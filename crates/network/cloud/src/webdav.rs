@@ -16,6 +16,8 @@ use reqwest_dav::types::Auth;
 use reqwest_dav::types::list_cmd::ListEntity;
 use reqwest_dav::{Client as DavClient, ClientBuilder, Depth};
 
+use lumino_core::{tr, trf};
+
 use crate::client::{CloudClient, basename, join_remote, normalize_remote};
 use crate::crypto::decrypt;
 use crate::dav_xml::{is_html_response, parse_list_multi_status, response_preview};
@@ -54,7 +56,7 @@ impl CloudClient for WebdavClient {
     async fn connect(&mut self, conn: &CloudConnection) -> Result<()> {
         let password = decrypt(&conn.password_encrypted)?;
         if conn.address.trim().is_empty() {
-            return Err(CloudError::Config("WebDAV 地址不能为空".into()));
+            return Err(CloudError::Config(tr!("WebDAV 地址不能为空").to_string()));
         }
         // 地址 + 独立端口字段（端口未填时默认 80；地址已含端口时以地址为准）
         let host = build_host(&conn.address, conn.port);
@@ -69,7 +71,7 @@ impl CloudClient for WebdavClient {
             // 2) 标准 WebDAV 客户端均不跟随重定向
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|e| CloudError::Connect(format!("创建 HTTP 客户端失败: {e}")))?;
+            .map_err(|e| CloudError::Connect(trf!("创建 HTTP 客户端失败: {e}", e = e)))?;
 
         let auth = if conn.username.is_empty() {
             Auth::Anonymous
@@ -98,7 +100,7 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         // 统一规范化为绝对路径（消除 ./ 残留）；请求用编码形式，is_self 比较用原始形式
         let target_raw = normalize_remote(path);
         let target = encode_remote_path(&target_raw);
@@ -124,7 +126,7 @@ impl CloudClient for WebdavClient {
         let text = resp
             .text()
             .await
-            .map_err(|e| CloudError::Protocol(format!("读取 PROPFIND 响应失败: {e}")))?;
+            .map_err(|e| CloudError::Protocol(trf!("读取 PROPFIND 响应失败: {e}", e = e)))?;
         // 服务器返回 HTML 页面（登录页/代理错误页）而非 WebDAV 响应：
         // 状态码可能是 200，但内容解析必炸。命中时响应头与 HTML 源码已由
         // html_response_error 打到 tracing 日志，错误信息回传实际连接端口
@@ -136,9 +138,10 @@ impl CloudClient for WebdavClient {
             return Err(html_response_error(&headers_snapshot, &text, port));
         }
         let parsed = parse_list_multi_status(&text).map_err(|e| {
-            CloudError::Protocol(format!(
-                "解析 PROPFIND 响应失败: {e}（响应预览: {}）",
-                response_preview(&text)
+            CloudError::Protocol(trf!(
+                "解析 PROPFIND 响应失败: {e}（响应预览: {preview}）",
+                e = e,
+                preview = response_preview(&text)
             ))
         })?;
         let entities: Vec<ListEntity> = parsed
@@ -186,13 +189,16 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         let bytes = std::fs::read(local).map_err(CloudError::Io)?;
         let remote_path = encode_remote_path(&normalize_remote(remote_path));
-        client
-            .put(&remote_path, bytes)
-            .await
-            .map_err(|e| CloudError::Protocol(format!("上传失败 {remote_path}: {e}")))?;
+        client.put(&remote_path, bytes).await.map_err(|e| {
+            CloudError::Protocol(trf!(
+                "上传失败 {remote_path}: {e}",
+                remote_path = remote_path,
+                e = e
+            ))
+        })?;
         Ok(())
     }
 
@@ -200,16 +206,19 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         let remote_path = encode_remote_path(&normalize_remote(remote_path));
-        let resp = client
-            .get(&remote_path)
-            .await
-            .map_err(|e| CloudError::Protocol(format!("下载失败 {remote_path}: {e}")))?;
+        let resp = client.get(&remote_path).await.map_err(|e| {
+            CloudError::Protocol(trf!(
+                "下载失败 {remote_path}: {e}",
+                remote_path = remote_path,
+                e = e
+            ))
+        })?;
         let bytes = resp
             .bytes()
             .await
-            .map_err(|e| CloudError::Protocol(format!("读取下载数据失败: {e}")))?;
+            .map_err(|e| CloudError::Protocol(trf!("读取下载数据失败: {e}", e = e)))?;
         std::fs::write(local, &bytes).map_err(CloudError::Io)?;
         Ok(())
     }
@@ -218,13 +227,17 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         let from = encode_remote_path(&normalize_remote(from));
         let to = encode_remote_path(&normalize_remote(to));
-        client
-            .mv(&from, &to)
-            .await
-            .map_err(|e| CloudError::Protocol(format!("重命名失败 {from} → {to}: {e}")))?;
+        client.mv(&from, &to).await.map_err(|e| {
+            CloudError::Protocol(trf!(
+                "重命名失败 {from} → {to}: {e}",
+                from = from,
+                to = to,
+                e = e
+            ))
+        })?;
         Ok(())
     }
 
@@ -232,12 +245,12 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         let path = encode_remote_path(&normalize_remote(path));
         client
             .delete(&path)
             .await
-            .map_err(|e| CloudError::Protocol(format!("删除失败 {path}: {e}")))?;
+            .map_err(|e| CloudError::Protocol(trf!("删除失败 {path}: {e}", path = path, e = e)))?;
         Ok(())
     }
 
@@ -245,17 +258,21 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         // basename 必须先于编码提取，避免已编码的 %20 被二次编码为 %25
         let from_norm = normalize_remote(from);
         let from = encode_remote_path(&from_norm);
         let to = encode_remote_path(&normalize_remote(
             join_remote(to_dir, &basename(&from_norm)).as_str(),
         ));
-        client
-            .mv(&from, &to)
-            .await
-            .map_err(|e| CloudError::Protocol(format!("移动失败 {from} → {to}: {e}")))?;
+        client.mv(&from, &to).await.map_err(|e| {
+            CloudError::Protocol(trf!(
+                "移动失败 {from} → {to}: {e}",
+                from = from,
+                to = to,
+                e = e
+            ))
+        })?;
         Ok(())
     }
 
@@ -263,12 +280,11 @@ impl CloudClient for WebdavClient {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+            .ok_or_else(|| CloudError::NotConnected(tr!("WebDAV 未连接").to_string()))?;
         let path = encode_remote_path(&normalize_remote(path));
-        client
-            .mkcol(&path)
-            .await
-            .map_err(|e| CloudError::Protocol(format!("创建目录失败 {path}: {e}")))?;
+        client.mkcol(&path).await.map_err(|e| {
+            CloudError::Protocol(trf!("创建目录失败 {path}: {e}", path = path, e = e))
+        })?;
         Ok(())
     }
 }

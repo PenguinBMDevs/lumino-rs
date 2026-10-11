@@ -5,6 +5,8 @@
 use iced_core::{Alignment, Length, Padding};
 use iced_widget::{button, column, container, mouse_area, row, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::resources::icon::{self, Icon};
 use crate::sidebar::{Event, Track};
 use crate::window;
@@ -65,7 +67,7 @@ pub(super) fn view_track_item<'a>(
 
     let name: Element<'a> = if is_renaming {
         let buffer = renaming_track.map(|(_, buf)| buf.as_str()).unwrap_or("");
-        text_input("音轨名称", buffer)
+        text_input(tr!("音轨名称"), buffer)
             .on_input(|value| Event::track_rename_changed(track.id, value))
             .on_submit(Event::track_rename_confirmed(track.id))
             .width(Length::Fill)

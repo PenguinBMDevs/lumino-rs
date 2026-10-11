@@ -12,6 +12,8 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, trace};
 
+use lumino_core::{tr, trf};
+
 use crate::Result;
 
 use crate::types::RoomInfo;
@@ -84,9 +86,9 @@ impl CollaborationClient {
             Ok(Err(e)) => Err(e.into()),
             Err(_) => {
                 tracing::debug!("WebSocket 连接超时");
-                Err(crate::CollaborationError::Other(format!(
-                    "连接超时（{}秒）",
-                    timeout_duration.as_secs()
+                Err(crate::CollaborationError::Other(trf!(
+                    "连接超时（{seconds}秒）",
+                    seconds = timeout_duration.as_secs()
                 )))
             }
         }
@@ -303,20 +305,24 @@ impl CollaborationClient {
                         Ok(read)
                     }
                     ServerMessage::Error { error } => Err(crate::CollaborationError::Other(error)),
-                    _ => Err(crate::CollaborationError::Other(format!(
-                        "意外的认证响应: {}",
-                        text
+                    _ => Err(crate::CollaborationError::Other(trf!(
+                        "意外的认证响应: {text}",
+                        text = text
                     ))),
                 }
             }
-            Ok(None) => Err(crate::CollaborationError::Other("连接已关闭".to_string())),
-            Ok(Some(Err(e))) => Err(crate::CollaborationError::Other(format!(
-                "WebSocket 错误: {}",
-                e
+            Ok(None) => Err(crate::CollaborationError::Other(
+                tr!("连接已关闭").to_string(),
+            )),
+            Ok(Some(Err(e))) => Err(crate::CollaborationError::Other(trf!(
+                "WebSocket 错误: {e}",
+                e = e
             ))),
-            Err(_) => Err(crate::CollaborationError::Other("认证超时".to_string())),
+            Err(_) => Err(crate::CollaborationError::Other(
+                tr!("认证超时").to_string(),
+            )),
             _ => Err(crate::CollaborationError::Other(
-                "意外的消息类型".to_string(),
+                tr!("意外的消息类型").to_string(),
             )),
         }
     }

@@ -7,6 +7,7 @@ use crate::{
     LoggingSettings, MidiSettings, SettingsPanel, SynthSettings,
 };
 use lumino_core::storage::config::SynthBackend;
+use lumino_core::tr;
 use lumino_ui_core::settings_event::OutputType;
 
 /// 解析设置输入字符串并应用；解析失败记录 warn 并忽略（保持旧行为不变）。
@@ -168,10 +169,10 @@ impl SettingsPanel {
             }
             Event::BrowseSoundfont => {
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("音色库文件", &["sf2", "sfz"])
-                    .add_filter("SF2 文件", &["sf2"])
-                    .add_filter("SFZ 文件", &["sfz"])
-                    .add_filter("所有文件", &["*"])
+                    .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
+                    .add_filter(tr!("SF2 文件"), &["sf2"])
+                    .add_filter(tr!("SFZ 文件"), &["sfz"])
+                    .add_filter(tr!("所有文件"), &["*"])
                     .pick_file()
                 {
                     self.synth.soundfont_path = path.to_string_lossy().into_owned();
@@ -260,10 +261,10 @@ impl SettingsPanel {
             }
             Event::BrowseProgramFont => {
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("字体文件", &["ttf", "otf", "ttc", "woff", "woff2"])
-                    .add_filter("TrueType 字体", &["ttf"])
-                    .add_filter("OpenType 字体", &["otf"])
-                    .add_filter("所有文件", &["*"])
+                    .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc", "woff", "woff2"])
+                    .add_filter(tr!("TrueType 字体"), &["ttf"])
+                    .add_filter(tr!("OpenType 字体"), &["otf"])
+                    .add_filter(tr!("所有文件"), &["*"])
                     .pick_file()
                 {
                     self.editing.program_font_path = path.to_string_lossy().into_owned();

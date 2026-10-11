@@ -4,6 +4,7 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{button, column, container, row, space};
+use lumino_core::tr;
 use lumino_extras::i18n::Language;
 
 use super::{Event, GroupId, ROUTES, RollBarButton, Route, RouteConfig};
@@ -147,7 +148,7 @@ pub fn view<'a>(
         params.mixer_panel_open,
         GroupId::PianoRoll.child_color(),
         Event::mixer_panel_toggled(),
-        "混音台",
+        tr!("混音台"),
         window,
     ));
 

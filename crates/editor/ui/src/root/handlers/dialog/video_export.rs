@@ -6,6 +6,8 @@ mod helpers;
 
 use helpers::*;
 
+use lumino_core::{tr, trf};
+
 use crate::message::{Message, VideoExportAction};
 use crate::root::Root;
 use crate::root::file_dialog::PathDialogTask;
@@ -44,13 +46,13 @@ impl DialogHandler {
                     let st = &root.state.video_export_dialog;
                     if document.is_some() {
                         tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
-                        "内存模式".to_string()
+                        tr!("内存模式").to_string()
                     } else if !st.midi_path.is_empty() {
                         tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.midi_path);
-                        "流式读取".to_string()
+                        tr!("流式读取").to_string()
                     } else {
                         tracing::warn!("视频导出未配置 MIDI 数据源");
-                        "未配置".to_string()
+                        tr!("未配置").to_string()
                     }
                 };
 
@@ -58,7 +60,7 @@ impl DialogHandler {
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
                 root.state.video_export_dialog.progress = 0.0;
                 root.state.video_export_dialog.status_message =
-                    format!("正在初始化... [{}]", midi_source);
+                    trf!("正在初始化... [{source}]", source = midi_source);
                 root.state.video_export_dialog.current_frame = 0;
                 root.state.video_export_dialog.total_frames = 0;
                 root.state.video_export_dialog.render_fps = 0.0;
@@ -165,7 +167,7 @@ impl DialogHandler {
                 // 浏览字体文件（TTF/OTF/TTC）：后台线程打开对话框（防 UI 冻结）
                 root.spawn_path_dialog(PathDialogTask::VideoCounterFont, || {
                     rfd::FileDialog::new()
-                        .add_filter("字体文件", &["ttf", "otf", "ttc"])
+                        .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc"])
                         .pick_file()
                 });
             }
@@ -227,7 +229,7 @@ impl DialogHandler {
                 root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {
                     rfd::FileDialog::new()
                         .set_file_name("notecounter.csv")
-                        .add_filter("CSV 数据文件", &["csv"])
+                        .add_filter(tr!("CSV 数据文件"), &["csv"])
                         .save_file()
                 });
             }
@@ -278,7 +280,7 @@ impl DialogHandler {
             V::DataCurveBrowseFont => {
                 root.spawn_path_dialog(PathDialogTask::VideoDataCurveFont, || {
                     rfd::FileDialog::new()
-                        .add_filter("字体文件", &["ttf", "otf", "ttc"])
+                        .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc"])
                         .pick_file()
                 });
             }
@@ -306,10 +308,10 @@ impl DialogHandler {
             V::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::VideoExportMidi, || {
                     rfd::FileDialog::new()
-                        .add_filter("音乐文件", &["mid", "midi", "lmpj"])
-                        .add_filter("MIDI 文件", &["mid", "midi"])
-                        .add_filter("Lumino 项目", &["lmpj"])
-                        .add_filter("所有文件", &["*"])
+                        .add_filter(tr!("音乐文件"), &["mid", "midi", "lmpj"])
+                        .add_filter(tr!("MIDI 文件"), &["mid", "midi"])
+                        .add_filter(tr!("Lumino 项目"), &["lmpj"])
+                        .add_filter(tr!("所有文件"), &["*"])
                         .pick_file()
                 });
             }

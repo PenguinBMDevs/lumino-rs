@@ -6,6 +6,7 @@
 use iced_core::{Alignment, Length};
 use iced_widget::{checkbox, column, container, row, slider, space, text, text_input};
 
+use lumino_core::tr;
 use lumino_message::events::window::video::RenderMode;
 
 use crate::message::{Message, VideoExportAction};
@@ -13,6 +14,7 @@ use crate::view::widgets;
 
 use super::helpers;
 use super::layout::pick_list_row;
+use super::localized_choice::LocalizedChoice;
 use super::state::{MIDITRAIL_Z_FAR_MAX, VideoExportDialogState};
 
 /// 渲染设置区域（容器格式、编码器、硬件加速、质量、分辨率、帧率）
@@ -21,7 +23,7 @@ pub(super) fn render_settings_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     let mut content: crate::Element<'a> = column![
-        text("渲染设置")
+        text(tr!("渲染设置"))
             .size(16)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
@@ -37,7 +39,7 @@ pub(super) fn render_settings_section<'a>(
         space().height(8),
         resolution_input_row(state, palette),
         pick_list_row(
-            "帧率:",
+            tr!("帧率:"),
             100.0,
             vec![24u32, 30, 60, 120],
             Some(state.fps),
@@ -98,7 +100,7 @@ fn render_format_options<'a>(
 
     column![
         pick_list_row(
-            "渲染格式:",
+            tr!("渲染格式:"),
             100.0,
             containers,
             Some(state.container.clone()),
@@ -107,7 +109,7 @@ fn render_format_options<'a>(
         ),
         space().height(8),
         pick_list_row(
-            "编码器:",
+            tr!("编码器:"),
             100.0,
             codecs,
             Some(state.codec.clone()),
@@ -116,7 +118,7 @@ fn render_format_options<'a>(
         ),
         space().height(8),
         pick_list_row(
-            "加速:",
+            tr!("加速:"),
             100.0,
             backends,
             Some(state.backend.clone()),
@@ -132,32 +134,36 @@ fn render_quality_mode_options<'a>(
     state: &'a VideoExportDialogState,
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
-    let qualities = vec!["高", "中", "低"]
+    // 注：质量选项值 "高"/"中"/"低" 是 `QualityPreset` 的 `Display`/`FromStr`
+    // 往返取值（见 `core/message/events/window/video/types.rs`），属数据 key，
+    // **不能在状态里改成英文**；这里用 `LocalizedChoice` 只替换「显示」一层，
+    // 选中回调仍把原始中文数据值发回消息（`.0`）。
+    let qualities: Vec<LocalizedChoice> = ["高", "中", "低"]
         .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
+        .map(LocalizedChoice::new)
+        .collect();
     // 渲染风格列表由 `RenderMode::ALL` + `Display` 生成，与解析表同源，防止改名漏改
-    let render_modes = RenderMode::ALL
+    let render_modes: Vec<LocalizedChoice> = RenderMode::ALL
         .iter()
-        .map(|mode| mode.to_string())
-        .collect::<Vec<_>>();
+        .map(|mode| LocalizedChoice::new(mode.to_string()))
+        .collect();
 
     column![
         pick_list_row(
-            "质量:",
+            tr!("质量:"),
             100.0,
             qualities,
-            Some(state.quality.clone()),
-            |v| Message::VideoExport(VideoExportAction::QualityChanged(v)),
+            Some(LocalizedChoice::new(state.quality.clone())),
+            |v: LocalizedChoice| Message::VideoExport(VideoExportAction::QualityChanged(v.0)),
             palette,
         ),
         space().height(8),
         pick_list_row(
-            "渲染风格:",
+            tr!("渲染风格:"),
             100.0,
             render_modes,
-            Some(state.render_mode.clone()),
-            |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
+            Some(LocalizedChoice::new(state.render_mode.clone())),
+            |v: LocalizedChoice| Message::VideoExport(VideoExportAction::RenderModeChanged(v.0)),
             palette,
         ),
     ]
@@ -169,14 +175,16 @@ fn midi_console_settings_section<'a>(
     state: &'a VideoExportDialogState,
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
+    // 注：后端取值 "GPU"/"CPU" 既是 `EncoderBackend` 的解析 key，本身也已是
+    // 语言无关的拉丁文缩写（双语界面下同样显示 GPU/CPU），故无需包装。
     column![
-        text("MidiConsole 设置")
+        text(tr!("MidiConsole 设置"))
             .size(16)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(12),
         pick_list_row(
-            "渲染后端:",
+            tr!("渲染后端:"),
             100.0,
             vec!["GPU".to_string(), "CPU".to_string()],
             Some(state.midi_console_backend.clone()),
@@ -216,7 +224,10 @@ fn waterfall_speed_slider_row<'a>(
     };
 
     row![
-        text("下落速度:").size(14).style(label_style).width(100),
+        text(tr!("下落速度:"))
+            .size(14)
+            .style(label_style)
+            .width(100),
         slider(0.1..=10.0, value, move |v| {
             Message::VideoExport(if is_miditrail {
                 if is_top {
@@ -242,9 +253,12 @@ fn miditrail_view_mode_row<'a>(
     state: &'a VideoExportDialogState,
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
+    // 注：视图模式取值 "Normal"/"Top" 是 `MiditrailViewMode` 的解析 key（见
+    // `handlers/dialog/video_export.rs` 的 `MiditrailViewModeChanged` 分派），
+    // 且本身已是语言无关的拉丁文，故无需包装（改了反而会让分派失配）。
     if state.render_mode == "MIDITrail" {
         pick_list_row(
-            "视图模式:",
+            tr!("视图模式:"),
             100.0,
             vec!["Normal".to_string(), "Top".to_string()],
             Some(state.miditrail_view_mode.clone()),
@@ -268,7 +282,10 @@ fn miditrail_z_far_slider_row<'a>(
 
     if state.render_mode == "MIDITrail" {
         row![
-            text("Z 显示距离:").size(14).style(label_style).width(100),
+            text(tr!("Z 显示距离:"))
+                .size(14)
+                .style(label_style)
+                .width(100),
             slider(0.1..=MIDITRAIL_Z_FAR_MAX, state.miditrail_z_far, |v| {
                 Message::VideoExport(VideoExportAction::MiditrailZFarChanged(v))
             })
@@ -293,7 +310,7 @@ fn miditrail_3d_notes_checkbox_row<'a>(
 ) -> crate::Element<'a> {
     if state.render_mode == "MIDITrail" {
         checkbox(state.miditrail_3d_notes)
-            .label("3D 音符（盒子，关闭则为平面）")
+            .label(tr!("3D 音符（盒子，关闭则为平面）"))
             .on_toggle(|v| Message::VideoExport(VideoExportAction::Miditrail3DNotesChanged(v)))
             .style(widgets::dialog_checkbox_style(palette))
             .into()
@@ -311,7 +328,7 @@ fn resolution_input_row<'a>(
     let height_str = state.height.to_string();
 
     row![
-        text("分辨率:")
+        text(tr!("分辨率:"))
             .size(14)
             .style(widgets::dialog_label_style(palette))
             .width(100),

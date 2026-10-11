@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use iced_wgpu::wgpu;
+use lumino_core::tr;
 use lumino_message::I2mConfigField;
-use once_cell::sync::Lazy;
 
 use crate::right_sidebar::material::MaterialLibrary;
 
@@ -31,34 +31,40 @@ pub enum RightSidebarPanel {
     PianoWaterfall,
 }
 
-/// 可选调色板算法（中文名 + i2m-rs `PaletteSource`）
+/// 可选调色板算法（显示名 + i2m-rs `PaletteSource`）
 ///
 /// 跳过 i2m-rs 中标记为"回退"的变体（`OnlyWpfMedianCut`、`Optics`）与
 /// 纯初始化变体 `OnlyKMeansPlusPlus`，其余全部暴露给用户。
-pub static PALETTE_ALGORITHMS: Lazy<Vec<(&'static str, i2m_rs::PaletteSource)>> = Lazy::new(|| {
+///
+/// 显示名按当前界面语言实时翻译，故用函数而非静态表（静态表会把首次构建
+/// 时的语言固化下来，切换语言后下拉项不跟随）。
+pub fn palette_algorithms() -> Vec<(&'static str, i2m_rs::PaletteSource)> {
     vec![
         ("K-Means++", i2m_rs::PaletteSource::KMeansPlusPlus),
         ("K-Means", i2m_rs::PaletteSource::KMeans),
-        ("流行色", i2m_rs::PaletteSource::Popularity),
-        ("八叉树", i2m_rs::PaletteSource::Octree),
-        ("方差分割", i2m_rs::PaletteSource::VarianceSplit),
-        ("PCA 主成分", i2m_rs::PaletteSource::Pca),
+        (tr!("流行色"), i2m_rs::PaletteSource::Popularity),
+        (tr!("八叉树"), i2m_rs::PaletteSource::Octree),
+        (tr!("方差分割"), i2m_rs::PaletteSource::VarianceSplit),
+        (tr!("PCA 主成分"), i2m_rs::PaletteSource::Pca),
         ("Max-Min", i2m_rs::PaletteSource::MaxMin),
-        ("原生 K-Means", i2m_rs::PaletteSource::NativeKMeans),
-        ("均值漂移", i2m_rs::PaletteSource::MeanShift),
-        ("DBSCAN 密度", i2m_rs::PaletteSource::Dbscan),
-        ("GMM 混合模型", i2m_rs::PaletteSource::Gmm),
-        ("层次聚类", i2m_rs::PaletteSource::Hierarchical),
-        ("谱聚类", i2m_rs::PaletteSource::Spectral),
+        (tr!("原生 K-Means"), i2m_rs::PaletteSource::NativeKMeans),
+        (tr!("均值漂移"), i2m_rs::PaletteSource::MeanShift),
+        (tr!("DBSCAN 密度"), i2m_rs::PaletteSource::Dbscan),
+        (tr!("GMM 混合模型"), i2m_rs::PaletteSource::Gmm),
+        (tr!("层次聚类"), i2m_rs::PaletteSource::Hierarchical),
+        (tr!("谱聚类"), i2m_rs::PaletteSource::Spectral),
         ("Lab K-Means", i2m_rs::PaletteSource::LabKMeans),
         (
-            "Floyd-Steinberg 抖动",
+            tr!("Floyd-Steinberg 抖动"),
             i2m_rs::PaletteSource::FloydSteinbergDither,
         ),
-        ("Bayer 有序抖动", i2m_rs::PaletteSource::OrderedDither),
-        ("固定位深调色板", i2m_rs::PaletteSource::FixedBitPalette),
+        (tr!("Bayer 有序抖动"), i2m_rs::PaletteSource::OrderedDither),
+        (
+            tr!("固定位深调色板"),
+            i2m_rs::PaletteSource::FixedBitPalette,
+        ),
     ]
-});
+}
 
 /// 图片转 MIDI 转换配置（用户可自定义项）
 ///
@@ -76,7 +82,7 @@ pub struct I2mConfig {
     pub ticks_per_pixel: u32,
     /// 调色板颜色数（=生成音轨数）
     pub color_count: usize,
-    /// 调色板算法索引（指向 `PALETTE_ALGORITHMS`）
+    /// 调色板算法索引（指向 `palette_algorithms`）
     pub palette_index: usize,
     /// 最低 key 输入框文本
     pub start_key_text: String,
@@ -174,7 +180,7 @@ impl I2mConfig {
 
     /// 当前调色板算法（索引越界时回退 K-Means++）
     pub fn palette(&self) -> i2m_rs::PaletteSource {
-        PALETTE_ALGORITHMS
+        palette_algorithms()
             .get(self.palette_index)
             .map(|(_, source)| source.clone())
             .unwrap_or(i2m_rs::PaletteSource::KMeansPlusPlus)

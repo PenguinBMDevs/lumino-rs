@@ -1,10 +1,12 @@
+use lumino_core::trf;
+
 use super::*;
 
 /// `wgpu::BufferSize::new` 仅对 0 字节返回 `None`；统一转成带上下文的 GPU
 /// 错误，避免生产路径 `unwrap`。
 fn checked_buffer_size(bytes: usize) -> Result<wgpu::BufferSize, SynthError> {
     wgpu::BufferSize::new(bytes as u64)
-        .ok_or_else(|| SynthError::Gpu(format!("buffer size 为 0（bytes={bytes}）")))
+        .ok_or_else(|| SynthError::Gpu(trf!("buffer size 为 0（bytes={bytes}）", bytes = bytes)))
 }
 
 impl GpuSynth {

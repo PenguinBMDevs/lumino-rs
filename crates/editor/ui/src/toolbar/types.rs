@@ -2,6 +2,8 @@
 //!
 //! 共享类型定义已迁移至 lumino-message crate，此处重新导出以保持路径兼容。
 
+use lumino_core::trf;
+
 pub use lumino_message::{DotType, NotePrecision, SpeedFactor, Tool, TupletType};
 
 /// 自定义精度对话框状态
@@ -74,7 +76,8 @@ impl CustomPrecisionDialog {
             text.push(' ');
         }
         text.push_str(&self.note_value);
-        text.push_str("分音符");
+        // 音符时值后缀：中文「4分音符」/ 英文「1/4 note」，占位符承载时值本身
+        text.push_str(&trf!("{value}分音符", value = self.note_value));
         if self.divisor != "1" && !self.divisor.is_empty() {
             text.push_str(" / ");
             text.push_str(&self.divisor);

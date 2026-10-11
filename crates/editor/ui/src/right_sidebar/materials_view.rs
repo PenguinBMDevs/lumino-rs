@@ -12,6 +12,7 @@ use iced_core::{Alignment, Color, Length};
 use iced_widget::{
     Stack, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip,
 };
+use lumino_core::tr;
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_message::RightSidebarAction;
 
@@ -234,7 +235,7 @@ fn material_item<'a>(
             .as_ref()
             .map(|(_, b)| b.clone())
             .unwrap_or_default();
-        text_input("素材名称", &buffer)
+        text_input(tr!("素材名称"), &buffer)
             .on_input(|value| {
                 Message::RightSidebar(RightSidebarAction::MaterialRenameInputChanged(value))
             })

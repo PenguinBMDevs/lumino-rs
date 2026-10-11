@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
 use lumino_diagnostics::memory_monitor::MemoryMonitor;
 
 use crate::LmpjData;
@@ -12,7 +13,7 @@ use super::types::ProgressCallback;
 
 fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> LoaderResult<T> {
     let decoded = zstd::stream::decode_all(std::io::Cursor::new(bytes))
-        .map_err(|e| LoaderError::Compression(format!("解压失败: {e}")))?;
+        .map_err(|e| LoaderError::Compression(trf!("解压失败: {e}", e = e)))?;
     bincode::deserialize(&decoded).map_err(LoaderError::from)
 }
 
@@ -42,7 +43,13 @@ pub async fn load_parsed_midi(
 
     {
         let initial_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
-        cb(&format!("正在准备加载文件 (内存: {initial_rss} MB)"), 0.0);
+        cb(
+            &trf!(
+                "正在准备加载文件 (内存: {initial_rss} MB)",
+                initial_rss = initial_rss
+            ),
+            0.0,
+        );
     }
 
     // ── 文件格式验证 ──
@@ -51,7 +58,7 @@ pub async fn load_parsed_midi(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|s| s.to_ascii_lowercase())
-        .ok_or_else(|| LoaderError::FileFormat("无法获取文件扩展名".to_string()))?;
+        .ok_or_else(|| LoaderError::FileFormat(tr!("无法获取文件扩展名").to_string()))?;
 
     // 有效的 MIDI 文件扩展名
     let is_midi_ext = matches!(extension.as_str(), "mid" | "midi" | "lmpj");
@@ -63,26 +70,26 @@ pub async fn load_parsed_midi(
         use crate::archive::is_archive;
         if is_archive(&path) {
             return Err(LoaderError::FileFormat(
-                "文件是压缩包格式，请先解压后再加载。".to_string(),
+                tr!("文件是压缩包格式，请先解压后再加载。").to_string(),
             ));
         }
         return Err(LoaderError::FileFormat(
-            "本文件不支持加载，请检查文件格式！支持的格式：.mid / .midi / .lmpj".to_string(),
+            tr!("本文件不支持加载，请检查文件格式！支持的格式：.mid / .midi / .lmpj").to_string(),
         ));
     }
 
     if extension == "lmpj" {
-        cb("正在加载 Lumino 工程文件", 0.1);
+        cb(tr!("正在加载 Lumino 工程文件"), 0.1);
         let data = tokio::fs::read(&path).await.map_err(|e| {
             let err = LoaderError::Io(e);
             cb(&err.to_string(), 1.0);
             err
         })?;
-        cb("解析 Lumino 工程文件", 0.5);
+        cb(tr!("解析 Lumino 工程文件"), 0.5);
 
         let parsed = tokio::task::spawn_blocking(move || {
             let mut lmpj_data: LmpjData = decode_lmpj(&data)
-                .map_err(|e| LoaderError::FileFormat(format!("解析 LMPJ 失败: {e}")))?;
+                .map_err(|e| LoaderError::FileFormat(trf!("解析 LMPJ 失败: {e}", e = e)))?;
 
             tracing::info!(
                 "LMPJ 解析成功: info.path={:?}, midi_data 存在={}",
@@ -114,7 +121,7 @@ pub async fn load_parsed_midi(
         })
         .await
         .map_err(|e| {
-            let err = LoaderError::Other(format!("解析 LMPJ 失败: {e}"));
+            let err = LoaderError::Other(trf!("解析 LMPJ 失败: {e}", e = e));
             cb(&err.to_string(), 1.0);
             err
         })?
@@ -122,7 +129,7 @@ pub async fn load_parsed_midi(
             cb(&e.to_string(), 1.0);
         })?;
 
-        cb("Lumino 工程文件加载完成", 1.0);
+        cb(tr!("Lumino 工程文件加载完成"), 1.0);
         // 解析临时数据（zstd 解压 + midly 中间态）已全部 drop，
         // 主动回收 mimalloc 空闲页，避免峰值残留抬高 RSS
         lumino_diagnostics::memtrace::purge_free_pages();
@@ -133,7 +140,10 @@ pub async fn load_parsed_midi(
     // 避免 scan_midi_file 与 from_notes_file 两次完整 IO
     {
         let read_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
-        cb(&format!("正在读取文件... (内存: {read_rss} MB)"), 0.05);
+        cb(
+            &trf!("正在读取文件... (内存: {read_rss} MB)", read_rss = read_rss),
+            0.05,
+        );
     }
     let file_bytes = tokio::fs::read(&path).await.map_err(|e| {
         let err = LoaderError::Io(e);
@@ -143,7 +153,10 @@ pub async fn load_parsed_midi(
 
     let file_size_mb = file_bytes.len() / (1024 * 1024);
     cb(
-        &format!("文件读取完成 ({file_size_mb} MB)，开始解析..."),
+        &trf!(
+            "文件读取完成 ({file_size_mb} MB)，开始解析...",
+            file_size_mb = file_size_mb
+        ),
         0.10,
     );
 
@@ -153,7 +166,10 @@ pub async fn load_parsed_midi(
         Arc::new(move |val: f64| {
             let inner_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
             p(
-                &format!("正在提取音符并构建缓存... (内存: {inner_rss} MB)"),
+                &trf!(
+                    "正在提取音符并构建缓存... (内存: {inner_rss} MB)",
+                    inner_rss = inner_rss
+                ),
                 0.10 + val * 0.85,
             );
         }) as Arc<dyn Fn(f64) + Send + Sync>
@@ -164,8 +180,8 @@ pub async fn load_parsed_midi(
         crate::MidiDocument::from_notes_bytes(&file_bytes, p_ref)
     })
     .await
-    .map_err(|e| LoaderError::Other(format!("加载线程 panic: {e}")))?
-    .map_err(|e| LoaderError::MidiParse(format!("解析 MIDI 数据失败: {e}")))?;
+    .map_err(|e| LoaderError::Other(trf!("加载线程 panic: {e}", e = e)))?
+    .map_err(|e| LoaderError::MidiParse(trf!("解析 MIDI 数据失败: {e}", e = e)))?;
 
     let info = MidiInfo {
         path: path.clone(),
@@ -191,7 +207,11 @@ pub async fn load_parsed_midi(
 
     let rss_mb = MemoryMonitor::global().current_rss() / (1024 * 1024);
     cb(
-        &format!("MIDI 加载完成 ({total_notes} 音符, 内存: {rss_mb} MB)"),
+        &trf!(
+            "MIDI 加载完成 ({total_notes} 音符, 内存: {rss_mb} MB)",
+            total_notes = total_notes,
+            rss_mb = rss_mb
+        ),
         1.0,
     );
 
@@ -229,7 +249,10 @@ pub async fn load_parsed_midi_from_bytes(
     {
         let parse_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
         cb(
-            &format!("正在解析 MIDI 数据... (内存: {parse_rss} MB)"),
+            &trf!(
+                "正在解析 MIDI 数据... (内存: {parse_rss} MB)",
+                parse_rss = parse_rss
+            ),
             0.1,
         );
     }
@@ -238,14 +261,20 @@ pub async fn load_parsed_midi_from_bytes(
         build_document_from_midi_bytes(&midi_bytes, track_count)
     })
     .await
-    .map_err(|e| LoaderError::Other(format!("加载线程 panic: {e}")))??;
+    .map_err(|e| LoaderError::Other(trf!("加载线程 panic: {e}", e = e)))??;
 
     // 解析临时数据已全部 drop，主动回收 mimalloc 空闲页（同 load_parsed_midi）
     lumino_diagnostics::memtrace::purge_free_pages();
 
     {
         let final_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
-        cb(&format!("MIDI 加载完成 (内存: {final_rss} MB)"), 1.0);
+        cb(
+            &trf!(
+                "MIDI 加载完成 (内存: {final_rss} MB)",
+                final_rss = final_rss
+            ),
+            1.0,
+        );
     }
 
     // DEBT-02 #119（分片 5 M10）：division / total_notes 从真实文档取，

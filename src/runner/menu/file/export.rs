@@ -3,6 +3,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
+
 use crate::runner::RunnerInner;
 
 use super::helpers::get_file_stem;
@@ -106,7 +108,7 @@ impl RunnerInner {
 
         let Some(entry_path) = rfd::FileDialog::new()
             .set_file_name(format!("{file_stem}.lmpj"))
-            .add_filter("Lumino 工程入口", &["lmpj"])
+            .add_filter(tr!("Lumino 工程入口"), &["lmpj"])
             .save_file()
         else {
             return;
@@ -120,8 +122,8 @@ impl RunnerInner {
         let cb = Arc::clone(&self.window_state.progress_cb);
 
         tokio::spawn(async move {
-            cb("准备导出工程", 0.0);
-            cb("正在导出工程", 0.3);
+            cb(tr!("准备导出工程"), 0.0);
+            cb(tr!("正在导出工程"), 0.3);
 
             let path_clone = entry_path.clone();
             match tokio::task::spawn_blocking(move || {
@@ -130,16 +132,16 @@ impl RunnerInner {
             .await
             {
                 Ok(Ok(())) => {
-                    cb("工程导出成功", 1.0);
+                    cb(tr!("工程导出成功"), 1.0);
                     tracing::info!("工程导出成功: {:?}", entry_path);
                 }
                 Ok(Err(e)) => {
-                    let msg = format!("导出失败: {e}");
+                    let msg = trf!("导出失败: {e}", e = e);
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                 }
                 Err(e) => {
-                    let msg = format!("导出任务失败: {e}");
+                    let msg = trf!("导出任务失败: {e}", e = e);
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                 }

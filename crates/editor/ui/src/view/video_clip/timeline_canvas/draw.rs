@@ -7,6 +7,7 @@
 use iced_core::{Color, Point, Rectangle, Size, border};
 use iced_widget::canvas::{Frame, Path, Text};
 
+use lumino_core::tr;
 use lumino_message::video_clip::ClipTrack;
 use lumino_ui_core::state::video_clip_state::ClipTrackEdit;
 
@@ -168,7 +169,7 @@ pub(super) fn draw_timeline(
             TrackGeom::track_y(ClipTrack::Video),
         ),
         Color::from_rgb(0.2, 0.6, 0.95),
-        "视频",
+        tr!("视频"),
         bounds.width,
     );
     draw_track(
@@ -181,7 +182,7 @@ pub(super) fn draw_timeline(
             TrackGeom::track_y(ClipTrack::Audio),
         ),
         Color::from_rgb(0.25, 0.75, 0.35),
-        "音频",
+        tr!("音频"),
         bounds.width,
     );
 

@@ -1,5 +1,6 @@
 use iced_core::{Border, Length};
 use iced_widget::{button, column, container, row, space, text, text_input};
+use lumino_core::tr;
 
 use crate::message::{BatchEditAction, BatchEditField, Message};
 use crate::state::root_state::BatchEditDialogState;
@@ -40,7 +41,7 @@ pub fn view_batch_edit_dialog<'a>(
     let text_color = palette.background.neutral.text;
     let hint_color = palette.background.strong.text;
 
-    let title = text("批量编辑")
+    let title = text(tr!("批量编辑"))
         .size(18)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(text_color),
@@ -74,24 +75,38 @@ pub fn view_batch_edit_dialog<'a>(
 
     let settings_section = container(
         column![
-            text("设置")
+            text(tr!("设置"))
                 .size(16)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(text_color),
                 }),
             space().height(8),
-            input_row("音符力度:", "如: +20", &state.velocity_input, |v| {
-                Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Velocity, v))
-            }),
-            input_row("音符长度:", "如: *1.5", &state.gate_input, |v| {
-                Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Gate, v))
-            }),
-            input_row("音符key位置:", "如: 60", &state.key_input, |v| {
-                Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Key, v))
-            }),
-            input_row("音符tick位置:", "如: 1000", &state.tick_input, |v| {
-                Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Tick, v))
-            }),
+            input_row(
+                tr!("音符力度:"),
+                tr!("如: +20"),
+                &state.velocity_input,
+                |v| {
+                    Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Velocity, v))
+                }
+            ),
+            input_row(
+                tr!("音符长度:"),
+                tr!("如: *1.5"),
+                &state.gate_input,
+                |v| { Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Gate, v)) }
+            ),
+            input_row(
+                tr!("音符key位置:"),
+                tr!("如: 60"),
+                &state.key_input,
+                |v| { Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Key, v)) }
+            ),
+            input_row(
+                tr!("音符tick位置:"),
+                tr!("如: 1000"),
+                &state.tick_input,
+                |v| { Message::BatchEdit(BatchEditAction::InputChanged(BatchEditField::Tick, v)) }
+            ),
         ]
         .spacing(SECTION_SPACING)
         .align_x(iced_core::Alignment::Start),
@@ -102,28 +117,28 @@ pub fn view_batch_edit_dialog<'a>(
 
     let format_section = container(
         column![
-            text("格式")
+            text(tr!("格式"))
                 .size(16)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(text_color),
                 }),
             space().height(8),
-            text("支持以下运算符号:")
+            text(tr!("支持以下运算符号:"))
                 .size(13)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(hint_color)
                 }),
-            text("+N  增加 N        -N  减少 N").size(12).style(
+            text(tr!("+N  增加 N        -N  减少 N")).size(12).style(
                 move |_theme: &iced_core::Theme| text::Style {
                     color: Some(hint_color)
                 }
             ),
-            text("*N  乘以 N        /N  除以 N").size(12).style(
+            text(tr!("*N  乘以 N        /N  除以 N")).size(12).style(
                 move |_theme: &iced_core::Theme| text::Style {
                     color: Some(hint_color)
                 }
             ),
-            text("无符号数字表示直接设置为该值").size(12).style(
+            text(tr!("无符号数字表示直接设置为该值")).size(12).style(
                 move |_theme: &iced_core::Theme| text::Style {
                     color: Some(hint_color)
                 }
@@ -137,7 +152,7 @@ pub fn view_batch_edit_dialog<'a>(
     .style(section_style);
 
     let buttons = row![
-        button(text("确定").size(14))
+        button(text(tr!("确定")).size(14))
             .on_press(Message::BatchEdit(BatchEditAction::Confirm))
             .padding([8, 24])
             .style(move |_theme: &iced_core::Theme, status| {
@@ -158,7 +173,7 @@ pub fn view_batch_edit_dialog<'a>(
                 }
             }),
         space().width(12),
-        button(text("取消").size(14))
+        button(text(tr!("取消")).size(14))
             .on_press(Message::BatchEdit(BatchEditAction::CloseDialog))
             .padding([8, 24])
             .style(move |_theme: &iced_core::Theme, status| {

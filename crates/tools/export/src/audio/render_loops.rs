@@ -7,6 +7,7 @@ use tracing::info;
 
 use midly::{MidiMessage, TrackEventKind};
 
+use lumino_core::{tr, trf};
 use lumino_midi_loader::{MidiDocument, streaming::StreamingMidiPlayer};
 use lumino_midi_model::multi_port::MAX_PORTS;
 
@@ -38,7 +39,7 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     let mmap = unsafe { memmap2::Mmap::map(&file)? };
 
     let player = StreamingMidiPlayer::from_bytes(&mmap)
-        .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
+        .map_err(|e| ExportError::AudioWrite(trf!("解析 MIDI 失败: {e}", e = e)))?;
 
     // REND-002：多端口由文件预扫描推导（覆盖 UI 传入的 0），并做 B1 超限告警。
     let mut config = config.clone();
@@ -139,7 +140,7 @@ pub fn render_audio_from_document(
         doc.notes.iter().map(|v| v.len()).sum::<usize>() * 2 + doc.control_events.len();
     if total_events == 0 {
         return Err(ExportError::AudioWrite(
-            "MIDI 文档中没有可渲染的事件".into(),
+            tr!("MIDI 文档中没有可渲染的事件").into(),
         ));
     }
 

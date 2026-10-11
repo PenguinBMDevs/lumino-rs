@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+use lumino_core::{tr, trf};
 use lumino_gpu_synth::audio::playback::{AudioPlayback, EventSender, PlaybackControl};
 use lumino_gpu_synth::midi::MidiEvent;
 use lumino_gpu_synth::{GpuSynth, InterpolationMode, SynthConfig};
@@ -103,10 +104,10 @@ impl Lgs {
         let config = Self::synth_config_from(options);
 
         let mut synth = GpuSynth::new(config)
-            .map_err(|e| Error::InitFailed(format!("LGS (GPU) 初始化失败: {e}")))?;
+            .map_err(|e| Error::InitFailed(trf!("LGS (GPU) 初始化失败: {e}", e = e)))?;
         synth
             .load_soundfont(soundfont_path, 0, 0)
-            .map_err(|e| Error::InitFailed(format!("LGS (GPU) 音色库加载失败: {e}")))?;
+            .map_err(|e| Error::InitFailed(trf!("LGS (GPU) 音色库加载失败: {e}", e = e)))?;
         Ok(synth)
     }
 
@@ -129,7 +130,7 @@ impl Lgs {
             options.audio_output_device.as_deref(),
         );
         let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
-            .map_err(|e| Error::InitFailed(format!("LGS (GPU) 音频流启动失败: {e}")))?;
+            .map_err(|e| Error::InitFailed(trf!("LGS (GPU) 音频流启动失败: {e}", e = e)))?;
         let event_tx = Arc::new(Mutex::new(playback.event_sender()));
         let control_tx = Arc::new(Mutex::new(playback.control_sender()));
         let velocity_filter = Arc::new(AtomicU8::new(options.velocity_filter_threshold));
@@ -342,7 +343,7 @@ impl SynthControl for Lgs {
                 );
                 let playback = self._playback.lock().unwrap_or_else(|e| e.into_inner());
                 if !playback.reset_synth_state() {
-                    return Err("LGS (GPU): 复位请求发送失败（渲染线程已停止）".into());
+                    return Err(tr!("LGS (GPU): 复位请求发送失败（渲染线程已停止）").into());
                 }
                 Ok(())
             }
@@ -354,7 +355,7 @@ impl SynthControl for Lgs {
                 let mut options = self.options.clone();
                 options.midi_max_port = max_port;
                 let synth = Self::build_synth(&self.soundfont_path, &options)
-                    .map_err(|e| format!("重建 GPU 合成引擎失败: {e}"))?;
+                    .map_err(|e| trf!("重建 GPU 合成引擎失败: {e}", e = e))?;
                 let device = crate::audio_devices::resolve_audio_output_device(
                     options.audio_output_device.as_deref(),
                 );
@@ -363,7 +364,7 @@ impl SynthControl for Lgs {
                     old.stop();
                 }
                 let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
-                    .map_err(|e| format!("重启 GPU 音频流失败: {e}"))?;
+                    .map_err(|e| trf!("重启 GPU 音频流失败: {e}", e = e))?;
                 *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
                 *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) =
                     playback.control_sender();

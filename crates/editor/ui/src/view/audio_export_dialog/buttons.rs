@@ -4,6 +4,8 @@
 
 use iced_widget::{button, column, progress_bar, row, space, text};
 
+use lumino_core::{tr, trf};
+
 use crate::Message;
 use crate::message::AudioExportAction;
 use crate::state::root_state::AudioExportDialogState;
@@ -30,7 +32,11 @@ fn render_progress_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     let status_text = render_status_text(state, palette);
-    let pause_label = if state.is_paused { "继续" } else { "暂停" };
+    let pause_label = if state.is_paused {
+        tr!("继续")
+    } else {
+        tr!("暂停")
+    };
     let pause_action = AudioExportAction::TogglePause;
 
     column![
@@ -55,7 +61,7 @@ fn render_progress_section<'a>(
                     palette.background.neutral.text,
                 )),
             space().width(12),
-            button(text("中止").size(14))
+            button(text(tr!("中止")).size(14))
                 .on_press(Message::AudioExport(AudioExportAction::Abort))
                 .padding([8, 24])
                 .width(iced_core::Length::Fixed(90.0))
@@ -81,7 +87,7 @@ fn render_finished_section<'a>(
         status_text,
         space().height(12),
         row![
-            button(text("重置").size(14))
+            button(text(tr!("重置")).size(14))
                 .on_press(Message::AudioExport(AudioExportAction::ResetRendering))
                 .padding([8, 24])
                 .width(iced_core::Length::Fixed(90.0))
@@ -91,7 +97,7 @@ fn render_finished_section<'a>(
                     palette.background.neutral.text,
                 )),
             space().width(12),
-            button(text("关闭").size(14))
+            button(text(tr!("关闭")).size(14))
                 .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
                 .padding([8, 24])
                 .width(iced_core::Length::Fixed(90.0))
@@ -113,14 +119,14 @@ fn render_status_text<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     if state.is_paused && state.is_rendering {
-        text("已暂停")
+        text(tr!("已暂停"))
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
             })
             .into()
     } else if state.render_completed {
-        text("导出完成")
+        text(tr!("导出完成"))
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.success.strong.color),
@@ -128,14 +134,17 @@ fn render_status_text<'a>(
             .into()
     } else if let Some(ref err) = state.render_error {
         if err == "已中止" {
-            text("已中止")
+            // 注：`"已中止"` 是与导出层 `ExportError::Aborted` 的 Display 文案
+            // 对应的比较 key（见 `tools/export/src/error.rs`），属数据不是文案，
+            // 保持中文原样；仅展示文案走 i18n。
+            text(tr!("已中止"))
                 .size(14)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(palette.background.neutral.text),
                 })
                 .into()
         } else {
-            text(format!("导出失败: {err}"))
+            text(trf!("导出失败: {err}", err = err))
                 .size(14)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(palette.danger.strong.color),
@@ -155,7 +164,7 @@ fn render_status_text<'a>(
 /// 非渲染中：关闭/导出按钮
 fn action_buttons(palette: &iced_core::theme::palette::Extended) -> crate::Element<'static> {
     row![
-        button(text("关闭").size(14))
+        button(text(tr!("关闭")).size(14))
             .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
             .padding([8, 32])
             .width(iced_core::Length::Fixed(100.0))
@@ -165,7 +174,7 @@ fn action_buttons(palette: &iced_core::theme::palette::Extended) -> crate::Eleme
                 palette.background.neutral.text,
             )),
         space().width(12),
-        button(text("导出").size(14))
+        button(text(tr!("导出")).size(14))
             .on_press(Message::AudioExport(AudioExportAction::Confirm))
             .padding([8, 32])
             .width(iced_core::Length::Fixed(100.0))

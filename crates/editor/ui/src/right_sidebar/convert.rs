@@ -5,6 +5,7 @@
 //! NoteOn/NoteOff 事件流解析为每色一轨的预览音符（`ImageToMidiPreview`）。
 
 use crate::right_sidebar::core::I2mConfig;
+use lumino_core::trf;
 use lumino_editor_state::{ImageToMidiPreview, PreviewNote};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -20,17 +21,17 @@ pub fn run_conversion(path: &Path, ui_config: &I2mConfig) -> ConvertResult {
     use i2m_rs::cluster::generate_palette;
 
     // 1. 加载图片（PNG/JPEG/BMP/GIF/WebP/SVG）
-    let image = i2m_rs::load_image(path).map_err(|e| format!("图片解码失败: {e}"))?;
+    let image = i2m_rs::load_image(path).map_err(|e| trf!("图片解码失败: {e}", e = e))?;
 
     // 2. 用户配置 + 生成调色板（算法与颜色数来自面板）
     let config = ui_config.to_converter_config();
     let (palette, _dithered) = generate_palette(&image, &config.palette, config.color_count)
-        .map_err(|e| format!("调色板生成失败: {e}"))?;
+        .map_err(|e| trf!("调色板生成失败: {e}", e = e))?;
 
     // 3. 转换为时序事件（每调色板颜色一轨）
     let cancel = AtomicBool::new(false);
     let result = i2m_rs::convert(&image, &palette, &config, None, &cancel)
-        .map_err(|e| format!("转换失败: {e}"))?;
+        .map_err(|e| trf!("转换失败: {e}", e = e))?;
 
     // 4. 解析 NoteOn/NoteOff 事件流为音符（pixel-tick × ticks_per_pixel → MIDI tick）
     // i2m-rs 的事件按"列"集中输出：同 tick 内先推全部列的 NoteOn（再于尾部集中 NoteOff），

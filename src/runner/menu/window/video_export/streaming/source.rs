@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use lumino_core::{tr, trf};
 use lumino_gfx::{NoteInstance, RenderParams};
 
 use super::super::render_params::{
@@ -29,7 +30,7 @@ pub struct StreamingNoteSource {
 impl StreamingNoteSource {
     pub fn open(result: StreamingMidiResult) -> Result<Self, String> {
         let note_file = File::open(&result.note_cache_path)
-            .map_err(|e| format!("打开音符缓存文件失败: {e}"))?;
+            .map_err(|e| trf!("打开音符缓存文件失败: {e}", e = e))?;
         Ok(Self {
             note_file,
             note_cache_path: result.note_cache_path,
@@ -80,7 +81,7 @@ impl StreamingNoteSource {
         fps: f64,
     ) -> Result<(Vec<NoteRecord>, RenderParams), String> {
         if frame_idx >= self.total_frames {
-            return Err("帧索引越界".to_string());
+            return Err(tr!("帧索引越界").to_string());
         }
 
         let entry = self.frame_index[frame_idx as usize];
@@ -90,7 +91,7 @@ impl StreamingNoteSource {
             let offset = 8 + (entry.note_offset as u64) * (NOTE_RECORD_SIZE as u64);
             self.note_file
                 .seek(SeekFrom::Start(offset))
-                .map_err(|e| format!("seek 音符缓存失败: {e}"))?;
+                .map_err(|e| trf!("seek 音符缓存失败: {e}", e = e))?;
 
             let expected_bytes = (entry.note_count as usize) * NOTE_RECORD_SIZE;
             self.read_buf.resize(expected_bytes, 0);
@@ -109,7 +110,7 @@ impl StreamingNoteSource {
                     file_len,
                     NOTE_RECORD_SIZE,
                 );
-                return Err(format!("读取音符缓存失败: {e}"));
+                return Err(trf!("读取音符缓存失败: {e}", e = e));
             }
 
             // SAFETY:

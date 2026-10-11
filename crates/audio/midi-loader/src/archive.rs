@@ -17,6 +17,8 @@ mod format;
 
 use std::path::Path;
 
+use lumino_core::tr;
+
 pub use extract::{EntryData, extract_all_to_temp, extract_entry_to_dir, extract_entry_to_temp};
 pub use format::{ArchiveFormat, detect_format, is_archive, is_midi_extension};
 
@@ -33,31 +35,35 @@ pub struct ArchiveEntry {
 #[derive(Debug, thiserror::Error)]
 pub enum ArchiveError {
     /// 不支持的压缩格式
-    #[error("不支持的压缩格式: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("不支持的压缩格式"), .0)]
     UnsupportedFormat(String),
 
     /// 文件不是有效的压缩包
-    #[error("文件不是有效的压缩包: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("文件不是有效的压缩包"), .0)]
     NotAnArchive(String),
 
     /// IO 错误
-    #[error("IO 错误: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("IO 错误"), .0)]
     Io(#[from] std::io::Error),
 
     /// 解压错误
-    #[error("解压失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("解压失败"), .0)]
     Extraction(String),
 
     /// 条目未找到
-    #[error("压缩包中未找到条目: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("压缩包中未找到条目"), .0)]
     EntryNotFound(String),
 
     /// 条目名不安全（路径穿越 / 绝对路径 / 盘符等，DEBT-02 #119）
-    #[error("压缩包条目名不安全（疑似路径穿越攻击），已拒绝: {0}")]
+    #[error(
+        "{}: {}",
+        lumino_core::i18n::tr("压缩包条目名不安全（疑似路径穿越攻击），已拒绝"),
+        .0
+    )]
     UnsafeEntryName(String),
 
     /// 内部解压库错误
-    #[error("解压库错误: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("解压库错误"), .0)]
     LibraryError(String),
 }
 
@@ -69,7 +75,7 @@ pub fn scan_archive(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
         ArchiveError::UnsupportedFormat(
             path.extension()
                 .and_then(|e| e.to_str())
-                .unwrap_or("未知")
+                .unwrap_or(tr!("未知"))
                 .to_string(),
         )
     })?;

@@ -10,6 +10,8 @@
 //! - 云上传/下载为阻塞调用无精确进度回调，采用阶段进度（0.1 开始 → 1.0 结束）
 
 use std::sync::Arc;
+
+use lumino_core::tr;
 use tokio::sync::mpsc;
 use winit::{
     dpi::{LogicalSize, PhysicalPosition, Position},
@@ -189,7 +191,7 @@ impl CloudProgressManager {
                 width: CLOUD_PROGRESS_WIDTH,
                 height: CLOUD_PROGRESS_HEIGHT,
             })
-            .with_title("云存储传输")
+            .with_title(tr!("云存储传输"))
             .with_visible(true);
 
         // 悬浮窗跟随主窗口的标题栏配置。

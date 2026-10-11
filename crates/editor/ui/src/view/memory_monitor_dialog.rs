@@ -7,6 +7,7 @@
 
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};
+use lumino_core::tr;
 use lumino_diagnostics::memtrace::{AllocTag, Snapshot};
 
 use crate::message::Message;
@@ -36,7 +37,7 @@ pub fn view_memory_monitor_dialog<'a>(
     };
 
     // 标题
-    let title = text("内存占用详情")
+    let title = text(tr!("内存占用详情"))
         .size(18)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(palette.background.neutral.text),
@@ -44,26 +45,26 @@ pub fn view_memory_monitor_dialog<'a>(
 
     // 总体指标
     let total_row = metric_row(
-        "分配器追踪总内存",
+        tr!("分配器追踪总内存"),
         format!("{:.1} MB", snapshot.total_mb()),
         label_style,
         accent_style,
     );
     let rss_row = metric_row(
-        "系统 RSS",
+        tr!("系统 RSS"),
         format!("{:.1} MB", rss_mb),
         label_style,
         accent_style,
     );
     let gpu_row = metric_row(
-        "GPU 资源",
+        tr!("GPU 资源"),
         format!("{:.1} MB", snapshot.gpu_mb()),
         label_style,
         accent_style,
     );
 
     // 按子系统分类网格
-    let grid_title = text("按子系统分类").size(14).style(label_style);
+    let grid_title = text(tr!("按子系统分类")).size(14).style(label_style);
 
     let mut grid_rows = column![].spacing(4);
     for tag in AllocTag::ALL {
@@ -82,15 +83,14 @@ pub fn view_memory_monitor_dialog<'a>(
     }
 
     // 底部说明
-    let note = text(
-        "注：GPU 资源计数反映应用显式创建的 wgpu Texture/Buffer 大小；\
-         驱动层额外开销（swapchain、depth、pipeline cache 等）不纳入此项统计。",
-    )
+    let note = text(tr!(
+        "注：GPU 资源计数反映应用显式创建的 wgpu Texture/Buffer 大小；驱动层额外开销（swapchain、depth、pipeline cache 等）不纳入此项统计。"
+    ))
     .size(11)
     .style(note_style);
 
     // 关闭按钮：通过 Core 事件通道将关闭请求发往 Runner
-    let close_button = button(text("关闭").size(14))
+    let close_button = button(text(tr!("关闭")).size(14))
         .on_press(Message::Core(crate::event::Event::Window(
             crate::event::window::Event::close_memory_monitor_dialog(),
         )))

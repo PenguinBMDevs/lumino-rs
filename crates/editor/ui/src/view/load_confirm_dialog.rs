@@ -1,6 +1,8 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};
 
+use lumino_core::{tr, trf};
+
 use crate::message::{LoadConfirmAction, Message};
 use crate::state::root_state::LoadConfirmDialogState;
 
@@ -13,25 +15,28 @@ pub fn view_load_confirm_dialog<'a>(
 
     // 文件信息区域
     let file_info = column![
-        text(format!("文件: {}", state.file_name))
+        text(trf!("文件: {name}", name = state.file_name))
             .size(14)
             .style(move |_t: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
             }),
         space().height(6),
-        text(format!("大小: {:.1} MB", state.size_mb))
-            .size(14)
-            .style(move |_t: &iced_core::Theme| text::Style {
-                color: Some(palette.background.neutral.text),
-            }),
+        text(trf!(
+            "大小: {size} MB",
+            size = format!("{:.1}", state.size_mb)
+        ))
+        .size(14)
+        .style(move |_t: &iced_core::Theme| text::Style {
+            color: Some(palette.background.neutral.text),
+        }),
         space().height(6),
-        text(format!("路径: {}", state.file_path))
+        text(trf!("路径: {path}", path = state.file_path))
             .size(12)
             .style(move |_t: &iced_core::Theme| text::Style {
                 color: Some(palette.background.weak.text),
             }),
         space().height(16),
-        text("此文件较大，加载可能需要一些时间。")
+        text(tr!("此文件较大，加载可能需要一些时间。"))
             .size(13)
             .style(move |_t: &iced_core::Theme| text::Style {
                 color: Some(palette.background.weak.text),
@@ -42,7 +47,7 @@ pub fn view_load_confirm_dialog<'a>(
     // 按钮区域
     let buttons = row![
         button(
-            text("取消")
+            text(tr!("取消"))
                 .size(14)
                 .style(move |_t: &iced_core::Theme| text::Style {
                     color: Some(palette.background.neutral.text),
@@ -69,7 +74,7 @@ pub fn view_load_confirm_dialog<'a>(
             }
         }),
         space().width(12),
-        button(text("加载").size(14))
+        button(text(tr!("加载")).size(14))
             .on_press(Message::LoadConfirm(LoadConfirmAction::Confirm))
             .padding([8, 32])
             .width(Length::Fixed(100.0))

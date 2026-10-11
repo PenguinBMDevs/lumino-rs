@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+use lumino_core::{tr, trf};
+
 use crate::{ExportError, ExportResult};
 
 /// 同步复制文件
@@ -25,7 +27,7 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
             // 尝试读取 LMPJ 文件内是否包含原始 MIDI 数据（有些 LMPJ 可能未保存）
             let data = std::fs::read(source_path).map_err(ExportError::Io)?;
             let parsed: lumino_midi_loader::ParsedMidi = crate::format::decode_lmpj(&data)
-                .map_err(|e| ExportError::InvalidData(format!("解析 LMPJ 失败: {e}")))?;
+                .map_err(|e| ExportError::InvalidData(trf!("解析 LMPJ 失败: {e}", e = e)))?;
 
             // ParsedMidi 不再缓存原始 MIDI 字节（解析后即释放）。
             // 从原始路径读取，或从 MidiDocument 重新构建 MIDI。
@@ -34,14 +36,14 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
                 std::fs::read(&original).map_err(ExportError::Io)
             } else {
                 Err(ExportError::InvalidData(
-                    "当前 LMPJ 未包含原始 MIDI 数据，且原始文件不存在，无法导出标准 MIDI"
+                    tr!("当前 LMPJ 未包含原始 MIDI 数据，且原始文件不存在，无法导出标准 MIDI")
                         .to_string(),
                 ))
             }
         }
-        _ => Err(ExportError::InvalidData(format!(
-            "不支持的 MIDI 源格式: {}",
-            extension
+        _ => Err(ExportError::InvalidData(trf!(
+            "不支持的 MIDI 源格式: {ext}",
+            ext = extension
         ))),
     }
 }

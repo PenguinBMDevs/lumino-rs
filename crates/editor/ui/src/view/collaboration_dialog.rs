@@ -1,6 +1,8 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text, text_input};
 
+use lumino_core::{tr, trf};
+
 use crate::message::Message;
 use crate::state::root_state::{CollaborationDialogState, CollaborationViewState};
 
@@ -12,7 +14,7 @@ pub fn view_collaboration_dialog<'a>(
     let palette = theme.extended_palette();
 
     // 标题
-    let title = text("多人协作")
+    let title = text(tr!("多人协作"))
         .size(20)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(palette.background.neutral.text),
@@ -27,7 +29,7 @@ pub fn view_collaboration_dialog<'a>(
     };
 
     // 关闭按钮
-    let close_button = button(text("关闭").size(12))
+    let close_button = button(text(tr!("关闭")).size(12))
         .on_press(Message::Collaboration(
             lumino_message::CollaborationAction::CloseDialog,
         ))
@@ -76,24 +78,24 @@ fn view_connect<'a>(
     let palette = theme.extended_palette();
 
     // 连接服务器界面
-    let host_input = text_input("服务器地址", &state.server_host)
+    let host_input = text_input(tr!("服务器地址"), &state.server_host)
         .on_input(|s| Message::Collaboration(lumino_message::CollaborationAction::HostChanged(s)))
         .padding(8)
         .width(Length::Fill);
 
-    let port_input = text_input("端口", &state.server_port)
+    let port_input = text_input(tr!("端口"), &state.server_port)
         .on_input(|s| Message::Collaboration(lumino_message::CollaborationAction::PortChanged(s)))
         .padding(8)
         .width(Length::Fixed(80.0));
 
-    let username_input = text_input("用户", &state.username)
+    let username_input = text_input(tr!("用户"), &state.username)
         .on_input(|s| {
             Message::Collaboration(lumino_message::CollaborationAction::UsernameChanged(s))
         })
         .padding(8)
         .width(Length::Fill);
 
-    let password_input = text_input("密码", &state.password)
+    let password_input = text_input(tr!("密码"), &state.password)
         .on_input(|s| {
             Message::Collaboration(lumino_message::CollaborationAction::PasswordChanged(s))
         })
@@ -101,7 +103,7 @@ fn view_connect<'a>(
         .padding(8)
         .width(Length::Fill);
 
-    let invite_input = text_input("邀请码（可选）", &state.invite_code)
+    let invite_input = text_input(tr!("邀请码（可选）"), &state.invite_code)
         .on_input(|s| {
             Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(s))
         })
@@ -110,7 +112,7 @@ fn view_connect<'a>(
 
     // 连接按钮始终可点击（Connect 视图内允许重试）。
     // 连接状态以独立提示文字呈现，不再作为按钮禁用条件，避免断连后按钮被永久禁用。
-    let connect_button = button(text("连接").size(14))
+    let connect_button = button(text(tr!("连接")).size(14))
         .on_press(Message::Collaboration(
             lumino_message::CollaborationAction::Connect {
                 host: state.server_host.clone(),
@@ -180,7 +182,7 @@ fn view_connecting<'a>(theme: &'a iced_core::Theme) -> crate::Element<'a> {
 
     // 显示连接中的状态
     let connecting_text =
-        text("正在连接服务器...")
+        text(tr!("正在连接服务器..."))
             .size(16)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.primary.base.color),
@@ -189,7 +191,7 @@ fn view_connecting<'a>(theme: &'a iced_core::Theme) -> crate::Element<'a> {
     column![
         connecting_text,
         space().height(16),
-        text("请稍候")
+        text(tr!("请稍候"))
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
@@ -207,14 +209,14 @@ fn view_room_actions<'a>(
     let palette = theme.extended_palette();
 
     // 创建/加入房间界面
-    let room_name_input = text_input("房间名称", &state.room_name)
+    let room_name_input = text_input(tr!("房间名称"), &state.room_name)
         .on_input(|s| {
             Message::Collaboration(lumino_message::CollaborationAction::RoomNameChanged(s))
         })
         .padding(8)
         .width(Length::Fill);
 
-    let create_button = button(text("创建房间").size(14))
+    let create_button = button(text(tr!("创建房间")).size(14))
         .on_press(Message::Collaboration(
             lumino_message::CollaborationAction::CreateRoom {
                 name: state.room_name.clone(),
@@ -240,20 +242,20 @@ fn view_room_actions<'a>(
             }
         });
 
-    let or_text = text("- 或 -")
+    let or_text = text(tr!("- 或 -"))
         .size(12)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(palette.background.neutral.text),
         });
 
-    let invite_input = text_input("邀请码", &state.invite_code)
+    let invite_input = text_input(tr!("邀请码"), &state.invite_code)
         .on_input(|s| {
             Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(s))
         })
         .padding(8)
         .width(Length::Fill);
 
-    let join_button = button(text("加入房间").size(14))
+    let join_button = button(text(tr!("加入房间")).size(14))
         .on_press(Message::Collaboration(
             lumino_message::CollaborationAction::JoinRoom {
                 invite_code: state.invite_code.clone(),
@@ -303,14 +305,14 @@ fn view_in_room<'a>(
 
     // 在房间内界面
     let room_info = column![
-        text(format!("房间: {}", state.room_name)).size(16).style(
-            move |_theme: &iced_core::Theme| text::Style {
+        text(trf!("房间: {name}", name = state.room_name))
+            .size(16)
+            .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
-            }
-        ),
+            }),
         space().height(8),
         row![
-            text("邀请码: ")
+            text(tr!("邀请码: "))
                 .size(14)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(palette.background.neutral.text),
@@ -325,7 +327,7 @@ fn view_in_room<'a>(
     ]
     .align_x(iced_core::Alignment::Center);
 
-    let copy_button = button(text("复制邀请码").size(12))
+    let copy_button = button(text(tr!("复制邀请码")).size(12))
         .on_press(Message::Collaboration(
             lumino_message::CollaborationAction::CopyInviteCode,
         ))
@@ -348,7 +350,7 @@ fn view_in_room<'a>(
             }
         });
 
-    let disconnect_button = button(text("断开连接").size(14))
+    let disconnect_button = button(text(tr!("断开连接")).size(14))
         .on_press(Message::Collaboration(
             lumino_message::CollaborationAction::Disconnect,
         ))

@@ -5,10 +5,13 @@
 use iced_core::{Alignment, Length};
 use iced_widget::{button, column, container, pick_list, row, slider, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::message::{Message, VideoExportAction};
 use crate::view::widgets;
 
 use super::data_curve_settings::number_row;
+use super::localized_choice::LocalizedChoice;
 use super::state::VideoExportDialogState;
 
 /// hex 颜色输入行
@@ -50,11 +53,11 @@ pub(super) fn appearance_section<'a>(
     };
 
     column![
-        text("外观").size(13).style(label_style),
+        text(tr!("外观")).size(13).style(label_style),
         space().height(4),
         row![
             color_row(
-                "背景色",
+                tr!("背景色"),
                 &state.dc_bg_color,
                 "bg_color",
                 palette,
@@ -62,7 +65,7 @@ pub(super) fn appearance_section<'a>(
             ),
             space().width(8),
             color_row(
-                "折线色",
+                tr!("折线色"),
                 &state.dc_line_color,
                 "line_color",
                 palette,
@@ -73,7 +76,7 @@ pub(super) fn appearance_section<'a>(
         space().height(6),
         row![
             color_row(
-                "文字色",
+                tr!("文字色"),
                 &state.dc_text_color,
                 "text_color",
                 palette,
@@ -81,7 +84,7 @@ pub(super) fn appearance_section<'a>(
             ),
             space().width(8),
             color_row(
-                "网格线色",
+                tr!("网格线色"),
                 &state.dc_bar_color,
                 "bar_color",
                 palette,
@@ -92,7 +95,7 @@ pub(super) fn appearance_section<'a>(
         space().height(6),
         row![
             number_row(
-                "折线宽(px)",
+                tr!("折线宽(px)"),
                 &state.dc_line_thickness,
                 "line_thickness",
                 palette,
@@ -100,7 +103,7 @@ pub(super) fn appearance_section<'a>(
             ),
             space().width(8),
             number_row(
-                "网格线宽(px)",
+                tr!("网格线宽(px)"),
                 &state.dc_bar_thickness,
                 "bar_thickness",
                 palette,
@@ -110,7 +113,7 @@ pub(super) fn appearance_section<'a>(
         .spacing(0),
         space().height(6),
         row![
-            text("字号:").size(14).style(label_style).width(100),
+            text(tr!("字号:")).size(14).style(label_style).width(100),
             slider(7..=256, state.dc_font_size, |v| {
                 Message::VideoExport(VideoExportAction::DataCurveFontSizeChanged(v))
             })
@@ -125,7 +128,7 @@ pub(super) fn appearance_section<'a>(
         space().height(6),
         font_row(state, palette),
         space().height(4),
-        text("支持 8 位 hex 带透明度，如 #FFFFFF7F")
+        text(tr!("支持 8 位 hex 带透明度，如 #FFFFFF7F"))
             .size(11)
             .style(label_style),
     ]
@@ -144,18 +147,22 @@ fn font_row<'a>(
     };
 
     let font_mode = state.dc_font_mode.as_str();
+    // 注：三个选项值同时是 `state.dc_font_mode` 的持久化取值，并在
+    // `root/handlers/dialog/video_export` 侧参与 `match` 分派 —— 属数据 key，
+    // 状态里保持中文不动；`LocalizedChoice` 只本地化显示，回发原始值（`.0`）。
     let font_mode_pick = pick_list(
         vec![
-            "内置点阵".to_string(),
-            "系统字体".to_string(),
-            "自定义字体".to_string(),
+            LocalizedChoice::new("内置点阵"),
+            LocalizedChoice::new("系统字体"),
+            LocalizedChoice::new("自定义字体"),
         ],
-        Some(font_mode.to_string()),
-        |v| Message::VideoExport(VideoExportAction::DataCurveFontModeChanged(v)),
+        Some(LocalizedChoice::new(font_mode)),
+        |v: LocalizedChoice| Message::VideoExport(VideoExportAction::DataCurveFontModeChanged(v.0)),
     )
     .text_size(12)
     .width(Length::Fixed(140.0));
 
+    // 系统字体选择（字体族名是数据值，不是文案，保持原样不动）
     let system_pick = pick_list(
         super::counter_settings_font::SYSTEM_FONT_FAMILIES
             .iter()
@@ -174,7 +181,7 @@ fn font_row<'a>(
 
     let file_row = row![
         container(
-            text_input("选择 TTF/OTF 字体文件...", &state.dc_font_path)
+            text_input(tr!("选择 TTF/OTF 字体文件..."), &state.dc_font_path)
                 .on_input(|v| {
                     Message::VideoExport(VideoExportAction::DataCurveTextChanged {
                         field: "font_path".to_string(),
@@ -187,16 +194,18 @@ fn font_row<'a>(
         .width(Length::Fill)
         .style(widgets::dialog_input_style(palette)),
         space().width(6),
-        button(text("浏览...").size(12))
+        button(text(tr!("浏览...")).size(12))
             .on_press(Message::VideoExport(VideoExportAction::DataCurveBrowseFont))
             .padding([4, 10]),
     ]
     .spacing(4)
     .align_y(Alignment::Center);
 
+    // 分支值同上是数据 key（与 `dc_font_mode` 比对），状态与分派键不翻译，
+    // 只有上面的 `font_mode_pick` 显示层接了文案目录。
     let font_extras: crate::Element<'a> = match font_mode {
         "系统字体" => row![
-            text("字体:").size(14).style(label_style).width(100),
+            text(tr!("字体:")).size(14).style(label_style).width(100),
             system_pick,
         ]
         .spacing(8)
@@ -204,7 +213,7 @@ fn font_row<'a>(
         .into(),
         "自定义字体" => file_row.into(),
         _ => column![
-            text("内置 5x7 点阵字体，仅支持 ASCII 数字与字母")
+            text(tr!("内置 5x7 点阵字体，仅支持 ASCII 数字与字母"))
                 .size(11)
                 .style(label_style),
         ]
@@ -214,7 +223,7 @@ fn font_row<'a>(
 
     column![
         row![
-            text("字体:").size(14).style(label_style).width(100),
+            text(tr!("字体:")).size(14).style(label_style).width(100),
             font_mode_pick,
         ]
         .spacing(8)

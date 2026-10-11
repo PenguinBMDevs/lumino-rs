@@ -2,6 +2,8 @@
 //!
 //! 处理远程条目的下载、新建、上传保存与复制/剪切/粘贴/重命名/删除。
 
+use lumino_core::{tr, trf};
+
 use crate::state::cloud_state::CloudClipboard;
 
 use super::*;
@@ -10,7 +12,7 @@ impl Root {
     /// 下载远程文件（素材过滤器决定目标：素材库 or 导入目录）
     pub(super) fn cloud_download(&mut self, path: String) {
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         let target = if self.cloud.filter.as_deref() == Some("lmmaterial") {
@@ -31,11 +33,11 @@ impl Root {
     pub(super) fn cloud_new_folder(&mut self, name: String) {
         let name = name.trim().to_string();
         if name.is_empty() {
-            self.cloud.notice = Some("文件夹名称不能为空".to_string());
+            self.cloud.notice = Some(tr!("文件夹名称不能为空").to_string());
             return;
         }
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         self.cloud.busy = true;
@@ -50,7 +52,7 @@ impl Root {
     /// 保存到当前目录：有素材上传待办 → 上传素材；否则上传工程归档
     pub(super) fn cloud_save_here(&mut self) {
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         self.cloud.busy = true;
@@ -79,27 +81,27 @@ impl Root {
     /// 复制条目到剪贴板（目录复制暂不支持）
     pub(super) fn cloud_copy_entry(&mut self, path: String, is_dir: bool) {
         if is_dir {
-            self.cloud.notice = Some("复制目录暂不支持，请使用剪切移动".to_string());
+            self.cloud.notice = Some(tr!("复制目录暂不支持，请使用剪切移动").to_string());
             return;
         }
         self.cloud.clipboard = Some(CloudClipboard::new(path.clone(), false, false));
-        self.cloud.notice = Some(format!("已复制：{}", basename_of(&path)));
+        self.cloud.notice = Some(trf!("已复制：{name}", name = basename_of(&path)));
     }
 
     /// 剪切条目到剪贴板
     pub(super) fn cloud_cut_entry(&mut self, path: String, is_dir: bool) {
         self.cloud.clipboard = Some(CloudClipboard::new(path.clone(), is_dir, true));
-        self.cloud.notice = Some(format!("已剪切：{}", basename_of(&path)));
+        self.cloud.notice = Some(trf!("已剪切：{name}", name = basename_of(&path)));
     }
 
     /// 粘贴剪贴板条目（复制/移动请求）
     pub(super) fn cloud_paste(&mut self) {
         let Some(clip) = self.cloud.clipboard.clone() else {
-            self.cloud.notice = Some("剪贴板为空".to_string());
+            self.cloud.notice = Some(tr!("剪贴板为空").to_string());
             return;
         };
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         event::emit(event::Event::cloud(cloud_event::Event::CopyRequest {
@@ -119,7 +121,7 @@ impl Root {
     /// 确认删除（由行内确认态触发）
     pub(super) fn cloud_delete_entry(&mut self, path: String, is_dir: bool) {
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         self.cloud.busy = true;
@@ -146,11 +148,11 @@ impl Root {
         };
         let new_name = self.cloud.rename_input.trim().to_string();
         if new_name.is_empty() {
-            self.cloud.notice = Some("名称不能为空".to_string());
+            self.cloud.notice = Some(tr!("名称不能为空").to_string());
             return;
         }
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         // 目标路径 = 源目录 + 新名称

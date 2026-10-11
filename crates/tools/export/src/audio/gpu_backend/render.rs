@@ -1,5 +1,7 @@
 //! GPU 渲染入口与结果写盘
 
+use lumino_core::{tr, trf};
+
 use super::*;
 
 /// 检测 GPU 是否可用（尝试创建 wgpu 适配器）
@@ -31,7 +33,7 @@ pub fn render_audio_gpu_from_document(
 
     if config.soundfonts.is_empty() {
         return Err(ExportError::AudioWrite(
-            "未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into(),
+            tr!("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件").into(),
         ));
     }
     // 校验编码器参数
@@ -44,18 +46,18 @@ pub fn render_audio_gpu_from_document(
     // 检查音色库文件存在与格式（SFZ 会直接 panic，需前置拦截）
     let sf_path = &config.soundfonts[0];
     if !sf_path.exists() {
-        return Err(ExportError::AudioWrite(format!(
-            "音色库文件不存在: {:?}，请检查路径或重新选择",
-            sf_path
+        return Err(ExportError::AudioWrite(trf!(
+            "音色库文件不存在: {path}，请检查路径或重新选择",
+            path = format!("{sf_path:?}")
         )));
     }
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
         && !ext.eq_ignore_ascii_case("sf2")
         && !ext.eq_ignore_ascii_case("sfz")
     {
-        return Err(ExportError::AudioWrite(format!(
-            "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
-            sf_path
+        return Err(ExportError::AudioWrite(trf!(
+            "不支持的音色库格式 {path}：仅支持 .sf2/.sfz",
+            path = format!("{sf_path:?}")
         )));
     }
     // 仅对 SF2 校验 RIFF 头，SFZ 为文本
@@ -66,42 +68,48 @@ pub fn render_audio_gpu_from_document(
         use std::io::Read;
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
-            return Err(ExportError::AudioWrite(format!(
-                "音色库不是合法的 SF2 {:?}：头应为 RIFF，实际 {:02X?}",
-                sf_path, header
+            return Err(ExportError::AudioWrite(trf!(
+                "音色库不是合法的 SF2 {path}：头应为 RIFF，实际 {header}",
+                path = format!("{sf_path:?}"),
+                header = format!("{header:02X?}")
             )));
         }
     }
 
-    report("GPU 初始化中...", 0.05);
+    report(tr!("GPU 初始化中..."), 0.05);
     check_control(config)?;
     let synth_config = build_synth_config(config);
     let mut synth = GpuSynth::new(synth_config).map_err(|e| {
-        ExportError::AudioWrite(format!(
-            "GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}"
+        ExportError::AudioWrite(trf!(
+            "GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}",
+            e = e
         ))
     })?;
 
-    report("GPU 加载音色库...", 0.10);
+    report(tr!("GPU 加载音色库..."), 0.10);
     check_control(config)?;
-    synth
-        .load_soundfont(sf_path, 0, 0)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
+    synth.load_soundfont(sf_path, 0, 0).map_err(|e| {
+        ExportError::AudioWrite(trf!(
+            "GPU 音色库加载失败 {sf_path}: {e}",
+            sf_path = format!("{sf_path:?}"),
+            e = e
+        ))
+    })?;
 
-    report("GPU 序列化 MIDI（内存）...", 0.15);
+    report(tr!("GPU 序列化 MIDI（内存）..."), 0.15);
     check_control(config)?;
     // 空文档直接报错，交由上层回退到文件模式
     let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
     if total_notes == 0 && doc.control_events.is_empty() {
         return Err(ExportError::AudioWrite(
-            "MIDI 文档中没有可渲染的事件（0 notes），请检查 MIDI 是否已加载".into(),
+            tr!("MIDI 文档中没有可渲染的事件（0 notes），请检查 MIDI 是否已加载").into(),
         ));
     }
     // EXP-002：SMF 序列化只发生在内存，直喂 GPU —— 全程无临时 MIDI 文件、无重复导出
     let export_data = build_export_data(doc, config);
     let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;
 
-    report("GPU 渲染中（可能耗时，黑 MIDI 请耐心）...", 0.20);
+    report(tr!("GPU 渲染中（可能耗时，黑 MIDI 请耐心）..."), 0.20);
     check_control(config)?;
     // 渲染循环内的协作式暂停/中止检查点：GPU 渲染是长时间阻塞调用，
     // 没有它 UI 的"暂停/停止"要等整段渲染结束才生效。
@@ -114,15 +122,15 @@ pub fn render_audio_gpu_from_document(
     attach_render_progress(&mut synth, config);
     let result = synth.render_midi_bytes(&midi_bytes).map_err(|e| match e {
         lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
-        other => ExportError::AudioWrite(format!("GPU 渲染失败: {other}")),
+        other => ExportError::AudioWrite(trf!("GPU 渲染失败: {other}", other = other)),
     })?;
     check_control(config)?;
 
-    report("GPU 写入输出...", 0.85);
+    report(tr!("GPU 写入输出..."), 0.85);
     // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
     write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
 
-    report("GPU 完成", 1.0);
+    report(tr!("GPU 完成"), 1.0);
     Ok(())
 }
 
@@ -140,7 +148,7 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
 
     if config.soundfonts.is_empty() {
         return Err(ExportError::AudioWrite(
-            "未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into(),
+            tr!("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件").into(),
         ));
     }
     if let Err(msg) = config
@@ -151,18 +159,18 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
     }
     let sf_path = &config.soundfonts[0];
     if !sf_path.exists() {
-        return Err(ExportError::AudioWrite(format!(
-            "音色库文件不存在: {:?}",
-            sf_path
+        return Err(ExportError::AudioWrite(trf!(
+            "音色库文件不存在: {path}",
+            path = format!("{sf_path:?}")
         )));
     }
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
         && !ext.eq_ignore_ascii_case("sf2")
         && !ext.eq_ignore_ascii_case("sfz")
     {
-        return Err(ExportError::AudioWrite(format!(
-            "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
-            sf_path
+        return Err(ExportError::AudioWrite(trf!(
+            "不支持的音色库格式 {path}：仅支持 .sf2/.sfz",
+            path = format!("{sf_path:?}")
         )));
     }
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
@@ -172,32 +180,37 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
         use std::io::Read;
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
-            return Err(ExportError::AudioWrite(format!(
-                "音色库不是合法的 SF2 {:?}：头应为 RIFF，实际 {:02X?}",
-                sf_path, header
+            return Err(ExportError::AudioWrite(trf!(
+                "音色库不是合法的 SF2 {path}：头应为 RIFF，实际 {header}",
+                path = format!("{sf_path:?}"),
+                header = format!("{header:02X?}")
             )));
         }
     }
     if !config.midi_path.exists() {
-        return Err(ExportError::AudioWrite(format!(
-            "MIDI 文件不存在: {:?}",
-            config.midi_path
+        return Err(ExportError::AudioWrite(trf!(
+            "MIDI 文件不存在: {midi_path}",
+            midi_path = format!("{:?}", config.midi_path)
         )));
     }
 
-    report("GPU 初始化中...", 0.05);
+    report(tr!("GPU 初始化中..."), 0.05);
     check_control(config)?;
     let synth_config = build_synth_config(config);
     let mut synth = GpuSynth::new(synth_config)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败: {e}")))?;
+        .map_err(|e| ExportError::AudioWrite(trf!("GPU 初始化失败: {e}", e = e)))?;
 
-    report("GPU 加载音色库...", 0.10);
+    report(tr!("GPU 加载音色库..."), 0.10);
     check_control(config)?;
-    synth
-        .load_soundfont(sf_path, 0, 0)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
+    synth.load_soundfont(sf_path, 0, 0).map_err(|e| {
+        ExportError::AudioWrite(trf!(
+            "GPU 音色库加载失败 {sf_path}: {e}",
+            sf_path = format!("{sf_path:?}"),
+            e = e
+        ))
+    })?;
 
-    report("GPU 渲染中...", 0.20);
+    report(tr!("GPU 渲染中..."), 0.20);
     check_control(config)?;
     // 渲染循环内的协作式暂停/中止检查点（同内存模式）。
     if let Some(ctrl) = config.control.clone() {
@@ -211,13 +224,13 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
         .render_midi_file(&config.midi_path)
         .map_err(|e| match e {
             lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
-            other => ExportError::AudioWrite(format!("GPU 渲染失败: {other}")),
+            other => ExportError::AudioWrite(trf!("GPU 渲染失败: {other}", other = other)),
         })?;
     check_control(config)?;
 
-    report("GPU 写入输出...", 0.85);
+    report(tr!("GPU 写入输出..."), 0.85);
     write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
-    report("GPU 完成", 1.0);
+    report(tr!("GPU 完成"), 1.0);
     Ok(())
 }
 
@@ -289,7 +302,10 @@ fn write_gpu_result_to_sink(
         if let Some(ref cb) = config.progress_callback {
             let inner = offset as f64 / samples.len().max(1) as f64;
             let pct = 0.85 + inner * 0.15;
-            cb(format!("GPU 写入 {:.1}%", inner * 100.0), pct);
+            cb(
+                trf!("GPU 写入 {pct}%", pct = format!("{:.1}", inner * 100.0)),
+                pct,
+            );
         }
     }
     sink.finalize()?;

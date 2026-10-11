@@ -5,6 +5,7 @@
 
 use crate::message::EditorAction;
 use crate::root::Root;
+use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
 impl Root {
@@ -29,7 +30,7 @@ impl Root {
             if self.intercept_notification_enabled() {
                 self.toast.push(
                     crate::toast::ToastLevel::Warning,
-                    "请先完成当前编辑（拖动 / 绘制 / 调整大小）后再执行撤销/重做",
+                    tr!("请先完成当前编辑（拖动 / 绘制 / 调整大小）后再执行撤销/重做"),
                 );
             }
             tracing::info!(

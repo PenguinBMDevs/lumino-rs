@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
 use lumino_ui::event::{self, cloud as cloud_event};
 
 use crate::runner::RunnerInner;
@@ -26,7 +27,7 @@ impl RunnerInner {
         if self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst) {
             tracing::warn!("云上传进行中，忽略保存到云请求");
             self.window_state.window.ui_mut().cloud_state_mut().notice =
-                Some("正在上传中，请稍候再试".to_string());
+                Some(tr!("正在上传中，请稍候再试").to_string());
             return;
         }
         // 上传进行中：禁止关闭软件（完成后在 apply_cloud_save_result 清除）
@@ -57,7 +58,7 @@ impl RunnerInner {
                 None => {
                     self.apply_cloud_save_result(
                         false,
-                        Some("当前没有可保存的工程内容".to_string()),
+                        Some(tr!("当前没有可保存的工程内容").to_string()),
                     );
                     return;
                 }
@@ -76,7 +77,10 @@ impl RunnerInner {
 
         // 云进度悬浮窗：开始保存到云（导出阶段）
         let progress_tx = self.window_state.cloud_progress_tx.clone();
-        let _ = progress_tx.send((format!("正在导出工程 {file_stem}.lmpj"), 0.1));
+        let _ = progress_tx.send((
+            trf!("正在导出工程 {file_stem}.lmpj", file_stem = file_stem),
+            0.1,
+        ));
 
         let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
@@ -85,10 +89,10 @@ impl RunnerInner {
             // 入口文件 + 同目录数据文件夹，云上传只有单文件通道，
             // 数据文件夹不会上传，下载后工程无法加载（曾引发 67 字节 bug）。
             if let Err(e) = lumino_export::save_to_archive(&project, local_path.clone()) {
-                let _ = progress_tx.send((format!("导出工程失败：{e}"), 1.0));
+                let _ = progress_tx.send((trf!("导出工程失败：{e}", e = e), 1.0));
                 event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
                     ok: false,
-                    error: Some(format!("导出工程失败：{e}")),
+                    error: Some(trf!("导出工程失败：{e}", e = e)),
                 }));
                 return;
             }
@@ -105,20 +109,23 @@ impl RunnerInner {
                         .unwrap_or_else(|| format!("{file_stem}.lmpj"))
                 )
             };
-            let _ = progress_tx.send((format!("正在上传 {file_stem}.lmpj 到云存储"), 0.5));
+            let _ = progress_tx.send((
+                trf!("正在上传 {file_stem}.lmpj 到云存储", file_stem = file_stem),
+                0.5,
+            ));
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.upload(&id, &local_path, &remote);
             let _ = std::fs::remove_file(&local_path);
             let done_msg = if result.is_ok() {
-                "已保存到云存储".to_string()
+                tr!("已保存到云存储").to_string()
             } else {
-                format!(
-                    "保存到云失败：{}",
-                    result
+                trf!(
+                    "保存到云失败：{err}",
+                    err = result
                         .as_ref()
                         .err()
                         .map(|e| e.to_string())
-                        .unwrap_or_else(|| "未知错误".to_string())
+                        .unwrap_or_else(|| tr!("未知错误").to_string())
                 )
             };
             let _ = progress_tx.send((done_msg, 1.0));
@@ -163,7 +170,7 @@ impl RunnerInner {
 
         // 云进度悬浮窗：开始自动回传
         let progress_tx = self.window_state.cloud_progress_tx.clone();
-        let _ = progress_tx.send((format!("正在上传 {tmp_remote}"), 0.2));
+        let _ = progress_tx.send((trf!("正在上传 {tmp_remote}", tmp_remote = tmp_remote), 0.2));
 
         let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
@@ -173,14 +180,14 @@ impl RunnerInner {
             let result = (|| {
                 // 1. 上传到临时名
                 mgr.upload(&id, &local_path, &tmp_remote)?;
-                let _ = progress_tx.send(("上传完成，正在更新云端文件".to_string(), 0.7));
+                let _ = progress_tx.send((tr!("上传完成，正在更新云端文件").to_string(), 0.7));
                 // 2. 删除云端原文件（旧版本）
                 if let Err(e) = mgr.delete(&id, &remote_path, false) {
                     tracing::warn!("删除云端旧文件失败（保留原文件）: {e}");
                     stage = 1;
                     return Err(e);
                 }
-                let _ = progress_tx.send(("正在完成云端重命名".to_string(), 0.9));
+                let _ = progress_tx.send((tr!("正在完成云端重命名").to_string(), 0.9));
                 // 3. 重命名为正确的文件名
                 match mgr.rename(&id, &tmp_remote, &remote_path) {
                     Ok(()) => Ok(()),
@@ -198,16 +205,20 @@ impl RunnerInner {
             }
 
             let error = match (&result, stage) {
-                (Err(e), 2) => Some(format!("上传后重命名失败，文件已保留为 {tmp_remote}：{e}")),
-                (Err(e), 1) => Some(format!("删除云端旧文件失败：{e}")),
-                (Err(e), _) => Some(format!("上传到云端失败：{e}")),
+                (Err(e), 2) => Some(trf!(
+                    "上传后重命名失败，文件已保留为 {tmp_remote}：{e}",
+                    tmp_remote = tmp_remote,
+                    e = e
+                )),
+                (Err(e), 1) => Some(trf!("删除云端旧文件失败：{e}", e = e)),
+                (Err(e), _) => Some(trf!("上传到云端失败：{e}", e = e)),
                 (Ok(()), _) => None,
             };
             // 云进度悬浮窗：结束（完成/失败均关闭）
             let done_msg = if result.is_ok() {
-                "已保存到云存储".to_string()
+                tr!("已保存到云存储").to_string()
             } else {
-                Self::cloud_error_text("保存到云失败", error.as_deref())
+                Self::cloud_error_text(tr!("保存到云失败"), error.as_deref())
             };
             let _ = progress_tx.send((done_msg, 1.0));
             event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
@@ -234,7 +245,7 @@ impl RunnerInner {
         if self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst) {
             tracing::warn!("云上传进行中，忽略素材上传请求");
             self.window_state.window.ui_mut().cloud_state_mut().notice =
-                Some("正在上传中，请稍候再试".to_string());
+                Some(tr!("正在上传中，请稍候再试").to_string());
             return;
         }
         // 上传进行中：禁止关闭软件（完成后在 apply_cloud_upload_result 清除）
@@ -243,7 +254,7 @@ impl RunnerInner {
 
         // 云进度悬浮窗：开始上传
         let progress_tx = self.window_state.cloud_progress_tx.clone();
-        let _ = progress_tx.send((format!("正在上传素材 {file_name}"), 0.2));
+        let _ = progress_tx.send((trf!("正在上传素材 {file_name}", file_name = file_name), 0.2));
 
         let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
@@ -256,15 +267,16 @@ impl RunnerInner {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.upload(&id, Path::new(&local_path), &remote);
             let done_msg = if result.is_ok() {
-                format!("素材 {file_name} 已上传到云存储")
+                trf!("素材 {file_name} 已上传到云存储", file_name = file_name)
             } else {
-                format!(
-                    "素材 {file_name} 上传失败：{}",
-                    result
+                trf!(
+                    "素材 {file_name} 上传失败：{err}",
+                    file_name = file_name,
+                    err = result
                         .as_ref()
                         .err()
                         .map(|e| e.to_string())
-                        .unwrap_or_else(|| "未知错误".to_string())
+                        .unwrap_or_else(|| tr!("未知错误").to_string())
                 )
             };
             let _ = progress_tx.send((done_msg, 1.0));
@@ -286,15 +298,18 @@ impl RunnerInner {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
             if ok {
-                state.notice = Some("素材已上传到云存储".to_string());
+                state.notice = Some(tr!("素材已上传到云存储").to_string());
                 false
             } else {
-                state.notice = Some(Self::cloud_error_text("素材上传失败", error.as_deref()));
+                state.notice = Some(Self::cloud_error_text(
+                    tr!("素材上传失败"),
+                    error.as_deref(),
+                ));
                 true
             }
         };
         if failed {
-            self.report_cloud_error("云存储连接异常", error.as_deref());
+            self.report_cloud_error(tr!("云存储连接异常"), error.as_deref());
         } else {
             // 刷新当前目录列表（显示新上传的素材文件）
             let id = self
@@ -329,15 +344,15 @@ impl RunnerInner {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
             if ok {
-                state.notice = Some("已保存到云存储".to_string());
+                state.notice = Some(tr!("已保存到云存储").to_string());
                 false
             } else {
-                state.notice = Some(Self::cloud_error_text("保存失败", error.as_deref()));
+                state.notice = Some(Self::cloud_error_text(tr!("保存失败"), error.as_deref()));
                 true
             }
         };
         if failed {
-            self.report_cloud_error("云存储连接异常", error.as_deref());
+            self.report_cloud_error(tr!("云存储连接异常"), error.as_deref());
         } else {
             self.sync_cloud_to_dialogs();
         }

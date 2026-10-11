@@ -3,6 +3,7 @@
 //! 从 `midi_manager.rs` 零逻辑变更拆分而来。
 
 use super::*;
+use lumino_core::{tr, trf};
 
 impl MidiManager {
     /// 处理音频流恢复（音频设备被拔出/更换后）。
@@ -137,7 +138,7 @@ impl MidiManager {
                 self.lgs_init_rx = None;
                 // #127 问题1：失败不得静默——生成可见提示（原因随提示展示）。
                 self.pending_backend_notice =
-                    Some(format!("LGS 初始化失败，已回退 System 后端：{e}"));
+                    Some(trf!("LGS 初始化失败，已回退 System 后端：{e}", e = e));
                 // 保持在当前后端（System）
                 AsyncInitOutcome::Failed
             }
@@ -147,7 +148,7 @@ impl MidiManager {
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
                 self.pending_backend_notice =
-                    Some("LGS 初始化线程异常断开，已回退 System 后端".to_string());
+                    Some(tr!("LGS 初始化线程异常断开，已回退 System 后端").to_string());
                 AsyncInitOutcome::Failed
             }
         }

@@ -1,5 +1,7 @@
 //! 音频导出事件共享类型。
 
+use lumino_core::{tr, trf};
+
 /// 音频通道数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AudioChannels {
@@ -23,8 +25,8 @@ impl AudioChannels {
 impl std::fmt::Display for AudioChannels {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Mono => write!(f, "单声道"),
-            Self::Stereo => write!(f, "立体声"),
+            Self::Mono => write!(f, "{}", tr!("单声道")),
+            Self::Stereo => write!(f, "{}", tr!("立体声")),
         }
     }
 }
@@ -44,9 +46,9 @@ pub enum ThreadingOption {
 impl std::fmt::Display for ThreadingOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::None => write!(f, "关闭"),
-            Self::Auto => write!(f, "自动"),
-            Self::Manual(n) => write!(f, "{n} 线程"),
+            Self::None => write!(f, "{}", tr!("关闭")),
+            Self::Auto => write!(f, "{}", tr!("自动")),
+            Self::Manual(n) => write!(f, "{}", trf!("{n} 线程", n = n)),
         }
     }
 }
@@ -64,8 +66,8 @@ pub enum Interpolation {
 impl std::fmt::Display for Interpolation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::None => write!(f, "无插值"),
-            Self::Linear => write!(f, "线性插值"),
+            Self::None => write!(f, "{}", tr!("无插值")),
+            Self::Linear => write!(f, "{}", tr!("线性插值")),
         }
     }
 }
@@ -129,8 +131,8 @@ pub enum AudioBackend {
 impl std::fmt::Display for AudioBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Cpu => write!(f, "CPU (兼容)"),
-            Self::Gpu => write!(f, "GPU (加速)"),
+            Self::Cpu => write!(f, "{}", tr!("CPU (兼容)")),
+            Self::Gpu => write!(f, "{}", tr!("GPU (加速)")),
         }
     }
 }

@@ -19,6 +19,7 @@ use iced_wgpu::wgpu;
 use iced_widget::shader::{Program, Shader};
 use iced_widget::{Column, container, text};
 
+use lumino_core::{tr, trf};
 use lumino_extras::i18n::{Language, main_translations};
 
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
@@ -62,7 +63,10 @@ pub(super) fn panel<'a>(
         .spacing(8)
         .padding(PANEL_PADDING)
         .width(Length::Fill)
-        .push(panel_header(format!("{}预览", t.piano_waterfall), _window));
+        .push(panel_header(
+            trf!("{name}预览", name = t.piano_waterfall),
+            _window,
+        ));
 
     // 瀑布流占满面板剩余高度：用 iced `shader` 图元直接合成离屏纹理（GPU→GPU，不闪烁）
     let bottom_section: crate::Element<'a> = match &state.waterfall_view {
@@ -70,7 +74,7 @@ pub(super) fn panel<'a>(
             .width(Length::Fill)
             .height(Length::Fill)
             .into(),
-        None => text("（键盘渲染中或面板不可见）")
+        None => text(tr!("（键盘渲染中或面板不可见）"))
             .size(11)
             .style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().background.strong.text),

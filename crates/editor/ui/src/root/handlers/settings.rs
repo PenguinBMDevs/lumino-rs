@@ -85,6 +85,9 @@ impl MessageHandler for SettingsHandler {
                 );
             }
             crate::settings::Event::LanguageChanged(lang) => {
+                // 文案目录（`lumino_core::i18n`）读的是进程级当前语言，切换界面语言
+                // 必须在这里同步，否则新目录文案会停留在旧语言。
+                lumino_core::i18n::set_current_language(lang);
                 tracing::debug!("Root: 界面语言切换为 {:?}", lang);
             }
             crate::settings::Event::AutomationLineThicknessChanged(v) => {

@@ -4,6 +4,7 @@
 
 use iced_core::{Alignment, Length};
 use iced_widget::{column, row, text, text_input};
+use lumino_core::tr;
 use lumino_ui_core::{Message, Theme};
 
 use super::super::super::components::constants::{
@@ -72,7 +73,7 @@ pub(super) fn render_xsynth_options<'a>(
         Some(v) => (v as f32).clamp(0.0, 64.0),
     };
     let display_val = match settings.synth.xsynth_max_voices_per_key {
-        None => "不限制".to_string(),
+        None => tr!("不限制").to_string(),
         Some(v) => v.to_string(),
     };
     col = col.push(
@@ -90,7 +91,7 @@ pub(super) fn render_xsynth_options<'a>(
             })
             .step(1.0_f32)
             .width(160.0),
-            text_input("0=不限制 1-128", &display_val)
+            text_input(tr!("0=不限制 1-128"), &display_val)
                 .width(80.0)
                 .on_input(|s| { Message::Settings(crate::Event::XSynthMaxVoicesCustomInput(s)) }),
         ]

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::tr;
+
 /// 自动滚动模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AutoScrollMode {
@@ -39,9 +41,9 @@ impl Default for AutoScrollConfig {
 impl std::fmt::Display for AutoScrollMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AutoScrollMode::FixedIndicatorLeft => write!(f, "固定指示线 (卷帘滚动)"),
-            AutoScrollMode::ScrollingIndicator => write!(f, "滚动指示线 (自动翻页)"),
-            AutoScrollMode::Off => write!(f, "关闭"),
+            AutoScrollMode::FixedIndicatorLeft => write!(f, "{}", tr!("固定指示线 (卷帘滚动)")),
+            AutoScrollMode::ScrollingIndicator => write!(f, "{}", tr!("滚动指示线 (自动翻页)")),
+            AutoScrollMode::Off => write!(f, "{}", tr!("关闭")),
         }
     }
 }

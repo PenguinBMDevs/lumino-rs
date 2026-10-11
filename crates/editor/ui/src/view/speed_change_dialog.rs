@@ -1,6 +1,8 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::message::{Message, SpeedChangeAction};
 use crate::state::root_state::SpeedChangeDialogState;
 
@@ -23,7 +25,7 @@ pub fn view_speed_change_dialog<'a>(
     };
 
     // 标题
-    let title = text("变速")
+    let title = text(tr!("变速"))
         .size(18)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(palette.background.neutral.text),
@@ -31,14 +33,14 @@ pub fn view_speed_change_dialog<'a>(
 
     // 倍率输入行
     let factor_row = row![
-        text("倍率(S):")
+        text(tr!("倍率(S):"))
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
             }),
         space().width(12),
         container(
-            text_input("如: 0.5 或 1/3", &state.factor_input)
+            text_input(tr!("如: 0.5 或 1/3"), &state.factor_input)
                 .on_input(|v| Message::SpeedChange(SpeedChangeAction::FactorChanged(v)))
                 .padding([6, 10])
                 .width(Length::Fixed(120.0))
@@ -49,16 +51,15 @@ pub fn view_speed_change_dialog<'a>(
     .align_y(iced_core::Alignment::Center);
 
     // 提示文字
-    let hint =
-        text("支持小数 (0.5) 或分数 (1/3)")
-            .size(12)
-            .style(move |_theme: &iced_core::Theme| text::Style {
-                color: Some(palette.background.strong.text),
-            });
+    let hint = text(tr!("支持小数 (0.5) 或分数 (1/3)")).size(12).style(
+        move |_theme: &iced_core::Theme| text::Style {
+            color: Some(palette.background.strong.text),
+        },
+    );
 
     // 按钮区域
     let buttons = row![
-        button(text("确定").size(14))
+        button(text(tr!("确定")).size(14))
             .on_press(Message::SpeedChange(SpeedChangeAction::Confirm))
             .padding([8, 24])
             .style(move |_theme: &iced_core::Theme, status| {
@@ -79,7 +80,7 @@ pub fn view_speed_change_dialog<'a>(
                 }
             }),
         space().width(12),
-        button(text("取消").size(14))
+        button(text(tr!("取消")).size(14))
             .on_press(Message::SpeedChange(SpeedChangeAction::CloseDialog))
             .padding([8, 24])
             .style(move |_theme: &iced_core::Theme, status| {

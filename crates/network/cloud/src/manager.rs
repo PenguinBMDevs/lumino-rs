@@ -10,6 +10,8 @@ use std::sync::OnceLock;
 
 use tokio::runtime::{Handle, Runtime};
 
+use lumino_core::{tr, trf};
+
 use crate::client::{CloudClient, create_client};
 use crate::config::CloudConfigStore;
 use crate::error::{CloudError, Result};
@@ -31,7 +33,7 @@ fn runtime_handle() -> Result<Handle> {
         return Ok(rt.handle().clone());
     }
     let rt = Runtime::new()
-        .map_err(|e| CloudError::Operation(format!("创建全局 tokio 运行时失败: {e}")))?;
+        .map_err(|e| CloudError::Operation(trf!("创建全局 tokio 运行时失败: {e}", e = e)))?;
     let rt = Box::leak(Box::new(rt));
     // 并发竞争下若已被其他线程写入，复用既有实例（语义等价）
     let rt = GLOBAL_RT.get_or_init(|| rt);
@@ -102,7 +104,7 @@ impl CloudManager {
             .config
             .find(id)
             .cloned()
-            .ok_or_else(|| CloudError::Config(format!("连接不存在: {id}")))?;
+            .ok_or_else(|| CloudError::Config(trf!("连接不存在: {id}", id = id)))?;
         self.status.insert(id.to_string(), ConnState::Connecting);
 
         let mut client = create_client(conn.protocol)?;
@@ -161,7 +163,7 @@ impl CloudManager {
     ) -> Result<&'a mut Box<dyn CloudClient>> {
         clients
             .get_mut(id)
-            .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))
+            .ok_or_else(|| CloudError::NotConnected(trf!("云存储未连接: {id}", id = id)))
     }
 
     /// 列出目录内容
@@ -280,7 +282,7 @@ where
             Err(e) => last_err = Some(e),
         }
     }
-    Err(last_err.unwrap_or_else(|| CloudError::Operation("读操作重试耗尽".into())))
+    Err(last_err.unwrap_or_else(|| CloudError::Operation(tr!("读操作重试耗尽").to_string())))
 }
 
 #[cfg(test)]

@@ -15,8 +15,9 @@ pub mod view;
 pub use convert::{ConvertResult, run_conversion};
 pub use core::{
     DEFAULT_PANEL_WIDTH as RIGHT_SIDEBAR_DEFAULT_WIDTH, MAX_PANEL_WIDTH as RIGHT_SIDEBAR_MAX_WIDTH,
-    MIN_PANEL_WIDTH as RIGHT_SIDEBAR_MIN_WIDTH, PALETTE_ALGORITHMS,
+    MIN_PANEL_WIDTH as RIGHT_SIDEBAR_MIN_WIDTH,
     RESIZE_HANDLE_WIDTH as RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH, RightSidebar, RightSidebarPanel,
+    palette_algorithms,
 };
 pub use material::{
     MaterialEntry, MaterialLibrary, MaterialSource, copy_material_to_user_dir,

@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
+use lumino_core::trf;
 use lumino_export::video::FfmpegEncoder;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -96,7 +97,7 @@ pub(super) fn composite_and_encode_frame(
             }
             Err(e) => {
                 tracing::error!("取消收尾写入失败: {e}");
-                send_export_error(progress_tx, format!("导出失败: {e}"));
+                send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
             }
         }
         return (true, stats);
@@ -138,7 +139,7 @@ pub(super) fn composite_and_encode_frame(
         Ok(buf) => buf,
         Err(e) => {
             tracing::error!("写入视频帧失败: {e}");
-            send_export_error(progress_tx, format!("导出失败: {e}"));
+            send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
             return (true, stats);
         }
     };

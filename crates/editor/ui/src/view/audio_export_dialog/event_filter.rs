@@ -4,6 +4,8 @@
 
 use iced_widget::{checkbox, column, row, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::Message;
 use crate::message::AudioExportAction;
 use crate::state::root_state::AudioExportDialogState;
@@ -17,7 +19,7 @@ pub fn event_filter_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        section_title("事件过滤", palette),
+        section_title(tr!("事件过滤"), palette),
         space().height(8),
         ignore_program_changes_checkbox(state, palette),
         space().height(8),
@@ -38,10 +40,10 @@ fn ignore_program_changes_checkbox<'a>(
 ) -> crate::Element<'a> {
     column![
         checkbox(state.ignore_program_changes)
-            .label("忽略音色变化事件（Program Change）")
+            .label(tr!("忽略音色变化事件（Program Change）"))
             .on_toggle(|v| Message::AudioExport(AudioExportAction::IgnoreProgramChangesChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
-        text("勾选后所有音色切换事件被丢弃，所有音符用默认音色渲染")
+        text(tr!("勾选后所有音色切换事件被丢弃，所有音符用默认音色渲染"))
             .size(11)
             .style(widgets::dialog_label_style(palette)),
     ]
@@ -55,17 +57,17 @@ fn velocity_filter_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("音符力度过滤（仅保留指定力度范围内的音符）")
+        text(tr!("音符力度过滤（仅保留指定力度范围内的音符）"))
             .size(14)
             .style(widgets::dialog_label_style(palette)),
         space().height(4),
         checkbox(state.filter_velocity)
-            .label("启用力度过滤（超出范围的音符将被静音丢弃）")
+            .label(tr!("启用力度过滤（超出范围的音符将被静音丢弃）"))
             .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterVelocityChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         range_input_row(
-            "力度范围 (0-127):",
+            tr!("力度范围 (0-127):"),
             palette,
             state.velocity_low,
             state.velocity_high,
@@ -83,17 +85,19 @@ fn key_filter_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("音符键位过滤（仅保留指定键位范围内的音符，0=C-1, 60=C4, 127=G9）")
-            .size(14)
-            .style(widgets::dialog_label_style(palette)),
+        text(tr!(
+            "音符键位过滤（仅保留指定键位范围内的音符，0=C-1, 60=C4, 127=G9）"
+        ))
+        .size(14)
+        .style(widgets::dialog_label_style(palette)),
         space().height(4),
         checkbox(state.filter_key)
-            .label("启用键位过滤（超出范围的音符将被静音丢弃）")
+            .label(tr!("启用键位过滤（超出范围的音符将被静音丢弃）"))
             .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterKeyChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         range_input_row(
-            "键位范围 (0-127):",
+            tr!("键位范围 (0-127):"),
             palette,
             state.key_low,
             state.key_high,
@@ -112,7 +116,7 @@ fn note_delay_row<'a>(
 ) -> crate::Element<'a> {
     column![
         row![
-            text("音符结束延迟 (ms):")
+            text(tr!("音符结束延迟 (ms):"))
                 .size(14)
                 .style(widgets::dialog_label_style(palette))
                 .width(140),
@@ -123,9 +127,11 @@ fn note_delay_row<'a>(
         ]
         .spacing(8)
         .align_y(iced_core::Alignment::Center),
-        text("每个音符 NoteOff 后额外延长该时长再释放，>0 可避免极短音被吞（0=禁用）")
-            .size(11)
-            .style(widgets::dialog_label_style(palette)),
+        text(tr!(
+            "每个音符 NoteOff 后额外延长该时长再释放，>0 可避免极短音被吞（0=禁用）"
+        ))
+        .size(11)
+        .style(widgets::dialog_label_style(palette)),
     ]
     .width(iced_core::Length::Fill)
     .into()

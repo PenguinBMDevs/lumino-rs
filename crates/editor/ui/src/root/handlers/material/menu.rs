@@ -3,6 +3,7 @@
 //! 2026-08-18 拆分：原 `root/handlers/material.rs`（803 行）按职责拆分，
 //! 本模块承载素材右键菜单及其重命名 / 删除确认流程。
 
+use lumino_core::{tr, trf};
 use lumino_message::MaterialContextMenuItem;
 
 use crate::root::Root;
@@ -95,21 +96,22 @@ impl Root {
         };
         let new_name = buffer.trim().replace(['/', '\\'], "_");
         if new_name.is_empty() || new_name == "." || new_name == ".." {
-            self.toast.push(ToastLevel::Error, "素材名称不能为空");
+            self.toast.push(ToastLevel::Error, tr!("素材名称不能为空"));
             return;
         }
         let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
             return;
         };
         let Some(old_path) = &entry.path else {
-            self.toast.push(ToastLevel::Error, "内置素材不可重命名");
+            self.toast
+                .push(ToastLevel::Error, tr!("内置素材不可重命名"));
             return;
         };
         // 新路径 = 用户素材目录 / 新名称.lmmaterial（与导入落点一致）
         let user_dir = crate::right_sidebar::user_materials_dir();
         let new_path = user_dir.join(format!("{new_name}.lmmaterial"));
         if new_path.exists() {
-            self.toast.push(ToastLevel::Error, "已存在同名素材");
+            self.toast.push(ToastLevel::Error, tr!("已存在同名素材"));
             return;
         }
         // 加载工程 → 以新名称重新保存（同步 metadata.project.name）→ 删除旧文件
@@ -117,7 +119,7 @@ impl Root {
             Ok(project) => {
                 if let Err(e) = lumino_export::save_material(&project, &new_name, &new_path) {
                     self.toast
-                        .push(ToastLevel::Error, format!("素材重命名失败：{e}"));
+                        .push(ToastLevel::Error, trf!("素材重命名失败：{e}", e = e));
                     return;
                 }
                 if let Err(e) = std::fs::remove_file(old_path) {
@@ -125,17 +127,17 @@ impl Root {
                     tracing::warn!("素材重命名后旧文件删除失败: {e}");
                     self.toast.push(
                         ToastLevel::Error,
-                        format!("素材已保存为新名称，但旧文件删除失败：{e}"),
+                        trf!("素材已保存为新名称，但旧文件删除失败：{e}", e = e),
                     );
                 } else {
-                    self.toast.push(ToastLevel::Success, "素材已重命名");
+                    self.toast.push(ToastLevel::Success, tr!("素材已重命名"));
                 }
                 self.start_material_scan();
             }
             Err(e) => {
                 self.toast.push(
                     ToastLevel::Error,
-                    format!("素材重命名失败：无法读取原文件 {e}"),
+                    trf!("素材重命名失败：无法读取原文件 {e}", e = e),
                 );
             }
         }
@@ -165,19 +167,19 @@ impl Root {
             return;
         };
         let Some(path) = &entry.path else {
-            self.toast.push(ToastLevel::Error, "内置素材不可删除");
+            self.toast.push(ToastLevel::Error, tr!("内置素材不可删除"));
             return;
         };
         match std::fs::remove_file(path) {
             Ok(()) => {
                 tracing::info!("素材已删除: {}", path.display());
-                self.toast.push(ToastLevel::Success, "素材已删除");
+                self.toast.push(ToastLevel::Success, tr!("素材已删除"));
                 self.start_material_scan();
             }
             Err(e) => {
                 tracing::error!("素材删除失败: {e}");
                 self.toast
-                    .push(ToastLevel::Error, format!("素材删除失败：{e}"));
+                    .push(ToastLevel::Error, trf!("素材删除失败：{e}", e = e));
             }
         }
     }

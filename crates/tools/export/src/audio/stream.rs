@@ -11,6 +11,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+use lumino_core::{tr, trf};
+
 use crate::error::{ExportError, ExportResult};
 
 use super::codec::AudioCodec;
@@ -97,10 +99,15 @@ impl WavFileSink {
             sample_format: hound::SampleFormat::Float,
         };
 
-        let file = std::fs::File::create(path)
-            .map_err(|e| ExportError::AudioWrite(format!("无法创建 WAV 文件 {path:?}: {e}")))?;
+        let file = std::fs::File::create(path).map_err(|e| {
+            ExportError::AudioWrite(trf!(
+                "无法创建 WAV 文件 {path}: {e}",
+                path = format!("{path:?}"),
+                e = e
+            ))
+        })?;
         let writer = hound::WavWriter::new(std::io::BufWriter::new(file), spec)
-            .map_err(|e| ExportError::AudioWrite(format!("WAV 写入器初始化失败: {e}")))?;
+            .map_err(|e| ExportError::AudioWrite(trf!("WAV 写入器初始化失败: {e}", e = e)))?;
 
         Ok(WavFileSink {
             writer: Some(writer),
@@ -125,12 +132,12 @@ impl SampleSink for WavFileSink {
         let writer = self
             .writer
             .as_mut()
-            .ok_or_else(|| ExportError::AudioWrite("WAV 写入器已关闭".into()))?;
+            .ok_or_else(|| ExportError::AudioWrite(tr!("WAV 写入器已关闭").into()))?;
 
         for &s in samples {
             writer
                 .write_sample(s)
-                .map_err(|e| ExportError::AudioWrite(format!("WAV 写入错误: {e}")))?;
+                .map_err(|e| ExportError::AudioWrite(trf!("WAV 写入错误: {e}", e = e)))?;
         }
         Ok(())
     }
@@ -139,12 +146,12 @@ impl SampleSink for WavFileSink {
         let writer = self
             .writer
             .as_mut()
-            .ok_or_else(|| ExportError::AudioWrite("WAV 写入器已关闭".into()))?;
+            .ok_or_else(|| ExportError::AudioWrite(tr!("WAV 写入器已关闭").into()))?;
 
         for _ in 0..count {
             writer
                 .write_sample(0.0f32)
-                .map_err(|e| ExportError::AudioWrite(format!("WAV 写入错误: {e}")))?;
+                .map_err(|e| ExportError::AudioWrite(trf!("WAV 写入错误: {e}", e = e)))?;
         }
         Ok(())
     }
@@ -153,7 +160,7 @@ impl SampleSink for WavFileSink {
         if let Some(writer) = self.writer.take() {
             writer
                 .finalize()
-                .map_err(|e| ExportError::AudioWrite(format!("WAV finalize 失败: {e}")))?;
+                .map_err(|e| ExportError::AudioWrite(trf!("WAV finalize 失败: {e}", e = e)))?;
         }
         Ok(())
     }
@@ -232,11 +239,14 @@ impl FfmpegSink {
     ) -> ExportResult<Self> {
         let codec_name = codec
             .ffmpeg_codec()
-            .ok_or_else(|| ExportError::AudioWrite("PCM 不需要 ffmpeg 编码".into()))?;
+            .ok_or_else(|| ExportError::AudioWrite(tr!("PCM 不需要 ffmpeg 编码").into()))?;
 
         // 使用 stdin pipe (pipe:0) 向 ffmpeg 输入 PCM 数据
         let output_str = output_path.to_str().ok_or_else(|| {
-            ExportError::AudioWrite(format!("输出路径不是合法 UTF-8: {}", output_path.display()))
+            ExportError::AudioWrite(trf!(
+                "输出路径不是合法 UTF-8: {path}",
+                path = output_path.display()
+            ))
         })?;
         let args = build_ffmpeg_args(
             codec_name,
@@ -255,12 +265,12 @@ impl FfmpegSink {
 
         let mut process = cmd
             .spawn()
-            .map_err(|e| ExportError::AudioWrite(format!("无法启动 ffmpeg: {e}")))?;
+            .map_err(|e| ExportError::AudioWrite(trf!("无法启动 ffmpeg: {e}", e = e)))?;
 
         let stdin = process
             .stdin
             .take()
-            .ok_or_else(|| ExportError::AudioWrite("无法获取 ffmpeg stdin".into()))?;
+            .ok_or_else(|| ExportError::AudioWrite(tr!("无法获取 ffmpeg stdin").into()))?;
 
         // DEBT-07 #124：实时排空 stderr。旧实现把 stderr 设为 piped 却只在
         // `wait()` 之后才读——ffmpeg 持续写进度统计，管道缓冲（Windows 约 4-64KB）
@@ -268,7 +278,7 @@ impl FfmpegSink {
         let stderr = process
             .stderr
             .take()
-            .ok_or_else(|| ExportError::AudioWrite("无法获取 ffmpeg stderr".into()))?;
+            .ok_or_else(|| ExportError::AudioWrite(tr!("无法获取 ffmpeg stderr").into()))?;
         let stderr_tail: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let tail_clone = std::sync::Arc::clone(&stderr_tail);
@@ -299,7 +309,7 @@ impl FfmpegSink {
                     }
                 }
             })
-            .map_err(|e| ExportError::AudioWrite(format!("无法启动 stderr 排空线程: {e}")))?;
+            .map_err(|e| ExportError::AudioWrite(trf!("无法启动 stderr 排空线程: {e}", e = e)))?;
 
         Ok(FfmpegSink {
             process: Some(process),
@@ -314,7 +324,7 @@ impl FfmpegSink {
         if let Some(mut process) = self.process.take() {
             let status = process
                 .wait()
-                .map_err(|e| ExportError::AudioWrite(format!("ffmpeg 进程等待失败: {e}")))?;
+                .map_err(|e| ExportError::AudioWrite(trf!("ffmpeg 进程等待失败: {e}", e = e)))?;
 
             // 进程退出 → stderr EOF → 排空线程收尾；join 防线程泄漏
             if let Some(handle) = self.stderr_thread.take() {
@@ -327,13 +337,14 @@ impl FfmpegSink {
 
             if !status.success() {
                 if stderr_text.is_empty() {
-                    return Err(ExportError::AudioWrite(format!(
-                        "ffmpeg 进程退出码: {:?}",
-                        status.code()
+                    return Err(ExportError::AudioWrite(trf!(
+                        "ffmpeg 进程退出码: {code}",
+                        code = format!("{:?}", status.code())
                     )));
                 }
-                return Err(ExportError::AudioWrite(format!(
-                    "ffmpeg 编码失败:\n{stderr_text}"
+                return Err(ExportError::AudioWrite(trf!(
+                    "ffmpeg 编码失败:\n{stderr_text}",
+                    stderr_text = stderr_text
                 )));
             }
         }
@@ -346,14 +357,14 @@ impl SampleSink for FfmpegSink {
         let stdin = self
             .stdin
             .as_mut()
-            .ok_or_else(|| ExportError::AudioWrite("ffmpeg 管道已关闭".into()))?;
+            .ok_or_else(|| ExportError::AudioWrite(tr!("ffmpeg 管道已关闭").into()))?;
 
         // 将 f32 样本转换为 little-endian 字节写入
         let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
 
         stdin
             .write_all(&bytes)
-            .map_err(|e| ExportError::AudioWrite(format!("ffmpeg 管道写入错误: {e}")))?;
+            .map_err(|e| ExportError::AudioWrite(trf!("ffmpeg 管道写入错误: {e}", e = e)))?;
 
         Ok(())
     }

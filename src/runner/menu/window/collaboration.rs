@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::runner::RunnerInner;
 use crate::storage;
 use lumino_collaboration::http::HttpClient;
+use lumino_core::{tr, trf};
 use lumino_export;
 use lumino_project::project::load::load_project_from_bytes;
 use lumino_ui::event::window::collaboration::Event;
@@ -140,7 +141,7 @@ impl RunnerInner {
                 };
                 let progress_cb = Arc::clone(&self.window_state.progress_cb);
                 // 先弹进度对话框，立即给用户反馈（此时尚未开始序列化）
-                progress_cb(&format!("正在准备协作工程 {name}…"), 0.0);
+                progress_cb(&trf!("正在准备协作工程 {name}…", name = name), 0.0);
                 tokio::spawn(async move {
                     let name_p = name.clone();
                     let name_for_progress = name.clone();
@@ -153,10 +154,10 @@ impl RunnerInner {
                                 0.0
                             };
                             cb_for_stream(
-                                &format!(
-                                    "正在上传协作工程 {}（{:.0}%）",
-                                    name_for_progress,
-                                    p * 100.0
+                                &trf!(
+                                    "正在上传协作工程 {name}（{pct}%）",
+                                    name = name_for_progress,
+                                    pct = format!("{:.0}", p * 100.0)
                                 ),
                                 p,
                             );
@@ -171,30 +172,30 @@ impl RunnerInner {
                         {
                             Ok(b) => b,
                             Err(e) => {
-                                progress_cb(&format!("生成协作工程失败：{e}"), 1.0);
+                                progress_cb(&trf!("生成协作工程失败：{e}", e = e), 1.0);
                                 return;
                             }
                         },
                         None => None,
                     };
                     let Some(bytes) = bytes else {
-                        progress_cb("无工程可上传或生成失败", 1.0);
+                        progress_cb(tr!("无工程可上传或生成失败"), 1.0);
                         return;
                     };
                     let hash = hash_bytes(&bytes);
                     // 进度切到「上传中」，进入带百分比的流式上传
-                    progress_cb(&format!("正在上传协作工程 {name_p}…"), 0.0);
+                    progress_cb(&trf!("正在上传协作工程 {name}…", name = name_p), 0.0);
                     let client = HttpClient::new(&host, port);
                     match client
                         .upload_room_project(&code, &name_p, &hash, bytes, on_progress)
                         .await
                     {
                         Ok(_) => {
-                            progress_cb("协作工程上传完成", 1.0);
+                            progress_cb(tr!("协作工程上传完成"), 1.0);
                             tracing::info!("协作: 已上传房间工程 (hash={hash})")
                         }
                         Err(e) => {
-                            progress_cb(&format!("协作工程上传失败：{e}"), 1.0);
+                            progress_cb(&trf!("协作工程上传失败：{e}", e = e), 1.0);
                             tracing::warn!("协作: 上传房间工程失败: {e}")
                         }
                     }
@@ -236,7 +237,10 @@ impl RunnerInner {
                     )
                 };
                 let progress_cb = Arc::clone(&self.window_state.progress_cb);
-                progress_cb(&format!("正在同步协作工程 {invite_code}…"), 0.0);
+                progress_cb(
+                    &trf!("正在同步协作工程 {invite_code}…", invite_code = invite_code),
+                    0.0,
+                );
                 let code = invite_code.clone();
                 let host = self.collab_state.server_host.clone();
                 let port = self.collab_state.server_port;
@@ -258,13 +262,13 @@ impl RunnerInner {
                     if let Some(local) = local_hash
                         && local == project_hash
                     {
-                        progress_cb("本地工程已是最新", 1.0);
+                        progress_cb(tr!("本地工程已是最新"), 1.0);
                         tracing::info!("协作: 本地工程与房间一致，跳过下载");
                         return;
                     }
 
                     let client = HttpClient::new(&host, port);
-                    progress_cb(&format!("正在下载协作工程 {code}…"), 0.0);
+                    progress_cb(&trf!("正在下载协作工程 {code}…", code = code), 0.0);
                     match client.download_room_project(&code).await {
                         Ok(bytes) => {
                             let load = tokio::task::spawn_blocking(move || {
@@ -283,21 +287,21 @@ impl RunnerInner {
                                             std::sync::Arc::new(parsed),
                                         ),
                                     ));
-                                    progress_cb("协作工程已加载", 1.0);
+                                    progress_cb(tr!("协作工程已加载"), 1.0);
                                     tracing::info!("协作: 已加载房间工程");
                                 }
                                 Ok(Err(e)) => {
-                                    progress_cb(&format!("解析下载工程失败：{e}"), 1.0);
+                                    progress_cb(&trf!("解析下载工程失败：{e}", e = e), 1.0);
                                     tracing::warn!("协作: 解析下载工程失败: {e}")
                                 }
                                 Err(e) => {
-                                    progress_cb(&format!("加载工程任务失败：{e}"), 1.0);
+                                    progress_cb(&trf!("加载工程任务失败：{e}", e = e), 1.0);
                                     tracing::warn!("协作: 加载工程任务失败: {e}")
                                 }
                             }
                         }
                         Err(e) => {
-                            progress_cb(&format!("下载房间工程失败：{e}"), 1.0);
+                            progress_cb(&trf!("下载房间工程失败：{e}", e = e), 1.0);
                             tracing::warn!("协作: 下载房间工程失败: {e}")
                         }
                     }

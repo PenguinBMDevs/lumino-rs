@@ -1,5 +1,7 @@
 //! Configuration types for the synthesizer.
 
+use lumino_core::tr;
+
 use crate::synth::dsp::EnvelopeCurveConfig;
 
 /// The sample interpolation algorithm used inside the GPU render kernels.
@@ -209,7 +211,7 @@ impl SynthConfig {
         // （0.5*(L+R)），不要打开这个开关——旧实现静默产出错误音频。
         if self.channels == ChannelMode::Mono {
             return Err(crate::SynthError::Config(
-                "GPU 引擎仅支持立体声（ChannelMode::Stereo）；单声道请在写出前降混".into(),
+                tr!("GPU 引擎仅支持立体声（ChannelMode::Stereo）；单声道请在写出前降混").into(),
             ));
         }
         if !self.render_silence_threshold.is_finite() || self.render_silence_threshold <= 0.0 {

@@ -5,6 +5,8 @@
 
 use std::path::PathBuf;
 
+use lumino_core::tr;
+
 /// 音频编码器类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioCodec {
@@ -59,17 +61,17 @@ impl AudioCodec {
             AudioCodec::Pcm | AudioCodec::WavPack => Ok(()),
             AudioCodec::Flac => {
                 if sample_rate > 384000 {
-                    return Err("FLAC 不支持超过 384kHz 的采样率".into());
+                    return Err(tr!("FLAC 不支持超过 384kHz 的采样率").into());
                 }
                 Ok(())
             }
             AudioCodec::Mp3 => {
                 let mut errors = Vec::new();
                 if sample_rate > 48000 {
-                    errors.push("MP3 不支持超过 48kHz 的采样率");
+                    errors.push(tr!("MP3 不支持超过 48kHz 的采样率"));
                 }
                 if bitrate > 320 {
-                    errors.push("MP3 不支持超过 320kbps 的比特率");
+                    errors.push(tr!("MP3 不支持超过 320kbps 的比特率"));
                 }
                 if errors.is_empty() {
                     Ok(())
@@ -80,10 +82,10 @@ impl AudioCodec {
             AudioCodec::Vorbis => {
                 let mut errors = Vec::new();
                 if sample_rate > 48000 {
-                    errors.push("Vorbis 不支持超过 48kHz 的采样率");
+                    errors.push(tr!("Vorbis 不支持超过 48kHz 的采样率"));
                 }
                 if bitrate > 480 {
-                    errors.push("Vorbis 不支持超过 480kbps 的比特率");
+                    errors.push(tr!("Vorbis 不支持超过 480kbps 的比特率"));
                 }
                 if errors.is_empty() {
                     Ok(())

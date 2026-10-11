@@ -1,3 +1,4 @@
+use lumino_core::tr;
 use lumino_ui::window::TrafficAction;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -184,7 +185,7 @@ impl ProgressManager {
                 width: PROGRESS_WINDOW_WIDTH,
                 height: PROGRESS_WINDOW_HEIGHT,
             })
-            .with_title("MIDI 处理进度")
+            .with_title(tr!("MIDI 处理进度"))
             .with_visible(true)
             // UI-004：进度指示对话框内容为固定布局，禁止拉伸与最大化（保留关闭/最小化）。
             .with_resizable(false)

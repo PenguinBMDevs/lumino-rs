@@ -1,6 +1,7 @@
 //! 工程设置对话框状态
 
 use lumino_core::storage::config::NoteCountDisplay;
+use lumino_core::{tr, trf};
 
 /// 工程设置对话框状态
 #[derive(Debug, Clone)]
@@ -62,7 +63,7 @@ impl ProjectSettingsDialogState {
     pub fn format_editing_time(&self) -> String {
         let total_seconds = self.total_editing_time_seconds;
         if total_seconds < 1.0 {
-            return "不足 1 秒".to_string();
+            return tr!("不足 1 秒").to_string();
         }
 
         let days = (total_seconds / 86400.0) as u64;
@@ -71,13 +72,26 @@ impl ProjectSettingsDialogState {
         let seconds = (total_seconds % 60.0) as u64;
 
         if days > 0 {
-            format!("{} 天 {} 小时 {} 分钟", days, hours, minutes)
+            trf!(
+                "{days} 天 {hours} 小时 {minutes} 分钟",
+                days = days,
+                hours = hours,
+                minutes = minutes
+            )
         } else if hours > 0 {
-            format!("{} 小时 {} 分钟", hours, minutes)
+            trf!(
+                "{hours} 小时 {minutes} 分钟",
+                hours = hours,
+                minutes = minutes
+            )
         } else if minutes > 0 {
-            format!("{} 分钟 {} 秒", minutes, seconds)
+            trf!(
+                "{minutes} 分钟 {seconds} 秒",
+                minutes = minutes,
+                seconds = seconds
+            )
         } else {
-            format!("{} 秒", seconds)
+            trf!("{seconds} 秒", seconds = seconds)
         }
     }
 

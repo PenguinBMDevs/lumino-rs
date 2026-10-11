@@ -1,5 +1,7 @@
 //! Host 对话框状态管理子模块 — 开关/标记类 setter 与状态查询
 
+use lumino_core::{tr, trf};
+
 use crate::host::{Host, types::DialogResult};
 use crate::message;
 use crate::state::root_state::CollaborationViewState;
@@ -249,7 +251,7 @@ impl Host {
         self.root.state.audio_export_dialog.is_paused = false;
         self.root.state.audio_export_dialog.render_completed = true;
         self.root.state.audio_export_dialog.render_progress = 1.0;
-        self.root.state.audio_export_dialog.render_message = "导出完成".to_string();
+        self.root.state.audio_export_dialog.render_message = tr!("导出完成").to_string();
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -261,10 +263,11 @@ impl Host {
         // “已中止”为预期操作，不加“导出失败”前缀
         if error == "已中止" {
             self.root.state.audio_export_dialog.render_error = Some(error.clone());
-            self.root.state.audio_export_dialog.render_message = "已中止".to_string();
+            self.root.state.audio_export_dialog.render_message = tr!("已中止").to_string();
         } else {
             self.root.state.audio_export_dialog.render_error = Some(error.clone());
-            self.root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+            self.root.state.audio_export_dialog.render_message =
+                trf!("导出失败: {error}", error = error);
         }
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();

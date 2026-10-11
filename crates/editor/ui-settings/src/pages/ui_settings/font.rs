@@ -2,6 +2,7 @@
 
 use iced_core::Alignment;
 use iced_widget::{button, column, pick_list, row, text, text_input};
+use lumino_core::tr;
 use lumino_ui_core::{Element, Message};
 
 use super::super::super::components::constants::*;
@@ -28,7 +29,7 @@ pub(crate) fn build_font_section<'a>(
         |font_name| Message::Settings(crate::Event::ProgramFontNameChanged(font_name)),
     )
     .width(200.0)
-    .placeholder("选择系统字体...");
+    .placeholder(tr!("选择系统字体..."));
 
     // 自定义字体路径输入
     let font_path_input = text_input(t.font_path_placeholder, &settings.editing.program_font_path)

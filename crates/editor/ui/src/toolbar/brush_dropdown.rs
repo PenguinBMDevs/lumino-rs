@@ -14,6 +14,7 @@
 
 use iced_core::{Alignment, Background, Border, Color};
 use iced_widget::{button, column, container, row, space, text};
+use lumino_core::tr;
 use lumino_ui_core::color::contrast_text_color;
 
 use crate::Element;
@@ -56,7 +57,7 @@ pub(crate) fn render_brush_dropdown<'a>(
                 row![
                     icon::view_with_size_and_theme(icon::Gear, 18, 18, Some(theme)),
                     space().width(4),
-                    text("绘制行为").size(14),
+                    text(tr!("绘制行为")).size(14),
                 ]
                 .align_y(Alignment::Center),
             )

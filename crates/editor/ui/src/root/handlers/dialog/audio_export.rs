@@ -1,5 +1,7 @@
 //! 音频导出面板处理器
 
+use lumino_core::{tr, trf};
+
 use crate::message::{AudioExportAction, Message};
 use crate::root::Root;
 use crate::root::file_dialog::PathDialogTask;
@@ -18,7 +20,7 @@ fn begin_audio_export_render(root: &mut Root) {
     st.render_completed = false;
     st.render_error = None;
     st.render_progress = 0.0;
-    st.render_message = "正在初始化...".to_string();
+    st.render_message = tr!("正在初始化...").to_string();
 }
 
 /// 根据音频导出对话框状态构建导出配置
@@ -172,7 +174,7 @@ impl DialogHandler {
             A::Pause => {
                 if root.state.audio_export_dialog.is_rendering {
                     root.state.audio_export_dialog.is_paused = true;
-                    root.state.audio_export_dialog.render_message = "已暂停".to_string();
+                    root.state.audio_export_dialog.render_message = tr!("已暂停").to_string();
                     let ev = crate::event::window::Event::dialog(
                         crate::event::window::dialog::Event::PauseAudioExport,
                     );
@@ -182,7 +184,7 @@ impl DialogHandler {
             A::Resume => {
                 if root.state.audio_export_dialog.is_rendering {
                     root.state.audio_export_dialog.is_paused = false;
-                    root.state.audio_export_dialog.render_message = "正在继续...".to_string();
+                    root.state.audio_export_dialog.render_message = tr!("正在继续...").to_string();
                     let ev = crate::event::window::Event::dialog(
                         crate::event::window::dialog::Event::ResumeAudioExport,
                     );
@@ -193,14 +195,15 @@ impl DialogHandler {
                 if root.state.audio_export_dialog.is_rendering {
                     if root.state.audio_export_dialog.is_paused {
                         root.state.audio_export_dialog.is_paused = false;
-                        root.state.audio_export_dialog.render_message = "正在继续...".to_string();
+                        root.state.audio_export_dialog.render_message =
+                            tr!("正在继续...").to_string();
                         let ev = crate::event::window::Event::dialog(
                             crate::event::window::dialog::Event::ResumeAudioExport,
                         );
                         crate::event::emit(crate::event::Event::Window(ev));
                     } else {
                         root.state.audio_export_dialog.is_paused = true;
-                        root.state.audio_export_dialog.render_message = "已暂停".to_string();
+                        root.state.audio_export_dialog.render_message = tr!("已暂停").to_string();
                         let ev = crate::event::window::Event::dialog(
                             crate::event::window::dialog::Event::PauseAudioExport,
                         );
@@ -210,7 +213,7 @@ impl DialogHandler {
             }
             A::Abort => {
                 if root.state.audio_export_dialog.is_rendering {
-                    root.state.audio_export_dialog.render_message = "正在中止...".to_string();
+                    root.state.audio_export_dialog.render_message = tr!("正在中止...").to_string();
                     let ev = crate::event::window::Event::dialog(
                         crate::event::window::dialog::Event::AbortAudioExport,
                     );
@@ -221,7 +224,7 @@ impl DialogHandler {
                 let st = &root.state.audio_export_dialog;
                 let current = st.output_path.clone();
                 let ext = st.format.extension().to_string();
-                let filter_label = format!("{} 文件", st.format);
+                let filter_label = trf!("{format} 文件", format = st.format);
                 let default_name = std::path::Path::new(&current)
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -249,20 +252,20 @@ impl DialogHandler {
             A::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::AudioExportMidi, || {
                     rfd::FileDialog::new()
-                        .add_filter("音乐文件", &["mid", "midi", "lmpj"])
-                        .add_filter("MIDI 文件", &["mid", "midi"])
-                        .add_filter("Lumino 项目", &["lmpj"])
-                        .add_filter("所有文件", &["*"])
+                        .add_filter(tr!("音乐文件"), &["mid", "midi", "lmpj"])
+                        .add_filter(tr!("MIDI 文件"), &["mid", "midi"])
+                        .add_filter(tr!("Lumino 项目"), &["lmpj"])
+                        .add_filter(tr!("所有文件"), &["*"])
                         .pick_file()
                 });
             }
             A::BrowseSoundfont => {
                 root.spawn_path_dialog(PathDialogTask::AudioExportSoundfont, || {
                     rfd::FileDialog::new()
-                        .add_filter("音色库文件", &["sf2", "sfz"])
-                        .add_filter("SF2 文件", &["sf2"])
-                        .add_filter("SFZ 文件", &["sfz"])
-                        .add_filter("所有文件", &["*"])
+                        .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
+                        .add_filter(tr!("SF2 文件"), &["sf2"])
+                        .add_filter(tr!("SFZ 文件"), &["sfz"])
+                        .add_filter(tr!("所有文件"), &["*"])
                         .pick_file()
                 });
             }
@@ -278,17 +281,18 @@ impl DialogHandler {
                 root.state.audio_export_dialog.is_paused = false;
                 root.state.audio_export_dialog.render_completed = true;
                 root.state.audio_export_dialog.render_progress = 1.0;
-                root.state.audio_export_dialog.render_message = "导出完成".to_string();
+                root.state.audio_export_dialog.render_message = tr!("导出完成").to_string();
             }
             A::RenderFailed(error) => {
                 root.state.audio_export_dialog.is_rendering = false;
                 root.state.audio_export_dialog.is_paused = false;
                 if error == "已中止" {
                     root.state.audio_export_dialog.render_error = Some(error.clone());
-                    root.state.audio_export_dialog.render_message = "已中止".to_string();
+                    root.state.audio_export_dialog.render_message = tr!("已中止").to_string();
                 } else {
                     root.state.audio_export_dialog.render_error = Some(error.clone());
-                    root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+                    root.state.audio_export_dialog.render_message =
+                        trf!("导出失败: {error}", error = error);
                 }
             }
             A::ResetRendering => {

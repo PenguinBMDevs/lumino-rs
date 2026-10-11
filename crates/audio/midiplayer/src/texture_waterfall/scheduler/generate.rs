@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
 
+use lumino_core::trf;
 use tracing::warn;
 
 use crate::texture_waterfall::cache::{self, WaterfallCacheMeta, waterfall_cache_path};
@@ -192,7 +193,14 @@ pub(super) fn generate_one_track_group(
         let done = req.completed.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cb) = req.progress_cb {
             let pct = done as f32 / req.total_tiles as f32;
-            cb(&format!("贴图瀑布流 {}/{}", done, req.total_tiles), pct);
+            cb(
+                &trf!(
+                    "贴图瀑布流 {done}/{total}",
+                    done = done,
+                    total = req.total_tiles
+                ),
+                pct,
+            );
         }
     }
 

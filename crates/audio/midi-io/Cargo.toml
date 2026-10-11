@@ -20,6 +20,7 @@ tracy = ["dep:tracy-client", "xsynth-realtime?/tracy", "xsynth-core/tracy"]
 voice_probe = ["xsynth-core/voice_probe"]
 
 [dependencies]
+lumino-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-midi-loader = { workspace = true }
 libloading = { workspace = true }

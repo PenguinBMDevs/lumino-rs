@@ -5,6 +5,8 @@
 
 use std::time::{Duration, Instant};
 
+use lumino_core::{tr, trf};
+
 /// 离屏检测画面宽度（256 保证回读行距天然满足 256 字节对齐）
 const TEST_WIDTH: u32 = 256;
 /// 离屏检测画面高度
@@ -145,7 +147,7 @@ fn readback_has_content(
     let deadline = Instant::now() + READBACK_TIMEOUT;
     loop {
         if let Ok(result) = rx.try_recv() {
-            result.map_err(|e| format!("回读映射失败: {e}"))?;
+            result.map_err(|e| trf!("回读映射失败: {e}", e = e))?;
             let data = staging.slice(..).get_mapped_range();
             let drawn = data
                 .as_chunks::<4>()
@@ -157,13 +159,14 @@ fn readback_has_content(
             return if drawn {
                 Ok(())
             } else {
-                Err(format!(
-                    "离屏画面为空白（{buffer_size} 字节均为清屏色，未画出卷帘）"
+                Err(trf!(
+                    "离屏画面为空白（{buffer_size} 字节均为清屏色，未画出卷帘）",
+                    buffer_size = buffer_size
                 ))
             };
         }
         if Instant::now() >= deadline {
-            return Err("离屏回读超时（2 秒）".to_string());
+            return Err(tr!("离屏回读超时（2 秒）").to_string());
         }
         let _ = device.poll(wgpu::PollType::Wait {
             submission_index: None,

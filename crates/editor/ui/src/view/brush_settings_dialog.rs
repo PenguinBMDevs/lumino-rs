@@ -10,7 +10,7 @@
 
 use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, scrollable, space, text};
-use lumino_core::BrushConfig;
+use lumino_core::{BrushConfig, tr, trf};
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_ui_core::color::contrast_text_color;
 
@@ -58,7 +58,7 @@ pub fn view_brush_settings_dialog<'a>(
     let mut level_rows: Vec<Element<'a>> = Vec::new();
     for level in 0..draft.tracks.len() {
         // 层号而非"粗细度"：N 是层序号，粗细（= 层数）是全局值、由「粗细」面板管
-        let label = format!("第 {} 层", level + 1);
+        let label = trf!("第 {n} 层", n = level + 1);
         let assigned = draft.tracks.get(level).copied().flatten();
         let can_remove = draft.tracks.len() > BrushConfig::MIN_THICKNESS as usize;
 
@@ -68,7 +68,7 @@ pub fn view_brush_settings_dialog<'a>(
                 container(row![
                     text(label).size(14),
                     space().width(8),
-                    text("（无可用音轨）")
+                    text(tr!("（无可用音轨）"))
                         .size(12)
                         .style(move |_t: &iced_core::Theme| text::Style {
                             color: Some(palette.background.weak.text),
@@ -82,7 +82,7 @@ pub fn view_brush_settings_dialog<'a>(
         // 下拉选项：默认（自动分配）+ 每个普通音轨
         let mut options: Vec<TrackChoice> = vec![TrackChoice {
             id: None,
-            name: "默认（自动分配）".to_string(),
+            name: tr!("默认（自动分配）").to_string(),
         }];
         for (id, name) in tracks.iter() {
             options.push(TrackChoice {
@@ -97,8 +97,8 @@ pub fn view_brush_settings_dialog<'a>(
                     .iter()
                     .find(|(i, _)| *i == id)
                     .map(|(_, n)| n.clone())
-                    .unwrap_or_else(|| format!("音轨 {}", id)),
-                None => "默认（自动分配）".to_string(),
+                    .unwrap_or_else(|| trf!("音轨 {id}", id = id)),
+                None => tr!("默认（自动分配）").to_string(),
             },
         };
 
@@ -145,22 +145,22 @@ pub fn view_brush_settings_dialog<'a>(
     }
 
     let list: Element<'a> = if no_tracks {
-        column![text("无可用音轨，请先在工程中创建普通音轨。").size(14)].into()
+        column![text(tr!("无可用音轨，请先在工程中创建普通音轨。")).size(14)].into()
     } else {
         column(level_rows).spacing(8).into()
     };
 
     let content = column![
-        text("画刷绘制行为设置").size(18),
+        text(tr!("画刷绘制行为设置")).size(18),
         space().height(8),
         scrollable(list).height(Length::Fill).width(Length::Fill),
         space().height(8),
         row![
-            button(text("保存").size(14))
+            button(text(tr!("保存")).size(14))
                 .on_press(Message::BrushSettings(BrushSettingsAction::Save))
                 .padding([6, 16]),
             space().width(8),
-            button(text("取消").size(14))
+            button(text(tr!("取消")).size(14))
                 .on_press(Message::BrushSettings(BrushSettingsAction::Cancel))
                 .padding([6, 16]),
         ]

@@ -3,6 +3,8 @@
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 
+use lumino_core::{tr, trf};
+
 use crate::error::CloudError;
 
 /// 将 reqwest_dav 错误转换为 CloudError
@@ -24,8 +26,9 @@ pub(crate) fn html_response_error(headers: &str, source: &str, port: u16) -> Clo
     tracing::warn!(
         "WebDAV 服务器返回了 HTML 页面（非 WebDAV 响应），响应头如下:\n{headers}\nHTML 源码如下:\n{source}"
     );
-    CloudError::Protocol(format!(
-        "服务器返回了 HTML 页面而非 WebDAV 响应：当前连接端口为 {port}（地址未填写端口时默认 80）。若 WebDAV 服务使用非默认端口（如群晖为 5005/5006），请在地址中显式填写端口（如 主机:5005），并确认地址是 WebDAV 服务端点而非网页管理界面"
+    CloudError::Protocol(trf!(
+        "服务器返回了 HTML 页面而非 WebDAV 响应：当前连接端口为 {port}（地址未填写端口时默认 80）。若 WebDAV 服务使用非默认端口（如群晖为 5005/5006），请在地址中显式填写端口（如 主机:5005），并确认地址是 WebDAV 服务端点而非网页管理界面",
+        port = port
     ))
 }
 
@@ -41,16 +44,23 @@ pub(crate) fn format_headers(headers: &HeaderMap) -> String {
 /// 非成功状态码 → 分级诊断错误（禁用重定向后各状态码含义明确）
 pub(crate) fn status_error(status: StatusCode) -> CloudError {
     match status.as_u16() {
-        301 | 302 | 303 | 307 | 308 => CloudError::Protocol(format!(
-            "服务器返回重定向 (HTTP {status})：WebDAV 客户端不跟随重定向，请确认地址是 WebDAV 服务端点（部分服务器对未认证请求会 302 到登录页）"
+        301 | 302 | 303 | 307 | 308 => CloudError::Protocol(trf!(
+            "服务器返回重定向 (HTTP {status})：WebDAV 客户端不跟随重定向，请确认地址是 WebDAV 服务端点（部分服务器对未认证请求会 302 到登录页）",
+            status = status
         )),
-        401 => CloudError::Auth("认证失败 (HTTP 401)：请检查用户名与密码".into()),
-        403 => CloudError::Protocol(format!(
-            "权限不足 (HTTP {status})：请检查账号对目标目录的访问权限"
+        401 => CloudError::Auth(tr!("认证失败 (HTTP 401)：请检查用户名与密码").to_string()),
+        403 => CloudError::Protocol(trf!(
+            "权限不足 (HTTP {status})：请检查账号对目标目录的访问权限",
+            status = status
         )),
         404 => CloudError::Protocol(
-            "资源不存在 (HTTP 404)：请确认 WebDAV 地址路径是否正确（如群晖为 http://IP:5005/ 根路径）".into(),
+            tr!("资源不存在 (HTTP 404)：请确认 WebDAV 地址路径是否正确（如群晖为 http://IP:5005/ 根路径）")
+                .to_string(),
         ),
-        code => CloudError::Protocol(format!("PROPFIND 失败: HTTP {status} (code: {code})")),
+        code => CloudError::Protocol(trf!(
+            "PROPFIND 失败: HTTP {status} (code: {code})",
+            status = status,
+            code = code
+        )),
     }
 }

@@ -32,6 +32,8 @@ use std::{
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+use lumino_core::{tr, trf};
+
 use crate::audio_devices::resolve_audio_output_device;
 
 /// 内置「钢管落地」音效
@@ -272,11 +274,11 @@ impl Engine {
 
         let device = resolve_audio_output_device(device_name)
             .or_else(|| cpal::default_host().default_output_device())
-            .ok_or_else(|| "无可用音频输出设备".to_string())?;
+            .ok_or_else(|| tr!("无可用音频输出设备").to_string())?;
 
         let supported = device
             .default_output_config()
-            .map_err(|e| format!("读取默认输出配置失败: {e}"))?;
+            .map_err(|e| trf!("读取默认输出配置失败: {e}", e = e))?;
         let channels = supported.channels() as usize;
         let sample_rate = supported.sample_rate().0;
         let config = supported.config();
@@ -326,10 +328,12 @@ impl Engine {
                 |e| tracing::warn!("UI 音效输出流错误: {e}"),
                 None,
             )
-            .map_err(|e| format!("创建输出流失败: {e}"))?;
+            .map_err(|e| trf!("创建输出流失败: {e}", e = e))?;
 
         // 初始暂停：仅在真正播放时开闸，避免常驻静音回调
-        stream.pause().map_err(|e| format!("暂停输出流失败: {e}"))?;
+        stream
+            .pause()
+            .map_err(|e| trf!("暂停输出流失败: {e}", e = e))?;
 
         tracing::debug!(
             "UI 音效就绪：{} Hz / {} 声道 / {:.2}s",
@@ -458,18 +462,18 @@ fn decode_mp3_bytes(bytes: &'static [u8]) -> Result<DecodedAudio, String> {
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .map_err(|e| format!("探测音频格式失败: {e:?}"))?;
+        .map_err(|e| trf!("探测音频格式失败: {e}", e = format!("{:?}", e)))?;
     let mut format = probed.format;
 
     let track = format
         .default_track()
-        .ok_or_else(|| "音频文件无可用轨道".to_string())?;
+        .ok_or_else(|| tr!("音频文件无可用轨道").to_string())?;
     let sample_rate = track.codec_params.sample_rate.unwrap_or(48_000);
     let track_id = track.id;
 
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| format!("创建解码器失败: {e:?}"))?;
+        .map_err(|e| trf!("创建解码器失败: {e}", e = format!("{:?}", e)))?;
 
     let mut channels: Vec<Vec<f32>> = Vec::new();
     loop {
@@ -480,14 +484,16 @@ fn decode_mp3_bytes(bytes: &'static [u8]) -> Result<DecodedAudio, String> {
             {
                 break;
             }
-            Err(e) => return Err(format!("读取音频包失败: {e:?}")),
+            Err(e) => {
+                return Err(trf!("读取音频包失败: {e}", e = format!("{:?}", e)));
+            }
         };
         if packet.track_id() != track_id {
             continue;
         }
         let decoded = decoder
             .decode(&packet)
-            .map_err(|e| format!("解码音频包失败: {e:?}"))?;
+            .map_err(|e| trf!("解码音频包失败: {e}", e = format!("{:?}", e)))?;
 
         if channels.is_empty() {
             channels = vec![Vec::new(); decoded.spec().channels.count()];
@@ -523,7 +529,7 @@ fn decode_mp3_bytes(bytes: &'static [u8]) -> Result<DecodedAudio, String> {
     }
 
     if channels.is_empty() || channels[0].is_empty() {
-        return Err("音频解码结果为空".to_string());
+        return Err(tr!("音频解码结果为空").to_string());
     }
     let channel_count = channels.len();
 

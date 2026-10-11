@@ -14,6 +14,7 @@ use crate::texture_waterfall::scheduler::{
 };
 use crate::texture_waterfall::stream::WaterfallStreamMsg;
 use crate::texture_waterfall::types::WaterfallGroupTile;
+use lumino_core::tr;
 
 /// 贴图瀑布流后台生成上下文。
 ///
@@ -127,7 +128,7 @@ fn spawn_streaming_generation(
 /// 处理 `WaterfallCommand::Generate`：启动后台流式生成
 pub fn handle_waterfall_generate(mut context: WaterfallGenerateContext<'_>) {
     setup_generate_context(&mut context);
-    push_waterfall_progress(context.progress, "正在后台生成贴图瀑布流\u{2026}", 0.0);
+    push_waterfall_progress(context.progress, tr!("正在后台生成贴图瀑布流\u{2026}"), 0.0);
 
     spawn_streaming_generation(
         Arc::clone(context.progress),
@@ -155,5 +156,5 @@ pub fn handle_waterfall_dispose(
     *renderer = None;
     *meta = None;
     *renderer_config = None;
-    push_waterfall_progress(progress, "贴图瀑布流资源已释放", 1.0);
+    push_waterfall_progress(progress, tr!("贴图瀑布流资源已释放"), 1.0);
 }

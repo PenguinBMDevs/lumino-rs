@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::LuminoProject;
 use lumino_core::error::{CoreError, Result};
+use lumino_core::tr;
 
 use self::{archive::load_from_archive, folder::load_from_folder};
 
@@ -38,7 +39,7 @@ pub fn load_project(path: impl AsRef<Path>) -> Result<LuminoProject> {
             load_from_archive(&bytes)
         } else {
             Err(CoreError::FileFormat(
-                "不是有效的 Lumino 工程文件（缺少 LMPJ 魔数）".into(),
+                tr!("不是有效的 Lumino 工程文件（缺少 LMPJ 魔数）").into(),
             ))
         }
     }
@@ -51,7 +52,7 @@ pub fn load_project(path: impl AsRef<Path>) -> Result<LuminoProject> {
 pub fn load_project_from_bytes(bytes: &[u8]) -> Result<LuminoProject> {
     if bytes.len() < 4 || &bytes[0..4] != b"LMPJ" {
         return Err(CoreError::FileFormat(
-            "不是有效的 Lumino 工程归档（缺少 LMPJ 魔数）".into(),
+            tr!("不是有效的 Lumino 工程归档（缺少 LMPJ 魔数）").into(),
         ));
     }
     load_from_archive(bytes)

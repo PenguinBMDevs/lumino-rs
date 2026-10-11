@@ -12,6 +12,8 @@
 
 use std::sync::Arc;
 
+use lumino_core::tr;
+
 use crate::root::Root;
 use crate::sidebar::Sidebar;
 
@@ -99,6 +101,6 @@ impl Root {
             .sort_by_key(|t| (t.port, t.channel, t.id));
         self.sync_track_visual_order();
         self.statusbar
-            .set_status_message(Some("端口修改未应用：文档不可用".to_string()));
+            .set_status_message(Some(tr!("端口修改未应用：文档不可用").to_string()));
     }
 }

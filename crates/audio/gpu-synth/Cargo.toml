@@ -12,6 +12,7 @@ categories = ["multimedia::audio", "rendering::gpu"]
 # 作为 vendored 子 crate 原样搬入。
 
 [dependencies]
+lumino-core = { workspace = true }
 wgpu = { workspace = true }
 lumino-midly = "0.6.2"
 xsynth-soundfonts = "0.4.0"

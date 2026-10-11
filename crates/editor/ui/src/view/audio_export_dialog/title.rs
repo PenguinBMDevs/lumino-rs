@@ -1,12 +1,13 @@
 //! 音频导出对话框 - 大标题与段落小标题
 
 use iced_widget::text;
+use lumino_core::tr;
 
 use crate::view::widgets;
 
 /// 对话框大标题
 pub fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
-    text("音频导出")
+    text(tr!("音频导出"))
         .size(18)
         .font(lumino_ui_core::font::ui_font())
         .style(widgets::dialog_label_style(palette))

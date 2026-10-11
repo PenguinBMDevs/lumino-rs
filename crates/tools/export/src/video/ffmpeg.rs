@@ -18,6 +18,8 @@ use std::process::{ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use lumino_core::{tr, trf};
+
 use crate::video::config::VideoExportConfig;
 use crate::video::error::{VideoExportError, VideoExportResult};
 
@@ -69,10 +71,9 @@ impl FfmpegEncoder {
         let writer_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
         // stderr 捕获线程：实时读取 ffmpeg stderr
-        let stderr = process
-            .stderr
-            .take()
-            .ok_or_else(|| VideoExportError::PipeSetupFailed("ffmpeg stderr 未 piped".into()))?;
+        let stderr = process.stderr.take().ok_or_else(|| {
+            VideoExportError::PipeSetupFailed(tr!("ffmpeg stderr 未 piped").into())
+        })?;
         let stderr_buf_clone = Arc::clone(&stderr_buf);
         thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stderr);
@@ -100,10 +101,9 @@ impl FfmpegEncoder {
 
         let stdin_writer = Some(BufWriter::with_capacity(
             1024 * 1024, // 1MB 缓冲，批量写入
-            process
-                .stdin
-                .take()
-                .ok_or_else(|| VideoExportError::PipeSetupFailed("ffmpeg stdin 未 piped".into()))?,
+            process.stdin.take().ok_or_else(|| {
+                VideoExportError::PipeSetupFailed(tr!("ffmpeg stdin 未 piped").into())
+            })?,
         ));
 
         Ok(Self {
@@ -130,10 +130,10 @@ impl FfmpegEncoder {
         }
 
         let Some(writer) = self.stdin_writer.as_mut() else {
-            return Err(self.build_write_error("stdin_writer 已关闭，无法写入帧"));
+            return Err(self.build_write_error(tr!("stdin_writer 已关闭，无法写入帧")));
         };
         if let Err(e) = writer.write_all(&frame_data) {
-            let msg = format!("write_all 失败: {e}");
+            let msg = trf!("write_all 失败: {e}", e = e);
             if let Ok(mut err) = self.writer_error.lock() {
                 *err = Some(msg);
             }
@@ -162,8 +162,8 @@ impl FfmpegEncoder {
                 "ffmpeg 非零退出"
             );
             let msg = match status.code() {
-                Some(code) => format!("ffmpeg 退出码 {code}"),
-                None => "ffmpeg 未知错误退出".to_string(),
+                Some(code) => trf!("ffmpeg 退出码 {code}", code = code),
+                None => tr!("ffmpeg 未知错误退出").to_string(),
             };
             return Err(VideoExportError::FfmpegWriteFailed(format!(
                 "{msg}\nffmpeg stderr:\n{stderr_lines}"
@@ -188,7 +188,7 @@ impl FfmpegEncoder {
         if let Ok(writer_err) = self.writer_error.lock()
             && let Some(ref e) = *writer_err
         {
-            parts.push(format!("写入错误: {e}"));
+            parts.push(trf!("写入错误: {e}", e = e));
         }
         let stderr = self.stderr_content();
         if !stderr.is_empty() {

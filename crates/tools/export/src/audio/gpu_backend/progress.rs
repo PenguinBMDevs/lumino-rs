@@ -1,5 +1,7 @@
 //! 导出控制检查与渲染进度回调
 
+use lumino_core::trf;
+
 use super::*;
 
 pub(super) fn check_control(config: &AudioRenderConfig) -> ExportResult<()> {
@@ -70,9 +72,12 @@ pub(super) fn render_progress_message(
             let pct = 0.10 + 0.10 * frac;
             (
                 pct,
-                format!(
-                    "进度: {:.1}% | 预载音色库 {done}/{total} | 耗时 {elapsed_secs:.1}s",
-                    pct * 100.0
+                trf!(
+                    "进度: {pct}% | 预载音色库 {done}/{total} | 耗时 {elapsed}s",
+                    pct = format!("{:.1}", pct * 100.0),
+                    done = done,
+                    total = total,
+                    elapsed = format!("{:.1}", elapsed_secs)
                 ),
             )
         }
@@ -83,12 +88,18 @@ pub(super) fn render_progress_message(
                 (done as f64 / total as f64).clamp(0.0, 1.0)
             };
             let pct = 0.20 + 0.65 * frac;
-            let speed_text = speed.map_or(String::new(), |s| format!(" | {s:.2}× 实时"));
+            let speed_text = speed.map_or(String::new(), |s| {
+                trf!(" | {s}× 实时", s = format!("{:.2}", s))
+            });
             (
                 pct,
-                format!(
-                    "进度: {:.1}% | 帧 {done}/{total}{speed_text} | 耗时 {elapsed_secs:.1}s",
-                    pct * 100.0
+                trf!(
+                    "进度: {pct}% | 帧 {done}/{total}{speed_text} | 耗时 {elapsed}s",
+                    pct = format!("{:.1}", pct * 100.0),
+                    done = done,
+                    total = total,
+                    speed_text = speed_text,
+                    elapsed = format!("{:.1}", elapsed_secs)
                 ),
             )
         }

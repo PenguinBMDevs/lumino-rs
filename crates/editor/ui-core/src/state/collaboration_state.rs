@@ -1,5 +1,7 @@
 //! 协作对话框状态
 
+use lumino_core::tr;
+
 /// 协作视图状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CollaborationViewState {
@@ -50,9 +52,9 @@ impl CollaborationDialogState {
             is_open: false,
             server_host: "localhost".to_string(),
             server_port: "3000".to_string(),
-            username: "用户".to_string(),
+            username: tr!("用户").to_string(),
             password: String::new(),
-            room_name: "我的房间".to_string(),
+            room_name: tr!("我的房间").to_string(),
             invite_code: String::new(),
             view_state: CollaborationViewState::Connect,
             connection_status: String::new(),

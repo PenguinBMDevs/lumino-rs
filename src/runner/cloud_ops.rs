@@ -7,6 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
 use lumino_ui::event::{self, cloud as cloud_event};
 use lumino_ui::state::cloud_state::CloudEntryUi;
 
@@ -59,7 +60,7 @@ impl RunnerInner {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
             if let Some(err) = error {
-                state.notice = Some(format!("加载失败：{err}"));
+                state.notice = Some(trf!("加载失败：{err}", err = err));
                 true
             } else {
                 state.entries = entries
@@ -76,7 +77,7 @@ impl RunnerInner {
             }
         };
         if failed {
-            self.notify_cloud_failure("云存储连接异常".to_string());
+            self.notify_cloud_failure(tr!("云存储连接异常").to_string());
         } else {
             // 目录列表已更新：广播到已打开的云文件浏览器对话框
             self.sync_cloud_to_dialogs();
@@ -102,7 +103,7 @@ impl RunnerInner {
         // 云进度悬浮窗：开始下载
         let progress_tx = self.window_state.cloud_progress_tx.clone();
         let file_name = remote_file_name(&remote_path);
-        let _ = progress_tx.send((format!("正在下载 {file_name}"), 0.1));
+        let _ = progress_tx.send((trf!("正在下载 {file_name}", file_name = file_name), 0.1));
 
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
@@ -111,9 +112,9 @@ impl RunnerInner {
             let error = result.err().map(|e| e.to_string());
             // 云进度悬浮窗：下载结束（完成/失败均关闭）
             let done_msg = if ok {
-                format!("下载完成：{file_name}")
+                trf!("下载完成：{file_name}", file_name = file_name)
             } else {
-                format!("下载失败：{file_name}")
+                trf!("下载失败：{file_name}", file_name = file_name)
             };
             let _ = progress_tx.send((done_msg, 1.0));
             event::emit(event::Event::cloud(cloud_event::Event::DownloadResult {
@@ -141,12 +142,12 @@ impl RunnerInner {
             if ok {
                 false
             } else {
-                state.notice = Some(Self::cloud_error_text("下载失败", error.as_deref()));
+                state.notice = Some(Self::cloud_error_text(tr!("下载失败"), error.as_deref()));
                 true
             }
         };
         if failed {
-            self.report_cloud_error("云存储连接异常", error.as_deref());
+            self.report_cloud_error(tr!("云存储连接异常"), error.as_deref());
             return;
         }
         let Some(local) = local_path else { return };
@@ -161,7 +162,7 @@ impl RunnerInner {
                 // 已落入用户素材目录，触发重新扫描
                 self.window_state.window.ui_mut().request_material_scan();
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
-                    Some("素材已导入素材库".to_string());
+                    Some(tr!("素材已导入素材库").to_string());
             }
             "lmpj" => {
                 // 工程归档（单文件 LMPJ）→ 自动加载到编辑器，并记录云端来源：
@@ -172,14 +173,14 @@ impl RunnerInner {
                 });
                 self.load_midi_file(path.to_path_buf());
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
-                    Some("已下载并导入工程".to_string());
+                    Some(tr!("已下载并导入工程").to_string());
             }
             "mid" | "midi" => {
                 self.load_midi_file(path.to_path_buf());
             }
             _ => {
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
-                    Some(format!("已下载到 {}", path.display()));
+                    Some(trf!("已下载到 {path}", path = path.display()));
             }
         }
         // 广播到已打开的设置/云对话框

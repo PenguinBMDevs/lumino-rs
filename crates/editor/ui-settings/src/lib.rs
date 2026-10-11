@@ -18,6 +18,7 @@ use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
 use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
+use lumino_core::tr;
 use lumino_extras::i18n::Language;
 use lumino_ui_core::{Element, Message, Theme, state::GpuCheckUiState, window};
 
@@ -289,7 +290,7 @@ fn render_content_area<'a>(
         7 => cloud_view(settings),
         8 => compatibility_view(settings),
         MENU_INDEX_ABOUT => about_view(settings, egg, echo),
-        _ => render_placeholder("设置内容区域").into(),
+        _ => render_placeholder(tr!("设置内容区域")).into(),
     };
 
     let scrollable_content = scrollable(content)
@@ -348,7 +349,7 @@ fn render_placeholder<'a>(
     content: &'a str,
 ) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
     column![
-        text("设置")
+        text(tr!("设置"))
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),

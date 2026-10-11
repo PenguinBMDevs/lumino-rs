@@ -4,6 +4,7 @@
 
 use iced_core::{Alignment, Length};
 use iced_widget::{column, row, text, text_input};
+use lumino_core::tr;
 use lumino_ui_core::{Message, Theme};
 
 use super::super::super::components::constants::{
@@ -76,7 +77,7 @@ pub(super) fn render_lgs_options<'a>(
     // 每键最大同音数：0=不限制，1..128 拖拽 + 自定义输入
     let lgs_voices = settings.synth.lgs_max_voices_per_key;
     let display_voices = if lgs_voices == 0 {
-        "不限制".to_string()
+        tr!("不限制").to_string()
     } else {
         lgs_voices.to_string()
     };

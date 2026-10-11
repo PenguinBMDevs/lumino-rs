@@ -16,6 +16,8 @@ use base64::engine::general_purpose::STANDARD;
 use rand::RngCore;
 use rand::rngs::OsRng;
 
+use lumino_core::{tr, trf};
+
 use crate::error::{CloudError, Result};
 
 /// 编译期内置 256 位密钥（"Lumino-Cloud-Key0123456789abcdef" 的十六进制字节）
@@ -30,20 +32,20 @@ const NONCE_LEN: usize = 12;
 /// 加密字符串，返回 `base64(nonce || ciphertext)`
 pub fn encrypt(plaintext: &str) -> Result<String> {
     let key = Key::<Aes256Gcm>::try_from(ENCRYPTION_KEY.as_slice())
-        .map_err(|e| CloudError::Crypto(format!("密钥长度无效: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("密钥长度无效: {e}", e = e)))?;
     let cipher = Aes256Gcm::new(&key);
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
     OsRng
         .try_fill_bytes(&mut nonce_bytes)
-        .map_err(|e| CloudError::Crypto(format!("生成随机 nonce 失败: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("生成随机 nonce 失败: {e}", e = e)))?;
 
     let nonce = Nonce::try_from(nonce_bytes.as_slice())
-        .map_err(|e| CloudError::Crypto(format!("nonce 长度无效: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("nonce 长度无效: {e}", e = e)))?;
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext.as_bytes())
-        .map_err(|e| CloudError::Crypto(format!("加密失败: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("加密失败: {e}", e = e)))?;
 
     let mut payload = Vec::with_capacity(NONCE_LEN + ciphertext.len());
     payload.extend_from_slice(&nonce_bytes);
@@ -55,23 +57,24 @@ pub fn encrypt(plaintext: &str) -> Result<String> {
 pub fn decrypt(encrypted: &str) -> Result<String> {
     let payload = STANDARD
         .decode(encrypted)
-        .map_err(|e| CloudError::Crypto(format!("密文 base64 解码失败: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("密文 base64 解码失败: {e}", e = e)))?;
     if payload.len() <= NONCE_LEN {
-        return Err(CloudError::Crypto("密文长度无效".into()));
+        return Err(CloudError::Crypto(tr!("密文长度无效").to_string()));
     }
 
     let (nonce_bytes, ciphertext) = payload.split_at(NONCE_LEN);
     let key = Key::<Aes256Gcm>::try_from(ENCRYPTION_KEY.as_slice())
-        .map_err(|e| CloudError::Crypto(format!("密钥长度无效: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("密钥长度无效: {e}", e = e)))?;
     let cipher = Aes256Gcm::new(&key);
     let nonce = Nonce::try_from(nonce_bytes)
-        .map_err(|e| CloudError::Crypto(format!("nonce 长度无效: {e}")))?;
+        .map_err(|e| CloudError::Crypto(trf!("nonce 长度无效: {e}", e = e)))?;
 
     let plaintext = cipher
         .decrypt(&nonce, ciphertext)
-        .map_err(|_| CloudError::Crypto("解密失败：密文损坏或密钥不匹配".into()))?;
+        .map_err(|_| CloudError::Crypto(tr!("解密失败：密文损坏或密钥不匹配").to_string()))?;
 
-    String::from_utf8(plaintext).map_err(|e| CloudError::Crypto(format!("解密结果非 UTF-8: {e}")))
+    String::from_utf8(plaintext)
+        .map_err(|e| CloudError::Crypto(trf!("解密结果非 UTF-8: {e}", e = e)))
 }
 
 #[cfg(test)]

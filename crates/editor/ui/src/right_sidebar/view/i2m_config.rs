@@ -1,12 +1,16 @@
 use super::*;
 
+use lumino_core::tr;
+
 /// 转换参数配置区：key 范围、目标高度、每像素 tick、颜色数、调色板算法
 pub(super) fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Element<'a> {
     let cfg = &right_sidebar.config;
 
-    // 调色板算法下拉（选项为中文名，选中后回传索引）
-    let palette_names: Vec<&'static str> =
-        PALETTE_ALGORITHMS.iter().map(|(name, _)| *name).collect();
+    // 调色板算法下拉（选项名按当前语言翻译，选中后回传索引）
+    let palette_names: Vec<&'static str> = palette_algorithms()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
     let palette_current = palette_names
         .get(cfg.palette_index)
         .copied()
@@ -15,7 +19,7 @@ pub(super) fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Eleme
         palette_names,
         Some(palette_current),
         |name: &'static str| {
-            let idx = PALETTE_ALGORITHMS
+            let idx = palette_algorithms()
                 .iter()
                 .position(|(n, _)| *n == name)
                 .unwrap_or(0);
@@ -28,9 +32,9 @@ pub(super) fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Eleme
 
     Column::new()
         .spacing(4)
-        .push(section_label("转换参数"))
+        .push(section_label(tr!("转换参数")))
         .push(config_row(
-            "Key 范围",
+            tr!("Key 范围"),
             Row::new()
                 .push(config_input(&cfg.start_key_text, I2mConfigField::StartKey))
                 .push(iced_widget::text("~").size(12).style(|theme: &Theme| {
@@ -44,18 +48,18 @@ pub(super) fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Eleme
                 .into(),
         ))
         .push(config_row(
-            "目标高度",
+            tr!("目标高度"),
             config_input(&cfg.target_height_text, I2mConfigField::TargetHeight),
         ))
         .push(config_row(
-            "每像素 tick",
+            tr!("每像素 tick"),
             config_input(&cfg.ticks_per_pixel_text, I2mConfigField::TicksPerPixel),
         ))
         .push(config_row(
-            "颜色数",
+            tr!("颜色数"),
             config_input(&cfg.color_count_text, I2mConfigField::ColorCount),
         ))
-        .push(config_row("调色板", palette_control.into()))
+        .push(config_row(tr!("调色板"), palette_control.into()))
         .into()
 }
 

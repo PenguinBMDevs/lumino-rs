@@ -20,6 +20,8 @@ use thiserror::Error;
 
 use std::path::PathBuf;
 
+use lumino_core::tr;
+
 use api::Kdmapi;
 use api::System;
 use api::XSynth;
@@ -112,7 +114,7 @@ pub trait Api: Send + Sync {
     ///
     /// 默认实现：不支持流恢复的后端返回错误，调用方应仅记录日志。
     fn recover_stream(&mut self) -> Result<(), String> {
-        Err("当前后端不支持音频流恢复".to_string())
+        Err(tr!("当前后端不支持音频流恢复").to_string())
     }
 }
 

@@ -4,6 +4,7 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{button, column, container, image, pick_list, row, space, text, text_input};
+use lumino_core::tr;
 
 use crate::message::{Message, VideoExportAction};
 use crate::view::widgets;
@@ -34,7 +35,7 @@ pub fn pick_list_row<'a, T: 'a + Clone + ToString + PartialEq>(
 
 /// 标题
 pub fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
-    text("视频导出")
+    text(tr!("视频导出"))
         .size(18)
         .font(lumino_ui_core::font::ui_font())
         .style(widgets::dialog_label_style(palette))
@@ -47,13 +48,13 @@ pub fn midi_source_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     let hint = if state.midi_path.is_empty() {
-        "优先使用当前工程的 MIDI 数据"
+        tr!("优先使用当前工程的 MIDI 数据")
     } else {
-        "使用指定 MIDI 文件流式读取"
+        tr!("使用指定 MIDI 文件流式读取")
     };
 
     column![
-        text("MIDI 数据源")
+        text(tr!("MIDI 数据源"))
             .size(16)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
@@ -68,7 +69,7 @@ pub fn midi_source_section<'a>(
             .width(Length::Fill)
             .style(widgets::dialog_input_style(palette)),
             space().width(8),
-            button(text("浏览...").size(14))
+            button(text(tr!("浏览...")).size(14))
                 .on_press(Message::VideoExport(VideoExportAction::BrowseMidi))
                 .padding([6, 16]),
         ]
@@ -89,14 +90,14 @@ pub fn output_path_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("导出位置")
+        text(tr!("导出位置"))
             .size(16)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(8),
         row![
             container(
-                text_input("选择输出路径...", &state.output_path)
+                text_input(tr!("选择输出路径..."), &state.output_path)
                     .on_input(|v| Message::VideoExport(VideoExportAction::OutputPathChanged(v)))
                     .padding([6, 10])
                     .width(Length::Fill),
@@ -104,7 +105,7 @@ pub fn output_path_section<'a>(
             .width(Length::Fill)
             .style(widgets::dialog_input_style(palette)),
             space().width(8),
-            button(text("浏览...").size(14))
+            button(text(tr!("浏览...")).size(14))
                 .on_press(Message::VideoExport(VideoExportAction::BrowseOutput))
                 .padding([6, 16]),
         ]
@@ -118,7 +119,7 @@ pub fn output_path_section<'a>(
 /// 关闭/导出按钮
 pub fn buttons_section(palette: &iced_core::theme::palette::Extended) -> crate::Element<'static> {
     row![
-        button(text("关闭").size(14))
+        button(text(tr!("关闭")).size(14))
             .on_press(Message::VideoExport(VideoExportAction::ClosePanel))
             .padding([8, 32])
             .width(Length::Fixed(100.0))
@@ -128,7 +129,7 @@ pub fn buttons_section(palette: &iced_core::theme::palette::Extended) -> crate::
                 palette.background.neutral.text,
             )),
         space().width(12),
-        button(text("开始导出").size(14))
+        button(text(tr!("开始导出")).size(14))
             .on_press(Message::VideoExport(VideoExportAction::StartExport))
             .padding([8, 32])
             .width(Length::Fixed(120.0))
@@ -179,7 +180,7 @@ pub(super) fn preview_area_empty<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     container(
-        text("等待渲染...")
+        text(tr!("等待渲染..."))
             .size(14)
             .style(widgets::dialog_muted_text_style(palette)),
     )

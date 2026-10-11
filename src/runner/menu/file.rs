@@ -17,6 +17,8 @@ mod save;
 mod save_flow;
 mod util;
 
+use lumino_core::tr;
+
 use crate::runner::RunnerInner;
 use crate::runner::inner::PendingCloseAction;
 
@@ -157,7 +159,7 @@ impl RunnerInner {
                         .as_ref()
                         .and_then(|p| p.file_stem())
                         .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "无标题".to_string())
+                        .unwrap_or_else(|| tr!("无标题").to_string())
                 } else {
                     saved_title
                 };

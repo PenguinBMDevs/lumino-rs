@@ -4,6 +4,8 @@
 //! sidebar 只即时更新 UI（标签/重排），真实数据改写在这里完成，保证
 //! 「选通道 → 播放/导出生效」而不是只改显示。
 
+use lumino_core::tr;
+
 use crate::root::Root;
 use crate::sidebar::Sidebar;
 
@@ -92,6 +94,6 @@ impl Root {
             .sort_by_key(|t| (t.port, t.channel, t.id));
         self.sync_track_visual_order();
         self.statusbar
-            .set_status_message(Some("通道修改未应用：文档不可用".to_string()));
+            .set_status_message(Some(tr!("通道修改未应用：文档不可用").to_string()));
     }
 }

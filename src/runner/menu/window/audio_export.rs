@@ -4,6 +4,7 @@ use crate::runner::RunnerInner;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
 use lumino_export::audio::codec::AudioCodec;
 use lumino_export::audio::config::{
     AudioBackendKind, AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode,
@@ -34,7 +35,7 @@ impl RunnerInner {
             self.window_state
                 .window
                 .ui_mut()
-                .set_status_message(Some("已有导出任务进行中，请等待完成".to_string()));
+                .set_status_message(Some(tr!("已有导出任务进行中，请等待完成").to_string()));
             return;
         }
 
@@ -186,7 +187,7 @@ impl RunnerInner {
         let backend_for_log = config.backend;
         // 立即发送初始进度，避免 UI 长时间停在 0% 无反馈（GPU 初始化可能耗时）
         let _ = progress_tx.send((
-            format!("正在初始化 {} 渲染...", backend_for_log),
+            trf!("正在初始化 {backend} 渲染...", backend = backend_for_log),
             0.0,
             0,
             0.0,
@@ -218,7 +219,8 @@ impl RunnerInner {
                                 lumino_export::audio::render_audio(&config)
                             } else {
                                 Err(lumino_export::ExportError::AudioWrite(
-                                    "内存文档为空且 MIDI 文件不存在，请先加载 MIDI 或检查 MIDI 路径".into(),
+                                    tr!("内存文档为空且 MIDI 文件不存在，请先加载 MIDI 或检查 MIDI 路径")
+                                        .to_string(),
                                 ))
                             }
                         } else {
@@ -243,7 +245,7 @@ impl RunnerInner {
                             output_path_display,
                         );
                         let _ = progress_tx_final.send((
-                            "导出完成".to_string(),
+                            tr!("导出完成").to_string(),
                             1.0,
                             0,
                             0.0,
@@ -255,7 +257,13 @@ impl RunnerInner {
                         if matches!(e, lumino_export::ExportError::Aborted) {
                             let _ = std::fs::remove_file(&output_path_display);
                             tracing::info!("音频导出已中止，已清理: {}", output_path_display);
-                            let _ = progress_tx_final.send(("已中止".to_string(), -1.0, 0, 0.0, 0.0));
+                            let _ = progress_tx_final.send((
+                                tr!("已中止").to_string(),
+                                -1.0,
+                                0,
+                                0.0,
+                                0.0,
+                            ));
                         } else {
                             tracing::error!("音频导出失败: {e}");
                             let _ = progress_tx_final

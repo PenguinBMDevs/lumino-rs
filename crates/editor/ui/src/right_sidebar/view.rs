@@ -14,7 +14,7 @@ use lumino_message::{I2mConfigField, RightSidebarAction};
 
 use crate::resources::icon::{self, Icon};
 use crate::right_sidebar::core::{
-    PALETTE_ALGORITHMS, RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar, RightSidebarPanel,
+    RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar, RightSidebarPanel, palette_algorithms,
 };
 use crate::widget;
 use crate::{Element, Message, Theme, window};

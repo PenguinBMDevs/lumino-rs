@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::channel;
 use std::time::Instant;
 
+use lumino_core::{tr, trf};
 use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
 use tokio::sync::mpsc::UnboundedSender;
@@ -82,7 +83,7 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
         Ok(r) => r,
         Err(e) => {
             tracing::error!("视频导出 MIDI 解析失败: {e}");
-            send_export_error(&progress_tx, format!("导出失败: {e}"));
+            send_export_error(&progress_tx, trf!("导出失败: {e}", e = e));
             return;
         }
     };
@@ -94,7 +95,7 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
         Ok(s) => s,
         Err(e) => {
             tracing::error!("视频导出打开流式数据源失败: {e}");
-            send_export_error(&progress_tx, format!("导出失败: {e}"));
+            send_export_error(&progress_tx, trf!("导出失败: {e}", e = e));
             return;
         }
     };
@@ -122,7 +123,7 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
         Ok(e) => e,
         Err(e) => {
             tracing::error!("FFmpeg 创建失败: {e}");
-            send_export_error(&progress_tx, format!("导出失败: {e}"));
+            send_export_error(&progress_tx, trf!("导出失败: {e}", e = e));
             return;
         }
     };
@@ -155,7 +156,7 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
                     Ok(v) => v,
                     Err(e) => {
                         tracing::error!("读取流式音符失败: {e}");
-                        send_export_error(&progress_tx, format!("导出失败: {e}"));
+                        send_export_error(&progress_tx, trf!("导出失败: {e}", e = e));
                         return true;
                     }
                 };
@@ -199,8 +200,13 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
                 .is_err()
             {
                 tracing::error!("发送 RenderVideoFrame 命令失败");
-                let _ =
-                    progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
+                let _ = progress_tx.send((
+                    tr!("导出失败：渲染线程通信错误").to_string(),
+                    -1.0,
+                    0,
+                    0.0,
+                    0.0,
+                ));
                 return true;
             }
             false

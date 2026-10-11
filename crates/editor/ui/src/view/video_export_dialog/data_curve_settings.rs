@@ -11,9 +11,12 @@
 use iced_core::{Alignment, Length};
 use iced_widget::{checkbox, column, container, pick_list, row, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::message::{Message, VideoExportAction};
 use crate::view::widgets;
 
+use super::localized_choice::LocalizedChoice;
 use super::state::VideoExportDialogState;
 
 /// 数据曲线设置区块（仅「数据曲线」渲染风格时显示）
@@ -22,7 +25,7 @@ pub fn data_curve_settings_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("数据曲线设置")
+        text(tr!("数据曲线设置"))
             .size(16)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
@@ -84,19 +87,28 @@ fn metric_section<'a>(
 
     column![
         row![
-            text("数据来源:").size(14).style(label_style).width(100),
+            text(tr!("数据来源:"))
+                .size(14)
+                .style(label_style)
+                .width(100),
+            // 注：下面四个选项值同时是 `state.dc_metric` 的取值，会在
+            // `root/handlers/dialog/video_export` 侧经 `parse_enum_or_log` 反解析为
+            // `DataCurveMetric` —— 属数据 key。状态里保持中文，
+            // `LocalizedChoice` 只本地化「显示」，回发 `v.0` 即原始数据值。
             pick_list(
                 vec![
-                    "NPS（每秒音符数）".to_string(),
-                    "复音数".to_string(),
-                    "累计音符数".to_string(),
-                    "BPM（速度）".to_string(),
+                    LocalizedChoice::new("NPS（每秒音符数）"),
+                    LocalizedChoice::new("复音数"),
+                    LocalizedChoice::new("累计音符数"),
+                    LocalizedChoice::new("BPM（速度）"),
                 ],
-                Some(state.dc_metric.clone()),
-                |v| Message::VideoExport(VideoExportAction::DataCurveTextChanged {
-                    field: "metric".to_string(),
-                    value: v,
-                }),
+                Some(LocalizedChoice::new(state.dc_metric.clone())),
+                |v: LocalizedChoice| {
+                    Message::VideoExport(VideoExportAction::DataCurveTextChanged {
+                        field: "metric".to_string(),
+                        value: v.0,
+                    })
+                },
             )
             .text_size(12)
             .width(Length::Fixed(180.0)),
@@ -104,7 +116,7 @@ fn metric_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("数据由 MIDI 统计状态按帧直传，无需外部文件")
+        text(tr!("数据由 MIDI 统计状态按帧直传，无需外部文件"))
             .size(11)
             .style(label_style),
     ]
@@ -123,11 +135,11 @@ fn curve_section<'a>(
     };
 
     column![
-        text("曲线参数").size(13).style(label_style),
+        text(tr!("曲线参数")).size(13).style(label_style),
         space().height(4),
         row![
             number_row(
-                "窗口时长(秒)",
+                tr!("窗口时长(秒)"),
                 &state.dc_graph_duration,
                 "graph_duration",
                 palette,
@@ -135,7 +147,7 @@ fn curve_section<'a>(
             ),
             space().width(8),
             number_row(
-                "缩放平滑",
+                tr!("缩放平滑"),
                 &state.dc_zoom_smoothness,
                 "zoom_smoothness",
                 palette,
@@ -146,7 +158,7 @@ fn curve_section<'a>(
         space().height(6),
         row![
             number_row(
-                "折线平滑",
+                tr!("折线平滑"),
                 &state.dc_graph_smoothness,
                 "graph_smoothness",
                 palette,
@@ -154,7 +166,7 @@ fn curve_section<'a>(
             ),
             space().width(8),
             number_row(
-                "纵轴 padding",
+                tr!("纵轴 padding"),
                 &state.dc_padding_mul,
                 "padding_mul",
                 palette,
@@ -163,7 +175,7 @@ fn curve_section<'a>(
         ]
         .spacing(0),
         space().height(4),
-        text("折线平滑=0 关闭；越大曲线越平滑但更趋直线")
+        text(tr!("折线平滑=0 关闭；越大曲线越平滑但更趋直线"))
             .size(11)
             .style(label_style),
     ]
@@ -182,11 +194,11 @@ fn text_section<'a>(
     };
 
     column![
-        text("文字与刻度").size(13).style(label_style),
+        text(tr!("文字与刻度")).size(13).style(label_style),
         space().height(4),
         row![
             number_row(
-                "X 偏移(px)",
+                tr!("X 偏移(px)"),
                 &state.dc_text_x_offset,
                 "text_x_offset",
                 palette,
@@ -194,7 +206,7 @@ fn text_section<'a>(
             ),
             space().width(8),
             number_row(
-                "Y 偏移(px)",
+                tr!("Y 偏移(px)"),
                 &state.dc_text_y_offset,
                 "text_y_offset",
                 palette,
@@ -205,7 +217,7 @@ fn text_section<'a>(
         space().height(6),
         row![
             number_row(
-                "里程碑放大",
+                tr!("里程碑放大"),
                 &state.dc_milestone_scale_mul,
                 "milestone_scale_mul",
                 palette,
@@ -213,7 +225,7 @@ fn text_section<'a>(
             ),
             space().width(8),
             number_row(
-                "缩写位数",
+                tr!("缩写位数"),
                 &state.dc_abbreviate_digits,
                 "abbreviate_digits",
                 palette,
@@ -223,7 +235,7 @@ fn text_section<'a>(
         .spacing(0),
         space().height(6),
         checkbox(state.dc_abbreviate)
-            .label("刻度数字缩写（1,000 → 1K）")
+            .label(tr!("刻度数字缩写（1,000 → 1K）"))
             .on_toggle(
                 |v| Message::VideoExport(VideoExportAction::DataCurveBoolChanged {
                     field: "abbreviate".to_string(),
@@ -233,7 +245,7 @@ fn text_section<'a>(
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         checkbox(state.dc_show_text)
-            .label("显示刻度文字")
+            .label(tr!("显示刻度文字"))
             .on_toggle(
                 |v| Message::VideoExport(VideoExportAction::DataCurveBoolChanged {
                     field: "show_text".to_string(),
@@ -243,7 +255,7 @@ fn text_section<'a>(
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         checkbox(state.dc_show_bars)
-            .label("显示水平网格线")
+            .label(tr!("显示水平网格线"))
             .on_toggle(
                 |v| Message::VideoExport(VideoExportAction::DataCurveBoolChanged {
                     field: "show_bars".to_string(),
@@ -252,9 +264,11 @@ fn text_section<'a>(
             )
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
-        text("里程碑 = 1,000 / 10,000 / 100,000 等整数次幂刻度，文字放大显示")
-            .size(11)
-            .style(label_style),
+        text(tr!(
+            "里程碑 = 1,000 / 10,000 / 100,000 等整数次幂刻度，文字放大显示"
+        ))
+        .size(11)
+        .style(label_style),
     ]
     .width(Length::Fill)
     .into()

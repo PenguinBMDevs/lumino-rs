@@ -9,6 +9,8 @@
 use iced_core::{Border, Length};
 use iced_widget::{button, column, container, row, scrollable, space, text};
 
+use lumino_core::tr;
+
 use crate::message::{Message, RecoverTrackAction};
 use crate::state::root_state::{RecoverTrackDialogState, RecoverTrackEntry};
 
@@ -34,23 +36,24 @@ pub fn view_recover_track_dialog<'a>(
     let row_selected_text = palette.primary.base.text;
     let border_color = palette.background.strong.color;
 
-    let title = text("找回删除音轨")
+    let title = text(tr!("找回删除音轨"))
         .size(18)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(text_color),
         });
 
-    let hint =
-        text("选中条目后点击「恢复」可还原至原位置；「永久删除」将销毁缓存文件并释放轨道编号。")
-            .size(12)
-            .style(move |_theme: &iced_core::Theme| text::Style {
-                color: Some(hint_color),
-            });
+    let hint = text(tr!(
+        "选中条目后点击「恢复」可还原至原位置；「永久删除」将销毁缓存文件并释放轨道编号。"
+    ))
+    .size(12)
+    .style(move |_theme: &iced_core::Theme| text::Style {
+        color: Some(hint_color),
+    });
 
     // 表头
     let header = row![
         container(
-            text("文件名")
+            text(tr!("文件名"))
                 .size(13)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(text_color),
@@ -60,7 +63,7 @@ pub fn view_recover_track_dialog<'a>(
         .align_x(iced_core::alignment::Horizontal::Left)
         .padding([6, 8]),
         container(
-            text("删除时间")
+            text(tr!("删除时间"))
                 .size(13)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(text_color),
@@ -70,7 +73,7 @@ pub fn view_recover_track_dialog<'a>(
         .align_x(iced_core::alignment::Horizontal::Left)
         .padding([6, 8]),
         container(
-            text("音符总数")
+            text(tr!("音符总数"))
                 .size(13)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(text_color),
@@ -100,7 +103,7 @@ pub fn view_recover_track_dialog<'a>(
     let mut list = column![].spacing(2);
     if state.entries.is_empty() {
         list = list.push(
-            container(text("暂无已删除的音轨缓存").size(13).style(
+            container(text(tr!("暂无已删除的音轨缓存")).size(13).style(
                 move |_theme: &iced_core::Theme| text::Style {
                     color: Some(hint_color),
                 },
@@ -207,7 +210,7 @@ pub fn view_recover_track_dialog<'a>(
         let entry = selected_entry;
         let enabled = can_act && entry.is_some();
         let mut btn = button(
-            text("恢复")
+            text(tr!("恢复"))
                 .size(14)
                 .width(Length::Fill)
                 .align_x(iced_core::alignment::Horizontal::Center)
@@ -255,7 +258,7 @@ pub fn view_recover_track_dialog<'a>(
         let entry = selected_entry;
         let enabled = can_act && entry.is_some();
         let mut btn = button(
-            text("永久删除")
+            text(tr!("永久删除"))
                 .size(14)
                 .width(Length::Fill)
                 .align_x(iced_core::alignment::Horizontal::Center)
@@ -302,7 +305,7 @@ pub fn view_recover_track_dialog<'a>(
     };
 
     let close_button = button(
-        text("关闭")
+        text(tr!("关闭"))
             .size(14)
             .width(Length::Fill)
             .align_x(iced_core::alignment::Horizontal::Center)

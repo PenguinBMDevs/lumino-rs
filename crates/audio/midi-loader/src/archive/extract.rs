@@ -10,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
+use lumino_core::tr;
+
 use crate::archive::{ArchiveEntry, ArchiveError, format::ArchiveFormat};
 
 // 子模块
@@ -42,7 +44,7 @@ pub fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
         ArchiveError::UnsupportedFormat(
             path.extension()
                 .and_then(|e| e.to_str())
-                .unwrap_or("未知")
+                .unwrap_or(tr!("未知"))
                 .to_string(),
         )
     })?;
@@ -79,7 +81,7 @@ pub fn extract_entry_data(path: &Path, entry_name: &str) -> Result<EntryData, Ar
         ArchiveError::UnsupportedFormat(
             path.extension()
                 .and_then(|e| e.to_str())
-                .unwrap_or("未知")
+                .unwrap_or(tr!("未知"))
                 .to_string(),
         )
     })?;
@@ -129,7 +131,7 @@ pub fn extract_all_to_dir(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>
         ArchiveError::UnsupportedFormat(
             path.extension()
                 .and_then(|e| e.to_str())
-                .unwrap_or("未知")
+                .unwrap_or(tr!("未知"))
                 .to_string(),
         )
     })?;

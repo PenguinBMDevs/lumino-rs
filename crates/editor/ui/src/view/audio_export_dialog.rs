@@ -64,6 +64,8 @@ pub fn view_audio_export_dialog<'a>(
 use iced_core::{Alignment, Length};
 use iced_widget::{checkbox, pick_list, row, text, text_input};
 
+use lumino_core::tr;
+
 use crate::message::{AudioExportAction, Message};
 use crate::state::root_state::{
     AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption,
@@ -87,9 +89,9 @@ fn audio_settings_section<'a>(
     let apply_limiter_cb = {
         let cb = checkbox(gpu || state.apply_limiter)
             .label(if gpu {
-                "启用限幅器（GPU 引擎始终限幅，此选项对 GPU 无效）"
+                tr!("启用限幅器（GPU 引擎始终限幅，此选项对 GPU 无效）")
             } else {
-                "启用限幅器（大复音防削波，会轻微影响响度，建议开启）"
+                tr!("启用限幅器（大复音防削波，会轻微影响响度，建议开启）")
             })
             .style(widgets::dialog_checkbox_style(palette));
         if gpu {
@@ -101,9 +103,9 @@ fn audio_settings_section<'a>(
     let disable_fade_cb = {
         let cb = checkbox(!gpu && state.disable_fade_out)
             .label(if gpu {
-                "禁用淡出（GPU 引擎固定 1ms 淡出，此选项对 GPU 无效）"
+                tr!("禁用淡出（GPU 引擎固定 1ms 淡出，此选项对 GPU 无效）")
             } else {
-                "禁用淡出（voice 被抢占时硬切，会产生咔哒声，不建议开启）"
+                tr!("禁用淡出（voice 被抢占时硬切，会产生咔哒声，不建议开启）")
             })
             .style(widgets::dialog_checkbox_style(palette));
         if gpu {
@@ -114,14 +116,17 @@ fn audio_settings_section<'a>(
     };
 
     column![
-        text("音频设置")
+        text(tr!("音频设置"))
             .size(18)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(12),
         // 渲染后端
         row![
-            text("渲染后端:").size(14).style(label_style).width(120),
+            text(tr!("渲染后端:"))
+                .size(14)
+                .style(label_style)
+                .width(120),
             pick_list(
                 vec![AudioBackend::Cpu, AudioBackend::Gpu],
                 Some(state.backend),
@@ -132,15 +137,20 @@ fn audio_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("CPU 兼容性最好；GPU 需 Vulkan/Metal，无适配器时自动回退到 CPU，速度提升 2-5 倍")
-            .size(11)
-            .style(move |_t: &iced_core::Theme| text::Style {
-                color: Some(palette.background.neutral.text.scale_alpha(0.7)),
-            }),
+        text(tr!(
+            "CPU 兼容性最好；GPU 需 Vulkan/Metal，无适配器时自动回退到 CPU，速度提升 2-5 倍"
+        ))
+        .size(11)
+        .style(move |_t: &iced_core::Theme| text::Style {
+            color: Some(palette.background.neutral.text.scale_alpha(0.7)),
+        }),
         space().height(12),
         // 输出格式
         row![
-            text("输出格式:").size(14).style(label_style).width(120),
+            text(tr!("输出格式:"))
+                .size(14)
+                .style(label_style)
+                .width(120),
             pick_list(
                 vec![
                     AudioFormat::WAV,
@@ -159,7 +169,7 @@ fn audio_settings_section<'a>(
         space().height(8),
         // 比特率
         row![
-            text("比特率 (kbps):")
+            text(tr!("比特率 (kbps):"))
                 .size(14)
                 .style(label_style)
                 .width(120),
@@ -171,7 +181,7 @@ fn audio_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("仅 MP3/Ogg 有效；WAV/FLAC 忽略此值")
+        text(tr!("仅 MP3/Ogg 有效；WAV/FLAC 忽略此值"))
             .size(11)
             .style(move |_t: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text.scale_alpha(0.6)),
@@ -179,7 +189,10 @@ fn audio_settings_section<'a>(
         space().height(8),
         // 采样率
         row![
-            text("采样率 (Hz):").size(14).style(label_style).width(120),
+            text(tr!("采样率 (Hz):"))
+                .size(14)
+                .style(label_style)
+                .width(120),
             pick_list(
                 vec![22050u32, 44100, 48000, 96000],
                 Some(state.sample_rate),
@@ -190,15 +203,17 @@ fn audio_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("MP3 最高 48000 Hz，FLAC 最高 384000 Hz，超出会自动报错")
-            .size(11)
-            .style(move |_t: &iced_core::Theme| text::Style {
-                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
-            }),
+        text(tr!(
+            "MP3 最高 48000 Hz，FLAC 最高 384000 Hz，超出会自动报错"
+        ))
+        .size(11)
+        .style(move |_t: &iced_core::Theme| text::Style {
+            color: Some(palette.background.neutral.text.scale_alpha(0.6)),
+        }),
         space().height(8),
         // 通道数
         row![
-            text("通道数:").size(14).style(label_style).width(120),
+            text(tr!("通道数:")).size(14).style(label_style).width(120),
             pick_list(
                 vec![AudioChannels::Mono, AudioChannels::Stereo],
                 Some(state.channels),
@@ -214,7 +229,7 @@ fn audio_settings_section<'a>(
         space().height(8),
         // 通道多线程（仅 CPU 有效）
         threading_row(
-            "通道多线程 (CPU):",
+            tr!("通道多线程 (CPU):"),
             state.channel_threading,
             |v| Message::AudioExport(AudioExportAction::ChannelThreadingChanged(v)),
             palette
@@ -222,7 +237,7 @@ fn audio_settings_section<'a>(
         space().height(8),
         // 按键多线程（仅 CPU 有效）
         threading_row(
-            "按键多线程 (CPU):",
+            tr!("按键多线程 (CPU):"),
             state.key_threading,
             |v| Message::AudioExport(AudioExportAction::KeyThreadingChanged(v)),
             palette
@@ -230,7 +245,10 @@ fn audio_settings_section<'a>(
         space().height(8),
         // 插值算法
         row![
-            text("插值算法:").size(14).style(label_style).width(120),
+            text(tr!("插值算法:"))
+                .size(14)
+                .style(label_style)
+                .width(120),
             pick_list(
                 vec![Interpolation::None, Interpolation::Linear],
                 Some(state.interpolation),
@@ -241,11 +259,13 @@ fn audio_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("无插值有混叠，线性为默认（GPU 固定线性，与 CPU 线性一致）")
-            .size(11)
-            .style(move |_t: &iced_core::Theme| text::Style {
-                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
-            }),
+        text(tr!(
+            "无插值有混叠，线性为默认（GPU 固定线性，与 CPU 线性一致）"
+        ))
+        .size(11)
+        .style(move |_t: &iced_core::Theme| text::Style {
+            color: Some(palette.background.neutral.text.scale_alpha(0.6)),
+        }),
         space().height(12),
         // 复选框（GPU 后端下前两项由引擎固定，见上方 gpu 分支）
         apply_limiter_cb,
@@ -253,7 +273,9 @@ fn audio_settings_section<'a>(
         disable_fade_cb,
         space().height(4),
         checkbox(state.linear_envelope)
-            .label("线性包络（CPU 衰减/释音用线性，GPU 默认线性，关闭则全指数）")
+            .label(tr!(
+                "线性包络（CPU 衰减/释音用线性，GPU 默认线性，关闭则全指数）"
+            ))
             .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
     ]
@@ -281,7 +303,7 @@ fn layers_row<'a>(
 
     let mut col = column![
         row![
-            text("每键复音 (0=不限):")
+            text(tr!("每键复音 (0=不限):"))
                 .size(14)
                 .style(label_style)
                 .width(120),
@@ -293,7 +315,7 @@ fn layers_row<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("每个键（通道+音高）最大同时发声数；0=不限（不推荐）。建议保持 32：实测同素材全曲 32 → 165s、0 → 59min（声部无限堆积，耗时与内存暴涨）。CPU 按 voice 计、GPU 按音符组计。")
+        text(tr!("每个键（通道+音高）最大同时发声数；0=不限（不推荐）。建议保持 32：实测同素材全曲 32 → 165s、0 → 59min（声部无限堆积，耗时与内存暴涨）。CPU 按 voice 计、GPU 按音符组计。"))
             .size(11)
             .style(hint_style),
     ];
@@ -302,7 +324,7 @@ fn layers_row<'a>(
         let warn_color = palette.danger.strong.color;
         col = col.push(space().height(4));
         col = col.push(
-            text("⚠ 已设为不限：密集素材下声部会无限堆积，渲染时间与内存会显著恶化——除非明确需要，建议改回 32。")
+            text(tr!("⚠ 已设为不限：密集素材下声部会无限堆积，渲染时间与内存会显著恶化——除非明确需要，建议改回 32。"))
                 .size(11)
                 .style(move |_t: &iced_core::Theme| text::Style {
                     color: Some(warn_color),

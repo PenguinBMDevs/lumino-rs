@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytemuck;
+use lumino_core::{tr, trf};
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, MidiMessage, TrackEventKind};
 use rayon::prelude::*;
@@ -90,20 +91,25 @@ pub fn parse_midi_to_cache(
     // ═══════════════════════════════════════════════════════════════════════
     // 阶段 1：读取 MIDI 文件 + 并行解析轨道（midi_bytes 在此作用域结束后释放）
     // ═══════════════════════════════════════════════════════════════════════
-    let _ = send_progress(&progress, "正在扫描 MIDI 头部信息...".to_string(), 0.02);
+    let _ = send_progress(
+        &progress,
+        tr!("正在扫描 MIDI 头部信息...").to_string(),
+        0.02,
+    );
 
     let (ppqn, scan_results) = {
         let midi_bytes =
-            std::fs::read(midi_path).map_err(|e| format!("读取 MIDI 文件失败: {e}"))?;
+            std::fs::read(midi_path).map_err(|e| trf!("读取 MIDI 文件失败: {e}", e = e))?;
 
-        let mmap_smf = MmapSmf::parse(&midi_bytes).map_err(|e| format!("MmapSmf 解析失败: {e}"))?;
+        let mmap_smf =
+            MmapSmf::parse(&midi_bytes).map_err(|e| trf!("MmapSmf 解析失败: {e}", e = e))?;
 
         let ppqn = match mmap_smf.header().timing {
             midly::Timing::Metrical(t) => u16::from(t) as u32,
             midly::Timing::Timecode(_, _) => 480,
         };
 
-        let _ = send_progress(&progress, "正在并行解析所有轨道...".to_string(), 0.05);
+        let _ = send_progress(&progress, tr!("正在并行解析所有轨道...").to_string(), 0.05);
 
         type ScanResult = (Vec<(u32, f32)>, Vec<(u32, u8, u8)>, u64, Vec<NoteRecord>);
         let scan_results: Vec<ScanResult> = mmap_smf
@@ -203,7 +209,7 @@ pub fn parse_midi_to_cache(
     // ═══════════════════════════════════════════════════════════════════════
     // 阶段 2：合并轨道数据 → 排序 → 写入硬盘缓存
     // ═══════════════════════════════════════════════════════════════════════
-    let _ = send_progress(&progress, "正在合并轨道数据...".to_string(), 0.65);
+    let _ = send_progress(&progress, tr!("正在合并轨道数据...").to_string(), 0.65);
 
     let mut tempo_changes: Vec<(u32, f32)> = Vec::new();
     let mut time_signatures: Vec<(u32, u8, u8)> = Vec::new();
@@ -251,25 +257,25 @@ pub fn parse_midi_to_cache(
     // 写入缓存文件
     {
         let note_file = std::fs::File::create(&note_cache_path)
-            .map_err(|e| format!("创建音符缓存文件失败: {e}"))?;
+            .map_err(|e| trf!("创建音符缓存文件失败: {e}", e = e))?;
         let mut note_writer = BufWriter::with_capacity(64 * 1024, note_file);
 
         note_writer
             .write_all(&(all_records.len() as u64).to_le_bytes())
-            .map_err(|e| format!("写入缓存 header 失败: {e}"))?;
+            .map_err(|e| trf!("写入缓存 header 失败: {e}", e = e))?;
 
         for record in &all_records {
             let bytes: [u8; NOTE_RECORD_SIZE] = bytemuck::cast(*record);
             note_writer
                 .write_all(&bytes)
-                .map_err(|e| format!("写入音符记录失败: {e}"))?;
+                .map_err(|e| trf!("写入音符记录失败: {e}", e = e))?;
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
     // 阶段 3：直接在内存中构建帧索引（无需重读缓存文件）
     // ═══════════════════════════════════════════════════════════════════════
-    let _ = send_progress(&progress, "正在构建帧索引...".to_string(), 0.75);
+    let _ = send_progress(&progress, tr!("正在构建帧索引...").to_string(), 0.75);
 
     let frame_index = build_frame_index(
         &all_records,
@@ -284,7 +290,7 @@ pub fn parse_midi_to_cache(
 
     // all_records 在此函数末尾自动释放
 
-    let _ = send_progress(&progress, "MIDI 缓存准备完成".to_string(), 1.0);
+    let _ = send_progress(&progress, tr!("MIDI 缓存准备完成").to_string(), 1.0);
 
     Ok(StreamingMidiResult {
         note_cache_path,

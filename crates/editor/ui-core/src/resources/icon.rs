@@ -18,16 +18,16 @@ pub use Icon::*;
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum IconError {
     /// 图标不在缓存中（至少需先加载一次）
-    #[error("图标 {0:?} 不在缓存中")]
+    #[error("{}: {:?}", lumino_core::i18n::tr("图标不在缓存中"), .0)]
     IconNotInCache(Icon),
     /// SVG 解析错误
-    #[error("SVG 解析错误: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("SVG 解析错误"), .0)]
     SvgParseError(String),
     /// 无法创建 pixmap
-    #[error("无法创建 pixmap")]
+    #[error("{}", lumino_core::i18n::tr("无法创建 pixmap"))]
     PixmapCreationError,
     /// 获取缓存锁失败
-    #[error("获取缓存锁失败")]
+    #[error("{}", lumino_core::i18n::tr("获取缓存锁失败"))]
     LockError,
 }
 

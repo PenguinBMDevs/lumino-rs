@@ -12,6 +12,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+lumino-core = { workspace = true }
 # crates.io
 suppaftp = { workspace = true }
 russh = { workspace = true }

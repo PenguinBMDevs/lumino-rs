@@ -8,6 +8,8 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use lumino_core::trf;
+
 use crate::archive::{ArchiveEntry, ArchiveError};
 
 // ── 内部辅助 ────────────────────────────────────────────────
@@ -17,14 +19,14 @@ fn list_from<R: Read>(archive: &mut tar::Archive<R>) -> Result<Vec<ArchiveEntry>
     let mut entries = Vec::new();
     let archive_entries = archive
         .entries()
-        .map_err(|e| ArchiveError::LibraryError(format!("tar 读取条目失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("tar 读取条目失败: {e}", e = e)))?;
 
     for entry in archive_entries {
         let entry =
-            entry.map_err(|e| ArchiveError::LibraryError(format!("tar 条目解析失败: {e}")))?;
+            entry.map_err(|e| ArchiveError::LibraryError(trf!("tar 条目解析失败: {e}", e = e)))?;
         let name = entry
             .path()
-            .map_err(|e| ArchiveError::LibraryError(format!("tar 路径解析失败: {e}")))?
+            .map_err(|e| ArchiveError::LibraryError(trf!("tar 路径解析失败: {e}", e = e)))?
             .to_string_lossy()
             .to_string();
         let is_dir = entry.header().entry_type().is_dir();
@@ -43,15 +45,15 @@ fn extract_from<R: Read>(
 
     let entries = archive
         .entries()
-        .map_err(|e| ArchiveError::LibraryError(format!("tar 读取条目失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("tar 读取条目失败: {e}", e = e)))?;
 
     for entry in entries {
         let mut entry =
-            entry.map_err(|e| ArchiveError::LibraryError(format!("tar 条目解析失败: {e}")))?;
+            entry.map_err(|e| ArchiveError::LibraryError(trf!("tar 条目解析失败: {e}", e = e)))?;
 
         let name = entry
             .path()
-            .map_err(|e| ArchiveError::LibraryError(format!("tar 路径解析失败: {e}")))?
+            .map_err(|e| ArchiveError::LibraryError(trf!("tar 路径解析失败: {e}", e = e)))?
             .to_string_lossy()
             .to_string();
         let normalized_name = name.replace('\\', "/");
@@ -62,7 +64,7 @@ fn extract_from<R: Read>(
             let mut entry_data = Vec::new();
             entry
                 .read_to_end(&mut entry_data)
-                .map_err(|e| ArchiveError::LibraryError(format!("tar 读取数据失败: {e}")))?;
+                .map_err(|e| ArchiveError::LibraryError(trf!("tar 读取数据失败: {e}", e = e)))?;
             return Ok(entry_data);
         }
     }
@@ -146,7 +148,7 @@ pub(super) fn extract_all(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>
     let mut archive = tar::Archive::new(file);
     archive
         .unpack(output_dir)
-        .map_err(|e| ArchiveError::LibraryError(format!("tar 解压失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("tar 解压失败: {e}", e = e)))?;
     let mut extracted = Vec::new();
     collect_files(output_dir, &mut extracted)?;
     Ok(extracted)
@@ -159,7 +161,7 @@ pub(super) fn extract_all_gz(path: &Path, output_dir: &Path) -> Result<Vec<PathB
     let mut archive = tar::Archive::new(decoder);
     archive
         .unpack(output_dir)
-        .map_err(|e| ArchiveError::LibraryError(format!("tar.gz 解压失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("tar.gz 解压失败: {e}", e = e)))?;
     let mut extracted = Vec::new();
     collect_files(output_dir, &mut extracted)?;
     Ok(extracted)
@@ -172,7 +174,7 @@ pub(super) fn extract_all_xz(path: &Path, output_dir: &Path) -> Result<Vec<PathB
     let mut archive = tar::Archive::new(decoder);
     archive
         .unpack(output_dir)
-        .map_err(|e| ArchiveError::LibraryError(format!("tar.xz 解压失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("tar.xz 解压失败: {e}", e = e)))?;
     let mut extracted = Vec::new();
     collect_files(output_dir, &mut extracted)?;
     Ok(extracted)

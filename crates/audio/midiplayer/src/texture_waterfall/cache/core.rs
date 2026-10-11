@@ -84,10 +84,15 @@ impl WaterfallCacheMeta {
 #[derive(Debug, Error)]
 pub enum WaterfallCacheError {
     /// IO 错误
-    #[error("IO 错误: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("IO 错误"), .0)]
     Io(#[from] std::io::Error),
     /// magic 标识不匹配
-    #[error("magic 不匹配: 期望 {expected:?}, 实际 {actual:?}")]
+    #[error(
+        "{}: expected {:?}, actual {:?}",
+        lumino_core::i18n::tr("magic 不匹配"),
+        .expected,
+        .actual
+    )]
     MagicMismatch {
         /// 期望的 magic 值
         expected: [u8; 8],
@@ -95,7 +100,12 @@ pub enum WaterfallCacheError {
         actual: [u8; 8],
     },
     /// 缓存版本不匹配
-    #[error("版本不匹配: 期望 {expected}, 实际 {actual}")]
+    #[error(
+        "{}: expected {}, actual {}",
+        lumino_core::i18n::tr("版本不匹配"),
+        .expected,
+        .actual
+    )]
     VersionMismatch {
         /// 期望的版本号
         expected: u16,
@@ -103,13 +113,13 @@ pub enum WaterfallCacheError {
         actual: u16,
     },
     /// 元数据序列化/反序列化失败
-    #[error("元数据序列化/反序列化失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("元数据序列化/反序列化失败"), .0)]
     MetaCodec(String),
     /// 像素压缩/解压失败
-    #[error("像素压缩/解压失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("像素压缩/解压失败"), .0)]
     PixelCodec(String),
     /// 规格不匹配（缓存失效）
-    #[error("规格不匹配（缓存失效）: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("规格不匹配（缓存失效）"), .0)]
     SpecMismatch(String),
 }
 

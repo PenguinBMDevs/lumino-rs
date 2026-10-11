@@ -3,6 +3,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use lumino_core::{tr, trf};
+
 use super::render::render_test;
 use super::report::{
     GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, required_backend, required_backend_name,
@@ -66,8 +68,9 @@ pub fn run_check_with_timeout(timeout: Duration, when: FallbackDiagnostics) -> G
         });
     if let Err(e) = spawn_result {
         tracing::error!("GPU 检测线程创建失败: {e}");
-        return GpuCheckReport::failed(GpuCheckFailure::RenderError(format!(
-            "检测线程创建失败: {e}"
+        return GpuCheckReport::failed(GpuCheckFailure::RenderError(trf!(
+            "检测线程创建失败: {e}",
+            e = e
         )));
     }
 
@@ -81,7 +84,9 @@ pub fn run_check_with_timeout(timeout: Duration, when: FallbackDiagnostics) -> G
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
             tracing::error!("GPU 检测线程意外退出（可能 panic）");
-            GpuCheckReport::failed(GpuCheckFailure::RenderError("检测线程意外退出".to_string()))
+            GpuCheckReport::failed(GpuCheckFailure::RenderError(
+                tr!("检测线程意外退出").to_string(),
+            ))
         }
     }
 }
@@ -106,7 +111,7 @@ fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
     if debug_force_fail_requested() {
         tracing::warn!("LUMINO_FORCE_DEVICE_CHECK_FAIL 已设置，强制返回失败报告");
         let mut report = GpuCheckReport::failed(GpuCheckFailure::RenderError(
-            "调试开关 LUMINO_FORCE_DEVICE_CHECK_FAIL 强制失败".to_string(),
+            tr!("调试开关 LUMINO_FORCE_DEVICE_CHECK_FAIL 强制失败").to_string(),
         ));
         report.duration_ms = started.elapsed().as_millis() as u64;
         return report;
@@ -395,5 +400,5 @@ fn captured_error(errors: &Arc<Mutex<Vec<String>>>) -> Option<String> {
         .lock()
         .ok()
         .filter(|list| !list.is_empty())
-        .map(|list| format!("渲染期间出现 wgpu 错误: {}", list.join("; ")))
+        .map(|list| trf!("渲染期间出现 wgpu 错误: {errors}", errors = list.join("; ")))
 }

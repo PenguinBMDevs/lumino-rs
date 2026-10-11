@@ -9,7 +9,7 @@ mod redraw;
 
 use std::sync::Arc;
 
-use lumino_core::storage::config::UiConfig;
+use lumino_core::{storage::config::UiConfig, tr};
 use lumino_ui::host::DialogResult;
 use lumino_ui::state::root_state::DialogType;
 use winit::{
@@ -52,23 +52,23 @@ impl DialogWindow {
         puffin::profile_scope!("dialog_init_phase_window");
         let (width, height, title, resizable) = match dialog_type {
             DialogType::None => unreachable!("不会创建 None 类型的对话框"),
-            DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合", false),
-            DialogType::Collaboration => (800.0, 600.0, "多人协作", false),
-            DialogType::LoadConfirm => (420.0, 260.0, "加载大文件", false),
-            DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
-            DialogType::Settings => (720.0, 540.0, "设置", true),
-            DialogType::SpeedChange => (400.0, 250.0, "变速", false),
-            DialogType::BatchEdit => (420.0, 640.0, "批量编辑", true),
-            DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
-            DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
-            DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
-            DialogType::RecoverTrack => (560.0, 770.0, "找回删除音轨", true),
+            DialogType::CustomPrecision => (480.0, 180.0, tr!("自定义贴合"), false),
+            DialogType::Collaboration => (800.0, 600.0, tr!("多人协作"), false),
+            DialogType::LoadConfirm => (420.0, 260.0, tr!("加载大文件"), false),
+            DialogType::ProjectSettings => (450.0, 480.0, tr!("工程设置"), true),
+            DialogType::Settings => (720.0, 540.0, tr!("设置"), true),
+            DialogType::SpeedChange => (400.0, 250.0, tr!("变速"), false),
+            DialogType::BatchEdit => (420.0, 640.0, tr!("批量编辑"), true),
+            DialogType::ExportProgress => (400.0, 200.0, tr!("音频导出"), false),
+            DialogType::VideoExport => (520.0, 560.0, tr!("视频导出"), false),
+            DialogType::MemoryMonitor => (300.0, 440.0, tr!("内存占用详情"), false),
+            DialogType::RecoverTrack => (560.0, 770.0, tr!("找回删除音轨"), true),
             DialogType::SaveConfirm => (380.0, 180.0, "Lumino", false),
-            DialogType::CloudConnect => (480.0, 515.0, "连接云存储", false),
-            DialogType::CloudBrowser => (720.0, 520.0, "云存储文件", true),
-            DialogType::CloudNotice => (440.0, 200.0, "云存储提醒", false),
-            DialogType::BrushSettings => (480.0, 600.0, "画刷绘制行为", false),
-            DialogType::DrawSettings => (460.0, 420.0, "音符画设置", false),
+            DialogType::CloudConnect => (480.0, 515.0, tr!("连接云存储"), false),
+            DialogType::CloudBrowser => (720.0, 520.0, tr!("云存储文件"), true),
+            DialogType::CloudNotice => (440.0, 200.0, tr!("云存储提醒"), false),
+            DialogType::BrushSettings => (480.0, 600.0, tr!("画刷绘制行为"), false),
+            DialogType::DrawSettings => (460.0, 420.0, tr!("音符画设置"), false),
         };
 
         let mut attributes = WindowAttributes::default()

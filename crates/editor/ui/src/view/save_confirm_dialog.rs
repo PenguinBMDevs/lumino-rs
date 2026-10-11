@@ -6,6 +6,8 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};
 
+use lumino_core::tr;
+
 use crate::message::{Message, SaveConfirmAction};
 use crate::state::root_state::SaveConfirmDialogState;
 
@@ -17,15 +19,16 @@ pub fn view_save_confirm_dialog<'a>(
     let palette = theme.extended_palette();
 
     // 居中提示文字
-    let prompt = text("是否保留未保存的更改？")
-        .size(16)
-        .style(move |_t: &iced_core::Theme| text::Style {
-            color: Some(palette.background.neutral.text),
-        });
+    let prompt =
+        text(tr!("是否保留未保存的更改？"))
+            .size(16)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text),
+            });
 
     // 按钮区域：保存（主）/ 关闭（次）/ 取消（次）
     let buttons = row![
-        button(text("保存").size(14))
+        button(text(tr!("保存")).size(14))
             .on_press(Message::SaveConfirm(SaveConfirmAction::Save))
             .padding([8, 28])
             .width(Length::Fixed(90.0))
@@ -48,7 +51,7 @@ pub fn view_save_confirm_dialog<'a>(
             }),
         space().width(10),
         button(
-            text("关闭")
+            text(tr!("关闭"))
                 .size(14)
                 .style(move |_t: &iced_core::Theme| text::Style {
                     color: Some(palette.background.neutral.text),
@@ -76,7 +79,7 @@ pub fn view_save_confirm_dialog<'a>(
         }),
         space().width(10),
         button(
-            text("取消")
+            text(tr!("取消"))
                 .size(14)
                 .style(move |_t: &iced_core::Theme| text::Style {
                     color: Some(palette.background.neutral.text),

@@ -6,6 +6,7 @@
 use iced_core::{Alignment, Length};
 use iced_widget::{Space, button, column, container, pick_list, row, text, text_input};
 
+use lumino_core::{tr, trf};
 use lumino_message::{CloudAction, CloudProtocolUi};
 
 use crate::root::Root;
@@ -14,7 +15,9 @@ use crate::state::root_state::DialogType;
 use crate::{Element, Message, Theme};
 
 /// 隐私提示（需求 8：明示本地存储）
-const PRIVACY_HINT: &str = "Lumino 无权且不会收集您的个人信息，所有信息将会存储在本地";
+fn privacy_hint() -> &'static str {
+    tr!("Lumino 无权且不会收集您的个人信息，所有信息将会存储在本地")
+}
 
 /// 渲染云存储对话框（按 dialog_type 区分连接面板与文件浏览面板）
 pub fn view_cloud_dialog<'a>(root: &'a Root, theme: &Theme) -> Element<'a> {
@@ -27,16 +30,19 @@ pub fn view_cloud_dialog<'a>(root: &'a Root, theme: &Theme) -> Element<'a> {
 
 /// 断连/失败提醒面板（每次会话只弹一次，之后仅设置面板显示标志）
 fn view_cloud_notice<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a> {
-    let message = state.alert_message.as_deref().unwrap_or("云存储连接异常");
+    let message = state
+        .alert_message
+        .as_deref()
+        .unwrap_or(tr!("云存储连接异常"));
 
     container(
         column![
-            text("云存储提醒").size(16),
+            text(tr!("云存储提醒")).size(16),
             text(message).size(13).style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().background.base.text),
             }),
             row![
-                button(text("知道了").size(13))
+                button(text(tr!("知道了")).size(13))
                     .padding([6, 20])
                     .on_press(Message::Cloud(CloudAction::DismissAlert)),
             ]
@@ -66,34 +72,34 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
 
     let form = column![
         label_row(
-            "协议",
+            tr!("协议"),
             pick_list(protocols, Some(state.protocol), |p| {
                 Message::Cloud(CloudAction::ProtocolSelected(p))
             })
         ),
         label_row(
-            "名称（可选）",
-            text_input("例如：我的 NAS", &state.name)
+            tr!("名称（可选）"),
+            text_input(tr!("例如：我的 NAS"), &state.name)
                 .on_input(|s| Message::Cloud(CloudAction::NameChanged(s)))
         ),
         label_row(
-            "服务器地址",
+            tr!("服务器地址"),
             text_input("host.example.com", &state.address)
                 .on_input(|s| Message::Cloud(CloudAction::AddressChanged(s)))
         ),
         label_row(
-            "端口（可选）",
-            text_input("留空使用默认端口", &state.port)
+            tr!("端口（可选）"),
+            text_input(tr!("留空使用默认端口"), &state.port)
                 .on_input(|s| Message::Cloud(CloudAction::PortChanged(s)))
         ),
         label_row(
-            "用户名",
-            text_input("用户名", &state.username)
+            tr!("用户名"),
+            text_input(tr!("用户名"), &state.username)
                 .on_input(|s| Message::Cloud(CloudAction::UsernameChanged(s)))
         ),
         label_row(
-            "密码（可选）",
-            text_input("密码", &state.password)
+            tr!("密码（可选）"),
+            text_input(tr!("密码"), &state.password)
                 .on_input(|s| Message::Cloud(CloudAction::PasswordChanged(s)))
         ),
     ]
@@ -104,7 +110,7 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
         .connect_error
         .as_deref()
         .map(|e| {
-            text(format!("连接失败：{e}"))
+            text(trf!("连接失败：{e}", e = e))
                 .size(13)
                 .style(|theme: &Theme| text::Style {
                     color: Some(theme.extended_palette().danger.base.color),
@@ -114,9 +120,9 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
         .unwrap_or_else(|| Space::new().height(4).into());
     let connect_btn = button(
         text(if state.connecting {
-            "连接中..."
+            tr!("连接中...")
         } else {
-            "连接"
+            tr!("连接")
         })
         .size(14),
     )
@@ -142,7 +148,7 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
     })
     .on_press(Message::Cloud(CloudAction::Connect));
 
-    let cancel_btn = button(text("取消").size(14))
+    let cancel_btn = button(text(tr!("取消")).size(14))
         .padding([8, 20])
         .style(|theme: &Theme, _status| button::Style {
             background: Some(iced_core::Background::Color(
@@ -154,11 +160,11 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
 
     container(
         column![
-            text("连接云存储").size(18),
+            text(tr!("连接云存储")).size(18),
             form,
             error_hint,
             // 隐私提示（需求 8）：显式跟随主题色，保证深色/浅色主题下均可读
-            text(PRIVACY_HINT)
+            text(privacy_hint())
                 .size(12)
                 .style(|theme: &Theme| text::Style {
                     color: Some(theme.palette().text),

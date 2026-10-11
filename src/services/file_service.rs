@@ -1,3 +1,4 @@
+use lumino_core::{tr, trf};
 use lumino_midi_loader::loader::ProgressCallback;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -57,15 +58,15 @@ impl FileService {
     /// 保存为 MIDI 文件
     pub async fn save_as_midi(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
         self.run_blocking_task(
-            "准备导出 MIDI 文件",
-            "正在导出 MIDI 文件",
-            "MIDI 导出成功",
-            "MIDI 导出成功",
+            tr!("准备导出 MIDI 文件"),
+            tr!("正在导出 MIDI 文件"),
+            tr!("MIDI 导出成功"),
+            tr!("MIDI 导出成功"),
             move |cb| {
                 let bytes = lumino_export::export_midi_from_parsed_midi_sync(&source_path)
                     .map_err(|e| e.to_string())?;
-                cb("正在写入文件", 0.8);
-                std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
+                cb(tr!("正在写入文件"), 0.8);
+                std::fs::write(&path, bytes).map_err(|e| trf!("写入文件失败: {e}", e = e))
             },
         )
         .await

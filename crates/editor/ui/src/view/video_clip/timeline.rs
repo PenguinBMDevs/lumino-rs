@@ -5,6 +5,7 @@
 
 use iced_core::Length;
 use iced_widget::{column, container, row, text};
+use lumino_core::{tr, trf};
 use lumino_ui_core::state::video_clip_state::{ClipTrackEdit, VideoClipState};
 
 use crate::Theme;
@@ -183,16 +184,18 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
         column![
             // 标题行：独立传输按钮 + 时长/位置信息
             row![
-                text("剪辑带")
+                text(tr!("剪辑带"))
                     .size(12)
                     .style(move |_t: &Theme| text::Style {
                         color: Some(strong_text)
                     }),
                 rewind_btn,
                 play_btn,
-                text(format!(
-                    "时长 {:.1}s  位置 {:.1}s  缩放 {:.1}x   空格 播放/暂停",
-                    duration_secs, params.playhead_secs, params.clip.zoom
+                text(trf!(
+                    "时长 {dur}s  位置 {pos}s  缩放 {zoom}x   空格 播放/暂停",
+                    dur = format!("{:.1}", duration_secs),
+                    pos = format!("{:.1}", params.playhead_secs),
+                    zoom = format!("{:.1}", params.clip.zoom)
                 ))
                 .size(11)
                 .style(move |_t: &Theme| text::Style {

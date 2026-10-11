@@ -355,8 +355,10 @@ impl CollaborationService {
                 std::thread::spawn(move || {
                     #[cfg(not(test))]
                     {
+                        use lumino_core::tr;
+
                         let _ = rfd::MessageDialog::new()
-                            .set_title("协作通知")
+                            .set_title(tr!("协作通知"))
                             .set_description(&_msg)
                             .set_level(rfd::MessageLevel::Warning)
                             .show();

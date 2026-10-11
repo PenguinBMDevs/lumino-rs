@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::tr;
+
 // 音轨标签格式同 yinhe：{通道字母}{通道号+1:02}，音轨始终按原始序号排列。
 // 通道字母 ch0=A, ch1=B, ..., ch15=P，通道号 1-16（零填充两位数）。
 
@@ -16,8 +18,8 @@ pub enum TrackAddBehavior {
 impl std::fmt::Display for TrackAddBehavior {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TrackAddBehavior::AutoSwitch => write!(f, "自动跳转到新音轨"),
-            TrackAddBehavior::StayCurrent => write!(f, "保持当前音轨"),
+            TrackAddBehavior::AutoSwitch => write!(f, "{}", tr!("自动跳转到新音轨")),
+            TrackAddBehavior::StayCurrent => write!(f, "{}", tr!("保持当前音轨")),
         }
     }
 }
@@ -49,8 +51,8 @@ pub enum SelectionBoxMode {
 impl std::fmt::Display for SelectionBoxMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SelectionBoxMode::Spring => write!(f, "弹簧动画"),
-            SelectionBoxMode::Direct => write!(f, "直接跟随"),
+            SelectionBoxMode::Spring => write!(f, "{}", tr!("弹簧动画")),
+            SelectionBoxMode::Direct => write!(f, "{}", tr!("直接跟随")),
         }
     }
 }
@@ -68,8 +70,8 @@ pub enum EraserBehavior {
 impl std::fmt::Display for EraserBehavior {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EraserBehavior::Default => write!(f, "默认 (Shift+拖动框选)"),
-            EraserBehavior::DirectSelect => write!(f, "直接框选 (无需Shift)"),
+            EraserBehavior::Default => write!(f, "{}", tr!("默认 (Shift+拖动框选)")),
+            EraserBehavior::DirectSelect => write!(f, "{}", tr!("直接框选 (无需Shift)")),
         }
     }
 }
@@ -87,8 +89,8 @@ pub enum NoteCountDisplay {
 impl std::fmt::Display for NoteCountDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NoteCountDisplay::ProjectSettings => write!(f, "工程设置面板"),
-            NoteCountDisplay::StatusBar => write!(f, "下边栏"),
+            NoteCountDisplay::ProjectSettings => write!(f, "{}", tr!("工程设置面板")),
+            NoteCountDisplay::StatusBar => write!(f, "{}", tr!("下边栏")),
         }
     }
 }
@@ -96,9 +98,10 @@ impl std::fmt::Display for NoteCountDisplay {
 impl std::fmt::Display for SynthBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SynthBackend::XSynth => write!(f, "XSynth (内置)"),
+            SynthBackend::XSynth => write!(f, "{}", tr!("XSynth (内置)")),
+            // KDMAPI / LGS (GPU) 为专有名词，两种语言写法相同
             SynthBackend::Kdmapi => write!(f, "KDMAPI"),
-            SynthBackend::System => write!(f, "系统 MIDI"),
+            SynthBackend::System => write!(f, "{}", tr!("系统 MIDI")),
             SynthBackend::Lgs => write!(f, "LGS (GPU)"),
         }
     }

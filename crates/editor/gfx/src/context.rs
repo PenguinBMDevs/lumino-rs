@@ -150,19 +150,19 @@ async fn init_shared_gpu(
 #[derive(Error, Debug)]
 pub enum ContextError {
     /// 创建 `wgpu::Surface` 失败
-    #[error("创建 surface 失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("创建 surface 失败"), .0)]
     SurfaceCreation(String),
     /// 创建 `wgpu::Adapter` 失败
-    #[error("创建 adapter 失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("创建 adapter 失败"), .0)]
     AdapterCreation(String),
     /// 未找到可用的 preferred format
-    #[error("获取 preferred format 失败")]
+    #[error("{}", lumino_core::i18n::tr("获取 preferred format 失败"))]
     PreferredFormatNotFound,
     /// 请求 `wgpu::Device` 失败
-    #[error("请求 device 失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("请求 device 失败"), .0)]
     DeviceRequest(String),
     /// 获取交换链帧失败（含 `wgpu::SurfaceError`）
-    #[error("获取帧失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("获取帧失败"), .0)]
     FrameAcquisition(#[from] wgpu::SurfaceError),
 }
 

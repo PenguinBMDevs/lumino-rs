@@ -3,6 +3,8 @@
 //! 报告是检查核心与调用方（runner / 设置页）之间唯一的数据契约：
 //! 检查核心只产出报告，弹窗、持久化与文案选择均由调用方决定。
 
+use lumino_core::{tr, trf};
+
 /// 单个 GPU 适配器的诊断摘要（供设置页展示与复制）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpuAdapterSummary {
@@ -40,9 +42,13 @@ impl GpuAdapterSummary {
 
     /// 单行描述（日志与设置页展示用）
     pub fn describe(&self) -> String {
-        format!(
-            "{} [{}] {} · 驱动 {} {}",
-            self.name, self.backend, self.device_type, self.driver, self.driver_info
+        trf!(
+            "{name} [{backend}] {device_type} · 驱动 {driver} {driver_info}",
+            name = self.name,
+            backend = self.backend,
+            device_type = self.device_type,
+            driver = self.driver,
+            driver_info = self.driver_info
         )
     }
 }
@@ -63,10 +69,10 @@ pub enum GpuCheckFailure {
 impl std::fmt::Display for GpuCheckFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoAdapter => write!(f, "未找到适配器"),
-            Self::DeviceRequest(e) => write!(f, "设备请求失败: {e}"),
-            Self::RenderError(e) => write!(f, "渲染执行失败: {e}"),
-            Self::Timeout => write!(f, "检测超时"),
+            Self::NoAdapter => write!(f, "{}", tr!("未找到适配器")),
+            Self::DeviceRequest(e) => write!(f, "{}: {e}", tr!("设备请求失败")),
+            Self::RenderError(e) => write!(f, "{}: {e}", tr!("渲染执行失败")),
+            Self::Timeout => write!(f, "{}", tr!("检测超时")),
         }
     }
 }
@@ -107,16 +113,20 @@ impl GpuCheckReport {
     /// 汇总诊断文本（日志 / 设置页结果 / 复制诊断信息）
     pub fn detail(&self) -> String {
         let mut out = if self.passed {
-            format!("{} 兼容性检测通过", self.required_backend)
+            trf!("{backend} 兼容性检测通过", backend = self.required_backend)
         } else {
             match &self.failure {
-                Some(failure) => format!("{} 兼容性检测失败: {failure}", self.required_backend),
-                None => format!("{} 兼容性检测失败", self.required_backend),
+                Some(failure) => trf!(
+                    "{backend} 兼容性检测失败: {failure}",
+                    backend = self.required_backend,
+                    failure = failure
+                ),
+                None => trf!("{backend} 兼容性检测失败", backend = self.required_backend),
             }
         };
-        out.push_str(&format!("（耗时 {}ms）", self.duration_ms));
+        out.push_str(&trf!("（耗时 {ms}ms）", ms = self.duration_ms));
         if let Some(fingerprint) = &self.fingerprint {
-            out.push_str(&format!("\n指纹: {fingerprint}"));
+            out.push_str(&trf!("\n指纹: {fingerprint}", fingerprint = fingerprint));
         }
         for adapter in &self.adapters {
             out.push_str(&format!(
@@ -126,7 +136,7 @@ impl GpuCheckReport {
             ));
         }
         if !self.fallback_adapters.is_empty() {
-            out.push_str("\n其他可用后端（回退参考）:");
+            out.push_str(tr!("\n其他可用后端（回退参考）:"));
             for adapter in &self.fallback_adapters {
                 out.push_str(&format!("\n· {}", adapter.describe()));
             }

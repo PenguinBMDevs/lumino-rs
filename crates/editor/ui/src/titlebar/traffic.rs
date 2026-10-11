@@ -1,6 +1,8 @@
 use iced_core::{Border, Color, Length};
 use iced_widget::{button, container, row};
 
+use lumino_core::tr;
+
 use crate::widget;
 use crate::{Element, Theme, resources::icon, window};
 
@@ -9,7 +11,6 @@ struct TrafficConfig {
     icon: TrafficIcon,
     color: Option<Color>,
     action: window::TrafficAction,
-    tooltip: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,7 +27,6 @@ const TRAFFICS: &[TrafficConfig] = &[
         icon: TrafficIcon::Static(icon::WindowMin),
         color: None,
         action: window::TrafficAction::Minimize,
-        tooltip: "最小化",
     },
     TrafficConfig {
         icon: TrafficIcon::Toggle {
@@ -35,15 +35,22 @@ const TRAFFICS: &[TrafficConfig] = &[
         },
         color: None,
         action: window::TrafficAction::ToggleMaximize,
-        tooltip: "最大化",
     },
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowClose),
         color: Some(Color::from_rgb8(196, 43, 28)),
         action: window::TrafficAction::Close,
-        tooltip: "关闭",
     },
 ];
+
+/// 红绿灯按钮的 tooltip 文案（按当前界面语言取词；`const` 表里调不了 `tr!`）
+fn traffic_tooltip(action: &window::TrafficAction) -> &'static str {
+    match action {
+        window::TrafficAction::Minimize => tr!("最小化"),
+        window::TrafficAction::ToggleMaximize => tr!("最大化"),
+        window::TrafficAction::Close => tr!("关闭"),
+    }
+}
 
 pub fn view<'a>(window: &'a window::Window) -> Element<'a> {
     let items = TRAFFICS
@@ -110,9 +117,9 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
     // 最大化时修改 tooltip 文本
     let tooltip_text = if cfg.action == window::TrafficAction::ToggleMaximize && window.is_maximized
     {
-        "还原"
+        tr!("还原")
     } else {
-        cfg.tooltip
+        traffic_tooltip(&cfg.action)
     };
 
     widget::with_tooltip_bottom(btn, tooltip_text).into()

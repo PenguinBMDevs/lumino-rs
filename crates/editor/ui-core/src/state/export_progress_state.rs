@@ -1,5 +1,7 @@
 //! 音频导出进度对话框状态
 
+use lumino_core::{tr, trf};
+
 /// 音频导出进度对话框状态
 #[derive(Debug, Clone)]
 pub struct ExportProgressDialogState {
@@ -46,13 +48,13 @@ impl ExportProgressDialogState {
     pub fn set_completed(&mut self) {
         self.is_completed = true;
         self.progress = 1.0;
-        self.message = "导出完成".to_string();
+        self.message = tr!("导出完成").to_string();
     }
 
     /// 标记错误
     pub fn set_error(&mut self, error: String) {
         self.error = Some(error.clone());
-        self.message = format!("导出失败: {}", error);
+        self.message = trf!("导出失败: {error}", error = error);
     }
 }
 

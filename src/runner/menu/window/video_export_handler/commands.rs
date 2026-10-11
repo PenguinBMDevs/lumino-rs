@@ -2,6 +2,7 @@
 
 use std::sync::mpsc::{Receiver, Sender};
 
+use lumino_core::{tr, trf};
 use lumino_export::video::FfmpegEncoder;
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
 use tokio::sync::mpsc::UnboundedSender;
@@ -41,7 +42,7 @@ pub(super) fn send_initial_render_commands(
         .is_err()
     {
         tracing::error!("发送 StartVideoExport 命令失败");
-        send_export_error(progress_tx, "导出失败：渲染线程通信错误");
+        send_export_error(progress_tx, tr!("导出失败：渲染线程通信错误"));
         return true;
     }
 
@@ -76,7 +77,7 @@ pub(super) fn finalize_video_export(
     send_finish_render_command(cmd_sender);
     if !cancelled {
         let _ = progress_tx.send((
-            "导出完成".to_string(),
+            tr!("导出完成").to_string(),
             1.0,
             total_frames,
             smoothed_fps,
@@ -84,7 +85,7 @@ pub(super) fn finalize_video_export(
         ));
     } else {
         let _ = progress_tx.send((
-            "导出已取消".to_string(),
+            tr!("导出已取消").to_string(),
             1.0,
             total_frames,
             smoothed_fps,
@@ -93,6 +94,6 @@ pub(super) fn finalize_video_export(
     }
     if let Err(e) = encoder.finish() {
         tracing::error!("FFmpeg 收尾失败: {e}");
-        send_export_error(progress_tx, format!("导出失败: {e}"));
+        send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
     }
 }

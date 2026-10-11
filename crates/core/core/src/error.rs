@@ -6,31 +6,31 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum CoreError {
     /// IO 错误
-    #[error("IO 错误: {0}")]
+    #[error("{}: {}", crate::i18n::tr("IO 错误"), .0)]
     Io(#[from] std::io::Error),
 
     /// MIDI 解析错误
-    #[error("MIDI 解析错误: {0}")]
+    #[error("{}: {}", crate::i18n::tr("MIDI 解析错误"), .0)]
     MidiParse(String),
 
     /// 缓存错误
-    #[error("缓存错误: {0}")]
+    #[error("{}: {}", crate::i18n::tr("缓存错误"), .0)]
     Cache(String),
 
     /// 序列化错误
-    #[error("序列化错误: {0}")]
+    #[error("{}: {}", crate::i18n::tr("序列化错误"), .0)]
     Serialization(String),
 
     /// 压缩/解压错误
-    #[error("压缩错误: {0}")]
+    #[error("{}: {}", crate::i18n::tr("压缩错误"), .0)]
     Compression(String),
 
     /// 文件格式错误
-    #[error("文件格式错误: {0}")]
+    #[error("{}: {}", crate::i18n::tr("文件格式错误"), .0)]
     FileFormat(String),
 
     /// 无效参数
-    #[error("无效参数: {0}")]
+    #[error("{}: {}", crate::i18n::tr("无效参数"), .0)]
     InvalidArgument(String),
 
     /// 其他错误

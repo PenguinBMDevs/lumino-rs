@@ -1,3 +1,5 @@
+use lumino_core::tr;
+
 use super::*;
 
 /// 内存模式单帧入队（原 `run_video_export_task` 内嵌 `enqueue_frame` 闭包抽出的自由函数）。
@@ -50,7 +52,7 @@ pub(super) fn enqueue_memory_frame(
             RenderMode::Waterfall => {
                 send_export_error(
                     ctx.progress_tx,
-                    "导出失败：Waterfall 模式不应进入 CPU 渲染分支（内部错误）",
+                    tr!("导出失败：Waterfall 模式不应进入 CPU 渲染分支（内部错误）"),
                 );
                 return true;
             }
@@ -60,21 +62,21 @@ pub(super) fn enqueue_memory_frame(
                 let Some(cfg) = ctx.counter_config.as_ref() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：计数器模式缺少渲染配置（内部错误）",
+                        tr!("导出失败：计数器模式缺少渲染配置（内部错误）"),
                     );
                     return true;
                 };
                 let Some(stats) = ctx.counter_stats.as_mut() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：计数器模式缺少统计状态（内部错误）",
+                        tr!("导出失败：计数器模式缺少统计状态（内部错误）"),
                     );
                     return true;
                 };
                 let Some(renderer) = ctx.counter_renderer.as_mut() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：计数器模式缺少字体渲染器（内部错误）",
+                        tr!("导出失败：计数器模式缺少字体渲染器（内部错误）"),
                     );
                     return true;
                 };
@@ -115,14 +117,14 @@ pub(super) fn enqueue_memory_frame(
             RenderMode::NoteRectangle => {
                 send_export_error(
                     ctx.progress_tx,
-                    "导出失败：NoteRectangle 模式不应进入 CPU 渲染分支（内部错误）",
+                    tr!("导出失败：NoteRectangle 模式不应进入 CPU 渲染分支（内部错误）"),
                 );
                 return true;
             }
             RenderMode::MIDITrail => {
                 send_export_error(
                     ctx.progress_tx,
-                    "导出失败：MIDITrail 模式不应进入 CPU 渲染分支（内部错误）",
+                    tr!("导出失败：MIDITrail 模式不应进入 CPU 渲染分支（内部错误）"),
                 );
                 return true;
             }
@@ -132,21 +134,21 @@ pub(super) fn enqueue_memory_frame(
                 let Some(cfg) = ctx.data_curve_config.as_ref() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：数据曲线模式缺少渲染配置（内部错误）",
+                        tr!("导出失败：数据曲线模式缺少渲染配置（内部错误）"),
                     );
                     return true;
                 };
                 let Some(stats) = ctx.counter_stats.as_mut() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：数据曲线模式缺少统计状态（内部错误）",
+                        tr!("导出失败：数据曲线模式缺少统计状态（内部错误）"),
                     );
                     return true;
                 };
                 let Some(renderer) = ctx.data_curve_renderer.as_mut() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：数据曲线模式缺少渲染器（内部错误）",
+                        tr!("导出失败：数据曲线模式缺少渲染器（内部错误）"),
                     );
                     return true;
                 };
@@ -191,14 +193,14 @@ pub(super) fn enqueue_memory_frame(
                 let Some(renderer) = ctx.midi_console_renderer.as_mut() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：MidiConsole 模式缺少渲染器（内部错误）",
+                        tr!("导出失败：MidiConsole 模式缺少渲染器（内部错误）"),
                     );
                     return true;
                 };
                 let Some(cfg) = ctx.midi_console_config.as_ref() else {
                     send_export_error(
                         ctx.progress_tx,
-                        "导出失败：MidiConsole 模式缺少渲染配置（内部错误）",
+                        tr!("导出失败：MidiConsole 模式缺少渲染配置（内部错误）"),
                     );
                     return true;
                 };
@@ -238,7 +240,7 @@ pub(super) fn enqueue_memory_frame(
         // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
         if ctx.frame_tx_waterfall.send(frame_data).is_err() {
             tracing::error!("CPU 渲染帧发送失败：通道已关闭");
-            send_export_error(ctx.progress_tx, "导出失败：帧通道通信错误");
+            send_export_error(ctx.progress_tx, tr!("导出失败：帧通道通信错误"));
             return true;
         }
     } else {
@@ -267,7 +269,7 @@ pub(super) fn enqueue_memory_frame(
         else {
             send_export_error(
                 ctx.progress_tx,
-                "导出失败：当前渲染模式不应进入此分支（内部错误）",
+                tr!("导出失败：当前渲染模式不应进入此分支（内部错误）"),
             );
             return true;
         };
@@ -282,7 +284,7 @@ pub(super) fn enqueue_memory_frame(
             .is_err()
         {
             tracing::error!("发送 RenderVideoFrame 命令失败");
-            send_export_error(ctx.progress_tx, "导出失败：渲染线程通信错误");
+            send_export_error(ctx.progress_tx, tr!("导出失败：渲染线程通信错误"));
             return true;
         }
     }

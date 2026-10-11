@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use lumino_core::{tr, trf};
+
 use crate::runner::RunnerInner;
 
 use super::editor_midi;
@@ -45,8 +47,8 @@ impl RunnerInner {
         // 保存对话框（仅支持 .lmmaterial）
         let Some(save_path) = rfd::FileDialog::new()
             .add_filter(
-                crate::constants::filters::LUMINO_MATERIAL.0,
-                crate::constants::filters::LUMINO_MATERIAL.1,
+                crate::constants::filters::lumino_material_filter(),
+                crate::constants::filters::LUMINO_MATERIAL_EXTS,
             )
             .set_file_name("untitled.lmmaterial")
             .save_file()
@@ -82,23 +84,23 @@ impl RunnerInner {
         let save_path2 = save_path.clone();
         let material_name2 = material_name.clone();
         tokio::spawn(async move {
-            cb("正在导出素材", 0.3);
+            cb(tr!("正在导出素材"), 0.3);
             match tokio::task::spawn_blocking(move || {
                 lumino_export::save_material(&project, &material_name2, &save_path2)
             })
             .await
             {
                 Ok(Ok(())) => {
-                    cb("素材导出成功", 1.0);
+                    cb(tr!("素材导出成功"), 1.0);
                     tracing::info!("素材导出成功: {:?}（名称: {}）", save_path, material_name);
                 }
                 Ok(Err(e)) => {
-                    let msg = format!("素材导出失败: {e}");
+                    let msg = trf!("素材导出失败: {e}", e = e);
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                 }
                 Err(e) => {
-                    let msg = format!("素材导出任务失败: {e}");
+                    let msg = trf!("素材导出任务失败: {e}", e = e);
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                 }
@@ -121,8 +123,8 @@ impl RunnerInner {
 
         let save_path = rfd::FileDialog::new()
             .add_filter(
-                crate::constants::filters::MIDI_FILES.0,
-                crate::constants::filters::MIDI_FILES.1,
+                crate::constants::filters::midi_files_filter(),
+                crate::constants::filters::MIDI_FILES_EXTS,
             )
             .set_file_name("untitled.mid")
             .save_file()?;
@@ -224,12 +226,12 @@ impl RunnerInner {
 
         let Some(save_path) = rfd::FileDialog::new()
             .add_filter(
-                crate::constants::filters::LUMINO_PROJECT.0,
-                crate::constants::filters::LUMINO_PROJECT.1,
+                crate::constants::filters::lumino_project_filter(),
+                crate::constants::filters::LUMINO_PROJECT_EXTS,
             )
             .add_filter(
-                crate::constants::filters::MIDI_FILES.0,
-                crate::constants::filters::MIDI_FILES.1,
+                crate::constants::filters::midi_files_filter(),
+                crate::constants::filters::MIDI_FILES_EXTS,
             )
             .set_file_name(format!("{file_stem}.lmpj"))
             .save_file()
@@ -327,7 +329,7 @@ impl RunnerInner {
         let saving = Arc::clone(&self.saving);
         let cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
-            cb("正在保存 LMPJ 文件", 0.3);
+            cb(tr!("正在保存 LMPJ 文件"), 0.3);
             let save_path_for_task = save_path.clone();
             let result = tokio::task::spawn_blocking(move || {
                 lumino_export::save_to_archive(&project, &save_path_for_task)
@@ -339,14 +341,14 @@ impl RunnerInner {
 
             match result {
                 Ok(Ok(())) => {
-                    cb("工程保存成功", 1.0);
+                    cb(tr!("工程保存成功"), 1.0);
                     tracing::info!("工程保存成功: {:?}", save_path);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::save_completed(save_path),
                     ));
                 }
                 Ok(Err(e)) => {
-                    let msg = format!("保存失败: {e}");
+                    let msg = trf!("保存失败: {e}", e = e);
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
@@ -354,7 +356,7 @@ impl RunnerInner {
                     ));
                 }
                 Err(e) => {
-                    let msg = format!("保存任务失败: {e}");
+                    let msg = trf!("保存任务失败: {e}", e = e);
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(

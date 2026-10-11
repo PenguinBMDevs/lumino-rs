@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use lumino_core::tr;
 use lumino_editor_state::{ImageToMidiPreview, PreviewNote};
 
 /// 素材来源
@@ -62,7 +63,7 @@ impl MaterialEntry {
         let name = path
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "未知素材".into());
+            .unwrap_or_else(|| tr!("未知素材").to_string());
         Self {
             name,
             author: String::new(),
@@ -282,9 +283,9 @@ pub fn user_materials_dir() -> PathBuf {
 /// 将素材归档复制到用户素材目录（导入后保存）
 pub fn copy_material_to_user_dir(source: &Path, user_dir: &Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(user_dir)?;
-    let file_name = source
-        .file_name()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "无效的文件名"))?;
+    let file_name = source.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, tr!("无效的文件名"))
+    })?;
     let dest = user_dir.join(file_name);
     std::fs::copy(source, &dest)?;
     Ok(dest)

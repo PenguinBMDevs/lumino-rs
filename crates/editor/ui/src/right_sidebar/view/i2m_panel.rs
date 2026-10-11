@@ -2,6 +2,8 @@ use super::*;
 
 use super::i2m_config::build_config_section;
 
+use lumino_core::tr;
+
 /// 图片转 MIDI 面板内容（原 view 主体）
 pub(super) fn i2m_panel<'a>(
     right_sidebar: &'a RightSidebar,
@@ -9,7 +11,7 @@ pub(super) fn i2m_panel<'a>(
     _language: Language,
 ) -> Element<'a> {
     // 面板内"选择图片文件"按钮：标准 iced 按钮（无图标），居左放置
-    let select_btn = button(iced_widget::text("选择图片文件").size(13))
+    let select_btn = button(iced_widget::text(tr!("选择图片文件")).size(13))
         .padding(6)
         .style(move |theme: &Theme, status| {
             let p = theme.extended_palette();
@@ -34,7 +36,7 @@ pub(super) fn i2m_panel<'a>(
     let mut select_row = Row::new().spacing(6).align_y(Alignment::Center);
     select_row = select_row.push(select_btn);
     if right_sidebar.selected_image_path.is_some() {
-        select_row = select_row.push(iced_widget::text("选择了一个图片文件").size(12).style(
+        select_row = select_row.push(iced_widget::text(tr!("选择了一个图片文件")).size(12).style(
             |theme: &Theme| iced_widget::text::Style {
                 color: Some(theme.extended_palette().background.strong.text),
             },
@@ -49,15 +51,15 @@ pub(super) fn i2m_panel<'a>(
         .spacing(8)
         .padding(8)
         .width(Length::Fill)
-        .push(panel_header("图片转 MIDI", window))
+        .push(panel_header(tr!("图片转 MIDI"), window))
         .push(select_row)
         .push(config_section);
     if right_sidebar.selected_image_path.is_some() {
         let convert_btn = button(
             iced_widget::text(if right_sidebar.converting {
-                "转换中..."
+                tr!("转换中...")
             } else {
-                "转换为 MIDI"
+                tr!("转换为 MIDI")
             })
             .size(13),
         )

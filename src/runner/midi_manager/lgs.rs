@@ -4,6 +4,7 @@
 
 use super::*;
 use lumino_core::storage::config::LGS_AUTO_MAX_VOICES;
+use lumino_core::{tr, trf};
 
 impl MidiManager {
     /// 启动 LGS (GPU) 异步初始化
@@ -16,7 +17,7 @@ impl MidiManager {
             tracing::warn!("LGS (GPU) 异步初始化: 音色库路径未设置");
             // #127 问题1：不得静默降级——生成可见提示（Runner 每帧写入状态栏）。
             self.pending_backend_notice = Some(
-                "LGS 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）"
+                tr!("LGS 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）")
                     .to_string(),
             );
             return;
@@ -25,9 +26,9 @@ impl MidiManager {
         let path = PathBuf::from(&ui_config.soundfont_path);
         if !path.exists() {
             tracing::warn!("LGS (GPU) 异步初始化: 音色库文件不存在: {:?}", path);
-            self.pending_backend_notice = Some(format!(
-                "LGS 未生效：音色库文件不存在（{}），当前使用 System 后端",
-                path.display()
+            self.pending_backend_notice = Some(trf!(
+                "LGS 未生效：音色库文件不存在（{path}），当前使用 System 后端",
+                path = path.display()
             ));
             return;
         }
@@ -84,8 +85,12 @@ impl MidiManager {
             midi_max_port,
         };
 
-        let api = lumino_midi_io::new_api(&api_kind)
-            .map_err(|e| format!("初始化 LGS (GPU) MIDI API 失败: {:?}", e))?;
+        let api = lumino_midi_io::new_api(&api_kind).map_err(|e| {
+            trf!(
+                "初始化 LGS (GPU) MIDI API 失败: {e}",
+                e = format!("{:?}", e)
+            )
+        })?;
 
         if let Some(version) = api.version() {
             tracing::info!("LGS (GPU): 音频后端已初始化 (version: {})", version);
@@ -93,15 +98,15 @@ impl MidiManager {
 
         let outputs = api
             .outputs()
-            .map_err(|e| format!("获取 LGS (GPU) 输出设备失败: {:?}", e))?;
+            .map_err(|e| trf!("获取 LGS (GPU) 输出设备失败: {e}", e = format!("{:?}", e)))?;
 
         let output = outputs
             .first()
-            .ok_or("未找到可用的 LGS (GPU) MIDI 输出设备")?;
+            .ok_or(tr!("未找到可用的 LGS (GPU) MIDI 输出设备"))?;
 
         let conn = api
             .open_output(output.id)
-            .map_err(|e| format!("打开 LGS (GPU) 输出连接失败: {:?}", e))?;
+            .map_err(|e| trf!("打开 LGS (GPU) 输出连接失败: {e}", e = format!("{:?}", e)))?;
 
         Ok((api, conn))
     }

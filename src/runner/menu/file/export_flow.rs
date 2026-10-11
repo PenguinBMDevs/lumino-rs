@@ -47,8 +47,8 @@ impl RunnerInner {
 
         let Some(save_path) = rfd::FileDialog::new()
             .add_filter(
-                crate::constants::filters::MIDI_FILES.0,
-                crate::constants::filters::MIDI_FILES.1,
+                crate::constants::filters::midi_files_filter(),
+                crate::constants::filters::MIDI_FILES_EXTS,
             )
             .set_file_name(format!("{file_stem}.mid"))
             .save_file()

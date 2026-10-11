@@ -6,6 +6,7 @@
 
 use iced_core::{Alignment, Color, Length, Padding, Point};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
+use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
 use crate::{Element, Message, Theme};
@@ -182,13 +183,13 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
 /// 菜单项显示文本
 fn item_label(item: PianoRollContextMenuItem) -> &'static str {
     match item {
-        PianoRollContextMenuItem::Cut => "剪切",
-        PianoRollContextMenuItem::Copy => "复制",
-        PianoRollContextMenuItem::Paste => "粘贴",
-        PianoRollContextMenuItem::Delete => "删除",
-        PianoRollContextMenuItem::SelectAll => "全选",
-        PianoRollContextMenuItem::BatchEdit => "批量编辑",
-        PianoRollContextMenuItem::DeleteDrawnShape => "删除",
+        PianoRollContextMenuItem::Cut => tr!("剪切"),
+        PianoRollContextMenuItem::Copy => tr!("复制"),
+        PianoRollContextMenuItem::Paste => tr!("粘贴"),
+        PianoRollContextMenuItem::Delete => tr!("删除"),
+        PianoRollContextMenuItem::SelectAll => tr!("全选"),
+        PianoRollContextMenuItem::BatchEdit => tr!("批量编辑"),
+        PianoRollContextMenuItem::DeleteDrawnShape => tr!("删除"),
     }
 }
 

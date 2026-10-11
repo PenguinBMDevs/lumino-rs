@@ -2,6 +2,7 @@
 //!
 //! 处理连接表单校验、连接发起与目录导航（选中/进入/返回/刷新）。
 
+use lumino_core::tr;
 use lumino_message::CloudProtocolUi;
 
 use super::*;
@@ -14,7 +15,7 @@ impl Root {
         }
         // 校验必填项
         if self.cloud.address.trim().is_empty() {
-            self.cloud.connect_error = Some("服务器地址不能为空".to_string());
+            self.cloud.connect_error = Some(tr!("服务器地址不能为空").to_string());
             return;
         }
         // 解析端口（非法输入回退默认）
@@ -80,7 +81,7 @@ impl Root {
     /// 请求列出当前选中连接的当前目录
     pub(super) fn request_list_dir(&mut self) {
         let Some(id) = self.cloud.selected_id.clone() else {
-            self.cloud.notice = Some("未选择云存储".to_string());
+            self.cloud.notice = Some(tr!("未选择云存储").to_string());
             return;
         };
         self.cloud.busy = true;

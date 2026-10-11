@@ -8,6 +8,7 @@ use crate::texture_waterfall::gpu_ctx::WaterfallGpuCtx;
 use crate::texture_waterfall::renderer::TextureWaterfallRenderer;
 use crate::texture_waterfall::stream::WaterfallStreamMsg;
 use crate::texture_waterfall::types::WaterfallTileCoord;
+use lumino_core::tr;
 
 // ── 流式接收后台生成的贴图并上传到 GPU ──────────────
 
@@ -47,7 +48,7 @@ pub fn drain_waterfall_stream(
                             });
                     gpu.queue.submit(std::iter::once(flush.finish()));
                 }
-                push_waterfall_progress(progress, "贴图瀑布流流式生成+上传完成", 1.0);
+                push_waterfall_progress(progress, tr!("贴图瀑布流流式生成+上传完成"), 1.0);
             }
             Err(_) => break,
         }

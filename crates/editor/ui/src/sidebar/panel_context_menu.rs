@@ -7,6 +7,7 @@
 
 use iced_core::{Alignment, Color, Length, Padding};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
+use lumino_core::tr;
 use lumino_message::PanelContextMenuItem;
 
 use crate::resources::icon::{self, Icon};
@@ -87,7 +88,7 @@ const fn item_icon(item: PanelContextMenuItem) -> Icon {
 /// 菜单项显示文本
 fn item_label(item: PanelContextMenuItem) -> &'static str {
     match item {
-        PanelContextMenuItem::RecoverDeletedTrack => "找回删除音轨",
+        PanelContextMenuItem::RecoverDeletedTrack => tr!("找回删除音轨"),
     }
 }
 

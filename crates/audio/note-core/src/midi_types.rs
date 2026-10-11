@@ -2,6 +2,8 @@
 //!
 //! 力度/Tempo/CC 编辑面板使用的数据类型。
 
+use lumino_core::tr;
+
 /// 编辑模式
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum EditMode {
@@ -25,8 +27,8 @@ impl EditMode {
     /// 获取显示名称
     pub fn display_name(&self) -> &'static str {
         match self {
-            EditMode::Velocity => "力度",
-            EditMode::Tempo => "速度",
+            EditMode::Velocity => tr!("力度"),
+            EditMode::Tempo => tr!("速度"),
             EditMode::Bend => "Bend",
             EditMode::Cc(_) => "CC",
         }

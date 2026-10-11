@@ -2,6 +2,8 @@
 
 use tracing::info;
 
+use lumino_core::tr;
+
 use crate::Result;
 use crate::http::CreateRoomResponse;
 use crate::types::RoomInfo;
@@ -12,14 +14,14 @@ impl CollaborationClient {
     /// 创建房间（遗留兼容接口）
     pub async fn create_room(&self, _name: String) -> Result<()> {
         Err(crate::CollaborationError::Other(
-            "请使用 create_room_and_connect".to_string(),
+            tr!("请使用 create_room_and_connect").to_string(),
         ))
     }
 
     /// 加入房间（遗留兼容接口）
     pub async fn join_room(&self, _invite_code: String) -> Result<()> {
         Err(crate::CollaborationError::Other(
-            "请使用 join_room_and_connect".to_string(),
+            tr!("请使用 join_room_and_connect").to_string(),
         ))
     }
 

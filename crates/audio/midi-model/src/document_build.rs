@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use lumino_core::{tr, trf};
 use lumino_diagnostics::memory_monitor::MemoryMonitor;
 
 use crate::error::{LoaderError, LoaderResult};
@@ -92,7 +93,7 @@ impl MidiDocument {
         }
 
         let (_, division) = scan::scan_header_info(file_bytes)
-            .ok_or_else(|| LoaderError::FileFormat("无法解析 MIDI 文件头".to_string()))?;
+            .ok_or_else(|| LoaderError::FileFormat(tr!("无法解析 MIDI 文件头").to_string()))?;
 
         if let Some(cb) = progress {
             (cb)(0.10);
@@ -192,7 +193,7 @@ impl MidiDocument {
                     );
                 },
             )
-            .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
+            .map_err(|e| LoaderError::MidiParse(trf!("提取音符失败: {e}", e = e)))?;
 
             finalize_sorted_events(&mut all_tempo_changes, |&(t, _)| t, (0u32, 120.0f32));
             finalize_sorted_events(&mut all_time_signatures, |&(t, _, _)| t, (0u32, 4u8, 4u8));

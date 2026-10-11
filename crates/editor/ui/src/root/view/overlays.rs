@@ -5,6 +5,8 @@
 use iced_core::Length;
 use iced_widget::{Stack, button, checkbox, column, container, progress_bar, row, space, text};
 
+use lumino_core::tr;
+
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
@@ -34,11 +36,11 @@ impl Root {
             .progress
             .as_ref()
             .map(|(m, p)| (m.as_str(), *p))
-            .unwrap_or(("正在初始化...", 0.0));
+            .unwrap_or((tr!("正在初始化..."), 0.0));
 
         let content: Element<'_> = container(
             column![
-                text("处理中...")
+                text(tr!("处理中..."))
                     .size(24)
                     .style(|theme: &Theme| text::Style {
                         color: Some(theme.extended_palette().background.neutral.text),
@@ -78,15 +80,15 @@ impl Root {
 
         let actions = row![
             checkbox(suppress)
-                .label("不要再提示我")
+                .label(tr!("不要再提示我"))
                 .on_toggle(crate::window::Event::device_warning_suppress_toggled),
             space().width(Length::Fill),
-            button(text("确认并关闭").size(14)).on_press(
+            button(text(tr!("确认并关闭")).size(14)).on_press(
                 crate::window::Event::device_warning_actioned(
                     crate::window::DeviceWarningAction::Quit
                 ),
             ),
-            button(text("放我进去").size(14)).on_press(
+            button(text(tr!("放我进去")).size(14)).on_press(
                 crate::window::Event::device_warning_actioned(
                     crate::window::DeviceWarningAction::Continue { suppress },
                 ),
@@ -99,7 +101,7 @@ impl Root {
             column![
                 row![
                     text("🤔").size(34),
-                    text("你的电脑不满足运行 Lumino 的最低要求").size(18),
+                    text(tr!("你的电脑不满足运行 Lumino 的最低要求")).size(18),
                 ]
                 .spacing(12)
                 .align_y(iced_core::Alignment::Center),
@@ -191,7 +193,7 @@ impl Root {
                 } else {
                     container(
                         column![
-                            text("准备中...").size(16),
+                            text(tr!("准备中...")).size(16),
                             space().height(20),
                             progress_bar(0.0..=1.0, 0.0),
                         ]

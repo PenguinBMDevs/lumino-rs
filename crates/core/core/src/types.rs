@@ -3,6 +3,8 @@
 //! 这些类型不依赖 UI 或消息系统，被 `lumino-core` 自身以及 `lumino-message`
 //! 共同使用。将它们放在 `core` 中，避免 `lumino-core` 反向依赖 `lumino-message`。
 
+use crate::tr;
+
 // ─── 音频动作 ───
 
 /// 音频动作
@@ -91,15 +93,15 @@ pub enum NotePrecision {
 impl std::fmt::Display for NotePrecision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            NotePrecision::Whole => "全音符",
-            NotePrecision::Half => "二分音符",
-            NotePrecision::Quarter => "四分音符",
-            NotePrecision::Eighth => "八分音符",
-            NotePrecision::Sixteenth => "十六分音符",
-            NotePrecision::ThirtySecond => "三十二分音符",
-            NotePrecision::SixtyFourth => "六十四分音符",
-            NotePrecision::OneTwentyEighth => "128分音符",
-            NotePrecision::Custom => "自定义",
+            NotePrecision::Whole => tr!("全音符"),
+            NotePrecision::Half => tr!("二分音符"),
+            NotePrecision::Quarter => tr!("四分音符"),
+            NotePrecision::Eighth => tr!("八分音符"),
+            NotePrecision::Sixteenth => tr!("十六分音符"),
+            NotePrecision::ThirtySecond => tr!("三十二分音符"),
+            NotePrecision::SixtyFourth => tr!("六十四分音符"),
+            NotePrecision::OneTwentyEighth => tr!("128分音符"),
+            NotePrecision::Custom => tr!("自定义"),
         };
         write!(f, "{}", name)
     }
@@ -107,17 +109,22 @@ impl std::fmt::Display for NotePrecision {
 
 impl NotePrecision {
     /// 获取精度显示名称
+    ///
+    /// 与 `Display` 同源：按当前语言取词。
+    ///
+    /// 注：i18n 改造时全工作区 grep 确认**零调用点**（疑似死代码），
+    /// 但作为公开 API 保留，避免破坏潜在的外部使用者。
     pub fn display_name(&self) -> &'static str {
         match self {
-            NotePrecision::Whole => "全音符",
-            NotePrecision::Half => "二分音符",
-            NotePrecision::Quarter => "四分音符",
-            NotePrecision::Eighth => "八分音符",
-            NotePrecision::Sixteenth => "十六分音符",
-            NotePrecision::ThirtySecond => "三十二分音符",
-            NotePrecision::SixtyFourth => "六十四分音符",
-            NotePrecision::OneTwentyEighth => "128分音符",
-            NotePrecision::Custom => "自定义",
+            NotePrecision::Whole => tr!("全音符"),
+            NotePrecision::Half => tr!("二分音符"),
+            NotePrecision::Quarter => tr!("四分音符"),
+            NotePrecision::Eighth => tr!("八分音符"),
+            NotePrecision::Sixteenth => tr!("十六分音符"),
+            NotePrecision::ThirtySecond => tr!("三十二分音符"),
+            NotePrecision::SixtyFourth => tr!("六十四分音符"),
+            NotePrecision::OneTwentyEighth => tr!("128分音符"),
+            NotePrecision::Custom => tr!("自定义"),
         }
     }
 
@@ -229,10 +236,10 @@ pub enum DotType {
 impl std::fmt::Display for DotType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            DotType::None => "（无）",
-            DotType::Tuplet => "连音符",
-            DotType::Single => "符点",
-            DotType::Double => "双符点",
+            DotType::None => tr!("（无）"),
+            DotType::Tuplet => tr!("连音符"),
+            DotType::Single => tr!("符点"),
+            DotType::Double => tr!("双符点"),
         };
         write!(f, "{}", name)
     }
@@ -284,7 +291,8 @@ impl Language {
 impl std::fmt::Display for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Language::ZhCn => write!(f, "简体中文"),
+            Language::ZhCn => write!(f, "{}", tr!("简体中文")),
+            // 「English」在两种语言下写法相同（语言自称），无需查表
             Language::EnUs => write!(f, "English"),
         }
     }

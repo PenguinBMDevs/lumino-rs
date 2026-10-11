@@ -1,3 +1,5 @@
+use lumino_core::trf;
+
 use super::enqueue::enqueue_memory_frame;
 use super::*;
 
@@ -75,7 +77,7 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         Ok(e) => e,
         Err(e) => {
             tracing::error!("FFmpeg 创建失败: {e}");
-            send_export_error(&progress_tx, format!("导出失败: {e}"));
+            send_export_error(&progress_tx, trf!("导出失败: {e}", e = e));
             return;
         }
     };

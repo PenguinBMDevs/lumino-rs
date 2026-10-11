@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use lumino_core::tr;
 use lumino_ui::event::{self, cloud as cloud_event};
 
 use crate::runner::RunnerInner;
@@ -96,19 +97,19 @@ impl RunnerInner {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
             if ok {
-                state.notice = Some("操作成功".to_string());
+                state.notice = Some(tr!("操作成功").to_string());
                 // 剪切粘贴成功：源已移动，清空剪贴板（复制粘贴保留，可重复粘贴）
                 if kind == "paste_cut" {
                     state.clipboard = None;
                 }
                 false
             } else {
-                state.notice = Some(Self::cloud_error_text("操作失败", error.as_deref()));
+                state.notice = Some(Self::cloud_error_text(tr!("操作失败"), error.as_deref()));
                 true
             }
         };
         if failed {
-            self.report_cloud_error("云存储连接异常", error.as_deref());
+            self.report_cloud_error(tr!("云存储连接异常"), error.as_deref());
         } else {
             // 刷新当前目录列表
             let id = self

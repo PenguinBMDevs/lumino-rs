@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::realtime::{ChannelMixHandle, RealtimeEventSender, SynthEvent};
+use lumino_core::trf;
 use xsynth_core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent};
 
 use crate::constants::*;
@@ -161,9 +162,9 @@ impl OutputConnection for XSynthOutputConn {
                 self.send_event(SynthEvent::Channel(channel, ChannelEvent::Audio(audio)));
                 Ok(())
             }
-            None => Err(Error::SendFailed(format!(
-                "xsynth 不支持的消息类型: 0x{:02X}",
-                data[0] & 0xF0
+            None => Err(Error::SendFailed(trf!(
+                "xsynth 不支持的消息类型: 0x{code}",
+                code = format!("{:02X}", data[0] & 0xF0)
             ))),
         }
     }

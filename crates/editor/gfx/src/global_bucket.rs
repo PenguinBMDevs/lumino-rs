@@ -42,19 +42,24 @@ pub(crate) const HIST_BYTES: u64 = (HIST_LEN * std::mem::size_of::<u32>()) as u6
 #[derive(Debug, thiserror::Error)]
 pub enum GlobalBucketError {
     /// 音符数量超出 u32 索引范围。
-    #[error("音符数量 {0} 超出 u32 索引范围")]
+    #[error("{}: {}", lumino_core::i18n::tr("音符数量超出 u32 索引范围"), .0)]
     CountOverflow(usize),
     /// 直方图回读 map 失败。
-    #[error("直方图回读 map 失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("直方图回读 map 失败"), .0)]
     MapFailed(String),
     /// 直方图回读超时（5s 未就绪）。
-    #[error("直方图回读超时")]
+    #[error("{}", lumino_core::i18n::tr("直方图回读超时"))]
     MapTimeout,
     /// 回读数据长度异常。
-    #[error("回读数据长度异常：期望 {expected}，实际 {got}")]
+    #[error(
+        "{}: expected {}, actual {}",
+        lumino_core::i18n::tr("回读数据长度异常"),
+        .expected,
+        .got
+    )]
     BadLength { expected: usize, got: usize },
     /// cull 内部资源缺失（管线/暂存未就绪，正常路径不应发生）。
-    #[error("cull 内部资源缺失: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("cull 内部资源缺失"), .0)]
     CullResource(&'static str),
 }
 

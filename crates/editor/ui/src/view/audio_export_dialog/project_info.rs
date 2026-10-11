@@ -4,6 +4,8 @@
 
 use iced_widget::{button, column, container, row, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::Message;
 use crate::message::AudioExportAction;
 use crate::state::root_state::AudioExportDialogState;
@@ -32,12 +34,12 @@ fn project_name_row<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("工程名称")
+        text(tr!("工程名称"))
             .size(14)
             .style(widgets::dialog_label_style(palette)),
         space().height(4),
         container(
-            text_input("工程名称", &state.project_name)
+            text_input(tr!("工程名称"), &state.project_name)
                 .on_input(|v| Message::AudioExport(AudioExportAction::ProjectNameChanged(v)))
                 .padding([6, 10])
                 .width(iced_core::Length::Fill),
@@ -55,7 +57,7 @@ fn midi_path_row<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("MIDI 路径")
+        text(tr!("MIDI 路径"))
             .size(14)
             .style(widgets::dialog_label_style(palette)),
         space().height(4),
@@ -69,7 +71,7 @@ fn midi_path_row<'a>(
             .width(iced_core::Length::Fill)
             .style(widgets::dialog_input_style(palette)),
             space().width(8),
-            button(text("浏览...").size(14))
+            button(text(tr!("浏览...")).size(14))
                 .on_press(Message::AudioExport(AudioExportAction::BrowseMidi))
                 .padding([6, 16]),
         ]
@@ -86,7 +88,7 @@ fn soundfont_path_row<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("音色库 (SF2)")
+        text(tr!("音色库 (SF2)"))
             .size(14)
             .style(widgets::dialog_label_style(palette)),
         space().height(4),
@@ -100,7 +102,7 @@ fn soundfont_path_row<'a>(
             .width(iced_core::Length::Fill)
             .style(widgets::dialog_input_style(palette)),
             space().width(8),
-            button(text("浏览...").size(14))
+            button(text(tr!("浏览...")).size(14))
                 .on_press(Message::AudioExport(AudioExportAction::BrowseSoundfont))
                 .padding([6, 16]),
         ]

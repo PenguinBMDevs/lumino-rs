@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use lumino_core::trf;
 use lumino_ui::event::{self, cloud as cloud_event};
 use lumino_ui::state::cloud_state::CloudConnInfo;
 
@@ -68,8 +69,8 @@ impl RunnerInner {
     /// 杜绝线上排障时根因丢失。
     pub(super) fn cloud_error_text(context: &str, error: Option<&str>) -> String {
         match error {
-            Some(e) => format!("{context}（{e}）"),
-            None => format!("{context}（未知错误）"),
+            Some(e) => trf!("{context}（{e}）", context = context, e = e),
+            None => trf!("{context}（未知错误）", context = context),
         }
     }
 

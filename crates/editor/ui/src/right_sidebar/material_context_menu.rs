@@ -11,6 +11,7 @@
 
 use iced_core::{Alignment, Color, Length, Padding, Size};
 use iced_widget::{Space, button, column, container, mouse_area, responsive, tooltip};
+use lumino_core::tr;
 use lumino_message::{MaterialContextMenuItem, RightSidebarAction};
 
 use crate::resources::icon::{self, Icon};
@@ -134,9 +135,9 @@ const fn item_icon(item: MaterialContextMenuItem) -> Icon {
 /// 菜单项显示文本
 fn item_label(item: MaterialContextMenuItem) -> &'static str {
     match item {
-        MaterialContextMenuItem::Rename => "重命名",
-        MaterialContextMenuItem::Delete => "删除",
-        MaterialContextMenuItem::UploadToCloud => "上传到云",
+        MaterialContextMenuItem::Rename => tr!("重命名"),
+        MaterialContextMenuItem::Delete => tr!("删除"),
+        MaterialContextMenuItem::UploadToCloud => tr!("上传到云"),
     }
 }
 

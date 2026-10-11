@@ -2,6 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use lumino_core::tr;
+
 use crate::runner::inner::RunnerInner;
 use crate::runner::midi_manager::AsyncInitOutcome;
 
@@ -213,8 +215,10 @@ impl RunnerInner {
                     );
                 } else {
                     self.window_state.window.ui_mut().set_status_message(Some(
-                        "MIDI 播放输出创建失败，播放将无声：请检查输出设备（设置 → MIDI）后重试"
-                            .to_string(),
+                        tr!(
+                            "MIDI 播放输出创建失败，播放将无声：请检查输出设备（设置 → MIDI）后重试"
+                        )
+                        .to_string(),
                     ));
                     tracing::error!("MIDI: 播放输出自动重试耗尽，播放将无声（已提示用户）");
                 }

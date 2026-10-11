@@ -18,6 +18,7 @@ use crate::sidebar::MIXER_DEFAULT_VOLUME;
 use crate::{Element, Theme};
 use iced_core::{Background, Length, Padding, alignment};
 use iced_widget::{Space, button, column, container, mouse_area, row, scrollable, text};
+use lumino_core::tr;
 use lumino_ui_core::sidebar_event::Event;
 
 mod strips;
@@ -130,7 +131,7 @@ pub(crate) fn view_mixer_panel(root: &Root) -> Option<Element<'static>> {
 
 /// 标题栏：含关闭按钮；标题+中间空白为拖拽手柄（按下开始拖拽，全窗口覆盖层接管后续移动）。
 fn build_header() -> Element<'static> {
-    let title = text("混音台").size(13).style(mixer_text_style);
+    let title = text(tr!("混音台")).size(13).style(mixer_text_style);
     let close_btn = button(text("✕").size(12))
         .padding(2)
         .style(transparent_button)
@@ -201,7 +202,7 @@ fn build_body(root: &Root) -> Element<'static> {
     }
 
     if rendered.is_empty() {
-        return container(text("暂无音轨").size(12)).padding(16).into();
+        return container(text(tr!("暂无音轨")).size(12)).padding(16).into();
     }
 
     scrollable(row(rendered).spacing(STRIP_SPACING).padding(8))

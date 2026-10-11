@@ -2,6 +2,8 @@
 
 use iced_widget::{button, column, container, row, space, text, text_input};
 
+use lumino_core::tr;
+
 use crate::Message;
 use crate::message::AudioExportAction;
 use crate::state::root_state::AudioExportDialogState;
@@ -15,7 +17,7 @@ pub fn output_path_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        section_title("输出路径", palette),
+        section_title(tr!("输出路径"), palette),
         space().height(8),
         output_path_row(state, palette),
     ]
@@ -30,7 +32,7 @@ fn output_path_row<'a>(
 ) -> crate::Element<'a> {
     row![
         container(
-            text_input("选择输出路径...", &state.output_path)
+            text_input(tr!("选择输出路径..."), &state.output_path)
                 .on_input(|v| Message::AudioExport(AudioExportAction::OutputPathChanged(v)))
                 .padding([6, 10])
                 .width(iced_core::Length::Fill),
@@ -38,7 +40,7 @@ fn output_path_row<'a>(
         .width(iced_core::Length::Fill)
         .style(widgets::dialog_input_style(palette)),
         space().width(8),
-        button(text("浏览...").size(14))
+        button(text(tr!("浏览...")).size(14))
             .on_press(Message::AudioExport(AudioExportAction::BrowseOutput))
             .padding([6, 16]),
     ]

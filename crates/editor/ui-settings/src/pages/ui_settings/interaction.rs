@@ -11,6 +11,7 @@ use super::super::super::components::{
 };
 use crate::SettingsPanel;
 use lumino_core::storage::config::SelectionBoxMode;
+use lumino_core::tr;
 use lumino_extras::i18n::{Language, SettingsTranslations};
 
 /// 本地化框选框模式包装
@@ -105,10 +106,10 @@ pub(crate) fn build_interaction_section<'a>(
                 |enabled| { Message::Settings(crate::Event::VelocityCurveStyleChanged(enabled)) }
             ),
             with_setting_tooltip_inline_action(
-                text("力度面板曲线显示（默认）")
+                text(tr!("力度面板曲线显示（默认）"))
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style()),
-                "关闭后使用柱状图显示力度值",
+                tr!("关闭后使用柱状图显示力度值"),
                 Message::Settings(crate::Event::VelocityCurveStyleChanged(
                     !settings.display.velocity_curve_style,
                 )),
@@ -125,10 +126,10 @@ pub(crate) fn build_interaction_section<'a>(
                 }
             ),
             with_setting_tooltip_inline_action(
-                text("播放时键盘颜色指示（默认关闭）")
+                text(tr!("播放时键盘颜色指示（默认关闭）"))
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style()),
-                "开启后播放时在钢琴键盘上高亮当前音符位置，占用额外内存",
+                tr!("开启后播放时在钢琴键盘上高亮当前音符位置，占用额外内存"),
                 Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(
                     !settings.display.playback_key_colors_enabled,
                 )),

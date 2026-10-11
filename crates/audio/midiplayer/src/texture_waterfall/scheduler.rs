@@ -23,6 +23,7 @@ use crate::texture_waterfall::scheduler::generate::{
     generate_one_track_group, sort_notes_per_track,
 };
 use crate::texture_waterfall::types::{WaterfallGroupTile, WaterfallTileCoord};
+use lumino_core::{tr, trf};
 use lumino_diagnostics::memory_monitor::MemoryMonitor;
 
 mod generate;
@@ -34,7 +35,7 @@ pub type TextureWaterfallProgressCallback = Arc<dyn Fn(&str, f32) + Send + Sync>
 #[derive(Debug, thiserror::Error)]
 pub enum WaterfallGenerateError {
     /// 缓存 IO 错误
-    #[error("缓存 IO 错误: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("缓存 IO 错误"), .0)]
     CacheIo(String),
 }
 
@@ -133,7 +134,7 @@ pub fn generate_waterfall_tiles(
 
     if total_tiles == 0 {
         if let Some(cb) = &progress_cb {
-            cb("贴图瀑布流：无内容需生成", 1.0);
+            cb(tr!("贴图瀑布流：无内容需生成"), 1.0);
         }
         return HashMap::new();
     }
@@ -192,7 +193,7 @@ pub fn generate_waterfall_tiles(
     }
 
     if let Some(cb) = &progress_cb {
-        cb("贴图瀑布流生成完成", 1.0);
+        cb(tr!("贴图瀑布流生成完成"), 1.0);
     }
 
     info!("贴图瀑布流生成完成：{} 张整合组贴图", buffer.len());
@@ -226,7 +227,7 @@ pub fn generate_waterfall_tiles_streaming<F>(
 
     if total_tiles == 0 {
         if let Some(cb) = &progress_cb {
-            cb("贴图瀑布流：无内容需生成", 1.0);
+            cb(tr!("贴图瀑布流：无内容需生成"), 1.0);
         }
         return;
     }
@@ -296,7 +297,11 @@ pub fn generate_waterfall_tiles_streaming<F>(
         if let Some(cb) = &progress_cb {
             let pct = done as f32 / time_groups as f32;
             cb(
-                &format!("贴图瀑布流 time_group {}/{}", done, time_groups),
+                &trf!(
+                    "贴图瀑布流 time_group {done}/{total}",
+                    done = done,
+                    total = time_groups
+                ),
                 pct,
             );
         }
@@ -306,7 +311,7 @@ pub fn generate_waterfall_tiles_streaming<F>(
     join_cache_thread(cache_tx, cache_handle);
 
     if let Some(cb) = &progress_cb {
-        cb("贴图瀑布流流式生成完成", 1.0);
+        cb(tr!("贴图瀑布流流式生成完成"), 1.0);
     }
 
     info!("贴图瀑布流流式生成完成：{} 个 time_group", time_groups);

@@ -5,6 +5,7 @@
 use iced_core::{Alignment, Length};
 use iced_widget::{Space, button, column, container, pick_list, row, scrollable, text, text_input};
 
+use lumino_core::{tr, trf};
 use lumino_message::CloudAction;
 
 use crate::state::cloud_state::{CloudEntryUi, CloudUiState, format_size};
@@ -22,7 +23,11 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
                 "{} [{}] {}",
                 c.name,
                 c.protocol,
-                if c.online { "在线" } else { "离线" }
+                if c.online {
+                    tr!("在线")
+                } else {
+                    tr!("离线")
+                }
             ),
         })
         .collect();
@@ -33,31 +38,31 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
     let device_pick = pick_list(devices, selected_device, |opt| {
         Message::Cloud(CloudAction::SelectStorage(opt.id))
     })
-    .placeholder("选择云存储");
+    .placeholder(tr!("选择云存储"));
 
     // 顶部：设备切换 + 刷新 + 断开 + 粘贴（剪贴板非空时）
     let clipboard = state.clipboard.as_ref();
     let paste_btn = button(
         text(if clipboard.map(|c| c.is_cut).unwrap_or(false) {
-            "粘贴（剪切）"
+            tr!("粘贴（剪切）")
         } else {
-            "粘贴"
+            tr!("粘贴")
         })
         .size(12),
     )
     .padding([4, 10])
     .on_press_maybe(clipboard.map(|_| Message::Cloud(CloudAction::Paste)));
 
-    let clear_clip_btn = button(text("清空剪贴板").size(12))
+    let clear_clip_btn = button(text(tr!("清空剪贴板")).size(12))
         .padding([4, 10])
         .on_press_maybe(clipboard.map(|_| Message::Cloud(CloudAction::ClearClipboard)));
 
     let tool_row = row![
         device_pick.width(Length::Fill),
-        button(text("刷新").size(12))
+        button(text(tr!("刷新")).size(12))
             .padding([4, 10])
             .on_press(Message::Cloud(CloudAction::Refresh)),
-        button(text("断开").size(12))
+        button(text(tr!("断开")).size(12))
             .padding([4, 10])
             .on_press_maybe(
                 state
@@ -73,7 +78,7 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
 
     // 导航栏：返回 + 当前路径
     let nav_row = row![
-        button(text("← 返回").size(12))
+        button(text(tr!("← 返回")).size(12))
             .padding([4, 10])
             .on_press(Message::Cloud(CloudAction::Back)),
         text(if state.current_path.is_empty() {
@@ -89,10 +94,10 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
 
     // 新建文件夹输入行
     let new_folder_row = row![
-        text_input("新建文件夹名称", &state.new_folder_input)
+        text_input(tr!("新建文件夹名称"), &state.new_folder_input)
             .on_input(|s| Message::Cloud(CloudAction::NewFolderInputChanged(s)))
             .width(Length::Fill),
-        button(text("新建文件夹").size(12))
+        button(text(tr!("新建文件夹")).size(12))
             .padding([4, 10])
             .on_press(Message::Cloud(CloudAction::NewFolder(
                 state.new_folder_input.clone(),
@@ -103,9 +108,9 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
 
     // 文件列表（按入口场景过滤文件类型）
     let list: Vec<Element<'static>> = if state.busy && state.entries.is_empty() {
-        vec![placeholder_text("加载中...")]
+        vec![placeholder_text(tr!("加载中..."))]
     } else if state.entries.is_empty() {
-        vec![placeholder_text("（空目录）")]
+        vec![placeholder_text(tr!("（空目录）"))]
     } else {
         state
             .entries
@@ -127,21 +132,21 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
     let save_panel: Element<'static> = if state.save_mode {
         // 素材上传待办存在 → 上传素材；否则保存当前工程
         let title = match &state.pending_upload {
-            Some(p) => format!(
-                "将上传素材 {} 到：{}",
-                p.file_name,
-                if state.current_path.is_empty() {
+            Some(p) => trf!(
+                "将上传素材 {name} 到：{path}",
+                name = p.file_name,
+                path = if state.current_path.is_empty() {
                     "/"
                 } else {
-                    &state.current_path
+                    state.current_path.as_str()
                 }
             ),
-            None => format!(
-                "将保存当前工程到：{}",
-                if state.current_path.is_empty() {
+            None => trf!(
+                "将保存当前工程到：{path}",
+                path = if state.current_path.is_empty() {
                     "/"
                 } else {
-                    &state.current_path
+                    state.current_path.as_str()
                 }
             ),
         };
@@ -150,9 +155,9 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
                 text(title).size(13),
                 button(
                     text(if state.busy {
-                        "上传中..."
+                        tr!("上传中...")
                     } else {
-                        "保存到此处"
+                        tr!("保存到此处")
                     })
                     .size(14)
                 )
@@ -225,11 +230,11 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
     let is_renaming = state.renaming.as_deref() == Some(entry.path.as_str());
     let name_area: Element<'static> = if is_renaming {
         row![
-            text_input("新名称", &state.rename_input)
+            text_input(tr!("新名称"), &state.rename_input)
                 .on_input(|s| Message::Cloud(CloudAction::RenameInputChanged(s)))
                 .width(Length::Fill),
-            small_btn("确定", Message::Cloud(CloudAction::RenameConfirm)),
-            small_btn("取消", Message::Cloud(CloudAction::RenameCancel)),
+            small_btn(tr!("确定"), Message::Cloud(CloudAction::RenameConfirm)),
+            small_btn(tr!("取消"), Message::Cloud(CloudAction::RenameCancel)),
         ]
         .spacing(6)
         .align_y(Alignment::Center)
@@ -276,15 +281,15 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
 
     let action_area: Element<'static> = if pending_delete {
         row![
-            text("确认删除？").size(12),
+            text(tr!("确认删除？")).size(12),
             small_btn(
-                "删除",
+                tr!("删除"),
                 Message::Cloud(CloudAction::DeleteEntry {
                     path: entry.path.clone(),
                     is_dir: entry.is_dir,
                 })
             ),
-            small_btn("取消", Message::Cloud(CloudAction::DeleteCancel)),
+            small_btn(tr!("取消"), Message::Cloud(CloudAction::DeleteCancel)),
         ]
         .spacing(6)
         .align_y(Alignment::Center)
@@ -294,7 +299,7 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
         if !state.save_mode && !entry.is_dir {
             // 文件行：下载
             actions.push(small_btn(
-                "下载",
+                tr!("下载"),
                 Message::Cloud(CloudAction::Download {
                     path: entry.path.clone(),
                 }),
@@ -304,7 +309,7 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
             if entry.is_dir {
                 // 目录：复制不支持（提示），支持剪切
                 actions.push(small_btn(
-                    "剪切",
+                    tr!("剪切"),
                     Message::Cloud(CloudAction::CutEntry {
                         path: entry.path.clone(),
                         is_dir: true,
@@ -312,14 +317,14 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
                 ));
             } else {
                 actions.push(small_btn(
-                    "复制",
+                    tr!("复制"),
                     Message::Cloud(CloudAction::CopyEntry {
                         path: entry.path.clone(),
                         is_dir: false,
                     }),
                 ));
                 actions.push(small_btn(
-                    "剪切",
+                    tr!("剪切"),
                     Message::Cloud(CloudAction::CutEntry {
                         path: entry.path.clone(),
                         is_dir: false,
@@ -327,11 +332,11 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
                 ));
             }
             actions.push(small_btn(
-                "重命名",
+                tr!("重命名"),
                 Message::Cloud(CloudAction::StartRename(entry.path.clone())),
             ));
             actions.push(small_btn(
-                "删除",
+                tr!("删除"),
                 Message::Cloud(CloudAction::RequestDelete {
                     path: entry.path.clone(),
                     is_dir: entry.is_dir,

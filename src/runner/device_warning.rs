@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use lumino_core::tr;
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 
 /// 警告窗宽度（逻辑像素）
@@ -35,7 +36,7 @@ impl DeviceWarningWindow {
                 width: DEVICE_WARNING_WINDOW_WIDTH,
                 height: DEVICE_WARNING_WINDOW_HEIGHT,
             })
-            .with_title("GPU 兼容性检查")
+            .with_title(tr!("GPU 兼容性检查"))
             .with_resizable(false)
             .with_visible(true);
 

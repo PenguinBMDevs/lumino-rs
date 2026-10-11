@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use lumino_core::trf;
 use midly::loader::scan_midi_file;
 
 use crate::LoaderError;
@@ -43,7 +44,7 @@ impl MidiInfo {
         }
 
         let scan_result = scan_midi_file(&path)
-            .map_err(|e| LoaderError::MidiParse(format!("扫描 MIDI 文件失败: {e}")))?;
+            .map_err(|e| LoaderError::MidiParse(trf!("扫描 MIDI 文件失败: {e}", e = e)))?;
 
         if let Some(cb) = progress_callback {
             cb(1.0);
@@ -64,12 +65,15 @@ impl std::fmt::Display for MidiInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MIDI文件: {} | 音轨数: {} | 音符事件数: {} | 时长: {} ticks | 分辨率: {}",
-            self.path.display(),
-            self.track_count,
-            self.total_notes,
-            self.duration_ticks,
-            self.division,
+            "{}",
+            trf!(
+                "MIDI文件: {path} | 音轨数: {track_count} | 音符事件数: {total_notes} | 时长: {duration_ticks} ticks | 分辨率: {division}",
+                path = self.path.display(),
+                track_count = self.track_count,
+                total_notes = self.total_notes,
+                duration_ticks = self.duration_ticks,
+                division = self.division
+            )
         )
     }
 }

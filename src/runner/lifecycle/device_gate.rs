@@ -9,6 +9,7 @@
 //! 全量检测的回退后端诊断（DX12/GL 适配器枚举）只在「失败且要弹警告窗」时收集，
 //! 见 [`fallback_diagnostics`]。
 
+use lumino_core::{tr, trf};
 use lumino_gfx::device_check::{self, FallbackDiagnostics, GpuCheckFailure, GpuCheckReport};
 use winit::event_loop::ActiveEventLoop;
 
@@ -136,9 +137,9 @@ impl Runner {
                 "GPU 兼容性检测失败（已抑制弹窗，静默继续）: {}",
                 report.detail().replace('\n', " | ")
             );
-            self.pending_status_hint = Some(format!(
-                "未检测到 {} 支持，运行可能不稳定（可在设置中查看详情）",
-                device_check::required_backend_name()
+            self.pending_status_hint = Some(trf!(
+                "未检测到 {backend} 支持，运行可能不稳定（可在设置中查看详情）",
+                backend = device_check::required_backend_name()
             ));
             if let Err(e) = storage.persist_gpu_check_cache(fingerprint.as_deref(), passed) {
                 tracing::warn!("写入 GPU 检测缓存失败: {e}");
@@ -268,19 +269,19 @@ fn fallback_diagnostics(policy: device_check_policy::StartupCheckPolicy) -> Fall
 
 /// 原生提示框兜底（iced 警告窗创建失败时使用）；返回是否选择继续启动
 fn show_native_warning(detail: &str) -> bool {
-    const CONTINUE_LABEL: &str = "放我进去";
-    const QUIT_LABEL: &str = "确认并关闭";
+    let continue_label = tr!("放我进去");
+    let quit_label = tr!("确认并关闭");
     matches!(
         rfd::MessageDialog::new()
             .set_level(rfd::MessageLevel::Warning)
-            .set_title("GPU 兼容性检查")
+            .set_title(tr!("GPU 兼容性检查"))
             .set_description(detail)
             .set_buttons(rfd::MessageButtons::OkCancelCustom(
-                CONTINUE_LABEL.to_string(),
-                QUIT_LABEL.to_string(),
+                continue_label.to_string(),
+                quit_label.to_string(),
             ))
             .show(),
-        rfd::MessageDialogResult::Custom(label) if label == CONTINUE_LABEL
+        rfd::MessageDialogResult::Custom(label) if label == continue_label
     )
 }
 
@@ -288,19 +289,23 @@ fn show_native_warning(detail: &str) -> bool {
 fn failure_detail(report: &GpuCheckReport) -> String {
     let backend = device_check::required_backend_name();
     let base = match &report.failure {
-        Some(GpuCheckFailure::NoAdapter) => {
-            format!("未检测到支持 {backend} 的显卡或驱动，可尝试更新显卡驱动。")
-        }
-        Some(GpuCheckFailure::DeviceRequest(_)) => {
-            format!("检测到 {backend} 设备，但初始化失败（驱动可能不满足要求）。")
-        }
-        Some(GpuCheckFailure::RenderError(_)) => {
-            format!("{backend} 渲染管线执行失败，请尝试更新显卡驱动。")
-        }
-        Some(GpuCheckFailure::Timeout) => {
-            format!("{backend} 检测超时，驱动可能异常；已跳过本次检测。")
-        }
-        None => format!("{backend} 兼容性检测未通过。"),
+        Some(GpuCheckFailure::NoAdapter) => trf!(
+            "未检测到支持 {backend} 的显卡或驱动，可尝试更新显卡驱动。",
+            backend = backend
+        ),
+        Some(GpuCheckFailure::DeviceRequest(_)) => trf!(
+            "检测到 {backend} 设备，但初始化失败（驱动可能不满足要求）。",
+            backend = backend
+        ),
+        Some(GpuCheckFailure::RenderError(_)) => trf!(
+            "{backend} 渲染管线执行失败，请尝试更新显卡驱动。",
+            backend = backend
+        ),
+        Some(GpuCheckFailure::Timeout) => trf!(
+            "{backend} 检测超时，驱动可能异常；已跳过本次检测。",
+            backend = backend
+        ),
+        None => trf!("{backend} 兼容性检测未通过。", backend = backend),
     };
 
     if report.fallback_adapters.is_empty() {
@@ -313,9 +318,10 @@ fn failure_detail(report: &GpuCheckReport) -> String {
         .collect();
     names.sort_unstable();
     names.dedup();
-    format!(
-        "{base}（检测到其他可用后端：{}，可能仍可运行）",
-        names.join("/")
+    trf!(
+        "{base}（检测到其他可用后端：{others}，可能仍可运行）",
+        base = base,
+        others = names.join("/")
     )
 }
 

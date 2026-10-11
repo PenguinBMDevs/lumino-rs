@@ -6,6 +6,7 @@
 use iced_core::{Alignment, Length};
 use iced_widget::{Space, button, column, container, row, scrollable, text};
 
+use lumino_core::{tr, trf};
 use lumino_ui_core::{Element, Message, Theme};
 
 use crate::{CloudConnItem, SettingsPanel};
@@ -19,13 +20,11 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
         .alert
         .as_deref()
         .map(|msg| {
-            container(
-                text(format!("⚠ 云存储提醒：{msg}"))
-                    .size(12)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().danger.base.color),
-                    }),
-            )
+            container(text(trf!("⚠ 云存储提醒：{msg}", msg = msg)).size(12).style(
+                |theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                },
+            ))
             .padding(8)
             .width(Length::Fill)
             .style(|theme: &Theme| container::Style {
@@ -40,7 +39,7 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
         .unwrap_or_else(|| Space::new().height(0).into());
 
     // 添加连接按钮
-    let add_btn = button(text("添加连接").size(13))
+    let add_btn = button(text(tr!("添加连接")).size(13))
         .padding([6, 18])
         .style(|theme: &Theme, _status| button::Style {
             background: Some(iced_core::Background::Color(
@@ -54,12 +53,14 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
 
     // 连接列表
     let list: Element<'static> = if settings.cloud.connections.is_empty() {
-        text("尚未添加云存储连接。支持 FTP / SFTP / WebDAV，连接信息仅存储在本机。")
-            .size(12)
-            .style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().background.strong.text),
-            })
-            .into()
+        text(tr!(
+            "尚未添加云存储连接。支持 FTP / SFTP / WebDAV，连接信息仅存储在本机。"
+        ))
+        .size(12)
+        .style(|theme: &Theme| text::Style {
+            color: Some(theme.extended_palette().background.strong.text),
+        })
+        .into()
     } else {
         scrollable(
             column(
@@ -78,7 +79,7 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
 
     container(
         column![
-            text("云存储管理").size(16),
+            text(tr!("云存储管理")).size(16),
             alert,
             row![add_btn, Space::new().width(Length::Fill)].align_y(Alignment::Center),
             list,
@@ -94,31 +95,31 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
 /// 单个连接行：名称 [协议] 地址 · 状态标志 · 操作按钮
 fn conn_row(conn: &CloudConnItem) -> Element<'static> {
     let status = if conn.online {
-        "🟢 在线"
+        tr!("🟢 在线")
     } else {
-        "🔴 离线"
+        tr!("🔴 离线")
     };
 
     let connect_btn = if conn.online {
-        button(text("断开").size(12))
+        button(text(tr!("断开")).size(12))
             .padding([3, 10])
             .on_press(Message::Cloud(CloudAction::Disconnect(conn.id.clone())))
     } else {
-        button(text("连接").size(12))
+        button(text(tr!("连接")).size(12))
             .padding([3, 10])
             .on_press(Message::Cloud(CloudAction::ConnectExisting(
                 conn.id.clone(),
             )))
     };
 
-    let manage_btn = button(text("管理文件").size(12))
+    let manage_btn = button(text(tr!("管理文件")).size(12))
         .padding([3, 10])
         .on_press_maybe(
             conn.online
                 .then_some(Message::Cloud(CloudAction::OpenBrowserPanel)),
         );
 
-    let delete_btn = button(text("删除").size(12))
+    let delete_btn = button(text(tr!("删除")).size(12))
         .padding([3, 10])
         .on_press(Message::Cloud(CloudAction::DeleteConnection(
             conn.id.clone(),

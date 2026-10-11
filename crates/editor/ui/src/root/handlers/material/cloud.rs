@@ -3,6 +3,8 @@
 //! 2026-08-18 拆分：原 `root/handlers/material.rs`（803 行）按职责拆分，
 //! 本模块承载素材上传到云流程（设置上传待办 + 打开云存储面板）。
 
+use lumino_core::tr;
+
 use crate::root::Root;
 use crate::toast::ToastLevel;
 
@@ -18,11 +20,12 @@ impl Root {
             return;
         };
         if !entry.valid {
-            self.toast.push(ToastLevel::Error, "素材无效，无法上传");
+            self.toast
+                .push(ToastLevel::Error, tr!("素材无效，无法上传"));
             return;
         }
         let Some(path) = &entry.path else {
-            self.toast.push(ToastLevel::Error, "内置素材不可上传");
+            self.toast.push(ToastLevel::Error, tr!("内置素材不可上传"));
             return;
         };
         // 远程文件名：素材显示名 + 扩展名；过滤路径分隔符（防止创建子路径）

@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
+use lumino_core::tr;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::cli_progress::CliProgressBar;
@@ -124,7 +125,7 @@ impl<'a> FramePipeline<'a> {
                     }
                     Err(FrameWaitError::Closed) => {
                         tracing::error!("帧数据通道关闭（渲染线程异常退出）");
-                        send_export_error(self.progress_tx, "导出失败：帧数据通道关闭");
+                        send_export_error(self.progress_tx, tr!("导出失败：帧数据通道关闭"));
                         cancelled = true;
                         break;
                     }

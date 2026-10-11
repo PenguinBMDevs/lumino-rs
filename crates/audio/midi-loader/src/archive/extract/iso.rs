@@ -7,6 +7,8 @@
 use std::io::Read;
 use std::path::Path;
 
+use lumino_core::trf;
+
 use crate::archive::{ArchiveEntry, ArchiveError};
 
 use super::sanitize::safe_join;
@@ -70,7 +72,7 @@ fn list_directory<T: iso9660::ISO9660Reader>(
 ) -> Result<(), ArchiveError> {
     for entry_result in dir.contents() {
         let entry = entry_result
-            .map_err(|e| ArchiveError::LibraryError(format!("iso9660 读取条目失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("iso9660 读取条目失败: {e}", e = e)))?;
 
         let name = entry.identifier().to_string();
         let full_name = if prefix.is_empty() {
@@ -115,13 +117,16 @@ pub(super) fn extract_entry_data(path: &Path, entry_name: &str) -> Result<Vec<u8
                     let mut reader = iso_file.read();
                     let mut entry_data = Vec::new();
                     reader.read_to_end(&mut entry_data).map_err(|e| {
-                        ArchiveError::LibraryError(format!("iso9660 读取文件失败: {e}"))
+                        ArchiveError::LibraryError(trf!("iso9660 读取文件失败: {e}", e = e))
                     })?;
                     Ok(entry_data)
                 }
                 Ok(Some(_)) => Err(ArchiveError::EntryNotFound(entry_name.to_string())),
                 Ok(None) => Err(ArchiveError::EntryNotFound(entry_name.to_string())),
-                Err(e) => Err(ArchiveError::LibraryError(format!("iso9660 查找失败: {e}"))),
+                Err(e) => Err(ArchiveError::LibraryError(trf!(
+                    "iso9660 查找失败: {e}",
+                    e = e
+                ))),
             }
         }
         Err(_e) => {
@@ -221,7 +226,7 @@ fn extract_all_from_dir<T: iso9660::ISO9660Reader>(
 ) -> Result<(), ArchiveError> {
     for entry_result in dir.contents() {
         let entry = entry_result
-            .map_err(|e| ArchiveError::LibraryError(format!("iso9660 读取条目失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("iso9660 读取条目失败: {e}", e = e)))?;
 
         let name = entry.identifier().to_string();
         let full_name = if prefix.is_empty() {
@@ -241,7 +246,7 @@ fn extract_all_from_dir<T: iso9660::ISO9660Reader>(
                 let mut reader = f.read();
                 let mut entry_data = Vec::new();
                 reader.read_to_end(&mut entry_data).map_err(|e| {
-                    ArchiveError::LibraryError(format!("iso9660 读取文件失败: {e}"))
+                    ArchiveError::LibraryError(trf!("iso9660 读取文件失败: {e}", e = e))
                 })?;
 
                 // DEBT-02 #119：ISO 标识符也不可信，统一 safe_join

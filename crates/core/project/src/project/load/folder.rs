@@ -12,19 +12,20 @@ use crate::project::{
 };
 use crate::{LuminoProject, TrackSlot};
 use lumino_core::error::{CoreError, Result};
+use lumino_core::trf;
 
 /// 从文件夹加载
 pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     // 读取 metadata.toml
     let metadata = ProjectMetadata::from_file(path.join(folder::FolderPaths::METADATA_FILE))
-        .map_err(|e| CoreError::FileFormat(format!("读取 metadata.toml 失败: {e}")))?;
+        .map_err(|e| CoreError::FileFormat(trf!("读取 metadata.toml 失败: {e}", e = e)))?;
 
     let mut project = LuminoProject::new(&metadata.project.name);
     project.metadata = metadata;
 
     // 读取音轨
     let tracks = folder::read_all_tracks(path)
-        .map_err(|e| CoreError::FileFormat(format!("读取音轨失败: {e}")))?;
+        .map_err(|e| CoreError::FileFormat(trf!("读取音轨失败: {e}", e = e)))?;
     for track in tracks {
         let track_id = track.meta.track_id;
         let idx = track_id as usize;
@@ -42,7 +43,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if tempo_path.exists() {
         let bytes = std::fs::read(&tempo_path)?;
         let data = LmtempData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("tempo 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("tempo 解码失败: {e}", e = e)))?;
         project.tempo_changes = data.tempo_changes;
     }
 
@@ -51,7 +52,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if sig_path.exists() {
         let bytes = std::fs::read(&sig_path)?;
         let data = LmsigData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("signature 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("signature 解码失败: {e}", e = e)))?;
         project.time_signatures = data.time_signatures;
         project.key_signatures = data.key_signatures;
     }
@@ -61,7 +62,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if ctl_path.exists() {
         let bytes = std::fs::read(&ctl_path)?;
         let data = LmctlData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("controls 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("controls 解码失败: {e}", e = e)))?;
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
         project.pitch_bends = data.pitch_bends;
@@ -72,7 +73,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if aftertouch_path.exists() {
         let bytes = std::fs::read(&aftertouch_path)?;
         let data = LmcatData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("aftertouch 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("aftertouch 解码失败: {e}", e = e)))?;
         project.channel_aftertouch = data.channel_aftertouch;
         project.poly_aftertouch = data.poly_aftertouch;
     }
@@ -82,7 +83,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if txt_path.exists() {
         let bytes = std::fs::read(&txt_path)?;
         let data = LmtxtData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("text events 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("text events 解码失败: {e}", e = e)))?;
         project.lyrics = data.lyrics;
         project.markers = data.markers;
     }
@@ -92,7 +93,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if txtmeta_path.exists() {
         let bytes = std::fs::read(&txtmeta_path)?;
         let data = LmtextmetaData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("text metas 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("text metas 解码失败: {e}", e = e)))?;
         project.text_events = data.text_events;
     }
 
@@ -101,7 +102,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if syx_path.exists() {
         let bytes = std::fs::read(&syx_path)?;
         let data = LmsyxData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("SysEx 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("SysEx 解码失败: {e}", e = e)))?;
         project.sys_ex = data.sys_ex;
     }
 
@@ -110,7 +111,7 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     if names_path.exists() {
         let bytes = std::fs::read(&names_path)?;
         let _data = LmnamesData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(format!("names 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("names 解码失败: {e}", e = e)))?;
         // 名称冗余存储，实际名称从各 .lmtrack 中已读取
     }
 

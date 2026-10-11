@@ -9,6 +9,7 @@ use crate::sidebar::{MIXER_MAX_VOLUME, gain_to_volume, volume_to_gain};
 use crate::{Element, Theme, sidebar::Track};
 use iced_core::{Alignment, Background, Color, Length};
 use iced_widget::{Space, button, column, container, row, text, vertical_slider};
+use lumino_core::{tr, trf};
 use lumino_ui_core::sidebar_event::Event;
 
 /// 混音台文本主题样式：跟随主题基底文字色（暗色系白字 / 亮色系黑字），
@@ -94,7 +95,7 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
         })
         .unwrap_or(0.0);
     let meter = build_level_meter(level);
-    let vol_readout = text(format!("音量 {volume}"))
+    let vol_readout = text(trf!("音量 {value}", value = volume))
         .size(10)
         .style(mixer_text_style);
 
@@ -115,7 +116,7 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
 /// 全局音量控制器（混音台首项）：主音量推子 + 电平表 + 读数，无 M/S 与声像。
 pub(crate) fn build_master_strip(root: &Root) -> Element<'static> {
     let master_volume = root.mixer_panel.master_volume;
-    let name = text("主音量").size(11).style(mixer_text_style);
+    let name = text(tr!("主音量")).size(11).style(mixer_text_style);
 
     // 主音量推子：0..=127，纵向，变化即时同步到播放引擎（全局缩放所有通道）。
     let gain = vertical_slider(
@@ -135,7 +136,7 @@ pub(crate) fn build_master_strip(root: &Root) -> Element<'static> {
         .map(|f| f.master_level)
         .unwrap_or(0.0);
     let meter = build_level_meter(master_level);
-    let vol_readout = text(format!("音量 {master_volume}"))
+    let vol_readout = text(trf!("音量 {value}", value = master_volume))
         .size(10)
         .style(mixer_text_style);
 

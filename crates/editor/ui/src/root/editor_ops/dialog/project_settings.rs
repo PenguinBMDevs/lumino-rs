@@ -1,5 +1,7 @@
 //! 工程设置对话框数据管理
 
+use lumino_core::tr;
+
 use crate::root::Root;
 
 /// 工程设置对话框数据包（消除 `set_project_settings_data` 的 8 个参数）
@@ -162,7 +164,7 @@ impl Root {
             // 尝试从文件名获取标题
             let title = if dialog.title.is_empty() {
                 // 使用默认标题
-                "无标题".to_string()
+                tr!("无标题").to_string()
             } else {
                 dialog.title.clone()
             };

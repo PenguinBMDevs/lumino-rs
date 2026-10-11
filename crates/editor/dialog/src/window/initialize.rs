@@ -2,8 +2,7 @@
 
 use std::sync::Arc;
 
-use lumino_core::BrushConfig;
-use lumino_core::storage::config::UiConfig;
+use lumino_core::{BrushConfig, storage::config::UiConfig, tr};
 use lumino_ui::state::root_state::DialogType;
 
 use super::DialogWindow;
@@ -128,7 +127,7 @@ impl DialogWindow {
                 ui.set_export_progress_dialog_open(true);
             }
             DialogType::VideoExport => {
-                ui.update_video_export_progress("正在初始化...".to_string(), 0.0, 0, 0.0, 0.0);
+                ui.update_video_export_progress(tr!("正在初始化...").to_string(), 0.0, 0, 0.0, 0.0);
             }
             DialogType::MemoryMonitor => {
                 ui.set_memory_monitor_dialog_open(true);

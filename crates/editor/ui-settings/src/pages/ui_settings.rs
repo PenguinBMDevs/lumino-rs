@@ -14,6 +14,7 @@ use super::super::components::styles::create_content_text_style;
 use super::super::components::{with_setting_tooltip_inline, with_setting_tooltip_inline_action};
 use crate::SettingsPanel;
 use lumino_core::storage::config::NoteCountDisplay;
+use lumino_core::tr;
 use lumino_extras::i18n::{Language, settings_translations};
 
 /// 音符总量显示位置（本地化下拉项；UI-015）
@@ -92,7 +93,7 @@ pub fn view<'a>(
         iced_widget::space().height(20),
         // 语言选择
         row![
-            text("语言 / Language:")
+            text(tr!("语言 / Language:"))
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),

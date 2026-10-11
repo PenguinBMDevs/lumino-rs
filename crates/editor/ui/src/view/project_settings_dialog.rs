@@ -1,5 +1,6 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, scrollable, space, text, text_input};
+use lumino_core::tr;
 use lumino_extras::i18n::{Language, main_translations};
 
 use crate::message::{Message, ProjectSettingsAction};
@@ -95,7 +96,7 @@ pub fn view_project_settings_dialog<'a>(
     .style(input_style);
 
     // 拍号（单拍号编辑，tick 固定为 0）
-    let time_signature_label = text("拍号").size(14).style(label_style);
+    let time_signature_label = text(tr!("拍号")).size(14).style(label_style);
     let numerator_input = container(
         text_input("4", &state.time_signature_numerator)
             .on_input(|s| {

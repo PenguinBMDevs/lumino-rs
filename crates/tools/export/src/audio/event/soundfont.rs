@@ -11,14 +11,16 @@ use xsynth_core::{
     soundfont::{SampleSoundfont, SoundfontBase},
 };
 
+use lumino_core::{tr, trf};
+
 use crate::audio::config::{AudioRenderConfig, normalize_layer_limit};
 use crate::error::{ExportError, ExportResult};
 
 fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
     if !path.exists() {
-        return Err(ExportError::AudioWrite(format!(
-            "音色库文件不存在: {:?}",
-            path
+        return Err(ExportError::AudioWrite(trf!(
+            "音色库文件不存在: {path}",
+            path = format!("{path:?}")
         )));
     }
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
@@ -28,9 +30,9 @@ fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
             return Ok(());
         }
         if !ext.eq_ignore_ascii_case("sf2") {
-            return Err(ExportError::AudioWrite(format!(
-                "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
-                path
+            return Err(ExportError::AudioWrite(trf!(
+                "不支持的音色库格式 {path}：仅支持 .sf2/.sfz",
+                path = format!("{path:?}")
             )));
         }
     }
@@ -42,9 +44,10 @@ fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
         use std::io::Read;
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
-            return Err(ExportError::AudioWrite(format!(
-                "音色库不是合法的 SF2 文件 {:?}：头应为 RIFF，实际 {:02X?}",
-                path, header
+            return Err(ExportError::AudioWrite(trf!(
+                "音色库不是合法的 SF2 文件 {path}：头应为 RIFF，实际 {header}",
+                path = format!("{path:?}"),
+                header = format!("{header:02X?}")
             )));
         }
     }
@@ -58,7 +61,7 @@ pub fn load_soundfonts(
 ) -> ExportResult<()> {
     if config.soundfonts.is_empty() {
         return Err(ExportError::AudioWrite(
-            "未指定音色库文件，请在导出面板选择 .sf2".into(),
+            tr!("未指定音色库文件，请在导出面板选择 .sf2").into(),
         ));
     }
     for p in &config.soundfonts {
@@ -78,7 +81,11 @@ pub fn load_soundfonts(
                 || {
                     let sf: Arc<dyn SoundfontBase> = Arc::new(
                         SampleSoundfont::new(sf_path, stream_params, sf_options).map_err(|e| {
-                            ExportError::AudioWrite(format!("音色库 {sf_path:?}: {e}"))
+                            ExportError::AudioWrite(trf!(
+                                "音色库 {sf_path}: {e}",
+                                sf_path = format!("{sf_path:?}"),
+                                e = e
+                            ))
                         })?,
                     );
                     Ok(sf)

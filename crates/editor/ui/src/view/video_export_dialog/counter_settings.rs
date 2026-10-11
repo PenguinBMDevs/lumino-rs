@@ -14,9 +14,12 @@ use iced_widget::{
     button, checkbox, column, container, pick_list, row, slider, space, text, text_input,
 };
 
+use lumino_core::tr;
+
 use crate::message::{Message, VideoExportAction};
 use crate::view::widgets;
 
+use super::localized_choice::LocalizedChoice;
 use super::state::VideoExportDialogState;
 
 /// 计数器设置区块（仅「计数器」渲染风格时显示）
@@ -25,7 +28,7 @@ pub fn counter_settings_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("计数器设置")
+        text(tr!("计数器设置"))
             .size(16)
             .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
@@ -63,7 +66,7 @@ fn template_section<'a>(
         .padding(8);
 
     column![
-        text("文本模板（支持 {nc} {nps} {bpm} 等占位符，\\n 换行）")
+        text(tr!("文本模板（支持 {nc} {nps} {bpm} 等占位符，\\n 换行）"))
             .size(12)
             .style(label_style),
         space().height(4),
@@ -72,13 +75,13 @@ fn template_section<'a>(
             .style(widgets::dialog_input_style(palette)),
         space().height(4),
         row![
-            button(text("恢复默认").size(12))
+            button(text(tr!("恢复默认")).size(12))
                 .on_press(Message::VideoExport(
                     VideoExportAction::CounterLoadTemplate("default".to_string(),)
                 ))
                 .padding([4, 12]),
             space().width(8),
-            button(text("完整模板").size(12))
+            button(text(tr!("完整模板")).size(12))
                 .on_press(Message::VideoExport(
                     VideoExportAction::CounterLoadTemplate("full".to_string(),)
                 ))
@@ -104,18 +107,24 @@ fn appearance_section<'a>(
         super::counter_settings_font::font_section(state, palette),
         space().height(8),
         row![
-            text("对齐:").size(14).style(label_style).width(100),
+            text(tr!("对齐:")).size(14).style(label_style).width(100),
+            // 注：六个对齐取值是 `CounterAlignment` 的 `Display`/`FromStr` 往返取值
+            // （见 `core/message/events/window/video/types.rs`），属数据 key 不是文案：
+            // 状态里仍存中文，`LocalizedChoice` 只把「显示」一层接上文案目录，
+            // 选中回调回发的是原始数据值（`.0`）。
             pick_list(
                 vec![
-                    "左上".to_string(),
-                    "右上".to_string(),
-                    "左下".to_string(),
-                    "右下".to_string(),
-                    "顶部分散".to_string(),
-                    "底部分散".to_string(),
+                    LocalizedChoice::new("左上"),
+                    LocalizedChoice::new("右上"),
+                    LocalizedChoice::new("左下"),
+                    LocalizedChoice::new("右下"),
+                    LocalizedChoice::new("顶部分散"),
+                    LocalizedChoice::new("底部分散"),
                 ],
-                Some(state.counter_alignment.clone()),
-                |v| Message::VideoExport(VideoExportAction::CounterAlignmentChanged(v)),
+                Some(LocalizedChoice::new(state.counter_alignment.clone())),
+                |v: LocalizedChoice| {
+                    Message::VideoExport(VideoExportAction::CounterAlignmentChanged(v.0))
+                },
             )
             .width(Length::Fixed(140.0)),
         ]
@@ -123,7 +132,7 @@ fn appearance_section<'a>(
         .align_y(Alignment::Center),
         space().height(8),
         row![
-            text("字号:").size(14).style(label_style).width(100),
+            text(tr!("字号:")).size(14).style(label_style).width(100),
             slider(7..=256, state.counter_font_size, |v| {
                 Message::VideoExport(VideoExportAction::CounterFontSizeChanged(v))
             })
@@ -137,12 +146,12 @@ fn appearance_section<'a>(
         .align_y(Alignment::Center),
         space().height(8),
         checkbox(state.counter_use_commas)
-            .label("使用千分位分隔符（1,234,567）")
+            .label(tr!("使用千分位分隔符（1,234,567）"))
             .on_toggle(|v| Message::VideoExport(VideoExportAction::CounterUseCommasChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         checkbox(state.counter_padding_zeroes)
-            .label("数字补零（按下方宽度对齐）")
+            .label(tr!("数字补零（按下方宽度对齐）"))
             .on_toggle(|v| {
                 Message::VideoExport(VideoExportAction::CounterPaddingZeroesChanged(v))
             })
@@ -166,9 +175,9 @@ fn csv_section<'a>(
         column![
             space().height(4),
             row![
-                text("路径:").size(12).style(label_style).width(50),
+                text(tr!("路径:")).size(12).style(label_style).width(50),
                 container(
-                    text_input("选择 CSV 输出路径...", &state.counter_csv_output)
+                    text_input(tr!("选择 CSV 输出路径..."), &state.counter_csv_output)
                         .on_input(|v| {
                             Message::VideoExport(VideoExportAction::CounterCsvPathChanged(v))
                         })
@@ -178,7 +187,7 @@ fn csv_section<'a>(
                 .width(Length::Fill)
                 .style(widgets::dialog_input_style(palette)),
                 space().width(6),
-                button(text("浏览...").size(12))
+                button(text(tr!("浏览...")).size(12))
                     .on_press(Message::VideoExport(VideoExportAction::CounterBrowseCsv))
                     .padding([4, 10]),
             ]
@@ -186,7 +195,7 @@ fn csv_section<'a>(
             .align_y(Alignment::Center),
             space().height(4),
             row![
-                text("格式:").size(12).style(label_style).width(50),
+                text(tr!("格式:")).size(12).style(label_style).width(50),
                 container(
                     text_input("{nps},{plph},{bpm},{nc}", &state.counter_csv_format)
                         .on_input(|v| {
@@ -209,7 +218,7 @@ fn csv_section<'a>(
 
     column![
         checkbox(state.counter_save_csv)
-            .label("每帧统计数据写入 CSV 文件")
+            .label(tr!("每帧统计数据写入 CSV 文件"))
             .on_toggle(|v| Message::VideoExport(VideoExportAction::CounterSaveCsvChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         csv_extras,
@@ -258,11 +267,11 @@ fn padding_section<'a>(
     }
 
     column![
-        text("数字补零宽度").size(13).style(label_style),
+        text(tr!("数字补零宽度")).size(13).style(label_style),
         space().height(4),
         row![
             pad_row(
-                "BPM 整数",
+                tr!("BPM 整数"),
                 state.counter_bpm_int_pad,
                 "bpm_int",
                 palette,
@@ -270,7 +279,7 @@ fn padding_section<'a>(
             ),
             space().width(8),
             pad_row(
-                "BPM 小数",
+                tr!("BPM 小数"),
                 state.counter_bpm_dec_pad,
                 "bpm_dec",
                 palette,
@@ -281,7 +290,7 @@ fn padding_section<'a>(
         space().height(6),
         row![
             pad_row(
-                "音符数",
+                tr!("音符数"),
                 state.counter_note_count_pad,
                 "nc",
                 palette,
@@ -289,7 +298,7 @@ fn padding_section<'a>(
             ),
             space().width(8),
             pad_row(
-                "复音数",
+                tr!("复音数"),
                 state.counter_polyphony_pad,
                 "plph",
                 palette,
@@ -312,10 +321,16 @@ fn padding_section<'a>(
         .spacing(0),
         space().height(6),
         row![
-            pad_row("小节", state.counter_bars_pad, "bars", palette, label_style),
+            pad_row(
+                tr!("小节"),
+                state.counter_bars_pad,
+                "bars",
+                palette,
+                label_style
+            ),
             space().width(8),
             pad_row(
-                "帧数",
+                tr!("帧数"),
                 state.counter_frames_pad,
                 "frames",
                 palette,
@@ -324,7 +339,7 @@ fn padding_section<'a>(
         ]
         .spacing(0),
         space().height(8),
-        button(text("恢复默认补零宽度").size(12))
+        button(text(tr!("恢复默认补零宽度")).size(12))
             .on_press(Message::VideoExport(VideoExportAction::CounterResetPadding))
             .padding([4, 12]),
     ]

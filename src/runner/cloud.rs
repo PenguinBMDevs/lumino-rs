@@ -9,6 +9,7 @@
 use std::sync::{Arc, Mutex, RwLock};
 
 use lumino_cloud::{CloudConnection, CloudManager, CloudProtocol};
+use lumino_core::tr;
 use lumino_ui::event::{self, cloud as cloud_event};
 
 use crate::runner::RunnerInner;
@@ -220,7 +221,7 @@ impl RunnerInner {
                     snap.remove_connection(&id);
                 }
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
-                    Some("连接已删除".to_string());
+                    Some(tr!("连接已删除").to_string());
                 self.refresh_cloud_connections();
             }
             cloud_event::Event::DismissAlert => {
@@ -370,12 +371,13 @@ impl RunnerInner {
                 state.selected_id = Some(id);
                 false
             } else {
-                state.connect_error = Some(error.clone().unwrap_or_else(|| "未知错误".to_string()));
+                state.connect_error =
+                    Some(error.clone().unwrap_or_else(|| tr!("未知错误").to_string()));
                 true
             }
         };
         if failed {
-            self.report_cloud_error("云存储连接失败", error.as_deref());
+            self.report_cloud_error(tr!("云存储连接失败"), error.as_deref());
             return;
         }
         // 连接成功：清除历史提醒标志（状态实时更新）

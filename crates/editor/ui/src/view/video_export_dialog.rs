@@ -7,6 +7,7 @@
 //! | `helpers` | 进度详情/时长格式化/后端列表 | <span class="line-numbers">167</span> |
 //! | `state` | 状态类型重导出 | <span class="line-numbers">7</span> |
 //! | `layout` | pick_list 选择行、预览区域 | <span class="line-numbers">200</span> |
+//! | `localized_choice` | 下拉选项「数据值 / 显示文案」分离包装 | <span class="line-numbers">71</span> |
 //! | `render_settings` | 渲染设置区各区块 | <span class="line-numbers">339</span> |
 //! | `view` | 公开入口 | <span class="line-numbers">90</span> |
 //! | `handlers` | 覆盖层各状态视图 | <span class="line-numbers">206</span> |
@@ -20,6 +21,7 @@ pub mod data_curve_settings_style;
 pub mod handlers;
 pub mod helpers;
 pub mod layout;
+pub mod localized_choice;
 pub mod render_settings;
 pub mod state;
 pub mod view;

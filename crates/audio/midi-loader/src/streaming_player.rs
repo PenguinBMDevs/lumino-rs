@@ -3,6 +3,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+use lumino_core::trf;
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, TrackEventKind};
 
@@ -116,7 +117,7 @@ impl<'a> StreamingMidiPlayer<'a> {
     /// 3. 创建每轨 TrackCursor 并预读第一轮
     pub fn from_bytes(data: &'a [u8]) -> LoaderResult<Self> {
         let mmap_smf = MmapSmf::parse(data)
-            .map_err(|e| LoaderError::MidiParse(format!("MmapSmf 解析失败: {}", e)))?;
+            .map_err(|e| LoaderError::MidiParse(trf!("MmapSmf 解析失败: {e}", e = e)))?;
 
         let ScanResult {
             tempo_changes,

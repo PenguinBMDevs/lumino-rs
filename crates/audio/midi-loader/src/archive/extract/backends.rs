@@ -5,6 +5,8 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use lumino_core::trf;
+
 use crate::archive::{ArchiveEntry, ArchiveError};
 
 use super::sanitize::safe_join;
@@ -14,12 +16,12 @@ use super::sanitize::safe_join;
 /// 使用 unarc-rs 列出压缩包条目
 pub(super) fn list_entries_unarc(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
     let mut archive = unarc_rs::unified::ArchiveFormat::open_path(path)
-        .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 打开失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 打开失败: {e}", e = e)))?;
 
     let mut entries = Vec::new();
     while let Some(entry) = archive
         .next_entry()
-        .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 读取条目失败: {e}")))?
+        .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 读取条目失败: {e}", e = e)))?
     {
         let name = entry.name().to_string();
         let is_dir = name.ends_with('/');
@@ -35,22 +37,22 @@ pub(super) fn extract_entry_data_unarc(
     entry_name: &str,
 ) -> Result<Vec<u8>, ArchiveError> {
     let mut archive = unarc_rs::unified::ArchiveFormat::open_path(path)
-        .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 打开失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 打开失败: {e}", e = e)))?;
 
     let normalized_target = entry_name.replace('\\', "/").to_ascii_lowercase();
 
     while let Some(entry) = archive
         .next_entry()
-        .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 读取条目失败: {e}")))?
+        .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 读取条目失败: {e}", e = e)))?
     {
         let normalized_name = entry.name().replace('\\', "/").to_ascii_lowercase();
 
         if normalized_name == normalized_target
             || normalized_name.ends_with(&format!("/{normalized_target}"))
         {
-            let entry_data = archive
-                .read(&entry)
-                .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 读取数据失败: {e}")))?;
+            let entry_data = archive.read(&entry).map_err(|e| {
+                ArchiveError::LibraryError(trf!("unarc-rs 读取数据失败: {e}", e = e))
+            })?;
             return Ok(entry_data);
         }
     }
@@ -64,13 +66,13 @@ pub(super) fn extract_all_unarc(
     output_dir: &Path,
 ) -> Result<Vec<PathBuf>, ArchiveError> {
     let mut archive = unarc_rs::unified::ArchiveFormat::open_path(path)
-        .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 打开失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 打开失败: {e}", e = e)))?;
 
     let mut extracted = Vec::new();
 
     while let Some(entry) = archive
         .next_entry()
-        .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 读取条目失败: {e}")))?
+        .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 读取条目失败: {e}", e = e)))?
     {
         let name = entry.name();
         if name.ends_with('/') {
@@ -82,7 +84,7 @@ pub(super) fn extract_all_unarc(
 
         let entry_data = archive
             .read(&entry)
-            .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 读取数据失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("unarc-rs 读取数据失败: {e}", e = e)))?;
 
         let entry_path = safe_join(output_dir, name)?;
         if let Some(parent) = entry_path.parent() {
@@ -101,13 +103,13 @@ pub(super) fn extract_all_unarc(
 pub(super) fn list_entries_zip(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
     let file = std::fs::File::open(path)?;
     let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| ArchiveError::LibraryError(format!("zip 打开失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("zip 打开失败: {e}", e = e)))?;
 
     let mut entries = Vec::new();
     for i in 0..archive.len() {
         let entry = archive
             .by_index(i)
-            .map_err(|e| ArchiveError::LibraryError(format!("zip 读取条目失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("zip 读取条目失败: {e}", e = e)))?;
         let name = entry.name().to_string();
         let is_dir = name.ends_with('/');
         entries.push(ArchiveEntry { name, is_dir });
@@ -122,14 +124,14 @@ pub(super) fn extract_entry_data_zip(
 ) -> Result<Vec<u8>, ArchiveError> {
     let file = std::fs::File::open(path)?;
     let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| ArchiveError::LibraryError(format!("zip 打开失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("zip 打开失败: {e}", e = e)))?;
 
     let normalized_target = entry_name.replace('\\', "/");
 
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
-            .map_err(|e| ArchiveError::LibraryError(format!("zip 读取条目失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("zip 读取条目失败: {e}", e = e)))?;
         let normalized_name = entry.name().replace('\\', "/");
 
         if normalized_name == normalized_target
@@ -138,7 +140,7 @@ pub(super) fn extract_entry_data_zip(
             let mut entry_data = Vec::new();
             entry
                 .read_to_end(&mut entry_data)
-                .map_err(|e| ArchiveError::LibraryError(format!("zip 读取数据失败: {e}")))?;
+                .map_err(|e| ArchiveError::LibraryError(trf!("zip 读取数据失败: {e}", e = e)))?;
             return Ok(entry_data);
         }
     }
@@ -153,13 +155,13 @@ pub(super) fn extract_all_zip(
 ) -> Result<Vec<PathBuf>, ArchiveError> {
     let file = std::fs::File::open(path)?;
     let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| ArchiveError::LibraryError(format!("zip 打开失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("zip 打开失败: {e}", e = e)))?;
 
     let mut extracted = Vec::new();
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
-            .map_err(|e| ArchiveError::LibraryError(format!("zip 读取条目失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("zip 读取条目失败: {e}", e = e)))?;
 
         let name = entry.name().to_string();
         // DEBT-02 #119：zip crate 的 enclosed_name 已拒绝 `../` 与绝对路径；
@@ -180,7 +182,7 @@ pub(super) fn extract_all_zip(
         let mut entry_data = Vec::new();
         entry
             .read_to_end(&mut entry_data)
-            .map_err(|e| ArchiveError::LibraryError(format!("zip 读取数据失败: {e}")))?;
+            .map_err(|e| ArchiveError::LibraryError(trf!("zip 读取数据失败: {e}", e = e)))?;
         std::fs::write(&entry_path, &entry_data)?;
         extracted.push(entry_path);
     }
@@ -263,7 +265,7 @@ pub(super) fn extract_entry_data_gz(path: &Path) -> Result<Vec<u8>, ArchiveError
     let mut decompressed_data = Vec::new();
     decoder
         .read_to_end(&mut decompressed_data)
-        .map_err(|e| ArchiveError::LibraryError(format!("GZ 解压失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("GZ 解压失败: {e}", e = e)))?;
     Ok(decompressed_data)
 }
 
@@ -274,7 +276,7 @@ pub(super) fn extract_entry_data_xz(path: &Path) -> Result<Vec<u8>, ArchiveError
     let mut decompressed_data = Vec::new();
     decoder
         .read_to_end(&mut decompressed_data)
-        .map_err(|e| ArchiveError::LibraryError(format!("XZ 解压失败: {e}")))?;
+        .map_err(|e| ArchiveError::LibraryError(trf!("XZ 解压失败: {e}", e = e)))?;
     Ok(decompressed_data)
 }
 

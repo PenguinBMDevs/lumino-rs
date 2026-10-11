@@ -10,6 +10,8 @@
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
+use lumino_core::tr;
+
 use super::Root;
 
 /// 路径选择类对话框任务标识（决定结果写回哪个字段）
@@ -130,9 +132,9 @@ impl Root {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let outcome = match rfd::FileDialog::new()
-                .set_title("选择要导入的素材文件")
-                .add_filter("Lumino 素材", &["lmmaterial"])
-                .add_filter("所有文件", &["*"])
+                .set_title(tr!("选择要导入的素材文件"))
+                .add_filter(tr!("Lumino 素材"), &["lmmaterial"])
+                .add_filter(tr!("所有文件"), &["*"])
                 .pick_file()
             {
                 Some(path) => {
@@ -178,12 +180,12 @@ impl Root {
                 tracing::error!("导入失败：所选文件不是素材文件（.lmmaterial）");
                 self.toast.push(
                     crate::toast::ToastLevel::Error,
-                    "素材导入失败：不是有效的素材文件",
+                    tr!("素材导入失败：不是有效的素材文件"),
                 );
             }
             MaterialImportOutcome::Imported => {
                 self.toast
-                    .push(crate::toast::ToastLevel::Success, "素材已导入");
+                    .push(crate::toast::ToastLevel::Success, tr!("素材已导入"));
                 // 重新扫描列表
                 self.start_material_scan();
             }
@@ -191,7 +193,7 @@ impl Root {
                 tracing::error!("素材导入失败：{e}");
                 self.toast.push(
                     crate::toast::ToastLevel::Error,
-                    "素材导入失败：复制文件出错",
+                    tr!("素材导入失败：复制文件出错"),
                 );
             }
         }

@@ -2,6 +2,8 @@
 //!
 //! 处理 `Message::RightSidebar`（图片转 MIDI / 素材库）相关动作。
 
+use lumino_core::tr;
+
 use crate::root::Root;
 
 /// 处理右侧栏动作
@@ -44,18 +46,18 @@ impl Root {
                     crate::root::file_dialog::PathDialogTask::ImageToMidiSource,
                     || {
                         rfd::FileDialog::new()
-                            .set_title("选择要转换为 MIDI 的图片")
+                            .set_title(tr!("选择要转换为 MIDI 的图片"))
                             .add_filter(
-                                "图片文件",
+                                tr!("图片文件"),
                                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "svg"],
                             )
-                            .add_filter("PNG 图片", &["png"])
-                            .add_filter("JPEG 图片", &["jpg", "jpeg"])
-                            .add_filter("BMP 图片", &["bmp"])
-                            .add_filter("GIF 图片", &["gif"])
-                            .add_filter("WebP 图片", &["webp"])
-                            .add_filter("SVG 矢量图", &["svg"])
-                            .add_filter("所有文件", &["*"])
+                            .add_filter(tr!("PNG 图片"), &["png"])
+                            .add_filter(tr!("JPEG 图片"), &["jpg", "jpeg"])
+                            .add_filter(tr!("BMP 图片"), &["bmp"])
+                            .add_filter(tr!("GIF 图片"), &["gif"])
+                            .add_filter(tr!("WebP 图片"), &["webp"])
+                            .add_filter(tr!("SVG 矢量图"), &["svg"])
+                            .add_filter(tr!("所有文件"), &["*"])
                             .pick_file()
                     },
                 );
@@ -133,8 +135,8 @@ impl Root {
                 true
             }
             I2mPaletteChanged(index) => {
-                // 面板调色板算法切换（索引指向 PALETTE_ALGORITHMS）
-                if index < crate::right_sidebar::PALETTE_ALGORITHMS.len() {
+                // 面板调色板算法切换（索引指向 palette_algorithms）
+                if index < crate::right_sidebar::palette_algorithms().len() {
                     self.right_sidebar.config.palette_index = index;
                 }
                 true

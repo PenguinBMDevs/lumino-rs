@@ -2,6 +2,8 @@
 //!
 //! 从 `video_export_dialog.rs` 中提取，降低主文件单文件规模。
 
+use lumino_core::trf;
+
 use crate::state::root_state::VideoExportDialogState;
 use iced_widget::{column, progress_bar, space, text};
 
@@ -32,16 +34,17 @@ pub fn render_progress_detail<'a>(
     );
 
     column![
-        text(format!(
-            "帧: {} / {}",
-            state.current_frame, state.total_frames
+        text(trf!(
+            "帧: {current} / {total}",
+            current = state.current_frame,
+            total = state.total_frames
         ))
         .size(13)
         .style(weak_text),
-        text(format!(
-            "时间: {} / {}",
-            format_duration(current_sec),
-            format_duration(total_sec)
+        text(trf!(
+            "时间: {elapsed} / {total}",
+            elapsed = format_duration(current_sec),
+            total = format_duration(total_sec)
         ))
         .size(13)
         .style(weak_text),
@@ -52,12 +55,18 @@ pub fn render_progress_detail<'a>(
             .size(12)
             .style(weak_text),
         space().height(8),
-        text(format!("渲染速度: {:.1} fps", state.render_fps))
-            .size(13)
-            .style(weak_text),
-        text(format!("速度: {:.1}x 原速", speedup))
-            .size(13)
-            .style(weak_text),
+        text(trf!(
+            "渲染速度: {fps} fps",
+            fps = format!("{:.1}", state.render_fps)
+        ))
+        .size(13)
+        .style(weak_text),
+        text(trf!(
+            "速度: {speed}x 原速",
+            speed = format!("{:.1}", speedup)
+        ))
+        .size(13)
+        .style(weak_text),
         text(elapsed_str).size(13).style(weak_text),
     ]
     .width(iced_core::Length::Fill)
@@ -95,13 +104,13 @@ pub fn elapsed_remaining_text(
 ) -> String {
     if elapsed_secs > 0.0 && render_fps > 0.0 {
         let remaining = total_frames.saturating_sub(current_frame) as f64 / render_fps;
-        format!(
-            "已用: {} / 剩余: {}",
-            format_duration(elapsed_secs),
-            format_duration(remaining)
+        trf!(
+            "已用: {elapsed} / 剩余: {remaining}",
+            elapsed = format_duration(elapsed_secs),
+            remaining = format_duration(remaining)
         )
     } else {
-        format!("已用: {}", format_duration(elapsed_secs))
+        trf!("已用: {elapsed}", elapsed = format_duration(elapsed_secs))
     }
 }
 

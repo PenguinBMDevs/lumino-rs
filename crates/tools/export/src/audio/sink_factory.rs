@@ -4,6 +4,8 @@
 //! - 非 PCM 格式使用 FFmpeg 子进程
 //! - PCM WAV 使用 hound 直接写入
 
+use lumino_core::trf;
+
 use crate::error::{ExportError, ExportResult};
 
 use super::codec;
@@ -23,9 +25,9 @@ pub(super) fn create_output_sink(config: &AudioRenderConfig) -> ExportResult<Box
 
     if codec.needs_ffmpeg() {
         let ffmpeg_path = codec::find_ffmpeg().ok_or_else(|| {
-            ExportError::AudioWrite(format!(
-                "需要 ffmpeg 来编码 {} 格式，但未找到 ffmpeg",
-                codec.extension()
+            ExportError::AudioWrite(trf!(
+                "需要 ffmpeg 来编码 {ext} 格式，但未找到 ffmpeg",
+                ext = codec.extension()
             ))
         })?;
 

@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use lumino_core::error::{CoreError, Result};
+use lumino_core::trf;
 
 /// 同卷临时路径的进程内序号：避免同一进程并发保存时互踩临时文件。
 static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -24,7 +25,7 @@ static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 /// 目标的同卷临时兄弟路径。
 fn sibling_tmp(target: &Path) -> Result<PathBuf> {
     let file_name = target.file_name().ok_or_else(|| {
-        CoreError::InvalidArgument(format!("无效的保存路径: {}", target.display()))
+        CoreError::InvalidArgument(trf!("无效的保存路径: {path}", path = target.display()))
     })?;
     let parent = parent_dir(target);
     let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -72,9 +73,9 @@ fn swap_into_place(tmp: &Path, target: &Path) -> Result<()> {
         .map(|m| m.permissions().readonly())
         .unwrap_or(false)
     {
-        return Err(CoreError::Other(format!(
-            "保存目标为只读，无法覆盖：{}（请先取消只读属性）",
-            target.display()
+        return Err(CoreError::Other(trf!(
+            "保存目标为只读，无法覆盖：{path}（请先取消只读属性）",
+            path = target.display()
         )));
     }
 
@@ -83,7 +84,7 @@ fn swap_into_place(tmp: &Path, target: &Path) -> Result<()> {
         remove_path(&bak).map_err(|e| {
             CoreError::Io(std::io::Error::new(
                 e.kind(),
-                format!("无法清理旧备份 {}：{e}", bak.display()),
+                trf!("无法清理旧备份 {path}：{e}", path = bak.display(), e = e),
             ))
         })?;
     }
@@ -91,7 +92,7 @@ fn swap_into_place(tmp: &Path, target: &Path) -> Result<()> {
     std::fs::rename(target, &bak).map_err(|e| {
         CoreError::Io(std::io::Error::new(
             e.kind(),
-            format!("无法备份原文件到 {}：{e}", bak.display()),
+            trf!("无法备份原文件到 {path}：{e}", path = bak.display(), e = e),
         ))
     })?;
 
@@ -100,10 +101,12 @@ fn swap_into_place(tmp: &Path, target: &Path) -> Result<()> {
         if let Err(rb) = std::fs::rename(&bak, target) {
             return Err(CoreError::Io(std::io::Error::new(
                 e.kind(),
-                format!(
-                    "换入 {} 失败：{e}；回滚失败：{rb}（原文件保留在 {}）",
-                    target.display(),
-                    bak.display()
+                trf!(
+                    "换入 {path} 失败：{e}；回滚失败：{rb}（原文件保留在 {bak}）",
+                    path = target.display(),
+                    e = e,
+                    rb = rb,
+                    bak = bak.display()
                 ),
             )));
         }

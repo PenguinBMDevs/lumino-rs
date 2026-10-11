@@ -1,5 +1,7 @@
 //! Root 协作功能处理器子模块
 
+use lumino_core::tr;
+
 use crate::root::Root;
 use crate::state::root_state::{CollaborationViewState, DialogType};
 
@@ -20,7 +22,7 @@ impl Root {
 
         // 设置为正在连接状态
         self.state.collaboration_dialog.view_state = CollaborationViewState::Connecting;
-        self.state.collaboration_dialog.connection_status = "正在连接...".to_string();
+        self.state.collaboration_dialog.connection_status = tr!("正在连接...").to_string();
 
         tracing::info!("协作对话框已打开，正在连接服务器 {}:{}", host, port);
     }

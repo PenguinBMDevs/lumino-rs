@@ -1,5 +1,6 @@
 //! 渲染进度与端口超限告警（自 `render_loops.rs` 拆出，保持单文件 < 400 行）
 
+use lumino_core::trf;
 use lumino_midi_model::multi_port::MAX_PORTS;
 
 use super::config::AudioRenderConfig;
@@ -46,13 +47,16 @@ pub(super) fn report_progress(
     speed: Option<f64>,
 ) {
     let elapsed = start_time.elapsed();
-    let speed_text = speed.map_or(String::new(), |s| format!(" | {s:.2}× 实时"));
-    let msg = format!(
-        "进度: {:.1}% | 事件: {} | 音符: {}{speed_text} | 耗时: {:.1}s",
-        pct * 100.0,
-        event_count,
-        note_count,
-        elapsed.as_secs_f64()
+    let speed_text = speed.map_or(String::new(), |s| {
+        trf!(" | {s}× 实时", s = format!("{:.2}", s))
+    });
+    let msg = trf!(
+        "进度: {pct}% | 事件: {events} | 音符: {notes}{speed_text} | 耗时: {elapsed}s",
+        pct = format!("{:.1}", pct * 100.0),
+        events = event_count,
+        notes = note_count,
+        speed_text = speed_text,
+        elapsed = format!("{:.1}", elapsed.as_secs_f64())
     );
     if let Some(ref callback) = config.progress_callback {
         callback(msg, pct);

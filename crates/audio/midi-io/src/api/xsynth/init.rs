@@ -9,6 +9,7 @@ use xsynth_core::{
     soundfont::SoundfontBase,
 };
 
+use lumino_core::trf;
 use lumino_midi_model::multi_port::{channels_for_max_port_clamped, percussion_channels};
 
 use crate::Error;
@@ -190,7 +191,7 @@ impl XSynth {
             Some(device) => {
                 let stream_config = device
                     .default_output_config()
-                    .map_err(|e| Error::InitFailed(format!("音频设备默认配置失败: {}", e)))?;
+                    .map_err(|e| Error::InitFailed(trf!("音频设备默认配置失败: {e}", e = e)))?;
                 RealtimeSynth::open(rt_config, &device, stream_config)
                     .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?
             }
@@ -287,7 +288,7 @@ impl XSynth {
     pub(super) fn rebuild_with_layout(&mut self, midi_max_port: u8) -> Result<(), String> {
         let (synth, sender) =
             Self::init_synth(&self.soundfont_path, self.options.as_ref(), midi_max_port)
-                .map_err(|e| format!("重建合成管线失败: {e}"))?;
+                .map_err(|e| trf!("重建合成管线失败: {e}", e = e))?;
 
         // 替换合成器（旧实例 drop：发送 Shutdown 并 join 全部线程）
         self.synth = synth;

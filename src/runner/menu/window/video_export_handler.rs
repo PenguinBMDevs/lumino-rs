@@ -4,6 +4,7 @@ use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use lumino_core::{tr, trf};
 use lumino_export::video::{
     Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig,
 };
@@ -39,7 +40,7 @@ impl RunnerInner {
             self.window_state
                 .window
                 .ui_mut()
-                .set_status_message(Some("已有导出任务进行中，请等待完成".to_string()));
+                .set_status_message(Some(tr!("已有导出任务进行中，请等待完成").to_string()));
             return;
         }
 
@@ -125,7 +126,7 @@ impl RunnerInner {
         let Some(cmd_sender) = cmd_sender else {
             tracing::error!("视频导出失败：渲染线程未启动");
             let main_ui = self.window_state.window.ui_mut();
-            main_ui.set_video_export_failed("渲染线程未启动".to_string());
+            main_ui.set_video_export_failed(tr!("渲染线程未启动").to_string());
             return;
         };
 
@@ -279,11 +280,11 @@ impl RunnerInner {
                     tracing::error!("视频导出失败：流式读取模式已暂时禁用，请先加载工程");
                     send_export_error(
                         &progress_tx,
-                        "导出失败：流式读取模式已暂时禁用，请先加载工程",
+                        tr!("导出失败：流式读取模式已暂时禁用，请先加载工程"),
                     );
                 } else {
                     tracing::error!("视频导出失败：无 MidiDocument 且未指定 MIDI 路径");
-                    send_export_error(&progress_tx, "导出失败：无 MIDI 数据");
+                    send_export_error(&progress_tx, tr!("导出失败：无 MIDI 数据"));
                 }
             });
         if let Err(e) = spawn_result {
@@ -294,7 +295,7 @@ impl RunnerInner {
             tracing::error!("视频导出线程启动失败: {e}");
             self.window_state
                 .dialog_manager
-                .forward_video_export_failed(format!("导出线程启动失败: {e}"));
+                .forward_video_export_failed(trf!("导出线程启动失败: {e}", e = e));
             self.window_state
                 .dialog_manager
                 .mark_dialog_for_close(DialogType::VideoExport);

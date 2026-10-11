@@ -10,6 +10,8 @@
 use iced_core::{Alignment, Background, Border, Color};
 use iced_widget::{button, container, row, text, tooltip};
 
+use lumino_core::tr;
+
 use crate::resources::icon;
 use crate::toolbar::{Event, ShapeType};
 use crate::{Element, Theme};
@@ -34,10 +36,10 @@ pub fn render_shape_dropdown<'a>(
     theme: &'a Theme,
 ) -> Element<'a> {
     // 条目：(图形类型, 图标, 悬浮 tooltip 名称)
-    let all_items: &[(ShapeType, icon::Icon, &'static str)] = &[
-        (ShapeType::Rectangle, icon::ShapeRectangle, "矩形"),
-        (ShapeType::Circle, icon::ShapeCircle, "圆形"),
-        (ShapeType::Triangle, icon::ShapeTriangle, "三角形"),
+    let all_items: [(ShapeType, icon::Icon, &'static str); 3] = [
+        (ShapeType::Rectangle, icon::ShapeRectangle, tr!("矩形")),
+        (ShapeType::Circle, icon::ShapeCircle, tr!("圆形")),
+        (ShapeType::Triangle, icon::ShapeTriangle, tr!("三角形")),
     ];
 
     let buttons = all_items

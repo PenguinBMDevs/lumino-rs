@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
 use lumino_midi_loader::loader::archive_loading::{
     ArchiveLoadResult, extract_entry_with_tempdir, scan_file_for_midi,
 };
@@ -48,9 +49,9 @@ impl RunnerInner {
             ArchiveLoadResult::NoMidiFiles => {
                 // 压缩包但内部没有 MIDI 文件
                 tracing::warn!("压缩包中未找到 MIDI 文件：{:?}", path);
-                self.show_error_dialog(
-                    "本文件不支持加载，请检查文件格式！\n\n支持的格式：\n- MIDI 文件 (.mid / .midi)\n- Lumino 项目文件 (.lmpj)\n- 包含上述文件的压缩包 (.zip / .rar / .7z 等)",
-                );
+                self.show_error_dialog(tr!(
+                    "本文件不支持加载，请检查文件格式！\n\n支持的格式：\n- MIDI 文件 (.mid / .midi)\n- Lumino 项目文件 (.lmpj)\n- 包含上述文件的压缩包 (.zip / .rar / .7z 等)"
+                ));
             }
             ArchiveLoadResult::SingleMidiFile(extracted_path) => {
                 // 压缩包中只有一个 MIDI 文件，自动解压并加载
@@ -98,15 +99,18 @@ impl RunnerInner {
                         first_midi,
                         archive_path
                     );
-                    self.show_info_dialog(&format!(
-                        "该压缩包中包含多个 MIDI 文件：\n\n{file_list}\n\n已自动加载第一个文件：{first_midi}\n如需加载其他文件，请直接打开对应的 MIDI 文件。"
+                    self.show_info_dialog(&trf!(
+                        "该压缩包中包含多个 MIDI 文件：\n\n{file_list}\n\n已自动加载第一个文件：{first_midi}\n如需加载其他文件，请直接打开对应的 MIDI 文件。",
+                        file_list = file_list,
+                        first_midi = first_midi
                     ));
                     self.load_midi_file(extracted_path);
                 }
                 Err(e) => {
                     tracing::error!("提取 MIDI 文件失败：{e}");
-                    self.show_error_dialog(&format!(
-                        "解压 MIDI 文件失败：{e}\n\n请尝试手动解压后加载。"
+                    self.show_error_dialog(&trf!(
+                        "解压 MIDI 文件失败：{e}\n\n请尝试手动解压后加载。",
+                        e = e
                     ));
                 }
             }
@@ -117,28 +121,28 @@ impl RunnerInner {
     pub(super) fn handle_import_files(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter(
-                crate::constants::filters::MUSIC_AND_ARCHIVE.0,
-                crate::constants::filters::MUSIC_AND_ARCHIVE.1,
+                crate::constants::filters::music_and_archive_filter(),
+                crate::constants::filters::MUSIC_AND_ARCHIVE_EXTS,
             )
             .add_filter(
-                crate::constants::filters::MUSIC_FILES.0,
-                crate::constants::filters::MUSIC_FILES.1,
+                crate::constants::filters::music_files_filter(),
+                crate::constants::filters::MUSIC_FILES_EXTS,
             )
             .add_filter(
-                crate::constants::filters::MIDI_FILES.0,
-                crate::constants::filters::MIDI_FILES.1,
+                crate::constants::filters::midi_files_filter(),
+                crate::constants::filters::MIDI_FILES_EXTS,
             )
             .add_filter(
-                crate::constants::filters::LUMINO_PROJECT.0,
-                crate::constants::filters::LUMINO_PROJECT.1,
+                crate::constants::filters::lumino_project_filter(),
+                crate::constants::filters::LUMINO_PROJECT_EXTS,
             )
             .add_filter(
-                crate::constants::filters::ARCHIVE_FILES.0,
-                crate::constants::filters::ARCHIVE_FILES.1,
+                crate::constants::filters::archive_files_filter(),
+                crate::constants::filters::ARCHIVE_FILES_EXTS,
             )
             .add_filter(
-                crate::constants::filters::ALL_FILES.0,
-                crate::constants::filters::ALL_FILES.1,
+                crate::constants::filters::all_files_filter(),
+                crate::constants::filters::ALL_FILES_EXTS,
             )
             .pick_file()
         else {
@@ -157,7 +161,7 @@ impl RunnerInner {
         #[cfg(not(test))]
         {
             let _ = rfd::MessageDialog::new()
-                .set_title("加载失败")
+                .set_title(tr!("加载失败"))
                 .set_description(message)
                 .set_level(rfd::MessageLevel::Error)
                 .show();
@@ -174,7 +178,7 @@ impl RunnerInner {
         #[cfg(not(test))]
         {
             let _ = rfd::MessageDialog::new()
-                .set_title("提示")
+                .set_title(tr!("提示"))
                 .set_description(message)
                 .set_level(rfd::MessageLevel::Info)
                 .show();
@@ -239,15 +243,15 @@ impl RunnerInner {
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
-            progress_cb("正在加载素材", 0.3);
+            progress_cb(tr!("正在加载素材"), 0.3);
             let path_for_blocking = path.clone();
             let load_result = tokio::task::spawn_blocking(move || {
                 let project = lumino_export::load_project(&path_for_blocking)?;
                 // 从 metadata 分辨素材/工程：非素材文件拒绝按素材加载
                 if !project.metadata.is_material_file() {
-                    return Err(lumino_export::ExportError::FileFormat(format!(
-                        "{} 不是素材文件（.lmmaterial）",
-                        path_for_blocking.display()
+                    return Err(lumino_export::ExportError::FileFormat(trf!(
+                        "{path} 不是素材文件（.lmmaterial）",
+                        path = path_for_blocking.display()
                     )));
                 }
                 lumino_export::project_to_parsed_midi(&project, path_for_blocking)
@@ -256,7 +260,7 @@ impl RunnerInner {
 
             match load_result {
                 Ok(Ok(parsed)) => {
-                    progress_cb("素材加载成功", 1.0);
+                    progress_cb(tr!("素材加载成功"), 1.0);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
@@ -265,7 +269,7 @@ impl RunnerInner {
                     ));
                 }
                 Ok(Err(e)) => {
-                    let msg = format!("加载素材失败: {e}");
+                    let msg = trf!("加载素材失败: {e}", e = e);
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
@@ -274,7 +278,7 @@ impl RunnerInner {
                     ));
                 }
                 Err(e) => {
-                    let msg = format!("加载素材任务失败: {e}");
+                    let msg = trf!("加载素材任务失败: {e}", e = e);
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
@@ -294,7 +298,7 @@ impl RunnerInner {
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
-            progress_cb("正在加载 LMPJ 工程", 0.3);
+            progress_cb(tr!("正在加载 LMPJ 工程"), 0.3);
             let path_for_blocking = path.clone();
             let load_result = tokio::task::spawn_blocking(move || {
                 let project = lumino_export::load_project(&path_for_blocking)?;
@@ -304,7 +308,7 @@ impl RunnerInner {
 
             match load_result {
                 Ok(Ok(parsed)) => {
-                    progress_cb("工程加载成功", 1.0);
+                    progress_cb(tr!("工程加载成功"), 1.0);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
@@ -313,7 +317,7 @@ impl RunnerInner {
                     ));
                 }
                 Ok(Err(e)) => {
-                    let msg = format!("加载 LMPJ 工程失败: {e}");
+                    let msg = trf!("加载 LMPJ 工程失败: {e}", e = e);
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
@@ -322,7 +326,7 @@ impl RunnerInner {
                     ));
                 }
                 Err(e) => {
-                    let msg = format!("加载 LMPJ 工程任务失败: {e}");
+                    let msg = trf!("加载 LMPJ 工程任务失败: {e}", e = e);
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);

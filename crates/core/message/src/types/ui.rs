@@ -1,5 +1,7 @@
 //! UI 相关类型
 
+use lumino_core::tr;
+
 // ─── 性能监控数据 ───
 
 /// 性能监控数据
@@ -48,7 +50,7 @@ pub enum TupletType {
 impl std::fmt::Display for TupletType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            TupletType::None => "（无）",
+            TupletType::None => tr!("（无）"),
             TupletType::Triplet => "3",
             TupletType::Quintuplet => "5",
             TupletType::Sextuplet => "6",

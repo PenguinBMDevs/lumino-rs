@@ -35,11 +35,11 @@ pub(crate) use test::TestModeState;
 /// Runner 初始化错误
 #[derive(Debug, thiserror::Error)]
 pub enum InitError {
-    #[error("存储初始化失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("存储初始化失败"), .0)]
     Storage(#[from] std::io::Error),
-    #[error("窗口初始化失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("窗口初始化失败"), .0)]
     Window(String),
-    #[error("云存储初始化失败: {0}")]
+    #[error("{}: {}", lumino_core::i18n::tr("云存储初始化失败"), .0)]
     Cloud(#[from] lumino_cloud::CloudError),
 }
 
@@ -257,6 +257,11 @@ impl Runner {
 
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
+
+        // 文案目录（`lumino_core::i18n`）走进程级当前语言：启动即按配置落一次，
+        // 之后由设置面板的 `LanguageChanged` 事件同步（见 root/handlers/settings.rs）。
+        lumino_core::i18n::set_current_language(config.ui.language);
+        tracing::info!("界面语言 = {:?}（来源：启动配置）", config.ui.language);
 
         // 保存进行中标志：WindowManager（关闭拦截）与 RunnerInner（保存任务）共享
         let saving = Arc::new(AtomicBool::new(false));

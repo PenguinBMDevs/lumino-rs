@@ -38,13 +38,25 @@ pub enum TextureWaterfallRenderMode {
 #[derive(Debug, Error)]
 pub enum WaterfallConfigError {
     /// 组内小节数超出 1..=16 范围
-    #[error("组内小节数必须在 1..=16 之间，当前为 {0}")]
+    #[error(
+        "{} {}",
+        lumino_core::i18n::tr("组内小节数必须在 1..=16 之间，当前为"),
+        .0
+    )]
     MeasuresOutOfRange(u32),
     /// 贴图宽度超出 480..=7680 范围
-    #[error("贴图宽度必须在 480..=7680 之间，当前为 {0}")]
+    #[error(
+        "{} {}",
+        lumino_core::i18n::tr("贴图宽度必须在 480..=7680 之间，当前为"),
+        .0
+    )]
     TileWidthOutOfRange(u32),
     /// 冷静期超出 3..=60 秒范围
-    #[error("冷静期必须在 3..=60 秒之间，当前为 {0}")]
+    #[error(
+        "{} {}",
+        lumino_core::i18n::tr("冷静期必须在 3..=60 秒之间，当前为"),
+        .0
+    )]
     CooldownOutOfRange(u64),
     // GPU 显存上限校验已删除——用户硬约束：不得限制 GPU 内存使用
 }

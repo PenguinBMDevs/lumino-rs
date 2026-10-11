@@ -1,3 +1,5 @@
+use lumino_core::tr;
+
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
     PlaybackOutput, SynthControl,
@@ -48,7 +50,7 @@ impl System {
             .map_err(|e| Error::InitFailed(format!("MIDI input lock poisoned: {e}")))?;
         let input = guard
             .as_ref()
-            .ok_or_else(|| Error::InitFailed("MIDI 输入未初始化".into()))?;
+            .ok_or_else(|| Error::InitFailed(tr!("MIDI 输入未初始化").into()))?;
         f(input)
     }
 
@@ -62,7 +64,7 @@ impl System {
             .map_err(|e| Error::InitFailed(format!("MIDI output lock poisoned: {e}")))?;
         let output = guard
             .as_ref()
-            .ok_or_else(|| Error::InitFailed("MIDI 输出未初始化".into()))?;
+            .ok_or_else(|| Error::InitFailed(tr!("MIDI 输出未初始化").into()))?;
         f(output)
     }
 

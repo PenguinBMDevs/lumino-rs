@@ -1,6 +1,8 @@
 use iced_core::Length;
 use iced_widget::{column, container, progress_bar, space, text};
 
+use lumino_core::tr;
+
 use crate::state::root_state::ExportProgressDialogState;
 
 /// 渲染音频导出进度对话框
@@ -11,7 +13,7 @@ pub fn view_export_progress_dialog<'a>(
     let palette = theme.extended_palette();
 
     // 标题
-    let title = text("音频导出")
+    let title = text(tr!("音频导出"))
         .size(18)
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(palette.background.neutral.text),
@@ -25,7 +27,7 @@ pub fn view_export_progress_dialog<'a>(
                 color: Some(palette.danger.strong.color),
             })
     } else if state.is_completed {
-        text("导出完成")
+        text(tr!("导出完成"))
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.success.strong.color),

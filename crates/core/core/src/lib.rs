@@ -4,6 +4,8 @@
 
 /// 核心错误类型与结果别名
 pub mod error;
+/// 运行时文案目录（i18n 长尾覆盖层：原文即 key，见模块文档）
+pub mod i18n;
 /// 平滑滚动动画模块
 pub mod smooth_scroll;
 /// 应用存储配置与界面状态模块

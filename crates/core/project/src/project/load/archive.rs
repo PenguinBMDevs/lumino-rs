@@ -12,23 +12,24 @@ use crate::project::{
 };
 use crate::{LmtrackData, LuminoProject, TrackSlot};
 use lumino_core::error::{CoreError, Result};
+use lumino_core::{tr, trf};
 
 /// 从归档文件加载
 pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // DEBT-01 #118：文件头 + 文件表只解析一次（边界/版本/CRC 校验随读取执行）。
     let reader = archive::ArchiveReader::new(bytes)
-        .map_err(|e| CoreError::FileFormat(format!("归档读取失败: {e}")))?;
+        .map_err(|e| CoreError::FileFormat(trf!("归档读取失败: {e}", e = e)))?;
 
     // 读取 metadata.toml
     let meta_bytes = reader
         .read("metadata.toml")
-        .map_err(|e| CoreError::FileFormat(format!("归档读取失败: {e}")))?
-        .ok_or_else(|| CoreError::FileFormat("归档中缺少 metadata.toml".into()))?;
+        .map_err(|e| CoreError::FileFormat(trf!("归档读取失败: {e}", e = e)))?
+        .ok_or_else(|| CoreError::FileFormat(tr!("归档中缺少 metadata.toml").into()))?;
     let metadata = ProjectMetadata::from_toml_str(
         std::str::from_utf8(&meta_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("metadata 编码错误: {e}")))?,
+            .map_err(|e| CoreError::FileFormat(trf!("metadata 编码错误: {e}", e = e)))?,
     )
-    .map_err(|e| CoreError::FileFormat(format!("metadata 解析失败: {e}")))?;
+    .map_err(|e| CoreError::FileFormat(trf!("metadata 解析失败: {e}", e = e)))?;
 
     let mut project = LuminoProject::new(&metadata.project.name);
     project.metadata = metadata;
@@ -36,12 +37,20 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取音轨（根据 metadata 中的 track_count）
     for track_id in 0..project.metadata.audio.track_count {
         let path = format!("data/project/tracks/{:03}.lmtrack", track_id);
-        if let Some(track_bytes) = reader
-            .read(&path)
-            .map_err(|e| CoreError::FileFormat(format!("读取音轨 {track_id} 失败: {e}")))?
-        {
-            let track = LmtrackData::decode(&track_bytes)
-                .map_err(|e| CoreError::FileFormat(format!("解码音轨 {track_id} 失败: {e}")))?;
+        if let Some(track_bytes) = reader.read(&path).map_err(|e| {
+            CoreError::FileFormat(trf!(
+                "读取音轨 {track_id} 失败: {e}",
+                track_id = track_id,
+                e = e
+            ))
+        })? {
+            let track = LmtrackData::decode(&track_bytes).map_err(|e| {
+                CoreError::FileFormat(trf!(
+                    "解码音轨 {track_id} 失败: {e}",
+                    track_id = track_id,
+                    e = e
+                ))
+            })?;
             let idx = track_id as usize;
             if idx >= project.tracks.len() {
                 project.tracks.resize_with(idx + 1, || TrackSlot::Unloaded {
@@ -56,20 +65,20 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取 tempo（专用格式 LMTM）
     if let Some(tempo_bytes) = reader
         .read("data/project/tempo.lmtemp")
-        .map_err(|e| CoreError::FileFormat(format!("读取 tempo 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 tempo 失败: {e}", e = e)))?
     {
         let data = LmtempData::decode(&tempo_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("tempo 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("tempo 解码失败: {e}", e = e)))?;
         project.tempo_changes = data.tempo_changes;
     }
 
     // 读取 signature（专用格式 LMSG）
     if let Some(sig_bytes) = reader
         .read("data/project/signature.lmsig")
-        .map_err(|e| CoreError::FileFormat(format!("读取 signature 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 signature 失败: {e}", e = e)))?
     {
         let data = LmsigData::decode(&sig_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("signature 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("signature 解码失败: {e}", e = e)))?;
         project.time_signatures = data.time_signatures;
         project.key_signatures = data.key_signatures;
     }
@@ -77,10 +86,10 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取 controls（专用格式 LMCT）
     if let Some(ctl_bytes) = reader
         .read("data/project/controls.lmctl")
-        .map_err(|e| CoreError::FileFormat(format!("读取 controls 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 controls 失败: {e}", e = e)))?
     {
         let data = LmctlData::decode(&ctl_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("controls 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("controls 解码失败: {e}", e = e)))?;
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
         project.pitch_bends = data.pitch_bends;
@@ -89,10 +98,10 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取触后（专用格式 LMAT；老工程无此文件即空，不报错）
     if let Some(cat_bytes) = reader
         .read("data/project/aftertouch.lmcat")
-        .map_err(|e| CoreError::FileFormat(format!("读取 aftertouch 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 aftertouch 失败: {e}", e = e)))?
     {
         let data = LmcatData::decode(&cat_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("aftertouch 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("aftertouch 解码失败: {e}", e = e)))?;
         project.channel_aftertouch = data.channel_aftertouch;
         project.poly_aftertouch = data.poly_aftertouch;
     }
@@ -100,10 +109,10 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取 text events（专用格式 LMTX）
     if let Some(txt_bytes) = reader
         .read("data/project/text_events.lmtxt")
-        .map_err(|e| CoreError::FileFormat(format!("读取 text events 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 text events 失败: {e}", e = e)))?
     {
         let data = LmtxtData::decode(&txt_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("text events 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("text events 解码失败: {e}", e = e)))?;
         project.lyrics = data.lyrics;
         project.markers = data.markers;
     }
@@ -111,30 +120,30 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取 text metas（专用格式 LMMT；老工程无此文件即空，不报错）
     if let Some(txtmeta_bytes) = reader
         .read("data/project/text_metas.lmmtx")
-        .map_err(|e| CoreError::FileFormat(format!("读取 text metas 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 text metas 失败: {e}", e = e)))?
     {
         let data = LmtextmetaData::decode(&txtmeta_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("text metas 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("text metas 解码失败: {e}", e = e)))?;
         project.text_events = data.text_events;
     }
 
     // 读取 SysEx（专用格式 LMSY）
     if let Some(syx_bytes) = reader
         .read("data/project/sysex.lmsyx")
-        .map_err(|e| CoreError::FileFormat(format!("读取 SysEx 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 SysEx 失败: {e}", e = e)))?
     {
         let data = LmsyxData::decode(&syx_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("SysEx 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("SysEx 解码失败: {e}", e = e)))?;
         project.sys_ex = data.sys_ex;
     }
 
     // 读取 track_names（专用格式 LMNM）
     if let Some(names_bytes) = reader
         .read("data/project/track_names.lmnames")
-        .map_err(|e| CoreError::FileFormat(format!("读取 names 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(trf!("读取 names 失败: {e}", e = e)))?
     {
         let _data = LmnamesData::decode(&names_bytes)
-            .map_err(|e| CoreError::FileFormat(format!("names 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(trf!("names 解码失败: {e}", e = e)))?;
     }
 
     Ok(project)

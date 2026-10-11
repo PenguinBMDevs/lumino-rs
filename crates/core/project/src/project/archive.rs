@@ -5,6 +5,7 @@
 use crc32fast::Hasher;
 
 use lumino_core::error::{CoreError, Result};
+use lumino_core::{tr, trf};
 
 /// 从指定偏移读取固定长度的小端字节数组
 fn read_le_bytes<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N]> {
@@ -42,17 +43,35 @@ const MAX_DECOMPRESSED_PART_BYTES: u64 = 1 << 31;
 /// 按 `offset/len` 取切片：全部 checked 运算 + 上界校验，损坏文件返回
 /// `FileFormat` 错误而不是 panic（DEBT-01 #118）。
 fn slice_at<'a>(bytes: &'a [u8], offset: u64, len: u64, what: &str) -> Result<&'a [u8]> {
-    let start = usize::try_from(offset)
-        .map_err(|_| CoreError::FileFormat(format!("{what}: 偏移 {offset} 超出地址空间")))?;
-    let len = usize::try_from(len)
-        .map_err(|_| CoreError::FileFormat(format!("{what}: 长度 {len} 超出地址空间")))?;
-    let end = start
-        .checked_add(len)
-        .ok_or_else(|| CoreError::FileFormat(format!("{what}: 偏移 {offset}+{len} 溢出")))?;
+    let start = usize::try_from(offset).map_err(|_| {
+        CoreError::FileFormat(trf!(
+            "{what}: 偏移 {offset} 超出地址空间",
+            what = what,
+            offset = offset
+        ))
+    })?;
+    let len = usize::try_from(len).map_err(|_| {
+        CoreError::FileFormat(trf!(
+            "{what}: 长度 {len} 超出地址空间",
+            what = what,
+            len = len
+        ))
+    })?;
+    let end = start.checked_add(len).ok_or_else(|| {
+        CoreError::FileFormat(trf!(
+            "{what}: 偏移 {offset}+{len} 溢出",
+            what = what,
+            offset = offset,
+            len = len
+        ))
+    })?;
     bytes.get(start..end).ok_or_else(|| {
-        CoreError::FileFormat(format!(
-            "{what}: 数据区越界（{start}..{end}，文件共 {} 字节），文件可能已损坏",
-            bytes.len()
+        CoreError::FileFormat(trf!(
+            "{what}: 数据区越界（{start}..{end}，文件共 {total} 字节），文件可能已损坏",
+            what = what,
+            start = start,
+            end = end,
+            total = bytes.len()
         ))
     })
 }
@@ -61,21 +80,25 @@ fn slice_at<'a>(bytes: &'a [u8], offset: u64, len: u64, what: &str) -> Result<&'
 fn decode_zstd_checked(data: &[u8], what: &str, expected_original_size: u64) -> Result<Vec<u8>> {
     use std::io::Read;
     let mut decoder = zstd::stream::Decoder::new(std::io::Cursor::new(data))
-        .map_err(|e| CoreError::Compression(format!("{what} 解压失败: {e}")))?;
+        .map_err(|e| CoreError::Compression(trf!("{what} 解压失败: {e}", what = what, e = e)))?;
     let mut out = Vec::new();
     (&mut decoder)
         .take(MAX_DECOMPRESSED_PART_BYTES + 1)
         .read_to_end(&mut out)
-        .map_err(|e| CoreError::Compression(format!("{what} 解压失败: {e}")))?;
+        .map_err(|e| CoreError::Compression(trf!("{what} 解压失败: {e}", what = what, e = e)))?;
     if out.len() as u64 > MAX_DECOMPRESSED_PART_BYTES {
-        return Err(CoreError::FileFormat(format!(
-            "{what} 解压后超过上限（{MAX_DECOMPRESSED_PART_BYTES} 字节），文件可能已损坏"
+        return Err(CoreError::FileFormat(trf!(
+            "{what} 解压后超过上限（{MAX_DECOMPRESSED_PART_BYTES} 字节），文件可能已损坏",
+            what = what,
+            MAX_DECOMPRESSED_PART_BYTES = MAX_DECOMPRESSED_PART_BYTES
         )));
     }
     if expected_original_size != 0 && out.len() as u64 != expected_original_size {
-        return Err(CoreError::FileFormat(format!(
-            "{what} 大小与文件头不一致（期望 {expected_original_size}，实际 {}），文件可能已损坏",
-            out.len()
+        return Err(CoreError::FileFormat(trf!(
+            "{what} 大小与文件头不一致（期望 {expected_original_size}，实际 {actual}），文件可能已损坏",
+            what = what,
+            expected_original_size = expected_original_size,
+            actual = out.len()
         )));
     }
     Ok(out)
@@ -198,9 +221,10 @@ impl FileEntry {
             .and_then(|p| p.checked_add(FIXED_FIELDS))
             .ok_or_else(|| CoreError::FileFormat("file entry: length overflow".into()))?;
         if bytes.len() < needed {
-            return Err(CoreError::FileFormat(format!(
-                "file entry: incomplete（需要 {needed} 字节，实际 {}）",
-                bytes.len()
+            return Err(CoreError::FileFormat(trf!(
+                "file entry: incomplete（需要 {needed} 字节，实际 {actual}）",
+                needed = needed,
+                actual = bytes.len()
             )));
         }
 
@@ -266,7 +290,7 @@ impl FileTable {
 
         for _ in 0..count {
             let rest = bytes.get(pos..).ok_or_else(|| {
-                CoreError::FileFormat(format!("file table: 条目区越界（pos={pos}）"))
+                CoreError::FileFormat(trf!("file table: 条目区越界（pos={pos}）", pos = pos))
             })?;
             let (entry, consumed) = FileEntry::decode(rest)?;
             pos = pos
@@ -301,19 +325,20 @@ impl<'a> ArchiveReader<'a> {
         let header = ArchiveHeader::from_bytes(bytes)?;
         if &header.magic != b"LMPJ" {
             return Err(CoreError::FileFormat(
-                "这不是有效的 Lumino 工程文件（魔数不匹配）".into(),
+                tr!("这不是有效的 Lumino 工程文件（魔数不匹配）").into(),
             ));
         }
         if header.version != ARCHIVE_VERSION {
-            return Err(CoreError::FileFormat(format!(
-                "不支持的工程文件版本 v{}（当前支持 v{ARCHIVE_VERSION}）",
-                header.version
+            return Err(CoreError::FileFormat(trf!(
+                "不支持的工程文件版本 v{version}（当前支持 v{ARCHIVE_VERSION}）",
+                version = header.version,
+                ARCHIVE_VERSION = ARCHIVE_VERSION
             )));
         }
         if header.compression_flags != ARCHIVE_COMPRESSION_ZSTD {
-            return Err(CoreError::FileFormat(format!(
-                "不支持的归档压缩标志 0x{:02X}（仅支持 zstd）",
-                header.compression_flags
+            return Err(CoreError::FileFormat(trf!(
+                "不支持的归档压缩标志 0x{flags}（仅支持 zstd）",
+                flags = format!("{:02X}", header.compression_flags)
             )));
         }
 
@@ -321,9 +346,10 @@ impl<'a> ArchiveReader<'a> {
             bytes,
             header.file_table_offset,
             header.file_table_compressed_size,
-            "文件表",
+            tr!("文件表"),
         )?;
-        let decompressed = decode_zstd_checked(ft_data, "文件表", header.file_table_original_size)?;
+        let decompressed =
+            decode_zstd_checked(ft_data, tr!("文件表"), header.file_table_original_size)?;
         let file_table = FileTable::decode(&decompressed)?;
 
         Ok(Self { bytes, file_table })
@@ -339,25 +365,31 @@ impl<'a> ArchiveReader<'a> {
             self.bytes,
             entry.data_offset,
             entry.compressed_size,
-            &format!("文件 {file_path}"),
+            &trf!("文件 {file_path}", file_path = file_path),
         )?;
 
         // CRC 覆盖"存储态"字节（压缩后大小），与写入端 `build_archive` 一致
         let crc = compute_crc32(data);
         if crc != entry.crc32 {
-            return Err(CoreError::FileFormat(format!(
-                "文件 {file_path} 校验失败（CRC 不匹配），工程可能已损坏"
+            return Err(CoreError::FileFormat(trf!(
+                "文件 {file_path} 校验失败（CRC 不匹配），工程可能已损坏",
+                file_path = file_path
             )));
         }
 
         let output = if entry.is_compressed {
-            decode_zstd_checked(data, &format!("文件 {file_path}"), entry.original_size)?
+            decode_zstd_checked(
+                data,
+                &trf!("文件 {file_path}", file_path = file_path),
+                entry.original_size,
+            )?
         } else {
             if entry.original_size != 0 && entry.original_size as usize != data.len() {
-                return Err(CoreError::FileFormat(format!(
-                    "文件 {file_path} 大小与文件头不一致（期望 {}，实际 {}），工程可能已损坏",
-                    entry.original_size,
-                    data.len()
+                return Err(CoreError::FileFormat(trf!(
+                    "文件 {file_path} 大小与文件头不一致（期望 {expected}，实际 {actual}），工程可能已损坏",
+                    file_path = file_path,
+                    expected = entry.original_size,
+                    actual = data.len()
                 )));
             }
             data.to_vec()

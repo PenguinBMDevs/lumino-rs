@@ -12,6 +12,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+lumino-core = { workspace = true }
 tracing = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

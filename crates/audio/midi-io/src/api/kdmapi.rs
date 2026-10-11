@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use lumino_core::{tr, trf};
+
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
     PlaybackOutput, SynthControl,
@@ -178,10 +180,9 @@ unsafe fn try_load_library(paths: &[PathBuf]) -> Result<Library, Error> {
         }
     }
 
-    Err(Error::InitFailed(format!(
-        "OmniMIDI.dll 未找到。已尝试路径: {}。\
-         请确认 OmniMIDI 已安装（https://github.com/KeppySoftware/OmniMIDI）",
-        paths
+    Err(Error::InitFailed(trf!(
+        "OmniMIDI.dll 未找到。已尝试路径: {paths}。请确认 OmniMIDI 已安装（https://github.com/KeppySoftware/OmniMIDI）",
+        paths = paths
             .iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
@@ -231,9 +232,7 @@ impl Kdmapi {
             // 1. 检查 KDMAPI 是否可用
             if !(sym.is_kdmapi_available)() {
                 return Err(Error::InitFailed(
-                    "KDMAPI 不可用（IsKDMAPIAvailable 返回 false）。\
-                     请在 OmniMIDI 设置中启用 KDMAPI"
-                        .into(),
+                    tr!("KDMAPI 不可用（IsKDMAPIAvailable 返回 false）。请在 OmniMIDI 设置中启用 KDMAPI").into(),
                 ));
             }
 
@@ -241,7 +240,7 @@ impl Kdmapi {
             //    返回非零表示成功，零表示失败
             if (sym.initialize_kdmapi_stream)() == 0 {
                 return Err(Error::InitFailed(
-                    "初始化 KDMAPI 流失败。请确认 OmniMIDI 驱动程序运行正常".into(),
+                    tr!("初始化 KDMAPI 流失败。请确认 OmniMIDI 驱动程序运行正常").into(),
                 ));
             }
 
@@ -251,7 +250,7 @@ impl Kdmapi {
             let mut patch = 0;
             let mut rev = 0;
             if !(sym.return_kdmapi_ver)(&mut major, &mut minor, &mut patch, &mut rev) {
-                return Err(Error::InitFailed("获取 KDMAPI 版本失败".into()));
+                return Err(Error::InitFailed(tr!("获取 KDMAPI 版本失败").into()));
             }
 
             let bundle = Arc::new(KdmapiBundle { lib, sym });
@@ -306,7 +305,7 @@ impl Api for Kdmapi {
         _id: u32,
         _callback: MidiInputCallback,
     ) -> Result<Box<dyn InputConnection>, Error> {
-        Err(Error::InitFailed("KDMAPI 不支持 MIDI 输入".into()))
+        Err(Error::InitFailed(tr!("KDMAPI 不支持 MIDI 输入").into()))
     }
 }
 

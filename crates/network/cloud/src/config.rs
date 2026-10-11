@@ -8,6 +8,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use lumino_core::trf;
+
 use crate::error::{CloudError, Result};
 use crate::model::CloudConnection;
 
@@ -79,7 +81,7 @@ impl CloudConfigStore {
         let before = self.inner.connections.len();
         self.inner.connections.retain(|c| c.id != id);
         if self.inner.connections.len() == before {
-            return Err(CloudError::Config(format!("连接不存在: {id}")));
+            return Err(CloudError::Config(trf!("连接不存在: {id}", id = id)));
         }
         self.save()
     }
@@ -93,19 +95,19 @@ impl CloudConfigStore {
 /// 将配置写入指定路径（原子写：先写临时文件再重命名，避免写坏配置）
 pub fn save_config_to(path: &Path, config: &CloudConfigFile) -> Result<()> {
     let json = serde_json::to_string_pretty(config)
-        .map_err(|e| CloudError::Config(format!("序列化配置失败: {e}")))?;
+        .map_err(|e| CloudError::Config(trf!("序列化配置失败: {e}", e = e)))?;
 
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
         fs::create_dir_all(parent)
-            .map_err(|e| CloudError::Config(format!("创建配置目录失败: {e}")))?;
+            .map_err(|e| CloudError::Config(trf!("创建配置目录失败: {e}", e = e)))?;
     }
 
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, json.as_bytes())
-        .map_err(|e| CloudError::Config(format!("写入配置失败: {e}")))?;
-    fs::rename(&tmp, path).map_err(|e| CloudError::Config(format!("保存配置失败: {e}")))?;
+        .map_err(|e| CloudError::Config(trf!("写入配置失败: {e}", e = e)))?;
+    fs::rename(&tmp, path).map_err(|e| CloudError::Config(trf!("保存配置失败: {e}", e = e)))?;
     Ok(())
 }
 

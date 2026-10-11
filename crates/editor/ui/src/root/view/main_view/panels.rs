@@ -3,6 +3,8 @@
 use iced_core::{Length, Size};
 use iced_widget::{column, container, responsive, row, scrollable, text};
 
+use lumino_core::{tr, trf};
+
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_clip::preview::{PreviewGate, preview_gate, preview_placeholder};
@@ -106,13 +108,13 @@ impl Root {
             // 左侧轨道占位（后续接入真实轨道列表）
             let left_panel = container(
                 iced_widget::column![
-                    iced_widget::text("轨道").size(12).style(move |_t: &iced_core::Theme| {
+                    iced_widget::text(tr!("轨道")).size(12).style(move |_t: &iced_core::Theme| {
                         iced_widget::text::Style {
                             color: Some(weak_text)
                         }
                     }),
                     iced_widget::space().height(8),
-                    iced_widget::text("（轨道列表占位）")
+                    iced_widget::text(tr!("（轨道列表占位）"))
                         .size(11)
                         .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
                             color: Some(strong_text)
@@ -143,11 +145,11 @@ impl Root {
             let preview_content: crate::Element<'_> =
                 match preview_gate(playhead_in_band, texture_ready) {
                     PreviewGate::NoMaterial => preview_placeholder(
-                        "播放指示线不在视频带上（当前位置无素材）",
+                        tr!("播放指示线不在视频带上（当前位置无素材）"),
                         strong_text,
                     ),
                     PreviewGate::WaitingRender => {
-                        preview_placeholder("瀑布流预览（等待渲染…）", strong_text)
+                        preview_placeholder(tr!("瀑布流预览（等待渲染…）"), strong_text)
                     }
                     PreviewGate::Waterfall => match waterfall_view.clone() {
                         Some(view) => {
@@ -176,7 +178,7 @@ impl Root {
                                 .into()
                         }
                         // 门控判定纹理就绪却取不到视图：不静默显示空画面，退占位
-                        None => preview_placeholder("瀑布流预览（纹理缺失）", strong_text),
+                        None => preview_placeholder(tr!("瀑布流预览（纹理缺失）"), strong_text),
                     },
                 };
             // 严格 16:9 预览卡片：几何结构由可测试的 preview_card 构建（黑底 Fixed 盒 + 居中包装），
@@ -207,23 +209,29 @@ impl Root {
             let settings = {
                 let s = &export_state;
                 iced_widget::column![
-                    iced_widget::text("导出设置（复用）")
+                    iced_widget::text(tr!("导出设置（复用）"))
                         .size(14)
                         .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
                             color: Some(neutral_text)
                         }),
                     iced_widget::space().height(8),
-                    iced_widget::text(format!(
-                        "格式: {}  编码: {}  质量: {}",
-                        s.container, s.codec, s.quality
+                    iced_widget::text(trf!(
+                        "格式: {container}  编码: {codec}  质量: {quality}",
+                        container = s.container,
+                        codec = s.codec,
+                        // `quality` 是规范数据值（高/中/低），显示层单独取词
+                        quality = lumino_core::i18n::tr_dyn(&s.quality)
                     ))
                     .size(12)
                     .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
                         color: Some(weak_text)
                     }),
-                    iced_widget::text(format!(
-                        "分辨率: {}x{}  帧率: {}  速度: {:.1}x",
-                        s.width, s.height, s.fps, s.waterfall_speed
+                    iced_widget::text(trf!(
+                        "分辨率: {width}x{height}  帧率: {fps}  速度: {speed}x",
+                        width = s.width,
+                        height = s.height,
+                        fps = s.fps,
+                        speed = format!("{:.1}", s.waterfall_speed)
                     ))
                     .size(12)
                     .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
@@ -249,13 +257,13 @@ impl Root {
             });
 
             let header = iced_widget::row![
-                iced_widget::text("视频剪辑").size(18).style(move |_t: &iced_core::Theme| {
+                iced_widget::text(tr!("视频剪辑")).size(18).style(move |_t: &iced_core::Theme| {
                     iced_widget::text::Style {
                         color: Some(neutral_text)
                     }
                 }),
                 iced_widget::space().width(Length::Fill),
-                iced_widget::text(format!("缩放 {:.1}x", clip_zoom))
+                iced_widget::text(trf!("缩放 {zoom}x", zoom = format!("{:.1}", clip_zoom)))
                     .size(12)
                     .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
                         color: Some(strong_text)
@@ -298,7 +306,7 @@ impl Root {
                 Some(v) => {
                     crate::right_sidebar::piano_waterfall::waterfall_shader_element(v.clone())
                 }
-                None => text("（瀑布流渲染中…）")
+                None => text(tr!("（瀑布流渲染中…）"))
                     .size(18)
                     .style(|theme: &Theme| text::Style {
                         color: Some(theme.extended_palette().background.neutral.text),

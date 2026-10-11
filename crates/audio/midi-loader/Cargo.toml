@@ -12,6 +12,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+lumino-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

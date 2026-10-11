@@ -8,6 +8,8 @@ use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 use tracing::info;
 
+use lumino_core::trf;
+
 use crate::Result;
 use crate::http::HttpClient;
 
@@ -94,9 +96,9 @@ impl CollaborationClient {
     /// 不在此处执行任何异步 I/O，因此可以在 UI 线程等任意上下文调用。
     pub(super) fn enqueue_message(&self, msg: ClientMessage) -> Result<()> {
         if !self.state.is_active() {
-            return Err(crate::CollaborationError::Other(format!(
-                "客户端未连接，当前状态: {:?}",
-                self.state.get()
+            return Err(crate::CollaborationError::Other(trf!(
+                "客户端未连接，当前状态: {state}",
+                state = format!("{:?}", self.state.get())
             )));
         }
 

@@ -17,6 +17,7 @@ use iced_core::{Length, Point};
 use iced_widget::Space;
 use iced_widget::canvas::Canvas;
 use iced_widget::container;
+use lumino_core::tr;
 
 use crate::grid::PianoRollGrid;
 use crate::scrollbar_widget;
@@ -300,7 +301,7 @@ impl Editor {
         // 输入框只占文本框顶部一条（输入文字），下方区域留给画布绘制的「墨水格」实时预览
         let input_h = box_h.min(28.0);
         let input = container(
-            iced_widget::text_input("输入文字…", &self.editor_state.text_tool.text)
+            iced_widget::text_input(tr!("输入文字…"), &self.editor_state.text_tool.text)
                 .on_input(|s: String| {
                     Message::EditorAction(crate::message::EditorAction::TextToolTextChanged(s))
                 })

@@ -15,6 +15,8 @@
 //! - 任何改动建议在 CI 接入 `cargo +nightly miri test -p lumino-core-diagnostics`
 //!   以捕获数据竞争与 UB，未通过不得合并。
 
+use lumino_core::tr;
+
 mod allocator;
 mod stats;
 
@@ -62,12 +64,12 @@ impl AllocTag {
     /// 标签对应的静态字符串描述
     pub fn name(self) -> &'static str {
         match self {
-            AllocTag::Midi => "MIDI 数据",
-            AllocTag::SoundFont => "音色库采样",
-            AllocTag::Audio => "音频引擎",
-            AllocTag::Gpu => "GPU 显存/缓冲",
-            AllocTag::Ui => "UI / 状态",
-            AllocTag::Other => "其他（未显式归类）",
+            AllocTag::Midi => tr!("MIDI 数据"),
+            AllocTag::SoundFont => tr!("音色库采样"),
+            AllocTag::Audio => tr!("音频引擎"),
+            AllocTag::Gpu => tr!("GPU 显存/缓冲"),
+            AllocTag::Ui => tr!("UI / 状态"),
+            AllocTag::Other => tr!("其他（未显式归类）"),
         }
     }
 }

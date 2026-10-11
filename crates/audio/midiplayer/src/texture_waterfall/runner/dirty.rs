@@ -14,6 +14,7 @@ use crate::texture_waterfall::note::WaterfallNote;
 use crate::texture_waterfall::renderer::TextureWaterfallRenderer;
 use crate::texture_waterfall::track_params::WaterfallTrackParams;
 use crate::texture_waterfall::types::WaterfallTileCoord;
+use lumino_core::trf;
 
 /// 对所有目标 time_group 生成并上传脏区域覆层贴图
 ///
@@ -134,7 +135,10 @@ pub fn handle_waterfall_dirty_overlay(
 
     push_waterfall_progress(
         progress,
-        &format!("音轨组 {track_group} 脏区域临时覆层已生成"),
+        &trf!(
+            "音轨组 {track_group} 脏区域临时覆层已生成",
+            track_group = track_group
+        ),
         1.0,
     );
 }

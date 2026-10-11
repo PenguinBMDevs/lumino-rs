@@ -5,6 +5,7 @@
 
 use iced_core::{Alignment, Color, Length, Padding};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
+use lumino_core::tr;
 use lumino_message::TrackContextMenuItem;
 
 use crate::resources::icon::{self, Icon};
@@ -107,11 +108,11 @@ const fn item_icon(item: TrackContextMenuItem) -> Icon {
 /// 菜单项显示文本
 fn item_label(item: TrackContextMenuItem) -> &'static str {
     match item {
-        TrackContextMenuItem::Delete => "删除",
-        TrackContextMenuItem::Rename => "重命名",
-        TrackContextMenuItem::SetColor => "设置颜色",
-        TrackContextMenuItem::SetChannel => "设置通道",
-        TrackContextMenuItem::SetPort => "设置端口",
+        TrackContextMenuItem::Delete => tr!("删除"),
+        TrackContextMenuItem::Rename => tr!("重命名"),
+        TrackContextMenuItem::SetColor => tr!("设置颜色"),
+        TrackContextMenuItem::SetChannel => tr!("设置通道"),
+        TrackContextMenuItem::SetPort => tr!("设置端口"),
     }
 }
 
