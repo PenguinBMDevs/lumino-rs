@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### KDMAPI 后端 · 兼容 OmniMIDI v2（AUD-001 #141）
+
+- **症状** — OmniMIDI v2（15.0+）Windows 构建不再导出 `ReturnKDMAPIVer`，旧实现一次性
+  `lib.get` 5 个符号、任一缺失即初始化失败——v2 用户完全无法连接，且错误信息无法区分失败阶段。
+- **修复** — `ReturnKDMAPIVer` 改为**可选符号**：缺失时版本降级为 `unknown (OmniMIDI v2+)`
+  且不阻断连接；其余 4 个必需符号逐符号解析，缺失时给出缺失名单与「可能为 OmniMIDI v2 /
+  非 KDMAPI 构建」的可操作提示；`InitializeKDMAPIStream` 返回 0 的提示补充 v2
+  settings.json（renderer/音色库）排查引导；`Symbols` 文档补齐 v1/v2 差异与来源链接。
+- **可见化** — KDMAPI 启动失败回退 System 时，状态栏显示具体原因（与 #127 的 LGS 回退
+  提示同模式），不再静默降级。
+- **验证** — 符号解析层抽象为 `KdmapiLib`（fake 桩单测覆盖降级路径，不依赖真实 DLL）：
+  新增 4 项单测（缺版本符号降级 / 缺必需符号名单 / 全齐 / 版本串契约）；全量回归 0 failed；
+  fmt/clippy 干净。
+
 ### REND-017 · GPU 渲染缓冲状态指示器（#140，状态栏 + 设置可关）
 
 - **动机** — REND-016 #139 之后，GPU (LGS) 渲染/缓冲状态对用户仍不可知：过载只有「突然

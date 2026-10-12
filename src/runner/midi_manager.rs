@@ -19,6 +19,10 @@ struct BackendInitResult {
     output: Option<MidiOutput>,
     /// 实际使用的后端类型
     backend: SynthBackend,
+    /// 待向用户展示的后端提示（初始化失败并回退时的可见原因；成功路径为 None）。
+    ///
+    /// 由 Runner 每帧取走写入状态栏（与 `pending_backend_notice` 同语义）。
+    notice: Option<String>,
 }
 
 /// XSynth 异步初始化结果

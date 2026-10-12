@@ -47,7 +47,8 @@ impl MidiManager {
             spawned_midi_max_port: 0,
             layout_apply: None,
             layout_desired: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
-            pending_backend_notice: None,
+            // KDMAPI 启动失败并回退 System 时，携带可见原因（状态栏展示）
+            pending_backend_notice: init_result.notice,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
@@ -91,6 +92,7 @@ impl MidiManager {
                                 api: Some(api),
                                 output: Some(conn),
                                 backend: SynthBackend::System,
+                                notice: None,
                             };
                         }
                     }
@@ -103,6 +105,7 @@ impl MidiManager {
                     api: Some(api),
                     output: None,
                     backend: SynthBackend::System,
+                    notice: None,
                 }
             }
             Err(e) => {
@@ -111,6 +114,7 @@ impl MidiManager {
                     api: None,
                     output: None,
                     backend: SynthBackend::System,
+                    notice: None,
                 }
             }
         }
@@ -142,18 +146,30 @@ impl MidiManager {
                         api: Some(api),
                         output: Some(conn),
                         backend: SynthBackend::Kdmapi,
+                        notice: None,
                     };
                 }
                 tracing::warn!("MIDI: KDMAPI 已初始化但无法打开输出，回退到 System 后端");
-                // 有 api 但无 output → 回退到 System 后端
-                Self::init_system_output(selected_device)
+                // 有 api 但无 output → 回退到 System 后端（附可见提示）
+                Self::kdmapi_fallback(selected_device, "已初始化但无法打开输出端口")
             }
             Err(e) => {
                 tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}，回退到 System 后端", e);
-                // KDMAPI 完全不可用 → 回退到 System 后端
-                Self::init_system_output(selected_device)
+                // KDMAPI 完全不可用 → 回退到 System 后端；提示携带具体原因
+                // （DLL 未找到 / 关键符号缺失〔可能为 OmniMIDI v2〕/ 初始化失败），
+                // 避免"选了 KDMAPI 却静默回退"的困惑（#127 同款可见化模式）。
+                Self::kdmapi_fallback(selected_device, &e.to_string())
             }
         }
+    }
+
+    /// KDMAPI 未生效时的回退结果：System 后端 + 状态栏可见提示。
+    ///
+    /// `reason` 为具体失败原因；由 Runner 每帧取走写入状态栏。
+    fn kdmapi_fallback(selected_device: Option<u32>, reason: &str) -> BackendInitResult {
+        let mut result = Self::init_system_output(selected_device);
+        result.notice = Some(format!("KDMAPI 未生效，已回退 System 后端：{reason}"));
+        result
     }
 
     /// 获取 MIDI 输出连接的可变引用

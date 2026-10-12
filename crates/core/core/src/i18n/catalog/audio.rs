@@ -33,10 +33,16 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "KDMAPI is unavailable (IsKDMAPIAvailable returned false). Please enable KDMAPI in the OmniMIDI settings.",
             )
         }
-        "初始化 KDMAPI 流失败。请确认 OmniMIDI 驱动程序运行正常" => Some(
-            "Failed to initialize the KDMAPI stream. Please make sure the OmniMIDI driver is running properly.",
-        ),
-        "获取 KDMAPI 版本失败" => Some("Failed to get the KDMAPI version"),
+        "KDMAPI 关键符号缺失: {list}。可能为 OmniMIDI v2（已移除部分旧版符号）或该 DLL 非 KDMAPI 构建；请升级或重装 OmniMIDI 后重试" => {
+            Some(
+                "KDMAPI is missing required symbols: {list}. This may be OmniMIDI v2 (some legacy symbols were removed) or a non-KDMAPI build of the DLL; please update or reinstall OmniMIDI and try again",
+            )
+        }
+        "初始化 KDMAPI 流失败（InitializeKDMAPIStream 返回 0）。若使用 OmniMIDI v2，请检查其 settings.json 的 renderer/合成器配置（指向未编译的模块会导致失败）与音色库选择；确认驱动状态后重试" => {
+            Some(
+                "Failed to initialize the KDMAPI stream (InitializeKDMAPIStream returned 0). If you are using OmniMIDI v2, check the renderer/synth configuration in its settings.json (pointing to an uncompiled module will fail) and the selected soundfont, then verify the driver status and retry",
+            )
+        }
         "KDMAPI 不支持 MIDI 输入" => Some("KDMAPI does not support MIDI input"),
         "OmniMIDI.dll 未找到。已尝试路径: {paths}。请确认 OmniMIDI 已安装（https://github.com/KeppySoftware/OmniMIDI）" => {
             Some(

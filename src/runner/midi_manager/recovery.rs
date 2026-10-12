@@ -256,6 +256,8 @@ impl MidiManager {
                 self.api = backend_result.api;
                 self.output = backend_result.output;
                 self.active_backend = backend_result.backend;
+                // 失败回退 System 时给出可见原因（成功为 None，无副作用）
+                self.pending_backend_notice = backend_result.notice;
             }
             SynthBackend::System => {
                 let backend_result = Self::init_system_output(self.winmm_output_device_id);
