@@ -23,6 +23,12 @@ pub struct ConfigWrapper {
     /// （`logging::start_file_logging` 依赖刚加载出来的配置），在这里 `info!` 只会进
     /// stderr，用户回传的日志文件里看不到。
     language_source: String,
+    /// 本次启动的界面语言是否由环境变量（`LUMINO_LANG`）覆盖（UI-020）。
+    ///
+    /// 环境变量只影响**本次启动**：持久化层据此守卫语言字段落盘——来源为
+    /// 环境变量且用户本次未显式改语言时，不写 `language` / `language_preference`
+    /// （防止排障用覆盖被任意一次设置保存物化为「固定语言」用户意图）。
+    language_from_env: bool,
 }
 
 impl ConfigWrapper {
@@ -47,7 +53,7 @@ impl ConfigWrapper {
         }
         // UI-018：解析本次启动的界面语言——环境变量 > 显式固定 > 系统显示语言；
         // 老配置（有文件但没写过偏好）保留既有值，绝不静默覆盖用户选择。
-        let (language, source) =
+        let (language, source, language_from_env) =
             resolve_language_with_env(&inner.ui, existed, language_override.as_deref());
         inner.ui.language = language;
         if !existed && inner.ui.language_preference.is_none() {
@@ -61,12 +67,18 @@ impl ConfigWrapper {
             dirty: false,
             legacy_gpu,
             language_source: source,
+            language_from_env,
         })
     }
 
     /// 界面语言的解析来源说明（供启动日志打印，见字段文档）。
     pub fn language_source(&self) -> &str {
         &self.language_source
+    }
+
+    /// 本次启动的界面语言是否由环境变量覆盖（UI-020 持久化守卫依据）。
+    pub fn language_from_env(&self) -> bool {
+        self.language_from_env
     }
 
     /// 加载配置文件，支持从旧版 TOML 格式迁移到 JSON
@@ -154,25 +166,30 @@ impl ConfigWrapper {
 /// **不覆盖**——否则用户手动选过的英文会在下次启动被系统语言悄悄改回去。
 ///
 /// 环境变量由参数注入（不在此函数内读进程环境），使单测可确定性覆盖全部分支。
+/// 解析本次启动的界面语言。
+///
+/// 返回 `(语言, 来源说明, 是否由环境变量覆盖)`；第三个元素供持久化守卫使用
+/// （UI-020：env 只影响本次启动，不得被任意一次设置保存物化）。
 fn resolve_language_with_env(
     ui: &UiConfig,
     existed: bool,
     env_override: Option<&str>,
-) -> (Language, String) {
+) -> (Language, String, bool) {
     if let Some(raw) = env_override {
         if let Some(lang) = Language::from_tag(raw) {
-            return (lang, format!("来源：环境变量 {ENV_LANG}={raw}"));
+            return (lang, format!("来源：环境变量 {ENV_LANG}={raw}"), true);
         }
         tracing::warn!("{ENV_LANG}=\"{raw}\" 无法识别为语言标签，已忽略");
     }
-    match ui.language_preference {
+    let (lang, source) = match ui.language_preference {
         Some(LanguagePreference::Fixed(lang)) => (lang, "来源：用户在设置中固定".to_string()),
         Some(LanguagePreference::System) => detect_with_source(),
         // 老配置：文件里没有 `language_preference`，语义上按「用户固定」处理，
         // 宁可不跟随系统，也不覆盖用户可能已经选过的语言。
         None if existed => (ui.language, "来源：老配置保留（未声明偏好）".to_string()),
         None => detect_with_source(),
-    }
+    };
+    (lang, source, false)
 }
 
 /// 探测系统显示语言并附来源说明（含实际命中的 tag，便于排障）。
@@ -202,42 +219,46 @@ mod tests {
             Some(LanguagePreference::Fixed(Language::EnUs)),
             Language::EnUs,
         );
-        let (lang, source) = resolve_language_with_env(&ui, true, None);
+        let (lang, source, from_env) = resolve_language_with_env(&ui, true, None);
         assert_eq!(lang, Language::EnUs);
         assert!(source.contains("固定"), "来源应说明用户固定：{source}");
+        assert!(!from_env, "无环境变量时不应标记 env 来源");
     }
 
     #[test]
     fn test_resolve_language_legacy_config_keeps_stored_language() {
         // 老配置（有文件、没写过偏好）：保留既有 language，不被系统检测覆盖。
         let ui = ui_with(None, Language::EnUs);
-        let (lang, source) = resolve_language_with_env(&ui, true, None);
+        let (lang, source, from_env) = resolve_language_with_env(&ui, true, None);
         assert_eq!(lang, Language::EnUs, "老配置的用户选择不能被系统检测覆盖");
         assert!(source.contains("老配置"), "来源应标注老配置保留：{source}");
+        assert!(!from_env);
     }
 
     #[test]
     fn test_resolve_language_fresh_install_follows_system() {
         // 全新安装走系统检测：具体语言取决于 CI 机器，只断言来源文案与取值合法。
         let ui = ui_with(None, Language::ZhCn);
-        let (lang, source) = resolve_language_with_env(&ui, false, None);
+        let (lang, source, from_env) = resolve_language_with_env(&ui, false, None);
         assert!(Language::all().contains(&lang));
         assert!(
             source.contains("系统显示语言") || source.contains("无法判定"),
             "来源应为系统检测：{source}"
         );
+        assert!(!from_env);
     }
 
     #[test]
     fn test_resolve_language_system_preference_detects() {
         // 用户显式选了「跟随系统」（配置里已有该字段）→ 走检测而非固定值。
         let ui = ui_with(Some(LanguagePreference::System), Language::ZhCn);
-        let (lang, source) = resolve_language_with_env(&ui, true, None);
+        let (lang, source, from_env) = resolve_language_with_env(&ui, true, None);
         assert!(Language::all().contains(&lang));
         assert!(
             source.contains("系统显示语言") || source.contains("无法判定"),
             "来源应为系统检测：{source}"
         );
+        assert!(!from_env);
     }
 
     #[test]
@@ -246,13 +267,18 @@ mod tests {
             Some(LanguagePreference::Fixed(Language::ZhCn)),
             Language::ZhCn,
         );
-        let (lang, source) = resolve_language_with_env(&ui, true, Some("en-US"));
+        let (lang, source, from_env) = resolve_language_with_env(&ui, true, Some("en-US"));
         assert_eq!(lang, Language::EnUs);
         assert!(source.contains(ENV_LANG), "来源应标注环境变量：{source}");
+        assert!(
+            from_env,
+            "环境变量覆盖成功必须标记 env 来源（UI-020 持久化守卫依据）"
+        );
 
         // POSIX 形态同样认
-        let (lang, _) = resolve_language_with_env(&ui, true, Some("zh_CN.UTF-8"));
+        let (lang, _, from_env) = resolve_language_with_env(&ui, true, Some("zh_CN.UTF-8"));
         assert_eq!(lang, Language::ZhCn);
+        assert!(from_env);
     }
 
     #[test]
@@ -262,9 +288,10 @@ mod tests {
             Language::EnUs,
         );
         // `LANG=C` 这类占位值判定不出语言 → 回落配置口径，而不是变成英文/中文的猜测
-        let (lang, source) = resolve_language_with_env(&ui, true, Some("C"));
+        let (lang, source, from_env) = resolve_language_with_env(&ui, true, Some("C"));
         assert_eq!(lang, Language::EnUs);
         assert!(source.contains("固定"), "{source}");
+        assert!(!from_env, "无法识别的 env 不算来源（不应触发持久化守卫）");
     }
 
     // ── 端到端：文件 → serde → 解析（不依赖进程环境变量，不碰用户真实配置）──
@@ -345,6 +372,25 @@ mod tests {
             text.contains(r#""mode": "fixed""#) && text.contains(r#""language": "en-US""#),
             "偏好序列化形态漂移：{text}"
         );
+        let _ = fs::remove_file(&path);
+    }
+
+    /// UI-020：`language_from_env()` 标记契约——仅 env 成功解析生效时为 true。
+    #[test]
+    fn test_config_wrapper_language_from_env_flag() {
+        let path = temp_config_path("envflag");
+        let wrapper = ConfigWrapper::new_with_language_override(path.clone(), Some("en-US".into()))
+            .expect("配置加载不应失败");
+        assert!(
+            wrapper.language_from_env(),
+            "env 覆盖生效应标记来源（持久化守卫依据）"
+        );
+        let _ = fs::remove_file(&path);
+
+        let path = temp_config_path("envflag-none");
+        let wrapper = ConfigWrapper::new_with_language_override(path.clone(), None)
+            .expect("配置加载不应失败");
+        assert!(!wrapper.language_from_env(), "无 env 不应标记来源");
         let _ = fs::remove_file(&path);
     }
 }

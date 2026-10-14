@@ -22,6 +22,15 @@ fn display_or_empty(s: &str) -> &str {
     if s.is_empty() { "(空)" } else { s }
 }
 
+/// UI-020：语言字段是否应落盘。
+///
+/// 环境变量（`LUMINO_LANG`）只影响本次启动：来源为 env 且用户本次未显式
+/// 改语言时不落盘（防止排障覆盖被任意一次设置保存物化成固定语言）；
+/// 用户真实改过语言（`language_changed`）时照常写入意图。
+fn should_persist_language(language_from_env: bool, language_changed: bool) -> bool {
+    !language_from_env || language_changed
+}
+
 impl RunnerInner {
     fn config_diff(
         new: &lumino_ui::settings::SettingsPanel,
@@ -133,6 +142,9 @@ impl RunnerInner {
 
     pub(crate) fn save_storage(&mut self) {
         let new = self.window_state.window.ui().settings();
+        // UI-020：本次启动语言是否来自环境变量（LUMINO_LANG）。
+        // 排障覆盖只影响本次启动，不得被任意一次设置保存物化为「固定语言」。
+        let language_from_env = self.window_state.storage.config.language_from_env();
         let old = &self.window_state.storage.config.get().ui;
         let current_theme = self.window_state.window.ui().root().theme().to_string();
         let auto_scroll_mode_changed =
@@ -261,10 +273,17 @@ impl RunnerInner {
         }
         self.window_state.storage.config.patch(|config| {
             config.ui.theme.clone_from(&current_theme);
-            config.ui.language = new.display.language;
-            // UI-018：把「跟随系统 / 固定语言」的**意图**落盘；不写的话下次启动
-            // 会退化成「老配置保留」，用户选的「跟随系统」形同虚设。
-            config.ui.language_preference = Some(new.display.language_preference);
+            // UI-018 + UI-020：语言字段落盘守卫。环境变量（LUMINO_LANG）只影响
+            // 本次启动：来源为 env 且用户本次未显式改语言时，`language` 与
+            // `language_preference` 都不写——`language` 必须一并守卫：老配置
+            // （preference=None）的解析会回退到该字段，单独放行仍会把 env 值
+            // 带到下次启动。非 env 来源或用户显式改语言时，照常写入
+            // 「跟随系统 / 固定语言」的**意图**（不写的话下次启动会退化成
+            // 「老配置保留」，用户选的「跟随系统」形同虚设）。
+            if should_persist_language(language_from_env, diff.language_changed) {
+                config.ui.language = new.display.language;
+                config.ui.language_preference = Some(new.display.language_preference);
+            }
             config.ui.preferred_backend = new.synth.backend;
             config.ui.audio_engine = new.synth.audio_engine;
             config.ui.soundfont_path = new.synth.soundfont_path.clone();
@@ -335,5 +354,31 @@ impl RunnerInner {
         if let Err(e) = self.window_state.storage.ui_state.save() {
             tracing::warn!("保存UI状态失败: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_persist_language;
+
+    /// UI-020：语言落盘守卫真值表——env 来源且未改语言时不落盘，其余照常。
+    #[test]
+    fn test_should_persist_language_guard() {
+        assert!(
+            should_persist_language(false, false),
+            "非 env 来源：照常落盘"
+        );
+        assert!(
+            should_persist_language(false, true),
+            "非 env 来源：照常落盘"
+        );
+        assert!(
+            !should_persist_language(true, false),
+            "env 来源且未改语言：不得物化（老配置场景的核心守卫）"
+        );
+        assert!(
+            should_persist_language(true, true),
+            "env 来源但用户显式改语言：照常落盘意图"
+        );
     }
 }
