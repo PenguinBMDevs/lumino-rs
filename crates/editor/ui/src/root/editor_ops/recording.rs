@@ -296,21 +296,16 @@ impl Root {
         true
     }
 
-    /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）
+    /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）。
+    ///
+    /// **不在调用线程枚举设备**：输入设备枚举（midir/WinMM 客户端创建）改为
+    /// 后台线程执行，完成后经信道回写设备列表与自动选中（见
+    /// [`Root::scan_midi_input_devices`] / [`Root::poll_midi_devices_scan`]），
+    /// 避免启动路径在 UI 线程触碰 midir。设备列表短暂为空是正常状态：
+    /// 后台枚举完成后下一帧回填。
     pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi_io::Api>) {
-        // 缓存设备列表到设置面板（供设备选择器使用）
-        let devices = api.inputs().unwrap_or_default();
-        self.settings.midi.devices = devices.iter().map(|d| (d.id, d.name.clone())).collect();
-
-        // 自动选中第一个设备（如果还没有选中）
-        if self.settings.midi.selected_device.is_none()
-            && let Some(first) = devices.first()
-        {
-            self.settings.midi.selected_device = Some(first.id);
-        }
-
-        self.midi.api = Some(api);
-        tracing::debug!("Root: MIDI API 已设置，检测到 {} 个输入设备", devices.len());
+        self.midi.api = Some(Arc::from(api));
+        self.scan_midi_input_devices();
     }
 
     /// 获取录制状态引用

@@ -15,11 +15,9 @@ impl DialogHandler {
         match action {
             SettingsDialogAction::OpenDialog => {
                 root.state.dialog_type = crate::state::root_state::DialogType::Settings;
-                // 若当前为 WinMM 模式，打开设置面板时自动扫描播表（输出设备）
-                if root.settings.synth.backend == lumino_core::storage::config::SynthBackend::System
-                {
-                    root.scan_winmm_outputs();
-                }
+                // 打开设置面板时自动扫描播表（输出设备）：后端守卫与后台化
+                // 均在 `scan_winmm_outputs` 内部处理（#149），调用侧不再重复判断。
+                root.scan_winmm_outputs();
             }
             SettingsDialogAction::CloseDialog => {
                 // 返回设置结果，将设置同步到主窗口

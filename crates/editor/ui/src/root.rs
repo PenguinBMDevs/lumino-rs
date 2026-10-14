@@ -96,6 +96,10 @@ pub struct Root {
     /// 素材扫描结果接收端（后台扫描完成后的素材列表）
     pub(crate) pending_material_scan:
         Option<std::sync::mpsc::Receiver<Vec<crate::right_sidebar::MaterialEntry>>>,
+    /// WinMM 播表（输出设备）后台扫描结果接收端（#149：midir 调用移出 UI 线程）
+    pub(crate) pending_winmm_scan: Option<std::sync::mpsc::Receiver<Vec<(u32, String)>>>,
+    /// MIDI 输入设备后台扫描结果接收端（#149：midir 调用移出 UI 线程）
+    pub(crate) pending_midi_devices_scan: Option<std::sync::mpsc::Receiver<Vec<(u32, String)>>>,
     /// 后台文件对话框任务（路径选择类；独立线程打开，结果由 `poll_path_dialogs` 消费）
     pub(crate) pending_path_dialogs: Vec<(file_dialog::PathDialogTask, file_dialog::DialogRx)>,
     /// 素材导入后台任务结果接收端（对话框/校验/复制均在后台线程）
@@ -172,6 +176,8 @@ impl Root {
                 window_resize_guard: false,
                 pending_i2m: None,
                 pending_material_scan: None,
+                pending_winmm_scan: None,
+                pending_midi_devices_scan: None,
                 pending_path_dialogs: Vec::new(),
                 pending_material_import: None,
                 i2m_restore_tool: None,

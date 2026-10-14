@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### AUD-005 · System (WinMM) 后端惰性初始化 + 设备扫描后台化（#149）
+
+- **动机** — 无论选择哪个后端，System（WinMM）后端都会在 UI 线程同步创建 midir
+  客户端（`System::new` 一次建 input+output），拖慢启动；播表扫描同样在 UI 线程
+  执行；驱动异常时该同步调用无超时，可能拖死启动（与白屏反馈同源）。
+- **修复** —
+  - **midi-io**：`System::new()` 改为零 midir 的惰性句柄（首次 `outputs()`/`inputs()`
+    访问时才创建，创建发生在调用线程）；连接类操作不变（每次自建独立实例）。
+  - **UI 播表扫描**：改为**后台线程 + 信道轮询回写**；非 System 后端由函数内守卫
+    直接拦截（调用侧删除重复判断）；扫描在途忽略重复请求。顺带修复一处死代码：
+    `SettingsDialogAction::OpenDialog` 全仓无人发射，"打开设置页自动扫描"实际从未生效，
+    现由 `set_settings_dialog_open(true)` 补齐真实触发（打开即后台扫描，System 后端）。
+  - **UI 输入设备枚举**：移出启动路径（`set_midi_api` 不再同步 `inputs()`，改后台
+    扫描 + 回写设备列表并自动选中首个；未注入 API 时置空），消除启动时以
+    XSynth/LGS 后端仍创建 midir 输入客户端的路径。
+- **验收口径** — 非 System 后端下，启动/开设置页不再包含"可后台化"的 midir 调用；
+  XSynth/LGS 的 System 占位输出（快启动枚举/打开 + 播放输出连接）保持既有行为，
+  其后台化/超时由后续卡处理。
+- **验证** — 新增 5 项单测（守卫跳过非 System / System 异步在途并可收尾 / 播表写回与
+  失效回落 / 输入设备写回与自动选中 / 无 API 置空）；全量回归 63 测试目标 0 failed；
+  fmt/clippy 干净。
+
 ### KDMAPI 后端 · 兼容 OmniMIDI v2（AUD-001 #141）
 
 - **症状** — OmniMIDI v2（15.0+）Windows 构建不再导出 `ReturnKDMAPIVer`，旧实现一次性

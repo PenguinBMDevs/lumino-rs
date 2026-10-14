@@ -304,6 +304,8 @@ impl Host {
         self.root.poll_pending_i2m();
         self.root.poll_material_scan();
         self.root.poll_material_import();
+        self.root.poll_winmm_scan();
+        self.root.poll_midi_devices_scan();
         self.root.poll_path_dialogs();
         // 素材拖出跟随：鼠标已释放且未在卷帘内确认放置 → 兜底取消（避免预览残留）
         if !self.window_ctx.is_mouse_pressed {

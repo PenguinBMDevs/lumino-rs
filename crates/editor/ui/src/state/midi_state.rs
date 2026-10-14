@@ -14,8 +14,11 @@ pub struct MidiConnectionState {
     pub input_connection: Option<Box<dyn lumino_midi_io::InputConnection>>,
     /// MIDI 输入数据缓冲区（midir 回调线程写入，UI 线程读取）
     pub input_buffer: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    /// MIDI API 句柄，用于枚举端口时保持端口打开
-    pub api: Option<Box<dyn lumino_midi_io::Api>>,
+    /// MIDI API 句柄，用于枚举端口时保持端口打开。
+    ///
+    /// `Arc` 包装：设备枚举已移至后台线程（避免 UI 线程触碰 midir），
+    /// 线程与 UI 侧共享同一 API 实例（`Api: Send + Sync`）。
+    pub api: Option<Arc<dyn lumino_midi_io::Api>>,
 }
 
 impl MidiConnectionState {

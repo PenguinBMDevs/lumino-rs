@@ -1,6 +1,9 @@
 //! 编辑器操作 - MIDI 输出管理
 
 use crate::root::Root;
+use lumino_core::storage::config::SynthBackend;
+use std::sync::Arc;
+use std::sync::mpsc;
 
 impl Root {
     /// 加载 Tempo 变化事件到播放管理器
@@ -72,32 +75,120 @@ impl Root {
         released
     }
 
-    /// 系统 MIDI (WinMM) 播表（输出设备）自动扫描。
+    /// 系统 MIDI (WinMM) 播表（输出设备）自动扫描（后台线程）。
     ///
-    /// 通过 System API 枚举所有可用的 WinMM MIDI 输出端口，写入设置面板，
-    /// 供「WinMM 输出设备」下拉菜单展示（系统播表自动扫描）。
+    /// 仅对 System 后端有意义：非 System 后端直接返回（守卫，防误触发）；
+    /// midir/WinMM 客户端创建与端口枚举**全部在后台线程执行**，结果经
+    /// [`Root::poll_winmm_scan`] 回写设置面板（避免 UI 线程触碰 midir、
+    /// 拖慢启动与设置页打开）。扫描在途时忽略重复请求。
     pub fn scan_winmm_outputs(&mut self) {
         use lumino_midi_io::ApiKind;
 
-        match lumino_midi_io::new_api(&ApiKind::System) {
-            Ok(api) => {
-                let outputs = api.outputs().unwrap_or_default();
-                let list: Vec<(u32, String)> =
-                    outputs.iter().map(|o| (o.id, o.name.clone())).collect();
-                tracing::info!("扫描到 {} 个 WinMM 输出设备(播表)", list.len());
-                self.settings.midi.winmm_outputs = list.clone();
+        if self.settings.synth.backend != SynthBackend::System {
+            tracing::debug!("WinMM 播表扫描：当前后端非 System，跳过");
+            return;
+        }
+        if self.pending_winmm_scan.is_some() {
+            tracing::debug!("WinMM 播表扫描已在进行中，忽略重复请求");
+            return;
+        }
 
-                // 校验已选设备是否仍然有效；失效则回落到第一个（None = 使用系统默认）
-                if let Some(sel) = self.settings.midi.selected_winmm_output
-                    && !list.iter().any(|(id, _)| *id == sel)
-                {
-                    self.settings.midi.selected_winmm_output = list.first().map(|(id, _)| *id);
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let list: Vec<(u32, String)> = match lumino_midi_io::new_api(&ApiKind::System) {
+                Ok(api) => api
+                    .outputs()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|o| (o.id, o.name.clone()))
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!("扫描 WinMM 输出设备(播表)失败: {}", e);
+                    Vec::new()
                 }
+            };
+            let _ = tx.send(list);
+        });
+        self.pending_winmm_scan = Some(rx);
+    }
+
+    /// 轮询 WinMM 播表扫描结果（后台完成 → 写回设置面板 + 校验回落）。
+    pub(crate) fn poll_winmm_scan(&mut self) {
+        let Some(rx) = self.pending_winmm_scan.as_ref() else {
+            return;
+        };
+        let list = match rx.try_recv() {
+            Ok(list) => list,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                tracing::warn!("WinMM 播表扫描线程异常断开");
+                Vec::new()
             }
-            Err(e) => {
-                tracing::warn!("扫描 WinMM 输出设备(播表)失败: {}", e);
-                self.settings.midi.winmm_outputs = Vec::new();
+        };
+        self.pending_winmm_scan = None;
+        tracing::info!("扫描到 {} 个 WinMM 输出设备(播表)", list.len());
+        self.settings.midi.winmm_outputs = list.clone();
+
+        // 校验已选设备是否仍然有效；失效则回落到第一个（None = 使用系统默认）
+        if let Some(sel) = self.settings.midi.selected_winmm_output
+            && !list.iter().any(|(id, _)| *id == sel)
+        {
+            self.settings.midi.selected_winmm_output = list.first().map(|(id, _)| *id);
+        }
+    }
+
+    /// MIDI 输入设备扫描（后台线程）。
+    ///
+    /// 枚举已注入的输入 API（`set_midi_api` 的实例，`Arc` 共享；枚举本身
+    /// 会触发 midir 惰性创建，故必须在后台线程执行）。结果经
+    /// [`Root::poll_midi_devices_scan`] 回写设备列表并自动选中首个设备。
+    /// 扫描在途时忽略重复请求；未注入 API 时置空列表。
+    pub fn scan_midi_input_devices(&mut self) {
+        if self.pending_midi_devices_scan.is_some() {
+            tracing::debug!("MIDI 输入设备扫描已在进行中，忽略重复请求");
+            return;
+        }
+        let Some(api) = self.midi.api.as_ref().map(Arc::clone) else {
+            tracing::debug!("MIDI 输入设备扫描：API 未注入，置空设备列表");
+            self.settings.midi.devices = Vec::new();
+            return;
+        };
+
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let list: Vec<(u32, String)> = api
+                .inputs()
+                .unwrap_or_default()
+                .iter()
+                .map(|d| (d.id, d.name.clone()))
+                .collect();
+            let _ = tx.send(list);
+        });
+        self.pending_midi_devices_scan = Some(rx);
+    }
+
+    /// 轮询 MIDI 输入设备扫描结果（写回设备列表 + 自动选中首个）。
+    pub(crate) fn poll_midi_devices_scan(&mut self) {
+        let Some(rx) = self.pending_midi_devices_scan.as_ref() else {
+            return;
+        };
+        let devices = match rx.try_recv() {
+            Ok(devices) => devices,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                tracing::warn!("MIDI 输入设备扫描线程异常断开");
+                Vec::new()
             }
+        };
+        self.pending_midi_devices_scan = None;
+        tracing::info!("扫描到 {} 个 MIDI 输入设备", devices.len());
+        self.settings.midi.devices = devices.clone();
+
+        // 自动选中第一个设备（如果还没有选中）
+        if self.settings.midi.selected_device.is_none()
+            && let Some(first) = devices.first()
+        {
+            self.settings.midi.selected_device = Some(first.0);
         }
     }
 

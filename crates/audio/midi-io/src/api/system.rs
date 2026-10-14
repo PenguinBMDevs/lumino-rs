@@ -26,17 +26,29 @@ impl From<midir::ConnectError<midir::MidiInput>> for Error {
 }
 
 /// 系统 MIDI 后端，基于 midir 访问操作系统 MIDI 设备
+///
+/// # 惰性初始化
+///
+/// `new()` **不做任何 WinMM/midir 调用**（零耗时、零副作用）：共享句柄
+/// `midi_input` / `midi_output` 在**首次访问时**才创建（`with_input` /
+/// `with_output`），创建发生在调用线程上——枚举播表等慢操作应放到后台线程，
+/// 避免在 UI 线程触碰 WinMM 客户端创建。
+///
+/// 连接类操作（`open_output` / `open_input`）每次都自建独立实例，不依赖
+/// 上述共享句柄（midir 的 `connect` 需要独立所有权）。
 pub struct System {
     midi_input: std::sync::Mutex<Option<midir::MidiInput>>,
     midi_output: std::sync::Mutex<Option<midir::MidiOutput>>,
 }
 
 impl System {
-    /// 创建并初始化系统 MIDI 后端
+    /// 创建惰性句柄：不触碰 WinMM。
+    ///
+    /// 保留 `Result` 签名与历史调用方（`new_api`）兼容；恒返回 `Ok`。
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
-            midi_input: std::sync::Mutex::new(Some(midir::MidiInput::new(IDENTIFIER)?)),
-            midi_output: std::sync::Mutex::new(Some(midir::MidiOutput::new(IDENTIFIER)?)),
+            midi_input: std::sync::Mutex::new(None),
+            midi_output: std::sync::Mutex::new(None),
         })
     }
 
@@ -44,10 +56,14 @@ impl System {
         &self,
         f: impl FnOnce(&midir::MidiInput) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let guard = self
+        let mut guard = self
             .midi_input
             .lock()
             .map_err(|e| Error::InitFailed(format!("MIDI input lock poisoned: {e}")))?;
+        if guard.is_none() {
+            // 首次访问才创建 WinMM 输入客户端（调用线程承担创建成本）
+            *guard = Some(midir::MidiInput::new(IDENTIFIER)?);
+        }
         let input = guard
             .as_ref()
             .ok_or_else(|| Error::InitFailed(tr!("MIDI 输入未初始化").into()))?;
@@ -58,10 +74,14 @@ impl System {
         &self,
         f: impl FnOnce(&midir::MidiOutput) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let guard = self
+        let mut guard = self
             .midi_output
             .lock()
             .map_err(|e| Error::InitFailed(format!("MIDI output lock poisoned: {e}")))?;
+        if guard.is_none() {
+            // 首次访问才创建 WinMM 输出客户端（调用线程承担创建成本）
+            *guard = Some(midir::MidiOutput::new(IDENTIFIER)?);
+        }
         let output = guard
             .as_ref()
             .ok_or_else(|| Error::InitFailed(tr!("MIDI 输出未初始化").into()))?;
