@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### UI-020 · LUMINO_LANG 环境变量泄漏修复（#150）
+
+- **症状** — 排障用 `LUMINO_LANG` 启动（本应只影响本次启动），若顺手改了任意设置触发
+  落盘，env 指定的语言被物化为「固定语言」偏好：老配置 × env × 任意保存三条件命中后，
+  下次不带 env 正常启动也会被固定在该语言上。
+- **修复** — `ConfigWrapper` 记录本次语言来源（env 是否实际生效）；持久化守卫：
+  env 来源且用户本次未显式改语言时，`language` 与 `language_preference` **均不落盘**
+  （`language` 一并守卫——老配置的解析会回退到该字段，单独放行仍会把 env 值带到下次
+  启动）；用户显式改语言或非 env 来源时照常写入意图。解析优先级保持不变
+  （env > 固定 > 老配置 > 系统检测）。
+- **验证** — 新增单测：来源标记契约（env 生效/无效/无 env，含 ConfigWrapper 端到端）、
+  落盘守卫真值表（4 组合）。
+
+### REND-018 · 惰性创建的播放管理器未同步指示线位置（#151）
+
+- **症状** — 加载工程后（管理器尚未创建）拖动演奏指示线再按播放，仍从工程开头起播
+  （拖动产生的 seek 因 `manager.is_none()` 被静默丢弃，管理器内部位置为 0）。
+- **修复** — `init_playback_manager` 末尾（`play()` 之前）注入
+  `manager.seek(editor.playback_position)`（>EPSILON 时）：一次性覆盖所有「重建
+  manager 后内部位置归零」路径；stop 后位置归零 → 仍从 0 起播。
+- **验证** — 新增单测（并做过**反向验证**）：无 manager → 拖到 240 tick → Play →
+  引擎首个非零位置 ≥239；禁用修复时该用例转红。
+
 ### AUD-005 · System (WinMM) 后端惰性初始化 + 设备扫描后台化（#149）
 
 - **动机** — 无论选择哪个后端，System（WinMM）后端都会在 UI 线程同步创建 midir
