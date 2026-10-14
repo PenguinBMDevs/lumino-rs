@@ -360,3 +360,37 @@ fn test_play_then_draw_then_play() {
         off_count
     );
 }
+
+/// REND-018：加载工程后拖动演奏指示线 → 惰性创建播放管理器 → 应从拖动位置起播。
+#[test]
+fn test_first_play_starts_from_dragged_playhead() {
+    let mut root = create_root();
+    attach_test_document(&mut root);
+    add_two_test_notes(&mut root);
+    root.set_midi_output(create_mock_output());
+    assert!(root.playback.manager.is_none(), "加载后管理器应惰性未创建");
+
+    // 拖动指示线到 240 tick，随后播放
+    root.editor.playback_position = 240.0;
+    root.update(Message::Toolbar(toolbar::Event::Play));
+    let manager = root
+        .playback
+        .manager
+        .as_ref()
+        .expect("播放消息后管理器应被创建");
+
+    // 等待引擎处理命令后的**第一个非零位置**：修复后应≈240（seek 先于 play 入队）；
+    // 未修复时从 0 播起、首个非零位置远小于 240（该断言可区分两种实现）。
+    let deadline = std::time::Instant::now() + Duration::from_millis(500);
+    let mut tick = manager.current_tick();
+    while tick <= 0.5 && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(2));
+        tick = manager.current_tick();
+    }
+    assert!(
+        tick >= 240.0 - 1.0,
+        "首播应从拖动位置起播（期望≈240，实际 {tick}）"
+    );
+
+    root.update(Message::Toolbar(toolbar::Event::Stop));
+}

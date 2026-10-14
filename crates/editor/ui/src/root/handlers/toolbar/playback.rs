@@ -128,6 +128,19 @@ impl ToolbarHandler {
         // 新 manager 接线完成后按面板值重新下发一次，避免"面板显示增益 vs
         // 合成器实际增益"不一致（此前只在用户动滑块时才同步）。
         root.update_playback_track_mix();
+
+        // REND-018：惰性创建时同步演奏指示线位置——加载工程后（管理器尚未创建）
+        // 拖动指示线再按播放，应从拖动位置起播。此前只同步了音符/输出/tempo/
+        // 循环/混音，manager 内部位置仍为 0，`play()` 会从头开始，而拖动产生的
+        // seek 因 `manager.is_none()` 被静默丢弃。放在这里可一次性覆盖所有
+        // "重建 manager 后内部位置归零"的路径。
+        let start_tick = root.editor.playback_position;
+        if start_tick > f32::EPSILON
+            && let Some(manager) = &mut root.playback.manager
+        {
+            manager.seek(start_tick);
+            tracing::debug!("Root: 播放管理器初始 seek 到 {start_tick:.2}");
+        }
     }
 
     /// 处理录制
