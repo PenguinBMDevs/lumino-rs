@@ -7,16 +7,31 @@ use super::*;
 impl MidiManager {
     /// 从配置初始化 MIDI 管理器
     ///
-    /// 如果配置使用 XSynth，会先使用 System 快速启动，然后在后台初始化 XSynth
+    /// 如果配置使用 XSynth / LGS (GPU)，会在后台异步初始化软件合成后端；
+    /// **返工 #149：软件后端启动阶段不触碰 System(WinMM)**——不做 System 占位
+    /// 输出（omv2 等环境下原生层崩溃无法兜底）；仅当异步未启动（提前 bail）时才立即回退。
     pub fn from_config(ui_config: &UiConfig) -> Self {
         let preferred = ui_config.preferred_backend;
 
-        // 快速启动初始后端（不阻塞 UI）
-        let init_result = match preferred {
-            SynthBackend::Kdmapi => Self::init_kdmapi_output(ui_config.system_output_device_id),
-            SynthBackend::System => Self::init_system_output(ui_config.system_output_device_id),
-            SynthBackend::XSynth => Self::init_system_output(ui_config.system_output_device_id),
-            SynthBackend::Lgs => Self::init_system_output(ui_config.system_output_device_id),
+        // 是否走"软件后端异步初始化"（不碰 System）路径
+        let software_pending = matches!(preferred, SynthBackend::XSynth | SynthBackend::Lgs)
+            && ui_config.audio_engine == AudioEngineKind::Realtime;
+
+        // 初始后端：软件后端在途时留空（零 WinMM 触碰）；否则按偏好初始化。
+        let init_result = if software_pending {
+            BackendInitResult {
+                api: None,
+                output: None,
+                backend: SynthBackend::System,
+                notice: None,
+            }
+        } else {
+            match preferred {
+                SynthBackend::Kdmapi => Self::init_kdmapi_output(ui_config.system_output_device_id),
+                SynthBackend::System | SynthBackend::XSynth | SynthBackend::Lgs => {
+                    Self::init_system_output(ui_config.system_output_device_id)
+                }
+            }
         };
 
         let mut manager = Self {
@@ -51,15 +66,19 @@ impl MidiManager {
             pending_backend_notice: init_result.notice,
         };
 
-        // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
-        if preferred == SynthBackend::XSynth && ui_config.audio_engine == AudioEngineKind::Realtime
-        {
-            manager.start_xsynth_async_init(ui_config);
-        }
-
-        // 如果偏好 LGS (GPU)，同样在后台异步初始化（GPU 设备创建 + 音色库加载较慢）
-        if preferred == SynthBackend::Lgs && ui_config.audio_engine == AudioEngineKind::Realtime {
-            manager.start_lgs_async_init(ui_config);
+        // 软件合成后端（XSynth / LGS）：后台异步初始化；提前 bail（无音色库/
+        // 文件缺失）时立即回退 System（保留 bail 产生的可见提示）。
+        if software_pending {
+            let started = match preferred {
+                SynthBackend::XSynth => manager.start_xsynth_async_init(ui_config),
+                SynthBackend::Lgs => manager.start_lgs_async_init(ui_config),
+                // `software_pending` 已限定，理论不可达
+                SynthBackend::System | SynthBackend::Kdmapi => true,
+            };
+            if !started {
+                // 提前 bail（无音色库/文件缺失）：立即回退 System（保留 bail 产生的提示）
+                manager.ensure_system_fallback_initialized();
+            }
         }
 
         manager
@@ -184,6 +203,13 @@ impl MidiManager {
     /// 2. 创建全新 API 实例 + 连接（保存新 API 到 fallback_api 防止释放）
     /// 3. 兜底：取走主输出连接（播放期间音符预览静音，但至少播放功能正常）
     pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi_io::PlaybackOutput>> {
+        // 返工 #149：软件后端初始化在途时（启动/装载/重试窗口）不得创建输出
+        // ——避免触碰 System(WinMM)；就绪/失败后由既有重连路径创建。
+        if self.software_backend_pending() {
+            tracing::debug!("MIDI 播放输出: 软件合成后端初始化中，延迟创建");
+            return None;
+        }
+
         // DEBT-05 #122：若后台布局重建在途，先等它归还 API，否则策略 1 会因
         // `api == None` 失败（表现为"装载后播放无声"）。
         self.drain_layout_apply();

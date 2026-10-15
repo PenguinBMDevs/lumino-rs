@@ -81,6 +81,12 @@ impl RunnerInner {
     /// 这样用户自绘音符在点击播放按钮时能正常发声；创建失败时不再只记日志，
     /// 由自愈重试接管（每帧在 [`Self::handle_midi_reinit`] 中检查到期）。
     pub(crate) fn setup_playback_output(&mut self) {
+        // 返工 #149：软件合成后端初始化在途时不创建占位播放输出（零 WinMM 触碰）；
+        // 就绪/失败后由 `handle_midi_reinit` 的既有重连路径接线。
+        if self.midi_state.midi.software_backend_pending() {
+            tracing::info!("Runner: 软件合成后端初始化中，播放输出延迟到就绪后创建");
+            return;
+        }
         match self.midi_state.midi.create_additional_output() {
             Some(output) => {
                 self.window_state
@@ -137,8 +143,8 @@ impl RunnerInner {
             }
         }
 
-        // 检查异步后端初始化是否落定（#127：成功与失败都必须重连——
-        // 失败时同步兜底后端（System）的连接已在快速启动时建立，
+        // 检查异步后端初始化是否落定（#127：成功与失败都必须重连——失败时
+        // System 回退已在 finish_*_init 中初始化（返工 #149：不再有启动占位），
         // 若不重连，播放引擎停留在已被释放的旧连接上 → 无声）。
         match self.midi_state.midi.check_async_init_complete() {
             AsyncInitOutcome::Switched => {
@@ -215,6 +221,11 @@ impl RunnerInner {
     /// 到期执行一次播放输出重试；重试耗尽后给出用户可见提示并停止自动重试。
     fn tick_midi_output_retry(&mut self) {
         if !self.midi_output_retry.waiting() || !self.midi_output_retry.due() {
+            return;
+        }
+
+        // 返工 #149：软件后端初始化中不算失败（创建被有意延迟），不消耗重试次数
+        if self.midi_state.midi.software_backend_pending() {
             return;
         }
 

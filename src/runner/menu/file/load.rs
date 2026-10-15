@@ -359,13 +359,17 @@ impl RunnerInner {
         // 最后创建播放输出连接，保证连接指向正确的通道空间。
         self.midi_state.midi.apply_midi_port_layout(midi_max_port);
 
-        // MIDI 导入后，为播放管理器绑定一个独立的 MIDI 输出连接
+        // MIDI 导入后，为播放管理器绑定一个独立的 MIDI 输出连接。
+        // 返工 #149：软件合成后端初始化在途时创建被有意延迟（零 WinMM 触碰），
+        // 不算失败——就绪后由既有重连路径自动接线。
         if let Some(output) = self.midi_state.midi.create_additional_output() {
             self.window_state
                 .window
                 .ui_mut()
                 .set_playback_midi_output(output);
             tracing::info!("Playback MIDI output connected");
+        } else if self.midi_state.midi.software_backend_pending() {
+            tracing::info!("MIDI: 软件合成后端初始化中，播放输出将在就绪后自动接线");
         } else {
             tracing::warn!("Failed to create playback MIDI output connection");
         }

@@ -298,14 +298,13 @@ impl Root {
 
     /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）。
     ///
-    /// **不在调用线程枚举设备**：输入设备枚举（midir/WinMM 客户端创建）改为
-    /// 后台线程执行，完成后经信道回写设备列表与自动选中（见
-    /// [`Root::scan_midi_input_devices`] / [`Root::poll_midi_devices_scan`]），
-    /// 避免启动路径在 UI 线程触碰 midir。设备列表短暂为空是正常状态：
-    /// 后台枚举完成后下一帧回填。
+    /// **不枚举设备**（返工 #149）：输入设备枚举会创建 midir/WinMM 客户端，
+    /// 而 omv2 等环境下 WinMM 接口可能在原生层崩溃（AV——后台线程同样杀进程），
+    /// 启动路径必须零触碰。设备枚举改由用户主动路径触发：录制开始时自愈
+    /// （`start_recording` 内部自带枚举）；设置页列表回填留给后续接线
+    /// （`scan_midi_input_devices` / `poll_midi_devices_scan` 保留备用）。
     pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi_io::Api>) {
         self.midi.api = Some(Arc::from(api));
-        self.scan_midi_input_devices();
     }
 
     /// 获取录制状态引用

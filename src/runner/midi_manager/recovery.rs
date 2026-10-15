@@ -79,7 +79,8 @@ impl MidiManager {
                 tracing::warn!("XSynth: 异步初始化失败: {}", e);
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
-                // 保持在当前后端（System）
+                // 返工 #149：启动时未建 System 占位——失败时才初始化 System 回退
+                self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -90,6 +91,7 @@ impl MidiManager {
                 tracing::warn!("XSynth: 初始化线程异常断开");
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
+                self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
         }
@@ -139,7 +141,8 @@ impl MidiManager {
                 // #127 问题1：失败不得静默——生成可见提示（原因随提示展示）。
                 self.pending_backend_notice =
                     Some(trf!("LGS 初始化失败，已回退 System 后端：{e}", e = e));
-                // 保持在当前后端（System）
+                // 返工 #149：启动时未建 System 占位——失败时才初始化 System 回退
+                self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => AsyncInitOutcome::Pending,
@@ -149,6 +152,7 @@ impl MidiManager {
                 self.lgs_init_rx = None;
                 self.pending_backend_notice =
                     Some(tr!("LGS 初始化线程异常断开，已回退 System 后端").to_string());
+                self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
         }
@@ -180,6 +184,32 @@ impl MidiManager {
     /// 新后端是同步就绪还是仍在异步初始化。
     pub fn is_lgs_initializing(&self) -> bool {
         self.is_lgs_initializing
+    }
+
+    /// 返工 #149：软件合成后端（XSynth/LGS）是否正在异步初始化。
+    ///
+    /// 在途期间**禁止任何 System(WinMM) 输出创建**（占位连接与播放输出均
+    /// 延迟到就绪/失败后由既有重连路径接线）：omv2 等环境下 WinMM 接口
+    /// 可能在原生层崩溃（AV），启动路径必须零触碰。
+    pub fn software_backend_pending(&self) -> bool {
+        self.is_xsynth_initializing || self.is_lgs_initializing
+    }
+
+    /// 返工 #149：软件后端失败/断开时，若当前无任何后端则初始化 System 回退。
+    ///
+    /// 启动时不再建 System 占位（零 WinMM 触碰），故失败路径必须在此显式兜底；
+    /// `pending_backend_notice` 已有内容（如 LGS/XSynth 的失败原因）时不覆盖。
+    pub(super) fn ensure_system_fallback_initialized(&mut self) {
+        if self.api.is_some() {
+            return;
+        }
+        let system_result = Self::init_system_output(self.winmm_output_device_id);
+        self.api = system_result.api;
+        self.output = system_result.output;
+        self.active_backend = system_result.backend;
+        if self.pending_backend_notice.is_none() {
+            self.pending_backend_notice = system_result.notice;
+        }
     }
 
     /// 如果设置改变，重新初始化 MIDI 输出
@@ -236,20 +266,23 @@ impl MidiManager {
         // 重新初始化
         match ui_config.preferred_backend {
             SynthBackend::XSynth => {
-                // 先快速启动 System，然后后台初始化 XSynth（Realtime 引擎）
-                let system_result = Self::init_system_output(self.winmm_output_device_id);
-                self.api = system_result.api;
-                self.output = system_result.output;
-                self.active_backend = system_result.backend;
-                self.start_xsynth_async_init(ui_config);
+                // 返工 #149：软件后端初始化期间不触碰 System(WinMM)——不再做 System
+                // 快速启动占位；仅当异步未启动（提前 bail：无音色库/文件缺失）时立即回退。
+                self.api = None;
+                self.output = None;
+                self.active_backend = SynthBackend::System;
+                if !self.start_xsynth_async_init(ui_config) {
+                    self.ensure_system_fallback_initialized();
+                }
             }
             SynthBackend::Lgs => {
-                // 先快速启动 System，然后后台初始化 LGS (GPU)（Realtime 引擎）
-                let system_result = Self::init_system_output(self.winmm_output_device_id);
-                self.api = system_result.api;
-                self.output = system_result.output;
-                self.active_backend = system_result.backend;
-                self.start_lgs_async_init(ui_config);
+                // 返工 #149：同上（LGS 异步在途期间零 WinMM 触碰）
+                self.api = None;
+                self.output = None;
+                self.active_backend = SynthBackend::System;
+                if !self.start_lgs_async_init(ui_config) {
+                    self.ensure_system_fallback_initialized();
+                }
             }
             SynthBackend::Kdmapi => {
                 let backend_result = Self::init_kdmapi_output(self.winmm_output_device_id);

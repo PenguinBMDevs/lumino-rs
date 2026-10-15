@@ -3,23 +3,41 @@
 //! 从 `midi_manager.rs` 零逻辑变更拆分而来。
 
 use super::*;
+use lumino_core::{tr, trf};
 
 impl MidiManager {
-    /// 启动 XSynth 异步初始化
-    pub(super) fn start_xsynth_async_init(&mut self, ui_config: &UiConfig) {
+    /// 启动 XSynth 异步初始化。
+    ///
+    /// 返回 `true` = 软件后端初始化路径已接管（调用方**不要**回退 System）；
+    /// 返回 `false` = 提前 bail（无音色库/文件缺失），调用方应立即回退 System。
+    /// 返工 #149：软件后端在途期间启动路径不触碰 System(WinMM)。
+    pub(super) fn start_xsynth_async_init(&mut self, ui_config: &UiConfig) -> bool {
         if self.is_xsynth_initializing {
-            return;
+            // 已在进行中：路径已接管，调用方不得回退 System
+            return true;
         }
 
         if ui_config.soundfont_path.is_empty() {
             tracing::warn!("XSynth 异步初始化: 音色库路径未设置");
-            return;
+            // 与 LGS 同口径：#127 可见化——不得静默回退
+            self.pending_backend_notice = Some(
+                tr!("XSynth 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）")
+                    .to_string(),
+            );
+            return false;
         }
 
         let path = PathBuf::from(&ui_config.soundfont_path);
         if !path.exists() {
             tracing::warn!("XSynth 异步初始化: 音色库文件不存在: {:?}", path);
-            return;
+            self.pending_backend_notice = Some(
+                trf!(
+                    "XSynth 未生效：音色库文件不存在（{path}），当前使用 System 后端",
+                    path = path.display()
+                )
+                .to_string(),
+            );
+            return false;
         }
 
         tracing::info!("XSynth: 启动后台初始化...");
@@ -52,6 +70,8 @@ impl MidiManager {
 
             let _ = tx.send(init_result);
         });
+
+        true
     }
 
     /// 阻塞式初始化 XSynth（用于后台线程）

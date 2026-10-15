@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### AUD-005 返工 · 软件合成后端启动零 WinMM 触碰（#149）
+
+- **症状** — LGS + OmniMIDI v2 环境下启动概率性/必然崩溃（0xc0000005）：初始实现
+  （D1-A 决策）为软件后端保留 System 占位输出（WinMM 枚举 + `midiOutOpen`），
+  而 OmniMIDI v2 的 WinMM 侧存在**空函数指针调用缺陷**（上游，进程内无法兜底）
+  ——启动路径被触碰即可能在原生层 AV 杀进程。诊断结论：omv2 全责。
+- **修复** —
+  - XSynth/LGS 启动阶段**零 WinMM/midir 触碰**：跳过 System 快速启动/占位输出；
+    `start_*_async_init` 改为返回 `bool`，仅提前 bail（无音色库/文件缺失）时才立即回退 System。
+  - 播放输出延迟接线：`create_additional_output` 在软件后端初始化在途时返回 `None`
+    （覆盖加载文档与自愈重试窗口）；`setup_playback_output` 同步延迟；就绪/失败后
+    由既有重连路径创建（`reconnect_playback_output`）。
+  - 启动输入枚举触发移除：`set_midi_api` 只注入 API（不再触发设备扫描）；枚举改由
+    用户主动路径触发（录制开始时自愈）。
+  - 失败兜底显式化：`finish_*_init`（Failed/Disconnected）才初始化 System 回退
+    （`ensure_system_fallback_initialized`）；`reinit_if_needed` 切换到软件后端时
+    同样不再先建占位。
+  - LGS 初始化分段打点（GPU 上下文 / 音色库 / 设备解析 / 流启动耗时），便于定位
+    原生层卡点（`api/lgs/init.rs`，自 `lgs.rs` 拆出）。
+- **边界（D5，留作测试依据）** — ① System 后端 + 坏 omv2 仍会崩（omv2 环境问题；
+  产品决策：Lumino 不再受理 OmniMIDI v2 任何接入需求，最多管 KDMAPI）；
+  ② 软件失败 → System 回退路径仍触碰 WinMM；③ 录制/设置页属用户主动路径仍触碰
+  midir；④ 初始化窗口期无占位试听（已接受）。
+- **验证** — 本机 LGS 实测（构建含诊断打点）：启动日志零 WinMM 调用（无占位枚举/
+  打开、无设备扫描）；LGS 后台初始化全程返回且各段耗时可见（GPU 330ms / 音色库
+  1360ms / 设备解析 0ms / 流启动 88ms）；就绪后播放输出自动接线（策略 1）。
+  单测：LGS/XSynth bail 返回值与提示、软件后端在途 `create_additional_output`
+  守卫、`set_midi_api` 不触发枚举、显式扫描路径可用；受影响 crate 全绿
+  （lumino-core i18n 13、lumino-midi-io 90、lumino-ui 470、lumino-rs 131），
+  fmt/clippy 干净。
+
 ### UI-020 · LUMINO_LANG 环境变量泄漏修复（#150）
 
 - **症状** — 排障用 `LUMINO_LANG` 启动（本应只影响本次启动），若顺手改了任意设置触发

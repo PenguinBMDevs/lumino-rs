@@ -195,8 +195,12 @@ mod tests {
         // `UiConfig::default()` 的 soundfont_path 即空串（未设置音色库）。
         let config = UiConfig::default();
 
-        manager.start_lgs_async_init(&config);
+        let started = manager.start_lgs_async_init(&config);
 
+        assert!(
+            !started,
+            "未设置音色库应提前 bail（返工 #149：调用方立即回退 System）"
+        );
         let notice = manager
             .take_pending_backend_notice()
             .expect("未设置音色库时应产生可见提示");
@@ -220,13 +224,68 @@ mod tests {
             ..UiConfig::default()
         };
 
-        manager.start_lgs_async_init(&config);
+        let started = manager.start_lgs_async_init(&config);
 
+        assert!(!started, "音色库文件缺失应提前 bail（立即回退 System）");
         let notice = manager
             .take_pending_backend_notice()
             .expect("音色库文件不存在时应产生可见提示");
         assert!(notice.contains("LGS"), "提示应说明 LGS 未生效: {notice}");
         assert!(!manager.is_lgs_initializing());
+    }
+
+    /// 返工 #149：未设置音色库时选择 XSynth 同样提前 bail（false + 可见提示），
+    /// 而非启动后台初始化。
+    #[test]
+    fn test_xsynth_without_soundfont_bails_with_notice() {
+        let mut manager = MidiManager::default();
+        let config = UiConfig::default();
+
+        let started = manager.start_xsynth_async_init(&config);
+
+        assert!(
+            !started,
+            "未设置音色库应提前 bail（返工 #149：调用方立即回退 System）"
+        );
+        let notice = manager
+            .take_pending_backend_notice()
+            .expect("未设置音色库时应产生可见提示");
+        assert!(
+            notice.contains("XSynth"),
+            "提示应说明 XSynth 未生效: {notice}"
+        );
+        assert!(
+            !manager.is_xsynth_initializing(),
+            "bail 后不应处于初始化状态"
+        );
+    }
+
+    /// 返工 #149：软件后端初始化在途时，任何路径都不得创建播放输出
+    /// （避免触碰 System/WinMM 占位连接）。
+    #[test]
+    fn test_create_additional_output_deferred_while_software_backend_pending() {
+        let mut manager = MidiManager {
+            is_xsynth_initializing: true,
+            ..MidiManager::default()
+        };
+        assert!(
+            manager.software_backend_pending(),
+            "XSynth 在途应报告 pending"
+        );
+        assert!(
+            manager.create_additional_output().is_none(),
+            "XSynth 初始化在途时不得创建输出"
+        );
+
+        let mut manager = MidiManager {
+            is_lgs_initializing: true,
+            ..MidiManager::default()
+        };
+        assert!(manager.software_backend_pending(), "LGS 在途应报告 pending");
+        assert!(
+            manager.create_additional_output().is_none(),
+            "LGS 初始化在途时不得创建输出"
+        );
     }
 
     /// #127 问题2：LGS 异步初始化失败必须落定为 `Failed`（而非静默 false），

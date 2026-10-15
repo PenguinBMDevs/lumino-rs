@@ -90,6 +90,16 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "Failed to create the MIDI playback output; playback will be silent. Check the output device (Settings → MIDI) and try again",
             )
         }
+        "XSynth 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）" => {
+            Some(
+                "XSynth is inactive: no soundfont is configured, so the System backend is in use. Load a soundfont (.sf2/.sfz) in Settings",
+            )
+        }
+        "XSynth 未生效：音色库文件不存在（{path}），当前使用 System 后端" => {
+            Some(
+                "XSynth is inactive: the soundfont file does not exist ({path}); the System backend is in use",
+            )
+        }
         "LGS 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）" => {
             Some(
                 "LGS is inactive: no soundfont is configured, so the System backend is in use. Load a soundfont (.sf2/.sfz) in Settings",
