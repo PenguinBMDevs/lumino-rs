@@ -42,6 +42,18 @@ impl DialogWindow {
 
         let target = self.measure_target_size(work_area.as_ref());
 
+        // E1：可缩放对话框必须在**系统层面**压不扁。
+        // 下限 = 本次决策出的尺寸（内容刚好放得下的尺寸），这样用户拖小窗口时
+        // Windows 会在 WM_GETMINMAXINFO 就拦住，控件不会被挤成细条/被裁掉。
+        // 不可缩放的对话框无需设置（系统已经不允许拉伸）。
+        if let Some(minimum) = minimum_inner_size(
+            target,
+            work_area.map(|area| area.logical_size),
+            self.window.is_resizable(),
+        ) {
+            self.window.set_min_inner_size(Some(minimum));
+        }
+
         // Windows 上 `request_inner_size` 恒返回 `None`（请求交给显示系统，
         // 真实尺寸由 `WindowEvent::Resized` 回送）——所以绝不能靠返回值判断成败，
         // 下面回读 `inner_size()` 并立即对齐渲染侧。
@@ -117,6 +129,53 @@ impl DialogWindow {
     }
 }
 
+/// 可缩放对话框的**最小** inner size（纯函数，`None` = 不设下限）
+///
+/// # 为什么需要（E1）
+///
+/// 对话框构造时没有设任何最小尺寸（`with_min_inner_size` 全仓库只有主窗口用），
+/// 运行时的 `set_min_inner_size` 也没有调用点 ⇒ 用户可以把可缩放对话框拖到
+/// **比内容还小**，控件被挤成细条或被裁掉——尺子（`host::measure::edge`）在
+/// 决策尺寸下是干净的，但管不住用户的手。这里把下限交给系统（Windows 在
+/// `WM_GETMINMAXINFO` 阶段拦截），不需要新增任何尺寸数字。
+///
+/// 取值 = 本次决策出的尺寸，并按工作区夹取（防御：下限不得超过可见区域，
+/// 否则用户连正常尺寸都拉不出来）。不可缩放 / 尺寸非法时返回 `None`。
+pub(crate) fn minimum_inner_size(
+    decided: LogicalSize<f32>,
+    work_area: Option<LogicalSize<f32>>,
+    resizable: bool,
+) -> Option<LogicalSize<f32>> {
+    if !resizable {
+        return None;
+    }
+
+    if !decided.width.is_finite()
+        || !decided.height.is_finite()
+        || decided.width <= 0.0
+        || decided.height <= 0.0
+    {
+        return None;
+    }
+
+    let Some(work_area) = work_area else {
+        return Some(decided);
+    };
+
+    if !work_area.width.is_finite()
+        || !work_area.height.is_finite()
+        || work_area.width <= 0.0
+        || work_area.height <= 0.0
+    {
+        return Some(decided);
+    }
+
+    Some(LogicalSize::new(
+        decided.width.min(work_area.width),
+        decided.height.min(work_area.height),
+    ))
+}
+
 /// 测量结果 → 可用的逻辑尺寸（纯函数，便于单测）
 ///
 /// 拒绝 0 / 负数 / 非有限值：这些值会造出不可见或不可点击的窗口，
@@ -170,5 +229,74 @@ mod tests {
             usable_size(Size::new(SEED_DIALOG_SIZE.width, SEED_DIALOG_SIZE.height)).is_some(),
             "种子尺寸必须非零，否则退路也会失败"
         );
+    }
+
+    const DECIDED: LogicalSize<f32> = LogicalSize::new(720.0, 540.0);
+    const WORK_AREA: LogicalSize<f32> = LogicalSize::new(1920.0, 1040.0);
+
+    /// 可缩放对话框：下限 = 决策尺寸 ⇒ 系统层面压不扁，控件不会被挤。
+    #[test]
+    fn test_minimum_inner_size_for_resizable_is_decided_size() {
+        assert_eq!(
+            minimum_inner_size(DECIDED, Some(WORK_AREA), true),
+            Some(DECIDED)
+        );
+    }
+
+    /// 不可缩放对话框：系统本来就不允许拉伸，无需设下限。
+    #[test]
+    fn test_minimum_inner_size_is_none_for_fixed_dialogs() {
+        assert_eq!(minimum_inner_size(DECIDED, Some(WORK_AREA), false), None);
+    }
+
+    /// 工作区比决策尺寸还小（异常）⇒ 下限夹到工作区，否则用户连正常尺寸都拉不出来。
+    #[test]
+    fn test_minimum_inner_size_clamps_to_work_area() {
+        let tiny = LogicalSize::new(500.0, 400.0);
+
+        assert_eq!(
+            minimum_inner_size(DECIDED, Some(tiny), true),
+            Some(LogicalSize::new(500.0, 400.0))
+        );
+    }
+
+    /// 找不到工作区时退回决策尺寸（不因为拿不到显示器信息就放弃下限）。
+    #[test]
+    fn test_minimum_inner_size_without_work_area_uses_decided() {
+        assert_eq!(minimum_inner_size(DECIDED, None, true), Some(DECIDED));
+    }
+
+    /// 决策尺寸非法 ⇒ 绝不设下限：错误的 min 可能让窗口永远显示不出来。
+    #[test]
+    fn test_minimum_inner_size_rejects_degenerate_decided_size() {
+        for decided in [
+            LogicalSize::new(0.0, 540.0),
+            LogicalSize::new(720.0, 0.0),
+            LogicalSize::new(-1.0, 540.0),
+            LogicalSize::new(f32::NAN, 540.0),
+            LogicalSize::new(720.0, f32::INFINITY),
+        ] {
+            assert_eq!(
+                minimum_inner_size(decided, Some(WORK_AREA), true),
+                None,
+                "{decided:?} 必须被拒绝"
+            );
+        }
+    }
+
+    /// 工作区数据非法（NaN / 0）时退回决策尺寸，而不是算出 0 下限。
+    #[test]
+    fn test_minimum_inner_size_survives_broken_work_area() {
+        for work_area in [
+            LogicalSize::new(0.0, 1040.0),
+            LogicalSize::new(f32::NAN, 1040.0),
+            LogicalSize::new(1920.0, f32::NAN),
+        ] {
+            assert_eq!(
+                minimum_inner_size(DECIDED, Some(work_area), true),
+                Some(DECIDED),
+                "工作区 {work_area:?} 非法时应退回决策尺寸"
+            );
+        }
     }
 }
