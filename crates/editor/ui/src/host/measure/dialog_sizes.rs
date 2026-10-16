@@ -20,14 +20,15 @@ use crate::state::root_state::DialogType;
 use crate::view::dialog_preferred_size::{self, dialog_size_hint, width_cap, width_floor};
 
 use super::{
-    measure_content_height, measure_is_squeezed, measure_min_fitting_width, measure_width_baseline,
+    decide_dialog_window_size, measure_content_height, measure_is_squeezed,
+    measure_min_fitting_width, measure_width_baseline,
 };
 
 /// 参考工作区：1920×1040（1080p 屏去掉任务栏后的典型可见区域）
-const WORK_AREA: Size = Size::new(1920.0, 1040.0);
+pub(super) const WORK_AREA: Size = Size::new(1920.0, 1040.0);
 
 /// 全部「真实」对话框类型（`None` 除外）
-const ALL_DIALOGS: [DialogType; 17] = [
+pub(super) const ALL_DIALOGS: [DialogType; 17] = [
     DialogType::CustomPrecision,
     DialogType::Collaboration,
     DialogType::LoadConfirm,
@@ -51,7 +52,7 @@ const ALL_DIALOGS: [DialogType; 17] = [
 ///
 /// 无可用 GPU 适配器时返回 `None`，调用方**跳过**而不是失败
 /// （与 `root::draw_toolbar::tests::headless_renderer_with_font` 同一实现口径）。
-fn headless_renderer() -> Option<crate::Renderer> {
+pub(super) fn headless_renderer() -> Option<crate::Renderer> {
     use iced_wgpu::graphics::Shell;
 
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -130,6 +131,13 @@ fn test_all_dialog_types_measure_within_bounds() {
         let measured_height = measure_content_height(root.view(), &renderer, width, cap_height);
         let size =
             dialog_preferred_size::recommend_window_size(hint, WORK_AREA, width, measured_height);
+
+        // 口径不漂移：本测试内联的配方必须与生产入口 `decide_dialog_window_size` 逐位一致
+        assert_eq!(
+            size,
+            decide_dialog_window_size(&root, &renderer, dialog_type, WORK_AREA),
+            "{dialog_type:?} 测试内的尺寸配方已与生产口径漂移"
+        );
 
         assert!(
             width >= floor_width - 0.5 && width <= cap_width + 0.5,

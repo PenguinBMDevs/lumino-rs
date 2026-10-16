@@ -314,72 +314,89 @@ fn layout_at_width(
 }
 
 impl Host {
-    /// 对话框窗口的推荐**逻辑尺寸**（REF-001 决策 D3：宽声明、高测量）
+    /// 对话框窗口的推荐**逻辑尺寸**
     ///
-    /// 规则：`宽 = 声明宽度`；`高 = clamp(测量高度, 声明下限, 声明上限, 工作区上限)`。
-    ///
-    /// - 宽度取视图侧的声明（[`dialog_preferred_size::dialog_size_hint`]），
-    ///   它同时充当**文本折行宽度**（测量时作为硬约束传入，见
-    ///   [`measure_content_height`]）；
-    /// - 高度由测量驱动，再用声明的上下限兜底：
-    ///   - 上限：含无界滚动区的对话框必填（否则高度顶满工作区）；
-    ///   - 下限：内容随状态变化、开局态未必最高的对话框必填。
-    ///
-    /// `work_area` 为窗口所在显示器的**逻辑**工作区（不可用时传 `Size::ZERO`）。
-    /// **测量与夹取共用同一个上限**（[`dialog_preferred_size::measurement_cap`]），
-    /// 否则内容会在夹取那一步被裁掉。
-    ///
-    /// 返回 `Size::ZERO` 表示**测量不可用**（`DialogType::None`、宽度非法、
-    /// 或内容高度非正/非有限），调用方必须回退种子尺寸并**照常显示窗口**。
+    /// 决策规则见 [`decide_dialog_window_size`]——本方法只是把 `Host` 的视图与
+    /// 渲染器喂给它，保证**生产路径与验证工具同源**（不出现两套口径）。
     pub fn measure_dialog_window_size(&self, work_area: Size) -> Size {
-        let dialog_type = self.root.state.dialog_type;
-        let hint = dialog_preferred_size::dialog_size_hint(dialog_type);
-
-        let width_cap = dialog_preferred_size::width_cap(hint, work_area);
-        if !width_cap.is_finite() || width_cap <= 0.0 {
-            return Size::ZERO;
-        }
-
-        let height_cap = dialog_preferred_size::measurement_cap(hint, work_area);
-        let width_floor = dialog_preferred_size::width_floor(hint, work_area);
-
-        // 宽度自动计算：区间内求「内容不被压窄的最小宽度」；
-        // 区间退化为一点（`boxed`/`pinned`/`floored`）时直接取值，省掉基准 + 9 次布局。
-        let width = if hint.needs_width_search(work_area.width) {
-            match measure_min_fitting_width(
-                || self.root.view(),
-                &self.render_ctx.renderer,
-                height_cap,
-                width_floor,
-                width_cap,
-            ) {
-                Some(fitted) => fitted.clamp(width_floor, width_cap),
-                None => width_floor,
-            }
-        } else {
-            width_cap
-        };
-
-        let measured_height = measure_content_height(
-            self.root.view(),
+        decide_dialog_window_size(
+            &self.root,
             &self.render_ctx.renderer,
-            width,
-            height_cap,
-        );
-
-        if !usable(Size::new(width, measured_height)) {
-            tracing::warn!(
-                "对话框内容测量不可用: {dialog_type:?} 宽度={width:.1} 上限={height_cap:.1} 实测高度={measured_height:.1}，调用方应回退种子尺寸"
-            );
-            return Size::ZERO;
-        }
-
-        dialog_preferred_size::recommend_window_size(hint, work_area, width, measured_height)
+            self.root.state.dialog_type,
+            work_area,
+        )
     }
+}
+
+/// 对话框窗口尺寸决策（REF-001：宽自动计算、高测量驱动）
+///
+/// # 规则
+///
+/// ```text
+/// 宽 = clamp(内容不被压窄的最小宽度, width_floor, width_cap ∩ 工作区)
+/// 高 = clamp(测量高度, 声明下限, 声明上限 ∩ 工作区)     // 钉死高度时跳过测量
+/// ```
+///
+/// - 宽度区间退化（`boxed`/`pinned`/`floored`）时不跑搜索，直接用上限；
+/// - 高度上限在**测量与夹取**两处共用同一个值
+///   （[`dialog_preferred_size::measurement_cap`]），否则内容会在夹取那一步被裁掉；
+/// - 钉死高度（`min_height == max_height`）完全不依赖测量。
+///
+/// 返回 `Size::ZERO` 表示**测量不可用**（`DialogType::None`、宽度非法、或内容高度
+/// 非正/非有限），调用方必须回退种子尺寸并**照常显示窗口**。
+///
+/// 抽成自由函数是为了让**测试直接跑生产口径**（不需要构造 `Host`）：
+/// `host::measure::dialog_sizes` 的尺寸验证与 `host::measure::edge` 的边缘可见性
+/// 诊断都调用它。
+pub fn decide_dialog_window_size(
+    root: &crate::Root,
+    renderer: &Renderer,
+    dialog_type: crate::state::root_state::DialogType,
+    work_area: Size,
+) -> Size {
+    let hint = dialog_preferred_size::dialog_size_hint(dialog_type);
+
+    let width_cap = dialog_preferred_size::width_cap(hint, work_area);
+    if !width_cap.is_finite() || width_cap <= 0.0 {
+        return Size::ZERO;
+    }
+
+    let height_cap = dialog_preferred_size::measurement_cap(hint, work_area);
+    let width_floor = dialog_preferred_size::width_floor(hint, work_area);
+
+    // 宽度自动计算：区间内求「内容不被压窄的最小宽度」；
+    // 区间退化为一点（`boxed`/`pinned`/`floored`）时直接取值，省掉基准 + 9 次布局。
+    let width = if hint.needs_width_search(work_area.width) {
+        match measure_min_fitting_width(
+            || root.view(),
+            renderer,
+            height_cap,
+            width_floor,
+            width_cap,
+        ) {
+            Some(fitted) => fitted.clamp(width_floor, width_cap),
+            None => width_floor,
+        }
+    } else {
+        width_cap
+    };
+
+    let measured_height = measure_content_height(root.view(), renderer, width, height_cap);
+
+    if !usable(Size::new(width, measured_height)) {
+        tracing::warn!(
+            "对话框内容测量不可用: {dialog_type:?} 宽度={width:.1} 上限={height_cap:.1} 实测高度={measured_height:.1}，调用方应回退种子尺寸"
+        );
+        return Size::ZERO;
+    }
+
+    dialog_preferred_size::recommend_window_size(hint, work_area, width, measured_height)
 }
 
 #[cfg(test)]
 mod dialog_sizes;
+#[cfg(test)]
+mod edge;
 #[cfg(test)]
 mod tests {
     //! iced 0.14 布局语义的**契约测试**。
