@@ -5,7 +5,7 @@ mod font;
 mod interaction;
 mod theme_cards;
 
-use iced_core::Alignment;
+use iced_core::{Alignment, Length};
 use iced_widget::{column, pick_list, row, text};
 use lumino_ui_core::{Element, Message};
 
@@ -230,7 +230,7 @@ pub fn view<'a>(
                 text(t.ui_automation_line_thickness)
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style())
-                    .width(200.0),
+                    .width(Length::Fill),
                 t.ui_automation_line_thickness_hint,
             ),
             iced_widget::slider(
@@ -257,7 +257,7 @@ pub fn view<'a>(
                 text(t.ui_monitor_refresh_interval)
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style())
-                    .width(200.0),
+                    .width(Length::Fill),
                 t.ui_monitor_refresh_interval_hint,
             ),
             iced_widget::slider(

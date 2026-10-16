@@ -82,7 +82,7 @@ pub(super) fn render_xsynth_options<'a>(
                 text(format!("{}: {}", t.max_voices, display_val))
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style())
-                    .width(180.0),
+                    .width(Length::Fill),
                 t.max_voices_hint,
             ),
             iced_widget::slider(0.0..=64.0, slider_val, |v| {
@@ -112,7 +112,7 @@ pub(super) fn render_xsynth_options<'a>(
                 text(format!("{}: {}", t.global_voice_limit, global_display))
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style())
-                    .width(200.0),
+                    .width(Length::Fill),
                 t.global_voice_limit_hint,
             ),
             iced_widget::slider(0.0..=20000.0, global_limit_val as f64, |v| {
@@ -136,7 +136,7 @@ pub(super) fn render_xsynth_options<'a>(
                 ))
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
-                .width(200.0),
+                .width(Length::Fill),
                 t.voice_target_ratio_hint,
             ),
             iced_widget::slider(0.50..=0.90, settings.synth.xsynth_voice_target_ratio, |r| {

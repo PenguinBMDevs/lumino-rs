@@ -28,6 +28,7 @@ mod cache;
 mod dialog;
 mod editor_ops;
 mod event;
+mod measure;
 mod render;
 mod render_ctx;
 mod render_thread;

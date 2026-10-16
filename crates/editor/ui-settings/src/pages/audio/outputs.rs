@@ -2,7 +2,7 @@
 //!
 //! 由 `pages/audio.rs` 原样拆分，函数体逻辑零变更。
 
-use iced_core::Alignment;
+use iced_core::{Alignment, Length};
 use iced_widget::{column, pick_list, row, text};
 use lumino_ui_core::{Element, Message};
 
@@ -27,7 +27,8 @@ pub(super) fn render_winmm_output_selector<'a>(
     let label = with_setting_tooltip_inline(
         text(t.winmm_output_device)
             .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style()),
+            .style(create_content_text_style())
+            .width(Length::Fill),
         t.system_hint,
     );
 
@@ -40,7 +41,8 @@ pub(super) fn render_winmm_output_selector<'a>(
             iced_widget::space().width(SPACING_MAIN),
             text(t.winmm_no_device)
                 .size(TEXT_SIZE_CONTENT)
-                .style(create_placeholder_text_style()),
+                .style(create_placeholder_text_style())
+                .width(Length::Fill),
             iced_widget::space().width(SPACING_ICON_LABEL),
             refresh_btn,
         ]
@@ -109,7 +111,8 @@ pub(super) fn render_audio_output_selector<'a>(
     let device_label = with_setting_tooltip_inline(
         text(t.audio_output_device)
             .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style()),
+            .style(create_content_text_style())
+            .width(Length::Fill),
         t.audio_output_hint,
     );
 
@@ -119,7 +122,8 @@ pub(super) fn render_audio_output_selector<'a>(
             iced_widget::space().width(SPACING_MAIN),
             text(t.audio_output_no_device)
                 .size(TEXT_SIZE_CONTENT)
-                .style(create_placeholder_text_style()),
+                .style(create_placeholder_text_style())
+                .width(Length::Fill),
             iced_widget::space().width(SPACING_ICON_LABEL),
             refresh_btn,
         ]
