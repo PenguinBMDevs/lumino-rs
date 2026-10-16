@@ -376,3 +376,16 @@ fn mute_fingerprint_distinguishes_sets() {
     assert_ne!(fp_empty, fp_one);
     assert_ne!(fp_one, fp_two);
 }
+
+/// REND-019 PR-A：降级重试/告警节流门（防渲染线程被拖住时的重试风暴与刷屏）
+#[test]
+fn onion_skin_degrade_throttle_gates() {
+    let mut state = OnionSkinState::default();
+    // 初始即可重试、首次告警到期
+    assert!(state.degrade_retry_ready(), "初始应允许重试");
+    assert!(state.degrade_warn_due(), "首次告警应到期");
+    // 记录一次重试后：重试与告警均处于节流窗口内
+    state.note_degrade_retry();
+    assert!(!state.degrade_retry_ready(), "节流窗口内不应重试");
+    assert!(!state.degrade_warn_due(), "聚合窗口内不应重复告警");
+}

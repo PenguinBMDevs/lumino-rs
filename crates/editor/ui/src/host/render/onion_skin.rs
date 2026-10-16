@@ -49,6 +49,13 @@ const STREAMING_CHUNK_SIZE: usize = 8_000_000;
 /// 并行实例构建的最小音符数（低于此规模顺序构建更快，避免线程调度开销）
 const PARALLEL_BUILD_MIN: usize = 1_000_000;
 
+/// 洋葱皮降级重试节流间隔（REND-019 PR-A：渲染线程被 GPU 拖住时通道持续满，
+/// 避免每帧全量重建风暴）
+const DEGRADE_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// 洋葱皮降级告警聚合间隔（REND-019 PR-A：日志节流，避免刷屏）
+const DEGRADE_WARN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// 洋葱皮状态缓存
 ///
 /// 跟踪 track_notes_gen、音轨开关、当前音轨、调色板变化，避免每帧重建全量实例。
@@ -73,6 +80,10 @@ pub(crate) struct OnionSkinState {
     /// 强制全量重建标志（未知变化兜底：undo/redo/散改/加载后主音轨段
     /// 无事件可对账 → 全量会话分块重建，CPU 峰值可控）
     force_full: bool,
+    /// 降级重试节流截止时间（REND-019 PR-A：通道满降级后的重试风暴防护）
+    degrade_retry_at: Option<std::time::Instant>,
+    /// 降级告警节流截止时间（REND-019 PR-A：日志聚合，避免刷屏）
+    degrade_warn_at: Option<std::time::Instant>,
 }
 
 /// 洋葱皮构建动作（事件级增量，2026-08-05）
@@ -124,6 +135,8 @@ impl Default for OnionSkinState {
             last_track_count: 0,
             initialized: false,
             force_full: false,
+            degrade_retry_at: None,
+            degrade_warn_at: None,
         }
     }
 }
@@ -132,6 +145,32 @@ impl OnionSkinState {
     /// 标记下一次决策强制全量重建（未知变化兜底，见 `force_full` 字段）
     pub(super) fn force_full_next(&mut self) {
         self.force_full = true;
+    }
+
+    /// 降级重试节流是否已就绪（REND-019 PR-A）。
+    ///
+    /// 渲染线程被 GPU 拖住（TDR 前窗口）时洋葱皮通道会持续满：每次全量
+    /// 会话都发不出去，若每帧重试会形成重建风暴（大工程为每帧数百 ms 的
+    /// 实例重建）。节流为 ≥ [`DEGRADE_RETRY_INTERVAL`] 重试一次。
+    pub(super) fn degrade_retry_ready(&self) -> bool {
+        self.degrade_retry_at
+            .is_none_or(|t| std::time::Instant::now() >= t)
+    }
+
+    /// 记录一次降级重试开始（重置重试节流窗口）。
+    pub(super) fn note_degrade_retry(&mut self) {
+        self.degrade_retry_at = Some(std::time::Instant::now() + DEGRADE_RETRY_INTERVAL);
+    }
+
+    /// 降级告警是否到期（`true` 时调用方输出一次 warn，否则降为 debug）。
+    pub(super) fn degrade_warn_due(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        if self.degrade_warn_at.is_none_or(|t| now >= t) {
+            self.degrade_warn_at = Some(now + DEGRADE_WARN_INTERVAL);
+            true
+        } else {
+            false
+        }
     }
 
     /// 计算音轨开关指纹（is_muted 状态 hash）
@@ -272,15 +311,24 @@ impl Host {
     ///
     /// 2026-08 单一权威源：音符数据一律从 `document` 读取（track_notes 缓存已删除）。
     pub(super) fn stream_onion_skin_instances(&mut self) {
-        // REND-019（PR-A §1.6）：上一帧有洋葱皮消息因通道满被丢弃 →
-        // 先于决策强制全量重建补发（防增量命中残缺段表）
-        if self
-            .render_ctx
-            .wgpu_render_thread
-            .as_ref()
-            .is_some_and(|t| t.take_onion_skin_degraded())
+        // REND-019（PR-A §1.6）：上一帧有洋葱皮消息因通道满被丢弃 → 强制
+        // 全量重建补发（防增量命中残缺段表）。
+        // 节流：重试 ≥500ms、告警 ≥1s——渲染线程被 GPU 拖住（TDR 前窗口）
+        // 时通道会持续满，避免每帧重建风暴与日志刷屏
+        //（2026-10-16 冒烟实测：空工程 ~百条 warn/秒；大工程为重建风暴）。
+        if self.render_ctx.onion_skin_state.degrade_retry_ready()
+            && self
+                .render_ctx
+                .wgpu_render_thread
+                .as_ref()
+                .is_some_and(|t| t.take_onion_skin_degraded())
         {
-            tracing::warn!("[onion-skin] 上一帧通道满丢弃：强制全量重建补发");
+            self.render_ctx.onion_skin_state.note_degrade_retry();
+            if self.render_ctx.onion_skin_state.degrade_warn_due() {
+                tracing::warn!("[onion-skin] 通道满降级：强制全量重建补发（节流重试中）");
+            } else {
+                tracing::debug!("[onion-skin] 通道满降级重试（日志节流）");
+            }
             self.render_ctx.onion_skin_state.force_full_next();
         }
 

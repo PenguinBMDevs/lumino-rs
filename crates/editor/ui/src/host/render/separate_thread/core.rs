@@ -54,6 +54,13 @@ impl Host {
     ) {
         use crate::titlebar::mode_toggle::AppMode;
 
+        // REND-019（PR-A §1.6）：设备已丢失（TDR）——本帧不渲染任何内容
+        // （含 blit 与 iced 覆盖层），等待重连接管；避免对死设备/死渲染
+        // 线程继续投递造成日志刷屏
+        if lumino_gfx::device_lost() {
+            return;
+        }
+
         // 视频剪辑面板（渲染器首级）：不应渲染钢琴卷帘的任何内容（网格/音符/标尺），
         // 仅保留瀑布流离屏预览（由 ensure_piano_waterfall_keyboard 的 is_renderer_entry 分支处理）
         // 与 iced UI，避免其他面板内容透出或 GPU 浪费。

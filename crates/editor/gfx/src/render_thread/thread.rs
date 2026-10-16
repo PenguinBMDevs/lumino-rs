@@ -328,7 +328,9 @@ impl WgpuRenderThread {
             Ok(()) => {}
             Err(std::sync::mpsc::TrySendError::Full(_)) => {
                 self.onion_skin_degraded.store(true, Ordering::SeqCst);
-                tracing::warn!("洋葱皮通道满：本消息丢弃并置位降级标志（下一步强制全量重建补发）");
+                // 告警由 UI 侧聚合节流输出（REND-019 PR-A：渲染线程被 GPU
+                // 拖住时通道持续满，逐条 warn 会刷屏）——此处仅记 debug
+                tracing::debug!("洋葱皮通道满：本消息丢弃并置位降级标志（UI 侧节流重试）");
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
                 tracing::warn!("洋葱皮消息丢弃：渲染线程通道已断开");
