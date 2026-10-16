@@ -99,6 +99,17 @@ impl DeviceWarningWindow {
         self.window.as_ref().is_some_and(|w| w.id() == window_id)
     }
 
+    /// REND-019 PR-C：重连——警告窗存活时重绑到新 device（不存在则 no-op）。
+    #[allow(dead_code)]
+    pub(crate) fn rebind_gpu(&mut self, epoch: lumino_gfx::GpuEpoch, gpu: &lumino_gfx::SharedGpu) {
+        if let Some(gfx) = self.gfx.as_mut() {
+            gfx.rebind_device(epoch, gpu);
+        }
+        if let Some(ui) = self.ui.as_mut() {
+            ui.rebind_gpu(epoch, gpu);
+        }
+    }
+
     /// 处理窗口事件（重绘 / 光标 / 尺寸 / 关闭）
     pub(crate) fn handle_event(&mut self, event: WindowEvent) {
         let Some(window) = self.window.clone() else {

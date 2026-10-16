@@ -22,6 +22,7 @@ mod collab;
 mod file;
 mod midi;
 mod persist;
+mod reconnect;
 mod session;
 mod test;
 mod window;
@@ -59,6 +60,8 @@ pub struct Runner {
     pub(crate) pending_status_hint: Option<String>,
     /// 待持久化的 GPU 检测缓存（用户选择「放我进去」时写入）
     pub(crate) pending_gpu_cache: Option<(Option<String>, bool)>,
+    /// REND-019 PR-C：进行中的 GPU 重连会话（None = 无重连）
+    pub(crate) reconnect: Option<crate::runner::reconnect::ReconnectSession<lumino_gfx::SharedGpu>>,
 }
 
 // ── 领域状态 ────────────────────────────────────────────────────────────

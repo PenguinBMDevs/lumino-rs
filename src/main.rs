@@ -9,6 +9,8 @@
 )]
 
 use winit::event_loop::EventLoop;
+#[cfg(target_os = "linux")]
+use winit::event_loop::EventLoopBuilder;
 
 /// 全局内存追踪分配器，按子系统统计堆分配。
 #[global_allocator]
@@ -73,7 +75,7 @@ fn wayland_compositor_available() -> bool {
 /// 解决方案：在调用 `build()` **之前** 通过检查 Wayland socket 实际存在性
 /// 来决策选用哪个后端。
 #[cfg(target_os = "linux")]
-fn create_event_loop() -> Result<EventLoop<()>, winit::error::EventLoopError> {
+fn create_event_loop() -> Result<EventLoop<runner::UserEvent>, winit::error::EventLoopError> {
     use winit::platform::x11::EventLoopBuilderExtX11;
 
     let has_x11 = std::env::var("DISPLAY").is_ok();
@@ -82,24 +84,25 @@ fn create_event_loop() -> Result<EventLoop<()>, winit::error::EventLoopError> {
     if wayland_ok {
         // Wayland 合成器真正在运行，让 winit 默认走 Wayland
         tracing::info!("Wayland 合成器检测可用，使用 Wayland 后端");
-        EventLoop::builder().build()
+        EventLoopBuilder::<runner::UserEvent>::with_user_event().build()
     } else if has_x11 {
         // Wayland 不可用，强制 X11 后端
         tracing::info!("使用 X11 后端");
-        let mut builder = EventLoop::builder();
+        let mut builder = EventLoopBuilder::<runner::UserEvent>::with_user_event();
         builder.with_x11();
         builder.build()
     } else {
         // 两个显示服务器都不可用，尝试默认（会失败但给出明确错误）
         tracing::error!("未检测到显示服务器（Wayland socket 和 DISPLAY 均不可用）");
-        EventLoop::builder().build()
+        EventLoopBuilder::<runner::UserEvent>::with_user_event().build()
     }
 }
 
-/// 非 Linux 平台直接使用默认事件循环创建。
+/// 非 Linux 平台直接使用默认事件循环创建（REND-019 PR-C：事件循环参数化
+/// `UserEvent`——device-lost 通知链路 §1.3 C2 的前置改造）。
 #[cfg(not(target_os = "linux"))]
-fn create_event_loop() -> Result<EventLoop<()>, winit::error::EventLoopError> {
-    EventLoop::new()
+fn create_event_loop() -> Result<EventLoop<runner::UserEvent>, winit::error::EventLoopError> {
+    EventLoop::<runner::UserEvent>::with_user_event().build()
 }
 
 #[tokio::main]
@@ -119,9 +122,20 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     let test_config = cli.get_test_config();
 
     let event_loop = create_event_loop()?;
+
+    // REND-019 PR-C §1.3（C1/C2）：device-lost 回调 → EventLoopProxy（无锁唤醒；
+    // 回调线程只做原子置位 + send_event，重连决策由 UI 主循环消费事件后发起）
+    let lost_proxy = event_loop.create_proxy();
+    lumino_gfx::set_device_lost_notifier(move |reason, message| {
+        let _ = lost_proxy.send_event(runner::UserEvent::GpuDeviceLost {
+            reason: format!("{reason:?}"),
+            message,
+        });
+    });
+
     let proxy = event_loop.create_proxy();
     lumino_ui::event::set_waker(move || {
-        let _ = proxy.send_event(());
+        let _ = proxy.send_event(runner::UserEvent::UiWake);
     });
 
     let mut runner = runner::Runner::default();

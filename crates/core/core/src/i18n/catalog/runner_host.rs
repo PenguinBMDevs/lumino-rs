@@ -58,6 +58,12 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "云存储传输" => Some("Cloud Storage Transfer"),
         "MIDI 处理进度" => Some("MIDI Processing Progress"),
         "GPU 兼容性检查" => Some("GPU Compatibility Check"),
+        "GPU 重连中…（驱动超时恢复）" => {
+            Some("GPU reconnecting… (driver timeout recovery)")
+        }
+        "GPU 重连失败：请重启 Lumino" => {
+            Some("GPU reconnect failed; please restart Lumino")
+        }
         // ── GPU 兼容性：提示与失败详情（device_gate / device_warning） ──
         "未检测到 {backend} 支持，运行可能不稳定（可在设置中查看详情）" => {
             Some(

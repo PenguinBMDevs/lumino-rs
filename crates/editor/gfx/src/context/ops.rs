@@ -21,6 +21,19 @@ impl Context {
         self.epoch
     }
 
+    /// REND-019 PR-C：重连后把本上下文重绑到新 device。
+    ///
+    /// Surface 挂在同一 `Instance` 上（重连复用 instance），无需重建——
+    /// 换 device/queue 克隆 + 按既有交换链配置重配即可恢复（E2）。
+    pub fn rebind_device(&mut self, epoch: GpuEpoch, gpu: &crate::SharedGpu) {
+        self.adapter = gpu.adapter.clone();
+        self.device = gpu.device.clone();
+        self.queue = gpu.queue.clone();
+        self.epoch = epoch;
+        self.surface.configure(&self.device, &self.surface_config);
+        tracing::info!("Context 已重绑到新 device：epoch = {}", epoch.0);
+    }
+
     /// 同步创建图形上下文（在无法使用 async 的初始化路径中使用）
     ///
     /// 内部使用 `futures::executor::block_on` 驱动异步初始化流程，

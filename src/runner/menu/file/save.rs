@@ -272,14 +272,14 @@ impl RunnerInner {
     ///
     /// 保存期间 `saving` 标志置位：禁止关闭软件，关闭请求转为 `pending_close`
     /// 延迟处理，保存完成后自动退出。
-    fn save_lmpj_project_to(&mut self, save_path: PathBuf) -> bool {
-        // 串行限制：保存/云上传进行中，新保存请求直接拒绝
-        // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
-        if self.is_saving() || self.is_cloud_saving() {
-            tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
-            return false;
-        }
-
+    /// 构建待写入的 LuminoProject（保存 / 重连兜底自动保存共用口径）。
+    ///
+    /// 2026-08 单一权威源：优先借用 UI 的 `MidiDocument`（零拷贝）构建；
+    /// 无文档时从编辑器音符重建；作者/版权/累计创作时长写入元数据。
+    pub(super) fn build_lmpj_project(
+        &mut self,
+        save_path: &Path,
+    ) -> Option<lumino_export::LuminoProject> {
         let project = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
@@ -305,12 +305,7 @@ impl RunnerInner {
                     project
                 })
             }
-        };
-
-        let Some(project) = project else {
-            tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
-            return false;
-        };
+        }?;
 
         // 工程设置对话框中填写的作者/版权写入工程元数据（.lmpj / metadata.toml）
         let mut project = project;
@@ -323,6 +318,21 @@ impl RunnerInner {
         // 保存时取实时值（current_editing_secs = accumulated + 会话已流逝），
         // 重新加载时从 metadata.stats.working_time_seconds 恢复，跨会话不丢。
         project.set_working_time_seconds(self.session_tracker.current_editing_secs());
+        Some(project)
+    }
+
+    fn save_lmpj_project_to(&mut self, save_path: PathBuf) -> bool {
+        // 串行限制：保存/云上传进行中，新保存请求直接拒绝
+        // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
+        if self.is_saving() || self.is_cloud_saving() {
+            tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
+            return false;
+        }
+
+        let Some(project) = self.build_lmpj_project(&save_path) else {
+            tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
+            return false;
+        };
 
         // 标记保存进行中（保存期间禁止关闭软件）
         self.saving.store(true, Ordering::SeqCst);

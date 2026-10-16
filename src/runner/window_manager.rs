@@ -125,6 +125,13 @@ impl WindowManager {
         &self.ui
     }
 
+    /// REND-019 PR-C：重连——窗口 Context 与 Host 重绑到新 device（幂等）。
+    #[allow(dead_code)]
+    pub(crate) fn rebind_gpu(&mut self, epoch: lumino_gfx::GpuEpoch, gpu: &lumino_gfx::SharedGpu) {
+        self.gfx.rebind_device(epoch, gpu);
+        self.ui.rebind_gpu(epoch, gpu);
+    }
+
     /// 请求重绘窗口
     pub fn request_redraw(&self) {
         self.window.request_redraw();

@@ -9,7 +9,24 @@ use lumino_ui::state::root_state::DialogType;
 use crate::runner::inner::{InitError, Runner, TestModeState};
 use crate::runner::lifecycle::device_gate::DeviceGate;
 
-impl winit::application::ApplicationHandler for Runner {
+impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner {
+    fn user_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        event: crate::runner::UserEvent,
+    ) {
+        // REND-019 PR-C §1.3：回调线程经 EventLoopProxy 投递事件；重连决策
+        // 在此（UI 主循环）发起（C1）。
+        match event {
+            crate::runner::UserEvent::UiWake => {
+                // 空唤醒：UI 事件队列由 about_to_wait 消费
+            }
+            crate::runner::UserEvent::GpuDeviceLost { reason, message } => {
+                self.on_gpu_device_lost(&reason, &message);
+            }
+        }
+    }
+
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.inner.is_some() || self.init_error.is_some() || self.device_warning.is_some() {
             return;
@@ -159,6 +176,15 @@ impl winit::application::ApplicationHandler for Runner {
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
+
+        // REND-019 PR-C：重连流水线逐帧推进（每帧最多一步，§1.4 S1），
+        // 并自唤醒下一帧保证步进不依赖外部事件
+        if self.reconnect.is_some() {
+            if let Some(this) = self.inner.as_ref() {
+                this.window_state.window.window().request_redraw();
+            }
+            self.step_reconnect();
+        }
 
         // 设备检查警告窗阶段：主窗口未初始化，只处理警告窗的用户选择
         if self.inner.is_none() {

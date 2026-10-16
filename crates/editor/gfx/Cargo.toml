@@ -13,6 +13,9 @@ workspace = true
 
 [features]
 default = []
+# R2 真实重连冒烟注入（REND-019 §三 R2）：env LUMINO_TEST_DEVICE_LOST 触发
+# device.destroy() 注入，走与真实 TDR 相同的 device-lost 回调路径。
+gpu-reconnect-test = []
 
 [dependencies]
 wgpu = { workspace = true }

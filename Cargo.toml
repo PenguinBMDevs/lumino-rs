@@ -196,6 +196,9 @@ description.workspace = true
 edition.workspace = true
 
 [features]
+# REND-019 §三 R2：GPU 重连进程内冒烟注入（env LUMINO_TEST_DEVICE_LOST，
+# 用法见 .ai-context/tdr-kit/checklist-R2R3.md）。
+gpu-reconnect-test = ["lumino-gfx/gpu-reconnect-test"]
 # Tracy 性能剖析：启用后音频/播放热路径发射 zone（默认构建零开销）。
 # 用法：cargo build --profile fast-release --features tracy
 tracy = ["lumino-midi-io/tracy"]

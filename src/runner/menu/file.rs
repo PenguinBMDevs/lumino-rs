@@ -6,6 +6,7 @@
 //! - `save_flow`：保存完成 / 失败提示
 //! - `util`：文件创建时间等工具函数
 
+mod auto_save;
 mod close;
 mod editor_midi;
 mod export;

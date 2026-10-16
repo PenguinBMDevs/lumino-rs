@@ -5,6 +5,7 @@
 mod event;
 mod initialize;
 mod query;
+mod reconnect;
 mod redraw;
 
 use std::sync::Arc;

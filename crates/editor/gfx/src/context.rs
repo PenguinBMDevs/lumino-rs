@@ -128,6 +128,30 @@ fn create_instance() -> wgpu::Instance {
     })
 }
 
+/// 按统一口径为 adapter 构建 device/queue（初建与重连共用，避免特征/限制漂移）。
+async fn build_device_queue(
+    adapter: &wgpu::Adapter,
+) -> std::result::Result<(wgpu::Device, wgpu::Queue), ContextError> {
+    let adapter_features = adapter.features();
+    let limits = adapter.limits();
+
+    adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: adapter_features & wgpu::Features::default(),
+            required_limits: wgpu::Limits {
+                max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
+                max_buffer_size: limits.max_buffer_size,
+                ..wgpu::Limits::default()
+            },
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            trace: wgpu::Trace::Off,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        })
+        .await
+        .map_err(|e| ContextError::DeviceRequest(e.to_string()))
+}
+
 async fn init_shared_gpu(
     instance: &wgpu::Instance,
     surface: &wgpu::Surface<'static>,
@@ -142,24 +166,7 @@ async fn init_shared_gpu(
         .await
         .map_err(|e| ContextError::AdapterCreation(e.to_string()))?;
 
-    let adapter_features = adapter.features();
-    let limits = adapter.limits();
-
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: None,
-            required_features: adapter_features & wgpu::Features::default(),
-            required_limits: wgpu::Limits {
-                max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
-                max_buffer_size: limits.max_buffer_size,
-                ..wgpu::Limits::default()
-            },
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
-            trace: wgpu::Trace::Off,
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-        })
-        .await
-        .map_err(|e| ContextError::DeviceRequest(e.to_string()))?;
+    let (device, queue) = build_device_queue(&adapter).await?;
 
     Ok(SharedGpu {
         instance: instance.clone(),
@@ -213,6 +220,60 @@ pub fn gpu_snapshot() -> Result<(GpuEpoch, Arc<SharedGpu>)> {
         Some(Err(e)) => Err(ContextError::AdapterCreation(e.clone())),
         None => Err(ContextError::GpuUninitialized),
     }
+}
+
+/// REND-019 PR-C：重连 worker——从旧共享状态重建 adapter/device（在专用线程执行，
+/// 禁止在 UI 线程同步等待；结果经 channel 交回 UI 主循环安装）。
+///
+/// 复用同一 `Instance`：各窗口 `Surface` 挂在其中——换 instance 需把全部窗口
+/// surface 重建；同 instance 下由各窗口 `rebind_device` 重配即可恢复（E2）。
+pub fn recreate_shared_gpu_worker() -> std::result::Result<(GpuEpoch, SharedGpu), String> {
+    let (old_epoch, old) = gpu_snapshot().map_err(|e| e.to_string())?;
+    let instance = old.instance.clone();
+
+    // 适配器选择沿用初建口径（env 覆盖 + 默认偏好）；无 surface 做兼容性检查
+    let adapter = futures::executor::block_on(wgpu::util::initialize_adapter_from_env_or_default(
+        &instance, None,
+    ))
+    .map_err(|e| format!("重连初始化适配器失败: {e}"))?;
+
+    let (device, queue) = futures::executor::block_on(build_device_queue(&adapter))
+        .map_err(|e| format!("重连请求设备失败: {e}"))?;
+
+    // 回调接线与初建口径一致（uncaptured + device-lost 置位/通知）
+    device.on_uncaptured_error(Arc::new(|err| {
+        tracing::error!("wgpu uncaptured error: {err}")
+    }));
+    device.set_device_lost_callback(device_status::on_device_lost);
+
+    Ok((
+        old_epoch.next(),
+        SharedGpu {
+            instance,
+            adapter,
+            device,
+            queue,
+        },
+    ))
+}
+
+/// REND-019 PR-C：安装重连产物为新的共享 GPU 状态（epoch 单调递增）。
+///
+/// 只替换 `SHARED_GPU` 槽位；停帧标志由重连流水线在基础设施重建完成后撤销。
+pub fn install_recreated_shared_gpu(
+    epoch: GpuEpoch,
+    gpu: SharedGpu,
+) -> std::result::Result<(), String> {
+    // 写锁内只做赋值（G3：无 wgpu 调用）
+    let mut guard = SHARED_GPU
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard = Some(Ok(SharedGpuState {
+        epoch,
+        inner: Arc::new(gpu),
+    }));
+    tracing::info!("共享 GPU 已重建并安装：epoch = {}", epoch.0);
+    Ok(())
 }
 
 /// GPU 渲染上下文，封装 surface / adapter / device / queue 等 wgpu 资源
@@ -321,6 +382,9 @@ impl Context {
                 }
             }
         };
+
+        // R2 测试注入（`gpu-reconnect-test` 特性；默认构建为空操作，REND-019 §三 R2）
+        device_status::maybe_spawn_device_lost_injection();
 
         let capabilities = surface.get_capabilities(&shared.adapter);
 

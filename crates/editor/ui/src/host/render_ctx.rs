@@ -148,6 +148,10 @@ pub(crate) struct RenderContext {
     /// 本上下文所属 GPU 代次（REND-019 PR-B：iced Engine / 面板缓存视图 /
     /// 键盘渲染器等的登记基准）
     pub epoch: GpuEpoch,
+    /// 应用字体（REND-019 PR-C：iced Renderer 重建时复用）
+    pub font: Font,
+    /// 是否复用对话框共享 Engine（REND-019 PR-C：重建时按此分流）
+    pub uses_shared_engine: bool,
     /// 钢琴瀑布流面板键盘离屏渲染器（按需懒创建，跨帧复用管线）
     pub keyboard_renderer:
         Option<crate::right_sidebar::piano_waterfall::keyboard_renderer::KeyboardRenderer>,
@@ -219,8 +223,62 @@ impl RenderContext {
             queue: wgpu.queue.clone(),
             format: wgpu.format,
             epoch: wgpu.epoch,
+            font,
+            uses_shared_engine: use_shared_engine,
             keyboard_renderer: None,
         }
+    }
+
+    /// REND-019 PR-C：重连——把渲染基础设施重绑到新 device。
+    ///
+    /// - device/queue/epoch 换新；
+    /// - iced Engine/Renderer 重建（共享 Engine 经 epoch 判据自动换代，
+    ///   独立 Engine 按当前窗口 Notifier 重建）；
+    /// - 主窗口音符渲染器重建（epoch 登记）；
+    /// - GPU 侧缓存判废（键盘渲染器 / 首帧标记）；洋葱皮重放标记由 Host 层补充。
+    pub(crate) fn rebind_gpu(
+        &mut self,
+        epoch: GpuEpoch,
+        gpu: &lumino_gfx::SharedGpu,
+        window: &Arc<iced_winit::winit::window::Window>,
+    ) {
+        self.device = gpu.device.clone();
+        self.queue = gpu.queue.clone();
+        self.epoch = epoch;
+
+        let engine = if self.uses_shared_engine {
+            ensure_shared_engine(
+                &gpu.adapter,
+                gpu.device.clone(),
+                gpu.queue.clone(),
+                self.format,
+                epoch,
+            )
+        } else {
+            let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(Arc::clone(window)));
+            Engine::new(
+                &gpu.adapter,
+                gpu.device.clone(),
+                gpu.queue.clone(),
+                self.format,
+                None,
+                shell,
+            )
+        };
+        self.renderer = Renderer::new(engine, self.font, Pixels::from(16));
+
+        if self.note_renderer.is_some() {
+            self.note_renderer = Some(lumino_gfx::NoteRenderer::new(
+                &gpu.device,
+                &gpu.queue,
+                self.format,
+                epoch,
+            ));
+        }
+
+        self.keyboard_renderer = None;
+        self.has_rendered_ui = false;
+        tracing::info!("Host 渲染基础设施已重绑到 epoch = {}", epoch.0);
     }
 }
 

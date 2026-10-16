@@ -310,6 +310,12 @@ impl Host {
     /// 增删渲染侧段表，并为新增轨补发 `TrackDelta`（不重建既有轨）。
     ///
     /// 2026-08 单一权威源：音符数据一律从 `document` 读取（track_notes 缓存已删除）。
+    /// REND-019 PR-C：重连重放标记——强制下一次洋葱皮决策走全量重建
+    ///（数据从文档重放；配合 `Host::mark_gpu_replay` 的内容脏标记）。
+    pub(crate) fn mark_onion_replay(&mut self) {
+        self.render_ctx.onion_skin_state.force_full_next();
+    }
+
     pub(super) fn stream_onion_skin_instances(&mut self) {
         // REND-019（PR-A §1.6）：上一帧有洋葱皮消息因通道满被丢弃 → 强制
         // 全量重建补发（防增量命中残缺段表）。

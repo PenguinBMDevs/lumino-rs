@@ -56,12 +56,17 @@ pub use cc_bar_renderer::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
     build_cc_bar_instances,
 };
-pub use context::{Context, ContextError, Result, SharedGpu, SharedGpuState, gpu_snapshot};
+pub use context::{
+    Context, ContextError, Result, SharedGpu, SharedGpuState, gpu_snapshot,
+    install_recreated_shared_gpu, recreate_shared_gpu_worker,
+};
 pub use device_check::{
     FallbackDiagnostics, GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
     debug_force_fail_requested, required_backend_name, run_check_with_timeout,
 };
-pub use device_status::{device_lost, mark_device_lost};
+pub use device_status::{
+    clear_device_lost, device_lost, mark_device_lost, set_device_lost_notifier,
+};
 pub use epoch::{EpochTagged, GpuEpoch};
 pub use frame_error::{FrameErrorAction, classify_frame_error};
 pub(crate) use global_bucket::readback_bytes_sync;
