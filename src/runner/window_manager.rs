@@ -35,6 +35,8 @@ pub struct WindowManager {
     /// REND-019：重连后窗口几何微扰的待恢复目标尺寸
     /// （见 [`Self::nudge_window_geometry`]；`Some` = 微扰进行中）。
     pending_size_restore: Option<winit::dpi::PhysicalSize<u32>>,
+    /// REND-019：微扰前窗口是否为最大化（微扰会退出最大化，完成后自动恢复）。
+    pending_restore_maximized: bool,
 }
 
 impl WindowManager {
@@ -111,6 +113,7 @@ impl WindowManager {
             close_pending: false,
             deferred_save_confirm_close: false,
             pending_size_restore: None,
+            pending_restore_maximized: false,
         })
     }
 
@@ -142,14 +145,18 @@ impl WindowManager {
     /// 「交换链 / DWM 组合关联失效」状态——状态机、日志、winit 事件交付全部
     /// 正常，但**输入不再产生任何可见/状态效果、画面停在旧帧**；对窗口做
     /// **任意一次真实尺寸变化**（取消最大化 / 拖拽到边缘）即整体恢复。
-    /// 对策：重连完成时主动把窗口宽度缩 4px，并在下一次 `Resized` 到达后恢复
+    /// 对策：重连完成时把窗口宽度缩 4px，并在下一次 `Resized` 到达后恢复
     /// 原尺寸——等效用户那次"尺寸变化解锁"，全程无可见副作用。
+    ///
+    /// 注：最大化窗口中 `request_inner_size` 会先退出最大化（Windows 行为）；
+    /// 记录原最大化状态，解锁后自动恢复最大化（`handle_resize` 的恢复步）。
     pub(crate) fn nudge_window_geometry(&mut self) {
         let size = self.window.inner_size();
         if size.width < 64 {
             return;
         }
         self.pending_size_restore = Some(size);
+        self.pending_restore_maximized = self.window.is_maximized();
         let nudged = winit::dpi::PhysicalSize::new(size.width - 4, size.height);
         let _ = self.window.request_inner_size(nudged);
     }
@@ -224,14 +231,20 @@ impl WindowManager {
         size: winit::dpi::PhysicalSize<u32>,
         storage: &mut crate::storage::Storage,
     ) {
-        // REND-019：几何微扰的恢复步——首次收到扰动后的 `Resized` 即恢复原尺寸
-        // （一次真实尺寸变化即可重建交换链/DWM 关联；一次性，见
-        // [`Self::nudge_window_geometry`]）。
+        // REND-019：几何微扰的恢复步——首次收到扰动后的 `Resized` 即恢复原
+        // 几何（一次真实尺寸变化即可重建交换链/DWM 关联；一次性，见
+        // [`Self::nudge_window_geometry`]）。最大化窗口在微扰时被系统退出
+        // 最大化并触发本分支：此处自动恢复最大化；普通窗口恢复原尺寸。
         if let Some(target) = self.pending_size_restore
             && (target.width != size.width || target.height != size.height)
         {
             self.pending_size_restore = None;
-            let _ = self.window.request_inner_size(target);
+            if self.pending_restore_maximized {
+                self.pending_restore_maximized = false;
+                self.window.set_maximized(true);
+            } else {
+                let _ = self.window.request_inner_size(target);
+            }
         }
         storage.ui_state.patch(|state| {
             state.w = size.width;
