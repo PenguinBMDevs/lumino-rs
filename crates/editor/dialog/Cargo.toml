@@ -16,6 +16,7 @@ lumino-core = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-ui = { workspace = true }
 # crates.io
+iced_core = { workspace = true }
 winit = { workspace = true }
 tracing = { workspace = true }
 puffin = { workspace = true }

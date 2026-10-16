@@ -10,9 +10,24 @@ use crate::window::DialogWindow;
 use super::DialogManager;
 
 impl DialogManager {
-    /// 检查是否是对话框窗口
+    /// 检查是否是对话框窗口（按**窗口归属**判定，不按 UI 是否就绪判定）
+    ///
+    /// REF-001 P0-1：必须查 `claimed_windows` 而不是 `dialogs`。处于分帧初始化
+    /// 阶段 1/2 的对话框窗口**已存在但尚未 `dialogs.insert`**；此时若返回 false，
+    /// Runner 会把这些事件交给主窗口（`src/runner/lifecycle/handler.rs`）：
+    /// - `Resized`/`Moved` → 写进主窗口持久化的 `ui_state.w/h/x/y`
+    ///   （`src/runner/window_manager.rs`）⇒ 主窗口下次启动套用对话框的尺寸/位置；
+    /// - 所有事件被转给主窗口的 iced 事件队列 ⇒ 光标/命中串台；
+    /// - `CloseRequested` → 被当成主窗口关闭请求 ⇒ 关掉一个还在初始化的对话框
+    ///   会让整个应用退出。
+    ///
+    /// 认领后即便 UI 未就绪，事件也只会被 [`RunnerInner::handle_dialog_event`]
+    /// 安全消费（查不到就绪窗口 ⇒ 无副作用并返回 `true`）。
+    ///
+    /// 注意与 [`Self::has_dialog_type`] 的区别：后者仍只认 **UI 已就绪** 的窗口，
+    /// 两者语义不同，不可互换。
     pub fn is_dialog_window(&self, window_id: WindowId) -> bool {
-        self.dialogs.contains_key(&window_id)
+        self.claimed_windows.contains(&window_id)
     }
 
     /// 获取对话框的可变引用
@@ -155,6 +170,54 @@ mod tests {
         assert!(
             !manager.is_open_or_pending(DialogType::Settings),
             "去重必须按类型区分，不得张冠李戴"
+        );
+    }
+
+    /// REF-001 P0-1：窗口归属只看「已认领」，不看 UI 是否就绪。
+    ///
+    /// 反例（修复前）：阶段 1/2 的窗口不在 `dialogs` 里 ⇒ `is_dialog_window`
+    /// 返回 false ⇒ 该窗口的 `Resized`/`Moved`/`CloseRequested` 落到主窗口分支。
+    #[test]
+    fn test_is_dialog_window_follows_claim_not_readiness() {
+        let mut manager = DialogManager::new();
+        let id = WindowId::dummy();
+
+        assert!(!manager.is_dialog_window(id), "未认领的窗口不是对话框窗口");
+
+        manager.claim_window(id);
+        assert!(
+            manager.is_dialog_window(id),
+            "已认领但 UI 未就绪也必须判为对话框窗口——否则其 Resized/Moved 会污染主窗口持久化尺寸"
+        );
+        assert!(
+            !manager.has_dialog_type(DialogType::Settings),
+            "「认领」不等于「就绪」：has_dialog_type 语义不得被污染"
+        );
+
+        manager.release_window(id);
+        assert!(!manager.is_dialog_window(id), "释放后不再判为对话框窗口");
+    }
+
+    /// 关闭必须释放归属，且对「尚未就绪」的窗口同样生效。
+    ///
+    /// 只 `dialogs.remove` 会让 `claimed_windows` 只增不减（泄漏 + 该窗口 id
+    /// 的事件永远被误判为对话框窗口）。
+    #[test]
+    fn test_close_dialog_releases_claim_even_when_not_ready() {
+        let mut manager = DialogManager::new();
+        let id = WindowId::dummy();
+
+        manager.claim_window(id);
+        manager.close_dialog(id);
+        assert!(
+            !manager.is_dialog_window(id),
+            "close_dialog 必须释放归属（含仅认领、未就绪的窗口）"
+        );
+
+        manager.close_dialog(id);
+        assert!(
+            !manager.is_dialog_window(id),
+            "重复关闭必须幂等（不得 panic、不得影响其它窗口）"
         );
     }
 }

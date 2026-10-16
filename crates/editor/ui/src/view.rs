@@ -6,6 +6,8 @@ pub mod cloud_browser;
 pub mod cloud_dialog;
 pub mod collaboration_dialog;
 pub mod custom_precision_dialog;
+/// REF-001：对话框偏好排版宽度声明点（决策 D3：宽声明 / 高测量）
+pub mod dialog_preferred_size;
 pub mod draw_settings_dialog;
 pub mod export_progress_dialog;
 pub mod load_confirm_dialog;

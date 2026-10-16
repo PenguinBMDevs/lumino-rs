@@ -2,7 +2,7 @@
 //!
 //! 自 `manager.rs` 拆分而来（零逻辑变更）。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use lumino_core::BrushConfig;
@@ -22,7 +22,25 @@ impl DialogManager {
             dialogs: HashMap::new(),
             pending_dialogs: Vec::new(),
             initializing: Vec::new(),
+            claimed_windows: HashSet::new(),
         }
+    }
+
+    /// 认领窗口归属（阶段 1 建窗成功后立即调用）
+    ///
+    /// REF-001 P0-1：认领后该窗口的所有 winit 事件都会被判定为「对话框窗口」，
+    /// 不再落到主窗口分支（即使 UI 尚未就绪，`RunnerInner::handle_dialog_event`
+    /// 也会安全地消费掉这些事件）。
+    pub(crate) fn claim_window(&mut self, window_id: WindowId) {
+        self.claimed_windows.insert(window_id);
+    }
+
+    /// 释放窗口归属（关闭对话框或初始化失败清理时调用）
+    ///
+    /// 与 [`Self::claim_window`] 成对出现：漏掉任何一条释放路径都会让
+    /// `claimed_windows` 只增不减。
+    pub(crate) fn release_window(&mut self, window_id: WindowId) {
+        self.claimed_windows.remove(&window_id);
     }
 
     /// 请求打开一个对话框
@@ -110,6 +128,10 @@ impl DialogManager {
                 ui_config,
             ) {
                 Ok(dialog) => {
+                    // REF-001 P0-1：建窗成功即认领窗口归属——此后（含阶段 2/3
+                    // 的整个初始化窗口期）该窗口的事件都不会再落到主窗口分支。
+                    let window_id = dialog.window_id();
+                    self.claim_window(window_id);
                     tracing::info!("对话框窗口已创建: {:?}", pending.dialog_type);
                     self.initializing.push((dialog, pending));
                 }
@@ -121,12 +143,16 @@ impl DialogManager {
 
         // 推进当前正在初始化的对话框一个阶段。
         if let Some((dialog, pending)) = self.initializing.first_mut() {
+            let window_id = dialog.window_id();
             if dialog.gfx_ref().is_none() {
                 // 阶段 2：创建 GFX。
                 puffin::profile_scope!("dialog_manager_init_gfx");
                 if let Err(e) = dialog.initialize_gfx() {
                     tracing::error!("初始化对话框 GFX 失败: {}", e);
                     self.initializing.remove(0);
+                    // 窗口随 DialogWindow 一起销毁，必须释放归属：
+                    // claimed_windows 只增不减会泄漏，且窗口 id 不会复用。
+                    self.release_window(window_id);
                 }
             } else {
                 // 阶段 3：创建 UI 并显示窗口。
@@ -141,10 +167,11 @@ impl DialogManager {
                 ) {
                     tracing::error!("初始化对话框 UI 失败: {}", e);
                     self.initializing.remove(0);
+                    self.release_window(window_id);
                 } else {
                     let (dialog, _) = self.initializing.remove(0);
-                    let window_id = dialog.window_id();
                     tracing::info!("对话框已就绪: {:?}", dialog.dialog_type);
+                    // 归属保留：窗口从 initializing 迁到 dialogs，仍属对话框窗口。
                     self.dialogs.insert(window_id, dialog);
                 }
             }
@@ -155,6 +182,9 @@ impl DialogManager {
 impl DialogManager {
     /// 关闭对话框
     pub fn close_dialog(&mut self, window_id: WindowId) {
+        // 无论该窗口处于哪个阶段都要释放归属：只关 dialogs 里的窗口会让
+        // claimed_windows 残留（事件仍被判为对话框窗口，且集合无界增长）。
+        self.release_window(window_id);
         if self.dialogs.remove(&window_id).is_some() {
             tracing::info!("对话框已关闭: {:?}", window_id);
         }
@@ -180,6 +210,14 @@ impl DialogManager {
             if dialog.should_close() {
                 continue;
             }
+
+            // REF-001：入册后的首帧完成「测量 → resize → 居中 → 显示」，只做一次。
+            // 放在这里而不是 `initialize_ui` 末尾，有两个硬理由：
+            // 1. 同帧稍早的 `try_fill_recover_track_entries` 已完成内容注入
+            //    （`src/runner/lifecycle/handler.rs`），此时测量才看得到完整内容；
+            // 2. 窗口已入册 ⇒ resize 回程的 `Resized` 会正确路由回本窗口。
+            dialog.apply_measured_size();
+
             match dialog.dialog_type {
                 DialogType::MemoryMonitor => {
                     dialog.redraw_force();

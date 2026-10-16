@@ -46,7 +46,11 @@ pub fn view_draw_settings_dialog(theme: &iced_core::Theme, language: Language) -
         title,
         space().height(12),
         body,
-        space().height(Length::Fill),
+        // REF-001：窗口高度改为按内容测量后，「把按钮推到底部」的柔性撑位
+        // 失去意义——压缩测量下 `space().height(Length::Fill)` 会吃掉整个
+        // 工作区上限，使窗口高度 = 上限（且其后的按钮行被压成 0 高）。
+        // 窗口已经贴合内容，按钮自然就在底部，改用固定间距即可。
+        space().height(12),
         buttons,
     ]
     .spacing(4)

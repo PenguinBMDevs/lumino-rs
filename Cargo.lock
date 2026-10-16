@@ -4231,6 +4231,7 @@ dependencies = [
 name = "lumino-dialog"
 version = "0.2.1"
 dependencies = [
+ "iced_core",
  "lumino-core",
  "lumino-gfx",
  "lumino-ui",
