@@ -345,9 +345,25 @@ impl Root {
                 (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0);
             let max_x =
                 (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
-            v.scroll_x = new_x.clamp(0.0, max_x);
-            v.scroll_y = new_y.clamp(0.0, max_y);
-            still_active
+            let clamped_x = new_x.clamp(0.0, max_x);
+            let clamped_y = new_y.clamp(0.0, max_y);
+            // REND-019 实测修复（一次滚轮 → ~2500fps 重绘风暴根因）：
+            // `SmoothScrollAnimation::update` 为 `&self`，**无法清除 `active`**，
+            // 且其收敛判定基于钳制**前**位置——目标被钳制截断（如空工程
+            // max_scroll=0、滚轮目标越界）时差值恒 ≥ 阈值：`still_active`
+            // 永真、`active` 永不落幕，`needs_animation`（frame.rs）每帧自驱动
+            // 重绘。此处按「钳制后的实际位置」判定到位/触边，并显式停止动画。
+            let reached = (clamped_x - v.smooth_scroll.target_x).abs() < v.smooth_scroll.threshold
+                && (clamped_y - v.smooth_scroll.target_y).abs() < v.smooth_scroll.threshold;
+            let hit_boundary = (clamped_x - new_x).abs() > f32::EPSILON
+                || (clamped_y - new_y).abs() > f32::EPSILON;
+            v.scroll_x = clamped_x;
+            v.scroll_y = clamped_y;
+            let animating = still_active && !reached && !hit_boundary;
+            if !animating {
+                v.smooth_scroll.stop();
+            }
+            animating
         };
         if scroll_animating {
             self.editor
