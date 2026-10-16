@@ -17,9 +17,11 @@ use lumino_core::storage::config::UiConfig;
 
 use crate::Root;
 use crate::state::root_state::DialogType;
-use crate::view::dialog_preferred_size::{self, dialog_size_hint};
+use crate::view::dialog_preferred_size::{self, dialog_size_hint, width_cap, width_floor};
 
-use super::measure_content_height;
+use super::{
+    measure_content_height, measure_is_squeezed, measure_min_fitting_width, measure_width_baseline,
+};
 
 /// 参考工作区：1920×1040（1080p 屏去掉任务栏后的典型可见区域）
 const WORK_AREA: Size = Size::new(1920.0, 1040.0);
@@ -101,18 +103,41 @@ fn test_all_dialog_types_measure_within_bounds() {
         let root = Root::new_dialog_with_config(&ui_config.theme, dialog_type, &ui_config);
         let hint = dialog_size_hint(dialog_type);
 
-        // 与生产路径同源：同一份「测量上限」既用于测量也用于夹取
-        let cap = dialog_preferred_size::measurement_cap(hint, WORK_AREA);
-        let measured_height = measure_content_height(root.view(), &renderer, hint.width, cap);
-        let size = dialog_preferred_size::recommend_window_size(
-            hint,
-            WORK_AREA,
-            Size::new(hint.width, measured_height),
-        );
+        // 与生产路径同源：同一份上限既用于测量也用于夹取
+        let cap_height = dialog_preferred_size::measurement_cap(hint, WORK_AREA);
+        let cap_width = width_cap(hint, WORK_AREA);
+        let floor_width = width_floor(hint, WORK_AREA);
 
+        // 超宽参考基准：区分「内容驱动」与「流体」节点
+        let baseline = measure_width_baseline(|| root.view(), &renderer, cap_width, cap_height)
+            .expect("超宽参考布局必须可测");
+
+        // 宽度自动计算（区间退化为一点时直接取上限，不跑搜索）
+        let width = if cap_width <= floor_width + 1.0 {
+            cap_width
+        } else {
+            measure_min_fitting_width(
+                || root.view(),
+                &renderer,
+                cap_height,
+                floor_width,
+                cap_width,
+            )
+            .unwrap_or(floor_width)
+            .clamp(floor_width, cap_width)
+        };
+
+        let measured_height = measure_content_height(root.view(), &renderer, width, cap_height);
+        let size =
+            dialog_preferred_size::recommend_window_size(hint, WORK_AREA, width, measured_height);
+
+        assert!(
+            width >= floor_width - 0.5 && width <= cap_width + 0.5,
+            "{dialog_type:?} 自动宽度 {width} 越出声明区间 [{floor_width}, {cap_width}]"
+        );
         assert_eq!(
-            size.width, hint.width,
-            "{dialog_type:?} 宽度必须取自声明（测量得到的宽度不可用）"
+            size.width, width,
+            "{dialog_type:?} 窗口宽度必须等于自动计算结果"
         );
         assert!(
             measured_height > 0.0 && measured_height.is_finite(),
@@ -133,6 +158,29 @@ fn test_all_dialog_types_measure_within_bounds() {
             size.height,
             WORK_AREA.height
         );
+        // 宽度自动计算的核心不变量：选中的宽度不得压窄内容驱动的节点
+        assert_eq!(
+            measure_is_squeezed(|| root.view(), &renderer, size.width, cap_height, &baseline),
+            Some(false),
+            "{dialog_type:?} 自动宽度 {} 仍压窄了内容（声明上限需放宽）",
+            size.width
+        );
+
+        // 且该宽度必须是**最小**的：再窄一点就应当被压窄（下限处已无压缩空间时跳过）
+        if size.width > floor_width + 8.0 {
+            assert_eq!(
+                measure_is_squeezed(
+                    || root.view(),
+                    &renderer,
+                    size.width - 8.0,
+                    cap_height,
+                    &baseline,
+                ),
+                Some(true),
+                "{dialog_type:?} 的自动宽度 {} 不是最小可用宽度（还能更窄）",
+                size.width
+            );
+        }
 
         match (hint.min_height, hint.max_height) {
             // 钉死高度（滚动区测量不可信）：无论测到多少，窗口高度恒为声明值
@@ -164,7 +212,8 @@ fn test_all_dialog_types_measure_within_bounds() {
         }
 
         rows.push(format!(
-            "  {dialog_type:?}: 内容高 {measured_height:.1} → 窗口 {:.0}×{:.0}（上限 {cap:.0}）",
+            "  {dialog_type:?}: 自动宽 {width:.0}（区间 [{floor_width:.0}, {cap_width:.0}]）\
+             + 内容高 {measured_height:.1} → 窗口 {:.0}×{:.0}",
             size.width, size.height
         ));
     }
@@ -187,14 +236,20 @@ fn debug_dump_dialog_layout_tree() {
     };
 
     let ui_config = UiConfig::default();
-    for dialog_type in [DialogType::Settings, DialogType::CloudBrowser] {
+    for (dialog_type, layout_width) in [
+        (DialogType::BatchEdit, 247.0_f32),
+        (DialogType::BatchEdit, 480.0),
+        (DialogType::SaveConfirm, 247.0),
+    ] {
         let root = Root::new_dialog_with_config(&ui_config.theme, dialog_type, &ui_config);
         let hint = dialog_size_hint(dialog_type);
         let cap = dialog_preferred_size::measurement_cap(hint, WORK_AREA);
 
-        let limits =
-            iced_core::layout::Limits::new(Size::new(hint.width, 0.0), Size::new(hint.width, cap))
-                .height(iced_core::Length::Shrink);
+        let limits = iced_core::layout::Limits::new(
+            Size::new(layout_width, 0.0),
+            Size::new(layout_width, cap),
+        )
+        .height(iced_core::Length::Shrink);
 
         let mut element = root.view();
         let mut tree = iced_core::widget::Tree::new(&element);
@@ -202,21 +257,33 @@ fn debug_dump_dialog_layout_tree() {
             .as_widget_mut()
             .layout(&mut tree, &renderer, &limits);
 
-        println!("=== {dialog_type:?} root={:?}", node.size());
+        let squeezed = measure_width_baseline(|| root.view(), &renderer, 1920.0, cap)
+            .and_then(|baseline| {
+                measure_is_squeezed(|| root.view(), &renderer, layout_width, cap, &baseline)
+            })
+            .unwrap_or(false);
+
+        println!(
+            "=== {dialog_type:?} @w={layout_width} root={:?} 被压窄={squeezed}",
+            node.size()
+        );
         dump(&node, 1);
     }
 }
 
 fn dump(node: &iced_core::layout::Node, depth: usize) {
-    if depth > 14 {
+    if depth > 9 {
         return;
     }
-    let size = node.size();
+    let bounds = node.bounds();
     println!(
-        "{:indent$}size=({:.1},{:.1})",
+        "{:indent$}size=({:.1},{:.1}) at=({:.1},{:.1}) 右={:.1}",
         "",
-        size.width,
-        size.height,
+        bounds.width,
+        bounds.height,
+        bounds.x,
+        bounds.y,
+        bounds.x + bounds.width,
         indent = depth * 2
     );
     for child in node.children() {

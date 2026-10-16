@@ -82,12 +82,220 @@ pub fn measure_content_height(
 ) -> f32 {
     puffin::profile_scope!("dialog_measure_content");
 
+    let Some(node) = layout_at_width(view, renderer, layout_width, max_height) else {
+        return 0.0;
+    };
+
+    let size = node.size();
+    if !size.height.is_finite() || size.height <= 0.0 {
+        return 0.0;
+    }
+
+    size.height
+}
+
+/// 宽度搜索步数：`(cap - floor) / 2^8` 的分辨率足够（1px 内即停）
+const WIDTH_SEARCH_STEPS: u32 = 8;
+
+/// 判定「节点是内容驱动而非流体」的容差（逻辑像素）
+const FLUID_TOLERANCE: f32 = 1.0;
+
+/// 判定「节点被压窄」的容差（逻辑像素）
+const SQUEEZE_TOLERANCE: f32 = 0.5;
+
+/// 采集两套超宽参考布局时的宽度差（逻辑像素）
+const REFERENCE_DELTA: f32 = 160.0;
+
+/// 按先序采集布局树里每个节点的宽度
+fn collect_widths(node: &iced_core::layout::Node, out: &mut Vec<f32>) {
+    out.push(node.bounds().width);
+
+    for child in node.children() {
+        collect_widths(child, out);
+    }
+}
+
+/// 一次布局的节点宽度画像
+fn width_profile(node: &iced_core::layout::Node) -> Vec<f32> {
+    let mut widths = Vec::new();
+    collect_widths(node, &mut widths);
+
+    widths
+}
+
+/// 宽度基准画像：区分**内容驱动**节点与**流体**节点（REF-001 宽度自动计算）
+///
+/// 做法：在 `wide_width` 与 `wide_width - REFERENCE_DELTA` 两个超宽布局下各采集
+/// 一次节点宽度。宽度**随可用宽度变化**的节点是流体（`Fill`：包括被 padding
+/// 内缩的容器），宽度**不变**的节点由内容决定（`Fixed` 控件 / 图标 /
+/// 不折行的文本）。
+///
+/// 只用「明显窄于参考宽度」来判内容驱动是不够的：被 padding 内缩的流体容器
+/// 也满足那个条件，会制造假阳性（实测：所有自动宽度都被顶到上限）。
+pub struct WidthBaseline {
+    /// 每个节点在超宽布局下的内容驱动宽度（流体的节点为 `None`）
+    widths: Vec<Option<f32>>,
+}
+
+/// 采集宽度基准画像；返回 `None` 表示入参非法或结构不稳定
+pub fn measure_width_baseline<'a>(
+    mut build_view: impl FnMut() -> Element<'a>,
+    renderer: &Renderer,
+    wide_width: f32,
+    max_height: f32,
+) -> Option<WidthBaseline> {
+    if !wide_width.is_finite() || wide_width <= REFERENCE_DELTA {
+        return None;
+    }
+
+    let wide = width_profile(&layout_at_width(
+        build_view(),
+        renderer,
+        wide_width,
+        max_height,
+    )?);
+    let narrow = width_profile(&layout_at_width(
+        build_view(),
+        renderer,
+        wide_width - REFERENCE_DELTA,
+        max_height,
+    )?);
+
+    if wide.len() != narrow.len() {
+        return None;
+    }
+
+    Some(WidthBaseline {
+        widths: wide
+            .iter()
+            .zip(&narrow)
+            .map(|(wide_width, narrow_width)| {
+                let tracks_available = (wide_width - narrow_width).abs() > FLUID_TOLERANCE;
+
+                (!tracks_available).then_some(*wide_width)
+            })
+            .collect(),
+    })
+}
+
+/// 在 `layout_width` 下是否有**内容驱动**的节点被压窄
+///
+/// # 为什么不能检测「横向溢出」
+///
+/// iced **不会产生横向溢出**：`Limits::resolve` 对 `Fixed(n)` 会做
+/// `n.min(max)`，而 flex 传给子节点的是**剩余可用宽度**，因此过窄时
+/// `Fixed` 控件被直接压窄而不是溢出。实测（批量编辑排版宽度 247）：
+/// 声明 `Fixed(120)` 的输入框实际布局宽度只有 **49**，且整棵树没有任何节点
+/// 越过父边界——「溢出」作为判据恒为假。
+///
+/// 可观测的信号是**压窄**：基准里判为内容驱动的节点，在窄布局下比基准更小
+/// ⇒ 它被挤了。流体节点不参与判定（它们的宽度本来就是自由参数）。
+pub fn measure_is_squeezed<'a>(
+    mut build_view: impl FnMut() -> Element<'a>,
+    renderer: &Renderer,
+    layout_width: f32,
+    max_height: f32,
+    baseline: &WidthBaseline,
+) -> Option<bool> {
+    let current = width_profile(&layout_at_width(
+        build_view(),
+        renderer,
+        layout_width,
+        max_height,
+    )?);
+
+    // 结构不一致（不同状态的视图）：保守判为「没被挤」，交由声明区间兜底
+    if current.len() != baseline.widths.len() {
+        return Some(false);
+    }
+
+    Some(
+        current
+            .iter()
+            .zip(&baseline.widths)
+            .any(|(current, baseline_width)| {
+                baseline_width
+                    .is_some_and(|baseline_width| *current < baseline_width - SQUEEZE_TOLERANCE)
+            }),
+    )
+}
+
+/// 求内容**不被压窄的最小排版宽度**（REF-001 宽度自动计算）
+///
+/// # 语义
+///
+/// 「自然宽度」对 `Fill` 宽度占多数内容的视图不是良定义量（`Text` 会自证、
+/// `TextInput` 内在宽度恒 0），可定义的只有**下界**：内容驱动的节点不被挤的
+/// 最小宽度。本函数用二分求它（判据见 [`measure_is_squeezed`]）。
+///
+/// - 宽度的**下限**（流体内容不会被挤，宽度是自由参数）由调用方的声明值兜底；
+/// - 宽度的**上限**（长文本需要的折行宽度）同样由声明值约束。
+///   两者之间才是自动量出来的区间，因此声明的宽度从「精确值」退化为「边界」。
+///
+/// 返回 `None` 表示入参非法；连 `max_width` 都压窄内容时返回 `max_width`
+/// （调用方按上限处理，并由尺寸验证测试暴露「声明上限不够用」）。
+pub fn measure_min_fitting_width<'a>(
+    mut build_view: impl FnMut() -> Element<'a>,
+    renderer: &Renderer,
+    max_height: f32,
+    min_width: f32,
+    max_width: f32,
+) -> Option<f32> {
+    if !min_width.is_finite()
+        || min_width <= 0.0
+        || !max_width.is_finite()
+        || max_width < min_width
+        || !max_height.is_finite()
+        || max_height <= 0.0
+    {
+        return None;
+    }
+
+    let baseline = measure_width_baseline(&mut build_view, renderer, max_width, max_height)?;
+
+    let mut squeezed_at = |width: f32| -> Option<bool> {
+        measure_is_squeezed(&mut build_view, renderer, width, max_height, &baseline)
+    };
+
+    // 上限都压窄内容：交给调用方按上限处理（不要谎报一个更小的值）
+    if squeezed_at(max_width)? {
+        return Some(max_width);
+    }
+
+    // 二分：`low` 未知/被压窄，`high` 已知不被压窄
+    let mut low = min_width;
+    let mut high = max_width;
+
+    for _ in 0..WIDTH_SEARCH_STEPS {
+        if high - low <= 1.0 {
+            break;
+        }
+
+        let mid = (low + high) / 2.0;
+
+        if squeezed_at(mid)? {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+
+    Some(high)
+}
+
+/// 在「固定宽度 + 压缩高度」下跑一次布局，返回根节点
+fn layout_at_width(
+    view: Element<'_>,
+    renderer: &Renderer,
+    layout_width: f32,
+    max_height: f32,
+) -> Option<iced_core::layout::Node> {
     if !layout_width.is_finite()
         || layout_width <= 0.0
         || !max_height.is_finite()
         || max_height <= 0.0
     {
-        return 0.0;
+        return None;
     }
 
     // 与渲染路径同源的视图树；`Tree` 新建后即丢弃 ⇒ 对渲染的控件状态零副作用。
@@ -102,16 +310,7 @@ pub fn measure_content_height(
     )
     .height(Length::Shrink);
 
-    let size = element
-        .as_widget_mut()
-        .layout(&mut tree, renderer, &limits)
-        .size();
-
-    if !size.height.is_finite() || size.height <= 0.0 {
-        return 0.0;
-    }
-
-    size.height
+    Some(element.as_widget_mut().layout(&mut tree, renderer, &limits))
 }
 
 impl Host {
@@ -130,33 +329,52 @@ impl Host {
     /// **测量与夹取共用同一个上限**（[`dialog_preferred_size::measurement_cap`]），
     /// 否则内容会在夹取那一步被裁掉。
     ///
-    /// 返回 `Size::ZERO` 表示**测量不可用**（`DialogType::None`、宽度未声明、
+    /// 返回 `Size::ZERO` 表示**测量不可用**（`DialogType::None`、宽度非法、
     /// 或内容高度非正/非有限），调用方必须回退种子尺寸并**照常显示窗口**。
     pub fn measure_dialog_window_size(&self, work_area: Size) -> Size {
-        let hint = dialog_preferred_size::dialog_size_hint(self.root.state.dialog_type);
+        let dialog_type = self.root.state.dialog_type;
+        let hint = dialog_preferred_size::dialog_size_hint(dialog_type);
 
-        if !hint.width.is_finite() || hint.width <= 0.0 {
+        let width_cap = dialog_preferred_size::width_cap(hint, work_area);
+        if !width_cap.is_finite() || width_cap <= 0.0 {
             return Size::ZERO;
         }
 
-        let cap = dialog_preferred_size::measurement_cap(hint, work_area);
-        let measured_height =
-            measure_content_height(self.root.view(), &self.render_ctx.renderer, hint.width, cap);
+        let height_cap = dialog_preferred_size::measurement_cap(hint, work_area);
+        let width_floor = dialog_preferred_size::width_floor(hint, work_area);
 
-        if !usable(Size::new(hint.width, measured_height)) {
+        // 宽度自动计算：区间内求「内容不被压窄的最小宽度」；
+        // 区间退化为一点（`boxed`/`pinned`/`floored`）时直接取值，省掉基准 + 9 次布局。
+        let width = if hint.needs_width_search(work_area.width) {
+            match measure_min_fitting_width(
+                || self.root.view(),
+                &self.render_ctx.renderer,
+                height_cap,
+                width_floor,
+                width_cap,
+            ) {
+                Some(fitted) => fitted.clamp(width_floor, width_cap),
+                None => width_floor,
+            }
+        } else {
+            width_cap
+        };
+
+        let measured_height = measure_content_height(
+            self.root.view(),
+            &self.render_ctx.renderer,
+            width,
+            height_cap,
+        );
+
+        if !usable(Size::new(width, measured_height)) {
             tracing::warn!(
-                "对话框内容测量不可用: {:?} 宽度={:.1} 上限={cap:.1} 实测高度={measured_height:.1}，调用方应回退种子尺寸",
-                self.root.state.dialog_type,
-                hint.width
+                "对话框内容测量不可用: {dialog_type:?} 宽度={width:.1} 上限={height_cap:.1} 实测高度={measured_height:.1}，调用方应回退种子尺寸"
             );
             return Size::ZERO;
         }
 
-        dialog_preferred_size::recommend_window_size(
-            hint,
-            work_area,
-            Size::new(hint.width, measured_height),
-        )
+        dialog_preferred_size::recommend_window_size(hint, work_area, width, measured_height)
     }
 }
 
