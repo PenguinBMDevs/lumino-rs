@@ -29,6 +29,7 @@ futures = { workspace = true }
 anyhow = { workspace = true }
 im = { workspace = true }
 rayon = { workspace = true }
+crossbeam-channel = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-editor-state = { workspace = true }

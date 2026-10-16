@@ -80,9 +80,18 @@ impl Host {
     /// 统一全量渲染（2026-08-06）：主音轨与洋葱皮共用此通道——
     /// - `SetViewState`：切轨/静音零重传
     /// - `PreviewInstances`：Drawing/hover/i2m 预览实例
-    pub fn send_onion_skin_msg_to_render_thread(&self, msg: lumino_gfx::OnionSkinStreamMsg) {
+    ///
+    /// # 返回值
+    /// `true` = 已送达；`false` = 未送达（渲染线程未启用 / 线程退出 / 等待超时
+    /// ——超时已置降级标志，由 `force_full_next` 节流全量补发）。
+    pub fn send_onion_skin_msg_to_render_thread(
+        &self,
+        msg: lumino_gfx::OnionSkinStreamMsg,
+    ) -> bool {
         if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
-            thread.send_onion_skin_msg(msg);
+            thread.send_onion_skin_msg(msg)
+        } else {
+            false
         }
     }
 

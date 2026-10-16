@@ -1,4 +1,6 @@
-use super::{ControlCommand, RenderCommand, RenderParams, RenderStats};
+use super::{
+    ControlCommand, OnionSendOutcome, RenderCommand, RenderParams, RenderStats, send_with_timeout,
+};
 
 #[test]
 fn test_render_params_default() {
@@ -100,4 +102,75 @@ fn test_note_event_channel_delivers_event() {
             panic!("Expected NoteEvent::Clear, got {:?}", other);
         }
     }
+}
+
+// ── REND-019 PR-A′：洋葱皮通道 `send_timeout` 语义回归 ─────────────────────
+// 背景（2026-10-17 release 实测）：`try_send` 立即丢弃使多块全量会话（Begin +
+// N×Chunk + Done，大工程 100+ 条）必然残缺、`Done` 常丢 → 渲染侧永远收不到
+// 完整会话 → 音符/洋葱皮整层不渲染。规范 §1.6 允许的 `send_timeout` 方案：
+// 满通道等待消费者（背压，会话必然完整），等待上限内未被消费则超时丢弃。
+
+/// 有消费者时：满通道发送等待并在超时窗口内送达（背压语义，不得丢弃）
+#[test]
+fn test_send_with_timeout_waits_for_consumer_and_delivers() {
+    let (tx, rx) = crossbeam_channel::bounded::<u32>(1);
+    tx.send(1).expect("预填通道失败");
+
+    let consumer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let first = rx.recv().expect("消费者应收到第 1 条");
+        let second = rx.recv().expect("消费者应收到第 2 条");
+        (first, second)
+    });
+
+    let started = std::time::Instant::now();
+    let outcome = send_with_timeout(&tx, 2, std::time::Duration::from_secs(2));
+    assert_eq!(
+        outcome,
+        OnionSendOutcome::Sent,
+        "有消费者时必须送达而非丢弃"
+    );
+    let (first, second) = consumer.join().expect("消费者线程 panic");
+    assert_eq!((first, second), (1, 2), "消息顺序必须保持");
+    assert!(
+        started.elapsed() >= std::time::Duration::from_millis(40),
+        "满通道发送应等待消费者腾挪，而非立即返回"
+    );
+}
+
+/// 无消费者且通道满：超时丢弃——等待有界（UI 线程不被永久阻塞）
+#[test]
+fn test_send_with_timeout_is_bounded_when_no_consumer() {
+    let (tx, _rx) = crossbeam_channel::bounded::<u32>(1);
+    tx.send(1).expect("预填通道失败");
+
+    let started = std::time::Instant::now();
+    let outcome = send_with_timeout(&tx, 2, std::time::Duration::from_millis(50));
+    assert_eq!(outcome, OnionSendOutcome::Timeout, "满且无消费者应超时");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= std::time::Duration::from_millis(45),
+        "应在超时窗口内保持等待，实际 {elapsed:?}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "超时必须是有界等待（不得永久阻塞），实际 {elapsed:?}"
+    );
+}
+
+/// 接收端已释放：立即 Disconnected（快速失败，不等待超时窗口）
+#[test]
+fn test_send_with_timeout_disconnected_fails_fast() {
+    let (tx, rx) = crossbeam_channel::bounded::<u32>(1);
+    drop(rx);
+
+    let started = std::time::Instant::now();
+    assert_eq!(
+        send_with_timeout(&tx, 1, std::time::Duration::from_secs(2)),
+        OnionSendOutcome::Disconnected
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(500),
+        "断开应快速失败，不占用完整超时窗口"
+    );
 }

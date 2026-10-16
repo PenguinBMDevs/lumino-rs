@@ -234,9 +234,11 @@ impl Host {
         ) {
             self.render_ctx.mark_render_content_dirty();
             self.render_ctx.last_preview_instances = preview_instances.clone();
-            self.send_onion_skin_msg_to_render_thread(OnionSkinStreamMsg::PreviewInstances(
+            if !self.send_onion_skin_msg_to_render_thread(OnionSkinStreamMsg::PreviewInstances(
                 preview_instances,
-            ));
+            )) {
+                tracing::debug!("预览实例未送达（渲染线程忙或已退出；预览将在后续变化时重发）");
+            }
         }
 
         // 更新光标位置缓存

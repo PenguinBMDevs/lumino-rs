@@ -19,9 +19,14 @@ impl Host {
     /// 静音轨（shader 按静音位图隐藏，仅主轨身份时显示）都包含在内。
     /// 切轨/静音变化因此零重传（只发 ViewState uniform）。
     ///
-    /// 每块 ≤ 800 万实例（128 MB），sync_channel(3) 背压；CPU 峰值 ~256-384 MB。
+    /// 每块 ≤ 800 万实例（128 MB），有界通道 `bounded(3)` + 发送侧
+    /// `send_timeout` 背压（REND-019 PR-A′）；CPU 峰值 ~256-384 MB。
     /// 每轨末尾强制 flush（空块 = 段表占位）：WGPU 侧据此构建音轨段表，
     /// 事件级增量（TrackDelta / 段内 NoteEvent）依赖它定位段。
+    ///
+    /// REND-019 PR-A′：会话内任一条消息未送达（超时/断开）即**中止会话**
+    /// （不再发送后续 Chunk/Done）——残缺会话会让渲染侧段表错乱；中止后
+    /// 降级标志已置位，由 `force_full_next` 节流全量补发完整会话。
     pub(super) fn stream_onion_skin_full(
         &self,
         fp: &OnionSkinFingerprint,
@@ -30,8 +35,14 @@ impl Host {
         let t_start = std::time::Instant::now();
         let data = &self.root.editor.editor_state.data;
 
+        // 会话中止标志：任一消息未送达即置位，阻断后续发送与 Done
+        let aborted = std::cell::Cell::new(false);
+
         // 显式会话边界：清空段表 + 重置计数（空文档会话也生效，防旧段表残留）
-        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::BeginSession);
+        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::BeginSession) {
+            tracing::warn!("[onion-skin] 全量会话中止：BeginSession 未送达（降级补发接管）");
+            return;
+        }
 
         // 分块构建 + send 的辅助闭包（每轨末尾必 flush，空块 = 段表占位）
         let mut chunk: Vec<NoteInstance> = Vec::with_capacity(STREAMING_CHUNK_SIZE);
@@ -39,12 +50,17 @@ impl Host {
 
         let flush_chunk =
             |chunk: &mut Vec<NoteInstance>, track_id: usize, wgpu_thread: &WgpuRenderThread| {
+                if aborted.get() {
+                    return;
+                }
                 let instances = std::mem::replace(chunk, Vec::with_capacity(STREAMING_CHUNK_SIZE));
                 total_counter.set(total_counter.get() + instances.len());
-                wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Chunk {
+                if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Chunk {
                     track_id,
                     instances,
-                });
+                }) {
+                    aborted.set(true);
+                }
             };
 
         // 预分配：统计所有轨实例总数（ChunkedList len O(1)），
@@ -58,14 +74,18 @@ impl Host {
                     .sum()
             })
             .unwrap_or(0);
-        if total > 0 {
-            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Reserve { total });
+        if total > 0 && !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Reserve { total }) {
+            tracing::warn!("[onion-skin] 全量会话中止：Reserve 未送达（降级补发接管）");
+            return;
         }
 
         // 从 MidiDocument 构建所有音轨（单一权威源；含当前轨与静音轨）
         if let Some(doc) = data.document.as_ref() {
             let track_count = doc.track_count();
             for track_idx in 0..track_count {
+                if aborted.get() {
+                    break;
+                }
                 let doc_notes = doc.track_notes(track_idx);
                 let color = lumino_extras::palette::current_track_color_f32(track_idx);
                 // 轨道索引编码进 border_width 高 16 位（统一编码：主音轨判定 + 稳定深度）
@@ -86,8 +106,19 @@ impl Host {
             }
         }
 
+        if aborted.get() {
+            tracing::warn!(
+                "[onion-skin] 全量会话中止：消息未送达（已置降级，等待全量补发）已发送 {} 个实例",
+                total_counter.get()
+            );
+            return;
+        }
+
         // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
-        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done);
+        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done) {
+            tracing::warn!("[onion-skin] 全量会话中止：Done 未送达（降级补发接管）");
+            return;
+        }
 
         tracing::debug!(
             "[onion-skin] 流式上传完成：{} 个实例 (track_gen={}, current_track={}, palette_idx={})",
@@ -96,8 +127,8 @@ impl Host {
             fp.current_track,
             fp.palette_idx
         );
-        // REND-003：全量会话在主线程分块构建 + 阻塞发送（sync_channel(3) 背压），
-        // 大工程下是加载后"未响应"的第二段风险，耗时打点便于定位与后续优化。
+        // REND-003：全量会话在主线程分块构建 + 背压发送（bounded(3) + send_timeout，
+        // REND-019 PR-A′），大工程下是加载后"未响应"的第二段风险，耗时打点便于定位与后续优化。
         tracing::info!(
             "[onion-skin] 全量会话完成：{} 个实例，耗时 {:?}",
             total_counter.get(),
@@ -116,13 +147,20 @@ impl Host {
         track_count: usize,
         old_count: usize,
     ) -> Vec<usize> {
-        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackLayout { track_count });
+        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackLayout { track_count }) {
+            tracing::warn!("[onion-skin] 轨布局未送达（降级补发接管）");
+            return Vec::new();
+        }
 
         let data = &self.root.editor.editor_state.data;
         let mut sent = Vec::new();
         for track_id in old_count..track_count {
             let parts = build_track_instance_parts(data, track_id);
-            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts });
+            if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts })
+            {
+                tracing::warn!("[onion-skin] 新增轨内容未送达（降级补发接管）");
+                break;
+            }
             sent.push(track_id);
         }
 
@@ -150,7 +188,11 @@ impl Host {
 
         for &track_id in tracks {
             let parts = build_track_instance_parts(data, track_id);
-            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts });
+            if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts })
+            {
+                tracing::warn!("[onion-skin] 事件级增量未送达（降级补发接管）");
+                break;
+            }
         }
 
         tracing::debug!(

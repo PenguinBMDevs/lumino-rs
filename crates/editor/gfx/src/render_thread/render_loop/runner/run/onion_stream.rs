@@ -7,7 +7,9 @@ use super::super::onion_segments::{
 
 /// drain 贴图瀑布流流式上传通道：逐块 streaming_append 到 GPU。
 ///
-/// UI 线程分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB），通过 sync_channel(3) 传输。
+/// UI 线程分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB），通过有界
+/// `bounded(3)` 通道传输（REND-019 PR-A′：发送侧 `send_timeout` 背压，
+/// 全会话完整送达）。
 /// 消息协议（事件级增量 2026-08-05）：
 /// - `BeginSession`：全量会话开始（清空段表 + 重置计数，空文档会话也生效）
 /// - `Chunk{track_id}`：全量会话数据块，按到达顺序构建段表（同轨续写、异轨新段）
@@ -26,7 +28,7 @@ pub(super) fn drain_onion_skin_stream(
     onion_segments: &mut Vec<OnionSegment>,
     onion_skin_streaming_in_progress: &mut bool,
     current_track_encoded: &mut u32,
-    rx: &std::sync::mpsc::Receiver<crate::OnionSkinStreamMsg>,
+    rx: &crossbeam_channel::Receiver<crate::OnionSkinStreamMsg>,
 ) {
     loop {
         match rx.try_recv() {
@@ -166,8 +168,8 @@ pub(super) fn drain_onion_skin_stream(
                     .note
                     .upload_instances(&instances, &ctx.device, &ctx.queue);
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => break,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Err(crossbeam_channel::TryRecvError::Empty) => break,
+            Err(crossbeam_channel::TryRecvError::Disconnected) => {
                 // UI 线程关闭 channel（shutdown），停止 drain
                 break;
             }

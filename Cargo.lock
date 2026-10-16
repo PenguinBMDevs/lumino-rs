@@ -4305,6 +4305,7 @@ dependencies = [
  "ab_glyph",
  "anyhow",
  "bytemuck",
+ "crossbeam-channel",
  "futures",
  "half",
  "im",

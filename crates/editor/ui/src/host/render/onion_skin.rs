@@ -385,8 +385,12 @@ impl Host {
         let pending = if is_full { Vec::new() } else { pending };
         let mut synced_tracks: Vec<usize> = Vec::with_capacity(pending.len());
         for (track_id, ranges) in pending {
-            wgpu_thread
-                .send_onion_skin_msg(OnionSkinStreamMsg::TrackRemoveRanges { track_id, ranges });
+            if !wgpu_thread
+                .send_onion_skin_msg(OnionSkinStreamMsg::TrackRemoveRanges { track_id, ranges })
+            {
+                tracing::warn!("[onion-skin] 区间删除增量未送达（降级补发接管）");
+                break;
+            }
             synced_tracks.push(track_id);
         }
         // 当前轨段是否已重建（决定 `main_track_struct_dirty` 是否可清）：
@@ -397,10 +401,12 @@ impl Host {
                 self.stream_onion_skin_full(&fp, wgpu_thread);
                 // 全量会话重建后必须设置 current_track / 静音位图，否则 shader
                 // 不知道哪个段是主音轨，主音轨事件级增量也找不到段。
-                wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                     current_track: fp.current_track as u32 + 1,
                     muted_tracks: fp.muted_tracks.clone(),
-                });
+                }) {
+                    tracing::warn!("[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）");
+                }
                 tracing::debug!(
                     "[onion-skin] Full 重建后同步 ViewState: current_track={}，静音 {:?}",
                     fp.current_track,
@@ -430,10 +436,14 @@ impl Host {
                     }
                     OnionSkinAction::ViewState => {
                         // 切轨/静音零重传：只发 ViewState uniform（当前音轨 + 静音集合）
-                        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                             current_track: fp.current_track as u32 + 1,
                             muted_tracks: fp.muted_tracks.clone(),
-                        });
+                        }) {
+                            tracing::warn!(
+                                "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"
+                            );
+                        }
                         tracing::debug!(
                             "[onion-skin] 视图状态更新：current_track={}，静音 {:?}（零数据重传）",
                             fp.current_track,
