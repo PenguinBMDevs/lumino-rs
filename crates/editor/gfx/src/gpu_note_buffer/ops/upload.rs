@@ -1,5 +1,7 @@
 //! 缓冲区创建与（全量/流式）上传
 
+use crate::epoch::GpuEpoch;
+
 use super::super::types::GpuNoteBuffer;
 
 impl GpuNoteBuffer {
@@ -16,7 +18,9 @@ impl GpuNoteBuffer {
     pub const MAX_CAPACITY: usize = usize::MAX;
 
     /// 创建新的 GPU 音符缓冲区
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    ///
+    /// `epoch`：创建时所属 GPU 代次（REND-019 PR-B 登记）。
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, epoch: GpuEpoch) -> Self {
         let instance_buffer = Self::create_buffer(device, Self::INITIAL_CAPACITY);
 
         let max_binding_size = device.limits().max_storage_buffer_binding_size as u64;
@@ -33,6 +37,7 @@ impl GpuNoteBuffer {
             device: std::sync::Arc::new(device.clone()),
             queue: std::sync::Arc::new(queue.clone()),
             instances: Vec::with_capacity(Self::INITIAL_CAPACITY),
+            epoch,
         }
     }
 

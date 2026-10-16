@@ -24,7 +24,7 @@ const READBACK_TIMEOUT: Duration = Duration::from_secs(2);
 /// 离屏试画卷帘：创建真实 NoteRenderer 管线，绘制 3 个音符并回读校验像素
 pub(super) fn render_test(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(), String> {
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-    let mut renderer = crate::NoteRenderer::new(device, queue, format);
+    let mut renderer = crate::NoteRenderer::new(device, queue, format, crate::GpuEpoch::INITIAL);
 
     let size = wgpu::Extent3d {
         width: TEST_WIDTH,

@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 
+use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedTexture;
 use crate::render_thread::commands::{FrameSender, RenderCommand};
 use crate::render_thread::export_pipeline::ExportPipeline;
@@ -24,20 +25,25 @@ pub struct RenderContext {
     pub queue: wgpu::Queue,
     /// 渲染目标纹理格式
     pub texture_format: wgpu::TextureFormat,
+    /// 本渲染线程所属 GPU 代次（REND-019 PR-B：线程内全部渲染器 / 纹理 /
+    /// 导出管线的登记基准；跨代次即整体判废、重建线程——PR-C）
+    pub epoch: GpuEpoch,
 }
 
 impl RenderContext {
-    /// 使用已有的 device / queue / texture_format 构造。
+    /// 使用已有的 device / queue / texture_format / epoch 构造。
     #[must_use]
     pub fn new(
         device: wgpu::Device,
         queue: wgpu::Queue,
         texture_format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
     ) -> Self {
         Self {
             device,
             queue,
             texture_format,
+            epoch,
         }
     }
 }

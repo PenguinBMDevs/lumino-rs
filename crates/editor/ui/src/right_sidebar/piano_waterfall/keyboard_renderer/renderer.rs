@@ -1,4 +1,5 @@
 use iced_wgpu::wgpu;
+use lumino_gfx::GpuEpoch;
 use wgpu::util::DeviceExt;
 
 use super::instances::f32_slice_to_bytes;
@@ -7,7 +8,9 @@ use super::{Instance, KeyboardRenderer, NoteUniforms};
 
 impl KeyboardRenderer {
     /// 创建渲染器（键盘 + 音符 + 剔除 三套管线，及复用缓冲）
-    pub fn new(device: &wgpu::Device) -> Self {
+    ///
+    /// `epoch`：创建时所属 GPU 代次（REND-019 PR-B 登记）。
+    pub fn new(device: &wgpu::Device, epoch: GpuEpoch) -> Self {
         let keyboard_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("piano_waterfall_keyboard"),
             source: wgpu::ShaderSource::Wgsl(KEYBOARD_SHADER.into()),
@@ -368,6 +371,7 @@ impl KeyboardRenderer {
             inst_w: 0,
             inst_h: 0,
             inst_keys: 0,
+            epoch,
         }
     }
 }

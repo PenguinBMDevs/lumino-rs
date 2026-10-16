@@ -29,7 +29,12 @@ impl Row {
 pub(super) fn measure(gpu: &BenchGpu, count: usize, zoomed: bool, iters: usize) -> Row {
     let notes = synth_notes(count);
     // 与生产一致：钢琴卷帘的全量音符层是 onion_skin 渲染器（新渲染器实例，隔离状态）
-    let mut renderer = NoteRenderer::new_onion_skin(&gpu.device, &gpu.queue, gpu.format);
+    let mut renderer = NoteRenderer::new_onion_skin(
+        &gpu.device,
+        &gpu.queue,
+        gpu.format,
+        crate::GpuEpoch::INITIAL,
+    );
     // 主音轨 = track_enc 1；无静音轨（与「主轨可见」生产态一致）
     renderer.set_view_state(&gpu.queue, 1, &[]);
     renderer.upload_instances(&notes, &gpu.device, &gpu.queue);

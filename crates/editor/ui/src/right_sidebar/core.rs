@@ -248,6 +248,9 @@ pub struct PianoWaterfallState {
     pub waterfall_view: Option<Arc<wgpu::TextureView>>,
     /// 上次渲染的参数签名（宽度/高度/键数等），用于脏判断
     pub cached_signature: Option<u64>,
+    /// 缓存视图所属 GPU 代次（REND-019 PR-B：跨代次判废——失配时丢弃视图
+    /// 与签名，走既有重渲染路径）
+    pub cached_epoch: Option<lumino_gfx::GpuEpoch>,
 }
 
 impl RightSidebar {

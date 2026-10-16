@@ -1,5 +1,6 @@
 //! GPU 音符缓冲区类型定义
 
+use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedBuffer;
 
 /// GPU 音符缓冲区
@@ -18,4 +19,15 @@ pub struct GpuNoteBuffer {
     pub(crate) queue: std::sync::Arc<wgpu::Queue>,
     /// CPU 侧实例缓存（用于支持删除等操作）
     pub(crate) instances: Vec<crate::NoteInstance>,
+    /// 创建时所属 GPU 代次（REND-019 PR-B：跨帧常驻缓冲的登记基准；
+    /// 跨代次判废走既有重建路径——随宿主渲染器 / 线程整体重建，E2/E3）
+    pub(crate) epoch: GpuEpoch,
+}
+
+impl GpuNoteBuffer {
+    /// 创建时所属 GPU 代次（REND-019 PR-B：跨代次判废的登记读取点）。
+    #[must_use]
+    pub fn gpu_epoch(&self) -> GpuEpoch {
+        self.epoch
+    }
 }

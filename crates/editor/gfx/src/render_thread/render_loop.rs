@@ -1,3 +1,5 @@
+use crate::epoch::GpuEpoch;
+
 /// 渲染命令定义
 pub mod commands;
 /// Prepare 阶段（上传实例与 uniform）
@@ -36,20 +38,31 @@ pub struct Renderers {
     /// 洋葱皮常驻数据世代计数（MIDI 全量重载 / TrackDelta 增量变更时递增，
     /// 全局桶等派生索引据此判定重建；单调递增，wrapping）。
     pub onion_epoch: u64,
+    /// 创建时所属 GPU 代次（REND-019 PR-B 登记）。
+    ///
+    /// ⚠️ 与 `onion_epoch` 是**不同代次体系**：前者是内容代次（数据版本），
+    /// 本字段是 device 代次（设备重建）——禁止混用（类型已隔离）。
+    pub gpu_epoch: GpuEpoch,
 }
 
 impl Renderers {
     /// 创建默认渲染器（带 depth attachment，用于普通 UI 预览）。
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
+    ) -> Self {
         Self {
             grid: crate::GridRenderer::new(device, format),
             vertical_grid: crate::VerticalGridRenderer::new(device, format),
-            note: crate::NoteRenderer::new(device, queue, format),
-            onion_skin: crate::NoteRenderer::new_onion_skin(device, queue, format),
+            note: crate::NoteRenderer::new(device, queue, format, epoch),
+            onion_skin: crate::NoteRenderer::new_onion_skin(device, queue, format, epoch),
             ruler: crate::RulerRenderer::new(device, format),
             arrangement: crate::ArrangementRenderer::new(device, format),
             cc_bar: crate::CcBarRenderer::new(device, format),
             onion_epoch: 0,
+            gpu_epoch: epoch,
         }
     }
 
@@ -62,16 +75,20 @@ impl Renderers {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
     ) -> Self {
         Self {
             grid: crate::GridRenderer::new_without_depth(device, format),
             vertical_grid: crate::VerticalGridRenderer::new_without_depth(device, format),
-            note: crate::NoteRenderer::new_without_depth(device, queue, format),
-            onion_skin: crate::NoteRenderer::new_onion_skin_without_depth(device, queue, format),
+            note: crate::NoteRenderer::new_without_depth(device, queue, format, epoch),
+            onion_skin: crate::NoteRenderer::new_onion_skin_without_depth(
+                device, queue, format, epoch,
+            ),
             ruler: crate::RulerRenderer::new_without_depth(device, format),
             arrangement: crate::ArrangementRenderer::new_without_depth(device, format),
             cc_bar: crate::CcBarRenderer::new_without_depth(device, format),
             onion_epoch: 0,
+            gpu_epoch: epoch,
         }
     }
 }

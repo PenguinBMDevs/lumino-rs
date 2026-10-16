@@ -1,12 +1,20 @@
 use super::types::CameraUniform;
 use super::types::DrawIndirectArgs;
+use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::note_renderer::NoteRenderer;
 
 impl NoteRenderer {
     /// 创建新的音符渲染器（默认带 depth attachment）
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
-        Self::new_with_depth(device, queue, format, true)
+    ///
+    /// `epoch`：创建时所属 GPU 代次（REND-019 PR-B 登记，透传至 GpuNoteBuffer）。
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
+    ) -> Self {
+        Self::new_with_depth(device, queue, format, true, epoch)
     }
 
     /// 创建不带 depth attachment 的音符渲染器（用于视频导出等纯 2D 路径）
@@ -14,8 +22,9 @@ impl NoteRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
     ) -> Self {
-        Self::new_with_depth(device, queue, format, false)
+        Self::new_with_depth(device, queue, format, false, epoch)
     }
 
     /// 创建洋葱皮音符渲染器
@@ -39,12 +48,14 @@ impl NoteRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
     ) -> Self {
         Self::new_with_shader(
             device,
             queue,
             format,
             true,
+            epoch,
             Self::ONION_SHADER,
             Self::CULL_SHADER,
         )
@@ -62,12 +73,14 @@ impl NoteRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
     ) -> Self {
         Self::new_with_shader(
             device,
             queue,
             format,
             false,
+            epoch,
             Self::ONION_SHADER,
             Self::CULL_SHADER,
         )
@@ -78,12 +91,14 @@ impl NoteRenderer {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         needs_depth: bool,
+        epoch: GpuEpoch,
     ) -> Self {
         Self::new_with_shader(
             device,
             queue,
             format,
             needs_depth,
+            epoch,
             Self::VERTEX_SHADER,
             Self::CULL_SHADER,
         )
@@ -94,6 +109,7 @@ impl NoteRenderer {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         needs_depth: bool,
+        epoch: GpuEpoch,
         vertex_shader: &'static str,
         cull_shader: &'static str,
     ) -> Self {
@@ -228,7 +244,7 @@ impl NoteRenderer {
             viewport_buffer,
             cull_uniform_buffer,
             cull_uniform_buffer_size,
-        ) = Self::create_renderer_buffers(device, queue, slot_align);
+        ) = Self::create_renderer_buffers(device, queue, slot_align, epoch);
 
         // 视图状态 uniform buffer（当前音轨 + 静音位图，切轨/静音零重传）
         let view_state_buffer = TrackedBuffer::new_init(
@@ -323,6 +339,7 @@ impl NoteRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         slot_align: u64,
+        epoch: GpuEpoch,
     ) -> (
         crate::gpu_note_buffer::GpuNoteBuffer,
         TrackedBuffer,
@@ -331,7 +348,7 @@ impl NoteRenderer {
         TrackedBuffer,
         u64,
     ) {
-        let gpu_note_buffer = crate::gpu_note_buffer::GpuNoteBuffer::new(device, queue);
+        let gpu_note_buffer = crate::gpu_note_buffer::GpuNoteBuffer::new(device, queue, epoch);
         let visible_instance_buffer =
             Self::create_visible_index_buffer(device, Self::INITIAL_CAPACITY);
 

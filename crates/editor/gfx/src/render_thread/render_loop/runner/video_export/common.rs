@@ -15,7 +15,12 @@ pub(crate) fn start_video_export(context: VideoExportSetupContext<'_>) {
         context.width,
         context.height
     );
-    let mut pipeline = ExportPipeline::new(&context.ctx.device, context.width, context.height);
+    let mut pipeline = ExportPipeline::new(
+        &context.ctx.device,
+        context.width,
+        context.height,
+        context.ctx.epoch,
+    );
     pipeline.set_recycle_receiver(context.recycle_rx);
     *context.export_pipeline = Some(pipeline);
     *context.export_frame_tx = Some(context.frame_tx);
@@ -24,6 +29,7 @@ pub(crate) fn start_video_export(context: VideoExportSetupContext<'_>) {
         &context.ctx.device,
         &context.ctx.queue,
         context.ctx.texture_format,
+        context.ctx.epoch,
     ));
 }
 

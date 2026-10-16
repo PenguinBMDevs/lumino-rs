@@ -41,14 +41,16 @@ impl Host {
         // 各窗口/组件统一从 lumino_ui_core::font 取字体（字体切换重启生效）
         let font = lumino_ui_core::font::init(ui_config);
 
-        let note_renderer = needs_renderers
-            .then(|| lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format));
+        let note_renderer = needs_renderers.then(|| {
+            lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format, gfx.epoch())
+        });
 
         let wgpu_resources = WgpuResources {
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
             adapter: gfx.adapter.clone(),
+            epoch: gfx.epoch(),
         };
         let render_ctx = RenderContext::new(
             &wgpu_resources,

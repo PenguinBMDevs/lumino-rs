@@ -52,8 +52,14 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
 fn run_render_thread_inner(ctx: RenderContext, channels: RenderThreadChannels) {
     tracing::info!("Render thread started");
 
+    // REND-019 PR-B：本线程持有的全部 GPU 资源（渲染器 [Renderers.gpu_epoch] /
+    // 离屏纹理 / 导出管线 / 瀑布流渲染器）以 `ctx.epoch` 为统一登记基准——
+    // 跨代次即整体判废、重建线程（PR-C）；线程内私有句柄不逐对象登记
+    // （由线程生命周期统辖，E2 重建路径 = 线程重启）。
+
     // 初始化渲染器
-    let mut renderers = super::super::Renderers::new(&ctx.device, &ctx.queue, ctx.texture_format);
+    let mut renderers =
+        super::super::Renderers::new(&ctx.device, &ctx.queue, ctx.texture_format, ctx.epoch);
     // 视频导出使用独立的纯 2D 渲染器，避免 depth-stencil 状态与普通预览不一致。
     let mut export_renderers: Option<super::super::Renderers> = None;
 

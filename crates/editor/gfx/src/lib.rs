@@ -16,6 +16,8 @@ mod context;
 pub mod device_check;
 /// 设备丢失 / 停帧状态（REND-019 PR-A 先行防护：全局标志 + 回调置位）
 pub mod device_status;
+/// GPU 代次与跨帧资源登记（REND-019 PR-B epoch 地基）
+mod epoch;
 /// 帧错误统一收口（REND-019 PR-A §1.6：5 处 with_frame 调用点分类处置）
 pub mod frame_error;
 mod global_bucket;
@@ -54,12 +56,13 @@ pub use cc_bar_renderer::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
     build_cc_bar_instances,
 };
-pub use context::{Context, ContextError, Result};
+pub use context::{Context, ContextError, Result, SharedGpu, SharedGpuState, gpu_snapshot};
 pub use device_check::{
     FallbackDiagnostics, GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
     debug_force_fail_requested, required_backend_name, run_check_with_timeout,
 };
 pub use device_status::{device_lost, mark_device_lost};
+pub use epoch::{EpochTagged, GpuEpoch};
 pub use frame_error::{FrameErrorAction, classify_frame_error};
 pub(crate) use global_bucket::readback_bytes_sync;
 pub use global_bucket::{

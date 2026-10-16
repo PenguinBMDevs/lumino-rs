@@ -10,6 +10,8 @@
 
 use std::sync::mpsc;
 
+use crate::epoch::GpuEpoch;
+
 mod staging;
 
 use staging::StagingRing;
@@ -21,6 +23,9 @@ use staging::StagingRing;
 /// 然后通过 `try_read` / `wait_read` 读取 BGRA 像素数据。
 pub struct ExportPipeline {
     ring: StagingRing,
+    /// 创建时所属 GPU 代次（REND-019 PR-B：ExportPipeline / StagingRing 以
+    /// 此整体为登记基准——跨代次时随管线整体重建，槽位不单独登记）。
+    pub epoch: GpuEpoch,
     /// 上次 ensure_size 的尺寸，尺寸不变时跳过迭代检查
     cached_width: u32,
     cached_height: u32,
@@ -30,9 +35,12 @@ pub struct ExportPipeline {
 
 impl ExportPipeline {
     /// 创建导出管线
-    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+    ///
+    /// `epoch`：渲染线程所属 GPU 代次（REND-019 PR-B 登记）。
+    pub fn new(device: &wgpu::Device, width: u32, height: u32, epoch: GpuEpoch) -> Self {
         Self {
             ring: StagingRing::new(device, width, height),
+            epoch,
             cached_width: width,
             cached_height: height,
             recycle_rx: None,

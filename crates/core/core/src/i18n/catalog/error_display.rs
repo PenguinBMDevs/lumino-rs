@@ -105,6 +105,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "获取 preferred format 失败" => Some("Failed to get preferred format"),
         "请求 device 失败" => Some("Failed to request device"),
         "获取帧失败" => Some("Failed to acquire frame"),
+        "GPU 尚未初始化" => Some("GPU not initialized"),
 
         // `crates/editor/gfx/src/global_bucket.rs`（GlobalBucketError）
         "音符数量超出 u32 索引范围" => Some("Note count exceeds u32 index range"),

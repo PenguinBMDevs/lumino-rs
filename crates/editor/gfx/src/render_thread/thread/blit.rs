@@ -1,4 +1,5 @@
 use super::WgpuRenderThread;
+use crate::epoch::GpuEpoch;
 
 impl WgpuRenderThread {
     /// 将离屏渲染结果复制到 Surface 纹理
@@ -57,6 +58,7 @@ impl WgpuRenderThread {
             texture.inner(),
             &frame.texture,
             frame.texture.format(),
+            self.epoch,
         );
     }
 
@@ -64,12 +66,17 @@ impl WgpuRenderThread {
     ///
     /// 用于最大化/拖拽动画期 `src` 与 `dst` 尺寸不一致时，避免 `copy_texture_to_texture`
     /// 的等尺寸限制导致的黑屏/黑边。离屏需 `TEXTURE_BINDING`（已在 textures.rs 配置）。
+    ///
+    /// REND-019 PR-B（F6）：静态缓存按 `(GpuEpoch, format)` 双键——跨代次
+    /// （device 重建）后旧 pipeline / bind group layout 不得用于新 device 的
+    /// 纹理，必须重建。
     fn blit_texture_to_surface(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         src: &wgpu::Texture,
         dst: &wgpu::Texture,
         dst_format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
     ) {
         use std::sync::{Mutex, OnceLock};
 
@@ -92,17 +99,20 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
             bind_group_layout: wgpu::BindGroupLayout,
             sampler: wgpu::Sampler,
             format: wgpu::TextureFormat,
+            /// 创建时所属 GPU 代次（REND-019 PR-B F6：双键之 epoch 键）
+            epoch: GpuEpoch,
         }
         static CACHE: OnceLock<Mutex<Option<BlitCache>>> = OnceLock::new();
         let cache_mutex = CACHE.get_or_init(|| Mutex::new(None));
 
-        // 尝试复用缓存管线（format 需一致，否则重建）
+        // 尝试复用缓存管线（(GpuEpoch, format) 双键：任一不一致即重建）
         let needs_rebuild = {
             let guard = cache_mutex.lock().ok();
-            guard
+            let cached = guard
                 .as_ref()
-                .and_then(|opt| opt.as_ref().map(|c| c.format != dst_format))
-                .unwrap_or(true)
+                .and_then(|opt| opt.as_ref())
+                .map(|c| (c.epoch, c.format));
+            blit_cache_needs_rebuild(cached, epoch, dst_format)
         };
 
         if needs_rebuild {
@@ -180,6 +190,7 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
                     bind_group_layout,
                     sampler,
                     format: dst_format,
+                    epoch,
                 });
             }
         }
@@ -236,3 +247,23 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
         queue.submit(std::iter::once(encoder.finish()));
     }
 }
+
+/// blit 缓存重建判据（REND-019 PR-B F6）：`(GpuEpoch, format)` 双键。
+///
+/// 仅 format 一致不足以复用——重连（跨代次）后旧 device 的 pipeline /
+/// bind group layout 与新 device 的纹理混用会触发 wgpu validation panic。
+#[must_use]
+pub(crate) fn blit_cache_needs_rebuild(
+    cached: Option<(GpuEpoch, wgpu::TextureFormat)>,
+    epoch: GpuEpoch,
+    dst_format: wgpu::TextureFormat,
+) -> bool {
+    match cached {
+        Some((cached_epoch, cached_format)) => cached_epoch != epoch || cached_format != dst_format,
+        None => true,
+    }
+}
+
+#[cfg(test)]
+#[path = "blit/tests.rs"]
+mod tests;

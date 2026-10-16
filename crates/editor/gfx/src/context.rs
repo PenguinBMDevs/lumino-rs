@@ -1,8 +1,10 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
 use crate::device_status;
-use crate::frame_error::{FrameErrorAction, classify_frame_error};
+use crate::epoch::GpuEpoch;
+
+mod ops;
 
 /// 根据可用的 present modes 选择最优的 present mode
 ///
@@ -80,7 +82,25 @@ pub struct SharedGpu {
     pub queue: wgpu::Queue,
 }
 
-static SHARED_GPU: OnceLock<std::result::Result<Arc<SharedGpu>, String>> = OnceLock::new();
+/// 进程级共享 GPU 状态（REND-019 PR-B）。
+///
+/// 重连时整体替换 `inner` 并递增 `epoch`（PR-C）——旧代次的一切跨帧资源
+/// 依据 [`GpuEpoch`] 判废并走既有重建路径（E2/E3），禁止跨代次复用。
+#[derive(Clone)]
+pub struct SharedGpuState {
+    /// 当前 GPU 代次（每次 device 重建单调递增）
+    pub epoch: GpuEpoch,
+    /// 共享 GPU 资源（instance / adapter / device / queue 结构不变）
+    pub inner: Arc<SharedGpu>,
+}
+
+/// 唯一全局入口（REND-019 PR-B，G1）。
+///
+/// - device/queue 只能经 [`gpu_snapshot`] 或调用方传入的
+///   `(GpuEpoch, Arc<SharedGpu>)` 获取；禁止新增长期存放 `Arc<SharedGpu>`
+///   的 `OnceLock` / `static`（既有 SHARED_ENGINE / blit CACHE 属改造对象，非绕过对象）；
+/// - 读锁拿快照后立即放锁——禁止持锁做任何 wgpu 调用 / `.await` / 阻塞收发（G3）。
+static SHARED_GPU: RwLock<Option<std::result::Result<SharedGpuState, String>>> = RwLock::new(None);
 
 /// 根据构建配置决定 wgpu 实例 flags
 ///
@@ -164,6 +184,9 @@ pub enum ContextError {
     /// 请求 `wgpu::Device` 失败
     #[error("{}: {}", lumino_core::i18n::tr("请求 device 失败"), .0)]
     DeviceRequest(String),
+    /// GPU 共享资源尚未初始化（`gpu_snapshot` 在初始化完成前被调用）
+    #[error("{}", lumino_core::i18n::tr("GPU 尚未初始化"))]
+    GpuUninitialized,
     /// 获取交换链帧失败（含 `wgpu::SurfaceError`）
     #[error("{}: {}", lumino_core::i18n::tr("获取帧失败"), .0)]
     FrameAcquisition(#[from] wgpu::SurfaceError),
@@ -171,6 +194,26 @@ pub enum ContextError {
 
 /// 图形上下文操作的通用结果类型
 pub type Result<T> = std::result::Result<T, ContextError>;
+
+/// 获取当前 GPU 代次快照（REND-019 PR-B，G1：唯一允许的读取方式）。
+///
+/// 读锁拿快照后立即放锁——禁止持锁做任何 wgpu 调用 / `.await` / 阻塞收发（G3）。
+/// 返回的 `Arc<SharedGpu>` 只允许在「一次性渲染 / 上传动作」内使用（G2）；
+/// 跨帧持有者必须连 [`GpuEpoch`] 一起存，且每帧使用前比对。
+///
+/// # 错误
+/// - [`ContextError::GpuUninitialized`]：共享 GPU 尚未初始化
+/// - [`ContextError::AdapterCreation`]：初始化曾失败（透传当时存储的错误串）
+pub fn gpu_snapshot() -> Result<(GpuEpoch, Arc<SharedGpu>)> {
+    let guard = SHARED_GPU
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match guard.as_ref() {
+        Some(Ok(state)) => Ok((state.epoch, Arc::clone(&state.inner))),
+        Some(Err(e)) => Err(ContextError::AdapterCreation(e.clone())),
+        None => Err(ContextError::GpuUninitialized),
+    }
+}
 
 /// GPU 渲染上下文，封装 surface / adapter / device / queue 等 wgpu 资源
 pub struct Context {
@@ -187,6 +230,9 @@ pub struct Context {
     /// 当前交换链配置（REND-019 PR-A：`resize` 与 `handle_frame_error` 的
     /// Outdated 重配共用同一份，避免两处拼装 `SurfaceConfiguration` 漂移）
     surface_config: wgpu::SurfaceConfiguration,
+    /// 本上下文所属 GPU 代次（REND-019 PR-B：跨帧资源比对基准；PR-C 重连后
+    /// 旧上下文整体丢弃、由新代次重建。读取走 `Context::epoch()`）
+    epoch: GpuEpoch,
 }
 
 impl Context {
@@ -218,19 +264,32 @@ impl Context {
 
         // 如果共享资源已初始化，复用其中的 instance；否则先创建一个临时 instance
         // 用来创建 surface，随后再用该 surface 初始化 adapter/device。
-        let instance = SHARED_GPU
-            .get()
-            .and_then(|res| res.as_ref().ok().map(|shared| shared.instance.clone()))
-            .unwrap_or_else(create_instance);
+        // REND-019 PR-B：读取统一走快照（读锁拿数据即放锁，G3）。
+        let instance = match gpu_snapshot() {
+            Ok((_, gpu)) => gpu.instance.clone(),
+            Err(_) => create_instance(),
+        };
 
         let surface = instance
             .create_surface(target)
             .map_err(|e| ContextError::SurfaceCreation(e.to_string()))?;
 
-        let shared = match SHARED_GPU.get() {
-            Some(Ok(shared)) => Arc::clone(shared),
-            Some(Err(e)) => return Err(ContextError::AdapterCreation(e.clone())),
+        // 快照读（锁内只做 clone / 状态判断，立即放锁——G3：禁止持锁做 wgpu 调用）
+        let existing = {
+            let guard = SHARED_GPU
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match guard.as_ref() {
+                Some(Ok(state)) => Some((state.epoch, Arc::clone(&state.inner))),
+                Some(Err(e)) => return Err(ContextError::AdapterCreation(e.clone())),
+                None => None,
+            }
+        };
+
+        let (epoch, shared) = match existing {
+            Some(snapshot) => snapshot,
             None => {
+                // 无锁初始化（init_shared_gpu 为 async + wgpu 调用，必须在锁外执行——G3）
                 let gpu = init_shared_gpu(&instance, &surface).await?;
                 // 注册 uncaptured error handler，避免 Metal 报错直接 abort（yinhe:84）
                 // 睡眠唤醒/maximize 大纹理时 Surface::configure 可能触发 idle 等待失败
@@ -244,8 +303,22 @@ impl Context {
                 gpu.device
                     .set_device_lost_callback(device_status::on_device_lost);
                 let gpu = Arc::new(gpu);
-                let _ = SHARED_GPU.set(Ok(Arc::clone(&gpu)));
-                gpu
+                // 写锁安装（双检：并发初始化时沿用先到者、丢弃本实例——
+                // 与旧 OnceLock::set 语义一致；锁内只做赋值，无 wgpu 调用——G3）
+                let mut guard = SHARED_GPU
+                    .write()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                match guard.as_ref() {
+                    Some(Ok(state)) => (state.epoch, Arc::clone(&state.inner)),
+                    _ => {
+                        let epoch = GpuEpoch::INITIAL;
+                        *guard = Some(Ok(SharedGpuState {
+                            epoch,
+                            inner: Arc::clone(&gpu),
+                        }));
+                        (epoch, gpu)
+                    }
+                }
             }
         };
 
@@ -299,120 +372,7 @@ impl Context {
             device: shared.device.clone(),
             format,
             surface_config,
+            epoch,
         })
-    }
-
-    /// 同步创建图形上下文（在无法使用 async 的初始化路径中使用）
-    ///
-    /// 内部使用 `futures::executor::block_on` 驱动异步初始化流程，
-    /// 避免在多个窗口管理器中重复书写 block_on 样板。
-    pub fn new_blocking(
-        target: impl Into<wgpu::SurfaceTarget<'static>>,
-        width: u32,
-        height: u32,
-    ) -> Result<Self> {
-        futures::executor::block_on(Self::new(target, width, height))
-    }
-
-    /// 调整交换链尺寸并重新配置 surface。
-    ///
-    /// # 参数
-    /// * `width` — 新宽度（像素）
-    /// * `height` — 新高度（像素；任一为 0 时直接忽略本次调整）
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        let max_dim = self.device.limits().max_texture_dimension_2d;
-        // REND-019（PR-A）：就地更新保存的交换链配置——与
-        // `handle_frame_error` 的 Outdated 重配共用同一份（视图格式 /
-        // 呈现模式等不再两处重复拼装）。
-        self.surface_config.width = width.min(max_dim);
-        self.surface_config.height = height.min(max_dim);
-        self.surface.configure(&self.device, &self.surface_config);
-    }
-
-    /// 获取当前交换链帧并在其上执行一次绘制。
-    ///
-    /// 若获取帧失败（如 OutOfMemory）则返回对应错误而不调用回调。
-    ///
-    /// # 参数
-    /// * `f` — 接收帧纹理与视图的回调，在其中提交绘制命令
-    ///
-    /// # 返回值
-    /// * `Ok(())` — 回调执行成功
-    /// * `Err(ContextError::FrameAcquisition)` — 获取帧失败；REND-019（PR-A）
-    ///   起调用方必须经 [`Context::handle_frame_error`] 分类处置，禁止盲重绘
-    pub fn with_frame(
-        &self,
-        f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),
-    ) -> Result<()> {
-        puffin::profile_function!();
-
-        // 两个真正的 GPU 同步点：获取交换链帧（可能在 GPU 忙时阻塞）与 present
-        // （GPU 积压时阻塞）。单独插桩以便在火焰图中区分「取帧等待」与「呈现等待」，
-        // 定位播放期突发性大卡顿究竟来自哪一环。
-        let frame = {
-            puffin::profile_scope!("get_current_texture");
-            match self.surface.get_current_texture() {
-                Ok(frame) => frame,
-                Err(wgpu::SurfaceError::OutOfMemory) => {
-                    tracing::error!("Swapchain error: OutOfMemory. Rendering cannot continue.");
-                    return Err(ContextError::FrameAcquisition(
-                        wgpu::SurfaceError::OutOfMemory,
-                    ));
-                }
-                Err(e) => return Err(ContextError::FrameAcquisition(e)),
-            }
-        };
-
-        let view = {
-            puffin::profile_scope!("create_view");
-            frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default())
-        };
-
-        f(&frame, &view);
-
-        {
-            puffin::profile_scope!("present");
-            frame.present();
-        }
-
-        Ok(())
-    }
-
-    /// REND-019（PR-A §1.6）：统一帧错误处置入口——5 处 `with_frame`
-    /// 调用点收口，替代原先对 `Err` 一律盲 `request_redraw` 的重试。
-    ///
-    /// 动作语义见 [`FrameErrorAction`]：
-    /// - `Outdated` → 按保存的交换链配置重新 configure（`Reconfigured`）；
-    /// - `Timeout` → 本帧放弃（`SkipFrame`）；
-    /// - `Lost` / `OutOfMemory` → 置停帧标志等重连（`Stop`，禁止盲重绘）。
-    ///
-    /// 调用方约定：`action.should_redraw()` 为 true 时安排一次重绘。
-    #[must_use]
-    pub fn handle_frame_error(&self, err: &ContextError) -> FrameErrorAction {
-        let ContextError::FrameAcquisition(surface_err) = err else {
-            // with_frame 只产出 FrameAcquisition；其他变体按本帧放弃处理
-            tracing::warn!("handle_frame_error：非帧获取类错误按本帧放弃处理: {err}");
-            return FrameErrorAction::SkipFrame;
-        };
-        let action = classify_frame_error(surface_err);
-        match action {
-            FrameErrorAction::Reconfigured => {
-                tracing::warn!("Surface Outdated：按现有配置重新 configure 交换链");
-                self.surface.configure(&self.device, &self.surface_config);
-            }
-            FrameErrorAction::SkipFrame => {
-                tracing::debug!("Surface Timeout：本帧放弃，下一帧重试");
-            }
-            FrameErrorAction::Stop => {
-                tracing::error!("Surface {surface_err:?}：置停帧标志，等待重连接管（禁止盲重绘）");
-                device_status::mark_device_lost();
-            }
-        }
-        action
     }
 }

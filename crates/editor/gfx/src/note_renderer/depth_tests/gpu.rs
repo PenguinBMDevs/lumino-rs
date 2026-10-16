@@ -22,12 +22,12 @@ fn test_overlap_pixels_are_draw_order_independent() {
     let onion_notes = onion_scene();
     let preview_notes = preview_scene();
 
-    let mut onion = NoteRenderer::new_onion_skin(&device, &queue, format);
+    let mut onion = NoteRenderer::new_onion_skin(&device, &queue, format, crate::GpuEpoch::INITIAL);
     // track_enc = 1 为主音轨（主轨蓝 + 主音轨区深度）
     onion.set_view_state(&queue, 1, &[]);
     onion.upload_instances(&onion_notes, &device, &queue);
 
-    let mut note = NoteRenderer::new(&device, &queue, format);
+    let mut note = NoteRenderer::new(&device, &queue, format, crate::GpuEpoch::INITIAL);
     note.upload_instances(&preview_notes, &device, &queue);
 
     write_camera(&onion, &queue);
@@ -136,7 +136,7 @@ fn test_chunk_start_is_folded_into_depth() {
     // P：101 个实例，可见索引 100 → 深度 = 区底 + 100
     let mut notes_p = vec![crate::NoteInstance::new(0.0, 60, 100.0, red, 1)];
     notes_p.resize(101, crate::NoteInstance::new(0.0, 60, 100.0, red, 1));
-    let mut p = NoteRenderer::new(&device, &queue, format);
+    let mut p = NoteRenderer::new(&device, &queue, format, crate::GpuEpoch::INITIAL);
     p.upload_instances(&notes_p, &device, &queue);
     write_camera(&p, &queue);
     write_visible_order(&p, &queue, &[100]);
@@ -144,7 +144,7 @@ fn test_chunk_start_is_folded_into_depth() {
     // Q：51 个实例，可见索引 50；chunk 基准拉到槽数上限 → 深度饱和到区顶
     let mut notes_q = vec![crate::NoteInstance::new(0.0, 60, 100.0, green, 1)];
     notes_q.resize(51, crate::NoteInstance::new(0.0, 60, 100.0, green, 1));
-    let mut q = NoteRenderer::new(&device, &queue, format);
+    let mut q = NoteRenderer::new(&device, &queue, format, crate::GpuEpoch::INITIAL);
     q.upload_instances(&notes_q, &device, &queue);
     write_camera(&q, &queue);
     write_visible_order(&q, &queue, &[50]);
@@ -209,12 +209,13 @@ fn test_depthless_pass_keeps_note_coverage() {
     let notes = onion_scene();
     let order: Vec<u32> = (0..notes.len() as u32).collect();
 
-    let mut with_depth = NoteRenderer::new(&device, &queue, format);
+    let mut with_depth = NoteRenderer::new(&device, &queue, format, crate::GpuEpoch::INITIAL);
     with_depth.upload_instances(&notes, &device, &queue);
     write_camera(&with_depth, &queue);
     write_visible_order(&with_depth, &queue, &order);
 
-    let mut no_depth = NoteRenderer::new_without_depth(&device, &queue, format);
+    let mut no_depth =
+        NoteRenderer::new_without_depth(&device, &queue, format, crate::GpuEpoch::INITIAL);
     no_depth.upload_instances(&notes, &device, &queue);
     write_camera(&no_depth, &queue);
     write_visible_order(&no_depth, &queue, &order);
@@ -285,7 +286,12 @@ fn test_onion_skin_depthless_pipeline_is_pass_compatible() {
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let notes = onion_scene();
 
-    let mut onion = NoteRenderer::new_onion_skin_without_depth(&device, &queue, format);
+    let mut onion = NoteRenderer::new_onion_skin_without_depth(
+        &device,
+        &queue,
+        format,
+        crate::GpuEpoch::INITIAL,
+    );
     onion.set_view_state(&queue, 1, &[]);
     onion.upload_instances(&notes, &device, &queue);
     write_camera(&onion, &queue);
@@ -325,7 +331,12 @@ fn test_onion_skin_depthless_pipeline_is_pass_compatible() {
     );
 
     // 静音轨（非主音轨）必须完全不产生片元：覆盖掩码为空
-    let mut muted_onion = NoteRenderer::new_onion_skin_without_depth(&device, &queue, format);
+    let mut muted_onion = NoteRenderer::new_onion_skin_without_depth(
+        &device,
+        &queue,
+        format,
+        crate::GpuEpoch::INITIAL,
+    );
     // current_track = 1（主音轨 = track_enc 1）；轨道索引 1/2 静音
     // → track_enc 2（key 58）/ track_enc 3（key 56）必须被裁剪，仅主音轨可见
     muted_onion.set_view_state(&queue, 1, &[1, 2]);

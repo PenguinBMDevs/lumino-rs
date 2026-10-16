@@ -29,13 +29,13 @@ use crate::note_renderer::types::CameraUniform;
 #[test]
 fn test_preview_layer_has_direct_pipeline() {
     let (device, queue) = crate::test_gpu::shared_device();
-    let preview = NoteRenderer::new(&device, &queue, FORMAT);
+    let preview = NoteRenderer::new(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
     assert!(
         preview.direct_pipeline.is_some(),
         "预览层必须创建 VS 直绘管线：否则预览实例走 cull 随机序，重叠区 z-order 闪烁"
     );
     // 导出无 depth 变体不建（`draw_direct` 内部自动回退 cull 路径）
-    let export = NoteRenderer::new_without_depth(&device, &queue, FORMAT);
+    let export = NoteRenderer::new_without_depth(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
     assert!(
         export.direct_pipeline.is_none(),
         "无 depth 变体（导出）不应创建直绘管线"
@@ -45,7 +45,7 @@ fn test_preview_layer_has_direct_pipeline() {
         "预览层必须创建纵向直绘管线：否则纵向卷帘下重叠预览矩形仍按 cull 随机序闪烁"
     );
     // 洋葱皮只建横向直绘（纵向仍走 cull 路径），不为它多付一次大 shader 管线编译
-    let onion = NoteRenderer::new_onion_skin(&device, &queue, FORMAT);
+    let onion = NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
     assert!(
         onion.direct_pipeline.is_some() && onion.vertical_direct_pipeline.is_none(),
         "洋葱皮应只有横向直绘管线（纵向仍走 cull 路径）"
@@ -109,7 +109,8 @@ fn overlap_scene() -> Vec<NoteInstance> {
 fn render(notes: &[NoteInstance], camera: CameraUniform, direct: bool) -> Vec<u8> {
     let (device, queue) = crate::test_gpu::shared_device();
 
-    let mut renderer = NoteRenderer::new_onion_skin(&device, &queue, FORMAT);
+    let mut renderer =
+        NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
     // current_track = 1（track_enc 1）；track_idx 2（track_enc 3）静音
     renderer.set_view_state(&queue, 1, &[2]);
     renderer.upload_instances(notes, &device, &queue);

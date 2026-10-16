@@ -130,7 +130,8 @@ fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAtt
 fn render_points(notes: &[NoteInstance], current_track: u32, muted: &[usize]) -> Vec<u8> {
     let (device, queue) = crate::test_gpu::shared_device();
 
-    let mut renderer = NoteRenderer::new_onion_skin(&device, &queue, FORMAT);
+    let mut renderer =
+        NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
     renderer.set_view_state(&queue, current_track, muted);
     renderer.upload_instances(notes, &device, &queue);
     renderer.prepare_direct(subpixel_camera(), &queue);
@@ -328,7 +329,7 @@ fn test_point_mode_respects_muted_tracks() {
 #[test]
 fn test_draw_points_falls_back_without_point_pipeline() {
     let (device, queue) = crate::test_gpu::shared_device();
-    let mut renderer = NoteRenderer::new(&device, &queue, FORMAT);
+    let mut renderer = NoteRenderer::new(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
     // key 110：在 `normal_camera`（zoom_y = 10，高 240px ⇒ 可见 24 键）视口内。
     renderer.upload_instances(
         &[NoteInstance::new(0.0, 110, 40.0, NOTE_COLOR, encode(1, 2))],

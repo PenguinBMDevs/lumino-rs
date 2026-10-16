@@ -100,6 +100,24 @@ impl Host {
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
         use crate::titlebar::mode_toggle::AppMode;
 
+        // REND-019 PR-B：跨代次判废面板缓存视图（epoch 恒同代时无行为变化；
+        // PR-C 重连后旧视图整体丢弃，走既有重渲染路径）
+        let epoch = self.render_ctx.epoch;
+        {
+            let rs = &mut self.root.right_sidebar.piano_waterfall;
+            if rs.cached_epoch.is_some_and(|e| e != epoch) {
+                rs.waterfall_view = None;
+                rs.cached_signature = None;
+                rs.cached_epoch = None;
+            }
+            let fp = &mut self.root.waterfall_player;
+            if fp.cached_epoch.is_some_and(|e| e != epoch) {
+                fp.view = None;
+                fp.cached_signature = None;
+                fp.cached_epoch = None;
+            }
+        }
+
         let in_waterfall = self.root.state.current_mode == AppMode::Waterfall;
 
         // 键数跟随全局设置：开启 256 键扩展则为 256，否则 128
@@ -164,10 +182,20 @@ impl Host {
                 return; // 参数未变，复用已渲染纹理视图
             }
 
+            // REND-019 PR-B：跨代次判废键盘渲染器（恒同代时无行为变化；
+            // 失配丢弃后走既有懒创建路径）
+            if self
+                .render_ctx
+                .keyboard_renderer
+                .as_ref()
+                .is_some_and(|r| r.gpu_epoch() != epoch)
+            {
+                self.render_ctx.keyboard_renderer = None;
+            }
             let renderer = self
                 .render_ctx
                 .keyboard_renderer
-                .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
+                .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device, epoch));
 
             let diag = std::env::var("LUMINO_VRDIAG").is_ok();
             let scene = renderer.render_scene(
@@ -184,6 +212,7 @@ impl Host {
             if let Some(view) = scene {
                 state.view = Some(view);
                 state.cached_signature = Some(sig);
+                state.cached_epoch = Some(epoch);
                 if diag {
                     tracing::info!(
                         "[VR_DIAG] render_scene OK w={width} h={height} note_count={note_count}"
@@ -200,6 +229,7 @@ impl Host {
             if rs.waterfall_view.is_some() {
                 rs.waterfall_view = None;
                 rs.cached_signature = None;
+                rs.cached_epoch = None;
             }
             if self.root.state.current_mode == AppMode::Waterfall {
                 return;
@@ -241,10 +271,18 @@ impl Host {
             if state.cached_signature != Some(sig) {
                 match anchor_tick {
                     Some(_) => {
-                        let renderer = self
+                        // REND-019 PR-B：跨代次判废（同上，恒同代时无行为变化）
+                        if self
                             .render_ctx
                             .keyboard_renderer
-                            .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
+                            .as_ref()
+                            .is_some_and(|r| r.gpu_epoch() != epoch)
+                        {
+                            self.render_ctx.keyboard_renderer = None;
+                        }
+                        let renderer = self.render_ctx.keyboard_renderer.get_or_insert_with(|| {
+                            KeyboardRenderer::new(&self.render_ctx.device, epoch)
+                        });
                         if let Some(view) = renderer.render_scene(
                             &self.render_ctx.device,
                             &self.render_ctx.queue,
@@ -258,12 +296,14 @@ impl Host {
                         ) {
                             state.view = Some(view);
                             state.cached_signature = Some(sig);
+                            state.cached_epoch = Some(epoch);
                         }
                     }
                     None => {
                         // 播放头在素材带之外：无帧可显示，释放纹理（画面占位由 UI 呈现）
                         state.view = None;
                         state.cached_signature = Some(sig);
+                        state.cached_epoch = Some(epoch);
                     }
                 }
             }
@@ -272,6 +312,7 @@ impl Host {
             if rs.waterfall_view.is_some() {
                 rs.waterfall_view = None;
                 rs.cached_signature = None;
+                rs.cached_epoch = None;
             }
             return;
         }
@@ -290,12 +331,14 @@ impl Host {
             if state.waterfall_view.is_some() {
                 state.waterfall_view = None;
                 state.cached_signature = None;
+                state.cached_epoch = None;
             }
             // 同步清空全屏播放器缓存（从瀑布流模式切回时）
             let fp = &mut self.root.waterfall_player;
             if fp.view.is_some() {
                 fp.view = None;
                 fp.cached_signature = None;
+                fp.cached_epoch = None;
             }
             return;
         }
@@ -320,10 +363,19 @@ impl Host {
             return; // 参数未变，复用已渲染纹理视图
         }
 
+        // REND-019 PR-B：跨代次判废（同上，恒同代时无行为变化）
+        if self
+            .render_ctx
+            .keyboard_renderer
+            .as_ref()
+            .is_some_and(|r| r.gpu_epoch() != epoch)
+        {
+            self.render_ctx.keyboard_renderer = None;
+        }
         let renderer = self
             .render_ctx
             .keyboard_renderer
-            .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
+            .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device, epoch));
 
         // 同步离屏渲染：返回 Some 即拿到本帧纹理视图（无 CPU 读回、无异步）；
         // iced `shader` 图元会在自身渲染通道内直接采样该视图合成（GPU→GPU，不闪烁）。
@@ -340,6 +392,7 @@ impl Host {
         ) {
             state.waterfall_view = Some(view);
             state.cached_signature = Some(sig);
+            state.cached_epoch = Some(epoch);
         }
     }
 }

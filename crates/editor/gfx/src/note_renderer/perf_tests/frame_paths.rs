@@ -114,7 +114,12 @@ pub(super) fn measure_frame_paths(
         a: 1.0,
     };
 
-    let mut renderer = NoteRenderer::new_onion_skin(&gpu.device, &gpu.queue, gpu.format);
+    let mut renderer = NoteRenderer::new_onion_skin(
+        &gpu.device,
+        &gpu.queue,
+        gpu.format,
+        crate::GpuEpoch::INITIAL,
+    );
     renderer.set_view_state(&gpu.queue, 1, &[]);
     renderer.upload_instances(notes, &gpu.device, &gpu.queue);
 

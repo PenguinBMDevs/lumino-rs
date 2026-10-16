@@ -15,6 +15,7 @@
 use std::sync::Arc;
 
 use iced_wgpu::wgpu;
+use lumino_gfx::GpuEpoch;
 
 // 子模块
 mod ensure;
@@ -128,4 +129,14 @@ pub struct KeyboardRenderer {
     inst_w: u32,
     inst_h: u32,
     inst_keys: u32,
+    /// 创建时所属 GPU 代次（REND-019 PR-B：跨代次判废——调用方在 ensure
+    /// 路径比对 `gpu_epoch()`，失配即丢弃重建，走既有懒创建路径）
+    epoch: GpuEpoch,
+}
+
+impl KeyboardRenderer {
+    /// 创建时所属 GPU 代次（REND-019 PR-B）。
+    pub(crate) fn gpu_epoch(&self) -> GpuEpoch {
+        self.epoch
+    }
 }

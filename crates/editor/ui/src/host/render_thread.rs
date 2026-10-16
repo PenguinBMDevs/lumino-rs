@@ -24,6 +24,7 @@ impl Host {
             self.render_ctx.device.clone(),
             self.render_ctx.queue.clone(),
             self.render_ctx.format,
+            self.render_ctx.epoch,
             note_event_tx,
             note_event_rx,
             std::sync::Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),

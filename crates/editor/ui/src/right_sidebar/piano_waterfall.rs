@@ -128,6 +128,8 @@ pub(crate) struct WaterfallPlayerState {
     pub view: Option<Arc<wgpu::TextureView>>,
     /// 脏判断签名（尺寸 / 键数 / 缩放 / 滚动 / 主音轨 / 音符数任一变化即重绘）
     pub cached_signature: Option<u64>,
+    /// 缓存视图所属 GPU 代次（REND-019 PR-B：跨代次判废）
+    pub(crate) cached_epoch: Option<lumino_gfx::GpuEpoch>,
     /// 主内容区实际像素尺寸（由 `responsive` 布局回调写入，供离屏渲染定尺寸）
     pub size: std::cell::RefCell<Option<(u32, u32)>>,
 }
@@ -137,6 +139,7 @@ impl Default for WaterfallPlayerState {
         Self {
             view: None,
             cached_signature: None,
+            cached_epoch: None,
             size: std::cell::RefCell::new(None),
         }
     }

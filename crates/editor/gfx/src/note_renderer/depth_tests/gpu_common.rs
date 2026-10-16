@@ -315,7 +315,7 @@ pub(super) fn probe_region_depth(
         crate::NoteInstance::new(0.0, 60, 100.0, [1.0, 0.0, 0.0, 1.0], encode(2)),
     ];
 
-    let mut onion = NoteRenderer::new_onion_skin(device, queue, format);
+    let mut onion = NoteRenderer::new_onion_skin(device, queue, format, crate::GpuEpoch::INITIAL);
     onion.set_view_state(queue, 1, &[]);
     onion.upload_instances(&notes, device, queue);
     write_camera(&onion, queue);

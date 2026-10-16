@@ -52,7 +52,12 @@ pub struct WaterfallPipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    /// 当前绑定的离屏纹理视图（用于判定是否需要重建绑定组）
+    /// 当前绑定的离屏纹理视图（用于判定是否需要重建绑定组）。
+    ///
+    /// REND-019 PR-B：本缓存不单独登记 `GpuEpoch`——`Pipeline::new` 由 iced
+    /// 驱动、无 epoch 入参；判废链由上游承接：面板状态（`cached_epoch`）判废
+    /// 后丢弃旧视图 → 新图元携带新视图 → 本处 `cached_view` 不等即重建绑定组
+    /// （既有重建路径，E2）。
     cached_view: Option<Arc<wgpu::TextureView>>,
     /// 离屏纹理 → 采样器 的绑定组（随视图变化重建）
     bind_group: Mutex<Option<Arc<wgpu::BindGroup>>>,

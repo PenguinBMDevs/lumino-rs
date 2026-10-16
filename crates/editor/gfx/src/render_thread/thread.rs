@@ -11,6 +11,7 @@ use super::render_loop::run_render_thread;
 use super::render_loop::runner::context::{RenderContext, RenderThreadChannels};
 use super::stats::RenderStats;
 use crate::SwappableBuffer;
+use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedTexture;
 
 mod blit;
@@ -70,6 +71,9 @@ pub struct WgpuRenderThread {
     /// 洋葱皮通道降级标志（REND-019 PR-A §1.6）：通道满导致消息丢弃时置位，
     /// UI 侧每帧取走并强制下一次全量重建补发（防段表残缺）。
     onion_skin_degraded: Arc<AtomicBool>,
+    /// 本渲染线程所属 GPU 代次（REND-019 PR-B）：线程内全部渲染器 / 纹理 /
+    /// 导出管线均在该代次下创建；跨代次即整体判废、重建线程（PR-C）。
+    epoch: GpuEpoch,
 }
 
 /// 渲染线程退出守卫：Drop 即置 `alive = false`。
@@ -91,6 +95,7 @@ impl WgpuRenderThread {
     /// WGPU 渲染线程在后台将所有内容渲染到离屏纹理中，然后主线程将该纹理复制到 Surface。
     ///
     /// # 参数
+    /// - `epoch`: 渲染线程所属 GPU 代次（REND-019 PR-B；线程内资源登记基准）。
     /// - `note_event_sender`: 音符事件发送端，UI 线程通过它发送增量更新事件。
     ///   必须由调用方持有，不能立即 drop（否则通道死信）。
     /// - `note_events_rx`: 音符事件接收端，渲染线程通过 `process_events()` 消费。
@@ -98,6 +103,7 @@ impl WgpuRenderThread {
         device: wgpu::Device,
         queue: wgpu::Queue,
         texture_format: wgpu::TextureFormat,
+        epoch: GpuEpoch,
         note_event_sender: std::sync::mpsc::Sender<crate::NoteEvent>,
         note_events_rx: std::sync::mpsc::Receiver<crate::NoteEvent>,
         note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
@@ -133,7 +139,7 @@ impl WgpuRenderThread {
         let thread_handle = thread::spawn(move || {
             // REND-019（PR-A）：线程退出（正常 / 兜底）即置 alive=false
             let _alive_guard = AliveGuard(Arc::clone(&alive_clone));
-            let ctx = RenderContext::new(device, queue, texture_format);
+            let ctx = RenderContext::new(device, queue, texture_format, epoch);
             let channels = RenderThreadChannels {
                 running: running_clone,
                 command_receiver,
@@ -164,6 +170,7 @@ impl WgpuRenderThread {
             frame_sync,
             alive,
             onion_skin_degraded,
+            epoch,
         })
     }
 
@@ -275,6 +282,12 @@ impl WgpuRenderThread {
     /// `OnionSkinState::force_full_next()` 强制下一次全量重建补发。
     pub fn take_onion_skin_degraded(&self) -> bool {
         self.onion_skin_degraded.swap(false, Ordering::SeqCst)
+    }
+
+    /// 本渲染线程所属 GPU 代次（REND-019 PR-B）。
+    #[must_use]
+    pub fn epoch(&self) -> GpuEpoch {
+        self.epoch
     }
 
     /// 获取渲染统计
