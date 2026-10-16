@@ -267,6 +267,13 @@ impl RenderContext {
         };
         self.renderer = Renderer::new(engine, self.font, Pixels::from(16));
 
+        // REND-019：widget 树缓存与 iced 渲染器必须同代——换新 Renderer 时旧树
+        // 缓存（损伤追踪 / 字形与图像上传状态 / 布局缓存）与全新渲染器不匹配，
+        // 会导致「交互状态生效但画面不更新、文字间歇消失」等渲染陈旧/部分缺失
+        // （2026-10-17 实测：重连后切轨等状态变更不上屏）。整树重建——与
+        // `has_rendered_ui = false`（首帧全量渲染）配套。
+        self.cache = Cache::new();
+
         if self.note_renderer.is_some() {
             self.note_renderer = Some(lumino_gfx::NoteRenderer::new(
                 &gpu.device,

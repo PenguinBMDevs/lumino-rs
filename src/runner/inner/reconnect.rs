@@ -129,6 +129,10 @@ impl ReconnectOps<SharedGpu> for Runner {
             .ui_mut()
             .restart_render_thread_for_reconnect();
         this.window_state.window.window().request_redraw();
+        // REND-019：重连后窗口几何微扰——重建交换链 / DWM 组合关联。
+        // 实测：重连后输入/画面整体脱钩，任意一次真实尺寸变化（取消最大化 /
+        // 拖拽边缘）即整体恢复；见 `WindowManager::nudge_window_geometry` 注释。
+        this.window_state.window.nudge_window_geometry();
         Ok(())
     }
 

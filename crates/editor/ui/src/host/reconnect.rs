@@ -20,6 +20,8 @@ impl Host {
     pub fn rebind_gpu(&mut self, epoch: GpuEpoch, gpu: &SharedGpu) {
         self.render_ctx
             .rebind_gpu(epoch, gpu, &self.window_ctx.window);
+        // REND-019：重绑后强制下一帧全量重建 UI（渲染器/树缓存均已换代）
+        self.ui_dirty = true;
     }
 
     /// 重连：数据回放标记——洋葱皮强制全量重建（数据从文档重放）+ 内容脏。

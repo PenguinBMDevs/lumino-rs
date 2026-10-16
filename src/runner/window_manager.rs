@@ -32,6 +32,9 @@ pub struct WindowManager {
     /// `handle_window_actions` 检测到关闭请求且工程有未保存更改时置位，
     /// 由 Runner 在 `about_to_wait` 中读取并弹出保存确认对话框，置位后清空。
     pub(crate) deferred_save_confirm_close: bool,
+    /// REND-019：重连后窗口几何微扰的待恢复目标尺寸
+    /// （见 [`Self::nudge_window_geometry`]；`Some` = 微扰进行中）。
+    pending_size_restore: Option<winit::dpi::PhysicalSize<u32>>,
 }
 
 impl WindowManager {
@@ -107,6 +110,7 @@ impl WindowManager {
             cloud_saving,
             close_pending: false,
             deferred_save_confirm_close: false,
+            pending_size_restore: None,
         })
     }
 
@@ -130,6 +134,24 @@ impl WindowManager {
     pub(crate) fn rebind_gpu(&mut self, epoch: lumino_gfx::GpuEpoch, gpu: &lumino_gfx::SharedGpu) {
         self.gfx.rebind_device(epoch, gpu);
         self.ui.rebind_gpu(epoch, gpu);
+    }
+
+    /// REND-019（重连后"输入+画面脱钩"修复）：窗口几何微扰。
+    ///
+    /// 实测（2026-10-17，用户端 + 自动复现）：device 重建重连完成后，窗口进入
+    /// 「交换链 / DWM 组合关联失效」状态——状态机、日志、winit 事件交付全部
+    /// 正常，但**输入不再产生任何可见/状态效果、画面停在旧帧**；对窗口做
+    /// **任意一次真实尺寸变化**（取消最大化 / 拖拽到边缘）即整体恢复。
+    /// 对策：重连完成时主动把窗口宽度缩 4px，并在下一次 `Resized` 到达后恢复
+    /// 原尺寸——等效用户那次"尺寸变化解锁"，全程无可见副作用。
+    pub(crate) fn nudge_window_geometry(&mut self) {
+        let size = self.window.inner_size();
+        if size.width < 64 {
+            return;
+        }
+        self.pending_size_restore = Some(size);
+        let nudged = winit::dpi::PhysicalSize::new(size.width - 4, size.height);
+        let _ = self.window.request_inner_size(nudged);
     }
 
     /// 请求重绘窗口
@@ -202,6 +224,15 @@ impl WindowManager {
         size: winit::dpi::PhysicalSize<u32>,
         storage: &mut crate::storage::Storage,
     ) {
+        // REND-019：几何微扰的恢复步——首次收到扰动后的 `Resized` 即恢复原尺寸
+        // （一次真实尺寸变化即可重建交换链/DWM 关联；一次性，见
+        // [`Self::nudge_window_geometry`]）。
+        if let Some(target) = self.pending_size_restore
+            && (target.width != size.width || target.height != size.height)
+        {
+            self.pending_size_restore = None;
+            let _ = self.window.request_inner_size(target);
+        }
         storage.ui_state.patch(|state| {
             state.w = size.width;
             state.h = size.height;
