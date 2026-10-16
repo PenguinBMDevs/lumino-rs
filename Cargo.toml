@@ -307,7 +307,11 @@ opt-level = 3
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# REND-019（#152）：panic 必须为 unwind——wgpu 对已丢失设备的 present/discard 是
+# 绕不过错误处理器的 fatal panic；PR-C 的 with_frame 局部 catch_unwind（TDR 竞态
+# 窗口防护）与 PR-A 的渲染线程 catch_unwind 兜底都依赖 unwind 才能在正式构建生效。
+# 切回 abort 会让上述防护全部失效（同场景直接终止进程）。
+panic = "unwind"
 strip = true
 
 [build-dependencies]
@@ -346,7 +350,7 @@ lto = false                         # 禁用链接时优化（大幅减少链接
 codegen-units = 16                  # 增加并行代码生成单元（最大 16，加速编译）
 debug = 1                           # 行号表（函数名+行号），支持 backtrace 和 profiler
 strip = "none"                      # 保留符号用于调试分析（体积换调试能力）
-panic = "abort"                    # 使用 abort 而非 unwind（减少生成的代码量）
+panic = "unwind"                    # 与 release 一致：catch_unwind 防护（REND-019）依赖 unwind
 incremental = true                 # 启用增量编译（对多次构建友好）
 
 [workspace.lints.clippy]
