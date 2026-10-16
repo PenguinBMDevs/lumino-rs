@@ -244,20 +244,23 @@ fn debug_dump_dialog_layout_tree() {
     };
 
     let ui_config = UiConfig::default();
-    for (dialog_type, layout_width) in [
-        (DialogType::BatchEdit, 247.0_f32),
-        (DialogType::BatchEdit, 480.0),
-        (DialogType::SaveConfirm, 247.0),
-    ] {
-        let root = Root::new_dialog_with_config(&ui_config.theme, dialog_type, &ui_config);
-        let hint = dialog_size_hint(dialog_type);
-        let cap = dialog_preferred_size::measurement_cap(hint, WORK_AREA);
 
-        let limits = iced_core::layout::Limits::new(
-            Size::new(layout_width, 0.0),
-            Size::new(layout_width, cap),
-        )
-        .height(iced_core::Length::Shrink);
+    // (设置页, 只 dump 该先序下标的子树) —— 下标与 `edge` 诊断报告的 `#N` 一一对应
+    for (page, focus) in [
+        (1usize, 130usize),
+        (1, 133),
+        (1, 134),
+        (2, 501),
+        (2, 504),
+        (2, 505),
+    ] {
+        let mut root =
+            Root::new_dialog_with_config(&ui_config.theme, DialogType::Settings, &ui_config);
+        root.settings.selected_menu_index = page;
+
+        let window_size =
+            super::decide_dialog_window_size(&root, &renderer, DialogType::Settings, WORK_AREA);
+        let limits = iced_core::layout::Limits::new(Size::ZERO, window_size);
 
         let mut element = root.view();
         let mut tree = iced_core::widget::Tree::new(&element);
@@ -265,36 +268,65 @@ fn debug_dump_dialog_layout_tree() {
             .as_widget_mut()
             .layout(&mut tree, &renderer, &limits);
 
-        let squeezed = measure_width_baseline(|| root.view(), &renderer, 1920.0, cap)
-            .and_then(|baseline| {
-                measure_is_squeezed(|| root.view(), &renderer, layout_width, cap, &baseline)
-            })
-            .unwrap_or(false);
-
         println!(
-            "=== {dialog_type:?} @w={layout_width} root={:?} 被压窄={squeezed}",
-            node.size()
+            "=== Settings 页 {page} 窗口 {:.0}×{:.0} 焦点 #{focus}",
+            window_size.width, window_size.height
         );
-        dump(&node, 1);
+        let mut counter = 0;
+        dump(&node, 1, Some(focus), &mut counter, (0, 1));
     }
 }
 
-fn dump(node: &iced_core::layout::Node, depth: usize) {
-    if depth > 9 {
-        return;
+/// 打印布局树，只保留**焦点节点的祖先链**（其余略过）
+///
+/// 每行形如 `#130[3/16] size=(392,31) 子节点=3`：`[i/n]` 是该节点在父节点里的
+/// 兄弟序号 / 兄弟总数——用来把违规节点映射回源码里第 i 个 `push(...)` / `row![...]`。
+fn dump(
+    node: &iced_core::layout::Node,
+    depth: usize,
+    focus: Option<usize>,
+    counter: &mut usize,
+    sibling: (usize, usize),
+) {
+    let index = *counter;
+    *counter += 1;
+
+    let mut size = 0;
+    subtree_size(node, &mut size);
+    let covers_focus = focus.is_none_or(|focus| focus >= index && focus < index + size);
+
+    if covers_focus || focus.is_none() {
+        let bounds = node.bounds();
+        println!(
+            "{:indent$}#{index}[{}/{}] size=({:.1},{:.1}) 子节点={}",
+            "",
+            sibling.0,
+            sibling.1,
+            bounds.width,
+            bounds.height,
+            node.children().len(),
+            indent = depth * 2
+        );
     }
-    let bounds = node.bounds();
-    println!(
-        "{:indent$}size=({:.1},{:.1}) at=({:.1},{:.1}) 右={:.1}",
-        "",
-        bounds.width,
-        bounds.height,
-        bounds.x,
-        bounds.y,
-        bounds.x + bounds.width,
-        indent = depth * 2
-    );
+
+    let sibling_count = node.children().len();
+    // 到达焦点后，把它的整棵子树都打出来（否则只打祖先链）
+    let dump_all = focus == Some(index);
+
+    for (sibling_index, child) in node.children().iter().enumerate() {
+        dump(
+            child,
+            depth + 1,
+            if dump_all { None } else { focus },
+            counter,
+            (sibling_index, sibling_count),
+        );
+    }
+}
+
+fn subtree_size(node: &iced_core::layout::Node, size: &mut usize) {
+    *size += 1;
     for child in node.children() {
-        dump(child, depth + 1);
+        subtree_size(child, size);
     }
 }

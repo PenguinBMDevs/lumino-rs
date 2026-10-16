@@ -15,7 +15,10 @@ use lumino_extras::palette::PaletteColor;
 /// 调色板预览颜色条的大小
 const SWATCH_SIZE: f32 = 28.0;
 /// 每行显示的色块数量
-const SWATCHES_PER_ROW: usize = 16;
+///
+/// 必须让一行放得下：`n × 28 + (n-1) × 2 ≤` 内容区宽度（设置窗口 720 时内容区
+/// 有效宽约 372）。16 个时需 478 ⇒ 末尾色块被压成 0（实测）。12 个需 358，留有余量。
+const SWATCHES_PER_ROW: usize = 12;
 /// 色块之间的间距
 const SWATCH_SPACING: f32 = 2.0;
 
@@ -74,7 +77,8 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
             with_setting_tooltip_inline(
                 text(t.palette_select)
                     .size(TEXT_SIZE_CONTENT)
-                    .style(create_content_text_style()),
+                    .style(create_content_text_style())
+                    .width(Length::Fill),
                 t.palette_hint,
             ),
             iced_widget::space().width(SPACING_MAIN),
