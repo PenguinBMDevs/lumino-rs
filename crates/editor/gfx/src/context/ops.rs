@@ -25,11 +25,26 @@ impl Context {
     ///
     /// Surface 挂在同一 `Instance` 上（重连复用 instance），无需重建——
     /// 换 device/queue 克隆 + 按既有交换链配置重配即可恢复（E2）。
+    ///
+    /// ⚠️ **configure 必须调用两次**（两处均为有意为之，禁止「优化」成一次；
+    /// R2 fast-release 冒烟 2026-10-16 实测）：TDR 时若有帧在途，「跳过
+    /// present」后帧对象 Drop 走 `discard()`，而 wgpu-core-27.0.3
+    /// `Surface::discard`（`present.rs:333-338`）在 `device.check_is_valid()`
+    /// （设备已丢）处提前失败——已取得的 `acquired_texture` **永不被释放**。
+    /// 此时首次 `configure` 在 `surface_configure`（`device/global.rs:2021-2026`）
+    /// 撞上残留报 `PreviousOutputExists`，且该路径**已先 `take()` 掉旧
+    /// presentation**：失败后 surface 进入「无 presentation」永久未配置态 →
+    /// 此后每帧 `get_current_texture` 报 `NotConfigured`（错误走 uncaptured
+    /// handler），调用方按本帧放弃重试 → 约 6kHz 空转刷日志、渲染永不恢复。
+    /// 第二次 `configure` 时残留已随 `take()` 一并清除，必然成功安装新配置；
+    /// 首配无残留时第二次为幂等重配（重连低频路径，代价可忽略）。
     pub fn rebind_device(&mut self, epoch: GpuEpoch, gpu: &crate::SharedGpu) {
         self.adapter = gpu.adapter.clone();
         self.device = gpu.device.clone();
         self.queue = gpu.queue.clone();
         self.epoch = epoch;
+        self.surface.configure(&self.device, &self.surface_config);
+        // 第二次 configure：首配若因 TDR 残留失败，此时残留已被 take 清除（见上方 ⚠️）
         self.surface.configure(&self.device, &self.surface_config);
         tracing::info!("Context 已重绑到新 device：epoch = {}", epoch.0);
     }
