@@ -113,8 +113,14 @@ impl Host {
         // RedrawRequested → handle_dialog_event → dialog.redraw() 的无用自循环。
         {
             puffin::profile_scope!("update_ui_state");
-            let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
-            if (has_state_change || is_ui_updated) && self.render_ctx.note_renderer.is_some() {
+            // REND-019（重连后自旋修复）：仅 `has_state_change` 强制下一帧；
+            // Updated 的重绘需求以 iced 的 `redraw_request` 为准——
+            // `NextFrame` / `At` 由 handle_redraw_request 驱动（含 ui_dirty 置位），
+            // 纯 `Wait` 的 Updated **不得**自触发重绘。
+            // 背景（实测 2026-10-17）：重连后 iced 每帧返回 `Updated{Wait}`，
+            // 旧条件 `(has_state_change || is_ui_updated)` 形成 ~1100fps 全量
+            // UI 重建 + 重绘风暴（主线程 100%、R2「CPU 非空转」准出项失守）。
+            if has_state_change && self.render_ctx.note_renderer.is_some() {
                 self.ui_dirty = true;
                 self.window_ctx.window.request_redraw();
             }

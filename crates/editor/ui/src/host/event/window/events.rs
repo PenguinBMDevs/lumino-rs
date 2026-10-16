@@ -136,13 +136,20 @@ impl Host {
         }
 
         // 构建 UI 并处理事件；同时取回 iced 是否需要下一帧（State::Updated）
-        let (messages, is_ui_updated) = self.build_ui_and_process_events();
+        let (messages, _is_ui_updated) = self.build_ui_and_process_events();
 
         // 处理消息并检查状态变更
         let has_state_change = self.handle_event_messages(messages);
 
-        // 仅当状态变更或 iced 需续帧时才请求重绘
-        self.update_ui_state(has_state_change || is_ui_updated);
+        // REND-019（重连后自旋修复）：续帧语义以 iced 的 `redraw_request` 为准——
+        // `NextFrame` / `At` 已由 `build_ui_and_process_events` 内的
+        // `handle_redraw_request` 驱动（含 ui_dirty 置位）；纯 `Wait` 的
+        // `State::Updated` 不得再触发请求。
+        // 背景（实测 2026-10-17）：重连后 iced 每帧返回 `Updated{Wait}`，
+        // 而 RedrawRequested 会经 `convert_and_queue_window_event` 每帧入队
+        // （`is_redraw_requested` 只挡了"再请求"，没挡入队）→ 事件队列恒非空
+        // → 每帧全量重建 + `Updated` 再请求 → ~数百 fps 重建/重绘风暴。
+        self.update_ui_state(has_state_change);
     }
 
     /// 构建 UI 界面并处理事件，返回产生的消息
