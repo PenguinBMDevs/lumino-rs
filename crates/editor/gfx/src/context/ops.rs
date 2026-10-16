@@ -107,9 +107,45 @@ impl Context {
 
         f(&frame, &view);
 
-        {
-            puffin::profile_scope!("present");
-            frame.present();
+        // REND-019 PR-C 硬化（R2 冒烟实测崩溃根因）：
+        // 对已丢失设备 present 或 discard 均走 wgpu `handle_error_fatal` 内部 panic
+        // （"Parent device is lost"，绕不过未捕获错误处理器）；若 panic 向上展开，
+        // 外层（Runner 析构）的 Surface 信号量校验会二次 panic → abort。
+        // 此处**局部** catch_unwind 截断展开：命中即按设备丢失处理（置停帧标志 +
+        // 返回 Lost 错误，交调用方 `handle_frame_error` → Stop，既有连接管）。
+        // 依据（wgpu 27.0.1 `api/surface_texture.rs`）：`present(mut self)` 先置
+        // `presented = true` 再调用 fatal 路径——展开时 Drop 跳过 discard；
+        // 局部截断保证不会有二次 panic 逃逸。
+        // 说明：release（panic = "abort"）下本防护失效——见 PR-C 实施记录「已知限制」。
+        let present_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            {
+                puffin::profile_scope!("present_poll_lost_check");
+                // poll 在轮询阶段**同步送达** device-lost 回调（R1 实测不变量：
+                // destroy 后单次 poll 即置位停帧标志；poll 自身返回 Ok，不作依据）——
+                // 标志命中则丢弃本帧、跳过 present，交重连接管。
+                let _ = self.device.poll(wgpu::PollType::Poll);
+            }
+            if device_status::device_lost() {
+                tracing::warn!("with_frame：设备已丢失，跳过 present（本帧丢弃，交重连接管）");
+                drop(frame); // 可能触发 discard fatal → 由外层 catch 截断
+                return;
+            }
+            {
+                puffin::profile_scope!("present");
+                frame.present(); // 对丢失设备 fatal → 由外层 catch 截断
+            }
+        }));
+        if let Err(payload) = present_outcome {
+            let detail = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "未知 panic 载荷".to_string());
+            tracing::error!(
+                "with_frame：present/discard 触发 wgpu fatal panic（设备丢失在途）——按设备丢失处理: {detail}"
+            );
+            device_status::mark_device_lost();
+            return Err(ContextError::FrameAcquisition(wgpu::SurfaceError::Lost));
         }
 
         Ok(())

@@ -107,3 +107,65 @@ fn test_reconnect_r1_destroy_triggers_callback_and_flag() {
 
     reset_for_test();
 }
+
+/// R1 扩展（REND-019 PR-C present 硬化前置不变量）：
+/// `destroy()` 后**单次 `poll` 必须同步送达 device-lost 回调**（置位停帧标志）。
+///
+/// 实测背景：`poll` 对丢失设备返回 `Ok(QueueEmpty)`（不报错）——present 前的
+/// 探测不能依赖其返回值，只能依赖「poll 处理阶段同步触发回调」这一副作用。
+/// 若此不变量不成立，present 硬化需更换探测通道。
+#[test]
+fn test_reconnect_r1_poll_delivers_lost_callback_sync() {
+    use futures::executor::block_on;
+
+    let _guard = lock_flag_tests();
+    reset_for_test();
+
+    // 独立设备（禁共享，同 R1 约束）
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: false,
+        ..Default::default()
+    }))
+    .expect("独立适配器应可用（硬件或 CI 软渲染）");
+    let (device, _queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("r1_poll_probe_device"),
+        required_features: adapter.features() & wgpu::Features::default(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: wgpu::MemoryHints::default(),
+        trace: wgpu::Trace::Off,
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+    }))
+    .expect("独立设备请求失败");
+
+    device.on_uncaptured_error(Arc::new(|err| {
+        eprintln!("[R1 poll 探测测试] 捕获错误: {err}");
+    }));
+
+    let captured: Arc<Mutex<Vec<wgpu::DeviceLostReason>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let captured = Arc::clone(&captured);
+        device.set_device_lost_callback(move |reason, _message| {
+            if let Ok(mut v) = captured.lock() {
+                v.push(reason);
+            }
+            super::mark_device_lost();
+        });
+    }
+
+    device.destroy();
+
+    // 关键断言：单次 poll（返回 Ok 也无妨）即应同步送达回调 → 停帧标志置位
+    let poll_result = device.poll(wgpu::PollType::Poll);
+    let delivered = captured.lock().map(|v| !v.is_empty()).unwrap_or(false);
+    assert!(
+        delivered,
+        "destroy 后单次 poll 应同步送达 lost 回调（poll 结果: {poll_result:?}）"
+    );
+    assert!(
+        device_lost(),
+        "回调应在 poll 轮询内同步置位全局 DEVICE_LOST 标志"
+    );
+
+    reset_for_test();
+}
