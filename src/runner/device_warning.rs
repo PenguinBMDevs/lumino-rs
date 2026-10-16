@@ -109,11 +109,14 @@ impl DeviceWarningWindow {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut ui) = self.ui
                     && let Some(ref gfx) = self.gfx
-                    && gfx
-                        .with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
-                        .is_err()
+                    && let Err(e) =
+                        gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
                 {
-                    window.request_redraw();
+                    // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排
+                    // 重绘；Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
+                    if gfx.handle_frame_error(&e).should_redraw() {
+                        window.request_redraw();
+                    }
                 }
                 // 应用自制标题栏产生的窗口动作（关闭/最小化/拖动）
                 // 必须在 redraw（事件队列已消费）之后调用

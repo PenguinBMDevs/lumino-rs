@@ -26,8 +26,30 @@ use arrangement::prepare_arrangement_note_data;
 use deferred_commands::process_deferred_commands;
 use onion_stream::drain_onion_skin_stream;
 
-/// 运行渲染线程主循环
+/// 运行渲染线程主循环（panic 兜底外层）。
+///
+/// REND-019（PR-A §1.6）：渲染循环 panic 不得裸逃逸——外层 `catch_unwind`
+/// 捕获后置位停帧标志并统一收尾（错误响应兜底）。注意 release
+/// （`panic = "abort"`）下进程终止由 profile 兜底，catch_unwind 覆盖
+/// unwind 构建（debug / CI）。
 pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_render_thread_inner(ctx, channels);
+    }));
+    if let Err(payload) = result {
+        let detail = payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "未知 panic 载荷".to_string());
+        tracing::error!("渲染线程 panic 被兜底捕获：{detail}；置位停帧标志（错误响应兜底）");
+        crate::device_status::mark_device_lost();
+    }
+    tracing::info!("Render thread stopped");
+}
+
+/// 渲染线程主循环实现（由 [`run_render_thread`] 以兜底方式调用）。
+fn run_render_thread_inner(ctx: RenderContext, channels: RenderThreadChannels) {
     tracing::info!("Render thread started");
 
     // 初始化渲染器
@@ -75,6 +97,15 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         std::sync::mpsc::sync_channel::<WaterfallStreamMsg>(1);
 
     while channels.running.load(Ordering::Relaxed) {
+        // REND-019（PR-A §1.6）：每轮首行检查停帧标志——设备丢失（TDR）后
+        // 不再对死设备发命令，有序退出（资源随作用域统一释放；running 置
+        // false 供外部感知；重连接管由 PR-C 接管）。
+        if crate::device_status::device_lost() {
+            tracing::error!("DEVICE_LOST 置位：渲染线程有序退出（等待重连接管）");
+            channels.running.store(false, Ordering::Relaxed);
+            break;
+        }
+
         // 处理命令
         let mut latest_params: Option<RenderParams> = None;
         let mut should_shutdown = false;
@@ -249,6 +280,4 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             }
         }
     }
-
-    tracing::info!("Render thread stopped");
 }

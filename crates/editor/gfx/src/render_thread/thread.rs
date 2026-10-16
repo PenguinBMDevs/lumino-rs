@@ -64,6 +64,24 @@ pub struct WgpuRenderThread {
     outgoing_frame: AtomicU64,
     /// 帧同步原语（渲染线程写 `rendered_frame` + notify，UI 线程 `wait_for_frame`）
     frame_sync: FrameSync,
+    /// 渲染线程存活标志（REND-019 PR-A §1.6）：线程退出（含兜底捕获）即置
+    /// false——发送侧快速失败，避免向已退出的线程投递消息。
+    alive: Arc<AtomicBool>,
+    /// 洋葱皮通道降级标志（REND-019 PR-A §1.6）：通道满导致消息丢弃时置位，
+    /// UI 侧每帧取走并强制下一次全量重建补发（防段表残缺）。
+    onion_skin_degraded: Arc<AtomicBool>,
+}
+
+/// 渲染线程退出守卫：Drop 即置 `alive = false`。
+///
+/// 覆盖正常返回与 `catch_unwind` 兜底两条路径；release（`panic = abort`）
+/// 下进程终止由 profile 兜底。
+struct AliveGuard(Arc<AtomicBool>);
+
+impl Drop for AliveGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 impl WgpuRenderThread {
@@ -93,6 +111,9 @@ impl WgpuRenderThread {
         let waterfall_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
         // 帧同步原语：渲染线程渲染完成后写入 rendered_frame 并 notify
         let frame_sync: FrameSync = Arc::new((Mutex::new(0u64), Condvar::new()));
+        // REND-019（PR-A）：渲染线程存活标志 + 洋葱皮降级标志
+        let alive = Arc::new(AtomicBool::new(true));
+        let onion_skin_degraded = Arc::new(AtomicBool::new(false));
 
         // 洋葱皮流式上传 channel（容量 3 块 × 800 万实例/块 = 2400 万实例在途，最坏 ~384 MB）
         let (onion_skin_streaming_tx, onion_skin_streaming_rx) =
@@ -106,9 +127,12 @@ impl WgpuRenderThread {
         let note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>> = Arc::new(Mutex::new(None));
         let note_data_pub_clone = Arc::clone(&note_data_pub);
         let frame_sync_clone = Arc::clone(&frame_sync);
+        let alive_clone = Arc::clone(&alive);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
+            // REND-019（PR-A）：线程退出（正常 / 兜底）即置 alive=false
+            let _alive_guard = AliveGuard(Arc::clone(&alive_clone));
             let ctx = RenderContext::new(device, queue, texture_format);
             let channels = RenderThreadChannels {
                 running: running_clone,
@@ -138,6 +162,8 @@ impl WgpuRenderThread {
             note_data_pub,
             outgoing_frame: AtomicU64::new(0),
             frame_sync,
+            alive,
+            onion_skin_degraded,
         })
     }
 
@@ -182,6 +208,10 @@ impl WgpuRenderThread {
     ///
     /// 带超时（100ms）防死锁：渲染线程异常时不无限阻塞 UI；超时后退回"落后一帧"，
     /// 下一帧 redraw 会补齐（与旧行为一致，不会更差）。
+    ///
+    /// REND-019（PR-A §1.6）：调用方在返回后必须复查
+    /// [`crate::device_lost`]——置位时本帧放弃 blit（见
+    /// `host/render/separate_thread/core.rs`）。
     pub fn wait_for_frame(&self, frame_id: u64) {
         let (mtx, cvar) = &*self.frame_sync;
         // 锁中毒时退化为不等待（直接 present 旧帧），不放大故障
@@ -231,6 +261,22 @@ impl WgpuRenderThread {
         self.note_event_sender.is_some()
     }
 
+    /// 渲染线程是否存活（REND-019 PR-A）。
+    ///
+    /// 线程主循环退出（含 panic 兜底路径）即置 false——发送侧据此快速失败。
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
+    }
+
+    /// 取走洋葱皮降级标志（REND-019 PR-A）。
+    ///
+    /// 返回 true 表示此前有洋葱皮消息因通道满被丢弃——UI 侧应调用
+    /// `OnionSkinState::force_full_next()` 强制下一次全量重建补发。
+    pub fn take_onion_skin_degraded(&self) -> bool {
+        self.onion_skin_degraded.swap(false, Ordering::SeqCst)
+    }
+
     /// 获取渲染统计
     pub fn stats(&self) -> RenderStats {
         self.stats.lock().map(|s| s.clone()).unwrap_or_default()
@@ -259,19 +305,34 @@ impl WgpuRenderThread {
     /// 发送洋葱皮上传消息（全量会话：Chunk + Done；事件级增量：TrackDelta）
     ///
     /// 全量会话：UI 线程分块构建后发送若干 `Chunk{track_id, instances}`，
-    /// 最后发送 `Done`。sync_channel(3) 背压：channel 满时阻塞 UI 线程，
-    /// 等渲染线程消费后继续。
+    /// 最后发送 `Done`。
     ///
     /// 事件级增量：编辑非当前/非静音音轨时，只发送
     /// `TrackDelta{track_id, instances}`（该音轨段整体替换）。
+    ///
+    /// REND-019（PR-A §1.6）：**禁止裸 `send`**——渲染线程卡死（TDR / GPU 挂起）
+    /// 时满通道 `send` 会永久阻塞 UI 线程（死锁兑现路径）。改为 `try_send`：
+    /// - 线程已退出（alive=false）→ 快速失败丢弃；
+    /// - 通道满 → 本消息丢弃并置位降级标志（UI 侧下一步强制全量重建补发）；
+    /// - 通道断开 → 丢弃并告警。
     pub fn send_onion_skin_msg(&self, msg: crate::OnionSkinStreamMsg) {
-        if let Some(ref sender) = self.onion_skin_streaming_sender
-            && let Err(e) = sender.send(msg)
-        {
-            tracing::warn!(
-                "Failed to send onion skin msg (render thread closed?): {}",
-                e
-            );
+        if !self.is_alive() {
+            tracing::warn!("洋葱皮消息丢弃：渲染线程已退出");
+            return;
+        }
+        let Some(ref sender) = self.onion_skin_streaming_sender else {
+            tracing::warn!("洋葱皮消息丢弃：发送端已释放（已 shutdown）");
+            return;
+        };
+        match sender.try_send(msg) {
+            Ok(()) => {}
+            Err(std::sync::mpsc::TrySendError::Full(_)) => {
+                self.onion_skin_degraded.store(true, Ordering::SeqCst);
+                tracing::warn!("洋葱皮通道满：本消息丢弃并置位降级标志（下一步强制全量重建补发）");
+            }
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                tracing::warn!("洋葱皮消息丢弃：渲染线程通道已断开");
+            }
         }
     }
 

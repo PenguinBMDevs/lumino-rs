@@ -14,6 +14,10 @@ pub mod constants;
 mod context;
 /// 无头 GPU 兼容性检测（首启设备检查 / 设置页手动检查）
 pub mod device_check;
+/// 设备丢失 / 停帧状态（REND-019 PR-A 先行防护：全局标志 + 回调置位）
+pub mod device_status;
+/// 帧错误统一收口（REND-019 PR-A §1.6：5 处 with_frame 调用点分类处置）
+pub mod frame_error;
 mod global_bucket;
 mod gpu_note_buffer;
 mod gpu_resource_tracker;
@@ -55,6 +59,8 @@ pub use device_check::{
     FallbackDiagnostics, GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
     debug_force_fail_requested, required_backend_name, run_check_with_timeout,
 };
+pub use device_status::{device_lost, mark_device_lost};
+pub use frame_error::{FrameErrorAction, classify_frame_error};
 pub(crate) use global_bucket::readback_bytes_sync;
 pub use global_bucket::{
     BucketSource, CullActiveParams, CullExtract, CullWindow, GlobalBucketError, GlobalBucketIndex,

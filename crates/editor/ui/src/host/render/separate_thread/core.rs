@@ -110,6 +110,13 @@ impl Host {
                 puffin::profile_scope!("wait_for_frame");
                 wgpu_thread.wait_for_frame(frame_id);
             }
+            // REND-019（PR-A §1.6）：等待返回后必须复查设备丢失——置位则本帧
+            // 放弃 blit（禁止向死设备提交拷贝，重连由上层接管），同时跳过
+            // iced 覆盖层渲染（同一死设备）。
+            if lumino_gfx::device_lost() {
+                tracing::warn!("device lost 置位：本帧放弃 blit 与 iced 渲染（等待重连）");
+                return;
+            }
             wgpu_thread.copy_offscreen_to_surface(frame, &gfx.device, &gfx.queue);
         }
 

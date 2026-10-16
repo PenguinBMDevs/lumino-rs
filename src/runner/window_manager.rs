@@ -177,12 +177,15 @@ impl WindowManager {
             self.resized = false;
         }
 
-        if self
+        if let Err(e) = self
             .gfx
             .with_frame(|frame, view| self.ui.redraw_requested(frame, view, &self.gfx))
-            .is_err()
         {
-            self.window.request_redraw();
+            // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排重绘；
+            // Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
+            if self.gfx.handle_frame_error(&e).should_redraw() {
+                self.window.request_redraw();
+            }
         }
     }
 

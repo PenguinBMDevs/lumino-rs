@@ -10,13 +10,13 @@ impl DialogWindow {
             return;
         }
 
-        if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut()) {
-            match gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx)) {
-                Ok(_) => {}
-                Err(_) => {
-                    self.window.request_redraw();
-                }
-            }
+        // REND-019（PR-A §1.6）：统一帧错误处置——Outdated 已重配 /
+        // Timeout 下帧重试可重绘；Lost/OOM 置停帧标志（禁止盲重绘）
+        if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut())
+            && let Err(e) = gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
+            && gfx.handle_frame_error(&e).should_redraw()
+        {
+            self.window.request_redraw();
         }
     }
 

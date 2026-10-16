@@ -272,6 +272,18 @@ impl Host {
     ///
     /// 2026-08 单一权威源：音符数据一律从 `document` 读取（track_notes 缓存已删除）。
     pub(super) fn stream_onion_skin_instances(&mut self) {
+        // REND-019（PR-A §1.6）：上一帧有洋葱皮消息因通道满被丢弃 →
+        // 先于决策强制全量重建补发（防增量命中残缺段表）
+        if self
+            .render_ctx
+            .wgpu_render_thread
+            .as_ref()
+            .is_some_and(|t| t.take_onion_skin_degraded())
+        {
+            tracing::warn!("[onion-skin] 上一帧通道满丢弃：强制全量重建补发");
+            self.render_ctx.onion_skin_state.force_full_next();
+        }
+
         // 注：走带模式不再跳过流式上传。
         // 走带音符层直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存），
         // 必须让该共享缓冲在走带模式下也保持常驻（全量一次上传，编辑走增量），

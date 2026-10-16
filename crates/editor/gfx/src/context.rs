@@ -1,6 +1,9 @@
 use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
+use crate::device_status;
+use crate::frame_error::{FrameErrorAction, classify_frame_error};
+
 /// 根据可用的 present modes 选择最优的 present mode
 ///
 /// macOS 上使用 Mailbox 优先策略（2026-04-24）：
@@ -181,8 +184,9 @@ pub struct Context {
     pub device: wgpu::Device,
     /// 当前 surface 纹理格式（优先 sRGB）
     pub format: wgpu::TextureFormat,
-    /// 当前呈现模式（同步用，`resize` 时复用）
-    present_mode: wgpu::PresentMode,
+    /// 当前交换链配置（REND-019 PR-A：`resize` 与 `handle_frame_error` 的
+    /// Outdated 重配共用同一份，避免两处拼装 `SurfaceConfiguration` 漂移）
+    surface_config: wgpu::SurfaceConfiguration,
 }
 
 impl Context {
@@ -233,9 +237,12 @@ impl Context {
                 gpu.device.on_uncaptured_error(Arc::new(|err| {
                     tracing::error!("wgpu uncaptured error: {err}")
                 }));
-                gpu.device.set_device_lost_callback(|reason, msg| {
-                    tracing::error!("wgpu device lost: {reason:?} — {msg}")
-                });
+                // REND-019（PR-A）：回调置位全局停帧标志（红线 C1：只做日志 +
+                // 原子写，禁止 wgpu 调用 / 锁 / 阻塞发送）。渲染线程与 UI 侧
+                // 依据该标志停止对死设备的盲重试；PR-C 将在此接线事件循环
+                // 通知与重连状态机。
+                gpu.device
+                    .set_device_lost_callback(device_status::on_device_lost);
                 let gpu = Arc::new(gpu);
                 let _ = SHARED_GPU.set(Ok(Arc::clone(&gpu)));
                 gpu
@@ -270,22 +277,20 @@ impl Context {
         };
         let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
 
-        surface.configure(
-            &shared.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-                format,
-                width,
-                height,
-                present_mode,
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats,
-                // 收紧帧延迟以减少输入延迟（见 desired_maximum_frame_latency 说明）：
-                // 该值直接决定 UI 能领先 GPU 多少帧，也就决定全量音符渲染在
-                // GPU 队列里堆积的深度。
-                desired_maximum_frame_latency: desired_maximum_frame_latency(),
-            },
-        );
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            format,
+            width,
+            height,
+            present_mode,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats,
+            // 收紧帧延迟以减少输入延迟（见 desired_maximum_frame_latency 说明）：
+            // 该值直接决定 UI 能领先 GPU 多少帧，也就决定全量音符渲染在
+            // GPU 队列里堆积的深度。
+            desired_maximum_frame_latency: desired_maximum_frame_latency(),
+        };
+        surface.configure(&shared.device, &surface_config);
 
         Ok(Self {
             surface,
@@ -293,7 +298,7 @@ impl Context {
             queue: shared.queue.clone(),
             device: shared.device.clone(),
             format,
-            present_mode,
+            surface_config,
         })
     }
 
@@ -319,29 +324,12 @@ impl Context {
             return;
         }
         let max_dim = self.device.limits().max_texture_dimension_2d;
-        let width = width.min(max_dim);
-        let height = height.min(max_dim);
-
-        let linear_view_format = match self.format {
-            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
-            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
-            _ => None,
-        };
-        let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
-
-        self.surface.configure(
-            &self.device,
-            &wgpu::SurfaceConfiguration {
-                format: self.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-                width,
-                height,
-                present_mode: self.present_mode,
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats,
-                desired_maximum_frame_latency: desired_maximum_frame_latency(),
-            },
-        );
+        // REND-019（PR-A）：就地更新保存的交换链配置——与
+        // `handle_frame_error` 的 Outdated 重配共用同一份（视图格式 /
+        // 呈现模式等不再两处重复拼装）。
+        self.surface_config.width = width.min(max_dim);
+        self.surface_config.height = height.min(max_dim);
+        self.surface.configure(&self.device, &self.surface_config);
     }
 
     /// 获取当前交换链帧并在其上执行一次绘制。
@@ -353,7 +341,8 @@ impl Context {
     ///
     /// # 返回值
     /// * `Ok(())` — 回调执行成功
-    /// * `Err(ContextError::FrameAcquisition)` — 获取帧失败
+    /// * `Err(ContextError::FrameAcquisition)` — 获取帧失败；REND-019（PR-A）
+    ///   起调用方必须经 [`Context::handle_frame_error`] 分类处置，禁止盲重绘
     pub fn with_frame(
         &self,
         f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),
@@ -392,5 +381,38 @@ impl Context {
         }
 
         Ok(())
+    }
+
+    /// REND-019（PR-A §1.6）：统一帧错误处置入口——5 处 `with_frame`
+    /// 调用点收口，替代原先对 `Err` 一律盲 `request_redraw` 的重试。
+    ///
+    /// 动作语义见 [`FrameErrorAction`]：
+    /// - `Outdated` → 按保存的交换链配置重新 configure（`Reconfigured`）；
+    /// - `Timeout` → 本帧放弃（`SkipFrame`）；
+    /// - `Lost` / `OutOfMemory` → 置停帧标志等重连（`Stop`，禁止盲重绘）。
+    ///
+    /// 调用方约定：`action.should_redraw()` 为 true 时安排一次重绘。
+    #[must_use]
+    pub fn handle_frame_error(&self, err: &ContextError) -> FrameErrorAction {
+        let ContextError::FrameAcquisition(surface_err) = err else {
+            // with_frame 只产出 FrameAcquisition；其他变体按本帧放弃处理
+            tracing::warn!("handle_frame_error：非帧获取类错误按本帧放弃处理: {err}");
+            return FrameErrorAction::SkipFrame;
+        };
+        let action = classify_frame_error(surface_err);
+        match action {
+            FrameErrorAction::Reconfigured => {
+                tracing::warn!("Surface Outdated：按现有配置重新 configure 交换链");
+                self.surface.configure(&self.device, &self.surface_config);
+            }
+            FrameErrorAction::SkipFrame => {
+                tracing::debug!("Surface Timeout：本帧放弃，下一帧重试");
+            }
+            FrameErrorAction::Stop => {
+                tracing::error!("Surface {surface_err:?}：置停帧标志，等待重连接管（禁止盲重绘）");
+                device_status::mark_device_lost();
+            }
+        }
+        action
     }
 }
