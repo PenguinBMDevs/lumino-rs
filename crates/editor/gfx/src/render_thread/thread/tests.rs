@@ -1,6 +1,5 @@
-use super::{
-    ControlCommand, OnionSendOutcome, RenderCommand, RenderParams, RenderStats, send_with_timeout,
-};
+use super::onion_send::{OnionSendOutcome, send_with_timeout};
+use super::{ControlCommand, RenderCommand, RenderParams, RenderStats};
 
 #[test]
 fn test_render_params_default() {
