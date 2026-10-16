@@ -43,7 +43,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "未知 panic 载荷".to_string());
         tracing::error!("渲染线程 panic 被兜底捕获：{detail}；置位停帧标志（错误响应兜底）");
-        crate::device_status::mark_device_lost();
+        let _ = crate::device_status::mark_device_lost();
     }
     tracing::info!("Render thread stopped");
 }

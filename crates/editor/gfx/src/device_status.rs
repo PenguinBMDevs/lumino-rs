@@ -32,10 +32,18 @@ pub fn device_lost() -> bool {
 /// 置位停帧标志（幂等；仅首次置位打日志，避免重复刷屏）。
 ///
 /// 可从任意线程调用（含 wgpu 回调线程）——只做一次原子写 + 日志。
-pub fn mark_device_lost() {
-    if !DEVICE_LOST.swap(true, Ordering::SeqCst) {
+///
+/// # 返回值
+/// `true` = 本次调用完成置位（首置）；`false` = 此前已置位。
+/// REND-019（R2 实测）：停帧窗口内重绘循环每帧都会走 Stop 处置，
+/// 调用方可据此把伴随日志收敛为「仅首次告警」。
+#[must_use]
+pub fn mark_device_lost() -> bool {
+    let first = !DEVICE_LOST.swap(true, Ordering::SeqCst);
+    if first {
         tracing::error!("DEVICE_LOST 置位：停止渲染，等待重连接管（REND-019 PR-A）");
     }
+    first
 }
 
 /// 撤销停帧标志（REND-019 PR-C：重连基础设施重建完成后恢复渲染）。
@@ -72,7 +80,7 @@ pub fn set_device_lost_notifier(
 /// 禁止任何 wgpu 调用 / 锁获取 / 阻塞发送 / panic。
 pub fn on_device_lost(reason: wgpu::DeviceLostReason, message: String) {
     tracing::error!("wgpu device lost: {reason:?} — {message}");
-    mark_device_lost();
+    let _ = mark_device_lost();
     // §1.3 C1/C2：通知 UI 主循环（无锁 send_event）；重连决策只由 UI 主循环发起
     if let Some(notify) = LOST_NOTIFIER.get() {
         notify(reason, message);
@@ -90,9 +98,29 @@ pub(crate) fn reset_for_test() {
 /// env `LUMINO_TEST_DEVICE_LOST`（非 "0" 值）启用：延时后对**当前共享 device**
 /// 执行 `destroy()`——与真实 TDR 走完全相同的 device-lost 回调路径。
 ///
+/// R2 实测（2026-10-17 第 2 轮卡死）后改为**安全点注入**：注入线程只置位
+/// [`INJECTION_PENDING`]，实际 `destroy()` 由 UI 线程在 `Context::with_frame`
+/// 帧间静态点执行（见该处注释）——避免注入线程与在途 surface 调用
+/// （acquire / present）驱动级竞态导致的 UI 线程永久阻塞。
+///
 /// env：
 /// - `LUMINO_TEST_DEVICE_LOST_DELAY`：首次注入延时秒数（默认 5）；
 /// - `LUMINO_TEST_DEVICE_LOST_INTERVAL`：重复注入间隔秒数（0/缺省 = 单次）。
+#[cfg(feature = "gpu-reconnect-test")]
+static INJECTION_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// R2 注入：取走待执行请求（`Context::with_frame` 帧安全点调用）。
+#[cfg(feature = "gpu-reconnect-test")]
+pub(crate) fn take_injection_request() -> bool {
+    INJECTION_PENDING.swap(false, Ordering::SeqCst)
+}
+
+/// 默认构建：空操作（注入仅存在于 `gpu-reconnect-test` 调试特性）。
+#[cfg(not(feature = "gpu-reconnect-test"))]
+pub(crate) fn take_injection_request() -> bool {
+    false
+}
+
 #[cfg(feature = "gpu-reconnect-test")]
 pub(crate) fn maybe_spawn_device_lost_injection() {
     static SPAWNED: AtomicBool = AtomicBool::new(false);
@@ -108,20 +136,15 @@ pub(crate) fn maybe_spawn_device_lost_injection() {
     let delay = env_secs("LUMINO_TEST_DEVICE_LOST_DELAY", 5);
     let interval = env_secs("LUMINO_TEST_DEVICE_LOST_INTERVAL", 0);
     tracing::warn!(
-        "[gpu-reconnect-test] 注入已武装：{delay}s 后 destroy 共享 device（interval={interval}s）"
+        "[gpu-reconnect-test] 注入已武装：{delay}s 后请求 destroy 共享 device（interval={interval}s）"
     );
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(delay));
         loop {
-            match crate::gpu_snapshot() {
-                Ok((_, gpu)) => {
-                    tracing::warn!(
-                        "[gpu-reconnect-test] 注入 device.destroy()（R2，与真实 TDR 同回调路径）"
-                    );
-                    gpu.device.destroy();
-                }
-                Err(e) => tracing::warn!("[gpu-reconnect-test] 注入跳过（无共享 device）：{e}"),
-            }
+            INJECTION_PENDING.store(true, Ordering::SeqCst);
+            tracing::warn!(
+                "[gpu-reconnect-test] 注入已请求：等待 UI 帧安全点执行 device.destroy()（R2，与真实 TDR 同回调路径）"
+            );
             if interval == 0 {
                 break;
             }

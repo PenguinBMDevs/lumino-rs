@@ -70,6 +70,12 @@ impl Context {
         if width == 0 || height == 0 {
             return;
         }
+        // REND-019（R2 实测 2026-10-17）：停帧期间（设备已销毁、等待重连）禁止
+        // 重新 configure——对已销毁设备的 surface.configure 会走
+        // maintain(wait_indefinitely) 等待永不完成的 GPU 工作，UI 线程永久卡死。
+        if device_status::device_lost() {
+            return;
+        }
         let max_dim = self.device.limits().max_texture_dimension_2d;
         // REND-019（PR-A）：就地更新保存的交换链配置——与
         // `handle_frame_error` 的 Outdated 重配共用同一份（视图格式 /
@@ -95,6 +101,26 @@ impl Context {
         f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),
     ) -> Result<()> {
         puffin::profile_function!();
+
+        // REND-019（R2 实测 2026-10-17 第 2 轮卡死修复）：
+        // 1) 帧首先 poll：送达可能已发生的 device-lost 回调（R1 不变量：poll
+        //    同步送达）并检查停帧标志——**禁止在已销毁设备上执行
+        //    `get_current_texture`**：release（无校验层）下该调用会驱动级阻塞，
+        //    UI 线程永久卡死且回调永远送不出（R2 第 2 轮实测：注入后 24s 零日志）。
+        // 2) R2 注入安全点：注入请求在此处（帧间静态点、本线程无 surface 调用
+        //    在途）执行 destroy，避免注入线程与在途 acquire/present 竞态。
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        if device_status::take_injection_request() {
+            tracing::warn!(
+                "[gpu-reconnect-test] 注入 device.destroy()（UI 帧安全点，R2，与真实 TDR 同回调路径）"
+            );
+            self.device.destroy();
+            // destroy 后立即 poll：同步送达 lost 回调 → 置停帧标志（R1 不变量）
+            let _ = self.device.poll(wgpu::PollType::Poll);
+        }
+        if device_status::device_lost() {
+            return Err(ContextError::FrameAcquisition(wgpu::SurfaceError::Lost));
+        }
 
         // 两个真正的 GPU 同步点：获取交换链帧（可能在 GPU 忙时阻塞）与 present
         // （GPU 积压时阻塞）。单独插桩以便在火焰图中区分「取帧等待」与「呈现等待」，
@@ -159,7 +185,7 @@ impl Context {
             tracing::error!(
                 "with_frame：present/discard 触发 wgpu fatal panic（设备丢失在途）——按设备丢失处理: {detail}"
             );
-            device_status::mark_device_lost();
+            let _ = device_status::mark_device_lost();
             return Err(ContextError::FrameAcquisition(wgpu::SurfaceError::Lost));
         }
 
@@ -194,8 +220,17 @@ impl Context {
                 tracing::debug!("Surface Timeout：本帧放弃，下一帧重试");
             }
             FrameErrorAction::Stop => {
-                tracing::error!("Surface {surface_err:?}：置停帧标志，等待重连接管（禁止盲重绘）");
-                device_status::mark_device_lost();
+                // REND-019（R2 实测）：停帧窗口内重绘循环每帧都会走到本分支——
+                // 仅首次置位时告警（此前每帧一条 ERROR，2.3s 窗口实测 5594 条）。
+                if device_status::mark_device_lost() {
+                    tracing::error!(
+                        "Surface {surface_err:?}：置停帧标志，等待重连接管（禁止盲重绘）"
+                    );
+                } else {
+                    tracing::debug!(
+                        "Surface {surface_err:?}：停帧标志已置位（本帧放弃，等待重连接管）"
+                    );
+                }
             }
         }
         action

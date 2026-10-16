@@ -27,9 +27,12 @@ fn test_device_lost_flag_set_and_read() {
     let _guard = lock_flag_tests();
     reset_for_test();
     assert!(!device_lost(), "复位后应为 false");
-    mark_device_lost();
+    assert!(mark_device_lost(), "首次置位应返回 true（首置语义）");
     assert!(device_lost(), "置位后应为 true");
-    mark_device_lost(); // 幂等：二次置位不 panic
+    assert!(
+        !mark_device_lost(),
+        "二次置位应返回 false（幂等，供调用方收敛告警）"
+    );
     assert!(device_lost());
     reset_for_test();
     assert!(!device_lost(), "测试必须复位，避免串扰");
@@ -149,7 +152,7 @@ fn test_reconnect_r1_poll_delivers_lost_callback_sync() {
             if let Ok(mut v) = captured.lock() {
                 v.push(reason);
             }
-            super::mark_device_lost();
+            let _ = super::mark_device_lost();
         });
     }
 
