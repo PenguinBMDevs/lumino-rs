@@ -32,6 +32,10 @@ resolver = "3"
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
 xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
+# 菜单栏文字悬停闪烁修复（2026-10-17）：vendored iced_wgpu 钉住段落强引用
+# （段落弱引用在渲染线程 prepare 前死亡 → 整段文字静默不绘制；详见 vendor/iced_wgpu
+# 中 pinned_paragraphs 注释）。LUMINO_TEXT_TRACE=1 可输出文本批次诊断日志。
+iced_wgpu = { path = "vendor/iced_wgpu" }
 
 [workspace.package]
 version = "0.2.1"
@@ -226,6 +230,8 @@ lumino-cloud = { workspace = true }
 # crates.io
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# 诊断桥：把依赖（iced_wgpu/iced 等）的 `log` 记录接入 tracing（受 RUST_LOG 控制）
+tracing-log = "0.2"
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

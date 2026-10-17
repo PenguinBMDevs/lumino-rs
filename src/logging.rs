@@ -62,10 +62,16 @@ pub fn init() {
 
     let level_filter = filter_fn(|metadata| {
         if metadata.target().starts_with("lumino") {
-            // 让 env_filter 接管控制
+            // 交由 env_filter 接管控制
+            true
+        } else if metadata.target().starts_with("iced_wgpu")
+            || metadata.target().starts_with("cryoglyph")
+        {
+            // 诊断放行（文本图集 trim/失效等内部日志）：实际档位仍由 RUST_LOG 控制
+            // （默认 "info" 时其 debug/trace 不会输出，无日常噪音）
             true
         } else {
-            // 对于框架和依赖项，我们只接受 WARN 和 ERROR，不包括 INFO
+            // 对于框架和第三方库，默认只看 WARN 和 ERROR，避免 INFO 刷屏
             metadata.level() < &Level::INFO
         }
     });
@@ -85,6 +91,10 @@ pub fn init() {
         .with(stdout_layer)
         .with(file_layer)
         .init();
+
+    // `log` → `tracing` 桥：捕获 wgpu / iced_wgpu / iced 等依赖的 log 记录
+    // （RUST_LOG 控制档位；如 RUST_LOG=info,iced_wgpu=trace 观察文本图集行为）
+    tracing_log::LogTracer::init().ok();
 
     // 安装 panic hook
     install_panic_hook();
