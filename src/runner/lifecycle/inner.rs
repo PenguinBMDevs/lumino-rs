@@ -78,13 +78,14 @@ impl crate::runner::inner::RunnerInner {
                     .has_dialog_type(DialogType::VideoExport);
                 if is_video {
                     if progress < 0.0 {
+                        // R5-b 实测（2026-10-17）：此前失败后立即 mark_dialog_for_close，
+                        // 错误态（Error overlay）来不及上屏、对话框即被关闭，用户完全
+                        // 看不到任何提示（TDR 中断导出场景实测）。错误提示必须留在
+                        // 对话框内可见（与完成态一致不自动关闭），用户读毕自行关闭。
+                        tracing::warn!("视频导出失败已转发对话框（保持开启）：{msg}");
                         self.window_state
                             .dialog_manager
                             .forward_video_export_failed(msg);
-                        // 视频导出失败时关闭对话框
-                        self.window_state
-                            .dialog_manager
-                            .mark_dialog_for_close(DialogType::VideoExport);
                     } else if progress >= 1.0 {
                         self.window_state
                             .dialog_manager

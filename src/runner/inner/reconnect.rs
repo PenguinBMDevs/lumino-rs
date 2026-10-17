@@ -60,7 +60,12 @@ impl ReconnectOps<SharedGpu> for Runner {
             .video_export_running
             .load(Ordering::SeqCst)
         {
-            tracing::warn!("重连：视频导出进行中，置取消标志");
+            tracing::warn!("重连：视频导出进行中，置取消标志（TDR 语义，收尾按失败上报）");
+            // 先置 TDR 归因再置通用取消（SeqCst 全序）：导出线程看到取消时
+            // 必能看到 TDR 归因，收尾据此发送「导出失败」而非「已取消」（R5-b）
+            this.window_state
+                .video_export_tdr_cancel
+                .store(true, Ordering::SeqCst);
             this.window_state
                 .video_export_cancel
                 .store(true, Ordering::SeqCst);

@@ -37,6 +37,8 @@ pub(super) struct RunStreamingVideoExportTaskInput {
     pub width: u32,
     pub height: u32,
     pub cancel_flag: Arc<AtomicBool>,
+    /// TDR 归因标志（R5-b）：重连取消时置位——收尾按失败上报而非「已取消」
+    pub tdr_cancel_flag: Arc<AtomicBool>,
     pub input_pix_fmt: &'static str,
 }
 
@@ -52,6 +54,7 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
         width,
         height,
         cancel_flag,
+        tdr_cancel_flag,
         input_pix_fmt,
     } = input;
     let start = std::time::Instant::now();
@@ -261,6 +264,7 @@ pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTask
         &cmd_sender,
         encoder,
         cancelled,
+        tdr_cancel_flag.load(std::sync::atomic::Ordering::SeqCst),
         elapsed,
         total_frames,
         smoothed_fps,

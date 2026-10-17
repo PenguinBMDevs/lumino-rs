@@ -64,10 +64,14 @@ pub(super) fn send_finish_render_command(cmd_sender: &Sender<RenderCommand>) {
 }
 
 /// 收尾编码：根据是否取消发送最终进度，并调用 `finish()` 写入文件头。
+///
+/// `tdr_cancelled`（R5-b）：取消由重连流水线（GPU 设备丢失）置位时为 true——
+/// 按「失败」上报 UI（progress=-1 → 弹错误提示），而非静默「已取消」。
 pub(super) fn finalize_video_export(
     cmd_sender: &Sender<RenderCommand>,
     encoder: FfmpegEncoder,
     cancelled: bool,
+    tdr_cancelled: bool,
     elapsed: f64,
     total_frames: u64,
     smoothed_fps: f64,
@@ -83,6 +87,14 @@ pub(super) fn finalize_video_export(
             smoothed_fps,
             elapsed,
         ));
+    } else if tdr_cancelled {
+        // R5-b（用户实测 2026-10-17）：TDR 打断导出必须给用户明确错误——
+        // 旧实现归入「已取消」（progress=1.0）导致无任何提示。
+        tracing::error!("视频导出因 GPU 设备丢失（TDR）中断，按失败上报 UI");
+        send_export_error(
+            progress_tx,
+            tr!("导出失败：GPU 设备丢失（驱动超时恢复）——导出已中断，渲染已自动恢复，可直接重试"),
+        );
     } else {
         let _ = progress_tx.send((
             tr!("导出已取消").to_string(),

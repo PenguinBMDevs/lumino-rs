@@ -177,6 +177,9 @@ impl RunnerInner {
         // 创建取消标志
         let cancel_flag = Arc::new(AtomicBool::new(false));
         self.window_state.video_export_cancel = Arc::clone(&cancel_flag);
+        // 每次导出新建 TDR 归因标志（重连流水线置位；收尾按失败上报，R5-b）
+        let tdr_cancel_flag = Arc::new(AtomicBool::new(false));
+        self.window_state.video_export_tdr_cancel = Arc::clone(&tdr_cancel_flag);
 
         // 后台线程：逐帧渲染 + FFmpeg 编码
         let running = Arc::clone(&self.window_state.video_export_running);
@@ -260,6 +263,7 @@ impl RunnerInner {
                         width,
                         height,
                         cancel_flag,
+                        tdr_cancel_flag,
                         input_pix_fmt,
                         is_cpu_renderer,
                         is_gpu_compute_style,

@@ -87,6 +87,9 @@ pub(crate) struct WindowState {
     pub(crate) video_preview_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
     /// 视频导出取消标志（后台线程通过此标志检测用户取消）
     pub(crate) video_export_cancel: Arc<AtomicBool>,
+    /// 视频导出 TDR 取消标志（R5-b 补强：重连流水线置位；与用户取消区分——
+    /// 收尾按「失败」上报 UI（弹错误），而非静默「已取消」）
+    pub(crate) video_export_tdr_cancel: Arc<AtomicBool>,
     /// 视频导出运行标志（DEBT-07 #124：导出入口守卫，防可重入；线程 RAII 复位）
     pub(crate) video_export_running: Arc<AtomicBool>,
     /// 音频导出控制（暂停/中止，跨线程共享）
@@ -341,6 +344,7 @@ impl Runner {
                 export_progress_rx: None,
                 video_preview_rx: None,
                 video_export_cancel: Arc::new(AtomicBool::new(false)),
+                video_export_tdr_cancel: Arc::new(AtomicBool::new(false)),
                 video_export_running: Arc::new(AtomicBool::new(false)),
                 audio_export_control: None,
             },
