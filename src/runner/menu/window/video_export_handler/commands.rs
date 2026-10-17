@@ -67,6 +67,7 @@ pub(super) fn send_finish_render_command(cmd_sender: &Sender<RenderCommand>) {
 ///
 /// `tdr_cancelled`（R5-b）：取消由重连流水线（GPU 设备丢失）置位时为 true——
 /// 按「失败」上报 UI（progress=-1 → 弹错误提示），而非静默「已取消」。
+#[allow(clippy::too_many_arguments)] // 内存/流式两条导出路径共用的收尾接口，保持显式传递
 pub(super) fn finalize_video_export(
     cmd_sender: &Sender<RenderCommand>,
     encoder: FfmpegEncoder,
