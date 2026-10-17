@@ -2,12 +2,16 @@
 
 mod buffer;
 mod context;
+#[cfg(feature = "gpu-reconnect-test")]
+mod inject;
 mod layout;
 mod pipelines;
 mod resources;
 
 pub use buffer::GrowableBuffer;
-pub use context::{GpuContext, create_gpu_context};
+pub use context::{GpuContext, create_gpu_context, set_device_lost_hook};
+#[cfg(feature = "gpu-reconnect-test")]
+pub(crate) use inject::{arm_injection_if_requested, take_injection_pending};
 pub use layout::*;
 pub use resources::GpuResources;
 

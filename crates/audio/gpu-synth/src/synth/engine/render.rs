@@ -14,6 +14,19 @@ impl GpuSynth {
             return Err(SynthError::Config("output buffer too small".into()));
         }
 
+        // R5 测试注入（LGS 独立 device，仅 `gpu-reconnect-test`）：安全点 = 本块
+        // 开始处（无在途 GPU 调用）——destroy + 单次 poll 同步送达丢失回调
+        // （R1 不变量），本块提前返回静音；后续块由播放侧错误路径容错
+        // （start.rs 记录一次并继续），待 PR-D 热替换接管。
+        #[cfg(feature = "gpu-reconnect-test")]
+        if crate::gpu::take_injection_pending() {
+            tracing::warn!("[gpu-reconnect-test] 注入 LGS device.destroy()（渲染块安全点）");
+            self.res.ctx.device.destroy();
+            let _ = self.res.ctx.device.poll(wgpu::PollType::Poll);
+            out[..block * chs].fill(0.0);
+            return Ok(());
+        }
+
         // PREF-006 B：环境开关一次性缓存（每块 `env::var` 会走进程锁）
         static PROFILE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let prof = *PROFILE.get_or_init(|| std::env::var("LUMINO_PROFILE").is_ok());

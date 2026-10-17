@@ -17,6 +17,10 @@ mod profiling;
 pub use constants::*;
 /// LGS (GPU) 播放缓冲状态快照（转出 gpu-synth 类型，供 Runner/UI 使用）。
 pub use lumino_gpu_synth::audio::playback::GpuBufferStats;
+/// REND-019 PR-D（§1.5 L1）：注册 LGS 独立 device 的丢失钩子（转发 gpu-synth）。
+///
+/// 钩子在设备丢失回调线程执行——只允许置标志 / 非阻塞通知（禁 wgpu 调用/锁/阻塞）。
+pub use lumino_gpu_synth::gpu::set_device_lost_hook as set_lgs_device_lost_hook;
 
 use thiserror::Error;
 
@@ -140,6 +144,15 @@ pub trait SynthControl: Api {
     /// 外部 MIDI 设备与未实现此能力的后端返回 `None`（UI 隐藏指示器）。
     fn gpu_buffer_stats(&self) -> Option<GpuBufferStats> {
         None
+    }
+
+    /// 重建 GPU 合成管线（REND-019 PR-D §1.5 L2：TDR 后热替换）。
+    ///
+    /// 默认 no-op：非 GPU 后端（System/XSynth）不因 GPU device 丢失而失效。
+    /// LGS 覆写为"先建新引擎、**成功才**停旧流并热替换事件/控制发送器
+    /// （既有输出连接自动跟随）；失败返回 Err、旧句柄不动等下一轮"。
+    fn rebuild_gpu_pipeline(&mut self) -> Result<(), String> {
+        Ok(())
     }
 }
 

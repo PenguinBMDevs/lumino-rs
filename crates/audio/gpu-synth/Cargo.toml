@@ -11,6 +11,11 @@ categories = ["multimedia::audio", "rendering::gpu"]
 # 因为它沿用上游 `.unwrap()` 风格，与 AGENTS.md 的 `unwrap_used` 强约束冲突。
 # 作为 vendored 子 crate 原样搬入。
 
+[features]
+default = []
+# REND-019 R5 测试注入（LGS 独立 device）：env LUMINO_TEST_DEVICE_LOST_LGS 触发。
+gpu-reconnect-test = []
+
 [dependencies]
 lumino-core = { workspace = true }
 wgpu = { workspace = true }
