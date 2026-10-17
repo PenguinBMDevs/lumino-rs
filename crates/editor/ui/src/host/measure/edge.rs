@@ -1,4 +1,4 @@
-//! REF-001 第三轮：**边缘控件可见性**诊断（先量后治）
+//! REF-001 第三轮：**边缘控件可见性**尺子（核心判据）
 //!
 //! # 验收定义（倒推自需求）
 //!
@@ -12,7 +12,7 @@
 //!    而是「可以滚出来」。
 //!
 //! 流体容器（`Fill`）本身不参与判定——它的尺寸是自由参数，这正是本需求的
-//! 「流体就流体」。
+//! 「流体就流体」。**文字允许让位**（折行/收窄 ≤10%），**控件不许被挤**。
 //!
 //! # 判据为什么不能靠「越界」
 //!
@@ -21,11 +21,14 @@
 //! 只有 49）。因此「自然尺寸基准」是必需的：用两套宽松布局（`ref` 与 `ref-160`）
 //! 区分流体与内容驱动，再把最终布局与基准逐节点比对。
 //!
-//! # 现状
+//! # 模块结构
 //!
-//! 本模块是**诊断工具**：`report_edge_visibility` 打印 17 类的违规清单（不改产品
-//! 行为）；`assert_edge_visibility_clean` 是未来的 CI 门槛，修完违规后去掉
-//! `#[ignore]` 即可转正（见实施记录 §9 的处置计划）。
+//! | 文件 | 职责 |
+//! |------|------|
+//! | `edge`（本文件） | 判据核心：基准、遍历器、单角诊断 |
+//! | `edge/corners` | 待检角落清单（**类型 × 视图状态**）与全量扫描 |
+//! | `edge/report` | 诊断报告（人看）与 CI 门槛（机器判） |
+//! | `edge/tests` | 反向对照：证明尺子抓得住真问题 |
 
 use iced_core::Size;
 use iced_core::layout::{Limits, Node};
@@ -35,7 +38,7 @@ use crate::state::root_state::DialogType;
 use crate::{Element, Renderer, Root};
 
 use super::decide_dialog_window_size;
-use super::dialog_sizes::{ALL_DIALOGS, WORK_AREA, headless_renderer};
+use super::dialog_sizes::WORK_AREA;
 
 /// 判定「流体 / 内容驱动」的容差（逻辑像素）
 const FLUID_TOLERANCE: f32 = 1.0;
@@ -87,9 +90,9 @@ enum Kind {
 
 /// 单个违规
 #[derive(Debug, Clone, Copy)]
-struct Violation {
+pub(super) struct Violation {
     /// 先序节点下标（用于定位）
-    index: usize,
+    pub(super) index: usize,
     axis: Axis,
     kind: Kind,
     expected: f32,
@@ -278,10 +281,17 @@ impl<'a> Walker<'a> {
 
         // 2) 子节点越出容器边界（= 被裁）
         //
-        // 例外：容器在**该轴是流体**（高度/宽度随窗口变化）却装不下内容 ⇒ 那是滚动
-        // 视口（`scrollable` 的内容本来就该超出视口，可以滚出来），不是「没显示」。
-        // 只有**内容驱动**的容器装不下子节点，才说明内容被裁掉。
+        // 例外只给**滚动视口**：`scrollable` 的布局节点是「padding 包裹层 + 唯一内容
+        // 子节点」（`iced_widget/src/scrollable.rs` 的 `layout::padded`），内容超出视口
+        // 是设计如此，可以滚出来。所以豁免必须同时满足：
+        //   a. 容器在该轴**流体**（尺寸随窗口变化，不是内容撑出来的）；
+        //   b. 容器**只有一个子节点**——滚动视口的形状。
+        // 只判 (a) 会漏：云浏览面板的工具行 `row[pick_list(Fill), 刷新, 断开, 粘贴,
+        // 清空剪贴板]` 在窄窗口下工具行整体仍是流体，但四个按钮保持自然宽度**越出**
+        // 容器（实测 216 宽时行宽 184、按钮合计逾 300），被 (a) 当成滚动视口放过了
+        // ——`ruler_sees_squeeze_inside_real_dialog_views` 就是这么发现它的。
         let bounds = node.bounds();
+        let single_child = node.children().len() == 1;
         let mut child_clip_width = clip_width;
         let mut child_clip_height = clip_height;
 
@@ -291,7 +301,7 @@ impl<'a> Walker<'a> {
             if !clip_width
                 && child_bounds.x + child_bounds.width > bounds.width + VIOLATION_TOLERANCE
             {
-                if self.baseline.fluid_width[index] {
+                if self.baseline.fluid_width[index] && single_child {
                     child_clip_width = true;
                 } else {
                     self.violations.push(Violation {
@@ -308,7 +318,7 @@ impl<'a> Walker<'a> {
             if !clip_height
                 && child_bounds.y + child_bounds.height > bounds.height + VIOLATION_TOLERANCE
             {
-                if self.baseline.fluid_height[index] {
+                if self.baseline.fluid_height[index] && single_child {
                     child_clip_height = true;
                 } else {
                     self.violations.push(Violation {
@@ -329,7 +339,7 @@ impl<'a> Walker<'a> {
     }
 }
 
-/// 诊断单个对话框：返回最终布局节点与违规清单
+/// 诊断单个角落：返回最终布局节点与违规清单
 fn edge_report(
     root: &Root,
     renderer: &Renderer,
@@ -359,270 +369,9 @@ fn edge_report(
     (Some(node), walker.violations)
 }
 
-/// 一个待检角落
-struct Case {
-    name: String,
-    window_size: Size,
-    node: Option<Node>,
-    violations: Vec<Violation>,
-}
-
-/// 扫一遍所有角落：每个对话框类型 + **设置面板逐页**
-///
-/// 设置面板是唯一有「多页内容」的对话框（10 页），只测默认的第 0 页会漏掉
-/// 其它页的控件——这正是验收反馈里"设置界面部分控件"漏检的原因。
-fn scan_all(renderer: &Renderer, ui_config: &lumino_core::storage::config::UiConfig) -> Vec<Case> {
-    let mut results = Vec::new();
-
-    for dialog_type in ALL_DIALOGS {
-        let mut root = Root::new_dialog_with_config(&ui_config.theme, dialog_type, ui_config);
-
-        if dialog_type == DialogType::Settings {
-            for page in SETTINGS_PAGES {
-                root.settings.selected_menu_index = page;
-                let window_size =
-                    decide_dialog_window_size(&root, renderer, dialog_type, WORK_AREA);
-                let (node, violations) = edge_report(&root, renderer, dialog_type);
-                results.push(Case {
-                    name: format!("Settings[页 {page}]"),
-                    window_size,
-                    node,
-                    violations,
-                });
-            }
-            continue;
-        }
-
-        let window_size = decide_dialog_window_size(&root, renderer, dialog_type, WORK_AREA);
-        let (node, violations) = edge_report(&root, renderer, dialog_type);
-        results.push(Case {
-            name: format!("{dialog_type:?}"),
-            window_size,
-            node,
-            violations,
-        });
-    }
-
-    results
-}
-
-/// 调试定位：把某先序下标节点的「祖先链 + 兄弟序号」渲染成可读路径
-///
-/// 形如 `#24[1/2](688×90) → #126[0/5](464×32) → #130[2/5](392×18)`，
-/// 用来把违规下标映射回视图源码里那一行 `row![...]`。
-fn node_path(node: &Node, target: usize, counter: &mut usize, path: &mut Vec<String>) -> bool {
-    let index = *counter;
-    *counter += 1;
-
-    let bounds = node.bounds();
-    // 找到自己在兄弟里的序号
-    path.push(format!(
-        "#{index}({:.0}×{:.0})",
-        bounds.width, bounds.height
-    ));
-
-    if index == target {
-        return true;
-    }
-
-    for child in node.children() {
-        if node_path(child, target, counter, path) {
-            return true;
-        }
-    }
-
-    path.pop();
-    false
-}
-
-fn describe(node: &Node, target: usize) -> String {
-    let mut path = Vec::new();
-    let mut counter = 0;
-    let _ = node_path(node, target, &mut counter, &mut path);
-
-    path.join(" → ")
-}
-
-/// 诊断报告：打印全部角落（17 类 + 设置面板 10 页）的边缘可见性现状
-#[test]
-#[ignore = "诊断报告；需要时用 --ignored 运行"]
-fn report_edge_visibility() {
-    let Some(renderer) = headless_renderer() else {
-        eprintln!("跳过：无可用 GPU 适配器（边缘可见性诊断需要真实文本度量）");
-        return;
-    };
-
-    let ui_config = lumino_core::storage::config::UiConfig::default();
-    let results = scan_all(&renderer, &ui_config);
-    let clean = results
-        .iter()
-        .filter(|case| case.violations.is_empty())
-        .count();
-
-    println!("REF-001 边缘控件可见性诊断（工作区 {WORK_AREA:?}）:");
-    for case in &results {
-        let Case {
-            name,
-            window_size,
-            node,
-            violations,
-        } = case;
-
-        if violations.is_empty() {
-            println!(
-                "  {name}: 干净（窗口 {:.0}×{:.0}）",
-                window_size.width, window_size.height
-            );
-            continue;
-        }
-
-        println!(
-            "  {name}: {} 处违规（窗口 {:.0}×{:.0}）",
-            violations.len(),
-            window_size.width,
-            window_size.height
-        );
-        for violation in violations.iter().take(6) {
-            let path = node
-                .as_ref()
-                .map_or_else(String::new, |node| describe(node, violation.index));
-            println!(
-                "      {axis:?} {kind:?}: 自然 {expected:.1} → 实际 {actual:.1}",
-                axis = violation.axis,
-                kind = violation.kind,
-                expected = violation.expected,
-                actual = violation.actual,
-            );
-            println!("        路径 {path}");
-        }
-    }
-
-    println!("  —— {} 个角落中 {clean} 个干净", results.len());
-}
-
-/// CI 门槛：17 类对话框都不许有边缘可见性违规
-///
-/// 「所有最边缘的控件都显示出来」的可执行定义。覆盖 17 类对话框 +
-/// **设置面板全部 10 页**（只测默认页会漏检其它页的控件——那正是一次验收反馈）。
-#[test]
-fn assert_edge_visibility_clean() {
-    let Some(renderer) = headless_renderer() else {
-        eprintln!("跳过：无可用 GPU 适配器");
-        return;
-    };
-
-    let ui_config = lumino_core::storage::config::UiConfig::default();
-    let mut failures = Vec::new();
-
-    for case in scan_all(&renderer, &ui_config) {
-        let Case {
-            name,
-            node,
-            violations,
-            ..
-        } = case;
-
-        if violations.is_empty() {
-            continue;
-        }
-
-        let detail = violations
-            .iter()
-            .take(3)
-            .map(|violation| {
-                let path = node
-                    .as_ref()
-                    .map_or_else(String::new, |node| describe(node, violation.index));
-                format!(
-                    "{axis:?} {kind:?} 自然 {expected:.1} → 实际 {actual:.1} @ {path}",
-                    axis = violation.axis,
-                    kind = violation.kind,
-                    expected = violation.expected,
-                    actual = violation.actual,
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("；");
-
-        failures.push(format!("{name}: {} 处（{detail}）", violations.len()));
-    }
-
-    assert!(
-        failures.is_empty(),
-        "以下位置存在边缘控件被压窄/被裁：\n  {}",
-        failures.join("\n  ")
-    );
-}
-
 #[cfg(test)]
-mod tests {
-    //! 尺子的**反向对照**：证明它抓得住真问题（否则"17/17 干净"没有意义）。
-
-    use super::*;
-    use iced_core::Length;
-    use iced_widget::{container, row, space};
-
-    /// 两个 Fixed(300) 并排 ⇒ 内容自然宽 600；窗口只给 300 时控件必须被压窄。
-    fn probe_view() -> Element<'static> {
-        container(
-            row![
-                space()
-                    .width(Length::Fixed(300.0))
-                    .height(Length::Fixed(40.0)),
-                space()
-                    .width(Length::Fixed(300.0))
-                    .height(Length::Fixed(40.0)),
-            ]
-            .spacing(0),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    }
-
-    fn violations_at(renderer: &Renderer, size: Size) -> Vec<Violation> {
-        let baseline = baseline(probe_view, renderer, size).expect("宽松基准必须可测");
-        let node = layout_at_size(probe_view(), renderer, size);
-        let current = Profile::collect(&node);
-
-        let mut walker = Walker {
-            baseline: &baseline,
-            current: &current,
-            index: 0,
-            violations: Vec::new(),
-        };
-        walker.run(&node, false, false);
-        walker.violations
-    }
-
-    /// 窗口够宽 ⇒ 干净。
-    #[test]
-    fn ruler_is_clean_when_window_is_wide_enough() {
-        let Some(renderer) = headless_renderer() else {
-            eprintln!("跳过：无可用 GPU 适配器");
-            return;
-        };
-
-        assert!(
-            violations_at(&renderer, Size::new(1200.0, 400.0)).is_empty(),
-            "窗口 1200 宽时装得下 600 宽的内容，不该报违规"
-        );
-    }
-
-    /// 窗口过窄 ⇒ **必须**报违规（这条用例就是这把尺子的价值证明）。
-    #[test]
-    fn ruler_detects_squeeze_caused_by_narrow_window() {
-        let Some(renderer) = headless_renderer() else {
-            eprintln!("跳过：无可用 GPU 适配器");
-            return;
-        };
-
-        let violations = violations_at(&renderer, Size::new(300.0, 400.0));
-
-        assert!(
-            !violations.is_empty(),
-            "窗口 300 宽放不下 600 宽的内容，必须报出被压窄——\
-             若这里为空，说明尺子恒绿，不能作为门槛"
-        );
-    }
-}
+mod corners;
+#[cfg(test)]
+mod report;
+#[cfg(test)]
+mod tests;
