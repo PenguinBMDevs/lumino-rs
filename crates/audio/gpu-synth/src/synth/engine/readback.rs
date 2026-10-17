@@ -32,16 +32,45 @@ impl GpuSynth {
                 let _ = stx.send(r.is_ok());
             });
 
-        // The GPU has already finished the pending submission (it had this
-        // block's CPU work to run in); this wait does not stall.
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(p.idx),
-                timeout: None,
-            })
-            .map_err(|e| SynthError::Gpu(format!("poll failed: {e:?}")))?;
+        // REND-019 #152：**有界等待**——分片 poll（100ms）+ 本地丢失标志检查 +
+        // 回调 try_recv；任一失败/超时立即以明确错误收场。旧实现
+        // `Wait{timeout:None}` + 无超时 `recv()`：设备中途丢失（TDR）时存在
+        // 永久挂死窗口（离线导出尤其致命）。
+        // 正常路径：GPU 早已完成（一个 block 的 CPU 工作量），首个分片即返回。
+        const WAIT_SLICE: std::time::Duration = std::time::Duration::from_millis(100);
+        const WAIT_MAX: std::time::Duration = std::time::Duration::from_secs(10);
+        let deadline = std::time::Instant::now() + WAIT_MAX;
+        let mut out_res: Option<bool> = None;
+        let mut states_res: Option<bool> = None;
+        loop {
+            if self.res.ctx.is_lost() {
+                return Err(SynthError::Gpu("device lost during readback".into()));
+            }
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: Some(p.idx.clone()),
+                    timeout: Some(WAIT_SLICE),
+                })
+                .map_err(|e| SynthError::Gpu(format!("poll failed: {e:?}")))?;
+            if out_res.is_none()
+                && let Ok(r) = orx.try_recv()
+            {
+                out_res = Some(r);
+            }
+            if states_res.is_none()
+                && let Ok(r) = srx.try_recv()
+            {
+                states_res = Some(r);
+            }
+            if out_res.is_some() && states_res.is_some() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(SynthError::Gpu("readback timeout".into()));
+            }
+        }
 
-        let out_ok = orx.recv().unwrap_or(false);
+        let out_ok = out_res.unwrap_or(false);
         if out_ok {
             let slice = self.out_readback[p.out_slot].slice(..);
             self.last_out = Some(slice.get_mapped_range().to_vec());
@@ -49,7 +78,7 @@ impl GpuSynth {
         } else {
             return Err(SynthError::Gpu("output readback map failed".into()));
         }
-        let states_ok = srx.recv().unwrap_or(false);
+        let states_ok = states_res.unwrap_or(false);
         if states_ok {
             let rb = self.states_readback[p.states_slot].buffer();
             let mapped = rb.slice(..).get_mapped_range();

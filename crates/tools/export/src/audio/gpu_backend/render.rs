@@ -79,7 +79,9 @@ pub fn render_audio_gpu_from_document(
     report(tr!("GPU 初始化中..."), 0.05);
     check_control(config)?;
     let synth_config = build_synth_config(config);
-    let mut synth = GpuSynth::new(synth_config).map_err(|e| {
+    // REND-019 #152：离线导出使用 offline 语义上下文（丢失只置本地标志、
+    // 不触发实时 LGS 重建链路）
+    let mut synth = GpuSynth::new_offline(synth_config).map_err(|e| {
         ExportError::AudioWrite(trf!(
             "GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}",
             e = e
@@ -120,18 +122,35 @@ pub fn render_audio_gpu_from_document(
         })));
     }
     attach_render_progress(&mut synth, config);
-    let result = synth.render_midi_bytes(&midi_bytes).map_err(|e| match e {
-        lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
-        other => ExportError::AudioWrite(trf!("GPU 渲染失败: {other}", other = other)),
-    })?;
-    check_control(config)?;
+    // REND-019 #152：导出边界兜底——wgpu facade 在设备丢失竞态下可能 panic
+    // （失效缓冲上的 map/unmap/write 校验失败）；catch 后转明确错误收场，
+    // 杜绝导出线程静默死亡导致的 UI 卡死。
+    let render_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        synth.render_midi_bytes(&midi_bytes)
+    }));
+    match render_outcome {
+        Ok(Ok(result)) => {
+            check_control(config)?;
 
-    report(tr!("GPU 写入输出..."), 0.85);
-    // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
-    write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
+            report(tr!("GPU 写入输出..."), 0.85);
+            // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
+            write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
 
-    report(tr!("GPU 完成"), 1.0);
-    Ok(())
+            report(tr!("GPU 完成"), 1.0);
+            Ok(())
+        }
+        Ok(Err(lumino_gpu_synth::SynthError::Cancelled)) => Err(ExportError::Aborted),
+        Ok(Err(other)) => Err(ExportError::AudioWrite(trf!(
+            "GPU 渲染失败: {other}",
+            other = other
+        ))),
+        Err(_) => {
+            tracing::error!("GPU 音频导出异常中断（设备丢失竞态，已兜底）");
+            Err(ExportError::AudioWrite(
+                tr!("GPU 渲染异常中断（设备丢失），请重试导出").into(),
+            ))
+        }
+    }
 }
 
 /// 使用 GPU 后端从磁盘 MIDI 文件渲染（流式模式，无 MidiDocument）
@@ -197,7 +216,8 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
     report(tr!("GPU 初始化中..."), 0.05);
     check_control(config)?;
     let synth_config = build_synth_config(config);
-    let mut synth = GpuSynth::new(synth_config)
+    // REND-019 #152：离线导出使用 offline 语义上下文（同内存模式）
+    let mut synth = GpuSynth::new_offline(synth_config)
         .map_err(|e| ExportError::AudioWrite(trf!("GPU 初始化失败: {e}", e = e)))?;
 
     report(tr!("GPU 加载音色库..."), 0.10);
@@ -220,12 +240,26 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
         })));
     }
     attach_render_progress(&mut synth, config);
-    let result = synth
-        .render_midi_file(&config.midi_path)
-        .map_err(|e| match e {
-            lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
-            other => ExportError::AudioWrite(trf!("GPU 渲染失败: {other}", other = other)),
-        })?;
+    // REND-019 #152：导出边界兜底（同内存模式）
+    let render_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        synth.render_midi_file(&config.midi_path)
+    }));
+    let result = match render_outcome {
+        Ok(Ok(result)) => result,
+        Ok(Err(lumino_gpu_synth::SynthError::Cancelled)) => return Err(ExportError::Aborted),
+        Ok(Err(other)) => {
+            return Err(ExportError::AudioWrite(trf!(
+                "GPU 渲染失败: {other}",
+                other = other
+            )));
+        }
+        Err(_) => {
+            tracing::error!("GPU 音频导出异常中断（设备丢失竞态，已兜底）");
+            return Err(ExportError::AudioWrite(
+                tr!("GPU 渲染异常中断（设备丢失），请重试导出").into(),
+            ));
+        }
+    };
     check_control(config)?;
 
     report(tr!("GPU 写入输出..."), 0.85);

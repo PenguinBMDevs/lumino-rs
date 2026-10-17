@@ -18,13 +18,23 @@ impl GpuSynth {
         // 开始处（无在途 GPU 调用）——destroy + 单次 poll 同步送达丢失回调
         // （R1 不变量），本块提前返回静音；后续块由播放侧错误路径容错
         // （start.rs 记录一次并继续），待 PR-D 热替换接管。
+        // REND-019 #152：实时/离线各消费自己的注入队列（`_LGS_OFFLINE` 定向命中
+        // 导出实例）。
         #[cfg(feature = "gpu-reconnect-test")]
-        if crate::gpu::take_injection_pending() {
+        if crate::gpu::take_injection_pending(self.res.ctx.offline) {
             tracing::warn!("[gpu-reconnect-test] 注入 LGS device.destroy()（渲染块安全点）");
             self.res.ctx.device.destroy();
             let _ = self.res.ctx.device.poll(wgpu::PollType::Poll);
             out[..block * chs].fill(0.0);
             return Ok(());
+        }
+
+        // REND-019 #152：丢失快速退出——必须位于任何设备工作（事件应用/上传/
+        // belt 写入）之前：destroyed/invalid 缓冲上的 map/写操作会走 wgpu
+        // facade panic（实测：销毁后下一块在 StagingBelt get_mapped_range 处
+        // panic，导出线程死亡 → UI 卡住）。
+        if self.res.ctx.is_lost() {
+            return Err(SynthError::Gpu("device lost".into()));
         }
 
         // PREF-006 B：环境开关一次性缓存（每块 `env::var` 会走进程锁）
@@ -42,6 +52,11 @@ impl GpuSynth {
         // prepared this block). The pending submission has had a full block
         // of CPU work to finish, so the poll returns immediately.
         self.collect_pending_readback()?;
+        // REND-019 #152：collect 的 poll 可能刚送达丢失回调（其 map 在销毁处理
+        // 生效前发出而"成功"）——上传/belt/提交前复查，杜绝在失效缓冲上操作。
+        if self.res.ctx.is_lost() {
+            return Err(SynthError::Gpu("device lost".into()));
+        }
         let t1b = std::time::Instant::now();
 
         // Fast path: no voices at all - the block is pure silence (the mix

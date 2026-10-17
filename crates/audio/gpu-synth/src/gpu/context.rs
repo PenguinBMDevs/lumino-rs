@@ -6,20 +6,15 @@ use std::sync::OnceLock;
 /// LGS 使用**独立** device（与编辑器 SHARED_GPU 零共享，红线 8），因此丢失
 /// 通知也独立：设备丢失回调只做日志 + 钩子调用——钩子在 wgpu 回调线程执行，
 /// 只允许置标志 / 非阻塞通知（禁止 wgpu 调用 / 锁 / 阻塞；同编辑器侧红线 C1）。
+///
+/// REND-019 #152：**仅实时 LGS 链路创建的上文转发本钩子**；离线导出上下文
+/// （`create_gpu_context_offline`）只置本地丢失标志——避免导出自身 device 的
+/// 丢失被误报成"实时 LGS 丢失"而触发实时引擎重建。
 static DEVICE_LOST_HOOK: OnceLock<Box<dyn Fn(String, String) + Send + Sync>> = OnceLock::new();
 
 /// 注册 LGS device-lost 钩子（仅允许注册一次；上层经依赖转发注册）。
 pub fn set_device_lost_hook(hook: impl Fn(String, String) + Send + Sync + 'static) {
     let _ = DEVICE_LOST_HOOK.set(Box::new(hook));
-}
-
-/// device-lost 回调实现（`set_device_lost_callback` 接线目标）。
-fn on_device_lost(reason: wgpu::DeviceLostReason, message: String) {
-    let reason = format!("{reason:?}");
-    tracing::error!("[gpu-synth] device lost: {reason} — {message}");
-    if let Some(hook) = DEVICE_LOST_HOOK.get() {
-        hook(reason, message);
-    }
 }
 
 /// A ready-to-use GPU device/queue pair.
@@ -31,6 +26,21 @@ pub struct GpuContext {
     pub queue: wgpu::Queue,
     /// The adapter used (exposed for diagnostics).
     pub adapter_info: wgpu::AdapterInfo,
+    /// REND-019 #152：本 device 是否已丢失（回调置位）。
+    /// 离线渲染循环（有界读回等待）据此快速收场。
+    lost: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// REND-019 #152：离线导出上下文（定向注入/归因分辨用）。
+    /// 仅 `gpu-reconnect-test` 特性构建下读取（定向注入消费）。
+    #[cfg_attr(not(feature = "gpu-reconnect-test"), allow(dead_code))]
+    pub(crate) offline: bool,
+}
+
+impl GpuContext {
+    /// 本 device 是否已丢失（REND-019 #152）。
+    #[must_use]
+    pub fn is_lost(&self) -> bool {
+        self.lost.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 /// Creates a [`GpuContext`] using the default high-performance adapter.
@@ -47,6 +57,21 @@ pub struct GpuContext {
 ///
 /// Returns [`SynthError::GpuInit`] when no usable adapter/device exists.
 pub fn create_gpu_context() -> Result<GpuContext, SynthError> {
+    create_gpu_context_impl(true)
+}
+
+/// 离线导出专用（REND-019 #152）：device-lost 只置本地标志、**不转发**
+/// 进程级钩子——导出的独立 device 丢失不应触发实时 LGS 重建链路
+/// （见 [`DEVICE_LOST_HOOK`] 注释）。
+///
+/// # Errors
+///
+/// 同 [`create_gpu_context`]。
+pub fn create_gpu_context_offline() -> Result<GpuContext, SynthError> {
+    create_gpu_context_impl(false)
+}
+
+fn create_gpu_context_impl(forward_lost_hook: bool) -> Result<GpuContext, SynthError> {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
@@ -77,9 +102,23 @@ pub fn create_gpu_context() -> Result<GpuContext, SynthError> {
     }))
     .map_err(|e| SynthError::GpuInit(format!("request_device failed: {e:?}")))?;
 
-    // REND-019 PR-D §1.5 L1：LGS 独立 device 的丢失回调（钩子由上层注册；
-    // 回调线程只做日志 + 非阻塞钩子调用）
-    device.set_device_lost_callback(on_device_lost);
+    // REND-019 PR-D §1.5 L1 + #152：丢失回调（回调线程只做原子置位 + 非阻塞
+    // 钩子调用）。实时上下文转发进程级钩子（UI 主循环消费后发起 LGS 重建）；
+    // 离线上下文仅置标志，由导出侧有界读回等待快速收场。
+    let lost = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cb_lost = std::sync::Arc::clone(&lost);
+    device.set_device_lost_callback(move |reason: wgpu::DeviceLostReason, message: String| {
+        cb_lost.store(true, std::sync::atomic::Ordering::SeqCst);
+        let reason = format!("{reason:?}");
+        if forward_lost_hook {
+            tracing::error!("[gpu-synth] device lost: {reason} — {message}");
+            if let Some(hook) = DEVICE_LOST_HOOK.get() {
+                hook(reason, message);
+            }
+        } else {
+            tracing::error!("[gpu-synth] offline context device lost: {reason} — {message}");
+        }
+    });
 
     // R2/R5 测试注入武装（仅 `gpu-reconnect-test`；默认构建不编译）
     #[cfg(feature = "gpu-reconnect-test")]
@@ -90,6 +129,8 @@ pub fn create_gpu_context() -> Result<GpuContext, SynthError> {
         device,
         queue,
         adapter_info,
+        lost,
+        offline: !forward_lost_hook,
     })
 }
 
@@ -114,5 +155,16 @@ mod tests {
         let _ = ctx.device.poll(wgpu::PollType::Poll);
         let fired = CAPTURED.lock().map(|v| !v.is_empty()).unwrap_or(false);
         assert!(fired, "destroy 后单次 poll 应同步送达 device-lost 钩子");
+    }
+
+    /// REND-019 #152：离线上下文（不转发钩子）销毁后本地丢失标志必须置位，
+    /// 供离线渲染循环有界等待快速收场。
+    #[test]
+    fn test_offline_context_sets_local_lost_flag_on_destroy() {
+        let ctx = create_gpu_context_offline().expect("创建离线 GPU 上下文失败");
+        assert!(!ctx.is_lost(), "初始不应处于丢失状态");
+        ctx.device.destroy();
+        let _ = ctx.device.poll(wgpu::PollType::Poll);
+        assert!(ctx.is_lost(), "destroy 后本地丢失标志应置位");
     }
 }

@@ -14,6 +14,23 @@ impl GpuSynth {
         Self::with_resources(config, res)
     }
 
+    /// 离线导出专用构造（REND-019 #152）。
+    ///
+    /// 与 [`Self::new`] 的差异仅在 device-lost 语义：离线上下文的丢失**只置
+    /// 本地标志、不转发进程级钩子**——导出的独立 device 丢失不应误触发实时
+    /// LGS 重建链路；导出侧经 [`Self::is_device_lost`] / 有界读回等待快速
+    /// 以明确错误收场（可重试）。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Self::new`]。
+    pub fn new_offline(config: SynthConfig) -> Result<Self, SynthError> {
+        config.validate()?;
+        let ctx = Arc::new(crate::gpu::create_gpu_context_offline()?);
+        let res = GpuResources::new(ctx, config.block_size, config.max_voices)?;
+        Self::with_resources(config, res)
+    }
+
     /// Creates a synthesizer reusing an existing [`GpuResources`] (advanced
     /// use: multiple engines sharing one device).
     ///
@@ -288,6 +305,12 @@ impl GpuSynth {
     /// Returns the adapter info (for diagnostics).
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
         &self.res.ctx.adapter_info
+    }
+
+    /// 本实例的 device 是否已丢失（REND-019 #152；离线渲染循环快速收场用）。
+    #[must_use]
+    pub fn is_device_lost(&self) -> bool {
+        self.res.ctx.is_lost()
     }
 
     /// Loads a soundfont and selects `bank`/`preset`.

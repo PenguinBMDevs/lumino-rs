@@ -9,7 +9,9 @@ mod pipelines;
 mod resources;
 
 pub use buffer::GrowableBuffer;
-pub use context::{GpuContext, create_gpu_context, set_device_lost_hook};
+pub use context::{
+    GpuContext, create_gpu_context, create_gpu_context_offline, set_device_lost_hook,
+};
 #[cfg(feature = "gpu-reconnect-test")]
 pub(crate) use inject::{arm_injection_if_requested, take_injection_pending};
 pub use layout::*;
