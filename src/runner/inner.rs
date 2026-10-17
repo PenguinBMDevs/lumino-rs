@@ -254,7 +254,7 @@ impl Runner {
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) -> Result<RunnerInner, InitError> {
         // 设备检查门控可能已提前只读加载 Storage（含旧配置归一化），优先复用
-        let storage = match self.pending_storage.take() {
+        let mut storage = match self.pending_storage.take() {
             Some(storage) => storage,
             None => storage::Storage::new()?,
         };
@@ -266,6 +266,9 @@ impl Runner {
             let retention = storage.config.get().ui.log_retention_count;
             crate::logging::start_file_logging(log_dir, retention);
         }
+
+        // REF-001 G-2：ui_state 几何字段一次性迁移为逻辑像素（迁移逻辑见 `inner::window`）
+        window::migrate_ui_state_units(&mut storage, event_loop);
 
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();

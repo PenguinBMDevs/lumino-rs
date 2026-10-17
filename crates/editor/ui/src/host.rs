@@ -16,9 +16,6 @@
 
 use std::time::Instant;
 
-use iced_core::Size;
-use iced_wgpu::graphics::Viewport;
-
 use crate::statusbar::performance::CpuMonitor;
 use crate::{message, root, settings};
 
@@ -165,12 +162,19 @@ impl Host {
         self.render_ctx.format
     }
 
-    /// 调整窗口大小
+    /// 调整窗口大小（同时按**当前**缩放因子重建视口）
+    ///
+    /// 注意这里**重新读** `scale_factor()`：DPI 变化的唯一已知收敛点就是这次重建，
+    /// 因此任何"尺寸变了"的路径（`Resized`、`ScaleFactorChanged`）都必须走它——
+    /// 5 个窗口的 `ScaleFactorChanged` 分支都是「取 `window.inner_size()` 后复用原有的
+    /// resize 路径」，不另立入口，避免出现"改了 ui 忘了 gfx"的第二条路。
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.render_ctx.viewport = Viewport::with_physical_size(
-            Size::new(width, height),
-            self.window_ctx.window.scale_factor() as f32,
-        );
+        self.render_ctx.viewport =
+            render::viewport::viewport_for(width, height, self.window_ctx.window.scale_factor());
+
+        // 置脏：`render_iced_ui` 在 `ui_dirty == false` 时走「仅 present 缓存帧」的
+        // 早退路径（`host/render/ui.rs`），不置脏会出现"视口换了但界面还是旧布局"。
+        self.ui_dirty = true;
     }
 
     /// 获取当前光标位置（逻辑坐标）

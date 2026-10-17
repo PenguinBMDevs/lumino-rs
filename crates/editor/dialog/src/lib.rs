@@ -6,7 +6,9 @@
 pub mod manager;
 pub mod window;
 
-#[cfg(target_os = "windows")]
+// 跨平台模块：`platform.rs` 内部自身按 `target_os` 分派
+// （Windows 走 `GetMonitorInfoW().rcWork`，其它平台退化为整屏尺寸），
+// 因此**不能**在此处整体 gate，否则非 Windows 目标会因找不到 `crate::platform` 而编译失败。
 pub(crate) mod platform;
 
 #[cfg(target_os = "windows")]

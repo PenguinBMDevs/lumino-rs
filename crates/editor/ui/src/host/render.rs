@@ -27,7 +27,7 @@ pub(crate) mod note_worker;
 pub(crate) mod onion_skin;
 mod separate_thread;
 mod ui;
-mod viewport;
+pub(crate) mod viewport;
 
 // 公开子模块的公共类型
 

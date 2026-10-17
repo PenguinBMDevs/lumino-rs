@@ -5,6 +5,8 @@ use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 use lumino_core::storage::ui_state::UiState;
 use lumino_ui::constants::dimensions::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 
+pub(crate) mod geometry;
+
 /// 主窗口管理器
 ///
 /// 负责管理主窗口的生命周期、渲染和事件处理
@@ -199,11 +201,23 @@ impl WindowManager {
             WindowEvent::Resized(size) => {
                 self.handle_resize(size, storage);
             }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                // REF-001 G-1：DPI 变化不一定伴随 `Resized`（物理尺寸可能不变）。
+                // 视口里缓存着缩放因子，必须按**当前窗口状态**重建一次，否则
+                // 布局按旧 DPI 换算、渲染按旧 DPI 缩放，而光标位置用的是新 DPI
+                // ——出现"光标对、控件错"的半对状态。
+                let size = self.window.inner_size();
+                self.handle_resize(size, storage);
+                self.window.request_redraw();
+            }
             WindowEvent::Moved(pos) => {
-                // 更新存储的位置信息
+                // 更新存储的位置信息。
+                // REF-001 G-2：落盘口径是**逻辑像素**（读取侧按 LogicalPosition 用），
+                // 这里必须把物理坐标转换后再写，否则 150% 屏上每次重启窗口向右下漂移。
+                let (x, y) = geometry::logical_position(pos, self.window.scale_factor());
                 storage.ui_state.patch(|state| {
-                    state.x = Some(pos.x);
-                    state.y = Some(pos.y);
+                    state.x = Some(x);
+                    state.y = Some(y);
                 });
             }
             WindowEvent::CloseRequested => {
@@ -261,9 +275,15 @@ impl WindowManager {
                 let _ = self.window.request_inner_size(target);
             }
         }
+        // REF-001 G-2：`Resized` 给的是**物理**尺寸，而读取侧
+        // （`build_window_attributes`）按**逻辑**尺寸建窗。落盘前必须换算，
+        // 否则 150% 屏上存 2160×1350 会被当逻辑值用 ⇒ 下次启动物理 3240×2025，
+        // 每次重启 ×1.5。
+        let (width, height) = geometry::logical_size(size, self.window.scale_factor());
+
         storage.ui_state.patch(|state| {
-            state.w = size.width;
-            state.h = size.height;
+            state.w = width;
+            state.h = height;
             state.is_maximized = self.window.is_maximized();
         });
         self.resized = true;
