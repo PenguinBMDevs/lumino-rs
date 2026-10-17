@@ -21,6 +21,7 @@ use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
 };
 
 // 子模块声明
+pub(crate) mod arrangement_geometry;
 mod data;
 mod frame;
 pub(crate) mod note_worker;

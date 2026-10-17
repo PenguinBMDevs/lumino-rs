@@ -139,6 +139,9 @@ pub mod editor {
     /// 时间轴标尺高度（小节号显示区域）
     pub const RULER_HEIGHT: f32 = 24.0;
 
+    /// 工程走带视图顶部时间标尺高度（与旧 yinhe 移植一致）
+    pub const ARRANGEMENT_RULER_HEIGHT: f32 = 28.0;
+
     /// 小节号字体大小
     pub const MEASURE_NUMBER_FONT_SIZE: f32 = 12.5;
 

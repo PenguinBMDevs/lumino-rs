@@ -6,6 +6,18 @@ use iced_core::{Point, Rectangle};
 use iced_widget::canvas::{Frame, Path, Stroke};
 use lumino_ui_core::Renderer;
 
+/// 标签相对小节线的上移量（字号 10 + 2px 间隙）。
+///
+/// 纵向时间轴从键盘顶线向上增长；tick 0 恰在 `grid_bottom` 上。旧实现把
+/// 标签画在 `screen_y + 2.0`（键盘区内），网格里第一个可见标签变成第 2 小节。
+/// 统一画在线上方，tick 0 的“1”才留在网格内（#146）。
+const LABEL_LIFT: f32 = 12.0;
+
+/// 小节号标签的顶部 y：线上方 `LABEL_LIFT`，且不得越过网格顶边。
+fn label_top_for_line(screen_y: f32, grid_top: f32) -> f32 {
+    (screen_y - LABEL_LIFT).max(grid_top)
+}
+
 /// 仅绘制小节号文本与边框（网格线已由 wgpu 绘制）
 pub fn draw_labels(
     editor: &Editor,
@@ -37,7 +49,7 @@ pub fn draw_labels(
         if screen_y >= grid_top && screen_y <= grid_bottom {
             let label = iced_widget::canvas::Text {
                 content: measure_no.to_string(),
-                position: Point::new(4.0, screen_y + 2.0),
+                position: Point::new(4.0, label_top_for_line(screen_y, grid_top)),
                 max_width: 60.0,
                 line_height: iced_core::text::LineHeight::Relative(1.0),
                 size: iced_core::Pixels(10.0),
@@ -65,4 +77,23 @@ pub fn draw_labels(
         Point::new(bounds.width, grid_top),
     );
     frame.stroke(&top_border, border_stroke);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_label_top_for_first_measure_stays_inside_grid() {
+        // tick 0 的线在 grid_bottom（如 600），标签必须画在网格内（< 600）。
+        let y = label_top_for_line(600.0, 0.0);
+        assert_eq!(y, 588.0);
+        assert!(y < 600.0, "首个标签不得落到键盘区");
+    }
+
+    #[test]
+    fn test_label_top_is_clamped_to_grid_top() {
+        assert_eq!(label_top_for_line(5.0, 0.0), 0.0);
+        assert_eq!(label_top_for_line(20.0, 10.0), 10.0);
+    }
 }
