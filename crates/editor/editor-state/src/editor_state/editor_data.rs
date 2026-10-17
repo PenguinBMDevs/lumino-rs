@@ -2,6 +2,7 @@
 //!
 //! 方法实现已拆分为同级子模块：
 //! - `automation`：自动化 lane 管理、编辑与导出
+//! - `automation_sync`：lane → `document.control_events` 单一权威同步
 //! - `notes`：音符 CRUD、分割、合并、选择框
 //! - `history`：Undo/Redo 历史记录
 
@@ -17,6 +18,7 @@ use lumino_note_core::note::Note;
 pub(crate) mod accessors;
 pub(crate) mod async_commit;
 mod automation;
+mod automation_sync;
 mod construct;
 mod history;
 mod note_store_ops;
@@ -25,6 +27,8 @@ mod reset;
 mod tempo;
 #[cfg(test)]
 mod tests_automation;
+#[cfg(test)]
+mod tests_automation_sync;
 #[cfg(test)]
 mod tests_basics;
 #[cfg(test)]
