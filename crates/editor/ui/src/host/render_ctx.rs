@@ -67,11 +67,12 @@ pub(crate) struct RenderContext {
     /// `build_render_params` 消费并写入 `RenderParams::content_dirty`。
     /// 纯视口变化帧保持 `false`，UI 线程据此跳过 `wait_for_frame`。
     pub render_content_dirty: bool,
-    /// 上一次实际提交渲染参数时的物理视口尺寸（`None` = 尚未提交过）。
+    /// 上一次实际提交渲染参数时的视口指纹：物理宽、物理高、缩放因子（`to_bits`）。
     ///
-    /// 尺寸变化会触发渲染线程重建离屏纹理：此时必须等待本帧渲染完成，
-    /// 否则可能拷到刚创建、尚未渲染的空纹理。
-    pub last_sent_viewport: Option<(u32, u32)>,
+    /// 尺寸**或缩放因子**变化都会触发渲染线程重建离屏纹理：此时必须等待本帧渲染
+    /// 完成，否则可能拷到刚创建、尚未渲染的空纹理。缩放因子必须入键——DPI 切换时
+    /// 物理尺寸可以完全不变（REF-001 G-1）。
+    pub last_sent_viewport: Option<(u32, u32, u32)>,
     /// 上一次发送给渲染线程的预览实例。
     ///
     /// 用途有二：① 判定预览是否真的变化——内容不变的 hover 预览若每帧把

@@ -5,8 +5,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use iced_core::Size;
-use iced_wgpu::graphics::Viewport;
 use iced_winit::winit;
 
 use crate::config;
@@ -14,6 +12,7 @@ use crate::root;
 use crate::root::handlers;
 use crate::statusbar::performance::CpuMonitor;
 
+use super::render::viewport::viewport_for;
 use super::render_ctx::WgpuResources;
 use super::{Host, RenderContext, WindowContext};
 
@@ -34,8 +33,7 @@ impl Host {
         needs_renderers: bool,
         use_shared_engine: bool,
     ) -> (RenderContext, WindowContext) {
-        let viewport =
-            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
+        let viewport = viewport_for(width, height, window.scale_factor());
 
         // 全局字体入口（UI-001）：启动解析一次（path 优先 → name → 默认），
         // 各窗口/组件统一从 lumino_ui_core::font 取字体（字体切换重启生效）

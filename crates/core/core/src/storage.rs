@@ -5,4 +5,5 @@ pub mod ui_state;
 
 pub use config::Config;
 pub use config::UiConfig;
+pub use ui_state::UI_STATE_LAYOUT_VERSION;
 pub use ui_state::UiState;

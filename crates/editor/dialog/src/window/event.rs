@@ -11,13 +11,14 @@ impl DialogWindow {
     pub fn handle_event(&mut self, event: WindowEvent) {
         match &event {
             WindowEvent::Resized(size) => {
-                if size.width == 0 || size.height == 0 {
-                    return;
-                }
-                if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut()) {
-                    ui.resize(size.width, size.height);
-                    gfx.resize(size.width, size.height);
-                }
+                self.apply_window_size(size.width, size.height);
+            }
+            // REF-001 G-1：`ScaleFactorChanged` 不一定伴随 `Resized`（物理尺寸可能
+            // 不变，只有 DPI 变）。视口里缓存着缩放因子，必须按当前窗口状态重建，
+            // 否则布局按旧 DPI 换算、渲染按旧 DPI 缩放，而光标用的是新 DPI。
+            WindowEvent::ScaleFactorChanged { .. } => {
+                let size = self.window.inner_size();
+                self.apply_window_size(size.width, size.height);
             }
             WindowEvent::CloseRequested => {
                 self.should_close = true;
@@ -32,6 +33,21 @@ impl DialogWindow {
 
         if let Some(ui) = self.ui.as_mut() {
             ui.handle_events(event, winit::keyboard::ModifiersState::default());
+        }
+    }
+
+    /// 应用物理尺寸变化（`Resized` 与 `ScaleFactorChanged` 共用）
+    ///
+    /// `ui.resize` 会按**当前** `scale_factor()` 重建视口并置脏，因此 DPI 变化
+    /// 走同一条路径即可自愈；对话框的重绘由 `DialogManager::update` 逐帧驱动，
+    /// 这里不发 `request_redraw`（历史上无条件请求重绘造成过 GPU 满载自循环）。
+    fn apply_window_size(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut()) {
+            ui.resize(width, height);
+            gfx.resize(width, height);
         }
     }
 

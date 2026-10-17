@@ -12,6 +12,19 @@ use lumino_gfx::ArrangementUniform;
 /// 这里取 0.9 留余量，避免在临界缩放来回切换。
 const VS_CULL_VISIBLE_FRACTION_THRESHOLD: f32 = 0.9;
 
+/// 渲染线程的「视口指纹」：物理尺寸 + 缩放因子
+///
+/// # 为什么必须带缩放因子（REF-001 阶段 G-1）
+///
+/// 只按物理尺寸判「视口变了」会漏掉 DPI 切换——把窗口从一个显示器拖到另一个
+/// 缩放比不同的显示器时，物理尺寸可能**一模一样**，只有 `scale_factor` 变了。
+/// 此时渲染线程不重建离屏纹理、也不走等待路径，下一帧拿到的还是旧 DPI 的图。
+///
+/// 缩放因子按 `to_bits` 比较：等价于逐位比较 `f32`，避免浮点相等判定的意外。
+fn viewport_key(width: u32, height: u32, scale_factor: f32) -> (u32, u32, u32) {
+    (width, height, scale_factor.to_bits())
+}
+
 /// 估算「可见音符占比」（0~1）= 可见 tick 比例 × 可见 key 比例。
 ///
 /// 用于 PREF-005 的 VS cull 直绘闸门。闸门判错会直接造成放大档 **8 倍回退**
@@ -157,12 +170,19 @@ impl Host {
         //
         // 决定调用方 present 前是否必须等待渲染线程提交本帧：
         // ① 生产者置位：音符编辑增量 / 洋葱皮重传 / 预览实例变化（新产生的数据）；
-        // ② 首次提交或视口物理尺寸变化：渲染线程会重建离屏纹理，跳过等待可能拷到
-        //    刚创建、尚未渲染的空纹理。
+        // ② 首次提交、视口物理尺寸变化或**缩放因子变化**：渲染线程会重建离屏纹理，
+        //    跳过等待可能拷到刚创建、尚未渲染的空纹理。
+        //
+        // REF-001 G-1：键里必须带缩放因子——DPI 从 100% 切到 150% 时物理尺寸可以完全
+        // 不变，只按物理尺寸判会漏掉"视口变了"，渲染线程继续拿旧 DPI 的图。
         //
         // 注意：随视口每帧重算的派生实例（网格/标尺/走带覆盖层/CC 柱）**不**置位——
         // 它们落后一帧无感知，置位会让纯滚动帧永远走等待路径、免等待策略失效。
-        let viewport_key = (physical_size.width, physical_size.height);
+        let viewport_key = viewport_key(
+            physical_size.width,
+            physical_size.height,
+            self.render_ctx.viewport.scale_factor(),
+        );
         let viewport_changed = self.render_ctx.last_sent_viewport != Some(viewport_key);
         let content_dirty =
             std::mem::take(&mut self.render_ctx.render_content_dirty) || viewport_changed;
@@ -247,12 +267,29 @@ impl Host {
 
 #[cfg(test)]
 mod tests {
-    use super::{VS_CULL_VISIBLE_FRACTION_THRESHOLD, estimate_visible_fraction};
+    use super::{VS_CULL_VISIBLE_FRACTION_THRESHOLD, estimate_visible_fraction, viewport_key};
 
     /// 1920px 画布 + 128 键（max_key_index = 127）
     const CANVAS_W: f32 = 1920.0;
     const KEYS: usize = 128;
     const MAX_KEY: f32 = 127.0;
+
+    /// REF-001 G-1：同物理尺寸、不同 DPI 必须被判为「视口变了」
+    #[test]
+    fn viewport_key_detects_scale_factor_change() {
+        let at_100 = viewport_key(1920, 1080, 1.0);
+        let at_150 = viewport_key(1920, 1080, 1.5);
+
+        assert_ne!(
+            at_100, at_150,
+            "物理尺寸相同、缩放因子不同时，视口指纹必须不同——否则渲染线程不会重建离屏纹理"
+        );
+        assert_eq!(
+            viewport_key(1920, 1080, 1.5),
+            at_150,
+            "同一视口重复取值必须稳定"
+        );
+    }
 
     /// 闸门必须**打开**：全曲缩放到屏 + 全键可见（可见占比 ≈ 1.0）。
     ///
