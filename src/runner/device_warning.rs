@@ -137,6 +137,18 @@ impl DeviceWarningWindow {
                 }
                 window.request_redraw();
             }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                // REF-001 G-1：DPI 变化可能不伴随 `Resized`（物理尺寸不变），
+                // 视口里缓存的缩放因子必须按当前窗口状态重建。
+                let size = window.inner_size();
+                if let Some(ref mut ui) = self.ui {
+                    ui.resize(size.width, size.height);
+                }
+                if let Some(ref mut gfx) = self.gfx {
+                    gfx.resize(size.width, size.height);
+                }
+                window.request_redraw();
+            }
             WindowEvent::CloseRequested => {
                 self.close_requested = true;
             }

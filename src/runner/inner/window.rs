@@ -185,3 +185,41 @@ impl RunnerInner {
         }
     }
 }
+
+/// 启动时把 `ui_state` 的几何字段一次性迁移为**逻辑像素**（REF-001 阶段 G-2）
+///
+/// # 为什么必须迁移
+///
+/// 历史版本写入侧用 `PhysicalSize`/`PhysicalPosition`，读取侧
+/// （`WindowManager::build_window_attributes`）用 `LogicalSize`/`LogicalPosition`：
+/// 150% 缩放下逻辑 1440×900 = 物理 2160×1350，存进去 2160×1350、下次按逻辑 2160×1350
+/// 建窗 ⇒ 物理 3240×2025 ⇒ **每次重启 ×1.5**，位置同比例漂移。
+///
+/// # 三个必须守住的行为
+///
+/// 1. **只迁一次**：`UiState::version` 达标即返回，绝不重复除 `scale`；
+/// 2. **立刻落盘**：`version` 只活在内存里的话，下次启动会再除一次 ⇒ 窗口越迁越小；
+/// 3. **夹到工作区**：历史累积的异常大值（如 3240 宽）不能原样还原，否则用户升级后
+///    第一眼就是超出屏幕的巨窗。
+pub(crate) fn migrate_ui_state_units(
+    storage: &mut crate::storage::Storage,
+    event_loop: &winit::event_loop::ActiveEventLoop,
+) {
+    use super::super::window_manager::geometry;
+
+    if !geometry::needs_migration(storage.ui_state.get()) {
+        return;
+    }
+
+    let (scale, work_area) = geometry::primary_monitor_metrics(event_loop);
+    storage.ui_state.patch(|state| {
+        // 返回值只用于单测断言；这里唯一目的是把 `state` 就地改写
+        let _migrated = geometry::migrate_units(state, scale, work_area);
+    });
+
+    if let Err(e) = storage.ui_state.save() {
+        tracing::warn!("ui_state 单位迁移落盘失败（下次启动将重试）: {e}");
+    }
+
+    tracing::info!("ui_state 尺寸单位已迁移为逻辑像素（scale={scale:.2}，工作区={work_area:?}）");
+}
