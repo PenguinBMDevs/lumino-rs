@@ -87,8 +87,11 @@ impl StagingRing {
                 // 滞留在 channel 中，后续 try_read 的 is_ok() 误判导致
                 // get_mapped_range 在已销毁 buffer 上 panic（wgpu_core.rs:2169）。
                 slot.rx = None;
-                // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数
-                slot.buffer.take();
+                // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数；
+                // REND-019 PR-D：drop 前复位映射状态（防挂起映射在 Drop 中访问违例）
+                if let Some(buf) = slot.buffer.take() {
+                    crate::device_status::safe_unmap(buf.buffer.inner());
+                }
                 // REND-019 PR-D（计划 F10）：device 丢失（TDR）时禁止在死 device 上
                 // 新建 staging 资源（validation 失败/挂起）——留空槽，交由
                 // `write_slot_buffer` 的 None 容错跳过本帧，导出由 cancel 标志收场。
@@ -179,7 +182,10 @@ impl StagingRing {
             tracing::warn!("staging ring 槽位恢复短路：device 已丢失（TDR），交由 cancel 收场");
             let slot = &mut self.slots[slot_idx];
             slot.rx = None;
-            slot.buffer.take();
+            if let Some(buf) = slot.buffer.take() {
+                // REND-019 PR-D：drop 前复位映射状态（死 device 上 drop 挂起映射会访问违例）
+                crate::device_status::safe_unmap(buf.buffer.inner());
+            }
             return;
         }
         self.rebuild_slot(slot_idx);
@@ -194,8 +200,11 @@ impl StagingRing {
             .as_ref()
             .map(|b| (b.width, b.height))
             .unwrap_or((0, 0));
-        // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数
-        slot.buffer.take();
+        // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数；
+        // REND-019 PR-D：drop 前复位映射状态（防挂起映射在 Drop 中访问违例）
+        if let Some(buf) = slot.buffer.take() {
+            crate::device_status::safe_unmap(buf.buffer.inner());
+        }
         if size.0 > 0 && size.1 > 0 {
             slot.buffer = Some(Self::create_staging_buffer(&self.device, size.0, size.1));
         }
@@ -207,6 +216,15 @@ impl StagingRing {
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
+            // REND-019 PR-D（R5-b：TDR 快速放弃）——device 已丢失时不等满 5s：
+            // 挂起映射永不会完成，槽位立即短路回收，导出由 cancel 收场。
+            if crate::device_status::device_lost() {
+                tracing::warn!("staging ring wait_read：device 已丢失（TDR），立即放弃等待");
+                self.recover_slot_after_map_failure(self.next_read);
+                self.next_read = (self.next_read + 1) % 4;
+                self.inflight = self.inflight.saturating_sub(1);
+                return Vec::new();
+            }
             {
                 let slot = &self.slots[self.next_read];
                 if let Some(ref rx) = slot.rx
@@ -242,6 +260,13 @@ impl StagingRing {
         }
     }
 
+    /// 当前读槽读取失败后的统一清理：TDR 短路回收槽位 + 游标推进 + inflight 修正。
+    fn skip_current_slot(&mut self) {
+        self.recover_slot_after_map_failure(self.next_read);
+        self.next_read = (self.next_read + 1) % 4;
+        self.inflight = self.inflight.saturating_sub(1);
+    }
+
     fn finish_read(&mut self) -> Option<Vec<u8>> {
         let slot = &mut self.slots[self.next_read];
         slot.rx = None;
@@ -251,7 +276,25 @@ impl StagingRing {
             return None;
         };
 
-        let data = buf.buffer.inner().slice(..).get_mapped_range();
+        // REND-019（R5-b 实测崩溃根因三）：map 回调 `Ok` 与 `device.destroy()`
+        // 之间存在竞态窗口——回调已送达（缓冲视为已映射），但缓冲可能已随 TDR
+        // 销毁；此时 `get_mapped_range` 走 wgpu facade panic（wgpu_core.rs:2169），
+        // unwind 途中再叠加 unmap 的二次 panic 即 panic-in-panic → 进程 abort
+        // （0xC0000409 实测）。防线：①读前复查丢失标志（关闭大多数窗口）；
+        // ②catch_unwind 兜底残余竞态——任何 panic 一律按 map 失败处理，绝不抛给上层。
+        if crate::device_status::device_lost() {
+            tracing::warn!("staging ring finish_read 短路：device 已丢失（TDR）");
+            self.skip_current_slot();
+            return None;
+        }
+        let mapped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            buf.buffer.inner().slice(..).get_mapped_range()
+        }));
+        let Ok(data) = mapped else {
+            tracing::warn!("staging ring 读回竞态（缓冲已随 TDR 销毁），按 map 失败处理");
+            self.skip_current_slot();
+            return None;
+        };
         let total_unpadded = (buf.unpadded_bytes_per_row * buf.height) as usize;
 
         // 从对象池取出复用，或新建缓冲区；确保容量足够当前尺寸
@@ -286,7 +329,7 @@ impl StagingRing {
             }
         }
         drop(data);
-        buf.buffer.inner().unmap();
+        crate::device_status::safe_unmap(buf.buffer.inner());
 
         self.next_read = (self.next_read + 1) % 4;
         self.inflight -= 1;
@@ -316,8 +359,12 @@ impl Drop for StagingRing {
         for slot in &mut self.slots {
             // 先丢弃 rx，避免 wgpu 在 buffer drop 时同步回调 Err 消息滞留
             slot.rx = None;
+            // REND-019 PR-D（R5-b 实测崩溃根因二）：drop 前复位映射状态——
+            // 挂起/残留映射在死 device 上 Drop 会触发 vkUnmapMemory 访问违例。
+            if let Some(buf) = slot.buffer.take() {
+                crate::device_status::safe_unmap(buf.buffer.inner());
+            }
             // TrackedBuffer Drop 自动注销内存计数
-            slot.buffer.take();
         }
     }
 }

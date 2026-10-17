@@ -292,6 +292,13 @@ impl MidiconsoleRenderer {
         queue.submit(std::iter::once(encoder.finish()));
 
         let slice = staging.slice(..);
+        // REND-019 PR-D（R5-b 实测崩溃根因一）：device 丢失（TDR）时禁止发起
+        // 映射——map 回调可能永不送达，残留 `mapped_range` 会毒化后续
+        // `map_async`（wgpu 断言「Buffer is already mapped」）。
+        if crate::device_status::device_lost() {
+            tracing::warn!("midiconsole 读回跳过：device 已丢失（TDR）");
+            return None;
+        }
         let (tx, rx) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
@@ -303,16 +310,26 @@ impl MidiconsoleRenderer {
             timeout: Some(std::time::Duration::from_secs(30)),
         });
         let Ok(callback) = rx.recv_timeout(std::time::Duration::from_secs(30)) else {
+            // 超时必须 unmap 复位映射状态（否则下次 map_async 断言崩溃）
+            crate::device_status::safe_unmap(&staging);
             tracing::warn!("midiconsole 读回超时（map_async 回调未收到）");
             return None;
         };
         if callback.is_err() {
-            staging.unmap();
+            crate::device_status::safe_unmap(&staging);
             tracing::warn!("midiconsole 读回失败（map_async 返回错误）");
             return None;
         }
 
-        let data = slice.get_mapped_range();
+        // REND-019（R5-b 实测崩溃根因三）：回调 Ok 与 destroy 的竞态窗口内
+        // get_mapped_range 走 facade panic——catch 后按读回失败处理。
+        let mapped =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| slice.get_mapped_range()));
+        let Ok(data) = mapped else {
+            crate::device_status::safe_unmap(&staging);
+            tracing::warn!("midiconsole 读回竞态（缓冲已随 TDR 销毁），放弃本帧");
+            return None;
+        };
         let mut out = vec![0u8; (self.frame_w * self.frame_h * bpp) as usize];
         for y in 0..self.frame_h {
             let rs = (y * padded) as usize;
@@ -323,7 +340,7 @@ impl MidiconsoleRenderer {
             }
         }
         drop(data);
-        staging.unmap();
+        crate::device_status::safe_unmap(&staging);
         Some(out)
     }
 }

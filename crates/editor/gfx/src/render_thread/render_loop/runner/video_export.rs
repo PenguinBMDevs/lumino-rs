@@ -69,6 +69,14 @@ pub(super) fn handle_video_frame(
         return;
     }
 
+    // REND-019 PR-D（R5-b：TDR 快速放弃）——device 已丢失时不再对死设备提交
+    // 导出帧（离屏渲染 / copy / submit / map 均无意义且会毒化映射状态）；
+    // 导出由 Runner 侧 cancel 标志以明确错误收场。
+    if crate::device_status::device_lost() {
+        tracing::warn!("RenderVideoFrame：device 已丢失（TDR），跳过本帧（导出将由 cancel 收场）");
+        return;
+    }
+
     let width = params.viewport_size.0.max(1);
     let height = params.viewport_size.1.max(1);
 

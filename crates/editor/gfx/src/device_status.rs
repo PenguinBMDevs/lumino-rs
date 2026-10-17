@@ -56,6 +56,23 @@ pub fn clear_device_lost() {
     }
 }
 
+/// REND-019（R5-b 实测崩溃根因三）：TDR 竞态下的安全 `unmap`。
+///
+/// `map_async` 完成回调与 `device.destroy()` 之间存在竞态窗口：回调已送达
+/// `Ok`（缓冲被视为已映射），设备随后被销毁——此时 `unmap` 可能命中 wgpu
+/// facade 的两类结果：
+/// - 缓冲已销毁（校验错误，走 uncaptured 错误处理，非致命）；
+/// - 「You cannot unmap a buffer that still has accessible mapped views」——
+///   **facade panic**；若该调用恰运行在 unwind 清理路径上，二次 panic 会
+///   触发 panic-in-panic → 进程 abort（0xC0000409，2026-10-17 R5-b 视频
+///   导出场景实测）。
+///
+/// 本助手吞掉 `unmap` 的 panic：缓冲随设备销毁一并释放，此处失败无事务性
+/// 影响——清理路径（Drop / 槽位重建）必须绝不把 panic 抛给上层。
+pub(crate) fn safe_unmap(buffer: &wgpu::Buffer) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.unmap()));
+}
+
 /// UI 通知器签名（REND-019 PR-C §1.3 C1/C2）。
 type LostNotifier = Box<dyn Fn(wgpu::DeviceLostReason, String) + Send + Sync>;
 

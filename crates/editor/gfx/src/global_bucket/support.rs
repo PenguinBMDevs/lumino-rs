@@ -97,6 +97,12 @@ pub(crate) fn readback_bytes_sync(
     staging: &wgpu::Buffer,
     need_bytes: usize,
 ) -> Result<Vec<u8>, GlobalBucketError> {
+    // REND-019 PR-D（R5-b 实测崩溃根因一）：device 丢失（TDR）时禁止发起新映射——
+    // map 回调可能永不送达，残留 `mapped_range` 会毒化后续 `map_async`
+    // （wgpu 断言「Buffer is already mapped」，随后 teardown 访问违例）。
+    if crate::device_status::device_lost() {
+        return Err(GlobalBucketError::MapFailed("device lost".to_string()));
+    }
     let cap = staging.size() as usize;
     let mut len = need_bytes.min(cap);
     len -= len % wgpu::MAP_ALIGNMENT as usize;
@@ -109,14 +115,35 @@ pub(crate) fn readback_bytes_sync(
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Ok(map_result) = rx.try_recv() {
-            map_result.map_err(|e| GlobalBucketError::MapFailed(format!("{e:?}")))?;
-            let data = staging.slice(..len as u64).get_mapped_range();
+            if let Err(e) = map_result {
+                // 失败路径也必须 unmap 复位映射状态（否则下次 map_async 断言崩溃）
+                crate::device_status::safe_unmap(staging);
+                return Err(GlobalBucketError::MapFailed(format!("{e:?}")));
+            }
+            // REND-019（R5-b 实测崩溃根因三）：回调 Ok 与 destroy 的竞态窗口内
+            // get_mapped_range 走 facade panic——catch 后按 map 失败处理。
+            let mapped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                staging.slice(..len as u64).get_mapped_range()
+            }));
+            let Ok(data) = mapped else {
+                crate::device_status::safe_unmap(staging);
+                return Err(GlobalBucketError::MapFailed(
+                    "TDR 竞态：缓冲已销毁".to_string(),
+                ));
+            };
             let out = data.to_vec();
             drop(data);
-            staging.unmap();
+            crate::device_status::safe_unmap(staging);
             return Ok(out);
         }
+        if crate::device_status::device_lost() {
+            // TDR：立即放弃等待并复位映射状态（不占用 5s 超时窗口）
+            crate::device_status::safe_unmap(staging);
+            return Err(GlobalBucketError::MapFailed("device lost".to_string()));
+        }
         if Instant::now() >= deadline {
+            // 超时必须复位映射状态（同失败路径）
+            crate::device_status::safe_unmap(staging);
             return Err(GlobalBucketError::MapTimeout);
         }
         // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
@@ -134,6 +161,10 @@ pub(crate) fn readback_u256(
     device: &wgpu::Device,
     staging: &wgpu::Buffer,
 ) -> Result<[u32; HIST_LEN], GlobalBucketError> {
+    // REND-019 PR-D（R5-b 实测崩溃根因一）：TDR 时禁止发起新映射（同上）
+    if crate::device_status::device_lost() {
+        return Err(GlobalBucketError::MapFailed("device lost".to_string()));
+    }
     let (tx, rx) = mpsc::channel();
     staging
         .slice(..)
@@ -143,21 +174,44 @@ pub(crate) fn readback_u256(
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Ok(map_result) = rx.try_recv() {
-            map_result.map_err(|e| GlobalBucketError::MapFailed(format!("{e:?}")))?;
-            let data = staging.slice(..).get_mapped_range();
-            if data.len() != HIST_BYTES as usize {
+            if let Err(e) = map_result {
+                // 失败路径必须 unmap 复位（同 readback_bytes_sync）
+                crate::device_status::safe_unmap(staging);
+                return Err(GlobalBucketError::MapFailed(format!("{e:?}")));
+            }
+            // REND-019（R5-b 实测崩溃根因三）：竞态窗口同 readback_bytes_sync
+            let mapped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                staging.slice(..).get_mapped_range()
+            }));
+            let Ok(data) = mapped else {
+                crate::device_status::safe_unmap(staging);
+                return Err(GlobalBucketError::MapFailed(
+                    "TDR 竞态：缓冲已销毁".to_string(),
+                ));
+            };
+            let got = data.len();
+            if got != HIST_BYTES as usize {
+                drop(data);
+                crate::device_status::safe_unmap(staging);
                 return Err(GlobalBucketError::BadLength {
                     expected: HIST_BYTES as usize,
-                    got: data.len(),
+                    got,
                 });
             }
             let mut out = [0u32; HIST_LEN];
             out.copy_from_slice(bytemuck::cast_slice(&data));
             drop(data);
-            staging.unmap();
+            crate::device_status::safe_unmap(staging);
             return Ok(out);
         }
+        if crate::device_status::device_lost() {
+            // TDR：立即放弃等待并复位映射状态
+            crate::device_status::safe_unmap(staging);
+            return Err(GlobalBucketError::MapFailed("device lost".to_string()));
+        }
         if Instant::now() >= deadline {
+            // 超时必须复位映射状态
+            crate::device_status::safe_unmap(staging);
             return Err(GlobalBucketError::MapTimeout);
         }
         // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
