@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### S0-1 · 形状数据模型（Spiderweb 图形工具移植底座）
+
+- **新增** — `lumino-core` 新模块 `shape`（`shape.rs` + `shape/{geometry,style,model}.rs`，
+  共 831 行含测试）：`ShapeModel` / `ShapeKind` / `ShapeGeometry` / `ShapeAnchor` / `ShapeRect` /
+  `ShapeStyle` / `ShapeFill` / `ShapeOp`，全部 `serde` 化。
+- **目的** — 把「一个形状」从一次性烘焙的几何残留，变成可持久、可回改、可与它生成的音符同组撤销的
+  **文档对象**（Spiderweb 图形工具 45 项缺口清单的公共底座，见
+  `docs/2026-10-17-Spiderweb图形工具缺口清单与移植规划.md`）。
+- **设计决策** —
+  1. 不新建 crate：编辑器域类型同域先例（`Tool` / `BrushConfig`）已在 `lumino-core`，
+     且该 crate 已依赖 `serde` / `bincode`，故只加模块、不加依赖边；
+  2. 几何不分枚举（统一点列 + 可选外接框），再生成管线只留一条代码分支；
+  3. **`k`（beats per key）随形状存储**——圆弧/突起/遮罩带的「圆度」按绘制时屏幕比例定义，
+     丢失它会让形状跨缩放走形；
+  4. `ops` 为**有序修饰链**（照抄 Spiderweb `notes/fx.py` 语义），S0 只有 `Noop` 占位变体，
+     真实算子由后续任务逐个追加到末尾；
+  5. 校验返回 `Err(InvalidArgument)` 而非 panic（损坏/手改工程不得让加载路径崩）。
+- **未改动** — `ProjectMetadata.format_version`、`EditorSnapshot`、`OpKind`、协作协议、`Tool` 枚举、i18n。
+- **验证** — `cargo test -p lumino-core shape` 33 passed / 0 failed（新增 32 项）；
+  `cargo clippy -p lumino-core --all-targets` 零警告；`cargo fmt` 干净；
+  7 个新文件均 ≤400 行（最大 198）。
+
 ### UI-018 / #146 · 加载 MIDI 后标尺小节号从 2 起跳（P0）
 
 - **症状** — 加载多轨 MIDI（如 Bad Apple 8.49M，123 轨 / division 960）后，钢琴
