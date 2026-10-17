@@ -163,7 +163,9 @@ impl DialogWindow {
             }
         }
 
-        self.window.set_visible(true);
+        // REF-001：**不在此处显示窗口**。窗口要等「入册后的首帧」测量完内容尺寸
+        // 再显示（`window/size.rs` 的 `apply_measured_size`，由
+        // `DialogManager::update` 调用）——那时同帧的内容注入也已完成。
         self.ui = Some(ui);
 
         Ok(())

@@ -7,12 +7,13 @@ use std::sync::{Mutex, OnceLock};
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winapi::shared::minwindef::{LPARAM, LRESULT, WPARAM};
-use winapi::shared::windef::{HWND, RECT};
+use winapi::shared::windef::{HMONITOR, HWND, RECT};
 use winapi::um::winuser::{
-    CallWindowProcW, DefWindowProcW, GWL_WNDPROC, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
-    HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed,
-    SetWindowLongPtrW, WM_NCHITTEST,
+    CallWindowProcW, DefWindowProcW, GWL_WNDPROC, GetMonitorInfoW, GetWindowRect, HTBOTTOM,
+    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, SetWindowLongPtrW, WM_NCHITTEST,
 };
+use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::window::Window;
 
 type WndProc = unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
@@ -116,6 +117,77 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+/// 取窗口所在显示器的**工作区**矩形（物理像素，虚拟屏坐标）。
+///
+/// REF-001 阶段 E：winit 0.30 只暴露整屏 `MonitorHandle::size()`，没有工作区 API
+/// （`rcWork` 仅在其内部用于无边框最大化）。而对话框高度上限必须按"可见区域"算，
+/// 否则窗口底部会被任务栏遮住。
+///
+/// 用 `MonitorFromWindow(..., MONITOR_DEFAULTTONEAREST)`：与窗口自身的 DPI 归属
+/// 一致（PerMonitorV2 进程下 `rcWork` 即该显示器的物理像素）。
+pub fn monitor_work_rect(window: &Window) -> Option<RECT> {
+    let handle = window.window_handle().ok()?;
+    let hwnd = match handle.as_raw() {
+        RawWindowHandle::Win32(handle) => handle.hwnd.get() as HWND,
+        _ => return None,
+    };
+
+    // SAFETY: `hwnd` 取自本进程窗口的 `RawWindowHandle`，在本函数内保持有效；
+    // `MonitorFromWindow` 不保留句柄，返回值只用于紧随其后的 `GetMonitorInfoW`。
+    let monitor: HMONITOR = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        return None;
+    }
+
+    // SAFETY: `MONITORINFO` 是 POD。Win32 要求调用方先写 `cbSize`；
+    // 下面的 `assume_init` 只在 `GetMonitorInfoW` 返回非零后执行。
+    let mut info = std::mem::MaybeUninit::<MONITORINFO>::uninit();
+    unsafe {
+        (*info.as_mut_ptr()).cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    }
+    let ok = unsafe { GetMonitorInfoW(monitor, info.as_mut_ptr()) };
+    if ok == 0 {
+        return None;
+    }
+    // SAFETY: `ok != 0` ⇒ Win32 已完整填充结构体。
+    let info = unsafe { info.assume_init() };
+
+    Some(info.rcWork)
+}
+
+/// 工作区矩形 → 逻辑尺寸（纯函数）
+pub(crate) fn work_rect_size(rect: RECT, scale_factor: f32) -> Option<LogicalSize<f32>> {
+    if !scale_factor.is_finite() || scale_factor <= 0.0 {
+        return None;
+    }
+
+    let width = (rect.right - rect.left) as f32 / scale_factor;
+    let height = (rect.bottom - rect.top) as f32 / scale_factor;
+
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+
+    Some(LogicalSize::new(width, height))
+}
+
+/// 工作区矩形 → 物理尺寸（纯函数）
+pub(crate) fn work_rect_physical_size(rect: RECT) -> Option<winit::dpi::PhysicalSize<u32>> {
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+
+    Some(winit::dpi::PhysicalSize::new(width as u32, height as u32))
+}
+
+/// 工作区矩形 → 左上角物理坐标（纯函数）
+pub(crate) fn work_rect_position(rect: RECT) -> PhysicalPosition<i32> {
+    PhysicalPosition::new(rect.left, rect.top)
+}
+
 /// 为指定窗口安装独立的拉伸命中测试，按 HWND 保存原始过程。
 pub fn setup_resize_border(window: &Window) -> Result<(), String> {
     let handle = window
@@ -206,6 +278,81 @@ mod tests {
         assert_eq!(
             hit_test_resize_border(1275, 795, 1280, 800),
             Some(HTBOTTOMRIGHT as LRESULT)
+        );
+    }
+
+    /// 工作区矩形 → 逻辑尺寸：100% DPI 下与物理像素 1:1。
+    ///
+    /// 用「整屏 1920×1080、工作区去掉 40px 任务栏」的真实形状。
+    #[test]
+    fn test_work_rect_size_at_100_percent() {
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1040,
+        };
+
+        let size = work_rect_size(rect, 1.0).expect("100% DPI 下应能换算工作区");
+        assert_eq!(size.width, 1920.0);
+        assert_eq!(size.height, 1040.0);
+    }
+
+    /// 工作区矩形 → 逻辑尺寸：150% DPI 下物理像素要除以缩放。
+    #[test]
+    fn test_work_rect_size_at_150_percent() {
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 2880,
+            bottom: 1560,
+        };
+
+        let size = work_rect_size(rect, 1.5).expect("150% DPI 下应能换算工作区");
+        assert!((size.width - 1920.0).abs() < 0.01, "实测 {}", size.width);
+        assert!((size.height - 1040.0).abs() < 0.01, "实测 {}", size.height);
+    }
+
+    /// 左侧副屏的负坐标必须原样保留（历史坑：符号扩展错误会变成 63536 一类巨值）。
+    #[test]
+    fn test_work_rect_position_keeps_negative_coords() {
+        let rect = RECT {
+            left: -1920,
+            top: 100,
+            right: 0,
+            bottom: 1140,
+        };
+
+        let position = work_rect_position(rect);
+        assert_eq!(position.x, -1920);
+        assert_eq!(position.y, 100);
+    }
+
+    /// 非法缩放系数 / 退化矩形必须返回 `None`（调用方据此退化为"只用声明上限"），
+    /// 绝不能返回 0 或负数尺寸——那会让窗口尺寸变成 0。
+    #[test]
+    fn test_work_rect_size_rejects_invalid_input() {
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1040,
+        };
+
+        assert!(work_rect_size(rect, 0.0).is_none(), "0 缩放应被拒绝");
+        assert!(work_rect_size(rect, -1.0).is_none(), "负缩放应被拒绝");
+        assert!(work_rect_size(rect, f32::NAN).is_none(), "NaN 缩放应被拒绝");
+
+        let degenerate = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        assert!(work_rect_size(degenerate, 1.0).is_none(), "空矩形应被拒绝");
+        assert!(
+            work_rect_physical_size(degenerate).is_none(),
+            "空矩形的物理尺寸应被拒绝"
         );
     }
 }

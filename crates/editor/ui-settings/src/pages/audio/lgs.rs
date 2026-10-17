@@ -63,7 +63,7 @@ pub(super) fn render_lgs_options<'a>(
                 ))
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
-                .width(200.0),
+                .width(Length::Fill),
                 t.lgs_buffer_hint,
             ),
             iced_widget::slider(6.0..=13.0, block_index as f32, |i| {
@@ -120,7 +120,7 @@ pub(super) fn render_lgs_options<'a>(
                 text(format!("{}: {}", t.global_voice_limit, global_display))
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style())
-                    .width(200.0),
+                    .width(Length::Fill),
                 t.global_voice_limit_hint,
             ),
             iced_widget::slider(0.0..=65536.0, global_limit_val as f64, |v| {
@@ -234,7 +234,7 @@ pub(super) fn render_lgs_options<'a>(
                 text(t.gpu_load_display)
                     .size(TEXT_SIZE_CONTENT)
                     .style(create_content_text_style())
-                    .width(200.0),
+                    .width(Length::Fill),
                 t.gpu_load_display_hint,
             ),
             pick_list(load_mode_options, Some(current_load_mode), |m| {
