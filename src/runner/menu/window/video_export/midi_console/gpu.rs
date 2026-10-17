@@ -49,9 +49,12 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
             return None;
         }
         let mut guard = g.borrow_mut();
-        let need_rebuild = guard
-            .as_ref()
-            .is_none_or(|c| c.width != frame_width || c.height != frame_height);
+        // REND-019 PR-D（§1.5 L3）：代次登记判废——重连（device 重建）后
+        // 旧 device 上的缓存上下文不可用，触发惰性重建。
+        let current_epoch = current_gpu_epoch();
+        let need_rebuild = guard.as_ref().is_none_or(|c| {
+            c.width != frame_width || c.height != frame_height || c.epoch != current_epoch
+        });
         if need_rebuild {
             match build_gpu_ctx(frame_width, frame_height) {
                 Some(ctx) => *guard = Some(ctx),
@@ -95,11 +98,14 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
     }
 }
 
-/// 线程内缓存的 GPU 上下文（来自 `lumino_gfx`，按分辨率缓存）
+/// 线程内缓存的 GPU 上下文（来自 `lumino_gfx`，按分辨率缓存 + 代次登记）
 struct GpuCtx {
     width: u32,
     height: u32,
     ctx: MidiconsoleGpuContext,
+    /// REND-019 PR-D（§1.5 L3）：缓存创建时的编辑器 GPU 代次。device 重建
+    /// （重连）后旧代次缓存判废——下次使用惰性重建（无需主动流水线步骤）。
+    epoch: Option<lumino_gfx::GpuEpoch>,
 }
 
 thread_local! {
@@ -109,8 +115,18 @@ thread_local! {
     static GPU_DISABLED: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
 }
 
+/// 当前编辑器 GPU 代次（共享 GPU 未初始化时为 `None`）。
+fn current_gpu_epoch() -> Option<lumino_gfx::GpuEpoch> {
+    lumino_gfx::gpu_snapshot().ok().map(|(epoch, _)| epoch)
+}
+
 /// 创建 GPU 上下文（无可用适配器时返回 `None`）
 fn build_gpu_ctx(width: u32, height: u32) -> Option<GpuCtx> {
     let ctx = MidiconsoleGpuContext::new(width, height)?;
-    Some(GpuCtx { width, height, ctx })
+    Some(GpuCtx {
+        width,
+        height,
+        ctx,
+        epoch: current_gpu_epoch(),
+    })
 }

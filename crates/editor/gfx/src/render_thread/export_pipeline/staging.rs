@@ -89,7 +89,14 @@ impl StagingRing {
                 slot.rx = None;
                 // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数
                 slot.buffer.take();
-                slot.buffer = Some(Self::create_staging_buffer(&self.device, width, height));
+                // REND-019 PR-D（计划 F10）：device 丢失（TDR）时禁止在死 device 上
+                // 新建 staging 资源（validation 失败/挂起）——留空槽，交由
+                // `write_slot_buffer` 的 None 容错跳过本帧，导出由 cancel 标志收场。
+                if !crate::device_status::device_lost() {
+                    slot.buffer = Some(Self::create_staging_buffer(&self.device, width, height));
+                } else {
+                    tracing::warn!("staging ring ensure_size 短路：device 已丢失（TDR），槽位留空");
+                }
                 changed = true;
             }
         }
@@ -156,12 +163,26 @@ impl StagingRing {
             }
             // map 失败（buffer 已销毁等）：重建该槽位并跳过，避免 panic
             tracing::warn!("staging ring map 失败：{:?}，重建槽位", map_result.err());
-            self.rebuild_slot(self.next_read);
+            self.recover_slot_after_map_failure(self.next_read);
             self.next_read = (self.next_read + 1) % 4;
             self.inflight -= 1;
             return None;
         }
         None
+    }
+
+    /// map 失败/超时后的槽位恢复：**TDR 短路**（REND-019 PR-D，计划 F10）——
+    /// device 已丢失时不在死 device 上重建资源（必然失败/挂起），仅丢弃失效
+    /// 缓冲，交由导出 cancel 标志收场；正常路径重建该槽位。
+    fn recover_slot_after_map_failure(&mut self, slot_idx: usize) {
+        if crate::device_status::device_lost() {
+            tracing::warn!("staging ring 槽位恢复短路：device 已丢失（TDR），交由 cancel 收场");
+            let slot = &mut self.slots[slot_idx];
+            slot.rx = None;
+            slot.buffer.take();
+            return;
+        }
+        self.rebuild_slot(slot_idx);
     }
 
     /// 重建槽位的 staging buffer（map 失败/超时后调用，丢弃失效资源）
@@ -199,7 +220,7 @@ impl StagingRing {
                         "staging ring wait_read map 失败：{:?}，重建槽位",
                         map_result.err()
                     );
-                    self.rebuild_slot(self.next_read);
+                    self.recover_slot_after_map_failure(self.next_read);
                     self.next_read = (self.next_read + 1) % 4;
                     self.inflight -= 1;
                     return Vec::new();
@@ -209,7 +230,7 @@ impl StagingRing {
                 tracing::warn!("staging ring wait_read 超时 5s");
                 // 超时说明该槽位的 map 可能永远不完成（如 GPU 忙/已销毁），
                 // 重建槽位并跳过，避免 inflight 计数泄漏导致死锁
-                self.rebuild_slot(self.next_read);
+                self.recover_slot_after_map_failure(self.next_read);
                 self.next_read = (self.next_read + 1) % 4;
                 self.inflight = self.inflight.saturating_sub(1);
                 return Vec::new();

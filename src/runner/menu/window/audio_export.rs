@@ -71,6 +71,23 @@ impl RunnerInner {
         } else {
             "文件模式"
         };
+
+        // REND-019 PR-D（§1.5 L4）：TDR 窗口期拒绝启动 GPU 音频导出——编辑器共享
+        // device 丢失/重连进行中时，导出新建的 GPU 设备大概率创建失败或立即丢失；
+        // 给出明确提示，避免导出中途以晦涩错误收场。
+        if matches!(
+            backend,
+            lumino_message::events::window::audio::AudioBackend::Gpu
+        ) && lumino_gfx::device_lost()
+        {
+            tracing::warn!("GPU 丢失/重连进行中，拒绝启动 GPU 音频导出");
+            self.window_state
+                .window
+                .ui_mut()
+                .set_status_message(Some(tr!("GPU 正在恢复，请稍后重试导出").to_string()));
+            return;
+        }
+
         tracing::info!("开始音频导出 [{mode_str}]: MIDI={midi_path}, SF2={soundfont_path}");
 
         let midi_path_buf = PathBuf::from(&midi_path);
