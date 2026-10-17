@@ -1,4 +1,4 @@
-use std::sync::Arc;
+﻿use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 
@@ -62,7 +62,10 @@ impl WindowManager {
         let physical_size = window.inner_size();
 
         let gfx = lumino_gfx::Context::new_blocking(
-            Arc::clone(&window),
+            {
+                let window = Arc::clone(&window);
+                move |instance| instance.create_surface(Arc::clone(&window))
+            },
             physical_size.width,
             physical_size.height,
         )

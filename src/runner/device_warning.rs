@@ -1,4 +1,4 @@
-//! 设备检查警告窗：独立 winit 窗口 + gfx Context + iced Host 管理器。
+﻿//! 设备检查警告窗：独立 winit 窗口 + gfx Context + iced Host 管理器。
 //!
 //! 生命周期仿 `ProgressManager`：窗口创建 → 事件转发 → 用户操作回传 → 关闭。
 //! 警告窗只在"首启/未抑制 + 检测失败"时短暂存在；用户选择由
@@ -72,8 +72,15 @@ impl DeviceWarningWindow {
         let window = Arc::new(window);
         let size = window.inner_size();
 
-        let gfx = lumino_gfx::Context::new_blocking(Arc::clone(&window), size.width, size.height)
-            .map_err(|e| format!("初始化警告窗图形上下文失败: {e}"))?;
+        let gfx = lumino_gfx::Context::new_blocking(
+            {
+                let window = Arc::clone(&window);
+                move |instance| instance.create_surface(Arc::clone(&window))
+            },
+            size.width,
+            size.height,
+        )
+        .map_err(|e| format!("初始化警告窗图形上下文失败: {e}"))?;
 
         let ui = lumino_ui::Host::new_device_warning(
             Arc::clone(&window),

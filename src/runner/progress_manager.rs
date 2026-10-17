@@ -1,4 +1,4 @@
-use lumino_core::tr;
+﻿use lumino_core::tr;
 use lumino_ui::window::TrafficAction;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -241,7 +241,10 @@ impl ProgressManager {
         let physical_size = window.inner_size();
 
         let gfx = match lumino_gfx::Context::new_blocking(
-            Arc::clone(&window),
+            {
+                let window = Arc::clone(&window);
+                move |instance| instance.create_surface(Arc::clone(&window))
+            },
             physical_size.width,
             physical_size.height,
         ) {

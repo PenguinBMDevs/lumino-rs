@@ -276,6 +276,24 @@ pub fn install_recreated_shared_gpu(
     Ok(())
 }
 
+/// REND-019 PR-C（R5-b 加固）：重建 `Surface` 的工厂。
+///
+/// 重连时必须**整体替换** Surface：wgpu-core 的 `device_destroy` 只置
+/// `valid=false`，**不清理**关联 surface 的 presentation / hal swapchain——
+/// 旧 swapchain 会残留。若直接对新 device `configure`，wgpu-hal 会拿旧 device
+/// 已销毁的 swapchain 句柄、用新 device 的 ash 函数指针去
+/// `vkCreateSwapchainKHR(oldSwapchain)` + `vkDestroySwapchainKHR`（跨设备句柄
+/// 使用=UB）。实测第二次重连在对话框窗口首次 configure 访问违例（0xC0000005）。
+///
+/// 用工厂重建 Surface 后，旧 Surface 的 Drop 由 core 走
+/// `unconfigure(present.device.raw())`——用**归属它的旧 device** 正点销毁旧
+/// swapchain（调用方以旧 device 克隆为存活锚点保证其尚未析构）。
+pub type SurfaceFactory = Box<
+    dyn Fn(&wgpu::Instance) -> std::result::Result<wgpu::Surface<'static>, wgpu::CreateSurfaceError>
+        + Send
+        + Sync,
+>;
+
 /// GPU 渲染上下文，封装 surface / adapter / device / queue 等 wgpu 资源
 pub struct Context {
     /// 渲染目标 surface（窗口或离屏）
@@ -294,6 +312,9 @@ pub struct Context {
     /// 本上下文所属 GPU 代次（REND-019 PR-B：跨帧资源比对基准；PR-C 重连后
     /// 旧上下文整体丢弃、由新代次重建。读取走 `Context::epoch()`）
     epoch: GpuEpoch,
+    /// 重建 Surface 的工厂（REND-019 R5-b 加固；见 [`SurfaceFactory`] 与
+    /// `Context::rebind_device` 说明）
+    surface_factory: SurfaceFactory,
 }
 
 impl Context {
@@ -304,7 +325,8 @@ impl Context {
     /// instance 与设备句柄，避免创建重复管线。
     ///
     /// # 参数
-    /// * `target` — 渲染目标（窗口句柄 / surface target）
+    /// * `surface_factory` — 渲染目标工厂（给定 instance 创建 `Surface`；
+    ///   重连时用它整体替换 Surface，见 [`SurfaceFactory`]）
     /// * `width` — 初始宽度（像素，至少为 1）
     /// * `height` — 初始高度（像素，至少为 1）
     ///
@@ -312,11 +334,17 @@ impl Context {
     /// * `Ok(Context)` — 创建成功
     /// * `Err(ContextError)` — surface / adapter / format / device 任一步骤失败
     pub async fn new(
-        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        surface_factory: impl Fn(
+            &wgpu::Instance,
+        ) -> std::result::Result<
+            wgpu::Surface<'static>,
+            wgpu::CreateSurfaceError,
+        > + Send
+        + Sync
+        + 'static,
         width: u32,
         height: u32,
     ) -> Result<Self> {
-        let target = target.into();
         // 初始尺寸同样做上限裁剪，避免最大化时瞬时超限触发 device lost
         // 需在 adapter 确定后用其 max_texture_dimension_2d 二次裁剪，此处先保底 max(1)
         let width = width.max(1);
@@ -331,9 +359,8 @@ impl Context {
             Err(_) => create_instance(),
         };
 
-        let surface = instance
-            .create_surface(target)
-            .map_err(|e| ContextError::SurfaceCreation(e.to_string()))?;
+        let surface =
+            surface_factory(&instance).map_err(|e| ContextError::SurfaceCreation(e.to_string()))?;
 
         // 快照读（锁内只做 clone / 状态判断，立即放锁——G3：禁止持锁做 wgpu 调用）
         let existing = {
@@ -437,6 +464,7 @@ impl Context {
             format,
             surface_config,
             epoch,
+            surface_factory: Box::new(surface_factory),
         })
     }
 }

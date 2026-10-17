@@ -95,10 +95,16 @@ impl ReconnectOps<SharedGpu> for Runner {
         let Some(this) = self.inner.as_mut() else {
             return Err("RunnerInner 不可用".to_string());
         };
+        tracing::info!("重连[1/3]：主窗重绑开始");
         this.window_state.window.rebind_gpu(epoch, &gpu);
+        tracing::info!("重连[1/3]：主窗重绑完成");
+        tracing::info!("重连[2/3]：对话框重绑开始");
         let dialog_count = this.window_state.dialog_manager.rebind_gpu_all(epoch, &gpu);
+        tracing::info!("重连[2/3]：对话框重绑完成（{dialog_count} 个）");
+        tracing::info!("重连[3/3]：进度/云进度窗重绑开始");
         this.window_state.progress.rebind_gpu(epoch, &gpu);
         this.window_state.cloud_progress.rebind_gpu(epoch, &gpu);
+        tracing::info!("重连[3/3]：进度/云进度窗重绑完成");
         tracing::info!(
             "重连：基础设施重建完成（主窗 + {dialog_count} 对话框 + 进度/云进度窗），epoch = {}",
             epoch.0

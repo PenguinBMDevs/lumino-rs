@@ -1,4 +1,4 @@
-//! 对话框窗口 - GFX 与 UI 初始化
+﻿//! 对话框窗口 - GFX 与 UI 初始化
 
 use std::sync::Arc;
 
@@ -23,7 +23,10 @@ impl DialogWindow {
         }
 
         let gfx = lumino_gfx::Context::new_blocking(
-            Arc::clone(&self.window),
+            {
+                let window = Arc::clone(&self.window);
+                move |instance| instance.create_surface(Arc::clone(&window))
+            },
             physical_size.width,
             physical_size.height,
         )

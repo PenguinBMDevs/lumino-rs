@@ -39,14 +39,49 @@ impl Context {
     /// 第二次 `configure` 时残留已随 `take()` 一并清除，必然成功安装新配置；
     /// 首配无残留时第二次为幂等重配（重连低频路径，代价可忽略）。
     pub fn rebind_device(&mut self, epoch: GpuEpoch, gpu: &crate::SharedGpu) {
+        // REND-019（R5-b 加固）：**先整体替换 Surface，再换 device**。
+        //
+        // wgpu-core 的 `device_destroy` 只置 `valid=false`，不清理关联
+        // surface 的 presentation / hal swapchain——旧 swapchain 残留在 hal
+        // Surface 内。若直接对新 device `configure`，wgpu-hal 的
+        // `create_swapchain` 会拿旧 device 已销毁的 swapchain 句柄、用新
+        // device 的 ash 函数指针去 `vkCreateSwapchainKHR(oldSwapchain)` +
+        // `vkDestroySwapchainKHR`（跨设备句柄使用=UB）。实测第二次重连在
+        // 对话框窗口的首次 configure 访问违例（0xC0000005）。
+        //
+        // 替换 Surface：旧 Surface Drop 走 core `unconfigure(present.device
+        // .raw())`，用归属它的旧 device 正点销毁旧 swapchain；`old_device`
+        // 克隆作为存活锚点，保证 unconfigure 期间旧 VkDevice 尚未析构。
+        let old_device = self.device.clone();
+        self.replace_surface(&gpu.instance);
+        drop(old_device);
+
         self.adapter = gpu.adapter.clone();
         self.device = gpu.device.clone();
         self.queue = gpu.queue.clone();
         self.epoch = epoch;
-        self.surface.configure(&self.device, &self.surface_config);
-        // 第二次 configure：首配若因 TDR 残留失败，此时残留已被 take 清除（见上方 ⚠️）
-        self.surface.configure(&self.device, &self.surface_config);
+        // 两次 configure：替换后 surface 为全新对象（无 presentation），首配
+        // 理论必然走安装路径；双配保留为防御（替换失败回退路径 / 平台差异）。
+        tracing::info!("Context 重绑：交换链重配开始（epoch = {}）", epoch.0);
+        self.configure_surface_stable();
         tracing::info!("Context 已重绑到新 device：epoch = {}", epoch.0);
+    }
+
+    /// REND-019（R5-b 加固）：重建本上下文的 `Surface`（语义见 `rebind_device`）。
+    ///
+    /// 失败（如窗口已销毁）时保留旧 Surface——退化为旧行为，由随后的
+    /// configure 兜底（存在跨设备句柄风险，但总好于直接丢弃窗口渲染）。
+    fn replace_surface(&mut self, instance: &wgpu::Instance) {
+        match (self.surface_factory)(instance) {
+            Ok(surface) => {
+                // 赋值瞬间旧 Surface Drop：core 经旧 device 正点 unconfigure
+                //（调用方以 old_device 克隆保证旧 device 存活，见 rebind_device）
+                self.surface = surface;
+            }
+            Err(e) => {
+                tracing::error!("重连：重建窗口 Surface 失败（保留旧 Surface 兜底）：{e}");
+            }
+        }
     }
 
     /// 同步创建图形上下文（在无法使用 async 的初始化路径中使用）
@@ -54,11 +89,18 @@ impl Context {
     /// 内部使用 `futures::executor::block_on` 驱动异步初始化流程，
     /// 避免在多个窗口管理器中重复书写 block_on 样板。
     pub fn new_blocking(
-        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        surface_factory: impl Fn(
+            &wgpu::Instance,
+        ) -> std::result::Result<
+            wgpu::Surface<'static>,
+            wgpu::CreateSurfaceError,
+        > + Send
+        + Sync
+        + 'static,
         width: u32,
         height: u32,
     ) -> Result<Self> {
-        futures::executor::block_on(Self::new(target, width, height))
+        futures::executor::block_on(Self::new(surface_factory, width, height))
     }
 
     /// 调整交换链尺寸并重新配置 surface。
@@ -82,6 +124,20 @@ impl Context {
         // 呈现模式等不再两处重复拼装）。
         self.surface_config.width = width.min(max_dim);
         self.surface_config.height = height.min(max_dim);
+        self.configure_surface_stable();
+    }
+
+    /// 稳健重配交换链（REND-019，R5-b 实测补强）：**连续 configure 两次**。
+    ///
+    /// wgpu-core 的 `Surface::configure` 失败路径（`PreviousOutputExists` /
+    /// 底层 `Invalid surface`）会**先把旧 presentation `take()` 走**——一次失败
+    /// 即 surface 进入「无 presentation」态，后续每帧 `get_current_texture`
+    /// 报 `NotConfigured` 形成热循环（R5-b：恢复后微扰重配一次失败 → 25 万行
+    /// 洪泛 → 进程访问违例）。第二次 configure 时残留已被清掉，可正常安装；
+    /// 首配成功时第二次为幂等重配（低频路径，代价可忽略）。
+    /// 禁止「优化」为单次（同 `rebind_device` 的双 configure 语义）。
+    fn configure_surface_stable(&self) {
+        self.surface.configure(&self.device, &self.surface_config);
         self.surface.configure(&self.device, &self.surface_config);
     }
 
@@ -214,7 +270,7 @@ impl Context {
         match action {
             FrameErrorAction::Reconfigured => {
                 tracing::warn!("Surface Outdated：按现有配置重新 configure 交换链");
-                self.surface.configure(&self.device, &self.surface_config);
+                self.configure_surface_stable();
             }
             FrameErrorAction::SkipFrame => {
                 tracing::debug!("Surface Timeout：本帧放弃，下一帧重试");

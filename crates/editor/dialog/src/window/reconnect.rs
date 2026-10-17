@@ -11,10 +11,14 @@ impl DialogWindow {
     /// 尚未建 GFX 的窗口跳过：其后续 `initialize_gfx` 会从最新快照建新 device。
     pub(crate) fn rebind_gpu(&mut self, epoch: GpuEpoch, gpu: &SharedGpu) {
         if let Some(gfx) = self.gfx.as_mut() {
+            tracing::info!("重连[对话框 {:?}]：GFX 重绑开始", self.dialog_type);
             gfx.rebind_device(epoch, gpu);
+            tracing::info!("重连[对话框 {:?}]：GFX 重绑完成", self.dialog_type);
         }
         if let Some(ui) = self.ui.as_mut() {
+            tracing::info!("重连[对话框 {:?}]：Host 重绑开始", self.dialog_type);
             ui.rebind_gpu(epoch, gpu);
+            tracing::info!("重连[对话框 {:?}]：Host 重绑完成", self.dialog_type);
         }
     }
 }

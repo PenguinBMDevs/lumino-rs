@@ -1,4 +1,4 @@
-//! 云传输（上传/下载）进度悬浮窗口管理器
+﻿//! 云传输（上传/下载）进度悬浮窗口管理器
 //!
 //! 模仿 MIDI 加载进度窗口（`ProgressManager`）实现：
 //! - 独立小窗口 + 进度条 UI（复用 `Root::new_progress` 进度视图）
@@ -254,7 +254,10 @@ impl CloudProgressManager {
         let physical_size = window.inner_size();
 
         let gfx = match lumino_gfx::Context::new_blocking(
-            Arc::clone(&window),
+            {
+                let window = Arc::clone(&window);
+                move |instance| instance.create_surface(Arc::clone(&window))
+            },
             physical_size.width,
             physical_size.height,
         ) {
