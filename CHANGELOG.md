@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### UI-018 / #146 · 加载 MIDI 后标尺小节号从 2 起跳（P0）
+
+- **症状** — 加载多轨 MIDI（如 Bad Apple 8.49M，123 轨 / division 960）后，钢琴
+  卷帘首屏小节号从 2 开始，看起来像“自动定位到第 2 小节”；实测视口
+  `scroll_x = 0`、`start_tick = 0`，不是滚动问题。
+- **根因** — 加载器为保住 EXP-005 的逐事件往返等价，全量保留同 tick 的重复拍号
+  （多轨 MIDI 常见：两轨各写一个 tick 0 的 4/4，得到
+  `time_signatures = [(0,4,4), (0,4,4)]`）。`MeasureIterator::advance_to`
+  （`81cdb8b7` O(段数) 重写）的 `segment_index_at` 取最后一个同 tick 段，
+  且 `measures_in_segment` 对零长段 `.max(1)` 计 1 小节，导致首个标签
+  `number = 2`；旧 `step()` 实现在 target 0 不步进、编号为 1。
+- **修复** — 仅在显示层 `MeasureIterator` 用 `Cow` 对拍号段表做同 tick 去重
+  （后者覆盖前者，与 `time_signature_at` 的“最后一个 ≤ tick 生效”一致）；
+  无重复时借用原表零分配，有重复时才 `Owned`。加载器与文档保持原样，
+  EXP-005 逐事件往返不受影响。
+- **验证** — 新增 3 个针对性用例（tick 0 重复 / 中途重复 / 同 tick 冲突），
+  并把等价性用例扩展到重复/冲突拍号；`cargo test -p lumino-ui-editor`
+  769 通过，`cargo clippy -p lumino-ui-editor --all-targets` 零警告。
+
 ### AUD-005 返工 · 软件合成后端启动零 WinMM 触碰（#149）
 
 - **症状** — LGS + OmniMIDI v2 环境下启动概率性/必然崩溃（0xc0000005）：初始实现
