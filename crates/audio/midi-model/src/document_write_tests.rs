@@ -345,6 +345,36 @@ fn test_track_max_end_tick_cache_incremental_and_per_track() {
 }
 
 #[test]
+fn test_clone_isolates_track_max_end_cache() {
+    // 2026-10-17 数据源冗余审计 §二：`track_max_end_ticks` 是 `Arc<Mutex<..>>`，
+    // 派生 Clone 会与快照**共享同一批可变缓存单元**——快照的读会拿到实时文档
+    // 更新后的值，即「快照内容与其 max_end 缓存不同世代」。本测试锁定
+    // 「clone 必须隔离缓存」这条契约。
+    let mut doc = make_doc(vec![make_track(&[(100, 200, 60)])]);
+
+    // 先让缓存变热：插入路径对「脏」缓存保持脏（不增量更新），
+    // 只有热缓存才会被 O(1) 增量更新，才观察得到串味。
+    assert_eq!(doc.track_max_end_tick(0), 200);
+
+    let snapshot = doc.clone();
+
+    // 实时文档追加更晚的音符 → 热缓存增量更新为 500（不置脏）
+    assert!(doc.insert_note(0, NoteEvent::new(300, 500, 62, 100, 0)));
+    assert_eq!(doc.track_max_end_tick(0), 500);
+
+    // 快照的块未被修改（COW），音符仍是 1 个 → max 必须仍是 200
+    assert_eq!(snapshot.notes[0].len(), 1, "快照音符数量不应变化");
+    assert_eq!(
+        snapshot.track_max_end_tick(0),
+        200,
+        "快照缓存被实时文档污染：快照返回了实时文档的 max_end_tick"
+    );
+
+    // 反向也不得串：快照的查询不能改写实时文档的缓存
+    assert_eq!(doc.track_max_end_tick(0), 500, "实时文档缓存不得被快照改写");
+}
+
+#[test]
 fn test_batch_insert_with_ids_aligned_and_unique() {
     let mut doc = make_doc(vec![make_track(&[]), make_track(&[])]);
 
