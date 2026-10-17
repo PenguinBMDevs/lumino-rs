@@ -7,6 +7,7 @@ pub mod editor_transform;
 
 pub use editor_state::brush_tool;
 pub use editor_state::editor_data::accessors::{event_to_note, f32_to_tick, note_to_event};
+pub use editor_state::shape_store::{MAX_SHAPE_LOG, ShapeEntry, ShapeStore};
 pub use editor_state::shape_tool;
 pub use editor_state::text_tool;
 pub use editor_state::{

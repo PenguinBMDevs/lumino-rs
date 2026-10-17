@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### S0-3 · 形状存储、撤销分组回放与再生成接线
+
+- **新增** — `lumino-editor-state::ShapeStore`（文档级形状存储 + 撤销分组日志 + 音符指纹）与
+  `lumino-ui-editor` 的 `shape_ops`（`load_shapes` / `create_shape` / `edit_shape` / `delete_shape` /
+  `shapes_snapshot`）。
+- **撤销口径（关键）** — 形状**不进** `EditorSnapshot`：音符由文档历史回退，形状参数由 `ShapeStore`
+  的同分组日志回退，两者共用同一个历史 `group_id` ⇒ 一次参数提交 = 一次撤销单元。
+  另修一处既有事实：Snapshot 历史的 `group_id` 在 **redo 侧会丢失**，故 `ShapeStore` 保留 LIFO 撤销栈，
+  redo 无分组时兜底回放（否则会出现「音符回来了、形状参数没回来」）。
+- **再生成** — 与曲线工具确认**同源**（`flatten_path` → `stroke_band::outline_notes` → `keep_longest`
+  → 长度下限）；旧音符按**值指纹**清理，杜绝孤儿音符。
+- **协作** — 形状对象不同步（已拍板口径）；它产生的音符按值广播（新增
+  `EditorData::push_collab_transform_sync`，与既有 `take_pending_collab_transform_sync` 对称）。
+- **验证** — `cargo test -p lumino-editor-state` 339 passed / `-p lumino-ui-editor` 782 passed
+  （含 21 项 S0-3 新增，「改参数 → undo → 形状与音符同时回退」为验收项）；
+  `cargo clippy -p lumino-editor-state -p lumino-ui-editor --all-targets` 零警告；改动文件 ≤400 行。
+
 ### S0-2 · 形状工程部件 `.lmshapes`
 
 - **新增** — 工程文件新增独立部件 `data/project/shapes.lmshapes`（魔数 `LMSH` + 版本 1 + bincode + zstd）：

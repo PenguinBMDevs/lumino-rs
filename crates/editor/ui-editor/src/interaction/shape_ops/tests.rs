@@ -1,0 +1,185 @@
+//! 形状提交与撤销测试（S0-3b 验收：改参数 → undo → 形状与音符**同时**回退）
+
+use crate::Editor;
+use crate::tests::test_helpers::seed_notes;
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+
+/// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
+fn editor_with_track(track: usize) -> Editor {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, track + 1, track, &[]);
+    editor
+}
+
+fn straight_shape(track: u16, tick_hi: f32) -> ShapeModel {
+    let mut model = ShapeModel::new(0, track, ShapeKind::Line, 0.25);
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (tick_hi, 72.0)]);
+    model.validate().expect("测试形状应合法");
+    model
+}
+
+fn note_count(editor: &Editor, track: usize) -> usize {
+    editor.editor_state.data.track_notes(track).len()
+}
+
+fn first_shape_id(editor: &Editor) -> u64 {
+    editor.editor_state.shape_store.ids()[0]
+}
+
+#[test]
+fn test_load_shapes_registers_without_generating_notes() {
+    let mut editor = editor_with_track(1);
+    editor.load_shapes(vec![straight_shape(1, 960.0), straight_shape(1, 480.0)]);
+
+    assert_eq!(editor.editor_state.shape_store.len(), 2, "两个形状应被登记");
+    assert_eq!(note_count(&editor, 1), 0, "加载只登记，不得凭空生成音符");
+    assert_eq!(
+        editor.shapes_snapshot().len(),
+        2,
+        "可持久化快照应含两个形状"
+    );
+}
+
+#[test]
+fn test_create_shape_generates_notes_and_registers() {
+    let mut editor = editor_with_track(1);
+    assert!(editor.create_shape(straight_shape(1, 960.0)));
+
+    let id = first_shape_id(&editor);
+    let count = note_count(&editor, 1);
+    assert!(count > 0, "斜线应生成音符（跨越多个音高行）");
+    assert_eq!(
+        editor.editor_state.shape_store.notes_of(id).len(),
+        count,
+        "形状的音符指纹应与文档实际音符数一致"
+    );
+}
+
+#[test]
+fn test_create_shape_rejects_conductor_track() {
+    let mut editor = editor_with_track(1);
+    assert!(
+        !editor.create_shape(straight_shape(0, 960.0)),
+        "Conductor 轨应被拒绝"
+    );
+    assert!(editor.editor_state.shape_store.is_empty());
+    assert_eq!(note_count(&editor, 0), 0);
+}
+
+#[test]
+fn test_edit_shape_replaces_notes_without_orphans() {
+    let mut editor = editor_with_track(1);
+    assert!(editor.create_shape(straight_shape(1, 480.0)));
+    let id = first_shape_id(&editor);
+    let before = note_count(&editor, 1);
+
+    // 跨更多音高行（横向拉长不增加音符数：每行本来就一条）
+    let taller = straight_shape(1, 1920.0)
+        .with_geometry(ShapeGeometry::from_points([(0.0, 60.0), (960.0, 84.0)]));
+    assert!(editor.edit_shape(id, taller));
+    let after = note_count(&editor, 1);
+    assert!(
+        after > before,
+        "跨更多音高行后音符应变多（{before} → {after}）"
+    );
+    assert_eq!(
+        editor.editor_state.shape_store.notes_of(id).len(),
+        after,
+        "旧音符必须被按值清理干净（不得残留孤儿）"
+    );
+}
+
+/// **S0-3 验收标准**：一次参数提交 = 一次撤销单元，形状参数与音符同时回退/前进
+#[test]
+fn test_edit_then_undo_restores_shape_params_and_notes() {
+    let mut editor = editor_with_track(1);
+    let mut model = straight_shape(1, 480.0);
+    assert!(editor.create_shape(model.clone()));
+    let id = first_shape_id(&editor);
+    let created_notes = note_count(&editor, 1);
+    let created_gate = editor
+        .editor_state
+        .shape_store
+        .model(id)
+        .expect("形状应存在")
+        .style
+        .gate_beats;
+
+    // 改参数：几何跨更多音高行（音符数随之变化）+ 门长变化
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (1920.0, 84.0)]);
+    model.style.gate_beats = 0.5;
+    assert!(editor.edit_shape(id, model.clone()));
+    let edited_notes = note_count(&editor, 1);
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(id)
+            .expect("形状应存在")
+            .style
+            .gate_beats,
+        0.5
+    );
+    assert_ne!(edited_notes, created_notes, "本次编辑应改变音符数");
+
+    // 撤销：形状参数与音符同时回退
+    assert!(editor.undo(), "撤销应成功");
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(id)
+            .expect("形状应存在")
+            .style
+            .gate_beats,
+        created_gate,
+        "形状参数应随撤销回退"
+    );
+    assert_eq!(note_count(&editor, 1), created_notes, "音符应随撤销回退");
+
+    // 重做：两者同时前进
+    assert!(editor.redo(), "重做应成功");
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(id)
+            .expect("形状应存在")
+            .style
+            .gate_beats,
+        0.5,
+        "形状参数应随重做前进"
+    );
+    assert_eq!(note_count(&editor, 1), edited_notes, "音符应随重做前进");
+}
+
+#[test]
+fn test_delete_shape_then_undo_restores() {
+    let mut editor = editor_with_track(1);
+    assert!(editor.create_shape(straight_shape(1, 960.0)));
+    let id = first_shape_id(&editor);
+    let count = note_count(&editor, 1);
+
+    assert!(editor.delete_shape(id));
+    assert_eq!(note_count(&editor, 1), 0, "删除形状应清理它的音符");
+    assert!(editor.shapes_snapshot().is_empty(), "已删除的形状不写盘");
+
+    assert!(editor.undo(), "撤销删除应成功");
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .entry(id)
+            .expect("形状应存在")
+            .is_visible(),
+        "撤销删除应恢复形状"
+    );
+    assert_eq!(note_count(&editor, 1), count, "撤销删除应恢复音符");
+}
+
+#[test]
+fn test_edit_missing_shape_returns_false() {
+    let mut editor = editor_with_track(1);
+    assert!(!editor.edit_shape(999, straight_shape(1, 480.0)));
+    assert!(!editor.delete_shape(999));
+}
