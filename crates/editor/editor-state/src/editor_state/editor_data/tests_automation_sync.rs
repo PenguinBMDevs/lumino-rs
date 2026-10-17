@@ -384,3 +384,53 @@ fn same_tick_value_move_updates_document_value() {
         "同 tick 改值也必须同步到 document"
     );
 }
+
+// ── 7. 性能口径诊断（默认 ignore） ───────────────────────────────────────
+//
+// 收口「同步是全量重建」这条遗留必须靠**测量**而不是估算：
+// `cargo test -p lumino-editor-state --lib sync_cost_diag -- --ignored --nocapture`
+
+#[test]
+#[ignore = "性能口径诊断，按需手动运行（--ignored --nocapture）"]
+fn sync_cost_diag() {
+    let mut data = data_with_doc();
+
+    // 10 万条「不属于 lane 覆盖范围」的既有控制事件（track 1、多控制器）：
+    // 模拟黑乐谱加载后 `document.control_events` 的规模
+    let events: Vec<PackedControlEvent> = (0..100_000u32)
+        .map(|i| PackedControlEvent::control_change(i, 1, 0, (i % 120) as u8, (i % 128) as u8))
+        .collect();
+    seed_document(&mut data, events);
+
+    // track 0 的 CC7 lane：1000 个锚点
+    for i in 0..1000u32 {
+        add_cc(&mut data, 1000 + i * 2, (i % 128) as u16);
+    }
+
+    let iters = 20u32;
+
+    // 1) 仅同步成本
+    let t_sync = std::time::Instant::now();
+    for _ in 0..iters {
+        data.sync_automation_to_document();
+    }
+    let per_sync = t_sync.elapsed() / iters;
+
+    // 2) 完整编辑成本（lane 更新 + 自动柄重算 + 同步）= 拖锚点的每帧成本
+    let t_edit = std::time::Instant::now();
+    for i in 0..iters {
+        add_cc(&mut data, 900_000 + i, 64);
+    }
+    let per_edit = t_edit.elapsed() / iters;
+
+    let doc_events = data
+        .document
+        .as_ref()
+        .expect("document 应存在")
+        .control_events
+        .len();
+    println!(
+        "sync_cost_diag: doc_events={doc_events} lane_events={} | sync-only={per_sync:?} | full-edit={per_edit:?}",
+        data.automation_lanes[0].events.len()
+    );
+}

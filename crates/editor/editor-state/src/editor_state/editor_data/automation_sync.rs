@@ -75,6 +75,9 @@ const KNOWN_KINDS: usize = 5;
 /// 分桶数 = 已知 kind + 1 个「其余 kind」兜底桶（保持未知 kind 的相对顺序与末位）
 const KIND_BUCKETS: usize = KNOWN_KINDS + 1;
 
+/// 阶段计时开关缓存（`LUMINO_SYNC_PROFILE` 只需读一次环境变量）
+static PROFILE_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
 impl EditorData {
     /// 将 `automation_lanes`（编辑态）同步进 `document.control_events`（唯一权威）。
     ///
@@ -85,6 +88,11 @@ impl EditorData {
         if self.automation_lanes.is_empty() {
             return;
         }
+
+        // 阶段计时（opt-in）：`LUMINO_SYNC_PROFILE=1` 时打印，供性能收口用数据而非估算。
+        let prof =
+            *PROFILE_ENABLED.get_or_init(|| std::env::var_os("LUMINO_SYNC_PROFILE").is_some());
+        let t0 = std::time::Instant::now();
 
         // ── 1. 先在只读借用下生成「lane 视角」的事件与覆盖集合 ──────────────
         // covered_cc: (track, controller) 由 lane 说了算的 CC
@@ -122,15 +130,22 @@ impl EditorData {
                 AutomationTarget::Rpn { .. } | AutomationTarget::Nrpn { .. } => {}
             }
         }
+        let t_lane = t0.elapsed();
+        let lane_n = lane_events.len();
 
         let Some(doc) = self.document.as_mut() else {
             return;
         };
 
         // ── 2. 按 kind 分桶：保留未被 lane 覆盖的既有事件，再并入 lane 事件 ──
+        let doc_n = doc.control_events.len();
         let mut buckets: [Vec<PackedControlEvent>; KIND_BUCKETS] =
             std::array::from_fn(|_| Vec::new());
+        // 预分配：分桶的几何增长会对最大的桶做 ~log2(n) 次搬移（16 万事件约 3MB 搬运）
+        buckets[KIND_CC].reserve(doc_n.min(1 << 16));
+        buckets[KIND_PB].reserve(lane_events.len().min(1 << 16));
 
+        let mut kept_n = 0usize;
         for ev in doc.control_events.iter() {
             // 注意：`PackedControlEvent` 是 packed 结构，字段引用可能未对齐
             // （rustc E0793「reference to field of packed struct is unaligned」），
@@ -148,14 +163,17 @@ impl EditorData {
                 _ => false,
             };
             if !covered {
+                kept_n += 1;
                 buckets[kind.min(KNOWN_KINDS)].push(*ev);
             }
         }
+        let t_kept = t0.elapsed();
 
         for ev in lane_events {
             let kind = ev.kind as usize;
             buckets[kind.min(KNOWN_KINDS)].push(ev);
         }
+        let t_bucket = t0.elapsed();
 
         // ── 3. 按 kind 顺序拼接 → 稳定按 tick 排序 → 重建分块容器 ────────────
         let mut out: Vec<PackedControlEvent> =
@@ -163,9 +181,28 @@ impl EditorData {
         for mut bucket in buckets {
             out.append(&mut bucket);
         }
-        // 稳定排序：同 tick 保持「CC → PC → PB → 触后 → 其余」相对顺序
+        // 稳定排序：同 tick 保持「CC → PC → PB → 触后 → 其余」相对顺序。
+        //
+        // 为什么不用 `sort_by_cached_key`：曾假设 packed 结构反复取 `tick` 是热点，
+        // 实测**反而更慢**（10 万事件：sort 1.0–3.0ms → 4.0–5.5ms，总量 2.9ms →
+        // 6.8ms）——键提取本身很便宜，缓存键多出的 `Vec<(K, usize)>` 分配 + 置换
+        // 通行才是净损失。数据推翻了直觉，保持 `sort_by_key`。
         out.sort_by_key(|e| e.tick);
+        let t_sort = t0.elapsed();
+
+        let out_n = out.len();
         doc.control_events = ChunkedList::from_sorted(out);
+        let t_build = t0.elapsed();
+
+        if prof {
+            eprintln!(
+                "[sync-profile] lane={t_lane:?} kept={:?} bucket={:?} sort={:?} build={:?} total={t_build:?} | doc_n={doc_n} kept_n={kept_n} lane_n={lane_n} out_n={out_n}",
+                t_kept - t_lane,
+                t_bucket - t_kept,
+                t_sort - t_bucket,
+                t_build - t_sort,
+            );
+        }
     }
 
     /// 统计 document 中指定 `(track, kind, controller)` 的事件数（同步测试与诊断用）。

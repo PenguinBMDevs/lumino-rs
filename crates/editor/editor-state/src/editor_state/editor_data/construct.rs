@@ -6,7 +6,7 @@ use super::super::constants::DEFAULT_BPM;
 use super::EditorData;
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::history::History;
-use lumino_note_core::midi_types::{CcData, TempoPoint};
+use lumino_note_core::midi_types::TempoPoint;
 
 impl Default for EditorData {
     fn default() -> Self {
@@ -29,7 +29,6 @@ impl EditorData {
             pending_collab_create_sync: Vec::new(),
             pending_collab_transform_sync: Vec::new(),
             collab_sync_enabled: false,
-            cc_data: CcData::default(),
             automation_lanes: Vec::new(),
             tempo_points: vec![TempoPoint {
                 tick: 0.0,
