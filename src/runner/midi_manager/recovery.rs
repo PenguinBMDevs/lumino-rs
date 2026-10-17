@@ -222,6 +222,8 @@ impl MidiManager {
 
         // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
         self.drain_layout_apply();
+        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（并取消暂存/退避请求）
+        self.drain_lgs_rebuild();
 
         tracing::info!(
             "重新初始化 MIDI 输出，使用偏好后端: {:?}",

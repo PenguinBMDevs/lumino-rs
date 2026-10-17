@@ -20,4 +20,14 @@ pub enum UserEvent {
         /// 驱动提供的说明文本
         message: String,
     },
+    /// LGS（GPU 合成）**独立 device** 丢失（REND-019 PR-D §1.5 L1）。
+    ///
+    /// 与 [`UserEvent::GpuDeviceLost`]（编辑器共享 device）分开处理：LGS 与编辑器
+    /// 零共享 device（红线 8），恢复流程独立、互不等待。
+    LgsDeviceLost {
+        /// `DeviceLostReason` 的 Debug 文本（`Destroyed` / `Unknown` 等）
+        reason: String,
+        /// 驱动提供的说明文本
+        message: String,
+    },
 }

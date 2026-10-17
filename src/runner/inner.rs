@@ -20,6 +20,7 @@ pub use lumino_midi_loader::ParsedMidi;
 
 mod collab;
 mod file;
+mod lgs_reconnect;
 mod midi;
 mod persist;
 mod reconnect;

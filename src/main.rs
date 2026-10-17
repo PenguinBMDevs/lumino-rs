@@ -138,6 +138,13 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
         let _ = proxy.send_event(runner::UserEvent::UiWake);
     });
 
+    // REND-019 PR-D §1.5 L1：LGS（GPU 合成）**独立 device** 丢失 → UserEvent
+    // （独立链路；LGS 与编辑器零共享 device——红线 8）
+    let lgs_proxy = event_loop.create_proxy();
+    lumino_midi_io::set_lgs_device_lost_hook(move |reason, message| {
+        let _ = lgs_proxy.send_event(runner::UserEvent::LgsDeviceLost { reason, message });
+    });
+
     let mut runner = runner::Runner::default();
 
     // 如果是测试模式，设置测试配置

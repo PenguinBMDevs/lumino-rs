@@ -108,6 +108,10 @@ impl RunnerInner {
         // 再做流恢复/重初始化等需要 API 的动作。
         self.midi_state.midi.poll_layout_apply();
 
+        // REND-019 PR-D（§1.5 L2）：LGS 独立 device 的 TDR 重建收尾（在途 worker /
+        // 暂存 / 退避重试；与布局重建共用 api 暂持工作机制）
+        self.midi_state.midi.poll_lgs_rebuild();
+
         // 检查音频流恢复（音频设备被拔出/更换后自动重定向/重建）
         self.midi_state.midi.handle_stream_recovery();
 

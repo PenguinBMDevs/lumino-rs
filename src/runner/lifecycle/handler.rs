@@ -24,6 +24,10 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             crate::runner::UserEvent::GpuDeviceLost { reason, message } => {
                 self.on_gpu_device_lost(&reason, &message);
             }
+            crate::runner::UserEvent::LgsDeviceLost { reason, message } => {
+                // REND-019 PR-D §1.5 L1：LGS 独立 device——独立恢复流程（红线 8）
+                self.on_lgs_device_lost(&reason, &message);
+            }
         }
     }
 

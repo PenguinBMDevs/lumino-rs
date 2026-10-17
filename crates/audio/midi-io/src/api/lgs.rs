@@ -281,33 +281,49 @@ impl SynthControl for Lgs {
                 );
                 let mut options = self.options.clone();
                 options.midi_max_port = max_port;
-                let synth = Self::build_synth(&self.soundfont_path, &options)
-                    .map_err(|e| trf!("重建 GPU 合成引擎失败: {e}", e = e))?;
-                let device = crate::audio_devices::resolve_audio_output_device(
-                    options.audio_output_device.as_deref(),
-                );
-                {
-                    let mut old = self._playback.lock().unwrap_or_else(|e| e.into_inner());
-                    old.stop();
-                }
-                let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
-                    .map_err(|e| trf!("重启 GPU 音频流失败: {e}", e = e))?;
-                *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
-                *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) =
-                    playback.control_sender();
-                // 管线重建后统计读取器随之刷新（旧朗读器随旧流冻结）
-                self.stats = playback.stats();
-                *self._playback.lock().unwrap_or_else(|e| e.into_inner()) = playback;
-                self.options = options;
+                self.rebuild_with_options(options)?;
                 self.midi_max_port = max_port;
                 Ok(())
             }
         }
     }
 
+    /// REND-019 PR-D（§1.5 L2）：TDR 后重建 GPU 合成管线（布局不变的热替换）。
+    fn rebuild_gpu_pipeline(&mut self) -> Result<(), String> {
+        let options = self.options.clone();
+        self.rebuild_with_options(options)
+    }
+
     /// GPU 缓冲状态快照（队列毫秒/负载/声部/欠载）。
     fn gpu_buffer_stats(&self) -> Option<GpuBufferStats> {
         Some(self.buffer_stats())
+    }
+}
+
+impl Lgs {
+    /// 管线重建公共机制（REND-002 端口布局重建 / REND-019 PR-D TDR 重建共用）：
+    /// 先 `build_synth` 建新引擎（含音色库加载；**失败即返回、旧管线不动**），
+    /// 再停旧流、起新流并热替换事件/控制发送器（既有输出连接自动跟随）；
+    /// 仅成功才提交 `options`。
+    fn rebuild_with_options(&mut self, options: LgsOptions) -> Result<(), String> {
+        let synth = Self::build_synth(&self.soundfont_path, &options)
+            .map_err(|e| trf!("重建 GPU 合成引擎失败: {e}", e = e))?;
+        let device = crate::audio_devices::resolve_audio_output_device(
+            options.audio_output_device.as_deref(),
+        );
+        {
+            let mut old = self._playback.lock().unwrap_or_else(|e| e.into_inner());
+            old.stop();
+        }
+        let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
+            .map_err(|e| trf!("重启 GPU 音频流失败: {e}", e = e))?;
+        *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
+        *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.control_sender();
+        // 管线重建后统计读取器随之刷新（旧朗读器随旧流冻结）
+        self.stats = playback.stats();
+        *self._playback.lock().unwrap_or_else(|e| e.into_inner()) = playback;
+        self.options = options;
+        Ok(())
     }
 }
 

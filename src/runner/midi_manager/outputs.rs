@@ -52,6 +52,7 @@ impl MidiManager {
             xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
             lgs_init_rx: None,
             is_lgs_initializing: false,
+            lgs_rebuild: super::lgs_rebuild::LgsRebuildState::default(),
             lgs_soundfont_path: ui_config.soundfont_path.clone(),
             lgs_sample_rate: ui_config.lgs_sample_rate,
             lgs_block_size: ui_config.lgs_block_size,
@@ -213,6 +214,8 @@ impl MidiManager {
         // DEBT-05 #122：若后台布局重建在途，先等它归还 API，否则策略 1 会因
         // `api == None` 失败（表现为"装载后播放无声"）。
         self.drain_layout_apply();
+        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（并取消暂存/退避请求）
+        self.drain_lgs_rebuild();
 
         // ── 策略1：在现有 API 上尝试打开第二个连接 ──
         // #127：指定端口打开失败（被占用等）时按候选顺序回退下一个可用输出。

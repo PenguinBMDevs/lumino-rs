@@ -149,6 +149,8 @@ impl MidiManager {
         // 装载路径是 apply → create_additional_output：必须先收尾在途 worker，
         // 否则 API 被取走会导致播放输出创建失败（无声音）。
         self.drain_layout_apply();
+        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（并取消暂存/退避请求）
+        self.drain_lgs_rebuild();
         self.desired_midi_max_port = max_port;
         self.layout_desired.store(max_port, Ordering::SeqCst);
         match self.active_backend {

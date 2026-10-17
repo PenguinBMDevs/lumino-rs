@@ -118,6 +118,9 @@ pub struct MidiManager {
     ///
     /// 由 Runner 每帧取走并写入状态栏；取走即清，避免重复提示。
     pending_backend_notice: Option<String>,
+    /// REND-019 PR-D（§1.5 L2）：LGS 独立 device TDR 重建状态
+    /// （请求暂存 / 在途 worker / 退避 / 尝试计数；见 `lgs_rebuild` 子模块）。
+    lgs_rebuild: lgs_rebuild::LgsRebuildState,
 }
 
 impl Default for MidiManager {
@@ -151,6 +154,7 @@ impl Default for MidiManager {
             layout_apply: None,
             layout_desired: Arc::new(AtomicU8::new(0)),
             pending_backend_notice: None,
+            lgs_rebuild: lgs_rebuild::LgsRebuildState::default(),
         }
     }
 }
@@ -177,6 +181,7 @@ impl MidiManager {
 mod audio_action;
 mod layout;
 mod lgs;
+mod lgs_rebuild;
 mod outputs;
 mod recovery;
 mod xsynth;
