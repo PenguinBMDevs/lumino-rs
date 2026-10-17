@@ -47,6 +47,25 @@ impl Runner {
             self.reconnect = Some(session);
         }
     }
+
+    /// REND-019 R3 反馈：重连完成后「GPU 重连中…」提示额外保留 1 秒再清除。
+    ///
+    /// 原实现恢复瞬间即清除——实测恢复仅 ~1s，提示几乎不可见（R3 真机实测）。
+    /// 保留期内持续请求重绘，保证到点后有帧执行清除（不依赖外部交互唤醒）。
+    pub(crate) fn step_status_clear(&mut self) {
+        let Some(deadline) = self.status_clear_at else {
+            return;
+        };
+        if std::time::Instant::now() >= deadline {
+            self.status_clear_at = None;
+            if let Some(this) = self.inner.as_mut() {
+                this.window_state.window.ui_mut().set_status_message(None);
+                this.window_state.window.window().request_redraw();
+            }
+        } else if let Some(this) = self.inner.as_ref() {
+            this.window_state.window.window().request_redraw();
+        }
+    }
 }
 
 impl ReconnectOps<SharedGpu> for Runner {
@@ -149,8 +168,11 @@ impl ReconnectOps<SharedGpu> for Runner {
 
     fn on_recovered(&mut self) {
         tracing::info!("GPU 重连完成：渲染已恢复");
+        // R3 实测反馈：恢复瞬间清除提示 = 几乎不可见（恢复仅 ~1s）——
+        // 改为恢复后额外保留 1 秒再清除（由 `step_status_clear` 每帧检查执行）。
+        self.status_clear_at = Some(std::time::Instant::now() + std::time::Duration::from_secs(1));
         if let Some(this) = self.inner.as_mut() {
-            this.window_state.window.ui_mut().set_status_message(None);
+            this.window_state.window.window().request_redraw();
         }
     }
 

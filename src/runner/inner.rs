@@ -63,6 +63,9 @@ pub struct Runner {
     pub(crate) pending_gpu_cache: Option<(Option<String>, bool)>,
     /// REND-019 PR-C：进行中的 GPU 重连会话（None = 无重连）
     pub(crate) reconnect: Option<crate::runner::reconnect::ReconnectSession<lumino_gfx::SharedGpu>>,
+    /// REND-019 R3 反馈：重连完成后「GPU 重连中…」提示的清除时刻
+    /// （恢复后额外保留 1 秒再清除；由 `step_status_clear` 每帧检查）
+    pub(crate) status_clear_at: Option<std::time::Instant>,
 }
 
 // ── 领域状态 ────────────────────────────────────────────────────────────

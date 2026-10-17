@@ -190,6 +190,9 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             self.step_reconnect();
         }
 
+        // REND-019 R3 反馈：重连完成后的「GPU 重连中…」提示保留 1 秒再清除
+        self.step_status_clear();
+
         // 设备检查警告窗阶段：主窗口未初始化，只处理警告窗的用户选择
         if self.inner.is_none() {
             self.about_to_wait_device_warning(event_loop);
