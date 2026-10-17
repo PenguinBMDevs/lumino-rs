@@ -4,12 +4,14 @@
 
 pub mod click_canvas;
 pub mod interaction;
+pub mod ruler;
 pub mod track_list;
 
 use iced_core::Point;
 use lumino_ui_core::constants::editor::zoom::{MAX_ARRANGEMENT_ZOOM_X, MIN_ARRANGEMENT_ZOOM_X};
 
 pub use click_canvas::ArrangementClickCanvas;
+pub use ruler::ArrangementRulerCanvas;
 pub use track_list::TrackListCanvas;
 
 /// 工程走带视口状态

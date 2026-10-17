@@ -2,7 +2,9 @@
 
 use iced_core::Length;
 use iced_widget::{button, column, container};
+use lumino_ui_core::constants::editor::ARRANGEMENT_RULER_HEIGHT;
 
+use crate::editor::arrangement::ArrangementRulerCanvas;
 use crate::resources::icon::{self, Icon};
 use crate::root::Root;
 use crate::sidebar::Event as SidebarEvent;
@@ -208,7 +210,44 @@ impl Root {
             },
         );
 
-        let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
+        // 顶部时间标尺：走带主体是 WGPU 线框（无文字层），这里补 28px Canvas
+        // 小节号标尺。它与下方走带区共用同一个 `scroll_x/zoom_x`，点击/拖拽
+        // 发 `ArrangementCursorSet`，滚轮缩放与钢琴卷帘标尺一致。
+        let ruler = iced_widget::canvas::Canvas::new(ArrangementRulerCanvas {
+            viewport: vp.clone(),
+            ppq: self.editor.editor_state.view.ppq,
+            time_signatures: self.editor.editor_state.data.time_signatures.clone(),
+        })
+        .width(Length::Fill)
+        .height(Length::Fixed(ARRANGEMENT_RULER_HEIGHT));
+
+        // 三列顶部各留 28px：音轨列表/走带区/垂直滚动条从标尺下方开始，
+        // 保证 lane 行与标尺刻度在同一 y 基准上。左右两角用同色背景补齐，
+        // 避免标尺条两侧出现透明缝。
+        let header_style = |theme: &Theme| container::Style {
+            background: Some(theme.extended_palette().background.weak.color.into()),
+            ..container::Style::default()
+        };
+        let track_list_top = container(iced_widget::Space::new())
+            .width(Length::Fixed(TRACK_LIST_WIDTH))
+            .height(Length::Fixed(ARRANGEMENT_RULER_HEIGHT))
+            .style(header_style);
+        let scrollbar_top = container(iced_widget::Space::new())
+            .width(Length::Fixed(20.0))
+            .height(Length::Fixed(ARRANGEMENT_RULER_HEIGHT))
+            .style(header_style);
+
+        let track_list_column = iced_widget::column![track_list_top, track_list,]
+            .width(Length::Fixed(TRACK_LIST_WIDTH))
+            .height(Length::Fill);
+        let arrangement_column = iced_widget::column![ruler, arrangement_area]
+            .width(Length::Fill)
+            .height(Length::Fill);
+        let v_scrollbar_column =
+            iced_widget::column![scrollbar_top, v_scrollbar,].height(Length::Fill);
+
+        let arrangement_row =
+            iced_widget::row![track_list_column, arrangement_column, v_scrollbar_column];
 
         let perf_ctx = crate::toolbar::ToolbarPerfContext {
             playback_tick: self.editor.playback_position,

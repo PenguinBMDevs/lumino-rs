@@ -246,7 +246,7 @@ fn ticks_per_measure(ppq: f32, numerator: u8, denominator: u8) -> f32 {
 }
 
 /// 小节边界迭代器，按拍号变化分段生成小节起始 tick 与编号
-struct MeasureIterator<'a> {
+pub(crate) struct MeasureIterator<'a> {
     /// 已按 tick 去重的拍号段表。
     ///
     /// 加载器为保住 EXP-005 的逐事件往返等价，会**全量保留**同 tick 的重复
@@ -283,7 +283,7 @@ fn dedup_time_signatures<'a>(sigs: &'a [(u32, u8, u8)]) -> Cow<'a, [(u32, u8, u8
 }
 
 impl<'a> MeasureIterator<'a> {
-    fn new(time_signatures: &'a [(u32, u8, u8)], ppq: f32, start_tick: f32) -> Self {
+    pub(crate) fn new(time_signatures: &'a [(u32, u8, u8)], ppq: f32, start_tick: f32) -> Self {
         let mut iter = Self::at_origin(dedup_time_signatures(time_signatures), ppq);
         iter.advance_to(start_tick);
         iter
@@ -407,7 +407,7 @@ impl<'a> MeasureIterator<'a> {
         self.measure_number += 1;
     }
 
-    fn next(&mut self) -> Option<(f32, u32)> {
+    pub(crate) fn next(&mut self) -> Option<(f32, u32)> {
         let result = (self.current_tick, self.measure_number);
         self.step();
         Some(result)

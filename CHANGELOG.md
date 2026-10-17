@@ -28,6 +28,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   并把等价性用例扩展到重复/冲突拍号；`cargo test -p lumino-ui-editor`
   769 通过，`cargo clippy -p lumino-ui-editor --all-targets` 零警告。
 
+### UI-018 / #146 · 走带顶部时间标尺 + 纵向卷帘首标签（P1）
+
+- **症状** — 工程走带视图没有小节号文本（WGPU 只画线），长文件无法按小节导航；
+  纵向卷帘把 tick 0 的小节号画在键盘区内，网格里首个可见标签变成第 2 小节。
+- **修复** —
+  - 新增 `ArrangementRulerCanvas`（`ui-editor/src/arrangement/ruler.rs`）：
+    28px 顶部标尺，复用 P0 去重后的 `MeasureIterator` 画小节号与刻度线；
+    点击/拖拽发 `ArrangementCursorSet` 跳转，滚轮缩放与钢琴卷帘标尺一致。
+  - 走带布局改为三列顶部各留 28px（音轨列表/走带区/垂直滚动条），
+    新增 `arrangement_geometry` 纯函数收口 `canvas_offset/canvas_size`
+    （此前 `collect_viewport_info` 与 `collect_render_data` 各写一份）；
+    垂直滚动条宽度由 12 修正为 20（与 `ScrollbarWidget` 实际宽度一致）。
+  - `vertical_labels` 的标签统一画在小节线上方（`label_top_for_line`），
+    tick 0 的“1”留在网格内。
+- **验证** — `cargo test -p lumino-ui-editor` 775 通过（新增 4 个标尺用例 +
+  2 个纵向标签用例）；`cargo test -p lumino-ui --lib` 506 通过（新增 3 个
+  几何用例）；`cargo clippy -p lumino-ui-editor -p lumino-ui -p lumino-ui-core
+  --all-targets` 零警告。按用户要求未跑 app build，真机目视待补。
+
 ### AUD-005 返工 · 软件合成后端启动零 WinMM 触碰（#149）
 
 - **症状** — LGS + OmniMIDI v2 环境下启动概率性/必然崩溃（0xc0000005）：初始实现
