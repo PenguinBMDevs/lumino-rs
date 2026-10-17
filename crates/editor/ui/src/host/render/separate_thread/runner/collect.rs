@@ -167,25 +167,18 @@ impl Host {
         // 这些值用于 handlers.rs 的滚动范围钳制和 view.rs 的滚动条滑块计算
         // 而 collect_viewport_info() 每帧计算正确值但不会自动写回
         if self.root.is_arrangement_mode() {
-            const TRACK_LIST_WIDTH: f32 = 160.0;
-            const STATUSBAR_HEIGHT: f32 = 20.0;
-            const TITLEBAR_HEIGHT: f32 = 30.0;
-            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
-            const V_SCROLLBAR_WIDTH: f32 = 12.0;
             let sidebar_width = self.root.sidebar.width() as f32;
             let th = self.root.toolbar.height();
-            let tbo = if cfg!(target_os = "macos") {
-                0.0
-            } else {
-                TITLEBAR_HEIGHT
-            };
-            self.root.arrangement_view.viewport.canvas_size = iced_core::Point::new(
-                (viewport_size.width - sidebar_width - TRACK_LIST_WIDTH - V_SCROLLBAR_WIDTH)
-                    .max(1.0),
-                (viewport_size.height - th - STATUSBAR_HEIGHT - H_SCROLLBAR_HEIGHT - tbo).max(1.0),
+            let tbo = if cfg!(target_os = "macos") { 0.0 } else { 30.0 };
+            let geometry = crate::host::render::arrangement_geometry::arrangement_canvas_geometry(
+                viewport_size.width,
+                viewport_size.height,
+                sidebar_width,
+                th,
+                tbo,
             );
-            self.root.arrangement_view.viewport.canvas_offset =
-                iced_core::Point::new(sidebar_width + TRACK_LIST_WIDTH, th + tbo);
+            self.root.arrangement_view.viewport.canvas_size = geometry.size;
+            self.root.arrangement_view.viewport.canvas_offset = geometry.offset;
         }
 
         let (scroll, zoom) = if self.root.is_arrangement_mode() {

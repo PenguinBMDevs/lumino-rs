@@ -1,5 +1,7 @@
 //! 时间轴标尺绘制
 
+use std::borrow::Cow;
+
 use super::loop_range::LoopRange;
 use super::theme::ThemeExt;
 use crate::Editor;
@@ -244,8 +246,14 @@ fn ticks_per_measure(ppq: f32, numerator: u8, denominator: u8) -> f32 {
 }
 
 /// 小节边界迭代器，按拍号变化分段生成小节起始 tick 与编号
-struct MeasureIterator<'a> {
-    time_signatures: &'a [(u32, u8, u8)],
+pub(crate) struct MeasureIterator<'a> {
+    /// 已按 tick 去重的拍号段表。
+    ///
+    /// 加载器为保住 EXP-005 的逐事件往返等价，会**全量保留**同 tick 的重复
+    /// 拍号（多轨 MIDI 常见：两轨各写一个 tick 0 的 4/4）。显示层若把重复段
+    /// 当成两个小节段，首个可见小节号会从 2 起跳（#146）。这里用 `Cow`：
+    /// 无重复时借用原表零分配，有重复时在显示层去重，文档保持原样。
+    time_signatures: Cow<'a, [(u32, u8, u8)]>,
     ppq: f32,
     current_tick: f32,
     measure_number: u32,
@@ -253,16 +261,38 @@ struct MeasureIterator<'a> {
     measure_ticks: f32,
 }
 
+/// 拍号段表去重：同一 tick 只保留最后一个定义（与 `time_signature_at`
+/// 的「最后一个 ≤ tick 生效」语义一致）。
+///
+/// 输入约定按 tick 升序（加载器已稳定排序），因此同 tick 事件必然相邻。
+fn dedup_time_signatures<'a>(sigs: &'a [(u32, u8, u8)]) -> Cow<'a, [(u32, u8, u8)]> {
+    if !sigs.windows(2).any(|w| w[0].0 == w[1].0) {
+        return Cow::Borrowed(sigs);
+    }
+    let mut out: Vec<(u32, u8, u8)> = Vec::with_capacity(sigs.len());
+    for &(tick, num, den) in sigs {
+        if let Some(last) = out.last_mut()
+            && last.0 == tick
+        {
+            *last = (tick, num, den);
+        } else {
+            out.push((tick, num, den));
+        }
+    }
+    Cow::Owned(out)
+}
+
 impl<'a> MeasureIterator<'a> {
-    fn new(time_signatures: &'a [(u32, u8, u8)], ppq: f32, start_tick: f32) -> Self {
-        let mut iter = Self::at_origin(time_signatures, ppq);
+    pub(crate) fn new(time_signatures: &'a [(u32, u8, u8)], ppq: f32, start_tick: f32) -> Self {
+        let mut iter = Self::at_origin(dedup_time_signatures(time_signatures), ppq);
         iter.advance_to(start_tick);
         iter
     }
 
     /// 从 tick 0 / 小节 1 起始的迭代器状态（不含起点定位）。
-    fn at_origin(time_signatures: &'a [(u32, u8, u8)], ppq: f32) -> Self {
-        let (num, den) = time_signature_at(0.0, time_signatures);
+    fn at_origin(time_signatures: impl Into<Cow<'a, [(u32, u8, u8)]>>, ppq: f32) -> Self {
+        let time_signatures = time_signatures.into();
+        let (num, den) = time_signature_at(0.0, time_signatures.as_ref());
         Self {
             time_signatures,
             ppq,
@@ -308,7 +338,7 @@ impl<'a> MeasureIterator<'a> {
             .time_signatures
             .get(index + 1)
             .map(|&(tick, _, _)| tick as f32)?;
-        let (num, den) = time_signature_at(start, self.time_signatures);
+        let (num, den) = time_signature_at(start, self.time_signatures.as_ref());
         let ticks = ticks_per_measure(self.ppq, num, den).max(f32::EPSILON);
         Some((((end - start) / ticks).ceil() as u32).max(1))
     }
@@ -325,7 +355,7 @@ impl<'a> MeasureIterator<'a> {
     fn advance_to(&mut self, target_tick: f32) {
         let seg = self.segment_index_at(target_tick);
         let start = self.segment_start(seg);
-        let (num, den) = time_signature_at(start, self.time_signatures);
+        let (num, den) = time_signature_at(start, self.time_signatures.as_ref());
         let ticks = ticks_per_measure(self.ppq, num, den).max(f32::EPSILON);
 
         // 段内已走过的小节数（含之前所有段）
@@ -366,7 +396,7 @@ impl<'a> MeasureIterator<'a> {
             let next_ts_tick = *next_ts_tick as f32;
             if next_measure_tick >= next_ts_tick && self.current_tick < next_ts_tick {
                 self.ts_index += 1;
-                let (num, den) = time_signature_at(next_ts_tick, self.time_signatures);
+                let (num, den) = time_signature_at(next_ts_tick, self.time_signatures.as_ref());
                 self.measure_ticks = ticks_per_measure(self.ppq, num, den);
                 self.current_tick = next_ts_tick;
                 self.measure_number += 1;
@@ -377,7 +407,7 @@ impl<'a> MeasureIterator<'a> {
         self.measure_number += 1;
     }
 
-    fn next(&mut self) -> Option<(f32, u32)> {
+    pub(crate) fn next(&mut self) -> Option<(f32, u32)> {
         let result = (self.current_tick, self.measure_number);
         self.step();
         Some(result)
@@ -430,6 +460,36 @@ mod tests {
         assert_eq!(iter.next(), Some((1920.0 + 2880.0, 4)));
     }
 
+    /// #146 P0 回归：同一 tick 的两份拍号（多轨 MIDI 常见）不得把
+    /// 首个可见小节号推成 2。加载器全量保留重复事件，标尺显示层必须去重。
+    #[test]
+    fn test_measure_iterator_duplicate_tick_zero_starts_at_one() {
+        let signatures = [(0, 4, 4), (0, 4, 4)];
+        let mut iter = MeasureIterator::new(&signatures, 960.0, 0.0);
+        assert_eq!(iter.next(), Some((0.0, 1)), "首个边界必须编号 1");
+        assert_eq!(iter.next(), Some((3840.0, 2)), "下一小节编号 2");
+    }
+
+    /// #146 P0 回归：中途的同 tick 重复拍号不得让该点之后的小节号跳变。
+    #[test]
+    fn test_measure_iterator_duplicate_mid_tick_keeps_numbering() {
+        let signatures = [(0, 4, 4), (1920, 4, 4), (1920, 4, 4), (3840, 3, 4)];
+        let mut iter = MeasureIterator::new(&signatures, 960.0, 1920.0);
+        assert_eq!(iter.next(), Some((1920.0, 2)));
+        assert_eq!(iter.next(), Some((3840.0, 3)));
+    }
+
+    /// #146 P0 回归：同 tick 冲突时后者覆盖前者（与 `time_signature_at` 一致），
+    /// 且只计一个小节段。
+    #[test]
+    fn test_measure_iterator_same_tick_conflict_last_wins() {
+        let signatures = [(0, 4, 4), (0, 3, 4)];
+        let mut iter = MeasureIterator::new(&signatures, 960.0, 0.0);
+        assert_eq!(iter.next(), Some((0.0, 1)));
+        // 3/4 @ ppq 960 = 2880 tick/小节
+        assert_eq!(iter.next(), Some((2880.0, 2)));
+    }
+
     #[test]
     fn test_ticks_per_measure_different_denominators() {
         // ppq = 480, 6/8 -> beat = 480 * 4 / 8 = 240, measure = 240 * 6 = 1440
@@ -443,7 +503,7 @@ mod tests {
     /// 逐位一致——包括落点 tick、小节号，以及其后 8 个小节边界的全部输出。
     ///
     /// 覆盖：单拍号、空拍号表、首个拍号不在 tick 0、跨段边界前后 1 tick、
-    /// 段内不满一小节的尾部、多段切换、不同 ppq。
+    /// 段内不满一小节的尾部、多段切换、不同 ppq、同 tick 重复/冲突拍号。
     #[test]
     fn test_measure_iterator_advance_to_matches_stepping_reference() {
         let cases: Vec<MeasureCase> = vec![
@@ -454,6 +514,18 @@ mod tests {
             (vec![(0, 3, 4), (1920, 4, 4), (3360, 6, 8)], 480.0),
             (
                 vec![(0, 4, 4), (500, 5, 4), (900, 7, 8), (4000, 2, 4)],
+                960.0,
+            ),
+            // #146：同 tick 重复拍号（多轨 MIDI 常见）
+            (vec![(0, 4, 4), (0, 4, 4)], 480.0),
+            (vec![(0, 4, 4), (0, 4, 4), (0, 4, 4)], 960.0),
+            // #146：同 tick 冲突 + 中途重复
+            (
+                vec![(0, 4, 4), (0, 3, 4), (1920, 4, 4), (1920, 4, 4)],
+                480.0,
+            ),
+            (
+                vec![(0, 4, 4), (1920, 4, 4), (1920, 4, 4), (3840, 3, 4)],
                 960.0,
             ),
         ];
@@ -467,10 +539,14 @@ mod tests {
             }
             probes.push(1.0e6);
 
+            // 参考实现：先把同 tick 重复段折叠，再按旧算法从 0 逐小节 step。
+            // 这正是修复后的期望语义；文档原表保持不去重。
+            let deduped = dedup_time_signatures(&signatures);
+
             for &target in &probes {
                 let target = target.max(0.0);
                 // 参考实现：旧算法原样（从 0 逐小节 step）
-                let mut reference = MeasureIterator::at_origin(&signatures, ppq);
+                let mut reference = MeasureIterator::at_origin(deduped.as_ref(), ppq);
                 while reference.current_tick < target {
                     reference.step();
                 }
