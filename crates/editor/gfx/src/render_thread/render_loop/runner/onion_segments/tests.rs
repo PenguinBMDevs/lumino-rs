@@ -143,3 +143,102 @@ fn layout_same_count_is_noop() {
     assert_eq!(after, layout());
     assert_eq!(removed, None);
 }
+
+// ── 内容世代契约（2026-10-17 修正）真机 GPU 验证 ────────────────────────────
+//
+// 背景：此前 `process_main_track_events` 的段内增量（等长写/删/插）不递增
+// `onion_epoch`，而拖动音符会改变 `(key, start_tick)` 排序键——依赖该世代判定的
+// 派生索引（全局桶）会按旧序取数，表现为静默漏音/错位。以下两条断言把契约钉死：
+// 有字节变更必须换代；无字节变更不得换代（避免每帧空转重建）。
+
+fn epoch_test_renderers() -> (
+    wgpu::Device,
+    wgpu::Queue,
+    crate::render_thread::render_loop::Renderers,
+) {
+    let (device, queue) = crate::test_gpu::shared_device();
+    let renderers = crate::render_thread::render_loop::Renderers::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    );
+    (device, queue, renderers)
+}
+
+fn epoch_note(tick: f32, key: u8) -> crate::NoteInstance {
+    crate::NoteInstance::new(tick, key, 10.0, [1.0, 0.0, 0.0, 1.0], 0)
+}
+
+/// 播种一个含 `len` 个实例的 track 0 段，返回段表
+fn seed_track0(
+    renderers: &mut crate::render_thread::render_loop::Renderers,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    notes: &[crate::NoteInstance],
+) -> Vec<OnionSegment> {
+    renderers.onion_skin.begin_streaming_upload();
+    renderers.onion_skin.streaming_append(notes);
+    renderers.onion_skin.finish_streaming_upload(device, queue);
+    vec![seg(0, 0, notes.len())]
+}
+
+#[test]
+fn main_track_inplace_increment_bumps_onion_epoch() {
+    let (device, queue, mut renderers) = epoch_test_renderers();
+    let mut segments = seed_track0(
+        &mut renderers,
+        &device,
+        &queue,
+        &[epoch_note(0.0, 60), epoch_note(5.0, 62)],
+    );
+
+    let before = renderers.onion_epoch;
+    let (tx, rx) = std::sync::mpsc::channel();
+    tx.send(crate::NoteEvent::UpdateMany {
+        start_index: 0,
+        instances: vec![epoch_note(1.0, 61)],
+    })
+    .expect("发送事件");
+    assert!(
+        process_main_track_events(&mut renderers, &mut segments, 1, &rx, &device, &queue),
+        "事件应被消费"
+    );
+    assert_eq!(
+        renderers.onion_epoch,
+        before + 1,
+        "段内等长原位写改变了常驻字节与排序键 → 必须换代"
+    );
+}
+
+#[test]
+fn main_track_noop_batch_does_not_bump_onion_epoch() {
+    let (device, queue, mut renderers) = epoch_test_renderers();
+    let mut segments = seed_track0(&mut renderers, &device, &queue, &[epoch_note(0.0, 60)]);
+
+    // count=0 的区间删除被 `continue` 掉：事件被消费但字节未变
+    let before = renderers.onion_epoch;
+    let (tx, rx) = std::sync::mpsc::channel();
+    tx.send(crate::NoteEvent::RemoveAt { index: 0, count: 0 })
+        .expect("发送事件");
+    assert!(
+        process_main_track_events(&mut renderers, &mut segments, 1, &rx, &device, &queue),
+        "事件应被消费"
+    );
+    assert_eq!(
+        renderers.onion_epoch, before,
+        "无字节变更不得换代（避免派生索引空转重建）"
+    );
+
+    // 段表缺该轨：事件被丢弃，同样不得换代
+    let (tx2, rx2) = std::sync::mpsc::channel();
+    tx2.send(crate::NoteEvent::RemoveAt { index: 0, count: 1 })
+        .expect("发送事件");
+    assert!(
+        !process_main_track_events(&mut renderers, &mut segments, 9, &rx2, &device, &queue),
+        "缺段表应返回 false"
+    );
+    assert_eq!(
+        renderers.onion_epoch, before,
+        "丢弃的事件不得换代（内容以 document 为准，稍后全量同步）"
+    );
+}

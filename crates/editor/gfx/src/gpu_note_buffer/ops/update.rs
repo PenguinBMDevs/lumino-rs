@@ -1,11 +1,15 @@
-//! 音符增删改（CPU 镜像同步 + GPU 上传）
+//! 音符增删改（直接改 GPU 常驻字节，无 CPU 镜像）
+//!
+//! 2026-10-17 单一权威源整改：GPU 常驻缓冲是音符实例的唯一权威，本模块
+//! 所有操作只写 GPU；此前每个操作都额外维护 `self.instances` CPU 镜像，
+//! 属冗余拷贝（且 6 亿音符下达 9.6 GB）。
 
 use super::super::types::GpuNoteBuffer;
 
 impl GpuNoteBuffer {
     /// 增量更新单个音符
     ///
-    /// 流式模式（CPU 镜像已清空）下直接写 GPU；非流式模式同步 CPU 镜像。
+    /// 原位写 GPU（不改变计数）。索引越界只告警不写。
     pub fn update_note(&mut self, index: usize, instance: &crate::NoteInstance) {
         puffin::profile_function!();
         if index >= self.instance_count {
@@ -17,23 +21,17 @@ impl GpuNoteBuffer {
             return;
         }
 
-        // 上传单个实例
         let offset = index * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
             self.instance_buffer.inner(),
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(std::slice::from_ref(instance)),
         );
-
-        // 同步 CPU 缓存（非流式模式存在镜像）
-        if !self.instances.is_empty() {
-            self.instances[index] = *instance;
-        }
     }
 
     /// 批量更新音符（用于编辑操作后的批量更新）
     ///
-    /// 流式模式（CPU 镜像已清空）下直接写 GPU；非流式模式同步 CPU 镜像。
+    /// 原位写 GPU 连续区间（不改变计数）；区间按当前计数截断。
     pub fn update_notes(&mut self, start_index: usize, instances: &[crate::NoteInstance]) {
         puffin::profile_function!();
         if start_index >= self.instance_count || instances.is_empty() {
@@ -43,20 +41,12 @@ impl GpuNoteBuffer {
         let end_index = (start_index + instances.len()).min(self.instance_count);
         let count = end_index - start_index;
 
-        // 批量上传 GPU（流式模式安全）
         let offset = start_index * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
             self.instance_buffer.inner(),
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(&instances[..count]),
         );
-
-        // 同步 CPU 缓存（非流式模式存在镜像）
-        if !self.instances.is_empty() {
-            for (index, instance) in instances[..count].iter().enumerate() {
-                self.instances[start_index + index] = *instance;
-            }
-        }
     }
 
     /// 添加新音符（在末尾追加）
@@ -71,23 +61,26 @@ impl GpuNoteBuffer {
         let index = self.instance_count;
         let offset = index * std::mem::size_of::<crate::NoteInstance>();
 
-        // 上传单个实例
         self.queue.write_buffer(
             self.instance_buffer.inner(),
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(std::slice::from_ref(instance)),
         );
 
-        if index < self.instances.len() {
-            self.instances[index] = *instance;
-        } else {
-            self.instances.push(*instance);
-        }
         self.instance_count += 1;
         index
     }
 
-    /// 删除音符（通过将最后一个音符移动到被删除位置）
+    /// 删除音符（swap-remove：把末尾实例搬到被删位置）
+    ///
+    /// 2026-10-17 单一权威源整改：搬移改在 GPU 内完成，不再从 CPU 镜像取末尾元素。
+    /// 旧实现是 CPU 副本唯一无法删除的原因——镜像为空时 `self.instances[instance_count]`
+    /// 直接越界 panic。
+    ///
+    /// 实现注意：**不能**用同 buffer 的 `copy_buffer_to_buffer` —— wgpu 校验
+    /// 明确拒绝「Source and destination cannot be the same buffer」（即使区间不重叠，
+    /// 实测 wgpu 27 直接报 validation error）。因此复用 [`Self::move_range`] 的
+    /// staging 中转路径（与保序删/插同一条已由 `compute_move_blocks` 单测覆盖的搬移）。
     pub fn remove_note(&mut self, index: usize) {
         puffin::profile_function!();
         if index >= self.instance_count {
@@ -96,20 +89,10 @@ impl GpuNoteBuffer {
 
         self.instance_count -= 1;
 
-        // 如果不是最后一个，将最后一个移动到被删除位置
+        // 非末位：新的末位实例（index == instance_count）搬到被删位置
         if index < self.instance_count {
-            let last = self.instances[self.instance_count];
-            self.instances[index] = last;
-
-            let offset = index * std::mem::size_of::<crate::NoteInstance>();
-            self.queue.write_buffer(
-                self.instance_buffer.inner(),
-                offset as wgpu::BufferAddress,
-                bytemuck::cast_slice(std::slice::from_ref(&last)),
-            );
+            self.move_range(self.instance_count, index, 1);
         }
-
-        self.instances.truncate(self.instance_count);
     }
 
     /// 保序删除：删除 `[index, index+count)` 区间，后续段 GPU 内部左移
@@ -117,10 +100,7 @@ impl GpuNoteBuffer {
     /// 主音轨事件级增量专用（`NoteEvent::RemoveAt`）：GPU buffer 顺序与
     /// `notes` 顺序一致，删除后**保持顺序**（区别于 [`Self::remove_note`]
     /// 的 swap-remove 乱序语义）。搬移复用 [`Self::move_range`]
-    /// （staging 分块，支持重叠——此处前移不重叠）。
-    ///
-    /// CPU 镜像（`self.instances`，主音轨模式存在）同步 drain；
-    /// 流式模式（洋葱皮）镜像为空时跳过镜像操作。
+    /// （staging 分块，支持重叠——此处前移不重叠）。全流程无 CPU 拷贝。
     pub fn remove_at(&mut self, index: usize, count: usize) {
         if count == 0 || index >= self.instance_count {
             return;
@@ -128,11 +108,6 @@ impl GpuNoteBuffer {
         let count = count.min(self.instance_count - index);
         let tail = index + count;
         let remaining = self.instance_count - tail;
-
-        // CPU 镜像同步（流式模式镜像为空则跳过）
-        if !self.instances.is_empty() {
-            self.instances.drain(index..tail);
-        }
 
         // GPU：后续段左移 count（无后续则仅计数变化）
         if remaining > 0 {
@@ -145,6 +120,5 @@ impl GpuNoteBuffer {
     /// 清空所有音符
     pub fn clear(&mut self) {
         self.instance_count = 0;
-        self.instances.clear();
     }
 }
