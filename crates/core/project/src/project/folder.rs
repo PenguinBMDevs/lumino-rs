@@ -43,6 +43,8 @@ impl FolderPaths {
     pub const SYSEX_FILE: &str = "data/project/sysex.lmsyx";
     /// 音轨名称文件
     pub const TRACK_NAMES_FILE: &str = "data/project/track_names.lmnames";
+    /// 形状数据文件（Spiderweb 图形工具底座；老工程无此文件即空）
+    pub const SHAPES_FILE: &str = "data/project/shapes.lmshapes";
 }
 
 /// 创建文件夹工程的基础目录结构

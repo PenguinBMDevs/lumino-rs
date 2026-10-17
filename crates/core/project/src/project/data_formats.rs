@@ -1,9 +1,10 @@
 //! 工程专用数据文件格式定义
 //!
-//! .lmtemp / .lmsig / .lmctl / .lmnames 均使用专用魔数 + bincode + zstd。
+//! .lmtemp / .lmsig / .lmctl / .lmnames / .lmshapes 均使用专用魔数 + bincode + zstd。
 
 use super::folder::{decode_binary_file, encode_binary_file};
 use lumino_core::error::Result;
+use lumino_core::shape::ShapeModel;
 
 /// 全局速度变化数据（.lmtemp）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17,6 +18,35 @@ pub struct LmtempData {
 impl LmtempData {
     /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMTM";
+
+    /// 编码为二进制文件字节
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        encode_binary_file(Self::MAGIC, 1, self)
+    }
+
+    /// 从二进制字节解码
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        decode_binary_file(bytes, Self::MAGIC)
+    }
+}
+
+/// 形状数据（.lmshapes）
+///
+/// 形状是**文档对象**：随工程保存、参数可回改、可与它生成的音符同组撤销。
+/// 独立成文件遵循「新部件缺失即空」约定：老工程无此文件即空形状列表，
+/// 无需提升 `format_version`；形状为空时保存侧**不写**该部件，老工程保存后字节不变。
+///
+/// ⚠️ 落盘纪律：bincode 为位置编码，`ShapeModel` / `ShapeOp` 增删字段或变体
+/// 必须同时提升本部件版本（当前 1），不得静默改结构。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LmshapesData {
+    /// 形状列表（顺序即 Shapes 列表顺序）
+    pub shapes: Vec<ShapeModel>,
+}
+
+impl LmshapesData {
+    /// 文件魔数
+    pub const MAGIC: &[u8; 4] = b"LMSH";
 
     /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### S0-2 · 形状工程部件 `.lmshapes`
+
+- **新增** — 工程文件新增独立部件 `data/project/shapes.lmshapes`（魔数 `LMSH` + 版本 1 + bincode + zstd）：
+  `LmshapesData`、`FolderPaths::SHAPES_FILE`、`LuminoProject::shapes` 字段；文件夹与单文件归档两种形态都可存取。
+- **兼容性（关键）** — 遵循既有「新部件缺失即空」约定：加载侧 `exists()` 守卫，**形状为空时保存侧不写部件**
+  ⇒ 老工程保存后字节不变，且**不提升 `format_version`**；含未知部件的工程仍可加载（旧版本读新工程不报错）。
+- **落盘纪律** — bincode 为位置编码：`ShapeModel` / `ShapeOp` 增删字段或变体必须同时提升部件版本。
+- **顺带** — `save.rs` 574 行超 400 行红线，测试模块外迁为 `save/tests.rs`（纯移动，零逻辑变更）。
+- **验证** — `cargo test -p lumino-project` 70 passed / 0 failed（含 5 项 S0-2 新增）；
+  `cargo clippy -p lumino-project --all-targets` 零警告；
+  `cargo check -p lumino-export -p lumino-editor-state -p lumino-ui-editor -p lumino-ui` 通过（覆盖加字段影响面）；
+  `cargo test -p lumino-core` 84 passed（i18n 覆盖率门禁已含新增 2 条文案）；全部改动文件 ≤400 行。
+
 ### S0-1 · 形状数据模型（Spiderweb 图形工具移植底座）
 
 - **新增** — `lumino-core` 新模块 `shape`（`shape.rs` + `shape/{geometry,style,model}.rs`，

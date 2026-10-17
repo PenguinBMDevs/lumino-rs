@@ -8,8 +8,8 @@ use crate::{
     LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     project::archive,
     project::data_formats::{
-        LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData,
-        LmtxtData,
+        LmcatData, LmctlData, LmnamesData, LmshapesData, LmsigData, LmsyxData, LmtempData,
+        LmtextmetaData, LmtxtData,
     },
     project::folder,
     project::metadata::{
@@ -122,6 +122,11 @@ fn write_folder_contents(project: &LuminoProject, base: &Path) -> Result<()> {
     let encoded = names_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::TRACK_NAMES_FILE), encoded)?;
 
+    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程保存后字节不变）
+    if let Some(encoded) = encode_shapes(project)? {
+        std::fs::write(base.join(folder::FolderPaths::SHAPES_FILE), encoded)?;
+    }
+
     Ok(())
 }
 
@@ -228,7 +233,23 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
     let encoded = names_data.encode()?;
     files.push(("data/project/track_names.lmnames".into(), encoded, true));
 
+    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程归档字节不变）
+    if let Some(encoded) = encode_shapes(project)? {
+        files.push((folder::FolderPaths::SHAPES_FILE.into(), encoded, true));
+    }
+
     Ok(files)
+}
+
+/// 形状部件编码；形状为空时返回 `None`（**缺失即空**，老工程不受影响）
+fn encode_shapes(project: &LuminoProject) -> Result<Option<Vec<u8>>> {
+    if project.shapes.is_empty() {
+        return Ok(None);
+    }
+    let data = LmshapesData {
+        shapes: project.shapes.clone(),
+    };
+    Ok(Some(data.encode()?))
 }
 
 /// 从工程构建元数据
@@ -296,151 +317,4 @@ fn build_metadata(project: &LuminoProject) -> ProjectMetadata {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{LmtrackData, TrackMeta, TrackVisibilitySer};
-    use lumino_midi_model::compact::{CompactEvent, EventKind};
-
-    fn create_test_project() -> LuminoProject {
-        let mut project = LuminoProject::new("Test Project");
-        let data = LmtrackData::from_compact_events(
-            TrackMeta {
-                track_id: 0,
-                name: "Piano".into(),
-                channel: 0,
-                port: 0,
-                visibility: TrackVisibilitySer::Visible,
-                solo: false,
-                is_drum: false,
-                max_tick: 1000,
-            },
-            &[
-                CompactEvent::new(0, 0, EventKind::NoteOn, 0, 60, 100),
-                CompactEvent::new(480, 0, EventKind::NoteOff, 0, 60, 0),
-            ],
-        );
-        project.add_track(data);
-        project
-    }
-
-    #[test]
-    fn test_save_to_folder() {
-        let project = create_test_project();
-        let save_dir = std::env::temp_dir().join("lumino_save_folder_test");
-        let _ = std::fs::remove_dir_all(&save_dir);
-
-        save_to_folder(&project, &save_dir).expect("保存项目到文件夹失败");
-
-        assert!(save_dir.join("metadata.toml").exists());
-        assert!(save_dir.join(".lumino/version").exists());
-        assert!(save_dir.join("data/project/tracks/000.lmtrack").exists());
-        assert!(save_dir.join("data/project/tempo.lmtemp").exists());
-        assert!(save_dir.join("data/project/signature.lmsig").exists());
-        assert!(save_dir.join("data/project/controls.lmctl").exists());
-        assert!(save_dir.join("data/project/text_events.lmtxt").exists());
-        assert!(save_dir.join("data/project/sysex.lmsyx").exists());
-        assert!(save_dir.join("data/project/track_names.lmnames").exists());
-
-        // 验证魔数
-        let tempo_bytes =
-            std::fs::read(save_dir.join("data/project/tempo.lmtemp")).expect("读取tempo文件失败");
-        assert_eq!(&tempo_bytes[0..4], b"LMTM");
-
-        let sig_bytes = std::fs::read(save_dir.join("data/project/signature.lmsig"))
-            .expect("读取signature文件失败");
-        assert_eq!(&sig_bytes[0..4], b"LMSG");
-
-        let ctl_bytes = std::fs::read(save_dir.join("data/project/controls.lmctl"))
-            .expect("读取controls文件失败");
-        assert_eq!(&ctl_bytes[0..4], b"LMCT");
-
-        let txt_bytes = std::fs::read(save_dir.join("data/project/text_events.lmtxt"))
-            .expect("读取text_events文件失败");
-        assert_eq!(&txt_bytes[0..4], b"LMTX");
-
-        let syx_bytes =
-            std::fs::read(save_dir.join("data/project/sysex.lmsyx")).expect("读取sysex文件失败");
-        assert_eq!(&syx_bytes[0..4], b"LMSY");
-
-        let names_bytes = std::fs::read(save_dir.join("data/project/track_names.lmnames"))
-            .expect("读取track_names文件失败");
-        assert_eq!(&names_bytes[0..4], b"LMNM");
-
-        let _ = std::fs::remove_dir_all(&save_dir);
-    }
-
-    #[test]
-    fn test_save_to_archive() {
-        let project = create_test_project();
-        let save_archive_path = std::env::temp_dir().join("lumino_save_archive_test.lmpj");
-        let _ = std::fs::remove_file(&save_archive_path);
-
-        save_to_archive(&project, &save_archive_path).expect("保存项目到归档失败");
-
-        assert!(save_archive_path.exists());
-        let bytes = std::fs::read(&save_archive_path).expect("读取归档文件失败");
-        assert!(bytes.len() > 4);
-        assert_eq!(&bytes[0..4], b"LMPJ");
-
-        let _ = std::fs::remove_file(&save_archive_path);
-    }
-
-    fn atomic_test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("lumino_save_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("创建测试目录失败");
-        dir
-    }
-
-    fn assert_no_leftovers(dir: &std::path::Path) {
-        let leftovers: Vec<String> = std::fs::read_dir(dir)
-            .expect("读取测试目录失败")
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.contains(".tmp-") || n.ends_with(".bak"))
-            .collect();
-        assert!(leftovers.is_empty(), "不应残留临时/备份文件: {leftovers:?}");
-    }
-
-    /// DEBT-01 #118：覆盖保存必须原子替换——旧目标被整体换掉，不留 tmp/bak。
-    #[test]
-    fn test_save_to_archive_atomic_replace() {
-        let dir = atomic_test_dir("archive_replace");
-        let target = dir.join("project.lmpj");
-        std::fs::write(&target, b"stale-not-an-archive").expect("写入旧内容失败");
-
-        let project = create_test_project();
-        save_to_archive(&project, &target).expect("原子保存归档失败");
-
-        let bytes = std::fs::read(&target).expect("读取归档失败");
-        assert_eq!(&bytes[0..4], b"LMPJ", "旧内容必须被完整替换");
-        assert!(
-            archive::read_file_from_archive(&bytes, "metadata.toml")
-                .expect("读取归档内容失败")
-                .is_some(),
-            "替换后的归档必须可读"
-        );
-        assert_no_leftovers(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// DEBT-01 #118：文件夹保存整体换入，旧目录的陈旧文件不得残留。
-    #[test]
-    fn test_save_to_folder_atomic_replace() {
-        let dir = atomic_test_dir("folder_replace");
-        let target = dir.join("project.lmpj");
-        std::fs::create_dir_all(&target).expect("创建旧目录失败");
-        std::fs::write(target.join("stale.bin"), b"stale").expect("写入陈旧文件失败");
-
-        let project = create_test_project();
-        save_to_folder(&project, &target).expect("原子保存文件夹失败");
-
-        assert!(target.join("metadata.toml").exists());
-        assert!(
-            !target.join("stale.bin").exists(),
-            "旧目录的陈旧文件必须整体消失"
-        );
-        assert_no_leftovers(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
+mod tests;
