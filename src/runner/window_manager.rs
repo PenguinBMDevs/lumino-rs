@@ -37,6 +37,9 @@ pub struct WindowManager {
     pending_size_restore: Option<winit::dpi::PhysicalSize<u32>>,
     /// REND-019：微扰前窗口是否为最大化（微扰会退出最大化，完成后自动恢复）。
     pending_restore_maximized: bool,
+    /// REND-019 周边（R4 P2 反馈）：微扰恢复最大化后需要把存活对话框重新置前
+    /// （"取消最大化→重最大化"会把主窗抬到端窗之上；由 Runner 每帧读取执行一次）。
+    pub(crate) raise_dialogs_pending: bool,
 }
 
 impl WindowManager {
@@ -117,6 +120,7 @@ impl WindowManager {
             deferred_save_confirm_close: false,
             pending_size_restore: None,
             pending_restore_maximized: false,
+            raise_dialogs_pending: false,
         })
     }
 
@@ -165,6 +169,12 @@ impl WindowManager {
     }
 
     /// 请求重绘窗口
+    /// REND-019 周边：取走"需要置前存活对话框"标志（微扰恢复最大化后置位；
+    /// 见字段注释）。返回 true 时由 Runner 调用 DialogManager 置前各端窗。
+    pub(crate) fn take_raise_dialogs_pending(&mut self) -> bool {
+        std::mem::take(&mut self.raise_dialogs_pending)
+    }
+
     pub fn request_redraw(&self) {
         self.window.request_redraw();
     }
@@ -245,6 +255,8 @@ impl WindowManager {
             if self.pending_restore_maximized {
                 self.pending_restore_maximized = false;
                 self.window.set_maximized(true);
+                // 重最大化会把主窗抬到存活对话框之上——标记一次"重新置前"
+                self.raise_dialogs_pending = true;
             } else {
                 let _ = self.window.request_inner_size(target);
             }

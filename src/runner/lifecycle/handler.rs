@@ -199,6 +199,15 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             return;
         }
 
+        // REND-019 周边（R4 P2 反馈）：最大化微扰的"取消最大化→重最大化"会把主窗
+        // 抬到存活对话框之上——恢复完成后把它们重新置前（一次性；见
+        // WindowManager::take_raise_dialogs_pending）。
+        if let Some(this) = self.inner.as_mut()
+            && this.window_state.window.take_raise_dialogs_pending()
+        {
+            this.window_state.dialog_manager.raise_all_dialogs();
+        }
+
         let Some(this) = self.inner.as_mut() else {
             return;
         };

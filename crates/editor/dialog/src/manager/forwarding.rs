@@ -132,4 +132,17 @@ impl DialogManager {
             }
         }
     }
+
+    /// 重连/微扰恢复后把存活对话框重新置前（REND-019 周边，R4 用户实测 P2：
+    /// 最大化主窗恢复时"取消最大化→重最大化"会把主窗抬到端窗之上，端窗需显式
+    /// 提升）。焦点将落在最后一个对话框（winit 无"仅提升不夺焦"接口，R4 评估
+    /// 可接受）。
+    pub fn raise_all_dialogs(&mut self) {
+        for window in self.dialogs.values() {
+            window.window().focus_window();
+        }
+        for (window, _) in self.initializing.iter() {
+            window.window().focus_window();
+        }
+    }
 }
