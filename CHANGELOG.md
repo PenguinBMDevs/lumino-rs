@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### S0-5 · 形状随工程存取接线与集成夹具
+
+- **接线（4 处）** — 形状真正随工程进出编辑器：
+  - **保存**：`runner/menu/file/export.rs` 组工程时 `project.shapes = editor.shapes_snapshot()`；
+  - **打开**：`runner/menu/file/load.rs` 读工程后先取 `project.shapes`，再转换 ParsedMidi；
+  - **事件**：新增 `menu::file::Event::ProjectShapes(Vec<ShapeModel>)`，加载侧在
+    `MidiParsed` **之后**单独发一条（顺序不可反：文档装载路径会清空形状存储）；
+  - **清空**：`clear_drawn_shapes()` 同时清 `shape_store`（新文档与旧形状无关）。
+- **夹具（3 项）** — `shapes_snapshot → load_shapes` 往返、`k` 保真、**再生成与视口缩放无关**。
+- **验证** — `cargo test -p lumino-note-core` 146 / `-p lumino-message` 47 / `-p lumino-ui-editor` 785 /
+  `-p lumino-editor-state` 339 / `-p lumino-ui` 507，全部 0 failed；
+  `cargo check -p lumino-rs` 与 `cargo clippy`（6 个 crate）均通过、零警告；改动文件 ≤400 行。
+
 ### S0-4 · 通道模式与同键重叠消解
 
 - **新增** — `lumino-note-core::channels`：`ChannelMode`（`Raw` / `Single`）、

@@ -76,14 +76,17 @@ impl Host {
         self.root.load_tempo_changes(tempo_changes);
     }
 
-    /// 清空「已绘制图形」注册表（装载新 MIDI 文档时调用）
+    /// 清空「已绘制图形」注册表与形状对象（装载新文档时调用）
     ///
     /// 图形对象是**会话内的叠加对象**（不随 MIDI 文件持久化）：新文档的音符与
     /// 旧文档的图形几何毫无关系，若不清空，旧文件的图形描边会残留在新文档上。
+    /// S0-3 起**形状对象已随 `.lmpj` 持久化**，因此打开工程的路径在清空之后
+    /// 会紧跟一条 `ProjectShapes` 事件把形状灌回来（顺序不可颠倒）。
     /// 注意：导出前的「自动保存重载同一文档」路径**不**调用本方法（同一文档，
     /// 用户绘制的图形应保留），见 `runner/menu/file/export.rs`。
     pub fn clear_drawn_shapes(&mut self) {
         self.root.editor.editor_state.shape_select.clear();
+        self.root.editor.editor_state.shape_store.clear();
         // 注册表被整体清空会连带清掉「待确认产物镜像」：若此刻正停在鼠标工具，
         // 立刻按 owning tool 的待确认几何重建，维持「看得见 = 框得着」不变式。
         self.root.editor.rebuild_pending_mirrors();

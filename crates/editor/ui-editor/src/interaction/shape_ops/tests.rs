@@ -183,3 +183,83 @@ fn test_edit_missing_shape_returns_false() {
     assert!(!editor.edit_shape(999, straight_shape(1, 480.0)));
     assert!(!editor.delete_shape(999));
 }
+
+// ── S0-5：工程往返（snapshot → load）与 k 保真 ─────────────────────────
+
+#[test]
+fn test_shapes_snapshot_roundtrips_through_load() {
+    let mut source = editor_with_track(1);
+    assert!(source.create_shape(straight_shape(1, 480.0)));
+    assert!(source.create_shape(straight_shape(1, 960.0)));
+    let snapshot = source.shapes_snapshot();
+    assert_eq!(snapshot.len(), 2);
+
+    // 模拟「打开工程」：新编辑器先装载文档、再灌入形状
+    let mut target = editor_with_track(1);
+    target.load_shapes(snapshot.clone());
+
+    assert_eq!(
+        target.shapes_snapshot(),
+        snapshot,
+        "形状快照经 load_shapes 应原样还原（含 k / 几何 / 样式）"
+    );
+    assert_eq!(
+        note_count(&target, 1),
+        0,
+        "load_shapes 只登记形状，音符由工程文档自身承载"
+    );
+}
+
+#[test]
+fn test_k_is_preserved_across_roundtrip() {
+    let mut source = editor_with_track(1);
+    let mut model = straight_shape(1, 480.0);
+    model.k = 0.375; // 非默认视图比例：丢失即说明 k 未随形状持久化
+    assert!(source.create_shape(model));
+    let snapshot = source.shapes_snapshot();
+    let id = first_shape_id(&source);
+
+    let mut target = editor_with_track(1);
+    target.load_shapes(snapshot);
+    assert_eq!(
+        target
+            .editor_state
+            .shape_store
+            .model(id)
+            .expect("形状应存在")
+            .k,
+        0.375,
+        "视图比例 k 必须随形状还原（否则跨缩放会走形）"
+    );
+}
+
+/// 再生成只看几何，**不随视口缩放变化**（厚度 1 时无屏幕空间加粗）
+#[test]
+fn test_regeneration_is_zoom_independent() {
+    let mut editor = editor_with_track(1);
+    let model = straight_shape(1, 960.0);
+    assert!(editor.create_shape(model.clone()));
+    let id = first_shape_id(&editor);
+    let before = editor.editor_state.shape_store.notes_of(id).to_vec();
+
+    // 改变视口缩放后，用**同一参数**再生成
+    editor.editor_state.view.zoom_x *= 2.5;
+    editor.editor_state.view.zoom_y *= 0.5;
+    assert!(editor.edit_shape(id, model));
+
+    let after = editor.editor_state.shape_store.notes_of(id).to_vec();
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "音符数量不得随视口缩放变化（{} → {}）",
+        before.len(),
+        after.len()
+    );
+    for (a, b) in before.iter().zip(after.iter()) {
+        assert_eq!(
+            (a.tick, a.key, a.length),
+            (b.tick, b.key, b.length),
+            "音符几何不得随视口缩放变化"
+        );
+    }
+}
