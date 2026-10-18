@@ -3,12 +3,19 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(windows_gui_subsystem)");
 
     // 嵌入 Windows 应用程序图标（.ico 文件，含 16x16~512x512 多分辨率）
-    // 构建脚本无法返回 Result，失败时输出明确错误并以非零码退出（等价于 panic，语义更清晰）
-    if let Err(e) = embed_resource::compile("resources/icons/logo/lumino.rc", embed_resource::NONE)
-        .manifest_optional()
-    {
-        eprintln!("error: 嵌入 Windows 图标（lumino.rc）失败: {e}");
-        std::process::exit(1);
+    //
+    // ⚠️ 必须按**目标**平台判断，不能靠 embed-resource 自己的 NotWindows 判定：
+    // 在 Windows 宿主上交叉编译 Android 时，embed-resource 认为是 Windows 而产出
+    // `lumino.lib`，android 链接器直接 `unknown file type` 报错。
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" {
+        if let Err(e) =
+            embed_resource::compile("resources/icons/logo/lumino.rc", embed_resource::NONE)
+                .manifest_optional()
+        {
+            eprintln!("error: 嵌入 Windows 图标（lumino.rc）失败: {e}");
+            std::process::exit(1);
+        }
     }
 
     let git_hash = std::process::Command::new("git")
