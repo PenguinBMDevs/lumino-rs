@@ -19,6 +19,22 @@ mod runner;
 mod services;
 mod storage;
 
+/// 启动阶段打点：**直接走 `log`**（不经 tracing），保证在日志系统初始化前后都能落 logcat。
+///
+/// 存在的唯一理由：入口崩溃时 tracing 还没装 subscriber，`tracing::info!` 全是静默的，
+/// 只有 `log::error!` 能证明「我们走到了哪一行」。定位完应删除或降级为 debug。
+macro_rules! boot_mark {
+    ($($arg:tt)*) => {{
+        #[cfg(target_os = "android")]
+        {
+            log::error!("[BOOT] {}", format!($($arg)*));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = format_args!($($arg)*);
+        }
+    }};
+}
 /// 平台入口句柄。
 ///
 /// - Android：winit 的 `AndroidApp`（`android_main` 的入参，事件循环靠它绑 Looper）；
@@ -161,7 +177,9 @@ fn create_event_loop(
 ///
 /// `app` 只有 Android 会传 `Some(AndroidApp)`；桌面传 `None`。
 pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
+    boot_mark!("REACHED-3 即将 logging::init");
     logging::init();
+    boot_mark!("REACHED-4 logging 已就绪");
 
     // 启动 puffin 性能分析服务器 - 保持存活直到程序结束（Android 上为 no-op）
     let _puffin_holder = PuffinServerHolder::new();
@@ -184,7 +202,9 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
     let cli = cli::Cli::parse_args();
     let test_config = cli.get_test_config();
 
+    boot_mark!("REACHED-5 即将 create_event_loop");
     let event_loop = create_event_loop(app)?;
+    boot_mark!("REACHED-6 事件循环已创建");
 
     // REND-019 PR-C §1.3（C1/C2）：device-lost 回调 → EventLoopProxy（无锁唤醒；
     // 回调线程只做原子置位 + send_event，重连决策由 UI 主循环消费事件后发起）
@@ -208,6 +228,7 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
         let _ = lgs_proxy.send_event(runner::UserEvent::LgsDeviceLost { reason, message });
     });
 
+    boot_mark!("REACHED-7 即将构造 Runner");
     let mut runner = runner::Runner::default();
 
     // 如果是测试模式，设置测试配置
@@ -226,6 +247,7 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
     // 因此该线程的所有分配（编辑器状态、空间索引、iced 每帧 widget 树等）均归 Ui。
     // 其中 MIDI 解析路径在 document.rs 内层已用 Midi 标签覆盖，音频渲染线程在 synth.rs 内单独标 Audio。
     lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
+        boot_mark!("REACHED-8 即将 run_app");
         event_loop.run_app(&mut runner)
     })?;
 
@@ -238,6 +260,12 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub fn android_main(app: PlatformApp) {
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Trace)
+            .with_tag("lumino"),
+    );
+    boot_mark!("REACHED-1 进入 android_main");
     // 必须最早注入：Android 上没有 $HOME/XDG，Storage::new() 依赖这个目录，
     // 缺了就在启动第一步 Err(NotFound) → 优雅退出（看上去像"闪退"）。
     match app.internal_data_path() {
@@ -248,7 +276,7 @@ pub fn android_main(app: PlatformApp) {
         None => tracing::error!("Android 无法获取 internal_data_path，配置将无法持久化"),
     }
 
-    tracing::info!("android_main 启动");
+    boot_mark!("REACHED-2 已注入数据目录");
     if let Err(error) = run(Some(app)) {
         tracing::error!("Android 主循环异常退出: {error}");
     }

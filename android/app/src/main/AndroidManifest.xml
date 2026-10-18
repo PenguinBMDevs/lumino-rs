@@ -22,7 +22,7 @@
             <!-- GameActivity 依此名加载原生库：lib<value>.so -->
             <meta-data
                 android:name="android.app.lib_name"
-                android:value="lumino_probe" />
+                android:value="lumino" />
         </activity>
     </application>
 

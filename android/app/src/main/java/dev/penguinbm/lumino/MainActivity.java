@@ -18,7 +18,7 @@ import com.google.androidgamesdk.GameActivity;
 /**
  * Lumino Android 入口 Activity。
  *
- * <p>只做三件事：加载原生库（{@code liblumino_probe.so} → {@code android_main}）、
+ * <p>只做三件事：加载原生库（{@code liblumino.so} → {@code android_main}）、
  * 隐藏系统栏以拿到全屏绘制区、给 Rust 侧暴露几个 JNI 可调用的平台能力。
  */
 public class MainActivity extends GameActivity {
@@ -27,7 +27,7 @@ public class MainActivity extends GameActivity {
 
     static {
         // 名字必须与 AndroidManifest 的 android.app.lib_name 及 Cargo [lib] name 一致。
-        System.loadLibrary("lumino_probe");
+        System.loadLibrary("lumino");
     }
 
     @Override
