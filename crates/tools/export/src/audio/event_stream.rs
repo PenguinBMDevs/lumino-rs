@@ -25,6 +25,10 @@ pub(crate) struct MergedEvent {
 
 /// MidiDocEventStream — 流式迭代 MidiDocument 中的事件
 ///
+/// 与文件回退分支的 `StreamingMidiPlayer`（`lumino-midi-loader`）构成导出链路的
+/// **两套事件提取实现**；等价性由 `audio/event_stream/tests_parity.rs` 对拍锁定，
+/// 改动本类的提取/排序逻辑前请先跑通该对拍（详见审计 §6.2 / §18.5）。
+///
 /// 将文档中所有 NoteOn/NoteOff 与控制事件展开为扁平列表后按 (tick, priority)
 /// 排序，彻底解决旧游标实现中“同轨重叠音符屏蔽”问题：
 /// 旧实现每轨仅跟踪一个 `(idx, bool)`，发射 `A On(0)` 后游标指向 `A Off(10)`，

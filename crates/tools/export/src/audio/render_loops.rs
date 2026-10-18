@@ -29,6 +29,22 @@ use super::tick_conv::TickToTime;
 // ════════════════════════════════════════════════════════════
 
 /// 流式模式：直接从磁盘 MIDI 文件渲染为音频文件
+///
+/// ## ⚠️ 已知的第二实现 —— 后续会重构（审计 §6.2 / §18.5，2026-10-17 决策）
+///
+/// 本函数（`StreamingMidiPlayer` 流式提取）与内存模式
+/// （[`render_audio_from_document`]：`MidiDocument` → `MidiDocEventStream`）
+/// 是**两套事件提取实现**。当前**有意保留**：流式路径对超大黑乐谱是「零文档常驻」，
+/// 而本分支只在无 document（或 document 为空）时触发——那时最可能撞上超大文件，
+/// 先载入文档会常驻数 GB。
+///
+/// **重构方向（已定，未在本批次实施）**：回退时先
+/// `MidiDocument::from_notes_file(path)` 载入唯一权威源，再统一调用
+/// [`render_audio_from_document`]，让导出链路只剩一条。
+///
+/// 在那之前，两条链的**等价性由 `audio/event_stream/tests_parity.rs` 兜底**
+/// （自足 SMF 对拍 NoteOn/NoteOff/CC/PC/PB + 端口元事件）——
+/// **改动任一侧的事件提取逻辑，必须先让该对拍通过**。
 pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     if let Some(ctrl) = &config.control {
         ctrl.check_abort()?;
