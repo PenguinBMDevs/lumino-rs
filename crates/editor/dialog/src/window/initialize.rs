@@ -1,4 +1,4 @@
-﻿//! 对话框窗口 - GFX 与 UI 初始化
+//! 对话框窗口 - GFX 与 UI 初始化
 
 use std::sync::Arc;
 

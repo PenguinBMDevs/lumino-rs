@@ -8,9 +8,7 @@
     windows_subsystem = "windows"
 )]
 
-use winit::event_loop::EventLoop;
-#[cfg(target_os = "linux")]
-use winit::event_loop::EventLoopBuilder;
+use winit::event_loop::{EventLoop, EventLoopBuilder};
 
 /// 全局内存追踪分配器，按子系统统计堆分配。
 #[global_allocator]
@@ -63,6 +61,22 @@ fn wayland_compositor_available() -> bool {
     available
 }
 
+/// 构造携带 `runner::UserEvent` 的事件循环构建器（跨平台共用）。
+///
+/// # 为什么单独抽成一个「不带 cfg 门控」的函数
+///
+/// winit 0.30 里 `with_user_event()` 是 `EventLoop<T>` 的关联函数（返回
+/// `EventLoopBuilder<T>`），**不是** `EventLoopBuilder<T>` 的——后者的 `impl`
+/// 块里只有 `build()`。而 X11/Wayland 分支整体挂在 `#[cfg(target_os = "linux")]`
+/// 下：在 Windows 上开发时这段代码被 cfg 剥离、永不参与类型检查，写错了只能等
+/// ubuntu CI 炸（2026-10-16 a047e613e 引入，潜伏 2 天）。
+///
+/// 收敛到本函数后，该 API 调用在本机任意平台的 `cargo check` 下都会被检查，
+/// 同类误用不再需要跨平台 CI 才能暴露。
+fn user_event_builder() -> EventLoopBuilder<runner::UserEvent> {
+    EventLoop::<runner::UserEvent>::with_user_event()
+}
+
 /// 根据当前显示服务器环境自动创建事件循环。
 ///
 /// # 设计原理
@@ -84,17 +98,17 @@ fn create_event_loop() -> Result<EventLoop<runner::UserEvent>, winit::error::Eve
     if wayland_ok {
         // Wayland 合成器真正在运行，让 winit 默认走 Wayland
         tracing::info!("Wayland 合成器检测可用，使用 Wayland 后端");
-        EventLoopBuilder::<runner::UserEvent>::with_user_event().build()
+        user_event_builder().build()
     } else if has_x11 {
         // Wayland 不可用，强制 X11 后端
         tracing::info!("使用 X11 后端");
-        let mut builder = EventLoopBuilder::<runner::UserEvent>::with_user_event();
+        let mut builder = user_event_builder();
         builder.with_x11();
         builder.build()
     } else {
         // 两个显示服务器都不可用，尝试默认（会失败但给出明确错误）
         tracing::error!("未检测到显示服务器（Wayland socket 和 DISPLAY 均不可用）");
-        EventLoopBuilder::<runner::UserEvent>::with_user_event().build()
+        user_event_builder().build()
     }
 }
 
@@ -102,7 +116,7 @@ fn create_event_loop() -> Result<EventLoop<runner::UserEvent>, winit::error::Eve
 /// `UserEvent`——device-lost 通知链路 §1.3 C2 的前置改造）。
 #[cfg(not(target_os = "linux"))]
 fn create_event_loop() -> Result<EventLoop<runner::UserEvent>, winit::error::EventLoopError> {
-    EventLoop::<runner::UserEvent>::with_user_event().build()
+    user_event_builder().build()
 }
 
 #[tokio::main]
@@ -166,4 +180,22 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
         event_loop.run_app(&mut runner)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 编译期契约：`with_user_event()` 属于 `EventLoop<T>`，返回 `EventLoopBuilder<T>`。
+    ///
+    /// 若有人改回 `EventLoopBuilder::<T>::with_user_event()`，本测试在**所有平台**
+    /// 编译失败，而不是只在 ubuntu CI 红——这是对 cfg 剥离盲区的直接封堵。
+    /// 构造 builder 只写入平台属性结构体（各平台 `Default` 均无副作用），
+    /// 不触碰 winit 的 `EVENT_LOOP_CREATED` 一次性标志，可在测试线程安全调用。
+    #[test]
+    fn user_event_builder_matches_winit_api() {
+        fn assert_builder_type(_: EventLoopBuilder<runner::UserEvent>) {}
+
+        assert_builder_type(user_event_builder());
+    }
 }

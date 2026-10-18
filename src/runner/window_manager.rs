@@ -1,4 +1,4 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 

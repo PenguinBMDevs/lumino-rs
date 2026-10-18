@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### CI 修复 · ubuntu lint（事件循环 API）与 BOM 守卫红灯
+
+- **ubuntu lint（E0599）** — Linux 专用分支把 `with_user_event()` 误挂在 `EventLoopBuilder<T>` 上
+  （winit 0.30 里它属于 `EventLoop<T>`）。该分支被 `#[cfg(target_os = "linux")]` 剥离 ⇒ Windows 本机
+  永不参与类型检查，只有 ubuntu CI 能炸。现收敛为**不带 cfg** 的 `user_event_builder()`，本机任意平台
+  `cargo check` 均可拦截，并补一条编译期契约测试。**存量问题**（`a047e613`，2026-10-16），非 S0 引入。
+- **BOM 守卫（5 个 .rs）** — 逐字节剥离文件头 3 字节（`EF BB BF`），其余内容零改动：校验
+  `HEAD blob[3:] == 工作区` 逐字节相同、`git diff --numstat` 每文件 1/1。**存量问题**
+  （`6dc5f82b`/`dc658893`，2026-10-17），非 S0 引入。
+- **预防** — 新增 `.githooks/pre-push`（推送前跑字节级 BOM 守卫，零依赖秒级），
+  `git config core.hooksPath .githooks` 启用。
+- **验证** — 真 Ubuntu 26.04（WSL）跑通 CI 同款命令：`cargo check --workspace`（6m06s，0 error）、
+  `cargo clippy --workspace --all-targets -- -D warnings`（3m08s，0 warning）、`bash scripts/check-bom.sh`
+  （1565 个 .rs，0 命中）；Windows 侧 `cargo fmt --check`、`cargo clippy -p lumino-rs --all-targets
+  -- -D warnings` 均 RC=0。**`cargo test` 不在本地跑**（首个测试进程长时间未退出），交由 CI 三平台执行。
+
 ### S0-5 · 形状随工程存取接线与集成夹具
 
 - **接线（4 处）** — 形状真正随工程进出编辑器：

@@ -1,4 +1,4 @@
-﻿use lumino_core::tr;
+use lumino_core::tr;
 use lumino_ui::window::TrafficAction;
 use std::sync::Arc;
 use tokio::sync::mpsc;

@@ -1,0 +1,20 @@
+#!/bin/sh
+# 推送前本地门禁：BOM 字节级守卫（拦"编辑器保存行为把 BOM 写回 .rs"）。
+#
+# 为什么放 pre-push 而不是只放 CI：守卫脚本零依赖、秒级返回，放本地能在推送前
+# 拦住，而不是让 CI 白红一轮——2026-10-17 的 BOM 回归就是"脚本已存在但只在 CI
+# 跑"，红了 1 天没人看见（同类失败的代价 > 钩子的打扰成本）。
+#
+# 启用（每位开发者一次性执行；钩子本身随仓库分发，不依赖 dotfiles）：
+#     git config core.hooksPath .githooks
+# 已确认原因需要临时跳过：
+#     git push --no-verify
+#
+# 说明：只跑字节级守卫，不跑 cargo（推送前不阻塞编译，编译门禁交给 CI 与本地自查）。
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}" || exit 1
+
+echo "[pre-push] BOM 守卫：scripts/check-bom.sh"
+sh scripts/check-bom.sh

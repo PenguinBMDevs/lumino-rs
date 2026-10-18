@@ -1,4 +1,4 @@
-﻿//! 设备检查警告窗：独立 winit 窗口 + gfx Context + iced Host 管理器。
+//! 设备检查警告窗：独立 winit 窗口 + gfx Context + iced Host 管理器。
 //!
 //! 生命周期仿 `ProgressManager`：窗口创建 → 事件转发 → 用户操作回传 → 关闭。
 //! 警告窗只在"首启/未抑制 + 检测失败"时短暂存在；用户选择由
