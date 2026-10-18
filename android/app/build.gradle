@@ -3,25 +3,34 @@
 // 关键约定：
 // - 原生库由 `cargo ndk` 产出到 `app/src/main/jniLibs/<abi>/liblumino_probe.so`
 //   （正式版换成 `liblumino_rs.so`），**不入库**，见 .gitignore。
-// - compileSdk 固定 33：本机 SDK 只装了 android-30/33/36.1，选 33 可完全离线构建；
-//   games-activity 相应选 1.2.2（2.x 要求 compileSdk 34+）。
+// - compileSdk 34 + `androidx.games:games-activity:3.0.5`（**版本强绑定，别乱升/降**）：
+//   GameActivity 的 Java 类与「android-activity 0.6.1 自带的 AGDK C++ glue」必须签名
+//   逐一对上。glue 的 RegisterNatives 表要求
+//     initializeNativeCode(String,String,String,AssetManager,byte[],Configuration)J
+//     onTouchEventNative(J,MotionEvent,IIIIIJJIIIIIIFF)Z
+//   1.2.2 连 initializeNativeCode 都对不上、2.0.2 卡在 onTouchEventNative（Java 侧只有
+//   `(J,MotionEvent)Z`），表现为 JNI_OnLoad 注册失败 → ART 直接 `SIGABRT:
+//   RegisterNatives failed for 'com/google/androidgamesdk/GameActivity'`（进程启动即崩）。
+//   3.0.x / 4.x 的签名才与 glue 一致（已用 javap 逐版本核对，实测 3.0.5 可跑）。
 // - 不使用 NDK 编译 C/C++（无 CMake/ndk-build），故不声明 ndkVersion。
+// - compileSdk 34 需 `sdkmanager "platforms;android-34"`；本机已装 android-30/33/34/36.1。
 plugins {
     id 'com.android.application'
 }
 
 android {
     namespace 'dev.penguinbm.lumino'
-    compileSdk 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "dev.penguinbm.lumino.probe"
         minSdk 28
-        targetSdk 33
+        targetSdk 34
         versionCode 1
         versionName "0.1.0"
         ndk {
-            abiFilters 'arm64-v8a'
+            // arm64 真机 + x86_64 模拟器（Windows/Intel 宿主机只能跑 x86_64 镜像）。
+            abiFilters 'arm64-v8a', 'x86_64'
         }
     }
 
@@ -57,5 +66,5 @@ dependencies {
     // 否则 javac 报「无法访问 AppCompatActivity」并连带所有继承方法（getWindow 等）失踪；
     // 运行时也要求 Theme.AppCompat 派生主题。
     implementation "androidx.appcompat:appcompat:1.6.1"
-    implementation "androidx.games:games-activity:1.2.2"
+    implementation "androidx.games:games-activity:3.0.5"
 }
