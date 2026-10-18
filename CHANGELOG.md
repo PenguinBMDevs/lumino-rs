@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### S0-4 · 通道模式与同键重叠消解
+
+- **新增** — `lumino-note-core::channels`：`ChannelMode`（`Raw` / `Single`）、
+  `apply_channel_mode`、`resolve_single_channel`、`MIN_NOTE_TICKS`。
+- **口径**（对齐 Spiderweb `help/channels.txt`）：
+  - `Raw`（As drawn）= 原样保留，**允许同键重叠**（黑乐谱纹理的前提）；
+  - `Single` = 同键重叠消解：同 tick 合并取「最响力度 + 最长长度」；不同起点重叠时
+    前者在后者起点截断、后者延伸到前者原终点（后者更长则保留更长）。
+- **边界** — 只按 `(key, tick)` 组织、不同音高互不影响；截断结果不低于 `MIN_NOTE_TICKS`；
+  结果与输入顺序无关（内部稳定排序）；**不改通道号**（`Multi channel` 自动分配属后续任务）。
+- **验证** — `cargo test -p lumino-note-core` 146 passed（含 12 项新增）；
+  `cargo clippy -p lumino-note-core --all-targets` 零警告。
+
 ### S0-3 · 形状存储、撤销分组回放与再生成接线
 
 - **新增** — `lumino-editor-state::ShapeStore`（文档级形状存储 + 撤销分组日志 + 音符指纹）与
