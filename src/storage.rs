@@ -95,11 +95,37 @@ fn copy_dir(src: &std::path::Path, dst: &std::path::Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Android 应用私有数据目录（`/data/data/<pkg>/files`）。
+///
+/// 由 `android_main` 在启动最早处注入（`AndroidApp::internal_data_path()`）。
+/// 为什么必须注入：Android 上没有 `$HOME` / XDG，`directories` 的 `ProjectDirs::from()`
+/// 恒为 `None`（`dirs-sys` 对 android 的 fallback 显式返回 None），不注入的话
+/// `Storage::new()` 直接 `Err(NotFound)`，进程在启动第一步就退出。
+#[cfg(target_os = "android")]
+static ANDROID_DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// 注入 Android 应用私有数据目录（幂等；重复调用忽略）。
+#[cfg(target_os = "android")]
+pub(crate) fn set_android_data_dir(dir: std::path::PathBuf) {
+    let _ = ANDROID_DATA_DIR.set(dir);
+}
+
 /// 获取应用程序配置目录路径
 pub fn config_dir() -> PathBuf {
-    ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
-        .map(|d| d.config_dir().to_owned())
-        .unwrap_or_else(|| PathBuf::from("."))
+    #[cfg(target_os = "android")]
+    {
+        return ANDROID_DATA_DIR
+            .get()
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from("."));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
+            .map(|d| d.config_dir().to_owned())
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
 }
 
 /// 当前 Unix 时间戳（秒）；系统时钟早于 epoch（异常）时返回 `None`。
@@ -117,22 +143,45 @@ pub(crate) fn now_unix_secs() -> Option<u64> {
 impl Storage {
     // 创建一个新的存储系统
     pub fn new() -> io::Result<Self> {
-        // 先尝试从旧版目录迁移配置文件
-        migrate_old_dir();
+        #[cfg(target_os = "android")]
+        {
+            // Android：唯一可写的稳定目录是应用私有数据目录（内部存储）。
+            // 不做旧目录迁移（桌面路径在 android 上不存在）。
+            let data = ANDROID_DATA_DIR.get().cloned().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "Android 数据目录未注入（android_main 未调用 set_android_data_dir）",
+                )
+            })?;
 
-        let dirs = ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "无法创建项目目录"))?;
+            let config = data.join("config");
+            let preference = data.join("preference");
 
-        // 创建配置文件目录
-        let config = dirs.config_dir().to_owned();
-        // 创建偏好设置目录
-        let preference = dirs.preference_dir().to_owned();
+            return Ok(Self {
+                config: config::ConfigWrapper::new(config.join("config.json"))?,
+                ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
+            });
+        }
 
-        Ok(Self {
-            // 成功
-            config: config::ConfigWrapper::new(config.join("config.json"))?,
-            ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
-        })
+        #[cfg(not(target_os = "android"))]
+        {
+            // 先尝试从旧版目录迁移配置文件
+            migrate_old_dir();
+
+            let dirs = ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "无法创建项目目录"))?;
+
+            // 创建配置文件目录
+            let config = dirs.config_dir().to_owned();
+            // 创建偏好设置目录
+            let preference = dirs.preference_dir().to_owned();
+
+            Ok(Self {
+                // 成功
+                config: config::ConfigWrapper::new(config.join("config.json"))?,
+                ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
+            })
+        }
     }
 
     /// 持久化 GPU 检测缓存（指纹 + 结果 + 检测时刻），并补写"已初始化"标记。

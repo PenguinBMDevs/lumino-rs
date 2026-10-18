@@ -226,6 +226,12 @@ license.workspace = true
 description.workspace = true
 edition.workspace = true
 
+[lib]
+# cdylib：Android 由 android-activity 通过 `android_main` 加载这个 .so；
+# rlib：桌面 bin 与集成测试复用同一套启动逻辑（避免了把 main 逻辑复制两份）。
+name = "lumino"
+crate-type = ["cdylib", "rlib"]
+
 [features]
 # REND-019 §三 R2：GPU 重连进程内冒烟注入（env LUMINO_TEST_DEVICE_LOST，
 # 用法见 .ai-context/tdr-kit/checklist-R2R3.md）。
@@ -286,6 +292,11 @@ rustc-hash = { workspace = true }
 rayon = { workspace = true }
 i2m-rs = { workspace = true }
 
+
+[target.'cfg(target_os = "android")'.dependencies]
+# logcat：android_logger 接管 log 门面；log 直接依赖供 LogcatLayer 转发使用。
+log = { workspace = true }
+android_logger = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }
 raw-window-handle = { workspace = true }

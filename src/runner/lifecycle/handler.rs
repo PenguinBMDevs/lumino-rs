@@ -32,7 +32,18 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     }
 
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.inner.is_some() || self.init_error.is_some() || self.device_warning.is_some() {
+        if self.init_error.is_some() || self.device_warning.is_some() {
+            return;
+        }
+
+        // 续次 resumed（Android 切后台再回前台、桌面从最小化恢复）：旧窗口的 surface 已失效，
+        // 处理不当的表现是**黑屏且永不重绘**（Android 上 Suspended 后 native window 为 null）。
+        // 复用标题栏变更用的同一条 `restart_window` 路径——它只重建 WindowManager
+        // （窗口 + surface + Host 渲染上下文），不动文档 / 音频 / UI 状态。
+        if let Some(this) = self.inner.as_mut() {
+            tracing::info!("resumed（续次）：重建窗口与表面");
+            this.restart_window(event_loop);
+            this.window_state.window.window().request_redraw();
             return;
         }
 
@@ -176,6 +187,26 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         this.window_state
             .window
             .handle_event(event, &mut this.window_state.storage);
+    }
+
+    /// 后台/失焦：surface 即将失效，先把配置与工程状态落盘。
+    ///
+    /// Android 上进程随时可能被系统回收，suspended 是唯一可靠的「还活着」的信号。
+    fn suspended(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        tracing::info!("suspended：落盘后等待重建（surface 将失效）");
+        if let Some(this) = self.inner.as_mut() {
+            this.save_storage();
+        }
+    }
+
+    /// 事件循环退出前最后一次落盘
+    ///
+    /// winit 0.30 的 `ApplicationHandler` 没有 `destroyed`，对应的收尾钩子是 `exiting`。
+    fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        tracing::info!("exiting：事件循环退出，最后落盘一次");
+        if let Some(this) = self.inner.as_mut() {
+            this.save_storage();
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {

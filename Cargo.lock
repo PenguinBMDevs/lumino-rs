@@ -4483,6 +4483,7 @@ name = "lumino-rs"
 version = "0.2.1"
 dependencies = [
  "ab_glyph",
+ "android_logger",
  "anyhow",
  "bytemuck",
  "chrono",
@@ -4498,6 +4499,7 @@ dependencies = [
  "iced_wgpu",
  "iced_widget",
  "iced_winit",
+ "log",
  "lumino-cloud",
  "lumino-collaboration",
  "lumino-core",
