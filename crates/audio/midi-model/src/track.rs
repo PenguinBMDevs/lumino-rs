@@ -1,124 +1,93 @@
-//! 音轨视图管理器
+//! 音轨持久化状态（可见性 / 独奏）
+//!
+//! ## 为什么保留这两个字段
+//!
+//! `visibility` / `solo` 是 `.lmpj` 的**持久化落点**：
+//! `LuminoProject::to_midi_document` 在加载工程时写入，
+//! `LuminoProject::from_midi_document` 在保存工程时读取
+//! （见 `crates/core/project/src/project/conversion.rs`）。UI 侧改动经
+//! `Root::apply_track_visibility_to_document` 写回这里。
+//!
+//! 注意它**不是**：
+//! - 音轨名的权威 —— 权威是 `MidiDocument.track_names`（读取一律走 `track_name()`）；
+//! - 播放静音的权威 —— 权威是播放引擎自己的 `track_muted` / `track_soloed`
+//!   （`PlaybackEngine::track_should_play`）。
+//!
+//! ## 2026-10-17 死副本清理（审计 §四）
+//!
+//! 删除全库零调用的成员：`TrackView.track_id`（即索引，冗余）、
+//! `TrackView.name`（与 `track_names` 重复且零读取）、
+//! `TrackView::{with_name, should_play, should_render}`、
+//! `TrackManager::{get_mut, has_solo, playable_tracks, count}`。
+//! 其中「是否应播放」的判定在播放引擎侧有活的实现，这里那套只是同名影子。
 
-/// 音轨视图状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 音轨可见性
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TrackVisibility {
     /// 可见（播放/渲染）
+    #[default]
     Visible,
     /// 静音（不播放，但仍可渲染）
     Muted,
-    /// 隐藏（不播放也不渲染）
+    /// 隐藏（不播放也不渲染）。
+    ///
+    /// 仅存在于 `.lmpj` 元数据，UI 未建模（`sidebar::Track` 只有静音/独奏两位），
+    /// 因此任何来自 UI 的写回都**不得**把它降级为 `Visible`/`Muted`。
     Hidden,
 }
 
-/// 音轨视图 — 管理单个音轨的可见性状态
-#[derive(Clone)]
+/// 单条音轨的持久化状态（按 `TrackManager` 内位置对应音轨索引）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TrackView {
-    /// 音轨编号
-    pub track_id: u16,
-    /// 音轨名称（可选）
-    pub name: String,
     /// 当前可见性
     pub visibility: TrackVisibility,
-    /// 是否反转（solo 模式）
+    /// 是否独奏
     pub solo: bool,
 }
 
 impl TrackView {
-    /// 创建新的音轨视图
-    pub fn new(track_id: u16) -> Self {
-        Self {
-            track_id,
-            name: format!("Track {}", track_id),
-            visibility: TrackVisibility::Visible,
-            solo: false,
-        }
-    }
-
-    /// 创建带名称的音轨视图
-    pub fn with_name(track_id: u16, name: String) -> Self {
-        Self {
-            track_id,
-            name,
-            visibility: TrackVisibility::Visible,
-            solo: false,
-        }
-    }
-
-    /// 音轨是否应该播放
-    pub fn should_play(&self, has_solo: bool) -> bool {
-        if has_solo {
-            return self.solo;
-        }
-        self.visibility == TrackVisibility::Visible
-    }
-
-    /// 音轨是否应该渲染
-    pub fn should_render(&self) -> bool {
-        self.visibility != TrackVisibility::Hidden
+    /// 创建默认状态（可见、非独奏）
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
-/// 音轨视图管理器
-#[derive(Clone)]
+/// 每轨持久化状态表（长度 == 音轨数，按索引对应）
+#[derive(Debug, Clone, Default)]
 pub struct TrackManager {
     tracks: Vec<TrackView>,
 }
 
 impl TrackManager {
-    /// 创建新的音轨管理器
+    /// 创建 n 条默认状态的音轨
     pub fn new(track_count: u16) -> Self {
-        let tracks = (0..track_count).map(TrackView::new).collect();
-        Self { tracks }
+        Self {
+            tracks: (0..track_count).map(|_| TrackView::new()).collect(),
+        }
     }
 
-    /// 追加一条音轨视图（图片转 MIDI 自动建轨用）
+    /// 追加一条音轨状态（图片转 MIDI 自动建轨用）
     pub fn push(&mut self, track: TrackView) {
         self.tracks.push(track);
     }
 
-    /// 获取音轨视图
+    /// 获取音轨状态
     pub fn get(&self, track_id: u16) -> Option<&TrackView> {
         self.tracks.get(track_id as usize)
     }
 
-    /// 获取音轨视图（可变）
-    pub fn get_mut(&mut self, track_id: u16) -> Option<&mut TrackView> {
-        self.tracks.get_mut(track_id as usize)
-    }
-
-    /// 设置音轨可见性
+    /// 设置音轨可见性（越界忽略）
     pub fn set_visibility(&mut self, track_id: u16, visibility: TrackVisibility) {
         if let Some(track) = self.tracks.get_mut(track_id as usize) {
             track.visibility = visibility;
         }
     }
 
-    /// 设置音轨 solo
+    /// 设置音轨独奏（越界忽略）
     pub fn set_solo(&mut self, track_id: u16, solo: bool) {
         if let Some(track) = self.tracks.get_mut(track_id as usize) {
             track.solo = solo;
         }
-    }
-
-    /// 是否有任何音轨处于 solo 状态
-    pub fn has_solo(&self) -> bool {
-        self.tracks.iter().any(|t| t.solo)
-    }
-
-    /// 获取应播放的音轨 ID 列表
-    pub fn playable_tracks(&self) -> Vec<u16> {
-        let has_solo = self.has_solo();
-        self.tracks
-            .iter()
-            .filter(|t| t.should_play(has_solo))
-            .map(|t| t.track_id)
-            .collect()
-    }
-
-    /// 音轨总数
-    pub fn count(&self) -> u16 {
-        self.tracks.len() as u16
     }
 }
 
@@ -127,41 +96,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_track_view_visibility() {
-        let mut view = TrackView::new(0);
-        assert!(view.should_play(false));
-        assert!(view.should_render());
+    fn test_set_visibility_and_solo_are_per_track() {
+        let mut mgr = TrackManager::new(3);
+        mgr.set_visibility(1, TrackVisibility::Muted);
+        mgr.set_solo(2, true);
 
-        view.visibility = TrackVisibility::Muted;
-        assert!(!view.should_play(false));
-        assert!(view.should_render());
-
-        view.visibility = TrackVisibility::Hidden;
-        assert!(!view.should_play(false));
-        assert!(!view.should_render());
+        assert_eq!(
+            mgr.get(1).map(|v| v.visibility),
+            Some(TrackVisibility::Muted)
+        );
+        assert_eq!(mgr.get(2).map(|v| v.solo), Some(true));
+        assert_eq!(
+            mgr.get(0).map(|v| v.visibility),
+            Some(TrackVisibility::Visible),
+            "不得串号到其它音轨"
+        );
+        assert_eq!(
+            mgr.get(0).map(|v| v.solo),
+            Some(false),
+            "不得串号到其它音轨"
+        );
+        assert_eq!(
+            mgr.get(2).map(|v| v.visibility),
+            Some(TrackVisibility::Visible),
+            "独奏不应改写可见性"
+        );
     }
 
     #[test]
-    fn test_track_solo() {
-        let mut view0 = TrackView::new(0);
-        let view1 = TrackView::new(1);
-        view0.solo = true;
-
-        let has_solo = true;
-        assert!(view0.should_play(has_solo));
-        assert!(!view1.should_play(has_solo));
+    fn test_out_of_range_write_is_ignored() {
+        let mut mgr = TrackManager::new(1);
+        mgr.set_visibility(9, TrackVisibility::Hidden);
+        mgr.set_solo(9, true);
+        assert_eq!(mgr.get(9).map(|v| v.visibility), None);
     }
 
     #[test]
-    fn test_track_manager() {
-        let mut mgr = TrackManager::new(4);
-        assert_eq!(mgr.count(), 4);
-        assert!(!mgr.has_solo());
-
-        mgr.set_solo(1, true);
-        assert!(mgr.has_solo());
-
-        let playable = mgr.playable_tracks();
-        assert_eq!(playable, vec![1]);
+    fn test_push_extends_state_table() {
+        let mut mgr = TrackManager::new(1);
+        mgr.push(TrackView::new());
+        mgr.set_visibility(1, TrackVisibility::Muted);
+        assert_eq!(
+            mgr.get(1).map(|v| v.visibility),
+            Some(TrackVisibility::Muted)
+        );
     }
 }
