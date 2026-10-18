@@ -47,9 +47,9 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     let config = &config;
     warn_port_overflow("流式导出", player.track_ports());
 
-    // GPU 后端优先尝试
+    // GPU 后端优先尝试（复用上面已 mmap 的字节：文件只读一次、只解析一次）
     if config.backend == super::config::AudioBackendKind::Gpu {
-        match super::gpu_backend::render_audio_gpu_streaming(config) {
+        match super::gpu_backend::render_audio_gpu_streaming(config, &mmap) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 if matches!(e, ExportError::Aborted) {

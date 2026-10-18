@@ -134,8 +134,18 @@ pub fn render_audio_gpu_from_document(
     Ok(())
 }
 
-/// 使用 GPU 后端从磁盘 MIDI 文件渲染（流式模式，无 MidiDocument）
-pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()> {
+/// 使用 GPU 后端从磁盘 MIDI **字节**渲染（流式模式，无 MidiDocument）
+///
+/// 2026-10-17（审计 §6.2）：入参从「文件路径」改为「已读入的 SMF 字节」。
+/// 旧实现内部 `MidiFile::load(config.midi_path)` 会**再读一次磁盘**，
+/// 而调用方（`render_loops::render_audio`）已经 mmap 过同一文件取端口/tempo
+/// —— 同一次导出把同一个文件解析两遍。改为复用调用方已持有的字节后：
+/// - 文件只读一次、只解析一次；
+/// - 导出链路统一走 `GpuSynth::render_midi_bytes`（与内存模式同一个解析入口）。
+pub fn render_audio_gpu_streaming(
+    config: &AudioRenderConfig,
+    midi_bytes: &[u8],
+) -> ExportResult<()> {
     use lumino_gpu_synth::GpuSynth;
 
     check_control(config)?;
@@ -193,6 +203,12 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
             midi_path = format!("{:?}", config.midi_path)
         )));
     }
+    // 防呆：调用方必须传入实际读到的字节（空字节视为未读取，避免静默渲染出静音）
+    if midi_bytes.is_empty() {
+        return Err(ExportError::AudioWrite(
+            tr!("MIDI 文件内容为空，无法渲染").into(),
+        ));
+    }
 
     report(tr!("GPU 初始化中..."), 0.05);
     check_control(config)?;
@@ -220,12 +236,10 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
         })));
     }
     attach_render_progress(&mut synth, config);
-    let result = synth
-        .render_midi_file(&config.midi_path)
-        .map_err(|e| match e {
-            lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
-            other => ExportError::AudioWrite(trf!("GPU 渲染失败: {other}", other = other)),
-        })?;
+    let result = synth.render_midi_bytes(midi_bytes).map_err(|e| match e {
+        lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
+        other => ExportError::AudioWrite(trf!("GPU 渲染失败: {other}", other = other)),
+    })?;
     check_control(config)?;
 
     report(tr!("GPU 写入输出..."), 0.85);

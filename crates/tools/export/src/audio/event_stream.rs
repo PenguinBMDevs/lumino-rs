@@ -136,6 +136,10 @@ impl MidiDocEventStream {
 }
 
 #[cfg(test)]
+#[path = "event_stream/tests_parity.rs"]
+mod tests_parity;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use lumino_midi_model::{NoteEvent, track::TrackManager};
