@@ -45,7 +45,7 @@ impl RunnerInner {
             .map(|p| helpers::get_file_stem(std::path::Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
-        let Some(save_path) = rfd::FileDialog::new()
+        let Some(save_path) = lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 crate::constants::filters::midi_files_filter(),
                 crate::constants::filters::MIDI_FILES_EXTS,

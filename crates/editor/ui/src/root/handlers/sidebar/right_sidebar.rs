@@ -45,7 +45,7 @@ impl Root {
                 self.spawn_path_dialog(
                     crate::root::file_dialog::PathDialogTask::ImageToMidiSource,
                     || {
-                        rfd::FileDialog::new()
+                        lumino_platform::dialog::FileDialog::new()
                             .set_title(tr!("选择要转换为 MIDI 的图片"))
                             .add_filter(
                                 tr!("图片文件"),

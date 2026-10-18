@@ -18,7 +18,10 @@ tracing = { workspace = true }
 lumino-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 thiserror = { workspace = true }
-font-kit = { workspace = true }
+# 字体枚举与字形覆盖：fontdb（cosmic-text 既有依赖）+ ab_glyph。
+# 不再用 font-kit —— 它在 android 上强编 fontconfig-sys/freetype-sys，NDK 无 pkg-config 直接构建失败。
+fontdb = { version = "0.23", features = ["fs", "memmap"] }
+ab_glyph = { workspace = true }
 im = { workspace = true }
 bit-vec = { workspace = true }
 puffin = { workspace = true }

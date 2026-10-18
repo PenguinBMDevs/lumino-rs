@@ -84,15 +84,15 @@ impl CollaborationHandler {
     }
 
     fn handle_collaboration_copy_invite_code(&self, root: &mut Root) {
-        if !root.state.collaboration_dialog.invite_code.is_empty()
-            && let Ok(mut clipboard) = arboard::Clipboard::new()
-        {
-            if let Err(e) = clipboard.set_text(root.state.collaboration_dialog.invite_code.clone())
-            {
-                tracing::error!("复制邀请码失败: {}", e);
-            } else {
-                tracing::info!("邀请码已复制到剪贴板");
-            }
+        if root.state.collaboration_dialog.invite_code.is_empty() {
+            return;
+        }
+
+        match lumino_platform::clipboard::set_text(
+            root.state.collaboration_dialog.invite_code.clone(),
+        ) {
+            Ok(()) => tracing::info!("邀请码已复制到剪贴板"),
+            Err(e) => tracing::error!("复制邀请码失败: {}", e),
         }
     }
 

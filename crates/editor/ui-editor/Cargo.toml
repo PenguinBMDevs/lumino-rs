@@ -71,5 +71,5 @@ thiserror = { workspace = true }
 im = { workspace = true }
 serde_json = { workspace = true }
 puffin = { workspace = true }
-arboard = { workspace = true }
+lumino-platform = { workspace = true }
 winapi = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name = "lumino-platform"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Lumino 平台能力门面：文件对话框 / 消息框 / 剪贴板（桌面实现 + Android 占位）"
+
+[lints]
+workspace = true
+
+[dependencies]
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+# 桌面实现依赖 rfd / arboard。它们都没有 Android 后端（rfd 的 backend 模块与 arboard
+# 的 platform 模块都显式 cfg 排除 android，连 crate 自身都编不过），故只在非 android
+# 目标引入；android 侧由本 crate 提供同签名占位实现（见 src/dialog.rs / clipboard.rs）。
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = { workspace = true }
+arboard = { workspace = true }

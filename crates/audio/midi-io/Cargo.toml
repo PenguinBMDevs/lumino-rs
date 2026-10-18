@@ -26,7 +26,6 @@ lumino-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-midi-loader = { workspace = true }
 libloading = { workspace = true }
-midir = { workspace = true }
 midly = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -49,3 +48,9 @@ tracy-client = { version = "0.19.0", optional = true, default-features = false, 
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Media_Audio"] }
+
+# 系统 MIDI 后端（midir）无 Android 实现：midir 的 backend 模块在 android 上为空，
+# 连 crate 自身都编不过（common.rs 无条件 use backend::{MidiInput, ...}）。
+# 故只对非 Android 平台引入；Android 侧 `ApiKind::System` 返回明确的「平台不支持」错误。
+[target.'cfg(not(target_os = "android"))'.dependencies]
+midir = { workspace = true }

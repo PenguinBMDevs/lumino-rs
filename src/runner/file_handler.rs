@@ -10,7 +10,7 @@ impl FileHandler {
 
     /// 打开文件对话框并返回选择的路径
     pub fn handle_open_file(&self) -> Option<std::path::PathBuf> {
-        rfd::FileDialog::new()
+        lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 filters::music_and_archive_filter(),
                 filters::MUSIC_AND_ARCHIVE_EXTS,

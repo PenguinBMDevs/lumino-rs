@@ -198,8 +198,8 @@ impl ReconnectOps<SharedGpu> for Runner {
                 .set_status_message(Some(msg));
         }
         // 终态兜底提示（阻塞式；用户确认后自行重启——PR-C 无进程内二次恢复路径）
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
+        lumino_platform::dialog::MessageDialog::new()
+            .set_level(lumino_platform::dialog::MessageLevel::Error)
             .set_title("Lumino")
             .set_description(format!(
                 "{reason}\n\n{}",

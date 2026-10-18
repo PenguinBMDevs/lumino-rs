@@ -1,6 +1,6 @@
 //! 后台文件对话框 — 对话框在独立线程打开，结果回传主线程消费
 //!
-//! 同步 `rfd::FileDialog` 会阻塞调用线程；UI 主线程直接调用会冻结窗口。
+//! 同步 `lumino_platform::dialog::FileDialog` 会阻塞调用线程；UI 主线程直接调用会冻结窗口。
 //! 这里统一把对话框挪到后台线程（rfd 内部处理 macOS 的主线程分发），
 //! `Root` 在每帧消息路由时轮询结果并写回对应状态。
 //!
@@ -131,7 +131,7 @@ impl Root {
         let user_dir = crate::right_sidebar::user_materials_dir();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let outcome = match rfd::FileDialog::new()
+            let outcome = match lumino_platform::dialog::FileDialog::new()
                 .set_title(tr!("选择要导入的素材文件"))
                 .add_filter(tr!("Lumino 素材"), &["lmmaterial"])
                 .add_filter(tr!("所有文件"), &["*"])

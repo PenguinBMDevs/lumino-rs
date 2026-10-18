@@ -272,16 +272,16 @@ fn show_native_warning(detail: &str) -> bool {
     let continue_label = tr!("放我进去");
     let quit_label = tr!("确认并关闭");
     matches!(
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Warning)
+        lumino_platform::dialog::MessageDialog::new()
+            .set_level(lumino_platform::dialog::MessageLevel::Warning)
             .set_title(tr!("GPU 兼容性检查"))
             .set_description(detail)
-            .set_buttons(rfd::MessageButtons::OkCancelCustom(
+            .set_buttons(lumino_platform::dialog::MessageButtons::OkCancelCustom(
                 continue_label.to_string(),
                 quit_label.to_string(),
             ))
             .show(),
-        rfd::MessageDialogResult::Custom(label) if label == continue_label
+        lumino_platform::dialog::MessageDialogResult::Custom(label) if label == continue_label
     )
 }
 

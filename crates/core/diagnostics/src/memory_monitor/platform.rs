@@ -2,10 +2,12 @@
 //!
 //! 平台专属内存信息获取函数（跨平台）
 //!
-//! 支持 Linux、macOS、Windows 三平台，分别使用对应平台 API：
+//! 支持 Linux、macOS、Windows、Android 四平台，分别使用对应平台 API：
 //! - **Linux**:   `/proc/meminfo`（总内存）、`/proc/self/status`（RSS）
 //! - **macOS**:  `sysctl HW_MEMSIZE`（总内存）、`task_info`（RSS）
 //! - **Windows**: `GlobalMemoryStatusEx`（总内存）、`GetProcessMemoryInfo`（RSS）
+//! - **Android**: 与 Linux 同源——`/proc/meminfo`、`/proc/self/status`、`getrusage`
+//!   对普通 App 均可用（App 读自己的 `/proc/self/*` 无需额外权限）。
 //!
 //! 提取为独立子模块，供 MemoryMonitor 和看门狗共用。
 
@@ -16,7 +18,7 @@ const FALLBACK_TOTAL_MEMORY: u64 = 8 * 1024 * 1024 * 1024;
 // 获取总物理内存
 // =============================================================================
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 /// 获取系统总物理内存大小（字节）。
 ///
 /// 通过读取 `/proc/meminfo` 的 `MemTotal` 字段获得；读取失败或未找到该字段时
@@ -103,7 +105,7 @@ pub fn get_total_physical_memory() -> u64 {
 // 获取当前 RSS
 // =============================================================================
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 /// 获取当前进程的 RSS（常驻内存集，字节）。
 ///
 /// 通过解析 `/proc/self/status` 的 `VmRSS` 字段获得；读取失败时记录告警并返回 0。
@@ -246,7 +248,7 @@ pub fn get_current_rss() -> u64 {
 /// 获取当前进程已消耗的 CPU 时间总和（用户态 + 内核态，单位微秒）。
 ///
 /// 用于计算 CPU 使用率：(delta_cpu / delta_wall) * 100%
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
 pub fn get_process_cpu_time_us() -> u64 {
     let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
     let rusage_result = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };

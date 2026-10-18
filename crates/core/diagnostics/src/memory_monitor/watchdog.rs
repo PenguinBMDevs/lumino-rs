@@ -35,7 +35,7 @@ const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024; // 350mb 应该够
 
 // ── 平台相关：通过 PID 获取进程 RSS（完全独立，不依赖 /proc/self）──
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn watchdog_get_process_rss(pid: u32) -> u64 {
     let path = format!("/proc/{pid}/status");
     let content = match std::fs::read_to_string(&path) {
@@ -80,7 +80,7 @@ fn watchdog_get_process_rss(pid: u32) -> u64 {
 
 // ── 平台相关：获取系统可用内存 ──
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn watchdog_get_available_memory() -> u64 {
     let content = match std::fs::read_to_string("/proc/meminfo") {
         Ok(c) => c,

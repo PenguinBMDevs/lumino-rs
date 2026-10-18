@@ -1,6 +1,13 @@
 //! 跨平台字体扫描模块
 //!
-//! 使用 font-kit 调用系统 API 获取准确的字体信息。
+//! 实现改用 `fontdb`（枚举系统字体）+ `ab_glyph`（字形覆盖检测），**不再依赖
+//! font-kit**。原因：
+//! - font-kit 在 Android 上会强编 `yeslogic-fontconfig-sys` / `freetype-sys`，
+//!   而 NDK 里没有 `fontconfig.pc`，构建脚本直接失败（连 crate 都编不过）；
+//! - `fontdb` 是 cosmic-text 的既有依赖（同版本 0.23），零新增编译成本，且全平台可用。
+//!
+//! Android 特别注意：`fontdb` 的 `load_system_fonts()` 在 android 上被显式跳过
+//! （`cfg` 排除），所以必须自己 `load_fonts_dir("/system/fonts")`，否则字体列表为空。
 //!
 //! 字体扫描是重操作（Windows 上枚举 200-500+ 字体），
 //! 通过全局 OnceLock 缓存避免每次对话框重建时重复扫描约 1.3s 的延迟。
@@ -11,7 +18,7 @@ use std::sync::OnceLock;
 /// 字体信息
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontInfo {
-    /// 字体名称（从系统 API 获取的真实名称）
+    /// 字体名称（从字体文件的 name 表解析出的真实家族名）
     pub name: String,
     /// 字体文件路径
     pub path: PathBuf,
@@ -23,57 +30,53 @@ impl std::fmt::Display for FontInfo {
     }
 }
 
+/// Android 系统字体目录（`fontdb` 不会自动扫描这些目录）
+#[cfg(target_os = "android")]
+const ANDROID_FONT_DIRS: &[&str] = &["/system/fonts", "/product/fonts", "/system_ext/fonts"];
+
+/// 构造已加载系统字体的字体库
+fn system_database() -> fontdb::Database {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    #[cfg(target_os = "android")]
+    for dir in ANDROID_FONT_DIRS {
+        db.load_fonts_dir(dir);
+    }
+
+    db
+}
+
 /// 扫描系统字体，返回可用字体列表
 ///
-/// 使用 font-kit 的 SystemSource 调用系统 API 获取准确的字体信息，
-/// 包括真实的字体名称（而非文件名）和字体文件路径。
+/// 每个家族取第一个字面（face）；同一路径只会出现一次（字体集合内多字面共用路径）。
 pub fn scan_system_fonts() -> Vec<FontInfo> {
-    use font_kit::source::SystemSource;
+    let db = system_database();
 
-    let source = SystemSource::new();
+    let mut fonts: Vec<FontInfo> = db
+        .faces()
+        .filter_map(|face| {
+            // 家族名优先取 name 表里的第一个（通常为英文名）
+            let name = face.families.first()?.0.clone();
 
-    // 获取所有字体家族名称
-    let family_names = match source.all_families() {
-        Ok(names) => names,
-        Err(e) => {
-            tracing::warn!("Failed to get font families: {}", e);
-            return Vec::new();
-        }
-    };
-
-    let mut fonts: Vec<FontInfo> = family_names
-        .into_iter()
-        .filter_map(|family_name| {
-            // 获取字体句柄
-            let font = source.select_family_by_name(&family_name).ok()?;
-
-            // 获取字体家族中的第一个字体
-            let font_handle = font.fonts().first()?.clone();
-
-            // 加载字体以获取路径
-            let font_ref = font_handle.load().ok()?;
-
-            // 获取字体文件路径
-            font_ref.copy_font_data()?;
-            let path = match &font_handle {
-                font_kit::handle::Handle::Path { path, .. } => path.clone(),
-                font_kit::handle::Handle::Memory { .. } => PathBuf::new(),
+            let path = match &face.source {
+                fontdb::Source::File(path) => path.clone(),
+                fontdb::Source::SharedFile(path, _) => path.clone(),
+                // 内存字体（无实际文件路径）不参与「按路径加载」的调用方
+                fontdb::Source::Binary(_) => return None,
             };
 
-            // 跳过内存字体（无实际路径）
-            if path.as_os_str().is_empty() {
+            if name.is_empty() || !path.is_file() {
                 return None;
             }
 
-            Some(FontInfo {
-                name: family_name,
-                path,
-            })
+            Some(FontInfo { name, path })
         })
         .collect();
 
-    // 按字体名称排序（不区分大小写）
-    fonts.sort_by_key(|a| a.name.to_lowercase());
+    // 按名称排序（不区分大小写），并去重同名字体
+    fonts.sort_by_key(|font| font.name.to_lowercase());
+    fonts.dedup_by(|a, b| a.path == b.path);
 
     fonts
 }
@@ -100,10 +103,6 @@ pub fn get_cached_fonts() -> &'static [FontInfo] {
 ///
 /// 应在应用启动的早期调用（例如主窗口创建后），
 /// 使首次打开设置对话框时字体列表已缓存，不会阻塞 UI 线程。
-///
-/// 与 `prewarm_dialog_shared_engine` 同样的后台预热 pattern：
-/// 用 `std::thread::spawn` 将耗时的系统字体枚举移到后台，
-/// 主线程渲染时调用 `get_cached_fonts()` 直接获取已缓存的结果。
 pub fn prewarm_font_cache() {
     std::thread::spawn(|| {
         puffin::profile_scope!("prewarm_font_cache");
@@ -114,10 +113,12 @@ pub fn prewarm_font_cache() {
 /// 解析字体文件的家族名（family name）
 ///
 /// 用于「自定义字体文件路径」场景：文件注册进字体库后，需按家族名引用。
-/// 解析失败（文件损坏/非字体）返回 `None`。
+/// 解析失败（文件不存在/损坏/非字体）返回 `None`。
 pub fn resolve_font_family(path: &Path) -> Option<String> {
-    let font = font_kit::font::Font::from_path(path, 0).ok()?;
-    let name = font.family_name();
+    let mut db = fontdb::Database::new();
+    db.load_font_file(path).ok()?;
+
+    let name = db.faces().next()?.families.first()?.0.clone();
     (!name.is_empty()).then_some(name)
 }
 
@@ -130,23 +131,30 @@ pub fn font_supports_cjk(name_or_path: &str) -> bool {
     let Some(path) = resolve_font_path(name_or_path) else {
         return false;
     };
-    let Ok(font) = font_kit::font::Font::from_path(&path, 0) else {
+
+    let Ok(bytes) = std::fs::read(&path) else {
         return false;
     };
+
+    // 字体集合（.ttc）取第 0 个字面
+    let Ok(font) = ab_glyph::FontVec::try_from_vec_and_index(bytes, 0) else {
+        return false;
+    };
+
+    use ab_glyph::Font as _;
+
     const PROBE_CHARS: [char; 4] = ['中', '文', '测', '试'];
-    PROBE_CHARS
-        .iter()
-        .any(|&c| font.glyph_for_char(c).is_some())
+    PROBE_CHARS.iter().any(|&probe| font.glyph_id(probe).0 != 0)
 }
 
 /// 从系统字体链中挑一个覆盖 CJK 的字体（不写死单一字体）
 ///
-/// 先按跨平台常见 CJK 家族名候选匹配（Windows/macOS/Linux 各平台候选），
+/// 先按跨平台常见 CJK 家族名候选匹配（Windows/macOS/Linux/Android 各平台候选），
 /// 再用字形覆盖校验；候选均不命中时，按名称关键字兜底扫描（有上限），
 /// 仍无命中则返回 `None`（调用方回退默认字体；渲染层另有 cosmic-text 自动回退兜底）。
 pub fn pick_cjk_font() -> Option<&'static FontInfo> {
-    /// 常见 CJK 字体家族候选（按平台习惯排序）
-    const CANDIDATES: [&str; 12] = [
+    /// 常见 CJK 字体家族候选（按平台习惯排序；末尾三条为 Android 系统字体）
+    const CANDIDATES: [&str; 15] = [
         "Microsoft YaHei UI",
         "Microsoft YaHei",
         "SimSun",
@@ -159,6 +167,9 @@ pub fn pick_cjk_font() -> Option<&'static FontInfo> {
         "Malgun Gothic",
         "Yu Gothic",
         "Meiryo",
+        "Noto Sans SC",
+        "Noto Sans CJK",
+        "Droid Sans Fallback",
     ];
     /// 名称关键字兜底扫描的最大检测数量（避免全量加载系统字体）
     const SCAN_LIMIT: usize = 40;
@@ -280,6 +291,7 @@ mod tests {
             "SimSun",
             "PingFang SC",
             "Noto Sans CJK SC",
+            "Noto Sans SC",
             "WenQuanYi Zen Hei",
         ] {
             if fonts.iter().any(|f| f.name.eq_ignore_ascii_case(name)) {

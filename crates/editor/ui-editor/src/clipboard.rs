@@ -198,16 +198,9 @@ impl Editor {
     }
 }
 
-/// 仅写文本到系统剪贴板（arboard，跨平台）
+/// 仅写文本到系统剪贴板（经 lumino-platform：桌面 arboard / Android 待接入 JNI）
 pub(crate) fn set_clipboard_text(text: &str) -> bool {
-    let mut clipboard = match arboard::Clipboard::new() {
-        Ok(cb) => cb,
-        Err(e) => {
-            tracing::error!("Editor: 创建剪贴板失败: {}", e);
-            return false;
-        }
-    };
-    match clipboard.set_text(text.to_string()) {
+    match lumino_platform::clipboard::set_text(text) {
         Ok(()) => true,
         Err(e) => {
             tracing::error!("Editor: 复制到剪贴板失败: {}", e);
@@ -216,7 +209,7 @@ pub(crate) fn set_clipboard_text(text: &str) -> bool {
     }
 }
 
-/// 仅从系统剪贴板读文本（arboard，跨平台）
-pub(crate) fn read_clipboard_text() -> Result<String, arboard::Error> {
-    arboard::Clipboard::new()?.get_text()
+/// 仅从系统剪贴板读文本（经 lumino-platform：桌面 arboard / Android 待接入 JNI）
+pub(crate) fn read_clipboard_text() -> Result<String, lumino_platform::clipboard::ClipboardError> {
+    lumino_platform::clipboard::get_text()
 }

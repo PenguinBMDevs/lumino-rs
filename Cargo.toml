@@ -2,7 +2,7 @@
 # 成员按功能域分组：crates/core(基础/基础设施) / crates/audio(MIDI·音频·播放) / crates/editor(UI·渲染·编辑) / crates/network(协作·云) / crates/tools(工具·导出)
 members = [
     # core — 基础数据与基础设施
-    "crates/core/core", "crates/core/diagnostics", "crates/core/message", "crates/core/project",
+    "crates/core/core", "crates/core/diagnostics", "crates/core/message", "crates/core/platform", "crates/core/project",
     # audio — MIDI / 音频 / 播放
     "crates/audio/midi-io", "crates/audio/midi-loader", "crates/audio/midi-model", "crates/audio/midiplayer", "crates/audio/note-core",
     "crates/audio/gpu-synth",
@@ -74,6 +74,7 @@ lumino-gpu-synth = { path = "crates/audio/gpu-synth", version = "0.1.0" }
 lumino-midi-loader = { path = "crates/audio/midi-loader", version = "0.2.1-crates-io-preview1" }
 lumino-midiplayer = { path = "crates/audio/midiplayer", version = "0.2.1-crates-io-preview1" }
 lumino-diagnostics = { path = "crates/core/diagnostics", version = "0.2.1-crates-io-preview1" }
+lumino-platform = { path = "crates/core/platform", version = "0.2.1-crates-io-preview1" }
 lumino-midi-model = { path = "crates/audio/midi-model", version = "0.2.1-crates-io-preview1" }
 lumino-message = { path = "crates/core/message", version = "0.2.1-crates-io-preview1" }
 midly = { version = "0.6.4", package = "lumino-midly", features = ["std", "alloc", "parallel", "memmap"] }
@@ -212,7 +213,6 @@ crc32fast = "1.3"
 # ── 其他 ──
 bytes = "1.9"
 bit-vec = "0.8"
-font-kit = "0.14"
 i2m-rs = "0.1.1"
 embed-resource = "3.0"
 
@@ -268,7 +268,7 @@ futures = { workspace = true }
 directories = { workspace = true }
 toml = { workspace = true }
 bytemuck = { workspace = true }
-rfd = { workspace = true }
+lumino-platform = { workspace = true }
 midly = { workspace = true }
 tokio = { workspace = true }
 zstd = { workspace = true }
@@ -361,7 +361,6 @@ wgpu = { workspace = true }
 chrono = { workspace = true }
 tokio-test = { workspace = true }
 # 剪贴板探测示例 (examples/domino_clipboard_probe.rs) 依赖
-arboard = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-midi-model = { workspace = true }
 

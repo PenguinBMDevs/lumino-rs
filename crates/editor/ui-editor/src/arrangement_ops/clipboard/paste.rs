@@ -30,14 +30,7 @@ impl Editor {
             }
         }
 
-        let mut clipboard = match arboard::Clipboard::new() {
-            Ok(cb) => cb,
-            Err(e) => {
-                tracing::error!("Arrangement: 创建剪贴板失败: {}", e);
-                return false;
-            }
-        };
-        let text = match clipboard.get_text() {
+        let text = match lumino_platform::clipboard::get_text() {
             Ok(t) => t,
             Err(e) => {
                 tracing::error!("Arrangement: 读取剪贴板失败: {}", e);

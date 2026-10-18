@@ -45,7 +45,7 @@ impl RunnerInner {
         }
 
         // 保存对话框（仅支持 .lmmaterial）
-        let Some(save_path) = rfd::FileDialog::new()
+        let Some(save_path) = lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 crate::constants::filters::lumino_material_filter(),
                 crate::constants::filters::LUMINO_MATERIAL_EXTS,
@@ -121,7 +121,7 @@ impl RunnerInner {
             return None;
         }
 
-        let save_path = rfd::FileDialog::new()
+        let save_path = lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 crate::constants::filters::midi_files_filter(),
                 crate::constants::filters::MIDI_FILES_EXTS,
@@ -224,7 +224,7 @@ impl RunnerInner {
             .map(|p| get_file_stem(Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
-        let Some(save_path) = rfd::FileDialog::new()
+        let Some(save_path) = lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 crate::constants::filters::lumino_project_filter(),
                 crate::constants::filters::LUMINO_PROJECT_EXTS,

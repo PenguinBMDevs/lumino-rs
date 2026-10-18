@@ -237,7 +237,7 @@ impl DialogHandler {
                     .to_string();
                 // 对话框在后台线程打开（防 UI 冻结），结果由 poll_path_dialogs 写回
                 root.spawn_path_dialog(PathDialogTask::AudioExportOutput, move || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .set_file_name(
                             default_name
                                 .rsplit_once('.')
@@ -251,7 +251,7 @@ impl DialogHandler {
             }
             A::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::AudioExportMidi, || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .add_filter(tr!("音乐文件"), &["mid", "midi", "lmpj"])
                         .add_filter(tr!("MIDI 文件"), &["mid", "midi"])
                         .add_filter(tr!("Lumino 项目"), &["lmpj"])
@@ -261,7 +261,7 @@ impl DialogHandler {
             }
             A::BrowseSoundfont => {
                 root.spawn_path_dialog(PathDialogTask::AudioExportSoundfont, || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
                         .add_filter(tr!("SF2 文件"), &["sf2"])
                         .add_filter(tr!("SFZ 文件"), &["sfz"])

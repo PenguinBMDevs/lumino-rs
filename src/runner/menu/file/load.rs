@@ -119,7 +119,7 @@ impl RunnerInner {
 
     /// 导入文件（支持 MIDI 文件和压缩包自动解压）
     pub(super) fn handle_import_files(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 crate::constants::filters::music_and_archive_filter(),
                 crate::constants::filters::MUSIC_AND_ARCHIVE_EXTS,
@@ -160,10 +160,10 @@ impl RunnerInner {
     fn show_error_dialog(&self, message: &str) {
         #[cfg(not(test))]
         {
-            let _ = rfd::MessageDialog::new()
+            let _ = lumino_platform::dialog::MessageDialog::new()
                 .set_title(tr!("加载失败"))
                 .set_description(message)
-                .set_level(rfd::MessageLevel::Error)
+                .set_level(lumino_platform::dialog::MessageLevel::Error)
                 .show();
         }
         #[cfg(test)]
@@ -177,10 +177,10 @@ impl RunnerInner {
     fn show_info_dialog(&self, message: &str) {
         #[cfg(not(test))]
         {
-            let _ = rfd::MessageDialog::new()
+            let _ = lumino_platform::dialog::MessageDialog::new()
                 .set_title(tr!("提示"))
                 .set_description(message)
-                .set_level(rfd::MessageLevel::Info)
+                .set_level(lumino_platform::dialog::MessageLevel::Info)
                 .show();
         }
         #[cfg(test)]
