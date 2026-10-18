@@ -38,7 +38,9 @@ use self::waterfall_frame::{DIGIT_H, DIGIT_SPACING, DIGIT_W, draw_digit};
 
 pub mod cli_progress;
 pub mod keyboard;
-pub mod streaming;
+// `streaming`（流式导出的事件/音符磁盘缓存）已按审计 §八 删除——0 调用者，
+// 且构成第二套 MIDI 解析 + 磁盘 `NoteRecord` 镜像（表格第 18 行）。
+// 重做时见 `video_export_handler.rs` 同位置注释：本体在 git 历史，权威源用 `MidiDocument`。
 
 // ── 时间计算 ──
 

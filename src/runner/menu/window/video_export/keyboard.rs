@@ -42,4 +42,6 @@ mod update;
 mod tests;
 
 pub use texture::{composite_keyboard, generate_keyboard_texture};
-pub use update::{update_playback_key_colors, update_playback_key_colors_from_notes};
+pub use update::update_playback_key_colors;
+// `update_playback_key_colors_from_notes`（流式读取模式专用：直接消费磁盘音符列表
+// 着色）已随审计 §八 的流式导出链删除——它只服务该路径，且构成音符的第三条来源。

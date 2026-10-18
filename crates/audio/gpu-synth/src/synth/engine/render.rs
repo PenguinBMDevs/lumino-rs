@@ -210,41 +210,4 @@ impl GpuSynth {
             last_peak,
         }
     }
-
-    const MAX_CPU_MEM_BYTES: u64 = 100 * 1024 * 1024;
-
-    pub(crate) fn check_memory(&self) -> Result<(), SynthError> {
-        // Heuristic MIDI budget — file + Vec<TimedEvent> must stay <100 MB.
-        // With true file streaming the heap is O(tracks + block); voices dominate.
-        let voices_mem =
-            (self.voices.len() * std::mem::size_of::<crate::synth::voices::Voice>()) as u64;
-        let upload_mem = (self.upload_params.len() * std::mem::size_of::<crate::gpu::VoiceParams>()
-            + self.upload_states.len() * std::mem::size_of::<crate::gpu::VoiceState>())
-            as u64;
-        let total = voices_mem + upload_mem + 8 * 1024 * 4; // 4 tracks × 8 KiB
-        if total > Self::MAX_CPU_MEM_BYTES {
-            return Err(SynthError::Config(format!(
-                "MIDI/CPU budget {} bytes exceeds 100 MB (voices {} upload {} KiB)",
-                total,
-                self.voices.len(),
-                upload_mem / 1024
-            )));
-        }
-        if self
-            .global_frame
-            .is_multiple_of(self.config.block_size as u64 * 25)
-        {
-            eprintln!(
-                "[mem] midi≈{} MB voices={} upload≈{} KiB",
-                total / (1024 * 1024),
-                self.voices.len(),
-                upload_mem / 1024
-            );
-        }
-        Ok(())
-    }
-
-    // ------------------------------------------------------------------
-    // Streaming offline render — zero `Vec<TimedEvent>` / zero full-sample Vec
-    // ------------------------------------------------------------------
 }

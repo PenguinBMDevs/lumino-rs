@@ -1,13 +1,15 @@
 //! MIDI 文件元信息。
 //!
-//! 通过轻量级扫描获取文件的路径、音轨数、音符数等信息，用于列表展示。
+//! 元信息由**加载链路**（`loader::parsed_midi`）在解析时填好（音符数/时长/PPQN），
+//! 列表展示与工程序列化直接消费它。
+//!
+//! 2026-10-17（审计 §八）：删除了 `from_path` / `from_path_with_progress`
+//! ——它们是走 `midly::loader::scan_midi_file` 的**第二套轻量扫描**实现，
+//! 全仓 0 调用者（唯一构造来源是加载链路本身）。元信息不需要第二条扫描链。
 
 use std::path::PathBuf;
 
 use lumino_core::trf;
-use midly::loader::scan_midi_file;
-
-use crate::LoaderError;
 
 /// MIDI文件元信息（用于列表显示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -24,41 +26,6 @@ pub struct MidiInfo {
     pub division: u16,
     /// 扫描进度（0.0–1.0，`None` 表示未知/未开始）。
     pub parse_progress: Option<f64>,
-}
-
-impl MidiInfo {
-    /// 使用 midly-fork 的轻量扫描快速获取 MIDI 文件信息
-    ///
-    /// 顺序读取，峰值内存 < 10MB，不解析事件细节
-    pub fn from_path(path: PathBuf) -> crate::LoaderResult<Self> {
-        Self::from_path_with_progress(path, None)
-    }
-
-    /// 带进度回调的 MIDI 文件扫描
-    pub fn from_path_with_progress(
-        path: PathBuf,
-        progress_callback: Option<&dyn Fn(f64)>,
-    ) -> crate::LoaderResult<Self> {
-        if let Some(cb) = progress_callback {
-            cb(0.0);
-        }
-
-        let scan_result = scan_midi_file(&path)
-            .map_err(|e| LoaderError::MidiParse(trf!("扫描 MIDI 文件失败: {e}", e = e)))?;
-
-        if let Some(cb) = progress_callback {
-            cb(1.0);
-        }
-
-        Ok(MidiInfo {
-            path,
-            track_count: scan_result.track_count,
-            total_notes: scan_result.note_count,
-            duration_ticks: scan_result.max_tick,
-            division: scan_result.division,
-            parse_progress: Some(100.0),
-        })
-    }
 }
 
 impl std::fmt::Display for MidiInfo {

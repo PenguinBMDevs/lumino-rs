@@ -2,10 +2,8 @@
 
 pub mod parser;
 pub mod port;
-pub mod stream;
 
 pub use parser::MidiFile;
-pub use stream::MidiStream;
 
 /// A MIDI event as understood by the synthesizer (channel-scoped).
 #[derive(Debug, Clone, Copy, PartialEq)]
