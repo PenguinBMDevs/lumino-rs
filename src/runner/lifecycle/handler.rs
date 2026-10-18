@@ -48,7 +48,13 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         }
 
         // 启动设备检查门控（测试模式 / LUMINO_SKIP_DEVICE_CHECK 时跳过）
-        if self.test_config.is_none() && std::env::var_os("LUMINO_SKIP_DEVICE_CHECK").is_none() {
+        // Android：设备门控是**桌面**逻辑（Vulkan 探测 + rfd 弹窗 + 可取消的警告窗），
+        // 移动端没有多窗口，且模拟器 SwiftShader 的 Vulkan 能力不全 → 必定走"警告/退出"分支。
+        // 这里直接跳过，等 L3 单窗口化后换成「应用内提示 + 降级」。
+        if !cfg!(target_os = "android")
+            && self.test_config.is_none()
+            && std::env::var_os("LUMINO_SKIP_DEVICE_CHECK").is_none()
+        {
             match self.run_device_gate(event_loop) {
                 DeviceGate::Proceed => {}
                 DeviceGate::Waiting => return,
@@ -131,6 +137,8 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             }
             Err(e) => {
                 tracing::error!("Runner 初始化失败：{}", e);
+                #[cfg(target_os = "android")]
+                log::error!("[BOOT] Runner 初始化失败: {e}");
                 self.init_error = Some(e);
                 event_loop.exit();
             }

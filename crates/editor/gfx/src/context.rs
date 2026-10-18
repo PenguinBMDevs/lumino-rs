@@ -142,7 +142,9 @@ async fn build_device_queue(
             required_limits: wgpu::Limits {
                 max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
                 max_buffer_size: limits.max_buffer_size,
-                ..wgpu::Limits::default()
+                // 必须从 adapter 实际能力出发：SwiftShader/移动 GPU 的 max_uniform_buffer_binding_size 只有 16384，
+                // 而 Limits::default() 要 65536 → request_device 直接失败。
+                ..limits
             },
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,
