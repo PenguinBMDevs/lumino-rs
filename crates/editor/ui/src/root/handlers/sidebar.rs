@@ -149,11 +149,12 @@ impl Root {
         let needs_redraw = self.sidebar.update(event.clone());
 
         // 静音/独奏切换 → 立即同步到播放引擎，使独奏/静音实时过滤播放。
-        if matches!(
-            &event,
-            sidebar::Event::TrackMuteToggled(_) | sidebar::Event::TrackSoloToggled(_)
-        ) {
+        // 同时写回 document —— `.lmpj` 保存链路读的是 `doc.tracks` 的
+        // visibility/solo，只改 sidebar 会让「静音/独奏」在保存重开后丢失。
+        if let sidebar::Event::TrackMuteToggled(id) | sidebar::Event::TrackSoloToggled(id) = &event
+        {
             self.update_playback_track_states();
+            self.apply_track_visibility_to_document(*id);
         }
 
         // 增益/声像变化 → 立即同步到播放引擎（音频域混音，与 MIDI CC 解耦）。

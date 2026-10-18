@@ -284,3 +284,4 @@ mod port;
 mod sidebar;
 mod speed_change;
 mod tool_panel_switch;
+mod track_visibility;
