@@ -1,0 +1,61 @@
+// Lumino Android 壳工程（M0 探针 + 后续正式版共用）。
+//
+// 关键约定：
+// - 原生库由 `cargo ndk` 产出到 `app/src/main/jniLibs/<abi>/liblumino_probe.so`
+//   （正式版换成 `liblumino_rs.so`），**不入库**，见 .gitignore。
+// - compileSdk 固定 33：本机 SDK 只装了 android-30/33/36.1，选 33 可完全离线构建；
+//   games-activity 相应选 1.2.2（2.x 要求 compileSdk 34+）。
+// - 不使用 NDK 编译 C/C++（无 CMake/ndk-build），故不声明 ndkVersion。
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.penguinbm.lumino'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "dev.penguinbm.lumino.probe"
+        minSdk 28
+        targetSdk 33
+        versionCode 1
+        versionName "0.1.0"
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            // cargo 产出的 .so 已 strip，交给 AGP 再压缩会破坏符号
+            useLegacyPackaging = false
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.core:core:1.9.0"
+    // GameActivity 继承 androidx.appcompat.app.AppCompatActivity，必须给 appcompat，
+    // 否则 javac 报「无法访问 AppCompatActivity」并连带所有继承方法（getWindow 等）失踪；
+    // 运行时也要求 Theme.AppCompat 派生主题。
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "androidx.games:games-activity:1.2.2"
+}
