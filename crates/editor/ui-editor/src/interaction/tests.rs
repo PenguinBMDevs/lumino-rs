@@ -35,7 +35,10 @@ fn test_update_cursor_position() {
 fn test_spatial_index_default() {
     let state = crate::SpatialIndexState::default();
     assert!(state.note_index.borrow().is_none());
-    assert!(!state.note_index_dirty.get()); // 默认未脏
+    assert!(
+        state.note_index_key.get().is_none(),
+        "默认未构建（失效键为空）"
+    );
     assert!(state.query_cache.borrow().is_empty());
 }
 

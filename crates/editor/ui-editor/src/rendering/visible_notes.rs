@@ -63,10 +63,9 @@ impl Editor {
         let pending = &self.pending_drag_state;
         let pending_copy = &self.pending_copy_drag_state;
 
-        // 渲染路径：仅在索引干净（!dirty 且已存在）时复用，否则线性扫描。
+        // 渲染路径：仅在索引干净（键未过期且已构建）时复用，否则线性扫描。
         // 避免渲染帧触发 133ms 的全量重建——重建交给交互路径按需完成。
-        let has_clean_index =
-            !self.spatial.note_index_dirty.get() && self.spatial.note_index.borrow().is_some();
+        let has_clean_index = self.has_clean_spatial_index();
 
         // 性能优化：当没有活跃拖动时，ghost_delta_for_index 对每个音符都返回 None，
         // 避免 200 万次函数调用开销。先判断再决定走哪条路径。
