@@ -28,6 +28,7 @@ pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
 pub mod selection_set;
+pub mod shape_store;
 pub mod shape_tool;
 pub mod text_tool;
 pub mod viewport;
@@ -106,6 +107,8 @@ pub struct EditorState {
     pub text_tool: text_tool::TextToolState,
     /// 已确认绘制图形的对象注册表与选中状态（鼠标工具点选 / 高亮描边）
     pub shape_select: drawn_shape::ShapeSelectState,
+    /// 形状对象的文档级存储与撤销分组日志（S0-3：形状随工程保存、可回改、可同组撤销）
+    pub shape_store: shape_store::ShapeStore,
 }
 
 impl Default for EditorState {
@@ -137,6 +140,7 @@ impl EditorState {
             shape_tool: shape_tool::ShapeToolState::default(),
             text_tool: text_tool::TextToolState::new(),
             shape_select: drawn_shape::ShapeSelectState::default(),
+            shape_store: shape_store::ShapeStore::new(),
         }
     }
 
@@ -154,6 +158,7 @@ impl EditorState {
         self.shape_tool = shape_tool::ShapeToolState::default();
         self.text_tool = text_tool::TextToolState::new();
         self.shape_select = drawn_shape::ShapeSelectState::default();
+        self.shape_store = shape_store::ShapeStore::new();
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
             .update_max_scroll(total_ticks);

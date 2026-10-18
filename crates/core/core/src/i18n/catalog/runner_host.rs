@@ -64,6 +64,16 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "GPU 重连失败：请重启 Lumino" => {
             Some("GPU reconnect failed; please restart Lumino")
         }
+        // ── GPU 合成（LGS 音频后端）恢复与失败提示（lgs_rebuild / lgs_reconnect） ──
+        "GPU 合成已恢复" => Some("GPU synthesis has recovered"),
+        "GPU 合成不可用（重建多次失败）：音频将保持静音，请重启 Lumino" => {
+            Some(
+                "GPU synthesis is unavailable (rebuild failed repeatedly): audio will stay silent. Please restart Lumino",
+            )
+        }
+        "音频设备丢失，正在恢复 GPU 合成…" => {
+            Some("Audio device lost; recovering GPU synthesis…")
+        }
         // ── GPU 兼容性：提示与失败详情（device_gate / device_warning） ──
         "未检测到 {backend} 支持，运行可能不稳定（可在设置中查看详情）" => {
             Some(

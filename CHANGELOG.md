@@ -9,6 +9,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### S0-5 · 形状随工程存取接线与集成夹具
+
+- **接线（4 处）** — 形状真正随工程进出编辑器：
+  - **保存**：`runner/menu/file/export.rs` 组工程时 `project.shapes = editor.shapes_snapshot()`；
+  - **打开**：`runner/menu/file/load.rs` 读工程后先取 `project.shapes`，再转换 ParsedMidi；
+  - **事件**：新增 `menu::file::Event::ProjectShapes(Vec<ShapeModel>)`，加载侧在
+    `MidiParsed` **之后**单独发一条（顺序不可反：文档装载路径会清空形状存储）；
+  - **清空**：`clear_drawn_shapes()` 同时清 `shape_store`（新文档与旧形状无关）。
+- **夹具（3 项）** — `shapes_snapshot → load_shapes` 往返、`k` 保真、**再生成与视口缩放无关**。
+- **验证** — `cargo test -p lumino-note-core` 146 / `-p lumino-message` 47 / `-p lumino-ui-editor` 785 /
+  `-p lumino-editor-state` 339 / `-p lumino-ui` 507，全部 0 failed；
+  `cargo check -p lumino-rs` 与 `cargo clippy`（6 个 crate）均通过、零警告；改动文件 ≤400 行。
+
+### S0-4 · 通道模式与同键重叠消解
+
+- **新增** — `lumino-note-core::channels`：`ChannelMode`（`Raw` / `Single`）、
+  `apply_channel_mode`、`resolve_single_channel`、`MIN_NOTE_TICKS`。
+- **口径**（对齐 Spiderweb `help/channels.txt`）：
+  - `Raw`（As drawn）= 原样保留，**允许同键重叠**（黑乐谱纹理的前提）；
+  - `Single` = 同键重叠消解：同 tick 合并取「最响力度 + 最长长度」；不同起点重叠时
+    前者在后者起点截断、后者延伸到前者原终点（后者更长则保留更长）。
+- **边界** — 只按 `(key, tick)` 组织、不同音高互不影响；截断结果不低于 `MIN_NOTE_TICKS`；
+  结果与输入顺序无关（内部稳定排序）；**不改通道号**（`Multi channel` 自动分配属后续任务）。
+- **验证** — `cargo test -p lumino-note-core` 146 passed（含 12 项新增）；
+  `cargo clippy -p lumino-note-core --all-targets` 零警告。
+
+### S0-3 · 形状存储、撤销分组回放与再生成接线
+
+- **新增** — `lumino-editor-state::ShapeStore`（文档级形状存储 + 撤销分组日志 + 音符指纹）与
+  `lumino-ui-editor` 的 `shape_ops`（`load_shapes` / `create_shape` / `edit_shape` / `delete_shape` /
+  `shapes_snapshot`）。
+- **撤销口径（关键）** — 形状**不进** `EditorSnapshot`：音符由文档历史回退，形状参数由 `ShapeStore`
+  的同分组日志回退，两者共用同一个历史 `group_id` ⇒ 一次参数提交 = 一次撤销单元。
+  另修一处既有事实：Snapshot 历史的 `group_id` 在 **redo 侧会丢失**，故 `ShapeStore` 保留 LIFO 撤销栈，
+  redo 无分组时兜底回放（否则会出现「音符回来了、形状参数没回来」）。
+- **再生成** — 与曲线工具确认**同源**（`flatten_path` → `stroke_band::outline_notes` → `keep_longest`
+  → 长度下限）；旧音符按**值指纹**清理，杜绝孤儿音符。
+- **协作** — 形状对象不同步（已拍板口径）；它产生的音符按值广播（新增
+  `EditorData::push_collab_transform_sync`，与既有 `take_pending_collab_transform_sync` 对称）。
+- **验证** — `cargo test -p lumino-editor-state` 339 passed / `-p lumino-ui-editor` 782 passed
+  （含 21 项 S0-3 新增，「改参数 → undo → 形状与音符同时回退」为验收项）；
+  `cargo clippy -p lumino-editor-state -p lumino-ui-editor --all-targets` 零警告；改动文件 ≤400 行。
+
+### S0-2 · 形状工程部件 `.lmshapes`
+
+- **新增** — 工程文件新增独立部件 `data/project/shapes.lmshapes`（魔数 `LMSH` + 版本 1 + bincode + zstd）：
+  `LmshapesData`、`FolderPaths::SHAPES_FILE`、`LuminoProject::shapes` 字段；文件夹与单文件归档两种形态都可存取。
+- **兼容性（关键）** — 遵循既有「新部件缺失即空」约定：加载侧 `exists()` 守卫，**形状为空时保存侧不写部件**
+  ⇒ 老工程保存后字节不变，且**不提升 `format_version`**；含未知部件的工程仍可加载（旧版本读新工程不报错）。
+- **落盘纪律** — bincode 为位置编码：`ShapeModel` / `ShapeOp` 增删字段或变体必须同时提升部件版本。
+- **顺带** — `save.rs` 574 行超 400 行红线，测试模块外迁为 `save/tests.rs`（纯移动，零逻辑变更）。
+- **验证** — `cargo test -p lumino-project` 70 passed / 0 failed（含 5 项 S0-2 新增）；
+  `cargo clippy -p lumino-project --all-targets` 零警告；
+  `cargo check -p lumino-export -p lumino-editor-state -p lumino-ui-editor -p lumino-ui` 通过（覆盖加字段影响面）；
+  `cargo test -p lumino-core` 84 passed（i18n 覆盖率门禁已含新增 2 条文案）；全部改动文件 ≤400 行。
+
+### S0-1 · 形状数据模型（Spiderweb 图形工具移植底座）
+
+- **新增** — `lumino-core` 新模块 `shape`（`shape.rs` + `shape/{geometry,style,model}.rs`，
+  共 831 行含测试）：`ShapeModel` / `ShapeKind` / `ShapeGeometry` / `ShapeAnchor` / `ShapeRect` /
+  `ShapeStyle` / `ShapeFill` / `ShapeOp`，全部 `serde` 化。
+- **目的** — 把「一个形状」从一次性烘焙的几何残留，变成可持久、可回改、可与它生成的音符同组撤销的
+  **文档对象**（Spiderweb 图形工具 45 项缺口清单的公共底座，见
+  `docs/2026-10-17-Spiderweb图形工具缺口清单与移植规划.md`）。
+- **设计决策** —
+  1. 不新建 crate：编辑器域类型同域先例（`Tool` / `BrushConfig`）已在 `lumino-core`，
+     且该 crate 已依赖 `serde` / `bincode`，故只加模块、不加依赖边；
+  2. 几何不分枚举（统一点列 + 可选外接框），再生成管线只留一条代码分支；
+  3. **`k`（beats per key）随形状存储**——圆弧/突起/遮罩带的「圆度」按绘制时屏幕比例定义，
+     丢失它会让形状跨缩放走形；
+  4. `ops` 为**有序修饰链**（照抄 Spiderweb `notes/fx.py` 语义），S0 只有 `Noop` 占位变体，
+     真实算子由后续任务逐个追加到末尾；
+  5. 校验返回 `Err(InvalidArgument)` 而非 panic（损坏/手改工程不得让加载路径崩）。
+- **未改动** — `ProjectMetadata.format_version`、`EditorSnapshot`、`OpKind`、协作协议、`Tool` 枚举、i18n。
+- **验证** — `cargo test -p lumino-core shape` 33 passed / 0 failed（新增 32 项）；
+  `cargo clippy -p lumino-core --all-targets` 零警告；`cargo fmt` 干净；
+  7 个新文件均 ≤400 行（最大 198）。
+
 ### UI-018 / #146 · 加载 MIDI 后标尺小节号从 2 起跳（P0）
 
 - **症状** — 加载多轨 MIDI（如 Bad Apple 8.49M，123 轨 / division 960）后，钢琴

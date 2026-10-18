@@ -98,6 +98,8 @@ impl RunnerInner {
                 return;
             };
             let mut project = lumino_export::LuminoProject::from_midi_document(document);
+            // S0-5：形状对象随工程持久化（音符已由 document 承载，这里只存参数化形状）
+            project.shapes = ui.root().editor.shapes_snapshot();
             // 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo，
             // 保证用户修改的 BPM（工程设置/速度面板）随导出持久化
             project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));

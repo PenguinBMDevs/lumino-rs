@@ -302,18 +302,26 @@ impl RunnerInner {
             let path_for_blocking = path.clone();
             let load_result = tokio::task::spawn_blocking(move || {
                 let project = lumino_export::load_project(&path_for_blocking)?;
-                lumino_export::project_to_parsed_midi(&project, path_for_blocking)
+                // S0-5：形状对象随工程持久化，需在文档装载后灌回编辑器
+                let shapes = project.shapes.clone();
+                let parsed = lumino_export::project_to_parsed_midi(&project, path_for_blocking)?;
+                Ok::<_, lumino_export::ExportError>((parsed, shapes))
             })
             .await;
 
             match load_result {
-                Ok(Ok(parsed)) => {
+                Ok(Ok((parsed, shapes))) => {
                     progress_cb(tr!("工程加载成功"), 1.0);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
                             parsed,
                         )),
+                    ));
+                    // 形状必须在 MidiParsed 之后发：文档装载路径会清空形状存储，
+                    // 顺序反了会把刚加载的形状再清掉。
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::ProjectShapes(shapes),
                     ));
                 }
                 Ok(Err(e)) => {

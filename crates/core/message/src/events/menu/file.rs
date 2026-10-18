@@ -31,6 +31,11 @@ pub enum Event {
     MidiLoadError(String),
     /// MIDI 解析完成
     MidiParsed(Arc<lumino_midi_loader::ParsedMidi>),
+    /// 打开工程时随文档携带的形状对象（S0-5）
+    ///
+    /// 形状不进 `ParsedMidi`（那层只承载 MIDI 语义），由加载侧在其**之后**单独发一条事件：
+    /// 文档装载路径会清空形状存储，顺序反了会把刚加载的形状再清掉。
+    ProjectShapes(Vec<lumino_core::shape::ShapeModel>),
     /// MIDI 解析失败
     MidiParseError(String),
     /// 显示进度（消息和进度 0.0-1.0）

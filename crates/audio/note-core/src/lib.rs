@@ -5,6 +5,7 @@
 pub mod arrange_selection;
 pub mod automation;
 pub mod batch_edit;
+pub mod channels;
 pub mod event;
 pub mod font_scanner;
 pub mod history;
@@ -20,6 +21,7 @@ pub use automation::{
     AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
 };
 pub use batch_edit::{BatchEditOperation, parse_batch_edit_input};
+pub use channels::{ChannelMode, MIN_NOTE_TICKS, apply_channel_mode, resolve_single_channel};
 pub use event::{
     AutomationEvent as EventAutomationEvent, AutomationTarget as EventAutomationTarget,
     SegmentShape as EventSegmentShape,

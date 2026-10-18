@@ -142,6 +142,15 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "帧索引越界" => Some("Frame index out of range"),
         "seek 音符缓存失败: {e}" => Some("Failed to seek in the note cache: {e}"),
         "读取音符缓存失败: {e}" => Some("Failed to read the note cache: {e}"),
+        // ── 导出：GPU 设备丢失后的恢复提示（audio_export / video_export_handler） ──
+        "GPU 正在恢复，请稍后重试导出" => {
+            Some("GPU is recovering; please retry the export shortly")
+        }
+        "导出失败：GPU 设备丢失（驱动超时恢复）——导出已中断，渲染已自动恢复，可直接重试" => {
+            Some(
+                "Export failed: GPU device lost (driver timeout recovery). The export was interrupted, but rendering has recovered automatically — you can retry directly",
+            )
+        }
         _ => None,
     }
 }

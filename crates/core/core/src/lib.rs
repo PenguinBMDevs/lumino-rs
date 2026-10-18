@@ -8,6 +8,8 @@ pub mod error;
 pub mod i18n;
 /// 系统语言检测与界面语言偏好模块（UI-018）
 pub mod locale;
+/// 形状数据模型模块（Spiderweb 图形工具移植底座）
+pub mod shape;
 /// 平滑滚动动画模块
 pub mod smooth_scroll;
 /// 应用存储配置与界面状态模块
@@ -19,6 +21,9 @@ pub mod view_state;
 
 pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
+pub use shape::{
+    ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
+};
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};
 pub use view_state::ViewState;

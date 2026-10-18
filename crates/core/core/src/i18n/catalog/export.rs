@@ -102,6 +102,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "GPU 写入输出..." => Some("GPU writing output..."),
         "GPU 写入 {pct}%" => Some("GPU writing {pct}%"),
         "GPU 完成" => Some("GPU finished"),
+        "GPU 渲染异常中断（设备丢失），请重试导出" => {
+            Some("GPU rendering was interrupted abnormally (device lost); please retry the export")
+        }
         "音色库文件不存在: {path}" => Some("Soundfont file not found: {path}"),
         "音色库文件不存在: {path}，请检查路径或重新选择" => {
             Some("Soundfont file not found: {path}. Check the path or select it again")

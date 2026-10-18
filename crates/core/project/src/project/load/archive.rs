@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use crate::project::{
     archive,
     data_formats::{
-        LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData,
-        LmtxtData,
+        LmcatData, LmctlData, LmnamesData, LmshapesData, LmsigData, LmsyxData, LmtempData,
+        LmtextmetaData, LmtxtData,
     },
     metadata::ProjectMetadata,
 };
@@ -144,6 +144,16 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     {
         let _data = LmnamesData::decode(&names_bytes)
             .map_err(|e| CoreError::FileFormat(trf!("names 解码失败: {e}", e = e)))?;
+    }
+
+    // 读取形状（专用格式 LMSH；老工程无此文件即空，不报错）
+    if let Some(shapes_bytes) = reader
+        .read("data/project/shapes.lmshapes")
+        .map_err(|e| CoreError::FileFormat(trf!("读取形状失败: {e}", e = e)))?
+    {
+        let data = LmshapesData::decode(&shapes_bytes)
+            .map_err(|e| CoreError::FileFormat(trf!("形状解码失败: {e}", e = e)))?;
+        project.shapes = data.shapes;
     }
 
     Ok(project)

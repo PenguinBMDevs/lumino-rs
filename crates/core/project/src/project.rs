@@ -27,6 +27,8 @@ pub use track::{LmtrackData, LmtrackHeader, TrackMeta, TrackVisibilitySer};
 
 use std::path::PathBuf;
 
+use lumino_core::shape::ShapeModel;
+
 /// 工程数据（内存中表示）
 #[derive(Debug, Clone)]
 pub struct LuminoProject {
@@ -62,6 +64,8 @@ pub struct LuminoProject {
     pub track_names: Vec<Option<String>>,
     /// 导入的外部文件
     pub loaded_files: Vec<LoadedFileEntry>,
+    /// 形状对象（Spiderweb 图形工具底座；老工程为空列表）
+    pub shapes: Vec<ShapeModel>,
 }
 
 /// 音轨槽（支持懒加载）
@@ -125,6 +129,7 @@ impl LuminoProject {
             sys_ex: Vec::new(),
             track_names: Vec::new(),
             loaded_files: Vec::new(),
+            shapes: Vec::new(),
         }
     }
 

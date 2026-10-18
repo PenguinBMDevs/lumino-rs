@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::project::{
     data_formats::{
-        LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData,
-        LmtxtData,
+        LmcatData, LmctlData, LmnamesData, LmshapesData, LmsigData, LmsyxData, LmtempData,
+        LmtextmetaData, LmtxtData,
     },
     folder,
     metadata::ProjectMetadata,
@@ -113,6 +113,15 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
         let _data = LmnamesData::decode(&bytes)
             .map_err(|e| CoreError::FileFormat(trf!("names 解码失败: {e}", e = e)))?;
         // 名称冗余存储，实际名称从各 .lmtrack 中已读取
+    }
+
+    // 读取形状（专用格式 LMSH；老工程无此文件即空，不报错）
+    let shapes_path = path.join(folder::FolderPaths::SHAPES_FILE);
+    if shapes_path.exists() {
+        let bytes = std::fs::read(&shapes_path)?;
+        let data = LmshapesData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(trf!("形状解码失败: {e}", e = e)))?;
+        project.shapes = data.shapes;
     }
 
     Ok(project)

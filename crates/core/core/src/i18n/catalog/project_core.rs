@@ -6,6 +6,9 @@
 /// 查本域英文译文；未登记返回 `None`。
 pub fn lookup(zh: &str) -> Option<&'static str> {
     match zh {
+        // ── 形状部件（.lmshapes）读写（crates/core/project/src/project/load/*） ──
+        "读取形状失败: {e}" => Some("Failed to read shapes: {e}"),
+        "形状解码失败: {e}" => Some("Failed to decode shapes: {e}"),
         // ── crates/core/diagnostics/src/memtrace.rs（内存监控对话框「按子系统分类」）──
         "MIDI 数据" => Some("MIDI data"),
         "音色库采样" => Some("SoundFont samples"),

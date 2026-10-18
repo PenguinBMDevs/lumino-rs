@@ -69,6 +69,18 @@ impl RunnerInner {
             MidiLoadError(err) => {
                 tracing::error!("MIDI 文件加载失败：{}", err);
             }
+            ProjectShapes(shapes) => {
+                // S0-5：把工程里的形状对象灌回编辑器。
+                // 必须晚于 `MidiParsed`（那条路径会清空形状存储）。
+                let count = shapes.len();
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .root_mut()
+                    .editor
+                    .load_shapes(shapes);
+                tracing::info!("工程形状已载入：{count} 个");
+            }
             MidiParsed(parsed) => {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 

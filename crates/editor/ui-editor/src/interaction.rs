@@ -15,6 +15,7 @@ pub(crate) mod line_tool;
 mod moved;
 mod pressed;
 mod released;
+pub(crate) mod shape_ops;
 pub(crate) mod shape_tool;
 pub(crate) mod text_tool;
 
