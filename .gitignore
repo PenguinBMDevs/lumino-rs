@@ -116,3 +116,5 @@ domino_clip.bin
 
 # 补丁目录
 patches/
+
+.dsh-bundles/*
