@@ -246,10 +246,15 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
     // with_tag 是线程局部的，run_app 在调用线程上运行，
     // 因此该线程的所有分配（编辑器状态、空间索引、iced 每帧 widget 树等）均归 Ui。
     // 其中 MIDI 解析路径在 document.rs 内层已用 Midi 标签覆盖，音频渲染线程在 synth.rs 内单独标 Audio。
-    lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
-        boot_mark!("REACHED-8 即将 run_app");
-        event_loop.run_app(&mut runner)
-    })?;
+    let loop_result = lumino_diagnostics::memtrace::with_tag(
+        lumino_diagnostics::memtrace::AllocTag::Ui,
+        || {
+            boot_mark!("REACHED-8 即将 run_app");
+            event_loop.run_app(&mut runner)
+        },
+    );
+    log::error!("[BOOT] run_app 已返回: {loop_result:?}");
+    loop_result?;
 
     Ok(())
 }
@@ -265,6 +270,23 @@ pub fn android_main(app: PlatformApp) {
             .with_max_level(log::LevelFilter::Trace)
             .with_tag("lumino"),
     );
+
+    // android-activity 在 Activity 被系统销毁并重建时，会**再次**调用 `android_main`。
+    // 而 winit 的 `EventLoop` 每进程只能创建一个（`EventLoopError::RecreationAttempt`），
+    // 第二次调用一旦 `return`，胶水就会 `finishAndRemoveTask()` —— 用户看到的现象是
+    // 「切后台再回来，应用自己消失」。这里让第二次调用**不返回**（挂起该线程），
+    // 保留第一次调用创建的、仍然持有窗口与 GPU 资源的事件循环。
+    static FIRST_INVOCATION: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(true);
+    if !FIRST_INVOCATION.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        log::error!(
+            "[BOOT] android_main 第二次被调用（Activity 重建）：挂起该线程，保留既有事件循环"
+        );
+        loop {
+            std::thread::park();
+        }
+    }
+
     boot_mark!("REACHED-1 进入 android_main");
     // 必须最早注入：Android 上没有 $HOME/XDG，Storage::new() 依赖这个目录，
     // 缺了就在启动第一步 Err(NotFound) → 优雅退出（看上去像"闪退"）。
@@ -277,9 +299,15 @@ pub fn android_main(app: PlatformApp) {
     }
 
     boot_mark!("REACHED-2 已注入数据目录");
-    if let Err(error) = run(Some(app)) {
+    let outcome = run(Some(app));
+    match &outcome {
+        Ok(()) => log::error!("[BOOT] run() 正常返回 → android_main 即将结束（Activity 会被 finish）"),
+        Err(error) => log::error!("[BOOT] run() 返回错误 → {error}"),
+    }
+    if let Err(error) = outcome {
         tracing::error!("Android 主循环异常退出: {error}");
     }
+    log::error!("[BOOT] android_main 结束");
 }
 
 #[cfg(test)]

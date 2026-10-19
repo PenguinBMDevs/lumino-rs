@@ -32,6 +32,11 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     }
 
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        log::error!(
+            "[BOOT] resumed 进入: inner_ready={} suspended_since_resume={}",
+            self.inner.is_some(),
+            self.suspended_since_resume
+        );
         if self.init_error.is_some() || self.device_warning.is_some() {
             return;
         }
@@ -40,10 +45,19 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 处理不当的表现是**黑屏且永不重绘**（Android 上 Suspended 后 native window 为 null）。
         // 复用标题栏变更用的同一条 `restart_window` 路径——它只重建 WindowManager
         // （窗口 + surface + Host 渲染上下文），不动文档 / 音频 / UI 状态。
-        if let Some(this) = self.inner.as_mut() {
-            tracing::info!("resumed（续次）：重建窗口与表面");
-            this.restart_window(event_loop);
-            this.window_state.window.window().request_redraw();
+        if self.inner.is_some() {
+            // 只有「真的被 suspended 过」才重建。启动期 Android 常连发两次 resumed，
+            // 若不区分就会把刚建好的窗口/表面整个 drop（wgpu 全部 Destroy + Activity invisible）。
+            if !self.suspended_since_resume {
+                log::error!("[BOOT] resumed（重复，启动期）：忽略，不重建");
+                return;
+            }
+            self.suspended_since_resume = false;
+            log::error!("[BOOT] resumed（真·回前台）：重建窗口与表面");
+            if let Some(this) = self.inner.as_mut() {
+                this.restart_window(event_loop);
+                this.window_state.window.window().request_redraw();
+            }
             return;
         }
 
@@ -75,6 +89,7 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             Ok(inner) => {
                 self.inner = Some(inner);
 
+                log::error!("[BOOT] init_inner 成功，inner 就绪");
                 // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
                 self.after_inner_started();
 
@@ -201,7 +216,8 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     ///
     /// Android 上进程随时可能被系统回收，suspended 是唯一可靠的「还活着」的信号。
     fn suspended(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        tracing::info!("suspended：落盘后等待重建（surface 将失效）");
+        log::error!("[BOOT] suspended：落盘并置位，等待前台重建");
+        self.suspended_since_resume = true;
         if let Some(this) = self.inner.as_mut() {
             this.save_storage();
         }
@@ -211,6 +227,7 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     ///
     /// winit 0.30 的 `ApplicationHandler` 没有 `destroyed`，对应的收尾钩子是 `exiting`。
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        log::error!("[BOOT] exiting：事件循环退出，最后落盘一次");
         tracing::info!("exiting：事件循环退出，最后落盘一次");
         if let Some(this) = self.inner.as_mut() {
             this.save_storage();
@@ -218,6 +235,10 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| log::error!("[BOOT] about_to_wait 首次进入"));
+        }
         puffin::profile_scope!("runner_about_to_wait");
 
         // REND-019 PR-C：重连流水线逐帧推进（每帧最多一步，§1.4 S1），
@@ -377,7 +398,7 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 保存完成后的延迟退出：保存期间用户请求关闭（close_pending），
         // 本地保存与云端上传均结束后自动退出
         if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
-            tracing::info!("保存完成，执行延迟的退出请求");
+            log::error!("[BOOT] exit: close_pending（延迟退出被触发）");
             this.window_state.window.close_pending = false;
             event_loop.exit();
             return;

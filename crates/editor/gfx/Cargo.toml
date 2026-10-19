@@ -22,6 +22,7 @@ wgpu = { workspace = true }
 ab_glyph = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+log = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
 puffin = { workspace = true }
 half = { workspace = true }

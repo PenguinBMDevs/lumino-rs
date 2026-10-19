@@ -42,6 +42,12 @@ pub struct WindowManager {
     /// REND-019 周边（R4 P2 反馈）：微扰恢复最大化后需要把存活对话框重新置前
     /// （"取消最大化→重最大化"会把主窗抬到端窗之上；由 Runner 每帧读取执行一次）。
     pub(crate) raise_dialogs_pending: bool,
+    /// Android 首帧前是否已用「当前窗口尺寸」重配过一次交换链。
+    ///
+    /// `WindowManager::new` 建链时窗口表面可能尚未 finalize，configure 会被 hal
+    /// 拒绝并让 wgpu-core 丢掉 presentation（此后取帧恒 NotConfigured）。首帧前
+    /// 用真实 `inner_size()` 再配一次即可安装 presentation。
+    android_reconfigured_once: bool,
 }
 
 impl WindowManager {
@@ -65,6 +71,25 @@ impl WindowManager {
         window.set_visible(true);
 
         let physical_size = window.inner_size();
+        // Android 首帧防护（2026-10-19 真机实测）：窗口刚创建时 `inner_size()` 可能
+        // 为 0×0，wgpu-core 会以 `ZeroArea` 拒绝首次 configure（surface 保持未配置），
+        // 随后首帧 `get_current_texture` 直接 fatal panic → Activity 被 finish。
+        // 此时先按临时尺寸建立交换链，随后的 `Resized` 会把尺寸拉正到真实分辨率。
+        let physical_size = if physical_size.width == 0 || physical_size.height == 0 {
+            log::error!(
+                "[BOOT] 窗口物理尺寸为 0（{}x{}），先按 1280x720 临时建交换链",
+                physical_size.width,
+                physical_size.height
+            );
+            winit::dpi::PhysicalSize::new(1280, 720)
+        } else {
+            log::error!(
+                "[BOOT] 窗口物理尺寸 {}x{}",
+                physical_size.width,
+                physical_size.height
+            );
+            physical_size
+        };
 
         let gfx = lumino_gfx::Context::new_blocking(
             {
@@ -123,6 +148,7 @@ impl WindowManager {
             pending_size_restore: None,
             pending_restore_maximized: false,
             raise_dialogs_pending: false,
+            android_reconfigured_once: false,
         })
     }
 
@@ -221,6 +247,7 @@ impl WindowManager {
                 });
             }
             WindowEvent::CloseRequested => {
+                log::error!("[BOOT] 收到 CloseRequested（系统关闭请求）");
                 self.close_requested = true;
             }
             _ => (),
@@ -233,6 +260,19 @@ impl WindowManager {
     fn handle_redraw(&mut self) {
         puffin::profile_function!();
 
+        // Android 首帧：用真实窗口尺寸再配一次交换链（见字段注释）。
+        // 只在首次绘制前执行，避免每帧重复 configure。
+        if cfg!(target_os = "android") && !self.android_reconfigured_once {
+            self.android_reconfigured_once = true;
+            let size = self.window.inner_size();
+            log::error!(
+                "[BOOT] 首帧前重配交换链（窗口 {}x{}）",
+                size.width,
+                size.height
+            );
+            self.gfx.resize(size.width, size.height);
+        }
+
         if self.resized {
             let size = self.window.inner_size();
             self.ui.resize(size.width, size.height);
@@ -244,6 +284,7 @@ impl WindowManager {
             .gfx
             .with_frame(|frame, view| self.ui.redraw_requested(frame, view, &self.gfx))
         {
+            log::error!("[BOOT] 帧错误: {e:?}");
             // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排重绘；
             // Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
             if self.gfx.handle_frame_error(&e).should_redraw() {
@@ -294,6 +335,7 @@ impl WindowManager {
     /// 用户点击关闭按钮时，窗口立即隐藏，让用户感知到"已关闭"，
     /// 剩余进程清理在 `about_to_wait` 当前迭代结束后自然完成。
     fn quick_close(&mut self) {
+        log::error!("[BOOT] quick_close: 隐藏窗口 + 退出事件循环");
         // 先隐藏窗口，让用户立即感知到关闭
         self.window.set_visible(false);
         // 重置关闭请求标记，防止重复触发
@@ -315,6 +357,7 @@ impl WindowManager {
 
         if let Some(action) = self.ui.take_window_action() {
             use lumino_ui::window::TrafficAction;
+            log::error!("[BOOT] UI 窗口动作: {action:?}");
             match action {
                 TrafficAction::Minimize => {
                     self.window.set_minimized(true);
@@ -346,6 +389,12 @@ impl WindowManager {
     ///    交由 Runner 弹出「是否保留未保存的更改」确认对话框，**暂不关闭**；
     /// 3. 否则立即快速关闭并退出事件循环。
     fn handle_close_request(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        log::error!(
+            "[BOOT] handle_close_request: saving={} modified={}",
+            self.is_saving(),
+            self.ui.is_project_modified()
+        );
+
         // 保存期间禁止关闭软件：关闭请求转为待关闭，保存完成后自动退出
         if self.is_saving() {
             tracing::info!("保存进行中，关闭请求延迟到保存完成");

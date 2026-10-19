@@ -141,6 +141,84 @@ impl Context {
         self.surface.configure(&self.device, &self.surface_config);
     }
 
+    /// 交换链级错误：重配即可恢复，与「设备丢失」语义无关。
+    fn is_swapchain_only(e: &wgpu::SurfaceError) -> bool {
+        matches!(
+            e,
+            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Timeout
+        )
+    }
+
+    /// 取交换链帧（Android 首帧实测加固，2026-10-19 真机）。
+    ///
+    /// 两类 Android 独有的失败必须在这里吞掉，否则表现就是「打开就黑屏 / 闪退」：
+    ///
+    /// 1. **fatal panic**：surface 未配置时 wgpu（`api/surface.rs`，
+    ///    "Surface::get_current_texture_view"）走 `handle_error_fatal` **直接 panic**，
+    ///    调用方拿不到 `Result`；展开会穿透 winit 回调 → `android_main` 返回 →
+    ///    Activity 被 finish。此处 `catch_unwind` 截断。
+    /// 2. **`Lost` / `Outdated` / `Timeout`**：新建的 Vulkan swapchain 在
+    ///    ANativeWindow 尚未就绪时会立刻失效。按设备丢失处置会走
+    ///    `handle_frame_error → Stop` **永久停帧**（黑屏不恢复）；本质上属于交换链级
+    ///    错误，重配即可，故重配后重试至多 3 次。
+    fn acquire_frame(&self) -> Result<wgpu::SurfaceTexture> {
+        // 零尺寸无法配置（wgpu-core `ZeroArea`），重试无意义
+        if self.surface_config.width == 0 || self.surface_config.height == 0 {
+            tracing::error!("交换链尺寸为 0，跳过取帧（等待窗口 Resized 拉正）");
+            #[cfg(target_os = "android")]
+            log::error!("[BOOT] 交换链尺寸为 0，跳过取帧（等待窗口 Resized 拉正）");
+            return Err(ContextError::FrameAcquisition(wgpu::SurfaceError::Lost));
+        }
+
+        let mut last = wgpu::SurfaceError::Lost;
+        for attempt in 0..=3u8 {
+            if attempt > 0 {
+                self.configure_surface_stable();
+                #[cfg(target_os = "android")]
+                std::thread::sleep(std::time::Duration::from_millis(8));
+            }
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.surface.get_current_texture()
+            })) {
+                Ok(Ok(frame)) => return Ok(frame),
+                Ok(Err(wgpu::SurfaceError::OutOfMemory)) => {
+                    tracing::error!("Swapchain error: OutOfMemory. Rendering cannot continue.");
+                    return Err(ContextError::FrameAcquisition(
+                        wgpu::SurfaceError::OutOfMemory,
+                    ));
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("取帧失败（第 {} 次）：{e:?}", attempt + 1);
+                    #[cfg(target_os = "android")]
+                    log::error!("[BOOT] 取帧失败（第 {} 次）：{e:?}", attempt + 1);
+                    let recoverable = Self::is_swapchain_only(&e);
+                    last = e;
+                    if !recoverable {
+                        break;
+                    }
+                }
+                Err(payload) => {
+                    let detail = panic_payload_text(&payload);
+                    tracing::error!(
+                        "取帧 fatal panic（第 {} 次，交换链 {}×{}）：{detail}",
+                        attempt + 1,
+                        self.surface_config.width,
+                        self.surface_config.height
+                    );
+                    #[cfg(target_os = "android")]
+                    log::error!(
+                        "[BOOT] 取帧 fatal panic（第 {} 次，交换链 {}×{}）：{detail}",
+                        attempt + 1,
+                        self.surface_config.width,
+                        self.surface_config.height
+                    );
+                    last = wgpu::SurfaceError::Lost;
+                }
+            }
+        }
+        Err(ContextError::FrameAcquisition(last))
+    }
+
     /// 获取当前交换链帧并在其上执行一次绘制。
     ///
     /// 若获取帧失败（如 OutOfMemory）则返回对应错误而不调用回调。
@@ -183,16 +261,9 @@ impl Context {
         // 定位播放期突发性大卡顿究竟来自哪一环。
         let frame = {
             puffin::profile_scope!("get_current_texture");
-            match self.surface.get_current_texture() {
-                Ok(frame) => frame,
-                Err(wgpu::SurfaceError::OutOfMemory) => {
-                    tracing::error!("Swapchain error: OutOfMemory. Rendering cannot continue.");
-                    return Err(ContextError::FrameAcquisition(
-                        wgpu::SurfaceError::OutOfMemory,
-                    ));
-                }
-                Err(e) => return Err(ContextError::FrameAcquisition(e)),
-            }
+            // 取帧统一走 `acquire_frame`：内含 fatal-panic 截断与交换链级错误重配重试
+            // （Android 首帧实测根因，见该方法文档）。
+            self.acquire_frame()?
         };
 
         let view = {
@@ -267,6 +338,18 @@ impl Context {
             return FrameErrorAction::SkipFrame;
         };
         let action = classify_frame_error(surface_err);
+        // Android 实测（2026-10-19 真机）：交换链级 `Lost`（设备本身未丢——真正的
+        // 设备丢失由 `on_device_lost` 回调置位）在首帧 / 窗口重建后是常态。
+        // 若按 `Stop` 处理会 `mark_device_lost()` 把整个 device 判死 → 渲染永久
+        // 停止（表现：界面黑屏不再刷新）。此处仅重配交换链并按本帧放弃，
+        // 下一帧重试，窗口 `Resized` 后自然恢复。
+        if matches!(surface_err, wgpu::SurfaceError::Lost) && !device_status::device_lost() {
+            tracing::warn!("Surface Lost（设备未丢）：按交换链级错误重配，下一帧重试");
+            #[cfg(target_os = "android")]
+            log::error!("[BOOT] Surface Lost（设备未丢）：重配交换链，下一帧重试");
+            self.configure_surface_stable();
+            return FrameErrorAction::SkipFrame;
+        }
         match action {
             FrameErrorAction::Reconfigured => {
                 tracing::warn!("Surface Outdated：按现有配置重新 configure 交换链");
@@ -291,4 +374,13 @@ impl Context {
         }
         action
     }
+}
+
+/// 提取 panic 载荷文本（`&str` / `String` 两种常见形态）。
+fn panic_payload_text(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "未知 panic 载荷".to_string())
 }

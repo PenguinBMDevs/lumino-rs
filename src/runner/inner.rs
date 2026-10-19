@@ -66,6 +66,12 @@ pub struct Runner {
     /// REND-019 R3 反馈：重连完成后「GPU 重连中…」提示的清除时刻
     /// （恢复后额外保留 1 秒再清除；由 `step_status_clear` 每帧检查）
     pub(crate) status_clear_at: Option<std::time::Instant>,
+    /// Android：是否处于「suspended 之后」——区分「真·回前台」与「启动期重复 resumed」。
+    ///
+    /// 一次启动里 Android 可能连发两次 `resumed`（onSurfaceCreated 与 onResume）。若第二次也走
+    /// `restart_window`，会把刚建好的窗口/表面/Host 整个 drop（实测 wgpu 全部 Destroy +
+    /// Activity 变 invisible）——表现就是「打开即退」。
+    pub(crate) suspended_since_resume: bool,
 }
 
 // ── 领域状态 ────────────────────────────────────────────────────────────
@@ -259,6 +265,7 @@ impl Runner {
             None => storage::Storage::new()?,
         };
 
+    log::error!("[BOOT] M1 storage 就绪");
         // 在存储初始化后启动文件日志
         {
             let config_dir = storage::config_dir();
@@ -291,6 +298,7 @@ impl Runner {
         let cloud_saving = Arc::new(AtomicBool::new(false));
 
         // 创建主窗口管理器
+    log::error!("[BOOT] M2 即将 WindowManager::new（建窗+GPU+Host）");
         let mut window = WindowManager::new(
             event_loop,
             ui_state,
@@ -299,6 +307,7 @@ impl Runner {
             Arc::clone(&cloud_saving),
         )
         .map_err(|e| InitError::Window(e.to_string()))?;
+    log::error!("[BOOT] M3 WindowManager 成功");
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();

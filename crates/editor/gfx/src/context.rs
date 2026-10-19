@@ -6,6 +6,22 @@ use crate::epoch::GpuEpoch;
 
 mod ops;
 
+#[cfg(test)]
+#[path = "context/tests.rs"]
+mod tests;
+
+/// 交换链纹理用途。
+///
+/// `COPY_DST` **不可省**（2026-10-19 Android 真机实测回归）：钢琴卷帘/瀑布流由
+/// 分离渲染线程画进离屏纹理，再经 `copy_offscreen_to_surface` 的
+/// `copy_texture_to_texture` 拷回交换链（`render_thread/thread/blit.rs`）。
+/// 目标纹理缺少 `COPY_DST` 时该拷贝被 wgpu 校验拒绝——表现是 UI 框架正常、
+/// **音符区整块黑**。回归测试见 `context/tests.rs`。
+#[must_use]
+pub(crate) fn surface_usage() -> wgpu::TextureUsages {
+    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST
+}
+
 /// 根据可用的 present modes 选择最优的 present mode
 ///
 /// macOS 上使用 Mailbox 优先策略（2026-04-24）：
@@ -36,16 +52,38 @@ fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     // 非 macOS 平台：Immediate 优先，降低输入延迟
     #[cfg(not(target_os = "macos"))]
     {
-        if modes.contains(&wgpu::PresentMode::Immediate) {
-            wgpu::PresentMode::Immediate
-        } else if modes.contains(&wgpu::PresentMode::Mailbox) {
-            wgpu::PresentMode::Mailbox
-        } else if modes.contains(&wgpu::PresentMode::Fifo) {
-            wgpu::PresentMode::Fifo
-        } else if modes.contains(&wgpu::PresentMode::AutoVsync) {
-            wgpu::PresentMode::AutoVsync
-        } else {
-            wgpu::PresentMode::Fifo
+        // Android（2026-10-19 真机实测）：Adreno/Vulkan 上 Mailbox/Immediate 组合
+        // 在 `surface_configure` 阶段失败，wgpu-core 先把 presentation `take()` 走
+        // （`device/global.rs:2022`），失败后永久留空 → 此后每帧 `get_current_texture`
+        // 恒报 `NotConfigured` → 黑屏。已验证可渲染的最小配置是 `AutoVsync`
+        // （见 `crates/tools/android-probe`，同机同栈跑通）。
+        #[cfg(target_os = "android")]
+        {
+            if modes.contains(&wgpu::PresentMode::AutoVsync) {
+                return wgpu::PresentMode::AutoVsync;
+            }
+            if modes.contains(&wgpu::PresentMode::Fifo) {
+                return wgpu::PresentMode::Fifo;
+            }
+            if modes.contains(&wgpu::PresentMode::Mailbox) {
+                return wgpu::PresentMode::Mailbox;
+            }
+            return wgpu::PresentMode::Immediate;
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            if modes.contains(&wgpu::PresentMode::Immediate) {
+                wgpu::PresentMode::Immediate
+            } else if modes.contains(&wgpu::PresentMode::Mailbox) {
+                wgpu::PresentMode::Mailbox
+            } else if modes.contains(&wgpu::PresentMode::Fifo) {
+                wgpu::PresentMode::Fifo
+            } else if modes.contains(&wgpu::PresentMode::AutoVsync) {
+                wgpu::PresentMode::AutoVsync
+            } else {
+                wgpu::PresentMode::Fifo
+            }
         }
     }
 }
@@ -139,13 +177,11 @@ async fn build_device_queue(
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: adapter_features & wgpu::Features::default(),
-            required_limits: wgpu::Limits {
-                max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
-                max_buffer_size: limits.max_buffer_size,
-                // 必须从 adapter 实际能力出发：SwiftShader/移动 GPU 的 max_uniform_buffer_binding_size 只有 16384，
-                // 而 Limits::default() 要 65536 → request_device 直接失败。
-                ..limits
-            },
+            // 取 adapter 能力，但把「分辨率类限制」夹回 wgpu 默认：移动 GPU / SwiftShader 常见
+            // max_texture_dimension_2d=16384，照搬会让贴图/离屏缓冲按 16k 量级分配（上 GB），
+            // 端上直接 OOM 或驱动崩。using_resolution(default) 对分辨率类取 min，其余字段保持
+            // adapter 值（否则 max_uniform_buffer_binding_size 等低于默认值，request_device 失败）。
+            required_limits: limits.using_resolution(wgpu::Limits::default()),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -436,15 +472,24 @@ impl Context {
         let height = height.min(max_dim);
 
         // sRGB 需提供 linear view_format 供 shader 采样，否则 Metal 大纹理创建失败
+        #[cfg(not(target_os = "android"))]
         let linear_view_format = match format {
             wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
             wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
             _ => None,
         };
+        // Android（2026-10-19 真机实测）：Adreno 的 surface format 列表不含线性
+        // view_format，申请它会让 `validate_surface_configuration` 失败并丢掉
+        // presentation（同 `select_present_mode` 注释）；已验证可渲染的探针
+        // （`crates/tools/android-probe`）也不申请，故 Android 下留空。
+        #[cfg(target_os = "android")]
+        let view_formats: Vec<wgpu::TextureFormat> = Vec::new();
+        #[cfg(not(target_os = "android"))]
         let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
 
         let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            // `COPY_DST` 由 `surface_usage()` 统一给出（不可省，见该函数注释）。
+            usage: crate::context::surface_usage(),
             format,
             width,
             height,
@@ -453,7 +498,10 @@ impl Context {
             view_formats,
             // 收紧帧延迟以减少输入延迟（见 desired_maximum_frame_latency 说明）：
             // 该值直接决定 UI 能领先 GPU 多少帧，也就决定全量音符渲染在
-            // GPU 队列里堆积的深度。
+            // GPU 队列里堆积的深度。Android 固定为驱动安全值 2（探针同值）。
+            #[cfg(target_os = "android")]
+            desired_maximum_frame_latency: 2,
+            #[cfg(not(target_os = "android"))]
             desired_maximum_frame_latency: desired_maximum_frame_latency(),
         };
         surface.configure(&shared.device, &surface_config);

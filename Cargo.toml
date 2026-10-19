@@ -265,6 +265,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 # 诊断桥：把依赖（iced_wgpu/iced 等）的 `log` 记录接入 tracing（受 RUST_LOG 控制）
 tracing-log = "0.2"
+# 直接依赖 log：启动打点与 logcat 转发都用它，且桌面分支也要能编译。
+log = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -294,8 +296,7 @@ i2m-rs = { workspace = true }
 
 
 [target.'cfg(target_os = "android")'.dependencies]
-# logcat：android_logger 接管 log 门面；log 直接依赖供 LogcatLayer 转发使用。
-log = { workspace = true }
+# logcat：android_logger 接管 log 门面（tracing 事件经 fmt 层写入 log）。
 android_logger = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

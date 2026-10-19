@@ -4289,6 +4289,7 @@ dependencies = [
  "futures",
  "half",
  "im",
+ "log",
  "lumino-core",
  "lumino-diagnostics",
  "lumino-editor-state",
