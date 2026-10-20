@@ -144,6 +144,7 @@ impl Editor {
                     tick: start,
                     key,
                     length: end - start,
+                    velocity: 100,
                 })
                 .collect();
             per_path_notes.push(owned);
