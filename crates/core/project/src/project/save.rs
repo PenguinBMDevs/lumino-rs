@@ -242,6 +242,9 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
 }
 
 /// 形状部件编码；形状为空时返回 `None`（**缺失即空**，老工程不受影响）
+///
+/// DRAW-040 / D6：非空时恒写 **v2**。**含 v1 形状部件的工程重新保存后字节会变**
+/// （部件版本 1 → 2），这是预期的迁移行为，不是回归；无形状部件的工程仍不写该部件。
 fn encode_shapes(project: &LuminoProject) -> Result<Option<Vec<u8>>> {
     if project.shapes.is_empty() {
         return Ok(None);

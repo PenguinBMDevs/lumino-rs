@@ -252,6 +252,18 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// DRAW-040 / D4：lmtrack 版本与行为保持 1，版本 2 必须被拒绝
+    #[test]
+    fn test_lmtrack_rejects_version_2() {
+        let data = LmtrackData::from_compact_events(create_test_meta(0), &[]);
+        let mut encoded = data.encode().expect("编码LmtrackData失败");
+        encoded[4..6].copy_from_slice(&2u16.to_le_bytes());
+        assert!(
+            LmtrackData::decode(&encoded).is_err(),
+            "lmtrack 版本 2 必须被拒绝（D4：只改 lmshapes）"
+        );
+    }
+
     #[test]
     fn test_compact_events_iterator() {
         let meta = create_test_meta(1);

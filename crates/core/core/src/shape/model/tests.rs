@@ -13,6 +13,7 @@ fn sample_shape() -> ShapeModel {
         stroke_width: 3,
         velocity: 96,
         colour_slot: 4,
+        ..ShapeStyle::default()
     };
     shape.push_op(ShapeOp::Noop);
     shape.push_op(ShapeOp::Noop);
@@ -57,7 +58,7 @@ fn test_builder_helpers_set_geometry_and_style() {
     let geometry = ShapeGeometry::from_points([(0.0, 60.0), (100.0, 60.0)]);
     let shape = ShapeModel::new(1, 0, ShapeKind::Line, 0.25)
         .with_geometry(geometry.clone())
-        .with_style(style);
+        .with_style(style.clone());
     assert_eq!(shape.geometry, geometry);
     assert_eq!(shape.style, style);
 }

@@ -4,7 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{COLOUR_SLOT_MAX, STROKE_WIDTH_MAX, STROKE_WIDTH_MIN};
+use super::areas::AreaSpot;
+use super::{AREA_COLOUR_MAX, COLOUR_SLOT_MAX, STROKE_WIDTH_MAX, STROKE_WIDTH_MIN};
 use crate::error::{CoreError, Result};
 
 /// 填充模式
@@ -31,8 +32,46 @@ impl ShapeFill {
     }
 }
 
+/// Spam 音符在门长网格上的起点对齐方式
+///
+/// 对应 Spiderweb `notes/custom.py` 的 `ALIGNS = (auto, aligned, centred)`。
+/// 语义在 DRAW-011 落地，本卡只落字段与默认值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SpamAlign {
+    /// 各行自自身左边缘起铺
+    #[default]
+    Auto,
+    /// 对齐 tick 0 的全局网格
+    Aligned,
+    /// 余量在两端分摊
+    Centred,
+}
+
+/// 一段里放不下整数个门时，末端余数的处理方式
+///
+/// 对应 Spiderweb `notes/custom.py` 的
+/// `ENDS = (round, keep, drop, min, stretch)`。语义在 DRAW-011 落地。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SpamEnds {
+    /// ≥ 半门取整门，否则丢弃
+    #[default]
+    Round,
+    /// 保留短音
+    Keep,
+    /// 丢弃（短段仍留一音）
+    Drop,
+    /// 同 `Drop`，但不短于 1/4 门
+    Min,
+    /// 整段伸缩，精确吻合
+    Stretch,
+}
+
 /// 形状样式（S0 只承载字段，语义在 T1 落地）
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+///
+/// ⚠️ v2 起本结构体**不再 `Copy`**（`areas` 为 `Vec`）。字段只能**追加到末尾**；
+/// 任何字段增删/重排都必须提升 `.lmshapes` 部件版本（见 `lumino-project` 的
+/// `LmshapesData`）。`ShapeOp` 变体追加不在此列——枚举末尾追加对旧数据安全。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShapeStyle {
     /// 填充模式
     pub fill: ShapeFill,
@@ -44,6 +83,18 @@ pub struct ShapeStyle {
     pub velocity: u8,
     /// 颜色槽（0..=15）
     pub colour_slot: u8,
+    /// Spam 起点对齐（DRAW-011）
+    pub align: SpamAlign,
+    /// 填充末端余数处理（DRAW-011）
+    pub ends: SpamEnds,
+    /// 重叠处也填充（取消 even-odd，DRAW-011）
+    pub union: bool,
+    /// 描边与内部走不同通道（DRAW-011）
+    pub apart: bool,
+    /// 颜色交界处也算描边（依赖区域色，DRAW-011 / DRAW-032）
+    pub borders: bool,
+    /// 区域着色点（DRAW-032；本卡只落类型与校验）
+    pub areas: Vec<AreaSpot>,
 }
 
 impl Default for ShapeStyle {
@@ -55,6 +106,12 @@ impl Default for ShapeStyle {
             stroke_width: 1,
             velocity: 100,
             colour_slot: 0,
+            align: SpamAlign::Auto,
+            ends: SpamEnds::Round,
+            union: false,
+            apart: false,
+            borders: false,
+            areas: Vec::new(),
         }
     }
 }
@@ -85,6 +142,13 @@ impl ShapeStyle {
                 "颜色槽越界（允许 0..={}，实际 {}）",
                 COLOUR_SLOT_MAX, self.colour_slot
             )));
+        }
+        for (index, area) in self.areas.iter().enumerate() {
+            area.validate().map_err(|e| {
+                CoreError::InvalidArgument(format!(
+                    "形状样式第 {index} 个区域着色点非法（色号上限 {AREA_COLOUR_MAX}）：{e}"
+                ))
+            })?;
         }
         Ok(())
     }
