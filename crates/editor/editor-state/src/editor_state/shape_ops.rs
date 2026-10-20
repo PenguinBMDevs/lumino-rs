@@ -8,6 +8,7 @@
 //! 依赖方向保持 `ui-editor → editor-state → lumino-core`。
 
 pub mod chain;
+pub mod claw;
 pub mod glue;
 pub mod tumours;
 
@@ -15,5 +16,6 @@ pub mod tumours;
 mod tests;
 
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
+pub use claw::apply as apply_claw;
 pub use glue::apply as apply_glue;
 pub use tumours::{TumourReport, apply as apply_tumours};

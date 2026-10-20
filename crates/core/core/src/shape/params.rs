@@ -2,8 +2,10 @@
 //!
 //! 落盘纪律与模块划分见 [`super`] 的模块文档。
 
+pub mod claw;
 pub mod glue;
 pub mod tumours;
 
+pub use claw::{ClawMode, ClawParams, ClawPeriod, ClawTrash};
 pub use glue::GlueParams;
 pub use tumours::{TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at};

@@ -65,6 +65,7 @@ impl Editor {
         let poly = apply_geometry_ops(&poly, &model.ops, &ctx);
         let note_ctx = NoteOpContext {
             glue_box: shape_box_of(&poly),
+            ppq: f64::from(self.editor_state.view.ppq),
         };
         let key_count = self.editor_state.view.key_count as i32;
         let min_ticks = paths::min_note_length_ticks(
