@@ -4,7 +4,7 @@ use lumino_core::shape::{OpStage, ShapeOp, ShapeRect};
 
 use crate::ShapeNote;
 
-use super::{glue, tumours};
+use super::{claw, glue, tumours};
 
 /// 几何阶段的上下文（目前只需要拍 → tick 的换算）
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,8 +39,8 @@ pub fn apply_geometry_ops(
             ShapeOp::Tumours(params) => {
                 current = tumours::apply(&current, params, ctx.ppq).0;
             }
-            // Glue 是 Notes 阶段，已被上面的 stage filter 排除。
-            ShapeOp::Glue(_) => {}
+            // Glue / Claw 是 Notes 阶段，已被上面的 stage filter 排除。
+            ShapeOp::Glue(_) | ShapeOp::Claw(_) => {}
         }
     }
     current
@@ -51,17 +51,24 @@ pub fn apply_geometry_ops(
 pub struct NoteOpContext {
     /// 形状包围盒（`Boxes` 的相对坐标系）；无几何时为 `None`
     pub glue_box: Option<ShapeRect>,
+    /// 拍 → tick 的换算（Claw time 模式需要）；非法/0 时相关算子原样返回
+    pub ppq: f64,
 }
 
 /// 依次应用 Notes 阶段算子
 ///
-/// **Glue 恒为第一位**（上游顺序 `glue → fx pages`），不依赖它在 `ops`
-/// 数组中的位置；其余 Notes 算子（DRAW-004..010）在 Glue 之后按数组顺序应用。
+/// **Glue 恒为第一位**（上游顺序 `glue → claw/strum/chop → …`），不依赖它在
+/// `ops` 数组中的位置；其余 Notes 算子（DRAW-004..010）在 Glue 之后按数组顺序应用。
 pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpContext) {
     for op in ops {
         if let ShapeOp::Glue(params) = op {
             *notes = glue::apply(notes, params, ctx.glue_box);
         }
     }
-    // 其它 Notes 阶段算子（DRAW-004..010）在此之后按数组顺序应用。
+    for op in ops {
+        if let ShapeOp::Claw(params) = op {
+            *notes = claw::apply(notes, params, ctx.ppq);
+        }
+    }
+    // 其它 Notes 阶段算子（DRAW-005/006/009/008/010）在此之后按数组顺序应用。
 }

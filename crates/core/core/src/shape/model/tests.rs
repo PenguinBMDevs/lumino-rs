@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::shape::{
-    GlueParams, OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, TumourParams,
+    ClawParams, GlueParams, OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle,
+    TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -184,6 +185,11 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "Glue 是生成音符之后的 Notes 阶段算子"
     );
+    assert_eq!(
+        ShapeOp::Claw(ClawParams::default()).stage(),
+        OpStage::Notes,
+        "Claw 是生成音符之后的 Notes 阶段算子"
+    );
 }
 
 #[test]
@@ -203,6 +209,30 @@ fn test_validate_rejects_bad_glue_params() {
     shape.push_op(ShapeOp::Glue(GlueParams::Boxes(vec![[0.0, 0.0, 1.5, 1.0]])));
     let err = shape.validate().expect_err("越界 Glue 框应被拒绝");
     assert!(format!("{err}").contains("Glue"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_claw_params() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Claw(ClawParams {
+        keep: 0,
+        ..ClawParams::default()
+    }));
+    let err = shape.validate().expect_err("keep=0 的 Claw 应被拒绝");
+    assert!(format!("{err}").contains("Claw"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_claw() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Claw(ClawParams {
+        keep: 3,
+        skip: 2,
+        ..ClawParams::default()
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Claw 的形状应逐字段往返");
 }
 
 #[test]
