@@ -43,5 +43,7 @@ pub mod style;
 pub use areas::AreaSpot;
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
-pub use params::{TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at};
+pub use params::{
+    GlueParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+};
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};

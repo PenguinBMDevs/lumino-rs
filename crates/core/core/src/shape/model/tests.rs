@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::shape::{
-    OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, TumourParams,
+    GlueParams, OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -179,6 +179,11 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Tumours 是生成音符之前的 Geometry 阶段算子"
     );
+    assert_eq!(
+        ShapeOp::Glue(GlueParams::All).stage(),
+        OpStage::Notes,
+        "Glue 是生成音符之后的 Notes 阶段算子"
+    );
 }
 
 #[test]
@@ -190,6 +195,23 @@ fn test_validate_rejects_bad_tumour_params() {
     }));
     let err = shape.validate().expect_err("dist=0 的 Tumours 应被拒绝");
     assert!(format!("{err}").contains("Tumours"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_glue_params() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Glue(GlueParams::Boxes(vec![[0.0, 0.0, 1.5, 1.0]])));
+    let err = shape.validate().expect_err("越界 Glue 框应被拒绝");
+    assert!(format!("{err}").contains("Glue"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_glue() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Glue(GlueParams::Boxes(vec![[0.0, 0.0, 0.5, 1.0]])));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Glue 的形状应逐字段往返");
 }
 
 #[test]

@@ -21,8 +21,10 @@
 
 use crate::interaction::line_tool::{geom, paths, stroke_band};
 use crate::{Editor, Note};
-use lumino_core::shape::ShapeModel;
-use lumino_editor_state::shape_ops::{OpContext, apply_geometry_ops, apply_note_ops};
+use lumino_core::shape::{ShapeModel, ShapeRect};
+use lumino_editor_state::shape_ops::{
+    NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops,
+};
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
 
@@ -61,6 +63,9 @@ impl Editor {
         // Geometry 阶段算子（Tumours）：先改路径，再走同源音符生成
         let ctx = OpContext::new(f64::from(self.editor_state.view.ppq));
         let poly = apply_geometry_ops(&poly, &model.ops, &ctx);
+        let note_ctx = NoteOpContext {
+            glue_box: shape_box_of(&poly),
+        };
         let key_count = self.editor_state.view.key_count as i32;
         let min_ticks = paths::min_note_length_ticks(
             self.editor_state.line_tool.min_note_division,
@@ -86,8 +91,8 @@ impl Editor {
                 }
             })
             .collect();
-        // Notes 阶段算子（当前为空；DRAW-004..010 接入）
-        apply_note_ops(&mut notes, &model.ops);
+        // Notes 阶段算子（Glue 置顶；DRAW-004..010 后续接入）
+        apply_note_ops(&mut notes, &model.ops, &note_ctx);
         notes
     }
 
@@ -237,6 +242,27 @@ impl Editor {
                 .push_collab_transform_sync(is_insert, sn.tick, sn.key, sn.length, 100, 0, track);
         }
     }
+}
+
+/// 展平路径 → 形状包围盒（key 上下各扩 0.5，供 Glue 的 Boxes 使用）
+fn shape_box_of(points: &[(f64, f64)]) -> Option<ShapeRect> {
+    let &(first_tick, first_key) = points.first()?;
+    let mut tick_lo = first_tick;
+    let mut tick_hi = first_tick;
+    let mut key_lo = first_key;
+    let mut key_hi = first_key;
+    for &(tick, key) in points {
+        tick_lo = tick_lo.min(tick);
+        tick_hi = tick_hi.max(tick);
+        key_lo = key_lo.min(key);
+        key_hi = key_hi.max(key);
+    }
+    Some(ShapeRect::normalized(
+        tick_lo as f32,
+        key_lo as f32 - 0.5,
+        tick_hi as f32,
+        key_hi as f32 + 0.5,
+    ))
 }
 
 #[cfg(test)]

@@ -264,6 +264,17 @@ fn test_regeneration_is_zoom_independent() {
     }
 }
 
+/// DRAW-007：Glue 的 Boxes 坐标系必须覆盖形状包围盒（key 上下各扩 0.5）
+#[test]
+fn test_shape_box_of_expands_key_range() {
+    let box_ = super::shape_box_of(&[(0.0, 60.0), (480.0, 72.0)]).expect("非空路径应有包围盒");
+    assert_eq!(box_.tick_lo, 0.0);
+    assert_eq!(box_.tick_hi, 480.0);
+    assert_eq!(box_.key_lo, 59.5);
+    assert_eq!(box_.key_hi, 72.5);
+    assert!(super::shape_box_of(&[]).is_none());
+}
+
 /// DRAW-003：Tumours 是 Geometry 阶段算子，必须进入现有音符生成链路
 #[test]
 fn test_regeneration_applies_tumours_geometry_op() {

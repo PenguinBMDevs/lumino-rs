@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::params::TumourParams;
+use super::params::{GlueParams, TumourParams};
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
 
@@ -17,7 +17,7 @@ use crate::error::{CoreError, Result};
 /// 真实算子（Tumour / Claw / Strum / Chop / Glue / Sustain / GateFlip / …）
 /// 由 T1 逐个**追加到末尾**。追加变体对旧数据安全，不需要提升部件版本。
 ///
-/// v2 起本枚举**不再 `Copy + Eq`**：`Tumours` 含 `f32` 与 `graphs: Vec`。
+/// v2 起本枚举**不再 `Copy + Eq`**：`Tumours` 含 `f32` 与 `graphs: Vec`，`Glue` 含 `Vec`。
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub enum ShapeOp {
     /// 占位步骤：不改变任何音符
@@ -25,6 +25,8 @@ pub enum ShapeOp {
     Noop,
     /// 沿途突起（Geometry 阶段；DRAW-003）
     Tumours(TumourParams),
+    /// 形状级粘合（Notes 阶段，链内第一位；DRAW-007）
+    Glue(GlueParams),
 }
 
 /// 算子在链上的执行阶段
@@ -44,6 +46,7 @@ impl ShapeOp {
     pub fn stage(&self) -> OpStage {
         match self {
             Self::Noop | Self::Tumours(_) => OpStage::Geometry,
+            Self::Glue(_) => OpStage::Notes,
         }
     }
 
@@ -54,6 +57,9 @@ impl ShapeOp {
             Self::Tumours(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Tumours 参数非法：{e}"))),
+            Self::Glue(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Glue 参数非法：{e}"))),
         }
     }
 }

@@ -1,6 +1,6 @@
 //! 算子链与 Tumours 几何测试
 
-use lumino_core::shape::{ShapeOp, TumourParams, TumourShape, TumourSide};
+use lumino_core::shape::{GlueParams, ShapeOp, TumourParams, TumourShape, TumourSide};
 
 use super::*;
 use crate::ShapeNote;
@@ -197,9 +197,32 @@ fn test_note_ops_are_noop_for_geometry_op() {
         length: 120.0,
     }];
     let ops = vec![ShapeOp::Tumours(params())];
-    apply_note_ops(&mut notes, &ops);
+    apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].key, 60);
+}
+
+#[test]
+fn test_note_ops_applies_glue() {
+    let mut notes = vec![
+        ShapeNote {
+            track: 0,
+            tick: 0.0,
+            key: 60,
+            length: 10.0,
+        },
+        ShapeNote {
+            track: 0,
+            tick: 10.0,
+            key: 60,
+            length: 10.0,
+        },
+    ];
+    let ops = vec![ShapeOp::Glue(GlueParams::All)];
+    apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
+    assert_eq!(notes.len(), 1, "Glue 应合并相接音符");
+    assert_eq!(notes[0].tick, 0.0);
+    assert_eq!(notes[0].length, 20.0);
 }
 
 #[test]
