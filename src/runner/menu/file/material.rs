@@ -4,7 +4,6 @@
 //! 保持模块职责单一且文件长度合规。
 
 use lumino_midi_loader::MidiDocument;
-use lumino_note_core::midi_types::TempoPoint;
 
 use super::editor_midi::EditorNotes;
 
@@ -28,13 +27,12 @@ use super::editor_midi::EditorNotes;
 /// - 控制事件（CC/PC/弯音）：仅选中轨道；
 /// - 全局数据（tempo/拍号/调号/歌词/SysEx）：全量保留（含时间轴平移）。
 ///
-/// `tempo_points` 为编辑器当前速度点（UI 编辑权威源）：`doc.tempo_changes`
-/// 是加载文件时的原始值，用户修改的 BPM 只存在于 `tempo_points` 中，
-/// 素材必须携带用户编辑后的速度而非加载时的旧值。
+/// tempo 直接读 `doc.tempo_changes`（单一权威源）：`EditorData` 的 tempo 写入入口
+/// 都会写回 document，故它已是用户编辑后的值（2026-10-20 审计 §三：此前由调用方
+/// 额外传入 `tempo_points` 补丁，现已删除）。
 pub(super) fn build_material_project_from_selection(
     doc: &MidiDocument,
     selected: &EditorNotes,
-    tempo_points: &[TempoPoint],
 ) -> lumino_export::LuminoProject {
     use lumino_midi_loader::{CompactEvent, EventKind};
     use lumino_project::{LmtrackData, TrackMeta, TrackVisibilitySer};
@@ -59,11 +57,13 @@ pub(super) fn build_material_project_from_selection(
 
     // 全局数据：整体平移时间轴（片段前的拍号/调号/歌词/SysEx/标记丢弃，
     // 片段前的 tempo 收敛到 0 保留）。
-    // 速度源用编辑器 tempo_points（UI 编辑权威值），而非 doc 的加载时原始值。
-    project.tempo_changes = tempo_points
+    // 速度源直接取 document.tempo_changes（单一权威源，2026-10-20 审计 §三）：
+    // `EditorData` 的 tempo 写入入口都会 sync 回 document，故这里就是编辑后的值，
+    // 不再需要外部传入 tempo_points 补丁。
+    project.tempo_changes = doc
+        .tempo_changes
         .iter()
-        .map(|tp| (tp.tick.max(0.0) as u32, tp.bpm as f32))
-        .map(|(tick, bpm)| (tick.saturating_sub(offset), bpm))
+        .map(|&(tick, bpm)| (tick.saturating_sub(offset), bpm))
         .collect();
     project.time_signatures = doc
         .time_signatures
@@ -249,13 +249,8 @@ mod tests {
             0,
             vec![(1000.0, 60, 480.0, 100, 0), (2000.0, 62, 240.0, 90, 0)],
         )];
-        // 编辑器速度点（用户编辑后的权威值，与 doc 加载值一致）
-        let tempo_points = vec![TempoPoint {
-            tick: 0.0,
-            bpm: 90.0,
-        }];
-
-        let project = build_material_project_from_selection(&doc, &selected, &tempo_points);
+        // 速度点来自实测文档（make_doc_with_leading_gap 里 tempo_changes = [(0, 90.0)]）
+        let project = build_material_project_from_selection(&doc, &selected);
 
         // 素材长度 = 最后一个音符结束(2240) - 第一个音符开始(1000)，不跟随框选/引子空白
         assert_eq!(project.metadata.audio.total_ticks, 1240);
@@ -311,13 +306,8 @@ mod tests {
             track_max_end_ticks: MidiDocument::new_track_max_ticks(1),
         };
         let selected: EditorNotes = vec![(0, vec![(0.0, 60, 480.0, 100, 0)])];
-        // 编辑器速度点（用户编辑后的权威值）
-        let tempo_points = vec![TempoPoint {
-            tick: 0.0,
-            bpm: 120.0,
-        }];
 
-        let project = build_material_project_from_selection(&doc, &selected, &tempo_points);
+        let project = build_material_project_from_selection(&doc, &selected);
         assert_eq!(project.metadata.audio.total_ticks, 480);
         assert_eq!(project.time_signatures, vec![(0, 4, 4)]);
         assert_eq!(project.tempo_changes, vec![(0, 120.0)]);

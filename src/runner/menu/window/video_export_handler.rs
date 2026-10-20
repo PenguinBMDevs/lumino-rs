@@ -160,22 +160,6 @@ impl RunnerInner {
         let ppq = ppq.max(1) as u32;
         let fps_f64 = fps as f64;
 
-        // 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo（与音频导出/保存一致）：
-        // doc.tempo_changes 是加载文件时的值，用户经工程设置/速度面板修改的 BPM
-        // 只写入 tempo_points、不回写 doc——不覆盖视频导出的总时长/帧调度/BPM 显示用旧值。
-        let editor_tempos: Vec<(u32, f32)> = self
-            .window_state
-            .window
-            .ui()
-            .root()
-            .editor
-            .editor_state
-            .data
-            .tempo_points
-            .iter()
-            .map(|tp| (tp.tick.max(0.0) as u32, tp.bpm as f32))
-            .collect();
-
         // 创建取消标志
         let cancel_flag = Arc::new(AtomicBool::new(false));
         self.window_state.video_export_cancel = Arc::clone(&cancel_flag);
@@ -244,12 +228,12 @@ impl RunnerInner {
                     None
                 };
                 if let Some(document) = document {
-                    // Arc 快照不可变：克隆 owned 副本后覆盖 tempo。
+                    // Arc 快照不可变：克隆 owned 副本。
                     // ChunkedList 为块级浅拷贝（O(块数) 指针拷贝），不复制音符数据。
-                    let mut snapshot = (*document).clone();
-                    if !editor_tempos.is_empty() {
-                        snapshot.tempo_changes = editor_tempos;
-                    }
+                    // tempo 无需覆盖（2026-10-20 审计 §三）：`EditorData` 的 tempo 写入
+                    // 入口都会 `sync_tempo_to_document`，快照里的 tempo_changes 已是
+                    // 编辑后的值；原 `snapshot.tempo_changes = editor_tempos` 已删除。
+                    let snapshot = (*document).clone();
                     run_video_export_task(RunVideoExportTaskInput {
                         config,
                         cmd_sender,

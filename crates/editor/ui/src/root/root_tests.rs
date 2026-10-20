@@ -284,5 +284,6 @@ mod fill_division_panel;
 mod port;
 mod sidebar;
 mod speed_change;
+mod tempo_single_source;
 mod tool_panel_switch;
 mod track_visibility;

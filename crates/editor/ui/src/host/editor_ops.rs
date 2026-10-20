@@ -6,7 +6,6 @@
 
 use crate::host::Host;
 use lumino_midi_loader::MidiDocument;
-use lumino_note_core::TempoPoint;
 
 mod clear;
 mod query;
@@ -98,30 +97,10 @@ impl Host {
     ///
     /// 用户硬约束：避免 track_notes + MidiDocument 双份数据共存导致内存暴涨。
     pub fn set_midi_document(&mut self, doc: MidiDocument) {
-        // 先读取 tempo/拍号（doc 随后 move 进 root，借用必须在此之前结束）
-        let tempo_points: Vec<TempoPoint> = doc
-            .tempo_changes
-            .iter()
-            .map(|&(tick, bpm)| TempoPoint {
-                tick: tick as f32,
-                bpm: bpm as f64,
-            })
-            .collect();
-        let time_signatures = doc.time_signatures.clone();
-
+        // tempo / 拍号的编辑态缓存由 `Root::set_midi_document` 统一只读刷新
+        // （2026-10-20 审计 §三：此处原先「读 doc → set_tempo_points 写回 doc」
+        // 是一次数据未变的往返，已删除）。
         self.root.set_midi_document(doc);
-        // 同步 tempo 点到编辑器（用于速度编辑；经统一入口，与 document.tempo_changes 一致）
-        self.root
-            .editor
-            .editor_state
-            .data
-            .set_tempo_points(tempo_points);
-        // 同步拍号变化到编辑器（经统一入口，与 document.time_signatures 一致）
-        self.root
-            .editor
-            .editor_state
-            .data
-            .set_time_signatures(time_signatures);
 
         // 新 MIDI 文档加载后必须标记音符数据变化，触发洋葱皮全量重建。
         // 否则 `track_notes_gen` 不变，`OnionSkinState` 认为无需重建，导致
