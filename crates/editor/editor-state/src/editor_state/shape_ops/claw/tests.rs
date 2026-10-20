@@ -13,6 +13,7 @@ fn note(tick: f32, key: u16, length: f32) -> ShapeNote {
         tick,
         key,
         length,
+        velocity: 100,
     }
 }
 

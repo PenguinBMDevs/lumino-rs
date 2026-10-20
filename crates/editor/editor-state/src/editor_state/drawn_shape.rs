@@ -24,7 +24,7 @@ use super::shape_tool::ShapeKind;
 
 /// 某个图形 √ 确认时生成的**单个音符**（逻辑值，用于整体移动 / 删除）
 ///
-/// 只记录定位所需的最小字段：`(track, tick, key, length)`——与文档里
+/// 记录定位所需的最小字段：`(track, tick, key, length, velocity)`——与文档里
 /// `NoteEvent` 的值语义一致，可经 `position_of_unused` 按值精确定位。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShapeNote {
@@ -36,6 +36,8 @@ pub struct ShapeNote {
     pub key: u16,
     /// 时长（tick）
     pub length: f32,
+    /// 力度（1..=127；形状样式 velocity 为初值，算子可改）
+    pub velocity: u8,
 }
 
 impl ShapeNote {
@@ -46,6 +48,7 @@ impl ShapeNote {
             tick: self.tick + dtick,
             key: (self.key as f32 + dkey).round().clamp(0.0, 255.0) as u16,
             length: self.length,
+            velocity: self.velocity,
         }
     }
 }
@@ -742,6 +745,7 @@ mod tests {
             tick,
             key,
             length: 1.0,
+            velocity: 100,
         }
     }
 

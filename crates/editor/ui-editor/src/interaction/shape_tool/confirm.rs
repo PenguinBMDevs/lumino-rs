@@ -259,6 +259,7 @@ impl Editor {
                     tick,
                     key,
                     length,
+                    velocity: 100,
                 });
             }
         }
@@ -269,6 +270,7 @@ impl Editor {
                     tick,
                     key,
                     length: snap,
+                    velocity: 100,
                 });
             }
         }
@@ -279,6 +281,7 @@ impl Editor {
                     tick,
                     key,
                     length,
+                    velocity: 100,
                 });
             }
         }

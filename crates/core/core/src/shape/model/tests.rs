@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::shape::{
-    ClawParams, GlueParams, OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle,
-    TumourParams,
+    ChopParams, ClawParams, GlueParams, OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect,
+    ShapeStyle, StrumParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -190,6 +190,16 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "Claw 是生成音符之后的 Notes 阶段算子"
     );
+    assert_eq!(
+        ShapeOp::Strum(StrumParams::default()).stage(),
+        OpStage::Notes,
+        "Strum 是生成音符之后的 Notes 阶段算子"
+    );
+    assert_eq!(
+        ShapeOp::Chop(ChopParams::default()).stage(),
+        OpStage::Notes,
+        "Chop 是生成音符之后的 Notes 阶段算子"
+    );
 }
 
 #[test]
@@ -220,6 +230,54 @@ fn test_validate_rejects_bad_claw_params() {
     }));
     let err = shape.validate().expect_err("keep=0 的 Claw 应被拒绝");
     assert!(format!("{err}").contains("Claw"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_strum_params() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Strum(StrumParams {
+        time: 5.0,
+        ..StrumParams::default()
+    }));
+    let err = shape.validate().expect_err("time 越界的 Strum 应被拒绝");
+    assert!(format!("{err}").contains("Strum"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_chop_params() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Chop(ChopParams {
+        steps: 0,
+        ..ChopParams::default()
+    }));
+    let err = shape.validate().expect_err("steps=0 的 Chop 应被拒绝");
+    assert!(format!("{err}").contains("Chop"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_chop() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Chop(ChopParams {
+        name: "triplets".into(),
+        steps: 1,
+        ..ChopParams::builtin("triplets").expect("内置节奏")
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Chop 的形状应逐字段往返");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_strum() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Strum(StrumParams {
+        time: 0.25,
+        alternate: true,
+        ..StrumParams::default()
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Strum 的形状应逐字段往返");
 }
 
 #[test]

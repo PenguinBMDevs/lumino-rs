@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::params::{ClawParams, GlueParams, TumourParams};
+use super::params::{ChopParams, ClawParams, GlueParams, StrumParams, TumourParams};
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
 
@@ -29,6 +29,10 @@ pub enum ShapeOp {
     Glue(GlueParams),
     /// 爪机：按时间片/计数/随机抽稀（Notes 阶段；DRAW-004）
     Claw(ClawParams),
+    /// 扫弦：同 tick 和弦按指数级数错开（Notes 阶段；DRAW-005）
+    Strum(StrumParams),
+    /// 节奏切分（Notes 阶段；DRAW-006）
+    Chop(ChopParams),
 }
 
 /// 算子在链上的执行阶段
@@ -48,7 +52,7 @@ impl ShapeOp {
     pub fn stage(&self) -> OpStage {
         match self {
             Self::Noop | Self::Tumours(_) => OpStage::Geometry,
-            Self::Glue(_) | Self::Claw(_) => OpStage::Notes,
+            Self::Glue(_) | Self::Claw(_) | Self::Strum(_) | Self::Chop(_) => OpStage::Notes,
         }
     }
 
@@ -65,6 +69,12 @@ impl ShapeOp {
             Self::Claw(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Claw 参数非法：{e}"))),
+            Self::Strum(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Strum 参数非法：{e}"))),
+            Self::Chop(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Chop 参数非法：{e}"))),
         }
     }
 }

@@ -195,6 +195,7 @@ fn test_note_ops_are_noop_for_geometry_op() {
         tick: 0.0,
         key: 60,
         length: 120.0,
+        velocity: 100,
     }];
     let ops = vec![ShapeOp::Tumours(params())];
     apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
@@ -210,12 +211,14 @@ fn test_note_ops_applies_glue() {
             tick: 0.0,
             key: 60,
             length: 10.0,
+            velocity: 100,
         },
         ShapeNote {
             track: 0,
             tick: 10.0,
             key: 60,
             length: 10.0,
+            velocity: 100,
         },
     ];
     let ops = vec![ShapeOp::Glue(GlueParams::All)];

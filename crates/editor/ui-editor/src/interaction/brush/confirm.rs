@@ -43,6 +43,7 @@ impl Editor {
                     tick: item.tick_cell as f32 * snap,
                     key: item.key,
                     length: snap,
+                    velocity: 100,
                 });
             }
         }

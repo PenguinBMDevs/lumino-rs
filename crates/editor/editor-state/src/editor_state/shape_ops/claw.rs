@@ -265,6 +265,7 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
             tick: item.start as f32,
             key: item.original.key,
             length: length as f32,
+            velocity: item.original.velocity,
         });
     }
     out

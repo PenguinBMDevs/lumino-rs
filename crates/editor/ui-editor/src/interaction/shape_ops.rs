@@ -89,6 +89,8 @@ impl Editor {
                     tick,
                     key,
                     length,
+                    // MIDI NoteOn velocity 0 等同 NoteOff；形状音符下限取 1
+                    velocity: model.style.velocity.max(1),
                 }
             })
             .collect();
@@ -177,7 +179,7 @@ impl Editor {
         let mut written: Vec<ShapeNote> = Vec::with_capacity(notes.len());
         if notes.len() <= crate::interaction::BATCH_INSERT_THRESHOLD {
             for sn in notes {
-                let note = Note::new(sn.tick, sn.key, sn.length);
+                let note = Note::new(sn.tick, sn.key, sn.length).with_velocity(sn.velocity);
                 if self
                     .editor_state
                     .data
@@ -190,7 +192,7 @@ impl Editor {
         } else {
             let payload: Vec<Note> = notes
                 .iter()
-                .map(|sn| Note::new(sn.tick, sn.key, sn.length))
+                .map(|sn| Note::new(sn.tick, sn.key, sn.length).with_velocity(sn.velocity))
                 .collect();
             let before = self.editor_state.data.track_notes(track).len();
             self.editor_state.data.batch_insert_notes_with_ids(&payload);
@@ -212,8 +214,9 @@ impl Editor {
         let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
         let mut indices: Vec<usize> = Vec::with_capacity(notes.len());
         for sn in notes {
-            // 形状音符一律以 `Note::new` 写入（力度 100 / 通道 0），指纹按同口径重建
-            let ev = note_to_event(Note::new(sn.tick, sn.key, sn.length));
+            // 形状音符力度随 `ShapeNote`，通道固定 0；指纹按同口径重建
+            let ev =
+                note_to_event(Note::new(sn.tick, sn.key, sn.length).with_velocity(sn.velocity));
             if let Some(idx) = self
                 .editor_state
                 .data
@@ -238,9 +241,15 @@ impl Editor {
     /// 开关判定在 `EditorData::push_collab_transform_sync` 内部。
     fn broadcast_shape_sync(&mut self, track: usize, notes: &[ShapeNote], is_insert: bool) {
         for sn in notes {
-            self.editor_state
-                .data
-                .push_collab_transform_sync(is_insert, sn.tick, sn.key, sn.length, 100, 0, track);
+            self.editor_state.data.push_collab_transform_sync(
+                is_insert,
+                sn.tick,
+                sn.key,
+                sn.length,
+                sn.velocity,
+                0,
+                track,
+            );
         }
     }
 }

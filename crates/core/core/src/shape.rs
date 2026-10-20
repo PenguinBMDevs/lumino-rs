@@ -44,7 +44,7 @@ pub use areas::AreaSpot;
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
-    ClawMode, ClawParams, ClawPeriod, ClawTrash, GlueParams, TumourGraphs, TumourParams,
-    TumourShape, TumourSide, TumourWrap, factor_at,
+    ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, GlueParams, StrumParams,
+    TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
 };
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
