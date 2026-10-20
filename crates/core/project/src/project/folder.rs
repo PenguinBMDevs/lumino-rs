@@ -146,9 +146,28 @@ pub fn encode_binary_file(
 }
 
 /// 通用二进制数据文件解码（验证魔数 + zstd + bincode）
+///
+/// 兼容包装：**只接受版本 1**（历史行为不变）。需要多版本分派的部件请使用
+/// [`decode_binary_file_versioned`]。
 pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
     bytes: &[u8],
     expected_magic: &[u8; 4],
+) -> Result<T> {
+    decode_binary_file_versioned(bytes, expected_magic, &[1], |_, payload| {
+        bincode::deserialize(payload).map_err(CoreError::from)
+    })
+}
+
+/// 通用二进制数据文件解码，支持多版本分派。
+///
+/// 校验顺序：长度 → 魔数 → 版本（必须命中 `supported`）→ zstd 解压。
+/// `decode` 收到的是**解压后**的原始 bincode 字节，由调用方按版本解释；
+/// 这样版本分派与具体结构体解耦，旧的 [`decode_binary_file`] 行为不受影响。
+pub fn decode_binary_file_versioned<T>(
+    bytes: &[u8],
+    expected_magic: &[u8; 4],
+    supported: &[u16],
+    decode: impl FnOnce(u16, &[u8]) -> Result<T>,
 ) -> Result<T> {
     if bytes.len() < 6 {
         return Err(CoreError::FileFormat("binary file: too short".into()));
@@ -157,7 +176,7 @@ pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
         return Err(CoreError::FileFormat("binary file: invalid magic".into()));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != 1 {
+    if !supported.contains(&version) {
         return Err(CoreError::FileFormat(format!(
             "binary file: unsupported version {version}"
         )));
@@ -166,7 +185,7 @@ pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
     let decompressed = zstd::stream::decode_all(std::io::Cursor::new(&bytes[6..]))
         .map_err(|e| CoreError::Compression(format!("decompression: {e}")))?;
 
-    bincode::deserialize(&decompressed).map_err(CoreError::from)
+    decode(version, &decompressed)
 }
 
 #[cfg(test)]
@@ -236,5 +255,49 @@ mod tests {
         assert_eq!(tracks[0].event_count, 1);
 
         let _ = std::fs::remove_dir_all(&track_dir);
+    }
+
+    #[test]
+    fn test_binary_file_versioned_dispatch() {
+        let magic = b"TEST";
+        let v1 = encode_binary_file(magic, 1, &42_u32).expect("编码 v1 失败");
+        let v2 = encode_binary_file(magic, 2, &42_u32).expect("编码 v2 失败");
+
+        // 兼容包装：行为不变，只认版本 1
+        let decoded: u32 = decode_binary_file(&v1, magic).expect("v1 应可解");
+        assert_eq!(decoded, 42);
+        assert!(
+            decode_binary_file::<u32>(&v2, magic).is_err(),
+            "兼容包装必须拒绝版本 2"
+        );
+
+        // 通用版本化：按 supported 分派
+        let decoded: u32 = decode_binary_file_versioned(&v2, magic, &[1, 2], |version, payload| {
+            assert_eq!(version, 2, "分派应收到真实版本号");
+            bincode::deserialize(payload).map_err(CoreError::from)
+        })
+        .expect("v2 应可解");
+        assert_eq!(decoded, 42);
+
+        assert!(
+            decode_binary_file_versioned(&v2, magic, &[1], |_, _| Ok(0_u32)).is_err(),
+            "未列入 supported 的版本必须被拒绝"
+        );
+    }
+
+    #[test]
+    fn test_binary_file_versioned_rejects_short_and_bad_magic() {
+        let magic = b"TEST";
+        assert!(
+            decode_binary_file_versioned::<u32>(&[0; 5], magic, &[1], |_, _| Ok(0)).is_err(),
+            "短于 6 字节必须被拒绝"
+        );
+
+        let mut bad = encode_binary_file(magic, 1, &1_u32).expect("编码失败");
+        bad[0..4].copy_from_slice(b"XXXX");
+        assert!(
+            decode_binary_file_versioned::<u32>(&bad, magic, &[1], |_, _| Ok(0)).is_err(),
+            "错误魔数必须被拒绝"
+        );
     }
 }

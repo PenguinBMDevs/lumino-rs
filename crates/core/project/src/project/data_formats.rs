@@ -2,9 +2,17 @@
 //!
 //! .lmtemp / .lmsig / .lmctl / .lmnames / .lmshapes 均使用专用魔数 + bincode + zstd。
 
-use super::folder::{decode_binary_file, encode_binary_file};
-use lumino_core::error::Result;
+use super::folder::{decode_binary_file, decode_binary_file_versioned, encode_binary_file};
+use lumino_core::error::{CoreError, Result};
 use lumino_core::shape::ShapeModel;
+
+mod v1;
+use v1::LmshapesDataV1;
+
+/// `.lmshapes` 当前编码版本
+///
+/// v2：`ShapeStyle` 追加 `align / ends / union / apart / borders / areas`（DRAW-040）。
+const LMSHAPES_VERSION: u16 = 2;
 
 /// 全局速度变化数据（.lmtemp）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -36,8 +44,15 @@ impl LmtempData {
 /// 独立成文件遵循「新部件缺失即空」约定：老工程无此文件即空形状列表，
 /// 无需提升 `format_version`；形状为空时保存侧**不写**该部件，老工程保存后字节不变。
 ///
-/// ⚠️ 落盘纪律：bincode 为位置编码，`ShapeModel` / `ShapeOp` 增删字段或变体
-/// 必须同时提升本部件版本（当前 1），不得静默改结构。
+/// ⚠️ 落盘纪律（DRAW-040 / D1）：
+/// - bincode 是位置编码：`ShapeModel` / `ShapeStyle` **增删字段或重排**必须提升
+///   本部件版本（当前 [`LMSHAPES_VERSION`]），不得静默改结构；
+/// - `ShapeOp` / `ShapeKind` 的**变体只能追加到末尾**，追加变体**不需要**提版本
+///   （旧数据不会出现新变体索引；重排或删除才会让旧工程解错语义）；
+/// - `encode` 恒写 v2；`decode` 接受 v1（升级）与 v2。
+///
+/// v1 → v2 的字节变化是**预期行为**：含形状部件的工程重新保存后版本变为 2；
+/// **无**形状部件的工程仍然不写该部件，保存后字节不变（见 `save/tests.rs`）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LmshapesData {
     /// 形状列表（顺序即 Shapes 列表顺序）
@@ -48,14 +63,29 @@ impl LmshapesData {
     /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMSH";
 
-    /// 编码为二进制文件字节
+    /// 编码为二进制文件字节（恒写 [`LMSHAPES_VERSION`]）
     pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
+        encode_binary_file(Self::MAGIC, LMSHAPES_VERSION, self)
     }
 
-    /// 从二进制字节解码
+    /// 从二进制字节解码（接受 v1 与 v2）
     pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
+        decode_binary_file_versioned(
+            bytes,
+            Self::MAGIC,
+            &[1, LMSHAPES_VERSION],
+            |version, payload| match version {
+                1 => {
+                    let v1: LmshapesDataV1 =
+                        bincode::deserialize(payload).map_err(CoreError::from)?;
+                    Ok(v1.into())
+                }
+                LMSHAPES_VERSION => bincode::deserialize(payload).map_err(CoreError::from),
+                other => Err(CoreError::FileFormat(format!(
+                    "lmshapes: unsupported version {other}"
+                ))),
+            },
+        )
     }
 }
 
@@ -240,130 +270,4 @@ impl LmnamesData {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_lmtemp_roundtrip() {
-        let data = LmtempData {
-            tempo_changes: vec![(0, 120.0), (960, 140.0)],
-            default_bpm: 120.0,
-        };
-        let encoded = data.encode().expect("编码LmtempData失败");
-        assert_eq!(&encoded[0..4], LmtempData::MAGIC);
-        let decoded = LmtempData::decode(&encoded).expect("解码LmtempData失败");
-        assert_eq!(decoded.tempo_changes.len(), 2);
-        assert!((decoded.default_bpm - 120.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_lmsig_roundtrip() {
-        let data = LmsigData {
-            time_signatures: vec![(0, 4, 4), (960, 3, 4)],
-            key_signatures: vec![(0, 0, true)],
-        };
-        let encoded = data.encode().expect("编码LmsigData失败");
-        assert_eq!(&encoded[0..4], LmsigData::MAGIC);
-        let decoded = LmsigData::decode(&encoded).expect("解码LmsigData失败");
-        assert_eq!(decoded.time_signatures.len(), 2);
-    }
-
-    #[test]
-    fn test_lmctl_roundtrip() {
-        let data = LmctlData {
-            control_changes: vec![(0, 0, 0, 7, 100)],
-            program_changes: vec![(0, 0, 0, 1)],
-            // pitch_bends 为相对中心的偏移量（i16；0 = 中心），不是 raw 14-bit。
-            pitch_bends: vec![(480, 0, 0, 0)],
-        };
-        let encoded = data.encode().expect("编码LmctlData失败");
-        assert_eq!(&encoded[0..4], LmctlData::MAGIC);
-        let decoded = LmctlData::decode(&encoded).expect("解码LmctlData失败");
-        assert_eq!(decoded.control_changes.len(), 1);
-        assert_eq!(decoded.pitch_bends.len(), 1);
-        assert_eq!(decoded.pitch_bends[0].3, 0, "偏移量中心应为 0");
-    }
-
-    #[test]
-    fn test_lmtxt_roundtrip() {
-        let data = LmtxtData {
-            lyrics: vec![(0, 0, b"la".to_vec()), (480, 0, b"la".to_vec())],
-            markers: vec![(960, 0, b"Chorus".to_vec())],
-        };
-        let encoded = data.encode().expect("编码LmtxtData失败");
-        assert_eq!(&encoded[0..4], LmtxtData::MAGIC);
-        let decoded = LmtxtData::decode(&encoded).expect("解码LmtxtData失败");
-        assert_eq!(decoded.lyrics.len(), 2);
-        assert_eq!(decoded.markers.len(), 1);
-        assert_eq!(decoded.lyrics[0].2, b"la");
-    }
-
-    #[test]
-    fn test_lmtextmeta_roundtrip() {
-        let data = LmtextmetaData {
-            text_events: vec![
-                (0, 0, 0x01, b"hello".to_vec()),
-                (120, 1, 0x02, b"(c) test".to_vec()),
-                (480, 0, 0x07, b"cue1".to_vec()),
-            ],
-        };
-        let encoded = data.encode().expect("编码LmtextmetaData失败");
-        assert_eq!(&encoded[0..4], LmtextmetaData::MAGIC);
-        let decoded = LmtextmetaData::decode(&encoded).expect("解码LmtextmetaData失败");
-        assert_eq!(decoded.text_events.len(), 3);
-        assert_eq!(decoded.text_events[1].2, 0x02);
-        assert_eq!(decoded.text_events[2].3, b"cue1");
-    }
-
-    #[test]
-    fn test_lmsyx_roundtrip() {
-        let data = LmsyxData {
-            sys_ex: vec![(0, 0, b"\x01\x02\x03\xF7".to_vec())],
-        };
-        let encoded = data.encode().expect("编码LmsyxData失败");
-        assert_eq!(&encoded[0..4], LmsyxData::MAGIC);
-        let decoded = LmsyxData::decode(&encoded).expect("解码LmsyxData失败");
-        assert_eq!(decoded.sys_ex.len(), 1);
-        assert_eq!(decoded.sys_ex[0].2, b"\x01\x02\x03\xF7");
-    }
-
-    #[test]
-    fn test_lmnames_roundtrip() {
-        let data = LmnamesData {
-            track_names: vec![Some("Piano".into()), Some("Bass".into()), None],
-        };
-        let encoded = data.encode().expect("编码LmnamesData失败");
-        assert_eq!(&encoded[0..4], LmnamesData::MAGIC);
-        let decoded = LmnamesData::decode(&encoded).expect("解码LmnamesData失败");
-        assert_eq!(decoded.track_names.len(), 3);
-        assert_eq!(decoded.track_names[0], Some("Piano".into()));
-        assert_eq!(decoded.track_names[2], None);
-    }
-
-    #[test]
-    fn test_lmcat_roundtrip() {
-        let data = LmcatData {
-            channel_aftertouch: vec![(0, 0, 5, 64), (120, 1, 0, 100)],
-            poly_aftertouch: vec![(240, 0, 3, 60, 80)],
-        };
-        let encoded = data.encode().expect("编码LmcatData失败");
-        assert_eq!(&encoded[0..4], LmcatData::MAGIC);
-        let decoded = LmcatData::decode(&encoded).expect("解码LmcatData失败");
-        assert_eq!(decoded.channel_aftertouch.len(), 2);
-        assert_eq!(decoded.poly_aftertouch, vec![(240, 0, 3, 60, 80)]);
-        assert_eq!(decoded.channel_aftertouch[1].3, 100);
-    }
-
-    #[test]
-    fn test_invalid_magic() {
-        let mut bytes = vec![0u8; 20];
-        bytes[0..4].copy_from_slice(b"XXXX");
-        assert!(LmtempData::decode(&bytes).is_err());
-        assert!(LmsigData::decode(&bytes).is_err());
-        assert!(LmctlData::decode(&bytes).is_err());
-        assert!(LmtxtData::decode(&bytes).is_err());
-        assert!(LmsyxData::decode(&bytes).is_err());
-        assert!(LmnamesData::decode(&bytes).is_err());
-        assert!(LmcatData::decode(&bytes).is_err());
-    }
-}
+mod tests;

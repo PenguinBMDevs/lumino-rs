@@ -31,10 +31,15 @@ pub const STROKE_WIDTH_MAX: u8 = 20;
 /// 颜色槽上限（0..=15，通道 10 留待后续开关）
 pub const COLOUR_SLOT_MAX: u8 = 15;
 
+/// 区域着色色号上限（16 = 通道 10；仅在工程启用通道 10 时可用）
+pub const AREA_COLOUR_MAX: u8 = 16;
+
+pub mod areas;
 pub mod geometry;
 pub mod model;
 pub mod style;
 
+pub use areas::AreaSpot;
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{ShapeModel, ShapeOp};
-pub use style::{ShapeFill, ShapeStyle};
+pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
