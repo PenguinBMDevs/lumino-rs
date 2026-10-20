@@ -28,6 +28,7 @@ pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
 pub mod selection_set;
+pub mod shape_ops;
 pub mod shape_store;
 pub mod shape_tool;
 pub mod text_tool;

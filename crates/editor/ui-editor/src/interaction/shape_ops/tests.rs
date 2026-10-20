@@ -2,7 +2,7 @@
 
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, TumourParams};
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
@@ -262,4 +262,29 @@ fn test_regeneration_is_zoom_independent() {
             "音符几何不得随视口缩放变化"
         );
     }
+}
+
+/// DRAW-003：Tumours 是 Geometry 阶段算子，必须进入现有音符生成链路
+#[test]
+fn test_regeneration_applies_tumours_geometry_op() {
+    let editor = editor_with_track(1);
+    let mut model = straight_shape(1, 480.0);
+    let base = editor.shape_notes_of(&model, 1);
+    assert!(!base.is_empty(), "无算子的直线形状应生成音符");
+
+    model.push_op(ShapeOp::Tumours(TumourParams {
+        k: 0.25,
+        dist: 1.0,
+        length: 0.5,
+        size: 4.0,
+        ..TumourParams::default()
+    }));
+    let with_op = editor.shape_notes_of(&model, 1);
+    assert!(!with_op.is_empty(), "Tumours 形状应生成音符");
+    assert!(
+        with_op.len() > base.len(),
+        "凸起轮廓应增加音符（base={}, with_op={}）",
+        base.len(),
+        with_op.len()
+    );
 }

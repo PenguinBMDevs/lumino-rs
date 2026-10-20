@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::params::TumourParams;
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
 
@@ -12,13 +13,49 @@ use crate::error::{CoreError, Result};
 /// 语义照抄 Spiderweb `notes/fx.py`：`ops` 是**有序**步骤，每一步作用在上一步输出的音符上，
 /// 可开关、可重复（同一算子可以出现多次）。
 ///
-/// S0 只有 `Noop` 占位：它证明"链式重跑"这条管线跑得通（幂等、顺序保真），
-/// 真实算子（Tumour / Claw / Strum / Chop / Glue / Sustain / GateFlip / …）由 T1 逐个**追加到末尾**。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// `Noop` 证明"链式重跑"这条管线跑得通（幂等、顺序保真）；
+/// 真实算子（Tumour / Claw / Strum / Chop / Glue / Sustain / GateFlip / …）
+/// 由 T1 逐个**追加到末尾**。追加变体对旧数据安全，不需要提升部件版本。
+///
+/// v2 起本枚举**不再 `Copy + Eq`**：`Tumours` 含 `f32` 与 `graphs: Vec`。
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub enum ShapeOp {
     /// 占位步骤：不改变任何音符
     #[default]
     Noop,
+    /// 沿途突起（Geometry 阶段；DRAW-003）
+    Tumours(TumourParams),
+}
+
+/// 算子在链上的执行阶段
+///
+/// `Geometry` 在「几何 → 音符」之前执行（改路径）；
+/// `Notes` 在音符生成之后执行（改音符）。DRAW-004..010 按此分阶段追加。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpStage {
+    /// 生成音符之前，作用于几何/路径
+    Geometry,
+    /// 生成音符之后，作用于音符
+    Notes,
+}
+
+impl ShapeOp {
+    /// 该算子所在的阶段
+    pub fn stage(&self) -> OpStage {
+        match self {
+            Self::Noop | Self::Tumours(_) => OpStage::Geometry,
+        }
+    }
+
+    /// 校验算子参数（加载路径不得 panic）
+    pub fn validate(&self) -> Result<()> {
+        match self {
+            Self::Noop => Ok(()),
+            Self::Tumours(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Tumours 参数非法：{e}"))),
+        }
+    }
 }
 
 /// 一个形状（文档对象）
@@ -92,6 +129,11 @@ impl ShapeModel {
             )));
         }
         self.style.validate()?;
+        for (index, op) in self.ops.iter().enumerate() {
+            op.validate().map_err(|e| {
+                CoreError::InvalidArgument(format!("形状 {} 的第 {index} 个算子非法：{e}", self.id))
+            })?;
+        }
         if self.geometry.is_empty() {
             return Err(CoreError::InvalidArgument(format!(
                 "形状 {} 几何为空（既无点列也无外接框）",

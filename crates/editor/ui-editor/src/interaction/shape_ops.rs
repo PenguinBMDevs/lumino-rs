@@ -22,6 +22,7 @@
 use crate::interaction::line_tool::{geom, paths, stroke_band};
 use crate::{Editor, Note};
 use lumino_core::shape::ShapeModel;
+use lumino_editor_state::shape_ops::{OpContext, apply_geometry_ops, apply_note_ops};
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
 
@@ -57,6 +58,9 @@ impl Editor {
             return Vec::new();
         }
         let poly = geom::flatten_path(&anchors);
+        // Geometry 阶段算子（Tumours）：先改路径，再走同源音符生成
+        let ctx = OpContext::new(f64::from(self.editor_state.view.ppq));
+        let poly = apply_geometry_ops(&poly, &model.ops, &ctx);
         let key_count = self.editor_state.view.key_count as i32;
         let min_ticks = paths::min_note_length_ticks(
             self.editor_state.line_tool.min_note_division,
@@ -69,7 +73,7 @@ impl Editor {
             self.editor_state.view.zoom_y,
             key_count,
         );
-        paths::keep_longest(&raw)
+        let mut notes: Vec<ShapeNote> = paths::keep_longest(&raw)
             .into_iter()
             .filter(|n| n.key >= 0 && n.key < key_count)
             .map(|n| {
@@ -81,7 +85,10 @@ impl Editor {
                     length,
                 }
             })
-            .collect()
+            .collect();
+        // Notes 阶段算子（当前为空；DRAW-004..010 接入）
+        apply_note_ops(&mut notes, &model.ops);
+        notes
     }
 
     /// 新建形状：生成音符 + 登记形状（一次撤销单元）；Conductor 轨（0）拒绝

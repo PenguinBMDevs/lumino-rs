@@ -1,7 +1,9 @@
 //! 形状对象与修饰链测试
 
 use super::*;
-use crate::shape::{ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle};
+use crate::shape::{
+    OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, TumourParams,
+};
 
 fn sample_shape() -> ShapeModel {
     let mut shape = ShapeModel::new(7, 2, ShapeKind::Curve, 0.25);
@@ -166,6 +168,40 @@ fn test_op_chain_order_is_preserved() {
     shape.push_op(ShapeOp::Noop);
     assert_eq!(shape.ops.len(), 3);
     assert_eq!(ShapeOp::default(), ShapeOp::Noop);
+}
+
+#[test]
+fn test_op_stage_classification() {
+    assert_eq!(ShapeOp::Noop.stage(), OpStage::Geometry);
+    assert_eq!(
+        ShapeOp::Tumours(TumourParams::default()).stage(),
+        OpStage::Geometry,
+        "Tumours 是生成音符之前的 Geometry 阶段算子"
+    );
+}
+
+#[test]
+fn test_validate_rejects_bad_tumour_params() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Tumours(TumourParams {
+        dist: 0.0,
+        ..TumourParams::default()
+    }));
+    let err = shape.validate().expect_err("dist=0 的 Tumours 应被拒绝");
+    assert!(format!("{err}").contains("Tumours"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_tumours() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Tumours(TumourParams {
+        size: 6.0,
+        side: crate::shape::TumourSide::Random,
+        ..TumourParams::default()
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Tumours 的形状应逐字段往返");
 }
 
 #[test]

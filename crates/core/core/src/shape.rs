@@ -33,8 +33,10 @@ pub const COLOUR_SLOT_MAX: u8 = 15;
 
 pub mod geometry;
 pub mod model;
+pub mod params;
 pub mod style;
 
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
-pub use model::{ShapeModel, ShapeOp};
+pub use model::{OpStage, ShapeModel, ShapeOp};
+pub use params::{TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at};
 pub use style::{ShapeFill, ShapeStyle};

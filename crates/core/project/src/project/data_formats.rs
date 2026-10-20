@@ -36,8 +36,10 @@ impl LmtempData {
 /// 独立成文件遵循「新部件缺失即空」约定：老工程无此文件即空形状列表，
 /// 无需提升 `format_version`；形状为空时保存侧**不写**该部件，老工程保存后字节不变。
 ///
-/// ⚠️ 落盘纪律：bincode 为位置编码，`ShapeModel` / `ShapeOp` 增删字段或变体
-/// 必须同时提升本部件版本（当前 1），不得静默改结构。
+/// ⚠️ 落盘纪律：bincode 为位置编码。
+/// - `ShapeModel` / `ShapeStyle` 增删字段或重排必须提升本部件版本（当前 1）；
+/// - `ShapeOp` / `ShapeKind` 的变体只能**追加到末尾**，追加变体**不需要**提版本
+///   （旧数据不会出现新变体索引；重排或删除才会让旧工程解错语义）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LmshapesData {
     /// 形状列表（顺序即 Shapes 列表顺序）
