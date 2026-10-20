@@ -290,7 +290,15 @@ mod tests {
 
     /// #127 问题2：LGS 异步初始化失败必须落定为 `Failed`（而非静默 false），
     /// 并产生携带原因的可见提示，供 Runner 触发播放输出重连与状态栏展示。
+    ///
+    /// ⚠️ **默认忽略**（2026-10-20）：本用例在 `check_async_init_complete` 的
+    /// 失败分支会走后端回退/重建路径，进而经 `midi-io/api/kdmapi.rs` **动态加载
+    /// 真实的 `OmniMIDI.dll`**。实测在该驱动存在但初始化缓慢的机器上，单条用例
+    /// 会阻塞 20s～数分钟（把其余 136 项 0.59s 就能跑完的测试拖成"整套跑不完"）。
+    /// 需要本机驱动覆盖时显式运行：
+    /// `cargo test -p lumino-rs test_lgs_async_failure_reports_failed_outcome_and_notice -- --ignored`
     #[test]
+    #[ignore = "会加载真实 OmniMIDI.dll，依赖本机驱动状态；需显式 --ignored 运行"]
     fn test_lgs_async_failure_reports_failed_outcome_and_notice() {
         let (tx, rx) = channel();
         let mut manager = MidiManager {

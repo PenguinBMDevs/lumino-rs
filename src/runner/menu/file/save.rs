@@ -296,14 +296,13 @@ impl RunnerInner {
                 }
                 Some(project)
             } else {
-                // 无文档时从编辑器音符重建（不再深拷贝 runner 侧 document）
-                editor_midi::build_editor_midi_document(self).map(|doc| {
-                    let mut project = lumino_export::LuminoProject::from_midi_document(&doc);
-                    if let Some(stem) = save_path.file_stem() {
-                        project.metadata.project.name = stem.to_string_lossy().into_owned();
-                    }
-                    project
-                })
+                // 无文档 = 没有可保存的音符（单一权威源：音符只存在于 document，
+                // 编辑器视图不再另存一份）。旧实现在此从「编辑器音符」重建一份
+                // `MidiDocument`（`build_editor_midi_document`：编辑器音符 → SMF 字节
+                // → 重新解析成文档），但该函数的第一步 `get_editor_notes()` 就是读
+                // document，无文档时必然为空 → 恒返回 None（审计 §十二 认定的死路径）。
+                // 故此处直接返回 None，由下方统一告警处理。
+                None
             }
         };
 

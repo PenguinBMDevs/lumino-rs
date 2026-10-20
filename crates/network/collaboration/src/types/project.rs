@@ -30,12 +30,9 @@ pub enum ProjectUpdateType {
     Full,
 }
 
-/// 项目状态快照
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ProjectState {
-    /// 音符批量操作列表
-    pub notes: Vec<crate::types::NoteBatchOperation>,
-    /// 附加字段（透传的其它项目数据）
-    #[serde(flatten)]
-    pub extra: std::collections::HashMap<String, serde_json::Value>,
-}
+// 2026-10-20（审计 §十一）：删除 `ProjectState`。
+// 它是服务端下发的「房间全量状态快照」（含 `notes: Vec<NoteBatchOperation>` 与
+// `#[serde(flatten)] extra`），挂在 `ServerMessage::{RoomJoined, FullSync}` 上，
+// 但两处消费端都以 `..` 丢弃、`extra` 也从未被读取——即「反序列化后即丢弃」的
+// 死负载，且构成房间里第二份音符数据（权威是各端 `MidiDocument`）。
+// 字段已在消息类型中移除；服务端继续下发 `projectState` 会被 serde 忽略。

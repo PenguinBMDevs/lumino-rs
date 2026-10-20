@@ -106,9 +106,10 @@ pub enum ServerMessage {
         room: crate::types::RoomInfo,
         /// 房间内用户列表
         users: Vec<crate::types::UserInfo>,
-        /// 项目状态快照
-        #[serde(rename = "projectState")]
-        project_state: crate::types::ProjectState,
+        // 2026-10-20（审计 §十一）：删除 `project_state`（房间全量状态快照）。
+        // 它反序列化后从未被读取（`handlers.rs` 以 `..` 丢弃），是「房间内第二份
+        // 音符数据」的载体；音符的唯一权威是各端的 `MidiDocument`。
+        // 服务端仍可下发该字段——serde 会忽略未知字段，协议不会因此报错。
     },
     /// 房间错误响应
     RoomError {
@@ -180,9 +181,7 @@ pub enum ServerMessage {
     },
     /// 全量同步响应
     FullSync {
-        /// 项目状态快照
-        #[serde(rename = "projectState")]
-        project_state: crate::types::ProjectState,
+        // 2026-10-20（审计 §十一）：删除 `project_state`（理由同 `RoomJoined`）。
         /// 全量用户列表
         users: Vec<crate::types::UserInfo>,
     },
