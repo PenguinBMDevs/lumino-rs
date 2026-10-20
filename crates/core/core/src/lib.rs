@@ -22,8 +22,9 @@ pub mod view_state;
 pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
-    AreaSpot, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect,
-    ShapeStyle, SpamAlign, SpamEnds,
+    AreaSpot, OpStage, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
+    ShapeRect, ShapeStyle, SpamAlign, SpamEnds, TumourGraphs, TumourParams, TumourShape,
+    TumourSide, TumourWrap,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};

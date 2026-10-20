@@ -37,9 +37,11 @@ pub const AREA_COLOUR_MAX: u8 = 16;
 pub mod areas;
 pub mod geometry;
 pub mod model;
+pub mod params;
 pub mod style;
 
 pub use areas::AreaSpot;
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
-pub use model::{ShapeModel, ShapeOp};
+pub use model::{OpStage, ShapeModel, ShapeOp};
+pub use params::{TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at};
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
