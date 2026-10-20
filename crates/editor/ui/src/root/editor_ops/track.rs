@@ -12,6 +12,7 @@ use lumino_midi_loader::NoteEvent;
 mod channel;
 mod deletion;
 mod port;
+mod visibility;
 
 impl Root {
     /// 更新音轨列表（从 MIDI 导入）

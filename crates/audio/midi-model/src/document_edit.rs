@@ -18,7 +18,7 @@ impl MidiDocument {
         self.track_ports.push(0);
         self.track_max_end_ticks
             .push(std::sync::Arc::new(std::sync::Mutex::new(None)));
-        self.tracks.push(crate::track::TrackView::new(new_id));
+        self.tracks.push(crate::track::TrackView::new());
         self.track_count = self.track_count.saturating_add(1);
         new_id
     }

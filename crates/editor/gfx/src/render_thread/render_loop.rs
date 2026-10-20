@@ -35,8 +35,13 @@ pub struct Renderers {
     pub arrangement: crate::ArrangementRenderer,
     /// CC 柱状条渲染器
     pub cc_bar: crate::CcBarRenderer,
-    /// 洋葱皮常驻数据世代计数（MIDI 全量重载 / TrackDelta 增量变更时递增，
-    /// 全局桶等派生索引据此判定重建；单调递增，wrapping）。
+    /// 洋葱皮常驻数据内容世代（`onion_skin` 常驻字节被改写时递增，单调 wrapping）。
+    ///
+    /// 契约：**任何改写 `onion_skin` 常驻字节的路径都必须经
+    /// `onion_segments::bump_onion_epoch` 递增本计数**（全量会话完成、整轨
+    /// TrackDelta、轨布局变更、区间删除、以及主音轨段内等长写/删/插）。
+    /// 全局桶等派生索引据此判定重建——漏递增会让索引按旧
+    /// `(key, start_tick)` 序取数（静默漏音/错位）。
     pub onion_epoch: u64,
     /// 创建时所属 GPU 代次（REND-019 PR-B 登记）。
     ///

@@ -107,6 +107,8 @@ fn test_track_switching_does_not_set_notes_changed() {
     let mut editor = Editor::new();
 
     test_helpers::seed_notes(&mut editor, 2, 0, &[Note::new(0.0, 60, 480.0)]);
+    // 先让空间索引以「音轨 0 + 当前世代」建好，切轨后必须失效
+    editor.ensure_spatial_index();
     editor.mark_notes_changed();
     assert!(editor.notes_changed());
     editor.clear_notes_changed();
@@ -117,10 +119,10 @@ fn test_track_switching_does_not_set_notes_changed() {
     assert_eq!(editor.current_track(), 1);
     assert!(!editor.notes_changed(), "切轨不应设置 notes_changed 标志");
 
-    // 但空间索引必须标记为脏，以便后续命中测试重建
+    // 但空间索引必须失效（当前轨是失效键的一部分），以便后续命中测试重建
     assert!(
-        editor.spatial.note_index_dirty.get(),
-        "切轨必须标记空间索引为脏"
+        !editor.has_clean_spatial_index(),
+        "切轨后空间索引不得再被视为可复用"
     );
 }
 

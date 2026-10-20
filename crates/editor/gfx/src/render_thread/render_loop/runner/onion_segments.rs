@@ -17,10 +17,22 @@
 //! - `compute_move_blocks` 为纯函数，搬移分块序列已用 `Vec::copy_within`
 //!   对照单测
 //! - 段表偏移更新为纯计算，单测覆盖前插/删除/尾部增删/无后续段等边界
+//! - **内容世代契约（2026-10-17 修正）**：任何改写 `onion_skin` 常驻字节的路径
+//!   都必须调用 [`bump_onion_epoch`]。此前主音轨段内增量（本模块的等长写/删/插）
+//!   漏了这一步，使 `onion_epoch` 只在整轨替换/布局变化时递增——而拖动音符会改变
+//!   `(key, start_tick)` 排序键，依赖该世代判定的派生索引（全局桶）会按旧序取数，
+//!   表现为静默漏音/错位/重复。
 
 use crate::NoteEvent;
 use crate::NoteInstance;
 use crate::render_thread::render_loop::Renderers;
+
+/// 洋葱皮常驻字节变更 → 内容世代递增（派生索引重建判定依据）。
+///
+/// 单调递增（wrapping）。见模块头「内容世代契约」：**任何写常驻字节的路径都要调**。
+pub(crate) fn bump_onion_epoch(renderers: &mut Renderers) {
+    renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+}
 
 /// 洋葱皮 GPU 缓冲区中的音轨段
 ///
@@ -66,6 +78,8 @@ pub fn process_main_track_events(
     };
 
     let mut updated = false;
+    // 常驻字节是否被本批事件改写（决定是否换代）；Reset/Clear 分支内部已换代。
+    let mut bytes_changed = false;
     while let Ok(event) = rx.try_recv() {
         updated = true;
         // 每轮重新读取段元数据：段长可能被前序事件（删/插）改变
@@ -79,11 +93,13 @@ pub fn process_main_track_events(
                 renderers
                     .onion_skin
                     .update_notes(seg.offset + start_index, &instances);
+                bytes_changed = true;
             }
             NoteEvent::Update { index, instance } => {
                 renderers
                     .onion_skin
                     .update_notes(seg.offset + index, &[instance]);
+                bytes_changed = true;
             }
             NoteEvent::RemoveAt { index, count } => {
                 let count = count.min(seg.len.saturating_sub(index));
@@ -92,6 +108,7 @@ pub fn process_main_track_events(
                 }
                 renderers.onion_skin.remove_at(seg.offset + index, count);
                 shift_segment_len(renderers, segments, idx, -(count as isize), device, queue);
+                bytes_changed = true;
             }
             NoteEvent::Remove(index) => {
                 if index >= seg.len {
@@ -99,6 +116,7 @@ pub fn process_main_track_events(
                 }
                 renderers.onion_skin.remove_at(seg.offset + index, 1);
                 shift_segment_len(renderers, segments, idx, -1, device, queue);
+                bytes_changed = true;
             }
             NoteEvent::Insert { index, instances } => {
                 let index = index.min(seg.len);
@@ -116,21 +134,28 @@ pub fn process_main_track_events(
                     device,
                     queue,
                 );
+                bytes_changed = true;
             }
             NoteEvent::Add(instance) => {
                 renderers
                     .onion_skin
                     .insert_at(seg.offset + seg.len, &[instance]);
                 shift_segment_len(renderers, segments, idx, 1, device, queue);
+                bytes_changed = true;
             }
             NoteEvent::Reset(instances) => {
                 // 防御性兜底：整段替换（正常路径 UI 不再发送 Reset）
+                // 换代由 `apply_onion_track_delta` 内部完成。
                 apply_onion_track_delta(renderers, segments, track_id, &[instances], device, queue);
             }
             NoteEvent::Clear => {
                 apply_onion_track_delta(renderers, segments, track_id, &[], device, queue);
             }
         }
+    }
+    // 段内增量（等长写/删/插）同样改写常驻字节与排序键 → 必须换代。
+    if bytes_changed {
+        bump_onion_epoch(renderers);
     }
     updated
 }
@@ -211,7 +236,7 @@ pub fn apply_onion_track_delta(
         // 等长替换：音符级增量，无需动段表 / cull info
         write_parts(renderers, segments[idx].offset);
         // 常驻字节变更 → 换代（全局桶重建）。
-        renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+        bump_onion_epoch(renderers);
         return true;
     }
 
@@ -255,7 +280,7 @@ pub fn apply_onion_track_delta(
     renderers.onion_skin.update_cull_info(device, queue);
 
     // 常驻字节变更（搬移/写段）→ 换代（全局桶重建）。
-    renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+    bump_onion_epoch(renderers);
 
     tracing::debug!(
         "OnionSkin: TrackDelta track={} {} 实例 (原 {} 实例，{}) → 增量完成",
@@ -289,7 +314,7 @@ pub fn apply_onion_track_layout(
     let (new_segments, removed) = layout_segments_after_track_count(segments, track_count);
     if let Some((start, count)) = removed {
         renderers.onion_skin.remove_at(start, count);
-        renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+        bump_onion_epoch(renderers);
         renderers.onion_skin.update_cull_info(device, queue);
     }
     tracing::debug!(
@@ -371,7 +396,7 @@ pub fn apply_onion_track_remove_ranges(
         seg.offset -= removed_total;
     }
     renderers.onion_skin.update_cull_info(device, queue);
-    renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+    bump_onion_epoch(renderers);
     tracing::debug!(
         "OnionSkin: TrackRemoveRanges track={} 删除 {} 实例（{} 个区间）",
         track_id,

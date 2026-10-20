@@ -54,3 +54,27 @@ pub(crate) fn make_test_doc() -> MidiDocument {
         track_max_end_ticks: vec![],
     }
 }
+
+/// 单轨单音符文档（`0..1920` 一颗，指定键位）——用于「替换文档」场景
+pub(crate) fn make_single_note_doc(key: u8) -> MidiDocument {
+    let notes = vec![NoteEvent::new(0, 1920, key, 100, 0)];
+    MidiDocument {
+        notes: vec![lumino_midi_loader::ChunkedList::from_sorted(notes)],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("Track 1".into())],
+        total_ticks: 1920,
+        track_count: 1,
+        tracks: lumino_midi_loader::TrackManager::new(1),
+        division: 480,
+        track_ports: vec![],
+
+        track_max_end_ticks: vec![],
+    }
+}

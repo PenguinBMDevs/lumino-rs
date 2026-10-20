@@ -139,8 +139,11 @@ impl Host {
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
         self.render_ctx.render_cache.grid_viewport_hash = 0;
-        // 标记音符数据变化，触发走带缓存重建
-        self.root.editor.spatial.note_index_dirty.set(true);
+        // 空间索引/最长音符长度**无需**在此手工失效：上方
+        // `mark_track_notes_changed()` 已 bump `track_notes_gen`，而世代是它们的
+        // 失效键（见 `SpatialIndexState` 文档）。这里也不能改用
+        // `Editor::mark_notes_changed()`——那会置 `notes_changed`，被 handle_action
+        // 判成脏音轨而误触发高精度洋葱皮。
         // 注意：不再预加载全量音符到 track_notes——
         // 洋葱皮渲染通过 build_onion_skin_instances 直接遍历 document。
     }

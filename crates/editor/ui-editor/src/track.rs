@@ -49,11 +49,11 @@ impl super::Editor {
         // 换轨后继续保留会导致 ghost 渲染错位、提交时误伤新轨音符。
         self.pending_drag_state = None;
         self.pending_copy_drag_state = None;
-        // 切轨只是切换当前显示的音轨（current_track_notes 换轨），
-        // 并非用户编辑。需要重建空间索引并失效渲染缓存，
-        // 但不能设置 notes_changed，否则会被 handle_action 误判为脏音轨，
-        // 导致高精度洋葱皮覆盖层/重生被误触发。
-        self.spatial.note_index_dirty.set(true);
+        // 切轨只是切换当前显示的音轨（current_track_notes 换轨），并非用户编辑。
+        // 空间索引与最长音符长度会因 `current_track` 参与失效键而自动重算
+        // （见 `SpatialIndexState` 文档），故此处无需手工置脏；也不能设置
+        // notes_changed，否则会被 handle_action 误判为脏音轨，导致高精度
+        // 洋葱皮覆盖层/重生被误触发。
         self.grid_cache.clear();
 
         // 统一全量渲染（2026-08-06）：GPU buffer 常驻所有轨全部音符，

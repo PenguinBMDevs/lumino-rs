@@ -3,7 +3,6 @@
 //! 事件/音符/音轨信息的访问器，以及 max_end_tick 缓存的惰性重算。
 
 use crate::note_event::NoteEvent;
-use crate::track::TrackManager;
 
 use super::{MidiDocument, TICK_SEARCH_BUFFER, TrackNoteView};
 
@@ -12,12 +11,6 @@ impl MidiDocument {
     #[inline]
     pub fn total_ticks(&self) -> u32 {
         self.total_ticks
-    }
-
-    /// 获取音轨可见性管理（只读视图）。
-    #[inline]
-    pub fn tracks(&self) -> &TrackManager {
-        &self.tracks
     }
 
     /// 获取 MIDI 文件头 division（PPQ）。

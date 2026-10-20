@@ -268,6 +268,9 @@ impl EditorData {
         // 当前正在查看的音轨；否则切轨后按 Ctrl+Z 会跳回上一条被编辑的音轨。
         self.replace_track_notes_chunked(snapshot.current_track, snapshot.notes.as_ref());
         self.automation_lanes = snapshot.automation_lanes.clone();
+        // 经统一入口同步：lane 是编辑态，document.control_events 是 CC/PB 唯一权威。
+        // 不同步的话 undo 后保存/导出仍会写出被撤销的曲线（2026-10-17 整改）。
+        self.sync_automation_to_document();
         if let Some(v) = snapshot.time_signatures {
             // 经统一入口恢复，保证 document.time_signatures 同步（保存链路读到最新）
             self.set_time_signatures(v);

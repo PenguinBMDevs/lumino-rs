@@ -27,23 +27,58 @@ impl Default for SpatialIndexState {
     fn default() -> Self {
         Self {
             note_index: RefCell::new(None),
-            note_index_dirty: Cell::new(false),
+            note_index_key: Cell::new(None),
             query_cache: RefCell::new(Vec::new()),
             max_note_len: Cell::new(0),
+            max_note_len_key: Cell::new(None),
         }
     }
 }
 
 impl Editor {
-    /// 当前轨最大音符长度（tick；惰性计算并缓存，音符变化时失效）。
+    /// 派生缓存的权威失效键：`(音符内容世代, 当前轨)`。
+    ///
+    /// 空间索引与最大音符长度都只由「当前轨的音符内容」决定，因此这两项就是
+    /// 完备的失效依据（见 `SpatialIndexState` 文档）：
+    /// - `track_notes_gen` 由数据层所有音符写入路径 bump（含协作/素材/整轨恢复）；
+    /// - `current_track` 变化即索引的输入底座变化。
+    pub(crate) fn spatial_cache_key(&self) -> (u64, usize) {
+        (
+            self.editor_state.data.track_notes_gen,
+            self.editor_state.data.current_track,
+        )
+    }
+
+    /// 空间索引是否可安全复用（已构建且键未过期）
+    ///
+    /// 供渲染路径判断能否走索引查询；不可复用时调用方回退窗口扫描。
+    pub(crate) fn has_clean_spatial_index(&self) -> bool {
+        self.spatial.note_index_key.get() == Some(self.spatial_cache_key())
+            && self.spatial.note_index.borrow().is_some()
+    }
+}
+
+impl SpatialIndexState {
+    /// 显式失效两个派生缓存（清空失效键，下次访问必重算）
+    ///
+    /// 由 [`Editor::mark_notes_changed`] 与「清空编辑器」路径调用，兜住
+    /// 「改了音符但没 bump `track_notes_gen`」的增量热路径。
+    pub fn invalidate_spatial_caches(&self) {
+        self.note_index_key.set(None);
+        self.max_note_len_key.set(None);
+    }
+}
+
+impl Editor {
+    /// 当前轨最大音符长度（tick；惰性计算并缓存，音符世代/当前轨变化时重算）。
     ///
     /// 用途：框选增量窗口的 **lookback 精确上界**——查询区间左侧只需回看
     /// 「可能跨入区间的最长音符」，无需固定 1M tick（密集轨道下 1M tick 可覆盖
     /// 整轨，拖动增量会退化为每次全轨扫描）。
     pub(crate) fn current_track_max_note_len(&self) -> u32 {
-        let cached = self.spatial.max_note_len.get();
-        if cached != 0 {
-            return cached;
+        let key = self.spatial_cache_key();
+        if self.spatial.max_note_len_key.get() == Some(key) {
+            return self.spatial.max_note_len.get().max(1);
         }
         let mut max = 0u32;
         for n in self.editor_state.data.current_track_notes().iter() {
@@ -51,6 +86,7 @@ impl Editor {
         }
         let max = max.max(1);
         self.spatial.max_note_len.set(max);
+        self.spatial.max_note_len_key.set(Some(key));
         max
     }
 }
@@ -58,14 +94,20 @@ impl Editor {
 impl Editor {
     /// 标记音符数据已变化
     ///
-    /// 同时触发：
-    /// - `notes_changed = true`（wgpu 重绘）
-    /// - `note_index_dirty = true`（空间索引重建）
+    /// 职责有两层：
+    /// 1. `notes_changed = true`（wgpu 重绘）；
+    /// 2. **显式**失效空间索引与最长音符长度缓存（清空失效键 → 下次
+    ///    [`Self::ensure_spatial_index`] / [`Self::current_track_max_note_len`] 必重算）。
+    ///
+    /// 第 2 层为什么不能只靠 [`Self::spatial_cache_key`]：拖动热路径的增量接口
+    /// （`restore_current_track_sorted_incremental` / `record_update_ranges`，
+    /// 见 `released.rs` 拉伸提交）**刻意不 bump** `track_notes_gen`——每帧全量同步
+    /// 代价过高，它们靠 `mark_current_track_changed` + 本方法完成失效。
+    /// 反之，只靠手工标记又会漏掉数据层写入（协作/素材/整轨恢复），
+    /// 故两条通路都要有：本方法管「UI 层显式失效」，世代键管「数据层自动失效」。
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
-        self.spatial.note_index_dirty.set(true);
-        // 音符已变化 → 最大音符长度缓存失效（框选增量 lookback 依赖）
-        self.spatial.max_note_len.set(0);
+        self.spatial.invalidate_spatial_caches();
         // 诊断日志：打印调用栈，追踪 notes_changed 被误触发的来源
         if std::env::var("LUMINO_TRACE_NOTES_CHANGED").is_ok() {
             let backtrace = std::backtrace::Backtrace::capture();
@@ -99,21 +141,22 @@ impl Editor {
     /// `hit_test_note` 的 ChunkedList 窗口扫描兜底（O(log N + K) 同量级，
     /// 免 O(N log N) 全量重建 ≈ 2-4s）。保证该量级下查询不建树、不卡顿。
     pub(crate) fn ensure_spatial_index(&self) {
-        if !self.spatial.note_index_dirty.get() {
+        let key = self.spatial_cache_key();
+        if self.spatial.note_index_key.get() == Some(key) {
             return;
         }
 
         // 2026-08 单一权威源：从 document 当前轨切片收集 NoteRef（NoteEvent → NoteRef）
         let notes = self.editor_state.data.current_track_notes();
         if notes.len() <= SPATIAL_INDEX_BUILD_THRESHOLD {
-            // 小数据量：直接标记为已更新，使用线性扫描路径
-            self.spatial.note_index_dirty.set(false);
+            // 小数据量：直接标记为已更新（记录键），使用线性扫描路径
+            self.spatial.note_index_key.set(Some(key));
             *self.spatial.note_index.borrow_mut() = None;
             return;
         }
         if notes.len() > SPATIAL_INDEX_MAX_BUILD {
             // 超大型工程：不建索引，查询走 ChunkedList 窗口扫描（见 hit_test.rs）
-            self.spatial.note_index_dirty.set(false);
+            self.spatial.note_index_key.set(Some(key));
             *self.spatial.note_index.borrow_mut() = None;
             tracing::debug!(
                 "Editor: 超大型工程（{} 音符）跳过空间索引构建，走窗口查询",
@@ -136,7 +179,7 @@ impl Editor {
         let new_index = crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs);
 
         *self.spatial.note_index.borrow_mut() = Some(new_index);
-        self.spatial.note_index_dirty.set(false);
+        self.spatial.note_index_key.set(Some(key));
 
         tracing::debug!(
             "Editor: rebuild spatial index from ensure_spatial_index for {} notes",

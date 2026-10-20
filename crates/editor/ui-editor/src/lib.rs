@@ -69,6 +69,7 @@ mod tests {
     mod scroll;
     mod selection_precision;
     mod selection_remap;
+    mod spatial_index_staleness;
     mod state;
     pub(crate) mod test_helpers;
     mod track_order;
@@ -113,16 +114,32 @@ impl CacheInvalidation {
 }
 
 /// 空间索引状态（从 Editor 提取，减少字段数）
+///
+/// ## 派生缓存的失效键（2026-10-17 审计 §五 同类项整改）
+///
+/// 两个派生缓存都不再用「手工置脏的布尔标记」，而是记录构建时所用的
+/// **权威键** `(EditorData::track_notes_gen, EditorData::current_track)`：
+///
+/// - `track_notes_gen`：数据层所有音符写入路径都必须 bump（`marks.rs` 契约），
+///   协作远端编辑、素材放置、整轨恢复等路径自动覆盖；
+/// - `current_track`：索引是「当前轨」的衍生结构，切轨必须失效。
+///
+/// 此前用 `note_index_dirty` / `max_note_len = 0` 作废，只有 UI 层
+/// `Editor::mark_notes_changed` 与切轨路径会设置它们——数据层写入不会碰，
+/// 于是缓存长期陈旧：框选会命中已删除的音符（下标甚至越界不存在），
+/// lookback 上界也可能偏小导致长音符漏选。
 #[derive(Debug)]
 pub struct SpatialIndexState {
     /// 音符空间索引（惰性更新）
     pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
-    /// 空间索引是否已过期（需重建）
-    pub note_index_dirty: Cell<bool>,
+    /// 构建 `note_index` 时的权威键（`None` = 尚未构建；与当前键不等 = 需失效）
+    pub note_index_key: Cell<Option<(u64, usize)>>,
     /// 空间索引查询结果的缓存
     pub query_cache: RefCell<Vec<usize>>,
-    /// 当前轨最大音符长度（tick；0 = 未计算）。框选增量窗口的 lookback 上界。
+    /// 当前轨最大音符长度（tick）。框选增量窗口的 lookback 上界。
     pub max_note_len: Cell<u32>,
+    /// 计算 `max_note_len` 时的权威键（与当前键不等 = 需重算）
+    pub max_note_len_key: Cell<Option<(u64, usize)>>,
 }
 
 /// 钢琴卷帘编辑器

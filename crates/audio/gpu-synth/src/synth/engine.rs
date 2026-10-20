@@ -14,7 +14,7 @@ use crate::gpu::{
     SAMPLES_CHUNK_BINDING_BASE, SAMPLES_CHUNK_BYTES, SAMPLES_CHUNKS, VoiceParams, VoiceState,
     create_gpu_context,
 };
-use crate::midi::{MidiEvent, MidiFile, MidiStream, TimedEvent};
+use crate::midi::{MidiEvent, MidiFile, TimedEvent};
 use crate::soundfont::SoundFont;
 use crate::synth::voices::{Voice, build_voice, refresh_env_stages};
 
@@ -30,7 +30,6 @@ mod pool;
 mod progress;
 mod readback;
 mod render;
-mod streaming;
 mod trim;
 mod types;
 mod upload;
@@ -286,6 +285,22 @@ pub struct GpuSynth {
     render_checkpoint: Option<RenderCheckpoint>,
     /// 离线渲染进度回调（见 [`RenderProgressFn`]）；`None` = 不报告。
     render_progress: Option<RenderProgressFn>,
+}
+
+impl GpuSynth {
+    /// 输出声道数（1 = Mono，2 = Stereo）。
+    ///
+    /// 2026-10-17：原定义在 `engine/streaming.rs`（该文件随审计 §八 的流式渲染链
+    /// 一并删除），但它被 `offline.rs` / `render.rs` / `warm.rs` 共用——删除时把它
+    /// 迁到引擎主体，避免与"流式渲染"这种具体路径绑在一起（编译期即暴露：见
+    /// 删除提交的 check 报错）。
+    pub(crate) fn output_channels(&self) -> usize {
+        if self.config.channels == ChannelMode::Stereo {
+            2
+        } else {
+            1
+        }
+    }
 }
 
 #[cfg(test)]

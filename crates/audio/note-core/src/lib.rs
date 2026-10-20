@@ -6,7 +6,6 @@ pub mod arrange_selection;
 pub mod automation;
 pub mod batch_edit;
 pub mod channels;
-pub mod event;
 pub mod font_scanner;
 pub mod history;
 pub mod midi_types;
@@ -22,15 +21,11 @@ pub use automation::{
 };
 pub use batch_edit::{BatchEditOperation, parse_batch_edit_input};
 pub use channels::{ChannelMode, MIN_NOTE_TICKS, apply_channel_mode, resolve_single_channel};
-pub use event::{
-    AutomationEvent as EventAutomationEvent, AutomationTarget as EventAutomationTarget,
-    SegmentShape as EventSegmentShape,
-};
 pub use font_scanner::{FontInfo, get_cached_fonts, prewarm_font_cache, scan_system_fonts};
 pub use history::{EditorSnapshot, History, HistoryEntry, MoveOp, OpKind, OperationEntry};
 pub use midi_types::{
-    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
-    PITCH_BEND_CENTER, TempoPoint, VelocityPoint,
+    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcDisplay, CcPoint, EditMode, PITCH_BEND_CENTER,
+    TempoPoint, VelocityPoint,
 };
 pub use note::Note;
 pub use note_store::{BitSet, NoteView};

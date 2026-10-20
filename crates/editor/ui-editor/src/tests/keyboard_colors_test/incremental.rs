@@ -121,3 +121,82 @@ fn test_keyboard_colors_incremental_no_growth() {
     // tick=2000 时所有音符已结束，active_notes 应为空
     assert_eq!(last_active_len, 0, "active_notes should be empty at end");
 }
+
+/// 索引失效必须按**音符内容世代**判定，而不是文档内存地址。
+///
+/// 2026-10-17（审计 §五）：旧实现只比对 `doc as *const MidiDocument` 地址，
+/// 而就地增删音符**不改变地址** → 索引被判为仍然有效，此后任何全量重建
+/// （seek / 循环回绕 / tick 回退）都会拿**陈旧索引**着色：
+/// 已删除的音符仍然着色、新增音符不着色。
+#[test]
+fn test_keyboard_colors_index_follows_notes_generation() {
+    let mut editor = Editor::new();
+    editor.playback_key_colors_enabled = true;
+    editor.editor_state.data.document = Some(make_test_doc());
+
+    // 建索引：tick=240 时 C4(60) 与 G4(67) 活跃
+    editor.playback_position = 240.0;
+    editor.update_playback_key_colors();
+    assert_ne!(editor.playback_key_colors[60 * 4 + 3], 0, "C4 初始应着色");
+
+    // 就地删除 C4（track 0 中 start_tick 最小者，即 index 0），并 bump 音符世代
+    // ——所有直接改动音符的入口都必须 `mark_track_notes_changed`（marks.rs 契约）
+    {
+        let data = &mut editor.editor_state.data;
+        let doc = data.document.as_mut().expect("文档应存在");
+        assert!(doc.remove_note(0, 0).is_some(), "应删除 C4");
+        data.mark_track_notes_changed();
+    }
+
+    // tick 回退 → 触发全量重建：必须用**新内容**重建索引
+    editor.playback_position = 120.0;
+    editor.update_playback_key_colors();
+    assert_eq!(
+        editor.playback_key_colors[60 * 4 + 3],
+        0,
+        "已删除的 C4 不得再着色：索引必须随音符世代失效并重建"
+    );
+    assert_ne!(
+        editor.playback_key_colors[67 * 4 + 3],
+        0,
+        "G4 仍活跃，应保持着色"
+    );
+}
+
+/// 装载新文档后（同一 tick、无 seek）也必须用**新内容**重建索引。
+///
+/// 审计 §五 第二条：旧实现按文档内存地址判失效，而旧文档 drop 后新文档
+/// **可能分配到同一地址** → 两份文档被判为同一份，残留上一份的键色。
+/// 世代方案下「装载 = 世代变化」是硬前提，故这里按装载契约显式 bump
+/// （与 `Root::set_midi_document` 的行为一致）。
+#[test]
+fn test_keyboard_colors_index_follows_document_replacement() {
+    let mut editor = Editor::new();
+    editor.playback_key_colors_enabled = true;
+    editor.editor_state.data.document = Some(make_test_doc());
+
+    editor.playback_position = 240.0;
+    editor.update_playback_key_colors();
+    assert_ne!(
+        editor.playback_key_colors[60 * 4 + 3],
+        0,
+        "旧文档 C4 应着色"
+    );
+
+    // 替换为「同 tick 只有 D4(62)」的文档，并按装载契约 bump 世代
+    editor.editor_state.data.document = Some(make_single_note_doc(62));
+    editor.editor_state.data.mark_track_notes_changed();
+
+    // 同一 tick（不落入 tick 回退 / seek 分支）也必须触发索引重建
+    editor.update_playback_key_colors();
+    assert_eq!(
+        editor.playback_key_colors[60 * 4 + 3],
+        0,
+        "旧文档的 C4 不得残留：索引必须随世代重建"
+    );
+    assert_ne!(
+        editor.playback_key_colors[62 * 4 + 3],
+        0,
+        "新文档的 D4 应着色"
+    );
+}

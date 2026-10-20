@@ -69,7 +69,8 @@ impl TrackNoteView {
 /// 音符按音轨存放为 `Vec<ChunkedList<NoteEvent>>`，每轨内按 `start_tick` 升序排列，
 /// 分块存储（50 万事件/块）保证插入不阻塞（O(块内) 而非 O(整轨)）。
 /// 控制事件和速度变化仍保留，用于播放、导出和工程保存。
-#[derive(Clone)]
+///
+/// `Clone` 为**手写**实现（非 derive），原因见 `impl Clone` 的文档。
 pub struct MidiDocument {
     /// 每轨的音符列表，按 `start_tick` 升序排列，分块存储
     pub notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>>,
@@ -132,6 +133,49 @@ impl std::fmt::Debug for MidiDocument {
             .field("division", &self.division)
             .field("control_events.len", &self.control_events.len())
             .finish()
+    }
+}
+
+/// 手写 `Clone`：音符块共享，但 **max_end 缓存单元必须逐快照独立**。
+///
+/// 音符 / 控制事件是 `ChunkedList` 的块级 `Arc` 共享（O(块数) 浅拷贝，块数据物理
+/// 共址）。而 `track_max_end_ticks` 是 `Arc<Mutex<Option<u32>>>` 的**可变记忆**：
+/// 若照 derive 走「Arc 指针拷贝」，快照与实时文档会共享同一批缓存单元 ——
+/// 实时文档插入更长音符后 O(1) 更新缓存，快照随后读到的是**实时文档的**值，
+/// 即「快照内容与其 max_end 缓存不同世代」（2026-10-17 审计 §二，已由
+/// `test_clone_isolates_track_max_end_cache` 复现：快照返回 500 而它只有 end=200 的音符）。
+///
+/// 这里按**当前缓存值**重建独立单元：代价是每轨一次小分配（O(音轨数)），
+/// 换来快照与实时文档互不串味；不复制任何音符数据。毒锁按脏（`None`）处理 ——
+/// 缓存失效只会导致一次惰性重算，不会给出错误值。
+impl Clone for MidiDocument {
+    fn clone(&self) -> Self {
+        Self {
+            notes: self.notes.clone(),
+            tempo_changes: self.tempo_changes.clone(),
+            time_signatures: self.time_signatures.clone(),
+            key_signatures: self.key_signatures.clone(),
+            control_events: self.control_events.clone(),
+            lyrics: self.lyrics.clone(),
+            markers: self.markers.clone(),
+            text_events: self.text_events.clone(),
+            sys_ex: self.sys_ex.clone(),
+            track_names: self.track_names.clone(),
+            total_ticks: self.total_ticks,
+            track_count: self.track_count,
+            tracks: self.tracks.clone(),
+            division: self.division,
+            track_ports: self.track_ports.clone(),
+            track_max_end_ticks: self
+                .track_max_end_ticks
+                .iter()
+                .map(|cell| {
+                    // 毒锁 → None（脏）：宁可重算一次，也不给出可能错误的值。
+                    let cached = cell.lock().map(|guard| *guard).unwrap_or(None);
+                    std::sync::Arc::new(std::sync::Mutex::new(cached))
+                })
+                .collect(),
+        }
     }
 }
 

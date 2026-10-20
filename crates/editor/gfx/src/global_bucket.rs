@@ -86,7 +86,15 @@ pub struct BucketSource<'a> {
     pub buffer: &'a wgpu::Buffer,
     /// 有效音符数。
     pub count: usize,
-    /// 常驻数据世代（`Renderers::onion_epoch`，内容变更即递增）。
+    /// 调用方提供的常驻数据**内容世代**（内容变更即递增）。
+    ///
+    /// 语义由调用方保证，本模块只做 `(字节数, 数量, 世代)` 任一不等即重建的判定：
+    /// - 洋葱皮常驻缓冲的真实世代是 `Renderers::onion_epoch`
+    ///   （契约见 `onion_segments::bump_onion_epoch`）；
+    /// - 当前 `ResidentCull` 的调用方（waterfall / miditrail 导出）传入的是各自
+    ///   内部的 `ResidentCull::seq`（仅 `mark_resident_updated` 递增）。两者是
+    ///   独立计数——**把外部缓冲接到本结构前，必须确认传入的是被绑定缓冲的世代**，
+    ///   否则「等长原地改写」不会被识别，索引会静默陈旧。
     pub epoch: u64,
 }
 

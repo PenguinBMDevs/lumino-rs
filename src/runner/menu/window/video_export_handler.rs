@@ -18,9 +18,11 @@ mod composite;
 mod frame;
 mod memory_task;
 mod pipeline;
-/// 流式导出已暂时禁用（数据源统一期间保留代码供后续重做，见分支内 TODO）。
-#[allow(dead_code)]
-mod streaming_task;
+// 流式视频导出（`streaming_task` + `video_export::streaming`）已按审计 §八 删除：
+// 该链路 0 调用者（`run_streaming_video_export_task` 全仓无调用），且它自带第二套
+// MIDI 解析 + 磁盘 `NoteRecord` 镜像（审计 §6.2 / 表格第 18 行）。
+// 需要重做时：实现本体在 git 历史（删除提交见报告 §十九）与其 `NoteRecord` 磁盘缓存
+// 设计；**不要**再起第二套音符镜像——直接消费 `MidiDocument`（唯一权威源）。
 
 impl RunnerInner {
     pub(crate) fn handle_start_video_export(

@@ -36,7 +36,6 @@ impl GpuNoteBuffer {
             max_capacity,
             device: std::sync::Arc::new(device.clone()),
             queue: std::sync::Arc::new(queue.clone()),
-            instances: Vec::with_capacity(Self::INITIAL_CAPACITY),
             epoch,
         }
     }
@@ -73,19 +72,14 @@ impl GpuNoteBuffer {
         let upload_count = instances.len();
         self.instance_count = upload_count;
 
-        // 优化：复制到 CPU 缓存后直接从缓存上传 GPU
-        // 避免对输入 slice 的二次遍历（write_buffer 也会 memcpy）
-        //
-        // 数据流：instances → self.instances（一次遍历）→ write_buffer（缓存热点）
-        // 原方案：instances → self.instances（一次遍历）+ instances → write_buffer（二次遍历）
-        self.instances.clear();
-        self.instances.extend_from_slice(&instances[..upload_count]);
-
-        // 从 CPU 缓存上传 GPU — 此时 self.instances 的数据仍在 L1/L2 cache 中
+        // 直接上传输入 slice，不再落 CPU 镜像（2026-10-17 单一权威源整改）。
+        // 旧实现先整份 memcpy 进 `self.instances` 再从镜像上传——`write_buffer`
+        // 本身就是 memcpy，落镜像纯属多一份 CPU 常驻（16M 音符 = 256MB），
+        // 且在 6 亿音符下把 CPU 峰值推到 30–40 GB。
         self.queue.write_buffer(
             self.instance_buffer.inner(),
             0,
-            bytemuck::cast_slice(&self.instances),
+            bytemuck::cast_slice(&instances[..upload_count]),
         );
 
         tracing::debug!("Uploading {} notes", upload_count);
@@ -93,18 +87,14 @@ impl GpuNoteBuffer {
 
     /// 流式上传：开始一次流式上传会话
     ///
-    /// 重置 instance_count=0，准备接受分块 append。
-    /// 不清空 self.instances（如果存在），因为流式模式下不再使用 CPU 全量副本。
+    /// 重置 `instance_count = 0`，准备接受分块 append（分块直接写 GPU，无 CPU 镜像）。
     ///
-    /// 性能优化（6 亿音符 CPU 峰值问题 2026-08-05）：
-    /// 旧 `upload_all` 维护 `self.instances: Vec<NoteInstance>` CPU 全量副本（9.6 GB @ 6 亿音符），
-    /// 导致 CPU 峰值 30-40 GB。流式模式跳过 CPU 副本，分块直接上传 GPU。
+    /// 历史（2026-08-05，6 亿音符 CPU 峰值 30–40 GB）：当时只有本流式路径跳过
+    /// CPU 全量副本；2026-10-17 整改后**所有**上传/增量路径都不再持有 CPU 镜像，
+    /// 本方法只剩「重置计数」一件事。
     pub fn begin_streaming_upload(&mut self) {
         puffin::profile_function!();
         self.instance_count = 0;
-        // 释放 CPU 缓存——流式模式不再需要全量副本
-        self.instances.clear();
-        self.instances.shrink_to_fit();
     }
 
     /// 流式上传：追加一块音符实例到 GPU buffer

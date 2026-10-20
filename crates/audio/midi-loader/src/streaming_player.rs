@@ -84,6 +84,16 @@ fn scan_tempos(smf: &MmapSmf) -> ScanResult {
 ///
 /// 创建后通过 `next_event` 逐次获取事件，事件按全局 tick 升序排列。
 /// 渲染完成后返回 `None`。
+///
+/// ## ⚠️ 导出链路的两套事件提取实现之一（审计 §6.2 / §18.5）
+///
+/// 音频导出的文件回退分支用本播放器流式提取事件；内存模式用
+/// `MidiDocument` → `MidiDocEventStream`（`lumino-export`）。两者等价性由
+/// `lumino-export` 的 `audio/event_stream/tests_parity.rs` 对拍锁定。
+///
+/// **后续会重构**（2026-10-17 决策：暂不重构）：回退分支改为先载入
+/// `MidiDocument` 再统一走内存路径；保留本路径的理由是超大黑乐谱的
+/// 「零文档常驻」内存优势。改动事件提取逻辑前请先跑通上述对拍。
 pub struct StreamingMidiPlayer<'a> {
     /// 保持字节数据的生命周期，`TrackCursor` 均借用至此。
     _data: core::marker::PhantomData<&'a [u8]>,

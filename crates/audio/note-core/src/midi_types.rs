@@ -69,15 +69,6 @@ pub struct BendPoint {
     pub value: i16,
 }
 
-/// 音轨 CC 数据
-#[derive(Debug, Clone, Default)]
-pub struct CcData {
-    /// 控制器编号 → 控制点列表
-    pub controllers: std::collections::HashMap<u8, Vec<CcPoint>>,
-    /// 弯音点列表
-    pub bend_points: Vec<BendPoint>,
-}
-
 /// 力度点数据
 #[derive(Debug, Clone, Copy)]
 pub struct VelocityPoint {
@@ -306,13 +297,6 @@ mod tests {
         let display_str = BendDisplay.to_string();
         assert!(display_str.contains("Bend"));
         assert!(display_str.contains("-8192"));
-    }
-
-    #[test]
-    fn test_cc_data_default() {
-        let data = CcData::default();
-        assert!(data.controllers.is_empty());
-        assert!(data.bend_points.is_empty());
     }
 
     #[test]

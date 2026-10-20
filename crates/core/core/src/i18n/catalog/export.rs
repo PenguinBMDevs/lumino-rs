@@ -98,6 +98,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "GPU 渲染中（可能耗时，黑 MIDI 请耐心）..." => {
             Some("GPU rendering (this may take a while; heavy MIDI needs patience)...")
         }
+        "MIDI 文件内容为空，无法渲染" => {
+            Some("MIDI file content is empty; cannot render")
+        }
         "GPU 渲染失败: {other}" => Some("GPU rendering failed: {other}"),
         "GPU 写入输出..." => Some("GPU writing output..."),
         "GPU 写入 {pct}%" => Some("GPU writing {pct}%"),

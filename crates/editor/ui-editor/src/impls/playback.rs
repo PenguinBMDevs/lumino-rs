@@ -6,7 +6,6 @@
 
 use crate::spatial_index::{NoteRef, NoteSpatialIndex};
 use crate::{Editor, onion_track_color};
-use lumino_midi_loader::MidiDocument;
 
 /// 播放键色增量扫描状态
 ///
@@ -17,8 +16,8 @@ use lumino_midi_loader::MidiDocument;
 /// O(新进入活跃的音符) + O(活跃音符 retain)。
 ///
 /// 触发全量重建的条件：
-/// - 首次调用（`doc_addr == None`）
-/// - MIDI 文档切换（`doc_addr` 变化）
+/// - 首次调用（`notes_gen == None`）
+/// - 音符数据世代变化（`EditorData::track_notes_gen` 变化：编辑音符、装载新文档）
 /// - tick 回退（循环播放、用户拖动进度条）
 /// - tick 大幅前跳（用户 seek）
 #[derive(Default)]
@@ -30,8 +29,18 @@ pub(crate) struct PlaybackScanState {
     /// 当前活跃音符缓存：(end_tick, key_offset_bytes, color)
     /// 每帧 retain 清理已结束音符，涂色时直接遍历此 Vec
     pub active_notes: Vec<(u32, usize, [u8; 4])>,
-    /// 上次扫描时的 `Arc<MidiDocument>` 地址（用于检测文档切换）
-    pub doc_addr: Option<usize>,
+    /// 上次构建索引时的**音符内容世代**（`EditorData::track_notes_gen`）。
+    ///
+    /// 2026-10-17（审计 §五）修正：此前比对的是 `doc as *const MidiDocument` 地址，
+    /// 两个方向都会漏判：
+    ///
+    /// 1. **就地编辑**（增/删/改音符）不改变文档地址 → 索引被判有效，此后全量重建会拿陈旧索引着色；
+    /// 2. **换文档**（旧文档 drop、新文档分配到同地址）→ 误判为同一份，残留上一份文档的键色。
+    ///
+    /// `track_notes_gen` 是代码库既有的音符内容世代（`mark_track_notes_changed`，
+    /// 所有音符写入入口都必须 bump），且装载新文档时也会 bump
+    /// （`Root::set_midi_document` / `host::editor_ops::set_midi_document`）。
+    pub notes_gen: Option<u64>,
     /// 跨所有轨的播放键色空间索引（按 doc 缓存），用于全量重建时 O(活跃) 取活跃音符。
     /// `None` 表示未构建（超大工程超阈值）或已重置，调用方回退 O(end) 线性扫描。
     pub key_color_index: Option<PlaybackKeyIndex>,
@@ -110,22 +119,23 @@ impl Editor {
 
         // 一次性取出文档相关标量后立即释放文档不可变借用，避免在后续 `&mut self`
         // 调用（`rebuild_playback_key_index`）时因同时存在借用而触发借用冲突。
-        let (track_count, current_doc_addr, need_full_rebuild) = {
+        let (track_count, notes_gen, need_full_rebuild) = {
             let Some(doc) = self.editor_state.data.document.as_ref() else {
                 return;
             };
-            let current_doc_addr = doc as *const MidiDocument as usize;
-            let doc_changed = self.playback_scan_state.doc_addr != Some(current_doc_addr);
+            // 用音符内容世代（而非文档地址）判断数据是否变化：见 `notes_gen` 字段文档
+            let notes_gen = self.editor_state.data.track_notes_gen;
+            let notes_changed = self.playback_scan_state.notes_gen != Some(notes_gen);
             let last_tick = self.playback_scan_state.last_tick;
             let need_full_rebuild =
-                doc_changed || tick < last_tick || (tick - last_tick) > SEEK_THRESHOLD_TICKS;
-            (doc.track_count(), current_doc_addr, need_full_rebuild)
+                notes_changed || tick < last_tick || (tick - last_tick) > SEEK_THRESHOLD_TICKS;
+            (doc.track_count(), notes_gen, need_full_rebuild)
         };
 
         if need_full_rebuild {
-            // 仅在文档切换时重建索引（按 doc 缓存，避免每次 seek/循环重复建树）
-            if self.playback_scan_state.doc_addr != Some(current_doc_addr) {
-                self.rebuild_playback_key_index(track_count, current_doc_addr);
+            // 仅在音符数据变化时重建索引（按世代缓存，避免每次 seek/循环重复建树）
+            if self.playback_scan_state.notes_gen != Some(notes_gen) {
+                self.rebuild_playback_key_index(track_count, notes_gen);
             }
 
             let Some(doc) = self.editor_state.data.document.as_ref() else {
@@ -170,7 +180,7 @@ impl Editor {
                     last_tick: tick,
                     scan_idx: vec![0; track_count],
                     active_notes: Vec::new(),
-                    doc_addr: Some(current_doc_addr),
+                    notes_gen: Some(notes_gen),
                     key_color_index: None,
                 };
 
@@ -252,11 +262,11 @@ impl Editor {
     /// 增长）。改用本索引后，全量重建经 `update_query(tick, tick, 0, 255, _)` 直接取得
     /// 在 `tick` 活跃的音符，复杂度降为 O(活跃音符数)，与已播放音符总量无关。
     ///
-    /// 仅在 `doc_changed` 时调用一次；音符总量超阈值则置 `None`，由调用方回退线性扫描。
+    /// 仅在音符数据世代变化时调用一次；音符总量超阈值则置 `None`，由调用方回退线性扫描。
     ///
     /// # 参数
-    /// - `current_doc_addr`：当前文档地址，用于更新 `doc_addr` 缓存，避免下一帧误判文档切换
-    fn rebuild_playback_key_index(&mut self, track_count: usize, current_doc_addr: usize) {
+    /// - `notes_gen`：当前音符内容世代，写入 `notes_gen` 缓存，避免下一帧重复重建
+    fn rebuild_playback_key_index(&mut self, track_count: usize, notes_gen: u64) {
         puffin::profile_scope!("rebuild_playback_key_index");
         let Some(doc) = self.editor_state.data.document.as_ref() else {
             return;
@@ -293,7 +303,7 @@ impl Editor {
             }
         }
 
-        self.playback_scan_state.doc_addr = Some(current_doc_addr);
+        self.playback_scan_state.notes_gen = Some(notes_gen);
 
         if aborted {
             self.playback_scan_state.key_color_index = None;
