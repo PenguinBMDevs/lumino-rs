@@ -3,8 +3,8 @@
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
-    GateRangeParams, RangeDir, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
-    ShapeStyle, TumourParams,
+    GateRangeParams, PolyStyle, PolygonParams, RangeDir, ShapeFill, ShapeGeometry, ShapeKind,
+    ShapeModel, ShapeOp, ShapeStyle, TumourParams,
 };
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
@@ -39,6 +39,39 @@ fn arc_shape(mid_key: f32) -> ShapeModel {
     let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);
     model
+}
+
+fn polygon_shape(style: PolyStyle, points: u16) -> ShapeModel {
+    let rect = lumino_core::shape::ShapeRect {
+        tick_lo: 100.0,
+        key_lo: 60.0,
+        tick_hi: 500.0,
+        key_hi: 68.0,
+    };
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 1.0);
+    model.geometry = ShapeGeometry::from_rect(rect);
+    model.ops.push(ShapeOp::Polygon(PolygonParams {
+        points,
+        style,
+        ..PolygonParams::default()
+    }));
+    model
+}
+
+#[test]
+fn test_polygon_generates_outline_inside_box() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&polygon_shape(PolyStyle::Polygon, 4), 1);
+    assert!(!notes.is_empty(), "方形应生成描边音符");
+    assert!(notes.iter().all(|n| (100.0..=500.0).contains(&n.tick)));
+    assert!(notes.iter().all(|n| (60..=68).contains(&n.key)));
+}
+
+#[test]
+fn test_cross_6_2_generates_two_loops() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&polygon_shape(PolyStyle::Cross, 6), 1);
+    assert!(!notes.is_empty(), "6/2 两个三角形环都应产出音符");
 }
 
 #[test]

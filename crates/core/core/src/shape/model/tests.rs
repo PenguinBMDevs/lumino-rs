@@ -3,8 +3,9 @@
 use super::*;
 use crate::shape::{
     ChopParams, ClawParams, CycleBy, CycleParams, GateRangeParams, GlueParams, MaskMode,
-    MaskParams, MaskShow, OpStage, RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind,
-    ShapeRect, ShapeStyle, StopsParams, StrumParams, SustainParams, TumourParams,
+    MaskParams, MaskShow, OpStage, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, StrumParams, SustainParams,
+    TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -226,6 +227,11 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "GateRange 是生成音符之后的 Notes 阶段标记"
     );
+    assert_eq!(
+        ShapeOp::Polygon(PolygonParams::default()).stage(),
+        OpStage::Geometry,
+        "Polygon 是几何来源，必须先于音符生成"
+    );
 }
 
 #[test]
@@ -311,6 +317,32 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_polygon() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Polygon(PolygonParams {
+        points: 2,
+        ..PolygonParams::default()
+    }));
+    let err = shape.validate().expect_err("points=2 的 Polygon 应被拒绝");
+    assert!(format!("{err}").contains("Polygon"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_polygon() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Polygon(PolygonParams {
+        points: 7,
+        style: PolyStyle::Star,
+        inner: 42.5,
+        skip: 3,
+        shape: None,
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Polygon 的形状应逐字段往返");
 }
 
 #[test]

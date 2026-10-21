@@ -11,6 +11,8 @@ use super::{chop, claw, cycle, gateflip, glue, strum, sustain, tumours};
 pub struct OpContext {
     /// 每四分音符的 tick 数（PPQ）；必须为正
     pub ppq: f64,
+    /// 形状外接框（Polygon 等框型几何需要）；无框为 `None`
+    pub rect: Option<ShapeRect>,
 }
 
 impl OpContext {
@@ -22,7 +24,14 @@ impl OpContext {
             } else {
                 f64::EPSILON
             },
+            rect: None,
         }
+    }
+
+    /// 附带形状外接框（Polygon / 框型几何）
+    pub fn with_rect(mut self, rect: Option<ShapeRect>) -> Self {
+        self.rect = rect;
+        self
     }
 }
 
@@ -39,6 +48,8 @@ pub fn apply_geometry_ops(
             ShapeOp::Tumours(params) => {
                 current = tumours::apply(&current, params, ctx.ppq).0;
             }
+            // Polygon 由调用方按 box 预生成（可能多环）；链上不二次替换路径。
+            ShapeOp::Polygon(_) => {}
             // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。
             ShapeOp::Glue(_)
             | ShapeOp::Claw(_)
