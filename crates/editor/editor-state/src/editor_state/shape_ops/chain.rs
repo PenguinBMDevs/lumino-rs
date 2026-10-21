@@ -4,7 +4,7 @@ use lumino_core::shape::{OpStage, ShapeOp, ShapeRect};
 
 use crate::ShapeNote;
 
-use super::{chop, claw, gateflip, glue, strum, tumours};
+use super::{chop, claw, gateflip, glue, strum, sustain, tumours};
 
 /// 几何阶段的上下文（目前只需要拍 → tick 的换算）
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,12 +39,13 @@ pub fn apply_geometry_ops(
             ShapeOp::Tumours(params) => {
                 current = tumours::apply(&current, params, ctx.ppq).0;
             }
-            // Glue / Claw / Strum / Chop / GateFlip 是 Notes 阶段，已被上面的 stage filter 排除。
+            // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。
             ShapeOp::Glue(_)
             | ShapeOp::Claw(_)
             | ShapeOp::Strum(_)
             | ShapeOp::Chop(_)
-            | ShapeOp::GateFlip => {}
+            | ShapeOp::GateFlip
+            | ShapeOp::Sustain(_) => {}
         }
     }
     current
@@ -78,5 +79,11 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             _ => {}
         }
     }
-    // 其它 Notes 阶段算子（DRAW-008/010）在此之后按数组顺序应用。
+    // Sustain 恒为最后一步（上游明确；只让音符变长），不依赖它在数组中的位置。
+    for op in ops {
+        if let ShapeOp::Sustain(params) = op {
+            *notes = sustain::apply(notes, params, ctx.ppq).0;
+        }
+    }
+    // 其它 Notes 阶段算子（DRAW-010）在此之后按数组顺序应用。
 }

@@ -3,7 +3,7 @@
 use super::*;
 use crate::shape::{
     ChopParams, ClawParams, GlueParams, OpStage, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect,
-    ShapeStyle, StrumParams, TumourParams,
+    ShapeStyle, StopsParams, StrumParams, SustainParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -205,6 +205,11 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "GateFlip 是生成音符之后的 Notes 阶段算子"
     );
+    assert_eq!(
+        ShapeOp::Sustain(SustainParams::default()).stage(),
+        OpStage::Notes,
+        "Sustain 是生成音符之后的 Notes 阶段算子"
+    );
 }
 
 #[test]
@@ -257,6 +262,36 @@ fn test_validate_rejects_bad_chop_params() {
     }));
     let err = shape.validate().expect_err("steps=0 的 Chop 应被拒绝");
     assert!(format!("{err}").contains("Chop"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_sustain_params() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Sustain(SustainParams {
+        most_beats: Some(0.0),
+        ..SustainParams::default()
+    }));
+    let err = shape.validate().expect_err("most=0 的 Sustain 应被拒绝");
+    assert!(format!("{err}").contains("Sustain"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_sustain() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Sustain(SustainParams {
+        gap_beats: Some(0.25),
+        most_beats: Some(2.0),
+        every_beats: Some(1.0),
+        from_beats: Some(0.5),
+        stops: Some(StopsParams {
+            at: vec![0.5],
+            past: true,
+            off: false,
+        }),
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Sustain 的形状应逐字段往返");
 }
 
 #[test]

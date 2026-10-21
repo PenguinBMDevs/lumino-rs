@@ -1,6 +1,8 @@
 //! 算子链与 Tumours 几何测试
 
-use lumino_core::shape::{GlueParams, ShapeOp, TumourParams, TumourShape, TumourSide};
+use lumino_core::shape::{
+    GlueParams, ShapeOp, SustainParams, TumourParams, TumourShape, TumourSide,
+};
 
 use super::*;
 use crate::ShapeNote;
@@ -235,6 +237,37 @@ fn test_note_ops_applies_gate_flip() {
         vec![240.0, 120.0, 0.0],
         "GateFlip 应通过算子链生效"
     );
+}
+
+#[test]
+fn test_note_ops_applies_sustain() {
+    let mut notes = vec![
+        ShapeNote {
+            track: 0,
+            tick: 0.0,
+            key: 60,
+            length: 100.0,
+            velocity: 100,
+        },
+        ShapeNote {
+            track: 0,
+            tick: 50.0,
+            key: 60,
+            length: 100.0,
+            velocity: 100,
+        },
+    ];
+    let ops = vec![ShapeOp::Sustain(SustainParams::default())];
+    apply_note_ops(
+        &mut notes,
+        &ops,
+        &NoteOpContext {
+            ppq: PPQ,
+            ..NoteOpContext::default()
+        },
+    );
+    assert_eq!(notes[0].length, 150.0, "组末 150；Sustain 应通过算子链生效");
+    assert_eq!(notes[1].length, 100.0);
 }
 
 #[test]
