@@ -237,6 +237,8 @@ pub struct Editor {
     pub context_menu: context_menu::PianoRollContextMenuState,
     /// 020 Custom edit 的手柄拖拽状态
     pub(crate) shape_edit: Option<crate::interaction::shape_edit_ui::ShapeEditState>,
+    /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）
+    pub(crate) baked_pending: std::collections::HashMap<u64, crate::interaction::bake::BakePending>,
 
     /// 选择框边界缓存（raw 坐标），增量维护，避免每帧 O(N) 全量扫描。
     /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。

@@ -22,10 +22,10 @@
 //! 从 `line_tool.rs` 拆出（文件长度纪律）：交互处理与提交职责分离。
 
 use super::{fill, geom, paths, stroke_band};
+use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
-use lumino_editor_state::{BezierAnchor, ShapeNote};
+use lumino_editor_state::BezierAnchor;
 use lumino_note_core::history::CreateOp;
-use std::collections::HashSet;
 
 impl Editor {
     /// 一条路径的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
@@ -36,9 +36,8 @@ impl Editor {
     /// （宽度 = N × 单 key 高），而产物是**单侧向外**铺 `N-1` 层，两者差到用户报的
     /// "宽度显示 X2"。
     ///
-    /// 逐路径独立生成（与下面的"逐路径音符归属"同一口径）：多条路径重叠时预览按各自
-    /// 路径各画一份，写入侧由跨路径 `keep_longest` 收敛——重叠区域的**覆盖**两者相同，
-    /// 仅"归谁"不同（与 [`Self::record_line_tool_paths`] 的既有说明一致）。
+    /// 逐路径独立生成：多条路径重叠时预览按各自路径各画一份，写入侧由跨路径
+    /// `keep_longest` 收敛——重叠区域的**覆盖**两者相同，仅"归谁"不同。
     pub(crate) fn path_outline_blocks(&self, path: &[BezierAnchor]) -> Vec<(f32, f32, u16)> {
         if path.len() < 2 {
             return Vec::new();
@@ -122,35 +121,6 @@ impl Editor {
             return false;
         }
 
-        // 逐路径音符归属（供「鼠标工具」登记图形对象）：每条路径独立按同规则生成，
-        // 跨路径首占去重。路径互不重叠时与整体 keep_longest 结果逐项一致；
-        // 重叠时仅归属可能落在先登记的路径上，音符本身（写入 payload）不受影响。
-        let owner_track = self.editor_state.data.current_track;
-        let mut per_path_notes: Vec<Vec<ShapeNote>> = Vec::with_capacity(line_paths.len());
-        let mut claimed: HashSet<(i64, u16)> = HashSet::new();
-        for path in &line_paths {
-            if path.len() < 2 {
-                per_path_notes.push(Vec::new());
-                continue;
-            }
-            // 与写入 payload 同源（含全局粗细的**法线加粗** + 最小长度下限）：
-            // 直接复用预览块入口 [`Self::path_outline_blocks`]，杜绝"预览一套、登记一套"
-            let owned: Vec<ShapeNote> = self
-                .path_outline_blocks(path)
-                .into_iter()
-                .filter(|(t, _, k)| claimed.insert((*t as i64, *k)))
-                .map(|(start, end, key)| ShapeNote {
-                    track: owner_track,
-                    tick: start,
-                    key,
-                    length: end - start,
-                    velocity: 100,
-                    channel: 0,
-                })
-                .collect();
-            per_path_notes.push(owned);
-        }
-
         let track = self.editor_state.data.current_track;
         let total = notes.len();
         let mut create_ops = Vec::with_capacity(total);
@@ -201,13 +171,19 @@ impl Editor {
             return false;
         }
 
-        // 批量创建操作日志（撤销/重做）+ 标记当前轨变化
-        self.editor_state.data.history.push_note_create(create_ops);
+        // 一次 ✓ = 一个独立历史分组（不能被 NoteCreate 合并窗口并到上一次 Bake）
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
         self.editor_state.data.mark_current_track_changed();
-        // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空路径之前读几何）
-        self.record_line_tool_paths(per_path_notes);
+        // Bake：保存 ✓ 前的矢量状态，供 undo 恢复；✓ 后不登记任何 DrawnShape。
+        let pending = BakePending::Line(self.editor_state.line_tool.clone());
+        self.remember_bake(group, pending);
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
+        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }

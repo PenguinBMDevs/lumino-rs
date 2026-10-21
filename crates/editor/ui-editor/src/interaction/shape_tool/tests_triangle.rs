@@ -10,8 +10,8 @@
 
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
+use lumino_editor_state::ShapeKind;
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_vertices};
-use lumino_editor_state::{DrawnShapeSource, ShapeKind};
 use std::collections::BTreeMap;
 
 /// 构造一个非 Conductor 轨（track 1，空）、吸附精度 = 1 的编辑器
@@ -137,14 +137,16 @@ fn test_drag_up_produces_inverted_triangle() {
         ],
         "倒立：宽行在上、顶点行在下（上一条正立用例的逐行镜像）"
     );
-    // 登记的几何必须带上朝向：外接框已规范化、朝向无法反推，
-    // 丢了它鼠标工具的高亮/命中会把倒三角画成镜像
-    match &editor.editor_state.shape_select.shapes()[0].source {
-        DrawnShapeSource::Shape { apex_high, .. } => {
-            assert!(!apex_high, "登记来源应保留倒立朝向");
-        }
-        other => panic!("期望 Shape 几何，实际 {other:?}"),
-    }
+    assert_eq!(
+        editor.editor_state.shape_select.len(),
+        0,
+        "Bake 后不应登记图形对象"
+    );
+    // undo 恢复的待确认形状必须带上朝向：外接框已规范化、朝向无法反推，
+    // 丢了它下一次 ✓ 或鼠标工具高亮会把倒三角画成镜像
+    assert!(editor.undo(), "Bake 应可撤销");
+    let restored = &editor.editor_state.shape_tool.shapes[0];
+    assert!(!restored.apex_high, "恢复的待确认形状应保留倒立朝向");
 }
 
 /// 拖拽过程中越过起点 ⇒ 预览**实时**翻面（松手前已可见），确认结果与最终朝向一致

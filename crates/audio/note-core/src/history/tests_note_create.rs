@@ -64,6 +64,20 @@ fn test_push_note_create_within_window_merges() {
 }
 
 #[test]
+fn test_push_note_create_new_group_never_merges() {
+    let mut history = History::new();
+    let first = history.push_note_create_new_group(vec![make_create_op(1, 0)]);
+    let second = history.push_note_create_new_group(vec![make_create_op(1, 100)]);
+    assert_ne!(first, second, "每次 Bake 必须分配独立 group");
+    assert_eq!(history.undo_len(), 2, "连续确认不得被合并窗口并成一条");
+
+    let top = assert_create(history.undo_back().expect("应存在可撤销条目"));
+    assert_eq!(top.group_id, Some(second));
+    assert_eq!(top.ops.len(), 1, "新分组不得带上上一组 ops");
+    assert_eq!(top.parent_group_id, None, "Bake 分组不参与父组链");
+}
+
+#[test]
 fn test_push_note_create_split_on_limit() {
     let mut history = History::with_config(100, 300, 2);
     history.push_note_create(vec![make_create_op(1, 0)]);

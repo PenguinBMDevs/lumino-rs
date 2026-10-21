@@ -63,7 +63,31 @@ fn release(editor: &mut Editor) {
     editor.handle_action(EditorAction::Released);
 }
 
-/// 用形状工具画出矩形并 √（真实确认链路，登记图形对象）
+/// 为注册表行为测试登记一个“已确认图形”；Bake 的真实确认链路不再登记。
+fn register_test_drawn_shape(editor: &mut Editor, source: lumino_editor_state::DrawnShapeSource) {
+    let track = editor.editor_state.data.current_track;
+    let notes: Vec<lumino_editor_state::ShapeNote> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .map(|n| lumino_editor_state::ShapeNote {
+            track,
+            tick: n.start_tick as f32,
+            key: n.key as u16,
+            length: (n.end_tick - n.start_tick) as f32,
+            velocity: n.velocity,
+            channel: n.channel,
+        })
+        .collect();
+    let group = editor.last_create_group();
+    editor
+        .editor_state
+        .shape_select
+        .add(track, group, source, notes);
+}
+
+/// 用形状工具画出矩形并 √（真实确认链路 + 测试用注册表对象）
 fn draw_and_confirm_rect(editor: &mut Editor) {
     editor.set_tool(Tool::Shape);
     editor.set_shape(lumino_editor_state::ShapeKind::Rectangle);
@@ -71,7 +95,17 @@ fn draw_and_confirm_rect(editor: &mut Editor) {
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
     editor.handle_shape_tool_released();
-    assert!(editor.confirm_shape_tool(), "矩形应生成音符并登记图形");
+    assert!(editor.confirm_shape_tool(), "矩形应生成音符");
+    register_test_drawn_shape(
+        editor,
+        lumino_editor_state::DrawnShapeSource::Shape {
+            kind: lumino_editor_state::ShapeKind::Rectangle,
+            rect: (0.0, 60.0, 4.0, 64.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: false,
+        },
+    );
 }
 
 /// 场景一：√ 确认后的图形 → 鼠标工具空白拉框 → **必须**出现选中选框，且框内可拖动
@@ -127,31 +161,35 @@ fn test_marquee_over_confirmed_shape_shows_box_and_can_drag() {
     );
 }
 
-/// 场景二：√ 确认后的**曲线**（折线）→ 鼠标工具框选 → 选框 + 拖动
+/// 场景二：曲线 √ 后 Bake：只留音符，undo 恢复待确认曲线，redo 再次丢弃
 #[test]
-fn test_marquee_over_confirmed_curve_shows_box_and_can_drag() {
-    let mut editor = editor_with_canvas();
+fn test_confirmed_curve_bakes_and_undo_restores_path() {
+    let mut editor = editor_with_empty_canvas();
     editor.set_tool(Tool::Curve);
     editor.editor_state.line_tool.paths = vec![vec![
         lumino_editor_state::BezierAnchor::new((0.0, 60.0)),
         lumino_editor_state::BezierAnchor::new((40.0, 70.0)),
     ]];
     editor.editor_state.line_tool.recompute_auto_handles();
-    assert!(editor.confirm_line_tool(), "曲线应生成音符并登记折线");
-    editor.set_tool(Tool::ShapeSelect);
-
-    press_at(&mut editor, (200.0, 90.0), false);
-    move_to(&mut editor, (0.0, 40.0));
-    release(&mut editor);
-
-    assert!(
-        editor.editor_state.shape_select.selection_len() > 0,
-        "框内曲线应被框选选中"
+    assert!(editor.confirm_line_tool(), "曲线应生成音符");
+    assert_eq!(
+        editor.editor_state.shape_select.len(),
+        0,
+        "Bake 后不应有可交互曲线对象"
     );
-    assert!(
-        editor.selection_box().is_some(),
-        "框选曲线后必须显示选中选框（BUG：框选后无选框）"
+    assert!(!editor.editor_state.data.current_track_notes().is_empty());
+
+    assert!(editor.undo(), "Bake 应可撤销");
+    assert_eq!(
+        editor.editor_state.line_tool.paths.len(),
+        1,
+        "undo 应恢复待确认曲线"
     );
+    assert!(editor.editor_state.data.current_track_notes().is_empty());
+
+    assert!(editor.redo(), "Bake 应可重做");
+    assert!(editor.editor_state.line_tool.paths.is_empty());
+    assert!(!editor.editor_state.data.current_track_notes().is_empty());
 }
 
 /// 场景三：**未 √** 的待确认图形 → 切「鼠标工具」→ 框选 → 选框 + 拖动 → √ 落在新位置
@@ -472,7 +510,17 @@ fn test_marquee_over_two_confirmed_shapes_boxes_union_and_drags_group() {
         editor.handle_shape_tool_pressed(t0, 60.0, false);
         editor.handle_shape_tool_moved(t1, 64.0);
         editor.handle_shape_tool_released();
-        assert!(editor.confirm_shape_tool(), "矩形应生成音符并登记图形");
+        assert!(editor.confirm_shape_tool(), "矩形应生成音符");
+        register_test_drawn_shape(
+            &mut editor,
+            lumino_editor_state::DrawnShapeSource::Shape {
+                kind: lumino_editor_state::ShapeKind::Rectangle,
+                rect: (t0, 60.0, t1, 64.0),
+                shift_constrained: false,
+                filled: false,
+                apex_high: false,
+            },
+        );
     }
     editor.set_tool(Tool::ShapeSelect);
 
@@ -554,7 +602,13 @@ fn test_marquee_over_confirmed_brush_stroke_shows_box_and_can_drag() {
         points: vec![(0.0, 60.0), (20.0, 64.0), (40.0, 68.0)],
         base_track: 1,
     });
-    assert!(editor.confirm_brush(), "画刷笔画应生成音符并登记折线");
+    assert!(editor.confirm_brush(), "画刷笔画应生成音符");
+    register_test_drawn_shape(
+        &mut editor,
+        lumino_editor_state::DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (20.0, 64.0), (40.0, 68.0)],
+        },
+    );
     editor.set_tool(Tool::ShapeSelect);
 
     press_at(&mut editor, (100.0, 90.0), false);

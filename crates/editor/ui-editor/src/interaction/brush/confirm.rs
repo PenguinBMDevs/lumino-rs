@@ -9,8 +9,8 @@
 //! 小规模逐笔 `insert_note_with_id`（自动记录 GPU 段内增量事件），
 //! 大规模走批量归并（O(N+M) 单次重建）并显式补标受影响轨。
 
+use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
-use lumino_editor_state::ShapeNote;
 use lumino_note_core::history::CreateOp;
 use std::collections::HashSet;
 
@@ -27,27 +27,12 @@ impl Editor {
         if thickness == 0 {
             return false;
         }
-        // 预览与写入的唯一权威源（所见即生成）；附带来源笔画以登记图形对象
+        // 预览与写入的唯一权威源（所见即生成）；✓ 后只 Bake 音符，不登记矢量对象
         let pending_with_stroke = self.brush_pending_notes_by_stroke();
         if pending_with_stroke.is_empty() {
             return false;
         }
         let snap = self.editor_state.view.snap_precision.max(1.0);
-        // 逐笔画音符归属（与写入同源，仅多带来源信息）
-        let mut per_stroke_notes: Vec<Vec<ShapeNote>> =
-            vec![Vec::new(); self.editor_state.brush_tool.strokes.len()];
-        for (stroke_idx, item) in &pending_with_stroke {
-            if let Some(bucket) = per_stroke_notes.get_mut(*stroke_idx) {
-                bucket.push(ShapeNote {
-                    track: item.track,
-                    tick: item.tick_cell as f32 * snap,
-                    key: item.key,
-                    length: snap,
-                    velocity: 100,
-                    channel: 0,
-                });
-            }
-        }
         let pending: Vec<_> = pending_with_stroke.iter().map(|(_, item)| *item).collect();
         let total = pending.len();
 
@@ -125,15 +110,24 @@ impl Editor {
             return false;
         }
 
-        // 一次历史记录（多轨合并为一组）+ 精确标记受影响轨
-        self.editor_state.data.history.push_note_create(create_ops);
+        // 一次 ✓ = 一个独立历史记录（多轨合并为一组，不参与 NoteCreate 合并窗口）
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空笔画之前读几何）
-        self.record_brush_strokes(per_stroke_notes);
+        // Bake：保存 ✓ 前笔画，undo 恢复；✓ 后不登记 DrawnShape。
+        let pending = BakePending::Brush {
+            state: self.editor_state.brush_tool.clone(),
+            config: self.brush.clone(),
+        };
+        self.remember_bake(group, pending);
         // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
         self.editor_state.brush_tool.reset();
+        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }
