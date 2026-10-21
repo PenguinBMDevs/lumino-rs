@@ -25,12 +25,12 @@ pub use shape::{
     AreaSpot, ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CurveRef,
     CycleBy, CycleParams, DrawingRef, Expr, ExprError, FunnelParams, FunnelStart, GateRangeParams,
     GlueParams, JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams,
-    MaskShow, NestedParams, NestedWay, OpStage, PATTERN_PRESETS, PatternParams, PatternPreset,
-    PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeAnchor, ShapeFill,
-    ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds,
-    StopsParams, StrumParams, SustainParams, Sym, TileBy, TileFlip, TileLayout, TilesParams,
-    TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, pattern_from_preset,
-    pattern_preset,
+    MaskShow, MergeParams, NestedParams, NestedWay, OpStage, PATTERN_PRESETS, PatternParams,
+    PatternPreset, PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeAnchor,
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign,
+    SpamEnds, StopsParams, StrumParams, SustainParams, Sym, TileBy, TileFlip, TileLayout,
+    TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
+    pattern_from_preset, pattern_preset,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};
