@@ -23,9 +23,9 @@ use std::collections::BTreeMap;
 
 use crate::interaction::line_tool::{geom, paths};
 use crate::{Editor, Note};
-use lumino_core::shape::{ShapeFill, ShapeModel, ShapeOp, ShapeRect};
+use lumino_core::shape::{ShapeFill, ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 use lumino_editor_state::shape_ops::{
-    NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops,
+    NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops, arc_k_or_one, arc_points_scaled,
 };
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
@@ -61,9 +61,24 @@ impl Editor {
         if anchors.len() < 2 {
             return Vec::new();
         }
-        let poly = geom::flatten_path(&anchors);
+        let ppq = f64::from(self.editor_state.view.ppq);
+        // Arc：三点定圆，在屏幕空间（beats/k, keys）求解；退化则回退为折线。
+        let poly = if model.kind == ShapeKind::Arc && model.geometry.anchors.len() >= 3 {
+            let to_beat = |a: &lumino_core::shape::ShapeAnchor| {
+                (f64::from(a.pos.0) / ppq, f64::from(a.pos.1))
+            };
+            let a = to_beat(&model.geometry.anchors[0]);
+            let b = to_beat(&model.geometry.anchors[1]);
+            let c = to_beat(&model.geometry.anchors[2]);
+            arc_points_scaled(a, b, c, arc_k_or_one(f64::from(model.k)))
+                .into_iter()
+                .map(|(beat, key)| (beat * ppq, key))
+                .collect()
+        } else {
+            geom::flatten_path(&anchors)
+        };
         // Geometry 阶段算子（Tumours）：先改路径，再走同源音符生成
-        let ctx = OpContext::new(f64::from(self.editor_state.view.ppq));
+        let ctx = OpContext::new(ppq);
         let poly = apply_geometry_ops(&poly, &model.ops, &ctx);
         let note_ctx = NoteOpContext {
             glue_box: shape_box_of(&poly),
