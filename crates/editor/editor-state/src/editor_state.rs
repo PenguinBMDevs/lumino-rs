@@ -28,6 +28,7 @@ pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
 pub mod selection_set;
+pub mod shape_edit;
 pub mod shape_ops;
 pub mod shape_store;
 pub mod shape_tool;
@@ -57,6 +58,10 @@ pub use line_tool::{
     BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
 };
 pub use selection_set::SelectionSet;
+pub use shape_edit::{
+    Corner, EditHandles, HandleKind, Mods, Side, Zoom, apply_drag, handles as edit_handles,
+    hit_test,
+};
 pub use shape_tool::{
     ShapeInstance, ShapeKind, ShapePreview, ShapeSpec, ShapeToolInteraction, ShapeToolState,
 };
