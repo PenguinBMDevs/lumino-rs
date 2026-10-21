@@ -18,6 +18,7 @@ mod pressed;
 mod released;
 pub(crate) mod shape_bridge;
 pub(crate) mod shape_compose;
+pub(crate) mod shape_edit_ui;
 pub(crate) mod shape_ops;
 pub(crate) mod shape_tool;
 pub(crate) mod text_tool;

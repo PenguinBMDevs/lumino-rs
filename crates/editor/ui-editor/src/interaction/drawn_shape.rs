@@ -585,6 +585,10 @@ impl Editor {
         // 手势边界自愈：命中判定与选框都建立在镜像几何之上，动手前先保证它是最新的
         // （任何未预料到的待确认几何改动都不会再退化成「框不中」）。
         self.refresh_pending_mirror_geometry();
+        if self.begin_shape_edit(tick, key) {
+            self.grid_cache.clear();
+            return;
+        }
         match self.hit_test_drawn_shape(tick, key) {
             Some(id) => {
                 if additive {
@@ -618,6 +622,10 @@ impl Editor {
 
     /// 鼠标工具：拖动中 —— 更新预览偏移（拖动整组）或拉框矩形（框选），均不改文档
     pub(crate) fn handle_shape_select_moved(&mut self, tick: f32, key: f32) {
+        if self.is_shape_editing() {
+            self.update_shape_edit(tick, key);
+            return;
+        }
         if self.editor_state.shape_select.is_dragging() {
             let snap = self.editor_state.view.snap_precision;
             self.editor_state.shape_select.update_drag(tick, key, snap);
@@ -634,6 +642,12 @@ impl Editor {
 
     /// 鼠标工具：左键释放 —— 有实际位移则提交**整组移动**，否则落在框选上
     pub(crate) fn handle_shape_select_released(&mut self) {
+        if self.is_shape_editing() {
+            self.finish_shape_edit();
+            self.pending_drag_applied = (0.0, 0.0);
+            self.grid_cache.clear();
+            return;
+        }
         if let Some((dtick, dkey)) = self.editor_state.shape_select.end_drag() {
             self.move_selected_shapes(dtick, dkey);
         } else if let Some(area) = self.editor_state.shape_select.end_marquee() {
