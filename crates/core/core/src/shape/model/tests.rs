@@ -6,7 +6,7 @@ use crate::shape::{
     JoinedParams, LiveShapeParams, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams,
     OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill,
     ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, Stroke, StrokeKind, StrumParams,
-    SustainParams, TilesParams, TumourParams,
+    SustainParams, Sym, SymAxis, SymParams, TilesParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -268,6 +268,19 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "Merge 在音符生成后逐行滑移"
     );
+    assert_eq!(
+        ShapeOp::Symmetry(symmetry_params()).stage(),
+        OpStage::Geometry,
+        "Symmetry 必须在音符生成前展开"
+    );
+}
+
+fn symmetry_params() -> SymParams {
+    SymParams {
+        mode: Sym::Mirror,
+        axis: SymAxis::Vertical { x: 100.0 },
+        source: 0,
+    }
 }
 
 fn joined_params() -> JoinedParams {
@@ -395,6 +408,26 @@ fn test_shape_model_roundtrip_with_merge() {
     let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
     let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
     assert_eq!(back, shape, "含 Merge 的形状应逐字段往返");
+}
+
+#[test]
+fn test_validate_and_roundtrip_symmetry() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Symmetry(symmetry_params()));
+    shape.validate().expect("合法 Symmetry 应通过");
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Symmetry 的形状应逐字段往返");
+
+    let mut bad = sample_shape();
+    bad.push_op(ShapeOp::Symmetry(SymParams {
+        axis: SymAxis::Custom {
+            origin: (0.0, 0.0),
+            dir: (0.0, 0.0),
+        },
+        ..symmetry_params()
+    }));
+    assert!(bad.validate().is_err());
 }
 
 #[test]

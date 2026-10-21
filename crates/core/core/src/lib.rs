@@ -28,8 +28,8 @@ pub use shape::{
     MaskShow, MergeParams, NestedParams, NestedWay, OpStage, PATTERN_PRESETS, PatternParams,
     PatternPreset, PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeAnchor,
     ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign,
-    SpamEnds, StopsParams, StrumParams, SustainParams, Sym, TileBy, TileFlip, TileLayout,
-    TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
+    SpamEnds, StopsParams, StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip,
+    TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
     pattern_from_preset, pattern_preset,
 };
 pub use smooth_scroll::SmoothScrollAnimation;

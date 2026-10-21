@@ -17,6 +17,7 @@ pub mod pattern;
 pub mod polygon;
 pub mod strum;
 pub mod sustain;
+pub mod symmetry;
 pub mod tiles;
 pub mod tumours;
 
@@ -35,5 +36,6 @@ pub use pattern::{LoopCurve, PatternParams, Sym};
 pub use polygon::{PatternRef, PolyStyle, PolygonParams};
 pub use strum::StrumParams;
 pub use sustain::{StopsParams, SustainParams};
+pub use symmetry::{SymAxis, SymParams};
 pub use tiles::{TileBy, TileFlip, TileLayout, TilesParams};
 pub use tumours::{TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at};

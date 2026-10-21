@@ -6,6 +6,8 @@
 
 use lumino_core::shape::{ShapeAnchor, ShapeKind, ShapeModel, ShapeRect};
 
+pub mod symmetry;
+
 /// 形状 → 贝塞尔锚点；`sharp` 为尖角锚点序号
 ///
 /// - 有显式锚点时原样保留（含 `in_handle` / `out_handle` / `handles_auto`）

@@ -26,7 +26,7 @@ use crate::{Editor, Note};
 use lumino_core::shape::{ShapeFill, ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 use lumino_editor_state::shape_ops::{
     NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops, arc_k_or_one, arc_points_scaled,
-    polygon_paths,
+    polygon_paths, symmetric_shape,
 };
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
@@ -48,7 +48,14 @@ impl Editor {
     /// 与曲线工具确认同源：展平 → 逐音高行解析 + 法线加粗 → 同 tick 同 key 留最长 →
     /// 长度下限补齐。`anchors.len() < 2` 视为无音符形状（仍可登记与持久化）。
     pub(crate) fn shape_notes_of(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
-        let anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
+        let mut anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Symmetry(params) => Some(params),
+            _ => None,
+        }) && let Some(expanded) = symmetric_shape(model, params)
+        {
+            anchors = expanded;
+        }
         if anchors.len() < 2 && model.geometry.rect.is_none() {
             return Vec::new();
         }
