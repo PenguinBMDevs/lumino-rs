@@ -49,10 +49,11 @@ pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CurveRef, CycleBy,
     CycleParams, DrawingRef, FunnelParams, FunnelStart, GateRangeParams, GlueParams, JoinedParams,
-    LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow, NestedParams,
-    NestedWay, PatternParams, PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart,
-    StopsParams, Stroke, StrokeKind, StrumParams, SustainParams, Sym, TileBy, TileFlip, TileLayout,
-    TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow, MergeParams,
+    NestedParams, NestedWay, PatternParams, PatternRef, PolyStyle, PolygonParams, RangeDir,
+    RowRestart, StopsParams, Stroke, StrokeKind, StrumParams, SustainParams, Sym, TileBy, TileFlip,
+    TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
+    factor_at,
 };
 pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,

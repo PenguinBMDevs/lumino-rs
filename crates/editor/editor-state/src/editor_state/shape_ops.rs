@@ -19,6 +19,7 @@ pub mod glue;
 pub mod joined;
 pub mod live;
 pub mod masks;
+pub mod merge;
 pub mod nested;
 pub mod pattern;
 pub mod polygon;
@@ -52,6 +53,7 @@ pub use masks::{
     Area, MaskMember, MaskPreview, MaskedPiece, RowSpan, UnitArea, apply_visible, covered,
     member_of, preview, shown_parts, unit_area,
 };
+pub use merge::{MergeOutcome, comes_from_left, gate_merge};
 pub use nested::{ColouredSpan, nested_spans};
 pub use pattern::{LOOP_SAMPLES, MAX_POINTS, formed_path};
 pub use polygon::{paths as polygon_paths, side_paths as polygon_side_paths, unit_loops};

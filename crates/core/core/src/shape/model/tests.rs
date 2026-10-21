@@ -3,10 +3,10 @@
 use super::*;
 use crate::shape::{
     ChopParams, ClawParams, CycleBy, CycleParams, FunnelParams, GateRangeParams, GlueParams,
-    JoinedParams, LiveShapeParams, MaskMode, MaskParams, MaskShow, NestedParams, OpStage,
-    PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry,
-    ShapeKind, ShapeRect, ShapeStyle, StopsParams, Stroke, StrokeKind, StrumParams, SustainParams,
-    TilesParams, TumourParams,
+    JoinedParams, LiveShapeParams, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams,
+    OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, Stroke, StrokeKind, StrumParams,
+    SustainParams, TilesParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -263,6 +263,11 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Joined 是几何串联，必须先于音符生成"
     );
+    assert_eq!(
+        ShapeOp::Merge(MergeParams::default()).stage(),
+        OpStage::Notes,
+        "Merge 在音符生成后逐行滑移"
+    );
 }
 
 fn joined_params() -> JoinedParams {
@@ -381,6 +386,15 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_merge() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Merge(MergeParams::default()));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Merge 的形状应逐字段往返");
 }
 
 #[test]
