@@ -125,6 +125,10 @@ fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
             PianoRollContextMenuItem::SymmetryHorizontal,
             PianoRollContextMenuItem::Straighten,
             PianoRollContextMenuItem::StraightenOff,
+            PianoRollContextMenuItem::SliceVertical,
+            PianoRollContextMenuItem::BetweenCreate,
+            PianoRollContextMenuItem::CopyAlong,
+            PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
     };
@@ -199,6 +203,10 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::SymmetryHorizontal => Icon::ContextMenuPaste,
         PianoRollContextMenuItem::Straighten => Icon::ContextMenuCut,
         PianoRollContextMenuItem::StraightenOff => Icon::ContextMenuDelete,
+        PianoRollContextMenuItem::SliceVertical => Icon::ContextMenuCut,
+        PianoRollContextMenuItem::BetweenCreate => Icon::ContextMenuCopy,
+        PianoRollContextMenuItem::CopyAlong => Icon::ContextMenuPaste,
+        PianoRollContextMenuItem::VelocityUp => Icon::ContextMenuSelectAll,
     }
 }
 
@@ -222,6 +230,10 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),
         PianoRollContextMenuItem::Straighten => tr!("扶正 50%"),
         PianoRollContextMenuItem::StraightenOff => tr!("取消扶正"),
+        PianoRollContextMenuItem::SliceVertical => tr!("竖切"),
+        PianoRollContextMenuItem::BetweenCreate => tr!("创建补间"),
+        PianoRollContextMenuItem::CopyAlong => tr!("沿路径复制"),
+        PianoRollContextMenuItem::VelocityUp => tr!("力度渐强"),
     }
 }
 

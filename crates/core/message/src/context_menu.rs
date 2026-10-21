@@ -72,6 +72,14 @@ pub enum PianoRollContextMenuItem {
     Straighten,
     /// 取消扶正（DRAW-024）
     StraightenOff,
+    /// 竖切（DRAW-025）
+    SliceVertical,
+    /// 创建补间（DRAW-026）
+    BetweenCreate,
+    /// 沿路径复制（DRAW-027）
+    CopyAlong,
+    /// 力度渐强（DRAW-028）
+    VelocityUp,
 }
 
 impl PianoRollContextMenuItem {
@@ -88,7 +96,11 @@ impl PianoRollContextMenuItem {
             | Self::SymmetryVertical
             | Self::SymmetryHorizontal
             | Self::Straighten
-            | Self::StraightenOff => ContextMenuTarget::DrawnShape,
+            | Self::StraightenOff
+            | Self::SliceVertical
+            | Self::BetweenCreate
+            | Self::CopyAlong
+            | Self::VelocityUp => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
     }
