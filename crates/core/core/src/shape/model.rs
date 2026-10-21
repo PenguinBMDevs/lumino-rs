@@ -5,9 +5,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::params::{
-    ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams,
-    LiveShapeParams, MaskParams, MergeParams, NestedParams, PatternParams, PolygonParams,
-    StraightenParams, StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
+    BetweenParams, ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams,
+    JoinedParams, LiveShapeParams, MaskParams, MergeParams, NestedParams, PatternParams,
+    PolygonParams, StraightenParams, StrumParams, SustainParams, SymParams, TilesParams,
+    TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -67,6 +68,8 @@ pub enum ShapeOp {
     Symmetry(SymParams),
     /// 手绘扶正（Geometry 阶段；DRAW-024）
     Straighten(StraightenParams),
+    /// Between 组角色标记（Notes 阶段；DRAW-026）
+    Between(BetweenParams),
 }
 
 /// 算子在链上的执行阶段
@@ -105,7 +108,8 @@ impl ShapeOp {
             | Self::GateRange(_)
             | Self::Nested(_)
             | Self::Tiles(_)
-            | Self::Merge(_) => OpStage::Notes,
+            | Self::Merge(_)
+            | Self::Between(_) => OpStage::Notes,
         }
     }
 
@@ -169,6 +173,9 @@ impl ShapeOp {
             Self::Straighten(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Straighten 参数非法：{e}"))),
+            Self::Between(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Between 参数非法：{e}"))),
         }
     }
 }
