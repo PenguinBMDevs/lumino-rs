@@ -41,6 +41,7 @@ pub mod model;
 pub mod params;
 pub mod pattern_presets;
 pub mod style;
+pub mod velocity_env;
 
 pub use areas::AreaSpot;
 pub use expr::{Expr, ExprError};
@@ -60,3 +61,4 @@ pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,
 };
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
+pub use velocity_env::{ENV_EPS, VelocityEnv, env_at, paint_env, tidy_env};

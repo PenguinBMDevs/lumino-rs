@@ -10,7 +10,7 @@ use super::params::{
     NestedParams, PatternParams, PolygonParams, StraightenParams, StrumParams, SustainParams,
     SymParams, TilesParams, TumourParams,
 };
-use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
+use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle, VelocityEnv};
 use crate::error::{CoreError, Result};
 
 /// 形状修饰链中的一步
@@ -72,6 +72,8 @@ pub enum ShapeOp {
     Between(BetweenParams),
     /// 沿路径复制（Notes fx 页；DRAW-027）
     CopyAlong(CopyPathParams),
+    /// 形状力度包络（Notes；DRAW-028）
+    VelocityEnv(VelocityEnv),
 }
 
 /// 算子在链上的执行阶段
@@ -112,7 +114,8 @@ impl ShapeOp {
             | Self::Tiles(_)
             | Self::Merge(_)
             | Self::Between(_)
-            | Self::CopyAlong(_) => OpStage::Notes,
+            | Self::CopyAlong(_)
+            | Self::VelocityEnv(_) => OpStage::Notes,
         }
     }
 
@@ -182,6 +185,12 @@ impl ShapeOp {
             Self::CopyAlong(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("CopyAlong 参数非法：{e}"))),
+            Self::VelocityEnv(env) => {
+                if env.points.iter().flatten().any(|value| !value.is_finite()) {
+                    return Err(CoreError::InvalidArgument("VelocityEnv 含非有限值".into()));
+                }
+                Ok(())
+            }
         }
     }
 }

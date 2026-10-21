@@ -7,7 +7,7 @@ use crate::shape::{
     MaskMode, MaskParams, MaskShow, MergeParams, NestedParams, OpStage, PatternParams, PolyStyle,
     PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect,
     ShapeStyle, StopsParams, StraightenParams, Stroke, StrokeKind, StrumParams, SustainParams, Sym,
-    SymAxis, SymParams, TilesParams, TumourParams,
+    SymAxis, SymParams, TilesParams, TumourParams, VelocityEnv,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -289,6 +289,11 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "CopyAlong 是 fx 页，在音符生成后复制"
     );
+    assert_eq!(
+        ShapeOp::VelocityEnv(VelocityEnv::default()).stage(),
+        OpStage::Notes,
+        "VelocityEnv 在音符生成后改力度"
+    );
 }
 
 fn between_params() -> BetweenParams {
@@ -502,6 +507,24 @@ fn test_validate_and_roundtrip_copypath() {
     bad.push_op(ShapeOp::CopyAlong(CopyPathParams {
         mode: CopyMode::Count { n: 0 },
         ..CopyPathParams::default()
+    }));
+    assert!(bad.validate().is_err());
+}
+
+#[test]
+fn test_validate_and_roundtrip_velocity_env() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::VelocityEnv(VelocityEnv {
+        points: vec![[0.0, 40.0], [1.0, 100.0]],
+    }));
+    shape.validate().expect("合法 VelocityEnv 应通过");
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape);
+
+    let mut bad = sample_shape();
+    bad.push_op(ShapeOp::VelocityEnv(VelocityEnv {
+        points: vec![[0.0, f32::NAN]],
     }));
     assert!(bad.validate().is_err());
 }
