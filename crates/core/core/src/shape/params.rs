@@ -5,6 +5,7 @@
 pub mod between;
 pub mod chop;
 pub mod claw;
+pub mod copypath;
 pub mod cycle;
 pub mod funnel;
 pub mod gate_range;
@@ -26,6 +27,7 @@ pub mod tumours;
 pub use between::{BetweenParams, BetweenRole, BetweenSet};
 pub use chop::{ChopParams, ChopPiece};
 pub use claw::{ClawMode, ClawParams, ClawPeriod, ClawTrash};
+pub use copypath::{ColourMode, CopyMode, CopyPathParams, FlipMode, FlipWay, PathKind, Speed};
 pub use cycle::{CycleBy, CycleParams, RowRestart};
 pub use funnel::{CurveRef, FunnelParams, FunnelStart};
 pub use gate_range::{GateRangeParams, RangeDir};
