@@ -97,6 +97,7 @@ fn flush(group: &mut Option<Group>, out: &mut Vec<ShapeNote>) {
         key: group.first.key,
         length: (group.max_end - group.first.tick).max(0.0),
         velocity: group.first.velocity,
+        channel: group.first.channel,
     });
 }
 

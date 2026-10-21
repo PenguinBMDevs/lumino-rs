@@ -44,6 +44,7 @@ impl Editor {
                     key: item.key,
                     length: snap,
                     velocity: 100,
+                    channel: 0,
                 });
             }
         }

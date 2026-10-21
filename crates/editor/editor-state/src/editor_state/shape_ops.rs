@@ -10,6 +10,7 @@
 pub mod chain;
 pub mod chop;
 pub mod claw;
+pub mod cycle;
 pub mod gateflip;
 pub mod glue;
 pub mod masks;
@@ -23,6 +24,7 @@ mod tests;
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;
+pub use cycle::apply as apply_cycle;
 pub use gateflip::{GateFlipReason, apply as apply_gate_flip, auto_gap};
 pub use glue::apply as apply_glue;
 pub use masks::{

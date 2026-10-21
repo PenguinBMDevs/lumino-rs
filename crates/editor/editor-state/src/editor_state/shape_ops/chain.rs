@@ -4,7 +4,7 @@ use lumino_core::shape::{OpStage, ShapeOp, ShapeRect};
 
 use crate::ShapeNote;
 
-use super::{chop, claw, gateflip, glue, strum, sustain, tumours};
+use super::{chop, claw, cycle, gateflip, glue, strum, sustain, tumours};
 
 /// 几何阶段的上下文（目前只需要拍 → tick 的换算）
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,7 +46,8 @@ pub fn apply_geometry_ops(
             | ShapeOp::Chop(_)
             | ShapeOp::GateFlip
             | ShapeOp::Sustain(_)
-            | ShapeOp::Mask(_) => {}
+            | ShapeOp::Mask(_)
+            | ShapeOp::Cycle(_) => {}
         }
     }
     current
@@ -79,6 +80,9 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::GateFlip => *notes = gateflip::apply(notes),
             // Mask 是标记：区域由 shape_ops::masks 在所有形状的 notes 上统一计算。
             ShapeOp::Mask(_) => {}
+            ShapeOp::Cycle(params) => {
+                cycle::apply(notes, params, ctx.ppq);
+            }
             _ => {}
         }
     }

@@ -37,6 +37,7 @@ fn note(track: usize) -> ShapeNote {
         key: 61,
         length: 480.0,
         velocity: 100,
+        channel: 0,
     }
 }
 
@@ -248,6 +249,7 @@ fn test_mask_is_never_masked() {
             key: 60,
             length: 480.0,
             velocity: 100,
+            channel: 0,
         }],
     );
     assert!(
