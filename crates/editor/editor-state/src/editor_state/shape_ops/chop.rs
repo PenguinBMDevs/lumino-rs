@@ -89,6 +89,7 @@ fn apply_with_limit(
                     key: run.key,
                     length: (end - start) as f32,
                     velocity: piece_velocity(run.velocity, piece.vel, params.vel, params.fixed),
+                    channel: run.channel,
                 });
             }
             cycle_start += cycle_ticks;
@@ -112,6 +113,7 @@ struct Run {
     start: f64,
     end: f64,
     velocity: u8,
+    channel: u8,
 }
 
 /// 同一 (track, key) 相接/重叠的音符合并为一条 run
@@ -146,6 +148,7 @@ fn build_runs(notes: &[ShapeNote]) -> Vec<Run> {
             start,
             end,
             velocity: note.velocity,
+            channel: note.channel,
         });
     }
     runs

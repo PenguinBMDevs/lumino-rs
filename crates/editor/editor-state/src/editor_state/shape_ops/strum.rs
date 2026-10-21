@@ -135,6 +135,7 @@ pub fn apply(notes: &[ShapeNote], params: &StrumParams, ppq: f64) -> Vec<ShapeNo
                 key: original.key,
                 length: (note_end - start) as f32,
                 velocity,
+                channel: original.channel,
             });
         }
     }

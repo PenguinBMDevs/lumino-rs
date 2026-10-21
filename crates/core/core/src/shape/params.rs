@@ -4,6 +4,7 @@
 
 pub mod chop;
 pub mod claw;
+pub mod cycle;
 pub mod glue;
 pub mod mask;
 pub mod strum;
@@ -12,6 +13,7 @@ pub mod tumours;
 
 pub use chop::{ChopParams, ChopPiece};
 pub use claw::{ClawMode, ClawParams, ClawPeriod, ClawTrash};
+pub use cycle::{CycleBy, CycleParams, RowRestart};
 pub use glue::GlueParams;
 pub use mask::{MaskMode, MaskParams, MaskShow};
 pub use strum::StrumParams;

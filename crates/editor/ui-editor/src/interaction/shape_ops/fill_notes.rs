@@ -53,6 +53,7 @@ impl Editor {
                         key,
                         length: span.end - span.start,
                         velocity,
+                        channel: 0,
                     });
                 }
             } else {
@@ -62,6 +63,7 @@ impl Editor {
                     key,
                     length,
                     velocity,
+                    channel: 0,
                 });
             }
         }
@@ -118,6 +120,7 @@ impl Editor {
                         key: key as u16,
                         length: span.end - span.start,
                         velocity,
+                        channel: 0,
                     });
                 }
             }

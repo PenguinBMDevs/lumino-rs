@@ -38,6 +38,8 @@ pub struct ShapeNote {
     pub length: f32,
     /// 力度（1..=127；形状样式 velocity 为初值，算子可改）
     pub velocity: u8,
+    /// MIDI 通道（0..=15；Cycle 算子分配）
+    pub channel: u8,
 }
 
 impl ShapeNote {
@@ -49,6 +51,7 @@ impl ShapeNote {
             key: (self.key as f32 + dkey).round().clamp(0.0, 255.0) as u16,
             length: self.length,
             velocity: self.velocity,
+            channel: self.channel,
         }
     }
 }
@@ -746,6 +749,7 @@ mod tests {
             key,
             length: 1.0,
             velocity: 100,
+            channel: 0,
         }
     }
 

@@ -20,6 +20,7 @@ fn note(tick: f32, key: u16) -> ShapeNote {
         key,
         length: 120.0,
         velocity: 100,
+        channel: 0,
     }
 }
 

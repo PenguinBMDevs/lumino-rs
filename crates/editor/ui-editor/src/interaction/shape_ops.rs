@@ -208,7 +208,9 @@ impl Editor {
         let mut written: Vec<ShapeNote> = Vec::with_capacity(notes.len());
         if notes.len() <= crate::interaction::BATCH_INSERT_THRESHOLD {
             for sn in notes {
-                let note = Note::new(sn.tick, sn.key, sn.length).with_velocity(sn.velocity);
+                let note = Note::new(sn.tick, sn.key, sn.length)
+                    .with_velocity(sn.velocity)
+                    .with_channel(sn.channel);
                 if self
                     .editor_state
                     .data
@@ -221,7 +223,11 @@ impl Editor {
         } else {
             let payload: Vec<Note> = notes
                 .iter()
-                .map(|sn| Note::new(sn.tick, sn.key, sn.length).with_velocity(sn.velocity))
+                .map(|sn| {
+                    Note::new(sn.tick, sn.key, sn.length)
+                        .with_velocity(sn.velocity)
+                        .with_channel(sn.channel)
+                })
                 .collect();
             let before = self.editor_state.data.track_notes(track).len();
             self.editor_state.data.batch_insert_notes_with_ids(&payload);
@@ -254,8 +260,11 @@ impl Editor {
         let mut indices: Vec<usize> = Vec::with_capacity(notes.len());
         for sn in notes {
             // 形状音符力度随 `ShapeNote`，通道固定 0；指纹按同口径重建
-            let ev =
-                note_to_event(Note::new(sn.tick, sn.key, sn.length).with_velocity(sn.velocity));
+            let ev = note_to_event(
+                Note::new(sn.tick, sn.key, sn.length)
+                    .with_velocity(sn.velocity)
+                    .with_channel(sn.channel),
+            );
             if let Some(idx) = self
                 .editor_state
                 .data
@@ -286,7 +295,7 @@ impl Editor {
                 sn.key,
                 sn.length,
                 sn.velocity,
-                0,
+                sn.channel,
                 track,
             );
         }

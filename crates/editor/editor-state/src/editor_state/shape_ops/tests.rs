@@ -1,7 +1,8 @@
 //! 算子链与 Tumours 几何测试
 
 use lumino_core::shape::{
-    GlueParams, MaskParams, ShapeOp, SustainParams, TumourParams, TumourShape, TumourSide,
+    CycleParams, GlueParams, MaskParams, ShapeOp, SustainParams, TumourParams, TumourShape,
+    TumourSide,
 };
 
 use super::*;
@@ -198,6 +199,7 @@ fn test_note_ops_are_noop_for_geometry_op() {
         key: 60,
         length: 120.0,
         velocity: 100,
+        channel: 0,
     }];
     let ops = vec![ShapeOp::Tumours(params())];
     apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
@@ -214,6 +216,7 @@ fn test_note_ops_applies_gate_flip() {
             key: 60,
             length: 120.0,
             velocity: 100,
+            channel: 0,
         },
         ShapeNote {
             track: 0,
@@ -221,6 +224,7 @@ fn test_note_ops_applies_gate_flip() {
             key: 60,
             length: 120.0,
             velocity: 100,
+            channel: 0,
         },
         ShapeNote {
             track: 0,
@@ -228,6 +232,7 @@ fn test_note_ops_applies_gate_flip() {
             key: 60,
             length: 120.0,
             velocity: 100,
+            channel: 0,
         },
     ];
     let ops = vec![ShapeOp::GateFlip];
@@ -240,6 +245,45 @@ fn test_note_ops_applies_gate_flip() {
 }
 
 #[test]
+fn test_note_ops_applies_cycle_channels() {
+    let mut notes = vec![
+        ShapeNote {
+            track: 0,
+            tick: 0.0,
+            key: 60,
+            length: 100.0,
+            velocity: 100,
+            channel: 0,
+        },
+        ShapeNote {
+            track: 0,
+            tick: 120.0,
+            key: 60,
+            length: 100.0,
+            velocity: 100,
+            channel: 0,
+        },
+        ShapeNote {
+            track: 0,
+            tick: 240.0,
+            key: 60,
+            length: 100.0,
+            velocity: 100,
+            channel: 0,
+        },
+    ];
+    let ops = vec![ShapeOp::Cycle(CycleParams {
+        n: 3,
+        ..CycleParams::default()
+    })];
+    apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
+    assert_eq!(
+        notes.iter().map(|n| n.channel).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+}
+
+#[test]
 fn test_note_ops_ignore_mask_marker() {
     let mut notes = vec![ShapeNote {
         track: 0,
@@ -247,6 +291,7 @@ fn test_note_ops_ignore_mask_marker() {
         key: 60,
         length: 120.0,
         velocity: 100,
+        channel: 0,
     }];
     let before = notes.clone();
     let ops = vec![ShapeOp::Mask(MaskParams::default())];
@@ -263,6 +308,7 @@ fn test_note_ops_applies_sustain() {
             key: 60,
             length: 100.0,
             velocity: 100,
+            channel: 0,
         },
         ShapeNote {
             track: 0,
@@ -270,6 +316,7 @@ fn test_note_ops_applies_sustain() {
             key: 60,
             length: 100.0,
             velocity: 100,
+            channel: 0,
         },
     ];
     let ops = vec![ShapeOp::Sustain(SustainParams::default())];
@@ -294,6 +341,7 @@ fn test_note_ops_applies_glue() {
             key: 60,
             length: 10.0,
             velocity: 100,
+            channel: 0,
         },
         ShapeNote {
             track: 0,
@@ -301,6 +349,7 @@ fn test_note_ops_applies_glue() {
             key: 60,
             length: 10.0,
             velocity: 100,
+            channel: 0,
         },
     ];
     let ops = vec![ShapeOp::Glue(GlueParams::All)];

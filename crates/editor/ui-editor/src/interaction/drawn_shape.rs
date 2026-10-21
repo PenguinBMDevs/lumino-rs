@@ -1116,6 +1116,7 @@ mod tests {
             key: 60,
             length: 1.0,
             velocity: 100,
+            channel: 0,
         }]];
         editor.record_brush_strokes(notes);
         let st = &editor.editor_state.shape_select;
@@ -1686,6 +1687,7 @@ mod tests {
                 key: 60,
                 length: 1.0,
                 velocity: 100,
+                channel: 0,
             },
             ShapeNote {
                 track: 1,
@@ -1693,6 +1695,7 @@ mod tests {
                 key: 60,
                 length: 1.0,
                 velocity: 100,
+                channel: 0,
             },
             ShapeNote {
                 track: 1,
@@ -1700,6 +1703,7 @@ mod tests {
                 key: 80,
                 length: 1.0,
                 velocity: 100,
+                channel: 0,
             },
         ];
         let id = editor.editor_state.shape_select.add(
@@ -1937,6 +1941,7 @@ mod tests {
                     key,
                     length: 1.0,
                     velocity: 100,
+                    channel: 0,
                 },
                 ShapeNote {
                     track: 1,
@@ -1944,6 +1949,7 @@ mod tests {
                     key,
                     length: 1.0,
                     velocity: 100,
+                    channel: 0,
                 },
             ]
         };

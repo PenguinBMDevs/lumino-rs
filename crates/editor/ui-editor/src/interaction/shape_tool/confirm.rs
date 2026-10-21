@@ -260,6 +260,7 @@ impl Editor {
                     key,
                     length,
                     velocity: 100,
+                    channel: 0,
                 });
             }
         }
@@ -271,6 +272,7 @@ impl Editor {
                     key,
                     length: snap,
                     velocity: 100,
+                    channel: 0,
                 });
             }
         }
@@ -282,6 +284,7 @@ impl Editor {
                     key,
                     length,
                     velocity: 100,
+                    channel: 0,
                 });
             }
         }

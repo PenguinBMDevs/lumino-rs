@@ -145,6 +145,7 @@ impl Editor {
                     key,
                     length: end - start,
                     velocity: 100,
+                    channel: 0,
                 })
                 .collect();
             per_path_notes.push(owned);
