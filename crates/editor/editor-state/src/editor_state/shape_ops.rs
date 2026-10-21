@@ -21,9 +21,12 @@ pub mod joined;
 pub mod live;
 pub mod masks;
 pub mod merge;
+pub mod mould;
 pub mod nested;
 pub mod pattern;
 pub mod polygon;
+pub mod slice;
+pub mod sliced;
 pub mod smooth;
 pub mod strum;
 pub mod sustain;
@@ -58,9 +61,12 @@ pub use masks::{
     member_of, preview, shown_parts, unit_area,
 };
 pub use merge::{MergeOutcome, comes_from_left, gate_merge};
+pub use mould::{SHORT as MOULD_SHORT, mould_rows};
 pub use nested::{ColouredSpan, nested_spans};
 pub use pattern::{LOOP_SAMPLES, MAX_POINTS, formed_path};
 pub use polygon::{paths as polygon_paths, side_paths as polygon_side_paths, unit_loops};
+pub use slice::{crossings, cut_loops, inside as slice_inside};
+pub use sliced::{CutKind, CutMark, CutRef, KnifeKind, outline_keys};
 pub use smooth::{smooth_path, straighten_shape, tolerance as straighten_tolerance};
 pub use strum::apply as apply_strum;
 pub use sustain::{SustainReport, apply as apply_sustain};
