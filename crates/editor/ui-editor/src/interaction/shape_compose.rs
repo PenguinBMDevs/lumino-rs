@@ -4,10 +4,14 @@
 //! 最小桥：组合时保留原音符，形状参数写入 `ShapeStore`，一次提交一个 group。
 
 use lumino_core::shape::{
-    MergeParams, ShapeKind, ShapeModel, ShapeOp, StraightenParams, Sym, SymAxis, SymParams,
+    BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeKind, ShapeModel, ShapeOp,
+    StraightenParams, Sym, SymAxis, SymParams, VelocityEnv,
 };
-use lumino_editor_state::shape_ops::{gate_merge, join, symmetric_shape, to_live};
-use lumino_editor_state::{DrawnShape, ShapeNote};
+use lumino_editor_state::shape_ops::{
+    between_blend, between_graph_at, copy_along_apply, cut_loops, gate_merge, join,
+    symmetric_shape, to_live,
+};
+use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeNote};
 
 use crate::Editor;
 
@@ -194,6 +198,161 @@ impl Editor {
         ok
     }
 
+    /// 025：选中一个图形，沿 bbox 中心竖切成两半
+    pub fn slice_selected_vertical(&mut self) -> bool {
+        let Some((_, _, model)) = self.selected_model_for_edit() else {
+            return false;
+        };
+        let Some((x0, y0, x1, y1)) = model.geometry.bounds() else {
+            return false;
+        };
+        let cut = (x0 + x1) / 2.0;
+        let ring = geometry_ring(&model);
+        let Some((left, right)) = cut_loops(&[ring], (cut, y0 - 1.0), (cut, y1 + 1.0)) else {
+            return false;
+        };
+        let selected = self.selected_drawn_snapshot();
+        let notes = selected[0].notes.clone();
+        let (left_notes, right_notes) = split_notes_vertical(&notes, cut);
+        let items = vec![
+            ShapeItem {
+                source: DrawnShapeSource::Polyline {
+                    points: left.into_iter().flatten().collect(),
+                },
+                notes: left_notes,
+                model: None,
+            },
+            ShapeItem {
+                source: DrawnShapeSource::Polyline {
+                    points: right.into_iter().flatten().collect(),
+                },
+                notes: right_notes,
+                model: None,
+            },
+        ];
+        self.replace_selected_with_many(items)
+    }
+
+    /// 026：两个选中图形生成 5 个 Between 步
+    pub fn create_between_selected(&mut self) -> bool {
+        let selected = self.selected_drawn_snapshot();
+        if selected.len() != 2 {
+            return false;
+        }
+        let Some(first_id) = self.ensure_model_for_drawn(selected[0].id) else {
+            return false;
+        };
+        let Some(last_id) = self.ensure_model_for_drawn(selected[1].id) else {
+            return false;
+        };
+        let Some(mut first) = self.editor_state.shape_store.model(first_id).cloned() else {
+            return false;
+        };
+        let Some(mut last) = self.editor_state.shape_store.model(last_id).cloned() else {
+            return false;
+        };
+        let set = BetweenSet {
+            steps: 5,
+            ..BetweenSet::default()
+        };
+        let group_id = 1;
+        first.ops.push(ShapeOp::Between(BetweenParams {
+            id: group_id,
+            role: BetweenRole::First,
+            at: Some(0.0),
+            sig: None,
+            push: None,
+            vel: None,
+            set: Some(set.clone()),
+        }));
+        last.ops.push(ShapeOp::Between(BetweenParams {
+            id: group_id,
+            role: BetweenRole::Last,
+            at: Some(1.0),
+            sig: None,
+            push: None,
+            vel: None,
+            set: None,
+        }));
+        let track = selected[0].track;
+        let mut items = vec![
+            ShapeItem {
+                source: source_from_model(&first),
+                notes: selected[0].notes.clone(),
+                model: Some(first.clone()),
+            },
+            ShapeItem {
+                source: source_from_model(&last),
+                notes: selected[1].notes.clone(),
+                model: Some(last.clone()),
+            },
+        ];
+        for index in 1..=set.steps {
+            let at = f32::from(index) / f32::from(set.steps + 1);
+            let model = between_blend(&first, &last, between_graph_at(&set, at), set.rev);
+            let notes = self.shape_notes_of(&model, track);
+            items.insert(
+                index as usize,
+                ShapeItem {
+                    source: source_from_model(&model),
+                    notes,
+                    model: Some(model),
+                },
+            );
+        }
+        self.replace_selected_with_many(items)
+    }
+
+    /// 027：选中一个图形，沿默认路径复制 3 份
+    pub fn copy_along_selected(&mut self) -> bool {
+        let Some((drawn_id, model_id, model)) = self.selected_model_for_edit() else {
+            return false;
+        };
+        let Some(bounds) = model.geometry.bounds() else {
+            return false;
+        };
+        let width = (bounds.2 - bounds.0).max(1.0);
+        let params = lumino_core::shape::CopyPathParams {
+            pts: vec![[width * 2.0, 0.0]],
+            mode: lumino_core::shape::CopyMode::Count { n: 3 },
+            grp: Some([bounds.0, bounds.1]),
+            ..lumino_core::shape::CopyPathParams::default()
+        };
+        let Some(selected) = self
+            .editor_state
+            .shape_select
+            .shapes()
+            .iter()
+            .find(|shape| shape.id == drawn_id)
+            .cloned()
+        else {
+            return false;
+        };
+        let notes = copy_along_apply(&selected.notes, &params, 480.0);
+        self.replace_selected_with_many(vec![ShapeItem {
+            source: selected.source,
+            notes,
+            model: self.editor_state.shape_store.model(model_id).cloned(),
+        }])
+    }
+
+    /// 028：对选中图形应用渐强力度包络
+    pub fn velocity_up_selected(&mut self) -> bool {
+        let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
+            return false;
+        };
+        model
+            .ops
+            .retain(|op| !matches!(op, ShapeOp::VelocityEnv(_)));
+        model.ops.push(ShapeOp::VelocityEnv(VelocityEnv::new(vec![
+            [0.0, 30.0],
+            [1.0, 120.0],
+        ])));
+        let ok = self.edit_shape(model_id, model);
+        self.refresh_drawn_source(drawn_id, model_id);
+        ok
+    }
+
     /// 019/021：还原最近一次组合前的图形
     pub fn split_composed_shape(&mut self) -> bool {
         let selected = self.selected_drawn_snapshot();
@@ -227,6 +386,47 @@ impl Editor {
                     .shape_select
                     .add(shape.track, Some(group), shape.source, notes);
             self.editor_state.shape_select.add_to_selection(new_id);
+        }
+        self.mark_notes_changed();
+        true
+    }
+
+    fn replace_selected_with_many(&mut self, items: Vec<ShapeItem>) -> bool {
+        let selected = self.selected_drawn_snapshot();
+        if selected.is_empty() || items.is_empty() {
+            return false;
+        }
+        let track = selected[0].track;
+        self.push_history();
+        let group = self.current_history_group();
+        for shape in &selected {
+            self.remove_shape_notes(shape.track, &shape.notes);
+            self.editor_state.shape_select.mark_deleted(shape.id);
+            if let Some(model_id) = shape.model_id {
+                self.editor_state.shape_store.mark_deleted(model_id, group);
+                self.editor_state
+                    .shape_store
+                    .assign_notes(model_id, Vec::new());
+            }
+        }
+        for item in items {
+            let written = self.write_shape_notes(track, &item.notes);
+            let drawn_id = self.editor_state.shape_select.add(
+                track,
+                Some(group),
+                item.source,
+                written.clone(),
+            );
+            if let Some(model) = item.model {
+                let model_id = self.editor_state.shape_store.insert(model, group);
+                self.editor_state
+                    .shape_store
+                    .assign_notes(model_id, written);
+                self.editor_state
+                    .shape_select
+                    .set_model_id(drawn_id, Some(model_id));
+            }
+            self.editor_state.shape_select.add_to_selection(drawn_id);
         }
         self.mark_notes_changed();
         true
@@ -302,6 +502,66 @@ impl Editor {
         self.mark_notes_changed();
         true
     }
+}
+
+struct ShapeItem {
+    source: DrawnShapeSource,
+    notes: Vec<ShapeNote>,
+    model: Option<ShapeModel>,
+}
+
+fn geometry_ring(model: &ShapeModel) -> Vec<(f32, f32)> {
+    let mut ring = model
+        .geometry
+        .anchors
+        .iter()
+        .map(|anchor| anchor.pos)
+        .collect::<Vec<_>>();
+    if ring.is_empty()
+        && let Some(rect) = model.geometry.rect
+    {
+        ring = vec![
+            (rect.tick_lo, rect.key_lo),
+            (rect.tick_hi, rect.key_lo),
+            (rect.tick_hi, rect.key_hi),
+            (rect.tick_lo, rect.key_hi),
+        ];
+    }
+    if let Some(first) = ring.first().copied()
+        && ring.last().copied() != Some(first)
+    {
+        ring.push(first);
+    }
+    ring
+}
+
+fn split_notes_vertical(notes: &[ShapeNote], cut: f32) -> (Vec<ShapeNote>, Vec<ShapeNote>) {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for note in notes {
+        let start = note.tick;
+        let end = note.tick + note.length.max(0.0);
+        if end <= cut {
+            left.push(*note);
+        } else if start >= cut {
+            right.push(*note);
+        } else {
+            if cut > start {
+                left.push(ShapeNote {
+                    length: cut - start,
+                    ..*note
+                });
+            }
+            if end > cut {
+                right.push(ShapeNote {
+                    tick: cut,
+                    length: end - cut,
+                    ..*note
+                });
+            }
+        }
+    }
+    (left, right)
 }
 
 #[cfg(test)]

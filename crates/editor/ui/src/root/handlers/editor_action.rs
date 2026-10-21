@@ -176,6 +176,18 @@ impl Root {
                     PianoRollContextMenuItem::StraightenOff => {
                         let _ = self.editor.set_straighten(false);
                     }
+                    PianoRollContextMenuItem::SliceVertical => {
+                        let _ = self.editor.slice_selected_vertical();
+                    }
+                    PianoRollContextMenuItem::BetweenCreate => {
+                        let _ = self.editor.create_between_selected();
+                    }
+                    PianoRollContextMenuItem::CopyAlong => {
+                        let _ = self.editor.copy_along_selected();
+                    }
+                    PianoRollContextMenuItem::VelocityUp => {
+                        let _ = self.editor.velocity_up_selected();
+                    }
                     PianoRollContextMenuItem::SelectAll => {
                         let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }
