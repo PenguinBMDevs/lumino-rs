@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::params::{
     ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams,
     LiveShapeParams, MaskParams, MergeParams, NestedParams, PatternParams, PolygonParams,
-    StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
+    StraightenParams, StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -65,6 +65,8 @@ pub enum ShapeOp {
     Merge(MergeParams),
     /// 半边对称展开（Geometry 阶段；DRAW-023）
     Symmetry(SymParams),
+    /// 手绘扶正（Geometry 阶段；DRAW-024）
+    Straighten(StraightenParams),
 }
 
 /// 算子在链上的执行阶段
@@ -90,7 +92,8 @@ impl ShapeOp {
             | Self::Funnel(_)
             | Self::Live(_)
             | Self::Joined(_)
-            | Self::Symmetry(_) => OpStage::Geometry,
+            | Self::Symmetry(_)
+            | Self::Straighten(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -163,6 +166,9 @@ impl ShapeOp {
             Self::Symmetry(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Symmetry 参数非法：{e}"))),
+            Self::Straighten(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Straighten 参数非法：{e}"))),
         }
     }
 }
