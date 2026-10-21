@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::params::{
-    ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams,
+    ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams,
     LiveShapeParams, MaskParams, NestedParams, PatternParams, PolygonParams, StrumParams,
     SustainParams, TilesParams, TumourParams,
 };
@@ -59,6 +59,8 @@ pub enum ShapeOp {
     Tiles(TilesParams),
     /// 多个形状折叠成一条活形状（Geometry 阶段；DRAW-019）
     Live(LiveShapeParams),
+    /// 多个形状连接成一条曲线（Geometry 阶段；DRAW-021）
+    Joined(JoinedParams),
 }
 
 /// 算子在链上的执行阶段
@@ -82,7 +84,8 @@ impl ShapeOp {
             | Self::Polygon(_)
             | Self::Pattern(_)
             | Self::Funnel(_)
-            | Self::Live(_) => OpStage::Geometry,
+            | Self::Live(_)
+            | Self::Joined(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -147,6 +150,9 @@ impl ShapeOp {
             Self::Live(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Live 参数非法：{e}"))),
+            Self::Joined(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Joined 参数非法：{e}"))),
         }
     }
 }

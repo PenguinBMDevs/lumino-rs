@@ -3,10 +3,10 @@
 use super::*;
 use crate::shape::{
     ChopParams, ClawParams, CycleBy, CycleParams, FunnelParams, GateRangeParams, GlueParams,
-    LiveShapeParams, MaskMode, MaskParams, MaskShow, NestedParams, OpStage, PatternParams,
-    PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect,
-    ShapeStyle, StopsParams, Stroke, StrokeKind, StrumParams, SustainParams, TilesParams,
-    TumourParams,
+    JoinedParams, LiveShapeParams, MaskMode, MaskParams, MaskShow, NestedParams, OpStage,
+    PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry,
+    ShapeKind, ShapeRect, ShapeStyle, StopsParams, Stroke, StrokeKind, StrumParams, SustainParams,
+    TilesParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -258,6 +258,20 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Live 是几何折叠，必须先于音符生成"
     );
+    assert_eq!(
+        ShapeOp::Joined(joined_params()).stage(),
+        OpStage::Geometry,
+        "Joined 是几何串联，必须先于音符生成"
+    );
+}
+
+fn joined_params() -> JoinedParams {
+    JoinedParams {
+        gaps: Vec::new(),
+        tumours: vec![None],
+        splits: Vec::new(),
+        src: vec![1],
+    }
 }
 
 fn live_params() -> LiveShapeParams {
@@ -367,6 +381,27 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_joined() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Joined(JoinedParams {
+        src: Vec::new(),
+        tumours: Vec::new(),
+        gaps: Vec::new(),
+        splits: Vec::new(),
+    }));
+    assert!(shape.validate().is_err());
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_joined() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Joined(joined_params()));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Joined 的形状应逐字段往返");
 }
 
 #[test]
