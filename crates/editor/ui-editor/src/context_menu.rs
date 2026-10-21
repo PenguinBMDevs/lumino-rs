@@ -120,6 +120,7 @@ fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::SplitJoinedShape,
             PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::EditShape,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
     };
@@ -189,6 +190,7 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::JoinShapes => Icon::Gear,
         PianoRollContextMenuItem::SplitJoinedShape => Icon::ContextMenuCut,
         PianoRollContextMenuItem::MergeShapes => Icon::ContextMenuSelectAll,
+        PianoRollContextMenuItem::EditShape => Icon::Gear,
     }
 }
 
@@ -207,6 +209,7 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::JoinShapes => tr!("连接图形"),
         PianoRollContextMenuItem::SplitJoinedShape => tr!("还原连接"),
         PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
+        PianoRollContextMenuItem::EditShape => tr!("编辑形状"),
     }
 }
 

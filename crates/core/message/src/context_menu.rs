@@ -62,6 +62,8 @@ pub enum PianoRollContextMenuItem {
     SplitJoinedShape,
     /// 门控合并两个图形（DRAW-022）
     MergeShapes,
+    /// 进入自定义编辑（DRAW-020）
+    EditShape,
 }
 
 impl PianoRollContextMenuItem {
@@ -73,7 +75,8 @@ impl PianoRollContextMenuItem {
             | Self::SplitLiveShape
             | Self::JoinShapes
             | Self::SplitJoinedShape
-            | Self::MergeShapes => ContextMenuTarget::DrawnShape,
+            | Self::MergeShapes
+            | Self::EditShape => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
     }

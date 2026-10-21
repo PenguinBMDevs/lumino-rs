@@ -235,6 +235,8 @@ pub struct Editor {
 
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
+    /// 020 Custom edit 的手柄拖拽状态
+    pub(crate) shape_edit: Option<crate::interaction::shape_edit_ui::ShapeEditState>,
 
     /// 选择框边界缓存（raw 坐标），增量维护，避免每帧 O(N) 全量扫描。
     /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。

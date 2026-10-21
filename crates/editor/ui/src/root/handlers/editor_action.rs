@@ -161,6 +161,9 @@ impl Root {
                     PianoRollContextMenuItem::MergeShapes => {
                         let _ = self.editor.merge_selected_shapes();
                     }
+                    PianoRollContextMenuItem::EditShape => {
+                        let _ = self.editor.enable_shape_edit();
+                    }
                     PianoRollContextMenuItem::SelectAll => {
                         let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }

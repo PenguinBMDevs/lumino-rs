@@ -193,6 +193,8 @@ struct Overlay {
     selection_box: Option<Rectangle>,
     /// 框选拉框矩形
     marquee_path: Option<Path>,
+    /// 020 当前形状编辑手柄（屏幕坐标）
+    edit_handles: Vec<Point>,
 }
 
 impl Overlay {
@@ -226,6 +228,7 @@ impl Overlay {
             // 保证「看到的框」就是「抓得住的框」。
             selection_box: editor.selection_box(),
             marquee_path,
+            edit_handles: editor.shape_edit_handle_points(),
         }
     }
 
@@ -235,6 +238,7 @@ impl Overlay {
             && self.selected_paths.is_empty()
             && self.selection_box.is_none()
             && self.marquee_path.is_none()
+            && self.edit_handles.is_empty()
     }
 }
 
@@ -283,6 +287,12 @@ pub fn draw(
                 Stroke::default().with_width(CORE_WIDTH).with_color(strong),
             );
         }
+    }
+
+    // 020 手柄：小圆点，压在形状的 box/锚点位置
+    for point in &overlay.edit_handles {
+        let circle = Path::circle(*point, 3.5);
+        frame.fill(&circle, strong);
     }
 
     // 选中选框：外侧描边 + 四角实心手柄（手柄压在框角上，便于识别「可拖动」）
