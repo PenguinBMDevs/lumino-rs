@@ -101,7 +101,7 @@ pub fn why_not(notes: &[ShapeNote], is_spam_fill: bool) -> Option<GateFlipReason
 /// 按 (key, 起点) 排序，并给出每条音符与同 key 前一条「已发声结束」之间的静音
 ///
 /// 行首记 `-1.0`；同 key 的 track/颜色视为同一行（上游 `row_order` 口径）。
-fn row_order(notes: &[ShapeNote]) -> (Vec<usize>, Vec<f32>) {
+pub(crate) fn row_order(notes: &[ShapeNote]) -> (Vec<usize>, Vec<f32>) {
     let mut order: Vec<usize> = (0..notes.len()).collect();
     order.sort_by(|&a, &b| {
         notes[a]
