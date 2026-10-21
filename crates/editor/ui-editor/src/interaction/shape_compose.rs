@@ -3,8 +3,10 @@
 //! 在 `DrawnShape`（UI 选中对象）与 `ShapeModel`（019–022 算法输入）之间搭一条
 //! 最小桥：组合时保留原音符，形状参数写入 `ShapeStore`，一次提交一个 group。
 
-use lumino_core::shape::{MergeParams, ShapeModel, ShapeOp};
-use lumino_editor_state::shape_ops::{gate_merge, join, to_live};
+use lumino_core::shape::{
+    MergeParams, ShapeKind, ShapeModel, ShapeOp, StraightenParams, Sym, SymAxis, SymParams,
+};
+use lumino_editor_state::shape_ops::{gate_merge, join, symmetric_shape, to_live};
 use lumino_editor_state::{DrawnShape, ShapeNote};
 
 use crate::Editor;
@@ -128,6 +130,70 @@ impl Editor {
         self.replace_selected_with(first_model, notes, None)
     }
 
+    /// 023：切换对称（竖轴/横轴）。再次调用同一轴 = 关闭。
+    pub fn toggle_symmetry(&mut self, vertical: bool) -> bool {
+        let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
+            return false;
+        };
+        let params = SymParams {
+            mode: Sym::Mirror,
+            axis: if vertical {
+                SymAxis::Vertical {
+                    x: model
+                        .geometry
+                        .bounds()
+                        .map(|b| (b.0 + b.2) / 2.0)
+                        .unwrap_or(0.0),
+                }
+            } else {
+                SymAxis::Horizontal {
+                    y: model
+                        .geometry
+                        .bounds()
+                        .map(|b| (b.1 + b.3) / 2.0)
+                        .unwrap_or(0.0),
+                }
+            },
+            source: 0,
+        };
+        let already = model
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Symmetry(_)));
+        model.ops.retain(|op| !matches!(op, ShapeOp::Symmetry(_)));
+        if !already {
+            if model.kind != ShapeKind::Curve || symmetric_shape(&model, &params).is_none() {
+                return false;
+            }
+            model.ops.push(ShapeOp::Symmetry(params));
+        }
+        let ok = self.edit_shape(model_id, model);
+        self.refresh_drawn_source(drawn_id, model_id);
+        ok
+    }
+
+    /// 024：显式开启/关闭扶正
+    pub fn set_straighten(&mut self, on: bool) -> bool {
+        let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
+            return false;
+        };
+        model.ops.retain(|op| !matches!(op, ShapeOp::Straighten(_)));
+        if on {
+            if !matches!(
+                model.kind,
+                ShapeKind::Freehand | ShapeKind::Polyline | ShapeKind::Line
+            ) {
+                return false;
+            }
+            model
+                .ops
+                .push(ShapeOp::Straighten(StraightenParams { level: 50 }));
+        }
+        let ok = self.edit_shape(model_id, model);
+        self.refresh_drawn_source(drawn_id, model_id);
+        ok
+    }
+
     /// 019/021：还原最近一次组合前的图形
     pub fn split_composed_shape(&mut self) -> bool {
         let selected = self.selected_drawn_snapshot();
@@ -164,6 +230,25 @@ impl Editor {
         }
         self.mark_notes_changed();
         true
+    }
+
+    fn selected_model_for_edit(&mut self) -> Option<(u64, u64, ShapeModel)> {
+        let drawn = self.selected_drawn_snapshot();
+        if drawn.len() != 1 {
+            return None;
+        }
+        let drawn_id = drawn[0].id;
+        let model_id = self.ensure_model_for_drawn(drawn_id)?;
+        let model = self.editor_state.shape_store.model(model_id)?.clone();
+        Some((drawn_id, model_id, model))
+    }
+
+    fn refresh_drawn_source(&mut self, drawn_id: u64, model_id: u64) {
+        if let Some(model) = self.editor_state.shape_store.model(model_id).cloned() {
+            let source = source_from_model(&model);
+            self.editor_state.shape_select.set_source(drawn_id, source);
+            self.grid_cache.clear();
+        }
     }
 
     fn selected_drawn_snapshot(&self) -> Vec<DrawnShape> {

@@ -3,6 +3,7 @@
 use super::*;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeOp};
 use lumino_editor_state::{DrawnShapeSource, ShapeNote};
 
 fn shape_note(tick: f32, key: u16) -> ShapeNote {
@@ -99,6 +100,93 @@ fn test_join_requires_two_shapes() {
     editor.editor_state.shape_select.select_all_of([a, b]);
     assert!(editor.join_selected_shapes());
     assert_eq!(editor.editor_state.shape_select.selection_len(), 1);
+}
+
+#[test]
+fn test_straighten_toggle_adds_and_removes_op() {
+    let mut editor = seeded_editor();
+    let id = add_polyline(
+        &mut editor,
+        vec![(0.0, 60.0), (20.0, 64.0), (40.0, 60.0)],
+        vec![shape_note(0.0, 60)],
+    );
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.set_straighten(true));
+    let model_id = editor
+        .editor_state
+        .shape_select
+        .model_id_of(id)
+        .expect("模型");
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Straighten(_)))
+    );
+    assert!(editor.set_straighten(false));
+    assert!(
+        !editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Straighten(_)))
+    );
+}
+
+#[test]
+fn test_symmetry_toggle_adds_and_removes_op() {
+    let mut editor = seeded_editor();
+    let id = add_polyline(
+        &mut editor,
+        vec![(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)],
+        vec![shape_note(0.0, 60)],
+    );
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.ensure_model_for_drawn(id).is_some());
+    let model_id = editor
+        .editor_state
+        .shape_select
+        .model_id_of(id)
+        .expect("模型");
+    let mut model = editor
+        .editor_state
+        .shape_store
+        .model(model_id)
+        .expect("模型")
+        .clone();
+    model.kind = ShapeKind::Curve;
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)]);
+    editor.editor_state.shape_store.edit(model_id, model, 0);
+
+    assert!(editor.toggle_symmetry(true));
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Symmetry(_)))
+    );
+    assert!(editor.toggle_symmetry(true));
+    assert!(
+        !editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Symmetry(_)))
+    );
 }
 
 #[test]

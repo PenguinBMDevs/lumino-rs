@@ -121,6 +121,10 @@ fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
             PianoRollContextMenuItem::SplitJoinedShape,
             PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::EditShape,
+            PianoRollContextMenuItem::SymmetryVertical,
+            PianoRollContextMenuItem::SymmetryHorizontal,
+            PianoRollContextMenuItem::Straighten,
+            PianoRollContextMenuItem::StraightenOff,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
     };
@@ -191,6 +195,10 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::SplitJoinedShape => Icon::ContextMenuCut,
         PianoRollContextMenuItem::MergeShapes => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::EditShape => Icon::Gear,
+        PianoRollContextMenuItem::SymmetryVertical => Icon::ContextMenuCopy,
+        PianoRollContextMenuItem::SymmetryHorizontal => Icon::ContextMenuPaste,
+        PianoRollContextMenuItem::Straighten => Icon::ContextMenuCut,
+        PianoRollContextMenuItem::StraightenOff => Icon::ContextMenuDelete,
     }
 }
 
@@ -210,6 +218,10 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::SplitJoinedShape => tr!("还原连接"),
         PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
         PianoRollContextMenuItem::EditShape => tr!("编辑形状"),
+        PianoRollContextMenuItem::SymmetryVertical => tr!("竖轴对称"),
+        PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),
+        PianoRollContextMenuItem::Straighten => tr!("扶正 50%"),
+        PianoRollContextMenuItem::StraightenOff => tr!("取消扶正"),
     }
 }
 
