@@ -2,7 +2,9 @@
 
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, TumourParams};
+use lumino_core::shape::{
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TumourParams,
+};
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
@@ -16,6 +18,68 @@ fn straight_shape(track: u16, tick_hi: f32) -> ShapeModel {
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (tick_hi, 72.0)]);
     model.validate().expect("测试形状应合法");
     model
+}
+
+fn closed_shape(fill: ShapeFill, gate_beats: f32) -> ShapeModel {
+    let mut geometry =
+        ShapeGeometry::from_points([(0.0, 60.0), (480.0, 60.0), (480.0, 64.0), (0.0, 64.0)]);
+    geometry.closed = true;
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 0.25);
+    model.geometry = geometry;
+    model.style = ShapeStyle {
+        fill,
+        gate_beats,
+        ..ShapeStyle::default()
+    };
+    model
+}
+
+#[test]
+fn test_fill_shape_is_one_note_per_row() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::Fill, 0.25), 1);
+    // 现有 row_spans 的边界口径会把上边界行 64 也算进来（与曲线填充一致）
+    assert_eq!(notes.len(), 5, "矩形 60..64 当前填 60..64 五行");
+    assert_eq!(
+        notes.iter().map(|n| n.key).collect::<Vec<_>>(),
+        vec![60, 61, 62, 63, 64]
+    );
+    assert!(notes.iter().all(|n| (n.length - 480.0).abs() < 1e-3));
+}
+
+#[test]
+fn test_spam_shape_uses_gate() {
+    let editor = editor_with_track(1);
+    let gate = 0.0625 * f32::from(editor.editor_state.view.ppq);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::Spam, 0.0625), 1);
+    assert_eq!(notes.len(), 20, "五行 × 每行四个门（gate=120 tick）");
+    assert!(
+        notes.iter().all(|n| (n.length - gate).abs() < 1e-3),
+        "Auto + Round 应铺满整门"
+    );
+}
+
+#[test]
+fn test_outline_spam_chops_outline_without_filling_inside() {
+    let editor = editor_with_track(1);
+    let gate = 0.0625 * f32::from(editor.editor_state.view.ppq);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::OutlineSpam, 0.0625), 1);
+    assert!(!notes.is_empty(), "轮廓仍应生成音符");
+    assert!(
+        notes.iter().all(|n| n.length <= gate + 1e-3),
+        "描边应被门长切开，不再保留整行 480 tick 长音"
+    );
+}
+
+#[test]
+fn test_empty_shape_stays_outline_only() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::Empty, 0.25), 1);
+    assert!(!notes.is_empty());
+    assert!(
+        notes.iter().any(|n| n.length < 100.0),
+        "Empty 应只有轮廓短音，不是四条整行长音"
+    );
 }
 
 fn note_count(editor: &Editor, track: usize) -> usize {
