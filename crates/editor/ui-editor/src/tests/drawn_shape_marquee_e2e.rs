@@ -266,6 +266,34 @@ fn test_pending_curve_drag_then_confirm_then_drag() {
     );
 }
 
+/// 在鼠标工具下按 √：待确认镜像必须退场，不能留下无音符的几何副本
+#[test]
+fn test_confirm_while_shape_select_removes_pending_mirror() {
+    let mut editor = editor_with_empty_canvas();
+    editor.set_tool(Tool::Curve);
+    editor.editor_state.line_tool.paths = vec![vec![
+        lumino_editor_state::BezierAnchor::new((0.0, 60.0)),
+        lumino_editor_state::BezierAnchor::new((40.0, 70.0)),
+    ]];
+    editor.editor_state.line_tool.recompute_auto_handles();
+    editor.set_tool(Tool::ShapeSelect);
+    assert_eq!(editor.editor_state.shape_select.shapes().len(), 1);
+
+    assert!(editor.confirm_line_tool());
+    assert_eq!(
+        editor.editor_state.shape_select.shapes().len(),
+        1,
+        "确认后应只剩已确认图形，没有待确认镜像"
+    );
+    assert!(
+        !editor.editor_state.shape_select.shapes()[0]
+            .notes
+            .is_empty(),
+        "已确认图形应带音符"
+    );
+    assert_shape_notes_match_document(&editor);
+}
+
 /// 曲线在同一 key 行折返：登记音符必须取最终 keep-longest 长度
 #[test]
 fn test_overlapping_curve_notes_match_document() {
