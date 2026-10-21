@@ -1,5 +1,6 @@
 //! Join 测试
 
+use super::super::bezier::to_bezier;
 use super::*;
 use lumino_core::shape::ShapeFill;
 
@@ -60,6 +61,30 @@ fn test_split_here_and_separate() {
     let mut changed = joined.clone();
     changed.model.geometry.anchors[0].pos.0 += 10.0;
     assert!(split_separate(&changed).is_none());
+}
+
+#[test]
+fn test_join_reverse_swaps_handles() {
+    let mut second = shape(2, ShapeKind::Curve, &[(200.0, 60.0), (100.0, 60.0)]);
+    second.geometry.anchors[0].set_out_handle((5.0, 1.0));
+    second.geometry.anchors[1].set_in_handle((-5.0, -1.0));
+    let joined = join(
+        &[
+            shape(1, ShapeKind::Line, &[(0.0, 60.0), (100.0, 60.0)]),
+            second,
+        ],
+        1.0,
+        1.0,
+    )
+    .expect("应可连接");
+    let reversed = &joined.segments[1].anchors;
+    assert_eq!(reversed[0].pos, (100.0, 60.0), "第二段应反向接入");
+    assert_eq!(
+        reversed[0].out_handle,
+        (-5.0, -1.0),
+        "反向时入/出控制柄必须交换"
+    );
+    assert_eq!(reversed[1].in_handle, (5.0, 1.0));
 }
 
 #[test]

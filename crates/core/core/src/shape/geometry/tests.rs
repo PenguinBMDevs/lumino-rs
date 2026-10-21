@@ -25,6 +25,21 @@ fn test_anchor_handle_absolute_and_finiteness() {
 }
 
 #[test]
+fn test_anchor_set_handles_marks_custom_and_swaps() {
+    let mut anchor = ShapeAnchor::new((100.0, 60.0));
+    anchor.set_out_handle((10.0, 2.0));
+    anchor.set_in_handle((-10.0, -2.0));
+    assert!(!anchor.handles_auto, "设置手柄后应转为自定义");
+    assert_eq!(anchor.out_handle_abs(), (110.0, 62.0));
+    assert_eq!(anchor.in_handle_abs(), (90.0, 58.0));
+
+    anchor.swap_handles();
+    assert_eq!(anchor.out_handle, (-10.0, -2.0));
+    assert_eq!(anchor.in_handle, (10.0, 2.0));
+    assert!(!anchor.handles_auto, "交换不应改变自定义标记");
+}
+
+#[test]
 fn test_rect_normalized_swaps_bounds() {
     let rect = ShapeRect::normalized(480.0, 72.0, 0.0, 60.0);
     assert_eq!((rect.tick_lo, rect.key_lo), (0.0, 60.0));

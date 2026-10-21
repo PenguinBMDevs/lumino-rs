@@ -8,6 +8,7 @@
 //! 依赖方向保持 `ui-editor → editor-state → lumino-core`。
 
 pub mod arc;
+pub mod bezier;
 pub mod chain;
 pub mod chop;
 pub mod claw;
@@ -35,6 +36,7 @@ pub use arc::{
     ARC_STEP, arc_k_or_one, arc_points, arc_points_scaled, arc_span, circle_through, rotate_k,
     stretch_k,
 };
+pub use bezier::{reverse_anchors, to_bezier};
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;
@@ -47,7 +49,7 @@ pub use gate_range::{
 };
 pub use gateflip::{GateFlipReason, apply as apply_gate_flip, auto_gap};
 pub use glue::apply as apply_glue;
-pub use joined::{JoinedShape, Segment, join, split_here, split_separate, to_bezier};
+pub use joined::{JoinedShape, Segment, join, split_here, split_separate};
 pub use live::{LiveError, split_back, to_live};
 pub use masks::{
     Area, MaskMember, MaskPreview, MaskedPiece, RowSpan, UnitArea, apply_visible, covered,

@@ -7,6 +7,8 @@ use lumino_core::shape::{
     JoinedParams, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, StrokeKind,
 };
 
+use super::bezier::{reverse_anchors, to_bezier};
+
 /// 路径点（tick, key）
 pub type Pt = (f32, f32);
 
@@ -36,37 +38,27 @@ pub struct JoinedShape {
     pub original_anchors: Vec<ShapeAnchor>,
 }
 
-/// 任何形状 → 贝塞尔锚点；`sharp` 为尖角锚点序号
-pub fn to_bezier(shape: &ShapeModel, _k: f32) -> (Vec<Pt>, Vec<u16>) {
-    let points = shape
-        .geometry
-        .anchors
-        .iter()
-        .map(|anchor| anchor.pos)
-        .collect::<Vec<_>>();
-    let sharp = match shape.kind {
-        ShapeKind::Polyline | ShapeKind::Freehand => (1..points.len().saturating_sub(1))
-            .map(|index| index as u16)
-            .collect(),
-        _ => Vec::new(),
-    };
-    (points, sharp)
-}
-
 /// 贪心串联；`touch` 是端点相接容差
 pub fn join(shapes: &[ShapeModel], touch: f32, k: f32) -> Option<JoinedShape> {
     let first = shapes.first()?;
+    let paths = shapes
+        .iter()
+        .map(|shape| to_bezier(shape, k).0)
+        .collect::<Vec<_>>();
+    if paths.iter().any(|path| path.len() < 2) {
+        return None;
+    }
     let mut remaining = (1..shapes.len()).collect::<Vec<_>>();
     let mut chain = vec![(0usize, false)];
     let mut gaps = Vec::new();
     while !remaining.is_empty() {
         let front = chain.first()?.0;
         let back = chain.last()?.0;
-        let front_point = shapes[front].geometry.anchors.first()?.pos;
-        let back_point = shapes[back].geometry.anchors.last()?.pos;
+        let front_point = paths[front].first()?.pos;
+        let back_point = paths[back].last()?.pos;
         let mut best: Option<(usize, bool, bool, f32)> = None;
         for &index in &remaining {
-            let anchors = &shapes[index].geometry.anchors;
+            let anchors = &paths[index];
             let start = anchors.first()?.pos;
             let end = anchors.last()?.pos;
             for (at_front, reverse, point) in [
@@ -100,9 +92,9 @@ pub fn join(shapes: &[ShapeModel], touch: f32, k: f32) -> Option<JoinedShape> {
     let mut tumours = Vec::with_capacity(chain.len());
     for (index, reverse) in chain {
         let shape = &shapes[index];
-        let mut segment_anchors = shape.geometry.anchors.clone();
+        let mut segment_anchors = paths[index].clone();
         if reverse {
-            segment_anchors.reverse();
+            reverse_anchors(&mut segment_anchors);
         }
         let segment = Segment {
             kind: StrokeKind::from_kind(shape.kind),
@@ -132,7 +124,6 @@ pub fn join(shapes: &[ShapeModel], touch: f32, k: f32) -> Option<JoinedShape> {
     };
     model.style = first.style.clone();
     model.ops = vec![ShapeOp::Joined(params.clone())];
-    let _ = k;
     Some(JoinedShape {
         model,
         params,
