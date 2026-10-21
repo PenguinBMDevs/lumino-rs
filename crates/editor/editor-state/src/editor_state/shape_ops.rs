@@ -34,6 +34,7 @@ pub mod strum;
 pub mod sustain;
 pub mod tiles;
 pub mod tumours;
+pub mod velocity_tool;
 
 #[cfg(test)]
 mod tests;
@@ -81,3 +82,4 @@ pub use strum::apply as apply_strum;
 pub use sustain::{SustainReport, apply as apply_sustain};
 pub use tiles::tiled_spans;
 pub use tumours::{TumourReport, apply as apply_tumours};
+pub use velocity_tool::{Drag, VelTool, apply_env_to_notes, apply_vel_tool};

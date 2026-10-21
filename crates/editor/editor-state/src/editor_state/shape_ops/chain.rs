@@ -73,7 +73,8 @@ pub fn apply_geometry_ops(
             | ShapeOp::Tiles(_)
             | ShapeOp::Merge(_)
             | ShapeOp::Between(_)
-            | ShapeOp::CopyAlong(_) => {}
+            | ShapeOp::CopyAlong(_)
+            | ShapeOp::VelocityEnv(_) => {}
         }
     }
     current
@@ -116,6 +117,9 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             // Merge / Between 是跨形状操作标记：纯函数在调用方执行。
             ShapeOp::Merge(_) | ShapeOp::Between(_) => {}
             ShapeOp::CopyAlong(params) => *notes = super::copypath::apply(notes, params, ctx.ppq),
+            ShapeOp::VelocityEnv(env) => {
+                *notes = super::velocity_tool::apply(notes, env, ctx.ppq);
+            }
             _ => {}
         }
     }
