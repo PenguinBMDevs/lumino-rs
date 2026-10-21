@@ -148,6 +148,19 @@ impl Root {
                         // 与 Delete 键同一条路径：鼠标工具下会优先删除选中的绘制图形
                         let _ = self.handle_editor_action(EditorAction::DeletePressed);
                     }
+                    PianoRollContextMenuItem::LiveShape => {
+                        let _ = self.editor.live_selected_shapes();
+                    }
+                    PianoRollContextMenuItem::SplitLiveShape
+                    | PianoRollContextMenuItem::SplitJoinedShape => {
+                        let _ = self.editor.split_composed_shape();
+                    }
+                    PianoRollContextMenuItem::JoinShapes => {
+                        let _ = self.editor.join_selected_shapes();
+                    }
+                    PianoRollContextMenuItem::MergeShapes => {
+                        let _ = self.editor.merge_selected_shapes();
+                    }
                     PianoRollContextMenuItem::SelectAll => {
                         let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }

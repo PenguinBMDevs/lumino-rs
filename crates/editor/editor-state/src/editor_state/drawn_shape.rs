@@ -18,7 +18,7 @@
 //! 注册表不参与文档序列化（不是文档内容），文档重建（`EditorState::reset`）时清空；
 //! 切换工具**不**清空（选中是跨工具的持久对象状态）。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::shape_tool::ShapeKind;
 
@@ -161,6 +161,8 @@ pub enum PendingShapeRef {
 pub struct DrawnShape {
     /// 稳定标识（注册表内自增，选中态以此引用）
     pub id: u64,
+    /// 对应的 `ShapeStore` 模型 id（019–022 的矢量编辑入口）
+    pub model_id: Option<u64>,
     /// 所属音轨（仅在当前轨可点选 / 高亮 / 编辑）
     ///
     /// 待确认镜像（`pending.is_some()`）例外：几何尚未绑定音轨，随任何非
@@ -255,6 +257,8 @@ pub struct ShapeSelectState {
     drag: Option<ShapeDrag>,
     /// 空白处拉框（框选）状态
     marquee: Option<ShapeMarquee>,
+    /// 019–022 的“还原原图形”快照（仅会话内；不参与序列化）
+    restore: HashMap<u64, Vec<DrawnShape>>,
 }
 
 impl ShapeSelectState {
@@ -265,6 +269,7 @@ impl ShapeSelectState {
         self.selected.clear();
         self.drag = None;
         self.marquee = None;
+        self.restore.clear();
     }
 
     /// 登记一个已确认图形（几何 + 它生成的音符），返回其稳定 ID
@@ -277,6 +282,7 @@ impl ShapeSelectState {
     ) -> u64 {
         self.push_shape(DrawnShape {
             id: self.next_id,
+            model_id: None,
             track,
             group,
             source,
@@ -303,6 +309,7 @@ impl ShapeSelectState {
     ) -> u64 {
         self.push_shape(DrawnShape {
             id: self.next_id,
+            model_id: None,
             track,
             group: None,
             source,
@@ -351,6 +358,33 @@ impl ShapeSelectState {
         };
         s.source = source;
         true
+    }
+
+    /// 绑定/解绑 `ShapeStore` 模型 id
+    pub fn set_model_id(&mut self, id: u64, model_id: Option<u64>) -> bool {
+        let Some(shape) = self.shapes.iter_mut().find(|shape| shape.id == id) else {
+            return false;
+        };
+        shape.model_id = model_id;
+        true
+    }
+
+    /// 该图形绑定的模型 id
+    pub fn model_id_of(&self, id: u64) -> Option<u64> {
+        self.shapes
+            .iter()
+            .find(|shape| shape.id == id)
+            .and_then(|shape| shape.model_id)
+    }
+
+    /// 记录 019–022 的还原快照
+    pub fn set_restore(&mut self, id: u64, shapes: Vec<DrawnShape>) {
+        self.restore.insert(id, shapes);
+    }
+
+    /// 取出还原快照（一次性）
+    pub fn take_restore(&mut self, id: u64) -> Option<Vec<DrawnShape>> {
+        self.restore.remove(&id)
     }
 
     /// 删除**全部**待确认镜像（离开鼠标工具时调用；已确认图形不受影响）

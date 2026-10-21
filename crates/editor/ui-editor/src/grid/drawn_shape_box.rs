@@ -366,6 +366,7 @@ mod tests {
     fn polyline(points: Vec<(f32, f32)>) -> DrawnShape {
         DrawnShape {
             id: 0,
+            model_id: None,
             track: 1,
             group: None,
             source: DrawnShapeSource::Polyline { points },
