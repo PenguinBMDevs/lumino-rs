@@ -7,6 +7,7 @@
 //! 这样 `editor-state` 不需要反向依赖 `ui-editor` 的 `Editor::shape_notes_of`，
 //! 依赖方向保持 `ui-editor → editor-state → lumino-core`。
 
+pub mod arc;
 pub mod chain;
 pub mod chop;
 pub mod claw;
@@ -22,6 +23,10 @@ pub mod tumours;
 #[cfg(test)]
 mod tests;
 
+pub use arc::{
+    ARC_STEP, arc_k_or_one, arc_points, arc_points_scaled, arc_span, circle_through, rotate_k,
+    stretch_k,
+};
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;

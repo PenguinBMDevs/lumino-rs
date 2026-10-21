@@ -35,6 +35,29 @@ fn closed_shape(fill: ShapeFill, gate_beats: f32) -> ShapeModel {
     model
 }
 
+fn arc_shape(mid_key: f32) -> ShapeModel {
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);
+    model
+}
+
+#[test]
+fn test_arc_shape_uses_three_point_circle() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&arc_shape(66.0), 1);
+    assert!(!notes.is_empty(), "Arc 应生成描边音符");
+    let hi = notes.iter().map(|n| n.key).max().unwrap_or(0);
+    assert!(hi >= 66, "弧应经过中间点 key=66，实际最高 {hi}");
+}
+
+#[test]
+fn test_collinear_arc_falls_back_to_polyline() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&arc_shape(60.0), 1);
+    assert!(!notes.is_empty(), "退化弧应回退为折线而不是无产物");
+    assert!(notes.iter().all(|n| n.key == 60), "共线三点应保持直线");
+}
+
 #[test]
 fn test_fill_shape_is_one_note_per_row() {
     let editor = editor_with_track(1);
