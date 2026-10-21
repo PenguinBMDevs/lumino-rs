@@ -35,6 +35,12 @@ fn seeded_editor() -> Editor {
     editor
 }
 
+fn empty_editor() -> Editor {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor
+}
+
 #[test]
 fn test_live_then_split_restores_shapes() {
     let mut editor = seeded_editor();
@@ -50,6 +56,11 @@ fn test_live_then_split_restores_shapes() {
     );
     editor.editor_state.shape_select.select_all_of([a, b]);
     assert!(editor.live_selected_shapes(), "应可折叠");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        2,
+        "Live 折叠不应丢文档音符"
+    );
     assert_eq!(editor.editor_state.shape_select.selection_len(), 1);
     let live_id = editor.editor_state.shape_select.selected_ids()[0];
     assert!(
@@ -79,11 +90,16 @@ fn test_live_then_split_restores_shapes() {
 
     assert!(editor.split_composed_shape(), "应可还原");
     assert_eq!(editor.editor_state.shape_select.selection_len(), 2);
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        2,
+        "还原 Live 不应丢文档音符"
+    );
 }
 
 #[test]
 fn test_join_requires_two_shapes() {
-    let mut editor = seeded_editor();
+    let mut editor = empty_editor();
     let a = add_polyline(
         &mut editor,
         vec![(0.0, 60.0), (50.0, 60.0)],
@@ -100,6 +116,17 @@ fn test_join_requires_two_shapes() {
     editor.editor_state.shape_select.select_all_of([a, b]);
     assert!(editor.join_selected_shapes());
     assert_eq!(editor.editor_state.shape_select.selection_len(), 1);
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        2,
+        "Join 不应丢文档音符"
+    );
+    assert!(editor.split_composed_shape());
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        2,
+        "还原 Join 不应丢文档音符"
+    );
 }
 
 #[test]
@@ -280,7 +307,7 @@ fn test_velocity_up_writes_env_op() {
 
 #[test]
 fn test_merge_two_shapes() {
-    let mut editor = seeded_editor();
+    let mut editor = empty_editor();
     let a = add_polyline(
         &mut editor,
         vec![(0.0, 60.0), (50.0, 60.0)],
@@ -294,4 +321,9 @@ fn test_merge_two_shapes() {
     editor.editor_state.shape_select.select_all_of([a, b]);
     assert!(editor.merge_selected_shapes());
     assert_eq!(editor.editor_state.shape_select.selection_len(), 1);
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        2,
+        "Merge 不应丢文档音符"
+    );
 }
