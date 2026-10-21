@@ -16,6 +16,7 @@ pub mod funnel;
 pub mod gate_range;
 pub mod gateflip;
 pub mod glue;
+pub mod joined;
 pub mod live;
 pub mod masks;
 pub mod nested;
@@ -45,6 +46,7 @@ pub use gate_range::{
 };
 pub use gateflip::{GateFlipReason, apply as apply_gate_flip, auto_gap};
 pub use glue::apply as apply_glue;
+pub use joined::{JoinedShape, Segment, join, split_here, split_separate, to_bezier};
 pub use live::{LiveError, split_back, to_live};
 pub use masks::{
     Area, MaskMember, MaskPreview, MaskedPiece, RowSpan, UnitArea, apply_visible, covered,

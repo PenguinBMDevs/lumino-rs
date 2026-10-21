@@ -48,7 +48,7 @@ pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CurveRef, CycleBy,
-    CycleParams, DrawingRef, FunnelParams, FunnelStart, GateRangeParams, GlueParams,
+    CycleParams, DrawingRef, FunnelParams, FunnelStart, GateRangeParams, GlueParams, JoinedParams,
     LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow, NestedParams,
     NestedWay, PatternParams, PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart,
     StopsParams, Stroke, StrokeKind, StrumParams, SustainParams, Sym, TileBy, TileFlip, TileLayout,
