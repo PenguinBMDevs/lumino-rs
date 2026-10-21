@@ -204,6 +204,40 @@ fn test_note_ops_are_noop_for_geometry_op() {
 }
 
 #[test]
+fn test_note_ops_applies_gate_flip() {
+    let mut notes = vec![
+        ShapeNote {
+            track: 0,
+            tick: 0.0,
+            key: 60,
+            length: 120.0,
+            velocity: 100,
+        },
+        ShapeNote {
+            track: 0,
+            tick: 120.0,
+            key: 60,
+            length: 120.0,
+            velocity: 100,
+        },
+        ShapeNote {
+            track: 0,
+            tick: 240.0,
+            key: 60,
+            length: 120.0,
+            velocity: 100,
+        },
+    ];
+    let ops = vec![ShapeOp::GateFlip];
+    apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
+    assert_eq!(
+        notes.iter().map(|note| note.tick).collect::<Vec<_>>(),
+        vec![240.0, 120.0, 0.0],
+        "GateFlip 应通过算子链生效"
+    );
+}
+
+#[test]
 fn test_note_ops_applies_glue() {
     let mut notes = vec![
         ShapeNote {

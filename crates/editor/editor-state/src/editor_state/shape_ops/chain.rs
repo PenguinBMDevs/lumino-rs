@@ -4,7 +4,7 @@ use lumino_core::shape::{OpStage, ShapeOp, ShapeRect};
 
 use crate::ShapeNote;
 
-use super::{chop, claw, glue, strum, tumours};
+use super::{chop, claw, gateflip, glue, strum, tumours};
 
 /// 几何阶段的上下文（目前只需要拍 → tick 的换算）
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,8 +39,12 @@ pub fn apply_geometry_ops(
             ShapeOp::Tumours(params) => {
                 current = tumours::apply(&current, params, ctx.ppq).0;
             }
-            // Glue / Claw / Strum / Chop 是 Notes 阶段，已被上面的 stage filter 排除。
-            ShapeOp::Glue(_) | ShapeOp::Claw(_) | ShapeOp::Strum(_) | ShapeOp::Chop(_) => {}
+            // Glue / Claw / Strum / Chop / GateFlip 是 Notes 阶段，已被上面的 stage filter 排除。
+            ShapeOp::Glue(_)
+            | ShapeOp::Claw(_)
+            | ShapeOp::Strum(_)
+            | ShapeOp::Chop(_)
+            | ShapeOp::GateFlip => {}
         }
     }
     current
@@ -70,8 +74,9 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::Claw(params) => *notes = claw::apply(notes, params, ctx.ppq),
             ShapeOp::Strum(params) => *notes = strum::apply(notes, params, ctx.ppq),
             ShapeOp::Chop(params) => *notes = chop::apply(notes, params, ctx.ppq).0,
+            ShapeOp::GateFlip => *notes = gateflip::apply(notes),
             _ => {}
         }
     }
-    // 其它 Notes 阶段算子（DRAW-009/008/010）在此之后按数组顺序应用。
+    // 其它 Notes 阶段算子（DRAW-008/010）在此之后按数组顺序应用。
 }
