@@ -242,6 +242,9 @@ impl Editor {
         self.record_line_tool_paths(per_path_notes);
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
+        // 若确认时正停在鼠标工具，待确认镜像必须退场，否则用户会继续拖到
+        // “无音符的几何副本”（表现为曲线动、音符不动）。
+        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }
