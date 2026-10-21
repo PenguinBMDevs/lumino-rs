@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::params::{
     ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams,
     LiveShapeParams, MaskParams, MergeParams, NestedParams, PatternParams, PolygonParams,
-    StrumParams, SustainParams, TilesParams, TumourParams,
+    StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -63,6 +63,8 @@ pub enum ShapeOp {
     Joined(JoinedParams),
     /// 门控感知合并（Notes 阶段；DRAW-022）
     Merge(MergeParams),
+    /// 半边对称展开（Geometry 阶段；DRAW-023）
+    Symmetry(SymParams),
 }
 
 /// 算子在链上的执行阶段
@@ -87,7 +89,8 @@ impl ShapeOp {
             | Self::Pattern(_)
             | Self::Funnel(_)
             | Self::Live(_)
-            | Self::Joined(_) => OpStage::Geometry,
+            | Self::Joined(_)
+            | Self::Symmetry(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -157,6 +160,9 @@ impl ShapeOp {
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Joined 参数非法：{e}"))),
             Self::Merge(_) => Ok(()),
+            Self::Symmetry(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Symmetry 参数非法：{e}"))),
         }
     }
 }

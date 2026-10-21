@@ -36,6 +36,7 @@ pub use arc::{
     ARC_STEP, arc_k_or_one, arc_points, arc_points_scaled, arc_span, circle_through, rotate_k,
     stretch_k,
 };
+pub use bezier::symmetry::{symmetric, symmetric_shape};
 pub use bezier::{reverse_anchors, to_bezier};
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};

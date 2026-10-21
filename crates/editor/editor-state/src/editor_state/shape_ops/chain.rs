@@ -57,6 +57,8 @@ pub fn apply_geometry_ops(
             ShapeOp::Funnel(_) => {}
             // Live / Joined 由合并时已经写入几何；链上不重复折叠。
             ShapeOp::Live(_) | ShapeOp::Joined(_) => {}
+            // Symmetry 在 shape_notes_of 的锚点级入口展开；链上不重复处理。
+            ShapeOp::Symmetry(_) => {}
             // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。
             ShapeOp::Glue(_)
             | ShapeOp::Claw(_)
