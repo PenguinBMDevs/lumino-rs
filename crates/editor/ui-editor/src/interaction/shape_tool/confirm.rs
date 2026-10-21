@@ -345,7 +345,6 @@ impl Editor {
         // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空待确认列表之前读几何）
         self.record_shape_tool_shapes(per_shape_notes);
         self.editor_state.shape_tool.clear_pending();
-        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }

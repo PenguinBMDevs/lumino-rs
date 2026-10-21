@@ -25,7 +25,7 @@ use super::{fill, geom, paths, stroke_band};
 use crate::{Editor, Note};
 use lumino_editor_state::{BezierAnchor, ShapeNote};
 use lumino_note_core::history::CreateOp;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 impl Editor {
     /// 一条路径的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
@@ -126,13 +126,6 @@ impl Editor {
         // 跨路径首占去重。路径互不重叠时与整体 keep_longest 结果逐项一致；
         // 重叠时仅归属可能落在先登记的路径上，音符本身（写入 payload）不受影响。
         let owner_track = self.editor_state.data.current_track;
-        // 写入 payload 已按 `(start, key)` 取最长；逐路径归属必须使用**同一份最终长度**，
-        // 否则曲线重叠/加粗产生的同 (tick,key) 短音符会登记成错误值，鼠标工具按值定位
-        // 时找不到文档事件，表现为“图形移动、音符不动”。
-        let written: HashMap<(i64, u16), f32> = notes
-            .iter()
-            .map(|(start, key, length)| ((start.round() as i64, *key), *length))
-            .collect();
         let mut per_path_notes: Vec<Vec<ShapeNote>> = Vec::with_capacity(line_paths.len());
         let mut claimed: HashSet<(i64, u16)> = HashSet::new();
         for path in &line_paths {
@@ -145,44 +138,17 @@ impl Editor {
             let owned: Vec<ShapeNote> = self
                 .path_outline_blocks(path)
                 .into_iter()
-                .filter_map(|(start, _end, key)| {
-                    let lookup = (start.round() as i64, key);
-                    if !claimed.insert(lookup) {
-                        return None;
-                    }
-                    let length = *written.get(&lookup)?;
-                    Some(ShapeNote {
-                        track: owner_track,
-                        tick: start,
-                        key,
-                        length,
-                        velocity: 100,
-                        channel: 0,
-                    })
+                .filter(|(t, _, k)| claimed.insert((*t as i64, *k)))
+                .map(|(start, end, key)| ShapeNote {
+                    track: owner_track,
+                    tick: start,
+                    key,
+                    length: end - start,
+                    velocity: 100,
+                    channel: 0,
                 })
                 .collect();
             per_path_notes.push(owned);
-        }
-        // 填充音符不属于任何单条路径：把它们归到首个图形，否则带填充的曲线
-        // 移动时只有轮廓音符跟走，填充音符会留在原地。
-        let mut assigned: HashSet<(i64, u16)> = per_path_notes
-            .iter()
-            .flatten()
-            .map(|note| (note.tick.round() as i64, note.key))
-            .collect();
-        if let Some(first) = per_path_notes.first_mut() {
-            for (start, key, length) in &notes {
-                if assigned.insert((start.round() as i64, *key)) {
-                    first.push(ShapeNote {
-                        track: owner_track,
-                        tick: *start,
-                        key: *key,
-                        length: *length,
-                        velocity: 100,
-                        channel: 0,
-                    });
-                }
-            }
         }
 
         let track = self.editor_state.data.current_track;
@@ -242,9 +208,6 @@ impl Editor {
         self.record_line_tool_paths(per_path_notes);
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
-        // 若确认时正停在鼠标工具，待确认镜像必须退场，否则用户会继续拖到
-        // “无音符的几何副本”（表现为曲线动、音符不动）。
-        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }

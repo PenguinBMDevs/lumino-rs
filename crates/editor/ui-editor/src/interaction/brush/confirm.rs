@@ -134,8 +134,6 @@ impl Editor {
         self.record_brush_strokes(per_stroke_notes);
         // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
         self.editor_state.brush_tool.reset();
-        // 确认时若停在鼠标工具，待确认镜像必须退场，避免拖到无音符的几何副本。
-        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }

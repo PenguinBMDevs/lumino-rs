@@ -811,39 +811,8 @@ impl Editor {
             seq = seq.saturating_add(1);
         }
         if ops.is_empty() {
-            if selected
-                .iter()
-                .any(|(_, notes, pending)| pending.is_none() && !notes.is_empty())
-            {
-                tracing::warn!(
-                    "[shape-move] 已确认图形有 notes 但文档一个都没定位到：selected_shapes={} shape_notes={}",
-                    selected.len(),
-                    selected
-                        .iter()
-                        .map(|(_, notes, _)| notes.len())
-                        .sum::<usize>()
-                );
-            }
             // 仅待确认几何被移动：文档未变 → 不写历史、不重建空间索引
             return pending_moved;
-        }
-        let lookup_count: usize = lookups_by_track.values().map(Vec::len).sum();
-        let moved_count: usize = ops.iter().map(|op| op.originals.len()).sum();
-        if moved_count < lookup_count {
-            tracing::warn!(
-                "[shape-move] 音符按值定位不完整：selected_shapes={} shape_notes={} lookups={} moved={} pending={}",
-                selected.len(),
-                selected
-                    .iter()
-                    .map(|(_, notes, _)| notes.len())
-                    .sum::<usize>(),
-                lookup_count,
-                moved_count,
-                selected
-                    .iter()
-                    .filter(|(_, _, pending)| pending.is_some())
-                    .count(),
-            );
         }
 
         let modified = self.editor_state.data.apply_move_ops(&ops, false, max_key);
