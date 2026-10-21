@@ -48,17 +48,7 @@ impl Editor {
     /// 与曲线工具确认同源：展平 → 逐音高行解析 + 法线加粗 → 同 tick 同 key 留最长 →
     /// 长度下限补齐。`anchors.len() < 2` 视为无音符形状（仍可登记与持久化）。
     pub(crate) fn shape_notes_of(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
-        let anchors: Vec<BezierAnchor> = model
-            .geometry
-            .anchors
-            .iter()
-            .map(|a| BezierAnchor {
-                pos: a.pos,
-                in_handle: a.in_handle,
-                out_handle: a.out_handle,
-                handles_auto: a.handles_auto,
-            })
-            .collect();
+        let anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
         if anchors.len() < 2 && model.geometry.rect.is_none() {
             return Vec::new();
         }
