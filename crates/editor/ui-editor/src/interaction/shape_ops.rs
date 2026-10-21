@@ -295,7 +295,7 @@ impl Editor {
     }
 
     /// 按值指纹清理旧音符（降序删除，避免索引漂移）
-    fn remove_shape_notes(&mut self, _track: usize, notes: &[ShapeNote]) {
+    pub(super) fn remove_shape_notes(&mut self, _track: usize, notes: &[ShapeNote]) {
         if notes.is_empty() {
             return;
         }

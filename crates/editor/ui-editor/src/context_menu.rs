@@ -114,7 +114,14 @@ fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
             PianoRollContextMenuItem::SelectAll,
             PianoRollContextMenuItem::BatchEdit,
         ],
-        ContextMenuTarget::DrawnShape => &[PianoRollContextMenuItem::DeleteDrawnShape],
+        ContextMenuTarget::DrawnShape => &[
+            PianoRollContextMenuItem::LiveShape,
+            PianoRollContextMenuItem::SplitLiveShape,
+            PianoRollContextMenuItem::JoinShapes,
+            PianoRollContextMenuItem::SplitJoinedShape,
+            PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::DeleteDrawnShape,
+        ],
     };
     let buttons = items.iter().copied().map(menu_button).collect::<Vec<_>>();
 
@@ -177,6 +184,11 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::SelectAll => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::BatchEdit => Icon::Gear,
         PianoRollContextMenuItem::DeleteDrawnShape => Icon::ContextMenuDelete,
+        PianoRollContextMenuItem::LiveShape => Icon::ContextMenuCopy,
+        PianoRollContextMenuItem::SplitLiveShape => Icon::ContextMenuPaste,
+        PianoRollContextMenuItem::JoinShapes => Icon::Gear,
+        PianoRollContextMenuItem::SplitJoinedShape => Icon::ContextMenuCut,
+        PianoRollContextMenuItem::MergeShapes => Icon::ContextMenuSelectAll,
     }
 }
 
@@ -190,6 +202,11 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::SelectAll => tr!("全选"),
         PianoRollContextMenuItem::BatchEdit => tr!("批量编辑"),
         PianoRollContextMenuItem::DeleteDrawnShape => tr!("删除"),
+        PianoRollContextMenuItem::LiveShape => tr!("转为活形状"),
+        PianoRollContextMenuItem::SplitLiveShape => tr!("还原活形状"),
+        PianoRollContextMenuItem::JoinShapes => tr!("连接图形"),
+        PianoRollContextMenuItem::SplitJoinedShape => tr!("还原连接"),
+        PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
     }
 }
 
