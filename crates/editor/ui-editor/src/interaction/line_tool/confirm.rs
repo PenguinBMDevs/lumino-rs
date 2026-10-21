@@ -163,6 +163,27 @@ impl Editor {
                 .collect();
             per_path_notes.push(owned);
         }
+        // 填充音符不属于任何单条路径：把它们归到首个图形，否则带填充的曲线
+        // 移动时只有轮廓音符跟走，填充音符会留在原地。
+        let mut assigned: HashSet<(i64, u16)> = per_path_notes
+            .iter()
+            .flatten()
+            .map(|note| (note.tick.round() as i64, note.key))
+            .collect();
+        if let Some(first) = per_path_notes.first_mut() {
+            for (start, key, length) in &notes {
+                if assigned.insert((start.round() as i64, *key)) {
+                    first.push(ShapeNote {
+                        track: owner_track,
+                        tick: *start,
+                        key: *key,
+                        length: *length,
+                        velocity: 100,
+                        channel: 0,
+                    });
+                }
+            }
+        }
 
         let track = self.editor_state.data.current_track;
         let total = notes.len();

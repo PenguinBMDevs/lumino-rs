@@ -228,6 +228,44 @@ fn test_confirmed_curved_path_drag_moves_notes() {
     );
 }
 
+/// 待确认曲线先移动，再 √，再拖动已确认曲线：音符必须跟随
+#[test]
+fn test_pending_curve_drag_then_confirm_then_drag() {
+    let mut editor = editor_with_empty_canvas();
+    editor.set_tool(Tool::Curve);
+    editor.editor_state.line_tool.paths = vec![vec![
+        lumino_editor_state::BezierAnchor::new((0.0, 60.0)),
+        lumino_editor_state::BezierAnchor::new((40.0, 70.0)),
+    ]];
+    editor.editor_state.line_tool.recompute_auto_handles();
+    editor.set_tool(Tool::ShapeSelect);
+
+    press_at(&mut editor, (20.0, 65.0), false);
+    move_to(&mut editor, (30.0, 67.0));
+    release(&mut editor);
+
+    editor.set_tool(Tool::Curve);
+    assert!(editor.confirm_line_tool(), "移动后的待确认曲线应能 √");
+    assert_shape_notes_match_document(&editor);
+    editor.set_tool(Tool::ShapeSelect);
+    let id = editor.editor_state.shape_select.shapes()[0].id;
+    editor.editor_state.shape_select.select_only(id);
+
+    press_at(&mut editor, (30.0, 67.0), false);
+    move_to(&mut editor, (40.0, 69.0));
+    release(&mut editor);
+
+    assert!(
+        editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .any(|n| n.start_tick == 20),
+        "第二次拖动后音符应继续 +10 tick"
+    );
+}
+
 /// 曲线在同一 key 行折返：登记音符必须取最终 keep-longest 长度
 #[test]
 fn test_overlapping_curve_notes_match_document() {
