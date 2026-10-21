@@ -45,7 +45,8 @@ pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CycleBy, CycleParams,
-    GlueParams, MaskMode, MaskParams, MaskShow, RowRestart, StopsParams, StrumParams,
-    SustainParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    GateRangeParams, GlueParams, MaskMode, MaskParams, MaskShow, RangeDir, RowRestart, StopsParams,
+    StrumParams, SustainParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
+    factor_at,
 };
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};

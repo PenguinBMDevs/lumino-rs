@@ -47,7 +47,8 @@ pub fn apply_geometry_ops(
             | ShapeOp::GateFlip
             | ShapeOp::Sustain(_)
             | ShapeOp::Mask(_)
-            | ShapeOp::Cycle(_) => {}
+            | ShapeOp::Cycle(_)
+            | ShapeOp::GateRange(_) => {}
         }
     }
     current
@@ -83,6 +84,8 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::Cycle(params) => {
                 cycle::apply(notes, params, ctx.ppq);
             }
+            // GateRange 是标记：spam 生成时消费，不直接改已生成音符。
+            ShapeOp::GateRange(_) => {}
             _ => {}
         }
     }

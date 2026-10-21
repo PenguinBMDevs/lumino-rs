@@ -2,9 +2,9 @@
 
 use super::*;
 use crate::shape::{
-    ChopParams, ClawParams, CycleBy, CycleParams, GlueParams, MaskMode, MaskParams, MaskShow,
-    OpStage, RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams,
-    StrumParams, SustainParams, TumourParams,
+    ChopParams, ClawParams, CycleBy, CycleParams, GateRangeParams, GlueParams, MaskMode,
+    MaskParams, MaskShow, OpStage, RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind,
+    ShapeRect, ShapeStyle, StopsParams, StrumParams, SustainParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -221,6 +221,11 @@ fn test_op_stage_classification() {
         OpStage::Notes,
         "Cycle 是生成音符之后的 Notes 阶段算子"
     );
+    assert_eq!(
+        ShapeOp::GateRange(GateRangeParams::default()).stage(),
+        OpStage::Notes,
+        "GateRange 是生成音符之后的 Notes 阶段标记"
+    );
 }
 
 #[test]
@@ -306,6 +311,35 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_gate_range() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::GateRange(GateRangeParams {
+        to: 0.0,
+        ..GateRangeParams::default()
+    }));
+    let err = shape.validate().expect_err("to=0 的 GateRange 应被拒绝");
+    assert!(format!("{err}").contains("GateRange"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_gate_range() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::GateRange(GateRangeParams {
+        to: 1.5,
+        graph: vec![[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]],
+        dir: RangeDir::KeysDown,
+        fit: true,
+        rows: true,
+        join: true,
+        halves: true,
+        follow_curve: true,
+    }));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 GateRange 的形状应逐字段往返");
 }
 
 #[test]

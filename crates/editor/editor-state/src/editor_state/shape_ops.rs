@@ -11,6 +11,7 @@ pub mod chain;
 pub mod chop;
 pub mod claw;
 pub mod cycle;
+pub mod gate_range;
 pub mod gateflip;
 pub mod glue;
 pub mod masks;
@@ -25,6 +26,9 @@ pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;
 pub use cycle::apply as apply_cycle;
+pub use gate_range::{
+    fit_squares, gate_at, keys_gate, normalize as normalize_gate_range, range_squares, steps_of,
+};
 pub use gateflip::{GateFlipReason, apply as apply_gate_flip, auto_gap};
 pub use glue::apply as apply_glue;
 pub use masks::{

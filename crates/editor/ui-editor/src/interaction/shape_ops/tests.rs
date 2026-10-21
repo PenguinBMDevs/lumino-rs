@@ -3,7 +3,8 @@
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
-    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TumourParams,
+    GateRangeParams, RangeDir, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
+    ShapeStyle, TumourParams,
 };
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
@@ -69,6 +70,25 @@ fn test_outline_spam_chops_outline_without_filling_inside() {
         notes.iter().all(|n| n.length <= gate + 1e-3),
         "描边应被门长切开，不再保留整行 480 tick 长音"
     );
+}
+
+#[test]
+fn test_spam_gate_range_varies_gate_across_time() {
+    let editor = editor_with_track(1);
+    let mut model = closed_shape(ShapeFill::Spam, 0.0625);
+    model.push_op(ShapeOp::GateRange(GateRangeParams {
+        to: 0.25,
+        dir: RangeDir::Time,
+        ..GateRangeParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    let min = notes.iter().map(|n| n.length).fold(f32::INFINITY, f32::min);
+    let max = notes
+        .iter()
+        .map(|n| n.length)
+        .fold(f32::NEG_INFINITY, f32::max);
+    assert!(max > min + 1.0, "Time Range 的门长应沿时间增大");
 }
 
 #[test]
