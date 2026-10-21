@@ -35,18 +35,24 @@ pub const COLOUR_SLOT_MAX: u8 = 15;
 pub const AREA_COLOUR_MAX: u8 = 16;
 
 pub mod areas;
+pub mod expr;
 pub mod geometry;
 pub mod model;
 pub mod params;
+pub mod pattern_presets;
 pub mod style;
 
 pub use areas::AreaSpot;
+pub use expr::{Expr, ExprError};
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CycleBy, CycleParams,
-    GateRangeParams, GlueParams, MaskMode, MaskParams, MaskShow, PatternRef, PolyStyle,
-    PolygonParams, RangeDir, RowRestart, StopsParams, StrumParams, SustainParams, TumourGraphs,
-    TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    GateRangeParams, GlueParams, LoopCurve, MaskMode, MaskParams, MaskShow, PatternParams,
+    PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, StopsParams, StrumParams,
+    SustainParams, Sym, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+};
+pub use pattern_presets::{
+    PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,
 };
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
