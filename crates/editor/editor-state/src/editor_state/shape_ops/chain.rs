@@ -4,7 +4,7 @@ use lumino_core::shape::{OpStage, ShapeOp, ShapeRect};
 
 use crate::ShapeNote;
 
-use super::{chop, claw, cycle, gateflip, glue, strum, sustain, tumours};
+use super::{chop, claw, cycle, gateflip, glue, pattern, strum, sustain, tumours};
 
 /// 几何阶段的上下文（目前只需要拍 → tick 的换算）
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,6 +50,9 @@ pub fn apply_geometry_ops(
             }
             // Polygon 由调用方按 box 预生成（可能多环）；链上不二次替换路径。
             ShapeOp::Polygon(_) => {}
+            ShapeOp::Pattern(params) => {
+                current = pattern::formed_path(&current, params, ctx.ppq);
+            }
             // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。
             ShapeOp::Glue(_)
             | ShapeOp::Claw(_)

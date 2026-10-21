@@ -3,8 +3,8 @@
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
-    GateRangeParams, PolyStyle, PolygonParams, RangeDir, ShapeFill, ShapeGeometry, ShapeKind,
-    ShapeModel, ShapeOp, ShapeStyle, TumourParams,
+    GateRangeParams, PatternParams, PolyStyle, PolygonParams, RangeDir, ShapeFill, ShapeGeometry,
+    ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TumourParams,
 };
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
@@ -39,6 +39,28 @@ fn arc_shape(mid_key: f32) -> ShapeModel {
     let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);
     model
+}
+
+fn pattern_shape() -> ShapeModel {
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Line, 1.0);
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (480.0, 60.0)]);
+    model.ops.push(ShapeOp::Pattern(PatternParams {
+        formula: "sin(2*pi*x)".into(),
+        vars: Default::default(),
+        loops: 1.0,
+        k: 1.0,
+        ..PatternParams::default()
+    }));
+    model
+}
+
+#[test]
+fn test_pattern_generates_sideways_wave() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&pattern_shape(), 1);
+    assert!(!notes.is_empty(), "Pattern 应生成描边音符");
+    let hi = notes.iter().map(|n| n.key).max().unwrap_or(0);
+    assert!(hi > 60, "正弦应向上偏移，实际最高 key {hi}");
 }
 
 fn polygon_shape(style: PolyStyle, points: u16) -> ShapeModel {

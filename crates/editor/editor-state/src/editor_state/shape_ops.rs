@@ -16,6 +16,7 @@ pub mod gate_range;
 pub mod gateflip;
 pub mod glue;
 pub mod masks;
+pub mod pattern;
 pub mod polygon;
 pub mod strum;
 pub mod sustain;
@@ -41,6 +42,7 @@ pub use masks::{
     Area, MaskMember, MaskPreview, MaskedPiece, RowSpan, UnitArea, apply_visible, covered,
     member_of, preview, shown_parts, unit_area,
 };
+pub use pattern::{LOOP_SAMPLES, MAX_POINTS, formed_path};
 pub use polygon::{paths as polygon_paths, side_paths as polygon_side_paths, unit_loops};
 pub use strum::apply as apply_strum;
 pub use sustain::{SustainReport, apply as apply_sustain};

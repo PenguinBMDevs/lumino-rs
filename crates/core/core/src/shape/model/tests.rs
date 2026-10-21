@@ -3,9 +3,9 @@
 use super::*;
 use crate::shape::{
     ChopParams, ClawParams, CycleBy, CycleParams, GateRangeParams, GlueParams, MaskMode,
-    MaskParams, MaskShow, OpStage, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill,
-    ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, StrumParams, SustainParams,
-    TumourParams,
+    MaskParams, MaskShow, OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart,
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, StrumParams,
+    SustainParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -232,6 +232,11 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Polygon 是几何来源，必须先于音符生成"
     );
+    assert_eq!(
+        ShapeOp::Pattern(PatternParams::default()).stage(),
+        OpStage::Geometry,
+        "Pattern 改路径，必须先于音符生成"
+    );
 }
 
 #[test]
@@ -317,6 +322,26 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_pattern() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Pattern(PatternParams {
+        loops: 0.0,
+        ..PatternParams::default()
+    }));
+    let err = shape.validate().expect_err("loops=0 的 Pattern 应被拒绝");
+    assert!(format!("{err}").contains("Pattern"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_pattern() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Pattern(PatternParams::default()));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Pattern 的形状应逐字段往返");
 }
 
 #[test]

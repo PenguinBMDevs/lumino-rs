@@ -5,8 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::params::{
-    ChopParams, ClawParams, CycleParams, GateRangeParams, GlueParams, MaskParams, PolygonParams,
-    StrumParams, SustainParams, TumourParams,
+    ChopParams, ClawParams, CycleParams, GateRangeParams, GlueParams, MaskParams, PatternParams,
+    PolygonParams, StrumParams, SustainParams, TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -48,6 +48,8 @@ pub enum ShapeOp {
     GateRange(GateRangeParams),
     /// 参数化多边形 / 星形 / 十字（Geometry 阶段；DRAW-015）
     Polygon(PolygonParams),
+    /// 沿曲线的公式图案（Geometry 阶段；DRAW-016）
+    Pattern(PatternParams),
 }
 
 /// 算子在链上的执行阶段
@@ -66,7 +68,9 @@ impl ShapeOp {
     /// 该算子所在的阶段
     pub fn stage(&self) -> OpStage {
         match self {
-            Self::Noop | Self::Tumours(_) | Self::Polygon(_) => OpStage::Geometry,
+            Self::Noop | Self::Tumours(_) | Self::Polygon(_) | Self::Pattern(_) => {
+                OpStage::Geometry
+            }
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -114,6 +118,9 @@ impl ShapeOp {
             Self::Polygon(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Polygon 参数非法：{e}"))),
+            Self::Pattern(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Pattern 参数非法：{e}"))),
         }
     }
 }
