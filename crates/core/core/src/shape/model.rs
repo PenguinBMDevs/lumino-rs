@@ -33,6 +33,8 @@ pub enum ShapeOp {
     Strum(StrumParams),
     /// 节奏切分（Notes 阶段；DRAW-006）
     Chop(ChopParams),
+    /// 门控感知翻转：每个 key 行的 run 在自身范围内镜像（Notes 阶段；DRAW-009）
+    GateFlip,
 }
 
 /// 算子在链上的执行阶段
@@ -52,7 +54,9 @@ impl ShapeOp {
     pub fn stage(&self) -> OpStage {
         match self {
             Self::Noop | Self::Tumours(_) => OpStage::Geometry,
-            Self::Glue(_) | Self::Claw(_) | Self::Strum(_) | Self::Chop(_) => OpStage::Notes,
+            Self::Glue(_) | Self::Claw(_) | Self::Strum(_) | Self::Chop(_) | Self::GateFlip => {
+                OpStage::Notes
+            }
         }
     }
 
@@ -75,6 +79,7 @@ impl ShapeOp {
             Self::Chop(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Chop 参数非法：{e}"))),
+            Self::GateFlip => Ok(()),
         }
     }
 }
