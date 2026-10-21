@@ -22,13 +22,13 @@ pub mod view_state;
 pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
-    AreaSpot, ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CycleBy,
-    CycleParams, Expr, ExprError, GateRangeParams, GlueParams, LoopCurve, MaskMode, MaskParams,
-    MaskShow, OpStage, PATTERN_PRESETS, PatternParams, PatternPreset, PatternRef, PolyStyle,
-    PolygonParams, RangeDir, RowRestart, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind,
-    ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds, StopsParams, StrumParams,
-    SustainParams, Sym, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
-    pattern_from_preset, pattern_preset,
+    AreaSpot, ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CurveRef,
+    CycleBy, CycleParams, Expr, ExprError, FunnelParams, FunnelStart, GateRangeParams, GlueParams,
+    LoopCurve, MaskMode, MaskParams, MaskShow, OpStage, PATTERN_PRESETS, PatternParams,
+    PatternPreset, PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeAnchor,
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign,
+    SpamEnds, StopsParams, StrumParams, SustainParams, Sym, TumourGraphs, TumourParams,
+    TumourShape, TumourSide, TumourWrap, pattern_from_preset, pattern_preset,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};

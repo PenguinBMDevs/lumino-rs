@@ -5,6 +5,7 @@
 pub mod chop;
 pub mod claw;
 pub mod cycle;
+pub mod funnel;
 pub mod gate_range;
 pub mod glue;
 pub mod mask;
@@ -17,6 +18,7 @@ pub mod tumours;
 pub use chop::{ChopParams, ChopPiece};
 pub use claw::{ClawMode, ClawParams, ClawPeriod, ClawTrash};
 pub use cycle::{CycleBy, CycleParams, RowRestart};
+pub use funnel::{CurveRef, FunnelParams, FunnelStart};
 pub use gate_range::{GateRangeParams, RangeDir};
 pub use glue::GlueParams;
 pub use mask::{MaskMode, MaskParams, MaskShow};

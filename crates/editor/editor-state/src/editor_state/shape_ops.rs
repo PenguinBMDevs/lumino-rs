@@ -12,6 +12,7 @@ pub mod chain;
 pub mod chop;
 pub mod claw;
 pub mod cycle;
+pub mod funnel;
 pub mod gate_range;
 pub mod gateflip;
 pub mod glue;
@@ -33,6 +34,9 @@ pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;
 pub use cycle::apply as apply_cycle;
+pub use funnel::{
+    SlantBox, box_outline as funnel_box_outline, funnel_rows, slant_boxes as funnel_slant_boxes,
+};
 pub use gate_range::{
     fit_squares, gate_at, keys_gate, normalize as normalize_gate_range, range_squares, steps_of,
 };

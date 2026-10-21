@@ -47,10 +47,11 @@ pub use expr::{Expr, ExprError};
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
-    ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CycleBy, CycleParams,
-    GateRangeParams, GlueParams, LoopCurve, MaskMode, MaskParams, MaskShow, PatternParams,
-    PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, StopsParams, StrumParams,
-    SustainParams, Sym, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CurveRef, CycleBy,
+    CycleParams, FunnelParams, FunnelStart, GateRangeParams, GlueParams, LoopCurve, MaskMode,
+    MaskParams, MaskShow, PatternParams, PatternRef, PolyStyle, PolygonParams, RangeDir,
+    RowRestart, StopsParams, StrumParams, SustainParams, Sym, TumourGraphs, TumourParams,
+    TumourShape, TumourSide, TumourWrap, factor_at,
 };
 pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,

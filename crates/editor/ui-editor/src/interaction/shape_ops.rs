@@ -63,6 +63,22 @@ impl Editor {
             return Vec::new();
         }
         let ppq = f64::from(self.editor_state.view.ppq);
+        // Funnel 是斜 box 区域，不走普通轮廓/填充；直接按参数生成音符。
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Funnel(params) => Some(params),
+            _ => None,
+        }) {
+            let mut notes = self.funnel_notes(params, track, model, ppq);
+            apply_note_ops(
+                &mut notes,
+                &model.ops,
+                &NoteOpContext {
+                    glue_box: None,
+                    ppq,
+                },
+            );
+            return notes;
+        }
         // Arc：三点定圆，在屏幕空间（beats/k, keys）求解；退化则回退为折线。
         let poly = if model.kind == ShapeKind::Arc && model.geometry.anchors.len() >= 3 {
             let to_beat = |a: &lumino_core::shape::ShapeAnchor| {
@@ -364,6 +380,7 @@ fn shape_box_of(points: &[(f64, f64)]) -> Option<ShapeRect> {
 }
 
 mod fill_notes;
+mod funnel_notes;
 
 #[cfg(test)]
 mod tests;

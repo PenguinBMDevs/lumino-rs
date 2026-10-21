@@ -53,6 +53,8 @@ pub fn apply_geometry_ops(
             ShapeOp::Pattern(params) => {
                 current = pattern::formed_path(&current, params, ctx.ppq);
             }
+            // Funnel 由 ui-editor 按斜 box 直接生成音符；链上不二次替换路径。
+            ShapeOp::Funnel(_) => {}
             // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。
             ShapeOp::Glue(_)
             | ShapeOp::Claw(_)
