@@ -24,6 +24,8 @@ use std::collections::HashSet;
 pub(crate) mod loops;
 /// 渲染层填充区域几何（fill_region）
 pub(crate) mod region;
+/// Spam 门长落位（Align × Ends；唯一实现）
+pub(crate) mod spam_layout;
 /// 逐音高行填充区间（闭包内部 → 音符）
 pub(crate) mod spans;
 
