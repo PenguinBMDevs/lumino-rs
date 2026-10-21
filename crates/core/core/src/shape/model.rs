@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::params::{
     ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, MaskParams,
-    PatternParams, PolygonParams, StrumParams, SustainParams, TumourParams,
+    NestedParams, PatternParams, PolygonParams, StrumParams, SustainParams, TilesParams,
+    TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -52,6 +53,10 @@ pub enum ShapeOp {
     Pattern(PatternParams),
     /// 漏斗（Geometry 阶段；DRAW-018 最简版）
     Funnel(FunnelParams),
+    /// 内部步进副本填充（Notes 阶段；DRAW-017）
+    Nested(NestedParams),
+    /// 内部平铺填充（Notes 阶段；DRAW-017）
+    Tiles(TilesParams),
 }
 
 /// 算子在链上的执行阶段
@@ -83,7 +88,9 @@ impl ShapeOp {
             | Self::Sustain(_)
             | Self::Mask(_)
             | Self::Cycle(_)
-            | Self::GateRange(_) => OpStage::Notes,
+            | Self::GateRange(_)
+            | Self::Nested(_)
+            | Self::Tiles(_) => OpStage::Notes,
         }
     }
 
@@ -128,6 +135,12 @@ impl ShapeOp {
             Self::Funnel(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Funnel 参数非法：{e}"))),
+            Self::Nested(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Nested 参数非法：{e}"))),
+            Self::Tiles(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Tiles 参数非法：{e}"))),
         }
     }
 }

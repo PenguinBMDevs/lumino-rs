@@ -3,8 +3,9 @@
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
-    FunnelParams, GateRangeParams, PatternParams, PolyStyle, PolygonParams, RangeDir, ShapeFill,
-    ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TumourParams,
+    FunnelParams, GateRangeParams, NestedParams, PatternParams, PolyStyle, PolygonParams, RangeDir,
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TileBy, TilesParams,
+    TumourParams,
 };
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
@@ -39,6 +40,47 @@ fn arc_shape(mid_key: f32) -> ShapeModel {
     let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);
     model
+}
+
+fn interior_shape(op: ShapeOp) -> ShapeModel {
+    let mut model = closed_shape(ShapeFill::Fill, 0.25);
+    model.ops.push(op);
+    model
+}
+
+#[test]
+fn test_nested_fill_emits_layers_and_channels() {
+    let editor = editor_with_track(1);
+    let model = interior_shape(ShapeOp::Nested(NestedParams {
+        steps: 3,
+        last: 0.5,
+        colours: 3,
+        ..NestedParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    let channels = notes
+        .iter()
+        .map(|n| n.channel)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(channels.contains(&0) && channels.contains(&1) && channels.contains(&2));
+    assert!(notes.iter().all(|n| n.channel < 16));
+}
+
+#[test]
+fn test_tiles_fill_emits_coloured_blocks() {
+    let editor = editor_with_track(1);
+    let model = interior_shape(ShapeOp::Tiles(TilesParams {
+        length: 120.0,
+        keys: 2.0,
+        colours: 2,
+        by: TileBy::Cols,
+        ..TilesParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty(), "Tiles 应生成内部块");
+    assert!(notes.iter().any(|n| n.channel == 1), "多列应轮转通道");
+    assert!(notes.iter().all(|n| n.channel < 16));
 }
 
 fn funnel_params(fill: ShapeFill, reverse: bool) -> FunnelParams {

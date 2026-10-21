@@ -3,9 +3,9 @@
 use super::*;
 use crate::shape::{
     ChopParams, ClawParams, CycleBy, CycleParams, FunnelParams, GateRangeParams, GlueParams,
-    MaskMode, MaskParams, MaskShow, OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir,
-    RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams,
-    StrumParams, SustainParams, TumourParams,
+    MaskMode, MaskParams, MaskShow, NestedParams, OpStage, PatternParams, PolyStyle, PolygonParams,
+    RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams,
+    StrumParams, SustainParams, TilesParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -242,6 +242,16 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Funnel 是斜 box 几何来源，必须先于音符生成"
     );
+    assert_eq!(
+        ShapeOp::Nested(NestedParams::default()).stage(),
+        OpStage::Notes,
+        "Nested 是内部填充，生成后消费"
+    );
+    assert_eq!(
+        ShapeOp::Tiles(TilesParams::default()).stage(),
+        OpStage::Notes,
+        "Tiles 是内部填充，生成后消费"
+    );
 }
 
 fn funnel_params() -> FunnelParams {
@@ -337,6 +347,33 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_nested_and_tiles() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Nested(NestedParams {
+        steps: 0,
+        ..NestedParams::default()
+    }));
+    assert!(shape.validate().is_err());
+
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Tiles(TilesParams {
+        length: 0.0,
+        ..TilesParams::default()
+    }));
+    assert!(shape.validate().is_err());
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_nested_and_tiles() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Nested(NestedParams::default()));
+    shape.push_op(ShapeOp::Tiles(TilesParams::default()));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Nested/Tiles 的形状应逐字段往返");
 }
 
 #[test]

@@ -64,7 +64,9 @@ pub fn apply_geometry_ops(
             | ShapeOp::Sustain(_)
             | ShapeOp::Mask(_)
             | ShapeOp::Cycle(_)
-            | ShapeOp::GateRange(_) => {}
+            | ShapeOp::GateRange(_)
+            | ShapeOp::Nested(_)
+            | ShapeOp::Tiles(_) => {}
         }
     }
     current
@@ -102,6 +104,8 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             }
             // GateRange 是标记：spam 生成时消费，不直接改已生成音符。
             ShapeOp::GateRange(_) => {}
+            // Nested / Tiles 是内部填充标记：由 ui-editor 在生成后统一消费。
+            ShapeOp::Nested(_) | ShapeOp::Tiles(_) => {}
             _ => {}
         }
     }
