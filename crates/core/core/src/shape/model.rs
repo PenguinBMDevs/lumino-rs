@@ -5,9 +5,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::params::{
-    ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, MaskParams,
-    NestedParams, PatternParams, PolygonParams, StrumParams, SustainParams, TilesParams,
-    TumourParams,
+    ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams,
+    LiveShapeParams, MaskParams, NestedParams, PatternParams, PolygonParams, StrumParams,
+    SustainParams, TilesParams, TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -57,6 +57,8 @@ pub enum ShapeOp {
     Nested(NestedParams),
     /// 内部平铺填充（Notes 阶段；DRAW-017）
     Tiles(TilesParams),
+    /// 多个形状折叠成一条活形状（Geometry 阶段；DRAW-019）
+    Live(LiveShapeParams),
 }
 
 /// 算子在链上的执行阶段
@@ -79,7 +81,8 @@ impl ShapeOp {
             | Self::Tumours(_)
             | Self::Polygon(_)
             | Self::Pattern(_)
-            | Self::Funnel(_) => OpStage::Geometry,
+            | Self::Funnel(_)
+            | Self::Live(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -141,6 +144,9 @@ impl ShapeOp {
             Self::Tiles(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Tiles 参数非法：{e}"))),
+            Self::Live(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Live 参数非法：{e}"))),
         }
     }
 }
