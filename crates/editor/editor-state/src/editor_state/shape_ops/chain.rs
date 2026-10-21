@@ -45,7 +45,8 @@ pub fn apply_geometry_ops(
             | ShapeOp::Strum(_)
             | ShapeOp::Chop(_)
             | ShapeOp::GateFlip
-            | ShapeOp::Sustain(_) => {}
+            | ShapeOp::Sustain(_)
+            | ShapeOp::Mask(_) => {}
         }
     }
     current
@@ -76,6 +77,8 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::Strum(params) => *notes = strum::apply(notes, params, ctx.ppq),
             ShapeOp::Chop(params) => *notes = chop::apply(notes, params, ctx.ppq).0,
             ShapeOp::GateFlip => *notes = gateflip::apply(notes),
+            // Mask 是标记：区域由 shape_ops::masks 在所有形状的 notes 上统一计算。
+            ShapeOp::Mask(_) => {}
             _ => {}
         }
     }

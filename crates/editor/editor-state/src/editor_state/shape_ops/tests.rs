@@ -1,7 +1,7 @@
 //! 算子链与 Tumours 几何测试
 
 use lumino_core::shape::{
-    GlueParams, ShapeOp, SustainParams, TumourParams, TumourShape, TumourSide,
+    GlueParams, MaskParams, ShapeOp, SustainParams, TumourParams, TumourShape, TumourSide,
 };
 
 use super::*;
@@ -237,6 +237,21 @@ fn test_note_ops_applies_gate_flip() {
         vec![240.0, 120.0, 0.0],
         "GateFlip 应通过算子链生效"
     );
+}
+
+#[test]
+fn test_note_ops_ignore_mask_marker() {
+    let mut notes = vec![ShapeNote {
+        track: 0,
+        tick: 0.0,
+        key: 60,
+        length: 120.0,
+        velocity: 100,
+    }];
+    let before = notes.clone();
+    let ops = vec![ShapeOp::Mask(MaskParams::default())];
+    apply_note_ops(&mut notes, &ops, &NoteOpContext::default());
+    assert_eq!(notes, before, "Mask 是标记，不应直接改音符");
 }
 
 #[test]

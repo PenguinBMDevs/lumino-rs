@@ -24,6 +24,28 @@ fn note(tick: f32, key: u16) -> ShapeNote {
 }
 
 #[test]
+fn test_source_notes_survive_silent_assign() {
+    let mut store = ShapeStore::new();
+    let id = store.insert(shape_model(0, 0.0625), 0);
+    let source = vec![note(0.0, 60), note(120.0, 60)];
+    assert!(store.assign_source_notes(id, source.clone()));
+    assert!(store.assign_notes(id, Vec::new()));
+    assert!(store.notes_of(id).is_empty(), "silent mask 不发声");
+    assert_eq!(
+        store.source_notes_of(id),
+        source.as_slice(),
+        "区域源音符应保留"
+    );
+
+    assert!(store.assign_notes(id, vec![note(0.0, 60)]));
+    assert_eq!(
+        store.source_notes_of(id),
+        source.as_slice(),
+        "已有 source 不应被写回覆盖"
+    );
+}
+
+#[test]
 fn test_insert_assigns_and_keeps_ids() {
     let mut store = ShapeStore::new();
     let auto = store.insert(shape_model(0, 0.0625), 0);

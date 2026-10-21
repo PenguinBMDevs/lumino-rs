@@ -4,7 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::params::{ChopParams, ClawParams, GlueParams, StrumParams, SustainParams, TumourParams};
+use super::params::{
+    ChopParams, ClawParams, GlueParams, MaskParams, StrumParams, SustainParams, TumourParams,
+};
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
 
@@ -37,6 +39,8 @@ pub enum ShapeOp {
     GateFlip,
     /// 堆叠延音（Notes 阶段最后一步；DRAW-008）
     Sustain(SustainParams),
+    /// 遮罩标记（Notes 阶段；DRAW-010，实际区域在 shape_ops::masks 统一计算）
+    Mask(MaskParams),
 }
 
 /// 算子在链上的执行阶段
@@ -61,7 +65,8 @@ impl ShapeOp {
             | Self::Strum(_)
             | Self::Chop(_)
             | Self::GateFlip
-            | Self::Sustain(_) => OpStage::Notes,
+            | Self::Sustain(_)
+            | Self::Mask(_) => OpStage::Notes,
         }
     }
 
@@ -88,6 +93,9 @@ impl ShapeOp {
             Self::Sustain(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Sustain 参数非法：{e}"))),
+            Self::Mask(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Mask 参数非法：{e}"))),
         }
     }
 }

@@ -12,6 +12,7 @@ pub(crate) mod drawn_shape;
 mod edit_ops;
 mod i2m;
 pub(crate) mod line_tool;
+pub(crate) mod masks;
 mod moved;
 mod pressed;
 mod released;

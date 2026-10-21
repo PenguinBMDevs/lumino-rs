@@ -223,6 +223,9 @@ impl Host {
 
         // ── 4. 预览音符（Drawing / hover / i2m）→ 合并到同一预览列表
         preview_instances.extend(self.build_preview_instances());
+        preview_instances.extend(crate::host::render::mask_preview::instances(
+            &self.root.editor,
+        ));
         // 仅在预览内容**真的变化**时下发并置内容脏标记：
         // - 内容不变的 hover 预览若每帧置脏，滚动/缩放时会永远走等待路径，
         //   「在途帧闸门 + 纯视口帧免等待」完全失效；
