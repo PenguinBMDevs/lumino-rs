@@ -5,7 +5,6 @@
 
 use lumino_core::shape::{
     JoinedParams, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, StrokeKind,
-    TumourParams,
 };
 
 /// 路径点（tick, key）
