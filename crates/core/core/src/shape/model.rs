@@ -5,8 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::params::{
-    ChopParams, ClawParams, CycleParams, GateRangeParams, GlueParams, MaskParams, PatternParams,
-    PolygonParams, StrumParams, SustainParams, TumourParams,
+    ChopParams, ClawParams, CycleParams, FunnelParams, GateRangeParams, GlueParams, MaskParams,
+    PatternParams, PolygonParams, StrumParams, SustainParams, TumourParams,
 };
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle};
 use crate::error::{CoreError, Result};
@@ -50,6 +50,8 @@ pub enum ShapeOp {
     Polygon(PolygonParams),
     /// 沿曲线的公式图案（Geometry 阶段；DRAW-016）
     Pattern(PatternParams),
+    /// 漏斗（Geometry 阶段；DRAW-018 最简版）
+    Funnel(FunnelParams),
 }
 
 /// 算子在链上的执行阶段
@@ -68,9 +70,11 @@ impl ShapeOp {
     /// 该算子所在的阶段
     pub fn stage(&self) -> OpStage {
         match self {
-            Self::Noop | Self::Tumours(_) | Self::Polygon(_) | Self::Pattern(_) => {
-                OpStage::Geometry
-            }
+            Self::Noop
+            | Self::Tumours(_)
+            | Self::Polygon(_)
+            | Self::Pattern(_)
+            | Self::Funnel(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -121,6 +125,9 @@ impl ShapeOp {
             Self::Pattern(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Pattern 参数非法：{e}"))),
+            Self::Funnel(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Funnel 参数非法：{e}"))),
         }
     }
 }

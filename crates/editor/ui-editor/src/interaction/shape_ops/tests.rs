@@ -3,8 +3,8 @@
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
-    GateRangeParams, PatternParams, PolyStyle, PolygonParams, RangeDir, ShapeFill, ShapeGeometry,
-    ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TumourParams,
+    FunnelParams, GateRangeParams, PatternParams, PolyStyle, PolygonParams, RangeDir, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TumourParams,
 };
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
@@ -39,6 +39,70 @@ fn arc_shape(mid_key: f32) -> ShapeModel {
     let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);
     model
+}
+
+fn funnel_params(fill: ShapeFill, reverse: bool) -> FunnelParams {
+    FunnelParams {
+        lines: vec![[[0.0, 20.0], [100.0, 20.0]]],
+        wall: [[100.0, 10.0], [100.0, 30.0]],
+        starts: Vec::new(),
+        fill,
+        reverse,
+    }
+}
+
+fn funnel_shape(fill: ShapeFill, reverse: bool) -> ShapeModel {
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Funnel, 1.0);
+    model.geometry =
+        ShapeGeometry::from_points([(0.0, 20.0), (100.0, 20.0), (100.0, 10.0), (100.0, 30.0)]);
+    model
+        .ops
+        .push(ShapeOp::Funnel(funnel_params(fill, reverse)));
+    model
+}
+
+#[test]
+fn test_funnel_spam_notes_are_inside_slant_boxes() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&funnel_shape(ShapeFill::Spam, false), 1);
+    assert!(!notes.is_empty());
+    let boxes =
+        lumino_editor_state::shape_ops::funnel_slant_boxes(&funnel_params(ShapeFill::Spam, false));
+    for note in &notes {
+        let point = (f64::from(note.tick), f64::from(note.key));
+        assert!(
+            boxes.iter().any(|box_| {
+                box_.inverse(point).is_some_and(|(u, f)| {
+                    (-1e-4..=1.0 + 1e-4).contains(&u) && (-1e-4..=1.0 + 1e-4).contains(&f)
+                })
+            }),
+            "音符 {note:?} 应落在漏斗内"
+        );
+    }
+}
+
+#[test]
+fn test_funnel_empty_outline_differs_from_spam() {
+    let editor = editor_with_track(1);
+    let empty = editor.shape_notes_of(&funnel_shape(ShapeFill::Empty, false), 1);
+    let spam = editor.shape_notes_of(&funnel_shape(ShapeFill::Spam, false), 1);
+    assert!(!empty.is_empty());
+    assert!(!spam.is_empty());
+    assert_ne!(
+        empty.len(),
+        spam.len(),
+        "Empty 描边与 Spam 填充音符数应不同"
+    );
+}
+
+#[test]
+fn test_funnel_reverse_order() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&funnel_shape(ShapeFill::Spam, true), 1);
+    assert!(notes.len() > 1);
+    let first = notes.first().expect("应有音符").tick;
+    let last = notes.last().expect("应有音符").tick;
+    assert!(first >= last, "反向漏斗应按时间倒序输出");
 }
 
 fn pattern_shape() -> ShapeModel {

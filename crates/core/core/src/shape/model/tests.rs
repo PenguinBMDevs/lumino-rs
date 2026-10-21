@@ -2,10 +2,10 @@
 
 use super::*;
 use crate::shape::{
-    ChopParams, ClawParams, CycleBy, CycleParams, GateRangeParams, GlueParams, MaskMode,
-    MaskParams, MaskShow, OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart,
-    ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, StrumParams,
-    SustainParams, TumourParams,
+    ChopParams, ClawParams, CycleBy, CycleParams, FunnelParams, GateRangeParams, GlueParams,
+    MaskMode, MaskParams, MaskShow, OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir,
+    RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams,
+    StrumParams, SustainParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -237,6 +237,21 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Pattern 改路径，必须先于音符生成"
     );
+    assert_eq!(
+        ShapeOp::Funnel(funnel_params()).stage(),
+        OpStage::Geometry,
+        "Funnel 是斜 box 几何来源，必须先于音符生成"
+    );
+}
+
+fn funnel_params() -> FunnelParams {
+    FunnelParams {
+        lines: vec![[[0.0, 20.0], [100.0, 20.0]]],
+        wall: [[100.0, 10.0], [100.0, 30.0]],
+        starts: Vec::new(),
+        fill: ShapeFill::Spam,
+        reverse: false,
+    }
 }
 
 #[test]
@@ -322,6 +337,26 @@ fn test_validate_rejects_bad_cycle_params() {
     }));
     let err = shape.validate().expect_err("n=1 的 Cycle 应被拒绝");
     assert!(format!("{err}").contains("Cycle"), "实际错误：{err}");
+}
+
+#[test]
+fn test_validate_rejects_bad_funnel() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Funnel(FunnelParams {
+        fill: ShapeFill::Fill,
+        ..funnel_params()
+    }));
+    let err = shape.validate().expect_err("Fill 的 Funnel 应被拒绝");
+    assert!(format!("{err}").contains("Funnel"), "实际错误：{err}");
+}
+
+#[test]
+fn test_shape_model_roundtrip_with_funnel() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Funnel(funnel_params()));
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape, "含 Funnel 的形状应逐字段往返");
 }
 
 #[test]
