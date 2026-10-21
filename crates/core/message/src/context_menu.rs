@@ -64,6 +64,14 @@ pub enum PianoRollContextMenuItem {
     MergeShapes,
     /// 进入自定义编辑（DRAW-020）
     EditShape,
+    /// 竖轴对称（DRAW-023）
+    SymmetryVertical,
+    /// 横轴对称（DRAW-023）
+    SymmetryHorizontal,
+    /// 手绘扶正 50%（DRAW-024）
+    Straighten,
+    /// 取消扶正（DRAW-024）
+    StraightenOff,
 }
 
 impl PianoRollContextMenuItem {
@@ -76,7 +84,11 @@ impl PianoRollContextMenuItem {
             | Self::JoinShapes
             | Self::SplitJoinedShape
             | Self::MergeShapes
-            | Self::EditShape => ContextMenuTarget::DrawnShape,
+            | Self::EditShape
+            | Self::SymmetryVertical
+            | Self::SymmetryHorizontal
+            | Self::Straighten
+            | Self::StraightenOff => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
     }

@@ -164,6 +164,18 @@ impl Root {
                     PianoRollContextMenuItem::EditShape => {
                         let _ = self.editor.enable_shape_edit();
                     }
+                    PianoRollContextMenuItem::SymmetryVertical => {
+                        let _ = self.editor.toggle_symmetry(true);
+                    }
+                    PianoRollContextMenuItem::SymmetryHorizontal => {
+                        let _ = self.editor.toggle_symmetry(false);
+                    }
+                    PianoRollContextMenuItem::Straighten => {
+                        let _ = self.editor.set_straighten(true);
+                    }
+                    PianoRollContextMenuItem::StraightenOff => {
+                        let _ = self.editor.set_straighten(false);
+                    }
                     PianoRollContextMenuItem::SelectAll => {
                         let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }
