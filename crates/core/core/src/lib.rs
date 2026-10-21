@@ -23,10 +23,10 @@ pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
     AreaSpot, ChopParams, ChopPiece, ClawMode, ClawParams, ClawPeriod, ClawTrash, CycleBy,
-    CycleParams, GateRangeParams, GlueParams, MaskMode, MaskParams, MaskShow, OpStage, RangeDir,
-    RowRestart, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect,
-    ShapeStyle, SpamAlign, SpamEnds, StopsParams, StrumParams, SustainParams, TumourGraphs,
-    TumourParams, TumourShape, TumourSide, TumourWrap,
+    CycleParams, GateRangeParams, GlueParams, MaskMode, MaskParams, MaskShow, OpStage, PatternRef,
+    PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeAnchor, ShapeFill, ShapeGeometry,
+    ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds, StopsParams,
+    StrumParams, SustainParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};

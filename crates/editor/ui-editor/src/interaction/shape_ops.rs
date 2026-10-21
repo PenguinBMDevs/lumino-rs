@@ -26,6 +26,7 @@ use crate::{Editor, Note};
 use lumino_core::shape::{ShapeFill, ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 use lumino_editor_state::shape_ops::{
     NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops, arc_k_or_one, arc_points_scaled,
+    polygon_paths,
 };
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
@@ -58,7 +59,7 @@ impl Editor {
                 handles_auto: a.handles_auto,
             })
             .collect();
-        if anchors.len() < 2 {
+        if anchors.len() < 2 && model.geometry.rect.is_none() {
             return Vec::new();
         }
         let ppq = f64::from(self.editor_state.view.ppq);
@@ -77,31 +78,47 @@ impl Editor {
         } else {
             geom::flatten_path(&anchors)
         };
+        // Polygon 是框型几何来源，可能产生多条环；先按 box 预生成。
+        let polygon = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Polygon(params) => Some(params),
+            _ => None,
+        });
+        let base_paths = polygon
+            .and_then(|params| model.geometry.rect.map(|rect| polygon_paths(params, rect)))
+            .unwrap_or_else(|| vec![poly]);
         // Geometry 阶段算子（Tumours）：先改路径，再走同源音符生成
-        let ctx = OpContext::new(ppq);
-        let poly = apply_geometry_ops(&poly, &model.ops, &ctx);
-        let note_ctx = NoteOpContext {
-            glue_box: shape_box_of(&poly),
-            ppq: f64::from(self.editor_state.view.ppq),
-        };
+        let ctx = OpContext::new(ppq).with_rect(model.geometry.rect);
         let key_count = self.editor_state.view.key_count as i32;
         let min_ticks = paths::min_note_length_ticks(
             self.editor_state.line_tool.min_note_division,
             self.editor_state.view.ppq,
         );
-        // ShapeStyle.fill：Empty/OutlineSpam 走描边，Fill/Spam 走逐行内部。
-        // 这是形状再生成的唯一入口；工具预览仍走各自 pending 链路。
-        let mut notes = match model.style.fill {
-            ShapeFill::Empty => {
-                self.shape_outline_notes(&poly, track, key_count, min_ticks, false, model)
+        let mut notes = Vec::new();
+        let mut glue_box = None;
+        for path in base_paths {
+            let poly = apply_geometry_ops(&path, &model.ops, &ctx);
+            if poly.len() < 2 {
+                continue;
             }
-            ShapeFill::OutlineSpam => {
-                self.shape_outline_notes(&poly, track, key_count, min_ticks, true, model)
+            if glue_box.is_none() {
+                glue_box = shape_box_of(&poly);
             }
-            ShapeFill::Fill => self.shape_fill_notes(&poly, track, key_count, false, model),
-            ShapeFill::Spam => self.shape_fill_notes(&poly, track, key_count, true, model),
-        };
+            // ShapeStyle.fill：Empty/OutlineSpam 走描边，Fill/Spam 走逐行内部。
+            // 这是形状再生成的唯一入口；工具预览仍走各自 pending 链路。
+            let mut part = match model.style.fill {
+                ShapeFill::Empty => {
+                    self.shape_outline_notes(&poly, track, key_count, min_ticks, false, model)
+                }
+                ShapeFill::OutlineSpam => {
+                    self.shape_outline_notes(&poly, track, key_count, min_ticks, true, model)
+                }
+                ShapeFill::Fill => self.shape_fill_notes(&poly, track, key_count, false, model),
+                ShapeFill::Spam => self.shape_fill_notes(&poly, track, key_count, true, model),
+            };
+            notes.append(&mut part);
+        }
         // Notes 阶段算子（Glue 置顶；DRAW-004..010 后续接入）
+        let note_ctx = NoteOpContext { glue_box, ppq };
         apply_note_ops(&mut notes, &model.ops, &note_ctx);
         notes
     }
