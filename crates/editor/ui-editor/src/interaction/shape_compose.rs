@@ -380,11 +380,11 @@ impl Editor {
             shape.ever_deleted = false;
             shape.hidden_by_creation = false;
             shape.model_id = None;
-            let notes = shape.notes.clone();
+            let written = self.write_shape_notes(shape.track, &shape.notes);
             let new_id =
                 self.editor_state
                     .shape_select
-                    .add(shape.track, Some(group), shape.source, notes);
+                    .add(shape.track, Some(group), shape.source, written);
             self.editor_state.shape_select.add_to_selection(new_id);
         }
         self.mark_notes_changed();
@@ -484,12 +484,16 @@ impl Editor {
             }
         }
         let source = source_from_model(&model);
+        // 旧音符已删除；新形状的音符必须重新写入文档，不能只挂在 DrawnShape.notes 上。
+        let written = self.write_shape_notes(track, &notes);
         let drawn_id =
             self.editor_state
                 .shape_select
-                .add(track, Some(group), source, notes.clone());
+                .add(track, Some(group), source, written.clone());
         let model_id = self.editor_state.shape_store.insert(model, group);
-        self.editor_state.shape_store.assign_notes(model_id, notes);
+        self.editor_state
+            .shape_store
+            .assign_notes(model_id, written);
         self.editor_state
             .shape_select
             .set_model_id(drawn_id, Some(model_id));
