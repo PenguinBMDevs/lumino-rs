@@ -48,12 +48,13 @@ pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,
-    ClawPeriod, ClawTrash, CurveRef, CycleBy, CycleParams, DrawingRef, FunnelParams, FunnelStart,
-    GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode,
-    MaskParams, MaskShow, MergeParams, NestedParams, NestedWay, PatternParams, PatternRef,
-    PolyStyle, PolygonParams, RangeDir, RowRestart, StopsParams, StraightenParams, Stroke,
-    StrokeKind, StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip, TileLayout,
-    TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef, CycleBy, CycleParams,
+    DrawingRef, FlipMode, FlipWay, FunnelParams, FunnelStart, GateRangeParams, GlueParams,
+    JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow,
+    MergeParams, NestedParams, NestedWay, PathKind, PatternParams, PatternRef, PolyStyle,
+    PolygonParams, RangeDir, RowRestart, Speed, StopsParams, StraightenParams, Stroke, StrokeKind,
+    StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip, TileLayout, TilesParams,
+    TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
 };
 pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,

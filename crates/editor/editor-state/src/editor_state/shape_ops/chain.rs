@@ -72,7 +72,8 @@ pub fn apply_geometry_ops(
             | ShapeOp::Nested(_)
             | ShapeOp::Tiles(_)
             | ShapeOp::Merge(_)
-            | ShapeOp::Between(_) => {}
+            | ShapeOp::Between(_)
+            | ShapeOp::CopyAlong(_) => {}
         }
     }
     current
@@ -114,6 +115,7 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::Nested(_) | ShapeOp::Tiles(_) => {}
             // Merge / Between 是跨形状操作标记：纯函数在调用方执行。
             ShapeOp::Merge(_) | ShapeOp::Between(_) => {}
+            ShapeOp::CopyAlong(params) => *notes = super::copypath::apply(notes, params, ctx.ppq),
             _ => {}
         }
     }

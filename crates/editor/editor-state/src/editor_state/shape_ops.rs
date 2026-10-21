@@ -13,6 +13,7 @@ pub mod bezier;
 pub mod chain;
 pub mod chop;
 pub mod claw;
+pub mod copypath;
 pub mod cycle;
 pub mod funnel;
 pub mod gate_range;
@@ -50,6 +51,9 @@ pub use bezier::{reverse_anchors, to_bezier};
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;
+pub use copypath::{
+    apply as copy_along_apply, copies as copy_along_copies, copy_notes as copy_along_notes,
+};
 pub use cycle::apply as apply_cycle;
 pub use funnel::{
     SlantBox, box_outline as funnel_box_outline, funnel_rows, slant_boxes as funnel_slant_boxes,
