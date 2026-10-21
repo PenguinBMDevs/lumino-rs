@@ -71,7 +71,8 @@ pub fn apply_geometry_ops(
             | ShapeOp::GateRange(_)
             | ShapeOp::Nested(_)
             | ShapeOp::Tiles(_)
-            | ShapeOp::Merge(_) => {}
+            | ShapeOp::Merge(_)
+            | ShapeOp::Between(_) => {}
         }
     }
     current
@@ -111,8 +112,8 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::GateRange(_) => {}
             // Nested / Tiles 是内部填充标记：由 ui-editor 在生成后统一消费。
             ShapeOp::Nested(_) | ShapeOp::Tiles(_) => {}
-            // Merge 是跨形状操作标记：纯函数在调用方执行。
-            ShapeOp::Merge(_) => {}
+            // Merge / Between 是跨形状操作标记：纯函数在调用方执行。
+            ShapeOp::Merge(_) | ShapeOp::Between(_) => {}
             _ => {}
         }
     }

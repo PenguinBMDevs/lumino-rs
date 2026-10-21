@@ -2,11 +2,12 @@
 
 use super::*;
 use crate::shape::{
-    ChopParams, ClawParams, CycleBy, CycleParams, FunnelParams, GateRangeParams, GlueParams,
-    JoinedParams, LiveShapeParams, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams,
-    OpStage, PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill,
-    ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, StraightenParams, Stroke,
-    StrokeKind, StrumParams, SustainParams, Sym, SymAxis, SymParams, TilesParams, TumourParams,
+    BetweenParams, BetweenRole, BetweenSet, ChopParams, ClawParams, CycleBy, CycleParams,
+    FunnelParams, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, MaskMode, MaskParams,
+    MaskShow, MergeParams, NestedParams, OpStage, PatternParams, PolyStyle, PolygonParams,
+    RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams,
+    StraightenParams, Stroke, StrokeKind, StrumParams, SustainParams, Sym, SymAxis, SymParams,
+    TilesParams, TumourParams,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -278,6 +279,23 @@ fn test_op_stage_classification() {
         OpStage::Geometry,
         "Straighten 必须先生成平滑路径"
     );
+    assert_eq!(
+        ShapeOp::Between(between_params()).stage(),
+        OpStage::Notes,
+        "Between 是组角色标记，不进入几何链"
+    );
+}
+
+fn between_params() -> BetweenParams {
+    BetweenParams {
+        id: 1,
+        role: BetweenRole::First,
+        at: Some(0.0),
+        sig: None,
+        push: None,
+        vel: None,
+        set: Some(BetweenSet::default()),
+    }
 }
 
 fn symmetry_params() -> SymParams {
@@ -446,6 +464,23 @@ fn test_validate_and_roundtrip_straighten() {
 
     let mut bad = sample_shape();
     bad.push_op(ShapeOp::Straighten(StraightenParams { level: 101 }));
+    assert!(bad.validate().is_err());
+}
+
+#[test]
+fn test_validate_and_roundtrip_between() {
+    let mut shape = sample_shape();
+    shape.push_op(ShapeOp::Between(between_params()));
+    shape.validate().expect("合法 Between 应通过");
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
+    assert_eq!(back, shape);
+
+    let mut bad = sample_shape();
+    bad.push_op(ShapeOp::Between(BetweenParams {
+        set: None,
+        ..between_params()
+    }));
     assert!(bad.validate().is_err());
 }
 

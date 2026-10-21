@@ -2,6 +2,7 @@
 //!
 //! 落盘纪律与模块划分见 [`super`] 的模块文档。
 
+pub mod between;
 pub mod chop;
 pub mod claw;
 pub mod cycle;
@@ -22,6 +23,7 @@ pub mod symmetry;
 pub mod tiles;
 pub mod tumours;
 
+pub use between::{BetweenParams, BetweenRole, BetweenSet};
 pub use chop::{ChopParams, ChopPiece};
 pub use claw::{ClawMode, ClawParams, ClawPeriod, ClawTrash};
 pub use cycle::{CycleBy, CycleParams, RowRestart};
