@@ -21,9 +21,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::interaction::line_tool::{geom, paths, stroke_band};
+use crate::interaction::line_tool::{geom, paths};
 use crate::{Editor, Note};
-use lumino_core::shape::{ShapeModel, ShapeOp, ShapeRect};
+use lumino_core::shape::{ShapeFill, ShapeModel, ShapeOp, ShapeRect};
 use lumino_editor_state::shape_ops::{
     NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops,
 };
@@ -74,28 +74,18 @@ impl Editor {
             self.editor_state.line_tool.min_note_division,
             self.editor_state.view.ppq,
         );
-        let raw = stroke_band::outline_notes(
-            &poly,
-            self.draw_thickness(),
-            self.editor_state.view.zoom_x,
-            self.editor_state.view.zoom_y,
-            key_count,
-        );
-        let mut notes: Vec<ShapeNote> = paths::keep_longest(&raw)
-            .into_iter()
-            .filter(|n| n.key >= 0 && n.key < key_count)
-            .map(|n| {
-                let (tick, key, length) = paths::to_note_triple(&n, min_ticks);
-                ShapeNote {
-                    track,
-                    tick,
-                    key,
-                    length,
-                    // MIDI NoteOn velocity 0 等同 NoteOff；形状音符下限取 1
-                    velocity: model.style.velocity.max(1),
-                }
-            })
-            .collect();
+        // ShapeStyle.fill：Empty/OutlineSpam 走描边，Fill/Spam 走逐行内部。
+        // 这是形状再生成的唯一入口；工具预览仍走各自 pending 链路。
+        let mut notes = match model.style.fill {
+            ShapeFill::Empty => {
+                self.shape_outline_notes(&poly, track, key_count, min_ticks, false, model)
+            }
+            ShapeFill::OutlineSpam => {
+                self.shape_outline_notes(&poly, track, key_count, min_ticks, true, model)
+            }
+            ShapeFill::Fill => self.shape_fill_notes(&poly, track, key_count, false, model),
+            ShapeFill::Spam => self.shape_fill_notes(&poly, track, key_count, true, model),
+        };
         // Notes 阶段算子（Glue 置顶；DRAW-004..010 后续接入）
         apply_note_ops(&mut notes, &model.ops, &note_ctx);
         notes
@@ -331,6 +321,8 @@ fn shape_box_of(points: &[(f64, f64)]) -> Option<ShapeRect> {
         key_hi as f32 + 0.5,
     ))
 }
+
+mod fill_notes;
 
 #[cfg(test)]
 mod tests;
