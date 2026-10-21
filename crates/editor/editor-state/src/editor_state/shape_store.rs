@@ -38,6 +38,11 @@ pub struct ShapeEntry {
     pub model: ShapeModel,
     /// 该形状当前生成的音符（值指纹；由 S0-3b 的再生成维护）
     pub notes: Vec<ShapeNote>,
+    /// 生成时的完整音符（仅 silent mask 的 own=false 边框需要）
+    ///
+    /// 普通形状为空，`source_notes_of` 回退 `notes`；`own=false` 的遮罩只写
+    /// `notes = []`，区域计算仍需要这里保留的边框音符。
+    pub source_notes: Vec<ShapeNote>,
     /// 创建动作已被撤销（形状与它的音符都应视为不存在）
     pub hidden_by_creation: bool,
     /// 删除动作已提交（撤销删除即恢复）
@@ -161,6 +166,7 @@ impl ShapeStore {
         self.entries.push(ShapeEntry {
             model,
             notes: Vec::new(),
+            source_notes: Vec::new(),
             hidden_by_creation: false,
             deleted: false,
         });
@@ -202,7 +208,10 @@ impl ShapeStore {
         true
     }
 
-    /// 写入该形状当前生成的音符指纹
+    /// 写入该形状当前**发声**的音符指纹
+    ///
+    /// 普通形状的 source 为空（`source_notes_of` 会回退到 notes，避免双份内存）；
+    /// silent mask 由 [`Self::assign_source_notes`] 单独保存边框。
     pub fn assign_notes(&mut self, id: u64, notes: Vec<ShapeNote>) -> bool {
         match self.index_of(id) {
             Some(index) => {
@@ -210,6 +219,28 @@ impl ShapeStore {
                 true
             }
             None => false,
+        }
+    }
+
+    /// 写入生成时的完整音符（silent mask 的边框来源）
+    pub fn assign_source_notes(&mut self, id: u64, notes: Vec<ShapeNote>) -> bool {
+        match self.index_of(id) {
+            Some(index) => {
+                self.entries[index].source_notes = notes;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 生成时的完整音符（供 mask 区域计算；未设置时退回发声音符）
+    pub fn source_notes_of(&self, id: u64) -> &[ShapeNote] {
+        match self.index_of(id) {
+            Some(index) if !self.entries[index].source_notes.is_empty() => {
+                &self.entries[index].source_notes
+            }
+            Some(index) => &self.entries[index].notes,
+            None => &[],
         }
     }
 

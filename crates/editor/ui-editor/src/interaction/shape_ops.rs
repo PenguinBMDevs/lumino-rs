@@ -19,9 +19,11 @@
 //! [`stroke_band::outline_notes`] → [`paths::keep_longest`] → 长度下限），
 //! 不另起一套几何——否则「预览/工具生成的音符」与「形状再生成的音符」会不一致。
 
+use std::collections::BTreeMap;
+
 use crate::interaction::line_tool::{geom, paths, stroke_band};
 use crate::{Editor, Note};
-use lumino_core::shape::{ShapeModel, ShapeRect};
+use lumino_core::shape::{ShapeModel, ShapeOp, ShapeRect};
 use lumino_editor_state::shape_ops::{
     NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops,
 };
@@ -107,11 +109,16 @@ impl Editor {
             return false;
         }
         let notes = self.shape_notes_of(&model, track);
+        let silent = mask_silent(&model);
         self.push_history();
         let group = self.current_history_group();
-        let written = self.write_shape_notes(track, &notes);
+        let sounding: &[ShapeNote] = if silent { &[] } else { &notes };
+        let written = self.write_shape_notes(track, sounding);
         let id = self.editor_state.shape_store.insert(model, group);
         self.editor_state.shape_store.assign_notes(id, written);
+        if silent {
+            self.editor_state.shape_store.assign_source_notes(id, notes);
+        }
         self.mark_notes_changed();
         true
     }
@@ -127,12 +134,24 @@ impl Editor {
         }
         let old_notes = self.editor_state.shape_store.notes_of(id).to_vec();
         let new_notes = self.shape_notes_of(&new_model, track);
+        let silent = mask_silent(&new_model);
         self.push_history();
         let group = self.current_history_group();
         self.remove_shape_notes(track, &old_notes);
-        let written = self.write_shape_notes(track, &new_notes);
+        let sounding: &[ShapeNote] = if silent { &[] } else { &new_notes };
+        let written = self.write_shape_notes(track, sounding);
         self.editor_state.shape_store.edit(id, new_model, group);
         self.editor_state.shape_store.assign_notes(id, written);
+        if silent {
+            self.editor_state
+                .shape_store
+                .assign_source_notes(id, new_notes);
+        } else {
+            // 从 silent 切回发声时清掉旧 source，避免区域继续读过期边框
+            self.editor_state
+                .shape_store
+                .assign_source_notes(id, Vec::new());
+        }
         self.editor_state.data.mark_current_track_changed();
         self.mark_notes_changed();
         true
@@ -156,7 +175,7 @@ impl Editor {
     }
 
     /// 本次提交所属的历史分组 ID（`push_history()` 之后调用）
-    fn current_history_group(&self) -> u64 {
+    pub(super) fn current_history_group(&self) -> u64 {
         self.editor_state
             .data
             .history
@@ -171,7 +190,27 @@ impl Editor {
     /// [`Self::edit_shape`] 里的 `push_history()` 快照承担（与 `split_note` 同款）。
     /// 再压一条 CreateOp 会多出第二条历史条目，破坏「一次提交 = 一次撤销」，
     /// 并让撤销时读到的 group 不是形状日志所记录的那个。
-    fn write_shape_notes(&mut self, track: usize, notes: &[ShapeNote]) -> Vec<ShapeNote> {
+    pub(super) fn write_shape_notes(
+        &mut self,
+        _track: usize,
+        notes: &[ShapeNote],
+    ) -> Vec<ShapeNote> {
+        if notes.is_empty() {
+            return Vec::new();
+        }
+        // Apply mask 的可见音符可能跨轨：按音符自身的 track 分组写入（普通形状仍只有一轨）。
+        let mut by_track: BTreeMap<usize, Vec<ShapeNote>> = BTreeMap::new();
+        for sn in notes {
+            by_track.entry(sn.track).or_default().push(*sn);
+        }
+        let mut written = Vec::with_capacity(notes.len());
+        for (track, group) in by_track {
+            written.extend(self.write_shape_notes_on_track(track, &group));
+        }
+        written
+    }
+
+    fn write_shape_notes_on_track(&mut self, track: usize, notes: &[ShapeNote]) -> Vec<ShapeNote> {
         if notes.is_empty() {
             return Vec::new();
         }
@@ -207,10 +246,20 @@ impl Editor {
     }
 
     /// 按值指纹清理旧音符（降序删除，避免索引漂移）
-    fn remove_shape_notes(&mut self, track: usize, notes: &[ShapeNote]) {
+    fn remove_shape_notes(&mut self, _track: usize, notes: &[ShapeNote]) {
         if notes.is_empty() {
             return;
         }
+        let mut by_track: BTreeMap<usize, Vec<ShapeNote>> = BTreeMap::new();
+        for sn in notes {
+            by_track.entry(sn.track).or_default().push(*sn);
+        }
+        for (track, group) in by_track {
+            self.remove_shape_notes_on_track(track, &group);
+        }
+    }
+
+    fn remove_shape_notes_on_track(&mut self, track: usize, notes: &[ShapeNote]) {
         let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
         let mut indices: Vec<usize> = Vec::with_capacity(notes.len());
         for sn in notes {
@@ -252,6 +301,14 @@ impl Editor {
             );
         }
     }
+}
+
+/// `own=false` 的遮罩：自身音符只用于区域计算，不写入文档发声
+fn mask_silent(model: &ShapeModel) -> bool {
+    model
+        .ops
+        .iter()
+        .any(|op| matches!(op, ShapeOp::Mask(params) if !params.own))
 }
 
 /// 展平路径 → 形状包围盒（key 上下各扩 0.5，供 Glue 的 Boxes 使用）
