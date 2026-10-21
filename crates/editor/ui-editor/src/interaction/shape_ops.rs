@@ -133,6 +133,8 @@ impl Editor {
             };
             notes.append(&mut part);
         }
+        // Nested / Tiles：在普通 Fill/Spam 之后、Notes 算子之前改内部填充。
+        notes = self.apply_interior_fill(notes, model, track, ppq);
         // Notes 阶段算子（Glue 置顶；DRAW-004..010 后续接入）
         let note_ctx = NoteOpContext { glue_box, ppq };
         apply_note_ops(&mut notes, &model.ops, &note_ctx);
@@ -381,6 +383,7 @@ fn shape_box_of(points: &[(f64, f64)]) -> Option<ShapeRect> {
 
 mod fill_notes;
 mod funnel_notes;
+mod interior_fill;
 
 #[cfg(test)]
 mod tests;
