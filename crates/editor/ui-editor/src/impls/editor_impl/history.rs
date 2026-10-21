@@ -81,6 +81,8 @@ impl Editor {
                 self.editor_state.shape_select.on_undo_group(group);
                 // S0-3：形状参数与它的音符同组回退（口径：形状不进 EditorSnapshot）
                 self.editor_state.shape_store.on_undo_group(group);
+                // DRAW-041：Bake 的 undo 还要恢复 ✓ 前的待确认矢量。
+                self.restore_baked_group(group);
             }
             // 删除走 Snapshot 历史（分组在 redo 侧丢失）→ 按「音符是否还在」对账
             self.reconcile_drawn_shapes();
@@ -208,6 +210,8 @@ impl Editor {
                 self.editor_state.shape_select.on_redo_group(group);
                 // S0-3：形状参数与它的音符同组前进
                 self.editor_state.shape_store.on_redo_group(group);
+                // DRAW-041：再次 Bake，丢弃恢复出来的待确认矢量。
+                self.discard_baked_group(group);
             } else {
                 // S0-3：Snapshot 历史的 group_id 在 redo 侧会丢失（见上方删除路径的说明），
                 // 形状按撤销栈 LIFO 兜底回放，避免"音符回来了、形状参数没回来"。

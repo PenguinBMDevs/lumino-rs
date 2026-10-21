@@ -120,7 +120,7 @@ fn test_cancel_discards_stroke_history_too() {
 }
 
 #[test]
-fn test_confirm_then_undo_removes_all_notes_and_strokes_stay_gone() {
+fn test_confirm_then_undo_restores_strokes_and_redo_bakes_again() {
     let mut editor = brush_editor();
     editor.brush.set_thickness(2);
     stroke_via_actions(&mut editor, &[(0.0, VISIBLE_KEY), (2400.0, VISIBLE_KEY)]);
@@ -136,6 +136,11 @@ fn test_confirm_then_undo_removes_all_notes_and_strokes_stay_gone() {
         !editor.editor_state.brush_tool.has_pending(),
         "√ 后清空笔画"
     );
+    assert_eq!(
+        editor.editor_state.shape_select.len(),
+        0,
+        "Bake 后不应保留可交互笔画对象"
+    );
     assert!(
         !editor.editor_state.brush_tool.can_undo_path(),
         "√ 后笔画历史栈清空（document 历史单独存在）"
@@ -145,15 +150,27 @@ fn test_confirm_then_undo_removes_all_notes_and_strokes_stay_gone() {
         "√ 写入 document 产生一条记录"
     );
 
-    // Ctrl+Z：一次回退全部生成音符（卡片要求），且笔画**不会**被还原
+    // 改变当前粗细，undo 必须恢复 Bake 前的粗细而不是沿用当前值
+    editor.brush.set_thickness(1);
+    // Ctrl+Z：一次回退音符，并恢复 ✓ 前的待确认笔画（Bake 语义）
     editor.handle_action(EditorAction::Undo);
     assert!(notes_of(&editor, 1).is_empty(), "一次撤销回退全部生成音符");
+    assert_eq!(
+        editor.editor_state.brush_tool.strokes.len(),
+        2,
+        "undo 应恢复待确认笔画"
+    );
+    assert_eq!(editor.brush.thickness, 2, "undo 应恢复 Bake 前的粗细");
     assert!(
-        !editor.editor_state.brush_tool.has_pending(),
-        "√ 后撤销不得把笔画还原成待确认状态"
+        !editor.editor_state.brush_tool.can_redo_path(),
+        "恢复后应直接重做 Bake，而不是先重做笔画编辑"
     );
 
-    // Ctrl+Y：音符回来
+    // Ctrl+Y：音符回来，笔画再次丢弃
     editor.handle_action(EditorAction::Redo);
     assert_eq!(notes_of(&editor, 1).len(), generated, "Ctrl+Y 恢复生成音符");
+    assert!(
+        !editor.editor_state.brush_tool.has_pending(),
+        "redo 应再次丢弃笔画"
+    );
 }
