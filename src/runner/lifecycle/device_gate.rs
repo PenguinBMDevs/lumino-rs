@@ -302,7 +302,7 @@ fn failure_detail(report: &GpuCheckReport) -> String {
             backend = backend
         ),
         Some(GpuCheckFailure::Timeout) => trf!(
-            "{backend} 检测超时，驱动可能异常；已跳过本次检测。",
+            "{backend} 检测超时（驱动可能挂起）；本次已跳过，若界面持续卡顿请重启应用。",
             backend = backend
         ),
         None => trf!("{backend} 兼容性检测未通过。", backend = backend),

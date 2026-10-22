@@ -93,8 +93,10 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "{backend} 渲染管线执行失败，请尝试更新显卡驱动。" => Some(
             "The {backend} render pipeline failed to execute. Try updating your graphics driver.",
         ),
-        "{backend} 检测超时，驱动可能异常；已跳过本次检测。" => {
-            Some("The {backend} check timed out; the driver may be faulty. This check was skipped.")
+        "{backend} 检测超时（驱动可能挂起）；本次已跳过，若界面持续卡顿请重启应用。" => {
+            Some(
+                "{backend} check timed out (the driver may be hung); this check was skipped. Restart the app if the UI keeps stuttering.",
+            )
         }
         "{backend} 兼容性检测未通过。" => Some("{backend} compatibility check failed."),
         "{base}（检测到其他可用后端：{others}，可能仍可运行）" => {

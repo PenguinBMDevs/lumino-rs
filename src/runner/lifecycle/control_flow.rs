@@ -45,6 +45,14 @@ impl RunnerInner {
                 None => deadline,
             });
         }
+        // GPU 检测超时冷却：到点必须唤醒一次，否则按钮要等下次鼠标移动才恢复
+        // （`Wait` 模式下没有周期 tick，冷却结束这件事本身不会产生事件）。
+        if let Some(deadline) = self.gpu_check.next_wake(now) {
+            next_wake = Some(match next_wake {
+                Some(t) => t.min(deadline),
+                None => deadline,
+            });
+        }
 
         match next_wake {
             Some(deadline) => event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)),

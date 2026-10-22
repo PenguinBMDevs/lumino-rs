@@ -8,8 +8,10 @@
 //! 共享的辅助方法（`open_dialog_traced` / `close_dialog_traced`）与
 //! 预览帧缩放工具（`downscale_rgba`）保留在本文件中。
 
+use std::time::Instant;
+
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
-use lumino_ui::event::window::Event as WindowEvent;
+use lumino_ui::event::window::{Event as WindowEvent, GpuCheckOutcome};
 
 mod audio_export;
 mod collaboration;
@@ -27,18 +29,12 @@ impl RunnerInner {
             WindowEvent::Collaboration(e) => self.handle_collaboration_events(e),
             WindowEvent::Sync(e) => self.handle_sync_events(e),
             WindowEvent::Track(e) => self.handle_track_events(e),
-            WindowEvent::GpuCheckRun => Self::spawn_gpu_compatibility_check(),
+            WindowEvent::GpuCheckRun => self.on_gpu_check_run_requested(),
             WindowEvent::GpuCheckFinished {
                 outcome,
                 detail,
                 fingerprint,
-            } => {
-                // 先落盘再注入 UI：设置对话框可能尚未就绪（分帧初始化），
-                // 但检测结果本身已经确定，缓存不应等待 UI。
-                self.persist_manual_gpu_check_cache(fingerprint.as_deref(), outcome.is_passed());
-                self.pending_gpu_check_ui = Some((outcome, detail));
-                self.inject_pending_gpu_check_ui();
-            }
+            } => self.on_gpu_check_finished(outcome, detail, fingerprint),
             WindowEvent::MidiPortLayoutChanged { max_port } => {
                 // 端口编辑改变文档 max_port：按新布局重建实时合成输出，
                 // 否则新端口事件会被旧通道空间静默丢弃。
@@ -97,21 +93,76 @@ impl RunnerInner {
         }
     }
 
-    /// 逐帧尝试把待注入的 GPU 检查结果写入已就绪的设置对话框
+    /// 手动检测请求：由 Runner 单点裁决（在飞 / 冷却 / 会话锁定一律拒绝）。
     ///
-    /// 设置对话框可能尚未创建或仍在分帧初始化（窗口→GFX→UI），此时结果保留在
-    /// `pending_gpu_check_ui`，由 `about_to_wait` 后续帧继续尝试。
-    pub(crate) fn inject_pending_gpu_check_ui(&mut self) {
-        let Some((outcome, detail)) = self.pending_gpu_check_ui.clone() else {
+    /// 拒绝后仍回推一次权威状态：按钮可用性由 Runner 决定，设置面板不再本地置
+    /// `Running`（否则关窗 / 开窗会让面板状态与真源分叉，形成二次点击缺口）。
+    fn on_gpu_check_run_requested(&mut self) {
+        if !self.gpu_check.try_begin(Instant::now()) {
+            tracing::warn!("手动 GPU 检测请求被忽略：检测进行中 / 冷却中 / 会话已锁定");
+            self.sync_gpu_check_ui(true);
             return;
-        };
-        if self
+        }
+        self.sync_gpu_check_ui(true);
+        Self::spawn_gpu_compatibility_check();
+    }
+
+    /// 检测结果落地：先回写缓存，再推进状态机并刷新 UI。
+    ///
+    /// 先落盘再注入 UI：设置对话框可能尚未就绪（分帧初始化），
+    /// 但检测结果本身已经确定，缓存不应等待 UI。
+    fn on_gpu_check_finished(
+        &mut self,
+        outcome: GpuCheckOutcome,
+        detail: String,
+        fingerprint: Option<String>,
+    ) {
+        self.persist_manual_gpu_check_cache(fingerprint.as_deref(), outcome.is_passed());
+        self.gpu_check.finish(outcome, detail, Instant::now());
+        self.sync_gpu_check_ui(true);
+    }
+
+    /// 逐帧维护 GPU 检测 UI：冷却到点推进 + 设置对话框（重）建时灌注一次。
+    ///
+    /// 必须在 `handle_control_flow` 之前调用：`tick` 清掉到点的冷却，
+    /// 控制流计算才不会继续用过期 deadline 唤醒事件循环。
+    pub(crate) fn about_to_wait_gpu_check(&mut self) {
+        let now = Instant::now();
+        if self.gpu_check.tick(now) {
+            tracing::info!("GPU 检测冷却结束，按钮恢复可用");
+            self.sync_gpu_check_ui(true);
+            return;
+        }
+        self.sync_gpu_check_ui(false);
+    }
+
+    /// 把 Runner 侧的权威状态投影到设置对话框。
+    ///
+    /// `force=false` 仅在「设置对话框窗口刚创建 / 重开」时灌注一次（按窗口 id 去重），
+    /// 避免每帧无意义地置脏；`force=true` 用于状态刚变化后的立即刷新。
+    fn sync_gpu_check_ui(&mut self, force: bool) {
+        let current = self
             .window_state
             .dialog_manager
-            .apply_gpu_check_result(outcome, detail)
-        {
-            self.pending_gpu_check_ui = None;
+            .first_dialog_id_of_type(DialogType::Settings);
+        let Some(window_id) = current else {
+            // 设置窗已关闭：清空记录，下次打开时重新灌注（含 Running / 冷却）
+            self.gpu_check_ui_window = None;
+            return;
+        };
+        if !force && self.gpu_check_ui_window == Some(window_id) {
+            return;
         }
+        let now = Instant::now();
+        let state = self.gpu_check.ui_state();
+        let gate = self.gpu_check.retry_gate(now);
+        let applied = self
+            .window_state
+            .dialog_manager
+            .apply_gpu_check_state(state.clone(), gate);
+        // 注入失败（对话框 UI 尚未就绪）时不记录 id，下一帧继续重试
+        self.gpu_check_ui_window = applied.then_some(window_id);
+        tracing::debug!("GPU 检测状态已注入设置面板: {state:?} / 重试门控 {gate:?}");
     }
 
     /// 打开对话框并记录日志（保持「先日志后打开」顺序）。

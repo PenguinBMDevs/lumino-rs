@@ -123,20 +123,18 @@ impl Host {
         self.root.take_device_warning_action()
     }
 
-    /// 注入 GPU 兼容性检测结果到设置面板（设置对话框专用）。
+    /// 注入 GPU 检测的完整 UI 快照（状态 + 重试门控，设置对话框专用）。
     ///
-    /// 结论以 [`GpuCheckOutcome`] 分类传入：UI 不得再从详情文本里反推失败类型，
+    /// 状态以 [`GpuCheckUiState`] 表达（含 `Running`），门控决定按钮可用性：
+    /// 两者都由 Runner 会话状态机产出，UI 不得从详情文本里反推失败类型，
     /// 否则切换界面语言后分类立刻失效（详情是本地化后的展示文案）。
-    pub fn set_gpu_check_result(
+    pub fn set_gpu_check_state(
         &mut self,
-        outcome: lumino_ui_core::state::GpuCheckOutcome,
-        detail: String,
+        state: lumino_ui_core::state::GpuCheckUiState,
+        retry_gate: lumino_ui_core::state::GpuCheckRetryGate,
     ) {
-        self.root.settings.compat.check_state =
-            lumino_ui_core::state::GpuCheckUiState::Done(lumino_ui_core::state::GpuCheckUiResult {
-                outcome,
-                detail,
-            });
+        self.root.settings.compat.check_state = state;
+        self.root.settings.compat.retry_gate = retry_gate;
         self.root.settings.compat.copied = false;
         self.mark_dirty();
     }

@@ -278,8 +278,8 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
         this.try_fill_recover_track_entries();
 
-        // GPU 兼容性检查结果注入（设置对话框可能刚创建/刚就绪）
-        this.inject_pending_gpu_check_ui();
+        // GPU 检测会话状态灌注（设置对话框刚创建 / 重开时重放 Running、冷却与结果）
+        this.about_to_wait_gpu_check();
 
         // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
         // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的

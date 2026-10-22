@@ -21,7 +21,11 @@ use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
 use lumino_core::tr;
 use lumino_extras::i18n::Language;
-use lumino_ui_core::{Element, Message, Theme, state::GpuCheckUiState, window};
+use lumino_ui_core::{
+    Element, Message, Theme,
+    state::{GpuCheckRetryGate, GpuCheckUiState},
+    window,
+};
 
 use components::*;
 use pages::*;
@@ -204,8 +208,10 @@ pub struct CompatSettings {
     pub warning_suppressed: bool,
     /// 是否启用 Domino（TAKABO SOFT）剪贴板互粘（仅 Windows 生效，默认关闭）
     pub domino_clipboard_enabled: bool,
-    /// 手动检查状态（会话内瞬态，不持久化）
+    /// 手动检查状态（会话内瞬态，不持久化；真源在 Runner，面板只读展示）
     pub check_state: GpuCheckUiState,
+    /// 重试门控（冷却 / 会话锁定由 Runner 注入；面板只读）
+    pub retry_gate: GpuCheckRetryGate,
     /// 复制按钮的瞬时"已复制"状态
     pub copied: bool,
 }

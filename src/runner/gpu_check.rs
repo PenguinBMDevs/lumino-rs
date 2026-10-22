@@ -7,6 +7,10 @@
 use lumino_gfx::device_check::{GpuCheckFailure, GpuCheckReport};
 use lumino_ui::event::window::GpuCheckOutcome;
 
+mod state;
+
+pub(crate) use state::GpuCheckState;
+
 /// 把检测报告折算为 UI 结论。
 ///
 /// 判定优先级：**失败原因优先于 `passed` 布尔值**。二者理论一致
