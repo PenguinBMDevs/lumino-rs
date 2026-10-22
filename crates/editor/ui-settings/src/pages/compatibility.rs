@@ -64,7 +64,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .style(create_placeholder_text_style())
             .into(),
         GpuCheckUiState::Done(result) => {
-            let headline = if result.passed {
+            let headline = if result.passed() {
                 t.compat_passed
             } else {
                 t.compat_failed

@@ -29,14 +29,14 @@ impl RunnerInner {
             WindowEvent::Track(e) => self.handle_track_events(e),
             WindowEvent::GpuCheckRun => Self::spawn_gpu_compatibility_check(),
             WindowEvent::GpuCheckFinished {
-                passed,
+                outcome,
                 detail,
                 fingerprint,
             } => {
                 // 先落盘再注入 UI：设置对话框可能尚未就绪（分帧初始化），
                 // 但检测结果本身已经确定，缓存不应等待 UI。
-                self.persist_manual_gpu_check_cache(fingerprint.as_deref(), passed);
-                self.pending_gpu_check_ui = Some((passed, detail));
+                self.persist_manual_gpu_check_cache(fingerprint.as_deref(), outcome.is_passed());
+                self.pending_gpu_check_ui = Some((outcome, detail));
                 self.inject_pending_gpu_check_ui();
             }
             WindowEvent::MidiPortLayoutChanged { max_port } => {
@@ -57,10 +57,10 @@ impl RunnerInner {
         }
     }
 
-    /// 在后台线程执行 GPU 兼容性检查，完成后经事件总线回传纯文本结果
+    /// 在后台线程执行 GPU 兼容性检查，完成后经事件总线回传纯文本结果 + 结论分类
     ///
     /// 检查耗时可达数百毫秒且可能触发驱动路径，必须在阻塞线程池执行，
-    /// 不阻塞 UI/事件循环；UI 侧只消费 `(passed, detail)`，`fingerprint` 供 Runner 回写缓存。
+    /// 不阻塞 UI/事件循环；UI 侧消费 `(outcome, detail)`，`fingerprint` 供 Runner 回写缓存。
     /// 手动检测人看得见结果（设置页展示 + 复制诊断），因此**始终**收集回退后端诊断。
     fn spawn_gpu_compatibility_check() {
         tracing::info!("兼容性页请求手动 GPU 兼容性检查");
@@ -69,14 +69,11 @@ impl RunnerInner {
                 lumino_gfx::device_check::DEFAULT_TIMEOUT,
                 lumino_gfx::device_check::FallbackDiagnostics::Always,
             );
+            let outcome = crate::runner::gpu_check::outcome_of(&report);
             let detail = report.detail();
             let fingerprint = report.fingerprint.clone();
             lumino_ui::event::emit(lumino_ui::event::Event::Window(
-                lumino_ui::event::window::Event::gpu_check_finished(
-                    report.passed,
-                    detail,
-                    fingerprint,
-                ),
+                lumino_ui::event::window::Event::gpu_check_finished(outcome, detail, fingerprint),
             ));
         });
     }
@@ -105,13 +102,13 @@ impl RunnerInner {
     /// 设置对话框可能尚未创建或仍在分帧初始化（窗口→GFX→UI），此时结果保留在
     /// `pending_gpu_check_ui`，由 `about_to_wait` 后续帧继续尝试。
     pub(crate) fn inject_pending_gpu_check_ui(&mut self) {
-        let Some((passed, detail)) = self.pending_gpu_check_ui.clone() else {
+        let Some((outcome, detail)) = self.pending_gpu_check_ui.clone() else {
             return;
         };
         if self
             .window_state
             .dialog_manager
-            .apply_gpu_check_result(passed, detail)
+            .apply_gpu_check_result(outcome, detail)
         {
             self.pending_gpu_check_ui = None;
         }

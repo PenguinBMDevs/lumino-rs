@@ -123,11 +123,18 @@ impl Host {
         self.root.take_device_warning_action()
     }
 
-    /// 注入 GPU 兼容性检测结果到设置面板（设置对话框专用）
-    pub fn set_gpu_check_result(&mut self, passed: bool, detail: String) {
+    /// 注入 GPU 兼容性检测结果到设置面板（设置对话框专用）。
+    ///
+    /// 结论以 [`GpuCheckOutcome`] 分类传入：UI 不得再从详情文本里反推失败类型，
+    /// 否则切换界面语言后分类立刻失效（详情是本地化后的展示文案）。
+    pub fn set_gpu_check_result(
+        &mut self,
+        outcome: lumino_ui_core::state::GpuCheckOutcome,
+        detail: String,
+    ) {
         self.root.settings.compat.check_state =
             lumino_ui_core::state::GpuCheckUiState::Done(lumino_ui_core::state::GpuCheckUiResult {
-                passed,
+                outcome,
                 detail,
             });
         self.root.settings.compat.copied = false;

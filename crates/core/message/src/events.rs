@@ -205,31 +205,36 @@ mod tests {
     /// （`runner::device_check_policy::tests::test_fingerprint_round_trips_from_producer_to_cache_hit`），
     /// 那里才同时够得着两侧。
     #[test]
-    fn test_gpu_check_finished_carries_fingerprint() {
+    fn test_gpu_check_finished_carries_outcome_and_fingerprint() {
         let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         let event = window::Event::gpu_check_finished(
-            true,
+            window::GpuCheckOutcome::Passed,
             "Vulkan 兼容性检测通过".to_string(),
             Some("Vulkan|RTX|d|i|DiscreteGpu".to_string()),
         );
         let window::Event::GpuCheckFinished {
-            passed,
+            outcome,
             detail,
             fingerprint,
         } = event
         else {
             panic!("gpu_check_finished 应构造 GpuCheckFinished 变体");
         };
-        assert!(passed);
+        assert_eq!(outcome, window::GpuCheckOutcome::Passed);
+        assert!(outcome.is_passed());
         assert!(detail.contains("通过"));
         assert_eq!(fingerprint.as_deref(), Some("Vulkan|RTX|d|i|DiscreteGpu"));
 
-        // 无适配器 / 超时场景：指纹缺省不影响事件构造
-        let event = window::Event::gpu_check_finished(false, "失败".to_string(), None);
+        // 超时场景：指纹缺省不影响事件构造，且结论必须与「通过」可区分
+        let event = window::Event::gpu_check_finished(
+            window::GpuCheckOutcome::TimedOut,
+            "失败".to_string(),
+            None,
+        );
         assert!(matches!(
             event,
             window::Event::GpuCheckFinished {
-                passed: false,
+                outcome: window::GpuCheckOutcome::TimedOut,
                 fingerprint: None,
                 ..
             }

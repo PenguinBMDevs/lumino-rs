@@ -9,6 +9,7 @@ mod device_check_policy;
 mod device_warning;
 mod dialog_manager;
 mod file_handler;
+mod gpu_check;
 mod inner;
 mod lifecycle;
 mod menu;

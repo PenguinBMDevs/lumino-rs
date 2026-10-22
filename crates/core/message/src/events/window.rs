@@ -10,6 +10,34 @@ mod collaboration_ctors;
 mod dialog_ctors;
 mod sync_ctors;
 
+/// GPU 兼容性检测结论（UI 展示与文案选择的唯一分类依据）。
+///
+/// 与 `lumino_gfx::device_check::GpuCheckFailure` 是**投影关系**而非等价关系：
+/// gfx 侧失败类型携带诊断字符串，属图形栈内部细节；这里只保留 UI 需要区分的类别。
+/// 映射集中在宿主层（`src/runner/gpu_check.rs`），因此 UI crate 不必依赖 gfx。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GpuCheckOutcome {
+    /// 检测通过
+    Passed,
+    /// 未找到本平台要求的图形后端适配器
+    NoAdapter,
+    /// 找到适配器，但请求设备失败（驱动 / 特性不满足）
+    DeviceRequestFailed,
+    /// 设备创建成功，但离屏渲染或回读失败
+    RenderFailed,
+    /// 检测未在时限内完成（驱动可能挂起）
+    TimedOut,
+    /// 报告自相矛盾：既未通过又没有失败原因（正常路径不应出现）
+    Unknown,
+}
+
+impl GpuCheckOutcome {
+    /// 是否判定为通过（缓存回写与「检测通过」展示的唯一依据）
+    pub const fn is_passed(self) -> bool {
+        matches!(self, Self::Passed)
+    }
+}
+
 // Dialog variant 已 Box 化以减小 Event 枚举体积（同 Message 布局评审结论）。
 // const fn 构造函数经由 const helper `Event::dialog()` 使用 `Box::new`（Rust ≥1.85 支持）。
 #[derive(Debug, Clone)]
@@ -27,10 +55,10 @@ pub enum Event {
     Track(track::Event),
     /// GPU 兼容性检查请求（设置页 → Runner）
     GpuCheckRun,
-    /// GPU 兼容性检查完成（Runner → 设置页，纯文本避免图形栈类型泄漏）
+    /// GPU 兼容性检查完成（Runner → 设置页，纯文本 + 结论分类，避免图形栈类型泄漏）
     GpuCheckFinished {
-        /// 是否通过
-        passed: bool,
+        /// 检测结论分类（UI 据此选择文案与按钮可用性）
+        outcome: GpuCheckOutcome,
         /// 技术详情（多行文本）
         detail: String,
         /// 选中适配器指纹（Runner 据此回写启动缓存；无适配器 / 检测超时时为 `None`）
@@ -67,10 +95,15 @@ impl Event {
     /// 构造 GPU 兼容性检查完成事件
     ///
     /// `fingerprint` 供 Runner 回写启动缓存（与启动门控共用同一缓存键，语义为
-    /// 「最近一次检测结果」）；UI 侧只消费 `passed` / `detail`。
-    pub fn gpu_check_finished(passed: bool, detail: String, fingerprint: Option<String>) -> Self {
+    /// 「最近一次检测结果」）；UI 侧消费 `outcome` / `detail`，是否通过由
+    /// [`GpuCheckOutcome::is_passed`] 派生——不额外传 `passed`，避免两个字段不一致。
+    pub fn gpu_check_finished(
+        outcome: GpuCheckOutcome,
+        detail: String,
+        fingerprint: Option<String>,
+    ) -> Self {
         Self::GpuCheckFinished {
-            passed,
+            outcome,
             detail,
             fingerprint,
         }

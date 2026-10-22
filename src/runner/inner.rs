@@ -1,3 +1,4 @@
+use lumino_ui::event::window::GpuCheckOutcome;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
@@ -207,11 +208,11 @@ pub(crate) struct RunnerInner {
     /// 仅当 `pending_close_action.is_some()` 且用户选择「保存」时为 true；
     /// 保存任务完成后（`handle_save_completed`）据此继续原动作。
     pub(crate) run_pending_after_save: bool,
-    /// 待注入设置对话框的 GPU 兼容性检测结果 `(passed, detail)`。
+    /// 待注入设置对话框的 GPU 兼容性检测结果 `(outcome, detail)`。
     ///
     /// 手动检查在后台线程执行，结果经事件总线回传时设置对话框可能尚未创建；
     /// 暂存于此，由 `about_to_wait` 逐帧尝试注入。
-    pub(crate) pending_gpu_check_ui: Option<(bool, String)>,
+    pub(crate) pending_gpu_check_ui: Option<(GpuCheckOutcome, String)>,
     /// #127：播放输出创建失败后的自愈重试状态（启动即失败时立即武装）。
     pub(crate) midi_output_retry: MidiOutputRetry,
     /// GPU 缓冲状态上次轮询时刻（250ms 节流，避免每帧取快照）。

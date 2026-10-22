@@ -83,15 +83,22 @@ impl DialogManager {
 
     /// 将 GPU 兼容性检测结果注入所有已打开的设置对话框。
     ///
+    /// `outcome` 是结论分类（`GpuCheckOutcome`），`detail` 是本地化后的诊断文本；
+    /// 两者分开传递，UI 才能在不解析文本的前提下区分「超时」与「驱动错误」。
+    ///
     /// 返回是否至少注入了一个对话框：无设置对话框时结果由 Runner 暂存，
     /// 待下次设置对话框就绪后再注入（与 RecoverTrack 条目的 pending 模式一致）。
-    pub fn apply_gpu_check_result(&mut self, passed: bool, detail: String) -> bool {
+    pub fn apply_gpu_check_result(
+        &mut self,
+        outcome: lumino_ui::event::window::GpuCheckOutcome,
+        detail: String,
+    ) -> bool {
         let mut applied = false;
         for dialog in self.dialogs.values_mut() {
             if dialog.dialog_type == DialogType::Settings
                 && let Some(ui) = dialog.ui_mut()
             {
-                ui.set_gpu_check_result(passed, detail.clone());
+                ui.set_gpu_check_result(outcome, detail.clone());
                 dialog.window().request_redraw();
                 applied = true;
             }
