@@ -28,6 +28,15 @@ impl DialogWindow {
                     ui.cursor_moved(*position);
                 }
             }
+            // 纯触屏平台（Android）没有 `CursorMoved`，指针位置只能由 `Touch` 驱动。
+            // 不在这里同步，对话框 Host 的 `cursor` 会一直是 `Unavailable`
+            // （`window_ctx.rs:44`），其下所有控件按 `cursor.is_over()` 判定失败
+            // ⇒ 设置/导出/进度等对话框在触摸设备上整块点不动。
+            WindowEvent::Touch(touch) => {
+                if let Some(ui) = self.ui.as_mut() {
+                    ui.cursor_moved(touch.location);
+                }
+            }
             _ => {}
         }
 

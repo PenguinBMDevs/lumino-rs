@@ -85,6 +85,13 @@ pub enum DialogResult {
 ///
 /// 注意：只返回转换后的鼠标事件，不同时发送原始触摸事件，
 /// 否则会导致单击被计为两次点击，触发错误的双击检测。
+///
+/// `FingerLost`（系统取消，如来电/切后台/手势被系统接管）必须**同时**保留
+/// 原生事件并补一次左键释放：
+/// - 原生事件让 iced 控件复位自己的按压态（`button.rs` 仅在 `FingerLost`
+///   分支清 `is_pressed`）；
+/// - 合成的 `ButtonReleased` 负责让画布/编辑器收尾——钢琴卷帘只认
+///   `Mouse(ButtonReleased)`，不收尾会卡在绘制/拖动中间态。
 pub fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
     match event {
         Event::Touch(touch_event) => match touch_event {
@@ -103,8 +110,106 @@ pub fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
             touch::Event::FingerMoved { position, .. } => {
                 vec![Event::Mouse(mouse::Event::CursorMoved { position })]
             }
-            _ => vec![event],
+            touch::Event::FingerLost { id, position } => {
+                vec![
+                    Event::Touch(touch::Event::FingerLost { id, position }),
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+                    Event::Mouse(mouse::Event::CursorMoved { position }),
+                ]
+            }
         },
         _ => vec![event],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iced_core::Point;
+
+    /// 单指按下：合成「左键按下 + 光标定位」，顺序不能反
+    /// （画布按下时用光标位置算命中，光标必须先到位）
+    #[test]
+    fn finger_pressed_becomes_button_press() {
+        let events = convert_touch_to_mouse(Event::Touch(touch::Event::FingerPressed {
+            id: touch::Finger(1),
+            position: Point::new(12.0, 34.0),
+        }));
+
+        assert_eq!(
+            events,
+            vec![
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+                Event::Mouse(mouse::Event::CursorMoved {
+                    position: Point::new(12.0, 34.0),
+                }),
+            ]
+        );
+    }
+
+    /// 单指抬起：合成「左键释放 + 光标定位」
+    #[test]
+    fn finger_lifted_becomes_button_release() {
+        let events = convert_touch_to_mouse(Event::Touch(touch::Event::FingerLifted {
+            id: touch::Finger(1),
+            position: Point::new(12.0, 34.0),
+        }));
+
+        assert_eq!(
+            events,
+            vec![
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+                Event::Mouse(mouse::Event::CursorMoved {
+                    position: Point::new(12.0, 34.0),
+                }),
+            ]
+        );
+    }
+
+    /// 单指移动：只合成光标移动，不产生按键事件
+    #[test]
+    fn finger_moved_only_moves_cursor() {
+        let events = convert_touch_to_mouse(Event::Touch(touch::Event::FingerMoved {
+            id: touch::Finger(1),
+            position: Point::new(5.0, 6.0),
+        }));
+
+        assert_eq!(
+            events,
+            vec![Event::Mouse(mouse::Event::CursorMoved {
+                position: Point::new(5.0, 6.0),
+            })]
+        );
+    }
+
+    /// 系统取消：必须保留原生 `FingerLost`（控件复位按压态）**并**补左键释放
+    /// （画布/编辑器只认鼠标释放，不补会卡在绘制/拖动的中间态）
+    #[test]
+    fn finger_lost_keeps_native_event_and_releases_button() {
+        let events = convert_touch_to_mouse(Event::Touch(touch::Event::FingerLost {
+            id: touch::Finger(7),
+            position: Point::new(1.0, 2.0),
+        }));
+
+        assert_eq!(
+            events,
+            vec![
+                Event::Touch(touch::Event::FingerLost {
+                    id: touch::Finger(7),
+                    position: Point::new(1.0, 2.0),
+                }),
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+                Event::Mouse(mouse::Event::CursorMoved {
+                    position: Point::new(1.0, 2.0),
+                }),
+            ]
+        );
+    }
+
+    /// 非触摸事件原样透传
+    #[test]
+    fn non_touch_event_passes_through() {
+        let event = Event::Mouse(mouse::Event::CursorLeft);
+        assert_eq!(convert_touch_to_mouse(event.clone()), vec![event]);
     }
 }

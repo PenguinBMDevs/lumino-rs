@@ -84,8 +84,25 @@ pub struct Host {
     pub(crate) message_router: root::handlers::MessageRouter,
     /// 触摸捏合回退：多指触摸点（id -> 逻辑坐标），用于无 PinchGesture 平台合成缩放
     pub(crate) active_touches: std::collections::HashMap<u64, iced_core::Point>,
-    /// 上一次双指距离（像素），用于计算 pinch delta
-    pub(crate) prev_pinch_distance: Option<f32>,
+    /// 双指缩放的**锚点距离**（逻辑像素）。
+    ///
+    /// 只在「发出过一次缩放」或「手指数量变化」时前移：逐帧前移会让慢速捏合
+    /// 每帧都落回阈值以下，表现为「慢慢捏合完全没反应」。
+    pub(crate) pinch_anchor_distance: Option<f32>,
+    /// 双指平移的上一个中点（逻辑坐标），仅在真正发出滚动增量时前移
+    pub(crate) prev_pan_center: Option<iced_core::Point>,
+    /// 本次触摸会话是否已升级为多指手势（双指及以上出现过）
+    ///
+    /// 置位后即便手指降为单指也继续消费触摸，避免剩余手指的移动被当成拖拽。
+    pub(crate) touch_gesture_active: bool,
+    /// 触摸全部抬起后需要抑制 hover（下一批事件以 `Cursor::Unavailable` 重建）
+    pub(crate) suppress_hover_after_touch: bool,
+    /// 触摸长按模拟右键：首指按下点（长按抖动判定 + 右键落点）
+    pub(crate) touch_press_origin: Option<iced_core::Point>,
+    /// 触摸长按的判定时刻（`None` = 无待判定长按）
+    pub(crate) touch_long_press_deadline: Option<Instant>,
+    /// 本次触摸是否已经触发过长按右键（抬手时只需释放右键）
+    pub(crate) touch_long_press_fired: bool,
     /// iced 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
     pub(crate) redraw_at: std::sync::Arc<std::sync::Mutex<Option<Instant>>>,
     /// 定时重绘后台线程是否在运行（避免重复起线程）

@@ -12,7 +12,12 @@ impl Host {
 
         let logical_pos =
             conversion::cursor_position(position, self.render_ctx.viewport.scale_factor());
+        // 触摸抬手后 `cursor` 会被置为 `Unavailable`（抑制 hover，见
+        // `event/window/events.rs` 的 `suppress_hover_after_touch`）。此时即便
+        // 位置与上次完全相同，也必须重新装回 `Available`——否则「同一位置连点
+        // 两次」的第二次点击会因为 cursor 不可用而整块丢失。
         if self.window_ctx.cursor_position == Some(logical_pos)
+            && self.window_ctx.cursor.position().is_some()
             && !self.window_ctx.is_toolbar_resizing
             && !self.root.sidebar.is_resizing()
             && !self.root.right_sidebar.is_resizing
