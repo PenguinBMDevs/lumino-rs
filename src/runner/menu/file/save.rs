@@ -71,8 +71,7 @@ impl RunnerInner {
                 tracing::error!("导出为素材：文档不可用");
                 return;
             };
-            let mut project =
-                material::build_material_project_from_selection(doc, &selected, &data.tempo_points);
+            let mut project = material::build_material_project_from_selection(doc, &selected);
             // 作者/版权：素材文件继承工程设置对话框中填写的作者与版权
             project.metadata.project.author = ui.get_project_author();
             project.metadata.project.copyright = ui.get_project_copyright();
@@ -284,26 +283,26 @@ impl RunnerInner {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             if let Some(doc) = data.document.as_ref() {
+                // tempo 无需在此「补救」（2026-10-20 审计 §三）：
+                // `EditorData` 的 tempo 写入入口（`set_tempo_points` /
+                // `set_tempo_point` / `add_tempo_point` / `remove_tempo_point`）都会经
+                // `sync_tempo_to_document` 写回 `document.tempo_changes`，
+                // 故 `from_midi_document(doc)` 读到的就是用户编辑后的值。
+                // 旧注释「用户修改的 BPM 只写入 tempo_points、不回写 doc」已不成立。
                 let mut project = lumino_export::LuminoProject::from_midi_document(doc);
-                // 用编辑器 tempo_points 覆盖 doc 中的原始 tempo：
-                // doc.tempo_changes 是加载文件时的值，用户经工程设置/速度面板
-                // 修改的 BPM 只写入 tempo_points，不回写 doc——不覆盖会保存旧值
-                // （新工程保存后 tempo 丢失，回落到默认 120 BPM 的 BUG 根因）。
-                project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
                 // 使用实际保存路径的文件名作为工程名
                 if let Some(stem) = save_path.file_stem() {
                     project.metadata.project.name = stem.to_string_lossy().into_owned();
                 }
                 Some(project)
             } else {
-                // 无文档时从编辑器音符重建（不再深拷贝 runner 侧 document）
-                editor_midi::build_editor_midi_document(self).map(|doc| {
-                    let mut project = lumino_export::LuminoProject::from_midi_document(&doc);
-                    if let Some(stem) = save_path.file_stem() {
-                        project.metadata.project.name = stem.to_string_lossy().into_owned();
-                    }
-                    project
-                })
+                // 无文档 = 没有可保存的音符（单一权威源：音符只存在于 document，
+                // 编辑器视图不再另存一份）。旧实现在此从「编辑器音符」重建一份
+                // `MidiDocument`（`build_editor_midi_document`：编辑器音符 → SMF 字节
+                // → 重新解析成文档），但该函数的第一步 `get_editor_notes()` 就是读
+                // document，无文档时必然为空 → 恒返回 None（审计 §十二 认定的死路径）。
+                // 故此处直接返回 None，由下方统一告警处理。
+                None
             }
         }?;
 
