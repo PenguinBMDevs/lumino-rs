@@ -64,6 +64,8 @@ pub enum GpuCheckFailure {
     RenderError(String),
     /// 检测在超时内未完成（驱动可能异常挂起）
     Timeout,
+    /// 检测执行环境异常（检测线程/子进程创建失败、子进程崩溃或输出不可解析）
+    Aborted(String),
 }
 
 impl std::fmt::Display for GpuCheckFailure {
@@ -73,6 +75,7 @@ impl std::fmt::Display for GpuCheckFailure {
             Self::DeviceRequest(e) => write!(f, "{}: {e}", tr!("设备请求失败")),
             Self::RenderError(e) => write!(f, "{}: {e}", tr!("渲染执行失败")),
             Self::Timeout => write!(f, "{}", tr!("检测超时")),
+            Self::Aborted(e) => write!(f, "{}: {e}", tr!("检测执行异常")),
         }
     }
 }

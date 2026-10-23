@@ -119,6 +119,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "设备请求失败" => Some("Device request failed"),
         "渲染执行失败" => Some("Rendering failed"),
         "检测超时" => Some("Check timed out"),
+        "检测执行异常" => Some("The check could not be executed"),
 
         // `crates/editor/ui-core/src/resources/icon.rs`（IconError）
         "图标不在缓存中" => Some("Icon not in cache"),

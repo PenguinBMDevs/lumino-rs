@@ -17,6 +17,7 @@ static GLOBAL_ALLOC: lumino_diagnostics::memtrace::TaggedAlloc =
 
 mod cli;
 mod constants;
+mod device_probe;
 mod logging;
 mod platform;
 mod runner;
@@ -121,6 +122,13 @@ fn create_event_loop() -> Result<EventLoop<runner::UserEvent>, winit::error::Eve
 
 #[tokio::main]
 async fn main() -> Result<(), winit::error::EventLoopError> {
+    // GPU 检测子进程模式：必须在日志 / puffin / 内存监控 / clap **之前**分支。
+    // 子进程只做一次无头检测，不需要事件循环、音频与 UI；晚一步就可能抢 8585
+    // 端口、起看门狗线程，或直接被 clap 以「未知参数」拒绝（退出码 2）。
+    if device_probe::is_child_mode() {
+        device_probe::run_child_mode();
+    }
+
     logging::init();
 
     // 启动 puffin 性能分析服务器 - 保持存活直到程序结束

@@ -6,7 +6,10 @@
 use iced_core::Alignment;
 use iced_widget::{button, checkbox, column, row, text};
 use lumino_extras::i18n::settings_translations;
-use lumino_ui_core::{Element, Message, state::GpuCheckUiState};
+use lumino_ui_core::{
+    Element, Message,
+    state::{GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiState},
+};
 
 use crate::SettingsPanel;
 
@@ -22,8 +25,10 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
     let t = settings_translations(settings.display.language);
     let compat = &settings.compat;
 
-    // 手动检查按钮：检查中禁用并显示"检查中…"
+    // 手动检查按钮：检测中 / 冷却 / 会话锁定期间禁用。
+    // 门控由 Runner 注入（面板只读），面板不再自行判断"是否刚超时"。
     let is_running = matches!(compat.check_state, GpuCheckUiState::Running);
+    let can_check = !is_running && compat.retry_gate == GpuCheckRetryGate::Ready;
     let check_label = if is_running {
         t.compat_checking
     } else {
@@ -31,10 +36,10 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
     };
     let check_button = {
         let btn = button(text(check_label).size(TEXT_SIZE_CONTENT));
-        if is_running {
-            btn
-        } else {
+        if can_check {
             btn.on_press(Message::Settings(crate::Event::RunGpuCompatibilityCheck))
+        } else {
+            btn
         }
     };
 
@@ -54,33 +59,69 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         }
     };
 
-    let result_block: Element<'a> = match &compat.check_state {
-        GpuCheckUiState::Idle => text(t.compat_never_checked)
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_placeholder_text_style())
-            .into(),
-        GpuCheckUiState::Running => text(t.compat_checking)
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_placeholder_text_style())
-            .into(),
+    // 结果区：标题按结论分类选择（超时与驱动错误必须文案可分）；
+    // 门控提示另起一行，保证冷却/锁定期间用户知道"为什么点不了"。
+    let mut result_lines: Vec<Element<'a>> = Vec::new();
+    match &compat.check_state {
+        GpuCheckUiState::Idle => result_lines.push(
+            text(t.compat_never_checked)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style())
+                .into(),
+        ),
+        GpuCheckUiState::Running => result_lines.push(
+            text(t.compat_checking)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style())
+                .into(),
+        ),
         GpuCheckUiState::Done(result) => {
-            let headline = if result.passed {
-                t.compat_passed
-            } else {
-                t.compat_failed
+            let headline = match result.outcome {
+                GpuCheckOutcome::Passed => t.compat_passed,
+                GpuCheckOutcome::TimedOut => t.compat_timeout,
+                _ => t.compat_failed,
             };
-            column![
+            result_lines.push(
                 text(headline)
                     .size(TEXT_SIZE_CONTENT)
-                    .style(create_content_text_style()),
+                    .style(create_content_text_style())
+                    .into(),
+            );
+            // 超时不是"驱动报错"，而是"检测没回来"：必须显式提示挂起风险与重启建议
+            if result.outcome == GpuCheckOutcome::TimedOut {
+                result_lines.push(
+                    text(t.compat_timeout_hint)
+                        .size(12.0)
+                        .style(create_placeholder_text_style())
+                        .into(),
+                );
+            }
+            result_lines.push(
                 text(result.detail.clone())
                     .size(12.0)
-                    .style(create_placeholder_text_style()),
-            ]
-            .spacing(4)
-            .into()
+                    .style(create_placeholder_text_style())
+                    .into(),
+            );
         }
-    };
+    }
+    match compat.retry_gate {
+        GpuCheckRetryGate::Ready => {}
+        GpuCheckRetryGate::Cooling => result_lines.push(
+            text(t.compat_retry_cooling)
+                .size(12.0)
+                .style(create_placeholder_text_style())
+                .into(),
+        ),
+        GpuCheckRetryGate::Locked => result_lines.push(
+            text(t.compat_retry_locked)
+                .size(12.0)
+                .style(create_placeholder_text_style())
+                .into(),
+        ),
+    }
+    let result_block: Element<'a> = iced_widget::Column::with_children(result_lines)
+        .spacing(4)
+        .into();
 
     // Domino（TAKABO SOFT）剪贴板互粘开关
     //

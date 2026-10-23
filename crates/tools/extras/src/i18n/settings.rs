@@ -295,6 +295,14 @@ pub struct SettingsTranslations {
     pub compat_passed: &'static str,
     /// 检测失败
     pub compat_failed: &'static str,
+    /// 检测超时标题（与「检测失败」区分：驱动可能挂起）
+    pub compat_timeout: &'static str,
+    /// 检测超时的挂起风险说明与重启建议
+    pub compat_timeout_hint: &'static str,
+    /// 超时冷却期间的提示
+    pub compat_retry_cooling: &'static str,
+    /// 连续超时后会话锁定的提示
+    pub compat_retry_locked: &'static str,
     /// 复制诊断信息按钮
     pub compat_copy_diagnostics: &'static str,
     /// 已复制提示

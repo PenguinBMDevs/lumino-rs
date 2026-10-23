@@ -111,7 +111,13 @@ fn test_compat_events_update_switches_and_state() {
     panel.update(Event::RunGpuCompatibilityCheck);
     assert_eq!(
         panel.compat.check_state,
-        lumino_ui_core::state::GpuCheckUiState::Running
+        lumino_ui_core::state::GpuCheckUiState::Idle,
+        "面板不得本地置 Running：检测状态由 Runner 单点裁决后回推"
+    );
+    assert_eq!(
+        panel.compat.retry_gate,
+        lumino_ui_core::state::GpuCheckRetryGate::Ready,
+        "默认门控必须为可重试"
     );
 }
 
