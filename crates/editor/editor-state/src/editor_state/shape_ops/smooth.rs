@@ -96,18 +96,19 @@ fn smooth_open(points: &[Pt], tol: f64) -> Vec<Pt> {
     if points.len() <= 2 {
         return points.to_vec();
     }
-    let mut pieces = vec![vec![points[0]]];
+    // 用「当前 piece + 已闭合 piece」两个局部变量代替 last_mut().expect()：
+    // 所有权显式，且生产代码不需要 expect（AGENTS.md 禁令）。
+    let mut pieces: Vec<Vec<Pt>> = Vec::new();
+    let mut current: Vec<Pt> = vec![points[0]];
     for index in 1..points.len() - 1 {
-        let current = pieces.last_mut().expect("至少有一个 piece");
         current.push(points[index]);
         if turn_angle(points[index - 1], points[index], points[index + 1]) > f64::from(CORNER) {
-            pieces.push(vec![points[index]]);
+            pieces.push(std::mem::take(&mut current));
+            current.push(points[index]);
         }
     }
-    pieces
-        .last_mut()
-        .expect("至少有一个 piece")
-        .push(points[points.len() - 1]);
+    current.push(points[points.len() - 1]);
+    pieces.push(current);
     let mut out = Vec::new();
     for piece in pieces {
         let simplified = simplify(&piece, tol);

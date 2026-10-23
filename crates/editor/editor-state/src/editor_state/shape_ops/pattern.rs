@@ -23,10 +23,39 @@ pub const MAX_POINTS: usize = 400_000;
 
 const EPS: f64 = 1e-12;
 
+/// 图案生成报告（DRAW-043：点数截断必须可见，不允许静默丢点）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PatternReport {
+    /// 是否因 [`MAX_POINTS`] 上限被截断
+    pub truncated: bool,
+    /// 实际产出点数
+    pub points: usize,
+}
+
 /// 应用 Pattern：失败/退化时原样返回路径（不 panic）
+///
+/// 点数超 [`MAX_POINTS`] 会被截断并打 `warn` 日志（不静默）；
+/// 需要结构化报告时用 [`formed_path_with_report`]。
 pub fn formed_path(path: &[Pt], params: &PatternParams, ppq: f64) -> Vec<Pt> {
+    let (out, report) = formed_path_with_report(path, params, ppq);
+    if report.truncated {
+        tracing::warn!(
+            points = report.points,
+            max_points = MAX_POINTS,
+            "Formula 图案点数达到上限，已截断（图案将不完整，请减少 loops 或简化公式）"
+        );
+    }
+    out
+}
+
+/// 同 [`formed_path`]，额外返回截断 / 点数报告
+pub fn formed_path_with_report(
+    path: &[Pt],
+    params: &PatternParams,
+    ppq: f64,
+) -> (Vec<Pt>, PatternReport) {
     if path.len() < 2 || !ppq.is_finite() || ppq <= 0.0 {
-        return path.to_vec();
+        return unchanged(path);
     }
     let k = arc_k_or_one(f64::from(params.k));
     let scale = ppq * k;
@@ -36,16 +65,17 @@ pub fn formed_path(path: &[Pt], params: &PatternParams, ppq: f64) -> Vec<Pt> {
         .collect::<Vec<_>>();
     let (lengths, total) = lengths_of(&screen);
     if total <= EPS {
-        return path.to_vec();
+        return unchanged(path);
     }
     let Some((u, v)) = loop_values(params) else {
-        return path.to_vec();
+        return unchanged(path);
     };
     if u.len() < 2 || u.len() != v.len() {
-        return path.to_vec();
+        return unchanged(path);
     }
     let loops = f64::from(params.loops.max(1e-6));
     let loop_count = loops.ceil().max(1.0) as usize;
+    let mut truncated = false;
     let mut entries: Vec<(f64, f64)> = Vec::new();
     for loop_index in 0..loop_count {
         for i in 0..u.len().saturating_sub(1) {
@@ -53,18 +83,20 @@ pub fn formed_path(path: &[Pt], params: &PatternParams, ppq: f64) -> Vec<Pt> {
             if along <= loops + 1e-9 {
                 entries.push((along, v[i]));
                 if entries.len() >= MAX_POINTS {
+                    truncated = true;
                     break;
                 }
             }
         }
         if entries.len() >= MAX_POINTS {
+            truncated = true;
             break;
         }
     }
     let last_side = interpolate_unit(&u, &v, loops.fract());
     entries.push((loops, last_side));
     if entries.len() < 2 {
-        return path.to_vec();
+        return unchanged(path);
     }
     let normals = normals_of(&screen);
     let mut out = Vec::with_capacity(entries.len());
@@ -73,10 +105,29 @@ pub fn formed_path(path: &[Pt], params: &PatternParams, ppq: f64) -> Vec<Pt> {
         let (px, py, nx, ny) = lay(&screen, &lengths, &normals, s);
         out.push(((px + nx * side) * scale, py + ny * side));
         if out.len() >= MAX_POINTS {
+            truncated = true;
             break;
         }
     }
-    if out.is_empty() { path.to_vec() } else { out }
+    if out.is_empty() {
+        return unchanged(path);
+    }
+    let report = PatternReport {
+        truncated,
+        points: out.len(),
+    };
+    (out, report)
+}
+
+/// 原样返回 + 无截断报告
+fn unchanged(path: &[Pt]) -> (Vec<Pt>, PatternReport) {
+    (
+        path.to_vec(),
+        PatternReport {
+            truncated: false,
+            points: path.len(),
+        },
+    )
 }
 
 fn loop_values(params: &PatternParams) -> Option<(Vec<f64>, Vec<f64>)> {

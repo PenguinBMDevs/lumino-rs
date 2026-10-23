@@ -165,10 +165,10 @@ impl Root {
                         let _ = self.editor.enable_shape_edit();
                     }
                     PianoRollContextMenuItem::SymmetryVertical => {
-                        let _ = self.editor.toggle_symmetry(true);
+                        self.editor.toggle_symmetry(true).ok();
                     }
                     PianoRollContextMenuItem::SymmetryHorizontal => {
-                        let _ = self.editor.toggle_symmetry(false);
+                        self.editor.toggle_symmetry(false).ok();
                     }
                     PianoRollContextMenuItem::Straighten => {
                         let _ = self.editor.set_straighten(true);

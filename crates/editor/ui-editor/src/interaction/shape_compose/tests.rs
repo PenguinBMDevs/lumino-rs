@@ -192,7 +192,7 @@ fn test_symmetry_toggle_adds_and_removes_op() {
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)]);
     editor.editor_state.shape_store.edit(model_id, model, 0);
 
-    assert!(editor.toggle_symmetry(true));
+    assert!(editor.toggle_symmetry(true).is_ok());
     assert!(
         editor
             .editor_state
@@ -203,7 +203,7 @@ fn test_symmetry_toggle_adds_and_removes_op() {
             .iter()
             .any(|op| matches!(op, ShapeOp::Symmetry(_)))
     );
-    assert!(editor.toggle_symmetry(true));
+    assert!(editor.toggle_symmetry(true).is_ok());
     assert!(
         !editor
             .editor_state
@@ -213,6 +213,91 @@ fn test_symmetry_toggle_adds_and_removes_op() {
             .ops
             .iter()
             .any(|op| matches!(op, ShapeOp::Symmetry(_)))
+    );
+}
+
+#[test]
+fn test_symmetry_toggle_round_trip_keeps_geometry_and_params() {
+    // DRAW-043：开 → 关 → 开 必须幂等——几何（半边锚点）任何一步都不被改写，
+    // 且两次开启挂上的对称参数完全相同。
+    let mut editor = seeded_editor();
+    let id = add_polyline(
+        &mut editor,
+        vec![(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)],
+        vec![shape_note(0.0, 60)],
+    );
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.ensure_model_for_drawn(id).is_some());
+    let model_id = editor
+        .editor_state
+        .shape_select
+        .model_id_of(id)
+        .expect("模型");
+    let mut seed = editor
+        .editor_state
+        .shape_store
+        .model(model_id)
+        .expect("模型")
+        .clone();
+    seed.kind = ShapeKind::Curve;
+    seed.geometry = ShapeGeometry::from_points([(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)]);
+    editor.editor_state.shape_store.edit(model_id, seed, 0);
+
+    let half = editor
+        .editor_state
+        .shape_store
+        .model(model_id)
+        .expect("模型")
+        .geometry
+        .anchors
+        .clone();
+    let symmetry_op = |editor: &Editor| {
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .ops
+            .iter()
+            .find_map(|op| match op {
+                ShapeOp::Symmetry(params) => Some(*params),
+                _ => None,
+            })
+    };
+
+    assert!(editor.toggle_symmetry(true).is_ok());
+    let first = symmetry_op(&editor).expect("第一次开启应有对称 op");
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .geometry
+            .anchors,
+        half,
+        "开启对称不得改写几何"
+    );
+
+    assert!(editor.toggle_symmetry(true).is_ok());
+    assert!(symmetry_op(&editor).is_none(), "再次切换应关闭对称");
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型")
+            .geometry
+            .anchors,
+        half,
+        "关闭对称后锚点必须逐点还原"
+    );
+
+    assert!(editor.toggle_symmetry(true).is_ok());
+    assert_eq!(
+        symmetry_op(&editor),
+        Some(first),
+        "重新开启应挂上与首次完全相同的对称参数"
     );
 }
 
