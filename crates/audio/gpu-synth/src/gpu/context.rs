@@ -71,6 +71,56 @@ pub fn create_gpu_context_offline() -> Result<GpuContext, SynthError> {
     create_gpu_context_impl(false)
 }
 
+/// 合成器期望的单 binding 上限（2 GiB - 1）：1 GiB 采样块必须整块绑定
+/// （见 [`SAMPLES_CHUNK_BYTES`] 与 `gpu.rs` 中 `SAMPLES_CHUNKS` 的注释）。
+const DESIRED_STORAGE_BINDING_SIZE: u32 = (1 << 31) - 1;
+
+/// 合成器期望的单 buffer 上限（2 GiB - 1），与 binding 上限同口径。
+const DESIRED_BUFFER_SIZE: u64 = (1 << 31) - 1;
+
+/// 合成器期望的每 stage storage buffer 数：
+/// 4 sample chunks + sinc + env + states + voice_out + params。
+const DESIRED_STORAGE_BUFFERS_PER_STAGE: u32 = 16;
+
+/// 把「期望限制」收敛到 adapter 上报能力之内。
+///
+/// `wgpu::Adapter::request_device` 是硬约束：`required_limits` 中任何一项
+/// **超过** adapter 上报值都会让整台设备创建失败
+/// （`RequestDeviceError::LimitsExceeded`），没有降级余地。此前这里硬写
+/// 2 GiB - 1，在只上报 128 MiB `max_storage_buffer_binding_size` 的适配器上
+/// （CI 的 Linux lavapipe、Mesa llvmpipe、部分老集显）会让
+/// `create_gpu_context` 直接失败——Linux CI 因此红了整整一串 run。
+///
+/// 收敛口径 `min(期望值, adapter 上报值)`：能力足够的适配器行为完全不变；
+/// 能力不足时退化为其上限，并由 [`warn_on_capability_shortfall`] 在创建
+/// 上下文时可见地告警，不做静默降级。
+fn required_limits(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
+    wgpu::Limits {
+        max_storage_buffers_per_shader_stage: DESIRED_STORAGE_BUFFERS_PER_STAGE
+            .min(adapter_limits.max_storage_buffers_per_shader_stage),
+        max_storage_buffer_binding_size: DESIRED_STORAGE_BINDING_SIZE
+            .min(adapter_limits.max_storage_buffer_binding_size),
+        max_buffer_size: DESIRED_BUFFER_SIZE.min(adapter_limits.max_buffer_size),
+        ..wgpu::Limits::default()
+    }
+}
+
+/// adapter 撑不起单个 1 GiB 采样块时，必须在创建上下文时就留下可见痕迹：
+/// 否则症状推迟到首次分配采样块才爆（`buffer size ... exceeds limit`），
+/// 现场归因成本高。
+fn warn_on_capability_shortfall(adapter_limits: &wgpu::Limits, adapter_info: &wgpu::AdapterInfo) {
+    let binding_limit = u64::from(adapter_limits.max_storage_buffer_binding_size);
+    if binding_limit < SAMPLES_CHUNK_BYTES {
+        tracing::warn!(
+            adapter = %adapter_info.name,
+            backend = ?adapter_info.backend,
+            binding_limit_bytes = binding_limit,
+            chunk_bytes = SAMPLES_CHUNK_BYTES,
+            "adapter 的 max_storage_buffer_binding_size 小于单个采样块，采样数据无法整块绑定",
+        );
+    }
+}
+
 fn create_gpu_context_impl(forward_lost_hook: bool) -> Result<GpuContext, SynthError> {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
@@ -84,18 +134,14 @@ fn create_gpu_context_impl(forward_lost_hook: bool) -> Result<GpuContext, SynthE
     }))
     .map_err(|e| SynthError::GpuInit(format!("request_adapter failed: {e:?}")))?;
 
+    let adapter_info = adapter.get_info();
+    let adapter_limits = adapter.limits();
+    warn_on_capability_shortfall(&adapter_limits, &adapter_info);
+
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("lumino-gpu-synth"),
         required_features: wgpu::Features::empty(),
-        required_limits: wgpu::Limits {
-            // 4 sample chunks + sinc + env + states + voice_out + params.
-            max_storage_buffers_per_shader_stage: 16,
-            // 1 GiB chunks; Vulkan GPUs report 2 GiB - 1 storage buffer
-            // range and buffer size.
-            max_storage_buffer_binding_size: (1 << 31) - 1,
-            max_buffer_size: (1 << 31) - 1,
-            ..wgpu::Limits::default()
-        },
+        required_limits: required_limits(&adapter_limits),
         memory_hints: wgpu::MemoryHints::default(),
         experimental_features: Default::default(),
         trace: wgpu::Trace::Off,
@@ -124,7 +170,6 @@ fn create_gpu_context_impl(forward_lost_hook: bool) -> Result<GpuContext, SynthE
     #[cfg(feature = "gpu-reconnect-test")]
     crate::gpu::arm_injection_if_requested();
 
-    let adapter_info = adapter.get_info();
     Ok(GpuContext {
         device,
         queue,
@@ -166,5 +211,90 @@ mod tests {
         ctx.device.destroy();
         let _ = ctx.device.poll(wgpu::PollType::Poll);
         assert!(ctx.is_lost(), "destroy 后本地丢失标志应置位");
+    }
+
+    /// CI 回归（`test (ubuntu-latest)` 连续红）：只上报 128 MiB storage binding
+    /// 的适配器（lavapipe / llvmpipe）上，required_limits 必须收敛到 adapter
+    /// 能力内——否则 `request_device` 整体 `LimitsExceeded`，上下文建不出来。
+    #[test]
+    fn test_required_limits_clamped_to_weak_adapter() {
+        let weak = wgpu::Limits {
+            max_storage_buffers_per_shader_stage: 8,
+            max_storage_buffer_binding_size: 128 << 20,
+            max_buffer_size: 256 << 20,
+            ..wgpu::Limits::default()
+        };
+
+        let requested = required_limits(&weak);
+
+        assert_eq!(requested.max_storage_buffers_per_shader_stage, 8);
+        assert_eq!(requested.max_storage_buffer_binding_size, 128 << 20);
+        assert_eq!(requested.max_buffer_size, 256 << 20);
+        // `check_limits` 就是 wgpu `request_device` 判 `LimitsExceeded` 的同一判据：
+        // 断言它为真 = 这个 adapter 上设备一定建得出来（旧代码在此为假）。
+        assert!(
+            requested.check_limits(&weak),
+            "required_limits 必须落在 adapter 能力内（wgpu check_limits 判据）：{requested:?} vs {weak:?}"
+        );
+    }
+
+    /// 能力足够的适配器不得被降级（高配卡仍拿 2 GiB - 1 / 16 buffers）。
+    #[test]
+    fn test_required_limits_keep_desired_on_capable_adapter() {
+        let capable = wgpu::Limits {
+            max_storage_buffers_per_shader_stage: DESIRED_STORAGE_BUFFERS_PER_STAGE,
+            max_storage_buffer_binding_size: u32::MAX,
+            max_buffer_size: u64::MAX,
+            ..wgpu::Limits::default()
+        };
+
+        let requested = required_limits(&capable);
+
+        assert_eq!(
+            requested.max_storage_buffers_per_shader_stage,
+            DESIRED_STORAGE_BUFFERS_PER_STAGE
+        );
+        assert_eq!(
+            requested.max_storage_buffer_binding_size,
+            DESIRED_STORAGE_BINDING_SIZE
+        );
+        assert_eq!(requested.max_buffer_size, DESIRED_BUFFER_SIZE);
+        assert!(
+            requested.check_limits(&capable),
+            "高配 adapter 上不得因收敛而越界：{requested:?} vs {capable:?}"
+        );
+    }
+
+    /// 不变量：任意 adapter 能力下，required_limits 都不得超过 adapter 上报值。
+    #[test]
+    fn test_required_limits_never_exceed_adapter() {
+        let cases = [
+            (4_u32, 64_u32 << 20, 128_u64 << 20),
+            (8, 128 << 20, 256 << 20),
+            (16, 2_u32 << 30, 4_u64 << 30),
+            (32, u32::MAX, u64::MAX),
+        ];
+
+        for (buffers, binding, buffer) in cases {
+            let adapter = wgpu::Limits {
+                max_storage_buffers_per_shader_stage: buffers,
+                max_storage_buffer_binding_size: binding,
+                max_buffer_size: buffer,
+                ..wgpu::Limits::default()
+            };
+
+            let requested = required_limits(&adapter);
+
+            assert!(
+                requested.check_limits(&adapter),
+                "任意 adapter 能力下 required_limits 都不得越界：{requested:?} vs {adapter:?}"
+            );
+            // 反向保护：不得因为「收敛」把所需能力整体压到最小（那会静默降配）。
+            assert!(
+                requested.max_buffer_size >= 64 << 20
+                    && requested.max_storage_buffer_binding_size >= 64 << 20,
+                "收敛后仍须保留可用容量：{requested:?}"
+            );
+        }
     }
 }

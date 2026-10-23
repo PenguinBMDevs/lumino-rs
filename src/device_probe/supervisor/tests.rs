@@ -10,10 +10,11 @@ fn immediate_exit_command() -> Command {
         cmd.args(["/C", "exit", "0"]);
         cmd
     }
+    // 非 Windows：`true` 无参数，直接返回即可（避免 unused_mut / let_and_return，
+    // 二者在 `-D warnings` 下会直接让 Linux/macOS 的 clippy 门禁变红）。
     #[cfg(not(windows))]
     {
-        let mut cmd = Command::new("true");
-        cmd
+        Command::new("true")
     }
 }
 
