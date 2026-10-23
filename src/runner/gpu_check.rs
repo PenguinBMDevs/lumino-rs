@@ -23,6 +23,7 @@ pub(crate) fn outcome_of(report: &GpuCheckReport) -> GpuCheckOutcome {
         Some(GpuCheckFailure::DeviceRequest(_)) => GpuCheckOutcome::DeviceRequestFailed,
         Some(GpuCheckFailure::RenderError(_)) => GpuCheckOutcome::RenderFailed,
         Some(GpuCheckFailure::Timeout) => GpuCheckOutcome::TimedOut,
+        Some(GpuCheckFailure::Aborted(_)) => GpuCheckOutcome::ProbeFailed,
         None if report.passed => GpuCheckOutcome::Passed,
         None => GpuCheckOutcome::Unknown,
     }
@@ -32,8 +33,8 @@ pub(crate) fn outcome_of(report: &GpuCheckReport) -> GpuCheckOutcome {
 mod tests {
     use super::*;
 
-    /// 四类失败必须映射到四个**互不相同**的 UI 结论——
-    /// 这是「超时与驱动错误在 UI 上可区分」的契约底线。
+    /// 五类失败必须映射到五个**互不相同**的 UI 结论——
+    /// 这是「超时 / 驱动错误 / 检测环境异常在 UI 上可区分」的契约底线。
     #[test]
     fn test_every_failure_kind_maps_to_distinct_outcome() {
         let cases = [
@@ -47,6 +48,10 @@ mod tests {
                 GpuCheckOutcome::RenderFailed,
             ),
             (GpuCheckFailure::Timeout, GpuCheckOutcome::TimedOut),
+            (
+                GpuCheckFailure::Aborted("child crashed".into()),
+                GpuCheckOutcome::ProbeFailed,
+            ),
         ];
 
         let mut seen = std::collections::BTreeSet::new();
@@ -57,7 +62,7 @@ mod tests {
             assert!(!outcome.is_passed(), "失败报告不得被判定为通过");
             seen.insert(format!("{outcome:?}"));
         }
-        assert_eq!(seen.len(), 4, "四类失败必须在 UI 侧保持可区分");
+        assert_eq!(seen.len(), 5, "五类失败必须在 UI 侧保持可区分");
     }
 
     /// 通过路径：无失败原因 + passed=true
@@ -117,6 +122,7 @@ mod tests {
             GpuCheckOutcome::DeviceRequestFailed,
             GpuCheckOutcome::RenderFailed,
             GpuCheckOutcome::TimedOut,
+            GpuCheckOutcome::ProbeFailed,
             GpuCheckOutcome::Unknown,
         ] {
             assert!(!outcome.is_passed(), "{outcome:?} 不应被判定为通过");

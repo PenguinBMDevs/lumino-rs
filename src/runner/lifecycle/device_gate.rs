@@ -108,7 +108,7 @@ impl Runner {
             tracing::info!(
                 "GPU 适配器指纹缓存未命中，执行全量兼容性检测（回退后端诊断收集策略: {fallback:?}）"
             );
-            device_check::run_check_with_timeout(device_check::DEFAULT_TIMEOUT, fallback)
+            crate::device_probe::run_check_with_timeout(device_check::DEFAULT_TIMEOUT, fallback)
         };
 
         let fingerprint = report.fingerprint.clone();
@@ -303,6 +303,10 @@ fn failure_detail(report: &GpuCheckReport) -> String {
         ),
         Some(GpuCheckFailure::Timeout) => trf!(
             "{backend} 检测超时（驱动可能挂起）；本次已跳过，若界面持续卡顿请重启应用。",
+            backend = backend
+        ),
+        Some(GpuCheckFailure::Aborted(_)) => trf!(
+            "{backend} 检测进程异常（无法启动或意外退出），请稍后在设置中重试。",
             backend = backend
         ),
         None => trf!("{backend} 兼容性检测未通过。", backend = backend),

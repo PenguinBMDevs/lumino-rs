@@ -27,6 +27,8 @@ pub enum GpuCheckOutcome {
     RenderFailed,
     /// 检测未在时限内完成（驱动可能挂起）
     TimedOut,
+    /// 检测执行环境异常（探针进程无法启动 / 崩溃 / 输出不可解析）
+    ProbeFailed,
     /// 报告自相矛盾：既未通过又没有失败原因（正常路径不应出现）
     Unknown,
 }

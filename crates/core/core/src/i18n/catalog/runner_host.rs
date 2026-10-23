@@ -98,9 +98,26 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "{backend} check timed out (the driver may be hung); this check was skipped. Restart the app if the UI keeps stuttering.",
             )
         }
+        "{backend} 检测进程异常（无法启动或意外退出），请稍后在设置中重试。" => {
+            Some(
+                "The {backend} check process failed (could not start or exited unexpectedly). Try again later in Settings.",
+            )
+        }
         "{backend} 兼容性检测未通过。" => Some("{backend} compatibility check failed."),
         "{base}（检测到其他可用后端：{others}，可能仍可运行）" => {
             Some("{base} (other usable backends detected: {others}, the app may still run)")
+        }
+        // ── GPU 检测探针子进程（`src/device_probe/**`） ──
+        "无法定位程序自身路径: {e}" => Some("Could not resolve the executable path: {e}"),
+        "检测进程启动失败: {e}" => Some("Failed to start the check process: {e}"),
+        "检测进程未回传有效结果: {e}" => {
+            Some("The check process did not return a valid result: {e}")
+        }
+        "（退出状态 {status}）" => Some(" (exit status {status})"),
+        "读取结果文件失败: {e}" => Some("Failed to read the result file: {e}"),
+        "结果 JSON 解析失败: {e}" => Some("Failed to parse the result JSON: {e}"),
+        "协议版本不匹配（子进程 {got}，当前 {want}）" => {
+            Some("Protocol version mismatch (child {got}, current {want})")
         }
         // ── MIDI 后端回显（lifecycle/midi、midi_manager） ──
         "MIDI 播放输出创建失败，播放将无声：请检查输出设备（设置 → MIDI）后重试" => {

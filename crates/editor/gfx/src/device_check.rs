@@ -10,18 +10,19 @@
 //!
 //! 子模块：
 //! - `report`：报告类型与平台后端策略
-//! - `check`：检测入口、超时封装与适配器枚举
+//! - `check`：检测入口与适配器枚举
+//! - `timeout`：线程模型的超时包装与廉价探测（Windows 的完整检测改由宿主
+//!   `device_probe` 子进程隔离，见 `src/device_probe/`）
 //! - `render`：离屏试画与回读校验
 
 mod check;
 mod render;
 mod report;
+mod timeout;
 
-pub use check::{
-    FallbackDiagnostics, check_gpu_support, debug_force_fail_requested,
-    probe_adapter_fingerprints_with_timeout, run_check_with_timeout,
-};
+pub use check::{FallbackDiagnostics, check_gpu_support, debug_force_fail_requested};
 pub use report::{GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, required_backend_name};
+pub use timeout::{probe_adapter_fingerprints_with_timeout, run_check_with_timeout};
 
 /// GPU 检测默认超时（独立线程 + `recv_timeout`，保证不阻塞启动）
 pub const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);

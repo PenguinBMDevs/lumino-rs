@@ -61,7 +61,7 @@ impl RunnerInner {
     fn spawn_gpu_compatibility_check() {
         tracing::info!("兼容性页请求手动 GPU 兼容性检查");
         tokio::task::spawn_blocking(|| {
-            let report = lumino_gfx::device_check::run_check_with_timeout(
+            let report = crate::device_probe::run_check_with_timeout(
                 lumino_gfx::device_check::DEFAULT_TIMEOUT,
                 lumino_gfx::device_check::FallbackDiagnostics::Always,
             );
