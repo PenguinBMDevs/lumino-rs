@@ -39,7 +39,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
+          # mesa-vulkan-drivers = lavapipe（Vulkan 软件实现，含 ICD 清单）。
+          # 本项目目标后端就是 Vulkan（macOS 为 Metal，见 device_check::required_backend_name），
+          # 只装 libvulkan-dev（头文件 + loader）而没有 ICD 时 runner 上枚举不到 Vulkan
+          # 适配器，wgpu 会静默退到 GLES；而 wgpu-hal 的 GLES adapter context 是
+          # try_lock + panic（"Could not lock adapter context"），并行测试必然假死失败。
           sudo apt-get install -y \
+            mesa-vulkan-drivers \
             libssl-dev \
             libasound2-dev \
             libvulkan-dev \
@@ -91,7 +97,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
+          # mesa-vulkan-drivers = lavapipe（Vulkan 软件实现，含 ICD 清单）。
+          # 本项目目标后端就是 Vulkan（macOS 为 Metal，见 device_check::required_backend_name），
+          # 只装 libvulkan-dev（头文件 + loader）而没有 ICD 时 runner 上枚举不到 Vulkan
+          # 适配器，wgpu 会静默退到 GLES；而 wgpu-hal 的 GLES adapter context 是
+          # try_lock + panic（"Could not lock adapter context"），并行测试必然假死失败。
           sudo apt-get install -y \
+            mesa-vulkan-drivers \
             libssl-dev \
             libasound2-dev \
             libvulkan-dev \
@@ -101,6 +113,14 @@ jobs:
             libfreetype6-dev \
             libxkbcommon-dev \
             libegl1-mesa-dev
+
+      # 只打印枚举结果，不参与判定：下次若再出现「无适配器 / 回退 GLES」，
+      # 日志里直接能看到后端与驱动，不必再靠 wgpu-hal 的 panic 栈反推。
+      - name: Vulkan ICD diagnostic (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get install -y vulkan-tools
+          vulkaninfo --summary 2>&1 | head -40 || true
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
