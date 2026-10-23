@@ -1,7 +1,7 @@
 //! 重置方法 —— `reset()` 释放所有内存回初始状态
 
 use super::EditorData;
-use lumino_note_core::midi_types::{CcData, TempoPoint};
+use lumino_note_core::midi_types::TempoPoint;
 
 impl EditorData {
     /// 重置编辑器数据到初始状态（释放所有内存）
@@ -13,7 +13,6 @@ impl EditorData {
         self.history.clear();
         self.pending_commit = None;
         self.document = None;
-        self.cc_data = CcData::default();
         self.automation_lanes.clear();
         self.set_tempo_points(vec![TempoPoint {
             tick: 0.0,

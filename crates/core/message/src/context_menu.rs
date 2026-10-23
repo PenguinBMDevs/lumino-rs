@@ -52,13 +52,55 @@ pub enum PianoRollContextMenuItem {
     BatchEdit,
     /// 删除选中的绘制图形（图形目标专用）
     DeleteDrawnShape,
+    /// 折叠为 Live shape（DRAW-019）
+    LiveShape,
+    /// 还原 Live shape（DRAW-019）
+    SplitLiveShape,
+    /// 连接选中的图形（DRAW-021）
+    JoinShapes,
+    /// 还原 Join（DRAW-021）
+    SplitJoinedShape,
+    /// 门控合并两个图形（DRAW-022）
+    MergeShapes,
+    /// 进入自定义编辑（DRAW-020）
+    EditShape,
+    /// 竖轴对称（DRAW-023）
+    SymmetryVertical,
+    /// 横轴对称（DRAW-023）
+    SymmetryHorizontal,
+    /// 手绘扶正 50%（DRAW-024）
+    Straighten,
+    /// 取消扶正（DRAW-024）
+    StraightenOff,
+    /// 竖切（DRAW-025）
+    SliceVertical,
+    /// 创建补间（DRAW-026）
+    BetweenCreate,
+    /// 沿路径复制（DRAW-027）
+    CopyAlong,
+    /// 力度渐强（DRAW-028）
+    VelocityUp,
 }
 
 impl PianoRollContextMenuItem {
     /// 该条目所属的目标（用于按目标过滤菜单条目）
     pub fn target(self) -> ContextMenuTarget {
         match self {
-            Self::DeleteDrawnShape => ContextMenuTarget::DrawnShape,
+            Self::DeleteDrawnShape
+            | Self::LiveShape
+            | Self::SplitLiveShape
+            | Self::JoinShapes
+            | Self::SplitJoinedShape
+            | Self::MergeShapes
+            | Self::EditShape
+            | Self::SymmetryVertical
+            | Self::SymmetryHorizontal
+            | Self::Straighten
+            | Self::StraightenOff
+            | Self::SliceVertical
+            | Self::BetweenCreate
+            | Self::CopyAlong
+            | Self::VelocityUp => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
     }

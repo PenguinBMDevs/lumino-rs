@@ -299,7 +299,9 @@ i2m-rs = { workspace = true }
 # logcat：android_logger 接管 log 门面（tracing 事件经 fmt 层写入 log）。
 android_logger = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { workspace = true }
+# jobapi2/winnt/handleapi：GPU 检测探针的 Job Object（父进程崩溃连带杀子进程，
+# 见 `src/device_probe/supervisor/job.rs`）。
+winapi = { workspace = true, features = ["jobapi2", "winnt", "handleapi"] }
 raw-window-handle = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

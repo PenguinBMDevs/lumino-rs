@@ -18,6 +18,24 @@ impl History {
     /// 返回 `true` 表示合并到上一条，`false` 表示新增/分割。
     /// 每 op 仅 20 字节，与音符总量解耦——1600W 音符工程的铅笔绘制
     /// 不再克隆整轨快照（对比：快照合并时 `..top.clone()` 复制全快照）。
+    /// 推入一个**独立**音符创建分组（不参与 300ms 合并窗口）。
+    ///
+    /// 用于 DRAW-041 Bake：一次 ✓ 必须恰好对应一个历史 group，否则连续快速确认
+    /// 会把两次 Bake 合并，undo 一次会同时删掉两组音符、只能恢复最后一组的矢量。
+    /// 返回新分组 ID。
+    pub fn push_note_create_new_group(&mut self, ops: Vec<CreateOp>) -> u64 {
+        let group_id = self.alloc_group_id();
+        let entry = CreateEntry {
+            ops,
+            group_id: Some(group_id),
+            parent_group_id: None,
+            timestamp: Instant::now(),
+            entry_count: 1,
+        };
+        self.push_internal(HistoryEntry::Create(entry));
+        group_id
+    }
+
     pub fn push_note_create(&mut self, ops: Vec<CreateOp>) -> bool {
         let now = Instant::now();
 

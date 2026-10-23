@@ -60,6 +60,7 @@ const MARQUEE_MIN_PX: f32 = 4.0;
 pub(crate) const SHAPE_BOX_PADDING_PX: f32 = 3.0;
 
 /// 单条画刷笔画的登记三元组：(落笔基准轨, 折线点列, 该笔画生成的音符)
+#[allow(dead_code)] // 供“显式保留形状”模式/测试复用；Bake 默认不再登记
 type StrokeRecord = (usize, Vec<(f32, f32)>, Vec<ShapeNote>);
 
 /// 逻辑 AABB 相交（含接触）；参数布局统一为 `(min_tick, max_tick, min_key, max_key)`
@@ -122,6 +123,7 @@ impl Editor {
     /// 登记形状工具的待确认图形（√ 确认后调用，须在 `clear_pending` 之前）
     ///
     /// `per_shape_notes[i]` 与 `shape_tool.shapes[i]` 一一对应（由 confirm 侧同源产出）。
+    #[allow(dead_code)] // 保留给未来“显式保留形状”模式；当前 Bake 不再登记
     pub(crate) fn record_shape_tool_shapes(&mut self, per_shape_notes: Vec<Vec<ShapeNote>>) {
         let track = self.editor_state.data.current_track;
         let sources: Vec<DrawnShapeSource> = self
@@ -145,6 +147,7 @@ impl Editor {
     /// 登记曲线工具的待确认路径（√ 确认后调用，须在 `reset` 之前）
     ///
     /// 每条完整路径（≥ 2 锚点）展开为一条折线；`per_path_notes[i]` 与 `paths[i]` 对应。
+    #[allow(dead_code)] // 保留给未来“显式保留形状”模式；当前 Bake 不再登记
     pub(crate) fn record_line_tool_paths(&mut self, per_path_notes: Vec<Vec<ShapeNote>>) {
         let track = self.editor_state.data.current_track;
         let polylines: Vec<Vec<(f32, f32)>> = self
@@ -168,6 +171,7 @@ impl Editor {
     ///
     /// `per_stroke_notes[i]` 与 `brush_tool.strokes[i]` 对应；图形以**落笔基准轨**
     /// （`BrushStroke::base_track`）登记，保证「在哪个轨画的就在哪个轨选中」。
+    #[allow(dead_code)] // 保留给未来“显式保留形状”模式；当前 Bake 不再登记
     pub(crate) fn record_brush_strokes(&mut self, per_stroke_notes: Vec<Vec<ShapeNote>>) {
         let fallback = self.editor_state.data.current_track;
         let data: Vec<StrokeRecord> = self
@@ -585,6 +589,10 @@ impl Editor {
         // 手势边界自愈：命中判定与选框都建立在镜像几何之上，动手前先保证它是最新的
         // （任何未预料到的待确认几何改动都不会再退化成「框不中」）。
         self.refresh_pending_mirror_geometry();
+        if self.begin_shape_edit(tick, key) {
+            self.grid_cache.clear();
+            return;
+        }
         match self.hit_test_drawn_shape(tick, key) {
             Some(id) => {
                 if additive {
@@ -618,6 +626,10 @@ impl Editor {
 
     /// 鼠标工具：拖动中 —— 更新预览偏移（拖动整组）或拉框矩形（框选），均不改文档
     pub(crate) fn handle_shape_select_moved(&mut self, tick: f32, key: f32) {
+        if self.is_shape_editing() {
+            self.update_shape_edit(tick, key);
+            return;
+        }
         if self.editor_state.shape_select.is_dragging() {
             let snap = self.editor_state.view.snap_precision;
             self.editor_state.shape_select.update_drag(tick, key, snap);
@@ -634,6 +646,12 @@ impl Editor {
 
     /// 鼠标工具：左键释放 —— 有实际位移则提交**整组移动**，否则落在框选上
     pub(crate) fn handle_shape_select_released(&mut self) {
+        if self.is_shape_editing() {
+            self.finish_shape_edit();
+            self.pending_drag_applied = (0.0, 0.0);
+            self.grid_cache.clear();
+            return;
+        }
         if let Some((dtick, dkey)) = self.editor_state.shape_select.end_drag() {
             self.move_selected_shapes(dtick, dkey);
         } else if let Some(area) = self.editor_state.shape_select.end_marquee() {
@@ -984,6 +1002,33 @@ mod tests {
         editor
     }
 
+    /// 为 DrawnShape 自身的行为测试登记一个“已确认图形”。
+    ///
+    /// Bake 后真实确认链路不再登记矢量对象；这些用例只测试选择/拖动/删除/历史同步，
+    /// 因此直接构造等价的注册表条目，避免把“Bake 不登记”与“注册表行为”混在一起。
+    fn register_test_drawn_shape(editor: &mut Editor, source: DrawnShapeSource) {
+        let track = editor.editor_state.data.current_track;
+        let notes: Vec<ShapeNote> = editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .map(|n| ShapeNote {
+                track,
+                tick: n.start_tick as f32,
+                key: n.key as u16,
+                length: (n.end_tick - n.start_tick) as f32,
+                velocity: n.velocity,
+                channel: n.channel,
+            })
+            .collect();
+        let group = editor.last_create_group();
+        editor
+            .editor_state
+            .shape_select
+            .add(track, group, source, notes);
+    }
+
     /// 拉出并确认一个 0..4 × 60..64 的矩形描边（snap = 1），返回编辑器
     ///
     /// 描边音符数见 [`RECT_OUTLINE_NOTES`]（不再是「每格一条」的 16 条）。
@@ -995,6 +1040,16 @@ mod tests {
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         assert!(editor.confirm_shape_tool(), "矩形应生成音符");
+        register_test_drawn_shape(
+            &mut editor,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (0.0, 60.0, 4.0, 64.0),
+                shift_constrained: false,
+                filled: false,
+                apex_high: false,
+            },
+        );
         editor
     }
 
@@ -1021,66 +1076,83 @@ mod tests {
     // ── 登记 ─────────────────────────────────────────────
 
     #[test]
-    fn test_confirm_shape_registers_drawn_shape_with_notes() {
-        let editor = draw_and_confirm_rect();
-        let st = &editor.editor_state.shape_select;
-        assert_eq!(st.len(), 1, "确认后应登记 1 个图形对象");
-        let shape = &st.shapes()[0];
-        assert_eq!(shape.track, 1, "登记在当前音轨");
-        assert!(shape.group.is_some(), "应绑定音符创建历史分组");
-        assert!(shape.notes.iter().all(|n| n.track == 1));
-        // 登记的音符必须与文档里的音符**逐条同源**（描边走几何解析后长度不再恒为 snap，
-        // 只断言数量会漏掉「登记与写入分叉」这类回归）
-        let mut registered: Vec<(f32, u16, f32)> = shape
-            .notes
-            .iter()
-            .map(|n| (n.tick, n.key, n.length))
-            .collect();
-        let mut written: Vec<(f32, u16, f32)> = editor
-            .editor_state
-            .data
-            .current_track_notes()
-            .iter()
-            .map(|n| {
-                (
-                    n.start_tick as f32,
-                    n.key as u16,
-                    (n.end_tick - n.start_tick) as f32,
-                )
-            })
-            .collect();
-        let key_of = |n: &(f32, u16, f32)| (n.0.round() as i64, n.1, (n.2 * 1000.0).round() as i64);
-        registered.sort_unstable_by_key(key_of);
-        written.sort_unstable_by_key(key_of);
-        assert_eq!(registered, written, "登记音符应与文档音符逐条一致");
+    fn test_confirm_shape_bakes_notes_without_shape() {
+        let mut editor = test_editor();
+        draw_pending_rect(&mut editor);
+        assert!(editor.confirm_shape_tool(), "矩形应生成音符");
         assert_eq!(
-            registered.len(),
+            editor.editor_state.shape_select.len(),
+            0,
+            "Bake 后不应登记可交互图形"
+        );
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
             RECT_OUTLINE_NOTES,
             "矩形描边 = 上下边各 1 条 + 右竖直边 5 条 + 左竖直边 3 条"
         );
-        match &shape.source {
-            DrawnShapeSource::Shape {
-                kind,
-                rect,
-                shift_constrained,
-                filled,
-                apex_high,
-            } => {
-                assert_eq!(*kind, ShapeKind::Rectangle);
-                assert_eq!(*rect, (0.0, 60.0, 4.0, 64.0));
-                assert!(!shift_constrained && !filled);
-                assert!(
-                    !*apex_high,
-                    "起点 key 60 → 当前 key 64 = 向上拉 ⇒ 朝向 false；\
-                     矩形几何忽略该字段，但登记值必须原样透传（鼠标工具高亮/命中共用）"
-                );
-            }
-            other => panic!("期望 Shape 几何，实际 {other:?}"),
-        }
+
+        assert!(editor.undo(), "Bake 应可撤销");
+        assert!(
+            editor.editor_state.shape_tool.has_pending(),
+            "undo 应恢复待确认形状"
+        );
+        assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+
+        assert!(editor.redo(), "Bake 应可重做");
+        assert!(
+            !editor.editor_state.shape_tool.has_pending(),
+            "redo 应再次丢弃形状"
+        );
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            RECT_OUTLINE_NOTES
+        );
     }
 
     #[test]
-    fn test_confirm_curve_registers_polyline_with_notes() {
+    fn test_two_bakes_are_separate_history_groups() {
+        let mut editor = test_editor();
+        editor.set_tool(Tool::Curve);
+        let first = vec![vec![
+            BezierAnchor::new((0.0, 60.0)),
+            BezierAnchor::new((240.0, 64.0)),
+        ]];
+        editor.editor_state.line_tool.paths = first;
+        editor.editor_state.line_tool.recompute_auto_handles();
+        assert!(editor.confirm_line_tool());
+        let first_notes = editor.editor_state.data.current_track_note_count();
+        assert!(first_notes > 0);
+
+        // 第二次确认发生在合并窗口内，仍必须形成独立 group
+        editor.editor_state.line_tool.paths = vec![vec![
+            BezierAnchor::new((480.0, 60.0)),
+            BezierAnchor::new((720.0, 64.0)),
+        ]];
+        editor.editor_state.line_tool.recompute_auto_handles();
+        assert!(editor.confirm_line_tool());
+        let both_notes = editor.editor_state.data.current_track_note_count();
+        assert!(both_notes > first_notes);
+
+        assert!(editor.undo(), "应只撤销第二次 Bake");
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            first_notes,
+            "一次 undo 不得删掉两次 Bake 的全部音符"
+        );
+        assert_eq!(
+            editor.editor_state.line_tool.paths.len(),
+            1,
+            "只应恢复第二次 Bake 的待确认曲线"
+        );
+        assert_eq!(
+            editor.editor_state.shape_select.len(),
+            0,
+            "Bake 后始终没有可交互曲线对象"
+        );
+    }
+
+    #[test]
+    fn test_confirm_curve_bakes_notes_without_shape() {
         let mut editor = test_editor();
         editor.editor_state.line_tool.paths = vec![vec![
             BezierAnchor::new((0.0, 60.0)),
@@ -1088,19 +1160,36 @@ mod tests {
         ]];
         editor.editor_state.line_tool.recompute_auto_handles();
         assert!(editor.confirm_line_tool(), "曲线应生成音符");
-        let st = &editor.editor_state.shape_select;
-        assert_eq!(st.len(), 1, "一条路径 = 一个图形对象");
-        match &st.shapes()[0].source {
-            DrawnShapeSource::Polyline { points } => {
-                assert!(
-                    points.len() >= 2,
-                    "展平折线至少 2 点，实际 {}",
-                    points.len()
-                );
-            }
-            other => panic!("期望 Polyline 几何，实际 {other:?}"),
-        }
-        assert!(!st.shapes()[0].notes.is_empty(), "路径音符应被登记");
+        assert_eq!(
+            editor.editor_state.shape_select.len(),
+            0,
+            "Bake 后不应保留曲线对象"
+        );
+        assert!(
+            !editor.editor_state.data.current_track_notes().is_empty(),
+            "Bake 后应留下普通音符"
+        );
+
+        assert!(editor.undo(), "Bake 应可撤销");
+        assert_eq!(
+            editor.editor_state.line_tool.paths.len(),
+            1,
+            "undo 应恢复待确认曲线"
+        );
+        assert!(
+            editor.editor_state.data.current_track_notes().is_empty(),
+            "undo 应删除 Bake 生成的音符"
+        );
+
+        assert!(editor.redo(), "Bake 应可重做");
+        assert!(
+            editor.editor_state.line_tool.paths.is_empty(),
+            "redo 应再次丢弃曲线"
+        );
+        assert!(
+            !editor.editor_state.data.current_track_notes().is_empty(),
+            "redo 应重新生成音符"
+        );
     }
 
     #[test]
@@ -1115,6 +1204,8 @@ mod tests {
             tick: 0.0,
             key: 60,
             length: 1.0,
+            velocity: 100,
+            channel: 0,
         }]];
         editor.record_brush_strokes(notes);
         let st = &editor.editor_state.shape_select;
@@ -1155,6 +1246,16 @@ mod tests {
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         assert!(editor.confirm_shape_tool());
+        register_test_drawn_shape(
+            &mut editor,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Circle,
+                rect: (0.0, 60.0, 4.0, 64.0),
+                shift_constrained: false,
+                filled: false,
+                apex_high: false,
+            },
+        );
         editor.set_tool(Tool::ShapeSelect);
         // 命中测试口径：椭圆内部，而非外接矩形
         assert_eq!(
@@ -1316,19 +1417,31 @@ mod tests {
     }
 
     #[test]
-    fn test_hidden_shape_cannot_be_hit() {
+    fn test_undo_bake_restores_pending_shape_hit() {
         let mut editor = draw_and_confirm_rect();
         editor.set_tool(Tool::ShapeSelect);
         editor.handle_shape_select_pressed(2.0, 62.0, false);
-        // 原地松手（未移动）：仅选中，不产生移动历史
+        // ??????????????????????
         editor.handle_shape_select_released();
         assert!(editor.editor_state.shape_select.selection_len() > 0);
         assert!(editor.undo());
-        assert_eq!(editor.hit_test_drawn_shape(2.0, 62.0), None);
-        assert_eq!(editor.editor_state.shape_select.selection_len(), 0);
+        assert!(
+            editor.editor_state.shape_tool.has_pending(),
+            "undo Bake ????????"
+        );
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            0,
+            "undo ??? Bake ?????"
+        );
+        assert!(
+            editor.hit_test_drawn_shape(2.0, 62.0).is_some(),
+            "???????????????"
+        );
     }
 
     #[test]
+
     fn test_reset_clears_registry() {
         let mut editor = draw_and_confirm_rect();
         assert!(!editor.editor_state.shape_select.is_empty());
@@ -1417,7 +1530,11 @@ mod tests {
             editor.editor_state.data.current_track_note_count(),
             RECT_OUTLINE_NOTES
         );
-        assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 1);
+        assert_eq!(
+            editor.editor_state.shape_select.visible_on(1).count(),
+            0,
+            "确认后 Bake，不应保留可交互图形"
+        );
     }
 
     #[test]
@@ -1684,18 +1801,24 @@ mod tests {
                 tick: 0.0,
                 key: 60,
                 length: 1.0,
+                velocity: 100,
+                channel: 0,
             },
             ShapeNote {
                 track: 1,
                 tick: 500.0,
                 key: 60,
                 length: 1.0,
+                velocity: 100,
+                channel: 0,
             },
             ShapeNote {
                 track: 1,
                 tick: 500.0,
                 key: 80,
                 length: 1.0,
+                velocity: 100,
+                channel: 0,
             },
         ];
         let id = editor.editor_state.shape_select.add(
@@ -1932,12 +2055,16 @@ mod tests {
                     tick: 0.0,
                     key,
                     length: 1.0,
+                    velocity: 100,
+                    channel: 0,
                 },
                 ShapeNote {
                     track: 1,
                     tick: 100.0,
                     key,
                     length: 1.0,
+                    velocity: 100,
+                    channel: 0,
                 },
             ]
         };

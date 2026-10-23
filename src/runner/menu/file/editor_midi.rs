@@ -19,25 +19,11 @@ type ProgramChangeMap = HashMap<u16, Vec<lumino_export::midi::MidiProgramChangeE
 /// 控制变更事件按轨分组
 type ControlChangeMap = HashMap<u16, Vec<lumino_export::midi::MidiControlChangeEvent>>;
 
-/// 从当前加载的文档或编辑器构建一个临时 `MidiDocument`
-///
-/// 优先使用 UI 中已加载的 `MidiDocument`（单一权威源，零拷贝借用）；
-/// 若已释放，则尝试从编辑器音符重建。
-/// 返回 `None` 表示既没有已加载文档也没有编辑器内容。
-pub(super) fn build_editor_midi_document(runner: &RunnerInner) -> Option<MidiDocument> {
-    // 2026-08 单一权威源改造：不再从 runner.midi_state 深拷贝 document，
-    // 优先借用 UI 的 EditorData.document；调用方需要所有权时（如 LMPJ 保存）
-    // 由 save.rs 直接借用，本函数仅作为「无文档时从编辑器重建」的回退路径。
-    let export_data = build_midi_export_data_from_editor(runner, true)?;
-    let midi_bytes = export_midi_to_bytes(&export_data)?;
-    match MidiDocument::from_notes_bytes(&midi_bytes, None) {
-        Ok((doc, _, _)) => Some(doc),
-        Err(e) => {
-            tracing::error!("从编辑器 MIDI 字节构建 MidiDocument 失败: {}", e);
-            None
-        }
-    }
-}
+// 2026-10-20（审计 §十二）：删除 `build_editor_midi_document`。
+// 它是「无文档时从编辑器重建第二份 `MidiDocument`」的入口（编辑器音符 → SMF 字节
+// → `from_notes_bytes` 重新解析），但它的第一步 `get_editor_notes()` 读的就是
+// `EditorData.document`——无文档时必然为空 → 恒返回 `None`，属死路径。
+// 唯一调用方 `save.rs` 已改为直接返回 `None`。
 
 /// 编辑器音符表示
 pub(super) type EditorNotes = Vec<(usize, Vec<(f32, u8, f32, u8, u8)>)>;
@@ -233,17 +219,6 @@ fn tempo_events_from_points(points: &[TempoPoint]) -> Vec<MidiTempoEvent> {
         .zip(tempos)
         .map(|(tick, tempo)| MidiTempoEvent { tick, tempo })
         .collect()
-}
-
-/// 将 `MidiExportData` 导出为 MIDI 字节
-fn export_midi_to_bytes(export_data: &MidiExportData) -> Option<Vec<u8>> {
-    match lumino_export::midi::export_midi_to_bytes(export_data) {
-        Ok(bytes) => Some(bytes),
-        Err(e) => {
-            tracing::error!("导出 MIDI 字节失败: {}", e);
-            None
-        }
-    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 //!
 //! 方法实现已拆分为同级子模块：
 //! - `automation`：自动化 lane 管理、编辑与导出
+//! - `automation_sync`：lane → `document.control_events` 单一权威同步
 //! - `notes`：音符 CRUD、分割、合并、选择框
 //! - `history`：Undo/Redo 历史记录
 
@@ -11,12 +12,13 @@ use std::sync::Arc;
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::automation::AutomationLane;
 use lumino_note_core::history::History;
-use lumino_note_core::midi_types::{CcData, TempoPoint};
+use lumino_note_core::midi_types::TempoPoint;
 use lumino_note_core::note::Note;
 
 pub(crate) mod accessors;
 pub(crate) mod async_commit;
 mod automation;
+mod automation_sync;
 mod construct;
 mod history;
 mod note_store_ops;
@@ -25,6 +27,8 @@ mod reset;
 mod tempo;
 #[cfg(test)]
 mod tests_automation;
+#[cfg(test)]
+mod tests_automation_sync;
 #[cfg(test)]
 mod tests_basics;
 #[cfg(test)]
@@ -117,11 +121,13 @@ pub struct EditorData {
     ///
     /// 由上层在协作房间创建/加入时开启、断开/失败时关闭（见 Runner 协作事件处理）。
     collab_sync_enabled: bool,
-    /// 控制器（CC）数据
-    pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；
     /// 修改 lane 前必须经 `Arc::make_mut`（见 editor_data/automation.rs）。
     /// lane 数量通常 ≤50，`Vec` 索引写 O(1)。
+    ///
+    /// CC/PB 的**唯一权威**是 `document.control_events`；lane 是编辑态
+    /// （形状/贝塞尔柄/RPN 目标 + UI 与实时播放采样），任何改写都必须经
+    /// [`Self::sync_automation_to_document`] 写回权威（契约见 `automation_sync.rs`）。
     pub automation_lanes: Vec<Arc<AutomationLane>>,
     /// 速度变化点列表
     pub tempo_points: Vec<TempoPoint>,

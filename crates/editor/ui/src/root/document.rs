@@ -31,5 +31,22 @@ impl Root {
 
         // 单一权威源：文档独占存入 EditorData
         self.editor.editor_state.data.document = Some(doc);
+        // 装载后刷新 tempo / 拍号的编辑态缓存（2026-10-20 审计 §三）：
+        // 此前由调用方（`host::editor_ops::set_midi_document`）「从 doc 深拷贝 →
+        // set_tempo_points 写回 doc」，是一次毫无意义的往返；现在统一在「文档进入
+        // 编辑器」这一处只读刷新，且不置脏、不回写。
+        self.editor
+            .editor_state
+            .data
+            .adopt_tempo_cache_from_document();
+        // 装载新文档 = 音符内容变化：必须 bump `track_notes_gen`。
+        //
+        // 该世代是所有音符派生缓存的失效键（洋葱皮、走带 max_tick、播放键色索引
+        // `PlaybackScanState.notes_gen`…）。此前只有
+        // `host::editor_ops::set_midi_document` 会 bump，直接调用本方法的路径
+        // （测试、协作/素材装载等）装载后世代不变，派生缓存会继续用上一份文档的
+        // 内容——播放键色索引此前靠文档内存地址兜底，而地址在旧文档 drop 后
+        // 可能被新文档复用（见审计 §五）。把不变量放在「文档进入编辑器」这一处。
+        self.editor.editor_state.data.mark_track_notes_changed();
     }
 }

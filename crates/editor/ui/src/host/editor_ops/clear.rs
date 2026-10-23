@@ -22,9 +22,9 @@ impl Host {
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root.editor.reset_internal_state();
 
-        // 空间索引（惰性重建）
+        // 空间索引（惰性重建）：清空索引并失效其失效键 → 下次访问必重算
         root.editor.spatial.note_index = std::cell::RefCell::new(None);
-        root.editor.spatial.note_index_dirty = std::cell::Cell::new(true);
+        root.editor.spatial.invalidate_spatial_caches();
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
 
         // 协作远端光标

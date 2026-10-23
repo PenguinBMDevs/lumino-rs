@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use lumino_editor_state::ShapeNote;
+use crate::interaction::bake::BakePending;
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
 use lumino_note_core::history::CreateOp;
 
@@ -249,39 +249,6 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
-        // 逐图形音符归属（与写入 payload 同源，仅多带来源信息）
-        let mut per_shape_notes: Vec<Vec<ShapeNote>> =
-            vec![Vec::new(); self.editor_state.shape_tool.shapes.len()];
-        for &(tick, key, length, idx) in &outline {
-            if let Some(bucket) = per_shape_notes.get_mut(idx) {
-                bucket.push(ShapeNote {
-                    track,
-                    tick,
-                    key,
-                    length,
-                });
-            }
-        }
-        for &(tick, key, idx) in &points {
-            if let Some(bucket) = per_shape_notes.get_mut(idx) {
-                bucket.push(ShapeNote {
-                    track,
-                    tick,
-                    key,
-                    length: snap,
-                });
-            }
-        }
-        for &(tick, key, length, idx) in &chopped {
-            if let Some(bucket) = per_shape_notes.get_mut(idx) {
-                bucket.push(ShapeNote {
-                    track,
-                    tick,
-                    key,
-                    length,
-                });
-            }
-        }
         let payload: Vec<Note> = outline
             .iter()
             .map(|&(tick, key, length, _)| Note::new(tick, key, length))
@@ -334,11 +301,17 @@ impl Editor {
             return false;
         }
 
-        self.editor_state.data.history.push_note_create(create_ops);
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
         self.editor_state.data.mark_current_track_changed();
-        // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空待确认列表之前读几何）
-        self.record_shape_tool_shapes(per_shape_notes);
+        // Bake：保存 ✓ 前形状，undo 恢复；✓ 后不登记 DrawnShape。
+        let pending = BakePending::Shape(self.editor_state.shape_tool.clone());
+        self.remember_bake(group, pending);
         self.editor_state.shape_tool.clear_pending();
+        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
     }

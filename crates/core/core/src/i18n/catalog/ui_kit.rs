@@ -21,6 +21,23 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "删除" => Some("Delete"),
         "全选" => Some("Select All"),
         "批量编辑" => Some("Batch Edit"),
+        // ── 手绘图形右键菜单（DRAW-019～028，`ui-editor/src/context_menu.rs`）──
+        // 说明：这批文案在 HEAD 上已存在调用点但缺英文登记，i18n 覆盖率门禁为红；
+        // 因该门禁同时守卫本卡新增文案，故一并补齐（纯登记，无行为变更）。
+        "转为活形状" => Some("Convert to Live Shape"),
+        "还原活形状" => Some("Revert Live Shape"),
+        "连接图形" => Some("Join Shapes"),
+        "还原连接" => Some("Split Joined Shape"),
+        "门控合并" => Some("Gate-Merge Shapes"),
+        "编辑形状" => Some("Edit Shape"),
+        "竖轴对称" => Some("Symmetry: Vertical Axis"),
+        "横轴对称" => Some("Symmetry: Horizontal Axis"),
+        "扶正 50%" => Some("Straighten 50%"),
+        "取消扶正" => Some("Clear Straightening"),
+        "竖切" => Some("Slice Vertically"),
+        "创建补间" => Some("Insert Tween"),
+        "沿路径复制" => Some("Copy Along Path"),
+        "力度渐强" => Some("Velocity Ramp Up"),
         "输入文字…" => Some("Enter text…"),
         "设置内容区域" => Some("Settings content area"),
         "设置" => Some("Settings"),

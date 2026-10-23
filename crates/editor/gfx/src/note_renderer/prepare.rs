@@ -45,7 +45,8 @@ impl NoteRenderer {
     /// 流式上传：开始一次流式上传会话（用于 6 亿音符场景控制 CPU 峰值）
     ///
     /// 调用方应在 UI 线程分块构建 NoteInstance，逐块调用 `streaming_append`，
-    /// 最后调用 `finish_streaming_upload`。避免 `upload_instances` 的 CPU 全量副本。
+    /// 最后调用 `finish_streaming_upload`；与 `upload_instances` 的唯一区别是分块，
+    /// 两者都不再落 CPU 副本（2026-10-17 单一权威源整改）。
     ///
     /// 详见 `GpuNoteBuffer::begin_streaming_upload`。
     /// 工程切换时必须同步清零旧计数，防陈旧 bind group 野调度。
@@ -70,11 +71,12 @@ impl NoteRenderer {
         self.update_cull_info(device, queue);
     }
 
-    // ── 洋葱皮事件级增量专用（流式模式安全，无 CPU 缓存） ────────────────────
+    // ── 洋葱皮事件级增量专用（纯 GPU，无 CPU 镜像） ──────────────────────────
     //
-    // 薄封装 GpuNoteBuffer 的流式安全操作，供渲染线程的 OnionSegment 段表增量使用。
-    // 流式模式下 update_note/update_notes 会索引已清空的 CPU 缓存而 panic，
-    // 因此段替换必须走以下纯 GPU 方法。
+    // 薄封装 GpuNoteBuffer 的 GPU-only 操作，供渲染线程的 OnionSegment 段表增量使用。
+    // 2026-10-17 单一权威源整改后 GpuNoteBuffer 已无 CPU 镜像，`update_note(s)` 与
+    // 下列方法同为纯 GPU 写；保留下述「段级」API 是因为它们免去调用方自己算
+    // 段偏移/计数联动，而非因为存在流式模式限制。
 
     /// 当前 GPU 实例数（段表偏移计算用）
     pub fn gpu_instance_count(&self) -> usize {
@@ -91,7 +93,7 @@ impl NoteRenderer {
         self.gpu_note_buffer.grow(required)
     }
 
-    /// 段内写（不更新计数，不触碰 CPU 缓存）
+    /// 段内写（不更新计数；GPU 常驻缓冲是唯一权威，无 CPU 镜像可触碰）
     pub fn write_segment(&mut self, offset: usize, instances: &[crate::NoteInstance]) {
         self.gpu_note_buffer.write_segment(offset, instances);
     }

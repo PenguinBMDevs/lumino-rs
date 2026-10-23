@@ -159,7 +159,7 @@ fn test_failed_report_sets_invariants() {
 
 #[test]
 fn test_probe_with_timeout_returns_value_on_completion() {
-    let result = check::probe_with_timeout(Duration::from_millis(500), || vec!["fp".to_string()]);
+    let result = timeout::probe_with_timeout(Duration::from_millis(500), || vec!["fp".to_string()]);
     assert_eq!(result, Some(vec!["fp".to_string()]));
 }
 
@@ -168,7 +168,7 @@ fn test_probe_with_timeout_returns_none_on_hang() {
     // 模拟驱动挂起：探测线程睡 500ms，超时 50ms → 必须立即返回 None
     // （调用方按 cache miss 落回全量检测，UI-008 / #37）
     let started = std::time::Instant::now();
-    let result = check::probe_with_timeout(Duration::from_millis(50), || {
+    let result = timeout::probe_with_timeout(Duration::from_millis(50), || {
         std::thread::sleep(Duration::from_millis(500));
         vec!["never-returned".to_string()]
     });
@@ -185,7 +185,7 @@ fn test_probe_with_timeout_returns_none_on_hang() {
 
 #[test]
 fn test_probe_with_timeout_thread_panic_is_none() {
-    let result = check::probe_with_timeout(Duration::from_millis(500), || {
+    let result = timeout::probe_with_timeout(Duration::from_millis(500), || {
         panic!("模拟探测线程 panic");
     });
     assert!(

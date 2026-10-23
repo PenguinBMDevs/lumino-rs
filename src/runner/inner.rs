@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use winit::event_loop::ControlFlow;
+use winit::window::WindowId;
 
 use super::dialog_manager::DialogManager;
 use super::file_handler::FileHandler;
@@ -213,11 +214,15 @@ pub(crate) struct RunnerInner {
     /// 仅当 `pending_close_action.is_some()` 且用户选择「保存」时为 true；
     /// 保存任务完成后（`handle_save_completed`）据此继续原动作。
     pub(crate) run_pending_after_save: bool,
-    /// 待注入设置对话框的 GPU 兼容性检测结果 `(passed, detail)`。
+    /// 手动 GPU 检测会话状态（唯一真源：在飞 / 冷却 / 会话锁定 + 最近一次结果）。
     ///
-    /// 手动检查在后台线程执行，结果经事件总线回传时设置对话框可能尚未创建；
-    /// 暂存于此，由 `about_to_wait` 逐帧尝试注入。
-    pub(crate) pending_gpu_check_ui: Option<(bool, String)>,
+    /// 设置面板只是它的投影——面板每次打开都会重建，故瞬态不能放面板内。
+    pub(crate) gpu_check: crate::runner::gpu_check::GpuCheckState,
+    /// 已灌注 GPU 检测状态的设置对话框窗口。
+    ///
+    /// 用来识别「设置对话框被重开」：窗口 id 变化即重新灌注一次（含 `Running` 与
+    /// 冷却 / 锁定），关窗后置 `None`，下次打开自然重放。
+    pub(crate) gpu_check_ui_window: Option<WindowId>,
     /// #127：播放输出创建失败后的自愈重试状态（启动即失败时立即武装）。
     pub(crate) midi_output_retry: MidiOutputRetry,
     /// GPU 缓冲状态上次轮询时刻（250ms 节流，避免每帧取快照）。
@@ -406,7 +411,8 @@ impl Runner {
             cloud_saving,
             pending_close_action: None,
             run_pending_after_save: false,
-            pending_gpu_check_ui: None,
+            gpu_check: crate::runner::gpu_check::GpuCheckState::default(),
+            gpu_check_ui_window: None,
             midi_output_retry: MidiOutputRetry::default(),
             gpu_stats_last_poll: std::time::Instant::now(),
         };

@@ -13,6 +13,7 @@ static GLOBAL_ALLOC: lumino_diagnostics::memtrace::TaggedAlloc =
 
 mod cli;
 mod constants;
+mod device_probe;
 mod logging;
 mod platform;
 mod runner;
@@ -177,6 +178,16 @@ fn create_event_loop(
 ///
 /// `app` 只有 Android 会传 `Some(AndroidApp)`；桌面传 `None`。
 pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
+    // GPU 检测子进程模式：必须在日志 / puffin / 内存监控 / clap **之前**分支。
+    // 子进程只做一次无头检测，不需要事件循环、音频与 UI；晚一步就可能抢 8585
+    // 端口、起看门狗线程，或直接被 clap 以「未知参数」拒绝（退出码 2）。
+    //
+    // 合并自 dev（`feat(gpu): 全平台 GPU 指纹探测改子进程隔离`）：本函数由
+    // 原 `main.rs` 搬迁而来，分支必须随之搬迁，否则该特性在本分支静默失效。
+    if device_probe::is_child_mode() {
+        device_probe::run_child_mode();
+    }
+
     boot_mark!("REACHED-3 即将 logging::init");
     logging::init();
     boot_mark!("REACHED-4 logging 已就绪");

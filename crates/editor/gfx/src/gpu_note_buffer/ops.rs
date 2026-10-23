@@ -37,3 +37,8 @@ impl GpuNoteBuffer {
 #[cfg(test)]
 #[path = "ops_tests.rs"]
 mod tests;
+
+/// 真机 GPU 单测（需适配器）：CPU 镜像删除后的增量正确性
+#[cfg(test)]
+#[path = "ops_tests_gpu.rs"]
+mod gpu_tests;

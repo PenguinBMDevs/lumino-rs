@@ -100,9 +100,9 @@ impl RunnerInner {
             let mut project = lumino_export::LuminoProject::from_midi_document(document);
             // S0-5：形状对象随工程持久化（音符已由 document 承载，这里只存参数化形状）
             project.shapes = ui.root().editor.shapes_snapshot();
-            // 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo，
-            // 保证用户修改的 BPM（工程设置/速度面板）随导出持久化
-            project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
+            // tempo 无需补救（2026-10-20 审计 §三）：`EditorData` 的 tempo 写入入口
+            // 都会 `sync_tempo_to_document`，doc.tempo_changes 已是编辑后的值；
+            // 原 `project.apply_tempo_points(...)` 补丁已删除。
             // 累计创作时间随导出持久化（与本地保存一致）
             project.set_working_time_seconds(self.session_tracker.current_editing_secs());
             project

@@ -108,12 +108,34 @@ impl EditorData {
         }
     }
 
-    /// 应用单个自动化编辑操作到数据模型。
+    /// 应用单个自动化编辑操作到数据模型（编辑态 → 唯一权威同步见下）。
     ///
     /// 返回是否实际修改了数据。
     /// 增删移事件后自动重算自动控制柄（未弯曲段保持直线），
     /// 保证弯音面板贝塞尔路径与卷帘曲线工具语义一致。
+    ///
+    /// 2026-10-17 单一权威源整改：lane 是编辑态，`document.control_events` 是
+    /// CC/PB 的**唯一权威**（保存 / 导出 / 非当前轨播放都读它）。因此本方法在
+    /// **确实改动 document 可见内容**时统一调用
+    /// [`Self::sync_automation_to_document`]，
+    /// 修复「面板里画的曲线听得到、存不下来」（详见 `automation_sync.rs`）。
+    ///
+    /// `CycleShape` / `UpdateHandles` 只改形状与贝塞尔柄（document 无对应字段、
+    /// 导出时按 Step 采样），故不同步——避免拖控制柄时每帧全量重建控制事件。
     pub fn apply_automation_edit(&mut self, edit: AutomationEdit) -> bool {
+        let touches_document = super::automation_sync::edit_affects_document(&edit);
+        let changed = self.apply_automation_edit_inner(edit);
+        if changed && touches_document {
+            self.sync_automation_to_document();
+        }
+        changed
+    }
+
+    /// 编辑内核：只改 `automation_lanes`，不触碰 document。
+    ///
+    /// 同步 document 的职责收口在公开入口 [`Self::apply_automation_edit`]，
+    /// 避免每个分支各自为政、漏同步（契约见 `automation_sync.rs` 模块头）。
+    fn apply_automation_edit_inner(&mut self, edit: AutomationEdit) -> bool {
         match edit {
             AutomationEdit::Add {
                 track_idx,

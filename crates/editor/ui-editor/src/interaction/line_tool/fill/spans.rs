@@ -193,9 +193,29 @@ pub(crate) fn fill_spans(
     key_hi: i32,
     step: Option<f32>,
 ) -> Vec<RawNote> {
+    fill_spans_with(
+        loops, regions, tick_lo, tick_hi, key_lo, key_hi, step, false,
+    )
+}
+
+/// 同 [`fill_spans`]，`union=true` 时按所选闭环的**并集**填充（重叠处也填），
+/// `false` 维持区域身份精确匹配（even-odd 取消）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fill_spans_with(
+    loops: &[Vec<(f32, f32)>],
+    regions: &HashSet<RegionKey>,
+    tick_lo: f32,
+    tick_hi: f32,
+    key_lo: i32,
+    key_hi: i32,
+    step: Option<f32>,
+    union: bool,
+) -> Vec<RawNote> {
     if regions.is_empty() || tick_hi <= tick_lo {
         return Vec::new();
     }
+    let selected = regions.iter().fold(0u128, |acc, &key| acc | key);
+    let background = regions.contains(&0);
     let mut out: Vec<RawNote> = Vec::new();
     for q in key_lo..=key_hi {
         let per_loop: Vec<Vec<(f32, f32)>> =
@@ -223,7 +243,12 @@ pub(crate) fn fill_spans(
                     key |= 1u128 << i;
                 }
             }
-            if !regions.contains(&key) {
+            let keep = if union {
+                (background && key == 0) || (key & selected != 0)
+            } else {
+                regions.contains(&key)
+            };
+            if !keep {
                 continue;
             }
             match spans.last_mut() {

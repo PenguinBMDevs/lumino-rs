@@ -51,9 +51,9 @@ impl Host {
     /// 应用批量编辑到主窗口
     pub fn apply_batch_edit(&mut self, velocity: &str, gate: &str, key: &str, tick: &str) {
         self.root.apply_batch_edit(velocity, gate, key, tick);
-        // 强制使 note 渲染缓存失效：`mark_notes_changed` 设置的 `note_index_dirty`
-        // 可能被 hit_test 路径的 `ensure_spatial_index()` 提前清除，导致下一帧
-        // `prepare_notes_if_needed` 跳过实例重建，音符视觉位置不更新。
+        // 强制使 note 渲染缓存失效：空间索引的失效键可能已被
+        // `ensure_spatial_index()` 消费（消费后即视为最新），
+        // 导致下一帧 `prepare_notes_if_needed` 跳过实例重建、音符视觉位置不更新。
         self.render_ctx.render_cache.note_viewport_hash = 0;
         self.render_ctx.render_cache.note_render_viewport = None;
         self.root.editor.grid_cache.clear();

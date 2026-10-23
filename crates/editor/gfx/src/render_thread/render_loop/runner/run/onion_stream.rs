@@ -46,7 +46,7 @@ pub(super) fn drain_onion_skin_stream(
                         .finish_streaming_upload(&ctx.device, &ctx.queue);
                     *onion_skin_streaming_in_progress = false;
                     // 全量会话结束 → 常驻数据换代，派生索引（全局桶）必须重建。
-                    renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+                    super::super::onion_segments::bump_onion_epoch(renderers);
                     let total_gpu_mb =
                         lumino_diagnostics::memtrace::Snapshot::capture().total_with_gpu_mb();
                     tracing::debug!(

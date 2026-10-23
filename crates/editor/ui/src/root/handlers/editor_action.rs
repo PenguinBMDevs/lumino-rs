@@ -148,6 +148,46 @@ impl Root {
                         // 与 Delete 键同一条路径：鼠标工具下会优先删除选中的绘制图形
                         let _ = self.handle_editor_action(EditorAction::DeletePressed);
                     }
+                    PianoRollContextMenuItem::LiveShape => {
+                        let _ = self.editor.live_selected_shapes();
+                    }
+                    PianoRollContextMenuItem::SplitLiveShape
+                    | PianoRollContextMenuItem::SplitJoinedShape => {
+                        let _ = self.editor.split_composed_shape();
+                    }
+                    PianoRollContextMenuItem::JoinShapes => {
+                        let _ = self.editor.join_selected_shapes();
+                    }
+                    PianoRollContextMenuItem::MergeShapes => {
+                        let _ = self.editor.merge_selected_shapes();
+                    }
+                    PianoRollContextMenuItem::EditShape => {
+                        let _ = self.editor.enable_shape_edit();
+                    }
+                    PianoRollContextMenuItem::SymmetryVertical => {
+                        let _ = self.editor.toggle_symmetry(true);
+                    }
+                    PianoRollContextMenuItem::SymmetryHorizontal => {
+                        let _ = self.editor.toggle_symmetry(false);
+                    }
+                    PianoRollContextMenuItem::Straighten => {
+                        let _ = self.editor.set_straighten(true);
+                    }
+                    PianoRollContextMenuItem::StraightenOff => {
+                        let _ = self.editor.set_straighten(false);
+                    }
+                    PianoRollContextMenuItem::SliceVertical => {
+                        let _ = self.editor.slice_selected_vertical();
+                    }
+                    PianoRollContextMenuItem::BetweenCreate => {
+                        let _ = self.editor.create_between_selected();
+                    }
+                    PianoRollContextMenuItem::CopyAlong => {
+                        let _ = self.editor.copy_along_selected();
+                    }
+                    PianoRollContextMenuItem::VelocityUp => {
+                        let _ = self.editor.velocity_up_selected();
+                    }
                     PianoRollContextMenuItem::SelectAll => {
                         let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }

@@ -6,7 +6,6 @@
 
 use crate::host::Host;
 use lumino_midi_loader::MidiDocument;
-use lumino_note_core::TempoPoint;
 
 mod clear;
 mod query;
@@ -101,30 +100,10 @@ impl Host {
     ///
     /// 用户硬约束：避免 track_notes + MidiDocument 双份数据共存导致内存暴涨。
     pub fn set_midi_document(&mut self, doc: MidiDocument) {
-        // 先读取 tempo/拍号（doc 随后 move 进 root，借用必须在此之前结束）
-        let tempo_points: Vec<TempoPoint> = doc
-            .tempo_changes
-            .iter()
-            .map(|&(tick, bpm)| TempoPoint {
-                tick: tick as f32,
-                bpm: bpm as f64,
-            })
-            .collect();
-        let time_signatures = doc.time_signatures.clone();
-
+        // tempo / 拍号的编辑态缓存由 `Root::set_midi_document` 统一只读刷新
+        // （2026-10-20 审计 §三：此处原先「读 doc → set_tempo_points 写回 doc」
+        // 是一次数据未变的往返，已删除）。
         self.root.set_midi_document(doc);
-        // 同步 tempo 点到编辑器（用于速度编辑；经统一入口，与 document.tempo_changes 一致）
-        self.root
-            .editor
-            .editor_state
-            .data
-            .set_tempo_points(tempo_points);
-        // 同步拍号变化到编辑器（经统一入口，与 document.time_signatures 一致）
-        self.root
-            .editor
-            .editor_state
-            .data
-            .set_time_signatures(time_signatures);
 
         // 新 MIDI 文档加载后必须标记音符数据变化，触发洋葱皮全量重建。
         // 否则 `track_notes_gen` 不变，`OnionSkinState` 认为无需重建，导致
@@ -139,8 +118,11 @@ impl Host {
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
         self.render_ctx.render_cache.grid_viewport_hash = 0;
-        // 标记音符数据变化，触发走带缓存重建
-        self.root.editor.spatial.note_index_dirty.set(true);
+        // 空间索引/最长音符长度**无需**在此手工失效：上方
+        // `mark_track_notes_changed()` 已 bump `track_notes_gen`，而世代是它们的
+        // 失效键（见 `SpatialIndexState` 文档）。这里也不能改用
+        // `Editor::mark_notes_changed()`——那会置 `notes_changed`，被 handle_action
+        // 判成脏音轨而误触发高精度洋葱皮。
         // 注意：不再预加载全量音符到 track_notes——
         // 洋葱皮渲染通过 build_onion_skin_instances 直接遍历 document。
     }

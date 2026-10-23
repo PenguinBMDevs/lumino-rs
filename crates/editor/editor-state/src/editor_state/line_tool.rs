@@ -55,61 +55,9 @@ pub enum HandleSide {
 
 /// 贝塞尔锚点
 ///
-/// 位置与控制柄均为 (tick, key) 逻辑坐标；key 为 f32——
-/// 中间锚点不吸附网格，可自由精确定位。
-///
-/// 控制柄初始为**自动维护**（`handles_auto`）：重算时取相邻段方向 1/3
-/// 长度——三次贝塞尔在 cp1 = A + (B-A)/3、cp2 = B - (B-A)/3 时为**精确直线**，
-/// 保证路径初始外观为直线，同时控制柄可见可交互（可随时拖动弯曲）。
-/// 用户拖动控制柄后标记为自定义，不再被自动重算覆盖。
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct BezierAnchor {
-    /// 锚点位置（tick, key）
-    pub pos: (f32, f32),
-    /// 出向控制柄偏移（相对 pos，控制"到下一锚点"的贝塞尔段）
-    pub out_handle: (f32, f32),
-    /// 入向控制柄偏移（相对 pos，控制"来自上一锚点"的贝塞尔段）
-    pub in_handle: (f32, f32),
-    /// 控制柄是否自动维护（未被用户自定义）：插入/删除/锚点移动时自动重算
-    pub handles_auto: bool,
-}
-
-impl BezierAnchor {
-    /// 构造锚点（控制柄自动维护，偏移为 0——由路径重算填充）
-    pub fn new(pos: (f32, f32)) -> Self {
-        Self {
-            pos,
-            out_handle: (0.0, 0.0),
-            in_handle: (0.0, 0.0),
-            handles_auto: true,
-        }
-    }
-
-    /// 设置出向控制柄（标记为自定义，不再自动维护）
-    pub fn set_out_handle(&mut self, offset: (f32, f32)) {
-        self.out_handle = offset;
-        self.handles_auto = false;
-    }
-
-    /// 设置入向控制柄（标记为自定义，不再自动维护）
-    pub fn set_in_handle(&mut self, offset: (f32, f32)) {
-        self.in_handle = offset;
-        self.handles_auto = false;
-    }
-
-    /// 出向控制柄绝对坐标（逻辑坐标）
-    pub fn out_handle_abs(&self) -> (f32, f32) {
-        (
-            self.pos.0 + self.out_handle.0,
-            self.pos.1 + self.out_handle.1,
-        )
-    }
-
-    /// 入向控制柄绝对坐标（逻辑坐标）
-    pub fn in_handle_abs(&self) -> (f32, f32) {
-        (self.pos.0 + self.in_handle.0, self.pos.1 + self.in_handle.1)
-    }
-}
+/// 直接复用 `lumino_core::shape::ShapeAnchor`：曲线工具、形状模型与后续
+/// 对称/补间共用同一套锚点/控制柄语义，避免两套结构互相转换时丢手柄。
+pub use lumino_core::shape::ShapeAnchor as BezierAnchor;
 
 /// 单条路径（有序锚点链）
 pub type LinePath = Vec<BezierAnchor>;

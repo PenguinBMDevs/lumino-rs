@@ -8,10 +8,7 @@ impl GpuNoteBuffer {
     ///
     /// 主音轨可见列表 diff 增量专用（`NoteEvent::Insert`）：与 [`Self::remove_at`]
     /// 互为逆操作。搬移复用 [`Self::move_range`]（staging 分块，支持重叠——
-    /// 此处右移从尾向前，安全）。
-    ///
-    /// CPU 镜像（`self.instances`，主音轨模式存在）同步 splice；
-    /// 流式模式（洋葱皮）镜像为空时跳过镜像操作。
+    /// 此处右移从尾向前，安全）。全流程无 CPU 拷贝。
     pub fn insert_at(&mut self, index: usize, instances: &[crate::NoteInstance]) {
         puffin::profile_function!();
         if instances.is_empty() {
@@ -37,16 +34,10 @@ impl GpuNoteBuffer {
         // 写入新段（write_buffer 在 move_range 的 submit 之后入队，顺序保证）
         self.write_segment(index, instances);
 
-        // CPU 镜像同步（流式模式镜像为空则跳过）
-        if !self.instances.is_empty() {
-            self.instances
-                .splice(index..index, instances.iter().copied());
-        }
-
         self.instance_count = new_count;
     }
 
-    /// 段内写：将 `instances` 写入 `offset` 处（不更新计数、不触碰 CPU 缓存）
+    /// 段内写：将 `instances` 写入 `offset` 处（不更新计数，不触碰镜像——本来就没有）
     /// 写前调用方需保证容量充足（grow 后）且目标区间不与未搬移的后续段重叠。
     pub fn write_segment(&mut self, offset: usize, instances: &[crate::NoteInstance]) {
         if instances.is_empty() {

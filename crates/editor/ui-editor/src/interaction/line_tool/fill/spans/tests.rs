@@ -41,6 +41,34 @@ fn fill_all(
     fill_spans(loops, regions, tick_lo, tick_hi, key_lo, key_hi, None)
 }
 
+#[test]
+fn test_union_fills_overlap_while_even_odd_cancels() {
+    let a = rect(0.0, 2.0, 10.0, 5.0);
+    let b = rect(5.0, 2.0, 15.0, 5.0);
+    let loops = vec![a, b];
+    // 只标记 A 内部 → 位 0
+    let marks = regions(&[1]);
+    let exact = fill_all(&loops, &marks, 0.0, 15.0, 3, 3);
+    assert_eq!(
+        exact
+            .iter()
+            .map(|n| (n.start, n.end, n.key))
+            .collect::<Vec<_>>(),
+        vec![(0, 5, 3)],
+        "even-odd：A 与 B 重叠处被取消"
+    );
+
+    let union = fill_spans_with(&loops, &marks, 0.0, 15.0, 3, 3, None, true);
+    assert_eq!(
+        union
+            .iter()
+            .map(|n| (n.start, n.end, n.key))
+            .collect::<Vec<_>>(),
+        vec![(0, 10, 3)],
+        "union：A 的完整区间被填满"
+    );
+}
+
 // ── row_spans ──
 
 #[test]

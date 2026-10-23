@@ -6,15 +6,20 @@
 //! - released:  鼠标释放事件处理
 //! - edit_ops:  编辑操作入口（占位，实现分散在 clipboard / note_ops / editor 中）
 
+pub(crate) mod bake;
 mod batch_insert;
 mod brush;
 pub(crate) mod drawn_shape;
 mod edit_ops;
 mod i2m;
 pub(crate) mod line_tool;
+pub(crate) mod masks;
 mod moved;
 mod pressed;
 mod released;
+pub(crate) mod shape_bridge;
+pub(crate) mod shape_compose;
+pub(crate) mod shape_edit_ui;
 pub(crate) mod shape_ops;
 pub(crate) mod shape_tool;
 pub(crate) mod text_tool;

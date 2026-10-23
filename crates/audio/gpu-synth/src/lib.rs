@@ -71,7 +71,6 @@ pub use audio::wav;
 pub use config::{ChannelMode, InterpolationMode, SynthConfig};
 pub use error::{SoundFontError, SynthError};
 pub use midi::parser::MidiFile;
-pub use midi::stream::MidiStream;
 pub use soundfont::SoundFont;
 pub use synth::RenderProgress;
 pub use synth::RenderResult;

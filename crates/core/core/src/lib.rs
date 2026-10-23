@@ -22,7 +22,17 @@ pub mod view_state;
 pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
+    AreaSpot, BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,
+    ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef, CycleBy, CycleParams,
+    DrawingRef, ENV_EPS, Expr, ExprError, FlipMode, FlipWay, FunnelParams, FunnelStart,
+    GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode,
+    MaskParams, MaskShow, MergeParams, NestedParams, NestedWay, OpStage, PATTERN_PRESETS, PathKind,
+    PatternParams, PatternPreset, PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart,
     ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
+    SpamAlign, SpamEnds, Speed, StopsParams, StraightenParams, StrumParams, SustainParams, Sym,
+    SymAxis, SymParams, TileBy, TileFlip, TileLayout, TilesParams, TumourGraphs, TumourParams,
+    TumourShape, TumourSide, TumourWrap, VelocityEnv, env_at, paint_env, pattern_from_preset,
+    pattern_preset, tidy_env,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};

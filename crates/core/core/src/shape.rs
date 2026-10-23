@@ -31,10 +31,34 @@ pub const STROKE_WIDTH_MAX: u8 = 20;
 /// 颜色槽上限（0..=15，通道 10 留待后续开关）
 pub const COLOUR_SLOT_MAX: u8 = 15;
 
+/// 区域着色色号上限（16 = 通道 10；仅在工程启用通道 10 时可用）
+pub const AREA_COLOUR_MAX: u8 = 16;
+
+pub mod areas;
+pub mod expr;
 pub mod geometry;
 pub mod model;
+pub mod params;
+pub mod pattern_presets;
 pub mod style;
+pub mod velocity_env;
 
+pub use areas::AreaSpot;
+pub use expr::{Expr, ExprError};
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
-pub use model::{ShapeModel, ShapeOp};
-pub use style::{ShapeFill, ShapeStyle};
+pub use model::{OpStage, ShapeModel, ShapeOp};
+pub use params::{
+    BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,
+    ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef, CycleBy, CycleParams,
+    DrawingRef, FlipMode, FlipWay, FunnelParams, FunnelStart, GateRangeParams, GlueParams,
+    JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow,
+    MergeParams, NestedParams, NestedWay, PathKind, PatternParams, PatternRef, PolyStyle,
+    PolygonParams, RangeDir, RowRestart, Speed, StopsParams, StraightenParams, Stroke, StrokeKind,
+    StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip, TileLayout, TilesParams,
+    TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+};
+pub use pattern_presets::{
+    PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,
+};
+pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
+pub use velocity_env::{ENV_EPS, VelocityEnv, env_at, paint_env, tidy_env};

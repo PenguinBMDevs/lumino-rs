@@ -56,6 +56,23 @@ impl ShapeAnchor {
         }
     }
 
+    /// 设置出向控制柄（标记为自定义，不再自动维护）
+    pub fn set_out_handle(&mut self, offset: (f32, f32)) {
+        self.out_handle = offset;
+        self.handles_auto = false;
+    }
+
+    /// 设置入向控制柄（标记为自定义，不再自动维护）
+    pub fn set_in_handle(&mut self, offset: (f32, f32)) {
+        self.in_handle = offset;
+        self.handles_auto = false;
+    }
+
+    /// 交换入/出控制柄（路径反向时使用）
+    pub fn swap_handles(&mut self) {
+        std::mem::swap(&mut self.in_handle, &mut self.out_handle);
+    }
+
     /// 出向控制柄绝对坐标
     pub fn out_handle_abs(&self) -> (f32, f32) {
         (

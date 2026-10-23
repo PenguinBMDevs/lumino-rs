@@ -74,7 +74,10 @@ fn force_spatial_index(editor: &Editor) {
         .collect();
     *editor.spatial.note_index.borrow_mut() =
         Some(lumino_note_core::NoteSpatialIndex::from_note_refs(&refs));
-    editor.spatial.note_index_dirty.set(false);
+    editor
+        .spatial
+        .note_index_key
+        .set(Some(editor.spatial_cache_key()));
 }
 
 /// 跑一组口径断言（对同一 editor 的两种实现路径复用）

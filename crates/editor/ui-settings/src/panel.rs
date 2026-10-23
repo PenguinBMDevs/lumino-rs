@@ -127,6 +127,7 @@ impl SettingsPanel {
                 warning_suppressed: ui_config.gpu_warning_suppressed.unwrap_or(false),
                 domino_clipboard_enabled: ui_config.domino_clipboard_enabled,
                 check_state: lumino_ui_core::state::GpuCheckUiState::Idle,
+                retry_gate: lumino_ui_core::state::GpuCheckRetryGate::Ready,
                 copied: false,
             },
         }
@@ -436,7 +437,8 @@ impl SettingsPanel {
                 self.compat.domino_clipboard_enabled = enabled;
             }
             Event::RunGpuCompatibilityCheck => {
-                self.compat.check_state = lumino_ui_core::state::GpuCheckUiState::Running;
+                // 检测状态由 Runner 单点裁决并回推（在飞 / 冷却 / 会话锁定会拒绝），
+                // 面板不本地置 Running——否则关窗重开时面板状态会与真源分叉。
                 self.compat.copied = false;
             }
             Event::CopyGpuDiagnostics => {

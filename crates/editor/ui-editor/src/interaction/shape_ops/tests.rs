@@ -2,7 +2,11 @@
 
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_core::shape::{
+    FunnelParams, GateRangeParams, NestedParams, PatternParams, PolyStyle, PolygonParams, RangeDir,
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TileBy, TilesParams,
+    TumourParams,
+};
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
@@ -16,6 +20,270 @@ fn straight_shape(track: u16, tick_hi: f32) -> ShapeModel {
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (tick_hi, 72.0)]);
     model.validate().expect("测试形状应合法");
     model
+}
+
+fn closed_shape(fill: ShapeFill, gate_beats: f32) -> ShapeModel {
+    let mut geometry =
+        ShapeGeometry::from_points([(0.0, 60.0), (480.0, 60.0), (480.0, 64.0), (0.0, 64.0)]);
+    geometry.closed = true;
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 0.25);
+    model.geometry = geometry;
+    model.style = ShapeStyle {
+        fill,
+        gate_beats,
+        ..ShapeStyle::default()
+    };
+    model
+}
+
+fn arc_shape(mid_key: f32) -> ShapeModel {
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);
+    model
+}
+
+fn interior_shape(op: ShapeOp) -> ShapeModel {
+    let mut model = closed_shape(ShapeFill::Fill, 0.25);
+    model.ops.push(op);
+    model
+}
+
+#[test]
+fn test_nested_fill_emits_layers_and_channels() {
+    let editor = editor_with_track(1);
+    let model = interior_shape(ShapeOp::Nested(NestedParams {
+        steps: 3,
+        last: 0.5,
+        colours: 3,
+        ..NestedParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    let channels = notes
+        .iter()
+        .map(|n| n.channel)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(channels.contains(&0) && channels.contains(&1) && channels.contains(&2));
+    assert!(notes.iter().all(|n| n.channel < 16));
+}
+
+#[test]
+fn test_tiles_fill_emits_coloured_blocks() {
+    let editor = editor_with_track(1);
+    let model = interior_shape(ShapeOp::Tiles(TilesParams {
+        length: 120.0,
+        keys: 2.0,
+        colours: 2,
+        by: TileBy::Cols,
+        ..TilesParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty(), "Tiles 应生成内部块");
+    assert!(notes.iter().any(|n| n.channel == 1), "多列应轮转通道");
+    assert!(notes.iter().all(|n| n.channel < 16));
+}
+
+fn funnel_params(fill: ShapeFill, reverse: bool) -> FunnelParams {
+    FunnelParams {
+        lines: vec![[[0.0, 20.0], [100.0, 20.0]]],
+        wall: [[100.0, 10.0], [100.0, 30.0]],
+        starts: Vec::new(),
+        fill,
+        reverse,
+    }
+}
+
+fn funnel_shape(fill: ShapeFill, reverse: bool) -> ShapeModel {
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Funnel, 1.0);
+    model.geometry =
+        ShapeGeometry::from_points([(0.0, 20.0), (100.0, 20.0), (100.0, 10.0), (100.0, 30.0)]);
+    model
+        .ops
+        .push(ShapeOp::Funnel(funnel_params(fill, reverse)));
+    model
+}
+
+#[test]
+fn test_funnel_spam_notes_are_inside_slant_boxes() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&funnel_shape(ShapeFill::Spam, false), 1);
+    assert!(!notes.is_empty());
+    let boxes =
+        lumino_editor_state::shape_ops::funnel_slant_boxes(&funnel_params(ShapeFill::Spam, false));
+    for note in &notes {
+        let point = (f64::from(note.tick), f64::from(note.key));
+        assert!(
+            boxes.iter().any(|box_| {
+                box_.inverse(point).is_some_and(|(u, f)| {
+                    (-1e-4..=1.0 + 1e-4).contains(&u) && (-1e-4..=1.0 + 1e-4).contains(&f)
+                })
+            }),
+            "音符 {note:?} 应落在漏斗内"
+        );
+    }
+}
+
+#[test]
+fn test_funnel_empty_outline_differs_from_spam() {
+    let editor = editor_with_track(1);
+    let empty = editor.shape_notes_of(&funnel_shape(ShapeFill::Empty, false), 1);
+    let spam = editor.shape_notes_of(&funnel_shape(ShapeFill::Spam, false), 1);
+    assert!(!empty.is_empty());
+    assert!(!spam.is_empty());
+    assert_ne!(
+        empty.len(),
+        spam.len(),
+        "Empty 描边与 Spam 填充音符数应不同"
+    );
+}
+
+#[test]
+fn test_funnel_reverse_order() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&funnel_shape(ShapeFill::Spam, true), 1);
+    assert!(notes.len() > 1);
+    let first = notes.first().expect("应有音符").tick;
+    let last = notes.last().expect("应有音符").tick;
+    assert!(first >= last, "反向漏斗应按时间倒序输出");
+}
+
+fn pattern_shape() -> ShapeModel {
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Line, 1.0);
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (480.0, 60.0)]);
+    model.ops.push(ShapeOp::Pattern(PatternParams {
+        formula: "sin(2*pi*x)".into(),
+        vars: Default::default(),
+        loops: 1.0,
+        k: 1.0,
+        ..PatternParams::default()
+    }));
+    model
+}
+
+#[test]
+fn test_pattern_generates_sideways_wave() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&pattern_shape(), 1);
+    assert!(!notes.is_empty(), "Pattern 应生成描边音符");
+    let hi = notes.iter().map(|n| n.key).max().unwrap_or(0);
+    assert!(hi > 60, "正弦应向上偏移，实际最高 key {hi}");
+}
+
+fn polygon_shape(style: PolyStyle, points: u16) -> ShapeModel {
+    let rect = lumino_core::shape::ShapeRect {
+        tick_lo: 100.0,
+        key_lo: 60.0,
+        tick_hi: 500.0,
+        key_hi: 68.0,
+    };
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 1.0);
+    model.geometry = ShapeGeometry::from_rect(rect);
+    model.ops.push(ShapeOp::Polygon(PolygonParams {
+        points,
+        style,
+        ..PolygonParams::default()
+    }));
+    model
+}
+
+#[test]
+fn test_polygon_generates_outline_inside_box() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&polygon_shape(PolyStyle::Polygon, 4), 1);
+    assert!(!notes.is_empty(), "方形应生成描边音符");
+    assert!(notes.iter().all(|n| (100.0..=500.0).contains(&n.tick)));
+    assert!(notes.iter().all(|n| (60..=68).contains(&n.key)));
+}
+
+#[test]
+fn test_cross_6_2_generates_two_loops() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&polygon_shape(PolyStyle::Cross, 6), 1);
+    assert!(!notes.is_empty(), "6/2 两个三角形环都应产出音符");
+}
+
+#[test]
+fn test_arc_shape_uses_three_point_circle() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&arc_shape(66.0), 1);
+    assert!(!notes.is_empty(), "Arc 应生成描边音符");
+    let hi = notes.iter().map(|n| n.key).max().unwrap_or(0);
+    assert!(hi >= 66, "弧应经过中间点 key=66，实际最高 {hi}");
+}
+
+#[test]
+fn test_collinear_arc_falls_back_to_polyline() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&arc_shape(60.0), 1);
+    assert!(!notes.is_empty(), "退化弧应回退为折线而不是无产物");
+    assert!(notes.iter().all(|n| n.key == 60), "共线三点应保持直线");
+}
+
+#[test]
+fn test_fill_shape_is_one_note_per_row() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::Fill, 0.25), 1);
+    // 现有 row_spans 的边界口径会把上边界行 64 也算进来（与曲线填充一致）
+    assert_eq!(notes.len(), 5, "矩形 60..64 当前填 60..64 五行");
+    assert_eq!(
+        notes.iter().map(|n| n.key).collect::<Vec<_>>(),
+        vec![60, 61, 62, 63, 64]
+    );
+    assert!(notes.iter().all(|n| (n.length - 480.0).abs() < 1e-3));
+}
+
+#[test]
+fn test_spam_shape_uses_gate() {
+    let editor = editor_with_track(1);
+    let gate = 0.0625 * f32::from(editor.editor_state.view.ppq);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::Spam, 0.0625), 1);
+    assert_eq!(notes.len(), 20, "五行 × 每行四个门（gate=120 tick）");
+    assert!(
+        notes.iter().all(|n| (n.length - gate).abs() < 1e-3),
+        "Auto + Round 应铺满整门"
+    );
+}
+
+#[test]
+fn test_outline_spam_chops_outline_without_filling_inside() {
+    let editor = editor_with_track(1);
+    let gate = 0.0625 * f32::from(editor.editor_state.view.ppq);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::OutlineSpam, 0.0625), 1);
+    assert!(!notes.is_empty(), "轮廓仍应生成音符");
+    assert!(
+        notes.iter().all(|n| n.length <= gate + 1e-3),
+        "描边应被门长切开，不再保留整行 480 tick 长音"
+    );
+}
+
+#[test]
+fn test_spam_gate_range_varies_gate_across_time() {
+    let editor = editor_with_track(1);
+    let mut model = closed_shape(ShapeFill::Spam, 0.0625);
+    model.push_op(ShapeOp::GateRange(GateRangeParams {
+        to: 0.25,
+        dir: RangeDir::Time,
+        ..GateRangeParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    let min = notes.iter().map(|n| n.length).fold(f32::INFINITY, f32::min);
+    let max = notes
+        .iter()
+        .map(|n| n.length)
+        .fold(f32::NEG_INFINITY, f32::max);
+    assert!(max > min + 1.0, "Time Range 的门长应沿时间增大");
+}
+
+#[test]
+fn test_empty_shape_stays_outline_only() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&closed_shape(ShapeFill::Empty, 0.25), 1);
+    assert!(!notes.is_empty());
+    assert!(
+        notes.iter().any(|n| n.length < 100.0),
+        "Empty 应只有轮廓短音，不是四条整行长音"
+    );
 }
 
 fn note_count(editor: &Editor, track: usize) -> usize {
@@ -262,4 +530,40 @@ fn test_regeneration_is_zoom_independent() {
             "音符几何不得随视口缩放变化"
         );
     }
+}
+
+/// DRAW-007：Glue 的 Boxes 坐标系必须覆盖形状包围盒（key 上下各扩 0.5）
+#[test]
+fn test_shape_box_of_expands_key_range() {
+    let box_ = super::shape_box_of(&[(0.0, 60.0), (480.0, 72.0)]).expect("非空路径应有包围盒");
+    assert_eq!(box_.tick_lo, 0.0);
+    assert_eq!(box_.tick_hi, 480.0);
+    assert_eq!(box_.key_lo, 59.5);
+    assert_eq!(box_.key_hi, 72.5);
+    assert!(super::shape_box_of(&[]).is_none());
+}
+
+/// DRAW-003：Tumours 是 Geometry 阶段算子，必须进入现有音符生成链路
+#[test]
+fn test_regeneration_applies_tumours_geometry_op() {
+    let editor = editor_with_track(1);
+    let mut model = straight_shape(1, 480.0);
+    let base = editor.shape_notes_of(&model, 1);
+    assert!(!base.is_empty(), "无算子的直线形状应生成音符");
+
+    model.push_op(ShapeOp::Tumours(TumourParams {
+        k: 0.25,
+        dist: 1.0,
+        length: 0.5,
+        size: 4.0,
+        ..TumourParams::default()
+    }));
+    let with_op = editor.shape_notes_of(&model, 1);
+    assert!(!with_op.is_empty(), "Tumours 形状应生成音符");
+    assert!(
+        with_op.len() > base.len(),
+        "凸起轮廓应增加音符（base={}, with_op={}）",
+        base.len(),
+        with_op.len()
+    );
 }

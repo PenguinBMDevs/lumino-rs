@@ -25,7 +25,7 @@ pub use custom_precision_state::CustomPrecisionDialogState;
 pub use echo_cave::EchoCaveState;
 pub use export_progress_state::ExportProgressDialogState;
 pub use fill_division_state::FillDivisionDialogState;
-pub use gpu_compat_state::{GpuCheckUiResult, GpuCheckUiState};
+pub use gpu_compat_state::{GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState};
 pub use load_confirm_state::LoadConfirmDialogState;
 pub use memory_monitor_state::MemoryMonitorDialogState;
 pub use project_settings_state::ProjectSettingsDialogState;
