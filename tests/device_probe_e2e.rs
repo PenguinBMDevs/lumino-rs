@@ -26,10 +26,12 @@ fn unique_path(tag: &str) -> PathBuf {
 }
 
 /// 构造探针子进程命令（与 supervisor 生产路径同一套参数）
-fn probe_command(out: &Path, timeout_ms: u64) -> Command {
+fn probe_command(out: &Path, timeout_ms: u64, mode: &str) -> Command {
     let mut cmd = Command::new(BIN);
     cmd.arg("--device-check-probe")
         .arg(out)
+        .arg("--device-check-probe-mode")
+        .arg(mode)
         .arg("--device-check-fallback")
         .arg("always")
         .arg("--device-check-timeout-ms")
@@ -74,7 +76,7 @@ fn test_probe_child_writes_valid_report() {
     let out = unique_path("ok");
     let _ = std::fs::remove_file(&out);
 
-    let mut child = probe_command(&out, 10_000)
+    let mut child = probe_command(&out, 10_000, "full")
         .spawn()
         .expect("探针子进程应能启动");
     let status = wait_with_deadline(&mut child, Duration::from_secs(60));
@@ -111,7 +113,7 @@ fn test_probe_watchdog_reports_timeout_on_injected_hang() {
     let _ = std::fs::remove_file(&out);
 
     let started = Instant::now();
-    let mut cmd = probe_command(&out, 1500);
+    let mut cmd = probe_command(&out, 1500, "full");
     cmd.env("LUMINO_DEBUG_CHECK_HANG", "1");
     let mut child = cmd.spawn().expect("探针子进程应能启动");
     let status = wait_with_deadline(&mut child, Duration::from_secs(30));
@@ -128,6 +130,47 @@ fn test_probe_watchdog_reports_timeout_on_injected_hang() {
     assert_eq!(json["passed"], false);
 
     let _ = std::fs::remove_file(&out);
+}
+
+/// 廉价探测模式：真实二进制只枚举指纹，不建 wgpu 设备
+#[test]
+fn test_probe_fingerprints_mode_writes_list() {
+    let out = unique_path("fp");
+    let _ = std::fs::remove_file(&out);
+
+    let mut child = probe_command(&out, 10_000, "fingerprints")
+        .spawn()
+        .expect("探针子进程应能启动");
+    let status = wait_with_deadline(&mut child, Duration::from_secs(60));
+    assert!(status.success(), "指纹模式应正常退出，实际 {status}");
+
+    let json = read_json(&out);
+    assert_eq!(json["version"], 1, "协议版本必须为 1");
+    assert!(
+        json["fingerprints"].is_array(),
+        "必须回传指纹数组（无 GPU 时为空数组）: {json}"
+    );
+
+    let _ = std::fs::remove_file(&out);
+}
+
+/// 指纹模式挂起：看门狗只退出、**不写任何文件**（父进程按 cache miss 处理）
+#[cfg(debug_assertions)]
+#[test]
+fn test_probe_fingerprints_hang_writes_nothing() {
+    let out = unique_path("fp-hang");
+    let _ = std::fs::remove_file(&out);
+
+    let mut cmd = probe_command(&out, 1500, "fingerprints");
+    cmd.env("LUMINO_DEBUG_PROBE_HANG", "1");
+    let mut child = cmd.spawn().expect("探针子进程应能启动");
+    let status = wait_with_deadline(&mut child, Duration::from_secs(30));
+
+    assert!(status.success(), "看门狗路径应正常退出，实际 {status}");
+    assert!(
+        !out.exists(),
+        "指纹模式超时不得写出文件（空列表会被误读成「探测成功」）"
+    );
 }
 
 /// 参数缺失 → 协议错误退出码 2（不得静默跑成默认策略）

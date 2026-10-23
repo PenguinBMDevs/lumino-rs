@@ -13,12 +13,17 @@
 //! - [`child`]：子进程侧（看门狗 + 原子写结果）；
 //! - [`supervisor`]：父进程侧（启动 / 超时强杀 / 收割 / 解析 / Job Object）。
 //!
-//! # 平台口径（卡片显式决策）
+//! # 平台口径
 //!
-//! Windows 走子进程（根治）；macOS / Linux 本期沿用进程内线程模型 + 阶段一兜底
-//! （结果区分 / 冷却 / 会话锁定）。`supervisor` 本身是跨平台 std 代码，后续测量
-//! 冷启动开销后可以把 [`run_check_with_timeout`] 的非 Windows 分支切过来，
-//! 一并删除线程模型与 detach 注释。
+//! **全平台**走子进程：supervisor 是跨平台 std 代码，Windows 额外用 Job Object 兜
+//! 「父进程崩溃」；无平台分支意味着只有一条生产路径要维护、测试与解释。
+//! （早期版本曾按卡片范围决策在 macOS / Linux 保留线程模型，本版已收敛。）
+//!
+//! # 两种模式
+//!
+//! - `full`：完整兼容性检测（手动检查 + 启动门控全量检测）；
+//! - `fingerprints`：只枚举适配器指纹（启动缓存校验），成本远低于全量检测，
+//!   超时按 cache miss 处理。
 //!
 //! # 失败语义（fail closed）
 //!
@@ -31,12 +36,12 @@ mod wire;
 
 use std::time::Duration;
 
-#[cfg(not(windows))]
-use lumino_gfx::device_check;
 use lumino_gfx::device_check::{FallbackDiagnostics, GpuCheckReport};
 
 /// 子进程模式标记（父进程用该参数重新拉起自身）
 pub(crate) const CHILD_FLAG: &str = "--device-check-probe";
+/// 探针工作模式参数（`full` / `fingerprints`）
+pub(crate) const MODE_FLAG: &str = "--device-check-probe-mode";
 /// 回退后端诊断策略参数
 pub(crate) const FALLBACK_FLAG: &str = "--device-check-fallback";
 /// 语义超时参数（毫秒）
@@ -56,21 +61,20 @@ pub(crate) fn run_child_mode() -> ! {
     child::run()
 }
 
-/// 带超时的检测入口（Windows 走子进程，其他平台沿用线程模型）。
+/// 带超时的完整检测入口（子进程 + 超时强杀）。
 pub(crate) fn run_check_with_timeout(
     timeout: Duration,
     when: FallbackDiagnostics,
 ) -> GpuCheckReport {
-    #[cfg(windows)]
-    {
-        supervisor::run(timeout, when)
-    }
-    #[cfg(not(windows))]
-    {
-        // 卡片范围决策：macOS/Linux 本期保留线程模型（阶段一兜底为结果区分 + 冷却 +
-        // 会话锁定）。supervisor 已按跨平台实现并有单测覆盖，切换只需改这一行。
-        device_check::run_check_with_timeout(timeout, when)
-    }
+    supervisor::run(timeout, when)
+}
+
+/// 带超时的廉价探测入口（子进程 + 超时强杀）。
+///
+/// 语义与 gfx 的线程版一致：返回 `None` 表示超时 / 失败，调用方必须按 **cache miss**
+/// 处理——不得判定为「检测失败」，更不得弹警告窗。
+pub(crate) fn probe_fingerprints_with_timeout(timeout: Duration) -> Option<Vec<String>> {
+    supervisor::run_fingerprints(timeout)
 }
 
 /// 回退诊断策略 → 子进程命令行取值

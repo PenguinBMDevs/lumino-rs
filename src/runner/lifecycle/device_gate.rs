@@ -84,7 +84,7 @@ impl Runner {
             cached_passed,
             cached_fp.as_deref(),
             || {
-                device_check::probe_adapter_fingerprints_with_timeout(device_check::PROBE_TIMEOUT)
+                crate::device_probe::probe_fingerprints_with_timeout(device_check::PROBE_TIMEOUT)
                     .unwrap_or_default()
             },
         );

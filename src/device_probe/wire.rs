@@ -91,6 +91,15 @@ impl From<ProbeFailure> for GpuCheckFailure {
     }
 }
 
+/// 廉价探测回传：仅要求后端的适配器指纹列表（不创建设备，成本远低于全量检测）
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ProbeFingerprints {
+    /// 协议版本
+    pub(crate) version: u32,
+    /// 适配器指纹（空列表在缓存比对中同样按 miss 处理）
+    pub(crate) fingerprints: Vec<String>,
+}
+
 impl From<&GpuAdapterSummary> for ProbeAdapter {
     fn from(adapter: &GpuAdapterSummary) -> Self {
         Self {
@@ -164,18 +173,33 @@ impl TryFrom<ProbeReport> for GpuCheckReport {
     }
 }
 
-/// 原子写入结果：先写 `.tmp` 再改名，父进程读到的永远是完整 JSON。
-pub(crate) fn write_report(path: &Path, report: &GpuCheckReport) -> std::io::Result<()> {
-    let payload = serde_json::to_vec(&ProbeReport::from(report))
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+/// 原子写入：先写 `.tmp` 再改名，父进程读到的永远是完整 JSON。
+fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     {
         let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(&payload)?;
+        file.write_all(bytes)?;
         // 先落盘再改名：避免父进程在改名瞬间读到空文件
         file.sync_all()?;
     }
     std::fs::rename(&tmp, path)
+}
+
+/// 原子写入完整检测报告。
+pub(crate) fn write_report(path: &Path, report: &GpuCheckReport) -> std::io::Result<()> {
+    let payload = serde_json::to_vec(&ProbeReport::from(report))
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    write_atomic(path, &payload)
+}
+
+/// 原子写入廉价探测的指纹列表。
+pub(crate) fn write_fingerprints(path: &Path, fingerprints: &[String]) -> std::io::Result<()> {
+    let payload = serde_json::to_vec(&ProbeFingerprints {
+        version: PROTOCOL_VERSION,
+        fingerprints: fingerprints.to_vec(),
+    })
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    write_atomic(path, &payload)
 }
 
 /// 读取并校验子进程回传的结果。
@@ -184,6 +208,21 @@ pub(crate) fn read_report(path: &Path) -> Result<GpuCheckReport, String> {
     let parsed: ProbeReport =
         serde_json::from_str(&raw).map_err(|e| trf!("结果 JSON 解析失败: {e}", e = e))?;
     GpuCheckReport::try_from(parsed)
+}
+
+/// 读取并校验子进程回传的廉价探测指纹。
+pub(crate) fn read_fingerprints(path: &Path) -> Result<Vec<String>, String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| trf!("读取结果文件失败: {e}", e = e))?;
+    let parsed: ProbeFingerprints =
+        serde_json::from_str(&raw).map_err(|e| trf!("结果 JSON 解析失败: {e}", e = e))?;
+    if parsed.version != PROTOCOL_VERSION {
+        return Err(trf!(
+            "协议版本不匹配（子进程 {got}，当前 {want}）",
+            got = parsed.version,
+            want = PROTOCOL_VERSION
+        ));
+    }
+    Ok(parsed.fingerprints)
 }
 
 #[cfg(test)]

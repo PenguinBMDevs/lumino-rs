@@ -22,7 +22,9 @@ mod timeout;
 
 pub use check::{FallbackDiagnostics, check_gpu_support, debug_force_fail_requested};
 pub use report::{GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, required_backend_name};
-pub use timeout::{probe_adapter_fingerprints_with_timeout, run_check_with_timeout};
+pub use timeout::{
+    probe_adapter_fingerprints, probe_adapter_fingerprints_with_timeout, run_check_with_timeout,
+};
 
 /// GPU 检测默认超时（独立线程 + `recv_timeout`，保证不阻塞启动）
 pub const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);

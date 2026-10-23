@@ -60,33 +60,25 @@ pub fn run_check_with_timeout(timeout: Duration, when: FallbackDiagnostics) -> G
     }
 }
 
-/// 廉价探测（内部实现，**禁止直接调用**）：仅枚举要求后端的适配器指纹。
+/// 阻塞式廉价探测：仅枚举要求后端的适配器指纹。
 ///
-/// # ⚠️ 使用约束（务必阅读，UI-008 / #37 事故修复）
+/// # ⚠️ 调用约束（务必阅读，UI-008 / #37 事故修复）
 ///
-/// 本函数是 **阻塞式** 的：内部新建 wgpu `Instance` 并执行 `enumerate_adapters`
-/// （加载 Vulkan ICD、dlopen 各驱动）。在驱动异常的设备上，该调用可能**永久挂起**。
+/// 本函数内部新建 wgpu `Instance` 并执行 `enumerate_adapters`（加载 Vulkan ICD、
+/// dlopen 各驱动），在驱动异常的设备上可能**永久挂起**，且无法被线程超时终止。
 ///
-/// 历史事故：启动门控曾在主线程直接调用本函数校验指纹缓存——这是绝大多数老用户
-/// 每次启动的默认路径；驱动挂起时进程冻结在窗口创建之前，用户表现为「双击无反应」。
+/// **生产路径只允许在探针子进程内调用**（宿主 `device_probe`，超时可
+/// `TerminateProcess` 强杀）。历史事故：启动门控曾在主线程直接调用本函数，驱动挂起时
+/// 进程冻结在窗口创建之前，用户表现为「双击无反应」。
 ///
-/// 因此本函数可见性已收紧为 `pub(crate)`，crate 外无法调用；**唯一允许的调用方式
-/// 是 [`probe_adapter_fingerprints_with_timeout`]**（独立线程 + `recv_timeout`，
-/// 超时按 cache miss 处理）。同 crate 内新增调用点也必须遵守：
-///
-/// ```ignore
-/// // ❌ 禁止：调用线程（主线程/事件循环）被阻塞，驱动挂起即无限冻结
-/// let fingerprints = probe_adapter_fingerprints();
-///
-/// // ✅ 正确：走带超时的包装（内部独立线程；超时返回 None，按 cache miss 落回全量检测）
-/// let fingerprints = probe_adapter_fingerprints_with_timeout(PROBE_TIMEOUT);
-/// ```
+/// [`probe_adapter_fingerprints_with_timeout`]（独立线程 + 超时，超时按 cache miss
+/// 处理）仅供测试与诊断：超时后线程 detach、无法回收，不得用于生产主路径。
 ///
 /// # 返回值
 ///
 /// 要求后端的适配器指纹列表；枚举失败 / 无适配器时为空列表（空列表在缓存比对中
 /// 同样按 miss 处理，与超时语义一致）。
-pub(crate) fn probe_adapter_fingerprints() -> Vec<String> {
+pub fn probe_adapter_fingerprints() -> Vec<String> {
     // 调试开关（仅 debug 构建）：模拟探测挂起，用于验证
     // 「超时 → cache miss → 自动落回全量检测 → 启动在有限时间内继续」。
     #[cfg(debug_assertions)]
