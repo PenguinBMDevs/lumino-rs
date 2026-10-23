@@ -5,20 +5,49 @@
 
 use lumino_core::shape::{ShapeAnchor, ShapeKind, ShapeModel, ShapeOp, Sym, SymAxis, SymParams};
 
-/// 展开半边对称；非法输入返回 `None`（不 panic、不猜）
-pub fn symmetric(anchors: &[ShapeAnchor], params: &SymParams) -> Option<Vec<ShapeAnchor>> {
+/// 半边对称被拒绝的原因（DRAW-043：拒绝必须说得出为什么，不能静默返回 `None`）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymReject {
+    /// 锚点数不足 3
+    TooFewAnchors,
+    /// 锚点数为偶数（中间锚点必须落在对称轴上）
+    EvenAnchors,
+    /// 对称参数非法
+    InvalidParams,
+    /// 对称轴退化，无法求解
+    DegenerateAxis,
+    /// 只支持 Curve
+    NotCurve,
+    /// Joined 曲线不支持半边对称
+    JoinedCurve,
+    /// 展开结果含非有限值
+    NonFinite,
+    /// UI 侧：没有选中可编辑的形状
+    NoSelection,
+    /// UI 侧：形状更新失败
+    EditFailed,
+}
+
+/// 展开半边对称；非法输入返回**可展示的原因**
+pub fn symmetric_with_reason(
+    anchors: &[ShapeAnchor],
+    params: &SymParams,
+) -> Result<Vec<ShapeAnchor>, SymReject> {
     let n = anchors.len();
-    if n < 3 || n.is_multiple_of(2) {
-        return None;
+    if n < 3 {
+        return Err(SymReject::TooFewAnchors);
     }
-    params.validate().ok()?;
-    let axis = Axis::new(params.axis)?;
+    if n.is_multiple_of(2) {
+        return Err(SymReject::EvenAnchors);
+    }
+    params.validate().map_err(|_| SymReject::InvalidParams)?;
+    let axis = Axis::new(params.axis).ok_or(SymReject::DegenerateAxis)?;
     let pivot = axis.onto_line(anchors[n - 1].pos);
     if !finite(pivot) {
-        return None;
+        return Err(SymReject::NonFinite);
     }
     let mut out = anchors.to_vec();
-    let last = out.last_mut()?;
+    let last = out.last_mut().ok_or(SymReject::TooFewAnchors)?;
     last.pos = pivot;
     axis.flat_handles(last);
     for index in (0..n - 1).rev() {
@@ -38,7 +67,7 @@ pub fn symmetric(anchors: &[ShapeAnchor], params: &SymParams) -> Option<Vec<Shap
             }
         }
         if !finite(reflected.pos) || !finite(reflected.in_handle) || !finite(reflected.out_handle) {
-            return None;
+            return Err(SymReject::NonFinite);
         }
         out.push(reflected);
     }
@@ -48,16 +77,31 @@ pub fn symmetric(anchors: &[ShapeAnchor], params: &SymParams) -> Option<Vec<Shap
     if let Some(first_reflected) = out.get_mut(n) {
         axis.flat_in_handle(first_reflected);
     }
-    Some(out)
+    Ok(out)
 }
 
-/// 形状级入口：只允许 Curve，Joined 曲线禁用
-pub fn symmetric_shape(model: &ShapeModel, params: &SymParams) -> Option<Vec<ShapeAnchor>> {
-    if model.kind != ShapeKind::Curve || model.ops.iter().any(|op| matches!(op, ShapeOp::Joined(_)))
-    {
-        return None;
+/// 展开半边对称；非法输入返回 `None`（保留旧签名）
+pub fn symmetric(anchors: &[ShapeAnchor], params: &SymParams) -> Option<Vec<ShapeAnchor>> {
+    symmetric_with_reason(anchors, params).ok()
+}
+
+/// 形状级入口：只允许 Curve，Joined 曲线禁用；返回拒绝原因
+pub fn symmetric_shape_with_reason(
+    model: &ShapeModel,
+    params: &SymParams,
+) -> Result<Vec<ShapeAnchor>, SymReject> {
+    if model.kind != ShapeKind::Curve {
+        return Err(SymReject::NotCurve);
     }
-    symmetric(&model.geometry.anchors, params)
+    if model.ops.iter().any(|op| matches!(op, ShapeOp::Joined(_))) {
+        return Err(SymReject::JoinedCurve);
+    }
+    symmetric_with_reason(&model.geometry.anchors, params)
+}
+
+/// 形状级入口（旧签名）：拒绝时 `None`
+pub fn symmetric_shape(model: &ShapeModel, params: &SymParams) -> Option<Vec<ShapeAnchor>> {
+    symmetric_shape_with_reason(model, params).ok()
 }
 
 #[derive(Debug, Clone, Copy)]
