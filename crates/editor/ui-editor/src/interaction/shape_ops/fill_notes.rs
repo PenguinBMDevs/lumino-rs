@@ -315,3 +315,6 @@ fn fit_spans(pieces: &mut [Span], span: Span) {
     let last = pieces.len() - 1;
     pieces[last].end = span.end;
 }
+
+#[cfg(test)]
+mod tests;

@@ -118,24 +118,46 @@ fn test_shapes_roundtrip_archive() {
     assert_eq!(loaded.shapes, project.shapes, "形状应原样往返");
 }
 
-/// S0-2：空形状归档不含部件，且同一工程两次保存字节一致（确定性）
+/// S0-2：空形状归档不含部件；固定 `created_at` 的编码路径逐字节可复现（确定性）
+///
+/// 注意：`save_to_archive` 的归档头写入**当前时间**，所以「两次 `save_to_archive`
+/// 字节一致」只可能落在同一秒内——旧断言是跨秒即红的 flaky 测试。
+/// 真正的确定性承诺在 [`encode_archive_with_time`]（`created_at` 显式传入），
+/// 断言也落在那里。
 #[test]
 fn test_empty_shapes_archive_has_no_part_and_is_deterministic() {
     let project = create_test_project();
     let path = atomic_test_dir("shapes_empty_archive").join("a.lmpj");
     save_to_archive(&project, &path).expect("保存归档失败");
-    let first = std::fs::read(&path).expect("读取归档失败");
+    let saved = std::fs::read(&path).expect("读取归档失败");
 
     assert!(
-        crate::read_file_from_archive(&first, FolderPaths::SHAPES_FILE)
+        crate::read_file_from_archive(&saved, FolderPaths::SHAPES_FILE)
             .expect("读取归档部件失败")
             .is_none(),
         "空形状不得在归档中写出部件"
     );
 
-    save_to_archive(&project, &path).expect("重复保存失败");
-    let second = std::fs::read(&path).expect("读取归档失败");
-    assert_eq!(first, second, "同一工程两次保存应字节一致");
+    let first = encode_archive_with_time(&project, 0).expect("编码归档失败");
+    let second = encode_archive_with_time(&project, 0).expect("重复编码失败");
+    assert_eq!(first, second, "同一工程 + 同一 created_at 应字节一致");
+}
+
+/// 归档头 `created_at` 是编码过程唯一的时间来源：它变，字节才变
+#[test]
+fn test_archive_created_at_drives_bytes() {
+    let project = create_test_project();
+    let a = encode_archive_with_time(&project, 1).expect("编码归档失败");
+    let b = encode_archive_with_time(&project, 2).expect("编码归档失败");
+
+    assert_ne!(a, b, "created_at 必须体现在归档字节里");
+    assert_eq!(a.len(), b.len(), "只改时间戳不应改变归档长度");
+    assert_eq!(
+        crate::ArchiveHeader::from_bytes(&a)
+            .expect("解析归档头失败")
+            .created_at,
+        1
+    );
 }
 
 /// S0-2：含未知部件的工程仍可加载（旧版本读新工程不报错）
@@ -280,4 +302,26 @@ fn test_save_to_folder_atomic_replace() {
     );
     assert_no_leftovers(&dir);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `encode_archive`（不落盘）与 `save_to_archive` 同源：字节可被加载器回读，
+/// tempo / 拍号原样往返。协作房间工程上传走的就是这条内存编码路径。
+#[test]
+fn test_encode_archive_roundtrip() {
+    let mut project = create_test_project();
+    project.tempo_changes = vec![(0, 150.0), (960, 90.5)];
+    project.time_signatures = vec![(0, 3, 4)];
+
+    let bytes = encode_archive(&project).expect("编码归档失败");
+    assert_eq!(&bytes[0..4], b"LMPJ", "编码结果必须是合法归档（魔数）");
+
+    let loaded = crate::project::load::load_project_from_bytes(&bytes).expect("回读归档失败");
+    assert_eq!(
+        loaded.tempo_changes, project.tempo_changes,
+        "tempo 应原样往返"
+    );
+    assert_eq!(
+        loaded.time_signatures, project.time_signatures,
+        "拍号应原样往返"
+    );
 }

@@ -29,6 +29,13 @@ fn lengths(notes: &[ShapeNote]) -> Vec<f32> {
     notes.iter().map(|note| note.length).collect()
 }
 
+/// 某 tick 是否被任一音符覆盖
+fn covers(notes: &[ShapeNote], tick: f32) -> bool {
+    notes
+        .iter()
+        .any(|note| note.tick <= tick && tick < note.tick + note.length)
+}
+
 #[test]
 fn test_auto_gap_extends_group_to_group_end() {
     let notes = vec![
@@ -231,4 +238,53 @@ fn test_most_and_reach_never_shorten() {
     };
     let (out, _) = apply(&notes, &sustain, PPQ);
     assert_eq!(out[0].length, 100.0, "most 不能把原长 100 缩短");
+}
+
+#[test]
+fn test_sustain_coverage_equals_group_hull_union() {
+    // 口径裁定（见模块头「覆盖口径」）：延音后每 key 行的覆盖 = 各组凸包的并集。
+    // 组内小 gap 被填掉是**设计意图**，跨组大 gap 必须保留。
+    let notes = vec![
+        note(0.0, 60, 100.0, 100),   // [0,100)
+        note(110.0, 60, 100.0, 100), // [110,210)，组内 gap=10
+        note(500.0, 60, 100.0, 100), // [500,600)，跨组 gap=290
+        note(510.0, 60, 100.0, 100), // [510,610)，组内 gap=10
+    ];
+    // hold_gap = 0.05 拍 = 24 tick：10 ≤ 24 同组，290 > 24 断组
+    let (out, _) = apply(&notes, &params(Some(0.05)), PPQ);
+
+    // 1) 组内小空洞被填满 → 组 1 覆盖 [0,210)，组 2 覆盖 [500,610)
+    assert_eq!(
+        lengths(&out),
+        vec![210.0, 100.0, 110.0, 100.0],
+        "每组延长到本组组末"
+    );
+    assert!(covers(&out, 105.0), "组内 gap 100..110 应被填满");
+    assert!(covers(&out, 520.0), "组内 gap 500..510 应被填满");
+
+    // 2) 跨组大空洞保持为空
+    assert!(
+        !covers(&out, 300.0) && !covers(&out, 450.0),
+        "跨组空洞 210..500 不得被跨越"
+    );
+
+    // 3) 覆盖单调不减：原来的每个覆盖点都还在
+    for tick in [0.0, 50.0, 99.0, 110.0, 200.0, 500.0, 510.0, 609.0] {
+        assert!(covers(&out, tick), "tick={tick} 的原覆盖不得消失");
+    }
+}
+
+#[test]
+fn test_sustain_never_creates_new_hole_within_group() {
+    // 反证：若实现改成「只延长到下一个音符起点」，组内会新出现空洞——这里锁死不许
+    let notes = vec![
+        note(0.0, 60, 40.0, 100),   // [0,40)
+        note(60.0, 60, 40.0, 100),  // [60,100)
+        note(120.0, 60, 40.0, 100), // [120,160)
+    ];
+    let (out, _) = apply(&notes, &params(Some(0.05)), PPQ);
+    for tick in (0..160).step_by(10) {
+        assert!(covers(&out, tick as f32), "组内 tick={tick} 必须是连续覆盖");
+    }
+    assert_eq!(out[0].length, 160.0, "组内第一条延长到组末 160");
 }

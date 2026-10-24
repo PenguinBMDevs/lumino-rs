@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use super::{device_lost, mark_device_lost, reset_for_test};
+use super::{device_lost, ensure_device_available, mark_device_lost, reset_for_test};
 
 /// 全局标志相关测试的串行锁（测试进程内并行线程互斥）。
 static FLAG_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -168,6 +168,48 @@ fn test_reconnect_r1_poll_delivers_lost_callback_sync() {
     assert!(
         device_lost(),
         "回调应在 poll 轮询内同步置位全局 DEVICE_LOST 标志"
+    );
+
+    reset_for_test();
+}
+
+/// REND-020：统一守卫的纯逻辑——置位拒绝、复位放行。
+#[test]
+fn test_rend_020_guard_rejects_when_device_lost() {
+    let _guard = lock_flag_tests();
+    reset_for_test();
+    assert!(ensure_device_available().is_ok(), "初始应允许");
+    assert!(mark_device_lost(), "首次置位应返回 true");
+    assert!(
+        matches!(
+            ensure_device_available(),
+            Err(crate::ContextError::DeviceLost)
+        ),
+        "停帧标志置位后守卫必须返回 DeviceLost"
+    );
+    reset_for_test();
+    assert!(ensure_device_available().is_ok(), "复位后应恢复");
+}
+
+/// REND-020：`Context::new` 必须在创建 surface 之前早退（用 panic factory 证明）。
+#[test]
+fn test_rend_020_context_new_rejects_before_surface_creation() {
+    use futures::executor::block_on;
+
+    let _guard = lock_flag_tests();
+    reset_for_test();
+    assert!(mark_device_lost(), "首次置位应返回 true");
+
+    let factory = |_: &wgpu::Instance| -> std::result::Result<
+        wgpu::Surface<'static>,
+        wgpu::CreateSurfaceError,
+    > {
+        panic!("REND-020：停帧守卫必须先于 surface 创建");
+    };
+    let result = block_on(crate::Context::new(factory, 320, 240));
+    assert!(
+        matches!(result, Err(crate::ContextError::DeviceLost)),
+        "停帧窗口内 Context::new 必须返回 DeviceLost"
     );
 
     reset_for_test();

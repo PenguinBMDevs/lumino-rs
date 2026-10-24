@@ -20,6 +20,26 @@ fn path() -> Vec<Pt> {
     vec![(0.0, 60.0), (480.0, 60.0)]
 }
 
+/// 把 `y > threshold` 的连续段收成「波峰 x」
+fn peak_centres(points: &[Pt], threshold: f64) -> Vec<f64> {
+    let mut out = Vec::new();
+    let mut best: Option<(f64, f64)> = None;
+    for &(x, y) in points {
+        if y > threshold {
+            match best {
+                Some((_, best_y)) if best_y >= y => {}
+                _ => best = Some((x, y)),
+            }
+        } else if let Some((best_x, _)) = best.take() {
+            out.push(best_x);
+        }
+    }
+    if let Some((best_x, _)) = best {
+        out.push(best_x);
+    }
+    out
+}
+
 #[test]
 fn test_sine_wave_peaks_up() {
     let out = formed_path(&path(), &sine(1.0), 480.0);
@@ -44,10 +64,28 @@ fn test_sine_wave_peaks_up() {
 #[test]
 fn test_loops_repeat_three_times() {
     let out = formed_path(&path(), &sine(3.0), 480.0);
-    let peaks = out.iter().filter(|p| p.1 > 60.9).count();
-    assert!(peaks >= 3, "三圈应出现三个正向波峰区，实际 {peaks}");
     let max_x = out.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
     assert!(max_x <= 480.0 + 1e-6, "不应越过曲线终点");
+
+    // 段间距 = 圈长：曲线 480 tick / 3 圈 = 160 tick，波峰落在 40 / 200 / 360
+    let peaks = peak_centres(&out, 60.5);
+    assert_eq!(peaks.len(), 3, "三圈应恰好三个波峰，实际 {peaks:?}");
+    for (index, expected) in [40.0, 200.0, 360.0].iter().enumerate() {
+        assert!(
+            (peaks[index] - expected).abs() < 4.0,
+            "第 {} 个波峰应在 tick≈{expected}，实际 {}",
+            index + 1,
+            peaks[index]
+        );
+    }
+    let loop_ticks = 480.0 / 3.0;
+    for pair in peaks.windows(2) {
+        assert!(
+            (pair[1] - pair[0] - loop_ticks).abs() < 4.0,
+            "相邻波峰间距应等于圈长 {loop_ticks}，实际 {}",
+            pair[1] - pair[0]
+        );
+    }
 }
 
 #[test]
@@ -89,9 +127,22 @@ fn test_invalid_formula_returns_original() {
 
 #[test]
 fn test_point_limit_truncates() {
-    let out = formed_path(&path(), &sine(2000.0), 480.0);
+    let (out, report) = formed_path_with_report(&path(), &sine(2000.0), 480.0);
     assert!(out.len() <= MAX_POINTS);
     assert!(out.len() > 1000);
+    assert!(
+        report.truncated,
+        "超过 MAX_POINTS 必须报告截断，不允许静默丢点"
+    );
+    assert_eq!(report.points, out.len(), "报告点数应与实际产出一致");
+}
+
+#[test]
+fn test_no_truncation_report_under_limit() {
+    let (out, report) = formed_path_with_report(&path(), &sine(1.0), 480.0);
+    assert!(!report.truncated, "未超限不得误报截断");
+    assert_eq!(report.points, out.len());
+    assert_eq!(formed_path(&path(), &sine(1.0), 480.0), out);
 }
 
 #[test]

@@ -405,8 +405,24 @@ pub fn read_file_from_archive(archive_bytes: &[u8], file_path: &str) -> Result<O
     ArchiveReader::new(archive_bytes)?.read(file_path)
 }
 
-/// 构建归档文件
+/// 构建归档文件（归档头写入当前时间）
 pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> Result<Vec<u8>> {
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    build_archive_with_time(files, created_at)
+}
+
+/// 以指定创建时间构建归档（**确定性入口**）
+///
+/// 归档头 `created_at` 是本函数唯一的墙钟字段。固定它之后，
+/// 「相同文件列表 + 相同 `created_at` ⇒ 逐字节相同的归档」——
+/// 供内容指纹（跨进程 hash 比对）场景使用，例如协作房间工程上传。
+pub fn build_archive_with_time(
+    files: &[(String, Vec<u8>, bool)],
+    created_at: u64,
+) -> Result<Vec<u8>> {
     let mut result = Vec::new();
 
     // 预留文件头空间
@@ -455,10 +471,6 @@ pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> Result<Vec<u8>> {
     result.extend_from_slice(&ft_compressed);
 
     // 写入文件头
-    let created_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
     let header = ArchiveHeader {
         magic: *b"LMPJ",
         version: 1,

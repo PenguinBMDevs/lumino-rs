@@ -1,12 +1,9 @@
 //! 协作类窗口事件处理
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::runner::RunnerInner;
-use crate::storage;
 use lumino_collaboration::http::HttpClient;
 use lumino_core::{tr, trf};
 use lumino_export;
@@ -14,12 +11,7 @@ use lumino_project::project::load::load_project_from_bytes;
 use lumino_ui::event::window::collaboration::Event;
 use lumino_ui::state::root_state::CollaborationViewState;
 
-/// 计算字节的 hex 哈希（用于工程一致性比对）
-fn hash_bytes(bytes: &[u8]) -> String {
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
+mod room_project;
 
 impl RunnerInner {
     /// 同步「协作同步开关」到主窗口编辑器。
@@ -30,35 +22,6 @@ impl RunnerInner {
     fn set_editor_collab_sync(&mut self, enabled: bool) {
         let editor = &mut self.window_state.window.ui_mut().root_mut().editor;
         editor.editor_state.data.set_collab_sync_enabled(enabled);
-    }
-
-    /// 把工程序列化为 `.lmpj` 字节（纯数据操作，可在后台线程执行，不触碰 UI）。
-    ///
-    /// 接收已克隆出来的 `MidiDocument` 与 tempo 点，避免在主线程直接读取编辑器状态
-    /// 导致大工程卡死 UI。返回 None 表示无工程或序列化失败。
-    fn serialize_room_project(
-        doc: &lumino_midi_loader::MidiDocument,
-        tempo: &[(f32, f64)],
-    ) -> Option<Vec<u8>> {
-        let mut project = lumino_export::LuminoProject::from_midi_document(doc);
-        project.apply_tempo_points(tempo.iter().copied());
-
-        let tmp_dir = storage::config_dir().join("user-data").join("rooms");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        let path = tmp_dir.join(format!(
-            "room_proj_{}.lmpj",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-        if let Err(e) = lumino_export::save_to_archive(&project, &path) {
-            tracing::warn!("协作: 序列化房间工程为归档失败，无法上传: {e}");
-            return None;
-        }
-        let bytes = std::fs::read(&path).ok();
-        let _ = std::fs::remove_file(&path);
-        bytes
     }
 
     pub(crate) fn handle_collaboration_events(&mut self, window_event: Event) {
@@ -118,8 +81,9 @@ impl RunnerInner {
                 );
 
                 // host 路径：上传当前工程到房间。
-                // 关键修复：在 UI 线程仅 Clone 可 Send 的 MidiDocument/tempo（轻量），
-                // 真正的序列化与上传搬到右台线程，避免大工程卡死主线程、进度条晚出。
+                // 关键修复：在 UI 线程仅 Clone 可 Send 的 MidiDocument（tempo 已在
+                // document 内，无需另拷），真正的序列化与上传搬到后台线程，
+                // 避免大工程卡死主线程、进度条晚出。
                 let code = invite_code.clone();
                 let host = self.collab_state.server_host.clone();
                 let port = self.collab_state.server_port;
@@ -128,16 +92,9 @@ impl RunnerInner {
                 } else {
                     project_name
                 };
-                let (doc, tempo) = {
+                let doc = {
                     let ui = self.window_state.window.ui();
-                    let data = &ui.root().editor.editor_state.data;
-                    (
-                        data.document.clone(),
-                        data.tempo_points
-                            .iter()
-                            .map(|tp| (tp.tick, tp.bpm))
-                            .collect::<Vec<_>>(),
-                    )
+                    ui.root().editor.editor_state.data.document.clone()
                 };
                 let progress_cb = Arc::clone(&self.window_state.progress_cb);
                 // 先弹进度对话框，立即给用户反馈（此时尚未开始序列化）
@@ -164,9 +121,8 @@ impl RunnerInner {
                         }));
                     // 后台线程完成重活：序列化工程为 .lmpj 字节（doc 为 Option，需解包后传入）
                     let bytes = match doc {
-                        Some(doc_inner) => match tokio::task::spawn_blocking({
-                            let tempo = tempo.clone();
-                            move || Self::serialize_room_project(&doc_inner, &tempo)
+                        Some(doc_inner) => match tokio::task::spawn_blocking(move || {
+                            room_project::serialize(&doc_inner)
                         })
                         .await
                         {
@@ -182,7 +138,7 @@ impl RunnerInner {
                         progress_cb(tr!("无工程可上传或生成失败"), 1.0);
                         return;
                     };
-                    let hash = hash_bytes(&bytes);
+                    let hash = room_project::hash_bytes(&bytes);
                     // 进度切到「上传中」，进入带百分比的流式上传
                     progress_cb(&trf!("正在上传协作工程 {name}…", name = name_p), 0.0);
                     let client = HttpClient::new(&host, port);
@@ -225,16 +181,9 @@ impl RunnerInner {
                     tracing::warn!("协作: 房间无工程哈希，跳过下载");
                     return;
                 }
-                let (doc, tempo) = {
+                let doc = {
                     let ui = self.window_state.window.ui();
-                    let data = &ui.root().editor.editor_state.data;
-                    (
-                        data.document.clone(),
-                        data.tempo_points
-                            .iter()
-                            .map(|tp| (tp.tick, tp.bpm))
-                            .collect::<Vec<_>>(),
-                    )
+                    ui.root().editor.editor_state.data.document.clone()
                 };
                 let progress_cb = Arc::clone(&self.window_state.progress_cb);
                 progress_cb(
@@ -246,13 +195,12 @@ impl RunnerInner {
                 let port = self.collab_state.server_port;
                 tokio::spawn(async move {
                     // 后台计算本地工程哈希，与房间哈希比对（避免主线程序列化卡顿）
+                    // 与 host 上传用的是同一个 `room_project::serialize`（逐字节确定），
+                    // 因此内容一致时 hash 必然一致。
                     let local_hash = match doc {
-                        Some(doc_inner) => tokio::task::spawn_blocking({
-                            let tempo = tempo.clone();
-                            move || {
-                                Self::serialize_room_project(&doc_inner, &tempo)
-                                    .map(|b| hash_bytes(&b))
-                            }
+                        Some(doc_inner) => tokio::task::spawn_blocking(move || {
+                            room_project::serialize(&doc_inner)
+                                .map(|b| room_project::hash_bytes(&b))
                         })
                         .await
                         .ok()
@@ -376,3 +324,6 @@ impl RunnerInner {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

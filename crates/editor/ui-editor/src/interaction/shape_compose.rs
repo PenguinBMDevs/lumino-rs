@@ -7,9 +7,10 @@ use lumino_core::shape::{
     BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeKind, ShapeModel, ShapeOp,
     StraightenParams, Sym, SymAxis, SymParams, VelocityEnv,
 };
+use lumino_core::tr;
 use lumino_editor_state::shape_ops::{
-    between_blend, between_graph_at, copy_along_apply, cut_loops, gate_merge, join,
-    symmetric_shape, to_live,
+    SymReject, between_blend, between_graph_at, copy_along_apply, cut_loops, gate_merge, join,
+    symmetric_shape_with_reason, to_live,
 };
 use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeNote};
 
@@ -135,9 +136,22 @@ impl Editor {
     }
 
     /// 023：切换对称（竖轴/横轴）。再次调用同一轴 = 关闭。
-    pub fn toggle_symmetry(&mut self, vertical: bool) -> bool {
+    ///
+    /// 关闭不是失败，只有「拒绝」才返回 `Err`（附可展示原因，DRAW-043）。
+    pub fn toggle_symmetry(&mut self, vertical: bool) -> Result<(), SymReject> {
+        let result = self.toggle_symmetry_inner(vertical);
+        if let Err(reason) = result {
+            tracing::warn!(
+                reason = sym_reject_message(reason),
+                "半边对称被拒绝（DRAW-023）"
+            );
+        }
+        result
+    }
+
+    fn toggle_symmetry_inner(&mut self, vertical: bool) -> Result<(), SymReject> {
         let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
-            return false;
+            return Err(SymReject::NoSelection);
         };
         let params = SymParams {
             mode: Sym::Mirror,
@@ -166,14 +180,16 @@ impl Editor {
             .any(|op| matches!(op, ShapeOp::Symmetry(_)));
         model.ops.retain(|op| !matches!(op, ShapeOp::Symmetry(_)));
         if !already {
-            if model.kind != ShapeKind::Curve || symmetric_shape(&model, &params).is_none() {
-                return false;
-            }
+            symmetric_shape_with_reason(&model, &params)?;
             model.ops.push(ShapeOp::Symmetry(params));
         }
-        let ok = self.edit_shape(model_id, model);
+        let updated = self.edit_shape(model_id, model);
         self.refresh_drawn_source(drawn_id, model_id);
-        ok
+        if updated {
+            Ok(())
+        } else {
+            Err(SymReject::EditFailed)
+        }
     }
 
     /// 024：显式开启/关闭扶正
@@ -566,6 +582,21 @@ fn split_notes_vertical(notes: &[ShapeNote], cut: f32) -> (Vec<ShapeNote>, Vec<S
         }
     }
     (left, right)
+}
+
+/// 半边对称拒绝原因的用户可见文案（DRAW-043：拒绝必须说得出为什么）
+pub(crate) fn sym_reject_message(reason: SymReject) -> &'static str {
+    match reason {
+        SymReject::NoSelection => tr!("请先选中一个形状"),
+        SymReject::NotCurve => tr!("只有曲线形状支持半边对称"),
+        SymReject::JoinedCurve => tr!("已连接的曲线不支持半边对称"),
+        SymReject::TooFewAnchors => tr!("锚点太少，无法做半边对称"),
+        SymReject::EvenAnchors => tr!("锚点数为偶数，中间锚点需落在对称轴上"),
+        SymReject::InvalidParams => tr!("对称参数不合法"),
+        SymReject::DegenerateAxis => tr!("对称轴退化，无法求解"),
+        SymReject::NonFinite => tr!("对称结果包含非有限值"),
+        SymReject::EditFailed => tr!("形状更新失败"),
+    }
 }
 
 #[cfg(test)]

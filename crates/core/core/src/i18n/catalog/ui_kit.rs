@@ -32,6 +32,20 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "编辑形状" => Some("Edit Shape"),
         "竖轴对称" => Some("Symmetry: Vertical Axis"),
         "横轴对称" => Some("Symmetry: Horizontal Axis"),
+        // ── 半边对称拒绝原因（DRAW-043，`ui-editor/src/interaction/shape_compose.rs`）──
+        "请先选中一个形状" => Some("Select a shape first"),
+        "只有曲线形状支持半边对称" => Some("Only curve shapes support half symmetry"),
+        "已连接的曲线不支持半边对称" => {
+            Some("Joined curves do not support half symmetry")
+        }
+        "锚点太少，无法做半边对称" => Some("Too few anchors for half symmetry"),
+        "锚点数为偶数，中间锚点需落在对称轴上" => {
+            Some("Even anchor count: the middle anchor must lie on the axis")
+        }
+        "对称参数不合法" => Some("Invalid symmetry parameters"),
+        "对称轴退化，无法求解" => Some("Degenerate symmetry axis"),
+        "对称结果包含非有限值" => Some("Symmetry produced non-finite values"),
+        "形状更新失败" => Some("Failed to update shape"),
         "扶正 50%" => Some("Straighten 50%"),
         "取消扶正" => Some("Clear Straightening"),
         "竖切" => Some("Slice Vertically"),

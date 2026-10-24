@@ -121,6 +121,13 @@ impl DialogManager {
         ui_config: &UiConfig,
         main_ui: &lumino_ui::Host,
     ) {
+        // REND-020（#166）：停帧窗口内冻结对话框初始化——`Context::new` 会拒绝在
+        // 死设备上建 Context（返回 DeviceLost）；此处先停，既避免逐帧建/毁窗口，
+        // 也保证 `pending_dialogs` 原样保留，重连完成（标志撤销）后下一帧继续。
+        if lumino_gfx::device_lost() {
+            return;
+        }
+
         // 阶段 1：从 pending 队列取出一个请求，仅创建窗口。
         // 限制同时初始化的窗口数量，避免一帧内堆积多个窗口创建。
         if self.initializing.is_empty()
@@ -154,11 +161,23 @@ impl DialogManager {
                 // 阶段 2：创建 GFX。
                 puffin::profile_scope!("dialog_manager_init_gfx");
                 if let Err(e) = dialog.initialize_gfx() {
-                    tracing::error!("初始化对话框 GFX 失败: {}", e);
-                    self.initializing.remove(0);
-                    // 窗口随 DialogWindow 一起销毁，必须释放归属：
-                    // claimed_windows 只增不减会泄漏，且窗口 id 不会复用。
-                    self.release_window(window_id);
+                    if lumino_gfx::device_lost() {
+                        // REND-020（#166）：守卫拒绝（停帧窗口）——窗口丢弃、请求回队，
+                        // 重连完成后重试；入口早退保证不会逐帧重建窗口。
+                        let (_, pending) = self.initializing.remove(0);
+                        self.release_window(window_id);
+                        tracing::info!(
+                            "REND-020：停帧窗口内对话框初始化延后（{:?}），待重连完成后重试",
+                            pending.dialog_type
+                        );
+                        self.pending_dialogs.push(pending);
+                    } else {
+                        tracing::error!("初始化对话框 GFX 失败: {}", e);
+                        self.initializing.remove(0);
+                        // 窗口随 DialogWindow 一起销毁，必须释放归属：
+                        // claimed_windows 只增不减会泄漏，且窗口 id 不会复用。
+                        self.release_window(window_id);
+                    }
                 }
             } else {
                 // 阶段 3：创建 UI 并显示窗口。

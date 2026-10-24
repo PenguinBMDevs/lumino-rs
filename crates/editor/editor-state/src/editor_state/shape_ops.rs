@@ -47,7 +47,9 @@ pub use between::{
     BetweenWarning, blend as between_blend, fingerprint as between_fingerprint,
     graph_at as between_graph_at, is_modified as between_is_modified, sync_groups,
 };
-pub use bezier::symmetry::{symmetric, symmetric_shape};
+pub use bezier::symmetry::{
+    SymReject, symmetric, symmetric_shape, symmetric_shape_with_reason, symmetric_with_reason,
+};
 pub use bezier::{reverse_anchors, to_bezier};
 pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
@@ -73,7 +75,7 @@ pub use masks::{
 pub use merge::{MergeOutcome, comes_from_left, gate_merge};
 pub use mould::{SHORT as MOULD_SHORT, mould_rows};
 pub use nested::{ColouredSpan, nested_spans};
-pub use pattern::{LOOP_SAMPLES, MAX_POINTS, formed_path};
+pub use pattern::{LOOP_SAMPLES, MAX_POINTS, PatternReport, formed_path, formed_path_with_report};
 pub use polygon::{paths as polygon_paths, side_paths as polygon_side_paths, unit_loops};
 pub use slice::{crossings, cut_loops, inside as slice_inside};
 pub use sliced::{CutKind, CutMark, CutRef, KnifeKind, outline_keys};

@@ -8,7 +8,9 @@
 //! 消费方：
 //! - 渲染线程主循环每轮首行检查，置位则有序退出（不再对死设备发命令）；
 //! - UI 侧 blit 前复查（`host/render/separate_thread/core.rs`），置位则本帧放弃拷贝；
-//! - `handle_frame_error` 返回 `FrameErrorAction::Stop`，调用点不再盲重绘。
+//! - `handle_frame_error` 返回 `FrameErrorAction::Stop`，调用点不再盲重绘；
+//! - `Context::new` / `resize` / `handle_frame_error` 经 `ensure_device_available`
+//!   早退，禁止在死设备上 `configure`（REND-020）。
 //!
 //! 演进说明（REND-019 计划范式）：
 //! - PR-B：本标志并入 `GpuEpoch` / `SharedGpuState` 快照体系；
@@ -53,6 +55,24 @@ pub fn mark_device_lost() -> bool {
 pub fn clear_device_lost() {
     if DEVICE_LOST.swap(false, Ordering::SeqCst) {
         tracing::info!("DEVICE_LOST 撤销：重连完成，恢复渲染（REND-019 PR-C）");
+    }
+}
+
+/// REND-020（#166）：渲染/交换链操作前的统一停帧守卫。
+///
+/// 置位时返回 [`crate::ContextError::DeviceLost`]——调用方必须早退：禁止在
+/// 已丢失设备上执行 `surface.configure`（wgpu 的 configure 会等待 GPU idle，
+/// 可能永久不返回，见 `Context::new` / `resize` 的 R2 记录）。
+///
+/// ⚠️ 禁止在 `Context::rebind_device` / `configure_surface_stable` 内调用：
+/// 重连恢复路径在标志仍置位时必须继续 configure（标志到
+/// `restart_render_threads` 才撤销）；若在此早退，新 surface 会留在未配置态，
+/// `get_current_texture` 退化为 `SurfaceError::Other` 热循环。
+pub(crate) fn ensure_device_available() -> Result<(), crate::ContextError> {
+    if DEVICE_LOST.load(Ordering::SeqCst) {
+        Err(crate::ContextError::DeviceLost)
+    } else {
+        Ok(())
     }
 }
 

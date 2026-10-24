@@ -41,8 +41,11 @@ xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", re
 #      android 跳过系统字体扫描，不补则中文全豆腐块）；
 #   3. wgpu/{lib,text}.rs    —— 原 vendor/iced_wgpu 的段落强引用钉（菜单栏文字
 #      悬停闪烁修复）+ LUMINO_TEXT_TRACE 诊断。
+# vendor/iced_wgpu 已删除：其 src 与 fork 的 wgpu/src 37 个文件逐字节一致，
+# 等价性已核验，迁移后行为不变。（2026-10-24）
 # 12 个 crate 必须**同 rev 一起 patch**：iced_winit 等包内部是 path 依赖，
 # 只 patch 单个包会产生 crates.io 与 git 双实例类型分裂（E0308，同 xsynth 教训）。
+# 补丁镜像：docs/iced-fork/0001-android-support.patch（已在 595af03 上 apply --check）
 iced = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
 iced_core = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
 iced_debug = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }

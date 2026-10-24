@@ -95,3 +95,87 @@ fn test_shape_entry_rejects_joined_and_non_curve() {
     line.geometry = ShapeGeometry::from_points([(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)]);
     assert!(symmetric_shape(&line, &params(Sym::Mirror)).is_none());
 }
+
+#[test]
+fn test_off_axis_seam_anchor_is_projected_onto_axis() {
+    // DRAW-043：接缝（中间）锚点原本偏离竖轴 x=100，展开后必须落在轴上（1e-6）
+    let mut input = anchors();
+    input[2].pos = (100.4, 70.0);
+    let out = symmetric(&input, &params(Sym::Mirror)).expect("应可展开");
+    let seam = out[2].pos;
+    assert!(
+        (seam.0 - 100.0).abs() < 1e-6,
+        "中间锚点必须落在对称线上，实际 {seam:?}"
+    );
+    assert!(
+        ((out[0].pos.0 + out[4].pos.0) * 0.5 - 100.0).abs() < 1e-6,
+        "两端点仍应关于该轴严格对称"
+    );
+}
+
+#[test]
+fn test_reject_reasons_are_distinguishable() {
+    // DRAW-043：拒绝必须给出**具体**原因，不能一律 None
+    let two = vec![
+        ShapeAnchor::new((0.0, 60.0)),
+        ShapeAnchor::new((100.0, 70.0)),
+    ];
+    assert_eq!(
+        symmetric_with_reason(&two, &params(Sym::Mirror)).err(),
+        Some(SymReject::TooFewAnchors),
+        "2 个锚点应报「太少」而不是「偶数」"
+    );
+
+    let four: Vec<ShapeAnchor> = (0..4)
+        .map(|index| ShapeAnchor::new((index as f32 * 10.0, 60.0)))
+        .collect();
+    assert_eq!(
+        symmetric_with_reason(&four, &params(Sym::Mirror)).err(),
+        Some(SymReject::EvenAnchors)
+    );
+
+    let mut bad = params(Sym::Mirror);
+    bad.axis = SymAxis::Custom {
+        origin: (0.0, 0.0),
+        dir: (0.0, 0.0),
+    };
+    assert_eq!(
+        symmetric_with_reason(&anchors(), &bad).err(),
+        Some(SymReject::InvalidParams),
+        "零方向轴在 validate 阶段就被拒（早于 Axis 构造）"
+    );
+
+    // validate 只查「非零」，极短但非零的方向能过校验、在 Axis 构造处退化
+    let mut tiny = params(Sym::Mirror);
+    tiny.axis = SymAxis::Custom {
+        origin: (0.0, 0.0),
+        dir: (2e-7, 0.0),
+    };
+    assert_eq!(
+        symmetric_with_reason(&anchors(), &tiny).err(),
+        Some(SymReject::DegenerateAxis)
+    );
+
+    let mut line = ShapeModel::new(9, 1, ShapeKind::Line, 1.0);
+    line.geometry = ShapeGeometry::from_points([(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)]);
+    assert_eq!(
+        symmetric_shape_with_reason(&line, &params(Sym::Mirror)).err(),
+        Some(SymReject::NotCurve)
+    );
+
+    let mut joined = ShapeModel::new(10, 1, ShapeKind::Curve, 1.0);
+    joined.geometry = ShapeGeometry::from_points([(0.0, 60.0), (50.0, 64.0), (100.0, 70.0)]);
+    joined
+        .ops
+        .push(ShapeOp::Joined(lumino_core::shape::JoinedParams {
+            gaps: Vec::new(),
+            tumours: vec![None],
+            splits: Vec::new(),
+            src: vec![1],
+        }));
+    assert_eq!(
+        symmetric_shape_with_reason(&joined, &params(Sym::Mirror)).err(),
+        Some(SymReject::JoinedCurve),
+        "已连接曲线必须报 JoinedCurve 而不是 NotCurve"
+    );
+}

@@ -106,6 +106,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "请求 device 失败" => Some("Failed to request device"),
         "获取帧失败" => Some("Failed to acquire frame"),
         "GPU 尚未初始化" => Some("GPU not initialized"),
+        "GPU 设备已丢失（等待重连）" => Some("GPU device lost (waiting for reconnect)"),
 
         // `crates/editor/gfx/src/global_bucket.rs`（GlobalBucketError）
         "音符数量超出 u32 索引范围" => Some("Note count exceeds u32 index range"),

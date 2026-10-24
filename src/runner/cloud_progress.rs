@@ -199,6 +199,11 @@ impl CloudProgressManager {
         anchor: Option<&Window>,
     ) {
         if self.progress.is_some() && self.window.is_none() {
+            // REND-020（#166）：停帧窗口内不建云进度浮窗——`Context::new` 会拒绝在
+            // 死设备上建 Context；逐帧「建窗→丢弃」还会放大窗口/交换链开销。
+            if lumino_gfx::device_lost() {
+                return;
+            }
             self.create_window(event_loop, ui_config, anchor);
         } else if self.progress.is_none() && self.window.is_some() {
             self.close();

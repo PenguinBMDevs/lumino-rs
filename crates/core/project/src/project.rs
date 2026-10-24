@@ -189,10 +189,18 @@ impl LuminoProject {
 
     /// 用速度点列表覆盖全局速度变化（tick, BPM）
     ///
-    /// UI 中速度编辑的权威源是 `tempo_points`（工程设置对话框 / 速度面板），
-    /// 而保存链路 `from_midi_document` 只读 `doc.tempo_changes`（加载时的原始值）。
-    /// 两者不同步会导致用户修改的 tempo 保存后丢失（回落到默认 120 BPM），
-    /// 因此所有保存/导出出口在构建 `LuminoProject` 后必须调用本方法覆盖。
+    /// **历史遗留兼容方法——不应在新代码中调用。**
+    ///
+    /// 2026-10-20 单一权威源整改（审计 §三 / §二十一）前，UI 编辑态是
+    /// `EditorData.tempo_points`，而 [`Self::from_midi_document`] 只读
+    /// `doc.tempo_changes`，于是六个保存/导出出口在构建工程后靠本方法把编辑值
+    /// 覆盖回去（"补丁"）。整改后 `EditorData` 的每个 tempo 写入入口都会
+    /// `sync_tempo_to_document` 写穿，`doc.tempo_changes` 恒为编辑后的值，
+    /// 全部出口直接读 document；再调用本方法只是把"本来就一样的值"重复写一遍，
+    /// 等于保留第二种事实来源。
+    ///
+    /// 写穿与本方法的转换式相同（`tick.max(0.0) as u32, bpm as f32`），
+    /// 因此对已同步的 document 调用与否，结果完全相同。
     pub fn apply_tempo_points(&mut self, points: impl IntoIterator<Item = (f32, f64)>) {
         self.tempo_changes = points
             .into_iter()
