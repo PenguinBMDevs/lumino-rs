@@ -281,3 +281,25 @@ fn test_save_to_folder_atomic_replace() {
     assert_no_leftovers(&dir);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `encode_archive`（不落盘）与 `save_to_archive` 同源：字节可被加载器回读，
+/// tempo / 拍号原样往返。协作房间工程上传走的就是这条内存编码路径。
+#[test]
+fn test_encode_archive_roundtrip() {
+    let mut project = create_test_project();
+    project.tempo_changes = vec![(0, 150.0), (960, 90.5)];
+    project.time_signatures = vec![(0, 3, 4)];
+
+    let bytes = encode_archive(&project).expect("编码归档失败");
+    assert_eq!(&bytes[0..4], b"LMPJ", "编码结果必须是合法归档（魔数）");
+
+    let loaded = crate::project::load::load_project_from_bytes(&bytes).expect("回读归档失败");
+    assert_eq!(
+        loaded.tempo_changes, project.tempo_changes,
+        "tempo 应原样往返"
+    );
+    assert_eq!(
+        loaded.time_signatures, project.time_signatures,
+        "拍号应原样往返"
+    );
+}

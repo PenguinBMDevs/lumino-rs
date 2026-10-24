@@ -135,10 +135,22 @@ fn write_folder_contents(project: &LuminoProject, base: &Path) -> Result<()> {
 /// DEBT-01 #118：同卷临时文件 → `sync_all` → 换入目标；写失败时原文件保持
 /// 不变（Windows 上先旧→`.bak` 再换入，失败自动回滚）。
 pub fn save_to_archive(project: &LuminoProject, path: impl AsRef<Path>) -> Result<()> {
-    let files = build_archive_files(project)?;
-    let archive_bytes = archive::build_archive(&files)?;
+    let archive_bytes = encode_archive(project)?;
     atomic::write_file_atomic(path.as_ref(), &archive_bytes)?;
     Ok(())
+}
+
+/// 把工程编码为单文件归档字节（**不落盘**）
+///
+/// 与 [`save_to_archive`] 同源，供"只要字节、不要文件"的场景直接使用
+/// （例：协作房间工程上传），避免「写临时文件 → 读回 → 删除」的往返。
+///
+/// ⚠️ 归档头与 `metadata.toml` 含**编码时刻**的时间戳（`SystemTime::now()` /
+/// `chrono::Local::now()`），所以同一份数据两次编码的字节不一定相同。
+/// 不要把本函数的输出当作内容指纹（hash）使用——跨进程比对必然失配。
+pub fn encode_archive(project: &LuminoProject) -> Result<Vec<u8>> {
+    let files = build_archive_files(project)?;
+    archive::build_archive(&files)
 }
 
 /// 构建归档文件列表
