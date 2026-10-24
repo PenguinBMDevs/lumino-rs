@@ -95,16 +95,23 @@ pub enum DialogResult {
 pub fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
     match event {
         Event::Touch(touch_event) => match touch_event {
+            // 顺序很重要：**先** `CursorMoved`，再按下/抬起。
+            // iced 的下拉类控件是「press-only」判定——`pick_list.rs:451-463` 与
+            // `overlay/menu.rs:413-419` 都要求 `cursor.is_over(bounds)`，而该
+            // cursor 取自本批事件**处理前** `UserInterface` 持有的光标。
+            // 先发按下的旧顺序会让「按下」看到上一帧的光标：触屏上表现为
+            // **下拉框点了没反应**；画布类控件用事件自带坐标所以照常工作，
+            // 正好对得上真机现象。
             touch::Event::FingerPressed { position, .. } => {
                 vec![
-                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
                     Event::Mouse(mouse::Event::CursorMoved { position }),
+                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
                 ]
             }
             touch::Event::FingerLifted { position, .. } => {
                 vec![
-                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
                     Event::Mouse(mouse::Event::CursorMoved { position }),
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
                 ]
             }
             touch::Event::FingerMoved { position, .. } => {
@@ -113,8 +120,8 @@ pub fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
             touch::Event::FingerLost { id, position } => {
                 vec![
                     Event::Touch(touch::Event::FingerLost { id, position }),
-                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
                     Event::Mouse(mouse::Event::CursorMoved { position }),
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
                 ]
             }
         },
@@ -127,8 +134,10 @@ mod tests {
     use super::*;
     use iced_core::Point;
 
-    /// 单指按下：合成「左键按下 + 光标定位」，顺序不能反
-    /// （画布按下时用光标位置算命中，光标必须先到位）
+    /// 单指按下：合成「光标定位 + 左键按下」，**光标必须在前**
+    ///
+    /// press-only 控件（`pick_list` / menu overlay）用处理时刻的 cursor 判
+    /// `is_over(bounds)`，光标后置会让按下看到上一帧位置 → 下拉框点不开。
     #[test]
     fn finger_pressed_becomes_button_press() {
         let events = convert_touch_to_mouse(Event::Touch(touch::Event::FingerPressed {
@@ -139,15 +148,15 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
                 Event::Mouse(mouse::Event::CursorMoved {
                     position: Point::new(12.0, 34.0),
                 }),
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
             ]
         );
     }
 
-    /// 单指抬起：合成「左键释放 + 光标定位」
+    /// 单指抬起：合成「光标定位 + 左键释放」（同样光标在前）
     #[test]
     fn finger_lifted_becomes_button_release() {
         let events = convert_touch_to_mouse(Event::Touch(touch::Event::FingerLifted {
@@ -158,10 +167,10 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
                 Event::Mouse(mouse::Event::CursorMoved {
                     position: Point::new(12.0, 34.0),
                 }),
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
             ]
         );
     }
@@ -198,10 +207,10 @@ mod tests {
                     id: touch::Finger(7),
                     position: Point::new(1.0, 2.0),
                 }),
-                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
                 Event::Mouse(mouse::Event::CursorMoved {
                     position: Point::new(1.0, 2.0),
                 }),
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
             ]
         );
     }

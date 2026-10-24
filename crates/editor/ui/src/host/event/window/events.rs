@@ -121,6 +121,17 @@ impl Host {
             _ => (),
         }
 
+        // 触摸链路真机诊断（log 门面在 Android 可见）：只对触摸打点，
+        // 桌面鼠标不产生额外日志。
+        if matches!(event, winit::event::WindowEvent::Touch(_)) {
+            let available = self.window_ctx.cursor.position().is_some();
+            let pos = self.window_ctx.cursor.position();
+            log::debug!(
+                "[TOUCH] 排队 iced 事件 cursor_available={available} cursor={pos:?} queue={}",
+                self.events.len()
+            );
+        }
+
         self.convert_and_queue_window_event(&event, modifiers);
     }
 

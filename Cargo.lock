@@ -4556,6 +4556,7 @@ dependencies = [
  "iced_winit",
  "im",
  "image",
+ "log",
  "lumino-collaboration",
  "lumino-core",
  "lumino-diagnostics",

@@ -111,6 +111,14 @@ impl Host {
         let scale = self.window_ctx.window.scale_factor() as f32;
         let logical = conversion::cursor_position(touch.location, scale);
 
+        // 按下瞬间把光标**钉到触点**：不依赖上游 `cursor_moved` 的早退条件，
+        // 保证本批事件里的按下一定能被 press-only 控件（pick_list / menu
+        // overlay）按 `cursor.is_over(bounds)` 命中。
+        if matches!(touch.phase, winit::event::TouchPhase::Started) {
+            self.window_ctx.cursor_position = Some(logical);
+            self.window_ctx.cursor = mouse::Cursor::Available(logical);
+        }
+
         match touch.phase {
             winit::event::TouchPhase::Started => {
                 self.active_touches.insert(touch.id, logical);
@@ -127,12 +135,14 @@ impl Host {
                     // 立刻把光标锚到两指中点（`window_manager` 已按本指位置推过一次
                     // 光标，直接用会让锚点贴到某一根手指上）
                     self.apply_multi_touch_gesture();
+                    log::debug!("[TOUCH] started 升手势 fingers={}", self.active_touches.len());
                     return TouchRouting::Consumed;
                 }
 
                 // 首指：同步全局鼠标按下（分割条/侧栏拖拽收尾、is_mouse_pressed）
                 self.sync_global_pointer(true);
                 self.begin_long_press(logical);
+                log::debug!("[TOUCH] started 单指 pos=({:.0},{:.0}) -> Pointer", logical.x, logical.y);
                 TouchRouting::Pointer
             }
             winit::event::TouchPhase::Moved => {

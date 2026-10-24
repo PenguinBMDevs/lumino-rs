@@ -47,6 +47,8 @@ image = { workspace = true }
 once_cell = { workspace = true }
 lumino-platform = { workspace = true }
 tracing = { workspace = true }
+# Android 上 tracing 无 logcat 桥（不可见），触摸链路打点必须走 log 门面
+log = { workspace = true }
 resvg = { workspace = true }
 usvg = { workspace = true }
 tiny-skia = { workspace = true }
