@@ -1,0 +1,284 @@
+From 5f5139389a48e751b8ddfde9353c742624abd321 Mon Sep 17 00:00:00 2001
+From: Enderman-bm <m18981160776@163.com>
+Date: Sun, 18 Oct 2026 12:49:36 +0800
+Subject: [PATCH] =?UTF-8?q?feat(android):=20=E6=94=AF=E6=8C=81=20Android?=
+ =?UTF-8?q?=20=E7=9B=AE=E6=A0=87=EF=BC=88=E9=94=AE=E7=9B=98=E8=BD=AC?=
+ =?UTF-8?q?=E6=8D=A2=20+=20=E7=B3=BB=E7=BB=9F=E5=AD=97=E4=BD=93=20+=20?=
+ =?UTF-8?q?=E6=AE=B5=E8=90=BD=E5=BC=BA=E5=BC=95=E7=94=A8=E9=92=89=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- winit/src/conversion.rs: winit 的 modifier_supplement 模块仅在
+  windows/macos/x11/wayland/orbital 下编译（android 被排除），原实现
+  `key_without_modifiers()` / `text_with_all_modifiers()` 在 android 上直接
+  `E0432 unresolved import`，iced_winit 整体编不过。android 分支改用
+  `logical_key`，text 缺失时回退 `Key::Character`。
+- graphics/src/text.rs: fontdb 0.23 的 load_system_fonts() 对 android 显式跳过
+  （cfg 排除），导致 android 上字体库只有内嵌字体、中文全是豆腐块。显式
+  load_fonts_dir("/system/fonts") 并补齐 sans/serif/mono 默认族名。
+- wgpu/{lib,text}.rs: 迁入 LUMINO 的段落强引用钉修复（段落弱引用在渲染线程
+  prepare 前死亡会导致整段文字静默不绘制）与 LUMINO_TEXT_TRACE 诊断日志。
+---
+ graphics/src/text.rs    | 34 ++++++++++++++++------
+ wgpu/src/lib.rs         | 22 +++++++++++++++
+ wgpu/src/text.rs        | 62 ++++++++++++++++++++++++++++++++++++++++-
+ winit/src/conversion.rs | 21 ++++++++++++--
+ 4 files changed, 127 insertions(+), 12 deletions(-)
+
+diff --git a/graphics/src/text.rs b/graphics/src/text.rs
+index 35ff24f..9a6dac8 100644
+--- a/graphics/src/text.rs
++++ b/graphics/src/text.rs
+@@ -117,16 +117,32 @@ pub fn font_system() -> &'static RwLock<FontSystem> {
+     static FONT_SYSTEM: OnceLock<RwLock<FontSystem>> = OnceLock::new();
+ 
+     FONT_SYSTEM.get_or_init(|| {
++        let mut raw = cosmic_text::FontSystem::new_with_fonts([
++            cosmic_text::fontdb::Source::Binary(Arc::new(
++                include_bytes!("../fonts/Iced-Icons.ttf").as_slice(),
++            )),
++            #[cfg(feature = "fira-sans")]
++            cosmic_text::fontdb::Source::Binary(Arc::new(
++                include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice(),
++            )),
++        ]);
++
++        // [LUMINO PATCH] fontdb 0.23 的 `load_system_fonts()` 对 android 显式跳过
++        // （`#[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]`），
++        // 结果是 android 上字体库只有内嵌字体——中文全体豆腐块。必须显式扫描
++        // `/system/fonts` 并补上默认族名，否则 `Family::SansSerif` 无解析目标。
++        #[cfg(target_os = "android")]
++        {
++            raw.db_mut().load_fonts_dir("/system/fonts");
++            raw.db_mut().set_sans_serif_family("Roboto");
++            raw.db_mut().set_serif_family("Noto Serif");
++            raw.db_mut().set_monospace_family("Droid Sans Mono");
++            raw.db_mut().set_cursive_family("Dancing Script");
++            raw.db_mut().set_fantasy_family("Dancing Script");
++        }
++
+         RwLock::new(FontSystem {
+-            raw: cosmic_text::FontSystem::new_with_fonts([
+-                cosmic_text::fontdb::Source::Binary(Arc::new(
+-                    include_bytes!("../fonts/Iced-Icons.ttf").as_slice(),
+-                )),
+-                #[cfg(feature = "fira-sans")]
+-                cosmic_text::fontdb::Source::Binary(Arc::new(
+-                    include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice(),
+-                )),
+-            ]),
++            raw,
+             loaded_fonts: HashSet::new(),
+             version: Version::default(),
+         })
+diff --git a/wgpu/src/lib.rs b/wgpu/src/lib.rs
+index ec103cf..23d11d8 100644
+--- a/wgpu/src/lib.rs
++++ b/wgpu/src/lib.rs
+@@ -85,6 +85,14 @@ pub struct Renderer {
+     text: text::State,
+     text_viewport: text::Viewport,
+ 
++    /// [LUMINO PATCH] 段落强引用钉：绘制侧只存弱引用
++    /// （iced_graphics `Text::Paragraph{paragraph::Weak}`），而 prepare 在渲染
++    /// 线程晚于 UI 侧 widget 重建执行——段落若在间隙被重建/丢弃，
++    /// `upgrade()` 失败 → 该文本贡献 0 个 area → 静默不绘制（菜单栏文字间歇
++    /// 消失的根因，2026-10-17 实测）。绘制时钉住强引用、帧首 `reset` 释放：
++    /// 弱引用在 prepare/render 完成前不可能提前死亡。
++    pinned_paragraphs: Vec<Paragraph>,
++
+     #[cfg(any(feature = "svg", feature = "image"))]
+     image: image::State,
+ 
+@@ -113,6 +121,7 @@ impl Renderer {
+             ),
+             text: text::State::new(),
+             text_viewport: engine.text_pipeline.create_viewport(&engine.device),
++            pinned_paragraphs: Vec::new(),
+ 
+             #[cfg(any(feature = "svg", feature = "image"))]
+             image: image::State::new(),
+@@ -642,6 +651,15 @@ impl Renderer {
+ 
+             if !layer.text.is_empty() {
+                 let render_span = debug::render(debug::Primitive::Text);
++                if std::env::var_os("LUMINO_TEXT_TRACE").is_some() {
++                    log::warn!(
++                        "[TTRACE] layer text: bounds={:?} scissor={:?} batch={} text_layer_before={}",
++                        layer.bounds,
++                        scissor_rect,
++                        layer.text.len(),
++                        text_layer
++                    );
++                }
+                 text_layer += self.text.render(
+                     &self.engine.text_pipeline,
+                     &self.text_viewport,
+@@ -697,6 +715,8 @@ impl core::Renderer for Renderer {
+     }
+ 
+     fn reset(&mut self, new_bounds: Rectangle) {
++        // [LUMINO PATCH] 帧首释放上一帧的段落强引用钉（见字段注释）
++        self.pinned_paragraphs.clear();
+         self.layers.reset(new_bounds);
+     }
+ 
+@@ -743,6 +763,8 @@ impl core::text::Renderer for Renderer {
+         color: Color,
+         clip_bounds: Rectangle,
+     ) {
++        // [LUMINO PATCH] 钉住强引用（见 pinned_paragraphs 字段注释）
++        self.pinned_paragraphs.push(text.clone());
+         let (layer, transformation) = self.layers.current_mut();
+ 
+         layer.draw_paragraph(
+diff --git a/wgpu/src/text.rs b/wgpu/src/text.rs
+index 16efa09..3203884 100644
+--- a/wgpu/src/text.rs
++++ b/wgpu/src/text.rs
+@@ -328,12 +328,57 @@ impl State {
+     ) {
+         let mut atlas = pipeline.atlas.write().expect("Write to text atlas");
+ 
++        let trace = std::env::var_os("LUMINO_TEXT_TRACE").is_some();
+         for item in batch {
+             match item {
+                 Item::Group {
+                     transformation,
+                     text,
+                 } => {
++                    if trace {
++                        let first = text.first();
++                        let (label, bounds, clip) = match first {
++                            Some(Text::Cached {
++                                content,
++                                bounds,
++                                clip_bounds,
++                                ..
++                            }) => (
++                                content.chars().take(12).collect::<String>(),
++                                *bounds,
++                                *clip_bounds,
++                            ),
++                            Some(Text::Paragraph { clip_bounds, .. }) => (
++                                "<para>".to_string(),
++                                Rectangle::default(),
++                                *clip_bounds,
++                            ),
++                            Some(Text::Editor { clip_bounds, .. }) => (
++                                "<editor>".to_string(),
++                                Rectangle::default(),
++                                *clip_bounds,
++                            ),
++                            Some(Text::Raw { .. }) => (
++                                "<raw>".to_string(),
++                                Rectangle::default(),
++                                Rectangle::default(),
++                            ),
++                            None => (
++                                "<empty>".to_string(),
++                                Rectangle::default(),
++                                Rectangle::default(),
++                            ),
++                        };
++                        log::warn!(
++                            "[TTRACE] P-Group slot={} n={} first={:?} bounds={:?} clip={:?} layer_bounds={:?}",
++                            self.prepare_layer,
++                            text.len(),
++                            label,
++                            bounds,
++                            clip,
++                            layer_bounds
++                        );
++                    }
+                     if self.renderers.len() <= self.prepare_layer {
+                         self.renderers.push(cryoglyph::TextRenderer::new(
+                             &mut atlas,
+@@ -407,11 +452,22 @@ impl State {
+             bounds.height,
+         );
+ 
++        let trace = std::env::var_os("LUMINO_TEXT_TRACE").is_some();
+         for item in batch {
+             match item {
+                 Item::Group { .. } => {
+                     let renderer = &self.renderers[start + layer_count];
+ 
++                    if trace {
++                        log::warn!(
++                            "[TTRACE] R-Group slot={} (start={} lc={}) scissor={:?}",
++                            start + layer_count,
++                            start,
++                            layer_count,
++                            bounds
++                        );
++                    }
++
+                     renderer
+                         .render(&atlas, &viewport.0, render_pass)
+                         .expect("Render text");
+@@ -466,7 +522,11 @@ fn prepare(
+         .iter()
+         .map(|section| match section {
+             Text::Paragraph { paragraph, .. } => {
+-                paragraph.upgrade().map(Allocation::Paragraph)
++                let upgraded = paragraph.upgrade();
++                if upgraded.is_none() && std::env::var_os("LUMINO_TEXT_TRACE").is_some() {
++                    log::warn!("[TTRACE] paragraph upgrade FAILED (dead weak)");
++                }
++                upgraded.map(Allocation::Paragraph)
+             }
+             Text::Editor { editor, .. } => {
+                 editor.upgrade().map(Allocation::Editor)
+diff --git a/winit/src/conversion.rs b/winit/src/conversion.rs
+index 54260e1..6e062a7 100644
+--- a/winit/src/conversion.rs
++++ b/winit/src/conversion.rs
+@@ -233,12 +233,17 @@ pub fn window_event(
+         WindowEvent::KeyboardInput { is_synthetic, .. } if is_synthetic => None,
+         WindowEvent::KeyboardInput { event, .. } => Some(Event::Keyboard({
+             let key = {
+-                #[cfg(not(target_arch = "wasm32"))]
++                #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+                 {
+                     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+                     event.key_without_modifiers()
+                 }
+ 
++                #[cfg(target_os = "android")]
++                {
++                    event.logical_key.clone()
++                }
++
+                 #[cfg(target_arch = "wasm32")]
+                 {
+                     // TODO: Fix inconsistent API on Wasm
+@@ -247,7 +252,7 @@ pub fn window_event(
+             };
+ 
+             let text = {
+-                #[cfg(not(target_arch = "wasm32"))]
++                #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+                 {
+                     use crate::core::SmolStr;
+                     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+@@ -255,6 +260,18 @@ pub fn window_event(
+                     event.text_with_all_modifiers().map(SmolStr::new)
+                 }
+ 
++                #[cfg(target_os = "android")]
++                {
++                    if event.text.is_some() {
++                        event.text
++                    } else {
++                        match &key {
++                            winit::keyboard::Key::Character(c) => Some(c.clone()),
++                            _ => None,
++                        }
++                    }
++                }
++
+                 #[cfg(target_arch = "wasm32")]
+                 {
+                     // TODO: Fix inconsistent API on Wasm
