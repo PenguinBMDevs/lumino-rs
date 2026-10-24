@@ -76,6 +76,7 @@ impl NoteRenderer {
             source: &source,
             viewport: self.viewport_buffer.inner(),
             view_state: self.view_state_buffer.inner(),
+            chunk_layout: &self.chunk_layout,
         };
         let frame = SplatFrame {
             physical,

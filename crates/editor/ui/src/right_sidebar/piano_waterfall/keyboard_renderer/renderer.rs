@@ -338,16 +338,6 @@ impl KeyboardRenderer {
             mapped_at_creation: false,
         });
 
-        // 间接绘制参数缓冲：vertex_count=6, instance_count=0, first=0, first=0
-        let draw_args = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("piano_waterfall_draw_args"),
-            size: 16,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::INDIRECT
-                | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         Self {
             pipeline: keyboard_pipeline,
             quad_buffer,
@@ -357,7 +347,6 @@ impl KeyboardRenderer {
             cull_pipeline,
             cull_bind_group_layout,
             visible_indices,
-            draw_args,
             key_colors: None,
             keycolor_pipeline,
             keycolor_bind_group_layout,

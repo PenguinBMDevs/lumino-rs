@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 性能 · 存储 buffer 分段补齐（splat / UI 瀑布流）
+
+- **splat**：source 按 `ChunkLayout` 切片，每 chunk 独立 compute bind + base
+  uniform；新增 `splat_resolve.wgsl` 把 depth 胜者解析为 `winner_color`，
+  composite 不再整段绑定 source。>2GB 不再禁用 splat。
+- **UI 钢琴瀑布流**：cull/keycolor/note 全部按 source/visible 切片，逐 chunk
+  dispatch/draw_indirect；索引保持 chunk 局部，chunk 顺序保持全局绘制顺序。
+  新增 `keyboard_renderer/chunk.rs` 规划 2GB/256B 对齐。
+- **限制**：视频导出 waterfall 与 miditrail 仍整段绑定；单 buffer >
+  `max_buffer_size`（4GB）的多 buffer 拆分未做。12B × 310M ≈3.73GB 只需
+  binding 切片，不需要多 buffer。
+- **验证**：gfx 240 tests / UI chunk 2 tests；splat 64M 6.04ms（point 40.17ms）；
+  2M MIDI 启动无 wgpu validation。
+
 ### 重构 · 音符实例 16B→12B（第一批：12B 可测版）
 
 - **删除 16B wasabi 布局**：`NoteInstance` 改为

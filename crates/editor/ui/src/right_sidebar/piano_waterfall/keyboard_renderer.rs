@@ -18,6 +18,7 @@ use iced_wgpu::wgpu;
 use lumino_gfx::GpuEpoch;
 
 // 子模块
+mod chunk;
 mod ensure;
 mod instances;
 mod renderer;
@@ -100,7 +101,6 @@ pub struct KeyboardRenderer {
     /// 可见音符索引缓冲（storage，容量随音符数变化）
     visible_indices: wgpu::Buffer,
     /// 间接绘制参数缓冲 [vertex_count, instance_count, first_vertex, first_instance]
-    draw_args: wgpu::Buffer,
     /// 活跃键颜色缓冲（storage，KEY_COUNT_MAX × u32，packed 0xRRGGBBAA；每帧清零后由 compute 写入）
     key_colors: Option<wgpu::Buffer>,
     /// 活跃键颜色 compute 管线

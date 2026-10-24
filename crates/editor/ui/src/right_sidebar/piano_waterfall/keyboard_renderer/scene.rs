@@ -4,6 +4,7 @@ use iced_wgpu::wgpu;
 use wgpu::util::DeviceExt;
 
 use super::super::key_layout;
+use super::chunk::{KeyboardChunk, plan_chunks};
 use super::instances::{build_instances, build_uniforms, instances_to_bytes};
 use super::{
     KEY_HEIGHT_RATIO, KeyboardColors, KeyboardRenderer, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT,
@@ -97,138 +98,139 @@ impl KeyboardRenderer {
         );
         queue.write_buffer(&self.uniform_buffer, 0, &uni);
 
-        // 间接绘制参数：vertex_count=6，instance_count 由 compute 原子自增
-        let draw_args_bytes = {
+        // source/visible 按 binding 上限切片；每 chunk 独立 draw args，
+        // 避免整段 source 绑定（310M × 12B > 2GB binding）。
+        let chunks = plan_chunks(
+            count as usize,
+            device.limits().max_storage_buffer_binding_size as u64,
+            device.limits().min_storage_buffer_offset_alignment as u64,
+        );
+        let mut chunk_args = Vec::with_capacity(chunks.len());
+        for _ in &chunks {
             let mut db = Vec::with_capacity(16);
             for u in [6u32, 0u32, 0u32, 0u32] {
                 db.extend_from_slice(&u.to_le_bytes());
             }
-            db
-        };
-        queue.write_buffer(&self.draw_args, 0, &draw_args_bytes);
+            chunk_args.push(
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("piano_waterfall_draw_args"),
+                    contents: &db,
+                    usage: wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::INDIRECT
+                        | wgpu::BufferUsages::COPY_DST,
+                }),
+            );
+        }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         // 可视区间剔除：仅把可见音符索引写入 visible_indices + draw_args[1]
         // 超量音符（>65535 工作群组）分块调度，每块带各自 dispatch 偏移，
         // 仍累加到同一 draw_args 原子计数，主绘制只画可见音符。
-        if let Some((buf, c)) = &note_data
-            && *c > 0
+        if let Some((buf, _)) = &note_data
+            && !chunks.is_empty()
         {
-            let total_wg = (*c).div_ceil(WORKGROUP_SIZE);
             let max_wg = 65535u32;
             let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("piano_waterfall_cull"),
                 timestamp_writes: None,
             });
             cp.set_pipeline(&self.cull_pipeline);
-            let mut dispatched = 0u32;
-            while dispatched < total_wg {
-                let wg_count = (total_wg - dispatched).min(max_wg);
-                let offset = dispatched * WORKGROUP_SIZE;
-                let mut ob = Vec::with_capacity(16);
-                ob.extend_from_slice(&offset.to_le_bytes());
-                ob.extend_from_slice(&[0u8; 12]);
-                let off_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("piano_waterfall_cull_offset"),
-                    contents: &ob,
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-                let cull_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("piano_waterfall_cull_bg"),
-                    layout: &self.cull_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.uniform_buffer.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.visible_indices.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.draw_args.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: wgpu::BindingResource::Buffer(
-                                off_buf.as_entire_buffer_binding(),
-                            ),
-                        },
-                    ],
-                });
-                cp.set_bind_group(0, &cull_bg, &[]);
-                cp.dispatch_workgroups(wg_count, 1, 1);
-                dispatched += wg_count;
+            for (ci, chunk) in chunks.iter().enumerate() {
+                let total_wg = (chunk.count as u32).div_ceil(WORKGROUP_SIZE);
+                let mut dispatched = 0u32;
+                while dispatched < total_wg {
+                    let wg_count = (total_wg - dispatched).min(max_wg);
+                    let offset = dispatched * WORKGROUP_SIZE;
+                    let off_buf = offset_buf(device, "piano_waterfall_cull_offset", offset);
+                    let cull_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("piano_waterfall_cull_bg"),
+                        layout: &self.cull_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: chunk_binding(buf, *chunk, 12),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Buffer(
+                                    self.uniform_buffer.as_entire_buffer_binding(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: chunk_binding(&self.visible_indices, *chunk, 4),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: wgpu::BindingResource::Buffer(
+                                    chunk_args[ci].as_entire_buffer_binding(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 4,
+                                resource: wgpu::BindingResource::Buffer(
+                                    off_buf.as_entire_buffer_binding(),
+                                ),
+                            },
+                        ],
+                    });
+                    cp.set_bind_group(0, &cull_bg, &[]);
+                    cp.dispatch_workgroups(wg_count, 1, 1);
+                    dispatched += wg_count;
+                }
             }
         }
 
-        // 活跃键颜色 compute：把“正跨过键盘线（落键）”的音符对应键颜色写入 key_colors。
-        // 与剔除同分块策略（>65535 工作群组分块），复用同一条 notes 缓冲与 uniform。
-        if let Some((buf, c)) = &note_data
-            && *c > 0
+        // 活跃键颜色 compute：仅扫描本 chunk 的 source；索引是 chunk 局部。
+        if let Some((buf, _)) = &note_data
+            && !chunks.is_empty()
         {
-            let total_wg = (*c).div_ceil(WORKGROUP_SIZE);
             let max_wg = 65535u32;
             let mut cp2 = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("piano_waterfall_keycolor"),
                 timestamp_writes: None,
             });
             cp2.set_pipeline(&self.keycolor_pipeline);
-            let mut dispatched = 0u32;
-            while dispatched < total_wg {
-                let wg_count = (total_wg - dispatched).min(max_wg);
-                let offset = dispatched * WORKGROUP_SIZE;
-                let mut ob = Vec::with_capacity(16);
-                ob.extend_from_slice(&offset.to_le_bytes());
-                ob.extend_from_slice(&[0u8; 12]);
-                let off_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("piano_waterfall_keycolor_offset"),
-                    contents: &ob,
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-                let kc_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("piano_waterfall_keycolor_bg"),
-                    layout: &self.keycolor_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.uniform_buffer.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Buffer(
-                                key_colors_buf.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: wgpu::BindingResource::Buffer(
-                                off_buf.as_entire_buffer_binding(),
-                            ),
-                        },
-                    ],
-                });
-                cp2.set_bind_group(0, &kc_bg, &[]);
-                cp2.dispatch_workgroups(wg_count, 1, 1);
-                dispatched += wg_count;
+            for chunk in &chunks {
+                let total_wg = (chunk.count as u32).div_ceil(WORKGROUP_SIZE);
+                let mut dispatched = 0u32;
+                while dispatched < total_wg {
+                    let wg_count = (total_wg - dispatched).min(max_wg);
+                    let offset = dispatched * WORKGROUP_SIZE;
+                    let off_buf = offset_buf(device, "piano_waterfall_keycolor_offset", offset);
+                    let kc_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("piano_waterfall_keycolor_bg"),
+                        layout: &self.keycolor_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: chunk_binding(buf, *chunk, 12),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Buffer(
+                                    self.uniform_buffer.as_entire_buffer_binding(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Buffer(
+                                    key_colors_buf.as_entire_buffer_binding(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: wgpu::BindingResource::Buffer(
+                                    off_buf.as_entire_buffer_binding(),
+                                ),
+                            },
+                        ],
+                    });
+                    cp2.set_bind_group(0, &kc_bg, &[]);
+                    cp2.dispatch_workgroups(wg_count, 1, 1);
+                    dispatched += wg_count;
+                }
             }
         }
 
@@ -255,35 +257,35 @@ impl KeyboardRenderer {
                 occlusion_query_set: None,
             });
 
-            // 1) 下落式音符（仅可见音符，间接绘制；复用渲染线程活体 GPU 实例缓冲）
+            // 1) 下落式音符：逐 chunk 绑定 source/visible，draw 只画本 chunk 可见项。
             if let Some((buf, _)) = &note_data
-                && count > 0
+                && !chunks.is_empty()
             {
-                let bg_note = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("piano_waterfall_note_bg"),
-                    layout: &self.note_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.uniform_buffer.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.visible_indices.as_entire_buffer_binding(),
-                            ),
-                        },
-                    ],
-                });
                 rp.set_pipeline(&self.note_pipeline);
-                rp.set_bind_group(0, &bg_note, &[]);
-                rp.draw_indirect(&self.draw_args, 0);
+                for (ci, chunk) in chunks.iter().enumerate() {
+                    let bg_note = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("piano_waterfall_note_bg"),
+                        layout: &self.note_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: chunk_binding(buf, *chunk, 12),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Buffer(
+                                    self.uniform_buffer.as_entire_buffer_binding(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: chunk_binding(&self.visible_indices, *chunk, 4),
+                            },
+                        ],
+                    });
+                    rp.set_bind_group(0, &bg_note, &[]);
+                    rp.draw_indirect(&chunk_args[ci], 0);
+                }
             }
 
             // 2) 底部钢琴键盘（覆盖在落点线处，确保键位清晰）
@@ -314,4 +316,31 @@ impl KeyboardRenderer {
         // （GPU→GPU）。返回克隆的 `Arc`，即使后续纹理重建，旧视图仍可被在途图元安全引用。
         self.tex_view.clone()
     }
+}
+
+/// 一个 chunk 在 source/visible buffer 中的切片；索引保持 chunk 局部。
+fn chunk_binding(
+    buf: &wgpu::Buffer,
+    chunk: KeyboardChunk,
+    stride: u64,
+) -> wgpu::BindingResource<'_> {
+    let offset = chunk.start as u64 * stride;
+    let size = chunk.count as u64 * stride;
+    wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+        buffer: buf,
+        offset,
+        size: std::num::NonZeroU64::new(size),
+    })
+}
+
+/// 每个 dispatch 的局部 workgroup 偏移（chunk 内从 0 开始）。
+fn offset_buf(device: &wgpu::Device, label: &str, offset: u32) -> wgpu::Buffer {
+    let mut bytes = Vec::with_capacity(16);
+    bytes.extend_from_slice(&offset.to_le_bytes());
+    bytes.extend_from_slice(&[0u8; 12]);
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: &bytes,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    })
 }

@@ -71,6 +71,9 @@ struct SplatParams {
     height: u32,
     scale_x: f32,
     scale_y: f32,
+    chunk_base: u32,
+    chunk_count: u32,
+    _padding: vec2<u32>,
 }
 
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
@@ -78,6 +81,7 @@ struct SplatParams {
 @group(0) @binding(2) var<storage, read> all_instances: array<NoteInstance>;
 @group(0) @binding(3) var<storage, read_write> depth: array<atomic<u32>>;
 @group(0) @binding(4) var<uniform> params: SplatParams;
+@group(0) @binding(5) var<storage, read> winner_color: array<u32>;
 
 fn is_muted_track(track_enc: u32) -> bool {
     if (track_enc == 0u) {
@@ -105,11 +109,12 @@ fn unpack_key_color(packed: u32) -> vec4<f32> {
 /// packed = 主音轨位(31) | (0x7FFFFFFF - 源索引)，值越大越近/越小索引。
 @compute @workgroup_size(256)
 fn splat(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 65535u * 256u;
-    if (i >= arrayLength(&all_instances)) {
+    let local = gid.x + gid.y * 65535u * 256u;
+    if (local >= params.chunk_count) {
         return;
     }
-    let n = all_instances[i];
+    let i = params.chunk_base + local;
+    let n = all_instances[local];
     let track_enc = note_track(n.attrs);
     let is_main = track_enc == view_state.current_track;
     if (!is_main && is_muted_track(track_enc)) {
@@ -175,11 +180,14 @@ fn fs_splat(@builtin(position) pos: vec4<f32>) -> SplatOut {
     let is_main = (packed & 0x80000000u) != 0u;
     let inv = packed & 0x7FFFFFFFu;
     let index = 0x7FFFFFFFu - inv;
-    let inst = all_instances[index];
-    var color = note_color(inst.attrs);
-    if (is_main) {
-        color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
-    }
+    // resolve 已按 chunk 把胜者颜色写进 winner_color；composite 不再读 source。
+    let c = winner_color[y * params.width + x];
+    let color = vec4<f32>(
+        f32((c >> 24u) & 0xFFu) / 255.0,
+        f32((c >> 16u) & 0xFFu) / 255.0,
+        f32((c >> 8u) & 0xFFu) / 255.0,
+        1.0,
+    );
     let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, is_main);
     let depth_bits = region_bits + min(index, DEPTH_REGION_SLOTS - 1u);
     var out: SplatOut;

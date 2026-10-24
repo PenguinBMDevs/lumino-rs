@@ -223,11 +223,9 @@ impl NoteRenderer {
         };
 
         // 创建缓冲区
-        let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
-            / std::mem::size_of::<crate::NoteInstance>();
-        let max_capacity = max_capacity.min(
-            (device.limits().max_buffer_size as usize) / std::mem::size_of::<crate::NoteInstance>(),
-        );
+        // 12B 源 buffer 由 chunk 绑定切片；总容量只受 max_buffer_size 约束。
+        let max_capacity =
+            (device.limits().max_buffer_size as usize) / std::mem::size_of::<crate::NoteInstance>();
 
         // storage binding 分块布局（2GB 上限规避，详见 chunk.rs）
         let chunk_layout = super::chunk::ChunkLayout::from_limits(&device.limits());
@@ -264,6 +262,7 @@ impl NoteRenderer {
                 gpu_note_buffer.buffer(),
                 viewport_buffer.inner(),
                 view_state_buffer.inner(),
+                &chunk_layout,
             ))
         } else {
             None

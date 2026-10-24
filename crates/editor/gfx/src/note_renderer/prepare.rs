@@ -239,6 +239,7 @@ impl NoteRenderer {
                 source,
                 self.viewport_buffer.inner(),
                 self.view_state_buffer.inner(),
+                &self.chunk_layout,
             );
         }
 
