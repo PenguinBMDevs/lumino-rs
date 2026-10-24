@@ -166,6 +166,52 @@ fn test_keyboard_colors_no_state_growth() {
         editor.playback_key_colors, [0u8; 1024],
         "所有音符结束后颜色应全部熄灭"
     );
+
+    // 回退快照有上限（`SNAPSHOT_CAP = 64`），不得随播放无限增长
+    assert!(
+        editor.playback_scan_state.snapshots.len() <= 64,
+        "快照数量必须有上限，实际 {}",
+        editor.playback_scan_state.snapshots.len()
+    );
+}
+
+/// 反向 seek / 循环回绕复用快照后，结果必须与「一次性全量重扫」逐字节一致。
+///
+/// 这是快照优化的核心不变式：快照保存的是「所有 `start_tick <= 快照点` 的音符」
+/// 的前缀聚合，因此从任一 `<= 目标 tick` 的快照起算再补扫剩余区间，
+/// 与从 tick 0 一次性扫到目标位置**必然等价**。
+#[test]
+fn test_keyboard_colors_backward_seek_matches_full_rescan() {
+    let mut editor = Editor::new();
+    editor.playback_key_colors_enabled = true;
+    editor.editor_state.data.document = Some(make_test_doc());
+
+    // 正向播放一整遍，沿途采样快照
+    for tick in (10..=1920u32).step_by(10) {
+        editor.playback_position = tick as f32;
+        editor.update_playback_key_colors();
+    }
+    assert!(
+        !editor.playback_scan_state.snapshots.is_empty(),
+        "正向播放应沿途记录回退快照"
+    );
+
+    // 反向 seek 到若干位置（含跨过多个音符边界），逐一与全量重扫比对
+    for target in [1500u32, 1200, 961, 700, 480, 300, 240, 121, 61, 10] {
+        editor.playback_position = target as f32;
+        editor.update_playback_key_colors();
+
+        let mut full = Editor::new();
+        full.playback_key_colors_enabled = true;
+        full.editor_state.data.document = Some(make_test_doc());
+        full.playback_position = target as f32;
+        full.update_playback_key_colors();
+
+        assert_eq!(
+            editor.playback_key_colors, full.playback_key_colors,
+            "反向 seek 到 tick={target} 的结果与全量重扫不一致"
+        );
+    }
 }
 
 /// 扫描状态失效必须按**音符内容世代**判定，而不是文档内存地址。
