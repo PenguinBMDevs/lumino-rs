@@ -140,17 +140,29 @@ pub fn save_to_archive(project: &LuminoProject, path: impl AsRef<Path>) -> Resul
     Ok(())
 }
 
-/// 把工程编码为单文件归档字节（**不落盘**）
+/// 把工程编码为单文件归档字节（**不落盘**，归档头写入当前时间）
 ///
 /// 与 [`save_to_archive`] 同源，供"只要字节、不要文件"的场景直接使用
 /// （例：协作房间工程上传），避免「写临时文件 → 读回 → 删除」的往返。
 ///
 /// ⚠️ 归档头与 `metadata.toml` 含**编码时刻**的时间戳（`SystemTime::now()` /
 /// `chrono::Local::now()`），所以同一份数据两次编码的字节不一定相同。
-/// 不要把本函数的输出当作内容指纹（hash）使用——跨进程比对必然失配。
+/// 需要**逐字节可复现**时用 [`encode_archive_with_time`]，并把 metadata 的
+/// 时间字段一并固定（本函数不做归一化）。
 pub fn encode_archive(project: &LuminoProject) -> Result<Vec<u8>> {
     let files = build_archive_files(project)?;
     archive::build_archive(&files)
+}
+
+/// 把工程编码为单文件归档字节（**确定性入口**：归档头时间由调用方给定）
+///
+/// `created_at` 是归档里唯一的编码时刻字段；把它固定后，
+/// 「相同工程（含相同 metadata 时间戳）+ 相同 `created_at` ⇒ 逐字节相同」。
+/// 注意 `metadata.toml` 的 `created_at` / `modified_at` 仍取自 `project.metadata`，
+/// 内容指纹场景需由调用方把它们归一化（见协作房间工程）。
+pub fn encode_archive_with_time(project: &LuminoProject, created_at: u64) -> Result<Vec<u8>> {
+    let files = build_archive_files(project)?;
+    archive::build_archive_with_time(&files, created_at)
 }
 
 /// 构建归档文件列表
