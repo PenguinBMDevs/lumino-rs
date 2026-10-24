@@ -71,6 +71,10 @@ impl MidiDocument {
     }
 
     /// 使用 midly 从 MIDI 文件加载并构建紧凑内存文档。
+    ///
+    /// ⚠️ 本方法始终把整份文件读入 `Vec<u8>`（便捷入口，主要供测试与命令行工具使用）。
+    /// 编辑器主链路走 `lumino_midi_loader::load_parsed_midi`，其输入层是只读映射
+    /// （`crates/audio/midi-loader/src/loader/mmap_file.rs`），不产生整份文件的堆副本。
     pub fn from_notes_file<P: AsRef<Path>>(
         midi_path: P,
         progress: Option<&dyn Fn(f64)>,

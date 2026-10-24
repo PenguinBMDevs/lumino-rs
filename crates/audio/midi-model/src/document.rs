@@ -1,6 +1,6 @@
 //! MidiDocument — 解析后的 MIDI 文档（全内存紧凑存放）
 //!
-//! 使用 midly 提取音符后以 NoteEvent（16 bytes/note）紧凑存放。
+//! 使用 midly 提取音符后以 NoteEvent（12 bytes/note）紧凑存放。
 //! 每轨独立一个 Vec，按 start_tick 排序，查询时无需 active-table 配对。
 //!
 //! 本文件仅保留类型定义（`MidiDocument` / `TrackNoteView` / `TICK_SEARCH_BUFFER`）

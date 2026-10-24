@@ -136,26 +136,26 @@ pub async fn load_parsed_midi(
         return Ok(parsed);
     }
 
-    // ── 统一加载路径：单次读取 + from_notes_bytes ──
-    // 避免 scan_midi_file 与 from_notes_file 两次完整 IO
+    // ── 统一加载路径：只读映射 + from_notes_bytes ──
+    // 不再把整份文件读成 Vec<u8>：黑乐谱（1.31GB / 1.64 亿音符）在加载期会多出
+    // 一份与文件等大的私有堆副本。映射只活到解析结束，文档仍完整常驻内存。
     {
-        let read_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        let map_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
         cb(
-            &trf!("正在读取文件... (内存: {read_rss} MB)", read_rss = read_rss),
+            &trf!("正在映射文件... (内存: {map_rss} MB)", map_rss = map_rss),
             0.05,
         );
     }
-    let file_bytes = tokio::fs::read(&path).await.map_err(|e| {
-        let err = LoaderError::Io(e);
-        cb(&err.to_string(), 1.0);
-        err
-    })?;
 
-    let file_size_mb = file_bytes.len() / (1024 * 1024);
+    // 文件大小只用于进度文案；打开/映射/解析全部在阻塞线程内完成
+    let file_size = tokio::fs::metadata(&path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
     cb(
         &trf!(
-            "文件读取完成 ({file_size_mb} MB)，开始解析...",
-            file_size_mb = file_size_mb
+            "准备解析 ({file_size_mb} MB)，开始映射...",
+            file_size_mb = file_size / (1024 * 1024)
         ),
         0.10,
     );
@@ -175,13 +175,16 @@ pub async fn load_parsed_midi(
         }) as Arc<dyn Fn(f64) + Send + Sync>
     });
 
+    let parse_path = path.clone();
     let (document, division, total_notes) = tokio::task::spawn_blocking(move || {
         let p_ref = cache_progress.as_ref().map(|a| a.as_ref() as &dyn Fn(f64));
-        crate::MidiDocument::from_notes_bytes(&file_bytes, p_ref)
+        super::mmap_file::load_document_from_path(&parse_path, p_ref)
     })
     .await
     .map_err(|e| LoaderError::Other(trf!("加载线程 panic: {e}", e = e)))?
-    .map_err(|e| LoaderError::MidiParse(trf!("解析 MIDI 数据失败: {e}", e = e)))?;
+    .inspect_err(|e| {
+        cb(&e.to_string(), 1.0);
+    })?;
 
     let info = MidiInfo {
         path: path.clone(),
@@ -200,7 +203,7 @@ pub async fn load_parsed_midi(
         info.division
     );
 
-    // 解析临时数据（原始字节 + midly 中间态 + 分块构建）已全部 drop，
+    // 解析临时数据（文件映射 + midly 中间态 + 分块构建）已全部释放，
     // 主动回收 mimalloc 空闲页，避免加载峰值残留抬高 RSS
     // （2000W 音符场景实测峰值残留 ~180MB）
     lumino_diagnostics::memtrace::purge_free_pages();
@@ -215,8 +218,9 @@ pub async fn load_parsed_midi(
         1.0,
     );
 
-    // 不再缓存原始 MIDI 字节。356MB 的黑乐谱原始数据仅在解析时暂存，
-    // 解析为 MidiDocument 后立即释放。音频导出等场景从 info.division 读取 PPQN。
+    // 不再缓存原始 MIDI 字节，也不保留文件映射：两者都只活在解析窗口内。
+    // 解析为 MidiDocument 后映射立即释放，文档（12B/音符）常驻内存。
+    // 音频导出等场景从 info.division 读取 PPQN。
     Ok(ParsedMidi {
         info,
         document: Some(std::sync::Arc::new(document)),
