@@ -151,7 +151,6 @@ impl RunnerInner {
 
     /// 重启窗口（标题栏设置变更后）
     pub(crate) fn restart_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        log::error!("[BOOT] restart_window 被调用（Android 上会 drop 掉旧 surface/Host）");
 
         // 保存当前窗口状态
         let is_maximized = self.window_state.window.window().is_maximized();

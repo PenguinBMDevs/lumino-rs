@@ -270,7 +270,6 @@ impl Runner {
             None => storage::Storage::new()?,
         };
 
-    log::error!("[BOOT] M1 storage 就绪");
         // 在存储初始化后启动文件日志
         {
             let config_dir = storage::config_dir();
@@ -303,7 +302,6 @@ impl Runner {
         let cloud_saving = Arc::new(AtomicBool::new(false));
 
         // 创建主窗口管理器
-    log::error!("[BOOT] M2 即将 WindowManager::new（建窗+GPU+Host）");
         let mut window = WindowManager::new(
             event_loop,
             ui_state,
@@ -312,7 +310,6 @@ impl Runner {
             Arc::clone(&cloud_saving),
         )
         .map_err(|e| InitError::Window(e.to_string()))?;
-    log::error!("[BOOT] M3 WindowManager 成功");
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();

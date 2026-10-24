@@ -172,9 +172,7 @@ impl Context {
     fn acquire_frame(&self) -> Result<wgpu::SurfaceTexture> {
         // 零尺寸无法配置（wgpu-core `ZeroArea`），重试无意义
         if self.surface_config.width == 0 || self.surface_config.height == 0 {
-            tracing::error!("交换链尺寸为 0，跳过取帧（等待窗口 Resized 拉正）");
-            #[cfg(target_os = "android")]
-            log::error!("[BOOT] 交换链尺寸为 0，跳过取帧（等待窗口 Resized 拉正）");
+            log::error!("交换链尺寸为 0，跳过取帧（等待窗口 Resized 拉正）");
             return Err(ContextError::FrameAcquisition(wgpu::SurfaceError::Lost));
         }
 
@@ -196,9 +194,7 @@ impl Context {
                     ));
                 }
                 Ok(Err(e)) => {
-                    tracing::warn!("取帧失败（第 {} 次）：{e:?}", attempt + 1);
-                    #[cfg(target_os = "android")]
-                    log::error!("[BOOT] 取帧失败（第 {} 次）：{e:?}", attempt + 1);
+                    log::warn!("取帧失败（第 {} 次）：{e:?}", attempt + 1);
                     let recoverable = Self::is_swapchain_only(&e);
                     last = e;
                     if !recoverable {
@@ -207,15 +203,8 @@ impl Context {
                 }
                 Err(payload) => {
                     let detail = panic_payload_text(&payload);
-                    tracing::error!(
-                        "取帧 fatal panic（第 {} 次，交换链 {}×{}）：{detail}",
-                        attempt + 1,
-                        self.surface_config.width,
-                        self.surface_config.height
-                    );
-                    #[cfg(target_os = "android")]
                     log::error!(
-                        "[BOOT] 取帧 fatal panic（第 {} 次，交换链 {}×{}）：{detail}",
+                        "取帧 fatal panic（第 {} 次，交换链 {}×{}）：{detail}",
                         attempt + 1,
                         self.surface_config.width,
                         self.surface_config.height
@@ -352,9 +341,7 @@ impl Context {
         // 停止（表现：界面黑屏不再刷新）。此处仅重配交换链并按本帧放弃，
         // 下一帧重试，窗口 `Resized` 后自然恢复。
         if matches!(surface_err, wgpu::SurfaceError::Lost) && !device_status::device_lost() {
-            tracing::warn!("Surface Lost（设备未丢）：按交换链级错误重配，下一帧重试");
-            #[cfg(target_os = "android")]
-            log::error!("[BOOT] Surface Lost（设备未丢）：重配交换链，下一帧重试");
+            log::warn!("Surface Lost（设备未丢）：按交换链级错误重配，下一帧重试");
             self.configure_surface_stable();
             return FrameErrorAction::SkipFrame;
         }

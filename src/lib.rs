@@ -20,22 +20,6 @@ mod runner;
 mod services;
 mod storage;
 
-/// 启动阶段打点：**直接走 `log`**（不经 tracing），保证在日志系统初始化前后都能落 logcat。
-///
-/// 存在的唯一理由：入口崩溃时 tracing 还没装 subscriber，`tracing::info!` 全是静默的，
-/// 只有 `log::error!` 能证明「我们走到了哪一行」。定位完应删除或降级为 debug。
-macro_rules! boot_mark {
-    ($($arg:tt)*) => {{
-        #[cfg(target_os = "android")]
-        {
-            log::error!("[BOOT] {}", format!($($arg)*));
-        }
-        #[cfg(not(target_os = "android"))]
-        {
-            let _ = format_args!($($arg)*);
-        }
-    }};
-}
 /// 平台入口句柄。
 ///
 /// - Android：winit 的 `AndroidApp`（`android_main` 的入参，事件循环靠它绑 Looper）；
@@ -188,9 +172,7 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
         device_probe::run_child_mode();
     }
 
-    boot_mark!("REACHED-3 即将 logging::init");
     logging::init();
-    boot_mark!("REACHED-4 logging 已就绪");
 
     // 启动 puffin 性能分析服务器 - 保持存活直到程序结束（Android 上为 no-op）
     let _puffin_holder = PuffinServerHolder::new();
@@ -213,9 +195,7 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
     let cli = cli::Cli::parse_args();
     let test_config = cli.get_test_config();
 
-    boot_mark!("REACHED-5 即将 create_event_loop");
     let event_loop = create_event_loop(app)?;
-    boot_mark!("REACHED-6 事件循环已创建");
 
     // REND-019 PR-C §1.3（C1/C2）：device-lost 回调 → EventLoopProxy（无锁唤醒；
     // 回调线程只做原子置位 + send_event，重连决策由 UI 主循环消费事件后发起）
@@ -239,7 +219,6 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
         let _ = lgs_proxy.send_event(runner::UserEvent::LgsDeviceLost { reason, message });
     });
 
-    boot_mark!("REACHED-7 即将构造 Runner");
     let mut runner = runner::Runner::default();
 
     // 如果是测试模式，设置测试配置
@@ -260,11 +239,10 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
     let loop_result = lumino_diagnostics::memtrace::with_tag(
         lumino_diagnostics::memtrace::AllocTag::Ui,
         || {
-            boot_mark!("REACHED-8 即将 run_app");
             event_loop.run_app(&mut runner)
         },
     );
-    log::error!("[BOOT] run_app 已返回: {loop_result:?}");
+    log::info!("事件循环已退出: {loop_result:?}");
     loop_result?;
 
     Ok(())
@@ -290,15 +268,12 @@ pub fn android_main(app: PlatformApp) {
     static FIRST_INVOCATION: std::sync::atomic::AtomicBool =
         std::sync::atomic::AtomicBool::new(true);
     if !FIRST_INVOCATION.swap(false, std::sync::atomic::Ordering::SeqCst) {
-        log::error!(
-            "[BOOT] android_main 第二次被调用（Activity 重建）：挂起该线程，保留既有事件循环"
-        );
+        log::warn!("android_main 被重复调用（Activity 重建）：挂起该线程，保留既有事件循环");
         loop {
             std::thread::park();
         }
     }
 
-    boot_mark!("REACHED-1 进入 android_main");
     // 必须最早注入：Android 上没有 $HOME/XDG，Storage::new() 依赖这个目录，
     // 缺了就在启动第一步 Err(NotFound) → 优雅退出（看上去像"闪退"）。
     match app.internal_data_path() {
@@ -309,16 +284,11 @@ pub fn android_main(app: PlatformApp) {
         None => tracing::error!("Android 无法获取 internal_data_path，配置将无法持久化"),
     }
 
-    boot_mark!("REACHED-2 已注入数据目录");
     let outcome = run(Some(app));
     match &outcome {
-        Ok(()) => log::error!("[BOOT] run() 正常返回 → android_main 即将结束（Activity 会被 finish）"),
-        Err(error) => log::error!("[BOOT] run() 返回错误 → {error}"),
+        Ok(()) => log::info!("主循环正常退出（Activity 将被 finish）"),
+        Err(error) => log::error!("Android 主循环异常退出: {error}"),
     }
-    if let Err(error) = outcome {
-        tracing::error!("Android 主循环异常退出: {error}");
-    }
-    log::error!("[BOOT] android_main 结束");
 }
 
 #[cfg(test)]

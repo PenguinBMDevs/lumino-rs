@@ -58,8 +58,6 @@ impl Write for ChannelWriter {
 pub fn init() {
     // 控制我们的 crate 的日志级别
     // 当环境变量 'RUST_LOG' 未指定时，默认为 INFO+
-    #[cfg(target_os = "android")]
-    log::error!("[BOOT] L1 进入 init，构造 EnvFilter 前");
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let level_filter = filter_fn(|metadata| {
@@ -95,23 +93,12 @@ pub fn init() {
     // 注意**不能**再装 LogTracer（log→tracing），否则 tracing→log→tracing 递归。
     #[cfg(target_os = "android")]
     {
-        macro_rules! mark {
-            ($($a:tt)*) => {
-                log::error!("[BOOT] {}", format!($($a)*))
-            };
-        }
-
-        mark!("L2 即将 android_logger::init_once（第 2 次调用）");
         android_logger::init_once(
             android_logger::Config::default()
                 .with_max_level(log::LevelFilter::Trace)
                 .with_tag("lumino"),
         );
-        mark!("L3 android_logger 就绪");
 
-        // 临时：Android 先只装 android_logger，装 tracing 桥会 SIGSEGV（见提交记录），
-        // 先验证主窗口能否启动，再回头修桥。
-        mark!("L4 subscriber 已安装");
     }
 
     #[cfg(not(target_os = "android"))]
