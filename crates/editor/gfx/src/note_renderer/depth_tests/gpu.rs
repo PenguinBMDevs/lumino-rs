@@ -152,7 +152,7 @@ fn test_chunk_start_is_folded_into_depth() {
         instance_count: 51,
         chunk_start: DEPTH_REGION_SLOTS - 1,
         chunk_count: 51,
-        _padding: 0,
+        local_start: 0,
     };
     queue.write_buffer(
         q.cull_uniform_buffer.inner(),

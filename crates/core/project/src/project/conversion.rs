@@ -312,6 +312,11 @@ impl LuminoProject {
             track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(
                 track_count as usize,
             ),
+            // 工程反序列化路径未统计每轨最大长度：置脏（None）让 cull 退化为
+            // 整轨候选，正确性优先；首次编辑后缓存仍保持脏，不影响可见性。
+            track_max_note_lens: lumino_midi_model::MidiDocument::new_track_max_note_lens_unknown(
+                track_count as usize,
+            ),
         };
 
         // 恢复每轨可见性与 solo（来自 lmtrack 元数据），保证隐藏/静音等音轨状态

@@ -179,11 +179,13 @@ impl Default for CameraUniform {
     }
 }
 
-/// 裁剪 uniform 数据（每 chunk 一份，16 bytes）
+/// 裁剪 uniform 数据（每 chunk / 每裁剪区间一份，16 bytes）
 ///
 /// storage binding 有 `max_storage_buffer_binding_size`（2GB-1）硬限制，
-/// 超大数据按 chunk 切片绑定；`chunk_start`/`chunk_count` 描述本 chunk
-/// 在全局实例数组中的范围，`instance_count` 为全局实例数（冗余诊断）。
+/// 超大数据按 chunk 切片绑定；`chunk_start`/`chunk_count` 描述本次分发
+/// 在全局实例数组中的范围，`instance_count` 为全局实例数（冗余诊断），
+/// `local_start` 为本次分发在 **chunk 局部** 的起始偏移（整段 cull 为 0，
+/// 可见区间裁剪时为 `range.start - chunk_start`）。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CullUniform {
@@ -191,10 +193,44 @@ pub struct CullUniform {
     pub instance_count: u32,
     /// 本 chunk 在全局实例数组中的起始索引
     pub chunk_start: u32,
-    /// 本 chunk 包含的实例数量
+    /// 本次分发包含的实例数量
     pub chunk_count: u32,
-    /// 对齐填充（保持 16 字节对齐）
-    pub _padding: u32,
+    /// 本次分发在 chunk 局部的起始偏移（整段 cull = 0）
+    pub local_start: u32,
+}
+
+/// 一次 GPU cull 的候选实例区间（全局实例索引，左闭右开）。
+///
+/// 由 UI 按相机可见 tick 窗口 + 每轨 max note length 算出，渲染线程据此
+/// **只扫可见区间**，避免每帧全量读 N 个实例（实测 64M 音符全量 cull 3.53ms，
+/// 其中绝大多数实例根本不在视口内）。
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct CullRange {
+    /// 全局起始实例索引
+    pub start: u32,
+    /// 实例数量（> 0）
+    pub count: u32,
+}
+
+/// 一帧的 cull 计划：候选区间 + 文档实例总数（一致性校验）。
+///
+/// `total_instances` 必须等于渲染线程当前 GPU 实例数；不等说明 UI 与渲染侧
+/// 数据尚未同步（流式上传/增量在途），渲染线程回退整段 cull 保证正确性。
+#[derive(Clone, Debug, Default)]
+pub struct CullPlan {
+    /// 候选区间（按 start 升序、互不重叠；空 = 整段 cull）
+    pub ranges: Vec<CullRange>,
+    /// 文档实例总数（一致性校验）
+    pub total_instances: usize,
+}
+
+impl CullPlan {
+    /// 计划是否可用（非空且总数已知）。
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        !self.ranges.is_empty() && self.total_instances > 0
+    }
 }
 
 /// 合并的渲染 uniform 数据（Camera + Cull）

@@ -277,6 +277,19 @@ impl MidiDocument {
         max
     }
 
+    /// 指定音轨的最大音符长度缓存（`Some` = 已知真值；`None` = 脏）。
+    ///
+    /// 仅供 cull 可见区间裁剪使用：`None` 时调用方必须退化为整轨范围，
+    /// 不得把 `None` 当 0（否则会裁掉可见长音符）。
+    #[inline]
+    pub fn track_max_note_len(&self, track_id: usize) -> Option<u32> {
+        self.track_max_note_lens
+            .get(track_id)?
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+    }
+
     /// 所有音轨的最大音符结束 tick（走带视图滚动范围用，O(音轨数)）。
     #[inline]
     pub fn tracks_max_end_tick(&self) -> u32 {

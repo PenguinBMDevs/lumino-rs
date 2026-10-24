@@ -37,6 +37,7 @@ fn make_doc() -> MidiDocument {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     }
 }
 
@@ -253,5 +254,6 @@ fn make_short_doc() -> MidiDocument {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     }
 }

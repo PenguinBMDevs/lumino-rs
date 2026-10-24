@@ -67,6 +67,7 @@ impl MidiDocument {
             division,
             track_ports: vec![0; track_count as usize],
             track_max_end_ticks: Self::new_track_max_ticks(track_count as usize),
+            track_max_note_lens: Self::new_track_max_note_lens(track_count as usize),
         }
     }
 
@@ -110,6 +111,7 @@ impl MidiDocument {
             }
 
             let mut notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>> = Vec::new();
+            let mut track_max_note_lens: Vec<u32> = Vec::new();
             let mut track_ports: Vec<u8> = Vec::new();
             let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
             let mut all_time_signatures: Vec<(u32, u8, u8)> = Vec::new();
@@ -129,6 +131,7 @@ impl MidiDocument {
                         notes.resize_with(track_idx + 1, crate::chunked_list::ChunkedList::new);
                         track_ports.resize(track_idx + 1, 0);
                     }
+                    track_max_note_lens.resize(track_idx + 1, 0);
 
                     // 2026-08-15 峰值优化：不再经中间 Vec<NoteEvent> 中转，
                     // PackedNote 直接分块转换进 ChunkedList（省 16B/音符的峰值内存，
@@ -145,6 +148,12 @@ impl MidiDocument {
                     // 必须在转换前显式排序。仅对 midly 已物化的本轨 Vec<PackedNote>
                     // 做原地排序，不引入额外峰值内存（无第二个 Vec<NoteEvent> 常驻）。
                     events.notes.sort_by_key(|n| n.start_tick);
+                    track_max_note_lens[track_idx] = events
+                        .notes
+                        .iter()
+                        .map(|n| n.end_tick.saturating_sub(n.start_tick))
+                        .max()
+                        .unwrap_or(0);
                     notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted_iter(
                         events.notes.into_iter().map(NoteEvent::from),
                     );
@@ -256,6 +265,11 @@ impl MidiDocument {
                     track_ports,
                     // max_end_tick 缓存：初始 None（脏），首次查询惰性重算
                     track_max_end_ticks: Self::new_track_max_ticks(track_count as usize),
+                    // 最大音符长度：构建期已逐轨算出真值，直接写入（避免首次 cull 惰性扫描）
+                    track_max_note_lens: Self::track_max_note_lens_from_values(
+                        &track_max_note_lens,
+                        track_count as usize,
+                    ),
                 },
                 division,
                 total_notes,
@@ -270,6 +284,42 @@ impl MidiDocument {
     pub fn new_track_max_ticks(n: usize) -> Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>> {
         (0..n)
             .map(|_| std::sync::Arc::new(std::sync::Mutex::new(None)))
+            .collect()
+    }
+
+    /// 构造每轨最大音符长度缓存（已知真值：空轨 max = 0）。
+    ///
+    /// **仅用于确实没有音符的文档**（新建空白工程）。带音符的字面量构造必须用
+    /// [`Self::new_track_max_note_lens_unknown`] 或构建期真值，否则 `Some(0)`
+    /// 会让 cull 误裁长音符。
+    pub fn new_track_max_note_lens(n: usize) -> Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>> {
+        (0..n)
+            .map(|_| std::sync::Arc::new(std::sync::Mutex::new(Some(0))))
+            .collect()
+    }
+
+    /// 构造每轨最大音符长度缓存（未知/脏：调用方退化为整轨候选）。
+    ///
+    /// 用于无法在构造期确定真值的路径（工程反序列化、测试字面量）。
+    pub fn new_track_max_note_lens_unknown(
+        n: usize,
+    ) -> Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>> {
+        (0..n)
+            .map(|_| std::sync::Arc::new(std::sync::Mutex::new(None)))
+            .collect()
+    }
+
+    /// 按构建期统计的每轨最大长度构造缓存（长度不足补 0）。
+    fn track_max_note_lens_from_values(
+        values: &[u32],
+        n: usize,
+    ) -> Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>> {
+        (0..n)
+            .map(|i| {
+                std::sync::Arc::new(std::sync::Mutex::new(Some(
+                    values.get(i).copied().unwrap_or(0),
+                )))
+            })
             .collect()
     }
 }

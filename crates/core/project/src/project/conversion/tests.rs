@@ -24,6 +24,7 @@ fn make_test_document() -> MidiDocument {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     }
 }
 
@@ -169,6 +170,7 @@ fn test_to_midi_document_roundtrip_overlapping_notes() {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
     let project = LuminoProject::from_midi_document(&doc);
     let rebuilt = project.to_midi_document().expect("重叠音符重建失败");
@@ -255,6 +257,7 @@ fn test_from_midi_document_same_key_adjacent_notes() {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
     let project = LuminoProject::from_midi_document(&doc);
     let rebuilt = project.to_midi_document().expect("相接音符重建失败");
@@ -306,6 +309,7 @@ fn test_blank_track_preserved_roundtrip() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
 
     // from_midi_document：3 条音轨都应保留（含 2 条空白）
@@ -410,6 +414,7 @@ fn test_all_blank_project_preserved() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
 
     let project = LuminoProject::from_midi_document(&doc);

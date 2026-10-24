@@ -31,6 +31,7 @@ fn doc_with_ports(port: u8) -> Arc<MidiDocument> {
         division: 480,
         track_ports: vec![port],
         track_max_end_ticks: lumino_midi_loader::MidiDocument::new_track_max_ticks(1),
+        track_max_note_lens: lumino_midi_loader::MidiDocument::new_track_max_note_lens_unknown(1),
     })
 }
 

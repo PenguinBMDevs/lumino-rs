@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 渲染 · 可见区间 cull（range cull）：大工程放大档只扫候选实例
+
+- **问题** — 全量 cull 每帧读取全部 `NoteInstance`（16B/音符）：RTX 2060 实测
+  64M 音符 cull 3.4–4.1ms（≈220GB/s），而放大视图可见音符只有数万，99.9% 读取是浪费。
+- **新增** — `MidiDocument.track_max_note_lens` 每轨最大音符长度缓存（构建期写真值；
+  插入 O(1) 取大，删除/整轨替换/可变引用保守置脏）。UI 按相机可见 tick 窗口 +
+  每轨 `max_len` 二分出 `[first, end)`，随 `RenderParams.cull_plan` 下发
+  `CullPlan { ranges, total_instances }`。
+- **渲染器** — `NoteRenderer::prepare_pass_with_cull_plan`：cull uniform 改动态 offset，
+  每个候选区间一次 compute dispatch；`cull.wgsl` 新增 `local_start`（复用原 padding
+  字段，16B 布局不变），区间跨 chunk 自动切分；总数不一致/区间异常/超限自动回退整段。
+- **防负优化** — UI 侧按「区间数 × 单次 dispatch 折算 10 万实例」做预算，
+  2M 音符 + 43 区间这类小规模多区间场景直接回退（实测 0.65ms vs 全量 0.46ms）；
+  `content_dirty` 帧回退（流式/增量在途时 UI 与段表可能差一帧）。
+- **实测（RTX 2060 / Vulkan / 1080p / 5 轮中位数，仅 cull pass，多次运行取区间）**：
+  - 64M 音符放大档：全量 3.4–3.9ms → 单区间 0.22–0.37ms（10–15×） / 43 区间 0.40–0.61ms（6–8×）
+  - 16M：1.17–1.19ms → 单区间 0.21–0.22ms（5×） / 43 区间 0.43–0.51ms（2.3–2.7×）
+  - 8M：0.786ms → 0.237ms / 0.473ms（3.3× / 1.7×）
+  - 2M 全量 0.457ms；43 区间 0.647ms → 预算守卫回退，不出现回退
+- **正确性** — 新增像素级等价测试（单区间/多区间/总数不一致回退），与整段 cull
+  逐位一致；原有 direct/depth/全量 cull 测试全通过。
+
 ### 加载保护 · 内存检查 / 强杀看门狗设置开关（默认关闭）
 
 - **新增设置** — 设置面板「常规 → 加载保护」两个开关，**默认均关闭**：

@@ -52,6 +52,7 @@ pub(crate) fn make_test_doc() -> MidiDocument {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     }
 }
 
@@ -76,5 +77,6 @@ pub(crate) fn make_single_note_doc(key: u8) -> MidiDocument {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     }
 }

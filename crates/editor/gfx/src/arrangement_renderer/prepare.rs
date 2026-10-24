@@ -111,7 +111,7 @@ impl ArrangementRenderer {
             instance_count: note_instance_count,
             chunk_start: 0,
             chunk_count: note_instance_count,
-            _padding: 0,
+            local_start: 0,
         };
         queue.write_buffer(
             self.cull_info_buffer.inner(),

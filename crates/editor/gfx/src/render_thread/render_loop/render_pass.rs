@@ -145,10 +145,14 @@ pub fn execute_render_pass(
     } else {
         // 预览层恒直绘（可见占比 ≈ 100%，见上），洋葱皮仍走 cull
         frame.renderers.note.prepare_direct(camera, &ctx.queue);
-        frame
-            .renderers
-            .onion_skin
-            .prepare_pass(encoder, camera, &ctx.queue);
+        // 可见区间 cull：UI 已按相机 + 每轨最大音符长度算出候选实例区间；
+        // 计划不可用/总数不一致时渲染器内部回退整段 cull。
+        frame.renderers.onion_skin.prepare_pass_with_cull_plan(
+            encoder,
+            camera,
+            &ctx.queue,
+            &params.cull_plan,
+        );
     }
 
     {

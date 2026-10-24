@@ -3,8 +3,9 @@ pub mod types;
 use crate::gpu_resource_tracker::TrackedBuffer;
 
 pub use types::{
-    CameraParams, CameraUniform, CullUniform, NoteInstance, PREVIEW_BORDER_SENTINEL, RenderUniform,
-    ViewState, calculate_border_width, pack_key_color, unpack_key_color,
+    CameraParams, CameraUniform, CullPlan, CullRange, CullUniform, NoteInstance,
+    PREVIEW_BORDER_SENTINEL, RenderUniform, ViewState, calculate_border_width, pack_key_color,
+    unpack_key_color,
 };
 
 // 子模块
@@ -16,10 +17,15 @@ mod init;
 mod pipeline;
 mod point;
 mod prepare;
+mod range_cull;
 
 /// 深度编码验证（精度预算 CPU 孪生 + 绘制顺序无关的像素证据）
 #[cfg(test)]
 mod depth_tests;
+
+/// 可见区间 cull 与整段 cull 的像素等价契约
+#[cfg(test)]
+mod range_tests;
 
 /// GPU 耗时分解基准（PREF-004 P1 决策依据，默认 #[ignore]）
 #[cfg(test)]
@@ -229,7 +235,7 @@ mod tests {
             instance_count: 1000,
             chunk_start: 0,
             chunk_count: 1000,
-            _padding: 0,
+            local_start: 0,
         };
 
         assert_eq!(cull.instance_count, 1000);

@@ -121,6 +121,16 @@ pub struct MidiDocument {
     /// 直接读写本字段会绕过置脏逻辑导致缓存失效。
     #[doc(hidden)]
     pub track_max_end_ticks: Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>>,
+    /// 每轨最大音符长度（`end_tick - start_tick`）缓存。
+    ///
+    /// 供 GPU cull 的可见 tick 区间裁剪使用：音符只可能可见当
+    /// `start_tick + length >= 可见左边界`，因此首候选索引 =
+    /// `lower_bound(start_tick >= tick_left - max_len)`。`None` = 脏
+    /// （编辑后保守置脏，调用方退化为整轨范围），首次加载由构建器写入真值。
+    ///
+    /// 与 `track_max_end_ticks` 同构：插入 O(1) 取大、删除/替换/可变引用置脏。
+    #[doc(hidden)]
+    pub track_max_note_lens: Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>>,
 }
 
 impl std::fmt::Debug for MidiDocument {
@@ -175,6 +185,14 @@ impl Clone for MidiDocument {
                     std::sync::Arc::new(std::sync::Mutex::new(cached))
                 })
                 .collect(),
+            track_max_note_lens: self
+                .track_max_note_lens
+                .iter()
+                .map(|cell| {
+                    let cached = cell.lock().map(|guard| *guard).unwrap_or(None);
+                    std::sync::Arc::new(std::sync::Mutex::new(cached))
+                })
+                .collect(),
         }
     }
 }
@@ -183,6 +201,11 @@ impl Clone for MidiDocument {
 #[cfg(test)]
 #[path = "document_write_tests.rs"]
 mod tests;
+
+/// 每轨最大音符长度缓存单测（独立文件）
+#[cfg(test)]
+#[path = "document_note_len_tests.rs"]
+mod note_len_tests;
 
 /// MidiDocument 加载链路验收单测（EXP-006 数据保留，独立文件）
 #[cfg(test)]

@@ -247,7 +247,7 @@ impl NoteRenderer {
                 instance_count: clamp_count(current_count),
                 chunk_start: clamp_count(chunk_start),
                 chunk_count: clamp_count(chunk_len),
-                _padding: 0,
+                local_start: 0,
             };
             let slot_offset = self.chunk_layout.chunk_offset_bytes(idx);
             queue.write_buffer(
@@ -331,7 +331,9 @@ impl NoteRenderer {
         const WORKGROUP_SIZE: u32 = 256;
         const MAX_DISPATCH_X: u32 = 65535;
         for idx in 0..dispatch_count {
-            compute_pass.set_bind_group(0, &self.cull_bind_groups[idx], &[]);
+            // binding 1 为动态 offset：整段路径选本 chunk 的 cull uniform 槽位
+            let uniform_offset = self.chunk_layout.chunk_offset_bytes(idx) as u32;
+            compute_pass.set_bind_group(0, &self.cull_bind_groups[idx], &[uniform_offset]);
             let (_, chunk_len) = self.chunk_layout.chunk_range(count, idx);
             let workgroup_count = clamp_count(chunk_len).div_ceil(WORKGROUP_SIZE);
             let dispatch_x = workgroup_count.min(MAX_DISPATCH_X);

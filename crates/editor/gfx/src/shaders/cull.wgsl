@@ -23,7 +23,9 @@ struct CullUniform {
     instance_count: u32,
     chunk_start: u32,
     chunk_count: u32,
-    _padding: u32,
+    // 本次分发在 chunk 局部的起始偏移：整段 cull 为 0；可见区间裁剪为
+    // `range.start - chunk_start`，使本 dispatch 只扫描候选区间。
+    local_start: u32,
 };
 
 struct DrawIndirectArgs {
@@ -53,10 +55,11 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let MAX_X_THREADS: u32 = 65535u * 256u;
-    // 本 chunk 内的线性 id → 全局实例索引（chunk_start 偏移）
-    let local_index = global_id.x + global_id.y * MAX_X_THREADS;
+    // 本次 dispatch 的相对 id（0..dispatch 实例数）→ chunk 局部索引
+    let rel_index = global_id.x + global_id.y * MAX_X_THREADS;
+    let local_index = cull_info.local_start + rel_index;
     let index = cull_info.chunk_start + local_index;
-    let in_range = local_index < cull_info.chunk_count
+    let in_range = rel_index < cull_info.chunk_count
                 && index < cull_info.instance_count;
 
     // 可见性判定（不提前 return，所有线程必须到达 barrier）

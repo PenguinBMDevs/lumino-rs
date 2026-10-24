@@ -276,9 +276,11 @@ impl NoteRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
+                        // 动态 offset：整段 cull 用本 chunk 槽位，可见区间 cull
+                        // 用 range 槽位（两者共享同一 uniform buffer）。
                         resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                             buffer: cull_uniform_buffer,
-                            offset: slot_offset,
+                            offset: 0,
                             size: Some(uniform_size),
                         }),
                     },

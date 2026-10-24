@@ -50,6 +50,7 @@ fn doc_with_control_events() -> MidiDocument {
         division: 480,
         track_ports: vec![0],
         track_max_end_ticks: MidiDocument::new_track_max_ticks(1),
+        track_max_note_lens: MidiDocument::new_track_max_note_lens_unknown(1),
     }
 }
 

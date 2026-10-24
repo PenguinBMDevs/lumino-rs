@@ -352,14 +352,19 @@ impl NoteRenderer {
         let visible_instance_buffer =
             Self::create_visible_index_buffer(device, Self::INITIAL_CAPACITY);
 
-        let slot_count = super::chunk::MAX_CHUNKS as u64;
-        let slot_bytes = slot_count * slot_align;
-        let zeros = vec![0u8; slot_bytes as usize];
+        // chunk 槽位 + 可见区间槽位：区间 cull 复用同一 uniform buffer，
+        // 动态 offset 区分槽位（见 range_cull.rs）。
+        let chunk_slots = super::chunk::MAX_CHUNKS as u64;
+        let cull_slots = (super::chunk::MAX_CHUNKS + super::range_cull::MAX_CULL_RANGES) as u64;
+        let indirect_bytes = chunk_slots * slot_align;
+        let cull_slot_bytes = cull_slots * slot_align;
+        let indirect_zeros = vec![0u8; indirect_bytes as usize];
+        let cull_zeros = vec![0u8; cull_slot_bytes as usize];
         let indirect_buffer = TrackedBuffer::new_init(
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("note_indirect_buffer"),
-                contents: &zeros,
+                contents: &indirect_zeros,
                 usage: wgpu::BufferUsages::INDIRECT
                     | wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_DST
@@ -380,7 +385,7 @@ impl NoteRenderer {
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("cull_uniform"),
-                contents: &zeros,
+                contents: &cull_zeros,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
         );
@@ -391,7 +396,7 @@ impl NoteRenderer {
             indirect_buffer,
             viewport_buffer,
             cull_uniform_buffer,
-            slot_bytes,
+            cull_slot_bytes,
         )
     }
 

@@ -30,6 +30,7 @@ fn make_test_doc() -> MidiDocument {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     }
 }
 
@@ -108,6 +109,7 @@ fn test_playback_key_colors_no_overflow() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
     let mut state = PlaybackKeyColorState::default();
     let mut colors = [0u8; KEY_COLOR_BYTES];

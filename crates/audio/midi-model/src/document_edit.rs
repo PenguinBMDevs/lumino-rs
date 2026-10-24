@@ -18,6 +18,8 @@ impl MidiDocument {
         self.track_ports.push(0);
         self.track_max_end_ticks
             .push(std::sync::Arc::new(std::sync::Mutex::new(None)));
+        self.track_max_note_lens
+            .push(std::sync::Arc::new(std::sync::Mutex::new(Some(0))));
         self.tracks.push(crate::track::TrackView::new());
         self.track_count = self.track_count.saturating_add(1);
         new_id
@@ -30,6 +32,7 @@ impl MidiDocument {
     /// 音符身份即其音乐内容（按值引用，无全局 ID）。
     pub fn insert_note_with_id(&mut self, track_id: usize, note: NoteEvent) -> Option<u64> {
         let end_tick = note.end_tick;
+        let note_len = note.end_tick.saturating_sub(note.start_tick);
         let track_notes = self.notes.get_mut(track_id)?;
         // 分块插入：只移动目标块内元素（O(块内)），满块自动分裂
         track_notes.insert(note);
@@ -40,6 +43,7 @@ impl MidiDocument {
         {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(end_tick);
         }
+        self.grow_track_max_note_len(track_id, note_len);
         Some(0)
     }
 
@@ -65,6 +69,11 @@ impl MidiDocument {
         let inserted = notes.len();
         notes.sort_by_key(|a| a.start_tick);
         let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
+        let max_len = notes
+            .iter()
+            .map(|n| n.end_tick.saturating_sub(n.start_tick))
+            .max()
+            .unwrap_or(0);
         let Some(track_notes) = self.notes.get_mut(track_id) else {
             return 0;
         };
@@ -75,6 +84,7 @@ impl MidiDocument {
         {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(max_end);
         }
+        self.grow_track_max_note_len(track_id, max_len);
         inserted
     }
 
@@ -123,6 +133,11 @@ impl MidiDocument {
         }
         let inserted = notes.len();
         let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
+        let max_len = notes
+            .iter()
+            .map(|n| n.end_tick.saturating_sub(n.start_tick))
+            .max()
+            .unwrap_or(0);
         let Some(track_notes) = self.notes.get_mut(track_id) else {
             return 0;
         };
@@ -133,6 +148,7 @@ impl MidiDocument {
         {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(max_end);
         }
+        self.grow_track_max_note_len(track_id, max_len);
         inserted
     }
 
@@ -146,6 +162,33 @@ impl MidiDocument {
         }
     }
 
+    /// 插入路径 O(1) 取大：缓存未知（脏）时保持脏，不猜测。
+    fn grow_track_max_note_len(&self, track_id: usize, note_len: u32) {
+        if let Some(cell) = self.track_max_note_lens.get(track_id)
+            && let Some(cur) = cell.lock().ok().and_then(|g| *g)
+            && note_len > cur
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(note_len);
+        }
+    }
+
+    /// 保守置脏：调用方退化为整轨范围（正确性优先，性能由后续插入/重载恢复）。
+    fn invalidate_track_max_note_len(&self, track_id: usize) {
+        if let Some(cell) = self.track_max_note_lens.get(track_id) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
+    }
+
+    /// 删除音符时仅在删掉的正是最大长度音符时置脏（普通删除保持缓存有效）。
+    fn invalidate_track_max_note_len_if_max(&self, track_id: usize, removed_len: u32) {
+        if let Some(cell) = self.track_max_note_lens.get(track_id) {
+            let cur = cell.lock().ok().and_then(|g| *g);
+            if cur == Some(removed_len) {
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            }
+        }
+    }
+
     /// 删除指定音轨指定索引处的音符，返回被删除的音符副本。
     /// track_id 越界或 index 越界返回 None。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
@@ -155,6 +198,12 @@ impl MidiDocument {
         };
         // 保守置脏：被删音符可能是当前 max，查询时惰性重算
         self.invalidate_track_max_tick(track_id);
+        if let Some(note) = &removed {
+            self.invalidate_track_max_note_len_if_max(
+                track_id,
+                note.end_tick.saturating_sub(note.start_tick),
+            );
+        }
         removed
     }
 
@@ -170,6 +219,7 @@ impl MidiDocument {
         if removed > 0 {
             // 保守置脏：被删区间可能包含当前 max，查询时惰性重算
             self.invalidate_track_max_tick(track_id);
+            self.invalidate_track_max_note_len(track_id);
         }
         removed
     }
@@ -196,6 +246,7 @@ impl MidiDocument {
     ) -> Option<&mut crate::chunked_list::ChunkedList<NoteEvent>> {
         // 可变引用逃逸后无法感知修改内容，保守置脏
         self.invalidate_track_max_tick(track_id);
+        self.invalidate_track_max_note_len(track_id);
         self.notes.get_mut(track_id)
     }
 
@@ -212,6 +263,7 @@ impl MidiDocument {
         };
         *track = crate::chunked_list::ChunkedList::from_sorted(notes);
         self.invalidate_track_max_tick(track_id);
+        self.invalidate_track_max_note_len(track_id);
         true
     }
 
@@ -230,6 +282,7 @@ impl MidiDocument {
         };
         *track = notes.clone();
         self.invalidate_track_max_tick(track_id);
+        self.invalidate_track_max_note_len(track_id);
         true
     }
 
@@ -241,6 +294,10 @@ impl MidiDocument {
         track.clear();
         // 空轨缓存置脏（None），与 recompute 的空轨处理一致，避免残留 Some(0) 误判
         self.invalidate_track_max_tick(track_id);
+        // 最大音符长度：空轨已知为 0，可安全写回真值（非脏）
+        if let Some(cell) = self.track_max_note_lens.get(track_id) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(0);
+        }
         true
     }
 }

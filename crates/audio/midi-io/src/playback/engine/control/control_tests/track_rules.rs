@@ -27,6 +27,7 @@ fn two_track_doc() -> Arc<MidiDocument> {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     })
 }
 
@@ -160,6 +161,7 @@ fn test_solo_plays_only_soloed_track_engine() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     });
     engine.set_document(doc, 1);
     engine.set_track_play_states(vec![false, false], vec![false, true]);
@@ -206,6 +208,7 @@ fn test_multi_port_maps_global_channels() {
         division: 480,
         track_ports: vec![0, 1],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     });
     engine.set_document(doc, 0);
     engine.play();
@@ -260,6 +263,7 @@ fn test_bank_select_emits_percussion_mode_before_cc() {
         division: 480,
         track_ports: vec![0, 0],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     });
     engine.set_document(doc, 0);
     engine.play();

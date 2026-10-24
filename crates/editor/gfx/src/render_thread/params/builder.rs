@@ -2,7 +2,7 @@
 
 use super::RenderParams;
 use crate::{
-    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
+    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance, CullPlan,
     GridLineInstance, RulerTickInstance, miditrail_renderer::MiditrailViewMode,
 };
 
@@ -394,6 +394,9 @@ impl RenderParamsBuilder {
             content_dirty: self.content_dirty,
             subpixel_note_mode: self.subpixel_note_mode,
             vs_cull_mode: self.vs_cull_mode,
+            // 可见区间 cull 计划由 UI 在 build 后按相机/文档填充（避免 builder
+            // 依赖文档类型）；默认空 = 整段 cull，行为与旧版逐字节一致。
+            cull_plan: CullPlan::default(),
         }
     }
 }

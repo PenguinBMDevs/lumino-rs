@@ -286,7 +286,7 @@ impl ArrangementRenderer {
                     instance_count: 0,
                     chunk_start: 0,
                     chunk_count: 0,
-                    _padding: 0,
+                    local_start: 0,
                 }]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },

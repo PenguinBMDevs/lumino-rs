@@ -235,6 +235,7 @@ mod tests {
             division: 480,
             track_ports: vec![0],
             track_max_end_ticks: MidiDocument::new_track_max_ticks(1),
+            track_max_note_lens: MidiDocument::new_track_max_note_lens_unknown(1),
         }
     }
 
@@ -304,6 +305,7 @@ mod tests {
             division: 480,
             track_ports: vec![0],
             track_max_end_ticks: MidiDocument::new_track_max_ticks(1),
+            track_max_note_lens: MidiDocument::new_track_max_note_lens_unknown(1),
         };
         let selected: EditorNotes = vec![(0, vec![(0.0, 60, 480.0, 100, 0)])];
 

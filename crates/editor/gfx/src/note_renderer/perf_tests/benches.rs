@@ -4,6 +4,82 @@ use super::frame_paths::*;
 use super::helpers::*;
 use super::measure::*;
 use super::*;
+use crate::{CullPlan, CullRange};
+
+/// 可见区间 cull（range cull）与整段 cull 的 cull-pass 耗时对比。
+///
+/// 候选区间取总实例数的 1%（放大档量级）；只测 cull pass（不含 draw），
+/// 用于验证「cull 成本 ∝ 候选区间大小」这一核心收益。
+#[test]
+#[ignore = "GPU 基准：需显式 --ignored 运行，见模块头注释"]
+fn bench_range_cull_zoomed() {
+    let gpu = BenchGpu::new();
+    let counts = env_counts(&gpu);
+    let iters = env_iters();
+    eprintln!(
+        "\n=== range cull vs full cull · adapter={} · {iters} 轮中位数 ===",
+        gpu.adapter_info
+    );
+    eprintln!(
+        "{:>12} {:>12} {:>14} {:>12} {:>14} {:>10}",
+        "notes", "candidates", "full_cull(ms)", "range1(ms)", "range43(ms)", "speedup"
+    );
+    for count in counts {
+        let notes = synth_notes(count);
+        let mut renderer = NoteRenderer::new_onion_skin(
+            &gpu.device,
+            &gpu.queue,
+            gpu.format,
+            crate::GpuEpoch::INITIAL,
+        );
+        renderer.set_view_state(&gpu.queue, 1, &[]);
+        renderer.upload_instances(&notes, &gpu.device, &gpu.queue);
+        let camera = zoomed_camera();
+
+        let full = ms(median_time(&gpu.device, &gpu.queue, iters, |enc| {
+            renderer.prepare_pass(enc, camera, &gpu.queue);
+        }));
+
+        let candidates = (count / 100).max(1);
+        let plan = CullPlan {
+            ranges: vec![CullRange {
+                start: 0,
+                count: candidates as u32,
+            }],
+            total_instances: count,
+        };
+        let ranged = ms(median_time(&gpu.device, &gpu.queue, iters, |enc| {
+            renderer.prepare_pass_with_cull_plan(enc, camera, &gpu.queue, &plan);
+        }));
+        // 黑乐谱常见 43 轨：把候选量均分到 43 个区间，量 43 次 dispatch 的固定开销
+        let tracks = 43usize;
+        let per = (candidates / tracks).max(1) as u32;
+        let mut ranges = Vec::new();
+        let mut start = 0u32;
+        while start < candidates as u32 {
+            let count = per.min(candidates as u32 - start);
+            ranges.push(CullRange { start, count });
+            start += count;
+        }
+        let multi_plan = CullPlan {
+            ranges,
+            total_instances: count,
+        };
+        let multi = ms(median_time(&gpu.device, &gpu.queue, iters, |enc| {
+            renderer.prepare_pass_with_cull_plan(enc, camera, &gpu.queue, &multi_plan);
+        }));
+
+        eprintln!(
+            "{:>12} {:>12} {:>14.3} {:>12.3} {:>14.3} {:>9.1}x",
+            count,
+            candidates,
+            full,
+            ranged,
+            multi,
+            full / multi.max(f64::EPSILON)
+        );
+    }
+}
 
 /// PREF-005 A/B：混合+compute cull（改动前） vs 不透明+compute cull vs 不透明+VS cull。
 ///

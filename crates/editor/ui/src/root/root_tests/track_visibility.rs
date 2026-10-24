@@ -30,6 +30,7 @@ fn doc_with_tracks(n: u16, hidden: Option<u16>) -> MidiDocument {
         division: 480,
         track_ports: vec![0; n as usize],
         track_max_end_ticks: MidiDocument::new_track_max_ticks(n as usize),
+        track_max_note_lens: MidiDocument::new_track_max_note_lens_unknown(n as usize),
     };
     if let Some(id) = hidden {
         doc.tracks.set_visibility(id, TrackVisibility::Hidden);

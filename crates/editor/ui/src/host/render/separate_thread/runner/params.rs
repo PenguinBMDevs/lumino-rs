@@ -4,7 +4,9 @@ use crate::RenderParams;
 use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
 use crate::titlebar::mode_toggle::AppMode;
-use lumino_gfx::ArrangementUniform;
+use lumino_gfx::{ArrangementUniform, CullPlan};
+
+use super::cull_ranges::compute_cull_plan;
 
 /// VS cull 直绘的可见占比阈值（PREF-005）。
 ///
@@ -221,7 +223,7 @@ impl Host {
         let vs_cull_mode =
             !es.is_vertical_roll && visible_fraction > VS_CULL_VISIBLE_FRACTION_THRESHOLD;
 
-        RenderParams::builder()
+        let mut params = RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))
             .logical_size((data.viewport_size.width, data.viewport_size.height))
             .scale_factor(self.render_ctx.viewport.scale_factor())
@@ -261,7 +263,33 @@ impl Host {
             .content_dirty(content_dirty)
             .subpixel_note_mode(subpixel_note_mode)
             .vs_cull_mode(vs_cull_mode)
-            .build()
+            .build();
+
+        // 可见区间 cull：仅横向卷帘的洋葱皮 cull 路径消费。亚像素/VS 直绘
+        // 已跳过 cull，纵向转置相机口径不同，排列模式走独立渲染器——这些
+        // 场景保持空计划（渲染器内部回退整段 cull，行为与旧版一致）。
+        params.cull_plan = if is_arrangement_mode
+            || es.is_vertical_roll
+            || params.subpixel_note_mode
+            || params.vs_cull_mode
+            || content_dirty
+        {
+            // content_dirty 帧：UI 文档与渲染侧段表可能差一帧（流式/增量在途），
+            // 区间偏移不可信 → 回退整段 cull，下一帧稳定后再启用区间。
+            // 亚像素/VS 直绘/纵向/排列不跑本 cull 路径，也无需计算。
+            // 这些路径不跑 compute cull（点图元/VS 直绘），无需每帧二分计算
+            CullPlan::default()
+        } else {
+            compute_cull_plan(
+                es.data.document.as_ref(),
+                data.scroll.0,
+                data.zoom.0,
+                data.viewport_size.width,
+                keyboard_width,
+                canvas_offset.0,
+            )
+        };
+        params
     }
 }
 

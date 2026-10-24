@@ -78,7 +78,9 @@ impl NoteRenderer {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
+                        // 可见区间 cull：同一 bind group 通过动态 offset 选择
+                        // chunk 槽位或 range 槽位（见 range_cull.rs）。
+                        has_dynamic_offset: true,
                         min_binding_size: None,
                     },
                     count: None,

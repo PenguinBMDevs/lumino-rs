@@ -152,6 +152,7 @@ fn two_track_doc() -> Arc<MidiDocument> {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     })
 }
 

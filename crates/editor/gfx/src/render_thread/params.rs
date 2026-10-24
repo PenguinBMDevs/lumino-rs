@@ -1,5 +1,5 @@
 use crate::{
-    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
+    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance, CullPlan,
     GridLineInstance, NoteInstance, RulerTickInstance, miditrail_renderer::MiditrailViewMode,
 };
 
@@ -157,6 +157,11 @@ pub struct RenderParams {
     ///
     /// 默认 `false`（保守走 cull 路径）；纵向卷帘与导出路径不生效。
     pub vs_cull_mode: bool,
+    /// 可见区间 cull 计划（UI 按相机 + 每轨最大音符长度算出）。
+    ///
+    /// 空/总数不一致时渲染线程回退整段 cull；仅横向卷帘的洋葱皮 cull 路径
+    /// 消费本字段（亚像素/VS 直绘路径跳过 cull，不需要它）。
+    pub cull_plan: CullPlan,
 }
 
 impl Default for RenderParams {
@@ -213,6 +218,7 @@ impl Default for RenderParams {
             content_dirty: true,
             subpixel_note_mode: false,
             vs_cull_mode: false,
+            cull_plan: CullPlan::default(),
         }
     }
 }

@@ -53,6 +53,7 @@ fn test_document_streaming_emits_events_in_order() {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     });
 
     engine.set_document(doc, 0);
@@ -122,6 +123,7 @@ fn late_notes_are_skipped_not_replayed() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     });
 
     engine.set_document(doc, 0);

@@ -101,6 +101,7 @@ fn test_loop_wrap_cache_reuse_and_invalidation() {
             division: 480,
             track_ports: vec![],
             track_max_end_ticks: MidiDocument::new_track_max_ticks(2),
+            track_max_note_lens: MidiDocument::new_track_max_note_lens_unknown(2),
         })
     };
 

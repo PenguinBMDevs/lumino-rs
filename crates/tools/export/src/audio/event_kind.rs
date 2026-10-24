@@ -87,6 +87,7 @@ mod tests {
             track_ports: vec![],
 
             track_max_end_ticks: vec![],
+            track_max_note_lens: vec![],
         }
     }
 

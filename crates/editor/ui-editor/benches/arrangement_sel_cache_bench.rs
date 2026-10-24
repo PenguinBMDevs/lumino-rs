@@ -73,6 +73,9 @@ fn build_editor(tracks: usize, notes_per_track: usize) -> Editor {
         division: 480,
         track_ports: vec![0; tracks],
         track_max_end_ticks: lumino_midi_loader::MidiDocument::new_track_max_ticks(tracks),
+        track_max_note_lens: lumino_midi_loader::MidiDocument::new_track_max_note_lens_unknown(
+            tracks,
+        ),
     };
 
     // 每轨 M 个音符，tick 升序、key 循环 0..127

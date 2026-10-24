@@ -76,6 +76,7 @@ fn test_visible_notes_collection_matches_full_scan() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
 
     let tick_start = 5_000_000;
@@ -174,6 +175,7 @@ fn test_waterfall_collect_all_first_frame_full_then_skip() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
     let mut visible = Vec::new();
     let mut out = Vec::new();
@@ -259,6 +261,7 @@ fn test_miditrail_collect_all_first_frame_full_then_skip() {
         division: 480,
         track_ports: vec![],
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
     let mut visible = Vec::new();
     let mut out = Vec::new();

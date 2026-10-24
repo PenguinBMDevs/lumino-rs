@@ -27,7 +27,8 @@ struct CullUniform {
     instance_count: u32,
     chunk_start: u32,
     chunk_count: u32,
-    _padding: u32,
+    // 本次分发在 chunk 局部的起始偏移（整段 cull = 0）
+    local_start: u32,
 };
 
 struct DrawIndirectArgs {
@@ -55,9 +56,10 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let MAX_X_THREADS: u32 = 65535u * 256u;
-    let local_index = global_id.x + global_id.y * MAX_X_THREADS;
+    let rel_index = global_id.x + global_id.y * MAX_X_THREADS;
+    let local_index = cull_info.local_start + rel_index;
     let index = cull_info.chunk_start + local_index;
-    let in_range = local_index < cull_info.chunk_count
+    let in_range = rel_index < cull_info.chunk_count
                 && index < cull_info.instance_count;
 
     var is_visible = false;

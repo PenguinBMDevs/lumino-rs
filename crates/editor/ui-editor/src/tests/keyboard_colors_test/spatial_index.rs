@@ -51,6 +51,7 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
         track_ports: vec![],
 
         track_max_end_ticks: vec![],
+        track_max_note_lens: vec![],
     };
 
     let mut editor = Editor::new();

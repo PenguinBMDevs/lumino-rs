@@ -44,6 +44,7 @@ fn make_doc(tracks: Vec<Vec<NoteEvent>>) -> MidiDocument {
         track_ports: vec![0; track_count as usize],
 
         track_max_end_ticks: MidiDocument::new_track_max_ticks(track_count as usize),
+        track_max_note_lens: MidiDocument::new_track_max_note_lens(track_count as usize),
     }
 }
 
