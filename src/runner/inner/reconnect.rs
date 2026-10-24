@@ -31,6 +31,19 @@ impl Runner {
             ));
         }
         self.reconnect = Some(ReconnectSession::new());
+
+        // REND-020 验收钩子（仅 gpu-reconnect-test）：停帧窗口内请求一个对话框，
+        // 验证 DialogManager 冻结/回队、重连完成后正常出现，且 UI 不挂起。
+        #[cfg(feature = "gpu-reconnect-test")]
+        if std::env::var_os("LUMINO_TEST_OPEN_DIALOG_ON_LOST").is_some()
+            && let Some(this) = self.inner.as_mut()
+        {
+            tracing::warn!("[gpu-reconnect-test] 停帧窗口内请求对话框（REND-020 验收）");
+            this.window_state
+                .dialog_manager
+                .open_dialog(lumino_ui::state::root_state::DialogType::Settings);
+        }
+
         tracing::info!("重连会话启动（REND-019 PR-C：epoch 将递增并重绑全部窗口）");
     }
 

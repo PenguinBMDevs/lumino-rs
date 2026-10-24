@@ -112,10 +112,11 @@ impl Context {
         if width == 0 || height == 0 {
             return;
         }
-        // REND-019（R2 实测 2026-10-17）：停帧期间（设备已销毁、等待重连）禁止
-        // 重新 configure——对已销毁设备的 surface.configure 会走
+        // REND-019（R2 实测 2026-10-17）/ REND-020（#166）：停帧期间（设备已销毁、
+        // 等待重连）禁止重新 configure——对已丢失设备的 surface.configure 会走
         // maintain(wait_indefinitely) 等待永不完成的 GPU 工作，UI 线程永久卡死。
-        if device_status::device_lost() {
+        // 统一守卫（与 `Context::new` / `handle_frame_error` 共用）。
+        if device_status::ensure_device_available().is_err() {
             return;
         }
         let max_dim = self.device.limits().max_texture_dimension_2d;
@@ -136,6 +137,13 @@ impl Context {
     /// 洪泛 → 进程访问违例）。第二次 configure 时残留已被清掉，可正常安装；
     /// 首配成功时第二次为幂等重配（低频路径，代价可忽略）。
     /// 禁止「优化」为单次（同 `rebind_device` 的双 configure 语义）。
+    ///
+    /// ⚠️ REND-020（#166）：本函数**不**做停帧守卫——`rebind_device` 在重连安装
+    /// 新 device 后立即调用它，而停帧标志要到 `restart_render_threads` 才撤销。
+    /// 若在此处早退，新 surface 会永远停留在未配置态（`get_current_texture`
+    /// 退化为 `SurfaceError::Other` 热循环）。守卫放调用点：`resize` /
+    /// `Context::new` / `handle_frame_error` 经
+    /// [`crate::device_status::ensure_device_available`] 早退。
     fn configure_surface_stable(&self) {
         self.surface.configure(&self.device, &self.surface_config);
         self.surface.configure(&self.device, &self.surface_config);
@@ -269,6 +277,16 @@ impl Context {
         let action = classify_frame_error(surface_err);
         match action {
             FrameErrorAction::Reconfigured => {
+                // REND-020（#166）：取帧与重配之间停帧标志可能被置位（lost 回调 /
+                // 另一窗口的 Stop 处置）——对死设备 configure 会等待 GPU idle，
+                // 禁止重配；降级为 Stop，交重连接管。
+                if device_status::ensure_device_available().is_err() {
+                    let _ = device_status::mark_device_lost();
+                    tracing::warn!(
+                        "Surface Outdated：停帧标志已置位，跳过交换链重配（交重连接管）"
+                    );
+                    return FrameErrorAction::Stop;
+                }
                 tracing::warn!("Surface Outdated：按现有配置重新 configure 交换链");
                 self.configure_surface_stable();
             }

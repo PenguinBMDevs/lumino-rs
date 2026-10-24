@@ -187,6 +187,11 @@ impl ProgressManager {
         ui_config: &lumino_core::storage::config::UiConfig,
     ) {
         if self.progress.is_some() && self.window.is_none() {
+            // REND-020（#166）：停帧窗口内不建进度窗——`Context::new` 会拒绝在死设备
+            // 上建 Context；逐帧「建窗→丢弃」还会放大窗口/交换链开销。
+            if lumino_gfx::device_lost() {
+                return;
+            }
             self.create_window(event_loop, ui_config);
         } else if self.progress.is_none() && self.window.is_some() {
             self.close();
