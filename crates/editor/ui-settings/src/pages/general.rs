@@ -1,12 +1,12 @@
 //! 设置页面 - 常规设置
 
 use iced_core::Alignment;
-use iced_widget::{column, pick_list, row, text, text_input};
+use iced_widget::{checkbox, column, pick_list, row, text, text_input};
 use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
 use super::super::components::styles::create_content_text_style;
-use super::super::components::with_setting_tooltip_inline;
+use super::super::components::{with_setting_tooltip_inline, with_setting_tooltip_inline_action};
 use crate::SettingsPanel;
 use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
 use lumino_extras::i18n::settings_translations;
@@ -83,6 +83,28 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
     let current_eraser =
         LocalizedEraser::new(settings.editing.eraser_behavior, settings.display.language);
 
+    // 看门狗在 macOS 上整体禁用（系统内存压力模型不同，见 memory_monitor/watchdog.rs）：
+    // 与 Domino 开关同款处理——对钩框不挂 on_toggle（置灰），标签改用无动作 tooltip，
+    // 避免出现一个「能点但永远不会生效」的假开关。
+    let watchdog_checkbox = checkbox(settings.logging.load_watchdog_enabled);
+    #[cfg(not(target_os = "macos"))]
+    let watchdog_checkbox = watchdog_checkbox
+        .on_toggle(|enabled| Message::Settings(crate::Event::LoadWatchdogEnabledChanged(enabled)));
+    let watchdog_label = text(t.load_watchdog)
+        .size(TEXT_SIZE_CONTENT)
+        .style(create_content_text_style());
+    #[cfg(not(target_os = "macos"))]
+    let watchdog_label = with_setting_tooltip_inline_action(
+        watchdog_label,
+        t.load_watchdog_hint,
+        Message::Settings(crate::Event::LoadWatchdogEnabledChanged(
+            !settings.logging.load_watchdog_enabled,
+        )),
+    );
+    #[cfg(target_os = "macos")]
+    let watchdog_label =
+        with_setting_tooltip_inline(watchdog_label, t.load_watchdog_unsupported_hint);
+
     column![
         text(t.general_title)
             .size(TEXT_SIZE_TITLE)
@@ -157,6 +179,36 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
+        iced_widget::space().height(20),
+        // ── 加载保护（默认关闭）──
+        // 加载大工程/黑乐谱时的内存检查与强杀看门狗默认都不启用：
+        // 由用户显式选择「宁可慢/被系统 OOM」还是「由程序主动终止」。
+        text(t.load_guard_section)
+            .size(TEXT_SIZE_SECTION)
+            .style(create_content_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 加载期间内存检查（说明挂在标签文字上，点击文字等价于切换对钩）
+        row![
+            checkbox(settings.logging.load_memory_check_enabled).on_toggle(|enabled| {
+                Message::Settings(crate::Event::LoadMemoryCheckEnabledChanged(enabled))
+            }),
+            with_setting_tooltip_inline_action(
+                text(t.load_memory_check)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.load_memory_check_hint,
+                Message::Settings(crate::Event::LoadMemoryCheckEnabledChanged(
+                    !settings.logging.load_memory_check_enabled,
+                )),
+            ),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(8),
+        // 加载期间进程强杀看门狗（说明挂在标签文字上，点击文字等价于切换对钩）
+        row![watchdog_checkbox, watchdog_label]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

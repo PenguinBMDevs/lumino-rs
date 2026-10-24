@@ -277,6 +277,18 @@ pub struct SettingsTranslations {
     pub ui_monitor_refresh_interval: &'static str,
     /// 监控数据刷新间隔提示
     pub ui_monitor_refresh_interval_hint: &'static str,
+    /// 加载保护分区标题
+    pub load_guard_section: &'static str,
+    /// 加载期间内存检查开关
+    pub load_memory_check: &'static str,
+    /// 加载期间内存检查提示
+    pub load_memory_check_hint: &'static str,
+    /// 加载期间进程强杀看门狗开关
+    pub load_watchdog: &'static str,
+    /// 加载期间进程强杀看门狗提示
+    pub load_watchdog_hint: &'static str,
+    /// 加载期间进程强杀看门狗提示（当前平台不支持时的置灰说明）
+    pub load_watchdog_unsupported_hint: &'static str,
     /// 界面语言：跟随系统选项（UI-018）
     pub language_follow_system: &'static str,
 

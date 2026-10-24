@@ -150,6 +150,11 @@ pub enum Event {
     LogRetentionCountChanged(String),
     /// 底边栏监控数据刷新间隔（毫秒，50-2000）
     MonitorRefreshIntervalChanged(f32),
+    // 加载保护（内存检查 / 进程强杀看门狗，均默认关闭）
+    /// 加载期间内存检查开关变更
+    LoadMemoryCheckEnabledChanged(bool),
+    /// 加载期间进程强杀看门狗开关变更
+    LoadWatchdogEnabledChanged(bool),
     // 兼容性设置
     /// 每次启动检查 GPU 兼容性开关变更
     GpuCheckOnStartupChanged(bool),

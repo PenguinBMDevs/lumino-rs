@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 加载保护 · 内存检查 / 强杀看门狗设置开关（默认关闭）
+
+- **新增设置** — 设置面板「常规 → 加载保护」两个开关，**默认均关闭**：
+  - 「加载期间检查内存」(`UiConfig::load_memory_check_enabled`)：加载期间执行同步内存检查，
+    RSS 达到软限（总内存 - 512MB）的 95% 时主动终止；同时门控后台监控线程在加载期间的检查。
+  - 「加载期间进程强杀看门狗」(`UiConfig::load_watchdog_enabled`)：独立线程在加载期间
+    每 50ms 检查，超软限或系统可用内存 < 350MB 时 SIGKILL / TerminateProcess。
+- **口径** — 关闭时加载期间不做阈值判定、不主动终止（系统 OOM 仍可能结束进程）；非加载期间
+  后台监控保持原行为。开关即时生效：后台/看门狗每轮读标志，加载中途关闭立即停检。
+- **安全** — 加载期检查触发时走 `std::process::abort()`（不是 `panic!`）：加载在 `tokio::spawn`
+  任务里，panic 会被任务边界吞掉（进程存活且加载标志卡死）。加载状态改用 RAII 守卫
+  `MidiLoadGuard`，正常/提前返回/取消/panic 展开都会清除标志。
+- **实现** — 新增 `lumino-diagnostics::memory_monitor::load_guard`（进程级原子开关，默认 false）；
+  `MemoryMonitor::check_loading()` 供加载链路使用（渲染路径仍走 `check()`，不受开关影响）；
+  `spawn_watchdog()` 开关关闭时惰性不建线程，加载入口/设置保存时按需补起。加载入口收敛为
+  `RunnerInner::begin_midi_load()`（刷新开关 + 看门狗 + RAII 守卫）。macOS 看门狗本就整体禁用，
+  UI 置灰并把配置归一化为关闭。
+- **验证** — `cargo fmt --check`、`git diff --check`、`cargo check -p lumino-rs --all-targets`、
+  `cargo clippy --workspace --all-targets -- -D warnings` 全部通过；定向测试
+  `lumino-diagnostics` 16 / `lumino-core` 211 / `lumino-ui-settings` 26 / `lumino-extras` 30 /
+  `lumino-midi-loader` 50 / `lumino-midi-model` 124 / `lumino-rs` 181，全部 0 failed。
+
 ### CI 修复 · ubuntu lint（事件循环 API）与 BOM 守卫红灯
 
 - **ubuntu lint（E0599）** — Linux 专用分支把 `with_user_event()` 误挂在 `EventLoopBuilder<T>` 上

@@ -86,7 +86,9 @@ impl MidiDocument {
         file_bytes: &[u8],
         progress: Option<&dyn Fn(f64)>,
     ) -> LoaderResult<(Self, u16, u64)> {
-        MemoryMonitor::global().check();
+        // 解析大分配前检查内存。受设置面板「加载期间内存检查」开关控制
+        // （默认关闭）：关闭时直接返回，不读 RSS、不因软限 panic。
+        MemoryMonitor::global().check_loading();
 
         if let Some(cb) = progress {
             (cb)(0.05);

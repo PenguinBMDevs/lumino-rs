@@ -29,6 +29,17 @@ fn abort_process(report: &str) -> ! {
     std::process::abort()
 }
 
+/// 后台监控本轮是否应检查内存。
+///
+/// 非加载期间：保持原有行为（始终检查，与该开关无关）。
+/// 加载期间：受「加载期间内存检查」开关控制——关闭时后台线程同样跳过，
+/// 否则开关只关掉同步检查、进程仍会被后台监控在 95% 软限处 abort，
+/// 开关就失去了「默认不主动终止」的意义。
+#[cfg(any(not(target_os = "macos"), test))]
+fn should_check_now(load_active: bool, memory_check_enabled: bool) -> bool {
+    !load_active || memory_check_enabled
+}
+
 /// 启动后台内存监控线程
 ///
 /// 该线程独立于主线程运行，每 100ms 检查一次 RSS。
@@ -53,6 +64,15 @@ pub fn spawn_monitor_thread() -> bool {
             let monitor = MemoryMonitor::global();
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+
+                // 加载期间的内存检查受设置面板开关控制（默认关闭），
+                // 非加载期间的行为与开关无关（见 `should_check_now`）。
+                if !should_check_now(
+                    super::midi_guard::midi_load_active(),
+                    super::load_guard::load_memory_check_enabled(),
+                ) {
+                    continue;
+                }
 
                 match monitor.check_inner("bg: ") {
                     Some(true) => {
@@ -96,6 +116,10 @@ pub fn spawn_monitor_thread() -> bool {
 /// 等价于依次调用 `spawn_monitor_thread()` + [`watchdog::spawn_watchdog()`]，
 /// 确保两层防线同时就位。
 ///
+/// 看门狗是否真正启动取决于「加载期间进程强杀看门狗」开关（默认关闭，见
+/// [`super::load_guard`]）：开关关闭时 `spawn_watchdog()` 直接返回 `true`，
+/// 不算失败；加载入口刷新开关后会再次调用并补起线程。
+///
 /// 返回 `true` 表示所有启用的监控均已成功启动。
 ///
 /// ## 平台说明
@@ -123,4 +147,30 @@ pub fn spawn_all_monitors() -> bool {
         "MemoryMonitor: macOS 上禁用后台内存监控和看门狗（参见 spawn_all_monitors 文档）"
     );
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_check_now;
+
+    /// 后台监控门控真值表：加载期由开关决定；非加载期一律照常检查。
+    #[test]
+    fn test_background_check_gate_truth_table() {
+        assert!(
+            should_check_now(false, false),
+            "非加载期不受开关影响：后台监控照常工作"
+        );
+        assert!(
+            should_check_now(false, true),
+            "非加载期不受开关影响：后台监控照常工作"
+        );
+        assert!(
+            !should_check_now(true, false),
+            "加载期且开关关闭：后台监控必须跳过（否则仍会在 95% 软限 abort）"
+        );
+        assert!(
+            should_check_now(true, true),
+            "加载期且开关开启：后台监控照常检查"
+        );
+    }
 }

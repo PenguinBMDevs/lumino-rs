@@ -32,8 +32,10 @@ pub async fn load_parsed_midi(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
 ) -> LoaderResult<ParsedMidi> {
-    // 大分配前检查内存，防止 OOM 导致系统无响应
-    MemoryMonitor::global().check();
+    // 大分配前检查内存，防止 OOM 导致系统无响应。
+    // 受设置面板「加载期间内存检查」开关控制（默认关闭）：
+    // 关闭时不读 RSS、不主动 panic，避免默认把进程杀掉。
+    MemoryMonitor::global().check_loading();
 
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {

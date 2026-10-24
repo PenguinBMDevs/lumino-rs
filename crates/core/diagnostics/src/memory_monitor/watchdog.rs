@@ -13,10 +13,11 @@
 //! - 看门狗在 100% soft_limit 或系统内存 ≤ 350MB 时 SIGKILL
 //! - 50ms 轮询确保在突发分配瞬间吞掉最后 350MB 之前拦截
 //!
-//! 生效范围（Lumino 定制）：**只监控 MIDI 加载期间的内存**。
-//! - 加载路径（`runner::menu::file::load` 等）在加载前确保看门狗已启动，
-//!   加载开始前置位 `midi_guard::set_midi_load_active(true)`；
-//! - 看门狗每轮检查该标志：非加载状态一律不检查、不终止；
+//! 生效范围（Lumino 定制）：**只监控 MIDI 加载期间的内存**，且需设置面板
+//! 「加载期间进程强杀看门狗」开关开启（默认关闭，见 `load_guard`）。
+//! - 加载路径（`runner::menu::file::load` 等）通过 `RunnerInner::begin_midi_load()`
+//!   刷新开关、确保看门狗已启动并置位加载状态（RAII 守卫在任务结束时清除）；
+//! - 看门狗每轮检查开关与标志：未启用或非加载状态一律不检查、不终止；
 //! - 加载结束（成功或失败）清除标志，看门狗恢复休眠。
 //! - 除加载 MIDI 之外的场景一律不监控。
 
@@ -139,6 +140,16 @@ fn watchdog_force_kill(pid: u32) {
     }
 }
 
+/// 看门狗本轮是否应检查内存。
+///
+/// 必须同时满足：开关开启（设置面板「加载期间进程强杀看门狗」，默认关闭）
+/// 且处于 MIDI 加载状态。开关在启动后被关闭时，已存在的线程会立即停止检查
+/// 并回到休眠，不会继续保留强杀能力。
+#[cfg(any(not(target_os = "macos"), test))]
+fn should_check_now(watchdog_enabled: bool, load_active: bool) -> bool {
+    watchdog_enabled && load_active
+}
+
 /// 启动看门狗线程（完全独立的终极防线）
 ///
 /// 与 `spawn_monitor_thread()` 完全独立运行：
@@ -148,6 +159,10 @@ fn watchdog_force_kill(pid: u32) {
 /// - 系统可用内存阈值（< 350MB 时即使 RSS 未超限也触发，macOS 使用 host_statistics64）
 /// - 自己的终止手段（SIGKILL / TerminateProcess，不可被捕获/阻塞/忽略）
 ///
+/// 开关关闭（默认）时**直接返回 `true` 而不启动线程**——"未启用"不是错误；
+/// 加载入口在刷新开关后会再次调用本函数补起线程。线程启动后每轮仍会复查
+/// 开关，运行中关闭即停止检查。
+///
 /// 返回 `true` 表示线程已启动（或之前已启动），`false` 表示创建线程失败。
 ///
 /// ## 平台说明
@@ -156,6 +171,11 @@ fn watchdog_force_kill(pid: u32) {
 #[cfg(not(target_os = "macos"))]
 pub fn spawn_watchdog() -> bool {
     static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
+
+    if !crate::memory_monitor::load_guard::load_watchdog_enabled() {
+        tracing::debug!("MemoryWatchdog: 加载期看门狗开关关闭，跳过启动");
+        return true;
+    }
 
     if SPAWNED.get().is_some() {
         return true;
@@ -179,10 +199,14 @@ pub fn spawn_watchdog() -> bool {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(WATCHDOG_INTERVAL_MS));
 
-                // 只监控 MIDI 加载期间的内存：非加载状态一律不检查、不终止。
-                // 看门狗在加载路径（load_midi_file 等）加载前确保已启动，
+                // 只监控 MIDI 加载期间的内存，且仅在开关开启时生效：
+                // 未启用或非加载状态一律不检查、不终止。
+                // 加载路径在每次加载前刷新开关并确保看门狗已启动，
                 // 加载开始前置位 MIDI_LOAD_ACTIVE，加载结束（成功/失败）后清除。
-                if !crate::memory_monitor::midi_guard::midi_load_active() {
+                if !should_check_now(
+                    crate::memory_monitor::load_guard::load_watchdog_enabled(),
+                    crate::memory_monitor::midi_guard::midi_load_active(),
+                ) {
                     continue;
                 }
 
@@ -256,4 +280,27 @@ pub fn spawn_watchdog() -> bool {
 #[cfg(target_os = "macos")]
 pub fn spawn_watchdog() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_check_now;
+
+    /// 看门狗门控真值表：开关与加载状态必须同时成立。
+    #[test]
+    fn test_watchdog_gate_truth_table() {
+        assert!(!should_check_now(false, false), "开关关闭 + 非加载：不检查");
+        assert!(
+            !should_check_now(false, true),
+            "开关关闭 + 加载中：不得强杀（默认行为）"
+        );
+        assert!(
+            !should_check_now(true, false),
+            "开关开启 + 非加载：看门狗保持休眠"
+        );
+        assert!(
+            should_check_now(true, true),
+            "开关开启 + 加载中：执行内存监控"
+        );
+    }
 }

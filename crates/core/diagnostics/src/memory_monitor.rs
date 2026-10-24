@@ -22,7 +22,9 @@
 //!
 //! # 架构
 //!
-//! 三层防护，独立运行：
+//! 三层防护，独立运行。**加载期间**的第 1 层（后台线程在加载期间的检查）、
+//! 第 2 层（`check_loading` 调用点）与第 3 层（看门狗）均受设置面板「加载保护」
+//! 开关控制，默认关闭（见 [`load_guard`]）；非加载期间第 1 层照常工作。
 //!
 //! 1. **后台线程**（主防护）— 调用 [`spawn_monitor_thread()`] 启动独立线程，
 //!    每隔 100ms 检查 RSS，超限时直接 `std::process::abort()` 终止进程。
@@ -36,6 +38,8 @@
 //!
 //! 2. **同步检查**（第二道防线）— [`MemoryMonitor::check()`] 在加载/渲染
 //!    大分配前调用，`panic!()` 抛出详细内存报告，捕获突发分配高峰。
+//!    加载链路的调用点使用 [`MemoryMonitor::check_loading()`]：它受设置面板
+//!    「加载期间内存检查」开关（[`load_guard`]，默认关闭）控制。
 //!
 //! 3. **RSS 读取容错** — 连续 3 次读取失败才跳过检查，避免偶尔的平台 API 抖动漏报。
 //!
@@ -49,8 +53,10 @@
 //! - [`platform`]: 平台专属内存信息获取（Linux: /proc, macOS: sysctl/task_info, Windows: WinAPI）
 //! - [`watchdog`]: 完全独立的看门狗线程（Linux: SIGKILL, macOS: SIGKILL, Windows: TerminateProcess）
 //! - [`midi_guard`]: MIDI 加载状态标志（看门狗只在加载 MIDI 期间监控内存）
+//! - [`load_guard`]: 加载期防护开关（内存检查 / 强杀看门狗，均默认关闭）
 //! - `background`: 后台监控线程与看门狗启动函数（`spawn_monitor_thread` / `spawn_all_monitors`）
 
+pub mod load_guard;
 pub mod midi_guard;
 pub mod platform;
 pub mod watchdog;
@@ -278,6 +284,34 @@ impl MemoryMonitor {
             self.warn_throttle
                 .store(0, std::sync::atomic::Ordering::Relaxed);
             Some(false)
+        }
+    }
+
+    /// 加载期同步检查（受设置面板「加载期间内存检查」开关控制，默认关闭）
+    ///
+    /// 开关关闭时直接返回——不执行阈值判定，也不会终止进程；开关开启时在
+    /// RSS >= 95% soft_limit 处**主动 `abort()` 终止进程**。
+    ///
+    /// 为什么是 abort 而不是 [`Self::check()`] 的 panic：加载链路运行在
+    /// `tokio::spawn` 任务里，panic 会被任务边界吞掉——进程存活，加载的
+    /// 成功/失败回调与 `midi_load_active` 清理都不执行，既不符合"主动终止
+    /// 保护系统"的承诺，还会让看门狗/后台监控误判为仍在加载。`abort()` 在
+    /// 任何线程都不可忽略。渲染等其它路径仍使用 [`Self::check()`]。
+    pub fn check_loading(&self) {
+        if !load_guard::load_memory_check_enabled() {
+            return;
+        }
+        if let Some(true) = self.check_inner("load: ") {
+            let rss = platform::get_current_rss();
+            let report = self.format_report(
+                rss,
+                "MEMORY_LIMIT: 加载期内存检查触发，主动终止进程以保护系统稳定 🔴",
+            );
+            // 与 `background::abort_process` 同路径：直接写 stderr，不依赖 tracing。
+            use std::io::Write;
+            let _ = writeln!(std::io::stderr(), "{report}");
+            let _ = std::io::stderr().flush();
+            std::process::abort();
         }
     }
 

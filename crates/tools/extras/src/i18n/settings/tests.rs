@@ -35,6 +35,13 @@ fn test_settings_translations_not_empty() {
         assert!(!t.compat_domino_clipboard_unsupported_hint.is_empty());
         // UI-018：语言「跟随系统」选项
         assert!(!t.language_follow_system.is_empty());
+        // 加载保护：两个开关与说明必须都有文案（缺一个就是空标签/空提示）
+        assert!(!t.load_guard_section.is_empty());
+        assert!(!t.load_memory_check.is_empty());
+        assert!(!t.load_memory_check_hint.is_empty());
+        assert!(!t.load_watchdog.is_empty());
+        assert!(!t.load_watchdog_hint.is_empty());
+        assert!(!t.load_watchdog_unsupported_hint.is_empty());
     }
 }
 

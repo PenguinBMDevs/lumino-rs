@@ -224,3 +224,68 @@ fn test_gpu_status_events_update_fields() {
     panel.update(Event::GpuLoadDisplayChanged(GpuLoadDisplay::ShortAverage));
     assert_eq!(panel.synth.gpu_load_display, GpuLoadDisplay::ShortAverage);
 }
+
+// ── 加载保护（内存检查 / 进程强杀看门狗，均默认关闭）──
+
+/// 面板初始化镜像 UiConfig；全新配置两个开关都必须是关闭。
+#[test]
+fn test_load_guard_panel_defaults_and_mirror() {
+    let panel = SettingsPanel::new(&UiConfig::default());
+    assert!(
+        !panel.logging.load_memory_check_enabled,
+        "加载期间内存检查默认应为关闭"
+    );
+    assert!(
+        !panel.logging.load_watchdog_enabled,
+        "加载期间强杀看门狗默认应为关闭"
+    );
+
+    let config = UiConfig {
+        load_memory_check_enabled: true,
+        load_watchdog_enabled: true,
+        ..UiConfig::default()
+    };
+    let panel = SettingsPanel::new(&config);
+    assert!(panel.logging.load_memory_check_enabled, "应镜像配置值");
+    assert_eq!(
+        panel.logging.load_watchdog_enabled,
+        cfg!(not(target_os = "macos")),
+        "应镜像配置值；macOS 上看门狗整体禁用，必须归一化为关闭（置灰开关若显示已勾选则无法取消）"
+    );
+}
+
+/// macOS 归一化契约：配置里残留 true 也不能让置灰开关显示「已勾选」。
+#[test]
+fn test_load_watchdog_normalized_on_macos() {
+    let config = UiConfig {
+        load_watchdog_enabled: true,
+        ..UiConfig::default()
+    };
+    let panel = SettingsPanel::new(&config);
+    if cfg!(target_os = "macos") {
+        assert!(
+            !panel.logging.load_watchdog_enabled,
+            "macOS 上看门狗不启用，面板必须归一化为关闭"
+        );
+    } else {
+        assert!(
+            panel.logging.load_watchdog_enabled,
+            "非 macOS 平台应镜像配置值"
+        );
+    }
+}
+
+/// 事件可双向切换两个开关（面板只改本地状态，持久化由 Runner 统一落盘）。
+#[test]
+fn test_load_guard_events_toggle_switches() {
+    let mut panel = SettingsPanel::new(&UiConfig::default());
+    panel.update(Event::LoadMemoryCheckEnabledChanged(true));
+    assert!(panel.logging.load_memory_check_enabled);
+    panel.update(Event::LoadMemoryCheckEnabledChanged(false));
+    assert!(!panel.logging.load_memory_check_enabled);
+
+    panel.update(Event::LoadWatchdogEnabledChanged(true));
+    assert!(panel.logging.load_watchdog_enabled);
+    panel.update(Event::LoadWatchdogEnabledChanged(false));
+    assert!(!panel.logging.load_watchdog_enabled);
+}

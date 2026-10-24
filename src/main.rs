@@ -134,8 +134,10 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     // 启动 puffin 性能分析服务器 - 保持存活直到程序结束
     let _puffin_holder = PuffinServerHolder::new();
 
-    // 启动内存监控：主监控（95% → abort）+ 看门狗（100% → SIGKILL）
-    // 看门狗完全独立，用 /proc/{pid} 而非 /proc/self，系统可用 < 350MB 也触发
+    // 启动内存监控：主监控（95% → abort）+ 看门狗（100% → SIGKILL）。
+    // 看门狗受设置面板「加载期间进程强杀看门狗」开关控制（默认关闭）：
+    // 未启用时 spawn_watchdog 直接返回成功而不建线程，加载入口在开关开启后补起。
+    // 看门狗完全独立，用 /proc/{pid} 而非 /proc/self，系统可用 < 350MB 也触发。
     if !lumino_diagnostics::memory_monitor::spawn_all_monitors() {
         tracing::warn!("内存监控线程启动失败，程序继续运行但缺少 OOM 防护");
     }

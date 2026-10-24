@@ -188,6 +188,10 @@ pub struct LoggingSettings {
     pub log_retention_count: usize,
     /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
     pub monitor_refresh_interval_ms: f32,
+    /// 加载期间是否检查内存（默认关闭）
+    pub load_memory_check_enabled: bool,
+    /// 加载期间是否启用进程强杀看门狗（默认关闭）
+    pub load_watchdog_enabled: bool,
 }
 
 /// 云存储设置

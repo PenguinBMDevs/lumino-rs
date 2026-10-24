@@ -31,6 +31,19 @@ fn should_persist_language(language_from_env: bool, language_changed: bool) -> b
     !language_from_env || language_changed
 }
 
+/// 把设置面板的「加载保护」开关写入 `UiConfig`。
+///
+/// 单独成函数是为了让单测能锁死两个相邻 `bool` 的字段映射——写反不会报错，
+/// 只会表现为「设置不落盘 / 开关不生效」。字段与 `SettingsPanel::logging`
+/// 一一对应。
+fn apply_load_guard_to_config(
+    ui: &mut lumino_core::storage::config::UiConfig,
+    new: &lumino_ui::settings::SettingsPanel,
+) {
+    ui.load_memory_check_enabled = new.logging.load_memory_check_enabled;
+    ui.load_watchdog_enabled = new.logging.load_watchdog_enabled;
+}
+
 impl RunnerInner {
     fn config_diff(
         new: &lumino_ui::settings::SettingsPanel,
@@ -92,6 +105,8 @@ impl RunnerInner {
             || new.editing.automation_line_thickness != old.automation_line_thickness
             || new.editing.tempo_max_bpm != old.tempo_max_bpm
             || new.logging.monitor_refresh_interval_ms != old.monitor_refresh_interval_ms
+            || new.logging.load_memory_check_enabled != old.load_memory_check_enabled
+            || new.logging.load_watchdog_enabled != old.load_watchdog_enabled
             || new.synth.gpu_buffer_status_enabled != old.gpu_buffer_status_enabled
             || new.synth.gpu_governor_metrics_enabled != old.gpu_governor_metrics_enabled
             || new.synth.gpu_load_display != old.gpu_load_display
@@ -340,6 +355,7 @@ impl RunnerInner {
             config.ui.automation_line_thickness = new.editing.automation_line_thickness;
             config.ui.tempo_max_bpm = new.editing.tempo_max_bpm;
             config.ui.monitor_refresh_interval_ms = new.logging.monitor_refresh_interval_ms;
+            apply_load_guard_to_config(&mut config.ui, new);
             config.ui.log_retention_count = new.logging.log_retention_count;
             config.ui.system_output_device_id = new.midi.selected_winmm_output;
             config.ui.audio_output_device = new.synth.selected_audio_output_device.clone();
@@ -347,6 +363,12 @@ impl RunnerInner {
             config.ui.domino_clipboard_enabled = new.compat.domino_clipboard_enabled;
             config.ui.gpu_warning_suppressed = Some(new.compat.warning_suppressed);
         });
+        // 加载保护开关即时落到运行时：关闭看门狗后已启动的线程会在下一轮休眠；
+        // 开启且线程尚未创建时立即补起（当前若正在加载，下一轮即开始监控）。
+        self.sync_load_guard();
+        if new.logging.load_watchdog_enabled {
+            lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+        }
         lumino_extras::palette::set_current_palette_by_name(&new.display.selected_palette);
         if let Err(e) = self.window_state.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");
@@ -358,27 +380,4 @@ impl RunnerInner {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::should_persist_language;
-
-    /// UI-020：语言落盘守卫真值表——env 来源且未改语言时不落盘，其余照常。
-    #[test]
-    fn test_should_persist_language_guard() {
-        assert!(
-            should_persist_language(false, false),
-            "非 env 来源：照常落盘"
-        );
-        assert!(
-            should_persist_language(false, true),
-            "非 env 来源：照常落盘"
-        );
-        assert!(
-            !should_persist_language(true, false),
-            "env 来源且未改语言：不得物化（老配置场景的核心守卫）"
-        );
-        assert!(
-            should_persist_language(true, true),
-            "env 来源但用户显式改语言：照常落盘意图"
-        );
-    }
-}
+mod tests;
