@@ -256,6 +256,19 @@ impl NoteRenderer {
             },
         );
 
+        // 像素聚合 splat：仅横向洋葱皮 + depth 交互路径需要（与点管线同范围）
+        let splat = if is_onion && needs_depth {
+            Some(super::splat::SplatState::new(
+                device,
+                format,
+                gpu_note_buffer.buffer(),
+                viewport_buffer.inner(),
+                view_state_buffer.inner(),
+            ))
+        } else {
+            None
+        };
+
         // 创建渲染 bind groups（按 chunk 分块，避免大 source buffer 整体绑定超限）
         // binding 3 = 本 chunk 的 cull uniform 槽位（chunk_start 全局基准）
         let render_bind_groups = Self::create_render_bind_groups(
@@ -307,6 +320,7 @@ impl NoteRenderer {
             point_pipeline,
             direct_pipeline,
             vertical_direct_pipeline,
+            splat,
         }
     }
 

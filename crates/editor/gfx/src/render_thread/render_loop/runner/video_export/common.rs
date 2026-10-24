@@ -1,10 +1,10 @@
+use crate::NoteInstance;
 use crate::render_thread::commands::FrameSender;
 use crate::render_thread::export_pipeline::ExportPipeline;
 use crate::render_thread::render_loop::Renderers;
 use crate::render_thread::render_loop::runner::context::{
     RenderFrameState, VideoExportFrameContext, VideoExportSetupContext,
 };
-use crate::{NoteInstance, unpack_key_color};
 
 use super::handle_video_frame;
 
@@ -84,7 +84,7 @@ pub(crate) fn note_instances_to_key_offsets(notes: &[NoteInstance], key_count: u
     let key_count = key_count.max(1);
     let mut counts = vec![0u32; key_count];
     for n in notes {
-        let (key, _) = unpack_key_color(n.key_color);
+        let key = n.key();
         // 不变式：瀑布流生产侧已按 key_count 过滤（见 render_params/waterfall.rs），
         // 共享缓冲内不应出现越界 key，否则分桶边界错位。
         debug_assert!(

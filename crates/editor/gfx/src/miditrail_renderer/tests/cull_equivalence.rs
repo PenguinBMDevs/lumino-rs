@@ -130,8 +130,8 @@ fn test_cull_active_matches_cpu_reference() {
 
     let mut ordered = notes.clone();
     ordered.sort_by(|a, b| {
-        let ka = a.key_color & 0xFF;
-        let kb = b.key_color & 0xFF;
+        let ka = a.key();
+        let kb = b.key();
         ka.cmp(&kb).then_with(|| {
             (a.start_length[0].max(0.0) as u32).cmp(&(b.start_length[0].max(0.0) as u32))
         })

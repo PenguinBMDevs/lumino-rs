@@ -296,11 +296,9 @@ pub(crate) fn same_preview_instances(
     b: &[lumino_gfx::NoteInstance],
 ) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b).all(|(x, y)| {
-            x.start_length == y.start_length
-                && x.key_color == y.key_color
-                && x.border_width == y.border_width
-        })
+        && a.iter()
+            .zip(b)
+            .all(|(x, y)| x.start_length == y.start_length && x.attrs == y.attrs)
 }
 
 /// 影响离屏画面内容的「视口参数指纹」。
@@ -442,7 +440,7 @@ mod tests {
 
         // border_width 参与比较（预览哨兵值 / 轨道深度编码都在其中）
         let mut other_border = inst(0.0);
-        other_border.border_width = 2;
+        other_border.attrs = (other_border.attrs & !(0x7F << 24)) | (2 << 24);
         assert!(!same_preview_instances(&[inst(0.0)], &[other_border]));
     }
 }

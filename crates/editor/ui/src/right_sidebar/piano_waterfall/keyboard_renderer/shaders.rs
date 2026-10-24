@@ -78,9 +78,10 @@ fn fs(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
 /// 实例索引经 compute 剔除后由 `visible_indices` 间接给出，仅绘制可见音符。
 pub(super) const NOTE_SHADER: &str = r#"
 struct NoteInstance {
-    start_length: vec2<f32>,   // x = start_tick, y = length_tick
-    key_color: u32,            // 低 8 位 = key，高 24 位 = RGB（无 alpha）
-    border_width: u32,         // 高 16 位 = track_idx+1（主音轨判定）
+    start: f32,
+    length: f32,
+    attrs: u32,                // key | track_enc | border | preview
+
 };
 
 struct NoteUniforms {
@@ -103,6 +104,23 @@ struct VsOut {
 };
 
 const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);
+fn note_color_f32(attrs: u32) -> vec4<f32> {
+    let idx = max((attrs >> 8u) & 0xFFFFu, 1u) - 1u;
+    let c = array<vec3<f32>, 12>(
+        vec3<f32>(0.7843137, 0.3137255, 0.3137255),
+        vec3<f32>(0.3137255, 0.7843137, 0.4705882),
+        vec3<f32>(0.3137255, 0.4705882, 0.8627451),
+        vec3<f32>(0.8627451, 0.7843137, 0.3137255),
+        vec3<f32>(0.7843137, 0.3921569, 0.7843137),
+        vec3<f32>(0.3137255, 0.7843137, 0.7843137),
+        vec3<f32>(0.9411765, 0.5882353, 0.3137255),
+        vec3<f32>(0.7058824, 0.7058824, 0.7058824),
+        vec3<f32>(0.9019608, 0.3921569, 0.3921569),
+        vec3<f32>(0.3921569, 0.7058824, 0.3921569),
+        vec3<f32>(0.3921569, 0.3921569, 0.7843137),
+        vec3<f32>(0.7843137, 0.7058824, 0.3921569));
+    return vec4<f32>(c[idx % 12u], 1.0);
+}
 
 fn unpack_key_color(packed: u32) -> vec4<f32> {
     let rgb = packed >> 8u;
@@ -146,7 +164,7 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VsO
 
     let real = visible_indices[iid];
     let inst = notes[real];
-    let k = i32(inst.key_color & 0xFFu);
+    let k = i32(inst.attrs & 0xFFu);
     let white_count = whites_before(i32(u.key_count));
     let white_w = u.resolution.x / f32(white_count);
     let black_w = white_w * 0.58;
@@ -163,8 +181,8 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VsO
     }
 
     // y 轴：底部键盘线 = min_tick，后续 tick 向上（panel 顶部流入）
-    let start = inst.start_length.x;
-    let len = inst.start_length.y;
+    let start = inst.start;
+    let len = inst.length;
     let y_top = u.keyboard_y - ((start + len) * u.zoom_x - u.scroll_x);
     let y_bot = u.keyboard_y - (start * u.zoom_x - u.scroll_x);
     let px_left = x;
@@ -184,8 +202,8 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VsO
     var out: VsOut;
     out.pos = vec4<f32>(clip, 0.0, 1.0);
 
-    let track_enc = inst.border_width >> 16u;
-    var color = unpack_key_color(inst.key_color);
+    let track_enc = (inst.attrs >> 8u) & 0xFFFFu;
+    var color = note_color_f32(inst.attrs);
     if (track_enc == u.current_track) {
         color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
     }
@@ -207,9 +225,10 @@ fn fs(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
 /// 由键盘着色器的 `blend_key_color` 混合——与主卷帘键盘高亮完全同源。
 pub(super) const KEYCOLOR_SHADER: &str = r#"
 struct NoteInstance {
-    start_length: vec2<f32>,
-    key_color: u32,
-    border_width: u32,
+    start: f32,
+    length: f32,
+    attrs: u32,
+
 };
 
 struct NoteUniforms {
@@ -230,6 +249,23 @@ struct CullOffset { offset: u32, _p0: u32, _p1: u32, _p2: u32, };
 @group(0) @binding(3) var<uniform> cull_offset: CullOffset;
 
 const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);
+fn note_color_f32(attrs: u32) -> vec4<f32> {
+    let idx = max((attrs >> 8u) & 0xFFFFu, 1u) - 1u;
+    let c = array<vec3<f32>, 12>(
+        vec3<f32>(0.7843137, 0.3137255, 0.3137255),
+        vec3<f32>(0.3137255, 0.7843137, 0.4705882),
+        vec3<f32>(0.3137255, 0.4705882, 0.8627451),
+        vec3<f32>(0.8627451, 0.7843137, 0.3137255),
+        vec3<f32>(0.7843137, 0.3921569, 0.7843137),
+        vec3<f32>(0.3137255, 0.7843137, 0.7843137),
+        vec3<f32>(0.9411765, 0.5882353, 0.3137255),
+        vec3<f32>(0.7058824, 0.7058824, 0.7058824),
+        vec3<f32>(0.9019608, 0.3921569, 0.3921569),
+        vec3<f32>(0.3921569, 0.7058824, 0.3921569),
+        vec3<f32>(0.3921569, 0.3921569, 0.7843137),
+        vec3<f32>(0.7843137, 0.7058824, 0.3921569));
+    return vec4<f32>(c[idx % 12u], 1.0);
+}
 // 活跃键高亮强度（0..255），复用卷帘瀑布流 0xRRGGBBAA 打包
 const ACTIVE_KEY_ALPHA: u32 = 200u;
 
@@ -250,15 +286,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + cull_offset.offset;
     if (i >= arrayLength(&notes)) { return; }
     let inst = notes[i];
-    let k = inst.key_color & 0xFFu;
+    let k = inst.attrs & 0xFFu;
     // 键盘线 tick：面板底部键盘线 = 当前滚动线（scroll_x / zoom_x）。
     // 音符区间覆盖该线即正“落键”，点亮对应键。
     let tk = u.scroll_x / u.zoom_x;
-    let start = inst.start_length.x;
-    let len = inst.start_length.y;
+    let start = inst.start;
+    let len = inst.length;
     if (tk >= start && tk <= start + len) {
-        var col = unpack_key_color(inst.key_color);
-        if ((inst.border_width >> 16u) == u.current_track) {
+        var col = note_color_f32(inst.attrs);
+        if (((inst.attrs >> 8u) & 0xFFFFu) == u.current_track) {
             col = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
         }
         let r = u32(clamp(col.r, 0.0, 1.0) * 255.0);
@@ -273,9 +309,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// 并以原子自增维护 `draw_args[1]`（间接绘制的 instance_count）。
 pub(super) const CULL_SHADER: &str = r#"
 struct NoteInstance {
-    start_length: vec2<f32>,
-    key_color: u32,
-    border_width: u32,
+    start: f32,
+    length: f32,
+    attrs: u32,
+
 };
 
 struct NoteUniforms {
@@ -302,8 +339,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + cull_offset.offset;
     if (i >= arrayLength(&notes)) { return; }
     let inst = notes[i];
-    let start = inst.start_length.x;
-    let len = inst.start_length.y;
+    let start = inst.start;
+    let len = inst.length;
     let y_top = u.keyboard_y - ((start + len) * u.zoom_x - u.scroll_x);
     let y_bot = u.keyboard_y - (start * u.zoom_x - u.scroll_x);
     if (y_bot >= -4.0 && y_top <= u.resolution.y + 4.0) {

@@ -15,7 +15,7 @@ impl MiditrailRenderer {
         let cap = self.resident_capacity;
         if self.resident_buffer.is_none() || need > cap {
             let new_cap = (need.saturating_mul(6) / 5).max(need + 1024);
-            let size = (new_cap * 16) as u64;
+            let size = (new_cap * std::mem::size_of::<NoteInstance>()) as u64;
             self.resident_buffer = Some(TrackedBuffer::new(
                 device,
                 &wgpu::BufferDescriptor {

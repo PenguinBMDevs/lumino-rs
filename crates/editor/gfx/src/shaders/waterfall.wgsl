@@ -39,10 +39,26 @@ struct WaterfallUniform {
     _padding: u32,
 }
 
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_color_u32(attrs: u32) -> u32 {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    let colors = array<u32, 12>(
+        0xC85050FFu, 0x50C878FFu, 0x5078DCFFu, 0xDCC850FFu,
+        0xC864C8FFu, 0x50C8C8FFu, 0xF09650FFu, 0xB4B4B4FFu,
+        0xE66464FFu, 0x64B464FFu, 0x6464C8FFu, 0xC8B464FFu,
+    );
+    return colors[idx % 12u];
+}
+fn note_color_u8(attrs: u32) -> vec4<u32> {
+    let c = note_color_u32(attrs);
+    return vec4<u32>((c >> 24u) & 0xFFu, (c >> 16u) & 0xFFu, (c >> 8u) & 0xFFu, 0xFFu);
+}
 struct WaterfallNote {
-    start_length: vec2<f32>,  // [start_tick, length_tick]（与 NoteInstance 同布局）
-    key_color: u32,           // 低8位=key，高24位=RGB
-    border_width: u32,        // 本 shader 忽略（钢琴卷帘矩形管线使用）
+    start: f32,
+    length: f32,
+    attrs: u32,
 }
 
 // ── Bindings ──
@@ -71,16 +87,16 @@ fn unpack_color(packed: u32) -> vec4<u32> {
 }
 
 // 权威 NoteInstance 解码（与 note.wgsl / cull.wgsl 的 key_color 语义一致）。
-fn note_key(n: WaterfallNote) -> u32 {
-    return n.key_color & 0xFFu;
+fn note_key_of(n: WaterfallNote) -> u32 {
+    return note_key(n.attrs);
 }
 
 fn note_start(n: WaterfallNote) -> u32 {
-    return u32(max(n.start_length.x, 0.0));
+    return u32(max(n.start, 0.0));
 }
 
 fn note_end(n: WaterfallNote) -> u32 {
-    return note_start(n) + u32(max(n.start_length.y, 1.0));
+    return note_start(n) + u32(max(n.length, 1.0));
 }
 
 fn unpack_key_rgb(packed: u32) -> vec3<u32> {
@@ -192,7 +208,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     continue;
                 }
 
-                let note_x = u32(f32(note_key(n)) * zoom_x);
+                let note_x = u32(f32(note_key_of(n)) * zoom_x);
                 let note_w = u32(ceil(zoom_x));
                 let note_top = u32(f32(tick_end - visible_end) * zoom_y);
                 // 将 note_bottom 限制在 note_area_h 内，防止浮点精度导致音符被裁切
@@ -200,7 +216,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 let note_h = max(note_bottom - note_top, 1u);
 
                 if x >= note_x && x < note_x + note_w && y >= note_top && y < note_top + note_h {
-                    let c = unpack_key_rgb(n.key_color);
+                    let c = note_color_u8(n.attrs);
                     pixel = pack_u32(c.x, c.y, c.z, 200u);
                     break;
                 }

@@ -5,11 +5,38 @@
 // 键盘在底部，故 X 不叠加 keyboard_width；Y 仍叠加 ruler_height。
 // 样式/深度/可见性阈值与横向完全一致，复用 GPU 音符数据仅改变绘制方式（瀑布流风格的纵向流动感）
 
+// ── 12B note layout（16B wasabi 布局已删除）────────────────────────────
 struct NoteInstance {
-    start_length: vec2<f32>,
-    key_color: u32,
-    border_width: u32,
+    start: f32,
+    length: f32,
+    attrs: u32, // key(0..7) | track_enc(8..23) | border(24..30) | preview(31)
 };
+
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_is_preview(attrs: u32) -> bool { return (attrs & 0x80000000u) != 0u; }
+
+// 与 lumino_extras fallback 调色板同色；GPU 调色板缓冲接入前的兜底。
+const FALLBACK_TRACK_COLORS: array<vec4<f32>, 12> = array<vec4<f32>, 12>(
+    vec4<f32>(0.784, 0.314, 0.314, 1.0),
+    vec4<f32>(0.314, 0.784, 0.471, 1.0),
+    vec4<f32>(0.314, 0.471, 0.863, 1.0),
+    vec4<f32>(0.863, 0.784, 0.314, 1.0),
+    vec4<f32>(0.784, 0.392, 0.784, 1.0),
+    vec4<f32>(0.314, 0.784, 0.784, 1.0),
+    vec4<f32>(0.941, 0.588, 0.314, 1.0),
+    vec4<f32>(0.706, 0.706, 0.706, 1.0),
+    vec4<f32>(0.902, 0.392, 0.392, 1.0),
+    vec4<f32>(0.392, 0.706, 0.392, 1.0),
+    vec4<f32>(0.392, 0.392, 0.784, 1.0),
+    vec4<f32>(0.784, 0.706, 0.392, 1.0),
+);
+
+fn note_color(attrs: u32) -> vec4<f32> {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    return FALLBACK_TRACK_COLORS[idx % 12u];
+}
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -65,9 +92,9 @@ fn main(
     var is_visible = false;
     if (in_range) {
         let instance = all_instances[local_index];
-        let tick = instance.start_length.x;
-        let length = instance.start_length.y;
-        let key = f32(instance.key_color & 0xFFu);
+        let tick = instance.start;
+        let length = instance.length;
+        let key = f32(note_key(instance.attrs));
 
         if (length > 0.0) {
             // 纵向头部对齐键盘顶部：X = key*zoom_y - scroll_y, Y = grid_bottom - (tick+len)*zoom + scroll

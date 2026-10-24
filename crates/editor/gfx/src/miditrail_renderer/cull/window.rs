@@ -131,8 +131,12 @@ impl MiditrailRenderer {
             .compact_buffer()
             .ok_or(crate::GlobalBucketError::CullResource("miditrail 紧凑缓冲"))?
             .clone();
-        let need_bytes = total * 16;
-        self.ensure_cull_staging(device, need_bytes);
+        let stride = std::mem::size_of::<NoteInstance>();
+        let need_bytes = total * stride;
+        // `readback_bytes_sync` 会向下取整到 MAP_ALIGNMENT；12B stride 下
+        // 必须把 staging/读取长度向上补齐，否则最后一条会被截掉。
+        let read_bytes = (need_bytes + 7) & !7;
+        self.ensure_cull_staging(device, read_bytes);
         let staging = self
             .cull_staging
             .as_ref()
@@ -145,12 +149,13 @@ impl MiditrailRenderer {
                 .as_ref()
                 .ok_or(crate::GlobalBucketError::CullResource("miditrail 回读暂存"))?
                 .inner(),
-            need_bytes,
+            read_bytes,
         )?;
         let fill_readback_us = t_fill.elapsed().as_micros() as u64;
         // 按需映射已保证长度（`need_bytes` 内对齐截断）；尾部零填充不是音符。
-        let bytes = &bytes[..need_bytes.min(bytes.len())];
-        let count = bytes.len() / 16;
+        let usable = bytes.len().min(need_bytes) / stride * stride;
+        let bytes = &bytes[..usable];
+        let count = usable / stride;
         let mut out = std::mem::take(&mut self.cull_cpu);
         out.clear();
         out.reserve(count);

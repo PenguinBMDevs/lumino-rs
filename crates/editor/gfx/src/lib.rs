@@ -91,9 +91,10 @@ pub use lumino_midiplayer::texture_waterfall::{
     read_waterfall_track_tile_cache,
 };
 pub use note_renderer::{
-    CameraParams, CameraUniform, CullPlan, CullRange, CullUniform, NoteInstance, NoteRenderer,
-    PREVIEW_BORDER_SENTINEL, RenderUniform, ViewState, calculate_border_width, pack_key_color,
-    unpack_key_color,
+    CameraParams, CameraUniform, CullPlan, CullRange, CullUniform, FALLBACK_TRACK_COLORS,
+    FALLBACK_TRACK_COLORS_U8, NoteInstance, NoteRenderer, PREVIEW_BORDER_SENTINEL, RenderUniform,
+    ViewState, calculate_border_width, fallback_track_color, fallback_track_color_u32,
+    pack_key_color, unpack_key_color,
 };
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,

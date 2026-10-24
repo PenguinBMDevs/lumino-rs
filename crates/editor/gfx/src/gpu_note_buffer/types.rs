@@ -20,8 +20,10 @@ pub struct GpuNoteBuffer {
     pub(crate) capacity: usize,
     /// 当前实际存储的实例数量
     pub(crate) instance_count: usize,
-    /// 最大容量限制
+    /// 最大容量限制（`max_storage_buffer_binding_size / 16`，硬件物理上限）
     pub(crate) max_capacity: usize,
+    /// 本次流式会话因超过 `max_capacity` 被丢弃的实例数（仅诊断；结束时报一次）
+    pub(crate) dropped_instances: usize,
     /// 设备引用（用于扩容）
     pub(crate) device: std::sync::Arc<wgpu::Device>,
     /// 队列引用（用于更新）

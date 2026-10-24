@@ -57,7 +57,7 @@ fn synthetic_full() -> Vec<NoteInstance> {
 fn reverse_ties(mut notes: Vec<NoteInstance>) -> Vec<NoteInstance> {
     let mut out = Vec::with_capacity(notes.len());
     let mut run: Vec<NoteInstance> = Vec::new();
-    let key_of = |n: &NoteInstance| (n.key_color & 0xFF, n.start_length[0].max(0.0).to_bits());
+    let key_of = |n: &NoteInstance| (n.key(), n.start_length[0].max(0.0).to_bits());
     for n in notes.drain(..) {
         if run.last().is_some_and(|last| key_of(last) == key_of(&n)) {
             run.push(n);
@@ -77,15 +77,15 @@ fn cpu_window(notes: &[NoteInstance], tick_start: u32, tick_end: u32) -> Vec<Not
         .iter()
         .copied()
         .filter(|n| {
-            let key = (n.key_color & 0xFF) as usize;
+            let key = (n.key()) as usize;
             let start = n.start_length[0].max(0.0) as u32;
             let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
             key < 128 && end > tick_start && start < tick_end
         })
         .collect();
     out.sort_by(|a, b| {
-        let ka = a.key_color & 0xFF;
-        let kb = b.key_color & 0xFF;
+        let ka = a.key();
+        let kb = b.key();
         ka.cmp(&kb).then_with(|| {
             a.start_length[0]
                 .max(0.0)
@@ -99,7 +99,7 @@ fn cpu_window(notes: &[NoteInstance], tick_start: u32, tick_end: u32) -> Vec<Not
 fn key_offsets_for(notes: &[NoteInstance], key_count: usize) -> Vec<u32> {
     let mut counts = vec![0u32; key_count];
     for n in notes {
-        let key = (n.key_color & 0xFF) as usize;
+        let key = (n.key()) as usize;
         if key < key_count {
             counts[key] += 1;
         }
@@ -113,14 +113,14 @@ fn key_offsets_for(notes: &[NoteInstance], key_count: usize) -> Vec<u32> {
 
 /// CPU 参考键色（生产 legacy 循环：窗口序 last-writer）。
 fn cpu_active_colors(notes: &[NoteInstance], tick: u32) -> [u32; 128] {
-    use crate::{pack_color, unpack_key_color};
     let mut colors = [0u32; 128];
     for n in notes.iter() {
-        let (key, rgb) = unpack_key_color(n.key_color);
+        let key = n.key();
         let start = n.start_length[0].max(0.0) as u32;
         let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
         if start <= tick && end > tick && (key as usize) < 128 {
-            colors[key as usize] = pack_color([rgb[0], rgb[1], rgb[2], 1.0]) & 0xFFFF_FF00 | 153u32;
+            colors[key as usize] =
+                crate::fallback_track_color_u32(n.track_enc()) & 0xFFFF_FF00 | 153u32;
         }
     }
     colors
@@ -238,7 +238,7 @@ fn test_cull_render_dense_history() {
     assert!(
         window
             .iter()
-            .any(|n| (n.key_color & 0xFF) == 60 && n.start_length[0] == 1000.0),
+            .any(|n| (n.key()) == 60 && n.start_length[0] == 1000.0),
         "CPU 参考窗口应含覆盖长音（测试前提）"
     );
     let (legacy_pixels, cull_pixels) = render_both(&window, &full);

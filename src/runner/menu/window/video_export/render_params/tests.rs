@@ -204,7 +204,7 @@ fn test_waterfall_collect_all_first_frame_full_then_skip() {
     let keys_starts: Vec<(u32, f32)> = params
         .note_instances
         .iter()
-        .map(|n| (n.key_color & 0xFF, n.start_length[0]))
+        .map(|n| (u32::from(n.key()), n.start_length[0]))
         .collect();
     let mut sorted = keys_starts.clone();
     sorted.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.total_cmp(&b.1)));

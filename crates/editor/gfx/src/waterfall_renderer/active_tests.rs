@@ -8,11 +8,10 @@ use crate::NoteInstance;
 
 /// CPU 参考循环（生产 legacy 语义）：稳定排序后窗口序 last-writer。
 fn cpu_active_colors_sorted(notes: &[NoteInstance], tick: u32) -> [u32; 128] {
-    use crate::{pack_color, unpack_key_color};
     let mut sorted = notes.to_vec();
     sorted.sort_by(|a, b| {
-        let ka = a.key_color & 0xFF;
-        let kb = b.key_color & 0xFF;
+        let ka = a.key();
+        let kb = b.key();
         ka.cmp(&kb).then_with(|| {
             let sa = a.start_length[0].max(0.0);
             let sb = b.start_length[0].max(0.0);
@@ -21,11 +20,12 @@ fn cpu_active_colors_sorted(notes: &[NoteInstance], tick: u32) -> [u32; 128] {
     });
     let mut colors = [0u32; 128];
     for n in sorted.iter() {
-        let (key, rgb) = unpack_key_color(n.key_color);
+        let key = n.key();
         let start = n.start_length[0].max(0.0) as u32;
         let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
         if start <= tick && end > tick && (key as usize) < 128 {
-            colors[key as usize] = pack_color([rgb[0], rgb[1], rgb[2], 1.0]) & 0xFFFF_FF00 | 153u32;
+            colors[key as usize] =
+                crate::fallback_track_color_u32(n.track_enc()) & 0xFFFF_FF00 | 153u32;
         }
     }
     colors

@@ -232,6 +232,16 @@ impl NoteRenderer {
             &self.chunk_layout,
         );
 
+        // splat 的 bind group 也引用实例 buffer，句柄变化必须同步重建
+        if let Some(splat) = self.splat.as_mut() {
+            splat.rebuild_bind_groups(
+                device,
+                source,
+                self.viewport_buffer.inner(),
+                self.view_state_buffer.inner(),
+            );
+        }
+
         // 每 chunk 写入 uniform 条目（chunk_start / chunk_count）
         self.write_cull_uniforms(queue, current_count);
 

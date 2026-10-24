@@ -39,14 +39,14 @@ impl MiditrailRenderer {
         derived.reserve(note_instances.len());
         let t_convert = std::time::Instant::now();
         for n in note_instances {
-            let (key, rgb) = crate::unpack_key_color(n.key_color);
+            let key = n.key();
             let start = n.start_length[0].max(0.0) as u32;
             let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
             derived.push(MiditrailNoteGpu {
                 key: key as u32,
                 start_tick: start,
                 end_tick: end,
-                color_packed: pack_color([rgb[0], rgb[1], rgb[2], 1.0]),
+                color_packed: crate::fallback_track_color_u32(n.track_enc()),
                 track_idx: 0,
                 velocity: 100,
                 channel: 0,

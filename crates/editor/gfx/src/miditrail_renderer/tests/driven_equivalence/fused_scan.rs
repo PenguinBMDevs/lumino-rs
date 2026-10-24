@@ -10,7 +10,8 @@ fn test_fused_scan_matches_legacy() {
     let derived: Vec<MiditrailNoteGpu> = notes
         .iter()
         .map(|n| {
-            let (key, rgb) = crate::unpack_key_color(n.key_color);
+            let key = n.key();
+            let rgb = crate::fallback_track_color(n.track_enc());
             let start = n.start_length[0].max(0.0) as u32;
             let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
             MiditrailNoteGpu {

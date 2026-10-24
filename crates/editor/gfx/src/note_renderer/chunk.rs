@@ -9,7 +9,7 @@
 
 /// 固定 chunk 槽位上限。
 ///
-/// 每槽位可承载 `instances_per_chunk` 个实例（≈2GB/16B ≈ 1.34 亿），
+/// 每槽位可承载 `instances_per_chunk` 个实例（≈2GB/12B ≈ 1.78 亿），
 /// 64 槽位 ≈ 86 亿实例（>137GB），远超任何设备的 max_buffer_size 实际容量。
 pub(super) const MAX_CHUNKS: usize = 64;
 
@@ -88,9 +88,9 @@ mod tests {
     #[test]
     fn test_layout_2gb_binding_cap() {
         let layout = ChunkLayout::from_limits(&default_limits());
-        // 2GB-1 向下对齐到 256 → 2_147_483_392 字节 / 16B = 134_217_712，
-        // 再向下取整到可见对齐 64（256/4）→ 134_217_664，保证 start*4 % 256 == 0。
-        assert_eq!(layout.instances_per_chunk, 134_217_664);
+        // 2GB-1 向下对齐到 256 → 2_147_483_392 字节 / 12B = 178_956_949，
+        // 再向下取整到可见对齐 64（256/4）→ 178_956_928，保证 start*4 与 start*12 均对齐。
+        assert_eq!(layout.instances_per_chunk, 178_956_928);
         assert_eq!(layout.slot_align, 256);
         // 每 chunk 字节范围 ≤ 2GB-1
         assert!(
@@ -113,8 +113,8 @@ mod tests {
         assert_eq!(layout.chunk_count(1), 1);
         assert_eq!(layout.chunk_count(layout.instances_per_chunk), 1);
         assert_eq!(layout.chunk_count(layout.instances_per_chunk + 1), 2);
-        // 2.9 亿音符 → 3 chunks
-        assert_eq!(layout.chunk_count(290_000_000), 3);
+        // 2.9 亿音符 → 2 chunks（12B 下每 chunk 容量更大）
+        assert_eq!(layout.chunk_count(290_000_000), 2);
     }
 
     #[test]
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(layout.slot_align, 512);
         // offset 对齐后 binding 字节范围仍不超上限
         assert!(
-            (layout.instances_per_chunk as u64) * 16
+            (layout.instances_per_chunk as u64) * std::mem::size_of::<NoteInstance>() as u64
                 <= limits.max_storage_buffer_binding_size as u64
         );
     }

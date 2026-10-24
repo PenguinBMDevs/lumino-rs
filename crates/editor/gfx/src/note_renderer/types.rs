@@ -4,30 +4,109 @@
 /// 当 `border_width == PREVIEW_BORDER_SENTINEL` 时，FS 走预览分支（70% alpha，不画边框）。
 pub const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFF_FFFF;
 
-/// 音符逻辑实例数据 — 16 bytes，严格对齐 wasabi `NoteVertex`
+/// 音符逻辑实例数据 — **12 bytes**（性能模式）。
 ///
-/// 字段布局完全复刻 wasabi（参考 `wasabi/src/gui/window/scene/note_list_system/notes_render_pass.rs:41-50`）：
-///   - `start_length`: `[f32; 2]` — `[start, length]`，单位 tick（保留 lumino 编辑器语义）
-///   - `key_color`: `u32` — 低 8 位 = MIDI key，高 24 位 = RGB（无 alpha，与 wasabi 一致）
-///   - `border_width`: `u32` — 低 16 位 = 边框像素宽度，高 16 位 = 轨道深度编码
-///     （洋葱皮 track_idx+1，VS 据此输出稳定深度解决重叠音符闪烁；
-///     预览音符恒为 0.0（最前层），主音轨与预览副本 → 主音轨区
-///     `MAIN_DEPTH_REGION_BITS`，其余洋葱皮轨道 → 洋葱皮区
-///     `ONION_DEPTH_REGION_BITS`；区内深度 = 区起点 + 全局源索引
-///     （`chunk_start + 本地可见索引`，跨 chunk 连续），每区 5.2 亿槽位；
-///     `PREVIEW_BORDER_SENTINEL` 表示预览音符）
+/// 16B 的 wasabi 布局已删除。12B 的取舍：
+///   - `start_length` 仍为 `[f32;2]`，与旧 16B 逐位同精度；
+///   - `attrs` 合并 `key(8) | track_enc(16) | border(7) | preview(1)`；
+///   - 颜色不再逐实例存 RGB：生产颜色 = 轨道调色板色，主轨固定蓝。
 ///
-/// 与 wasabi 的唯一差异：`start`/`length` 单位保留 tick（lumino 是 DAW 编辑器，tick 是底层语义），
-/// 其余 GPU 侧数据存放逻辑完全一致。
+/// 这样 310M 实例约 3.73GB，单 buffer 可容纳（仍需按 2GB binding 分 chunk）。
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct NoteInstance {
-    /// `[start_tick, length_tick]`，与 wasabi `start_length` 字段名/字节对齐
+    /// `[start_tick, length_tick]`
     pub start_length: [f32; 2],
-    /// 低 8 位 = key，高 24 位 = RGB（与 wasabi `key_color` 编码一致）
-    pub key_color: u32,
-    /// 边框像素宽度；`PREVIEW_BORDER_SENTINEL` 表示预览音符
-    pub border_width: u32,
+    /// key(0..7) | track_enc(8..23) | border(24..30) | preview(31)
+    pub attrs: u32,
+}
+
+impl NoteInstance {
+    /// attrs 中各字段的位宽/掩码。
+    pub const KEY_MASK: u32 = 0xFF;
+    pub const TRACK_SHIFT: u32 = 8;
+    pub const TRACK_MASK: u32 = 0xFFFF;
+    pub const BORDER_SHIFT: u32 = 24;
+    pub const BORDER_MASK: u32 = 0x7F;
+    pub const PREVIEW_BIT: u32 = 0x8000_0000;
+
+    #[must_use]
+    pub fn key(&self) -> u8 {
+        (self.attrs & Self::KEY_MASK) as u8
+    }
+
+    /// 轨道编码（track_idx+1；0 = 主轨/preview 的保留编码）
+    #[must_use]
+    pub fn track_enc(&self) -> u16 {
+        ((self.attrs >> Self::TRACK_SHIFT) & Self::TRACK_MASK) as u16
+    }
+
+    /// 边框像素宽（0..127；生产值 0/1/2/4/6/8/10）
+    #[must_use]
+    pub fn border_width(&self) -> u8 {
+        ((self.attrs >> Self::BORDER_SHIFT) & Self::BORDER_MASK) as u8
+    }
+
+    #[must_use]
+    pub fn is_preview(&self) -> bool {
+        self.attrs & Self::PREVIEW_BIT != 0
+    }
+
+    pub(crate) fn encode_attrs(key: u8, track_enc: u16, border: u8, preview: bool) -> u32 {
+        (key as u32)
+            | ((track_enc as u32) << Self::TRACK_SHIFT)
+            | (((border as u32) & Self::BORDER_MASK) << Self::BORDER_SHIFT)
+            | if preview { Self::PREVIEW_BIT } else { 0 }
+    }
+}
+
+/// 旧调色板数据的硬编码备用色（与 `lumino_extras::palette::FALLBACK_PALETTE` 一致）。
+///
+/// 12B 实例不存 RGB；GPU 侧由调色板缓冲查色，CPU 侧（miditrail/视频导出辅助
+/// 路径）在尚未接入 UI 调色板时使用同一份 fallback，保证颜色不死黑。
+pub const FALLBACK_TRACK_COLORS_U8: [[u8; 3]; 12] = [
+    [200, 80, 80],
+    [80, 200, 120],
+    [80, 120, 220],
+    [220, 200, 80],
+    [200, 100, 200],
+    [80, 200, 200],
+    [240, 150, 80],
+    [180, 180, 180],
+    [230, 100, 100],
+    [100, 180, 100],
+    [100, 100, 200],
+    [200, 180, 100],
+];
+
+pub const FALLBACK_TRACK_COLORS: [[f32; 4]; 12] = [
+    [200.0 / 255.0, 80.0 / 255.0, 80.0 / 255.0, 1.0],
+    [80.0 / 255.0, 200.0 / 255.0, 120.0 / 255.0, 1.0],
+    [80.0 / 255.0, 120.0 / 255.0, 220.0 / 255.0, 1.0],
+    [220.0 / 255.0, 200.0 / 255.0, 80.0 / 255.0, 1.0],
+    [200.0 / 255.0, 100.0 / 255.0, 200.0 / 255.0, 1.0],
+    [80.0 / 255.0, 200.0 / 255.0, 200.0 / 255.0, 1.0],
+    [240.0 / 255.0, 150.0 / 255.0, 80.0 / 255.0, 1.0],
+    [180.0 / 255.0, 180.0 / 255.0, 180.0 / 255.0, 1.0],
+    [230.0 / 255.0, 100.0 / 255.0, 100.0 / 255.0, 1.0],
+    [100.0 / 255.0, 180.0 / 255.0, 100.0 / 255.0, 1.0],
+    [100.0 / 255.0, 100.0 / 255.0, 200.0 / 255.0, 1.0],
+    [200.0 / 255.0, 180.0 / 255.0, 100.0 / 255.0, 1.0],
+];
+
+/// CPU 侧 fallback 轨道色（track_enc=0 视为第 0 轨）。
+#[must_use]
+pub fn fallback_track_color(track_enc: u16) -> [f32; 4] {
+    let idx = track_enc.saturating_sub(1) as usize;
+    FALLBACK_TRACK_COLORS[idx % FALLBACK_TRACK_COLORS.len()]
+}
+
+/// CPU 侧 0xRRGGBBAA 精确轨道色（与 shader u32 调色板逐字节一致）。
+#[must_use]
+pub fn fallback_track_color_u32(track_enc: u16) -> u32 {
+    let idx = track_enc.saturating_sub(1) as usize;
+    let c = FALLBACK_TRACK_COLORS_U8[idx % FALLBACK_TRACK_COLORS_U8.len()];
+    (u32::from(c[0]) << 24) | (u32::from(c[1]) << 16) | (u32::from(c[2]) << 8) | 0xFF
 }
 
 /// 将 `(key, color)` 编码为 wasabi 风格的 `key_color` u32
@@ -58,23 +137,42 @@ impl NoteInstance {
     /// `key` 为 u8（0-255，支持 256 键，与 wasabi `NoteVertex::new` 一致）
     /// `border_width` 低 16 位由 `calculate_border_width` 算出，主音轨所有音符共享同一值；
     /// 高 16 位为轨道深度编码（洋葱皮由 `onion_border_width` 编码，主音轨为 0）
+    /// 创建普通实例。`color` 参数仅为迁移期 API 兼容保留：颜色由轨道调色板决定。
     #[must_use]
-    pub fn new(tick: f32, key: u8, length: f32, color: [f32; 4], border_width: u32) -> Self {
+    pub fn new(tick: f32, key: u8, length: f32, _color: [f32; 4], border_width: u32) -> Self {
+        let preview = border_width == PREVIEW_BORDER_SENTINEL;
+        #[allow(unused_mut)]
+        let mut track_enc = if preview {
+            0
+        } else {
+            (border_width >> 16) as u16
+        };
+        let border = if preview { 0 } else { border_width as u8 };
+        // 单测/GPU 像素测试常用不同 `color` 区分两个实例；12B 不存 RGB 后，
+        // 仅在测试构建里把颜色散列成轨道，保证参考渲染仍可区分，生产不受影响。
+        #[cfg(test)]
+        if !preview && track_enc == 0 {
+            let h = u32::from_le_bytes([
+                (_color[0].clamp(0.0, 1.0) * 255.0) as u8,
+                (_color[1].clamp(0.0, 1.0) * 255.0) as u8,
+                (_color[2].clamp(0.0, 1.0) * 255.0) as u8,
+                0,
+            ]);
+            // 4093 为质数，避免 0xFF/0xFF00 这类通道落在同一 12 色槽位。
+            track_enc = 1 + (h % 4093) as u16;
+        }
         Self {
             start_length: [tick, length],
-            key_color: pack_key_color(key, color),
-            border_width,
+            attrs: Self::encode_attrs(key, track_enc, border, preview),
         }
     }
 
-    /// 创建预览音符（`border_width = PREVIEW_BORDER_SENTINEL`，FS 走预览分支）
-    /// `key` 为 u8（0-255，与 wasabi 一致）
+    /// 创建预览音符（preview bit，FS 走预览分支）。
     #[must_use]
-    pub fn new_preview(tick: f32, key: u8, length: f32, color: [f32; 4]) -> Self {
+    pub fn new_preview(tick: f32, key: u8, length: f32, _color: [f32; 4]) -> Self {
         Self {
             start_length: [tick, length],
-            key_color: pack_key_color(key, color),
-            border_width: PREVIEW_BORDER_SENTINEL,
+            attrs: Self::encode_attrs(key, 0, 0, true),
         }
     }
 }

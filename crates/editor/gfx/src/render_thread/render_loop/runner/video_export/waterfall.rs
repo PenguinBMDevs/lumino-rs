@@ -8,11 +8,10 @@
 //! 回退正确，慢一次）。
 
 use super::common::{CopyDrainInput, copy_texture_and_drain, note_instances_to_key_offsets};
-use crate::miditrail_renderer::pack_color;
 use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::runner::context::{RenderContext, RenderFrameState};
 use crate::waterfall_renderer::{CullRenderOutcome, waterfall_viewport_span};
-use crate::{CullWindow, WaterfallRenderer, WaterfallUniformGpu, unpack_key_color};
+use crate::{CullWindow, WaterfallRenderer, WaterfallUniformGpu};
 
 /// 处理视频导出瀑布流帧：常驻上传（首帧）→ cull 窗口 → 内核键色 → legacy 渲染 → 读回。
 pub(super) fn handle_waterfall_frame(
@@ -107,14 +106,14 @@ pub(super) fn handle_waterfall_frame(
             let tick_u = params.waterfall_current_tick;
             let mut active_key_colors = [0u32; 128];
             for n in notes.iter() {
-                let (key, rgb) = unpack_key_color(n.key_color);
+                let key = n.key();
                 let start = n.start_length[0].max(0.0) as u32;
                 let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
                 if start <= tick_u && end > tick_u && (key as usize) < 128 {
                     // color_packed 为 0xRRGGBBAA，alpha=153 表示 60% 混合
                     // （与 shader 中 blend_key_color 的 alpha 参数匹配）
                     active_key_colors[key as usize] =
-                        pack_color([rgb[0], rgb[1], rgb[2], 1.0]) & 0xFFFF_FF00 | 153u32;
+                        crate::fallback_track_color_u32(n.track_enc()) & 0xFFFF_FF00 | 153u32;
                 }
             }
             // dispatch compute shader（音符读共享缓冲，不再自有拷贝）

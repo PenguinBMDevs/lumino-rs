@@ -33,24 +33,24 @@ pub fn create_note_driven_pipeline(
             },
         ],
     };
-    // 紧凑实例：vec2(start, length) + u32(key_color) + u32(border)，stride 16。
+    // 紧凑实例 12B：f32 start + f32 length + u32 attrs。
     let compact_layout = wgpu::VertexBufferLayout {
-        array_stride: 16,
+        array_stride: 12,
         step_mode: wgpu::VertexStepMode::Instance,
         attributes: &[
             wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32,
                 offset: 0,
                 shader_location: 2,
             },
             wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Uint32,
-                offset: 8,
+                format: wgpu::VertexFormat::Float32,
+                offset: 4,
                 shader_location: 3,
             },
             wgpu::VertexAttribute {
                 format: wgpu::VertexFormat::Uint32,
-                offset: 12,
+                offset: 8,
                 shader_location: 4,
             },
         ],

@@ -85,12 +85,38 @@ var<uniform> camera: CameraUniform;
 var<uniform> view_state: ViewState;
 
 // 全部音符实例数据（只读 storage）
+// ── 12B note layout（16B wasabi 布局已删除）────────────────────────────
 struct NoteInstance {
-    start_length: vec2<f32>,
-    key_color: u32,
-    border_width: u32,
-}
-@group(0) @binding(2)
+    start: f32,
+    length: f32,
+    attrs: u32, // key(0..7) | track_enc(8..23) | border(24..30) | preview(31)
+};
+
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_is_preview(attrs: u32) -> bool { return (attrs & 0x80000000u) != 0u; }
+
+// 与 lumino_extras fallback 调色板同色；GPU 调色板缓冲接入前的兜底。
+const FALLBACK_TRACK_COLORS: array<vec4<f32>, 12> = array<vec4<f32>, 12>(
+    vec4<f32>(0.784, 0.314, 0.314, 1.0),
+    vec4<f32>(0.314, 0.784, 0.471, 1.0),
+    vec4<f32>(0.314, 0.471, 0.863, 1.0),
+    vec4<f32>(0.863, 0.784, 0.314, 1.0),
+    vec4<f32>(0.784, 0.392, 0.784, 1.0),
+    vec4<f32>(0.314, 0.784, 0.784, 1.0),
+    vec4<f32>(0.941, 0.588, 0.314, 1.0),
+    vec4<f32>(0.706, 0.706, 0.706, 1.0),
+    vec4<f32>(0.902, 0.392, 0.392, 1.0),
+    vec4<f32>(0.392, 0.706, 0.392, 1.0),
+    vec4<f32>(0.392, 0.392, 0.784, 1.0),
+    vec4<f32>(0.784, 0.706, 0.392, 1.0),
+);
+
+fn note_color(attrs: u32) -> vec4<f32> {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    return FALLBACK_TRACK_COLORS[idx % 12u];
+}@group(0) @binding(2)
 var<storage, read> all_instances: array<NoteInstance>;
 
 // 本 chunk 的全局基准（跨 chunk 索引连续）：`chunk_start` = 本 chunk 首实例的
@@ -110,6 +136,7 @@ struct VertexOutput {
     @location(1) uv: vec2<f32>,           // [0,1]² UV，用于边距判定
     @location(2) screen_size: vec2<f32>,  // 屏幕像素宽高（用于 UV 边距反算）
     @location(3) border_width: u32,       // 透传到 FS
+    @location(4) attrs: u32,
 };
 
 /// 解包 key_color → vec4 RGBA（alpha 恒为 1.0）
@@ -155,9 +182,9 @@ fn vs_main(
     }
 
     // 将逻辑坐标 (tick, key) 转换为屏幕像素坐标
-    let tick = instance.start_length.x;
-    let length = instance.start_length.y;
-    let key = f32(instance.key_color & 0xFFu);
+    let tick = instance.start;
+    let length = instance.length;
+    let key = f32(note_key(instance.attrs));
 
     let screen_x = tick * camera.zoom.x - camera.scroll.x
                    + camera.keyboard_width + camera.canvas_offset.x;
@@ -172,7 +199,7 @@ fn vs_main(
     let ndc_y = 1.0 - (screen_pos.y / camera.viewport_size.y) * 2.0;
 
     // 主音轨判定：track 编码 == 当前音轨编码（track_idx+1）
-    let track_enc = instance.border_width >> 16u;
+    let track_enc = note_track(instance.attrs);
     let is_main = track_enc == view_state.current_track;
     // 静音且非主音轨 → 不渲染（退化为视口外零面积几何，见下方输出分支）
     let is_muted = is_muted_track(track_enc);
@@ -187,7 +214,7 @@ fn vs_main(
     let depth = region_depth(region_bits, global_index);
 
     // 颜色：主音轨强制主轨蓝（数据无需重传）；其余用实例固化调色板色
-    var color = unpack_key_color(instance.key_color);
+    var color = note_color(instance.attrs);
     if (is_main) {
         color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
     }
@@ -204,7 +231,8 @@ fn vs_main(
     output.color = color;
     output.uv = local_offset;
     output.screen_size = screen_size;
-    output.border_width = instance.border_width;
+    output.border_width = note_border(instance.attrs);
+    output.attrs = instance.attrs;
 
     return output;
 }
@@ -221,7 +249,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var is_border = false;
     if (half_width_pixels > 0.0 && half_height_pixels > 0.0) {
         // 边框宽 = 低 16 位（高 16 位被深度编码占用）
-        let border_px = f32(input.border_width & 0xFFFFu);
+        let border_px = f32(note_border(input.attrs));
         let horiz_margin = 1.0 / half_width_pixels * border_px;
         let vert_margin = 1.0 / half_height_pixels * border_px;
         is_border = input.uv.x < horiz_margin
@@ -262,9 +290,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
     let instance = all_instances[instance_index];
 
-    let tick = instance.start_length.x;
-    let length = instance.start_length.y;
-    let key = f32(instance.key_color & 0xFFu);
+    let tick = instance.start;
+    let length = instance.length;
+    let key = f32(note_key(instance.attrs));
 
     let screen_min_x = tick * camera.zoom.x - camera.scroll.x
                        + camera.keyboard_width + camera.canvas_offset.x;
@@ -279,7 +307,7 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
         && (screen_min_y + screen_size.y) >= 0.0
         && screen_min_y <= camera.viewport_size.y;
 
-    let track_enc = instance.border_width >> 16u;
+    let track_enc = note_track(instance.attrs);
     let is_main = track_enc == view_state.current_track;
     let is_muted = is_muted_track(track_enc);
     let show = is_main || !is_muted;
@@ -289,7 +317,7 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
     let global_index = chunk_info.chunk_start + instance_index;
     let depth = region_depth(region_bits, global_index);
 
-    var color = unpack_key_color(instance.key_color);
+    var color = note_color(instance.attrs);
     if (is_main) {
         color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
     }
@@ -310,7 +338,8 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
     output.color = color;
     output.uv = vec2<f32>(0.5, 0.5);
     output.screen_size = screen_size;
-    output.border_width = instance.border_width;
+    output.border_width = note_border(instance.attrs);
+    output.attrs = instance.attrs;
 
     return output;
 }
@@ -357,9 +386,9 @@ fn vs_direct(
         default: { local_offset = vec2<f32>(0.0, 0.0); }
     }
 
-    let tick = instance.start_length.x;
-    let length = instance.start_length.y;
-    let key = f32(instance.key_color & 0xFFu);
+    let tick = instance.start;
+    let length = instance.length;
+    let key = f32(note_key(instance.attrs));
 
     let screen_x = tick * camera.zoom.x - camera.scroll.x
                    + camera.keyboard_width + camera.canvas_offset.x;
@@ -378,7 +407,7 @@ fn vs_direct(
     let ndc_x = (screen_pos.x / camera.viewport_size.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (screen_pos.y / camera.viewport_size.y) * 2.0;
 
-    let track_enc = instance.border_width >> 16u;
+    let track_enc = note_track(instance.attrs);
     let is_main = track_enc == view_state.current_track;
     let is_muted = is_muted_track(track_enc);
     let show = is_main || !is_muted;
@@ -389,7 +418,7 @@ fn vs_direct(
     let global_index = chunk_info.chunk_start + instance_index;
     let depth = region_depth(region_bits, global_index);
 
-    var color = unpack_key_color(instance.key_color);
+    var color = note_color(instance.attrs);
     if (is_main) {
         color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
     }
@@ -405,7 +434,8 @@ fn vs_direct(
     output.color = color;
     output.uv = local_offset;
     output.screen_size = screen_size;
-    output.border_width = instance.border_width;
+    output.border_width = note_border(instance.attrs);
+    output.attrs = instance.attrs;
 
     return output;
 }

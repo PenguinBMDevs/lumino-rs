@@ -3,8 +3,9 @@ pub mod types;
 use crate::gpu_resource_tracker::TrackedBuffer;
 
 pub use types::{
-    CameraParams, CameraUniform, CullPlan, CullRange, CullUniform, NoteInstance,
-    PREVIEW_BORDER_SENTINEL, RenderUniform, ViewState, calculate_border_width, pack_key_color,
+    CameraParams, CameraUniform, CullPlan, CullRange, CullUniform, FALLBACK_TRACK_COLORS,
+    FALLBACK_TRACK_COLORS_U8, NoteInstance, PREVIEW_BORDER_SENTINEL, RenderUniform, ViewState,
+    calculate_border_width, fallback_track_color, fallback_track_color_u32, pack_key_color,
     unpack_key_color,
 };
 
@@ -18,6 +19,7 @@ mod pipeline;
 mod point;
 mod prepare;
 mod range_cull;
+mod splat;
 
 /// 深度编码验证（精度预算 CPU 孪生 + 绘制顺序无关的像素证据）
 #[cfg(test)]
@@ -26,6 +28,10 @@ mod depth_tests;
 /// 可见区间 cull 与整段 cull 的像素等价契约
 #[cfg(test)]
 mod range_tests;
+
+/// 像素聚合 splat 与点图元路径的像素等价契约
+#[cfg(test)]
+mod splat_tests;
 
 /// GPU 耗时分解基准（PREF-004 P1 决策依据，默认 #[ignore]）
 #[cfg(test)]
@@ -106,6 +112,11 @@ pub struct NoteRenderer {
     /// 必须靠提交序决定重叠区赢家（后来者居上，§19）；洋葱皮纵向仍走 cull 路径，
     /// 不为它多付一次大 shader 的管线编译（启动时间敏感）。
     vertical_direct_pipeline: Option<wgpu::RenderPipeline>,
+    /// 像素聚合 splat（全景亚像素档位，见 `splat.rs`）。
+    ///
+    /// 仅横向洋葱皮 + depth 路径创建；实例数低于阈值/无 depth/超 binding 时
+    /// 调用方回退点图元路径。
+    splat: Option<splat::SplatState>,
 }
 
 impl NoteRenderer {
@@ -177,35 +188,30 @@ mod tests {
     use super::*;
     use crate::note_renderer::types::DrawIndirectArgs;
 
-    /// 测试 NoteInstance 创建和属性访问
+    /// 测试 12B NoteInstance 创建和属性访问
     #[test]
     fn test_note_instance_creation() {
-        // border_width = 4（wasabi 风格）
-        let instance = NoteInstance::new(100.0, 60u8, 200.0, [1.0, 0.5, 0.0, 0.8], 4);
+        let instance = NoteInstance::new(100.0, 60u8, 200.0, [1.0, 0.5, 0.0, 0.8], (7 << 16) | 4);
 
         assert_eq!(instance.start_length, [100.0, 200.0]);
-        assert_eq!(instance.border_width, 4);
-        // key_color 解包验证：低 8 位 = key, 高 24 位 = RGB
-        let (key, unpacked) = crate::note_renderer::types::unpack_key_color(instance.key_color);
-        assert_eq!(key, 60);
-        assert!((unpacked[0] - 1.0).abs() < 0.01);
-        assert!((unpacked[1] - 0.5).abs() < 0.01);
-        assert!(unpacked[2].abs() < 0.01);
-        // alpha 在 key_color 编码中不存（与 wasabi 一致），恒为 1.0
-        assert!((unpacked[3] - 1.0).abs() < 0.01);
+        assert_eq!(instance.key(), 60);
+        assert_eq!(instance.track_enc(), 7);
+        assert_eq!(instance.border_width(), 4);
+        assert!(!instance.is_preview());
     }
 
-    /// 测试 NoteInstance 字节大小 = 16（与 wasabi NoteVertex 一致）
+    /// 12B：两个 f32 + 一个 u32，无 padding。
     #[test]
-    fn test_note_instance_size_16_bytes() {
-        assert_eq!(std::mem::size_of::<NoteInstance>(), 16);
+    fn test_note_instance_size_12_bytes() {
+        assert_eq!(std::mem::size_of::<NoteInstance>(), 12);
     }
 
-    /// 测试预览音符哨兵值
+    /// 预览不再用整字哨兵，改用 attrs 的 preview bit。
     #[test]
     fn test_preview_sentinel() {
         let preview = NoteInstance::new_preview(0.0, 0u8, 100.0, [1.0; 4]);
-        assert_eq!(preview.border_width, PREVIEW_BORDER_SENTINEL);
+        assert!(preview.is_preview());
+        assert_eq!(preview.border_width(), 0);
     }
 
     /// 测试 CameraUniform 默认值

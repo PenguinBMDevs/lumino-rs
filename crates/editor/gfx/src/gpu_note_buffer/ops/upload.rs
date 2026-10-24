@@ -11,10 +11,11 @@ impl GpuNoteBuffer {
     /// 扩容因子
     pub const GROWTH_FACTOR: usize = 2;
 
-    /// 最大容量
+    /// 软件容量上限（`usize::MAX` = 不额外截断）。
     ///
-    /// 用户硬约束：不得限制 GPU 内存使用。设为 usize::MAX 表示无限制，
-    /// 实际容量仅受 wgpu 硬件限制（max_storage_buffer_binding_size / max_buffer_size）。
+    /// 真实容量由 `max_buffer_size / 12` 决定；单 storage binding 2GB-1
+    /// 的限制由 `ChunkLayout` 按 chunk 切片解决，不再把总容量钉死在 2GB。
+    /// 12B × 310M ≈ 3.73GB，4GB buffer 可容纳。
     pub const MAX_CAPACITY: usize = usize::MAX;
 
     /// 创建新的 GPU 音符缓冲区
@@ -23,9 +24,10 @@ impl GpuNoteBuffer {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, epoch: GpuEpoch) -> Self {
         let instance_buffer = Self::create_buffer(device, Self::INITIAL_CAPACITY);
 
-        let max_binding_size = device.limits().max_storage_buffer_binding_size as u64;
         let max_buffer_size = device.limits().max_buffer_size;
-        let max_bytes = max_binding_size.min(max_buffer_size) as usize;
+        // 12B 源缓冲由 NoteRenderer 按 2GB binding 分 chunk 绑定；
+        // 总容量只受 max_buffer_size 约束（否则 310M 永远进不来）。
+        let max_bytes = max_buffer_size as usize;
         // 硬件限制仍需保留（wgpu 物理限制无法绕过），但不再叠加软件 MAX_CAPACITY 截断
         let max_capacity = max_bytes / std::mem::size_of::<crate::NoteInstance>();
 
@@ -34,6 +36,7 @@ impl GpuNoteBuffer {
             capacity: Self::INITIAL_CAPACITY,
             instance_count: 0,
             max_capacity,
+            dropped_instances: 0,
             device: std::sync::Arc::new(device.clone()),
             queue: std::sync::Arc::new(queue.clone()),
             epoch,
@@ -46,12 +49,13 @@ impl GpuNoteBuffer {
     /// 1. 使用 extend_from_slice 替代 to_vec，避免重复分配
     /// 2. 预分配 capacity，减少重新分配
     ///
-    /// 用户硬约束：不得限制 GPU 内存使用——删除 max_capacity 截断逻辑，
-    /// 实际容量仅受 wgpu 硬件限制（在 new() 中已计算 max_capacity）。
+    /// 不叠加软件截断；容量只受硬件 `max_capacity` 限制（在 `new()` 中计算）。
+    /// 超限时早退并记录 `dropped_instances`，不得向旧 buffer 越界写。
     pub fn upload_all(&mut self, instances: &[crate::NoteInstance]) {
         puffin::profile_function!();
         if instances.is_empty() {
             self.instance_count = 0;
+            self.dropped_instances = 0;
             return;
         }
 
@@ -65,8 +69,10 @@ impl GpuNoteBuffer {
                 self.capacity,
                 self.max_capacity
             );
+            self.dropped_instances = instances.len();
             return;
         }
+        self.dropped_instances = 0;
 
         // 用户硬约束：不再截断——grow 已在超硬件上限时明确失败并早退
         let upload_count = instances.len();
@@ -95,6 +101,7 @@ impl GpuNoteBuffer {
     pub fn begin_streaming_upload(&mut self) {
         puffin::profile_function!();
         self.instance_count = 0;
+        self.dropped_instances = 0;
     }
 
     /// 流式上传：追加一块音符实例到 GPU buffer
@@ -111,9 +118,12 @@ impl GpuNoteBuffer {
 
         // 检查是否需要扩容
         if new_count > self.capacity && !self.grow(new_count) {
-            tracing::error!(
-                "GpuNoteBuffer: streaming_append grow failed, dropping {} instances",
-                chunk.len()
+            // 逐块 error 会刷屏；累计到 finish_streaming_upload 报一次。
+            self.dropped_instances += chunk.len();
+            tracing::debug!(
+                "GpuNoteBuffer: streaming_append grow failed, dropping {} instances (total dropped {})",
+                chunk.len(),
+                self.dropped_instances
             );
             return;
         }
@@ -134,9 +144,19 @@ impl GpuNoteBuffer {
     /// 仅做最终校验和日志，GPU 数据已在 streaming_append 中就位。
     pub fn finish_streaming_upload(&self) {
         puffin::profile_function!();
-        tracing::debug!(
-            "Streaming upload finished: {} instances on GPU",
-            self.instance_count
-        );
+        if self.dropped_instances > 0 {
+            tracing::warn!(
+                "GpuNoteBuffer: 流式上传完成：GPU 保留 {} 个实例，丢弃 {} 个（单 buffer 16B/实例的 2GB binding 物理上限={}）。\
+                 需要完整显示请启用多 buffer 分段（待实现）。",
+                self.instance_count,
+                self.dropped_instances,
+                self.max_capacity
+            );
+        } else {
+            tracing::debug!(
+                "Streaming upload finished: {} instances on GPU",
+                self.instance_count
+            );
+        }
     }
 }

@@ -109,6 +109,8 @@ pub fn execute_render_pass(
         max_key_index: params.max_key_index,
     });
 
+    // splat 是否就绪（仅 subpixel 分支可能置 true；失败回退点图元）
+    let mut splat_ready = false;
     if params.is_vertical_roll {
         // 预览层纵向同样恒直绘（可见占比 ≈ 100%）：draw 侧已是
         // `draw_direct_vertical`（不读 cull 产出的可见索引/indirect），若此处仍走
@@ -129,6 +131,16 @@ pub fn execute_render_pass(
             .renderers
             .onion_skin
             .prepare_direct(camera, &ctx.queue);
+        // 全景大实例数：像素聚合（每像素 1 个胜者）替代每音符点图元。
+        // 低于阈值/无 depth/超 binding 时返回 false，draw 侧回退 `draw_points`。
+        splat_ready = has_depth
+            && frame.renderers.onion_skin.prepare_splat(
+                encoder,
+                &ctx.device,
+                &ctx.queue,
+                camera,
+                (width, height),
+            );
     } else if has_depth && params.vs_cull_mode {
         // UI 路径 + 近全量可见闸门（PREF-005）：主音符层取消 compute cull，改由
         // `vs_direct` 自判可见，并按 `instance_index` 升序（= `region_depth` 近→远序）
@@ -199,11 +211,19 @@ pub fn execute_render_pass(
                 .onion_skin
                 .draw_vertical(&mut render_pass, onion_has_instances, None);
         } else if params.subpixel_note_mode {
-            // 点图元直绘：每实例 1 顶点 1 点，不读可见索引缓冲（无 cull 输出）
-            frame
-                .renderers
-                .onion_skin
-                .draw_points(&mut render_pass, onion_has_instances, None);
+            // 全景大 N：像素聚合合成层；未就绪/小 N 回退点图元直绘
+            let drew_splat = splat_ready
+                && frame
+                    .renderers
+                    .onion_skin
+                    .draw_splat(&mut render_pass, None);
+            if !drew_splat {
+                // 点图元直绘：每实例 1 顶点 1 点，不读可见索引缓冲（无 cull 输出）
+                frame
+                    .renderers
+                    .onion_skin
+                    .draw_points(&mut render_pass, onion_has_instances, None);
+            }
         } else if has_depth && params.vs_cull_mode {
             // VS cull 直绘：每 chunk 4 顶点 × chunk_len 实例，实例序 = 深度序
             frame

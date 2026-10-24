@@ -17,11 +17,38 @@ struct Uniforms {
     _pad: vec2<f32>,
 };
 
+// ── 12B note layout（16B wasabi 布局已删除）────────────────────────────
 struct NoteInstance {
-    start_length: vec2<f32>,  // [start_tick, length_tick]
-    key_color: u32,           // 低8位=key, 高24位=RGB
-    border_width: u32,        // 低16位=边框像素宽, 高16位=track_idx+1
+    start: f32,
+    length: f32,
+    attrs: u32, // key(0..7) | track_enc(8..23) | border(24..30) | preview(31)
 };
+
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_is_preview(attrs: u32) -> bool { return (attrs & 0x80000000u) != 0u; }
+
+// 与 lumino_extras fallback 调色板同色；GPU 调色板缓冲接入前的兜底。
+const FALLBACK_TRACK_COLORS: array<vec4<f32>, 12> = array<vec4<f32>, 12>(
+    vec4<f32>(0.784, 0.314, 0.314, 1.0),
+    vec4<f32>(0.314, 0.784, 0.471, 1.0),
+    vec4<f32>(0.314, 0.471, 0.863, 1.0),
+    vec4<f32>(0.863, 0.784, 0.314, 1.0),
+    vec4<f32>(0.784, 0.392, 0.784, 1.0),
+    vec4<f32>(0.314, 0.784, 0.784, 1.0),
+    vec4<f32>(0.941, 0.588, 0.314, 1.0),
+    vec4<f32>(0.706, 0.706, 0.706, 1.0),
+    vec4<f32>(0.902, 0.392, 0.392, 1.0),
+    vec4<f32>(0.392, 0.706, 0.392, 1.0),
+    vec4<f32>(0.392, 0.392, 0.784, 1.0),
+    vec4<f32>(0.784, 0.706, 0.392, 1.0),
+);
+
+fn note_color(attrs: u32) -> vec4<f32> {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    return FALLBACK_TRACK_COLORS[idx % 12u];
+}
 
 @group(0) @binding(0)
 var<uniform> u: Uniforms;
@@ -66,11 +93,11 @@ fn vs_main(
         default: { local_offset = vec2<f32>(0.0, 0.0); }
     }
 
-    let tick = instance.start_length.x;
-    let length = instance.start_length.y;
-    let key = f32(instance.key_color & 0xFFu);
+    let tick = instance.start;
+    let length = instance.length;
+    let key = f32(note_key(instance.attrs));
     // 还原文档音轨索引（高 16 位 = track_idx + 1）
-    let track = (instance.border_width >> 16u) - 1u;
+    let track = (note_track(instance.attrs)) - 1u;
     let lane = lane_index[track];
 
     let lh = u.lane_height;
@@ -97,10 +124,10 @@ fn vs_main(
 
     var output: VertexOutput;
     output.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    output.color = unpack_color(instance.key_color);
+    output.color = note_color(instance.attrs);
     output.uv = local_offset;
     output.screen_size = vec2<f32>(sw, sh);
-    output.border_width = f32(instance.border_width & 0xFFFFu);
+    output.border_width = f32(note_border(instance.attrs));
     return output;
 }
 

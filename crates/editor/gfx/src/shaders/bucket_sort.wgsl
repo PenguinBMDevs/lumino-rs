@@ -17,11 +17,38 @@
 // 注意 legacy CPU sort_visible_notes 并列 tiebreak 为 track 降序，
 // 此处为 load 顺序——差异由像素等价 harness 量化（集成任务验收）。
 
+// ── 12B note layout（16B wasabi 布局已删除）────────────────────────────
 struct NoteInstance {
-    start_length: vec2<f32>,
-    key_color: u32,
-    border_width: u32,
+    start: f32,
+    length: f32,
+    attrs: u32, // key(0..7) | track_enc(8..23) | border(24..30) | preview(31)
 };
+
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_is_preview(attrs: u32) -> bool { return (attrs & 0x80000000u) != 0u; }
+
+// 与 lumino_extras fallback 调色板同色；GPU 调色板缓冲接入前的兜底。
+const FALLBACK_TRACK_COLORS: array<vec4<f32>, 12> = array<vec4<f32>, 12>(
+    vec4<f32>(0.784, 0.314, 0.314, 1.0),
+    vec4<f32>(0.314, 0.784, 0.471, 1.0),
+    vec4<f32>(0.314, 0.471, 0.863, 1.0),
+    vec4<f32>(0.863, 0.784, 0.314, 1.0),
+    vec4<f32>(0.784, 0.392, 0.784, 1.0),
+    vec4<f32>(0.314, 0.784, 0.784, 1.0),
+    vec4<f32>(0.941, 0.588, 0.314, 1.0),
+    vec4<f32>(0.706, 0.706, 0.706, 1.0),
+    vec4<f32>(0.902, 0.392, 0.392, 1.0),
+    vec4<f32>(0.392, 0.706, 0.392, 1.0),
+    vec4<f32>(0.392, 0.392, 0.784, 1.0),
+    vec4<f32>(0.784, 0.706, 0.392, 1.0),
+);
+
+fn note_color(attrs: u32) -> vec4<f32> {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    return FALLBACK_TRACK_COLORS[idx % 12u];
+}
 
 struct SortParams {
     count: u32,
@@ -46,18 +73,18 @@ const INVALID_DIGIT: u32 = 256u;
 @group(0) @binding(3) var<storage, read_write> tile_buf: array<u32>;
 @group(0) @binding(4) var<uniform> params: SortParams;
 
-fn note_key(n: NoteInstance) -> u32 {
-    return n.key_color & 0xFFu;
+fn bucket_key_of(n: NoteInstance) -> u32 {
+    return note_key(n.attrs);
 }
 
 fn note_start(n: NoteInstance) -> u32 {
     // 与 waterfall.wgsl note_start 逐字一致（含 max 钳负）。
-    return u32(max(n.start_length.x, 0.0));
+    return u32(max(n.start, 0.0));
 }
 
 fn digit_of(n: NoteInstance) -> u32 {
     if params.use_key == 1u {
-        return note_key(n);
+        return bucket_key_of(n);
     }
     return (note_start(n) >> params.shift) & 0xFFu;
 }

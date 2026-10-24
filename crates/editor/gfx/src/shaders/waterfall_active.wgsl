@@ -22,10 +22,22 @@ struct ActiveParams {
     _pad2: u32,
 }
 
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_color_u32(attrs: u32) -> u32 {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    let colors = array<u32, 12>(
+        0xC85050FFu, 0x50C878FFu, 0x5078DCFFu, 0xDCC850FFu,
+        0xC864C8FFu, 0x50C8C8FFu, 0xF09650FFu, 0xB4B4B4FFu,
+        0xE66464FFu, 0x64B464FFu, 0x6464C8FFu, 0xC8B464FFu,
+    );
+    return colors[idx % 12u];
+}
 struct WaterfallNote {
-    start_length: vec2<f32>,
-    key_color: u32,
-    border_width: u32,
+    start: f32,
+    length: f32,
+    attrs: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: ActiveParams;
@@ -36,11 +48,11 @@ struct WaterfallNote {
 
 fn note_start(n: WaterfallNote) -> u32 {
     // 与 waterfall.wgsl note_start 逐字一致（含 max 钳负）。
-    return u32(max(n.start_length.x, 0.0));
+    return u32(max(n.start, 0.0));
 }
 
 fn note_end(n: WaterfallNote) -> u32 {
-    return note_start(n) + u32(max(n.start_length.y, 1.0));
+    return note_start(n) + u32(max(n.length, 1.0));
 }
 
 // 复刻 unpack_key_color → pack_color → & 0xFFFFFF00 | 153（与 CPU 逐 op 一致，
@@ -80,7 +92,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
         i -= 1u;
         let n = notes[sort_index[i]];
         if note_end(n) > tick {
-            color = active_color_for(n.key_color);
+            color = active_color_for(note_color_u32(n.attrs));
             break;
         }
     }

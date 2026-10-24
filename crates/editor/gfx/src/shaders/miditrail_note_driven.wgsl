@@ -39,10 +39,10 @@ struct DrivenParams {
 struct DrivenInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    // 与 `NoteInstance` 字节布局一致：[start, length] + key_color + border。
-    @location(2) start_length: vec2<f32>,
-    @location(3) key_color: u32,
-    @location(4) border: u32,
+    // 12B `NoteInstance`：f32 start + f32 length + u32 attrs。
+    @location(2) start_tick: f32,
+    @location(3) length_tick: f32,
+    @location(4) attrs: u32,
 }
 
 struct VertexOutput {
@@ -54,18 +54,25 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: DrivenInput) -> VertexOutput {
-    // key_color：低 8 位 = key，高 24 位 = RGB（与 `pack_key_color` 一致）。
-    let key = in.key_color & 0xFFu;
-    let rgb = in.key_color >> 8u;
-    var r = f32((rgb >> 16u) & 0xFFu) / 255.0;
-    var g = f32((rgb >> 8u) & 0xFFu) / 255.0;
-    var b = f32(rgb & 0xFFu) / 255.0;
+    let key = in.attrs & 0xFFu;
+    let track = (in.attrs >> 8u) & 0xFFFFu;
+    let colors = array<vec3<f32>, 12>(
+        vec3<f32>(0.784, 0.314, 0.314), vec3<f32>(0.314, 0.784, 0.471),
+        vec3<f32>(0.314, 0.471, 0.863), vec3<f32>(0.863, 0.784, 0.314),
+        vec3<f32>(0.784, 0.392, 0.784), vec3<f32>(0.314, 0.784, 0.784),
+        vec3<f32>(0.941, 0.588, 0.314), vec3<f32>(0.706, 0.706, 0.706),
+        vec3<f32>(0.902, 0.392, 0.392), vec3<f32>(0.392, 0.706, 0.392),
+        vec3<f32>(0.392, 0.392, 0.784), vec3<f32>(0.784, 0.706, 0.392));
+    let c = colors[(max(track, 1u) - 1u) % 12u];
+    var r = c.x;
+    var g = c.y;
+    var b = c.z;
 
     let tick_f = f32(params.tick);
-    let start = in.start_length.x;
+    let start = in.start_tick;
     // CPU `pack` 保证 length >= 1.0，此处再钳一次防脏数据（与 CPU
     // `n.start_length[1].max(1.0)` 同语义）。
-    let end = start + max(in.start_length.y, 1.0);
+    let end = start + max(in.length_tick, 1.0);
 
     // 与 CPU `build_note_instances` 同式的可见区间与深度映射
     // （运算顺序刻意保持一致，减小 CPU/GPU 浮点差异）。

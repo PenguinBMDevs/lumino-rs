@@ -34,17 +34,16 @@ fn test_render_from_instances_matches_manual_convert() {
     ];
     let instances: Vec<crate::NoteInstance> = raw
         .iter()
-        .map(|&(s, l, k)| crate::NoteInstance {
-            start_length: [s as f32, (l as f32).max(1.0)],
-            key_color: crate::pack_key_color(k, [1.0, 0.0, 0.0, 1.0]),
-            border_width: 0,
+        .map(|&(s, l, k)| {
+            crate::NoteInstance::new(s as f32, k, (l as f32).max(1.0), [1.0, 0.0, 0.0, 1.0], 0)
         })
         .collect();
     // 旧路径参考换算（与已删除的 `note_instances_to_miditrail` 同公式）。
     let manual: Vec<MiditrailNoteGpu> = instances
         .iter()
         .map(|n| {
-            let (key, rgb) = crate::unpack_key_color(n.key_color);
+            let key = n.key();
+            let rgb = crate::fallback_track_color(n.track_enc());
             let start = n.start_length[0].max(0.0) as u32;
             let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
             MiditrailNoteGpu {

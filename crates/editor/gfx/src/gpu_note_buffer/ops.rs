@@ -23,6 +23,11 @@ impl GpuNoteBuffer {
         self.instance_count == 0
     }
 
+    /// 本次上传因超过硬件容量上限被丢弃的实例数（0 = 全部保留）。
+    pub fn dropped_instances(&self) -> usize {
+        self.dropped_instances
+    }
+
     /// 获取当前容量
     pub fn capacity(&self) -> usize {
         self.capacity

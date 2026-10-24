@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 重构 · 音符实例 16B→12B（第一批：12B 可测版）
+
+- **删除 16B wasabi 布局**：`NoteInstance` 改为
+  `start_length: [f32;2] + attrs: u32` = **12B**，无 padding。
+  `attrs = key(8) | track_enc(16) | border(7) | preview(1)`。
+- **颜色移出实例**：GPU/CPU 按 track 查 12 色 fallback 调色板；主轨仍固定蓝。
+  动态 UI 调色板接入与 8B 档位**不在本批**。
+- **全链路 12B**：cull / onion / note / vertical / splat / bucket / waterfall /
+  miditrail / UI 键盘瀑布流 / video export pack 均切 12B；16B 字段访问清零。
+- **容量**：`GpuNoteBuffer` 改为 `max_buffer_size / 12`；290M 实例约 3.48GB，
+  只需 2 个 2GB binding chunk（不再被单 binding 钉死在 134M）。
+- **验证**：`lumino-gfx` **239 passed / 6 ignored**；workspace check/clippy 通过；
+  2,000,000 音符 MIDI 测试模式启动，onion 全量 138ms，无 wgpu validation。
+- **未完成**：设置面板性能档位、8B 内存模式、>2GB waterfall/splat 整段绑定分块。
+  当前不能宣称 310M 全量 UI 已支持。
+
+### 修复 · GpuNoteBuffer 扩容越过 2GB binding 上限（waterfall validation 刷屏）
+
+- **真机现象** — 310M 音符流式加载时 `GpuNoteBuffer` 日志显示
+  `piano_waterfall_cull_bg / keycolor_bg / note_bg` 的 binding range
+  `2,161,423,600` 超过 `max_storage_buffer_binding_size`（2,147,483,647），
+  wgpu validation error 每帧刷屏。
+- **根因** — `grow` 先算 `required + 1,048,576` 余量，再直接 `create_buffer`；
+  `required` 接近 `max_capacity`（134,217,727）时余量把容量推到 135M 以上，
+  buffer 变成 2.16GB。虽然 `required` 本身没超上限，但**扩容后的容量**超了。
+- **修复** — 抽出纯函数 `next_capacity`：余量计算后强制 `.min(max_capacity)`；
+  超限/不增长明确返回 `None`。新增 6 个边界单测（含真机触发形态 134,040,399）。
+- **诊断收敛** — 超过容量后不再每 chunk 刷 `error`，改为累计 `dropped_instances`
+  并在流式会话结束时报**一次** warning（含 GPU 保留/丢弃数量与物理上限）。
+- **物理上限说明** — 单 storage buffer binding 上限 2GB-1；16B/实例 ⇒ 最多
+  134,217,727 个实例（310M ×16B ≈4.98GB，约 2.32×）。本次修复保证**不创建
+  超限 buffer、不刷 wgpu validation**；310M 全量显示仍需多 buffer 分段/压缩
+  实例格式（未在本卡实现，见归档）。
+- **验证** — `lumino-gfx` 239 测试通过，含 6 个扩容边界测试；clippy/fmt 通过。
+
+### 渲染 · 全景 draw：像素聚合 splat（每像素 1 个胜者，64M 音符 draw 42.8→4.7ms）
+
+- **问题** — 点图元路径的瓶颈是**每实例固定成本**（RTX 2060 实测 ≈0.7ns/实例，与
+  着色器复杂度几乎无关）：64M 音符点图元 draw 仍要 35–43ms。换更轻的 VS/FS、
+  减少 varying 的 A/B 均无可测收益（8M：5.73 vs 5.86ms，噪声内）。
+- **实现** — 新增 `note_renderer/splat.rs` + `shaders/splat.wgsl`：每音符一个 compute
+  线程算屏幕像素，用 `atomicMax` 在 `(区域位 | 0x7FFFFFFF-源索引)` 上保留每像素
+  最近胜者（主轨优先、同区小索引优先，与 `vs_point` + `LessEqual` 逐像素一致）；
+  随后全屏合成只对胜者像素写颜色/`frag_depth`，空格 `discard` 保留背景。
+- **不限制显示数量** — 每个音符都被 compute 处理（不 LOD、不剔除），只是同一像素
+  只保留最终可见的那个；1px 以下音符的覆盖语义与点图元路径逐像素相同。
+- **触发** — 仅在 `subpixel_note_mode` 且实例数 ≥1M 时启用（1M 实测 splat 0.86ms
+  vs 点 1.4–2.3ms）；小场景保留点图元，避免白付全屏合成固定成本。无 depth /
+  纵向卷帘 / 实例缓冲超 2GB binding / 索引超 2^31 自动回退点图元或 quad。
+- **像素落点** — 硬件 1px 点图元规则是 `floor(center - 0.5)`（实测 100.5→100、
+  111.0→110、160.00032→159），splat 按同一规则取格；DPI scale、跨 chunk、
+  静音/主轨、重叠胜者与点路径逐像素等价。
+- **实测（RTX 2060 / Vulkan / 1080p / 5 轮中位数，clear+compute+合成全链路）**：
+  - 64M：点 34.7–42.8ms → splat **4.7–6.1ms**（7.1×）
+  - 16M：点 11.9–16.7ms → splat **1.6–2.1ms**（7.5×）
+  - 8M：点 8.8–10.7ms → splat **1.3–1.9ms**（4.7–8.4×）
+  - 1M：点 1.4–2.3ms → splat **0.86ms**；100k/500k 打平或点略优（阈值依据）
+- **正确性** — 新增 5 个 GPU 像素级测试：单场景逐像素等价、4096 音符密集场景、
+  DPI scale=2、大 tick 精度、胜者/静音/主轨契约；全量 `lumino-gfx` 233 测试通过。
+
 ### 渲染 · 可见区间 cull（range cull）：大工程放大档只扫候选实例
 
 - **问题** — 全量 cull 每帧读取全部 `NoteInstance`（16B/音符）：RTX 2060 实测

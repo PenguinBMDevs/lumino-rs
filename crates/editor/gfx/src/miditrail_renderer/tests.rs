@@ -36,7 +36,7 @@ pub(crate) fn paint_order_window(
             let mut key_sorted: Vec<NoteInstance> = notes
                 .iter()
                 .copied()
-                .filter(|n| (n.key_color & 0xFF) == key && in_window(n))
+                .filter(|n| (n.key() as u32) == key && in_window(n))
                 .collect();
             // 常驻桶序：key 内按 start 升序稳定（`bucket_sort.wgsl` (key,start)）。
             key_sorted.sort_by_key(|n| start_of(n));

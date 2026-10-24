@@ -46,10 +46,23 @@ struct CullParams {
     paint_order: u32,
 }
 
+fn note_key(attrs: u32) -> u32 { return attrs & 0xFFu; }
+fn note_track(attrs: u32) -> u32 { return (attrs >> 8u) & 0xFFFFu; }
+fn note_border(attrs: u32) -> u32 { return (attrs >> 24u) & 0x7Fu; }
+fn note_color_u32(attrs: u32) -> u32 {
+    let idx = max(note_track(attrs), 1u) - 1u;
+    let colors = array<u32, 12>(
+        0xC85050FFu, 0x50C878FFu, 0x5078DCFFu, 0xDCC850FFu,
+        0xC864C8FFu, 0x50C8C8FFu, 0xF09650FFu, 0xB4B4B4FFu,
+        0xE66464FFu, 0x64B464FFu, 0x6464C8FFu, 0xC8B464FFu,
+    );
+    return colors[idx % 12u];
+}
 struct CullNote {
-    start_length: vec2<f32>, // [start_tick, length_tick]（与 NoteInstance 同布局）
-    key_color: u32, // 低 8 位 = key
-    border_width: u32,
+    // 12B: start/length/attrs，与 Rust NoteInstance 字节一致
+    start: f32,
+    length: f32,
+    attrs: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -65,12 +78,12 @@ struct CullNote {
 @group(0) @binding(8) var<storage, read_write> active_out: array<u32>;
 
 fn note_start(n: CullNote) -> u32 {
-    return u32(max(n.start_length.x, 0.0));
+    return u32(max(n.start, 0.0));
 }
 
 // 打包语义 end（与 waterfall.wgsl `note_end` 同式；零长边界见头注）。
 fn note_end(n: CullNote) -> u32 {
-    return note_start(n) + u32(max(n.start_length.y, 1.0));
+    return note_start(n) + u32(max(n.length, 1.0));
 }
 
 // 光晕系数：与 CPU `instances.rs::aura_factor_raw` 逐 op 对齐
@@ -137,7 +150,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 count += 1u;
             }
             if compute_active && s <= tick_start && tick_start < e {
-                color = (n.key_color & 0xFFFFFF00u) | 0xFFu;
+                color = note_color_u32(n.attrs);
                 aura = max(aura, aura_factor(
                     tick_start,
                     s,

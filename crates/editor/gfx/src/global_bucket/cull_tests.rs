@@ -42,15 +42,15 @@ fn cpu_window(
         .iter()
         .copied()
         .filter(|n| {
-            let key = (n.key_color & 0xFF) as usize;
+            let key = (n.key()) as usize;
             let start = n.start_length[0].max(0.0) as u32;
             let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
             key < key_count && end > tick_start && start < tick_end
         })
         .collect();
     out.sort_by(|a, b| {
-        let ka = a.key_color & 0xFF;
-        let kb = b.key_color & 0xFF;
+        let ka = a.key();
+        let kb = b.key();
         ka.cmp(&kb).then_with(|| {
             a.start_length[0]
                 .max(0.0)
@@ -147,20 +147,29 @@ fn extract_with(
     let compact = cull.compact_buffer().expect("cull 紧凑缓冲应就绪").clone();
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("cull_equiv_staging"),
-        size: (total * 16).max(16) as u64,
+        size: ((total * std::mem::size_of::<NoteInstance>()).max(16) + 7) as u64 & !7,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     if total > 0 {
-        enc.copy_buffer_to_buffer(&compact, 0, &staging, 0, (total * 16) as u64);
+        enc.copy_buffer_to_buffer(
+            &compact,
+            0,
+            &staging,
+            0,
+            (total * std::mem::size_of::<NoteInstance>()) as u64,
+        );
     }
     queue.submit(Some(enc.finish()));
     if total == 0 {
         return Vec::new();
     }
-    let need_bytes = (total * 16).max(16);
-    let bytes = crate::readback_bytes_sync(device, &staging, need_bytes).expect("cull 回读应成功");
-    bytemuck::cast_slice::<u8, NoteInstance>(&bytes).to_vec()
+    let stride = std::mem::size_of::<NoteInstance>();
+    let need_bytes = (total * stride).max(16);
+    let read_bytes = (need_bytes + 7) & !7;
+    let bytes = crate::readback_bytes_sync(device, &staging, read_bytes).expect("cull 回读应成功");
+    let usable = bytes.len().min(need_bytes) / stride * stride;
+    bytemuck::cast_slice::<u8, NoteInstance>(&bytes[..usable]).to_vec()
 }
 
 #[test]
@@ -245,9 +254,9 @@ fn test_cull_finds_buried_long_note() {
         KEY_COUNT,
     );
 
-    let found = got.iter().any(|n| {
-        (n.key_color & 0xFF) == 60 && n.start_length[0] == 1000.0 && n.start_length[1] == 9000.0
-    });
+    let found = got
+        .iter()
+        .any(|n| (n.key()) == 60 && n.start_length[0] == 1000.0 && n.start_length[1] == 9000.0);
     assert!(found, "300 死音符下的覆盖长音必须被 cull 提取");
     // 死音符（end ≤ tick）一个都不该出现。
     let dead = got

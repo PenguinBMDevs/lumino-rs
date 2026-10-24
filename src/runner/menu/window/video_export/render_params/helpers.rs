@@ -2,8 +2,7 @@
 //!
 //! 自 `render_params.rs` 逐字节搬移。
 
-use lumino_extras::palette::current_track_color_f32;
-use lumino_gfx::{NoteInstance, pack_key_color};
+use lumino_gfx::NoteInstance;
 use lumino_midi_loader::{MidiDocument, NoteEvent};
 
 use super::SortableNote;
@@ -105,12 +104,16 @@ pub(crate) fn pack_note_instances(
     note_instances_out.clear();
     note_instances_out.reserve(visible_notes.len());
     for n in visible_notes.iter() {
-        let key_color = pack_key_color(n.key, current_track_color_f32(n.track_idx as usize));
-        note_instances_out.push(NoteInstance {
-            start_length: [n.start_tick as f32, (n.length as f32).max(1.0)],
-            key_color,
-            border_width,
-        });
+        // 12B：颜色由轨道调色板推导，实例只保留 track_enc。
+        let track_enc = (n.track_idx as u32 + 1) & 0xFFFF;
+        let encoded_border = (border_width & 0xFFFF) | (track_enc << 16);
+        note_instances_out.push(NoteInstance::new(
+            n.start_tick as f32,
+            n.key,
+            (n.length as f32).max(1.0),
+            [1.0; 4],
+            encoded_border,
+        ));
     }
 }
 

@@ -120,5 +120,6 @@ impl GpuNoteBuffer {
     /// 清空所有音符
     pub fn clear(&mut self) {
         self.instance_count = 0;
+        self.dropped_instances = 0;
     }
 }

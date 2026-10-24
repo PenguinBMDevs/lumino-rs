@@ -159,7 +159,7 @@ impl ResidentCull {
             return;
         }
         let new_cap = (total.saturating_mul(6) / 5).max(total + 1024);
-        let size = (new_cap * 16) as u64;
+        let size = (new_cap * std::mem::size_of::<crate::NoteInstance>()) as u64;
         self.compact_buffer = Some(new_storage_buffer(device, "bucket_cull_compact", size));
         self.compact_capacity = new_cap;
         self.bind_group = None;

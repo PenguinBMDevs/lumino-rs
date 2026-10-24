@@ -134,3 +134,4 @@ mod benches;
 mod frame_paths;
 mod helpers;
 mod measure;
+mod splat_bench;

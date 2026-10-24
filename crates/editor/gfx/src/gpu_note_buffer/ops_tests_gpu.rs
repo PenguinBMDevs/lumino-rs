@@ -29,12 +29,13 @@ fn read_instances(
     count: usize,
 ) -> Vec<NoteInstance> {
     let bytes = count * std::mem::size_of::<NoteInstance>();
+    let read_bytes = (bytes + 7) & !7;
     if bytes == 0 {
         return Vec::new();
     }
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("gpu_note_buffer_test_staging"),
-        size: bytes as u64,
+        size: read_bytes as u64,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -43,9 +44,11 @@ fn read_instances(
     });
     enc.copy_buffer_to_buffer(src, 0, &staging, 0, bytes as u64);
     queue.submit(Some(enc.finish()));
-    let raw = crate::global_bucket::readback_bytes_sync(device, &staging, bytes)
+    let raw = crate::global_bucket::readback_bytes_sync(device, &staging, read_bytes)
         .expect("实例缓冲回读应成功");
-    bytemuck::cast_slice::<u8, NoteInstance>(&raw).to_vec()
+    // readback 可能按 256B 对齐补齐；12B stride 下必须截到精确字节数，
+    // 否则 bytemuck 会因尾部 slop 拒绝 cast。
+    bytemuck::cast_slice::<u8, NoteInstance>(&raw[..bytes]).to_vec()
 }
 
 /// 逐字节比较（`NoteInstance` 无 `PartialEq`；此处要的正是位模式一致）

@@ -128,7 +128,7 @@ pub fn compute_active_and_aura_for_compact(
     let mut colors = [0u32; 128];
     let mut aura_sizes = [0.0f32; 128];
     for n in notes {
-        let key = (n.key_color & 0xFF) as usize;
+        let key = n.key() as usize;
         if key >= 128 {
             continue;
         }
@@ -137,9 +137,8 @@ pub fn compute_active_and_aura_for_compact(
         let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
         if start <= tick && tick < end {
             pressed[key] = true;
-            // `key_color` 高 24 位即 RGB，低 8 key 字节清零后补 alpha=0xFF，
-            // 与 legacy `unpack→pack_color` 逐字节一致。
-            colors[key] = (n.key_color & 0xFFFF_FF00) | 0xFF;
+            // 12B 不再存 RGB：按轨道查 fallback 调色板后补 alpha=0xFF。
+            colors[key] = crate::fallback_track_color_u32(n.track_enc());
             let factor = aura_factor_raw(tick, ticks_per_second, fps, start, end);
             if factor > aura_sizes[key] {
                 aura_sizes[key] = factor;
