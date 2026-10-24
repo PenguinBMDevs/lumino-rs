@@ -32,6 +32,12 @@ iso9660 = { workspace = true }
 thiserror = { workspace = true }
 puffin = { workspace = true }
 tempfile = { workspace = true }
+# 原始 MIDI 输入层走只读映射（见 loader/mmap_file.rs），避免整份文件堆副本
+memmap2 = { workspace = true }
+
+[dev-dependencies]
+# 性能卡验收探针（examples/load_peak_probe.rs）需要日志落地，用于证明命中的输入路径
+tracing-subscriber = { workspace = true }
 
 # unarc-rs 0.6.1 无条件依赖 unrar（C++ 源码含 Windows 专属 isnt.cpp / wbemidl.h），
 # 在 android 上构建期即失败，且该 crate 没有任何 feature 可关掉 RAR 后端。

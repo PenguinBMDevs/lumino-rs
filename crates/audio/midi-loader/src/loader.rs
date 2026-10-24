@@ -2,14 +2,16 @@
 //!
 //! 提供 MIDI 文件和压缩包 MIDI 的加载功能。
 //!
-//! 统一使用 cache-only 加载模式：
-//! - scan_midi_file 轻量扫描（峰值 < 10MB）
-//! - MidiCache::from_notes_file 提取音符并构建分层缓存
+//! 加载主链路（`load_parsed_midi`）：
+//! - `.mid` / `.midi` → `mmap_file`（只读映射 + `MidiDocument::from_notes_bytes`），
+//!   映射失败自动回退整份读取；原始文件字节不驻留，文档常驻内存
+//! - `.lmpj` → zstd 解压 + bincode 反序列化，再从中重建 `MidiDocument`
 
 use std::path::PathBuf;
 
 // 子模块
 pub mod archive_loading;
+mod mmap_file;
 mod parsed_midi;
 mod types;
 
