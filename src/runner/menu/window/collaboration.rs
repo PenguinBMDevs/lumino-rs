@@ -1,7 +1,5 @@
 //! 协作类窗口事件处理
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,12 +11,7 @@ use lumino_project::project::load::load_project_from_bytes;
 use lumino_ui::event::window::collaboration::Event;
 use lumino_ui::state::root_state::CollaborationViewState;
 
-/// 计算字节的 hex 哈希（用于工程一致性比对）
-fn hash_bytes(bytes: &[u8]) -> String {
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
+mod room_project;
 
 impl RunnerInner {
     /// 同步「协作同步开关」到主窗口编辑器。
@@ -29,24 +22,6 @@ impl RunnerInner {
     fn set_editor_collab_sync(&mut self, enabled: bool) {
         let editor = &mut self.window_state.window.ui_mut().root_mut().editor;
         editor.editor_state.data.set_collab_sync_enabled(enabled);
-    }
-
-    /// 把工程序列化为 `.lmpj` 字节（纯数据操作，可在后台线程执行，不触碰 UI）。
-    ///
-    /// 只接收已克隆出来的 `MidiDocument`：2026-10-20 单一权威源整改（审计 §三）后
-    /// `EditorData` 的每个 tempo 写入入口都会写穿到 `doc.tempo_changes`，
-    /// 出口只读 document 即可，**不再单独传 tempo 补丁**。
-    /// 避免在主线程直接读取编辑器状态导致大工程卡死 UI。
-    /// 全程内存编码（不走临时文件）。返回 None 表示序列化失败。
-    fn serialize_room_project(doc: &lumino_midi_loader::MidiDocument) -> Option<Vec<u8>> {
-        let project = lumino_export::LuminoProject::from_midi_document(doc);
-        match lumino_project::project::save::encode_archive(&project) {
-            Ok(bytes) => Some(bytes),
-            Err(e) => {
-                tracing::warn!("协作: 序列化房间工程为归档失败，无法上传: {e}");
-                None
-            }
-        }
     }
 
     pub(crate) fn handle_collaboration_events(&mut self, window_event: Event) {
@@ -147,7 +122,7 @@ impl RunnerInner {
                     // 后台线程完成重活：序列化工程为 .lmpj 字节（doc 为 Option，需解包后传入）
                     let bytes = match doc {
                         Some(doc_inner) => match tokio::task::spawn_blocking(move || {
-                            Self::serialize_room_project(&doc_inner)
+                            room_project::serialize(&doc_inner)
                         })
                         .await
                         {
@@ -163,7 +138,7 @@ impl RunnerInner {
                         progress_cb(tr!("无工程可上传或生成失败"), 1.0);
                         return;
                     };
-                    let hash = hash_bytes(&bytes);
+                    let hash = room_project::hash_bytes(&bytes);
                     // 进度切到「上传中」，进入带百分比的流式上传
                     progress_cb(&trf!("正在上传协作工程 {name}…", name = name_p), 0.0);
                     let client = HttpClient::new(&host, port);
@@ -220,9 +195,12 @@ impl RunnerInner {
                 let port = self.collab_state.server_port;
                 tokio::spawn(async move {
                     // 后台计算本地工程哈希，与房间哈希比对（避免主线程序列化卡顿）
+                    // 与 host 上传用的是同一个 `room_project::serialize`（逐字节确定），
+                    // 因此内容一致时 hash 必然一致。
                     let local_hash = match doc {
                         Some(doc_inner) => tokio::task::spawn_blocking(move || {
-                            Self::serialize_room_project(&doc_inner).map(|b| hash_bytes(&b))
+                            room_project::serialize(&doc_inner)
+                                .map(|b| room_project::hash_bytes(&b))
                         })
                         .await
                         .ok()

@@ -6,7 +6,10 @@ pub mod project;
 
 pub use project::{
     LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
-    archive::{ArchiveHeader, FileEntry, FileTable, build_archive, read_file_from_archive},
+    archive::{
+        ArchiveHeader, FileEntry, FileTable, build_archive, build_archive_with_time,
+        read_file_from_archive,
+    },
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
     deleted_track::{
         DeletedNote, DeletedTrackData, DeletedTrackEntry, DeletedTrackMetadata, delete_permanently,
@@ -15,6 +18,6 @@ pub use project::{
     folder::FolderPaths,
     load::load_project,
     metadata::ProjectMetadata,
-    save::{encode_archive, save_to_archive, save_to_folder},
+    save::{encode_archive, encode_archive_with_time, save_to_archive, save_to_folder},
     track::{LmtrackData, LmtrackHeader, TrackMeta},
 };
