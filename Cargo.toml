@@ -32,10 +32,32 @@ resolver = "3"
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
 xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
-# 菜单栏文字悬停闪烁修复（2026-10-17）：vendored iced_wgpu 钉住段落强引用
-# （段落弱引用在渲染线程 prepare 前死亡 → 整段文字静默不绘制；详见 vendor/iced_wgpu
-# 中 pinned_paragraphs 注释）。LUMINO_TEXT_TRACE=1 可输出文本批次诊断日志。
-iced_wgpu = { path = "vendor/iced_wgpu" }
+# iced 0.14 fork（PenguinBMDevs/iced，分支 lumino-android-0.14）：
+# 基线 = iced-rs/iced 0.14 分支 595af03（与 crates.io 已发布源码逐字节一致），
+# 其上仅 1 个提交，含三处 LUMINO 需要的改动：
+#   1. winit/conversion.rs   —— android 键盘事件转换（winit 的 modifier_supplement
+#      模块对 android 不编译，原实现会让 iced_winit 直接 E0432 编不过）；
+#   2. graphics/text.rs      —— android 显式加载 /system/fonts（fontdb 0.23 对
+#      android 跳过系统字体扫描，不补则中文全豆腐块）；
+#   3. wgpu/{lib,text}.rs    —— 原 vendor/iced_wgpu 的段落强引用钉（菜单栏文字
+#      悬停闪烁修复）+ LUMINO_TEXT_TRACE 诊断。
+# vendor/iced_wgpu 已删除：其 src 与 fork 的 wgpu/src 37 个文件逐字节一致，
+# 等价性已核验，迁移后行为不变。（2026-10-24）
+# 12 个 crate 必须**同 rev 一起 patch**：iced_winit 等包内部是 path 依赖，
+# 只 patch 单个包会产生 crates.io 与 git 双实例类型分裂（E0308，同 xsynth 教训）。
+# 补丁镜像：docs/iced-fork/0001-android-support.patch（已在 595af03 上 apply --check）
+iced = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_core = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_debug = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_futures = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_graphics = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_program = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_renderer = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_runtime = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_tiny_skia = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_widget = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_wgpu = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
+iced_winit = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
 
 [workspace.package]
 version = "0.2.1"
