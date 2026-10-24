@@ -13,6 +13,7 @@ use super::sanitize::safe_join;
 
 // ── unarc-rs 后端 ──────────────────────────────────────────
 
+#[cfg(not(target_os = "android"))]
 /// 使用 unarc-rs 列出压缩包条目
 pub(super) fn list_entries_unarc(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
     let mut archive = unarc_rs::unified::ArchiveFormat::open_path(path)
@@ -31,6 +32,7 @@ pub(super) fn list_entries_unarc(path: &Path) -> Result<Vec<ArchiveEntry>, Archi
     Ok(entries)
 }
 
+#[cfg(not(target_os = "android"))]
 /// 使用 unarc-rs 提取指定条目到内存
 pub(super) fn extract_entry_data_unarc(
     path: &Path,
@@ -60,6 +62,7 @@ pub(super) fn extract_entry_data_unarc(
     Err(ArchiveError::EntryNotFound(entry_name.to_string()))
 }
 
+#[cfg(not(target_os = "android"))]
 /// 使用 unarc-rs 批量提取所有文件到目录
 pub(super) fn extract_all_unarc(
     path: &Path,
@@ -97,6 +100,40 @@ pub(super) fn extract_all_unarc(
     Ok(extracted)
 }
 
+// ── Android：unarc-rs 无 android 后端 ────────────────────────
+//
+// unarc-rs 0.6.1 无条件依赖 `unrar`（其 C++ 源码含 Windows 专属 isnt.cpp，引用
+// wbemidl.h / DWORD），在 android 上**构建期**就失败，故该依赖只在非 android 目标引入
+// （见 Cargo.toml）。这里保留同名签名 + 明确的「格式不支持」错误，让 RAR/7Z/LZH 走
+// 可预期的失败路径，而不是让整个 crate 编不过。ZIP/TAR/GZ/XZ/ISO 各有独立的可移植
+// 后端，不受影响。
+#[cfg(target_os = "android")]
+pub(super) fn list_entries_unarc(_path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+    Err(unarc_unsupported())
+}
+
+#[cfg(target_os = "android")]
+pub(super) fn extract_entry_data_unarc(
+    _path: &Path,
+    _entry_name: &str,
+) -> Result<Vec<u8>, ArchiveError> {
+    Err(unarc_unsupported())
+}
+
+#[cfg(target_os = "android")]
+pub(super) fn extract_all_unarc(
+    _path: &Path,
+    _output_dir: &Path,
+) -> Result<Vec<PathBuf>, ArchiveError> {
+    Err(unarc_unsupported())
+}
+
+#[cfg(target_os = "android")]
+fn unarc_unsupported() -> ArchiveError {
+    ArchiveError::LibraryError(trf!(
+        "该压缩格式（RAR/7Z/LZH）在 Android 上暂不支持：unarc-rs 无 android 后端"
+    ))
+}
 // ── ZIPX 后端（zip crate，只处理 ZIPX 格式）─────────────
 
 /// 使用 zip crate 列出 ZIPX 文件条目

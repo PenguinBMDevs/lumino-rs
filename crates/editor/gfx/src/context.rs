@@ -9,6 +9,25 @@ use crate::epoch::GpuEpoch;
 mod create;
 mod ops;
 
+#[cfg(test)]
+#[path = "context/tests.rs"]
+mod tests;
+
+/// 交换链纹理用途。
+///
+/// `COPY_DST` **不可省**（2026-10-19 Android 真机实测回归）：钢琴卷帘/瀑布流由
+/// 分离渲染线程画进离屏纹理，再经 `copy_offscreen_to_surface` 的
+/// `copy_texture_to_texture` 拷回交换链（`render_thread/thread/blit.rs`）。
+/// 目标纹理缺少 `COPY_DST` 时该拷贝被 wgpu 校验拒绝——表现是 UI 框架正常、
+/// **音符区整块黑**。回归测试见 `context/tests.rs`。
+///
+/// REND-020 拆分后本函数留在主文件：`create.rs`（配置）与 `tests.rs`（断言）
+/// 都引用它，放在父模块是二者唯一的公共落点。
+#[must_use]
+pub(crate) fn surface_usage() -> wgpu::TextureUsages {
+    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST
+}
+
 /// 进程级共享的 wgpu 资源
 ///
 /// 多窗口场景下重复创建 Instance/Adapter/Device 是启动瓶颈之一，

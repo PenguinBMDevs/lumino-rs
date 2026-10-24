@@ -76,25 +76,44 @@ pub fn init() {
         }
     });
 
-    // 控制台输出层
+    // 控制台输出层（Android 分支不用它——真机 stdout 是黑洞，且未使用的 `fmt::layer()`
+    // 会让类型推断失败 E0282）
+    #[cfg(not(target_os = "android"))]
     let stdout_layer = fmt::layer().compact();
 
     // 文件日志层（通过 ChannelWriter 异步写入，启动时暂不激活，等待 start_file_logging）
+    #[cfg(not(target_os = "android"))]
     let file_layer = fmt::layer()
         .with_writer(|| ChannelWriter)
         .with_ansi(false)
         .compact();
 
-    tracing_subscriber::registry()
-        .with(level_filter)
-        .with(env_filter)
-        .with(stdout_layer)
-        .with(file_layer)
-        .init();
+    // Android：logcat 是唯一可见出口（真机上 stdout 等于黑洞）。
+    // android_logger 接管 `log` 门面；tracing 事件经 LogcatLayer 反向转发进 `log`。
+    // 注意**不能**再装 LogTracer（log→tracing），否则 tracing→log→tracing 递归。
+    #[cfg(target_os = "android")]
+    {
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Trace)
+                .with_tag("lumino"),
+        );
 
-    // `log` → `tracing` 桥：捕获 wgpu / iced_wgpu / iced 等依赖的 log 记录
-    // （RUST_LOG 控制档位；如 RUST_LOG=info,iced_wgpu=trace 观察文本图集行为）
-    tracing_log::LogTracer::init().ok();
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        tracing_subscriber::registry()
+            .with(level_filter)
+            .with(env_filter)
+            .with(stdout_layer)
+            .with(file_layer)
+            .init();
+
+        // `log` → `tracing` 桥：捕获 wgpu / iced_wgpu / iced 等依赖的 log 记录
+        // （RUST_LOG 控制档位；如 RUST_LOG=info,iced_wgpu=trace 观察文本图集行为）
+        tracing_log::LogTracer::init().ok();
+    }
 
     // 安装 panic hook
     install_panic_hook();
@@ -272,4 +291,30 @@ fn install_panic_hook() {
         // 调用原始 hook（stderr 输出 + backtrace）
         prev_hook(panic_info);
     }));
+}
+// ── Android：tracing → logcat ────────────────────────────────
+
+/// logcat 写入器：把 `fmt` 层格式化后的一行交给 `log`（android_logger 落到 logcat）。
+///
+/// 为什么不用自定义 `tracing_subscriber::Layer`：泛型 `Layer<S>` 在 android 分支会
+/// 触发 `E0282`（S 推断不出），而 `fmt::layer().with_writer(...)` 是现成且稳定的路径。
+/// 代价是 logcat 里优先级统一为 I——但格式化正文本身带 "INFO/WARN/ERROR" 与 target，
+/// 过滤体验不受影响。
+#[cfg(target_os = "android")]
+struct LogcatWriter;
+
+#[cfg(target_os = "android")]
+impl Write for LogcatWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = String::from_utf8_lossy(buf);
+        let line = text.trim_end();
+        if !line.is_empty() {
+            log::info!("{line}");
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }

@@ -5,6 +5,7 @@ use iced_core::window::RedrawRequest;
 use iced_winit::runtime::user_interface;
 use iced_winit::{conversion, winit};
 
+use super::touch::TouchRouting;
 use crate::host::{Host, types::convert_touch_to_mouse};
 use crate::message;
 
@@ -99,9 +100,16 @@ impl Host {
                 self.handle_modifiers_changed_event(new_modifiers);
             }
             winit::event::WindowEvent::Touch(touch) => {
-                // 双指捏合回退：两指时合成 pinch 并消费，三指/单指放行走 iced 鼠标合成
-                if self.handle_touch_for_pinch(touch) {
-                    return;
+                // 触摸手势层：单指合成指针并同步窗口级按下/抬起；
+                // 双指缩放/平移期一律消费（不产生任何指针事件）；
+                // 长按已模拟右键时，抬手只补右键释放
+                match self.handle_touch(touch) {
+                    TouchRouting::Pointer => {}
+                    TouchRouting::Consumed => return,
+                    TouchRouting::RightRelease => {
+                        self.release_touch_right_button(touch);
+                        return;
+                    }
                 }
             }
             PinchGesture { delta, phase, .. } => {
@@ -111,6 +119,17 @@ impl Host {
                 return;
             }
             _ => (),
+        }
+
+        // 触摸链路真机诊断（log 门面在 Android 可见）：只对触摸打点，
+        // 桌面鼠标不产生额外日志。
+        if matches!(event, winit::event::WindowEvent::Touch(_)) {
+            let available = self.window_ctx.cursor.position().is_some();
+            let pos = self.window_ctx.cursor.position();
+            log::debug!(
+                "[TOUCH] 排队 iced 事件 cursor_available={available} cursor={pos:?} queue={}",
+                self.events.len()
+            );
         }
 
         self.convert_and_queue_window_event(&event, modifiers);
@@ -131,6 +150,10 @@ impl Host {
     pub(crate) fn process_pending_events(&mut self) {
         puffin::profile_function!();
 
+        // 触摸长按判定必须排在「事件为空就早退」之前：长按期间没有任何窗口
+        // 事件，事件队列是空的，只有定时唤醒这一帧能把它判出来。
+        self.poll_touch_long_press();
+
         if self.events.is_empty() {
             return;
         }
@@ -140,6 +163,23 @@ impl Host {
 
         // 处理消息并检查状态变更
         let has_state_change = self.handle_event_messages(messages);
+
+        // 触摸抬手后的 hover 抑制（纯触屏没有 CursorLeft）：
+        // 抬手后 iced 的 cursor 仍停在落点，悬停高亮 / tooltip 延迟 / 音符
+        // hover 预览会一直挂着，直到下一次输入。这里把 cursor 置为
+        // `Unavailable` 并补一条 `CursorLeft`，让**下一批**事件以「无指针」
+        // 重建一次界面（仅触摸路径置位，桌面端永不触发）。
+        //
+        // 顺序刻意放在本批处理之后：本批还要用真实落点处理 ButtonReleased，
+        // 提前置空会让控件按 `cursor.is_over()` 判定失败而丢点击。
+        if self.suppress_hover_after_touch {
+            self.suppress_hover_after_touch = false;
+            self.window_ctx.cursor = iced_core::mouse::Cursor::Unavailable;
+            self.events
+                .push(iced_core::Event::Mouse(iced_core::mouse::Event::CursorLeft));
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+        }
 
         // REND-019（重连后自旋修复）：续帧语义以 iced 的 `redraw_request` 为准——
         // `NextFrame` / `At` 已由 `build_ui_and_process_events` 内的

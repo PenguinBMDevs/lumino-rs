@@ -7,6 +7,11 @@
 //! C 库显式链接；在此兜底声明，保证链接稳定（根治在上游 unarc_sys）。
 
 fn main() {
-    #[cfg(windows)]
-    println!("cargo:rustc-link-lib=dylib=advapi32");
+    // 注意：build.rs 里的 `#[cfg(windows)]` 判断的是**宿主**平台（build script 本身
+    // 就是为宿主编译的）。交叉编译到 Android 时宿主仍是 Windows，`#[cfg(windows)]`
+    // 会为真，于是给 android 链接器塞了 `-ladvapi32` → `ld.lld: unable to find
+    // library -ladvapi32`。必须读目标平台的 CARGO_CFG_TARGET_OS。
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rustc-link-lib=dylib=advapi32");
+    }
 }

@@ -166,7 +166,7 @@ impl DialogHandler {
             V::CounterBrowseFont => {
                 // 浏览字体文件（TTF/OTF/TTC）：后台线程打开对话框（防 UI 冻结）
                 root.spawn_path_dialog(PathDialogTask::VideoCounterFont, || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc"])
                         .pick_file()
                 });
@@ -227,7 +227,7 @@ impl DialogHandler {
             }
             V::CounterBrowseCsv => {
                 root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .set_file_name("notecounter.csv")
                         .add_filter(tr!("CSV 数据文件"), &["csv"])
                         .save_file()
@@ -279,7 +279,7 @@ impl DialogHandler {
             }
             V::DataCurveBrowseFont => {
                 root.spawn_path_dialog(PathDialogTask::VideoDataCurveFont, || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc"])
                         .pick_file()
                 });
@@ -296,7 +296,7 @@ impl DialogHandler {
                 let ext = container.to_lowercase();
                 let default_name = format!("output.{ext}");
                 root.spawn_path_dialog(PathDialogTask::VideoExportOutput, move || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .set_file_name(&default_name)
                         .add_filter(&container, &[ext.as_str()])
                         .save_file()
@@ -307,7 +307,7 @@ impl DialogHandler {
             }
             V::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::VideoExportMidi, || {
-                    rfd::FileDialog::new()
+                    lumino_platform::dialog::FileDialog::new()
                         .add_filter(tr!("音乐文件"), &["mid", "midi", "lmpj"])
                         .add_filter(tr!("MIDI 文件"), &["mid", "midi"])
                         .add_filter(tr!("Lumino 项目"), &["lmpj"])

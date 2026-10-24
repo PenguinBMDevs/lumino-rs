@@ -357,10 +357,10 @@ impl CollaborationService {
                     {
                         use lumino_core::tr;
 
-                        let _ = rfd::MessageDialog::new()
+                        let _ = lumino_platform::dialog::MessageDialog::new()
                             .set_title(tr!("协作通知"))
                             .set_description(&_msg)
-                            .set_level(rfd::MessageLevel::Warning)
+                            .set_level(lumino_platform::dialog::MessageLevel::Warning)
                             .show();
                     }
                 });

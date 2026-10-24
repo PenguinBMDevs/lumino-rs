@@ -45,8 +45,19 @@ pub enum Commands {
 
 impl Cli {
     /// 解析命令行参数
+    ///
+    /// Android 上**忽略进程真实 argv**：启动器/系统可能塞入任意参数，clap 遇到未知
+    /// 参数会直接 `exit(1)`，表现为「点开图标闪退」。移动端没有命令行语义，固定空参数。
     pub fn parse_args() -> Self {
-        Cli::parse()
+        #[cfg(target_os = "android")]
+        {
+            Cli::parse_from(["lumino-rs"])
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            Cli::parse()
+        }
     }
 
     /// 检查是否启用了 memory-usage 日志

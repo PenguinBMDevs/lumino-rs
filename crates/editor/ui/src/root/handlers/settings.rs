@@ -140,9 +140,7 @@ impl MessageHandler for SettingsHandler {
                     _ => None,
                 };
                 if let Some(detail) = detail {
-                    match arboard::Clipboard::new()
-                        .and_then(|mut clipboard| clipboard.set_text(detail))
-                    {
+                    match lumino_platform::clipboard::set_text(detail) {
                         Ok(()) => {
                             root.settings.compat.copied = true;
                             tracing::info!("GPU 诊断信息已复制到剪贴板");

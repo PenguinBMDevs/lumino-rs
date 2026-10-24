@@ -1,0 +1,9 @@
+// Top-level build file：插件版本集中在此声明。
+plugins {
+    id 'com.android.application' version '8.8.0' apply false
+    id 'com.android.library' version '8.8.0' apply false
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

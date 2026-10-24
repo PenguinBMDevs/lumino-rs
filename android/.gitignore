@@ -1,0 +1,11 @@
+# Gradle / AGP 产物
+.gradle/
+build/
+app/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# cargo ndk 产出的原生库（构建产物，不入库）
+app/src/main/jniLibs/

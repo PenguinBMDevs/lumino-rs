@@ -24,7 +24,6 @@ zstd = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-diagnostics = { workspace = true }
-unarc-rs = { workspace = true }
 zip = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }
@@ -33,6 +32,13 @@ iso9660 = { workspace = true }
 thiserror = { workspace = true }
 puffin = { workspace = true }
 tempfile = { workspace = true }
+
+# unarc-rs 0.6.1 无条件依赖 unrar（C++ 源码含 Windows 专属 isnt.cpp / wbemidl.h），
+# 在 android 上构建期即失败，且该 crate 没有任何 feature 可关掉 RAR 后端。
+# 故只在非 android 目标引入；android 侧 backends.rs 提供同名 stub 返回
+# 「格式不支持」（RAR/7Z/LZH 不可用，ZIP/TAR/GZ/XZ/ISO 各有独立可移植后端）。
+[target.'cfg(not(target_os = "android"))'.dependencies]
+unarc-rs = { workspace = true }
 
 [features]
 ldms-export = []

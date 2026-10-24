@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- GameActivity 继承 AppCompatActivity，主题必须是 Theme.AppCompat 派生。
+         背景全黑，避免首帧白闪；NoActionBar 保证满屏绘制。 -->
+    <style name="Theme.Lumino" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

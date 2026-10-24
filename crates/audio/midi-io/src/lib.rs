@@ -29,6 +29,7 @@ use std::path::PathBuf;
 use lumino_core::tr;
 
 use api::Kdmapi;
+#[cfg(not(target_os = "android"))]
 use api::System;
 use api::XSynth;
 use api::{Lgs, LgsOptions};
@@ -391,7 +392,14 @@ pub fn new_api_with_options(
     let engine: Box<dyn SynthControl> = match kind {
         ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path, options)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
+        #[cfg(not(target_os = "android"))]
         ApiKind::System => Box::new(System::new()?),
+        #[cfg(target_os = "android")]
+        ApiKind::System => {
+            return Err(Error::InitFailed(
+                "系统 MIDI 后端（midir）在 Android 上不可用，请改用 XSynth / LGS".to_string(),
+            ));
+        }
         ApiKind::Lgs {
             soundfont_path,
             sample_rate,

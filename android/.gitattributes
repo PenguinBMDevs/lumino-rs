@@ -1,0 +1,7 @@
+# Android 壳工程的行尾约定。
+#
+# 仓库根 .gitattributes 统一 `* text=auto eol=lf`，但 cmd.exe 对纯 LF 的批处理
+# 在个别版本上会出现标签解析问题（`call :label` / `goto`），故本目录内的 .bat
+# 强制 CRLF；gradlew（sh）保持 LF。
+*.bat text eol=crlf
+gradlew text eol=lf

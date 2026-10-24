@@ -45,12 +45,13 @@ iced_widget = { workspace = true, features = ["image", "wgpu", "svg"] }
 iced_core = { workspace = true }
 image = { workspace = true }
 once_cell = { workspace = true }
-rfd = { workspace = true }
+lumino-platform = { workspace = true }
 tracing = { workspace = true }
+# Android 上 tracing 无 logcat 桥（不可见），触摸链路打点必须走 log 门面
+log = { workspace = true }
 resvg = { workspace = true }
 usvg = { workspace = true }
 tiny-skia = { workspace = true }
-arboard = { workspace = true }
 serde_json = { workspace = true }
 im = { workspace = true }
 puffin = { workspace = true }

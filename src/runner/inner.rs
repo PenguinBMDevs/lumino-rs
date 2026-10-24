@@ -67,6 +67,12 @@ pub struct Runner {
     /// REND-019 R3 反馈：重连完成后「GPU 重连中…」提示的清除时刻
     /// （恢复后额外保留 1 秒再清除；由 `step_status_clear` 每帧检查）
     pub(crate) status_clear_at: Option<std::time::Instant>,
+    /// Android：是否处于「suspended 之后」——区分「真·回前台」与「启动期重复 resumed」。
+    ///
+    /// 一次启动里 Android 可能连发两次 `resumed`（onSurfaceCreated 与 onResume）。若第二次也走
+    /// `restart_window`，会把刚建好的窗口/表面/Host 整个 drop（实测 wgpu 全部 Destroy +
+    /// Activity 变 invisible）——表现就是「打开即退」。
+    pub(crate) suspended_since_resume: bool,
 }
 
 // ── 领域状态 ────────────────────────────────────────────────────────────

@@ -146,6 +146,14 @@ impl DeviceWarningWindow {
                 }
                 window.request_redraw();
             }
+            // 纯触屏平台（Android）没有 `CursorMoved`：指针位置必须由 `Touch` 驱动，
+            // 否则 Host 的 cursor 恒为 `Unavailable`，警告窗的按钮点不动。
+            WindowEvent::Touch(touch) => {
+                if let Some(ref mut ui) = self.ui {
+                    ui.cursor_moved(touch.location);
+                }
+                window.request_redraw();
+            }
             WindowEvent::ModifiersChanged(new_modifiers) => {
                 self.modifiers = new_modifiers.state();
             }

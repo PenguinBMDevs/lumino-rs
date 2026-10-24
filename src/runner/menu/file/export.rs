@@ -108,7 +108,7 @@ impl RunnerInner {
             project
         };
 
-        let Some(entry_path) = rfd::FileDialog::new()
+        let Some(entry_path) = lumino_platform::dialog::FileDialog::new()
             .set_file_name(format!("{file_stem}.lmpj"))
             .add_filter(tr!("Lumino 工程入口"), &["lmpj"])
             .save_file()

@@ -173,7 +173,7 @@ impl SettingsPanel {
                 self.synth.soundfont_path = path;
             }
             Event::BrowseSoundfont => {
-                if let Some(path) = rfd::FileDialog::new()
+                if let Some(path) = lumino_platform::dialog::FileDialog::new()
                     .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
                     .add_filter(tr!("SF2 文件"), &["sf2"])
                     .add_filter(tr!("SFZ 文件"), &["sfz"])
@@ -274,7 +274,7 @@ impl SettingsPanel {
                 }
             }
             Event::BrowseProgramFont => {
-                if let Some(path) = rfd::FileDialog::new()
+                if let Some(path) = lumino_platform::dialog::FileDialog::new()
                     .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc", "woff", "woff2"])
                     .add_filter(tr!("TrueType 字体"), &["ttf"])
                     .add_filter(tr!("OpenType 字体"), &["otf"])

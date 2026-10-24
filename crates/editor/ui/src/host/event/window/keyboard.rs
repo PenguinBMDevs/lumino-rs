@@ -1,6 +1,9 @@
-//! Host 窗口键盘/修饰键/触摸捏合缩放事件处理子模块
+//! Host 窗口键盘/修饰键/捏合缩放事件处理子模块
+//!
+//! 触摸（Touch）指针合成与双指手势已迁到 `window/touch.rs`，本模块只负责
+//! 键盘、修饰键与两处缩放共用的 `Host::handle_pinch_gesture`。
 
-use iced_winit::{conversion, winit};
+use iced_winit::winit;
 
 use crate::host::Host;
 use crate::message;
@@ -32,63 +35,10 @@ impl Host {
         self.route_message(message::Message::ShiftKeyChanged(shift));
     }
 
-    /// 触摸多指回退：用原生 Touch 合成 pinch（无 PinchGesture 平台，如 Windows/Linux 触屏）
-    ///
-    /// 维护 `active_touches` 映射，第二指刚落（fresh_pinch）不发缩放避免跳变，
-    /// 后续根据双指距离比计算 `delta = dist/prev - 1` 走同一 `handle_pinch_gesture`
-    /// 返回 `true` 表示已消费（双指捏合中，屏蔽 iced 鼠标合成，避免误拖音符）
-    pub(super) fn handle_touch_for_pinch(&mut self, touch: &winit::event::Touch) -> bool {
-        let scale = self.window_ctx.window.scale_factor() as f32;
-        let logical = conversion::cursor_position(touch.location, scale);
-        match touch.phase {
-            winit::event::TouchPhase::Started => {
-                self.active_touches.insert(touch.id, logical);
-                if self.active_touches.len() != 2 {
-                    self.prev_pinch_distance = None;
-                }
-            }
-            winit::event::TouchPhase::Moved => {
-                if let Some(p) = self.active_touches.get_mut(&touch.id) {
-                    *p = logical;
-                } else {
-                    self.active_touches.insert(touch.id, logical);
-                }
-            }
-            winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                self.active_touches.remove(&touch.id);
-                self.prev_pinch_distance = None;
-                return false;
-            }
-        }
-
-        if self.active_touches.len() == 2 {
-            let pts: Vec<iced_core::Point> = self.active_touches.values().copied().collect();
-            let dx = pts[0].x - pts[1].x;
-            let dy = pts[0].y - pts[1].y;
-            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
-            let center =
-                iced_core::Point::new((pts[0].x + pts[1].x) * 0.5, (pts[0].y + pts[1].y) * 0.5);
-            // 以双指中点更新光标，确保锚点跟手（对齐 yinhe touch_center）
-            self.window_ctx.cursor_position = Some(center);
-            self.window_ctx.cursor = iced_core::mouse::Cursor::Available(center);
-            if let Some(prev) = self.prev_pinch_distance
-                && prev > 0.0
-            {
-                let delta = (dist / prev) - 1.0;
-                // 夹到 ±0.15 避免首帧或快速张合跳变（类似 yinhe 0.02 阈值）
-                let clamped = delta.clamp(-0.15, 0.15);
-                if clamped.abs() > 0.01 {
-                    self.handle_pinch_gesture(clamped as f64, winit::event::TouchPhase::Moved);
-                }
-            }
-            self.prev_pinch_distance = Some(dist);
-            return true;
-        }
-        self.prev_pinch_distance = None;
-        false
-    }
-
     /// 触摸板捏合缩放（C）：处理 winit `PinchGesture`（macOS 触控板双指捏合）
+    ///
+    /// 触屏的双指捏合不在这里：Android / Windows 触屏没有 `PinchGesture`，
+    /// 由 `window/touch.rs` 用原生 `Touch` 合成后调用本函数。
     ///
     /// `delta` 为 Open 增量（>0 放大），转换为连续 `factor = 1+delta`，锚点跟当前光标
     /// 区域判定对齐 yinhe：键盘区→Y，标尺区→X，网格区→双轴同时缩放

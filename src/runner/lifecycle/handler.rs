@@ -32,12 +32,43 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     }
 
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.inner.is_some() || self.init_error.is_some() || self.device_warning.is_some() {
+        log::debug!(
+            "resumed: inner_ready={} suspended_since_resume={}",
+            self.inner.is_some(),
+            self.suspended_since_resume
+        );
+        if self.init_error.is_some() || self.device_warning.is_some() {
+            return;
+        }
+
+        // 续次 resumed（Android 切后台再回前台、桌面从最小化恢复）：旧窗口的 surface 已失效，
+        // 处理不当的表现是**黑屏且永不重绘**（Android 上 Suspended 后 native window 为 null）。
+        // 复用标题栏变更用的同一条 `restart_window` 路径——它只重建 WindowManager
+        // （窗口 + surface + Host 渲染上下文），不动文档 / 音频 / UI 状态。
+        if self.inner.is_some() {
+            // 只有「真的被 suspended 过」才重建。启动期 Android 常连发两次 resumed，
+            // 若不区分就会把刚建好的窗口/表面整个 drop（wgpu 全部 Destroy + Activity invisible）。
+            if !self.suspended_since_resume {
+                log::debug!("启动期重复 resumed：忽略，不重建");
+                return;
+            }
+            self.suspended_since_resume = false;
+            log::info!("回前台：重建窗口与表面");
+            if let Some(this) = self.inner.as_mut() {
+                this.restart_window(event_loop);
+                this.window_state.window.window().request_redraw();
+            }
             return;
         }
 
         // 启动设备检查门控（测试模式 / LUMINO_SKIP_DEVICE_CHECK 时跳过）
-        if self.test_config.is_none() && std::env::var_os("LUMINO_SKIP_DEVICE_CHECK").is_none() {
+        // Android：设备门控是**桌面**逻辑（Vulkan 探测 + rfd 弹窗 + 可取消的警告窗），
+        // 移动端没有多窗口，且模拟器 SwiftShader 的 Vulkan 能力不全 → 必定走"警告/退出"分支。
+        // 这里直接跳过，等 L3 单窗口化后换成「应用内提示 + 降级」。
+        if !cfg!(target_os = "android")
+            && self.test_config.is_none()
+            && std::env::var_os("LUMINO_SKIP_DEVICE_CHECK").is_none()
+        {
             match self.run_device_gate(event_loop) {
                 DeviceGate::Proceed => {}
                 DeviceGate::Waiting => return,
@@ -58,6 +89,7 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             Ok(inner) => {
                 self.inner = Some(inner);
 
+                log::debug!("init_inner 完成，inner 就绪");
                 // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
                 self.after_inner_started();
 
@@ -120,6 +152,8 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             }
             Err(e) => {
                 tracing::error!("Runner 初始化失败：{}", e);
+                #[cfg(target_os = "android")]
+                log::error!("Android 初始化失败: {e}");
                 self.init_error = Some(e);
                 event_loop.exit();
             }
@@ -176,6 +210,28 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         this.window_state
             .window
             .handle_event(event, &mut this.window_state.storage);
+    }
+
+    /// 后台/失焦：surface 即将失效，先把配置与工程状态落盘。
+    ///
+    /// Android 上进程随时可能被系统回收，suspended 是唯一可靠的「还活着」的信号。
+    fn suspended(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        log::info!("suspended：落盘并置位，等待前台重建");
+        self.suspended_since_resume = true;
+        if let Some(this) = self.inner.as_mut() {
+            this.save_storage();
+        }
+    }
+
+    /// 事件循环退出前最后一次落盘
+    ///
+    /// winit 0.30 的 `ApplicationHandler` 没有 `destroyed`，对应的收尾钩子是 `exiting`。
+    fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+
+        tracing::info!("exiting：事件循环退出，最后落盘一次");
+        if let Some(this) = self.inner.as_mut() {
+            this.save_storage();
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -338,7 +394,7 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 保存完成后的延迟退出：保存期间用户请求关闭（close_pending），
         // 本地保存与云端上传均结束后自动退出
         if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
-            tracing::info!("保存完成，执行延迟的退出请求");
+            log::info!("延迟退出：保存完成，关闭事件循环");
             this.window_state.window.close_pending = false;
             event_loop.exit();
             return;
