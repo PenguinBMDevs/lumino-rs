@@ -253,7 +253,8 @@ pub struct Editor {
     /// 故按三者版本号缓存，见 `arrangement_ops::selection_cache`。
     pub(crate) arrange_selection_cache: arrangement_ops::selection_cache::ArrangeSelectionCache,
 
-    /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
+    /// 播放键色增量扫描状态（每键聚合，定长）——避免每帧 O(N) 全量扫描，
+    /// 且成本与「同时发声音符数」无关，见 `impls::playback` 模块文档
     pub(crate) playback_scan_state: impls::PlaybackScanState,
 
     /// Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动，可靠通道）

@@ -1,13 +1,17 @@
-//! 键盘颜色空间索引路径：跨轨全量重建不 panic 且结果正确
+//! 键盘颜色全量重扫路径：跨轨重扫不 panic 且结果正确
+//!
+//! 2026-10-24：原先本文件覆盖的是「跨轨空间索引 `update_query` 全量重建」路径。
+//! 该索引因构建成本 O(N log N)（1600W 音符 2-4s）已从渲染/命中路径退役，
+//! 键色成为最后一个消费者后一并退役，全量重扫改回 `ChunkedList::iter_window`
+//! 窗口扫描。本文件保留跨轨正确性覆盖。
 
 use super::*;
 
-/// 验证跨所有轨空间索引全量重建路径（本优化引入）：
-/// 较大文档下，全量重建经 `update_query` 直接取得活跃音符，
-/// 结果须与逐音符扫描一致，且 `track_of`/`key_of`/`end_of` 对齐无越界 panic。
+/// 验证跨所有轨的全量重扫路径：较大文档下重扫须与逐音符扫描一致，
+/// 且键位 → 颜色偏移映射无越界 panic。
 #[test]
-fn test_keyboard_colors_spatial_index_full_rebuild() {
-    // 2 轨，每轨 200 音符（total=400，低于索引上限，走索引路径）
+fn test_keyboard_colors_full_rescan_across_tracks() {
+    // 2 轨，每轨 200 音符（合计 400）
     let mut track0 = Vec::new();
     let mut track1 = Vec::new();
     for i in 0..200u32 {
@@ -78,7 +82,7 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
         "key 60 不应着色（i=0 已结束）"
     );
 
-    // 继续推进到 tick=9000（所有音符 tick<8000 已结束），索引路径不应 panic 且颜色清空
+    // 继续推进到 tick=9000（所有音符已结束），跨轨重扫不应 panic 且颜色清空
     editor.playback_position = 9000.0;
     editor.update_playback_key_colors();
     assert_eq!(editor.playback_key_colors, [0u8; 1024]);

@@ -5,13 +5,13 @@
 //! 2026-09 拆分（原文件 415 行 > 400 行阈值，按场景拆分为同级子模块）：
 //! - `basics`：基础着色与边界（二分定位、音符边界、功能开关、无文档、tick 0、越过全部音符）
 //! - `clear`：清除行为（停止后清空与幂等）
-//! - `incremental`：增量扫描路径与活跃集合不增长
-//! - `spatial_index`：跨轨空间索引全量重建路径
+//! - `incremental`：增量扫描路径、与全量重扫的一致性、状态不增长
+//! - `full_rebuild`：跨轨全量重扫路径（原 `spatial_index`，索引退役后更名）
 
 mod basics;
 mod clear;
+mod full_rebuild;
 mod incremental;
-mod spatial_index;
 
 use crate::Editor;
 use lumino_midi_loader::{MidiDocument, NoteEvent};
