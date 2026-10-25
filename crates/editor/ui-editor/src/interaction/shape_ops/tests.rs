@@ -4,8 +4,8 @@ use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
     FunnelParams, GateRangeParams, NestedParams, PatternParams, PolyStyle, PolygonParams, RangeDir,
-    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle, TileBy, TilesParams,
-    TumourParams,
+    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
+    TextLayoutMode, TextOp, TextParams, TileBy, TilesParams, TumourParams,
 };
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
@@ -20,6 +20,42 @@ fn straight_shape(track: u16, tick_hi: f32) -> ShapeModel {
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (tick_hi, 72.0)]);
     model.validate().expect("测试形状应合法");
     model
+}
+
+#[test]
+fn test_text_shape_notes_follow_geometry_translation() {
+    let editor = editor_with_track(1);
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 1.0);
+    model.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(0.0, 60.0, 960.0, 64.0));
+    model.ops.push(ShapeOp::Text(TextOp {
+        text: "A".to_string(),
+        params: TextParams {
+            font: "Arial".to_string(),
+            ..TextParams::default()
+        },
+        layout: TextLayoutMode::Parametric,
+        snap: 480.0,
+        merged: false,
+        vertical: false,
+    }));
+    let base = editor.shape_notes_of(&model, 1);
+    if base.is_empty() {
+        eprintln!("跳过 test_text_shape_notes_follow_geometry_translation：无可用系统字体");
+        return;
+    }
+
+    model.geometry.translate(480.0, 2.0);
+    let shifted = editor.shape_notes_of(&model, 1);
+    assert_eq!(base.len(), shifted.len(), "平移不应改变文字音符数量");
+    for (a, b) in base.iter().zip(&shifted) {
+        assert!(
+            (b.tick - a.tick - 480.0).abs() < 1e-3,
+            "文字 bbox 平移后 tick 应整体 +480：{} -> {}",
+            a.tick,
+            b.tick
+        );
+        assert_eq!(b.key, a.key + 2, "文字 bbox 平移后 key 应整体 +2");
+    }
 }
 
 fn closed_shape(fill: ShapeFill, gate_beats: f32) -> ShapeModel {
