@@ -43,6 +43,15 @@ pub(crate) fn render_text_params(
         .collect();
     fonts.sort_unstable();
     fonts.dedup();
+    if fonts.is_empty() {
+        fonts.push(params.font.clone());
+    } else if !fonts
+        .iter()
+        .any(|font| font.eq_ignore_ascii_case(&params.font))
+    {
+        // 当前字体可能来自旧工程/外部字体文件，不能被空选项列表吞掉。
+        fonts.push(params.font.clone());
+    }
     let p_font = params.clone();
     let font_pick = pick_list(fonts, Some(params.font.clone()), move |font: String| {
         let mut next = p_font.clone();

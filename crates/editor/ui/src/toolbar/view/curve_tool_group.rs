@@ -130,7 +130,7 @@ impl widget::Widget<Message, Theme, Renderer> for CurveToolGroup<'_> {
         tree: &'b mut widget::Tree,
         layout: Layout<'b>,
         _renderer: &Renderer,
-        _viewport: &Rectangle,
+        viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
         let menu = self.menu.as_mut()?;
@@ -145,6 +145,7 @@ impl widget::Widget<Message, Theme, Renderer> for CurveToolGroup<'_> {
             menu,
             tree: menu_tree,
             menu_width: self.menu_width,
+            viewport: *viewport,
         })))
     }
 }
@@ -156,6 +157,7 @@ struct PanelOverlay<'a, 'b> {
     menu: &'b mut Element<'a, Message, Theme, Renderer>,
     tree: &'b mut widget::Tree,
     menu_width: f32,
+    viewport: Rectangle,
 }
 
 impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
@@ -258,6 +260,23 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
             cursor,
             &Rectangle::with_size(Size::INFINITE),
             renderer,
+        )
+    }
+
+    fn overlay<'a>(
+        &'a mut self,
+        layout: Layout<'a>,
+        renderer: &Renderer,
+    ) -> Option<overlay::Element<'a, Message, Theme, Renderer>> {
+        // 面板内部的 PickList / ComboBox 也是 overlay；父级不转发时，
+        // 它们只会打开状态而永远不会被绘制（Font 下拉点不开的根因）。
+        let child = layout.children().next()?;
+        self.menu.as_widget_mut().overlay(
+            self.tree,
+            child,
+            renderer,
+            &self.viewport,
+            Vector::new(0.0, 0.0),
         )
     }
 }
