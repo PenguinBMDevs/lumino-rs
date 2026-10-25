@@ -486,6 +486,25 @@ impl Editor {
         self.hit_test_drawn_shape(tick, key)
     }
 
+    /// 右键命中的图形是否属于“待确认”菜单目标。
+    ///
+    /// 返回：
+    /// - `Some(true)`：命中 pending 镜像，或当前选中集含 pending（混合选区也按 pending 处理）；
+    /// - `Some(false)`：命中已确认图形且选中集全是已确认图形；
+    /// - `None`：没有命中图形。
+    ///
+    /// 这样右键菜单不会把 019–028 暴露给没有 `ShapeStore` 模型 / 音符的 pending 产物。
+    pub fn drawn_shape_pending_at_screen(&self, pos: iced_core::Point) -> Option<bool> {
+        let id = self.drawn_shape_at_screen(pos)?;
+        let hit_pending = self.editor_state.shape_select.pending_of(id).is_some();
+        let selection_has_pending = self
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .any(|shape| shape.pending.is_some());
+        Some(hit_pending || selection_has_pending)
+    }
+
     // ── 选框（选中集外接框） ───────────────────────────────
 
     /// 选中集合的**选框**（屏幕空间轴对齐矩形，含拖拽实时预览偏移）
@@ -1169,6 +1188,12 @@ mod tests {
             !editor.editor_state.data.current_track_notes().is_empty(),
             "Bake 后应留下普通音符"
         );
+        assert!(
+            editor
+                .drawn_shape_pending_at_screen(editor.line_pos_screen_pos((120.0, 62.0)))
+                .is_none(),
+            "Bake 后不得再命中图形/打开图形菜单"
+        );
 
         assert!(editor.undo(), "Bake 应可撤销");
         assert_eq!(
@@ -1219,6 +1244,28 @@ mod tests {
     }
 
     // ── 点选 ─────────────────────────────────────────────
+
+    #[test]
+    fn test_context_menu_target_distinguishes_pending_and_confirmed() {
+        let mut pending = test_editor();
+        draw_pending_rect(&mut pending);
+        pending.set_tool(Tool::ShapeSelect);
+        let pending_pos = pending.line_pos_screen_pos((2.0, 62.0));
+        assert_eq!(
+            pending.drawn_shape_pending_at_screen(pending_pos),
+            Some(true),
+            "pending 镜像必须走 PendingDrawnShape 目标，不能暴露 019–028"
+        );
+
+        let mut confirmed = draw_and_confirm_rect();
+        confirmed.set_tool(Tool::ShapeSelect);
+        let confirmed_pos = confirmed.line_pos_screen_pos((2.0, 62.0));
+        assert_eq!(
+            confirmed.drawn_shape_pending_at_screen(confirmed_pos),
+            Some(false),
+            "已确认图形才允许 DrawnShape 目标"
+        );
+    }
 
     #[test]
     fn test_mouse_tool_selects_inside_and_deselects_outside() {
