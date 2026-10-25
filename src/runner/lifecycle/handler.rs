@@ -61,6 +61,15 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
                 // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
                 self.after_inner_started();
 
+                // 自动保存恢复询问：异常退出留下的自动保存文件，启动时询问
+                // 处置（恢复走现有 load_midi_file 链路 / 丢弃则删除文件）。
+                // 测试模式跳过——自动化场景不得被模态框卡住。
+                if self.test_config.is_none()
+                    && let Some(this) = self.inner.as_mut()
+                {
+                    this.prompt_autosave_recovery();
+                }
+
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
                     && let Some(this) = self.inner.as_mut()
@@ -340,9 +349,16 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
             tracing::info!("保存完成，执行延迟的退出请求");
             this.window_state.window.close_pending = false;
+            // 延迟退出同样属于正常退出：用户已请求关闭且保存已完成
+            this.cleanup_autosave_on_exit();
             event_loop.exit();
             return;
         }
+
+        // 周期自动保存心跳：放在控制流策略**之前**，本轮到点排程能立即
+        // 参与 `handle_control_flow` 的唤醒点合并（未启用时是廉价早退）
+        puffin::profile_scope!("runner_about_to_wait_autosave");
+        this.autosave_tick();
 
         // 控制循环休眠策略
         puffin::profile_scope!("runner_about_to_wait_control_flow");

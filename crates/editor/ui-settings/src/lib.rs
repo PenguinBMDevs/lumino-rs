@@ -105,6 +105,10 @@ pub struct EditingSettings {
     pub merge_window_ms: u64,
     /// 编辑拦截时是否显示 Toast 提示
     pub intercept_notification_enabled: bool,
+    /// 周期自动保存开关（默认关闭）
+    pub autosave_enabled: bool,
+    /// 周期自动保存间隔（分钟，输入框原文；落盘前收敛到 1..=120）
+    pub autosave_interval_mins: String,
     /// 自动化曲线连线粗细（像素，1-10）
     pub automation_line_thickness: f32,
     /// Tempo 面板 BPM 绘制上限（默认 512）

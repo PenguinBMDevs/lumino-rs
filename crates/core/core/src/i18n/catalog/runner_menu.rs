@@ -47,6 +47,15 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "工程保存成功" => Some("Project saved successfully"),
         "保存失败: {e}" => Some("Save failed: {e}"),
         "保存任务失败: {e}" => Some("Save task failed: {e}"),
+        "检测到未保存的自动保存" => Some("Unsaved Autosave Detected"),
+        "发现上次会话的自动保存（修改于 {time}）。\n\n是否恢复其内容？恢复不会改动任何已有文件。" => {
+            Some(
+                "An autosave from the previous session was found (modified at {time}).\n\nRestore its content? Restoring does not modify any existing files.",
+            )
+        }
+        "恢复自动保存" => Some("Restore Autosave"),
+        "不恢复" => Some("Don't Restore"),
+        "未知时间" => Some("unknown time"),
         "已有导出任务进行中，请等待完成" => {
             Some("An export task is already running. Please wait for it to finish")
         }

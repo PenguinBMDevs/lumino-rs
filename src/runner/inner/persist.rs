@@ -31,6 +31,12 @@ fn should_persist_language(language_from_env: bool, language_changed: bool) -> b
     !language_from_env || language_changed
 }
 
+/// 解析自动保存间隔输入（分钟）：越界值收敛到 1..=120，非法输入返回
+/// `None`（落盘时保留旧值，不阻塞其他设置项的保存）
+fn parse_autosave_interval_mins(s: &str) -> Option<u32> {
+    s.trim().parse::<u32>().ok().map(|v| v.clamp(1, 120))
+}
+
 impl RunnerInner {
     fn config_diff(
         new: &lumino_ui::settings::SettingsPanel,
@@ -97,7 +103,10 @@ impl RunnerInner {
             || new.synth.gpu_load_display != old.gpu_load_display
             || new.compat.check_on_startup != old.gpu_check_on_startup
             || new.compat.domino_clipboard_enabled != old.domino_clipboard_enabled
-            || new.compat.warning_suppressed != old.gpu_warning_suppressed.unwrap_or(false);
+            || new.compat.warning_suppressed != old.gpu_warning_suppressed.unwrap_or(false)
+            || new.editing.autosave_enabled != old.autosave_enabled
+            || parse_autosave_interval_mins(&new.editing.autosave_interval_mins)
+                .is_some_and(|v| v != old.autosave_interval_mins);
         if theme_changed
             || synth_changed
             || xsynth_changed
@@ -346,6 +355,11 @@ impl RunnerInner {
             config.ui.gpu_check_on_startup = new.compat.check_on_startup;
             config.ui.domino_clipboard_enabled = new.compat.domino_clipboard_enabled;
             config.ui.gpu_warning_suppressed = Some(new.compat.warning_suppressed);
+            config.ui.autosave_enabled = new.editing.autosave_enabled;
+            // 间隔输入框原文非法时保留旧值（面板侧不做实时校验，落盘时统一 parse）
+            if let Some(v) = parse_autosave_interval_mins(&new.editing.autosave_interval_mins) {
+                config.ui.autosave_interval_mins = v;
+            }
         });
         lumino_extras::palette::set_current_palette_by_name(&new.display.selected_palette);
         if let Err(e) = self.window_state.storage.config.save() {

@@ -238,6 +238,18 @@ pub struct UiConfig {
     /// 旧配置缺该字段时落 `false`（由 `#[serde(default)]` 提供），升级后保持关闭。
     #[serde(default)]
     pub domino_clipboard_enabled: bool,
+    /// 是否启用周期性自动保存（默认关闭）
+    ///
+    /// 开启后按 [`UiConfig::autosave_interval_mins`] 间隔，把当前工程异步写入
+    /// 独立的自动保存文件（配置目录 `autosave/autosave.lmpj`），**不改动用户
+    /// 手动保存的 .lmpj 源文件**。崩溃 / 强杀后该文件留存，下次启动弹窗询问
+    /// 恢复；正常退出时删除（用户已明确处置过更改，文件失去意义）。
+    #[serde(default)]
+    pub autosave_enabled: bool,
+    /// 自动保存间隔（分钟；读取时经 [`UiConfig::effective_autosave_interval_mins`]
+    /// 收敛到 1..=120，防止手输越界值）
+    #[serde(default = "default_autosave_interval_mins")]
+    pub autosave_interval_mins: u32,
 }
 
 /// 界面语言偏好的实际语义（UI-018）。
@@ -250,6 +262,11 @@ impl UiConfig {
     pub fn effective_language_preference(&self) -> LanguagePreference {
         self.language_preference
             .unwrap_or(LanguagePreference::Fixed(self.language))
+    }
+
+    /// 生效的自动保存间隔（分钟）：手输越界值收敛到 1..=120。
+    pub fn effective_autosave_interval_mins(&self) -> u32 {
+        self.autosave_interval_mins.clamp(1, 120)
     }
 }
 
@@ -317,6 +334,8 @@ impl Default for UiConfig {
             gpu_last_passed: None,
             gpu_last_check_time: None,
             domino_clipboard_enabled: false,
+            autosave_enabled: false,
+            autosave_interval_mins: default_autosave_interval_mins(),
         }
     }
 }
@@ -386,6 +405,87 @@ mod tests {
         assert!(
             !restored.domino_clipboard_enabled,
             "旧配置缺该字段应落为 false（关闭）"
+        );
+    }
+
+    /// 自动保存默认关闭：全新安装不改变用户现有行为（写入与恢复都是用户显式开启后才有）。
+    #[test]
+    fn test_autosave_defaults_to_disabled() {
+        let config = UiConfig::default();
+        assert!(!config.autosave_enabled, "自动保存开关默认应为关闭");
+        assert_eq!(
+            config.autosave_interval_mins, 5,
+            "自动保存间隔默认应为 5 分钟"
+        );
+        assert_eq!(
+            config.effective_autosave_interval_mins(),
+            5,
+            "默认间隔经 clamp 后应保持 5"
+        );
+    }
+
+    /// 旧配置（自动保存功能之前写入的 `config.json`）缺少两个 autosave 字段：
+    /// 反序列化不得失败，开关落 `false`、间隔落默认值，保证升级静默兼容。
+    #[test]
+    fn test_legacy_config_without_autosave_deserializes_to_defaults() {
+        let mut value =
+            serde_json::to_value(UiConfig::default()).expect("UiConfig 应能序列化为 JSON");
+        let object = value
+            .as_object_mut()
+            .expect("UiConfig 序列化结果应为 JSON 对象");
+        let removed_enabled = object.remove("autosave_enabled");
+        let removed_interval = object.remove("autosave_interval_mins");
+        assert!(
+            removed_enabled.is_some(),
+            "默认配置应写出 autosave_enabled 键"
+        );
+        assert!(
+            removed_interval.is_some(),
+            "默认配置应写出 autosave_interval_mins 键"
+        );
+
+        let restored: UiConfig =
+            serde_json::from_value(value).expect("缺自动保存字段的旧配置应能反序列化");
+        assert!(
+            !restored.autosave_enabled,
+            "旧配置缺开关字段应落为 false（关闭）"
+        );
+        assert_eq!(
+            restored.autosave_interval_mins, 5,
+            "旧配置缺间隔字段应落为默认值 5"
+        );
+    }
+
+    /// 间隔收敛：手输越界值（0 / 负数语义不适用 u32，越上界）经
+    /// `effective_autosave_interval_mins` 收敛到 1..=120。
+    #[test]
+    fn test_autosave_interval_effective_clamps() {
+        let zero = UiConfig {
+            autosave_interval_mins: 0,
+            ..UiConfig::default()
+        };
+        assert_eq!(
+            zero.effective_autosave_interval_mins(),
+            1,
+            "0 分钟应收敛到下界 1"
+        );
+        let over = UiConfig {
+            autosave_interval_mins: 999,
+            ..UiConfig::default()
+        };
+        assert_eq!(
+            over.effective_autosave_interval_mins(),
+            120,
+            "999 分钟应收敛到上界 120"
+        );
+        let valid = UiConfig {
+            autosave_interval_mins: 30,
+            ..UiConfig::default()
+        };
+        assert_eq!(
+            valid.effective_autosave_interval_mins(),
+            30,
+            "合法值应原样通过"
         );
     }
 

@@ -105,6 +105,9 @@ impl RunnerInner {
                     tracing::info!("保存进行中，退出请求延迟到保存完成");
                     self.window_state.window.close_pending = true;
                 } else {
+                    // 正常退出：用户已对未保存更改做出处置，清理自动保存文件
+                    // （崩溃 / 强杀不走这里，文件留存供下次启动恢复）
+                    self.cleanup_autosave_on_exit();
                     event_loop.exit();
                 }
             }

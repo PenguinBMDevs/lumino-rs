@@ -221,6 +221,11 @@ pub(crate) struct RunnerInner {
     pub(crate) midi_output_retry: MidiOutputRetry,
     /// GPU 缓冲状态上次轮询时刻（250ms 节流，避免每帧取快照）。
     pub(crate) gpu_stats_last_poll: std::time::Instant,
+    /// 周期自动保存：下次触发时刻（None = 未启用或未排程；
+    /// 由 `autosave_tick` 维护，`control_flow` 据此合并唤醒点）
+    pub(crate) autosave_next: Option<std::time::Instant>,
+    /// 周期自动保存：写入任务进行中标志（防上轮写入期与本轮组包堆积）
+    pub(crate) autosave_in_flight: Arc<AtomicBool>,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -406,6 +411,9 @@ impl Runner {
             gpu_check_ui_window: None,
             midi_output_retry: MidiOutputRetry::default(),
             gpu_stats_last_poll: std::time::Instant::now(),
+            // 周期自动保存默认关闭：启动时不排程，首次 tick 读到开关开启才排程
+            autosave_next: None,
+            autosave_in_flight: Arc::new(AtomicBool::new(false)),
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）
