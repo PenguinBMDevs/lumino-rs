@@ -64,6 +64,15 @@ impl Editor {
         if !self.text_tool_allowed() {
             return;
         }
+        // ????????????????????????????????
+        if !self.editor_state.text_tool.active {
+            let tick = self.pos_to_tick(pos);
+            let key = self.pos_to_key(pos);
+            if let Some((id, model)) = self.text_shape_at(tick, key) {
+                self.begin_text_shape_edit(id, &model);
+                return;
+            }
+        }
         // 已拉出框：先判按钮命中
         if self.editor_state.text_tool.active {
             if let Some(btns) = button_rects(self) {
@@ -196,10 +205,20 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
+        let model = self.build_text_shape_model(&tt, track, snap);
+
+        // ???????????????????? + ??????????????
+        if let Some(id) = tt.editing_shape {
+            let ok = self.edit_shape(id, model);
+            self.editor_state.text_tool.reset();
+            self.mark_notes_changed();
+            return ok;
+        }
+
         let mut create_ops = Vec::with_capacity(notes.len());
         for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
-            // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
+            // ?????redo ?????undo ??????????? ID??
             if self
                 .editor_state
                 .data
@@ -222,22 +241,6 @@ impl Editor {
             .history
             .push_note_create_new_group(create_ops);
         self.editor_state.data.mark_current_track_changed();
-
-        // ?????????????????? document????????/???/?????
-        let (tick_lo, tick_hi) = tt.normalized_ticks();
-        let (key_lo, key_hi) = tt.normalized_keys();
-        let rect = ShapeRect::normalized(tick_lo, key_lo as f32, tick_hi, key_hi as f32);
-        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0)
-            .with_geometry(ShapeGeometry::from_rect(rect));
-        model.name = tt.text.chars().take(32).collect();
-        model.ops.push(ShapeOp::Text(TextOp {
-            text: tt.text.clone(),
-            params: tt.params.clone(),
-            layout: tt.layout_mode,
-            snap,
-            merged: tt.mode.is_merged(),
-            vertical: self.editor_state.is_vertical_roll,
-        }));
         let shape_id = self.editor_state.shape_store.insert(model, group);
         self.editor_state.shape_store.assign_notes(
             shape_id,
@@ -257,5 +260,39 @@ impl Editor {
         self.editor_state.text_tool.reset();
         self.mark_notes_changed();
         true
+    }
+
+    /// ?????????????????????????? id/??/???
+    fn build_text_shape_model(
+        &self,
+        tt: &lumino_editor_state::text_tool::TextToolState,
+        track: usize,
+        snap: f32,
+    ) -> ShapeModel {
+        let mut model = tt
+            .editing_shape
+            .and_then(|id| self.editor_state.shape_store.model(id).cloned())
+            .unwrap_or_else(|| ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0));
+        model.track = track as u16;
+        model.kind = ShapeKind::Custom;
+        let (tick_lo, tick_hi) = tt.normalized_ticks();
+        let (key_lo, key_hi) = tt.normalized_keys();
+        model.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(
+            tick_lo,
+            key_lo as f32,
+            tick_hi,
+            key_hi as f32,
+        ));
+        model.ops.retain(|op| !matches!(op, ShapeOp::Text(_)));
+        model.ops.push(ShapeOp::Text(TextOp {
+            text: tt.text.clone(),
+            params: tt.params.clone(),
+            layout: tt.layout_mode,
+            snap,
+            merged: tt.mode.is_merged(),
+            vertical: self.editor_state.is_vertical_roll,
+        }));
+        model.name = tt.text.chars().take(32).collect();
+        model
     }
 }

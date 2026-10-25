@@ -380,6 +380,58 @@ fn test_confirm_text_creates_persistent_text_shape() {
 }
 
 #[test]
+fn test_click_existing_text_shape_reopens_for_edit() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+    }
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!("跳过 test_click_existing_text_shape_reopens_for_edit：无可用系统字体");
+        return;
+    }
+    assert!(editor.confirm_text_tool());
+    let shape_id = editor.editor_state.shape_store.ids()[0];
+    let before_rect = editor
+        .editor_state
+        .shape_store
+        .model(shape_id)
+        .and_then(|m| m.geometry.rect);
+    let pos = editor.tick_key_to_pos(480.0, 62);
+    editor.handle_text_tool_pressed(pos, 62);
+    assert_eq!(
+        editor.editor_state.text_tool.editing_shape,
+        Some(shape_id),
+        "点击已有文字应进入该形状的编辑态"
+    );
+    assert_eq!(editor.editor_state.text_tool.text, "A");
+    assert!(editor.editor_state.text_tool.active);
+
+    editor.set_text_tool_text("B".to_string());
+    assert!(editor.confirm_text_tool());
+    let shapes = editor.editor_state.shape_store.persisted_models();
+    assert_eq!(shapes.len(), 1, "重新编辑不得新建第二个文字形状");
+    assert_eq!(shapes[0].id, shape_id, "重新编辑必须复用原形状 id");
+    assert_eq!(
+        shapes[0].geometry.rect, before_rect,
+        "只改文字不得让文本框位置漂移"
+    );
+    let text = shapes[0]
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            lumino_core::shape::ShapeOp::Text(op) => Some(&op.text),
+            _ => None,
+        })
+        .expect("文字形状应保留 TextOp");
+    assert_eq!(text, "B");
+}
+
+#[test]
 fn test_text_shape_participates_in_undo_redo() {
     let mut editor = text_tool_editor(false);
     {

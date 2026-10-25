@@ -31,6 +31,8 @@ pub struct TextToolState {
     pub layout_mode: lumino_core::TextLayoutMode,
     /// 参数化排版参数（LegacyBox 下不参与渲染）
     pub params: lumino_core::TextParams,
+    /// 正在重新编辑的文字形状 id（`None` = 新文本框）
+    pub editing_shape: Option<u64>,
     /// 框起点 tick（绘制时记录的精确值，确认时吸附音符精度）
     pub start_tick: f32,
     /// 框当前/终点 tick（绘制中实时更新）
@@ -74,6 +76,7 @@ impl TextToolState {
         self.params = params;
         self.layout_mode = layout_mode;
         self.font_family = font_family;
+        self.editing_shape = None;
     }
 
     /// 仅收敛**未完成的输入/拖动会话**（收起输入焦点、结束文本框拖动），
@@ -109,6 +112,7 @@ impl TextToolState {
         self.end_key = key_hi;
         self.active = true;
         self.editing = true;
+        self.editing_shape = None;
         self.text.clear();
     }
 
