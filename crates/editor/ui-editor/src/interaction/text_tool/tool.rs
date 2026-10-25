@@ -1,4 +1,4 @@
-use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text, sample_to_notes_grid};
+use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid};
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
 use iced_core::Point;
@@ -167,7 +167,7 @@ impl Editor {
         if grid.cols == 0 || grid.rows == 0 {
             return false;
         }
-        let occupancy = match rasterize_text(&tt.text, grid.cols, grid.rows, tt.font_family) {
+        let occupancy = match rasterize_text_for_tool(&tt, grid.cols, grid.rows) {
             Some(o) => o,
             None => return false,
         };

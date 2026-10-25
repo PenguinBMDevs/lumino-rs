@@ -5,7 +5,7 @@ use lumino_editor_state::text_tool::TextToolState;
 use super::font::load_font;
 
 /// 字形光栅化超采样倍数（每个 key 列 / key 行细分为 SS×SS 子像素，提升细笔画捕获）
-const SS: u32 = 4;
+pub(super) const SS: u32 = 4;
 /// 单元格占用判定阈值：墨水子像素占比高于此值视为「有墨水」
 const COVERAGE_THRESHOLD: f32 = 0.08;
 
