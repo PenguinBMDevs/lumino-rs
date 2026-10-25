@@ -101,7 +101,7 @@ impl Root {
                 match target {
                     // 图形目标：右键命中哪个图形就作用于它。若它**已在选中集内**则保持
                     // 整个多选不变（菜单「删除」作用于既有批量选区），与音符目标的语义一致。
-                    ContextMenuTarget::DrawnShape => {
+                    ContextMenuTarget::DrawnShape | ContextMenuTarget::PendingDrawnShape => {
                         if let Some(id) = self.editor.drawn_shape_at_screen(pos) {
                             self.editor.select_drawn_shape(id);
                         }

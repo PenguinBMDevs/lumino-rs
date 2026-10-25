@@ -102,10 +102,9 @@ pub fn background_close_overlay<'a>() -> Element<'a> {
         .into()
 }
 
-/// 构建菜单面板内容（条目集由作用目标决定）
-fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
-    // 弦外之音：图形目标目前只需「删除」（后续可扩移动/翻转等）
-    let items: &[PianoRollContextMenuItem] = match target {
+/// 目标对应的菜单条目集
+fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] {
+    match target {
         ContextMenuTarget::Notes => &[
             PianoRollContextMenuItem::Cut,
             PianoRollContextMenuItem::Copy,
@@ -131,7 +130,15 @@ fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
             PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-    };
+        // 待确认镜像没有 ShapeStore 模型 / 音符，019–028 全部无目标；
+        // 只保留删除（取消该待确认产物），避免“菜单有、点了静默失败”。
+        ContextMenuTarget::PendingDrawnShape => &[PianoRollContextMenuItem::DeleteDrawnShape],
+    }
+}
+
+/// 构建菜单面板内容（条目集由作用目标决定）
+fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
+    let items = menu_items(target);
     let buttons = items.iter().copied().map(menu_button).collect::<Vec<_>>();
 
     let total_height = buttons.len() as f32 * BUTTON_SIZE
@@ -327,9 +334,33 @@ mod tests {
     }
 
     #[test]
+    fn test_pending_shape_menu_only_deletes() {
+        let items = menu_items(ContextMenuTarget::PendingDrawnShape);
+        assert_eq!(
+            items,
+            &[PianoRollContextMenuItem::DeleteDrawnShape],
+            "待确认镜像没有 ShapeStore 模型，019–028 不得出现在菜单里"
+        );
+        assert!(
+            !items.iter().any(|item| matches!(
+                item,
+                PianoRollContextMenuItem::LiveShape
+                    | PianoRollContextMenuItem::JoinShapes
+                    | PianoRollContextMenuItem::MergeShapes
+                    | PianoRollContextMenuItem::EditShape
+                    | PianoRollContextMenuItem::SymmetryVertical
+                    | PianoRollContextMenuItem::SliceVertical
+                    | PianoRollContextMenuItem::VelocityUp
+            )),
+            "待确认目标不得保留任何组合/编辑入口"
+        );
+    }
+
+    #[test]
     fn test_menu_panel_size() {
         let _element = menu_panel(ContextMenuTarget::Notes);
         let _element = menu_panel(ContextMenuTarget::DrawnShape);
+        let _element = menu_panel(ContextMenuTarget::PendingDrawnShape);
     }
 
     #[test]

@@ -31,8 +31,10 @@ pub enum ContextMenuTarget {
     /// 音符（钢琴卷帘编辑）
     #[default]
     Notes,
-    /// 已绘制图形对象（曲线 / 形状 / 画刷确认后登记的图形）
+    /// 已确认的绘制图形对象（曲线 / 形状 / 画刷 √ 后登记的图形）
     DrawnShape,
+    /// 未 √ 的待确认镜像（仅几何、无音符；019–028 没有可操作模型）
+    PendingDrawnShape,
 }
 
 /// 上下文菜单项

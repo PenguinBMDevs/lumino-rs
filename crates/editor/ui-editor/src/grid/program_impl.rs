@@ -134,10 +134,12 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                     if self.editor.is_inside_canvas(local_pos) {
                         // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）；
                         // 否则沿用「音符」目标菜单。
-                        let target = if self.editor.current_tool() == Tool::ShapeSelect
-                            && self.editor.drawn_shape_at_screen(local_pos).is_some()
-                        {
-                            ContextMenuTarget::DrawnShape
+                        let target = if self.editor.current_tool() == Tool::ShapeSelect {
+                            match self.editor.drawn_shape_pending_at_screen(local_pos) {
+                                Some(true) => ContextMenuTarget::PendingDrawnShape,
+                                Some(false) => ContextMenuTarget::DrawnShape,
+                                None => ContextMenuTarget::Notes,
+                            }
                         } else {
                             ContextMenuTarget::Notes
                         };

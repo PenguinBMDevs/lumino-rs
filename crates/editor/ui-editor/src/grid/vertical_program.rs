@@ -185,9 +185,12 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                         // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）
                         let target = if self.editor.current_tool()
                             == lumino_message::Tool::ShapeSelect
-                            && self.editor.drawn_shape_at_screen(local_pos).is_some()
                         {
-                            lumino_message::ContextMenuTarget::DrawnShape
+                            match self.editor.drawn_shape_pending_at_screen(local_pos) {
+                                Some(true) => lumino_message::ContextMenuTarget::PendingDrawnShape,
+                                Some(false) => lumino_message::ContextMenuTarget::DrawnShape,
+                                None => lumino_message::ContextMenuTarget::Notes,
+                            }
                         } else {
                             lumino_message::ContextMenuTarget::Notes
                         };
