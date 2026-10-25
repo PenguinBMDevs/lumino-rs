@@ -347,6 +347,21 @@ impl Root {
                 menu,
                 Message::FillDivision(FillDivisionAction::CloseDialog),
             ))
+        } else if self.toolbar.text_params_open {
+            let menu: Element<'_> = container(crate::root::text_params_panel::render_text_params(
+                &self.editor.editor_state.text_tool.params,
+                self.editor.editor_state.text_tool.layout_mode,
+                panel_background,
+                &self.window.theme,
+            ))
+            .width(Length::Fixed(MENU_WIDTH))
+            .height(Length::Shrink)
+            .into();
+            Some((
+                SettingsPanelOwner::Item(ToolPanelItem::Text),
+                menu,
+                Event::close_text_params_panel(),
+            ))
         } else if self.toolbar.thickness_panel_open {
             let menu: Element<'_> = container(
                 crate::toolbar::thickness_dropdown::render_thickness_dropdown(
@@ -389,7 +404,10 @@ enum SettingsPanelOwner {
 fn has_settings(item: ToolPanelItem) -> bool {
     matches!(
         item,
-        ToolPanelItem::Brush | ToolPanelItem::Shape | ToolPanelItem::FillBucket
+        ToolPanelItem::Brush
+            | ToolPanelItem::Shape
+            | ToolPanelItem::FillBucket
+            | ToolPanelItem::Text
     )
 }
 
@@ -1013,6 +1031,7 @@ mod tests {
             ToolPanelItem::Brush,
             ToolPanelItem::Shape,
             ToolPanelItem::FillBucket,
+            ToolPanelItem::Text,
         ] {
             assert!(
                 is_settings_request(&tool_panel_item_press(item, true), item),
@@ -1021,11 +1040,7 @@ mod tests {
         }
 
         // 已启用但无独立设置：仍是普通选择（不产生空的设置请求）
-        for item in [
-            ToolPanelItem::Mouse,
-            ToolPanelItem::Curve,
-            ToolPanelItem::Text,
-        ] {
+        for item in [ToolPanelItem::Mouse, ToolPanelItem::Curve] {
             assert!(
                 is_plain_select(&tool_panel_item_press(item, true), item),
                 "无设置条目 {item:?} 再次点击应退化为普通选择"
@@ -1169,7 +1184,7 @@ mod tests {
         assert!(has_settings(ToolPanelItem::Shape));
         assert!(has_settings(ToolPanelItem::FillBucket));
         assert!(!has_settings(ToolPanelItem::Curve));
-        assert!(!has_settings(ToolPanelItem::Text));
+        assert!(has_settings(ToolPanelItem::Text));
         assert!(!has_settings(ToolPanelItem::Mouse));
     }
 }

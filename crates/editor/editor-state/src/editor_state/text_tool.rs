@@ -65,9 +65,15 @@ impl TextToolState {
         }
     }
 
-    /// 清空全部状态（切换工具 / 取消时调用）
+    /// 清空文本框/输入会话，但保留用户刚调好的参数与排版模式
     pub fn reset(&mut self) {
+        let params = self.params.clone();
+        let layout_mode = self.layout_mode;
+        let font_family = self.font_family;
         *self = Self::new();
+        self.params = params;
+        self.layout_mode = layout_mode;
+        self.font_family = font_family;
     }
 
     /// 仅收敛**未完成的输入/拖动会话**（收起输入焦点、结束文本框拖动），
@@ -215,6 +221,17 @@ mod tests {
             "默认必须保持现有框填充行为"
         );
         assert_eq!(s.params, lumino_core::TextParams::default());
+    }
+
+    #[test]
+    fn test_reset_keeps_text_params_and_layout_mode() {
+        let mut s = TextToolState::new();
+        s.params.threshold = 72.0;
+        s.layout_mode = lumino_core::TextLayoutMode::Parametric;
+        s.reset();
+        assert_eq!(s.params.threshold, 72.0, "确认/取消不得丢参数");
+        assert_eq!(s.layout_mode, lumino_core::TextLayoutMode::Parametric);
+        assert!(!s.active && !s.editing);
     }
 
     #[test]

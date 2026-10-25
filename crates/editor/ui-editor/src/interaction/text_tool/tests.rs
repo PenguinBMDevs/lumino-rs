@@ -16,6 +16,33 @@ fn horiz_grid(rows: usize, cols: usize, tick_lo: f32, key_top: u16, snap: f32) -
 }
 
 #[test]
+fn test_text_params_update_enters_parametric_and_can_revert() {
+    let mut editor = Editor::new();
+    let params = lumino_core::TextParams {
+        threshold: 72.0,
+        ..lumino_core::TextParams::default()
+    };
+    editor.set_text_params(params.clone());
+    let tt = &editor.editor_state.text_tool;
+    assert_eq!(tt.params, params);
+    assert_eq!(
+        tt.layout_mode,
+        lumino_core::TextLayoutMode::Parametric,
+        "改参数必须自动进入 Parametric"
+    );
+
+    editor.set_text_layout_mode(lumino_core::TextLayoutMode::LegacyBox);
+    assert_eq!(
+        editor.editor_state.text_tool.layout_mode,
+        lumino_core::TextLayoutMode::LegacyBox
+    );
+    assert_eq!(
+        editor.editor_state.text_tool.params, params,
+        "切回兼容模式不得丢参数"
+    );
+}
+
+#[test]
 fn test_sample_to_notes_normal_single_cell() {
     let occ = vec![vec![true]];
     let grid = horiz_grid(1, 1, 0.0, 64, 1920.0);

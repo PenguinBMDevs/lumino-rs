@@ -14,6 +14,22 @@ impl Editor {
         }
     }
 
+    /// ??????????????????????
+    ///
+    /// ????????? Parametric?LegacyBox ?????????????
+    pub(crate) fn set_text_params(&mut self, params: lumino_core::TextParams) {
+        if params.validate().is_err() {
+            return;
+        }
+        self.editor_state.text_tool.params = params;
+        self.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
+    }
+
+    /// ??????? LegacyBox / Parametric
+    pub(crate) fn set_text_layout_mode(&mut self, mode: lumino_core::TextLayoutMode) {
+        self.editor_state.text_tool.layout_mode = mode;
+    }
+
     /// 文字工具：切换采样模式（正常 / key 范围合并）
     pub(crate) fn toggle_text_tool_mode(&mut self) {
         let m = &mut self.editor_state.text_tool.mode;

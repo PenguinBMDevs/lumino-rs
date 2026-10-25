@@ -305,6 +305,11 @@ impl Event {
         Message::Toolbar(Self::CloseThicknessPanel)
     }
 
+    /// ??????????????????
+    pub const fn close_text_params_panel() -> Message {
+        Message::Toolbar(Self::CloseTextParamsPanel)
+    }
+
     /// 构造“全局绘制粗细变更”的工具栏消息（粗细面板滑杆，1-100 个 key 层）
     pub const fn draw_thickness_changed(thickness: u8) -> Message {
         Message::Toolbar(Self::DrawThicknessChanged(thickness))
