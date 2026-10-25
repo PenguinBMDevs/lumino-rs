@@ -27,6 +27,10 @@ impl TextToolMode {
 /// 文字工具状态
 #[derive(Debug, Clone, Default)]
 pub struct TextToolState {
+    /// 排版路径：默认 LegacyBox，保持现有像素行为
+    pub layout_mode: lumino_core::TextLayoutMode,
+    /// 参数化排版参数（LegacyBox 下不参与渲染）
+    pub params: lumino_core::TextParams,
     /// 框起点 tick（绘制时记录的精确值，确认时吸附音符精度）
     pub start_tick: f32,
     /// 框当前/终点 tick（绘制中实时更新）
@@ -56,6 +60,7 @@ impl TextToolState {
     pub fn new() -> Self {
         Self {
             font_family: "Microsoft YaHei",
+            params: lumino_core::TextParams::default(),
             ..Default::default()
         }
     }
@@ -199,6 +204,17 @@ mod tests {
         let s = TextToolState::new();
         assert_eq!(s.font_family, "Microsoft YaHei");
         assert!(!s.active);
+    }
+
+    #[test]
+    fn test_layout_defaults_to_legacy_and_params_exist() {
+        let s = TextToolState::new();
+        assert_eq!(
+            s.layout_mode,
+            lumino_core::TextLayoutMode::LegacyBox,
+            "默认必须保持现有框填充行为"
+        );
+        assert_eq!(s.params, lumino_core::TextParams::default());
     }
 
     #[test]

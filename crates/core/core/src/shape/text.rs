@@ -25,6 +25,21 @@ pub enum TextUnit {
     Rows,
 }
 
+/// 文字排版路径
+///
+/// `LegacyBox` 保留当前“按文本框填满/拉伸”的逐像素行为；`Parametric` 才读取
+/// [`TextParams`] 的 em 布局、阈值、grow 等参数。默认必须是 `LegacyBox`，
+/// 否则未开参数面板的旧文本会改样。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextLayoutMode {
+    /// 现有框填充兼容路径
+    #[default]
+    LegacyBox,
+    /// 参数化排版路径
+    Parametric,
+}
+
 /// 文本对齐
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

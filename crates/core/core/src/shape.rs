@@ -62,5 +62,5 @@ pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,
 };
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
-pub use text::{DEFAULT_FONT, SUB_ROWS, TextAlign, TextParams, TextUnit};
+pub use text::{DEFAULT_FONT, SUB_ROWS, TextAlign, TextLayoutMode, TextParams, TextUnit};
 pub use velocity_env::{ENV_EPS, VelocityEnv, env_at, paint_env, tidy_env};
