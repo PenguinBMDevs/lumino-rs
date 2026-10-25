@@ -10,6 +10,7 @@ use super::params::{
     NestedParams, PatternParams, PolygonParams, StraightenParams, StrumParams, SustainParams,
     SymParams, TilesParams, TumourParams,
 };
+use super::text::TextOp;
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle, VelocityEnv};
 use crate::error::{CoreError, Result};
 
@@ -74,6 +75,8 @@ pub enum ShapeOp {
     CopyAlong(CopyPathParams),
     /// 形状力度包络（Notes；DRAW-028）
     VelocityEnv(VelocityEnv),
+    /// ?????Geometry?DRAW-029???????
+    Text(TextOp),
 }
 
 /// 算子在链上的执行阶段
@@ -100,7 +103,8 @@ impl ShapeOp {
             | Self::Live(_)
             | Self::Joined(_)
             | Self::Symmetry(_)
-            | Self::Straighten(_) => OpStage::Geometry,
+            | Self::Straighten(_)
+            | Self::Text(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -191,6 +195,7 @@ impl ShapeOp {
                 }
                 Ok(())
             }
+            Self::Text(op) => op.validate(),
         }
     }
 }

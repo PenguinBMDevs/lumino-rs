@@ -344,6 +344,76 @@ fn test_text_tool_confirm_uses_incremental_path() {
 }
 
 #[test]
+fn test_confirm_text_creates_persistent_text_shape() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+        tt.params.threshold = 40.0;
+    }
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!("跳过 test_confirm_text_creates_persistent_text_shape：无可用系统字体");
+        return;
+    }
+    assert!(editor.confirm_text_tool());
+
+    let shapes = editor.editor_state.shape_store.persisted_models();
+    assert_eq!(shapes.len(), 1, "确认文字应持久化一个文字形状");
+    let model = &shapes[0];
+    assert!(model.geometry.rect.is_some(), "文字形状必须有文本框 bbox");
+    let text_op = model
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            lumino_core::shape::ShapeOp::Text(op) => Some(op),
+            _ => None,
+        })
+        .expect("文字形状必须带 TextOp");
+    assert_eq!(text_op.text, "A");
+    assert_eq!(text_op.params.threshold, 40.0);
+    assert_eq!(text_op.snap, editor.editor_state.view.snap_precision);
+    assert!(!text_op.merged);
+}
+
+#[test]
+fn test_text_shape_participates_in_undo_redo() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+    }
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!("跳过 test_text_shape_participates_in_undo_redo：无可用系统字体");
+        return;
+    }
+    assert!(editor.confirm_text_tool());
+    assert_eq!(editor.editor_state.shape_store.persisted_models().len(), 1);
+    assert!(editor.undo());
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .is_empty(),
+        "undo 应隐藏本次创建的文字形状"
+    );
+    assert!(editor.redo());
+    assert_eq!(
+        editor.editor_state.shape_store.persisted_models().len(),
+        1,
+        "redo 应恢复文字形状"
+    );
+}
+
+#[test]
 fn test_text_tool_confirm_rejected_on_conductor_track() {
     // 回归：文字工具不得在非可编辑的 Conductor 音轨（track 0）放置音符，
     // 与铅笔等工具（finish_drawing 的 `current_track == 0` 守卫）保持一致。

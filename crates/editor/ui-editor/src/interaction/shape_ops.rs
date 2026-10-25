@@ -48,6 +48,13 @@ impl Editor {
     /// 与曲线工具确认同源：展平 → 逐音高行解析 + 法线加粗 → 同 tick 同 key 留最长 →
     /// 长度下限补齐。`anchors.len() < 2` 视为无音符形状（仍可登记与持久化）。
     pub(crate) fn shape_notes_of(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
+        // 文字形状是独立再生成路径：几何锚点不参与，参数/文本框/采样模式全在 TextOp。
+        if let Some(op) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Text(op) => Some(op),
+            _ => None,
+        }) {
+            return self.text_shape_notes(model, op, track);
+        }
         let mut anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
         if let Some(params) = model.ops.iter().find_map(|op| match op {
             ShapeOp::Straighten(params) => Some(params),
@@ -387,6 +394,7 @@ fn shape_box_of(points: &[(f64, f64)]) -> Option<ShapeRect> {
 mod fill_notes;
 mod funnel_notes;
 mod interior_fill;
+mod text_notes;
 
 #[cfg(test)]
 mod tests;

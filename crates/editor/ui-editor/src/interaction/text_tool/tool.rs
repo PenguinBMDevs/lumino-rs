@@ -2,8 +2,9 @@ use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text_for_tool, sample
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
 use iced_core::Point;
-use lumino_editor_state::note_to_event;
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOp};
 use lumino_editor_state::text_tool::TextToolMode;
+use lumino_editor_state::{ShapeNote, note_to_event};
 use lumino_note_core::history::CreateOp;
 
 impl Editor {
@@ -196,7 +197,7 @@ impl Editor {
 
         let track = self.editor_state.data.current_track;
         let mut create_ops = Vec::with_capacity(notes.len());
-        for (tick, key, len) in notes {
+        for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
             // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
             if self
@@ -215,8 +216,44 @@ impl Editor {
             return false;
         }
 
-        self.editor_state.data.history.push_note_create(create_ops);
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
         self.editor_state.data.mark_current_track_changed();
+
+        // ?????????????????? document????????/???/?????
+        let (tick_lo, tick_hi) = tt.normalized_ticks();
+        let (key_lo, key_hi) = tt.normalized_keys();
+        let rect = ShapeRect::normalized(tick_lo, key_lo as f32, tick_hi, key_hi as f32);
+        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0)
+            .with_geometry(ShapeGeometry::from_rect(rect));
+        model.name = tt.text.chars().take(32).collect();
+        model.ops.push(ShapeOp::Text(TextOp {
+            text: tt.text.clone(),
+            params: tt.params.clone(),
+            layout: tt.layout_mode,
+            snap,
+            merged: tt.mode.is_merged(),
+            vertical: self.editor_state.is_vertical_roll,
+        }));
+        let shape_id = self.editor_state.shape_store.insert(model, group);
+        self.editor_state.shape_store.assign_notes(
+            shape_id,
+            notes
+                .iter()
+                .map(|&(tick, key, length)| ShapeNote {
+                    track,
+                    tick,
+                    key,
+                    length,
+                    velocity: 100,
+                    channel: 0,
+                })
+                .collect(),
+        );
+
         self.editor_state.text_tool.reset();
         self.mark_notes_changed();
         true

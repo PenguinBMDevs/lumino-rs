@@ -53,6 +53,45 @@ pub enum TextAlign {
     Right,
 }
 
+/// 文字形状的持久化算子
+///
+/// 追加到 `ShapeOp` 末尾（bincode 旧数据安全）；文本框位置由
+/// `ShapeModel.geometry.rect` 承载，`snap` 固定制字时的网格。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextOp {
+    /// 原始文本（可多行）
+    pub text: String,
+    /// 文字参数
+    pub params: TextParams,
+    /// 制字时的排版模式
+    pub layout: TextLayoutMode,
+    /// 制字时的音符精度（tick）
+    pub snap: f32,
+    /// 制字时是否使用 key 范围合并采样
+    pub merged: bool,
+    /// 制字时是否纵向卷帘
+    pub vertical: bool,
+}
+
+impl TextOp {
+    /// 校验文字形状参数
+    pub fn validate(&self) -> Result<()> {
+        if self.text.is_empty() {
+            return Err(CoreError::InvalidArgument(
+                "文字形状文本不得为空".to_string(),
+            ));
+        }
+        self.params.validate()?;
+        if !self.snap.is_finite() || self.snap <= 0.0 {
+            return Err(CoreError::InvalidArgument(format!(
+                "文字形状精度非法（需有限且为正，实际 {}）",
+                self.snap
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// 文字参数
 ///
 /// 字段默认值对应 Spiderweb `TEXT_DEFAULTS`；是否实际走参数化布局由

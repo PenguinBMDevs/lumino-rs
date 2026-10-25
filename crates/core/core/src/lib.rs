@@ -30,10 +30,10 @@ pub use shape::{
     PATTERN_PRESETS, PathKind, PatternParams, PatternPreset, PatternRef, PolyStyle, PolygonParams,
     RangeDir, RowRestart, SUB_ROWS, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel,
     ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds, Speed, StopsParams, StraightenParams,
-    StrumParams, SustainParams, Sym, SymAxis, SymParams, TextAlign, TextLayoutMode, TextParams,
-    TextUnit, TileBy, TileFlip, TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape,
-    TumourSide, TumourWrap, VelocityEnv, env_at, paint_env, pattern_from_preset, pattern_preset,
-    tidy_env,
+    StrumParams, SustainParams, Sym, SymAxis, SymParams, TextAlign, TextLayoutMode, TextOp,
+    TextParams, TextUnit, TileBy, TileFlip, TileLayout, TilesParams, TumourGraphs, TumourParams,
+    TumourShape, TumourSide, TumourWrap, VelocityEnv, env_at, paint_env, pattern_from_preset,
+    pattern_preset, tidy_env,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};

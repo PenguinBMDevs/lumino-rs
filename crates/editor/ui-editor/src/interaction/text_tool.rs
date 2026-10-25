@@ -18,6 +18,7 @@ mod tool;
 use lumino_core::TextLayoutMode;
 use lumino_editor_state::text_tool::TextToolState;
 
+pub(crate) use parametric::rasterize_text_params;
 #[cfg(test)]
 pub(crate) use rasterize::rasterize_glyph_alpha_with_font;
 pub(crate) use rasterize::{
