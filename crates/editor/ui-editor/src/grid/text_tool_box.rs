@@ -13,7 +13,7 @@
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::content_bounds;
-use crate::interaction::text_tool::{GlyphGrid, rasterize_glyph_alpha};
+use crate::interaction::text_tool::{GlyphGrid, rasterize_glyph_alpha_for_tool};
 use iced_core::image::{self, FilterMethod};
 use iced_core::{Color, Image, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
@@ -158,7 +158,7 @@ pub fn draw(
                 editor.editor_state.is_vertical_roll,
             );
             if let Some((iw, ih, buf)) =
-                rasterize_glyph_alpha(text, grid.cols, grid.rows, tt.font_family)
+                rasterize_glyph_alpha_for_tool(tt, text, grid.cols, grid.rows)
             {
                 let (cr, cg, cb) = (
                     (TEXT_PREVIEW_COLOR.r * 255.0) as u8,

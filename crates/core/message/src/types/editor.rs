@@ -1,5 +1,7 @@
 //! 编辑器相关消息类型
 
+use lumino_core::{TextLayoutMode, TextParams};
+
 use crate::Point2;
 
 /// 编辑器动作
@@ -75,6 +77,10 @@ pub enum EditorAction {
     BrushCancel,
     /// 文字工具：输入框文字变更（画布覆盖层 TextInput 的 on_input）
     TextToolTextChanged(String),
+    /// ?????????????????? Parametric ???
+    TextParamsChanged(TextParams),
+    /// ??????? LegacyBox / Parametric ????
+    TextLayoutModeChanged(TextLayoutMode),
 }
 
 #[cfg(test)]

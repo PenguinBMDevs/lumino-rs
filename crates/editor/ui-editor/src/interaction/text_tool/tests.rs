@@ -2,6 +2,44 @@ use super::*;
 use crate::{EditState, Editor};
 use iced_core::Point;
 
+fn bundled_font() -> ab_glyph::FontArc {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../resources/fonts/NotoSansSC-Regular.ttf"
+    ));
+    ab_glyph::FontArc::try_from_vec(bytes.to_vec()).expect("仓库内置 Noto Sans SC 应可解析")
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+#[test]
+fn test_legacy_default_golden_pixels() {
+    let font = bundled_font();
+    let (w, h, buf) =
+        rasterize_glyph_alpha_with_font("LUMINO", 32, 16, &font).expect("内置字体应能栅格化 ASCII");
+    assert_eq!((w, h), (128, 64), "SS=4 时 32×16 格应为 128×64 像素");
+    let hash = fnv1a(&buf);
+    assert_eq!(
+        hash, 0xc8c3_24a0_eadc_3693,
+        "LegacyBox 默认像素 golden 变化；实际 hash = {hash:#x}"
+    );
+}
+
+#[test]
+fn test_legacy_dispatch_matches_old_rasterizer() {
+    let tt = lumino_editor_state::text_tool::TextToolState::new();
+    let old = rasterize_glyph_alpha("LUMINO", 32, 16, tt.font_family);
+    let new = rasterize_glyph_alpha_for_tool(&tt, "LUMINO", 32, 16);
+    assert_eq!(old, new, "LegacyBox 分派必须逐字节等同旧入口");
+}
+
 /// 横向卷帘的采样网格（**测试用**手动构造：这些用例喂合成占用网格，
 /// 不经过文本框状态，故直接给出 dims / 原点，与 `GlyphGrid::from_state` 的横向分支同口径）。
 fn horiz_grid(rows: usize, cols: usize, tick_lo: f32, key_top: u16, snap: f32) -> GlyphGrid {
@@ -13,6 +51,33 @@ fn horiz_grid(rows: usize, cols: usize, tick_lo: f32, key_top: u16, snap: f32) -
         key_origin: key_top,
         tick_step: snap,
     }
+}
+
+#[test]
+fn test_text_params_update_enters_parametric_and_can_revert() {
+    let mut editor = Editor::new();
+    let params = lumino_core::TextParams {
+        threshold: 72.0,
+        ..lumino_core::TextParams::default()
+    };
+    editor.set_text_params(params.clone());
+    let tt = &editor.editor_state.text_tool;
+    assert_eq!(tt.params, params);
+    assert_eq!(
+        tt.layout_mode,
+        lumino_core::TextLayoutMode::Parametric,
+        "改参数必须自动进入 Parametric"
+    );
+
+    editor.set_text_layout_mode(lumino_core::TextLayoutMode::LegacyBox);
+    assert_eq!(
+        editor.editor_state.text_tool.layout_mode,
+        lumino_core::TextLayoutMode::LegacyBox
+    );
+    assert_eq!(
+        editor.editor_state.text_tool.params, params,
+        "切回兼容模式不得丢参数"
+    );
 }
 
 #[test]
@@ -276,6 +341,128 @@ fn test_text_tool_confirm_uses_incremental_path() {
     // 文档侧：音符确实已写入当前轨（普通轨 index=1，非 Conductor）
     let created = editor.editor_state.data.track_notes(1).len();
     assert!(created > 0, "确认后当前轨应至少写入一个音符");
+}
+
+#[test]
+fn test_confirm_text_creates_persistent_text_shape() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+        tt.params.threshold = 40.0;
+    }
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!("跳过 test_confirm_text_creates_persistent_text_shape：无可用系统字体");
+        return;
+    }
+    assert!(editor.confirm_text_tool());
+
+    let shapes = editor.editor_state.shape_store.persisted_models();
+    assert_eq!(shapes.len(), 1, "确认文字应持久化一个文字形状");
+    let model = &shapes[0];
+    assert!(model.geometry.rect.is_some(), "文字形状必须有文本框 bbox");
+    let text_op = model
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            lumino_core::shape::ShapeOp::Text(op) => Some(op),
+            _ => None,
+        })
+        .expect("文字形状必须带 TextOp");
+    assert_eq!(text_op.text, "A");
+    assert_eq!(text_op.params.threshold, 40.0);
+    assert_eq!(text_op.snap, editor.editor_state.view.snap_precision);
+    assert!(!text_op.merged);
+}
+
+#[test]
+fn test_click_existing_text_shape_reopens_for_edit() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+    }
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!("跳过 test_click_existing_text_shape_reopens_for_edit：无可用系统字体");
+        return;
+    }
+    assert!(editor.confirm_text_tool());
+    let shape_id = editor.editor_state.shape_store.ids()[0];
+    let before_rect = editor
+        .editor_state
+        .shape_store
+        .model(shape_id)
+        .and_then(|m| m.geometry.rect);
+    let pos = editor.tick_key_to_pos(480.0, 62);
+    editor.handle_text_tool_pressed(pos, 62);
+    assert_eq!(
+        editor.editor_state.text_tool.editing_shape,
+        Some(shape_id),
+        "点击已有文字应进入该形状的编辑态"
+    );
+    assert_eq!(editor.editor_state.text_tool.text, "A");
+    assert!(editor.editor_state.text_tool.active);
+
+    editor.set_text_tool_text("B".to_string());
+    assert!(editor.confirm_text_tool());
+    let shapes = editor.editor_state.shape_store.persisted_models();
+    assert_eq!(shapes.len(), 1, "重新编辑不得新建第二个文字形状");
+    assert_eq!(shapes[0].id, shape_id, "重新编辑必须复用原形状 id");
+    assert_eq!(
+        shapes[0].geometry.rect, before_rect,
+        "只改文字不得让文本框位置漂移"
+    );
+    let text = shapes[0]
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            lumino_core::shape::ShapeOp::Text(op) => Some(&op.text),
+            _ => None,
+        })
+        .expect("文字形状应保留 TextOp");
+    assert_eq!(text, "B");
+}
+
+#[test]
+fn test_text_shape_participates_in_undo_redo() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+    }
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!("跳过 test_text_shape_participates_in_undo_redo：无可用系统字体");
+        return;
+    }
+    assert!(editor.confirm_text_tool());
+    assert_eq!(editor.editor_state.shape_store.persisted_models().len(), 1);
+    assert!(editor.undo());
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .is_empty(),
+        "undo 应隐藏本次创建的文字形状"
+    );
+    assert!(editor.redo());
+    assert_eq!(
+        editor.editor_state.shape_store.persisted_models().len(),
+        1,
+        "redo 应恢复文字形状"
+    );
 }
 
 #[test]

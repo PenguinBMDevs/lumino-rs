@@ -69,6 +69,29 @@ fn test_tool_panel_settings_requested_fill_keeps_fill_on() {
     assert!(toolbar.fill_enabled, "再次点击颜料桶不应把已开启的填充关掉");
 }
 
+/// 文字工具再次点击：打开文字参数面板，并关闭其它工具面板。
+#[test]
+fn test_text_settings_opens_text_params_panel() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+    toolbar.brush_dropdown_open = true;
+    toolbar.shape_dropdown_open = true;
+    toolbar.thickness_panel_open = true;
+
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Text));
+    assert_eq!(toolbar.current_tool, Tool::Text);
+    assert!(toolbar.text_params_open, "文字设置请求应打开参数面板");
+    assert!(
+        !toolbar.brush_dropdown_open
+            && !toolbar.shape_dropdown_open
+            && !toolbar.thickness_panel_open,
+        "参数面板必须与其它工具面板互斥"
+    );
+
+    toolbar.update(Event::CloseTextParamsPanel);
+    assert!(!toolbar.text_params_open, "关闭事件应收起参数面板");
+}
+
 /// 无独立设置的条目（曲线）收到设置请求：退化为普通选择，不打开任何下拉。
 #[test]
 fn test_tool_panel_settings_requested_curve_degrades_to_plain_select() {

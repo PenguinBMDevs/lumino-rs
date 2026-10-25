@@ -48,6 +48,7 @@ pub mod handlers;
 mod memory;
 mod mixer_panel;
 mod state;
+mod text_params_panel;
 mod view;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;

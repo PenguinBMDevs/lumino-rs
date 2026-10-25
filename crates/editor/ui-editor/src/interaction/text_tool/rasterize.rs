@@ -5,7 +5,7 @@ use lumino_editor_state::text_tool::TextToolState;
 use super::font::load_font;
 
 /// 字形光栅化超采样倍数（每个 key 列 / key 行细分为 SS×SS 子像素，提升细笔画捕获）
-const SS: u32 = 4;
+pub(super) const SS: u32 = 4;
 /// 单元格占用判定阈值：墨水子像素占比高于此值视为「有墨水」
 const COVERAGE_THRESHOLD: f32 = 0.08;
 
@@ -129,10 +129,22 @@ pub(crate) fn rasterize_glyph_alpha(
     rows: usize,
     family: &str,
 ) -> Option<(u32, u32, Vec<u8>)> {
+    let font = load_font(family)?;
+    rasterize_glyph_alpha_with_font(text, cols, rows, &font)
+}
+
+/// 与 [`rasterize_glyph_alpha`] 同一实现，但字体由调用方注入。
+///
+/// 生产路径仍按字体族加载；测试用固定字体做像素 golden，避免系统字体差异。
+pub(crate) fn rasterize_glyph_alpha_with_font(
+    text: &str,
+    cols: usize,
+    rows: usize,
+    font: &ab_glyph::FontArc,
+) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 {
         return None;
     }
-    let font = load_font(family)?;
     let h = (rows as u32) * SS;
     let w = (cols as u32) * SS;
 

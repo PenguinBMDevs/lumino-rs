@@ -117,6 +117,12 @@ impl Editor {
             EditorAction::TextToolTextChanged(s) => {
                 self.set_text_tool_text(s);
             }
+            EditorAction::TextParamsChanged(params) => {
+                self.set_text_params(params);
+            }
+            EditorAction::TextLayoutModeChanged(mode) => {
+                self.set_text_layout_mode(mode);
+            }
         }
     }
 

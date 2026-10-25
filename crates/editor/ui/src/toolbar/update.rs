@@ -33,6 +33,7 @@ impl Toolbar {
             fill_enabled: false,
             shape_dropdown_open: false,
             current_shape: ShapeType::default(),
+            text_params_open: false,
         }
     }
 
@@ -100,6 +101,19 @@ impl Toolbar {
             )
         {
             self.thickness_panel_open = false;
+            self.text_params_open = false;
+        }
+
+        // 文字参数面板打开时，除悬停 / 显式关闭 / 再次请求设置外，其它动作先关闭。
+        if self.text_params_open
+            && !matches!(
+                event,
+                Event::ButtonHovered(_)
+                    | Event::CloseTextParamsPanel
+                    | Event::ToolPanelItemSettingsRequested(ToolPanelItem::Text)
+            )
+        {
+            self.text_params_open = false;
         }
 
         match event {
@@ -288,6 +302,7 @@ impl Toolbar {
                 // 关闭时一并收起粗细面板：它锚定在悬浮条的按钮上，悬浮条不在就没有锚点；
                 // 留着"开"状态会让下次打开悬浮条时凭空弹出一块面板（用户早已看不见它）
                 self.thickness_panel_open = false;
+                self.text_params_open = false;
                 // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
                 if !self.tool_panel_open {
                     self.tool_panel_dragging = false;
@@ -310,6 +325,7 @@ impl Toolbar {
                 self.brush_dropdown_open = false;
                 self.shape_dropdown_open = false;
                 self.thickness_panel_open = false;
+                self.text_params_open = false;
                 tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
             }
             Event::ToolPanelDragStarted => {
@@ -412,11 +428,13 @@ impl Toolbar {
             }
             Event::CloseThicknessPanel => {
                 self.thickness_panel_open = false;
+                self.text_params_open = false;
                 tracing::debug!("工具栏: 关闭粗细面板");
             }
             Event::ToolPanelItemSelected(item) => {
                 // 普通点击：仅执行选择语义（切工具 / 切换填充共存态），保持面板打开。
                 self.apply_tool_panel_item(item);
+                self.text_params_open = false;
                 // 选中后**保持面板打开**：悬浮工具条是常驻浮层，允许连续切换绘制工具
                 // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
                 tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
@@ -426,6 +444,7 @@ impl Toolbar {
                 // 发本事件（见 `root/draw_toolbar.rs::tool_panel_item_press`），
                 // 因此这里仍先套用一次选择语义（幂等，且保证填充态不被 toggle 掉）。
                 self.apply_tool_panel_item(item);
+                self.text_params_open = false;
                 match item {
                     ToolPanelItem::Brush => {
                         // 画刷设置下拉（全局粗细只读显示 / 绘制行为入口）
@@ -444,9 +463,19 @@ impl Toolbar {
                         self.fill_enabled = true;
                     }
                     // 曲线 / 文字无独立设置（视图层不会为本事件选中它们）
+                    ToolPanelItem::Text => {
+                        self.text_params_open = true;
+                        self.brush_dropdown_open = false;
+                        self.shape_dropdown_open = false;
+                        self.thickness_panel_open = false;
+                    }
                     _ => {}
                 }
                 tracing::debug!("工具栏: 绘制工具条再次点击 → 打开设置 {:?}", item);
+            }
+            Event::CloseTextParamsPanel => {
+                self.text_params_open = false;
+                tracing::debug!("???: ????????");
             }
             Event::OpenDrawSettingsDialog => {
                 // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，

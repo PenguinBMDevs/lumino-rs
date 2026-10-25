@@ -1,9 +1,10 @@
-use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text, sample_to_notes_grid};
+use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid};
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
 use iced_core::Point;
-use lumino_editor_state::note_to_event;
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOp};
 use lumino_editor_state::text_tool::TextToolMode;
+use lumino_editor_state::{ShapeNote, note_to_event};
 use lumino_note_core::history::CreateOp;
 
 impl Editor {
@@ -12,6 +13,22 @@ impl Editor {
         if self.editor_state.text_tool.active {
             self.editor_state.text_tool.text = text;
         }
+    }
+
+    /// ??????????????????????
+    ///
+    /// ????????? Parametric?LegacyBox ?????????????
+    pub(crate) fn set_text_params(&mut self, params: lumino_core::TextParams) {
+        if params.validate().is_err() {
+            return;
+        }
+        self.editor_state.text_tool.params = params;
+        self.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
+    }
+
+    /// ??????? LegacyBox / Parametric
+    pub(crate) fn set_text_layout_mode(&mut self, mode: lumino_core::TextLayoutMode) {
+        self.editor_state.text_tool.layout_mode = mode;
     }
 
     /// 文字工具：切换采样模式（正常 / key 范围合并）
@@ -46,6 +63,15 @@ impl Editor {
         // Conductor 音轨（track 0）：整工具不可用，所有按下交互直接忽略
         if !self.text_tool_allowed() {
             return;
+        }
+        // ????????????????????????????????
+        if !self.editor_state.text_tool.active {
+            let tick = self.pos_to_tick(pos);
+            let key = self.pos_to_key(pos);
+            if let Some((id, model)) = self.text_shape_at(tick, key) {
+                self.begin_text_shape_edit(id, &model);
+                return;
+            }
         }
         // 已拉出框：先判按钮命中
         if self.editor_state.text_tool.active {
@@ -167,7 +193,7 @@ impl Editor {
         if grid.cols == 0 || grid.rows == 0 {
             return false;
         }
-        let occupancy = match rasterize_text(&tt.text, grid.cols, grid.rows, tt.font_family) {
+        let occupancy = match rasterize_text_for_tool(&tt, grid.cols, grid.rows) {
             Some(o) => o,
             None => return false,
         };
@@ -179,10 +205,20 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
+        let model = self.build_text_shape_model(&tt, track, snap);
+
+        // ???????????????????? + ??????????????
+        if let Some(id) = tt.editing_shape {
+            let ok = self.edit_shape(id, model);
+            self.editor_state.text_tool.reset();
+            self.mark_notes_changed();
+            return ok;
+        }
+
         let mut create_ops = Vec::with_capacity(notes.len());
-        for (tick, key, len) in notes {
+        for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
-            // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
+            // ?????redo ?????undo ??????????? ID??
             if self
                 .editor_state
                 .data
@@ -199,10 +235,64 @@ impl Editor {
             return false;
         }
 
-        self.editor_state.data.history.push_note_create(create_ops);
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
         self.editor_state.data.mark_current_track_changed();
+        let shape_id = self.editor_state.shape_store.insert(model, group);
+        self.editor_state.shape_store.assign_notes(
+            shape_id,
+            notes
+                .iter()
+                .map(|&(tick, key, length)| ShapeNote {
+                    track,
+                    tick,
+                    key,
+                    length,
+                    velocity: 100,
+                    channel: 0,
+                })
+                .collect(),
+        );
+
         self.editor_state.text_tool.reset();
         self.mark_notes_changed();
         true
+    }
+
+    /// ?????????????????????????? id/??/???
+    fn build_text_shape_model(
+        &self,
+        tt: &lumino_editor_state::text_tool::TextToolState,
+        track: usize,
+        snap: f32,
+    ) -> ShapeModel {
+        let mut model = tt
+            .editing_shape
+            .and_then(|id| self.editor_state.shape_store.model(id).cloned())
+            .unwrap_or_else(|| ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0));
+        model.track = track as u16;
+        model.kind = ShapeKind::Custom;
+        let (tick_lo, tick_hi) = tt.normalized_ticks();
+        let (key_lo, key_hi) = tt.normalized_keys();
+        model.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(
+            tick_lo,
+            key_lo as f32,
+            tick_hi,
+            key_hi as f32,
+        ));
+        model.ops.retain(|op| !matches!(op, ShapeOp::Text(_)));
+        model.ops.push(ShapeOp::Text(TextOp {
+            text: tt.text.clone(),
+            params: tt.params.clone(),
+            layout: tt.layout_mode,
+            snap,
+            merged: tt.mode.is_merged(),
+            vertical: self.editor_state.is_vertical_roll,
+        }));
+        model.name = tt.text.chars().take(32).collect();
+        model
     }
 }

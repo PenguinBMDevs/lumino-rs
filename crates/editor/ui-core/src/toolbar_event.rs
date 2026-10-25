@@ -145,6 +145,8 @@ pub enum Event {
     ToggleThicknessPanel,
     /// 关闭「粗细」悬浮面板（点面板内空白 / 其它工具栏动作触发）
     CloseThicknessPanel,
+    /// 关闭文字参数面板（点面板内空白 / 其它工具栏动作触发）
+    CloseTextParamsPanel,
     /// **全局绘制粗细**变更（粗细面板滑杆；1-100 个 key 层）
     ///
     /// 全局唯一值：曲线 / 形状的**描边**与画刷**笔画**共用它纵向铺层，

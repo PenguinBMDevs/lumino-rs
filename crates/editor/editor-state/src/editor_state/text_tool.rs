@@ -27,6 +27,12 @@ impl TextToolMode {
 /// 文字工具状态
 #[derive(Debug, Clone, Default)]
 pub struct TextToolState {
+    /// 排版路径：默认 LegacyBox，保持现有像素行为
+    pub layout_mode: lumino_core::TextLayoutMode,
+    /// 参数化排版参数（LegacyBox 下不参与渲染）
+    pub params: lumino_core::TextParams,
+    /// 正在重新编辑的文字形状 id（`None` = 新文本框）
+    pub editing_shape: Option<u64>,
     /// 框起点 tick（绘制时记录的精确值，确认时吸附音符精度）
     pub start_tick: f32,
     /// 框当前/终点 tick（绘制中实时更新）
@@ -56,13 +62,21 @@ impl TextToolState {
     pub fn new() -> Self {
         Self {
             font_family: "Microsoft YaHei",
+            params: lumino_core::TextParams::default(),
             ..Default::default()
         }
     }
 
-    /// 清空全部状态（切换工具 / 取消时调用）
+    /// 清空文本框/输入会话，但保留用户刚调好的参数与排版模式
     pub fn reset(&mut self) {
+        let params = self.params.clone();
+        let layout_mode = self.layout_mode;
+        let font_family = self.font_family;
         *self = Self::new();
+        self.params = params;
+        self.layout_mode = layout_mode;
+        self.font_family = font_family;
+        self.editing_shape = None;
     }
 
     /// 仅收敛**未完成的输入/拖动会话**（收起输入焦点、结束文本框拖动），
@@ -98,6 +112,7 @@ impl TextToolState {
         self.end_key = key_hi;
         self.active = true;
         self.editing = true;
+        self.editing_shape = None;
         self.text.clear();
     }
 
@@ -199,6 +214,28 @@ mod tests {
         let s = TextToolState::new();
         assert_eq!(s.font_family, "Microsoft YaHei");
         assert!(!s.active);
+    }
+
+    #[test]
+    fn test_layout_defaults_to_legacy_and_params_exist() {
+        let s = TextToolState::new();
+        assert_eq!(
+            s.layout_mode,
+            lumino_core::TextLayoutMode::LegacyBox,
+            "默认必须保持现有框填充行为"
+        );
+        assert_eq!(s.params, lumino_core::TextParams::default());
+    }
+
+    #[test]
+    fn test_reset_keeps_text_params_and_layout_mode() {
+        let mut s = TextToolState::new();
+        s.params.threshold = 72.0;
+        s.layout_mode = lumino_core::TextLayoutMode::Parametric;
+        s.reset();
+        assert_eq!(s.params.threshold, 72.0, "确认/取消不得丢参数");
+        assert_eq!(s.layout_mode, lumino_core::TextLayoutMode::Parametric);
+        assert!(!s.active && !s.editing);
     }
 
     #[test]

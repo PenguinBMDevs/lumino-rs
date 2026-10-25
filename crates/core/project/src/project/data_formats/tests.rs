@@ -5,7 +5,7 @@
 use super::*;
 use lumino_core::shape::{
     AreaSpot, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
-    SpamAlign, SpamEnds,
+    SpamAlign, SpamEnds, TextLayoutMode, TextOp, TextParams,
 };
 
 /// 由**改动前**代码生成的 v1 字节夹具（DRAW-040 / D7）。
@@ -95,6 +95,33 @@ fn test_lmshapes_v1_upgrade_fills_explicit_defaults() {
         assert!(!shape.style.borders, "borders 默认应为 false");
         assert!(shape.style.areas.is_empty(), "areas 默认应为空");
     }
+}
+
+/// DRAW-029：文字形状走追加的 `ShapeOp::Text`，v2 部件可往返且不改变版本。
+#[test]
+fn test_lmshapes_text_shape_roundtrip() {
+    let mut shape = ShapeModel::new(9, 1, ShapeKind::Custom, 1.0);
+    shape.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(0.0, 60.0, 960.0, 72.0));
+    shape.name = "text".to_string();
+    shape.ops.push(ShapeOp::Text(TextOp {
+        text: "LUMINO".to_string(),
+        params: TextParams::default(),
+        layout: TextLayoutMode::Parametric,
+        snap: 480.0,
+        merged: false,
+        vertical: false,
+    }));
+    let data = LmshapesData {
+        shapes: vec![shape],
+    };
+    let encoded = data.encode().expect("文字形状编码失败");
+    assert_eq!(
+        u16::from_le_bytes([encoded[4], encoded[5]]),
+        2,
+        "追加 ShapeOp 变体不应改变 lmshapes 版本"
+    );
+    let decoded = LmshapesData::decode(&encoded).expect("文字形状解码失败");
+    assert_eq!(decoded.shapes, data.shapes, "文字形状应逐字段往返一致");
 }
 
 /// D5：encode 恒写 v2，v2 往返逐字段一致（含新增字段）
