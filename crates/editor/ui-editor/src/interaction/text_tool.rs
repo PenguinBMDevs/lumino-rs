@@ -18,6 +18,8 @@ mod tool;
 use lumino_core::TextLayoutMode;
 use lumino_editor_state::text_tool::TextToolState;
 
+#[cfg(test)]
+pub(crate) use rasterize::rasterize_glyph_alpha_with_font;
 pub(crate) use rasterize::{
     GlyphGrid, rasterize_glyph_alpha, rasterize_text, sample_to_notes_grid,
 };

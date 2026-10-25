@@ -2,6 +2,44 @@ use super::*;
 use crate::{EditState, Editor};
 use iced_core::Point;
 
+fn bundled_font() -> ab_glyph::FontArc {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../resources/fonts/NotoSansSC-Regular.ttf"
+    ));
+    ab_glyph::FontArc::try_from_vec(bytes.to_vec()).expect("仓库内置 Noto Sans SC 应可解析")
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+#[test]
+fn test_legacy_default_golden_pixels() {
+    let font = bundled_font();
+    let (w, h, buf) =
+        rasterize_glyph_alpha_with_font("LUMINO", 32, 16, &font).expect("内置字体应能栅格化 ASCII");
+    assert_eq!((w, h), (128, 64), "SS=4 时 32×16 格应为 128×64 像素");
+    let hash = fnv1a(&buf);
+    assert_eq!(
+        hash, 0xc8c3_24a0_eadc_3693,
+        "LegacyBox 默认像素 golden 变化；实际 hash = {hash:#x}"
+    );
+}
+
+#[test]
+fn test_legacy_dispatch_matches_old_rasterizer() {
+    let tt = lumino_editor_state::text_tool::TextToolState::new();
+    let old = rasterize_glyph_alpha("LUMINO", 32, 16, tt.font_family);
+    let new = rasterize_glyph_alpha_for_tool(&tt, "LUMINO", 32, 16);
+    assert_eq!(old, new, "LegacyBox 分派必须逐字节等同旧入口");
+}
+
 /// 横向卷帘的采样网格（**测试用**手动构造：这些用例喂合成占用网格，
 /// 不经过文本框状态，故直接给出 dims / 原点，与 `GlyphGrid::from_state` 的横向分支同口径）。
 fn horiz_grid(rows: usize, cols: usize, tick_lo: f32, key_top: u16, snap: f32) -> GlyphGrid {

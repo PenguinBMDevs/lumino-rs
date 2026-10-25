@@ -129,10 +129,22 @@ pub(crate) fn rasterize_glyph_alpha(
     rows: usize,
     family: &str,
 ) -> Option<(u32, u32, Vec<u8>)> {
+    let font = load_font(family)?;
+    rasterize_glyph_alpha_with_font(text, cols, rows, &font)
+}
+
+/// 与 [`rasterize_glyph_alpha`] 同一实现，但字体由调用方注入。
+///
+/// 生产路径仍按字体族加载；测试用固定字体做像素 golden，避免系统字体差异。
+pub(crate) fn rasterize_glyph_alpha_with_font(
+    text: &str,
+    cols: usize,
+    rows: usize,
+    font: &ab_glyph::FontArc,
+) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 {
         return None;
     }
-    let font = load_font(family)?;
     let h = (rows as u32) * SS;
     let w = (cols as u32) * SS;
 
