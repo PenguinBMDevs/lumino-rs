@@ -7,6 +7,7 @@
 use iced_core::{Alignment, Background, Border, Color, Length};
 use iced_widget::{button, column, container, pick_list, row, slider, text};
 use lumino_core::{TextAlign, TextLayoutMode, TextParams, TextUnit};
+use lumino_ui_settings::components::with_setting_tooltip_inline;
 
 use crate::message::EditorAction;
 use crate::{Element, Message};
@@ -179,14 +180,14 @@ pub(crate) fn render_text_params(
         TextLayoutMode::LegacyBox => TextLayoutMode::Parametric,
         TextLayoutMode::Parametric => TextLayoutMode::LegacyBox,
     };
+    let mode_text = match mode {
+        TextLayoutMode::LegacyBox => "LegacyBox",
+        TextLayoutMode::Parametric => "Parametric",
+    };
+    let mode_hint = "LegacyBox：兼容旧框填充；Parametric：按文字参数排版。";
     let mode_row = row![
         label("Mode", text_color),
-        text(match mode {
-            TextLayoutMode::LegacyBox => "Legacy",
-            TextLayoutMode::Parametric => "Parametric",
-        })
-        .size(12)
-        .color(text_color),
+        with_setting_tooltip_inline(text(mode_text).size(12).color(text_color), mode_hint,),
         button(text(mode_label).size(11))
             .on_press(Message::EditorAction(EditorAction::TextLayoutModeChanged(
                 mode_target
