@@ -37,10 +37,12 @@ pub(crate) fn render_text_params(
     let border_color = theme.extended_palette().background.strong.color;
     let text_color = panel_text_color(panel_background);
 
-    let fonts: Vec<String> = lumino_note_core::font_scanner::get_cached_fonts()
+    let mut fonts: Vec<String> = lumino_note_core::font_scanner::get_cached_fonts()
         .iter()
         .map(|font| font.name.clone())
         .collect();
+    fonts.sort_unstable();
+    fonts.dedup();
     let p_font = params.clone();
     let font_pick = pick_list(fonts, Some(params.font.clone()), move |font: String| {
         let mut next = p_font.clone();
@@ -63,6 +65,33 @@ pub(crate) fn render_text_params(
         text_color,
         |p, v| p.size = v,
     );
+    let p_weight = params.clone();
+    let weight_row = row![
+        label("Weight", text_color),
+        slider(100.0..=900.0, f32::from(params.weight), move |v| {
+            let mut next = p_weight.clone();
+            next.weight = v.round().clamp(100.0, 900.0) as u16;
+            Message::EditorAction(EditorAction::TextParamsChanged(next))
+        })
+        .step(100.0_f32)
+        .width(Length::Fixed(SLIDER_WIDTH)),
+        text(format!("{}", params.weight))
+            .size(11)
+            .width(Length::Fixed(VALUE_WIDTH))
+            .color(text_color),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+    let italic_row = row![
+        label("Italic", text_color),
+        small_button(
+            "Italic",
+            params.italic,
+            changed(params, |p| p.italic = !p.italic),
+        ),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
     let tracking_row = slider_row(
         "Tracking",
         params.tracking,
@@ -161,6 +190,8 @@ pub(crate) fn render_text_params(
     let content = column![
         font_row,
         size_row,
+        weight_row,
+        italic_row,
         unit_row,
         tracking_row,
         leading_row,
@@ -260,8 +291,13 @@ mod tests {
     fn test_render_text_params_builds_for_both_modes() {
         let theme = crate::Theme::Dark;
         let bg = Color::from_rgba(0.1, 0.1, 0.1, 1.0);
+        let params = TextParams {
+            weight: 700,
+            italic: true,
+            ..TextParams::default()
+        };
         for mode in [TextLayoutMode::LegacyBox, TextLayoutMode::Parametric] {
-            let _ = render_text_params(&TextParams::default(), mode, bg, &theme);
+            let _ = render_text_params(&params, mode, bg, &theme);
         }
     }
 

@@ -6,7 +6,7 @@
 use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
 use lumino_core::{TextAlign, TextParams, TextUnit};
 
-use super::font::load_font;
+use super::font::load_font_variant;
 use super::rasterize::SS;
 
 /// 参数化文字灰度图（宽 = cols×SS，高 = rows×SS，行 0 = 顶部）
@@ -19,7 +19,7 @@ pub(crate) fn rasterize_glyph_alpha_params(
     if text.is_empty() || cols == 0 || rows == 0 || params.validate().is_err() {
         return None;
     }
-    let font = load_font(&params.font)?;
+    let font = load_font_variant(&params.font, params.weight, params.italic)?;
     let w = (cols as u32) * SS;
     let h = (rows as u32) * SS;
 

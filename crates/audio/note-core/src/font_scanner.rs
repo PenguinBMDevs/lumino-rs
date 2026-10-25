@@ -22,6 +22,10 @@ pub struct FontInfo {
     pub name: String,
     /// 字体文件路径
     pub path: PathBuf,
+    /// 字重（100..=900，来自 fontdb face）
+    pub weight: u16,
+    /// 是否斜体/倾斜 face
+    pub italic: bool,
 }
 
 impl std::fmt::Display for FontInfo {
@@ -70,7 +74,12 @@ pub fn scan_system_fonts() -> Vec<FontInfo> {
                 return None;
             }
 
-            Some(FontInfo { name, path })
+            Some(FontInfo {
+                name,
+                path,
+                weight: face.weight.0,
+                italic: matches!(face.style, fontdb::Style::Italic | fontdb::Style::Oblique),
+            })
         })
         .collect();
 
@@ -236,6 +245,8 @@ mod tests {
         let font = FontInfo {
             name: "Arial".to_string(),
             path: PathBuf::from("/path/to/arial.ttf"),
+            weight: 400,
+            italic: false,
         };
         assert_eq!(format!("{}", font), "Arial");
     }
@@ -246,14 +257,20 @@ mod tests {
             FontInfo {
                 name: "Zebra".to_string(),
                 path: PathBuf::from("/path/to/zebra.ttf"),
+                weight: 400,
+                italic: false,
             },
             FontInfo {
                 name: "Arial".to_string(),
                 path: PathBuf::from("/path/to/arial.ttf"),
+                weight: 400,
+                italic: false,
             },
             FontInfo {
                 name: "bold".to_string(),
                 path: PathBuf::from("/path/to/bold.ttf"),
+                weight: 400,
+                italic: false,
             },
         ];
         fonts.sort_by_key(|a| a.name.to_lowercase());
