@@ -163,6 +163,13 @@ impl Host {
                 self.window_ctx.window.request_redraw();
             }
         }
+
+        // 后台预热键色快照：把「装载后首次 seek」的 O(全曲音符) 重扫摊到多帧
+        // （见 `lumino_note_core::playback_key_colors` 模块文档第三节）。
+        // 必须**每帧**驱动（含暂停态），否则装载后直接拖进度条仍会撞上一次性冻结。
+        self.root
+            .editor
+            .prewarm_playback_key_colors(lumino_note_core::DEFAULT_PREWARM_NOTE_BUDGET);
     }
 
     /// 更新光标位置（用于音符预览）

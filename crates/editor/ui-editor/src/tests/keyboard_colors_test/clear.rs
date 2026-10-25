@@ -34,7 +34,7 @@ fn test_keyboard_colors_clear_after_stop() {
     );
     // 扫描状态也应被重置，下次播放从头扫描
     assert_eq!(
-        editor.playback_scan_state.last_tick, 0.0,
+        editor.playback_scan_state.last_tick, 0,
         "扫描状态应在停止后重置"
     );
     // 不应改动播放指示线位置

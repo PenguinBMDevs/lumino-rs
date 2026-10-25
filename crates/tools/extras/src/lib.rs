@@ -14,8 +14,9 @@ pub use i18n::{
     synth_backend_name, track_add_behavior_name,
 };
 pub use palette::{
-    EmbeddedPalette, PALETTE_MANAGER, Palette, PaletteColor, PaletteManager, current_palette_idx,
-    current_palette_name, current_track_color, current_track_color_f32, is_palette_locked,
-    lock_palette, onion_track_color, onion_track_color_f32, reset_current_palette,
+    EmbeddedPalette, MAIN_TRACK_NOTE_COLOR, MAIN_TRACK_NOTE_COLOR_F32, PALETTE_MANAGER, Palette,
+    PaletteColor, PaletteManager, current_palette_idx, current_palette_name, current_track_color,
+    current_track_color_f32, is_palette_locked, lock_palette, note_track_color,
+    note_track_color_f32, onion_track_color, onion_track_color_f32, reset_current_palette,
     set_current_palette_by_name, unlock_palette,
 };

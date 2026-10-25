@@ -292,3 +292,50 @@ fn test_keyboard_colors_state_follows_document_replacement() {
         "新文档的 D4 应着色"
     );
 }
+
+/// 后台预热必须覆盖整条时间线，且用预热快照重算的结果与全新全量重扫一致。
+///
+/// 预热是把「装载后首次 seek」的 O(全曲音符) 重扫摊到多帧的机制：
+/// 每帧只消费固定音符预算，产出与播放沿途快照同构的基点。
+#[test]
+fn test_keyboard_colors_prewarm_covers_timeline() {
+    let mut editor = Editor::new();
+    editor.playback_key_colors_enabled = true;
+    editor.editor_state.data.document = Some(make_test_doc());
+
+    // 先跑一帧 update 锁定音轨结构（预热要求 track_count 已就绪）
+    editor.playback_position = 10.0;
+    editor.update_playback_key_colors();
+
+    // 小预算推进预热：应能在有限帧内覆盖整条时间线（本测试文档只有 3 个音符）
+    let mut rounds = 0usize;
+    while editor.prewarm_playback_key_colors(64) {
+        rounds += 1;
+        assert!(rounds < 10_000, "预热应在有限帧内完成");
+    }
+    assert!(
+        editor.playback_scan_state.prewarm_done(),
+        "预热应覆盖整条时间线"
+    );
+    assert!(
+        editor.playback_scan_state.prewarm_snapshot_count() > 0,
+        "预热应产出快照"
+    );
+
+    // 用预热快照作为基点重算 —— 结果必须与全新状态的全量重扫逐字节一致
+    for target in [1500u32, 800, 480, 240, 61] {
+        editor.playback_position = target as f32;
+        editor.update_playback_key_colors();
+
+        let mut full = Editor::new();
+        full.playback_key_colors_enabled = true;
+        full.editor_state.data.document = Some(make_test_doc());
+        full.playback_position = target as f32;
+        full.update_playback_key_colors();
+
+        assert_eq!(
+            editor.playback_key_colors, full.playback_key_colors,
+            "预热快照基点结果与全量重扫不一致（tick={target}）"
+        );
+    }
+}

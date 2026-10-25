@@ -96,27 +96,57 @@ pub fn current_palette_idx() -> u8 {
     CURRENT_PALETTE_IDX.load(Ordering::Relaxed)
 }
 
+/// 主音轨（当前编辑轨）音符的固定蓝色
+///
+/// **必须与 4 个 shader 的 `MAIN_TRACK_COLOR` 保持一致**：
+/// `note_renderer` / `onion_note` / `onion_note_vertical` / `splat` 均硬编码
+/// `vec3<f32>(0.2, 0.55, 1.0)`。改这里的 u8 值而不改 shader 会造成
+/// 「键盘键色」与「卷帘音符色」再次分叉。
+pub const MAIN_TRACK_NOTE_COLOR: PaletteColor = [51, 140, 255, 255];
+
+/// 主音轨音符固定蓝色（`[f32; 4]`，与 shader 常量逐位一致）
+pub const MAIN_TRACK_NOTE_COLOR_F32: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
+
+/// 卷帘音符颜色（RGB-A，`u8`）：**全工程音符取色的唯一权威**。
+///
+/// 卷帘的着色规则是「两段式」的，键盘高亮与视频导出键盘必须照此规则取色，
+/// 否则会出现「同一轨的键色 ≠ 音符色」：
+///
+/// - `doc_track == current_track`（主音轨 / 当前编辑轨）→ [`MAIN_TRACK_NOTE_COLOR`]；
+/// - 其他轨 → [`current_track_color`]（调色板按音轨索引循环取色）。
+///
+/// 传入 `current_track = usize::MAX` 表示「无主音轨概念」（视频导出等整篇渲染
+/// 路径），此时所有轨一律取调色板色。
+#[inline]
+pub fn note_track_color(doc_track: usize, current_track: usize) -> PaletteColor {
+    if doc_track == current_track {
+        MAIN_TRACK_NOTE_COLOR
+    } else {
+        current_track_color(doc_track)
+    }
+}
+
+/// 卷帘音符颜色（`[f32; 4]`，归一化到 0.0-1.0）
+#[inline]
+pub fn note_track_color_f32(doc_track: usize, current_track: usize) -> [f32; 4] {
+    if doc_track == current_track {
+        return MAIN_TRACK_NOTE_COLOR_F32;
+    }
+    current_track_color_f32(doc_track)
+}
+
 /// 获取洋葱皮音轨颜色（RGBA \[u8;4\]）
 ///
 /// 从当前调色板的第一个颜色开始取色，
 /// 超出调色板颜色数时循环取色。
+///
+/// **与 [`current_track_color`] 等价**：两者都是 `colors[track_idx % len]`，
+/// 此处保留独立函数名只为表达「洋葱皮语义」，实现委托以免调色板取色逻辑
+/// 出现第二份拷贝（历史上两份实现曾在 `palettes().get(idx)` 落空时给出
+/// 不同备用色）。
 #[inline]
 pub fn onion_track_color(track_idx: usize) -> PaletteColor {
-    let mgr = &*PALETTE_MANAGER;
-    // 使用 CURRENT_PALETTE_INIT/PALETTE_INIT 判断是否初始化
-    let palette = if !CURRENT_PALETTE_INIT.load(Ordering::Relaxed) {
-        mgr.default()
-    } else {
-        let idx = CURRENT_PALETTE_IDX.load(Ordering::Relaxed) as usize;
-        mgr.palettes().get(idx).unwrap_or_else(|| mgr.default())
-    };
-    // 从第一个颜色开始取色（offset = 0）
-    if palette.colors.is_empty() {
-        // 如果调色板没有颜色，用备用色
-        FALLBACK_PALETTE[track_idx % FALLBACK_PALETTE.len()]
-    } else {
-        palette.colors[track_idx % palette.colors.len()]
-    }
+    current_track_color(track_idx)
 }
 
 /// 获取洋葱皮音轨颜色（\[f32;4\]，归一化到 0.0-1.0）

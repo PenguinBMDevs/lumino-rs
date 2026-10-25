@@ -12,6 +12,7 @@ pub mod midi_types;
 pub mod note;
 pub mod note_store;
 pub mod pattern;
+pub mod playback_key_colors;
 pub mod spatial_index;
 
 pub use arrange_selection::ArrangeSelection;
@@ -30,4 +31,8 @@ pub use midi_types::{
 pub use note::Note;
 pub use note_store::{BitSet, NoteView};
 pub use pattern::Pattern;
+pub use playback_key_colors::{
+    DEFAULT_PREWARM_NOTE_BUDGET, KEY_COLOR_BYTES, KEY_SLOTS, KeyColorSnapshot,
+    PlaybackKeyColorState,
+};
 pub use spatial_index::{NoteRef, NoteSpatialIndex};

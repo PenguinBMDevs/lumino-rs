@@ -41,11 +41,11 @@ impl Root {
             .adopt_tempo_cache_from_document();
         // 装载新文档 = 音符内容变化：必须 bump `track_notes_gen`。
         //
-        // 该世代是所有音符派生缓存的失效键（洋葱皮、走带 max_tick、播放键色索引
-        // `PlaybackScanState.notes_gen`…）。此前只有
+        // 该世代是所有音符派生缓存的失效键（洋葱皮、走带 max_tick、播放键色聚合与
+        // 快照 `PlaybackKeyColorState.content_gen`…）。此前只有
         // `host::editor_ops::set_midi_document` 会 bump，直接调用本方法的路径
         // （测试、协作/素材装载等）装载后世代不变，派生缓存会继续用上一份文档的
-        // 内容——播放键色索引此前靠文档内存地址兜底，而地址在旧文档 drop 后
+        // 内容——播放键色此前靠文档内存地址兜底，而地址在旧文档 drop 后
         // 可能被新文档复用（见审计 §五）。把不变量放在「文档进入编辑器」这一处。
         self.editor.editor_state.data.mark_track_notes_changed();
     }

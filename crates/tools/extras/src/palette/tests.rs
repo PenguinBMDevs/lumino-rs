@@ -260,3 +260,64 @@ fn test_unlock_after_lock_allows_palette_switch() {
 fn default_palette_name() -> &'static str {
     PALETTE_MANAGER.default().name
 }
+
+// ─── 卷帘音符颜色（键盘 / 视频导出取色单源）──────────────────────────────────
+
+/// 主音轨（当前编辑轨）的音符颜色必须是 shader `MAIN_TRACK_COLOR` 的固定蓝。
+///
+/// 这是「键盘键色 = 卷帘音符色」的核心：卷帘对主音轨硬编码固定蓝，
+/// 对其它轨取调色板色。此规则一旦漂移，键盘与音符就会再次分叉。
+#[test]
+fn test_note_track_color_main_track_is_fixed_blue() {
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
+
+    // 逐分量断言 shader 常量（0.2, 0.55, 1.0）
+    assert_eq!(MAIN_TRACK_NOTE_COLOR[0], 51, "R = 0.2 × 255");
+    assert_eq!(MAIN_TRACK_NOTE_COLOR[1], 140, "G = round(0.55 × 255)");
+    assert_eq!(MAIN_TRACK_NOTE_COLOR[2], 255, "B = 1.0 × 255");
+    assert_eq!(MAIN_TRACK_NOTE_COLOR[3], 255, "A 不透明");
+    assert_eq!(MAIN_TRACK_NOTE_COLOR_F32, [0.2, 0.55, 1.0, 1.0]);
+
+    assert_eq!(note_track_color(0, 0), MAIN_TRACK_NOTE_COLOR);
+    assert_eq!(note_track_color(7, 7), MAIN_TRACK_NOTE_COLOR);
+    assert_eq!(note_track_color_f32(3, 3), MAIN_TRACK_NOTE_COLOR_F32);
+}
+
+/// 非主音轨取调色板色；`current_track = usize::MAX` 表示无主音轨概念（整篇渲染）。
+#[test]
+fn test_note_track_color_other_tracks_use_palette() {
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
+
+    // 当前轨 = 0，则 track 1 不是主音轨 → 调色板色
+    assert_eq!(note_track_color(1, 0), current_track_color(1));
+    assert_eq!(note_track_color(5, 2), current_track_color(5));
+
+    // usize::MAX = 无主音轨概念 → 所有轨（含 0）一律调色板色
+    for track in 0..4 {
+        assert_eq!(
+            note_track_color(track, usize::MAX),
+            current_track_color(track),
+            "track={track} 在无主音轨概念时应取调色板色"
+        );
+    }
+}
+
+/// `onion_track_color` 与 `current_track_color` 必须等价（同一份取色实现）。
+#[test]
+fn test_onion_track_color_delegates_to_current_track_color() {
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
+
+    for track in 0..8 {
+        assert_eq!(
+            onion_track_color(track),
+            current_track_color(track),
+            "onion_track_color({track}) 应等价于 current_track_color"
+        );
+    }
+}

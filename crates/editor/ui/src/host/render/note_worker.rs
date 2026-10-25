@@ -2,11 +2,14 @@
 //!
 //! 统一全量渲染（2026-08-06）：主音轨可见实例由 GPU 全量 buffer + cull 负责，
 //! 本文件仅保留：
-//! - `MAIN_TRACK_NOTE_COLOR`：主音轨固定蓝色（与 shader 一致）
+//! - `MAIN_TRACK_NOTE_COLOR`：主音轨固定蓝色（单源在 `lumino_extras::palette`）
 //! - `collect_i2m_preview_notes`：图片转 MIDI 预览音符收集
 
 /// 主音轨已放置音符的固定蓝色（与 shader `MAIN_TRACK_COLOR` 一致）
-pub(super) const MAIN_TRACK_NOTE_COLOR: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
+///
+/// 2026-10-25：不再本文件自定义，改为复用 `lumino_extras::palette` 的单一权威
+/// ——键盘键色 / 视频导出键色都从同一常量取色，避免 shader 与 CPU 侧再次分叉。
+pub(super) use lumino_extras::palette::MAIN_TRACK_NOTE_COLOR_F32 as MAIN_TRACK_NOTE_COLOR;
 
 // ─── 图片转 MIDI 预览音符收集 ─────────────────────────────────────────────
 
