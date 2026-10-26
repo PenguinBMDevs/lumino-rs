@@ -204,6 +204,8 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::MemoryMonitor => DialogSizeHint::boxed(300.0),
         // 音符画设置：长占位文案需固定折行宽度（旧 460×420）
         DialogType::DrawSettings => DialogSizeHint::boxed(460.0),
+        // 帮助：左侧列表 + 右侧滚动正文，尺寸固定，避免测量被滚动区压成 0
+        DialogType::Help => DialogSizeHint::pinned(900.0, 620.0),
 
         // ── 含「测量不可信」的滚动区：钉死高度（min = max） ──────────────
         //

@@ -42,6 +42,42 @@ impl RunnerInner {
             CloseDrawSettingsDialog => {
                 self.close_dialog_traced(DialogType::DrawSettings, "音符画设置")
             }
+            ToggleHelpDialog => {
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::Help)
+                {
+                    self.close_dialog_traced(DialogType::Help, "帮助");
+                } else {
+                    self.open_dialog_traced(DialogType::Help, "帮助");
+                }
+            }
+            CloseHelpDialog => self.close_dialog_traced(DialogType::Help, "帮助"),
+            HelpTipSeen(id) => {
+                self.window_state.storage.config.patch(|config| {
+                    if !config.ui.seen_help_tips.iter().any(|seen| seen == &id) {
+                        config.ui.seen_help_tips.push(id);
+                    }
+                });
+                if let Err(error) = self.window_state.storage.config.save() {
+                    tracing::warn!("保存帮助首次提示状态失败：{error}");
+                }
+            }
+            ResetHelpTips => {
+                self.window_state
+                    .storage
+                    .config
+                    .patch(|config| config.ui.seen_help_tips.clear());
+                if let Err(error) = self.window_state.storage.config.save() {
+                    tracing::warn!("清除帮助首次提示状态失败：{error}");
+                }
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .root_mut()
+                    .reset_help_tips();
+            }
             CloseCustomPrecisionDialog => {
                 self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度")
             }

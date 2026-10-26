@@ -13,6 +13,7 @@ use crate::collaboration::CollaborationAction;
 use crate::custom_precision::CustomPrecisionAction;
 use crate::draw_settings::DrawSettingsAction;
 use crate::fill_division::FillDivisionAction;
+use crate::help::HelpAction;
 use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
 use crate::project_settings::ProjectSettingsAction;
@@ -112,6 +113,8 @@ pub enum Message<W, S, Se, T> {
     DrawSettings(DrawSettingsAction),
     /// 颜料桶「分音符填充」对话框动作（主窗口覆盖层）
     FillDivision(FillDivisionAction),
+    /// 帮助窗口/首次提示动作（DRAW-038）
+    Help(HelpAction),
     /// 协作动作
     Collaboration(CollaborationAction),
     /// 加载确认对话框动作

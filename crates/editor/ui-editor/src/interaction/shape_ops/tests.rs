@@ -7,6 +7,7 @@ use lumino_core::shape::{
     ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
     TextLayoutMode, TextOp, TextParams, TileBy, TilesParams, TumourParams,
 };
+use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
@@ -357,6 +358,91 @@ fn test_create_shape_generates_notes_and_registers() {
         count,
         "形状的音符指纹应与文档实际音符数一致"
     );
+}
+
+#[test]
+fn test_pending_shape_can_be_shared_before_bake() {
+    let mut editor = editor_with_track(1);
+    let id = editor.editor_state.shape_select.add_pending(
+        1,
+        PendingShapeRef::CurvePath(0),
+        DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (480.0, 64.0)],
+        },
+    );
+    editor.editor_state.shape_select.select_only(id);
+
+    let model = editor
+        .selected_pending_shape_model()
+        .expect("待确认图形应可构造分享模型");
+    assert_eq!(model.track, 1);
+    assert_eq!(model.geometry.anchors.len(), 2);
+    let text = lumino_core::shape::share::encode_shapes(&[model], 480).expect("待确认几何应可编码");
+    assert!(text.starts_with(lumino_core::shape::share::PREFIX));
+}
+
+#[test]
+fn test_paste_shapes_from_text_regenerates_for_current_track() {
+    let mut source = editor_with_track(1);
+    assert!(source.create_shape(straight_shape(1, 480.0)));
+    let text = lumino_core::shape::share::encode_shapes(
+        &source.shapes_snapshot(),
+        source.editor_state.view.ppq,
+    )
+    .expect("应能编码");
+
+    let mut target = editor_with_track(1);
+    // 先占一个 id，确保粘贴走重新分配而不是复用分享者的 id。
+    assert!(target.create_shape(straight_shape(1, 240.0)));
+    let created = target.paste_shapes_from_text(&text).expect("粘贴应成功");
+    assert_eq!(created, 1);
+    assert_eq!(target.editor_state.shape_store.len(), 2);
+    let pasted_id = target.editor_state.shape_store.ids()[1];
+    assert_ne!(pasted_id, 1, "粘贴形状必须重新分配 id");
+    let pasted = target
+        .editor_state
+        .shape_store
+        .model(pasted_id)
+        .expect("粘贴形状应存在");
+    assert_eq!(pasted.track, 1, "track 必须落到当前轨");
+    assert!(note_count(&target, 1) > 0, "粘贴应生成音符");
+}
+
+#[test]
+fn test_paste_shapes_cross_ppq_scales_ticks() {
+    let mut source = editor_with_track(1);
+    source.editor_state.view.ppq = 480;
+    assert!(source.create_shape(straight_shape(1, 480.0)));
+    let text = lumino_core::shape::share::encode_shapes(
+        &source.shapes_snapshot(),
+        source.editor_state.view.ppq,
+    )
+    .expect("应能编码");
+
+    let mut target = editor_with_track(1);
+    target.editor_state.view.ppq = 960;
+    target
+        .paste_shapes_from_text(&text)
+        .expect("跨 PPQ 粘贴应成功");
+    let id = target.editor_state.shape_store.ids()[0];
+    let model = target
+        .editor_state
+        .shape_store
+        .model(id)
+        .expect("粘贴形状应存在");
+    assert_eq!(
+        model.geometry.anchors[1].pos.0, 960.0,
+        "480 tick @480 → 960 @960"
+    );
+}
+
+#[test]
+fn test_paste_shapes_rejects_conductor_track() {
+    let mut editor = editor_with_track(0);
+    let text = lumino_core::shape::share::encode_shapes(&[straight_shape(1, 480.0)], 480)
+        .expect("应能编码");
+    assert!(editor.paste_shapes_from_text(&text).is_err());
+    assert!(editor.editor_state.shape_store.is_empty());
 }
 
 #[test]

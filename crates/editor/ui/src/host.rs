@@ -103,6 +103,10 @@ pub struct Host {
     pub(crate) touch_long_press_deadline: Option<Instant>,
     /// 本次触摸是否已经触发过长按右键（抬手时只需释放右键）
     pub(crate) touch_long_press_fired: bool,
+    /// 文本输入法是否处于激活态（焦点在 text_input 时由 iced 打开）。
+    ///
+    /// 裸字母快捷键必须在此状态下让路，否则用户在输入框里打字会切工具。
+    pub(crate) ime_active: bool,
     /// iced 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
     pub(crate) redraw_at: std::sync::Arc<std::sync::Mutex<Option<Instant>>>,
     /// 定时重绘后台线程是否在运行（避免重复起线程）

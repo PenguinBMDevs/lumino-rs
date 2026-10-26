@@ -42,6 +42,15 @@ pub enum ExprError {
     /// 幂指数过大
     #[error("公式幂指数超过 64")]
     ExponentTooLarge,
+    /// 整数路径遇到非整数结果/非整数字面量
+    #[error("公式结果不是整数")]
+    NonInteger,
+    /// 整数运算溢出 i64
+    #[error("整数结果溢出 i64")]
+    IntegerOverflow,
+    /// 整数幂指数不合法（负数或超过 64）
+    #[error("整数幂指数必须为 0..=64")]
+    IntegerExponent,
     /// 求值时缺少变量
     #[error("求值缺少变量：{0}")]
     MissingValue(String),

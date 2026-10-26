@@ -97,7 +97,8 @@ impl Root {
             return None;
         }
 
-        let t = main_translations(self.settings.display.language);
+        let language = self.settings.display.language;
+        let t = main_translations(language);
         let cur = self.toolbar.current_tool;
         let fill = self.toolbar.fill_enabled;
 
@@ -107,13 +108,13 @@ impl Root {
             (
                 ToolPanelItem::Mouse,
                 icon::MousePointer,
-                t.tool_mouse,
+                lumino_ui_core::help::tool_tip(Tool::ShapeSelect, language).unwrap_or(t.tool_mouse),
                 cur == Tool::ShapeSelect,
             ),
             (
                 ToolPanelItem::Curve,
                 icon::Curve,
-                t.tool_curve,
+                lumino_ui_core::help::tool_tip(Tool::Curve, language).unwrap_or(t.tool_curve),
                 cur == Tool::Curve,
             ),
             (
@@ -125,19 +126,19 @@ impl Root {
             (
                 ToolPanelItem::Brush,
                 icon::BrushTool,
-                t.tool_brush,
+                lumino_ui_core::help::tool_tip(Tool::Brush, language).unwrap_or(t.tool_brush),
                 cur == Tool::Brush,
             ),
             (
                 ToolPanelItem::Shape,
                 shape_icon(self.toolbar.current_shape),
-                t.tool_shape,
+                lumino_ui_core::help::tool_tip(Tool::Shape, language).unwrap_or(t.tool_shape),
                 cur == Tool::Shape,
             ),
             (
                 ToolPanelItem::Text,
                 icon::TextInput,
-                t.tool_text,
+                lumino_ui_core::help::tool_tip(Tool::Text, language).unwrap_or(t.tool_text),
                 cur == Tool::Text,
             ),
         ];
@@ -334,6 +335,7 @@ impl Root {
             let menu: Element<'_> = container(
                 crate::toolbar::fill_division_dropdown::render_fill_division_dropdown(
                     &self.state.fill_division_dialog.value,
+                    self.state.fill_division_dialog.error.as_deref(),
                     self.settings.display.language,
                     panel_background,
                     &self.window.theme,
@@ -928,6 +930,7 @@ mod tests {
         for lang in [Language::ZhCn, Language::EnUs] {
             let mut element = crate::toolbar::fill_division_dropdown::render_fill_division_dropdown(
                 "16",
+                None,
                 lang,
                 Color::from_rgba(0.1, 0.1, 0.1, 1.0),
                 &crate::Theme::Dark,

@@ -25,6 +25,10 @@ impl Host {
         if focused {
             // 重新获得焦点后系统可能已重置光标，丢弃缓存以便下一帧重新应用
             self.window_ctx.applied_cursor = None;
+        } else {
+            // 失焦时 IME 状态可能收不到 Disabled（系统直接切走焦点），主动复位，
+            // 否则回到窗口后裸字母快捷键会一直失效。
+            self.ime_active = false;
         }
         self.route_message(message::Window::focused(focused));
     }
@@ -93,6 +97,15 @@ impl Host {
                 self.window_ctx.applied_cursor = None;
             }
             KeyboardInput { event, .. } => self.handle_keyboard_input_event(event, modifiers),
+            Ime(ime) => {
+                // iced text_input 获得焦点时会 set_ime_allowed(true)，winit 随之发
+                // Ime::Enabled；失焦发 Disabled。裸字母快捷键据此让路。
+                match ime {
+                    winit::event::Ime::Enabled => self.ime_active = true,
+                    winit::event::Ime::Disabled => self.ime_active = false,
+                    _ => {}
+                }
+            }
             MouseInput { state, button, .. } => {
                 self.handle_mouse_input_event(*state, *button);
             }

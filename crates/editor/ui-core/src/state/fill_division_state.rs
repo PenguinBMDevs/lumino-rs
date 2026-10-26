@@ -10,6 +10,8 @@ pub struct FillDivisionDialogState {
     pub is_open: bool,
     /// 输入框内容（x 分音符的 x；空串 = 恢复整块填充）
     pub value: String,
+    /// 最近一次提交失败的原因（None = 无错误）
+    pub error: Option<String>,
 }
 
 impl FillDivisionDialogState {
@@ -21,13 +23,18 @@ impl FillDivisionDialogState {
     /// 解析输入框内容 → 切分档位。
     ///
     /// - 空串 / `0` → `Ok(None)`（整块填充，不切分）；
-    /// - 非数字或溢出 → `Err(ParseIntError)`（调用方应保持对话框打开）。
-    pub fn parse(&self) -> Result<Option<u32>, std::num::ParseIntError> {
+    /// - 支持整数表达式（如 `8*2`）；
+    /// - 非法或溢出 → `Err(String)`（调用方应保持对话框打开并展示错误）。
+    pub fn parse(&self) -> Result<Option<u32>, String> {
         let s = self.value.trim();
         if s.is_empty() {
             return Ok(None);
         }
-        let n: u32 = s.parse()?;
+        let n = lumino_core::shape::expr::eval_int(s).map_err(|e| e.to_string())?;
+        if n < 0 || n > i64::from(u32::MAX) {
+            return Err("输入超出 u32 范围".to_string());
+        }
+        let n = n as u32;
         Ok(if n == 0 { None } else { Some(n) })
     }
 }
@@ -47,6 +54,7 @@ mod tests {
         let s = FillDivisionDialogState {
             is_open: true,
             value: "0".into(),
+            ..Default::default()
         };
         assert_eq!(s.parse(), Ok(None), "0 = 整块填充");
     }
@@ -58,6 +66,7 @@ mod tests {
             let s = FillDivisionDialogState {
                 is_open: true,
                 value: input.into(),
+                ..Default::default()
             };
             assert_eq!(s.parse(), Ok(Some(expected)), "输入 {input}");
         }
@@ -68,8 +77,19 @@ mod tests {
         let s = FillDivisionDialogState {
             is_open: true,
             value: "abc".into(),
+            ..Default::default()
         };
         assert!(s.parse().is_err(), "非数字应报错");
+    }
+
+    #[test]
+    fn test_parse_integer_expression() {
+        let s = FillDivisionDialogState {
+            is_open: true,
+            value: "8*2".into(),
+            ..Default::default()
+        };
+        assert_eq!(s.parse(), Ok(Some(16)), "整数表达式应精确求值");
     }
 
     #[test]
@@ -77,6 +97,7 @@ mod tests {
         let s = FillDivisionDialogState {
             is_open: true,
             value: "99999999999999".into(),
+            ..Default::default()
         };
         assert!(s.parse().is_err(), "超出 u32 应报错");
     }

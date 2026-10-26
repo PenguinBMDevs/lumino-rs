@@ -1,5 +1,5 @@
 use super::*;
-use crate::util::is_digits_or_empty;
+use lumino_core::shape::expr::is_int_input as is_expression_input;
 
 impl Toolbar {
     /// 创建新的工具栏
@@ -21,6 +21,7 @@ impl Toolbar {
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
+            ppq_edit_error: None,
             overflow_menu_open: false,
             tool_panel_open: false,
             // 默认位置：水平居中（dx=0）、距窗口底部内缩 44px（悬浮于卷帘区域下缘）
@@ -161,8 +162,9 @@ impl Toolbar {
                 tracing::debug!("工具栏: 确认自定义精度");
             }
             Event::CustomPrecisionTupletCountChanged(value) => {
-                if is_digits_or_empty(&value) {
+                if is_expression_input(&value) {
                     self.custom_precision_dialog.tuplet_count = value;
+                    self.custom_precision_dialog.error = None;
                 }
             }
             Event::CustomPrecisionTupletTypeChanged(value) => {
@@ -173,13 +175,15 @@ impl Toolbar {
                 self.custom_precision_dialog.dot_type = value;
             }
             Event::CustomPrecisionNoteValueChanged(value) => {
-                if is_digits_or_empty(&value) {
+                if is_expression_input(&value) {
                     self.custom_precision_dialog.note_value = value;
+                    self.custom_precision_dialog.error = None;
                 }
             }
             Event::CustomPrecisionDivisorChanged(value) => {
-                if is_digits_or_empty(&value) {
+                if is_expression_input(&value) {
                     self.custom_precision_dialog.divisor = value;
+                    self.custom_precision_dialog.error = None;
                 }
             }
             Event::OpenCollaborationDialog => {
@@ -270,17 +274,20 @@ impl Toolbar {
                     // 已在编辑状态 → 取消编辑
                     self.ppq_editing = false;
                     self.ppq_edit_buffer.clear();
+                    self.ppq_edit_error = None;
                 } else {
                     // 进入编辑状态，用当前 PPQ 值初始化缓冲区
                     self.ppq_editing = true;
                     self.ppq_edit_buffer = current_ppq.to_string();
+                    self.ppq_edit_error = None;
                 }
             }
             Event::PpqEditChanged(value) => {
                 if self.ppq_editing {
-                    // 只允许输入数字
-                    if value.is_empty() || value.chars().all(|c| c.is_ascii_digit()) {
+                    // 允许数字与整数表达式字符；非法字符直接丢弃，保留上一次合法输入。
+                    if value.is_empty() || is_expression_input(&value) {
                         self.ppq_edit_buffer = value;
+                        self.ppq_edit_error = None;
                     }
                 }
             }

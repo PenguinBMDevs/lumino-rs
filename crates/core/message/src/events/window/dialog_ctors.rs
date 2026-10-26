@@ -29,6 +29,22 @@ impl Event {
     pub fn close_draw_settings_dialog() -> Self {
         Self::dialog(dialog::Event::CloseDrawSettingsDialog)
     }
+    /// 构造打开/关闭 Help 窗口事件
+    pub fn toggle_help_dialog() -> Self {
+        Self::dialog(dialog::Event::ToggleHelpDialog)
+    }
+    /// 构造关闭 Help 窗口事件
+    pub fn close_help_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseHelpDialog)
+    }
+    /// 构造「首次 tip 已看过」事件
+    pub fn help_tip_seen(id: String) -> Self {
+        Self::dialog(dialog::Event::HelpTipSeen(id))
+    }
+    /// 构造「全部重现」事件
+    pub fn reset_help_tips() -> Self {
+        Self::dialog(dialog::Event::ResetHelpTips)
+    }
     /// 构造关闭自定义精度对话框事件
     pub fn close_custom_precision_dialog() -> Self {
         Self::dialog(dialog::Event::CloseCustomPrecisionDialog)

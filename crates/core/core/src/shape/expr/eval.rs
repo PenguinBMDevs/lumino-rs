@@ -12,6 +12,7 @@ impl Expr {
         for op in &self.ops {
             match op {
                 Op::Num(value) => stack.push(*value),
+                Op::Int(value) => stack.push(*value as f64),
                 Op::Var(name) => {
                     let value = if name == "x" {
                         Some(x)

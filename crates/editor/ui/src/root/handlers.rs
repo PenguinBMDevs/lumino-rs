@@ -22,6 +22,7 @@ pub mod collaboration;
 pub mod core_window;
 pub mod dialog;
 pub mod editor_action;
+pub mod help;
 pub mod loop_range;
 pub mod material;
 pub mod settings;
@@ -121,6 +122,10 @@ impl Root {
             }
             Message::Window(event) => {
                 self.handle_window_event(event.clone());
+                true
+            }
+            Message::Help(action) => {
+                self.handle_help_action(action.clone());
                 true
             }
             Message::Sidebar(event) => {

@@ -71,6 +71,14 @@ pub enum Event {
     OpenDrawSettingsDialog,
     /// 关闭「音符画设置」对话框窗口
     CloseDrawSettingsDialog,
+    /// 打开/关闭 Help 窗口（F1；已打开时聚焦/关闭由 Runner 裁决）
+    ToggleHelpDialog,
+    /// 关闭 Help 窗口
+    CloseHelpDialog,
+    /// 记录某个首次使用 tip 已看过（Runner 写入 UiConfig）
+    HelpTipSeen(String),
+    /// 清除全部已看过的首次使用 tip（「全部重现」）
+    ResetHelpTips,
     /// 打开加载确认对话框
     OpenLoadConfirmDialog {
         /// 文件路径

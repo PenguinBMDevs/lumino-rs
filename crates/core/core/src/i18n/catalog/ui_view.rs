@@ -6,6 +6,12 @@
 /// 查本域英文译文；未登记返回 `None`。
 pub fn lookup(zh: &str) -> Option<&'static str> {
     match zh {
+        "帮助" => Some("Help"),
+        "搜索帮助..." => Some("Search help..."),
+        "没有匹配的话题" => Some("No matching topics"),
+        "全部重现" => Some("Show all again"),
+        "查看帮助" => Some("View help"),
+        "知道了" => Some("Got it"),
         // ── 云存储连接面板 / 断连提醒（`view/cloud_dialog.rs`）──
         "Lumino 无权且不会收集您的个人信息，所有信息将会存储在本地" => {
             Some(
@@ -14,7 +20,6 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         "云存储连接异常" => Some("Cloud storage connection error"),
         "云存储提醒" => Some("Cloud Storage Notice"),
-        "知道了" => Some("Got it"),
         "协议" => Some("Protocol"),
         "名称（可选）" => Some("Name (optional)"),
         "例如：我的 NAS" => Some("e.g. My NAS"),

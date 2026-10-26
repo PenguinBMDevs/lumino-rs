@@ -129,7 +129,18 @@ pub fn view_custom_precision_dialog<'a>(
     .align_y(iced_core::Alignment::Center);
 
     // 左侧输入区域
-    let input_area = column![first_row, space().height(20), second_row,]
+    let mut input_area = column![first_row, space().height(20), second_row,];
+    if let Some(error) = &state.error {
+        input_area = input_area.push(space().height(6)).push(
+            text(error.clone())
+                .size(11)
+                .width(Length::Fixed(320.0))
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.danger.base.color),
+                }),
+        );
+    }
+    let input_area = input_area
         .width(Length::Fixed(320.0))
         .align_x(iced_core::Alignment::Start);
 

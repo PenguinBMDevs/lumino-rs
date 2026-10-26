@@ -10,9 +10,22 @@ mod compile;
 mod error;
 mod eval;
 mod func;
+mod int;
 
 pub use compile::compile;
 pub use error::ExprError;
+pub use int::{checked_pow, eval_int, fmt_number};
+
+/// 数字框输入字符白名单：数字、空白与整数表达式运算符（不含字母/函数）。
+///
+/// 只做“允许键入”的粗筛；真正的语法与整数约束由 [`eval_int`] 在提交时判定。
+pub fn is_int_input(src: &str) -> bool {
+    src.chars().all(|ch| {
+        ch.is_ascii_digit()
+            || ch.is_whitespace()
+            || matches!(ch, '+' | '-' | '*' | '/' | '%' | '^' | '(' | ')' | '.')
+    })
+}
 
 /// 已编译公式（后缀序列）
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +36,8 @@ pub struct Expr {
 #[derive(Debug, Clone, PartialEq)]
 enum Op {
     Num(f64),
+    /// 整数字面量（数字框精确求值路径；浮点求值时转 f64）
+    Int(i64),
     Var(String),
     Neg,
     Add,

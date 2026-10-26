@@ -96,8 +96,10 @@ pub struct Toolbar {
     pub auto_scroll_mode: lumino_core::storage::config::AutoScrollMode,
     /// PPQ 编辑模式（true = 正在编辑）
     pub ppq_editing: bool,
-    /// PPQ 编辑缓冲区（仅包含数字字符）
+    /// PPQ 编辑缓冲区（允许整数表达式，如 `480*2`）
     pub ppq_edit_buffer: String,
+    /// PPQ 编辑提交错误（None = 无错误；失败时保留编辑态与原输入）
+    pub ppq_edit_error: Option<String>,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
     /// 音符绘制悬浮工具条是否打开（工具栏绘制入口按钮触发）

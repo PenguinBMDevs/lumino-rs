@@ -13,6 +13,7 @@ use lumino_core::storage::config::UiConfig;
 mod deferred_remote_ops;
 mod document_sync;
 mod handler_behavior;
+mod help;
 mod piano_roll;
 mod recover_track;
 mod selection_drift;

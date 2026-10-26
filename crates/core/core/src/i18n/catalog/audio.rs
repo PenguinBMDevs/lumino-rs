@@ -28,6 +28,21 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         "MIDI 输入未初始化" => Some("MIDI input not initialized"),
         "MIDI 输出未初始化" => Some("MIDI output not initialized"),
+        "MIDI 文件为空" => Some("The MIDI file is empty"),
+        "不是普通文件，无法按 MIDI 加载" => {
+            Some("Not a regular file; cannot load it as MIDI")
+        }
+        "准备解析 ({file_size_mb} MB)，开始映射..." => {
+            Some("Preparing to parse ({file_size_mb} MB), mapping...")
+        }
+        "正在映射文件... (内存: {map_rss} MB)" => {
+            Some("Mapping file... (memory: {map_rss} MB)")
+        }
+        "该压缩格式（RAR/7Z/LZH）在 Android 上暂不支持：unarc-rs 无 android 后端" => {
+            Some(
+                "This archive format (RAR/7Z/LZH) is not supported on Android yet: unarc-rs has no Android backend",
+            )
+        }
         "KDMAPI 不可用（IsKDMAPIAvailable 返回 false）。请在 OmniMIDI 设置中启用 KDMAPI" => {
             Some(
                 "KDMAPI is unavailable (IsKDMAPIAvailable returned false). Please enable KDMAPI in the OmniMIDI settings.",

@@ -188,6 +188,58 @@ impl Root {
                     PianoRollContextMenuItem::VelocityUp => {
                         let _ = self.editor.velocity_up_selected();
                     }
+                    PianoRollContextMenuItem::CopyShapeText => {
+                        let mut models = self.editor.selected_shape_models();
+                        // 待确认图形没有 ShapeStore 模型，但有几何：按当前几何临时构造，
+                        // 让用户可以在 √ / Bake 之前先复制分享文本。
+                        if models.is_empty()
+                            && let Some(pending) = self.editor.selected_pending_shape_model()
+                        {
+                            models.push(pending);
+                        }
+                        if models.is_empty() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("没有可分享的形状，请先用鼠标工具选中已确认或待确认图形"),
+                            );
+                        } else {
+                            let ppq = self.editor.editor_state.view.ppq;
+                            match lumino_core::shape::share::encode_shapes(&models, ppq) {
+                                Ok(text) => match lumino_platform::clipboard::set_text(text) {
+                                    Ok(()) => self.toast.push(
+                                        crate::toast::ToastLevel::Success,
+                                        tr!("已复制形状分享文本"),
+                                    ),
+                                    Err(error) => self.toast.push(
+                                        crate::toast::ToastLevel::Error,
+                                        format!("{}: {error}", tr!("复制到剪贴板失败")),
+                                    ),
+                                },
+                                Err(error) => self.toast.push(
+                                    crate::toast::ToastLevel::Error,
+                                    format!("{}: {error}", tr!("形状分享编码失败")),
+                                ),
+                            };
+                        }
+                    }
+                    PianoRollContextMenuItem::PasteShapeText => {
+                        match lumino_platform::clipboard::get_text() {
+                            Ok(text) => match self.editor.paste_shapes_from_text(&text) {
+                                Ok(count) => self.toast.push(
+                                    crate::toast::ToastLevel::Success,
+                                    format!("{}: {count}", tr!("已粘贴形状")),
+                                ),
+                                Err(error) => self.toast.push(
+                                    crate::toast::ToastLevel::Error,
+                                    format!("{}: {error}", tr!("形状分享粘贴失败")),
+                                ),
+                            },
+                            Err(error) => self.toast.push(
+                                crate::toast::ToastLevel::Error,
+                                format!("{}: {error}", tr!("读取剪贴板失败")),
+                            ),
+                        };
+                    }
                     PianoRollContextMenuItem::SelectAll => {
                         let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }

@@ -53,7 +53,8 @@ impl Toolbar {
             row![
                 tool_selector(
                     icon::MousePointer,
-                    t.tool_pointer,
+                    lumino_ui_core::help::tool_tip(Tool::Pointer, language)
+                        .unwrap_or(t.tool_pointer),
                     Tool::Pointer,
                     self.current_tool,
                     window,
@@ -62,7 +63,8 @@ impl Toolbar {
                 space().width(4),
                 tool_selector(
                     icon::MousePointerYSelect,
-                    t.tool_pointer_y_select,
+                    lumino_ui_core::help::tool_tip(Tool::PointerYSelect, language)
+                        .unwrap_or(t.tool_pointer_y_select),
                     Tool::PointerYSelect,
                     self.current_tool,
                     window,
@@ -71,7 +73,7 @@ impl Toolbar {
                 space().width(4),
                 tool_selector(
                     icon::Pencil,
-                    t.tool_pencil,
+                    lumino_ui_core::help::tool_tip(Tool::Pencil, language).unwrap_or(t.tool_pencil),
                     Tool::Pencil,
                     self.current_tool,
                     window,
@@ -80,7 +82,7 @@ impl Toolbar {
                 space().width(4),
                 tool_selector(
                     icon::Eraser,
-                    t.tool_eraser,
+                    lumino_ui_core::help::tool_tip(Tool::Eraser, language).unwrap_or(t.tool_eraser),
                     Tool::Eraser,
                     self.current_tool,
                     window,

@@ -36,6 +36,16 @@ pub fn compile(src: &str, vars: &[&str]) -> Result<Expr, ExprError> {
                 last_was_lparen = false;
                 last_was_comma = false;
             }
+            Token::Int(value) => {
+                if !expect_operand {
+                    return Err(ExprError::Syntax("数字前缺少运算符".into()));
+                }
+                output.push(Op::Int(value));
+                expect_operand = false;
+                previous_was_function = false;
+                last_was_lparen = false;
+                last_was_comma = false;
+            }
             Token::Ident(name) => {
                 if !expect_operand {
                     return Err(ExprError::Syntax("标识符前缺少运算符".into()));
@@ -206,6 +216,7 @@ fn emit(output: &mut Vec<Op>, item: Stack) -> Result<(), ExprError> {
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
     Num(f64),
+    Int(i64),
     Ident(String),
     LParen,
     RParen,
@@ -238,6 +249,16 @@ fn tokenize(src: &str) -> Result<Vec<Token>, ExprError> {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
+            // 纯十进制整数走 `Token::Int`，保证数字框 `960*4` 不经过 f64；
+            // 带小数点/指数或超出 i64 的字面量仍走浮点路径。
+            if !text.contains('.')
+                && !text.contains('e')
+                && !text.contains('E')
+                && let Ok(value) = text.parse::<i64>()
+            {
+                out.push(Token::Int(value));
+                continue;
+            }
             let value = text
                 .parse::<f64>()
                 .map_err(|_| ExprError::Syntax(format!("非法数字：{text}")))?;
