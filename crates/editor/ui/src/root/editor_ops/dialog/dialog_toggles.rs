@@ -111,6 +111,15 @@ impl Root {
         }
     }
 
+    /// 设置 Help 窗口是否打开（独立 OS 窗口；DRAW-038）
+    pub fn set_help_dialog_open(&mut self, open: bool) {
+        if open {
+            self.state.dialog_type = DialogType::Help;
+        } else if self.state.dialog_type == DialogType::Help {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 设置找回删除音轨对话框的条目列表（由 Runner 扫描缓存目录后填充）
     pub fn set_recover_track_dialog_entries(
         &mut self,

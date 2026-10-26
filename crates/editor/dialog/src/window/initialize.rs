@@ -161,6 +161,10 @@ impl DialogWindow {
                 // 的空容器分支（窗口一片空白）。
                 ui.set_draw_settings_dialog_open(true);
             }
+            DialogType::Help => {
+                // 帮助窗口是独立 Root；切类型后 overlay 才会渲染帮助视图。
+                ui.set_help_dialog_open(true);
+            }
         }
 
         // REF-001：**不在此处显示窗口**。窗口要等「入册后的首帧」测量完内容尺寸

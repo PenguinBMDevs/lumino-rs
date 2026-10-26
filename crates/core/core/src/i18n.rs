@@ -93,6 +93,13 @@ pub fn tr(zh: &'static str) -> &'static str {
     tr_in(zh, current_language())
 }
 
+/// 查英文目录；未登记返回 `None`。
+///
+/// 供“key 在数据表里、调用点不是 `tr!` 字面量”的场景做覆盖率测试（帮助话题）。
+pub fn lookup_en(zh: &str) -> Option<&'static str> {
+    catalog::lookup(zh)
+}
+
 /// 动态取词：key 是**运行时字符串**（例如界面状态里存的中文数据值）。
 ///
 /// 与 [`tr`] 的差别只在返回类型：`tr` 拿 `&'static str` 可以直接内联，

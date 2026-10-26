@@ -135,6 +135,9 @@ impl Root {
         // 使用 UI 内存标签包裹 Root 各子组件初始化，便于内存监控归因
         lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             let mut state = RootState::new();
+            state.help_tips = lumino_ui_core::help::HelpTipsState::from_seen(
+                params.ui_config.seen_help_tips.clone(),
+            );
             if let Some(dt) = params.dialog_type {
                 state.is_dialog_window = true;
                 state.dialog_type = dt;

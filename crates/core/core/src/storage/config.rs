@@ -91,6 +91,11 @@ pub struct UiConfig {
     /// 自动滚动配置
     #[serde(default)]
     pub auto_scroll: AutoScrollConfig,
+    /// 已看过的帮助首次提示（topic id；DRAW-038）
+    ///
+    /// 新增字段用 `serde(default)`，旧配置无需迁移；「全部重现」清空此列表。
+    #[serde(default)]
+    pub seen_help_tips: Vec<String>,
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
@@ -284,6 +289,7 @@ impl Default for UiConfig {
             program_font_name: String::from("Microsoft YaHei"),
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
+            seen_help_tips: Vec::new(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
             xsynth_global_voice_limit: None,
             xsynth_voice_target_ratio: default_xsynth_voice_target_ratio(),
@@ -324,6 +330,27 @@ impl Default for UiConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DRAW-038：已看过的帮助 tip 必须能落盘/读回；旧配置缺字段默认为空。
+    #[test]
+    fn test_seen_help_tips_roundtrip_and_default() {
+        let mut config = UiConfig {
+            seen_help_tips: vec!["curve".into(), "text".into()],
+            ..UiConfig::default()
+        };
+        let json = serde_json::to_string(&config).expect("序列化");
+        let restored: UiConfig = serde_json::from_str(&json).expect("反序列化");
+        assert_eq!(restored.seen_help_tips, vec!["curve", "text"]);
+
+        config.seen_help_tips.clear();
+        let mut value = serde_json::to_value(&config).expect("序列化");
+        value
+            .as_object_mut()
+            .expect("对象")
+            .remove("seen_help_tips");
+        let restored: UiConfig = serde_json::from_value(value).expect("旧配置应可读");
+        assert!(restored.seen_help_tips.is_empty());
+    }
 
     /// 旧配置（UI-010 之前写入的 `config.json`）缺少 `gpu_last_check_time`：
     /// 反序列化不得失败，字段落为 `None`，由调用方按"缓存过期"处理。

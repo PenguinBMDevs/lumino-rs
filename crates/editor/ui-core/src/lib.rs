@@ -12,6 +12,7 @@ pub mod button_descs;
 pub mod color;
 /// 全局 UI 字体入口（UI-001：统一字体绑定 + 自定义字体文件加载）
 pub mod font;
+pub mod help;
 pub mod message;
 pub mod settings_event;
 pub mod sidebar_event;

@@ -268,6 +268,14 @@ impl Root {
         if let Some(draw_toolbar) = self.view_draw_toolbar() {
             stack = stack.push(draw_toolbar);
         }
+        // 首次使用帮助提示：最上层、右下角、非模态；显示即已读。
+        if let Some(tip) = crate::view::help_tip::view_help_tip(
+            self.state.help_tips.active_topic(),
+            &self.window,
+            self.settings.display.language,
+        ) {
+            stack = stack.push(tip);
+        }
         stack.into()
     }
 

@@ -55,6 +55,16 @@ impl ToolbarHandler {
 
         // 同步工具状态
         self.sync_toolbar_tool_state(root, &event);
+        // 工具首次选中 → 弹一次帮助 tip（DRAW-038）
+        match &event {
+            crate::toolbar::Event::ToolSelected(tool) => root.maybe_show_help_tip(*tool),
+            crate::toolbar::Event::ToolPanelItemSelected(_)
+            | crate::toolbar::Event::ToolPanelItemSettingsRequested(_) => {
+                let tool = root.toolbar.current_tool;
+                root.maybe_show_help_tip(tool);
+            }
+            _ => {}
+        }
 
         // 同步精度设置
         self.sync_toolbar_precision(root, &event);

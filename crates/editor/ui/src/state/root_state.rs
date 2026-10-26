@@ -14,6 +14,7 @@ pub use lumino_ui_core::state::{
 
 use crate::app_mode::AppMode;
 use lumino_core::BrushConfig;
+use lumino_ui_core::help::{HelpDialogState, HelpTipsState};
 
 /// 对话框类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -55,6 +56,8 @@ pub enum DialogType {
     BrushSettings,
     /// 「音符画设置」对话框（独立 OS 窗口：各绘制工具设置的聚合入口）
     DrawSettings,
+    /// 帮助窗口（F1；独立 OS 窗口）
+    Help,
 }
 
 /// Root 组件的状态
@@ -128,6 +131,10 @@ pub struct RootState {
     /// 动画持续重绘。起始相位为 `Idle`（不要求逐帧驱动），打字由「菜单切到关于页」
     /// 时调用 `begin_typing` 显式装填。
     pub echo_cave: EchoCaveState,
+    /// Help 窗口本地状态（搜索词 / 当前选中项；DRAW-038）
+    pub help_dialog: HelpDialogState,
+    /// 首次使用提示状态（已读集合 + 当前提示；DRAW-038）
+    pub help_tips: HelpTipsState,
 }
 
 impl Default for RootState {
@@ -169,6 +176,8 @@ impl RootState {
             device_warning_action: None,
             about_egg: AboutEggState::new(),
             echo_cave: EchoCaveState::new(),
+            help_dialog: HelpDialogState::default(),
+            help_tips: HelpTipsState::default(),
         }
     }
 }

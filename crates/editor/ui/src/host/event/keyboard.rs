@@ -236,6 +236,21 @@ impl Host {
         let ctrl = super::is_ctrl_or_cmd_pressed(modifiers);
         let shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
 
+        // F1：主窗口开关 Help；Help 窗口内关闭。其他对话框不抢 F1。
+        if key == winit::keyboard::KeyCode::F1 {
+            use crate::state::root_state::DialogType;
+            if self.root.state.dialog_type == DialogType::Help {
+                crate::event::emit(crate::event::Event::Window(
+                    crate::event::window::Event::close_help_dialog(),
+                ));
+            } else if !self.root.state.is_dialog_window {
+                crate::event::emit(crate::event::Event::Window(
+                    crate::event::window::Event::toggle_help_dialog(),
+                ));
+            }
+            return;
+        }
+
         // 空格键：播放/暂停切换（视图仲裁 + 忽略长按重复，见 space_shortcut_message）。
         // 无论是否消费都提前返回：空格不参与其余快捷键匹配。
         if key == winit::keyboard::KeyCode::Space {
