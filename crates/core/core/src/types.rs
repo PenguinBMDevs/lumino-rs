@@ -217,19 +217,19 @@ impl BrushConfig {
     }
 }
 
-// ─── 符点类型 ───
+// ─── 附点类型 ───
 
-/// 符点类型选项
+/// 附点类型选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DotType {
-    /// 无符点
+    /// 无附点
     #[default]
     None,
-    /// 连音符
+    /// 连音
     Tuplet,
-    /// 单符点
+    /// 单附点
     Single,
-    /// 双符点
+    /// 双附点
     Double,
 }
 
@@ -237,9 +237,9 @@ impl std::fmt::Display for DotType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             DotType::None => tr!("（无）"),
-            DotType::Tuplet => tr!("连音符"),
-            DotType::Single => tr!("符点"),
-            DotType::Double => tr!("双符点"),
+            DotType::Tuplet => tr!("连音"),
+            DotType::Single => tr!("附点"),
+            DotType::Double => tr!("双附点"),
         };
         write!(f, "{}", name)
     }
@@ -256,7 +256,7 @@ impl DotType {
         ]
     }
 
-    /// 获取倍数（符点增加原时值的多少）
+    /// 获取倍数（附点增加原时值的多少）
     pub fn multiplier(&self) -> f32 {
         match self {
             DotType::None => 1.0,

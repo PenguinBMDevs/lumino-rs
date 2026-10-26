@@ -9,13 +9,13 @@ use lumino_message::{DotType, TupletType};
 pub struct CustomPrecisionDialogState {
     /// 对话框是否打开
     pub is_open: bool,
-    /// 连音符分子（如三连音为 3）
+    /// 连音分子（如三连音为 3）
     pub tuplet_count: String,
     /// 基础音符时值（如四分音符为 4）
     pub note_value: String,
-    /// 连音符类型
+    /// 连音类型
     pub tuplet_type: TupletType,
-    /// 符点类型
+    /// 附点类型
     pub dot_type: DotType,
     /// 时值除数（额外除以的数值）
     pub divisor: String,

@@ -55,7 +55,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "音符精度、框选网格与自定义精度" => {
             Some("Note precision, marquee grid, and custom precision")
         }
-        "工具栏的精度下拉决定新建音符长度、拖动吸附与框选网格。常见档位从全音符到 128 分音符，也可以选择自定义。\n\n自定义精度支持三连音、符点与除数；修改 PPQ 时，非自定义精度会按新 PPQ 重新换算，自定义精度保持绝对 tick 不变。" => {
+        "工具栏的精度下拉决定新建音符长度、拖动吸附与框选网格。常见档位从全音符到 128 分音符，也可以选择自定义。\n\n自定义精度支持三连音、附点与除数；修改 PPQ 时，非自定义精度会按新 PPQ 重新换算，自定义精度保持绝对 tick 不变。" => {
             Some(
                 "The precision dropdown controls new-note length, drag snapping, and the marquee grid, from whole notes to 128th notes, plus Custom.\n\nCustom precision supports tuplets, dots, and divisors. On PPQ changes, preset precision is rescaled; Custom keeps its absolute tick value.",
             )

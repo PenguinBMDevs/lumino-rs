@@ -15,7 +15,7 @@ pub struct CustomPrecisionDialog {
     pub tuplet_count: String,
     /// 三连音类型
     pub tuplet_type: TupletType,
-    /// 符点类型
+    /// 附点类型
     pub dot_type: DotType,
     /// 分音符值（如 "64"）
     pub note_value: String,

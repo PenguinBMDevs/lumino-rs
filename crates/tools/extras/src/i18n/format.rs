@@ -1,4 +1,4 @@
-//! 格式化函数 — 按语言格式化音符精度、符点类型、配置枚举等显示名称
+//! 格式化函数 — 按语言格式化音符精度、附点类型、配置枚举等显示名称
 
 use lumino_core::types::Language;
 use lumino_core::{DotType, NotePrecision};
@@ -31,15 +31,18 @@ pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static
     }
 }
 
-/// 获取符点类型名称（按语言）
+/// 获取附点类型名称（按语言）
+///
+/// 中文统一用音乐记谱术语「附点」：单附点 = `附点`，双附点 = `双附点`；
+/// 不使用「符点 / 复点」等异体写法。`Tuplet` 仅表示连音选项。
 pub fn dot_type_name(dot_type: DotType, lang: Language) -> &'static str {
     use lumino_core::DotType::*;
     match lang {
         Language::ZhCn => match dot_type {
             None => "（无）",
-            Tuplet => "连音符",
-            Single => "符点",
-            Double => "双符点",
+            Tuplet => "连音",
+            Single => "附点",
+            Double => "双附点",
         },
         Language::EnUs => match dot_type {
             None => "(None)",
@@ -143,6 +146,20 @@ pub fn format_thousands(n: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::format_thousands;
+    use super::{Language, dot_type_name};
+    use lumino_core::DotType;
+
+    #[test]
+    fn test_dot_type_names_use_attached_dot_terms() {
+        assert_eq!(dot_type_name(DotType::Tuplet, Language::ZhCn), "连音");
+        assert_eq!(dot_type_name(DotType::Single, Language::ZhCn), "附点");
+        assert_eq!(dot_type_name(DotType::Double, Language::ZhCn), "双附点");
+        assert_eq!(dot_type_name(DotType::Single, Language::EnUs), "Dotted");
+        assert_eq!(
+            dot_type_name(DotType::Double, Language::EnUs),
+            "Double Dotted"
+        );
+    }
 
     #[test]
     fn test_format_thousands() {

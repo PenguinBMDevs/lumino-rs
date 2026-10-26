@@ -120,9 +120,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "六十四分音符" => Some("Sixty-Fourth Note"),
         "128分音符" => Some("128th Note"),
         "自定义" => Some("Custom"),
-        "连音符" => Some("Tuplet"),
-        "符点" => Some("Dotted"),
-        "双符点" => Some("Double Dotted"),
+        "连音" => Some("Tuplet"),
+        "附点" => Some("Dotted"),
+        "双附点" => Some("Double Dotted"),
         "（无）" => Some("(None)"),
         "简体中文" => Some("Simplified Chinese"),
         // ── crates/core/core/src/storage/config/enums.rs（设置下拉显示名）──

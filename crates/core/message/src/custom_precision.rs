@@ -16,7 +16,7 @@ pub enum CustomPrecisionAction {
     TupletCountChanged(String),
     /// 三连音类型变更
     TupletTypeChanged(TupletType),
-    /// 符点类型变更
+    /// 附点类型变更
     DotTypeChanged(DotType),
     /// 分音符值变更
     NoteValueChanged(String),

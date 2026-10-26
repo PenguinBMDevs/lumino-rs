@@ -113,7 +113,7 @@ pub static TOPICS: &[HelpTopic] = &[
         section: HelpSection::Editing,
         title: "吸附与精度",
         tip: HelpTip::Text("音符精度、框选网格与自定义精度"),
-        body: "工具栏的精度下拉决定新建音符长度、拖动吸附与框选网格。常见档位从全音符到 128 分音符，也可以选择自定义。\n\n自定义精度支持三连音、符点与除数；修改 PPQ 时，非自定义精度会按新 PPQ 重新换算，自定义精度保持绝对 tick 不变。",
+        body: "工具栏的精度下拉决定新建音符长度、拖动吸附与框选网格。常见档位从全音符到 128 分音符，也可以选择自定义。\n\n自定义精度支持三连音、附点与除数；修改 PPQ 时，非自定义精度会按新 PPQ 重新换算，自定义精度保持绝对 tick 不变。",
         words: &["吸附", "精度", "网格", "ppq", "snap", "precision", "grid"],
     },
     HelpTopic {

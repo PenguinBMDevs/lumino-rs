@@ -54,7 +54,7 @@ pub enum ButtonId {
     Split,
     /// 粘连/合并
     Glue,
-    /// 连音符
+    /// 连音
     Tie,
     /// 向下移调
     TransposeDown,

@@ -38,7 +38,7 @@ pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static
     main::note_precision_name(precision, lang)
 }
 
-/// 获取符点类型名称（按语言）
+/// 获取附点类型名称（按语言）
 pub fn dot_type_name(dot_type: DotType, lang: Language) -> &'static str {
     main::dot_type_name(dot_type, lang)
 }

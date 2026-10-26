@@ -105,7 +105,7 @@ impl Event {
         Message::Toolbar(Self::CustomPrecisionTupletTypeChanged(value))
     }
 
-    /// 构造"符点类型变更"的工具栏消息
+    /// 构造"附点类型变更"的工具栏消息
     pub fn custom_precision_dot_type_changed(value: DotType) -> Message {
         Message::Toolbar(Self::CustomPrecisionDotTypeChanged(value))
     }

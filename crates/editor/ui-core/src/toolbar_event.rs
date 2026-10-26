@@ -51,7 +51,7 @@ pub enum Event {
     CustomPrecisionTupletCountChanged(String),
     /// 三连音类型变更
     CustomPrecisionTupletTypeChanged(TupletType),
-    /// 符点类型变更
+    /// 附点类型变更
     CustomPrecisionDotTypeChanged(DotType),
     /// 分音符值变更
     CustomPrecisionNoteValueChanged(String),
