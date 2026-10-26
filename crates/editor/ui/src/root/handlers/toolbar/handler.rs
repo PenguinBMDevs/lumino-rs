@@ -17,10 +17,11 @@ impl ToolbarHandler {
     }
 
     fn handle_toolbar_event(&self, root: &mut Root, event: crate::toolbar::Event) {
-        // PPQ 编辑确认：直接保存并返回，不再处理其他事件
+        // PPQ 编辑确认：成功才收起编辑态；失败保留输入与错误，供用户继续改。
         if matches!(event, crate::toolbar::Event::PpqEditConfirmed) {
-            Self::confirm_ppq_edit(root);
-            root.toolbar.update(event);
+            if Self::confirm_ppq_edit(root) {
+                root.toolbar.update(event);
+            }
             return;
         }
 
@@ -103,19 +104,29 @@ impl ToolbarHandler {
         }
     }
 
-    /// 确认 PPQ 编辑：解析缓冲区 → 写入编辑器 → 清除编辑状态
-    fn confirm_ppq_edit(root: &mut Root) {
-        if let Ok(ppq) = root.toolbar.ppq_edit_buffer.parse::<u16>() {
-            // MIDI 规范：PPQ 范围 24-32767
-            if (24..=32767).contains(&ppq) {
-                root.set_ppq(ppq);
+    /// 确认 PPQ 编辑：整数表达式求值 → 写入编辑器 → 清除编辑状态
+    ///
+    /// 返回 `false` 表示提交失败：调用方不得收起编辑态，输入框内容与错误提示保留。
+    fn confirm_ppq_edit(root: &mut Root) -> bool {
+        // MIDI 规范：PPQ 范围 24-32767
+        match lumino_ui_core::widget::eval_int_field(&root.toolbar.ppq_edit_buffer, 24, 32767) {
+            Ok(ppq) => {
+                root.toolbar.ppq_edit_error = None;
+                root.toolbar.ppq_editing = false;
+                root.toolbar.ppq_edit_buffer.clear();
+                root.set_ppq(ppq as u16);
                 tracing::info!("PPQ 已更新为 {}", ppq);
-            } else {
-                tracing::warn!("PPQ 值 {} 超出范围 (24-32767)，已忽略", ppq);
+                true
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "PPQ 输入非法 {:?}（{error}），保留编辑态",
+                    root.toolbar.ppq_edit_buffer
+                );
+                root.toolbar.ppq_edit_error = Some(error);
+                false
             }
         }
-        root.toolbar.ppq_editing = false;
-        root.toolbar.ppq_edit_buffer.clear();
     }
 }
 

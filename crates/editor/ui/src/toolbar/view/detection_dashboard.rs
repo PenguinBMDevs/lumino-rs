@@ -51,6 +51,7 @@ impl Toolbar {
             ppq_edit_column(
                 format!("{bpm:.1}"),
                 &self.ppq_edit_buffer,
+                self.ppq_edit_error.as_deref(),
                 accent,
                 dim,
                 80.0,
@@ -150,6 +151,7 @@ fn ppq_display_column<'a>(
 fn ppq_edit_column<'a>(
     top: String,
     edit_buffer: &'a str,
+    error: Option<&'a str>,
     accent: iced_core::Color,
     _dim: iced_core::Color,
     width: f32,
@@ -166,7 +168,7 @@ fn ppq_edit_column<'a>(
         ..Default::default()
     };
 
-    column![
+    let mut content = column![
         text(top).size(13).style(move |_t: &Theme| text::Style {
             color: Some(accent),
         }),
@@ -181,10 +183,21 @@ fn ppq_edit_column<'a>(
         )
         .width(iced_widget::core::Length::Fixed(width - 4.0))
         .style(input_style),
-    ]
-    .width(iced_widget::core::Length::Fixed(width))
-    .align_x(Alignment::Center)
-    .into()
+    ];
+    if let Some(error) = error {
+        content = content.push(
+            text(error)
+                .size(9)
+                .width(iced_widget::core::Length::Fixed(width))
+                .style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                }),
+        );
+    }
+    content
+        .width(iced_widget::core::Length::Fixed(width))
+        .align_x(Alignment::Center)
+        .into()
 }
 
 /// 取播放位置处的当前 BPM（取 tick 之前最近的速度点）

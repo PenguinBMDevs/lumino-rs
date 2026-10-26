@@ -17,20 +17,23 @@ impl DialogHandler {
                 root.state.fill_division_dialog.is_open = true;
                 root.state.fill_division_dialog.value =
                     current.map(|n| n.to_string()).unwrap_or_default();
+                root.state.fill_division_dialog.error = None;
             }
             FillDivisionAction::CloseDialog => {
                 root.state.fill_division_dialog.is_open = false;
             }
             FillDivisionAction::ValueChanged(value) => {
-                // 只允许数字（含空串）：与自定义精度对话框同口径，
-                // 非法字符直接丢弃，输入框保持上一次合法值。
-                if value.chars().all(|c| c.is_ascii_digit()) {
+                // 允许数字与整数表达式字符；非法字符直接丢弃，保留上一次合法输入。
+                if lumino_core::shape::expr::is_int_input(&value) {
                     root.state.fill_division_dialog.value = value;
+                    root.state.fill_division_dialog.error = None;
                 }
             }
             FillDivisionAction::Confirm => {
-                match root.state.fill_division_dialog.parse() {
+                let result = root.state.fill_division_dialog.parse();
+                match result {
                     Ok(division) => {
+                        root.state.fill_division_dialog.error = None;
                         root.editor.set_fill_division(division);
                         root.state.fill_division_dialog.is_open = false;
                         tracing::info!("颜料桶: 填充切分档位 = {division:?}");
@@ -41,6 +44,7 @@ impl DialogHandler {
                             "颜料桶: 分音符输入非法 {:?}（{e}）",
                             root.state.fill_division_dialog.value
                         );
+                        root.state.fill_division_dialog.error = Some(e);
                     }
                 }
             }

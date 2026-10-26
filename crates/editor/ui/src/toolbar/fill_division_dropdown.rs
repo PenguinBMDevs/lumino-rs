@@ -36,6 +36,7 @@ const INPUT_WIDTH: f32 = 72.0;
 /// - `theme`：当前主题（用于边框 / 输入框配色）。
 pub(crate) fn render_fill_division_dropdown<'a>(
     value: &'a str,
+    error: Option<&'a str>,
     language: Language,
     panel_background: Color,
     theme: &'a iced_core::Theme,
@@ -73,28 +74,34 @@ pub(crate) fn render_fill_division_dropdown<'a>(
     ]
     .align_y(Alignment::Center);
 
-    container(
-        column![
-            input_row,
-            space().height(4),
-            text(t.fill_division_hint).size(11),
-            space().height(8),
-            buttons,
-        ]
-        .align_x(Alignment::Center)
-        .padding(10),
-    )
-    .style(move |_theme: &iced_core::Theme| container::Style {
-        background: Some(Background::Color(panel_background)),
-        text_color: Some(panel_text_color),
-        border: Border {
-            width: 1.0,
-            color: palette.background.strong.color,
-            radius: 8.0.into(),
-        },
-        ..Default::default()
-    })
-    .into()
+    let mut content = column![
+        input_row,
+        space().height(4),
+        text(t.fill_division_hint).size(11),
+    ];
+    if let Some(error) = error {
+        content = content.push(
+            text(error)
+                .size(10)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(iced_core::Color::from_rgb(1.0, 0.45, 0.45)),
+                }),
+        );
+    }
+    content = content.push(space().height(8)).push(buttons);
+
+    container(content.align_x(Alignment::Center).padding(10))
+        .style(move |_theme: &iced_core::Theme| container::Style {
+            background: Some(Background::Color(panel_background)),
+            text_color: Some(panel_text_color),
+            border: Border {
+                width: 1.0,
+                color: palette.background.strong.color,
+                radius: 8.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
 }
 
 #[cfg(test)]
@@ -106,7 +113,7 @@ mod tests {
     fn test_render_fill_division_dropdown_builds() {
         let theme = crate::Theme::Dark;
         let bg = Color::from_rgba(0.1, 0.1, 0.1, 1.0);
-        let _ = render_fill_division_dropdown("", Language::ZhCn, bg, &theme);
-        let _ = render_fill_division_dropdown("16", Language::EnUs, bg, &theme);
+        let _ = render_fill_division_dropdown("", None, Language::ZhCn, bg, &theme);
+        let _ = render_fill_division_dropdown("16", None, Language::EnUs, bg, &theme);
     }
 }

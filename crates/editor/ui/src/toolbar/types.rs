@@ -21,6 +21,8 @@ pub struct CustomPrecisionDialog {
     pub note_value: String,
     /// 除数（如 "1"）
     pub divisor: String,
+    /// 最近一次提交失败的原因（None = 无错误）
+    pub error: Option<String>,
 }
 
 impl Default for CustomPrecisionDialog {
@@ -32,6 +34,7 @@ impl Default for CustomPrecisionDialog {
             dot_type: DotType::None,
             note_value: "64".to_string(),
             divisor: "1".to_string(),
+            error: None,
         }
     }
 }

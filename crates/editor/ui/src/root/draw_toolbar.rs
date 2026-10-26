@@ -334,6 +334,7 @@ impl Root {
             let menu: Element<'_> = container(
                 crate::toolbar::fill_division_dropdown::render_fill_division_dropdown(
                     &self.state.fill_division_dialog.value,
+                    self.state.fill_division_dialog.error.as_deref(),
                     self.settings.display.language,
                     panel_background,
                     &self.window.theme,
@@ -928,6 +929,7 @@ mod tests {
         for lang in [Language::ZhCn, Language::EnUs] {
             let mut element = crate::toolbar::fill_division_dropdown::render_fill_division_dropdown(
                 "16",
+                None,
                 lang,
                 Color::from_rgba(0.1, 0.1, 0.1, 1.0),
                 &crate::Theme::Dark,
