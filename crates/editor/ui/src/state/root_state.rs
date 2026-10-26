@@ -281,9 +281,9 @@ mod tests {
     fn test_custom_precision_dialog_default() {
         let state = CustomPrecisionDialogState::new();
         assert!(!state.is_open);
-        assert_eq!(state.divisor, "2");
+        assert_eq!(state.divisor, "1");
         assert_eq!(state.note_value, "4");
-        assert_eq!(state.tuplet_count, "3");
+        assert_eq!(state.tuplet_count, "1");
     }
 
     #[test]

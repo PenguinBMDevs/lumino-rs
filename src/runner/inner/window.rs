@@ -28,21 +28,9 @@ impl RunnerInner {
     /// 将对话框结果应用到主窗口 UI
     pub(crate) fn apply_dialog_result_to_ui(ui: &mut lumino_ui::Host, result: DialogResult) {
         match result {
-            DialogResult::CustomPrecision {
-                numerator,
-                denominator,
-            } => {
-                tracing::info!("应用自定义精度: {}/{}", numerator, denominator);
-
-                // 应用到主窗口的编辑器
-                if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
-                    // 从编辑器状态获取实际的 PPQ 值
-                    let ppq = ui.ppq();
-                    let ticks = Self::compute_custom_precision_ticks(ppq as f32, num, den);
-
-                    ui.set_custom_precision(ticks);
-                    tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
-                }
+            DialogResult::CustomPrecision(spec) => {
+                tracing::info!("应用自定义吸附: {:?}", spec);
+                ui.set_custom_snap(spec);
             }
             DialogResult::LoadConfirm => {
                 // LoadConfirm 由 lifecycle.rs 处理，这里不应到达

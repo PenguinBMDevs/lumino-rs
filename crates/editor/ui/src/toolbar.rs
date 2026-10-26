@@ -85,6 +85,8 @@ pub struct Toolbar {
     resize_start_height: f32,
     /// 当前吸附规格（DRAW-037 单一设置源；派生 tick 写到 ViewState）
     pub snap_spec: SnapSpec,
+    /// 吸附选择器下拉是否打开
+    pub snap_picker_open: bool,
     /// 音符变速速度因子（浮点值，如 0.5 表示半速）
     pub speed_factor: f32,
     /// Ctrl 键是否按下（用于变速按钮的快捷操作）

@@ -40,6 +40,16 @@ impl Root {
     }
 
     /// 设置自定义精度值
+    /// 应用自定义吸附规格（DRAW-037）
+    pub fn set_custom_snap(&mut self, spec: lumino_core::SnapSpec) {
+        let ppq = self.editor.editor_state.view.ppq;
+        let ticks = spec.ticks(ppq) as f32;
+        self.toolbar.snap_spec = spec;
+        self.editor.set_snap_spec(spec);
+        self.editor.set_default_note_length(ticks);
+        tracing::info!("自定义吸附已应用：{:?} = {} ticks", spec, ticks);
+    }
+
     pub fn set_custom_precision(&mut self, ticks: f32) {
         let spec = lumino_core::SnapSpec::Custom {
             ticks: ticks.round().max(1.0) as u32,

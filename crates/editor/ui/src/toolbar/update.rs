@@ -14,6 +14,7 @@ impl Toolbar {
             resize_start_y: 0.0,
             resize_start_height: DEFAULT_HEIGHT,
             snap_spec: SnapSpec::QUARTER,
+            snap_picker_open: false,
             speed_factor: 0.5,
             ctrl_pressed: false,
             shift_pressed: false,
@@ -147,7 +148,14 @@ impl Toolbar {
             }
             Event::SnapSpecChanged(spec) => {
                 self.snap_spec = spec;
+                self.snap_picker_open = false;
                 tracing::debug!("工具栏: 吸附规格变更为 {:?}", spec);
+            }
+            Event::ToggleSnapPicker => {
+                self.snap_picker_open = !self.snap_picker_open;
+            }
+            Event::CloseSnapPicker => {
+                self.snap_picker_open = false;
             }
             Event::PrecisionChanged(precision) => {
                 // 旧事件兼容：仅用于尚未迁移的调用点。

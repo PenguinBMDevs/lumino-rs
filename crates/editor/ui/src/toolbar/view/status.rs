@@ -2,33 +2,18 @@
 //!
 //! 包含精度选择、自动滚动按钮、协作按钮等状态相关渲染。
 
-use iced_core::Alignment;
-use iced_widget::{button, container, pick_list, row, space, text};
+use iced_core::{Alignment, Color};
+use iced_widget::{button, container, row, space, text};
 
 use crate::message::CustomPrecisionAction;
 use crate::resources::icon;
+use crate::toolbar::view::snap_icon::snap_icon;
 use crate::toolbar::{ButtonId, Event, SnapSpec, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
 
-/// 吸附选择器条目：规格或「自定义…」入口。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SnapItem {
-    /// 预设/绝对 tick 规格
-    Spec(SnapSpec),
-    /// 打开自定义吸附对话框
-    Custom,
-}
-
-impl std::fmt::Display for SnapItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Spec(spec) => write!(f, "{}", spec.text()),
-            Self::Custom => write!(f, "Custom…"),
-        }
-    }
-}
+use iced_aw::DropDown;
 
 impl Toolbar {
     /// 渲染精度选择器内容（label + pick_list），不含外层容器。
@@ -42,15 +27,96 @@ impl Toolbar {
         _language: Language,
         t: &'static MainTranslations,
     ) -> Element<'a> {
-        let mut options: Vec<SnapItem> = SnapSpec::presets()
-            .into_iter()
-            .map(SnapItem::Spec)
-            .collect();
-        if !options.contains(&SnapItem::Spec(self.snap_spec)) {
-            options.push(SnapItem::Spec(self.snap_spec));
+        let text_color = palette.background.weak.text;
+        let underlay = button(
+            row![
+                snap_icon(self.snap_spec, text_color),
+                space().width(6),
+                text(self.snap_spec.text()).size(13).color(text_color),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .on_press(Event::toggle_snap_picker())
+        .padding([4, 8])
+        .style(move |_theme: &Theme, _status| button::Style {
+            background: Some(palette.background.weak.color.into()),
+            text_color,
+            border: iced_core::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: palette.background.strong.color,
+            },
+            ..Default::default()
+        });
+
+        let mut menu = iced_widget::column![].spacing(2);
+        for spec in SnapSpec::presets() {
+            menu = menu.push(
+                button(
+                    row![
+                        snap_icon(spec, text_color),
+                        space().width(6),
+                        text(spec.text()).size(13).color(text_color),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Event::snap_spec_changed(spec))
+                .padding([4, 8])
+                .width(iced_core::Length::Fill)
+                .style(move |_theme: &Theme, status| button::Style {
+                    background: match status {
+                        button::Status::Hovered => Some(iced_core::Background::Color(
+                            Color::from_rgba(1.0, 1.0, 1.0, 0.10),
+                        )),
+                        _ => None,
+                    },
+                    text_color,
+                    border: iced_core::Border::default().rounded(3),
+                    ..Default::default()
+                }),
+            );
         }
-        options.push(SnapItem::Custom);
-        let current = SnapItem::Spec(self.snap_spec);
+        menu = menu.push(
+            button(
+                row![
+                    snap_icon(SnapSpec::Custom { ticks: 1 }, text_color),
+                    space().width(6),
+                    text("Custom…").size(13).color(text_color),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::Batch(vec![
+                Message::CustomPrecision(CustomPrecisionAction::OpenDialog),
+                Event::close_snap_picker(),
+            ]))
+            .padding([4, 8])
+            .width(iced_core::Length::Fill)
+            .style(move |_theme: &Theme, status| button::Style {
+                background: match status {
+                    button::Status::Hovered => Some(iced_core::Background::Color(
+                        Color::from_rgba(1.0, 1.0, 1.0, 0.10),
+                    )),
+                    _ => None,
+                },
+                text_color,
+                border: iced_core::Border::default().rounded(3),
+                ..Default::default()
+            }),
+        );
+
+        let menu = container(menu)
+            .padding(6)
+            .width(iced_core::Length::Fixed(190.0))
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(palette.background.weak.color.into()),
+                text_color: Some(text_color),
+                border: iced_core::Border {
+                    radius: 6.0.into(),
+                    width: 1.0,
+                    color: palette.background.strong.color,
+                },
+                ..Default::default()
+            });
 
         row![
             // 精度解释文字颜色必须跟随主题：容器背景为 palette.background.weak，
@@ -60,16 +126,9 @@ impl Toolbar {
                 .size(14)
                 .color(palette.background.weak.text),
             space().width(8),
-            pick_list(options, Some(current), |item| match item {
-                SnapItem::Custom => {
-                    // 选择自定义时，发送消息到Root打开对话框
-                    Message::CustomPrecision(CustomPrecisionAction::OpenDialog)
-                }
-                SnapItem::Spec(spec) => Event::snap_spec_changed(spec),
-            },)
-            .placeholder(t.precision_placeholder)
-            .padding([4, 8])
-            .width(iced_widget::core::Length::Fixed(140.0)),
+            DropDown::new(underlay, menu, self.snap_picker_open)
+                .width(iced_core::Length::Fixed(190.0))
+                .on_dismiss(Event::close_snap_picker()),
         ]
         .align_y(Alignment::Center)
         .into()

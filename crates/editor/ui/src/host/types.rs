@@ -14,13 +14,8 @@ pub type TrackNotes = (usize, Vec<NoteData>);
 // 与 Message 枚举布局评审结论一致）。
 #[derive(Debug, Clone)]
 pub enum DialogResult {
-    /// 自定义精度设置
-    CustomPrecision {
-        /// 分子
-        numerator: String,
-        /// 分母
-        denominator: String,
-    },
+    /// 自定义吸附设置
+    CustomPrecision(lumino_core::SnapSpec),
     /// 确认加载
     LoadConfirm,
     /// 取消操作

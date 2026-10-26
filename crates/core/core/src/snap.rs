@@ -130,7 +130,8 @@ impl SnapSpec {
         match self {
             Self::Bar => {
                 let measure_num = beat_num * numerator;
-                u32::try_from((measure_num / denominator).max(1)).unwrap_or(u32::MAX)
+                let ticks = (measure_num + denominator / 2) / denominator;
+                u32::try_from(ticks.max(1)).unwrap_or(u32::MAX)
             }
             Self::Custom { ticks } => ticks.max(1),
             Self::Note { notes, dots, div } => {

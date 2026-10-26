@@ -37,6 +37,10 @@ pub enum Event {
     PrecisionChanged(NotePrecision),
     /// 吸附规格变更（DRAW-037）
     SnapSpecChanged(lumino_core::SnapSpec),
+    /// 开合吸附选择器下拉
+    ToggleSnapPicker,
+    /// 关闭吸附选择器下拉
+    CloseSnapPicker,
     /// 打开自定义精度对话框
     OpenCustomPrecisionDialog,
     /// 关闭自定义精度对话框
