@@ -22,6 +22,7 @@
 use std::collections::BTreeMap;
 
 use crate::interaction::line_tool::{geom, paths};
+use crate::interaction::shape_bridge::model_from_drawn;
 use crate::{Editor, Note};
 use lumino_core::shape::{ShapeFill, ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 use lumino_editor_state::shape_ops::{
@@ -57,6 +58,21 @@ impl Editor {
             .filter_map(|shape| shape.model_id)
             .filter_map(|model_id| self.editor_state.shape_store.model(model_id).cloned())
             .collect()
+    }
+
+    /// 当前选中的**待确认图形**按当前几何构造一个临时 ShapeModel（DRAW-034）。
+    ///
+    /// 待确认镜像还没有 `ShapeStore` 模型，不能走 019–028 的参数入口；但按 √ 前的
+    /// 几何本身可以分享，供用户先复制文本再决定是否 Bake。
+    pub fn selected_pending_shape_model(&self) -> Option<ShapeModel> {
+        let selected = self.editor_state.shape_select.selected_ids();
+        let drawn = self
+            .editor_state
+            .shape_select
+            .shapes()
+            .iter()
+            .find(|shape| selected.contains(&shape.id) && shape.pending.is_some())?;
+        Some(model_from_drawn(drawn, 1.0))
     }
 
     /// 从一行分享文本粘贴形状到当前音轨（DRAW-034）。

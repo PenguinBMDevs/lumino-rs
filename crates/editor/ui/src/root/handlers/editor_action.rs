@@ -189,11 +189,18 @@ impl Root {
                         let _ = self.editor.velocity_up_selected();
                     }
                     PianoRollContextMenuItem::CopyShapeText => {
-                        let models = self.editor.selected_shape_models();
+                        let mut models = self.editor.selected_shape_models();
+                        // 待确认图形没有 ShapeStore 模型，但有几何：按当前几何临时构造，
+                        // 让用户可以在 √ / Bake 之前先复制分享文本。
+                        if models.is_empty()
+                            && let Some(pending) = self.editor.selected_pending_shape_model()
+                        {
+                            models.push(pending);
+                        }
                         if models.is_empty() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("没有可分享的形状，请先用鼠标工具选中已确认形状"),
+                                tr!("没有可分享的形状，请先用鼠标工具选中已确认或待确认图形"),
                             );
                         } else {
                             let ppq = self.editor.editor_state.view.ppq;

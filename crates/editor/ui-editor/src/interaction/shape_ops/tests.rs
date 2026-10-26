@@ -7,6 +7,7 @@ use lumino_core::shape::{
     ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
     TextLayoutMode, TextOp, TextParams, TileBy, TilesParams, TumourParams,
 };
+use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
@@ -357,6 +358,27 @@ fn test_create_shape_generates_notes_and_registers() {
         count,
         "形状的音符指纹应与文档实际音符数一致"
     );
+}
+
+#[test]
+fn test_pending_shape_can_be_shared_before_bake() {
+    let mut editor = editor_with_track(1);
+    let id = editor.editor_state.shape_select.add_pending(
+        1,
+        PendingShapeRef::CurvePath(0),
+        DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (480.0, 64.0)],
+        },
+    );
+    editor.editor_state.shape_select.select_only(id);
+
+    let model = editor
+        .selected_pending_shape_model()
+        .expect("待确认图形应可构造分享模型");
+    assert_eq!(model.track, 1);
+    assert_eq!(model.geometry.anchors.len(), 2);
+    let text = lumino_core::shape::share::encode_shapes(&[model], 480).expect("待确认几何应可编码");
+    assert!(text.starts_with(lumino_core::shape::share::PREFIX));
 }
 
 #[test]

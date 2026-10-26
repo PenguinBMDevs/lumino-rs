@@ -133,9 +133,12 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::PasteShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-        // 待确认镜像没有 ShapeStore 模型 / 音符，019–028 全部无目标；
-        // 只保留删除（取消该待确认产物），避免“菜单有、点了静默失败”。
-        ContextMenuTarget::PendingDrawnShape => &[PianoRollContextMenuItem::DeleteDrawnShape],
+        // 待确认镜像没有 ShapeStore 模型 / 音符：不能做 019–028 的参数操作；
+        // 但可以按当前几何临时构造 ShapeModel 分享（DRAW-034），以及删除（取消待确认产物）。
+        ContextMenuTarget::PendingDrawnShape => &[
+            PianoRollContextMenuItem::CopyShapeText,
+            PianoRollContextMenuItem::DeleteDrawnShape,
+        ],
     }
 }
 
@@ -341,12 +344,15 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_shape_menu_only_deletes() {
+    fn test_pending_shape_menu_offers_share_and_delete() {
         let items = menu_items(ContextMenuTarget::PendingDrawnShape);
         assert_eq!(
             items,
-            &[PianoRollContextMenuItem::DeleteDrawnShape],
-            "待确认镜像没有 ShapeStore 模型，019–028 不得出现在菜单里"
+            &[
+                PianoRollContextMenuItem::CopyShapeText,
+                PianoRollContextMenuItem::DeleteDrawnShape,
+            ],
+            "待确认镜像可分享当前几何，但不能出现 019–028 参数操作"
         );
         assert!(
             !items.iter().any(|item| matches!(
