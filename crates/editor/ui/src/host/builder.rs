@@ -112,6 +112,7 @@ impl Host {
             touch_press_origin: None,
             touch_long_press_deadline: None,
             touch_long_press_fired: false,
+            ime_active: false,
             redraw_at: std::sync::Arc::new(std::sync::Mutex::new(None)),
             redraw_timer_active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }

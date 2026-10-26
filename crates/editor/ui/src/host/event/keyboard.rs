@@ -6,6 +6,27 @@ use crate::host::Host;
 use crate::{message, toolbar};
 use lumino_ui_core::sidebar_event::Route;
 
+/// 裸字母切工具键位表（无修饰键）。
+///
+/// 单一权威源：帮助系统（DRAW-038）也从这里导出，禁止在别处再写一份 match。
+/// 只列**当前可工作**的工具；Razor/Pen/DrawEraser 及未实现工具不占键位。
+pub const TOOL_KEYS: &[(winit::keyboard::KeyCode, toolbar::Tool)] = &[
+    (winit::keyboard::KeyCode::KeyV, toolbar::Tool::Pointer),
+    (
+        winit::keyboard::KeyCode::KeyY,
+        toolbar::Tool::PointerYSelect,
+    ),
+    (winit::keyboard::KeyCode::KeyP, toolbar::Tool::Pencil),
+    (winit::keyboard::KeyCode::KeyB, toolbar::Tool::Brush),
+    (winit::keyboard::KeyCode::KeyF, toolbar::Tool::Brush),
+    (winit::keyboard::KeyCode::KeyE, toolbar::Tool::Eraser),
+    (winit::keyboard::KeyCode::KeyC, toolbar::Tool::Curve),
+    (winit::keyboard::KeyCode::KeyL, toolbar::Tool::Curve),
+    (winit::keyboard::KeyCode::KeyS, toolbar::Tool::Shape),
+    (winit::keyboard::KeyCode::KeyM, toolbar::Tool::ShapeSelect),
+    (winit::keyboard::KeyCode::KeyX, toolbar::Tool::Text),
+];
+
 /// 原生菜单栏「编辑」动作的别名（`crate::event::menu::edit::Event`）。
 ///
 /// 单独起名而非在 impl 内 `use`：本文件已有 `use crate::{message, toolbar};`
@@ -170,6 +191,36 @@ impl Host {
         key == winit::keyboard::KeyCode::KeyS && ctrl
     }
 
+    /// 裸字母 → 工具（只查表，不做焦点/修饰键判定）。
+    fn match_tool_shortcut(key: winit::keyboard::KeyCode) -> Option<toolbar::Tool> {
+        TOOL_KEYS
+            .iter()
+            .find_map(|(candidate, tool)| (*candidate == key).then_some(*tool))
+    }
+
+    /// 当前是否允许响应裸字母切工具。
+    ///
+    /// - 文本输入法激活：让路给输入框；
+    /// - 对话框窗口：不得改主窗口工具；
+    /// - 长按重复：忽略；
+    /// - 任意修饰键（Ctrl/Alt/Super/Shift）：不抢组合键。
+    fn tool_shortcut_allowed(
+        ime_active: bool,
+        is_dialog: bool,
+        repeat: bool,
+        modifiers: winit::keyboard::ModifiersState,
+    ) -> bool {
+        if ime_active || is_dialog || repeat {
+            return false;
+        }
+        !modifiers.intersects(
+            winit::keyboard::ModifiersState::CONTROL
+                | winit::keyboard::ModifiersState::ALT
+                | winit::keyboard::ModifiersState::SUPER
+                | winit::keyboard::ModifiersState::SHIFT,
+        )
+    }
+
     /// 处理 Ctrl+Q：量化弹窗
     fn handle_ctrl_q_shortcut(&mut self) {
         self.route_message(message::Message::Toolbar(toolbar::Event::Quantize));
@@ -189,6 +240,23 @@ impl Host {
         // 无论是否消费都提前返回：空格不参与其余快捷键匹配。
         if key == winit::keyboard::KeyCode::Space {
             self.handle_space_shortcut(ctrl, repeat);
+            return;
+        }
+
+        // 文本输入框聚焦时，裸字母与编辑类组合键都交给 iced 处理；
+        // 否则在输入框里打字会切工具、Ctrl+C 会复制音符而不是文本。
+        if self.ime_active {
+            return;
+        }
+
+        // 裸字母切工具：只认无修饰键、非长按，且不在对话框窗口内。
+        if Self::tool_shortcut_allowed(false, self.root.state.is_dialog_window, repeat, modifiers)
+            && let Some(tool) = Self::match_tool_shortcut(key)
+        {
+            self.route_message(message::Message::Toolbar(toolbar::Event::ToolSelected(
+                tool,
+            )));
+            self.window_ctx.window.request_redraw();
             return;
         }
 
@@ -316,5 +384,79 @@ mod tests {
         assert!(Host::space_shortcut_message(true, false, true, false).is_none());
         assert!(Host::space_shortcut_message(false, false, true, false).is_none());
         assert!(Host::space_shortcut_message(false, true, true, false).is_none());
+    }
+
+    /// 每个已接入的裸字母必须逐键切到正确工具。
+    #[test]
+    fn test_tool_key_table_maps_each_key() {
+        use toolbar::Tool;
+
+        let cases = [
+            (KeyCode::KeyV, Tool::Pointer),
+            (KeyCode::KeyY, Tool::PointerYSelect),
+            (KeyCode::KeyP, Tool::Pencil),
+            (KeyCode::KeyB, Tool::Brush),
+            (KeyCode::KeyF, Tool::Brush),
+            (KeyCode::KeyE, Tool::Eraser),
+            (KeyCode::KeyC, Tool::Curve),
+            (KeyCode::KeyL, Tool::Curve),
+            (KeyCode::KeyS, Tool::Shape),
+            (KeyCode::KeyM, Tool::ShapeSelect),
+            (KeyCode::KeyX, Tool::Text),
+        ];
+        for (key, expected) in cases {
+            assert_eq!(
+                Host::match_tool_shortcut(key),
+                Some(expected),
+                "{key:?} 应切到 {expected:?}"
+            );
+        }
+    }
+
+    /// 未接入/未实现的工具不得占键位，未知键返回 None。
+    #[test]
+    fn test_tool_key_table_leaves_unwired_keys_free() {
+        for key in [
+            KeyCode::KeyK,
+            KeyCode::KeyA,
+            KeyCode::KeyO,
+            KeyCode::KeyQ,
+            KeyCode::KeyN,
+            KeyCode::KeyH,
+            KeyCode::KeyI,
+            KeyCode::KeyR,
+        ] {
+            assert_eq!(Host::match_tool_shortcut(key), None, "{key:?} 不应切工具");
+        }
+    }
+
+    /// 文本框聚焦、对话框窗口、长按与任意修饰键都必须让路。
+    #[test]
+    fn test_tool_shortcut_guard() {
+        use winit::keyboard::ModifiersState;
+
+        let none = ModifiersState::empty();
+        assert!(Host::tool_shortcut_allowed(false, false, false, none));
+        assert!(!Host::tool_shortcut_allowed(true, false, false, none));
+        assert!(!Host::tool_shortcut_allowed(false, true, false, none));
+        assert!(!Host::tool_shortcut_allowed(false, false, true, none));
+        assert!(!Host::tool_shortcut_allowed(
+            false,
+            false,
+            false,
+            ModifiersState::CONTROL
+        ));
+        assert!(!Host::tool_shortcut_allowed(
+            false,
+            false,
+            false,
+            ModifiersState::SHIFT
+        ));
+        assert!(!Host::tool_shortcut_allowed(
+            false,
+            false,
+            false,
+            ModifiersState::ALT | ModifiersState::SUPER
+        ));
     }
 }
