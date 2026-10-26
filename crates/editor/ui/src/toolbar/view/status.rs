@@ -7,37 +7,25 @@ use iced_widget::{button, container, pick_list, row, space, text};
 
 use crate::message::CustomPrecisionAction;
 use crate::resources::icon;
-use crate::toolbar::{ButtonId, Event, NotePrecision, Toolbar};
+use crate::toolbar::{ButtonId, Event, SnapSpec, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
 
-/// 本地化音符精度包装（支持按语言显示名称）
-#[derive(Debug, Clone, Copy)]
-struct LocalizedPrecision {
-    inner: NotePrecision,
-    name: &'static str,
+/// 吸附选择器条目：规格或「自定义…」入口。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SnapItem {
+    /// 预设/绝对 tick 规格
+    Spec(SnapSpec),
+    /// 打开自定义吸附对话框
+    Custom,
 }
 
-impl PartialEq for LocalizedPrecision {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
-    }
-}
-
-impl Eq for LocalizedPrecision {}
-
-impl std::fmt::Display for LocalizedPrecision {
+impl std::fmt::Display for SnapItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl LocalizedPrecision {
-    fn new(precision: NotePrecision, lang: Language) -> Self {
-        Self {
-            inner: precision,
-            name: lumino_extras::i18n::note_precision_name(precision, lang),
+        match self {
+            Self::Spec(spec) => write!(f, "{}", spec.text()),
+            Self::Custom => write!(f, "Custom…"),
         }
     }
 }
@@ -51,16 +39,18 @@ impl Toolbar {
         &'a self,
         _content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
-        language: Language,
+        _language: Language,
         t: &'static MainTranslations,
     ) -> Element<'a> {
-        let precision_options: Vec<LocalizedPrecision> = NotePrecision::presets()
-            .iter()
-            .copied()
-            .chain(std::iter::once(NotePrecision::Custom))
-            .map(|p| LocalizedPrecision::new(p, language))
+        let mut options: Vec<SnapItem> = SnapSpec::presets()
+            .into_iter()
+            .map(SnapItem::Spec)
             .collect();
-        let current_precision = LocalizedPrecision::new(self.note_precision, language);
+        if !options.contains(&SnapItem::Spec(self.snap_spec)) {
+            options.push(SnapItem::Spec(self.snap_spec));
+        }
+        options.push(SnapItem::Custom);
+        let current = SnapItem::Spec(self.snap_spec);
 
         row![
             // 精度解释文字颜色必须跟随主题：容器背景为 palette.background.weak，
@@ -70,17 +60,16 @@ impl Toolbar {
                 .size(14)
                 .color(palette.background.weak.text),
             space().width(8),
-            pick_list(precision_options, Some(current_precision), |lp| {
-                if lp.inner == NotePrecision::Custom {
+            pick_list(options, Some(current), |item| match item {
+                SnapItem::Custom => {
                     // 选择自定义时，发送消息到Root打开对话框
                     Message::CustomPrecision(CustomPrecisionAction::OpenDialog)
-                } else {
-                    Event::precision_changed(lp.inner)
                 }
+                SnapItem::Spec(spec) => Event::snap_spec_changed(spec),
             },)
             .placeholder(t.precision_placeholder)
             .padding([4, 8])
-            .width(iced_widget::core::Length::Fixed(120.0)),
+            .width(iced_widget::core::Length::Fixed(140.0)),
         ]
         .align_y(Alignment::Center)
         .into()

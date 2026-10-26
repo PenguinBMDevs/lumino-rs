@@ -83,6 +83,17 @@ impl super::Editor {
         self.invalidate_caches(CacheInvalidation::GRID);
     }
 
+    /// 设置吸附规格（同时派生 `snap_precision`；DRAW-037）。
+    pub fn set_snap_spec(&mut self, spec: lumino_core::SnapSpec) {
+        self.editor_state.view.set_snap_spec(spec);
+        self.invalidate_caches(CacheInvalidation::GRID);
+    }
+
+    /// 当前吸附规格。
+    pub fn snap_spec(&self) -> lumino_core::SnapSpec {
+        self.editor_state.view.snap_spec
+    }
+
     /// 获取当前吸附精度。
     ///
     /// # 返回

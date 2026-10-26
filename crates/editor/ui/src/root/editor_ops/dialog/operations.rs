@@ -1,7 +1,6 @@
 //! 音符变速、批量编辑和自定义精度操作
 
 use crate::root::Root;
-use crate::toolbar;
 
 impl Root {
     /// 应用音符变速
@@ -42,11 +41,14 @@ impl Root {
 
     /// 设置自定义精度值
     pub fn set_custom_precision(&mut self, ticks: f32) {
-        self.editor.set_snap_precision(ticks);
+        let spec = lumino_core::SnapSpec::Custom {
+            ticks: ticks.round().max(1.0) as u32,
+        };
+        self.editor.set_snap_spec(spec);
         self.editor.set_default_note_length(ticks);
         // 同步 UI 显示状态到 toolbar（status.rs 显示源），
         // 确保自定义精度生效后下拉框显示"自定义"而非旧值
-        self.toolbar.note_precision = toolbar::NotePrecision::Custom;
+        self.toolbar.snap_spec = spec;
         tracing::info!("自定义精度已设置为 {} ticks", ticks);
     }
 }

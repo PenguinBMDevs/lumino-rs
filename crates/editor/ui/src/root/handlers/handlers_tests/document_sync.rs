@@ -197,7 +197,7 @@ fn test_set_ppq_without_document_no_panic() {
 /// 而不是停留在旧 PPQ 的 tick 值。
 ///
 /// 机制：`Root::set_ppq` 在非 `Custom` 精度下以
-/// `note_precision.as_ticks(new_ppq)` 覆盖 `snap_precision`；框选 X 向量化
+/// `snap_spec.ticks(new_ppq)` 覆盖 `snap_precision`；框选 X 向量化
 /// （`ViewState::snap_marquee_edges`）直接消费该值，因此自动跟随。
 #[test]
 fn test_set_ppq_rescales_marquee_snap_precision() {
@@ -205,7 +205,7 @@ fn test_set_ppq_rescales_marquee_snap_precision() {
     attach_test_document(&mut root);
 
     // 工具栏选 1/4 音符
-    root.toolbar.note_precision = crate::toolbar::NotePrecision::Quarter;
+    root.toolbar.snap_spec = lumino_core::SnapSpec::QUARTER;
 
     root.set_ppq(1920);
     assert_eq!(
@@ -223,7 +223,11 @@ fn test_set_ppq_rescales_marquee_snap_precision() {
     assert_eq!(root.editor.editor_state.view.snap_precision, 480.0);
 
     // 切换到 1/8 精度后继续跟随 PPQ
-    root.toolbar.note_precision = crate::toolbar::NotePrecision::Eighth;
+    root.toolbar.snap_spec = lumino_core::SnapSpec::Note {
+        notes: 8,
+        dots: 0,
+        div: 1,
+    };
     root.set_ppq(960);
     assert_eq!(
         root.editor.editor_state.view.snap_precision, 480.0,
@@ -238,7 +242,7 @@ fn test_set_ppq_keeps_custom_snap_precision() {
     let mut root = create_root();
     attach_test_document(&mut root);
 
-    root.toolbar.note_precision = crate::toolbar::NotePrecision::Custom;
+    root.toolbar.snap_spec = lumino_core::SnapSpec::Custom { ticks: 777 };
     root.editor.set_snap_precision(777.0);
 
     root.set_ppq(960);

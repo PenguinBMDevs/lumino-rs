@@ -3,7 +3,7 @@
 use iced_core::{Point, mouse};
 use iced_widget::canvas;
 
-use lumino_core::NotePrecision;
+use lumino_core::SnapSpec;
 
 use crate::Message;
 use crate::arrangement::ArrangementViewport;
@@ -248,7 +248,7 @@ fn compute_ghost_notes(
     state: &ArrangementInteractionState,
     selected_notes: &[(f64, f64, usize, u8)],
     ppq: u16,
-    precision: NotePrecision,
+    precision: SnapSpec,
     time_signatures: &[(u32, u8, u8)],
 ) -> Vec<(f64, f64, usize, u8)> {
     let mut ghosts = Vec::new();
@@ -318,7 +318,7 @@ mod tests {
         let state = moving_state((0.0, 0.0), (480.0, 1.0), Some((0.0, 960.0, 0, 0)));
         let selected = [(0.0, 480.0, 0, 60u8), (480.0, 960.0, 0, 72u8)];
 
-        let ghosts = compute_ghost_notes(&state, &selected, 480, NotePrecision::Quarter, &[]);
+        let ghosts = compute_ghost_notes(&state, &selected, 480, SnapSpec::QUARTER, &[]);
 
         assert_eq!(
             ghosts,
@@ -334,7 +334,7 @@ mod tests {
         let selected = [(0.0, 480.0, 0, 60u8)];
 
         assert!(
-            compute_ghost_notes(&state, &selected, 480, NotePrecision::Quarter, &[]).is_empty(),
+            compute_ghost_notes(&state, &selected, 480, SnapSpec::QUARTER, &[]).is_empty(),
             "偏移为零时不得产生 ghost（否则起拖瞬间就出现重影）"
         );
     }
@@ -346,13 +346,13 @@ mod tests {
 
         let idle = ArrangementInteractionState::default();
         assert!(
-            compute_ghost_notes(&idle, &selected, 480, NotePrecision::Quarter, &[]).is_empty(),
+            compute_ghost_notes(&idle, &selected, 480, SnapSpec::QUARTER, &[]).is_empty(),
             "非移动拖拽状态不得产生 ghost"
         );
 
         let no_sel = moving_state((0.0, 0.0), (480.0, 1.0), None);
         assert!(
-            compute_ghost_notes(&no_sel, &selected, 480, NotePrecision::Quarter, &[]).is_empty(),
+            compute_ghost_notes(&no_sel, &selected, 480, SnapSpec::QUARTER, &[]).is_empty(),
             "缺少原始选择矩形时不得产生 ghost"
         );
     }
@@ -363,7 +363,7 @@ mod tests {
         let state = moving_state((0.0, 3.0), (0.0, 0.0), Some((0.0, 960.0, 3, 3)));
         let selected = [(0.0, 480.0, 3, 60u8)];
 
-        let ghosts = compute_ghost_notes(&state, &selected, 480, NotePrecision::Quarter, &[]);
+        let ghosts = compute_ghost_notes(&state, &selected, 480, SnapSpec::QUARTER, &[]);
 
         assert_eq!(ghosts, vec![(0.0, 480.0, 0, 60)], "越界上移应钳到视觉轨 0");
     }
@@ -378,7 +378,7 @@ mod tests {
             (2000.0, 2400.0, 0, 67u8), // tick 不在选区
         ];
 
-        let ghosts = compute_ghost_notes(&state, &selected, 480, NotePrecision::Quarter, &[]);
+        let ghosts = compute_ghost_notes(&state, &selected, 480, SnapSpec::QUARTER, &[]);
 
         assert_eq!(
             ghosts,

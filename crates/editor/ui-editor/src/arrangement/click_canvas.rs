@@ -8,7 +8,7 @@
 
 use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{self, Frame, Geometry, Program};
-use lumino_core::{NotePrecision, Tool};
+use lumino_core::{SnapSpec, Tool};
 
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::curve::curve_preview_note;
@@ -36,7 +36,7 @@ pub struct ArrangementClickCanvas {
     /// 每四分音符 tick 数
     pub ppq: u16,
     /// 网格对齐精度
-    pub precision: NotePrecision,
+    pub precision: SnapSpec,
     /// 拍号变化列表 (tick, 分子, 分母)：框选/移动吸附按真实小节边界对齐
     pub time_signatures: Vec<(u32, u8, u8)>,
     /// Ctrl 键按下状态
@@ -309,7 +309,7 @@ mod tests {
             arr_sel_rect: None,
             selected_notes: std::rc::Rc::from(Vec::new()),
             ppq: lumino_core::view_state::DEFAULT_PPQ,
-            precision: NotePrecision::Quarter,
+            precision: SnapSpec::QUARTER,
             time_signatures: Vec::new(),
             ctrl_pressed: ctrl,
             shift_pressed: false,

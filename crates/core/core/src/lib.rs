@@ -12,6 +12,8 @@ pub mod locale;
 pub mod shape;
 /// 平滑滚动动画模块
 pub mod smooth_scroll;
+/// 吸附规格（DRAW-037）
+pub mod snap;
 /// 应用存储配置与界面状态模块
 pub mod storage;
 /// 共享领域类型模块
@@ -36,5 +38,6 @@ pub use shape::{
     pattern_preset, tidy_env,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
+pub use snap::{SnapError, SnapSpec, snap_text, snap_ticks, snap_ticks_in_measure};
 pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};
 pub use view_state::ViewState;

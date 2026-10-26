@@ -327,7 +327,7 @@ impl Root {
 
         let language = self.settings.display.language;
         let ppq = self.editor.editor_state.view.ppq;
-        let note_precision = self.toolbar.note_precision.as_ticks(ppq);
+        let note_precision = self.toolbar.snap_spec.ticks(ppq) as f32;
 
         // 全局导航栏（非钢琴卷帘内容）
         let titlebar = self.titlebar.view(

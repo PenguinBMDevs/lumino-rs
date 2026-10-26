@@ -2,7 +2,7 @@
 
 use iced_core::{Point, Rectangle};
 
-use lumino_core::NotePrecision;
+use lumino_core::SnapSpec;
 
 use crate::arrangement::ArrangementViewport;
 
@@ -49,30 +49,13 @@ pub fn inside_selection_rect(
 /// 支持拍号变化：吸附间隔在拍号段内按段内拍长计算，且从段起点对齐，
 /// 保证框选/移动结果与按拍号绘制的网格线一致（避免"框选框错位"）。
 /// `time_signatures` 为空时回退到旧行为（固定 ppq 间隔）。
-pub fn snap_tick(
-    tick: f64,
-    precision: NotePrecision,
-    ppq: u16,
-    time_signatures: &[(u32, u8, u8)],
-) -> f64 {
-    if time_signatures.is_empty() {
-        let interval = precision.as_ticks(ppq) as f64;
-        if interval <= 0.0 {
-            return tick;
-        }
-        return (tick / interval).round() * interval;
-    }
-
-    let (seg_start, numerator, denominator) = ts_segment_at(tick, time_signatures);
-    let beat = ppq as f64 * 4.0 / denominator.max(1) as f64;
-    let measure = beat * numerator.max(1) as f64;
-    // 全音符（小节）精度吸附到段内小节边界；其余精度按拍长的倍数（与
-    // NotePrecision 语义一致：Quarter=1 拍、Half=2 拍、Eighth=1/2 拍…）
-    let interval = if precision == NotePrecision::Whole {
-        measure
+pub fn snap_tick(tick: f64, spec: SnapSpec, ppq: u16, time_signatures: &[(u32, u8, u8)]) -> f64 {
+    let (seg_start, numerator, denominator) = if time_signatures.is_empty() {
+        (0_u32, 4_u8, 4_u8)
     } else {
-        beat * (precision.as_ticks(ppq) / ppq as f32) as f64
+        ts_segment_at(tick, time_signatures)
     };
+    let interval = spec.ticks_in_measure(ppq, numerator, denominator) as f64;
     if interval <= 0.0 {
         return tick;
     }
@@ -100,7 +83,7 @@ pub fn arrange_snapped_bounds(
     start: Point,
     end: Point,
     viewport: &ArrangementViewport,
-    precision: NotePrecision,
+    precision: SnapSpec,
     ppq: u16,
     time_signatures: &[(u32, u8, u8)],
 ) -> (f32, f32, f32, f32, f64, f64, usize, usize) {
@@ -138,16 +121,12 @@ pub fn arrange_snapped_bounds(
 }
 
 /// 计算当前拍号段下的吸附间隔（snap_tick 内部逻辑的复刻，用于最小宽度兜底）
-fn snap_interval(precision: NotePrecision, ppq: u16, time_signatures: &[(u32, u8, u8)]) -> f64 {
-    if time_signatures.is_empty() {
-        return precision.as_ticks(ppq) as f64;
-    }
+fn snap_interval(spec: SnapSpec, ppq: u16, time_signatures: &[(u32, u8, u8)]) -> f64 {
     // 以 tick 0 所在段为准即可（框选起点一般接近 0；段变化时最小宽度略保守无害）
-    let (_, numerator, denominator) = ts_segment_at(0.0, time_signatures);
-    let beat = ppq as f64 * 4.0 / denominator.max(1) as f64;
-    if precision == NotePrecision::Whole {
-        beat * numerator.max(1) as f64
+    let (_, numerator, denominator) = if time_signatures.is_empty() {
+        (0_u32, 4_u8, 4_u8)
     } else {
-        beat * (precision.as_ticks(ppq) / ppq as f32) as f64
-    }
+        ts_segment_at(0.0, time_signatures)
+    };
+    spec.ticks_in_measure(ppq, numerator, denominator) as f64
 }

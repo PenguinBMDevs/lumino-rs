@@ -31,7 +31,7 @@ impl Root {
             &self.window,
             self.settings.display.language,
             self.state.current_mode,
-            self.toolbar.note_precision.as_ticks(ppq),
+            self.toolbar.snap_spec.ticks(ppq) as f32,
             self.mixer_panel.open,
         );
 

@@ -13,7 +13,7 @@ impl Toolbar {
             is_resizing: false,
             resize_start_y: 0.0,
             resize_start_height: DEFAULT_HEIGHT,
-            note_precision: NotePrecision::default(),
+            snap_spec: SnapSpec::QUARTER,
             speed_factor: 0.5,
             ctrl_pressed: false,
             shift_pressed: false,
@@ -145,9 +145,14 @@ impl Toolbar {
             Event::Quantize => {
                 tracing::debug!("工具栏: 量化操作");
             }
+            Event::SnapSpecChanged(spec) => {
+                self.snap_spec = spec;
+                tracing::debug!("工具栏: 吸附规格变更为 {:?}", spec);
+            }
             Event::PrecisionChanged(precision) => {
-                self.note_precision = precision;
-                tracing::debug!("工具栏: 精度设置变更为 {:?}", precision);
+                // 旧事件兼容：仅用于尚未迁移的调用点。
+                self.snap_spec = SnapSpec::from_legacy(precision, None);
+                tracing::debug!("工具栏: 旧精度事件 {:?} → {:?}", precision, self.snap_spec);
             }
             Event::OpenCustomPrecisionDialog => {
                 self.custom_precision_dialog.is_open = true;

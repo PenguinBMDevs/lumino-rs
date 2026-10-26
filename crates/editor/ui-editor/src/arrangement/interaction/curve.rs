@@ -3,7 +3,7 @@
 use iced_core::mouse;
 use iced_widget::canvas;
 
-use lumino_core::NotePrecision;
+use lumino_core::SnapSpec;
 
 use crate::Message;
 use crate::arrangement::ArrangementViewport;
@@ -78,7 +78,7 @@ pub fn curve_preview_note(
     state: &ArrangementInteractionState,
     viewport: &ArrangementViewport,
     ppq: u16,
-    precision: NotePrecision,
+    precision: SnapSpec,
     time_signatures: &[(u32, u8, u8)],
 ) -> Option<(f64, f64, usize)> {
     let ((start_tick, track), end_local) = state.curve_drag?;
