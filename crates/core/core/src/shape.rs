@@ -40,6 +40,7 @@ pub mod geometry;
 pub mod model;
 pub mod params;
 pub mod pattern_presets;
+pub mod share;
 pub mod style;
 pub mod text;
 pub mod velocity_env;
@@ -61,6 +62,7 @@ pub use params::{
 pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,
 };
+pub use share::{ShareError, decode_shapes, encode_shapes};
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
 pub use text::{DEFAULT_FONT, SUB_ROWS, TextAlign, TextLayoutMode, TextOp, TextParams, TextUnit};
 pub use velocity_env::{ENV_EPS, VelocityEnv, env_at, paint_env, tidy_env};

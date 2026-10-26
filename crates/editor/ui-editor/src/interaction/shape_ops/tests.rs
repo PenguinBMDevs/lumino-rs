@@ -360,6 +360,70 @@ fn test_create_shape_generates_notes_and_registers() {
 }
 
 #[test]
+fn test_paste_shapes_from_text_regenerates_for_current_track() {
+    let mut source = editor_with_track(1);
+    assert!(source.create_shape(straight_shape(1, 480.0)));
+    let text = lumino_core::shape::share::encode_shapes(
+        &source.shapes_snapshot(),
+        source.editor_state.view.ppq,
+    )
+    .expect("应能编码");
+
+    let mut target = editor_with_track(1);
+    // 先占一个 id，确保粘贴走重新分配而不是复用分享者的 id。
+    assert!(target.create_shape(straight_shape(1, 240.0)));
+    let created = target.paste_shapes_from_text(&text).expect("粘贴应成功");
+    assert_eq!(created, 1);
+    assert_eq!(target.editor_state.shape_store.len(), 2);
+    let pasted_id = target.editor_state.shape_store.ids()[1];
+    assert_ne!(pasted_id, 1, "粘贴形状必须重新分配 id");
+    let pasted = target
+        .editor_state
+        .shape_store
+        .model(pasted_id)
+        .expect("粘贴形状应存在");
+    assert_eq!(pasted.track, 1, "track 必须落到当前轨");
+    assert!(note_count(&target, 1) > 0, "粘贴应生成音符");
+}
+
+#[test]
+fn test_paste_shapes_cross_ppq_scales_ticks() {
+    let mut source = editor_with_track(1);
+    source.editor_state.view.ppq = 480;
+    assert!(source.create_shape(straight_shape(1, 480.0)));
+    let text = lumino_core::shape::share::encode_shapes(
+        &source.shapes_snapshot(),
+        source.editor_state.view.ppq,
+    )
+    .expect("应能编码");
+
+    let mut target = editor_with_track(1);
+    target.editor_state.view.ppq = 960;
+    target
+        .paste_shapes_from_text(&text)
+        .expect("跨 PPQ 粘贴应成功");
+    let id = target.editor_state.shape_store.ids()[0];
+    let model = target
+        .editor_state
+        .shape_store
+        .model(id)
+        .expect("粘贴形状应存在");
+    assert_eq!(
+        model.geometry.anchors[1].pos.0, 960.0,
+        "480 tick @480 → 960 @960"
+    );
+}
+
+#[test]
+fn test_paste_shapes_rejects_conductor_track() {
+    let mut editor = editor_with_track(0);
+    let text = lumino_core::shape::share::encode_shapes(&[straight_shape(1, 480.0)], 480)
+        .expect("应能编码");
+    assert!(editor.paste_shapes_from_text(&text).is_err());
+    assert!(editor.editor_state.shape_store.is_empty());
+}
+
+#[test]
 fn test_create_shape_rejects_conductor_track() {
     let mut editor = editor_with_track(1);
     assert!(

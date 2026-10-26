@@ -82,6 +82,10 @@ pub enum PianoRollContextMenuItem {
     CopyAlong,
     /// 力度渐强（DRAW-028）
     VelocityUp,
+    /// 复制选中图形为一行分享文本（DRAW-034）
+    CopyShapeText,
+    /// 从剪贴板一行分享文本粘贴形状（DRAW-034）
+    PasteShapeText,
 }
 
 impl PianoRollContextMenuItem {
@@ -102,7 +106,8 @@ impl PianoRollContextMenuItem {
             | Self::SliceVertical
             | Self::BetweenCreate
             | Self::CopyAlong
-            | Self::VelocityUp => ContextMenuTarget::DrawnShape,
+            | Self::VelocityUp
+            | Self::CopyShapeText => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
     }

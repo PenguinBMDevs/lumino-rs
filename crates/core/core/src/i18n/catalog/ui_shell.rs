@@ -47,6 +47,15 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "绘制行为" => Some("Brush Behavior"),
         "混音台" => Some("Mixer"),
         "剪贴板为空" => Some("Clipboard is empty"),
+        "没有可分享的形状，请先用鼠标工具选中已确认形状" => {
+            Some("No shareable shapes; select confirmed shapes with the mouse tool first")
+        }
+        "已复制形状分享文本" => Some("Shape share text copied"),
+        "复制到剪贴板失败" => Some("Failed to copy to clipboard"),
+        "形状分享编码失败" => Some("Failed to encode shape share text"),
+        "已粘贴形状" => Some("Shapes pasted"),
+        "形状分享粘贴失败" => Some("Failed to paste shape share text"),
+        "读取剪贴板失败" => Some("Failed to read clipboard"),
         "矩形" => Some("Rectangle"),
         "均值漂移" => Some("Mean Shift"),
         "流式读取" => Some("Streaming"),

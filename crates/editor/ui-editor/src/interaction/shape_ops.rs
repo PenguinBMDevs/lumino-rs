@@ -43,6 +43,52 @@ impl Editor {
         self.editor_state.shape_store.persisted_models()
     }
 
+    /// 当前选中的绘制图形对应的参数模型（DRAW-034 复制为文本用）。
+    ///
+    /// 只返回已绑定 `ShapeStore` 模型的图形；待确认镜像/旧无模型图形没有参数，
+    /// 无法分享，直接跳过。
+    pub fn selected_shape_models(&self) -> Vec<ShapeModel> {
+        let selected = self.editor_state.shape_select.selected_ids();
+        self.editor_state
+            .shape_select
+            .shapes()
+            .iter()
+            .filter(|shape| selected.contains(&shape.id))
+            .filter_map(|shape| shape.model_id)
+            .filter_map(|model_id| self.editor_state.shape_store.model(model_id).cloned())
+            .collect()
+    }
+
+    /// 从一行分享文本粘贴形状到当前音轨（DRAW-034）。
+    ///
+    /// 解码按当前 PPQ 换算，形状 id 清零由 `create_shape` 重新分配；track 强制改为
+    /// 当前轨，避免把分享者的音轨号带进来。返回实际创建数量。
+    pub fn paste_shapes_from_text(&mut self, text: &str) -> Result<usize, String> {
+        let track = self.editor_state.data.current_track;
+        if track == 0 {
+            return Err("指挥轨不能粘贴形状，请先选择普通音轨".to_string());
+        }
+        let ppq = self.editor_state.view.ppq;
+        let shapes = lumino_core::shape::share::decode_shapes(text, ppq)
+            .map_err(|error| error.to_string())?;
+        if shapes.is_empty() {
+            return Err("分享文本里没有形状".to_string());
+        }
+
+        let mut created = 0usize;
+        for mut model in shapes {
+            model.id = 0;
+            model.track = track as u16;
+            if self.create_shape(model) {
+                created += 1;
+            }
+        }
+        if created == 0 {
+            return Err("形状未能创建（请检查当前音轨）".to_string());
+        }
+        Ok(created)
+    }
+
     /// 形状参数 → 音符指纹
     ///
     /// 与曲线工具确认同源：展平 → 逐音高行解析 + 法线加粗 → 同 tick 同 key 留最长 →

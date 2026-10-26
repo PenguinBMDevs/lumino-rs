@@ -52,6 +52,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "创建补间" => Some("Insert Tween"),
         "沿路径复制" => Some("Copy Along Path"),
         "力度渐强" => Some("Velocity Ramp Up"),
+        "复制为分享文本" => Some("Copy as Share Text"),
+        "从分享文本粘贴" => Some("Paste Share Text"),
         "输入文字…" => Some("Enter text…"),
         "设置内容区域" => Some("Settings content area"),
         "设置" => Some("Settings"),

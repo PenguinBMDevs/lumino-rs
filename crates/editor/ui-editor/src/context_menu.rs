@@ -112,6 +112,7 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::Delete,
             PianoRollContextMenuItem::SelectAll,
             PianoRollContextMenuItem::BatchEdit,
+            PianoRollContextMenuItem::PasteShapeText,
         ],
         ContextMenuTarget::DrawnShape => &[
             PianoRollContextMenuItem::LiveShape,
@@ -128,6 +129,8 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::BetweenCreate,
             PianoRollContextMenuItem::CopyAlong,
             PianoRollContextMenuItem::VelocityUp,
+            PianoRollContextMenuItem::CopyShapeText,
+            PianoRollContextMenuItem::PasteShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
         // 待确认镜像没有 ShapeStore 模型 / 音符，019–028 全部无目标；
@@ -214,6 +217,8 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::BetweenCreate => Icon::ContextMenuCopy,
         PianoRollContextMenuItem::CopyAlong => Icon::ContextMenuPaste,
         PianoRollContextMenuItem::VelocityUp => Icon::ContextMenuSelectAll,
+        PianoRollContextMenuItem::CopyShapeText => Icon::ContextMenuCopy,
+        PianoRollContextMenuItem::PasteShapeText => Icon::ContextMenuPaste,
     }
 }
 
@@ -241,6 +246,8 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::BetweenCreate => tr!("创建补间"),
         PianoRollContextMenuItem::CopyAlong => tr!("沿路径复制"),
         PianoRollContextMenuItem::VelocityUp => tr!("力度渐强"),
+        PianoRollContextMenuItem::CopyShapeText => tr!("复制为分享文本"),
+        PianoRollContextMenuItem::PasteShapeText => tr!("从分享文本粘贴"),
     }
 }
 
