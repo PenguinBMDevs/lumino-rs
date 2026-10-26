@@ -1,6 +1,7 @@
 //! 视图状态（滚动、缩放、显示参数）
 
 use crate::smooth_scroll::SmoothScrollAnimation;
+use crate::snap::SnapSpec;
 use crate::storage::config::{EraserBehavior, SelectionBoxMode};
 
 /// 默认的歌曲位置 (tick)
@@ -49,8 +50,10 @@ pub struct ViewState {
     pub ppq: u16,
     /// 键盘宽度（pixel）
     pub keyboard_width: f32,
-    /// 音符对齐精度（tick）
+    /// 音符对齐精度（tick；由 [`Self::snap_spec`] 派生，保留给既有消费者）
     pub snap_precision: f32,
+    /// 吸附规格（DRAW-037 的单一设置源）
+    pub snap_spec: SnapSpec,
     /// 默认音符长度（tick）
     pub default_note_length: f32,
     /// 上一次放置音符的长度（用于预览矩形和下次放置的默认长度）
@@ -78,6 +81,7 @@ impl Default for ViewState {
             ppq: DEFAULT_PPQ,
             keyboard_width: DEFAULT_KEYBOARD_WIDTH,
             snap_precision: DEFAULT_SNAP_PRECISION,
+            snap_spec: SnapSpec::QUARTER,
             default_note_length: DEFAULT_NOTE_LENGTH,
             last_note_length: None,
             ruler_height: DEFAULT_RULER_HEIGHT,
@@ -118,9 +122,21 @@ impl ViewState {
         self.keyboard_width = width.max(0.0);
     }
 
-    /// 设置吸附精度
+    /// 设置吸附精度（旧绝对 tick 路径）
+    ///
+    /// 同步把规格记为 [`SnapSpec::Custom`]，保证 PPQ 变更时不会被悄悄重算。
     pub fn set_snap_precision(&mut self, precision: f32) {
-        self.snap_precision = precision.max(1.0);
+        let ticks = precision.max(1.0).round() as u32;
+        self.snap_precision = ticks.max(1) as f32;
+        self.snap_spec = SnapSpec::Custom {
+            ticks: ticks.max(1),
+        };
+    }
+
+    /// 设置吸附规格，并派生 `snap_precision`
+    pub fn set_snap_spec(&mut self, spec: SnapSpec) {
+        self.snap_spec = spec;
+        self.snap_precision = spec.ticks(self.ppq) as f32;
     }
 
     /// 设置默认音符长度

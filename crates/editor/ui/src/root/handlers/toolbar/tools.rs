@@ -62,16 +62,28 @@ impl ToolbarHandler {
         }
     }
 
-    /// 同步精度设置到编辑器
+    /// 同步吸附规格到编辑器
+    ///
+    /// `snap_precision` 仍是所有绘制/拖动消费者的 tick 缓存；这里只把「设置源」
+    /// 从旧 `NotePrecision` 换成 `SnapSpec`。
     pub(crate) fn sync_toolbar_precision(&self, root: &mut Root, event: &crate::toolbar::Event) {
-        if let crate::toolbar::Event::PrecisionChanged(precision) = event {
-            let ticks = (*precision).as_ticks(root.editor.editor_state.view.ppq);
-            root.editor.set_snap_precision(ticks);
+        let spec = match event {
+            crate::toolbar::Event::SnapSpecChanged(spec) => Some(*spec),
+            crate::toolbar::Event::PrecisionChanged(precision) => {
+                Some(lumino_core::SnapSpec::from_legacy(*precision, None))
+            }
+            _ => None,
+        };
+        if let Some(spec) = spec {
+            let ppq = root.editor.editor_state.view.ppq;
+            let ticks = spec.ticks(ppq) as f32;
+            root.editor.set_snap_spec(spec);
             root.editor.set_default_note_length(ticks);
             tracing::debug!(
-                "Root: 音符精度同步为 {} ticks (PPQ={})",
+                "Root: 吸附规格 {:?} 同步为 {} ticks (PPQ={})",
+                spec,
                 ticks,
-                root.editor.editor_state.view.ppq
+                ppq
             );
         }
     }

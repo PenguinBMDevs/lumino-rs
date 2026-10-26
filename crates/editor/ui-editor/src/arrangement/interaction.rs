@@ -10,7 +10,7 @@ use std::time::Instant;
 use iced_core::{Point, Rectangle, mouse};
 use iced_widget::canvas;
 
-use lumino_core::{NotePrecision, Tool};
+use lumino_core::{SnapSpec, Tool};
 
 use crate::Message;
 use crate::arrangement::ArrangementViewport;
@@ -89,7 +89,7 @@ pub struct ArrangementInteractionContext<'a> {
     /// 每四分音符 tick 数
     pub ppq: u16,
     /// 网格对齐精度
-    pub precision: NotePrecision,
+    pub precision: SnapSpec,
     /// 拍号变化列表 (tick, 分子, 分母)：框选/移动吸附按真实小节边界对齐
     pub time_signatures: &'a [(u32, u8, u8)],
     /// Ctrl 键按下状态

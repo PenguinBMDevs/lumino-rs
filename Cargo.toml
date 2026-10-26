@@ -173,7 +173,7 @@ png = "0.17"
 # 视频导出计数器模式：TTF/OTF 字体光栅化（中文字符支持）
 ab_glyph = "0.2"
 # ── UI 基础设施 ──
-iced_aw = { version = "0.13.0", features = ["menu"] }
+iced_aw = { version = "0.13.0", features = ["menu", "drop_down"] }
 image = "0.25"
 once_cell = "1.20"
 resvg = "0.44"

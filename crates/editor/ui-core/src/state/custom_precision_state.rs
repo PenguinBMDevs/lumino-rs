@@ -1,5 +1,6 @@
 //! 自定义精度对话框状态
 
+use lumino_core::SnapSpec;
 use lumino_core::shape::expr::eval_int;
 use lumino_message::{DotType, TupletType};
 
@@ -26,11 +27,11 @@ impl Default for CustomPrecisionDialogState {
     fn default() -> Self {
         Self {
             is_open: false,
-            tuplet_count: "3".to_string(),
+            tuplet_count: "1".to_string(),
             note_value: "4".to_string(),
-            tuplet_type: TupletType::Triplet,
+            tuplet_type: TupletType::None,
             dot_type: DotType::None,
-            divisor: "2".to_string(),
+            divisor: "1".to_string(),
             error: None,
         }
     }
@@ -47,21 +48,33 @@ impl CustomPrecisionDialogState {
     /// 输入允许 `960*4` / `(60+4)*16` 这类表达式；结果不为正或除法不精确时返回
     /// 可读错误，调用方应保留对话框并展示 `error`。
     pub fn calculate_ticks_checked(&self, ppq: u32) -> Result<f32, String> {
-        let numerator = eval_int(&self.tuplet_count).map_err(|e| format!("三连音数：{e}"))?;
-        let denominator = eval_int(&self.note_value).map_err(|e| format!("分音符：{e}"))?;
+        Ok(self.snap_spec()?.ticks(ppq as u16) as f32)
+    }
+
+    /// 把对话框字段换算成吸附规格。
+    ///
+    /// `div = 三连音数 × 除数`（DRAW-037 拍板口径）；附点只取 None/Single/Double。
+    pub fn snap_spec(&self) -> Result<SnapSpec, String> {
+        let notes = eval_int(&self.note_value).map_err(|e| format!("分音符：{e}"))?;
+        let tuplet = eval_int(&self.tuplet_count).map_err(|e| format!("三连音数：{e}"))?;
         let divisor = eval_int(&self.divisor).map_err(|e| format!("除数：{e}"))?;
-
-        if numerator <= 0 || denominator <= 0 || divisor <= 0 {
-            return Err("三连音数、分音符与除数都必须大于 0".to_string());
+        if tuplet <= 0 || divisor <= 0 {
+            return Err("三连音数与除数都必须大于 0".to_string());
         }
-
-        // 先算拍内 tick，再除除数；用 f64 承接中间值，最终必须是有限正数。
-        let base_ticks = f64::from(ppq) * 4.0 * numerator as f64 / denominator as f64;
-        let ticks = base_ticks / divisor as f64;
-        if !ticks.is_finite() || ticks <= 0.0 {
-            return Err("计算结果不是有限正数".to_string());
+        let div = tuplet
+            .checked_mul(divisor)
+            .ok_or_else(|| "三连音数 × 除数溢出".to_string())?;
+        if div > i64::from(u8::MAX) {
+            return Err("三连音数 × 除数过大".to_string());
         }
-        Ok(ticks as f32)
+        let notes = u8::try_from(notes).map_err(|_| "分音符超出 u8 范围".to_string())?;
+        let div = u8::try_from(div).map_err(|_| "分割数超出 u8 范围".to_string())?;
+        let dots = match self.dot_type {
+            DotType::None | DotType::Tuplet => 0,
+            DotType::Single => 1,
+            DotType::Double => 2,
+        };
+        SnapSpec::note(notes, dots, div).map_err(|error| error.to_string())
     }
 
     /// 兼容旧调用：失败时返回 `None`
@@ -77,13 +90,42 @@ mod tests {
     #[test]
     fn test_custom_precision_accepts_integer_expressions() {
         let state = CustomPrecisionDialogState {
-            tuplet_count: "3".into(),
+            tuplet_count: "1".into(),
             note_value: "4*2".into(),
-            divisor: "2".into(),
+            divisor: "1".into(),
             ..Default::default()
         };
         let ticks = state.calculate_ticks_checked(960).expect("表达式应可求值");
-        assert_eq!(ticks, 720.0, "960*4*3/(8*2)");
+        assert_eq!(ticks, 480.0, "960*4/8");
+
+        let triplet = CustomPrecisionDialogState {
+            tuplet_count: "3".into(),
+            note_value: "4".into(),
+            divisor: "1".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            triplet.snap_spec().expect("三连音"),
+            SnapSpec::Note {
+                notes: 4,
+                dots: 0,
+                div: 3
+            }
+        );
+        let product = CustomPrecisionDialogState {
+            tuplet_count: "3".into(),
+            note_value: "4".into(),
+            divisor: "2".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            product.snap_spec().expect("div 乘积"),
+            SnapSpec::Note {
+                notes: 4,
+                dots: 0,
+                div: 6
+            }
+        );
     }
 
     #[test]

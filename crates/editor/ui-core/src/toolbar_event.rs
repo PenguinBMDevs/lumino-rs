@@ -33,8 +33,14 @@ pub enum Event {
     FillToggled(bool),
     /// 量化音符
     Quantize,
-    /// 精度设置变更
+    /// 精度设置变更（旧事件，内部兼容）
     PrecisionChanged(NotePrecision),
+    /// 吸附规格变更（DRAW-037）
+    SnapSpecChanged(lumino_core::SnapSpec),
+    /// 开合吸附选择器下拉
+    ToggleSnapPicker,
+    /// 关闭吸附选择器下拉
+    CloseSnapPicker,
     /// 打开自定义精度对话框
     OpenCustomPrecisionDialog,
     /// 关闭自定义精度对话框

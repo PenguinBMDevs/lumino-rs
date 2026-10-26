@@ -65,6 +65,21 @@ impl Event {
         Message::Toolbar(Self::PrecisionChanged(precision))
     }
 
+    /// 构造"吸附规格变更"的工具栏消息（DRAW-037）
+    pub const fn snap_spec_changed(spec: lumino_core::SnapSpec) -> Message {
+        Message::Toolbar(Self::SnapSpecChanged(spec))
+    }
+
+    /// 开合吸附选择器
+    pub const fn toggle_snap_picker() -> Message {
+        Message::Toolbar(Self::ToggleSnapPicker)
+    }
+
+    /// 关闭吸附选择器
+    pub const fn close_snap_picker() -> Message {
+        Message::Toolbar(Self::CloseSnapPicker)
+    }
+
     /// 构造"打开自定义精度对话框"的工具栏消息
     pub const fn open_custom_precision_dialog() -> Message {
         Message::Toolbar(Self::OpenCustomPrecisionDialog)

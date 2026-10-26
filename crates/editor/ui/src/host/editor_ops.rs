@@ -43,6 +43,15 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 应用自定义吸附规格（DRAW-037 对话框结果）
+    pub fn set_custom_snap(&mut self, spec: lumino_core::SnapSpec) {
+        self.root.set_custom_snap(spec);
+        self.root.editor.grid_cache.clear();
+        self.root.editor.ruler_cache.clear();
+        self.render_ctx.render_cache.grid_viewport_hash = 0;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 加载音符到编辑器
     /// notes: (tick, key, length, velocity, channel)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8, u8)]) {

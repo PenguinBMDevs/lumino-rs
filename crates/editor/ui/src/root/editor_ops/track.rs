@@ -56,9 +56,13 @@ impl Root {
         //   1) 默认状态下 UI 显示"全音符"而实际吸附是四分音符；
         //   2) 用户手动切换精度后，一旦变更 PPQ，精度会被悄悄改回四分音符。
         // 自定义精度是用户明确指定的绝对 tick 值，PPQ 变更时保持不变。
-        if self.toolbar.note_precision != crate::toolbar::NotePrecision::Custom {
-            let precision_ticks = self.toolbar.note_precision.as_ticks(ppq);
-            self.editor.set_snap_precision(precision_ticks);
+        if let lumino_core::SnapSpec::Custom { ticks } = self.toolbar.snap_spec {
+            // 旧 Custom 是绝对 tick：PPQ 变更时保持原值。
+            self.editor.set_snap_precision(ticks as f32);
+        } else {
+            let spec = self.toolbar.snap_spec;
+            let precision_ticks = spec.ticks(ppq) as f32;
+            self.editor.set_snap_spec(spec);
             self.editor.set_default_note_length(precision_ticks);
         }
         // 同步到走带视图（影响网格线定位）

@@ -12,23 +12,23 @@
 //! 或破坏拍号感知，本文件立刻变红，提醒先走决策流程而不是顺手改。
 
 use crate::arrangement::interaction::geometry;
-use lumino_core::NotePrecision;
+use lumino_core::SnapSpec;
 
 /// 无拍号：回退固定 `ppq` 间隔 + round（1900 → 1920，而非 floor 到 1920 之外的 0）
 #[test]
 fn test_arrangement_snap_tick_rounds_without_time_signatures() {
     assert_eq!(
-        geometry::snap_tick(1900.0, NotePrecision::Quarter, 1920, &[]),
+        geometry::snap_tick(1900.0, SnapSpec::QUARTER, 1920, &[]),
         1920.0,
         "1/4 精度 @1920：1900 应 round 到最近格线 1920"
     );
     assert_eq!(
-        geometry::snap_tick(1000.0, NotePrecision::Quarter, 1920, &[]),
+        geometry::snap_tick(1000.0, SnapSpec::QUARTER, 1920, &[]),
         1920.0,
         "1/4 精度 @1920：1000 应 round 到 1920（floor 会得到 0）"
     );
     assert_eq!(
-        geometry::snap_tick(900.0, NotePrecision::Quarter, 1920, &[]),
+        geometry::snap_tick(900.0, SnapSpec::QUARTER, 1920, &[]),
         0.0,
         "1/4 精度 @1920：900 应 round 回 0"
     );
@@ -39,19 +39,28 @@ fn test_arrangement_snap_tick_rounds_without_time_signatures() {
 fn test_arrangement_snap_tick_keeps_time_signature_awareness() {
     let ts = [(0u32, 4u8, 4u8)];
     assert_eq!(
-        geometry::snap_tick(1900.0, NotePrecision::Quarter, 1920, &ts),
+        geometry::snap_tick(1900.0, SnapSpec::QUARTER, 1920, &ts),
         1920.0,
         "4/4 段内 1/4 精度间隔 = 1 拍 = 1920"
     );
     assert_eq!(
-        geometry::snap_tick(1900.0, NotePrecision::Eighth, 1920, &ts),
+        geometry::snap_tick(
+            1900.0,
+            SnapSpec::Note {
+                notes: 8,
+                dots: 0,
+                div: 1
+            },
+            1920,
+            &ts
+        ),
         1920.0,
         "4/4 段内 1/8 精度间隔 = 1/2 拍 = 960：1900 round 到 1920"
     );
     // 3/4 段：倍拍长，网格线随之变化（拍号感知未被绕过）
     let ts34 = [(0u32, 3u8, 4u8)];
     assert_eq!(
-        geometry::snap_tick(1900.0, NotePrecision::Quarter, 1920, &ts34),
+        geometry::snap_tick(1900.0, SnapSpec::QUARTER, 1920, &ts34),
         1920.0,
         "3/4 段内 1/4 精度仍为 1 拍：1900 round 到 1920"
     );

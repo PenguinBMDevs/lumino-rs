@@ -57,9 +57,7 @@ pub fn view_custom_precision_dialog<'a>(
     };
 
     // 第一行：三连音数量 + 符点下拉 + 分音符 + "分音符"
-    // 当符点类型为（无）时，禁用三连音数量输入框
-    let is_tuplet_disabled = state.dot_type == DotType::None;
-
+    // 三连音数始终可编辑：DRAW-037 中 div = 三连音数 × 除数。
     // 本地化符点下拉选项
     let dot_options: Vec<LocalizedDotType> = DotType::all()
         .iter()
@@ -72,11 +70,9 @@ pub fn view_custom_precision_dialog<'a>(
         // 三连音数量输入框
         container(
             text_input("", &state.tuplet_count)
-                .on_input_maybe(if is_tuplet_disabled {
-                    None
-                } else {
-                    Some(|s| Message::CustomPrecision(CustomPrecisionAction::TupletCountChanged(s)))
-                })
+                .on_input(
+                    |s| Message::CustomPrecision(CustomPrecisionAction::TupletCountChanged(s))
+                )
                 .padding([6, 10])
                 .width(Length::Fixed(50.0))
         )
