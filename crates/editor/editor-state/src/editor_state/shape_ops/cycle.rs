@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use lumino_core::shape::{CycleBy, CycleParams, RowRestart};
+use lumino_core::shape::{AREA_LOCK_BASE, CycleBy, CycleParams, RowRestart};
 
 use crate::ShapeNote;
 
@@ -17,7 +17,12 @@ pub fn apply(notes: &mut [ShapeNote], params: &CycleParams, ppq: f64) -> usize {
         return 0;
     }
     let n = i64::from(params.n);
-    let lowest = notes.iter().map(|note| note.key).min().unwrap_or(0);
+    let lowest = notes
+        .iter()
+        .filter(|note| note.channel < AREA_LOCK_BASE)
+        .map(|note| note.key)
+        .min()
+        .unwrap_or(0);
     let every = i64::from(params.every.max(1));
     let shift = params
         .shift
@@ -27,6 +32,9 @@ pub fn apply(notes: &mut [ShapeNote], params: &CycleParams, ppq: f64) -> usize {
         CycleBy::Step => {
             let rows = step_rows(notes, params.rows);
             for note in notes.iter_mut() {
+                if note.channel >= AREA_LOCK_BASE {
+                    continue;
+                }
                 let (index, count) = match params.rows {
                     Some(_) => {
                         let list = rows.get(&note.key).map(Vec::as_slice).unwrap_or(&[]);
@@ -47,6 +55,9 @@ pub fn apply(notes: &mut [ShapeNote], params: &CycleParams, ppq: f64) -> usize {
         }
         CycleBy::Key => {
             for note in notes.iter_mut() {
+                if note.channel >= AREA_LOCK_BASE {
+                    continue;
+                }
                 let row = i64::from(note.key.saturating_sub(lowest));
                 set_channel(note, row / every + shift_of(note.key, lowest, shift), n);
             }
@@ -57,6 +68,9 @@ pub fn apply(notes: &mut [ShapeNote], params: &CycleParams, ppq: f64) -> usize {
             };
             let bounds = row_bounds(notes);
             for note in notes.iter_mut() {
+                if note.channel >= AREA_LOCK_BASE {
+                    continue;
+                }
                 let index = match params.rows {
                     Some(RowRestart::First) => {
                         let start = bounds.get(&note.key).map(|(lo, _)| *lo).unwrap_or(0.0);
@@ -102,7 +116,7 @@ fn time_step(params: &CycleParams, ppq: f64) -> Option<f64> {
 /// Step 模式：`rows=Some` 每 key 一张起点表；`None` 用 `u16::MAX` 存全局表
 fn step_rows(notes: &[ShapeNote], rows: Option<RowRestart>) -> BTreeMap<u16, Vec<f32>> {
     let mut map: BTreeMap<u16, Vec<f32>> = BTreeMap::new();
-    for note in notes {
+    for note in notes.iter().filter(|note| note.channel < AREA_LOCK_BASE) {
         let key = if rows.is_some() { note.key } else { u16::MAX };
         map.entry(key).or_default().push(note.tick);
     }
@@ -115,7 +129,7 @@ fn step_rows(notes: &[ShapeNote], rows: Option<RowRestart>) -> BTreeMap<u16, Vec
 
 fn row_bounds(notes: &[ShapeNote]) -> BTreeMap<u16, (f32, f32)> {
     let mut map: BTreeMap<u16, (f32, f32)> = BTreeMap::new();
-    for note in notes {
+    for note in notes.iter().filter(|note| note.channel < AREA_LOCK_BASE) {
         let entry = map.entry(note.key).or_insert((note.tick, note.tick));
         entry.0 = entry.0.min(note.tick);
         entry.1 = entry.1.max(note.tick);
