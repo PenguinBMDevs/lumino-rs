@@ -91,6 +91,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                             )));
                         }
                     }
+                    // 曲线工具：选中锚点的弯折切换（DRAW-042）
+                    if self.editor.current_tool() == Tool::Curve
+                        && let Some(btns) =
+                            crate::grid::line_tool_box::line_bend_button_rects(self.editor)
+                    {
+                        if btns.smooth.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::LineToolBend(lumino_editor_state::AnchorBend::Smooth),
+                            )));
+                        }
+                        if btns.corner.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::LineToolBend(lumino_editor_state::AnchorBend::Corner),
+                            )));
+                        }
+                    }
                     // 形状工具：优先响应悬浮 √× 按钮
                     if self.editor.current_tool() == Tool::Shape
                         && let Some(btns) =

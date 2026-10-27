@@ -55,7 +55,8 @@ pub use interaction_state::{
     EditState, HitType, InteractionState, PreviewSequenceNote, SelectionHitType,
 };
 pub use line_tool::{
-    BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
+    AnchorBend, BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState,
+    PathSnapshot,
 };
 pub use selection_set::SelectionSet;
 pub use shape_edit::{

@@ -9,6 +9,17 @@ fn test_anchor_new_defaults_to_auto_handles() {
     assert_eq!(anchor.in_handle, (0.0, 0.0));
     assert_eq!(anchor.out_handle, (0.0, 0.0));
     assert!(anchor.handles_auto, "新锚点应为自动柄");
+    assert_eq!(anchor.bend, AnchorBend::Smooth, "新锚点默认曲线弯折");
+}
+
+#[test]
+fn test_anchor_json_without_bend_defaults_smooth() {
+    // DRAW-034 的 LUMINO1 分享文本直接 serde ShapeModel；旧文本没有 bend。
+    let anchor: ShapeAnchor = serde_json::from_str(
+        r#"{"pos":[100.0,60.0],"in_handle":[0.0,0.0],"out_handle":[0.0,0.0],"handles_auto":true}"#,
+    )
+    .expect("旧分享锚点应能解码");
+    assert_eq!(anchor.bend, AnchorBend::Smooth);
 }
 
 #[test]

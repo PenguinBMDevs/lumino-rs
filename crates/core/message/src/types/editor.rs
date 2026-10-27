@@ -1,6 +1,6 @@
 //! 编辑器相关消息类型
 
-use lumino_core::{TextLayoutMode, TextParams};
+use lumino_core::{AnchorBend, TextLayoutMode, TextParams};
 
 use crate::Point2;
 
@@ -67,6 +67,8 @@ pub enum EditorAction {
     LineToolConfirm,
     /// 曲线工具直线：取消并清空（× 按钮）
     LineToolCancel,
+    /// 曲线工具：切换选中锚点的弯折行为（DRAW-042）
+    LineToolBend(AnchorBend),
     /// 形状工具：确认并按图形区域生成音符（√ 按钮）
     ShapeToolConfirm,
     /// 形状工具：取消并清空（× 按钮）

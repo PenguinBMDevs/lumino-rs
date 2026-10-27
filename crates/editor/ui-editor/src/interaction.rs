@@ -102,6 +102,9 @@ impl Editor {
             EditorAction::LineToolCancel => {
                 self.cancel_line_tool();
             }
+            EditorAction::LineToolBend(bend) => {
+                self.set_selected_anchor_bend(bend);
+            }
             EditorAction::BrushConfirm => {
                 self.confirm_brush();
             }

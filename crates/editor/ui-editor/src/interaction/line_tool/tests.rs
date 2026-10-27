@@ -2,7 +2,7 @@
 
 use super::*;
 use lumino_core::Tool;
-use lumino_editor_state::{HandleSide, LineToolInteraction};
+use lumino_editor_state::{AnchorBend, HandleSide, LineToolInteraction};
 
 /// 构造曲线工具 + 一条完整路径 (0,60)-(3840,60) 的编辑器
 ///
@@ -68,7 +68,39 @@ fn test_press_segment_release_inserts_anchor() {
     let line = &editor.editor_state.line_tool;
     assert_eq!(line.paths[0].len(), 3);
     assert_eq!(line.paths[0][1].pos, (1920.0, 60.0));
-    assert_eq!(line.interaction, LineToolInteraction::None);
+    assert_eq!(
+        line.interaction,
+        LineToolInteraction::SelectedAnchor { path: 0, idx: 1 },
+        "插入锚点后应保持选中，供弯折切换"
+    );
+}
+
+#[test]
+fn test_selected_anchor_toggles_bend_and_undoes() {
+    let mut editor = line_editor();
+    let mid = editor.line_pos_screen_pos((1920.0, 60.0));
+    editor.handle_line_tool_pressed(mid, 1920.0, 60.0);
+    editor.handle_line_tool_released();
+    assert_eq!(
+        editor.editor_state.line_tool.selected_anchor(),
+        Some((0, 1))
+    );
+    assert!(!editor.is_editing(), "仅选中锚点不应拦截 Undo/Redo/Save");
+    assert!(editor.set_selected_anchor_bend(AnchorBend::Corner));
+    {
+        let line = &editor.editor_state.line_tool;
+        assert_eq!(line.paths[0][1].bend, AnchorBend::Corner);
+        assert!(
+            line.visible_handle_sides(0, 1).is_empty(),
+            "Corner 锚点不应显示控制柄"
+        );
+    }
+    assert!(editor.editor_state.line_tool.undo_path());
+    assert_eq!(
+        editor.editor_state.line_tool.paths[0][1].bend,
+        AnchorBend::Smooth,
+        "Ctrl+Z 应回退弯折切换"
+    );
 }
 
 #[test]

@@ -43,7 +43,7 @@ mod tests_vertical;
 
 use crate::Editor;
 use iced_core::Point;
-use lumino_editor_state::{BezierAnchor, HandleSide, LineToolInteraction};
+use lumino_editor_state::{AnchorBend, BezierAnchor, HandleSide, LineToolInteraction};
 
 /// 曲线段按下 → 拖动判定阈值（像素）：未超阈值松开视为点击插入锚点
 const PRESS_DRAG_THRESHOLD_PX: f32 = 4.0;
@@ -147,7 +147,8 @@ impl Editor {
                 line.interaction = LineToolInteraction::DraggingLine { path, segment };
             }
             None => {
-                // 空白处：开始新路径（保留已有路径——批量绘制）
+                // 空白处：开始新路径（保留已有路径——批量绘制）；同时清掉锚点选中态。
+                line.interaction = LineToolInteraction::None;
                 line.paths.push(vec![BezierAnchor::new(
                     blank_anchor.unwrap_or((snapped_tick, snapped_key)),
                 )]);
@@ -252,7 +253,7 @@ impl Editor {
                     }
                 }
             }
-            LineToolInteraction::None => {}
+            LineToolInteraction::SelectedAnchor { .. } | LineToolInteraction::None => {}
         }
     }
 
@@ -269,6 +270,17 @@ impl Editor {
             }
             _ => None,
         };
+        // 锚点/控制柄拖动松手后保持选中；段点击插入后选中新锚点。
+        let mut selected = match self.editor_state.line_tool.interaction {
+            LineToolInteraction::DraggingAnchor { path, idx }
+            | LineToolInteraction::DraggingHandle {
+                path,
+                anchor_idx: idx,
+                ..
+            } => Some((path, idx)),
+            LineToolInteraction::SelectedAnchor { path, idx } => Some((path, idx)),
+            _ => None,
+        };
         // 未确认拖动 → 点击插入锚点（位置 = 按下处，不吸附网格；仅锚点吸附）
         if let Some((path, segment, raw)) = pending
             && !self.editor_state.line_tool.drag_confirmed
@@ -276,18 +288,38 @@ impl Editor {
             let pos = self
                 .snap_new_anchor(raw, &[(path, segment), (path, segment + 1)])
                 .unwrap_or(raw);
-            self.editor_state
+            if self
+                .editor_state
                 .line_tool
-                .insert_anchor_at(path, segment + 1, pos);
+                .insert_anchor_at(path, segment + 1, pos)
+            {
+                selected = Some((path, segment + 1));
+            }
         }
         let line = &mut self.editor_state.line_tool;
-        line.interaction = LineToolInteraction::None;
+        line.interaction = selected
+            .map(|(path, idx)| LineToolInteraction::SelectedAnchor { path, idx })
+            .unwrap_or(LineToolInteraction::None);
         line.drag_confirmed = false;
         // 状态产生变化（插入锚点/拖动平移）→ 记录历史；未变化（空点击）不记录
         if line.snapshot() != line.path_history[line.path_history_index] {
             line.push_path_history();
         }
         line.last_push_path = None;
+    }
+
+    /// 切换当前选中锚点的弯折行为（DRAW-042）
+    ///
+    /// 仅中间锚点可切换；一次切换记一次路径历史，Ctrl+Z / Ctrl+Y 可回退。
+    pub fn set_selected_anchor_bend(&mut self, bend: AnchorBend) -> bool {
+        let Some((path, idx)) = self.editor_state.line_tool.selected_anchor() else {
+            return false;
+        };
+        if !self.editor_state.line_tool.set_anchor_bend(path, idx, bend) {
+            return false;
+        }
+        self.editor_state.line_tool.push_path_history();
+        true
     }
 
     /// 双击处理：命中锚点（含与其重合的控制柄）→ 删除中间锚点（端点不可删），
@@ -302,6 +334,7 @@ impl Editor {
                 ..
             }) if self.editor_state.line_tool.delete_anchor(path, idx) => {
                 let line = &mut self.editor_state.line_tool;
+                line.interaction = LineToolInteraction::None;
                 line.push_path_history();
                 line.last_push_path = None;
             }

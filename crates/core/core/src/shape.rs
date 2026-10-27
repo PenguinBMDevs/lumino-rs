@@ -47,7 +47,7 @@ pub mod velocity_env;
 
 pub use areas::AreaSpot;
 pub use expr::{Expr, ExprError};
-pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
+pub use geometry::{AnchorBend, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,

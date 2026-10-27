@@ -4,7 +4,7 @@
 //! 供 [`super::paths`] 的逐音高行跨越计算使用）。
 
 use iced_core::Point;
-use lumino_editor_state::BezierAnchor;
+use lumino_editor_state::{AnchorBend, BezierAnchor};
 
 /// tick 方向展平容差（tick）：音符起点四舍五入到整 tick，取远小于半 tick 的值
 const TICK_TOL: f64 = 0.1;
@@ -84,6 +84,11 @@ pub(crate) fn flatten_path(path: &[BezierAnchor]) -> Vec<(f64, f64)> {
         let (a, b) = (pair[0], pair[1]);
         let p0 = (a.pos.0 as f64, a.pos.1 as f64);
         let p3 = (b.pos.0 as f64, b.pos.1 as f64);
+        // 任一端为 Corner：整段按直线处理，不做贝塞尔细分（DRAW-042）。
+        if a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner {
+            push_point(&mut out, p3);
+            continue;
+        }
         if a.handles_auto && b.handles_auto {
             push_point(&mut out, p3);
             continue;
@@ -161,7 +166,7 @@ fn control_slope(a: (f64, f64), cp1: (f64, f64), cp2: (f64, f64), b: (f64, f64))
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_editor_state::BezierAnchor;
+    use lumino_editor_state::{AnchorBend, BezierAnchor};
 
     #[test]
     fn test_flatten_straight_is_two_points() {
@@ -248,6 +253,20 @@ mod tests {
         assert!(pts.len() > 2, "竖直弯曲段必须细分，实际 {} 点", pts.len());
         assert_eq!(pts.first(), Some(&(1920.0, 60.0)));
         assert_eq!(pts.last(), Some(&(1920.0, 68.0)));
+    }
+
+    #[test]
+    fn test_flatten_corner_anchor_is_straight() {
+        let mut a = BezierAnchor::new((0.0, 60.0));
+        a.set_out_handle((960.0, 20.0));
+        a.bend = AnchorBend::Corner;
+        let mut b = BezierAnchor::new((1920.0, 60.0));
+        b.set_in_handle((-960.0, 20.0));
+        assert_eq!(
+            flatten_path(&[a, b]),
+            vec![(0.0, 60.0), (1920.0, 60.0)],
+            "Corner 端应整段按直线展平"
+        );
     }
 
     #[test]

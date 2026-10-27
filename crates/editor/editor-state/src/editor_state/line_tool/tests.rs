@@ -69,6 +69,39 @@ fn test_auto_handles_after_push() {
     assert_eq!(state.paths[0][1].in_handle, (-640.0, -4.0 / 3.0));
 }
 
+#[test]
+fn test_corner_bend_hides_handles_and_skips_auto_recompute() {
+    let mut state = LineToolState::default();
+    state.paths.push(Vec::new());
+    state.push_anchor(0, (0.0, 60.0));
+    state.push_anchor(0, (960.0, 62.0));
+    state.push_anchor(0, (1920.0, 64.0));
+    assert!(state.set_anchor_bend(0, 1, AnchorBend::Corner));
+    assert!(
+        state.visible_handle_sides(0, 1).is_empty(),
+        "Corner 锚点不应显示控制柄"
+    );
+    let before = state.paths[0][1].out_handle;
+    state.paths[0][2].pos = (2400.0, 70.0);
+    state.recompute_auto_handles();
+    assert_eq!(
+        state.paths[0][1].out_handle, before,
+        "Corner 锚点不参与自动柄重算"
+    );
+    assert!(
+        !state.set_anchor_bend(0, 0, AnchorBend::Corner),
+        "端点不可设 Corner"
+    );
+    assert!(
+        !state.set_anchor_bend(0, 2, AnchorBend::Corner),
+        "端点不可设 Corner"
+    );
+
+    assert!(state.set_anchor_bend(0, 1, AnchorBend::Smooth));
+    assert!(state.paths[0][1].handles_auto);
+    assert!(!state.visible_handle_sides(0, 1).is_empty());
+}
+
 // ── 历史（撤销/重做） ──
 
 #[test]

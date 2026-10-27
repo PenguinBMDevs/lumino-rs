@@ -20,6 +20,8 @@ use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
 use crate::interaction::line_tool::fill::region::{FillRegion, fill_region};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
+use lumino_core::tr;
+use lumino_editor_state::AnchorBend;
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
 
@@ -43,6 +45,62 @@ pub struct LineButtonRects {
     pub confirm: Rectangle,
     /// × 取消按钮
     pub cancel: Rectangle,
+}
+
+/// 选中锚点的弯折切换按钮（DRAW-042）
+#[derive(Debug, Clone, Copy)]
+pub struct LineBendRects {
+    /// 曲线弯折
+    pub smooth: Rectangle,
+    /// 折线弯折
+    pub corner: Rectangle,
+    /// 当前状态（用于高亮）
+    pub current: AnchorBend,
+}
+
+/// 弯折切换按钮尺寸 / 间距 / 与锚点的垂直距离（画布坐标）
+const BEND_BUTTON_W: f32 = 52.0;
+const BEND_BUTTON_H: f32 = 20.0;
+const BEND_BUTTON_GAP: f32 = 4.0;
+const BEND_BUTTON_OFFSET: f32 = 14.0;
+
+/// 当前选中锚点可切换弯折时，返回两个切换按钮的矩形
+pub fn line_bend_button_rects(editor: &Editor) -> Option<LineBendRects> {
+    if editor.current_tool() != Tool::Curve {
+        return None;
+    }
+    let (path_idx, anchor_idx) = editor.editor_state.line_tool.selected_anchor()?;
+    let path = editor.editor_state.line_tool.paths.get(path_idx)?;
+    if anchor_idx == 0 || anchor_idx + 1 >= path.len() {
+        return None;
+    }
+    let anchor = path.get(anchor_idx)?;
+    let ap = editor.line_pos_screen_pos(anchor.pos);
+    let content = content_bounds(editor);
+    let total = BEND_BUTTON_W * 2.0 + BEND_BUTTON_GAP;
+    if content.width < total + 4.0 || content.height < BEND_BUTTON_H + 4.0 {
+        return None;
+    }
+    let x = (ap.x - total * 0.5).clamp(
+        content.x + 2.0,
+        (content.x + content.width - total - 2.0).max(content.x + 2.0),
+    );
+    let mut y = ap.y - BEND_BUTTON_H - BEND_BUTTON_OFFSET;
+    if y < content.y + 2.0 {
+        y = ap.y + BEND_BUTTON_OFFSET;
+    }
+    y = y.clamp(
+        content.y + 2.0,
+        (content.y + content.height - BEND_BUTTON_H - 2.0).max(content.y + 2.0),
+    );
+    Some(LineBendRects {
+        smooth: Rectangle::new(Point::new(x, y), Size::new(BEND_BUTTON_W, BEND_BUTTON_H)),
+        corner: Rectangle::new(
+            Point::new(x + BEND_BUTTON_W + BEND_BUTTON_GAP, y),
+            Size::new(BEND_BUTTON_W, BEND_BUTTON_H),
+        ),
+        current: anchor.bend,
+    })
 }
 
 /// 全部路径锚点的屏幕包围盒 (min_x, max_x, min_y, max_y)
@@ -132,6 +190,7 @@ pub fn draw(
     if line.paths.is_empty() {
         return None;
     }
+    let selected = line.selected_anchor();
 
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let mut has_content = false;
@@ -147,13 +206,21 @@ pub fn draw(
             for pair in path.windows(2) {
                 let (a, b) = (pair[0], pair[1]);
                 let pa = editor.line_pos_screen_pos(a.pos);
-                let p1 = editor.line_pos_screen_pos(a.out_handle_abs());
-                let p2 = editor.line_pos_screen_pos(b.in_handle_abs());
                 let pb = editor.line_pos_screen_pos(b.pos);
-                let curve = Path::new(|p| {
-                    p.move_to(pa);
-                    p.bezier_curve_to(p1, p2, pb);
-                });
+                let corner = a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner;
+                let curve = if corner {
+                    Path::new(|p| {
+                        p.move_to(pa);
+                        p.line_to(pb);
+                    })
+                } else {
+                    let p1 = editor.line_pos_screen_pos(a.out_handle_abs());
+                    let p2 = editor.line_pos_screen_pos(b.in_handle_abs());
+                    Path::new(|p| {
+                        p.move_to(pa);
+                        p.bezier_curve_to(p1, p2, pb);
+                    })
+                };
                 let stroke = Stroke::default()
                     .with_width(OUTLINE_GUIDE_WIDTH)
                     .with_color(anchor_color);
@@ -203,7 +270,7 @@ pub fn draw(
         }
 
         // 锚点：实心圆 + 白色描边（明确标注路径锚点）
-        for anchor in path {
+        for (ai, anchor) in path.iter().enumerate() {
             let ap = editor.line_pos_screen_pos(anchor.pos);
             let path = Path::circle(ap, ANCHOR_RADIUS);
             frame.fill(&path, anchor_color);
@@ -211,6 +278,14 @@ pub fn draw(
                 .with_width(ANCHOR_STROKE_WIDTH)
                 .with_color(white);
             frame.stroke(&path, ring);
+            // 选中锚点：加一圈主题色外环，明确弯折切换作用于谁
+            if selected == Some((pi, ai)) {
+                let selected_ring = Path::circle(ap, ANCHOR_RADIUS + 3.0);
+                frame.stroke(
+                    &selected_ring,
+                    Stroke::default().with_width(2.0).with_color(white),
+                );
+            }
             has_content = true;
         }
     }
@@ -226,6 +301,47 @@ pub fn draw(
             frame.fill(&path, fill_color);
         } else {
             fill_note_blocks(&mut frame, editor, &region.blocks, fill_color);
+        }
+        has_content = true;
+    }
+
+    // 选中锚点的弯折切换：曲线 / 折线两态（DRAW-042）
+    if let Some(btns) = line_bend_button_rects(editor) {
+        let palette = theme.extended_palette();
+        let selected_bg = palette.primary.strong.color;
+        let normal_bg = palette.background.weak.color;
+        let text_color = palette.background.neutral.text;
+        for (rect, label, bend) in [
+            (btns.smooth, tr!("曲线"), AnchorBend::Smooth),
+            (btns.corner, tr!("折线"), AnchorBend::Corner),
+        ] {
+            let selected = btns.current == bend;
+            let path = Path::rounded_rectangle(
+                rect.position(),
+                rect.size(),
+                iced_core::border::Radius::from(4.0),
+            );
+            frame.fill(&path, if selected { selected_bg } else { normal_bg });
+            frame.stroke(
+                &path,
+                Stroke::default().with_width(1.0).with_color(if selected {
+                    white
+                } else {
+                    anchor_color
+                }),
+            );
+            frame.fill_text(canvas::Text {
+                content: label.to_string(),
+                position: Point::new(rect.x + rect.width * 0.5, rect.y + 4.0),
+                max_width: rect.width,
+                line_height: iced_core::text::LineHeight::Relative(1.0),
+                size: iced_core::Pixels(11.0),
+                color: if selected { white } else { text_color },
+                font: lumino_ui_core::font::ui_font(),
+                align_x: iced_core::alignment::Horizontal::Center.into(),
+                align_y: iced_core::alignment::Vertical::Top,
+                shaping: iced_core::text::Shaping::Basic,
+            });
         }
         has_content = true;
     }

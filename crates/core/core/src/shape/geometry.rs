@@ -28,6 +28,19 @@ pub enum ShapeKind {
     Funnel,
 }
 
+/// 锚点弯折行为（DRAW-042）
+///
+/// `Smooth` 为默认：自动柄按相邻段方向 1/3 维护；`Corner` 表示该锚点两侧
+/// 都按直线处理，控制柄不显示也不参与命中。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum AnchorBend {
+    /// 曲线弯折（平滑通过）
+    #[default]
+    Smooth,
+    /// 折线弯折（尖角）
+    Corner,
+}
+
 /// 贝塞尔锚点
 ///
 /// 位置与控制柄均为逻辑坐标 `(tick, key)`，`key` 用 `f32` 以支持不吸附网格的自由锚点。
@@ -43,6 +56,9 @@ pub struct ShapeAnchor {
     pub out_handle: (f32, f32),
     /// 控制柄是否自动维护（未被用户自定义）
     pub handles_auto: bool,
+    /// 弯折行为（DRAW-042；v3 新增，旧分享文本缺省为 Smooth）
+    #[serde(default)]
+    pub bend: AnchorBend,
 }
 
 impl ShapeAnchor {
@@ -53,6 +69,7 @@ impl ShapeAnchor {
             in_handle: (0.0, 0.0),
             out_handle: (0.0, 0.0),
             handles_auto: true,
+            bend: AnchorBend::Smooth,
         }
     }
 

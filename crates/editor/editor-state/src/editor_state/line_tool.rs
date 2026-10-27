@@ -42,6 +42,13 @@ pub enum LineToolInteraction {
         /// 控制柄方位
         side: HandleSide,
     },
+    /// 锚点选中态（点击/拖动松手后保持；用于显示弯折切换）
+    SelectedAnchor {
+        /// 目标路径索引
+        path: usize,
+        /// 目标锚点索引
+        idx: usize,
+    },
 }
 
 /// 控制柄方位
@@ -57,6 +64,7 @@ pub enum HandleSide {
 ///
 /// 直接复用 `lumino_core::shape::ShapeAnchor`：曲线工具、形状模型与后续
 /// 对称/补间共用同一套锚点/控制柄语义，避免两套结构互相转换时丢手柄。
+pub use lumino_core::shape::AnchorBend;
 pub use lumino_core::shape::ShapeAnchor as BezierAnchor;
 
 /// 单条路径（有序锚点链）
@@ -203,6 +211,31 @@ impl LineToolState {
         true
     }
 
+    /// 切换指定锚点的弯折行为（DRAW-042）
+    ///
+    /// 仅中间锚点可切换（端点只有单侧段，无“两段弯折”可言）。切回 `Smooth`
+    /// 时恢复 `handles_auto = true` 并立即重算自动柄。
+    pub fn set_anchor_bend(&mut self, path_idx: usize, index: usize, bend: AnchorBend) -> bool {
+        let Some(path) = self.paths.get_mut(path_idx) else {
+            return false;
+        };
+        if index == 0 || index + 1 >= path.len() || path[index].bend == bend {
+            return false;
+        }
+        path[index].bend = bend;
+        path[index].handles_auto = bend == AnchorBend::Smooth;
+        self.recompute_auto_handles();
+        true
+    }
+
+    /// 当前选中的锚点（路径索引, 锚点索引）
+    pub fn selected_anchor(&self) -> Option<(usize, usize)> {
+        match self.interaction {
+            LineToolInteraction::SelectedAnchor { path, idx } => Some((path, idx)),
+            _ => None,
+        }
+    }
+
     /// 删除指定路径的锚点；仅中间锚点可删（端点不可删，保留至少 2 个锚点）。
     pub fn delete_anchor(&mut self, path_idx: usize, index: usize) -> bool {
         let Some(path) = self.paths.get_mut(path_idx) else {
@@ -222,6 +255,10 @@ impl LineToolState {
         let Some(path) = self.paths.get(path_idx) else {
             return Vec::new();
         };
+        // Corner 锚点两侧已是直线，不显示可拖控制柄（DRAW-042）。
+        if path[index].bend == AnchorBend::Corner {
+            return Vec::new();
+        }
         if index == 0 {
             vec![HandleSide::Out]
         } else if index + 1 >= path.len() {
@@ -241,10 +278,10 @@ impl LineToolState {
             for i in 0..path.len().saturating_sub(1) {
                 let a = path[i];
                 let b = path[i + 1];
-                if a.handles_auto {
+                if a.handles_auto && a.bend == AnchorBend::Smooth {
                     path[i].out_handle = ((b.pos.0 - a.pos.0) / 3.0, (b.pos.1 - a.pos.1) / 3.0);
                 }
-                if b.handles_auto {
+                if b.handles_auto && b.bend == AnchorBend::Smooth {
                     path[i + 1].in_handle = ((a.pos.0 - b.pos.0) / 3.0, (a.pos.1 - b.pos.1) / 3.0);
                 }
             }
