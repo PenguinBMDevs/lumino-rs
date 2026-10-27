@@ -330,6 +330,8 @@ pub fn draw(
                     anchor_color
                 }),
             );
+            // canvas 文本必须用 Advanced shaping：Basic 不会走系统 CJK 回退，
+            // 中文会显示成“口口”。
             frame.fill_text(canvas::Text {
                 content: label.to_string(),
                 position: Point::new(rect.x + rect.width * 0.5, rect.y + 4.0),
@@ -340,7 +342,7 @@ pub fn draw(
                 font: lumino_ui_core::font::ui_font(),
                 align_x: iced_core::alignment::Horizontal::Center.into(),
                 align_y: iced_core::alignment::Vertical::Top,
-                shaping: iced_core::text::Shaping::Basic,
+                shaping: iced_core::text::Shaping::Advanced,
             });
         }
         has_content = true;
