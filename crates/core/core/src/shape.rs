@@ -45,7 +45,10 @@ pub mod style;
 pub mod text;
 pub mod velocity_env;
 
-pub use areas::AreaSpot;
+pub use areas::{
+    ALL_COLOURS, AREA_BOUNDARY, AREA_LOCK_BASE, AREA_OUTSIDE, AREA_UNASSIGNED, AreaMap, AreaSpot,
+    COLOURS, MAP_CELLS, most_colours,
+};
 pub use expr::{Expr, ExprError};
 pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};

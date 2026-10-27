@@ -67,6 +67,17 @@ pub enum EditorAction {
     LineToolConfirm,
     /// 曲线工具直线：取消并清空（× 按钮）
     LineToolCancel,
+    /// 区域着色：在画布坐标处着色（`clear=true` 时写 colour=0）
+    AreaPaintAt {
+        /// 画布局部坐标
+        pos: Point2,
+        /// 是否清除
+        clear: bool,
+    },
+    /// 区域着色：选择画笔色号（0..=15）
+    AreaPaintSetColour(u8),
+    /// 区域着色：退出模式
+    AreaPaintEnd,
     /// 形状工具：确认并按图形区域生成音符（√ 按钮）
     ShapeToolConfirm,
     /// 形状工具：取消并清空（× 按钮）

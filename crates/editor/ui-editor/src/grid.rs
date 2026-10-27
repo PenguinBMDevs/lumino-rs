@@ -15,6 +15,7 @@
 //! - `program`: PianoRollGrid 结构体定义
 //! - `program_impl`: Program trait 实现（事件处理、绘制）
 
+pub mod area_paint_box;
 pub mod bars;
 pub mod brush_tool_box;
 pub mod confirm_buttons;

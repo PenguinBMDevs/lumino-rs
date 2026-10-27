@@ -59,6 +59,20 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // 区域着色模式：调色板优先，其余画布点击交给着色动作。
+                    if self.editor.area_paint_active() {
+                        if let Some(hit) = crate::grid::area_paint_box::hit(self.editor, local_pos)
+                        {
+                            return crate::grid::area_paint_box::action_for_hit(hit)
+                                .map(|action| Action::publish(Message::EditorAction(action)));
+                        }
+                        return Some(Action::publish(Message::EditorAction(
+                            EditorAction::AreaPaintAt {
+                                pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
+                                clear: false,
+                            },
+                        )));
+                    }
                     // 图片转 MIDI 放置模式：优先响应悬浮 √× 按钮
                     if self.editor.editor_state.image_to_midi.mode
                         == lumino_editor_state::ImageToMidiMode::Placing
@@ -130,6 +144,15 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。
+                    if self.editor.area_paint_active() {
+                        return Some(Action::publish(Message::EditorAction(
+                            EditorAction::AreaPaintAt {
+                                pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
+                                clear: true,
+                            },
+                        )));
+                    }
                     // 仅在有效钢琴卷帘区域内打开右键菜单
                     if self.editor.is_inside_canvas(local_pos) {
                         // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）；

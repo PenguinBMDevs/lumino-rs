@@ -6,6 +6,7 @@
 //! - released:  鼠标释放事件处理
 //! - edit_ops:  编辑操作入口（占位，实现分散在 clipboard / note_ops / editor 中）
 
+pub(crate) mod area_paint;
 pub(crate) mod bake;
 mod batch_insert;
 mod brush;
@@ -101,6 +102,21 @@ impl Editor {
             }
             EditorAction::LineToolCancel => {
                 self.cancel_line_tool();
+            }
+            EditorAction::AreaPaintAt { pos, clear } => {
+                let point = iced_core::Point::new(pos.x, pos.y);
+                let colour = if clear {
+                    0
+                } else {
+                    self.area_paint_colour().unwrap_or(0)
+                };
+                self.paint_area_at_screen(point, colour);
+            }
+            EditorAction::AreaPaintSetColour(colour) => {
+                self.set_area_paint_colour(colour);
+            }
+            EditorAction::AreaPaintEnd => {
+                self.end_area_paint();
             }
             EditorAction::BrushConfirm => {
                 self.confirm_brush();

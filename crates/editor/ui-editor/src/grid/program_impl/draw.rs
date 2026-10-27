@@ -125,6 +125,14 @@ pub(crate) fn draw(
     }
 
     {
+        puffin::profile_scope!("draw::area_paint_box");
+        if let Some(area_geom) = crate::grid::area_paint_box::draw(editor, renderer, theme, bounds)
+        {
+            geometries.push(area_geom);
+        }
+    }
+
+    {
         puffin::profile_scope!("draw::remote_cursors");
         let remote_cursor_geometries = remote_cursors::draw(editor, renderer, bounds);
         geometries.extend(remote_cursor_geometries);

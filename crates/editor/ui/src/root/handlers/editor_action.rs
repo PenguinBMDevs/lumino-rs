@@ -164,6 +164,9 @@ impl Root {
                     PianoRollContextMenuItem::EditShape => {
                         let _ = self.editor.enable_shape_edit();
                     }
+                    PianoRollContextMenuItem::PaintAreas => {
+                        let _ = self.editor.begin_area_paint();
+                    }
                     PianoRollContextMenuItem::SymmetryVertical => {
                         self.editor.toggle_symmetry(true).ok();
                     }
