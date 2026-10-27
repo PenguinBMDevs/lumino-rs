@@ -7,12 +7,15 @@ use lumino_core::error::{CoreError, Result};
 use lumino_core::shape::ShapeModel;
 
 mod v1;
+mod v2;
 use v1::LmshapesDataV1;
+use v2::LmshapesDataV2;
 
 /// `.lmshapes` 当前编码版本
 ///
-/// v2：`ShapeStyle` 追加 `align / ends / union / apart / borders / areas`（DRAW-040）。
-const LMSHAPES_VERSION: u16 = 2;
+/// - v2：`ShapeStyle` 追加 `align / ends / union / apart / borders / areas`（DRAW-040）。
+/// - v3：`ShapeAnchor` 追加 `bend`（DRAW-042）。
+const LMSHAPES_VERSION: u16 = 3;
 
 /// 全局速度变化数据（.lmtemp）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -49,9 +52,9 @@ impl LmtempData {
 ///   本部件版本（当前 [`LMSHAPES_VERSION`]），不得静默改结构；
 /// - `ShapeOp` / `ShapeKind` 的**变体只能追加到末尾**，追加变体**不需要**提版本
 ///   （旧数据不会出现新变体索引；重排或删除才会让旧工程解错语义）；
-/// - `encode` 恒写 v2；`decode` 接受 v1（升级）与 v2。
+/// - `encode` 恒写 v3；`decode` 接受 v1 / v2 / v3。
 ///
-/// v1 → v2 的字节变化是**预期行为**：含形状部件的工程重新保存后版本变为 2；
+/// 旧版本升级的字节变化是**预期行为**：含形状部件的工程重新保存后版本变为 3；
 /// **无**形状部件的工程仍然不写该部件，保存后字节不变（见 `save/tests.rs`）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LmshapesData {
@@ -68,17 +71,22 @@ impl LmshapesData {
         encode_binary_file(Self::MAGIC, LMSHAPES_VERSION, self)
     }
 
-    /// 从二进制字节解码（接受 v1 与 v2）
+    /// 从二进制字节解码（接受 v1 / v2 / v3）
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file_versioned(
             bytes,
             Self::MAGIC,
-            &[1, LMSHAPES_VERSION],
+            &[1, 2, LMSHAPES_VERSION],
             |version, payload| match version {
                 1 => {
                     let v1: LmshapesDataV1 =
                         bincode::deserialize(payload).map_err(CoreError::from)?;
                     Ok(v1.into())
+                }
+                2 => {
+                    let v2: LmshapesDataV2 =
+                        bincode::deserialize(payload).map_err(CoreError::from)?;
+                    Ok(v2.into())
                 }
                 LMSHAPES_VERSION => bincode::deserialize(payload).map_err(CoreError::from),
                 other => Err(CoreError::FileFormat(format!(

@@ -103,6 +103,9 @@ impl Editor {
             EditorAction::LineToolCancel => {
                 self.cancel_line_tool();
             }
+            EditorAction::LineToolBend(bend) => {
+                self.set_selected_anchor_bend(bend);
+            }
             EditorAction::AreaPaintAt { pos, clear } => {
                 let point = iced_core::Point::new(pos.x, pos.y);
                 let colour = if clear {

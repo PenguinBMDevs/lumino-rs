@@ -4,8 +4,8 @@
 
 use super::*;
 use lumino_core::shape::{
-    AreaSpot, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
-    SpamAlign, SpamEnds, TextLayoutMode, TextOp, TextParams,
+    AnchorBend, AreaSpot, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect,
+    ShapeStyle, SpamAlign, SpamEnds, TextLayoutMode, TextOp, TextParams,
 };
 
 /// 由**改动前**代码生成的 v1 字节夹具（DRAW-040 / D7）。
@@ -13,7 +13,10 @@ use lumino_core::shape::{
 /// 只读、不得重新生成：新代码永远写得对，只有旧字节才能证明「老工程仍能打开」。
 const SHAPES_V1_FIXTURE: &[u8] = include_bytes!("../load/fixtures/shapes_v1.lmshapes");
 
-fn sample_v2() -> LmshapesData {
+/// 由 **ShapeAnchor bend（v2→v3）改动前** 代码生成的 v2 夹具。
+const SHAPES_V2_FIXTURE: &[u8] = include_bytes!("../load/fixtures/shapes_v2.lmshapes");
+
+fn sample_v3() -> LmshapesData {
     let mut shape = ShapeModel::new(7, 1, ShapeKind::Curve, 0.25);
     shape.geometry = ShapeGeometry::from_points([(0.0, 60.0), (480.0, 72.0)]);
     shape.style.align = SpamAlign::Centred;
@@ -51,6 +54,14 @@ fn test_lmshapes_v1_fixture_decodes() {
     assert_eq!(first.geometry.anchors.len(), 2);
     assert_eq!(first.geometry.anchors[0].pos, (0.0, 60.0));
     assert_eq!(first.geometry.anchors[1].pos, (480.0, 72.0));
+    assert!(
+        first
+            .geometry
+            .anchors
+            .iter()
+            .all(|anchor| anchor.bend == AnchorBend::Smooth),
+        "v1 锚点升级后 bend 应为 Smooth"
+    );
     assert!(!first.geometry.closed);
     assert_eq!(first.style.fill, ShapeFill::Spam);
     assert!((first.style.gate_beats - 0.125).abs() < f32::EPSILON);
@@ -94,10 +105,61 @@ fn test_lmshapes_v1_upgrade_fills_explicit_defaults() {
         assert!(!shape.style.apart, "apart 默认应为 false");
         assert!(!shape.style.borders, "borders 默认应为 false");
         assert!(shape.style.areas.is_empty(), "areas 默认应为空");
+        assert!(
+            shape
+                .geometry
+                .anchors
+                .iter()
+                .all(|anchor| anchor.bend == AnchorBend::Smooth),
+            "v1 锚点 bend 默认应为 Smooth"
+        );
     }
 }
 
-/// DRAW-029：文字形状走追加的 `ShapeOp::Text`，v2 部件可往返且不改变版本。
+/// v2 夹具：顶层锚点与 Live 内嵌锚点都必须能解码，bend 默认 Smooth。
+#[test]
+fn test_lmshapes_v2_fixture_decodes_with_smooth_bend() {
+    let data = LmshapesData::decode(SHAPES_V2_FIXTURE).expect("v2 夹具应能解码");
+    assert_eq!(data.shapes.len(), 2, "夹具应含 Curve + Live 两个形状");
+
+    let curve = &data.shapes[0];
+    assert_eq!(curve.kind, ShapeKind::Curve);
+    assert_eq!(curve.geometry.anchors.len(), 2);
+    assert!(
+        curve
+            .geometry
+            .anchors
+            .iter()
+            .all(|anchor| anchor.bend == AnchorBend::Smooth),
+        "v2 顶层锚点 bend 默认 Smooth"
+    );
+    assert_eq!(curve.style.areas.len(), 1, "v2 areas 应保留");
+    assert!(curve.style.borders);
+
+    let live = &data.shapes[1];
+    let ShapeOp::Live(params) = &live.ops[0] else {
+        panic!("第二个形状应为 Live");
+    };
+    assert_eq!(params.strokes.len(), 1);
+    assert!(
+        params.strokes[0]
+            .anchors
+            .iter()
+            .all(|anchor| anchor.bend == AnchorBend::Smooth),
+        "v2 Live Stroke 内嵌锚点 bend 默认 Smooth"
+    );
+    assert_eq!(params.from.len(), 1);
+    assert!(
+        params.from[0]
+            .geometry
+            .anchors
+            .iter()
+            .all(|anchor| anchor.bend == AnchorBend::Smooth),
+        "v2 Live from 形状内锚点 bend 默认 Smooth"
+    );
+}
+
+/// DRAW-029：文字形状走追加的 `ShapeOp::Text`，当前 v3 部件可往返且不改变版本。
 #[test]
 fn test_lmshapes_text_shape_roundtrip() {
     let mut shape = ShapeModel::new(9, 1, ShapeKind::Custom, 1.0);
@@ -117,27 +179,28 @@ fn test_lmshapes_text_shape_roundtrip() {
     let encoded = data.encode().expect("文字形状编码失败");
     assert_eq!(
         u16::from_le_bytes([encoded[4], encoded[5]]),
-        2,
+        3,
         "追加 ShapeOp 变体不应改变 lmshapes 版本"
     );
     let decoded = LmshapesData::decode(&encoded).expect("文字形状解码失败");
     assert_eq!(decoded.shapes, data.shapes, "文字形状应逐字段往返一致");
 }
 
-/// D5：encode 恒写 v2，v2 往返逐字段一致（含新增字段）
+/// D5：encode 恒写 v3，v3 往返逐字段一致（含 bend / areas）
 #[test]
-fn test_lmshapes_v2_roundtrip_and_version() {
-    let data = sample_v2();
-    let encoded = data.encode().expect("编码 v2 失败");
+fn test_lmshapes_v3_roundtrip_and_version() {
+    let mut data = sample_v3();
+    data.shapes[0].geometry.anchors[1].bend = AnchorBend::Corner;
+    let encoded = data.encode().expect("编码 v3 失败");
     assert_eq!(&encoded[0..4], LmshapesData::MAGIC);
     assert_eq!(
         u16::from_le_bytes([encoded[4], encoded[5]]),
-        2,
-        "encode 必须恒写版本 2"
+        3,
+        "encode 必须恒写版本 3"
     );
 
-    let decoded = LmshapesData::decode(&encoded).expect("解码 v2 失败");
-    assert_eq!(decoded.shapes, data.shapes, "v2 应逐字段往返一致");
+    let decoded = LmshapesData::decode(&encoded).expect("解码 v3 失败");
+    assert_eq!(decoded.shapes, data.shapes, "v3 应逐字段往返一致");
 }
 
 /// D4：除 lmshapes 外的部件仍只认版本 1（版本 2 必须被拒绝）

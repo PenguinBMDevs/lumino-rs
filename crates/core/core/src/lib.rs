@@ -24,9 +24,9 @@ pub mod view_state;
 pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
-    AreaMap, AreaSpot, BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode,
-    ClawParams, ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef, CycleBy,
-    CycleParams, DEFAULT_FONT, DrawingRef, ENV_EPS, Expr, ExprError, FlipMode, FlipWay,
+    AnchorBend, AreaMap, AreaSpot, BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece,
+    ClawMode, ClawParams, ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef,
+    CycleBy, CycleParams, DEFAULT_FONT, DrawingRef, ENV_EPS, Expr, ExprError, FlipMode, FlipWay,
     FunnelParams, FunnelStart, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams,
     LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams, NestedWay,
     OpStage, PATTERN_PRESETS, PathKind, PatternParams, PatternPreset, PatternRef, PolyStyle,

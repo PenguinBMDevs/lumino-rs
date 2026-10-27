@@ -12,7 +12,8 @@ pub use editor_state::shape_store::{MAX_SHAPE_LOG, ShapeEntry, ShapeStore};
 pub use editor_state::shape_tool;
 pub use editor_state::text_tool;
 pub use editor_state::{
-    BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
+    AnchorBend, BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState,
+    PathSnapshot,
 };
 pub use editor_state::{BrushInteraction, BrushStroke, BrushToolState};
 pub use editor_state::{

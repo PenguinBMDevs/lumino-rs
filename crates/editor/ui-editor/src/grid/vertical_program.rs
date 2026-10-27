@@ -156,6 +156,25 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                             )));
                         }
                     }
+                    if self.editor.current_tool() == lumino_message::Tool::Curve
+                        && let Some(btns) =
+                            crate::grid::line_tool_box::line_bend_button_rects(self.editor)
+                    {
+                        if btns.smooth.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::LineToolBend(
+                                    lumino_editor_state::AnchorBend::Smooth,
+                                ),
+                            )));
+                        }
+                        if btns.corner.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::LineToolBend(
+                                    lumino_editor_state::AnchorBend::Corner,
+                                ),
+                            )));
+                        }
+                    }
                     if self.editor.current_tool() == lumino_message::Tool::Shape
                         && let Some(btns) =
                             crate::grid::shape_tool_box::shape_button_rects(self.editor)

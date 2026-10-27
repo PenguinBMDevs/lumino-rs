@@ -57,27 +57,27 @@ fn test_shapes_roundtrip_folder() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// DRAW-040 / D5–D7：改动前生成的 v1 夹具 → 保存恒写 v2 → 读回逐字段一致
+/// DRAW-040 / D5–D7：改动前生成的 v1 夹具 → 保存恒写 v3 → 读回逐字段一致
 #[test]
-fn test_shapes_v1_fixture_saves_as_v2() {
+fn test_shapes_v1_fixture_saves_as_v3() {
     const V1_FIXTURE: &[u8] = include_bytes!("../load/fixtures/shapes_v1.lmshapes");
     let v1 = LmshapesData::decode(V1_FIXTURE).expect("v1 夹具应能解码");
 
     let mut project = create_test_project();
     project.shapes = v1.shapes;
-    let dir = atomic_test_dir("shapes_v1_to_v2");
+    let dir = atomic_test_dir("shapes_v1_to_v3");
     save_to_folder(&project, &dir).expect("保存工程失败");
 
     let bytes = std::fs::read(dir.join(FolderPaths::SHAPES_FILE)).expect("读取形状部件失败");
     assert_eq!(&bytes[0..4], b"LMSH", "形状部件魔数应为 LMSH");
     assert_eq!(
         u16::from_le_bytes([bytes[4], bytes[5]]),
-        2,
-        "保存必须恒写版本 2"
+        3,
+        "保存必须恒写版本 3"
     );
 
     let loaded = crate::load_project(&dir).expect("加载工程失败");
-    assert_eq!(loaded.shapes, project.shapes, "v2 读回应与保存前逐字段一致");
+    assert_eq!(loaded.shapes, project.shapes, "v3 读回应与保存前逐字段一致");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

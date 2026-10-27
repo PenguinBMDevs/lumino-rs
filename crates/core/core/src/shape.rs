@@ -50,7 +50,7 @@ pub use areas::{
     COLOURS, MAP_CELLS, most_colours,
 };
 pub use expr::{Expr, ExprError};
-pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
+pub use geometry::{AnchorBend, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,
