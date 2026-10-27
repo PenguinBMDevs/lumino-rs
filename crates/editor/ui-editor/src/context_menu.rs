@@ -112,6 +112,7 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::Delete,
             PianoRollContextMenuItem::SelectAll,
             PianoRollContextMenuItem::BatchEdit,
+            PianoRollContextMenuItem::ShapeList,
             PianoRollContextMenuItem::PasteShapeText,
         ],
         ContextMenuTarget::DrawnShape => &[
@@ -214,6 +215,7 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::MergeShapes => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::EditShape => Icon::Gear,
         PianoRollContextMenuItem::PaintAreas => Icon::Gear,
+        PianoRollContextMenuItem::ShapeList => Icon::Gear,
         PianoRollContextMenuItem::SymmetryVertical => Icon::ContextMenuCopy,
         PianoRollContextMenuItem::SymmetryHorizontal => Icon::ContextMenuPaste,
         PianoRollContextMenuItem::Straighten => Icon::ContextMenuCut,
@@ -244,6 +246,7 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
         PianoRollContextMenuItem::EditShape => tr!("编辑形状"),
         PianoRollContextMenuItem::PaintAreas => tr!("区域着色"),
+        PianoRollContextMenuItem::ShapeList => tr!("形状列表"),
         PianoRollContextMenuItem::SymmetryVertical => tr!("竖轴对称"),
         PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),
         PianoRollContextMenuItem::Straighten => tr!("扶正 50%"),

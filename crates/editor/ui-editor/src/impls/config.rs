@@ -33,6 +33,7 @@ impl Editor {
         // 区域着色是鼠标工具的附属模式；离开鼠标工具即退出，避免遗留画笔。
         if tool != Tool::ShapeSelect {
             self.area_paint = None;
+            self.shape_list_open = false;
         }
         self.rebuild_pending_mirrors();
     }

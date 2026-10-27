@@ -37,7 +37,7 @@ fn editor_with_shape() -> (Editor, u64, u64) {
     editor.editor_state.shape_select.select_only(drawn_id);
     editor.editor_state.tool = Tool::ShapeSelect;
     editor.area_paint = Some(AreaPaintState {
-        drawn_id,
+        drawn_id: Some(drawn_id),
         model_id,
         colour: 3,
     });
@@ -108,6 +108,52 @@ fn test_selection_change_ends_area_paint() {
     editor.editor_state.shape_select.clear_selection();
     assert!(!editor.paint_area_at(50.0, 62.0, 3));
     assert!(!editor.area_paint_active(), "选区变化应结束着色会话");
+}
+
+#[test]
+fn test_model_list_entry_can_paint_without_drawn_shape() {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.editor_state.tool = Tool::ShapeSelect;
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 0.25);
+    let mut geometry =
+        ShapeGeometry::from_points([(0.0, 60.0), (100.0, 60.0), (100.0, 64.0), (0.0, 64.0)]);
+    geometry.closed = true;
+    model.geometry = geometry;
+    model.style = ShapeStyle {
+        fill: ShapeFill::Fill,
+        ..ShapeStyle::default()
+    };
+    let model_id = editor.editor_state.shape_store.insert(model, 0);
+    editor
+        .editor_state
+        .shape_store
+        .assign_notes(model_id, vec![shape_note()]);
+    assert!(editor.begin_area_paint_model(model_id));
+    assert!(editor.area_paint_active());
+    assert!(editor.paint_area_at(50.0, 62.0, 3));
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型应存在")
+            .style
+            .areas
+            .len(),
+        1
+    );
+}
+
+fn shape_note() -> lumino_editor_state::ShapeNote {
+    lumino_editor_state::ShapeNote {
+        track: 1,
+        tick: 0.0,
+        key: 60,
+        length: 100.0,
+        velocity: 100,
+        channel: 0,
+    }
 }
 
 #[test]

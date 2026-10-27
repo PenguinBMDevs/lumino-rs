@@ -121,6 +121,12 @@ impl Editor {
             EditorAction::AreaPaintEnd => {
                 self.end_area_paint();
             }
+            EditorAction::ShapeListPick(model_id) => {
+                self.begin_area_paint_model(model_id);
+            }
+            EditorAction::ShapeListClose => {
+                self.close_shape_list();
+            }
             EditorAction::BrushConfirm => {
                 self.confirm_brush();
             }

@@ -49,7 +49,9 @@ pub fn palette_rects(editor: &Editor) -> Option<AreaPaletteRects> {
     if !editor.area_paint_active() {
         return None;
     }
-    let anchor = editor.selection_box()?;
+    let anchor = editor
+        .selection_box()
+        .or_else(|| editor.area_paint_bounds())?;
     let content = content_bounds(editor);
     let width = PAD * 2.0 + SWATCH * COLS as f32 + GAP * (COLS - 1) as f32;
     let height = PAD * 2.0 + LABEL_H + SWATCH * ROWS as f32 + GAP * (ROWS - 1) as f32;
@@ -116,6 +118,31 @@ pub fn action_for_hit(hit: AreaPaintHit) -> Option<EditorAction> {
         AreaPaintHit::Close => Some(EditorAction::AreaPaintEnd),
         AreaPaintHit::Panel => None,
     }
+}
+
+/// 左键命中调色板：`None` = 非区域模式；`Some(None)` = 面板空白消费；
+/// `Some(Some(action))` = 选色/关闭/画布着色动作。
+pub fn press_action(editor: &Editor, point: Point) -> Option<Option<EditorAction>> {
+    if !editor.area_paint_active() {
+        return None;
+    }
+    if let Some(hit) = hit(editor, point) {
+        return Some(action_for_hit(hit));
+    }
+    Some(Some(EditorAction::AreaPaintAt {
+        pos: lumino_message::Point2::new(point.x, point.y),
+        clear: false,
+    }))
+}
+
+/// 右键：区域模式统一写 colour=0（清除）
+pub fn clear_action(editor: &Editor, point: Point) -> Option<EditorAction> {
+    editor
+        .area_paint_active()
+        .then_some(EditorAction::AreaPaintAt {
+            pos: lumino_message::Point2::new(point.x, point.y),
+            clear: true,
+        })
 }
 
 /// 绘制调色板
@@ -253,7 +280,7 @@ mod tests {
             .set_model_id(drawn_id, Some(1));
         editor.editor_state.shape_select.select_only(drawn_id);
         editor.area_paint = Some(AreaPaintState {
-            drawn_id,
+            drawn_id: Some(drawn_id),
             model_id: 1,
             colour: 3,
         });

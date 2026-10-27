@@ -24,8 +24,10 @@
 use super::{fill, geom, paths, stroke_band};
 use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
-use lumino_editor_state::BezierAnchor;
+use lumino_core::shape::{ShapeFill, ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_editor_state::{BezierAnchor, ShapeNote};
 use lumino_note_core::history::CreateOp;
+use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
 impl Editor {
     /// 一条路径的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
@@ -122,6 +124,17 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
+        let line_shape_notes: Vec<ShapeNote> = notes
+            .iter()
+            .map(|&(tick, key, length)| ShapeNote {
+                track,
+                tick,
+                key,
+                length,
+                velocity: DEFAULT_NOTE_VELOCITY,
+                channel: 0,
+            })
+            .collect();
         let total = notes.len();
         let mut create_ops = Vec::with_capacity(total);
         if total <= super::super::BATCH_INSERT_THRESHOLD {
@@ -181,6 +194,29 @@ impl Editor {
         // Bake：保存 ✓ 前的矢量状态，供 undo 恢复；✓ 后不登记任何 DrawnShape。
         let pending = BakePending::Line(self.editor_state.line_tool.clone());
         self.remember_bake(group, pending);
+        // DRAW-041B：单路径 Bake 保留只读模型（多路径的精确 per-path 音符归属另开增量）。
+        if line_paths.len() == 1
+            && let Some(path) = line_paths.first()
+            && path.len() >= 2
+        {
+            let mut model = ShapeModel::new(0, track as u16, ShapeKind::Curve, 1.0);
+            model.geometry = ShapeGeometry {
+                anchors: path.clone(),
+                rect: None,
+                closed: false,
+            };
+            let closed = path.first().is_some_and(|first| {
+                path.last().is_some_and(|last| {
+                    (first.pos.0 - last.pos.0).abs() < 1e-3
+                        && (first.pos.1 - last.pos.1).abs() < 1e-3
+                })
+            });
+            model.geometry.closed = closed;
+            if closed {
+                model.style.fill = ShapeFill::Fill;
+            }
+            self.record_baked_shape_models(vec![(model, line_shape_notes)]);
+        }
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
         self.rebuild_pending_mirrors();

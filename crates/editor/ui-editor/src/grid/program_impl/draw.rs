@@ -133,6 +133,14 @@ pub(crate) fn draw(
     }
 
     {
+        puffin::profile_scope!("draw::shape_list_box");
+        if let Some(list_geom) = crate::grid::shape_list_box::draw(editor, renderer, theme, bounds)
+        {
+            geometries.push(list_geom);
+        }
+    }
+
+    {
         puffin::profile_scope!("draw::remote_cursors");
         let remote_cursor_geometries = remote_cursors::draw(editor, renderer, bounds);
         geometries.extend(remote_cursor_geometries);

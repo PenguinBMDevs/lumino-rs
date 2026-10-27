@@ -13,6 +13,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "查看帮助" => Some("View help"),
         "知道了" => Some("Got it"),
         "区域着色" => Some("Paint areas"),
+        "形状列表" => Some("Shape list"),
+        "形状" => Some("Shape"),
         "曲线" => Some("Curve"),
         "折线" => Some("Polyline"),
         // ── 云存储连接面板 / 断连提醒（`view/cloud_dialog.rs`）──

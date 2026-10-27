@@ -80,6 +80,10 @@ pub enum EditorAction {
     AreaPaintSetColour(u8),
     /// 区域着色：退出模式
     AreaPaintEnd,
+    /// ShapeStore 列表：选择模型进入区域着色
+    ShapeListPick(u64),
+    /// ShapeStore 列表：关闭
+    ShapeListClose,
     /// 形状工具：确认并按图形区域生成音符（√ 按钮）
     ShapeToolConfirm,
     /// 形状工具：取消并清空（× 按钮）

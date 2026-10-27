@@ -18,8 +18,8 @@ use crate::interaction::line_tool::geom;
 /// 当前区域着色会话
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AreaPaintState {
-    /// 选中的绘制图形 id（用于检测选区是否变化）
-    pub drawn_id: u64,
+    /// 选中的绘制图形 id（用于检测选区是否变化；模型列表入口为 `None`）
+    pub drawn_id: Option<u64>,
     /// ShapeStore 模型 id
     pub model_id: u64,
     /// 当前色号（0..=15；0 = 清除）
@@ -52,12 +52,81 @@ impl Editor {
         // 形状自身 colour_slot 默认 0；0 是“空”，作为画笔默认值会一上来就擦除。
         let colour = model.style.colour_slot.clamp(1, 15);
         self.area_paint = Some(AreaPaintState {
-            drawn_id: drawn.id,
+            drawn_id: Some(drawn.id),
             model_id,
             colour,
         });
+        self.shape_list_open = false;
         self.grid_cache.clear();
         true
+    }
+
+    /// 从 ShapeStore 列表进入区域着色（Bake 后没有 DrawnShape 的模型）
+    pub fn begin_area_paint_model(&mut self, model_id: u64) -> bool {
+        if self.current_tool() != Tool::ShapeSelect {
+            return false;
+        }
+        let Some(model) = self.editor_state.shape_store.model(model_id) else {
+            return false;
+        };
+        if model.track == 0 {
+            return false;
+        }
+        // 载入工程的模型没有本次会话的音符指纹；先只允许本次会话保留的模型编辑，
+        // 避免 edit_shape 删不掉旧音符而重复。
+        if self.editor_state.shape_store.notes_of(model_id).is_empty() {
+            return false;
+        }
+        let colour = model.style.colour_slot.clamp(1, 15);
+        self.area_paint = Some(AreaPaintState {
+            drawn_id: None,
+            model_id,
+            colour,
+        });
+        self.shape_list_open = false;
+        self.grid_cache.clear();
+        true
+    }
+
+    /// 区域着色会话对应的屏幕包围框（列表入口没有 DrawnShape 选框）
+    pub(crate) fn area_paint_bounds(&self) -> Option<iced_core::Rectangle> {
+        let state = self.area_paint?;
+        let model = self.editor_state.shape_store.model(state.model_id)?;
+        let (tick_lo, key_lo, tick_hi, key_hi) = model.geometry.bounds()?;
+        let a = self.line_pos_screen_pos((tick_lo, key_lo));
+        let b = self.line_pos_screen_pos((tick_hi, key_hi));
+        Some(iced_core::Rectangle::new(
+            iced_core::Point::new(a.x.min(b.x) - 4.0, a.y.min(b.y) - 4.0),
+            iced_core::Size::new((a.x - b.x).abs() + 8.0, (a.y - b.y).abs() + 8.0),
+        ))
+    }
+
+    /// 打开 ShapeStore 模型列表（DRAW-041B）
+    pub fn open_shape_list(&mut self) -> bool {
+        if self.current_tool() != Tool::ShapeSelect {
+            return false;
+        }
+        let track = self.editor_state.data.current_track;
+        if !self
+            .editor_state
+            .shape_store
+            .iter()
+            .any(|entry| entry.is_visible() && entry.model.track as usize == track)
+        {
+            return false;
+        }
+        self.area_paint = None;
+        self.shape_list_open = true;
+        self.grid_cache.clear();
+        true
+    }
+
+    /// 关闭 ShapeStore 模型列表
+    pub fn close_shape_list(&mut self) {
+        if self.shape_list_open {
+            self.shape_list_open = false;
+            self.grid_cache.clear();
+        }
     }
 
     /// 退出区域着色模式
@@ -95,12 +164,13 @@ impl Editor {
         let Some(state) = self.area_paint else {
             return false;
         };
-        // 选区已变化：结束会话，避免把点画到旧形状上。
-        if !self
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .any(|shape| shape.id == state.drawn_id)
+        // 选区已变化：结束会话，避免把点画到旧形状上（列表入口不依赖选区）。
+        if let Some(drawn_id) = state.drawn_id
+            && !self
+                .editor_state
+                .shape_select
+                .selected_shapes()
+                .any(|shape| shape.id == drawn_id)
         {
             self.end_area_paint();
             return false;

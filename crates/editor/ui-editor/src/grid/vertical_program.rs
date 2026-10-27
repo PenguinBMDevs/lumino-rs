@@ -6,7 +6,6 @@ use super::state::GridInteractionState;
 use crate::Editor;
 use iced_core::{Point, Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
-use lumino_message::Tool;
 use lumino_ui_core::{Message, Renderer, Theme};
 
 /// 纵向卷帘网格绘制程序
@@ -112,18 +111,15 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
-                    if self.editor.area_paint_active() {
-                        if let Some(hit) = crate::grid::area_paint_box::hit(self.editor, local_pos)
-                        {
-                            return crate::grid::area_paint_box::action_for_hit(hit)
-                                .map(|action| Action::publish(Message::EditorAction(action)));
-                        }
-                        return Some(Action::publish(Message::EditorAction(
-                            lumino_ui_core::message::EditorAction::AreaPaintAt {
-                                pos: lumino_message::Point2::new(local_pos.x, local_pos.y),
-                                clear: false,
-                            },
-                        )));
+                    if let Some(action) =
+                        crate::grid::shape_list_box::press_action(self.editor, local_pos)
+                    {
+                        return action.map(|action| Action::publish(Message::EditorAction(action)));
+                    }
+                    if let Some(action) =
+                        crate::grid::area_paint_box::press_action(self.editor, local_pos)
+                    {
+                        return action.map(|action| Action::publish(Message::EditorAction(action)));
                     }
                     // 图片转 MIDI 与曲线工具悬浮按钮优先（复用横向逻辑）
                     if self.editor.editor_state.image_to_midi.mode
@@ -213,13 +209,15 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
-                    if self.editor.area_paint_active() {
+                    if self.editor.shape_list_open {
                         return Some(Action::publish(Message::EditorAction(
-                            lumino_ui_core::message::EditorAction::AreaPaintAt {
-                                pos: lumino_message::Point2::new(local_pos.x, local_pos.y),
-                                clear: true,
-                            },
+                            lumino_ui_core::message::EditorAction::ShapeListClose,
                         )));
+                    }
+                    if let Some(action) =
+                        crate::grid::area_paint_box::clear_action(self.editor, local_pos)
+                    {
+                        return Some(Action::publish(Message::EditorAction(action)));
                     }
                     if self.editor.is_inside_canvas(local_pos) {
                         // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）
@@ -349,23 +347,7 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        // 纵向卷帘光标反馈（与横向 `program_impl/mouse_interaction.rs` 对齐）：
-        // 橡皮擦十字、曲线工具命中锚点/段可拖动（Pointer）、其余十字。
-        if self.editor.area_paint_active() {
-            return mouse::Interaction::Crosshair;
-        }
-        if matches!(self.editor.current_tool(), Tool::Eraser | Tool::DrawEraser) {
-            return mouse::Interaction::Crosshair;
-        }
-        if self.editor.current_tool() == Tool::Curve {
-            if let Some(local_pos) = state.position
-                && self.editor.line_tool_hit_test(local_pos).is_some()
-            {
-                return mouse::Interaction::Pointer;
-            }
-            return mouse::Interaction::Crosshair;
-        }
-        mouse::Interaction::Idle
+        super::vertical_mouse::handle(self.editor, state.position)
     }
 
     fn draw(
@@ -437,6 +419,10 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             geometries.push(geom);
         }
         if let Some(geom) = crate::grid::area_paint_box::draw(self.editor, renderer, theme, bounds)
+        {
+            geometries.push(geom);
+        }
+        if let Some(geom) = crate::grid::shape_list_box::draw(self.editor, renderer, theme, bounds)
         {
             geometries.push(geom);
         }

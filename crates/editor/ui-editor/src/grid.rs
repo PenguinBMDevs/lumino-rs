@@ -32,6 +32,7 @@ pub mod remote_cursors;
 pub mod remote_selection;
 pub mod ruler;
 pub mod selection_box;
+pub mod shape_list_box;
 pub mod shape_tool_box;
 pub mod state;
 pub(crate) mod text_tool_box;
@@ -40,6 +41,7 @@ pub mod utils;
 pub mod vertical_bars;
 pub mod vertical_keyboard;
 pub mod vertical_labels;
+pub mod vertical_mouse;
 pub mod vertical_playback;
 pub mod vertical_program;
 

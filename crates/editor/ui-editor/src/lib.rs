@@ -239,6 +239,8 @@ pub struct Editor {
     pub(crate) shape_edit: Option<crate::interaction::shape_edit_ui::ShapeEditState>,
     /// DRAW-032B：区域着色会话（仅鼠标工具、唯一选中图形时）
     pub(crate) area_paint: Option<crate::interaction::area_paint::AreaPaintState>,
+    /// DRAW-041B/032B：ShapeStore 模型列表是否展开
+    pub(crate) shape_list_open: bool,
     /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）
     pub(crate) baked_pending: std::collections::HashMap<u64, crate::interaction::bake::BakePending>,
 
