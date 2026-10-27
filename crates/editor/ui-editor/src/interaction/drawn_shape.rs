@@ -120,6 +120,21 @@ impl Editor {
             .add(track, group, source, notes);
     }
 
+    /// DRAW-041B：Bake 后保留**只读 ShapeModel**（不登记可拖拽 DrawnShape）
+    ///
+    /// 模型带本次写出的音符指纹，供 032B/033 的 ShapeStore 列表入口使用；普通 Bake
+    /// 仍然不产生可交互图形，保持 DRAW-041 的“确认后只留音符”语义。
+    pub(crate) fn record_baked_shape_models(
+        &mut self,
+        models: Vec<(lumino_core::shape::ShapeModel, Vec<ShapeNote>)>,
+    ) {
+        let group = self.last_create_group().unwrap_or(0);
+        for (model, notes) in models {
+            let id = self.editor_state.shape_store.insert(model, group);
+            self.editor_state.shape_store.assign_notes(id, notes);
+        }
+    }
+
     /// 登记形状工具的待确认图形（√ 确认后调用，须在 `clear_pending` 之前）
     ///
     /// `per_shape_notes[i]` 与 `shape_tool.shapes[i]` 一一对应（由 confirm 侧同源产出）。
@@ -1103,6 +1118,19 @@ mod tests {
             editor.editor_state.shape_select.len(),
             0,
             "Bake 后不应登记可交互图形"
+        );
+        let entry = editor
+            .editor_state
+            .shape_store
+            .iter()
+            .next()
+            .expect("DRAW-041B 应保留只读 ShapeModel");
+        assert!(entry.is_visible());
+        assert_eq!(entry.notes.len(), RECT_OUTLINE_NOTES);
+        assert_eq!(
+            entry.model.style.fill,
+            lumino_core::shape::ShapeFill::Fill,
+            "保留模型用于区域着色，默认按内部填充建模"
         );
         assert_eq!(
             editor.editor_state.data.current_track_note_count(),
