@@ -1,10 +1,13 @@
 //! 帧循环：全量帧、滚动增量帧、编辑拖动预览、呈现桥接。
 
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use winit::event_loop::ActiveEventLoop;
 
-use super::App;
+use super::{App, canvas::shift_canvas_pixels};
 use crate::{
     camera::Camera,
     edit_overlay,
@@ -88,6 +91,13 @@ impl App {
                 return;
             }
             self.shift_canvas(dx_int);
+            // 帧的实际滚动 = 原帧滚动 + 整数平移。窄条必须用这个滚动渲染，
+            // 不能用 camera.scroll_x：后者带亚像素残差，会让复用区和新条带
+            // 逐渐错位（新进入视口的音符看起来"坏掉"）。
+            self.last_scroll_x += dx_int as f32;
+            let mut frame_camera = camera.clone();
+            frame_camera.scroll_x = self.last_scroll_x;
+            frame_camera.target_scroll_x = self.last_scroll_x;
             let (strip_x0, strip_x1) = if dx_int > 0 {
                 let start = width_usize.saturating_sub(dx_int as usize);
                 (start as u32, width)
@@ -95,18 +105,17 @@ impl App {
                 let end = (keyboard + (-dx_int) as usize).min(width_usize);
                 (keyboard as u32, end as u32)
             };
-            let strip_px = dx_int.unsigned_abs();
             // 滚动条带与铺底帧保持同一档位，避免复用区/新条带出现风格接缝。
             // 快速滚动/大跨度全量回退时铺底帧是 Motion（仍为矩形，仅省描边），
             // 条带也跟随 Motion；静止后再全量 Exact。
             let strip_mode = self.baseline_mode;
             let strip_stride = self.baseline_stride;
-            let _ = strip_px;
+            let frame_estimate = self.estimated_visible(&frame_camera);
             let render_start = Instant::now();
             let band_stats = self.renderer.render_strip_into_frame(
                 Arc::clone(&self.document),
                 Arc::clone(&self.index),
-                &camera,
+                &frame_camera,
                 self.current_track,
                 strip_mode,
                 strip_stride,
@@ -115,18 +124,17 @@ impl App {
             );
             let render_done = Instant::now();
             let render_stats = RenderStats {
-                visible_notes: estimate,
+                visible_notes: frame_estimate,
                 candidates: band_stats.candidates,
                 long_candidates: band_stats.long_candidates,
                 bands: 1,
                 per_band: vec![band_stats],
             };
-            let hud = self.hud_text(strip_mode.name(), estimate);
-            self.draw_overlays(&camera, width_usize, height_usize, &hud);
+            let hud = self.hud_text(strip_mode.name(), frame_estimate);
+            self.draw_overlays(&frame_camera, width_usize, height_usize, &hud);
             let overlay_done = Instant::now();
-            self.present_scrolled(dx_int, strip_x0, strip_x1);
+            self.present_canvas(&frame_camera);
             let present_done = Instant::now();
-            self.last_scroll_x = camera.scroll_x;
             self.last_scroll_y = camera.scroll_y;
             self.last_zoom_x = camera.zoom_x;
             self.last_zoom_y = camera.zoom_y;
@@ -230,7 +238,7 @@ impl App {
         self.draw_edit_selection(&camera, width_usize);
         let overlay_done = Instant::now();
         if mode == LodMode::Overview && self.frame_valid && !self.frame_index.is_multiple_of(30) {
-            self.present_region(&camera);
+            self.present_canvas(&camera);
         } else {
             self.present();
         }
@@ -255,6 +263,7 @@ impl App {
         if !self.bench_ready && self.bench.is_some() {
             // 基准首帧：完成一次全量（Motion 矩形）铺底，不计入统计。
             self.bench_ready = true;
+            self.bench_warmup_until = Some(Instant::now() + Duration::from_secs(1));
             self.stats.reset();
             self.next_frame = Instant::now() + self.frame_interval;
             return;
@@ -296,25 +305,7 @@ impl App {
         if frame.len() != width * height {
             return;
         }
-        if dx > 0 {
-            let shift = dx as usize;
-            if shift >= width - keyboard {
-                return;
-            }
-            for y in 0..height {
-                let row = &mut frame[y * width..(y + 1) * width];
-                row.copy_within(keyboard + shift..width, keyboard);
-            }
-        } else {
-            let shift = (-dx) as usize;
-            if shift >= width - keyboard {
-                return;
-            }
-            for y in 0..height {
-                let row = &mut frame[y * width..(y + 1) * width];
-                row.copy_within(keyboard..width - shift, keyboard + shift);
-            }
-        }
+        shift_canvas_pixels(frame, width, height, keyboard, dx);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -357,6 +348,14 @@ impl App {
             };
         }
         self.last_work_ms = work_ms;
+        if let Some(until) = self.bench_warmup_until {
+            if Instant::now() < until {
+                return;
+            }
+            // 1 秒暖机：排除窗口首次合成/DWM 冷启动尖峰后再统计。
+            self.bench_warmup_until = None;
+            self.stats.reset();
+        }
         self.stats.record_full(
             work_ms,
             draw_ms,

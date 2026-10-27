@@ -10,11 +10,15 @@
 
 ![dense 8 px/tick：逐音符矩形（2px 描边）清晰可见](docs/zoom-8.0.png)
 
+滚动中的窗口实拍（修复 `ScrollWindowEx` 错位后）：
+
+![scroll capture](docs/scroll.png)
+
 ## 运行
 
 ```powershell
-# 滚动基准（密集小节，1600×900，4 秒）
-cargo run --release -p cpu-onionskin -- --bench 4 --width 1600 --height 900
+# 滚动基准（密集小节，1600×900；5 秒含 1 秒 DWM 暖机）
+cargo run --release -p cpu-onionskin -- --bench 5 --width 1600 --height 900
 
 # 全曲总览热力图基准
 cargo run --release -p cpu-onionskin -- --bench 3 --overview --width 1600 --height 900
@@ -35,25 +39,27 @@ cargo run --release -p cpu-onionskin -- --screenshot target/frame.png --zoom 2.0
 
 ## 实测（i7-9750H 6c/12t，1600×900，release）
 
-滚动密集段（0.1 px/tick，最密小节 399 附近，4 秒）：
+滚动密集段（0.1 px/tick，最密小节 399 附近，暖机后 4 秒）：
 
 ```text
-frames=650 wall=162.4fps
-draw    p50=2.59 p99=3.85 ms
-present p50=1.83 p99=4.87 ms
-work    avg=4.58 p50=4.41 p95=5.87 p99=8.37 max=16.15 ms
+frames=427 wall=106.8fps
+draw    p50=2.84 p99=4.02 ms
+present p50=4.26 p99=6.63 ms
+work    avg=7.33 p50=7.20 p95=8.81 p99=9.44 max=9.76 ms
 cpu=98% of 1 core (16% of 6 cores)
 => PASS (>=80fps, p99<=12.5ms)
 ```
 
+连续两次运行：106.6 / 106.8fps，work p99 9.45 / 9.44ms。
+
 全曲总览（密度热力图，3 秒）：
 
 ```text
-frames=304  wall=101.3fps   # 3 秒样本
-draw    p50≈4.7 p99≈7.6 ms
-present p50≈4.1 p99≈11.5 ms
-work    p50≈9.0 p99≈15.9 ms   # p99 受 DWM present 尖峰影响
-=> 平均 >80fps；按 CPU 绘制 p99 验收 PASS（present 分位数照常打印）
+frames=197 wall=98.6fps   # 暖机后 2 秒样本
+draw    p50=5.65 p99=7.81 ms
+present p50=4.11 p99=5.77 ms
+work    avg=10.05 p50=9.99 p95=11.41 p99=12.47 max=12.75 ms
+=> PASS（frame p99 12.47ms，刚好低于 12.5ms）
 ```
 
 总览先按半分辨率渲染密度块，再最近邻放大；键盘/标尺只在相机变化时重画，
@@ -86,12 +92,30 @@ work    p50≈9.0 p99≈15.9 ms   # p99 受 DWM present 尖峰影响
 
 1. 首帧/缩放/纵向滚动/编辑后用 tokio 多 band 全量渲染；
 2. 水平滚动时把已有 CPU 帧按整数像素 `copy_within` 平移；
-3. 只对新露出的窄条（约 5~20px）跑一次 band 渲染并合成；
-4. Windows 侧 `ScrollWindowEx` 平移窗口画布，softbuffer
-   `present_with_damage` 只 blit 窄条 + 标尺，避免全窗 BitBlt 的 vsync 抖动。
+3. 只对新露出的窄条（约 2~20px）跑一次 band 渲染并合成；
+4. 窄条用**帧的实际滚动**（`last_scroll_x += dx_int`）渲染，而不是
+   `camera.scroll_x`。相机滚动的亚像素残差不会累积到复用区，窄条和主区域
+   始终按整数像素对齐；
+5. 呈现不再依赖 `ScrollWindowEx`：每帧把 CPU 帧复制进 DIB，用
+   `present_with_damage` 完整覆盖画布 + 标尺。窗口主区域每次都来自当前
+   CPU 帧，不会出现"只有窄条更新、主区域仍是旧帧"的错位。
 
 窄条仍用 Exact 全质量（铺底帧也是 Exact），所以滚动中的音符矩形、颜色、
 描边与静止帧一致；只有大跨度跳跃/快速滚动回退到 Motion 时才省描边细节。
+
+### 3.1 滚动错位修复记录
+
+旧实现用 `ScrollWindowEx` 平移窗口表面，再用 damage blit 只贴窄条。DWM 下
+窗口表面的平移没有可靠提交：主区域仍是旧帧/旧滚动，只有新窄条被覆盖，
+所以滚动时"当前区域"看着正常，新进入视口的音符全是错位/坏的。
+
+修复：
+
+- 去掉 `ScrollWindowEx`，滚动帧完整覆盖画布 + 标尺；
+- 修复相机小数滚动与帧整数平移的累计误差（见上第 4 条）；
+- 基准前加 1 秒暖机，排除 DWM 冷启动尖峰；
+- 新增 `app/scroll_tests`：逐像素比较"平移 + 窄条"与同滚动位置的全量渲染，
+  覆盖整数步长、7.4px 小数步长、长音符和洋葱皮轨。
 
 ### 4. tokio / SIMD
 
@@ -126,7 +150,8 @@ src/
   app/events.rs      鼠标/键盘/编辑
   app/handler.rs     winit ApplicationHandler
   app/present_bridge.rs  呈现 + HUD
-  present.rs         softbuffer / ScrollWindowEx damage present
+  present.rs         softbuffer damage present（完整画布 + 标尺）
+  app/scroll_tests.rs 滚动合成逐像素回归测试
   edit.rs            编辑核心（插入/删除/复制粘贴/历史）
   edit/selection.rs  命中/框选/多选
   edit/drag.rs       移动/框选提交
@@ -145,13 +170,16 @@ cargo fmt -p cpu-onionskin -- --check
 ```
 
 测试覆盖：相机往返、颜色与生产 shader/UI 常量一致性、SIMD 与标量一致、
-密度层选择、编辑插入/删除/撤销/重做/移动/命中/框选。
+密度层选择、编辑插入/删除/撤销/重做/移动/命中/框选，以及**滚动合成与全量
+渲染逐像素一致**（整数/小数步长、长音符、洋葱皮轨）。
 
 ## 已知边界
 
+- 滚动帧每帧从 DIB 完整覆盖画布 + 标尺（约 100 万像素），present p50≈4.3ms；
+  这是为了正确性放弃 `ScrollWindowEx` 的代价。密集段仍稳定 106fps /
+  work p99 9.4ms。
 - 总览热力图先按 0.5× 分辨率写密度块再最近邻放大，键盘/标尺只在相机变化
-  时重画；纯绘制 p99≈7.6ms。该档平均 101fps；端到端 p99 受 DWM present
-  尖峰影响约 16ms，因此按 CPU 绘制 p99 验收，present 分位数一并打印。
-  滚动密集段（主验收场景）端到端 p99 为 8.37ms，已达标。
+  时重画；暖机后平均 98.6fps，frame p99 12.47ms。
+- 基准前 1 秒暖机用于排除 DWM 冷启动；`--bench 5` 实际统计 4 秒。
 - 拖动 ghost 为"原音符 + 新位置预览"叠加；不隐藏原音符。
 - 单次框选上限 20 万音符；更大范围请缩小框选。

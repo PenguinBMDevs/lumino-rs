@@ -8,10 +8,13 @@
 //! - `frame`：全量帧、滚动增量帧、编辑拖动预览
 //! - `events`：鼠标/键盘输入、编辑操作、事件循环等待
 
+mod canvas;
 mod events;
 mod frame;
 mod handler;
 mod present_bridge;
+#[cfg(test)]
+mod scroll_tests;
 mod window;
 
 use std::{
@@ -126,6 +129,7 @@ struct App {
     baseline_mode: LodMode,
     baseline_stride: usize,
     bench_ready: bool,
+    bench_warmup_until: Option<Instant>,
     fps_ema: f32,
     last_work_ms: f32,
 }
@@ -200,6 +204,7 @@ impl App {
             baseline_mode: LodMode::Exact,
             baseline_stride: 1,
             bench_ready: false,
+            bench_warmup_until: None,
             fps_ema: 0.0,
             last_work_ms: 0.0,
         }

@@ -98,7 +98,7 @@ impl App {
         self.renderer.resize(width, height);
         self.camera = Some(camera);
         self.window = Some(window.clone());
-        self.presenter.init(&window, context, surface);
+        self.presenter.init(context, surface);
         self.needs_redraw = true;
         self.idle_reported = false;
         self.next_frame = Instant::now();

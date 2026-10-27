@@ -66,30 +66,12 @@ impl App {
         self.presenter.present(&window, self.renderer.frame());
     }
 
-    pub(super) fn present_region(&mut self, camera: &Camera) {
+    pub(super) fn present_canvas(&mut self, camera: &Camera) {
         let Some(window) = self.window.clone() else {
             return;
         };
         self.presenter
-            .present_region(&window, self.renderer.frame(), camera);
-    }
-
-    pub(super) fn present_scrolled(&mut self, dx: i32, strip_x0: u32, strip_x1: u32) {
-        let Some(window) = self.window.clone() else {
-            return;
-        };
-        let Some(camera) = self.camera.clone() else {
-            self.presenter.present(&window, self.renderer.frame());
-            return;
-        };
-        self.presenter.present_scrolled(
-            &window,
-            self.renderer.frame(),
-            &camera,
-            dx,
-            strip_x0,
-            strip_x1,
-        );
+            .present_canvas(&window, self.renderer.frame(), camera);
     }
 
     pub(super) fn draw_overlays(

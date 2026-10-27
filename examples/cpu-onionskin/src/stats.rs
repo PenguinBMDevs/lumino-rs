@@ -14,6 +14,7 @@ use std::{
 };
 
 use lumino_diagnostics::memory_monitor::MemoryMonitor;
+#[cfg(not(target_os = "windows"))]
 use sysinfo::{ProcessesToUpdate, System};
 
 /// 滑动窗口帧样本。
@@ -32,8 +33,10 @@ pub struct PerfMonitor {
     bands: usize,
 }
 
-/// 独立线程采样进程 CPU：sysinfo 的进程 CPU 必须跨两次 refresh 才有值，
-/// 不能放在渲染热路径里每帧调用。
+/// 独立线程采样进程 CPU。
+///
+/// Windows 用 `GetProcessTimes`（两次采样差分，开销只有几个 syscall），
+/// 避免 sysinfo 每秒遍历进程表在基准里制造 10ms 级假尖峰；其他平台回退 sysinfo。
 struct CpuSampler {
     value: Arc<AtomicU32>,
 }
@@ -45,20 +48,10 @@ impl CpuSampler {
         thread::Builder::new()
             .name("cpu-onionskin-cpu".to_string())
             .spawn(move || {
-                let mut system = System::new();
-                let Ok(pid) = sysinfo::get_current_pid() else {
-                    return;
-                };
-                let mut primed = false;
-                loop {
-                    system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-                    if primed && let Some(process) = system.process(pid) {
-                        let usage = process.cpu_usage().clamp(0.0, 100_000.0);
-                        slot.store((usage * 100.0) as u32, Ordering::Relaxed);
-                    }
-                    primed = true;
-                    thread::sleep(Duration::from_secs(1));
-                }
+                #[cfg(target_os = "windows")]
+                sample_cpu_windows(slot);
+                #[cfg(not(target_os = "windows"))]
+                sample_cpu_sysinfo(slot);
             })
             .ok()
             .map(|_| Self { value })
@@ -66,6 +59,63 @@ impl CpuSampler {
 
     fn read(&self) -> f32 {
         self.value.load(Ordering::Relaxed) as f32 / 100.0
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn sample_cpu_windows(slot: Arc<AtomicU32>) {
+    use windows::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{GetCurrentProcess, GetProcessTimes},
+    };
+
+    fn to_u64(value: FILETIME) -> u64 {
+        (u64::from(value.dwHighDateTime) << 32) | u64::from(value.dwLowDateTime)
+    }
+
+    let process = unsafe { GetCurrentProcess() };
+    let mut previous: Option<(u64, Instant)> = None;
+    loop {
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        // SAFETY: 当前进程句柄由 GetCurrentProcess 返回，FILETIME 均为栈上有效可写。
+        let result =
+            unsafe { GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) };
+        if result.is_ok() {
+            let cpu_100ns = to_u64(kernel).saturating_add(to_u64(user));
+            let now = Instant::now();
+            if let Some((previous_cpu, previous_time)) = previous {
+                let wall_100ns = now.duration_since(previous_time).as_nanos() as f64 / 100.0;
+                if wall_100ns > 0.0 {
+                    let percent = (cpu_100ns.saturating_sub(previous_cpu) as f64 / wall_100ns
+                        * 100.0)
+                        .clamp(0.0, 100_000.0);
+                    slot.store((percent * 100.0) as u32, Ordering::Relaxed);
+                }
+            }
+            previous = Some((cpu_100ns, now));
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sample_cpu_sysinfo(slot: Arc<AtomicU32>) {
+    let mut system = System::new();
+    let Ok(pid) = sysinfo::get_current_pid() else {
+        return;
+    };
+    let mut primed = false;
+    loop {
+        system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+        if primed && let Some(process) = system.process(pid) {
+            let usage = process.cpu_usage().clamp(0.0, 100_000.0);
+            slot.store((usage * 100.0) as u32, Ordering::Relaxed);
+        }
+        primed = true;
+        thread::sleep(Duration::from_secs(1));
     }
 }
 

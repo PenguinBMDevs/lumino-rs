@@ -30,10 +30,9 @@ tokio = { workspace = true }
 winit = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# 1ms 定时器分辨率 + 滚动增量 present（ScrollWindowEx + damage blit）。
+# 1ms 定时器分辨率：80/144fps 的帧间隔低于 Windows 默认 15.6ms 时钟粒度。
 windows = { workspace = true, features = [
     "Win32_Foundation",
-    "Win32_Graphics_Gdi",
     "Win32_Media",
-    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
 ] }

@@ -271,15 +271,8 @@ impl Renderer {
             key_max,
             track_stride: track_stride.max(1),
         };
-        let slot = Arc::clone(&self.strip_slot);
-        let task = self.runtime.spawn(async move {
-            let mut buffer = take_buffer(&slot);
-            let stats = render_band(&job, &mut buffer);
-            (buffer, stats)
-        });
-        let Ok((buffer, stats)) = self.runtime.block_on(task) else {
-            return BandStats::default();
-        };
+        let mut buffer = take_buffer(&self.strip_slot);
+        let stats = render_band(&job, &mut buffer);
         let expected_width = (x1 - x0) as usize;
         if buffer.width == expected_width && buffer.height == self.height as usize {
             let width = self.width as usize;
