@@ -41,6 +41,10 @@ pub(crate) fn handle(
         };
     }
 
+    if editor.area_paint_active() {
+        return mouse::Interaction::Crosshair;
+    }
+
     if editor.current_tool() == Tool::Eraser {
         return mouse::Interaction::Crosshair;
     }
