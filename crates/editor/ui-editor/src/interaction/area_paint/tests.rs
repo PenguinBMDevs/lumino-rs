@@ -143,6 +143,13 @@ fn test_model_list_entry_can_paint_without_drawn_shape() {
             .len(),
         1
     );
+    let notes = editor.editor_state.data.current_track_notes();
+    assert!(!notes.is_empty(), "区域着色应再生成填充音符");
+    assert!(
+        notes.iter().all(|note| note.channel == 3),
+        "区域色应写到音符通道，实际 {:?}",
+        notes.iter().map(|note| note.channel).collect::<Vec<_>>()
+    );
 }
 
 fn shape_note() -> lumino_editor_state::ShapeNote {

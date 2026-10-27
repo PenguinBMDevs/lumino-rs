@@ -1132,6 +1132,10 @@ mod tests {
             lumino_core::shape::ShapeFill::Fill,
             "保留模型用于区域着色，默认按内部填充建模"
         );
+        assert!(
+            entry.model.geometry.closed,
+            "形状工具保留模型必须是闭合图形，否则区域着色只会退回描边"
+        );
         assert_eq!(
             editor.editor_state.data.current_track_note_count(),
             RECT_OUTLINE_NOTES,

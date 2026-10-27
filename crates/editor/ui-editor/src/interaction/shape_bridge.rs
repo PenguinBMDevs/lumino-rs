@@ -48,6 +48,7 @@ pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32)
             model.kind = ShapeKind::Custom;
             model.geometry = ShapeGeometry::from_points(points);
             // 形状工具产物都是闭合图形；保留模型按填充建模，032B 才能着色。
+            model.geometry.closed = true;
             model.style.fill = lumino_core::shape::ShapeFill::Fill;
         }
     }
