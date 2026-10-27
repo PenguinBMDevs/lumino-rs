@@ -141,6 +141,7 @@ pub fn draw(
             .with_width(1.0)
             .with_color(palette.background.strong.color),
     );
+    // canvas 文本必须用 Advanced shaping：Basic 不会走系统 CJK 回退。
     frame.fill_text(canvas::Text {
         content: tr!("区域着色").to_string(),
         position: Point::new(rects.panel.x + PAD, rects.panel.y + PAD - 1.0),
@@ -151,7 +152,7 @@ pub fn draw(
         font: lumino_ui_core::font::ui_font(),
         align_x: iced_core::alignment::Horizontal::Left.into(),
         align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Basic,
+        shaping: iced_core::text::Shaping::Advanced,
     });
     frame.fill_text(canvas::Text {
         content: "×".to_string(),
@@ -163,7 +164,7 @@ pub fn draw(
         font: lumino_ui_core::font::ui_font(),
         align_x: iced_core::alignment::Horizontal::Center.into(),
         align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Basic,
+        shaping: iced_core::text::Shaping::Advanced,
     });
 
     for (slot, rect) in rects.swatches.iter().enumerate() {
