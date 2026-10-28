@@ -176,6 +176,68 @@ fn fractional_scroll_uses_frame_scroll_not_camera_scroll() {
 }
 
 #[test]
+fn large_strip_step_matches_full_render() {
+    let mut document = MidiDocument::empty_with_tracks(1, 480);
+    for tick in (0..1500).step_by(8) {
+        document.insert_note(0, NoteEvent::new(tick, tick + 4, 60, 100, 0));
+    }
+    let document = Arc::new(document);
+    let index = Arc::new(TrackIndex::build(&document));
+    let style = Arc::new(NoteStyle::new(1));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let mut renderer = Renderer::new(runtime, 1, style, SimdLevel::Scalar);
+    let width = 800u32;
+    let height = 240u32;
+    renderer.resize(width, height);
+    let mut camera = Camera::new(width, height, 1.0, 2000, 480, 1.0);
+    camera.scroll_x = 0.0;
+    camera.target_scroll_x = 0.0;
+    camera.center_on_key(60);
+    let keyboard = camera.keyboard_width.round() as usize;
+    let ruler = camera.ruler_height.round() as usize;
+    renderer.render(
+        Arc::clone(&document),
+        Arc::clone(&index),
+        &camera,
+        0,
+        LodMode::Exact,
+    );
+
+    let step_px = 400i32;
+    let frame = renderer.frame_mut();
+    shift_canvas_pixels(frame, width as usize, height as usize, keyboard, step_px);
+    camera.scroll_x = step_px as f32;
+    camera.target_scroll_x = camera.scroll_x;
+    renderer.render_strip_into_frame(
+        Arc::clone(&document),
+        Arc::clone(&index),
+        &camera,
+        0,
+        LodMode::Exact,
+        width - step_px as u32,
+        width,
+    );
+    let incremental = renderer.frame().to_vec();
+
+    renderer.render(document, index, &camera, 0, LodMode::Exact);
+    let full = renderer.frame();
+    let mut diff = 0usize;
+    for y in ruler..height as usize {
+        for x in keyboard..width as usize {
+            let index = y * width as usize + x;
+            if incremental[index] != full[index] {
+                diff += 1;
+            }
+        }
+    }
+    assert_eq!(diff, 0, "400px 大跨度窄条合成必须与全量渲染逐像素一致");
+}
+
+#[test]
 fn exact_render_keeps_fill_and_border() {
     let mut document = MidiDocument::empty_with_tracks(1, 480);
     document.insert_note(0, NoteEvent::new(0, 200, 60, 100, 0));

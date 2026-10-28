@@ -75,6 +75,21 @@ impl App {
             && dy.abs() < 0.01
             && canvas_width > 0;
 
+        // 大跨度水平跳转（End/Home、快速甩动）也走窄条 Exact，而不是全量重画：
+        // 单帧最多前进 35% 画布宽度，相机在后续帧继续追目标。这样大跨度
+        // 滚动仍然保持填充/描边/全部音轨，且不会出现一帧 30ms+ 的尖峰。
+        let mut camera = camera;
+        if can_scroll && moving {
+            let max_step = (canvas_width as f32 * 0.35).max(64.0);
+            let delta = camera.scroll_x - self.last_scroll_x;
+            if delta.abs() > max_step {
+                camera.scroll_x = self.last_scroll_x + max_step.copysign(delta);
+                if let Some(active) = self.camera.as_mut() {
+                    active.scroll_x = camera.scroll_x;
+                }
+            }
+        }
+
         // 亚像素滚动：屏幕内容还没变化，等积累到 1px 再平移。
         if moving && can_scroll && dx.abs() < 0.5 && !bench_finished {
             self.next_frame = Instant::now() + self.frame_interval;
