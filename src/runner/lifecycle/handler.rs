@@ -333,6 +333,7 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 找回删除音轨对话框 UI 就绪后，把 pending 条目列表注入对话框
         // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
         this.try_fill_recover_track_entries();
+        this.sync_history_dialog();
 
         // GPU 检测会话状态灌注（设置对话框刚创建 / 重开时重放 Running、冷却与结果）
         this.about_to_wait_gpu_check();

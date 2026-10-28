@@ -359,6 +359,47 @@ impl Editor {
         }
     }
 
+    /// 历史面板只读视图（DRAW-035）。
+    ///
+    /// 只包含文档历史；画刷/曲线待确认路径是编辑态临时历史，确认后才进入
+    /// 文档历史，不能和历史面板混排。
+    pub fn history_view(&self) -> lumino_editor_state::editor_state::HistoryView {
+        self.editor_state.data.history_view()
+    }
+
+    /// 跳到历史游标 `target`（0 = 初始状态，steps.len() = 最新）。
+    ///
+    /// 必须复用 [`Self::undo`] / [`Self::redo`]：它们负责形状 group 回放、
+    /// 协作广播和选中重映射。存在未确认笔画 / 正在编辑时拒绝跳转，
+    /// 避免历史面板误消费画刷或曲线路径的临时栈。
+    pub fn history_jump_to(&mut self, target: usize) -> bool {
+        if self.is_editing()
+            || self.has_pending_drag()
+            || self.editor_state.brush_tool.can_undo_path()
+            || self.editor_state.line_tool.can_undo_path()
+        {
+            return false;
+        }
+        let view = self.history_view();
+        if target > view.len() {
+            return false;
+        }
+        if target < view.current {
+            for _ in target..view.current {
+                if !self.undo() {
+                    return false;
+                }
+            }
+        } else {
+            for _ in view.current..target {
+                if !self.redo() {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
         self.editor_state.brush_tool.can_undo_path()

@@ -91,6 +91,8 @@ impl ToolbarHandler {
         self.handle_toolbar_draw_settings(root, &event);
         // 处理「形状抽屉」独立窗口（DRAW-033B0）
         self.handle_toolbar_shape_drawer(root, &event);
+        // 处理「撤销历史」独立窗口（DRAW-035）
+        self.handle_toolbar_history(root, &event);
 
         // 处理录制
         self.handle_toolbar_recording(root, &event);

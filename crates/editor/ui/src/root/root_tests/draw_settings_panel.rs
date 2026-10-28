@@ -74,6 +74,27 @@ fn test_shape_drawer_entry_emits_open_window_event() {
     );
 }
 
+/// DRAW-035：工具栏历史入口必须发独立窗口事件。
+#[test]
+fn test_history_entry_emits_open_window_event() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut root = setup_toolbar_open();
+    root.update(Event::open_history_dialog());
+
+    let events = crate::event::take_events();
+    let found = events.iter().any(|event| {
+        matches!(
+            event,
+            crate::event::Event::Window(crate::event::window::Event::Dialog(d))
+                if matches!(
+                    d.as_ref(),
+                    crate::event::window::dialog::Event::OpenHistoryDialog
+                )
+        )
+    });
+    assert!(found, "历史入口应发出 OpenHistoryDialog 窗口事件");
+}
+
 /// 场景 2（关键）：齿轮是**纯入口**，不改变当前绘制工具与填充共存态。
 ///
 /// 若齿轮退化为"工具条目"，点设置会顺手切走当前工具 —— 这正是把它做成独立按钮的理由。

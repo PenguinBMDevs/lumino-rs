@@ -80,6 +80,12 @@ impl RunnerInner {
                     tracing::warn!("形状抽屉插入失败: {error}");
                 }
             }
+            DialogResult::HistoryJump(target) => {
+                tracing::info!("撤销历史：跳到游标 {target}");
+                if !ui.history_jump_to(target) {
+                    tracing::warn!("撤销历史跳转被拒绝（可能正在编辑 / 有待确认笔画）");
+                }
+            }
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }

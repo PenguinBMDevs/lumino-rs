@@ -65,6 +65,25 @@ impl RunnerInner {
                 }
             }
             CloseShapeDrawerDialog => self.close_dialog_traced(DialogType::ShapeDrawer, "形状抽屉"),
+            OpenHistoryDialog => {
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::History)
+                {
+                    tracing::info!("撤销历史窗口已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::History)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    self.open_dialog_traced(DialogType::History, "撤销历史");
+                }
+            }
+            CloseHistoryDialog => self.close_dialog_traced(DialogType::History, "撤销历史"),
             ToggleHelpDialog => {
                 if self
                     .window_state

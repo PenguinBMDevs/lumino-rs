@@ -76,6 +76,8 @@ pub enum DialogResult {
     BrushSettings(lumino_core::BrushConfig),
     /// 形状抽屉插入工程（抽屉保持打开）
     InsertShapeDrawing(Box<lumino_core::shape::ShapeDrawing>),
+    /// 历史面板请求跳到指定游标（历史窗口保持打开）
+    HistoryJump(usize),
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

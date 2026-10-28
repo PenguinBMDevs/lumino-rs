@@ -20,6 +20,20 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "形状" => Some("Shape"),
         "曲线" => Some("Curve"),
         "折线" => Some("Polyline"),
+        // ── 撤销历史面板（`view/history_dialog.rs`）──
+        "撤销历史" => Some("Undo History"),
+        "初始状态" => Some("Initial state"),
+        "新建音符" => Some("Create note"),
+        "移动音符" => Some("Move note"),
+        "删除音符" => Some("Delete note"),
+        "变换音符" => Some("Transform note"),
+        "调整力度" => Some("Adjust velocity"),
+        "自动化编辑" => Some("Edit automation"),
+        "MIDI 录制" => Some("MIDI recording"),
+        "其他操作" => Some("Other action"),
+        "点击步骤跳转；初始状态为 0。" => {
+            Some("Click a step to jump; the initial state is 0.")
+        }
         // ── 云存储连接面板 / 断连提醒（`view/cloud_dialog.rs`）──
         "Lumino 无权且不会收集您的个人信息，所有信息将会存储在本地" => {
             Some(

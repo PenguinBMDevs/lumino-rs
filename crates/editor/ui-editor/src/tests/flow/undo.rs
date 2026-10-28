@@ -58,6 +58,77 @@ fn test_zero_delta_drag_commit_undo_is_noop() {
     );
 }
 
+#[test]
+fn test_history_jump_to_walks_document_history() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+
+    for i in 0..3u16 {
+        editor
+            .editor_state
+            .data
+            .push_history_with_op_kind(OpKind::NoteCreate);
+        editor.editor_state.data.insert_note(
+            editor.editor_state.data.current_track,
+            Note::new(i as f32 * 100.0, 60 + i, 80.0),
+        );
+    }
+
+    assert_eq!(editor.history_view().current, 3);
+    assert!(editor.history_jump_to(1), "应能跳到第 1 步");
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
+    assert_eq!(editor.history_view().current, 1);
+
+    assert!(editor.history_jump_to(3), "应能重做回最新一步");
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 3);
+
+    assert!(editor.history_jump_to(0), "应能回退到初始状态");
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+    assert!(!editor.history_jump_to(99), "越界目标必须拒绝");
+}
+
+#[test]
+fn test_history_jump_to_replays_shape_group() {
+    use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+
+    let mut model = ShapeModel::new(1, 1, ShapeKind::Line, 1.0);
+    model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (120.0, 60.0)]);
+    assert!(editor.create_shape(model), "形状应创建成功");
+    assert_eq!(editor.history_view().current, 1);
+    assert!(
+        !editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .is_empty()
+    );
+
+    assert!(editor.history_jump_to(0), "跳到初始状态");
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .is_empty(),
+        "撤销创建应隐藏形状"
+    );
+
+    assert!(editor.history_jump_to(1), "跳回形状创建步");
+    assert_eq!(editor.history_view().current, 1);
+    assert!(
+        !editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .is_empty(),
+        "重做应恢复形状"
+    );
+}
+
 // ===== 跨 group 逻辑撤销（直接调用 data.undo_logical）=====
 //
 // 此测试验证：当单个逻辑操作因超过 entry_limit 被分割为多个 group 时，

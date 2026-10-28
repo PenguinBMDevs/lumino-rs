@@ -339,4 +339,9 @@ impl Event {
     pub const fn open_shape_drawer_dialog() -> Message {
         Message::Toolbar(Self::OpenShapeDrawerDialog)
     }
+
+    /// 构造“打开撤销历史”的工具栏消息
+    pub const fn open_history_dialog() -> Message {
+        Message::Toolbar(Self::OpenHistoryDialog)
+    }
 }

@@ -75,6 +75,10 @@ pub enum Event {
     OpenShapeDrawerDialog,
     /// 关闭「形状抽屉」独立窗口
     CloseShapeDrawerDialog,
+    /// 打开撤销历史独立窗口（DRAW-035）
+    OpenHistoryDialog,
+    /// 关闭撤销历史独立窗口
+    CloseHistoryDialog,
     /// 打开/关闭 Help 窗口（F1；已打开时聚焦/关闭由 Runner 裁决）
     ToggleHelpDialog,
     /// 关闭 Help 窗口

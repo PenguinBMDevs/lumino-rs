@@ -208,6 +208,8 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::Help => DialogSizeHint::pinned(900.0, 620.0),
         // 形状抽屉：B0 空窗先钉死 1000×700；B1 画板接入后再评估测量
         DialogType::ShapeDrawer => DialogSizeHint::pinned(1000.0, 700.0),
+        // 撤销历史：固定列表面板，避免历史为空时测量把窗口压成最小高度
+        DialogType::History => DialogSizeHint::pinned(440.0, 560.0),
 
         // ── 含「测量不可信」的滚动区：钉死高度（min = max） ──────────────
         //
@@ -312,7 +314,7 @@ mod tests {
     use super::*;
 
     /// 全部「真实」对话框类型（`None` 除外）
-    const ALL_DIALOGS: [DialogType; 18] = [
+    const ALL_DIALOGS: [DialogType; 19] = [
         DialogType::CustomPrecision,
         DialogType::Collaboration,
         DialogType::LoadConfirm,
@@ -331,6 +333,7 @@ mod tests {
         DialogType::BrushSettings,
         DialogType::DrawSettings,
         DialogType::ShapeDrawer,
+        DialogType::History,
     ];
 
     /// 每个对话框的宽度区间都必须可用。

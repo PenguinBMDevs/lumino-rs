@@ -129,6 +129,24 @@ impl Root {
         }
     }
 
+    /// 设置撤销历史窗口是否打开（独立 OS 窗口；DRAW-035）
+    pub fn set_history_dialog_open(&mut self, open: bool) {
+        if open {
+            self.state.dialog_type = DialogType::History;
+        } else if self.state.dialog_type == DialogType::History {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
+    /// 用编辑器历史快照刷新历史面板；返回是否有变化。
+    pub fn set_history_view(
+        &mut self,
+        steps: Vec<crate::state::root_state::HistoryStepView>,
+        current: usize,
+    ) -> bool {
+        self.state.history_dialog.replace(steps, current)
+    }
+
     /// 设置找回删除音轨对话框的条目列表（由 Runner 扫描缓存目录后填充）
     pub fn set_recover_track_dialog_entries(
         &mut self,

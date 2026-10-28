@@ -12,6 +12,7 @@ pub mod draw_settings_dialog;
 pub mod export_progress_dialog;
 pub mod help_dialog;
 pub mod help_tip;
+pub mod history_dialog;
 pub mod load_confirm_dialog;
 pub mod memory_monitor_dialog;
 pub mod project_settings_dialog;

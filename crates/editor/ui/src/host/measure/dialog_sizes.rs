@@ -28,7 +28,7 @@ use super::{
 pub(super) const WORK_AREA: Size = Size::new(1920.0, 1040.0);
 
 /// 全部「真实」对话框类型（`None` 除外）
-pub(super) const ALL_DIALOGS: [DialogType; 18] = [
+pub(super) const ALL_DIALOGS: [DialogType; 19] = [
     DialogType::CustomPrecision,
     DialogType::Collaboration,
     DialogType::LoadConfirm,
@@ -47,6 +47,7 @@ pub(super) const ALL_DIALOGS: [DialogType; 18] = [
     DialogType::BrushSettings,
     DialogType::DrawSettings,
     DialogType::ShapeDrawer,
+    DialogType::History,
 ];
 
 /// 构建 headless iced 渲染器（不需要窗口）

@@ -5,11 +5,12 @@ pub use lumino_ui_core::state::{
     AboutEggState, AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT,
     COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState, FillDivisionDialogState,
-    GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState, LoadConfirmDialogState,
-    MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
-    MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
-    RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState,
-    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
+    GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState, HistoryDialogState,
+    HistoryKind, HistoryStepView, LoadConfirmDialogState, MIDITRAIL_SPEED_DEFAULT,
+    MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX,
+    MemoryMonitorDialogState, ProjectSettingsDialogState, RecoverTrackDialogState,
+    RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState, ToggleAnimationState,
+    VideoClipState, VideoExportDialogState, VideoExportOverlayState,
 };
 
 use std::cell::RefCell;
@@ -114,6 +115,8 @@ pub enum DialogType {
     Help,
     /// 形状抽屉（独立 OS 窗口；DRAW-033）
     ShapeDrawer,
+    /// 撤销历史（独立 OS 窗口；DRAW-035）
+    History,
 }
 
 /// Root 组件的状态
@@ -193,6 +196,8 @@ pub struct RootState {
     pub help_tips: HelpTipsState,
     /// 形状抽屉窗口状态（DRAW-033）
     pub shape_drawer: ShapeDrawerState,
+    /// 撤销历史面板状态（DRAW-035）
+    pub history_dialog: HistoryDialogState,
 }
 
 impl Default for RootState {
@@ -237,6 +242,7 @@ impl RootState {
             help_dialog: HelpDialogState::default(),
             help_tips: HelpTipsState::default(),
             shape_drawer: ShapeDrawerState::default(),
+            history_dialog: HistoryDialogState::default(),
         }
     }
 }

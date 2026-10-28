@@ -182,6 +182,55 @@ fn test_history_undo_redo_roundtrip() {
 }
 
 #[test]
+fn test_redo_preserves_op_kind_for_history_view() {
+    let mut history = History::new();
+    history.push_with_op_kind(make_snapshot(1), OpKind::NoteDelete);
+    assert_eq!(
+        history.undo_back().expect("应有历史").op_kind(),
+        OpKind::NoteDelete
+    );
+
+    let _ = history.undo(make_snapshot(2));
+    assert_eq!(
+        history.redo_back().expect("应有重做").op_kind(),
+        OpKind::NoteDelete,
+        "undo 生成的 redo 快照必须保留动作类型，否则历史面板步名退化"
+    );
+
+    let _ = history.redo(make_snapshot(1));
+    assert_eq!(
+        history.undo_back().expect("应有历史").op_kind(),
+        OpKind::NoteDelete,
+        "redo 生成的 undo 快照同样必须保留动作类型"
+    );
+}
+
+#[test]
+fn test_history_iterators_are_oldest_first_and_next_redo_first() {
+    let mut history = History::new();
+    history.push_with_op_kind(make_snapshot(1), OpKind::NoteCreate);
+    history.push_with_op_kind(make_snapshot(2), OpKind::NoteMove);
+
+    assert_eq!(
+        history
+            .undo_entries()
+            .map(HistoryEntry::op_kind)
+            .collect::<Vec<_>>(),
+        vec![OpKind::NoteCreate, OpKind::NoteMove]
+    );
+
+    let _ = history.undo(make_snapshot(3));
+    assert_eq!(
+        history
+            .redo_entries()
+            .map(HistoryEntry::op_kind)
+            .collect::<Vec<_>>(),
+        vec![OpKind::NoteMove],
+        "redo_entries 第一步应是最靠近当前状态的未来动作"
+    );
+}
+
+#[test]
 fn test_editor_snapshot_new() {
     let snap = make_snapshot(3);
     assert_eq!(snap.notes.len(), 3);

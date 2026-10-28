@@ -14,6 +14,7 @@ use crate::custom_precision::CustomPrecisionAction;
 use crate::draw_settings::DrawSettingsAction;
 use crate::fill_division::FillDivisionAction;
 use crate::help::HelpAction;
+use crate::history::HistoryAction;
 use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
 use crate::project_settings::ProjectSettingsAction;
@@ -118,6 +119,8 @@ pub enum Message<W, S, Se, T> {
     Help(HelpAction),
     /// 形状抽屉库/变换/插入动作（DRAW-033B2）
     ShapeDrawer(ShapeDrawerAction),
+    /// 撤销历史面板动作（DRAW-035）
+    History(HistoryAction),
     /// 协作动作
     Collaboration(CollaborationAction),
     /// 加载确认对话框动作

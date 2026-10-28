@@ -180,4 +180,14 @@ impl ToolbarHandler {
             ));
         }
     }
+
+    /// 处理「撤销历史」独立窗口请求（DRAW-035）。
+    pub(crate) fn handle_toolbar_history(&self, _root: &mut Root, event: &crate::toolbar::Event) {
+        if matches!(event, crate::toolbar::Event::OpenHistoryDialog) {
+            tracing::info!("Root: 触发打开撤销历史");
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::open_history_dialog(),
+            ));
+        }
+    }
 }

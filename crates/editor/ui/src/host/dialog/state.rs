@@ -2,10 +2,24 @@
 
 use lumino_core::shape::{ShapeDrawing, ShapeLibrary, ShapeRect};
 use lumino_core::{tr, trf};
+use lumino_note_core::history::OpKind;
 
 use crate::host::{Host, types::DialogResult};
 use crate::message;
-use crate::state::root_state::CollaborationViewState;
+use crate::state::root_state::{CollaborationViewState, HistoryKind};
+
+fn history_kind(kind: OpKind) -> HistoryKind {
+    match kind {
+        OpKind::NoteCreate => HistoryKind::NoteCreate,
+        OpKind::NoteMove => HistoryKind::NoteMove,
+        OpKind::NoteDelete => HistoryKind::NoteDelete,
+        OpKind::NoteTransform => HistoryKind::NoteTransform,
+        OpKind::VelocityEdit => HistoryKind::VelocityEdit,
+        OpKind::AutomationEdit => HistoryKind::AutomationEdit,
+        OpKind::Recording => HistoryKind::Recording,
+        OpKind::Other | OpKind::ChainMarker => HistoryKind::Other,
+    }
+}
 
 impl Host {
     /// 设置加载确认对话框（用于独立对话框窗口）
@@ -116,6 +130,53 @@ impl Host {
         self.root.set_shape_drawer_dialog_open(open);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+    }
+
+    /// 设置撤销历史窗口是否打开（独立 OS 窗口；DRAW-035）
+    pub fn set_history_dialog_open(&mut self, open: bool) {
+        self.root.set_history_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 读取主编辑器历史视图，投影为 UI 中性类型。
+    ///
+    /// 返回 `(steps, current)`；当前游标 0 表示初始状态。
+    pub fn history_view(&self) -> (Vec<crate::state::root_state::HistoryStepView>, usize) {
+        let view = self.root.editor.history_view();
+        let steps = view
+            .steps
+            .into_iter()
+            .map(|step| crate::state::root_state::HistoryStepView {
+                index: step.index,
+                kind: history_kind(step.kind),
+            })
+            .collect();
+        (steps, view.current)
+    }
+
+    /// 注入历史面板数据；返回是否有变化。
+    pub fn set_history_view(
+        &mut self,
+        steps: Vec<crate::state::root_state::HistoryStepView>,
+        current: usize,
+    ) -> bool {
+        if !self.root.set_history_view(steps, current) {
+            return false;
+        }
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+        true
+    }
+
+    /// 从历史面板跳到指定游标；形状 group / 协作广播由 Editor 统一处理。
+    pub fn history_jump_to(&mut self, target: usize) -> bool {
+        let ok = self.root.editor.history_jump_to(target);
+        if ok {
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+        }
+        ok
     }
 
     /// 注入形状库目录（Runner 在抽屉 UI 就绪后调用）

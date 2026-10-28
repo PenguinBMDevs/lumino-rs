@@ -37,6 +37,14 @@ impl Event {
     pub fn close_shape_drawer_dialog() -> Self {
         Self::dialog(dialog::Event::CloseShapeDrawerDialog)
     }
+    /// 构造打开撤销历史窗口事件
+    pub fn open_history_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenHistoryDialog)
+    }
+    /// 构造关闭撤销历史窗口事件
+    pub fn close_history_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseHistoryDialog)
+    }
     /// 构造打开/关闭 Help 窗口事件
     pub fn toggle_help_dialog() -> Self {
         Self::dialog(dialog::Event::ToggleHelpDialog)

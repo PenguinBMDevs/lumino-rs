@@ -90,6 +90,26 @@ fn test_shape_drawer_save_delete_and_insert_action() {
 }
 
 #[test]
+fn test_history_dialog_actions_route_to_dialog_results() {
+    use crate::host::DialogResult;
+    use crate::message::HistoryAction;
+
+    let mut root = Root::new_dialog("dark", DialogType::History);
+    root.update(crate::Message::History(HistoryAction::Jump(3)));
+    assert!(matches!(
+        root.state.dialog_result.as_ref(),
+        Some(DialogResult::HistoryJump(3))
+    ));
+
+    root.state.dialog_result = None;
+    root.update(crate::Message::History(HistoryAction::Close));
+    assert!(matches!(
+        root.state.dialog_result.as_ref(),
+        Some(DialogResult::Cancel)
+    ));
+}
+
+#[test]
 fn test_shape_drawer_area_paint_and_insert_result() {
     use crate::message::ShapeDrawerAction;
     use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};

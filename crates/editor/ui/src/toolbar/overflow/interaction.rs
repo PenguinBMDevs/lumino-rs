@@ -203,6 +203,12 @@ impl Toolbar {
         vec![
             menu_item(icon::Undo, t.undo, Event::undo(), true),
             menu_item(icon::Redo, t.redo, Event::redo(), true),
+            menu_item(
+                icon::Clock,
+                lumino_core::tr!("撤销历史"),
+                Event::open_history_dialog(),
+                true,
+            ),
         ]
     }
 

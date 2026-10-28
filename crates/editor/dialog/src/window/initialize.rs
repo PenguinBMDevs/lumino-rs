@@ -170,6 +170,11 @@ impl DialogWindow {
                 }
                 ui.set_shape_drawer_dialog_open(true);
             }
+            DialogType::History => {
+                ui.set_history_dialog_open(true);
+                let (steps, current) = main_ui.history_view();
+                ui.set_history_view(steps, current);
+            }
         }
 
         // REF-001：**不在此处显示窗口**。窗口要等「入册后的首帧」测量完内容尺寸

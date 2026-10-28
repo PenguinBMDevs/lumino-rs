@@ -169,6 +169,8 @@ pub enum Event {
     OpenDrawSettingsDialog,
     /// 打开独立「形状抽屉」窗口（DRAW-033；B0 仅空窗）
     OpenShapeDrawerDialog,
+    /// 打开独立「撤销历史」窗口（DRAW-035）
+    OpenHistoryDialog,
 }
 
 /// 形状工具当前绘制的图形类型
