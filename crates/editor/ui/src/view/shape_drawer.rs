@@ -5,7 +5,9 @@
 use iced_core::text::Wrapping;
 use iced_core::{Background, Length, mouse};
 use iced_widget::canvas::Canvas;
-use iced_widget::{MouseArea, button, column, container, row, scrollable, space, text, text_input};
+use iced_widget::{
+    MouseArea, Stack, button, column, container, row, scrollable, space, text, text_input,
+};
 
 use crate::message::ShapeDrawerAction;
 use crate::shape_drawer::canvas::ShapeDrawerCanvas;
@@ -114,7 +116,6 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     )
     .on_press(Message::ShapeDrawer(ShapeDrawerAction::PanelDragStart))
     .on_release(Message::ShapeDrawer(ShapeDrawerAction::PanelDragEnd))
-    .on_exit(Message::ShapeDrawer(ShapeDrawerAction::PanelDragEnd))
     .on_move(|point| Message::ShapeDrawer(ShapeDrawerAction::SetPanelWidth(point.x)))
     .interaction(mouse::Interaction::ResizingHorizontally);
 
@@ -130,10 +131,28 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     .width(Length::Fill)
     .height(Length::Fill);
 
-    row![panel, splitter, canvas]
+    let content: Element<'a> = row![panel, splitter, canvas]
         .width(Length::Fill)
         .height(Length::Fill)
-        .into()
+        .into();
+
+    if state.panel_dragging {
+        // 分割线只有 6px 宽；拖动时用全窗透明层接住 CursorMoved/Released，
+        // 否则鼠标一离开分割线，on_move 就断流，表现为“跳一下就拖不动”。
+        let drag_overlay =
+            MouseArea::new(container(space()).width(Length::Fill).height(Length::Fill))
+                .on_move(|point| Message::ShapeDrawer(ShapeDrawerAction::SetPanelWidth(point.x)))
+                .on_release(Message::ShapeDrawer(ShapeDrawerAction::PanelDragEnd))
+                .interaction(mouse::Interaction::ResizingHorizontally);
+        return Stack::new()
+            .push(content)
+            .push(drag_overlay)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    }
+
+    content
 }
 
 fn action_button<'a>(label: &'static str, action: ShapeDrawerAction) -> Element<'a> {

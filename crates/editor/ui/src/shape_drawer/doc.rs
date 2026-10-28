@@ -291,19 +291,14 @@ impl DrawerDoc {
         }
     }
 
-    /// 粘贴 strokes（一次撤销单元；偏移避免完全重叠）
+    /// 粘贴 strokes（一次撤销单元；绝对坐标保持不变）
     pub fn paste_strokes(&mut self, strokes: &[Stroke]) -> bool {
         if strokes.is_empty() {
             return false;
         }
         self.checkpoint();
         for stroke in strokes {
-            let mut copy = stroke.clone();
-            for anchor in &mut copy.anchors {
-                anchor.pos.0 = (anchor.pos.0 + 0.03).min(1.0);
-                anchor.pos.1 = (anchor.pos.1 + 0.03).min(1.0);
-            }
-            self.strokes.push(copy);
+            self.strokes.push(stroke.clone());
             self.roles.push(StrokeRole::default());
         }
         self.selection.clear();
@@ -532,8 +527,13 @@ mod tests {
 
         assert!(doc.rotate90());
         assert!((doc.areas[0].u - 0.75).abs() < 1e-4);
-        assert!(doc.paste_strokes(&doc.strokes.clone()));
+        let original = doc.strokes[0].clone();
+        assert!(doc.paste_strokes(std::slice::from_ref(&original)));
         assert_eq!(doc.strokes.len(), 2);
+        assert_eq!(
+            doc.strokes[0].anchors[0].pos, doc.strokes[1].anchors[0].pos,
+            "粘贴必须保持绝对位置，不做偏移"
+        );
         assert!(doc.undo());
         assert_eq!(doc.strokes.len(), 1);
     }
