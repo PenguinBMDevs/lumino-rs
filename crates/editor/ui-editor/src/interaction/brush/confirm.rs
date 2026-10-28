@@ -11,8 +11,11 @@
 
 use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_editor_state::ShapeNote;
 use lumino_note_core::history::CreateOp;
-use std::collections::HashSet;
+use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
+use std::collections::{BTreeMap, HashSet};
 
 // 批量归并写入阈值：定义与完整理由集中在 `super::super::batch_insert`
 // （曲线填充 / 形状 / 画刷三处共用，避免各写一份漂移）。
@@ -125,6 +128,41 @@ impl Editor {
             config: self.brush.clone(),
         };
         self.remember_bake(group, pending);
+        // DRAW-041B / 242C：按笔画保留只读模型（每条笔画一个；跨轨笔画跳过）。
+        let mut by_stroke: BTreeMap<usize, Vec<ShapeNote>> = BTreeMap::new();
+        for (stroke, item) in pending_with_stroke {
+            by_stroke.entry(stroke).or_default().push(ShapeNote {
+                track: item.track,
+                tick: item.tick_cell as f32 * snap,
+                key: item.key,
+                length: snap,
+                velocity: DEFAULT_NOTE_VELOCITY,
+                channel: 0,
+            });
+        }
+        let models = by_stroke
+            .into_iter()
+            .filter_map(|(stroke, notes)| {
+                let points = self
+                    .editor_state
+                    .brush_tool
+                    .strokes
+                    .get(stroke)?
+                    .points
+                    .clone();
+                if points.is_empty() {
+                    return None;
+                }
+                let track = notes.first()?.track;
+                if notes.iter().any(|note| note.track != track) {
+                    return None;
+                }
+                let mut model = ShapeModel::new(0, track as u16, ShapeKind::Polyline, 1.0);
+                model.geometry = ShapeGeometry::from_points(points);
+                Some((model, notes))
+            })
+            .collect();
+        self.record_baked_shape_models(models);
         // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
         self.editor_state.brush_tool.reset();
         self.rebuild_pending_mirrors();
