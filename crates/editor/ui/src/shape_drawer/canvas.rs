@@ -189,13 +189,6 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
             iced_core::Size::new(TOOLBAR_WIDTH, bounds.height),
             palette.background.weak.color,
         );
-        frame.fill_text(canvas::Text {
-            content: "Shape Drawer".to_string(),
-            position: Point::new(12.0, 8.0),
-            color: palette.background.base.text,
-            size: 14.0.into(),
-            ..canvas::Text::default()
-        });
 
         let doc = self.doc.borrow();
         draw_toolbar(&mut frame, &doc, theme);

@@ -78,8 +78,40 @@ fn current_drawing(state: &ShapeDrawerState) -> Result<ShapeDrawing, String> {
     if name.is_empty() {
         return Err("形状名称不能为空".to_string());
     }
-    let id = state.selected.clone().unwrap_or_else(|| name.to_string());
+    let selected_user = state
+        .selected
+        .as_deref()
+        .filter(|id| state.library.user.iter().any(|drawing| drawing.id == *id));
+    let base = selected_user.unwrap_or(name);
+    let keep_selected = selected_user.is_some();
+    let id = unique_user_id(state, base, keep_selected);
     Ok(state.doc.borrow().to_drawing(id, name.to_string()))
+}
+
+fn unique_user_id(state: &ShapeDrawerState, base: &str, keep_selected: bool) -> String {
+    let taken = |id: &str| {
+        state.library.builtin.iter().any(|drawing| drawing.id == id)
+            || state.library.user.iter().any(|drawing| drawing.id == id)
+    };
+    if keep_selected
+        && !state
+            .library
+            .builtin
+            .iter()
+            .any(|drawing| drawing.id == base)
+    {
+        return base.to_string();
+    }
+    if !taken(base) {
+        return base.to_string();
+    }
+    for suffix in 2..=u32::MAX {
+        let candidate = format!("{base}-{suffix}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+    }
+    format!("{base}-dup")
 }
 
 fn save_current(state: &mut ShapeDrawerState) {

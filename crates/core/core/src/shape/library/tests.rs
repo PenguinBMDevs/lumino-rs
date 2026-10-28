@@ -72,6 +72,33 @@ fn test_load_dir_skips_bad_files_and_keeps_good_ones() {
 }
 
 #[test]
+fn test_load_dir_renames_user_id_colliding_with_builtin() {
+    let dir = test_dir("builtin_collision");
+    let mut drawing = BuiltinShape::Square.drawing();
+    drawing.id = "square".to_string();
+    drawing.name = "333".to_string();
+    save_drawing(&dir, &drawing).expect("保存失败");
+
+    let (library, warnings) = ShapeLibrary::load_dir(&dir);
+    assert_eq!(library.builtin.len(), 3);
+    assert_eq!(library.user.len(), 1);
+    assert_eq!(
+        library.user[0].id, "square-2",
+        "用户 id 不得遮蔽内置 square"
+    );
+    assert!(library.find("square").is_some());
+    assert_eq!(library.find("square").expect("内置").name, "Square");
+    assert_eq!(library.find("square-2").expect("用户").name, "333");
+    assert!(
+        !dir.join("square.lmshape").exists(),
+        "冲突文件应迁移为 square-2.lmshape"
+    );
+    assert!(dir.join("square-2.lmshape").exists());
+    assert_eq!(warnings.len(), 1);
+    cleanup(&dir);
+}
+
+#[test]
 fn test_load_dir_renames_duplicate_ids_without_overwriting() {
     let dir = test_dir("duplicate");
     let mut first = BuiltinShape::Triangle.drawing();

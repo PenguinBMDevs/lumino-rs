@@ -50,14 +50,37 @@ impl ShapeLibrary {
 
     /// 扫描用户目录并合并内置图形；目录不存在视为空库，不报错。
     pub fn load_dir(dir: &Path) -> (Self, Vec<LibraryWarning>) {
-        let (user, warnings) = format::load_user_dir(dir);
-        (
-            Self {
-                builtin: builtin_drawings(),
-                user,
-            },
-            warnings,
-        )
+        let builtin = builtin_drawings();
+        let (mut user, mut warnings) = format::load_user_dir(dir);
+        // 用户图形 id 与内置 id 撞车时（例如把内置 Square 另存为 333），
+        // 不能靠 `find` 的先后顺序猜；加载时就直接改成用户唯一 id。
+        for index in 0..user.len() {
+            let id = user[index].id.clone();
+            if !builtin.iter().any(|builtin| builtin.id == id) {
+                continue;
+            }
+            let mut suffix = 2u32;
+            let unique = loop {
+                let candidate = format!("{id}-{suffix}");
+                let taken = builtin.iter().any(|shape| shape.id == candidate)
+                    || user.iter().any(|shape| shape.id == candidate);
+                if !taken {
+                    break candidate;
+                }
+                suffix = suffix.saturating_add(1);
+            };
+            let old_path = format::drawing_path(dir, &id);
+            warnings.push(LibraryWarning {
+                path: old_path.clone(),
+                message: format!("形状 id 与内置图形冲突，已重命名为 {unique}"),
+            });
+            user[index].id = unique;
+            // 迁移旧文件；失败时保留内存 id，至少本次会话可正常选中。
+            if format::save_drawing(dir, &user[index]).is_ok() {
+                let _ = std::fs::remove_file(&old_path);
+            }
+        }
+        (Self { builtin, user }, warnings)
     }
 
     /// 按 id 查找（先内置、后用户）

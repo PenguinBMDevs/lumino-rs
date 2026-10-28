@@ -36,14 +36,30 @@ fn test_shape_drawer_save_delete_and_insert_action() {
         anchors: vec![ShapeAnchor::new((0.1, 0.1)), ShapeAnchor::new((0.9, 0.9))],
         rect: None,
     });
-    root.handle_shape_drawer_action(ShapeDrawerAction::SetName("b2-test".to_string()));
-    root.handle_shape_drawer_action(ShapeDrawerAction::Save);
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::SetName(
+        "b2-test".to_string(),
+    )));
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Save));
     assert!(
         dir.join("b2-test.lmshape").exists(),
         "保存动作应写出 .lmshape"
     );
 
-    root.handle_shape_drawer_action(ShapeDrawerAction::Insert);
+    root.state.shape_drawer.selected = Some("square".to_string());
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::SetName(
+        "333".to_string(),
+    )));
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Save));
+    assert!(
+        dir.join("333.lmshape").exists(),
+        "选中内置图形另存时必须生成用户 id，不能写 square.lmshape"
+    );
+    assert!(
+        !dir.join("square.lmshape").exists(),
+        "不得用内置 id 覆盖用户库"
+    );
+    root.state.shape_drawer.selected = Some("b2-test".to_string());
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
     assert!(
         matches!(
             root.state.dialog_result,
@@ -52,7 +68,7 @@ fn test_shape_drawer_save_delete_and_insert_action() {
         "插入动作应设置对话框结果且保持抽屉打开"
     );
 
-    root.handle_shape_drawer_action(ShapeDrawerAction::Delete);
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Delete));
     assert!(!dir.join("b2-test.lmshape").exists(), "删除应移除库文件");
     let _ = std::fs::remove_dir_all(&dir);
 }

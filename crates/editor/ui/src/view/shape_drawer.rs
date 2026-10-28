@@ -77,7 +77,8 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, _theme: &'a Theme) -> Ele
                 .on_press(Message::ShapeDrawer(ShapeDrawerAction::Insert)),
         ]
         .spacing(6)
-        .padding(10),
+        .padding(10)
+        .height(Length::Fill),
     )
     .width(Length::Fixed(250.0))
     .height(Length::Fill);
