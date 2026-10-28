@@ -198,6 +198,37 @@ fn test_loaded_model_adopts_matching_notes() {
 }
 
 #[test]
+fn test_loaded_outline_model_becomes_editable_after_adoption() {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 0.25);
+    let mut geometry =
+        ShapeGeometry::from_points([(0.0, 60.0), (100.0, 60.0), (100.0, 64.0), (0.0, 64.0)]);
+    geometry.closed = true;
+    model.geometry = geometry;
+    model.style = ShapeStyle {
+        fill: ShapeFill::Empty,
+        ..ShapeStyle::default()
+    };
+    assert!(editor.create_shape(model));
+    let model_id = editor.editor_state.shape_store.ids()[0];
+    editor
+        .editor_state
+        .shape_store
+        .assign_notes(model_id, Vec::new());
+    editor.editor_state.tool = Tool::ShapeSelect;
+    assert!(editor.begin_area_paint_model(model_id));
+    assert!(editor.paint_area_at(50.0, 62.0, 4));
+    let model = editor
+        .editor_state
+        .shape_store
+        .model(model_id)
+        .expect("模型应存在");
+    assert_eq!(model.style.fill, ShapeFill::Fill, "首次着色应切 Fill");
+    assert!(model.style.areas.iter().any(|spot| spot.colour == 4));
+}
+
+#[test]
 fn test_switch_tool_ends_area_paint() {
     let (mut editor, _, _) = editor_with_shape();
     editor.set_tool(Tool::Pointer);
