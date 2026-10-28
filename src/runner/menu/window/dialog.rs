@@ -42,6 +42,29 @@ impl RunnerInner {
             CloseDrawSettingsDialog => {
                 self.close_dialog_traced(DialogType::DrawSettings, "音符画设置")
             }
+            OpenShapeDrawerDialog => {
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::ShapeDrawer)
+                {
+                    tracing::info!("形状抽屉已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::ShapeDrawer)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    let shapes_dir = crate::storage::config_dir().join("shapes");
+                    tracing::info!("打开形状抽屉: {}", shapes_dir.display());
+                    self.window_state
+                        .dialog_manager
+                        .open_shape_drawer(shapes_dir);
+                }
+            }
+            CloseShapeDrawerDialog => self.close_dialog_traced(DialogType::ShapeDrawer, "形状抽屉"),
             ToggleHelpDialog => {
                 if self
                     .window_state

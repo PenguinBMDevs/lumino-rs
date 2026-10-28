@@ -12,6 +12,15 @@ use crate::root::handlers::MessageHandler;
 // ================================================================
 
 #[test]
+fn test_shape_drawer_open_close_switches_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::None);
+    root.set_shape_drawer_dialog_open(true);
+    assert_eq!(root.state.dialog_type, DialogType::ShapeDrawer);
+    root.set_shape_drawer_dialog_open(false);
+    assert_eq!(root.state.dialog_type, DialogType::None);
+}
+
+#[test]
 fn test_close_settings_dialog_preserves_dialog_type() {
     let mut root = Root::new_dialog("dark", DialogType::Settings);
     let mut handler = handlers::DialogHandler::new();

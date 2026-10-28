@@ -12,9 +12,20 @@ pub use lumino_ui_core::state::{
     ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
 };
 
+use std::path::PathBuf;
+
 use crate::app_mode::AppMode;
 use lumino_core::BrushConfig;
 use lumino_ui_core::help::{HelpDialogState, HelpTipsState};
+
+/// 形状抽屉窗口状态（DRAW-033B0）。
+///
+/// B0 只承载目录注入与空窗占位；画板/库列表由 B1/B2 继续扩展。
+#[derive(Debug, Clone, Default)]
+pub struct ShapeDrawerState {
+    /// 用户形状库目录（由 Runner 注入；空表示尚未注入）
+    pub shapes_dir: PathBuf,
+}
 
 /// 对话框类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -58,6 +69,8 @@ pub enum DialogType {
     DrawSettings,
     /// 帮助窗口（F1；独立 OS 窗口）
     Help,
+    /// 形状抽屉（独立 OS 窗口；DRAW-033）
+    ShapeDrawer,
 }
 
 /// Root 组件的状态
@@ -135,6 +148,8 @@ pub struct RootState {
     pub help_dialog: HelpDialogState,
     /// 首次使用提示状态（已读集合 + 当前提示；DRAW-038）
     pub help_tips: HelpTipsState,
+    /// 形状抽屉窗口状态（DRAW-033）
+    pub shape_drawer: ShapeDrawerState,
 }
 
 impl Default for RootState {
@@ -178,6 +193,7 @@ impl RootState {
             echo_cave: EchoCaveState::new(),
             help_dialog: HelpDialogState::default(),
             help_tips: HelpTipsState::default(),
+            shape_drawer: ShapeDrawerState::default(),
         }
     }
 }

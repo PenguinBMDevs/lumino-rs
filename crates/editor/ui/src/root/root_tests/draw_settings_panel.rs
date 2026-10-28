@@ -49,6 +49,31 @@ fn test_gear_emits_open_dialog_window_event() {
     assert!(root.view_draw_toolbar().is_some(), "悬浮条仍应正常渲染");
 }
 
+/// DRAW-033B0：形状下拉里的抽屉入口必须发独立窗口事件，而不是主窗口浮层。
+#[test]
+fn test_shape_drawer_entry_emits_open_window_event() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut root = setup_toolbar_open();
+    root.update(Event::open_shape_drawer_dialog());
+
+    let events = crate::event::take_events();
+    let found = events.iter().any(|event| {
+        matches!(
+            event,
+            crate::event::Event::Window(crate::event::window::Event::Dialog(d))
+                if matches!(
+                    d.as_ref(),
+                    crate::event::window::dialog::Event::OpenShapeDrawerDialog
+                )
+        )
+    });
+    assert!(found, "形状抽屉入口应发出 OpenShapeDrawerDialog 窗口事件");
+    assert!(
+        root.toolbar.tool_panel_open,
+        "请求开窗后绘制工具悬浮条应保持打开"
+    );
+}
+
 /// 场景 2（关键）：齿轮是**纯入口**，不改变当前绘制工具与填充共存态。
 ///
 /// 若齿轮退化为"工具条目"，点设置会顺手切走当前工具 —— 这正是把它做成独立按钮的理由。

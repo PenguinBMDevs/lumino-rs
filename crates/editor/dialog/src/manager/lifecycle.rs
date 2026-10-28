@@ -3,6 +3,7 @@
 //! 自 `manager.rs` 拆分而来（零逻辑变更）。
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use lumino_core::BrushConfig;
@@ -51,6 +52,7 @@ impl DialogManager {
             pending_size_mb: None,
             pending_title: None,
             pending_brush_config: None,
+            shapes_dir: None,
         });
     }
 
@@ -62,6 +64,7 @@ impl DialogManager {
             pending_size_mb: None,
             pending_title: Some(title),
             pending_brush_config: None,
+            shapes_dir: None,
         });
     }
 
@@ -73,6 +76,7 @@ impl DialogManager {
             pending_size_mb: Some(size_mb),
             pending_title: None,
             pending_brush_config: None,
+            shapes_dir: None,
         });
     }
 
@@ -84,6 +88,7 @@ impl DialogManager {
             pending_size_mb: None,
             pending_title: None,
             pending_brush_config: Some(config),
+            shapes_dir: None,
         });
     }
 
@@ -98,6 +103,21 @@ impl DialogManager {
             pending_size_mb: None,
             pending_title: None,
             pending_brush_config: None,
+            shapes_dir: None,
+        });
+    }
+
+    /// 请求打开形状抽屉（DRAW-033B0）。
+    ///
+    /// `shapes_dir` 由 Runner 注入（`config_dir()/shapes`）；Dialog 层不依赖 storage。
+    pub fn open_shape_drawer(&mut self, shapes_dir: PathBuf) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::ShapeDrawer,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+            pending_brush_config: None,
+            shapes_dir: Some(shapes_dir),
         });
     }
 
@@ -182,14 +202,7 @@ impl DialogManager {
             } else {
                 // 阶段 3：创建 UI 并显示窗口。
                 puffin::profile_scope!("dialog_manager_init_ui");
-                if let Err(e) = dialog.initialize_ui(
-                    ui_config,
-                    main_ui,
-                    pending.pending_path.as_deref(),
-                    pending.pending_size_mb.unwrap_or(0.0),
-                    pending.pending_title.as_deref(),
-                    pending.pending_brush_config.as_ref(),
-                ) {
+                if let Err(e) = dialog.initialize_ui(ui_config, main_ui, pending) {
                     tracing::error!("初始化对话框 UI 失败: {}", e);
                     self.initializing.remove(0);
                     self.release_window(window_id);

@@ -20,8 +20,8 @@ use crate::view::{
     memory_monitor_dialog::view_memory_monitor_dialog,
     project_settings_dialog::view_project_settings_dialog,
     recover_track_dialog::view_recover_track_dialog, save_confirm_dialog::view_save_confirm_dialog,
-    settings_dialog::view_settings_dialog, speed_change_dialog::view_speed_change_dialog,
-    video_export_dialog::view_video_export_overlay,
+    settings_dialog::view_settings_dialog, shape_drawer::view_shape_drawer,
+    speed_change_dialog::view_speed_change_dialog, video_export_dialog::view_video_export_overlay,
 };
 use crate::{Element, Theme};
 
@@ -233,6 +233,9 @@ impl Root {
                 &self.window.theme,
                 self.settings.display.language,
             ),
+            DialogType::ShapeDrawer => {
+                view_shape_drawer(&self.state.shape_drawer, &self.window.theme)
+            }
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 crate::view::cloud_dialog::view_cloud_dialog(self, &self.window.theme)

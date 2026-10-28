@@ -89,6 +89,8 @@ impl ToolbarHandler {
 
         // 处理「音符画设置」对话框（悬浮条右端齿轮）
         self.handle_toolbar_draw_settings(root, &event);
+        // 处理「形状抽屉」独立窗口（DRAW-033B0）
+        self.handle_toolbar_shape_drawer(root, &event);
 
         // 处理录制
         self.handle_toolbar_recording(root, &event);

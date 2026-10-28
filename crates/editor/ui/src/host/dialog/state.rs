@@ -110,6 +110,20 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置形状抽屉是否打开（用于独立窗口；DRAW-033）
+    pub fn set_shape_drawer_dialog_open(&mut self, open: bool) {
+        self.root.set_shape_drawer_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 注入形状库目录（Runner 在抽屉 UI 就绪后调用）
+    pub fn set_shape_drawer_dir(&mut self, dir: std::path::PathBuf) {
+        self.root.state.shape_drawer.shapes_dir = dir;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 种入画刷「绘制行为」对话框本地草稿（Runner 在对话框 UI 就绪后注入）
     pub fn set_brush_settings_draft(&mut self, config: lumino_core::BrushConfig) {
         self.root.state.brush_settings_draft = config;

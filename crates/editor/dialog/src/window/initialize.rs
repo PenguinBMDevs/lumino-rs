@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
-use lumino_core::{BrushConfig, storage::config::UiConfig, tr};
+use lumino_core::{storage::config::UiConfig, tr};
 use lumino_ui::state::root_state::DialogType;
+
+use crate::manager::PendingDialog;
 
 use super::DialogWindow;
 
@@ -44,10 +46,7 @@ impl DialogWindow {
         &mut self,
         ui_config: &UiConfig,
         main_ui: &lumino_ui::Host,
-        pending_path: Option<&str>,
-        size_mb: f64,
-        pending_title: Option<&str>,
-        pending_brush_config: Option<&BrushConfig>,
+        pending: &PendingDialog,
     ) -> Result<(), String> {
         puffin::profile_scope!("dialog_init_phase_ui");
         let physical_size = self.window.inner_size();
@@ -58,7 +57,7 @@ impl DialogWindow {
 
         let gfx = self.gfx.as_ref().ok_or("GFX 未初始化")?;
 
-        if let Some(title) = pending_title {
+        if let Some(title) = pending.pending_title.as_deref() {
             self.window.set_title(title);
         }
 
@@ -89,8 +88,8 @@ impl DialogWindow {
                 ui.sync_collaboration_state_from(main_ui);
             }
             DialogType::LoadConfirm => {
-                let path = pending_path.unwrap_or_default();
-                ui.set_load_confirm_dialog(path, size_mb);
+                let path = pending.pending_path.as_deref().unwrap_or_default();
+                ui.set_load_confirm_dialog(path, pending.pending_size_mb.unwrap_or(0.0));
             }
             DialogType::ProjectSettings => {
                 ui.set_project_settings_dialog_open(true);
@@ -148,7 +147,7 @@ impl DialogWindow {
             }
             DialogType::BrushSettings => {
                 // 种入当前画刷配置作为对话框本地草稿，便于用户在此基础上编辑。
-                if let Some(config) = pending_brush_config {
+                if let Some(config) = pending.pending_brush_config.as_ref() {
                     ui.set_brush_settings_draft(config.clone());
                 }
                 // 注入可选音轨列表（排除指挥轨），供「每层音轨」下拉选择。
@@ -164,6 +163,12 @@ impl DialogWindow {
             DialogType::Help => {
                 // 帮助窗口是独立 Root；切类型后 overlay 才会渲染帮助视图。
                 ui.set_help_dialog_open(true);
+            }
+            DialogType::ShapeDrawer => {
+                if let Some(dir) = pending.shapes_dir.as_deref() {
+                    ui.set_shape_drawer_dir(dir.to_path_buf());
+                }
+                ui.set_shape_drawer_dialog_open(true);
             }
         }
 

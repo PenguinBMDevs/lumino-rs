@@ -29,6 +29,14 @@ impl Event {
     pub fn close_draw_settings_dialog() -> Self {
         Self::dialog(dialog::Event::CloseDrawSettingsDialog)
     }
+    /// 构造打开「形状抽屉」窗口事件
+    pub fn open_shape_drawer_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenShapeDrawerDialog)
+    }
+    /// 构造关闭「形状抽屉」窗口事件
+    pub fn close_shape_drawer_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseShapeDrawerDialog)
+    }
     /// 构造打开/关闭 Help 窗口事件
     pub fn toggle_help_dialog() -> Self {
         Self::dialog(dialog::Event::ToggleHelpDialog)

@@ -3,6 +3,7 @@
 //! 负责创建、管理和销毁对话框窗口。
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use lumino_core::BrushConfig;
 use lumino_ui::state::root_state::DialogType;
@@ -32,6 +33,8 @@ pub struct PendingDialog {
     pub pending_title: Option<String>,
     /// BrushSettings 的待注入画刷配置（打开时种入对话框草稿）
     pub pending_brush_config: Option<BrushConfig>,
+    /// ShapeDrawer 的待注入形状库目录
+    pub shapes_dir: Option<PathBuf>,
 }
 
 /// 对话框管理器

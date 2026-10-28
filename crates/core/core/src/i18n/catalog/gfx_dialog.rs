@@ -23,6 +23,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "云存储提醒" => Some("Cloud Storage Notice"),
         "画刷绘制行为" => Some("Brush Drawing Behavior"),
         "音符画设置" => Some("Note Drawing Settings"),
+        "形状抽屉" => Some("Shape Drawer"),
         // ── 视频导出进度初始文案（`crates/editor/dialog/src/window/initialize.rs`）──
         "正在初始化..." => Some("Initializing..."),
         // ── GPU 兼容性检测（`crates/editor/gfx/src/device_check/**`）──
