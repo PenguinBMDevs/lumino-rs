@@ -71,10 +71,11 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
                 }
                 let local = Point::new(position.x - bounds.x, position.y - bounds.y);
                 let mut interaction = self.interaction.borrow_mut();
+                let shift = interaction.shift;
                 if let Some(draft) = interaction.draft.as_mut() {
                     let view = self.doc.borrow().view;
                     let unit = local_to_unit(local, bounds, view);
-                    draft.update(unit);
+                    draft.update_with_shift(unit, shift);
                     return Some(canvas::Action::request_redraw());
                 }
                 if let Some(start) = interaction.pan_start {
@@ -134,10 +135,15 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
                 self.doc.borrow_mut().view.zoom_by(factor);
                 Some(canvas::Action::request_redraw().and_capture())
             }
+            canvas::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                self.interaction.borrow_mut().shift = modifiers.shift();
+                Some(canvas::Action::request_redraw())
+            }
             canvas::Event::Window(iced_core::window::Event::Unfocused) => {
                 let mut interaction = self.interaction.borrow_mut();
                 interaction.draft = None;
                 interaction.pan_start = None;
+                interaction.shift = false;
                 Some(canvas::Action::capture())
             }
             canvas::Event::Keyboard(keyboard::Event::KeyPressed {

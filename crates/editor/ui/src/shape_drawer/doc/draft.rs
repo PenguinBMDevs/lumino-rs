@@ -69,8 +69,13 @@ impl Draft {
         }
     }
 
-    /// 更新当前点
+    /// 更新当前点（不按 Shift）
     pub fn update(&mut self, point: (f32, f32)) {
+        self.update_with_shift(point, false);
+    }
+
+    /// 更新当前点；`shift` 时 Rect/Circle 约束为正方形/正圆
+    pub fn update_with_shift(&mut self, point: (f32, f32), shift: bool) {
         match self {
             Self::Freehand { points } => {
                 if points.last().is_none_or(|last| {
@@ -85,7 +90,16 @@ impl Draft {
                 *through = point;
                 *end = point;
             }
-            Self::Box { current, .. } => *current = point,
+            Self::Box { start, current, .. } => {
+                if shift {
+                    let dx = point.0 - start.0;
+                    let dy = point.1 - start.1;
+                    let side = dx.abs().max(dy.abs());
+                    *current = (start.0 + side.copysign(dx), start.1 + side.copysign(dy));
+                } else {
+                    *current = point;
+                }
+            }
         }
     }
 

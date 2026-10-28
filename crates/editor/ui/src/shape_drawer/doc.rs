@@ -245,8 +245,10 @@ impl DrawerDoc {
 pub struct DrawerInteraction {
     /// 当前草稿
     pub draft: Option<Draft>,
-    /// 中键平移起点（单位框坐标）
+    /// 中键平移起点（屏幕局部坐标）
     pub pan_start: Option<(f32, f32)>,
+    /// Shift 是否按下（Rect/Circle 约束正方形/正圆）
+    pub shift: bool,
 }
 
 fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
@@ -331,6 +333,18 @@ mod tests {
         assert!(doc.strokes.is_empty());
         assert!(doc.undo());
         assert_eq!(doc.strokes.len(), 1);
+    }
+
+    #[test]
+    fn test_shift_constrains_rect_and_circle_to_square() {
+        for tool in [DrawerTool::Rect, DrawerTool::Circle] {
+            let mut draft = Draft::begin(tool, (0.1, 0.1)).expect("草稿");
+            draft.update_with_shift((0.8, 0.4), true);
+            let stroke = draft.to_stroke().expect("stroke");
+            let rect = stroke.rect.expect("外接框");
+            let (w, h) = rect.size();
+            assert!((w - h).abs() < 1e-4, "{tool:?} Shift 应生成正方形/正圆框");
+        }
     }
 
     #[test]
