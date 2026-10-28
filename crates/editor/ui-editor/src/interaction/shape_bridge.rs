@@ -27,16 +27,13 @@ pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32)
                     })
                 });
             model.geometry.closed = closed;
-            if closed {
-                model.style.fill = lumino_core::shape::ShapeFill::Fill;
-            }
         }
         DrawnShapeSource::Shape {
             kind,
             rect,
             shift_constrained,
             apex_high,
-            ..
+            filled,
         } => {
             let spec = ShapeSpec {
                 kind: *kind,
@@ -47,9 +44,12 @@ pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32)
             let points = shape_outline_path(spec, 1.0, 1.0);
             model.kind = ShapeKind::Custom;
             model.geometry = ShapeGeometry::from_points(points);
-            // 形状工具产物都是闭合图形；保留模型按填充建模，032B 才能着色。
+            // 形状工具产物都是闭合图形；保留模型沿用原始填充语义，
+            // 载入后 Outline 模型可用同源轮廓音符接管，032B 编辑时再切 Fill。
             model.geometry.closed = true;
-            model.style.fill = lumino_core::shape::ShapeFill::Fill;
+            if *filled {
+                model.style.fill = lumino_core::shape::ShapeFill::Fill;
+            }
         }
     }
     model

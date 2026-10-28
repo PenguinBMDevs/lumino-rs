@@ -1129,8 +1129,8 @@ mod tests {
         assert_eq!(entry.notes.len(), RECT_OUTLINE_NOTES);
         assert_eq!(
             entry.model.style.fill,
-            lumino_core::shape::ShapeFill::Fill,
-            "保留模型用于区域着色，默认按内部填充建模"
+            lumino_core::shape::ShapeFill::Empty,
+            "未填充形状的保留模型应沿用 Empty；032B 首次着色时再切 Fill"
         );
         assert!(
             entry.model.geometry.closed,

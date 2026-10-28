@@ -8,7 +8,7 @@
 //! 区域求解、切行与音符通道仍由 DRAW-032A 的 `AreaMap` 链路完成，本模块不重写算法。
 
 use iced_core::Point;
-use lumino_core::shape::AreaSpot;
+use lumino_core::shape::{AreaSpot, ShapeFill};
 use lumino_message::Tool;
 use lumino_midi_model::TickIndexedEvents;
 
@@ -253,6 +253,11 @@ impl Editor {
             if !inside {
                 return false;
             }
+        }
+        // 轮廓模型（Empty）第一次区域着色时显式切到 Fill；旧轮廓音符由
+        // `edit_shape` 按 ShapeStore 指纹删除，不会重复。
+        if model.style.fill == ShapeFill::Empty {
+            model.style.fill = ShapeFill::Fill;
         }
         let u = ((tick - tick_lo) / width).clamp(0.0, 1.0);
         let v = ((key - key_lo) / height).clamp(0.0, 1.0);

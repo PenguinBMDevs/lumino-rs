@@ -24,7 +24,7 @@
 use super::{fill, geom, paths, stroke_band};
 use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
-use lumino_core::shape::{ShapeFill, ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
 use lumino_editor_state::{BezierAnchor, ShapeNote};
 use lumino_note_core::history::CreateOp;
 use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
@@ -251,9 +251,6 @@ impl Editor {
                         })
                     });
                     model.geometry.closed = closed;
-                    if closed {
-                        model.style.fill = ShapeFill::Fill;
-                    }
                     (model, notes)
                 })
                 .collect();
