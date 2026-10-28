@@ -2,6 +2,7 @@
 
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Text, path};
+use lumino_core::shape::{AreaMap, MAP_CELLS};
 
 use crate::shape_drawer::doc::{DrawerDoc, DrawerTool, DrawerView};
 use crate::{Renderer, Theme};
@@ -123,6 +124,7 @@ pub(super) fn draw_canvas(
     bounds: Rectangle,
     theme: &Theme,
     shapes_dir: &str,
+    area: Option<&AreaMap>,
 ) {
     let palette = theme.extended_palette();
     let text = palette.background.base.text;
@@ -151,6 +153,7 @@ pub(super) fn draw_canvas(
         &path::Path::rectangle(unit.position(), unit.size()),
         canvas::Stroke::default().with_color(text).with_width(1.0),
     );
+    draw_areas(frame, area, unit);
     for (index, stroke) in doc.strokes.iter().enumerate() {
         draw_stroke(
             frame,
@@ -178,6 +181,58 @@ pub(super) fn draw_canvas(
         max_width: (bounds.width - TOOLBAR_WIDTH - 24.0).max(1.0),
         ..Text::default()
     });
+}
+
+fn draw_areas(frame: &mut Frame<Renderer>, area: Option<&AreaMap>, unit: Rectangle) {
+    let Some(map) = area else {
+        return;
+    };
+    let cells = usize::from(MAP_CELLS);
+    let cell_w = unit.width / cells as f32;
+    let cell_h = unit.height / cells as f32;
+    for row in 0..cells {
+        let mut col = 0;
+        while col < cells {
+            let colour = map.cells[row * cells + col];
+            if colour == 0 || colour > 15 {
+                col += 1;
+                continue;
+            }
+            let start = col;
+            col += 1;
+            while col < cells && map.cells[row * cells + col] == colour {
+                col += 1;
+            }
+            let rect = Rectangle::new(
+                Point::new(unit.x + start as f32 * cell_w, unit.y + row as f32 * cell_h),
+                Size::new((col - start) as f32 * cell_w, cell_h),
+            );
+            frame.fill_rectangle(rect.position(), rect.size(), area_colour(colour));
+        }
+    }
+}
+
+fn area_colour(colour: u8) -> Color {
+    const COLOURS: [(f32, f32, f32); 16] = [
+        (0.0, 0.0, 0.0),
+        (0.95, 0.25, 0.25),
+        (0.95, 0.55, 0.20),
+        (0.90, 0.80, 0.20),
+        (0.35, 0.80, 0.35),
+        (0.20, 0.75, 0.65),
+        (0.25, 0.60, 0.95),
+        (0.45, 0.40, 0.95),
+        (0.75, 0.35, 0.95),
+        (0.95, 0.35, 0.75),
+        (0.80, 0.45, 0.30),
+        (0.55, 0.70, 0.25),
+        (0.20, 0.85, 0.80),
+        (0.35, 0.50, 0.95),
+        (0.70, 0.55, 0.90),
+        (0.90, 0.60, 0.45),
+    ];
+    let (r, g, b) = COLOURS[usize::from(colour.min(15))];
+    Color::from_rgba(r, g, b, 0.32)
 }
 
 pub(super) fn draw_stroke(

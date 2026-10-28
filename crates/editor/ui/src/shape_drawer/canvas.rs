@@ -55,6 +55,14 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
                 }
                 let view = self.doc.borrow().view;
                 let unit = local_to_unit(local, bounds, view);
+                {
+                    let mut doc = self.doc.borrow_mut();
+                    if doc.area_mode {
+                        let colour = doc.area_colour;
+                        doc.paint_area(unit.0, unit.1, colour);
+                        return Some(canvas::Action::request_redraw().and_capture());
+                    }
+                }
                 let tool = self.doc.borrow().tool;
                 if tool == DrawerTool::Select {
                     let tolerance = 0.035 / view.zoom.max(0.25);
@@ -192,7 +200,15 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
 
         let doc = self.doc.borrow();
         draw_toolbar(&mut frame, &doc, theme);
-        draw_canvas(&mut frame, &doc, bounds, theme, &self.shapes_dir);
+        let area = doc.area_map_cached();
+        draw_canvas(
+            &mut frame,
+            &doc,
+            bounds,
+            theme,
+            &self.shapes_dir,
+            area.as_deref(),
+        );
         if let Some(draft) = self.interaction.borrow().draft.as_ref()
             && let Some(stroke) = draft.to_stroke()
         {

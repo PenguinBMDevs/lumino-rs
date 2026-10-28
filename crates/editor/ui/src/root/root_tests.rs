@@ -90,6 +90,45 @@ fn test_shape_drawer_save_delete_and_insert_action() {
 }
 
 #[test]
+fn test_shape_drawer_area_paint_and_insert_result() {
+    use crate::message::ShapeDrawerAction;
+    use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+
+    let mut root = Root::new_dialog("dark", DialogType::ShapeDrawer);
+    root.state.shape_drawer.doc.borrow_mut().add_stroke(Stroke {
+        kind: StrokeKind::Polyline,
+        anchors: vec![
+            ShapeAnchor::new((0.1, 0.1)),
+            ShapeAnchor::new((0.9, 0.1)),
+            ShapeAnchor::new((0.9, 0.9)),
+            ShapeAnchor::new((0.1, 0.9)),
+            ShapeAnchor::new((0.1, 0.1)),
+        ],
+        rect: None,
+    });
+    assert!(root.state.shape_drawer.doc.borrow().can_area_paint());
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::ToggleAreaMode,
+    ));
+    assert!(root.state.shape_drawer.doc.borrow().area_mode);
+    assert!(
+        root.state
+            .shape_drawer
+            .doc
+            .borrow_mut()
+            .paint_area(0.5, 0.5, 3)
+    );
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
+    match root.state.dialog_result.as_ref() {
+        Some(crate::host::DialogResult::InsertShapeDrawing(drawing)) => {
+            assert_eq!(drawing.areas.len(), 1);
+            assert_eq!(drawing.areas[0].colour, 3);
+        }
+        other => panic!("应产生插入结果，实际 {other:?}"),
+    }
+}
+
+#[test]
 fn test_shape_drawer_open_close_switches_dialog_type() {
     let mut root = Root::new_dialog("dark", DialogType::None);
     root.set_shape_drawer_dialog_open(true);

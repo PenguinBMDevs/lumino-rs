@@ -4,8 +4,8 @@
 
 use super::*;
 use lumino_core::shape::{
-    AreaSpot, BuiltinShape, DrawingParams, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind,
-    ShapeModel, ShapeOp, ShapeRect, Stroke, StrokeKind, StrokeRole,
+    AreaSpot, BuiltinShape, DrawingParams, ShapeAnchor, ShapeDrawing, ShapeFill, ShapeGeometry,
+    ShapeKind, ShapeModel, ShapeOp, ShapeRect, Stroke, StrokeKind, StrokeRole,
 };
 
 fn drawing_model() -> ShapeModel {
@@ -69,6 +69,37 @@ fn test_drawing_multi_stroke_does_not_join_separate_strokes() {
     );
     assert!(notes.iter().any(|note| note.key == 60));
     assert!(notes.iter().any(|note| note.key == 64));
+}
+
+#[test]
+fn test_library_drawing_area_to_model_keeps_fill_and_channel() {
+    let mut editor = editor_with_track(1);
+    editor.brush.thickness = 1;
+    let mut drawing = ShapeDrawing::new("area", "area");
+    drawing.strokes.push(Stroke {
+        kind: StrokeKind::Polyline,
+        anchors: vec![
+            ShapeAnchor::new((0.0, 0.0)),
+            ShapeAnchor::new((1.0, 0.0)),
+            ShapeAnchor::new((1.0, 1.0)),
+            ShapeAnchor::new((0.0, 1.0)),
+            ShapeAnchor::new((0.0, 0.0)),
+        ],
+        rect: Some(ShapeRect::normalized(0.0, 0.0, 1.0, 1.0)),
+    });
+    drawing.areas.push(AreaSpot {
+        u: 0.5,
+        v: 0.5,
+        colour: 3,
+    });
+    drawing.roles.push(StrokeRole::default());
+    let model = drawing
+        .to_model(1, 0.25, ShapeRect::normalized(0.0, 60.0, 480.0, 72.0))
+        .expect("转换失败");
+    assert_eq!(model.style.fill, ShapeFill::Fill, "有 areas 时必须走 Fill");
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    assert!(notes.iter().all(|note| note.channel == 3));
 }
 
 #[test]

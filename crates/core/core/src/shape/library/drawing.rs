@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
 use crate::shape::{
-    AreaSpot, DrawingParams, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect,
-    ShapeStyle, Stroke, StrokeRole,
+    AreaSpot, DrawingParams, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
+    ShapeRect, ShapeStyle, Stroke, StrokeRole,
 };
 
 /// 库内名称/ID 的最大字符数
@@ -122,7 +122,16 @@ impl ShapeDrawing {
             rect: Some(rect),
             closed,
         };
+        // 区域色要生效，生成侧必须走 Fill/Spam 内部填充；开放/纯描边
+        // 图形即使带 areas 也不会产生内部音符。用户一旦着色或角色标了
+        // filled，就把模型切到 Fill，避免“预览有色、插入无音符”。
+        let filled = !self.areas.is_empty() || self.roles.iter().any(|role| role.filled);
         model.style = ShapeStyle {
+            fill: if filled {
+                ShapeFill::Fill
+            } else {
+                ShapeFill::Empty
+            },
             areas: self.areas.clone(),
             ..ShapeStyle::default()
         };

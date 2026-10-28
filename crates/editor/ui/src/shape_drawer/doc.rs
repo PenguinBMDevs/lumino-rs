@@ -3,11 +3,15 @@
 //! 坐标统一使用单位框 `0..=1`；画布只负责屏幕映射，不把 zoom/pan 写进
 //! `ShapeDrawing`。本模块不依赖 iced widget，便于对六工具、选择与撤销做单测。
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
-use lumino_core::shape::{AreaSpot, ShapeDrawing, Stroke, StrokeRole};
+use lumino_core::shape::{AreaMap, AreaSpot, ShapeDrawing, Stroke, StrokeRole};
 
+mod areas;
 pub mod draft;
+mod transform;
 pub use draft::Draft;
 
 /// 抽屉工具
@@ -97,7 +101,7 @@ struct Snapshot {
 }
 
 /// 抽屉文档
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DrawerDoc {
     /// 当前工具
     pub tool: DrawerTool,
@@ -109,12 +113,40 @@ pub struct DrawerDoc {
     pub roles: Vec<StrokeRole>,
     /// 归一化区域点
     pub areas: Vec<AreaSpot>,
+    /// 是否处于区域着色模式
+    pub area_mode: bool,
+    /// 当前区域色（0..=15）
+    pub area_colour: u8,
     /// 画布视图
     pub view: DrawerView,
     /// 是否有未保存修改
     pub dirty: bool,
+    /// 文档修订号；区域缓存按它失效
+    revision: u64,
+    /// 区域网格缓存（Rc 避免每帧复制 1024² 网格）
+    area_cache: RefCell<Option<(u64, Rc<AreaMap>)>>,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
+}
+
+impl Default for DrawerDoc {
+    fn default() -> Self {
+        Self {
+            tool: DrawerTool::default(),
+            strokes: Vec::new(),
+            selection: BTreeSet::new(),
+            roles: Vec::new(),
+            areas: Vec::new(),
+            area_mode: false,
+            area_colour: 1,
+            view: DrawerView::default(),
+            dirty: false,
+            revision: 0,
+            area_cache: RefCell::new(None),
+            undo: Vec::new(),
+            redo: Vec::new(),
+        }
+    }
 }
 
 impl DrawerDoc {
@@ -139,6 +171,7 @@ impl DrawerDoc {
         }
         self.redo.clear();
         self.dirty = true;
+        self.revision = self.revision.wrapping_add(1);
     }
 
     /// 追加一条 stroke（一次撤销单元）
@@ -194,6 +227,7 @@ impl DrawerDoc {
         self.areas = previous.areas;
         self.selection = previous.selection;
         self.dirty = true;
+        self.revision = self.revision.wrapping_add(1);
         true
     }
 
@@ -213,6 +247,7 @@ impl DrawerDoc {
         self.areas = next.areas;
         self.selection = next.selection;
         self.dirty = true;
+        self.revision = self.revision.wrapping_add(1);
         true
     }
 
@@ -273,6 +308,8 @@ impl DrawerDoc {
         self.undo.clear();
         self.redo.clear();
         self.dirty = false;
+        self.area_mode = false;
+        self.revision = self.revision.wrapping_add(1);
     }
 
     /// 导出为库图形；roles 不足时补默认值。
@@ -289,94 +326,6 @@ impl DrawerDoc {
             areas: self.areas.clone(),
             roles,
         }
-    }
-
-    /// 粘贴 strokes（一次撤销单元；绝对坐标保持不变）
-    pub fn paste_strokes(&mut self, strokes: &[Stroke]) -> bool {
-        if strokes.is_empty() {
-            return false;
-        }
-        self.checkpoint();
-        for stroke in strokes {
-            self.strokes.push(stroke.clone());
-            self.roles.push(StrokeRole::default());
-        }
-        self.selection.clear();
-        true
-    }
-
-    /// 水平翻转（一次撤销单元）
-    pub fn flip_horizontal(&mut self) -> bool {
-        self.transform_strokes(
-            |anchor| {
-                anchor.pos.0 = 1.0 - anchor.pos.0;
-                anchor.in_handle.0 = -anchor.in_handle.0;
-                anchor.out_handle.0 = -anchor.out_handle.0;
-            },
-            |area| area.u = 1.0 - area.u,
-        )
-    }
-
-    /// 垂直翻转（一次撤销单元）
-    pub fn flip_vertical(&mut self) -> bool {
-        self.transform_strokes(
-            |anchor| {
-                anchor.pos.1 = 1.0 - anchor.pos.1;
-                anchor.in_handle.1 = -anchor.in_handle.1;
-                anchor.out_handle.1 = -anchor.out_handle.1;
-            },
-            |area| area.v = 1.0 - area.v,
-        )
-    }
-
-    /// 顺时针旋转 90°（一次撤销单元）
-    pub fn rotate90(&mut self) -> bool {
-        self.transform_strokes(
-            |anchor| {
-                let (x, y) = anchor.pos;
-                anchor.pos = (y, 1.0 - x);
-                let (ix, iy) = anchor.in_handle;
-                anchor.in_handle = (iy, -ix);
-                let (ox, oy) = anchor.out_handle;
-                anchor.out_handle = (oy, -ox);
-            },
-            |area| {
-                let (u, v) = (area.u, area.v);
-                area.u = v;
-                area.v = 1.0 - u;
-            },
-        )
-    }
-
-    fn transform_strokes(
-        &mut self,
-        transform_anchor: impl Fn(&mut lumino_core::shape::ShapeAnchor),
-        transform_area: impl Fn(&mut AreaSpot),
-    ) -> bool {
-        if self.strokes.is_empty() && self.areas.is_empty() {
-            return false;
-        }
-        self.checkpoint();
-        for stroke in &mut self.strokes {
-            for anchor in &mut stroke.anchors {
-                transform_anchor(anchor);
-            }
-            if let Some(rect) = &mut stroke.rect {
-                let (lo_t, lo_k, hi_t, hi_k) =
-                    (rect.tick_lo, rect.key_lo, rect.tick_hi, rect.key_hi);
-                // 用两个角点经过同一变换后重新规范化，适用于翻转与 90° 旋转。
-                let mut a = lumino_core::shape::ShapeAnchor::new((lo_t, lo_k));
-                let mut b = lumino_core::shape::ShapeAnchor::new((hi_t, hi_k));
-                transform_anchor(&mut a);
-                transform_anchor(&mut b);
-                *rect =
-                    lumino_core::shape::ShapeRect::normalized(a.pos.0, a.pos.1, b.pos.0, b.pos.1);
-            }
-        }
-        for area in &mut self.areas {
-            transform_area(area);
-        }
-        true
     }
 }
 
@@ -418,139 +367,4 @@ fn segment_distance(a: (f32, f32), b: (f32, f32), p: (f32, f32)) -> f32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_six_tools_produce_distinct_strokes() {
-        for tool in DrawerTool::ALL {
-            if tool == DrawerTool::Select {
-                continue;
-            }
-            let mut draft = Draft::begin(tool, (0.1, 0.1)).expect("工具应有草稿");
-            draft.update((0.8, 0.7));
-            let stroke = draft.to_stroke().expect("应生成 stroke");
-            assert!(!stroke.anchors.is_empty(), "{tool:?} 应有锚点");
-        }
-    }
-
-    #[test]
-    fn test_rect_and_circle_are_closed() {
-        for tool in [DrawerTool::Rect, DrawerTool::Circle] {
-            let mut draft = Draft::begin(tool, (0.1, 0.1)).expect("草稿");
-            draft.update((0.9, 0.8));
-            let stroke = draft.to_stroke().expect("stroke");
-            assert!(stroke.rect.is_some(), "{tool:?} 应保存外接框");
-            let first = stroke.anchors.first().expect("首点").pos;
-            let last = stroke.anchors.last().expect("尾点").pos;
-            assert!((first.0 - last.0).abs() < 1e-4);
-            assert!((first.1 - last.1).abs() < 1e-4);
-        }
-    }
-
-    #[test]
-    fn test_undo_redo_restores_strokes_and_selection() {
-        let mut doc = DrawerDoc::default();
-        let mut draft = Draft::begin(DrawerTool::Line, (0.0, 0.0)).expect("草稿");
-        draft.update((1.0, 1.0));
-        assert!(doc.commit_draft(draft.to_stroke()));
-        assert_eq!(doc.strokes.len(), 1);
-        assert!(doc.undo());
-        assert!(doc.strokes.is_empty());
-        assert!(doc.redo());
-        assert_eq!(doc.strokes.len(), 1);
-    }
-
-    #[test]
-    fn test_select_and_delete() {
-        let mut doc = DrawerDoc::default();
-        let mut draft = Draft::begin(DrawerTool::Line, (0.0, 0.0)).expect("草稿");
-        draft.update((1.0, 1.0));
-        doc.commit_draft(draft.to_stroke());
-        assert!(doc.select_at((0.5, 0.5), 0.1));
-        assert_eq!(doc.selection.len(), 1);
-        assert!(doc.delete_selected());
-        assert!(doc.strokes.is_empty());
-        assert!(doc.undo());
-        assert_eq!(doc.strokes.len(), 1);
-    }
-
-    #[test]
-    fn test_shift_constrains_rect_and_circle_to_square() {
-        for tool in [DrawerTool::Rect, DrawerTool::Circle] {
-            let mut draft = Draft::begin(tool, (0.1, 0.1)).expect("草稿");
-            draft.update_with_shift((0.8, 0.4), true);
-            let stroke = draft.to_stroke().expect("stroke");
-            let rect = stroke.rect.expect("外接框");
-            let (w, h) = rect.size();
-            assert!((w - h).abs() < 1e-4, "{tool:?} Shift 应生成正方形/正圆框");
-        }
-    }
-
-    #[test]
-    fn test_drawing_roundtrip_includes_roles_and_areas() {
-        let mut doc = DrawerDoc::default();
-        let mut draft = Draft::begin(DrawerTool::Line, (0.1, 0.1)).expect("草稿");
-        draft.update((0.9, 0.8));
-        doc.commit_draft(draft.to_stroke());
-        doc.roles[0].colour_slot = 3;
-        doc.areas.push(AreaSpot {
-            u: 0.5,
-            v: 0.5,
-            colour: 2,
-        });
-        let drawing = doc.to_drawing("id".to_string(), "name".to_string());
-        let mut back = DrawerDoc::default();
-        back.load_drawing(&drawing);
-        assert_eq!(
-            back.to_drawing("id".to_string(), "name".to_string()),
-            drawing
-        );
-    }
-
-    #[test]
-    fn test_flip_rotate_and_paste_are_undoable() {
-        let mut doc = DrawerDoc::default();
-        let mut draft = Draft::begin(DrawerTool::Line, (0.1, 0.2)).expect("草稿");
-        draft.update((0.8, 0.6));
-        doc.commit_draft(draft.to_stroke());
-        doc.areas.push(AreaSpot {
-            u: 0.25,
-            v: 0.75,
-            colour: 1,
-        });
-
-        assert!(doc.flip_horizontal());
-        assert!((doc.strokes[0].anchors[0].pos.0 - 0.9).abs() < 1e-4);
-        assert!(doc.undo());
-        assert!((doc.strokes[0].anchors[0].pos.0 - 0.1).abs() < 1e-4);
-
-        assert!(doc.rotate90());
-        assert!((doc.areas[0].u - 0.75).abs() < 1e-4);
-        let original = doc.strokes[0].clone();
-        assert!(doc.paste_strokes(std::slice::from_ref(&original)));
-        assert_eq!(doc.strokes.len(), 2);
-        assert_eq!(
-            doc.strokes[0].anchors[0].pos, doc.strokes[1].anchors[0].pos,
-            "粘贴必须保持绝对位置，不做偏移"
-        );
-        assert!(doc.undo());
-        assert_eq!(doc.strokes.len(), 1);
-    }
-
-    #[test]
-    fn test_view_zoom_is_clamped() {
-        let mut view = DrawerView::default();
-        view.zoom_by(100.0);
-        assert_eq!(view.zoom, 8.0);
-        view.zoom_by(0.0001);
-        assert_eq!(view.zoom, 0.25);
-    }
-
-    #[test]
-    fn test_tiny_drag_does_not_create_shape() {
-        let mut draft = Draft::begin(DrawerTool::Rect, (0.5, 0.5)).expect("草稿");
-        draft.update((0.5001, 0.5001));
-        assert!(draft.to_stroke().is_none());
-    }
-}
+mod tests;

@@ -36,4 +36,10 @@ pub enum ShapeDrawerAction {
     PanelDragEnd,
     /// 设置库面板宽度（拖动分割线）
     SetPanelWidth(f32),
+    /// 切换区域着色模式
+    ToggleAreaMode,
+    /// 设置区域色号（0..=15）
+    SetAreaColour(u8),
+    /// 清空当前图形的区域点
+    ClearAreas,
 }

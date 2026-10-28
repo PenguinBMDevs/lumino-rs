@@ -84,6 +84,32 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     .spacing(4)
     .wrap();
 
+    let area_mode = state.doc.borrow().area_mode;
+    let area_colour = state.doc.borrow().area_colour;
+    let area_toggle = button(if area_mode { "Area: on" } else { "Area" })
+        .width(Length::Fill)
+        .on_press(Message::ShapeDrawer(ShapeDrawerAction::ToggleAreaMode));
+    let area_hint = if state.doc.borrow().can_area_paint() {
+        format!("current colour: {area_colour}")
+    } else {
+        "single closed stroke only".to_string()
+    };
+    let swatches = (0..=15u8)
+        .map(|colour| {
+            button(text(format!("{colour}")))
+                .on_press(Message::ShapeDrawer(ShapeDrawerAction::SetAreaColour(
+                    colour,
+                )))
+                .into()
+        })
+        .collect::<Vec<Element<'_>>>();
+    let area_actions = row![
+        area_toggle,
+        button("Clear").on_press(Message::ShapeDrawer(ShapeDrawerAction::ClearAreas)),
+    ]
+    .spacing(4);
+    let area_palette = row(swatches).spacing(2).wrap();
+
     let panel = container(
         column![
             text("Shape Library").size(16).color(panel_text),
@@ -91,6 +117,9 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
             name_input,
             file_actions,
             edit_actions,
+            area_actions,
+            area_palette,
+            text(area_hint).size(10).color(panel_text),
             status,
             warning,
             button("Insert")

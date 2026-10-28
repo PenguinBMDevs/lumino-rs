@@ -69,6 +69,28 @@ impl Root {
                     state.panel_width = width.clamp(180.0, 520.0);
                 }
             }
+            ShapeDrawerAction::ToggleAreaMode => {
+                let enabled = !state.doc.borrow().area_mode;
+                if state.doc.borrow_mut().set_area_mode(enabled) {
+                    state.status = Some(if enabled {
+                        "区域着色：点击闭合图形内部".to_string()
+                    } else {
+                        "已退出区域着色".to_string()
+                    });
+                } else {
+                    state.status = Some("多笔画/开放图形暂不支持区域着色".to_string());
+                }
+            }
+            ShapeDrawerAction::SetAreaColour(colour) => {
+                if state.doc.borrow_mut().set_area_colour(colour) {
+                    state.status = Some(format!("区域色：{colour}"));
+                }
+            }
+            ShapeDrawerAction::ClearAreas => {
+                if state.doc.borrow_mut().clear_areas() {
+                    state.status = Some("已清空区域色".to_string());
+                }
+            }
         }
     }
 }

@@ -280,6 +280,7 @@ fn test_to_model_preserves_style_areas_and_cjk_name() {
     assert_eq!(
         model.style,
         ShapeStyle {
+            fill: crate::shape::ShapeFill::Fill,
             areas: drawing.areas.clone(),
             ..ShapeStyle::default()
         }
