@@ -9,6 +9,8 @@ use lumino_core::shape::{
 };
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
 
+mod drawing;
+
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
     let mut editor = Editor::new();

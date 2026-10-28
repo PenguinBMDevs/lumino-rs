@@ -3,11 +3,12 @@
 use super::*;
 use crate::shape::{
     BetweenParams, BetweenRole, BetweenSet, ChopParams, ClawParams, CopyMode, CopyPathParams,
-    CycleBy, CycleParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams,
-    MaskMode, MaskParams, MaskShow, MergeParams, NestedParams, OpStage, PatternParams, PolyStyle,
-    PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry, ShapeKind, ShapeRect,
-    ShapeStyle, StopsParams, StraightenParams, Stroke, StrokeKind, StrumParams, SustainParams, Sym,
-    SymAxis, SymParams, TilesParams, TumourParams, VelocityEnv,
+    CycleBy, CycleParams, DrawingParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams,
+    LiveShapeParams, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams, OpStage,
+    PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry,
+    ShapeKind, ShapeRect, ShapeStyle, StopsParams, StraightenParams, Stroke, StrokeKind,
+    StrokeRole, StrumParams, SustainParams, Sym, SymAxis, SymParams, TilesParams, TumourParams,
+    VelocityEnv,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -183,6 +184,22 @@ fn test_op_stage_classification() {
         ShapeOp::Tumours(TumourParams::default()).stage(),
         OpStage::Geometry,
         "Tumours 是生成音符之前的 Geometry 阶段算子"
+    );
+    assert_eq!(
+        ShapeOp::Drawing(DrawingParams {
+            strokes: vec![Stroke {
+                kind: StrokeKind::Line,
+                anchors: vec![
+                    crate::shape::ShapeAnchor::new((0.0, 60.0)),
+                    crate::shape::ShapeAnchor::new((100.0, 60.0)),
+                ],
+                rect: None,
+            }],
+            roles: vec![StrokeRole::default()],
+        })
+        .stage(),
+        OpStage::Geometry,
+        "Drawing 是生成音符之前的 Geometry 阶段源算子"
     );
     assert_eq!(
         ShapeOp::Glue(GlueParams::All).stage(),
@@ -568,6 +585,44 @@ fn test_shape_model_roundtrip_with_live() {
     let bytes = bincode::serialize(&shape).expect("bincode 序列化应成功");
     let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化应成功");
     assert_eq!(back, shape, "含 Live 的形状应逐字段往返");
+}
+
+#[test]
+fn test_drawing_params_validate_and_roundtrip() {
+    let params = DrawingParams {
+        strokes: vec![Stroke {
+            kind: StrokeKind::Polyline,
+            anchors: vec![
+                crate::shape::ShapeAnchor::new((0.0, 60.0)),
+                crate::shape::ShapeAnchor::new((480.0, 64.0)),
+            ],
+            rect: None,
+        }],
+        roles: vec![StrokeRole {
+            colour_slot: 3,
+            filled: true,
+        }],
+    };
+    let mut shape = sample_shape();
+    shape.ops.push(ShapeOp::Drawing(params.clone()));
+    shape.validate().expect("Drawing 形状应合法");
+    let bytes = bincode::serialize(&shape).expect("bincode 序列化失败");
+    let back: ShapeModel = bincode::deserialize(&bytes).expect("bincode 反序列化失败");
+    assert_eq!(back, shape);
+
+    let mut bad = shape;
+    bad.ops = vec![ShapeOp::Drawing(DrawingParams {
+        strokes: Vec::new(),
+        roles: Vec::new(),
+    })];
+    assert!(bad.validate().is_err(), "空 Drawing 必须被拒绝");
+
+    let mut bad_roles = sample_shape();
+    bad_roles.ops.push(ShapeOp::Drawing(DrawingParams {
+        strokes: params.strokes,
+        roles: vec![StrokeRole::default(), StrokeRole::default()],
+    }));
+    assert!(bad_roles.validate().is_err(), "roles 长度不匹配必须被拒绝");
 }
 
 #[test]

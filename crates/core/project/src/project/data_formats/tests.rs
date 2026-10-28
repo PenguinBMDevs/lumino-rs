@@ -4,8 +4,9 @@
 
 use super::*;
 use lumino_core::shape::{
-    AnchorBend, AreaSpot, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect,
-    ShapeStyle, SpamAlign, SpamEnds, TextLayoutMode, TextOp, TextParams,
+    AnchorBend, AreaSpot, DrawingParams, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind,
+    ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds, Stroke, StrokeKind,
+    StrokeRole, TextLayoutMode, TextOp, TextParams,
 };
 
 /// 由**改动前**代码生成的 v1 字节夹具（DRAW-040 / D7）。
@@ -184,6 +185,57 @@ fn test_lmshapes_text_shape_roundtrip() {
     );
     let decoded = LmshapesData::decode(&encoded).expect("文字形状解码失败");
     assert_eq!(decoded.shapes, data.shapes, "文字形状应逐字段往返一致");
+}
+
+/// DRAW-033A：Drawing 是追加 ShapeOp 变体，v3 往返且不升版本。
+#[test]
+fn test_lmshapes_drawing_shape_roundtrip_without_version_bump() {
+    let mut shape = ShapeModel::new(12, 1, ShapeKind::Custom, 0.25);
+    shape.geometry = ShapeGeometry {
+        anchors: Vec::new(),
+        rect: Some(ShapeRect::normalized(0.0, 60.0, 960.0, 72.0)),
+        closed: false,
+    };
+    shape.name = "library".to_string();
+    shape.ops.push(ShapeOp::Drawing(DrawingParams {
+        strokes: vec![
+            Stroke {
+                kind: StrokeKind::Polyline,
+                anchors: vec![
+                    ShapeAnchor::new((0.0, 60.0)),
+                    ShapeAnchor::new((960.0, 60.0)),
+                ],
+                rect: None,
+            },
+            Stroke {
+                kind: StrokeKind::Curve,
+                anchors: vec![
+                    ShapeAnchor::new((0.0, 72.0)),
+                    ShapeAnchor::new((960.0, 72.0)),
+                ],
+                rect: None,
+            },
+        ],
+        roles: vec![
+            StrokeRole::default(),
+            StrokeRole {
+                colour_slot: 3,
+                filled: true,
+            },
+        ],
+    }));
+    shape.validate().expect("Drawing 形状应合法");
+    let data = LmshapesData {
+        shapes: vec![shape],
+    };
+    let encoded = data.encode().expect("Drawing 形状编码失败");
+    assert_eq!(
+        u16::from_le_bytes([encoded[4], encoded[5]]),
+        3,
+        "追加 Drawing 变体不应改变 lmshapes 版本"
+    );
+    let decoded = LmshapesData::decode(&encoded).expect("Drawing 形状解码失败");
+    assert_eq!(decoded.shapes, data.shapes, "Drawing 形状应逐字段往返一致");
 }
 
 /// D5：encode 恒写 v3，v3 往返逐字段一致（含 bend / areas）
