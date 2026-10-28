@@ -70,6 +70,22 @@ fn test_shape_drawer_save_delete_and_insert_action() {
 
     root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Delete));
     assert!(!dir.join("b2-test.lmshape").exists(), "删除应移除库文件");
+
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::PanelDragStart,
+    ));
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::SetPanelWidth(320.0),
+    ));
+    assert_eq!(root.state.shape_drawer.panel_width, 320.0);
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::PanelDragEnd));
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::SetPanelWidth(500.0),
+    ));
+    assert_eq!(
+        root.state.shape_drawer.panel_width, 320.0,
+        "未拖动时 on_move 不应改变面板宽度"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

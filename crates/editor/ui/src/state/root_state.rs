@@ -46,6 +46,10 @@ pub struct ShapeDrawerState {
     pub status: Option<String>,
     /// 抽屉剪贴板（复制/粘贴 strokes）
     pub clipboard: Vec<Stroke>,
+    /// 库面板宽度（可拖动分割线）
+    pub panel_width: f32,
+    /// 是否正在拖动库/画布分割线
+    pub panel_dragging: bool,
 }
 
 impl Default for ShapeDrawerState {
@@ -60,6 +64,8 @@ impl Default for ShapeDrawerState {
             warnings: Vec::new(),
             status: None,
             clipboard: Vec::new(),
+            panel_width: 250.0,
+            panel_dragging: false,
         }
     }
 }

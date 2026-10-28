@@ -4,7 +4,7 @@
 //! 插入工程走本动作枚举，避免把文件 I/O 塞进 canvas `update`。
 
 /// 形状抽屉动作
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ShapeDrawerAction {
     /// 修改名称输入框
     SetName(String),
@@ -30,4 +30,10 @@ pub enum ShapeDrawerAction {
     Rotate90,
     /// 插入当前图形到工程
     Insert,
+    /// 开始拖动库/画布分割线
+    PanelDragStart,
+    /// 结束拖动库/画布分割线
+    PanelDragEnd,
+    /// 设置库面板宽度（拖动分割线）
+    SetPanelWidth(f32),
 }

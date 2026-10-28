@@ -56,8 +56,10 @@ pub(super) fn toolbar_hit(local: Point) -> Option<ToolbarAction> {
 pub(super) fn draw_toolbar(frame: &mut Frame<Renderer>, doc: &DrawerDoc, theme: &Theme) {
     let palette = theme.extended_palette();
     let selected = palette.primary.weak.color;
+    let selected_text = palette.primary.weak.text;
     let button = palette.background.strong.color;
-    let text = palette.background.base.text;
+    let text = palette.background.strong.text;
+    let disabled_text = palette.background.weak.text;
     let tools = DrawerTool::ALL;
     for (index, tool) in tools.into_iter().enumerate() {
         let top = TOOLBAR_TOP + index as f32 * (ROW_HEIGHT + ROW_GAP);
@@ -73,7 +75,11 @@ pub(super) fn draw_toolbar(frame: &mut Frame<Renderer>, doc: &DrawerDoc, theme: 
         frame.fill_text(Text {
             content: tool.label().to_string(),
             position: Point::new(16.0, top + 7.0),
-            color: text,
+            color: if doc.tool == tool {
+                selected_text
+            } else {
+                text
+            },
             size: 12.0.into(),
             ..Text::default()
         });
@@ -104,11 +110,7 @@ pub(super) fn draw_toolbar(frame: &mut Frame<Renderer>, doc: &DrawerDoc, theme: 
         frame.fill_text(Text {
             content: label.to_string(),
             position: Point::new(16.0, top + 7.0),
-            color: if enabled {
-                text
-            } else {
-                palette.background.strong.text
-            },
+            color: if enabled { text } else { disabled_text },
             size: 12.0.into(),
             ..Text::default()
         });
@@ -173,6 +175,7 @@ pub(super) fn draw_canvas(
         position: Point::new(TOOLBAR_WIDTH + 12.0, bounds.height - 24.0),
         color: palette.background.strong.text,
         size: 11.0.into(),
+        max_width: (bounds.width - TOOLBAR_WIDTH - 24.0).max(1.0),
         ..Text::default()
     });
 }

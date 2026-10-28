@@ -58,6 +58,17 @@ impl Root {
                 }
                 Err(error) => state.status = Some(error),
             },
+            ShapeDrawerAction::PanelDragStart => {
+                state.panel_dragging = true;
+            }
+            ShapeDrawerAction::PanelDragEnd => {
+                state.panel_dragging = false;
+            }
+            ShapeDrawerAction::SetPanelWidth(width) => {
+                if state.panel_dragging && width.is_finite() {
+                    state.panel_width = width.clamp(180.0, 520.0);
+                }
+            }
         }
     }
 }
