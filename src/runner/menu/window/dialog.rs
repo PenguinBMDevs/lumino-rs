@@ -80,6 +80,9 @@ impl RunnerInner {
                         window.focus_window();
                     }
                 } else {
+                    // 历史窗口打开前先落盘 pending 批量移动/复制，避免用户
+                    // 刚松开拖动时面板看不到这一步。
+                    self.window_state.window.ui_mut().flush_history_pending();
                     self.open_dialog_traced(DialogType::History, "撤销历史");
                 }
             }

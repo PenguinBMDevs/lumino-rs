@@ -32,11 +32,11 @@ pub fn view_history_dialog<'a>(
         .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(text_color),
         });
-    let hint = text(tr!("点击步骤跳转；初始状态为 0。")).size(12).style(
-        move |_theme: &iced_core::Theme| text::Style {
+    let hint = text(tr!("点击步骤回到该步完成后的状态；初始状态为 0。"))
+        .size(12)
+        .style(move |_theme: &iced_core::Theme| text::Style {
             color: Some(hint_color),
-        },
-    );
+        });
 
     let mut rows: Vec<crate::Element<'a>> = Vec::with_capacity(state.steps.len() + 1);
     rows.push(history_row(

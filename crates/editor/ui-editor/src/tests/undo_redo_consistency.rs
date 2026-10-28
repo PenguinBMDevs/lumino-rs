@@ -13,6 +13,7 @@ use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
 use lumino_editor_state::DragState;
+use lumino_note_core::history::OpKind;
 
 /// 生产链路批量提交（不推快照，仅提交推 MoveOp）：拖动→松手→提交→落盘→清空选区
 fn batch_move_commit(editor: &mut Editor, indices: Vec<usize>, delta_tick: i64, delta_key: i16) {
@@ -47,6 +48,73 @@ fn track_keys(editor: &Editor) -> Vec<u8> {
 }
 
 // ── 批量移动 undo/redo 位置精确 ────────────────────────────────
+
+#[test]
+fn test_undo_redo_single_note_drag_restores_positions() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 100.0)]);
+    editor.selection_insert(0);
+
+    let mut drag = DragState::from_indices([0], 1, 0, 60);
+    drag.set_delta(100, 0);
+    assert!(editor.finalize_dragging(0, drag), "单音符拖动应提交");
+    assert_eq!(track_ticks(&editor), vec![100]);
+
+    assert!(editor.undo(), "单音符拖动 undo 应成功");
+    assert_eq!(track_ticks(&editor), vec![0], "undo 应回原位置");
+
+    assert!(editor.redo(), "单音符拖动 redo 应成功");
+    assert_eq!(track_ticks(&editor), vec![100], "redo 应回到移动位置");
+}
+
+#[test]
+fn test_history_jump_across_single_note_move() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 100.0)]);
+    editor.selection_insert(0);
+
+    editor
+        .editor_state
+        .data
+        .push_history_with_op_kind(OpKind::NoteCreate);
+    editor.editor_state.data.insert_note(
+        editor.editor_state.data.current_track,
+        Note::new(500.0, 62, 100.0),
+    );
+    // 上面 push 的是创建前的快照；当前有 2 个音符，创建第 2 个音符为一步。
+    // 再移动第 1 个音符，形成第二步。
+    editor.selection_clear();
+    editor.selection_insert(0);
+    let mut drag = DragState::from_indices([0], 2, 0, 60);
+    drag.set_delta(100, 0);
+    assert!(editor.finalize_dragging(0, drag));
+    assert_eq!(track_ticks(&editor), vec![100, 500]);
+
+    assert_eq!(editor.history_view().current, 2);
+    assert!(editor.history_jump_to(1), "跳到移动前的步骤");
+    assert_eq!(track_ticks(&editor), vec![0, 500], "移动应被撤销");
+
+    assert!(editor.history_jump_to(2), "重做移动");
+    assert_eq!(track_ticks(&editor), vec![100, 500], "移动应被重做");
+}
+
+#[test]
+fn test_history_jump_across_batch_move() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 100.0)]);
+    editor.selection_insert(0);
+    batch_move_commit(&mut editor, vec![0], 100, 0);
+    assert_eq!(track_ticks(&editor), vec![100]);
+    assert_eq!(editor.history_view().current, 1);
+
+    // 先清掉选区外点击产生的 pending 状态；这正是 history_jump_to 的守卫场景。
+    editor.selection_clear();
+    assert!(editor.history_jump_to(0), "跳到初始状态");
+    assert_eq!(track_ticks(&editor), vec![0]);
+
+    assert!(editor.history_jump_to(1), "重做批量移动");
+    assert_eq!(track_ticks(&editor), vec![100]);
+}
 
 #[test]
 fn test_undo_redo_batch_move_restores_positions() {
@@ -138,6 +206,70 @@ fn test_undo_chain_multi_moves_each_step_reverts_one() {
     assert_eq!(track_ticks(&editor), vec![100, 500]);
     assert!(editor.redo());
     assert_eq!(track_ticks(&editor), vec![100, 700]);
+}
+
+#[test]
+fn test_history_jump_multi_note_pending_move_returns_to_creation() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+    editor
+        .editor_state
+        .data
+        .push_history_with_op_kind(OpKind::NoteCreate);
+    editor.editor_state.data.insert_note(
+        editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 100.0),
+    );
+    editor.editor_state.data.insert_note(
+        editor.editor_state.data.current_track,
+        Note::new(500.0, 62, 100.0),
+    );
+    editor.selection_insert(0);
+    editor.selection_insert(1);
+
+    let note_count = editor.editor_state.data.current_track_note_count();
+    let mut drag = DragState::from_indices([0, 1], note_count, 0, 60);
+    drag.set_delta(100, 0);
+    editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };
+    editor.handle_released();
+    assert!(editor.has_pending_drag());
+
+    // 面板的创建步是 target 1；跳转前必须先 flush pending 的集体移动。
+    assert!(editor.history_jump_to(1), "回到创建步");
+    assert_eq!(track_ticks(&editor), vec![0, 500], "创建步应在移动前位置");
+    assert_eq!(editor.history_view().current, 1);
+
+    assert!(editor.history_jump_to(2), "前进到集体移动步");
+    assert_eq!(track_ticks(&editor), vec![100, 600], "集体移动应重做");
+    assert_eq!(editor.history_view().current, 2);
+}
+
+#[test]
+fn test_history_jump_flushes_pending_batch_move() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 100.0)]);
+    editor.selection_insert(0);
+
+    let note_count = editor.editor_state.data.current_track_note_count();
+    let mut drag = DragState::from_indices([0], note_count, 0, 60);
+    drag.set_delta(100, 0);
+    editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };
+    editor.handle_released();
+    assert!(editor.has_pending_drag(), "松手后应存在 pending 移动");
+    assert_eq!(track_ticks(&editor), vec![0], "pending 尚未写入 document");
+
+    assert!(
+        editor.history_jump_to(1),
+        "历史跳转必须先提交 pending，而不是直接拒绝"
+    );
+    assert!(!editor.has_pending_drag(), "跳转后 pending 应已 drain");
+    assert_eq!(track_ticks(&editor), vec![100], "移动应已落盘");
+    assert_eq!(editor.history_view().current, 1);
+
+    assert!(editor.history_jump_to(0), "跳过 pending 后应能撤销移动");
+    assert_eq!(track_ticks(&editor), vec![0], "移动应回原位置");
+    assert!(editor.history_jump_to(1), "重做移动");
+    assert_eq!(track_ticks(&editor), vec![100], "移动应重做");
 }
 
 // ── 幽灵态 undo/redo 不失败 ────────────────────────────────────

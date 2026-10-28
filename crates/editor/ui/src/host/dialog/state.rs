@@ -139,6 +139,13 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 历史窗口打开期间先提交待落盘的批量移动/复制，再读取历史。
+    pub fn flush_history_pending(&mut self) {
+        self.root.editor.flush_pending_history();
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 读取主编辑器历史视图，投影为 UI 中性类型。
     ///
     /// 返回 `(steps, current)`；当前游标 0 表示初始状态。

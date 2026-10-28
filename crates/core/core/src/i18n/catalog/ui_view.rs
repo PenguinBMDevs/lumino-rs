@@ -34,6 +34,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "点击步骤跳转；初始状态为 0。" => {
             Some("Click a step to jump; the initial state is 0.")
         }
+        "点击步骤回到该步完成后的状态；初始状态为 0。" => {
+            Some("Click a step to return to its completed state; the initial state is 0.")
+        }
         // ── 云存储连接面板 / 断连提醒（`view/cloud_dialog.rs`）──
         "Lumino 无权且不会收集您的个人信息，所有信息将会存储在本地" => {
             Some(

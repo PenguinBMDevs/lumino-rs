@@ -24,7 +24,13 @@ impl RunnerInner {
         {
             return;
         }
-        let (steps, current) = self.window_state.window.ui().history_view();
+        let (steps, current) = {
+            let main_ui = self.window_state.window.ui_mut();
+            // 历史窗口打开时，拖动松手产生的 pending 移动/复制必须先落盘，
+            // 否则面板看不到这一步，用户会误以为移动操作不可撤销。
+            main_ui.flush_history_pending();
+            main_ui.history_view()
+        };
         let Some(id) = self
             .window_state
             .dialog_manager

@@ -367,14 +367,33 @@ impl Editor {
         self.editor_state.data.history_view()
     }
 
+    /// 提交历史面板打开期间仍未落盘的批量移动/复制。
+    ///
+    /// 与 `undo` 的前置处理一致：先提交 pending，再 drain 异步写入。历史面板
+    /// 在拖动松手后才打开，用户看到“移动”却不在历史栈里，根因就是 pending
+    /// 尚未提交；这里让面板读取到与文档一致的历史。
+    pub fn flush_pending_history(&mut self) {
+        if self.pending_drag_state.is_some() {
+            self.commit_pending_drag();
+        }
+        if self.pending_copy_drag_state.is_some() {
+            self.commit_pending_copy();
+        }
+        if self.has_pending_drag() {
+            self.drain_async_commit();
+        }
+    }
+
     /// 跳到历史游标 `target`（0 = 初始状态，steps.len() = 最新）。
     ///
     /// 必须复用 [`Self::undo`] / [`Self::redo`]：它们负责形状 group 回放、
     /// 协作广播和选中重映射。存在未确认笔画 / 正在编辑时拒绝跳转，
     /// 避免历史面板误消费画刷或曲线路径的临时栈。
     pub fn history_jump_to(&mut self, target: usize) -> bool {
+        // 先像 undo/redo 一样提交 pending 拖动；否则历史面板跳转会被
+        // `is_editing()` 直接拒绝，用户感知为“移动操作无法撤销”。
+        self.flush_pending_history();
         if self.is_editing()
-            || self.has_pending_drag()
             || self.editor_state.brush_tool.can_undo_path()
             || self.editor_state.line_tool.can_undo_path()
         {
