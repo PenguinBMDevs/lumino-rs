@@ -64,13 +64,16 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
         .width(Length::Fill)
         .on_input(|value| Message::ShapeDrawer(ShapeDrawerAction::SetName(value)));
 
+    // 面板可缩到 180px，固定 row 会把后半排按钮裁掉；交给 iced 的横向
+    // wrapping 布局，放不下时自动换到下一行。
     let file_actions = row![
         action_button("New", ShapeDrawerAction::New),
         action_button("Save", ShapeDrawerAction::Save),
         action_button("Rename", ShapeDrawerAction::Rename),
         action_button("Del", ShapeDrawerAction::Delete),
     ]
-    .spacing(4);
+    .spacing(4)
+    .wrap();
     let edit_actions = row![
         action_button("Copy", ShapeDrawerAction::Copy),
         action_button("Paste", ShapeDrawerAction::Paste),
@@ -78,7 +81,8 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
         action_button("FlipV", ShapeDrawerAction::FlipVertical),
         action_button("Rot90", ShapeDrawerAction::Rotate90),
     ]
-    .spacing(4);
+    .spacing(4)
+    .wrap();
 
     let panel = container(
         column![
