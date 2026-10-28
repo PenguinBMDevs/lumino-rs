@@ -269,8 +269,20 @@ fn test_history_jump_across_two_independent_moves() {
 
     assert!(editor.history_jump_to(1), "从最新回退第二次移动");
     assert_eq!(track_ticks(&editor), vec![100, 500]);
+
+    // 跳转产生的 GPU 增量只对中间态成立；跳转后必须强制全量重建。
+    editor.editor_state.data.note_delta_events.clear();
+    editor.editor_state.data.note_delta_dirty = false;
     assert!(editor.history_jump_to(0), "继续回退第一次移动");
     assert_eq!(track_ticks(&editor), vec![0, 500]);
+    assert!(
+        editor.editor_state.data.note_delta_dirty,
+        "跨步跳转后必须标记全量音符重建"
+    );
+    assert!(
+        editor.editor_state.data.note_delta_events.is_empty(),
+        "跨步跳转不得把中间态增量留给 GPU"
+    );
 }
 
 #[test]

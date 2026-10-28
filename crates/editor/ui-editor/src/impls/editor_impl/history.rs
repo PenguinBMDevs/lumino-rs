@@ -402,6 +402,9 @@ impl Editor {
         if target > view.len() {
             return false;
         }
+        if target == view.current {
+            return true;
+        }
         if target < view.current {
             for _ in target..view.current {
                 if !self.undo() {
@@ -415,6 +418,15 @@ impl Editor {
                 }
             }
         }
+        // 一次跳转可能连续执行多步 undo/redo。每一步都会生成基于**中间文档**
+        // 的 note_delta_events；把它们逐条喂给 GPU 段内增量时，多步跳转的
+        // 索引/顺序可能只对中间态成立，出现“文档正确、画面还是旧位置/旧顺序”。
+        // 历史跳转是低频操作，直接清空增量并强制下一帧全量重建，保证 CPU
+        // 文档与 GPU 实例列表来自同一最终快照。
+        self.editor_state.data.note_delta_events.clear();
+        self.editor_state.data.note_delta_dirty = true;
+        self.invalidate_caches(CacheInvalidation::GRID);
+        self.mark_notes_changed();
         true
     }
 
