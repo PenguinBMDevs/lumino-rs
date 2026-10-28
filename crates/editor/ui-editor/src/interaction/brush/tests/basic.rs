@@ -17,6 +17,17 @@ fn test_fast_drag_one_frame_covers_every_cell_on_confirm() {
         "快速拖动必须逐格生成，无断墨空洞"
     );
     assert!(notes.iter().all(|n| n.1 == 60), "同 key 水平笔画");
+    assert!(
+        !editor.editor_state.shape_store.is_empty(),
+        "画刷 Bake 应保留逐笔画模型"
+    );
+    let model = editor
+        .editor_state
+        .shape_store
+        .iter()
+        .next()
+        .expect("模型应存在");
+    assert_eq!(model.notes.len(), notes.len(), "模型音符指纹应与写入一致");
 }
 
 #[test]

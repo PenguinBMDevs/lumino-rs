@@ -64,9 +64,6 @@ impl Editor {
 
     /// 从 ShapeStore 列表进入区域着色（Bake 后没有 DrawnShape 的模型）
     pub fn begin_area_paint_model(&mut self, model_id: u64) -> bool {
-        if self.current_tool() != Tool::ShapeSelect {
-            return false;
-        }
         let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
             return false;
         };
@@ -158,9 +155,6 @@ impl Editor {
 
     /// 打开 ShapeStore 模型列表（DRAW-041B）
     pub fn open_shape_list(&mut self) -> bool {
-        if self.current_tool() != Tool::ShapeSelect {
-            return false;
-        }
         let track = self.editor_state.data.current_track;
         if !self
             .editor_state

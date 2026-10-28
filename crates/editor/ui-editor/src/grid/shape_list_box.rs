@@ -42,7 +42,7 @@ pub enum ShapeListHit {
 
 /// 当前应显示的列表矩形；无模型/未展开时返回 `None`
 pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
-    if !editor.shape_list_open || editor.current_tool() != lumino_message::Tool::ShapeSelect {
+    if !editor.shape_list_open {
         return None;
     }
     let track = editor.editor_state.data.current_track;
@@ -223,7 +223,8 @@ mod tests {
     fn test_list_row_hit() {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
-        editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+        // 形状列表不再依赖鼠标工具：画刷 √ 后也应能打开。
+        editor.editor_state.tool = lumino_message::Tool::Brush;
         editor.editor_state.canvas.size_x = 800.0;
         editor.editor_state.canvas.size_y = 600.0;
         let mut model = ShapeModel::new(0, 1, ShapeKind::Curve, 1.0);
