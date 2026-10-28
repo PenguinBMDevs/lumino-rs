@@ -164,6 +164,40 @@ fn shape_note() -> lumino_editor_state::ShapeNote {
 }
 
 #[test]
+fn test_loaded_model_adopts_matching_notes() {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, 0.25);
+    let mut geometry =
+        ShapeGeometry::from_points([(0.0, 60.0), (100.0, 60.0), (100.0, 64.0), (0.0, 64.0)]);
+    geometry.closed = true;
+    model.geometry = geometry;
+    model.style = ShapeStyle {
+        fill: ShapeFill::Fill,
+        ..ShapeStyle::default()
+    };
+    assert!(editor.create_shape(model));
+    let model_id = editor.editor_state.shape_store.ids()[0];
+    // 模拟载入工程：模型在，但 ShapeStore 没有本次会话音符指纹。
+    editor
+        .editor_state
+        .shape_store
+        .assign_notes(model_id, Vec::new());
+    editor.editor_state.tool = Tool::ShapeSelect;
+    assert!(
+        editor.begin_area_paint_model(model_id),
+        "生成结果能在文档中精确定位时应接管"
+    );
+    assert!(
+        !editor
+            .editor_state
+            .shape_store
+            .notes_of(model_id)
+            .is_empty()
+    );
+}
+
+#[test]
 fn test_switch_tool_ends_area_paint() {
     let (mut editor, _, _) = editor_with_shape();
     editor.set_tool(Tool::Pointer);

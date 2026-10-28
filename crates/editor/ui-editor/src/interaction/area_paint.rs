@@ -10,6 +10,7 @@
 use iced_core::Point;
 use lumino_core::shape::AreaSpot;
 use lumino_message::Tool;
+use lumino_midi_model::TickIndexedEvents;
 
 use crate::Editor;
 use crate::interaction::line_tool::fill::spans::row_spans;
@@ -66,15 +67,16 @@ impl Editor {
         if self.current_tool() != Tool::ShapeSelect {
             return false;
         }
-        let Some(model) = self.editor_state.shape_store.model(model_id) else {
+        let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
             return false;
         };
         if model.track == 0 {
             return false;
         }
-        // 载入工程的模型没有本次会话的音符指纹；先只允许本次会话保留的模型编辑，
-        // 避免 edit_shape 删不掉旧音符而重复。
-        if self.editor_state.shape_store.notes_of(model_id).is_empty() {
+        // 载入工程的模型没有本次会话音符指纹；只有能逐音符精确定位时才接管。
+        if self.editor_state.shape_store.notes_of(model_id).is_empty()
+            && !self.adopt_model_notes(model_id)
+        {
             return false;
         }
         let colour = model.style.colour_slot.clamp(1, 15);
@@ -85,6 +87,42 @@ impl Editor {
         });
         self.shape_list_open = false;
         self.grid_cache.clear();
+        true
+    }
+
+    /// 尝试用模型再生成结果接管载入工程的旧音符（242D）
+    ///
+    /// 只有所有生成音符都能在文档中逐个精确定位时才写回 `ShapeStore`；
+    /// 任一缺失即保持只读，避免区域编辑删不掉旧音符导致重复。
+    fn adopt_model_notes(&mut self, model_id: u64) -> bool {
+        let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
+            return false;
+        };
+        let track = model.track as usize;
+        let generated = self.shape_notes_of(&model, track);
+        if generated.is_empty() {
+            return false;
+        }
+        let mut used = std::collections::HashSet::new();
+        for note in &generated {
+            let event = lumino_editor_state::note_to_event(
+                crate::Note::new(note.tick, note.key, note.length)
+                    .with_velocity(note.velocity)
+                    .with_channel(note.channel),
+            );
+            let Some(index) = self
+                .editor_state
+                .data
+                .track_notes(track)
+                .position_of_unused(&event, &used)
+            else {
+                return false;
+            };
+            used.insert(index);
+        }
+        self.editor_state
+            .shape_store
+            .assign_notes(model_id, generated);
         true
     }
 
