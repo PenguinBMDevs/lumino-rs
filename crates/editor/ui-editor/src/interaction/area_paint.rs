@@ -50,6 +50,11 @@ impl Editor {
         let Some(model) = self.editor_state.shape_store.model(model_id) else {
             return false;
         };
+        // 只有闭合区域才有“内部”可着色；开放曲线/画刷不能走 shape 再生成，
+        // 否则会把音符重写成沿路径的一串连续音符。
+        if !model.geometry.closed {
+            return false;
+        }
         // 形状自身 colour_slot 默认 0；0 是“空”，作为画笔默认值会一上来就擦除。
         let colour = model.style.colour_slot.clamp(1, 15);
         self.area_paint = Some(AreaPaintState {
@@ -67,7 +72,7 @@ impl Editor {
         let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
             return false;
         };
-        if model.track == 0 {
+        if model.track == 0 || !model.geometry.closed {
             return false;
         }
         // 载入工程的模型没有本次会话音符指纹；只有能逐音符精确定位时才接管。
@@ -95,6 +100,9 @@ impl Editor {
         let Some(model) = self.editor_state.shape_store.model(model_id) else {
             return false;
         };
+        if !model.geometry.closed {
+            return false;
+        }
         let generated = self.shape_notes_of(model, model.track as usize);
         !generated.is_empty() && self.model_notes_present(model.track as usize, &generated)
     }
@@ -228,6 +236,9 @@ impl Editor {
             self.end_area_paint();
             return false;
         };
+        if !model.geometry.closed {
+            return false;
+        }
         let Some((tick_lo, key_lo, tick_hi, key_hi)) = model.geometry.bounds() else {
             return false;
         };

@@ -229,6 +229,7 @@ mod tests {
         editor.editor_state.canvas.size_y = 600.0;
         let mut model = ShapeModel::new(0, 1, ShapeKind::Curve, 1.0);
         model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (100.0, 64.0)]);
+        model.geometry.closed = true;
         model.name = "test".to_string();
         let id = editor.editor_state.shape_store.insert(model, 0);
         editor.editor_state.shape_store.assign_notes(
