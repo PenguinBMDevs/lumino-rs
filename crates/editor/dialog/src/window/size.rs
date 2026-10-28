@@ -23,8 +23,13 @@
 
 use winit::dpi::{LogicalSize, PhysicalSize};
 
+use lumino_ui::state::root_state::DialogType;
+
 use super::{DialogWindow, SEED_DIALOG_SIZE};
 use crate::platform::{WorkArea, centered_position};
+
+/// 形状抽屉的初始内容只有占位，不能把 1000×700 的决策尺寸当成不可缩小的下限。
+const SHAPE_DRAWER_MIN_SIZE: LogicalSize<f32> = LogicalSize::new(640.0, 480.0);
 
 impl DialogWindow {
     /// REF-001：测量内容尺寸 → 应用窗口尺寸 → 居中 → 显示（只做一次）
@@ -46,7 +51,8 @@ impl DialogWindow {
         // 下限 = 本次决策出的尺寸（内容刚好放得下的尺寸），这样用户拖小窗口时
         // Windows 会在 WM_GETMINMAXINFO 就拦住，控件不会被挤成细条/被裁掉。
         // 不可缩放的对话框无需设置（系统已经不允许拉伸）。
-        if let Some(minimum) = minimum_inner_size(
+        if let Some(minimum) = minimum_inner_size_for(
+            self.dialog_type,
             target,
             work_area.map(|area| area.logical_size),
             self.window.is_resizable(),
@@ -145,6 +151,18 @@ impl DialogWindow {
 ///
 /// 取值 = 本次决策出的尺寸，并按工作区夹取（防御：下限不得超过可见区域，
 /// 否则用户连正常尺寸都拉不出来）。不可缩放 / 尺寸非法时返回 `None`。
+pub(crate) fn minimum_inner_size_for(
+    dialog_type: DialogType,
+    decided: LogicalSize<f32>,
+    work_area: Option<LogicalSize<f32>>,
+    resizable: bool,
+) -> Option<LogicalSize<f32>> {
+    if dialog_type == DialogType::ShapeDrawer {
+        return minimum_inner_size(SHAPE_DRAWER_MIN_SIZE, work_area, resizable);
+    }
+    minimum_inner_size(decided, work_area, resizable)
+}
+
 pub(crate) fn minimum_inner_size(
     decided: LogicalSize<f32>,
     work_area: Option<LogicalSize<f32>>,
@@ -244,6 +262,21 @@ mod tests {
         assert_eq!(
             minimum_inner_size(DECIDED, Some(WORK_AREA), true),
             Some(DECIDED)
+        );
+    }
+
+    #[test]
+    fn test_shape_drawer_min_size_is_not_pinned_to_decided_size() {
+        let decided = LogicalSize::new(1000.0, 700.0);
+        assert_eq!(
+            minimum_inner_size_for(DialogType::ShapeDrawer, decided, Some(WORK_AREA), true),
+            Some(LogicalSize::new(640.0, 480.0)),
+            "形状抽屉必须允许从 1000×700 缩到 640×480"
+        );
+        assert_eq!(
+            minimum_inner_size_for(DialogType::Settings, decided, Some(WORK_AREA), true),
+            Some(decided),
+            "其他可缩放对话框仍按内容尺寸设下限"
         );
     }
 
