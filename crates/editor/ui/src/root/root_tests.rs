@@ -12,6 +12,52 @@ use crate::root::handlers::MessageHandler;
 // ================================================================
 
 #[test]
+fn test_shape_drawer_save_delete_and_insert_action() {
+    use crate::message::ShapeDrawerAction;
+    use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("时间")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "lumino_shape_drawer_b2_{}_{}",
+        std::process::id(),
+        stamp
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("创建测试目录");
+
+    let mut root = Root::new_dialog("dark", DialogType::ShapeDrawer);
+    root.state.shape_drawer.shapes_dir = dir.clone();
+    root.state.shape_drawer.doc.borrow_mut().add_stroke(Stroke {
+        kind: StrokeKind::Line,
+        anchors: vec![ShapeAnchor::new((0.1, 0.1)), ShapeAnchor::new((0.9, 0.9))],
+        rect: None,
+    });
+    root.handle_shape_drawer_action(ShapeDrawerAction::SetName("b2-test".to_string()));
+    root.handle_shape_drawer_action(ShapeDrawerAction::Save);
+    assert!(
+        dir.join("b2-test.lmshape").exists(),
+        "保存动作应写出 .lmshape"
+    );
+
+    root.handle_shape_drawer_action(ShapeDrawerAction::Insert);
+    assert!(
+        matches!(
+            root.state.dialog_result,
+            Some(crate::host::DialogResult::InsertShapeDrawing(_))
+        ),
+        "插入动作应设置对话框结果且保持抽屉打开"
+    );
+
+    root.handle_shape_drawer_action(ShapeDrawerAction::Delete);
+    assert!(!dir.join("b2-test.lmshape").exists(), "删除应移除库文件");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_shape_drawer_open_close_switches_dialog_type() {
     let mut root = Root::new_dialog("dark", DialogType::None);
     root.set_shape_drawer_dialog_open(true);

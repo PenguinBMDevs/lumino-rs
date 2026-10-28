@@ -19,6 +19,7 @@ use std::rc::Rc;
 use crate::app_mode::AppMode;
 use crate::shape_drawer::doc::{DrawerDoc, DrawerInteraction};
 use lumino_core::BrushConfig;
+use lumino_core::shape::{LibraryWarning, ShapeLibrary, Stroke};
 use lumino_ui_core::help::{HelpDialogState, HelpTipsState};
 
 /// 形状抽屉窗口状态（DRAW-033B0/B1）。
@@ -33,6 +34,18 @@ pub struct ShapeDrawerState {
     pub doc: Rc<RefCell<DrawerDoc>>,
     /// 拖拽草稿与中键平移
     pub interaction: Rc<RefCell<DrawerInteraction>>,
+    /// 库（内置 + 用户）
+    pub library: ShapeLibrary,
+    /// 当前选中的库图形 id
+    pub selected: Option<String>,
+    /// 名称输入框
+    pub name_input: String,
+    /// 库加载 warning
+    pub warnings: Vec<LibraryWarning>,
+    /// 操作状态/错误提示
+    pub status: Option<String>,
+    /// 抽屉剪贴板（复制/粘贴 strokes）
+    pub clipboard: Vec<Stroke>,
 }
 
 impl Default for ShapeDrawerState {
@@ -41,6 +54,12 @@ impl Default for ShapeDrawerState {
             shapes_dir: PathBuf::new(),
             doc: Rc::new(RefCell::new(DrawerDoc::default())),
             interaction: Rc::new(RefCell::new(DrawerInteraction::default())),
+            library: ShapeLibrary::with_builtins(),
+            selected: None,
+            name_input: "New Shape".to_string(),
+            warnings: Vec::new(),
+            status: None,
+            clipboard: Vec::new(),
         }
     }
 }

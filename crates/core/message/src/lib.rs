@@ -24,6 +24,8 @@ pub mod recover_track;
 pub mod right_sidebar;
 pub mod save_confirm;
 pub mod settings_dialog;
+/// 形状抽屉库/变换/插入动作
+pub mod shape_drawer;
 pub mod speed_change;
 pub mod types;
 pub mod velocity;
@@ -50,6 +52,7 @@ pub use recover_track::RecoverTrackAction;
 pub use right_sidebar::{I2mConfigField, RightSidebarAction};
 pub use save_confirm::SaveConfirmAction;
 pub use settings_dialog::SettingsDialogAction;
+pub use shape_drawer::ShapeDrawerAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;

@@ -1,5 +1,6 @@
 //! Host 对话框状态管理子模块 — 开关/标记类 setter 与状态查询
 
+use lumino_core::shape::{ShapeDrawing, ShapeLibrary, ShapeRect};
 use lumino_core::{tr, trf};
 
 use crate::host::{Host, types::DialogResult};
@@ -119,9 +120,35 @@ impl Host {
 
     /// 注入形状库目录（Runner 在抽屉 UI 就绪后调用）
     pub fn set_shape_drawer_dir(&mut self, dir: std::path::PathBuf) {
-        self.root.state.shape_drawer.shapes_dir = dir;
+        let (library, warnings) = ShapeLibrary::load_dir(&dir);
+        let state = &mut self.root.state.shape_drawer;
+        state.shapes_dir = dir;
+        state.library = library;
+        state.warnings = warnings;
+        state.status = None;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+    }
+
+    /// 把抽屉当前图形插入主工程（当前轨道 + 播放头，默认 4 beats × 12 keys）。
+    pub fn insert_shape_drawing(&mut self, drawing: &ShapeDrawing) -> Result<(), String> {
+        let track = self.root.editor.editor_state.data.current_track;
+        if track == 0 {
+            return Err("指挥轨不能插入形状，请先选择普通音轨".to_string());
+        }
+        let ppq = f32::from(self.root.editor.editor_state.view.ppq);
+        let tick = self.root.editor.playback_position.max(0.0);
+        let rect = ShapeRect::normalized(tick, 60.0, tick + 4.0 * ppq, 72.0);
+        let model = drawing
+            .to_model(track as u16, 1.0, rect)
+            .map_err(|error| error.to_string())?;
+        if !self.root.editor.create_shape(model) {
+            return Err("形状插入失败（请检查当前音轨）".to_string());
+        }
+        self.root.state.shape_drawer.status = Some("已插入当前工程".to_string());
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+        Ok(())
     }
 
     /// 种入画刷「绘制行为」对话框本地草稿（Runner 在对话框 UI 就绪后注入）

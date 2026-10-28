@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use lumino_core::shape::Stroke;
+use lumino_core::shape::{AreaSpot, ShapeDrawing, Stroke, StrokeRole};
 
 pub mod draft;
 pub use draft::Draft;
@@ -91,6 +91,8 @@ impl DrawerView {
 #[derive(Debug, Clone)]
 struct Snapshot {
     strokes: Vec<Stroke>,
+    roles: Vec<StrokeRole>,
+    areas: Vec<AreaSpot>,
     selection: BTreeSet<usize>,
 }
 
@@ -103,6 +105,10 @@ pub struct DrawerDoc {
     pub strokes: Vec<Stroke>,
     /// 选中的 stroke 下标
     pub selection: BTreeSet<usize>,
+    /// 与 strokes 等长的角色
+    pub roles: Vec<StrokeRole>,
+    /// 归一化区域点
+    pub areas: Vec<AreaSpot>,
     /// 画布视图
     pub view: DrawerView,
     /// 是否有未保存修改
@@ -124,6 +130,8 @@ impl DrawerDoc {
     fn checkpoint(&mut self) {
         self.undo.push(Snapshot {
             strokes: self.strokes.clone(),
+            roles: self.roles.clone(),
+            areas: self.areas.clone(),
             selection: self.selection.clone(),
         });
         if self.undo.len() > 128 {
@@ -137,6 +145,7 @@ impl DrawerDoc {
     pub fn add_stroke(&mut self, stroke: Stroke) {
         self.checkpoint();
         self.strokes.push(stroke);
+        self.roles.push(StrokeRole::default());
         self.selection.clear();
     }
 
@@ -150,6 +159,9 @@ impl DrawerDoc {
         for index in selected.into_iter().rev() {
             if index < self.strokes.len() {
                 self.strokes.remove(index);
+            }
+            if index < self.roles.len() {
+                self.roles.remove(index);
             }
         }
         self.selection.clear();
@@ -173,9 +185,13 @@ impl DrawerDoc {
         };
         self.redo.push(Snapshot {
             strokes: self.strokes.clone(),
+            roles: self.roles.clone(),
+            areas: self.areas.clone(),
             selection: self.selection.clone(),
         });
         self.strokes = previous.strokes;
+        self.roles = previous.roles;
+        self.areas = previous.areas;
         self.selection = previous.selection;
         self.dirty = true;
         true
@@ -188,9 +204,13 @@ impl DrawerDoc {
         };
         self.undo.push(Snapshot {
             strokes: self.strokes.clone(),
+            roles: self.roles.clone(),
+            areas: self.areas.clone(),
             selection: self.selection.clone(),
         });
         self.strokes = next.strokes;
+        self.roles = next.roles;
+        self.areas = next.areas;
         self.selection = next.selection;
         self.dirty = true;
         true
@@ -235,7 +255,132 @@ impl DrawerDoc {
         }
         self.checkpoint();
         self.strokes.clear();
+        self.roles.clear();
+        self.areas.clear();
         self.selection.clear();
+        true
+    }
+
+    /// 从库图形载入到画板；重置选择与撤销栈。
+    pub fn load_drawing(&mut self, drawing: &ShapeDrawing) {
+        self.strokes = drawing.strokes.clone();
+        self.roles = drawing.roles.clone();
+        self.areas = drawing.areas.clone();
+        if self.roles.len() != self.strokes.len() {
+            self.roles = vec![StrokeRole::default(); self.strokes.len()];
+        }
+        self.selection.clear();
+        self.undo.clear();
+        self.redo.clear();
+        self.dirty = false;
+    }
+
+    /// 导出为库图形；roles 不足时补默认值。
+    pub fn to_drawing(&self, id: String, name: String) -> ShapeDrawing {
+        let roles = if self.roles.len() == self.strokes.len() {
+            self.roles.clone()
+        } else {
+            vec![StrokeRole::default(); self.strokes.len()]
+        };
+        ShapeDrawing {
+            id,
+            name,
+            strokes: self.strokes.clone(),
+            areas: self.areas.clone(),
+            roles,
+        }
+    }
+
+    /// 粘贴 strokes（一次撤销单元；偏移避免完全重叠）
+    pub fn paste_strokes(&mut self, strokes: &[Stroke]) -> bool {
+        if strokes.is_empty() {
+            return false;
+        }
+        self.checkpoint();
+        for stroke in strokes {
+            let mut copy = stroke.clone();
+            for anchor in &mut copy.anchors {
+                anchor.pos.0 = (anchor.pos.0 + 0.03).min(1.0);
+                anchor.pos.1 = (anchor.pos.1 + 0.03).min(1.0);
+            }
+            self.strokes.push(copy);
+            self.roles.push(StrokeRole::default());
+        }
+        self.selection.clear();
+        true
+    }
+
+    /// 水平翻转（一次撤销单元）
+    pub fn flip_horizontal(&mut self) -> bool {
+        self.transform_strokes(
+            |anchor| {
+                anchor.pos.0 = 1.0 - anchor.pos.0;
+                anchor.in_handle.0 = -anchor.in_handle.0;
+                anchor.out_handle.0 = -anchor.out_handle.0;
+            },
+            |area| area.u = 1.0 - area.u,
+        )
+    }
+
+    /// 垂直翻转（一次撤销单元）
+    pub fn flip_vertical(&mut self) -> bool {
+        self.transform_strokes(
+            |anchor| {
+                anchor.pos.1 = 1.0 - anchor.pos.1;
+                anchor.in_handle.1 = -anchor.in_handle.1;
+                anchor.out_handle.1 = -anchor.out_handle.1;
+            },
+            |area| area.v = 1.0 - area.v,
+        )
+    }
+
+    /// 顺时针旋转 90°（一次撤销单元）
+    pub fn rotate90(&mut self) -> bool {
+        self.transform_strokes(
+            |anchor| {
+                let (x, y) = anchor.pos;
+                anchor.pos = (y, 1.0 - x);
+                let (ix, iy) = anchor.in_handle;
+                anchor.in_handle = (iy, -ix);
+                let (ox, oy) = anchor.out_handle;
+                anchor.out_handle = (oy, -ox);
+            },
+            |area| {
+                let (u, v) = (area.u, area.v);
+                area.u = v;
+                area.v = 1.0 - u;
+            },
+        )
+    }
+
+    fn transform_strokes(
+        &mut self,
+        transform_anchor: impl Fn(&mut lumino_core::shape::ShapeAnchor),
+        transform_area: impl Fn(&mut AreaSpot),
+    ) -> bool {
+        if self.strokes.is_empty() && self.areas.is_empty() {
+            return false;
+        }
+        self.checkpoint();
+        for stroke in &mut self.strokes {
+            for anchor in &mut stroke.anchors {
+                transform_anchor(anchor);
+            }
+            if let Some(rect) = &mut stroke.rect {
+                let (lo_t, lo_k, hi_t, hi_k) =
+                    (rect.tick_lo, rect.key_lo, rect.tick_hi, rect.key_hi);
+                // 用两个角点经过同一变换后重新规范化，适用于翻转与 90° 旋转。
+                let mut a = lumino_core::shape::ShapeAnchor::new((lo_t, lo_k));
+                let mut b = lumino_core::shape::ShapeAnchor::new((hi_t, hi_k));
+                transform_anchor(&mut a);
+                transform_anchor(&mut b);
+                *rect =
+                    lumino_core::shape::ShapeRect::normalized(a.pos.0, a.pos.1, b.pos.0, b.pos.1);
+            }
+        }
+        for area in &mut self.areas {
+            transform_area(area);
+        }
         true
     }
 }
@@ -345,6 +490,52 @@ mod tests {
             let (w, h) = rect.size();
             assert!((w - h).abs() < 1e-4, "{tool:?} Shift 应生成正方形/正圆框");
         }
+    }
+
+    #[test]
+    fn test_drawing_roundtrip_includes_roles_and_areas() {
+        let mut doc = DrawerDoc::default();
+        let mut draft = Draft::begin(DrawerTool::Line, (0.1, 0.1)).expect("草稿");
+        draft.update((0.9, 0.8));
+        doc.commit_draft(draft.to_stroke());
+        doc.roles[0].colour_slot = 3;
+        doc.areas.push(AreaSpot {
+            u: 0.5,
+            v: 0.5,
+            colour: 2,
+        });
+        let drawing = doc.to_drawing("id".to_string(), "name".to_string());
+        let mut back = DrawerDoc::default();
+        back.load_drawing(&drawing);
+        assert_eq!(
+            back.to_drawing("id".to_string(), "name".to_string()),
+            drawing
+        );
+    }
+
+    #[test]
+    fn test_flip_rotate_and_paste_are_undoable() {
+        let mut doc = DrawerDoc::default();
+        let mut draft = Draft::begin(DrawerTool::Line, (0.1, 0.2)).expect("草稿");
+        draft.update((0.8, 0.6));
+        doc.commit_draft(draft.to_stroke());
+        doc.areas.push(AreaSpot {
+            u: 0.25,
+            v: 0.75,
+            colour: 1,
+        });
+
+        assert!(doc.flip_horizontal());
+        assert!((doc.strokes[0].anchors[0].pos.0 - 0.9).abs() < 1e-4);
+        assert!(doc.undo());
+        assert!((doc.strokes[0].anchors[0].pos.0 - 0.1).abs() < 1e-4);
+
+        assert!(doc.rotate90());
+        assert!((doc.areas[0].u - 0.75).abs() < 1e-4);
+        assert!(doc.paste_strokes(&doc.strokes.clone()));
+        assert_eq!(doc.strokes.len(), 2);
+        assert!(doc.undo());
+        assert_eq!(doc.strokes.len(), 1);
     }
 
     #[test]

@@ -44,8 +44,11 @@ impl RunnerInner {
                 );
                 // 永久删除音轨缓存：对话框保持开启（Runner 处理完后刷新条目列表），
                 // 其余结果沿用"取到结果即关闭"的默认行为。
-                should_close =
-                    !matches!(result, DialogResult::RecoverTrackPermanentlyDelete { .. });
+                should_close = !matches!(
+                    result,
+                    DialogResult::RecoverTrackPermanentlyDelete { .. }
+                        | DialogResult::InsertShapeDrawing(_)
+                );
                 dialog_result = Some(result);
             }
 

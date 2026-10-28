@@ -110,7 +110,11 @@ impl DialogWindow {
         {
             // 永久删除音轨缓存后对话框保持开启（Runner 会刷新条目列表，支持连续操作）；
             // 其余结果沿用"取到结果即关闭"的默认行为。
-            let keep_open = matches!(&result, DialogResult::RecoverTrackPermanentlyDelete { .. });
+            let keep_open = matches!(
+                &result,
+                DialogResult::RecoverTrackPermanentlyDelete { .. }
+                    | DialogResult::InsertShapeDrawing(_)
+            );
             self.result_data = Some(result);
             if !keep_open {
                 self.should_close = true;

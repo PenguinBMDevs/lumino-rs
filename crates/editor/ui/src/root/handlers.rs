@@ -26,6 +26,7 @@ pub mod help;
 pub mod loop_range;
 pub mod material;
 pub mod settings;
+pub mod shape_drawer;
 pub mod sidebar;
 pub mod state_update;
 pub mod toolbar;
@@ -126,6 +127,10 @@ impl Root {
             }
             Message::Help(action) => {
                 self.handle_help_action(action.clone());
+                true
+            }
+            Message::ShapeDrawer(action) => {
+                self.handle_shape_drawer_action(action.clone());
                 true
             }
             Message::Sidebar(event) => {

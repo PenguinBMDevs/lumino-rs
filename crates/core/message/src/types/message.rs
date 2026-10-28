@@ -21,6 +21,7 @@ use crate::recover_track::RecoverTrackAction;
 use crate::right_sidebar::RightSidebarAction;
 use crate::save_confirm::SaveConfirmAction;
 use crate::settings_dialog::SettingsDialogAction;
+use crate::shape_drawer::ShapeDrawerAction;
 use crate::speed_change::SpeedChangeAction;
 use crate::types::editor::EditorAction;
 use crate::types::geometry::{Point2, Size2};
@@ -115,6 +116,8 @@ pub enum Message<W, S, Se, T> {
     FillDivision(FillDivisionAction),
     /// 帮助窗口/首次提示动作（DRAW-038）
     Help(HelpAction),
+    /// 形状抽屉库/变换/插入动作（DRAW-033B2）
+    ShapeDrawer(ShapeDrawerAction),
     /// 协作动作
     Collaboration(CollaborationAction),
     /// 加载确认对话框动作

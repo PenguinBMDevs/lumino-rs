@@ -16,8 +16,9 @@ pub use lumino_message::{
     BrushSettingsAction, CcOption, CustomPrecisionAction, DotType, DrawSettingsAction,
     EditorAction, Interpolation, LoadConfirmAction, LoopRangeAction, Message as GenericMessage,
     NotePrecision, PerfData, Point2, ProjectSettingsAction, RecoverTrackAction, RightSidebarAction,
-    SaveConfirmAction, SettingsDialogAction, Size2, SpeedChangeAction, SpeedFactor,
-    ThreadingOption, Tool, TupletType, VelocityAction, VideoClipAction, VideoExportAction,
+    SaveConfirmAction, SettingsDialogAction, ShapeDrawerAction, Size2, SpeedChangeAction,
+    SpeedFactor, ThreadingOption, Tool, TupletType, VelocityAction, VideoClipAction,
+    VideoExportAction,
 };
 
 /// 具体化的消息类型

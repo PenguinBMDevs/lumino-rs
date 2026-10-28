@@ -74,6 +74,12 @@ impl RunnerInner {
                 tracing::info!("应用画刷绘制行为配置: 粗细度={}", config.thickness);
                 ui.apply_brush_settings(config);
             }
+            DialogResult::InsertShapeDrawing(drawing) => {
+                tracing::info!("形状抽屉：插入工程 {}", drawing.name);
+                if let Err(error) = ui.insert_shape_drawing(&drawing) {
+                    tracing::warn!("形状抽屉插入失败: {error}");
+                }
+            }
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }
@@ -139,7 +145,6 @@ impl RunnerInner {
 
     /// 重启窗口（标题栏设置变更后）
     pub(crate) fn restart_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-
         // 保存当前窗口状态
         let is_maximized = self.window_state.window.window().is_maximized();
 
