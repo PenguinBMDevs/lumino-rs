@@ -209,6 +209,71 @@ fn test_undo_chain_multi_moves_each_step_reverts_one() {
 }
 
 #[test]
+fn test_history_jump_across_create_entry_then_move() {
+    use lumino_note_core::history::CreateOp;
+
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+    editor.editor_state.data.insert_note(
+        editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 100.0),
+    );
+    let note = editor
+        .editor_state
+        .data
+        .track_notes(editor.editor_state.data.current_track)
+        .get(0)
+        .copied()
+        .expect("音符应存在");
+    editor.editor_state.data.push_note_create(vec![CreateOp {
+        track_id: editor.editor_state.data.current_track as u32,
+        note,
+    }]);
+    editor.selection_insert(0);
+    batch_move_commit(&mut editor, vec![0], 100, 0);
+    assert_eq!(track_ticks(&editor), vec![100]);
+    assert_eq!(editor.history_view().current, 2);
+
+    assert!(editor.history_jump_to(1), "回到创建步");
+    assert_eq!(track_ticks(&editor), vec![0]);
+    assert!(editor.history_jump_to(2), "重做移动");
+    assert_eq!(track_ticks(&editor), vec![100]);
+    assert!(editor.history_jump_to(0), "回到初始状态");
+    assert!(track_ticks(&editor).is_empty());
+}
+
+#[test]
+fn test_history_jump_across_two_independent_moves() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[Note::new(0.0, 60, 100.0), Note::new(500.0, 61, 100.0)],
+    );
+    editor.selection_insert(0);
+    batch_move_commit(&mut editor, vec![0], 100, 0);
+    editor.selection_insert(1);
+    batch_move_commit(&mut editor, vec![1], 200, 0);
+    assert_eq!(track_ticks(&editor), vec![100, 700]);
+    assert_eq!(editor.history_view().current, 2);
+
+    assert!(editor.history_jump_to(0), "回到初始状态");
+    assert_eq!(track_ticks(&editor), vec![0, 500]);
+
+    assert!(editor.history_jump_to(1), "只重做第一次移动");
+    assert_eq!(track_ticks(&editor), vec![100, 500]);
+
+    assert!(editor.history_jump_to(2), "重做第二次移动");
+    assert_eq!(track_ticks(&editor), vec![100, 700]);
+
+    assert!(editor.history_jump_to(1), "从最新回退第二次移动");
+    assert_eq!(track_ticks(&editor), vec![100, 500]);
+    assert!(editor.history_jump_to(0), "继续回退第一次移动");
+    assert_eq!(track_ticks(&editor), vec![0, 500]);
+}
+
+#[test]
 fn test_history_jump_multi_note_pending_move_returns_to_creation() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
