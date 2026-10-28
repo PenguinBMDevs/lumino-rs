@@ -1,8 +1,8 @@
 //! 单 band 的光栅化：直接遍历 `MidiDocument`，不构建任何音符实例副本。
 //!
 //! 洋葱皮 pass：track 0..N（跳过当前轨），owner=1；主轨 pass：当前轨，owner=2。
-//! 稳定深度语义与 GPU 一致：主轨恒覆盖洋葱皮；同级先到先得（Exact 档）。
-//! 滚动 LOD（Motion）只省描边/子像素细节，音符始终是完整高度矩形。
+//! 稳定深度语义与 GPU 一致：主轨恒覆盖洋葱皮；同级先到先得。
+//! 滚动与静止共用同一 Exact 光栅化，**不存在省填充/省描边/丢轨的滚动档位**。
 
 use std::sync::Arc;
 
@@ -17,10 +17,8 @@ use crate::{
 /// 渲染精度档位。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LodMode {
-    /// 静止全质量：完整高度 + 描边 + owner 稳定序。
+    /// 全质量：完整高度 + 填充 + 2px 描边 + owner 稳定序。
     Exact,
-    /// 滚动中：细音符压成 1px 高、无 owner 检查（last-wins）。
-    Motion,
     /// 全曲总览：密度热力图。
     Overview,
 }
@@ -31,7 +29,6 @@ impl LodMode {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Exact => "exact",
-            Self::Motion => "motion",
             Self::Overview => "overview",
         }
     }
@@ -61,8 +58,6 @@ pub struct BandJob {
     /// 可见 key 区间。
     pub key_min: u16,
     pub key_max: u16,
-    /// 滚动 LOD：只画每 N 条洋葱皮轨（1 = 全画；主轨恒画）。
-    pub track_stride: usize,
 }
 
 /// band 渲染统计。
@@ -104,7 +99,6 @@ fn render_notes(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
     let (tick_lo, tick_hi) = camera.tick_range_for_x(job.x0 as f32, job.x1 as f32);
     let track_count = job.document.track_count();
     let mut stats = BandStats::default();
-    let track_stride = job.track_stride.max(1);
     let cull_only = std::env::var_os("CPU_ONIONSKIN_CULL_ONLY").is_some();
 
     // pass 0 = 洋葱皮，pass 1 = 主轨（后画，覆盖洋葱皮）。
@@ -112,9 +106,6 @@ fn render_notes(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
         for track in 0..track_count {
             let is_main = track == job.current_track;
             if (pass == 1) != is_main {
-                continue;
-            }
-            if !is_main && track_stride > 1 && track % track_stride != 0 {
                 continue;
             }
             let notes = job.document.track_notes(track);

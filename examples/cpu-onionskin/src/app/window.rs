@@ -134,30 +134,14 @@ impl App {
         (estimate_all as f64 * key_fraction) as u64
     }
 
-    pub(super) fn choose_mode(&self, camera: &Camera, force_motion: bool) -> LodMode {
+    pub(super) fn choose_mode(&self, camera: &Camera) -> LodMode {
         let estimate = self.estimated_visible(camera);
-        let moving = force_motion || camera.is_moving();
-        // 全曲总览：逐音符绘制 1.64 亿条不可能 80fps，切密度热力图。
+        // 全曲总览：逐音符绘制 1.64 亿条不可能 60fps，切密度热力图。
         // 用"可见 key 比例"后的估算，避免只在 40 个键上放大时误判成全曲。
         if estimate > 6_000_000 {
             return LodMode::Overview;
         }
-        if moving && estimate > 250_000 {
-            LodMode::Motion
-        } else {
-            LodMode::Exact
-        }
-    }
-
-    pub(super) fn choose_track_stride(&self, camera: &Camera, force_motion: bool) -> usize {
-        if !(force_motion || camera.is_moving()) {
-            return 1;
-        }
-        let estimate = self.estimated_visible(camera);
-        if estimate <= 500_000 {
-            1
-        } else {
-            ((estimate as f64 / 500_000.0).ceil() as usize).clamp(1, 4)
-        }
+        // 滚动/静止一律 Exact：不允许省填充、省描边或丢音轨。
+        LodMode::Exact
     }
 }

@@ -135,7 +135,6 @@ impl Renderer {
         camera: &Camera,
         current_track: usize,
         mode: LodMode,
-        track_stride: usize,
     ) -> RenderStats {
         if self.frame.len() != self.width as usize * self.height as usize {
             self.resize(self.width.max(1), self.height.max(1));
@@ -188,7 +187,6 @@ impl Renderer {
                     simd,
                     key_min,
                     key_max,
-                    track_stride,
                 };
                 set.spawn(async move {
                     let mut buffer = take_buffer(&slot);
@@ -238,9 +236,9 @@ impl Renderer {
 
     /// 只渲染窗口中的一条 x 区间并直接合成进 frame（滚动增量路径）。
     ///
-    /// 这条路径是"滚动期间仍保持音符矩形"的关键：已有帧按像素平移，只有新
-    /// 露出的窄条重新光栅化。宽条/高密度时调用方可传 Motion（仍画矩形，
-    /// 只省描边/子像素），窄条用 Exact 基本零成本。
+    /// 这条路径是"滚动期间仍保持完整外观"的关键：已有帧按像素平移，只有新
+    /// 露出的窄条重新光栅化；窄条与全量帧使用同一 Exact 光栅化，不省填充/
+    /// 描边/音轨。
     #[allow(clippy::too_many_arguments)]
     pub fn render_strip_into_frame(
         &mut self,
@@ -249,7 +247,6 @@ impl Renderer {
         camera: &Camera,
         current_track: usize,
         mode: LodMode,
-        track_stride: usize,
         x0: u32,
         x1: u32,
     ) -> BandStats {
@@ -269,7 +266,6 @@ impl Renderer {
             simd: self.simd,
             key_min,
             key_max,
-            track_stride: track_stride.max(1),
         };
         let mut buffer = take_buffer(&self.strip_slot);
         let stats = render_band(&job, &mut buffer);

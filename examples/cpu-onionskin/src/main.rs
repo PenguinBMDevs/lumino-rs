@@ -203,7 +203,6 @@ fn main() -> Result<()> {
             &camera,
             current_track,
             render::band::LodMode::Exact,
-            1,
         );
         let font = text::TextRenderer::new();
         let hud = format!(

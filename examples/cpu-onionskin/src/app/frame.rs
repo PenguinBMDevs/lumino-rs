@@ -105,11 +105,8 @@ impl App {
                 let end = (keyboard + (-dx_int) as usize).min(width_usize);
                 (keyboard as u32, end as u32)
             };
-            // 滚动条带与铺底帧保持同一档位，避免复用区/新条带出现风格接缝。
-            // 快速滚动/大跨度全量回退时铺底帧是 Motion（仍为矩形，仅省描边），
-            // 条带也跟随 Motion；静止后再全量 Exact。
+            // 滚动条带与铺底帧使用同一 Exact 光栅化；不省填充/描边/音轨。
             let strip_mode = self.baseline_mode;
-            let strip_stride = self.baseline_stride;
             let frame_estimate = self.estimated_visible(&frame_camera);
             let render_start = Instant::now();
             let band_stats = self.renderer.render_strip_into_frame(
@@ -118,7 +115,6 @@ impl App {
                 &frame_camera,
                 self.current_track,
                 strip_mode,
-                strip_stride,
                 strip_x0,
                 strip_x1,
             );
@@ -140,11 +136,7 @@ impl App {
             self.last_zoom_y = camera.zoom_y;
             self.last_width = width;
             self.last_height = height;
-            self.last_path = if strip_mode == LodMode::Exact {
-                "scroll-exact"
-            } else {
-                "scroll-motion"
-            };
+            self.last_path = "scroll-exact";
             self.record_frame(
                 render_start,
                 render_done,
@@ -164,14 +156,8 @@ impl App {
         }
 
         // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
-        // 基准首帧强制 Exact 铺底，让后续条带复用全质量矩形；不计入统计。
-        let force_motion = if self.bench_ready {
-            bench_active || bench_finished
-        } else {
-            false
-        };
-        let mode = self.choose_mode(&camera, force_motion);
-        let track_stride = self.choose_track_stride(&camera, force_motion);
+        // 所有全量帧一律 Exact（静止与滚动同一外观）。
+        let mode = self.choose_mode(&camera);
         let render_start = Instant::now();
         let render_stats = if mode == LodMode::Overview {
             // 总览是密度热力图，半分辨率渲染后再最近邻放大：1.4M 像素/帧
@@ -224,7 +210,6 @@ impl App {
                 &camera,
                 self.current_track,
                 mode,
-                track_stride,
             )
         };
         let render_done = Instant::now();
@@ -255,13 +240,12 @@ impl App {
         self.content_dirty = false;
         if mode != LodMode::Overview {
             self.baseline_mode = mode;
-            self.baseline_stride = track_stride.max(1);
         } else {
             self.baseline_mode = LodMode::Overview;
         }
 
         if !self.bench_ready && self.bench.is_some() {
-            // 基准首帧：完成一次全量（Motion 矩形）铺底，不计入统计。
+            // 基准首帧：完成一次全量 Exact 铺底，不计入统计。
             self.bench_ready = true;
             self.bench_warmup_until = Some(Instant::now() + Duration::from_secs(1));
             self.stats.reset();
