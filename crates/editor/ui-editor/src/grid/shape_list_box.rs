@@ -57,8 +57,12 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
             } else {
                 entry.model.name.clone()
             };
-            // 载入工程后 notes 为空：本次会话没有可安全删除的旧音符指纹。
-            (entry.model.id, name, !entry.notes.is_empty())
+            // 载入工程后 notes 为空，但再生成结果能精确定位时仍可接管。
+            (
+                entry.model.id,
+                name,
+                editor.can_area_paint_model(entry.model.id),
+            )
         })
         .collect();
     entries.sort_by_key(|(id, _, _)| *id);

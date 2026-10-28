@@ -90,6 +90,18 @@ impl Editor {
         true
     }
 
+    /// 模型当前是否可进入区域着色（列表用，不产生副作用）
+    pub(crate) fn can_area_paint_model(&self, model_id: u64) -> bool {
+        if !self.editor_state.shape_store.notes_of(model_id).is_empty() {
+            return true;
+        }
+        let Some(model) = self.editor_state.shape_store.model(model_id) else {
+            return false;
+        };
+        let generated = self.shape_notes_of(model, model.track as usize);
+        !generated.is_empty() && self.model_notes_present(model.track as usize, &generated)
+    }
+
     /// 尝试用模型再生成结果接管载入工程的旧音符（242D）
     ///
     /// 只有所有生成音符都能在文档中逐个精确定位时才写回 `ShapeStore`；
@@ -100,11 +112,19 @@ impl Editor {
         };
         let track = model.track as usize;
         let generated = self.shape_notes_of(&model, track);
-        if generated.is_empty() {
+        if generated.is_empty() || !self.model_notes_present(track, &generated) {
             return false;
         }
+        self.editor_state
+            .shape_store
+            .assign_notes(model_id, generated);
+        true
+    }
+
+    /// 生成音符是否能在文档中逐条精确定位（同值多份按份数分配）
+    fn model_notes_present(&self, track: usize, notes: &[lumino_editor_state::ShapeNote]) -> bool {
         let mut used = std::collections::HashSet::new();
-        for note in &generated {
+        for note in notes {
             let event = lumino_editor_state::note_to_event(
                 crate::Note::new(note.tick, note.key, note.length)
                     .with_velocity(note.velocity)
@@ -120,9 +140,6 @@ impl Editor {
             };
             used.insert(index);
         }
-        self.editor_state
-            .shape_store
-            .assign_notes(model_id, generated);
         true
     }
 
