@@ -1,44 +1,27 @@
-//! 形状抽屉空窗（DRAW-033B0）
+//! 形状抽屉画布视图（DRAW-033B0/B1）
 //!
-//! 本阶段只验证独立窗口生命周期与 `shapes_dir` 注入；画板、工具和库列表
-//! 分别由 033B1 / 033B2 接入，避免 B0 提前锁死 UI 结构。
+//! B0 的空窗占位已替换为 B1 Canvas：左侧七工具 + 选择，右侧单位框画板。
+//! 库列表/保存/插入仍由 B2 接入。
 
-use iced_core::{Alignment, Length};
-use iced_widget::{column, container, space, text};
+use iced_core::Length;
+use iced_widget::canvas::Canvas;
 
-use lumino_core::tr;
-
+use crate::shape_drawer::canvas::ShapeDrawerCanvas;
 use crate::state::root_state::ShapeDrawerState;
 use crate::{Element, Theme};
 
-/// 渲染形状抽屉空窗占位。
-pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Element<'a> {
-    let path = if state.shapes_dir.as_os_str().is_empty() {
-        tr!("尚未注入形状库目录").to_string()
-    } else {
-        state.shapes_dir.display().to_string()
-    };
-    let palette = theme.extended_palette();
-
-    container(
-        column![
-            text(tr!("形状抽屉")).size(24),
-            space().height(12),
-            text(tr!("形状库目录")).size(14),
-            text(path).size(13),
-            space().height(24),
-            text(tr!("画板与工具将在 033B1 接入")).size(14),
-        ]
-        .spacing(6)
-        .align_x(Alignment::Start),
-    )
+/// 渲染形状抽屉。
+pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, _theme: &'a Theme) -> Element<'a> {
+    Canvas::new(ShapeDrawerCanvas {
+        doc: state.doc.clone(),
+        interaction: state.interaction.clone(),
+        shapes_dir: if state.shapes_dir.as_os_str().is_empty() {
+            "not injected".to_string()
+        } else {
+            state.shapes_dir.display().to_string()
+        },
+    })
     .width(Length::Fill)
     .height(Length::Fill)
-    .padding(32)
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(iced_core::Background::Color(palette.background.base.color)),
-        text_color: Some(palette.background.base.text),
-        ..Default::default()
-    })
     .into()
 }

@@ -12,19 +12,37 @@ pub use lumino_ui_core::state::{
     ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
 };
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::app_mode::AppMode;
+use crate::shape_drawer::doc::{DrawerDoc, DrawerInteraction};
 use lumino_core::BrushConfig;
 use lumino_ui_core::help::{HelpDialogState, HelpTipsState};
 
-/// 形状抽屉窗口状态（DRAW-033B0）。
+/// 形状抽屉窗口状态（DRAW-033B0/B1）。
 ///
-/// B0 只承载目录注入与空窗占位；画板/库列表由 B1/B2 继续扩展。
-#[derive(Debug, Clone, Default)]
+/// B0 承载目录注入；B1 增加共享文档与画布交互。窗口关闭重开会得到新的
+/// 空文档；库加载与持久化由 B2 接管。
+#[derive(Debug, Clone)]
 pub struct ShapeDrawerState {
     /// 用户形状库目录（由 Runner 注入；空表示尚未注入）
     pub shapes_dir: PathBuf,
+    /// 画布文档（窗口内共享；工具/undo/选择都写这里）
+    pub doc: Rc<RefCell<DrawerDoc>>,
+    /// 拖拽草稿与中键平移
+    pub interaction: Rc<RefCell<DrawerInteraction>>,
+}
+
+impl Default for ShapeDrawerState {
+    fn default() -> Self {
+        Self {
+            shapes_dir: PathBuf::new(),
+            doc: Rc::new(RefCell::new(DrawerDoc::default())),
+            interaction: Rc::new(RefCell::new(DrawerInteraction::default())),
+        }
+    }
 }
 
 /// 对话框类型
