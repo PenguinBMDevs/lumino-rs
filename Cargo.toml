@@ -8,6 +8,7 @@ members = [
     "crates/audio/gpu-synth",
     # editor — UI / 渲染 / 编辑
     "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings",
+    "crates/editor/cpu-onion",
     # network — 协作 / 云
     "crates/network/cloud", "crates/network/collaboration",
     # tools — 工具 / 导出
@@ -72,6 +73,7 @@ edition = "2024"
 
 [workspace.dependencies]
 lumino-core = { path = "crates/core/core", version = "0.2.1-crates-io-preview1" }
+lumino-cpu-onion = { path = "crates/editor/cpu-onion", version = "0.2.1-crates-io-preview1" }
 lumino-export = { path = "crates/tools/export", version = "0.2.1-crates-io-preview1" }
 lumino-gfx = { path = "crates/editor/gfx", version = "0.2.1-crates-io-preview1" }
 lumino-midi-io = { path = "crates/audio/midi-io", version = "0.2.1-crates-io-preview1" }

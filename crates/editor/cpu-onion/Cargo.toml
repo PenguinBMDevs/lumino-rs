@@ -1,0 +1,17 @@
+[package]
+name = "lumino-cpu-onion"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "纯 CPU 洋葱皮渲染核心（onion-only，透明背景 RGBA8 帧）"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lumino-midi-model = { workspace = true }
+lumino-extras = { workspace = true }
+tokio = { workspace = true }

@@ -4261,6 +4261,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-cpu-onion"
+version = "0.2.1"
+dependencies = [
+ "lumino-extras",
+ "lumino-midi-model",
+ "tokio",
+]
+
+[[package]]
 name = "lumino-diagnostics"
 version = "0.2.1"
 dependencies = [
