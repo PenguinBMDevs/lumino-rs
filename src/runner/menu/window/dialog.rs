@@ -42,6 +42,51 @@ impl RunnerInner {
             CloseDrawSettingsDialog => {
                 self.close_dialog_traced(DialogType::DrawSettings, "音符画设置")
             }
+            OpenShapeDrawerDialog => {
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::ShapeDrawer)
+                {
+                    tracing::info!("形状抽屉已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::ShapeDrawer)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    let shapes_dir = crate::storage::config_dir().join("shapes");
+                    tracing::info!("打开形状抽屉: {}", shapes_dir.display());
+                    self.window_state
+                        .dialog_manager
+                        .open_shape_drawer(shapes_dir);
+                }
+            }
+            CloseShapeDrawerDialog => self.close_dialog_traced(DialogType::ShapeDrawer, "形状抽屉"),
+            OpenHistoryDialog => {
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::History)
+                {
+                    tracing::info!("撤销历史窗口已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::History)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    // 历史窗口打开前先落盘 pending 批量移动/复制，避免用户
+                    // 刚松开拖动时面板看不到这一步。
+                    self.window_state.window.ui_mut().flush_history_pending();
+                    self.open_dialog_traced(DialogType::History, "撤销历史");
+                }
+            }
+            CloseHistoryDialog => self.close_dialog_traced(DialogType::History, "撤销历史"),
             ToggleHelpDialog => {
                 if self
                     .window_state

@@ -7,11 +7,15 @@ use crate::Editor;
 use crate::interaction::line_tool::fill::spam_layout::{Span, place_gates};
 use crate::interaction::line_tool::fill::spans::row_spans;
 use crate::interaction::line_tool::{paths, stroke_band};
-use lumino_core::shape::{GateRangeParams, RangeDir, ShapeModel, ShapeOp};
+use lumino_core::shape::{
+    AREA_LOCK_BASE, AREA_UNASSIGNED, COLOURS, GateRangeParams, RangeDir, ShapeModel, ShapeOp,
+    ShapeRect,
+};
 use lumino_editor_state::ShapeNote;
 use lumino_editor_state::shape_ops::gate_range::{
     fit_squares, keys_gate, normalize, range_squares,
 };
+use lumino_editor_state::shape_ops::{AreaContext, RowSpan, row_pieces_coloured};
 
 impl Editor {
     /// 描边音符；`spam` 时按 Spam 门长/Align/Ends 切开（OutlineSpam）
@@ -81,6 +85,7 @@ impl Editor {
         key_count: i32,
         spam: bool,
         model: &ShapeModel,
+        area: Option<&AreaContext>,
     ) -> Vec<ShapeNote> {
         let min_ticks = paths::min_note_length_ticks(
             self.editor_state.line_tool.min_note_division,
@@ -185,7 +190,38 @@ impl Editor {
             } else {
                 spans
             };
-            for span in pieces {
+            // 区域色只影响内部填充：未着色段保持 channel 0，之后仍可被 Cycle 接管；
+            // 显式区域色写成 AREA_LOCK_BASE + colour，Cycle 会跳过，生成结束后统一解锁。
+            let coloured: Vec<(RowSpan, u8)> = match area {
+                Some(ctx) => {
+                    let rows: Vec<RowSpan> = pieces
+                        .iter()
+                        .map(|span| RowSpan {
+                            key,
+                            start: span.start,
+                            end: span.end,
+                        })
+                        .collect();
+                    row_pieces_coloured(&rows, &ctx.map, ctx.box_)
+                }
+                None => pieces
+                    .iter()
+                    .map(|span| {
+                        (
+                            RowSpan {
+                                key,
+                                start: span.start,
+                                end: span.end,
+                            },
+                            AREA_UNASSIGNED,
+                        )
+                    })
+                    .collect(),
+            };
+            for (span, colour) in coloured {
+                let Some(channel) = area_channel(colour) else {
+                    continue;
+                };
                 if span.end > span.start {
                     out.push(ShapeNote {
                         track,
@@ -193,12 +229,16 @@ impl Editor {
                         key,
                         length: span.end - span.start,
                         velocity,
-                        channel: 0,
+                        channel,
                     });
                 }
             }
         }
         if out.is_empty() {
+            // 显式 Areas 可能把整个内部标空；此时不能再退回描边，否则“空区域”失效。
+            if area.is_some() {
+                return Vec::new();
+            }
             // 自交/退化轮廓可能一行区间都没有；保持可见性
             return self.shape_outline_notes(poly, track, key_count, min_ticks, false, model);
         }
@@ -210,6 +250,59 @@ impl Editor {
         (model.style.gate_beats * f32::from(self.editor_state.view.ppq))
             .round()
             .max(1.0)
+    }
+
+    /// 由已展平路径构建区域上下文；`areas` 为空或没有有效着色点时返回 `None`
+    pub(super) fn area_context(
+        &self,
+        paths: &[Vec<(f64, f64)>],
+        model: &ShapeModel,
+    ) -> Option<AreaContext> {
+        let box_ = area_box_of(paths)?;
+        // 当前工程配置尚无“启用通道 10”开关；AreaSpot 的 16 先按不可用处理。
+        AreaContext::build(paths, box_, &model.style.areas, model.style.union, false)
+    }
+}
+
+/// 形状自身 box（不做 Glue 的 key ±0.5 扩张；区域坐标以真实几何为准）
+fn area_box_of(paths: &[Vec<(f64, f64)>]) -> Option<ShapeRect> {
+    let mut points = paths.iter().flatten();
+    let &(first_tick, first_key) = points.next()?;
+    let mut tick_lo = first_tick;
+    let mut tick_hi = first_tick;
+    let mut key_lo = first_key;
+    let mut key_hi = first_key;
+    for &(tick, key) in points {
+        tick_lo = tick_lo.min(tick);
+        tick_hi = tick_hi.max(tick);
+        key_lo = key_lo.min(key);
+        key_hi = key_hi.max(key);
+    }
+    Some(ShapeRect::normalized(
+        tick_lo as f32,
+        key_lo as f32,
+        tick_hi as f32,
+        key_hi as f32,
+    ))
+}
+
+/// 区域色 → 生成期 channel；`None` = 该段不产音符
+fn area_channel(colour: u8) -> Option<u8> {
+    match colour {
+        AREA_UNASSIGNED => Some(0),
+        0 => None,
+        value if value <= COLOURS => Some(AREA_LOCK_BASE + value),
+        // 16 需要工程启用通道 10；当前无该配置，生成阶段直接跳过。
+        _ => None,
+    }
+}
+
+/// 生成结束后把区域锁定 channel 还原成合法 MIDI 通道
+pub(super) fn unlock_area_channels(notes: &mut [ShapeNote]) {
+    for note in notes {
+        if note.channel >= AREA_LOCK_BASE {
+            note.channel -= AREA_LOCK_BASE;
+        }
     }
 }
 

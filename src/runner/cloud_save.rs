@@ -47,6 +47,8 @@ impl RunnerInner {
                     // 写入入口都会 `sync_tempo_to_document`，doc 已是编辑后的值；
                     // 原 `apply_tempo_points(...)` 补丁已删除。
                     let mut project = lumino_export::LuminoProject::from_midi_document(doc);
+                    // 形状随云保存持久化（与本地保存一致）
+                    project.shapes = ui.root().editor.shapes_snapshot();
                     // 累计创作时间随云保存持久化（与本地保存一致）
                     project.set_working_time_seconds(self.session_tracker.current_editing_secs());
                     // 作者/版权随云保存持久化（与本地保存一致）

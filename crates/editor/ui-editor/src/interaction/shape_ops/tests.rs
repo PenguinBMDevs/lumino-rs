@@ -3,11 +3,13 @@
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
-    FunnelParams, GateRangeParams, NestedParams, PatternParams, PolyStyle, PolygonParams, RangeDir,
-    ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle,
-    TextLayoutMode, TextOp, TextParams, TileBy, TilesParams, TumourParams,
+    AreaSpot, CycleBy, CycleParams, FunnelParams, GateRangeParams, NestedParams, PatternParams,
+    PolyStyle, PolygonParams, RangeDir, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
+    ShapeRect, ShapeStyle, TextLayoutMode, TextOp, TextParams, TileBy, TilesParams, TumourParams,
 };
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
+
+mod drawing;
 
 /// 构造带文档的编辑器：`document` 非空才可写入音符（`insert_note_with_id` 空文档返回 None）
 fn editor_with_track(track: usize) -> Editor {
@@ -71,6 +73,120 @@ fn closed_shape(fill: ShapeFill, gate_beats: f32) -> ShapeModel {
         ..ShapeStyle::default()
     };
     model
+}
+
+fn area_shape(colour: u8) -> ShapeModel {
+    let mut model = closed_shape(ShapeFill::Fill, 0.25);
+    model.style.areas = vec![AreaSpot {
+        u: 0.5,
+        v: 0.5,
+        colour,
+    }];
+    model
+}
+
+#[test]
+fn test_areas_colour_only_the_painted_region() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&area_shape(3), 1);
+    assert!(!notes.is_empty(), "着 colour=3 应仍产生内部音符");
+    assert!(
+        notes.iter().all(|note| note.channel == 3),
+        "所有内部音符应使用区域色 3，实际 {:?}",
+        notes
+            .iter()
+            .map(|note| (note.key, note.tick, note.channel))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_area_colour_zero_suppresses_fill() {
+    let editor = editor_with_track(1);
+    let notes = editor.shape_notes_of(&area_shape(0), 1);
+    assert!(notes.is_empty(), "colour=0 的区域不应产音符");
+}
+
+#[test]
+fn test_areas_override_cycle_channels() {
+    let editor = editor_with_track(1);
+    let mut model = area_shape(3);
+    model.ops.push(ShapeOp::Cycle(CycleParams {
+        by: CycleBy::Step,
+        n: 3,
+        ..CycleParams::default()
+    }));
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    assert!(
+        notes.iter().all(|note| note.channel == 3),
+        "区域色必须优先于 Cycle，实际 {:?}",
+        notes.iter().map(|note| note.channel).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_areas_do_not_change_outline_only_shapes() {
+    let editor = editor_with_track(1);
+    let base = editor.shape_notes_of(&closed_shape(ShapeFill::Empty, 0.25), 1);
+    let mut model = closed_shape(ShapeFill::Empty, 0.25);
+    model.style.areas = vec![AreaSpot {
+        u: 0.5,
+        v: 0.5,
+        colour: 0,
+    }];
+    let notes = editor.shape_notes_of(&model, 1);
+    assert_eq!(notes, base, "Areas 只作用于内部填充，不应影响描边");
+}
+
+#[test]
+fn test_areas_follow_geometry_scale() {
+    let editor = editor_with_track(1);
+    let mut scaled = area_shape(5);
+    // 以原点为中心放大 2 倍；区域点仍是同一相对位置。
+    for anchor in &mut scaled.geometry.anchors {
+        anchor.pos.0 *= 2.0;
+        anchor.pos.1 = 60.0 + (anchor.pos.1 - 60.0) * 2.0;
+    }
+    let notes = editor.shape_notes_of(&scaled, 1);
+    assert!(!notes.is_empty());
+    assert!(
+        notes.iter().all(|note| note.channel == 5),
+        "缩放后区域相对位置不变，实际 {:?}",
+        notes
+            .iter()
+            .map(|note| (note.key, note.tick, note.channel))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_area_spot_outside_shape_falls_back_to_existing_fill() {
+    let editor = editor_with_track(1);
+    let base = editor.shape_notes_of(&closed_shape(ShapeFill::Fill, 0.25), 1);
+    let mut model = closed_shape(ShapeFill::Fill, 0.25);
+    model.style.areas = vec![AreaSpot {
+        u: 1.5,
+        v: 1.5,
+        colour: 3,
+    }];
+    let notes = editor.shape_notes_of(&model, 1);
+    assert_eq!(notes, base, "无效区域点不应改变既有填充");
+}
+
+#[test]
+fn test_areas_follow_geometry_translation() {
+    let editor = editor_with_track(1);
+    let base = editor.shape_notes_of(&area_shape(5), 1);
+    let mut moved = area_shape(5);
+    moved.geometry.translate(480.0, 2.0);
+    let shifted = editor.shape_notes_of(&moved, 1);
+    assert_eq!(base.len(), shifted.len());
+    for (a, b) in base.iter().zip(&shifted) {
+        assert_eq!(a.channel, b.channel, "平移不应改变区域色");
+        assert!((b.tick - a.tick - 480.0).abs() < 1e-3);
+        assert_eq!(b.key, a.key + 2);
+    }
 }
 
 fn arc_shape(mid_key: f32) -> ShapeModel {

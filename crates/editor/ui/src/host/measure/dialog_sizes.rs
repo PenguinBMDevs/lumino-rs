@@ -1,4 +1,4 @@
-//! REF-001 阶段 F：**17 种对话框的自动化尺寸验证**
+//! REF-001 阶段 F：**18 种对话框的自动化尺寸验证**
 //!
 //! 验证四件事（对应卡的验收标准）：
 //! 1. 宽度取自声明，且声明为有效值；
@@ -28,7 +28,7 @@ use super::{
 pub(super) const WORK_AREA: Size = Size::new(1920.0, 1040.0);
 
 /// 全部「真实」对话框类型（`None` 除外）
-pub(super) const ALL_DIALOGS: [DialogType; 17] = [
+pub(super) const ALL_DIALOGS: [DialogType; 19] = [
     DialogType::CustomPrecision,
     DialogType::Collaboration,
     DialogType::LoadConfirm,
@@ -46,6 +46,8 @@ pub(super) const ALL_DIALOGS: [DialogType; 17] = [
     DialogType::CloudNotice,
     DialogType::BrushSettings,
     DialogType::DrawSettings,
+    DialogType::ShapeDrawer,
+    DialogType::History,
 ];
 
 /// 构建 headless iced 渲染器（不需要窗口）
@@ -89,7 +91,7 @@ pub(super) fn headless_renderer() -> Option<crate::Renderer> {
     ))
 }
 
-/// 17 种对话框逐类验证尺寸规则，并打印实测表（供实施记录引用）。
+/// 18 种对话框逐类验证尺寸规则，并打印实测表（供实施记录引用）。
 #[test]
 fn test_all_dialog_types_measure_within_bounds() {
     let Some(renderer) = headless_renderer() else {

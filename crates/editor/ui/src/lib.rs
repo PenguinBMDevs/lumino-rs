@@ -16,6 +16,7 @@ pub use lumino_ui_core::message;
 pub mod playback;
 pub(crate) use lumino_ui_core::resources;
 pub mod root;
+pub mod shape_drawer;
 pub use lumino_ui_settings as settings;
 /// 右侧栏模块
 pub mod right_sidebar;

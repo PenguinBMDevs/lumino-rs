@@ -5,9 +5,9 @@ use base64::engine::general_purpose::STANDARD;
 
 use super::*;
 use crate::shape::{
-    CopyPathParams, FunnelParams, LiveShapeParams, ShapeAnchor, ShapeFill, ShapeGeometry,
-    ShapeKind, ShapeOp, ShapeRect, Stroke, StrokeKind, Sym, SymAxis, SymParams, TextLayoutMode,
-    TextOp, TextParams, TilesParams,
+    CopyPathParams, DrawingParams, FunnelParams, LiveShapeParams, ShapeAnchor, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeOp, ShapeRect, Stroke, StrokeKind, StrokeRole, Sym, SymAxis,
+    SymParams, TextLayoutMode, TextOp, TextParams, TilesParams,
 };
 
 fn line(id: u64) -> ShapeModel {
@@ -160,6 +160,32 @@ fn test_cross_ppq_scales_live_nested_models() {
         panic!("Live 丢失");
     };
     assert_eq!(roundtrip_live.from[0].geometry.anchors[1].pos.0, 480.0);
+}
+
+#[test]
+fn test_cross_ppq_scales_drawing_strokes() {
+    let mut shape = rect_shape(1);
+    shape.ops.push(ShapeOp::Drawing(DrawingParams {
+        strokes: vec![Stroke {
+            kind: StrokeKind::Line,
+            anchors: vec![
+                ShapeAnchor::new((480.0, 60.0)),
+                ShapeAnchor::new((960.0, 64.0)),
+            ],
+            rect: Some(ShapeRect::normalized(480.0, 60.0, 960.0, 64.0)),
+        }],
+        roles: vec![StrokeRole::default()],
+    }));
+
+    let text = encode_shapes(std::slice::from_ref(&shape), 480).expect("应能编码");
+    let decoded = decode_op(&text, 960);
+    let ShapeOp::Drawing(drawing) = &decoded.ops[0] else {
+        panic!("Drawing 丢失");
+    };
+    assert_eq!(drawing.strokes[0].anchors[0].pos.0, 960.0);
+    assert_eq!(drawing.strokes[0].anchors[1].pos.0, 1920.0);
+    assert_eq!(drawing.strokes[0].rect.expect("框").tick_hi, 1920.0);
+    assert_eq!(drawing.roles[0].colour_slot, 0);
 }
 
 #[test]

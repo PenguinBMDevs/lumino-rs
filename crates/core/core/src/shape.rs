@@ -37,6 +37,7 @@ pub const AREA_COLOUR_MAX: u8 = 16;
 pub mod areas;
 pub mod expr;
 pub mod geometry;
+pub mod library;
 pub mod model;
 pub mod params;
 pub mod pattern_presets;
@@ -45,19 +46,26 @@ pub mod style;
 pub mod text;
 pub mod velocity_env;
 
-pub use areas::AreaSpot;
+pub use areas::{
+    ALL_COLOURS, AREA_BOUNDARY, AREA_LOCK_BASE, AREA_OUTSIDE, AREA_UNASSIGNED, AreaMap, AreaSpot,
+    COLOURS, MAP_CELLS, most_colours,
+};
 pub use expr::{Expr, ExprError};
-pub use geometry::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
+pub use geometry::{AnchorBend, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
+pub use library::{
+    BuiltinShape, LibraryWarning, ShapeDrawing, ShapeLibrary, builtin_drawings, decode_drawing,
+    delete_drawing, drawing_path, encode_drawing, load_dir as load_shape_library, save_drawing,
+};
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{
     BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,
     ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef, CycleBy, CycleParams,
-    DrawingRef, FlipMode, FlipWay, FunnelParams, FunnelStart, GateRangeParams, GlueParams,
-    JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow,
-    MergeParams, NestedParams, NestedWay, PathKind, PatternParams, PatternRef, PolyStyle,
+    DrawingParams, DrawingRef, FlipMode, FlipWay, FunnelParams, FunnelStart, GateRangeParams,
+    GlueParams, JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams,
+    MaskShow, MergeParams, NestedParams, NestedWay, PathKind, PatternParams, PatternRef, PolyStyle,
     PolygonParams, RangeDir, RowRestart, Speed, StopsParams, StraightenParams, Stroke, StrokeKind,
-    StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip, TileLayout, TilesParams,
-    TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    StrokeRole, StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip, TileLayout,
+    TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
 };
 pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,

@@ -59,6 +59,17 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // ShapeStore 列表 / 区域着色优先于普通画布交互。
+                    if let Some(action) =
+                        crate::grid::shape_list_box::press_action(self.editor, local_pos)
+                    {
+                        return action.map(|action| Action::publish(Message::EditorAction(action)));
+                    }
+                    if let Some(action) =
+                        crate::grid::area_paint_box::press_action(self.editor, local_pos)
+                    {
+                        return action.map(|action| Action::publish(Message::EditorAction(action)));
+                    }
                     // 图片转 MIDI 放置模式：优先响应悬浮 √× 按钮
                     if self.editor.editor_state.image_to_midi.mode
                         == lumino_editor_state::ImageToMidiMode::Placing
@@ -88,6 +99,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                         if btns.cancel.contains(local_pos) {
                             return Some(Action::publish(Message::EditorAction(
                                 EditorAction::LineToolCancel,
+                            )));
+                        }
+                    }
+                    // 曲线工具：选中锚点的弯折切换（DRAW-042）
+                    if self.editor.current_tool() == Tool::Curve
+                        && let Some(btns) =
+                            crate::grid::line_tool_box::line_bend_button_rects(self.editor)
+                    {
+                        if btns.smooth.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::LineToolBend(lumino_editor_state::AnchorBend::Smooth),
+                            )));
+                        }
+                        if btns.corner.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::LineToolBend(lumino_editor_state::AnchorBend::Corner),
                             )));
                         }
                     }
@@ -130,6 +157,17 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    if self.editor.shape_list_open {
+                        return Some(Action::publish(Message::EditorAction(
+                            EditorAction::ShapeListClose,
+                        )));
+                    }
+                    // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。
+                    if let Some(action) =
+                        crate::grid::area_paint_box::clear_action(self.editor, local_pos)
+                    {
+                        return Some(Action::publish(Message::EditorAction(action)));
+                    }
                     // 仅在有效钢琴卷帘区域内打开右键菜单
                     if self.editor.is_inside_canvas(local_pos) {
                         // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）；

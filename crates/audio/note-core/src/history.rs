@@ -235,8 +235,17 @@ impl History {
         match self.undo_stack.pop_back()? {
             HistoryEntry::Snapshot(bx) => {
                 let s = *bx;
+                // 把被撤销动作的元数据带到 redo 快照上：当前快照由
+                // `make_snapshot_for_track` 生成，默认 `op_kind=Other`；
+                // 不带过去会让历史面板在 undo 后把后续步骤全部显示成“其他”。
+                let mut redo_state = current_state;
+                redo_state.group_id = s.group_id;
+                redo_state.parent_group_id = s.parent_group_id;
+                redo_state.timestamp = s.timestamp;
+                redo_state.op_kind = s.op_kind;
+                redo_state.entry_count = s.entry_count;
                 self.redo_stack
-                    .push_back(HistoryEntry::Snapshot(Box::new(current_state)));
+                    .push_back(HistoryEntry::Snapshot(Box::new(redo_state)));
                 Some(HistoryEntry::Snapshot(Box::new(s)))
             }
             HistoryEntry::Operation(op) => {
@@ -263,8 +272,15 @@ impl History {
         match self.redo_stack.pop_back()? {
             HistoryEntry::Snapshot(bx) => {
                 let s = *bx;
+                // 与 undo 对称：redo 回退到当前状态时，保留被重做动作的元数据。
+                let mut undo_state = current_state;
+                undo_state.group_id = s.group_id;
+                undo_state.parent_group_id = s.parent_group_id;
+                undo_state.timestamp = s.timestamp;
+                undo_state.op_kind = s.op_kind;
+                undo_state.entry_count = s.entry_count;
                 self.undo_stack
-                    .push_back(HistoryEntry::Snapshot(Box::new(current_state)));
+                    .push_back(HistoryEntry::Snapshot(Box::new(undo_state)));
                 Some(HistoryEntry::Snapshot(Box::new(s)))
             }
             HistoryEntry::Operation(op) => {
@@ -315,6 +331,18 @@ impl History {
     /// 当前 redo 栈大小（测试用）
     pub fn redo_len(&self) -> usize {
         self.redo_stack.len()
+    }
+
+    /// 按时间顺序（最老 → 最新）遍历 undo 栈。
+    ///
+    /// 历史面板只读；不要用返回值修改栈。
+    pub fn undo_entries(&self) -> impl DoubleEndedIterator<Item = &HistoryEntry> {
+        self.undo_stack.iter()
+    }
+
+    /// 按“下一步先重做”的顺序（最近可重做 → 最远未来）遍历 redo 栈。
+    pub fn redo_entries(&self) -> impl DoubleEndedIterator<Item = &HistoryEntry> {
+        self.redo_stack.iter().rev()
     }
 
     /// 查看 undo 栈顶（测试用）

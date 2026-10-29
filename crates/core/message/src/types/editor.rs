@@ -1,6 +1,6 @@
 //! 编辑器相关消息类型
 
-use lumino_core::{TextLayoutMode, TextParams};
+use lumino_core::{AnchorBend, TextLayoutMode, TextParams};
 
 use crate::Point2;
 
@@ -67,6 +67,23 @@ pub enum EditorAction {
     LineToolConfirm,
     /// 曲线工具直线：取消并清空（× 按钮）
     LineToolCancel,
+    /// 曲线工具：切换选中锚点的弯折行为（DRAW-042）
+    LineToolBend(AnchorBend),
+    /// 区域着色：在画布坐标处着色（`clear=true` 时写 colour=0）
+    AreaPaintAt {
+        /// 画布局部坐标
+        pos: Point2,
+        /// 是否清除
+        clear: bool,
+    },
+    /// 区域着色：选择画笔色号（0..=15）
+    AreaPaintSetColour(u8),
+    /// 区域着色：退出模式
+    AreaPaintEnd,
+    /// ShapeStore 列表：选择模型进入区域着色
+    ShapeListPick(u64),
+    /// ShapeStore 列表：关闭
+    ShapeListClose,
     /// 形状工具：确认并按图形区域生成音符（√ 按钮）
     ShapeToolConfirm,
     /// 形状工具：取消并清空（× 按钮）

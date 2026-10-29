@@ -1,6 +1,6 @@
 //! Between 形状插值
 
-use lumino_core::shape::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_core::shape::{AnchorBend, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeModel};
 
 use super::super::bezier::{reverse_anchors, to_bezier};
 
@@ -27,6 +27,11 @@ pub fn blend(first: &ShapeModel, last: &ShapeModel, f: f32, rev: bool) -> ShapeM
             in_handle: lerp(a.in_handle, b.in_handle, f),
             out_handle: lerp(a.out_handle, b.out_handle, f),
             handles_auto: a.handles_auto && b.handles_auto,
+            bend: if a.bend == b.bend {
+                a.bend
+            } else {
+                AnchorBend::Smooth
+            },
         })
         .collect::<Vec<_>>();
     let kind = if first.kind == last.kind
@@ -72,6 +77,11 @@ fn resample(anchors: &[ShapeAnchor], count: usize) -> Vec<ShapeAnchor> {
                 in_handle: lerp(a.in_handle, b.in_handle, local),
                 out_handle: lerp(a.out_handle, b.out_handle, local),
                 handles_auto: a.handles_auto && b.handles_auto,
+                bend: if a.bend == b.bend {
+                    a.bend
+                } else {
+                    AnchorBend::Smooth
+                },
             }
         })
         .collect()

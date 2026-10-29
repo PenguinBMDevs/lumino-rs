@@ -66,6 +66,10 @@ pub enum PianoRollContextMenuItem {
     MergeShapes,
     /// 进入自定义编辑（DRAW-020）
     EditShape,
+    /// 进入区域着色（DRAW-032B）
+    PaintAreas,
+    /// 打开 ShapeStore 模型列表（DRAW-041B）
+    ShapeList,
     /// 竖轴对称（DRAW-023）
     SymmetryVertical,
     /// 横轴对称（DRAW-023）
@@ -99,6 +103,7 @@ impl PianoRollContextMenuItem {
             | Self::SplitJoinedShape
             | Self::MergeShapes
             | Self::EditShape
+            | Self::PaintAreas
             | Self::SymmetryVertical
             | Self::SymmetryHorizontal
             | Self::Straighten

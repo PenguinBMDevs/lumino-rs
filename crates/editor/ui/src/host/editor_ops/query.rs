@@ -119,6 +119,7 @@ impl Host {
                 | message::EditorAction::Cut
                 | message::EditorAction::Paste
                 | message::EditorAction::LineToolConfirm
+                | message::EditorAction::AreaPaintAt { .. }
                 | message::EditorAction::ShapeToolConfirm
                 | message::EditorAction::BrushConfirm
         );

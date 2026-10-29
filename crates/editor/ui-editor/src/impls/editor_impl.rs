@@ -49,6 +49,8 @@ impl Editor {
                 pending_drag_applied: (0.0, 0.0),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 shape_edit: None,
+                area_paint: None,
+                shape_list_open: false,
                 baked_pending: std::collections::HashMap::new(),
                 selected_bounds: Cell::new(None),
                 arrange_selection_cache:

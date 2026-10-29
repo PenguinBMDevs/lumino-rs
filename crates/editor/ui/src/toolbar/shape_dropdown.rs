@@ -12,6 +12,7 @@ use iced_widget::{button, container, row, text, tooltip};
 
 use lumino_core::tr;
 
+use crate::message::Message;
 use crate::resources::icon;
 use crate::toolbar::{Event, ShapeType};
 use crate::{Element, Theme};
@@ -42,13 +43,27 @@ pub fn render_shape_dropdown<'a>(
         (ShapeType::Triangle, icon::ShapeTriangle, tr!("三角形")),
     ];
 
-    let buttons = all_items
+    let mut buttons = all_items
         .iter()
         .map(|(shape, ic, desc)| {
             let selected = *shape == current_shape;
-            shape_button(*shape, *ic, desc, selected, theme)
+            shape_button(
+                *ic,
+                desc,
+                Event::shape_type_selected(*shape),
+                selected,
+                theme,
+            )
         })
         .collect::<Vec<_>>();
+    // B0：形状库入口与三种基本图形并列；点击只发事件，不改当前图形。
+    buttons.push(shape_button(
+        icon::Gear,
+        tr!("形状抽屉"),
+        Event::open_shape_drawer_dialog(),
+        false,
+        theme,
+    ));
 
     let palette = theme.extended_palette();
 
@@ -72,11 +87,11 @@ pub fn render_shape_dropdown<'a>(
     .into()
 }
 
-/// 构建下拉中的图形图标按钮
+/// 构建下拉中的图标按钮（图形类型 / 形状抽屉共用）
 fn shape_button<'a>(
-    shape: ShapeType,
     ic: icon::Icon,
     desc: &'static str,
+    on_press: Message,
     selected: bool,
     theme: &'a Theme,
 ) -> Element<'a> {
@@ -85,7 +100,7 @@ fn shape_button<'a>(
     let btn = button(icon_el)
         .width(iced_core::Length::Fixed(BUTTON_SIZE))
         .height(iced_core::Length::Fixed(BUTTON_SIZE))
-        .on_press(Event::shape_type_selected(shape))
+        .on_press(on_press)
         .style(move |_theme: &Theme, status| icon_button_style(status, selected));
 
     // 悬浮 tooltip 显示该按钮说明（与绘制工具选择面板一致，避免把文字塞进按钮撑宽）

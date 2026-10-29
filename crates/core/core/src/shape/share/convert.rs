@@ -102,6 +102,16 @@ fn scale_op(op: &mut ShapeOp, factor: f64, depth: usize) -> Result<(), ShareErro
                 scale_shape(source, factor, depth + 1)?;
             }
         }
+        ShapeOp::Drawing(params) => {
+            for stroke in &mut params.strokes {
+                for anchor in &mut stroke.anchors {
+                    scale_anchor(anchor, factor);
+                }
+                if let Some(rect) = &mut stroke.rect {
+                    scale_rect(rect, factor);
+                }
+            }
+        }
         _ => {}
     }
     Ok(())

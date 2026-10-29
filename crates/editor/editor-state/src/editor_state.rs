@@ -20,6 +20,7 @@ pub mod constants;
 pub mod drag_state;
 pub mod drawn_shape;
 pub mod editor_data;
+pub mod history_view;
 pub mod hit_test;
 pub mod image_to_midi;
 pub mod image_to_midi_material;
@@ -48,6 +49,7 @@ pub use drawn_shape::{
 pub use editor_data::{
     CollabCreateSyncEntry, CollabTransformSyncEntry, EditorData, NoteDeltaEvent,
 };
+pub use history_view::{HistoryStep, HistoryView};
 pub use image_to_midi::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
@@ -55,7 +57,8 @@ pub use interaction_state::{
     EditState, HitType, InteractionState, PreviewSequenceNote, SelectionHitType,
 };
 pub use line_tool::{
-    BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
+    AnchorBend, BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState,
+    PathSnapshot,
 };
 pub use selection_set::SelectionSet;
 pub use shape_edit::{

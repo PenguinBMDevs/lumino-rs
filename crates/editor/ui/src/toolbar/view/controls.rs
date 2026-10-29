@@ -11,6 +11,7 @@ use crate::toolbar::buttons::tool_button;
 use crate::toolbar::{ButtonId, Event, RESIZE_HANDLE_HEIGHT, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
+use lumino_core::tr;
 use lumino_extras::i18n::MainTranslations;
 
 impl Toolbar {
@@ -174,7 +175,7 @@ impl Toolbar {
         .into()
     }
 
-    /// 渲染撤销/重做按钮区域（固定 64px 宽）
+    /// 渲染撤销/重做/历史按钮区域（固定 96px 宽）
     pub fn render_undo_redo_controls<'a>(
         &'a self,
         content_height: f32,
@@ -199,10 +200,18 @@ impl Toolbar {
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Redo))),
                 ),
+                space().width(4),
+                tool_button(
+                    icon::Clock,
+                    tr!("撤销历史"),
+                    Event::open_history_dialog(),
+                    window,
+                    None,
+                ),
             ]
             .align_y(Alignment::Center),
         )
-        .width(64)
+        .width(96)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

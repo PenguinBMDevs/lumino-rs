@@ -334,4 +334,14 @@ impl Event {
     pub const fn open_draw_settings_dialog() -> Message {
         Message::Toolbar(Self::OpenDrawSettingsDialog)
     }
+
+    /// 构造“打开形状抽屉”的工具栏消息（形状下拉中的抽屉入口）
+    pub const fn open_shape_drawer_dialog() -> Message {
+        Message::Toolbar(Self::OpenShapeDrawerDialog)
+    }
+
+    /// 构造“打开撤销历史”的工具栏消息
+    pub const fn open_history_dialog() -> Message {
+        Message::Toolbar(Self::OpenHistoryDialog)
+    }
 }

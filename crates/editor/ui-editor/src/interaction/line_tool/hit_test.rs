@@ -7,7 +7,7 @@ use super::LineToolHit;
 use super::geom;
 use crate::Editor;
 use iced_core::Point;
-use lumino_editor_state::HandleSide;
+use lumino_editor_state::{AnchorBend, HandleSide};
 
 /// 锚点命中半径（像素）
 pub(super) const ANCHOR_HIT_RADIUS: f32 = 12.0;
@@ -76,10 +76,15 @@ impl Editor {
             for (si, pair) in path.windows(2).enumerate() {
                 let (a, b) = (pair[0], pair[1]);
                 let pa = self.line_pos_screen_pos(a.pos);
-                let p1 = self.line_pos_screen_pos(a.out_handle_abs());
-                let p2 = self.line_pos_screen_pos(b.in_handle_abs());
                 let pb = self.line_pos_screen_pos(b.pos);
-                if geom::point_curve_distance(pos, pa, p1, p2, pb) <= LINE_HIT_THRESHOLD {
+                let distance = if a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner {
+                    geom::point_segment_distance(pos, pa, pb)
+                } else {
+                    let p1 = self.line_pos_screen_pos(a.out_handle_abs());
+                    let p2 = self.line_pos_screen_pos(b.in_handle_abs());
+                    geom::point_curve_distance(pos, pa, p1, p2, pb)
+                };
+                if distance <= LINE_HIT_THRESHOLD {
                     return Some(LineToolHit::Segment {
                         path: pi,
                         segment: si,

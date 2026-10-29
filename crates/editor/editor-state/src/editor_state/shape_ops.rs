@@ -8,6 +8,7 @@
 //! 依赖方向保持 `ui-editor → editor-state → lumino-core`。
 
 pub mod arc;
+pub mod areas;
 pub mod between;
 pub mod bezier;
 pub mod chain;
@@ -43,6 +44,7 @@ pub use arc::{
     ARC_STEP, arc_k_or_one, arc_points, arc_points_scaled, arc_span, circle_through, rotate_k,
     stretch_k,
 };
+pub use areas::{AreaContext, row_pieces_coloured};
 pub use between::{
     BetweenWarning, blend as between_blend, fingerprint as between_fingerprint,
     graph_at as between_graph_at, is_modified as between_is_modified, sync_groups,

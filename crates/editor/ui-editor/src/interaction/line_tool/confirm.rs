@@ -24,8 +24,10 @@
 use super::{fill, geom, paths, stroke_band};
 use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
-use lumino_editor_state::BezierAnchor;
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+use lumino_editor_state::{BezierAnchor, ShapeNote};
 use lumino_note_core::history::CreateOp;
+use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
 impl Editor {
     /// 一条路径的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
@@ -80,14 +82,17 @@ impl Editor {
         // ① 路径轮廓 → 音符：几何容差展平后逐音高行解析求交（无网格量化），
         //    再按全局粗细**沿法线**加粗（水平段纵向、竖直段横向——见 `stroke_band`）
         let mut raw: Vec<paths::RawNote> = Vec::new();
+        // DRAW-041B / 242C：保留每条路径的原始轮廓音符，后面按最终去重结果做归属。
+        let mut path_raw: Vec<Vec<paths::RawNote>> = Vec::with_capacity(line_paths.len());
         for path in &line_paths {
             if path.len() < 2 {
+                path_raw.push(Vec::new());
                 continue;
             }
             let poly = geom::flatten_path(path);
-            raw.extend(stroke_band::outline_notes(
-                &poly, thickness, zoom_x, zoom_y, key_count,
-            ));
+            let notes = stroke_band::outline_notes(&poly, thickness, zoom_x, zoom_y, key_count);
+            raw.extend(notes.iter().copied());
+            path_raw.push(notes);
         }
 
         // ② 颜料桶填充 → 逐音高行内部区间（与预览同源：fill::fill_notes）
@@ -122,6 +127,50 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
+        // 把最终音符按“路径候选”精确归属；每条最终音符最多进一个模型，
+        // 避免区域编辑时两个模型都去删同一条音符。
+        let mut path_candidates: Vec<Vec<(f32, u16, f32)>> = if fill_marks.is_empty() {
+            path_raw
+                .iter()
+                .map(|raw_path| {
+                    paths::keep_longest(raw_path)
+                        .into_iter()
+                        .filter(|n| n.key >= 0 && n.key < key_count)
+                        .map(|n| paths::to_note_triple(&n, min_ticks))
+                        .collect()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut per_path_notes = vec![Vec::new(); line_paths.len()];
+        if path_candidates.len() == line_paths.len() {
+            for &(tick, key, length) in &notes {
+                let mut found = None;
+                'paths: for (index, candidates) in path_candidates.iter().enumerate() {
+                    for (pos, candidate) in candidates.iter().enumerate() {
+                        if candidate.0.to_bits() == tick.to_bits()
+                            && candidate.1 == key
+                            && candidate.2.to_bits() == length.to_bits()
+                        {
+                            found = Some((index, pos));
+                            break 'paths;
+                        }
+                    }
+                }
+                if let Some((index, pos)) = found {
+                    path_candidates[index].remove(pos);
+                    per_path_notes[index].push(ShapeNote {
+                        track,
+                        tick,
+                        key,
+                        length,
+                        velocity: DEFAULT_NOTE_VELOCITY,
+                        channel: 0,
+                    });
+                }
+            }
+        }
         let total = notes.len();
         let mut create_ops = Vec::with_capacity(total);
         if total <= super::super::BATCH_INSERT_THRESHOLD {
@@ -181,6 +230,32 @@ impl Editor {
         // Bake：保存 ✓ 前的矢量状态，供 undo 恢复；✓ 后不登记任何 DrawnShape。
         let pending = BakePending::Line(self.editor_state.line_tool.clone());
         self.remember_bake(group, pending);
+        // DRAW-041B / 242C：每条路径保留只读模型；有 Fill 标记时暂不保留，
+        // 因为填充音符没有可靠的 per-path 归属，避免区域编辑误删。
+        if fill_marks.is_empty() && per_path_notes.len() == line_paths.len() {
+            let models = line_paths
+                .iter()
+                .zip(per_path_notes)
+                .filter(|(path, _)| path.len() >= 2)
+                .map(|(path, notes)| {
+                    let mut model = ShapeModel::new(0, track as u16, ShapeKind::Curve, 1.0);
+                    model.geometry = ShapeGeometry {
+                        anchors: path.clone(),
+                        rect: None,
+                        closed: false,
+                    };
+                    let closed = path.first().is_some_and(|first| {
+                        path.last().is_some_and(|last| {
+                            (first.pos.0 - last.pos.0).abs() < 1e-3
+                                && (first.pos.1 - last.pos.1).abs() < 1e-3
+                        })
+                    });
+                    model.geometry.closed = closed;
+                    (model, notes)
+                })
+                .collect();
+            self.record_baked_shape_models(models);
+        }
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
         self.rebuild_pending_mirrors();

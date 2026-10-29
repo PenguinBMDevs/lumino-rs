@@ -5,10 +5,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::params::{
-    BetweenParams, ChopParams, ClawParams, CopyPathParams, CycleParams, FunnelParams,
-    GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, MaskParams, MergeParams,
-    NestedParams, PatternParams, PolygonParams, StraightenParams, StrumParams, SustainParams,
-    SymParams, TilesParams, TumourParams,
+    BetweenParams, ChopParams, ClawParams, CopyPathParams, CycleParams, DrawingParams,
+    FunnelParams, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, MaskParams,
+    MergeParams, NestedParams, PatternParams, PolygonParams, StraightenParams, StrumParams,
+    SustainParams, SymParams, TilesParams, TumourParams,
 };
 use super::text::TextOp;
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle, VelocityEnv};
@@ -75,8 +75,10 @@ pub enum ShapeOp {
     CopyAlong(CopyPathParams),
     /// 形状力度包络（Notes；DRAW-028）
     VelocityEnv(VelocityEnv),
-    /// ?????Geometry?DRAW-029???????
+    /// 文字形状参数（Geometry；DRAW-029）
     Text(TextOp),
+    /// 形状库多笔绘图（Geometry；DRAW-033A）
+    Drawing(DrawingParams),
 }
 
 /// 算子在链上的执行阶段
@@ -104,7 +106,8 @@ impl ShapeOp {
             | Self::Joined(_)
             | Self::Symmetry(_)
             | Self::Straighten(_)
-            | Self::Text(_) => OpStage::Geometry,
+            | Self::Text(_)
+            | Self::Drawing(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -196,6 +199,7 @@ impl ShapeOp {
                 Ok(())
             }
             Self::Text(op) => op.validate(),
+            Self::Drawing(params) => params.validate(),
         }
     }
 }

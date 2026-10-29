@@ -7,6 +7,17 @@ use super::*;
 
 /// 悬浮条普通点击条目：仅选择工具，不打开任何设置下拉。
 #[test]
+fn test_open_shape_drawer_closes_shape_dropdown() {
+    let mut toolbar = Toolbar::new();
+    toolbar.shape_dropdown_open = true;
+    toolbar.update(Event::OpenShapeDrawerDialog);
+    assert!(
+        !toolbar.shape_dropdown_open,
+        "打开形状抽屉属于外部动作，应关闭形状下拉"
+    );
+}
+
+#[test]
 fn test_tool_panel_plain_click_selects_without_opening_settings() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;

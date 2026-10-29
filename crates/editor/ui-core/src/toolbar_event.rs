@@ -167,6 +167,10 @@ pub enum Event {
     /// 不同窗口不在同一块画布上争位置。齿轮按钮也**不带开合态**：
     /// 独立窗口有自己的标题栏与关闭按钮，主窗按钮再维护一份"开/关"只会与真实窗口状态漂移。
     OpenDrawSettingsDialog,
+    /// 打开独立「形状抽屉」窗口（DRAW-033；B0 仅空窗）
+    OpenShapeDrawerDialog,
+    /// 打开独立「撤销历史」窗口（DRAW-035）
+    OpenHistoryDialog,
 }
 
 /// 形状工具当前绘制的图形类型

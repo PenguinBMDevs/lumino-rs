@@ -28,8 +28,11 @@ impl Editor {
             || self.editor_state.data.has_pending_commit()
             || self.editor_state.brush_tool.is_active()
             || self.editor_state.shape_select.is_dragging()
-            || self.editor_state.line_tool.interaction
-                != lumino_editor_state::LineToolInteraction::None
+            || !matches!(
+                self.editor_state.line_tool.interaction,
+                lumino_editor_state::LineToolInteraction::None
+                    | lumino_editor_state::LineToolInteraction::SelectedAnchor { .. }
+            )
             || matches!(
                 self.editor_state.interaction.edit_state,
                 EditState::Dragging { .. }

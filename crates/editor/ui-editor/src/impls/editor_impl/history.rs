@@ -17,16 +17,9 @@ impl Editor {
         // 先提交未落盘的幽灵拖动，再排空飞行提交，避免 pending 阻塞 undo
         // 否则批量拖动后直接 Ctrl+Z 会被拦截返回 false（用户感知的“批量撤销失败”）。
         // 提交后 undo 将回退刚提交的移动（显示与内存一致，redo 可恢复）。
-        if self.pending_drag_state.is_some() {
-            tracing::info!("Editor: Undo 前发现未提交批量拖动，先 commit+drain");
-            self.commit_pending_drag();
-        }
-        if self.pending_copy_drag_state.is_some() {
-            self.commit_pending_copy();
-        }
         if self.has_pending_drag() {
-            tracing::info!("Editor: Undo 前发现 pending 异步提交，先 drain");
-            self.drain_async_commit();
+            tracing::info!("Editor: Undo 前发现未提交拖动/异步提交，先 flush");
+            self.flush_pending_history();
         }
         if self.is_editing() {
             tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
@@ -145,16 +138,9 @@ impl Editor {
     /// **路径历史优先**：先重做最近的路径编辑，无则回退 document 历史。
     pub fn redo(&mut self) -> bool {
         // 同 undo：先提交幽灵拖动再排空，避免批量场景 redo 被拦截失败。
-        if self.pending_drag_state.is_some() {
-            tracing::info!("Editor: Redo 前发现未提交批量拖动，先 commit+drain");
-            self.commit_pending_drag();
-        }
-        if self.pending_copy_drag_state.is_some() {
-            self.commit_pending_copy();
-        }
         if self.has_pending_drag() {
-            tracing::info!("Editor: Redo 前发现 pending 异步提交，先 drain");
-            self.drain_async_commit();
+            tracing::info!("Editor: Redo 前发现未提交拖动/异步提交，先 flush");
+            self.flush_pending_history();
         }
         if self.is_editing() {
             tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
@@ -357,6 +343,91 @@ impl Editor {
                 ),
             ));
         }
+    }
+
+    /// 历史面板只读视图（DRAW-035）。
+    ///
+    /// 只包含文档历史；画刷/曲线待确认路径是编辑态临时历史，确认后才进入
+    /// 文档历史，不能和历史面板混排。
+    pub fn history_view(&self) -> lumino_editor_state::editor_state::HistoryView {
+        self.editor_state.data.history_view()
+    }
+
+    /// 提交历史面板打开期间仍未落盘的批量移动/复制。
+    ///
+    /// 与 `undo` 的前置处理一致：先提交 pending，再 drain 异步写入。历史面板
+    /// 在拖动松手后才打开，用户看到“移动”却不在历史栈里，根因就是 pending
+    /// 尚未提交；这里让面板读取到与文档一致的历史。
+    pub fn flush_pending_history(&mut self) {
+        // 不能只做一轮：若此刻已有上一笔异步提交在飞行中，
+        // `commit_pending_drag` 会因 `has_pending_commit` 直接返回 true，
+        // 而新松手的 `pending_drag_state` 仍在；drain 完上一笔后必须再提交
+        // 这一笔。否则历史面板会“偶尔没有移动步骤”，表现为时序竞态。
+        const MAX_ROUNDS: usize = 8;
+        for _ in 0..MAX_ROUNDS {
+            if self.pending_drag_state.is_none()
+                && self.pending_copy_drag_state.is_none()
+                && !self.has_pending_drag()
+            {
+                break;
+            }
+            if self.pending_drag_state.is_some() {
+                self.commit_pending_drag();
+            }
+            if self.pending_copy_drag_state.is_some() {
+                self.commit_pending_copy();
+            }
+            if self.has_pending_drag() {
+                self.drain_async_commit();
+            }
+        }
+    }
+
+    /// 跳到历史游标 `target`（0 = 初始状态，steps.len() = 最新）。
+    ///
+    /// 必须复用 [`Self::undo`] / [`Self::redo`]：它们负责形状 group 回放、
+    /// 协作广播和选中重映射。存在未确认笔画 / 正在编辑时拒绝跳转，
+    /// 避免历史面板误消费画刷或曲线路径的临时栈。
+    pub fn history_jump_to(&mut self, target: usize) -> bool {
+        // 先像 undo/redo 一样提交 pending 拖动；否则历史面板跳转会被
+        // `is_editing()` 直接拒绝，用户感知为“移动操作无法撤销”。
+        self.flush_pending_history();
+        if self.is_editing()
+            || self.editor_state.brush_tool.can_undo_path()
+            || self.editor_state.line_tool.can_undo_path()
+        {
+            return false;
+        }
+        let view = self.history_view();
+        if target > view.len() {
+            return false;
+        }
+        if target == view.current {
+            return true;
+        }
+        if target < view.current {
+            for _ in target..view.current {
+                if !self.undo() {
+                    return false;
+                }
+            }
+        } else {
+            for _ in view.current..target {
+                if !self.redo() {
+                    return false;
+                }
+            }
+        }
+        // 一次跳转可能连续执行多步 undo/redo。每一步都会生成基于**中间文档**
+        // 的 note_delta_events；把它们逐条喂给 GPU 段内增量时，多步跳转的
+        // 索引/顺序可能只对中间态成立，出现“文档正确、画面还是旧位置/旧顺序”。
+        // 历史跳转是低频操作，直接清空增量并强制下一帧全量重建，保证 CPU
+        // 文档与 GPU 实例列表来自同一最终快照。
+        self.editor_state.data.note_delta_events.clear();
+        self.editor_state.data.note_delta_dirty = true;
+        self.invalidate_caches(CacheInvalidation::GRID);
+        self.mark_notes_changed();
+        true
     }
 
     /// Check if undo is available

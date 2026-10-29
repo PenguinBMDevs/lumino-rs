@@ -205,6 +205,22 @@ mod tests {
         assert!(!manager.is_dialog_window(id), "释放后不再判为对话框窗口");
     }
 
+    #[test]
+    fn test_shape_drawer_open_queues_with_shapes_dir() {
+        let mut manager = DialogManager::new();
+        let dir = std::path::PathBuf::from("shapes");
+        manager.open_shape_drawer(dir.clone());
+        assert!(
+            manager.is_open_or_pending(DialogType::ShapeDrawer),
+            "形状抽屉请求应进入 pending 队列"
+        );
+        let pending = manager
+            .pending_dialogs
+            .last()
+            .expect("应有一个待初始化抽屉");
+        assert_eq!(pending.shapes_dir.as_deref(), Some(dir.as_path()));
+    }
+
     /// 关闭必须释放归属，且对「尚未就绪」的窗口同样生效。
     ///
     /// 只 `dialogs.remove` 会让 `claimed_windows` 只增不减（泄漏 + 该窗口 id

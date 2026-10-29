@@ -497,6 +497,12 @@ impl Toolbar {
                 self.text_params_open = false;
                 tracing::debug!("???: ????????");
             }
+            Event::OpenShapeDrawerDialog => {
+                tracing::debug!("工具栏: 请求打开形状抽屉");
+            }
+            Event::OpenHistoryDialog => {
+                tracing::debug!("工具栏: 请求打开撤销历史");
+            }
             Event::OpenDrawSettingsDialog => {
                 // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，
                 // 实际开窗由 `ToolbarHandler` 转 `window::Event::OpenDrawSettingsDialog` 交 Runner。

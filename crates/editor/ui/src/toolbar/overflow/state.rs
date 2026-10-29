@@ -71,7 +71,7 @@ impl ToolbarGroup {
             ToolbarGroup::Record => 56.0,
             ToolbarGroup::Playback => 132.0,
             ToolbarGroup::Loop => 40.0,
-            ToolbarGroup::UndoRedo => 64.0,
+            ToolbarGroup::UndoRedo => 96.0,
             ToolbarGroup::Dashboard => 201.0,
             ToolbarGroup::Tools => 568.0,
             ToolbarGroup::AutoScroll => 50.0,

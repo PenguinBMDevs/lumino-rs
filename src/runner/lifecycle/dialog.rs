@@ -11,6 +11,41 @@ use crate::runner::dialog_manager::DialogResult;
 use crate::runner::inner::RunnerInner;
 
 impl RunnerInner {
+    /// 把主编辑器的历史快照同步到已打开的历史窗口。
+    ///
+    /// 历史窗口是独立 Root，必须由 Runner 每帧投影主编辑器状态；`Host` 内部
+    /// 比较 steps/current，不变时不会置脏。放在 `about_to_wait` 的对话框
+    /// 更新之前，保证刚创建 / 刚跳转的窗口同帧拿到正确列表。
+    pub(crate) fn sync_history_dialog(&mut self) {
+        if !self
+            .window_state
+            .dialog_manager
+            .has_dialog_type(DialogType::History)
+        {
+            return;
+        }
+        let (steps, current) = {
+            let main_ui = self.window_state.window.ui_mut();
+            // 历史窗口打开时，拖动松手产生的 pending 移动/复制必须先落盘，
+            // 否则面板看不到这一步，用户会误以为移动操作不可撤销。
+            main_ui.flush_history_pending();
+            main_ui.history_view()
+        };
+        let Some(id) = self
+            .window_state
+            .dialog_manager
+            .first_dialog_id_of_type(DialogType::History)
+        else {
+            return;
+        };
+        let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id) else {
+            return;
+        };
+        if let Some(ui) = dialog.ui_mut() {
+            ui.set_history_view(steps, current);
+        }
+    }
+
     /// 处理对话框窗口事件
     pub(crate) fn handle_dialog_event(
         &mut self,
@@ -44,8 +79,12 @@ impl RunnerInner {
                 );
                 // 永久删除音轨缓存：对话框保持开启（Runner 处理完后刷新条目列表），
                 // 其余结果沿用"取到结果即关闭"的默认行为。
-                should_close =
-                    !matches!(result, DialogResult::RecoverTrackPermanentlyDelete { .. });
+                should_close = !matches!(
+                    result,
+                    DialogResult::RecoverTrackPermanentlyDelete { .. }
+                        | DialogResult::InsertShapeDrawing(_)
+                        | DialogResult::HistoryJump(_)
+                );
                 dialog_result = Some(result);
             }
 
@@ -71,8 +110,11 @@ impl RunnerInner {
                     );
                     // 永久删除音轨缓存：对话框保持开启（Runner 处理完后刷新条目列表），
                     // 其余结果沿用"取到结果即关闭"的默认行为。
-                    should_close =
-                        !matches!(result, DialogResult::RecoverTrackPermanentlyDelete { .. });
+                    should_close = !matches!(
+                        result,
+                        DialogResult::RecoverTrackPermanentlyDelete { .. }
+                            | DialogResult::HistoryJump(_)
+                    );
                     dialog_result = Some(result);
                 }
             }

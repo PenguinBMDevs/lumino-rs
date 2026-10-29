@@ -25,7 +25,11 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::interaction::bake::BakePending;
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
+use lumino_editor_state::{DrawnShapeSource, ShapeNote};
 use lumino_note_core::history::CreateOp;
+use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
+
+use crate::interaction::shape_bridge::model_from_source;
 
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
 use crate::interaction::line_tool::{paths, stroke_band};
@@ -249,6 +253,30 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
+        let mut per_shape_notes = vec![Vec::new(); self.editor_state.shape_tool.shapes.len()];
+        let make_note = |tick: f32, key: u16, length: f32| ShapeNote {
+            track,
+            tick,
+            key,
+            length,
+            velocity: DEFAULT_NOTE_VELOCITY,
+            channel: 0,
+        };
+        for &(tick, key, length, idx) in &outline {
+            if let Some(bucket) = per_shape_notes.get_mut(idx) {
+                bucket.push(make_note(tick, key, length));
+            }
+        }
+        for &(tick, key, idx) in &points {
+            if let Some(bucket) = per_shape_notes.get_mut(idx) {
+                bucket.push(make_note(tick, key, snap));
+            }
+        }
+        for &(tick, key, length, idx) in &chopped {
+            if let Some(bucket) = per_shape_notes.get_mut(idx) {
+                bucket.push(make_note(tick, key, length));
+            }
+        }
         let payload: Vec<Note> = outline
             .iter()
             .map(|&(tick, key, length, _)| Note::new(tick, key, length))
@@ -310,6 +338,25 @@ impl Editor {
         // Bake：保存 ✓ 前形状，undo 恢复；✓ 后不登记 DrawnShape。
         let pending = BakePending::Shape(self.editor_state.shape_tool.clone());
         self.remember_bake(group, pending);
+        // DRAW-041B：保留只读模型（不登记 DrawnShape），供 032B/033 列表入口。
+        let models = self
+            .editor_state
+            .shape_tool
+            .shapes
+            .iter()
+            .zip(per_shape_notes)
+            .map(|(shape, notes)| {
+                let source = DrawnShapeSource::Shape {
+                    kind: shape.kind,
+                    rect: shape.rect,
+                    shift_constrained: shape.shift_constrained,
+                    filled: shape.filled,
+                    apex_high: shape.apex_high,
+                };
+                (model_from_source(&source, track, 1.0), notes)
+            })
+            .collect();
+        self.record_baked_shape_models(models);
         self.editor_state.shape_tool.clear_pending();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();

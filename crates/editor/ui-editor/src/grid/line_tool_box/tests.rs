@@ -3,6 +3,7 @@
 use super::*;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::Tool;
+use lumino_editor_state::{BezierAnchor, LineToolInteraction};
 
 /// 构造曲线工具 + 两条完整路径的编辑器（默认视图 128 键 × 20px、画布 800x600）
 ///
@@ -177,6 +178,30 @@ fn test_fill_render_winding_interior_only() {
     assert!(!region.has_background);
     assert_eq!(render_wn(&region, (2.0, 60.0)), 1, "已填图形内部显示");
     assert_eq!(render_wn(&region, (12.0, 60.0)), 0, "未填图形内部不显示");
+}
+
+#[test]
+fn test_bend_buttons_require_selected_middle_anchor() {
+    let mut editor = multi_curve_editor();
+    assert!(
+        line_bend_button_rects(&editor).is_none(),
+        "未选中锚点时不显示弯折按钮"
+    );
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths[0].insert(1, BezierAnchor::new((5150.0, 107.0)));
+        line.interaction = LineToolInteraction::SelectedAnchor { path: 0, idx: 1 };
+    }
+    let btns = line_bend_button_rects(&editor).expect("中间锚点应显示弯折按钮");
+    assert_eq!(btns.current, lumino_editor_state::AnchorBend::Smooth);
+    assert!(!btns.smooth.contains(Point::new(0.0, 0.0)));
+
+    editor.editor_state.line_tool.interaction =
+        LineToolInteraction::SelectedAnchor { path: 0, idx: 0 };
+    assert!(
+        line_bend_button_rects(&editor).is_none(),
+        "端点不可切换弯折"
+    );
 }
 
 #[test]

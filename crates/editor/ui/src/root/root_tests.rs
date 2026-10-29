@@ -12,6 +12,152 @@ use crate::root::handlers::MessageHandler;
 // ================================================================
 
 #[test]
+fn test_shape_drawer_save_delete_and_insert_action() {
+    use crate::message::ShapeDrawerAction;
+    use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("时间")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "lumino_shape_drawer_b2_{}_{}",
+        std::process::id(),
+        stamp
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("创建测试目录");
+
+    let mut root = Root::new_dialog("dark", DialogType::ShapeDrawer);
+    root.state.shape_drawer.shapes_dir = dir.clone();
+    root.state.shape_drawer.doc.borrow_mut().add_stroke(Stroke {
+        kind: StrokeKind::Line,
+        anchors: vec![ShapeAnchor::new((0.1, 0.1)), ShapeAnchor::new((0.9, 0.9))],
+        rect: None,
+    });
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::SetName(
+        "b2-test".to_string(),
+    )));
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Save));
+    assert!(
+        dir.join("b2-test.lmshape").exists(),
+        "保存动作应写出 .lmshape"
+    );
+
+    root.state.shape_drawer.selected = Some("square".to_string());
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::SetName(
+        "333".to_string(),
+    )));
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Save));
+    assert!(
+        dir.join("333.lmshape").exists(),
+        "选中内置图形另存时必须生成用户 id，不能写 square.lmshape"
+    );
+    assert!(
+        !dir.join("square.lmshape").exists(),
+        "不得用内置 id 覆盖用户库"
+    );
+    root.state.shape_drawer.selected = Some("b2-test".to_string());
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
+    assert!(
+        matches!(
+            root.state.dialog_result,
+            Some(crate::host::DialogResult::InsertShapeDrawing(_))
+        ),
+        "插入动作应设置对话框结果且保持抽屉打开"
+    );
+
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Delete));
+    assert!(!dir.join("b2-test.lmshape").exists(), "删除应移除库文件");
+
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::PanelDragStart,
+    ));
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::SetPanelWidth(320.0),
+    ));
+    assert_eq!(root.state.shape_drawer.panel_width, 320.0);
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::PanelDragEnd));
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::SetPanelWidth(500.0),
+    ));
+    assert_eq!(
+        root.state.shape_drawer.panel_width, 320.0,
+        "未拖动时 on_move 不应改变面板宽度"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_history_dialog_actions_route_to_dialog_results() {
+    use crate::host::DialogResult;
+    use crate::message::HistoryAction;
+
+    let mut root = Root::new_dialog("dark", DialogType::History);
+    root.update(crate::Message::History(HistoryAction::Jump(3)));
+    assert!(matches!(
+        root.state.dialog_result.as_ref(),
+        Some(DialogResult::HistoryJump(3))
+    ));
+
+    root.state.dialog_result = None;
+    root.update(crate::Message::History(HistoryAction::Close));
+    assert!(matches!(
+        root.state.dialog_result.as_ref(),
+        Some(DialogResult::Cancel)
+    ));
+}
+
+#[test]
+fn test_shape_drawer_area_paint_and_insert_result() {
+    use crate::message::ShapeDrawerAction;
+    use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+
+    let mut root = Root::new_dialog("dark", DialogType::ShapeDrawer);
+    root.state.shape_drawer.doc.borrow_mut().add_stroke(Stroke {
+        kind: StrokeKind::Polyline,
+        anchors: vec![
+            ShapeAnchor::new((0.1, 0.1)),
+            ShapeAnchor::new((0.9, 0.1)),
+            ShapeAnchor::new((0.9, 0.9)),
+            ShapeAnchor::new((0.1, 0.9)),
+            ShapeAnchor::new((0.1, 0.1)),
+        ],
+        rect: None,
+    });
+    assert!(root.state.shape_drawer.doc.borrow().can_area_paint());
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::ToggleAreaMode,
+    ));
+    assert!(root.state.shape_drawer.doc.borrow().area_mode);
+    assert!(
+        root.state
+            .shape_drawer
+            .doc
+            .borrow_mut()
+            .paint_area(0.5, 0.5, 3)
+    );
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
+    match root.state.dialog_result.as_ref() {
+        Some(crate::host::DialogResult::InsertShapeDrawing(drawing)) => {
+            assert_eq!(drawing.areas.len(), 1);
+            assert_eq!(drawing.areas[0].colour, 3);
+        }
+        other => panic!("应产生插入结果，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn test_shape_drawer_open_close_switches_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::None);
+    root.set_shape_drawer_dialog_open(true);
+    assert_eq!(root.state.dialog_type, DialogType::ShapeDrawer);
+    root.set_shape_drawer_dialog_open(false);
+    assert_eq!(root.state.dialog_type, DialogType::None);
+}
+
+#[test]
 fn test_close_settings_dialog_preserves_dialog_type() {
     let mut root = Root::new_dialog("dark", DialogType::Settings);
     let mut handler = handlers::DialogHandler::new();

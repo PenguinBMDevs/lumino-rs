@@ -1,6 +1,6 @@
 //! Colours 通道循环测试
 
-use lumino_core::shape::{CycleBy, CycleParams, RowRestart};
+use lumino_core::shape::{AREA_LOCK_BASE, CycleBy, CycleParams, RowRestart};
 
 use super::*;
 
@@ -203,4 +203,22 @@ fn test_invalid_n_and_empty_are_safe() {
         0
     );
     assert!(apply(&mut [], &CycleParams::default(), 480.0) == 0);
+}
+
+#[test]
+fn test_area_locked_channels_are_not_overwritten() {
+    let mut notes = vec![note(0.0, 60), note(120.0, 60), note(240.0, 60)];
+    notes[1].channel = AREA_LOCK_BASE + 3;
+    run(
+        &mut notes,
+        CycleParams {
+            by: CycleBy::Step,
+            n: 3,
+            ..CycleParams::default()
+        },
+        480.0,
+    );
+    assert_eq!(notes[0].channel, 0, "普通音符仍按 Cycle 分配");
+    assert_eq!(notes[1].channel, AREA_LOCK_BASE + 3, "区域色必须锁定");
+    assert_eq!(notes[2].channel, 1, "锁定音符不参与 step 序号");
 }

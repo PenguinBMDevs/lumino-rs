@@ -6,6 +6,7 @@ mod brush_settings;
 mod custom_precision;
 mod draw_settings;
 mod fill_division;
+mod history;
 mod load_confirm;
 mod project_settings;
 mod recover_track;
@@ -50,6 +51,10 @@ impl MessageHandler for DialogHandler {
             Message::BrushSettings(action) => self.handle_brush_settings(root, action),
             Message::DrawSettings(action) => self.handle_draw_settings(root, action),
             Message::FillDivision(action) => self.handle_fill_division(root, action),
+            Message::History(action) => {
+                root.handle_history_action(action);
+                None
+            }
             other => Some(other),
         }
     }

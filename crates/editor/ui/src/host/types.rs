@@ -74,6 +74,10 @@ pub enum DialogResult {
     },
     /// 画刷「绘制行为」配置（Save 后由 runner 应用回主窗）
     BrushSettings(lumino_core::BrushConfig),
+    /// 形状抽屉插入工程（抽屉保持打开）
+    InsertShapeDrawing(Box<lumino_core::shape::ShapeDrawing>),
+    /// 历史面板请求跳到指定游标（历史窗口保持打开）
+    HistoryJump(usize),
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

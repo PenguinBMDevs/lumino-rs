@@ -290,6 +290,9 @@ impl RunnerInner {
                 // 故 `from_midi_document(doc)` 读到的就是用户编辑后的值。
                 // 旧注释「用户修改的 BPM 只写入 tempo_points、不回写 doc」已不成立。
                 let mut project = lumino_export::LuminoProject::from_midi_document(doc);
+                // 形状是工程数据的一部分：必须从 ShapeStore 快照写入，否则
+                // Bake 保留的模型在保存/重开后丢失（242D 回归）。
+                project.shapes = ui.root().editor.shapes_snapshot();
                 // 使用实际保存路径的文件名作为工程名
                 if let Some(stem) = save_path.file_stem() {
                     project.metadata.project.name = stem.to_string_lossy().into_owned();

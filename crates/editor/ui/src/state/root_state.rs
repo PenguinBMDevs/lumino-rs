@@ -5,16 +5,71 @@ pub use lumino_ui_core::state::{
     AboutEggState, AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT,
     COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState, FillDivisionDialogState,
-    GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState, LoadConfirmDialogState,
-    MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
-    MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
-    RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState,
-    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
+    GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState, HistoryDialogState,
+    HistoryKind, HistoryStepView, LoadConfirmDialogState, MIDITRAIL_SPEED_DEFAULT,
+    MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX,
+    MemoryMonitorDialogState, ProjectSettingsDialogState, RecoverTrackDialogState,
+    RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState, ToggleAnimationState,
+    VideoClipState, VideoExportDialogState, VideoExportOverlayState,
 };
 
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
+
 use crate::app_mode::AppMode;
+use crate::shape_drawer::doc::{DrawerDoc, DrawerInteraction};
 use lumino_core::BrushConfig;
+use lumino_core::shape::{LibraryWarning, ShapeLibrary, Stroke};
 use lumino_ui_core::help::{HelpDialogState, HelpTipsState};
+
+/// 形状抽屉窗口状态（DRAW-033B0/B1）。
+///
+/// B0 承载目录注入；B1 增加共享文档与画布交互。窗口关闭重开会得到新的
+/// 空文档；库加载与持久化由 B2 接管。
+#[derive(Debug, Clone)]
+pub struct ShapeDrawerState {
+    /// 用户形状库目录（由 Runner 注入；空表示尚未注入）
+    pub shapes_dir: PathBuf,
+    /// 画布文档（窗口内共享；工具/undo/选择都写这里）
+    pub doc: Rc<RefCell<DrawerDoc>>,
+    /// 拖拽草稿与中键平移
+    pub interaction: Rc<RefCell<DrawerInteraction>>,
+    /// 库（内置 + 用户）
+    pub library: ShapeLibrary,
+    /// 当前选中的库图形 id
+    pub selected: Option<String>,
+    /// 名称输入框
+    pub name_input: String,
+    /// 库加载 warning
+    pub warnings: Vec<LibraryWarning>,
+    /// 操作状态/错误提示
+    pub status: Option<String>,
+    /// 抽屉剪贴板（复制/粘贴 strokes）
+    pub clipboard: Vec<Stroke>,
+    /// 库面板宽度（可拖动分割线）
+    pub panel_width: f32,
+    /// 是否正在拖动库/画布分割线
+    pub panel_dragging: bool,
+}
+
+impl Default for ShapeDrawerState {
+    fn default() -> Self {
+        Self {
+            shapes_dir: PathBuf::new(),
+            doc: Rc::new(RefCell::new(DrawerDoc::default())),
+            interaction: Rc::new(RefCell::new(DrawerInteraction::default())),
+            library: ShapeLibrary::with_builtins(),
+            selected: None,
+            name_input: "New Shape".to_string(),
+            warnings: Vec::new(),
+            status: None,
+            clipboard: Vec::new(),
+            panel_width: 250.0,
+            panel_dragging: false,
+        }
+    }
+}
 
 /// 对话框类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -58,6 +113,10 @@ pub enum DialogType {
     DrawSettings,
     /// 帮助窗口（F1；独立 OS 窗口）
     Help,
+    /// 形状抽屉（独立 OS 窗口；DRAW-033）
+    ShapeDrawer,
+    /// 撤销历史（独立 OS 窗口；DRAW-035）
+    History,
 }
 
 /// Root 组件的状态
@@ -135,6 +194,10 @@ pub struct RootState {
     pub help_dialog: HelpDialogState,
     /// 首次使用提示状态（已读集合 + 当前提示；DRAW-038）
     pub help_tips: HelpTipsState,
+    /// 形状抽屉窗口状态（DRAW-033）
+    pub shape_drawer: ShapeDrawerState,
+    /// 撤销历史面板状态（DRAW-035）
+    pub history_dialog: HistoryDialogState,
 }
 
 impl Default for RootState {
@@ -178,6 +241,8 @@ impl RootState {
             echo_cave: EchoCaveState::new(),
             help_dialog: HelpDialogState::default(),
             help_tips: HelpTipsState::default(),
+            shape_drawer: ShapeDrawerState::default(),
+            history_dialog: HistoryDialogState::default(),
         }
     }
 }

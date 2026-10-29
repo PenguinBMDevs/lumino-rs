@@ -71,6 +71,14 @@ pub enum Event {
     OpenDrawSettingsDialog,
     /// 关闭「音符画设置」对话框窗口
     CloseDrawSettingsDialog,
+    /// 打开「形状抽屉」独立窗口（DRAW-033B0；目录由 Runner 注入）
+    OpenShapeDrawerDialog,
+    /// 关闭「形状抽屉」独立窗口
+    CloseShapeDrawerDialog,
+    /// 打开撤销历史独立窗口（DRAW-035）
+    OpenHistoryDialog,
+    /// 关闭撤销历史独立窗口
+    CloseHistoryDialog,
     /// 打开/关闭 Help 窗口（F1；已打开时聚焦/关闭由 Runner 裁决）
     ToggleHelpDialog,
     /// 关闭 Help 窗口

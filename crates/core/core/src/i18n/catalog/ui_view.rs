@@ -12,6 +12,31 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "全部重现" => Some("Show all again"),
         "查看帮助" => Some("View help"),
         "知道了" => Some("Got it"),
+        "区域着色" => Some("Paint areas"),
+        "形状列表" => Some("Shape list"),
+        "形状库目录" => Some("Shape library folder"),
+        "尚未注入形状库目录" => Some("Shape library folder not injected"),
+        "画板与工具将在 033B1 接入" => Some("Canvas and tools will arrive in 033B1"),
+        "形状" => Some("Shape"),
+        "曲线" => Some("Curve"),
+        "折线" => Some("Polyline"),
+        // ── 撤销历史面板（`view/history_dialog.rs`）──
+        "撤销历史" => Some("Undo History"),
+        "初始状态" => Some("Initial state"),
+        "新建音符" => Some("Create note"),
+        "移动音符" => Some("Move note"),
+        "删除音符" => Some("Delete note"),
+        "变换音符" => Some("Transform note"),
+        "调整力度" => Some("Adjust velocity"),
+        "自动化编辑" => Some("Edit automation"),
+        "MIDI 录制" => Some("MIDI recording"),
+        "其他操作" => Some("Other action"),
+        "点击步骤跳转；初始状态为 0。" => {
+            Some("Click a step to jump; the initial state is 0.")
+        }
+        "点击步骤回到该步完成后的状态；初始状态为 0。" => {
+            Some("Click a step to return to its completed state; the initial state is 0.")
+        }
         // ── 云存储连接面板 / 断连提醒（`view/cloud_dialog.rs`）──
         "Lumino 无权且不会收集您的个人信息，所有信息将会存储在本地" => {
             Some(

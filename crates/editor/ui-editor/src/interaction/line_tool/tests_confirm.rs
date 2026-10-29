@@ -310,6 +310,17 @@ fn test_confirm_multiple_paths_batch() {
         assert!(covers(notes, 3840, key), "竖直段经过音高行 {key}");
     }
     assert!(editor.editor_state.line_tool.paths.is_empty());
+    let mut models = editor.editor_state.shape_store.iter();
+    let first = models.next().expect("路径 1 应保留模型");
+    let second = models.next().expect("路径 2 应保留模型");
+    assert!(models.next().is_none());
+    assert!(!first.notes.is_empty(), "路径 1 模型应带音符指纹");
+    assert!(!second.notes.is_empty(), "路径 2 模型应带音符指纹");
+    assert_eq!(
+        first.notes.len() + second.notes.len(),
+        notes.len(),
+        "最终音符应精确归属到各路径，不重复"
+    );
 }
 
 #[test]

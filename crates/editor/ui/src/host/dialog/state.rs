@@ -1,10 +1,25 @@
 //! Host 对话框状态管理子模块 — 开关/标记类 setter 与状态查询
 
+use lumino_core::shape::{ShapeDrawing, ShapeLibrary, ShapeRect};
 use lumino_core::{tr, trf};
+use lumino_note_core::history::OpKind;
 
 use crate::host::{Host, types::DialogResult};
 use crate::message;
-use crate::state::root_state::CollaborationViewState;
+use crate::state::root_state::{CollaborationViewState, HistoryKind};
+
+fn history_kind(kind: OpKind) -> HistoryKind {
+    match kind {
+        OpKind::NoteCreate => HistoryKind::NoteCreate,
+        OpKind::NoteMove => HistoryKind::NoteMove,
+        OpKind::NoteDelete => HistoryKind::NoteDelete,
+        OpKind::NoteTransform => HistoryKind::NoteTransform,
+        OpKind::VelocityEdit => HistoryKind::VelocityEdit,
+        OpKind::AutomationEdit => HistoryKind::AutomationEdit,
+        OpKind::Recording => HistoryKind::Recording,
+        OpKind::Other | OpKind::ChainMarker => HistoryKind::Other,
+    }
+}
 
 impl Host {
     /// 设置加载确认对话框（用于独立对话框窗口）
@@ -108,6 +123,100 @@ impl Host {
         self.root.set_help_dialog_open(open);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+    }
+
+    /// 设置形状抽屉是否打开（用于独立窗口；DRAW-033）
+    pub fn set_shape_drawer_dialog_open(&mut self, open: bool) {
+        self.root.set_shape_drawer_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 设置撤销历史窗口是否打开（独立 OS 窗口；DRAW-035）
+    pub fn set_history_dialog_open(&mut self, open: bool) {
+        self.root.set_history_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 历史窗口打开期间先提交待落盘的批量移动/复制，再读取历史。
+    pub fn flush_history_pending(&mut self) {
+        self.root.editor.flush_pending_history();
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 读取主编辑器历史视图，投影为 UI 中性类型。
+    ///
+    /// 返回 `(steps, current)`；当前游标 0 表示初始状态。
+    pub fn history_view(&self) -> (Vec<crate::state::root_state::HistoryStepView>, usize) {
+        let view = self.root.editor.history_view();
+        let steps = view
+            .steps
+            .into_iter()
+            .map(|step| crate::state::root_state::HistoryStepView {
+                index: step.index,
+                kind: history_kind(step.kind),
+            })
+            .collect();
+        (steps, view.current)
+    }
+
+    /// 注入历史面板数据；返回是否有变化。
+    pub fn set_history_view(
+        &mut self,
+        steps: Vec<crate::state::root_state::HistoryStepView>,
+        current: usize,
+    ) -> bool {
+        if !self.root.set_history_view(steps, current) {
+            return false;
+        }
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+        true
+    }
+
+    /// 从历史面板跳到指定游标；形状 group / 协作广播由 Editor 统一处理。
+    pub fn history_jump_to(&mut self, target: usize) -> bool {
+        let ok = self.root.editor.history_jump_to(target);
+        if ok {
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+        }
+        ok
+    }
+
+    /// 注入形状库目录（Runner 在抽屉 UI 就绪后调用）
+    pub fn set_shape_drawer_dir(&mut self, dir: std::path::PathBuf) {
+        let (library, warnings) = ShapeLibrary::load_dir(&dir);
+        let state = &mut self.root.state.shape_drawer;
+        state.shapes_dir = dir;
+        state.library = library;
+        state.warnings = warnings;
+        state.status = None;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 把抽屉当前图形插入主工程（当前轨道 + 播放头，默认 4 beats × 12 keys）。
+    pub fn insert_shape_drawing(&mut self, drawing: &ShapeDrawing) -> Result<(), String> {
+        let track = self.root.editor.editor_state.data.current_track;
+        if track == 0 {
+            return Err("指挥轨不能插入形状，请先选择普通音轨".to_string());
+        }
+        let ppq = f32::from(self.root.editor.editor_state.view.ppq);
+        let tick = self.root.editor.playback_position.max(0.0);
+        let rect = ShapeRect::normalized(tick, 60.0, tick + 4.0 * ppq, 72.0);
+        let model = drawing
+            .to_model(track as u16, 1.0, rect)
+            .map_err(|error| error.to_string())?;
+        if !self.root.editor.create_shape(model) {
+            return Err("形状插入失败（请检查当前音轨）".to_string());
+        }
+        self.root.state.shape_drawer.status = Some("已插入当前工程".to_string());
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+        Ok(())
     }
 
     /// 种入画刷「绘制行为」对话框本地草稿（Runner 在对话框 UI 就绪后注入）

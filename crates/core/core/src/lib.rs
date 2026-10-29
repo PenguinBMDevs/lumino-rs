@@ -6,6 +6,8 @@
 pub mod error;
 /// 运行时文案目录（i18n 长尾覆盖层：原文即 key，见模块文档）
 pub mod i18n;
+/// 文件 I/O 基础工具（原子替换等）
+pub mod io;
 /// 系统语言检测与界面语言偏好模块（UI-018）
 pub mod locale;
 /// 形状数据模型模块（Spiderweb 图形工具移植底座）
@@ -24,18 +26,18 @@ pub mod view_state;
 pub use error::{CoreError, Result};
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
-    AreaSpot, BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece, ClawMode, ClawParams,
-    ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef, CycleBy, CycleParams,
-    DEFAULT_FONT, DrawingRef, ENV_EPS, Expr, ExprError, FlipMode, FlipWay, FunnelParams,
-    FunnelStart, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, LiveWarning,
-    LoopCurve, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams, NestedWay, OpStage,
-    PATTERN_PRESETS, PathKind, PatternParams, PatternPreset, PatternRef, PolyStyle, PolygonParams,
-    RangeDir, RowRestart, SUB_ROWS, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel,
-    ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds, Speed, StopsParams, StraightenParams,
-    StrumParams, SustainParams, Sym, SymAxis, SymParams, TextAlign, TextLayoutMode, TextOp,
-    TextParams, TextUnit, TileBy, TileFlip, TileLayout, TilesParams, TumourGraphs, TumourParams,
-    TumourShape, TumourSide, TumourWrap, VelocityEnv, env_at, paint_env, pattern_from_preset,
-    pattern_preset, tidy_env,
+    AnchorBend, AreaMap, AreaSpot, BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece,
+    ClawMode, ClawParams, ClawPeriod, ClawTrash, ColourMode, CopyMode, CopyPathParams, CurveRef,
+    CycleBy, CycleParams, DEFAULT_FONT, DrawingParams, DrawingRef, ENV_EPS, Expr, ExprError,
+    FlipMode, FlipWay, FunnelParams, FunnelStart, GateRangeParams, GlueParams, JoinedParams,
+    LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams, MaskShow, MergeParams,
+    NestedParams, NestedWay, OpStage, PATTERN_PRESETS, PathKind, PatternParams, PatternPreset,
+    PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, SUB_ROWS, ShapeAnchor, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds,
+    Speed, StopsParams, StraightenParams, StrokeRole, StrumParams, SustainParams, Sym, SymAxis,
+    SymParams, TextAlign, TextLayoutMode, TextOp, TextParams, TextUnit, TileBy, TileFlip,
+    TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
+    VelocityEnv, env_at, paint_env, pattern_from_preset, pattern_preset, tidy_env,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use snap::{SnapError, SnapSpec, snap_text, snap_ticks, snap_ticks_in_measure};

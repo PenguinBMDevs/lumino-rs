@@ -127,3 +127,14 @@ pub enum HistoryEntry {
     /// 音符创建日志（增量、极简化，替代 NoteCreate 快照）
     Create(CreateEntry),
 }
+
+impl HistoryEntry {
+    /// 该条目对应的操作类型（历史面板步名使用）。
+    pub fn op_kind(&self) -> OpKind {
+        match self {
+            Self::Snapshot(snapshot) => snapshot.op_kind,
+            Self::Operation(entry) => entry.op_kind,
+            Self::Create(_) => OpKind::NoteCreate,
+        }
+    }
+}
