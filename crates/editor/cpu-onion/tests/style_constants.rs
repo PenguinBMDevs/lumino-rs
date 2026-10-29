@@ -18,10 +18,36 @@ fn style_constants_match_production_sources() {
     assert!(onion.contains("const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);"));
     assert!(onion.contains("const BORDER_DARKEN_FACTOR: f32 = 0.4;"));
     assert!(onion.contains("let border_px = f32(input.border_width & 0xFFFFu);"));
-    assert!(onion.contains("let horiz_margin = 1.0 / half_width_pixels * border_px;"));
-    assert!(onion.contains("let vert_margin = 1.0 / half_height_pixels * border_px;"));
     assert!(onion.contains("color = color * BORDER_DARKEN_FACTOR;"));
     assert!(onion.contains("return vec4<f32>(color, 1.0);"));
+
+    // 边框判定必须是**屏幕像素空间**且等号归填充（与 CPU `fill_start`/`fill_end`
+    // 同义）。UV 边距实现在半像素几何下会因重心插值噪声给出相反归属，已废弃。
+    assert!(
+        onion.contains("let side_px = border_px * 2.0;"),
+        "每侧边框必须是 2 × border_px 像素"
+    );
+    assert!(
+        onion.contains("let local = input.position.xy - input.rect_min;"),
+        "边框判定必须使用片元中心与矩形左上角的像素偏移（不得回到 UV 插值）"
+    );
+    assert!(
+        onion.contains("local.x < side_px")
+            && onion.contains("local.x > input.screen_size.x - side_px")
+            && onion.contains("local.y < side_px")
+            && onion.contains("local.y > input.screen_size.y - side_px"),
+        "四边判定必须用严格不等（等号归填充）"
+    );
+    assert!(
+        onion.contains("@interpolate(flat) rect_min: vec2<f32>"),
+        "rect_min 必须是 flat varying（逐实例常量，不参与插值）"
+    );
+    for forbidden in ["horiz_margin", "vert_margin", "half_width_pixels"] {
+        assert!(
+            !onion.contains(forbidden),
+            "onion_note.wgsl 仍残留 UV 边距实现片段：{forbidden}"
+        );
+    }
 
     let onion_skin = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
