@@ -157,6 +157,20 @@ pub struct RenderParams {
     ///
     /// 默认 `false`（保守走 cull 路径）；纵向卷帘与导出路径不生效。
     pub vs_cull_mode: bool,
+    /// CPU 洋葱皮透明叠加层（B 方案：画在 GPU 当前轨之前）。
+    ///
+    /// `Some(frame)` 时渲染线程先把 CPU 光栅结果上传为 sRGB 纹理，再在
+    /// **背景网格之后、GPU 洋葱皮与当前轨音符之前**绘制一个屏幕空间四边形；
+    /// `None`（默认）时完全不走这段代码，渲染行为零变化。
+    ///
+    /// 语义与约束：
+    /// - `frame` 的矩形为**物理像素**（调用方负责 DPI 换算，本层不做缩放）；
+    /// - 仅横向钢琴卷帘生效：走带模式在渲染通道开头提前返回，不会绘制；
+    /// - 需要 depth attachment 的 UI 通道（管线携带只读 `DEPTH_FORMAT` 状态），
+    ///   无 depth 的视频导出通道本步不接；
+    /// - 帧内容变化（`version` 递增）的调用方应同时置位
+    ///   [`RenderParams::content_dirty`]，否则 UI 线程可能跳过本帧的 present 等待。
+    pub cpu_onion_frame: Option<crate::CpuOnionFrame>,
 }
 
 impl Default for RenderParams {
@@ -213,6 +227,7 @@ impl Default for RenderParams {
             content_dirty: true,
             subpixel_note_mode: false,
             vs_cull_mode: false,
+            cpu_onion_frame: None,
         }
     }
 }
