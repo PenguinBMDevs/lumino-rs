@@ -65,6 +65,7 @@ pub struct RenderParamsBuilder {
     subpixel_note_mode: bool,
     vs_cull_mode: bool,
     cpu_onion_frame: Option<crate::CpuOnionFrame>,
+    cpu_onion_active: bool,
 }
 
 impl RenderParamsBuilder {
@@ -288,6 +289,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置 CPU 洋葱皮后端开关（默认 `false`，语义见 [`RenderParams::cpu_onion_active`]）。
+    pub fn cpu_onion_active(mut self, active: bool) -> Self {
+        self.cpu_onion_active = active;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -349,6 +356,7 @@ impl RenderParamsBuilder {
             subpixel_note_mode: self.subpixel_note_mode,
             vs_cull_mode: self.vs_cull_mode,
             cpu_onion_frame: self.cpu_onion_frame,
+            cpu_onion_active: self.cpu_onion_active,
         }
     }
 }

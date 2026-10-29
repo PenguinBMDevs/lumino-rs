@@ -127,6 +127,34 @@ impl std::fmt::Display for AudioEngineKind {
     }
 }
 
+/// 洋葱皮渲染后端（Step 3：Q3 B 方案）
+///
+/// - `Gpu`（默认）：全轨常驻 GPU + ViewState 切轨，行为与改动前完全一致；
+/// - `Cpu`：非当前轨/非静音轨由 CPU 渲染成透明叠加层（`lumino-cpu-onion`），
+///   GPU 洋葱皮 buffer 只保留当前轨（省显存、省全量上传）。
+///
+/// `#[serde(rename_all = "snake_case")]`：落盘为 `"gpu"` / `"cpu"`；
+/// 旧配置缺该字段时由 `#[serde(default)]` 落回 `Gpu`（默认后端不变）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OnionSkinBackend {
+    /// GPU 洋葱皮（全轨常驻，默认）
+    #[default]
+    Gpu,
+    /// CPU 洋葱皮（仅当前轨常驻 GPU）
+    Cpu,
+}
+
+impl std::fmt::Display for OnionSkinBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // GPU / CPU 为专有名词，两种语言写法相同（与 SynthBackend::Lgs 同口径）
+        match self {
+            OnionSkinBackend::Gpu => write!(f, "GPU"),
+            OnionSkinBackend::Cpu => write!(f, "CPU"),
+        }
+    }
+}
+
 /// 状态栏渲染负载(LOAD)的显示口径
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum GpuLoadDisplay {

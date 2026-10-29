@@ -62,6 +62,7 @@ impl Default for RenderParamsBuilder {
             subpixel_note_mode: base.subpixel_note_mode,
             vs_cull_mode: base.vs_cull_mode,
             cpu_onion_frame: base.cpu_onion_frame,
+            cpu_onion_active: base.cpu_onion_active,
         }
     }
 }

@@ -103,6 +103,8 @@ impl Host {
             waterfall_config: Some(waterfall_config),
             waterfall_midi_hash: Some(midi_hash),
             waterfall_gen_info: Some((ppq, key_count, total_ticks)),
+            onion_skin_backend: ui_config.onion_skin_backend,
+            cpu_onion_state: Default::default(),
             message_router: handlers::create_message_router(),
             active_touches: std::collections::HashMap::new(),
             pinch_anchor_distance: None,

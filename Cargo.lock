@@ -4637,6 +4637,7 @@ dependencies = [
  "log",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-cpu-onion",
  "lumino-diagnostics",
  "lumino-editor-state",
  "lumino-export",

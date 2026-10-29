@@ -18,6 +18,11 @@ pub struct RenderData {
     /// 走带视图各泳道可见性（与 `arrangement_track_order` 对齐，`false`=静音/隐藏不绘制）。
     pub arrangement_track_visible: Vec<bool>,
     pub cc_bar_instances: Vec<lumino_gfx::CcBarInstance>,
+    /// CPU 洋葱皮叠加帧（`None` = 不绘制；默认 GPU 后端恒为 `None`）。
+    ///
+    /// 由 [`crate::host::render::cpu_onion`] 每帧生成/复用：像素为透明背景 RGBA8
+    /// sRGB，矩形为**物理像素**；`version` 变化时渲染线程才重传纹理。
+    pub cpu_onion_frame: Option<lumino_gfx::CpuOnionFrame>,
 }
 
 /// 视口信息

@@ -80,6 +80,12 @@ pub struct Host {
     pub(crate) waterfall_midi_hash: Option<String>,
     /// 贴图瀑布流：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
     pub(crate) waterfall_gen_info: Option<(u16, u16, u32)>,
+    /// 洋葱皮渲染后端（初始化自 `UiConfig::onion_skin_backend`；默认 GPU）。
+    ///
+    /// Step 3 只提供运行时开关（无常驻设置页 UI、不新增持久化写入）。
+    pub(crate) onion_skin_backend: lumino_core::storage::config::OnionSkinBackend,
+    /// CPU 洋葱皮运行时状态（渲染器 / 文档快照 / 帧冻结，仅 CPU 后端创建）
+    pub(crate) cpu_onion_state: crate::host::render::cpu_onion::CpuOnionState,
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
     /// 触摸捏合回退：多指触摸点（id -> 逻辑坐标），用于无 PinchGesture 平台合成缩放

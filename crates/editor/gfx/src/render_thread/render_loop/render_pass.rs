@@ -228,7 +228,13 @@ pub fn execute_render_pass(
         }
 
         // 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）
-        if let Some(waterfall) = frame.texture_waterfall_renderer.as_ref() {
+        //
+        // CPU 洋葱皮后端（`cpu_onion_active`）跳过本块：非当前轨的洋葱皮由 CPU
+        // 透明叠加层负责，hires 贴图再叠一层会**双重绘制**（互相遮挡、白付采样），
+        // 且该叠加层是半废稿（Step 4/后续卡片整体改造）。默认 `false` → 行为不变。
+        if !params.cpu_onion_active
+            && let Some(waterfall) = frame.texture_waterfall_renderer.as_ref()
+        {
             let has_depth = depth_view.is_some();
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             waterfall.render(&mut render_pass, waterfall_visible_coords, has_depth);

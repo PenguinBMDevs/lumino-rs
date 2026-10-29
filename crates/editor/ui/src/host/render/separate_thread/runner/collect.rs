@@ -236,6 +236,10 @@ impl Host {
         // 分块构建 + send 到 WGPU 线程的 streaming channel，不再通过 RenderData 传输。
         self.stream_onion_skin_instances();
 
+        // CPU 洋葱皮叠加层（Q3 B）：后端为 CPU 时生成/复用透明帧，GPU 后端恒 None。
+        // 帧内容更新时内部已置内容脏（present 前等待新帧）。
+        let cpu_onion_frame = self.update_cpu_onion_frame();
+
         RenderData {
             scroll,
             zoom,
@@ -246,6 +250,7 @@ impl Host {
             arrangement_track_order,
             arrangement_track_visible,
             cc_bar_instances,
+            cpu_onion_frame,
         }
     }
 }
