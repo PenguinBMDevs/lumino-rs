@@ -53,6 +53,7 @@ impl Host {
         // 初始化空白工程：空 document（默认 2 轨 Conductor + Setup）+ 重建 sidebar.tracks。
         // 2026-08 修复：此前 reset() 置 document=None 且 sidebar.tracks 清空，
         // 导致空白工程创建音符被三重拦截（track_count=0 / document=None / current_track=0）。
+        // 该调用同时把洋葱皮后端**会话锁**复位为未加载态（关闭工程 → 可再选后端）。
         self.init_blank_project();
 
         // UI 缓存
@@ -83,6 +84,11 @@ impl Host {
     /// "启动后直接画音符"验收链路成立（根因：`EditorData::new` 时
     /// `document = None` + `current_track = 0`，铅笔音符被 `current_track == 0`
     /// 拦截）。幂等：重复调用每次都重建 2 轨空白文档。
+    ///
+    /// **会话锁**：空白工程**不是**「加载 MIDI」。`set_midi_document` 是真实载入的
+    /// 锁点，本方法必须在它之后**立刻解锁**，否则启动/新建/关闭工程会把洋葱皮后端
+    /// 永久锁死（设置页后端下拉不可用，见 `host::session_lock`）。`clear_editor`
+    /// 末尾也调用本方法，因此「关闭工程」同样回到解锁态。
     pub fn init_blank_project(&mut self) {
         // 空白文档的 division 取编辑器当前 PPQ（默认 1920），
         // 与视图状态保持一致，保证新工程保存的 PPQ 正确（不再硬编码 480）。
@@ -105,6 +111,8 @@ impl Host {
         self.update_tracks(&track_infos);
         // 再将空文档设为当前文档（set_midi_document 内部同步 tempo/拍号等）
         self.set_midi_document(doc);
+        // 空白文档不是「加载 MIDI」：立刻解除会话锁（`set_midi_document` 会置锁）。
+        self.midi_load.mark_blank();
 
         // 将当前轨道切到一条可编辑轨（跳过 Conductor 轨道 0，insert_note_at_tick 限制）
         let editable = self

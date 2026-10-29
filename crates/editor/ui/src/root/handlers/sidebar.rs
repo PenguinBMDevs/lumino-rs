@@ -6,11 +6,15 @@
 //! 子模块组织（按职责拆分，保持本文件 < 400 行）：
 //! - `right_sidebar`: 右侧栏动作处理（图片转 MIDI / 素材库）
 //! - `i2m`: 图片转 MIDI 后台转换结果轮询
+//!
+//! CPU 洋葱皮后端下的入口拦截见 [`super::cpu_guard`]（判定/文案集中在那里，
+//! 本文件只负责在正确时机（`sidebar.update` 之前）调用一次）。
 
 use crate::root::Root;
 use crate::sidebar;
 use crate::titlebar::mode_toggle::AppMode;
 use lumino_core::storage::config::TrackAddBehavior;
+use lumino_core::tr;
 
 mod i2m;
 mod right_sidebar;
@@ -29,6 +33,11 @@ impl Root {
             AppMode::Waterfall => AppMode::Editor,
         };
         if target_mode == AppMode::Waterfall {
+            // CPU 洋葱皮后端：全屏瀑布流播放器走 GPU 离屏纹理，不能进入。
+            // 只拦「进入瀑布流」——「退回编辑器」永远放行（出口不能被堵）。
+            if self.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持全屏瀑布流")) {
+                return true;
+            }
             // 通过分组系统切换
             self.sidebar
                 .update(sidebar::Event::GroupToggled(GroupId::Waterfall));
@@ -85,6 +94,14 @@ impl Root {
         {
             tracing::warn!("Root: 窗口最大化/还原期间忽略路由切换");
             return false;
+        }
+
+        // CPU 洋葱皮后端：纵向卷帘 / 工程走带 / 全屏瀑布流 / 视频导出的入口一律拒绝。
+        // **必须早于** `self.sidebar.update`：那里会写 route / active_group /
+        // roll_bar_active / video_export_visible，先改一半再弹 Toast 会让界面停在
+        // 「按钮已点亮但功能不可用」的自相矛盾状态。CPU 判定与文案见 `cpu_guard`。
+        if self.cpu_block_sidebar_event(&event) {
+            return true;
         }
 
         // 自动化面板切换始终触发重绘

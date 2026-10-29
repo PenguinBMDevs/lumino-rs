@@ -174,7 +174,14 @@ impl RunnerInner {
             }
             OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
             OpenBatchEditDialog => self.open_dialog_traced(DialogType::BatchEdit, "批量编辑"),
-            OpenVideoExportDialog => self.open_dialog_traced(DialogType::VideoExport, "视频导出"),
+            OpenVideoExportDialog => {
+                // CPU 洋葱皮后端：视频导出是 GPU 专属逐帧渲染链路，菜单入口直接拒绝——
+                // 开了窗也只会在「开始导出」处失败，不如当下就说清原因。
+                if self.reject_video_export_on_cpu() {
+                    return;
+                }
+                self.open_dialog_traced(DialogType::VideoExport, "视频导出")
+            }
             OpenMemoryMonitorDialog => {
                 self.open_dialog_traced(DialogType::MemoryMonitor, "内存监控")
             }

@@ -35,13 +35,17 @@ fn should_persist_language(language_from_env: bool, language_changed: bool) -> b
 ///
 /// 两个条件**任一**为真即不写，保留旧配置：
 /// - `backend_locked`：设置面板处于锁定会话态（主窗口注入）；
-/// - `has_document`：主窗口当前挂着 MIDI 文档。
+/// - `midi_loaded`：主窗口会话已加载**真实** MIDI/工程（空白工程不算）。
 ///
 /// 为什么两个都要：设置对话框可能在「无 MIDI」时打开、之后才加载 MIDI，
 /// 此时对话框面板里的 `backend_locked` 仍是打开那一刻的 `false`——
 /// 只信面板字段会把「加载 MIDI 后本不该生效的后端」写到下次启动。
-fn should_persist_onion_backend(backend_locked: bool, has_document: bool) -> bool {
-    !backend_locked && !has_document
+///
+/// 为什么判据是 `midi_loaded` 而不是「有没有文档」：启动/新建/关闭工程都会挂一份
+/// 2 轨空白 `MidiDocument`，用「有文档」判会把空白工程也挡在落盘之外——
+/// 用户在空白工程里选的后端永远存不下来（见 `host::session_lock`）。
+fn should_persist_onion_backend(backend_locked: bool, midi_loaded: bool) -> bool {
+    !backend_locked && !midi_loaded
 }
 
 impl RunnerInner {
@@ -161,20 +165,13 @@ impl RunnerInner {
         let current_theme = self.window_state.window.ui().root().theme().to_string();
         let auto_scroll_mode_changed =
             Self::auto_scroll_mode_changed(&self.window_state.window, old.auto_scroll.mode);
-        // 「加载 MIDI 后禁止切换后端」的持久化兜底：主窗口是否挂着文档才是硬事实，
-        // 面板字段（`hires.backend_locked`）在「先开设置、后载 MIDI」的时序下会过期。
-        let has_document = self
-            .window_state
-            .window
-            .ui()
-            .root()
-            .editor
-            .editor_state
-            .data
-            .document
-            .is_some();
+        // 「加载 MIDI 后禁止切换后端」的持久化兜底：主窗口会话是否加载过真实 MIDI
+        // 才是硬事实（`Host::onion_backend_locked()` 的同一真源），面板字段
+        // （`hires.backend_locked`）在「先开设置、后载 MIDI」的时序下会过期。
+        // 刻意不查 `document.is_some()`——空白工程也挂着 2 轨空文档，那样会永远不落盘。
+        let midi_loaded = self.window_state.window.ui().onion_backend_locked();
         let persist_onion_backend =
-            should_persist_onion_backend(new.hires.backend_locked, has_document);
+            should_persist_onion_backend(new.hires.backend_locked, midi_loaded);
         let diff = match Self::config_diff(new, old, &current_theme, persist_onion_backend) {
             Some(d) => d,
             None if !auto_scroll_mode_changed => return,

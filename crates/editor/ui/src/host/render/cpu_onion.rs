@@ -23,9 +23,12 @@
 //! - 纵向卷帘本步直接跳过 CPU 帧（坐标未做转置，画上去会错位）；
 //!   走带模式的音符层复用 GPU 段表绘制全部音轨，因此走带布局下不启用单轨模式；
 //! - Step 4a 只在**切换点**设闸：加载 MIDI 后禁止切换（`onion_backend_locked`）、
-//!   走带/瀑布流/导出中拒绝切到 CPU、纵向卷帘下切 CPU 会先自动退回横向
-//!   （`host::dialog::apply::onion`）；各模式**入口**的禁用/Toast 仍待 Step 4b，
-//!   因此「已在 CPU 后端时直接进入走带/纵向/导出」仍是本模块的静默跳过（不崩溃）。
+//!   走带/瀑布流/导出中/视频导出面板仅打开时拒绝切到 CPU、纵向卷帘下切 CPU 会先自动
+//!   退回横向（`host::dialog::apply::onion`）；
+//! - Step 4b 补**入口**闸：已处在 CPU 后端时，纵向卷帘 / 工程走带 / 全屏瀑布流 /
+//!   右侧栏钢琴瀑布预览 / 视频导出面板与开始导出一律拒绝 + Toast
+//!   （`root::handlers::cpu_guard`，Runner 侧另有最终兜底），因此下面的
+//!   「纵向往带直接跳过」分支只是**纵深防御**，不再是用户可达的静默降级。
 
 use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::CpuOnionFrame;
@@ -50,14 +53,20 @@ impl Host {
 
     /// 洋葱皮后端是否锁定（**加载 MIDI 后禁止切换**的用户硬约束）。
     ///
-    /// 判定取「主窗口是否有文档」这一单一真源：
-    /// - 关闭 MIDI 工程 → 文档为 `None` → 解锁；
-    /// - 加载/新建 MIDI → 文档 `Some(..)` → 锁定。
+    /// 判定取会话锁（`host::session_lock::MidiLoadLock`），即「**是否加载过真实
+    /// MIDI/工程**」这一单一真源：
+    /// - 真实 MIDI/工程载入 → `Host::set_midi_document` → 锁定；
+    /// - 启动 / 新建 / 关闭工程 → `Host::init_blank_project` → 解锁。
     ///
-    /// 设置对话框是独立 `Host`（Root 里没有文档），因此锁定态必须由主窗口
+    /// **刻意不用 `document.is_some()`**：启动即会 `init_blank_project` 挂一份 2 轨
+    /// 空白 `MidiDocument`，用「有文档」当锁会让设置页后端下拉从第一帧起永久锁定——
+    /// 空白工程里既选不了 CPU 也切不回 GPU，功能等于不可用。用户约束是「加载 MIDI
+    /// 后禁止切换」，空白工程不是加载 MIDI。
+    ///
+    /// 设置对话框是独立 `Host`（Root 里没有会话状态），因此锁定态必须由主窗口
     /// 主动注入（`Host::set_settings_onion_backend_locked`），对话框不得自行判定。
     pub fn onion_backend_locked(&self) -> bool {
-        self.root.editor.editor_state.data.document.is_some()
+        self.midi_load.is_loaded()
     }
 
     /// 切换洋葱皮渲染后端（由设置页触发；调用前必须过 `apply_onion_backend_switch` 守卫）。

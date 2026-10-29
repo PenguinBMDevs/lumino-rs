@@ -10,6 +10,8 @@ use lumino_core::storage::config::UiConfig;
 // - `recover_track`：恢复已删除音轨对话框
 // - `document_sync`：新建/恢复音轨后 document 同步与 PPQ 保存链路
 // - `deferred_remote_ops`：远端音符操作与本地编辑临界区串行化（防索引漂移）
+// - `cpu_guards`：CPU 洋葱皮后端下各不兼容入口的拦截（含 GPU 侧回归）
+mod cpu_guards;
 mod deferred_remote_ops;
 mod document_sync;
 mod handler_behavior;

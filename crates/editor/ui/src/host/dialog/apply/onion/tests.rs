@@ -3,7 +3,7 @@
 use super::{SwitchContext, SwitchPlan, plan_switch};
 use lumino_core::storage::config::OnionSkinBackend;
 
-/// 基准上下文：解锁、横向卷帘、无模式冲突、无导出。
+/// 基准上下文：解锁、横向卷帘、无模式冲突、无导出、无视频导出面板。
 fn base(requested: OnionSkinBackend, old: OnionSkinBackend) -> SwitchContext {
     SwitchContext {
         old,
@@ -13,6 +13,7 @@ fn base(requested: OnionSkinBackend, old: OnionSkinBackend) -> SwitchContext {
         arrangement: false,
         waterfall: false,
         exporting: false,
+        video_panel_visible: false,
     }
 }
 
@@ -93,6 +94,37 @@ fn test_incompatible_modes_block_cpu() {
         ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
     };
     assert_eq!(plan_switch(exporting), SwitchPlan::RejectIncompatibleMode);
+}
+
+/// 视频导出面板**仅打开未导出**也必须拒绝切到 CPU：
+/// CPU 下「开始导出」必然失败，让用户把参数配完再失败是更差的体验；
+/// 拒绝切换比悄悄关掉用户正在配置的面板更安全（面板状态原样保留）。
+#[test]
+fn test_video_export_panel_open_blocks_cpu() {
+    let ctx = SwitchContext {
+        video_panel_visible: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::RejectIncompatibleMode,
+        "视频导出面板打开（未导出）时不得切到 CPU"
+    );
+}
+
+/// 视频导出面板只限制「切到 CPU」：面板开着也能切回 GPU。
+#[test]
+fn test_video_export_panel_allows_switch_back_to_gpu() {
+    let ctx = SwitchContext {
+        video_panel_visible: true,
+        exporting: true,
+        ..base(OnionSkinBackend::Gpu, OnionSkinBackend::Cpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::Switch,
+        "切回 GPU 永远安全：不受视频导出面板/导出状态限制"
+    );
 }
 
 /// 不兼容模式优先于纵向卷帘：自动横滚是**副作用**，不能在一个注定被拒的

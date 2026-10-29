@@ -19,11 +19,12 @@ static BACKEND_OPTIONS: [OnionSkinBackend; 2] = [OnionSkinBackend::Gpu, OnionSki
 
 /// 「洋葱皮渲染方式」行（GPU / CPU）。
 ///
-/// - 未锁定（当前没有 MIDI 工程）：下拉选择，发
+/// - 未锁定（空白工程 / 尚未加载 MIDI）：下拉选择，发
 ///   [`crate::Event::OnionSkinBackendChanged`]；
-/// - 已锁定（主窗口已加载 MIDI）：只读展示当前后端 + 提示，**不提供可操作控件**。
+/// - 已锁定（主窗口已加载真实 MIDI/工程）：只读展示当前后端 + 提示，**不提供可操作控件**。
 ///
-/// 锁定语义的唯一真源是主窗口（`Host::onion_backend_locked`），面板只镜像。
+/// 锁定语义的唯一真源是主窗口（`Host::onion_backend_locked`，判的是「是否加载过真实
+/// MIDI」而非「有没有文档」——空白工程不是加载 MIDI），面板只镜像。
 fn renderer_row<'a>(settings: &SettingsPanel) -> Element<'a> {
     let label = text(tr!("洋葱皮渲染方式"))
         .size(TEXT_SIZE_CONTENT)

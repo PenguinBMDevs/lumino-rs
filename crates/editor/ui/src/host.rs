@@ -29,6 +29,7 @@ mod reconnect;
 mod render;
 mod render_ctx;
 mod render_thread;
+mod session_lock;
 pub mod types;
 mod waterfall;
 mod window_ctx;
@@ -86,6 +87,12 @@ pub struct Host {
     pub(crate) onion_skin_backend: lumino_core::storage::config::OnionSkinBackend,
     /// CPU 洋葱皮运行时状态（渲染器 / 文档快照 / 帧冻结，仅 CPU 后端创建）
     pub(crate) cpu_onion_state: crate::host::render::cpu_onion::CpuOnionState,
+    /// 洋葱皮后端的**会话锁**状态：只有加载过真实 MIDI/工程才锁定。
+    ///
+    /// 不能用 `EditorData.document.is_some()` 代替——启动/新建/关闭工程都会
+    /// 由 `init_blank_project` 挂一份 2 轨空白文档，那样锁会永久为真
+    /// （详见 `host::session_lock` 模块头）。
+    pub(crate) midi_load: session_lock::MidiLoadLock,
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
     /// 触摸捏合回退：多指触摸点（id -> 逻辑坐标），用于无 PinchGesture 平台合成缩放

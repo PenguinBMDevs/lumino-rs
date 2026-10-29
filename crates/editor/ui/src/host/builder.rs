@@ -105,6 +105,9 @@ impl Host {
             waterfall_gen_info: Some((ppq, key_count, total_ticks)),
             onion_skin_backend: ui_config.onion_skin_backend,
             cpu_onion_state: Default::default(),
+            // 启动态是空白工程（`init_blank_project` 随后建空文档）：会话锁默认未锁定，
+            // 用户可以先选后端再决定加载哪个 MIDI（见 `host::session_lock`）。
+            midi_load: Default::default(),
             message_router: handlers::create_message_router(),
             active_touches: std::collections::HashMap::new(),
             pinch_anchor_distance: None,

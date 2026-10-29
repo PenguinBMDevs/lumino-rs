@@ -15,6 +15,7 @@ use lumino_ui::event::window::{Event as WindowEvent, GpuCheckOutcome};
 
 mod audio_export;
 mod collaboration;
+mod cpu_guard;
 mod dialog;
 mod sync;
 mod track;

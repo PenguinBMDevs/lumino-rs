@@ -20,6 +20,7 @@ pub mod arrangement;
 pub mod cloud;
 pub mod collaboration;
 pub mod core_window;
+pub mod cpu_guard;
 pub mod dialog;
 pub mod editor_action;
 pub mod help;

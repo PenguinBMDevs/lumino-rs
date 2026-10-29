@@ -25,6 +25,11 @@ impl DialogHandler {
         use VideoExportAction as V;
         match action {
             V::OpenPanel => {
+                // CPU 洋葱皮后端：视频导出逐帧渲染依赖 GPU 表面纹理，入口即拒绝。
+                // 拦截必须在写 `video_export_visible`/`route` 之前（否则面板会先亮起来）。
+                if root.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持视频导出")) {
+                    return None;
+                }
                 root.sidebar.video_export_visible = true;
                 root.sidebar.route = crate::sidebar::Route::VideoExport;
             }
@@ -33,6 +38,13 @@ impl DialogHandler {
                 root.sidebar.route = crate::sidebar::Route::Arrangement;
             }
             V::StartExport => {
+                // CPU 洋葱皮后端：不置 `Exporting` 状态、不发导出事件（面板/对话框同源）。
+                // 主窗口 Root 的 `hires.backend` 与运行时真源一致；独立视频导出对话框
+                // 的 Root 取 UiConfig（可能滞后），最终兜底在 Runner 的
+                // `handle_start_video_export` 入口。
+                if root.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持视频导出")) {
+                    return None;
+                }
                 // 内存模式优先：从 EditorData.document 克隆快照（ChunkedList Arc 共享）；
                 // 否则若指定了 MIDI 路径，进入流式读取模式。
                 let document = root

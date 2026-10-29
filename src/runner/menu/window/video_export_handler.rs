@@ -30,6 +30,13 @@ impl RunnerInner {
         config: Box<EventVideoExportConfig>,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) {
+        // CPU 洋葱皮后端：**最终兜底**。独立视频导出对话框的 Root 取的是创建时的
+        // `UiConfig`（`hires.backend` 可能滞后于运行时真源），其入口闸只能尽力而为；
+        // 主窗口后端才是唯一真源，因此在这里再拦一次——不置导出状态、不启后台线程。
+        if self.reject_video_export_on_cpu() {
+            return;
+        }
+
         // DEBT-07 #124：导出可重入守卫（打开对话框之前拦截）——已有音频导出或
         // 视频导出进行中时拒绝，避免进度/预览通道与取消标志被覆盖。
         if self.window_state.audio_export_control.is_some()
