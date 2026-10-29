@@ -2,7 +2,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use lumino_core::{tr, trf};
 
@@ -11,6 +10,8 @@ use crate::runner::RunnerInner;
 use super::editor_midi;
 use super::helpers::{get_file_extension, get_file_stem};
 use super::material;
+
+mod lmpj;
 
 impl RunnerInner {
     /// 导出为素材（.lmmaterial）
@@ -252,133 +253,6 @@ impl RunnerInner {
                 false
             }
         }
-    }
-
-    /// 保存为 LMPJ 文件（默认使用新格式：按音轨拆分 + 归档）
-    ///
-    /// 返回 `true` 表示保存任务已真正启动（进入异步写入）；`false` 表示未启动
-    /// （保存/云上传进行中被拒绝，或无文档且无编辑器内容可写）。
-    /// 保存确认流程据此决定是否等待 `handle_save_completed` 继续关闭动作
-    /// （DEBT-01 #118：曾经无条件返回 true，未启动时关闭动作永久挂死）。
-    ///
-    /// 2026-08 单一权威源：优先借用 UI 的 `MidiDocument`（零拷贝）构建 LuminoProject；
-    /// 无文档时从编辑器音符重建。保证工程自包含——原始文件可删除后仍能完整加载。
-    ///
-    /// 保存成功后（经 `SaveCompleted` 事件回主线程）：
-    /// - 记录保存路径到 `current_midi_source`（后续 Ctrl+S 覆盖保存）
-    /// - 底边栏显示"文件已经保存"（3 秒后自动恢复"就绪"）
-    /// - 若文件来自云端，自动上传回云端原路径
-    ///
-    /// 保存期间 `saving` 标志置位：禁止关闭软件，关闭请求转为 `pending_close`
-    /// 延迟处理，保存完成后自动退出。
-    /// 构建待写入的 LuminoProject（保存 / 重连兜底自动保存共用口径）。
-    ///
-    /// 2026-08 单一权威源：优先借用 UI 的 `MidiDocument`（零拷贝）构建；
-    /// 无文档时从编辑器音符重建；作者/版权/累计创作时长写入元数据。
-    pub(super) fn build_lmpj_project(
-        &mut self,
-        save_path: &Path,
-    ) -> Option<lumino_export::LuminoProject> {
-        let project = {
-            let ui = self.window_state.window.ui();
-            let data = &ui.root().editor.editor_state.data;
-            if let Some(doc) = data.document.as_ref() {
-                // tempo 无需在此「补救」（2026-10-20 审计 §三）：
-                // `EditorData` 的 tempo 写入入口（`set_tempo_points` /
-                // `set_tempo_point` / `add_tempo_point` / `remove_tempo_point`）都会经
-                // `sync_tempo_to_document` 写回 `document.tempo_changes`，
-                // 故 `from_midi_document(doc)` 读到的就是用户编辑后的值。
-                // 旧注释「用户修改的 BPM 只写入 tempo_points、不回写 doc」已不成立。
-                let mut project = lumino_export::LuminoProject::from_midi_document(doc);
-                // 形状是工程数据的一部分：必须从 ShapeStore 快照写入，否则
-                // Bake 保留的模型在保存/重开后丢失（242D 回归）。
-                project.shapes = ui.root().editor.shapes_snapshot();
-                // 使用实际保存路径的文件名作为工程名
-                if let Some(stem) = save_path.file_stem() {
-                    project.metadata.project.name = stem.to_string_lossy().into_owned();
-                }
-                Some(project)
-            } else {
-                // 无文档 = 没有可保存的音符（单一权威源：音符只存在于 document，
-                // 编辑器视图不再另存一份）。旧实现在此从「编辑器音符」重建一份
-                // `MidiDocument`（`build_editor_midi_document`：编辑器音符 → SMF 字节
-                // → 重新解析成文档），但该函数的第一步 `get_editor_notes()` 就是读
-                // document，无文档时必然为空 → 恒返回 None（审计 §十二 认定的死路径）。
-                // 故此处直接返回 None，由下方统一告警处理。
-                None
-            }
-        }?;
-
-        // 工程设置对话框中填写的作者/版权写入工程元数据（.lmpj / metadata.toml）
-        let mut project = project;
-        let author = self.window_state.window.ui().get_project_author();
-        project.metadata.project.author = author;
-        let copyright = self.window_state.window.ui().get_project_copyright();
-        project.metadata.project.copyright = copyright;
-
-        // 累计创作时间写入工程元数据：历史累计 + 本次会话编辑时长。
-        // 保存时取实时值（current_editing_secs = accumulated + 会话已流逝），
-        // 重新加载时从 metadata.stats.working_time_seconds 恢复，跨会话不丢。
-        project.set_working_time_seconds(self.session_tracker.current_editing_secs());
-        Some(project)
-    }
-
-    fn save_lmpj_project_to(&mut self, save_path: PathBuf) -> bool {
-        // 串行限制：保存/云上传进行中，新保存请求直接拒绝
-        // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
-        if self.is_saving() || self.is_cloud_saving() {
-            tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
-            return false;
-        }
-
-        let Some(project) = self.build_lmpj_project(&save_path) else {
-            tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
-            return false;
-        };
-
-        // 标记保存进行中（保存期间禁止关闭软件）
-        self.saving.store(true, Ordering::SeqCst);
-        let saving = Arc::clone(&self.saving);
-        let cb = Arc::clone(&self.window_state.progress_cb);
-        tokio::spawn(async move {
-            cb(tr!("正在保存 LMPJ 文件"), 0.3);
-            let save_path_for_task = save_path.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                lumino_export::save_to_archive(&project, &save_path_for_task)
-            })
-            .await;
-
-            // 无论成败均清除保存标志（解除关闭限制）
-            saving.store(false, Ordering::SeqCst);
-
-            match result {
-                Ok(Ok(())) => {
-                    cb(tr!("工程保存成功"), 1.0);
-                    tracing::info!("工程保存成功: {:?}", save_path);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::save_completed(save_path),
-                    ));
-                }
-                Ok(Err(e)) => {
-                    let msg = trf!("保存失败: {e}", e = e);
-                    cb(&msg, 1.0);
-                    tracing::error!("{}", msg);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::save_failed(msg),
-                    ));
-                }
-                Err(e) => {
-                    let msg = trf!("保存任务失败: {e}", e = e);
-                    cb(&msg, 1.0);
-                    tracing::error!("{}", msg);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::save_failed(msg),
-                    ));
-                }
-            }
-        });
-
-        true
     }
 
     /// 保存为 MIDI（包含编辑器编辑 + 源文件的 PC/CC 事件）
