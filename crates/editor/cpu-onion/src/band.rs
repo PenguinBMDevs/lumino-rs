@@ -8,7 +8,10 @@
 //!   后画的音符（含边框）不能覆盖，对应 GPU 洋葱皮区「全局源索引越小越靠前」
 //!   的稳定深度语义；
 //! - 长音符（> [`LOOKBACK_TICKS`]）与正常窗口音符按 `start_tick` 归并，
-//!   避免「长音符 underlay 先画」导致晚开始的长音符错误覆盖早开始的短音符。
+//!   避免「长音符 underlay 先画」导致晚开始的长音符错误覆盖早开始的短音符；
+//! - 两条流在同一个 `start_tick` 上相遇（tie）时，顺序不能靠「长音先 / 短音先」
+//!   猜——回文档按**全局源索引**取该 tick 的音符组，与 GPU 洋葱皮区
+//!   （`window_range` / `iter_window` 返回的源顺序）保持一致。
 
 use std::sync::Arc;
 
@@ -53,10 +56,14 @@ pub(crate) struct BandJob {
 }
 
 /// band 渲染统计。
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default)]
+#[cfg_attr(not(test), derive(Clone, Copy))]
 pub(crate) struct BandStats {
     /// 实际尝试绘制的音符数（通过 tick/key 过滤）。
     pub(crate) visible_notes: u64,
+    /// 测试专用：`draw_note` 的调用顺序（生产构建没有该字段，热路径零成本）。
+    #[cfg(test)]
+    pub(crate) draw_order: Vec<NoteEvent>,
 }
 
 /// 渲染一条 band 到透明 band 缓冲。
@@ -116,8 +123,32 @@ fn draw_track(
         .peekable();
 
     loop {
+        // 两条流都在同一个 `start_tick` 上：谁先画不能靠「长音先 / 短音先」猜，
+        // 必须回文档按全局源索引取这一组，否则与 GPU 的源顺序不一致。
+        // 组查询只在 tie 时发生，常路径（不同 start）不为它付代价。
+        let tie_tick = match (long_iter.peek(), window_iter.peek()) {
+            (Some(long), Some(window)) if long.start_tick == window.start_tick => {
+                Some(long.start_tick)
+            }
+            _ => None,
+        };
+        if let Some(tick) = tie_tick {
+            draw_tick_group(job, buffer, track, notes, tick, stats);
+            // 两个流都必须跳过该 tick：组查询已经把其中所有可见音符画完了。
+            while long_iter.peek().is_some_and(|note| note.start_tick == tick) {
+                long_iter.next();
+            }
+            while window_iter
+                .peek()
+                .is_some_and(|note| note.start_tick == tick)
+            {
+                window_iter.next();
+            }
+            continue;
+        }
+
         let take_long = match (long_iter.peek(), window_iter.peek()) {
-            (Some(long), Some(window)) => long.start_tick <= window.start_tick,
+            (Some(long), Some(window)) => long.start_tick < window.start_tick,
             (Some(_), None) => true,
             (None, Some(_)) => false,
             (None, None) => break,
@@ -130,11 +161,55 @@ fn draw_track(
         let Some(note) = candidate else {
             continue;
         };
-        if (note.key as u16) < job.key_min || (note.key as u16) > job.key_max {
-            continue;
-        }
-        if draw_note(job, buffer, track, note) {
-            stats.visible_notes = stats.visible_notes.saturating_add(1);
-        }
+        draw_one(job, buffer, track, note, stats);
     }
 }
+
+/// 取同一 `start_tick` 的音符组，按文档**全局源索引**顺序绘制。
+///
+/// 长音符与正常窗口音符平时分两条流各自有序，但同 tick 内没有先后关系——
+/// 短音可能先插入（源索引更小），也可能后插入。GPU 洋葱皮区按源索引稳定排序，
+/// 所以 tie 时只能按 tick 回文档查一次。
+///
+/// `window_range(tick, tick + 1, 0)` 只框这一个 tick（`lookback = 0`，不会把前一
+/// 个 tick 的音符带进来）。`tick.saturating_add(1)` 防 `u32::MAX` 溢出；溢出时
+/// 区间退化为空，该组是文档末尾的 `u32::MAX` 音符，直接取到末尾（组内仍按
+/// `start_tick == tick` 过滤，不会混入别的 tick）。
+fn draw_tick_group(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    track: usize,
+    notes: &ChunkedList<NoteEvent>,
+    tick: u32,
+    stats: &mut BandStats,
+) {
+    let (lo, hi) = notes.window_range(tick, tick.saturating_add(1), 0);
+    let hi = if tick == u32::MAX { notes.len() } else { hi };
+    for (_, note) in notes.iter_window(lo, hi) {
+        if note.start_tick != tick || note.end_tick < job.tick_lo {
+            continue;
+        }
+        draw_one(job, buffer, track, note, stats);
+    }
+}
+
+/// 单个音符：key 过滤 + 光栅化 + 统计（单流路径与 tick 组查询共用）。
+fn draw_one(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    track: usize,
+    note: &NoteEvent,
+    stats: &mut BandStats,
+) {
+    if (note.key as u16) < job.key_min || (note.key as u16) > job.key_max {
+        return;
+    }
+    #[cfg(test)]
+    stats.draw_order.push(*note);
+    if draw_note(job, buffer, track, note) {
+        stats.visible_notes = stats.visible_notes.saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+mod tests;

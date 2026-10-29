@@ -119,6 +119,72 @@ fn cpu_frame_rect_is_physical_pixels() {
     );
 }
 
+/// 浮点近似断言：×1.5 的 f32 舍入误差远小于 1e-4。
+fn assert_close(actual: f32, expected: f32, what: &str) {
+    assert!(
+        (actual - expected).abs() < 1e-4,
+        "{what} 期望 {expected}，实际 {actual}"
+    );
+}
+
+/// 150% + 小数滚动/缩放：矩形 floor 成物理像素，相机滚动/缩放保留浮点（不取整）。
+///
+/// 与 GPU 主轨同口径：canvas scissor 用 `floor(逻辑值 × scale)`，而相机
+/// `scroll` / `zoom` 是浮点直乘——先 floor 相机值会让 CPU 帧相对主轨产生
+/// 亚像素错位，本用例把这两条口径同时锁住。
+#[test]
+fn cpu_frame_geometry_at_150_percent_with_fractional_values() {
+    let document = document();
+    let muted = vec![false, false, true];
+    let mut input = camera_input(1.5);
+    input.canvas_offset = (37.3, 21.9);
+    input.canvas_size = (333.3, 200.1);
+    input.scroll = (12.7, 3.3);
+    input.zoom = (1.7, 20.3);
+    let geometry = input.to_physical().expect("150% 小数输入应可换算");
+
+    // 矩形：逻辑值 ×1.5 后向下取整（与 canvas scissor 同口径）。
+    assert_eq!(
+        (geometry.x, geometry.y),
+        (55, 32),
+        "37.3×1.5=55.95 → 55；21.9×1.5=32.85 → 32"
+    );
+    assert_eq!(
+        (geometry.width, geometry.height),
+        (499, 300),
+        "333.3×1.5=499.95 → 499；200.1×1.5=300.15 → 300"
+    );
+
+    // 相机：滚动/缩放保留浮点，只乘 DPI（不得 floor）。
+    assert_close(geometry.camera.scroll_x, 19.05, "scroll_x");
+    assert_close(geometry.camera.scroll_y, 4.95, "scroll_y");
+    assert_close(geometry.camera.zoom_x, 2.55, "zoom_x");
+    assert_close(geometry.camera.zoom_y, 30.45, "zoom_y");
+    assert_eq!(geometry.camera.key_count, 128);
+
+    let mut state = CpuOnionState::default();
+    let frame = state
+        .update(frame_key(geometry), &document, &muted, None, None)
+        .frame
+        .expect("应生成帧");
+    assert_eq!(
+        (frame.x, frame.y),
+        (55, 32),
+        "CpuOnionFrame 物理矩形必须 floor（与 geometry 一致）"
+    );
+    assert_eq!(
+        frame.size(),
+        (499, 300),
+        "CpuOnionFrame 尺寸必须 = 物理画布尺寸"
+    );
+    assert_eq!(
+        (geometry.camera.width, geometry.camera.height),
+        frame.size(),
+        "相机宽高必须与帧物理尺寸一致"
+    );
+    assert!(frame.validate(), "帧像素长度必须与尺寸自洽");
+}
+
 /// 指纹不变 → 复用上一帧（不重渲染、不递增版本、像素 Arc 相同）。
 #[test]
 fn cpu_frame_is_frozen_until_inputs_change() {
