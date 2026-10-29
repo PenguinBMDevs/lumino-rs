@@ -7,6 +7,8 @@ use std::time::Instant;
 
 use iced_winit::winit;
 
+use lumino_core::storage::config::OnionSkinBackend;
+
 use crate::config;
 use crate::root;
 use crate::root::handlers;
@@ -87,7 +89,7 @@ impl Host {
         let ppq = lumino_core::view_state::DEFAULT_PPQ;
         let total_ticks = lumino_core::view_state::DEFAULT_TOTAL_TICKS;
 
-        Self {
+        let mut host = Self {
             render_ctx,
             window_ctx,
             root,
@@ -120,7 +122,17 @@ impl Host {
             ime_active: false,
             redraw_at: std::sync::Arc::new(std::sync::Mutex::new(None)),
             redraw_timer_active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        }
+        };
+        // CPU 洋葱皮脏区记录开关：只有 CPU 启动路径才开启（默认 GPU 零开销）。
+        //
+        // 必须在这里立刻置位，不能等第一帧：启动后到首帧之间的编辑不会被记录，
+        // 那段时间的脏区就永久丢了（下一帧只能靠整帧兜底，脏区优化直接失效）。
+        host.root
+            .editor
+            .editor_state
+            .data
+            .set_cpu_onion_dirty_enabled(ui_config.onion_skin_backend == OnionSkinBackend::Cpu);
+        host
     }
 
     /// 创建新的 Host

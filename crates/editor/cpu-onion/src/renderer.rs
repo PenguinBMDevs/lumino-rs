@@ -37,6 +37,10 @@ use crate::{
     slot::{BandSlot, put_buffer, take_buffer},
 };
 
+mod region;
+
+pub use region::CpuOnionRect;
+
 /// 纯 CPU 洋葱皮渲染器。
 pub struct CpuOnionRenderer {
     runtime: Option<tokio::runtime::Runtime>,
@@ -46,6 +50,8 @@ pub struct CpuOnionRenderer {
     style: Arc<NoteStyle>,
     /// 内部 `0xAARRGGBB` 合成帧。
     frame: Vec<u32>,
+    /// 区域重绘的局部合成帧（复用缓冲，避免每次脏区重绘都分配）。
+    region_frame: Vec<u32>,
     /// 对外 RGBA8 输出帧。
     output: CpuFrame,
     width: u32,
@@ -76,6 +82,7 @@ impl CpuOnionRenderer {
             strip_slot: Arc::new(BandSlot::new()),
             style: Arc::new(NoteStyle::new(track_count)),
             frame: Vec::new(),
+            region_frame: Vec::new(),
             output: CpuFrame::default(),
             width: 0,
             height: 0,

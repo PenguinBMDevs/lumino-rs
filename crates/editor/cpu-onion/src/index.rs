@@ -7,11 +7,18 @@
 //!   候选单独合并（按 `start_tick` 与正常窗口音符归并，保持源顺序）。
 //! - `measure_counts[measure]`：每小节 onset 数，供滚动 LOD 估算与密集段定位；
 //!   编辑增量通过 [`TrackIndex::with_changes`] 维护。
+//! - `track_note_counts[track]`：每轨音符数，供 [`TrackIndex::rebuild_track_geometry`]
+//!   在不重扫全文档的前提下精确修正 `total_notes`。
 //!
 //! `MidiDocument::clone` 是块级浅拷贝（音符块 `Arc` 共享），本索引同样只做
 //! 聚合拷贝，不触碰音符数据。
+//!
+//! 增量维护方法（`with_changes*` / `rebuild_track_geometry`）见子模块
+//! [`incremental`]。
 
 use lumino_midi_model::{MidiDocument, NoteEvent};
+
+mod incremental;
 
 /// 正常窗口的 lookback 上限（tick）。
 ///
@@ -44,6 +51,8 @@ pub struct TrackIndex {
     pub densest_measure_notes: u32,
     /// 总音符数。
     pub total_notes: u64,
+    /// 每轨音符数（`rebuild_track_geometry` 用它把 `total_notes` 修正到精确值）。
+    pub track_note_counts: Vec<u64>,
 }
 
 impl TrackIndex {
@@ -55,11 +64,13 @@ impl TrackIndex {
         let mut max_len = vec![0u32; track_count];
         let mut long_notes: Vec<Vec<NoteEvent>> = (0..track_count).map(|_| Vec::new()).collect();
         let mut measure_counts = vec![0u32; 1];
+        let mut track_note_counts = vec![0u64; track_count];
         let mut long_note_count = 0u64;
         let mut total_notes = 0u64;
 
         for (track_idx, notes) in document.notes.iter().enumerate() {
             let mut track_max = 0u32;
+            let mut track_notes = 0u64;
             for note in notes.iter() {
                 let len = note.length();
                 track_max = track_max.max(len);
@@ -74,10 +85,14 @@ impl TrackIndex {
                 if let Some(count) = measure_counts.get_mut(measure) {
                     *count = count.saturating_add(1);
                 }
+                track_notes = track_notes.saturating_add(1);
                 total_notes = total_notes.saturating_add(1);
             }
             if let Some(slot) = max_len.get_mut(track_idx) {
                 *slot = track_max;
+            }
+            if let Some(slot) = track_note_counts.get_mut(track_idx) {
+                *slot = track_notes;
             }
         }
 
@@ -90,6 +105,7 @@ impl TrackIndex {
             densest_measure: 0,
             densest_measure_notes: 0,
             total_notes,
+            track_note_counts,
         };
         index.recompute_densest();
         index
@@ -136,79 +152,12 @@ impl TrackIndex {
             .sum()
     }
 
-    /// 编辑后滚动更新派生索引：克隆一次，批量减旧增新。
+    /// 重算「密度最高的小节」（O(小节数)）。
     ///
-    /// 只更新 `measure_counts` / `max_len` / `long_notes` / 总数；不重建整份
-    /// 文档，也不复制音符数据。`max_len` 删除时允许偏大（只影响扫描窗口，安全）。
-    #[must_use]
-    pub fn with_changes(&self, track: usize, removed: &[NoteEvent], added: &[NoteEvent]) -> Self {
-        let mut next = self.clone();
-        if track >= next.max_len.len() {
-            return next;
-        }
-        for note in removed {
-            next.apply_remove(track, *note);
-        }
-        for note in added {
-            next.apply_insert(track, *note);
-        }
-        next.recompute_densest();
-        next
-    }
-
-    fn measure_of(&self, tick: u32) -> usize {
-        (tick / self.measure_ticks.max(1)) as usize
-    }
-
-    fn apply_insert(&mut self, track: usize, note: NoteEvent) {
-        self.total_notes = self.total_notes.saturating_add(1);
-        let len = note.length();
-        if let Some(slot) = self.max_len.get_mut(track) {
-            *slot = (*slot).max(len);
-        }
-        let measure = self.measure_of(note.start_tick);
-        grow_measure_buckets(&mut self.measure_counts, measure);
-        if let Some(count) = self.measure_counts.get_mut(measure) {
-            *count = count.saturating_add(1);
-        }
-        if len > LOOKBACK_TICKS
-            && let Some(slot) = self.long_notes.get_mut(track)
-        {
-            let position = slot.partition_point(|item| item.start_tick <= note.start_tick);
-            slot.insert(position, note);
-            self.long_note_count = self.long_note_count.saturating_add(1);
-        }
-    }
-
-    fn apply_remove(&mut self, track: usize, note: NoteEvent) {
-        self.total_notes = self.total_notes.saturating_sub(1);
-        let measure = self.measure_of(note.start_tick);
-        if let Some(count) = self.measure_counts.get_mut(measure) {
-            *count = count.saturating_sub(1);
-        }
-        if note.length() > LOOKBACK_TICKS
-            && let Some(slot) = self.long_notes.get_mut(track)
-        {
-            let position = slot.partition_point(|item| item.start_tick < note.start_tick);
-            let mut found = None;
-            for (offset, item) in slot[position..]
-                .iter()
-                .enumerate()
-                .take_while(|(_, item)| item.start_tick == note.start_tick)
-            {
-                if *item == note {
-                    found = Some(position + offset);
-                    break;
-                }
-            }
-            if let Some(index) = found {
-                slot.remove(index);
-                self.long_note_count = self.long_note_count.saturating_sub(1);
-            }
-        }
-    }
-
-    fn recompute_densest(&mut self) {
+    /// 只服务 LOD 估算与基准定位，**CPU 洋葱皮渲染不使用 densest**；编辑增量
+    /// 路径 [`TrackIndex::with_changes_fast`] 刻意跳过它，避免每次单笔编辑都
+    /// 扫一遍上百万吨的小节桶。
+    pub(super) fn recompute_densest(&mut self) {
         let mut densest_measure = 0usize;
         let mut densest_notes = 0u32;
         for (measure, count) in self.measure_counts.iter().enumerate() {
@@ -261,6 +210,7 @@ mod tests {
         assert_eq!(index.densest_measure, 0);
         assert_eq!(index.densest_measure_notes, 3);
         assert_eq!(index.total_notes, 3);
+        assert_eq!(index.track_note_counts, vec![2, 1]);
     }
 
     #[test]
@@ -269,27 +219,6 @@ mod tests {
         assert_eq!(index.estimate_visible(0, 1919), 3);
         assert_eq!(index.estimate_visible(1920, 10_000), 0);
         assert_eq!(index.estimate_visible(200, 100), 0);
-    }
-
-    #[test]
-    fn with_changes_updates_long_notes_and_counts() {
-        let index = TrackIndex::build(&document());
-        let removed = [NoteEvent::new(100, 700, 62, 100, 0)];
-        let added = [NoteEvent::new(0, 2000, 65, 100, 0)];
-        let next = index.with_changes(0, &removed, &added);
-        assert_eq!(next.total_notes, 3);
-        assert_eq!(next.max_len[0], 2000);
-        assert_eq!(next.long_note_count, 1);
-        assert!(next.long_notes(0).iter().any(|note| note.key == 65));
-        assert!(!next.long_notes(0).iter().any(|note| note.key == 62));
-        assert_eq!(next.estimate_visible(0, 1919), 3);
-    }
-
-    #[test]
-    fn with_changes_ignores_out_of_range_track() {
-        let index = TrackIndex::build(&document());
-        let next = index.with_changes(99, &[], &[NoteEvent::new(0, 10, 60, 100, 0)]);
-        assert_eq!(next.total_notes, index.total_notes);
     }
 
     #[test]

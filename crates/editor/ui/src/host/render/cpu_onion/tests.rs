@@ -67,7 +67,7 @@ fn cpu_frame_skips_current_and_muted_tracks() {
     let geometry = camera_input(1.0).to_physical().expect("100% 相机应可换算");
     let mut state = CpuOnionState::default();
 
-    let output = state.update(frame_key(geometry), &document, &muted);
+    let output = state.update(frame_key(geometry), &document, &muted, None, None);
     assert!(output.rebuilt, "首次调用必须重新光栅化");
     let frame = output.frame.expect("有文档且尺寸合法时必须生成帧");
 
@@ -108,7 +108,7 @@ fn cpu_frame_rect_is_physical_pixels() {
     assert_eq!((geometry.width, geometry.height), (250, 125));
 
     let mut state = CpuOnionState::default();
-    let output = state.update(frame_key(geometry), &document, &muted);
+    let output = state.update(frame_key(geometry), &document, &muted, None, None);
     let frame = output.frame.expect("应生成帧");
     assert_eq!((frame.x, frame.y), (12, 6), "帧矩形必须是物理像素");
     assert_eq!(frame.size(), (250, 125), "帧尺寸必须是物理 canvas 尺寸");
@@ -128,12 +128,12 @@ fn cpu_frame_is_frozen_until_inputs_change() {
     let mut state = CpuOnionState::default();
     let key = frame_key(geometry);
 
-    let first = state.update(key, &document, &muted);
+    let first = state.update(key, &document, &muted, None, None);
     assert!(first.rebuilt);
     let first = first.frame.expect("首帧应生成");
 
     // 同一指纹重复调用：不得重渲染、不得重传（版本相同 + 像素共享）
-    let second = state.update(key, &document, &muted);
+    let second = state.update(key, &document, &muted, None, None);
     assert!(!second.rebuilt, "指纹未变时不得重新光栅化");
     let second = second.frame.expect("应复用上一帧");
     assert_eq!(second.version, first.version, "复用帧的版本必须不变");
@@ -147,7 +147,7 @@ fn cpu_frame_is_frozen_until_inputs_change() {
     edited_document.insert_note(1, NoteEvent::new(200, 210, 121, 100, 0));
     let mut next_key = key;
     next_key.track_notes_gen = 2;
-    let third = state.update(next_key, &edited_document, &muted);
+    let third = state.update(next_key, &edited_document, &muted, None, None);
     assert!(third.rebuilt, "文档代次变化必须重新光栅化");
     let third = third.frame.expect("应生成新帧");
     assert_ne!(third.version, first.version, "新帧版本必须递增");
@@ -165,13 +165,13 @@ fn cpu_frame_rebuilds_on_camera_change() {
     let base = camera_input(1.0).to_physical().expect("100% 相机应可换算");
     let mut state = CpuOnionState::default();
 
-    let first = state.update(frame_key(base), &document, &muted);
+    let first = state.update(frame_key(base), &document, &muted, None, None);
     let first = first.frame.expect("首帧应生成");
 
     let mut scrolled_input = camera_input(1.0);
     scrolled_input.scroll = (100.0, 0.0);
     let scrolled = scrolled_input.to_physical().expect("相机应可换算");
-    let second = state.update(frame_key(scrolled), &document, &muted);
+    let second = state.update(frame_key(scrolled), &document, &muted, None, None);
     assert!(second.rebuilt, "滚动变化必须重新光栅化");
     assert_ne!(
         second.frame.expect("应生成新帧").version,
@@ -189,11 +189,16 @@ fn cpu_frame_deactivate_releases_state() {
     let mut state = CpuOnionState::default();
     let key = frame_key(geometry);
 
-    assert!(state.update(key, &document, &muted).frame.is_some());
+    assert!(
+        state
+            .update(key, &document, &muted, None, None)
+            .frame
+            .is_some()
+    );
     state.deactivate();
     assert!(state.frame().is_none(), "停用后不得保留帧");
 
-    let rebuilt = state.update(key, &document, &muted);
+    let rebuilt = state.update(key, &document, &muted, None, None);
     assert!(rebuilt.rebuilt);
     assert_eq!(
         rebuilt.frame.expect("停用后应可重建").version,

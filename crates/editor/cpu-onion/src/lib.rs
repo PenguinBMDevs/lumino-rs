@@ -46,4 +46,4 @@ mod slot;
 pub use camera::CanvasCamera;
 pub use frame::CpuFrame;
 pub use index::{LOOKBACK_TICKS, TrackIndex};
-pub use renderer::CpuOnionRenderer;
+pub use renderer::{CpuOnionRect, CpuOnionRenderer};

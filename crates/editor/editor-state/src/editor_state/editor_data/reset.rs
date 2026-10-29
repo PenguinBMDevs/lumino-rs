@@ -8,6 +8,9 @@ impl EditorData {
     pub fn reset(&mut self) {
         self.edited_tracks.clear();
         self.onion_dirty_tracks = None;
+        // 文档即将销毁：脏区必须丢弃，否则切回 CPU 时会被误当成真实变化。
+        // 开关状态保留（后端选择不因 reset 而改变）。
+        self.clear_cpu_onion_dirty();
         self.mark_track_notes_changed();
         self.current_track = 0;
         self.history.clear();

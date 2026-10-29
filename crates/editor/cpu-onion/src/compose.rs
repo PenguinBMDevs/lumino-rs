@@ -51,9 +51,26 @@ pub(crate) fn write_output(
     x0: u32,
     x1: u32,
 ) {
+    write_output_region(frame, width, height, output, x0, x1, 0, height as u32);
+}
+
+/// 把内部合成帧的 `[x0, x1) × [y0, y1)` 转换为 RGBA8 输出（区域重绘用）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_output_region(
+    frame: &[u32],
+    width: usize,
+    height: usize,
+    output: &mut CpuFrame,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+) {
     let x0 = (x0 as usize).min(width);
     let x1 = (x1 as usize).min(width);
-    if x0 >= x1 || width == 0 || height == 0 {
+    let y0 = (y0 as usize).min(height);
+    let y1 = (y1 as usize).min(height);
+    if x0 >= x1 || y0 >= y1 || width == 0 || height == 0 {
         return;
     }
     let pixel_count = width.saturating_mul(height);
@@ -65,7 +82,7 @@ pub(crate) fn write_output(
         return;
     }
     let span = x1 - x0;
-    for y in 0..height {
+    for y in y0..y1 {
         let src_start = y * width + x0;
         let Some(src) = frame.get(src_start..src_start + span) else {
             continue;
@@ -82,6 +99,45 @@ pub(crate) fn write_output(
                 ((pixel >> 24) & 0xFF) as u8,
             ];
         }
+    }
+}
+
+/// 把局部帧（`local_width × local_height`）贴进内部合成帧的 `(x, y)` 处。
+///
+/// 区域重绘在局部坐标里光栅化（band 局部 x 从 0 起），最终整块覆盖回全局帧，
+/// 因此区域内的旧像素**必然被清空**（band 缓冲初始化为全透明）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn blit_region(
+    frame: &mut [u32],
+    width: usize,
+    height: usize,
+    x: u32,
+    y: u32,
+    local_width: usize,
+    local_height: usize,
+    local: &[u32],
+) {
+    if local.len() != local_width.saturating_mul(local_height)
+        || local_width == 0
+        || local_height == 0
+        || frame.len() != width.saturating_mul(height)
+    {
+        return;
+    }
+    let (x, y) = (x as usize, y as usize);
+    if x.saturating_add(local_width) > width || y.saturating_add(local_height) > height {
+        return;
+    }
+    for row in 0..local_height {
+        let src_start = row * local_width;
+        let dst_start = (y + row) * width + x;
+        let (Some(src), Some(dst)) = (
+            local.get(src_start..src_start + local_width),
+            frame.get_mut(dst_start..dst_start + local_width),
+        ) else {
+            continue;
+        };
+        dst.copy_from_slice(src);
     }
 }
 

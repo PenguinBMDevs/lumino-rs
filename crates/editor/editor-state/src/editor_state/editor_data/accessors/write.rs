@@ -56,6 +56,8 @@ impl EditorData {
         // `Root::arrangement_max_tick_end`（走带滚动条范围）、`OnionSkinState`
         // 与走带选区命中音符缓存。跨轨插入必须**精确**标记受影响轨：若按
         // `{current_track}` 标记，洋葱皮会对真实变化轨错误豁免 → 漏渲染。
+        // CPU 洋葱皮脏区（Step 5a）：单笔插入 = (None, Some(new))，关闭时零开销。
+        self.record_cpu_onion_change(track_id, None, Some(event));
         if track_id == self.current_track {
             self.mark_current_track_changed();
         } else {
@@ -80,12 +82,18 @@ impl EditorData {
 
     /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
     /// document 为空时返回 false。
+    ///
+    /// 扩轨改变轨道数，CPU 洋葱皮的每轨几何缓存全部失效 → 记整帧兜底。
     pub fn ensure_track(&mut self, track_id: usize) -> bool {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
+        let grown = doc.track_count() <= track_id;
         while doc.track_count() <= track_id {
             doc.add_empty_track();
+        }
+        if grown {
+            self.record_cpu_onion_full();
         }
         true
     }
@@ -104,6 +112,8 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
         }
+        // CPU 洋葱皮脏区（Step 5a）：单笔删除 = (Some(removed), None)
+        self.record_cpu_onion_change(track_id, Some(removed), None);
         // 2026-09 补版本号：同 `insert_note_with_id`，删除此前不 bump gen
         self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         Some(removed)
@@ -117,6 +127,9 @@ impl EditorData {
         self.modified = true;
         let event = note_to_event(note.clone());
         let start_tick = event.start_tick;
+        // CPU 洋葱皮脏区需要「修改前」的音符；越界索引取不到则保持 None
+        // （此时 `update_note` 必然返回 false，脏区也不会落账）。
+        let previous = doc.track_notes(track_id).get(index).copied();
         if !doc.update_note(track_id, index, event) {
             return false;
         }
@@ -137,23 +150,32 @@ impl EditorData {
                 note,
             });
         }
+        // CPU 洋葱皮脏区（Step 5a）：更新 = (Some(old), Some(new))
+        self.record_cpu_onion_change(track_id, previous, Some(event));
         // 2026-09 补版本号：同 `insert_note_with_id`，更新此前不 bump gen
         self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         true
     }
 
     /// 整轨替换音符（undo/redo 快照恢复专用）。
+    ///
+    /// CPU 洋葱皮：整轨替换无法用原子变更表达 → 记整帧兜底。
     pub fn replace_track_notes(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> bool {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
         self.modified = true;
-        doc.replace_track_notes(track_id, notes)
+        let replaced = doc.replace_track_notes(track_id, notes);
+        if replaced {
+            self.record_cpu_onion_full();
+        }
+        replaced
     }
 
     /// 整轨替换音符（undo/redo 快照恢复专用，O(块数) 浅拷贝版）。
     ///
     /// 直接共享快照块 Arc，不做数据复制（1600W 音符工程 undo/redo 免整轨拷贝）。
+    /// CPU 洋葱皮：同 [`Self::replace_track_notes`]，记整帧兜底。
     pub fn replace_track_notes_chunked(
         &mut self,
         track_id: usize,
@@ -163,7 +185,11 @@ impl EditorData {
             return false;
         };
         self.modified = true;
-        doc.replace_track_notes_chunked(track_id, notes)
+        let replaced = doc.replace_track_notes_chunked(track_id, notes);
+        if replaced {
+            self.record_cpu_onion_full();
+        }
+        replaced
     }
 
     // ── 增量事件记录 ─────────────────────────────────────────

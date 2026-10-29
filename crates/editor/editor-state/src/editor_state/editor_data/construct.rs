@@ -22,6 +22,9 @@ impl EditorData {
             track_notes_gen: 0,
             edited_tracks: HashSet::new(),
             onion_dirty_tracks: None,
+            // CPU 洋葱皮脏区默认关闭：默认后端是 GPU，零开销优先（Host 切 CPU 时开启）
+            cpu_onion_dirty_enabled: false,
+            cpu_onion_dirty: None,
             document: None,
             history: History::new(),
             pending_commit: None,

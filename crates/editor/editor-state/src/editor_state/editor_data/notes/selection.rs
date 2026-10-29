@@ -92,6 +92,10 @@ impl EditorData {
             return 0;
         }
 
+        // CPU 洋葱皮（Step 5a）：区间删除（选择删除 / 走带删除）允整帧兜底——
+        // 逐音符原子变更在「整轨全选」时会膨胀到音符数量级，得不偿失。
+        self.record_cpu_onion_full();
+
         // 事件区间裁剪到删除前长度（防御越界索引：实际删除数可能小于区间和）；
         // 区间过多时走整段重建，跳过 O(区间数) 事件载荷构建。
         let incremental = ranges.len() <= MAX_INCREMENTAL_REMOVE_RANGES;

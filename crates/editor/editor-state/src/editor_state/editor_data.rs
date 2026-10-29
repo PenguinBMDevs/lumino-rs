@@ -3,11 +3,14 @@
 //! 方法实现已拆分为同级子模块：
 //! - `automation`：自动化 lane 管理、编辑与导出
 //! - `automation_sync`：lane → `document.control_events` 单一权威同步
+//! - `cpu_onion_dirty`：CPU 洋葱皮脏区元数据（Step 5a，默认关闭）
 //! - `notes`：音符 CRUD、分割、合并、选择框
 //! - `history`：Undo/Redo 历史记录
 
 use std::collections::HashSet;
 use std::sync::Arc;
+
+use cpu_onion_dirty::CpuOnionDirty;
 
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::automation::AutomationLane;
@@ -20,6 +23,7 @@ pub(crate) mod async_commit;
 mod automation;
 mod automation_sync;
 mod construct;
+pub mod cpu_onion_dirty;
 mod history;
 mod note_store_ops;
 mod notes;
@@ -69,6 +73,19 @@ pub struct EditorData {
     /// 洋葱皮跳过范围内时，`stream_onion_skin_instances` 可豁免全量重建上传，
     /// 避免编辑主音轨（最常见热路径，拖动音符每帧触发）导致其他音轨全量重传。
     pub onion_dirty_tracks: Option<HashSet<usize>>,
+    /// CPU 洋葱皮脏区记录开关（默认 `false`）。
+    ///
+    /// 默认后端是 GPU：无条件记录会让 GPU 用户的拖动/批量编辑白付 `Vec` 分配与
+    /// `NoteEvent` 拷贝。由 Host 在切到 CPU 后端时开启、切回 GPU 时关闭并清空
+    /// （见 [`Self::set_cpu_onion_dirty_enabled`]）。
+    pub cpu_onion_dirty_enabled: bool,
+    /// 自上次 CPU 洋葱皮渲染层消费以来的脏区（`None` = 无变化）。
+    ///
+    /// 与 [`Self::note_delta_events`] 互补：后者只覆盖**当前轨**的 GPU 段内增量，
+    /// 本字段覆盖**任意轨**的按值原子变更（含非当前轨，即 CPU 洋葱皮要画的那部分）。
+    /// 记录点见 `editor_data/cpu_onion_dirty.rs` 模块头；批量/整轨替换/区间删除
+    /// 一律记 [`CpuOnionDirty::full`]。
+    pub cpu_onion_dirty: Option<CpuOnionDirty>,
     /// 音符唯一权威源（独占所有权，2026-08 单一权威源改造）
     ///
     /// 原 `notes` / `track_notes` 冗余层已删除，音符数据只存在于 `document`。

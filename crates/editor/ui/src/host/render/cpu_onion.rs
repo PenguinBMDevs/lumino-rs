@@ -32,12 +32,14 @@
 
 use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::CpuOnionFrame;
+use lumino_midi_model::MidiDocument;
 
 use crate::host::Host;
 use crate::host::render::onion_skin::mute_fingerprint_of;
 use crate::sidebar::Track;
 
 mod camera;
+mod plan;
 mod state;
 
 pub(crate) use state::CpuOnionState;
@@ -71,9 +73,11 @@ impl Host {
 
     /// 切换洋葱皮渲染后端（由设置页触发；调用前必须过 `apply_onion_backend_switch` 守卫）。
     ///
-    /// 切换必须让两张缓存都失效：
+    /// 切换必须让三样缓存都失效：
     /// - GPU 段表：单轨 ↔ 全轨语义变化 → 强制下一次全量会话；
-    /// - CPU 帧：指纹包含后端语义，直接清空由下一帧重建。
+    /// - CPU 帧：指纹包含后端语义，直接清空由下一帧重建；
+    /// - 编辑器侧的 CPU 洋葱皮脏区记录开关：只有 CPU 后端才值得为每笔编辑付费
+    ///   （见 `EditorData::set_cpu_onion_dirty_enabled`，默认 GPU 零开销）。
     pub fn set_onion_skin_backend(&mut self, backend: OnionSkinBackend) {
         if self.onion_skin_backend == backend {
             return;
@@ -81,6 +85,12 @@ impl Host {
         self.onion_skin_backend = backend;
         self.render_ctx.onion_skin_state.force_full_next();
         self.cpu_onion_state.deactivate();
+        // 切到 CPU 开启记录；切回 GPU 关闭并清空残留脏区（关闭动作内含 clear）
+        self.root
+            .editor
+            .editor_state
+            .data
+            .set_cpu_onion_dirty_enabled(backend == OnionSkinBackend::Cpu);
         self.mark_dirty();
     }
 
@@ -89,12 +99,15 @@ impl Host {
     /// 返回 `Some(frame)` 时调用方必须把它放进 `RenderData::cpu_onion_frame`，
     /// 由 `build_render_params` 透传到 `RenderParams::cpu_onion_frame`。
     ///
-    /// 只有**重新光栅化**的帧才置内容脏（`render_content_dirty`）——复用帧不置位，
-    /// 否则纯滚动/空转帧会退化成每帧等待渲染线程，present 节奏崩掉。
+    /// 只有**重新光栅化**的帧才置内容脏（`render_content_dirty`）——复用帧与
+    /// 「只更新快照/索引」的帧都不置位，否则纯滚动/当前轨拖动会退化成每帧等待
+    /// 渲染线程，present 节奏崩掉。
     pub(crate) fn update_cpu_onion_frame(&mut self) -> Option<CpuOnionFrame> {
         // 默认后端是 GPU：本步完全不参与，零行为变化
         if self.onion_skin_backend != OnionSkinBackend::Cpu {
             self.cpu_onion_state.deactivate();
+            // 防御：异常路径下残留的脏区不得泄漏到下一次切回 CPU
+            self.root.editor.editor_state.data.clear_cpu_onion_dirty();
             return None;
         }
         let output = self.build_cpu_onion_output();
@@ -104,10 +117,13 @@ impl Host {
         output.frame
     }
 
-    /// 收集相机/静音/指纹并驱动帧冻结状态机（不置内容脏，由调用方决定）。
+    /// 收集相机/静音/指纹/脏区并驱动帧状态机（不置内容脏，由调用方决定）。
     fn build_cpu_onion_output(&mut self) -> CpuOnionOutput {
         // 走带模式：渲染通道在 arrangement 分支提前返回，CPU 叠加层结构上不会绘制；
         // 纵向卷帘：本步坐标未转置（Step 4 禁用 CPU 后端），跳过以免错位。
+        //
+        // **不 take 脏区**：这两条路径只是「暂时看不到」，回到钢琴卷帘后必须一次性
+        // 消费掉这段时间的编辑，否则脏区被静默丢弃 → CPU 帧永久停在旧内容。
         if self.root.is_arrangement_mode() || self.root.editor.editor_state.is_vertical_roll {
             self.cpu_onion_state.clear_frame();
             return CpuOnionOutput {
@@ -116,6 +132,49 @@ impl Host {
             };
         }
 
+        let input = {
+            let es = &self.root.editor.editor_state;
+            CpuOnionCameraInput {
+                scale_factor: self.render_ctx.viewport.scale_factor(),
+                canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
+                canvas_size: (es.canvas.size_x, es.canvas.size_y),
+                // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
+                scroll: (es.view.scroll_x, es.view.scroll_y),
+                zoom: (es.view.zoom_x, es.view.zoom_y),
+                key_count: es.view.visible_key_count,
+            }
+        };
+        let track_count = self
+            .root
+            .editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map_or(0, MidiDocument::track_count);
+        let Some(geometry) = input.to_physical() else {
+            self.cpu_onion_state.clear_frame();
+            return CpuOnionOutput {
+                frame: None,
+                rebuilt: false,
+            };
+        };
+        if track_count == 0 {
+            // 无文档：本帧不绘制；脏区保留（下次加载必然走整帧兜底）
+            self.cpu_onion_state.clear_frame();
+            return CpuOnionOutput {
+                frame: None,
+                rebuilt: false,
+            };
+        }
+
+        let (muted, mut muted_ids) = collect_muted_tracks(&self.root.sidebar.tracks, track_count);
+        // 每帧消费一次脏区；`onion_dirty_tracks` 是「变化来源」的独立真源
+        // （GPU 洋葱皮也在用，不能 take，只 clone）。
+        let (dirty, dirty_tracks) = {
+            let data = &mut self.root.editor.editor_state.data;
+            (data.take_cpu_onion_dirty(), data.onion_dirty_tracks.clone())
+        };
         let es = &self.root.editor.editor_state;
         let Some(document) = es.data.document.as_ref() else {
             self.cpu_onion_state.clear_frame();
@@ -124,26 +183,6 @@ impl Host {
                 rebuilt: false,
             };
         };
-
-        let input = CpuOnionCameraInput {
-            scale_factor: self.render_ctx.viewport.scale_factor(),
-            canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
-            canvas_size: (es.canvas.size_x, es.canvas.size_y),
-            // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
-            scroll: (es.view.scroll_x, es.view.scroll_y),
-            zoom: (es.view.zoom_x, es.view.zoom_y),
-            key_count: es.view.visible_key_count,
-        };
-        let Some(geometry) = input.to_physical() else {
-            self.cpu_onion_state.clear_frame();
-            return CpuOnionOutput {
-                frame: None,
-                rebuilt: false,
-            };
-        };
-
-        let (muted, mut muted_ids) =
-            collect_muted_tracks(&self.root.sidebar.tracks, document.track_count());
         let key = CpuOnionFrameKey {
             track_notes_gen: es.data.track_notes_gen,
             current_track: es.data.current_track,
@@ -151,7 +190,8 @@ impl Host {
             palette_idx: lumino_extras::palette::current_palette_idx(),
             geometry,
         };
-        self.cpu_onion_state.update(key, document, &muted)
+        self.cpu_onion_state
+            .update(key, document, &muted, dirty, dirty_tracks.as_ref())
     }
 }
 
@@ -175,3 +215,7 @@ fn collect_muted_tracks(tracks: &[Track], track_count: usize) -> (Vec<bool>, Vec
 #[cfg(test)]
 #[path = "cpu_onion/tests.rs"]
 mod tests;
+/// CPU 洋葱皮脏区/增量索引/当前轨跳过测试（Step 5a）
+#[cfg(test)]
+#[path = "cpu_onion/tests_dirty.rs"]
+mod tests_dirty;

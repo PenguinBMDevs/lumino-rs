@@ -24,6 +24,8 @@ impl EditorData {
         let n = events.len();
         let inserted = doc.batch_insert_notes(self.current_track, events);
         if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量插入无法用原子变更表达 → 整帧兜底
+            self.record_cpu_onion_full();
             // 结构性大插入：主轨段重建（TrackDelta），不走全量会话兜底
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
@@ -51,6 +53,10 @@ impl EditorData {
             .collect();
         let n = events.len();
         let inserted = doc.batch_insert_notes(track_id, events);
+        if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量插入 → 整帧兜底（与目标轨是否为当前轨无关）
+            self.record_cpu_onion_full();
+        }
         if inserted > 0 && track_id == self.current_track {
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
@@ -77,6 +83,10 @@ impl EditorData {
         };
         let n = events.len();
         let inserted = doc.batch_insert_notes_sorted(track_id, events);
+        if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量粘贴 → 整帧兜底
+            self.record_cpu_onion_full();
+        }
         if inserted > 0 && track_id == self.current_track {
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
@@ -99,6 +109,10 @@ impl EditorData {
             return;
         };
         let inserted = doc.batch_insert_notes_sorted(track_id, events);
+        if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量粘贴 → 整帧兜底
+            self.record_cpu_onion_full();
+        }
         if inserted > 0 && track_id == self.current_track {
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
