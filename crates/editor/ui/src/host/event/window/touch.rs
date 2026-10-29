@@ -135,14 +135,21 @@ impl Host {
                     // 立刻把光标锚到两指中点（`window_manager` 已按本指位置推过一次
                     // 光标，直接用会让锚点贴到某一根手指上）
                     self.apply_multi_touch_gesture();
-                    log::debug!("[TOUCH] started 升手势 fingers={}", self.active_touches.len());
+                    log::debug!(
+                        "[TOUCH] started 升手势 fingers={}",
+                        self.active_touches.len()
+                    );
                     return TouchRouting::Consumed;
                 }
 
                 // 首指：同步全局鼠标按下（分割条/侧栏拖拽收尾、is_mouse_pressed）
                 self.sync_global_pointer(true);
                 self.begin_long_press(logical);
-                log::debug!("[TOUCH] started 单指 pos=({:.0},{:.0}) -> Pointer", logical.x, logical.y);
+                log::debug!(
+                    "[TOUCH] started 单指 pos=({:.0},{:.0}) -> Pointer",
+                    logical.x,
+                    logical.y
+                );
                 TouchRouting::Pointer
             }
             winit::event::TouchPhase::Moved => {
