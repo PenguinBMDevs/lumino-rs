@@ -35,7 +35,10 @@ impl DialogHandler {
             }
             V::ClosePanel => {
                 root.sidebar.video_export_visible = false;
-                root.sidebar.route = crate::sidebar::Route::Arrangement;
+                // 出口守卫（与音频导出一致）：GPU 回工程走带（历史行为）；
+                // CPU 下走带已被入口闸禁用 → 回钢琴卷帘。当前 CPU 下打不开本面板，
+                // 这里防的是未来/时序绕过（例如切后端时面板恰好还没关）。
+                root.exit_rendering_panel();
             }
             V::StartExport => {
                 // CPU 洋葱皮后端：不置 `Exporting` 状态、不发导出事件（面板/对话框同源）。

@@ -16,6 +16,7 @@ use crate::message::Message;
 use crate::root::Root;
 
 // 重新导出子模块
+pub mod animation_tick;
 pub mod arrangement;
 pub mod cloud;
 pub mod collaboration;

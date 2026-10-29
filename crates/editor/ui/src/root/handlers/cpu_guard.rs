@@ -127,4 +127,36 @@ impl Root {
         self.right_sidebar.panel_visible = false;
         true
     }
+
+    /// 渲染面板（音频导出 / 视频导出面板）关闭后的路由落点——**出口守卫**。
+    ///
+    /// ## 为什么出口也要管
+    ///
+    /// 历史行为是关闭渲染面板后回到工程走带（`Route::Arrangement`）。但 CPU 洋葱皮
+    /// 后端下工程走带已被 [`Self::cpu_block_sidebar_event`] 闸死（走带复用 GPU 段表，
+    /// 当前轨缺失）：用户打开音频导出（CPU 下**允许**）再关闭，就会从这个出口直接
+    /// 写进走带，绕过入口闸。入口写一个 `match` 拦住了不算完——**每条能改
+    /// `sidebar.route` 的生产路径都是入口**，出口同样要查。
+    ///
+    /// ## 落点
+    ///
+    /// CPU：复用既有退出路径 [`crate::sidebar::Sidebar::restore_piano_roll_state`]
+    /// （恢复钢琴卷帘子面板状态 + `piano_roll_visible = true` + 路由回子面板/`File`），
+    /// 并清掉走带分组残留（`active_group == Project → PianoRoll`）。
+    /// GPU：保持历史行为（`Route::Arrangement`），默认路径零变化。
+    pub(crate) fn exit_rendering_panel(&mut self) {
+        if !self.is_cpu_onion_backend() {
+            self.sidebar.route = Route::Arrangement;
+            return;
+        }
+        self.sidebar.restore_piano_roll_state();
+        if self.sidebar.active_group == Some(GroupId::Project) {
+            self.sidebar.active_group = Some(GroupId::PianoRoll);
+        }
+        // 双保险：CPU 分支**绝不**停在工程走带（本后端下该视图不可用），
+        // 即使将来 `restore_piano_roll_state` 的落点变了也不会悄悄放行。
+        if self.sidebar.route == Route::Arrangement {
+            self.sidebar.route = Route::File;
+        }
+    }
 }

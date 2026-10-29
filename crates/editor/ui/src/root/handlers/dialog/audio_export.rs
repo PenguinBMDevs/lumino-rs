@@ -68,7 +68,9 @@ impl DialogHandler {
             }
             A::ClosePanel => {
                 root.sidebar.audio_export_visible = false;
-                root.sidebar.route = crate::sidebar::Route::Arrangement;
+                // 出口守卫：GPU 回工程走带（历史行为）；CPU 下走带已被入口闸禁用，
+                // 这里必须回钢琴卷帘编辑视图，否则「打开并关闭音频导出」就成了进走带的后门。
+                root.exit_rendering_panel();
             }
             A::Confirm => {
                 // 立即设置渲染状态（进度条第一时间刷新）

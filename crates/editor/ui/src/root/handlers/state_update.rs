@@ -319,53 +319,20 @@ impl Root {
     }
 
     /// 处理动画 tick（切换动画 + 平滑滚动 + 弹簧物理 + 关于页 logo 彩蛋）
+    ///
+    /// 模式切换动画与平滑滚动两个子步骤在 [`super::animation_tick`]（逐行等价搬迁，
+    /// 目的：`state_update.rs` 回到 400 行内，且把「翻转 `AppMode` 的状态机」与
+    /// CPU 后端的过渡守卫放在同一模块）。
     pub(crate) fn handle_animation_tick(&mut self) -> bool {
         // 每次 tick 只取一次时钟，避免同一帧内多个动画读到不同时间基准
         let now = Instant::now();
 
-        let still_animating = self.state.toggle_animation.update();
-        if !still_animating
-            && self.state.toggle_animation.position >= 0.5
-            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
-        {
-            self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
-        } else if !still_animating
-            && self.state.toggle_animation.position < 0.5
-            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Editor
-        {
-            self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
-        }
+        // 模式切换动画 + `AppMode` 归属同步（含 CPU 后端下的过渡取消；
+        // 状态机与守卫同在 `animation_tick` 模块，防止「只看 current_mode」的竞态）
+        self.tick_mode_animation();
 
-        let scroll_animating = {
-            let state = &mut self.editor.editor_state;
-            let v = &mut state.view;
-            let (new_x, new_y, still_active) = v.smooth_scroll.update(v.scroll_x, v.scroll_y);
-            // 钳制到有效滚动范围，防止平滑滚动超出键盘/音轨边界
-            let max_y =
-                (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0);
-            let max_x =
-                (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
-            let clamped_x = new_x.clamp(0.0, max_x);
-            let clamped_y = new_y.clamp(0.0, max_y);
-            // REND-019 实测修复（一次滚轮 → ~2500fps 重绘风暴根因）：
-            // `SmoothScrollAnimation::update` 为 `&self`，**无法清除 `active`**，
-            // 且其收敛判定基于钳制**前**位置——目标被钳制截断（如空工程
-            // max_scroll=0、滚轮目标越界）时差值恒 ≥ 阈值：`still_active`
-            // 永真、`active` 永不落幕，`needs_animation`（frame.rs）每帧自驱动
-            // 重绘。此处按「钳制后的实际位置」判定到位/触边，并显式停止动画。
-            let reached = (clamped_x - v.smooth_scroll.target_x).abs() < v.smooth_scroll.threshold
-                && (clamped_y - v.smooth_scroll.target_y).abs() < v.smooth_scroll.threshold;
-            let hit_boundary = (clamped_x - new_x).abs() > f32::EPSILON
-                || (clamped_y - new_y).abs() > f32::EPSILON;
-            v.scroll_x = clamped_x;
-            v.scroll_y = clamped_y;
-            let animating = still_active && !reached && !hit_boundary;
-            if !animating {
-                v.smooth_scroll.stop();
-            }
-            animating
-        };
-        if scroll_animating {
+        // 平滑滚动推进 + 越界钳制（REND-019 重绘风暴的收敛判定在该方法内）
+        if self.tick_smooth_scroll() {
             self.editor
                 .invalidate_caches(crate::editor::CacheInvalidation::ALL);
         }

@@ -2,6 +2,7 @@
 
 use super::{SwitchContext, SwitchPlan, plan_switch};
 use lumino_core::storage::config::OnionSkinBackend;
+use lumino_ui_core::state::ToggleAnimationState;
 
 /// 基准上下文：解锁、横向卷帘、无模式冲突、无导出、无视频导出面板。
 fn base(requested: OnionSkinBackend, old: OnionSkinBackend) -> SwitchContext {
@@ -124,6 +125,47 @@ fn test_video_export_panel_allows_switch_back_to_gpu() {
         plan_switch(ctx),
         SwitchPlan::Switch,
         "切回 GPU 永远安全：不受视频导出面板/导出状态限制"
+    );
+}
+
+/// **过渡态**也要拦：点标题栏进瀑布流后动画进行中，`AppMode` 仍是 `Editor`，
+/// 只看 `current_mode` 会放行切 CPU，动画收敛后就把会话带进瀑布流。
+///
+/// `HandleHost` 侧用 `current_mode == Waterfall || toggle_animation.is_heading_to_waterfall()`
+/// 拼 `SwitchContext.waterfall`，本用例锁定该语义：过渡中即视为「不兼容」。
+#[test]
+fn test_waterfall_transition_blocks_cpu() {
+    let mut anim = ToggleAnimationState::default();
+    anim.animate_to(1.0);
+    assert_eq!(anim.position, 0.0, "断言前提：动画刚启动，进度尚未移动");
+
+    let ctx = SwitchContext {
+        waterfall: anim.is_heading_to_waterfall(),
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::RejectIncompatibleMode,
+        "朝向瀑布流的过渡中同样不得切到 CPU"
+    );
+}
+
+/// 反向澄清：动画指向编辑器的过渡不算不兼容（只拦「进入瀑布流」）。
+#[test]
+fn test_returning_to_editor_transition_allows_cpu() {
+    let mut anim = ToggleAnimationState::default();
+    anim.animate_to(1.0);
+    anim.position = 1.0;
+    anim.animate_to(0.0);
+
+    let ctx = SwitchContext {
+        waterfall: anim.is_heading_to_waterfall(),
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::Switch,
+        "正在退出瀑布流：允许切到 CPU（视图正在回到编辑区）"
     );
 }
 

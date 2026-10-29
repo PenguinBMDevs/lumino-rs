@@ -56,7 +56,12 @@ pub(crate) struct SwitchContext {
     pub vertical_roll: bool,
     /// 当前是否为工程走带视图
     pub arrangement: bool,
-    /// 当前是否全屏瀑布流
+    /// 当前是否全屏瀑布流——**含「正在过渡到瀑布流」**
+    ///
+    /// 不能只看 `AppMode`：`current_mode` 是在 `handle_animation_tick` 里按动画
+    /// 进度（>= 0.5）才翻转的，动画进行中它仍是 `Editor`。只看 mode 会漏掉
+    /// 「点标题栏进瀑布流 → 动画进行中切 CPU → 动画收敛后 `AppMode` 变 Waterfall」
+    /// 的竞态（详见 `ToggleAnimationState::is_heading_to_waterfall`）。
     pub waterfall: bool,
     /// 视频导出是否进行中
     pub exporting: bool,
@@ -123,7 +128,8 @@ impl Host {
             locked,
             vertical_roll: self.root.editor.editor_state.is_vertical_roll,
             arrangement: self.root.is_arrangement_mode(),
-            waterfall: self.root.state.current_mode == AppMode::Waterfall,
+            waterfall: self.root.state.current_mode == AppMode::Waterfall
+                || self.root.state.toggle_animation.is_heading_to_waterfall(),
             exporting: self.is_video_exporting(),
             video_panel_visible: self.root.sidebar.video_export_visible,
         };

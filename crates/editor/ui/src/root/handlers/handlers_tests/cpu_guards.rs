@@ -1,41 +1,22 @@
-//! CPU 洋葱皮后端入口守卫测试（Step 4b）
+//! CPU 洋葱皮后端**入口**守卫测试（Step 4b）
 //!
-//! 两类断言缺一不可：
-//! 1. **CPU 后端**：每个不兼容入口「状态零变化 + Warning Toast」——拦截必须发生在
-//!    状态写入之前，否则会出现「按钮已点亮 / 路由已切一半」的自相矛盾状态；
-//! 2. **GPU 后端**：同样的入口行为与旧版完全一致（默认路径零回归）。
+//! 断言口径：每个不兼容入口「状态零变化 + Warning Toast」——拦截必须发生在状态写入
+//! 之前，否则会出现「按钮已点亮 / 路由已切一半」的自相矛盾状态；GPU 后端同样的入口
+//! 行为与旧版完全一致（默认路径零回归）。
+//!
+//! 相邻模块（同一 Step 的另两类守卫，拆分只为单文件 < 400 行）：
+//! - `rendering_panel_exit`：关闭渲染面板的**出口**不得落进被禁用的走带；
+//! - `mode_animation_guard`：瀑布流切换**过渡态**竞态（动画进行中切 CPU）。
 
 use crate::message::{Message, VideoExportAction};
 use crate::right_sidebar::RightSidebarPanel;
-use crate::root::Root;
 use crate::sidebar::{self, GroupId, RollBarButton, Route};
 use crate::state::root_state::VideoExportOverlayState;
 use crate::titlebar::mode_toggle::AppMode;
-use crate::toast::ToastLevel;
-use lumino_core::storage::config::{OnionSkinBackend, UiConfig};
+use lumino_core::storage::config::OnionSkinBackend;
 use lumino_message::RightSidebarAction;
 
-/// 构造指定后端的 Root（GPU 为默认后端；CPU 模拟「用户早已切到 CPU 后端」）。
-fn root_with_backend(backend: OnionSkinBackend) -> Root {
-    let mut root = Root::new(&UiConfig::default());
-    root.settings.hires.backend = backend;
-    root
-}
-
-/// 最近一条 Toast 的 (级别, 文案)；无 Toast 时返回 `None`。
-fn last_toast(root: &Root) -> Option<(ToastLevel, String)> {
-    root.toast
-        .toasts()
-        .last()
-        .map(|toast| (toast.level, toast.message.clone()))
-}
-
-/// 断言「恰好新增一条 Warning Toast」且文案为 `expected`。
-fn assert_warning_toast(root: &Root, expected: &str) {
-    let (level, message) = last_toast(root).expect("拦截必须伴随一条 Toast（静默拒绝不可接受）");
-    assert_eq!(level, ToastLevel::Warning, "拦截提示必须是 Warning 级");
-    assert_eq!(message, expected, "Toast 文案必须是入口专属文案");
-}
+use super::{assert_warning_toast, root_with_backend};
 
 // ─── 判定源 ───────────────────────────────────────────────
 
