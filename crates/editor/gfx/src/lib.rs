@@ -62,7 +62,7 @@ pub use context::{
     Context, ContextError, Result, SharedGpu, SharedGpuState, gpu_snapshot,
     install_recreated_shared_gpu, recreate_shared_gpu_worker,
 };
-pub use cpu_onion_renderer::{CpuOnionFrame, CpuOnionRenderer};
+pub use cpu_onion_renderer::{CpuOnionFrame, CpuOnionRenderer, CpuOnionUploadRect};
 pub use device_check::{
     FallbackDiagnostics, GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
     debug_force_fail_requested, required_backend_name, run_check_with_timeout,

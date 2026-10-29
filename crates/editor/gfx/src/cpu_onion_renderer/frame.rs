@@ -1,6 +1,8 @@
-//! CPU 洋葱皮帧：[`CpuOnionFrame`] 数据载体与尺寸校验。
+//! CPU 洋葱皮帧：[`CpuOnionFrame`] 数据载体、脏区与尺寸校验。
 
 use std::{fmt, sync::Arc};
+
+use super::rect::CpuOnionUploadRect;
 
 /// 一帧 CPU 光栅洋葱皮（透明背景叠加层）。
 ///
@@ -8,7 +10,9 @@ use std::{fmt, sync::Arc};
 /// - `pixels` 为行优先 RGBA8，长度 = `width * height * 4`；
 /// - 像素为 **sRGB 编码**值，透明背景 `[0, 0, 0, 0]`，音符 alpha = 255；
 /// - `x` / `y` 为物理像素左上角，**不做 DPI 缩放**（调用方负责换算）；
-/// - `version` 标识像素内容版本：版本相同视为同一份内容，渲染侧不重复上传。
+/// - `version` 标识像素内容版本：版本相同视为同一份内容，渲染侧不重复上传；
+/// - `dirty_rect` 为**帧内像素坐标**的脏区：`Some` 表示「相对上一帧只有该矩形
+///   变化」，渲染侧可只重写该子矩形；`None` 表示整帧重绘（必须全量上传）。
 #[derive(Clone)]
 pub struct CpuOnionFrame {
     /// 物理像素左上角 X
@@ -23,6 +27,8 @@ pub struct CpuOnionFrame {
     pub pixels: Arc<[u8]>,
     /// 内容版本：变化时重新上传纹理
     pub version: u64,
+    /// 脏区（帧内像素坐标）：`Some` = 相对上一帧只有该矩形变化；`None` = 整帧重绘
+    pub dirty_rect: Option<CpuOnionUploadRect>,
 }
 
 impl CpuOnionFrame {
@@ -49,7 +55,19 @@ impl CpuOnionFrame {
             height,
             pixels: pixels.into(),
             version,
+            // 默认整帧语义：调用方确认是区域重绘时再用 `with_dirty_rect` 标注
+            dirty_rect: None,
         }
+    }
+
+    /// 标注脏区（帧内像素坐标）并返回自身（链式构造）。
+    ///
+    /// 只描述「相对上一帧变化了哪块像素」，不改变像素内容与版本；
+    /// 传入 `None` 表示整帧重绘语义。
+    #[must_use]
+    pub fn with_dirty_rect(mut self, rect: Option<CpuOnionUploadRect>) -> Self {
+        self.dirty_rect = rect;
+        self
     }
 
     /// 期望的像素字节数（`width * height * 4`）；乘法溢出返回 `None`。
@@ -83,6 +101,35 @@ impl CpuOnionFrame {
     pub fn size(&self) -> (u32, u32) {
         (self.width, self.height)
     }
+
+    /// 区域像素在 `pixels` 中的字节跨度 `(起点, 结束)`，供局部上传切片。
+    ///
+    /// 语义与 `queue.write_texture` 的源数据要求一致：行距 = `width * 4`，
+    /// 共 `height` 行，最后一行只取 `width` 个像素（区域宽）。因此
+    ///
+    /// ```text
+    /// start = (rect.y * width + rect.x) * 4
+    /// end   = start + (rect.height - 1) * width * 4 + rect.width * 4
+    /// ```
+    ///
+    /// 以下情况返回 `None`（**不 panic**）：
+    /// - 矩形为空、部分越界、尺寸相乘溢出；
+    /// - `pixels` 长度不足以容纳该跨度（帧自相矛盾）。
+    #[must_use]
+    pub fn region_span(&self, rect: CpuOnionUploadRect) -> Option<(usize, usize)> {
+        if !rect.is_within(self.width, self.height) {
+            return None;
+        }
+        let stride = (self.width as usize).checked_mul(4)?;
+        let row_bytes = (rect.width as usize).checked_mul(4)?;
+        let start = (rect.y as usize)
+            .checked_mul(stride)?
+            .checked_add((rect.x as usize).checked_mul(4)?)?;
+        let end = start
+            .checked_add((rect.height as usize).checked_sub(1)?.checked_mul(stride)?)?
+            .checked_add(row_bytes)?;
+        (end <= self.pixels.len()).then_some((start, end))
+    }
 }
 
 /// 自定义 `Debug`：只打印元信息与像素字节数，**不打印像素内容**
@@ -96,12 +143,14 @@ impl fmt::Debug for CpuOnionFrame {
             .field("height", &self.height)
             .field("pixels_len", &self.pixels.len())
             .field("version", &self.version)
+            .field("dirty_rect", &self.dirty_rect)
             .finish()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::CpuOnionUploadRect;
     use super::*;
 
     #[test]
@@ -164,5 +213,96 @@ mod tests {
         );
         assert_eq!(cloned.version, 7);
         assert_eq!(cloned.size(), (1, 1));
+    }
+
+    #[test]
+    fn test_cpu_onion_frame_dirty_rect_defaults_to_none() {
+        let frame = CpuOnionFrame::new(0, 0, 2, 2, vec![0u8; 16], 1);
+        assert_eq!(
+            frame.dirty_rect, None,
+            "未标注脏区时必须默认整帧语义（现有构造点无需改动）"
+        );
+
+        let dirty = CpuOnionUploadRect::new(1, 0, 1, 2);
+        let frame = frame.with_dirty_rect(Some(dirty));
+        assert_eq!(
+            frame.dirty_rect,
+            Some(dirty),
+            "with_dirty_rect 必须写入脏区"
+        );
+        assert_eq!(
+            frame.with_dirty_rect(None).dirty_rect,
+            None,
+            "with_dirty_rect(None) 必须清回整帧语义"
+        );
+    }
+
+    #[test]
+    fn test_cpu_onion_frame_debug_shows_dirty_summary_only() {
+        let dirty = CpuOnionUploadRect::new(1, 1, 2, 1);
+        let frame = CpuOnionFrame::new(0, 0, 4, 4, vec![200u8; 64], 3).with_dirty_rect(Some(dirty));
+        let text = format!("{frame:?}");
+        assert!(
+            text.contains("dirty_rect: Some("),
+            "Debug 必须包含脏区摘要：{text}"
+        );
+        assert!(
+            !text.contains("200"),
+            "Debug 不得打印像素内容（整帧可达数 MB）：{text}"
+        );
+    }
+
+    #[test]
+    fn test_cpu_onion_frame_region_span_covers_exact_bytes() {
+        let frame = CpuOnionFrame::new(0, 0, 4, 4, vec![0u8; 64], 1);
+        let stride = 4 * 4;
+        // 单行子矩形：起点 = (y*width + x)*4
+        assert_eq!(
+            frame.region_span(CpuOnionUploadRect::new(1, 1, 2, 1)),
+            Some((stride + 4, stride + 4 + 2 * 4))
+        );
+        // 最后一行整宽：刚好贴到像素缓冲末尾（不得越界）
+        assert_eq!(
+            frame.region_span(CpuOnionUploadRect::new(0, 3, 4, 1)),
+            Some((3 * stride, 4 * stride))
+        );
+        // 右下角 1 像素
+        assert_eq!(
+            frame.region_span(CpuOnionUploadRect::new(3, 3, 1, 1)),
+            Some((3 * stride + 3 * 4, 4 * stride))
+        );
+        // 整帧
+        assert_eq!(
+            frame.region_span(CpuOnionUploadRect::new(0, 0, 4, 4)),
+            Some((0, 4 * stride))
+        );
+    }
+
+    #[test]
+    fn test_cpu_onion_frame_region_span_rejects_invalid() {
+        let frame = CpuOnionFrame::new(0, 0, 4, 4, vec![0u8; 64], 1);
+        for rect in [
+            CpuOnionUploadRect::new(0, 0, 0, 1),
+            CpuOnionUploadRect::new(1, 1, 0, 0),
+            // 部分越界
+            CpuOnionUploadRect::new(2, 2, 4, 4),
+            CpuOnionUploadRect::new(4, 0, 1, 1),
+            // 饱和溢出
+            CpuOnionUploadRect::new(0, 0, u32::MAX, 1),
+        ] {
+            assert_eq!(
+                frame.region_span(rect),
+                None,
+                "非法区域必须返回 None（不得 panic、不得越界切片）：{rect:?}"
+            );
+        }
+
+        // 帧自相矛盾（像素不足）：跨度越界也必须 None
+        let short = CpuOnionFrame::new(0, 0, 4, 4, vec![0u8; 16], 1);
+        assert_eq!(
+            short.region_span(CpuOnionUploadRect::new(3, 3, 1, 1)),
+            None,
+            "像素长度不足时必须拒绝，而不是越界切片"
+        );
     }
 }

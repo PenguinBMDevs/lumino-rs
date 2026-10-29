@@ -16,10 +16,13 @@
 //! 5. 状态机冻结：指纹不变 → 复用上一帧与同一 `version`；变化 → 重新 `render_full`、
 //!    版本递增并置内容脏（`mark_render_content_dirty`），保证 present 等到新帧。
 //!
-//! # 本步已知边界（Step 5 / Step 4b 接管）
+//! # 本步已知边界（Step 4b / Step 5b 已接管项）
 //!
-//! - `track_notes_gen` 变化时**整份索引重建**（未做增量/脏区）；
-//! - 每帧像素**整帧拷贝**（`Vec<u8>` → `Arc<[u8]>`，未做局部上传）；
+//! - `track_notes_gen` 变化但**没有原子变更记录**时仍可能整份索引重建
+//!   （Step 5a 已对可表达的增量走 `with_changes_fast`，剩直接写路径按受影响轨补齐）；
+//! - 每帧像素仍做**整帧快照**（`Vec<u8>` → `Arc<[u8]>`）：Step 5b 只把 **GPU 上传**
+//!   降成脏矩形（`CpuOnionFrame::dirty_rect`），CPU 侧拷贝未变——
+//!   区域重绘是原地改写渲染缓冲，不与上一帧共享；
 //! - 纵向卷帘本步直接跳过 CPU 帧（坐标未做转置，画上去会错位）；
 //!   走带模式的音符层复用 GPU 段表绘制全部音轨，因此走带布局下不启用单轨模式；
 //! - Step 4a 只在**切换点**设闸：加载 MIDI 后禁止切换（`onion_backend_locked`）、
@@ -39,13 +42,15 @@ use crate::host::render::onion_skin::mute_fingerprint_of;
 use crate::sidebar::Track;
 
 mod camera;
+mod output;
 mod plan;
 mod state;
 
 pub(crate) use state::CpuOnionState;
 
 use camera::CpuOnionCameraInput;
-use state::{CpuOnionFrameKey, CpuOnionOutput};
+use output::CpuOnionOutput;
+use state::CpuOnionFrameKey;
 
 impl Host {
     /// 当前洋葱皮渲染后端（只读）。
@@ -99,6 +104,9 @@ impl Host {
     /// 返回 `Some(frame)` 时调用方必须把它放进 `RenderData::cpu_onion_frame`，
     /// 由 `build_render_params` 透传到 `RenderParams::cpu_onion_frame`。
     ///
+    /// 帧自带 `dirty_rect`（区域重绘时为具体矩形，整帧/复用帧为 `None`），透传
+    /// 时**不得剥离**——gfx 据此把整帧上传降成局部上传（Step 5b）。
+    ///
     /// 只有**重新光栅化**的帧才置内容脏（`render_content_dirty`）——复用帧与
     /// 「只更新快照/索引」的帧都不置位，否则纯滚动/当前轨拖动会退化成每帧等待
     /// 渲染线程，present 节奏崩掉。
@@ -111,6 +119,17 @@ impl Host {
             return None;
         }
         let output = self.build_cpu_onion_output();
+        // 区域重绘时把脏区打出来（trace）：gfx 侧按它做局部上传，出问题时这是
+        // 唯一能对齐「CPU 认为变了哪块」与「GPU 写了哪块」的现场
+        if let Some(rect) = output.dirty {
+            tracing::trace!(
+                x = rect.x,
+                y = rect.y,
+                width = rect.width,
+                height = rect.height,
+                "[cpu-onion] 区域重绘（gfx 只上传该矩形）"
+            );
+        }
         if output.rebuilt {
             self.render_ctx.mark_render_content_dirty();
         }
@@ -129,6 +148,8 @@ impl Host {
             return CpuOnionOutput {
                 frame: None,
                 rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
             };
         }
 
@@ -157,6 +178,8 @@ impl Host {
             return CpuOnionOutput {
                 frame: None,
                 rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
             };
         };
         if track_count == 0 {
@@ -165,6 +188,8 @@ impl Host {
             return CpuOnionOutput {
                 frame: None,
                 rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
             };
         }
 
@@ -181,6 +206,8 @@ impl Host {
             return CpuOnionOutput {
                 frame: None,
                 rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
             };
         };
         let key = CpuOnionFrameKey {

@@ -14,6 +14,14 @@
 //! | 当前轨切换 | 补齐旧当前轨几何 | 整帧 |
 //! | 代次变了但没有脏区来源 | 整份重建 | 整帧 |
 //!
+//! # 脏区透传（Step 5b）
+//!
+//! 区域重绘时把实际矩形同时写进两处：`CpuOnionOutput::dirty`（给调用方/测试）与
+//! `CpuOnionFrame::dirty_rect`（给 gfx，局部上传用）。整帧重绘与复用帧一律
+//! `None`——复用帧的 `version` 没变，旧脏区必须清掉，否则下游可能把它误当本帧
+//! 增量范围。版本只增不减（见 [`CpuOnionState::deactivate`]），否则 gfx 侧按
+//! `(size, version)` 判重会把新会话首帧误判成 `Reuse`。
+//!
 //! # 直接 `track_notes_mut` 编辑的几何补齐
 //!
 //! 拖动 / 批量编辑 / 连奏直接改 `track_notes_mut`（不经过插入/删除/更新 API），
@@ -39,6 +47,7 @@ use lumino_gfx::CpuOnionFrame;
 use lumino_midi_model::MidiDocument;
 
 use super::camera::CpuOnionGeometry;
+use super::output::{CpuOnionOutput, to_gfx_rect};
 use super::plan::{CpuOnionIndex, CpuOnionRedraw, PlanInput, group_changes, plan_update};
 
 /// CPU 洋葱皮 band 数上限（每 band 一条 tokio worker 线程）。
@@ -70,14 +79,6 @@ impl CpuOnionFrameKey {
             && self.palette_idx == other.palette_idx
             && self.geometry == other.geometry
     }
-}
-
-/// 一次 `update` 的产出。
-pub(crate) struct CpuOnionOutput {
-    /// 待叠加的帧（`None` = 不绘制）
-    pub frame: Option<CpuOnionFrame>,
-    /// 本帧是否重新光栅化（调用方据此置内容脏 → present 前等待）
-    pub rebuilt: bool,
 }
 
 /// CPU 洋葱皮运行时状态（渲染器 + 文档快照 + 增量索引 + 帧冻结）。
@@ -122,6 +123,12 @@ impl CpuOnionState {
     ///
     /// 默认后端就是 GPU，且 CPU 模式可能长期不被使用——不能为了「切回更快」
     /// 而长期驻留一份索引/渲染缓冲。切回 CPU 时重建（一次 O(总音符数)）。
+    ///
+    /// **版本单调性必须保留**：`version` 是 gfx 侧判断「纹理内容是否同一份」的
+    /// 唯一标识。若这里把它归零，重新启用后的首帧版本会重新从 1 开始，而同尺寸、
+    /// 同版本的旧纹理仍驻留在渲染线程 → 被误判为 `Reuse`，画面上还是上一会话
+    /// 的旧图。空白工程里「CPU → GPU →（编辑）→ CPU」完全可达（`MIDI` 加载后
+    /// 才禁止切换），因此版本只增不减。
     pub(crate) fn deactivate(&mut self) {
         if self.renderer.is_none()
             && self.document.is_none()
@@ -130,8 +137,10 @@ impl CpuOnionState {
         {
             return;
         }
-        tracing::debug!("[cpu-onion] 停用 CPU 洋葱皮（释放渲染器与文档快照）");
+        tracing::debug!("[cpu-onion] 停用 CPU 洋葱皮（释放渲染器与文档快照，保留版本序列）");
+        let version = self.version;
         *self = Self::default();
+        self.version = version;
     }
 
     /// 当前帧（诊断用）。
@@ -190,8 +199,9 @@ impl CpuOnionState {
             // （几何待补已在入口按「上一帧当前轨」登记）
             self.frozen = Some(key);
             return CpuOnionOutput {
-                frame: self.frame.clone(),
+                frame: self.reuse_frame(),
                 rebuilt: false,
+                dirty: None,
             };
         };
 
@@ -202,6 +212,7 @@ impl CpuOnionState {
             return CpuOnionOutput {
                 frame: None,
                 rebuilt: false,
+                dirty: None,
             };
         };
 
@@ -210,7 +221,7 @@ impl CpuOnionState {
         // 调色板或轨数变化都要重建每轨颜色缓存（实例颜色固化在像素里）
         let refresh_palette =
             self.palette_idx != Some(key.palette_idx) || plan.index == CpuOnionIndex::Rebuild;
-        let pixels: Arc<[u8]> = {
+        let (pixels, dirty) = {
             let renderer = self
                 .renderer
                 .get_or_insert_with(|| CpuOnionRenderer::new(worker_bands(), track_count));
@@ -218,7 +229,7 @@ impl CpuOnionState {
             if refresh_palette {
                 renderer.refresh_palette(track_count);
             }
-            match redraw {
+            let dirty = match redraw {
                 CpuOnionRedraw::Full => {
                     renderer.render_full(
                         snapshot,
@@ -227,6 +238,8 @@ impl CpuOnionState {
                         key.current_track,
                         muted,
                     );
+                    // 整帧重绘：脏区语义交给「全量上传」，不标注局部范围
+                    None
                 }
                 CpuOnionRedraw::Region(rect) => {
                     renderer.render_region(
@@ -237,10 +250,14 @@ impl CpuOnionState {
                         muted,
                         rect,
                     );
+                    Some(rect)
                 }
-            }
-            // 整帧拷贝（`Vec<u8>` → `Arc<[u8]>`，Step 5b 才做局部上传）
-            Arc::from(renderer.frame().pixels.as_slice())
+            };
+            // 整帧快照（`Vec<u8>` → `Arc<[u8]>`）：Step 5b 的局部上传只减少 GPU
+            // 写入量，CPU 侧仍需一份与渲染缓冲解耦的共享快照——区域重绘是原地
+            // 改写渲染缓冲，不拷贝就无法与上一帧并存
+            let pixels: Arc<[u8]> = Arc::from(renderer.frame().pixels.as_slice());
+            (pixels, dirty)
         };
 
         self.version = self.version.wrapping_add(1).max(1);
@@ -252,13 +269,27 @@ impl CpuOnionState {
             geometry.height,
             pixels,
             self.version,
-        );
+        )
+        // 脏区透传：`Some` 让 gfx 只重写该子矩形，`None` 走全量上传
+        .with_dirty_rect(dirty.map(to_gfx_rect));
         self.frame = Some(frame.clone());
         self.frozen = Some(key);
         CpuOnionOutput {
             frame: Some(frame),
             rebuilt: true,
+            dirty,
         }
+    }
+
+    /// 复用上一帧：**清掉旧脏区**后返回克隆。
+    ///
+    /// 脏区语义只属于「刚重绘的那一帧」：复用帧的 `version` 没变，若把旧脏区
+    /// 继续带下去，下游可能把它当成本帧的增量范围。gfx 侧同版本本来就会
+    /// `Reuse`，但字段语义必须干净（也清掉驻留副本，`frame()` 诊断同样受益）。
+    fn reuse_frame(&mut self) -> Option<CpuOnionFrame> {
+        let frame = self.frame.as_mut()?;
+        frame.dirty_rect = None;
+        Some(frame.clone())
     }
 
     /// 维护文档快照与派生索引（`Rebuild` / `Incremental` / `Keep`）。

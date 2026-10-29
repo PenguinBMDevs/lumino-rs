@@ -125,3 +125,7 @@ mod frame;
 /// 静音轨（直接编辑与几何补齐）。
 #[path = "tests_dirty/mute.rs"]
 mod mute;
+
+/// Step 5b 脏区透传（`CpuOnionOutput::dirty` / `CpuOnionFrame::dirty_rect`）。
+#[path = "tests_dirty/dirty_rect.rs"]
+mod dirty_rect;

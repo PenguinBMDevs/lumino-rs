@@ -85,10 +85,21 @@ impl CpuOnionRenderer {
         self.viewport = (width, height);
     }
 
-    /// 准备一帧：尺寸变化时重建纹理并全量上传，`version` 变化时全量上传。
+    /// 准备一帧：按 `UploadPlan` 全量或**局部**上传纹理。
     ///
     /// - 帧无效（尺寸为 0 / 像素长度不匹配）→ 不上传、不 panic，`draw` 亦跳过；
-    /// - 尺寸与 `version` 都未变化 → 不上传（直接复用驻留纹理）。
+    /// - 首次 / 尺寸变化 → 重建纹理并全量上传（脏区无意义）；
+    /// - 尺寸与 `version` 都未变化 → 不上传（直接复用驻留纹理）；
+    /// - 版本变化、帧带**合法脏区**且与驻留版本**紧邻**（`resident + 1`）→ 只重写
+    ///   该子矩形，其余像素保留上一版；
+    /// - 版本变化但无脏区 / 脏区不可信 / 版本跳号 → 全量上传。
+    ///
+    /// 局部写入失败（矩形与像素自相矛盾）时复位上传状态且**不写 uniform**：
+    /// 下一帧自动退化为全量重建，本帧 `draw` 因版本不匹配而跳过（不会画旧内容）。
+    ///
+    /// 注：渲染线程只在 `RenderParams::cpu_onion_frame` 为 `Some` 时调用本函数，
+    /// 「帧变 `None`」不会经过这里；此时纹理与上传状态原样保留，恢复绘制时靠
+    /// `version` 变化（CPU 侧版本严格单调）走全量上传，不会误判复用。
     pub fn prepare(&mut self, queue: &wgpu::Queue, frame: &CpuOnionFrame) {
         let plan = self.upload.plan(frame);
         if matches!(plan, UploadPlan::Skip) {
@@ -116,6 +127,19 @@ impl CpuOnionRenderer {
                     return;
                 };
                 texture.upload(queue, frame);
+                self.upload.record(frame);
+            }
+            UploadPlan::PartialUpload(rect) => {
+                let Some(texture) = self.texture.as_ref() else {
+                    self.upload.reset();
+                    return;
+                };
+                if !texture.upload_region(queue, frame, rect) {
+                    // 局部写入被拒：状态复位 → 下一帧全量重建。本帧不写 uniform、
+                    // 不推进版本，`draw` 因版本不一致跳过（宁可少画一帧，不画错帧）
+                    self.upload.reset();
+                    return;
+                }
                 self.upload.record(frame);
             }
             UploadPlan::Reuse | UploadPlan::Skip => {}

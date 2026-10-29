@@ -180,7 +180,10 @@ fn cpu_frame_rebuilds_on_camera_change() {
     );
 }
 
-/// 停用后释放缓存：帧消失，再次调用重新光栅化（版本从 1 重新开始）。
+/// 停用后释放缓存：帧消失，再次调用重新光栅化；**版本保持单调递增**。
+///
+/// 版本不得归零：gfx 按 `(size, version)` 判重，回退会让新会话首帧被误判为
+/// `Reuse` 而复用上一会话的旧纹理（`deactivate` 只释放资源、保留版本序列）。
 #[test]
 fn cpu_frame_deactivate_releases_state() {
     let document = document();
@@ -189,21 +192,25 @@ fn cpu_frame_deactivate_releases_state() {
     let mut state = CpuOnionState::default();
     let key = frame_key(geometry);
 
-    assert!(
-        state
-            .update(key, &document, &muted, None, None)
-            .frame
-            .is_some()
-    );
+    let first = state
+        .update(key, &document, &muted, None, None)
+        .frame
+        .expect("首帧应生成");
+    assert_eq!(first.version, 1);
     state.deactivate();
     assert!(state.frame().is_none(), "停用后不得保留帧");
 
     let rebuilt = state.update(key, &document, &muted, None, None);
     assert!(rebuilt.rebuilt);
+    let rebuilt = rebuilt.frame.expect("停用后应可重建");
     assert_eq!(
-        rebuilt.frame.expect("停用后应可重建").version,
-        1,
-        "停用后版本重新从 1 开始"
+        rebuilt.version, 2,
+        "停用后版本必须继续递增（不得从 1 重新开始）"
+    );
+    assert_eq!(rebuilt.dirty_rect, None, "重新启用首帧是整帧重绘");
+    assert!(
+        !Arc::ptr_eq(&first.pixels, &rebuilt.pixels),
+        "停用会释放渲染器，重建必须产生新的像素缓冲"
     );
 }
 

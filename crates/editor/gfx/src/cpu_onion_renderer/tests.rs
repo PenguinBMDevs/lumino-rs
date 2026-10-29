@@ -1,4 +1,7 @@
 //! CPU 洋葱皮叠加层测试：纯逻辑断言 + GPU 读回像素证据。
+//!
+//! 脏矩形局部上传的验收在 `tests_partial.rs`；两者共用 `tests_support` 的
+//! 离屏目标与读回路径。
 
 use crate::RenderParams;
 use crate::constants::rendering::{DEPTH_FORMAT, is_depth_stencil_compatible};
@@ -7,14 +10,9 @@ use crate::pipeline::test_device;
 use super::{
     CpuOnionFrame, CpuOnionRenderer,
     pipeline::{self, CpuOnionUniform},
+    tests_support::{TARGET_FORMAT, pixel, render_and_readback},
     upload::{UploadPlan, UploadState},
 };
-
-/// 输出目标格式（与 UI 离屏纹理一致：sRGB）。
-const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-
-/// `copy_texture_to_buffer` 的行距对齐常量（256 字节）。
-const READBACK_STRIDE: u32 = 256;
 
 #[test]
 fn cpu_onion_frame_defaults_to_none() {
@@ -144,42 +142,7 @@ fn cpu_onion_gpu_quad_preserves_source_pixels() {
         "相同 version 的帧不得触发重新上传"
     );
 
-    let color = create_color_target(&device);
-    let depth = create_depth_target(&device);
-    let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
-    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("cpu_onion_gpu_test_encoder"),
-    });
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("cpu_onion_gpu_test_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &color_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Discard,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        renderer.draw(&mut pass, &frame);
-    }
-    queue.submit(Some(encoder.finish()));
-
-    let bytes = readback_rgba8(&device, &queue, &color, 2, 2);
+    let bytes = render_and_readback(&device, &queue, &mut renderer, &frame);
     assert_eq!(
         pixel(&bytes, 2, 0, 0),
         [255, 0, 0, 255],
@@ -192,122 +155,4 @@ fn cpu_onion_gpu_quad_preserves_source_pixels() {
             "透明像素必须保持清屏黑（alpha = 0 不改变目标）：({x}, {y})"
         );
     }
-}
-
-/// 创建 2x2 RGBA8 sRGB 颜色目标（`RENDER_ATTACHMENT | COPY_SRC`）。
-fn create_color_target(device: &wgpu::Device) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("cpu_onion_gpu_test_color"),
-        size: wgpu::Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: TARGET_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    })
-}
-
-/// 创建 2x2 深度目标（与管线 depth-stencil 状态匹配）。
-fn create_depth_target(device: &wgpu::Device) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("cpu_onion_gpu_test_depth"),
-        size: wgpu::Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    })
-}
-
-/// 同步回读 RGBA8 纹理（去掉 256 字节行距填充），超时以断言失败收尾（不无限阻塞）。
-fn readback_rgba8(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    width: u32,
-    height: u32,
-) -> Vec<u8> {
-    let staging = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("cpu_onion_gpu_test_staging"),
-        size: u64::from(READBACK_STRIDE) * u64::from(height),
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("cpu_onion_gpu_test_readback"),
-    });
-    encoder.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &staging,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(READBACK_STRIDE),
-                rows_per_image: Some(height),
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit(Some(encoder.finish()));
-
-    let slice = staging.slice(..);
-    let (tx, rx) = std::sync::mpsc::channel();
-    slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = tx.send(result);
-    });
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        if let Ok(result) = rx.try_recv() {
-            result.expect("CPU 洋葱皮 GPU 测试：回读 map 失败");
-            let data = slice.get_mapped_range();
-            let row_bytes = (width * 4) as usize;
-            let mut out = Vec::with_capacity(row_bytes * height as usize);
-            for row in 0..height as usize {
-                let start = row * READBACK_STRIDE as usize;
-                out.extend_from_slice(&data[start..start + row_bytes]);
-            }
-            drop(data);
-            staging.unmap();
-            return out;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "CPU 洋葱皮 GPU 测试：回读超时（30s，GPU 可能被驱动重置或设备争用卡死）"
-        );
-        let _ = device.poll(wgpu::PollType::Poll);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-}
-
-/// 取紧凑排布（无行距填充）RGBA8 图像的像素。
-fn pixel(bytes: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
-    let offset = ((y * width + x) * 4) as usize;
-    [
-        bytes[offset],
-        bytes[offset + 1],
-        bytes[offset + 2],
-        bytes[offset + 3],
-    ]
 }
