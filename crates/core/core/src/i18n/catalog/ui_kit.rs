@@ -97,6 +97,13 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "GPU 显存上限越大可同时显示越多贴图。" => {
             Some("A higher GPU memory limit allows more tiles to be shown at once.")
         }
+        "洋葱皮渲染方式" => Some("Onion skin renderer"),
+        "加载 MIDI 后不可切换，请先关闭 MIDI 工程" => {
+            Some("Cannot be changed after loading MIDI; close the MIDI project first")
+        }
+        "CPU 模式会禁用纵向卷帘、工程走带、瀑布流与视频导出" => Some(
+            "CPU mode disables the vertical piano roll, project arrangement, waterfall and video export",
+        ),
         "语言 / Language:" => Some("Language:"),
         "选择系统字体..." => Some("Select a system font..."),
         "力度面板曲线显示（默认）" => Some("Show velocity panel as curve (default)"),

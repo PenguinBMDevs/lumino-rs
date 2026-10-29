@@ -16,13 +16,16 @@
 //! 5. 状态机冻结：指纹不变 → 复用上一帧与同一 `version`；变化 → 重新 `render_full`、
 //!    版本递增并置内容脏（`mark_render_content_dirty`），保证 present 等到新帧。
 //!
-//! # 本步已知边界（Step 5 / Step 4 接管）
+//! # 本步已知边界（Step 5 / Step 4b 接管）
 //!
 //! - `track_notes_gen` 变化时**整份索引重建**（未做增量/脏区）；
 //! - 每帧像素**整帧拷贝**（`Vec<u8>` → `Arc<[u8]>`，未做局部上传）；
-//! - 走带 / 纵向模式未禁用 CPU 后端（Step 4：设置层禁用 + 模式内降级）：
-//!   纵向卷帘本步直接跳过 CPU 帧（坐标未做转置，画上去会错位）；
-//!   走带模式的音符层复用 GPU 段表绘制全部音轨，因此走带布局下不启用单轨模式。
+//! - 纵向卷帘本步直接跳过 CPU 帧（坐标未做转置，画上去会错位）；
+//!   走带模式的音符层复用 GPU 段表绘制全部音轨，因此走带布局下不启用单轨模式；
+//! - Step 4a 只在**切换点**设闸：加载 MIDI 后禁止切换（`onion_backend_locked`）、
+//!   走带/瀑布流/导出中拒绝切到 CPU、纵向卷帘下切 CPU 会先自动退回横向
+//!   （`host::dialog::apply::onion`）；各模式**入口**的禁用/Toast 仍待 Step 4b，
+//!   因此「已在 CPU 后端时直接进入走带/纵向/导出」仍是本模块的静默跳过（不崩溃）。
 
 use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::CpuOnionFrame;
@@ -45,7 +48,19 @@ impl Host {
         self.onion_skin_backend
     }
 
-    /// 切换洋葱皮渲染后端（Step 4 由设置页调用；本步无 UI 入口）。
+    /// 洋葱皮后端是否锁定（**加载 MIDI 后禁止切换**的用户硬约束）。
+    ///
+    /// 判定取「主窗口是否有文档」这一单一真源：
+    /// - 关闭 MIDI 工程 → 文档为 `None` → 解锁；
+    /// - 加载/新建 MIDI → 文档 `Some(..)` → 锁定。
+    ///
+    /// 设置对话框是独立 `Host`（Root 里没有文档），因此锁定态必须由主窗口
+    /// 主动注入（`Host::set_settings_onion_backend_locked`），对话框不得自行判定。
+    pub fn onion_backend_locked(&self) -> bool {
+        self.root.editor.editor_state.data.document.is_some()
+    }
+
+    /// 切换洋葱皮渲染后端（由设置页触发；调用前必须过 `apply_onion_backend_switch` 守卫）。
     ///
     /// 切换必须让两张缓存都失效：
     /// - GPU 段表：单轨 ↔ 全轨语义变化 → 强制下一次全量会话；

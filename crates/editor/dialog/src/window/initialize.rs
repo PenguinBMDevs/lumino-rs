@@ -118,6 +118,9 @@ impl DialogWindow {
                 ui.set_settings_dialog_open(true);
                 // 云管理页需要主窗口的连接快照（设置面板为独立 Root）
                 ui.sync_cloud_state_from(main_ui);
+                // 洋葱皮后端锁定态的唯一真源是主窗口（是否有 MIDI 文档）：
+                // 对话框 Root 里没有文档，必须显式注入，否则设置页会一直可切换。
+                ui.set_settings_onion_backend_locked(main_ui.onion_backend_locked());
             }
             DialogType::SpeedChange => {
                 ui.set_speed_change_dialog_open(true);

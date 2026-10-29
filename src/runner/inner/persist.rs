@@ -31,11 +31,25 @@ fn should_persist_language(language_from_env: bool, language_changed: bool) -> b
     !language_from_env || language_changed
 }
 
+/// 洋葱皮渲染后端是否应落盘（「加载 MIDI 后禁止切换后端」的第三道闸）。
+///
+/// 两个条件**任一**为真即不写，保留旧配置：
+/// - `backend_locked`：设置面板处于锁定会话态（主窗口注入）；
+/// - `has_document`：主窗口当前挂着 MIDI 文档。
+///
+/// 为什么两个都要：设置对话框可能在「无 MIDI」时打开、之后才加载 MIDI，
+/// 此时对话框面板里的 `backend_locked` 仍是打开那一刻的 `false`——
+/// 只信面板字段会把「加载 MIDI 后本不该生效的后端」写到下次启动。
+fn should_persist_onion_backend(backend_locked: bool, has_document: bool) -> bool {
+    !backend_locked && !has_document
+}
+
 impl RunnerInner {
     fn config_diff(
         new: &lumino_ui::settings::SettingsPanel,
         old: &lumino_core::storage::config::UiConfig,
         current_theme: &str,
+        persist_onion_backend: bool,
     ) -> Option<ConfigDiff> {
         let theme_changed = current_theme != old.theme;
         let synth_changed = new.synth.backend != old.preferred_backend
@@ -72,7 +86,13 @@ impl RunnerInner {
         let language_changed = new.display.language_preference
             != old.effective_language_preference()
             || new.display.language != old.language;
+        // 洋葱皮后端：只有「允许落盘」时后端差异才算变更。
+        // 否则锁定态下（面板值 vs 旧配置不同、但运行时保持不变）会每帧都被判成
+        // 「有变更」→ 每帧 `patch` + 写盘，白白打爆磁盘。
+        let onion_backend_changed =
+            persist_onion_backend && new.hires.backend != old.onion_skin_backend;
         let other_changed = language_changed
+            || onion_backend_changed
             || new.editing.selection_box_mode != old.selection_box_mode
             || new.midi.velocity_filter_threshold != old.velocity_filter_threshold
             || new.editing.eraser_behavior != old.eraser_behavior
@@ -141,7 +161,21 @@ impl RunnerInner {
         let current_theme = self.window_state.window.ui().root().theme().to_string();
         let auto_scroll_mode_changed =
             Self::auto_scroll_mode_changed(&self.window_state.window, old.auto_scroll.mode);
-        let diff = match Self::config_diff(new, old, &current_theme) {
+        // 「加载 MIDI 后禁止切换后端」的持久化兜底：主窗口是否挂着文档才是硬事实，
+        // 面板字段（`hires.backend_locked`）在「先开设置、后载 MIDI」的时序下会过期。
+        let has_document = self
+            .window_state
+            .window
+            .ui()
+            .root()
+            .editor
+            .editor_state
+            .data
+            .document
+            .is_some();
+        let persist_onion_backend =
+            should_persist_onion_backend(new.hires.backend_locked, has_document);
+        let diff = match Self::config_diff(new, old, &current_theme, persist_onion_backend) {
             Some(d) => d,
             None if !auto_scroll_mode_changed => return,
             None => ConfigDiff {
@@ -322,6 +356,11 @@ impl RunnerInner {
             config.ui.hires_tile_width_px = new.hires.tile_width_px;
             config.ui.hires_cooldown_secs = new.hires.cooldown_secs;
             config.ui.hires_gpu_mem_limit_mb = new.hires.gpu_mem_limit_mb;
+            // 洋葱皮渲染后端：锁定/有 MIDI 文档时保留旧配置（见
+            // `should_persist_onion_backend`——锁定后运行时值本来也切不动）。
+            if persist_onion_backend {
+                config.ui.onion_skin_backend = new.hires.backend;
+            }
             config.ui.playback_key_colors_enabled = new.display.playback_key_colors_enabled;
             config.ui.track_add_behavior = new.editing.track_add_behavior;
             config.ui.selected_palette = new.display.selected_palette.clone();
@@ -349,28 +388,7 @@ impl RunnerInner {
     }
 }
 
+/// 落盘守卫测试（独立文件，保持本文件 < 400 行）
 #[cfg(test)]
-mod tests {
-    use super::should_persist_language;
-
-    /// UI-020：语言落盘守卫真值表——env 来源且未改语言时不落盘，其余照常。
-    #[test]
-    fn test_should_persist_language_guard() {
-        assert!(
-            should_persist_language(false, false),
-            "非 env 来源：照常落盘"
-        );
-        assert!(
-            should_persist_language(false, true),
-            "非 env 来源：照常落盘"
-        );
-        assert!(
-            !should_persist_language(true, false),
-            "env 来源且未改语言：不得物化（老配置场景的核心守卫）"
-        );
-        assert!(
-            should_persist_language(true, true),
-            "env 来源但用户显式改语言：照常落盘意图"
-        );
-    }
-}
+#[path = "persist/tests.rs"]
+mod tests;

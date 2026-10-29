@@ -1,14 +1,15 @@
 //! 设置面板状态模型与事件处理
 //!
-//! 内含 `SettingsPanel` 的构造与 `Event` 分发逻辑，从 `lib.rs` 拆分而来。
+//! 内含 `Event` 分发逻辑（`SettingsPanel::update`），从 `lib.rs` 拆分而来。
+//! - 构造器 `SettingsPanel::new` 见 `panel/new`（纯结构拆分，语义不变）；
+//! - 阻塞式文件选择器（音色库 / 程序字体）见 `panel/file_pickers`。
 
-use crate::{
-    AutoScrollSettings, CloudSettings, DisplaySettings, EditingSettings, Event, HiresSettings,
-    LoggingSettings, MidiSettings, SettingsPanel, SynthSettings,
-};
+use crate::{Event, SettingsPanel};
 use lumino_core::storage::config::SynthBackend;
-use lumino_core::tr;
 use lumino_ui_core::settings_event::OutputType;
+
+mod file_pickers;
+mod new;
 
 /// 解析设置输入字符串并应用；解析失败记录 warn 并忽略（保持旧行为不变）。
 ///
@@ -24,115 +25,6 @@ where
 }
 
 impl SettingsPanel {
-    /// 根据给定的 UI 配置创建设置面板状态。
-    ///
-    /// 从 `ui_config` 中初始化各子设置，解析并填充可用/选中的调色板名称。
-    ///
-    /// # 参数
-    /// * `ui_config` — 应用 UI 配置来源
-    ///
-    /// # 返回值
-    /// 返回按配置类别初始化完成的 `SettingsPanel` 实例
-    pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
-        let palette_mgr = &*lumino_extras::palette::PALETTE_MANAGER;
-        let available_palettes = palette_mgr.names().to_vec();
-        let selected_palette = if ui_config.selected_palette.is_empty() {
-            palette_mgr.default().name.to_string()
-        } else {
-            palette_mgr
-                .resolve_name(&ui_config.selected_palette)
-                .to_string()
-        };
-
-        Self {
-            selected_menu_index: 0,
-            synth: SynthSettings {
-                backend: ui_config.preferred_backend,
-                audio_engine: ui_config.audio_engine,
-                soundfont_path: ui_config.soundfont_path.clone(),
-                use_native_titlebar: ui_config.use_native_titlebar,
-                xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
-                xsynth_sample_rate: ui_config.xsynth_sample_rate,
-                xsynth_threads: ui_config.xsynth_threads,
-                xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
-                xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
-                xsynth_voice_target_ratio: ui_config.xsynth_voice_target_ratio,
-                xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
-                lgs_block_size: ui_config.lgs_block_size,
-                lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
-                lgs_global_voice_limit: ui_config.lgs_global_voice_limit,
-                lgs_soft_nps_gate: ui_config.lgs_soft_nps_gate,
-                lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
-                gpu_buffer_status_enabled: ui_config.gpu_buffer_status_enabled,
-                gpu_governor_metrics_enabled: ui_config.gpu_governor_metrics_enabled,
-                gpu_load_display: ui_config.gpu_load_display,
-                audio_output_devices: Vec::new(),
-                selected_audio_output_device: ui_config.audio_output_device.clone(),
-            },
-            editing: EditingSettings {
-                eraser_behavior: ui_config.eraser_behavior,
-                selection_box_mode: ui_config.selection_box_mode,
-                program_font_name: ui_config.program_font_name.clone(),
-                program_font_path: ui_config.program_font_path.clone(),
-                history_total_limit: ui_config.history_total_limit,
-                history_entry_limit: ui_config.history_entry_limit,
-                merge_window_ms: ui_config.merge_window_ms,
-                intercept_notification_enabled: ui_config.intercept_notification_enabled,
-                automation_line_thickness: ui_config.automation_line_thickness,
-                tempo_max_bpm: ui_config.tempo_max_bpm,
-                tempo_custom_open: false,
-                tempo_custom_input: String::new(),
-                track_add_behavior: ui_config.track_add_behavior,
-            },
-            display: DisplaySettings {
-                icon_hidpi: ui_config.icon_hidpi,
-                enable_256key: ui_config.enable_256key,
-                note_count_display: ui_config.note_count_display,
-                velocity_curve_style: ui_config.velocity_curve_style,
-                language: ui_config.language,
-                language_preference: ui_config.effective_language_preference(),
-                playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
-                selected_palette,
-                available_palettes,
-            },
-            auto_scroll: AutoScrollSettings {
-                fixed_position: ui_config.auto_scroll.fixed_indicator_position,
-                page_trigger_offset: ui_config.auto_scroll.page_trigger_offset,
-                page_return_position: ui_config.auto_scroll.page_return_position,
-            },
-            midi: MidiSettings {
-                devices: Vec::new(),
-                selected_device: None,
-                velocity_filter_threshold: ui_config.velocity_filter_threshold,
-                winmm_outputs: Vec::new(),
-                selected_winmm_output: ui_config.system_output_device_id,
-            },
-            hires: HiresSettings {
-                onion_enabled: ui_config.hires_onion_enabled,
-                measures_per_group: ui_config.hires_measures_per_group,
-                tile_width_px: ui_config.hires_tile_width_px,
-                cooldown_secs: ui_config.hires_cooldown_secs,
-                gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
-            },
-            logging: LoggingSettings {
-                log_retention_count: ui_config.log_retention_count,
-                monitor_refresh_interval_ms: ui_config.monitor_refresh_interval_ms,
-            },
-            cloud: CloudSettings {
-                connections: Vec::new(),
-                alert: None,
-            },
-            compat: crate::CompatSettings {
-                check_on_startup: ui_config.gpu_check_on_startup,
-                warning_suppressed: ui_config.gpu_warning_suppressed.unwrap_or(false),
-                domino_clipboard_enabled: ui_config.domino_clipboard_enabled,
-                check_state: lumino_ui_core::state::GpuCheckUiState::Idle,
-                retry_gate: lumino_ui_core::state::GpuCheckRetryGate::Ready,
-                copied: false,
-            },
-        }
-    }
-
     /// 处理来自 UI 的设置变更事件并更新面板状态。
     ///
     /// 根据事件类型分发到对应的设置子结构，数值类变化通过字符串解析
@@ -173,15 +65,7 @@ impl SettingsPanel {
                 self.synth.soundfont_path = path;
             }
             Event::BrowseSoundfont => {
-                if let Some(path) = lumino_platform::dialog::FileDialog::new()
-                    .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
-                    .add_filter(tr!("SF2 文件"), &["sf2"])
-                    .add_filter(tr!("SFZ 文件"), &["sfz"])
-                    .add_filter(tr!("所有文件"), &["*"])
-                    .pick_file()
-                {
-                    self.synth.soundfont_path = path.to_string_lossy().into_owned();
-                }
+                file_pickers::browse_soundfont(self);
             }
             Event::NativeTitlebarChanged(enabled) => {
                 self.synth.use_native_titlebar = enabled;
@@ -274,17 +158,7 @@ impl SettingsPanel {
                 }
             }
             Event::BrowseProgramFont => {
-                if let Some(path) = lumino_platform::dialog::FileDialog::new()
-                    .add_filter(tr!("字体文件"), &["ttf", "otf", "ttc", "woff", "woff2"])
-                    .add_filter(tr!("TrueType 字体"), &["ttf"])
-                    .add_filter(tr!("OpenType 字体"), &["otf"])
-                    .add_filter(tr!("所有文件"), &["*"])
-                    .pick_file()
-                {
-                    self.editing.program_font_path = path.to_string_lossy().into_owned();
-                    // UI-001：与系统字体名互斥（浏览选择文件 → 清空字体名）
-                    self.editing.program_font_name.clear();
-                }
+                file_pickers::browse_program_font(self);
             }
             // 自动滚动配置事件
             Event::AutoScrollFixedPositionChanged(value) => {
@@ -361,6 +235,15 @@ impl SettingsPanel {
             Event::HiresGpuMemLimitChanged(s) => {
                 // 用户硬约束：不得限制 GPU 内存使用——移除 clamp(128, 4096)
                 parse_setting(&s, |v: u32| self.hires.gpu_mem_limit_mb = v);
+            }
+            Event::OnionSkinBackendChanged(backend) => {
+                // 锁定态（主窗口已加载 MIDI）忽略切换请求：后端选择必须在
+                // 「没有 MIDI 工程」时做出，避免运行中切换导致缓存/渲染语义错位。
+                if self.hires.backend_locked {
+                    tracing::debug!("设置: 洋葱皮渲染方式已锁定，忽略切换请求 {backend:?}");
+                } else {
+                    self.hires.backend = backend;
+                }
             }
             Event::PlaybackKeyColorsEnabledChanged(v) => {
                 self.display.playback_key_colors_enabled = v;

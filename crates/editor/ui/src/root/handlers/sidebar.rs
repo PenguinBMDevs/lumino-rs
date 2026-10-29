@@ -15,6 +15,10 @@ use lumino_core::storage::config::TrackAddBehavior;
 mod i2m;
 mod right_sidebar;
 
+#[cfg(test)]
+#[path = "sidebar/roll_tests.rs"]
+mod roll_tests;
+
 impl Root {
     /// 处理模式切换（编辑器 ↔ 瀑布流）
     pub(crate) fn handle_mode_toggle(&mut self) -> bool {
@@ -39,6 +43,31 @@ impl Root {
         };
         self.state.current_mode = target_mode;
         self.state.toggle_animation.animate_to(target_progress);
+        true
+    }
+
+    /// 强制回到横向卷帘（纵向卷帘与 CPU 洋葱皮后端互斥时的自动降级）。
+    ///
+    /// 语义与 [`Self::handle_sidebar_event`] 的「退出纵向」分支**完全一致**
+    /// （恢复横向视图备份 + 失效键盘/标尺缓存 + 同步右侧栏 `roll_mode`），
+    /// 不另写第二套——否则两处一旦漂移，会出现「按钮点击退出纵向」与
+    /// 「切后端自动退出纵向」行为不同（一处补缓存失效、一处漏）的隐性 bug。
+    ///
+    /// 返回本次是否真的发生了降级（当前已是横向 → 立即返回 `false`，无副作用）。
+    pub(crate) fn force_horizontal_roll(&mut self) -> bool {
+        if !self.editor.editor_state.is_vertical_roll {
+            return false;
+        }
+        self.sidebar.roll_bar_active = Some(sidebar::RollBarButton::Horizontal);
+        self.right_sidebar.roll_mode = sidebar::RollBarButton::Horizontal;
+        self.editor.editor_state.is_vertical_roll = false;
+        // 退出纵向：恢复横向视图备份，避免“音符消失”（缩放/滚动错位）
+        self.editor.editor_state.restore_horizontal_backup();
+        self.editor
+            .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
+        self.editor
+            .invalidate_caches(crate::editor::CacheInvalidation::RULER);
+        tracing::info!("Root: 强制退出纵向卷帘（CPU 洋葱皮后端不支持纵向卷帘）");
         true
     }
 

@@ -171,6 +171,16 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "SFZ 文件" => Some("SFZ Files"),
         "SVG 矢量图" => Some("SVG Vector Images"),
         "WebP 图片" => Some("WebP Images"),
+        // 洋葱皮渲染后端切换（「加载 MIDI 后禁止切换」用户硬约束的 Toast 文案）
+        "加载 MIDI 后不可切换洋葱皮渲染方式，请先关闭 MIDI 工程" => Some(
+            "The onion skin renderer cannot be changed after loading MIDI; close the MIDI project first",
+        ),
+        "请先返回钢琴卷帘并停止导出后再切换 CPU 洋葱皮" => {
+            Some("Return to the piano roll and stop exporting before switching to CPU onion skin")
+        }
+        "已切回横向卷帘：CPU 洋葱皮不支持纵向卷帘" => Some(
+            "Switched back to the horizontal roll: CPU onion skin does not support vertical roll",
+        ),
         _ => None,
     }
 }
