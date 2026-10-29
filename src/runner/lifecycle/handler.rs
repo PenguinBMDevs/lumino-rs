@@ -227,7 +227,6 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     ///
     /// winit 0.30 的 `ApplicationHandler` 没有 `destroyed`，对应的收尾钩子是 `exiting`。
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-
         tracing::info!("exiting：事件循环退出，最后落盘一次");
         if let Some(this) = self.inner.as_mut() {
             this.save_storage();

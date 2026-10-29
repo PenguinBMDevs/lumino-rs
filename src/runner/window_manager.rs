@@ -373,7 +373,6 @@ impl WindowManager {
     ///    交由 Runner 弹出「是否保留未保存的更改」确认对话框，**暂不关闭**；
     /// 3. 否则立即快速关闭并退出事件循环。
     fn handle_close_request(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-
         // 保存期间禁止关闭软件：关闭请求转为待关闭，保存完成后自动退出
         if self.is_saving() {
             tracing::info!("保存进行中，关闭请求延迟到保存完成");

@@ -98,7 +98,6 @@ pub fn init() {
                 .with_max_level(log::LevelFilter::Trace)
                 .with_tag("lumino"),
         );
-
     }
 
     #[cfg(not(target_os = "android"))]
