@@ -6,7 +6,7 @@
 //! - `save_flow`：保存完成 / 失败提示
 //! - `util`：文件创建时间等工具函数
 
-mod auto_save;
+pub(crate) mod auto_save;
 mod close;
 mod editor_midi;
 mod export;
@@ -152,9 +152,19 @@ impl RunnerInner {
                 // 加载完成后工程处于干净状态（无相对磁盘文件的未保存更改），
                 // 标记清零避免误弹保存确认对话框。
                 self.window_state.window.ui_mut().mark_project_clean();
+
+                // 自动保存恢复必须覆盖上面的 clean：恢复内容不是用户主动
+                // 保存的源文件，必须按未保存工程处理并建立 backup 快照。
+                if self.autosave_recovery.is_some() {
+                    self.finish_autosave_recovery();
+                }
             }
             MidiParseError(err) => {
                 tracing::error!("MIDI 文件解析失败：{}", err);
+                if self.autosave_recovery.is_some() {
+                    self.handle_autosave_load_failed();
+                    return;
+                }
                 if self.test_state.test_mode_state.is_some() {
                     tracing::error!("测试模式因 MIDI 加载失败而退出");
                     event_loop.exit();

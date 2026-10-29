@@ -134,6 +134,10 @@ pub enum Event {
     MergeWindowMsChanged(String),
     /// 编辑拦截时是否显示 Toast 提示
     InterceptNotificationChanged(bool),
+    /// 周期自动保存开关变更（默认关闭）
+    AutosaveEnabledChanged(bool),
+    /// 周期自动保存间隔变更（分钟；输入框原文，落盘前收敛到 1..=120）
+    AutosaveIntervalMinsChanged(String),
     /// 自动化曲线连线粗细（像素，1-10）
     AutomationLineThicknessChanged(f32),
     /// Tempo 面板 BPM 绘制上限（预设值下拉选择，如 256/512/.../65536）

@@ -93,6 +93,15 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
                 // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
                 self.after_inner_started();
 
+                // 崩溃日志 + 自动保存恢复询问：异常退出留下的文件，启动时
+                // 各提示一次。测试模式跳过——自动化场景不得被模态框卡住。
+                if self.test_config.is_none()
+                    && let Some(this) = self.inner.as_mut()
+                {
+                    this.notify_pending_crash_logs();
+                    this.prompt_autosave_recovery();
+                }
+
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
                     && let Some(this) = self.inner.as_mut()
@@ -227,9 +236,11 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
     ///
     /// winit 0.30 的 `ApplicationHandler` 没有 `destroyed`，对应的收尾钩子是 `exiting`。
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-
         tracing::info!("exiting：事件循环退出，最后落盘一次");
         if let Some(this) = self.inner.as_mut() {
+            // 正常退出（菜单 / X / 延迟关闭）统一在此清理自动保存；崩溃/强杀
+            // 不会走到这里，文件留存供下次启动恢复。
+            this.cleanup_autosave_on_exit();
             this.save_storage();
         }
     }
@@ -400,6 +411,11 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
             event_loop.exit();
             return;
         }
+
+        // 周期自动保存心跳：放在控制流策略之前，本轮到点排程能立即参与
+        // `handle_control_flow` 的唤醒点合并（未启用时廉价早退）。
+        puffin::profile_scope!("runner_about_to_wait_autosave");
+        this.autosave_tick();
 
         // 控制循环休眠策略
         puffin::profile_scope!("runner_about_to_wait_control_flow");

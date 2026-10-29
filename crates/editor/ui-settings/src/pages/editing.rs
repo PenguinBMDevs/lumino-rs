@@ -145,6 +145,45 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(24),
+        // ── 自动保存 section ──
+        text(t.editing_autosave_section)
+            .size(TEXT_SIZE_SECTION)
+            .style(create_content_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 周期自动保存开关（说明挂在标签文字上，对钩框本身不触发）
+        row![
+            iced_widget::Checkbox::new(settings.editing.autosave_enabled).on_toggle(|enabled| {
+                Message::Settings(crate::Event::AutosaveEnabledChanged(enabled))
+            }),
+            with_setting_tooltip_inline_action(
+                text(t.editing_autosave_enabled)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_autosave_enabled_hint,
+                Message::Settings(crate::Event::AutosaveEnabledChanged(
+                    !settings.editing.autosave_enabled,
+                )),
+            ),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 自动保存间隔（分钟）
+        row![
+            with_setting_tooltip_inline(
+                text(t.editing_autosave_interval)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_autosave_interval_hint,
+            ),
+            iced_widget::space().width(SPACING_MAIN),
+            text_input("5", &settings.editing.autosave_interval_mins)
+                .on_input(|v| Message::Settings(crate::Event::AutosaveIntervalMinsChanged(v)))
+                .width(80.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(24),
         // ── Tempo 面板 section ──
         text(t.editing_tempo_max_bpm)
             .size(TEXT_SIZE_SECTION)

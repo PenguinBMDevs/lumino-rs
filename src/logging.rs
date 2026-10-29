@@ -10,7 +10,7 @@
 //! - 安装 panic hook 捕获 Rust 崩溃信息并写入日志
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -98,7 +98,6 @@ pub fn init() {
                 .with_max_level(log::LevelFilter::Trace)
                 .with_tag("lumino"),
         );
-
     }
 
     #[cfg(not(target_os = "android"))]
@@ -252,6 +251,90 @@ fn cleanup_old_logs(log_dir: &PathBuf, retention: usize) {
     }
 }
 
+/// 扫描尚未归档的崩溃日志（`crash_*.log`），按文件名（时间）升序。
+pub fn pending_crash_logs(log_dir: &Path) -> Vec<PathBuf> {
+    let Ok(dir) = fs::read_dir(log_dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = dir
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .map(|name| {
+                        let name = name.to_string_lossy();
+                        name.starts_with("crash_") && name.ends_with(".log")
+                    })
+                    .unwrap_or(false)
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// 把崩溃日志移入 `logs/crash-archive/`，返回归档目录。
+///
+/// 归档即“已告知”标记：下次启动扫描根目录时不会再看到它们，因此不会重复提示。
+pub fn archive_crash_logs(log_dir: &Path, paths: &[PathBuf]) -> io::Result<PathBuf> {
+    let archive_dir = log_dir.join("crash-archive");
+    fs::create_dir_all(&archive_dir)?;
+
+    for path in paths {
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        let mut candidate = archive_dir.join(name);
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "crash".to_string());
+        let mut index = 1;
+        while candidate.exists() {
+            candidate = archive_dir.join(format!("{stem}-{index}.log"));
+            index += 1;
+        }
+        fs::rename(path, candidate)?;
+    }
+
+    Ok(archive_dir)
+}
+
+/// 打开日志目录（平台原生文件管理器）。
+pub fn open_log_dir(log_dir: &Path) -> io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(log_dir)
+            .spawn()?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(log_dir).spawn()?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(log_dir)
+            .spawn()?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = log_dir;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "当前平台不支持打开日志目录",
+        ))
+    }
+}
+
 /// 安装 panic hook，捕获 Rust 崩溃信息并写入日志
 fn install_panic_hook() {
     let prev_hook = std::panic::take_hook();
@@ -280,10 +363,12 @@ fn install_panic_hook() {
             let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
             let crash_log_path = log_dir.join(format!("crash_{}.log", timestamp));
             if let Ok(mut f) = fs::File::create(&crash_log_path) {
+                let backtrace = std::backtrace::Backtrace::force_capture();
                 let _ = writeln!(f, "========== PANIC ==========");
                 let _ = writeln!(f, "Timestamp: {}", chrono::Local::now());
                 let _ = writeln!(f, "Panic at: {}", location);
                 let _ = writeln!(f, "Message: {}", payload);
+                let _ = writeln!(f, "Backtrace:\n{backtrace}");
                 let _ = writeln!(f, "===========================");
             }
         }
@@ -318,3 +403,6 @@ impl Write for LogcatWriter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -90,3 +90,8 @@ pub(super) fn default_merge_window_ms() -> u64 {
 pub(super) fn default_xsynth_voice_target_ratio() -> f64 {
     1.0 - 1.0 / std::f64::consts::E
 }
+
+/// 自动保存间隔默认值（分钟）：默认功能关闭，该值仅在用户开启后生效。
+pub(super) fn default_autosave_interval_mins() -> u32 {
+    5
+}

@@ -78,6 +78,8 @@ impl SettingsPanel {
                 history_entry_limit: ui_config.history_entry_limit,
                 merge_window_ms: ui_config.merge_window_ms,
                 intercept_notification_enabled: ui_config.intercept_notification_enabled,
+                autosave_enabled: ui_config.autosave_enabled,
+                autosave_interval_mins: ui_config.autosave_interval_mins.to_string(),
                 automation_line_thickness: ui_config.automation_line_thickness,
                 tempo_max_bpm: ui_config.tempo_max_bpm,
                 tempo_custom_open: false,
@@ -390,6 +392,14 @@ impl SettingsPanel {
             }
             Event::InterceptNotificationChanged(enabled) => {
                 self.editing.intercept_notification_enabled = enabled;
+            }
+            Event::AutosaveEnabledChanged(enabled) => {
+                self.editing.autosave_enabled = enabled;
+            }
+            Event::AutosaveIntervalMinsChanged(s) => {
+                // 输入框原文先存面板（保证输入体验）；数值合法性在落盘 patch 时
+                // 统一 parse + clamp，非法输入不生效。
+                self.editing.autosave_interval_mins = s;
             }
             Event::AutomationLineThicknessChanged(v) => {
                 self.editing.automation_line_thickness = v.clamp(1.0, 10.0);

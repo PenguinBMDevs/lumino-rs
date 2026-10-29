@@ -253,6 +253,16 @@ pub struct SettingsTranslations {
     pub editing_intercept_notification: &'static str,
     /// 拦截通知提示
     pub editing_intercept_notification_hint: &'static str,
+    /// 自动保存分区
+    pub editing_autosave_section: &'static str,
+    /// 周期自动保存开关
+    pub editing_autosave_enabled: &'static str,
+    /// 周期自动保存开关提示
+    pub editing_autosave_enabled_hint: &'static str,
+    /// 自动保存间隔
+    pub editing_autosave_interval: &'static str,
+    /// 自动保存间隔提示
+    pub editing_autosave_interval_hint: &'static str,
     /// Tempo 面板 BPM 上限
     pub editing_tempo_max_bpm: &'static str,
     /// BPM 上限提示

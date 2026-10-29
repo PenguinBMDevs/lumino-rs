@@ -20,6 +20,7 @@ pub use lumino_midi_loader::ParsedMidi;
 // ── 子模块 ──────────────────────────────────────────────────────────────
 
 mod collab;
+mod crash_log;
 mod file;
 mod lgs_reconnect;
 mod midi;
@@ -227,6 +228,18 @@ pub(crate) struct RunnerInner {
     pub(crate) midi_output_retry: MidiOutputRetry,
     /// GPU 缓冲状态上次轮询时刻（250ms 节流，避免每帧取快照）。
     pub(crate) gpu_stats_last_poll: std::time::Instant,
+    /// 周期自动保存下一次触发时刻（由 `autosave_tick` 维护，`control_flow` 合并唤醒）。
+    pub(crate) autosave_next: Option<std::time::Instant>,
+    /// 周期自动保存写入任务进行中标志（防上轮写入与本轮快照重叠）。
+    pub(crate) autosave_in_flight: std::sync::Arc<AtomicBool>,
+    /// 退出时若自动保存仍在飞，标记“完成后删除”，避免正常退出留下过期文件。
+    pub(crate) autosave_cleanup_pending: std::sync::Arc<AtomicBool>,
+    /// 正在进行的自动保存恢复（主/备份候选；加载成功或失败后消费）。
+    pub(crate) autosave_recovery: Option<crate::runner::menu::file::auto_save::AutosaveRecovery>,
+    /// 自动保存写入失败标记（后台任务置位，主线程每会话提示一次）。
+    pub(crate) autosave_failed: std::sync::Arc<AtomicBool>,
+    /// 自动保存失败提示是否已显示（每会话只提示一次）。
+    pub(crate) autosave_notice_shown: bool,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -412,6 +425,12 @@ impl Runner {
             gpu_check_ui_window: None,
             midi_output_retry: MidiOutputRetry::default(),
             gpu_stats_last_poll: std::time::Instant::now(),
+            autosave_next: None,
+            autosave_in_flight: Arc::new(AtomicBool::new(false)),
+            autosave_cleanup_pending: Arc::new(AtomicBool::new(false)),
+            autosave_recovery: None,
+            autosave_failed: Arc::new(AtomicBool::new(false)),
+            autosave_notice_shown: false,
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）

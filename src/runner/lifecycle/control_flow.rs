@@ -53,6 +53,14 @@ impl RunnerInner {
                 None => deadline,
             });
         }
+        // 周期自动保存：到点必须唤醒一次（Wait 模式下定时器本身不产生事件）。
+        // 未启用时 `autosave_next` 为 None，不产生任何额外唤醒。
+        if let Some(deadline) = self.autosave_next {
+            next_wake = Some(match next_wake {
+                Some(t) => t.min(deadline),
+                None => deadline,
+            });
+        }
 
         match next_wake {
             Some(deadline) => event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)),

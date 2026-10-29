@@ -151,6 +151,39 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "Export failed: GPU device lost (driver timeout recovery). The export was interrupted, but rendering has recovered automatically — you can retry directly",
             )
         }
+        // ── 自动保存恢复 / 崩溃日志（RUNNER）──
+        "恢复自动保存" => Some("Restore autosave"),
+        "不恢复" => Some("Don't restore"),
+        "检测到未保存的自动保存" => Some("Unsaved autosave detected"),
+        "发现上次会话的自动保存（修改于 {time}）。\n\n恢复不会改动任何已有文件。" => {
+            Some(
+                "Found an autosave from the previous session (modified at {time}).\n\nRestoring it will not modify any existing files.",
+            )
+        }
+        "已恢复自动保存，请另存为" => {
+            Some("Autosave restored. Please use Save As to keep it.")
+        }
+        "主自动保存损坏" => Some("Main autosave is corrupted"),
+        "主自动保存无法打开，已改名保留。{hint}\n\n将尝试从备份恢复。" => {
+            Some(
+                "The main autosave could not be opened and was renamed to preserve it.{hint}\n\nTrying to restore from the backup.",
+            )
+        }
+        "自动保存无法恢复" => Some("Autosave could not be restored"),
+        "自动保存文件无法打开，已改名保留：\n\n{path}\n\n请从原工程或备份手动恢复。" => {
+            Some(
+                "The autosave file could not be opened and was renamed to preserve it:\n\n{path}\n\nPlease recover manually from the original project or a backup.",
+            )
+        }
+        "上次运行发生崩溃" => Some("A crash occurred during the last run"),
+        "发现 {count} 份崩溃日志，已归档到：\n\n{path}\n\n可打开日志目录查看详情。" => {
+            Some(
+                "Found {count} crash log(s), archived to:\n\n{path}\n\nYou can open the log folder for details.",
+            )
+        }
+        "打开日志目录" => Some("Open log folder"),
+        "未知时间" => Some("Unknown time"),
+        "自动保存失败，请检查日志" => Some("Autosave failed; please check the log"),
         _ => None,
     }
 }
