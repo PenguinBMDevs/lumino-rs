@@ -48,7 +48,9 @@ mod simd;
 mod slot;
 
 pub use camera::CanvasCamera;
-pub use density::{DensityPyramid, OVERVIEW_MIN_NOTE_PX, overview_note_estimate, uses_overview};
+pub use density::{
+    DensityPyramid, OVERVIEW_MIN_NOTE_PX, SHORT_NOTE_MIN_PX, overview_note_estimate, uses_overview,
+};
 pub use frame::CpuFrame;
 pub use index::{LOOKBACK_TICKS, TrackIndex};
 pub use renderer::{CpuOnionRect, CpuOnionRenderer};

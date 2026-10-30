@@ -11,15 +11,16 @@
 //!
 //! # 触发条件
 //!
-//! **按缩放比例，不按同屏音符数量**。逐音符绘制只有在音符还有可辨认的屏幕
-//! 尺寸时才有意义；当以下任一轴低于 [`OVERVIEW_MIN_NOTE_PX`]（物理像素）时，
-//! 切密度热力图：
+//! **按缩放比例与内容长度，不按同屏音符数量**。逐音符绘制只有在音符还有可辨认的
+//! 屏幕尺寸时才有意义；当以下任一条件成立时切密度热力图：
 //!
-//! - 横向：`zoom_x × (measure_ticks / 16) < 阈值`（1/16 音符宽度）；
-//! - 纵向：`zoom_y < 阈值`（单键行高）。
+//! - 横向：`zoom_x × (measure_ticks / 16) < 2px`（1/16 音符宽度）；
+//! - 横向：`zoom_x × short_note_ticks < 2px`（第 10 百分位短音符宽度；
+//!   黑乐谱 1-tick 音符在低缩放下逐音符只会退化成整曲扫描）；
+//! - 纵向：`zoom_y < 2px`（单键行高）。
 //!
-//! `measure_ticks` 来自 [`TrackIndex`]（PPQ × 4），因此阈值随 PPQ 自适应；
-//! 相机的 `zoom` 已含 DPI，阈值是物理像素。空文档不切换。
+//! `measure_ticks` 与 `short_note_ticks` 来自 [`TrackIndex`]，因此阈值随 PPQ
+//! 与内容自适应；相机的 `zoom` 已含 DPI，阈值是物理像素。空文档不切换。
 //!
 //! [`overview_note_estimate`] 仅保留为诊断/基准估算，**不参与档位判定**。
 //!
@@ -50,6 +51,9 @@ const MAX_BASE_BINS: usize = 32_768;
 /// 1/16 音符宽度或单键行高低于该值时，Exact 路径已经退化成亚像素线条/纯描边；
 /// 密度热力图比逐音符堆叠更可读。2px 是「还能看见一个色块」的下限。
 pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
+
+/// 短音符（第 10 百分位）仍能占满的最小物理像素宽度。
+pub const SHORT_NOTE_MIN_PX: f32 = 2.0;
 
 /// 一层密度数据。
 #[derive(Debug)]
@@ -266,10 +270,10 @@ pub fn overview_note_estimate(index: &TrackIndex, camera: &CanvasCamera) -> u64 
     estimate.saturating_mul(visible_keys) / total_keys
 }
 
-/// 是否应切到总览密度 LOD（**只看缩放，不看音符数量**）。
+/// 是否应切到总览密度 LOD（**只看缩放与内容长度，不看音符数量**）。
 ///
-/// 1/16 音符宽度 = `zoom_x × measure_ticks / 16`；`measure_ticks = PPQ × 4`，
-/// 所以阈值随 PPQ 自适应。相机 `zoom` 已是物理像素（DPI 已乘入）。
+/// 1/16 音符宽度 = `zoom_x × measure_ticks / 16`；`short_note_ticks` 是长度
+/// 第 10 百分位。相机 `zoom` 已是物理像素（DPI 已乘入）。
 #[must_use]
 pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
     if index.total_notes == 0 {
@@ -283,7 +287,10 @@ pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
         return false;
     }
     let sixteenth_ticks = (index.measure_ticks / 16).max(1) as f32;
-    camera.zoom_x * sixteenth_ticks < OVERVIEW_MIN_NOTE_PX || camera.zoom_y < OVERVIEW_MIN_NOTE_PX
+    let short_ticks = index.short_note_ticks.max(1) as f32;
+    camera.zoom_x * short_ticks < SHORT_NOTE_MIN_PX
+        || camera.zoom_x * sixteenth_ticks < OVERVIEW_MIN_NOTE_PX
+        || camera.zoom_y < OVERVIEW_MIN_NOTE_PX
 }
 
 /// 基础层规划：桶宽与 bin 数。

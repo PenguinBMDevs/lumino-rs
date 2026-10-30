@@ -10,6 +10,7 @@ mod edit;
 mod edit_overlay;
 mod model;
 mod present;
+mod profiling;
 mod render;
 mod stats;
 mod text;
@@ -55,6 +56,10 @@ struct Cli {
     #[arg(long)]
     workers: Option<usize>,
 
+    /// 横向 band 数（默认 = worker 数）；只影响并行切分，不改输出。
+    #[arg(long)]
+    bands: Option<usize>,
+
     /// 基准模式时长（秒）；指定后自动滚屏并输出 PASS/FAIL。
     #[arg(long)]
     bench: Option<u64>,
@@ -78,6 +83,18 @@ struct Cli {
     /// 启动即全曲总览（配合 --bench 测密度热力图帧时间）。
     #[arg(long)]
     overview: bool,
+
+    /// 快速大范围缩放基准（配合 --bench；每帧全量重绘）。
+    #[arg(long)]
+    bench_zoom: bool,
+
+    /// 缩放基准的高倍端（默认 8 px/tick）。
+    #[arg(long, default_value_t = 8.0)]
+    bench_zoom_high: f32,
+
+    /// 缩放基准的低倍端；缺省 = 全曲适配缩放。
+    #[arg(long)]
+    bench_zoom_low: Option<f32>,
 }
 
 fn print_progress(message: &str, progress: f64) {
@@ -85,6 +102,11 @@ fn print_progress(message: &str, progress: f64) {
 }
 
 fn main() -> Result<()> {
+    #[cfg(feature = "tracy")]
+    {
+        // 先启动客户端，保证 tokio worker 线程上的 zone 也能连上 Profiler。
+        let _ = tracy_client::Client::start();
+    }
     #[cfg(target_os = "windows")]
     // SAFETY: timeBeginPeriod 是 Win32 媒体定时器 API，进程启动时调用一次；
     // 不涉及指针/所有权，失败也只会退回系统默认时钟粒度。
@@ -92,6 +114,10 @@ fn main() -> Result<()> {
         windows::Win32::Media::timeBeginPeriod(1);
     }
     let cli = Cli::parse();
+    anyhow::ensure!(
+        !(cli.overview && cli.bench_zoom),
+        "--overview 与 --bench-zoom 不能同时使用"
+    );
     let workers = cli
         .workers
         .unwrap_or_else(|| physical_cores().max(1))
@@ -246,8 +272,12 @@ fn main() -> Result<()> {
         height: cli.height,
         zoom: cli.zoom,
         workers,
+        bands: cli.bands.unwrap_or(workers).max(1),
         simd,
         bench_seconds: cli.bench,
+        bench_zoom: cli.bench_zoom,
+        bench_zoom_high: cli.bench_zoom_high,
+        bench_zoom_low: cli.bench_zoom_low,
         smoke_seconds: cli.smoke,
         overview: cli.overview,
         style,

@@ -10,6 +10,8 @@
 //!   （档位只看缩放，见 `density::uses_overview`）。
 //! - `track_note_counts[track]`：每轨音符数，供 [`TrackIndex::rebuild_track_geometry`]
 //!   在不重扫全文档的前提下精确修正 `total_notes`。
+//! - `short_note_ticks`：音符长度第 10 百分位（至少 1 tick），供总览 LOD
+//!   判断短音符在当前缩放下是否已不足 1px。
 //!
 //! `MidiDocument::clone` 是块级浅拷贝（音符块 `Arc` 共享），本索引同样只做
 //! 聚合拷贝，不触碰音符数据。
@@ -33,11 +35,16 @@ pub const LOOKBACK_TICKS: u32 = 512;
 /// 超出部分不参与诊断估算（音符渲染与长音符索引不受影响）。
 const MAX_MEASURE_BUCKETS: usize = 1_048_576;
 
+/// 短音符长度直方图上限（tick）；更长的音符并入末桶。
+const SHORT_HISTOGRAM_TICKS: usize = 4096;
+
 /// 每轨 / 每小节聚合索引。
 #[derive(Debug, Clone)]
 pub struct TrackIndex {
     /// 每轨最大音符长度（tick）。
     pub max_len: Vec<u32>,
+    /// 音符长度第 10 百分位（至少 1 tick）；0 表示空文档。
+    pub short_note_ticks: u32,
     /// 超过 [`LOOKBACK_TICKS`] 的音符（按轨，按 `start_tick` 升序）。
     pub long_notes: Vec<Vec<NoteEvent>>,
     /// 长音符总数。
@@ -68,6 +75,7 @@ impl TrackIndex {
         let mut track_note_counts = vec![0u64; track_count];
         let mut long_note_count = 0u64;
         let mut total_notes = 0u64;
+        let mut length_histogram = vec![0u64; SHORT_HISTOGRAM_TICKS + 1];
 
         for (track_idx, notes) in document.notes.iter().enumerate() {
             let mut track_max = 0u32;
@@ -75,6 +83,7 @@ impl TrackIndex {
             for note in notes.iter() {
                 let len = note.length();
                 track_max = track_max.max(len);
+                length_histogram[(len as usize).min(SHORT_HISTOGRAM_TICKS)] += 1;
                 if len > LOOKBACK_TICKS
                     && let Some(slot) = long_notes.get_mut(track_idx)
                 {
@@ -99,6 +108,7 @@ impl TrackIndex {
 
         let mut index = Self {
             max_len,
+            short_note_ticks: short_percentile(&length_histogram, total_notes),
             long_notes,
             long_note_count,
             measure_counts,
@@ -170,6 +180,22 @@ impl TrackIndex {
         self.densest_measure = densest_measure;
         self.densest_measure_notes = densest_notes;
     }
+}
+
+/// 从长度直方图取第 10 百分位（至少 1 tick）。
+fn short_percentile(histogram: &[u64], total_notes: u64) -> u32 {
+    if total_notes == 0 {
+        return 0;
+    }
+    let target = total_notes.saturating_mul(10).div_ceil(100).max(1);
+    let mut accumulated = 0u64;
+    for (ticks, count) in histogram.iter().enumerate() {
+        accumulated = accumulated.saturating_add(*count);
+        if accumulated >= target {
+            return (ticks as u32).max(1);
+        }
+    }
+    SHORT_HISTOGRAM_TICKS as u32
 }
 
 /// 按需扩容小节计数桶：几何增长，避免多轨递增 tick 时的重复拷贝；

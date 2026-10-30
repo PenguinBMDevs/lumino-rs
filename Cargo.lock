@@ -1464,9 +1464,11 @@ dependencies = [
  "lumino-extras",
  "lumino-midi-loader",
  "png 0.17.16",
+ "raw-window-handle",
  "softbuffer",
  "sysinfo",
  "tokio",
+ "tracy-client",
  "windows 0.62.2",
  "winit",
 ]

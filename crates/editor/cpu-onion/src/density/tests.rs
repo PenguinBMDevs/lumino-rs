@@ -3,7 +3,8 @@
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
 use super::{
-    DensityPyramid, OVERVIEW_MIN_NOTE_PX, heat_argb, overview_note_estimate, uses_overview,
+    DensityPyramid, OVERVIEW_MIN_NOTE_PX, SHORT_NOTE_MIN_PX, heat_argb, overview_note_estimate,
+    uses_overview,
 };
 use crate::{CanvasCamera, TrackIndex};
 
@@ -135,6 +136,26 @@ fn apply_note_outside_layout_requires_rebuild() {
         pyramid.total_ticks(),
         "拒绝后不得改动渲染右界"
     );
+}
+
+#[test]
+fn overview_switches_when_short_notes_are_subpixel() {
+    let mut document = MidiDocument::empty_with_tracks(2, 480);
+    document.insert_note(1, NoteEvent::new(0, 2000, 60, 100, 0));
+    // 1-tick 短音符进入第 10 百分位。
+    document.insert_note(1, NoteEvent::new(2000, 2001, 61, 100, 0));
+    let index = TrackIndex::build(&document);
+    assert_eq!(index.short_note_ticks, 1);
+
+    let mut camera = camera(0.5);
+    assert!(
+        uses_overview(&index, &camera),
+        "短音符 0.5px 时逐音符只会退化成整曲扫描，必须切总览"
+    );
+    camera.zoom_x = 1.0;
+    assert!(uses_overview(&index, &camera), "短音符 1px 仍低于 2px 阈值");
+    camera.zoom_x = SHORT_NOTE_MIN_PX;
+    assert!(!uses_overview(&index, &camera), "短音符 2px 仍保持 Exact");
 }
 
 #[test]

@@ -66,6 +66,33 @@ work p99=14.64ms  max=16.07ms
 内存：文档 1879 MiB（`NoteEvent=12B`，与项目内加载路径完全一致）+ 密度金字塔
 23.4 MiB + 派生索引约 1 MiB，无渲染音符副本。
 
+## 快速大范围缩放基准（Paprika 310M）
+
+```powershell
+cargo run --release -p cpu-onionskin -- --midi "D:\BM-DATA\MIDI File\Paprika's Aua Ah Community Merge (FULL).mid" `
+  --bench 5 --bench-zoom --width 1920 --height 1080 --workers 12 --bands 24
+```
+
+缩放锚点 = 最密小节中心，在对数空间从全曲适配缩放扫到 8 px/tick 再回来
+（2 个来回）。每帧 `zoom_x` 都在变，因此不会命中滚动增量路径，只会走
+Overview/Exact 全量帧，专门测最坏路径。
+
+实测（i7-9750H 6c/12t，1920×1080，release，多次运行）：
+
+```text
+wall=124.0~137.0fps | draw p50=4.1~4.8 p99=12.3~14.0
+present p50=1.8~2.0 p99=3.3~3.7 | work p50=6.1~6.8 p99=14.0~16.3
+rss=4.33 GB
+=> 100fps 底线 PASS；137fps 达到 130 优秀线
+```
+
+`--workers 8 --bands 24` 单次可到 133.1fps，但 p99 波动更大；12 workers
+是可复现的稳妥配置。
+
+200fps 目标未达到：Overview 的 CPU 绘制 p50≈4.3ms + present≈1.8ms 已经
+6.1ms，Exact 高倍段仍约 12ms；继续压缩需要重做 Exact 的按 key 分桶光栅，
+或降低 Overview 分辨率（会损失可读性，未采用）。
+
 ## 关键设计
 
 ### 1. 同一份数据
@@ -81,7 +108,10 @@ work p99=14.64ms  max=16.07ms
 
 - 滚动与静止都走 Exact：完整高度矩形 + 填充 + 每侧 2px 描边 + owner 稳定深度；
 - 所有洋葱皮轨都画，没有 `track_stride` 丢轨；
-- 唯一的 LOD 是全曲 Overview 密度热力图，且只在可见音符估算 >600 万时启用；
+- 唯一的 LOD 是全曲 Overview 密度热力图，触发条件与 `lumino-cpu-onion`
+  生产实现一致：**按缩放物理像素，不按同屏音符数量**——1/16 音符宽度
+  (`zoom_x × measure_ticks / 16`) 或单键行高低于 2px，或第 10 百分位短音符
+  宽度不足 2px 时启用（黑乐谱 1-tick 音符在低缩放下没有可绘制的块）；
 - 细音符（宽度不足 4px）按生产 UI 规则只显示描边色，这是几何约束，与静止帧一致。
 
 ### 3. 滚动增量帧（性能关键）

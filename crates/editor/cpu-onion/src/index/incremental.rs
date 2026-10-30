@@ -74,16 +74,22 @@ impl TrackIndex {
         }
 
         let mut track_max = 0u32;
+        let mut track_min = u32::MAX;
         let mut track_notes = 0u64;
         let mut longs: Vec<NoteEvent> = Vec::new();
         // `ChunkedList::iter` 按 start_tick 升序 → `longs` 天然满足长音符的升序不变式
         for note in document.track_notes(track).iter() {
             let len = note.length();
             track_max = track_max.max(len);
+            track_min = track_min.min(len.max(1));
             track_notes = track_notes.saturating_add(1);
             if len > LOOKBACK_TICKS {
                 longs.push(*note);
             }
+        }
+        if track_notes > 0 {
+            // 直接编辑后短音符只可能变短；取 min 让 LOD 偏保守，宁可直接切总览。
+            next.short_note_ticks = next.short_note_ticks.max(1).min(track_min);
         }
 
         let previous_notes = next.track_note_counts.get(track).copied().unwrap_or(0);
@@ -134,6 +140,7 @@ impl TrackIndex {
             *count = count.saturating_add(1);
         }
         let len = note.length();
+        self.short_note_ticks = self.short_note_ticks.max(1).min(len.max(1));
         if let Some(slot) = self.max_len.get_mut(track) {
             *slot = (*slot).max(len);
         }

@@ -56,10 +56,18 @@ pub struct AppConfig {
     pub zoom: f32,
     /// tokio worker 数。
     pub workers: usize,
+    /// 横向 band 数。
+    pub bands: usize,
     /// SIMD 档位。
     pub simd: SimdLevel,
     /// 基准模式时长（秒）。
     pub bench_seconds: Option<u64>,
+    /// 快速大范围缩放基准。
+    pub bench_zoom: bool,
+    /// 缩放基准高倍端（px/tick）。
+    pub bench_zoom_high: f32,
+    /// 缩放基准低倍端；None = 全曲适配。
+    pub bench_zoom_low: Option<f32>,
     /// 交互冒烟时长（秒）。
     pub smoke_seconds: Option<u64>,
     /// 全曲总览起始。
@@ -91,6 +99,7 @@ struct App {
     editor: Editor,
     drag_base: Vec<u32>,
     overview_buf: Vec<u32>,
+    overview_scratch: crate::render::density::OverviewScratch,
     renderer: Renderer,
     font: Option<TextRenderer>,
     window: Option<Arc<Window>>,
@@ -103,6 +112,9 @@ struct App {
     ppq: u16,
     bench: Option<Bench>,
     bench_seconds: Option<u64>,
+    bench_zoom: bool,
+    bench_zoom_high: f32,
+    bench_zoom_low: Option<f32>,
     smoke_deadline: Option<Instant>,
     overview: bool,
     bench_pass: Option<bool>,
@@ -139,7 +151,7 @@ impl App {
         if font.is_none() {
             eprintln!("[warn] 内置字体解析失败：标尺/状态栏文本将缺失");
         }
-        let band_count = config.workers.max(2);
+        let band_count = config.bands.max(2);
         let renderer = Renderer::new(
             config.runtime,
             band_count,
@@ -163,6 +175,7 @@ impl App {
             editor: Editor::new(u32::from(ppq)),
             drag_base: Vec::new(),
             overview_buf: Vec::new(),
+            overview_scratch: Default::default(),
             renderer,
             font,
             window: None,
@@ -175,6 +188,9 @@ impl App {
             ppq,
             bench: None,
             bench_seconds: config.bench_seconds,
+            bench_zoom: config.bench_zoom,
+            bench_zoom_high: config.bench_zoom_high,
+            bench_zoom_low: config.bench_zoom_low,
             smoke_deadline: config
                 .smoke_seconds
                 .map(|seconds| now + Duration::from_secs(seconds.max(1))),

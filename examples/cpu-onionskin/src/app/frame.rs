@@ -191,6 +191,7 @@ impl App {
                 small_height,
                 &small_camera,
                 &self.density,
+                &mut self.overview_scratch,
             );
             let mut x_map = vec![0usize; width_usize];
             for (x, slot) in x_map.iter_mut().enumerate() {
@@ -203,13 +204,22 @@ impl App {
             let frame = self.renderer.frame_mut();
             let top = (camera.ruler_height.round().max(0.0) as usize).min(height_usize);
             let left = (camera.keyboard_width.round().max(0.0) as usize).min(width_usize);
-            for y in top..height_usize {
-                let source_row =
-                    &self.overview_buf[y_map[y] * small_width..(y_map[y] + 1) * small_width];
-                let destination = &mut frame[y * width_usize..(y + 1) * width_usize];
-                for x in left..width_usize {
-                    destination[x] = source_row[x_map[x]];
+            // 最近邻放大：同一源行通常覆盖 2 个目标行，先展开一次再整行拷贝，
+            // 避免每个目标像素都做一次源采样。
+            let mut expanded = vec![0u32; width_usize];
+            let mut last_source_row = usize::MAX;
+            for (y, &source_y) in y_map.iter().enumerate().take(height_usize).skip(top) {
+                if source_y != last_source_row {
+                    let source_row =
+                        &self.overview_buf[source_y * small_width..(source_y + 1) * small_width];
+                    for (x, slot) in expanded.iter_mut().enumerate().skip(left) {
+                        *slot = source_row[x_map[x]];
+                    }
+                    last_source_row = source_y;
                 }
+                let row_start = y * width_usize;
+                frame[row_start + left..row_start + width_usize]
+                    .copy_from_slice(&expanded[left..width_usize]);
             }
             RenderStats {
                 visible_notes: estimate,
@@ -230,11 +240,9 @@ impl App {
         let render_done = Instant::now();
 
         let hud = self.hud_text(mode.name(), estimate);
-        if mode == LodMode::Overview && self.frame_valid {
-            self.draw_overview_overlays(&camera, width_usize, height_usize, &hud);
-        } else {
-            self.draw_overlays(&camera, width_usize, height_usize, &hud);
-        }
+        // 键盘只随纵向相机变化，标尺只随横向相机变化：全量帧也按脏标记
+        // 重画，避免每帧重复画左侧 1080×120 的键盘。
+        self.draw_cached_overlays(&camera, width_usize, height_usize, &hud);
         self.draw_edit_selection(&camera, width_usize);
         let overlay_done = Instant::now();
         if mode == LodMode::Overview && self.frame_valid && !self.frame_index.is_multiple_of(30) {

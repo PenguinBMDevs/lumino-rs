@@ -3,6 +3,17 @@
 //! 层 0 = 64 tick × 1 key 的 onset 计数；层 l = 层 l-1 沿时间轴 2:1 合并。
 //! 7 层覆盖 64..4096 tick/bin，总量约 24.8MB（u16）。全曲总览时按屏幕像素
 //! 采样对应层，绘制密度热力图；滚动/缩放时仍直接遍历音符（Exact）。
+//!
+//! # 触发条件（与 `lumino-cpu-onion` 生产实现一致）
+//!
+//! **按缩放比例，不按同屏音符数量**。以下任一条件成立时切密度热力图：
+//!
+//! - 1/16 音符宽度 `zoom_x × (measure_ticks / 16)` 低于 [`OVERVIEW_MIN_NOTE_PX`]；
+//! - **第 10 百分位短音符宽度** `zoom_x × short_note_ticks` 低于 `2px`
+//!   （黑乐谱里 1-tick 音符在低缩放下会退化成纯扫描，逐音符已无意义）；
+//! - 单键行高 `zoom_y` 低于 [`OVERVIEW_MIN_NOTE_PX`]。
+//!
+//! `measure_ticks = PPQ × 4`，因此阈值随 PPQ 自适应；空文档不切换。
 
 use std::{sync::LazyLock, thread};
 
@@ -10,8 +21,43 @@ use lumino_midi_loader::MidiDocument;
 
 use crate::{
     camera::Camera,
+    model::TrackIndex,
     render::chrome::{COLOR_BG, COLOR_BLACK_ROW, COLOR_RULER_BG, is_black_key},
 };
+
+/// 密度 LOD 的物理像素阈值。
+///
+/// 与 `lumino-cpu-onion` 的 `OVERVIEW_MIN_NOTE_PX` 保持一致：1/16 音符宽度或
+/// 单键行高低于 2px 时，Exact 已经退化成亚像素线条/纯描边，热力图更可读。
+pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
+
+/// 短音符（第 10 百分位）仍能占满的最小物理像素宽度。
+///
+/// 与 1/16 阈值同为 2px：低于 2px 时 Exact 已退化成 1px 线条，热力图更可读。
+pub const SHORT_NOTE_MIN_PX: f32 = 2.0;
+
+/// 是否应切到总览密度 LOD（**只看缩放与内容长度，不看音符数量**）。
+///
+/// 1/16 音符宽度 = `zoom_x × measure_ticks / 16`；`short_note_ticks` 是长度
+/// 第 10 百分位。示例相机的 `zoom` 与生产 CPU 渲染器同为物理像素。
+#[must_use]
+pub fn uses_overview(index: &TrackIndex, camera: &Camera) -> bool {
+    if index.total_notes == 0 {
+        return false;
+    }
+    if !camera.zoom_x.is_finite()
+        || !camera.zoom_y.is_finite()
+        || camera.zoom_x <= 0.0
+        || camera.zoom_y <= 0.0
+    {
+        return false;
+    }
+    let sixteenth_ticks = (index.measure_ticks / 16).max(1) as f32;
+    let short_ticks = index.short_note_ticks.max(1) as f32;
+    camera.zoom_x * short_ticks < SHORT_NOTE_MIN_PX
+        || camera.zoom_x * sixteenth_ticks < OVERVIEW_MIN_NOTE_PX
+        || camera.zoom_y < OVERVIEW_MIN_NOTE_PX
+}
 
 /// 基础 bin 的 tick 宽度。
 const BASE_BIN_TICKS: u32 = 64;
@@ -221,6 +267,16 @@ fn heat_color(count: u16, max_count: u16) -> u32 {
     HEAT_LUT[index.min(255)]
 }
 
+/// 总览渲染的可复用临时缓冲（避免每帧分配/重算颜色）。
+#[derive(Debug, Default)]
+pub struct OverviewScratch {
+    bin_for_x: Vec<usize>,
+    colors: Vec<u32>,
+    key_rows: Vec<u32>,
+    cached_level: Option<usize>,
+    cached_max: u16,
+}
+
 /// 全曲总览：背景 + 密度热力图（直接写窗口 frame）。
 pub fn render_overview(
     frame: &mut [u32],
@@ -228,6 +284,7 @@ pub fn render_overview(
     height: usize,
     camera: &Camera,
     density: &DensityPyramid,
+    scratch: &mut OverviewScratch,
 ) {
     let ruler = (camera.ruler_height as usize).min(height);
     for y in 0..height {
@@ -259,34 +316,47 @@ pub fn render_overview(
 
     // 逐列 tick → bin 只算一次；逐 cell 颜色也只算一次。原来每像素都做
     // x_to_tick + get + ilog2，1600×900 要 38ms。
-    let mut bin_for_x = vec![0usize; width];
-    for (x, slot) in bin_for_x.iter_mut().enumerate().skip(keyboard) {
+    scratch.bin_for_x.clear();
+    scratch.bin_for_x.resize(width, 0);
+    for (x, slot) in scratch.bin_for_x.iter_mut().enumerate().skip(keyboard) {
         let tick = camera.x_to_tick(x as f32 + 0.5).max(0.0) as u32;
         *slot = ((tick / bin_ticks) as usize).min(bins - 1);
     }
-    let mut colors = Vec::with_capacity(cells.len());
-    for &count in cells {
-        colors.push(if count == 0 {
-            COLOR_BG
-        } else {
-            heat_color(count, max_count)
-        });
+    // 颜色只依赖 (层, max_count)；缩放档位不变时直接复用，避免每帧重算
+    // 百万级 cell 的 ilog2。
+    if scratch.cached_level != Some(level)
+        || scratch.cached_max != max_count
+        || scratch.colors.len() != cells.len()
+    {
+        scratch.colors.clear();
+        scratch.colors.reserve(cells.len());
+        for &count in cells {
+            scratch.colors.push(if count == 0 {
+                COLOR_BG
+            } else {
+                heat_color(count, max_count)
+            });
+        }
+        scratch.cached_level = Some(level);
+        scratch.cached_max = max_count;
     }
 
     // 每个 key 的整行颜色只算一次：overview 缩放下同一 key 往往覆盖 6~8 行，
     // 逐像素算 1.4M 次不如算 128×width 次再 memcpy。
-    let mut key_rows = vec![COLOR_BG; KEY_COUNT * width];
+    scratch.key_rows.clear();
+    scratch.key_rows.resize(KEY_COUNT * width, COLOR_BG);
     for key in 0..KEY_COUNT {
         let background = if is_black_key(key as u16) {
             COLOR_BLACK_ROW
         } else {
             COLOR_BG
         };
-        let row = &mut key_rows[key * width..(key + 1) * width];
+        let row = &mut scratch.key_rows[key * width..(key + 1) * width];
         row.fill(background);
         for (x, pixel) in row.iter_mut().enumerate().skip(keyboard) {
-            let color = colors
-                .get(bin_for_x[x] * KEY_COUNT + key)
+            let color = scratch
+                .colors
+                .get(scratch.bin_for_x[x] * KEY_COUNT + key)
                 .copied()
                 .unwrap_or(COLOR_BG);
             if color != COLOR_BG {
@@ -300,34 +370,10 @@ pub fn render_overview(
         if key >= KEY_COUNT {
             continue;
         }
-        let source = &key_rows[key * width..(key + 1) * width];
+        let source = &scratch.key_rows[key * width..(key + 1) * width];
         frame[y * width..(y + 1) * width].copy_from_slice(source);
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn level_selection_covers_a_pixel() {
-        let pyramid = DensityPyramid {
-            levels: (0..LEVELS)
-                .map(|index| DensityLevel {
-                    bin_ticks: BASE_BIN_TICKS << index,
-                    bins: 1,
-                    cells: vec![0; KEY_COUNT],
-                })
-                .collect(),
-            max_counts: vec![1; LEVELS],
-        };
-        assert_eq!(pyramid.level_for_zoom(1.0), 0);
-        assert!(pyramid.bin_ticks(pyramid.level_for_zoom(0.0001)) >= 1);
-    }
-
-    #[test]
-    fn heat_color_zero_is_background() {
-        assert_eq!(heat_color(0, 100), COLOR_BG);
-        assert_ne!(heat_color(100, 100), COLOR_BG);
-    }
-}
+mod tests;

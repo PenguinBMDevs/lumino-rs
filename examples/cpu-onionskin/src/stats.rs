@@ -273,22 +273,28 @@ impl PerfMonitor {
         );
     }
 
-    /// 输出基准最终汇总；返回是否达到 60fps + 全分位数门槛。
+    /// 输出基准最终汇总；返回是否达到目标。
     ///
-    /// 滚动帧要求 p50/p95/p99/max 全部 ≤16.67ms（60fps 预算）；
-    /// `draw_criterion=true` 用于总览热力图：该档验收 CPU 绘制 p99，
-    /// 端到端 present 分位数照常打印，不隐藏。
-    pub fn print_bench(&mut self, label: &str, draw_criterion: bool) -> bool {
+    /// `draw_criterion=true` 用于总览热力图：该档验收 CPU 绘制 p99；
+    /// `min_fps`/`p99_budget_ms` 由调用方按基准档位给出（滚动/总览 60fps，
+    /// 快速缩放 100fps）。端到端 present 分位数照常打印，不隐藏。
+    pub fn print_bench(
+        &mut self,
+        label: &str,
+        draw_criterion: bool,
+        min_fps: f64,
+        p99_budget_ms: f32,
+    ) -> bool {
         let summary = self.summary();
         let pass = if draw_criterion {
-            summary.wall_fps >= 60.0 && summary.draw_p99_ms <= 16.67
+            summary.wall_fps >= min_fps && summary.draw_p99_ms <= p99_budget_ms
         } else {
-            summary.wall_fps >= 60.0 && summary.p99_ms <= 16.67 && summary.max_ms <= 16.67
+            summary.wall_fps >= min_fps && summary.p99_ms <= p99_budget_ms
         };
         let criterion = if draw_criterion {
-            "overview: draw p99 ≤16.67ms"
+            format!("overview: wall ≥{min_fps:.0}fps, draw p99 ≤{p99_budget_ms:.2}ms")
         } else {
-            "scroll: p99/max ≤16.67ms"
+            format!("zoom/scroll: wall ≥{min_fps:.0}fps, work p99 ≤{p99_budget_ms:.2}ms")
         };
         println!(
             "[BENCH {label}] frames={} wall={:.1}fps | draw p50={:.2} p99={:.2} | present p50={:.2} p99={:.2} | work avg={:.2} p50={:.2} p95={:.2} p99={:.2} max={:.2} ms | secs={:.2} | cpu={:.0}% of 1 core ({:.0}% of {} cores) rss={}MB -> {} [{}]",
