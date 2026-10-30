@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### DRAW-039 · 自动保存补全与崩溃日志可见化
+
+- **周期自动保存**（默认关闭，间隔 5 分钟，1..=120 可调）：仅在工程 dirty 时写入
+  独立文件 `config_dir/autosave/autosave.lmpj`，不触碰用户手动保存的 `.lmpj`。
+- **不阻塞 UI**：主线程只做 `MidiDocument`/形状/元数据快照，`LuminoProject`
+  组包与归档写盘进入 `spawn_blocking`；REND-019 失败兜底同步保存保持原语义。
+- **串行纪律**：手动保存或云上传进行中跳过周期写入；`in_flight` 防止任务堆积。
+- **恢复保命**：`autosave-backup.lmpj`；主文件损坏改名 `autosave-lost-*` 后
+  退用 backup；用户拒绝改名 `autosave-declined-*`，永不静默删除。
+- **恢复语义**：恢复内容按未保存工程载入（清空 source、`modified = true`），
+  Ctrl+S 走另存为，不覆盖 autosave。
+- **退出清理**：正常退出（菜单/X/延迟关闭）清理 main + backup；崩溃/强杀保留。
+- **崩溃日志可见化**：扫描 `logs/crash_*.log`，归档到 `logs/crash-archive/`，
+  启动提示一次并支持打开目录；panic hook 写入 backtrace。
+- **Windows**：嵌入 Common Controls v6 manifest，恢复/崩溃提示使用自定义
+  “打开目录/关闭窗口”按钮。
+- **修复**：启动提示延迟到首帧后；Windows 回退 OK/Cancel 时确认按钮按恢复处理；
+  双损坏提示改为状态栏，避免模态循环死锁。
+
 ### CI 修复 · ubuntu lint（事件循环 API）与 BOM 守卫红灯
 
 - **ubuntu lint（E0599）** — Linux 专用分支把 `with_user_event()` 误挂在 `EventLoopBuilder<T>` 上
