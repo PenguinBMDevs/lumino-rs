@@ -261,6 +261,54 @@ fn cpu_frame_aligns_with_gpu_grid_at_all_dpi() {
     }
 }
 
+/// 缩放（X/Y）后，CPU 帧的 key 行仍必须与左侧键盘/网格同一公式。
+///
+/// 这条用例锁的是「缩放只改相机，不改内容区原点」：若帧原点被误当成随
+/// zoom/scroll 变化，或帧高被多减一次 ruler，key 行会整体上/下移。
+#[test]
+fn cpu_key_rows_align_with_keyboard_after_zoom() {
+    for (zoom_x, zoom_y, scroll_x, scroll_y) in [
+        (2.0f32, 20.0f32, 100.0f32, 50.0f32),
+        (0.5, 6.0, 0.0, 0.0),
+        (8.0, 40.0, 1234.5, 987.25),
+    ] {
+        let mut input = input(1.0);
+        input.zoom = (zoom_x, zoom_y);
+        input.scroll = (scroll_x, scroll_y);
+        let geometry = input.to_physical().expect("常规缩放应可换算");
+        let max_key = (input.key_count - 1) as f32;
+
+        // 帧矩形不随缩放漂移：仍等于 canvas 去掉键盘栏/标尺后的内容区。
+        assert_eq!(
+            (geometry.x, geometry.y),
+            (120, 60),
+            "缩放不得改变内容区原点；zoom=({zoom_x},{zoom_y})"
+        );
+        assert_eq!(
+            (geometry.width, geometry.height),
+            (940, 470),
+            "缩放不得改变内容区尺寸；zoom=({zoom_x},{zoom_y})"
+        );
+        assert_eq!(
+            geometry.y + geometry.height,
+            (input.canvas_offset.1 + input.canvas_size.1) as u32,
+            "帧底边必须贴住 canvas 底边（不能少减/多减 ruler）"
+        );
+
+        for key in [0u16, 60, 120, 127] {
+            let cpu_y = geometry.y as f32 + geometry.camera.key_to_y(key);
+            let keyboard_y =
+                input.canvas_offset.1 + input.ruler_height + (max_key - key as f32) * zoom_y
+                    - scroll_y;
+            let diff = cpu_y - keyboard_y;
+            assert!(
+                diff.abs() <= 1.0,
+                "zoom=({zoom_x},{zoom_y}) key={key}：CPU 帧 {cpu_y} / 键盘 {keyboard_y} 差 {diff}px"
+            );
+        }
+    }
+}
+
 /// 内容区原点为**半像素**（floor 真正起作用）时仍必须对齐。
 #[test]
 fn cpu_frame_aligns_with_fractional_content_origin() {
