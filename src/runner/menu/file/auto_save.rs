@@ -111,8 +111,11 @@ impl RunnerInner {
     /// 若写入任务仍在飞，置 `autosave_cleanup_pending`，由任务完成后删除，
     /// 避免在写盘中途删除后又被原子替换重新创建。
     pub(crate) fn cleanup_autosave_on_exit(&self) {
-        // 恢复加载尚未完成时关闭：保留文件，避免把正在恢复的唯一副本删掉。
-        if self.autosave_recovery.is_some() {
+        // 恢复加载/启动提示尚未处理时关闭：保留文件，避免把唯一副本删掉。
+        if self.autosave_recovery.is_some()
+            || self.pending_autosave_prompt
+            || self.startup_prompt_at.is_some()
+        {
             tracing::info!("正常退出：自动保存恢复尚未完成，保留文件");
             return;
         }

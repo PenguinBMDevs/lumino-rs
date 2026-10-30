@@ -47,9 +47,13 @@ impl RunnerInner {
         let result = MessageDialog::new()
             .set_level(MessageLevel::Info)
             .set_title(tr!("检测到未保存的自动保存"))
-            .set_description(trf!(
-                "发现上次会话的自动保存（修改于 {time}）。\n\n恢复不会改动任何已有文件。",
-                time = modified_at
+            .set_description(format!(
+                "{}\n\n{}",
+                trf!(
+                    "发现上次会话的自动保存（修改于 {time}）。\n\n恢复不会改动任何已有文件。",
+                    time = modified_at
+                ),
+                tr!("按「确定」恢复，按「取消」不恢复。")
             ))
             .set_buttons(MessageButtons::OkCancelCustom(
                 restore_label.clone(),
@@ -57,10 +61,14 @@ impl RunnerInner {
             ))
             .show();
 
-        let restore = matches!(
-            result,
-            MessageDialogResult::Custom(label) if label == restore_label
-        );
+        // Windows 未启用 common-controls-v6 时 rfd 会退回标准 OK/Cancel
+        // MessageBox，此时返回 `Ok`。恢复是提示框的主操作，`Ok` 也按恢复处理；
+        // `Cancel`/自定义“不恢复”才放弃，避免用户点“确定”却被改名。
+        let restore = match result {
+            MessageDialogResult::Ok => true,
+            MessageDialogResult::Custom(label) => label == restore_label,
+            MessageDialogResult::Cancel => false,
+        };
         if restore {
             tracing::info!("用户选择恢复自动保存: {:?}", candidate);
             self.autosave_recovery = Some(AutosaveRecovery {

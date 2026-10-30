@@ -240,6 +240,12 @@ pub(crate) struct RunnerInner {
     pub(crate) autosave_failed: std::sync::Arc<AtomicBool>,
     /// 自动保存失败提示是否已显示（每会话只提示一次）。
     pub(crate) autosave_notice_shown: bool,
+    /// 启动提示延迟到首帧之后，避免原生模态框在窗口绘制前阻塞事件循环。
+    pub(crate) startup_prompt_at: Option<std::time::Instant>,
+    /// 启动时待处理的崩溃日志提示。
+    pub(crate) pending_crash_notice: bool,
+    /// 启动时待处理的自动保存恢复提示。
+    pub(crate) pending_autosave_prompt: bool,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -431,6 +437,9 @@ impl Runner {
             autosave_recovery: None,
             autosave_failed: Arc::new(AtomicBool::new(false)),
             autosave_notice_shown: false,
+            startup_prompt_at: None,
+            pending_crash_notice: false,
+            pending_autosave_prompt: false,
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）

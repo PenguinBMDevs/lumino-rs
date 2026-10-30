@@ -160,6 +160,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "Found an autosave from the previous session (modified at {time}).\n\nRestoring it will not modify any existing files.",
             )
         }
+        "按「确定」恢复，按「取消」不恢复。" => {
+            Some("Press OK to restore, or Cancel to discard.")
+        }
         "已恢复自动保存，请另存为" => {
             Some("Autosave restored. Please use Save As to keep it.")
         }

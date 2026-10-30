@@ -1,5 +1,7 @@
 //! 启动时崩溃日志提示：扫描上次运行留下的 `crash_*.log`，归档并告知一次。
 
+use std::time::{Duration, Instant};
+
 use lumino_core::{tr, trf};
 use lumino_platform::dialog::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 
@@ -7,6 +9,34 @@ use crate::runner::RunnerInner;
 use crate::{logging, storage};
 
 impl RunnerInner {
+    /// 把启动提示排到首帧之后：原生模态框不能在 `resumed` 里同步弹出，
+    /// 否则主窗口还没绘制就被阻塞，用户看到白屏且无法交互。
+    pub(crate) fn schedule_startup_prompts(&mut self) {
+        self.pending_crash_notice = true;
+        self.pending_autosave_prompt = true;
+        self.startup_prompt_at = Some(Instant::now() + Duration::from_millis(350));
+    }
+
+    /// 首帧之后执行排队的启动提示（每项内部会自行判断文件是否存在）。
+    pub(crate) fn run_startup_prompts(&mut self) {
+        let Some(deadline) = self.startup_prompt_at else {
+            return;
+        };
+        if Instant::now() < deadline {
+            return;
+        }
+        self.startup_prompt_at = None;
+
+        if self.pending_crash_notice {
+            self.pending_crash_notice = false;
+            self.notify_pending_crash_logs();
+        }
+        if self.pending_autosave_prompt {
+            self.pending_autosave_prompt = false;
+            self.prompt_autosave_recovery();
+        }
+    }
+
     /// 启动时若发现未归档的崩溃日志，移入 `logs/crash-archive/` 并提示一次。
     ///
     /// 归档本身即“已告知”标记：第二次启动扫描根目录为空，不会重复弹窗。

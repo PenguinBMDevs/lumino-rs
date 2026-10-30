@@ -94,12 +94,13 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
                 self.after_inner_started();
 
                 // 崩溃日志 + 自动保存恢复询问：异常退出留下的文件，启动时
-                // 各提示一次。测试模式跳过——自动化场景不得被模态框卡住。
+                // 各提示一次。不能在这里同步弹原生模态框——此时首帧还没绘制，
+                // 会白屏且事件循环被阻塞；排到 `about_to_wait` 的首帧之后。
+                // 测试模式跳过——自动化场景不得被模态框卡住。
                 if self.test_config.is_none()
                     && let Some(this) = self.inner.as_mut()
                 {
-                    this.notify_pending_crash_logs();
-                    this.prompt_autosave_recovery();
+                    this.schedule_startup_prompts();
                 }
 
                 // 如果是测试模式，自动加载 MIDI
@@ -345,6 +346,10 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
         this.try_fill_recover_track_entries();
         this.sync_history_dialog();
+
+        // 启动提示（崩溃日志 / 自动保存恢复）排到首帧之后执行，
+        // 避免原生模态框在窗口绘制前阻塞事件循环。
+        this.run_startup_prompts();
 
         // GPU 检测会话状态灌注（设置对话框刚创建 / 重开时重放 Running、冷却与结果）
         this.about_to_wait_gpu_check();

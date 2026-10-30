@@ -61,6 +61,12 @@ impl RunnerInner {
                 None => deadline,
             });
         }
+        if let Some(deadline) = self.startup_prompt_at {
+            next_wake = Some(match next_wake {
+                Some(t) => t.min(deadline),
+                None => deadline,
+            });
+        }
 
         match next_wake {
             Some(deadline) => event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)),
