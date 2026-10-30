@@ -90,11 +90,12 @@ impl Host {
         self.window_ctx.cursor_position = Some(origin);
         self.window_ctx.cursor = mouse::Cursor::Available(origin);
 
-        self.events
-            .push(iced_core::Event::Touch(iced_core::touch::Event::FingerLost {
+        self.events.push(iced_core::Event::Touch(
+            iced_core::touch::Event::FingerLost {
                 id: iced_core::touch::Finger(finger_id),
                 position: origin,
-            }));
+            },
+        ));
         self.events
             .push(iced_core::Event::Mouse(mouse::Event::ButtonReleased(
                 mouse::Button::Left,

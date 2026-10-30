@@ -16,7 +16,10 @@ fn pinch_ratio_ignores_jitter_below_threshold() {
 #[test]
 fn pinch_ratio_reports_zoom_past_threshold() {
     let outward = pinch_ratio(100.0, 110.0).expect("张开 10% 应产生缩放增量");
-    assert!((outward - 0.1).abs() < 1e-4, "张开应为正增量，实际 {outward}");
+    assert!(
+        (outward - 0.1).abs() < 1e-4,
+        "张开应为正增量，实际 {outward}"
+    );
 
     let inward = pinch_ratio(100.0, 90.0).expect("收拢 10% 应产生缩放增量");
     assert!((inward + 0.1).abs() < 1e-4, "收拢应为负增量，实际 {inward}");

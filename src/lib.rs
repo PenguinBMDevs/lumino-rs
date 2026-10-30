@@ -236,12 +236,10 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
     // with_tag 是线程局部的，run_app 在调用线程上运行，
     // 因此该线程的所有分配（编辑器状态、空间索引、iced 每帧 widget 树等）均归 Ui。
     // 其中 MIDI 解析路径在 document.rs 内层已用 Midi 标签覆盖，音频渲染线程在 synth.rs 内单独标 Audio。
-    let loop_result = lumino_diagnostics::memtrace::with_tag(
-        lumino_diagnostics::memtrace::AllocTag::Ui,
-        || {
+    let loop_result =
+        lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             event_loop.run_app(&mut runner)
-        },
-    );
+        });
     log::info!("事件循环已退出: {loop_result:?}");
     loop_result?;
 
