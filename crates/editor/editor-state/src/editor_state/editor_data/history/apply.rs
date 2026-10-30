@@ -102,6 +102,12 @@ impl EditorData {
     // ── 历史记录条目应用 ─────────────────────────────────────
     /// 根据 HistoryEntry 类型应用撤销/重做（删加语义，按值，无全扫）
     pub(super) fn apply_history_entry(&mut self, entry: HistoryEntry, inverse: bool) {
+        // `apply_move_ops` / `apply_create_ops` 内部会调用
+        // `mark_track_notes_changed_for`，这是覆盖语义。多步历史跳转在同一帧
+        // 连续 apply 时，上一步的脏集合会在这里被中间覆盖；先保存并在末尾并集。
+        let previous_onion = self.onion_dirty_tracks.take();
+        let previous_main_struct = self.main_track_struct_dirty;
+
         // 清空可能残留的旧 note_delta_events，防止其在新 current_track 下被误应用到
         // 错误音轨（原 mark_tracks_changed_after_history 的防跨轨误用意图保留于此）。
         self.note_delta_events.clear();
@@ -212,7 +218,7 @@ impl EditorData {
                     }
                     self.pending_collab_move_sync = sync;
                 }
-                self.mark_track_notes_changed_for(Some(affected));
+                self.mark_tracks_changed_after_history(affected);
             }
             HistoryEntry::Create(entry) => {
                 let affected: HashSet<usize> =
@@ -236,9 +242,17 @@ impl EditorData {
                     }
                     self.pending_collab_create_sync = sync;
                 }
-                self.mark_track_notes_changed_for(Some(affected));
+                self.mark_tracks_changed_after_history(affected);
             }
         }
+
+        if let Some(previous) = previous_onion {
+            self.onion_dirty_tracks = Some(match self.onion_dirty_tracks.take() {
+                Some(current) => previous.union(&current).copied().collect(),
+                None => previous,
+            });
+        }
+        self.main_track_struct_dirty |= previous_main_struct;
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。
@@ -251,10 +265,17 @@ impl EditorData {
     ///   被误应用到错误音轨。
     fn mark_tracks_changed_after_history(&mut self, affected_tracks: HashSet<usize>) {
         self.note_delta_events.clear();
-        self.onion_dirty_tracks = Some(affected_tracks.clone());
+        // 多步历史跳转会在同一帧内连续调用本方法。这里必须**累积**受影响轨：
+        // 覆盖赋值会让「步 1 改当前轨、步 2 改其他轨」的最终 flags 只剩最后一步，
+        // 当前轨段既不重建也无增量事件（CPU 文档正确、GPU 旧索引/旧顺序）。
+        self.onion_dirty_tracks = Some(match self.onion_dirty_tracks.take() {
+            Some(previous) => previous.union(&affected_tracks).copied().collect(),
+            None => affected_tracks.clone(),
+        });
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
-        // 当前轨整轨替换 → 主轨段重建；其余受影响音轨由洋葱皮 Delta 同步
-        self.main_track_struct_dirty = affected_tracks.contains(&self.current_track);
+        // 当前轨整轨替换 → 主轨段重建；其余受影响音轨由洋葱皮 Delta 同步。
+        // 多步跳转时必须保留任一步产生的 true，不能覆盖回 false。
+        self.main_track_struct_dirty |= affected_tracks.contains(&self.current_track);
         self.note_delta_dirty = false;
     }
 

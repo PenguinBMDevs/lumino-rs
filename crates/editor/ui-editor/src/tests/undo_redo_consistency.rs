@@ -13,7 +13,7 @@ use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
 use lumino_editor_state::DragState;
-use lumino_note_core::history::OpKind;
+use lumino_note_core::history::{MoveOp, OpKind};
 
 /// 生产链路批量提交（不推快照，仅提交推 MoveOp）：拖动→松手→提交→落盘→清空选区
 fn batch_move_commit(editor: &mut Editor, indices: Vec<usize>, delta_tick: i64, delta_key: i16) {
@@ -270,19 +270,114 @@ fn test_history_jump_across_two_independent_moves() {
     assert!(editor.history_jump_to(1), "从最新回退第二次移动");
     assert_eq!(track_ticks(&editor), vec![100, 500]);
 
-    // 跳转产生的 GPU 增量只对中间态成立；跳转后必须强制全量重建。
-    editor.editor_state.data.note_delta_events.clear();
-    editor.editor_state.data.note_delta_dirty = false;
     assert!(editor.history_jump_to(0), "继续回退第一次移动");
     assert_eq!(track_ticks(&editor), vec![0, 500]);
+
+    // 多步跳转必须把两步的受影响轨/当前轨结构标记累积起来，而不是只留最后一步。
+    assert_eq!(
+        editor.editor_state.data.onion_dirty_tracks,
+        Some(std::collections::HashSet::from([0])),
+        "同轨多步跳转的洋葱皮脏集合应为并集"
+    );
     assert!(
-        editor.editor_state.data.note_delta_dirty,
-        "跨步跳转后必须标记全量音符重建"
+        editor.editor_state.data.main_track_struct_dirty,
+        "当前轨受多步跳转影响时必须保持单轨重建标记"
+    );
+    assert!(
+        !editor.editor_state.data.note_delta_dirty,
+        "历史跳转不得再触发全量重建兜底"
     );
     assert!(
         editor.editor_state.data.note_delta_events.is_empty(),
         "跨步跳转不得把中间态增量留给 GPU"
     );
+}
+
+#[test]
+fn test_history_jump_cross_track_accumulates_dirty_flags() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 2, 0, &[Note::new(0.0, 60, 100.0)]);
+    editor.editor_state.data.current_track = 1;
+    editor
+        .editor_state
+        .data
+        .insert_note(1, Note::new(0.0, 62, 100.0));
+    editor.editor_state.data.current_track = 0;
+
+    // 步 1：当前轨 0 移动。
+    editor.selection_insert(0);
+    batch_move_commit(&mut editor, vec![0], 100, 0);
+
+    // 步 2：非当前轨 1 移动（直接构造 MoveOp，模拟跨轨回放）。
+    let original = editor
+        .editor_state
+        .data
+        .track_notes(1)
+        .get(0)
+        .copied()
+        .expect("轨 1 应有音符");
+    let mut moved = original;
+    moved.start_tick += 100;
+    moved.end_tick += 100;
+    let ops = vec![MoveOp {
+        track_id: 1,
+        originals: vec![original],
+        moved: vec![moved],
+        delta_tick: 100,
+        delta_key: 0,
+        seq: 0,
+    }];
+    editor.editor_state.data.apply_move_ops(&ops, false, 127);
+    editor.editor_state.data.push_move_op(ops);
+    assert_eq!(editor.history_view().current, 2);
+
+    assert!(editor.history_jump_to(0), "回退两步到初始状态");
+    assert_eq!(track_ticks(&editor), vec![0]);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .track_notes(1)
+            .iter()
+            .map(|n| n.start_tick)
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+
+    // 重做两步：步 1 当前轨、步 2 非当前轨；旧实现会被步 2 覆盖回 false。
+    editor.editor_state.data.onion_dirty_tracks = None;
+    editor.editor_state.data.main_track_struct_dirty = false;
+    editor.editor_state.data.note_delta_dirty = false;
+    assert!(editor.history_jump_to(1), "先重做第一步");
+    assert_eq!(
+        editor.editor_state.data.onion_dirty_tracks,
+        Some(std::collections::HashSet::from([0])),
+        "第一步重做应只标当前轨"
+    );
+    assert!(editor.editor_state.data.main_track_struct_dirty);
+    assert!(editor.history_jump_to(2), "重做两步");
+    assert_eq!(track_ticks(&editor), vec![100]);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .track_notes(1)
+            .iter()
+            .map(|n| n.start_tick)
+            .collect::<Vec<_>>(),
+        vec![100]
+    );
+    assert_eq!(
+        editor.editor_state.data.onion_dirty_tracks,
+        Some(std::collections::HashSet::from([0, 1])),
+        "跨轨多步跳转的洋葱皮脏集合必须是两步并集"
+    );
+    assert!(
+        editor.editor_state.data.main_track_struct_dirty,
+        "当前轨被步 1 影响后，步 2 不得把结构重建标记覆盖回 false"
+    );
+    assert!(!editor.editor_state.data.note_delta_dirty);
+    assert!(editor.editor_state.data.note_delta_events.is_empty());
 }
 
 #[test]
