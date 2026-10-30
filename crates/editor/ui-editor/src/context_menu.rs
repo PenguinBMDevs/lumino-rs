@@ -135,9 +135,12 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::PasteShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-        // 待确认镜像没有 ShapeStore 模型 / 音符：不能做 019–028 的参数操作；
-        // 但可以按当前几何临时构造 ShapeModel 分享（DRAW-034），以及删除（取消待确认产物）。
+        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起先走 Bake 前组合会话，
+        // 019/021/022 在有 2+ 个 pending 矢量时可用；其余仍不可用。
         ContextMenuTarget::PendingDrawnShape => &[
+            PianoRollContextMenuItem::LiveShape,
+            PianoRollContextMenuItem::JoinShapes,
+            PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::CopyShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
@@ -350,28 +353,28 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_shape_menu_offers_share_and_delete() {
+    fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
         let items = menu_items(ContextMenuTarget::PendingDrawnShape);
         assert_eq!(
             items,
             &[
+                PianoRollContextMenuItem::LiveShape,
+                PianoRollContextMenuItem::JoinShapes,
+                PianoRollContextMenuItem::MergeShapes,
                 PianoRollContextMenuItem::CopyShapeText,
                 PianoRollContextMenuItem::DeleteDrawnShape,
             ],
-            "待确认镜像可分享当前几何，但不能出现 019–028 参数操作"
+            "待确认镜像可走 Bake 前组合、分享几何、删除；不得出现 020–028 参数操作"
         );
         assert!(
             !items.iter().any(|item| matches!(
                 item,
-                PianoRollContextMenuItem::LiveShape
-                    | PianoRollContextMenuItem::JoinShapes
-                    | PianoRollContextMenuItem::MergeShapes
-                    | PianoRollContextMenuItem::EditShape
+                PianoRollContextMenuItem::EditShape
                     | PianoRollContextMenuItem::SymmetryVertical
                     | PianoRollContextMenuItem::SliceVertical
                     | PianoRollContextMenuItem::VelocityUp
             )),
-            "待确认目标不得保留任何组合/编辑入口"
+            "020–028 仍不得出现在待确认目标"
         );
     }
 

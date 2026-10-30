@@ -14,7 +14,12 @@ pub(crate) enum BakePending {
     /// 曲线工具
     Line(LineToolState),
     /// 形状工具
-    Shape(ShapeToolState),
+    Shape {
+        /// 待确认图形与交互状态
+        state: ShapeToolState,
+        /// Bake 前组合会话（DRAW-041C）；undo 时一并恢复
+        composed: Vec<lumino_editor_state::PendingComposed>,
+    },
     /// 画刷工具（笔画 + 粗细/分层配置）
     Brush {
         /// 待确认笔画与笔画历史
@@ -51,7 +56,10 @@ impl Editor {
                 state.path_history.truncate(state.path_history_index + 1);
                 self.editor_state.line_tool = state;
             }
-            BakePending::Shape(state) => self.editor_state.shape_tool = state,
+            BakePending::Shape { state, composed } => {
+                self.editor_state.shape_tool = state;
+                self.editor_state.pending_composed = composed;
+            }
             BakePending::Brush { mut state, config } => {
                 state.path_history.truncate(state.path_history_index + 1);
                 self.editor_state.brush_tool = state;
@@ -70,7 +78,10 @@ impl Editor {
         };
         match pending {
             BakePending::Line(_) => self.editor_state.line_tool.reset(),
-            BakePending::Shape(_) => self.editor_state.shape_tool.clear_pending(),
+            BakePending::Shape { .. } => {
+                self.editor_state.shape_tool.clear_pending();
+                self.editor_state.pending_composed.clear();
+            }
             BakePending::Brush { .. } => self.editor_state.brush_tool.reset(),
         }
         self.rebuild_pending_mirrors();

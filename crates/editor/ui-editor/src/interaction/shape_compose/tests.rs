@@ -4,7 +4,7 @@ use super::*;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeOp};
-use lumino_editor_state::{DrawnShapeSource, ShapeNote};
+use lumino_editor_state::{DrawnShapeSource, PendingShapeRef, ShapeNote};
 
 fn shape_note(tick: f32, key: u16) -> ShapeNote {
     ShapeNote {
@@ -441,4 +441,128 @@ fn test_merge_two_shapes() {
         2,
         "Merge 不应丢文档音符"
     );
+}
+
+fn add_pending_rect(editor: &mut Editor, tick0: f32, tick1: f32, key: u16) {
+    editor
+        .editor_state
+        .shape_tool
+        .shapes
+        .push(lumino_editor_state::ShapeInstance {
+            kind: lumino_editor_state::ShapeKind::Rectangle,
+            rect: (tick0, key as f32, tick1, key as f32 + 4.0),
+            shift_constrained: false,
+            filled: true,
+            apex_high: true,
+        });
+}
+
+#[test]
+fn test_pending_live_composition_stays_pending_until_bake() {
+    let mut editor = empty_editor();
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    add_pending_rect(&mut editor, 0.0, 100.0, 60);
+    add_pending_rect(&mut editor, 200.0, 300.0, 64);
+    editor.rebuild_pending_mirrors();
+    let ids: Vec<u64> = (0..2)
+        .filter_map(|index| {
+            editor
+                .editor_state
+                .shape_select
+                .pending_mirror(PendingShapeRef::Shape(index))
+        })
+        .collect();
+    editor.editor_state.shape_select.select_all_of(ids);
+
+    assert!(editor.live_selected_shapes(), "pending 组合应成功");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert!(editor.editor_state.shape_tool.shapes.is_empty());
+    let pending_notes = editor.editor_state.pending_composed[0].notes.len();
+    assert!(pending_notes > 0);
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        0,
+        "组合结果保持 pending，不写文档音符"
+    );
+
+    assert!(editor.undo(), "组合会话 undo 应回到 pending 矢量");
+    assert!(editor.editor_state.pending_composed.is_empty());
+    assert_eq!(editor.editor_state.shape_tool.shapes.len(), 2);
+
+    assert!(editor.redo(), "组合会话 redo 应重新组合");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+
+    assert!(editor.confirm_shape_tool(), "✓ 才提交");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes,
+        "✓ 写入的音符应与预览一致"
+    );
+    assert!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_shapes()
+            .next()
+            .is_none(),
+        "✓ 后不应残留 pending 镜像"
+    );
+    assert!(
+        !editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .is_empty(),
+        "041B 只读模型应保留"
+    );
+
+    assert!(editor.undo(), "✓ 后 undo 应回到 pending 组合");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+    assert!(editor.redo(), "✓ 后 redo 应重新烘焙");
+    assert!(editor.editor_state.pending_composed.is_empty());
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes
+    );
+}
+
+fn setup_pending_rects(editor: &mut Editor) {
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    add_pending_rect(editor, 0.0, 100.0, 60);
+    add_pending_rect(editor, 200.0, 300.0, 64);
+    editor.rebuild_pending_mirrors();
+    let ids: Vec<u64> = (0..2)
+        .filter_map(|index| {
+            editor
+                .editor_state
+                .shape_select
+                .pending_mirror(PendingShapeRef::Shape(index))
+        })
+        .collect();
+    editor.editor_state.shape_select.select_all_of(ids);
+}
+
+#[test]
+fn test_pending_join_composition_is_pending() {
+    let mut editor = empty_editor();
+    setup_pending_rects(&mut editor);
+    assert!(editor.join_selected_shapes());
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Join);
+    assert!(!composed.notes.is_empty());
+    assert!(editor.editor_state.shape_tool.shapes.is_empty());
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+}
+
+#[test]
+fn test_pending_merge_composition_is_pending() {
+    let mut editor = empty_editor();
+    setup_pending_rects(&mut editor);
+    assert!(editor.merge_selected_shapes());
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Merge);
+    assert!(!composed.notes.is_empty());
+    assert!(editor.editor_state.shape_tool.shapes.is_empty());
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
 }

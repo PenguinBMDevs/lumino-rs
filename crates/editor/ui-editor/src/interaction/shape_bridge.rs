@@ -3,7 +3,7 @@
 //! UI 层原有 `DrawnShapeSource` 负责渲染/命中；019–022 的算法吃 `ShapeModel`。
 //! 这里只做最小桥接：几何转换 + 保留原音符，不重新生成。
 
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeStyle};
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle};
 use lumino_editor_state::shape_tool::shape_outline_path;
 use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeKind as UiShapeKind, ShapeSpec};
 
@@ -51,8 +51,42 @@ pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32)
                 model.style.fill = lumino_core::shape::ShapeFill::Fill;
             }
         }
+        DrawnShapeSource::PolylineSet { polylines } => {
+            // 仅用于把组合预览还原成可分析模型（不会再生成音符）；多段拍平为一条折线。
+            let points: Vec<(f32, f32)> = polylines.iter().flatten().copied().collect();
+            model.kind = ShapeKind::Polyline;
+            model.geometry = ShapeGeometry::from_points(points);
+            model.geometry.closed = false;
+        }
     }
     model
+}
+
+/// 模型的可渲染折线集合：Live 优先用各段 stroke，其它用整条几何。
+pub(crate) fn polylines_of_model(model: &ShapeModel) -> Vec<Vec<(f32, f32)>> {
+    if let Some(ShapeOp::Live(params)) = model.ops.iter().find(|op| matches!(op, ShapeOp::Live(_)))
+    {
+        let strokes: Vec<Vec<(f32, f32)>> = params
+            .strokes
+            .iter()
+            .filter(|stroke| !stroke.anchors.is_empty())
+            .map(|stroke| stroke.anchors.iter().map(|anchor| anchor.pos).collect())
+            .collect();
+        if !strokes.is_empty() {
+            return strokes;
+        }
+    }
+    if !model.geometry.anchors.is_empty() {
+        return vec![
+            model
+                .geometry
+                .anchors
+                .iter()
+                .map(|anchor| anchor.pos)
+                .collect(),
+        ];
+    }
+    Vec::new()
 }
 
 /// ShapeModel → 可渲染的 DrawnShapeSource

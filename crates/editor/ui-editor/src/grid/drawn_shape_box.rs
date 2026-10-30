@@ -105,6 +105,38 @@ fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> O
                 Some(open_path(&points, true))
             }
         }
+        DrawnShapeSource::PolylineSet { polylines } => {
+            let shifted = |&(t, k): &(f32, f32)| (t + dtick, k + dkey);
+            let screen_sets: Vec<Vec<Point>> = polylines
+                .iter()
+                .filter(|points| !points.is_empty())
+                .map(|points| {
+                    points
+                        .iter()
+                        .map(|pt| editor.line_pos_screen_pos(shifted(pt)))
+                        .collect()
+                })
+                .collect();
+            if screen_sets.is_empty() {
+                return None;
+            }
+            Some(Path::new(|p| {
+                for points in &screen_sets {
+                    if points.len() < 2 {
+                        let pt = points[0];
+                        p.move_to(Point::new(pt.x - 4.0, pt.y));
+                        p.line_to(Point::new(pt.x + 4.0, pt.y));
+                        p.move_to(Point::new(pt.x, pt.y - 4.0));
+                        p.line_to(Point::new(pt.x, pt.y + 4.0));
+                        continue;
+                    }
+                    p.move_to(points[0]);
+                    for pt in &points[1..] {
+                        p.line_to(*pt);
+                    }
+                }
+            }))
+        }
         DrawnShapeSource::Polyline { points } => {
             if points.is_empty() {
                 return None;

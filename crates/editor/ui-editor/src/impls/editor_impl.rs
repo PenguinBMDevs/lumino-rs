@@ -49,6 +49,7 @@ impl Editor {
                 pending_drag_applied: (0.0, 0.0),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 shape_edit: None,
+                pending_composed_redo: Vec::new(),
                 area_paint: None,
                 shape_list_open: false,
                 baked_pending: std::collections::HashMap::new(),

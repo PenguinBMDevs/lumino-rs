@@ -25,6 +25,11 @@ impl Editor {
             tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
             return false;
         }
+        // DRAW-041C：Bake 前组合会话优先（未提交文档，先回到 pending 矢量）
+        if self.undo_pending_compose() {
+            tracing::info!("Editor: 撤销 Bake 前组合");
+            return true;
+        }
         // 画刷待确认笔画的编辑历史优先（document 未变，只需重绘覆盖层）
         if self.editor_state.brush_tool.undo_path() {
             self.invalidate_caches(CacheInvalidation::GRID);
@@ -145,6 +150,11 @@ impl Editor {
         if self.is_editing() {
             tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
             return false;
+        }
+        // DRAW-041C：Bake 前组合会话优先
+        if self.redo_pending_compose() {
+            tracing::info!("Editor: 重做 Bake 前组合");
+            return true;
         }
         // 画刷待确认笔画编辑历史优先
         if self.editor_state.brush_tool.redo_path() {

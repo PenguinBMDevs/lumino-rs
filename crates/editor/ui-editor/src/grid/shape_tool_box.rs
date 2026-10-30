@@ -15,6 +15,7 @@
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
+use crate::interaction::shape_bridge::polylines_of_model;
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::ShapeKind;
@@ -81,7 +82,7 @@ pub fn shape_button_rects(editor: &Editor) -> Option<ShapeButtonRects> {
         return None;
     }
     let shape_tool = &editor.editor_state.shape_tool;
-    if !shape_tool.has_pending() {
+    if !shape_tool.has_pending() && editor.editor_state.pending_composed.is_empty() {
         return None;
     }
 
@@ -96,6 +97,19 @@ pub fn shape_button_rects(editor: &Editor) -> Option<ShapeButtonRects> {
                 min_y.min(b.2),
                 max_y.max(b.3),
             ),
+        });
+    }
+    for composed in &editor.editor_state.pending_composed {
+        let Some((t0, k0, t1, k1)) = composed.model.geometry.bounds() else {
+            continue;
+        };
+        let a = editor.line_pos_screen_pos((t0, k0));
+        let b = editor.line_pos_screen_pos((t1, k1));
+        let (min_x, max_x) = (a.x.min(b.x), a.x.max(b.x));
+        let (min_y, max_y) = (a.y.min(b.y), a.y.max(b.y));
+        bounds = Some(match bounds {
+            None => (min_x, max_x, min_y, max_y),
+            Some((x0, x1, y0, y1)) => (x0.min(min_x), x1.max(max_x), y0.min(min_y), y1.max(max_y)),
         });
     }
 
@@ -241,7 +255,10 @@ pub fn draw(
         return None;
     }
     let shape_tool = &editor.editor_state.shape_tool;
-    if !shape_tool.has_pending() && !shape_tool.is_dragging() {
+    if !shape_tool.has_pending()
+        && !shape_tool.is_dragging()
+        && editor.editor_state.pending_composed.is_empty()
+    {
         return None;
     }
 
@@ -253,6 +270,30 @@ pub fn draw(
     for shape in &shape_tool.shapes {
         draw_one_shape(&mut frame, editor, shape.spec(), shape.filled, base_color);
         has_content = true;
+    }
+
+    // DRAW-041C：Bake 前组合结果的预览（仍是 pending，✓ 才提交）
+    for composed in &editor.editor_state.pending_composed {
+        for points in polylines_of_model(&composed.model) {
+            let screen: Vec<Point> = points
+                .iter()
+                .map(|&(tick, key)| editor.line_pos_screen_pos((tick, key)))
+                .collect();
+            if screen.len() < 2 {
+                continue;
+            }
+            let path = Path::new(|p| {
+                p.move_to(screen[0]);
+                for point in &screen[1..] {
+                    p.line_to(*point);
+                }
+            });
+            frame.stroke(
+                &path,
+                Stroke::default().with_color(base_color).with_width(2.0),
+            );
+            has_content = true;
+        }
     }
 
     // 实时拖拽预览

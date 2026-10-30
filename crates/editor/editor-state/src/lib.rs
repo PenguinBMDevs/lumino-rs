@@ -23,8 +23,8 @@ pub use editor_state::{
     SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType, SelectionSet,
 };
 pub use editor_state::{
-    DrawnShape, DrawnShapeSource, PendingShapeRef, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote,
-    ShapeSelectState,
+    ComposedKind, DrawnShape, DrawnShapeSource, PendingComposed, PendingShapeRef, PendingSource,
+    ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote, ShapeSelectState,
 };
 pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,

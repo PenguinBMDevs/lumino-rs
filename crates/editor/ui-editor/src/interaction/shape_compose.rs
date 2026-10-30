@@ -12,7 +12,7 @@ use lumino_editor_state::shape_ops::{
     SymReject, between_blend, between_graph_at, copy_along_apply, cut_loops, gate_merge, join,
     symmetric_shape_with_reason, to_live,
 };
-use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeNote};
+use lumino_editor_state::{ComposedKind, DrawnShape, DrawnShapeSource, ShapeNote};
 
 use crate::Editor;
 
@@ -49,6 +49,9 @@ impl Editor {
 
     /// 019：选中的图形折叠成一个 Live shape
     pub fn live_selected_shapes(&mut self) -> bool {
+        if self.pending_selection_only() {
+            return self.compose_pending(ComposedKind::Live);
+        }
         let selected = self.selected_drawn_snapshot();
         if selected.is_empty() {
             return false;
@@ -76,6 +79,9 @@ impl Editor {
 
     /// 021：选中的图形连接成一条曲线
     pub fn join_selected_shapes(&mut self) -> bool {
+        if self.pending_selection_only() {
+            return self.compose_pending(ComposedKind::Join);
+        }
         let selected = self.selected_drawn_snapshot();
         if selected.len() < 2 {
             return false;
@@ -102,6 +108,9 @@ impl Editor {
 
     /// 022：两个图形按门控逐 key 行合并
     pub fn merge_selected_shapes(&mut self) -> bool {
+        if self.pending_selection_only() {
+            return self.compose_pending(ComposedKind::Merge);
+        }
         let selected = self.selected_drawn_snapshot();
         if selected.len() != 2 {
             return false;

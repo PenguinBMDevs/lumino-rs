@@ -24,6 +24,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::interaction::bake::BakePending;
+use lumino_core::shape::ShapeModel;
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
 use lumino_editor_state::{DrawnShapeSource, ShapeNote};
 use lumino_note_core::history::CreateOp;
@@ -248,7 +249,11 @@ impl Editor {
         let mut seen_chopped: HashSet<(i64, u16)> = HashSet::new();
         chopped.retain(|p| seen_chopped.insert(((p.0 / snap_key).round() as i64, p.1)));
 
-        if outline.is_empty() && points.is_empty() && chopped.is_empty() {
+        if outline.is_empty()
+            && points.is_empty()
+            && chopped.is_empty()
+            && self.editor_state.pending_composed.is_empty()
+        {
             return false;
         }
 
@@ -277,7 +282,7 @@ impl Editor {
                 bucket.push(make_note(tick, key, length));
             }
         }
-        let payload: Vec<Note> = outline
+        let mut payload: Vec<Note> = outline
             .iter()
             .map(|&(tick, key, length, _)| Note::new(tick, key, length))
             .chain(
@@ -291,6 +296,21 @@ impl Editor {
                     .map(|&(tick, key, length, _)| Note::new(tick, key, length)),
             )
             .collect();
+        // DRAW-041C：组合结果仍是 pending，✓ 时与普通 pending 一起提交。
+        let composed_snapshot = self.editor_state.pending_composed.clone();
+        let composed = std::mem::take(&mut self.editor_state.pending_composed);
+        payload.extend(composed.iter().flat_map(|item| {
+            item.notes.iter().map(|shape_note| {
+                let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
+                note.velocity = shape_note.velocity;
+                note.channel = shape_note.channel;
+                note
+            })
+        }));
+        if payload.is_empty() {
+            self.editor_state.pending_composed = composed;
+            return false;
+        }
         let mut create_ops: Vec<CreateOp> = Vec::with_capacity(payload.len());
         if payload.len() <= crate::interaction::BATCH_INSERT_THRESHOLD {
             // 小规模：逐音符插入（当前轨自动记录 GPU 段内增量事件）
@@ -336,10 +356,13 @@ impl Editor {
             .push_note_create_new_group(create_ops);
         self.editor_state.data.mark_current_track_changed();
         // Bake：保存 ✓ 前形状，undo 恢复；✓ 后不登记 DrawnShape。
-        let pending = BakePending::Shape(self.editor_state.shape_tool.clone());
+        let pending = BakePending::Shape {
+            state: self.editor_state.shape_tool.clone(),
+            composed: composed_snapshot,
+        };
         self.remember_bake(group, pending);
         // DRAW-041B：保留只读模型（不登记 DrawnShape），供 032B/033 列表入口。
-        let models = self
+        let mut models: Vec<(ShapeModel, Vec<ShapeNote>)> = self
             .editor_state
             .shape_tool
             .shapes
@@ -356,8 +379,11 @@ impl Editor {
                 (model_from_source(&source, track, 1.0), notes)
             })
             .collect();
+        models.extend(composed.into_iter().map(|item| (item.model, item.notes)));
         self.record_baked_shape_models(models);
         self.editor_state.shape_tool.clear_pending();
+        self.editor_state.pending_composed.clear();
+        self.pending_composed_redo.clear();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
@@ -366,6 +392,9 @@ impl Editor {
     /// 形状工具：取消（×）—— 清空所有待确认图形（保留图形类型）
     pub(crate) fn cancel_shape_tool(&mut self) {
         self.editor_state.shape_tool.clear_pending();
+        self.editor_state.pending_composed.clear();
+        self.pending_composed_redo.clear();
+        self.rebuild_pending_mirrors();
         self.mark_notes_changed();
     }
 }

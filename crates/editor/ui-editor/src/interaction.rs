@@ -16,6 +16,7 @@ mod i2m;
 pub(crate) mod line_tool;
 pub(crate) mod masks;
 mod moved;
+pub(crate) mod pending_compose;
 mod pressed;
 mod released;
 pub(crate) mod shape_bridge;

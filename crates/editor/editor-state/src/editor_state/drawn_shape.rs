@@ -80,6 +80,11 @@ pub enum DrawnShapeSource {
         /// 折线点列（至少 1 个点）
         points: Vec<(f32, f32)>,
     },
+    /// 多条折线（Bake 前组合预览：Live / Joined 的多段描边）
+    PolylineSet {
+        /// 每条折线的点列；空条目会被渲染/命中跳过
+        polylines: Vec<Vec<(f32, f32)>>,
+    },
 }
 
 impl DrawnShapeSource {
@@ -98,6 +103,14 @@ impl DrawnShapeSource {
                     p.1 = (p.1 + dkey).clamp(0.0, 255.0);
                 }
             }
+            Self::PolylineSet { polylines } => {
+                for points in polylines {
+                    for p in points.iter_mut() {
+                        p.0 = (p.0 + dtick).max(0.0);
+                        p.1 = (p.1 + dkey).clamp(0.0, 255.0);
+                    }
+                }
+            }
         }
     }
 
@@ -108,20 +121,36 @@ impl DrawnShapeSource {
                 let (x0, y0, x1, y1) = *rect;
                 Some((x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1)))
             }
-            Self::Polyline { points } => {
-                let mut it = points.iter().copied();
-                let first = it.next()?;
-                let mut b = (first.0, first.0, first.1, first.1);
-                for (t, k) in it {
-                    b.0 = b.0.min(t);
-                    b.1 = b.1.max(t);
-                    b.2 = b.2.min(k);
-                    b.3 = b.3.max(k);
+            Self::Polyline { points } => bounds_of(points),
+            Self::PolylineSet { polylines } => {
+                let mut acc: Option<(f32, f32, f32, f32)> = None;
+                for points in polylines {
+                    let Some(b) = bounds_of(points) else {
+                        continue;
+                    };
+                    acc = Some(match acc {
+                        None => b,
+                        Some(a) => (a.0.min(b.0), a.1.max(b.1), a.2.min(b.2), a.3.max(b.3)),
+                    });
                 }
-                Some(b)
+                acc
             }
         }
     }
+}
+
+/// 单条折线的外接框
+fn bounds_of(points: &[(f32, f32)]) -> Option<(f32, f32, f32, f32)> {
+    let mut it = points.iter().copied();
+    let first = it.next()?;
+    let mut b = (first.0, first.0, first.1, first.1);
+    for (t, k) in it {
+        b.0 = b.0.min(t);
+        b.1 = b.1.max(t);
+        b.2 = b.2.min(k);
+        b.3 = b.3.max(k);
+    }
+    Some(b)
 }
 
 /// 已应用到某图形的一次整体移动（绑定历史分组，供撤销/重做反向回放）
@@ -154,6 +183,8 @@ pub enum PendingShapeRef {
     CurvePath(usize),
     /// 画刷工具第 `i` 条待确认笔画（`brush_tool.strokes[i]`）
     BrushStroke(usize),
+    /// Bake 前组合会话第 `i` 个组合结果（`EditorState::pending_composed[i]`）
+    Composed(usize),
 }
 
 /// 一个已确认的绘制图形对象
@@ -406,6 +437,7 @@ impl ShapeSelectState {
                 (PendingShapeRef::Shape(i), PendingShapeRef::Shape(k)) => (i, k),
                 (PendingShapeRef::CurvePath(i), PendingShapeRef::CurvePath(k)) => (i, k),
                 (PendingShapeRef::BrushStroke(i), PendingShapeRef::BrushStroke(k)) => (i, k),
+                (PendingShapeRef::Composed(i), PendingShapeRef::Composed(k)) => (i, k),
                 _ => continue,
             };
             if *cur > gone {

@@ -44,6 +44,7 @@ use lumino_midi_model::TickIndexedEvents;
 use lumino_note_core::history::{HistoryEntry, MoveOp, OpKind};
 
 use crate::interaction::line_tool::geom::flatten_path;
+use crate::interaction::shape_bridge::polylines_of_model;
 use crate::{Editor, Note};
 
 /// 折线命中容差（屏幕像素）：点击位置到笔画折线的最短距离阈值
@@ -267,6 +268,12 @@ impl Editor {
                 items.push((r, src));
             }
         }
+        for i in 0..self.editor_state.pending_composed.len() {
+            let r = PendingShapeRef::Composed(i);
+            if let Some(src) = self.pending_source(r) {
+                items.push((r, src));
+            }
+        }
         for (r, src) in items {
             self.editor_state.shape_select.add_pending(track, r, src);
         }
@@ -281,7 +288,7 @@ impl Editor {
     ///
     /// 每次写回 / 平移后都用本方法重新导出并覆写镜像几何，杜绝「镜像与 owning
     /// 各自演化」的漂移。曲线按与 √ 登记同源的 `flatten_path` 展平（同一口径）。
-    fn pending_source(&self, r: PendingShapeRef) -> Option<DrawnShapeSource> {
+    pub(crate) fn pending_source(&self, r: PendingShapeRef) -> Option<DrawnShapeSource> {
         match r {
             PendingShapeRef::Shape(i) => {
                 let s = self.editor_state.shape_tool.shapes.get(i)?;
@@ -306,6 +313,12 @@ impl Editor {
                 let s = self.editor_state.brush_tool.strokes.get(i)?;
                 Some(DrawnShapeSource::Polyline {
                     points: s.points.clone(),
+                })
+            }
+            PendingShapeRef::Composed(i) => {
+                let composed = self.editor_state.pending_composed.get(i)?;
+                Some(DrawnShapeSource::PolylineSet {
+                    polylines: polylines_of_model(&composed.model),
                 })
             }
         }
@@ -414,6 +427,12 @@ impl Editor {
                 };
                 s.translate(dtick, dkey);
             }
+            PendingShapeRef::Composed(i) => {
+                let Some(c) = self.editor_state.pending_composed.get_mut(i) else {
+                    return false;
+                };
+                c.translate(dtick, dkey);
+            }
         }
         true
     }
@@ -426,7 +445,7 @@ impl Editor {
         match r {
             PendingShapeRef::CurvePath(_) => self.editor_state.line_tool.push_path_history(),
             PendingShapeRef::BrushStroke(_) => self.editor_state.brush_tool.push_path_history(),
-            PendingShapeRef::Shape(_) => {}
+            PendingShapeRef::Shape(_) | PendingShapeRef::Composed(_) => {}
         }
     }
 
@@ -445,6 +464,7 @@ impl Editor {
             PendingShapeRef::BrushStroke(i) => {
                 remove_at(&mut self.editor_state.brush_tool.strokes, i)
             }
+            PendingShapeRef::Composed(i) => remove_at(&mut self.editor_state.pending_composed, i),
         };
         if !removed {
             return false;
@@ -486,6 +506,9 @@ impl Editor {
                     key,
                 ),
                 DrawnShapeSource::Polyline { points } => polyline_hit(self, probe, points),
+                DrawnShapeSource::PolylineSet { polylines } => polylines
+                    .iter()
+                    .any(|points| polyline_hit(self, probe, points)),
             };
             if hit {
                 return Some(shape.id);
