@@ -113,6 +113,18 @@ fn reference_pixels_with(
         .pixels
 }
 
+/// 指定横向滚动的参考像素（冷启动整帧，验证增量滚动逐像素一致）。
+fn reference_pixels_at(document: &MidiDocument, current_track: usize, scroll_x: f32) -> Arc<[u8]> {
+    let mut frame_key = key(1, current_track);
+    frame_key.geometry.camera.scroll_x = scroll_x;
+    let mut state = CpuOnionState::default();
+    state
+        .update(frame_key, document, &MUTED, None, None)
+        .frame
+        .expect("冷启动必须生成帧")
+        .pixels
+}
+
 /// 当前轨直接编辑 / 切轨补齐（含同一帧内切轨）。
 #[path = "tests_dirty/current.rs"]
 mod current;

@@ -172,6 +172,31 @@ impl EditorData {
         replaced
     }
 
+    /// 整轨替换 + **有界原子变更**（异步 MoveOp 提交专用）。
+    ///
+    /// 与 [`Self::replace_track_notes`] 相同的替换语义，但 CPU 洋葱皮不记整帧，
+    /// 而是记录调用方从 `MoveOp` 提炼的 old/new（≤ `MAX_CPU_ONION_CHANGES`）；
+    /// 让总览密度走增量。超过上限的批量提交仍由调用方走整帧兜底，保持原有
+    /// 批量编辑的内存/处理行为不变。
+    pub(crate) fn replace_track_notes_with_cpu_onion_changes(
+        &mut self,
+        track_id: usize,
+        notes: Vec<NoteEvent>,
+        changes: &[super::super::cpu_onion_dirty::CpuOnionChange],
+    ) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        self.modified = true;
+        let replaced = doc.replace_track_notes(track_id, notes);
+        if replaced {
+            for change in changes {
+                self.record_cpu_onion_change(change.track, change.old, change.new);
+            }
+        }
+        replaced
+    }
+
     /// 整轨替换音符（undo/redo 快照恢复专用，O(块数) 浅拷贝版）。
     ///
     /// 直接共享快照块 Arc，不做数据复制（1600W 音符工程 undo/redo 免整轨拷贝）。

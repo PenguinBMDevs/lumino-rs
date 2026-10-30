@@ -51,14 +51,11 @@ use super::density_cache::DensityCache;
 use super::output::{CpuOnionOutput, to_gfx_rect};
 use super::plan::{CpuOnionIndex, CpuOnionRedraw, PlanInput, overview_redraw, plan_update};
 
+mod bands;
 mod maintain;
+mod scroll;
 
-/// CPU 洋葱皮 band 数上限（每 band 一条 tokio worker 线程）。
-///
-/// 洋葱皮帧通常只有 chocolate 量级的可见音符，4 band 已能把单帧压到亚毫秒；
-/// 再多的线程只增加调度开销与内存（每 band 一块 band 缓冲）。
-const MAX_BANDS: usize = 4;
-
+use bands::worker_bands;
 /// 帧冻结点：这些输入任一变化都必须重新光栅化。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct CpuOnionFrameKey {
@@ -159,6 +156,14 @@ impl CpuOnionState {
         self.frame.as_ref()
     }
 
+    /// 最近一次光栅实际绘制的音符数（诊断用；可区分整帧与窄条路径）。
+    #[cfg(test)]
+    pub(crate) fn visible_notes(&self) -> u64 {
+        self.renderer
+            .as_ref()
+            .map_or(0, CpuOnionRenderer::visible_notes)
+    }
+
     /// 生成/复用 CPU 洋葱皮帧。
     ///
     /// `muted` 长度 = 文档轨数（越界缺省 `false`）；`current_track` 越界时渲染器
@@ -185,10 +190,12 @@ impl CpuOnionState {
             .stale_tracks
             .iter()
             .any(|track| *track != key.current_track);
+        let scroll_dx = self.scroll_dx(&key);
         let plan = plan_update(PlanInput {
             frame_ready: self.frame.is_some(),
             index_ready: self.index.is_some() && self.document.is_some(),
             layout_changed,
+            scroll_dx,
             gen_changed,
             stale_needs_repair,
             dirty: dirty.as_ref(),
@@ -293,6 +300,27 @@ impl CpuOnionState {
                     );
                     Some(rect)
                 }
+                CpuOnionRedraw::Scroll(dx) => {
+                    // 整数像素平移已有帧，只重画新露出的窄条；纹理整体位移，
+                    // 必须全量上传（`dirty = None`）。
+                    renderer.shift_frame(dx);
+                    let width = geometry.width;
+                    let (x0, x1) = if dx > 0 {
+                        (width.saturating_sub(dx as u32), width)
+                    } else {
+                        (0, dx.unsigned_abs())
+                    };
+                    renderer.render_strip(
+                        snapshot,
+                        index,
+                        &geometry.camera,
+                        key.current_track,
+                        muted,
+                        x0,
+                        x1,
+                    );
+                    None
+                }
             };
             // 整帧快照（`Vec<u8>` → `Arc<[u8]>`）：Step 5b 的局部上传只减少 GPU
             // 写入量，CPU 侧仍需一份与渲染缓冲解耦的共享快照——区域重绘是原地
@@ -356,11 +384,4 @@ impl CpuOnionState {
             Some(tracks) => self.stale_tracks.extend(tracks.iter().copied()),
         }
     }
-}
-
-/// CPU 洋葱皮 band 数：按可用并行度取，限制在 `1..=MAX_BANDS`。
-fn worker_bands() -> usize {
-    std::thread::available_parallelism()
-        .map_or(2, |parallelism| parallelism.get())
-        .clamp(1, MAX_BANDS)
 }

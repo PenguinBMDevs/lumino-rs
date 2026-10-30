@@ -1,9 +1,9 @@
-//! 布局变化与停用重启用（`tests_dirty.rs` 的子模块）。
+//! 布局变化、增量滚动与停用重启用（`tests_dirty.rs` 的子模块）。
 
-use super::{MUTED, WIDTH, alpha, document, key, note_row};
+use super::{MUTED, alpha, document, key, note_row, reference_pixels_at};
 use crate::host::render::cpu_onion::CpuOnionState;
 
-/// 布局变化（相机滚动）仍整帧重绘且不重建索引（版本递增）。
+/// 非横向滚动的布局变化（纵向滚动）仍整帧重绘且不重建索引（版本递增）。
 #[test]
 fn layout_change_redraws_full_frame() {
     let document = document();
@@ -14,14 +14,109 @@ fn layout_change_redraws_full_frame() {
         .expect("首帧应生成");
 
     let mut scrolled = key(1, 0);
-    scrolled.geometry.width = WIDTH as u32;
-    scrolled.geometry.camera.scroll_x = 100.0;
+    scrolled.geometry.camera.scroll_y = 100.0;
     let output = state.update(scrolled, &document, &MUTED, None, None);
-    assert!(output.rebuilt, "滚动必须重绘");
+    assert!(output.rebuilt, "纵向滚动必须重绘");
     assert_ne!(
         output.frame.expect("应生成帧").version,
         first.version,
         "版本必须递增"
+    );
+}
+
+/// 纯水平滚动：平移 + 窄条必须与「同滚动位置冷启动整帧」逐像素一致。
+#[test]
+fn horizontal_scroll_shifts_frame_and_matches_full_render() {
+    let document = document();
+    let mut state = CpuOnionState::default();
+    state
+        .update(key(1, 0), &document, &MUTED, None, None)
+        .frame
+        .expect("首帧应生成");
+
+    let mut scrolled = key(1, 0);
+    scrolled.geometry.camera.scroll_x = 10.0;
+    let output = state.update(scrolled, &document, &MUTED, None, None);
+    assert!(output.rebuilt, "水平滚动必须重绘新露出区域");
+    assert_eq!(
+        output.dirty, None,
+        "纹理整体位移，必须全量上传（不能只传窄条）"
+    );
+    let frame = output.frame.expect("应生成帧");
+    assert_eq!(
+        frame.pixels,
+        reference_pixels_at(&document, 0, 10.0),
+        "平移+窄条不得与整帧渲染有任何像素差"
+    );
+    assert_eq!(
+        state.visible_notes(),
+        0,
+        "窄条 [630,640) 内没有音符：visible_notes=0 证明走的是增量窄条而非整帧"
+    );
+}
+
+/// 反向（向左）滚动同样逐像素一致。
+#[test]
+fn negative_horizontal_scroll_matches_full_render() {
+    let document = document();
+    let mut state = CpuOnionState::default();
+    let mut start = key(1, 0);
+    start.geometry.camera.scroll_x = 100.0;
+    state
+        .update(start, &document, &MUTED, None, None)
+        .frame
+        .expect("首帧应生成");
+
+    let mut back = start;
+    back.geometry.camera.scroll_x = 90.0;
+    let output = state.update(back, &document, &MUTED, None, None);
+    assert!(output.rebuilt);
+    assert_eq!(
+        output.frame.expect("应生成帧").pixels,
+        reference_pixels_at(&document, 0, 90.0),
+        "反向滚动也必须与整帧渲染逐像素一致"
+    );
+}
+
+/// 大跨度滚动（超过帧宽 60%）不接受窄条增量，退回整帧。
+#[test]
+fn large_scroll_jump_matches_full_render() {
+    let document = document();
+    let mut state = CpuOnionState::default();
+    state
+        .update(key(1, 0), &document, &MUTED, None, None)
+        .frame
+        .expect("首帧应生成");
+
+    let mut jump = key(1, 0);
+    jump.geometry.camera.scroll_x = 500.0;
+    let output = state.update(jump, &document, &MUTED, None, None);
+    assert!(output.rebuilt);
+    assert_eq!(
+        output.frame.expect("应生成帧").pixels,
+        reference_pixels_at(&document, 0, 500.0),
+        "大跨度必须整帧且像素正确"
+    );
+}
+
+/// 亚像素位移（吸附未生效/防御路径）不得走整数平移，退回整帧。
+#[test]
+fn fractional_scroll_falls_back_to_full_render() {
+    let document = document();
+    let mut state = CpuOnionState::default();
+    state
+        .update(key(1, 0), &document, &MUTED, None, None)
+        .frame
+        .expect("首帧应生成");
+
+    let mut fractional = key(1, 0);
+    fractional.geometry.camera.scroll_x = 0.4;
+    let output = state.update(fractional, &document, &MUTED, None, None);
+    assert!(output.rebuilt);
+    assert_eq!(
+        output.frame.expect("应生成帧").pixels,
+        reference_pixels_at(&document, 0, 0.4),
+        "亚像素滚动必须整帧，不得拿旧帧猜"
     );
 }
 

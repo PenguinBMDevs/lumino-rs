@@ -42,6 +42,8 @@ pub(crate) enum CpuOnionRedraw {
     Full,
     /// 只重画该矩形
     Region(CpuOnionRect),
+    /// 纯水平滚动：按 `dx` 整数物理像素平移已有帧，只重画新露出的窄条
+    Scroll(i32),
 }
 
 /// 索引动作（成本从低到高）。
@@ -80,6 +82,11 @@ pub(crate) struct PlanInput<'a> {
     pub index_ready: bool,
     /// 布局键（相机/当前轨/静音/调色板）相对上一帧变化
     pub layout_changed: bool,
+    /// 纯水平滚动的整数物理像素位移（`None` = 不允许增量滚动）。
+    ///
+    /// 仅在「除 `scroll_x` 外布局完全一致、位移落在整数物理像素且不超过帧宽
+    /// 一定比例」时由状态机给出；滚动吸附见 `camera::snap_scroll_x`。
+    pub scroll_dx: Option<i32>,
     /// 文档音符代次相对索引/快照变化
     pub gen_changed: bool,
     /// 存在「索引几何过期且已不再是当前轨」的音轨（切轨后必须补齐）
@@ -119,7 +126,25 @@ pub(crate) fn plan_update(input: PlanInput<'_>) -> CpuOnionPlan {
         };
     }
 
-    // ③ 布局键变化：必须整帧；索引按文档侧证据决定（切轨不等于重建索引）
+    // ③ 纯水平滚动：平移已有帧 + 只重画新露出的窄条。
+    //
+    // 必须排在 `layout_changed` 之前：滚动会改相机，但也只是相机。
+    // 有文档变更 / 脏区 / 代次变化时保守走整帧（密度统计覆盖全部音轨，
+    // 当前轨编辑也会改热力图，不能只靠滚动的窄条）。
+    if let Some(dx) = input.scroll_dx
+        && dx != 0
+        && !dirty_full
+        && !has_changes
+        && !input.gen_changed
+        && !input.stale_needs_repair
+    {
+        return CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Scroll(dx)),
+            index: CpuOnionIndex::Keep,
+        };
+    }
+
+    // ④ 布局键变化：必须整帧；索引按文档侧证据决定（切轨不等于重建索引）
     if input.layout_changed {
         return CpuOnionPlan {
             redraw: Some(CpuOnionRedraw::Full),
@@ -212,7 +237,12 @@ pub(crate) fn overview_redraw(
     if !overview {
         return redraw;
     }
-    if gen_changed || matches!(redraw, Some(CpuOnionRedraw::Region(_))) {
+    if gen_changed
+        || matches!(
+            redraw,
+            Some(CpuOnionRedraw::Region(_) | CpuOnionRedraw::Scroll(_))
+        )
+    {
         Some(CpuOnionRedraw::Full)
     } else {
         redraw

@@ -9,11 +9,16 @@ fn region() -> CpuOnionRedraw {
 }
 
 #[test]
-fn overview_promotes_region_to_full() {
+fn overview_promotes_region_and_scroll_to_full() {
     assert_eq!(
         overview_redraw(true, false, false, Some(region())),
         Some(CpuOnionRedraw::Full),
         "总览档单音符脏区覆盖不了密度整列，必须整帧"
+    );
+    assert_eq!(
+        overview_redraw(true, false, false, Some(CpuOnionRedraw::Scroll(4))),
+        Some(CpuOnionRedraw::Full),
+        "总览密度按屏幕列重采样，滚动也必须整帧"
     );
 }
 

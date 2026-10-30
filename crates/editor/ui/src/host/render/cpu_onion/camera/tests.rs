@@ -327,3 +327,27 @@ fn cpu_frame_aligns_with_fractional_content_origin() {
         assert_aligned(input, tick, key);
     }
 }
+
+/// 横向滚动吸附：100% / 125% DPI 都必须落在整数物理像素，退化输入原样返回。
+#[test]
+fn snap_scroll_x_lands_on_physical_pixels() {
+    for (logical, scale) in [
+        (10.4f32, 1.0f32),
+        (10.6, 1.0),
+        (10.4, 1.25),
+        (10.24, 1.25),
+        (10.8, 1.25),
+        (7.3, 1.5),
+    ] {
+        let snapped = super::snap_scroll_x(logical, scale);
+        let physical = snapped * scale;
+        assert!(
+            (physical - physical.round()).abs() < 1e-4,
+            "logical={logical} scale={scale}：吸附后物理值 {physical} 必须是整数"
+        );
+    }
+    let nan = super::snap_scroll_x(f32::NAN, 1.0);
+    assert!(nan.is_nan(), "NaN 必须原样返回，不得猜");
+    assert_eq!(super::snap_scroll_x(10.0, 0.0), 10.0);
+    assert_eq!(super::snap_scroll_x(10.0, -1.0), 10.0);
+}

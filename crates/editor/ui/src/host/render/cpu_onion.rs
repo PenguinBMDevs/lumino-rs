@@ -47,6 +47,7 @@ mod output;
 mod plan;
 mod state;
 
+pub(crate) use camera::snap_scroll_x;
 pub(crate) use state::CpuOnionState;
 
 use camera::CpuOnionCameraInput;
@@ -111,7 +112,7 @@ impl Host {
     /// 只有**重新光栅化**的帧才置内容脏（`render_content_dirty`）——复用帧与
     /// 「只更新快照/索引」的帧都不置位，否则纯滚动/当前轨拖动会退化成每帧等待
     /// 渲染线程，present 节奏崩掉。
-    pub(crate) fn update_cpu_onion_frame(&mut self) -> Option<CpuOnionFrame> {
+    pub(crate) fn update_cpu_onion_frame(&mut self, render_scroll_x: f32) -> Option<CpuOnionFrame> {
         // 默认后端是 GPU：本步完全不参与，零行为变化
         if self.onion_skin_backend != OnionSkinBackend::Cpu {
             self.cpu_onion_state.deactivate();
@@ -119,7 +120,7 @@ impl Host {
             self.root.editor.editor_state.data.clear_cpu_onion_dirty();
             return None;
         }
-        let output = self.build_cpu_onion_output();
+        let output = self.build_cpu_onion_output(render_scroll_x);
         // 区域重绘时把脏区打出来（trace）：gfx 侧按它做局部上传，出问题时这是
         // 唯一能对齐「CPU 认为变了哪块」与「GPU 写了哪块」的现场
         if let Some(rect) = output.dirty {
@@ -138,7 +139,11 @@ impl Host {
     }
 
     /// 收集相机/静音/指纹/脏区并驱动帧状态机（不置内容脏，由调用方决定）。
-    fn build_cpu_onion_output(&mut self) -> CpuOnionOutput {
+    ///
+    /// `render_scroll_x` 是**吸附到物理像素后**的逻辑横向滚动（由
+    /// `collect_render_data` 计算，GPU 网格/当前轨共用同一值），保证 CPU 帧
+    /// 与网格逐像素对齐；纵向滚动仍用 `es.view.scroll_y`。
+    fn build_cpu_onion_output(&mut self, render_scroll_x: f32) -> CpuOnionOutput {
         // 走带模式：渲染通道在 arrangement 分支提前返回，CPU 叠加层结构上不会绘制；
         // 纵向卷帘：本步坐标未转置（Step 4 禁用 CPU 后端），跳过以免错位。
         //
@@ -165,7 +170,8 @@ impl Host {
                 keyboard_width: es.view.keyboard_width,
                 ruler_height: es.view.ruler_height,
                 // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
-                scroll: (es.view.scroll_x, es.view.scroll_y),
+                // 横向滚动已吸附物理像素，纵向仍用实时值（本步不做纵向增量）
+                scroll: (render_scroll_x, es.view.scroll_y),
                 zoom: (es.view.zoom_x, es.view.zoom_y),
                 key_count: es.view.visible_key_count,
             }
@@ -178,7 +184,7 @@ impl Host {
             .document
             .as_ref()
             .map_or(0, MidiDocument::track_count);
-        let Some(geometry) = input.to_physical() else {
+        let Some(mut geometry) = input.to_physical() else {
             self.cpu_onion_state.clear_frame();
             return CpuOnionOutput {
                 frame: None,
@@ -187,6 +193,10 @@ impl Host {
                 dirty: None,
             };
         };
+        // 横向滚动已由 Host 吸附到物理像素；这里再 round 一次，消除
+        // `logical × scale` 的 f32 尾差（125%/150% DPI 下 10.000001 → 10），
+        // 保证 `shift_frame(dx)` 的整数增量与整帧渲染逐像素同口径。
+        geometry.camera.scroll_x = (input.scroll.0 * input.scale_factor).round();
         if track_count == 0 {
             // 无文档：本帧不绘制；脏区保留（下次加载必然走整帧兜底）
             self.cpu_onion_state.clear_frame();

@@ -5,7 +5,9 @@
 //! - `collect_arrangement_instances`: 收集走带视图实例
 
 use crate::host::Host;
+use crate::host::render::cpu_onion::snap_scroll_x;
 use crate::host::render::data::RenderData;
+use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::{ArrangementNoteInstance, ArrangementSceneParams, ArrangementViewColors};
 
 impl Host {
@@ -181,13 +183,23 @@ impl Host {
             self.root.arrangement_view.viewport.canvas_offset = geometry.offset;
         }
 
-        let (scroll, zoom) = if self.root.is_arrangement_mode() {
+        let (mut scroll, zoom) = if self.root.is_arrangement_mode() {
             let av = &self.root.arrangement_view.viewport;
             ((av.scroll_x, av.scroll_y), (av.zoom_x, av.zoom_y))
         } else {
             let editor = &self.root.editor;
             (editor.scroll(), editor.zoom())
         };
+
+        // CPU 洋葱皮：横向滚动吸附到物理像素网格，GPU 网格/当前轨与 CPU 帧
+        // 共用同一值（≤0.5 逻辑像素的像素吸附），既保证逐像素对齐，也让帧可以
+        // 按整数像素复用/平移。GPU 后端与走带/纵向卷帘保持实时滚动，零行为变化。
+        if self.onion_skin_backend() == OnionSkinBackend::Cpu
+            && !self.root.is_arrangement_mode()
+            && !self.root.editor.editor_state.is_vertical_roll
+        {
+            scroll.0 = snap_scroll_x(scroll.0, self.render_ctx.viewport.scale_factor());
+        }
 
         // 标尺实例由 GPU 线程的 RulerRenderer::prepare 内部基于缓存生成，
         // UI 线程不再每帧重复生成——之前每帧调用 generate_ruler_instances 是冗余的：
@@ -238,7 +250,7 @@ impl Host {
 
         // CPU 洋葱皮叠加层（Q3 B）：后端为 CPU 时生成/复用透明帧，GPU 后端恒 None。
         // 帧内容更新时内部已置内容脏（present 前等待新帧）。
-        let cpu_onion_frame = self.update_cpu_onion_frame();
+        let cpu_onion_frame = self.update_cpu_onion_frame(scroll.0);
 
         RenderData {
             scroll,

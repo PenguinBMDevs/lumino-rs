@@ -9,6 +9,7 @@
 //! 不依赖提交时的索引。
 
 use super::EditorData;
+use super::cpu_onion_dirty::{CpuOnionChange, MAX_CPU_ONION_CHANGES};
 use lumino_core::error::{CoreError, Result};
 use lumino_midi_model::{NoteEvent, TickIndexedEvents};
 use lumino_note_core::history::MoveOp;
@@ -123,7 +124,28 @@ impl EditorData {
                 // DEBT-03 #120：绝不用 current_track——提交窗口内用户切轨时，
                 // 旧实现会把 A 轨结果整轨写入 B 轨（静默数据损坏）。
                 let track_id = pending.track_id;
-                self.replace_track_notes(track_id, result.notes);
+                // CPU 洋葱皮：≤上限的批量 MoveOp 用有界 old/new 表达，密度走
+                // 增量；超过上限/已有 full 时保持原来的整轨替换 + 整帧兜底，
+                // 不改变批量拖动的数据处理与内存行为。
+                let cpu_changes = if self.cpu_onion_dirty_enabled()
+                    && !self
+                        .cpu_onion_dirty
+                        .as_ref()
+                        .is_some_and(|dirty| dirty.full)
+                {
+                    move_op_cpu_onion_changes(&pending.ops, track_id)
+                } else {
+                    None
+                };
+                if let Some(changes) = cpu_changes {
+                    self.replace_track_notes_with_cpu_onion_changes(
+                        track_id,
+                        result.notes,
+                        &changes,
+                    );
+                } else {
+                    self.replace_track_notes(track_id, result.notes);
+                }
                 if track_id == self.current_track {
                     for (start, notes) in update_events {
                         self.note_delta_events.push(
@@ -170,6 +192,40 @@ impl EditorData {
     pub fn cancel_async_commit(&mut self) {
         self.pending_commit = None;
     }
+}
+
+/// 从 MoveOp 提炼 CPU 洋葱皮**有界**原子变更。
+///
+/// 只服务总览密度增量：超过 [`MAX_CPU_ONION_CHANGES`] 或出现跨轨 op 时返回
+/// `None`，调用方退回整轨替换 + 整帧兜底——批量拖动的内存/数据处理行为不变。
+fn move_op_cpu_onion_changes(ops: &[MoveOp], track_id: usize) -> Option<Vec<CpuOnionChange>> {
+    let mut changes = Vec::new();
+    for op in ops {
+        if op.track_id as usize != track_id {
+            return None;
+        }
+        for old in &op.originals {
+            if changes.len() >= MAX_CPU_ONION_CHANGES {
+                return None;
+            }
+            changes.push(CpuOnionChange {
+                track: track_id,
+                old: Some(*old),
+                new: None,
+            });
+        }
+        for new in &op.moved {
+            if changes.len() >= MAX_CPU_ONION_CHANGES {
+                return None;
+            }
+            changes.push(CpuOnionChange {
+                track: track_id,
+                old: None,
+                new: Some(*new),
+            });
+        }
+    }
+    (!changes.is_empty()).then_some(changes)
 }
 
 /// 将 MoveOp 应用到当前音轨音符的克隆副本（按值定位，无全扫）

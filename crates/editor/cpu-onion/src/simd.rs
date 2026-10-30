@@ -15,8 +15,14 @@ pub(crate) enum SimdLevel {
 
 impl SimdLevel {
     /// 运行时检测；非 x86_64 或 CPU 不支持 AVX2 时回退标量。
+    ///
+    /// 诊断覆盖：`LUMINO_CPU_ONION_SCALAR=1` 强制标量（示例 `--no-simd` 的
+    /// 生产等价物，用于 A/B 与排查向量化回归）。
     #[must_use]
     pub(crate) fn detect() -> Self {
+        if std::env::var_os("LUMINO_CPU_ONION_SCALAR").is_some() {
+            return Self::Scalar;
+        }
         #[cfg(target_arch = "x86_64")]
         {
             if std::is_x86_feature_detected!("avx2") {

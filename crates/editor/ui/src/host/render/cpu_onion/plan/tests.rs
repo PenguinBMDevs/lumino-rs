@@ -37,6 +37,7 @@ fn base<'a>(
         frame_ready: true,
         index_ready: true,
         layout_changed: false,
+        scroll_dx: None,
         gen_changed: true,
         stale_needs_repair: false,
         dirty,
@@ -97,3 +98,7 @@ mod rects;
 /// 总览密度 LOD 的重绘放大（Step 7）。
 #[path = "tests/overview.rs"]
 mod overview;
+
+/// 纯水平增量滚动（Step 8）。
+#[path = "tests/scroll.rs"]
+mod scroll;

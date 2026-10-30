@@ -143,6 +143,21 @@ fn physical_px(logical: f32, scale: f32) -> Option<u32> {
     Some(scaled.floor() as u32)
 }
 
+/// 把逻辑水平滚动吸附到**物理像素**网格（仅 CPU 后端使用）。
+///
+/// 目的有两个：
+/// 1. CPU 帧按整数物理像素平移/复用，`shift_frame(dx)` 才能与网格逐像素一致；
+/// 2. GPU 网格/当前轨与 CPU 叠加层共用同一吸附后的 `scroll_x`，避免 CPU 在
+///    整数像素、GPU 在亚像素时出现 ≤0.5px 的相对错位。
+///
+/// `scale` 非正/非有限时原样返回（退化输入不猜）。
+pub(crate) fn snap_scroll_x(logical: f32, scale: f32) -> f32 {
+    if !logical.is_finite() || !scale.is_finite() || scale <= 0.0 {
+        return logical;
+    }
+    (logical * scale).round() / scale
+}
+
 /// 几何/DPI/网格对齐测试（独立文件，保持本文件 < 400 行）
 #[cfg(test)]
 #[path = "camera/tests.rs"]
