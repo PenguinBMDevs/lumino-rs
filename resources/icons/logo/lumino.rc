@@ -2,3 +2,4 @@
 // 将 app-icon.ico 嵌入为应用程序图标
 
 IDI_APP_ICON ICON "app-icon.ico"
+1 24 "lumino.manifest"
