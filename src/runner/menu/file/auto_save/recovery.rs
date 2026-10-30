@@ -135,7 +135,7 @@ impl RunnerInner {
 
         if recovery.using_backup {
             let lost = rename_to_unique(&recovery.backup, "lost");
-            notify_autosave_lost(lost.as_deref().unwrap_or(&recovery.backup));
+            self.notify_autosave_lost(lost.as_deref().unwrap_or(&recovery.backup));
             return;
         }
 
@@ -156,8 +156,25 @@ impl RunnerInner {
             return;
         }
 
-        notify_autosave_lost(lost.as_deref().unwrap_or(&recovery.main));
+        self.notify_autosave_lost(lost.as_deref().unwrap_or(&recovery.main));
         tracing::error!("自动保存主文件损坏且没有可用备份: {:?}", recovery.main);
+    }
+
+    /// 最后一道提示：两份文件都不可用。
+    ///
+    /// 这里不用原生模态框：它发生在 `MidiParseError` 事件处理/后台加载回调链上，
+    /// 紧接启动恢复模态框再弹一个原生框会导致 Windows 模态循环卡死（表现为
+    /// 提示音后无响应）。改为底边栏状态 + 日志，应用保持可交互。
+    fn notify_autosave_lost(&mut self, path: &Path) {
+        let message = trf!(
+            "自动保存无法恢复，文件已保留：{path}。请从原工程或备份手动恢复。",
+            path = path.display()
+        );
+        tracing::error!("{}", message);
+        self.window_state
+            .window
+            .ui_mut()
+            .set_status_message(Some(message));
     }
 }
 
@@ -203,19 +220,6 @@ fn rename_to_unique(path: &Path, tag: &str) -> Option<PathBuf> {
         }
     }
     None
-}
-
-/// 最后一道提示：两份文件都不可用。
-fn notify_autosave_lost(path: &Path) {
-    let _ = MessageDialog::new()
-        .set_level(MessageLevel::Warning)
-        .set_title(tr!("自动保存无法恢复"))
-        .set_description(trf!(
-            "自动保存文件无法打开，已改名保留：\n\n{path}\n\n请从原工程或备份手动恢复。",
-            path = path.display()
-        ))
-        .set_buttons(MessageButtons::Ok)
-        .show();
 }
 
 /// 文件修改时刻的本地化展示（取不到时返回占位文案）。

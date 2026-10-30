@@ -173,6 +173,11 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "自动保存无法恢复" => Some("Autosave could not be restored"),
+        "自动保存无法恢复，文件已保留：{path}。请从原工程或备份手动恢复。" => {
+            Some(
+                "Autosave could not be restored; the file was preserved: {path}. Please recover manually from the original project or a backup.",
+            )
+        }
         "自动保存文件无法打开，已改名保留：\n\n{path}\n\n请从原工程或备份手动恢复。" => {
             Some(
                 "The autosave file could not be opened and was renamed to preserve it:\n\n{path}\n\nPlease recover manually from the original project or a backup.",
