@@ -34,7 +34,7 @@ impl TrackIndex {
     /// [`Self::with_changes`] 的**不重算 densest** 版本（CPU 洋葱皮热路径）。
     ///
     /// 语义与 `with_changes` 完全一致，唯一区别是刻意跳过 `densest_measure` /
-    /// `densest_measure_notes` 的重算：这两个字段只服务 LOD 估算与基准定位，
+    /// `densest_measure_notes` 的重算：这两个字段只服务诊断估算与基准定位，
     /// 渲染不使用；而每笔单笔编辑都扫一遍百万级小节桶会直接吃掉脏区重绘的收益。
     /// 代价是 full 兜底之前 densest 可能偏旧——不影响渲染正确性。
     #[must_use]
@@ -54,7 +54,7 @@ impl TrackIndex {
     /// 先把它的几何补齐，否则长音符候选与 lookback 窗口都是过期的。
     ///
     /// 成本 O(该轨音符数)。不重扫其它轨，**也不重算 `measure_of` 小节桶**：
-    /// `measure_counts` 仅服务 LOD 估算，CPU 洋葱皮渲染不使用，保留偏保守的
+    /// `measure_counts` 仅服务诊断估算，CPU 洋葱皮渲染不使用，保留偏保守的
     /// 旧值即可（准确度不影响像素输出）。`densest` 同理保持旧值。
     #[must_use]
     pub fn rebuild_track_geometry(&self, document: &MidiDocument, track: usize) -> Self {

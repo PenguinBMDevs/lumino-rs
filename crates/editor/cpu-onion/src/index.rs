@@ -5,8 +5,9 @@
 //!   的扫描窗口放大到几十小节。
 //! - `long_notes[track]`：超过 [`LOOKBACK_TICKS`] 的音符，渲染时作为长音符
 //!   候选单独合并（按 `start_tick` 与正常窗口音符归并，保持源顺序）。
-//! - `measure_counts[measure]`：每小节 onset 数，供滚动 LOD 估算与密集段定位；
-//!   编辑增量通过 [`TrackIndex::with_changes`] 维护。
+//! - `measure_counts[measure]`：每小节 onset 数，供诊断估算与密集段定位；
+//!   编辑增量通过 [`TrackIndex::with_changes`] 维护。**不参与总览档位判定**
+//!   （档位只看缩放，见 `density::uses_overview`）。
 //! - `track_note_counts[track]`：每轨音符数，供 [`TrackIndex::rebuild_track_geometry`]
 //!   在不重扫全文档的前提下精确修正 `total_notes`。
 //!
@@ -29,7 +30,7 @@ pub const LOOKBACK_TICKS: u32 = 512;
 /// `measure_counts` 的保护上限，防止异常 tick 触发巨量内存分配。
 ///
 /// 1,048,576 小节 ≈ 4/4、PPQ=1920 下约 134 亿 tick，远超正常工程规模；
-/// 超出部分不参与 LOD 估算（音符渲染与长音符索引不受影响）。
+/// 超出部分不参与诊断估算（音符渲染与长音符索引不受影响）。
 const MAX_MEASURE_BUCKETS: usize = 1_048_576;
 
 /// 每轨 / 每小节聚合索引。
@@ -41,7 +42,7 @@ pub struct TrackIndex {
     pub long_notes: Vec<Vec<NoteEvent>>,
     /// 长音符总数。
     pub long_note_count: u64,
-    /// 每小节 onset 数（4/4 小节；仅用于 LOD 估算 / 基准定位）。
+    /// 每小节 onset 数（4/4 小节；仅用于诊断估算 / 基准定位）。
     pub measure_counts: Vec<u32>,
     /// 一个小节的 tick 数（PPQ × 4，至少为 1）。
     pub measure_ticks: u32,
@@ -129,7 +130,7 @@ impl TrackIndex {
 
     /// 估算 `[tick_start, tick_end]` 内的音符数量（只读小节聚合计数）。
     ///
-    /// 误差来自跨小节边界的音符；对「选精确档还是热力档」这类量级判断足够。
+    /// 误差来自跨小节边界的音符；只用于诊断/基准估算，不参与总览档位判定。
     /// 超出 `measure_counts` 保护上限的 tick 返回已覆盖部分的估算值。
     #[must_use]
     pub fn estimate_visible(&self, tick_start: u32, tick_end: u32) -> u64 {

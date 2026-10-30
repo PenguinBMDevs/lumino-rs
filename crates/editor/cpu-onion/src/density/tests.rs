@@ -3,7 +3,7 @@
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
 use super::{
-    DensityPyramid, OVERVIEW_NOTE_THRESHOLD, heat_argb, overview_note_estimate, uses_overview,
+    DensityPyramid, OVERVIEW_MIN_NOTE_PX, heat_argb, overview_note_estimate, uses_overview,
 };
 use crate::{CanvasCamera, TrackIndex};
 
@@ -138,19 +138,101 @@ fn apply_note_outside_layout_requires_rebuild() {
 }
 
 #[test]
-fn overview_threshold_uses_visible_key_fraction() {
+fn overview_switches_by_zoom_not_note_count() {
+    let document = sample_document();
+    let mut index = TrackIndex::build(&document);
+    // 1 个音符：数量极少，但 1/16 音符只有 1.2px（< 2px）→ 必须切总览。
+    let mut camera = camera(0.01);
+    assert!(
+        uses_overview(&index, &camera),
+        "缩放阈值触发不应依赖同屏音符数量"
+    );
+
+    // 反向证明：把聚合计数伪造到 2 亿，正常缩放也不得因「数量多」切档。
+    index.measure_counts = vec![200_000_000];
+    camera.zoom_x = 1.0;
+    assert!(
+        !uses_overview(&index, &camera),
+        "正常缩放下不得再按同屏音符数量切档"
+    );
+
+    // 计数恢复为 1：极限缩放仍应触发。
+    index.measure_counts = vec![1];
+    camera.zoom_x = 0.005;
+    assert!(uses_overview(&index, &camera));
+}
+
+#[test]
+fn overview_switches_by_key_row_height() {
+    let document = sample_document();
+    let index = TrackIndex::build(&document);
+    let mut camera = camera(1.0);
+    assert!(!uses_overview(&index, &camera), "横向正常时不应切档");
+    camera.zoom_y = 1.0;
+    assert!(
+        uses_overview(&index, &camera),
+        "单键行高 < 2px 时 Exact 已退化成线条，必须切总览"
+    );
+}
+
+#[test]
+fn overview_zoom_threshold_follows_ppq() {
+    let mut document = MidiDocument::empty_with_tracks(2, 960);
+    document.insert_note(1, NoteEvent::new(0, 2000, 125, 100, 0));
+    let index = TrackIndex::build(&document);
+
+    // PPQ=960：1/16 = 240 tick；0.01px/tick → 2.4px（Exact），0.008 → 1.92px（总览）。
+    let mut camera = camera(0.01);
+    assert!(
+        !uses_overview(&index, &camera),
+        "960 PPQ 下 0.01 仍是 2.4px"
+    );
+    camera.zoom_x = 0.008;
+    assert!(uses_overview(&index, &camera), "960 PPQ 下 0.008 已 < 2px");
+}
+
+#[test]
+fn overview_threshold_is_two_physical_pixels() {
+    let document = sample_document();
+    let index = TrackIndex::build(&document);
+    let mut camera = camera(1.0);
+
+    // 恰好 2px：仍是 Exact（判定为严格小于）。
+    camera.zoom_x = OVERVIEW_MIN_NOTE_PX / 120.0;
+    assert!(!uses_overview(&index, &camera), "2px 边界应保持 Exact");
+    camera.zoom_x *= 0.999;
+    assert!(uses_overview(&index, &camera), "略低于 2px 应切总览");
+
+    camera.zoom_x = 1.0;
+    camera.zoom_y = OVERVIEW_MIN_NOTE_PX;
+    assert!(!uses_overview(&index, &camera), "键行 2px 边界应保持 Exact");
+    camera.zoom_y *= 0.999;
+    assert!(uses_overview(&index, &camera), "键行略低于 2px 应切总览");
+}
+
+#[test]
+fn overview_never_switches_on_empty_document() {
+    let document = MidiDocument::empty_with_tracks(2, 480);
+    let index = TrackIndex::build(&document);
+    let camera = camera(0.001);
+    assert!(
+        !uses_overview(&index, &camera),
+        "空文档没有内容可密度化，不得切总览"
+    );
+}
+
+#[test]
+fn overview_note_estimate_remains_diagnostic_only() {
     let document = sample_document();
     let mut index = TrackIndex::build(&document);
     index.measure_counts = vec![200_000_000];
     let camera = camera(0.01);
     let estimate = overview_note_estimate(&index, &camera);
     assert!(
-        estimate > OVERVIEW_NOTE_THRESHOLD,
-        "200M × 可见 key 比例应超过阈值（estimate={estimate}）"
+        estimate > 0,
+        "估算仍应返回可见音符量（estimate={estimate}）"
     );
-    assert!(uses_overview(&index, &camera));
 
     index.measure_counts = vec![1];
     assert_eq!(overview_note_estimate(&index, &camera), 0);
-    assert!(!uses_overview(&index, &camera));
 }

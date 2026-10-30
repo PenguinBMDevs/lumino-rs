@@ -10,7 +10,7 @@ impl CpuOnionRenderer {
     /// 本函数**逐行覆盖整帧**（无密度处写透明），调用方无需预先清屏；输出帧也由
     /// `compose::write_output` 全量重写。
     ///
-    /// `estimate` 是本次总览判定的可见音符估算，仅写入 `visible_notes` 供诊断。
+    /// `estimate` 是诊断用可见音符估算（不参与档位判定），写入 `visible_notes`。
     pub(crate) fn render_overview_full(
         &mut self,
         camera: &CanvasCamera,

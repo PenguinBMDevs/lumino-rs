@@ -141,8 +141,9 @@ impl CpuOnionRenderer {
 
     /// 全量渲染一帧，按需切总览密度 LOD。
     ///
-    /// 仅当 `density` 为 `Some` 且可见音符估算超过阈值时才走密度热力图；
-    /// 否则与 [`Self::render_full`] 逐像素一致。总览是**整帧**输出（透明背景 +
+    /// 仅当 `density` 为 `Some` 且缩放低于阈值（见
+    /// [`crate::density::uses_overview`]）时才走密度热力图；否则与
+    /// [`Self::render_full`] 逐像素一致。总览是**整帧**输出（透明背景 +
     /// 密度格），调用方不得按区域/窄条复用本帧——密度会随相机整屏重采样。
     #[allow(clippy::too_many_arguments)]
     pub fn render_full_with_density(

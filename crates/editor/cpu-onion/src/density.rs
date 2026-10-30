@@ -11,9 +11,17 @@
 //!
 //! # 触发条件
 //!
-//! 可见音符估算超过 [`OVERVIEW_NOTE_THRESHOLD`] 时启用。估算复用
-//! [`TrackIndex::estimate_visible`]（小节聚合计数），并按可见 key 比例缩放；
-//! 阈值以下仍走 Exact 逐音符光栅，外观逐像素不变。
+//! **按缩放比例，不按同屏音符数量**。逐音符绘制只有在音符还有可辨认的屏幕
+//! 尺寸时才有意义；当以下任一轴低于 [`OVERVIEW_MIN_NOTE_PX`]（物理像素）时，
+//! 切密度热力图：
+//!
+//! - 横向：`zoom_x × (measure_ticks / 16) < 阈值`（1/16 音符宽度）；
+//! - 纵向：`zoom_y < 阈值`（单键行高）。
+//!
+//! `measure_ticks` 来自 [`TrackIndex`]（PPQ × 4），因此阈值随 PPQ 自适应；
+//! 相机的 `zoom` 已含 DPI，阈值是物理像素。空文档不切换。
+//!
+//! [`overview_note_estimate`] 仅保留为诊断/基准估算，**不参与档位判定**。
 //!
 //! # 内存
 //!
@@ -37,8 +45,11 @@ const BASE_BIN_TICKS: u32 = 64;
 const LEVELS: usize = 7;
 /// 基础层 bin 数上限：控制内存（`bins × keys × 2B`）。
 const MAX_BASE_BINS: usize = 32_768;
-/// 触发总览 LOD 的可见音符阈值（与示例一致）。
-pub const OVERVIEW_NOTE_THRESHOLD: u64 = 6_000_000;
+/// 密度 LOD 的物理像素阈值。
+///
+/// 1/16 音符宽度或单键行高低于该值时，Exact 路径已经退化成亚像素线条/纯描边；
+/// 密度热力图比逐音符堆叠更可读。2px 是「还能看见一个色块」的下限。
+pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
 
 /// 一层密度数据。
 #[derive(Debug)]
@@ -243,6 +254,8 @@ impl DensityPyramid {
 }
 
 /// 估算可见音符数（按可见 key 比例缩放小节聚合计数）。
+///
+/// **仅用于诊断/基准**，不参与总览档位判定。
 #[must_use]
 pub fn overview_note_estimate(index: &TrackIndex, camera: &CanvasCamera) -> u64 {
     let (tick_start, tick_end) = camera.visible_tick_range();
@@ -253,10 +266,24 @@ pub fn overview_note_estimate(index: &TrackIndex, camera: &CanvasCamera) -> u64 
     estimate.saturating_mul(visible_keys) / total_keys
 }
 
-/// 是否应切到总览密度 LOD。
+/// 是否应切到总览密度 LOD（**只看缩放，不看音符数量**）。
+///
+/// 1/16 音符宽度 = `zoom_x × measure_ticks / 16`；`measure_ticks = PPQ × 4`，
+/// 所以阈值随 PPQ 自适应。相机 `zoom` 已是物理像素（DPI 已乘入）。
 #[must_use]
 pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
-    overview_note_estimate(index, camera) > OVERVIEW_NOTE_THRESHOLD
+    if index.total_notes == 0 {
+        return false;
+    }
+    if !camera.zoom_x.is_finite()
+        || !camera.zoom_y.is_finite()
+        || camera.zoom_x <= 0.0
+        || camera.zoom_y <= 0.0
+    {
+        return false;
+    }
+    let sixteenth_ticks = (index.measure_ticks / 16).max(1) as f32;
+    camera.zoom_x * sixteenth_ticks < OVERVIEW_MIN_NOTE_PX || camera.zoom_y < OVERVIEW_MIN_NOTE_PX
 }
 
 /// 基础层规划：桶宽与 bin 数。

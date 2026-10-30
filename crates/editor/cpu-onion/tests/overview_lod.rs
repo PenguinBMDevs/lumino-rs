@@ -7,22 +7,21 @@
 use std::sync::Arc;
 
 use lumino_cpu_onion::{
-    CanvasCamera, CpuOnionRenderer, DensityPyramid, OVERVIEW_NOTE_THRESHOLD, TrackIndex,
-    color::NoteStyle, density::heat_argb,
+    CanvasCamera, CpuOnionRenderer, DensityPyramid, TrackIndex, color::NoteStyle,
+    density::heat_argb,
 };
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 240;
 
-fn camera() -> CanvasCamera {
+fn camera(zoom_x: f32) -> CanvasCamera {
     CanvasCamera {
         width: WIDTH,
         height: HEIGHT,
         scroll_x: 0.0,
         scroll_y: 0.0,
-        // 极限缩小：20 tick/px 的音符只剩 0.2px 宽。
-        zoom_x: 0.01,
+        zoom_x,
         zoom_y: 20.0,
         key_count: 128,
     }
@@ -34,13 +33,6 @@ fn document() -> Arc<MidiDocument> {
     Arc::new(document)
 }
 
-/// 伪造一个「一屏 2000 万可见音符」的工程：只改小节聚合计数，不造 2000 万音符。
-fn crowded_index(document: &MidiDocument) -> Arc<TrackIndex> {
-    let mut index = TrackIndex::build(document);
-    index.measure_counts = vec![200_000_000];
-    Arc::new(index)
-}
-
 fn row_center(camera: &CanvasCamera, key: u16) -> u32 {
     (camera.key_to_y(key) + camera.zoom_y * 0.5) as u32
 }
@@ -48,9 +40,9 @@ fn row_center(camera: &CanvasCamera, key: u16) -> u32 {
 #[test]
 fn extreme_zoom_renders_blue_density_instead_of_notes() {
     let document = document();
-    let index = crowded_index(&document);
+    let index = Arc::new(TrackIndex::build(&document));
     let density = DensityPyramid::build(document.as_ref(), 2, 128);
-    let camera = camera();
+    let camera = camera(0.01);
     let mut renderer = CpuOnionRenderer::new(2, 2);
     renderer.resize(WIDTH, HEIGHT);
 
@@ -65,7 +57,6 @@ fn extreme_zoom_renders_blue_density_instead_of_notes() {
     let row = row_center(&camera, 120);
     let density_pixel = frame.pixel(0, row).expect("帧内像素");
     let empty_row_pixel = frame.pixel(0, row_center(&camera, 124)).expect("帧内像素");
-    let visible = renderer.visible_notes();
 
     let expected = lumino_cpu_onion::color::argb_to_rgba(heat_argb(1, 1));
     assert_eq!(
@@ -77,10 +68,6 @@ fn extreme_zoom_renders_blue_density_instead_of_notes() {
         empty_row_pixel,
         [0, 0, 0, 0],
         "没有 onset 的 key 行必须保持透明（叠加层不得铺背景）"
-    );
-    assert!(
-        visible > OVERVIEW_NOTE_THRESHOLD,
-        "总览判定必须记录可见音符估算（visible={visible}）"
     );
 
     // 同一帧尺寸下走 Exact：x=0 是音符左边框，颜色必须与热力色不同。
@@ -98,12 +85,12 @@ fn extreme_zoom_renders_blue_density_instead_of_notes() {
 }
 
 #[test]
-fn overview_gate_stays_exact_for_small_documents() {
+fn overview_gate_stays_exact_at_normal_zoom() {
     let document = document();
-    // 正常索引：可见音符远低于 6M，即使传了密度也不得切换档位。
     let index = Arc::new(TrackIndex::build(&document));
     let density = DensityPyramid::build(document.as_ref(), 1, 128);
-    let camera = camera();
+    // 正常缩放：1/16 音符 120px、键行 20px，即使传了密度也不得切档。
+    let camera = camera(1.0);
     let mut renderer = CpuOnionRenderer::new(1, 2);
     renderer.resize(WIDTH, HEIGHT);
 
@@ -119,6 +106,6 @@ fn overview_gate_stays_exact_for_small_documents() {
     assert_eq!(
         frame.pixel(0, row),
         Some(NoteStyle::new(2).border_rgba(1)),
-        "阈值以下必须保持 Exact，不得误切总览"
+        "缩放阈值以上必须保持 Exact，不得误切总览"
     );
 }
