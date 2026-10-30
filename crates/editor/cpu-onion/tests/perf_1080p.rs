@@ -16,7 +16,7 @@
 //! 视口内，因此约 64% 音符可见（不是「全部在视口外」的作弊分布）。
 //!
 //! band 数按生产 `ui::host::render::cpu_onion::state::worker_bands` 同规则取
-//! `available_parallelism().clamp(1, 4)`（生产 `MAX_BANDS = 4`）。
+//! `available_parallelism().clamp(1, 12)`（生产 `MAX_BANDS = 12`）。
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -77,7 +77,7 @@ fn corpus(total: usize, tracks: usize) -> MidiDocument {
 fn worker_bands() -> usize {
     std::thread::available_parallelism()
         .map_or(2, |parallelism| parallelism.get())
-        .clamp(1, 4)
+        .clamp(1, 12)
 }
 
 /// 相机（滚动 0、无键盘栏/标尺偏移）。

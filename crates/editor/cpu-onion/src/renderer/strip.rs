@@ -34,6 +34,7 @@ impl CpuOnionRenderer {
         x1: u32,
     ) -> &CpuFrame {
         self.ensure_frame_size();
+        self.ensure_output_current();
         self.visible_notes = 0;
         if x0 >= x1 || x1 > self.width || self.height == 0 {
             return &self.output;
@@ -55,6 +56,7 @@ impl CpuOnionRenderer {
             index,
             document,
             simd: self.simd,
+            early_coverage: true,
         };
 
         let mut buffer = take_buffer(&self.strip_slot);

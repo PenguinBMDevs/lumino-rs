@@ -40,6 +40,17 @@ fn job_for(
     key_min: u16,
     key_max: u16,
 ) -> BandJob {
+    job_for_current(document, tick_lo, tick_hi, key_min, key_max, 1)
+}
+
+fn job_for_current(
+    document: Arc<MidiDocument>,
+    tick_lo: u32,
+    tick_hi: u32,
+    key_min: u16,
+    key_max: u16,
+    current_track: usize,
+) -> BandJob {
     let index = Arc::new(TrackIndex::build(document.as_ref()));
     BandJob {
         x0: 0,
@@ -57,12 +68,13 @@ fn job_for(
         tick_hi,
         key_min,
         key_max,
-        current_track: 1,
+        current_track,
         muted: Arc::from(Vec::<bool>::new()),
         style: Arc::new(NoteStyle::new(1)),
         index,
         document,
         simd: SimdLevel::detect(),
+        early_coverage: false,
     }
 }
 
@@ -216,6 +228,7 @@ fn tick_group_at_u32_max_covers_only_that_tick() {
         document.track_notes(0),
         u32::MAX,
         &mut stats,
+        usize::MAX,
     );
     assert_eq!(
         stats.draw_order,
@@ -225,6 +238,41 @@ fn tick_group_at_u32_max_covers_only_that_tick() {
 }
 
 /// 组查询只在 tie 时发生：无长音符时窗口流照常逐条绘制（常路径零回归）。
+#[test]
+fn early_coverage_skips_occluded_tracks_pixel_exact() {
+    let mut document = MidiDocument::empty_with_tracks(2, 480);
+    // 轨 0 完整覆盖 6 个 key × 1200 tick（每个音符 1×2 px），轨 1 落在同一
+    // 批像素上：一旦轨 0 铺满，轨 1 不可能改变任何像素，提前退出必须跳过它。
+    for tick in 0..1200 {
+        for key in 60..66 {
+            document.insert_note(0, NoteEvent::new(tick, tick + 1, key, 100, 0));
+            document.insert_note(1, NoteEvent::new(tick, tick + 1, key, 100, 1));
+        }
+    }
+    let document = Arc::new(document);
+    let mut early_job = job_for_current(Arc::clone(&document), 0, 1200, 60, 65, 2);
+    early_job.early_coverage = true;
+    let mut full_job = job_for_current(document, 0, 1200, 60, 65, 2);
+    full_job.early_coverage = false;
+
+    let mut early_buffer = BandBuffer::default();
+    let early = render_band(&early_job, &mut early_buffer);
+    let mut full_buffer = BandBuffer::default();
+    let full = render_band(&full_job, &mut full_buffer);
+
+    assert!(early.covered >= early.coverage_target);
+    assert!(
+        early.visible_notes < full.visible_notes,
+        "提前退出必须跳过被完全遮挡的后续轨：{} vs {}",
+        early.visible_notes,
+        full.visible_notes
+    );
+    assert_eq!(
+        early_buffer.pixels, full_buffer.pixels,
+        "提前退出不得改变任何像素"
+    );
+}
+
 #[test]
 fn window_only_stream_keeps_tick_order() {
     let n1 = NoteEvent::new(100, 200, 60, 100, 0);

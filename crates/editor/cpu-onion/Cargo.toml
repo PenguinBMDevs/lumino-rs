@@ -15,3 +15,6 @@ workspace = true
 lumino-midi-model = { workspace = true }
 lumino-extras = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+lumino-midi-loader = { workspace = true }

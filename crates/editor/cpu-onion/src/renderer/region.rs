@@ -137,6 +137,7 @@ impl CpuOnionRenderer {
         rect: CpuOnionRect,
     ) -> &CpuFrame {
         self.ensure_frame_size();
+        self.ensure_output_current();
         self.visible_notes = 0;
         let width = self.width;
         let height = self.height;
@@ -196,6 +197,7 @@ impl CpuOnionRenderer {
                 index: Arc::clone(&index),
                 document: Arc::clone(&document),
                 simd: self.simd,
+                early_coverage: true,
             });
         }
 

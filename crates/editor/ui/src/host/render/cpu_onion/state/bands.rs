@@ -2,12 +2,12 @@
 
 /// band 数上限（每 band 一条 tokio worker 线程）。
 ///
-/// 6 = 示例默认物理核（i7-9750H 6c）/ 常见 6 核档位；1080p 2M 音符实测：
-/// Exact 4 band 29.0ms → 6 band 22.4ms（-23%）。再高（8）在示例上已回退，
-/// 且每 band 一块 1080p 缓冲，内存/调度收益失衡。
-const MAX_BANDS: usize = 6;
+/// 12 = i7-9750H 6c/12t 的逻辑核数；Paprika 310M 真实语料实测
+/// 6 band 127.5fps → 12 band 142.8fps（p50 6.25 → 5.64ms），16 band 回退到
+/// 131.2fps。低核机器由 `available_parallelism` 自动下调。
+const MAX_BANDS: usize = 12;
 
-/// 诊断覆盖：`LUMINO_CPU_ONION_BANDS=1..=6`（示例 `--workers` 的生产等价物）。
+/// 诊断覆盖：`LUMINO_CPU_ONION_BANDS=1..=12`（示例 `--workers` 的生产等价物）。
 const BANDS_ENV: &str = "LUMINO_CPU_ONION_BANDS";
 
 /// 按可用并行度取 band 数，限制在 `1..=MAX_BANDS`；环境变量可覆盖。

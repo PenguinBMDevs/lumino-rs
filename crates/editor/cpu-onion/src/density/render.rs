@@ -1,19 +1,32 @@
 //! 总览热力图的逐像素重采样（逐列 bin / 逐 key 行缓存）。
 
-use super::{DensityPyramid, heat_argb};
+use super::{DensityPyramid, OverviewScratch, heat_argb};
 use crate::camera::CanvasCamera;
 
 impl DensityPyramid {
     /// 把总览热力图写进内部 `0xAARRGGBB` 帧（透明背景）。
     ///
-    /// 逐列 tick → bin 只算一次，逐 key 的整行颜色只算一次，最后按屏幕 y
-    /// 整行拷贝（与原示例相同的两级缓存）。
+    /// 测试/一次性调用走本入口；生产热路径用
+    /// [`Self::render_overview_with_scratch`] 复用缓冲。
     pub fn render_overview(
         &self,
         frame: &mut [u32],
         width: u32,
         height: u32,
         camera: &CanvasCamera,
+    ) {
+        let mut scratch = OverviewScratch::default();
+        self.render_overview_with_scratch(frame, width, height, camera, &mut scratch);
+    }
+
+    /// 与 [`Self::render_overview`] 同像素，但复用 `scratch` 的列/行缓冲。
+    pub fn render_overview_with_scratch(
+        &self,
+        frame: &mut [u32],
+        width: u32,
+        height: u32,
+        camera: &CanvasCamera,
+        scratch: &mut OverviewScratch,
     ) {
         let width = width as usize;
         let height = height as usize;
@@ -35,8 +48,9 @@ impl DensityPyramid {
         let max_count = self.max_count(level);
         let total_ticks = f64::from(self.total_ticks);
 
-        let mut bin_for_x = vec![usize::MAX; width];
-        for (x, slot) in bin_for_x.iter_mut().enumerate() {
+        scratch.bin_for_x.clear();
+        scratch.bin_for_x.resize(width, usize::MAX);
+        for (x, slot) in scratch.bin_for_x.iter_mut().enumerate() {
             let tick = camera.x_to_tick(x as f32 + 0.5);
             if !tick.is_finite() || tick < 0.0 || f64::from(tick) > total_ticks {
                 continue;
@@ -47,13 +61,15 @@ impl DensityPyramid {
 
         // 每个 key 的整行颜色只算一次：overview 缩放下同一 key 覆盖多行，
         // 逐像素算 LUT 会把 128×width 放大成 height×width。
-        let mut key_rows = vec![0u32; keys.saturating_mul(width)];
+        let row_len = keys.saturating_mul(width);
+        scratch.key_rows.clear();
+        scratch.key_rows.resize(row_len, 0);
         for key in 0..keys {
-            let Some(row) = key_rows.get_mut(key * width..(key + 1) * width) else {
+            let Some(row) = scratch.key_rows.get_mut(key * width..(key + 1) * width) else {
                 continue;
             };
             for (x, pixel) in row.iter_mut().enumerate() {
-                let bin = bin_for_x[x];
+                let bin = scratch.bin_for_x[x];
                 if bin == usize::MAX {
                     continue;
                 }
@@ -83,7 +99,7 @@ impl DensityPyramid {
                 destination.fill(0);
                 continue;
             }
-            let Some(source) = key_rows.get(key * width..(key + 1) * width) else {
+            let Some(source) = scratch.key_rows.get(key * width..(key + 1) * width) else {
                 destination.fill(0);
                 continue;
             };

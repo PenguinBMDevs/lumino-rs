@@ -55,18 +55,18 @@ pub(crate) fn draw_note(
     buffer: &mut BandBuffer,
     track: usize,
     note: &NoteEvent,
-) -> bool {
+) -> Option<usize> {
     let camera = &job.camera;
     let zoom_x = camera.zoom_x;
     let sx = note.start_tick as f32 * zoom_x - camera.scroll_x;
     let sw = note.length() as f32 * zoom_x;
     if sw <= 0.0 {
-        return false;
+        return None;
     }
     let sy = camera.key_to_y(note.key as u16);
     let sh = camera.zoom_y;
     if sh <= 0.0 {
-        return false;
+        return None;
     }
 
     let mut ix0 = fill_start(sx);
@@ -78,7 +78,7 @@ pub(crate) fn draw_note(
     iy0 = iy0.max(0);
     iy1 = iy1.min(camera.height as i32);
     if ix1 <= ix0 || iy1 <= iy0 {
-        return false;
+        return None;
     }
 
     let fill = job.style.fill(track);
@@ -102,11 +102,13 @@ pub(crate) fn draw_note(
     fy1 = fy1.min(iy1);
     let has_fill = fx1 > fx0 && fy1 > fy0;
 
+    let mut covered = 0usize;
+
     if !has_fill {
         // 细音符 / 纯描边：宽度 ≤ 8px 时直接遍历像素，避免每行一次函数调用。
         let width_px = ix1 - ix0;
         if width_px == 1 {
-            draw_pixel_column(
+            covered += draw_pixel_column(
                 buffer,
                 ix0 - job.x0 as i32,
                 iy0,
@@ -116,7 +118,7 @@ pub(crate) fn draw_note(
                 owner_limit,
             );
         } else if width_px <= 8 {
-            draw_owner_block(
+            covered += draw_owner_block(
                 buffer,
                 job.x0,
                 ix0,
@@ -129,7 +131,7 @@ pub(crate) fn draw_note(
             );
         } else {
             for y in iy0..iy1 {
-                draw_segment(
+                covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
@@ -142,13 +144,13 @@ pub(crate) fn draw_note(
                 );
             }
         }
-        return true;
+        return Some(covered);
     }
 
     for y in iy0..iy1 {
         if y >= fy0 && y < fy1 {
             if fx0 > ix0 {
-                draw_segment(
+                covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
@@ -160,7 +162,7 @@ pub(crate) fn draw_note(
                     job.simd,
                 );
             }
-            draw_segment(
+            covered += draw_segment(
                 buffer,
                 y,
                 job.x0,
@@ -172,7 +174,7 @@ pub(crate) fn draw_note(
                 job.simd,
             );
             if ix1 > fx1 {
-                draw_segment(
+                covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
@@ -185,7 +187,7 @@ pub(crate) fn draw_note(
                 );
             }
         } else {
-            draw_segment(
+            covered += draw_segment(
                 buffer,
                 y,
                 job.x0,
@@ -198,7 +200,7 @@ pub(crate) fn draw_note(
             );
         }
     }
-    true
+    Some(covered)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -212,25 +214,30 @@ fn draw_owner_block(
     color: u32,
     owner_value: u32,
     owner_limit: u32,
-) {
+) -> usize {
     let lx0 = (x0 - band_x0 as i32).max(0) as usize;
     let lx1 = (x1 - band_x0 as i32).min(buffer.width as i32).max(0) as usize;
     if lx1 <= lx0 {
-        return;
+        return 0;
     }
     let width = buffer.width;
     let start_y = y0.max(0) as usize;
     let end_y = (y1.min(buffer.height as i32)).max(0) as usize;
+    let mut covered = 0usize;
     for y in start_y..end_y {
         let base = y * width;
         for x in lx0..lx1 {
             let index = base + x;
             if buffer.owner[index] <= owner_limit {
+                if buffer.owner[index] == 0 {
+                    covered += 1;
+                }
                 buffer.pixels[index] = color;
                 buffer.owner[index] = owner_value;
             }
         }
     }
+    covered
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -244,18 +251,18 @@ fn draw_segment(
     owner_value: u32,
     owner_limit: u32,
     simd: SimdLevel,
-) {
+) -> usize {
     let lx0 = x0 - band_x0 as i32;
     let lx1 = x1 - band_x0 as i32;
     if lx1 <= lx0 {
-        return;
+        return 0;
     }
     let width = buffer.width;
     let row_start = y as usize * width;
     let (pixels, owner) = (&mut buffer.pixels, &mut buffer.owner);
     let row = &mut pixels[row_start..row_start + width];
     let own = &mut owner[row_start..row_start + width];
-    masked_fill_row(row, own, lx0, lx1, color, owner_value, owner_limit, simd);
+    masked_fill_row(row, own, lx0, lx1, color, owner_value, owner_limit, simd)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -267,18 +274,23 @@ fn draw_pixel_column(
     color: u32,
     owner_value: u32,
     owner_limit: u32,
-) {
+) -> usize {
     if x < 0 || x >= buffer.width as i32 {
-        return;
+        return 0;
     }
     let x = x as usize;
+    let mut covered = 0usize;
     for y in y0..y1 {
         let index = y as usize * buffer.width + x;
         if buffer.owner[index] <= owner_limit {
+            if buffer.owner[index] == 0 {
+                covered += 1;
+            }
             buffer.pixels[index] = color;
             buffer.owner[index] = owner_value;
         }
     }
+    covered
 }
 
 #[cfg(test)]

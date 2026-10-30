@@ -38,6 +38,9 @@ const MAX_MEASURE_BUCKETS: usize = 1_048_576;
 /// 短音符长度直方图上限（tick）；更长的音符并入末桶。
 const SHORT_HISTOGRAM_TICKS: usize = 4096;
 
+/// key 掩码单元上限（measures × tracks × 16B）；超过则不建，回退全画布覆盖目标。
+const MAX_KEY_MASK_CELLS: usize = 1_000_000;
+
 /// 每轨 / 每小节聚合索引。
 #[derive(Debug, Clone)]
 pub struct TrackIndex {
@@ -61,6 +64,14 @@ pub struct TrackIndex {
     pub total_notes: u64,
     /// 每轨音符数（`rebuild_track_geometry` 用它把 `total_notes` 修正到精确值）。
     pub track_note_counts: Vec<u64>,
+    /// 每轨、每小节的 key 位图（`key_masks[track][measure]`）。
+    ///
+    /// 用于 Exact 覆盖目标：只把本视口实际出现过的 key 行算进“应该铺满”的面积，
+    /// 避免空 key 行让覆盖目标永远达不到。未建立时为空，调用方回退全画布。
+    /// 删除音符时**只增不减**（陈旧位只会让目标偏大，不会少画像素）。
+    pub(crate) key_masks: Vec<Vec<u128>>,
+    /// key 掩码覆盖的小节数（0 = 未建立）。
+    pub(crate) key_mask_measures: usize,
 }
 
 impl TrackIndex {
@@ -76,6 +87,21 @@ impl TrackIndex {
         let mut long_note_count = 0u64;
         let mut total_notes = 0u64;
         let mut length_histogram = vec![0u64; SHORT_HISTOGRAM_TICKS + 1];
+        let estimated_measures =
+            (document.total_ticks() as usize / measure_ticks as usize).saturating_add(2);
+        let mut key_mask_measures = if estimated_measures
+            .saturating_mul(track_count)
+            .le(&MAX_KEY_MASK_CELLS)
+        {
+            estimated_measures
+        } else {
+            0
+        };
+        let mut key_masks = if key_mask_measures > 0 {
+            vec![vec![0u128; key_mask_measures]; track_count]
+        } else {
+            Vec::new()
+        };
 
         for (track_idx, notes) in document.notes.iter().enumerate() {
             let mut track_max = 0u32;
@@ -84,6 +110,21 @@ impl TrackIndex {
                 let len = note.length();
                 track_max = track_max.max(len);
                 length_histogram[(len as usize).min(SHORT_HISTOGRAM_TICKS)] += 1;
+                if key_mask_measures > 0 && note.key < 128 {
+                    let first = (note.start_tick / measure_ticks) as usize;
+                    let last = ((note.end_tick / measure_ticks) as usize)
+                        .min(key_mask_measures.saturating_sub(1));
+                    if first >= key_mask_measures {
+                        key_masks.clear();
+                        key_mask_measures = 0;
+                    } else {
+                        let bit = 1u128 << (note.key as u32);
+                        let slot = &mut key_masks[track_idx];
+                        for cell in &mut slot[first..=last] {
+                            *cell |= bit;
+                        }
+                    }
+                }
                 if len > LOOKBACK_TICKS
                     && let Some(slot) = long_notes.get_mut(track_idx)
                 {
@@ -117,6 +158,8 @@ impl TrackIndex {
             densest_measure_notes: 0,
             total_notes,
             track_note_counts,
+            key_masks,
+            key_mask_measures,
         };
         index.recompute_densest();
         index
@@ -136,6 +179,83 @@ impl TrackIndex {
     #[must_use]
     pub fn long_notes(&self, track: usize) -> &[NoteEvent] {
         self.long_notes.get(track).map_or(&[], Vec::as_slice)
+    }
+
+    /// 视口 tick 范围内实际出现过的 key 位图；未建掩码时返回全 1（保守）。
+    ///
+    /// 当前轨与静音轨不参与：它们不由 CPU 洋葱皮绘制，不能算进覆盖目标。
+    /// 查询向前扩 [`LOOKBACK_TICKS`]，覆盖从视口左侧跨入的普通音符。
+    #[must_use]
+    pub fn active_keys(
+        &self,
+        tick_lo: u32,
+        tick_hi: u32,
+        current_track: usize,
+        muted: &[bool],
+    ) -> u128 {
+        if self.key_masks.is_empty() || self.key_mask_measures == 0 {
+            return u128::MAX;
+        }
+        let measure_ticks = self.measure_ticks.max(1);
+        let first = (tick_lo.saturating_sub(LOOKBACK_TICKS) / measure_ticks) as usize;
+        let last =
+            ((tick_hi / measure_ticks) as usize).min(self.key_mask_measures.saturating_sub(1));
+        if first >= self.key_mask_measures || first > last {
+            return 0;
+        }
+        let mut mask = 0u128;
+        for (track, slots) in self.key_masks.iter().enumerate() {
+            if track == current_track || muted.get(track).copied().unwrap_or(false) {
+                continue;
+            }
+            for &slot in &slots[first..=last] {
+                mask |= slot;
+            }
+        }
+        mask
+    }
+
+    /// key 掩码占用字节数（诊断/内存预算用）。
+    #[must_use]
+    pub fn key_mask_bytes(&self) -> usize {
+        self.key_masks
+            .iter()
+            .map(|slots| slots.len().saturating_mul(std::mem::size_of::<u128>()))
+            .sum()
+    }
+
+    /// 把一个音符写入 key 掩码（插入/重建几何时用）。
+    ///
+    /// 掩码容纳不下时整体清空并回退全画布目标，绝不让目标偏小。
+    pub(crate) fn mark_key_mask(&mut self, track: usize, note: &NoteEvent) {
+        if self.key_mask_measures == 0 || note.key >= 128 {
+            return;
+        }
+        let measure_ticks = self.measure_ticks.max(1);
+        let first = (note.start_tick / measure_ticks) as usize;
+        let last = ((note.end_tick / measure_ticks) as usize)
+            .min(self.key_mask_measures.saturating_sub(1));
+        if first >= self.key_mask_measures {
+            self.key_masks.clear();
+            self.key_mask_measures = 0;
+            return;
+        }
+        if track >= self.key_masks.len() {
+            let measures = self.key_mask_measures;
+            if track.saturating_add(1).saturating_mul(measures) > MAX_KEY_MASK_CELLS {
+                self.key_masks.clear();
+                self.key_mask_measures = 0;
+                return;
+            }
+            self.key_masks
+                .resize_with(track + 1, || vec![0u128; measures]);
+        }
+        let bit = 1u128 << (note.key as u32);
+        if let Some(slots) = self.key_masks.get_mut(track) {
+            for cell in &mut slots[first..=last] {
+                *cell |= bit;
+            }
+        }
     }
 
     /// 估算 `[tick_start, tick_end]` 内的音符数量（只读小节聚合计数）。
@@ -212,50 +332,4 @@ fn grow_measure_buckets(counts: &mut Vec<u32>, measure: usize) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn document() -> MidiDocument {
-        let mut document = MidiDocument::empty_with_tracks(2, 480);
-        document.insert_note(0, NoteEvent::new(0, 100, 60, 100, 0));
-        // 600 tick > LOOKBACK_TICKS，进入 long_notes。
-        document.insert_note(0, NoteEvent::new(100, 700, 62, 100, 0));
-        document.insert_note(1, NoteEvent::new(200, 300, 64, 100, 0));
-        document
-    }
-
-    #[test]
-    fn build_aggregates_without_copying_notes() {
-        let index = TrackIndex::build(&document());
-        assert_eq!(index.max_len, vec![600, 100]);
-        assert_eq!(index.long_note_count, 1);
-        assert_eq!(index.long_notes(0).len(), 1);
-        assert!(index.long_notes(0).iter().any(|note| note.key == 62));
-        assert_eq!(index.measure_ticks, 1920);
-        // 三个音符都落在第 0 小节。
-        assert_eq!(index.measure_counts[0], 3);
-        assert_eq!(index.densest_measure, 0);
-        assert_eq!(index.densest_measure_notes, 3);
-        assert_eq!(index.total_notes, 3);
-        assert_eq!(index.track_note_counts, vec![2, 1]);
-    }
-
-    #[test]
-    fn estimate_visible_uses_measure_buckets() {
-        let index = TrackIndex::build(&document());
-        assert_eq!(index.estimate_visible(0, 1919), 3);
-        assert_eq!(index.estimate_visible(1920, 10_000), 0);
-        assert_eq!(index.estimate_visible(200, 100), 0);
-    }
-
-    #[test]
-    fn measure_counts_are_capped_for_extreme_ticks() {
-        let mut document = MidiDocument::empty_with_tracks(1, 1);
-        document.insert_note(0, NoteEvent::new(u32::MAX - 1, u32::MAX, 60, 100, 0));
-        let index = TrackIndex::build(&document);
-        assert!(index.measure_counts.len() <= MAX_MEASURE_BUCKETS);
-        assert_eq!(index.total_notes, 1);
-        // 正常 tick 仍可估算；超限 tick 返回 0 而不是巨量分配。
-        assert_eq!(index.estimate_visible(u32::MAX - 1, u32::MAX), 0);
-    }
-}
+mod tests;

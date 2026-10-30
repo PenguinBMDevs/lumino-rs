@@ -53,6 +53,8 @@ pub(crate) struct BandJob {
     pub(crate) document: Arc<MidiDocument>,
     /// SIMD 档位。
     pub(crate) simd: SimdLevel,
+    /// 是否允许画布覆盖后提前退出（测试可关闭做逐像素对照）。
+    pub(crate) early_coverage: bool,
 }
 
 /// band 渲染统计。
@@ -61,6 +63,10 @@ pub(crate) struct BandJob {
 pub(crate) struct BandStats {
     /// 实际尝试绘制的音符数（通过 tick/key 过滤）。
     pub(crate) visible_notes: u64,
+    /// 覆盖提前退出的像素目标。
+    pub(crate) coverage_target: usize,
+    /// 实际覆盖像素数。
+    pub(crate) covered: usize,
     /// 测试专用：`draw_note` 的调用顺序（生产构建没有该字段，热路径零成本）。
     #[cfg(test)]
     pub(crate) draw_order: Vec<NoteEvent>,
@@ -78,6 +84,40 @@ pub(crate) fn render_band(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
         return stats;
     }
 
+    let key_lo = u32::from(job.key_min.min(127));
+    let key_hi = u32::from(job.key_max.min(127));
+    let visible_key_mask = if key_hi >= key_lo {
+        let span = key_hi - key_lo + 1;
+        if span >= 128 {
+            u128::MAX
+        } else {
+            ((1u128 << span) - 1) << key_lo
+        }
+    } else {
+        0
+    };
+    let active_keys =
+        job.index
+            .active_keys(job.tick_lo, job.tick_hi, job.current_track, &job.muted)
+            & visible_key_mask;
+    let active_rows = if job.index.key_masks.is_empty() {
+        height
+    } else {
+        (active_keys.count_ones() as usize)
+            .saturating_mul(job.camera.zoom_y.ceil().max(1.0) as usize)
+            .min(height)
+    };
+    let coverage_target = if job.early_coverage {
+        width.saturating_mul(active_rows)
+    } else {
+        usize::MAX
+    };
+    stats.coverage_target = coverage_target;
+    if coverage_target == 0 {
+        return stats;
+    }
+
+    let mut covered = 0usize;
     for track in 0..job.document.notes.len() {
         if track == job.current_track {
             continue;
@@ -89,8 +129,20 @@ pub(crate) fn render_band(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
         if notes.is_empty() {
             continue;
         }
-        draw_track(job, buffer, track, notes, &mut stats);
+        draw_track(
+            job,
+            buffer,
+            track,
+            notes,
+            &mut stats,
+            &mut covered,
+            coverage_target,
+        );
+        if covered >= coverage_target {
+            break;
+        }
     }
+    stats.covered = covered;
     stats
 }
 
@@ -100,6 +152,8 @@ fn draw_track(
     track: usize,
     notes: &ChunkedList<NoteEvent>,
     stats: &mut BandStats,
+    covered: &mut usize,
+    coverage_target: usize,
 ) {
     let (tick_lo, tick_hi) = (job.tick_lo, job.tick_hi);
     let lookback = job.index.lookback(track);
@@ -133,7 +187,18 @@ fn draw_track(
             _ => None,
         };
         if let Some(tick) = tie_tick {
-            draw_tick_group(job, buffer, track, notes, tick, stats);
+            *covered += draw_tick_group(
+                job,
+                buffer,
+                track,
+                notes,
+                tick,
+                stats,
+                coverage_target.saturating_sub(*covered),
+            );
+            if *covered >= coverage_target {
+                return;
+            }
             // 两个流都必须跳过该 tick：组查询已经把其中所有可见音符画完了。
             while long_iter.peek().is_some_and(|note| note.start_tick == tick) {
                 long_iter.next();
@@ -161,7 +226,10 @@ fn draw_track(
         let Some(note) = candidate else {
             continue;
         };
-        draw_one(job, buffer, track, note, stats);
+        *covered += draw_one(job, buffer, track, note, stats);
+        if *covered >= coverage_target {
+            return;
+        }
     }
 }
 
@@ -182,15 +250,21 @@ fn draw_tick_group(
     notes: &ChunkedList<NoteEvent>,
     tick: u32,
     stats: &mut BandStats,
-) {
+    budget: usize,
+) -> usize {
     let (lo, hi) = notes.window_range(tick, tick.saturating_add(1), 0);
     let hi = if tick == u32::MAX { notes.len() } else { hi };
+    let mut covered = 0usize;
     for (_, note) in notes.iter_window(lo, hi) {
         if note.start_tick != tick || note.end_tick < job.tick_lo {
             continue;
         }
-        draw_one(job, buffer, track, note, stats);
+        covered += draw_one(job, buffer, track, note, stats);
+        if covered >= budget {
+            break;
+        }
     }
+    covered
 }
 
 /// 单个音符：key 过滤 + 光栅化 + 统计（单流路径与 tick 组查询共用）。
@@ -200,14 +274,17 @@ fn draw_one(
     track: usize,
     note: &NoteEvent,
     stats: &mut BandStats,
-) {
+) -> usize {
     if (note.key as u16) < job.key_min || (note.key as u16) > job.key_max {
-        return;
+        return 0;
     }
     #[cfg(test)]
     stats.draw_order.push(*note);
-    if draw_note(job, buffer, track, note) {
+    if let Some(covered) = draw_note(job, buffer, track, note) {
         stats.visible_notes = stats.visible_notes.saturating_add(1);
+        covered
+    } else {
+        0
     }
 }
 

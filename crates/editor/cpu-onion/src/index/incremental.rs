@@ -86,6 +86,7 @@ impl TrackIndex {
             if len > LOOKBACK_TICKS {
                 longs.push(*note);
             }
+            next.mark_key_mask(track, note);
         }
         if track_notes > 0 {
             // 直接编辑后短音符只可能变短；取 min 让 LOD 偏保守，宁可直接切总览。
@@ -136,6 +137,7 @@ impl TrackIndex {
 
     fn apply_insert(&mut self, track: usize, note: NoteEvent) {
         self.total_notes = self.total_notes.saturating_add(1);
+        self.mark_key_mask(track, &note);
         if let Some(count) = self.track_note_counts.get_mut(track) {
             *count = count.saturating_add(1);
         }

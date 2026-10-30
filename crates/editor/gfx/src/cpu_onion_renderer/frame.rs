@@ -24,7 +24,7 @@ pub struct CpuOnionFrame {
     /// 高度（物理像素）
     pub height: u32,
     /// 行优先 RGBA8 sRGB 像素（长度必须等于 `width * height * 4`）
-    pub pixels: Arc<[u8]>,
+    pub pixels: Arc<Vec<u8>>,
     /// 内容版本：变化时重新上传纹理
     pub version: u64,
     /// 脏区（帧内像素坐标）：`Some` = 相对上一帧只有该矩形变化；`None` = 整帧重绘
@@ -32,12 +32,12 @@ pub struct CpuOnionFrame {
 }
 
 impl CpuOnionFrame {
-    /// 构造一帧（像素按 `Arc<[u8]>` 共享，不拷贝像素）。
+    /// 构造一帧（像素按 `Arc<Vec<u8>>` 共享，不拷贝像素）。
     ///
     /// # 参数
     /// * `x` / `y` — 物理像素左上角
     /// * `width` / `height` — 物理像素尺寸
-    /// * `pixels` — 行优先 RGBA8 sRGB 像素（接受 `Arc<[u8]>` 或 `Vec<u8>`）
+    /// * `pixels` — 行优先 RGBA8 sRGB 像素（接受 `Arc<Vec<u8>>` 或 `Vec<u8>`）
     /// * `version` — 内容版本（内容不变时保持同一值，避免重复上传）
     #[must_use]
     pub fn new(
@@ -45,7 +45,7 @@ impl CpuOnionFrame {
         y: u32,
         width: u32,
         height: u32,
-        pixels: impl Into<Arc<[u8]>>,
+        pixels: impl Into<Arc<Vec<u8>>>,
         version: u64,
     ) -> Self {
         Self {

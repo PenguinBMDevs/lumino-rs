@@ -322,10 +322,9 @@ impl CpuOnionState {
                     None
                 }
             };
-            // 整帧快照（`Vec<u8>` → `Arc<[u8]>`）：Step 5b 的局部上传只减少 GPU
-            // 写入量，CPU 侧仍需一份与渲染缓冲解耦的共享快照——区域重绘是原地
-            // 改写渲染缓冲，不拷贝就无法与上一帧并存
-            let pixels: Arc<[u8]> = Arc::from(renderer.frame().pixels.as_slice());
+            // 帧像素由 Arc 共享：快照只克隆 Arc；渲染器下一次写回时由
+            // `Arc::make_mut` 做写时复制，旧快照保持不可变。
+            let pixels: Arc<Vec<u8>> = Arc::clone(&renderer.frame().pixels);
             (pixels, dirty)
         };
 

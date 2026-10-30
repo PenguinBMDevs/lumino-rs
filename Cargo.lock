@@ -4267,6 +4267,7 @@ name = "lumino-cpu-onion"
 version = "0.2.1"
 dependencies = [
  "lumino-extras",
+ "lumino-midi-loader",
  "lumino-midi-model",
  "tokio",
 ]

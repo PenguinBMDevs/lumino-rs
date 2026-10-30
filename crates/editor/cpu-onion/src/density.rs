@@ -55,6 +55,13 @@ pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
 /// 短音符（第 10 百分位）仍能占满的最小物理像素宽度。
 pub const SHORT_NOTE_MIN_PX: f32 = 2.0;
 
+/// 总览渲染的可复用临时缓冲（避免每帧分配 245k u32 的 key_rows）。
+#[derive(Debug, Default)]
+pub struct OverviewScratch {
+    pub(crate) bin_for_x: Vec<usize>,
+    pub(crate) key_rows: Vec<u32>,
+}
+
 /// 一层密度数据。
 #[derive(Debug)]
 struct DensityLevel {

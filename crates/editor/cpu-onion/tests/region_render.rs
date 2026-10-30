@@ -64,7 +64,7 @@ fn merged_rect(camera: &CanvasCamera, notes: &[NoteEvent], margin: i32) -> CpuOn
 }
 
 /// 直接整帧渲染 `document` 的像素。
-fn full_pixels(document: &MidiDocument, camera: &CanvasCamera) -> Vec<u8> {
+fn full_pixels(document: &MidiDocument, camera: &CanvasCamera) -> Arc<Vec<u8>> {
     let document = Arc::new(document.clone());
     let index = Arc::new(TrackIndex::build(&document));
     let mut renderer = CpuOnionRenderer::new(4, 3);
@@ -81,7 +81,7 @@ fn patched_pixels(
     after: &MidiDocument,
     camera: &CanvasCamera,
     rect: CpuOnionRect,
-) -> Vec<u8> {
+) -> Arc<Vec<u8>> {
     let before = Arc::new(before.clone());
     let before_index = Arc::new(TrackIndex::build(&before));
     let mut renderer = CpuOnionRenderer::new(4, 3);

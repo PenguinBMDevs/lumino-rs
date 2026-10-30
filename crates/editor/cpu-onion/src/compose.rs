@@ -88,13 +88,14 @@ pub(crate) fn write_output_region(
         return;
     }
     let span = x1 - x0;
+    let pixels = std::sync::Arc::make_mut(&mut output.pixels);
     for y in y0..y1 {
         let src_start = y * width + x0;
         let Some(src) = frame.get(src_start..src_start + span) else {
             continue;
         };
         let dst_start = src_start * 4;
-        let Some(dst) = output.pixels.get_mut(dst_start..dst_start + span * 4) else {
+        let Some(dst) = pixels.get_mut(dst_start..dst_start + span * 4) else {
             continue;
         };
         argb_to_rgba_row(src, dst, simd);
@@ -157,9 +158,10 @@ pub(crate) fn shift(frame: &mut [u32], output: &mut CpuFrame, width: u32, height
         return;
     }
     let shift = dx.unsigned_abs() as usize;
+    let pixels = std::sync::Arc::make_mut(&mut output.pixels);
     if shift >= width {
         frame.fill(0);
-        output.clear();
+        pixels.fill(0);
         return;
     }
 
@@ -170,10 +172,7 @@ pub(crate) fn shift(frame: &mut [u32], output: &mut CpuFrame, width: u32, height
                 row.copy_within(shift..width, 0);
                 row[width - shift..].fill(0);
             }
-            if let Some(row) = output
-                .pixels
-                .get_mut(y * byte_stride..(y + 1) * byte_stride)
-            {
+            if let Some(row) = pixels.get_mut(y * byte_stride..(y + 1) * byte_stride) {
                 row.copy_within(shift * 4..byte_stride, 0);
                 row[(width - shift) * 4..].fill(0);
             }
@@ -184,10 +183,7 @@ pub(crate) fn shift(frame: &mut [u32], output: &mut CpuFrame, width: u32, height
                 row.copy_within(0..width - shift, shift);
                 row[..shift].fill(0);
             }
-            if let Some(row) = output
-                .pixels
-                .get_mut(y * byte_stride..(y + 1) * byte_stride)
-            {
+            if let Some(row) = pixels.get_mut(y * byte_stride..(y + 1) * byte_stride) {
                 row.copy_within(0..(width - shift) * 4, shift * 4);
                 row[..shift * 4].fill(0);
             }
@@ -203,9 +199,10 @@ mod tests {
     fn shift_positive_keeps_u32_and_rgba_in_sync() {
         let mut frame = vec![1u32, 2, 3, 4, 5, 6, 7, 8];
         let mut output = CpuFrame::new(4, 2);
+        let pixels = std::sync::Arc::make_mut(&mut output.pixels);
         for (index, pixel) in frame.iter().enumerate() {
             let rgba = crate::color::argb_to_rgba(*pixel);
-            output.pixels[index * 4..index * 4 + 4].copy_from_slice(&rgba);
+            pixels[index * 4..index * 4 + 4].copy_from_slice(&rgba);
         }
         shift(&mut frame, &mut output, 4, 2, 1);
         assert_eq!(frame, vec![2, 3, 4, 0, 6, 7, 8, 0]);
@@ -219,9 +216,10 @@ mod tests {
     fn shift_negative_keeps_u32_and_rgba_in_sync() {
         let mut frame = vec![1u32, 2, 3, 4, 5, 6, 7, 8];
         let mut output = CpuFrame::new(4, 2);
+        let pixels = std::sync::Arc::make_mut(&mut output.pixels);
         for (index, pixel) in frame.iter().enumerate() {
             let rgba = crate::color::argb_to_rgba(*pixel);
-            output.pixels[index * 4..index * 4 + 4].copy_from_slice(&rgba);
+            pixels[index * 4..index * 4 + 4].copy_from_slice(&rgba);
         }
         shift(&mut frame, &mut output, 4, 2, -1);
         assert_eq!(frame, vec![0, 1, 2, 3, 0, 5, 6, 7]);
@@ -235,7 +233,7 @@ mod tests {
     fn shift_beyond_width_clears_frame() {
         let mut frame = vec![7u32; 1];
         let mut output = CpuFrame::new(1, 1);
-        output.pixels.copy_from_slice(&[1, 2, 3, 4]);
+        std::sync::Arc::make_mut(&mut output.pixels).copy_from_slice(&[1, 2, 3, 4]);
         shift(&mut frame, &mut output, 1, 1, 5);
         assert_eq!(frame, vec![0]);
         assert_eq!(output.pixel(0, 0), Some([0, 0, 0, 0]));

@@ -20,7 +20,13 @@ impl CpuOnionRenderer {
         let width = self.width;
         let height = self.height;
         if width > 0 && height > 0 {
-            density.render_overview(&mut self.frame, width, height, camera);
+            density.render_overview_with_scratch(
+                &mut self.frame,
+                width,
+                height,
+                camera,
+                &mut self.overview_scratch,
+            );
             compose::write_output(
                 &self.frame,
                 width as usize,

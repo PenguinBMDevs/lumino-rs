@@ -57,14 +57,14 @@ pub(crate) fn masked_fill_row(
     owner_value: u32,
     owner_limit: u32,
     level: SimdLevel,
-) {
+) -> usize {
     let len = row.len().min(owner.len());
     let row = &mut row[..len];
     let owner = &mut owner[..len];
     let start = (x0.max(0) as usize).min(len);
     let end = (x1.max(0) as usize).min(len);
     if start >= end {
-        return;
+        return 0;
     }
     let dst = &mut row[start..end];
     let own = &mut owner[start..end];
@@ -74,14 +74,12 @@ pub(crate) fn masked_fill_row(
             // SAFETY: 仅在本机确认 AVX2 后由 `detect()` 返回该档位；dst/own
             // 是等长合法切片，循环内不越界。
             unsafe {
-                masked_fill_row_avx2(dst, own, value, owner_value, owner_limit);
+                masked_fill_row_avx2(dst, own, value, owner_value, owner_limit)
             }
             #[cfg(not(target_arch = "x86_64"))]
-            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit);
+            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit)
         }
-        SimdLevel::Scalar => {
-            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit);
-        }
+        SimdLevel::Scalar => masked_fill_row_scalar(dst, own, value, owner_value, owner_limit),
     }
 }
 
@@ -91,13 +89,18 @@ fn masked_fill_row_scalar(
     value: u32,
     owner_value: u32,
     owner_limit: u32,
-) {
+) -> usize {
+    let mut covered = 0usize;
     for (pixel, slot) in dst.iter_mut().zip(owner.iter_mut()) {
         if *slot <= owner_limit {
+            if *slot == 0 {
+                covered += 1;
+            }
             *pixel = value;
             *slot = owner_value;
         }
     }
+    covered
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -108,10 +111,11 @@ unsafe fn masked_fill_row_avx2(
     value: u32,
     owner_value: u32,
     owner_limit: u32,
-) {
+) -> usize {
     use std::arch::x86_64::{
-        __m256i, _mm256_blendv_epi8, _mm256_cmpgt_epi32, _mm256_loadu_si256,
-        _mm256_maskstore_epi32, _mm256_movemask_epi8, _mm256_set1_epi32, _mm256_storeu_si256,
+        __m256i, _mm256_blendv_epi8, _mm256_castsi256_ps, _mm256_cmpeq_epi32, _mm256_cmpgt_epi32,
+        _mm256_loadu_si256, _mm256_maskstore_epi32, _mm256_movemask_epi8, _mm256_movemask_ps,
+        _mm256_set1_epi32, _mm256_setzero_si256, _mm256_storeu_si256,
     };
 
     let len = dst.len();
@@ -120,12 +124,17 @@ unsafe fn masked_fill_row_avx2(
     let color = _mm256_set1_epi32(value as i32);
     let new_owner = _mm256_set1_epi32(owner_value as i32);
     let limit = _mm256_set1_epi32(owner_limit.saturating_add(1) as i32);
+    let zero = _mm256_setzero_si256();
+    let mut covered = 0usize;
     let mut i = 0usize;
     // SAFETY: 每轮 i + 8 <= len；load/store 均在切片长度内，maskstore 的掩码
     // 只选择已加载的 8 个 lane。
     unsafe {
         while i + 8 <= len {
             let owners = _mm256_loadu_si256(owner_ptr.add(i) as *const __m256i);
+            let zero_mask = _mm256_cmpeq_epi32(owners, zero);
+            covered +=
+                (_mm256_movemask_ps(_mm256_castsi256_ps(zero_mask)) as u32).count_ones() as usize;
             let mask = _mm256_cmpgt_epi32(limit, owners);
             let bits = _mm256_movemask_epi8(mask);
             if bits == -1 {
@@ -139,13 +148,14 @@ unsafe fn masked_fill_row_avx2(
             i += 8;
         }
     }
-    masked_fill_row_scalar(
-        &mut dst[i..],
-        &mut owner[i..],
-        value,
-        owner_value,
-        owner_limit,
-    );
+    covered
+        + masked_fill_row_scalar(
+            &mut dst[i..],
+            &mut owner[i..],
+            value,
+            owner_value,
+            owner_limit,
+        )
 }
 
 /// `0xAARRGGBB` 行 → RGBA8 字节（每像素 R,G,B,A）。

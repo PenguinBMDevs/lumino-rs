@@ -38,6 +38,7 @@ use crate::{
     slot::{BandSlot, put_buffer, take_buffer},
 };
 
+mod output;
 mod overview;
 mod region;
 mod strip;
@@ -61,6 +62,7 @@ pub struct CpuOnionRenderer {
     height: u32,
     simd: SimdLevel,
     visible_notes: u64,
+    overview_scratch: crate::density::OverviewScratch,
 }
 
 impl CpuOnionRenderer {
@@ -91,26 +93,24 @@ impl CpuOnionRenderer {
             height: 0,
             simd: SimdLevel::detect(),
             visible_notes: 0,
+            overview_scratch: crate::density::OverviewScratch::default(),
         }
     }
 
     /// 窗口尺寸变化（重建内部帧缓冲）。
     pub fn resize(&mut self, width: u32, height: u32) {
         let expected_pixels = (width as usize).checked_mul(height as usize);
-        let expected_bytes = expected_pixels.and_then(|len| len.checked_mul(4));
-        if self.width == width
-            && self.height == height
-            && expected_pixels == Some(self.frame.len())
-            && self.output.width == width
-            && self.output.height == height
-            && expected_bytes == Some(self.output.pixels.len())
+        if self.width == width && self.height == height && expected_pixels == Some(self.frame.len())
         {
+            // 输出帧可能已被 `take_output` 取走；尺寸没变时**不能**清内部帧，
+            // 否则下一次窄条/区域重绘会从空帧重建。
             return;
         }
         self.width = width;
         self.height = height;
-        self.ensure_frame_size();
-        self.clear_frame();
+        self.frame = vec![0; expected_pixels.unwrap_or(0)];
+        self.output = CpuFrame::default();
+        self.visible_notes = 0;
     }
 
     /// 调色板切换后重建每轨颜色缓存。
@@ -203,6 +203,7 @@ impl CpuOnionRenderer {
                 index: Arc::clone(&index),
                 document: Arc::clone(&document),
                 simd: self.simd,
+                early_coverage: true,
             });
         }
 
@@ -235,26 +236,6 @@ impl CpuOnionRenderer {
         &self.output
     }
 
-    /// 按整数像素平移当前帧（相机滚动增量同向：`dx > 0` 内容左移）。
-    ///
-    /// 内部 u32 帧与对外 RGBA8 帧同步平移，保证 `frame()` 在 shift 后、
-    /// 窄条渲染前仍与相机一致。`|dx| >= width` 时整帧清空。
-    pub fn shift_frame(&mut self, dx: i32) {
-        if dx == 0 {
-            return;
-        }
-        self.ensure_frame_size();
-        let width = self.width;
-        let height = self.height;
-        if width == 0 || height == 0 {
-            return;
-        }
-        compose::shift(&mut self.frame, &mut self.output, width, height, dx);
-        if dx.unsigned_abs() >= width {
-            self.visible_notes = 0;
-        }
-    }
-
     /// 当前对外帧。
     #[must_use]
     pub fn frame(&self) -> &CpuFrame {
@@ -285,7 +266,6 @@ impl CpuOnionRenderer {
 
     fn clear_frame(&mut self) {
         self.frame.fill(0);
-        self.output.clear();
         self.visible_notes = 0;
     }
 

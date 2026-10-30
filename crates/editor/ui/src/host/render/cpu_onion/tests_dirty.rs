@@ -95,7 +95,7 @@ fn tracks(ids: &[usize]) -> HashSet<usize> {
 }
 
 /// 用「冷启动一次整帧」得到参考像素。
-fn reference_pixels(document: &MidiDocument, current_track: usize) -> Arc<[u8]> {
+fn reference_pixels(document: &MidiDocument, current_track: usize) -> Arc<Vec<u8>> {
     reference_pixels_with(document, current_track, &MUTED)
 }
 
@@ -104,7 +104,7 @@ fn reference_pixels_with(
     document: &MidiDocument,
     current_track: usize,
     muted: &[bool],
-) -> Arc<[u8]> {
+) -> Arc<Vec<u8>> {
     let mut state = CpuOnionState::default();
     state
         .update(key(1, current_track), document, muted, None, None)
@@ -114,7 +114,11 @@ fn reference_pixels_with(
 }
 
 /// 指定横向滚动的参考像素（冷启动整帧，验证增量滚动逐像素一致）。
-fn reference_pixels_at(document: &MidiDocument, current_track: usize, scroll_x: f32) -> Arc<[u8]> {
+fn reference_pixels_at(
+    document: &MidiDocument,
+    current_track: usize,
+    scroll_x: f32,
+) -> Arc<Vec<u8>> {
     let mut frame_key = key(1, current_track);
     frame_key.geometry.camera.scroll_x = scroll_x;
     let mut state = CpuOnionState::default();
