@@ -320,8 +320,11 @@ impl Editor {
     }
 
     /// 027：选中一个图形，沿默认路径复制 3 份
+    ///
+    /// 副本是 `ShapeOp::CopyAlong` 这个 fx 页的产物：op 必须写回模型，
+    /// 否则后续 `edit_shape` 按模型重生成时会把副本抹掉（DRAW-027 验收）。
     pub fn copy_along_selected(&mut self) -> bool {
-        let Some((drawn_id, model_id, model)) = self.selected_model_for_edit() else {
+        let Some((drawn_id, _, mut model)) = self.selected_model_for_edit() else {
             return false;
         };
         let Some(bounds) = model.geometry.bounds() else {
@@ -345,10 +348,13 @@ impl Editor {
             return false;
         };
         let notes = copy_along_apply(&selected.notes, &params, 480.0);
+        model.ops.push(ShapeOp::CopyAlong(params));
+        // 替换旧模型：清 id 让 ShapeStore 分配新 id，避免与刚标记删除的旧条目同 id
+        model.id = 0;
         self.replace_selected_with_many(vec![ShapeItem {
             source: selected.source,
             notes,
-            model: self.editor_state.shape_store.model(model_id).cloned(),
+            model: Some(model),
         }])
     }
 

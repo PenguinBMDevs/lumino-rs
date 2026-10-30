@@ -361,6 +361,36 @@ fn test_copy_along_adds_copies() {
         4,
         "原音符 + 3 副本"
     );
+
+    // 027：fx 页必须落盘；按模型重生成（移动形状）后副本仍在
+    let new_id = editor.editor_state.shape_select.selected_ids()[0];
+    let model_id = editor
+        .editor_state
+        .shape_select
+        .model_id_of(new_id)
+        .expect("模型");
+    let mut model = editor
+        .editor_state
+        .shape_store
+        .model(model_id)
+        .expect("模型")
+        .clone();
+    assert!(
+        model
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::CopyAlong(_))),
+        "CopyAlong op 应写回模型"
+    );
+    for anchor in &mut model.geometry.anchors {
+        anchor.pos.0 += 20.0;
+    }
+    assert!(editor.edit_shape(model_id, model), "按模型重估应成功");
+    assert_eq!(
+        editor.editor_state.shape_store.notes_of(model_id).len(),
+        4,
+        "移动形状重生成后副本不应消失"
+    );
 }
 
 #[test]
