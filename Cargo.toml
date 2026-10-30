@@ -12,6 +12,8 @@ members = [
     "crates/network/cloud", "crates/network/collaboration",
     # tools — 工具 / 导出
     "crates/tools/export", "crates/tools/extras", "crates/tools/android-probe",
+    # examples — 独立示例（纯 CPU 洋葱皮渲染，不依赖 wgpu）
+    "examples/cpu-onionskin",
 ]
 resolver = "3"
 
@@ -169,6 +171,8 @@ flac-encoder = "0.1"
 rustc-hash = "2.1"
 rayon = "1"
 png = "0.17"
+# 纯 CPU 窗口呈现（CPU ONIONSKIN 示例；不引入 GPU 渲染后端）
+softbuffer = "0.4"
 
 # 视频导出计数器模式：TTF/OTF 字体光栅化（中文字符支持）
 ab_glyph = "0.2"

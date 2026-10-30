@@ -1,0 +1,38 @@
+[package]
+name = "cpu-onionskin"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "纯 CPU 洋葱皮钢琴卷帘渲染示例（LOD / SIMD / tokio）"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "cpu-onionskin"
+path = "src/main.rs"
+
+[dependencies]
+ab_glyph = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+lumino-core = { workspace = true }
+lumino-diagnostics = { workspace = true }
+lumino-extras = { workspace = true }
+lumino-midi-loader = { workspace = true }
+png = { workspace = true }
+softbuffer = { workspace = true }
+sysinfo = { workspace = true }
+tokio = { workspace = true }
+winit = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# 1ms 定时器分辨率：80/144fps 的帧间隔低于 Windows 默认 15.6ms 时钟粒度。
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Media",
+    "Win32_System_Threading",
+] }
