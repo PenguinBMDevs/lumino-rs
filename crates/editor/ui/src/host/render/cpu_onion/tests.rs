@@ -1,4 +1,4 @@
-//! CPU 洋葱皮帧生成验收：跳过当前轨/静音轨、帧尺寸 = 物理画布、帧冻结。
+//! CPU 洋葱皮帧生成验收：跳过当前轨/静音轨、帧矩形 = 网格内容区、帧冻结。
 //!
 //! 这里直接驱动 [`CpuOnionState`]（Host 侧只是收集相机/静音并转发），
 //! 避免构造需要窗口与 GPU 设备的 `Host`——被测逻辑与被测输入完全一致。
@@ -17,12 +17,14 @@ use crate::sidebar::Track;
 const WIDTH: f32 = 640.0;
 const HEIGHT: f32 = 240.0;
 
-/// 1:1 DPI 的相机输入（画布铺满帧）。
+/// 1:1 DPI 的相机输入（无键盘栏/标尺时画布铺满帧）。
 fn camera_input(scale_factor: f32) -> CpuOnionCameraInput {
     CpuOnionCameraInput {
         scale_factor,
         canvas_offset: (0.0, 0.0),
         canvas_size: (WIDTH, HEIGHT),
+        keyboard_width: 0.0,
+        ruler_height: 0.0,
         scroll: (0.0, 0.0),
         zoom: (1.0, 20.0),
         key_count: 128,
@@ -59,7 +61,7 @@ fn frame_key(geometry: super::camera::CpuOnionGeometry) -> CpuOnionFrameKey {
     }
 }
 
-/// 当前轨/静音轨必须透明，非当前非静音轨 alpha = 255，帧尺寸 = 物理画布。
+/// 当前轨/静音轨必须透明，非当前非静音轨 alpha = 255；无键盘栏/标尺时帧矩形 = 整块画布。
 #[test]
 fn cpu_frame_skips_current_and_muted_tracks() {
     let document = document();
@@ -71,7 +73,7 @@ fn cpu_frame_skips_current_and_muted_tracks() {
     assert!(output.rebuilt, "首次调用必须重新光栅化");
     let frame = output.frame.expect("有文档且尺寸合法时必须生成帧");
 
-    // 帧矩形/尺寸 = 物理 canvas（与 render_pass 的 canvas scissor 同口径）
+    // 无边栏：内容区 = 整块画布（与 render_pass 的 canvas scissor 同口径）
     assert_eq!((frame.x, frame.y), (0, 0));
     assert_eq!(frame.size(), (WIDTH as u32, HEIGHT as u32));
     assert!(frame.validate(), "帧像素长度必须与尺寸自洽");
@@ -92,6 +94,70 @@ fn cpu_frame_skips_current_and_muted_tracks() {
         "非当前、非静音的洋葱皮轨必须绘制"
     );
     assert_eq!(alpha(&frame, 0, 0), 0, "背景必须全透明");
+}
+
+/// 帧矩形必须是**网格内容区**（= canvas 去掉键盘栏/标尺），不是整块 canvas。
+///
+/// 回归防线：修复前帧矩形 = canvas（0,0,640,240），CPU 音符相对 GPU 网格整体
+/// 左移 `keyboard_width`、上移 `ruler_height`（用户可见的「音符没对齐网格线」）。
+#[test]
+fn cpu_frame_rect_is_grid_content_area() {
+    let document = document();
+    let muted = vec![false, false, true];
+
+    // 100%：内容区原点 = 边栏内缩量，尺寸 = 画布减内缩
+    let mut input = camera_input(1.0);
+    input.keyboard_width = 40.0;
+    input.ruler_height = 16.0;
+    let geometry = input.to_physical().expect("带边栏的相机应可换算");
+    assert_eq!(
+        (geometry.x, geometry.y),
+        (40, 16),
+        "帧原点必须是内容区原点（键盘栏/标尺右侧、下方）"
+    );
+    assert_eq!(
+        (geometry.width, geometry.height),
+        (600, 224),
+        "帧尺寸必须是内容区尺寸（640−40 / 240−16）"
+    );
+
+    let mut state = CpuOnionState::default();
+    let frame = state
+        .update(frame_key(geometry), &document, &muted, None, None)
+        .frame
+        .expect("应生成帧");
+    assert_eq!(
+        (frame.x, frame.y),
+        (40, 16),
+        "CpuOnionFrame 必须落在内容区原点"
+    );
+    assert_eq!(frame.size(), (600, 224), "CpuOnionFrame 必须是内容区尺寸");
+    assert_eq!(
+        frame.size(),
+        (geometry.camera.width, geometry.camera.height),
+        "相机宽高必须与帧物理尺寸一致（局部坐标以内容区左上角为原点）"
+    );
+    assert!(frame.validate(), "帧像素长度必须与尺寸自洽");
+    // 内容区局部行号不变：音符仍落在同一 key 行（只是整体随帧矩形右下移）
+    assert_eq!(
+        alpha(&frame, 60, note_row(121)),
+        255,
+        "内容区局部坐标里洋葱皮音符照常绘制"
+    );
+
+    // 125%：内容区四边全部 ×1.25 后 floor（41→51.25、17→21.25、599→748.75、223→278.75）
+    let mut scaled = camera_input(1.25);
+    scaled.keyboard_width = 41.0;
+    scaled.ruler_height = 17.0;
+    let scaled_geometry = scaled.to_physical().expect("125% 带边栏应可换算");
+    assert_eq!((scaled_geometry.x, scaled_geometry.y), (51, 21));
+    assert_eq!((scaled_geometry.width, scaled_geometry.height), (748, 278));
+    let frame = CpuOnionState::default()
+        .update(frame_key(scaled_geometry), &document, &muted, None, None)
+        .frame
+        .expect("125% 应生成帧");
+    assert_eq!((frame.x, frame.y), (51, 21));
+    assert_eq!(frame.size(), (748, 278));
 }
 
 /// 帧矩形随 DPI 换算成物理像素（125%：全部 ×1.25 并向下取整）。
@@ -175,7 +241,7 @@ fn cpu_frame_geometry_at_150_percent_with_fractional_values() {
     assert_eq!(
         frame.size(),
         (499, 300),
-        "CpuOnionFrame 尺寸必须 = 物理画布尺寸"
+        "CpuOnionFrame 尺寸必须 = 内容区物理尺寸（无边栏时即整块画布）"
     );
     assert_eq!(
         (geometry.camera.width, geometry.camera.height),

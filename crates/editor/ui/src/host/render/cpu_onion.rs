@@ -159,6 +159,10 @@ impl Host {
                 scale_factor: self.render_ctx.viewport.scale_factor(),
                 canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
                 canvas_size: (es.canvas.size_x, es.canvas.size_y),
+                // canvas 是**整块**（含键盘栏/标尺）：内容区原点必须再内缩这两项，
+                // 否则 CPU 音符相对 GPU 网格整体左移 keyboard_width、上移 ruler_height
+                keyboard_width: es.view.keyboard_width,
+                ruler_height: es.view.ruler_height,
                 // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
                 scroll: (es.view.scroll_x, es.view.scroll_y),
                 zoom: (es.view.zoom_x, es.view.zoom_y),

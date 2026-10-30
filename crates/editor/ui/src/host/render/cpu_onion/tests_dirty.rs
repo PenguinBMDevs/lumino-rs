@@ -29,6 +29,9 @@ fn geometry() -> CpuOnionGeometry {
         scale_factor: 1.0,
         canvas_offset: (0.0, 0.0),
         canvas_size: (WIDTH, HEIGHT),
+        // 本文件的用例只关心内容区局部坐标，边栏取 0（帧矩形 = 整块画布）
+        keyboard_width: 0.0,
+        ruler_height: 0.0,
         scroll: (0.0, 0.0),
         zoom: (1.0, 20.0),
         key_count: 128,
