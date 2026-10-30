@@ -190,6 +190,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "打开日志目录" => Some("Open log folder"),
+        "打开目录" => Some("Open folder"),
+        "关闭窗口" => Some("Close window"),
         "未知时间" => Some("Unknown time"),
         "自动保存失败，请检查日志" => Some("Autosave failed; please check the log"),
         _ => None,

@@ -52,8 +52,8 @@ impl RunnerInner {
             log_dir.clone()
         });
 
-        let open_label = tr!("打开日志目录").to_string();
-        let close_label = tr!("关闭").to_string();
+        let open_label = tr!("打开目录").to_string();
+        let close_label = tr!("关闭窗口").to_string();
         let result = MessageDialog::new()
             .set_level(MessageLevel::Warning)
             .set_title(tr!("上次运行发生崩溃"))
