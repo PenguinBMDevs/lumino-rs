@@ -47,8 +47,11 @@ use lumino_gfx::CpuOnionFrame;
 use lumino_midi_model::MidiDocument;
 
 use super::camera::CpuOnionGeometry;
+use super::density_cache::DensityCache;
 use super::output::{CpuOnionOutput, to_gfx_rect};
-use super::plan::{CpuOnionIndex, CpuOnionRedraw, PlanInput, group_changes, plan_update};
+use super::plan::{CpuOnionIndex, CpuOnionRedraw, PlanInput, overview_redraw, plan_update};
+
+mod maintain;
 
 /// CPU 洋葱皮 band 数上限（每 band 一条 tokio worker 线程）。
 ///
@@ -110,6 +113,13 @@ pub(crate) struct CpuOnionState {
     ///   取消静音后它就是必须画的洋葱轨，几何过期会**静默漏画长音符**；
     /// - 当前轨：CPU 本帧不画它，登记后保留到切轨那一刻再补（热路径不回退）。
     stale_tracks: HashSet<usize>,
+    /// 总览密度 LOD 缓存（按代次/键数失效；单笔编辑增量维护）。
+    density: DensityCache,
+    /// 上一帧是否处于总览密度档。
+    ///
+    /// 跨档必须整帧：退出总览时哪怕本帧只是「本来不重绘」的当前轨编辑，也必须
+    /// 把蓝色密度层换回 Exact 音符；否则会一直显示过期的热力图。
+    overview_active: bool,
 }
 
 impl CpuOnionState {
@@ -189,12 +199,30 @@ impl CpuOnionState {
             frame_size: (key.geometry.width, key.geometry.height),
         });
 
-        self.maintain_index(document, &plan.index, dirty.as_ref(), key.current_track);
+        self.maintain_index(
+            document,
+            &plan.index,
+            dirty.as_ref(),
+            key.current_track,
+            key.track_notes_gen,
+        );
         if plan.index != CpuOnionIndex::Keep {
             self.index_gen = Some(key.track_notes_gen);
         }
 
-        let Some(redraw) = plan.redraw else {
+        // 总览 LOD：密度层逐屏幕列重采样，单音符脏区覆盖不了受影响的整列；且
+        // 密度覆盖全部音轨，当前轨编辑也会改热力图 → 代次一变就必须整帧。
+        // 每帧都重算档位（`estimate_visible` 只加小节桶）：复用帧也必须保持
+        // `overview_active`，否则空闲一帧就会误判「退出总览」。
+        let overview = self
+            .index
+            .as_ref()
+            .is_some_and(|index| lumino_cpu_onion::uses_overview(index, &key.geometry.camera));
+        let mode_changed = overview != self.overview_active;
+        self.overview_active = overview;
+        let redraw = overview_redraw(overview, mode_changed, gen_changed, plan.redraw);
+
+        let Some(redraw) = redraw else {
             // 不重绘：把冻结键推到新代次，避免下一帧重复判断
             // （几何待补已在入口按「上一帧当前轨」登记）
             self.frozen = Some(key);
@@ -218,6 +246,18 @@ impl CpuOnionState {
 
         let geometry = key.geometry;
         let track_count = snapshot.track_count().max(1);
+        // 密度只在总览档需要：进入总览的首帧整建一次（O(总音符数)），之后单笔
+        // 编辑走增量；切轨/静音不失效（统计覆盖全部音轨）。
+        let density = if overview {
+            self.density.ensure(
+                key.track_notes_gen,
+                snapshot.as_ref(),
+                geometry.camera.key_count,
+                worker_bands(),
+            )
+        } else {
+            None
+        };
         // 调色板或轨数变化都要重建每轨颜色缓存（实例颜色固化在像素里）
         let refresh_palette =
             self.palette_idx != Some(key.palette_idx) || plan.index == CpuOnionIndex::Rebuild;
@@ -231,12 +271,13 @@ impl CpuOnionState {
             }
             let dirty = match redraw {
                 CpuOnionRedraw::Full => {
-                    renderer.render_full(
+                    renderer.render_full_with_density(
                         snapshot,
                         index,
                         &geometry.camera,
                         key.current_track,
                         muted,
+                        density,
                     );
                     // 整帧重绘：脏区语义交给「全量上传」，不标注局部范围
                     None
@@ -292,30 +333,6 @@ impl CpuOnionState {
         Some(frame.clone())
     }
 
-    /// 维护文档快照与派生索引（`Rebuild` / `Incremental` / `Keep`）。
-    fn maintain_index(
-        &mut self,
-        document: &MidiDocument,
-        action: &CpuOnionIndex,
-        dirty: Option<&CpuOnionDirty>,
-        current_track: usize,
-    ) {
-        match action {
-            CpuOnionIndex::Keep => {}
-            CpuOnionIndex::Rebuild => {
-                let snapshot = Arc::new(document.clone());
-                self.index = Some(Arc::new(TrackIndex::build(snapshot.as_ref())));
-                self.document = Some(snapshot);
-                // 整建 = 全量按最新文档聚合 → 所有轨几何都新鲜
-                self.stale_tracks.clear();
-            }
-            CpuOnionIndex::Incremental => {
-                self.document = Some(Arc::new(document.clone()));
-                self.apply_incremental(dirty, current_track);
-            }
-        }
-    }
-
     /// 登记「索引几何待补」的音轨（仅在无原子变更可表达时调用）。
     ///
     /// - `Some(empty)`：约定为「只有当前轨变了」（`record_update_ranges` 用空集
@@ -338,39 +355,6 @@ impl CpuOnionState {
             }
             Some(tracks) => self.stale_tracks.extend(tracks.iter().copied()),
         }
-    }
-
-    /// 按原子变更增量更新索引；先补齐所有「已不再是当前轨」的过期轨几何。
-    ///
-    /// 当前轨的过期几何**保留**（CPU 不画它，热路径不为它付 O(该轨音符数)），
-    /// 等切轨那一刻再补。
-    fn apply_incremental(&mut self, dirty: Option<&CpuOnionDirty>, current_track: usize) {
-        let Some(snapshot) = self.document.clone() else {
-            return;
-        };
-        let Some(mut index) = self.index.clone() else {
-            return;
-        };
-        let repaired: Vec<usize> = self
-            .stale_tracks
-            .iter()
-            .copied()
-            .filter(|track| *track != current_track)
-            .collect();
-        for track in &repaired {
-            index = Arc::new(index.rebuild_track_geometry(snapshot.as_ref(), *track));
-            self.stale_tracks.remove(track);
-        }
-        if let Some(dirty) = dirty.filter(|dirty| dirty.has_changes()) {
-            for (track, removed, added) in group_changes(&dirty.changes) {
-                if repaired.contains(&track) {
-                    // 该轨已按最新文档整轨重算，再叠 changes 会重复计数
-                    continue;
-                }
-                index = Arc::new(index.with_changes_fast(track, &removed, &added));
-            }
-        }
-        self.index = Some(index);
     }
 }
 

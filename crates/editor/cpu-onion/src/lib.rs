@@ -1,4 +1,4 @@
-//! `lumino-cpu-onion` — 纯 CPU 洋葱皮渲染核心（onion-only）。
+//! `lumino-cpu-onion` — 纯 CPU 洋葱皮渲染核心（Exact 为 onion-only，总览 LOD 为全曲密度）。
 //!
 //! 从 `examples/cpu-onionskin` 抽取的**洋葱皮专用**子集：
 //! - 只画「非当前轨 + 非静音轨」的音符（主轨由 GPU 渲染器负责，本 crate 不画）；
@@ -6,6 +6,8 @@
 //! - 与 GPU `onion_note.wgsl` 的外观规则一致：调色板色、边框 `×0.4`
 //!   （线性空间）、每侧 2px、重叠 first-wins、无抗锯齿；
 //! - 保留 SIMD（AVX2 运行时检测 + 标量兜底）与 tokio 多 band 并行；
+//! - 极限缩放（可见音符估算超阈值）自动切 [`density`] 总览密度 LOD：蓝色热力图、
+//!   透明背景；该档统计全部音轨（与示例总览一致），当前轨仍由 GPU 精确绘制；
 //! - 不含 winit / softbuffer / present / screenshot / bench CLI，
 //!   也不绘制键盘栏、标尺、网格、背景与主轨。
 //!
@@ -32,6 +34,7 @@
 
 pub mod camera;
 pub mod color;
+pub mod density;
 pub mod frame;
 pub mod index;
 pub mod renderer;
@@ -44,6 +47,7 @@ mod simd;
 mod slot;
 
 pub use camera::CanvasCamera;
+pub use density::{DensityPyramid, OVERVIEW_NOTE_THRESHOLD, overview_note_estimate, uses_overview};
 pub use frame::CpuFrame;
 pub use index::{LOOKBACK_TICKS, TrackIndex};
 pub use renderer::{CpuOnionRect, CpuOnionRenderer};

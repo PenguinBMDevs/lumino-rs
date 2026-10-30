@@ -31,13 +31,16 @@ use crate::{
     camera::CanvasCamera,
     color::NoteStyle,
     compose,
+    density::DensityPyramid,
     frame::CpuFrame,
     index::TrackIndex,
     simd::SimdLevel,
     slot::{BandSlot, put_buffer, take_buffer},
 };
 
+mod overview;
 mod region;
+mod strip;
 
 pub use region::CpuOnionRect;
 
@@ -123,6 +126,8 @@ impl CpuOnionRenderer {
     /// `camera.width` / `height` 应与 [`Self::resize`] 的帧尺寸一致；高度不一致
     /// 时 band 合成会因尺寸校验被跳过（输出保持透明，不 panic）。
     /// `current_track` 越界或 `muted` 长度不足时按「非当前 / 未静音」处理。
+    ///
+    /// 本入口恒走 Exact；总览 LOD 用 [`Self::render_full_with_density`]。
     pub fn render_full(
         &mut self,
         document: Arc<MidiDocument>,
@@ -131,8 +136,25 @@ impl CpuOnionRenderer {
         current_track: usize,
         muted: &[bool],
     ) -> &CpuFrame {
+        self.render_full_with_density(document, index, camera, current_track, muted, None)
+    }
+
+    /// 全量渲染一帧，按需切总览密度 LOD。
+    ///
+    /// 仅当 `density` 为 `Some` 且可见音符估算超过阈值时才走密度热力图；
+    /// 否则与 [`Self::render_full`] 逐像素一致。总览是**整帧**输出（透明背景 +
+    /// 密度格），调用方不得按区域/窄条复用本帧——密度会随相机整屏重采样。
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_full_with_density(
+        &mut self,
+        document: Arc<MidiDocument>,
+        index: Arc<TrackIndex>,
+        camera: &CanvasCamera,
+        current_track: usize,
+        muted: &[bool],
+        density: Option<&DensityPyramid>,
+    ) -> &CpuFrame {
         self.ensure_frame_size();
-        self.clear_frame();
 
         let width = self.width;
         let height = self.height;
@@ -140,6 +162,18 @@ impl CpuOnionRenderer {
             return &self.output;
         }
 
+        // 总览分支自己覆盖整帧（每一行都写入，无密度处写透明），不必先清两次
+        // （`clear_frame` 会同时清内部帧 + 输出帧，1080p 白付 ~16MB 写入）。
+        if let Some(density) = density
+            && density.key_count() == camera.key_count
+            && crate::density::uses_overview(&index, camera)
+        {
+            let estimate = crate::density::overview_note_estimate(&index, camera);
+            self.render_overview_full(camera, density, estimate);
+            return &self.output;
+        }
+
+        self.clear_frame();
         let (key_min, key_max) = camera.visible_key_range();
         let bands = self.band_count.min(width as usize).max(1);
         let band_width = width.div_ceil(bands as u32);
@@ -195,6 +229,7 @@ impl CpuOnionRenderer {
             &mut self.output,
             0,
             width,
+            self.simd,
         );
         &self.output
     }
@@ -217,68 +252,6 @@ impl CpuOnionRenderer {
         if dx.unsigned_abs() >= width {
             self.visible_notes = 0;
         }
-    }
-
-    /// 只渲染 `[x0, x1)` 窄条并合成进当前帧（滚动增量路径）。
-    ///
-    /// 不整帧清空；调用方负责先 `shift_frame` 并把 `camera.scroll_x` 对齐到
-    /// 帧实际滚动值。窄条与全量帧使用同一光栅化，不省填充 / 描边 / 音轨。
-    #[allow(clippy::too_many_arguments)]
-    pub fn render_strip(
-        &mut self,
-        document: Arc<MidiDocument>,
-        index: Arc<TrackIndex>,
-        camera: &CanvasCamera,
-        current_track: usize,
-        muted: &[bool],
-        x0: u32,
-        x1: u32,
-    ) -> &CpuFrame {
-        self.ensure_frame_size();
-        self.visible_notes = 0;
-        if x0 >= x1 || x1 > self.width || self.height == 0 {
-            return &self.output;
-        }
-
-        let (key_min, key_max) = camera.visible_key_range();
-        let (tick_lo, tick_hi) = camera.tick_range_for_x(x0 as f32, x1 as f32);
-        let job = BandJob {
-            x0,
-            x1,
-            camera: *camera,
-            tick_lo,
-            tick_hi,
-            key_min,
-            key_max,
-            current_track,
-            muted: Arc::from(muted),
-            style: Arc::clone(&self.style),
-            index,
-            document,
-            simd: self.simd,
-        };
-
-        let mut buffer = take_buffer(&self.strip_slot);
-        let stats = render_band(&job, &mut buffer);
-        compose::compose_band(
-            &mut self.frame,
-            self.width as usize,
-            self.height as usize,
-            x0,
-            x1,
-            &buffer,
-        );
-        compose::write_output(
-            &self.frame,
-            self.width as usize,
-            self.height as usize,
-            &mut self.output,
-            x0,
-            x1,
-        );
-        put_buffer(&self.strip_slot, buffer);
-        self.visible_notes = stats.visible_notes;
-        &self.output
     }
 
     /// 当前对外帧。

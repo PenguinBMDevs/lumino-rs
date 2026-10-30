@@ -142,6 +142,72 @@ unsafe fn masked_fill_row_avx2(
     );
 }
 
+/// `0xAARRGGBB` 行 → RGBA8 字节（每像素 R,G,B,A）。
+///
+/// 1080p 输出帧有 207 万像素，标量逐像素位移约 3~4ms；AVX2 用 `pshufb`
+/// 把每个 4 字节组 `[B,G,R,A]`（小端）重排为 `[R,G,B,A]`，降到亚毫秒。
+/// `dst` 长度不足时按 `dst.len() / 4` 截断，绝不越界。
+pub(crate) fn argb_to_rgba_row(src: &[u32], dst: &mut [u8], level: SimdLevel) {
+    let len = src.len().min(dst.len() / 4);
+    if len == 0 {
+        return;
+    }
+    let src = &src[..len];
+    let dst = &mut dst[..len * 4];
+    match level {
+        SimdLevel::Avx2 => {
+            #[cfg(target_arch = "x86_64")]
+            // SAFETY: 仅在本机确认 AVX2 后由 `detect()` 返回该档位；src/dst
+            // 已按像素数截断，循环条件 `index + 8 <= len` 保证 32 字节读写不越界。
+            unsafe {
+                argb_to_rgba_avx2(src, dst);
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            argb_to_rgba_scalar(src, dst);
+        }
+        SimdLevel::Scalar => argb_to_rgba_scalar(src, dst),
+    }
+}
+
+fn argb_to_rgba_scalar(src: &[u32], dst: &mut [u8]) {
+    for (chunk, &pixel) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src) {
+        *chunk = [
+            ((pixel >> 16) & 0xFF) as u8,
+            ((pixel >> 8) & 0xFF) as u8,
+            (pixel & 0xFF) as u8,
+            ((pixel >> 24) & 0xFF) as u8,
+        ];
+    }
+}
+
+/// # Safety
+///
+/// 调用方必须确认 CPU 支持 AVX2，且 `dst` 至少有 `src.len() * 4` 字节。
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn argb_to_rgba_avx2(src: &[u32], dst: &mut [u8]) {
+    use std::arch::x86_64::{
+        __m256i, _mm256_loadu_si256, _mm256_setr_epi8, _mm256_shuffle_epi8, _mm256_storeu_si256,
+    };
+    let len = src.len().min(dst.len() / 4);
+    // 每个 128-bit lane 内做同样的 4 字节重排：[B,G,R,A] → [R,G,B,A]。
+    let mask = _mm256_setr_epi8(
+        2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15, 2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11,
+        14, 13, 12, 15,
+    );
+    let mut index = 0;
+    // SAFETY: 见函数 `# Safety`；`index + 8 <= len` 保证 32 字节读写不越界。
+    unsafe {
+        while index + 8 <= len {
+            let value = _mm256_loadu_si256(src.as_ptr().add(index) as *const __m256i);
+            let shuffled = _mm256_shuffle_epi8(value, mask);
+            _mm256_storeu_si256(dst.as_mut_ptr().add(index * 4) as *mut __m256i, shuffled);
+            index += 8;
+        }
+    }
+    argb_to_rgba_scalar(&src[index..len], &mut dst[index * 4..len * 4]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +287,32 @@ mod tests {
         );
         assert_eq!(scalar_row, simd_row);
         assert_eq!(scalar_owner, simd_owner);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn avx2_argb_to_rgba_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let pixels: Vec<u32> = (0..37u32)
+            .map(|index| 0xA1_00_00_00 | (index.wrapping_mul(0x0003_0507) & 0x00FF_FFFF))
+            .collect();
+        let mut scalar = vec![0u8; pixels.len() * 4];
+        let mut simd = vec![0u8; pixels.len() * 4];
+        argb_to_rgba_row(&pixels, &mut scalar, SimdLevel::Scalar);
+        argb_to_rgba_row(&pixels, &mut simd, SimdLevel::Avx2);
+        assert_eq!(scalar, simd, "AVX2 字节重排必须与标量逐字节一致");
+        // 37 像素 = 32 个走 AVX2 + 5 个走标量尾。
+        assert_eq!(scalar[..4], [0, 0, 0, 0xA1]);
+        assert_eq!(scalar.len(), 37 * 4);
+    }
+
+    #[test]
+    fn argb_to_rgba_row_truncates_to_shorter_buffer() {
+        let pixels = [0x11_22_33_44u32; 4];
+        let mut dst = [0u8; 8];
+        argb_to_rgba_row(&pixels, &mut dst, SimdLevel::Scalar);
+        assert_eq!(dst, [0x22, 0x33, 0x44, 0x11, 0x22, 0x33, 0x44, 0x11]);
     }
 }

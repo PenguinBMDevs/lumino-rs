@@ -42,6 +42,7 @@ use crate::host::render::onion_skin::mute_fingerprint_of;
 use crate::sidebar::Track;
 
 mod camera;
+mod density_cache;
 mod output;
 mod plan;
 mod state;

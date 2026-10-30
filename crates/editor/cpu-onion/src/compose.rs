@@ -4,7 +4,11 @@
 //! `shift` 同时维护内部 u32 帧与对外 RGBA8 帧，保证 `frame()` 在平移后立即
 //! 与相机一致（不依赖下一次窄条渲染才刷新）。
 
-use crate::{buffer::BandBuffer, frame::CpuFrame};
+use crate::{
+    buffer::BandBuffer,
+    frame::CpuFrame,
+    simd::{SimdLevel, argb_to_rgba_row},
+};
 
 /// 把一条 band 的像素拷进内部合成帧。
 pub(crate) fn compose_band(
@@ -50,8 +54,9 @@ pub(crate) fn write_output(
     output: &mut CpuFrame,
     x0: u32,
     x1: u32,
+    simd: SimdLevel,
 ) {
-    write_output_region(frame, width, height, output, x0, x1, 0, height as u32);
+    write_output_region(frame, width, height, output, x0, x1, 0, height as u32, simd);
 }
 
 /// 把内部合成帧的 `[x0, x1) × [y0, y1)` 转换为 RGBA8 输出（区域重绘用）。
@@ -65,6 +70,7 @@ pub(crate) fn write_output_region(
     x1: u32,
     y0: u32,
     y1: u32,
+    simd: SimdLevel,
 ) {
     let x0 = (x0 as usize).min(width);
     let x1 = (x1 as usize).min(width);
@@ -91,14 +97,7 @@ pub(crate) fn write_output_region(
         let Some(dst) = output.pixels.get_mut(dst_start..dst_start + span * 4) else {
             continue;
         };
-        for (chunk, &pixel) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.iter()) {
-            *chunk = [
-                ((pixel >> 16) & 0xFF) as u8,
-                ((pixel >> 8) & 0xFF) as u8,
-                (pixel & 0xFF) as u8,
-                ((pixel >> 24) & 0xFF) as u8,
-            ];
-        }
+        argb_to_rgba_row(src, dst, simd);
     }
 }
 
@@ -246,7 +245,7 @@ mod tests {
     fn write_output_maps_argb_to_rgba() {
         let frame = vec![0u32, 0xFF11_2233, 0x0000_0000, 0xFF44_5566];
         let mut output = CpuFrame::new(2, 2);
-        write_output(&frame, 2, 2, &mut output, 0, 2);
+        write_output(&frame, 2, 2, &mut output, 0, 2, SimdLevel::Scalar);
         assert_eq!(output.pixel(0, 0), Some([0, 0, 0, 0]));
         assert_eq!(output.pixel(1, 0), Some([0x11, 0x22, 0x33, 0xFF]));
         assert_eq!(output.pixel(0, 1), Some([0, 0, 0, 0]));

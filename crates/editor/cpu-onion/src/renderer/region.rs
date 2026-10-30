@@ -122,6 +122,10 @@ impl CpuOnionRenderer {
     /// 区域外的旧像素**原样保留**；区域内的像素与「同参数 `render_full` 后取同
     /// 一块区域」逐像素一致（见 `tests/region_render.rs`）。
     ///
+    /// 总览 LOD 下**不得**调用本入口：密度按屏幕列重采样，单音符脏区覆盖不了
+    /// 受影响的整列（且颜色归一化会随整帧变化）；调用方必须改走整帧
+    /// [`super::CpuOnionRenderer::render_full_with_density`]。
+    ///
     /// 越界部分被裁剪；完全越界或帧尺寸为 0 时不做任何改动。
     pub fn render_region(
         &mut self,
@@ -233,6 +237,7 @@ impl CpuOnionRenderer {
             rect.x + rect.width,
             rect.y,
             rect.y + rect.height,
+            self.simd,
         );
         self.visible_notes = visible;
         &self.output

@@ -93,3 +93,7 @@ mod changes;
 /// 脏矩形换算（越界裁剪 / 退化相机 / 全在画布外 / 面积升级）。
 #[path = "tests/rects.rs"]
 mod rects;
+
+/// 总览密度 LOD 的重绘放大（Step 7）。
+#[path = "tests/overview.rs"]
+mod overview;
