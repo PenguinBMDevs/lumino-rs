@@ -366,3 +366,5 @@ fn test_async_commit_writes_back_to_originating_track_after_switch() {
         "非当前轨提交不得发段内 UpdateRange（索引属于旧轨）"
     );
 }
+
+mod cpu_onion;

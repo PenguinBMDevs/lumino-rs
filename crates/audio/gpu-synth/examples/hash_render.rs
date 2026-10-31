@@ -51,7 +51,9 @@ fn write_wav_f32(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
-        eprintln!("用法: hash_render <midi> <sf2> <frames> <block> [--raw out.f32] [--wav out.wav]");
+        eprintln!(
+            "用法: hash_render <midi> <sf2> <frames> <block> [--raw out.f32] [--wav out.wav]"
+        );
         std::process::exit(2);
     }
 

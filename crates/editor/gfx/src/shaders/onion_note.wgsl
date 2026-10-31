@@ -1,20 +1,12 @@
-// 统一全量音符渲染着色器（洋葱皮 + 主音轨一体，2026-08-06）
+// 统一全量音符渲染着色器（洋葱皮 + 主音轨一体）。
 //
-// 数据模型：GPU buffer 持有**所有轨全部音符**（统一 `border_width` 高 16 位
-// 编码 track_idx+1），「哪个轨是主音轨」由 `ViewState.current_track` uniform
-// 低频更新（切轨零重传）。shader 内：
-//   - 主音轨（track == current_track）：染主音轨蓝、深度取主音轨区（最前，覆盖一切）
-//   - 静音轨且非主音轨：视口外退化几何裁剪（不渲染）
-//   - 其余（洋葱皮）：实例固化的调色板色、深度取洋葱皮区
+// 数据模型：GPU buffer 持**所有轨全部音符**（`border_width` 高 16 位 = track_idx+1）；
+// 「谁是主音轨」由 `ViewState.current_track` 低频更新（切轨零重传）：主音轨染主轨蓝 +
+// 主音轨区深度；静音且非主音轨 → 视口外退化几何（不产生片元）；其余用实例色 + 洋葱皮区
+// 深度。与 `note.wgsl` 的差异：无预览哨兵分支（预览音符走独立渲染器）。
 //
-// 深度语义（修复重叠音符逐帧闪烁，2026-08 / 2026-09 黑乐谱加固）：cull.wgsl
-// 输出可见索引，VS 从 all_instances 读取原数据，重叠实例的**输出顺序**由 cull 的
-// workgroup atomicAdd 抢占决定、帧间不稳定；管线是 LessEqual + depth_write_enabled=true，
-// 同深度「后画者胜」→ 赢家逐帧随机。本文件用与绘制顺序无关的稳定深度消除平局，
-// 完整语义见下方 region_depth 前的说明块。
-//
-// 与旧 note.wgsl 的差异：无预览哨兵分支（预览音符走独立渲染器 note.wgsl）。
-// 2026-08-07：顶点输入从完整 NoteInstance 改为 u32 可见索引。
+// 入口：`vs_main`（cull + 可见索引）/ `vs_direct`（VS 内自判可见，无 cull）/
+// `vs_point`（点图元）。完整背景、深度推导、PREF-004/005 取舍见同目录 `README.md`。
 
 /// 主音轨固定蓝色（与 UI 层 `MAIN_TRACK_NOTE_COLOR` 一致）
 const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);
@@ -22,25 +14,19 @@ const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);
 /// 边框颜色加深因子（同色系深色：color * 0.4，与主音轨 note.wgsl 保持一致）
 const BORDER_DARKEN_FACTOR: f32 = 0.4;
 
-// ── 深度语义：区域化位空间映射（与 note.wgsl 保持一致的语义，2026-09 加固）──
-//
-// 根因（两半叠加）：
-//   1) cull.wgsl 每个 workgroup 由线程 0 抢占式 atomicAdd 输出槽位，可见实例的
-//      输出顺序由 GPU 调度决定、帧间不稳定；
-//   2) 管线为 LessEqual + depth_write_enabled=true（constants.rs），同深度
-//      「后画者胜」，赢家随可见缓冲顺序逐帧随机 → 重叠区描边闪烁。
-// 本文件用**与绘制顺序无关**的稳定深度消除平局：
-//   1) 分层：预览（note.wgsl 的 0.0，最前） < 主音轨区 MAIN_DEPTH_REGION_BITS <
-//      洋葱皮区 ONION_DEPTH_REGION_BITS —— 主轨恒覆盖洋葱皮。
-//   2) 区内全序：深度取「区域起点 + 全局源索引」的 f32 正位空间线性映射
-//      （bitcast 后位模式单调 ⇒ 索引严格等价于深度序）。全局索引 =
-//      chunk_start + 本地可见索引，跨 chunk 不重置；索引跨帧稳定（段内原位），
-//      洋葱皮区序 = 段表/轨道顺序，与绘制顺序无关。
-//   3) 容量与饱和：每区 DEPTH_REGION_SLOTS 槽（5.2 亿实例），覆盖项目
-//      2.9 亿音符目标；超过槽数的极端索引饱和到区顶（确定性，但饱和段内
-//      仍可能平局——超出项目目标规模）。
-//   4) 值域：区域起点取最小正规格数 2^-126，洋葱区顶 0.25 < 远平面 1.0，
-//      全程正规格数、无 denormal、不越远平面。
+// ── 边框判定：屏幕像素空间（BORDER_PIXEL_SPACE）──────────────────────────────
+// 不用 UV 边距：等号归属落在重心插值末位噪声上（同类实例结论相反）；固定 UV epsilon
+// 又会随宽度放大（1e-4 × 1e6px = 100px，吃掉整条边框）。故用 flat `rect_min` +
+// `@builtin(position).xy` 做纯像素域判定：`local = position.xy - rect_min`、
+// `side_px = 2 * border_px`，等号归**填充**（与 CPU `notes.rs::{fill_start, fill_end}`
+// 同义），与音符宽度无关。完整证据见同目录 README.md。
+
+// ── 深度语义：区域化位空间映射（与 note.wgsl 同义）──────────────────────────
+// 深度 = **区域起点 + 全局源索引**（`chunk_start + 本地可见索引`），与绘制顺序无关：
+// 预览 0.0 < 主音轨区 < 洋葱皮区，区内索引严格等价于深度序 ⇒ 重叠裁决跨帧稳定
+// （cull 的 atomicAdd 输出顺序随机，同深度「后画者胜」会导致描边闪烁）。
+// 每区 DEPTH_REGION_SLOTS 槽；超槽饱和到区顶；洋葱区顶 0.25 < 远平面 1.0。
+// 完整根因与值域推导见同目录 README.md；CPU 孪生见 note_renderer/depth_tests。
 
 /// 主音轨区起点位模式（2^-126，最小正规格数）
 const MAIN_DEPTH_REGION_BITS: u32 = 0x00800000u;
@@ -107,9 +93,11 @@ var<uniform> chunk_info: ChunkInfo;
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) uv: vec2<f32>,           // [0,1]² UV，用于边距判定
-    @location(2) screen_size: vec2<f32>,  // 屏幕像素宽高（用于 UV 边距反算）
-    @location(3) border_width: u32,       // 透传到 FS
+    // 音符矩形左上角（屏幕像素）。**flat**：逐实例常量，不参与插值。
+    @location(1) @interpolate(flat) rect_min: vec2<f32>,
+    // 音符矩形尺寸（屏幕像素宽高）。**flat**：同上。
+    @location(2) @interpolate(flat) screen_size: vec2<f32>,
+    @location(3) border_width: u32,  // 透传到 FS（低 16 位边框宽，高 16 位轨道编码）
 };
 
 /// 解包 key_color → vec4 RGBA（alpha 恒为 1.0）
@@ -202,7 +190,7 @@ fn vs_main(
         output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
     }
     output.color = color;
-    output.uv = local_offset;
+    output.rect_min = vec2<f32>(screen_x, screen_y);
     output.screen_size = screen_size;
     output.border_width = instance.border_width;
 
@@ -214,20 +202,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // 纯色填充（不透明，洋葱皮 alpha=1.0 与主音轨一致）
     var color = input.color.rgb;
 
-    // 2 像素同色加深描边（与 note.wgsl 共用 UV 边距判定算法）
-    let half_width_pixels = input.screen_size.x * 0.5;
-    let half_height_pixels = input.screen_size.y * 0.5;
-
+    // 2 像素同色加深描边：**屏幕像素空间**判定（详见 BORDER_PIXEL_SPACE 说明块）
+    let border_px = f32(input.border_width & 0xFFFFu);
+    let side_px = border_px * 2.0;
+    let local = input.position.xy - input.rect_min;
     var is_border = false;
-    if (half_width_pixels > 0.0 && half_height_pixels > 0.0) {
-        // 边框宽 = 低 16 位（高 16 位被深度编码占用）
-        let border_px = f32(input.border_width & 0xFFFFu);
-        let horiz_margin = 1.0 / half_width_pixels * border_px;
-        let vert_margin = 1.0 / half_height_pixels * border_px;
-        is_border = input.uv.x < horiz_margin
-                 || input.uv.x > 1.0 - horiz_margin
-                 || input.uv.y < vert_margin
-                 || input.uv.y > 1.0 - vert_margin;
+    if (input.screen_size.x > 0.0 && input.screen_size.y > 0.0) {
+        // 左/上：`local == side_px`（片元中心正好压在第一列填充上）算**填充**；
+        // 右/下：`local == size - side_px` 同样算**填充**。
+        // 与 CPU `lumino-cpu-onion::notes::{fill_start, fill_end}` 的「等号归填充」
+        // 逐像素同义，且不经过任何重心插值 ⇒ 半像素几何下也不存在归属噪声。
+        is_border = local.x < side_px
+                 || local.x > input.screen_size.x - side_px
+                 || local.y < side_px
+                 || local.y > input.screen_size.y - side_px;
     }
 
     if (is_border) {
@@ -238,25 +226,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(color, 1.0);
 }
 
-// ── 亚像素档位：点图元直绘入口（PREF-004 P1，2026-10-01）─────────────────────
-//
-// 背景（真机 RTX 2060 / 1920×1080 分段实测）：
-//   缩小全景时每帧成本 = cull 1.39ms + draw 11.97ms（16M 音符全部可见）
-//   ⇒ 瓶颈不是 cull 的读取带宽，而是 **图元装配 + 小三角形光栅化**
-//     （每个音符 quad 只有零点几像素宽，仍要付 4 顶点 / 2 三角形的固定成本）。
-//   点图元把「4 顶点 2 三角形」降为「1 顶点 1 点」，并顺带省掉整趟 cull pass
-//   （可见性判定移入本入口），是这一档位唯一能显著压低 `T` 的杠杆。
-//
-// 与 vs_main 的差异（其余语义必须逐字一致，否则两条路径画面不一致）：
-//   1) 顶点输入改为 `@builtin(instance_index)` 直接索引源缓冲——点直绘不产出
-//      可见索引列表（无 cull），渲染侧因此不设顶点缓冲；
-//   2) 落点取音符**长度/键高的中点**（与 quad 的视觉中心一致）；
-//   3) 视口相交 / 静音轨 / 长度 ≤ 0 判定全部在本入口完成，不可见者输出视口外点；
-//   4) 深度公式不变：`global_index = chunk_start + instance_index`（= 源索引），
-//      与 quad 路径的 `chunk_start + 可见索引` 同值 ⇒ 两条路径深度逐位一致，
-//      重叠音符的稳定裁决语义不回退；
-//   5) 片元不画描边——亚像素宽度下描边没有物理意义（quad 路径在此时
-//      `horiz_margin` 巨大，整块都会被判成描边色，反而更失真）。
+// ── 亚像素档位：点图元直绘入口（PREF-004 P1）────────────────────────────────
+// 缩小全景时瓶颈是图元装配 + 小三角形光栅化（每个 quad 仅零点几像素宽仍付 4 顶点/2
+// 三角形）；点图元降为「1 顶点 1 点」并省掉整趟 cull pass。
+// 与 vs_main 的差异（其余语义必须逐字一致）：
+//   1) 顶点输入 `@builtin(instance_index)` 直索引源缓冲，无顶点缓冲；
+//   2) 落点取音符长度/键高中点；
+//   3) 视口相交 / 静音 / 长度 ≤ 0 在本入口判定，不可见者输出视口外点；
+//   4) 深度公式不变（`chunk_start + instance_index`）⇒ 与 quad 路径逐位一致；
+//   5) 片元不画描边（亚像素下每侧 2px 描边会吃掉整个矩形）。详见 README.md。
 
 @vertex
 fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
@@ -308,7 +286,8 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
         output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
     }
     output.color = color;
-    output.uv = vec2<f32>(0.5, 0.5);
+    // 点路径不画描边（`fs_point`），但仍需填满 flat varying 供同一 `VertexOutput` 复用。
+    output.rect_min = vec2<f32>(screen_min_x, screen_min_y);
     output.screen_size = screen_size;
     output.border_width = instance.border_width;
 
@@ -321,23 +300,13 @@ fn fs_point(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(input.color.rgb, 1.0);
 }
 
-// ── VS cull 直绘入口（PREF-005，2026-10-01）──────────────────────────────────
-//
-// 背景：`cull.wgsl` 的可见索引由 workgroup 间抢占式 `atomicAdd` 写入，输出顺序
-// 由 GPU 调度决定 ⇒ 重叠片元按**随机深度序**到达，`LessEqual + depth_write` 下
-// 无处早拒，每个片元全额付 FS + blend。实测（RTX 2060 / 1920×1080）：
-//   panorama 16M 全可见：compute cull 1.60ms + draw 13.44ms
-// 本入口把可见性判定搬进 VS，于是：
-//   1. 不再需要 compute cull pass（省掉全量读 + 可见索引写 + indirect）；
-//   2. `instance_index` 即**源索引升序** = `region_depth` 的近→远序 ⇒ 重叠片元
-//      后到者被 early-Z 直接拒绝，FS 执行量降到 ≈ 屏幕像素量级；
-//   3. 配合不透明管线（无 blend ROP），early-Z 不再被混合路径拖累。
-//
-// 与 vs_main 的差异（其余语义必须逐字一致，否则两条路径画面不一致）：
-//   1) 顶点输入改为 `@builtin(instance_index)`（无顶点缓冲）；
-//   2) 视口相交判定在本入口完成（谓词与 `cull.wgsl` 逐字一致），不可见/静音/
-//      长度 ≤ 0 一律退化为视口外零面积点（净效果：不产生任何片元）。
-//
+// ── VS cull 直绘入口（PREF-005）────────────────────────────────────────────
+// cull 的可见索引按抢占式 atomicAdd 输出，重叠片元按随机序到达；本入口把可见性判定
+// 搬进 VS：`instance_index` 即源索引升序 = 近→远序 ⇒ early-Z 直接早拒，且整趟
+// compute cull pass 可省（1440p 实测省掉 1.60ms/帧的全量读 + 可见索引写）。
+// 与 vs_main 的差异（其余语义必须逐字一致）：
+//   1) 顶点输入 `@builtin(instance_index)`（无顶点缓冲）；
+//   2) 视口相交 / 静音 / 长度 ≤ 0 在本入口判定，不可见者退化为视口外零面积点。
 // **硬约束**：不得在此引入 LOD 剔除（"1px 以下音符仍绘制"，见 cull.wgsl 注释）。
 
 @vertex
@@ -403,7 +372,7 @@ fn vs_direct(
         output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
     }
     output.color = color;
-    output.uv = local_offset;
+    output.rect_min = vec2<f32>(screen_x, screen_y);
     output.screen_size = screen_size;
     output.border_width = instance.border_width;
 

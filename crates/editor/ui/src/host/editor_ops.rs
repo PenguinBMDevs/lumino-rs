@@ -108,7 +108,13 @@ impl Host {
     /// - 洋葱皮渲染通过 build_onion_skin_instances 遍历 document
     ///
     /// 用户硬约束：避免 track_notes + MidiDocument 双份数据共存导致内存暴涨。
+    ///
+    /// **会话锁**：本方法是真实 MIDI/工程载入的唯一落点（MIDI、LMPJ、云下载、
+    /// 保存后重载都经此），因此在这里置锁。启动/新建/关闭工程的空白文档由
+    /// [`Host::init_blank_project`] 在本方法之后**立即解锁**——空白工程不是
+    /// 「加载 MIDI」，不得把后端选择永久锁死（见 `host::session_lock`）。
     pub fn set_midi_document(&mut self, doc: MidiDocument) {
+        self.midi_load.mark_loaded();
         // tempo / 拍号的编辑态缓存由 `Root::set_midi_document` 统一只读刷新
         // （2026-10-20 审计 §三：此处原先「读 doc → set_tempo_points 写回 doc」
         // 是一次数据未变的往返，已删除）。

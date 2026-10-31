@@ -12,7 +12,10 @@ pub mod density;
 mod notes;
 pub mod simd;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use lumino_midi_loader::MidiDocument;
 use tokio::task::JoinSet;
@@ -83,6 +86,8 @@ pub struct Renderer {
     height: u32,
     simd: SimdLevel,
     style: Arc<NoteStyle>,
+    early_coverage: bool,
+    column_major: bool,
 }
 
 impl Renderer {
@@ -106,7 +111,21 @@ impl Renderer {
             height: 0,
             simd,
             style,
+            early_coverage: true,
+            column_major: false,
         }
+    }
+
+    /// 开关"画布已覆盖"提前退出（仅测试/基准对照用）。
+    #[allow(dead_code)]
+    pub fn set_early_coverage(&mut self, enabled: bool) {
+        self.early_coverage = enabled;
+    }
+
+    /// 开关列主序窄音符绘制（仅测试/基准对照用）。
+    #[allow(dead_code)]
+    pub fn set_column_major(&mut self, enabled: bool) {
+        self.column_major = enabled;
     }
 
     /// 窗口尺寸变化。
@@ -162,6 +181,8 @@ impl Renderer {
 
         let style = Arc::clone(&self.style);
         let camera = camera.clone();
+        let column_major =
+            self.column_major && camera.zoom_x * index.short_note_ticks.max(1) as f32 <= 4.0;
         let document_for_tasks = Arc::clone(&document);
         let index_for_tasks = Arc::clone(&index);
         let slots = self.slots.clone();
@@ -187,10 +208,24 @@ impl Renderer {
                     simd,
                     key_min,
                     key_max,
+                    early_coverage: self.early_coverage,
+                    column_major,
                 };
                 set.spawn(async move {
                     let mut buffer = take_buffer(&slot);
+                    let started = Instant::now();
                     let stats = render_band(&job, &mut buffer);
+                    let elapsed_ms = started.elapsed().as_secs_f32() * 1000.0;
+                    if std::env::var_os("CPU_ONIONSKIN_SLOW_BAND").is_some() && elapsed_ms > 2.0 {
+                        eprintln!(
+                            "[band] x0={x0} x1={x1} ms={elapsed_ms:.2} visible={} cand={} long={} cover={}/{}",
+                            stats.visible_notes,
+                            stats.candidates,
+                            stats.long_candidates,
+                            stats.covered,
+                            stats.coverage_target
+                        );
+                    }
                     (band_index, buffer, stats)
                 });
             }
@@ -254,6 +289,8 @@ impl Renderer {
             return BandStats::default();
         }
         let (key_min, key_max) = camera.visible_key_range();
+        let column_major =
+            self.column_major && camera.zoom_x * index.short_note_ticks.max(1) as f32 <= 4.0;
         let job = BandJob {
             x0,
             x1,
@@ -266,6 +303,8 @@ impl Renderer {
             simd: self.simd,
             key_min,
             key_max,
+            early_coverage: self.early_coverage,
+            column_major,
         };
         let mut buffer = take_buffer(&self.strip_slot);
         let stats = render_band(&job, &mut buffer);

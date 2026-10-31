@@ -4,6 +4,7 @@
 //! 反向/正向应用、历史栈推入（快照 / `MoveOp` / `CreateOp`）与快照恢复。
 
 use super::*;
+use crate::editor_state::editor_data::cpu_onion_dirty::{CpuOnionChange, MAX_CPU_ONION_CHANGES};
 
 impl EditorData {
     // ── 快照构造 ─────────────────────────────────────────────
@@ -62,6 +63,7 @@ impl EditorData {
     /// **新代码应使用 `push_history_with_op_kind` 或 `push_history_mergeable`**
     /// 以获得逻辑撤销链 / 合并窗口能力。
     pub fn push_history(&mut self) {
+        self.commit_history_pending();
         self.history.push(self.make_snapshot());
     }
 
@@ -70,6 +72,7 @@ impl EditorData {
     /// 适用：NoteMove / NoteDelete / NoteTransform / VelocityEdit / AutomationEdit / Recording
     /// 这些操作不走合并窗口，但需要 group_id 以支持未来扩展（如批量操作的逻辑分组）。
     pub fn push_history_with_op_kind(&mut self, op_kind: OpKind) {
+        self.commit_history_pending();
         self.history
             .push_with_op_kind(self.make_snapshot(), op_kind);
     }
@@ -80,6 +83,7 @@ impl EditorData {
     /// 合并规则：栈顶 op_kind 相同 + 在合并窗口内 + 未超 entry 上限 → 合并。
     /// 返回 `true` 表示合并到上一条，`false` 表示新增/分割。
     pub fn push_history_mergeable(&mut self, op_kind: OpKind) -> bool {
+        self.commit_history_pending();
         self.history.push_mergeable(self.make_snapshot(), op_kind)
     }
 
@@ -87,6 +91,7 @@ impl EditorData {
     ///
     /// 拖动提交路径使用：用轻量 MoveOp 替代完整快照。
     pub fn push_move_op(&mut self, ops: Vec<MoveOp>) -> u64 {
+        self.commit_history_pending();
         self.history.push_move_op(ops)
     }
 
@@ -96,18 +101,33 @@ impl EditorData {
     /// 1600W 音符工程在合并窗口内连续绘制不再复制音符数据。
     /// 返回 `true` 表示合并到上一条（300ms 窗口内）。
     pub fn push_note_create(&mut self, ops: Vec<CreateOp>) -> bool {
+        self.commit_history_pending_for_create(&ops);
         self.history.push_note_create(ops)
     }
 
     // ── 历史记录条目应用 ─────────────────────────────────────
-    /// 根据 HistoryEntry 类型应用撤销/重做（删加语义，按值，无全扫）
-    pub(super) fn apply_history_entry(&mut self, entry: HistoryEntry, inverse: bool) {
+    /// 根据 HistoryEntry 类型应用撤销/重做（删加语义，按值，无全扫）。
+    ///
+    /// `snapshot_changes` / `snapshot_full` 只对 `Snapshot` 条目有效：由
+    /// undo/redo 从「待挂变更或条目自身变更」解析后传入；Operation/Create
+    /// 的精确 old/new 直接从 op 构造。回放期间内部写路径不污染历史队列。
+    pub(super) fn apply_history_entry(
+        &mut self,
+        entry: HistoryEntry,
+        inverse: bool,
+        snapshot_changes: Vec<lumino_note_core::history::SnapshotNoteChange>,
+        mut ranges: Vec<(u32, u32)>,
+        snapshot_full: bool,
+    ) {
         // `apply_move_ops` / `apply_create_ops` 内部会调用
         // `mark_track_notes_changed_for`，这是覆盖语义。多步历史跳转在同一帧
         // 连续 apply 时，上一步的脏集合会在这里被中间覆盖；先保存并在末尾并集。
         let previous_onion = self.onion_dirty_tracks.take();
         let previous_main_struct = self.main_track_struct_dirty;
 
+        self.history_replay = true;
+        let mut replay = Vec::new();
+        let mut replay_full = false;
         // 清空可能残留的旧 note_delta_events，防止其在新 current_track 下被误应用到
         // 错误音轨（原 mark_tracks_changed_after_history 的防跨轨误用意图保留于此）。
         self.note_delta_events.clear();
@@ -118,6 +138,16 @@ impl EditorData {
         match entry {
             HistoryEntry::Snapshot(s) => {
                 let track = s.current_track;
+                if snapshot_full && ranges.is_empty() {
+                    let lo = s.notes.first().map_or(0, |note| note.start_tick);
+                    let hi = s
+                        .notes
+                        .iter()
+                        .map(|note| note.end_tick.max(note.start_tick.saturating_add(1)))
+                        .max()
+                        .unwrap_or(lo);
+                    ranges.push((lo, hi.max(lo.saturating_add(1))));
+                }
                 if collab_sync {
                     // 协作对账（按值多重集差分，无 ID）：
                     // Snapshot 仅用于自动化/拍号等非音符高频路径（音符移动/创建已走
@@ -179,6 +209,12 @@ impl EditorData {
                     self.apply_snapshot(*s);
                 }
                 self.mark_tracks_changed_after_history(HashSet::from([track]));
+                replay_full = snapshot_full;
+                replay.extend(snapshot_changes.into_iter().map(|change| CpuOnionChange {
+                    track: change.track,
+                    old: if inverse { change.new } else { change.old },
+                    new: if inverse { change.old } else { change.new },
+                }));
             }
             HistoryEntry::Operation(op) => {
                 // 对 OperationEntry：undo 时传入 inverse=true 删 moved 加回 originals；
@@ -218,7 +254,55 @@ impl EditorData {
                     }
                     self.pending_collab_move_sync = sync;
                 }
+                // Move/Create 历史统一走累积 helper（见 `c7d05a88`：内部写路径的
+                // 覆盖语义会让多步跳转丢掉上一步的脏集合）；CPU 洋葱皮的
+                // replay 变更与区间另由 `record_cpu_onion_replay_changes` 承担。
                 self.mark_tracks_changed_after_history(affected);
+                let max_key = self.max_key_for_move_op();
+                for op in &op.ops {
+                    let moved = op.moved_notes(max_key);
+                    if moved.len() != op.originals.len() {
+                        for note in op.originals.iter().chain(moved.iter()) {
+                            super::ranges::push_union(
+                                &mut ranges,
+                                note.start_tick,
+                                note.end_tick.max(note.start_tick.saturating_add(1)),
+                            );
+                        }
+                        replay_full = true;
+                        continue;
+                    }
+                    for (original, moved) in op.originals.iter().zip(moved) {
+                        if *original == moved {
+                            continue;
+                        }
+                        super::ranges::push_union(
+                            &mut ranges,
+                            original.start_tick,
+                            original.end_tick.max(original.start_tick.saturating_add(1)),
+                        );
+                        super::ranges::push_union(
+                            &mut ranges,
+                            moved.start_tick,
+                            moved.end_tick.max(moved.start_tick.saturating_add(1)),
+                        );
+                        if replay.len() < MAX_CPU_ONION_CHANGES {
+                            replay.push(CpuOnionChange {
+                                track: op.track_id as usize,
+                                old: if inverse {
+                                    Some(moved)
+                                } else {
+                                    Some(*original)
+                                },
+                                new: if inverse {
+                                    Some(*original)
+                                } else {
+                                    Some(moved)
+                                },
+                            });
+                        }
+                    }
+                }
             }
             HistoryEntry::Create(entry) => {
                 let affected: HashSet<usize> =
@@ -243,8 +327,36 @@ impl EditorData {
                     self.pending_collab_create_sync = sync;
                 }
                 self.mark_tracks_changed_after_history(affected);
+                for op in &entry.ops {
+                    super::ranges::push_union(
+                        &mut ranges,
+                        op.note.start_tick,
+                        op.note.end_tick.max(op.note.start_tick.saturating_add(1)),
+                    );
+                    if replay.len() < MAX_CPU_ONION_CHANGES {
+                        replay.push(CpuOnionChange {
+                            track: op.track_id as usize,
+                            old: inverse.then_some(op.note),
+                            new: (!inverse).then_some(op.note),
+                        });
+                    }
+                }
             }
         }
+        self.history_replay = false;
+        if ranges.is_empty() {
+            for change in &replay {
+                if let Some((lo, hi)) =
+                    super::super::cpu_onion_dirty::note_change_range(change.old, change.new)
+                {
+                    ranges.push((lo, hi));
+                }
+            }
+        }
+        if !ranges.is_empty() {
+            replay_full = false;
+        }
+        self.record_cpu_onion_replay_changes(&replay, &ranges, replay_full);
 
         if let Some(previous) = previous_onion {
             self.onion_dirty_tracks = Some(match self.onion_dirty_tracks.take() {

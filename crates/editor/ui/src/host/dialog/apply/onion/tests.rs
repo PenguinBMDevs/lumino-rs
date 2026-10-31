@@ -1,0 +1,193 @@
+//! 洋葱皮后端切换裁决测试（纯函数，不初始化 `Host`/GPU）
+
+use super::{SwitchContext, SwitchPlan, plan_switch};
+use lumino_core::storage::config::OnionSkinBackend;
+use lumino_ui_core::state::ToggleAnimationState;
+
+/// 基准上下文：解锁、横向卷帘、无模式冲突、无导出、无视频导出面板。
+fn base(requested: OnionSkinBackend, old: OnionSkinBackend) -> SwitchContext {
+    SwitchContext {
+        old,
+        requested,
+        locked: false,
+        vertical_roll: false,
+        arrangement: false,
+        waterfall: false,
+        exporting: false,
+        video_panel_visible: false,
+    }
+}
+
+#[test]
+fn test_same_backend_is_keep() {
+    assert_eq!(
+        plan_switch(base(OnionSkinBackend::Gpu, OnionSkinBackend::Gpu)),
+        SwitchPlan::Keep
+    );
+    assert_eq!(
+        plan_switch(base(OnionSkinBackend::Cpu, OnionSkinBackend::Cpu)),
+        SwitchPlan::Keep,
+        "值与运行时相同：不切换、不弹提示（重复保存不产生噪音）"
+    );
+}
+
+#[test]
+fn test_unlocked_switch_is_applied() {
+    assert_eq!(
+        plan_switch(base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)),
+        SwitchPlan::Switch
+    );
+    assert_eq!(
+        plan_switch(base(OnionSkinBackend::Gpu, OnionSkinBackend::Cpu)),
+        SwitchPlan::Switch,
+        "切回 GPU 永远安全：不受纵向卷帘/走带/瀑布流/导出限制"
+    );
+}
+
+#[test]
+fn test_locked_rejects_both_directions() {
+    let ctx = SwitchContext {
+        locked: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::RejectLocked,
+        "加载 MIDI 后禁止切到 CPU"
+    );
+
+    let ctx = SwitchContext {
+        locked: true,
+        ..base(OnionSkinBackend::Gpu, OnionSkinBackend::Cpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::RejectLocked,
+        "锁定是「禁止切换后端」，不是「只禁止切到 CPU」"
+    );
+}
+
+#[test]
+fn test_vertical_roll_forces_horizontal_before_switch() {
+    let ctx = SwitchContext {
+        vertical_roll: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(plan_switch(ctx), SwitchPlan::ForceHorizontalThenSwitch);
+}
+
+#[test]
+fn test_incompatible_modes_block_cpu() {
+    let arrangement = SwitchContext {
+        arrangement: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(plan_switch(arrangement), SwitchPlan::RejectIncompatibleMode);
+
+    let waterfall = SwitchContext {
+        waterfall: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(plan_switch(waterfall), SwitchPlan::RejectIncompatibleMode);
+
+    let exporting = SwitchContext {
+        exporting: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(plan_switch(exporting), SwitchPlan::RejectIncompatibleMode);
+}
+
+/// 视频导出面板**仅打开未导出**也必须拒绝切到 CPU：
+/// CPU 下「开始导出」必然失败，让用户把参数配完再失败是更差的体验；
+/// 拒绝切换比悄悄关掉用户正在配置的面板更安全（面板状态原样保留）。
+#[test]
+fn test_video_export_panel_open_blocks_cpu() {
+    let ctx = SwitchContext {
+        video_panel_visible: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::RejectIncompatibleMode,
+        "视频导出面板打开（未导出）时不得切到 CPU"
+    );
+}
+
+/// 视频导出面板只限制「切到 CPU」：面板开着也能切回 GPU。
+#[test]
+fn test_video_export_panel_allows_switch_back_to_gpu() {
+    let ctx = SwitchContext {
+        video_panel_visible: true,
+        exporting: true,
+        ..base(OnionSkinBackend::Gpu, OnionSkinBackend::Cpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::Switch,
+        "切回 GPU 永远安全：不受视频导出面板/导出状态限制"
+    );
+}
+
+/// **过渡态**也要拦：点标题栏进瀑布流后动画进行中，`AppMode` 仍是 `Editor`，
+/// 只看 `current_mode` 会放行切 CPU，动画收敛后就把会话带进瀑布流。
+///
+/// `HandleHost` 侧用 `current_mode == Waterfall || toggle_animation.is_heading_to_waterfall()`
+/// 拼 `SwitchContext.waterfall`，本用例锁定该语义：过渡中即视为「不兼容」。
+#[test]
+fn test_waterfall_transition_blocks_cpu() {
+    let mut anim = ToggleAnimationState::default();
+    anim.animate_to(1.0);
+    assert_eq!(anim.position, 0.0, "断言前提：动画刚启动，进度尚未移动");
+
+    let ctx = SwitchContext {
+        waterfall: anim.is_heading_to_waterfall(),
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::RejectIncompatibleMode,
+        "朝向瀑布流的过渡中同样不得切到 CPU"
+    );
+}
+
+/// 反向澄清：动画指向编辑器的过渡不算不兼容（只拦「进入瀑布流」）。
+#[test]
+fn test_returning_to_editor_transition_allows_cpu() {
+    let mut anim = ToggleAnimationState::default();
+    anim.animate_to(1.0);
+    anim.position = 1.0;
+    anim.animate_to(0.0);
+
+    let ctx = SwitchContext {
+        waterfall: anim.is_heading_to_waterfall(),
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(
+        plan_switch(ctx),
+        SwitchPlan::Switch,
+        "正在退出瀑布流：允许切到 CPU（视图正在回到编辑区）"
+    );
+}
+
+/// 不兼容模式优先于纵向卷帘：自动横滚是**副作用**，不能在一个注定被拒的
+/// 请求上先把用户的视图改掉。
+#[test]
+fn test_incompatible_mode_beats_vertical_roll() {
+    let ctx = SwitchContext {
+        vertical_roll: true,
+        waterfall: true,
+        ..base(OnionSkinBackend::Cpu, OnionSkinBackend::Gpu)
+    };
+    assert_eq!(plan_switch(ctx), SwitchPlan::RejectIncompatibleMode);
+}
+
+/// 纵向卷帘只拦「切到 CPU」；切回 GPU 不该被视图状态拦。
+#[test]
+fn test_vertical_roll_allows_switch_back_to_gpu() {
+    let ctx = SwitchContext {
+        vertical_roll: true,
+        arrangement: true,
+        ..base(OnionSkinBackend::Gpu, OnionSkinBackend::Cpu)
+    };
+    assert_eq!(plan_switch(ctx), SwitchPlan::Switch);
+}

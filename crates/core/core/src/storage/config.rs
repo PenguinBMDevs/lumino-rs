@@ -8,8 +8,8 @@ mod enums;
 
 pub use autoscroll::{AutoScrollConfig, AutoScrollMode};
 pub use enums::{
-    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
-    SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, OnionSkinBackend,
+    SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
 
 use defaults::*;
@@ -154,6 +154,11 @@ pub struct UiConfig {
     /// 力度面板显示样式（默认曲线=折线图，false=柱状图）
     #[serde(default = "default_true")]
     pub velocity_curve_style: bool,
+    /// 洋葱皮渲染后端（默认 GPU，旧配置缺字段时落回 GPU，行为不变）
+    ///
+    /// Step 3 只提供运行时开关（无设置页 UI）；持久化与设置项由 Step 4 接入。
+    #[serde(default)]
+    pub onion_skin_backend: OnionSkinBackend,
     /// 高精度洋葱皮贴图：是否启用
     #[serde(default = "default_true")]
     pub hires_onion_enabled: bool,
@@ -315,6 +320,7 @@ impl Default for UiConfig {
             enable_256key: false,
             note_count_display: NoteCountDisplay::default(),
             velocity_curve_style: true,
+            onion_skin_backend: OnionSkinBackend::Gpu,
             hires_onion_enabled: true,
             hires_measures_per_group: default_hires_measures_per_group(),
             hires_tile_width_px: default_hires_tile_width(),
@@ -346,8 +352,13 @@ impl Default for UiConfig {
     }
 }
 
+/// `UiConfig` 序列化/默认值测试（独立文件：本文件已超过 400 行，不得继续塞行）
 #[cfg(test)]
 mod autosave_tests;
 
 #[cfg(test)]
 mod tests;
+
+/// 洋葱皮后端配置测试（独立文件：本文件已超过 400 行，不得继续塞行）
+#[cfg(test)]
+mod tests_onion_backend;

@@ -102,10 +102,16 @@ impl Editor {
         }
         Arc::make_mut(document).batch_insert_notes(track, added.to_vec());
         for note in &removed {
-            density.apply_note(note.start_tick, note.key, -1);
+            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, -1) {
+                self.density_dirty = true;
+            }
+            self.record_change(Some(*note), None);
         }
         for note in &added {
-            density.apply_note(note.start_tick, note.key, 1);
+            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, 1) {
+                self.density_dirty = true;
+            }
+            self.record_change(None, Some(*note));
         }
         *index = Arc::new(index.with_changes(track, &removed, &added));
         self.selection.clear();

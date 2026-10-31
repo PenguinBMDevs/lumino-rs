@@ -4,6 +4,7 @@ use crate::RenderParams;
 use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
 use crate::titlebar::mode_toggle::AppMode;
+use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::ArrangementUniform;
 
 /// VS cull 直绘的可见占比阈值（PREF-005）。
@@ -261,6 +262,10 @@ impl Host {
             .content_dirty(content_dirty)
             .subpixel_note_mode(subpixel_note_mode)
             .vs_cull_mode(vs_cull_mode)
+            // CPU 洋葱皮（Q3 B）：只在 CPU 后端置位——渲染线程据此跳过 hires 贴图
+            // 叠加层（半废稿本步不改造），并绘制 `cpu_onion_frame` 透明帧。
+            .cpu_onion_frame(data.cpu_onion_frame)
+            .cpu_onion_active(self.onion_skin_backend == OnionSkinBackend::Cpu)
             .build()
     }
 }

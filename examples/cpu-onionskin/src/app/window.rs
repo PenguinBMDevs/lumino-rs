@@ -85,12 +85,28 @@ impl App {
             self.initial_zoom = camera.zoom_x;
         }
         if let Some(seconds) = self.bench_seconds {
-            let mut bench = Bench::new(&camera, &self.index, seconds);
-            if self.overview {
-                bench.set_start(0.0);
-            }
-            camera.scroll_x = bench.start_scroll();
-            camera.target_scroll_x = bench.start_scroll();
+            let bench = if self.bench_zoom {
+                let bench = Bench::new_zoom(
+                    &camera,
+                    &self.index,
+                    seconds,
+                    self.bench_zoom_high,
+                    2.0,
+                    self.bench_zoom_low,
+                );
+                camera.zoom_x = bench.start_zoom();
+                camera.scroll_x = bench.start_scroll();
+                camera.target_scroll_x = camera.scroll_x;
+                bench
+            } else {
+                let mut bench = Bench::new(&camera, &self.index, seconds);
+                if self.overview {
+                    bench.set_start(0.0);
+                }
+                camera.scroll_x = bench.start_scroll();
+                camera.target_scroll_x = camera.scroll_x;
+                bench
+            };
             self.bench = Some(bench);
             self.frame_interval = Duration::ZERO;
             self.stats.reset();
@@ -126,6 +142,7 @@ impl App {
         self.content_dirty = true;
     }
 
+    /// 可见音符诊断估算（HUD/统计显示用，不参与 LOD 判定）。
     pub(super) fn estimated_visible(&self, camera: &Camera) -> u64 {
         let (tick_lo, tick_hi) = camera.visible_tick_range();
         let estimate_all = self.index.estimate_visible(tick_lo, tick_hi);
@@ -135,13 +152,14 @@ impl App {
     }
 
     pub(super) fn choose_mode(&self, camera: &Camera) -> LodMode {
-        let estimate = self.estimated_visible(camera);
-        // 全曲总览：逐音符绘制 1.64 亿条不可能 60fps，切密度热力图。
-        // 用"可见 key 比例"后的估算，避免只在 40 个键上放大时误判成全曲。
-        if estimate > 6_000_000 {
+        // 与 lumino-cpu-onion 生产实现同一优先级：彩色覆盖 > 热力图兜底 > Exact。
+        if self.density.can_render_coverage(camera) {
+            return LodMode::Coverage;
+        }
+        if crate::render::density::uses_overview(&self.index, camera) {
             return LodMode::Overview;
         }
-        // 滚动/静止一律 Exact：不允许省填充、省描边或丢音轨。
+        // 更高缩放保持 Exact：不允许省填充、省描边或丢音轨。
         LodMode::Exact
     }
 }

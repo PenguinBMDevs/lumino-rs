@@ -1,23 +1,43 @@
 //! 洋葱皮流式上传实现（全量会话 + 轨布局 + 事件级增量）
 //!
-//! 被父模块 [`super::stream_onion_skin_instances`] 按决策结果调用：
-//! - `stream_onion_skin_full`：全量分块构建所有音轨实例并 send
+//! 被 [`super::Host::stream_onion_skin_instances`] 按决策结果调用：
+//! - `stream_onion_skin_full`：全量分块构建音轨实例并 send
+//!   - `only_current = None`：**所有**音轨（GPU 全轨常驻，默认行为）
+//!   - `only_current = Some(t)`：**只**当前轨（CPU 单轨模式，Q3 B）
 //! - `stream_track_layout`：轨数变化 → `TrackLayout` + 新增轨 `TrackDelta`
 //! - `stream_onion_skin_delta`：事件级增量，只构建被编辑音轨并 send `TrackDelta`
+
+use std::cell::Cell;
 
 use crate::host::Host;
 use lumino_editor_state::EditorData;
 use lumino_gfx::{NoteInstance, OnionSkinStreamMsg, WgpuRenderThread};
+use lumino_midi_model::MidiDocument;
 
-use super::{OnionSkinFingerprint, PARALLEL_BUILD_MIN, STREAMING_CHUNK_SIZE, onion_border_width};
+use super::{OnionSkinFingerprint, STREAMING_CHUNK_SIZE, onion_border_width};
+
+mod instances;
+
+use instances::build_track_instance_parts;
 
 impl Host {
-    /// 全量流式会话：分块构建**所有音轨**（含当前轨、静音轨）实例并 send
+    /// 全量流式会话：分块构建目标音轨的实例并 send。
     ///
-    /// 统一全量渲染（2026-08-06）：GPU buffer 常驻所有轨全部音符——
-    /// 当前轨（主音轨段，shader 按 ViewState uniform 染主轨色/深度 0）与
-    /// 静音轨（shader 按静音位图隐藏，仅主轨身份时显示）都包含在内。
-    /// 切轨/静音变化因此零重传（只发 ViewState uniform）。
+    /// `only_current = None`（GPU 后端，默认）：构建**所有音轨**（含当前轨、静音轨）。
+    /// 统一全量渲染（2026-08-06）：GPU buffer 常驻所有轨全部音符——当前轨（主音轨段，
+    /// shader 按 ViewState uniform 染主轨色/深度 0）与静音轨（shader 按静音位图隐藏，
+    /// 仅主轨身份时显示）都包含在内；切轨/静音变化因此零重传（只发 ViewState uniform）。
+    ///
+    /// `only_current = Some(track)`（CPU 后端，Q3 B）：**只**发当前轨一段——
+    /// 非当前轨/静音轨由 CPU 叠加层绘制，不进 GPU 显存：
+    /// 1. `BeginSession` 清空段表；
+    /// 2. 只按当前轨长度 `Reserve`；
+    /// 3. 只发当前轨 `Chunk`（即使 0 条也发空块占位段，主轨事件增量才能命中段）；
+    /// 4. `Done`；
+    /// 5. `SetViewState { current_track: current+1, muted_tracks }`。
+    ///
+    /// 当前轨越界（文档轨数不足）时安全清空：不发 `Chunk`，段表保持空，
+    /// 仍发 `Done` + `SetViewState`，渲染侧无段可画（不 panic、不脏数据）。
     ///
     /// 每块 ≤ 800 万实例（128 MB），有界通道 `bounded(3)` + 发送侧
     /// `send_timeout` 背压（REND-019 PR-A′）；CPU 峰值 ~256-384 MB。
@@ -31,12 +51,10 @@ impl Host {
         &self,
         fp: &OnionSkinFingerprint,
         wgpu_thread: &WgpuRenderThread,
+        only_current: Option<usize>,
     ) {
         let t_start = std::time::Instant::now();
         let data = &self.root.editor.editor_state.data;
-
-        // 会话中止标志：任一消息未送达即置位，阻断后续发送与 Done
-        let aborted = std::cell::Cell::new(false);
 
         // 显式会话边界：清空段表 + 重置计数（空文档会话也生效，防旧段表残留）
         if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::BeginSession) {
@@ -44,25 +62,71 @@ impl Host {
             return;
         }
 
-        // 分块构建 + send 的辅助闭包（每轨末尾必 flush，空块 = 段表占位）
-        let mut chunk: Vec<NoteInstance> = Vec::with_capacity(STREAMING_CHUNK_SIZE);
-        let total_counter = std::cell::Cell::new(0usize);
+        // 会话中止标志：任一消息未送达即置位，阻断后续发送与 Done
+        let aborted = Cell::new(false);
+        let total_counter = Cell::new(0usize);
 
-        let flush_chunk =
-            |chunk: &mut Vec<NoteInstance>, track_id: usize, wgpu_thread: &WgpuRenderThread| {
-                if aborted.get() {
-                    return;
-                }
-                let instances = std::mem::replace(chunk, Vec::with_capacity(STREAMING_CHUNK_SIZE));
-                total_counter.set(total_counter.get() + instances.len());
-                if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Chunk {
-                    track_id,
-                    instances,
-                }) {
-                    aborted.set(true);
-                }
-            };
+        let sent_total = match only_current {
+            Some(track_id) => self.send_current_track_session(
+                data,
+                wgpu_thread,
+                track_id,
+                &aborted,
+                &total_counter,
+            ),
+            None => self.send_all_tracks_session(data, wgpu_thread, &aborted, &total_counter),
+        };
+        let Some(sent_total) = sent_total else {
+            tracing::warn!(
+                "[onion-skin] 全量会话中止：消息未送达（已置降级，等待全量补发）已发送 {} 个实例",
+                total_counter.get()
+            );
+            return;
+        };
 
+        // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
+        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done) {
+            tracing::warn!("[onion-skin] 全量会话中止：Done 未送达（降级补发接管）");
+            return;
+        }
+
+        // CPU 单轨会话：段表只有当前轨一条，完成后同步 ViewState（含越界安全清空）
+        if let Some(track_id) = only_current
+            && !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                current_track: track_id as u32 + 1,
+                muted_tracks: fp.muted_tracks.clone(),
+            })
+        {
+            tracing::warn!("[onion-skin] CPU 单轨 ViewState 未送达（切轨状态可能滞后至下次同步）");
+        }
+
+        tracing::debug!(
+            "[onion-skin] 流式上传完成：{} 个实例 (track_gen={}, current_track={}, palette_idx={}, only_current={:?})",
+            sent_total,
+            fp.track_gen,
+            fp.current_track,
+            fp.palette_idx,
+            only_current
+        );
+        // REND-003：全量会话在主线程分块构建 + 背压发送（bounded(3) + send_timeout，
+        // REND-019 PR-A′），大工程下是加载后"未响应"的第二段风险，耗时打点便于定位与后续优化。
+        tracing::info!(
+            "[onion-skin] 全量会话完成：{} 个实例，耗时 {:?}",
+            sent_total,
+            t_start.elapsed()
+        );
+    }
+
+    /// GPU 全轨会话：预分配全部轨实例总数后逐轨分块发送。
+    ///
+    /// 返回 `None` 表示会话被中止（消息未送达）。
+    fn send_all_tracks_session(
+        &self,
+        data: &EditorData,
+        wgpu_thread: &WgpuRenderThread,
+        aborted: &Cell<bool>,
+        total_counter: &Cell<usize>,
+    ) -> Option<usize> {
         // 预分配：统计所有轨实例总数（ChunkedList len O(1)），
         // 消除流式 append 2× 倍增的容量余量（2.9 亿音符省 ~4GB GPU 显存）
         let total: usize = data
@@ -76,64 +140,57 @@ impl Host {
             .unwrap_or(0);
         if total > 0 && !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Reserve { total }) {
             tracing::warn!("[onion-skin] 全量会话中止：Reserve 未送达（降级补发接管）");
-            return;
+            return None;
         }
 
         // 从 MidiDocument 构建所有音轨（单一权威源；含当前轨与静音轨）
         if let Some(doc) = data.document.as_ref() {
-            let track_count = doc.track_count();
-            for track_idx in 0..track_count {
+            for track_idx in 0..doc.track_count() {
                 if aborted.get() {
-                    break;
+                    return None;
                 }
-                let doc_notes = doc.track_notes(track_idx);
-                let color = lumino_extras::palette::current_track_color_f32(track_idx);
-                // 轨道索引编码进 border_width 高 16 位（统一编码：主音轨判定 + 稳定深度）
-                let border_width = onion_border_width(track_idx);
-                for ne in doc_notes.iter() {
-                    chunk.push(NoteInstance::new(
-                        ne.start_tick as f32,
-                        ne.key,
-                        (ne.end_tick - ne.start_tick) as f32,
-                        color,
-                        border_width,
-                    ));
-                    if chunk.len() >= STREAMING_CHUNK_SIZE {
-                        flush_chunk(&mut chunk, track_idx, wgpu_thread);
-                    }
-                }
-                flush_chunk(&mut chunk, track_idx, wgpu_thread);
+                send_track_chunked(doc, track_idx, wgpu_thread, aborted, total_counter);
             }
         }
-
         if aborted.get() {
-            tracing::warn!(
-                "[onion-skin] 全量会话中止：消息未送达（已置降级，等待全量补发）已发送 {} 个实例",
-                total_counter.get()
+            return None;
+        }
+        Some(total_counter.get())
+    }
+
+    /// CPU 单轨会话：只预分配 + 只发送当前轨。
+    ///
+    /// 当前轨越界时**不发送任何 `Chunk`**（`BeginSession` 已清空段表 →
+    /// 渲染侧无段可画），返回 `Some(0)` 让调用方继续发 `Done` / `SetViewState`。
+    fn send_current_track_session(
+        &self,
+        data: &EditorData,
+        wgpu_thread: &WgpuRenderThread,
+        track_id: usize,
+        aborted: &Cell<bool>,
+        total_counter: &Cell<usize>,
+    ) -> Option<usize> {
+        let Some((track_id, note_count)) = current_only_plan(data.document.as_ref(), track_id)
+        else {
+            tracing::debug!(
+                "[onion-skin] CPU 单轨会话：当前轨 {track_id} 越界（文档无该轨），清空段表"
             );
-            return;
+            return Some(0);
+        };
+        if note_count > 0
+            && !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Reserve { total: note_count })
+        {
+            tracing::warn!("[onion-skin] CPU 单轨会话中止：Reserve 未送达（降级补发接管）");
+            return None;
         }
-
-        // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
-        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done) {
-            tracing::warn!("[onion-skin] 全量会话中止：Done 未送达（降级补发接管）");
-            return;
+        let Some(doc) = data.document.as_ref() else {
+            return Some(0);
+        };
+        send_track_chunked(doc, track_id, wgpu_thread, aborted, total_counter);
+        if aborted.get() {
+            return None;
         }
-
-        tracing::debug!(
-            "[onion-skin] 流式上传完成：{} 个实例 (track_gen={}, current_track={}, palette_idx={})",
-            total_counter.get(),
-            fp.track_gen,
-            fp.current_track,
-            fp.palette_idx
-        );
-        // REND-003：全量会话在主线程分块构建 + 背压发送（bounded(3) + send_timeout，
-        // REND-019 PR-A′），大工程下是加载后"未响应"的第二段风险，耗时打点便于定位与后续优化。
-        tracing::info!(
-            "[onion-skin] 全量会话完成：{} 个实例，耗时 {:?}",
-            total_counter.get(),
-            t_start.elapsed()
-        );
+        Some(total_counter.get())
     }
 
     /// 轨数变化增量同步：发送 `TrackLayout`（增删段表）+ 新增轨内容。
@@ -204,63 +261,84 @@ impl Host {
     }
 }
 
-/// 构建单音轨的完整 NoteInstance 列表（分片；数据源：document 单一权威源）
+/// CPU 单轨会话计划（纯逻辑，可单测）：`Some((track_id, 音符数))`。
 ///
-/// 2026-08 改造：track_notes 缓存已删除，一律从 `MidiDocument` 读。
-/// 无文档 → 空列表。
-///
-/// 2026-09 并行构建：大轨（≥ [`PARALLEL_BUILD_MIN`]）按索引区间切分，多线程
-/// `iter_window` 顺序构建后**按序分片返回**（不做二次拼接拷贝）——单轨 3000W
-/// 实例构建实测 ~180ms，是主轨段重建（`TrackDelta`）的主要 CPU 成本。
-/// 小轨返回单分片（调用方语义不变）。
-fn build_track_instance_parts(data: &EditorData, track_id: usize) -> Vec<Vec<NoteInstance>> {
-    let color = lumino_extras::palette::current_track_color_f32(track_id);
-    // 轨道索引编码进 border_width 高 16 位（稳定深度优先级）
-    let border_width = onion_border_width(track_id);
-
-    let Some(doc) = data.document.as_ref() else {
-        return Vec::new();
-    };
-    let doc_notes = doc.track_notes(track_id);
-    let total = doc_notes.len();
-    if total == 0 {
-        return Vec::new();
+/// 返回 `None` 表示当前轨越界/无文档——此时会话不发任何 `Chunk`（段表保持空）。
+/// 音符数可为 0：仍要发一个空块占位段，否则主轨事件级增量（Insert/UpdateMany）
+/// 在段表里找不到段。
+fn current_only_plan(
+    document: Option<&MidiDocument>,
+    current_track: usize,
+) -> Option<(usize, usize)> {
+    let document = document?;
+    if current_track >= document.track_count() {
+        return None;
     }
-
-    if total < PARALLEL_BUILD_MIN {
-        let mut v = Vec::with_capacity(total);
-        for ne in doc_notes.iter() {
-            v.push(NoteInstance::new(
-                ne.start_tick as f32,
-                ne.key,
-                (ne.end_tick - ne.start_tick) as f32,
-                color,
-                border_width,
-            ));
-        }
-        return vec![v];
-    }
-
-    use rayon::prelude::*;
-    let workers = rayon::current_num_threads().max(1);
-    let part = total.div_ceil(workers);
-    (0..workers)
-        .into_par_iter()
-        .map(|w| {
-            let lo = (w * part).min(total);
-            let hi = ((w + 1) * part).min(total);
-            // 精确预分配：iter_window 无 size_hint，逐元素 push 会触发倍增重分配
-            let mut v = Vec::with_capacity(hi.saturating_sub(lo));
-            for (_, ne) in doc_notes.iter_window(lo, hi) {
-                v.push(NoteInstance::new(
-                    ne.start_tick as f32,
-                    ne.key,
-                    (ne.end_tick - ne.start_tick) as f32,
-                    color,
-                    border_width,
-                ));
-            }
-            v
-        })
-        .collect()
+    Some((current_track, document.track_notes(current_track).len()))
 }
+
+/// 把单音轨音符分块发送（每块 ≤ [`STREAMING_CHUNK_SIZE`]，末尾强制 flush）。
+///
+/// 末尾无条件的 flush 保证**空轨也发一个空块**（段表占位）；块刚好填满时多发一个
+/// 空块是渲染侧的无操作（同轨续写 0 实例），不改变段表/数据。
+fn send_track_chunked(
+    document: &MidiDocument,
+    track_id: usize,
+    wgpu_thread: &WgpuRenderThread,
+    aborted: &Cell<bool>,
+    total_counter: &Cell<usize>,
+) {
+    let doc_notes = document.track_notes(track_id);
+    let color = lumino_extras::palette::current_track_color_f32(track_id);
+    // 轨道索引编码进 border_width 高 16 位（统一编码：主音轨判定 + 稳定深度）
+    let border_width = onion_border_width(track_id);
+    let total = doc_notes.len();
+    let mut chunk: Vec<NoteInstance> = Vec::with_capacity(total.min(STREAMING_CHUNK_SIZE));
+    let mut pushed = 0usize;
+    for ne in doc_notes.iter() {
+        chunk.push(NoteInstance::new(
+            ne.start_tick as f32,
+            ne.key,
+            (ne.end_tick - ne.start_tick) as f32,
+            color,
+            border_width,
+        ));
+        pushed += 1;
+        if chunk.len() >= STREAMING_CHUNK_SIZE {
+            flush_chunk(&mut chunk, track_id, wgpu_thread, aborted, total_counter);
+            if aborted.get() {
+                return;
+            }
+            // 显式预留下一块（按剩余音符数，至多一块）：`flush_chunk` 取走后容量归零，
+            // 不预留会让超大单轨每块都从 0 倍增重分配（30M 音符 ≈ 数百 MB 额外 memcpy）。
+            chunk.reserve(total.saturating_sub(pushed).min(STREAMING_CHUNK_SIZE));
+        }
+    }
+    flush_chunk(&mut chunk, track_id, wgpu_thread, aborted, total_counter);
+}
+
+/// 发送一个数据块（`chunk` 被清空复用；未送达 → 置会话中止标志）。
+fn flush_chunk(
+    chunk: &mut Vec<NoteInstance>,
+    track_id: usize,
+    wgpu_thread: &WgpuRenderThread,
+    aborted: &Cell<bool>,
+    total_counter: &Cell<usize>,
+) {
+    if aborted.get() {
+        return;
+    }
+    let instances = std::mem::take(chunk);
+    total_counter.set(total_counter.get() + instances.len());
+    if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Chunk {
+        track_id,
+        instances,
+    }) {
+        aborted.set(true);
+    }
+}
+
+/// CPU 单轨会话计划测试（独立文件，保持本文件 < 400 行）
+#[cfg(test)]
+#[path = "stream/tests.rs"]
+mod tests;

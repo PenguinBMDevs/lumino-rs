@@ -5,18 +5,51 @@
 use super::*;
 
 impl EditorData {
+    /// 取走自上一笔入栈以来积累的按值变更。
+    fn take_history_pending(&mut self) -> (Vec<SnapshotNoteChange>, Vec<(u32, u32)>, bool) {
+        (
+            std::mem::take(&mut self.history_pending_changes),
+            std::mem::take(&mut self.history_pending_ranges),
+            std::mem::take(&mut self.history_pending_full),
+        )
+    }
+
+    /// 解析本次回放应使用的变更：当前未入栈 pending 优先，否则用条目自带。
+    fn resolve_history_changes(
+        &self,
+        pending: &(Vec<SnapshotNoteChange>, Vec<(u32, u32)>, bool),
+        entry: Option<&HistoryEntry>,
+    ) -> (Vec<SnapshotNoteChange>, Vec<(u32, u32)>, bool) {
+        if !pending.0.is_empty() || !pending.1.is_empty() || pending.2 {
+            return (pending.0.clone(), pending.1.clone(), pending.2);
+        }
+        match entry {
+            Some(HistoryEntry::Snapshot(snapshot)) => (
+                snapshot.note_changes.clone(),
+                snapshot.dirty_ranges.clone(),
+                snapshot.note_changes_full,
+            ),
+            _ => (Vec::new(), Vec::new(), false),
+        }
+    }
+
     // ── 单步 undo / redo ────────────────────────────────────
 
     /// 撤销上一步操作（单步，不跨 chain）
     pub fn undo(&mut self) -> bool {
-        let track = self
-            .history
-            .undo_back()
+        self.commit_history_pending();
+        let pending = self.take_history_pending();
+        let target = self.history.undo_back();
+        let track = target
             .and_then(Self::affected_track_of_history_entry)
             .unwrap_or(self.current_track);
-        let current = self.make_snapshot_for_track(track);
+        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
+        let mut current = self.make_snapshot_for_track(track);
+        current.note_changes = changes.clone();
+        current.dirty_ranges = ranges.clone();
+        current.note_changes_full = full;
         if let Some(entry) = self.history.undo(current) {
-            self.apply_history_entry(entry, true);
+            self.apply_history_entry(entry, true, changes, ranges, full);
             self.modified = true;
             true
         } else {
@@ -26,14 +59,19 @@ impl EditorData {
 
     /// 重做上一步撤销的操作（单步，不跨 chain）
     pub fn redo(&mut self) -> bool {
-        let track = self
-            .history
-            .redo_back()
+        self.commit_history_pending();
+        let pending = self.take_history_pending();
+        let target = self.history.redo_back();
+        let track = target
             .and_then(Self::affected_track_of_history_entry)
             .unwrap_or(self.current_track);
-        let current = self.make_snapshot_for_track(track);
+        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
+        let mut current = self.make_snapshot_for_track(track);
+        current.note_changes = changes.clone();
+        current.dirty_ranges = ranges.clone();
+        current.note_changes_full = full;
         if let Some(entry) = self.history.redo(current) {
-            self.apply_history_entry(entry, false);
+            self.apply_history_entry(entry, false, changes, ranges, full);
             self.modified = true;
             true
         } else {
@@ -48,14 +86,19 @@ impl EditorData {
     /// 适用：用户感知的"撤销刚才那一波放置"——即使分割为多个 group，
     /// 也应一次性回退整个逻辑操作。
     pub fn undo_logical(&mut self) -> bool {
-        let track = self
-            .history
-            .undo_back()
+        self.commit_history_pending();
+        let pending = self.take_history_pending();
+        let target = self.history.undo_back();
+        let track = target
             .and_then(Self::affected_track_of_history_entry)
             .unwrap_or(self.current_track);
-        let current = self.make_snapshot_for_track(track);
+        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
+        let mut current = self.make_snapshot_for_track(track);
+        current.note_changes = changes.clone();
+        current.dirty_ranges = ranges.clone();
+        current.note_changes_full = full;
         if let Some(entry) = self.history.undo_logical(current) {
-            self.apply_history_entry(entry, true);
+            self.apply_history_entry(entry, true, changes, ranges, full);
             true
         } else {
             false
@@ -64,14 +107,19 @@ impl EditorData {
 
     /// 逻辑重做：跨同 group_id / parent_group_id 链一次性重做
     pub fn redo_logical(&mut self) -> bool {
-        let track = self
-            .history
-            .redo_back()
+        self.commit_history_pending();
+        let pending = self.take_history_pending();
+        let target = self.history.redo_back();
+        let track = target
             .and_then(Self::affected_track_of_history_entry)
             .unwrap_or(self.current_track);
-        let current = self.make_snapshot_for_track(track);
+        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
+        let mut current = self.make_snapshot_for_track(track);
+        current.note_changes = changes.clone();
+        current.dirty_ranges = ranges.clone();
+        current.note_changes_full = full;
         if let Some(entry) = self.history.redo_logical(current) {
-            self.apply_history_entry(entry, false);
+            self.apply_history_entry(entry, false, changes, ranges, full);
             true
         } else {
             false

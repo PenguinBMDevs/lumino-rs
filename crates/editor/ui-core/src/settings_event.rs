@@ -4,8 +4,8 @@
 
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{
-    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
-    SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, OnionSkinBackend,
+    SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
 
 /// MIDI 输出类型（顶层选择）
@@ -119,6 +119,8 @@ pub enum Event {
     HiresCooldownChanged(String),
     /// 高精度洋葱皮贴图 GPU 显存上限变更（MB）
     HiresGpuMemLimitChanged(String),
+    /// 洋葱皮渲染后端变更（GPU / CPU；加载 MIDI 后由面板锁定态拦截）
+    OnionSkinBackendChanged(OnionSkinBackend),
     /// 播放时键盘颜色指示是否启用
     PlaybackKeyColorsEnabledChanged(bool),
     /// 添加音轨行为变更

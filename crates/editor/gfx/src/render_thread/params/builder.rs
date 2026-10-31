@@ -1,4 +1,9 @@
 //! [`RenderParams`] 的 Builder 实现
+//!
+//! 子模块：[`default`] 持有 `Default` 实现（字段默认值单一来源，从
+//! [`RenderParams::default`] 拷贝），本文件只保留字段声明、setter 与 `build`。
+
+mod default;
 
 use super::RenderParams;
 use crate::{
@@ -59,64 +64,8 @@ pub struct RenderParamsBuilder {
     content_dirty: bool,
     subpixel_note_mode: bool,
     vs_cull_mode: bool,
-}
-
-impl Default for RenderParamsBuilder {
-    /// 默认值单一来源：从 [`RenderParams::default`] 拷贝，
-    /// 避免与主类型的手写默认值漂移（新增字段只需改主类型一处）。
-    fn default() -> Self {
-        let base = RenderParams::default();
-        Self {
-            viewport_size: base.viewport_size,
-            logical_size: base.logical_size,
-            scale_factor: base.scale_factor,
-            scroll: base.scroll,
-            zoom: base.zoom,
-            keyboard_width: base.keyboard_width,
-            ruler_height: base.ruler_height,
-            background_color: base.background_color,
-            color_bg: base.color_bg,
-            color_bg_black_key: base.color_bg_black_key,
-            color_bar: base.color_bar,
-            color_beat: base.color_beat,
-            color_half_beat: base.color_half_beat,
-            color_grid: base.color_grid,
-            color_key_line: base.color_key_line,
-            grid_instances: base.grid_instances,
-            ruler_instances: base.ruler_instances,
-            ppq: base.ppq,
-            max_key_index: base.max_key_index,
-            is_arrangement_mode: base.is_arrangement_mode,
-            arrangement_overlay_instances: base.arrangement_overlay_instances,
-            arrangement_overlay_back_len: base.arrangement_overlay_back_len,
-            arrangement_track_order: base.arrangement_track_order,
-            arrangement_track_visible: base.arrangement_track_visible,
-            arrangement_lane_index: base.arrangement_lane_index,
-            arrangement_note_uniform: base.arrangement_note_uniform,
-            arrangement_uniform: base.arrangement_uniform,
-            cc_bar_instances: base.cc_bar_instances,
-            canvas_offset: base.canvas_offset,
-            canvas_size: base.canvas_size,
-            velocity_panel_rect: base.velocity_panel_rect,
-            time_signatures: base.time_signatures,
-            is_waterfall_mode: base.is_waterfall_mode,
-            waterfall_speed: base.waterfall_speed,
-            waterfall_current_tick: base.waterfall_current_tick,
-            miditrail_enabled: base.miditrail_enabled,
-            miditrail_speed: base.miditrail_speed,
-            miditrail_view_mode: base.miditrail_view_mode,
-            miditrail_current_tick: base.miditrail_current_tick,
-            miditrail_z_far: base.miditrail_z_far,
-            miditrail_3d_notes: base.miditrail_3d_notes,
-            miditrail_ticks_per_second: base.miditrail_ticks_per_second,
-            fps: base.fps,
-            skip_scene_render: base.skip_scene_render,
-            is_vertical_roll: base.is_vertical_roll,
-            content_dirty: base.content_dirty,
-            subpixel_note_mode: base.subpixel_note_mode,
-            vs_cull_mode: base.vs_cull_mode,
-        }
-    }
+    cpu_onion_frame: Option<crate::CpuOnionFrame>,
+    cpu_onion_active: bool,
 }
 
 impl RenderParamsBuilder {
@@ -334,6 +283,18 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置 CPU 洋葱皮透明叠加层（默认 `None`，语义见 [`RenderParams::cpu_onion_frame`]）。
+    pub fn cpu_onion_frame(mut self, frame: Option<crate::CpuOnionFrame>) -> Self {
+        self.cpu_onion_frame = frame;
+        self
+    }
+
+    /// 设置 CPU 洋葱皮后端开关（默认 `false`，语义见 [`RenderParams::cpu_onion_active`]）。
+    pub fn cpu_onion_active(mut self, active: bool) -> Self {
+        self.cpu_onion_active = active;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -394,6 +355,8 @@ impl RenderParamsBuilder {
             content_dirty: self.content_dirty,
             subpixel_note_mode: self.subpixel_note_mode,
             vs_cull_mode: self.vs_cull_mode,
+            cpu_onion_frame: self.cpu_onion_frame,
+            cpu_onion_active: self.cpu_onion_active,
         }
     }
 }

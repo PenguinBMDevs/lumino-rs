@@ -186,6 +186,20 @@ pub fn execute_render_pass(
             frame.renderers.grid.draw(&mut render_pass, 1);
         }
 
+        // CPU 洋葱皮透明叠加层（B 方案）：网格之上、GPU 洋葱皮与当前轨之前。
+        // - 走带模式已在函数开头提前 `return`，本层结构上不会绘制；
+        // - 管线携带只读 `DEPTH_FORMAT` 状态，只有带 depth attachment 的 UI 通道
+        //   可以绘制；导出通道无 depth，本步不接（`cpu_onion_frame` 恒 None），
+        //   以 `has_depth` 兜底避免 wgpu 管线/通道不兼容校验；
+        // - `cpu_onion_frame` 为 `None`（默认）时整段跳过，零行为变化。
+        if has_depth && let Some(cpu_frame) = params.cpu_onion_frame.as_ref() {
+            // 受既有 canvas scissor 约束（与网格/音符同一剔除区域）
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            frame.renderers.cpu_onion.set_viewport(width, height);
+            frame.renderers.cpu_onion.prepare(&ctx.queue, cpu_frame);
+            frame.renderers.cpu_onion.draw(&mut render_pass, cpu_frame);
+        }
+
         // 绘制贴图瀑布流（不透明背景层，网格之上、主音轨之前）
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         let onion_has_instances = frame.renderers.onion_skin.last_upload_count() > 0;
@@ -214,7 +228,13 @@ pub fn execute_render_pass(
         }
 
         // 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）
-        if let Some(waterfall) = frame.texture_waterfall_renderer.as_ref() {
+        //
+        // CPU 洋葱皮后端（`cpu_onion_active`）跳过本块：非当前轨的洋葱皮由 CPU
+        // 透明叠加层负责，hires 贴图再叠一层会**双重绘制**（互相遮挡、白付采样），
+        // 且该叠加层是半废稿（Step 4/后续卡片整体改造）。默认 `false` → 行为不变。
+        if !params.cpu_onion_active
+            && let Some(waterfall) = frame.texture_waterfall_renderer.as_ref()
+        {
             let has_depth = depth_view.is_some();
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             waterfall.render(&mut render_pass, waterfall_visible_coords, has_depth);

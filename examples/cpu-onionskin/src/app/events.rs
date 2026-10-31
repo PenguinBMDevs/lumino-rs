@@ -238,16 +238,26 @@ impl App {
                 let shift = self.modifiers.shift_key();
                 if ctrl && (text == "z" || text == "Z") {
                     if shift {
-                        if self.editor.redo(&mut self.document, &mut self.index) {
+                        if self
+                            .editor
+                            .redo(&mut self.document, &mut self.index, &mut self.density)
+                        {
                             self.after_edit();
                         }
-                    } else if self.editor.undo(&mut self.document, &mut self.index) {
+                    } else if self.editor.undo(
+                        &mut self.document,
+                        &mut self.index,
+                        &mut self.density,
+                    ) {
                         self.after_edit();
                     }
                     return;
                 }
                 if ctrl && (text == "y" || text == "Y") {
-                    if self.editor.redo(&mut self.document, &mut self.index) {
+                    if self
+                        .editor
+                        .redo(&mut self.document, &mut self.index, &mut self.density)
+                    {
                         self.after_edit();
                     }
                     return;

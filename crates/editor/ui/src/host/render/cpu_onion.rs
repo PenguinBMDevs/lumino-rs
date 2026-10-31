@@ -1,0 +1,277 @@
+//! CPU 洋葱皮接入 Host 渲染链路（Q3 B：GPU 只保留当前轨 + CPU 叠加层）。
+//!
+//! # 分工
+//!
+//! - **GPU**：当前轨（主音轨）——常驻 GPU 音符缓冲，事件级增量更新；
+//! - **CPU**（本模块）：非当前轨 + 非静音轨——`lumino-cpu-onion` 光栅成透明背景
+//!   RGBA8 帧，经 `lumino_gfx::CpuOnionFrame` 交渲染线程作为叠加层绘制
+//!   （网格之后、GPU 洋葱皮与当前轨之前）。
+//!
+//! # 每帧流程（`collect_render_data` → 本模块 → `RenderData` → `RenderParams`）
+//!
+//! 1. 后端不是 `Cpu` → 彻底停用（释放渲染器/索引），`frame = None`（默认路径零变化）；
+//! 2. 走带模式 / 纵向卷帘 / 无文档 / 相机退化 → 本帧不绘制；
+//! 3. 相机换算到**物理像素**（与 GPU 主轨屏幕坐标同口径，见 [`camera`]）；
+//! 4. 静音表按**文档轨数**展开（侧栏音轨 id 越界安全忽略）；
+//! 5. 状态机冻结：指纹不变 → 复用上一帧与同一 `version`；变化 → 重新 `render_full`、
+//!    版本递增并置内容脏（`mark_render_content_dirty`），保证 present 等到新帧。
+//!
+//! # 本步已知边界（Step 4b / Step 5b 已接管项）
+//!
+//! - `track_notes_gen` 变化但**没有原子变更记录**时仍可能整份索引重建
+//!   （Step 5a 已对可表达的增量走 `with_changes_fast`，剩直接写路径按受影响轨补齐）；
+//! - 每帧像素仍做**整帧快照**（`Vec<u8>` → `Arc<[u8]>`）：Step 5b 只把 **GPU 上传**
+//!   降成脏矩形（`CpuOnionFrame::dirty_rect`），CPU 侧拷贝未变——
+//!   区域重绘是原地改写渲染缓冲，不与上一帧共享；
+//! - 纵向卷帘本步直接跳过 CPU 帧（坐标未做转置，画上去会错位）；
+//!   走带模式的音符层复用 GPU 段表绘制全部音轨，因此走带布局下不启用单轨模式；
+//! - Step 4a 只在**切换点**设闸：加载 MIDI 后禁止切换（`onion_backend_locked`）、
+//!   走带/瀑布流/导出中/视频导出面板仅打开时拒绝切到 CPU、纵向卷帘下切 CPU 会先自动
+//!   退回横向（`host::dialog::apply::onion`）；
+//! - Step 4b 补**入口**闸：已处在 CPU 后端时，纵向卷帘 / 工程走带 / 全屏瀑布流 /
+//!   右侧栏钢琴瀑布预览 / 视频导出面板与开始导出一律拒绝 + Toast
+//!   （`root::handlers::cpu_guard`，Runner 侧另有最终兜底），因此下面的
+//!   「纵向往带直接跳过」分支只是**纵深防御**，不再是用户可达的静默降级。
+
+use lumino_core::storage::config::OnionSkinBackend;
+use lumino_gfx::CpuOnionFrame;
+use lumino_midi_model::MidiDocument;
+
+use crate::host::Host;
+use crate::host::render::onion_skin::mute_fingerprint_of;
+use crate::sidebar::Track;
+
+mod camera;
+mod density_cache;
+mod output;
+mod plan;
+mod state;
+
+pub(crate) use camera::snap_scroll_x;
+pub(crate) use state::CpuOnionState;
+
+use camera::CpuOnionCameraInput;
+use output::CpuOnionOutput;
+use state::CpuOnionFrameKey;
+
+impl Host {
+    /// 当前洋葱皮渲染后端（只读）。
+    pub fn onion_skin_backend(&self) -> OnionSkinBackend {
+        self.onion_skin_backend
+    }
+
+    /// 洋葱皮后端是否锁定（**加载 MIDI 后禁止切换**的用户硬约束）。
+    ///
+    /// 判定取会话锁（`host::session_lock::MidiLoadLock`），即「**是否加载过真实
+    /// MIDI/工程**」这一单一真源：
+    /// - 真实 MIDI/工程载入 → `Host::set_midi_document` → 锁定；
+    /// - 启动 / 新建 / 关闭工程 → `Host::init_blank_project` → 解锁。
+    ///
+    /// **刻意不用 `document.is_some()`**：启动即会 `init_blank_project` 挂一份 2 轨
+    /// 空白 `MidiDocument`，用「有文档」当锁会让设置页后端下拉从第一帧起永久锁定——
+    /// 空白工程里既选不了 CPU 也切不回 GPU，功能等于不可用。用户约束是「加载 MIDI
+    /// 后禁止切换」，空白工程不是加载 MIDI。
+    ///
+    /// 设置对话框是独立 `Host`（Root 里没有会话状态），因此锁定态必须由主窗口
+    /// 主动注入（`Host::set_settings_onion_backend_locked`），对话框不得自行判定。
+    pub fn onion_backend_locked(&self) -> bool {
+        self.midi_load.is_loaded()
+    }
+
+    /// 切换洋葱皮渲染后端（由设置页触发；调用前必须过 `apply_onion_backend_switch` 守卫）。
+    ///
+    /// 切换必须让三样缓存都失效：
+    /// - GPU 段表：单轨 ↔ 全轨语义变化 → 强制下一次全量会话；
+    /// - CPU 帧：指纹包含后端语义，直接清空由下一帧重建；
+    /// - 编辑器侧的 CPU 洋葱皮脏区记录开关：只有 CPU 后端才值得为每笔编辑付费
+    ///   （见 `EditorData::set_cpu_onion_dirty_enabled`，默认 GPU 零开销）。
+    pub fn set_onion_skin_backend(&mut self, backend: OnionSkinBackend) {
+        if self.onion_skin_backend == backend {
+            return;
+        }
+        self.onion_skin_backend = backend;
+        self.render_ctx.onion_skin_state.force_full_next();
+        self.cpu_onion_state.deactivate();
+        // 切到 CPU 开启记录；切回 GPU 关闭并清空残留脏区（关闭动作内含 clear）
+        self.root
+            .editor
+            .editor_state
+            .data
+            .set_cpu_onion_dirty_enabled(backend == OnionSkinBackend::Cpu);
+        self.mark_dirty();
+    }
+
+    /// 生成/复用 CPU 洋葱皮帧（每帧由 `collect_render_data` 调用）。
+    ///
+    /// 返回 `Some(frame)` 时调用方必须把它放进 `RenderData::cpu_onion_frame`，
+    /// 由 `build_render_params` 透传到 `RenderParams::cpu_onion_frame`。
+    ///
+    /// 帧自带 `dirty_rect`（区域重绘时为具体矩形，整帧/复用帧为 `None`），透传
+    /// 时**不得剥离**——gfx 据此把整帧上传降成局部上传（Step 5b）。
+    ///
+    /// 只有**重新光栅化**的帧才置内容脏（`render_content_dirty`）——复用帧与
+    /// 「只更新快照/索引」的帧都不置位，否则纯滚动/当前轨拖动会退化成每帧等待
+    /// 渲染线程，present 节奏崩掉。
+    pub(crate) fn update_cpu_onion_frame(&mut self, render_scroll_x: f32) -> Option<CpuOnionFrame> {
+        // 默认后端是 GPU：本步完全不参与，零行为变化
+        if self.onion_skin_backend != OnionSkinBackend::Cpu {
+            self.cpu_onion_state.deactivate();
+            // 防御：异常路径下残留的脏区不得泄漏到下一次切回 CPU
+            self.root.editor.editor_state.data.clear_cpu_onion_dirty();
+            return None;
+        }
+        let output = self.build_cpu_onion_output(render_scroll_x);
+        // 区域重绘时把脏区打出来（trace）：gfx 侧按它做局部上传，出问题时这是
+        // 唯一能对齐「CPU 认为变了哪块」与「GPU 写了哪块」的现场
+        if let Some(rect) = output.dirty {
+            tracing::trace!(
+                x = rect.x,
+                y = rect.y,
+                width = rect.width,
+                height = rect.height,
+                "[cpu-onion] 区域重绘（gfx 只上传该矩形）"
+            );
+        }
+        if output.rebuilt {
+            self.render_ctx.mark_render_content_dirty();
+        }
+        output.frame
+    }
+
+    /// 收集相机/静音/指纹/脏区并驱动帧状态机（不置内容脏，由调用方决定）。
+    ///
+    /// `render_scroll_x` 是**吸附到物理像素后**的逻辑横向滚动（由
+    /// `collect_render_data` 计算，GPU 网格/当前轨共用同一值），保证 CPU 帧
+    /// 与网格逐像素对齐；纵向滚动仍用 `es.view.scroll_y`。
+    fn build_cpu_onion_output(&mut self, render_scroll_x: f32) -> CpuOnionOutput {
+        // 走带模式：渲染通道在 arrangement 分支提前返回，CPU 叠加层结构上不会绘制；
+        // 纵向卷帘：本步坐标未转置（Step 4 禁用 CPU 后端），跳过以免错位。
+        //
+        // **不 take 脏区**：这两条路径只是「暂时看不到」，回到钢琴卷帘后必须一次性
+        // 消费掉这段时间的编辑，否则脏区被静默丢弃 → CPU 帧永久停在旧内容。
+        if self.root.is_arrangement_mode() || self.root.editor.editor_state.is_vertical_roll {
+            self.cpu_onion_state.clear_frame();
+            return CpuOnionOutput {
+                frame: None,
+                rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
+            };
+        }
+
+        let input = {
+            let es = &self.root.editor.editor_state;
+            CpuOnionCameraInput {
+                scale_factor: self.render_ctx.viewport.scale_factor(),
+                canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
+                canvas_size: (es.canvas.size_x, es.canvas.size_y),
+                // canvas 是**整块**（含键盘栏/标尺）：内容区原点必须再内缩这两项，
+                // 否则 CPU 音符相对 GPU 网格整体左移 keyboard_width、上移 ruler_height
+                keyboard_width: es.view.keyboard_width,
+                ruler_height: es.view.ruler_height,
+                // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
+                // 横向滚动已吸附物理像素，纵向仍用实时值（本步不做纵向增量）
+                scroll: (render_scroll_x, es.view.scroll_y),
+                zoom: (es.view.zoom_x, es.view.zoom_y),
+                key_count: es.view.visible_key_count,
+            }
+        };
+        let track_count = self
+            .root
+            .editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map_or(0, MidiDocument::track_count);
+        let Some(mut geometry) = input.to_physical() else {
+            self.cpu_onion_state.clear_frame();
+            return CpuOnionOutput {
+                frame: None,
+                rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
+            };
+        };
+        // 横向滚动已由 Host 吸附到物理像素；这里再 round 一次，消除
+        // `logical × scale` 的 f32 尾差（125%/150% DPI 下 10.000001 → 10），
+        // 保证 `shift_frame(dx)` 的整数增量与整帧渲染逐像素同口径。
+        geometry.camera.scroll_x = (input.scroll.0 * input.scale_factor).round();
+        if track_count == 0 {
+            // 无文档：本帧不绘制；脏区保留（下次加载必然走整帧兜底）
+            self.cpu_onion_state.clear_frame();
+            return CpuOnionOutput {
+                frame: None,
+                rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
+            };
+        }
+
+        let (muted, mut muted_ids) = collect_muted_tracks(&self.root.sidebar.tracks, track_count);
+        // 每帧消费一次脏区；`onion_dirty_tracks` 是「变化来源」的独立真源
+        // （GPU 洋葱皮也在用，不能 take，只 clone）。
+        let (dirty, direct_edits, direct_overflow, direct_bbox, dirty_tracks) = {
+            let data = &mut self.root.editor.editor_state.data;
+            let (direct, overflow, bbox) = data.take_cpu_onion_direct_edits();
+            (
+                data.take_cpu_onion_dirty(),
+                direct,
+                overflow,
+                bbox,
+                data.onion_dirty_tracks.clone(),
+            )
+        };
+        let es = &self.root.editor.editor_state;
+        let Some(document) = es.data.document.as_ref() else {
+            self.cpu_onion_state.clear_frame();
+            return CpuOnionOutput {
+                frame: None,
+                rebuilt: false,
+                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+                dirty: None,
+            };
+        };
+        let dirty = self.cpu_onion_state.merge_direct_edits(
+            document,
+            dirty,
+            &direct_edits,
+            direct_overflow,
+            direct_bbox,
+        );
+        let key = CpuOnionFrameKey {
+            track_notes_gen: es.data.track_notes_gen,
+            current_track: es.data.current_track,
+            mute_fingerprint: mute_fingerprint_of(&mut muted_ids),
+            palette_idx: lumino_extras::palette::current_palette_idx(),
+            geometry,
+        };
+        self.cpu_onion_state
+            .update(key, document, &muted, dirty, dirty_tracks.as_ref())
+    }
+}
+
+/// 收集静音映射：`(文档轨长的静音表, 静音音轨 id 列表)`。
+///
+/// 侧栏音轨 id 可能超出文档轨数（删轨/协作同步中间态）——越界 id 只进指纹、
+/// 不进静音表，绝不越界索引。
+fn collect_muted_tracks(tracks: &[Track], track_count: usize) -> (Vec<bool>, Vec<usize>) {
+    let mut muted = vec![false; track_count];
+    let mut ids = Vec::new();
+    for track in tracks.iter().filter(|track| track.is_muted) {
+        if let Some(slot) = muted.get_mut(track.id) {
+            *slot = true;
+        }
+        ids.push(track.id);
+    }
+    (muted, ids)
+}
+
+/// CPU 洋葱皮帧生成测试（独立文件，保持本文件 < 400 行）
+#[cfg(test)]
+#[path = "cpu_onion/tests.rs"]
+mod tests;
+/// CPU 洋葱皮脏区/增量索引/当前轨跳过测试（Step 5a）
+#[cfg(test)]
+#[path = "cpu_onion/tests_dirty.rs"]
+mod tests_dirty;

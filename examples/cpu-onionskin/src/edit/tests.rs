@@ -27,10 +27,52 @@ fn insert_delete_undo_redo_round_trip() {
 
     assert!(editor.delete_selected(&mut document, &mut index, &mut density, 0));
     assert_eq!(document.track_note_count(0), 2);
-    assert!(editor.undo(&mut document, &mut index));
+    assert!(editor.undo(&mut document, &mut index, &mut density));
     assert_eq!(document.track_note_count(0), 3);
-    assert!(editor.redo(&mut document, &mut index));
+    assert!(editor.redo(&mut document, &mut index, &mut density));
     assert_eq!(document.track_note_count(0), 2);
+}
+
+#[test]
+fn undo_redo_replays_density_without_full_dirty() {
+    let (mut document, mut index, mut density) = fixture();
+    let mut editor = Editor::new(1920);
+    editor.insert_at(&mut document, &mut index, &mut density, 0, 960, 64);
+    assert!(!editor.density_dirty, "插入后应只标记覆盖脏区");
+
+    assert!(editor.undo(&mut document, &mut index, &mut density));
+    assert!(!editor.density_dirty, "撤销不得要求整建密度");
+    assert!(
+        density.rebuild_dirty_coverage(&document, &index),
+        "撤销后覆盖层必须能局部重建"
+    );
+
+    assert!(editor.redo(&mut document, &mut index, &mut density));
+    assert!(!editor.density_dirty, "重做不得要求整建密度");
+    assert!(density.rebuild_dirty_coverage(&document, &index));
+}
+
+#[test]
+fn large_history_uses_ranges_without_full_density() {
+    let mut document = MidiDocument::empty_with_tracks(1, 1920);
+    for index in 0..100u32 {
+        document.insert_note(
+            0,
+            lumino_midi_loader::NoteEvent::new(index * 10, index * 10 + 5, 60, 100, 0),
+        );
+    }
+    let mut document = Arc::new(document);
+    let mut index = Arc::new(TrackIndex::build(&document));
+    let mut density = DensityPyramid::build(&document, 1);
+    let mut editor = Editor::new(1920);
+    editor.selection = (0..100).collect();
+    assert!(editor.delete_selected(&mut document, &mut index, &mut density, 0));
+    assert_eq!(document.track_note_count(0), 0);
+
+    assert!(editor.undo(&mut document, &mut index, &mut density));
+    assert_eq!(document.track_note_count(0), 100);
+    assert!(!editor.density_dirty, ">64 条历史不得要求整建密度");
+    assert!(density.coverage_valid(), "区间重建后覆盖层必须有效");
 }
 
 #[test]

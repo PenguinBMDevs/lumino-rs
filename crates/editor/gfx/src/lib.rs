@@ -12,6 +12,8 @@ pub mod cache;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;
+/// CPU 洋葱皮透明叠加层（B 方案：GPU 当前轨之前绘制 CPU 光栅结果）
+mod cpu_onion_renderer;
 /// 无头 GPU 兼容性检测（首启设备检查 / 设置页手动检查）
 pub mod device_check;
 /// 设备丢失 / 停帧状态（REND-019 PR-A 先行防护：全局标志 + 回调置位）
@@ -60,6 +62,7 @@ pub use context::{
     Context, ContextError, Result, SharedGpu, SharedGpuState, gpu_snapshot,
     install_recreated_shared_gpu, recreate_shared_gpu_worker,
 };
+pub use cpu_onion_renderer::{CpuOnionFrame, CpuOnionRenderer, CpuOnionUploadRect};
 pub use device_check::{
     FallbackDiagnostics, GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
     debug_force_fail_requested, required_backend_name, run_check_with_timeout,

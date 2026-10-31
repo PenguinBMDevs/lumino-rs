@@ -1,9 +1,10 @@
 # CPU ONIONSKIN
 
-纯 CPU 的 1.64 亿音符黑乐谱卷帘示例：winit + softbuffer 窗口，tokio 6 线程
+纯 CPU 的 3.1 亿音符黑乐谱卷帘示例：winit + softbuffer 窗口，tokio 多线程
 并行光栅化，AVX2 SIMD，滚动期间用"像素平移 + 只重画新露出窄条"的增量帧
-路径。**滚动与静止共用同一 Exact 光栅化：完整高度矩形 + 填充 + 每侧 2px
-描边，不省填充、不省描边、不丢音轨。**
+路径。**普通缩放与滚动共用同一 Exact 光栅化：完整高度矩形 + 填充 + 每侧
+2px 描边，不省填充、不省描边、不丢音轨。** 高缩放走彩色覆盖光栅（真实轨道
+色 + 音符宽度），覆盖层不可用时才退回蓝色密度热力图。
 
 ![dense 0.1 px/tick](docs/zoom-0.1.png)
 
@@ -21,7 +22,7 @@
 # 1080p 滚动基准（密集小节；5 秒含 1 秒 DWM 暖机，统计 4 秒）
 cargo run --release -p cpu-onionskin -- --bench 5 --width 1920 --height 1080
 
-# 全曲总览热力图基准
+# 全曲总览（彩色覆盖；覆盖不可用时才热力兜底）
 cargo run --release -p cpu-onionskin -- --bench 3 --overview --width 1920 --height 1080
 
 # 交互窗口（默认加载 熠星始芒 164M）
@@ -30,7 +31,7 @@ cargo run --release -p cpu-onionskin -- --width 1920 --height 1080
 # 静止不刷新冒烟：3 秒后退出并打印 IDLE
 cargo run --release -p cpu-onionskin -- --smoke 3
 
-# 离屏检查音符矩形/风格（不打开窗口）
+# 离屏检查 Exact 音符矩形/风格（不打开窗口，固定走 Exact）
 cargo run --release -p cpu-onionskin -- --screenshot target/frame.png --zoom 8.0 --width 1920 --height 1080
 ```
 
@@ -53,18 +54,41 @@ cpu=15~17% of 6 cores
 => PASS（≥60fps；p99 与 max 均 ≤16.67ms）
 ```
 
-全曲总览（密度热力图，1080p）：
+高缩放简化层（Paprika 310M，快速大范围缩放）：
 
 ```text
-wall=112.4fps  draw p99=6.00ms  present p99=7.66ms
-work p99=14.64ms  max=16.07ms
-=> PASS（≥60fps；frame p all 也在 16.67ms 内）
+wall=114.4fps | draw p50=5.67 p99=12.24
+present p50=1.65 p99=3.17 | work p50=7.38 p95=13.14 p99=14.14 max=15.58
+rss=4.44 GB | coverage+heat 133.4 MiB
+=> PASS（wall ≥100fps，work p99 ≤16.67ms；旧蓝色热力版本为 18.6fps）
 ```
 
-总览先按半分辨率渲染密度块，再最近邻放大；键盘/标尺只在相机变化时重画。
+构建：索引 5.07s、覆盖/热力金字塔 4.32s；文档 3558 MiB（`NoteEvent=12B`，
+与项目内加载路径一致），无渲染音符副本。
 
-内存：文档 1879 MiB（`NoteEvent=12B`，与项目内加载路径完全一致）+ 密度金字塔
-23.4 MiB + 派生索引约 1 MiB，无渲染音符副本。
+## 快速大范围缩放基准（Paprika 310M）
+
+```powershell
+cargo run --release -p cpu-onionskin -- --midi "D:\BM-DATA\MIDI File\Paprika's Aua Ah Community Merge (FULL).mid" `
+  --bench 5 --bench-zoom --width 1920 --height 1080 --workers 12 --bands 24
+```
+
+缩放锚点 = 最密小节中心，在对数空间从全曲适配缩放扫到 8 px/tick 再回来
+（2 个来回）。每帧 `zoom_x` 都在变，因此不会命中滚动增量路径，只会走
+Coverage/Overview/Exact 全量帧，专门测最坏路径。
+
+LOD 优先级与 `lumino-cpu-onion` 主程序一致：
+
+1. **彩色覆盖光栅**：单元 `bin_ticks × zoom_x ≤ 2px` 时启用；保留真实轨道色
+   与音符宽度，当前轨仍用主轨蓝；
+2. **热力图兜底**：仅覆盖不可用、且同屏可见小节数 ≥30（例如极低 PPQ 导致
+   基础 bin 已超过 2px）；
+3. **Exact**：其余缩放，完整矩形 + 填充 + 2px 描边。
+
+编辑后覆盖层只标记受影响的 tick 区间；进入覆盖缩放时**局部重建**这些 bin
+（清空 + 只扫该区间音符 + 逐层向上），不再整建 310M。Paprika 单笔编辑实测
+约 3ms；撤销/重做也按历史里的按值变更回放，越过既有右界只追加空 bin。
+只有变更索引提示溢出安全上限时才会扫全文档。
 
 ## 关键设计
 
@@ -77,11 +101,13 @@ work p99=14.64ms  max=16.07ms
 
 ### 2. 无质量损失的滚动
 
-用户要求滚动期间不得损失质量、不得改变外观，所以本示例**没有 Motion 档位**：
+滚动期间不损失质量、不改变外观，所以本示例**没有 Motion 档位**：
 
-- 滚动与静止都走 Exact：完整高度矩形 + 填充 + 每侧 2px 描边 + owner 稳定深度；
+- 普通缩放滚动与静止都走 Exact：完整高度矩形 + 填充 + 每侧 2px 描边 +
+  owner 稳定深度；
 - 所有洋葱皮轨都画，没有 `track_stride` 丢轨；
-- 唯一的 LOD 是全曲 Overview 密度热力图，且只在可见音符估算 >600 万时启用；
+- 唯一的高缩放简化是彩色覆盖光栅（≤2px 单元），热力图只在覆盖不可用且
+  ≥30 小节时兜底；覆盖单元按轨道序构建，保持 first-wins；
 - 细音符（宽度不足 4px）按生产 UI 规则只显示描边色，这是几何约束，与静止帧一致。
 
 ### 3. 滚动增量帧（性能关键）
@@ -127,7 +153,7 @@ work p99=14.64ms  max=16.07ms
 
 - 删除 `LodMode::Motion` 与所有 motion 光栅化分支；
 - 删除 `track_stride` 和 `choose_track_stride`，所有音轨都画；
-- `choose_mode` 只返回 Exact 或全曲 Overview；
+- `choose_mode` 只返回 Coverage / Overview / Exact（Coverage 优先，Overview 兜底）；
 - 新增 `exact_render_keeps_fill_and_border` 回归测试，直接断言宽音符中心
   像素是填充色、边缘像素是描边色。
 
@@ -151,7 +177,8 @@ work p99=14.64ms  max=16.07ms
 - `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z`：撤销/重做；
 - 拖动预览不重扫 1.6 亿音符：先缓存起始帧，鼠标移动只恢复该帧 + 画 ghost。
 
-撤销/重做恢复文档与派生索引的 Arc 快照，密度金字塔同步重建（约 200ms）。
+撤销/重做恢复文档与派生索引的 Arc 快照，同时按历史里的按值变更/脏 tick 区间
+增量维护密度/覆盖金字塔；逐音符变更超过 64 条时自动转区间，不退回整建。
 
 ## 模块
 
@@ -159,8 +186,11 @@ work p99=14.64ms  max=16.07ms
 src/
   main.rs            CLI、加载、索引/密度构建、截图
   app.rs             App 状态/配置
-  app/window.rs      窗口、相机、Exact/Overview 选择
+  app/window.rs      窗口、相机、Coverage/Overview/Exact 选择
   app/frame.rs       全量帧/增量帧/统计
+  app/coverage.rs    彩色覆盖整帧渲染
+  render/density/coverage.rs  覆盖单元构建与采样
+  render/density/render.rs    蓝色热力图兜底
   app/events.rs      鼠标/键盘/编辑
   app/handler.rs     winit ApplicationHandler
   app/present_bridge.rs  呈现 + HUD
@@ -195,8 +225,11 @@ cargo fmt -p cpu-onionskin -- --check
   密集段仍稳定 128.5/131.8fps，p99 8.10/8.41ms，max 9.19/10.79ms。
 - 水平大跨度已分帧到窄条 Exact；缩放/纵向滚动/编辑回退的全量 Exact 不在
   连续滚动统计内，但仍保持填充+描边+全部音轨，不降质量。
-- 总览热力图先按 0.5× 分辨率写密度块再最近邻放大；1080p 平均 112.4fps，
-  work p99 14.64ms，max 16.07ms。
+- 彩色覆盖按 2px 单元上限整帧渲染；Paprika 310M 快速缩放 wall=146.3fps，
+  draw p99=10.92ms，work p99=12.23ms。覆盖单元只记录前两条轨道；当前轨
+  在两条候选内优先显示主轨蓝，若被更多轨道压在第三条则按 first-wins 显示。
+- 覆盖层编辑后只重建脏 tick 区间；Paprika 单笔约 3ms。撤销/重做同样只回放
+  按值变更，超过 64 条时转成脏区间做局部重建，不再全量构建。
 - 基准前 1 秒暖机用于排除 DWM 冷启动；`--bench 5` 实际统计 4 秒。
 - 拖动 ghost 为"原音符 + 新位置预览"叠加；不隐藏原音符。
 - 单次框选上限 20 万音符；更大范围请缩小框选。
