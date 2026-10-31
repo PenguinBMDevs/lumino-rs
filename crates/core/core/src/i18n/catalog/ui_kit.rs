@@ -127,6 +127,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "OpenType 字体" => Some("OpenType Fonts"),
         // 工具栏按钮描述表未命中时的兜底说明（`ui-core/src/button_descs.rs`）
         "未配置说明" => Some("No description configured"),
+        // DRAW-041C：编辑器右键菜单的遮罩开关
+        "切换遮罩" => Some("Toggle Mask"),
         _ => None,
     }
 }

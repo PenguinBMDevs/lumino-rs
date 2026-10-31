@@ -202,6 +202,26 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "已关闭钢琴瀑布流预览面板：CPU 洋葱皮不支持该预览" => Some(
             "Closed the piano waterfall preview panel: CPU onion skin does not support this preview",
         ),
+        // DRAW-041C：待确认组合（掩膜 / 竖切 / 补间 / 编辑）的状态与失败提示
+        "编辑形状失败：请选中一个已 Bake 图形或单支待确认组合" => {
+            Some("Edit shape failed: select a baked shape or a single pending composition")
+        }
+        "已切换遮罩（仅预览；✓ 后固定）" => {
+            Some("Mask toggled (preview only; applied after ✓)")
+        }
+        "遮罩失败：请选中一个待确认/已 Bake 形状" => {
+            Some("Mask failed: select a pending or baked shape")
+        }
+        "已竖切；✓ 后才写入音符" => Some("Sliced vertically; notes are written after ✓"),
+        "竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
+            Some("Slice failed: select a pending shape/curve; composed results must be ✓ first")
+        }
+        "已生成补间（首 + 步 + 末）；✓ 后才写入音符" => {
+            Some("Tween generated (first + step + last); notes are written after ✓")
+        }
+        "补间失败：请恰好选中两个待确认形状/曲线" => {
+            Some("Tween failed: select exactly two pending shapes/curves")
+        }
         _ => None,
     }
 }
