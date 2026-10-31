@@ -3,6 +3,8 @@
 //! 组合只改 pending：来源从 owning tool 摘除，结果进入
 //! `EditorState::pending_composed`，✓ 才写文档音符。
 
+mod edit;
+
 use lumino_core::shape::{
     BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeGeometry, ShapeKind, ShapeModel,
     ShapeOp,
@@ -276,6 +278,8 @@ impl Editor {
             sources,
         });
         self.pending_composed_redo.clear();
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         if let Some(id) = self
@@ -298,6 +302,8 @@ impl Editor {
             self.restore_pending_source(source.clone());
         }
         self.pending_composed_redo.push(item);
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
@@ -313,6 +319,8 @@ impl Editor {
             self.remove_pending_source(source);
         }
         self.editor_state.pending_composed.push(item);
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
@@ -320,21 +328,6 @@ impl Editor {
     }
 
     /// 下一个可用的 Between 组 id：扫描已 Bake 模型与 pending 结果，避免跨组碰撞。
-    pub(super) fn next_between_group_id(&self) -> u64 {
-        let stored = self
-            .editor_state
-            .shape_store
-            .iter()
-            .filter_map(|entry| between_group_id(&entry.model));
-        let pending = self
-            .editor_state
-            .pending_composed
-            .iter()
-            .flat_map(|item| item.results.iter())
-            .filter_map(|part| between_group_id(&part.model));
-        stored.chain(pending).max().unwrap_or(0) + 1
-    }
-
     fn restore_pending_source(&mut self, source: PendingSource) {
         match source {
             PendingSource::Shape(shape) => self.editor_state.shape_tool.shapes.push(shape),
@@ -376,13 +369,6 @@ fn polyline_model(points: Vec<Vec<(f32, f32)>>, track: usize, k: f32) -> ShapeMo
     let mut model = ShapeModel::new(0, track as u16, ShapeKind::Polyline, k);
     model.geometry = ShapeGeometry::from_points(points);
     model
-}
-
-fn between_group_id(model: &ShapeModel) -> Option<u64> {
-    model.ops.iter().find_map(|op| match op {
-        ShapeOp::Between(params) => Some(params.id),
-        _ => None,
-    })
 }
 
 /// 竖切两半的几何集合（与外层 Vec 分支同形）

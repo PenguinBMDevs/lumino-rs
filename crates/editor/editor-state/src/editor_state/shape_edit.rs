@@ -5,7 +5,7 @@
 
 use std::f32::consts::PI;
 
-use lumino_core::shape::{ShapeKind, ShapeModel, ShapeRect};
+use lumino_core::shape::{ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 
 /// 逻辑坐标（tick, key）
 pub type Pt = (f32, f32);
@@ -231,6 +231,11 @@ pub fn apply_drag(
 }
 
 fn transform(shape: &mut ShapeModel, f: impl Fn(f32, f32) -> Pt) -> bool {
+    transform_model(shape, &f);
+    true
+}
+
+fn transform_model(shape: &mut ShapeModel, f: &impl Fn(f32, f32) -> Pt) {
     for anchor in &mut shape.geometry.anchors {
         anchor.pos = f(anchor.pos.0, anchor.pos.1);
     }
@@ -259,7 +264,30 @@ fn transform(shape: &mut ShapeModel, f: impl Fn(f32, f32) -> Pt) -> bool {
             key_hi: ny1,
         };
     }
-    true
+    // 带绝对坐标的 fx 页必须跟着变换，否则重生成时副本/内嵌笔画会留在旧位置。
+    for op in &mut shape.ops {
+        match op {
+            ShapeOp::CopyAlong(params) => {
+                if let Some(grp) = &mut params.grp {
+                    *grp = {
+                        let (x, y) = f(grp[0], grp[1]);
+                        [x, y]
+                    };
+                }
+            }
+            ShapeOp::Live(params) => {
+                for stroke in &mut params.strokes {
+                    for anchor in &mut stroke.anchors {
+                        anchor.pos = f(anchor.pos.0, anchor.pos.1);
+                    }
+                }
+                for from in &mut params.from {
+                    transform_model(from, f);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn ratio(to: f32, fixed: f32, from: f32) -> f32 {

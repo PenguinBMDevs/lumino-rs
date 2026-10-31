@@ -25,6 +25,11 @@ impl Editor {
             tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
             return false;
         }
+        // DRAW-041C 阶段 3：pending composed 手柄编辑优先于组合撤销
+        if self.undo_pending_edit() {
+            tracing::info!("Editor: 撤销 pending composed 手柄编辑");
+            return true;
+        }
         // DRAW-041C：Bake 前组合会话优先（未提交文档，先回到 pending 矢量）
         if self.undo_pending_compose() {
             tracing::info!("Editor: 撤销 Bake 前组合");
@@ -150,6 +155,11 @@ impl Editor {
         if self.is_editing() {
             tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
             return false;
+        }
+        // DRAW-041C 阶段 3：pending composed 手柄编辑重做优先
+        if self.redo_pending_edit() {
+            tracing::info!("Editor: 重做 pending composed 手柄编辑");
+            return true;
         }
         // DRAW-041C：Bake 前组合会话优先
         if self.redo_pending_compose() {

@@ -162,7 +162,12 @@ impl Root {
                         let _ = self.editor.merge_selected_shapes();
                     }
                     PianoRollContextMenuItem::EditShape => {
-                        let _ = self.editor.enable_shape_edit();
+                        if !self.editor.enable_shape_edit() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("编辑形状失败：请选中一个已 Bake 图形或单支待确认组合"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::PaintAreas => {
                         let _ = self.editor.begin_area_paint();

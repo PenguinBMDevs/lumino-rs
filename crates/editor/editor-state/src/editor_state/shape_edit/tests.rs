@@ -126,6 +126,30 @@ fn test_skew_is_integer_grid() {
 }
 
 #[test]
+fn test_move_updates_copy_along_group_anchor() {
+    let mut shape = line();
+    shape.ops.push(lumino_core::shape::ShapeOp::CopyAlong(
+        lumino_core::shape::CopyPathParams {
+            pts: vec![[240.0, 0.0]],
+            grp: Some([0.0, 60.0]),
+            ..lumino_core::shape::CopyPathParams::default()
+        },
+    ));
+    apply_drag(
+        &mut shape,
+        HandleKind::Move,
+        (0.0, 60.0),
+        (10.0, 64.0),
+        Mods::default(),
+        1.0,
+    );
+    let lumino_core::shape::ShapeOp::CopyAlong(params) = &shape.ops[0] else {
+        panic!("应为 CopyAlong");
+    };
+    assert_eq!(params.grp, Some([10.0, 64.0]), "路径起点必须跟随变换");
+}
+
+#[test]
 fn test_anchor_handle_moves_only_target() {
     let mut shape = curve();
     apply_drag(

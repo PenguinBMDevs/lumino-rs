@@ -143,6 +143,7 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::MaskToggle,
+            PianoRollContextMenuItem::EditShape,
             PianoRollContextMenuItem::SliceVertical,
             PianoRollContextMenuItem::BetweenCreate,
             PianoRollContextMenuItem::CopyAlong,
@@ -370,6 +371,7 @@ mod tests {
                 PianoRollContextMenuItem::JoinShapes,
                 PianoRollContextMenuItem::MergeShapes,
                 PianoRollContextMenuItem::MaskToggle,
+                PianoRollContextMenuItem::EditShape,
                 PianoRollContextMenuItem::SliceVertical,
                 PianoRollContextMenuItem::BetweenCreate,
                 PianoRollContextMenuItem::CopyAlong,
@@ -377,17 +379,16 @@ mod tests {
                 PianoRollContextMenuItem::CopyShapeText,
                 PianoRollContextMenuItem::DeleteDrawnShape,
             ],
-            "待确认镜像可走 010/019/021/022/025/026/027/028、分享几何、删除"
+            "待确认镜像可走 010/019/020/021/022/025/026/027/028、分享几何、删除"
         );
         assert!(
             !items.iter().any(|item| matches!(
                 item,
-                PianoRollContextMenuItem::EditShape
-                    | PianoRollContextMenuItem::SymmetryVertical
+                PianoRollContextMenuItem::SymmetryVertical
                     | PianoRollContextMenuItem::SymmetryHorizontal
                     | PianoRollContextMenuItem::Straighten
             )),
-            "020/023/024 仍不得出现在待确认目标"
+            "023/024 仍不得出现在待确认目标"
         );
     }
 

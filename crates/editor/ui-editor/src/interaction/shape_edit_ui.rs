@@ -1,31 +1,52 @@
 //! 020 Custom edit 的 UI 拖拽状态（CP-4.5a）
 //!
 //! 纯变换在 `editor_state::shape_edit`；本模块负责：
-//! 命中手柄 → 拖动预览 → 松手调用 `edit_shape` 一次提交。
+//! 命中手柄 → 拖动预览 → 松手提交。
+//!
+//! 041C 阶段 3：目标既可以是已 Bake 的 DrawnShape（走 `edit_shape`），
+//! 也可以是单支 `PendingComposed`（只改 pending model + 预览音符）。
 
 use iced_core::Point;
 use lumino_core::shape::ShapeModel;
 use lumino_editor_state::editor_state::{
     HandleKind, Mods, Zoom, apply_drag, edit_handles, hit_test,
 };
+use lumino_editor_state::{PendingComposed, PendingShapeRef};
 
 use crate::Editor;
 
 use super::shape_bridge::source_from_model;
 
+/// 手柄编辑目标
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShapeEditTarget {
+    /// 已 Bake 的 DrawnShape + ShapeStore 模型
+    Drawn {
+        /// UI 图形 id
+        drawn_id: u64,
+        /// ShapeStore 模型 id
+        model_id: u64,
+    },
+    /// 单支 pending composed 结果
+    PendingComposed {
+        /// `EditorState::pending_composed` 下标
+        index: usize,
+    },
+}
+
 /// 一次形状手柄拖拽
 #[derive(Debug, Clone)]
 pub(crate) struct ShapeEditState {
-    /// UI 图形 id
-    pub drawn_id: u64,
-    /// ShapeStore 模型 id
-    pub model_id: u64,
+    /// 编辑目标
+    pub target: ShapeEditTarget,
     /// 当前手柄
     pub handle: HandleKind,
     /// 按下时的逻辑坐标
     pub start: (f32, f32),
     /// 拖动前模型（取消/判断空操作）
     pub original: ShapeModel,
+    /// 拖动前的 pending 组合快照（仅 pending 目标；undo 用）
+    pub original_composed: Vec<PendingComposed>,
     /// 当前预览模型
     pub current: ShapeModel,
     /// Ctrl / Shift
@@ -33,21 +54,27 @@ pub(crate) struct ShapeEditState {
 }
 
 impl Editor {
-    /// 为当前唯一选中的图形绑定 ShapeModel，随后渲染编辑手柄
+    /// 为当前唯一选中的图形绑定 ShapeModel，随后渲染编辑手柄。
+    ///
+    /// 041C 阶段 3：单支 pending composed 也允许进入手柄编辑。
     pub fn enable_shape_edit(&mut self) -> bool {
         if self.editor_state.shape_select.selection_len() != 1 {
             return false;
         }
-        let Some(id) = self
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .next()
-            .map(|shape| shape.id)
-        else {
+        let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
             return false;
         };
-        let ok = self.ensure_model_for_drawn(id).is_some();
+        let drawn_id = shape.id;
+        let pending = shape.pending;
+        let ok = match pending {
+            Some(PendingShapeRef::Composed(index)) => self
+                .editor_state
+                .pending_composed
+                .get(index)
+                .is_some_and(|composed| composed.results.len() == 1),
+            Some(_) => false,
+            None => self.ensure_model_for_drawn(drawn_id).is_some(),
+        };
         if ok {
             self.grid_cache.clear();
         }
@@ -61,22 +88,43 @@ impl Editor {
         {
             return false;
         }
-        let Some(drawn) = self
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .next()
-            .cloned()
-        else {
-            return false;
+        let (drawn_id, pending, model_id) = {
+            let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
+                return false;
+            };
+            (drawn.id, drawn.pending, drawn.model_id)
         };
-        // 只有已绑定 ShapeModel 的图形才进入手柄编辑；普通图形保持原有框选/拖动语义。
-        let Some(model_id) = drawn.model_id else {
-            return false;
+
+        let (target, model, original_composed) = match pending {
+            Some(PendingShapeRef::Composed(index)) => {
+                let Some(composed) = self.editor_state.pending_composed.get(index) else {
+                    return false;
+                };
+                if composed.results.len() != 1 {
+                    return false;
+                }
+                (
+                    ShapeEditTarget::PendingComposed { index },
+                    composed.results[0].model.clone(),
+                    self.editor_state.pending_composed.clone(),
+                )
+            }
+            Some(_) => return false,
+            None => {
+                let Some(model_id) = model_id else {
+                    return false;
+                };
+                let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
+                    return false;
+                };
+                (
+                    ShapeEditTarget::Drawn { drawn_id, model_id },
+                    model,
+                    Vec::new(),
+                )
+            }
         };
-        let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
-            return false;
-        };
+
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
@@ -85,11 +133,11 @@ impl Editor {
             return false;
         };
         self.shape_edit = Some(ShapeEditState {
-            drawn_id: drawn.id,
-            model_id,
+            target,
             handle,
             start: (tick, key),
             original: model.clone(),
+            original_composed,
             current: model,
             mods: Mods {
                 ctrl: self.ctrl_pressed(),
@@ -101,7 +149,7 @@ impl Editor {
 
     /// 拖动手柄；返回是否更新
     pub(crate) fn update_shape_edit(&mut self, tick: f32, key: f32) -> bool {
-        let Some(state) = &mut self.shape_edit else {
+        let Some(mut state) = self.shape_edit.take() else {
             return false;
         };
         let k = state.current.k;
@@ -113,13 +161,30 @@ impl Editor {
             state.mods,
             k,
         ) {
+            self.shape_edit = Some(state);
             return false;
         }
-        let source = source_from_model(&state.current);
-        self.editor_state
-            .shape_select
-            .set_source(state.drawn_id, source);
+        let notes = self.shape_notes_of(&state.current, state.current.track as usize);
+        match state.target {
+            ShapeEditTarget::Drawn { drawn_id, .. } => {
+                let source = source_from_model(&state.current);
+                self.editor_state.shape_select.set_source(drawn_id, source);
+            }
+            ShapeEditTarget::PendingComposed { index } => {
+                if let Some(part) = self
+                    .editor_state
+                    .pending_composed
+                    .get_mut(index)
+                    .and_then(|composed| composed.results.first_mut())
+                {
+                    part.model = state.current.clone();
+                    part.notes = notes;
+                }
+                self.refresh_pending_mirror_geometry();
+            }
+        }
         self.grid_cache.clear();
+        self.shape_edit = Some(state);
         true
     }
 
@@ -128,22 +193,50 @@ impl Editor {
         let Some(state) = self.shape_edit.take() else {
             return false;
         };
-        if state.current == state.original {
-            let source = source_from_model(&state.original);
-            self.editor_state
-                .shape_select
-                .set_source(state.drawn_id, source);
-            return false;
+        let changed = state.current != state.original;
+        match state.target {
+            ShapeEditTarget::Drawn { drawn_id, model_id } => {
+                if !changed {
+                    let source = source_from_model(&state.original);
+                    self.editor_state.shape_select.set_source(drawn_id, source);
+                    return false;
+                }
+                let ok = self.edit_shape(model_id, state.current);
+                if !ok {
+                    let source = source_from_model(&state.original);
+                    self.editor_state.shape_select.set_source(drawn_id, source);
+                }
+                self.grid_cache.clear();
+                ok
+            }
+            ShapeEditTarget::PendingComposed { index } => {
+                if !changed {
+                    self.restore_pending_part(index, &state.original);
+                    self.refresh_pending_mirror_geometry();
+                    self.grid_cache.clear();
+                    return false;
+                }
+                let notes = self.shape_notes_of(&state.current, state.current.track as usize);
+                if let Some(part) = self
+                    .editor_state
+                    .pending_composed
+                    .get_mut(index)
+                    .and_then(|composed| composed.results.first_mut())
+                {
+                    part.model = state.current;
+                    part.notes = notes;
+                }
+                self.pending_edit_undo.push(state.original_composed);
+                while self.pending_edit_undo.len() > 64 {
+                    self.pending_edit_undo.remove(0);
+                }
+                self.pending_edit_redo.clear();
+                self.pending_composed_redo.clear();
+                self.refresh_pending_mirror_geometry();
+                self.grid_cache.clear();
+                true
+            }
         }
-        let ok = self.edit_shape(state.model_id, state.current);
-        if !ok {
-            let source = source_from_model(&state.original);
-            self.editor_state
-                .shape_select
-                .set_source(state.drawn_id, source);
-        }
-        self.grid_cache.clear();
-        ok
     }
 
     /// 取消拖拽并恢复原几何（预留给 Esc）
@@ -152,11 +245,30 @@ impl Editor {
         let Some(state) = self.shape_edit.take() else {
             return;
         };
-        let source = source_from_model(&state.original);
-        self.editor_state
-            .shape_select
-            .set_source(state.drawn_id, source);
+        match state.target {
+            ShapeEditTarget::Drawn { drawn_id, .. } => {
+                let source = source_from_model(&state.original);
+                self.editor_state.shape_select.set_source(drawn_id, source);
+            }
+            ShapeEditTarget::PendingComposed { index } => {
+                self.restore_pending_part(index, &state.original);
+                self.refresh_pending_mirror_geometry();
+            }
+        }
         self.grid_cache.clear();
+    }
+
+    fn restore_pending_part(&mut self, index: usize, model: &ShapeModel) {
+        let notes = self.shape_notes_of(model, model.track as usize);
+        if let Some(part) = self
+            .editor_state
+            .pending_composed
+            .get_mut(index)
+            .and_then(|composed| composed.results.first_mut())
+        {
+            part.model = model.clone();
+            part.notes = notes;
+        }
     }
 
     /// 当前编辑/选中形状的手柄屏幕位置（用于渲染）
@@ -164,11 +276,29 @@ impl Editor {
         let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
             return Vec::new();
         };
-        let Some(model_id) = drawn.model_id else {
-            return Vec::new();
-        };
-        let Some(model) = self.editor_state.shape_store.model(model_id) else {
-            return Vec::new();
+        let model = match drawn.pending {
+            Some(PendingShapeRef::Composed(index)) => {
+                let Some(composed) = self.editor_state.pending_composed.get(index) else {
+                    return Vec::new();
+                };
+                let Some(part) = composed.results.first() else {
+                    return Vec::new();
+                };
+                if composed.results.len() != 1 {
+                    return Vec::new();
+                }
+                &part.model
+            }
+            Some(_) => return Vec::new(),
+            None => {
+                let Some(model_id) = drawn.model_id else {
+                    return Vec::new();
+                };
+                let Some(model) = self.editor_state.shape_store.model(model_id) else {
+                    return Vec::new();
+                };
+                model
+            }
         };
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
