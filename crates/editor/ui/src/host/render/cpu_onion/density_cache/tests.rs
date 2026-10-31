@@ -46,6 +46,21 @@ fn alpha(cache: &mut DensityCache, doc_gen: u64, document: &MidiDocument) -> u8 
 }
 
 #[test]
+fn clearing_track_uses_dirty_range_not_full_build() {
+    let mut document = document();
+    let mut cache = DensityCache::default();
+    assert_eq!(alpha(&mut cache, 1, &document), 255);
+    assert_eq!(cache.full_builds, 1);
+
+    // 物理删轨：整轨音符清空，只提交该轨覆盖的 tick 区间。
+    assert!(document.replace_track_notes(1, Vec::new()));
+    cache.apply_ranges(Some(1), 2, &[(0, 2000)]);
+    assert_eq!(alpha(&mut cache, 2, &document), 0);
+    assert_eq!(cache.range_rebuilds, 1, "减轨必须走区间重建");
+    assert_eq!(cache.full_builds, 1, "减轨不得整建");
+}
+
+#[test]
 fn switching_to_256_keys_grows_without_full_build() {
     let mut document = document();
     let index = TrackIndex::build(&document);

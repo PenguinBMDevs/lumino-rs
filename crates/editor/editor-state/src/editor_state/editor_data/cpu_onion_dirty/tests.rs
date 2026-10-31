@@ -151,6 +151,21 @@ fn undo_redo_replays_single_note_as_changes() {
     assert!(redone.changes[0].old.is_none() && redone.changes[0].new.is_some());
 }
 
+/// 物理删轨（清空轨道内容）只走 tick 区间，不整建密度。
+#[test]
+fn physical_track_removal_uses_ranges_not_full() {
+    let mut data = EditorData::with_notes(0, &[NoteEvent::new(0, 100, 60, 100, 0)]);
+    data.ensure_track(1);
+    data.insert_note(1, Note::new(0.0, 64, 100.0));
+    data.set_cpu_onion_dirty_enabled(true);
+    let _ = data.take_cpu_onion_dirty();
+    assert!(data.remove_track_notes_physical(1));
+    assert!(data.track_notes(1).is_empty());
+    let dirty = data.take_cpu_onion_dirty().expect("删轨必须产生脏区");
+    assert!(!dirty.full, "物理删轨不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "删轨必须给出 tick 区间");
+}
+
 /// 追加空轨只改结构，不得触发 CPU 洋葱皮整建。
 #[test]
 fn ensure_track_does_not_force_full() {
