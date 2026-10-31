@@ -12,6 +12,23 @@ fn sample_document() -> MidiDocument {
 }
 
 #[test]
+fn extreme_out_of_range_coarsens_instead_of_rebuilding() {
+    let mut edited = sample_document();
+    let tick = (super::coverage::MAX_COVERAGE_CELLS / 128 * 8) as u32 + 5000;
+    let note = NoteEvent::new(tick, tick + 100, 60, 100, 0);
+    edited.insert_note(1, note);
+    let index = TrackIndex::build(&edited);
+    let mut pyramid = DensityPyramid::build(&sample_document(), 1, 128);
+    assert!(
+        pyramid.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), 1),
+        "超过覆盖内存上限必须降采样，不得要求整建"
+    );
+    assert!(pyramid.rebuild_dirty_ranges(&edited, &index, &[(tick, tick + 100)]));
+    assert!(pyramid.total_ticks() >= tick + 100);
+    assert!(pyramid.coverage_valid());
+}
+
+#[test]
 fn range_rebuild_matches_full_after_direct_edit() {
     let before = sample_document();
     let mut after = before.clone();

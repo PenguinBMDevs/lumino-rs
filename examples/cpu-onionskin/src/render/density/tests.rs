@@ -321,6 +321,25 @@ fn range_rebuild_matches_full_after_large_edit() {
 }
 
 #[test]
+fn extreme_out_of_range_coarsens_instead_of_rebuilding() {
+    let mut before = MidiDocument::empty_with_tracks(1, 480);
+    before.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));
+    let tick = (super::coverage::MAX_COVERAGE_CELLS / 128 * 8) as u32 + 5000;
+    let note = NoteEvent::new(tick, tick + 100, 60, 100, 0);
+    let mut after = before.clone();
+    after.insert_note(0, note);
+    let mut pyramid = DensityPyramid::build(&before, 1);
+    assert!(
+        pyramid.apply_note_range(note.start_tick, note.end_tick, note.key, 1),
+        "超过覆盖内存上限必须降采样，不得要求整建"
+    );
+    let index = TrackIndex::build(&after);
+    assert!(pyramid.rebuild_dirty_ranges(&after, &index, &[(tick, tick + 100)]));
+    assert!(pyramid.total_ticks() >= tick + 100);
+    assert!(pyramid.coverage_valid());
+}
+
+#[test]
 fn coverage_invalidates_after_edit() {
     let mut document = MidiDocument::empty_with_tracks(1, 480);
     document.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));

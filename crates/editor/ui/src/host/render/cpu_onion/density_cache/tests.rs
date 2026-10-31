@@ -122,6 +122,26 @@ fn dirty_ranges_rebuild_without_full_build() {
 }
 
 #[test]
+fn extreme_out_of_layout_ranges_coarsen_without_full_build() {
+    let mut edited = document();
+    let tick = 2_200_000u32;
+    let note = NoteEvent::new(tick, tick + 100, 60, 100, 0);
+    edited.insert_note(1, note);
+    let mut cache = DensityCache::default();
+    assert_eq!(alpha(&mut cache, 1, &document()), 255);
+
+    cache.apply_ranges(Some(1), 2, &[(tick, tick + 100)]);
+    assert_eq!(alpha(&mut cache, 2, &edited), 255);
+    assert_eq!(cache.range_rebuilds, 1, "极端越界必须降采样，不得整建");
+    assert!(
+        cache
+            .pyramid
+            .as_ref()
+            .is_some_and(|pyramid| pyramid.total_ticks() >= tick + 100)
+    );
+}
+
+#[test]
 fn out_of_layout_change_grows_cache_without_rebuild() {
     let mut edited = document();
     let note = NoteEvent::new(3000, 3200, 60, 100, 0);
