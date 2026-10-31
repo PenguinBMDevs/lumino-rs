@@ -30,6 +30,19 @@ pub(crate) fn fit_contain_rect(source: ShapeRect, target: ShapeRect, ppq: f32) -
     )
 }
 
+/// 插入弧线时使用的 `ShapeModel.k`：目标框的 beats per key。
+///
+/// 抽屉单位框是正方形；把弧插入 target 后，用 target 的拍/key 比例作为 k，
+/// 生成侧 `arc_points_scaled` 才能保持源图的圆度，而不是被 tick/key 拉伸。
+pub(crate) fn arc_k_for_rect(rect: ShapeRect, ppq: f32) -> f32 {
+    let width_beats = rect.size().0 / ppq.max(1e-6);
+    let height_keys = rect.size().1;
+    if !width_beats.is_finite() || !height_keys.is_finite() || height_keys <= 0.0 {
+        return 1.0;
+    }
+    (width_beats / height_keys).max(1e-6)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,5 +79,12 @@ mod tests {
             fit_contain_rect(rect(0.0, 0.0, 0.0, 1.0), target, 1.0),
             target
         );
+    }
+
+    #[test]
+    fn test_arc_k_uses_target_beats_per_key() {
+        let target = rect(0.0, 60.0, 1920.0, 72.0);
+        let k = arc_k_for_rect(target, 480.0);
+        assert!((k - 4.0 / 12.0).abs() < 1e-5);
     }
 }

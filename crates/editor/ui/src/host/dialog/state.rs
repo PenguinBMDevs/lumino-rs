@@ -6,7 +6,7 @@ use lumino_note_core::history::OpKind;
 
 use crate::host::{Host, ShapeInsertOptions, types::DialogResult};
 use crate::message;
-use crate::shape_drawer::fit::fit_contain_rect;
+use crate::shape_drawer::fit::{arc_k_for_rect, fit_contain_rect};
 use crate::state::root_state::{CollaborationViewState, HistoryKind};
 
 fn history_kind(kind: OpKind) -> HistoryKind {
@@ -231,7 +231,7 @@ impl Host {
             target
         };
         let model = drawing
-            .to_model(track as u16, 1.0, rect)
+            .to_model(track as u16, arc_k_for_rect(rect, ppq), rect)
             .map_err(|error| error.to_string())?;
         if !self.root.editor.create_shape(model) {
             return Err("形状插入失败（请检查当前音轨）".to_string());
