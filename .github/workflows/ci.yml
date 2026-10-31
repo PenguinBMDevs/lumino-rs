@@ -136,6 +136,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # ── 临时诊断（定位 Windows gfx 单测连锁失败，定位后删除）──────────
+      # 现象：gfx lib 二进制 46 例失败（R1 request_adapter NotFound + 44 个回读
+      # 用例 Buffer invalid），CPU 用例全绿；串行化无效 ⇒ 与并发无关。
+      # 三组排除法各自独立跑：哪一组转绿，就锁定哪一组是触发源。
+      - name: 诊断A · 跳过 cpu_onion 单测
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: cargo test -p lumino-gfx --lib -- --skip cpu_onion
+
+      - name: 诊断B · 跳过 device_status 单测
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: cargo test -p lumino-gfx --lib -- --skip device_status
+
+      - name: 诊断C · 跳过 device_check 单测
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: cargo test -p lumino-gfx --lib -- --skip device_check
+
       # ── Windows 必须串行跑测试 ────────────────────────────────────
       # 现象（2026-10-31 实测，feat/cpu-onion-skin 起稳定复现）：gfx 单测二进制
       # 264 个用例并行执行到后半程后，D3D12 适配器整体枚举失败（R1 注入用例
