@@ -2,7 +2,10 @@
 
 use super::*;
 
-/// REF-LGS-009：离线导出的 GPU 渲染块长（帧）。
+/// REF-LGS-009：离线导出的**默认** GPU 渲染块长（帧）。
+///
+/// 实际生效值来自 [`AudioRenderConfig::gpu_block_size`]（设置页可改，默认即本
+/// 常量），经 [`normalize_gpu_block_size`] 归一化后写入 `SynthConfig`。
 ///
 /// 离线导出对延迟不敏感，块长是最便宜的杠杆（每块固定成本被摊薄）：
 /// `sustained65536` 实测 512→2048 快 **2.6×**、512→4096 快 **3.3×**
@@ -24,6 +27,28 @@ pub(super) const GPU_OFFLINE_BLOCK_SIZE: usize = 2048;
 const _: () = assert!(GPU_OFFLINE_BLOCK_SIZE >= 2048);
 const _: () = assert!(GPU_OFFLINE_BLOCK_SIZE.is_power_of_two());
 const _: () = assert!(GPU_OFFLINE_BLOCK_SIZE >= 16);
+
+/// 离线块长的合法范围（REF-LGS-009 UI 候选集：512/1024/2048/4096/8192）。
+const GPU_OFFLINE_BLOCK_MIN: usize = 512;
+const GPU_OFFLINE_BLOCK_MAX: usize = 8192;
+
+/// REF-LGS-009：把导出配置里的块长归一化到 [512, 8192] 的 2 的幂。
+///
+/// UI 只提供合法候选值；这里兜底旧配置/程序化调用——**不静默**：非法值会
+/// warn 一条日志并归一化，避免一次导出因为过期配置直接 `validate` 失败。
+fn normalize_gpu_block_size(value: usize) -> usize {
+    let normalized = value
+        .clamp(GPU_OFFLINE_BLOCK_MIN, GPU_OFFLINE_BLOCK_MAX)
+        .next_power_of_two();
+    if normalized != value {
+        tracing::warn!(
+            "GPU 离线块长 {value} 非法，已归一化为 {normalized}（{}..={} 的 2 的幂）",
+            GPU_OFFLINE_BLOCK_MIN,
+            GPU_OFFLINE_BLOCK_MAX
+        );
+    }
+    normalized
+}
 
 /// 将 AudioInterpolation 映射到 GPU InterpolationMode
 fn map_interpolation(
@@ -79,7 +104,7 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
         max_voices: 0,
         max_voices_per_key,
         midi_channels,
-        block_size: GPU_OFFLINE_BLOCK_SIZE,
+        block_size: normalize_gpu_block_size(config.gpu_block_size),
         interpolation: map_interpolation(config.interpolation),
         use_effects: true,
         envelope_curves,
@@ -89,7 +114,7 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
         show_progress: false,
     };
     tracing::info!(
-        "GPU SynthConfig: sample_rate={}, block_size={} (离线默认), max_voices={} (0=无限制), max_voices_per_key={}, midi_channels={}, channels={:?}",
+        "GPU SynthConfig: sample_rate={}, block_size={} (离线配置), max_voices={} (0=无限制), max_voices_per_key={}, midi_channels={}, channels={:?}",
         synth_config.sample_rate,
         synth_config.block_size,
         synth_config.max_voices,
@@ -293,6 +318,33 @@ mod tests {
             synth.validate().is_ok(),
             "默认导出配置必须能通过 SynthConfig::validate"
         );
+    }
+
+    /// REF-LGS-009：导出配置的块长生效（设置页可改）；非法值归一化到
+    /// [512, 8192] 的 2 的幂后仍能通过 `validate`（不静默失败）。
+    #[test]
+    fn configured_gpu_block_size_is_used_and_normalized() {
+        for (value, expected) in [
+            (512usize, 512usize),
+            (1024, 1024),
+            (2048, 2048),
+            (4096, 4096),
+            (8192, 8192),
+            (0, 512),
+            (1000, 1024),
+            (16384, 8192),
+        ] {
+            let config = AudioRenderConfig {
+                gpu_block_size: value,
+                ..AudioRenderConfig::default()
+            };
+            let synth = build_synth_config(&config);
+            assert_eq!(synth.block_size, expected, "gpu_block_size={value}");
+            assert!(
+                synth.validate().is_ok(),
+                "归一化后必须合法（gpu_block_size={value}）"
+            );
+        }
     }
 
     /// CPU 后端的块式渲染参数（`block_frames`）与 GPU 块长解耦：

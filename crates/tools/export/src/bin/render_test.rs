@@ -135,6 +135,8 @@ fn main() {
         midi_max_port: 0,
         // 顺手补：PREF-002 新增字段，此 bin 漏同步（与本 issue 无关，默认值对齐 config.rs）
         block_frames: 256,
+        // REF-LGS-009：离线块长（本 bin 走 CPU 后端，不影响；对齐默认值）
+        gpu_block_size: 2048,
         progress_callback: None,
         control: None,
     };

@@ -110,6 +110,11 @@ impl SettingsPanel {
                 let clamped = size.clamp(64, 8192);
                 self.synth.lgs_block_size = clamped.next_power_of_two();
             }
+            Event::LgsOfflineBlockSizeChanged(size) => {
+                // REF-LGS-009：离线导出块长只接受 [512, 8192] 的 2 的幂
+                // （GUI 是固定候选集，这里兜底防脏事件）。
+                self.synth.lgs_offline_block_size = size.clamp(512, 8192).next_power_of_two();
+            }
             Event::LgsMaxVoicesChanged(v) => {
                 self.synth.lgs_max_voices_per_key = v.clamp(0, 128);
             }

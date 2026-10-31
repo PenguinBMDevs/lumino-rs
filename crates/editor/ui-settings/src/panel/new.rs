@@ -47,6 +47,7 @@ impl SettingsPanel {
                 xsynth_voice_target_ratio: ui_config.xsynth_voice_target_ratio,
                 xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
                 lgs_block_size: ui_config.lgs_block_size,
+                lgs_offline_block_size: ui_config.lgs_offline_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
                 lgs_global_voice_limit: ui_config.lgs_global_voice_limit,
                 lgs_soft_nps_gate: ui_config.lgs_soft_nps_gate,
