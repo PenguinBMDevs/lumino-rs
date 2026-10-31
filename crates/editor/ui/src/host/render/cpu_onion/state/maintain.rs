@@ -152,6 +152,10 @@ impl CpuOnionState {
         let Some(mut index) = self.index.clone() else {
             return;
         };
+        // `ensure_track` 可能先追加空轨：只扩每轨数组，不重扫文档。
+        if snapshot.track_count() > index.max_len.len() {
+            index = Arc::new(index.with_track_count(snapshot.track_count()));
+        }
         let repaired: Vec<usize> = self
             .stale_tracks
             .iter()
@@ -172,5 +176,50 @@ impl CpuOnionState {
             }
         }
         self.index = Some(index);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use lumino_editor_state::{CpuOnionChange, CpuOnionDirty};
+    use lumino_midi_model::{MidiDocument, NoteEvent};
+
+    use super::super::super::plan::CpuOnionIndex;
+    use super::CpuOnionState;
+
+    #[test]
+    fn incremental_extends_index_for_new_empty_track() {
+        let mut before = MidiDocument::empty_with_tracks(2, 480);
+        before.insert_note(1, NoteEvent::new(0, 100, 60, 100, 0));
+        let mut after = before.clone();
+        after.add_empty_track();
+        let added = NoteEvent::new(0, 2000, 64, 100, 0);
+        after.insert_note(2, added);
+
+        let mut state = CpuOnionState::default();
+        state.document = Some(Arc::new(before));
+        state.index = Some(Arc::new(lumino_cpu_onion::TrackIndex::build(
+            state.document.as_deref().expect("before 文档"),
+        )));
+        state.index_gen = Some(1);
+        let dirty = CpuOnionDirty {
+            full: false,
+            changes: vec![CpuOnionChange {
+                track: 2,
+                old: None,
+                new: Some(added),
+            }],
+            ranges: Vec::new(),
+        };
+
+        state.maintain_index(&after, &CpuOnionIndex::Incremental, Some(&dirty), 0, 2);
+        let index = state.index.as_ref().expect("索引必须存在");
+        assert_eq!(index.max_len.len(), 3, "新空轨必须扩进索引");
+        assert_eq!(index.track_note_counts[2], 1);
+        assert_eq!(index.max_len[2], 2000);
+        assert_eq!(index.long_notes(2).len(), 1);
+        assert_eq!(index.total_notes, 2);
     }
 }

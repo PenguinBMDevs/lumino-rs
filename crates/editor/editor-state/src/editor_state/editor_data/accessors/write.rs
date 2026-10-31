@@ -88,12 +88,9 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
-        let grown = doc.track_count() <= track_id;
+        // 空轨不改变任何计数/覆盖；索引在下一帧按文档轨数扩数组即可。
         while doc.track_count() <= track_id {
             doc.add_empty_track();
-        }
-        if grown {
-            self.record_cpu_onion_full();
         }
         true
     }

@@ -151,6 +151,17 @@ fn undo_redo_replays_single_note_as_changes() {
     assert!(redone.changes[0].old.is_none() && redone.changes[0].new.is_some());
 }
 
+/// 追加空轨只改结构，不得触发 CPU 洋葱皮整建。
+#[test]
+fn ensure_track_does_not_force_full() {
+    let mut data = data();
+    assert!(data.ensure_track(4));
+    assert!(
+        data.take_cpu_onion_dirty().is_none(),
+        "空轨扩容不得产生 full 脏区"
+    );
+}
+
 /// 脏区间列表必须有上限；超限折叠为包围区间，仍然不整建。
 #[test]
 fn dirty_ranges_are_bounded() {

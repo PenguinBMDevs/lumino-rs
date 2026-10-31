@@ -217,6 +217,18 @@ mod tests {
     }
 
     #[test]
+    fn with_track_count_appends_empty_tracks_without_rescan() {
+        let index = TrackIndex::build(&sample());
+        let next = index.with_track_count(4);
+        assert_eq!(next.max_len.len(), 4);
+        assert_eq!(next.long_notes.len(), 4);
+        assert_eq!(next.track_max_keys.len(), 4);
+        assert_eq!(next.total_notes, index.total_notes);
+        assert!(next.long_notes(3).is_empty());
+        assert_eq!(next.max_len[3], 0);
+    }
+
+    #[test]
     fn with_changes_updates_long_notes_and_counts() {
         let index = TrackIndex::build(&sample());
         let removed = [NoteEvent::new(100, 700, 62, 100, 0)];

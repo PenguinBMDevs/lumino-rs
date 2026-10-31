@@ -176,6 +176,25 @@ impl TrackIndex {
         index
     }
 
+    /// 追加空轨（`ensure_track`）：只扩每轨数组，不重扫任何音符。
+    #[must_use]
+    pub fn with_track_count(&self, track_count: usize) -> Self {
+        let mut next = self.clone();
+        if next.max_len.len() >= track_count {
+            return next;
+        }
+        next.max_len.resize(track_count, 0);
+        next.long_notes.resize_with(track_count, Vec::new);
+        next.track_note_counts.resize(track_count, 0);
+        next.track_max_keys.resize(track_count, 0);
+        if next.key_mask_measures > 0 {
+            let measures = next.key_mask_measures;
+            next.key_masks
+                .resize_with(track_count, || vec![0u128; measures]);
+        }
+        next
+    }
+
     /// 该轨渲染窗口的向左 lookback（tick）。
     #[inline]
     #[must_use]
