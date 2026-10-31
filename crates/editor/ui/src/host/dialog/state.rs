@@ -6,6 +6,7 @@ use lumino_note_core::history::OpKind;
 
 use crate::host::{Host, types::DialogResult};
 use crate::message;
+use crate::shape_drawer::fit::fit_contain_rect;
 use crate::state::root_state::{CollaborationViewState, HistoryKind};
 
 fn history_kind(kind: OpKind) -> HistoryKind {
@@ -198,22 +199,51 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 把抽屉当前图形插入主工程（当前轨道 + 播放头，默认 4 beats × 12 keys）。
+    /// 把抽屉当前图形插入主工程（当前轨道 + 播放头；尺寸/比例来自抽屉插入参数）。
     pub fn insert_shape_drawing(&mut self, drawing: &ShapeDrawing) -> Result<(), String> {
         let track = self.root.editor.editor_state.data.current_track;
         if track == 0 {
             return Err("指挥轨不能插入形状，请先选择普通音轨".to_string());
         }
+        let drawer = &self.root.state.shape_drawer;
+        let beats = drawer
+            .insert_beats_text
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .ok_or_else(|| "插入宽度需为正数（拍）".to_string())?;
+        let keys = drawer
+            .insert_keys_text
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite() && (1.0..=128.0).contains(value))
+            .ok_or_else(|| "插入高度需在 1–128 key".to_string())?;
         let ppq = f32::from(self.root.editor.editor_state.view.ppq);
         let tick = self.root.editor.playback_position.max(0.0);
-        let rect = ShapeRect::normalized(tick, 60.0, tick + 4.0 * ppq, 72.0);
+        let key_lo = 60.0;
+        let target = ShapeRect::normalized(tick, key_lo, tick + beats * ppq, key_lo + keys);
+        let rect = if drawer.insert_fit_contain {
+            let source = drawing.bounds().unwrap_or(target);
+            fit_contain_rect(source, target)
+        } else {
+            target
+        };
         let model = drawing
             .to_model(track as u16, 1.0, rect)
             .map_err(|error| error.to_string())?;
         if !self.root.editor.create_shape(model) {
             return Err("形状插入失败（请检查当前音轨）".to_string());
         }
-        self.root.state.shape_drawer.status = Some("已插入当前工程".to_string());
+        self.root.state.shape_drawer.status = Some(format!(
+            "已插入当前工程（{beats} 拍 × {keys} key{}）",
+            if drawer.insert_fit_contain {
+                "，保持比例"
+            } else {
+                ""
+            }
+        ));
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
         Ok(())

@@ -6,3 +6,5 @@
 pub mod canvas;
 /// 抽屉文档、草稿与工具
 pub mod doc;
+/// 插入比例适配
+pub mod fit;

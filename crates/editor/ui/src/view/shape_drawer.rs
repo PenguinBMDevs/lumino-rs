@@ -110,6 +110,32 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     .spacing(4);
     let area_palette = row(swatches).spacing(2).wrap();
 
+    let insert_size = row![
+        text("Size").size(11),
+        text_input("beats", &state.insert_beats_text)
+            .width(Length::Fixed(42.0))
+            .on_input(|value| Message::ShapeDrawer(ShapeDrawerAction::SetInsertBeats(value))),
+        text("x").size(11),
+        text_input("keys", &state.insert_keys_text)
+            .width(Length::Fixed(42.0))
+            .on_input(|value| Message::ShapeDrawer(ShapeDrawerAction::SetInsertKeys(value))),
+        button(if state.insert_fit_contain {
+            "Contain"
+        } else {
+            "Stretch"
+        })
+        .on_press(Message::ShapeDrawer(ShapeDrawerAction::ToggleInsertFit)),
+    ]
+    .spacing(4);
+    let scale_row = row![
+        text("Scale").size(11),
+        text_input("%", &state.scale_percent_text)
+            .width(Length::Fixed(46.0))
+            .on_input(|value| Message::ShapeDrawer(ShapeDrawerAction::SetScalePercent(value))),
+        button("Apply").on_press(Message::ShapeDrawer(ShapeDrawerAction::ApplyScale)),
+    ]
+    .spacing(4);
+
     let panel = container(
         column![
             text("Shape Library").size(16).color(panel_text),
@@ -122,6 +148,8 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
             text(area_hint).size(10).color(panel_text),
             status,
             warning,
+            insert_size,
+            scale_row,
             button("Insert")
                 .width(Length::Fill)
                 .on_press(Message::ShapeDrawer(ShapeDrawerAction::Insert)),

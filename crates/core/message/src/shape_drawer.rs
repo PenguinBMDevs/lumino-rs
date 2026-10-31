@@ -42,4 +42,14 @@ pub enum ShapeDrawerAction {
     SetAreaColour(u8),
     /// 清空当前图形的区域点
     ClearAreas,
+    /// 插入宽度输入（拍）
+    SetInsertBeats(String),
+    /// 插入高度输入（key）
+    SetInsertKeys(String),
+    /// 切换插入比例（拉伸 / 保持比例）
+    ToggleInsertFit,
+    /// 抽屉内缩放百分比输入
+    SetScalePercent(String),
+    /// 应用抽屉内缩放
+    ApplyScale,
 }

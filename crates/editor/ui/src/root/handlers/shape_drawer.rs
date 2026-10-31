@@ -91,6 +91,25 @@ impl Root {
                     state.status = Some("已清空区域色".to_string());
                 }
             }
+            ShapeDrawerAction::SetInsertBeats(text) => state.insert_beats_text = text,
+            ShapeDrawerAction::SetInsertKeys(text) => state.insert_keys_text = text,
+            ShapeDrawerAction::ToggleInsertFit => {
+                state.insert_fit_contain = !state.insert_fit_contain;
+            }
+            ShapeDrawerAction::SetScalePercent(text) => state.scale_percent_text = text,
+            ShapeDrawerAction::ApplyScale => {
+                let percent = state.scale_percent_text.trim().parse::<f32>().ok();
+                match percent {
+                    Some(percent) if (25.0..=200.0).contains(&percent) => {
+                        if state.doc.borrow_mut().scale_selection(percent / 100.0) {
+                            state.status = Some(format!("已缩放 {percent}%"));
+                        } else {
+                            state.status = Some("没有可缩放的 stroke".to_string());
+                        }
+                    }
+                    _ => state.status = Some("缩放百分比需在 25–200".to_string()),
+                }
+            }
         }
     }
 }

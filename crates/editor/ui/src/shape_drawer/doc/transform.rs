@@ -95,3 +95,114 @@ impl DrawerDoc {
         true
     }
 }
+
+impl DrawerDoc {
+    /// 缩放选中 strokes（无选中 = 全部）；围绕选区中心，结果夹在单位框内。
+    pub fn scale_selection(&mut self, factor: f32) -> bool {
+        if !factor.is_finite() || factor <= 0.0 {
+            return false;
+        }
+        let indices: Vec<usize> = if self.selection.is_empty() {
+            (0..self.strokes.len()).collect()
+        } else {
+            self.selection
+                .iter()
+                .copied()
+                .filter(|&index| index < self.strokes.len())
+                .collect()
+        };
+        if indices.is_empty() && self.areas.is_empty() {
+            return false;
+        }
+        let mut min = (f32::INFINITY, f32::INFINITY);
+        let mut max = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for &index in &indices {
+            for anchor in &self.strokes[index].anchors {
+                min.0 = min.0.min(anchor.pos.0);
+                min.1 = min.1.min(anchor.pos.1);
+                max.0 = max.0.max(anchor.pos.0);
+                max.1 = max.1.max(anchor.pos.1);
+            }
+        }
+        if !min.0.is_finite() || !min.1.is_finite() {
+            return false;
+        }
+        let pivot = ((min.0 + max.0) * 0.5, (min.1 + max.1) * 0.5);
+        let mut factor = factor.clamp(0.25, 2.0);
+        let half_x = (max.0 - min.0).abs() * 0.5;
+        let half_y = (max.1 - min.1).abs() * 0.5;
+        if half_x > 1e-6 {
+            let avail = pivot.0.min(1.0 - pivot.0);
+            factor = factor.min((avail / half_x).max(0.01));
+        }
+        if half_y > 1e-6 {
+            let avail = pivot.1.min(1.0 - pivot.1);
+            factor = factor.min((avail / half_y).max(0.01));
+        }
+        if (factor - 1.0).abs() < 1e-6 {
+            return false;
+        }
+        self.checkpoint();
+        for &index in &indices {
+            for anchor in &mut self.strokes[index].anchors {
+                anchor.pos = scale_point(anchor.pos, pivot, factor);
+                anchor.in_handle = (anchor.in_handle.0 * factor, anchor.in_handle.1 * factor);
+                anchor.out_handle = (anchor.out_handle.0 * factor, anchor.out_handle.1 * factor);
+            }
+            if let Some(rect) = &mut self.strokes[index].rect {
+                let a = scale_point((rect.tick_lo, rect.key_lo), pivot, factor);
+                let b = scale_point((rect.tick_hi, rect.key_hi), pivot, factor);
+                *rect = lumino_core::shape::ShapeRect::normalized(a.0, a.1, b.0, b.1);
+            }
+        }
+        for area in &mut self.areas {
+            area.u = (pivot.0 + (area.u - pivot.0) * factor).clamp(0.0, 1.0);
+            area.v = (pivot.1 + (area.v - pivot.1) * factor).clamp(0.0, 1.0);
+        }
+        true
+    }
+}
+
+fn scale_point(point: (f32, f32), pivot: (f32, f32), factor: f32) -> (f32, f32) {
+    (
+        pivot.0 + (point.0 - pivot.0) * factor,
+        pivot.1 + (point.1 - pivot.1) * factor,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_core::shape::{ShapeAnchor, StrokeKind};
+
+    fn stroke(a: (f32, f32), b: (f32, f32)) -> Stroke {
+        Stroke {
+            kind: StrokeKind::Line,
+            anchors: vec![ShapeAnchor::new(a), ShapeAnchor::new(b)],
+            rect: None,
+        }
+    }
+
+    #[test]
+    fn test_scale_selection_halves_and_undoes() {
+        let mut doc = DrawerDoc::default();
+        doc.strokes.push(stroke((0.2, 0.2), (0.6, 0.6)));
+        doc.selection.insert(0);
+        assert!(doc.scale_selection(0.5));
+        let anchors = &doc.strokes[0].anchors;
+        assert!((anchors[0].pos.0 - 0.3).abs() < 1e-5);
+        assert!((anchors[1].pos.0 - 0.5).abs() < 1e-5);
+        assert!(doc.undo());
+        let anchors = &doc.strokes[0].anchors;
+        assert!((anchors[0].pos.0 - 0.2).abs() < 1e-5);
+        assert!((anchors[1].pos.0 - 0.6).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_scale_selection_clamps_to_unit_box() {
+        let mut doc = DrawerDoc::default();
+        doc.strokes.push(stroke((0.0, 0.0), (1.0, 1.0)));
+        doc.selection.insert(0);
+        assert!(!doc.scale_selection(2.0), "满框无法再放大");
+    }
+}

@@ -51,6 +51,14 @@ pub struct ShapeDrawerState {
     pub panel_width: f32,
     /// 是否正在拖动库/画布分割线
     pub panel_dragging: bool,
+    /// 插入宽度（拍）
+    pub insert_beats_text: String,
+    /// 插入高度（key）
+    pub insert_keys_text: String,
+    /// 插入时保持原图比例（false = 拉伸铺满）
+    pub insert_fit_contain: bool,
+    /// 抽屉内缩放百分比（25–200）
+    pub scale_percent_text: String,
 }
 
 impl Default for ShapeDrawerState {
@@ -67,6 +75,10 @@ impl Default for ShapeDrawerState {
             clipboard: Vec::new(),
             panel_width: 250.0,
             panel_dragging: false,
+            insert_beats_text: "4".to_string(),
+            insert_keys_text: "12".to_string(),
+            insert_fit_contain: false,
+            scale_percent_text: "100".to_string(),
         }
     }
 }
