@@ -367,13 +367,25 @@ impl GpuSynth {
         bank: u16,
         preset: u16,
     ) -> Result<(), SynthError> {
-        let sf = SoundFont::load(
+        // REF-LGS-014：走进程级缓存——实时/导出/端口重建共用同一份解析结果。
+        // 先取到新句柄再替换 `self.sf`：替换前旧核心仍存活，重建路径必命中。
+        let t = std::time::Instant::now();
+        let sf = SoundFont::load_cached(
             path,
             bank,
             preset,
             self.config.use_effects,
             self.config.sample_rate,
         )?;
+        let shared = self
+            .sf
+            .as_ref()
+            .is_some_and(|old| old.shares_core_with(&sf));
+        tracing::info!(
+            "LGS 音色库加载完成（{} ms，CPU 采样 {} B，共用已有解析: {shared}）",
+            t.elapsed().as_millis(),
+            sf.memory_bytes()
+        );
         self.sf = Some(sf);
         Ok(())
     }

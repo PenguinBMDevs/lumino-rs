@@ -11,6 +11,8 @@
 //!   --json <out.json> 落盘机器可读指标（供 lgs_ab.py / CI 汇总）
 //!   --prewarm         渲染前调用 prewarm_midi_file（覆盖实时预热路径）
 //!   --no-effects      关闭音源滤波（REF-LGS-005 的未滤波验收路径）
+//!   --sf-stats        只打印音色库采样峰值/越界统计后退出（REF-LGS-007）
+//!   --load-twice      再加载一次音色库并打印 fresh/cached 耗时（REF-LGS-014）
 //!
 //! 哈希为 FNV-1a 64，覆盖所有样本的 `to_bits()` 小端字节，便于 golden 比对。
 //! `voice_frames` = Σ(每块提交声部数 × 块帧数)，除以墙钟即"声部帧率"
@@ -109,6 +111,7 @@ fn main() {
     let mut max_voices: usize = 0;
     let mut sinc = false;
     let mut sf_stats = false;
+    let mut load_twice = false;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
@@ -150,6 +153,10 @@ fn main() {
             }
             "--sf-stats" => {
                 sf_stats = true;
+                i += 1;
+            }
+            "--load-twice" => {
+                load_twice = true;
                 i += 1;
             }
             other => {
@@ -226,7 +233,21 @@ fn main() {
     };
 
     let mut synth = GpuSynth::new(config).expect("GpuSynth::new");
+    let t_load = Instant::now();
     synth.load_soundfont(sf2, 0, 0).expect("load_soundfont");
+    let load_fresh = t_load.elapsed();
+    if load_twice {
+        // REF-LGS-014：旧句柄仍在 → 第二次加载应命中进程级缓存（不重新解析）。
+        let t_cached = Instant::now();
+        synth
+            .load_soundfont(sf2, 0, 0)
+            .expect("load_soundfont (cached)");
+        println!(
+            "load_fresh={:.1}ms load_cached={:.3}ms",
+            load_fresh.as_secs_f64() * 1e3,
+            t_cached.elapsed().as_secs_f64() * 1e3
+        );
+    }
     if prewarm {
         // 覆盖实时路径：预热会扫描事件并构建 voice 模板（通道门控的敏感点）。
         synth.prewarm_midi_file(midi).expect("prewarm_midi_file");

@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 use xsynth_soundfonts::LoopMode;
@@ -29,10 +29,12 @@ use crate::error::SoundFontError;
 use crate::synth::dsp::{EnvelopeDescriptor, cents_factor};
 
 mod accessors;
+mod cache;
 mod load;
 mod regions;
 mod types;
 
+pub(crate) use types::{ResampleMap, SoundFontCore};
 pub use types::{SoundFont, Zone, ZonePositions};
 
 #[cfg(test)]
