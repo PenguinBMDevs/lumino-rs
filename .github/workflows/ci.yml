@@ -136,10 +136,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Cargo test
-        run: cargo test --workspace
+      # ── Windows 必须串行跑测试 ────────────────────────────────────
+      # 现象（2026-10-31 实测，feat/cpu-onion-skin 起稳定复现）：gfx 单测二进制
+      # 264 个用例并行执行到后半程后，D3D12 适配器整体枚举失败（R1 注入用例
+      # 的 request_adapter 返回 NotFound，no_adapter_backends = GL|DX12），
+      # 随后 44 个 GPU 回读用例报 "Buffer ... is invalid"；CPU 用例全部通过。
+      # 与 `lumino-gfx/src/test_gpu.rs` 头注释记录的根因一致：D3D12 驱动在
+      # **并发**设备创建/提交下会整体停顿。macOS(Metal) / Linux(Vulkan lavapipe)
+      # 并行无此问题，所以只对 Windows 串行，不拖慢另外两个 OS。
+      - name: Cargo test (Windows · GPU 串行)
+        if: matrix.os == 'windows-latest'
+        run: cargo test --workspace -- --test-threads=1
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
+          LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
+
+      - name: Cargo test
+        if: matrix.os != 'windows-latest'
+        run: cargo test --workspace
+        env:
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
 
   # ── 金丝雀构建：Windows x64 release → 推 Hugging Face ─────────────

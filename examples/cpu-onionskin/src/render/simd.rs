@@ -9,6 +9,10 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimdLevel {
     /// AVX2（x86_64）。
+    // 非 x86_64 上 `detect()` 永远不会返回该档位（机器码路径本身也已 cfg 掉），
+    // 枚举值仍需保留给测试与 `name()` 做跨平台断言；CI 的 `-D warnings`
+    // 会把「从未构造」升为编译错误，故按目标架构局部豁免。
+    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
     Avx2,
     /// 标量兜底。
     Scalar,

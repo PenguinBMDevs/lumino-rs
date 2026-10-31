@@ -1,11 +1,20 @@
 //! 逐像素差异统计与报告（从 `harness` 拆出，保持每个文件 < 400 行）。
 //!
 //! 比较口径见 [`compare`]：双方透明背景不计入；一方覆盖另一方不覆盖记几何差异；
-//! 双方覆盖必须 alpha = 255，并比较 RGB。
+//! 双方覆盖必须 alpha = 255，并比较 RGB（超出 [`COLOR_TOLERANCE`] 才记差异）。
 
 use lumino_cpu_onion::CpuFrame;
 
 use super::harness::{H, W};
+
+/// RGB 单通道容差（0..=255 刻度）。
+///
+/// CPU 侧用 `srgb_encode` 自己量化，GPU 侧由硬件做 linear→sRGB 写入：两路取色
+/// 同源、8 位量化在**硬件**后端逐位相同（Metal / 独显 Vulkan/DX12 实测 0 差），
+/// 但**软件光栅**（CI 的 Linux lavapipe、Windows WARP）在 linear→sRGB 转换上
+/// 会做不同的舍入，实测最多差 1。几何（覆盖集合）与 alpha 仍要求逐像素严格
+/// 一致，只有颜色放宽这 1 级，避免把后端舍入差异当成渲染语义不一致。
+pub const COLOR_TOLERANCE: u8 = 1;
 
 /// 单个差异像素。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,7 +42,9 @@ pub struct Diffs {
     pub color: Vec<Diff>,
     /// 覆盖像素中 alpha != 255 的个数（CPU + GPU 合计）。
     pub alpha_violations: Vec<Diff>,
-    /// RGB 单通道最大差值。
+    /// 颜色落在 [`COLOR_TOLERANCE`] 内、不计入失败但需要可见的像素数。
+    pub tolerated: usize,
+    /// RGB 单通道最大差值（含容差内差异，仅供报告）。
     pub max_channel_delta: u8,
 }
 
@@ -46,13 +57,14 @@ impl Diffs {
     /// 一行摘要（含前若干差异坐标）。
     pub fn summary(&self) -> String {
         let mut text = format!(
-            "画布 {}×{} = {} 像素｜双方覆盖 {}｜几何差异 {}｜颜色差异 {}｜最大通道差 {}｜alpha 违规 {}",
+            "画布 {}×{} = {} 像素｜双方覆盖 {}｜几何差异 {}｜颜色差异 {}（容差内 {}）｜最大通道差 {}｜alpha 违规 {}",
             W,
             H,
             self.total,
             self.covered,
             self.geometry.len(),
             self.color.len(),
+            self.tolerated,
             self.max_channel_delta,
             self.alpha_violations.len()
         );
@@ -132,9 +144,13 @@ pub fn compare(cpu: &CpuFrame, gpu: &[u8]) -> Diffs {
             .map(|channel| cpu_px[channel].abs_diff(gpu_px[channel]))
             .max()
             .unwrap_or(0);
-        if delta > 0 {
+        if delta > COLOR_TOLERANCE {
             diffs.max_channel_delta = diffs.max_channel_delta.max(delta);
             diffs.color.push(diff);
+        } else if delta > 0 {
+            // 容差内的舍入差：只统计可见，不判失败（见 [`COLOR_TOLERANCE`]）。
+            diffs.tolerated += 1;
+            diffs.max_channel_delta = diffs.max_channel_delta.max(delta);
         }
     }
     diffs

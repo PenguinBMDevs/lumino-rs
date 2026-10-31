@@ -18,7 +18,12 @@
 //! `pack_key_color` 量化为 8 位；CPU `NoteStyle` 用同一个
 //! `current_track_color_f32` 走 `srgb_encode`。两路取色同源，且
 //! `pack_key_color` 的 `(byte/255*255)` 8 位往返对 0..=255 全部无损，
-//! 因此**只要两边的像素分类一致，RGB 就必须逐字节相等**（实测 0 差）。
+//! 因此**只要两边的像素分类一致，RGB 就逐字节相等**（硬件后端实测 0 差）。
+//!
+//! 唯一的例外是**软件光栅**：CI 的 Linux lavapipe / Windows WARP 在
+//! linear→sRGB 写入时的舍入与硬件后端不同，实测最多差 1 级。颜色比较因此
+//! 允许 [`diff::COLOR_TOLERANCE`] 级通道差（默认 1），并在报告里单列
+//! 「容差内」计数；几何与 alpha 仍然逐像素严格相等，不放宽。
 //!
 //! # 边界归属
 //!
@@ -92,9 +97,10 @@ fn assert_exact(label: &str, diffs: &Diffs) {
     );
     assert!(
         diffs.color.is_empty(),
-        "{label}：RGB 不一致 {} 处（最大通道差 {}），首个 {:?}",
+        "{label}：RGB 超出容差 {} 处（最大通道差 {}，容差内 {}），首个 {:?}",
         diffs.color.len(),
         diffs.max_channel_delta,
+        diffs.tolerated,
         diffs.color.first()
     );
     assert!(diffs.covered > 0, "{label}：两侧都没有绘制任何音符");
