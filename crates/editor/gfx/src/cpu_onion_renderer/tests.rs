@@ -5,12 +5,11 @@
 
 use crate::RenderParams;
 use crate::constants::rendering::{DEPTH_FORMAT, is_depth_stencil_compatible};
-use crate::pipeline::test_device;
 
 use super::{
     CpuOnionFrame, CpuOnionRenderer,
     pipeline::{self, CpuOnionUniform},
-    tests_support::{TARGET_FORMAT, pixel, render_and_readback},
+    tests_support::{TARGET_FORMAT, pixel, render_and_readback, transient_device},
     upload::{UploadPlan, UploadState},
 };
 
@@ -105,7 +104,7 @@ fn cpu_onion_upload_state_skips_repeated_version() {
 
 #[test]
 fn cpu_onion_invalid_frame_is_not_drawn() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
     renderer.set_viewport(2, 2);
 
@@ -123,7 +122,7 @@ fn cpu_onion_invalid_frame_is_not_drawn() {
 /// - 透明像素保持清屏色（alpha = 0 不改变目标）。
 #[test]
 fn cpu_onion_gpu_quad_preserves_source_pixels() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
 
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
     renderer.set_viewport(2, 2);

@@ -4,11 +4,9 @@
 //! 旧像素**。因此帧 B 在脏区之外故意使用另一种颜色——若实现退化成全量上传
 //!（或错误清空纹理），下面「区域外 = A」的断言会立刻打到 B 的新颜色。
 
-use crate::pipeline::test_device;
-
 use super::{
     CpuOnionFrame, CpuOnionRenderer, CpuOnionUploadRect,
-    tests_support::{TARGET_FORMAT, pixel, render_and_readback},
+    tests_support::{TARGET_FORMAT, pixel, render_and_readback, transient_device},
     upload::{UploadPlan, UploadState},
 };
 
@@ -73,7 +71,7 @@ fn assert_frame_all(bytes: &[u8], rgba: [u8; 4], ctx: &str) {
 /// 局部上传核心验收：脏区内 = B，脏区外 = A（旧像素未被覆盖 / 未被清空）。
 #[test]
 fn cpu_onion_partial_upload_preserves_pixels_outside_dirty_rect() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
 
     // 帧 A：整帧不透明红（首帧 → 重建纹理 + 全量上传）
@@ -121,7 +119,7 @@ fn cpu_onion_partial_upload_preserves_pixels_outside_dirty_rect() {
 /// 末行脏区：验证源切片行距（`frame.width * 4`）与末行字节数计算不越界、不串行。
 #[test]
 fn cpu_onion_partial_upload_on_last_row_keeps_other_rows() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
 
     renderer.prepare(&queue, &solid(RED, 1));
@@ -153,7 +151,7 @@ fn cpu_onion_partial_upload_on_last_row_keeps_other_rows() {
 /// 同版本再 prepare：`Reuse`，不重新上传（用「同版本但内容不同」的帧反证）。
 #[test]
 fn cpu_onion_same_version_does_not_upload_again() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
 
     renderer.prepare(&queue, &solid(RED, 1));
@@ -181,7 +179,7 @@ fn cpu_onion_same_version_does_not_upload_again() {
 /// 版本变化但无脏区 / 脏区越界 → 全量上传，整帧等于新帧。
 #[test]
 fn cpu_onion_full_upload_when_dirty_missing_or_invalid() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
     renderer.prepare(&queue, &solid(RED, 1));
 
@@ -224,7 +222,7 @@ fn cpu_onion_partial_plan_rejects_invalid_rect() {
 /// 尺寸变化必须重建纹理并全量上传（脏区被忽略）。
 #[test]
 fn cpu_onion_size_change_recreates_and_ignores_dirty() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
     renderer.prepare(&queue, &solid(RED, 1));
 
@@ -253,7 +251,7 @@ fn cpu_onion_size_change_recreates_and_ignores_dirty() {
 /// 像素帧不是紧凑子图：脏区源数据来自整帧像素（行距 = 帧宽），不是区域切片。
 #[test]
 fn cpu_onion_partial_upload_reads_from_full_frame_stride() {
-    let (device, queue) = test_device();
+    let (_instance, device, queue) = transient_device();
     let mut renderer = CpuOnionRenderer::new(&device, &queue, TARGET_FORMAT);
 
     // 帧 A：每行不同色（红/绿/蓝/品红），便于发现「行距用错」

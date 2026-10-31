@@ -136,6 +136,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # ── Windows 测试（并行，与另外两个 OS 一致）──────────────────────
+      # 2026-10-31 曾在此临时改成 `--test-threads=1` 规避 gfx 单测连锁失败，
+      # 但串行化并未解决问题（真因是「驻留共享 Device + `device_check` 反复
+      # 建/销探测 Device」的 DX12 组合），反而让 `lumino-midi-io` 的音频设备
+      # 用例抛 STATUS_ACCESS_VIOLATION（并行模式下从未复现）。真因已由
+      # `cpu_onion_renderer::tests_support::transient_device` 修复，故恢复并行。
       - name: Cargo test
         run: cargo test --workspace
         env:
