@@ -5,6 +5,7 @@
 //! 撤销/重做恢复 Arc 快照并由 App 重建密度。
 
 mod drag;
+mod history;
 mod selection;
 
 #[cfg(test)]
@@ -21,6 +22,8 @@ pub const MAX_SELECTION: usize = 200_000;
 const HISTORY_LIMIT: usize = 24;
 /// 单笔历史可回放的按值变更上限；超过则撤销时整建密度。
 const MAX_HISTORY_CHANGES: usize = 64;
+/// 单笔历史脏区间上限：超出后折叠为包围区间，仍不整建。
+const MAX_HISTORY_RANGES: usize = 4096;
 
 /// 当前工具。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,10 +47,54 @@ struct NoteChange {
     new: Option<NoteEvent>,
 }
 
+/// 音符增删改覆盖的 tick 区间（旧/新位置并集）。
+fn note_change_range(old: Option<NoteEvent>, new: Option<NoteEvent>) -> Option<(u32, u32)> {
+    let mut range: Option<(u32, u32)> = None;
+    for note in [old, new].into_iter().flatten() {
+        let end = note.end_tick.max(note.start_tick.saturating_add(1));
+        range = Some(match range {
+            Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+            None => (note.start_tick, end),
+        });
+    }
+    range
+}
+
+fn push_history_range(out: &mut Vec<(u32, u32)>, start: u32, end: u32) {
+    if end <= start {
+        return;
+    }
+    for range in &mut *out {
+        if start <= range.1 && end >= range.0 {
+            range.0 = range.0.min(start);
+            range.1 = range.1.max(end);
+            return;
+        }
+    }
+    if out.len() >= MAX_HISTORY_RANGES {
+        let lo = out
+            .iter()
+            .map(|range| range.0)
+            .min()
+            .map_or(start, |lo| lo.min(start));
+        let hi = out
+            .iter()
+            .map(|range| range.1)
+            .max()
+            .map_or(end, |hi| hi.max(end));
+        out.clear();
+        out.push((lo, hi));
+        return;
+    }
+    out.push((start, end));
+}
+
 struct HistoryEntry {
     document: Arc<MidiDocument>,
     index: Arc<TrackIndex>,
     changes: Vec<NoteChange>,
+    ranges: Vec<(u32, u32)>,
+    range_mode: bool,
     full: bool,
 }
 
@@ -118,61 +165,6 @@ impl Editor {
     #[must_use]
     pub fn selection_count(&self) -> usize {
         self.selection.len()
-    }
-
-    pub fn snapshot(&mut self, document: &Arc<MidiDocument>, index: &Arc<TrackIndex>) {
-        self.history.push(HistoryEntry {
-            document: Arc::clone(document),
-            index: Arc::clone(index),
-            changes: Vec::new(),
-            full: false,
-        });
-        if self.history.len() > HISTORY_LIMIT {
-            self.history.remove(0);
-        }
-        self.redo.clear();
-    }
-
-    /// 把本笔操作的按值变更挂到刚推入的历史条目上。
-    fn record_change(&mut self, old: Option<NoteEvent>, new: Option<NoteEvent>) {
-        let Some(entry) = self.history.last_mut() else {
-            return;
-        };
-        if entry.full {
-            return;
-        }
-        if entry.changes.len() >= MAX_HISTORY_CHANGES {
-            entry.changes.clear();
-            entry.full = true;
-            return;
-        }
-        entry.changes.push(NoteChange { old, new });
-    }
-
-    /// 把历史变更回放到密度（逆序 = 撤销）。
-    fn apply_history_density(
-        &mut self,
-        density: &mut DensityPyramid,
-        changes: &[NoteChange],
-        inverse: bool,
-    ) {
-        let mut valid = true;
-        for change in changes {
-            let (remove, add) = if inverse {
-                (change.new, change.old)
-            } else {
-                (change.old, change.new)
-            };
-            if let Some(note) = remove {
-                valid &= density.apply_note_range(note.start_tick, note.end_tick, note.key, -1);
-            }
-            if let Some(note) = add {
-                valid &= density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
-            }
-        }
-        if !valid {
-            self.density_dirty = true;
-        }
     }
 
     /// 在 `(tick,key)` 插入一个 snap 长度音符。
@@ -302,60 +294,5 @@ impl Editor {
             }
         }
         self.status = format!("粘贴 {inserted} 个音符");
-    }
-
-    /// 撤销；成功返回 true。密度按历史变更增量回放，失败才整建。
-    pub fn undo(
-        &mut self,
-        document: &mut Arc<MidiDocument>,
-        index: &mut Arc<TrackIndex>,
-        density: &mut DensityPyramid,
-    ) -> bool {
-        let Some(entry) = self.history.pop() else {
-            return false;
-        };
-        self.redo.push(HistoryEntry {
-            document: Arc::clone(document),
-            index: Arc::clone(index),
-            changes: entry.changes.clone(),
-            full: entry.full,
-        });
-        *document = entry.document;
-        *index = entry.index;
-        self.selection.clear();
-        if entry.full {
-            self.density_dirty = true;
-        } else {
-            self.apply_history_density(density, &entry.changes, true);
-        }
-        self.status = "撤销".to_string();
-        true
-    }
-
-    pub fn redo(
-        &mut self,
-        document: &mut Arc<MidiDocument>,
-        index: &mut Arc<TrackIndex>,
-        density: &mut DensityPyramid,
-    ) -> bool {
-        let Some(entry) = self.redo.pop() else {
-            return false;
-        };
-        self.history.push(HistoryEntry {
-            document: Arc::clone(document),
-            index: Arc::clone(index),
-            changes: entry.changes.clone(),
-            full: entry.full,
-        });
-        *document = entry.document;
-        *index = entry.index;
-        self.selection.clear();
-        if entry.full {
-            self.density_dirty = true;
-        } else {
-            self.apply_history_density(density, &entry.changes, false);
-        }
-        self.status = "重做".to_string();
-        true
     }
 }

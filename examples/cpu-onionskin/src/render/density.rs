@@ -294,6 +294,16 @@ impl DensityPyramid {
     pub fn rebuild_dirty_coverage(&mut self, document: &MidiDocument, index: &TrackIndex) -> bool {
         rebuild::rebuild_dirty_coverage(self, document, index)
     }
+
+    /// 按多个脏 tick 区间重建计数层与覆盖层（历史大变更）。
+    pub fn rebuild_dirty_ranges(
+        &mut self,
+        document: &MidiDocument,
+        index: &TrackIndex,
+        ranges: &[(u32, u32)],
+    ) -> bool {
+        rebuild::rebuild_dirty_ranges(self, document, index, ranges)
+    }
 }
 
 /// 简化层渲染的可复用临时缓冲。

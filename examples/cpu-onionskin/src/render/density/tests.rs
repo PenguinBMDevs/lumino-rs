@@ -297,6 +297,30 @@ fn out_of_layout_insert_grows_and_matches_full() {
 }
 
 #[test]
+fn range_rebuild_matches_full_after_large_edit() {
+    let mut before = MidiDocument::empty_with_tracks(1, 480);
+    for index in 0..100u32 {
+        before.insert_note(0, NoteEvent::new(index * 10, index * 10 + 5, 60, 100, 0));
+    }
+    let mut pyramid = DensityPyramid::build(&before, 1);
+    let mut after = before.clone();
+    after.remove_note_ranges(0, &[(0, 100)]);
+    let index = TrackIndex::build(&after);
+    assert!(pyramid.rebuild_dirty_ranges(&after, &index, &[(0, 1000)]));
+
+    let full = DensityPyramid::build(&after, 1);
+    let mut camera = camera(0.01);
+    camera.scroll_y = 0.0;
+    let style = NoteStyle::new(1);
+    let mut patched = vec![0u32; 1920 * 1080];
+    let mut rebuilt = patched.clone();
+    let mut scratch = OverviewScratch::default();
+    pyramid.render_coverage(&mut patched, 1920, 1080, &camera, &style, 0, &mut scratch);
+    full.render_coverage(&mut rebuilt, 1920, 1080, &camera, &style, 0, &mut scratch);
+    assert_eq!(patched, rebuilt, "区间重建必须与整建逐像素一致");
+}
+
+#[test]
 fn coverage_invalidates_after_edit() {
     let mut document = MidiDocument::empty_with_tracks(1, 480);
     document.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));
