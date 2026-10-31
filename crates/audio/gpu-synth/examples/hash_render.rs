@@ -16,7 +16,7 @@
 //! `voice_frames` = Σ(每块提交声部数 × 块帧数)，除以墙钟即"声部帧率"
 //! （voice-frames/s），可跨块长/通道配置横向比较。
 
-use lumino_gpu_synth::{GpuSynth, MidiFile, SynthConfig};
+use lumino_gpu_synth::{GpuSynth, InterpolationMode, MidiFile, SynthConfig};
 use std::fmt::Write as _;
 use std::io::Write;
 use std::time::Instant;
@@ -107,6 +107,8 @@ fn main() {
     let mut prewarm = false;
     let mut no_effects = false;
     let mut max_voices: usize = 0;
+    let mut sinc = false;
+    let mut sf_stats = false;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
@@ -142,6 +144,14 @@ fn main() {
                 max_voices = args[i + 1].parse().expect("--max-voices 应为整数");
                 i += 2;
             }
+            "--sinc" => {
+                sinc = true;
+                i += 1;
+            }
+            "--sf-stats" => {
+                sf_stats = true;
+                i += 1;
+            }
             other => {
                 eprintln!("未知参数: {other}");
                 usage();
@@ -151,6 +161,40 @@ fn main() {
     if auto_channels && explicit_channels.is_some() {
         eprintln!("--auto-channels 与 --channels 不能同时使用");
         std::process::exit(2);
+    }
+
+    if sf_stats {
+        let sf = lumino_gpu_synth::SoundFont::load(sf2, 0, 0, !no_effects, sample_rate)
+            .expect("load_soundfont");
+        let mut max_abs = 0.0f32;
+        let mut over = 0usize;
+        let mut total = 0usize;
+        let mut worst = (0usize, 0.0f32);
+        for id in 0..sf.sample_count() {
+            for &v in sf.sample_data(id).iter() {
+                let a = v.abs();
+                if a.is_finite() {
+                    total += 1;
+                    if a > 1.0 {
+                        over += 1;
+                    }
+                    if a > max_abs {
+                        max_abs = a;
+                    }
+                    if a > worst.1 {
+                        worst = (id, a);
+                    }
+                }
+            }
+        }
+        println!(
+            "sf_stats samples={} frames={} max_abs={max_abs:.6} worst_sample={} over_1={over} ({:.4}%)",
+            sf.sample_count(),
+            total,
+            worst.0,
+            over as f64 / total.max(1) as f64 * 100.0
+        );
+        return;
     }
 
     // 端口上界只用于解析通道配置；渲染时引擎会再解析一次（解析成本不计入
@@ -173,6 +217,11 @@ fn main() {
         midi_channels,
         show_progress: false,
         use_effects: !no_effects,
+        interpolation: if sinc {
+            InterpolationMode::Point64Sinc
+        } else {
+            InterpolationMode::Linear
+        },
         ..SynthConfig::default()
     };
 

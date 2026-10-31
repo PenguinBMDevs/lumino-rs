@@ -192,31 +192,25 @@ impl GpuSynth {
             wanted.sort_unstable();
             wanted.dedup();
             let rate = self.config.sample_rate;
-            let pre: Vec<(usize, Arc<[f32]>)> = wanted
+            let pre: Vec<PreparedSample> = wanted
                 .par_iter()
-                .map(|&id| (id, sf.resample_uncached(id, rate)))
+                .map(|&id| {
+                    let data = sf.resample_uncached(id, rate);
+                    let (words, gain) = crate::gpu::pack_samples_2x16snorm(&data);
+                    (id, data, words, gain)
+                })
                 .collect();
-            let Some(sf) = self.sf.as_mut() else {
+            let Some(_sf) = self.sf.as_mut() else {
                 return Err(SynthError::Gpu(
                     "soundfont missing during prewarm upload".into(),
                 ));
             };
-            let device = &self.res.ctx.device;
-            let queue = &self.res.ctx.queue;
             let mut grown = false;
-            for (id, data) in pre {
-                sf.cache_resampled(id, rate, data.clone());
-                let len = data.len() as u32;
-                let offset = self.samples_next_offset;
-                grown |= write_samples(
-                    &mut self.samples_chunks,
-                    device,
-                    queue,
-                    offset as u64 * 4,
-                    bytemuck::cast_slice(&data),
-                )?;
-                self.sample_offsets.insert(id, (offset, len));
-                self.samples_next_offset = offset + len;
+            for (id, data, words, gain) in pre {
+                if let Some(sf) = self.sf.as_mut() {
+                    sf.cache_resampled(id, rate, data.clone());
+                }
+                grown |= self.upload_sample_packed(id, data.len() as u32, &words, gain)?;
             }
             if grown {
                 self.render_bg_dirty = true;

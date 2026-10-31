@@ -40,18 +40,16 @@ impl GpuSynth {
         if n > 2048 {
             // Resolve the per-voice sample offsets first (hash lookups are
             // not thread-safe for mutation, so do them sequentially but cheap).
-            let mut sample_offs: Vec<(u32, u32)> = Vec::with_capacity(n);
+            let mut sample_offs: Vec<(u32, u32, f32, f32)> = Vec::with_capacity(n);
             for v in self.voices.iter_mut() {
-                let off = sample_offsets
-                    .get(&v.sample_id)
-                    .map(|(o, _)| *o)
-                    .unwrap_or(0);
-                let off_r = sample_offsets
-                    .get(&v.sample_id_r)
-                    .map(|(o, _)| *o)
-                    .unwrap_or(off);
+                let s = sample_offsets.get(&v.sample_id).copied();
+                let off = s.map_or(0, |s| s.offset);
+                let gain = s.map_or(1.0, |s| s.gain);
+                let sr = sample_offsets.get(&v.sample_id_r).copied();
+                let off_r = sr.map_or(off, |s| s.offset);
+                let gain_r = sr.map_or(gain, |s| s.gain);
                 v.sample_offset_r = off_r;
-                sample_offs.push((off, off_r));
+                sample_offs.push((off, off_r, gain, gain_r));
             }
             // Parallel generation of params/chans/states via owned Vecs to avoid
             // borrow checker issues with &mut self in rayon closures. The
@@ -68,13 +66,15 @@ impl GpuSynth {
                                 .into_par_iter()
                                 .map(|i| {
                                     let v = &voices_ref[i];
-                                    let (off, off_r) = sample_offs_ref[i];
+                                    let (off, off_r, gain, gain_r) = sample_offs_ref[i];
                                     let env_base = if v.fade_out {
                                         fade_env_base
                                     } else {
                                         v.env_template
                                     };
-                                    v.gpu_dyn(v.slot, off, off_r, env_base, v.fade_out)
+                                    v.gpu_dyn(
+                                        v.slot, off, off_r, gain, gain_r, env_base, v.fade_out,
+                                    )
                                 })
                                 .collect::<Vec<_>>()
                         },
@@ -135,21 +135,27 @@ impl GpuSynth {
             let prev_ids_ref = &prev_ids;
             let mut k = 0usize;
             for (i, v) in self.voices.iter_mut().enumerate() {
-                let sample_offset = sample_offsets
-                    .get(&v.sample_id)
-                    .map(|(off, _)| *off)
-                    .unwrap_or(0);
-                let sample_offset_r = sample_offsets
-                    .get(&v.sample_id_r)
-                    .map(|(off, _)| *off)
-                    .unwrap_or(sample_offset);
+                let s = sample_offsets.get(&v.sample_id).copied();
+                let sample_offset = s.map_or(0, |s| s.offset);
+                let sample_gain = s.map_or(1.0, |s| s.gain);
+                let sr = sample_offsets.get(&v.sample_id_r).copied();
+                let sample_offset_r = sr.map_or(sample_offset, |s| s.offset);
+                let sample_gain_r = sr.map_or(sample_gain, |s| s.gain);
                 v.sample_offset_r = sample_offset_r;
                 let env_base = if v.fade_out {
                     fade_env_base
                 } else {
                     v.env_template
                 };
-                params[i] = v.gpu_dyn(v.slot, sample_offset, sample_offset_r, env_base, v.fade_out);
+                params[i] = v.gpu_dyn(
+                    v.slot,
+                    sample_offset,
+                    sample_offset_r,
+                    sample_gain,
+                    sample_gain_r,
+                    env_base,
+                    v.fade_out,
+                );
                 while k < prev_ids_ref.len() && prev_ids_ref[k] < v.id {
                     k += 1;
                 }

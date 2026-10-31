@@ -13,6 +13,17 @@ use crate::synth::dsp::{
 /// REF-LGS-011: 包络模板尚未驻留到共享 `env_stages` 表。
 pub const NO_ENV_TEMPLATE: u32 = u32::MAX;
 
+/// REF-LGS-007：一个采样在 GPU 池中的位置 + 归一化增益。
+///
+/// `offset` 以 **f32 采样**为单位（shader 用 `i >> 1` 定位 u32 字）；
+/// `gain = max(1.0, |peak|)` 是打包时的缩放，shader 侧乘回以还原原始幅度
+///（snorm16 只有 ±1，越界采样直接 clamp 会削波）。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SampleRef {
+    pub offset: u32,
+    pub gain: f32,
+}
+
 /// A single active voice (one zone of one note).
 ///
 /// `Clone` powers the voice-template cache (`GpuSynth::voice_templates`):
@@ -112,11 +123,16 @@ impl Voice {
     /// `env_base` is the envelope template offset (REF-LGS-011); `fade_env`
     /// selects the shared 5 ms fade template (`env_count = 1`, release at 0,
     /// terminal at 1), mirroring the old per-voice fade stage write.
+    ///
+    /// `sample_offset*`/`sample_gain*` 成对出现（REF-LGS-007：池位置 + 归一化增益）。
+    #[allow(clippy::too_many_arguments)] // 8 个参数是「静态/动态/采样」三组字段的展开
     pub fn gpu_dyn(
         &self,
         slot: u32,
         sample_offset: u32,
         sample_offset_r: u32,
+        sample_gain: f32,
+        sample_gain_r: f32,
         env_base: u32,
         fade_env: bool,
     ) -> VoiceParamsDyn {
@@ -138,6 +154,8 @@ impl Voice {
             finished_idx: if fade_env { 1 } else { self.finished_idx },
             sample_offset,
             sample_offset_r,
+            sample_gain,
+            sample_gain_r,
             start_at: (self.start_at & 0xFFFF_FFFF) as u32,
             speed: self.speed,
         }

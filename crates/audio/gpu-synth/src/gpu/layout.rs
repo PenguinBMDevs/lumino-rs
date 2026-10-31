@@ -55,6 +55,9 @@ pub struct VoiceParamsDyn {
     pub finished_idx: u32,
     pub sample_offset: u32,
     pub sample_offset_r: u32,
+    /// REF-LGS-007：采样归一化增益（打包时 `max(1, |peak|)`，取指后乘回）。
+    pub sample_gain: f32,
+    pub sample_gain_r: f32,
     pub start_at: u32,
     pub speed: f32,
 }

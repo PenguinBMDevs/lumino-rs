@@ -45,6 +45,8 @@ struct VoiceParamsDyn {
     finished_idx: u32,    // index of the terminal stage
     sample_offset: u32,   // offset of the sample data inside `samples`
     sample_offset_r: u32, // offset of the right-channel sample data
+    sample_gain: f32,     // REF-LGS-007: pool normalization gain (packed / gain)
+    sample_gain_r: f32,
     start_at: u32,        // absolute global frame at which the voice starts (gated before)
     speed: f32,           // samples advanced per output frame
 }
@@ -53,6 +55,8 @@ struct VoiceParams {
     is_active: u32,
     sample_offset: u32,
     sample_offset_r: u32,
+    sample_gain: f32,
+    sample_gain_r: f32,
     offset: u32,
     sample_end: u32,
     loop_mode: u32,
@@ -79,6 +83,8 @@ fn combine(d: VoiceParamsDyn, s: VoiceParamsStatic) -> VoiceParams {
     p.is_active = d.is_active;
     p.sample_offset = d.sample_offset;
     p.sample_offset_r = d.sample_offset_r;
+    p.sample_gain = d.sample_gain;
+    p.sample_gain_r = d.sample_gain_r;
     p.offset = s.offset;
     p.sample_end = s.sample_end;
     p.loop_mode = s.loop_mode;
@@ -135,14 +141,13 @@ struct ChunkParams {
 }
 
 @group(0) @binding(0) var<storage, read> params: array<VoiceParamsDyn>;
-// Sample data lives in fixed-size chunks so that no single storage binding
-// exceeds the device's per-binding size limit. CHUNK_F32 must match
-// SAMPLES_CHUNK_BYTES / 4 in gpu.rs (1 GiB of f32).
-const CHUNK_F32: u32 = 268435456u;
-@group(0) @binding(1) var<storage, read> samples0: array<f32>;
-@group(0) @binding(2) var<storage, read> samples1: array<f32>;
-@group(0) @binding(3) var<storage, read> samples2: array<f32>;
-@group(0) @binding(4) var<storage, read> samples3: array<f32>;
+// REF-LGS-007: 采样池按 **u32 字**寻址，每个字装 2 帧 snorm16（2 B/帧，池减半）。
+// CHUNK_WORDS 必须与 SAMPLES_CHUNK_WORDS（gpu.rs = 1 GiB / 4 B）一致。
+const CHUNK_WORDS: u32 = 268435456u;
+@group(0) @binding(1) var<storage, read> samples0: array<u32>;
+@group(0) @binding(2) var<storage, read> samples1: array<u32>;
+@group(0) @binding(3) var<storage, read> samples2: array<u32>;
+@group(0) @binding(4) var<storage, read> samples3: array<u32>;
 @group(0) @binding(5) var<storage, read> sinc_table: array<f32>;
 @group(0) @binding(6) var<storage, read> env_stages: array<EnvStageGpu>;
 @group(0) @binding(7) var<storage, read_write> states: array<VoiceState>;
@@ -192,29 +197,30 @@ var<private> g_sample_len1: u32;
 var<private> g_sample_len2: u32;
 var<private> g_sample_len3: u32;
 
-// Reads one f32 from the chunked samples buffer; out-of-bounds reads
-// yield 0.0. CHUNK_F32 = 1<<28, so shift/mask is cheaper than div/mod
+// Reads one sample from the chunked pool; out-of-bounds reads yield 0.0.
+//
+// REF-LGS-007: two snorm16 frames are packed into one u32 (low half = even
+// sample index, high half = odd). `offset`/`idx` stay in **sample** units, so
+// the word index is `(offset + idx) >> 1`; the half is picked with `& 1`.
+// CHUNK_WORDS = 1<<28, so shift/mask is cheaper than div/mod
 // (flame graph: raw_sample is hottest GPU function at 25k voices).
 fn raw_sample(offset: u32, idx: u32) -> f32 {
     let i = offset + idx;
-    let chunk = i >> 28u;
-    let off = i & 268435455u;
+    let word = i >> 1u;
+    let chunk = word >> 28u;
+    let off = word & 268435455u;
+    var packed = 0u;
     if (chunk == 0u) {
-        if (off < g_sample_len0) { return samples0[off]; }
-        return 0.0;
+        if (off < g_sample_len0) { packed = samples0[off]; }
+    } else if (chunk == 1u) {
+        if (off < g_sample_len1) { packed = samples1[off]; }
+    } else if (chunk == 2u) {
+        if (off < g_sample_len2) { packed = samples2[off]; }
+    } else if (chunk == 3u) {
+        if (off < g_sample_len3) { packed = samples3[off]; }
     }
-    if (chunk == 1u) {
-        if (off < g_sample_len1) { return samples1[off]; }
-        return 0.0;
-    }
-    if (chunk == 2u) {
-        if (off < g_sample_len2) { return samples2[off]; }
-        return 0.0;
-    }
-    if (chunk == 3u) {
-        if (off < g_sample_len3) { return samples3[off]; }
-    }
-    return 0.0;
+    let pair = unpack2x16snorm(packed);
+    return select(pair.y, pair.x, (i & 1u) == 0u);
 }
 
 // Computes the looped position for a data-relative absolute index.
@@ -245,7 +251,7 @@ fn linear_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_lo
     let a = loop_pos(p, pos_abs, released, last_loop);
     let v0 = raw_sample(p.sample_offset, a);
     let v1 = raw_sample(p.sample_offset, a + 1u);
-    return v0 * (1.0 - frac) + v1 * frac;
+    return (v0 * (1.0 - frac) + v1 * frac) * p.sample_gain;
 }
 
 fn sinc_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_loop: u32) -> f32 {
@@ -259,7 +265,7 @@ fn sinc_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_loop
             acc += c * raw_sample(p.sample_offset, a);
         }
     }
-    return acc;
+    return acc * p.sample_gain;
 }
 
 // ---------- state advance ----------
@@ -454,6 +460,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             if (p.channels == 2u) {
                 var p_r = p;
                 p_r.sample_offset = p.sample_offset_r;
+                p_r.sample_gain = p.sample_gain_r;
                 if (p.interp == 1u) {
                     sample_r = sinc_interp(p_r, pos_abs, st.frac, st.is_released, st.last_loop_pos);
                 } else {

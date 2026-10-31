@@ -16,7 +16,7 @@ use crate::gpu::{
 };
 use crate::midi::{MidiEvent, MidiFile, TimedEvent};
 use crate::soundfont::SoundFont;
-use crate::synth::voices::{NO_ENV_TEMPLATE, Voice, build_voice, refresh_env_stages};
+use crate::synth::voices::{NO_ENV_TEMPLATE, SampleRef, Voice, build_voice, refresh_env_stages};
 
 /// 固定桶前缀：2 组（sustained / released）× (256 通道 + 1) 个偏移。
 /// 与 `mix.wgsl` 的 `BUCKET_OFFSETS` 必须一致（REF-LGS-001）。
@@ -113,6 +113,9 @@ struct ChannelState {
     rpn1_lsb: u8,
 }
 
+/// REF-LGS-007：预打包的采样（id、原始 f32、packed words、归一化增益）。
+pub(crate) type PreparedSample = (usize, Arc<[f32]>, Vec<u32>, f32);
+
 /// The GPU-accelerated MIDI synthesizer.
 ///
 /// # Example
@@ -190,7 +193,7 @@ pub struct GpuSynth {
     /// hashing overhead on the hot black-MIDI path (measured: ~30% of
     /// `apply` time on 20k-voice blocks).
     key_voices: Vec<VecDeque<usize>>, // len midi_channels*128
-    sample_offsets: std::collections::HashMap<usize, (u32, u32)>, // sample_id -> (offset, len)
+    sample_offsets: std::collections::HashMap<usize, SampleRef>, // sample_id -> GPU 池位置
     samples_next_offset: u32,
     global_frame: u64,
     pending_events: VecDeque<TimedEvent>,
