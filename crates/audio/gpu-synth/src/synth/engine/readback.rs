@@ -160,7 +160,16 @@ impl GpuSynth {
     /// pure 1 ms delay - the waveform is preserved bit-exactly, just shifted.
     pub(crate) fn apply_limiter(&mut self, out: &mut [f32]) {
         let sr = self.config.sample_rate as f32;
-        limit_block(out, &mut self.limiter_tail, &mut self.limiter_gain, sr);
+        // REF-LGS-008（A2）：块 ≥ 512 帧时按绝对帧对齐的 512 帧窗口处理，
+        // 增益轨迹因此与渲染块长无关（block 512 的序列是唯一权威）。
+        let window = self.config.block_size.min(LIMITER_WINDOW);
+        limit_stream(
+            out,
+            &mut self.limiter_tail,
+            &mut self.limiter_gain,
+            sr,
+            window,
+        );
     }
 
     /// Applies the read-back voice states to the CPU mirror.

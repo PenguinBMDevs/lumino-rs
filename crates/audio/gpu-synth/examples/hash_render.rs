@@ -82,7 +82,7 @@ fn usage() -> ! {
     eprintln!(
         "用法: hash_render <midi> <sf2> <frames> <block> \
          [--channels N | --auto-channels] [--raw out.f32] [--wav out.wav] \
-         [--json out.json] [--prewarm] [--no-effects]"
+         [--json out.json] [--prewarm] [--no-effects] [--max-voices N]"
     );
     std::process::exit(2);
 }
@@ -106,6 +106,7 @@ fn main() {
     let mut auto_channels = false;
     let mut prewarm = false;
     let mut no_effects = false;
+    let mut max_voices: usize = 0;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
@@ -137,6 +138,10 @@ fn main() {
                 no_effects = true;
                 i += 1;
             }
+            "--max-voices" if i + 1 < args.len() => {
+                max_voices = args[i + 1].parse().expect("--max-voices 应为整数");
+                i += 2;
+            }
             other => {
                 eprintln!("未知参数: {other}");
                 usage();
@@ -163,7 +168,7 @@ fn main() {
     let config = SynthConfig {
         sample_rate,
         block_size: block,
-        max_voices: 0,
+        max_voices,
         max_voices_per_key: 0,
         midi_channels,
         show_progress: false,
@@ -215,8 +220,8 @@ fn main() {
     println!("samples={} fnv1a64={:016x}", res.samples.len(), hash);
     println!("peak={:.9} rms={:.9}", peak, rms);
     println!(
-        "midi_max_port={} midi_channels={} auto_channels={} no_effects={}",
-        max_port, midi_channels, auto_channels, no_effects
+        "midi_max_port={} midi_channels={} auto_channels={} no_effects={} max_voices={}",
+        max_port, midi_channels, auto_channels, no_effects, max_voices
     );
     println!(
         "voices_peak={} voice_frames={} voice_frames_per_s={:.0}",
@@ -252,6 +257,7 @@ fn main() {
                 "  \"out_channels\": {},\n",
                 "  \"auto_channels\": {},\n",
                 "  \"no_effects\": {},\n",
+                "  \"max_voices\": {},\n",
                 "  \"audio_s\": {:.6},\n",
                 "  \"wall_s\": {:.6},\n",
                 "  \"realtime\": {:.6},\n",
@@ -278,6 +284,7 @@ fn main() {
             res.channels,
             auto_channels,
             no_effects,
+            max_voices,
             audio_secs,
             wall_secs,
             realtime,

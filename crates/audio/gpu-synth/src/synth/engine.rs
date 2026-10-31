@@ -44,7 +44,7 @@ mod voice_alloc;
 mod warm;
 
 use env_pool::EnvTemplatePool;
-use limiter::{limit_block, write_samples};
+use limiter::{LIMITER_WINDOW, limit_stream, write_samples};
 use progress::ProgressBar;
 use types::{
     FADE_SLOTS_FRACTION, MAX_RENDER_FRAMES, MAX_VOICE_OUT_BYTES, PendingReadback,
