@@ -126,27 +126,44 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Per-channel lerp state machine: start from the block-start state and
     // replay this channel's events with frame <= f. Events of other channels
     // do not affect this channel's state, so filtering them out is exact.
+    //
+    // REF-LGS-004: the host now sorts `mix_events` by (channel, frame) instead
+    // of (frame) and the whole block used to be scanned by every thread:
+    // O(block * channels * events) loads where almost all comparisons failed
+    // the `channel == ch` test. Two binary searches (first event of `ch`, then
+    // the first event past `f_global`) plus a scan of only THIS channel's
+    // events keeps the same replay order and therefore bit-exact output.
+    var lo = 0u;
+    var hi = mix_params.event_count;
+    while (lo < hi) {
+        let mid = (lo + hi) / 2u;
+        if (mix_events[mid].channel < ch) {
+            lo = mid + 1u;
+        } else {
+            hi = mid;
+        }
+    }
     var cur = mix_params.starts[ch];
     var frame_c = 0u;
-    var i = 0u;
-    while (i < mix_params.event_count && mix_events[i].frame <= f_global) {
+    var i = lo;
+    while (i < mix_params.event_count
+        && mix_events[i].channel == ch
+        && mix_events[i].frame <= f_global) {
         let ev = mix_events[i];
-        if (ev.channel == ch) {
-            let n = f32(ev.frame - frame_c);
-            cur.vol = lerp_advance(cur.vol, cur.vol_step, cur.vol_end, n);
-            cur.expr = lerp_advance(cur.expr, cur.expr_step, cur.expr_end, n);
-            cur.pan = lerp_advance(cur.pan, cur.pan_step, cur.pan_end, n);
-            frame_c = ev.frame;
-            if (ev.cc == 7u) {
-                cur.vol_step = (ev.value - cur.vol) / mix_params.lerp_len;
-                cur.vol_end = ev.value;
-            } else if (ev.cc == 11u) {
-                cur.expr_step = (ev.value - cur.expr) / mix_params.lerp_len;
-                cur.expr_end = ev.value;
-            } else if (ev.cc == 10u || ev.cc == 8u) {
-                cur.pan_step = (ev.value - cur.pan) / mix_params.lerp_len;
-                cur.pan_end = ev.value;
-            }
+        let n = f32(ev.frame - frame_c);
+        cur.vol = lerp_advance(cur.vol, cur.vol_step, cur.vol_end, n);
+        cur.expr = lerp_advance(cur.expr, cur.expr_step, cur.expr_end, n);
+        cur.pan = lerp_advance(cur.pan, cur.pan_step, cur.pan_end, n);
+        frame_c = ev.frame;
+        if (ev.cc == 7u) {
+            cur.vol_step = (ev.value - cur.vol) / mix_params.lerp_len;
+            cur.vol_end = ev.value;
+        } else if (ev.cc == 11u) {
+            cur.expr_step = (ev.value - cur.expr) / mix_params.lerp_len;
+            cur.expr_end = ev.value;
+        } else if (ev.cc == 10u || ev.cc == 8u) {
+            cur.pan_step = (ev.value - cur.pan) / mix_params.lerp_len;
+            cur.pan_end = ev.value;
         }
         i = i + 1u;
     }

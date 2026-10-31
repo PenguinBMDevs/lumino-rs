@@ -24,7 +24,11 @@ impl GpuSynth {
             }
         });
         self.pending_mix_events = pending;
-        in_block.sort_by_key(|e| e.0);
+        // REF-LGS-004：按 (channel, frame) 排序——同一通道内仍是帧升序（稳定排序
+        // 保留同帧事件的原始先后），mix 内核因此可以二分定位本通道的事件段，
+        // 只扫描自己的事件；缓存局部性也从「全块事件」缩到「本通道事件」。
+        // 键打包成 u64：块内帧 < 8192，高 32 位放 channel，比较比元组便宜。
+        in_block.sort_by_key(|e| (u64::from(e.1) << 32) | (e.0 & 0xFFFF_FFFF));
 
         // Frame-exact controller curve: the mix kernel replays this block's
         // events against the block-start lerp states, so the output does not
@@ -43,6 +47,9 @@ impl GpuSynth {
         // the next block starts from the right values.
         let mut starts = std::mem::take(&mut self.mix_starts);
         starts.clear();
+        // 事件已按 channel 聚集：一次线性扫描代替「每通道 filter 全表」
+        // （16 通道 × 2048 事件 → 1 × 2048）。
+        let mut ev_idx = 0usize;
         for ch_idx in 0..self.channels.len() {
             let st = &mut self.channels[ch_idx];
             starts.push(MixStart {
@@ -57,7 +64,10 @@ impl GpuSynth {
                 pan_end: st.pan.end,
                 _pad: [0.0; 3],
             });
-            for ev in in_block.iter().filter(|e| e.1 as usize == ch_idx) {
+            while let Some(ev) = in_block.get(ev_idx) {
+                if ev.1 as usize != ch_idx {
+                    break;
+                }
                 let (s, cc, value) = (ev.0, ev.2, ev.3);
                 match cc {
                     0x07 => {
@@ -74,6 +84,7 @@ impl GpuSynth {
                     }
                     _ => {}
                 }
+                ev_idx += 1;
             }
             st.volume.advance_to(end);
             st.expression.advance_to(end);

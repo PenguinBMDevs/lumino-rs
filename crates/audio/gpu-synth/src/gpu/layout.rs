@@ -122,6 +122,11 @@ impl EnvStageGpu {
 /// against a per-channel copy of the block-start lerp state, so controller
 /// changes take effect at their exact sample regardless of the block size
 /// and of how many events a block contains.
+///
+/// REF-LGS-004: the host sorts the array by `(channel, frame)` (stable, so
+/// same-frame events keep their arrival order). The kernel binary-searches
+/// the first event of its channel, then scans only that slice - the replay
+/// order per channel, and therefore the output, is unchanged.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MixEvent {

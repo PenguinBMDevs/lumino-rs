@@ -43,6 +43,14 @@
       "block": 2048
     },
     {
+      "name": "cc_storm_10s_200ept@512",
+      "midi": "test-file/bench/cc_storm_10s_200ept.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512,
+      "notes": "REF-LGS-004 高事件密度夹具（≈2k CC/块，16 声部）"
+    },
+    {
       "name": "multiport_1p_16ch@512",
       "midi": "test-file/bench/multiport_1p_16ch.mid",
       "sf2": "test-file/bench/rich.sf2",
