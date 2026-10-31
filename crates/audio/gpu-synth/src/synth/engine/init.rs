@@ -234,6 +234,8 @@ impl GpuSynth {
             offline_cursor: 0,
             pending_mix_events: Vec::new(),
             active_voice_count: 0,
+            peak_voice_count: 0,
+            voice_frames: 0,
             limiter_gain: 1.0,
             limiter_tail: Vec::new(),
             last_out: None,

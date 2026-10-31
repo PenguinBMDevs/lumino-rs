@@ -18,6 +18,8 @@ impl GpuSynth {
         self.active_notes.fill(0);
         self.global_frame = 0;
         self.active_voice_count = 0;
+        self.peak_voice_count = 0;
+        self.voice_frames = 0;
         self.last_states = None;
         self.last_out = None;
         self.prev_voice_ids.clear();

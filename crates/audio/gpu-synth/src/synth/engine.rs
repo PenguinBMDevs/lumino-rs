@@ -182,6 +182,12 @@ pub struct GpuSynth {
     /// `(sample, channel, controller, value)`.
     pending_mix_events: Vec<(u64, u8, u8, u8)>,
     active_voice_count: u32,
+    /// 渲染工作量统计（REF-LGS-013）：本引擎生命周期内**实际提交给 GPU**
+    /// 的声部数峰值，以及 `声部数 × 块帧数` 的累计值（voice-frames）。
+    /// 每块只在 dispatch 后累加两个整数，不进入逐样本热路径；离线渲染
+    /// 开始时由 `reset_for_offline_render` 清零，实时路径为累计值。
+    peak_voice_count: u64,
+    voice_frames: u64,
     /// Output peak limiter gain (applied on the CPU side, after readback).
     ///
     /// The mix pass sums every active voice with no headroom management, so

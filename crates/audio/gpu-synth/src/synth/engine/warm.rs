@@ -85,6 +85,7 @@ impl GpuSynth {
         };
         let rate = self.config.sample_rate;
         let curves = self.config.envelope_curves;
+        let midi_channels = self.config.midi_channels;
         // Bitmap over the (channel x key x vel) grid: the HashMap lookup per
         // event cost ~50ns x 200M events on black-MIDI; this is O(1) array
         // indexing. Templates are built for the DEFAULT channel state only
@@ -92,6 +93,11 @@ impl GpuSynth {
         // building on demand.
         let mut seen: Vec<u8> = vec![0; self.config.midi_channels * 128 * 128];
         for ev in events {
+            // REND-002 #87：配置通道空间小于文件端口上界时必须丢弃，
+            // 否则下面按 `channel*128*128` 索引会越界 panic。
+            if !crate::midi::port::channel_in_range(ev.channel(), midi_channels) {
+                continue;
+            }
             let MidiEvent::NoteOn { key, vel } = ev.event() else {
                 continue;
             };
@@ -157,7 +163,12 @@ impl GpuSynth {
             // why prewarming "Rekt Apple!!.mid" took 90+ seconds.
             let mut seen: Vec<u8> = vec![0; 128 * 128];
             let mut wanted: Vec<usize> = Vec::new();
+            let midi_channels = self.config.midi_channels;
             for ev in events {
+                // 与渲染路径一致：超出配置通道空间的事件直接丢弃。
+                if !crate::midi::port::channel_in_range(ev.channel(), midi_channels) {
+                    continue;
+                }
                 let MidiEvent::NoteOn { key, vel } = ev.event() else {
                     continue;
                 };

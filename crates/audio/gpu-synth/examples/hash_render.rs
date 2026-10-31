@@ -1,12 +1,22 @@
-//! 渲染并输出样本哈希 / 电平指标（REF-LGS-013 基准脚手架）。
+//! 渲染并输出样本哈希 / 电平 / 工作量指标（REF-LGS-013 基准脚手架）。
 //!
 //! 用法:
-//!   hash_render <midi> <sf2> <frames> <block> [--raw out.f32] [--wav out.wav]
+//!   hash_render <midi> <sf2> <frames> <block> [选项]
 //!
-//! `--raw` 落盘交错 f32（小端），用于逐样本对拍；`--wav` 落盘 32-bit float WAV。
+//! 选项:
+//!   --channels <N>    显式指定 `SynthConfig::midi_channels`（16..=256，16 的倍数）
+//!   --auto-channels   按 MIDI 文件实际端口上界推导：`(max_port+1)*16`，钳到 16..=256
+//!   --raw <out.f32>   落盘交错 f32（小端），用于逐样本对拍
+//!   --wav <out.wav>   落盘 32-bit float WAV
+//!   --json <out.json> 落盘机器可读指标（供 lgs_ab.py / CI 汇总）
+//!   --prewarm         渲染前调用 prewarm_midi_file（覆盖实时预热路径）
+//!
 //! 哈希为 FNV-1a 64，覆盖所有样本的 `to_bits()` 小端字节，便于 golden 比对。
+//! `voice_frames` = Σ(每块提交声部数 × 块帧数)，除以墙钟即"声部帧率"
+//! （voice-frames/s），可跨块长/通道配置横向比较。
 
-use lumino_gpu_synth::{GpuSynth, SynthConfig};
+use lumino_gpu_synth::{GpuSynth, MidiFile, SynthConfig};
+use std::fmt::Write as _;
 use std::io::Write;
 use std::time::Instant;
 
@@ -48,22 +58,52 @@ fn write_wav_f32(
     Ok(())
 }
 
+/// 最小 JSON 字符串转义（路径里可能出现 `\` 与 `"`）。
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn usage() -> ! {
+    eprintln!(
+        "用法: hash_render <midi> <sf2> <frames> <block> \
+         [--channels N | --auto-channels] [--raw out.f32] [--wav out.wav] \
+         [--json out.json] [--prewarm]"
+    );
+    std::process::exit(2);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
-        eprintln!(
-            "用法: hash_render <midi> <sf2> <frames> <block> [--raw out.f32] [--wav out.wav]"
-        );
-        std::process::exit(2);
+        usage();
     }
 
     let midi = &args[1];
     let sf2 = &args[2];
     let frames: u64 = args[3].parse().expect("frames 应为整数");
     let block: usize = args[4].parse().expect("block 应为整数");
+    let sample_rate = 48_000u32;
 
     let mut raw_out: Option<&str> = None;
     let mut wav_out: Option<&str> = None;
+    let mut json_out: Option<&str> = None;
+    let mut explicit_channels: Option<usize> = None;
+    let mut auto_channels = false;
+    let mut prewarm = false;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
@@ -75,24 +115,61 @@ fn main() {
                 wav_out = Some(&args[i + 1]);
                 i += 2;
             }
+            "--json" if i + 1 < args.len() => {
+                json_out = Some(&args[i + 1]);
+                i += 2;
+            }
+            "--channels" if i + 1 < args.len() => {
+                explicit_channels = Some(args[i + 1].parse().expect("--channels 应为整数"));
+                i += 2;
+            }
+            "--auto-channels" => {
+                auto_channels = true;
+                i += 1;
+            }
+            "--prewarm" => {
+                prewarm = true;
+                i += 1;
+            }
             other => {
                 eprintln!("未知参数: {other}");
-                std::process::exit(2);
+                usage();
             }
         }
     }
+    if auto_channels && explicit_channels.is_some() {
+        eprintln!("--auto-channels 与 --channels 不能同时使用");
+        std::process::exit(2);
+    }
+
+    // 端口上界只用于解析通道配置；渲染时引擎会再解析一次（解析成本不计入
+    // 下面的 wall，口径与 5080 基线一致）。
+    let max_port = MidiFile::load(midi, sample_rate)
+        .expect("MidiFile::load")
+        .max_port;
+    // 默认保持历史行为（16 = 单端口）；只有 --auto-channels 才按文件推导。
+    let midi_channels = if auto_channels {
+        ((usize::from(max_port) + 1) * 16).clamp(16, 256)
+    } else {
+        explicit_channels.unwrap_or(16)
+    };
 
     let config = SynthConfig {
-        sample_rate: 48_000,
+        sample_rate,
         block_size: block,
         max_voices: 0,
         max_voices_per_key: 0,
+        midi_channels,
         show_progress: false,
         ..SynthConfig::default()
     };
 
     let mut synth = GpuSynth::new(config).expect("GpuSynth::new");
     synth.load_soundfont(sf2, 0, 0).expect("load_soundfont");
+    if prewarm {
+        // 覆盖实时路径：预热会扫描事件并构建 voice 模板（通道门控的敏感点）。
+        synth.prewarm_midi_file(midi).expect("prewarm_midi_file");
+    }
     let t = Instant::now();
     let res = synth
         .render_midi_frames(midi, frames)
@@ -112,6 +189,12 @@ fn main() {
     }
     let rms = (sq / res.samples.len().max(1) as f64).sqrt();
     let audio_secs = res.frames as f64 / res.sample_rate as f64;
+    let wall_secs = wall.as_secs_f64();
+    let realtime = audio_secs / wall_secs;
+    let hash = fnv1a64(&bytes);
+    let voice_frames = synth.voice_frames();
+    let voices_peak = synth.peak_voice_count();
+    let voice_frames_per_s = voice_frames as f64 / wall_secs;
 
     println!(
         "frames={} channels={} sample_rate={}",
@@ -119,16 +202,18 @@ fn main() {
     );
     println!(
         "wall={:?} audio={:.3}s realtime={:.3}x",
-        wall,
-        audio_secs,
-        audio_secs / wall.as_secs_f64()
+        wall, audio_secs, realtime
+    );
+    println!("samples={} fnv1a64={:016x}", res.samples.len(), hash);
+    println!("peak={:.9} rms={:.9}", peak, rms);
+    println!(
+        "midi_max_port={} midi_channels={} auto_channels={}",
+        max_port, midi_channels, auto_channels
     );
     println!(
-        "samples={} fnv1a64={:016x}",
-        res.samples.len(),
-        fnv1a64(&bytes)
+        "voices_peak={} voice_frames={} voice_frames_per_s={:.0}",
+        voices_peak, voice_frames, voice_frames_per_s
     );
-    println!("peak={:.9} rms={:.9}", peak, rms);
 
     if let Some(p) = raw_out {
         std::fs::write(p, &bytes).expect("write raw");
@@ -137,5 +222,59 @@ fn main() {
     if let Some(p) = wav_out {
         write_wav_f32(p, &res.samples, res.channels as u16, res.sample_rate).expect("write wav");
         println!("wav written: {p}");
+    }
+    if let Some(p) = json_out {
+        let no_limiter = std::env::var_os("LUMINO_NO_LIMITER").is_some();
+        let json = format!(
+            concat!(
+                "{{\n",
+                "  \"tool\": \"hash_render\",\n",
+                "  \"version\": \"{}\",\n",
+                "  \"midi\": \"{}\",\n",
+                "  \"sf2\": \"{}\",\n",
+                "  \"frames\": {},\n",
+                "  \"block\": {},\n",
+                "  \"sample_rate\": {},\n",
+                "  \"midi_max_port\": {},\n",
+                "  \"midi_channels\": {},\n",
+                "  \"out_channels\": {},\n",
+                "  \"auto_channels\": {},\n",
+                "  \"audio_s\": {:.6},\n",
+                "  \"wall_s\": {:.6},\n",
+                "  \"realtime\": {:.6},\n",
+                "  \"samples\": {},\n",
+                "  \"fnv1a64\": \"{:016x}\",\n",
+                "  \"peak\": {:.9},\n",
+                "  \"rms\": {:.9},\n",
+                "  \"voices_peak\": {},\n",
+                "  \"voice_frames\": {},\n",
+                "  \"voice_frames_per_s\": {:.1},\n",
+                "  \"no_limiter\": {}\n",
+                "}}\n"
+            ),
+            env!("CARGO_PKG_VERSION"),
+            json_escape(midi),
+            json_escape(sf2),
+            frames,
+            block,
+            res.sample_rate,
+            max_port,
+            midi_channels,
+            res.channels,
+            auto_channels,
+            audio_secs,
+            wall_secs,
+            realtime,
+            res.samples.len(),
+            hash,
+            peak,
+            rms,
+            voices_peak,
+            voice_frames,
+            voice_frames_per_s,
+            no_limiter
+        );
+        std::fs::write(p, json).expect("write json");
+        println!("json written: {p}");
     }
 }
