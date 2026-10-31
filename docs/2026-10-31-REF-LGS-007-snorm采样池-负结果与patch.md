@@ -103,7 +103,8 @@ sinc 档每帧 64 次取指，字节减半才有 +7.7%——但仍不够。
 - 接受理由：显存 −50%、linear 全档不退化，是本卡的主要目标；RMS 的 0.5 dB 是
   16-bit 表示的物理下限（相对误差 −79.5 dB），不是实现缺陷；sinc 的剩余差距
   来自「相邻 tap 未共用 u32 字」，作为后续可选优化（不是阻塞项）。
-- 后续（可选）：sinc 循环里把连续 tap 合并到同一字的读取，预计可再拿 3–4%。
+- 后续（可选）：sinc 循环里把连续 tap 合并到同一字的读取——**已试并否决**（−5.0%），
+  见 §8「007b 负结果」。
 
 ## 6. 新 golden 基线（007 之后，`rich.sf2`）
 
@@ -156,4 +157,29 @@ LUMINO_NO_LIMITER=1 hash_render <large.mid> <large.sf2> 480000 512 --raw post.f3
 | `synth/engine/{offline,warm}.rs` | 预载路径并行打包 |
 | `synth/engine/pool.rs` | 取 offset/gain 传给 `gpu_dyn` |
 | `examples/hash_render.rs` | `--sinc`（sinc 档测量用） |
+
+## 8. 007b 负结果：sinc 相邻 tap 共用 u32 字（已回退）
+
+**假设**：sinc 的 64 个 tap 各自读一个 u32 字；偶数下标与其 +1 落在同一个字。
+用滚动 `last_i/last_word` 复用，可把采样读取次数约减半，预计 +3~4%。
+
+**实现**（已回退，仅留档）：
+
+- `render.wgsl` 抽出 `raw_word(i)` / `word_to_sample(packed, i)`，`raw_sample` 复用；
+- `sinc_interp`：`(i & 1) == 1 && i == last_i + 1` 时复用上一次的字，否则重读；
+- `linear_interp`：`i` 为偶时复用同一字取 `v1`。
+
+**正确性**：Jasmine 96000 帧 @512，sinc / linear 原始 f32 逐样本 `max|d| = 0`。
+
+**性能**（Jasmine 480000 帧 @512，3 对交替中位）：
+
+| 档位 | 基线 | 007b | Δ |
+|---|---:|---:|---:|
+| sinc 512 | 25.335 s | 26.591 s | **−5.0%**（回退） |
+| linear 512 | 10.627 s | 10.625 s | 0.0% |
+
+**结论：不采纳。** 同一字刚被上一个 tap 读过，第二次 load 本来就命中 L1；
+滚动状态 + 分支的 ALU/分支开销大于省下的 load。sinc 剩的 3.4 pp 不在“共用字”
+这条路上，后续若要继续，方向应是减少 `loop_pos` 的逐 tap 求值（未释放 + 无循环
+的快速路径），需单独开卡并重做逐位对拍。
 
