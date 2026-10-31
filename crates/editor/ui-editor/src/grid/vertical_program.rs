@@ -224,17 +224,23 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                         return Some(Action::publish(Message::EditorAction(action)));
                     }
                     if self.editor.is_inside_canvas(local_pos) {
-                        // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）
-                        let target = if self.editor.current_tool()
-                            == lumino_message::Tool::ShapeSelect
-                        {
-                            match self.editor.drawn_shape_pending_at_screen(local_pos) {
-                                Some(true) => lumino_message::ContextMenuTarget::PendingDrawnShape,
-                                Some(false) => lumino_message::ContextMenuTarget::DrawnShape,
-                                None => lumino_message::ContextMenuTarget::Notes,
+                        // 待确认镜像：选择工具与它的 owner 工具都可直接右键；
+                        // 已确认图形只在对齐的鼠标工具下开放。
+                        let target = match self.editor.drawn_shape_pending_at_screen(local_pos) {
+                            Some(true) => self
+                                .editor
+                                .pending_ref_at_screen(local_pos)
+                                .filter(|pending| self.editor.pending_menu_allowed(*pending))
+                                .map_or(lumino_message::ContextMenuTarget::Notes, |_| {
+                                    lumino_message::ContextMenuTarget::PendingDrawnShape
+                                }),
+                            Some(false)
+                                if self.editor.current_tool()
+                                    == lumino_message::Tool::ShapeSelect =>
+                            {
+                                lumino_message::ContextMenuTarget::DrawnShape
                             }
-                        } else {
-                            lumino_message::ContextMenuTarget::Notes
+                            _ => lumino_message::ContextMenuTarget::Notes,
                         };
                         return Some(Action::publish(Message::PianoRollContextMenu(
                             lumino_message::PianoRollContextMenuAction::Open {

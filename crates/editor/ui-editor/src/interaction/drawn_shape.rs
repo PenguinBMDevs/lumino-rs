@@ -524,6 +524,39 @@ impl Editor {
         self.hit_test_drawn_shape(tick, key)
     }
 
+    /// 屏幕坐标命中的待确认来源（命中已确认图形时回退到当前选中集里的 pending）。
+    ///
+    /// 与 [`Self::drawn_shape_pending_at_screen`] 的区别：这里返回具体来源，
+    /// 供右键菜单判断「当前工具是不是该 pending 的 owner」。
+    pub(crate) fn pending_ref_at_screen(&self, pos: Point) -> Option<PendingShapeRef> {
+        let id = self.drawn_shape_at_screen(pos)?;
+        if let Some(pending) = self.editor_state.shape_select.pending_of(id) {
+            return Some(pending);
+        }
+        self.editor_state
+            .shape_select
+            .selected_shapes()
+            .find_map(|shape| shape.pending)
+    }
+
+    /// 当前工具是否应暴露待确认右键菜单。
+    ///
+    /// 选择工具对所有 pending 开放；绘制工具只对自己的 pending 来源开放，
+    /// 避免在被隐藏的待确认镜像上弹出菜单。组合结果由形状工具的预览层绘制，
+    /// 因此只随形状工具/选择工具开放。
+    pub(crate) fn pending_menu_allowed(&self, pending: PendingShapeRef) -> bool {
+        match self.current_tool() {
+            Tool::ShapeSelect => true,
+            Tool::Shape => matches!(
+                pending,
+                PendingShapeRef::Shape(_) | PendingShapeRef::Composed(_)
+            ),
+            Tool::Curve => matches!(pending, PendingShapeRef::CurvePath(_)),
+            Tool::Brush => matches!(pending, PendingShapeRef::BrushStroke(_)),
+            _ => false,
+        }
+    }
+
     /// 右键命中的图形是否属于“待确认”菜单目标。
     ///
     /// 返回：
@@ -1309,7 +1342,7 @@ mod tests {
         assert_eq!(
             pending.drawn_shape_pending_at_screen(pending_pos),
             Some(true),
-            "pending 镜像必须走 PendingDrawnShape 目标，不能暴露 019–028"
+            "pending 镜像必须走 PendingDrawnShape 目标"
         );
 
         let mut confirmed = draw_and_confirm_rect();
@@ -1319,6 +1352,36 @@ mod tests {
             confirmed.drawn_shape_pending_at_screen(confirmed_pos),
             Some(false),
             "已确认图形才允许 DrawnShape 目标"
+        );
+    }
+
+    #[test]
+    fn test_pending_menu_allowed_follows_owner_tool() {
+        let mut editor = test_editor();
+        draw_pending_rect(&mut editor);
+
+        editor.set_tool(Tool::Curve);
+        assert!(
+            !editor.pending_menu_allowed(PendingShapeRef::Shape(0)),
+            "曲线工具不得对形状 pending 开菜单"
+        );
+
+        editor.set_tool(Tool::Shape);
+        assert!(
+            editor.pending_menu_allowed(PendingShapeRef::Shape(0)),
+            "形状工具应能直接右键自己的 pending"
+        );
+
+        editor.set_tool(Tool::ShapeSelect);
+        assert!(
+            editor.pending_menu_allowed(PendingShapeRef::Composed(0)),
+            "选择工具对所有 pending 开放"
+        );
+
+        editor.set_tool(Tool::Pencil);
+        assert!(
+            !editor.pending_menu_allowed(PendingShapeRef::CurvePath(0)),
+            "非 owner 工具不得开 pending 菜单"
         );
     }
 
