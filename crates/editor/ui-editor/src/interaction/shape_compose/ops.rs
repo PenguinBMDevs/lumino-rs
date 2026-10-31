@@ -17,21 +17,44 @@ use crate::Editor;
 
 use super::{ShapeItem, source_from_model, sym_reject_message};
 
+/// 027 一次沿路径复制的输入规格（参数面板接入前的代码级唯一来源）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CopyAlongSpec {
+    /// 相邻副本左下角的间距（tick）
+    pub step_ticks: f32,
+    /// **总组数**（含原图）；5 = 原图 + 4 份副本
+    pub groups: u32,
+}
+
+impl CopyAlongSpec {
+    /// 默认：当前 PPQ 的半拍步长、共 5 组（原图 + 4 份副本）
+    pub(crate) fn half_beat(ppq: u16) -> Self {
+        Self {
+            step_ticks: (f32::from(ppq) * 0.5).max(1.0),
+            groups: 5,
+        }
+    }
+
+    /// `CopyMode::Count` 的副本数（总组数至少 2）
+    fn copies(self) -> Option<u32> {
+        (self.groups >= 2).then(|| self.groups - 1)
+    }
+}
+
 impl Editor {
-    /// 027 默认路径：固定半拍步长、复制 4 份（原图 + 4 = 5 个），Bake 前/后同口径。
+    /// 027 默认路径：按 `spec` 的 tick 步长与总组数生成参数。
     ///
     /// `CopyMode::Count { n }` 的落点是 `i / (n + 1)`，所以路径总长取
-    /// `step * (n + 1)` 才能让相邻副本正好相隔 `step`。
+    /// `step * groups`（`groups = n + 1`）才能让相邻副本正好相隔 `step`。
     pub(crate) fn default_copy_along_params(
         model: &ShapeModel,
-        ppq: f64,
+        spec: CopyAlongSpec,
     ) -> Option<CopyPathParams> {
-        const COPIES: u32 = 4;
+        let copies = spec.copies()?;
         let bounds = model.geometry.bounds()?;
-        let step = (ppq * 0.5).max(1.0);
         Some(CopyPathParams {
-            pts: vec![[(step * f64::from(COPIES + 1)) as f32, 0.0]],
-            mode: CopyMode::Count { n: COPIES },
+            pts: vec![[spec.step_ticks * spec.groups as f32, 0.0]],
+            mode: CopyMode::Count { n: copies },
             grp: Some([bounds.0, bounds.1]),
             ..CopyPathParams::default()
         })
@@ -231,14 +254,31 @@ impl Editor {
     /// 副本是 `ShapeOp::CopyAlong` 这个 fx 页的产物：op 必须写回模型，
     /// 否则后续 `edit_shape` 按模型重生成时会把副本抹掉（DRAW-027 验收）。
     pub fn copy_along_selected(&mut self) -> bool {
+        let ppq = self.editor_state.view.ppq;
+        self.copy_along_selected_with(f32::from(ppq) * 0.5, 5)
+    }
+
+    /// 027：按显式 **tick 步长** 与 **总组数** 复制（参数面板/脚本入口）。
+    ///
+    /// `groups` 是含原图的总组数：`groups = 5` → 4 份副本。
+    pub fn copy_along_selected_with(&mut self, step_ticks: f32, groups: u32) -> bool {
+        let spec = CopyAlongSpec {
+            step_ticks: step_ticks.max(1.0),
+            groups,
+        };
+        tracing::info!(
+            step_ticks = spec.step_ticks,
+            groups = spec.groups,
+            "DRAW-027 沿路径复制"
+        );
         if self.pending_single_selection() {
-            return self.compose_pending(ComposedKind::CopyAlong);
+            return self.compose_pending_copy_along(spec);
         }
         let Some((drawn_id, _, mut model)) = self.selected_model_for_edit() else {
             return false;
         };
         let ppq = f64::from(self.editor_state.view.ppq);
-        let Some(params) = Self::default_copy_along_params(&model, ppq) else {
+        let Some(params) = Self::default_copy_along_params(&model, spec) else {
             return false;
         };
         let Some(selected) = self
@@ -262,6 +302,39 @@ impl Editor {
         }])
     }
 
+    /// 最近一次 027 复制的可展示摘要（总组数 · 步长 tick），供 Toast 校验。
+    ///
+    /// pending 组合优先，其次当前选中的已 Bake 模型；`Every` 模式无法从
+    /// 路径长度反推步长，返回 `None`。
+    pub fn copy_along_summary(&self) -> Option<String> {
+        let (groups, step) = self
+            .editor_state
+            .pending_composed
+            .last()
+            .and_then(|item| {
+                if item.kind != ComposedKind::CopyAlong {
+                    return None;
+                }
+                item.model.ops.iter().rev().find_map(|op| match op {
+                    ShapeOp::CopyAlong(params) => summarize_copy_params(params),
+                    _ => None,
+                })
+            })
+            .or_else(|| {
+                let model_id = self
+                    .editor_state
+                    .shape_select
+                    .selected_shapes()
+                    .find_map(|shape| shape.model_id)?;
+                let model = self.editor_state.shape_store.model(model_id)?;
+                model.ops.iter().rev().find_map(|op| match op {
+                    ShapeOp::CopyAlong(params) => summarize_copy_params(params),
+                    _ => None,
+                })
+            })?;
+        Some(format!("{groups} 组 · 步长 {step:.0} tick"))
+    }
+
     /// 028：对选中图形应用渐强力度包络
     pub fn velocity_up_selected(&mut self) -> bool {
         if self.pending_single_selection() {
@@ -280,6 +353,15 @@ impl Editor {
         self.refresh_drawn_source(drawn_id, model_id);
         ok
     }
+}
+
+fn summarize_copy_params(params: &CopyPathParams) -> Option<(u32, f32)> {
+    let CopyMode::Count { n } = params.mode else {
+        return None;
+    };
+    let groups = n + 1;
+    let step = params.pts.first().map(|pt| pt[0].abs() / groups as f32)?;
+    Some((groups, step))
 }
 
 fn geometry_ring(model: &ShapeModel) -> Vec<(f32, f32)> {

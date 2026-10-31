@@ -602,8 +602,10 @@ fn test_default_copy_along_uses_half_beat_step_and_four_copies() {
     let mut model = lumino_core::shape::ShapeModel::new(0, 1, ShapeKind::Polyline, 1.0);
     model.geometry = ShapeGeometry::from_points(vec![(0.0, 60.0), (40.0, 60.0)]);
 
-    let params = Editor::default_copy_along_params(&model, 480.0).expect("应有路径参数");
+    let spec = super::ops::CopyAlongSpec::half_beat(480);
+    let params = Editor::default_copy_along_params(&model, spec).expect("应有路径参数");
     assert_eq!(params.mode, CopyMode::Count { n: 4 });
+    assert_eq!(spec.groups, 5, "输入是总组数，不是副本数");
     assert_eq!(
         params.pts,
         vec![[1200.0, 0.0]],
@@ -648,6 +650,12 @@ fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
         vec![0.0, step, step * 2.0, step * 3.0, step * 4.0],
         "original + 4 copies at half-beat steps"
     );
+    let expected_summary = format!("5 组 · 步长 {step:.0} tick");
+    assert_eq!(
+        editor.copy_along_summary(),
+        Some(expected_summary),
+        "摘要应报告总组数与 tick 步长"
+    );
     assert!(
         editor.editor_state.shape_tool.shapes.is_empty(),
         "来源应从 owning tool 摘除"
@@ -677,6 +685,27 @@ fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
     assert_eq!(
         editor.editor_state.data.current_track_notes().len(),
         pending_notes
+    );
+}
+
+#[test]
+fn test_pending_copy_along_accepts_explicit_step_and_total_groups() {
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+
+    assert!(
+        editor.copy_along_selected_with(120.0, 3),
+        "显式步长/总组数应可用"
+    );
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::CopyAlong);
+    let mut ticks: Vec<f32> = composed.notes.iter().map(|note| note.tick).collect();
+    ticks.sort_by(f32::total_cmp);
+    ticks.dedup();
+    assert_eq!(
+        ticks,
+        vec![0.0, 120.0, 240.0],
+        "groups=3 表示总组数 3（原图 + 2 副本），步长 120 tick"
     );
 }
 

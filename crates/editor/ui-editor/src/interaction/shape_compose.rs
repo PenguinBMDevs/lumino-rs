@@ -318,3 +318,5 @@ pub(crate) fn sym_reject_message(reason: SymReject) -> &'static str {
 mod tests;
 
 mod ops;
+
+pub(crate) use ops::CopyAlongSpec;

@@ -189,7 +189,14 @@ impl Root {
                         let _ = self.editor.create_between_selected();
                     }
                     PianoRollContextMenuItem::CopyAlong => {
-                        let _ = self.editor.copy_along_selected();
+                        if self.editor.copy_along_selected()
+                            && let Some(summary) = self.editor.copy_along_summary()
+                        {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                format!("沿路径复制：{summary}"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::VelocityUp => {
                         let _ = self.editor.velocity_up_selected();

@@ -9,6 +9,7 @@ use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, Pendin
 
 use crate::Editor;
 use crate::interaction::shape_bridge::model_from_source;
+use crate::interaction::shape_compose::CopyAlongSpec;
 
 impl Editor {
     /// 当前选中集是否全部是 pending 镜像（至少一个）；混合选区不走组合会话
@@ -42,6 +43,16 @@ impl Editor {
 
     /// 把选中的 pending 形状/路径组合成一个 pending composed 结果。
     pub(super) fn compose_pending(&mut self, kind: ComposedKind) -> bool {
+        let copy_spec = CopyAlongSpec::half_beat(self.editor_state.view.ppq);
+        self.compose_pending_with(kind, copy_spec)
+    }
+
+    /// 027 pending 入口：按显式 tick 步长/总组数组合。
+    pub(super) fn compose_pending_copy_along(&mut self, spec: CopyAlongSpec) -> bool {
+        self.compose_pending_with(ComposedKind::CopyAlong, spec)
+    }
+
+    fn compose_pending_with(&mut self, kind: ComposedKind, copy_spec: CopyAlongSpec) -> bool {
         let refs: Vec<PendingShapeRef> = self
             .editor_state
             .shape_select
@@ -52,7 +63,6 @@ impl Editor {
             return false;
         }
         let track = self.editor_state.data.current_track;
-        let ppq = f64::from(self.editor_state.view.ppq);
         let mut sources = Vec::with_capacity(refs.len());
         let mut models = Vec::with_capacity(refs.len());
         let mut notes = Vec::with_capacity(refs.len());
@@ -123,7 +133,7 @@ impl Editor {
                 let Some(mut model) = models.pop() else {
                     return false;
                 };
-                let Some(params) = Self::default_copy_along_params(&model, ppq) else {
+                let Some(params) = Self::default_copy_along_params(&model, copy_spec) else {
                     return false;
                 };
                 model.ops.push(ShapeOp::CopyAlong(params));
