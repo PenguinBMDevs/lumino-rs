@@ -227,11 +227,32 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
     fn mouse_interaction(
         &self,
         _state: &Self::State,
-        _bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        mouse::Interaction::Crosshair
+        drawer_cursor(bounds, cursor.position(), TOOLBAR_WIDTH)
     }
+}
+
+/// 抽屉光标：仅画板区域（Canvas 内、工具条右侧）返回十字，其余默认。
+///
+/// iced 的 `mouse_interaction` 可能在 cursor 离开 Canvas bounds 后仍被沿用，
+/// 因此必须显式判断 bounds 与工具条，不能无条件返回 Crosshair。
+pub(crate) fn drawer_cursor(
+    bounds: Rectangle,
+    cursor: Option<Point>,
+    toolbar_width: f32,
+) -> mouse::Interaction {
+    let Some(position) = cursor else {
+        return mouse::Interaction::Idle;
+    };
+    if !bounds.contains(position) {
+        return mouse::Interaction::Idle;
+    }
+    if position.x - bounds.x <= toolbar_width {
+        return mouse::Interaction::Idle;
+    }
+    mouse::Interaction::Crosshair
 }
 
 impl ShapeDrawerCanvas {
@@ -255,5 +276,42 @@ impl ShapeDrawerCanvas {
                 doc.delete_selected();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bounds() -> Rectangle {
+        Rectangle::new(Point::new(10.0, 20.0), iced_core::Size::new(400.0, 300.0))
+    }
+
+    #[test]
+    fn test_drawer_cursor_inside_board_is_crosshair() {
+        assert_eq!(
+            drawer_cursor(bounds(), Some(Point::new(200.0, 150.0)), TOOLBAR_WIDTH),
+            mouse::Interaction::Crosshair
+        );
+    }
+
+    #[test]
+    fn test_drawer_cursor_toolbar_is_default() {
+        assert_eq!(
+            drawer_cursor(bounds(), Some(Point::new(30.0, 150.0)), TOOLBAR_WIDTH),
+            mouse::Interaction::Idle
+        );
+    }
+
+    #[test]
+    fn test_drawer_cursor_outside_or_missing_is_default() {
+        assert_eq!(
+            drawer_cursor(bounds(), Some(Point::new(5.0, 5.0)), TOOLBAR_WIDTH),
+            mouse::Interaction::Idle
+        );
+        assert_eq!(
+            drawer_cursor(bounds(), None, TOOLBAR_WIDTH),
+            mouse::Interaction::Idle
+        );
     }
 }

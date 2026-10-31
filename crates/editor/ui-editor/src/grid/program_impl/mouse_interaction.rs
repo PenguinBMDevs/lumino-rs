@@ -13,6 +13,11 @@ pub(crate) fn handle(
 ) -> mouse::Interaction {
     puffin::profile_function!();
 
+    let in_grid = state.position.is_some_and(|pos| {
+        let view = &editor.editor_state.view;
+        pos.x >= view.keyboard_width && pos.y >= view.ruler_height
+    });
+
     // 图片转 MIDI 放置模式：光标反馈
     let i2m = &editor.editor_state.image_to_midi;
     if i2m.is_active() {
@@ -36,17 +41,29 @@ pub(crate) fn handle(
                         };
                     }
                 }
-                mouse::Interaction::Crosshair
+                if in_grid {
+                    mouse::Interaction::Crosshair
+                } else {
+                    mouse::Interaction::Idle
+                }
             }
         };
     }
 
     if editor.area_paint_active() {
-        return mouse::Interaction::Crosshair;
+        return if in_grid {
+            mouse::Interaction::Crosshair
+        } else {
+            mouse::Interaction::Idle
+        };
     }
 
     if editor.current_tool() == Tool::Eraser {
-        return mouse::Interaction::Crosshair;
+        return if in_grid {
+            mouse::Interaction::Crosshair
+        } else {
+            mouse::Interaction::Idle
+        };
     }
 
     // 曲线工具直线模式：悬停锚点/连线可拖动（Pointer），其余区域十字光标
@@ -56,7 +73,11 @@ pub(crate) fn handle(
         {
             return mouse::Interaction::Pointer;
         }
-        return mouse::Interaction::Crosshair;
+        return if in_grid {
+            mouse::Interaction::Crosshair
+        } else {
+            mouse::Interaction::Idle
+        };
     }
 
     let interaction = &editor.editor_state.interaction;
@@ -69,8 +90,20 @@ pub(crate) fn handle(
         | EditState::ResizingEnd { .. }
         | EditState::ResizingSelectionStart { .. }
         | EditState::ResizingSelectionEnd { .. } => mouse::Interaction::ResizingHorizontally,
-        EditState::Drawing { .. } => mouse::Interaction::Crosshair,
-        EditState::Selecting { .. } => mouse::Interaction::Crosshair,
+        EditState::Drawing { .. } => {
+            if in_grid {
+                mouse::Interaction::Crosshair
+            } else {
+                mouse::Interaction::Idle
+            }
+        }
+        EditState::Selecting { .. } => {
+            if in_grid {
+                mouse::Interaction::Crosshair
+            } else {
+                mouse::Interaction::Idle
+            }
+        }
         EditState::Scrubbing => mouse::Interaction::Grabbing,
         EditState::Idle => {
             // 先检查是否悬停在循环区域手柄上
