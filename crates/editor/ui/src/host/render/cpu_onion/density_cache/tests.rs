@@ -59,12 +59,13 @@ fn ensure_builds_then_keeps_cache_per_generation() {
 }
 
 #[test]
-fn apply_changes_updates_cells_without_rebuild() {
-    let document = document();
+fn apply_changes_updates_cells_and_rebuilds_stale_coverage() {
+    let mut document = document();
     let mut cache = DensityCache::default();
     assert_eq!(alpha(&mut cache, 1, &document), 255);
 
-    // 删除：上一代缓存 → 减 1。
+    // 删除：计数增量已生效，但彩色覆盖位图失效；下一次 ensure 按最新文档整建。
+    assert!(document.remove_note(1, 0).is_some());
     cache.apply_changes(
         Some(1),
         2,
@@ -75,9 +76,17 @@ fn apply_changes_updates_cells_without_rebuild() {
         }],
     );
     assert_eq!(cache.built_gen, Some(2), "增量成功必须推进代次");
+    assert!(
+        !cache
+            .pyramid
+            .as_ref()
+            .is_some_and(|pyramid| pyramid.coverage_valid()),
+        "覆盖位图必须标记失效"
+    );
     assert_eq!(alpha(&mut cache, 2, &document), 0, "删除后密度格必须清空");
 
     // 插入：再 +1 恢复。
+    assert!(document.insert_note(1, note()));
     cache.apply_changes(
         Some(2),
         3,

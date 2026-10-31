@@ -3,9 +3,10 @@
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
 use super::{
-    DensityPyramid, heat_argb, overview_note_estimate, uses_overview, visible_measure_count,
+    DensityPyramid, OverviewScratch, heat_argb, overview_note_estimate, uses_overview,
+    visible_measure_count,
 };
-use crate::{CanvasCamera, TrackIndex};
+use crate::{CanvasCamera, TrackIndex, color::NoteStyle};
 
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
@@ -211,6 +212,113 @@ fn overview_never_switches_on_empty_document() {
         !uses_overview(&index, &camera),
         "空文档没有内容可密度化，不得切总览"
     );
+}
+
+#[test]
+fn coverage_render_uses_first_wins_and_second_candidate_for_excluded_track() {
+    let mut document = MidiDocument::empty_with_tracks(3, 480);
+    // 同一像素格内三条轨：0 最先生效；0 是当前轨时取 1；0/1 都排除时取 2。
+    for track in 0..3 {
+        document.insert_note(track, NoteEvent::new(0, 2000, 125, 100, 0));
+    }
+    let pyramid = DensityPyramid::build(&document, 1, 128);
+    let camera = camera(0.01);
+    let style = NoteStyle::new(3);
+    let mut frame = vec![0u32; (WIDTH * HEIGHT) as usize];
+    let mut scratch = OverviewScratch::default();
+    let row = key_row(&camera, 125);
+
+    pyramid.render_coverage_with_scratch(
+        &mut frame,
+        WIDTH,
+        HEIGHT,
+        &camera,
+        &style,
+        0,
+        &[],
+        &mut scratch,
+    );
+    assert_eq!(
+        frame[(row * WIDTH) as usize],
+        style.fill(1),
+        "当前轨 0 必须由第二条候选轨 1 顶上"
+    );
+
+    pyramid.render_coverage_with_scratch(
+        &mut frame,
+        WIDTH,
+        HEIGHT,
+        &camera,
+        &style,
+        0,
+        &[false, true, false],
+        &mut scratch,
+    );
+    // 单元只保留前两条候选：当前轨 + 静音轨同时占住时留透明，绝不画错颜色。
+    assert_eq!(
+        frame[(row * WIDTH) as usize],
+        0,
+        "前两条候选都被排除时不得回退到未记录的第三条"
+    );
+}
+
+#[test]
+fn coverage_keeps_long_note_width_and_is_disabled_at_normal_zoom() {
+    let mut document = MidiDocument::empty_with_tracks(1, 480);
+    // 64 tick 宽：0.01 px/tick 下应覆盖 1 列；480 tick 宽应覆盖约 5 列。
+    document.insert_note(0, NoteEvent::new(0, 64, 125, 100, 0));
+    document.insert_note(0, NoteEvent::new(0, 480, 126, 100, 0));
+    let pyramid = DensityPyramid::build(&document, 1, 128);
+    let style = NoteStyle::new(1);
+    let coverage_camera = camera(0.01);
+    assert!(
+        pyramid.can_render_coverage(&coverage_camera),
+        "0.01 px/tick 必须启用覆盖光栅"
+    );
+    let mut frame = vec![0u32; (WIDTH * HEIGHT) as usize];
+    let mut scratch = OverviewScratch::default();
+    pyramid.render_coverage_with_scratch(
+        &mut frame,
+        WIDTH,
+        HEIGHT,
+        &coverage_camera,
+        &style,
+        usize::MAX,
+        &[],
+        &mut scratch,
+    );
+    let short_row = key_row(&coverage_camera, 125);
+    let long_row = key_row(&coverage_camera, 126);
+    let short_pixels = (0..WIDTH)
+        .filter(|x| frame[(short_row * WIDTH + x) as usize] != 0)
+        .count();
+    let long_pixels = (0..WIDTH)
+        .filter(|x| frame[(long_row * WIDTH + x) as usize] != 0)
+        .count();
+    assert_eq!(short_pixels, 1, "64 tick 在 0.01 px/tick 下应为 1 列");
+    assert!(
+        (4..=6).contains(&long_pixels),
+        "480 tick 应保留约 5 列宽度（实际 {long_pixels}）"
+    );
+
+    let mut normal = camera(1.0);
+    normal.width = WIDTH;
+    assert!(
+        !pyramid.can_render_coverage(&normal),
+        "1 px/tick 必须回到 Exact，不得再用覆盖块"
+    );
+}
+
+#[test]
+fn coverage_invalidates_after_edit() {
+    let mut document = sample_document();
+    let mut pyramid = DensityPyramid::build(&document, 1, 128);
+    assert!(pyramid.coverage_valid());
+    assert!(pyramid.apply_note(0, 125, 1));
+    assert!(!pyramid.coverage_valid(), "编辑后覆盖位图必须失效");
+    document.insert_note(1, NoteEvent::new(640, 650, 60, 100, 0));
+    let rebuilt = DensityPyramid::build(&document, 1, 128);
+    assert!(rebuilt.coverage_valid());
 }
 
 #[test]

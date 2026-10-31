@@ -1,38 +1,40 @@
-//! 全曲总览密度 LOD：极限缩放下把整份工程压成「key × tick 桶」热力图。
+//! 高缩放简化层：彩色覆盖光栅（主路径）+ 密度热力图（兜底）。
 //!
-//! 从 `examples/cpu-onionskin` 的 Overview 档位移植。生产链路与示例的差异：
+//! # 彩色覆盖光栅
 //!
-//! - **透明叠加层**：背景 alpha = 0，只有密度 > 0 的格子写不透明色；网格、键盘、
-//!   标尺仍由 UI 绘制，当前轨仍由 GPU 精确绘制在上层，示例会自己铺背景/标尺。
-//! - **统计覆盖全部音轨**：总览缩放级别已无法分辨单轨颜色，且切轨/静音无需重建
-//!   金字塔（重建是 O(总音符数)）；与示例的「全曲总览」语义一致。
-//! - **物理像素输出**：相机 `scroll/zoom` 已含 DPI 缩放，与网格同口径，不再做
-//!   逻辑/物理换算。
+//! [`coverage`] 把音符矩形压成 `key × tick` 单元，单元内保留最先生效的两条
+//! 轨道；渲染时按屏幕像素采样，**保留真实轨道色和音符宽度**。只在
+//! `bin_ticks × zoom_x ≤ 2px` 时启用；更高缩放仍走 Exact。它不依赖 30 小节
+//! 阈值——<30 小节但已密集到扫不动的区间，也用同一张覆盖图代替逐音符扫描。
 //!
-//! # 触发条件
+//! # 密度热力图
 //!
-//! **按同屏可见小节数判定**：屏幕横向覆盖 **≥ 30 个小节**时切密度热力图，
-//! 少于 30 个小节保持 Exact 逐音符绘制。不再使用 1/16 音符宽度、音符数量或
-//! 短音符百分位等间接阈值——小节数就是用户实际感知的“缩放级别”。
+//! 同屏可见小节数 **≥ 30** 时，若覆盖层因基础 bin 过粗不可用，退回蓝色密度
+//! 热力图（[`render`]）。30 小节仍是热力图的唯一判定，不使用短音符宽度/数量
+//! 等间接阈值。
 //!
-//! `measure_ticks = PPQ × 4` 来自 [`TrackIndex`]；相机 `zoom` 已含 DPI。
-//! 空文档不切换。
+//! # 共同约定
 //!
-//! [`overview_note_estimate`] 仅保留为诊断/基准估算，**不参与档位判定**。
+//! - 透明叠加层：只有非空格子写不透明色，网格/键盘/标尺仍由 UI 绘制；
+//! - 物理像素输出：相机 `zoom/scroll` 已含 DPI；
+//! - [`overview_note_estimate`] 只做诊断，不参与档位判定。
 //!
 //! # 内存
 //!
-//! 基础层 `bins × keys × u16`，共 [`LEVELS`] 层（逐层 2:1 合并）；基础桶宽按
-//! 总 tick 自适应，bin 数上限 [`MAX_BASE_BINS`]，最坏约 32 MiB（256 keys）。
-
-use std::thread;
+//! 热力计数层 `bins × keys × u16`；覆盖层基础 bin = 8 tick，单元 `4B`，单层
+//! 最多 32M 单元，逐层 2:1 合并。
 
 use lumino_midi_model::MidiDocument;
 
 use crate::{camera::CanvasCamera, index::TrackIndex};
 
+mod build;
+mod coverage;
 mod heat;
 mod render;
+
+use build::{base_plan, count_base};
+use coverage::{CoverageLevel, build_coverage};
 
 pub use heat::heat_argb;
 
@@ -42,10 +44,10 @@ const BASE_BIN_TICKS: u32 = 64;
 const LEVELS: usize = 7;
 /// 基础层 bin 数上限：控制内存（`bins × keys × 2B`）。
 const MAX_BASE_BINS: usize = 32_768;
-/// 同屏可见小节数达到该值时切总览密度 LOD。
+/// 同屏可见小节数达到该值时，**热力图兜底**允许启用。
 ///
-/// 30 个小节是产品判定：屏幕横向还能看到 30 个及以上小节时逐音符矩形已
-/// 不可读，用密度热力图；少于 30 个必须画原始音符。
+/// 彩色覆盖光栅是主路径；只有覆盖层不可用（例如 PPQ 极低导致基础 bin 已
+/// 超过 2px）时才看这个阈值。未达 30 小节不得显示蓝色热力图。
 pub const OVERVIEW_MIN_MEASURES: u32 = 30;
 
 /// 总览渲染的可复用临时缓冲（避免每帧分配 245k u32 的 key_rows）。
@@ -76,6 +78,10 @@ pub struct DensityPyramid {
     key_count: u16,
     /// 有效总 tick（文档值或实际最大 end_tick，取大）。
     total_ticks: u32,
+    /// 彩色覆盖光栅的 key × tick 单元（按 2:1 分层，保留前两条轨道）。
+    coverage: Vec<CoverageLevel>,
+    /// 覆盖单元是否仍与文档一致；编辑后置 false，须整建后再使用。
+    coverage_valid: bool,
 }
 
 impl std::fmt::Debug for DensityPyramid {
@@ -90,11 +96,13 @@ impl std::fmt::Debug for DensityPyramid {
 }
 
 impl DensityPyramid {
-    /// 构建密度金字塔（按音轨分片并行，只读遍历，不复制音符数据）。
+    /// 构建密度计数 + 彩色覆盖金字塔（只读遍历，不复制音符）。
     ///
-    /// `key_count` 必须与相机一致；越界 key 不参与统计。基础桶宽按
-    /// `document.total_ticks` 自适应；若实际音符超出容量（例如新建工程
-    /// `total_ticks == 0` 后插入音符），用实际最大 tick 重新规划并重扫一次。
+    /// 计数层按音轨分片并行；覆盖层按轨道顺序单线程写入，保证单元内
+    /// first-wins 与 GPU 稳定序一致。`key_count` 必须与相机一致；越界 key
+    /// 不参与统计。基础桶宽按 `document.total_ticks` 自适应；若实际音符超出
+    /// 容量（例如新建工程 `total_ticks == 0` 后插入音符），按实际最大 tick
+    /// 重新规划计数层。
     #[must_use]
     pub fn build(document: &MidiDocument, workers: usize, key_count: u16) -> Self {
         let key_count = key_count.max(1);
@@ -159,11 +167,15 @@ impl DensityPyramid {
             .iter()
             .map(|level| level.cells.iter().copied().max().unwrap_or(0).max(1))
             .collect();
+        let effective_ticks = total_ticks.max(max_end);
+        let coverage = build_coverage(document, effective_ticks, key_count);
         Self {
             levels,
             max_counts,
             key_count,
-            total_ticks: total_ticks.max(max_end),
+            total_ticks: effective_ticks,
+            coverage,
+            coverage_valid: true,
         }
     }
 
@@ -188,6 +200,29 @@ impl DensityPyramid {
     #[must_use]
     pub fn key_count(&self) -> u16 {
         self.key_count
+    }
+
+    /// 彩色覆盖位图是否仍与文档一致（编辑后失效，需整建）。
+    #[inline]
+    #[must_use]
+    pub fn coverage_valid(&self) -> bool {
+        self.coverage_valid
+    }
+
+    /// 计数层 + 覆盖层占用的字节数（诊断/内存预算用）。
+    #[must_use]
+    pub fn memory_bytes(&self) -> usize {
+        let counts: usize = self
+            .levels
+            .iter()
+            .map(|level| level.cells.len() * std::mem::size_of::<u16>())
+            .sum();
+        let coverage: usize = self
+            .coverage
+            .iter()
+            .map(|level| level.cells.len() * std::mem::size_of::<u32>())
+            .sum();
+        counts.saturating_add(coverage)
     }
 
     /// 有效总 tick。
@@ -225,6 +260,9 @@ impl DensityPyramid {
         if delta == 0 || u32::from(key) >= u32::from(self.key_count) {
             return true;
         }
+        // 覆盖单元不做增量（删除时要找回下一条覆盖该格的音符，成本不受控）。
+        // 失效后本次起退回热力/Exact；缓存持有者下一次 ensure 时整建覆盖层。
+        self.coverage_valid = false;
         let Some(first) = self.levels.first() else {
             return false;
         };
@@ -300,82 +338,6 @@ pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
         return false;
     }
     visible_measure_count(index, camera) >= OVERVIEW_MIN_MEASURES
-}
-
-/// 基础层规划：桶宽与 bin 数。
-fn base_plan(total_ticks: u32) -> (u32, usize) {
-    let needed = (u64::from(total_ticks) / MAX_BASE_BINS as u64).saturating_add(1);
-    let mut bin_ticks = BASE_BIN_TICKS;
-    while u64::from(bin_ticks) < needed {
-        bin_ticks = bin_ticks.saturating_mul(2);
-    }
-    let bins = ((u64::from(total_ticks) / u64::from(bin_ticks)) as usize)
-        .saturating_add(1)
-        .clamp(1, MAX_BASE_BINS);
-    (bin_ticks, bins)
-}
-
-/// 并行统计基础层；返回 `(cells, 最大 start_tick, 最大 end_tick)`。
-fn count_base(
-    document: &MidiDocument,
-    bin_ticks: u32,
-    bins: usize,
-    keys: usize,
-    workers: usize,
-) -> (Vec<u16>, u32, u32) {
-    let stride = bins.saturating_mul(keys);
-    let mut base = vec![0u16; stride];
-    let track_count = document.notes.len();
-    if stride == 0 || track_count == 0 {
-        return (base, 0, 0);
-    }
-    let workers = workers.max(1).min(track_count);
-    let chunk = track_count.div_ceil(workers).max(1);
-    let mut max_start = 0u32;
-    let mut max_end = 0u32;
-    thread::scope(|scope| {
-        let mut handles = Vec::new();
-        for worker in 0..workers {
-            let start = worker * chunk;
-            let end = (start + chunk).min(track_count);
-            if start >= end {
-                continue;
-            }
-            handles.push(scope.spawn(move || {
-                let mut local = vec![0u16; stride];
-                let mut local_max_start = 0u32;
-                let mut local_max_end = 0u32;
-                for track in start..end {
-                    for note in document.track_notes(track).iter() {
-                        local_max_start = local_max_start.max(note.start_tick);
-                        local_max_end = local_max_end.max(note.end_tick);
-                        if note.key as usize >= keys {
-                            continue;
-                        }
-                        let bin = (note.start_tick / bin_ticks) as usize;
-                        if bin >= bins {
-                            continue;
-                        }
-                        let offset = bin * keys + note.key as usize;
-                        if let Some(slot) = local.get_mut(offset) {
-                            *slot = slot.saturating_add(1);
-                        }
-                    }
-                }
-                (local, local_max_start, local_max_end)
-            }));
-        }
-        for handle in handles {
-            if let Ok((local, shard_start, shard_end)) = handle.join() {
-                max_start = max_start.max(shard_start);
-                max_end = max_end.max(shard_end);
-                for (destination, source) in base.iter_mut().zip(local) {
-                    *destination = destination.saturating_add(source);
-                }
-            }
-        }
-    });
-    (base, max_start, max_end)
 }
 
 #[cfg(test)]

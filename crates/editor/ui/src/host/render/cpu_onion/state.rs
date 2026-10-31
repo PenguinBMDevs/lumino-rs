@@ -112,11 +112,11 @@ pub(crate) struct CpuOnionState {
     stale_tracks: HashSet<usize>,
     /// 总览密度 LOD 缓存（按代次/键数失效；单笔编辑增量维护）。
     density: DensityCache,
-    /// 上一帧是否处于总览密度档。
+    /// 上一帧是否处于任一简化层（彩色覆盖或 >=30 小节热力图兜底）。
     ///
-    /// 跨档必须整帧：退出总览时哪怕本帧只是「本来不重绘」的当前轨编辑，也必须
-    /// 把蓝色密度层换回 Exact 音符；否则会一直显示过期的热力图。
-    overview_active: bool,
+    /// 跨档必须整帧：退出简化层时哪怕本帧只是「本来不重绘」的当前轨编辑，也必须
+    /// 换回 Exact 音符；简化层不能留下过期像素。
+    simplified_active: bool,
 }
 
 impl CpuOnionState {
@@ -162,6 +162,14 @@ impl CpuOnionState {
         self.renderer
             .as_ref()
             .map_or(0, CpuOnionRenderer::visible_notes)
+    }
+
+    /// 当前缩放是否可能启用彩色覆盖光栅（基础 bin 8 tick × 2px 粗粒度）。
+    ///
+    /// 这里只做保守预判：真正的可用性还要看覆盖层 key 数/构建结果。返回 true
+    /// 时按整帧路径规划，避免覆盖层与 Region 像素混合。
+    fn coverage_zoom(&self, camera: &lumino_cpu_onion::CanvasCamera) -> bool {
+        camera.zoom_x.is_finite() && camera.zoom_x > 0.0 && camera.zoom_x <= 2.0 / 8.0
     }
 
     /// 生成/复用 CPU 洋葱皮帧。
@@ -217,17 +225,21 @@ impl CpuOnionState {
             self.index_gen = Some(key.track_notes_gen);
         }
 
-        // 总览 LOD：密度层逐屏幕列重采样，单音符脏区覆盖不了受影响的整列；且
-        // 密度覆盖全部音轨，当前轨编辑也会改热力图 → 代次一变就必须整帧。
-        // 每帧都重算档位（`estimate_visible` 只加小节桶）：复用帧也必须保持
-        // `overview_active`，否则空闲一帧就会误判「退出总览」。
+        // 简化层（彩色覆盖/热力图）逐屏幕列重采样，单音符脏区覆盖不了受影响的
+        // 整列；且覆盖统计覆盖全部音轨，当前轨编辑也会改简化层 → 代次一变就必须
+        // 整帧。每帧都重算档位，复用帧也必须保持 `overview_active`，否则空闲
+        // 一帧就会误判「退出总览」。
         let overview = self
             .index
             .as_ref()
             .is_some_and(|index| lumino_cpu_onion::uses_overview(index, &key.geometry.camera));
-        let mode_changed = overview != self.overview_active;
-        self.overview_active = overview;
-        let redraw = overview_redraw(overview, mode_changed, gen_changed, plan.redraw);
+        // 彩色覆盖光栅在 <30 小节也会接管；它和热力图一样是整帧重采样，绝不能
+        // 让单音符 Region/Scroll 路径去改（否则会留下 Exact 像素与覆盖块混合）。
+        let coverage_zoom = self.coverage_zoom(&key.geometry.camera);
+        let simplified = overview || coverage_zoom;
+        let mode_changed = simplified != self.simplified_active;
+        self.simplified_active = simplified;
+        let redraw = overview_redraw(simplified, mode_changed, gen_changed, plan.redraw);
 
         let Some(redraw) = redraw else {
             // 不重绘：把冻结键推到新代次，避免下一帧重复判断
@@ -253,9 +265,10 @@ impl CpuOnionState {
 
         let geometry = key.geometry;
         let track_count = snapshot.track_count().max(1);
-        // 密度只在总览档需要：进入总览的首帧整建一次（O(总音符数)），之后单笔
-        // 编辑走增量；切轨/静音不失效（统计覆盖全部音轨）。
-        let density = if overview {
+        // 密度/覆盖金字塔只在真正可能用到时整建：总览档，或缩放到基础 bin
+        // （8 tick）已不足 1px 的密集区间。后者正是 Exact 逐音符扫描会卡死的
+        // 区间，彩色覆盖光栅在这里代替热力图/逐音符扫描。
+        let density = if simplified {
             self.density.ensure(
                 key.track_notes_gen,
                 snapshot.as_ref(),

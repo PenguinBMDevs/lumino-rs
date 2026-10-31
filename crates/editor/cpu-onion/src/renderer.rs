@@ -65,6 +65,8 @@ pub struct CpuOnionRenderer {
     overview_scratch: crate::density::OverviewScratch,
     /// 上一帧是否总览档；跨档时丢弃旧输出缓冲，杜绝热力图残影。
     last_overview: Option<bool>,
+    /// 上一帧是否走彩色覆盖光栅；与 Exact/热力图切换时同样换新缓冲。
+    last_coverage: Option<bool>,
 }
 
 impl CpuOnionRenderer {
@@ -97,6 +99,7 @@ impl CpuOnionRenderer {
             visible_notes: 0,
             overview_scratch: crate::density::OverviewScratch::default(),
             last_overview: None,
+            last_coverage: None,
         }
     }
 
@@ -115,6 +118,7 @@ impl CpuOnionRenderer {
         self.output = CpuFrame::default();
         self.visible_notes = 0;
         self.last_overview = None;
+        self.last_coverage = None;
     }
 
     /// 调色板切换后重建每轨颜色缓存。
@@ -143,12 +147,16 @@ impl CpuOnionRenderer {
         self.render_full_with_density(document, index, camera, current_track, muted, None)
     }
 
-    /// 全量渲染一帧，按需切总览密度 LOD。
+    /// 全量渲染一帧，按缩放选择 Exact / 彩色覆盖 / 热力图。
     ///
-    /// 仅当 `density` 为 `Some` 且缩放低于阈值（见
-    /// [`crate::density::uses_overview`]）时才走密度热力图；否则与
-    /// [`Self::render_full`] 逐像素一致。总览是**整帧**输出（透明背景 +
-    /// 密度格），调用方不得按区域/窄条复用本帧——密度会随相机整屏重采样。
+    /// 优先级：
+    /// 1. `density.can_render_coverage(camera)` → 彩色覆盖光栅（真实轨道色，
+    ///    单元 ≤2px；当前轨/静音轨走单元内第一、第二候选）；
+    /// 2. 同屏小节数 ≥30 且覆盖不可用 → 蓝色密度热力图（兜底）；
+    /// 3. 其余 → 与 [`Self::render_full`] 逐像素一致的 Exact。
+    ///
+    /// 两条简化层都是**整帧**输出（透明背景），调用方不得按区域/窄条复用：
+    /// 覆盖/密度会随相机整屏重采样。
     #[allow(clippy::too_many_arguments)]
     pub fn render_full_with_density(
         &mut self,
@@ -176,9 +184,21 @@ impl CpuOnionRenderer {
         let overview = density.is_some_and(|density| {
             density.key_count() == camera.key_count && crate::density::uses_overview(&index, camera)
         });
-        if self.last_overview != Some(overview) {
+        // 彩色覆盖光栅优先于热力图：只要覆盖金字塔能保证 1px 精度就按真实
+        // 轨道颜色出图。它同样适用于 `<30` 小节——那正是 Exact 在密集谱面
+        // 下扫上亿音符的区间；显示语义仍是「原始音符的像素覆盖」，不是密度热力。
+        let coverage = density.is_some_and(|density| {
+            density.key_count() == camera.key_count && density.can_render_coverage(camera)
+        });
+        if self.last_overview != Some(overview) || self.last_coverage != Some(coverage) {
             self.output = CpuFrame::new(width, height);
             self.last_overview = Some(overview);
+            self.last_coverage = Some(coverage);
+        }
+        if coverage && let Some(density) = density {
+            let estimate = crate::density::overview_note_estimate(&index, camera);
+            self.render_coverage_full(camera, density, estimate, current_track, muted);
+            return &self.output;
         }
         if overview && let Some(density) = density {
             let estimate = crate::density::overview_note_estimate(&index, camera);

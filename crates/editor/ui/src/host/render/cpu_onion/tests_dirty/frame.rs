@@ -1,6 +1,6 @@
 //! 布局变化、增量滚动与停用重启用（`tests_dirty.rs` 的子模块）。
 
-use super::{MUTED, alpha, document, key, note_row, reference_pixels_at};
+use super::{MUTED, alpha, change, dirty, document, key, note_row, reference_pixels_at, tracks};
 use crate::host::render::cpu_onion::CpuOnionState;
 
 /// 非横向滚动的布局变化（纵向滚动）仍整帧重绘且不重建索引（版本递增）。
@@ -258,6 +258,45 @@ fn overview_to_exact_replaces_heatmap_with_notes() {
     assert!(
         alpha(&frame, 50, note_row(121)) > 0,
         "音符必须画回 key=121 的 Exact 行"
+    );
+}
+
+/// `<30` 小节但已进入彩色覆盖光栅：编辑必须整帧，不能走 Region 混入 Exact 像素。
+#[test]
+fn coverage_zoom_edit_redraws_full_frame() {
+    let before = document();
+    let mut after = before.clone();
+    let old = lumino_midi_model::NoteEvent::new(10, 110, 121, 100, 0);
+    let new = lumino_midi_model::NoteEvent::new(10, 110, 122, 100, 0);
+    after.remove_note(1, 0);
+    after.insert_note(1, new);
+
+    let mut state = CpuOnionState::default();
+    let mut first_key = key(1, 0);
+    first_key.geometry.camera.zoom_x = 0.1;
+    state.update(first_key, &before, &MUTED, None, None);
+
+    let mut edit_key = key(2, 0);
+    edit_key.geometry.camera.zoom_x = 0.1;
+    let output = state.update(
+        edit_key,
+        &after,
+        &MUTED,
+        Some(dirty(vec![change(1, Some(old), Some(new))])),
+        Some(&tracks(&[1])),
+    );
+    assert!(output.rebuilt, "覆盖档编辑必须重绘");
+    assert_eq!(output.dirty, None, "覆盖档必须整帧，不能上报单音符脏区");
+
+    let mut reference = CpuOnionState::default();
+    let expected = reference
+        .update(edit_key, &after, &MUTED, None, None)
+        .frame
+        .expect("参考覆盖帧应生成");
+    assert_eq!(
+        output.frame.expect("覆盖帧应生成").pixels,
+        expected.pixels,
+        "覆盖档编辑后必须与冷启动整帧逐像素一致"
     );
 }
 

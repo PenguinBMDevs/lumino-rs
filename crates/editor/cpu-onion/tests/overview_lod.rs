@@ -1,14 +1,12 @@
-//! 极限缩放总览 LOD 回归：蓝色密度层必须替代逐音符光栅。
+//! 极限缩放 LOD 回归：彩色覆盖光栅必须替代逐音符扫描/蓝色热力图。
 //!
-//! 复现缺陷：CPU 洋葱皮只抽取了示例的 Exact 路径，`examples/cpu-onionskin`
-//! 的 Overview 密度金字塔没有跟着进生产；极限缩放下仍逐音符扫描，蓝色简化层
-//! 不出现（大工程还会卡死 UI）。
+//! 覆盖光栅保留真实轨道色与音符宽度；当前轨/静音轨通过单元内第一、第二候选
+//! 过滤。普通缩放仍必须逐音符 Exact。
 
 use std::sync::Arc;
 
 use lumino_cpu_onion::{
     CanvasCamera, CpuOnionRenderer, DensityPyramid, TrackIndex, color::NoteStyle,
-    density::heat_argb,
 };
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
@@ -38,7 +36,7 @@ fn row_center(camera: &CanvasCamera, key: u16) -> u32 {
 }
 
 #[test]
-fn extreme_zoom_renders_blue_density_instead_of_notes() {
+fn extreme_zoom_renders_colored_coverage_instead_of_notes() {
     let document = document();
     let index = Arc::new(TrackIndex::build(&document));
     let density = DensityPyramid::build(document.as_ref(), 2, 128);
@@ -58,19 +56,19 @@ fn extreme_zoom_renders_blue_density_instead_of_notes() {
     let density_pixel = frame.pixel(0, row).expect("帧内像素");
     let empty_row_pixel = frame.pixel(0, row_center(&camera, 124)).expect("帧内像素");
 
-    let expected = lumino_cpu_onion::color::argb_to_rgba(heat_argb(1, 1));
+    let expected = NoteStyle::new(2).fill_rgba(1);
     assert_eq!(
         density_pixel, expected,
-        "极限缩放必须画蓝色密度层（实际 {density_pixel:?}）"
+        "极限缩放必须画真实轨道色的覆盖块（实际 {density_pixel:?}）"
     );
-    assert_eq!(density_pixel[3], 255, "密度格必须不透明");
+    assert_eq!(density_pixel[3], 255, "覆盖块必须不透明");
     assert_eq!(
         empty_row_pixel,
         [0, 0, 0, 0],
         "没有 onset 的 key 行必须保持透明（叠加层不得铺背景）"
     );
 
-    // 同一帧尺寸下走 Exact：x=0 是音符左边框，颜色必须与热力色不同。
+    // 同一帧尺寸下走 Exact：x=0 是音符左边框，颜色必须与覆盖块不同。
     let exact_frame = renderer.render_full(
         Arc::clone(&document),
         Arc::clone(&index),
@@ -81,7 +79,10 @@ fn extreme_zoom_renders_blue_density_instead_of_notes() {
     let exact_pixel = exact_frame.pixel(0, row).expect("帧内像素");
     let border = NoteStyle::new(2).border_rgba(1);
     assert_eq!(exact_pixel, border, "Exact 路径必须仍是逐音符描边");
-    assert_ne!(exact_pixel, density_pixel, "总览 LOD 必须真正替换外观");
+    assert_ne!(
+        exact_pixel, density_pixel,
+        "覆盖 LOD 必须真正替代逐音符外观"
+    );
 }
 
 #[test]

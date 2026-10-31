@@ -103,6 +103,7 @@ fn zoom_bench_real_midi() {
     let mut snapshot_samples = Vec::new();
     let mut overview_frames = 0usize;
     let mut exact_frames = 0usize;
+    let mut coverage_frames = 0usize;
     let mut last_visible = 0u64;
 
     while start.elapsed() < Duration::from_secs(SECONDS) {
@@ -122,6 +123,10 @@ fn zoom_bench_real_midi() {
             key_count: KEY_COUNT,
         };
         let overview = uses_overview(&index, &camera);
+        let coverage = density.can_render_coverage(&camera);
+        if coverage {
+            coverage_frames += 1;
+        }
         let frame_started = Instant::now();
         renderer.render_full_with_density(
             Arc::clone(&document),
@@ -140,7 +145,7 @@ fn zoom_bench_real_midi() {
         samples.push(frame_started.elapsed().as_secs_f64() * 1000.0);
         if overview {
             overview_frames += 1;
-        } else {
+        } else if !coverage {
             exact_frames += 1;
         }
     }
@@ -150,8 +155,9 @@ fn zoom_bench_real_midi() {
     let (p50, p99, max, mean) = summarize(&mut samples);
     println!("== CPU 洋葱皮 1080p 快速缩放 ==");
     println!(
-        "midi={track_count} tracks / {} notes | load {load_ms:.0} ms | index {index_ms:.0} ms | density {density_ms:.0} ms | key_masks={:.1} MiB",
+        "midi={track_count} tracks / {} notes | load {load_ms:.0} ms | index {index_ms:.0} ms | density {density_ms:.0} ms / {:.1} MiB | key_masks={:.1} MiB",
         index.total_notes,
+        density.memory_bytes() as f64 / (1024.0 * 1024.0),
         index.key_mask_bytes() as f64 / (1024.0 * 1024.0)
     );
     println!(
@@ -159,7 +165,7 @@ fn zoom_bench_real_midi() {
         1000.0 / p50.max(0.001)
     );
     println!(
-        "modes: overview {overview_frames} / exact {exact_frames} | last visible={last_visible} | bands={bands}"
+        "modes: overview {overview_frames} / coverage {coverage_frames} / exact {exact_frames} | last visible={last_visible} | bands={bands}"
     );
     // 平均 FPS 是硬门槛：单看 p50 会把 2 秒级尖峰藏掉。
     let grade = if wall_fps < 100.0 {

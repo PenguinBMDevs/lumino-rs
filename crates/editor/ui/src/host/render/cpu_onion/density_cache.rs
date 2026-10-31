@@ -7,9 +7,9 @@
 //!   → 保持过期，由 [`DensityCache::ensure`] 在下次进入总览时整建一次，
 //!   绝不用错数据渲染。
 //!
-//! 密度统计覆盖**全部音轨**（与示例总览一致）：切轨 / 静音不改统计，因此不需要
-//! 重建（重建是 O(总音符数)）。代价是总览层不区分当前轨 / 静音轨——该缩放级别
-//! 已无法分辨单轨颜色，当前轨仍由 GPU 精确绘制在上层。
+//! 统计覆盖**全部音轨**，切轨 / 静音不需要重建；彩色覆盖光栅在渲染时按单元
+//! 内第一、第二候选过滤当前轨/静音轨。代价是单笔编辑后覆盖位图失效，下一次
+//! 使用前必须整建一次（删除音符时无法低成本找回下层轨道）。
 
 use lumino_cpu_onion::DensityPyramid;
 use lumino_editor_state::CpuOnionChange;
@@ -73,7 +73,14 @@ impl DensityCache {
         key_count: u16,
         workers: usize,
     ) -> Option<&DensityPyramid> {
-        if self.pyramid.is_none() || self.built_gen != Some(new_gen) || self.built_keys != key_count
+        let coverage_stale = self
+            .pyramid
+            .as_ref()
+            .is_some_and(|pyramid| !pyramid.coverage_valid());
+        if self.pyramid.is_none()
+            || self.built_gen != Some(new_gen)
+            || self.built_keys != key_count
+            || coverage_stale
         {
             let started = std::time::Instant::now();
             self.pyramid = Some(DensityPyramid::build(document, workers, key_count));

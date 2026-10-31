@@ -213,20 +213,19 @@ fn source_unknown(input: &PlanInput<'_>) -> bool {
     input.dirty.is_none() && input.dirty_tracks.is_none()
 }
 
-/// 总览 LOD 下的重绘放大（纯函数，Step 7）。
+/// 简化层（彩色覆盖 / 热力图）下的重绘放大（纯函数）。
 ///
-/// 密度层是**逐屏幕列重采样**：一个音符变化会改它所在 tick 桶覆盖的整列，
-/// 单音符像素矩形（`Region`）覆盖不了；同时颜色按整层 `max_count` 归一化，
-/// 任何计数变化都可能改全帧色阶。故总览档下：
+/// 简化层是**逐屏幕列重采样**：一个音符变化会改它所在 tick 桶覆盖的整列，
+/// 单音符像素矩形（`Region`）覆盖不了；颜色/候选轨也可能随整层变化。故：
 ///
-/// - 跨档（进入 / 退出总览，`mode_changed`）→ 整帧：退出时必须把蓝色密度层
-///   换回 Exact 音符，哪怕本帧只有「本来不重绘」的当前轨编辑；
-/// - 代次变化（含当前轨/静音轨编辑——密度统计覆盖全部音轨）→ 整帧；
+/// - 跨档（进入 / 退出简化层，`mode_changed`）→ 整帧：退出时必须把覆盖块/
+///   热力层换回 Exact 音符，哪怕本帧只有「本来不重绘」的当前轨编辑；
+/// - 代次变化（含当前轨/静音轨编辑——覆盖统计覆盖全部音轨）→ 整帧；
 /// - 已有区域脏区 → 整帧；
 /// - 只是相机/静音/切轨等布局变化（计划已是 `Full`）→ 保持；
 /// - 什么都没变（`None` 且代次未变、未跨档）→ 保持复用，不每帧重画。
 pub(crate) fn overview_redraw(
-    overview: bool,
+    simplified: bool,
     mode_changed: bool,
     gen_changed: bool,
     redraw: Option<CpuOnionRedraw>,
@@ -234,7 +233,7 @@ pub(crate) fn overview_redraw(
     if mode_changed {
         return Some(CpuOnionRedraw::Full);
     }
-    if !overview {
+    if !simplified {
         return redraw;
     }
     if gen_changed
