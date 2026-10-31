@@ -236,6 +236,7 @@ fn transform(shape: &mut ShapeModel, f: impl Fn(f32, f32) -> Pt) -> bool {
 }
 
 fn transform_model(shape: &mut ShapeModel, f: &impl Fn(f32, f32) -> Pt) {
+    let old_origin = shape.geometry.bounds().map(|bounds| (bounds.0, bounds.1));
     for anchor in &mut shape.geometry.anchors {
         anchor.pos = f(anchor.pos.0, anchor.pos.1);
     }
@@ -268,11 +269,26 @@ fn transform_model(shape: &mut ShapeModel, f: &impl Fn(f32, f32) -> Pt) {
     for op in &mut shape.ops {
         match op {
             ShapeOp::CopyAlong(params) => {
+                // grp / pts 是「绝对起点 + 相对向量」；只变换 grp 会让旋转/缩放后的
+                // 副本路径仍沿旧方向，表现为副本扭曲/飞走。
+                let origin = params
+                    .grp
+                    .map(|grp| (grp[0], grp[1]))
+                    .or(old_origin)
+                    .unwrap_or((0.0, 0.0));
+                let new_origin = f(origin.0, origin.1);
                 if let Some(grp) = &mut params.grp {
-                    *grp = {
-                        let (x, y) = f(grp[0], grp[1]);
-                        [x, y]
-                    };
+                    *grp = [new_origin.0, new_origin.1];
+                }
+                for pt in &mut params.pts {
+                    let (x, y) = f(origin.0 + pt[0], origin.1 + pt[1]);
+                    pt[0] = x - new_origin.0;
+                    pt[1] = y - new_origin.1;
+                }
+                for mid in params.mids.iter_mut().flatten() {
+                    let (x, y) = f(origin.0 + mid[0], origin.1 + mid[1]);
+                    mid[0] = x - new_origin.0;
+                    mid[1] = y - new_origin.1;
                 }
             }
             ShapeOp::Live(params) => {

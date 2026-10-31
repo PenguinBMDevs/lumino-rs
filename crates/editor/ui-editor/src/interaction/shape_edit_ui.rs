@@ -7,11 +7,11 @@
 //! 也可以是单支 `PendingComposed`（只改 pending model + 预览音符）。
 
 use iced_core::Point;
-use lumino_core::shape::ShapeModel;
+use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::editor_state::{
     HandleKind, Mods, Zoom, apply_drag, edit_handles, hit_test,
 };
-use lumino_editor_state::{PendingComposed, PendingShapeRef};
+use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, ShapeNote};
 
 use crate::Editor;
 
@@ -54,53 +54,88 @@ pub(crate) struct ShapeEditState {
 }
 
 impl Editor {
-    /// 为当前唯一选中的图形绑定 ShapeModel，随后渲染编辑手柄。
+    /// 041C 阶段 3：只有能可靠重生成的单支组合才开放手柄。
     ///
-    /// 041C 阶段 3：单支 pending composed 也允许进入手柄编辑。
+    /// Merge 的跨形状位移不在模型里，单独改第一支会丢第二支音符；Slice/Between
+    /// 是多支，暂不提供整体手柄。
+    fn pending_handle_supported(composed: &PendingComposed) -> bool {
+        composed.results.len() == 1
+            && matches!(
+                composed.kind,
+                ComposedKind::Live
+                    | ComposedKind::Join
+                    | ComposedKind::CopyAlong
+                    | ComposedKind::Velocity
+            )
+    }
+
+    /// 为当前唯一选中的图形进入/退出手柄编辑模式。
+    ///
+    /// 041C 阶段 3：单支 pending composed 也允许进入。显式模式避免「中心 Move
+    /// 手柄」抢占普通框选/整组拖动。
     pub fn enable_shape_edit(&mut self) -> bool {
         if self.editor_state.shape_select.selection_len() != 1 {
             return false;
         }
-        let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
-            return false;
+        let (drawn_id, pending, model_id) = {
+            let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
+                return false;
+            };
+            (shape.id, shape.pending, shape.model_id)
         };
-        let drawn_id = shape.id;
-        let pending = shape.pending;
-        let ok = match pending {
-            Some(PendingShapeRef::Composed(index)) => self
-                .editor_state
-                .pending_composed
-                .get(index)
-                .is_some_and(|composed| composed.results.len() == 1),
-            Some(_) => false,
-            None => self.ensure_model_for_drawn(drawn_id).is_some(),
+        let target = match pending {
+            Some(PendingShapeRef::Composed(index)) => {
+                let Some(composed) = self.editor_state.pending_composed.get(index) else {
+                    return false;
+                };
+                if !Self::pending_handle_supported(composed) {
+                    return false;
+                }
+                ShapeEditTarget::PendingComposed { index }
+            }
+            Some(_) => return false,
+            None => {
+                let model_id = match model_id {
+                    Some(id) => id,
+                    None => match self.ensure_model_for_drawn(drawn_id) {
+                        Some(id) => id,
+                        None => return false,
+                    },
+                };
+                ShapeEditTarget::Drawn { drawn_id, model_id }
+            }
         };
-        if ok {
-            self.grid_cache.clear();
-        }
-        ok
+        self.shape_edit_armed = if self.shape_edit_armed == Some(target) {
+            None
+        } else {
+            Some(target)
+        };
+        self.grid_cache.clear();
+        true
     }
 
-    /// 命中选中形状的手柄则进入编辑；返回是否接管本次按下
+    /// 命中手柄则进入拖拽；必须先通过「编辑形状」进入显式编辑模式。
     pub(crate) fn begin_shape_edit(&mut self, tick: f32, key: f32) -> bool {
         if self.current_tool() != lumino_message::Tool::ShapeSelect
             || self.editor_state.shape_select.selection_len() != 1
         {
             return false;
         }
+        let Some(armed) = self.shape_edit_armed else {
+            return false;
+        };
         let (drawn_id, pending, model_id) = {
             let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
             };
             (drawn.id, drawn.pending, drawn.model_id)
         };
-
         let (target, model, original_composed) = match pending {
             Some(PendingShapeRef::Composed(index)) => {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return false;
                 };
-                if composed.results.len() != 1 {
+                if !Self::pending_handle_supported(composed) {
                     return false;
                 }
                 (
@@ -124,12 +159,15 @@ impl Editor {
                 )
             }
         };
+        if target != armed {
+            return false;
+        }
 
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let Some(handle) = hit_test(&model, (tick, key), zoom, 8.0) else {
+        let Some(handle) = hit_test(&model, (tick, key), zoom, 10.0) else {
             return false;
         };
         self.shape_edit = Some(ShapeEditState {
@@ -152,7 +190,11 @@ impl Editor {
         let Some(mut state) = self.shape_edit.take() else {
             return false;
         };
-        let k = state.original.k;
+        let k = match state.handle {
+            // 旋转角必须在屏幕/拍–key 同一单位下计算；ShapeModel.k 是 beats per key。
+            HandleKind::Turn => state.original.k.max(1e-6) * f32::from(self.editor_state.view.ppq),
+            _ => state.original.k,
+        };
         // 关键：每帧都从拖动前的 original 重算一次。
         // 若在 state.current 上重复 apply_drag(start→current)，Move/Resize/Turn 会把
         // 同一个 delta 累乘/累加，表现为抽搐与飞出屏幕。
@@ -173,7 +215,7 @@ impl Editor {
             return false;
         }
         state.current = next;
-        let notes = self.shape_notes_of(&state.current, state.current.track as usize);
+        let notes = self.part_notes_for_edit(&state.current, state.current.track as usize);
         match state.target {
             ShapeEditTarget::Drawn { drawn_id, .. } => {
                 let source = source_from_model(&state.current);
@@ -225,7 +267,7 @@ impl Editor {
                     self.grid_cache.clear();
                     return false;
                 }
-                let notes = self.shape_notes_of(&state.current, state.current.track as usize);
+                let notes = self.part_notes_for_edit(&state.current, state.current.track as usize);
                 if let Some(part) = self
                     .editor_state
                     .pending_composed
@@ -254,6 +296,7 @@ impl Editor {
         let Some(state) = self.shape_edit.take() else {
             return;
         };
+        self.shape_edit_armed = None;
         match state.target {
             ShapeEditTarget::Drawn { drawn_id, .. } => {
                 let source = source_from_model(&state.original);
@@ -268,7 +311,7 @@ impl Editor {
     }
 
     fn restore_pending_part(&mut self, index: usize, model: &ShapeModel) {
-        let notes = self.shape_notes_of(model, model.track as usize);
+        let notes = self.part_notes_for_edit(model, model.track as usize);
         if let Some(part) = self
             .editor_state
             .pending_composed
@@ -280,23 +323,43 @@ impl Editor {
         }
     }
 
+    /// Live 的结果音符来自各 `from` 的原始音符；直接按展平几何重生成会得到
+    /// 一条错误的连接线。其余单支模型可按当前 model 重生成。
+    fn part_notes_for_edit(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
+        if let Some(ShapeOp::Live(params)) =
+            model.ops.iter().find(|op| matches!(op, ShapeOp::Live(_)))
+            && !params.from.is_empty()
+        {
+            let mut notes = Vec::new();
+            for from in &params.from {
+                notes.extend(self.shape_notes_of(from, from.track as usize));
+            }
+            notes
+        } else {
+            self.shape_notes_of(model, track)
+        }
+    }
+
     /// 当前编辑/选中形状的手柄屏幕位置（用于渲染）
     pub(crate) fn shape_edit_handle_points(&self) -> Vec<Point> {
+        let Some(armed) = self.shape_edit_armed else {
+            return Vec::new();
+        };
         let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
             return Vec::new();
         };
-        let model = match drawn.pending {
+        let (target, model) = match drawn.pending {
             Some(PendingShapeRef::Composed(index)) => {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return Vec::new();
                 };
+                if !Self::pending_handle_supported(composed) {
+                    return Vec::new();
+                }
                 let Some(part) = composed.results.first() else {
                     return Vec::new();
                 };
-                if composed.results.len() != 1 {
-                    return Vec::new();
-                }
-                &part.model
+                (ShapeEditTarget::PendingComposed { index }, &part.model)
             }
             Some(_) => return Vec::new(),
             None => {
@@ -306,9 +369,18 @@ impl Editor {
                 let Some(model) = self.editor_state.shape_store.model(model_id) else {
                     return Vec::new();
                 };
-                model
+                (
+                    ShapeEditTarget::Drawn {
+                        drawn_id: drawn.id,
+                        model_id,
+                    },
+                    model,
+                )
             }
         };
+        if target != armed {
+            return Vec::new();
+        }
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
@@ -321,6 +393,11 @@ impl Editor {
             .iter()
             .map(|(_, pos)| self.line_pos_screen_pos(*pos))
             .collect()
+    }
+
+    /// 是否正在显式手柄编辑模式（用于菜单状态/Toast）
+    pub fn is_shape_edit_armed(&self) -> bool {
+        self.shape_edit_armed.is_some()
     }
 
     /// 是否正在拖拽形状手柄

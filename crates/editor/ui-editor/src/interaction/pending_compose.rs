@@ -280,6 +280,7 @@ impl Editor {
         self.pending_composed_redo.clear();
         self.pending_edit_undo.clear();
         self.pending_edit_redo.clear();
+        self.shape_edit_armed = None;
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         if let Some(id) = self
@@ -304,6 +305,7 @@ impl Editor {
         self.pending_composed_redo.push(item);
         self.pending_edit_undo.clear();
         self.pending_edit_redo.clear();
+        self.shape_edit_armed = None;
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
@@ -321,6 +323,7 @@ impl Editor {
         self.editor_state.pending_composed.push(item);
         self.pending_edit_undo.clear();
         self.pending_edit_redo.clear();
+        self.shape_edit_armed = None;
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();

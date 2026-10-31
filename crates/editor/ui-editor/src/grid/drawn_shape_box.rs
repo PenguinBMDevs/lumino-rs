@@ -323,7 +323,7 @@ pub fn draw(
 
     // 020 手柄：小圆点，压在形状的 box/锚点位置
     for point in &overlay.edit_handles {
-        let circle = Path::circle(*point, 3.5);
+        let circle = Path::circle(*point, 5.0);
         frame.fill(&circle, strong);
     }
 

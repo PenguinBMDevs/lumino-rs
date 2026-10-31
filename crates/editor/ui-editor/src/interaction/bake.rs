@@ -61,6 +61,7 @@ impl Editor {
                 self.editor_state.pending_composed = composed;
                 self.pending_edit_undo.clear();
                 self.pending_edit_redo.clear();
+                self.shape_edit_armed = None;
             }
             BakePending::Brush { mut state, config } => {
                 state.path_history.truncate(state.path_history_index + 1);
@@ -85,6 +86,7 @@ impl Editor {
                 self.editor_state.pending_composed.clear();
                 self.pending_edit_undo.clear();
                 self.pending_edit_redo.clear();
+                self.shape_edit_armed = None;
             }
             BakePending::Brush { .. } => self.editor_state.brush_tool.reset(),
         }

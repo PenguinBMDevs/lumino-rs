@@ -150,6 +150,34 @@ fn test_move_updates_copy_along_group_anchor() {
 }
 
 #[test]
+fn test_resize_scales_copy_along_path_vectors() {
+    let mut shape = line();
+    shape.ops.push(lumino_core::shape::ShapeOp::CopyAlong(
+        lumino_core::shape::CopyPathParams {
+            pts: vec![[100.0, 0.0]],
+            grp: Some([0.0, 60.0]),
+            ..lumino_core::shape::CopyPathParams::default()
+        },
+    ));
+    apply_drag(
+        &mut shape,
+        HandleKind::Side(Side::Left),
+        (0.0, 60.0),
+        (-60.0, 60.0),
+        Mods::default(),
+        1.0,
+    );
+    let lumino_core::shape::ShapeOp::CopyAlong(params) = &shape.ops[0] else {
+        panic!("应为 CopyAlong");
+    };
+    assert_eq!(params.grp, Some([-60.0, 60.0]), "组起点跟随缩放");
+    assert!(
+        (params.pts[0][0] - 150.0).abs() < 1e-3,
+        "相对路径向量也必须缩放，否则副本会扭曲到旧位置"
+    );
+}
+
+#[test]
 fn test_anchor_handle_moves_only_target() {
     let mut shape = curve();
     apply_drag(

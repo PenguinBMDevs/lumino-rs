@@ -238,55 +238,59 @@ pub fn draw(
             has_content = true;
         }
 
-        // 控制柄（辅助线 + 方块，常驻显示）
-        for (ai, anchor) in path.iter().enumerate() {
-            let ap = editor.line_pos_screen_pos(anchor.pos);
-            for side in line.visible_handle_sides(pi, ai) {
-                let h_abs = match side {
-                    lumino_editor_state::HandleSide::In => anchor.in_handle_abs(),
-                    lumino_editor_state::HandleSide::Out => anchor.out_handle_abs(),
-                };
-                let hp = editor.line_pos_screen_pos(h_abs);
-                // 锚点 → 控制柄辅助线
-                let handle_connector = Path::new(|p| {
-                    p.move_to(ap);
-                    p.line_to(hp);
-                });
-                let connector_stroke = Stroke::default()
-                    .with_width(HANDLE_LINE_WIDTH)
-                    .with_color(handle_line_color);
-                frame.stroke(&handle_connector, connector_stroke);
-                // 控制柄方块
-                let rect = Rectangle::new(
-                    Point::new(hp.x - HANDLE_SIZE * 0.5, hp.y - HANDLE_SIZE * 0.5),
-                    Size::new(HANDLE_SIZE, HANDLE_SIZE),
-                );
-                let path = Path::rectangle(rect.position(), rect.size());
+        // 控制柄 / 锚点只在曲线工具下可交互；ShapeSelect 只负责组合后的 020 手柄。
+        // 否则用户会把待确认曲线的锚点当成可选对象，点下去却触发整条曲线的框选拖动。
+        if editor.current_tool() == Tool::Curve {
+            // 控制柄（辅助线 + 方块，常驻显示）
+            for (ai, anchor) in path.iter().enumerate() {
+                let ap = editor.line_pos_screen_pos(anchor.pos);
+                for side in line.visible_handle_sides(pi, ai) {
+                    let h_abs = match side {
+                        lumino_editor_state::HandleSide::In => anchor.in_handle_abs(),
+                        lumino_editor_state::HandleSide::Out => anchor.out_handle_abs(),
+                    };
+                    let hp = editor.line_pos_screen_pos(h_abs);
+                    // 锚点 → 控制柄辅助线
+                    let handle_connector = Path::new(|p| {
+                        p.move_to(ap);
+                        p.line_to(hp);
+                    });
+                    let connector_stroke = Stroke::default()
+                        .with_width(HANDLE_LINE_WIDTH)
+                        .with_color(handle_line_color);
+                    frame.stroke(&handle_connector, connector_stroke);
+                    // 控制柄方块
+                    let rect = Rectangle::new(
+                        Point::new(hp.x - HANDLE_SIZE * 0.5, hp.y - HANDLE_SIZE * 0.5),
+                        Size::new(HANDLE_SIZE, HANDLE_SIZE),
+                    );
+                    let path = Path::rectangle(rect.position(), rect.size());
+                    frame.fill(&path, anchor_color);
+                    let ring = Stroke::default().with_width(1.0).with_color(white);
+                    frame.stroke(&path, ring);
+                    has_content = true;
+                }
+            }
+
+            // 锚点：实心圆 + 白色描边（明确标注路径锚点）
+            for (ai, anchor) in path.iter().enumerate() {
+                let ap = editor.line_pos_screen_pos(anchor.pos);
+                let path = Path::circle(ap, ANCHOR_RADIUS);
                 frame.fill(&path, anchor_color);
-                let ring = Stroke::default().with_width(1.0).with_color(white);
+                let ring = Stroke::default()
+                    .with_width(ANCHOR_STROKE_WIDTH)
+                    .with_color(white);
                 frame.stroke(&path, ring);
+                // 选中锚点：加一圈主题色外环，明确弯折切换作用于谁
+                if selected == Some((pi, ai)) {
+                    let selected_ring = Path::circle(ap, ANCHOR_RADIUS + 3.0);
+                    frame.stroke(
+                        &selected_ring,
+                        Stroke::default().with_width(2.0).with_color(white),
+                    );
+                }
                 has_content = true;
             }
-        }
-
-        // 锚点：实心圆 + 白色描边（明确标注路径锚点）
-        for (ai, anchor) in path.iter().enumerate() {
-            let ap = editor.line_pos_screen_pos(anchor.pos);
-            let path = Path::circle(ap, ANCHOR_RADIUS);
-            frame.fill(&path, anchor_color);
-            let ring = Stroke::default()
-                .with_width(ANCHOR_STROKE_WIDTH)
-                .with_color(white);
-            frame.stroke(&path, ring);
-            // 选中锚点：加一圈主题色外环，明确弯折切换作用于谁
-            if selected == Some((pi, ai)) {
-                let selected_ring = Path::circle(ap, ANCHOR_RADIUS + 3.0);
-                frame.stroke(
-                    &selected_ring,
-                    Stroke::default().with_width(2.0).with_color(white),
-                );
-            }
-            has_content = true;
         }
     }
 

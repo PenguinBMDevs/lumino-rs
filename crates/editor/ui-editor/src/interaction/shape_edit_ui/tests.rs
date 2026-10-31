@@ -26,6 +26,7 @@ fn editor_with_shape() -> Editor {
     editor.editor_state.shape_select.select_only(id);
     assert!(editor.ensure_model_for_drawn(id).is_some());
     editor.set_tool(lumino_message::Tool::ShapeSelect);
+    assert!(editor.enable_shape_edit(), "进入手柄编辑模式");
     editor
 }
 
@@ -100,6 +101,183 @@ fn editor_with_pending_composed() -> Editor {
     editor.editor_state.shape_select.select_only(id);
     assert!(editor.copy_along_selected(), "先组合成单支 pending");
     editor
+}
+
+#[test]
+fn test_pending_handle_points_round_trip_to_hit_test() {
+    let mut editor = editor_with_pending_composed();
+    assert!(editor.enable_shape_edit(), "先进入显式编辑模式");
+    let points = editor.shape_edit_handle_points();
+    assert!(!points.is_empty(), "单支 composed 应有手柄");
+    for point in points {
+        let tick = editor.pos_to_tick(point);
+        let key = editor.pos_to_raw_key(point);
+        assert!(
+            editor.begin_shape_edit(tick, key),
+            "屏幕手柄 {point:?} 应能命中"
+        );
+    }
+}
+
+#[test]
+fn test_pending_live_handle_keeps_source_notes() {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    for (tick0, tick1, key) in [(0.0, 100.0, 60), (200.0, 300.0, 64)] {
+        editor
+            .editor_state
+            .shape_tool
+            .shapes
+            .push(lumino_editor_state::ShapeInstance {
+                kind: lumino_editor_state::ShapeKind::Rectangle,
+                rect: (tick0, key as f32, tick1, key as f32 + 4.0),
+                shift_constrained: false,
+                filled: true,
+                apex_high: true,
+                mask: None,
+            });
+    }
+    editor.rebuild_pending_mirrors();
+    let ids: Vec<u64> = (0..2)
+        .filter_map(|index| {
+            editor
+                .editor_state
+                .shape_select
+                .pending_mirror(PendingShapeRef::Shape(index))
+        })
+        .collect();
+    editor.editor_state.shape_select.select_all_of(ids);
+    assert!(editor.live_selected_shapes(), "Live 组合应成功");
+
+    let composed = &editor.editor_state.pending_composed[0];
+    let notes_before = composed.note_count();
+    assert!(notes_before > 0);
+    let bounds = composed.results[0]
+        .model
+        .geometry
+        .bounds()
+        .expect("Live 应有展平几何");
+
+    assert!(editor.enable_shape_edit());
+    assert!(editor.begin_shape_edit(bounds.0, bounds.3));
+    assert!(editor.update_shape_edit(bounds.0, bounds.3 + 4.0));
+    assert!(editor.finish_shape_edit());
+
+    let composed = &editor.editor_state.pending_composed[0];
+    assert!(
+        composed.note_count() > 0,
+        "Live 编辑应按来源模型重算，不能按展平几何生成空/连接线音符"
+    );
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+}
+
+#[test]
+fn test_pending_handle_edit_requires_explicit_mode() {
+    let mut editor = editor_with_pending_composed();
+    let bounds = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .geometry
+        .bounds()
+        .expect("几何");
+    assert!(
+        !editor.begin_shape_edit(bounds.0, bounds.3),
+        "未进入编辑模式时，手柄不得抢占整组拖动"
+    );
+    assert!(!editor.is_shape_editing());
+
+    editor.editor_state.shape_select.clear_selection();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Composed(0))
+        .expect("composed 镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.enable_shape_edit(), "进入编辑模式");
+    assert!(
+        editor.begin_shape_edit(bounds.0, bounds.3),
+        "进入模式后点手柄应开始编辑"
+    );
+    assert!(editor.is_shape_editing());
+}
+
+#[test]
+fn test_pending_turn_handle_rotates_geometry() {
+    let mut editor = editor_with_pending_composed();
+    assert!(editor.enable_shape_edit());
+    let model = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .clone();
+    let layout = edit_handles(
+        &model,
+        Zoom {
+            x: editor.editor_state.view.zoom_x,
+            y: editor.editor_state.view.zoom_y,
+        },
+    )
+    .expect("手柄布局");
+    let (_, turn_pos) = layout
+        .handles
+        .iter()
+        .find(|(kind, _)| matches!(kind, HandleKind::Turn))
+        .expect("Turn 手柄");
+    let screen = editor.line_pos_screen_pos(*turn_pos);
+    let tick = editor.pos_to_tick(screen);
+    let key = editor.pos_to_raw_key(screen);
+    assert!(editor.begin_shape_edit(tick, key), "Turn 手柄应命中");
+    assert!(editor.update_shape_edit(tick + 80.0, key));
+    assert!(editor.finish_shape_edit());
+    assert_ne!(
+        editor.editor_state.pending_composed[0].results[0]
+            .model
+            .geometry,
+        model.geometry,
+        "旋转应改变几何"
+    );
+}
+
+#[test]
+fn test_pending_curve_path_handle_moves_anchor() {
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((100.0, 64.0)),
+        BezierAnchor::new((200.0, 60.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.copy_along_selected(), "曲线应能组合成单支");
+    assert!(editor.enable_shape_edit(), "进入显式编辑模式");
+
+    let before = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .geometry
+        .anchors[0]
+        .pos;
+    let screen = editor.line_pos_screen_pos(before);
+    let tick = editor.pos_to_tick(screen);
+    let key = editor.pos_to_raw_key(screen);
+    assert!(editor.begin_shape_edit(tick, key), "Path 手柄应命中");
+    assert!(editor.update_shape_edit(tick, key + 4.0));
+    assert!(editor.finish_shape_edit());
+    let after = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .geometry
+        .anchors[0]
+        .pos;
+    assert!(
+        (after.1 - (before.1 + 4.0)).abs() < 1e-3,
+        "路径点应跟随拖动"
+    );
 }
 
 #[test]

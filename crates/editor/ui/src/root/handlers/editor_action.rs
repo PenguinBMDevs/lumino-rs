@@ -162,7 +162,14 @@ impl Root {
                         let _ = self.editor.merge_selected_shapes();
                     }
                     PianoRollContextMenuItem::EditShape => {
-                        if !self.editor.enable_shape_edit() {
+                        if self.editor.enable_shape_edit() {
+                            let state = if self.editor.is_shape_edit_armed() {
+                                tr!("已进入手柄编辑；拖小圆点，Shift 关闭 15° 旋转吸附")
+                            } else {
+                                tr!("已退出手柄编辑")
+                            };
+                            self.toast.push(crate::toast::ToastLevel::Info, state);
+                        } else {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
                                 tr!("编辑形状失败：请选中一个已 Bake 图形或单支待确认组合"),
