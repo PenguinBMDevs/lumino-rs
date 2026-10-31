@@ -27,6 +27,10 @@ pub enum ComposedKind {
     Join,
     /// 022：两形状门控合并
     Merge,
+    /// 027：单形状沿默认路径复制（`ShapeOp::CopyAlong`）
+    CopyAlong,
+    /// 028：单形状渐强力度包络（`ShapeOp::VelocityEnv`）
+    Velocity,
 }
 
 /// 一次 Bake 前组合的结果；`sources` 用于撤销回 pending 矢量
@@ -70,18 +74,29 @@ fn translate_model(model: &mut ShapeModel, dtick: f32, dkey: f32, depth: usize) 
         rect.key_hi = (rect.key_hi + dkey).clamp(0.0, 255.0);
     }
     for op in &mut model.ops {
-        if let ShapeOp::Live(params) = op {
-            for stroke in &mut params.strokes {
-                for anchor in &mut stroke.anchors {
-                    anchor.pos = (
-                        (anchor.pos.0 + dtick).max(0.0),
-                        (anchor.pos.1 + dkey).clamp(0.0, 255.0),
-                    );
+        match op {
+            ShapeOp::Live(params) => {
+                for stroke in &mut params.strokes {
+                    for anchor in &mut stroke.anchors {
+                        anchor.pos = (
+                            (anchor.pos.0 + dtick).max(0.0),
+                            (anchor.pos.1 + dkey).clamp(0.0, 255.0),
+                        );
+                    }
+                }
+                for from in &mut params.from {
+                    translate_model(from, dtick, dkey, depth + 1);
                 }
             }
-            for from in &mut params.from {
-                translate_model(from, dtick, dkey, depth + 1);
+            // CopyAlong 的路径点是文档绝对坐标；组合结果平移时 `grp` 必须同步，
+            // 否则后续按模型再生成会把副本放回旧位置。
+            ShapeOp::CopyAlong(params) => {
+                if let Some(grp) = &mut params.grp {
+                    grp[0] = (grp[0] + dtick).max(0.0);
+                    grp[1] = (grp[1] + dkey).clamp(0.0, 255.0);
+                }
             }
+            _ => {}
         }
     }
 }
@@ -89,11 +104,39 @@ fn translate_model(model: &mut ShapeModel, dtick: f32, dkey: f32, depth: usize) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lumino_core::shape::{CopyPathParams, ShapeKind, ShapeModel, ShapeOp};
 
     #[test]
     fn test_composed_kind_is_copy() {
         let kind = ComposedKind::Live;
         let copy = kind;
         assert_eq!(copy, ComposedKind::Live);
+    }
+
+    #[test]
+    fn test_translate_moves_copy_along_group_anchor() {
+        let mut model = ShapeModel::new(0, 1, ShapeKind::Polyline, 1.0);
+        model.ops.push(ShapeOp::CopyAlong(CopyPathParams {
+            pts: vec![[100.0, 0.0]],
+            grp: Some([10.0, 20.0]),
+            ..CopyPathParams::default()
+        }));
+        let mut composed = PendingComposed {
+            kind: ComposedKind::CopyAlong,
+            model,
+            notes: Vec::new(),
+            sources: Vec::new(),
+        };
+
+        composed.translate(5.0, 2.0);
+
+        let ShapeOp::CopyAlong(params) = &composed.model.ops[0] else {
+            panic!("应为 CopyAlong 参数");
+        };
+        assert_eq!(
+            params.grp,
+            Some([15.0, 22.0]),
+            "组合结果平移时 CopyAlong 的绝对路径起点必须同步"
+        );
     }
 }

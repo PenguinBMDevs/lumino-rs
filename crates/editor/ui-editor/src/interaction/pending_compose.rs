@@ -24,6 +24,22 @@ impl Editor {
         any
     }
 
+    /// 当前选中集是否恰好是一个 pending 矢量（形状/曲线），且不含已组合结果。
+    ///
+    /// 027/028 是单对象操作：镜像/组合结果仍走各自入口，不在这里重复组合。
+    pub(super) fn pending_single_selection(&self) -> bool {
+        let mut count = 0usize;
+        for shape in self.editor_state.shape_select.selected_shapes() {
+            match shape.pending {
+                Some(PendingShapeRef::Shape(_)) | Some(PendingShapeRef::CurvePath(_)) => {
+                    count += 1;
+                }
+                _ => return false,
+            }
+        }
+        count == 1
+    }
+
     /// 把选中的 pending 形状/路径组合成一个 pending composed 结果。
     pub(super) fn compose_pending(&mut self, kind: ComposedKind) -> bool {
         let refs: Vec<PendingShapeRef> = self
@@ -98,6 +114,36 @@ impl Editor {
                 let mut model = models[0].clone();
                 model.ops.push(ShapeOp::Merge(params));
                 (model, merged)
+            }
+            ComposedKind::CopyAlong => {
+                if models.len() != 1 {
+                    return false;
+                }
+                let Some(mut model) = models.pop() else {
+                    return false;
+                };
+                let Some(params) = Self::default_copy_along_params(&model) else {
+                    return false;
+                };
+                model.ops.push(ShapeOp::CopyAlong(params));
+                let composed_notes = self.shape_notes_of(&model, track);
+                (model, composed_notes)
+            }
+            ComposedKind::Velocity => {
+                if models.len() != 1 {
+                    return false;
+                }
+                let Some(mut model) = models.pop() else {
+                    return false;
+                };
+                model
+                    .ops
+                    .retain(|op| !matches!(op, ShapeOp::VelocityEnv(_)));
+                model
+                    .ops
+                    .push(ShapeOp::VelocityEnv(Self::rising_velocity_env()));
+                let composed_notes = self.shape_notes_of(&model, track);
+                (model, composed_notes)
             }
         };
         model.id = 0;

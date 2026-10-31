@@ -566,3 +566,120 @@ fn test_pending_merge_composition_is_pending() {
     assert!(editor.editor_state.shape_tool.shapes.is_empty());
     assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
 }
+
+fn setup_single_pending_rect(editor: &mut Editor) {
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    add_pending_rect(editor, 0.0, 100.0, 60);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("单个 pending 图形应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+}
+
+/// 单条 pending 曲线：音符沿 tick 分布，028 的力度包络才有可观察的渐强。
+fn setup_single_pending_curve(editor: &mut Editor) {
+    use lumino_editor_state::BezierAnchor;
+
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((200.0, 72.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("单条 pending 曲线应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+}
+
+#[test]
+fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+
+    assert!(editor.copy_along_selected(), "pending CopyAlong 应成功");
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(
+        composed.kind,
+        lumino_editor_state::ComposedKind::CopyAlong,
+        "027 应以 CopyAlong 组合类型留在 pending"
+    );
+    assert!(
+        matches!(composed.model.ops.last(), Some(ShapeOp::CopyAlong(_))),
+        "CopyAlong 参数必须写回模型，后续再生成才不会丢副本"
+    );
+    let pending_notes = composed.notes.len();
+    assert!(pending_notes > 0);
+    assert!(
+        editor.editor_state.shape_tool.shapes.is_empty(),
+        "来源应从 owning tool 摘除"
+    );
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        0,
+        "组合结果不得提前写文档"
+    );
+
+    assert!(editor.undo(), "undo 应回到 pending 矢量");
+    assert!(editor.editor_state.pending_composed.is_empty());
+    assert_eq!(editor.editor_state.shape_tool.shapes.len(), 1);
+    assert!(editor.redo(), "redo 应恢复组合结果");
+
+    assert!(editor.confirm_shape_tool(), "✓ 才提交副本");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes,
+        "✓ 写入的音符数应与预览一致"
+    );
+
+    assert!(editor.undo(), "✓ 后 undo 应恢复 pending 组合");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+    assert!(editor.redo(), "redo 应重新烘焙");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes
+    );
+}
+
+#[test]
+fn test_pending_velocity_stays_pending_and_varies_velocity() {
+    let mut editor = empty_editor();
+    setup_single_pending_curve(&mut editor);
+
+    assert!(editor.velocity_up_selected(), "pending Velocity 应成功");
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(
+        composed.kind,
+        lumino_editor_state::ComposedKind::Velocity,
+        "028 应以 Velocity 组合类型留在 pending"
+    );
+    assert!(
+        matches!(composed.model.ops.last(), Some(ShapeOp::VelocityEnv(_))),
+        "渐强包络必须写回模型"
+    );
+    let min = composed.notes.iter().map(|note| note.velocity).min();
+    let max = composed.notes.iter().map(|note| note.velocity).max();
+    assert!(
+        matches!((min, max), (Some(lo), Some(hi)) if hi > lo),
+        "渐强应在预览音符上产生力度差：min={min:?} max={max:?} notes={}",
+        composed.notes.len()
+    );
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        0,
+        "组合结果不得提前写文档"
+    );
+
+    let pending_notes = composed.notes.len();
+    assert!(editor.confirm_shape_tool());
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes
+    );
+}

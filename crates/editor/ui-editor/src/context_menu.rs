@@ -136,11 +136,13 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
         // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起先走 Bake 前组合会话，
-        // 019/021/022 在有 2+ 个 pending 矢量时可用；其余仍不可用。
+        // 019/021/022 在有 2+ 个 pending 矢量时可用；027/028 对单个 pending 矢量可用。
         ContextMenuTarget::PendingDrawnShape => &[
             PianoRollContextMenuItem::LiveShape,
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::CopyAlong,
+            PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::CopyShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
@@ -361,10 +363,12 @@ mod tests {
                 PianoRollContextMenuItem::LiveShape,
                 PianoRollContextMenuItem::JoinShapes,
                 PianoRollContextMenuItem::MergeShapes,
+                PianoRollContextMenuItem::CopyAlong,
+                PianoRollContextMenuItem::VelocityUp,
                 PianoRollContextMenuItem::CopyShapeText,
                 PianoRollContextMenuItem::DeleteDrawnShape,
             ],
-            "待确认镜像可走 Bake 前组合、分享几何、删除；不得出现 020–028 参数操作"
+            "待确认镜像可走 Bake 前组合、027/028 单对象参数、分享几何、删除"
         );
         assert!(
             !items.iter().any(|item| matches!(
@@ -372,9 +376,9 @@ mod tests {
                 PianoRollContextMenuItem::EditShape
                     | PianoRollContextMenuItem::SymmetryVertical
                     | PianoRollContextMenuItem::SliceVertical
-                    | PianoRollContextMenuItem::VelocityUp
+                    | PianoRollContextMenuItem::BetweenCreate
             )),
-            "020–028 仍不得出现在待确认目标"
+            "020/023/025/026 仍不得出现在待确认目标"
         );
     }
 
