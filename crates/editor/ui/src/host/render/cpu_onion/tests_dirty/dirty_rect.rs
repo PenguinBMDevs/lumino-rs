@@ -95,6 +95,7 @@ fn full_redraw_reports_no_dirty_rect() {
         Some(CpuOnionDirty {
             full: true,
             changes: Vec::new(),
+            ranges: Vec::new(),
         }),
         Some(&tracks(&[1])),
     );

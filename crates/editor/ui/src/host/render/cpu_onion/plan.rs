@@ -166,6 +166,18 @@ pub(crate) fn plan_update(input: PlanInput<'_>) -> CpuOnionPlan {
         };
     }
 
+    // 只有脏 tick 区间（历史大变更/回放）：帧必须整画，但索引/密度只做增量，
+    // 绝不能因为「没有逐音符 changes」升级为整建。
+    if input
+        .dirty
+        .is_some_and(|dirty| !dirty.ranges.is_empty() && !dirty.full)
+    {
+        return CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: CpuOnionIndex::Incremental,
+        };
+    }
+
     // ⑤ 什么都没变：复用（最高频路径，零分配）
     if !input.gen_changed && !has_changes && !input.stale_needs_repair {
         return CpuOnionPlan::REUSE;

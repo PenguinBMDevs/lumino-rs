@@ -105,19 +105,15 @@ fn bulk_edits_escalate_to_full() {
     let inserted = batch.batch_insert_notes_with_ids(&[Note::new(600.0, 70, 40.0)]);
     assert_eq!(inserted.len(), 1);
     let dirty = batch.take_cpu_onion_dirty().expect("批量插入必须记录");
-    assert!(dirty.full, "批量插入必须整帧兜底");
-    assert!(dirty.changes.is_empty(), "full 时 changes 必须清空");
+    assert!(!dirty.full, "批量插入应转脏区间，不再整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "批量插入必须留下 tick 区间");
 
     let mut replace = data();
     replace.set_cpu_onion_dirty_enabled(true);
     assert!(replace.replace_track_notes(0, vec![NoteEvent::new(0, 10, 60, 100, 0)]));
-    assert!(
-        replace
-            .take_cpu_onion_dirty()
-            .expect("整轨替换必须记录")
-            .full,
-        "整轨替换必须整帧兜底"
-    );
+    let replaced = replace.take_cpu_onion_dirty().expect("整轨替换必须记录");
+    assert!(!replaced.full, "整轨替换应转脏区间");
+    assert!(!replaced.ranges.is_empty(), "整轨替换必须留下 tick 区间");
 
     let mut ranges = data();
     ranges.set_cpu_onion_dirty_enabled(true);
@@ -155,9 +151,30 @@ fn undo_redo_replays_single_note_as_changes() {
     assert!(redone.changes[0].old.is_none() && redone.changes[0].new.is_some());
 }
 
-/// 超过上限的区间删除仍必须整帧兜底。
+/// 直接 `track_notes_mut` 编辑的 undo 必须转成脏 tick 区间，不得整建。
 #[test]
-fn huge_range_delete_escalates_to_full() {
+fn direct_edit_undo_uses_dirty_ranges() {
+    let mut data = data();
+    data.set_cpu_onion_dirty_enabled(true);
+    data.push_history();
+    if let Some(note) = data
+        .document
+        .as_mut()
+        .and_then(|document| document.track_notes_mut(0))
+        .and_then(|track| track.get_mut(0))
+    {
+        note.end_tick = 150;
+    }
+    data.record_update_ranges(&[0]);
+    assert!(data.undo(), "直接编辑后应可撤销");
+    let dirty = data.take_cpu_onion_dirty().expect("undo 必须产生脏区");
+    assert!(!dirty.full, "直接编辑撤销不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "必须转成脏 tick 区间供局部重建");
+}
+
+/// 超过逐音符上限的区间删除转成脏区间，不整帧兜底。
+#[test]
+fn huge_range_delete_uses_dirty_range() {
     let mut data = EditorData::with_notes(
         0,
         &(0..=MAX_CPU_ONION_CHANGES)
@@ -167,8 +184,8 @@ fn huge_range_delete_escalates_to_full() {
     data.set_cpu_onion_dirty_enabled(true);
     assert!(data.remove_ranges_merged(0, &[(0, MAX_CPU_ONION_CHANGES + 1)]) > 0);
     let dirty = data.take_cpu_onion_dirty().expect("批量删除必须记录");
-    assert!(dirty.full, "超过上限必须整帧兜底");
-    assert!(dirty.changes.is_empty());
+    assert!(!dirty.full, "大批量删除不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "必须留下可局部重建的 tick 区间");
 }
 
 /// full 优先：已有原子变更时升级 full 会清空 changes，之后的单笔变更被忽略。
@@ -188,9 +205,9 @@ fn full_takes_priority_and_absorbs_changes() {
     );
 }
 
-/// 原子变更条数超上限自动升级 full（单笔路径不该走到，防御无界增长）。
+/// 原子变更条数超上限转成脏区间，不再升级 full。
 #[test]
-fn too_many_changes_escalate_to_full() {
+fn too_many_changes_use_dirty_range() {
     let mut data = data();
     data.set_cpu_onion_dirty_enabled(true);
     let note = NoteEvent::new(0, 10, 60, 100, 0);
@@ -198,8 +215,8 @@ fn too_many_changes_escalate_to_full() {
         data.record_cpu_onion_change(1, None, Some(note));
     }
     let dirty = data.take_cpu_onion_dirty().expect("必须有脏区");
-    assert!(dirty.full, "超过上限必须升级为整帧兜底");
-    assert!(dirty.changes.is_empty());
+    assert!(!dirty.full, "超过逐音符上限不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "必须转成脏 tick 区间");
 }
 
 /// `take` 消费即清空；`clear` 直接丢弃；关闭开关会清空残留。
@@ -252,6 +269,7 @@ fn dirty_flags_are_consistent() {
             old: None,
             new: Some(NoteEvent::new(0, 10, 60, 100, 0)),
         }],
+        ranges: Vec::new(),
     };
     assert!(!changes.is_empty());
     assert!(changes.has_changes());
@@ -259,6 +277,7 @@ fn dirty_flags_are_consistent() {
     let full = CpuOnionDirty {
         full: true,
         changes: Vec::new(),
+        ranges: Vec::new(),
     };
     assert!(!full.is_empty());
     assert!(!full.has_changes(), "full 不算原子变更");

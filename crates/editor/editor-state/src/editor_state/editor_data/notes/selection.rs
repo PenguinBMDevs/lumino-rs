@@ -87,23 +87,36 @@ impl EditorData {
         }
         // 小批量删除保留按值 old：撤销可局部重建；超过上限才整帧兜底。
         let total: usize = ranges.iter().map(|(_, count)| *count).sum();
-        let removed_notes = if self.cpu_onion_dirty_enabled
-            && !self.history_replay
-            && total <= MAX_CPU_ONION_CHANGES
-        {
+        let mut removed_notes = None;
+        let mut removed_range: Option<(u32, u32)> = None;
+        if self.cpu_onion_dirty_enabled && !self.history_replay {
             let track = self.track_notes(track_id);
-            let mut notes = Vec::with_capacity(total);
-            for &(index, count) in ranges {
-                for offset in 0..count {
-                    if let Some(note) = track.get(index.saturating_add(offset)) {
-                        notes.push(*note);
+            if total <= MAX_CPU_ONION_CHANGES {
+                let mut notes = Vec::with_capacity(total);
+                for &(index, count) in ranges {
+                    for offset in 0..count {
+                        if let Some(note) = track.get(index.saturating_add(offset)) {
+                            notes.push(*note);
+                        }
+                    }
+                }
+                removed_notes = Some(notes);
+            } else {
+                // 大批量删除仍只记 tick 区间：扫描被删索引，不扫全文档。
+                for &(index, count) in ranges {
+                    for offset in 0..count {
+                        let Some(note) = track.get(index.saturating_add(offset)) else {
+                            continue;
+                        };
+                        let end = note.end_tick.max(note.start_tick.saturating_add(1));
+                        removed_range = Some(match removed_range {
+                            Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+                            None => (note.start_tick, end),
+                        });
                     }
                 }
             }
-            Some(notes)
-        } else {
-            None
-        };
+        }
         let deleted = match self.document.as_mut() {
             Some(doc) => doc.remove_note_ranges(track_id, ranges),
             None => 0,
@@ -116,8 +129,10 @@ impl EditorData {
             for note in notes {
                 self.record_cpu_onion_change(track_id, Some(note), None);
             }
+        } else if let Some((lo, hi)) = removed_range {
+            // 大批量删除：只记 tick 区间，密度按区间局部重建。
+            self.record_cpu_onion_range(lo, hi);
         } else {
-            // 大批量/未知来源：整帧兜底，逐音符队列会膨胀到音符数量级。
             self.record_cpu_onion_full();
         }
 

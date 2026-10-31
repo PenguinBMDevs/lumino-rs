@@ -25,11 +25,12 @@ impl CpuOnionState {
         dirty: Option<CpuOnionDirty>,
         direct_edits: &[(usize, usize)],
         overflow: bool,
+        direct_bbox: Option<(usize, usize, usize)>,
     ) -> Option<CpuOnionDirty> {
         if (direct_edits.is_empty() && !overflow)
-            || dirty
-                .as_ref()
-                .is_some_and(|dirty| dirty.full || !dirty.changes.is_empty())
+            || dirty.as_ref().is_some_and(|dirty| {
+                dirty.full || !dirty.changes.is_empty() || !dirty.ranges.is_empty()
+            })
         {
             return dirty;
         }
@@ -37,16 +38,39 @@ impl CpuOnionState {
             Some(CpuOnionDirty {
                 full: true,
                 changes: Vec::new(),
+                ranges: Vec::new(),
             })
         };
-        if overflow {
-            return full();
-        }
         let Some(previous) = self.document.as_ref() else {
             return full();
         };
+        if overflow {
+            let Some((track, lo, hi)) = direct_bbox else {
+                return full();
+            };
+            let mut range: Option<(u32, u32)> = None;
+            for index in lo..=hi {
+                let old = previous.track_notes(track).get(index).copied();
+                let new = document.track_notes(track).get(index).copied();
+                for note in [old, new].into_iter().flatten() {
+                    let end = note.end_tick.max(note.start_tick.saturating_add(1));
+                    range = Some(match range {
+                        Some((range_lo, range_hi)) => {
+                            (range_lo.min(note.start_tick), range_hi.max(end))
+                        }
+                        None => (note.start_tick, end),
+                    });
+                }
+            }
+            return Some(CpuOnionDirty {
+                full: false,
+                changes: Vec::new(),
+                ranges: range.into_iter().collect(),
+            });
+        }
         let mut seen = HashSet::with_capacity(direct_edits.len());
         let mut changes = Vec::new();
+        let mut range: Option<(u32, u32)> = None;
         for &(track, index) in direct_edits {
             if !seen.insert((track, index)) {
                 continue;
@@ -56,14 +80,26 @@ impl CpuOnionState {
             if old == new {
                 continue;
             }
+            for note in [old, new].into_iter().flatten() {
+                let end = note.end_tick.max(note.start_tick.saturating_add(1));
+                range = Some(match range {
+                    Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+                    None => (note.start_tick, end),
+                });
+            }
             if changes.len() >= MAX_CPU_ONION_CHANGES {
-                return full();
+                return Some(CpuOnionDirty {
+                    full: false,
+                    changes: Vec::new(),
+                    ranges: range.into_iter().collect(),
+                });
             }
             changes.push(CpuOnionChange { track, old, new });
         }
         Some(CpuOnionDirty {
             full: false,
             changes,
+            ranges: Vec::new(),
         })
     }
 
@@ -92,8 +128,13 @@ impl CpuOnionState {
             CpuOnionIndex::Incremental => {
                 self.document = Some(Arc::new(document.clone()));
                 if let Some(dirty) = dirty.filter(|dirty| dirty.has_changes()) {
-                    self.density
-                        .apply_changes(self.index_gen, new_gen, &dirty.changes);
+                    if dirty.ranges.is_empty() {
+                        self.density
+                            .apply_changes(self.index_gen, new_gen, &dirty.changes);
+                    } else {
+                        self.density
+                            .apply_ranges(self.index_gen, new_gen, &dirty.ranges);
+                    }
                 }
                 self.apply_incremental(dirty, current_track);
             }

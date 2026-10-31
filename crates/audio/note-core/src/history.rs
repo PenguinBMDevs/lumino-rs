@@ -358,13 +358,19 @@ impl History {
     ///
     /// 只对快照条目有效：Operation/Create 本身已保存精确 old/new，
     /// 无需再挂；栈顶不是快照时静默忽略。
-    pub fn attach_last_note_changes(&mut self, changes: Vec<SnapshotNoteChange>, full: bool) {
+    pub fn attach_last_note_changes(
+        &mut self,
+        changes: Vec<SnapshotNoteChange>,
+        ranges: Vec<(u32, u32)>,
+        full: bool,
+    ) {
         let Some(HistoryEntry::Snapshot(snapshot)) = self.undo_stack.back_mut() else {
             return;
         };
         let track = snapshot.current_track;
         let same_track = changes.iter().all(|change| change.track == track);
         snapshot.note_changes = if same_track { changes } else { Vec::new() };
+        snapshot.dirty_ranges = ranges;
         snapshot.note_changes_full = full || !same_track;
     }
 

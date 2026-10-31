@@ -47,6 +47,7 @@ impl EditorData {
         if self.cpu_onion_dirty_enabled
             && !self.history_replay
             && self.history_pending_changes.is_empty()
+            && self.history_pending_direct.is_empty()
         {
             self.history_pending_full = true;
         }

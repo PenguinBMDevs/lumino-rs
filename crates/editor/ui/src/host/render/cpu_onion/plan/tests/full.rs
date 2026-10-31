@@ -46,6 +46,7 @@ fn dirty_full_rebuilds_everything() {
     let dirty = CpuOnionDirty {
         full: true,
         changes: Vec::new(),
+        ranges: Vec::new(),
     };
     assert_full_rebuild(base(&camera, &muted, Some(&dirty), Some(&changed)));
 }

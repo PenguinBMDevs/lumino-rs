@@ -3,6 +3,21 @@
 use super::*;
 
 #[test]
+fn direct_edit_overflow_bbox_uses_ranges_not_full() {
+    let before = document();
+    let mut after = before.clone();
+    stretch_note(&mut after, 1, 0, 160);
+
+    let mut state = CpuOnionState::default();
+    state.update(key(1, 0), &before, &MUTED, None, None);
+    let merged = state
+        .merge_direct_edits(&after, None, &[], true, Some((1, 0, 0)))
+        .expect("包围盒必须能合成脏区");
+    assert!(!merged.full, "索引提示溢出不得整帧兜底");
+    assert!(!merged.ranges.is_empty(), "必须转成脏 tick 区间");
+}
+
+#[test]
 fn direct_edit_hint_merges_into_incremental_changes() {
     let before = document();
     let mut after = before.clone();
@@ -11,7 +26,7 @@ fn direct_edit_hint_merges_into_incremental_changes() {
     let mut state = CpuOnionState::default();
     state.update(key(1, 0), &before, &MUTED, None, None);
     let merged = state
-        .merge_direct_edits(&after, None, &[(1, 0)], false)
+        .merge_direct_edits(&after, None, &[(1, 0)], false, None)
         .expect("索引提示必须能合成脏区");
     assert!(!merged.full, "单索引直接编辑不得升级整帧");
     assert_eq!(merged.changes.len(), 1);

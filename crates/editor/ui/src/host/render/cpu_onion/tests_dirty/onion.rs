@@ -65,6 +65,7 @@ fn dirty_full_redraws_whole_frame() {
         Some(CpuOnionDirty {
             full: true,
             changes: Vec::new(),
+            ranges: Vec::new(),
         }),
         Some(&tracks(&[1])),
     );

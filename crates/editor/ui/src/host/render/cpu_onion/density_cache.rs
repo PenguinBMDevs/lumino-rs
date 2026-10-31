@@ -24,6 +24,11 @@ pub(crate) struct DensityCache {
     built_gen: Option<u64>,
     /// 金字塔对应的 key 数（256-key 切换时必须重建）。
     built_keys: u16,
+    /// 尚未重建的脏 tick 区间（历史回放/大变更），下次 ensure 局部重建。
+    pending_ranges: Vec<(u32, u32)>,
+    /// 测试诊断：按区间重建的次数（用于断言没有退回整建）。
+    #[cfg(test)]
+    pub(crate) range_rebuilds: u32,
 }
 
 impl DensityCache {
@@ -32,6 +37,27 @@ impl DensityCache {
         self.pyramid = None;
         self.built_gen = None;
         self.built_keys = 0;
+        self.pending_ranges.clear();
+    }
+
+    /// 记录脏 tick 区间；下次 [`Self::ensure`] 只重建这些区间。
+    pub(crate) fn apply_ranges(
+        &mut self,
+        old_gen: Option<u64>,
+        new_gen: u64,
+        ranges: &[(u32, u32)],
+    ) {
+        if ranges.is_empty() || self.built_gen != old_gen || self.pyramid.is_none() {
+            return;
+        }
+        for &(lo, hi) in ranges {
+            if hi > lo {
+                self.pending_ranges.push((lo, hi));
+            }
+        }
+        if !self.pending_ranges.is_empty() {
+            self.built_gen = Some(new_gen);
+        }
     }
 
     /// 按原子变更增量维护（仅当缓存正好对应 `old_gen` 时）。
@@ -87,11 +113,34 @@ impl DensityCache {
             self.pyramid = Some(DensityPyramid::build(document, workers, key_count));
             self.built_gen = Some(new_gen);
             self.built_keys = key_count;
+            self.pending_ranges.clear();
             tracing::debug!(
                 doc_gen = new_gen,
                 key_count,
                 ms = started.elapsed().as_millis(),
                 "[cpu-onion] 构建总览密度金字塔"
+            );
+        } else if !self.pending_ranges.is_empty() {
+            #[cfg(test)]
+            {
+                self.range_rebuilds = self.range_rebuilds.saturating_add(1);
+            }
+            let started = std::time::Instant::now();
+            let ranges = std::mem::take(&mut self.pending_ranges);
+            let rebuilt = self
+                .pyramid
+                .as_mut()
+                .is_some_and(|pyramid| pyramid.rebuild_dirty_ranges(document, index, &ranges));
+            if !rebuilt {
+                self.pyramid = Some(DensityPyramid::build(document, workers, key_count));
+            }
+            self.built_gen = Some(new_gen);
+            tracing::debug!(
+                doc_gen = new_gen,
+                ranges = ranges.len(),
+                dirty = rebuilt,
+                ms = started.elapsed().as_millis(),
+                "[cpu-onion] 按脏区间重建密度"
             );
         } else if coverage_stale {
             let started = std::time::Instant::now();

@@ -48,27 +48,48 @@ pub struct CpuOnionDirty {
     pub full: bool,
     /// 原子变更（按记录顺序，供按轨聚合）
     pub changes: Vec<CpuOnionChange>,
+    /// 大变更的脏 tick 区间；非空时密度只重建这些区间，不再整建。
+    pub ranges: Vec<(u32, u32)>,
 }
 
 impl CpuOnionDirty {
-    /// 是否有可用的原子变更（`full` 为真时恒为 `false`）。
+    /// 是否有可用的原子变更或脏区间（`full` 为真时恒为 `false`）。
     #[must_use]
     pub fn has_changes(&self) -> bool {
-        !self.full && !self.changes.is_empty()
+        !self.full && (!self.changes.is_empty() || !self.ranges.is_empty())
     }
 
     /// 是否没有任何待处理变化。
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        !self.full && self.changes.is_empty()
+        !self.full && self.changes.is_empty() && self.ranges.is_empty()
+    }
+
+    /// 合并一个脏 tick 区间；相邻/重叠区间直接合并。
+    pub fn push_range(&mut self, start: u32, end: u32) {
+        if end <= start || self.full {
+            return;
+        }
+        for range in &mut self.ranges {
+            if start <= range.1 && end >= range.0 {
+                range.0 = range.0.min(start);
+                range.1 = range.1.max(end);
+                return;
+            }
+        }
+        self.ranges.push((start, end));
     }
 }
 
 /// 原子变更条数上限：超过即升级为整帧兜底（单笔编辑远达不到这个量级）。
 pub const MAX_CPU_ONION_CHANGES: usize = 32;
 
-/// 直接编辑索引提示上限：超过后差分代价不可控，交回整建兜底。
+/// 直接编辑索引提示上限：超过后折叠为索引包围盒。
 pub const MAX_CPU_ONION_DIRECT_EDITS: usize = 8192;
+/// 直接编辑提示：`(索引点, 是否溢出, 包围盒)`。
+pub type CpuOnionDirectHint = (Vec<(usize, usize)>, bool, Option<(usize, usize, usize)>);
+
+mod direct;
 
 impl EditorData {
     /// CPU 洋葱皮脏区记录是否开启（默认 `false`，GPU 后端零开销）。
@@ -87,8 +108,11 @@ impl EditorData {
         if !enabled {
             self.cpu_onion_dirty = None;
             self.cpu_onion_direct_edits.clear();
+            self.cpu_onion_direct_bbox = None;
             self.cpu_onion_direct_overflow = false;
             self.history_pending_changes.clear();
+            self.history_pending_ranges.clear();
+            self.history_pending_direct.clear();
             self.history_pending_full = false;
         }
     }
@@ -109,6 +133,7 @@ impl EditorData {
             self.cpu_onion_dirty = Some(CpuOnionDirty {
                 full: false,
                 changes: vec![CpuOnionChange { track, old, new }],
+                ranges: Vec::new(),
             });
             self.push_history_pending(CpuOnionChange { track, old, new });
             return;
@@ -117,12 +142,29 @@ impl EditorData {
             return;
         }
         if dirty.changes.len() >= MAX_CPU_ONION_CHANGES {
-            // 单笔编辑路径不该到这里；真到了就整帧兜底，绝不让队列无界增长。
-            self.record_cpu_onion_full();
+            // 超过逐音符上限：转成脏 tick 区间，密度只重建区间，不整建。
+            if let Some((lo, hi)) = note_change_range(old, new) {
+                dirty.push_range(lo, hi);
+            }
             return;
         }
         dirty.changes.push(CpuOnionChange { track, old, new });
         self.push_history_pending(CpuOnionChange { track, old, new });
+    }
+
+    /// 记录脏 tick 区间（大批量删除/历史回放），密度只重建该区间。
+    pub fn record_cpu_onion_range(&mut self, start: u32, end: u32) {
+        if !self.cpu_onion_dirty_enabled || self.history_replay || end <= start {
+            return;
+        }
+        self.history_pending_ranges.push((start, end));
+        self.history_pending_full = false;
+        let dirty = self
+            .cpu_onion_dirty
+            .get_or_insert_with(CpuOnionDirty::default);
+        if !dirty.full {
+            dirty.push_range(start, end);
+        }
     }
 
     /// 记录整帧兜底（批量插入 / 区间删除 / 整轨替换 / 结构变化）。
@@ -133,8 +175,11 @@ impl EditorData {
             return;
         }
         self.history_pending_changes.clear();
+        self.history_pending_ranges.clear();
+        self.history_pending_direct.clear();
         self.history_pending_full = true;
         self.cpu_onion_direct_edits.clear();
+        self.cpu_onion_direct_bbox = None;
         self.cpu_onion_direct_overflow = false;
         match self.cpu_onion_dirty.as_mut() {
             Some(dirty) => {
@@ -145,6 +190,7 @@ impl EditorData {
                 self.cpu_onion_dirty = Some(CpuOnionDirty {
                     full: true,
                     changes: Vec::new(),
+                    ranges: Vec::new(),
                 });
             }
         }
@@ -160,103 +206,57 @@ impl EditorData {
     pub fn clear_cpu_onion_dirty(&mut self) {
         self.cpu_onion_dirty = None;
         self.cpu_onion_direct_edits.clear();
+        self.cpu_onion_direct_bbox = None;
         self.cpu_onion_direct_overflow = false;
-    }
-
-    /// 记录直接 `track_notes_mut` 等长编辑的索引提示（当前轨）。
-    ///
-    /// 索引稳定、只改值；CPU 洋葱皮用上一帧快照按索引差分，避免整份密度重建。
-    pub fn record_cpu_onion_direct_indices(&mut self, track: usize, indices: &[usize]) {
-        if !self.cpu_onion_dirty_enabled || self.history_replay {
-            return;
-        }
-        if indices.is_empty() || self.cpu_onion_direct_overflow {
-            return;
-        }
-        if self
-            .cpu_onion_dirty
-            .as_ref()
-            .is_some_and(|dirty| dirty.full)
-        {
-            return;
-        }
-        let room = MAX_CPU_ONION_DIRECT_EDITS.saturating_sub(self.cpu_onion_direct_edits.len());
-        if indices.len() > room {
-            self.cpu_onion_direct_edits.clear();
-            self.cpu_onion_direct_overflow = true;
-            return;
-        }
-        self.cpu_onion_direct_edits
-            .extend(indices.iter().map(|index| (track, *index)));
-    }
-
-    /// 记录闭区间 `[lo, hi]` 的直接编辑索引提示（重排/量化路径）。
-    pub fn record_cpu_onion_direct_ranges(&mut self, track: usize, ranges: &[(usize, usize)]) {
-        if !self.cpu_onion_dirty_enabled || self.history_replay {
-            return;
-        }
-        for &(lo, hi) in ranges {
-            let count = hi.saturating_sub(lo).saturating_add(1);
-            let room = MAX_CPU_ONION_DIRECT_EDITS.saturating_sub(self.cpu_onion_direct_edits.len());
-            if count > room {
-                self.cpu_onion_direct_edits.clear();
-                self.cpu_onion_direct_overflow = true;
-                return;
-            }
-            self.cpu_onion_direct_edits
-                .extend((lo..=hi).map(|index| (track, index)));
-        }
-    }
-
-    /// 取出直接编辑索引提示（渲染层每帧消费一次）。
-    #[must_use]
-    pub fn take_cpu_onion_direct_edits(&mut self) -> (Vec<(usize, usize)>, bool) {
-        let overflow = std::mem::take(&mut self.cpu_onion_direct_overflow);
-        (std::mem::take(&mut self.cpu_onion_direct_edits), overflow)
     }
 
     /// 回放历史变更：只写入待渲染脏区，不污染下一笔历史。
     pub(crate) fn record_cpu_onion_replay_changes(
         &mut self,
         changes: &[CpuOnionChange],
+        ranges: &[(u32, u32)],
         full: bool,
     ) {
         if !self.cpu_onion_dirty_enabled {
             return;
         }
-        if full || changes.len() > MAX_CPU_ONION_CHANGES {
-            self.cpu_onion_dirty = Some(CpuOnionDirty {
-                full: true,
-                changes: Vec::new(),
-            });
-            return;
-        }
-        let Some(dirty) = self.cpu_onion_dirty.as_mut() else {
-            self.cpu_onion_dirty = Some(CpuOnionDirty {
-                full: false,
-                changes: changes.to_vec(),
-            });
-            return;
+        // 有 tick 区间就只重建区间；逐音符变更超过上限也降级为区间，绝不整建。
+        let mut dirty = CpuOnionDirty {
+            full: false,
+            changes: if changes.len() <= MAX_CPU_ONION_CHANGES {
+                changes.to_vec()
+            } else {
+                Vec::new()
+            },
+            ranges: ranges.to_vec(),
         };
-        if dirty.full {
-            return;
+        if dirty.ranges.is_empty() && changes.len() > MAX_CPU_ONION_CHANGES {
+            dirty.changes.clear();
+            for change in changes {
+                if let Some((lo, hi)) = note_change_range(change.old, change.new) {
+                    dirty.push_range(lo, hi);
+                }
+            }
         }
-        if dirty.changes.len().saturating_add(changes.len()) > MAX_CPU_ONION_CHANGES {
+        if full && dirty.ranges.is_empty() {
             dirty.full = true;
             dirty.changes.clear();
-            return;
         }
-        dirty.changes.extend_from_slice(changes);
+        self.cpu_onion_dirty = Some(dirty);
     }
 
-    /// 把一笔变更追加到「待挂历史」；超限或已 full 时升级为 full。
+    /// 把一笔变更追加到「待挂历史」；超限后转脏区间，不再整建。
     fn push_history_pending(&mut self, change: CpuOnionChange) {
+        self.history_pending_ranges.extend(
+            note_change_range(change.old, change.new)
+                .into_iter()
+                .collect::<Vec<_>>(),
+        );
         if self.history_pending_full {
             return;
         }
         if self.history_pending_changes.len() >= MAX_CPU_ONION_CHANGES {
             self.history_pending_changes.clear();
-            self.history_pending_full = true;
             return;
         }
         self.history_pending_changes.push(SnapshotNoteChange {
@@ -272,6 +272,35 @@ impl EditorData {
     pub fn cpu_onion_dirty(&self) -> Option<&CpuOnionDirty> {
         self.cpu_onion_dirty.as_ref()
     }
+}
+
+/// 一组音符覆盖的 tick 区间（只读）。
+pub(crate) fn notes_range<'a>(notes: impl Iterator<Item = &'a NoteEvent>) -> Option<(u32, u32)> {
+    let mut range: Option<(u32, u32)> = None;
+    for note in notes {
+        let end = note.end_tick.max(note.start_tick.saturating_add(1));
+        range = Some(match range {
+            Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+            None => (note.start_tick, end),
+        });
+    }
+    range
+}
+
+/// 音符增删改覆盖的 tick 区间（旧/新位置的并集）。
+pub(crate) fn note_change_range(
+    old: Option<NoteEvent>,
+    new: Option<NoteEvent>,
+) -> Option<(u32, u32)> {
+    let mut range: Option<(u32, u32)> = None;
+    for note in [old, new].into_iter().flatten() {
+        let end = note.end_tick.max(note.start_tick.saturating_add(1));
+        range = Some(match range {
+            Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+            None => (note.start_tick, end),
+        });
+    }
+    range
 }
 
 #[cfg(test)]

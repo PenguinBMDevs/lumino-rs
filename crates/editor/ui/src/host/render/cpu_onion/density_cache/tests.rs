@@ -108,6 +108,20 @@ fn apply_changes_updates_cells_and_rebuilds_stale_coverage() {
 }
 
 #[test]
+fn dirty_ranges_rebuild_without_full_build() {
+    let mut document = document();
+    let mut cache = DensityCache::default();
+    assert_eq!(alpha(&mut cache, 1, &document), 255);
+    assert!(document.remove_note(1, 0).is_some());
+
+    cache.apply_ranges(Some(1), 2, &[(0, 2000)]);
+    assert_eq!(cache.range_rebuilds, 0, "apply 只登记区间");
+    assert_eq!(alpha(&mut cache, 2, &document), 0);
+    assert_eq!(cache.range_rebuilds, 1, "必须走区间重建，不得整建");
+    assert_eq!(cache.built_gen, Some(2));
+}
+
+#[test]
 fn out_of_layout_change_grows_cache_without_rebuild() {
     let mut edited = document();
     let note = NoteEvent::new(3000, 3200, 60, 100, 0);

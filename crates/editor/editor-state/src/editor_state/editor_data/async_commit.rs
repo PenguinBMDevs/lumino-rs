@@ -144,7 +144,11 @@ impl EditorData {
                         &changes,
                     );
                 } else {
+                    let old_range = move_ops_range(&pending.ops, track_id);
                     self.replace_track_notes(track_id, result.notes);
+                    if let Some((lo, hi)) = old_range {
+                        self.record_cpu_onion_range(lo, hi);
+                    }
                 }
                 if track_id == self.current_track {
                     for (start, notes) in update_events {
@@ -226,6 +230,24 @@ fn move_op_cpu_onion_changes(ops: &[MoveOp], track_id: usize) -> Option<Vec<CpuO
         }
     }
     (!changes.is_empty()).then_some(changes)
+}
+
+/// MoveOp 旧/新位置的 tick 区间；跨轨 op 返回 `None`（调用方按替换轨处理）。
+fn move_ops_range(ops: &[MoveOp], track_id: usize) -> Option<(u32, u32)> {
+    let mut range: Option<(u32, u32)> = None;
+    for op in ops {
+        if op.track_id as usize != track_id {
+            return None;
+        }
+        for note in op.originals.iter().chain(op.moved.iter()) {
+            let end = note.end_tick.max(note.start_tick.saturating_add(1));
+            range = Some(match range {
+                Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+                None => (note.start_tick, end),
+            });
+        }
+    }
+    range
 }
 
 /// 将 MoveOp 应用到当前音轨音符的克隆副本（按值定位，无全扫）

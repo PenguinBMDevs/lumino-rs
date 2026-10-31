@@ -36,6 +36,24 @@ fn assert_pad_matches_expectations() {
     );
 }
 
+/// 只有脏 tick 区间（历史回放）→ 整帧重画，但索引/密度保持增量。
+#[test]
+fn dirty_ranges_keep_index_incremental() {
+    let camera = camera();
+    let muted = [false, false, true];
+    let changed = tracks(&[1]);
+    let mut dirty = dirty_with(Vec::new());
+    dirty.ranges.push((0, 4096));
+    let plan = plan_update(base(&camera, &muted, Some(&dirty), Some(&changed)));
+    assert_eq!(
+        plan,
+        super::super::CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: CpuOnionIndex::Incremental,
+        }
+    );
+}
+
 /// `dirty_tracks` 里有洋葱轨没出现在 changes 中 → 保守整帧 + 整索引。
 #[test]
 fn uncovered_onion_track_forces_full_rebuild() {

@@ -76,7 +76,7 @@ fn async_batch_move_records_incremental_density_changes() {
 }
 
 #[test]
-fn large_async_batch_move_falls_back_to_full() {
+fn large_async_batch_move_uses_dirty_range() {
     let notes: Vec<Note> = (0..20)
         .map(|i| Note::new(i as f32 * 10.0, 60, 1.0))
         .collect();
@@ -94,6 +94,7 @@ fn large_async_batch_move_falls_back_to_full() {
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    let dirty = data.cpu_onion_dirty().expect("大批量必须有兜底记录");
-    assert!(dirty.full, "超过上限的批量必须整帧兜底，保持原内存行为");
+    let dirty = data.cpu_onion_dirty().expect("大批量必须有记录");
+    assert!(!dirty.full, "超过上限的批量不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "必须转成脏 tick 区间");
 }

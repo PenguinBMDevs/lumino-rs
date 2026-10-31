@@ -157,7 +157,7 @@ fn drag_records_bounded_cpu_onion_changes() {
 }
 
 #[test]
-fn large_drag_falls_back_to_full_instead_of_growing_dirty_changes() {
+fn large_drag_falls_back_to_dirty_range_instead_of_full() {
     let notes: Vec<Note> = (0..40)
         .map(|i| Note::new(i as f32 * 10.0, 60, 1.0))
         .collect();
@@ -169,7 +169,7 @@ fn large_drag_falls_back_to_full_instead_of_growing_dirty_changes() {
     drag_state.set_delta(5, 0);
     assert!(data.apply_drag_state_streaming(&drag_state, 127) > 0);
 
-    let dirty = data.cpu_onion_dirty().expect("大批量拖动必须有兜底记录");
-    assert!(dirty.full, "超过变更上限必须整帧兜底，不得无界增长");
-    assert!(dirty.changes.is_empty(), "full 时 changes 必须清空");
+    let dirty = data.cpu_onion_dirty().expect("大批量拖动必须有记录");
+    assert!(!dirty.full, "超过变更上限不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "必须转成脏 tick 区间");
 }

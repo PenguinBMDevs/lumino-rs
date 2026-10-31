@@ -29,6 +29,7 @@ impl EditorData {
                 .as_ref()
                 .is_some_and(|dirty| dirty.full);
         let mut onion_changes: Vec<(NoteEvent, NoteEvent)> = Vec::new();
+        let mut onion_range: Option<(u32, u32)> = None;
         let mut onion_truncated = false;
 
         let mut modified = 0usize;
@@ -60,6 +61,14 @@ impl EditorData {
                         modified += 1;
                         modified_indices.push(note_idx);
                         if collect_changes {
+                            let end = note
+                                .end_tick
+                                .max(note.start_tick.saturating_add(1))
+                                .max(old_event.end_tick);
+                            onion_range = Some(match onion_range {
+                                Some((lo, hi)) => (lo.min(old_event.start_tick), hi.max(end)),
+                                None => (old_event.start_tick, end),
+                            });
                             if onion_changes.len() < MAX_CPU_ONION_CHANGES {
                                 onion_changes.push((old_event, *note));
                             } else {
@@ -86,12 +95,11 @@ impl EditorData {
         }
 
         if collect_changes {
-            if onion_truncated {
-                self.record_cpu_onion_full();
-            } else {
-                for (old, new) in onion_changes {
-                    self.record_cpu_onion_change(track_id, Some(old), Some(new));
-                }
+            for (old, new) in onion_changes {
+                self.record_cpu_onion_change(track_id, Some(old), Some(new));
+            }
+            if onion_truncated && let Some((lo, hi)) = onion_range {
+                self.record_cpu_onion_range(lo, hi);
             }
         }
 

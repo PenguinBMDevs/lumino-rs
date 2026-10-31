@@ -92,7 +92,11 @@ pub struct EditorData {
     /// [`Self::cpu_onion_dirty`] 分离——后者每帧被 take，历史回放需要保留到
     /// 用户撤销那一刻。超过 [`MAX_CPU_ONION_CHANGES`] 时升级为 full。
     pub(crate) history_pending_changes: Vec<SnapshotNoteChange>,
-    /// 待挂历史的变更是否已无法用逐音符表达。
+    /// 待挂历史的脏 tick 区间（单笔变更数超限时仍有局部范围）。
+    pub(crate) history_pending_ranges: Vec<(u32, u32)>,
+    /// 待挂历史的直接编辑索引区间 `(track, lo, hi)`（闭区间）。
+    pub(crate) history_pending_direct: Vec<(usize, usize, usize)>,
+    /// 待挂历史的变更是否已无法用逐音符/区间表达。
     pub(crate) history_pending_full: bool,
     /// undo/redo 回放期间置位：内部写路径不得再污染历史待挂变更。
     pub(crate) history_replay: bool,
@@ -101,7 +105,9 @@ pub struct EditorData {
     /// 这类写路径没有按值 old/new，但索引稳定；CPU 洋葱皮用上一帧文档快照
     /// 与当前文档按索引差分，避免整份密度金字塔重建。
     pub(crate) cpu_onion_direct_edits: Vec<(usize, usize)>,
-    /// 索引提示超过上限，差分代价失控，交由渲染层按旧路径兜底。
+    /// 索引提示超过上限时改用索引包围盒 `(track, lo, hi)`，仍不整建。
+    pub(crate) cpu_onion_direct_bbox: Option<(usize, usize, usize)>,
+    /// 索引提示超过单点上限，已折叠为包围盒。
     pub(crate) cpu_onion_direct_overflow: bool,
     /// 音符唯一权威源（独占所有权，2026-08 单一权威源改造）
     ///

@@ -57,6 +57,7 @@ fn dirty_with(changes: Vec<CpuOnionChange>) -> CpuOnionDirty {
     CpuOnionDirty {
         full: false,
         changes,
+        ranges: Vec::new(),
     }
 }
 

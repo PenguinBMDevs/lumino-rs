@@ -12,6 +12,8 @@ impl EditorData {
         // 开关状态保留（后端选择不因 reset 而改变）。
         self.clear_cpu_onion_dirty();
         self.history_pending_changes.clear();
+        self.history_pending_ranges.clear();
+        self.history_pending_direct.clear();
         self.history_pending_full = false;
         self.history_replay = false;
         self.mark_track_notes_changed();

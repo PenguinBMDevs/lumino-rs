@@ -55,6 +55,8 @@ pub struct EditorSnapshot {
     pub note_changes: Vec<SnapshotNoteChange>,
     /// 变更无法用逐音符原子变更表达（批量结构变化）时置位。
     pub note_changes_full: bool,
+    /// 变更覆盖的脏 tick 区间；非空时派生缓存只重建这些区间。
+    pub dirty_ranges: Vec<(u32, u32)>,
     /// 操作元数据：分组 ID（同一逻辑操作的所有快照共享 group_id）
     pub group_id: Option<u64>,
     /// 父分组 ID（超限分割时，新分组的 parent 指向被分割的旧分组）
@@ -82,6 +84,7 @@ impl EditorSnapshot {
             tempo_points: None,
             note_changes: Vec::new(),
             note_changes_full: false,
+            dirty_ranges: Vec::new(),
             group_id: None,
             parent_group_id: None,
             timestamp: Instant::now(),
@@ -108,6 +111,7 @@ impl EditorSnapshot {
             tempo_points: None,
             note_changes: Vec::new(),
             note_changes_full: false,
+            dirty_ranges: Vec::new(),
             group_id,
             parent_group_id,
             timestamp: Instant::now(),

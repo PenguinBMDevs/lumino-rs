@@ -211,13 +211,14 @@ impl Host {
         let (muted, mut muted_ids) = collect_muted_tracks(&self.root.sidebar.tracks, track_count);
         // 每帧消费一次脏区；`onion_dirty_tracks` 是「变化来源」的独立真源
         // （GPU 洋葱皮也在用，不能 take，只 clone）。
-        let (dirty, direct_edits, direct_overflow, dirty_tracks) = {
+        let (dirty, direct_edits, direct_overflow, direct_bbox, dirty_tracks) = {
             let data = &mut self.root.editor.editor_state.data;
-            let (direct, overflow) = data.take_cpu_onion_direct_edits();
+            let (direct, overflow, bbox) = data.take_cpu_onion_direct_edits();
             (
                 data.take_cpu_onion_dirty(),
                 direct,
                 overflow,
+                bbox,
                 data.onion_dirty_tracks.clone(),
             )
         };
@@ -236,6 +237,7 @@ impl Host {
             dirty,
             &direct_edits,
             direct_overflow,
+            direct_bbox,
         );
         let key = CpuOnionFrameKey {
             track_notes_gen: es.data.track_notes_gen,

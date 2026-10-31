@@ -32,6 +32,7 @@ mod build;
 mod coverage;
 mod grow;
 mod heat;
+mod rebuild;
 mod render;
 
 use build::{base_plan, count_base};
@@ -311,6 +312,16 @@ impl DensityPyramid {
     /// 成本 = 该 tick 区间内的候选音符 + 基础层 2:1 合并，不再扫全文档。
     pub fn rebuild_dirty_coverage(&mut self, document: &MidiDocument, index: &TrackIndex) -> bool {
         coverage::rebuild_dirty_coverage(self, document, index)
+    }
+
+    /// 按脏 tick 区间重建计数层与覆盖层（历史回放/大变更）。
+    pub fn rebuild_dirty_ranges(
+        &mut self,
+        document: &MidiDocument,
+        index: &TrackIndex,
+        ranges: &[(u32, u32)],
+    ) -> bool {
+        rebuild::rebuild_dirty_ranges(self, document, index, ranges)
     }
 
     fn mark_coverage_dirty(&mut self, start_tick: u32, end_tick: u32) {

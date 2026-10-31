@@ -57,44 +57,6 @@ impl EditorData {
 
     // ── 向后兼容的 push / undo / redo ───────────────────────
 
-    /// 把上一笔操作的按值变更挂到栈顶快照，然后清空待挂队列。
-    ///
-    /// 调用点都在「新一笔操作入栈前」：此时上一笔已经结束，pending 正好是
-    /// 它从栈顶快照到当前状态的完整差分。
-    fn commit_history_pending(&mut self) {
-        if self.history_pending_changes.is_empty() && !self.history_pending_full {
-            return;
-        }
-        let changes = std::mem::take(&mut self.history_pending_changes);
-        let full = std::mem::take(&mut self.history_pending_full);
-        self.history.attach_last_note_changes(changes, full);
-    }
-
-    /// 入栈创建日志前，先摘掉属于本次创建操作的 pending 插入。
-    ///
-    /// 铅笔路径先 `insert_note`（记 pending）后 `push_note_create`；若直接
-    /// 挂到上一快照，会把本笔创建算进上一笔的撤销差分。CreateOp 本身已有
-    /// 精确值，这里只需保证上一笔快照拿到的是**它自己的**变更。
-    fn commit_history_pending_for_create(&mut self, ops: &[CreateOp]) {
-        let full = std::mem::take(&mut self.history_pending_full);
-        let pending = std::mem::take(&mut self.history_pending_changes);
-        if full {
-            self.history.attach_last_note_changes(Vec::new(), true);
-            return;
-        }
-        let mut remaining = pending;
-        for op in ops {
-            if let Some(index) = remaining.iter().position(|change| {
-                change.track == op.track_id as usize
-                    && change.old.is_none()
-                    && change.new == Some(op.note)
-            }) {
-                remaining.remove(index);
-            }
-        }
-        self.history.attach_last_note_changes(remaining, false);
-    }
-
     /// 将当前状态快照推入历史记录（O(lane 数) Arc clone，真共享）
     ///
     /// 向后兼容版本：op_kind = Other，每个 push 独立 group。
@@ -154,6 +116,7 @@ impl EditorData {
         entry: HistoryEntry,
         inverse: bool,
         snapshot_changes: Vec<lumino_note_core::history::SnapshotNoteChange>,
+        mut ranges: Vec<(u32, u32)>,
         snapshot_full: bool,
     ) {
         self.history_replay = true;
@@ -169,6 +132,16 @@ impl EditorData {
         match entry {
             HistoryEntry::Snapshot(s) => {
                 let track = s.current_track;
+                if snapshot_full && ranges.is_empty() {
+                    let lo = s.notes.first().map_or(0, |note| note.start_tick);
+                    let hi = s
+                        .notes
+                        .iter()
+                        .map(|note| note.end_tick.max(note.start_tick.saturating_add(1)))
+                        .max()
+                        .unwrap_or(lo);
+                    ranges.push((lo, hi.max(lo.saturating_add(1))));
+                }
                 if collab_sync {
                     // 协作对账（按值多重集差分，无 ID）：
                     // Snapshot 仅用于自动化/拍号等非音符高频路径（音符移动/创建已走
@@ -280,6 +253,13 @@ impl EditorData {
                 for op in &op.ops {
                     let moved = op.moved_notes(max_key);
                     if moved.len() != op.originals.len() {
+                        for note in op.originals.iter().chain(moved.iter()) {
+                            super::ranges::push_union(
+                                &mut ranges,
+                                note.start_tick,
+                                note.end_tick.max(note.start_tick.saturating_add(1)),
+                            );
+                        }
                         replay_full = true;
                         continue;
                     }
@@ -287,19 +267,31 @@ impl EditorData {
                         if *original == moved {
                             continue;
                         }
-                        replay.push(CpuOnionChange {
-                            track: op.track_id as usize,
-                            old: if inverse {
-                                Some(moved)
-                            } else {
-                                Some(*original)
-                            },
-                            new: if inverse {
-                                Some(*original)
-                            } else {
-                                Some(moved)
-                            },
-                        });
+                        super::ranges::push_union(
+                            &mut ranges,
+                            original.start_tick,
+                            original.end_tick.max(original.start_tick.saturating_add(1)),
+                        );
+                        super::ranges::push_union(
+                            &mut ranges,
+                            moved.start_tick,
+                            moved.end_tick.max(moved.start_tick.saturating_add(1)),
+                        );
+                        if replay.len() < MAX_CPU_ONION_CHANGES {
+                            replay.push(CpuOnionChange {
+                                track: op.track_id as usize,
+                                old: if inverse {
+                                    Some(moved)
+                                } else {
+                                    Some(*original)
+                                },
+                                new: if inverse {
+                                    Some(*original)
+                                } else {
+                                    Some(moved)
+                                },
+                            });
+                        }
                     }
                 }
             }
@@ -327,19 +319,35 @@ impl EditorData {
                 }
                 self.mark_track_notes_changed_for(Some(affected));
                 for op in &entry.ops {
-                    replay.push(CpuOnionChange {
-                        track: op.track_id as usize,
-                        old: inverse.then_some(op.note),
-                        new: (!inverse).then_some(op.note),
-                    });
+                    super::ranges::push_union(
+                        &mut ranges,
+                        op.note.start_tick,
+                        op.note.end_tick.max(op.note.start_tick.saturating_add(1)),
+                    );
+                    if replay.len() < MAX_CPU_ONION_CHANGES {
+                        replay.push(CpuOnionChange {
+                            track: op.track_id as usize,
+                            old: inverse.then_some(op.note),
+                            new: (!inverse).then_some(op.note),
+                        });
+                    }
                 }
             }
         }
         self.history_replay = false;
-        if replay.len() > MAX_CPU_ONION_CHANGES {
-            replay_full = true;
+        if ranges.is_empty() {
+            for change in &replay {
+                if let Some((lo, hi)) =
+                    super::super::cpu_onion_dirty::note_change_range(change.old, change.new)
+                {
+                    ranges.push((lo, hi));
+                }
+            }
         }
-        self.record_cpu_onion_replay_changes(&replay, replay_full);
+        if !ranges.is_empty() {
+            replay_full = false;
+        }
+        self.record_cpu_onion_replay_changes(&replay, &ranges, replay_full);
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。

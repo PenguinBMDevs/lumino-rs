@@ -227,6 +227,15 @@ fn zoom_bench_real_midi() {
             "edit dirty coverage: ok={dirty_ok} rebuild={edit_ms:.2} ms (note {}..{} key {})",
             note.start_tick, note.end_tick, note.key
         );
+        // 历史/直接编辑的区间重建：计数 + 覆盖都按 tick 区间局部刷新。
+        let range_started = Instant::now();
+        let range_ok = density.rebuild_dirty_ranges(
+            &edited,
+            &edited_index,
+            &[(note.start_tick, note.end_tick)],
+        );
+        let range_ms = range_started.elapsed().as_secs_f64() * 1000.0;
+        println!("history dirty range: ok={range_ok} rebuild={range_ms:.2} ms");
     }
     assert!(frames > 0, "至少渲染一帧");
 }

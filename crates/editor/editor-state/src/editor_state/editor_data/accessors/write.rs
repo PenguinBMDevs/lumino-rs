@@ -159,15 +159,23 @@ impl EditorData {
 
     /// 整轨替换音符（undo/redo 快照恢复专用）。
     ///
-    /// CPU 洋葱皮：整轨替换无法用原子变更表达 → 记整帧兜底。
+    /// CPU 洋葱皮：整轨替换转成 tick 区间，密度只重建该区间。
     pub fn replace_track_notes(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> bool {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
         self.modified = true;
+        let mut range = super::super::cpu_onion_dirty::notes_range(notes.iter());
+        if range.is_none() {
+            range = super::super::cpu_onion_dirty::notes_range(doc.track_notes(track_id).iter());
+        }
         let replaced = doc.replace_track_notes(track_id, notes);
         if replaced {
-            self.record_cpu_onion_full();
+            if let Some((lo, hi)) = range {
+                self.record_cpu_onion_range(lo, hi);
+            } else {
+                self.record_cpu_onion_full();
+            }
         }
         replaced
     }

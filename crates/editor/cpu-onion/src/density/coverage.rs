@@ -52,7 +52,7 @@ impl CoverageCell {
 
     /// 加入一条轨道；已存在则不重复，第三条及以后丢弃。
     #[inline]
-    fn add(&mut self, track: u16) {
+    pub(crate) fn add(&mut self, track: u16) {
         let first = self.first();
         if first == EMPTY_TRACK {
             self.0 = u32::from(track) | (u32::from(EMPTY_TRACK) << 16);
@@ -69,7 +69,7 @@ impl CoverageCell {
 
     /// 合并两个单元：保留轨道下标最小的两条（必须按轨道序，不能按 bin 序）。
     #[inline]
-    fn merge(self, other: Self) -> Self {
+    pub(crate) fn merge(self, other: Self) -> Self {
         let mut candidates = [EMPTY_TRACK; 4];
         let mut len = 0usize;
         for track in [self.first(), self.second(), other.first(), other.second()] {
@@ -99,7 +99,7 @@ pub(crate) struct CoverageLevel {
 
 impl CoverageLevel {
     #[inline]
-    fn get(&self, bin: usize, key: usize, keys: usize) -> CoverageCell {
+    pub(crate) fn get(&self, bin: usize, key: usize, keys: usize) -> CoverageCell {
         self.cells
             .get(bin.saturating_mul(keys).saturating_add(key))
             .copied()

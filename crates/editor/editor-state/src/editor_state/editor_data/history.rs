@@ -14,7 +14,9 @@ use lumino_note_core::history::{
 };
 
 mod apply;
+mod commit;
 mod ops;
+mod ranges;
 mod sync;
 mod undo;
 
