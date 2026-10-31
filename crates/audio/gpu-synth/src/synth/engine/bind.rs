@@ -152,10 +152,10 @@ impl GpuSynth {
 
     pub(crate) fn rebuild_bind_groups(&mut self) {
         let device = &self.res.ctx.device;
-        let mut entries: Vec<wgpu::BindGroupEntry> = Vec::with_capacity(13);
+        let mut entries: Vec<wgpu::BindGroupEntry> = Vec::with_capacity(14);
         entries.push(wgpu::BindGroupEntry {
             binding: 0,
-            resource: self.params_buf.buffer().as_entire_binding(),
+            resource: self.params_dyn_buf.buffer().as_entire_binding(),
         });
         for (i, chunk) in self.samples_chunks.iter().enumerate() {
             entries.push(wgpu::BindGroupEntry {
@@ -187,6 +187,10 @@ impl GpuSynth {
                     offset: 0,
                     size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
                 }),
+            },
+            wgpu::BindGroupEntry {
+                binding: crate::gpu::PARAMS_STATIC_BINDING,
+                resource: self.params_static_buf.buffer().as_entire_binding(),
             },
         ]);
         self.render_bg = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {

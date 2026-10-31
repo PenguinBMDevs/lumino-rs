@@ -1,34 +1,22 @@
 use super::*;
 
 impl GpuSynth {
-    pub(crate) fn upload_voices(&mut self, base: u64) -> Result<(), SynthError> {
+    pub(crate) fn upload_voices(&mut self, _base: u64) -> Result<(), SynthError> {
         self.trim_voice_pool_for_block();
         let n = self.voices.len();
+        // REF-LGS-010: 新声部分配静态槽位。静态参数只在分配槽位这一块写一次
+        // GPU（压缩声部列表不改变槽位），之后每块只上传动态字段。
+        let interp = self.config.interpolation;
+        self.assign_static_slots(interp);
+        self.coalesce_dirty_slots();
+        // REF-LGS-011: 相同 stage 序列共享同一条包络模板。
+        self.intern_env_templates();
+
         // Reuse the per-block upload buffers: `resize` keeps the allocation,
         // so a cap-sized pool does not re-allocate ~1.5 MB every block.
-        self.upload_params.resize(n.max(1), VoiceParams::zeroed());
+        self.upload_params
+            .resize(n.max(1), VoiceParamsDyn::zeroed());
         self.upload_states.resize(n.max(1), VoiceState::zeroed());
-        // Pre-compute per-voice env stage counts and prefix sums so the
-        // env upload can be parallelized (each voice knows its base).
-        let env_counts: Vec<u32> = self
-            .voices
-            .iter()
-            .map(|v| {
-                if v.fade_out {
-                    1
-                } else {
-                    v.env_stages.len() as u32
-                }
-            })
-            .collect();
-        let mut env_bases: Vec<u32> = Vec::with_capacity(n);
-        let mut total_env: usize = 0;
-        for &c in &env_counts {
-            env_bases.push(total_env as u32);
-            total_env += c as usize;
-        }
-        self.upload_env_stages
-            .resize(total_env.max(1), EnvStageGpu::zeroed());
         self.upload_chans.resize(n.max(1), 0);
 
         // Snapshot data needed for the parallel phase to avoid borrowing
@@ -44,21 +32,16 @@ impl GpuSynth {
         let st_count = last_states
             .as_ref()
             .map_or(0, |st| st.len() / VoiceState::SIZE);
-        let base_frame = base;
-        let interp = self.config.interpolation;
-        let sr = self.config.sample_rate;
+        let fade_env_base = self.fade_env_template;
 
         // Parallel path for large voice counts (black MIDI peaks). For small
         // n the rayon overhead outweighs the benefit, so keep the sequential
         // fast path.
         if n > 2048 {
-            // Pre-fetch sample offsets and update per-voice `sample_offset_r`
-            // in a first pass (hash lookups are not thread-safe for mutation,
-            // so do them sequentially but cheap). Also fill env stages
-            // sequentially (variable-length slices are not easily parallelized
-            // without disjoint borrow issues).
+            // Resolve the per-voice sample offsets first (hash lookups are
+            // not thread-safe for mutation, so do them sequentially but cheap).
             let mut sample_offs: Vec<(u32, u32)> = Vec::with_capacity(n);
-            for (i, v) in self.voices.iter_mut().enumerate() {
+            for v in self.voices.iter_mut() {
                 let off = sample_offsets
                     .get(&v.sample_id)
                     .map(|(o, _)| *o)
@@ -69,25 +52,6 @@ impl GpuSynth {
                     .unwrap_or(off);
                 v.sample_offset_r = off_r;
                 sample_offs.push((off, off_r));
-                // Fill env stages for this voice (sequential, cheap).
-                let env_base = env_bases[i] as usize;
-                let env_count = env_counts[i] as usize;
-                let slice = &mut self.upload_env_stages[env_base..env_base + env_count];
-                if v.fade_out {
-                    slice[0] = EnvStageGpu {
-                        kind: 0,
-                        target_val: 0.0,
-                        duration: fade_frames(sr) as u32,
-                    };
-                } else {
-                    for (j, s) in v.env_stages.iter().enumerate() {
-                        slice[j] = EnvStageGpu {
-                            kind: s.kind,
-                            target_val: s.target,
-                            duration: s.duration,
-                        };
-                    }
-                }
             }
             // Parallel generation of params/chans/states via owned Vecs to avoid
             // borrow checker issues with &mut self in rayon closures. The
@@ -95,7 +59,6 @@ impl GpuSynth {
             let voices_ref = &self.voices;
             let prev_ids_ref = &prev_ids;
             let last_states_ref = &last_states;
-            let env_bases_ref = &env_bases;
             let sample_offs_ref = &sample_offs;
             let ((params_vec, chans_vec), states_vec) = rayon::join(
                 || {
@@ -106,15 +69,12 @@ impl GpuSynth {
                                 .map(|i| {
                                     let v = &voices_ref[i];
                                     let (off, off_r) = sample_offs_ref[i];
-                                    let env_base = env_bases_ref[i];
-                                    let mut p =
-                                        v.gpu_params(off, off_r, env_base, base_frame, interp);
-                                    if v.fade_out {
-                                        p.env_count = 1;
-                                        p.release_idx = 0;
-                                        p.finished_idx = 1;
-                                    }
-                                    p
+                                    let env_base = if v.fade_out {
+                                        fade_env_base
+                                    } else {
+                                        v.env_template
+                                    };
+                                    v.gpu_dyn(v.slot, off, off_r, env_base, v.fade_out)
                                 })
                                 .collect::<Vec<_>>()
                         },
@@ -172,7 +132,6 @@ impl GpuSynth {
             let params = &mut self.upload_params;
             let states = &mut self.upload_states;
             let chans = &mut self.upload_chans;
-            let env_stages = &mut self.upload_env_stages;
             let prev_ids_ref = &prev_ids;
             let mut k = 0usize;
             for (i, v) in self.voices.iter_mut().enumerate() {
@@ -185,32 +144,12 @@ impl GpuSynth {
                     .map(|(off, _)| *off)
                     .unwrap_or(sample_offset);
                 v.sample_offset_r = sample_offset_r;
-                let env_base = env_bases[i];
-                let env_count = env_counts[i];
-                let slice = &mut env_stages[env_base as usize..(env_base + env_count) as usize];
-                if v.fade_out {
-                    slice[0] = EnvStageGpu {
-                        kind: 0,
-                        target_val: 0.0,
-                        duration: fade_frames(sr) as u32,
-                    };
+                let env_base = if v.fade_out {
+                    fade_env_base
                 } else {
-                    for (j, s) in v.env_stages.iter().enumerate() {
-                        slice[j] = EnvStageGpu {
-                            kind: s.kind,
-                            target_val: s.target,
-                            duration: s.duration,
-                        };
-                    }
-                }
-                let mut gp =
-                    v.gpu_params(sample_offset, sample_offset_r, env_base, base_frame, interp);
-                if v.fade_out {
-                    gp.env_count = 1;
-                    gp.release_idx = 0;
-                    gp.finished_idx = 1;
-                }
-                params[i] = gp;
+                    v.env_template
+                };
+                params[i] = v.gpu_dyn(v.slot, sample_offset, sample_offset_r, env_base, v.fade_out);
                 while k < prev_ids_ref.len() && prev_ids_ref[k] < v.id {
                     k += 1;
                 }
@@ -256,6 +195,28 @@ impl GpuSynth {
             &mut self.mix_bucket_indices,
         );
         Ok(())
+    }
+
+    /// REF-LGS-011: 把每个声部的 stage 序列驻留到共享模板池。
+    ///
+    /// 只有 `env_template == NO_ENV_TEMPLATE` 的声部（新出生 / CC72/73 重算过
+    /// 包络）会做哈希查表；已驻留的声部每块零成本。
+    fn intern_env_templates(&mut self) {
+        let sample_rate = self.config.sample_rate;
+        let Self {
+            voices,
+            env_pool,
+            fade_env_template,
+            ..
+        } = self;
+        if *fade_env_template == u32::MAX {
+            *fade_env_template = env_pool.intern_fade(sample_rate);
+        }
+        for v in voices.iter_mut() {
+            if v.env_template == NO_ENV_TEMPLATE {
+                v.env_template = env_pool.intern(&v.env_stages);
+            }
+        }
     }
 }
 

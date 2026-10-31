@@ -10,7 +10,7 @@ impl GpuSynth {
     pub(crate) fn reset_for_offline_render(&mut self) {
         self.offline_cursor = 0;
         self.offline_events = Vec::new();
-        self.voices.clear();
+        self.clear_voices();
         for q in self.key_voices.iter_mut() {
             q.clear();
         }

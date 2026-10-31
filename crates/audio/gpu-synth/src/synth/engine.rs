@@ -11,12 +11,12 @@ use crate::config::{ChannelMode, SynthConfig};
 use crate::error::SynthError;
 use crate::gpu::{
     EnvStageGpu, GpuResources, GrowableBuffer, MAX_MIDI_CHANNELS, MixEvent, MixParams, MixStart,
-    SAMPLES_CHUNK_BINDING_BASE, SAMPLES_CHUNK_BYTES, SAMPLES_CHUNKS, VoiceParams, VoiceState,
-    create_gpu_context,
+    SAMPLES_CHUNK_BINDING_BASE, SAMPLES_CHUNK_BYTES, SAMPLES_CHUNKS, VoiceParamsDyn,
+    VoiceParamsStatic, VoiceState, create_gpu_context,
 };
 use crate::midi::{MidiEvent, MidiFile, TimedEvent};
 use crate::soundfont::SoundFont;
-use crate::synth::voices::{Voice, build_voice, refresh_env_stages};
+use crate::synth::voices::{NO_ENV_TEMPLATE, Voice, build_voice, refresh_env_stages};
 
 /// 固定桶前缀：2 组（sustained / released）× (256 通道 + 1) 个偏移。
 /// 与 `mix.wgsl` 的 `BUCKET_OFFSETS` 必须一致（REF-LGS-001）。
@@ -25,7 +25,9 @@ pub(crate) const MIX_BUCKET_OFFSETS: usize = 2 * (MAX_MIDI_CHANNELS + 1);
 mod bind;
 mod cc;
 mod channel;
+mod diag;
 mod dispatch;
+mod env_pool;
 mod events;
 mod init;
 mod limiter;
@@ -34,12 +36,14 @@ mod pool;
 mod progress;
 mod readback;
 mod render;
+mod slot;
 mod trim;
 mod types;
 mod upload;
 mod voice_alloc;
 mod warm;
 
+use env_pool::EnvTemplatePool;
 use limiter::{limit_block, write_samples};
 use progress::ProgressBar;
 use types::{
@@ -131,7 +135,10 @@ pub struct GpuSynth {
     sf: Option<SoundFont>,
 
     // GPU buffers
-    params_buf: GrowableBuffer,
+    /// REF-LGS-010: 每块上传的动态声部参数（紧凑声部顺序，44 B/声部）。
+    params_dyn_buf: GrowableBuffer,
+    /// REF-LGS-010: 静态声部参数表（槽位索引，只在分配槽位时写）。
+    params_static_buf: GrowableBuffer,
     /// Resampled sample data, split across several capped chunks so no
     /// single storage binding exceeds the 128 MiB limit (D3D12).
     samples_chunks: Vec<GrowableBuffer>,
@@ -239,10 +246,23 @@ pub struct GpuSynth {
     mix_starts: Vec<MixStart>,
     /// Reused per-block upload buffers (avoid re-allocating ~1.5 MB of
     /// voice parameters every block when the pool sits at the cap).
-    upload_params: Vec<VoiceParams>,
+    upload_params: Vec<VoiceParamsDyn>,
     upload_states: Vec<VoiceState>,
-    upload_env_stages: Vec<EnvStageGpu>,
     upload_chans: Vec<u32>,
+    /// REF-LGS-010: 静态参数表的 CPU 镜像（按槽位索引；只在分配槽位时写）。
+    static_table: Vec<VoiceParamsStatic>,
+    /// 空闲静态槽位（LIFO；声部移除时回收）。
+    slot_free: Vec<u32>,
+    /// 静态槽位高水位（= 已分配的槽位总数上界）。
+    slot_count: u32,
+    /// 本块新分配/改写的槽位（排序后合并成连续区间上传）。
+    dirty_slots: Vec<u32>,
+    /// 本块要上传的静态区间 `(起始槽位, 槽位数)`。
+    static_runs: Vec<(u32, u32)>,
+    /// REF-LGS-011: 去重的包络模板池（append-only，只在追加时上传）。
+    env_pool: EnvTemplatePool,
+    /// 淡出模板下标（首次使用时驻留；`u32::MAX` = 未驻留）。
+    fade_env_template: u32,
     /// REF-LGS-001：桶构建 scratch（每块复用，零分配）。
     mix_bucket_offsets: Vec<u32>,
     mix_bucket_cursor: Vec<u32>,

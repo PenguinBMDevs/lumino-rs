@@ -3,12 +3,15 @@
 use xsynth_soundfonts::LoopMode;
 
 use crate::config::InterpolationMode;
-use crate::gpu::{EnvStageGpu, VoiceParams, VoiceState};
+use crate::gpu::{EnvStageGpu, VoiceParamsDyn, VoiceParamsStatic, VoiceState};
 use crate::soundfont::{SoundFont, Zone, ZonePositions};
 use crate::synth::dsp::{
     EnvStage, EnvelopeCurveConfig, EnvelopeDescriptor, biquad_lowpass_coeffs, modify_env_stages,
     resonance_to_q, to_gpu_stages,
 };
+
+/// REF-LGS-011: 包络模板尚未驻留到共享 `env_stages` 表。
+pub const NO_ENV_TEMPLATE: u32 = u32::MAX;
 
 /// A single active voice (one zone of one note).
 ///
@@ -53,8 +56,6 @@ pub struct Voice {
     pub spawn_frame: u64,
     /// Resampled-domain positions.
     pub positions: ZonePositions,
-    /// Resampled sample length.
-    pub sample_len: u32,
     /// Sample id in the soundfont (left channel).
     pub sample_id: usize,
     /// Sample id in the soundfont (right channel; == `sample_id` for mono).
@@ -96,24 +97,56 @@ pub struct Voice {
     pub fade_out: bool,
     /// Number of sample channels (1 = mono, 2 = stereo pair).
     pub channels: u32,
+    /// REF-LGS-010: 静态参数槽位（`u32::MAX` = 尚未分配；由 `upload_voices`
+    /// 在首次上传时分配，声部移除时回收）。压缩声部列表不会改变槽位，因此
+    /// 静态参数只在槽位分配时写一次 GPU。
+    pub slot: u32,
+    /// REF-LGS-011: 包络模板在共享 `env_stages` 表中的起始下标
+    /// （`u32::MAX` = 尚未驻留；`refresh_env_stages` 后失效并重新驻留）。
+    pub env_template: u32,
 }
 
 impl Voice {
-    /// Assembles the GPU parameters for this voice.
-    pub fn gpu_params(
+    /// Assembles the per-block dynamic GPU parameters (REF-LGS-010).
+    ///
+    /// `env_base` is the envelope template offset (REF-LGS-011); `fade_env`
+    /// selects the shared 5 ms fade template (`env_count = 1`, release at 0,
+    /// terminal at 1), mirroring the old per-voice fade stage write.
+    pub fn gpu_dyn(
         &self,
+        slot: u32,
         sample_offset: u32,
         sample_offset_r: u32,
         env_base: u32,
-        base_frame: u64,
-        interp: InterpolationMode,
-    ) -> VoiceParams {
-        let pos = self.positions;
-        VoiceParams {
+        fade_env: bool,
+    ) -> VoiceParamsDyn {
+        VoiceParamsDyn {
+            slot,
             is_active: 1,
+            release_at: if self.released || self.release_at == u64::MAX {
+                VoiceParamsDyn::RELEASE_AT_NONE
+            } else {
+                (self.release_at & 0xFFFF_FFFF) as u32
+            },
+            env_base,
+            env_count: if fade_env {
+                1
+            } else {
+                self.env_stages.len() as u32
+            },
+            release_idx: if fade_env { 0 } else { self.release_idx },
+            finished_idx: if fade_env { 1 } else { self.finished_idx },
             sample_offset,
             sample_offset_r,
-            sample_len: self.sample_len,
+            start_at: (self.start_at & 0xFFFF_FFFF) as u32,
+            speed: self.speed,
+        }
+    }
+
+    /// The static snapshot written once per slot (REF-LGS-010).
+    pub fn gpu_static(&self, interp: InterpolationMode) -> VoiceParamsStatic {
+        let pos = self.positions;
+        VoiceParamsStatic {
             offset: pos.offset,
             sample_end: pos.sample_end.saturating_sub(pos.offset),
             loop_mode: match self.loop_mode {
@@ -123,7 +156,6 @@ impl Voice {
             },
             loop_start: pos.loop_start,
             loop_end: pos.loop_end,
-            speed: self.speed,
             amp: self.amp,
             pan_l: self.pan_l,
             pan_r: self.pan_r,
@@ -133,23 +165,11 @@ impl Voice {
             b2: self.filter.map_or(0.0, |c| c[2]),
             a1: self.filter.map_or(0.0, |c| c[3]),
             a2: self.filter.map_or(0.0, |c| c[4]),
-            env_base,
-            env_count: self.env_stages.len() as u32,
-            release_idx: self.release_idx,
-            finished_idx: self.finished_idx,
-            release_at: if self.released || self.release_at == u64::MAX {
-                VoiceParams::RELEASE_AT_NONE
-            } else {
-                (self.release_at & 0xFFFF_FFFF) as u32
-            },
-            base_frame: (base_frame & 0xFFFF_FFFF) as u32,
             interp: match interp {
                 InterpolationMode::Linear => 0,
                 InterpolationMode::Point64Sinc => 1,
             },
             channels: self.channels,
-            start_at: (self.start_at & 0xFFFF_FFFF) as u32,
-            channel: self.channel as u32,
         }
     }
 
@@ -233,7 +253,6 @@ pub fn build_voice(
         start_at,
         spawn_frame: 0, // set by the engine when the voice is spawned
         positions,
-        sample_len: 0,
         sample_id: zone.sample_id,
         sample_id_r: zone.sample_id_r,
         sample_offset_r: 0,
@@ -253,10 +272,15 @@ pub fn build_voice(
         finished_idx,
         fade_out: false,
         channels: zone.channels,
+        slot: VoiceParamsDyn::NO_SLOT,
+        env_template: NO_ENV_TEMPLATE,
     })
 }
 
 /// Re-parameterizes a voice's envelope stages after a CC72/73 change.
+///
+/// REF-LGS-011: the voice's envelope template is invalidated so the next
+/// upload interns the new stage sequence into the shared template pool.
 pub fn refresh_env_stages(v: &mut Voice) {
     let mut gpu_env = to_gpu_stages(&v.envelope_desc, v.envelope_rate, v.envelope_curves);
     modify_env_stages(&mut gpu_env, v.envelope_rate, v.env_attack, v.env_release);
@@ -265,6 +289,7 @@ pub fn refresh_env_stages(v: &mut Voice) {
         .release_idx
         .unwrap_or(v.env_stages.len().saturating_sub(1)) as u32;
     v.finished_idx = (v.env_stages.len().saturating_sub(1)) as u32;
+    v.env_template = NO_ENV_TEMPLATE;
 }
 
 /// 测试用最小声部：只填充 damper/抢占状态机所需的字段，DSP 字段取哑值。
@@ -292,7 +317,6 @@ pub(crate) fn test_voice(note_id: u64, key: u8, channel: u8, damper_pending: boo
             loop_end: 0,
             sample_end: 0,
         },
-        sample_len: 0,
         sample_id: 0,
         sample_id_r: 0,
         sample_offset_r: 0,
@@ -320,5 +344,7 @@ pub(crate) fn test_voice(note_id: u64, key: u8, channel: u8, damper_pending: boo
         finished_idx: 0,
         fade_out: false,
         channels: 2,
+        slot: VoiceParamsDyn::NO_SLOT,
+        env_template: NO_ENV_TEMPLATE,
     }
 }

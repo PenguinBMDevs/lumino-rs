@@ -63,7 +63,7 @@ impl GpuSynth {
                         }
                     }
                 }
-                self.voices.retain(|v| v.state.ended == 0);
+                self.retain_voices(|v| v.state.ended == 0);
                 self.rebuild_key_voices();
                 self.active_voice_count = max_batch;
                 voices = max_batch;
@@ -93,10 +93,19 @@ impl GpuSynth {
         // whole submission with a validation error. Grow them here, the same
         // way the output buffer is grown. All three are bound by the render
         // bind group, so a grow dirties it for the rebuild below.
-        if self.params_buf.ensure(
+        if self.params_dyn_buf.ensure(
             &self.res.ctx.device,
             &self.res.ctx.queue,
-            (std::mem::size_of::<VoiceParams>() * voices as usize) as u64,
+            (std::mem::size_of::<VoiceParamsDyn>() * voices as usize) as u64,
+        ) {
+            self.render_bg_dirty = true;
+        }
+        // REF-LGS-010: 静态表按槽位高水位扩容。`GrowableBuffer::ensure` 会
+        // 清零新区域并保留旧内容，未分配槽位永远不被读取（只在分配时写入）。
+        if self.params_static_buf.ensure(
+            &self.res.ctx.device,
+            &self.res.ctx.queue,
+            (std::mem::size_of::<VoiceParamsStatic>() * self.slot_count as usize) as u64,
         ) {
             self.render_bg_dirty = true;
         }
@@ -110,7 +119,7 @@ impl GpuSynth {
         if self.env_buf.ensure(
             &self.res.ctx.device,
             &self.res.ctx.queue,
-            (std::mem::size_of::<EnvStageGpu>() * self.upload_env_stages.len().max(1)) as u64,
+            (std::mem::size_of::<EnvStageGpu>() * self.env_pool.stages().len().max(1)) as u64,
         ) {
             self.render_bg_dirty = true;
         }
@@ -138,9 +147,9 @@ impl GpuSynth {
             self.belt
                 .write_buffer(
                     &mut encoder,
-                    self.params_buf.buffer(),
+                    self.params_dyn_buf.buffer(),
                     0,
-                    checked_buffer_size(std::mem::size_of::<VoiceParams>() * n)?,
+                    checked_buffer_size(std::mem::size_of::<VoiceParamsDyn>() * n)?,
                     device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_params[..n]));
@@ -153,18 +162,37 @@ impl GpuSynth {
                     device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_states[..n]));
-            if !self.upload_env_stages.is_empty() {
+            // REF-LGS-010: 只上传本块新分配/改写的静态槽位（连续区间合并后
+            // 一次 belt 写；已驻留的声部零重传）。
+            for &(start, len) in &self.static_runs {
+                let bytes = bytemuck::cast_slice::<VoiceParamsStatic, u8>(
+                    &self.static_table[start as usize..(start + len) as usize],
+                );
+                self.belt
+                    .write_buffer(
+                        &mut encoder,
+                        self.params_static_buf.buffer(),
+                        u64::from(start) * VoiceParamsStatic::SIZE as u64,
+                        checked_buffer_size(bytes.len())?,
+                        device,
+                    )
+                    .copy_from_slice(bytes);
+            }
+            // REF-LGS-011: 只追加上一块以来新增的包络模板（稳态零上传）。
+            let env_len = self.env_pool.pending().len();
+            if env_len > 0 {
+                let env_start = self.env_pool.stages().len() - env_len;
+                let bytes = bytemuck::cast_slice(&self.env_pool.stages()[env_start..]);
                 self.belt
                     .write_buffer(
                         &mut encoder,
                         self.env_buf.buffer(),
-                        0,
-                        checked_buffer_size(
-                            std::mem::size_of::<EnvStageGpu>() * self.upload_env_stages.len(),
-                        )?,
+                        env_start as u64 * EnvStageGpu::SIZE as u64,
+                        checked_buffer_size(bytes.len())?,
                         device,
                     )
-                    .copy_from_slice(bytemuck::cast_slice(&self.upload_env_stages));
+                    .copy_from_slice(bytes);
+                self.env_pool.mark_uploaded();
             }
             self.belt.finish();
         }

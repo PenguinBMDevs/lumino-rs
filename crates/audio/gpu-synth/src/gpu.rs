@@ -67,6 +67,8 @@ pub const STATES_BINDING: u32 = ENV_BINDING + 1;
 pub const VOICE_OUT_BINDING: u32 = STATES_BINDING + 1;
 /// Binding index of the per-chunk parameters (render pass).
 pub const CHUNK_PARAMS_RENDER_BINDING: u32 = VOICE_OUT_BINDING + 1;
+/// Binding index of the static voice-parameter table (render pass, REF-LGS-010).
+pub const PARAMS_STATIC_BINDING: u32 = CHUNK_PARAMS_RENDER_BINDING + 1;
 /// Binding index of the per-chunk parameters (mix/reduce passes).
 pub const CHUNK_PARAMS_MIX_BINDING: u32 = 6;
 

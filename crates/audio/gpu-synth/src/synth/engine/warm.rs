@@ -60,6 +60,12 @@ impl GpuSynth {
         let _ = self.readback(&mut buf);
 
         // Restore state: drop the warm-up voice and reset the timeline.
+        // REF-LGS-010: 预热声部的静态槽位必须回收，否则每次预热泄漏一个槽位。
+        if let Some(v) = self.voices.first()
+            && v.slot != VoiceParamsDyn::NO_SLOT
+        {
+            self.slot_free.push(v.slot);
+        }
         self.voices = saved_voices;
         for q in self.key_voices.iter_mut() {
             q.clear();

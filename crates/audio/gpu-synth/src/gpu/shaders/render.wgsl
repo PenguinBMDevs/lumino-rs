@@ -16,32 +16,93 @@
 //   -> per-channel biquad low-pass (if enabled)
 // The channel volume/expression/pan controllers are applied in the mix pass.
 
-struct VoiceParams {
-    is_active: u32,          // 0 = slot unused
-    sample_offset: u32,   // offset of the sample data inside `samples`
-    sample_offset_r: u32,  // offset of the right-channel sample data
-    sample_len: u32,      // length of the (first channel) sample data
+// REF-LGS-010: 声部参数拆成「静态表 + 动态表」。
+// 静态字段在声部生命周期内不变，只在槽位分配时上传一次；每块只上传
+// 动态字段。`combine` 在每次 invocation 开头拼成局部结构体，后续热循环
+// 直接读寄存器（与旧版 `let p = params[voice]` 等价）。
+struct VoiceParamsStatic {
     offset: u32,          // playback start offset (converted domain)
     sample_end: u32,      // voice ends when time >= sample_end (conv(sample_end) - conv(offset))
     loop_mode: u32,       // 0 = no loop, 1 = continuous, 2 = sustain
     loop_start: u32,      // data-relative loop start (converted domain)
     loop_end: u32,        // data-relative loop end (converted domain)
-    speed: f32,           // samples advanced per output frame
     amp: f32,             // static amplitude (volume * velocity curve)
-    pan_l: f32,           // left gain from_val the zone pan
-    pan_r: f32,           // right gain from_val the zone pan
+    pan_l: f32,           // left gain from the zone pan
+    pan_r: f32,           // right gain from the zone pan
     filter_on: u32,
     b0: f32, b1: f32, b2: f32, a1: f32, a2: f32,
-    env_base: u32,        // index of this voice's first stage in `env_stages`
+    interp: u32,          // 0 = linear, 1 = 64-point sinc
+    channels: u32,        // 1 = mono, 2 = stereo pair
+}
+
+struct VoiceParamsDyn {
+    slot: u32,            // index into `params_static`
+    is_active: u32,       // 0 = slot unused
+    release_at: u32,      // absolute global frame at which release starts (0xFFFFFFFF = none)
+    env_base: u32,        // start index of this voice's envelope template (REF-LGS-011)
     env_count: u32,       // number of stages
     release_idx: u32,     // stage index (relative to env_base) to jump to on release
     finished_idx: u32,    // index of the terminal stage
-    release_at: u32,      // absolute global frame at which release starts (0xFFFFFFFF = none)
-    base_frame: u32,      // absolute global frame of the block's first sample (kept for layout; the shader uses chunk.render_frame_base)
-    interp: u32,          // 0 = linear, 1 = 64-point sinc
-    channels: u32,        // 1 = mono, 2 = stereo pair
+    sample_offset: u32,   // offset of the sample data inside `samples`
+    sample_offset_r: u32, // offset of the right-channel sample data
     start_at: u32,        // absolute global frame at which the voice starts (gated before)
-    channel: u32,         // MIDI channel (0-15), used by the mix pass
+    speed: f32,           // samples advanced per output frame
+}
+
+struct VoiceParams {
+    is_active: u32,
+    sample_offset: u32,
+    sample_offset_r: u32,
+    offset: u32,
+    sample_end: u32,
+    loop_mode: u32,
+    loop_start: u32,
+    loop_end: u32,
+    speed: f32,
+    amp: f32,
+    pan_l: f32,
+    pan_r: f32,
+    filter_on: u32,
+    b0: f32, b1: f32, b2: f32, a1: f32, a2: f32,
+    env_base: u32,
+    env_count: u32,
+    release_idx: u32,
+    finished_idx: u32,
+    release_at: u32,
+    interp: u32,
+    channels: u32,
+    start_at: u32,
+}
+
+fn combine(d: VoiceParamsDyn, s: VoiceParamsStatic) -> VoiceParams {
+    var p: VoiceParams;
+    p.is_active = d.is_active;
+    p.sample_offset = d.sample_offset;
+    p.sample_offset_r = d.sample_offset_r;
+    p.offset = s.offset;
+    p.sample_end = s.sample_end;
+    p.loop_mode = s.loop_mode;
+    p.loop_start = s.loop_start;
+    p.loop_end = s.loop_end;
+    p.speed = d.speed;
+    p.amp = s.amp;
+    p.pan_l = s.pan_l;
+    p.pan_r = s.pan_r;
+    p.filter_on = s.filter_on;
+    p.b0 = s.b0;
+    p.b1 = s.b1;
+    p.b2 = s.b2;
+    p.a1 = s.a1;
+    p.a2 = s.a2;
+    p.env_base = d.env_base;
+    p.env_count = d.env_count;
+    p.release_idx = d.release_idx;
+    p.finished_idx = d.finished_idx;
+    p.release_at = d.release_at;
+    p.interp = s.interp;
+    p.channels = s.channels;
+    p.start_at = d.start_at;
+    return p;
 }
 
 struct VoiceState {
@@ -73,7 +134,7 @@ struct ChunkParams {
     _pad: u32,
 }
 
-@group(0) @binding(0) var<storage, read> params: array<VoiceParams>;
+@group(0) @binding(0) var<storage, read> params: array<VoiceParamsDyn>;
 // Sample data lives in fixed-size chunks so that no single storage binding
 // exceeds the device's per-binding size limit. CHUNK_F32 must match
 // SAMPLES_CHUNK_BYTES / 4 in gpu.rs (1 GiB of f32).
@@ -88,6 +149,8 @@ const CHUNK_F32: u32 = 268435456u;
 @group(0) @binding(8) var<storage, read_write> voice_out: array<f32>;
 // Binding 9 = CHUNK_PARAMS_RENDER_BINDING (render layout; keep in sync).
 @group(0) @binding(9) var<uniform> chunk: ChunkParams;
+// REF-LGS-010: 静态声部参数表（槽位索引；只在分配槽位时上传）。
+@group(0) @binding(10) var<storage, read> params_static: array<VoiceParamsStatic>;
 
 const VOICES_PER_GROUP: u32 = 128u;
 const SINC_PHASES: u32 = 4096u;
@@ -329,10 +392,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (voice >= arrayLength(&params)) {
         return;
     }
-    let p = params[voice];
-    if (p.is_active == 0u) {
+    let d = params[voice];
+    if (d.is_active == 0u) {
         return;
     }
+    // REF-LGS-010: static fields live in the slot-indexed table (written once
+    // per slot); only the dynamic fields are re-uploaded every chunk.
+    let p = combine(d, params_static[d.slot]);
     // REF-LGS-006: hoist the storage-buffer lengths out of the sample loop.
     g_sample_len0 = arrayLength(&samples0);
     g_sample_len1 = arrayLength(&samples1);

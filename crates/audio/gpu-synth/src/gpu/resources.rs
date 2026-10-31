@@ -81,6 +81,12 @@ impl GpuResources {
             CHUNK_PARAMS_RENDER_BINDING,
             ChunkParams::SIZE as u64,
         ));
+        // REF-LGS-010: 静态声部参数表（按槽位索引，只在分配槽位时写）。
+        render_entries.push(bind_entry(
+            PARAMS_STATIC_BINDING,
+            wgpu::ShaderStages::COMPUTE,
+            wgpu::BufferBindingType::Storage { read_only: true },
+        ));
         let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("render bind group layout"),
             entries: &render_entries,
