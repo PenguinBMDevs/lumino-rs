@@ -118,6 +118,12 @@ pub struct UiConfig {
     /// LGS (GPU) 每块渲染帧数（GPU 一次 dispatch 的帧数，2 的幂，至少 16）
     #[serde(default = "default_lgs_block_size")]
     pub lgs_block_size: usize,
+    /// LGS (GPU) **离线导出**块长（帧，2 的幂，512..8192；REF-LGS-009）。
+    ///
+    /// 只影响离线导出（`lumino-export` 的 GPU 后端），实时播放仍用
+    /// [`Self::lgs_block_size`]。默认 2048；脏值在导出侧归一化并告警。
+    #[serde(default = "default_lgs_offline_block_size")]
+    pub lgs_offline_block_size: usize,
     /// LGS (GPU) 每个 (通道, 键) 最大同音数
     #[serde(default = "default_lgs_max_voices_per_key")]
     pub lgs_max_voices_per_key: usize,
@@ -298,6 +304,7 @@ impl Default for UiConfig {
             xsynth_max_voices_per_key: default_max_voices_per_key(),
             lgs_sample_rate: default_lgs_sample_rate(),
             lgs_block_size: default_lgs_block_size(),
+            lgs_offline_block_size: default_lgs_offline_block_size(),
             lgs_max_voices_per_key: default_lgs_max_voices_per_key(),
             lgs_global_voice_limit: None,
             lgs_soft_nps_gate: true,

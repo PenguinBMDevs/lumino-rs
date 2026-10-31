@@ -55,6 +55,8 @@ pub enum Event {
     XSynthSoftNpsGateChanged(bool),
     /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂）变更
     LgsBlockSizeChanged(usize),
+    /// LGS (GPU) 离线导出块长（2 的幂）变更；REF-LGS-009
+    LgsOfflineBlockSizeChanged(usize),
     /// LGS (GPU) 每键最大同音数变更（0=不限制）
     LgsMaxVoicesChanged(usize),
     /// LGS (GPU) 全局最大复音数（硬上限/量程）变更（0 = 自动；REND-016 #139）

@@ -54,6 +54,8 @@ pub(super) static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     builtin_engine: "Built-in Synth Engine:",
     lgs_buffer: "Buffer Size (samples):",
     lgs_buffer_hint: "Audio frames rendered per GPU dispatch; must be a power of two (64–8192); smaller = lower latency but higher GPU cost for dense passages",
+    lgs_offline_buffer: "Offline Export Block Size (samples):",
+    lgs_offline_buffer_hint: "GPU block size for offline export only (512–8192, power of two); larger = faster but more memory/latency per block; realtime playback is unaffected",
     gpu_buffer_status: "Show GPU buffer status in the status bar (on by default)",
     gpu_buffer_status_hint: "Show LGS (GPU) queue depth (seconds + trend arrow), render load, active voices and underrun count in the bottom bar; disabling hides the whole group",
     gpu_governor_metrics: "Show anti-overload metrics (GOV/DROP)",

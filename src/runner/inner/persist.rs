@@ -331,6 +331,8 @@ impl RunnerInner {
             config.ui.xsynth_voice_target_ratio = new.synth.xsynth_voice_target_ratio;
             config.ui.xsynth_soft_nps_gate = new.synth.xsynth_soft_nps_gate;
             config.ui.lgs_block_size = new.synth.lgs_block_size;
+            // REF-LGS-009：离线块长只影响导出，不触发实时管线重建（不进 lgs_changed）
+            config.ui.lgs_offline_block_size = new.synth.lgs_offline_block_size;
             config.ui.lgs_max_voices_per_key = new.synth.lgs_max_voices_per_key;
             config.ui.lgs_global_voice_limit = new.synth.lgs_global_voice_limit;
             config.ui.lgs_soft_nps_gate = new.synth.lgs_soft_nps_gate;

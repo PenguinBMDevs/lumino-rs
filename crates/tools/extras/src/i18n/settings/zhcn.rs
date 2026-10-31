@@ -54,6 +54,8 @@ pub(super) static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     builtin_engine: "内置合成器引擎:",
     lgs_buffer: "缓冲区大小 (samples):",
     lgs_buffer_hint: "GPU 一次调度的音频帧数，须为 2 的幂（64–8192）；越小延迟越低但密集段落 GPU 开销越大",
+    lgs_offline_buffer: "离线导出块长 (samples):",
+    lgs_offline_buffer_hint: "只影响离线导出的 GPU 块长（512–8192，2 的幂）；越大渲染越快，但每块内存与尾延迟更高；实时播放不受影响",
     gpu_buffer_status: "状态栏显示 GPU 缓冲状态（默认开启）",
     gpu_buffer_status_hint: "在底边栏显示 LGS (GPU) 的队列深度（秒+趋势箭头）、渲染负载、活跃声部与欠载计数；关闭后整组隐藏",
     gpu_governor_metrics: "显示防爆治理指标（GOV/DROP）",
