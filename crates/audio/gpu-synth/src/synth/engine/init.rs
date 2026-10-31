@@ -156,13 +156,21 @@ impl GpuSynth {
                 wgpu::BufferUsages::MAP_READ,
             ),
         ];
-        let voice_chans_buf = GrowableBuffer::new(
+        let mix_buckets_buf = GrowableBuffer::new(
             device,
             queue,
-            "voice channels",
-            (pool * 4) as u64,
+            "mix buckets",
+            ((MIX_BUCKET_OFFSETS + pool) * 4) as u64,
             wgpu::BufferUsages::STORAGE,
         );
+        // Every (frame, channel) partial is written by the gather pass before
+        // the reduce pass reads it, so an uninitialized allocation is safe.
+        let mix_partial_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mix partial"),
+            size: (config.block_size * config.midi_channels * 6 * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let mix_events_buf = GrowableBuffer::new(
             device,
             queue,
@@ -190,11 +198,6 @@ impl GpuSynth {
         if !zero.is_empty() {
             res.ctx.queue.write_buffer(env_buf.buffer(), 0, &zero);
         }
-        let zero = vec![0u8; pool * 4];
-        let mut voice_chans_buf = voice_chans_buf;
-        if !zero.is_empty() {
-            let _ = voice_chans_buf.write(&res.ctx.device, &res.ctx.queue, 0, &zero);
-        }
 
         // REND-015 #115: 每块 `apply_events` 开头会重置；这里只是给字段一个
         // 合法初值（首块应用事件前不会有裁剪）。
@@ -216,7 +219,8 @@ impl GpuSynth {
             out_readback_cur: 0,
             states_readback,
             states_readback_cur: 0,
-            voice_chans_buf,
+            mix_buckets_buf,
+            mix_partial_buf,
             mix_events_buf,
             mix_params_buf,
             render_bg: None,
@@ -249,6 +253,9 @@ impl GpuSynth {
             upload_states: Vec::new(),
             upload_env_stages: Vec::new(),
             upload_chans: Vec::new(),
+            mix_bucket_offsets: Vec::new(),
+            mix_bucket_cursor: Vec::new(),
+            mix_bucket_indices: Vec::new(),
             note_counter: 0,
             voice_id_counter: 0,
             spawn_budget: vec![0; midi_channels * 128],

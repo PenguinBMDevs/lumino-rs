@@ -8,6 +8,13 @@
   ],
   "cases": [
     {
+      "name": "sustained2048@512",
+      "midi": "test-file/bench/sustained2048.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512
+    },
+    {
       "name": "sustained65536@512",
       "midi": "test-file/bench/sustained65536.mid",
       "sf2": "test-file/bench/rich.sf2",

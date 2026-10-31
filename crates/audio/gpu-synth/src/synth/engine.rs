@@ -18,6 +18,10 @@ use crate::midi::{MidiEvent, MidiFile, TimedEvent};
 use crate::soundfont::SoundFont;
 use crate::synth::voices::{Voice, build_voice, refresh_env_stages};
 
+/// 固定桶前缀：2 组（sustained / released）× (256 通道 + 1) 个偏移。
+/// 与 `mix.wgsl` 的 `BUCKET_OFFSETS` 必须一致（REF-LGS-001）。
+pub(crate) const MIX_BUCKET_OFFSETS: usize = 2 * (MAX_MIDI_CHANNELS + 1);
+
 mod bind;
 mod cc;
 mod channel;
@@ -148,8 +152,12 @@ pub struct GpuSynth {
     /// wait only ever needs to cover already-completed work.
     states_readback: [GrowableBuffer; 2],
     states_readback_cur: usize,
-    /// Per-voice channel ids, grown like `voice_out_buf`.
-    voice_chans_buf: GrowableBuffer,
+    /// 稳定的 (通道, released) 声部索引桶（REF-LGS-001）：前
+    /// `MIX_BUCKET_OFFSETS` 个 u32 是偏移，其后是声部索引；索引顺序与上传
+    /// 列表一致（v 升序），保证每个通道的浮点求和顺序与旧内核完全相同。
+    mix_buckets_buf: GrowableBuffer,
+    /// 每 (frame, channel) 的立体声部分和（gather → reduce）。
+    mix_partial_buf: wgpu::Buffer,
     /// Per-block controller events (frame-exact, replayed by the mix pass).
     mix_events_buf: GrowableBuffer,
     mix_params_buf: wgpu::Buffer,
@@ -231,6 +239,10 @@ pub struct GpuSynth {
     upload_states: Vec<VoiceState>,
     upload_env_stages: Vec<EnvStageGpu>,
     upload_chans: Vec<u32>,
+    /// REF-LGS-001：桶构建 scratch（每块复用，零分配）。
+    mix_bucket_offsets: Vec<u32>,
+    mix_bucket_cursor: Vec<u32>,
+    mix_bucket_indices: Vec<u32>,
     /// Monotonic note-on counter; every zone voice of one note-on shares
     /// the current value as its `note_id`.
     note_counter: u64,

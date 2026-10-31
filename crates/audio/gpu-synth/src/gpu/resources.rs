@@ -1,4 +1,6 @@
-use super::pipelines::{bind_entry, create_mix_pipeline, create_render_pipeline};
+use super::pipelines::{
+    bind_entry, create_mix_pipeline, create_mix_reduce_pipeline, create_render_pipeline,
+};
 use super::*;
 
 /// Reference-counted GPU resources shared by the engine.
@@ -8,8 +10,10 @@ pub struct GpuResources {
     pub ctx: Arc<GpuContext>,
     /// Render pipeline (pass 1).
     pub render_pipeline: wgpu::ComputePipeline,
-    /// Mix pipeline (pass 2).
+    /// Mix pipeline (pass 2a: per-channel gather).
     pub mix_pipeline: wgpu::ComputePipeline,
+    /// Mix reduce pipeline (pass 2b: channel sum).
+    pub mix_reduce_pipeline: wgpu::ComputePipeline,
     /// Render bind group layout.
     pub render_layout: wgpu::BindGroupLayout,
     /// Mix bind group layout.
@@ -103,16 +107,23 @@ impl GpuResources {
                     wgpu::ShaderStages::COMPUTE,
                     wgpu::BufferBindingType::Uniform,
                 ),
+                bind_entry(
+                    5,
+                    wgpu::ShaderStages::COMPUTE,
+                    wgpu::BufferBindingType::Storage { read_only: false },
+                ),
             ],
         });
 
         let render_pipeline = create_render_pipeline(device, &render_layout, block_size)?;
         let mix_pipeline = create_mix_pipeline(device, &mix_layout)?;
+        let mix_reduce_pipeline = create_mix_reduce_pipeline(device, &mix_layout)?;
 
         Ok(Self {
             ctx,
             render_pipeline,
             mix_pipeline,
+            mix_reduce_pipeline,
             render_layout,
             mix_layout,
             block_size,

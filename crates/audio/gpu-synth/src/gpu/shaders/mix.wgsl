@@ -1,21 +1,18 @@
-// lumino-gpu-synth mix kernel (pass 2).
+// lumino-gpu-synth mix kernel (pass 2a: per-channel gather).
 //
-// Sums all voices produced by the render pass into the stereo output,
-// grouped per MIDI channel, and applies each channel's volume/expression/pan
-// controllers with the same 10 ms linear smoothing (`ValueLerp`) semantics
-// as XSynth.
+// REF-LGS-001: the old kernel was one thread per output frame looping over
+// ALL voices -> block 512 gave only 4 workgroups (128 threads each) and the
+// pass cost ~11.5 ms per block on the 5080 (measured: skipping the pass
+// drops `collect` from ~12.8 ms to ~1.2 ms).
 //
-// Controller events are applied frame-exactly: every mix thread (one per
-// output frame) starts from the per-channel block-start lerp state and
-// replays this block's events with `frame <= f`, exactly like XSynth's CPU
-// loop. The output therefore does not depend on the block size nor on how
-// many events a block contains.
-//
-//   vol  = lerp(vol, vol_step, vol_end, frames advanced)
-//   amp  = (vol * expr)^2
-//   pan  = lerp(pan, pan_step, pan_end, frames advanced)
-//   outL = sum * amp * cos(pan * PI/2)
-//   outR = sum * amp * sin(pan * PI/2)
+// This version keeps the EXACT floating-point accumulation order while
+// raising parallelism: the host builds stable per-(channel, released) voice
+// buckets each block (voice order preserved), and one thread handles one
+// (frame, channel) pair. Each thread sums only its channel's voices in the
+// original v-ascending order, applies the same controller lerp/amp/pan
+// formula, and writes a per-channel partial. A tiny reduce pass (pass 2b)
+// adds the channels in ascending order - the same order the old kernel used
+// for `out_l/out_r` - so the output stays bit-identical.
 
 struct MixParams {
     voice_count: u32,
@@ -51,15 +48,15 @@ struct MixEvent {
     value: f32,
 }
 
-// 全局通道空间上限（16 端口 × 16 通道）；实际通道数见 channel_count，
-// 单端口时循环只走 16 个通道（REND-002 #87）。
-const MAX_CHANNELS: u32 = 256u;
+// Fixed prefix of the bucket buffer: 2 groups x (256 channels + 1) offsets.
+// Indices start after this prefix (see `MIX_BUCKET_OFFSETS` on the host).
+const BUCKET_OFFSETS: u32 = 514u;
 
 @group(0) @binding(0) var<storage, read> voice_out: array<f32>;
-@group(0) @binding(1) var<storage, read_write> output: array<f32>;
-@group(0) @binding(2) var<storage, read> voice_chans: array<u32>;
+@group(0) @binding(2) var<storage, read> mix_buckets: array<u32>;
 @group(0) @binding(3) var<storage, read> mix_events: array<MixEvent>;
 @group(0) @binding(4) var<uniform> mix_params: MixParams;
+@group(0) @binding(5) var<storage, read_write> mix_partial: array<f32>;
 
 // Advances a ValueLerp by `n` frames and clamps to its target.
 fn lerp_advance(current: f32, step: f32, end: f32, n: f32) -> f32 {
@@ -76,111 +73,92 @@ fn lerp_advance(current: f32, step: f32, end: f32, n: f32) -> f32 {
 // (hundreds/thousands of voices accumulate with no headroom management).
 // f32 holds it losslessly. Anti-crackle headroom is applied on the CPU side
 // (engine.rs `apply_limiter`): a block-level peak limiter that scales the
-// whole block, preserving the waveform exactly. A per-sample saturation in
-// the shader was tried first but had to squeeze the entire 1.0..~700 range
-// into the 1.0..1.05 band, flat-topping every overloaded block into
-// square-wave distortion - worse than clipping.
+// whole block, preserving the waveform exactly.
 
 @compute
 @workgroup_size(128)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let f = gid.x;
-    if (f >= mix_params.block_size) {
+    let ch = gid.y;
+    let channels = mix_params.channel_count;
+    if (f >= mix_params.block_size || ch >= channels) {
         return;
     }
 
-    // Accumulate voices grouped by channel. Released voices are summed
-    // separately so the grouping stays correct, but BOTH groups get the
-    // per-channel amp: XSynth applies the channel volume (CC7/CC11) as a
-    // post-mix gain over the WHOLE channel buffer (`apply_channel_effects`,
-    // vol^3 over every sample including release tails), so skipping the amp
-    // for released voices would step the output the moment a voice enters
-    // release (amplitude jumps from vol^2 to 1.0) - an audible click that
-    // shows up in dense MIDI as a continuous crackle.
-    var acc_l: array<f32, MAX_CHANNELS>;
-    var acc_r: array<f32, MAX_CHANNELS>;
-    var acc_rel_l: array<f32, MAX_CHANNELS>;
-    var acc_rel_r: array<f32, MAX_CHANNELS>;
-    for (var c = 0u; c < mix_params.channel_count; c = c + 1u) {
-        acc_l[c] = 0.0;
-        acc_r[c] = 0.0;
-        acc_rel_l[c] = 0.0;
-        acc_rel_r[c] = 0.0;
-    }
+    // Stable per-(channel, released) buckets: group 0 = sustained voices,
+    // group 1 = released voices, each in the original ascending voice order.
+    let stride = channels + 1u;
+    let s0 = mix_buckets[ch];
+    let s1 = mix_buckets[ch + 1u];
+    let r0 = mix_buckets[stride + ch];
+    let r1 = mix_buckets[stride + ch + 1u];
 
-    for (var v = 0u; v < mix_params.voice_count; v = v + 1u) {
+    var acc_l = 0.0;
+    var acc_r = 0.0;
+    for (var i = s0; i < s1; i = i + 1u) {
+        let v = mix_buckets[BUCKET_OFFSETS + i];
         let base = (v * mix_params.block_size + f) * 2u;
-        let vc = voice_chans[v];
-        let ch = vc & 0xFFu;
-        let released = (vc >> 8u) & 1u;
-        if (released == 0u) {
-            acc_l[ch] = acc_l[ch] + voice_out[base];
-            acc_r[ch] = acc_r[ch] + voice_out[base + 1u];
-        } else {
-            acc_rel_l[ch] = acc_rel_l[ch] + voice_out[base];
-            acc_rel_r[ch] = acc_rel_r[ch] + voice_out[base + 1u];
-        }
+        acc_l = acc_l + voice_out[base];
+        acc_r = acc_r + voice_out[base + 1u];
+    }
+    var acc_rel_l = 0.0;
+    var acc_rel_r = 0.0;
+    for (var i = r0; i < r1; i = i + 1u) {
+        let v = mix_buckets[BUCKET_OFFSETS + i];
+        let base = (v * mix_params.block_size + f) * 2u;
+        acc_rel_l = acc_rel_l + voice_out[base];
+        acc_rel_r = acc_rel_r + voice_out[base + 1u];
     }
 
-    // Per-channel lerp state machines, starting from the block-start state
-    // and replaying every event with frame <= f.
-    var cur: array<MixStart, MAX_CHANNELS>;
-    var frames: array<u32, MAX_CHANNELS>;
-    for (var c = 0u; c < mix_params.channel_count; c = c + 1u) {
-        cur[c] = mix_params.starts[c];
-        frames[c] = 0u;
-    }
-
+    // Per-channel lerp state machine: start from the block-start state and
+    // replay this channel's events with frame <= f. Events of other channels
+    // do not affect this channel's state, so filtering them out is exact.
+    var cur = mix_params.starts[ch];
+    var frame_c = 0u;
     var i = 0u;
     while (i < mix_params.event_count && mix_events[i].frame <= f) {
         let ev = mix_events[i];
-        let c = ev.channel;
-        if (c >= mix_params.channel_count) {
-            i = i + 1u;
-            continue;
-        }
-        let n = f32(ev.frame - frames[c]);
-        cur[c].vol = lerp_advance(cur[c].vol, cur[c].vol_step, cur[c].vol_end, n);
-        cur[c].expr = lerp_advance(cur[c].expr, cur[c].expr_step, cur[c].expr_end, n);
-        cur[c].pan = lerp_advance(cur[c].pan, cur[c].pan_step, cur[c].pan_end, n);
-        frames[c] = ev.frame;
-        if (ev.cc == 7u) {
-            cur[c].vol_step = (ev.value - cur[c].vol) / mix_params.lerp_len;
-            cur[c].vol_end = ev.value;
-        } else if (ev.cc == 11u) {
-            cur[c].expr_step = (ev.value - cur[c].expr) / mix_params.lerp_len;
-            cur[c].expr_end = ev.value;
-        } else if (ev.cc == 10u || ev.cc == 8u) {
-            cur[c].pan_step = (ev.value - cur[c].pan) / mix_params.lerp_len;
-            cur[c].pan_end = ev.value;
+        if (ev.channel == ch) {
+            let n = f32(ev.frame - frame_c);
+            cur.vol = lerp_advance(cur.vol, cur.vol_step, cur.vol_end, n);
+            cur.expr = lerp_advance(cur.expr, cur.expr_step, cur.expr_end, n);
+            cur.pan = lerp_advance(cur.pan, cur.pan_step, cur.pan_end, n);
+            frame_c = ev.frame;
+            if (ev.cc == 7u) {
+                cur.vol_step = (ev.value - cur.vol) / mix_params.lerp_len;
+                cur.vol_end = ev.value;
+            } else if (ev.cc == 11u) {
+                cur.expr_step = (ev.value - cur.expr) / mix_params.lerp_len;
+                cur.expr_end = ev.value;
+            } else if (ev.cc == 10u || ev.cc == 8u) {
+                cur.pan_step = (ev.value - cur.pan) / mix_params.lerp_len;
+                cur.pan_end = ev.value;
+            }
         }
         i = i + 1u;
     }
 
-    let half_pi = 1.5707963267948966;
+    // Advance each controller to frame f.
+    let n = f32(f - frame_c);
+    let vol = lerp_advance(cur.vol, cur.vol_step, cur.vol_end, n);
+    let expr = lerp_advance(cur.expr, cur.expr_step, cur.expr_end, n);
+    let amp = (vol * expr) * (vol * expr);
 
-    var out_l = 0.0;
-    var out_r = 0.0;
+    let pan = lerp_advance(cur.pan, cur.pan_step, cur.pan_end, n);
+    let pan_angle = pan * 1.5707963267948966;
+    let pan_l = cos(pan_angle);
+    let pan_r = sin(pan_angle);
 
-    for (var ch = 0u; ch < mix_params.channel_count; ch = ch + 1u) {
-        if (ch >= MAX_CHANNELS) {
-            break;
-        }
-        // Advance each controller to frame f.
-        let n = f32(f - frames[ch]);
-        let vol = lerp_advance(cur[ch].vol, cur[ch].vol_step, cur[ch].vol_end, n);
-        let expr = lerp_advance(cur[ch].expr, cur[ch].expr_step, cur[ch].expr_end, n);
-        let amp = (vol * expr) * (vol * expr);
-
-        let pan = lerp_advance(cur[ch].pan, cur[ch].pan_step, cur[ch].pan_end, n);
-        let pan_angle = pan * half_pi;
-        let pan_l = cos(pan_angle);
-        let pan_r = sin(pan_angle);
-
-        out_l = out_l + (acc_l[ch] + acc_rel_l[ch]) * amp * pan_l;
-        out_r = out_r + (acc_r[ch] + acc_rel_r[ch]) * amp * pan_r;
-    }
-
-    output[f * 2u] = out_l;
-    output[f * 2u + 1u] = out_r;
+    // Store the raw per-channel sum and the amp/pan factors separately: the
+    // reduce pass must evaluate the SAME expression as the old kernel
+    // (`out + sum * amp * pan`) so the compiler can fuse it identically.
+    // Storing the final product would force an extra f32 rounding and break
+    // bit-exactness at the 1-ulp level on multi-channel mixes.
+    let out_base = (f * channels + ch) * 6u;
+    mix_partial[out_base] = acc_l + acc_rel_l;
+    mix_partial[out_base + 1u] = acc_r + acc_rel_r;
+    mix_partial[out_base + 2u] = amp;
+    mix_partial[out_base + 3u] = pan_l;
+    mix_partial[out_base + 4u] = pan_r;
+    mix_partial[out_base + 5u] = 0.0;
 }

@@ -79,23 +79,15 @@ impl GpuSynth {
             self.render_bg_dirty = true;
             self.mix_bg_dirty = true;
         }
-        if self.voice_chans_buf.ensure(
-            &self.res.ctx.device,
-            &self.res.ctx.queue,
-            (voices * 4) as u64,
-        ) {
-            self.render_bg_dirty = true;
-            self.mix_bg_dirty = true;
-        }
         // The per-voice GPU storage buffers (params/states/env) are written by
-        // the staging belt below at `n` voices, but unlike `voice_out_buf` /
-        // `voice_chans_buf` they were only ever allocated at the pool size and
-        // never grown. If the voice cap leaves slightly more than `pool` voices
-        // (it releases whole note groups, so the survivor count can overshoot
-        // by a group or two), the belt write overruns the fixed buffer and
-        // wgpu aborts the whole submission with a validation error. Grow them
-        // here, the same way the output buffers are grown. All three are bound
-        // by the render bind group, so a grow dirties it for the rebuild below.
+        // the staging belt below at `n` voices, but unlike `voice_out_buf`
+        // they were only ever allocated at the pool size and never grown. If
+        // the voice cap leaves slightly more than `pool` voices (it releases
+        // whole note groups, so the survivor count can overshoot by a group or
+        // two), the belt write overruns the fixed buffer and wgpu aborts the
+        // whole submission with a validation error. Grow them here, the same
+        // way the output buffer is grown. All three are bound by the render
+        // bind group, so a grow dirties it for the rebuild below.
         if self.params_buf.ensure(
             &self.res.ctx.device,
             &self.res.ctx.queue,
@@ -170,15 +162,6 @@ impl GpuSynth {
                     )
                     .copy_from_slice(bytemuck::cast_slice(&self.upload_env_stages));
             }
-            self.belt
-                .write_buffer(
-                    &mut encoder,
-                    self.voice_chans_buf.buffer(),
-                    0,
-                    checked_buffer_size(4 * n)?,
-                    device,
-                )
-                .copy_from_slice(bytemuck::cast_slice(&self.upload_chans[..n]));
             self.belt.finish();
         }
 
@@ -210,6 +193,17 @@ impl GpuSynth {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.res.mix_pipeline);
+            pass.set_bind_group(0, mix_bg, &[]);
+            let channels = self.channels.len().max(1) as u32;
+            pass.dispatch_workgroups(block.div_ceil(128).max(1), channels, 1);
+        }
+
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("mix reduce pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.res.mix_reduce_pipeline);
             pass.set_bind_group(0, mix_bg, &[]);
             pass.dispatch_workgroups(block.div_ceil(128).max(1), 1, 1);
         }

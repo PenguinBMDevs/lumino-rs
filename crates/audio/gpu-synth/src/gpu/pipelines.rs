@@ -79,3 +79,30 @@ pub(super) fn create_mix_pipeline(
     });
     Ok(pipeline)
 }
+
+/// REF-LGS-001: the tiny channel-reduce pass (see `mix_reduce.wgsl`).
+pub(super) fn create_mix_reduce_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+) -> Result<wgpu::ComputePipeline, SynthError> {
+    let source = include_str!("shaders/mix_reduce.wgsl");
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("mix_reduce.wgsl"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("lumino mix reduce"),
+        layout: Some(
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mix reduce layout"),
+                bind_group_layouts: &[layout],
+                push_constant_ranges: &[],
+            }),
+        ),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    Ok(pipeline)
+}

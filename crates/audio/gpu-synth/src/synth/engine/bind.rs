@@ -113,6 +113,35 @@ impl GpuSynth {
             );
         }
         queue.write_buffer(&self.mix_params_buf, 0, bytemuck::cast_slice(&[params]));
+        // REF-LGS-001: upload the stable buckets (offsets + indices) used by
+        // the per-channel gather. **Offsets are uploaded even when
+        // `active_voice_count == 0`**: a block whose voices ended on the GPU
+        // still takes the normal dispatch path (the CPU list is pruned during
+        // `upload_voices`), and reusing the previous block's buckets would
+        // re-sum its stale `voice_out` into the output (observed as a one-
+        // block replay after a voice ends).
+        let device = &self.res.ctx.device;
+        let queue = &self.res.ctx.queue;
+        let mut grown = false;
+        if !self.mix_bucket_offsets.is_empty() {
+            grown |= self.mix_buckets_buf.write(
+                device,
+                queue,
+                0,
+                bytemuck::cast_slice(&self.mix_bucket_offsets),
+            )?;
+        }
+        if !self.mix_bucket_indices.is_empty() {
+            grown |= self.mix_buckets_buf.write(
+                device,
+                queue,
+                (MIX_BUCKET_OFFSETS * 4) as u64,
+                bytemuck::cast_slice(&self.mix_bucket_indices),
+            )?;
+        }
+        if grown {
+            self.mix_bg_dirty = true;
+        }
         // scratch 归还（下块复用，零分配）
         self.mix_events = events;
         self.mix_starts = starts;
@@ -169,7 +198,7 @@ impl GpuSynth {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.voice_chans_buf.buffer().as_entire_binding(),
+                    resource: self.mix_buckets_buf.buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -178,6 +207,10 @@ impl GpuSynth {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.mix_params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.mix_partial_buf.as_entire_binding(),
                 },
             ],
         }));
@@ -201,7 +234,7 @@ impl GpuSynth {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.voice_chans_buf.buffer().as_entire_binding(),
+                    resource: self.mix_buckets_buf.buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -210,6 +243,10 @@ impl GpuSynth {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.mix_params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.mix_partial_buf.as_entire_binding(),
                 },
             ],
         }));

@@ -246,6 +246,107 @@ impl GpuSynth {
         // render pass, readback copies - happens in ONE submit; separate
         // submits measured ~9ms each of fixed wgpu/Vulkan overhead.)
         self.active_voice_count = n as u32;
+        // REF-LGS-001: 构建稳定的 (通道, released) 声部桶。索引按 v 升序
+        // 追加，与旧 mix 内核的累加顺序一致，因此浮点结果逐位不变。
+        build_mix_buckets(
+            &self.upload_chans[..n],
+            self.channels.len(),
+            &mut self.mix_bucket_offsets,
+            &mut self.mix_bucket_cursor,
+            &mut self.mix_bucket_indices,
+        );
         Ok(())
+    }
+}
+
+/// 构建稳定的 (通道, released) 声部桶（REF-LGS-001）。
+///
+/// `chans[v] = channel | released << 8`；每组内的索引按 `v` 升序追加，
+/// 保证 mix 内核按原顺序累加（浮点逐位一致）。`offsets` 布局：
+/// `[sustained: 0..=channels] ++ [released: 0..=channels]`。
+fn build_mix_buckets(
+    chans: &[u32],
+    channels: usize,
+    offsets: &mut Vec<u32>,
+    cursor: &mut Vec<u32>,
+    indices: &mut Vec<u32>,
+) {
+    let stride = channels + 1;
+    offsets.clear();
+    offsets.resize(2 * stride, 0);
+    for &vc in chans {
+        let ch = (vc & 0xFF) as usize;
+        let rel = ((vc >> 8) & 1) as usize;
+        if ch < channels {
+            offsets[rel * stride + ch + 1] += 1;
+        }
+    }
+    for group in 0..2 {
+        let base = group * stride;
+        for c in 0..channels {
+            offsets[base + c + 1] += offsets[base + c];
+        }
+    }
+    // 第二组（released）从 sustained 总数之后开始，避免两组索引区间重叠。
+    let sustained_total = offsets[channels];
+    for c in 0..=channels {
+        offsets[stride + c] += sustained_total;
+    }
+    cursor.clear();
+    cursor.extend_from_slice(offsets);
+    indices.clear();
+    indices.resize(chans.len(), 0);
+    for (v, &vc) in chans.iter().enumerate() {
+        let ch = (vc & 0xFF) as usize;
+        let rel = ((vc >> 8) & 1) as usize;
+        if ch >= channels {
+            continue;
+        }
+        let slot = rel * stride + ch;
+        let pos = cursor[slot] as usize;
+        indices[pos] = v as u32;
+        cursor[slot] += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_mix_buckets;
+
+    /// 桶必须保持每个 (通道, group) 内的 v 升序，否则浮点求和顺序会变。
+    #[test]
+    fn mix_buckets_preserve_voice_order_and_split_released() {
+        // v: 0 ch0 sustained, 1 ch1 sustained, 2 ch0 sustained,
+        //    3 ch1 released, 4 ch0 released
+        let chans = [0u32, 1, 0, 1 | (1 << 8), 1 << 8];
+        let mut offsets = Vec::new();
+        let mut cursor = Vec::new();
+        let mut indices = Vec::new();
+        build_mix_buckets(&chans, 2, &mut offsets, &mut cursor, &mut indices);
+
+        let stride = 3;
+        // sustained: ch0 = [0, 2], ch1 = [1]
+        assert_eq!(&offsets[0..stride], &[0, 2, 3]);
+        // released: ch0 = [4], ch1 = [3]，从 sustained 总数 3 之后开始
+        assert_eq!(&offsets[stride..], &[3, 4, 5]);
+        assert_eq!(indices, vec![0, 2, 1, 4, 3]);
+    }
+
+    /// 越界通道（配置空间小于文件端口上界）不得进入桶，也不得 panic。
+    #[test]
+    fn mix_buckets_skip_out_of_range_channels() {
+        let chans = [0u32, 16, 1 | (1 << 8)];
+        let mut offsets = Vec::new();
+        let mut cursor = Vec::new();
+        let mut indices = Vec::new();
+        build_mix_buckets(&chans, 2, &mut offsets, &mut cursor, &mut indices);
+
+        let stride = 3;
+        assert_eq!(&offsets[0..stride], &[0, 1, 1]);
+        assert_eq!(&offsets[stride..], &[1, 1, 2]);
+        // 索引仍是原始 v（v1 越界被跳过，其槽位保留 0 占位）
+        assert_eq!(indices[0], 0);
+        assert_eq!(indices[1], 2);
+        assert_eq!(indices[2], 0);
     }
 }
