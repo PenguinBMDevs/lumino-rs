@@ -122,6 +122,13 @@ fn env_eval(kind: u32, from_val: f32, target_val: f32, f_in: f32) -> f32 {
     return target_val;
 }
 
+// REF-LGS-006: cache the four storage-buffer lengths once per invocation
+// instead of calling `arrayLength` on every sample fetch.
+var<private> g_sample_len0: u32;
+var<private> g_sample_len1: u32;
+var<private> g_sample_len2: u32;
+var<private> g_sample_len3: u32;
+
 // Reads one f32 from the chunked samples buffer; out-of-bounds reads
 // yield 0.0. CHUNK_F32 = 1<<28, so shift/mask is cheaper than div/mod
 // (flame graph: raw_sample is hottest GPU function at 25k voices).
@@ -130,19 +137,19 @@ fn raw_sample(offset: u32, idx: u32) -> f32 {
     let chunk = i >> 28u;
     let off = i & 268435455u;
     if (chunk == 0u) {
-        if (off < arrayLength(&samples0)) { return samples0[off]; }
+        if (off < g_sample_len0) { return samples0[off]; }
         return 0.0;
     }
     if (chunk == 1u) {
-        if (off < arrayLength(&samples1)) { return samples1[off]; }
+        if (off < g_sample_len1) { return samples1[off]; }
         return 0.0;
     }
     if (chunk == 2u) {
-        if (off < arrayLength(&samples2)) { return samples2[off]; }
+        if (off < g_sample_len2) { return samples2[off]; }
         return 0.0;
     }
     if (chunk == 3u) {
-        if (off < arrayLength(&samples3)) { return samples3[off]; }
+        if (off < g_sample_len3) { return samples3[off]; }
     }
     return 0.0;
 }
@@ -194,21 +201,47 @@ fn sinc_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_loop
 
 // ---------- state advance ----------
 
+// REF-LGS-006: cached envelope-stage parameters. The 12 B `env_stages` read
+// is done once per stage transition instead of once per frame; the divisor
+// is cached too, but the IEEE division itself is kept (bit-exact).
+struct StageCache {
+    idx: u32,
+    kind: u32,
+    target_val: f32,
+    duration: u32,
+    denom: u32,
+}
+
+fn load_stage(p: VoiceParams, idx: u32) -> StageCache {
+    if (idx < p.env_count) {
+        let es = env_stages[p.env_base + idx];
+        return StageCache(idx, es.kind, es.target_val, es.duration, max(es.duration, 1u));
+    }
+    return StageCache(idx, 0u, 0.0, 0u, 1u);
+}
+
 // The result of advancing a voice by one frame.
 struct AdvanceResult {
     st: VoiceState,
     env_value: f32,
+    stage: StageCache,
 }
 
 // Advances the voice state by exactly one output frame at absolute `frame`.
 // Mirrors the per-frame logic of the old monolithic loop: release
 // scheduling, envelope progression, sample-end check and position advance.
-// The filter is disabled in this configuration (`use_effects = false`), so
-// the state advance has no signal dependency and can be replayed by every
-// segment thread to fast-forward to its start.
-fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> AdvanceResult {
+// The biquad filter state is updated separately in the frame loop, so this
+// helper is pure (no signal dependency).
+fn advance_frame(
+    p: VoiceParams,
+    st: VoiceState,
+    env_value: f32,
+    frame: u32,
+    stage: StageCache,
+) -> AdvanceResult {
     var s = st;
     var ev = env_value;
+    var sc = stage;
 
     // --- release scheduling (sample-accurate) ---
     if (p.release_at != 0xFFFFFFFFu && frame >= p.release_at && s.is_released == 0u) {
@@ -221,6 +254,8 @@ fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> 
         // samples after release; otherwise the release tail is computed from a
         // stale/block-start position and jumps.
         s.last_loop_pos = s.int_time;
+        // The jump switches stages this very frame: refresh the cache now.
+        sc = load_stage(p, p.release_idx);
     }
 
     // --- envelope ---
@@ -230,21 +265,23 @@ fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> 
         // the voice ends, mirroring XSynth's `envelope.ended()`.
         s.ended = 1u;
     } else if (stage_idx < p.env_count) {
-        let es = env_stages[p.env_base + stage_idx];
-        if (es.kind == 3u) {
-            ev = es.target_val; // hold
+        if (sc.idx != stage_idx) {
+            sc = load_stage(p, stage_idx);
+        }
+        if (sc.kind == 3u) {
+            ev = sc.target_val; // hold
         } else {
             // Defensive: a zero-duration stage must never divide by zero
             // (the CPU collapses those; this is a last-resort guard so a
             // pathological envelope cannot poison the output with NaN).
-            let denom = max(es.duration, 1u);
-            let prog = f32(s.env_t) / f32(denom);
-            ev = env_eval(es.kind, s.env_from, es.target_val, prog);
+            let prog = f32(s.env_t) / f32(sc.denom);
+            ev = env_eval(sc.kind, s.env_from, sc.target_val, prog);
             s.env_t = s.env_t + 1u;
-            if (s.env_t >= es.duration) {
+            if (s.env_t >= sc.duration) {
                 s.env_from = ev;
                 s.env_stage = stage_idx + 1u;
                 s.env_t = 0u;
+                sc = load_stage(p, s.env_stage);
             }
         }
     }
@@ -275,17 +312,15 @@ fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> 
     s.int_time = s.int_time + carry;
     s.frac = frac;
 
-    return AdvanceResult(s, ev);
+    return AdvanceResult(s, ev, sc);
 }
 
 // ---------- main ----------
 
-// Each workgroup (y = SEGS segments) renders one voice; the shader
-// fast-forwards the state to its segment start, so the GPU parallelism is
-// voices x segments. The default below is replaced at pipeline creation
-// with the engine's `RENDER_SEGMENTS` (see `create_render_pipeline`).
-const SEGS: u32 = 16u;
-const SEG_LEN: u32 = BLOCK / SEGS;
+// One invocation renders one voice for the whole frame chunk (REF-LGS-005:
+// the old 4-segment split + per-segment fast-forward was measured to be
+// slower than one thread per voice on the 5080; the replay cost outweighed
+// the extra parallelism, and filtered voices already ran single-segment).
 
 @compute
 @workgroup_size(VOICES_PER_GROUP)
@@ -298,29 +333,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (p.is_active == 0u) {
         return;
     }
+    // REF-LGS-006: hoist the storage-buffer lengths out of the sample loop.
+    g_sample_len0 = arrayLength(&samples0);
+    g_sample_len1 = arrayLength(&samples1);
+    g_sample_len2 = arrayLength(&samples2);
+    g_sample_len3 = arrayLength(&samples3);
 
     var st = states[voice];
     let out_base = voice * BLOCK * 2u;
-    let seg = gid.y;
-    // REF-LGS-002: hoist the chunk base out of the per-frame loops (a
+    // REF-LGS-002: hoist the chunk base out of the per-frame loop (a
     // uniform load inside the hot loop costs ~4% at block 512).
     let frame_base = chunk.render_frame_base;
-    // Filtered voices (use_effects = true) have signal-dependent biquad
-    // state that cannot be fast-forwarded, so they run single-segment:
-    // segment 0 renders the whole block, the other segments just zero their
-    // output range.
-    let is_filtered = p.filter_on != 0u;
-    let seg_start = select(seg * SEG_LEN, 0u, is_filtered);
-    let seg_end = select(min(seg_start + SEG_LEN, BLOCK), BLOCK, is_filtered);
-    if (is_filtered && seg > 0u) {
-        // Filtered (biquad) voices are rendered entirely by segment 0: the
-        // filter state is signal-dependent and cannot be fast-forwarded, so the
-        // other segments must leave this voice's output untouched. The old code
-        // zeroed the WHOLE block here, racing with segment 0's real writes and
-        // corrupting the signal at the segment boundary (a "chunk" boundary in
-        // the voice block) - a source of crackle/pops for filtered voices.
-        return;
-    }
 
     // NOTE: the loop-sustain release position is captured at the moment of
     // release inside `advance_frame` (so it tracks the true loop position),
@@ -335,25 +358,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // start, injecting a one-frame envelope error at each 512-frame block
     // boundary - the block-rate click/pop artifact audible in quiet tails.
     var env_value = st.env_value;
+    // REF-LGS-006: one stage-table read per stage transition (not per frame).
+    var stage = load_stage(p, st.env_stage);
 
-    // Fast-forward the state to this segment's start. No sample reads, only
-    // release/envelope/position logic; frames before `start_at` are gated
-    // (no state advance, like the original loop's `continue`).
-    for (var k = 0u; k < seg_start; k = k + 1u) {
-        let frame = frame_base + k;
-        if (frame < p.start_at) {
-            continue;
-        }
-        let adv = advance_frame(p, st, env_value, frame);
-        st = adv.st;
-        env_value = adv.env_value;
-        if (st.ended == 1u) {
-            break; // finished voices stay silent; no more state to advance
-        }
-    }
-
-    var f = seg_start;
-    while (f < seg_end) {
+    var f = 0u;
+    while (f < BLOCK) {
         let frame = frame_base + f;
 
         // --- start gating: the voice is silent before its note-on frame ---
@@ -394,8 +403,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         var value_l = sample_l * p.amp * p.pan_l * env_value;
         var value_r = sample_r * p.amp * p.pan_r * env_value;
 
-        // --- per-channel biquad low-pass (XSynth stereo voice structure;
-        // only active for filtered voices, which run single-segment) ---
+        // --- per-channel biquad low-pass (XSynth stereo voice structure) ---
         if (p.filter_on != 0u) {
             let yl = p.b0 * value_l + p.b1 * st.lx1 + p.b2 * st.lx2
                    - p.a1 * st.ly1 - p.a2 * st.ly2;
@@ -415,20 +423,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         voice_out[out_idx + 1u] = value_r;
 
         // --- advance to the next frame ---
-        let adv = advance_frame(p, st, env_value, frame);
+        let adv = advance_frame(p, st, env_value, frame, stage);
         st = adv.st;
         env_value = adv.env_value;
+        stage = adv.stage;
 
         f = f + 1u;
     }
 
-    // Persist the state from the last segment only (all segments compute
-    // the same value; writing once avoids needless storage traffic).
-    // Filtered voices are single-segment and persist from segment 0.
-    if (seg == SEGS - 1u || (is_filtered && seg == 0u)) {
-        st.env_value = env_value;
-        states[voice] = st;
-    }
+    // Persist the state after the chunk (one thread owns the whole voice).
+    st.env_value = env_value;
+    states[voice] = st;
 }
 
 

@@ -31,17 +31,6 @@ use crate::SynthError;
 /// GPUs).
 pub const SAMPLES_CHUNKS: usize = 4;
 
-/// Number of segments each voice block is split into (gid.y of the render
-/// kernel). More segments = more GPU parallelism for dense polyphony; the
-/// shader fast-forwards the voice state to each segment start. Filtered
-/// (biquad) voices are signal-dependent and fall back to single-segment
-/// rendering, which is correct (just less parallel) - so audio quality is
-/// unaffected.
-///
-/// Must match the `SEGS` constant injected into `render.wgsl` at pipeline
-/// creation (see `create_render_pipeline`).
-pub const RENDER_SEGMENTS: u32 = 4;
-
 /// REF-LGS-002: maximum number of frames a single render/mix dispatch
 /// processes. A block larger than this is rendered in frame chunks that
 /// REUSE the same `voice_out` buffer, so its peak memory is

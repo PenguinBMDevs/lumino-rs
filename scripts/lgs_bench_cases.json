@@ -89,6 +89,30 @@
       "frames": 1440000,
       "block": 2048,
       "auto_channels": true
+    },
+    {
+      "name": "sustained65536@512-unfiltered",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512,
+      "extra_args": ["--no-effects"]
+    },
+    {
+      "name": "sustained65536@2048-unfiltered",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 2048,
+      "extra_args": ["--no-effects"]
+    },
+    {
+      "name": "sustained65536@4096-unfiltered",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 4096,
+      "extra_args": ["--no-effects"]
     }
   ],
   "gating": {

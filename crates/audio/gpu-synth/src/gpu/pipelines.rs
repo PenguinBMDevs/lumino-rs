@@ -40,15 +40,10 @@ pub(super) fn create_render_pipeline(
     layout: &wgpu::BindGroupLayout,
     block_size: usize,
 ) -> Result<wgpu::ComputePipeline, SynthError> {
-    let source = include_str!("shaders/render.wgsl")
-        .replace(
-            "const BLOCK: u32 = 512u;",
-            &format!("const BLOCK: u32 = {block_size}u;"),
-        )
-        .replace(
-            "const SEGS: u32 = 16u;",
-            &format!("const SEGS: u32 = {}u;", RENDER_SEGMENTS),
-        );
+    let source = include_str!("shaders/render.wgsl").replace(
+        "const BLOCK: u32 = 512u;",
+        &format!("const BLOCK: u32 = {block_size}u;"),
+    );
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("render.wgsl"),
         source: wgpu::ShaderSource::Wgsl(source.into()),

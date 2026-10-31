@@ -211,10 +211,9 @@ impl GpuSynth {
                 });
                 pass.set_pipeline(&self.res.render_pipeline);
                 pass.set_bind_group(0, render_bg, &[offset]);
-                // Each voice is split across RENDER_SEGMENTS threads (gid.y);
-                // the shader fast-forwards to its segment start, so the GPU
-                // parallelism is voices x segments.
-                pass.dispatch_workgroups(voice_groups, crate::gpu::RENDER_SEGMENTS, 1);
+                // REF-LGS-005: one thread per voice renders the whole chunk;
+                // the old gid.y segment split + fast-forward is gone.
+                pass.dispatch_workgroups(voice_groups, 1, 1);
             }
 
             {

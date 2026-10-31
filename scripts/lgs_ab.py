@@ -343,6 +343,7 @@ def run_case(
                 use_json=use_json,
                 profile=args.profile,
                 gpu=gpu,
+                extra_args=case.get("extra_args"),
                 timeout=args.timeout,
             )
 
@@ -365,6 +366,7 @@ def run_case(
                     use_json=use_json,
                     profile=args.profile,
                     gpu=gpu,
+                    extra_args=case.get("extra_args"),
                     timeout=args.timeout,
                 )
             )
@@ -433,6 +435,7 @@ def run_case(
         "block": case["block"],
         "channels": case.get("channels"),
         "auto_channels": bool(case.get("auto_channels")),
+        "extra_args": case.get("extra_args", []),
         "pairs": pairs,
         "baseline": side_summary(base_runs),
         "after": side_summary(after_runs),

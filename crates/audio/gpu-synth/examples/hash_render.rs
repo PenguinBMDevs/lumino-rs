@@ -10,6 +10,7 @@
 //!   --wav <out.wav>   落盘 32-bit float WAV
 //!   --json <out.json> 落盘机器可读指标（供 lgs_ab.py / CI 汇总）
 //!   --prewarm         渲染前调用 prewarm_midi_file（覆盖实时预热路径）
+//!   --no-effects      关闭音源滤波（REF-LGS-005 的未滤波验收路径）
 //!
 //! 哈希为 FNV-1a 64，覆盖所有样本的 `to_bits()` 小端字节，便于 golden 比对。
 //! `voice_frames` = Σ(每块提交声部数 × 块帧数)，除以墙钟即"声部帧率"
@@ -81,7 +82,7 @@ fn usage() -> ! {
     eprintln!(
         "用法: hash_render <midi> <sf2> <frames> <block> \
          [--channels N | --auto-channels] [--raw out.f32] [--wav out.wav] \
-         [--json out.json] [--prewarm]"
+         [--json out.json] [--prewarm] [--no-effects]"
     );
     std::process::exit(2);
 }
@@ -104,6 +105,7 @@ fn main() {
     let mut explicit_channels: Option<usize> = None;
     let mut auto_channels = false;
     let mut prewarm = false;
+    let mut no_effects = false;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
@@ -129,6 +131,10 @@ fn main() {
             }
             "--prewarm" => {
                 prewarm = true;
+                i += 1;
+            }
+            "--no-effects" => {
+                no_effects = true;
                 i += 1;
             }
             other => {
@@ -161,6 +167,7 @@ fn main() {
         max_voices_per_key: 0,
         midi_channels,
         show_progress: false,
+        use_effects: !no_effects,
         ..SynthConfig::default()
     };
 
@@ -208,8 +215,8 @@ fn main() {
     println!("samples={} fnv1a64={:016x}", res.samples.len(), hash);
     println!("peak={:.9} rms={:.9}", peak, rms);
     println!(
-        "midi_max_port={} midi_channels={} auto_channels={}",
-        max_port, midi_channels, auto_channels
+        "midi_max_port={} midi_channels={} auto_channels={} no_effects={}",
+        max_port, midi_channels, auto_channels, no_effects
     );
     println!(
         "voices_peak={} voice_frames={} voice_frames_per_s={:.0}",
@@ -244,6 +251,7 @@ fn main() {
                 "  \"midi_channels\": {},\n",
                 "  \"out_channels\": {},\n",
                 "  \"auto_channels\": {},\n",
+                "  \"no_effects\": {},\n",
                 "  \"audio_s\": {:.6},\n",
                 "  \"wall_s\": {:.6},\n",
                 "  \"realtime\": {:.6},\n",
@@ -269,6 +277,7 @@ fn main() {
             midi_channels,
             res.channels,
             auto_channels,
+            no_effects,
             audio_secs,
             wall_secs,
             realtime,
