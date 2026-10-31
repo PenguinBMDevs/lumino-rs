@@ -222,6 +222,11 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "补间失败：请恰好选中两个待确认形状/曲线" => {
             Some("Tween failed: select exactly two pending shapes/curves")
         }
+        // DRAW-041C 阶段 3：020 显式手柄编辑的进入/退出提示
+        "已进入手柄编辑；拖小圆点，Shift 关闭 15° 旋转吸附" => Some(
+            "Handle edit mode on; drag the dots, Shift disables 15° rotation snapping",
+        ),
+        "已退出手柄编辑" => Some("Handle edit mode off"),
         _ => None,
     }
 }
