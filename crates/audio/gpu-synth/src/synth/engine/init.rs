@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::gpu::ChunkParams;
+
 impl GpuSynth {
     /// Creates a new synthesizer with the given configuration, initializing
     /// the GPU device (a wgpu adapter is picked automatically).
@@ -98,11 +100,12 @@ impl GpuSynth {
             (VoiceState::SIZE * pool) as u64,
             wgpu::BufferUsages::STORAGE,
         );
+        let chunk_size = res.chunk_size;
         let voice_out_buf = GrowableBuffer::with_max_capacity(
             device,
             queue,
             "voice out",
-            (pool * block * 2 * 4) as u64,
+            (pool * chunk_size * 2 * 4) as u64,
             MAX_VOICE_OUT_BYTES,
             wgpu::BufferUsages::STORAGE,
         );
@@ -167,8 +170,21 @@ impl GpuSynth {
         // the reduce pass reads it, so an uninitialized allocation is safe.
         let mix_partial_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mix partial"),
-            size: (config.block_size * config.midi_channels * 6 * 4) as u64,
+            size: (chunk_size * config.midi_channels * 6 * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let chunks = config.block_size.div_ceil(chunk_size).max(1);
+        let chunk_align = u64::from(
+            device
+                .limits()
+                .min_uniform_buffer_offset_alignment
+                .max(ChunkParams::SIZE as u32),
+        );
+        let chunk_params_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("chunk params"),
+            size: (chunks as u64 * chunk_align).max(ChunkParams::SIZE as u64),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let mix_events_buf = GrowableBuffer::new(
@@ -221,6 +237,9 @@ impl GpuSynth {
             states_readback_cur: 0,
             mix_buckets_buf,
             mix_partial_buf,
+            chunk_params_buf,
+            chunk_align,
+            chunk_params_bytes: Vec::new(),
             mix_events_buf,
             mix_params_buf,
             render_bg: None,

@@ -158,6 +158,10 @@ pub struct GpuSynth {
     mix_buckets_buf: GrowableBuffer,
     /// 每 (frame, channel) 的立体声部分和（gather → reduce）。
     mix_partial_buf: wgpu::Buffer,
+    /// REF-LGS-002：每个帧块的 uniform 槽位（动态偏移）。
+    chunk_params_buf: wgpu::Buffer,
+    chunk_align: u64,
+    chunk_params_bytes: Vec<u8>,
     /// Per-block controller events (frame-exact, replayed by the mix pass).
     mix_events_buf: GrowableBuffer,
     mix_params_buf: wgpu::Buffer,

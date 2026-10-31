@@ -1,5 +1,6 @@
 use super::pipelines::{
-    bind_entry, create_mix_pipeline, create_mix_reduce_pipeline, create_render_pipeline,
+    bind_entry, bind_entry_dynamic_uniform, create_mix_pipeline, create_mix_reduce_pipeline,
+    create_render_pipeline,
 };
 use super::*;
 
@@ -20,6 +21,8 @@ pub struct GpuResources {
     pub mix_layout: wgpu::BindGroupLayout,
     /// Block size compiled into the shaders.
     pub block_size: usize,
+    /// REF-LGS-002: frames per render/mix dispatch (divides `block_size`).
+    pub chunk_size: usize,
     /// Max voices compiled into the shaders.
     pub max_voices: usize,
 }
@@ -38,8 +41,9 @@ impl GpuResources {
         let device = &ctx.device;
 
         // --- render bind group layout ---
-        // binding 0: voice params, 1..=8: sample chunks, 9: sinc table,
-        // 10: env stages, 11: voice states (rw), 12: voice output (rw).
+        // binding 0: voice params, 1..=4: sample chunks, 5: sinc table,
+        // 6: env stages, 7: voice states (rw), 8: voice output (rw),
+        // 9: per-chunk params (dynamic uniform, REF-LGS-002).
         let mut render_entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::with_capacity(13);
         render_entries.push(bind_entry(
             0,
@@ -72,6 +76,10 @@ impl GpuResources {
             VOICE_OUT_BINDING,
             wgpu::ShaderStages::COMPUTE,
             wgpu::BufferBindingType::Storage { read_only: false },
+        ));
+        render_entries.push(bind_entry_dynamic_uniform(
+            CHUNK_PARAMS_RENDER_BINDING,
+            ChunkParams::SIZE as u64,
         ));
         let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("render bind group layout"),
@@ -112,10 +120,12 @@ impl GpuResources {
                     wgpu::ShaderStages::COMPUTE,
                     wgpu::BufferBindingType::Storage { read_only: false },
                 ),
+                bind_entry_dynamic_uniform(CHUNK_PARAMS_MIX_BINDING, ChunkParams::SIZE as u64),
             ],
         });
 
-        let render_pipeline = create_render_pipeline(device, &render_layout, block_size)?;
+        let chunk_size = crate::gpu::render_chunk_size(block_size);
+        let render_pipeline = create_render_pipeline(device, &render_layout, chunk_size)?;
         let mix_pipeline = create_mix_pipeline(device, &mix_layout)?;
         let mix_reduce_pipeline = create_mix_reduce_pipeline(device, &mix_layout)?;
 
@@ -127,6 +137,7 @@ impl GpuResources {
             render_layout,
             mix_layout,
             block_size,
+            chunk_size,
             max_voices,
         })
     }

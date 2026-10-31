@@ -48,6 +48,14 @@ struct MixEvent {
     value: f32,
 }
 
+// REF-LGS-002: frame-chunk parameters (uniform, dynamic offset).
+struct ChunkParams {
+    render_frame_base: u32,
+    mix_frame_base: u32, // block-relative frame of this chunk's first sample
+    chunk_size: u32,
+    _pad: u32,
+}
+
 // Fixed prefix of the bucket buffer: 2 groups x (256 channels + 1) offsets.
 // Indices start after this prefix (see `MIX_BUCKET_OFFSETS` on the host).
 const BUCKET_OFFSETS: u32 = 514u;
@@ -57,6 +65,7 @@ const BUCKET_OFFSETS: u32 = 514u;
 @group(0) @binding(3) var<storage, read> mix_events: array<MixEvent>;
 @group(0) @binding(4) var<uniform> mix_params: MixParams;
 @group(0) @binding(5) var<storage, read_write> mix_partial: array<f32>;
+@group(0) @binding(6) var<uniform> chunk: ChunkParams;
 
 // Advances a ValueLerp by `n` frames and clamps to its target.
 fn lerp_advance(current: f32, step: f32, end: f32, n: f32) -> f32 {
@@ -81,9 +90,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let f = gid.x;
     let ch = gid.y;
     let channels = mix_params.channel_count;
-    if (f >= mix_params.block_size || ch >= channels) {
+    let chunk_size = chunk.chunk_size;
+    if (f >= chunk_size || ch >= channels) {
         return;
     }
+    // Block-relative frame used by `MixEvent.frame` and the controller
+    // replay (the chunk's local frame is 0..chunk_size).
+    let f_global = chunk.mix_frame_base + f;
 
     // Stable per-(channel, released) buckets: group 0 = sustained voices,
     // group 1 = released voices, each in the original ascending voice order.
@@ -97,7 +110,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var acc_r = 0.0;
     for (var i = s0; i < s1; i = i + 1u) {
         let v = mix_buckets[BUCKET_OFFSETS + i];
-        let base = (v * mix_params.block_size + f) * 2u;
+        let base = (v * chunk_size + f) * 2u;
         acc_l = acc_l + voice_out[base];
         acc_r = acc_r + voice_out[base + 1u];
     }
@@ -105,7 +118,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var acc_rel_r = 0.0;
     for (var i = r0; i < r1; i = i + 1u) {
         let v = mix_buckets[BUCKET_OFFSETS + i];
-        let base = (v * mix_params.block_size + f) * 2u;
+        let base = (v * chunk_size + f) * 2u;
         acc_rel_l = acc_rel_l + voice_out[base];
         acc_rel_r = acc_rel_r + voice_out[base + 1u];
     }
@@ -116,7 +129,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var cur = mix_params.starts[ch];
     var frame_c = 0u;
     var i = 0u;
-    while (i < mix_params.event_count && mix_events[i].frame <= f) {
+    while (i < mix_params.event_count && mix_events[i].frame <= f_global) {
         let ev = mix_events[i];
         if (ev.channel == ch) {
             let n = f32(ev.frame - frame_c);
@@ -138,8 +151,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         i = i + 1u;
     }
 
-    // Advance each controller to frame f.
-    let n = f32(f - frame_c);
+    // Advance each controller to frame f (block-relative).
+    let n = f32(f_global - frame_c);
     let vol = lerp_advance(cur.vol, cur.vol_step, cur.vol_end, n);
     let expr = lerp_advance(cur.expr, cur.expr_step, cur.expr_end, n);
     let amp = (vol * expr) * (vol * expr);

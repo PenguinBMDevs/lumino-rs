@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::gpu::{CHUNK_PARAMS_MIX_BINDING, CHUNK_PARAMS_RENDER_BINDING, ChunkParams};
+
 impl GpuSynth {
     pub(crate) fn update_mix_params(&mut self, base: u64) -> Result<(), SynthError> {
         let queue = &self.res.ctx.queue;
@@ -178,6 +180,14 @@ impl GpuSynth {
                 binding: crate::gpu::VOICE_OUT_BINDING,
                 resource: self.voice_out_buf.buffer().as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: CHUNK_PARAMS_RENDER_BINDING,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &self.chunk_params_buf,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
+                }),
+            },
         ]);
         self.render_bg = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("render bind group"),
@@ -211,6 +221,14 @@ impl GpuSynth {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: self.mix_partial_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: CHUNK_PARAMS_MIX_BINDING,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.chunk_params_buf,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
+                    }),
                 },
             ],
         }));
@@ -247,6 +265,14 @@ impl GpuSynth {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: self.mix_partial_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: CHUNK_PARAMS_MIX_BINDING,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.chunk_params_buf,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
+                    }),
                 },
             ],
         }));

@@ -17,6 +17,24 @@ pub(super) fn bind_entry(
     }
 }
 
+/// REF-LGS-002: uniform binding addressed with a dynamic offset (one slot
+/// per render/mix frame chunk).
+pub(super) fn bind_entry_dynamic_uniform(
+    binding: u32,
+    min_size: u64,
+) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: wgpu::BufferSize::new(min_size),
+        },
+        count: None,
+    }
+}
+
 pub(super) fn create_render_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,

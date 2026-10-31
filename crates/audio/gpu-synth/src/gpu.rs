@@ -42,6 +42,23 @@ pub const SAMPLES_CHUNKS: usize = 4;
 /// creation (see `create_render_pipeline`).
 pub const RENDER_SEGMENTS: u32 = 4;
 
+/// REF-LGS-002: maximum number of frames a single render/mix dispatch
+/// processes. A block larger than this is rendered in frame chunks that
+/// REUSE the same `voice_out` buffer, so its peak memory is
+/// `chunk × voices × 8 B` instead of `block × voices × 8 B`.
+///
+/// Chunking does not change the audio: every voice still advances frame by
+/// frame and every per-channel sum keeps the original voice order.
+pub const MIX_CHUNK_FRAMES: usize = 2048;
+
+/// Frames processed per render/mix dispatch for a block size.
+///
+/// Always a power of two that divides the (power-of-two) block size, so the
+/// last chunk is never partial.
+pub fn render_chunk_size(block_size: usize) -> usize {
+    block_size.clamp(16, MIX_CHUNK_FRAMES)
+}
+
 /// Capacity of one sample chunk in bytes (1 GiB, well below the 2 GiB
 /// `max_storage_buffer_binding_size` requested from the adapter).
 pub const SAMPLES_CHUNK_BYTES: u64 = 1 << 30;
@@ -59,3 +76,26 @@ pub const ENV_BINDING: u32 = SINC_BINDING + 1;
 pub const STATES_BINDING: u32 = ENV_BINDING + 1;
 /// Binding index of the voice output (read-write).
 pub const VOICE_OUT_BINDING: u32 = STATES_BINDING + 1;
+/// Binding index of the per-chunk parameters (render pass).
+pub const CHUNK_PARAMS_RENDER_BINDING: u32 = VOICE_OUT_BINDING + 1;
+/// Binding index of the per-chunk parameters (mix/reduce passes).
+pub const CHUNK_PARAMS_MIX_BINDING: u32 = 6;
+
+#[cfg(test)]
+mod tests {
+    use super::{MIX_CHUNK_FRAMES, render_chunk_size};
+
+    /// 002: 分块必须整除块长，且不超过上限；小块保持原样（512 档零行为变化）。
+    #[test]
+    fn render_chunk_size_divides_power_of_two_blocks() {
+        for block in [16usize, 64, 256, 512, 1024, 2048, 4096, 8192] {
+            let chunk = render_chunk_size(block);
+            assert!(chunk <= MIX_CHUNK_FRAMES, "chunk {chunk} > cap");
+            assert_eq!(block % chunk, 0, "chunk {chunk} 必须整除 block {block}");
+        }
+        assert_eq!(render_chunk_size(512), 512);
+        assert_eq!(render_chunk_size(1024), 1024);
+        assert_eq!(render_chunk_size(2048), MIX_CHUNK_FRAMES);
+        assert_eq!(render_chunk_size(8192), MIX_CHUNK_FRAMES);
+    }
+}

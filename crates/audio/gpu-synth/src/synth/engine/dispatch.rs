@@ -2,6 +2,8 @@ use lumino_core::trf;
 
 use super::*;
 
+use crate::gpu::ChunkParams;
+
 /// `wgpu::BufferSize::new` 仅对 0 字节返回 `None`；统一转成带上下文的 GPU
 /// 错误，避免生产路径 `unwrap`。
 fn checked_buffer_size(bytes: usize) -> Result<wgpu::BufferSize, SynthError> {
@@ -11,23 +13,26 @@ fn checked_buffer_size(bytes: usize) -> Result<wgpu::BufferSize, SynthError> {
 
 impl GpuSynth {
     #[allow(clippy::modulo_one)] // STATES_SYNC_EVERY is 1; the cadence is configurable
-    pub(crate) fn dispatch(&mut self, _base: u64) -> Result<(), SynthError> {
+    pub(crate) fn dispatch(&mut self, base: u64) -> Result<(), SynthError> {
         let mut voices = self.active_voice_count;
         let block = self.config.block_size as u32;
+        // REF-LGS-002: render/mix in frame chunks that reuse `voice_out`;
+        // the buffer cap therefore scales with the chunk, not the block.
+        let chunk_size = self.res.chunk_size as u32;
+        let chunks = block.div_ceil(chunk_size).max(1);
 
         // Physical ceiling: the voice output buffer cannot exceed the
         // device's maximum buffer size. For limited mode report a clear
-        // error; for unlimited (black-MIDI) chunking would be required to
-        // exceed this, but the limit is ~524k voices at block 512 (~131k at
-        // 2048), far beyond any real black MIDI peak (observed ~80k), so a
-        // trim-to-fit fallback is practically unlimited and keeps the code
-        // simple. A full chunked dispatch is reserved for a future change if
-        // a file truly needs >500k simultaneous voices.
-        if (voices as u64) * (block as u64) * 8 > MAX_VOICE_OUT_BYTES {
+        // error; for unlimited (black-MIDI) mode we trim the oldest note
+        // groups to fit. With REF-LGS-002 frame chunking the ceiling is
+        // `MAX / (chunk × 8)` (e.g. block 8192 / chunk 1024 -> 262k voices
+        // instead of 32k before chunking), so it is far beyond any real
+        // black-MIDI peak (observed ~80k).
+        if (voices as u64) * (chunk_size as u64) * 8 > MAX_VOICE_OUT_BYTES {
             if self.config.max_voices == 0 {
-                let max_batch = (MAX_VOICE_OUT_BYTES / (block as u64 * 8)) as u32;
+                let max_batch = (MAX_VOICE_OUT_BYTES / (chunk_size as u64 * 8)) as u32;
                 eprintln!(
-                    "[warn] voices {voices} * block {block} exceeds device buffer ({} bytes), capping to {max_batch} (oldest trimmed)",
+                    "[warn] voices {voices} * chunk {chunk_size} exceeds device buffer ({} bytes), capping to {max_batch} (oldest trimmed)",
                     MAX_VOICE_OUT_BYTES
                 );
                 // Trim oldest voices down to max_batch (same steal semantics
@@ -74,7 +79,7 @@ impl GpuSynth {
         if self.voice_out_buf.ensure(
             &self.res.ctx.device,
             &self.res.ctx.queue,
-            (voices * block * 2 * 4) as u64,
+            (voices * chunk_size * 2 * 4) as u64,
         ) {
             self.render_bg_dirty = true;
             self.mix_bg_dirty = true;
@@ -118,7 +123,6 @@ impl GpuSynth {
 
         let device = &self.res.ctx.device;
         let queue = &self.res.ctx.queue;
-        let block = self.config.block_size as u32;
         let voices = self.active_voice_count;
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -174,38 +178,64 @@ impl GpuSynth {
             .as_ref()
             .ok_or_else(|| SynthError::Gpu("mix bind group missing".into()))?;
 
+        // REF-LGS-002: per-chunk uniforms, addressed with dynamic offsets so
+        // all chunks can be recorded into one encoder/submission.
         {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("render pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.res.render_pipeline);
-            pass.set_bind_group(0, render_bg, &[]);
-            // Each voice is split across RENDER_SEGMENTS threads (gid.y);
-            // the shader fast-forwards to its segment start, so the GPU
-            // parallelism is voices x segments.
-            pass.dispatch_workgroups(voices.div_ceil(128).max(1), crate::gpu::RENDER_SEGMENTS, 1);
+            let align = self.chunk_align as usize;
+            self.chunk_params_bytes.clear();
+            self.chunk_params_bytes.resize(chunks as usize * align, 0);
+            for (i, slot) in self.chunk_params_bytes.chunks_mut(align).enumerate() {
+                let p = ChunkParams {
+                    render_frame_base: (base + i as u64 * chunk_size as u64) as u32,
+                    mix_frame_base: (i as u64 * chunk_size as u64) as u32,
+                    chunk_size,
+                    _pad: 0,
+                };
+                slot[..ChunkParams::SIZE].copy_from_slice(bytemuck::bytes_of(&p));
+            }
+            queue.write_buffer(&self.chunk_params_buf, 0, &self.chunk_params_bytes);
         }
 
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("mix pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.res.mix_pipeline);
-            pass.set_bind_group(0, mix_bg, &[]);
-            let channels = self.channels.len().max(1) as u32;
-            pass.dispatch_workgroups(block.div_ceil(128).max(1), channels, 1);
-        }
+        let channels = self.channels.len().max(1) as u32;
+        let voice_groups = voices.div_ceil(128).max(1);
+        let chunk_groups = chunk_size.div_ceil(128).max(1);
+        let chunk_align = self.chunk_align as u32;
 
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("mix reduce pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.res.mix_reduce_pipeline);
-            pass.set_bind_group(0, mix_bg, &[]);
-            pass.dispatch_workgroups(block.div_ceil(128).max(1), 1, 1);
+        for i in 0..chunks {
+            let offset = i * chunk_align;
+
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("render pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.res.render_pipeline);
+                pass.set_bind_group(0, render_bg, &[offset]);
+                // Each voice is split across RENDER_SEGMENTS threads (gid.y);
+                // the shader fast-forwards to its segment start, so the GPU
+                // parallelism is voices x segments.
+                pass.dispatch_workgroups(voice_groups, crate::gpu::RENDER_SEGMENTS, 1);
+            }
+
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("mix pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.res.mix_pipeline);
+                pass.set_bind_group(0, mix_bg, &[offset]);
+                pass.dispatch_workgroups(chunk_groups, channels, 1);
+            }
+
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("mix reduce pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.res.mix_reduce_pipeline);
+                pass.set_bind_group(0, mix_bg, &[offset]);
+                pass.dispatch_workgroups(chunk_groups, 1, 1);
+            }
         }
 
         // Readbacks. The voice states are only copied back every

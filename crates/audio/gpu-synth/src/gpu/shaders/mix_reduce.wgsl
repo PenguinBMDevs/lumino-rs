@@ -34,16 +34,25 @@ struct MixStart {
     _pad2: f32,
 }
 
+// REF-LGS-002: frame-chunk parameters (uniform, dynamic offset).
+struct ChunkParams {
+    render_frame_base: u32,
+    mix_frame_base: u32, // block-relative frame of this chunk's first sample
+    chunk_size: u32,
+    _pad: u32,
+}
+
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 @group(0) @binding(4) var<uniform> mix_params: MixParams;
 @group(0) @binding(5) var<storage, read_write> mix_partial: array<f32>;
+@group(0) @binding(6) var<uniform> chunk: ChunkParams;
 
 @compute
 @workgroup_size(128)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let f = gid.x;
     let channels = mix_params.channel_count;
-    if (f >= mix_params.block_size) {
+    if (f >= chunk.chunk_size) {
         return;
     }
 
@@ -56,6 +65,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         out_r = out_r + mix_partial[o + 1u] * mix_partial[o + 2u] * mix_partial[o + 4u];
     }
 
-    output[f * 2u] = out_l;
-    output[f * 2u + 1u] = out_r;
+    let out_base = (chunk.mix_frame_base + f) * 2u;
+    output[out_base] = out_l;
+    output[out_base + 1u] = out_r;
 }

@@ -1,11 +1,15 @@
 // lumino-gpu-synth render kernel (pass 1).
 //
-// One invocation renders one voice for the whole block (BLOCK frames),
-// producing `BLOCK * 2` interleaved stereo samples into `voice_out`.
+// One invocation renders one voice for one FRAME CHUNK (BLOCK frames), where
+// BLOCK is the per-dispatch chunk size injected at pipeline creation
+// (REF-LGS-002: `min(block_size, MIX_CHUNK_FRAMES)`). The kernel writes
+// `BLOCK * 2` interleaved stereo samples into `voice_out`; the CPU dispatches
+// it once per chunk so the buffer is reused instead of being sized for the
+// whole block.
 //
 // The voice state (playback position, envelope stage, filter state) is
-// read from_val `states` at the start of the block and written back at the end,
-// so voices can span arbitrary many blocks.
+// read from `states` at the start of the chunk and written back at the end,
+// so voices can span arbitrary many chunks/blocks.
 //
 // Signal chain (mirrors XSynth's stereo voice):
 //   sample(L/R) * amp(velocity volume) * pan_gain(L/R) * envelope
@@ -33,7 +37,7 @@ struct VoiceParams {
     release_idx: u32,     // stage index (relative to env_base) to jump to on release
     finished_idx: u32,    // index of the terminal stage
     release_at: u32,      // absolute global frame at which release starts (0xFFFFFFFF = none)
-    base_frame: u32,      // absolute global frame of this block's first sample
+    base_frame: u32,      // absolute global frame of the block's first sample (kept for layout; the shader uses chunk.render_frame_base)
     interp: u32,          // 0 = linear, 1 = 64-point sinc
     channels: u32,        // 1 = mono, 2 = stereo pair
     start_at: u32,        // absolute global frame at which the voice starts (gated before)
@@ -61,6 +65,14 @@ struct EnvStageGpu {
     duration: u32,
 }
 
+// REF-LGS-002: frame-chunk parameters (uniform, dynamic offset).
+struct ChunkParams {
+    render_frame_base: u32, // global frame of this chunk's first sample
+    mix_frame_base: u32,    // block-relative frame of this chunk's first sample
+    chunk_size: u32,
+    _pad: u32,
+}
+
 @group(0) @binding(0) var<storage, read> params: array<VoiceParams>;
 // Sample data lives in fixed-size chunks so that no single storage binding
 // exceeds the device's per-binding size limit. CHUNK_F32 must match
@@ -74,6 +86,8 @@ const CHUNK_F32: u32 = 268435456u;
 @group(0) @binding(6) var<storage, read> env_stages: array<EnvStageGpu>;
 @group(0) @binding(7) var<storage, read_write> states: array<VoiceState>;
 @group(0) @binding(8) var<storage, read_write> voice_out: array<f32>;
+// Binding 9 = CHUNK_PARAMS_RENDER_BINDING (render layout; keep in sync).
+@group(0) @binding(9) var<uniform> chunk: ChunkParams;
 
 const VOICES_PER_GROUP: u32 = 128u;
 const SINC_PHASES: u32 = 4096u;
@@ -288,6 +302,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var st = states[voice];
     let out_base = voice * BLOCK * 2u;
     let seg = gid.y;
+    // REF-LGS-002: hoist the chunk base out of the per-frame loops (a
+    // uniform load inside the hot loop costs ~4% at block 512).
+    let frame_base = chunk.render_frame_base;
     // Filtered voices (use_effects = true) have signal-dependent biquad
     // state that cannot be fast-forwarded, so they run single-segment:
     // segment 0 renders the whole block, the other segments just zero their
@@ -323,7 +340,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // release/envelope/position logic; frames before `start_at` are gated
     // (no state advance, like the original loop's `continue`).
     for (var k = 0u; k < seg_start; k = k + 1u) {
-        let frame = p.base_frame + k;
+        let frame = frame_base + k;
         if (frame < p.start_at) {
             continue;
         }
@@ -337,7 +354,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     var f = seg_start;
     while (f < seg_end) {
-        let frame = p.base_frame + f;
+        let frame = frame_base + f;
 
         // --- start gating: the voice is silent before its note-on frame ---
         if (frame < p.start_at) {

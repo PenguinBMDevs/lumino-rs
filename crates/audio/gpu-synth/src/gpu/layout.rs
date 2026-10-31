@@ -136,6 +136,24 @@ pub struct MixStart {
 /// 单端口时循环只走 16 个通道，成本与历史一致。
 pub const MAX_MIDI_CHANNELS: usize = 256;
 
+/// REF-LGS-002：每个 render/mix dispatch 的帧块参数（uniform，动态偏移）。
+///
+/// `render_frame_base` 是**全局**帧号（render 的 `start_at`/`release_at`
+/// 比较用）；`mix_frame_base` 是**块内相对**帧号（`MixEvent.frame` 与
+/// `out_storage` 索引用）。
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ChunkParams {
+    pub render_frame_base: u32,
+    pub mix_frame_base: u32,
+    pub chunk_size: u32,
+    pub _pad: u32,
+}
+
+impl ChunkParams {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+}
+
 /// Mirror of `MixParams` in `mix.wgsl` (uniform buffer, 16-byte padded).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
