@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// REF-LGS-009：离线导出的 GPU 渲染块长（帧）。
+///
+/// 离线导出对延迟不敏感，块长是最便宜的杠杆（每块固定成本被摊薄）：
+/// `sustained65536` 实测 512→2048 快 **2.6×**、512→4096 快 **3.3×**
+/// （见 `docs/2026-10-31-REF-LGS-010-011-*` 的 A/B 表）。
+///
+/// 取 2048 而不是 4096：与 `scripts/lgs_bench_cases.json` 的主用档一致，
+/// 且 REF-LGS-008 的分层口径与 limiter 绝对帧窗口（A2）在该档已覆盖验证；
+/// 4096 的额外收益只有 ~20%，但每块内存/尾延迟翻倍。
+///
+/// **实时路径默认块长不变**（`LgsOptions::block_size`，见
+/// `crates/audio/midi-io/src/api/lgs/init.rs`）；这里只影响离线导出。
+///
+/// 合法性由 `SynthConfig::validate` 兜底（2 的幂且 ≥16），非法值在
+/// `GpuSynth::new` 处直接报错，不会静默降级。
+pub(super) const GPU_OFFLINE_BLOCK_SIZE: usize = 2048;
+
+// 编译期不变量：离线块长必须 ≥2048（否则本卡的目标失效）、是 2 的幂且 ≥16
+// （`SynthConfig::validate` 的硬要求）。改常量时在这里直接编译失败。
+const _: () = assert!(GPU_OFFLINE_BLOCK_SIZE >= 2048);
+const _: () = assert!(GPU_OFFLINE_BLOCK_SIZE.is_power_of_two());
+const _: () = assert!(GPU_OFFLINE_BLOCK_SIZE >= 16);
+
 /// 将 AudioInterpolation 映射到 GPU InterpolationMode
 fn map_interpolation(
     interp: super::config::AudioInterpolation,
@@ -56,7 +79,7 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
         max_voices: 0,
         max_voices_per_key,
         midi_channels,
-        block_size: 512,
+        block_size: GPU_OFFLINE_BLOCK_SIZE,
         interpolation: map_interpolation(config.interpolation),
         use_effects: true,
         envelope_curves,
@@ -66,8 +89,9 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
         show_progress: false,
     };
     tracing::info!(
-        "GPU SynthConfig: sample_rate={}, max_voices={} (0=无限制), max_voices_per_key={}, midi_channels={}, channels={:?}",
+        "GPU SynthConfig: sample_rate={}, block_size={} (离线默认), max_voices={} (0=无限制), max_voices_per_key={}, midi_channels={}, channels={:?}",
         synth_config.sample_rate,
+        synth_config.block_size,
         synth_config.max_voices,
         synth_config.max_voices_per_key,
         synth_config.midi_channels,
@@ -252,5 +276,53 @@ fn human_denom_to_pow2(d: u8) -> u8 {
         32 => 5,
         64 => 6,
         _ => 2,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// REF-LGS-009：构建出的 SynthConfig 必须直接用离线块长，并通过引擎校验。
+    #[test]
+    fn build_synth_config_uses_offline_block_size() {
+        let config = AudioRenderConfig::default();
+        let synth = build_synth_config(&config);
+        assert_eq!(synth.block_size, GPU_OFFLINE_BLOCK_SIZE);
+        assert!(
+            synth.validate().is_ok(),
+            "默认导出配置必须能通过 SynthConfig::validate"
+        );
+    }
+
+    /// CPU 后端的块式渲染参数（`block_frames`）与 GPU 块长解耦：
+    /// 改 CPU 侧不会把 GPU 拖回小块长（反之亦然）。
+    #[test]
+    fn cpu_block_frames_do_not_affect_gpu_block_size() {
+        for block_frames in [0u32, 1, 256, 1024] {
+            let config = AudioRenderConfig {
+                block_frames,
+                ..AudioRenderConfig::default()
+            };
+            let synth = build_synth_config(&config);
+            assert_eq!(
+                synth.block_size, GPU_OFFLINE_BLOCK_SIZE,
+                "block_frames={block_frames} 不应影响 GPU 块长"
+            );
+        }
+    }
+
+    /// 非法块长由引擎边界拒绝（不静默降级）——UI/配置传入非 2 的幂时能定位。
+    #[test]
+    fn invalid_block_sizes_are_rejected_by_the_engine() {
+        let base = build_synth_config(&AudioRenderConfig::default());
+        for bad in [0usize, 8, 100, 1000] {
+            let mut cfg = base.clone();
+            cfg.block_size = bad;
+            assert!(
+                cfg.validate().is_err(),
+                "block_size={bad} 应被 SynthConfig::validate 拒绝"
+            );
+        }
     }
 }
