@@ -3,8 +3,7 @@
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
 use super::{
-    DensityPyramid, OVERVIEW_MIN_NOTE_PX, SHORT_NOTE_MIN_PX, heat_argb, overview_note_estimate,
-    uses_overview,
+    DensityPyramid, heat_argb, overview_note_estimate, uses_overview, visible_measure_count,
 };
 use crate::{CanvasCamera, TrackIndex};
 
@@ -139,101 +138,68 @@ fn apply_note_outside_layout_requires_rebuild() {
 }
 
 #[test]
-fn short_note_percentile_only_switches_when_truly_subpixel() {
+fn overview_switches_at_thirty_visible_measures() {
+    let document = sample_document();
+    let index = TrackIndex::build(&document);
+    let mut camera = camera(0.001);
+
+    // 各缩放档的可见 tick 跨度 = measure_ticks × 小节数。
+    camera.zoom_x = 64.0 / (29.0 * 1920.0);
+    assert_eq!(visible_measure_count(&index, &camera), 29);
+    assert!(!uses_overview(&index, &camera), "29 个小节必须 Exact");
+
+    camera.zoom_x = 64.0 / (30.0 * 1920.0);
+    assert_eq!(visible_measure_count(&index, &camera), 30);
+    assert!(uses_overview(&index, &camera), "30 个小节切总览");
+
+    camera.zoom_x = 64.0 / (31.0 * 1920.0);
+    assert_eq!(visible_measure_count(&index, &camera), 31);
+    assert!(uses_overview(&index, &camera), "31 个小节继续总览");
+}
+
+#[test]
+fn overview_ignores_short_notes_and_key_row_height() {
     let mut document = MidiDocument::empty_with_tracks(2, 480);
     document.insert_note(1, NoteEvent::new(0, 2000, 60, 100, 0));
-    // 1-tick 短音符进入第 10 百分位。
     document.insert_note(1, NoteEvent::new(2000, 2001, 61, 100, 0));
     let index = TrackIndex::build(&document);
     assert_eq!(index.short_note_ticks, 1);
 
-    let mut camera = camera(0.5);
-    assert!(
-        uses_overview(&index, &camera),
-        "短音符 0.5px 真正亚像素，允许切总览"
-    );
-    camera.zoom_x = 1.0;
-    assert!(
-        !uses_overview(&index, &camera),
-        "1px/tick 的短音符必须画原始音符，不能切热度图"
-    );
-    camera.zoom_x = SHORT_NOTE_MIN_PX;
-    assert!(!uses_overview(&index, &camera), "1px 边界仍保持 Exact");
-    camera.zoom_x *= 0.999;
-    assert!(uses_overview(&index, &camera), "略低于 1px 才切总览");
-}
+    let mut camera = camera(0.001);
+    // 29 个小节 + 1-tick 短音符 + 单键行高 0.5px：仍必须 Exact。
+    camera.zoom_x = 64.0 / (29.0 * 1920.0);
+    camera.zoom_y = 0.5;
+    assert!(!uses_overview(&index, &camera));
 
-#[test]
-fn overview_switches_by_zoom_not_note_count() {
-    let document = sample_document();
-    let mut index = TrackIndex::build(&document);
-    // 1 个音符：数量极少，但 1/16 音符只有 1.2px（< 2px）→ 必须切总览。
-    let mut camera = camera(0.01);
-    assert!(
-        uses_overview(&index, &camera),
-        "缩放阈值触发不应依赖同屏音符数量"
-    );
-
-    // 反向证明：把聚合计数伪造到 2 亿，正常缩放也不得因「数量多」切档。
-    index.measure_counts = vec![200_000_000];
-    camera.zoom_x = 1.0;
-    assert!(
-        !uses_overview(&index, &camera),
-        "正常缩放下不得再按同屏音符数量切档"
-    );
-
-    // 计数恢复为 1：极限缩放仍应触发。
-    index.measure_counts = vec![1];
-    camera.zoom_x = 0.005;
+    // 30 个小节才切总览，与短音符/键行无关。
+    camera.zoom_x = 64.0 / (30.0 * 1920.0);
     assert!(uses_overview(&index, &camera));
 }
 
 #[test]
-fn overview_switches_by_key_row_height() {
-    let document = sample_document();
-    let index = TrackIndex::build(&document);
-    let mut camera = camera(1.0);
-    assert!(!uses_overview(&index, &camera), "横向正常时不应切档");
-    camera.zoom_y = 1.0;
-    assert!(
-        uses_overview(&index, &camera),
-        "单键行高 < 2px 时 Exact 已退化成线条，必须切总览"
-    );
-}
-
-#[test]
-fn overview_zoom_threshold_follows_ppq() {
+fn overview_threshold_follows_ppq() {
     let mut document = MidiDocument::empty_with_tracks(2, 960);
     document.insert_note(1, NoteEvent::new(0, 2000, 125, 100, 0));
     let index = TrackIndex::build(&document);
 
-    // PPQ=960：1/16 = 240 tick；0.01px/tick → 2.4px（Exact），0.008 → 1.92px（总览）。
-    let mut camera = camera(0.01);
-    assert!(
-        !uses_overview(&index, &camera),
-        "960 PPQ 下 0.01 仍是 2.4px"
-    );
-    camera.zoom_x = 0.008;
-    assert!(uses_overview(&index, &camera), "960 PPQ 下 0.008 已 < 2px");
+    // PPQ=960 → 每小节 3840 tick；30 小节 = 115200 tick。
+    let mut camera = camera(0.001);
+    camera.zoom_x = 64.0 / (29.0 * 3840.0);
+    assert!(!uses_overview(&index, &camera), "29 小节保持 Exact");
+    camera.zoom_x = 64.0 / (30.0 * 3840.0);
+    assert!(uses_overview(&index, &camera), "30 小节切总览");
 }
 
 #[test]
-fn overview_threshold_is_two_physical_pixels() {
+fn visible_measure_count_includes_partial_edge_measures() {
     let document = sample_document();
     let index = TrackIndex::build(&document);
-    let mut camera = camera(1.0);
-
-    // 恰好 2px：仍是 Exact（判定为严格小于）。
-    camera.zoom_x = OVERVIEW_MIN_NOTE_PX / 120.0;
-    assert!(!uses_overview(&index, &camera), "2px 边界应保持 Exact");
-    camera.zoom_x *= 0.999;
-    assert!(uses_overview(&index, &camera), "略低于 2px 应切总览");
-
-    camera.zoom_x = 1.0;
-    camera.zoom_y = OVERVIEW_MIN_NOTE_PX;
-    assert!(!uses_overview(&index, &camera), "键行 2px 边界应保持 Exact");
-    camera.zoom_y *= 0.999;
-    assert!(uses_overview(&index, &camera), "键行略低于 2px 应切总览");
+    let mut camera = camera(0.001);
+    // 从第 0 小节中间开始，覆盖到第 30 小节中间：首尾两个部分小节都计入。
+    camera.scroll_x = 1000.0;
+    camera.zoom_x = 64.0 / (29.5 * 1920.0);
+    assert!(visible_measure_count(&index, &camera) >= 30);
+    assert!(uses_overview(&index, &camera));
 }
 
 #[test]

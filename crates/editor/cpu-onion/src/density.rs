@@ -11,16 +11,12 @@
 //!
 //! # 触发条件
 //!
-//! **按缩放比例，不按同屏音符数量**。逐音符绘制只有在音符还有可辨认的屏幕
-//! 尺寸时才有意义；当以下任一条件成立时切密度热力图：
+//! **按同屏可见小节数判定**：屏幕横向覆盖 **≥ 30 个小节**时切密度热力图，
+//! 少于 30 个小节保持 Exact 逐音符绘制。不再使用 1/16 音符宽度、音符数量或
+//! 短音符百分位等间接阈值——小节数就是用户实际感知的“缩放级别”。
 //!
-//! - 横向：`zoom_x × (measure_ticks / 16) < 2px`（1/16 音符宽度）；
-//! - 横向：`zoom_x × short_note_ticks < 1px`（第 10 百分位短音符**真正亚像素**；
-//!   1px 及以上必须画原始音符，2px 阈值会把高缩放误切总览）；
-//! - 纵向：`zoom_y < 2px`（单键行高）。
-//!
-//! `measure_ticks` 与 `short_note_ticks` 来自 [`TrackIndex`]，因此阈值随 PPQ
-//! 与内容自适应；相机的 `zoom` 已含 DPI，阈值是物理像素。空文档不切换。
+//! `measure_ticks = PPQ × 4` 来自 [`TrackIndex`]；相机 `zoom` 已含 DPI。
+//! 空文档不切换。
 //!
 //! [`overview_note_estimate`] 仅保留为诊断/基准估算，**不参与档位判定**。
 //!
@@ -46,17 +42,11 @@ const BASE_BIN_TICKS: u32 = 64;
 const LEVELS: usize = 7;
 /// 基础层 bin 数上限：控制内存（`bins × keys × 2B`）。
 const MAX_BASE_BINS: usize = 32_768;
-/// 密度 LOD 的物理像素阈值。
+/// 同屏可见小节数达到该值时切总览密度 LOD。
 ///
-/// 1/16 音符宽度或单键行高低于该值时，Exact 路径已经退化成亚像素线条/纯描边；
-/// 密度热力图比逐音符堆叠更可读。2px 是「还能看见一个色块」的下限。
-pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
-
-/// 短音符（第 10 百分位）**真正亚像素**的阈值：低于 1px 才切总览。
-///
-/// 不能用 2px：1-tick 音符在 1.5px/tick 下仍然可见，2px 会把它整段吞成
-/// 热力图（“高缩放还是热度图”的根因）。
-pub const SHORT_NOTE_MIN_PX: f32 = 1.0;
+/// 30 个小节是产品判定：屏幕横向还能看到 30 个及以上小节时逐音符矩形已
+/// 不可读，用密度热力图；少于 30 个必须画原始音符。
+pub const OVERVIEW_MIN_MEASURES: u32 = 30;
 
 /// 总览渲染的可复用临时缓冲（避免每帧分配 245k u32 的 key_rows）。
 #[derive(Debug, Default)]
@@ -280,10 +270,23 @@ pub fn overview_note_estimate(index: &TrackIndex, camera: &CanvasCamera) -> u64 
     estimate.saturating_mul(visible_keys) / total_keys
 }
 
-/// 是否应切到总览密度 LOD（**只看缩放与内容长度，不看音符数量**）。
+/// 屏幕横向覆盖的可见小节数（首尾部分小节都计入）。
 ///
-/// 1/16 音符宽度 = `zoom_x × measure_ticks / 16`；`short_note_ticks` 是长度
-/// 第 10 百分位。相机 `zoom` 已是物理像素（DPI 已乘入）。
+/// 用 tick 区间与小节边界相交的整数小节数：`[start, end)` 覆盖
+/// `start / measure_ticks ..= (end - 1) / measure_ticks`。
+#[must_use]
+pub fn visible_measure_count(index: &TrackIndex, camera: &CanvasCamera) -> u32 {
+    let measure_ticks = index.measure_ticks.max(1);
+    let (start, end) = camera.visible_tick_range();
+    if end <= start {
+        return 0;
+    }
+    let first = start / measure_ticks;
+    let last = end.saturating_sub(1) / measure_ticks;
+    last.saturating_sub(first).saturating_add(1)
+}
+
+/// 是否应切到总览密度 LOD：**同屏可见小节数 ≥ 30**。
 #[must_use]
 pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
     if index.total_notes == 0 {
@@ -296,11 +299,7 @@ pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
     {
         return false;
     }
-    let sixteenth_ticks = (index.measure_ticks / 16).max(1) as f32;
-    let short_ticks = index.short_note_ticks.max(1) as f32;
-    camera.zoom_x * short_ticks < SHORT_NOTE_MIN_PX
-        || camera.zoom_x * sixteenth_ticks < OVERVIEW_MIN_NOTE_PX
-        || camera.zoom_y < OVERVIEW_MIN_NOTE_PX
+    visible_measure_count(index, camera) >= OVERVIEW_MIN_MEASURES
 }
 
 /// 基础层规划：桶宽与 bin 数。

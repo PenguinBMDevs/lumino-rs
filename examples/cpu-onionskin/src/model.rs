@@ -4,9 +4,9 @@
 //!   的精确 lookback。黑乐谱 75% 音符只有 1~7 tick，按轨取最大值而不是全曲
 //!   最大值，可避免为少数长音符把每一帧的扫描窗口放大到几十小节。
 //! - `measure_counts[measure]`：每小节 onset 数，用于基准密集段定位与诊断估算；
-//!   **不参与总览档位判定**（档位只看缩放，见 `render::density::uses_overview`）。
-//! - `short_note_ticks`：音符长度的第 10 百分位（至少 1 tick），用于判断
-//!   "短音符在当前缩放下是否已不足 1px"；与 1/16 音符阈值一起决定总览 LOD。
+//!   **不参与总览档位判定**（档位只看同屏小节数，见 `render::density::uses_overview`）。
+//! - `short_note_ticks`：音符长度的第 10 百分位（至少 1 tick），供列主序窄音符
+//!   阈值使用；不参与总览 LOD。
 
 use lumino_midi_loader::{MidiDocument, NoteEvent};
 

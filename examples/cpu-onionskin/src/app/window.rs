@@ -152,8 +152,7 @@ impl App {
     }
 
     pub(super) fn choose_mode(&self, camera: &Camera) -> LodMode {
-        // 与 lumino-cpu-onion 生产实现同一口径：只看缩放（1/16 音符宽度 /
-        // 单键行高是否低于 2 物理像素），不再按同屏音符数量判定。
+        // 与 lumino-cpu-onion 生产实现同一口径：同屏可见小节数 ≥30 才切总览。
         if crate::render::density::uses_overview(&self.index, camera) {
             return LodMode::Overview;
         }

@@ -89,7 +89,7 @@ impl TrackIndex {
             next.mark_key_mask(track, note);
         }
         if track_notes > 0 {
-            // 直接编辑后短音符只可能变短；取 min 让 LOD 偏保守，宁可直接切总览。
+            // 直接编辑后短音符只可能变短；保留最小值仅作诊断统计。
             next.short_note_ticks = next.short_note_ticks.max(1).min(track_min);
         }
 

@@ -146,6 +146,7 @@ fn zoom_bench_real_midi() {
     }
     let elapsed = start.elapsed().as_secs_f64();
     let frames = samples.len();
+    let wall_fps = frames as f64 / elapsed.max(0.001);
     let (p50, p99, max, mean) = summarize(&mut samples);
     println!("== CPU 洋葱皮 1080p 快速缩放 ==");
     println!(
@@ -154,14 +155,16 @@ fn zoom_bench_real_midi() {
         index.key_mask_bytes() as f64 / (1024.0 * 1024.0)
     );
     println!(
-        "frames={frames} | wall={:.1} fps | render p50={p50:.2} p99={p99:.2} max={max:.2} mean={mean:.2} ms | equivalent p50={:.1} fps",
-        frames as f64 / elapsed.max(0.001),
+        "frames={frames} | wall={wall_fps:.1} fps | render p50={p50:.2} p99={p99:.2} max={max:.2} mean={mean:.2} ms | equivalent p50={:.1} fps",
         1000.0 / p50.max(0.001)
     );
     println!(
         "modes: overview {overview_frames} / exact {exact_frames} | last visible={last_visible} | bands={bands}"
     );
-    let grade = if p50 <= 5.0 {
+    // 平均 FPS 是硬门槛：单看 p50 会把 2 秒级尖峰藏掉。
+    let grade = if wall_fps < 100.0 {
+        "BELOW_FLOOR"
+    } else if p50 <= 5.0 {
         "IDEAL(200fps)"
     } else if p50 <= 1000.0 / 130.0 {
         "EXCELLENT(130fps)"
@@ -171,14 +174,23 @@ fn zoom_bench_real_midi() {
         "BELOW_FLOOR"
     };
     println!(
-        "target: p50 {p50:.2}ms | 100fps {} | 130fps {} | 200fps {} => {grade}",
-        if p50 <= 10.0 { "PASS" } else { "FAIL" },
-        if p50 <= 1000.0 / 130.0 {
+        "target: wall {wall_fps:.1}fps {} | p50 {p50:.2}ms | 100fps {} | 130fps {} | 200fps {} => {grade}",
+        if wall_fps >= 100.0 { "PASS" } else { "FAIL" },
+        if wall_fps >= 100.0 && p50 <= 10.0 {
             "PASS"
         } else {
             "FAIL"
         },
-        if p50 <= 5.0 { "PASS" } else { "FAIL" }
+        if wall_fps >= 100.0 && p50 <= 1000.0 / 130.0 {
+            "PASS"
+        } else {
+            "FAIL"
+        },
+        if wall_fps >= 100.0 && p50 <= 5.0 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     );
 
     // UI 快照评估：生产路径逐帧克隆像素 Arc（零拷贝）；旧路径

@@ -6,14 +6,11 @@
 //!
 //! # 触发条件（与 `lumino-cpu-onion` 生产实现一致）
 //!
-//! **按缩放比例，不按同屏音符数量**。以下任一条件成立时切密度热力图：
+//! **按同屏可见小节数判定**：屏幕横向覆盖 **≥ 30 个小节**时切密度热力图，
+//! 少于 30 个小节保持 Exact。不再使用 1/16 音符宽度、音符数量或短音符百分位
+//! 等间接阈值。
 //!
-//! - 1/16 音符宽度 `zoom_x × (measure_ticks / 16)` 低于 [`OVERVIEW_MIN_NOTE_PX`]；
-//! - 第 10 百分位短音符宽度 `zoom_x × short_note_ticks` 低于
-//!   [`SHORT_NOTE_MIN_PX`]（**真正亚像素**才切；1px 及以上保留原始音符）；
-//! - 单键行高 `zoom_y` 低于 [`OVERVIEW_MIN_NOTE_PX`]。
-//!
-//! `measure_ticks = PPQ × 4`，因此阈值随 PPQ 自适应；空文档不切换。
+//! `measure_ticks = PPQ × 4`；空文档不切换。
 
 use std::{sync::LazyLock, thread};
 
@@ -25,19 +22,23 @@ use crate::{
     render::chrome::{COLOR_BG, COLOR_BLACK_ROW, COLOR_RULER_BG, is_black_key},
 };
 
-/// 密度 LOD 的物理像素阈值。
-///
-/// 与 `lumino-cpu-onion` 的 `OVERVIEW_MIN_NOTE_PX` 保持一致：1/16 音符宽度或
-/// 单键行高低于 2px 时，Exact 已经退化成亚像素线条/纯描边，热力图更可读。
-pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
+/// 同屏可见小节数达到该值时切总览密度 LOD。
+pub const OVERVIEW_MIN_MEASURES: u32 = 30;
 
-/// 短音符（第 10 百分位）**真正亚像素**的阈值：低于 1px 才切总览。
-pub const SHORT_NOTE_MIN_PX: f32 = 1.0;
+/// 屏幕横向覆盖的可见小节数（首尾部分小节都计入）。
+#[must_use]
+pub fn visible_measure_count(index: &TrackIndex, camera: &Camera) -> u32 {
+    let measure_ticks = index.measure_ticks.max(1);
+    let (start, end) = camera.visible_tick_range();
+    if end <= start {
+        return 0;
+    }
+    let first = start / measure_ticks;
+    let last = end.saturating_sub(1) / measure_ticks;
+    last.saturating_sub(first).saturating_add(1)
+}
 
-/// 是否应切到总览密度 LOD（**只看缩放与内容长度，不看音符数量**）。
-///
-/// 1/16 音符宽度 = `zoom_x × measure_ticks / 16`；`short_note_ticks` 是长度
-/// 第 10 百分位。示例相机的 `zoom` 与生产 CPU 渲染器同为物理像素。
+/// 是否应切到总览密度 LOD：**同屏可见小节数 ≥ 30**。
 #[must_use]
 pub fn uses_overview(index: &TrackIndex, camera: &Camera) -> bool {
     if index.total_notes == 0 {
@@ -50,11 +51,7 @@ pub fn uses_overview(index: &TrackIndex, camera: &Camera) -> bool {
     {
         return false;
     }
-    let sixteenth_ticks = (index.measure_ticks / 16).max(1) as f32;
-    let short_ticks = index.short_note_ticks.max(1) as f32;
-    camera.zoom_x * short_ticks < SHORT_NOTE_MIN_PX
-        || camera.zoom_x * sixteenth_ticks < OVERVIEW_MIN_NOTE_PX
-        || camera.zoom_y < OVERVIEW_MIN_NOTE_PX
+    visible_measure_count(index, camera) >= OVERVIEW_MIN_MEASURES
 }
 
 /// 基础 bin 的 tick 宽度。

@@ -7,11 +7,11 @@
 //!   候选单独合并（按 `start_tick` 与正常窗口音符归并，保持源顺序）。
 //! - `measure_counts[measure]`：每小节 onset 数，供诊断估算与密集段定位；
 //!   编辑增量通过 [`TrackIndex::with_changes`] 维护。**不参与总览档位判定**
-//!   （档位只看缩放，见 `density::uses_overview`）。
+//!   （档位只看同屏小节数，见 `density::uses_overview`）。
 //! - `track_note_counts[track]`：每轨音符数，供 [`TrackIndex::rebuild_track_geometry`]
 //!   在不重扫全文档的前提下精确修正 `total_notes`。
-//! - `short_note_ticks`：音符长度第 10 百分位（至少 1 tick），供总览 LOD
-//!   判断短音符在当前缩放下是否已不足 1px。
+//! - `short_note_ticks`：音符长度第 10 百分位（至少 1 tick），仅诊断/统计；
+//!   总览 LOD 已改为同屏 ≥30 小节，不再使用该值。
 //!
 //! `MidiDocument::clone` 是块级浅拷贝（音符块 `Arc` 共享），本索引同样只做
 //! 聚合拷贝，不触碰音符数据。
@@ -48,8 +48,7 @@ pub struct TrackIndex {
     pub max_len: Vec<u32>,
     /// 音符长度第 10 百分位（至少 1 tick）；0 表示空文档。
     ///
-    /// 总览 LOD 用它判断短音符是否**真正亚像素**（<1px）；1px 及以上仍画
-    /// 原始音符，避免高缩放被误切热力图。
+    /// 仅诊断/统计用；总览 LOD 改为同屏 ≥30 小节后不再使用。
     pub short_note_ticks: u32,
     /// 超过 [`LOOKBACK_TICKS`] 的音符（按轨，按 `start_tick` 升序）。
     pub long_notes: Vec<Vec<NoteEvent>>,
