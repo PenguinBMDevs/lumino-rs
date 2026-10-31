@@ -136,28 +136,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # ── Windows 串行跑测试（GPU 顺序确定性）─────────────────────────
-      # 2026-10-31 实测根因：gfx 单测里 `device_check` 的探测用例会反复创建/销毁
-      # 自己的 Device。若进程里已有**驻留** Device（`test_gpu` 的共享设备），
-      # Windows DX12/WARP 会整体停摆：随后 `request_adapter` 返回 NotFound、
-      # 44 个 GPU 回读用例连锁报 "Buffer ... is invalid"（CPU 用例全绿，
-      # macOS/Metal 与 Linux/lavapipe 无此问题，串行/并行都与故障无关）。
-      # 三组排除法定位：跳过 cpu_onion 或跳过 device_check 任一组即全绿。
-      # 根因修复：CPU 洋葱皮 GPU 用例改用一次性设备（见
-      # `cpu_onion_renderer::tests_support::transient_device`），不再抢在
-      # `device_check` 之前把共享 Device 拉起来。
-      # 串行是第二道保障：让「探测用例执行期间没有并发 Device」不依赖字典序。
-      - name: Cargo test (Windows · 串行)
-        if: matrix.os == 'windows-latest'
-        run: cargo test --workspace -- --test-threads=1
-        env:
-          MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
-          LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
-
+      # ── Windows 测试（并行，与另外两个 OS 一致）──────────────────────
+      # 2026-10-31 曾在此临时改成 `--test-threads=1` 规避 gfx 单测连锁失败，
+      # 但串行化并未解决问题（真因是「驻留共享 Device + `device_check` 反复
+      # 建/销探测 Device」的 DX12 组合），反而让 `lumino-midi-io` 的音频设备
+      # 用例抛 STATUS_ACCESS_VIOLATION（并行模式下从未复现）。真因已由
+      # `cpu_onion_renderer::tests_support::transient_device` 修复，故恢复并行。
       - name: Cargo test
-        if: matrix.os != 'windows-latest'
         run: cargo test --workspace
         env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
 
   # ── 金丝雀构建：Windows x64 release → 推 Hugging Face ─────────────
