@@ -341,15 +341,19 @@ fn rect_from_drag(a: (f32, f32), b: (f32, f32)) -> Option<ShapeRect> {
     Some(ShapeRect::normalized(a.0, a.1, b.0, b.1))
 }
 
-/// Shift 约束的单位框拖拽点：取主轴长度，保留 dx/dy 符号。
+/// Shift 约束的单位框拖拽点：取**较短边**作为边长，保留 dx/dy 符号。
 ///
-/// 抽屉画板本身是正方形（1 unit × 1 unit），所以「主轴取 max(|dx|, |dy|)」
-/// 与主形状工具的屏幕空间约束在正方形视图下等价；主工具因 tick/key 像素
-/// 尺度不同仍走 `effective_rect`，不能直接复用本函数。
+/// 与主形状工具的 `effective_rect`（屏幕空间 `constraint_scale` 取短边）
+/// 同一口径：Shift 拖出的正方形/正圆不会超出拖拽框的任一轴。
 pub(crate) fn constrain_unit_rect(start: (f32, f32), current: (f32, f32)) -> (f32, f32) {
     let dx = current.0 - start.0;
     let dy = current.1 - start.1;
-    let side = dx.abs().max(dy.abs());
+    let side = match (dx.abs() > 0.0, dy.abs() > 0.0) {
+        (true, true) => dx.abs().min(dy.abs()),
+        (true, false) => dx.abs(),
+        (false, true) => dy.abs(),
+        (false, false) => 0.0,
+    };
     (start.0 + side.copysign(dx), start.1 + side.copysign(dy))
 }
 
@@ -373,16 +377,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constrain_unit_rect_uses_long_axis() {
+    fn test_constrain_unit_rect_uses_short_axis() {
         assert_eq!(
             constrain_unit_rect((0.2, 0.2), (0.7, 0.4)),
-            (0.7, 0.7),
-            "dx 更长时取 dx，dy 跟随主轴"
+            (0.4, 0.4),
+            "取较短边：dy=0.2 生效，正方形不超出拖拽框"
         );
         assert_eq!(
             constrain_unit_rect((0.2, 0.2), (0.3, 0.8)),
-            (0.8, 0.8),
-            "dy 更长时取 dy"
+            (0.3, 0.3),
+            "取较短边：dx=0.1 生效"
         );
     }
 
@@ -390,10 +394,28 @@ mod tests {
     fn test_constrain_unit_rect_keeps_direction() {
         assert_eq!(
             constrain_unit_rect((0.8, 0.8), (0.3, 0.6)),
-            (0.3, 0.3),
+            (0.6, 0.6),
             "反向拖拽保留负方向"
         );
-        assert_eq!(constrain_unit_rect((0.8, 0.8), (0.6, 0.3)), (0.3, 0.3));
+        assert_eq!(constrain_unit_rect((0.8, 0.8), (0.6, 0.3)), (0.6, 0.6));
+    }
+
+    #[test]
+    fn test_constrain_unit_rect_matches_main_tool_effective_rect() {
+        use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect};
+        let spec = ShapeSpec {
+            kind: lumino_editor_state::ShapeKind::Rectangle,
+            rect: (0.2, 0.2, 0.7, 0.4),
+            shift_constrained: true,
+            apex_high: true,
+        };
+        let effective = effective_rect(spec, 1.0, 1.0);
+        let constrained = constrain_unit_rect((0.2, 0.2), (0.7, 0.4));
+        assert_eq!(
+            effective,
+            (0.2, 0.2, constrained.0, constrained.1),
+            "同参数同结果：抽屉与主工具都取较短边"
+        );
     }
 
     #[test]

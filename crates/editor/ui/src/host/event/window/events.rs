@@ -29,6 +29,9 @@ impl Host {
             // 失焦时 IME 状态可能收不到 Disabled（系统直接切走焦点），主动复位，
             // 否则回到窗口后裸字母快捷键会一直失效。
             self.ime_active = false;
+            // 失焦时 Shift 的 Released 也可能收不到：主工具与工具栏都不能残留约束态。
+            self.root.editor.set_shift_pressed(false);
+            self.root.toolbar.shift_pressed = false;
         }
         self.route_message(message::Window::focused(focused));
     }

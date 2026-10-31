@@ -105,6 +105,10 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             state.shift_pressed = modifiers.shift();
             state.control_pressed = modifiers.control();
         }
+        if matches!(event, Event::Window(iced_core::window::Event::Unfocused)) {
+            state.shift_pressed = false;
+            state.control_pressed = false;
+        }
 
         let cursor_over_bounds = cursor.position_over(bounds);
         match event {

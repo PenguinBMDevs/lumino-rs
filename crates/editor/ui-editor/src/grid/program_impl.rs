@@ -194,6 +194,11 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 state.shift_pressed = modifiers.shift();
                 state.control_pressed = modifiers.control();
             }
+            Event::Window(iced_core::window::Event::Unfocused) => {
+                // 失焦时修饰键 Released 可能收不到，清掉避免 Shift 约束残留。
+                state.shift_pressed = false;
+                state.control_pressed = false;
+            }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
 
