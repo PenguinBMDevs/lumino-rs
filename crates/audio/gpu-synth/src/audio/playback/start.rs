@@ -53,9 +53,10 @@ impl AudioPlayback {
         // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用；
         // `nps_gate_enabled` = 用户「LGS 防爆闸」开关）。
         let admission = Arc::new(AdmissionState::new(nps_gate_enabled));
-        // REND-016 #139：过载重同步纪元——渲染线程在进出 Emergency 时递增；
-        // 音频回调发现纪元变化后丢弃已渲染的旧音频（直接跳到最新内容）。
-        let flush_epoch = Arc::new(AtomicU64::new(0));
+        // REF-LGS-016：这里曾有 `flush_epoch`（过载时丢弃已渲染的旧音频）。`7bb878b9`
+        // 把 REND-016 的入口重同步改成「宁糊不切」后就不再递增它，机制已死；
+        // 2026-11-01 删除。**不要重新引入丢弃队列音频的路径**：现场验收里它造成
+        // 可听跳跃，且会被懒重采样的慢块误触发（详见 REND-016 实施记录）。
 
         // 队列样本计数（交错样本）的换算基准——重采样时队列块按
         // 设备率计数，否则按引擎率计数；供 UI 把 samples 换算成时间。
@@ -409,7 +410,6 @@ impl AudioPlayback {
         // 然后持活直到 `stop_flag` 置位（Stream 析构即停止音频回调）。
         let (stream_tx_result, stream_rx_result) = mpsc::channel::<Result<(), SynthError>>();
         let owner_stop = stop_flag.clone();
-        let owner_flush_epoch = Arc::clone(&flush_epoch);
         let stream_owner = thread::Builder::new()
             .name("lumino-gpu-synth-stream-owner".into())
             .spawn(move || {
@@ -419,20 +419,11 @@ impl AudioPlayback {
                 };
                 let mut next_block: Vec<f32> = Vec::new();
                 let mut next_pos = 0usize;
-                // REND-016 #139：已见到的重同步纪元（变化时丢弃旧缓冲）。
-                let mut flush_seen = 0u64;
                 let stream = match device.build_output_stream(
                     &stream_config,
                     move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
-                        // REND-016 #139：过载重同步——纪元变化则丢弃已渲染的旧音频，
-                        // 直接跳到最新内容（避免爆点后旧尾段播完才恢复）。
-                        let epoch = owner_flush_epoch.load(Ordering::Relaxed);
-                        if epoch != flush_seen {
-                            flush_seen = epoch;
-                            while sample_rx.try_recv().is_ok() {}
-                            next_block.clear();
-                            next_pos = 0;
-                        }
+                        // REF-LGS-016：这里曾有「纪元变化 → 丢弃队列旧音频」分支，
+                        // 已随死代码一起删除（原因见 `flush_epoch` 处的注释）。
                         cb_stats
                             .last_request_samples
                             .store(data.len() as i64, Ordering::SeqCst);
