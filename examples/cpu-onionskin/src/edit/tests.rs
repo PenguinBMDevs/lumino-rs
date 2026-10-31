@@ -27,10 +27,29 @@ fn insert_delete_undo_redo_round_trip() {
 
     assert!(editor.delete_selected(&mut document, &mut index, &mut density, 0));
     assert_eq!(document.track_note_count(0), 2);
-    assert!(editor.undo(&mut document, &mut index));
+    assert!(editor.undo(&mut document, &mut index, &mut density));
     assert_eq!(document.track_note_count(0), 3);
-    assert!(editor.redo(&mut document, &mut index));
+    assert!(editor.redo(&mut document, &mut index, &mut density));
     assert_eq!(document.track_note_count(0), 2);
+}
+
+#[test]
+fn undo_redo_replays_density_without_full_dirty() {
+    let (mut document, mut index, mut density) = fixture();
+    let mut editor = Editor::new(1920);
+    editor.insert_at(&mut document, &mut index, &mut density, 0, 960, 64);
+    assert!(!editor.density_dirty, "插入后应只标记覆盖脏区");
+
+    assert!(editor.undo(&mut document, &mut index, &mut density));
+    assert!(!editor.density_dirty, "撤销不得要求整建密度");
+    assert!(
+        density.rebuild_dirty_coverage(&document, &index),
+        "撤销后覆盖层必须能局部重建"
+    );
+
+    assert!(editor.redo(&mut document, &mut index, &mut density));
+    assert!(!editor.density_dirty, "重做不得要求整建密度");
+    assert!(density.rebuild_dirty_coverage(&document, &index));
 }
 
 #[test]

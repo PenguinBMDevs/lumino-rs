@@ -24,6 +24,7 @@
 //! 超过 [`MAX_CPU_ONION_CHANGES`] 直接升级为 full，杜绝长事务把队列撑爆。
 
 use lumino_midi_model::NoteEvent;
+use lumino_note_core::history::SnapshotNoteChange;
 
 use super::EditorData;
 
@@ -66,6 +67,9 @@ impl CpuOnionDirty {
 /// 原子变更条数上限：超过即升级为整帧兜底（单笔编辑远达不到这个量级）。
 pub const MAX_CPU_ONION_CHANGES: usize = 32;
 
+/// 直接编辑索引提示上限：超过后差分代价不可控，交回整建兜底。
+pub const MAX_CPU_ONION_DIRECT_EDITS: usize = 8192;
+
 impl EditorData {
     /// CPU 洋葱皮脏区记录是否开启（默认 `false`，GPU 后端零开销）。
     #[inline]
@@ -82,6 +86,10 @@ impl EditorData {
         self.cpu_onion_dirty_enabled = enabled;
         if !enabled {
             self.cpu_onion_dirty = None;
+            self.cpu_onion_direct_edits.clear();
+            self.cpu_onion_direct_overflow = false;
+            self.history_pending_changes.clear();
+            self.history_pending_full = false;
         }
     }
 
@@ -94,7 +102,7 @@ impl EditorData {
         old: Option<NoteEvent>,
         new: Option<NoteEvent>,
     ) {
-        if !self.cpu_onion_dirty_enabled {
+        if !self.cpu_onion_dirty_enabled || self.history_replay {
             return;
         }
         let Some(dirty) = self.cpu_onion_dirty.as_mut() else {
@@ -102,6 +110,7 @@ impl EditorData {
                 full: false,
                 changes: vec![CpuOnionChange { track, old, new }],
             });
+            self.push_history_pending(CpuOnionChange { track, old, new });
             return;
         };
         if dirty.full {
@@ -113,15 +122,20 @@ impl EditorData {
             return;
         }
         dirty.changes.push(CpuOnionChange { track, old, new });
+        self.push_history_pending(CpuOnionChange { track, old, new });
     }
 
     /// 记录整帧兜底（批量插入 / 区间删除 / 整轨替换 / 结构变化）。
     ///
     /// 关闭时立即返回；升级为 full 时清空已积累的原子变更（full 优先）。
     pub fn record_cpu_onion_full(&mut self) {
-        if !self.cpu_onion_dirty_enabled {
+        if !self.cpu_onion_dirty_enabled || self.history_replay {
             return;
         }
+        self.history_pending_changes.clear();
+        self.history_pending_full = true;
+        self.cpu_onion_direct_edits.clear();
+        self.cpu_onion_direct_overflow = false;
         match self.cpu_onion_dirty.as_mut() {
             Some(dirty) => {
                 dirty.full = true;
@@ -145,6 +159,111 @@ impl EditorData {
     /// 丢弃脏区（GPU 后端 / 无文档 / 重置）。
     pub fn clear_cpu_onion_dirty(&mut self) {
         self.cpu_onion_dirty = None;
+        self.cpu_onion_direct_edits.clear();
+        self.cpu_onion_direct_overflow = false;
+    }
+
+    /// 记录直接 `track_notes_mut` 等长编辑的索引提示（当前轨）。
+    ///
+    /// 索引稳定、只改值；CPU 洋葱皮用上一帧快照按索引差分，避免整份密度重建。
+    pub fn record_cpu_onion_direct_indices(&mut self, track: usize, indices: &[usize]) {
+        if !self.cpu_onion_dirty_enabled || self.history_replay {
+            return;
+        }
+        if indices.is_empty() || self.cpu_onion_direct_overflow {
+            return;
+        }
+        if self
+            .cpu_onion_dirty
+            .as_ref()
+            .is_some_and(|dirty| dirty.full)
+        {
+            return;
+        }
+        let room = MAX_CPU_ONION_DIRECT_EDITS.saturating_sub(self.cpu_onion_direct_edits.len());
+        if indices.len() > room {
+            self.cpu_onion_direct_edits.clear();
+            self.cpu_onion_direct_overflow = true;
+            return;
+        }
+        self.cpu_onion_direct_edits
+            .extend(indices.iter().map(|index| (track, *index)));
+    }
+
+    /// 记录闭区间 `[lo, hi]` 的直接编辑索引提示（重排/量化路径）。
+    pub fn record_cpu_onion_direct_ranges(&mut self, track: usize, ranges: &[(usize, usize)]) {
+        if !self.cpu_onion_dirty_enabled || self.history_replay {
+            return;
+        }
+        for &(lo, hi) in ranges {
+            let count = hi.saturating_sub(lo).saturating_add(1);
+            let room = MAX_CPU_ONION_DIRECT_EDITS.saturating_sub(self.cpu_onion_direct_edits.len());
+            if count > room {
+                self.cpu_onion_direct_edits.clear();
+                self.cpu_onion_direct_overflow = true;
+                return;
+            }
+            self.cpu_onion_direct_edits
+                .extend((lo..=hi).map(|index| (track, index)));
+        }
+    }
+
+    /// 取出直接编辑索引提示（渲染层每帧消费一次）。
+    #[must_use]
+    pub fn take_cpu_onion_direct_edits(&mut self) -> (Vec<(usize, usize)>, bool) {
+        let overflow = std::mem::take(&mut self.cpu_onion_direct_overflow);
+        (std::mem::take(&mut self.cpu_onion_direct_edits), overflow)
+    }
+
+    /// 回放历史变更：只写入待渲染脏区，不污染下一笔历史。
+    pub(crate) fn record_cpu_onion_replay_changes(
+        &mut self,
+        changes: &[CpuOnionChange],
+        full: bool,
+    ) {
+        if !self.cpu_onion_dirty_enabled {
+            return;
+        }
+        if full || changes.len() > MAX_CPU_ONION_CHANGES {
+            self.cpu_onion_dirty = Some(CpuOnionDirty {
+                full: true,
+                changes: Vec::new(),
+            });
+            return;
+        }
+        let Some(dirty) = self.cpu_onion_dirty.as_mut() else {
+            self.cpu_onion_dirty = Some(CpuOnionDirty {
+                full: false,
+                changes: changes.to_vec(),
+            });
+            return;
+        };
+        if dirty.full {
+            return;
+        }
+        if dirty.changes.len().saturating_add(changes.len()) > MAX_CPU_ONION_CHANGES {
+            dirty.full = true;
+            dirty.changes.clear();
+            return;
+        }
+        dirty.changes.extend_from_slice(changes);
+    }
+
+    /// 把一笔变更追加到「待挂历史」；超限或已 full 时升级为 full。
+    fn push_history_pending(&mut self, change: CpuOnionChange) {
+        if self.history_pending_full {
+            return;
+        }
+        if self.history_pending_changes.len() >= MAX_CPU_ONION_CHANGES {
+            self.history_pending_changes.clear();
+            self.history_pending_full = true;
+            return;
+        }
+        self.history_pending_changes.push(SnapshotNoteChange {
+            track: change.track,
+            old: change.old,
+            new: change.new,
+        });
     }
 
     /// 只读脏区引用（诊断与测试用，不消费）。

@@ -14,6 +14,7 @@ use lumino_midi_loader::MidiDocument;
 use crate::{camera::Camera, model::TrackIndex};
 
 mod coverage;
+mod grow;
 mod rebuild;
 mod render;
 
@@ -212,6 +213,14 @@ impl DensityPyramid {
         self.coverage_valid
     }
 
+    /// 覆盖层有效总 tick（渲染右界；目前仅测试断言使用）。
+    #[cfg(test)]
+    #[inline]
+    #[must_use]
+    pub fn total_ticks(&self) -> u32 {
+        self.total_ticks
+    }
+
     /// 当前缩放是否可能启用彩色覆盖光栅（不检查有效性）。
     #[must_use]
     pub fn coverage_applicable(&self, camera: &Camera) -> bool {
@@ -241,16 +250,23 @@ impl DensityPyramid {
     }
 
     /// 带 end_tick 的增量更新；覆盖脏区按 `[start_tick, end_tick)` 标记。
-    pub fn apply_note_range(&mut self, start_tick: u32, end_tick: u32, key: u8, delta: i32) {
+    ///
+    /// 返回 `false` 表示越过安全内存上限，调用方必须整建。
+    pub fn apply_note_range(
+        &mut self,
+        start_tick: u32,
+        end_tick: u32,
+        key: u8,
+        delta: i32,
+    ) -> bool {
         if key as usize >= KEY_COUNT || delta == 0 {
-            return;
+            return true;
         }
         let end_tick = end_tick.max(start_tick.saturating_add(1));
-        if end_tick > self.total_ticks {
-            // 覆盖右界已越过：下一次必须整建才能扩 bin。
+        if !grow::ensure_layout(self, start_tick, end_tick) {
             self.coverage_dirty = None;
             self.coverage_valid = false;
-            return;
+            return false;
         }
         self.coverage_valid = false;
         self.coverage_dirty = Some(match self.coverage_dirty {
@@ -271,6 +287,7 @@ impl DensityPyramid {
                 self.max_counts[level_index] = self.max_counts[level_index].max(*cell);
             }
         }
+        true
     }
 
     /// 只重建脏区覆盖单元；没有脏区时返回 `false`（调用方应整建）。

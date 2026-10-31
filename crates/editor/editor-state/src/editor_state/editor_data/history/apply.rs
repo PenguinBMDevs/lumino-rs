@@ -4,6 +4,7 @@
 //! 反向/正向应用、历史栈推入（快照 / `MoveOp` / `CreateOp`）与快照恢复。
 
 use super::*;
+use crate::editor_state::editor_data::cpu_onion_dirty::{CpuOnionChange, MAX_CPU_ONION_CHANGES};
 
 impl EditorData {
     // ── 快照构造 ─────────────────────────────────────────────
@@ -56,12 +57,51 @@ impl EditorData {
 
     // ── 向后兼容的 push / undo / redo ───────────────────────
 
+    /// 把上一笔操作的按值变更挂到栈顶快照，然后清空待挂队列。
+    ///
+    /// 调用点都在「新一笔操作入栈前」：此时上一笔已经结束，pending 正好是
+    /// 它从栈顶快照到当前状态的完整差分。
+    fn commit_history_pending(&mut self) {
+        if self.history_pending_changes.is_empty() && !self.history_pending_full {
+            return;
+        }
+        let changes = std::mem::take(&mut self.history_pending_changes);
+        let full = std::mem::take(&mut self.history_pending_full);
+        self.history.attach_last_note_changes(changes, full);
+    }
+
+    /// 入栈创建日志前，先摘掉属于本次创建操作的 pending 插入。
+    ///
+    /// 铅笔路径先 `insert_note`（记 pending）后 `push_note_create`；若直接
+    /// 挂到上一快照，会把本笔创建算进上一笔的撤销差分。CreateOp 本身已有
+    /// 精确值，这里只需保证上一笔快照拿到的是**它自己的**变更。
+    fn commit_history_pending_for_create(&mut self, ops: &[CreateOp]) {
+        let full = std::mem::take(&mut self.history_pending_full);
+        let pending = std::mem::take(&mut self.history_pending_changes);
+        if full {
+            self.history.attach_last_note_changes(Vec::new(), true);
+            return;
+        }
+        let mut remaining = pending;
+        for op in ops {
+            if let Some(index) = remaining.iter().position(|change| {
+                change.track == op.track_id as usize
+                    && change.old.is_none()
+                    && change.new == Some(op.note)
+            }) {
+                remaining.remove(index);
+            }
+        }
+        self.history.attach_last_note_changes(remaining, false);
+    }
+
     /// 将当前状态快照推入历史记录（O(lane 数) Arc clone，真共享）
     ///
     /// 向后兼容版本：op_kind = Other，每个 push 独立 group。
     /// **新代码应使用 `push_history_with_op_kind` 或 `push_history_mergeable`**
     /// 以获得逻辑撤销链 / 合并窗口能力。
     pub fn push_history(&mut self) {
+        self.commit_history_pending();
         self.history.push(self.make_snapshot());
     }
 
@@ -70,6 +110,7 @@ impl EditorData {
     /// 适用：NoteMove / NoteDelete / NoteTransform / VelocityEdit / AutomationEdit / Recording
     /// 这些操作不走合并窗口，但需要 group_id 以支持未来扩展（如批量操作的逻辑分组）。
     pub fn push_history_with_op_kind(&mut self, op_kind: OpKind) {
+        self.commit_history_pending();
         self.history
             .push_with_op_kind(self.make_snapshot(), op_kind);
     }
@@ -80,6 +121,7 @@ impl EditorData {
     /// 合并规则：栈顶 op_kind 相同 + 在合并窗口内 + 未超 entry 上限 → 合并。
     /// 返回 `true` 表示合并到上一条，`false` 表示新增/分割。
     pub fn push_history_mergeable(&mut self, op_kind: OpKind) -> bool {
+        self.commit_history_pending();
         self.history.push_mergeable(self.make_snapshot(), op_kind)
     }
 
@@ -87,6 +129,7 @@ impl EditorData {
     ///
     /// 拖动提交路径使用：用轻量 MoveOp 替代完整快照。
     pub fn push_move_op(&mut self, ops: Vec<MoveOp>) -> u64 {
+        self.commit_history_pending();
         self.history.push_move_op(ops)
     }
 
@@ -96,12 +139,26 @@ impl EditorData {
     /// 1600W 音符工程在合并窗口内连续绘制不再复制音符数据。
     /// 返回 `true` 表示合并到上一条（300ms 窗口内）。
     pub fn push_note_create(&mut self, ops: Vec<CreateOp>) -> bool {
+        self.commit_history_pending_for_create(&ops);
         self.history.push_note_create(ops)
     }
 
     // ── 历史记录条目应用 ─────────────────────────────────────
-    /// 根据 HistoryEntry 类型应用撤销/重做（删加语义，按值，无全扫）
-    pub(super) fn apply_history_entry(&mut self, entry: HistoryEntry, inverse: bool) {
+    /// 根据 HistoryEntry 类型应用撤销/重做（删加语义，按值，无全扫）。
+    ///
+    /// `snapshot_changes` / `snapshot_full` 只对 `Snapshot` 条目有效：由
+    /// undo/redo 从「待挂变更或条目自身变更」解析后传入；Operation/Create
+    /// 的精确 old/new 直接从 op 构造。回放期间内部写路径不污染历史队列。
+    pub(super) fn apply_history_entry(
+        &mut self,
+        entry: HistoryEntry,
+        inverse: bool,
+        snapshot_changes: Vec<lumino_note_core::history::SnapshotNoteChange>,
+        snapshot_full: bool,
+    ) {
+        self.history_replay = true;
+        let mut replay = Vec::new();
+        let mut replay_full = false;
         // 清空可能残留的旧 note_delta_events，防止其在新 current_track 下被误应用到
         // 错误音轨（原 mark_tracks_changed_after_history 的防跨轨误用意图保留于此）。
         self.note_delta_events.clear();
@@ -173,6 +230,12 @@ impl EditorData {
                     self.apply_snapshot(*s);
                 }
                 self.mark_tracks_changed_after_history(HashSet::from([track]));
+                replay_full = snapshot_full;
+                replay.extend(snapshot_changes.into_iter().map(|change| CpuOnionChange {
+                    track: change.track,
+                    old: if inverse { change.new } else { change.old },
+                    new: if inverse { change.old } else { change.new },
+                }));
             }
             HistoryEntry::Operation(op) => {
                 // 对 OperationEntry：undo 时传入 inverse=true 删 moved 加回 originals；
@@ -213,6 +276,32 @@ impl EditorData {
                     self.pending_collab_move_sync = sync;
                 }
                 self.mark_track_notes_changed_for(Some(affected));
+                let max_key = self.max_key_for_move_op();
+                for op in &op.ops {
+                    let moved = op.moved_notes(max_key);
+                    if moved.len() != op.originals.len() {
+                        replay_full = true;
+                        continue;
+                    }
+                    for (original, moved) in op.originals.iter().zip(moved) {
+                        if *original == moved {
+                            continue;
+                        }
+                        replay.push(CpuOnionChange {
+                            track: op.track_id as usize,
+                            old: if inverse {
+                                Some(moved)
+                            } else {
+                                Some(*original)
+                            },
+                            new: if inverse {
+                                Some(*original)
+                            } else {
+                                Some(moved)
+                            },
+                        });
+                    }
+                }
             }
             HistoryEntry::Create(entry) => {
                 let affected: HashSet<usize> =
@@ -237,8 +326,20 @@ impl EditorData {
                     self.pending_collab_create_sync = sync;
                 }
                 self.mark_track_notes_changed_for(Some(affected));
+                for op in &entry.ops {
+                    replay.push(CpuOnionChange {
+                        track: op.track_id as usize,
+                        old: inverse.then_some(op.note),
+                        new: (!inverse).then_some(op.note),
+                    });
+                }
             }
         }
+        self.history_replay = false;
+        if replay.len() > MAX_CPU_ONION_CHANGES {
+            replay_full = true;
+        }
+        self.record_cpu_onion_replay_changes(&replay, replay_full);
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。

@@ -172,14 +172,7 @@ impl App {
 
         // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
         // 编辑后只重建受影响 tick 区间；没有脏区信息才退回整建。
-        if !self.density.coverage_valid()
-            && self.density.coverage_applicable(&camera)
-            && !self
-                .density
-                .rebuild_dirty_coverage(&self.document, &self.index)
-        {
-            self.density = density::DensityPyramid::build(&self.document, self.workers);
-        }
+        self.ensure_density_ready(&camera);
         let mode = self.choose_mode(&camera);
         let render_start = Instant::now();
         let render_stats = if mode == LodMode::Coverage {

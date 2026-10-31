@@ -247,6 +247,8 @@ impl EditorData {
     /// 每个区间内部再按 [`REORDER_SPAN_CHUNK`] 分块（16MB/块，与渲染侧设备内
     /// 搬移块一致），避免超大单消息与瞬时内存峰值。
     pub fn push_reorder_ranges_events(&mut self, ranges: &[(usize, usize)]) {
+        let track_id = self.current_track;
+        self.record_cpu_onion_direct_ranges(track_id, ranges);
         for &(lo, hi) in ranges {
             #[cfg(debug_assertions)]
             self.debug_assert_track_sorted_around(&[lo, hi]);
@@ -277,6 +279,8 @@ impl EditorData {
         if indices.is_empty() {
             return;
         }
+        let track_id = self.current_track;
+        self.record_cpu_onion_direct_indices(track_id, indices);
         self.push_update_range_events(indices);
         self.mark_current_track_changed();
         self.note_delta_dirty = false;
@@ -293,6 +297,8 @@ impl EditorData {
         if indices.is_empty() {
             return;
         }
+        let track_id = self.current_track;
+        self.record_cpu_onion_direct_indices(track_id, indices);
         self.push_update_range_events(indices);
         self.mark_current_track_changed();
         self.note_delta_dirty = false;

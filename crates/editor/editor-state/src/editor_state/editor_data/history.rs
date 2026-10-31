@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use super::EditorData;
 use super::{CollabCreateSyncEntry, CollabTransformSyncEntry};
-use lumino_note_core::history::{CreateOp, EditorSnapshot, HistoryEntry, MoveOp, OpKind};
+use lumino_note_core::history::{
+    CreateOp, EditorSnapshot, HistoryEntry, MoveOp, OpKind, SnapshotNoteChange,
+};
 
 mod apply;
 mod ops;

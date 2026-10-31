@@ -42,6 +42,14 @@ impl EditorData {
     pub fn mark_track_notes_changed_for(&mut self, tracks: Option<HashSet<usize>>) {
         self.onion_dirty_tracks = tracks;
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
+        // 没有按值变更却 bump 了代次 = 直接 `track_notes_mut` 写路径：
+        // 历史回放无法构造原子变更，必须让撤销整建一次，绝不错算密度。
+        if self.cpu_onion_dirty_enabled
+            && !self.history_replay
+            && self.history_pending_changes.is_empty()
+        {
+            self.history_pending_full = true;
+        }
         // 未知来源才需要全量兜底；已知音轨变化（含当前轨）走 Delta 增量。
         if self.onion_dirty_tracks.is_none() {
             self.note_delta_dirty = true;

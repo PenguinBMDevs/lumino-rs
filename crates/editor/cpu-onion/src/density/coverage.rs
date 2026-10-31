@@ -20,7 +20,7 @@ use crate::index::TrackIndex;
 mod render;
 
 /// 单层单元数上限（约 32 MiB 的 `u32`）。
-const MAX_COVERAGE_CELLS: usize = 1 << 25;
+pub(super) const MAX_COVERAGE_CELLS: usize = 1 << 25;
 /// 基础 bin（tick）。
 const BASE_BIN_TICKS: u32 = 8;
 /// 层数：基础 bin × `2^0..=2^10`。
@@ -33,7 +33,7 @@ const EMPTY_TRACK: u16 = u16::MAX;
 pub(crate) struct CoverageCell(u32);
 
 impl CoverageCell {
-    const EMPTY: Self = Self(EMPTY_TRACK as u32 | ((EMPTY_TRACK as u32) << 16));
+    pub(crate) const EMPTY: Self = Self(EMPTY_TRACK as u32 | ((EMPTY_TRACK as u32) << 16));
 
     #[inline]
     const fn first(self) -> u16 {

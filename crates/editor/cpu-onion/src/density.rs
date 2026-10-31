@@ -30,6 +30,7 @@ use crate::{camera::CanvasCamera, index::TrackIndex};
 
 mod build;
 mod coverage;
+mod grow;
 mod heat;
 mod render;
 
@@ -254,8 +255,8 @@ impl DensityPyramid {
 
     /// 编辑后增量更新：`delta = +1` 插入，`-1` 删除。
     ///
-    /// 返回 `false` 表示本次变更超出既有 bin 布局（新增 end_tick 越过末 bin），
-    /// 调用方必须丢弃金字塔改走整建——绝不把音符塞进错误的桶。
+    /// 返回 `false` 表示扩容会超过覆盖层安全内存上限，调用方必须整建
+    /// （整建会选更粗的 bin）——绝不把音符塞进错误的桶。
     ///
     /// 覆盖层只记录脏 tick 区间，不在这里扫文档；缓存持有者下一次 ensure 时
     /// 调用 [`Self::rebuild_dirty_coverage`] 做局部重建。
@@ -274,15 +275,9 @@ impl DensityPyramid {
         if delta == 0 || u32::from(key) >= u32::from(self.key_count) {
             return true;
         }
-        let Some(first) = self.levels.first() else {
-            return false;
-        };
-        if (start_tick / first.bin_ticks.max(1)) as usize >= first.bins {
-            return false;
-        }
         let end_tick = end_tick.max(start_tick.saturating_add(1));
-        if end_tick > self.total_ticks {
-            // 覆盖层右界已越过：必须整建才能扩 bin，不能把音符塞进末尾。
+        if !grow::ensure_layout(self, start_tick, end_tick) {
+            // 增长超过安全内存上限：交回整建（整建会选更粗的 bin）。
             return false;
         }
         self.mark_coverage_dirty(start_tick, end_tick);
@@ -378,3 +373,6 @@ pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
 #[cfg(test)]
 #[path = "density/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod tests_grow;

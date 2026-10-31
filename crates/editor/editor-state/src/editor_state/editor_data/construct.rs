@@ -25,6 +25,11 @@ impl EditorData {
             // CPU 洋葱皮脏区默认关闭：默认后端是 GPU，零开销优先（Host 切 CPU 时开启）
             cpu_onion_dirty_enabled: false,
             cpu_onion_dirty: None,
+            history_pending_changes: Vec::new(),
+            history_pending_full: false,
+            history_replay: false,
+            cpu_onion_direct_edits: Vec::new(),
+            cpu_onion_direct_overflow: false,
             document: None,
             history: History::new(),
             pending_commit: None,

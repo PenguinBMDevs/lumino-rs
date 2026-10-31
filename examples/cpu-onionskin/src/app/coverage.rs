@@ -3,9 +3,29 @@
 use std::sync::Arc;
 
 use super::App;
-use crate::{camera::Camera, render::RenderStats};
+use crate::{
+    camera::Camera,
+    render::{RenderStats, density},
+};
 
 impl App {
+    /// 进入全量帧前把密度/覆盖层修到最新：优先脏区局部重建，失败才整建。
+    pub(super) fn ensure_density_ready(&mut self, camera: &Camera) {
+        if self.editor.density_dirty {
+            self.density = density::DensityPyramid::build(&self.document, self.workers);
+            self.editor.density_dirty = false;
+            return;
+        }
+        if !self.density.coverage_valid()
+            && self.density.coverage_applicable(camera)
+            && !self
+                .density
+                .rebuild_dirty_coverage(&self.document, &self.index)
+        {
+            self.density = density::DensityPyramid::build(&self.document, self.workers);
+        }
+    }
+
     pub(super) fn render_coverage_frame(
         &mut self,
         camera: &Camera,

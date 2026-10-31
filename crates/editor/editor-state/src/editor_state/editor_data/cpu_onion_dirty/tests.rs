@@ -97,7 +97,7 @@ fn failed_update_records_nothing() {
     assert!(data.take_cpu_onion_dirty().is_none());
 }
 
-/// 批量插入 / 整轨替换 / 区间删除一律升级为整帧兜底。
+/// 批量插入 / 整轨替换升级整帧；小批量区间删除保留按值 old。
 #[test]
 fn bulk_edits_escalate_to_full() {
     let mut batch = data();
@@ -122,24 +122,53 @@ fn bulk_edits_escalate_to_full() {
     let mut ranges = data();
     ranges.set_cpu_onion_dirty_enabled(true);
     assert!(ranges.remove_ranges_merged(0, &[(0, 1)]) > 0);
-    assert!(
-        ranges
-            .take_cpu_onion_dirty()
-            .expect("区间删除必须记录")
-            .full,
-        "区间删除必须整帧兜底"
-    );
+    let dirty = ranges.take_cpu_onion_dirty().expect("区间删除必须记录");
+    assert!(!dirty.full, "小批量区间删除不应升级整帧");
+    assert_eq!(dirty.changes.len(), 1, "必须保留被删音符的按值 old");
+    assert!(dirty.changes[0].old.is_some());
 
     let mut merged = data();
     merged.set_cpu_onion_dirty_enabled(true);
     assert_eq!(merged.remove_notes_merged(0, &[0]), 1);
-    assert!(
-        merged
-            .take_cpu_onion_dirty()
-            .expect("索引删除必须记录")
-            .full,
-        "索引删除必须整帧兜底"
+    assert!(!merged.take_cpu_onion_dirty().expect("必须有脏区").full);
+}
+
+/// 单笔插入的 undo/redo 必须回放按值变更，而不是整帧兜底。
+#[test]
+fn undo_redo_replays_single_note_as_changes() {
+    let mut data = data();
+    data.set_cpu_onion_dirty_enabled(true);
+    data.push_history();
+    assert!(data.insert_note(0, Note::new(400.0, 64, 100.0)));
+    assert!(data.take_cpu_onion_dirty().is_some());
+
+    assert!(data.undo(), "插入后应可撤销");
+    let undone = data.take_cpu_onion_dirty().expect("undo 必须产生脏区");
+    assert!(!undone.full, "单笔 undo 不得整帧兜底");
+    assert_eq!(undone.changes.len(), 1);
+    assert!(undone.changes[0].old.is_some() && undone.changes[0].new.is_none());
+
+    assert!(data.redo(), "撤销后应可重做");
+    let redone = data.take_cpu_onion_dirty().expect("redo 必须产生脏区");
+    assert!(!redone.full, "单笔 redo 不得整帧兜底");
+    assert_eq!(redone.changes.len(), 1);
+    assert!(redone.changes[0].old.is_none() && redone.changes[0].new.is_some());
+}
+
+/// 超过上限的区间删除仍必须整帧兜底。
+#[test]
+fn huge_range_delete_escalates_to_full() {
+    let mut data = EditorData::with_notes(
+        0,
+        &(0..=MAX_CPU_ONION_CHANGES)
+            .map(|index| NoteEvent::new(index as u32 * 10, index as u32 * 10 + 5, 60, 100, 0))
+            .collect::<Vec<_>>(),
     );
+    data.set_cpu_onion_dirty_enabled(true);
+    assert!(data.remove_ranges_merged(0, &[(0, MAX_CPU_ONION_CHANGES + 1)]) > 0);
+    let dirty = data.take_cpu_onion_dirty().expect("批量删除必须记录");
+    assert!(dirty.full, "超过上限必须整帧兜底");
+    assert!(dirty.changes.is_empty());
 }
 
 /// full 优先：已有原子变更时升级 full 会清空 changes，之后的单笔变更被忽略。

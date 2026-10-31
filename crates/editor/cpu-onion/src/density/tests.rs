@@ -123,22 +123,6 @@ fn heat_lut_is_blue_for_low_density_and_white_at_peak() {
 }
 
 #[test]
-fn apply_note_outside_layout_requires_rebuild() {
-    let pyramid = DensityPyramid::build(&sample_document(), 1, 128);
-    let mut incremental = DensityPyramid::build(&sample_document(), 1, 128);
-    // 远大于 2000 tick 的既有布局：必须拒绝，不能塞进末桶。
-    assert!(
-        !incremental.apply_note(10_000_000, 60, 1),
-        "越过末 bin 的插入必须要求整建"
-    );
-    assert_eq!(
-        incremental.total_ticks(),
-        pyramid.total_ticks(),
-        "拒绝后不得改动渲染右界"
-    );
-}
-
-#[test]
 fn overview_switches_at_thirty_visible_measures() {
     let document = sample_document();
     let index = TrackIndex::build(&document);

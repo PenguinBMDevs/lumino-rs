@@ -108,24 +108,38 @@ fn apply_changes_updates_cells_and_rebuilds_stale_coverage() {
 }
 
 #[test]
-fn out_of_layout_change_drops_cache_for_rebuild() {
-    let document = document();
+fn out_of_layout_change_grows_cache_without_rebuild() {
+    let mut edited = document();
+    let note = NoteEvent::new(3000, 3200, 60, 100, 0);
+    edited.insert_note(1, note);
     let mut cache = DensityCache::default();
-    assert_eq!(alpha(&mut cache, 1, &document), 255);
+    // 先用旧文档建缓存，再模拟插入越界音符。
+    let old_document = document();
+    assert_eq!(alpha(&mut cache, 1, &old_document), 255);
 
-    // 越过既有 bin 布局：必须拒绝增量并丢弃缓存，等下一次 ensure 整建。
     cache.apply_changes(
         Some(1),
         2,
         &[CpuOnionChange {
             track: 1,
             old: None,
-            new: Some(NoteEvent::new(10_000_000, 10_001_000, 60, 100, 0)),
+            new: Some(note),
         }],
     );
+    assert_eq!(cache.built_gen, Some(2), "越界变更应增量接收并扩容");
+    let index = TrackIndex::build(&edited);
     assert!(
-        cache.pyramid.is_none(),
-        "非法增量必须丢弃缓存，绝不把音符塞进错误桶"
+        cache
+            .pyramid
+            .as_mut()
+            .is_some_and(|pyramid| pyramid.rebuild_dirty_coverage(&edited, &index)),
+        "扩容后脏区局部重建必须成功"
     );
-    assert_eq!(alpha(&mut cache, 2, &document), 255, "整建后必须恢复");
+    assert!(
+        cache
+            .pyramid
+            .as_ref()
+            .is_some_and(|pyramid| pyramid.total_ticks() >= 3200),
+        "渲染右界必须扩到新音符末尾"
+    );
 }

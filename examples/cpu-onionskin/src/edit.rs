@@ -19,6 +19,8 @@ use crate::{model::TrackIndex, render::density::DensityPyramid};
 /// 选择集上限：避免一次框选 800 万音符把 BTreeSet 拖成秒级。
 pub const MAX_SELECTION: usize = 200_000;
 const HISTORY_LIMIT: usize = 24;
+/// 单笔历史可回放的按值变更上限；超过则撤销时整建密度。
+const MAX_HISTORY_CHANGES: usize = 64;
 
 /// 当前工具。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,9 +37,18 @@ pub struct Clipboard {
     anchor_key: u8,
 }
 
+/// 历史按值变更：`old`/`new` 其一为 `None` 表达增删。
+#[derive(Debug, Clone, Copy)]
+struct NoteChange {
+    old: Option<NoteEvent>,
+    new: Option<NoteEvent>,
+}
+
 struct HistoryEntry {
     document: Arc<MidiDocument>,
     index: Arc<TrackIndex>,
+    changes: Vec<NoteChange>,
+    full: bool,
 }
 
 /// 拖动状态。
@@ -113,11 +124,55 @@ impl Editor {
         self.history.push(HistoryEntry {
             document: Arc::clone(document),
             index: Arc::clone(index),
+            changes: Vec::new(),
+            full: false,
         });
         if self.history.len() > HISTORY_LIMIT {
             self.history.remove(0);
         }
         self.redo.clear();
+    }
+
+    /// 把本笔操作的按值变更挂到刚推入的历史条目上。
+    fn record_change(&mut self, old: Option<NoteEvent>, new: Option<NoteEvent>) {
+        let Some(entry) = self.history.last_mut() else {
+            return;
+        };
+        if entry.full {
+            return;
+        }
+        if entry.changes.len() >= MAX_HISTORY_CHANGES {
+            entry.changes.clear();
+            entry.full = true;
+            return;
+        }
+        entry.changes.push(NoteChange { old, new });
+    }
+
+    /// 把历史变更回放到密度（逆序 = 撤销）。
+    fn apply_history_density(
+        &mut self,
+        density: &mut DensityPyramid,
+        changes: &[NoteChange],
+        inverse: bool,
+    ) {
+        let mut valid = true;
+        for change in changes {
+            let (remove, add) = if inverse {
+                (change.new, change.old)
+            } else {
+                (change.old, change.new)
+            };
+            if let Some(note) = remove {
+                valid &= density.apply_note_range(note.start_tick, note.end_tick, note.key, -1);
+            }
+            if let Some(note) = add {
+                valid &= density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
+            }
+        }
+        if !valid {
+            self.density_dirty = true;
+        }
     }
 
     /// 在 `(tick,key)` 插入一个 snap 长度音符。
@@ -135,7 +190,10 @@ impl Editor {
         if !Arc::make_mut(document).insert_note(track, note) {
             return;
         }
-        density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
+        if !density.apply_note_range(note.start_tick, note.end_tick, note.key, 1) {
+            self.density_dirty = true;
+        }
+        self.record_change(None, Some(note));
         *index = Arc::new(index.with_changes(track, &[], &[note]));
         self.selection.clear();
         if let Some(position) = document.track_notes(track).position_of(&note) {
@@ -168,7 +226,10 @@ impl Editor {
             Arc::make_mut(document).remove_note(track, *position);
         }
         for note in &removed {
-            density.apply_note_range(note.start_tick, note.end_tick, note.key, -1);
+            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, -1) {
+                self.density_dirty = true;
+            }
+            self.record_change(Some(*note), None);
         }
         *index = Arc::new(index.with_changes(track, &removed, &[]));
         self.selection.clear();
@@ -227,7 +288,10 @@ impl Editor {
             return;
         }
         for note in &added {
-            density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
+            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, 1) {
+                self.density_dirty = true;
+            }
+            self.record_change(None, Some(*note));
         }
         *index = Arc::new(index.with_changes(track, &[], &added));
         self.selection.clear();
@@ -240,35 +304,57 @@ impl Editor {
         self.status = format!("粘贴 {inserted} 个音符");
     }
 
-    /// 撤销；成功返回 true（调用方需重建密度）。
-    pub fn undo(&mut self, document: &mut Arc<MidiDocument>, index: &mut Arc<TrackIndex>) -> bool {
+    /// 撤销；成功返回 true。密度按历史变更增量回放，失败才整建。
+    pub fn undo(
+        &mut self,
+        document: &mut Arc<MidiDocument>,
+        index: &mut Arc<TrackIndex>,
+        density: &mut DensityPyramid,
+    ) -> bool {
         let Some(entry) = self.history.pop() else {
             return false;
         };
         self.redo.push(HistoryEntry {
             document: Arc::clone(document),
             index: Arc::clone(index),
+            changes: entry.changes.clone(),
+            full: entry.full,
         });
         *document = entry.document;
         *index = entry.index;
         self.selection.clear();
-        self.density_dirty = true;
+        if entry.full {
+            self.density_dirty = true;
+        } else {
+            self.apply_history_density(density, &entry.changes, true);
+        }
         self.status = "撤销".to_string();
         true
     }
 
-    pub fn redo(&mut self, document: &mut Arc<MidiDocument>, index: &mut Arc<TrackIndex>) -> bool {
+    pub fn redo(
+        &mut self,
+        document: &mut Arc<MidiDocument>,
+        index: &mut Arc<TrackIndex>,
+        density: &mut DensityPyramid,
+    ) -> bool {
         let Some(entry) = self.redo.pop() else {
             return false;
         };
         self.history.push(HistoryEntry {
             document: Arc::clone(document),
             index: Arc::clone(index),
+            changes: entry.changes.clone(),
+            full: entry.full,
         });
         *document = entry.document;
         *index = entry.index;
         self.selection.clear();
-        self.density_dirty = true;
+        if entry.full {
+            self.density_dirty = true;
+        } else {
+            self.apply_history_density(density, &entry.changes, false);
+        }
         self.status = "重做".to_string();
         true
     }

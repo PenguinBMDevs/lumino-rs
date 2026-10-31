@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// 单层单元数上限（`u16` × 32M ≈ 64 MiB）。
-const MAX_COVERAGE_CELLS: usize = 1 << 25;
+pub(super) const MAX_COVERAGE_CELLS: usize = 1 << 25;
 /// 基础 bin。
 const BASE_BIN_TICKS: u32 = 8;
 /// 层数：基础 bin × `2^0..=2^10`。

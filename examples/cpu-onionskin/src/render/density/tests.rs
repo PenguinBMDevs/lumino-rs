@@ -268,6 +268,35 @@ fn dirty_coverage_rebuild_matches_full_after_edit() {
 }
 
 #[test]
+fn out_of_layout_insert_grows_and_matches_full() {
+    let mut before = MidiDocument::empty_with_tracks(1, 480);
+    before.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));
+    let mut pyramid = DensityPyramid::build(&before, 1);
+
+    let mut after = before.clone();
+    let note = NoteEvent::new(3000, 3200, 60, 100, 0);
+    after.insert_note(0, note);
+    assert!(
+        pyramid.apply_note_range(note.start_tick, note.end_tick, note.key, 1),
+        "越过既有右界只应扩容，不得要求整建"
+    );
+    assert!(pyramid.total_ticks() >= note.end_tick);
+    let index = TrackIndex::build(&after);
+    assert!(pyramid.rebuild_dirty_coverage(&after, &index));
+
+    let full = DensityPyramid::build(&after, 1);
+    let mut camera = camera(0.01);
+    camera.scroll_y = 0.0;
+    let style = NoteStyle::new(1);
+    let mut patched = vec![0u32; 1920 * 1080];
+    let mut rebuilt = patched.clone();
+    let mut scratch = OverviewScratch::default();
+    pyramid.render_coverage(&mut patched, 1920, 1080, &camera, &style, 0, &mut scratch);
+    full.render_coverage(&mut rebuilt, 1920, 1080, &camera, &style, 0, &mut scratch);
+    assert_eq!(patched, rebuilt, "扩容后必须与整建逐像素一致");
+}
+
+#[test]
 fn coverage_invalidates_after_edit() {
     let mut document = MidiDocument::empty_with_tracks(1, 480);
     document.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));

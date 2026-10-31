@@ -2,6 +2,7 @@
 
 use super::super::super::selection_set::SelectionSet;
 
+use super::super::cpu_onion_dirty::MAX_CPU_ONION_CHANGES;
 use super::EditorData;
 use super::editing::merge_descending_ranges;
 
@@ -84,6 +85,25 @@ impl EditorData {
         if ranges.is_empty() {
             return 0;
         }
+        // 小批量删除保留按值 old：撤销可局部重建；超过上限才整帧兜底。
+        let total: usize = ranges.iter().map(|(_, count)| *count).sum();
+        let removed_notes = if self.cpu_onion_dirty_enabled
+            && !self.history_replay
+            && total <= MAX_CPU_ONION_CHANGES
+        {
+            let track = self.track_notes(track_id);
+            let mut notes = Vec::with_capacity(total);
+            for &(index, count) in ranges {
+                for offset in 0..count {
+                    if let Some(note) = track.get(index.saturating_add(offset)) {
+                        notes.push(*note);
+                    }
+                }
+            }
+            Some(notes)
+        } else {
+            None
+        };
         let deleted = match self.document.as_mut() {
             Some(doc) => doc.remove_note_ranges(track_id, ranges),
             None => 0,
@@ -92,9 +112,14 @@ impl EditorData {
             return 0;
         }
 
-        // CPU 洋葱皮（Step 5a）：区间删除（选择删除 / 走带删除）允整帧兜底——
-        // 逐音符原子变更在「整轨全选」时会膨胀到音符数量级，得不偿失。
-        self.record_cpu_onion_full();
+        if let Some(notes) = removed_notes.filter(|notes| notes.len() == deleted) {
+            for note in notes {
+                self.record_cpu_onion_change(track_id, Some(note), None);
+            }
+        } else {
+            // 大批量/未知来源：整帧兜底，逐音符队列会膨胀到音符数量级。
+            self.record_cpu_onion_full();
+        }
 
         // 事件区间裁剪到删除前长度（防御越界索引：实际删除数可能小于区间和）；
         // 区间过多时走整段重建，跳过 O(区间数) 事件载荷构建。

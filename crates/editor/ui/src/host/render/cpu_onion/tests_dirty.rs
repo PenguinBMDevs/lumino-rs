@@ -145,6 +145,10 @@ mod frame;
 #[path = "tests_dirty/mute.rs"]
 mod mute;
 
+/// 直接 track_notes_mut 编辑的索引提示合成。
+#[path = "tests_dirty/direct.rs"]
+mod direct;
+
 /// Step 5b 脏区透传（`CpuOnionOutput::dirty` / `CpuOnionFrame::dirty_rect`）。
 #[path = "tests_dirty/dirty_rect.rs"]
 mod dirty_rect;
