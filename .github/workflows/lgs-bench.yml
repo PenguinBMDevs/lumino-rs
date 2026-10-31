@@ -1,7 +1,9 @@
-# REF-LGS-013 手动 GPU 性能基准（自托管 runner）
+# REF-LGS-013 手动 GPU 性能基准（可选：自托管 runner）
 #
 # 不在 push/PR 自动触发：GPU 机器只有一台，且性能数字需要受控环境。
-# 前置条件：
+# **2026-11-01 拍板：不引入自托管 runner。** 本 workflow 保留为可选工具
+# （将来有 runner 时可直接用）；日常 A/B 以本机 `scripts/lgs_ab.py` 为准。
+# 前置条件（仅当决定启用 runner 时）：
 #   - 自托管 runner，标签 `self-hosted, windows, x64, gpu`
 #   - 已安装 Rust stable、Python 3、nvidia-smi
 #   - 同一时间只跑一个基准（见 concurrency）
