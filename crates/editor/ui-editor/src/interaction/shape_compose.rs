@@ -217,7 +217,7 @@ impl Editor {
         true
     }
 
-    fn selected_model_for_edit(&mut self) -> Option<(u64, u64, ShapeModel)> {
+    pub(super) fn selected_model_for_edit(&mut self) -> Option<(u64, u64, ShapeModel)> {
         let drawn = self.selected_drawn_snapshot();
         if drawn.len() != 1 {
             return None;

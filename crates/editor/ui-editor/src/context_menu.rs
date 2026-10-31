@@ -123,6 +123,7 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::EditShape,
             PianoRollContextMenuItem::PaintAreas,
+            PianoRollContextMenuItem::MaskToggle,
             PianoRollContextMenuItem::SymmetryVertical,
             PianoRollContextMenuItem::SymmetryHorizontal,
             PianoRollContextMenuItem::Straighten,
@@ -141,6 +142,7 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::LiveShape,
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::MaskToggle,
             PianoRollContextMenuItem::SliceVertical,
             PianoRollContextMenuItem::BetweenCreate,
             PianoRollContextMenuItem::CopyAlong,
@@ -222,6 +224,7 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::MergeShapes => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::EditShape => Icon::Gear,
         PianoRollContextMenuItem::PaintAreas => Icon::Gear,
+        PianoRollContextMenuItem::MaskToggle => Icon::Gear,
         PianoRollContextMenuItem::ShapeList => Icon::Gear,
         PianoRollContextMenuItem::SymmetryVertical => Icon::ContextMenuCopy,
         PianoRollContextMenuItem::SymmetryHorizontal => Icon::ContextMenuPaste,
@@ -253,6 +256,7 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
         PianoRollContextMenuItem::EditShape => tr!("编辑形状"),
         PianoRollContextMenuItem::PaintAreas => tr!("区域着色"),
+        PianoRollContextMenuItem::MaskToggle => tr!("切换遮罩"),
         PianoRollContextMenuItem::ShapeList => tr!("形状列表"),
         PianoRollContextMenuItem::SymmetryVertical => tr!("竖轴对称"),
         PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),
@@ -365,6 +369,7 @@ mod tests {
                 PianoRollContextMenuItem::LiveShape,
                 PianoRollContextMenuItem::JoinShapes,
                 PianoRollContextMenuItem::MergeShapes,
+                PianoRollContextMenuItem::MaskToggle,
                 PianoRollContextMenuItem::SliceVertical,
                 PianoRollContextMenuItem::BetweenCreate,
                 PianoRollContextMenuItem::CopyAlong,
@@ -372,7 +377,7 @@ mod tests {
                 PianoRollContextMenuItem::CopyShapeText,
                 PianoRollContextMenuItem::DeleteDrawnShape,
             ],
-            "待确认镜像可走 019/021/022/025/026/027/028、分享几何、删除"
+            "待确认镜像可走 010/019/021/022/025/026/027/028、分享几何、删除"
         );
         assert!(
             !items.iter().any(|item| matches!(

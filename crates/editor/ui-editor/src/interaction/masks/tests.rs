@@ -41,6 +41,95 @@ fn note(track: usize) -> ShapeNote {
     }
 }
 
+fn pending_rect(editor: &mut Editor, tick0: f32, tick1: f32, key: u16, mask: Option<MaskParams>) {
+    editor
+        .editor_state
+        .shape_tool
+        .shapes
+        .push(lumino_editor_state::ShapeInstance {
+            kind: lumino_editor_state::ShapeKind::Rectangle,
+            rect: (tick0, key as f32, tick1, key as f32 + 4.0),
+            shift_constrained: false,
+            filled: true,
+            apex_high: true,
+            mask,
+        });
+}
+
+#[test]
+fn test_pending_mask_preview_ghosts_and_visible_without_doc_notes() {
+    let mut editor = test_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    pending_rect(&mut editor, 0.0, 480.0, 60, None);
+    pending_rect(
+        &mut editor,
+        200.0,
+        300.0,
+        60,
+        Some(MaskParams {
+            size_keys: 0.0,
+            own: false,
+            ..MaskParams::default()
+        }),
+    );
+
+    let previews = editor.mask_previews();
+    assert!(!previews.is_empty(), "pending 遮罩应产出预览");
+    let ghosts: usize = previews.iter().map(|preview| preview.ghosts.len()).sum();
+    let visible: usize = previews.iter().map(|preview| preview.visible.len()).sum();
+    assert!(ghosts > 0, "ghost 保留原音符");
+    assert!(visible > 0, "遮罩内应有可见片段");
+    assert!(visible <= ghosts);
+    assert_eq!(
+        editor.editor_state.data.track_notes(1).len(),
+        0,
+        "pending 遮罩只预览，不写文档"
+    );
+    assert!(
+        !editor.mask_outline_notes().is_empty(),
+        "own=false 的 pending mask 应提供虚线轮廓"
+    );
+}
+
+#[test]
+fn test_toggle_pending_mask_marks_and_unmarks_selected_shape() {
+    let mut editor = test_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    pending_rect(&mut editor, 0.0, 250.0, 60, None);
+    pending_rect(&mut editor, 0.0, 480.0, 60, None);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("pending 镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert!(editor.toggle_mask_selected());
+    assert!(editor.editor_state.shape_tool.shapes[0].mask.is_some());
+    assert!(!editor.mask_previews().is_empty(), "标记后应有预览");
+
+    assert!(editor.toggle_mask_selected());
+    assert!(editor.editor_state.shape_tool.shapes[0].mask.is_none());
+    assert!(editor.mask_previews().is_empty(), "取消后预览清空");
+}
+
+#[test]
+fn test_confirm_records_pending_mask_op_in_readonly_model() {
+    let mut editor = test_editor();
+    pending_rect(&mut editor, 0.0, 480.0, 60, Some(MaskParams::default()));
+    assert!(editor.confirm_shape_tool(), "✓ 应写入音符");
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .iter()
+            .any(|model| model.ops.iter().any(|op| matches!(op, ShapeOp::Mask(_)))),
+        "只读模型应保留 Mask op"
+    );
+}
+
 #[test]
 fn test_preview_returns_ghost_and_visible_without_touching_notes() {
     let mut editor = test_editor();

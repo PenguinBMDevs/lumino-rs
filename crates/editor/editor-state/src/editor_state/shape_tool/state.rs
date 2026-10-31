@@ -98,6 +98,7 @@ impl ShapeToolState {
             shift_constrained,
             filled: self.fill_enabled,
             apex_high: apex_high_of(start, current),
+            mask: None,
         };
         self.shapes.push(instance.clone());
         Some(instance)

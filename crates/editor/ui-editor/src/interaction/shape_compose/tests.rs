@@ -454,6 +454,7 @@ fn add_pending_rect(editor: &mut Editor, tick0: f32, tick1: f32, key: u16) {
             shift_constrained: false,
             filled: true,
             apex_high: true,
+            mask: None,
         });
 }
 

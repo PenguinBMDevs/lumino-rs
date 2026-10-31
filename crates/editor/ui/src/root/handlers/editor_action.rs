@@ -167,6 +167,19 @@ impl Root {
                     PianoRollContextMenuItem::PaintAreas => {
                         let _ = self.editor.begin_area_paint();
                     }
+                    PianoRollContextMenuItem::MaskToggle => {
+                        if self.editor.toggle_mask_selected() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已切换遮罩（仅预览；✓ 后固定）"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("遮罩失败：请选中一个待确认/已 Bake 形状"),
+                            );
+                        }
+                    }
                     PianoRollContextMenuItem::ShapeList => {
                         let _ = self.editor.open_shape_list();
                     }

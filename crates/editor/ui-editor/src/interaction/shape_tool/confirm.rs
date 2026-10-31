@@ -24,7 +24,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::interaction::bake::BakePending;
-use lumino_core::shape::ShapeModel;
+use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
 use lumino_editor_state::{DrawnShapeSource, ShapeNote};
 use lumino_note_core::history::CreateOp;
@@ -378,7 +378,11 @@ impl Editor {
                     filled: shape.filled,
                     apex_high: shape.apex_high,
                 };
-                (model_from_source(&source, track, 1.0), notes)
+                let mut model = model_from_source(&source, track, 1.0);
+                if let Some(mask) = &shape.mask {
+                    model.ops.push(ShapeOp::Mask(mask.clone()));
+                }
+                (model, notes)
             })
             .collect();
         models.extend(composed.into_iter().flat_map(|group| {
