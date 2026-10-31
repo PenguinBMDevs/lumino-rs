@@ -33,6 +33,19 @@ impl SoundFont {
         &self.samples[id]
     }
 
+    /// 采样数据占用的 CPU 字节：原生样本 + 重采样缓存（REF-LGS-013）。
+    ///
+    /// 只统计 f32 采样本体，不含 zone/矩阵/哈希表等元数据；用于状态栏的
+    /// 显存/内存趋势展示，不作为精确的内存计量。
+    pub fn memory_bytes(&self) -> u64 {
+        fn bytes(data: &Arc<[f32]>) -> u64 {
+            (data.len() as u64).saturating_mul(4)
+        }
+        let native: u64 = self.samples.iter().map(bytes).sum();
+        let cache: u64 = self.resample_cache.values().map(bytes).sum();
+        native.saturating_add(cache)
+    }
+
     /// Lazily resamples sample `id` into `new_rate` using the same rubato
     /// sinc resampler as XSynth, and returns the resampled data.
     ///

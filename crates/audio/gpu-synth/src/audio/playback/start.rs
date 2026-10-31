@@ -78,6 +78,8 @@ impl AudioPlayback {
             underruns: Arc::new(AtomicU64::new(0)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),
             governor_level: Arc::new(AtomicU64::new(0)),
+            sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
+            sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
         };
         let cb_stats = stats.clone();
 
@@ -126,6 +128,8 @@ impl AudioPlayback {
                 let mut buf = vec![0.0f32; block * channels];
                 let mut resampler = SincResampler::new(engine_rate, device_rate, channels);
                 let mut last_err = false;
+                // REF-LGS-013：采样内存快照的降频计数器（每 25 块发布一次）。
+                let mut mem_stat_countdown = 0u32;
                 // Max allowed per-block cost (drain + render) budget: 90% of
                 // realtime so the thread runs slightly ahead and the queue
                 // accumulates a cushion that absorbs peak blocks (dense
@@ -258,6 +262,18 @@ impl AudioPlayback {
                     thread_stats
                         .voice_count
                         .store(synth.voice_count() as u64, Ordering::Relaxed);
+
+                    // REF-LGS-013：采样内存低频发布（每 25 块一次）。
+                    // `sample_memory_bytes` 会遍历样本/重采样缓存，不应当成
+                    // 每块热路径；状态栏是低频展示，25 块（约 0.25–0.5 s）
+                    // 的更新粒度足够。
+                    if mem_stat_countdown == 0 {
+                        let (gpu_bytes, cpu_bytes) = synth.sample_memory_bytes();
+                        thread_stats.set_sample_memory(gpu_bytes, cpu_bytes);
+                        mem_stat_countdown = 25;
+                    } else {
+                        mem_stat_countdown -= 1;
+                    }
 
                     let out = if needs_resample {
                         resampler.process(&buf)

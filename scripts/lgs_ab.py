@@ -57,6 +57,7 @@ PORT_RE = re.compile(r"midi_max_port=(\d+) midi_channels=(\d+) auto_channels=(\w
 VOICE_RE = re.compile(
     r"voices_peak=(\d+) voice_frames=(\d+) voice_frames_per_s=([0-9.]+)"
 )
+SAMPLE_RE = re.compile(r"sample_gpu_bytes=(\d+) sample_cpu_bytes=(\d+)")
 PHASE_RE = re.compile(
     r"apply=(\d+)us collect=(\d+)us sync=(\d+)us upload=(\d+)us "
     r"samples=(\d+)us mix=(\d+)us dispatch=(\d+)us readback=(\d+)us total=(\d+)us"
@@ -148,6 +149,8 @@ class Run:
     voices_peak: int | None = None
     voice_frames: int | None = None
     voice_frames_per_s: float | None = None
+    sample_gpu_bytes: int | None = None
+    sample_cpu_bytes: int | None = None
     phases: dict = field(default_factory=dict)
     gpu: dict = field(default_factory=dict)
     returncode: int = 0
@@ -194,6 +197,10 @@ def parse_stdout(stdout: str) -> dict | None:
         data["voices_peak"] = int(voice.group(1))
         data["voice_frames"] = int(voice.group(2))
         data["voice_frames_per_s"] = float(voice.group(3))
+    sample = SAMPLE_RE.search(stdout)
+    if sample:
+        data["sample_gpu_bytes"] = int(sample.group(1))
+        data["sample_cpu_bytes"] = int(sample.group(2))
     return data
 
 
@@ -276,6 +283,8 @@ def run_once(
         voices_peak=data.get("voices_peak"),
         voice_frames=data.get("voice_frames"),
         voice_frames_per_s=data.get("voice_frames_per_s"),
+        sample_gpu_bytes=data.get("sample_gpu_bytes"),
+        sample_cpu_bytes=data.get("sample_cpu_bytes"),
         phases=parse_phases(proc.stderr),
         gpu=gpu_stamp(gpu),
         returncode=proc.returncode,
@@ -406,6 +415,8 @@ def run_case(
             "voice_frames_per_s_median": median(
                 [r["voice_frames_per_s"] for r in runs if r["voice_frames_per_s"]]
             ),
+            "sample_gpu_bytes_max": max((r["sample_gpu_bytes"] or 0) for r in runs),
+            "sample_cpu_bytes_max": max((r["sample_cpu_bytes"] or 0) for r in runs),
             "phases_us_median": {
                 k: median([r["phases"][k] for r in runs if k in r["phases"]])
                 for k in PHASES
@@ -546,6 +557,8 @@ def write_csv(path: Path, case_reports: list[dict]) -> None:
         "voices_peak",
         "voice_frames",
         "voice_frames_per_s",
+        "sample_gpu_bytes",
+        "sample_cpu_bytes",
         "gpu_sm_mhz",
         "gpu_temp_c",
         "gpu_power_w",
@@ -574,6 +587,8 @@ def write_csv(path: Path, case_reports: list[dict]) -> None:
                                 if r["voice_frames_per_s"]
                                 else ""
                             ),
+                            "sample_gpu_bytes": r["sample_gpu_bytes"] or "",
+                            "sample_cpu_bytes": r["sample_cpu_bytes"] or "",
                             "gpu_sm_mhz": r["gpu"].get("sm_mhz", ""),
                             "gpu_temp_c": r["gpu"].get("temp_c", ""),
                             "gpu_power_w": r["gpu"].get("power_w", ""),

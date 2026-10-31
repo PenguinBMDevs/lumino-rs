@@ -376,6 +376,16 @@ impl GpuSynth {
         self.voices.len()
     }
 
+    /// 采样数据内存占用 `(GPU 字节, CPU 字节)`（REF-LGS-013）。
+    ///
+    /// GPU = `samples_chunks` 实际分配字节；CPU = 原生样本 + 重采样缓存。
+    /// 会遍历样本表，供实时统计低频发布，不应每块调用。
+    pub fn sample_memory_bytes(&self) -> (u64, u64) {
+        let gpu: u64 = self.samples_chunks.iter().map(GrowableBuffer::size).sum();
+        let cpu = self.sf.as_ref().map_or(0, SoundFont::memory_bytes);
+        (gpu, cpu)
+    }
+
     /// Diagnostics: `(voices, released, ended)` - how many voices exist,
     /// how many have a release scheduled, and how many the GPU marked ended.
     #[doc(hidden)]

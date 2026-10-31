@@ -43,3 +43,23 @@ fn dump_zone_params() {
         );
     }
 }
+
+/// REF-LGS-013：CPU 采样字节 = 原生样本 + 重采样缓存；缺失夹具时跳过。
+#[test]
+fn memory_bytes_counts_native_and_resampled_cache() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../test-file/bench/rich.sf2");
+    let Some(path) = path.exists().then_some(path) else {
+        eprintln!("skip memory_bytes_counts_native_and_resampled_cache: 未找到 rich.sf2");
+        return;
+    };
+    let mut sf = SoundFont::load(&path, 0, 0, true, 48_000).expect("rich.sf2 应可加载");
+    let baseline = sf.memory_bytes();
+    assert!(baseline > 0, "加载后应统计到原生采样字节");
+    assert!(sf.sample_count() > 0, "rich.sf2 应含采样");
+    let _ = sf.resample(0, 24_000);
+    assert!(
+        sf.memory_bytes() > baseline,
+        "重采样缓存应计入 CPU 采样字节（baseline={baseline}）"
+    );
+}

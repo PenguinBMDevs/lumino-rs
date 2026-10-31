@@ -195,6 +195,7 @@ fn main() {
     let voice_frames = synth.voice_frames();
     let voices_peak = synth.peak_voice_count();
     let voice_frames_per_s = voice_frames as f64 / wall_secs;
+    let (sample_gpu_bytes, sample_cpu_bytes) = synth.sample_memory_bytes();
 
     println!(
         "frames={} channels={} sample_rate={}",
@@ -213,6 +214,10 @@ fn main() {
     println!(
         "voices_peak={} voice_frames={} voice_frames_per_s={:.0}",
         voices_peak, voice_frames, voice_frames_per_s
+    );
+    println!(
+        "sample_gpu_bytes={} sample_cpu_bytes={}",
+        sample_gpu_bytes, sample_cpu_bytes
     );
 
     if let Some(p) = raw_out {
@@ -249,6 +254,8 @@ fn main() {
                 "  \"voices_peak\": {},\n",
                 "  \"voice_frames\": {},\n",
                 "  \"voice_frames_per_s\": {:.1},\n",
+                "  \"sample_gpu_bytes\": {},\n",
+                "  \"sample_cpu_bytes\": {},\n",
                 "  \"no_limiter\": {}\n",
                 "}}\n"
             ),
@@ -272,6 +279,8 @@ fn main() {
             voices_peak,
             voice_frames,
             voice_frames_per_s,
+            sample_gpu_bytes,
+            sample_cpu_bytes,
             no_limiter
         );
         std::fs::write(p, json).expect("write json");
