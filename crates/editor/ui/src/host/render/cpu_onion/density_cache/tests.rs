@@ -46,6 +46,68 @@ fn alpha(cache: &mut DensityCache, doc_gen: u64, document: &MidiDocument) -> u8 
 }
 
 #[test]
+fn switching_to_256_keys_grows_without_full_build() {
+    let mut document = document();
+    let index = TrackIndex::build(&document);
+    let mut cache = DensityCache::default();
+    cache
+        .ensure(1, &document, &index, 128, 1)
+        .expect("首次密度必须构建");
+    assert_eq!(cache.full_builds, 1);
+
+    // 文档还没有高 key：切 256 只复用 128 金字塔，不整建。
+    let pyramid = cache
+        .ensure(1, &document, &index, 256, 1)
+        .expect("切 256 必须复用");
+
+    // 128 金字塔在 256 视口下高 key 必须透明，不能越界读下一 bin。
+    let high_camera = CanvasCamera {
+        key_count: 256,
+        scroll_y: (255 - 200) as f32 * 20.0,
+        ..camera()
+    };
+    let mut empty = vec![0u32; (WIDTH * HEIGHT) as usize];
+    pyramid.render_overview(&mut empty, WIDTH, HEIGHT, &high_camera);
+    let row = (high_camera.key_to_y(200) + high_camera.zoom_y * 0.5) as u32;
+    assert_eq!(
+        ((empty[(row * WIDTH) as usize] >> 24) & 0xFF) as u8,
+        0,
+        "未覆盖的高 key 必须是透明"
+    );
+    assert_eq!(cache.full_builds, 1);
+    assert_eq!(cache.built_keys, 128);
+
+    // 插入 key 200 后切 256：只扩 key 列 + 扫该轨，不整建。
+    document.insert_note(1, NoteEvent::new(0, 2000, 200, 100, 0));
+    let index = TrackIndex::build(&document);
+    let pyramid = cache
+        .ensure(1, &document, &index, 256, 1)
+        .expect("扩 key 后必须可用");
+    assert_eq!(pyramid.key_count(), 256);
+
+    let camera = CanvasCamera {
+        key_count: 256,
+        scroll_y: (255 - 200) as f32 * 20.0,
+        ..camera()
+    };
+    let mut frame = vec![0u32; (WIDTH * HEIGHT) as usize];
+    pyramid.render_overview(&mut frame, WIDTH, HEIGHT, &camera);
+    let row = (camera.key_to_y(200) + camera.zoom_y * 0.5) as u32;
+    assert_eq!(
+        ((frame[(row * WIDTH) as usize] >> 24) & 0xFF) as u8,
+        255,
+        "高 key 必须被扩进密度"
+    );
+    assert_eq!(cache.full_builds, 1, "256-key 切换不得整建");
+
+    // 切回 128 复用 256 金字塔，不整建。
+    cache
+        .ensure(1, &document, &index, 128, 1)
+        .expect("切回 128 必须复用");
+    assert_eq!(cache.full_builds, 1);
+}
+
+#[test]
 fn ensure_builds_then_keeps_cache_per_generation() {
     let document = document();
     let mut cache = DensityCache::default();

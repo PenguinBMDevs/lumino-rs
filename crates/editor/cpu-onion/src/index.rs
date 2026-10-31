@@ -66,6 +66,8 @@ pub struct TrackIndex {
     pub total_notes: u64,
     /// 每轨音符数（`rebuild_track_geometry` 用它把 `total_notes` 修正到精确值）。
     pub track_note_counts: Vec<u64>,
+    /// 每轨最大 key（升 256-key 时只扫可能含高 key 的轨；删除只增不减）。
+    pub track_max_keys: Vec<u16>,
     /// 每轨、每小节的 key 位图（`key_masks[track][measure]`）。
     ///
     /// 用于 Exact 覆盖目标：只把本视口实际出现过的 key 行算进“应该铺满”的面积，
@@ -86,6 +88,7 @@ impl TrackIndex {
         let mut long_notes: Vec<Vec<NoteEvent>> = (0..track_count).map(|_| Vec::new()).collect();
         let mut measure_counts = vec![0u32; 1];
         let mut track_note_counts = vec![0u64; track_count];
+        let mut track_max_keys = vec![0u16; track_count];
         let mut long_note_count = 0u64;
         let mut total_notes = 0u64;
         let mut length_histogram = vec![0u64; SHORT_HISTOGRAM_TICKS + 1];
@@ -107,10 +110,12 @@ impl TrackIndex {
 
         for (track_idx, notes) in document.notes.iter().enumerate() {
             let mut track_max = 0u32;
+            let mut track_max_key = 0u16;
             let mut track_notes = 0u64;
             for note in notes.iter() {
                 let len = note.length();
                 track_max = track_max.max(len);
+                track_max_key = track_max_key.max(u16::from(note.key));
                 length_histogram[(len as usize).min(SHORT_HISTOGRAM_TICKS)] += 1;
                 if key_mask_measures > 0 && note.key < 128 {
                     let first = (note.start_tick / measure_ticks) as usize;
@@ -147,6 +152,9 @@ impl TrackIndex {
             if let Some(slot) = track_note_counts.get_mut(track_idx) {
                 *slot = track_notes;
             }
+            if let Some(slot) = track_max_keys.get_mut(track_idx) {
+                *slot = track_max_key;
+            }
         }
 
         let mut index = Self {
@@ -160,6 +168,7 @@ impl TrackIndex {
             densest_measure_notes: 0,
             total_notes,
             track_note_counts,
+            track_max_keys,
             key_masks,
             key_mask_measures,
         };
@@ -181,6 +190,18 @@ impl TrackIndex {
     #[must_use]
     pub fn long_notes(&self, track: usize) -> &[NoteEvent] {
         self.long_notes.get(track).map_or(&[], Vec::as_slice)
+    }
+
+    /// 全文档最大 key；无音符时为 0。
+    #[must_use]
+    pub fn max_key(&self) -> u16 {
+        self.track_max_keys.iter().copied().max().unwrap_or(0)
+    }
+
+    /// 指定轨最大 key；越界轨返回 0。
+    #[must_use]
+    pub fn track_max_key(&self, track: usize) -> u16 {
+        self.track_max_keys.get(track).copied().unwrap_or(0)
     }
 
     /// 视口 tick 范围内实际出现过的 key 位图；未建掩码时返回全 1（保守）。

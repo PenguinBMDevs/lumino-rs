@@ -72,8 +72,12 @@ impl TrackIndex {
         if next.track_note_counts.len() <= track {
             next.track_note_counts.resize(track + 1, 0);
         }
+        if next.track_max_keys.len() <= track {
+            next.track_max_keys.resize(track + 1, 0);
+        }
 
         let mut track_max = 0u32;
+        let mut track_max_key = 0u16;
         let mut track_min = u32::MAX;
         let mut track_notes = 0u64;
         let mut longs: Vec<NoteEvent> = Vec::new();
@@ -81,6 +85,7 @@ impl TrackIndex {
         for note in document.track_notes(track).iter() {
             let len = note.length();
             track_max = track_max.max(len);
+            track_max_key = track_max_key.max(u16::from(note.key));
             track_min = track_min.min(len.max(1));
             track_notes = track_notes.saturating_add(1);
             if len > LOOKBACK_TICKS {
@@ -113,6 +118,9 @@ impl TrackIndex {
         if let Some(slot) = next.track_note_counts.get_mut(track) {
             *slot = track_notes;
         }
+        if let Some(slot) = next.track_max_keys.get_mut(track) {
+            *slot = track_max_key;
+        }
         next
     }
 
@@ -140,6 +148,9 @@ impl TrackIndex {
         self.mark_key_mask(track, &note);
         if let Some(count) = self.track_note_counts.get_mut(track) {
             *count = count.saturating_add(1);
+        }
+        if let Some(slot) = self.track_max_keys.get_mut(track) {
+            *slot = (*slot).max(u16::from(note.key));
         }
         let len = note.length();
         self.short_note_ticks = self.short_note_ticks.max(1).min(len.max(1));

@@ -61,10 +61,12 @@ impl DensityPyramid {
 
         // 每个 key 的整行颜色只算一次：overview 缩放下同一 key 覆盖多行，
         // 逐像素算 LUT 会把 128×width 放大成 height×width。
-        let row_len = keys.saturating_mul(width);
+        // 密度可能只建到 128 key，256-key 视口不能越界读取下一 bin。
+        let row_keys = (camera.key_count as usize).min(keys);
+        let row_len = row_keys.saturating_mul(width);
         scratch.key_rows.clear();
         scratch.key_rows.resize(row_len, 0);
-        for key in 0..keys {
+        for key in 0..row_keys {
             let Some(row) = scratch.key_rows.get_mut(key * width..(key + 1) * width) else {
                 continue;
             };

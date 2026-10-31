@@ -81,10 +81,11 @@ impl DensityPyramid {
             let track = track as usize;
             track != current_track && !muted.get(track).copied().unwrap_or(false)
         };
-        let row_len = keys.saturating_mul(width);
+        let row_keys = (camera.key_count as usize).min(keys);
+        let row_len = row_keys.saturating_mul(width);
         scratch.key_rows.clear();
         scratch.key_rows.resize(row_len, 0);
-        for key in 0..keys {
+        for key in 0..row_keys {
             let Some(row) = scratch.key_rows.get_mut(key * width..(key + 1) * width) else {
                 continue;
             };

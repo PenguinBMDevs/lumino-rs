@@ -49,6 +49,177 @@ pub(super) fn ensure_layout(pyramid: &mut DensityPyramid, start_tick: u32, end_t
 }
 
 /// 丢弃最细层，把上一层当新基础层，并补一个更粗的顶层。
+/// 把密度/覆盖的 key 维度从当前值扩到 `new_key_count`。
+///
+/// 只搬移旧列 + 扫描含高 key 的轨，不重扫全文档、不重建金字塔。
+pub(super) fn grow_keys(
+    pyramid: &mut DensityPyramid,
+    document: &lumino_midi_model::MidiDocument,
+    index: &crate::index::TrackIndex,
+    new_key_count: u16,
+) -> bool {
+    let old_keys = pyramid.key_count.max(1) as usize;
+    let new_keys = new_key_count.max(1) as usize;
+    if new_keys <= old_keys {
+        return true;
+    }
+    if pyramid.levels.is_empty() {
+        return false;
+    }
+    // 扩 key 会放大覆盖层；先降采样，保持内存上限。
+    while pyramid
+        .coverage
+        .first()
+        .is_some_and(|base| base.bins.saturating_mul(new_keys) > MAX_COVERAGE_CELLS)
+    {
+        if !coarsen(pyramid) {
+            return false;
+        }
+    }
+    let base_bin = pyramid
+        .levels
+        .first()
+        .map_or(1, |level| level.bin_ticks.max(1));
+    for level in &mut pyramid.levels {
+        let mut cells = vec![0u16; level.bins.saturating_mul(new_keys)];
+        for bin in 0..level.bins {
+            let source = bin.saturating_mul(old_keys);
+            let destination = bin.saturating_mul(new_keys);
+            let Some(source) = level.cells.get(source..source.saturating_add(old_keys)) else {
+                continue;
+            };
+            let Some(target) = cells.get_mut(destination..destination.saturating_add(old_keys))
+            else {
+                continue;
+            };
+            target.copy_from_slice(source);
+        }
+        level.cells = cells;
+    }
+
+    for track in 0..document.track_count() {
+        if usize::from(index.track_max_key(track)) < old_keys {
+            continue;
+        }
+        for note in document.track_notes(track).iter() {
+            if usize::from(note.key) < old_keys {
+                continue;
+            }
+            for level in &mut pyramid.levels {
+                let bin = (note.start_tick / level.bin_ticks.max(1)) as usize;
+                if let Some(cell) = level.cells.get_mut(
+                    bin.saturating_mul(new_keys)
+                        .saturating_add(usize::from(note.key)),
+                ) {
+                    *cell = cell.saturating_add(1);
+                }
+            }
+        }
+    }
+
+    for level in 1..pyramid.levels.len() {
+        let (before, after) = pyramid.levels.split_at_mut(level);
+        let previous = &before[level - 1];
+        let current = &mut after[0];
+        for bin in 0..current.bins {
+            for key in old_keys..new_keys {
+                let a = previous
+                    .cells
+                    .get(bin * 2 * new_keys + key)
+                    .copied()
+                    .unwrap_or(0);
+                let b = previous
+                    .cells
+                    .get((bin * 2 + 1) * new_keys + key)
+                    .copied()
+                    .unwrap_or(0);
+                if let Some(cell) = current
+                    .cells
+                    .get_mut(bin.saturating_mul(new_keys).saturating_add(key))
+                {
+                    *cell = a.saturating_add(b);
+                }
+            }
+        }
+    }
+
+    if !pyramid.coverage.is_empty() {
+        for level in 0..pyramid.coverage.len() {
+            let current = &mut pyramid.coverage[level];
+            let mut cells = vec![CoverageCell::EMPTY; current.bins.saturating_mul(new_keys)];
+            for bin in 0..current.bins {
+                let source = bin.saturating_mul(old_keys);
+                let destination = bin.saturating_mul(new_keys);
+                let Some(source) = current.cells.get(source..source.saturating_add(old_keys))
+                else {
+                    continue;
+                };
+                let Some(target) = cells.get_mut(destination..destination.saturating_add(old_keys))
+                else {
+                    continue;
+                };
+                target.copy_from_slice(source);
+            }
+            current.cells = cells;
+        }
+
+        for track in 0..document.track_count() {
+            if usize::from(index.track_max_key(track)) < old_keys {
+                continue;
+            }
+            let Ok(track_id) = u16::try_from(track) else {
+                continue;
+            };
+            let notes = document.track_notes(track);
+            let first = &mut pyramid.coverage[0];
+            for note in notes.iter() {
+                if usize::from(note.key) < old_keys {
+                    continue;
+                }
+                let first_bin = (note.start_tick / base_bin) as usize;
+                let last_bin = (note.end_tick.saturating_sub(1) / base_bin) as usize;
+                for bin in first_bin..=last_bin.min(first.bins.saturating_sub(1)) {
+                    if let Some(cell) = first.cells.get_mut(
+                        bin.saturating_mul(new_keys)
+                            .saturating_add(usize::from(note.key)),
+                    ) {
+                        cell.add(track_id);
+                    }
+                }
+            }
+        }
+
+        for level in 1..pyramid.coverage.len() {
+            let (before, after) = pyramid.coverage.split_at_mut(level);
+            let previous = &before[level - 1];
+            let current = &mut after[0];
+            for bin in 0..current.bins {
+                for key in old_keys..new_keys {
+                    let cell = previous.get(bin * 2, key, new_keys).merge(previous.get(
+                        bin * 2 + 1,
+                        key,
+                        new_keys,
+                    ));
+                    if let Some(slot) = current
+                        .cells
+                        .get_mut(bin.saturating_mul(new_keys).saturating_add(key))
+                    {
+                        *slot = cell;
+                    }
+                }
+            }
+        }
+    }
+
+    pyramid.key_count = new_key_count.max(1);
+    for (level, max) in pyramid.max_counts.iter_mut().enumerate() {
+        if let Some(level) = pyramid.levels.get(level) {
+            *max = level.cells.iter().copied().max().unwrap_or(1).max(1);
+        }
+    }
+    true
+}
+
 fn coarsen(pyramid: &mut DensityPyramid) -> bool {
     if pyramid.levels.len() < 2 || pyramid.coverage.len() < 2 {
         return false;

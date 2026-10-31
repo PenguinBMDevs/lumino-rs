@@ -324,6 +324,16 @@ impl DensityPyramid {
         rebuild::rebuild_dirty_ranges(self, document, index, ranges)
     }
 
+    /// 256-key 切换：只扩 key 列并扫描含高 key 的轨，不重建金字塔。
+    pub fn grow_keys(
+        &mut self,
+        document: &MidiDocument,
+        index: &TrackIndex,
+        new_key_count: u16,
+    ) -> bool {
+        grow::grow_keys(self, document, index, new_key_count)
+    }
+
     fn mark_coverage_dirty(&mut self, start_tick: u32, end_tick: u32) {
         if self.coverage.is_empty() || end_tick <= start_tick {
             return;

@@ -22,13 +22,16 @@ pub(crate) struct DensityCache {
     pyramid: Option<DensityPyramid>,
     /// 金字塔对应的文档代次。
     built_gen: Option<u64>,
-    /// 金字塔对应的 key 数（256-key 切换时必须重建）。
+    /// 金字塔实际覆盖的 key 数（256-key 切换只扩列，不重建）。
     built_keys: u16,
     /// 尚未重建的脏 tick 区间（历史回放/大变更），下次 ensure 局部重建。
     pending_ranges: Vec<(u32, u32)>,
     /// 测试诊断：按区间重建的次数（用于断言没有退回整建）。
     #[cfg(test)]
     pub(crate) range_rebuilds: u32,
+    /// 测试诊断：整建次数（256-key 切换不得增加）。
+    #[cfg(test)]
+    pub(crate) full_builds: u32,
 }
 
 impl DensityCache {
@@ -67,15 +70,29 @@ impl DensityCache {
         new_gen: u64,
         changes: &[CpuOnionChange],
     ) {
-        let (Some(pyramid), Some(built_gen)) = (self.pyramid.as_mut(), self.built_gen) else {
+        let Some(built_gen) = self.built_gen else {
             return;
         };
         if Some(built_gen) != old_gen || changes.is_empty() {
             return;
         }
+        // 当前金字塔不覆盖高 key 时，直接丢弃；下次 ensure 按视口 key 数重建。
+        if changes.iter().any(|change| {
+            change
+                .new
+                .is_some_and(|note| u16::from(note.key) >= self.built_keys)
+        }) {
+            self.reset();
+            return;
+        }
+        let Some(pyramid) = self.pyramid.as_mut() else {
+            return;
+        };
         let mut valid = true;
         for change in changes {
-            if let Some(old) = change.old {
+            if let Some(old) = change.old
+                && u16::from(old.key) < self.built_keys
+            {
                 valid &=
                     pyramid.apply_note_range(old.start_tick, old.end_tick, u16::from(old.key), -1);
             }
@@ -105,10 +122,23 @@ impl DensityCache {
             .pyramid
             .as_ref()
             .is_some_and(|pyramid| !pyramid.coverage_valid());
-        let shape_changed = self.pyramid.is_none()
-            || self.built_gen != Some(new_gen)
-            || self.built_keys != key_count;
+        let mut shape_changed = self.pyramid.is_none() || self.built_gen != Some(new_gen);
+        if !shape_changed && key_count > self.built_keys && index.max_key() >= self.built_keys {
+            let grown = self
+                .pyramid
+                .as_mut()
+                .is_some_and(|pyramid| pyramid.grow_keys(document, index, key_count));
+            if grown {
+                self.built_keys = key_count;
+            } else {
+                shape_changed = true;
+            }
+        }
         if shape_changed {
+            #[cfg(test)]
+            {
+                self.full_builds = self.full_builds.saturating_add(1);
+            }
             let started = std::time::Instant::now();
             self.pyramid = Some(DensityPyramid::build(document, workers, key_count));
             self.built_gen = Some(new_gen);

@@ -236,6 +236,14 @@ fn zoom_bench_real_midi() {
         );
         let range_ms = range_started.elapsed().as_secs_f64() * 1000.0;
         println!("history dirty range: ok={range_ok} rebuild={range_ms:.2} ms");
+        // 256-key 切换：只扩列，不重建金字塔。
+        let key_started = Instant::now();
+        let key_ok = density.grow_keys(&edited, &edited_index, 256);
+        let key_ms = key_started.elapsed().as_secs_f64() * 1000.0;
+        println!(
+            "256-key grow: ok={key_ok} grow={key_ms:.2} ms / {:.1} MiB",
+            density.memory_bytes() as f64 / (1024.0 * 1024.0)
+        );
     }
     assert!(frames > 0, "至少渲染一帧");
 }
