@@ -136,34 +136,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # ── 临时诊断（定位 Windows gfx 单测连锁失败，定位后删除）──────────
-      # 现象：gfx lib 二进制 46 例失败（R1 request_adapter NotFound + 44 个回读
-      # 用例 Buffer invalid），CPU 用例全绿；串行化无效 ⇒ 与并发无关。
-      # 三组排除法各自独立跑：哪一组转绿，就锁定哪一组是触发源。
-      - name: 诊断A · 跳过 cpu_onion 单测
-        if: matrix.os == 'windows-latest'
-        continue-on-error: true
-        run: cargo test -p lumino-gfx --lib -- --skip cpu_onion
-
-      - name: 诊断B · 跳过 device_status 单测
-        if: matrix.os == 'windows-latest'
-        continue-on-error: true
-        run: cargo test -p lumino-gfx --lib -- --skip device_status
-
-      - name: 诊断C · 跳过 device_check 单测
-        if: matrix.os == 'windows-latest'
-        continue-on-error: true
-        run: cargo test -p lumino-gfx --lib -- --skip device_check
-
-      # ── Windows 必须串行跑测试 ────────────────────────────────────
-      # 现象（2026-10-31 实测，feat/cpu-onion-skin 起稳定复现）：gfx 单测二进制
-      # 264 个用例并行执行到后半程后，D3D12 适配器整体枚举失败（R1 注入用例
-      # 的 request_adapter 返回 NotFound，no_adapter_backends = GL|DX12），
-      # 随后 44 个 GPU 回读用例报 "Buffer ... is invalid"；CPU 用例全部通过。
-      # 与 `lumino-gfx/src/test_gpu.rs` 头注释记录的根因一致：D3D12 驱动在
-      # **并发**设备创建/提交下会整体停顿。macOS(Metal) / Linux(Vulkan lavapipe)
-      # 并行无此问题，所以只对 Windows 串行，不拖慢另外两个 OS。
-      - name: Cargo test (Windows · GPU 串行)
+      # ── Windows 串行跑测试（GPU 顺序确定性）─────────────────────────
+      # 2026-10-31 实测根因：gfx 单测里 `device_check` 的探测用例会反复创建/销毁
+      # 自己的 Device。若进程里已有**驻留** Device（`test_gpu` 的共享设备），
+      # Windows DX12/WARP 会整体停摆：随后 `request_adapter` 返回 NotFound、
+      # 44 个 GPU 回读用例连锁报 "Buffer ... is invalid"（CPU 用例全绿，
+      # macOS/Metal 与 Linux/lavapipe 无此问题，串行/并行都与故障无关）。
+      # 三组排除法定位：跳过 cpu_onion 或跳过 device_check 任一组即全绿。
+      # 根因修复：CPU 洋葱皮 GPU 用例改用一次性设备（见
+      # `cpu_onion_renderer::tests_support::transient_device`），不再抢在
+      # `device_check` 之前把共享 Device 拉起来。
+      # 串行是第二道保障：让「探测用例执行期间没有并发 Device」不依赖字典序。
+      - name: Cargo test (Windows · 串行)
         if: matrix.os == 'windows-latest'
         run: cargo test --workspace -- --test-threads=1
         env:

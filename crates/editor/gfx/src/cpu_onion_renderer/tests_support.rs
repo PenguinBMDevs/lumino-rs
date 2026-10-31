@@ -7,6 +7,39 @@ use crate::constants::rendering::DEPTH_FORMAT;
 
 use super::{CpuOnionFrame, CpuOnionRenderer};
 
+/// 创建**一次性**测试设备（实例 + 设备 + 队列），随绑定生命周期结束而释放。
+///
+/// 为什么不复用 `test_gpu::shared_device()`：`device_check` 的探测用例会在同一
+/// 进程里反复创建/销毁自己的 `Device`；Windows DX12/WARP 在「已有存活 Device」
+/// 时做这种 churn 会让整个 DX12 栈停摆——实测（CI，2026-10-31）表现为随后
+/// `request_adapter` 返回 `NotFound`、所有 GPU 回读用例连锁报
+/// `Buffer ... is invalid`。本组用例名字典序最前，一旦用共享设备就会把驻留
+/// Device 提前拉起来，正好构成该组合。改用一次性设备后，本组用例结束即释放，
+/// 探测用例执行期间没有并发 Device（Windows CI 侧串行执行，见 `ci.yml`）。
+///
+/// 返回值里的 `Instance` 必须与 `Device` 同寿命持有（绑定到变量，不要 `_` 落空）。
+pub(super) fn transient_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
+    use futures::executor::block_on;
+
+    let force_fallback = std::env::var_os("LUMINO_GFX_TEST_FALLBACK").is_some();
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: force_fallback,
+        ..Default::default()
+    }))
+    .expect("CPU 洋葱皮 GPU 用例需要可用的 wgpu 适配器");
+    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("cpu_onion_gpu_test_device"),
+        required_features: adapter.features() & wgpu::Features::default(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: wgpu::MemoryHints::default(),
+        trace: wgpu::Trace::Off,
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+    }))
+    .expect("CPU 洋葱皮 GPU 用例：请求设备失败");
+    (instance, device, queue)
+}
+
 /// 输出目标格式（与 UI 离屏纹理一致：sRGB）。
 pub(super) const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
