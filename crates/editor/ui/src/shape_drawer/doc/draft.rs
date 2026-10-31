@@ -91,14 +91,11 @@ impl Draft {
                 *end = point;
             }
             Self::Box { start, current, .. } => {
-                if shift {
-                    let dx = point.0 - start.0;
-                    let dy = point.1 - start.1;
-                    let side = dx.abs().max(dy.abs());
-                    *current = (start.0 + side.copysign(dx), start.1 + side.copysign(dy));
+                *current = if shift {
+                    constrain_unit_rect(*start, point)
                 } else {
-                    *current = point;
-                }
+                    point
+                };
             }
         }
     }
@@ -207,4 +204,60 @@ fn rect_from_drag(a: (f32, f32), b: (f32, f32)) -> Option<ShapeRect> {
         return None;
     }
     Some(ShapeRect::normalized(a.0, a.1, b.0, b.1))
+}
+
+/// Shift 约束的单位框拖拽点：取主轴长度，保留 dx/dy 符号。
+///
+/// 抽屉画板本身是正方形（1 unit × 1 unit），所以「主轴取 max(|dx|, |dy|)」
+/// 与主形状工具的屏幕空间约束在正方形视图下等价；主工具因 tick/key 像素
+/// 尺度不同仍走 `effective_rect`，不能直接复用本函数。
+pub(crate) fn constrain_unit_rect(start: (f32, f32), current: (f32, f32)) -> (f32, f32) {
+    let dx = current.0 - start.0;
+    let dy = current.1 - start.1;
+    let side = dx.abs().max(dy.abs());
+    (start.0 + side.copysign(dx), start.1 + side.copysign(dy))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constrain_unit_rect_uses_long_axis() {
+        assert_eq!(
+            constrain_unit_rect((0.2, 0.2), (0.7, 0.4)),
+            (0.7, 0.7),
+            "dx 更长时取 dx，dy 跟随主轴"
+        );
+        assert_eq!(
+            constrain_unit_rect((0.2, 0.2), (0.3, 0.8)),
+            (0.8, 0.8),
+            "dy 更长时取 dy"
+        );
+    }
+
+    #[test]
+    fn test_constrain_unit_rect_keeps_direction() {
+        assert_eq!(
+            constrain_unit_rect((0.8, 0.8), (0.3, 0.6)),
+            (0.3, 0.3),
+            "反向拖拽保留负方向"
+        );
+        assert_eq!(constrain_unit_rect((0.8, 0.8), (0.6, 0.3)), (0.3, 0.3));
+    }
+
+    #[test]
+    fn test_draft_shift_toggles_square_then_release() {
+        let mut draft = Draft::begin(DrawerTool::Rect, (0.2, 0.2)).expect("应开始草稿");
+        draft.update_with_shift((0.7, 0.4), true);
+        let stroke = draft.to_stroke().expect("应有草稿");
+        let rect = stroke.rect.expect("矩形应有 rect");
+        assert_eq!(rect.size().0, rect.size().1, "Shift 下应是正方形");
+
+        let mut draft = Draft::begin(DrawerTool::Rect, (0.2, 0.2)).expect("应开始草稿");
+        draft.update_with_shift((0.7, 0.4), false);
+        let stroke = draft.to_stroke().expect("应有草稿");
+        let rect = stroke.rect.expect("矩形应有 rect");
+        assert_ne!(rect.size().0, rect.size().1, "松开 Shift 应恢复自由比例");
+    }
 }
