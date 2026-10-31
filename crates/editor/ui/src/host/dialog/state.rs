@@ -226,7 +226,7 @@ impl Host {
         let target = ShapeRect::normalized(tick, key_lo, tick + beats * ppq, key_lo + keys);
         let rect = if drawer.insert_fit_contain {
             let source = drawing.bounds().unwrap_or(target);
-            fit_contain_rect(source, target)
+            fit_contain_rect(source, target, ppq)
         } else {
             target
         };
