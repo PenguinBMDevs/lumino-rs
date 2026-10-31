@@ -74,9 +74,9 @@ impl RunnerInner {
                 tracing::info!("应用画刷绘制行为配置: 粗细度={}", config.thickness);
                 ui.apply_brush_settings(config);
             }
-            DialogResult::InsertShapeDrawing(drawing) => {
+            DialogResult::InsertShapeDrawing { drawing, options } => {
                 tracing::info!("形状抽屉：插入工程 {}", drawing.name);
-                if let Err(error) = ui.insert_shape_drawing(&drawing) {
+                if let Err(error) = ui.insert_shape_drawing(&drawing, options) {
                     tracing::warn!("形状抽屉插入失败: {error}");
                 }
             }

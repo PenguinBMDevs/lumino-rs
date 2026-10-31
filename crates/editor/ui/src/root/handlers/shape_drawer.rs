@@ -1,6 +1,6 @@
 //! 形状抽屉库/变换/插入动作（DRAW-033B2）
 
-use crate::host::DialogResult;
+use crate::host::{DialogResult, ShapeInsertOptions};
 use crate::message::ShapeDrawerAction;
 use crate::root::Root;
 use crate::state::root_state::ShapeDrawerState;
@@ -51,11 +51,16 @@ impl Root {
                 }
             }
             ShapeDrawerAction::Insert => match current_drawing(state) {
-                Ok(drawing) => {
-                    self.state.dialog_result =
-                        Some(DialogResult::InsertShapeDrawing(Box::new(drawing)));
-                    state.status = Some("正在插入当前工程".to_string());
-                }
+                Ok(drawing) => match parse_insert_options(state) {
+                    Ok(options) => {
+                        self.state.dialog_result = Some(DialogResult::InsertShapeDrawing {
+                            drawing: Box::new(drawing),
+                            options,
+                        });
+                        state.status = Some("正在插入当前工程".to_string());
+                    }
+                    Err(error) => state.status = Some(error),
+                },
                 Err(error) => state.status = Some(error),
             },
             ShapeDrawerAction::PanelDragStart => {
@@ -145,6 +150,29 @@ fn current_drawing(state: &ShapeDrawerState) -> Result<ShapeDrawing, String> {
     let keep_selected = selected_user.is_some();
     let id = unique_user_id(state, base, keep_selected);
     Ok(state.doc.borrow().to_drawing(id, name.to_string()))
+}
+
+/// 解析抽屉插入参数（与主窗 `insert_shape_drawing` 使用同一套校验）
+fn parse_insert_options(state: &ShapeDrawerState) -> Result<ShapeInsertOptions, String> {
+    let beats = state
+        .insert_beats_text
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .ok_or_else(|| "插入宽度需为正数（拍）".to_string())?;
+    let keys = state
+        .insert_keys_text
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite() && (1.0..=128.0).contains(value))
+        .ok_or_else(|| "插入高度需在 1–128 key".to_string())?;
+    Ok(ShapeInsertOptions {
+        beats,
+        keys,
+        fit_contain: state.insert_fit_contain,
+    })
 }
 
 fn unique_user_id(state: &ShapeDrawerState, base: &str, keep_selected: bool) -> String {

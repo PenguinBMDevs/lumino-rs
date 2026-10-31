@@ -37,7 +37,7 @@ use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
 pub use cache::RenderCache;
-pub use types::{DialogResult, NoteData, TrackNotes};
+pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
 /// UI 宿主 - 管理 iced 渲染和 wgpu 音符渲染
 ///

@@ -9,6 +9,27 @@ pub type NoteData = (f32, u8, f32, u8, u8);
 /// 音轨音符数据: (track_idx, notes)
 pub type TrackNotes = (usize, Vec<NoteData>);
 
+/// 形状抽屉插入参数（随 DialogResult 跨窗口传递）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShapeInsertOptions {
+    /// 插入宽度（拍）
+    pub beats: f32,
+    /// 插入高度（key）
+    pub keys: f32,
+    /// 保持原图比例（false = 拉伸铺满）
+    pub fit_contain: bool,
+}
+
+impl Default for ShapeInsertOptions {
+    fn default() -> Self {
+        Self {
+            beats: 4.0,
+            keys: 12.0,
+            fit_contain: false,
+        }
+    }
+}
+
 /// 对话框结果
 // Settings 变体已 Box 化（SettingsPanel 体积大，Box 降低 DialogResult 栈体积，
 // 与 Message 枚举布局评审结论一致）。
@@ -75,7 +96,12 @@ pub enum DialogResult {
     /// 画刷「绘制行为」配置（Save 后由 runner 应用回主窗）
     BrushSettings(lumino_core::BrushConfig),
     /// 形状抽屉插入工程（抽屉保持打开）
-    InsertShapeDrawing(Box<lumino_core::shape::ShapeDrawing>),
+    InsertShapeDrawing {
+        /// 当前抽屉图形
+        drawing: Box<lumino_core::shape::ShapeDrawing>,
+        /// 插入尺寸/比例
+        options: ShapeInsertOptions,
+    },
     /// 历史面板请求跳到指定游标（历史窗口保持打开）
     HistoryJump(usize),
 }

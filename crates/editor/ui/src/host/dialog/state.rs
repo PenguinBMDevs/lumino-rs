@@ -4,7 +4,7 @@ use lumino_core::shape::{ShapeDrawing, ShapeLibrary, ShapeRect};
 use lumino_core::{tr, trf};
 use lumino_note_core::history::OpKind;
 
-use crate::host::{Host, types::DialogResult};
+use crate::host::{Host, ShapeInsertOptions, types::DialogResult};
 use crate::message;
 use crate::shape_drawer::fit::fit_contain_rect;
 use crate::state::root_state::{CollaborationViewState, HistoryKind};
@@ -200,31 +200,31 @@ impl Host {
     }
 
     /// 把抽屉当前图形插入主工程（当前轨道 + 播放头；尺寸/比例来自抽屉插入参数）。
-    pub fn insert_shape_drawing(&mut self, drawing: &ShapeDrawing) -> Result<(), String> {
+    pub fn insert_shape_drawing(
+        &mut self,
+        drawing: &ShapeDrawing,
+        options: ShapeInsertOptions,
+    ) -> Result<(), String> {
         let track = self.root.editor.editor_state.data.current_track;
         if track == 0 {
             return Err("指挥轨不能插入形状，请先选择普通音轨".to_string());
         }
-        let drawer = &self.root.state.shape_drawer;
-        let beats = drawer
-            .insert_beats_text
-            .trim()
-            .parse::<f32>()
-            .ok()
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .ok_or_else(|| "插入宽度需为正数（拍）".to_string())?;
-        let keys = drawer
-            .insert_keys_text
-            .trim()
-            .parse::<f32>()
-            .ok()
-            .filter(|value| value.is_finite() && (1.0..=128.0).contains(value))
-            .ok_or_else(|| "插入高度需在 1–128 key".to_string())?;
+        if !options.beats.is_finite() || options.beats <= 0.0 {
+            return Err("插入宽度需为正数（拍）".to_string());
+        }
+        if !options.keys.is_finite() || !(1.0..=128.0).contains(&options.keys) {
+            return Err("插入高度需在 1–128 key".to_string());
+        }
         let ppq = f32::from(self.root.editor.editor_state.view.ppq);
         let tick = self.root.editor.playback_position.max(0.0);
         let key_lo = 60.0;
-        let target = ShapeRect::normalized(tick, key_lo, tick + beats * ppq, key_lo + keys);
-        let rect = if drawer.insert_fit_contain {
+        let target = ShapeRect::normalized(
+            tick,
+            key_lo,
+            tick + options.beats * ppq,
+            key_lo + options.keys,
+        );
+        let rect = if options.fit_contain {
             let source = drawing.bounds().unwrap_or(target);
             fit_contain_rect(source, target, ppq)
         } else {
@@ -237,8 +237,10 @@ impl Host {
             return Err("形状插入失败（请检查当前音轨）".to_string());
         }
         self.root.state.shape_drawer.status = Some(format!(
-            "已插入当前工程（{beats} 拍 × {keys} key{}）",
-            if drawer.insert_fit_contain {
+            "已插入当前工程（{} 拍 × {} key{}）",
+            options.beats,
+            options.keys,
+            if options.fit_contain {
                 "，保持比例"
             } else {
                 ""

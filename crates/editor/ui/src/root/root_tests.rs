@@ -59,14 +59,18 @@ fn test_shape_drawer_save_delete_and_insert_action() {
         "不得用内置 id 覆盖用户库"
     );
     root.state.shape_drawer.selected = Some("b2-test".to_string());
+    root.state.shape_drawer.insert_beats_text = "8".to_string();
+    root.state.shape_drawer.insert_keys_text = "24".to_string();
+    root.state.shape_drawer.insert_fit_contain = true;
     root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
-    assert!(
-        matches!(
-            root.state.dialog_result,
-            Some(crate::host::DialogResult::InsertShapeDrawing(_))
-        ),
-        "插入动作应设置对话框结果且保持抽屉打开"
-    );
+    match root.state.dialog_result.as_ref() {
+        Some(crate::host::DialogResult::InsertShapeDrawing { options, .. }) => {
+            assert_eq!(options.beats, 8.0);
+            assert_eq!(options.keys, 24.0);
+            assert!(options.fit_contain);
+        }
+        other => panic!("插入动作应携带尺寸/比例，实为 {other:?}"),
+    }
 
     root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Delete));
     assert!(!dir.join("b2-test.lmshape").exists(), "删除应移除库文件");
@@ -140,7 +144,7 @@ fn test_shape_drawer_area_paint_and_insert_result() {
     );
     root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
     match root.state.dialog_result.as_ref() {
-        Some(crate::host::DialogResult::InsertShapeDrawing(drawing)) => {
+        Some(crate::host::DialogResult::InsertShapeDrawing { drawing, .. }) => {
             assert_eq!(drawing.areas.len(), 1);
             assert_eq!(drawing.areas[0].colour, 3);
         }

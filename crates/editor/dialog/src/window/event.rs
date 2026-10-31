@@ -113,7 +113,7 @@ impl DialogWindow {
             let keep_open = matches!(
                 &result,
                 DialogResult::RecoverTrackPermanentlyDelete { .. }
-                    | DialogResult::InsertShapeDrawing(_)
+                    | DialogResult::InsertShapeDrawing { .. }
             );
             self.result_data = Some(result);
             if !keep_open {

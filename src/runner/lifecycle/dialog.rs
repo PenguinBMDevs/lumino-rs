@@ -82,7 +82,7 @@ impl RunnerInner {
                 should_close = !matches!(
                     result,
                     DialogResult::RecoverTrackPermanentlyDelete { .. }
-                        | DialogResult::InsertShapeDrawing(_)
+                        | DialogResult::InsertShapeDrawing { .. }
                         | DialogResult::HistoryJump(_)
                 );
                 dialog_result = Some(result);
