@@ -28,6 +28,17 @@ pub fn global_channel(port: u8, channel: u8) -> u8 {
     effective_port(port) * CHANNELS_PER_PORT + (channel & 0x0F)
 }
 
+/// 事件通道是否落在引擎配置的通道空间内（REND-002 #87）。
+///
+/// `SynthConfig::midi_channels` 可以小于文件实际使用的通道上界（例如把
+/// 多端口 MIDI 喂给单端口引擎）。这类事件必须**丢弃**而不是索引越界：
+/// 渲染路径（`handle_event`）与预热路径（`warm_voice_templates`）共用
+/// 同一判据，避免"渲染时丢弃、预热时 panic"的不一致行为。
+#[inline]
+pub fn channel_in_range(channel: u8, midi_channels: usize) -> bool {
+    usize::from(channel) < midi_channels
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,5 +68,26 @@ mod tests {
     fn channel_uses_low_nibble_only() {
         assert_eq!(global_channel(1, 0x1F), global_channel(1, 15));
         assert_eq!(global_channel(0, 0xFF), 15);
+    }
+
+    /// 负向门控：多端口事件喂给单端口引擎时，16.. 必须判为越界。
+    #[test]
+    fn channel_gate_rejects_events_outside_the_configured_space() {
+        assert!(channel_in_range(0, 16));
+        assert!(channel_in_range(15, 16));
+        assert!(
+            !channel_in_range(16, 16),
+            "端口 1 的事件不得进入 16 通道引擎"
+        );
+        assert!(!channel_in_range(255, 16));
+
+        assert!(channel_in_range(16, 32));
+        assert!(channel_in_range(31, 32));
+        assert!(!channel_in_range(32, 32));
+        assert!(channel_in_range(255, 256));
+        assert!(
+            !channel_in_range(255, 255),
+            "255 通道配置不合法，但判据仍须自洽"
+        );
     }
 }

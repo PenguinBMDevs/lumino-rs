@@ -10,7 +10,7 @@ impl GpuSynth {
     pub(crate) fn reset_for_offline_render(&mut self) {
         self.offline_cursor = 0;
         self.offline_events = Vec::new();
-        self.voices.clear();
+        self.clear_voices();
         for q in self.key_voices.iter_mut() {
             q.clear();
         }
@@ -18,6 +18,8 @@ impl GpuSynth {
         self.active_notes.fill(0);
         self.global_frame = 0;
         self.active_voice_count = 0;
+        self.peak_voice_count = 0;
+        self.voice_frames = 0;
         self.last_states = None;
         self.last_out = None;
         self.prev_voice_ids.clear();
@@ -89,14 +91,14 @@ impl GpuSynth {
             let rate = self.config.sample_rate;
             prewarm_total = wanted.len() as u64;
             let mut prewarm_done: u64 = 0;
-            let mut pre: Vec<(usize, Arc<[f32]>)> = Vec::with_capacity(wanted.len());
+            let mut pre: Vec<PreparedSample> = Vec::with_capacity(wanted.len());
             for chunk in wanted.chunks(64) {
                 self.check_render_checkpoint()?;
-                pre.par_extend(
-                    chunk
-                        .par_iter()
-                        .map(|&id| (id, sf.resample_uncached(id, rate))),
-                );
+                pre.par_extend(chunk.par_iter().map(|&id| {
+                    let data = sf.resample_uncached(id, rate);
+                    let (words, gain) = crate::gpu::pack_samples_2x16snorm(&data);
+                    (id, data, words, gain)
+                }));
                 prewarm_done += chunk.len() as u64;
                 self.report_render_progress(RenderProgress::Prewarm {
                     done: prewarm_done,
@@ -106,28 +108,18 @@ impl GpuSynth {
             // The upload loop holds `&mut self.sf`, so the checkpoint handle is
             // cloned out and polled via the free function instead of `&self`.
             let checkpoint = self.render_checkpoint.clone();
-            let Some(sf) = self.sf.as_mut() else {
+            let Some(_sf) = self.sf.as_mut() else {
                 return Err(SynthError::Config(
                     "soundfont missing during prewarm upload".into(),
                 ));
             };
-            let device = &self.res.ctx.device;
-            let queue = &self.res.ctx.queue;
             let mut grown = false;
-            for (id, data) in pre {
+            for (id, data, words, gain) in pre {
                 checkpoint_ok(&checkpoint)?;
-                sf.cache_resampled(id, rate, data.clone());
-                let len = data.len() as u32;
-                let offset = self.samples_next_offset;
-                grown |= write_samples(
-                    &mut self.samples_chunks,
-                    device,
-                    queue,
-                    offset as u64 * 4,
-                    bytemuck::cast_slice(&data),
-                )?;
-                self.sample_offsets.insert(id, (offset, len));
-                self.samples_next_offset = offset + len;
+                if let Some(sf) = self.sf.as_mut() {
+                    sf.cache_resampled(id, rate, data.clone());
+                }
+                grown |= self.upload_sample_packed(id, data.len() as u32, &words, gain)?;
             }
             if grown {
                 self.render_bg_dirty = true;

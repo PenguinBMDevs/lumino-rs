@@ -90,7 +90,7 @@ impl GpuSynth {
 
         // Drop voices that ended (state refreshed by the previous readback)
         // and rebuild the per-key index before borrowing the GPU device.
-        self.voices.retain(|v| v.state.ended == 0);
+        self.retain_voices(|v| v.state.ended == 0);
         // Global voice cap (once per block, not per note-on): the physical
         // GPU pool (`max_voices + max_voices/FADE_SLOTS_FRACTION`) is the
         // hard limit - a pathological MIDI (black-MIDI note storms) would
@@ -243,7 +243,7 @@ impl GpuSynth {
                 }
             }
         }
-        self.voices.retain(|v| v.state.ended == 0);
+        self.retain_voices(|v| v.state.ended == 0);
 
         self.rebuild_key_voices();
     }

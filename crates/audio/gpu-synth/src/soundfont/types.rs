@@ -69,7 +69,63 @@ pub struct ZonePositions {
     pub sample_end: u32,
 }
 
+/// 重采样缓存表：`(sample id, target rate) -> 数据`。
+pub(crate) type ResampleMap = HashMap<(usize, u32), Arc<[f32]>>;
+
+/// 重采样缓存（按 core 共享，REF-LGS-014）。
+pub(crate) type ResampleCache = Mutex<ResampleMap>;
+
+/// 解析后的音色库核心（不可变）。
+///
+/// REF-LGS-014：实时播放与离线导出、以及端口布局重建前后的 `GpuSynth`，
+/// 通过 [`std::sync::Arc`] 共享同一个核心——同一 SF2 的采样数据在进程内
+/// 只驻留一份（实测见 `docs/2026-10-31-REF-LGS-014-采样单份驻留.md`）。
+#[derive(Debug)]
+pub(crate) struct SoundFontCore {
+    pub(super) bank: u16,
+    pub(super) preset: u16,
+    /// All sample arrays at their native rate (deduplicated by pointer).
+    pub(super) samples: Vec<Arc<[f32]>>,
+    /// Per-(key, velocity) zone lists (index = key * 128 + vel).
+    pub(super) zone_matrix: Vec<Vec<u16>>,
+    /// All zones (indexed by the matrix entries).
+    pub(super) zones: Vec<Zone>,
+    /// Dedup map: sample Arc pointer as u64 -> sample id.
+    pub(super) sample_ids: HashMap<u64, usize>,
+    /// Whether voice effects (cutoff filter) is enabled.
+    pub use_effects: bool,
+    /// Rate SF2 sample data was resampled to at load (engine rate); also the
+    /// fallback for [`SoundFont::native_rate_for`].
+    pub(super) sample_rate: u32,
+    /// Resample cache: (sample id, target rate) -> resampled data.
+    ///
+    /// Lives in the core so every [`SoundFont`] handle of the same file shares
+    /// one cache (REF-LGS-014). The lock is only held for a map lookup/insert,
+    /// never while resampling.
+    pub(super) resample_cache: ResampleCache,
+}
+
+impl SoundFontCore {
+    pub(super) fn new(bank: u16, preset: u16, use_effects: bool, sample_rate: u32) -> Self {
+        Self {
+            bank,
+            preset,
+            samples: Vec::new(),
+            zone_matrix: (0..128 * 128).map(|_| Vec::new()).collect(),
+            zones: Vec::new(),
+            sample_ids: HashMap::new(),
+            use_effects,
+            sample_rate,
+            resample_cache: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
 /// A parsed soundfont ready for synthesis.
+///
+/// The parsed data ([`SoundFontCore`]) is reference-counted so several synths
+/// (realtime + export, or a port-layout rebuild) share one copy; the resample
+/// cache is shared per core as well.
 ///
 /// # Example
 ///
@@ -81,21 +137,5 @@ pub struct ZonePositions {
 /// ```
 #[derive(Debug)]
 pub struct SoundFont {
-    pub(super) bank: u16,
-    pub(super) preset: u16,
-    /// All sample arrays at their native rate (deduplicated by pointer).
-    pub(super) samples: Vec<Arc<[f32]>>,
-    /// Per-(key, velocity) zone lists (index = key * 128 + vel).
-    pub(super) zone_matrix: Vec<Vec<u16>>,
-    /// All zones (indexed by the matrix entries).
-    pub(super) zones: Vec<Zone>,
-    /// Dedup map: sample Arc pointer as u64 -> sample id.
-    pub(super) sample_ids: HashMap<u64, usize>,
-    /// Whether voice effects (cutoff filter) are enabled.
-    pub use_effects: bool,
-    /// Rate SF2 sample data was resampled to at load (engine rate); also the
-    /// fallback for [`SoundFont::native_rate_for`].
-    pub(super) sample_rate: u32,
-    /// Resample cache: (sample id, target rate) -> resampled data.
-    pub(super) resample_cache: HashMap<(usize, u32), Arc<[f32]>>,
+    pub(super) core: Arc<SoundFontCore>,
 }

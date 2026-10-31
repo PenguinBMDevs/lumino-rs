@@ -115,6 +115,7 @@ impl GpuSynth {
         self.update_mix_params(base)?;
         let t4 = std::time::Instant::now();
         self.dispatch(base)?;
+        self.record_voice_work(block);
         let t5 = std::time::Instant::now();
         // The output owed this block is the audio collected at its start
         // (the previous block's render).
@@ -226,6 +227,28 @@ impl GpuSynth {
         frames: u64,
     ) -> Result<RenderResult, SynthError> {
         self.render_midi_inner(midi_path, Some(frames))
+    }
+
+    /// 自上次离线渲染复位以来提交给 GPU 的声部数峰值（REF-LGS-013 指标）。
+    pub fn peak_voice_count(&self) -> u64 {
+        self.peak_voice_count
+    }
+
+    /// 自上次离线渲染复位以来累计的 voice-frames（`声部数 × 块帧数`）。
+    ///
+    /// 除以墙钟秒数即"声部帧率"（voice-frames/s），与块长无关，可在不同
+    /// 块长/通道配置之间横向比较。
+    pub fn voice_frames(&self) -> u64 {
+        self.voice_frames
+    }
+
+    /// 累加本块实际提交的声部工作量（每块两个整数运算，非逐样本热路径）。
+    fn record_voice_work(&mut self, block: usize) {
+        let voices = u64::from(self.active_voice_count);
+        self.peak_voice_count = self.peak_voice_count.max(voices);
+        self.voice_frames = self
+            .voice_frames
+            .saturating_add(voices.saturating_mul(block as u64));
     }
 
     /// Builds the error reported when offline rendering exceeds its frame

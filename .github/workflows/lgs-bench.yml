@@ -1,0 +1,105 @@
+# REF-LGS-013 手动 GPU 性能基准（可选：自托管 runner）
+#
+# 不在 push/PR 自动触发：GPU 机器只有一台，且性能数字需要受控环境。
+# **2026-11-01 拍板：不引入自托管 runner。** 本 workflow 保留为可选工具
+# （将来有 runner 时可直接用）；日常 A/B 以本机 `scripts/lgs_ab.py` 为准。
+# 前置条件（仅当决定启用 runner 时）：
+#   - 自托管 runner，标签 `self-hosted, windows, x64, gpu`
+#   - 已安装 Rust stable、Python 3、nvidia-smi
+#   - 同一时间只跑一个基准（见 concurrency）
+#
+# 产物：bench-results/ab.json + ab.csv（A/B 汇总与逐次运行），失败也归档。
+
+name: LGS Bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: "baseline 的 git ref（默认 dev）"
+        required: false
+        default: "dev"
+      after_ref:
+        description: "after 的 git ref（留空 = 触发本次 workflow 的 ref）"
+        required: false
+        default: ""
+      pairs:
+        description: "A/B 对数（默认 6）"
+        required: false
+        default: "6"
+      gate_pct:
+        description: "回归阈值（%，默认 2；CI 常规可用 10）"
+        required: false
+        default: "2"
+      only:
+        description: "只跑指定用例（逗号分隔，留空 = 全部）"
+        required: false
+        default: ""
+
+concurrency:
+  group: lgs-bench
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    name: "A/B (${{ inputs.baseline_ref }} -> ${{ inputs.after_ref || github.ref_name }})"
+    runs-on: [self-hosted, windows, x64, gpu]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout after
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.after_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Locate baseline worktree
+        shell: pwsh
+        run: |
+          $base = "${{ runner.workspace }}/lgs-baseline"
+          if (Test-Path $base) { git worktree remove --force $base }
+          git fetch origin "${{ inputs.baseline_ref }}"
+          git worktree add --detach $base FETCH_HEAD
+
+      - name: Build baseline hash_render
+        shell: pwsh
+        run: |
+          Push-Location "${{ runner.workspace }}/lgs-baseline"
+          $env:CARGO_TARGET_DIR = "${{ runner.workspace }}/lgs-baseline/target-bench"
+          cargo build --release -p lumino-gpu-synth --example hash_render
+          Pop-Location
+
+      - name: Build after hash_render
+        shell: pwsh
+        run: cargo build --release -p lumino-gpu-synth --example hash_render
+
+      - name: Generate fixtures
+        shell: pwsh
+        run: python scripts/gen_lgs_bench_fixtures.py
+
+      - name: Run A/B
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bench-results | Out-Null
+          $baseline = "${{ runner.workspace }}/lgs-baseline/target-bench/release/examples/hash_render.exe"
+          $after = "target\release\examples\hash_render.exe"
+          python scripts/lgs_ab.py `
+            --baseline $baseline `
+            --after $after `
+            --pairs ${{ inputs.pairs }} `
+            --gate-pct ${{ inputs.gate_pct }} `
+            --only "${{ inputs.only }}" `
+            --label "ci-${{ github.run_id }}" `
+            --json bench-results/ab.json `
+            --csv bench-results/ab.csv `
+            --fail-on any
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: lgs-bench-${{ github.run_id }}
+          path: bench-results/
+          if-no-files-found: warn

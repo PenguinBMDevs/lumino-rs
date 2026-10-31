@@ -1,6 +1,39 @@
 use super::*;
 
 impl GpuSynth {
+    /// REF-LGS-007：把一个**已打包**的采样写入 GPU 池，并登记偏移 + 增益。
+    ///
+    /// 打包（量化）在调用方的 rayon 并行段完成——大音源（数百 MB）的量化是
+    /// 一次性的 CPU 成本，串行做会拖慢短渲染（实测 10 s 素材 −3.5%）。
+    ///
+    /// `offset` 以 **f32 采样**为单位（shader 用 `i >> 1` 定位 u32 字），并保持
+    /// 偶数对齐——一个 u32 装两帧，奇数起点会跨字。`len` 是原始采样帧数。
+    pub(crate) fn upload_sample_packed(
+        &mut self,
+        sample_id: usize,
+        len: u32,
+        words: &[u32],
+        gain: f32,
+    ) -> Result<bool, SynthError> {
+        let mut offset = self.samples_next_offset;
+        if offset & 1 == 1 {
+            offset += 1;
+        }
+        let grown = write_samples(
+            &mut self.samples_chunks,
+            &self.res.ctx.device,
+            &self.res.ctx.queue,
+            // 每个 f32 采样 2 字节（两个字共 4 B）。
+            u64::from(offset) * 2,
+            bytemuck::cast_slice(words),
+        )?;
+        self.sample_offsets
+            .insert(sample_id, SampleRef { offset, gain });
+        // 4 个 1 GiB 片段 = 2G 采样，远低于 u32 上限；饱和加法只是防御。
+        self.samples_next_offset = offset.saturating_add(len);
+        Ok(grown)
+    }
+
     /// Uploads up to `max_bytes` of the given samples (resampling first,
     /// smallest first so a small budget still completes several samples).
     /// Returns how many samples were uploaded; the rest stay pending for
@@ -21,7 +54,8 @@ impl GpuSynth {
 
         let mut ids: Vec<(usize, usize)> = needed
             .iter()
-            .map(|&id| (id, sf.sample_data(id).len() * 4))
+            // REF-LGS-007：GPU 上每采样 2 B（2×snorm16 打包），预算按新口径算。
+            .map(|&id| (id, sf.sample_data(id).len() * 2))
             .collect();
         ids.sort_by_key(|&(_, bytes)| bytes);
         let mut budget = max_bytes;
@@ -47,35 +81,27 @@ impl GpuSynth {
             return Ok(0);
         }
 
-        let device = &self.res.ctx.device;
-        let queue = &self.res.ctx.queue;
         let rate = self.config.sample_rate;
         // Resampling is the dominant CPU cost for large soundfonts; run it
         // in parallel (each sample is independent), then upload sequentially.
-        let resampled: Vec<(usize, Arc<[f32]>)> = todo
+        // REF-LGS-007：量化（打包）也在并行段完成——大音源串行打包会拖慢短渲染。
+        let resampled: Vec<PreparedSample> = todo
             .par_iter()
             .map(|&sample_id| {
                 let data = sf.resample_read(sample_id, rate);
-                (sample_id, data)
+                let (words, gain) = crate::gpu::pack_samples_2x16snorm(&data);
+                (sample_id, data, words, gain)
             })
             .collect();
 
-        for (sample_id, data) in resampled {
-            sf.cache_resampled(sample_id, rate, data.clone());
+        for (sample_id, data, words, gain) in resampled {
+            if let Some(sf) = self.sf.as_mut() {
+                sf.cache_resampled(sample_id, rate, data.clone());
+            }
             let len = data.len() as u32;
-            let offset = self.samples_next_offset;
-            let grown = write_samples(
-                &mut self.samples_chunks,
-                device,
-                queue,
-                offset as u64 * 4,
-                bytemuck::cast_slice(&data),
-            )?;
-            if grown {
+            if self.upload_sample_packed(sample_id, len, &words, gain)? {
                 self.render_bg_dirty = true;
             }
-            self.sample_offsets.insert(sample_id, (offset, len));
-            self.samples_next_offset = offset + len;
         }
         Ok(todo.len())
     }

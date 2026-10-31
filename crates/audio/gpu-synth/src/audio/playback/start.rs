@@ -53,9 +53,10 @@ impl AudioPlayback {
         // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用；
         // `nps_gate_enabled` = 用户「LGS 防爆闸」开关）。
         let admission = Arc::new(AdmissionState::new(nps_gate_enabled));
-        // REND-016 #139：过载重同步纪元——渲染线程在进出 Emergency 时递增；
-        // 音频回调发现纪元变化后丢弃已渲染的旧音频（直接跳到最新内容）。
-        let flush_epoch = Arc::new(AtomicU64::new(0));
+        // REF-LGS-016：这里曾有 `flush_epoch`（过载时丢弃已渲染的旧音频）。`7bb878b9`
+        // 把 REND-016 的入口重同步改成「宁糊不切」后就不再递增它，机制已死；
+        // 2026-11-01 删除。**不要重新引入丢弃队列音频的路径**：现场验收里它造成
+        // 可听跳跃，且会被懒重采样的慢块误触发（详见 REND-016 实施记录）。
 
         // 队列样本计数（交错样本）的换算基准——重采样时队列块按
         // 设备率计数，否则按引擎率计数；供 UI 把 samples 换算成时间。
@@ -78,6 +79,8 @@ impl AudioPlayback {
             underruns: Arc::new(AtomicU64::new(0)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),
             governor_level: Arc::new(AtomicU64::new(0)),
+            sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
+            sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
         };
         let cb_stats = stats.clone();
 
@@ -126,6 +129,8 @@ impl AudioPlayback {
                 let mut buf = vec![0.0f32; block * channels];
                 let mut resampler = SincResampler::new(engine_rate, device_rate, channels);
                 let mut last_err = false;
+                // REF-LGS-013：采样内存快照的降频计数器（每 25 块发布一次）。
+                let mut mem_stat_countdown = 0u32;
                 // Max allowed per-block cost (drain + render) budget: 90% of
                 // realtime so the thread runs slightly ahead and the queue
                 // accumulates a cushion that absorbs peak blocks (dense
@@ -258,6 +263,18 @@ impl AudioPlayback {
                     thread_stats
                         .voice_count
                         .store(synth.voice_count() as u64, Ordering::Relaxed);
+
+                    // REF-LGS-013：采样内存低频发布（每 25 块一次）。
+                    // `sample_memory_bytes` 会遍历样本/重采样缓存，不应当成
+                    // 每块热路径；状态栏是低频展示，25 块（约 0.25–0.5 s）
+                    // 的更新粒度足够。
+                    if mem_stat_countdown == 0 {
+                        let (gpu_bytes, cpu_bytes) = synth.sample_memory_bytes();
+                        thread_stats.set_sample_memory(gpu_bytes, cpu_bytes);
+                        mem_stat_countdown = 25;
+                    } else {
+                        mem_stat_countdown -= 1;
+                    }
 
                     let out = if needs_resample {
                         resampler.process(&buf)
@@ -393,7 +410,6 @@ impl AudioPlayback {
         // 然后持活直到 `stop_flag` 置位（Stream 析构即停止音频回调）。
         let (stream_tx_result, stream_rx_result) = mpsc::channel::<Result<(), SynthError>>();
         let owner_stop = stop_flag.clone();
-        let owner_flush_epoch = Arc::clone(&flush_epoch);
         let stream_owner = thread::Builder::new()
             .name("lumino-gpu-synth-stream-owner".into())
             .spawn(move || {
@@ -403,20 +419,11 @@ impl AudioPlayback {
                 };
                 let mut next_block: Vec<f32> = Vec::new();
                 let mut next_pos = 0usize;
-                // REND-016 #139：已见到的重同步纪元（变化时丢弃旧缓冲）。
-                let mut flush_seen = 0u64;
                 let stream = match device.build_output_stream(
                     &stream_config,
                     move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
-                        // REND-016 #139：过载重同步——纪元变化则丢弃已渲染的旧音频，
-                        // 直接跳到最新内容（避免爆点后旧尾段播完才恢复）。
-                        let epoch = owner_flush_epoch.load(Ordering::Relaxed);
-                        if epoch != flush_seen {
-                            flush_seen = epoch;
-                            while sample_rx.try_recv().is_ok() {}
-                            next_block.clear();
-                            next_pos = 0;
-                        }
+                        // REF-LGS-016：这里曾有「纪元变化 → 丢弃队列旧音频」分支，
+                        // 已随死代码一起删除（原因见 `flush_epoch` 处的注释）。
                         cb_stats
                             .last_request_samples
                             .store(data.len() as i64, Ordering::SeqCst);

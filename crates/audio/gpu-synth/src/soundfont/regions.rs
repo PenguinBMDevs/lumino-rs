@@ -1,6 +1,6 @@
 use super::*;
 
-impl SoundFont {
+impl SoundFontCore {
     pub(super) fn add_region(&mut self, region: &xsynth_soundfonts::sf2::Sf2Region) {
         // Deduplicate sample data per channel (stereo pairs get two ids).
         let sample_channels = region.sample.len() as u32;

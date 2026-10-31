@@ -241,6 +241,18 @@ pub trait OutputConnection: Send {
     /// 发送原始 MIDI 消息（3 字节）
     fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error>;
 
+    /// 批量发送原始 MIDI 消息（保持顺序；默认逐条转 [`Self::send_raw`]）。
+    ///
+    /// REF-LGS-012：软件合成后端（LGS）覆写为「只解析一次发送端 + 批量入队」，
+    /// 纯 MIDI 设备走默认实现——与逐条发送**完全等价**，只是少一次 trait 分发
+    /// 和（后端的）发送端解析。
+    fn send_raw_batch(&mut self, messages: &[[u8; 3]]) -> Result<(), Error> {
+        for msg in messages {
+            self.send_raw(*msg)?;
+        }
+        Ok(())
+    }
+
     /// 停止所有通道的正在发声的音符（保留 Release 阶段）
     /// 默认实现：向所有通道发送 CC 123 (All Notes Off)
     fn all_notes_off(&mut self) -> Result<(), Error> {

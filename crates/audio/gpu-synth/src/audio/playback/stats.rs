@@ -27,7 +27,7 @@ impl PlaybackStatsReader {
     /// above 1.0 mean the render thread cannot keep up with realtime.
     ///
     /// 等价于 [`Self::average_renderer_load_window`] 的全环口径
-    /// （全环口径，现为 [`STATS_RING`] 块）。
+    /// （全环口径，现为 `STATS_RING` 块）。
     pub fn average_renderer_load(&self) -> f64 {
         self.average_renderer_load_window(STATS_RING)
     }
@@ -93,6 +93,20 @@ impl PlaybackStatsReader {
         }
     }
 
+    /// REF-LGS-013：采样数据内存 `(GPU 字节, CPU 字节)`。
+    pub fn sample_memory_bytes(&self) -> (u64, u64) {
+        (
+            self.sample_gpu_bytes.load(Ordering::Relaxed),
+            self.sample_cpu_bytes.load(Ordering::Relaxed),
+        )
+    }
+
+    /// 发布采样内存（渲染线程侧，lock-free；低频调用）。
+    pub(crate) fn set_sample_memory(&self, gpu_bytes: u64, cpu_bytes: u64) {
+        self.sample_gpu_bytes.store(gpu_bytes, Ordering::Relaxed);
+        self.sample_cpu_bytes.store(cpu_bytes, Ordering::Relaxed);
+    }
+
     /// 清零累计计数（欠载 / 丢弃 NoteOn），供"每次开始播放"重置显示。
     ///
     /// 只清累计量；瞬时量（负载/声部/队列/治理级别）天然连续刷新，不受影响。
@@ -129,6 +143,8 @@ impl PlaybackStatsReader {
             underruns: self.underruns(),
             governor_level: self.governor_level(),
             dropped_note_ons: self.dropped_note_ons(),
+            sample_gpu_bytes: self.sample_gpu_bytes.load(Ordering::Relaxed),
+            sample_cpu_bytes: self.sample_cpu_bytes.load(Ordering::Relaxed),
         }
     }
 }
@@ -151,6 +167,8 @@ mod tests {
             underruns: Arc::new(AtomicU64::new(0)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),
             governor_level: Arc::new(AtomicU64::new(0)),
+            sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
+            sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -216,5 +234,23 @@ mod tests {
         let stats = reader.snapshot(375);
         assert_eq!(stats.queue_samples, -9_600);
         assert_eq!(stats.queue_ms, 0.0);
+    }
+
+    /// REF-LGS-013：采样内存字段随快照导出，且清零累计量不影响它。
+    #[test]
+    fn test_snapshot_exports_sample_memory() {
+        let reader = test_reader(96_000);
+        reader.set_sample_memory(12 * 1024 * 1024, 34 * 1024 * 1024);
+        let stats = reader.snapshot(375);
+        assert_eq!(stats.sample_gpu_bytes, 12 * 1024 * 1024);
+        assert_eq!(stats.sample_cpu_bytes, 34 * 1024 * 1024);
+
+        reader.reset_counters();
+        let stats = reader.snapshot(375);
+        assert_eq!(
+            stats.sample_gpu_bytes,
+            12 * 1024 * 1024,
+            "采样内存是瞬时量，不应被 ResetStats 清零"
+        );
     }
 }

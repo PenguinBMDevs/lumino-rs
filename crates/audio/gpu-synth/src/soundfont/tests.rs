@@ -43,3 +43,108 @@ fn dump_zone_params() {
         );
     }
 }
+
+fn rich_sf2() -> Option<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../test-file/bench/rich.sf2");
+    path.exists().then_some(path)
+}
+
+/// REF-LGS-013：CPU 采样字节 = 原生样本 + 重采样缓存；缺失夹具时跳过。
+///
+/// REF-LGS-014：按 `Arc` 指针去重——目标率与原生率相同时缓存直接复用原生
+/// 采样，不得把同一份数据算两遍。
+#[test]
+fn memory_bytes_counts_native_and_resampled_cache() {
+    let Some(path) = rich_sf2() else {
+        eprintln!("skip memory_bytes_counts_native_and_resampled_cache: 未找到 rich.sf2");
+        return;
+    };
+    let mut sf = SoundFont::load(&path, 0, 0, true, 48_000).expect("rich.sf2 应可加载");
+    let baseline = sf.memory_bytes();
+    assert!(baseline > 0, "加载后应统计到原生采样字节");
+    assert!(sf.sample_count() > 0, "rich.sf2 应含采样");
+
+    // 同率：缓存项是原生采样的同一份 Arc → 字节数不变。
+    let _ = sf.resample(0, 48_000);
+    assert_eq!(
+        sf.memory_bytes(),
+        baseline,
+        "同率重采样只应缓存 Arc，不得重复计字节"
+    );
+
+    // 异率：真正的新数据 → 计入。
+    let _ = sf.resample(0, 24_000);
+    assert!(
+        sf.memory_bytes() > baseline,
+        "重采样缓存应计入 CPU 采样字节（baseline={baseline}）"
+    );
+}
+
+/// REF-LGS-014：同一文件第二次 `load_cached` 复用同一个解析核心（采样数据
+/// 与重采样缓存都只有一份）。
+#[test]
+fn load_cached_shares_core_between_instances() {
+    let Some(path) = rich_sf2() else {
+        eprintln!("skip load_cached_shares_core_between_instances: 未找到 rich.sf2");
+        return;
+    };
+    let a = SoundFont::load_cached(&path, 0, 0, true, 48_000).expect("首次加载");
+    let b = SoundFont::load_cached(&path, 0, 0, true, 48_000).expect("二次加载");
+    assert!(
+        a.shares_core_with(&b),
+        "同文件同参数的第二次加载必须复用解析结果"
+    );
+    assert!(
+        Arc::ptr_eq(a.sample_data(0), b.sample_data(0)),
+        "采样数据必须是同一份 Arc"
+    );
+    assert_eq!(
+        a.memory_bytes(),
+        b.memory_bytes(),
+        "两份句柄统计的是同一份数据"
+    );
+}
+
+/// REF-LGS-014：源文件变化（mtime 或大小）必须 miss，不能返回旧解析。
+#[test]
+fn load_cached_invalidates_when_file_changes() {
+    use std::time::{Duration, SystemTime};
+
+    let Some(src) = rich_sf2() else {
+        eprintln!("skip load_cached_invalidates_when_file_changes: 未找到 rich.sf2");
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!(
+        "lumino_sf_cache_{}_{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).expect("创建临时目录");
+    let copy = dir.join("copy.sf2");
+    std::fs::copy(&src, &copy).expect("复制 rich.sf2");
+
+    let first = SoundFont::load_cached(&copy, 0, 0, true, 48_000).expect("首次加载");
+    let same = SoundFont::load_cached(&copy, 0, 0, true, 48_000).expect("命中加载");
+    assert!(first.shares_core_with(&same), "未改动时应命中");
+
+    // 只改 mtime（内容仍是合法 SF2）——缓存键必须失效。
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&copy)
+        .expect("打开副本");
+    file.set_modified(SystemTime::now() + Duration::from_secs(120))
+        .expect("设置 mtime");
+    drop(file);
+
+    let after = SoundFont::load_cached(&copy, 0, 0, true, 48_000).expect("失效后重新解析");
+    assert!(
+        !first.shares_core_with(&after),
+        "mtime 变化后必须重新解析，不能复用旧核心"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

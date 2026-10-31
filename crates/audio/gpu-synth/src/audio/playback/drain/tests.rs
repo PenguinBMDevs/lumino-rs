@@ -17,6 +17,8 @@ fn test_stats() -> PlaybackStatsReader {
         underruns: Arc::new(AtomicU64::new(0)),
         dropped_note_ons: Arc::new(AtomicU64::new(0)),
         governor_level: Arc::new(AtomicU64::new(0)),
+        sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
+        sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
     }
 }
 

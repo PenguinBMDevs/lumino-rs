@@ -6,7 +6,7 @@
 //! 中可创建多个连接到同一渲染线程，无需第二个 GPU 实例。
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -30,7 +30,39 @@ mod stats;
 
 /// 共享 MIDI 事件注入器（输出连接 → GPU 渲染线程；REND-016 #139 带墙钟时间戳
 /// 与发送端准入限速）。
-type SharedEventTx = Arc<Mutex<Option<EventSender>>>;
+///
+/// REF-LGS-012：发送端用「纪元 + 连接内缓存」读取——`send_raw`/`note_on` 在
+/// 稳态下**不加锁**（只在管线重建、发送端被热替换时加一次锁）。`set` 先写值、
+/// 后递增纪元；输出连接发现纪元变化才重新取一次发送端。
+pub(crate) struct SharedEventTx {
+    inner: Mutex<Option<EventSender>>,
+    epoch: AtomicU64,
+}
+
+impl SharedEventTx {
+    pub(crate) fn new(sender: Option<EventSender>) -> Self {
+        Self {
+            inner: Mutex::new(sender),
+            epoch: AtomicU64::new(0),
+        }
+    }
+
+    /// 当前纪元（发送端每次被替换都会 +1）。
+    fn epoch(&self) -> u64 {
+        self.epoch.load(Ordering::Acquire)
+    }
+
+    /// 读取当前发送端（克隆；只在纪元变化时调用）。
+    fn load(&self) -> Option<EventSender> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 热替换发送端（管线重建）；写值成功后纪元 +1，所有连接下一事件重新读取。
+    fn set(&self, sender: Option<EventSender>) {
+        *self.inner.lock().unwrap_or_else(|e| e.into_inner()) = sender;
+        self.epoch.fetch_add(1, Ordering::Release);
+    }
+}
 
 /// LGS (GPU) 后端初始化选项
 #[derive(Debug, Clone)]
@@ -70,7 +102,7 @@ pub struct Lgs {
     /// （包在 Mutex 中仅为满足 `Api: Send + Sync`；正常运行无需加锁访问）
     _playback: Arc<Mutex<AudioPlayback>>,
     /// 共享事件发送器（所有输出连接通过它向渲染线程转发 MIDI 事件）
-    event_tx: SharedEventTx,
+    event_tx: Arc<SharedEventTx>,
     /// 共享控制发送器（轻量复位/踏板清理；重建时热替换内层发送器）
     control_tx: Arc<Mutex<Option<mpsc::Sender<PlaybackControl>>>>,
     /// 当前合成管线使用的最大 MIDI 端口（REND-002；0 = 单端口）
@@ -109,6 +141,9 @@ impl Api for Lgs {
             event_tx: Arc::clone(&self.event_tx),
             control_tx: Arc::clone(&self.control_tx),
             velocity_filter: Arc::clone(&self.velocity_filter),
+            cached_sender: None,
+            sender_epoch: u64::MAX,
+            batch_scratch: Vec::new(),
         }))
     }
 
@@ -125,23 +160,87 @@ impl Api for Lgs {
 
 /// LGS (GPU) MIDI 输出连接：把 MIDI 事件转发给 GPU 渲染线程
 pub(crate) struct LgsOutputConn {
-    event_tx: SharedEventTx,
+    event_tx: Arc<SharedEventTx>,
     /// 轻量控制发送器（复位/踏板清理；与 Lgs 共享，重建时内层热替换）
     control_tx: Arc<Mutex<Option<mpsc::Sender<PlaybackControl>>>>,
     velocity_filter: Arc<AtomicU8>,
+    /// REF-LGS-012：发送端缓存（`sender_epoch` 与共享纪元一致时直接复用，
+    /// 稳态零锁；只有管线重建热替换发送端后才重新取一次）。
+    cached_sender: Option<EventSender>,
+    sender_epoch: u64,
+    /// 批量入口的复用 scratch（避免每批一次分配）。
+    batch_scratch: Vec<(u8, MidiEvent)>,
 }
 
 impl LgsOutputConn {
+    /// 刷新发送端缓存：纪元未变时**不加锁**。
+    fn refresh_sender(&mut self) {
+        let epoch = self.event_tx.epoch();
+        if self.sender_epoch != epoch {
+            self.cached_sender = self.event_tx.load();
+            self.sender_epoch = epoch;
+        }
+    }
+
     /// 向 GPU 渲染线程发送一个 MIDI 事件；发送器不可用（已停止）时静默丢弃。
     ///
     /// REND-016 #139：入队盖墙钟时间戳；NoteOn 在 Overload/Emergency 下受
     /// 发送端准入限速（其余事件全放行）——由 `EventSender` 统一处理。
-    fn send_event(&self, channel: u8, event: MidiEvent) {
-        if let Ok(guard) = self.event_tx.lock()
-            && let Some(tx) = guard.as_ref()
-        {
+    ///
+    /// REF-LGS-012：不再每事件加锁（`refresh_sender` 稳态只比较纪元）。
+    fn send_event(&mut self, channel: u8, event: MidiEvent) {
+        self.refresh_sender();
+        if let Some(tx) = &self.cached_sender {
             tx.send(channel, event);
         }
+    }
+}
+
+/// MIDI 线协议 3 字节 → `(全局通道, 事件)`；不支持的消息返回 `None`。
+///
+/// 逐条（[`LgsOutputConn::send_raw`]）与批量（`send_raw_batch`）共用同一映射，
+/// 保证两条路径语义**逐事件一致**（REF-LGS-012 验收）。
+fn raw_to_event(data: &[u8; 3], velocity_threshold: u8) -> Option<(u8, MidiEvent)> {
+    let status = data[0] & 0xF0;
+    let channel = data[0] & 0x0F;
+    let (b1, b2) = (data[1], data[2]);
+    match status {
+        0x80 => Some((
+            channel,
+            MidiEvent::NoteOff {
+                key: b1 & MIDI_VALUE_MASK,
+            },
+        )),
+        0x90 => {
+            // 响度(力度)过滤：b2>0 的真实音符按下才过滤；b2==0 视为释放
+            if velocity_threshold > 0 && b2 > 0 && b2 <= velocity_threshold {
+                None
+            } else {
+                Some((
+                    channel,
+                    MidiEvent::NoteOn {
+                        key: b1 & MIDI_VALUE_MASK,
+                        vel: b2 & MIDI_VALUE_MASK,
+                    },
+                ))
+            }
+        }
+        0xB0 => Some((
+            channel,
+            MidiEvent::ControlChange {
+                controller: b1,
+                value: b2,
+            },
+        )),
+        0xC0 => Some((channel, MidiEvent::ProgramChange { program: b1 })),
+        0xE0 => Some((
+            channel,
+            MidiEvent::PitchBend {
+                value: (b1 as u16) | ((b2 as u16) << 7),
+            },
+        )),
+        // 通道后触(0xD0) / 复音后触(0xA0)：GPU 合成器不支持，忽略以避免噪声报错
+        _ => None,
     }
 }
 
@@ -207,47 +306,35 @@ impl OutputConnection for LgsOutputConn {
     }
 
     fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
-        let status = data[0] & 0xF0;
-        let channel = data[0] & 0x0F;
-        let b1 = data[1];
-        let b2 = data[2];
-        match status {
-            0x80 => self.send_event(
-                channel,
-                MidiEvent::NoteOff {
-                    key: b1 & MIDI_VALUE_MASK,
-                },
-            ),
-            0x90 => {
-                // 响度(力度)过滤：b2>0 的真实音符按下才过滤；b2==0 视为释放
-                let threshold = self.velocity_filter.load(Ordering::Relaxed);
-                if threshold > 0 && b2 > 0 && b2 <= threshold {
-                    // 过轻音符直接丢弃，不发往 GPU 渲染线程
-                } else {
-                    self.send_event(
-                        channel,
-                        MidiEvent::NoteOn {
-                            key: b1 & MIDI_VALUE_MASK,
-                            vel: b2 & MIDI_VALUE_MASK,
-                        },
-                    );
-                }
-            }
-            0xB0 => self.send_event(
-                channel,
-                MidiEvent::ControlChange {
-                    controller: b1,
-                    value: b2,
-                },
-            ),
-            0xC0 => self.send_event(channel, MidiEvent::ProgramChange { program: b1 }),
-            0xE0 => {
-                let bend = (b1 as u16) | ((b2 as u16) << 7);
-                self.send_event(channel, MidiEvent::PitchBend { value: bend });
-            }
-            // 通道后触(0xD0) / 复音后触(0xA0)：GPU 合成器不支持，忽略以避免噪声报错
-            _ => {}
+        self.refresh_sender();
+        let threshold = self.velocity_filter.load(Ordering::Relaxed);
+        if let Some((channel, event)) = raw_to_event(&data, threshold)
+            && let Some(tx) = &self.cached_sender
+        {
+            tx.send(channel, event);
         }
+        Ok(())
+    }
+
+    /// REF-LGS-012：批量入口——发送端只解析一次（纪元比较一次），事件逐条入队。
+    ///
+    /// 与逐条 `send_raw` 的语义完全一致（同一 `raw_to_event` 映射 + 同一
+    /// `EventSender` 准入闸），并共用一次墙钟时间戳（见 `EventSender::send_batch`）。
+    fn send_raw_batch(&mut self, messages: &[[u8; 3]]) -> Result<(), Error> {
+        self.refresh_sender();
+        let threshold = self.velocity_filter.load(Ordering::Relaxed);
+        let Some(tx) = &self.cached_sender else {
+            return Ok(());
+        };
+        let mut scratch = std::mem::take(&mut self.batch_scratch);
+        scratch.clear();
+        scratch.extend(
+            messages
+                .iter()
+                .filter_map(|msg| raw_to_event(msg, threshold)),
+        );
+        tx.send_batch(&scratch);
+        self.batch_scratch = scratch;
         Ok(())
     }
 
@@ -317,7 +404,7 @@ impl Lgs {
         }
         let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
             .map_err(|e| trf!("重启 GPU 音频流失败: {e}", e = e))?;
-        *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
+        self.event_tx.set(playback.event_sender());
         *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.control_sender();
         // 管线重建后统计读取器随之刷新（旧朗读器随旧流冻结）
         self.stats = playback.stats();

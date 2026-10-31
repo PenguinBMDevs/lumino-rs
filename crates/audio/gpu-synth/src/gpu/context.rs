@@ -62,7 +62,7 @@ pub fn create_gpu_context() -> Result<GpuContext, SynthError> {
 
 /// 离线导出专用（REND-019 #152）：device-lost 只置本地标志、**不转发**
 /// 进程级钩子——导出的独立 device 丢失不应触发实时 LGS 重建链路
-/// （见 [`DEVICE_LOST_HOOK`] 注释）。
+/// （见 `DEVICE_LOST_HOOK` 注释）。
 ///
 /// # Errors
 ///

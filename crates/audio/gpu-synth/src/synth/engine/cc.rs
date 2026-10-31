@@ -94,7 +94,7 @@ impl GpuSynth {
             }
             0x78 => {
                 // All sounds off: kill immediately.
-                self.voices.retain(|v| v.channel as usize != ch);
+                self.retain_voices(|v| v.channel as usize != ch);
                 self.rebuild_key_voices();
             }
             _ => {}

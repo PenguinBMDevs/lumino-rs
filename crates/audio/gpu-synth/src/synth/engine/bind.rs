@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::gpu::{CHUNK_PARAMS_MIX_BINDING, CHUNK_PARAMS_RENDER_BINDING, ChunkParams};
+
 impl GpuSynth {
     pub(crate) fn update_mix_params(&mut self, base: u64) -> Result<(), SynthError> {
         let queue = &self.res.ctx.queue;
@@ -22,7 +24,11 @@ impl GpuSynth {
             }
         });
         self.pending_mix_events = pending;
-        in_block.sort_by_key(|e| e.0);
+        // REF-LGS-004：按 (channel, frame) 排序——同一通道内仍是帧升序（稳定排序
+        // 保留同帧事件的原始先后），mix 内核因此可以二分定位本通道的事件段，
+        // 只扫描自己的事件；缓存局部性也从「全块事件」缩到「本通道事件」。
+        // 键打包成 u64：块内帧 < 8192，高 32 位放 channel，比较比元组便宜。
+        in_block.sort_by_key(|e| (u64::from(e.1) << 32) | (e.0 & 0xFFFF_FFFF));
 
         // Frame-exact controller curve: the mix kernel replays this block's
         // events against the block-start lerp states, so the output does not
@@ -41,6 +47,9 @@ impl GpuSynth {
         // the next block starts from the right values.
         let mut starts = std::mem::take(&mut self.mix_starts);
         starts.clear();
+        // 事件已按 channel 聚集：一次线性扫描代替「每通道 filter 全表」
+        // （16 通道 × 2048 事件 → 1 × 2048）。
+        let mut ev_idx = 0usize;
         for ch_idx in 0..self.channels.len() {
             let st = &mut self.channels[ch_idx];
             starts.push(MixStart {
@@ -55,7 +64,10 @@ impl GpuSynth {
                 pan_end: st.pan.end,
                 _pad: [0.0; 3],
             });
-            for ev in in_block.iter().filter(|e| e.1 as usize == ch_idx) {
+            while let Some(ev) = in_block.get(ev_idx) {
+                if ev.1 as usize != ch_idx {
+                    break;
+                }
                 let (s, cc, value) = (ev.0, ev.2, ev.3);
                 match cc {
                     0x07 => {
@@ -72,6 +84,7 @@ impl GpuSynth {
                     }
                     _ => {}
                 }
+                ev_idx += 1;
             }
             st.volume.advance_to(end);
             st.expression.advance_to(end);
@@ -113,6 +126,35 @@ impl GpuSynth {
             );
         }
         queue.write_buffer(&self.mix_params_buf, 0, bytemuck::cast_slice(&[params]));
+        // REF-LGS-001: upload the stable buckets (offsets + indices) used by
+        // the per-channel gather. **Offsets are uploaded even when
+        // `active_voice_count == 0`**: a block whose voices ended on the GPU
+        // still takes the normal dispatch path (the CPU list is pruned during
+        // `upload_voices`), and reusing the previous block's buckets would
+        // re-sum its stale `voice_out` into the output (observed as a one-
+        // block replay after a voice ends).
+        let device = &self.res.ctx.device;
+        let queue = &self.res.ctx.queue;
+        let mut grown = false;
+        if !self.mix_bucket_offsets.is_empty() {
+            grown |= self.mix_buckets_buf.write(
+                device,
+                queue,
+                0,
+                bytemuck::cast_slice(&self.mix_bucket_offsets),
+            )?;
+        }
+        if !self.mix_bucket_indices.is_empty() {
+            grown |= self.mix_buckets_buf.write(
+                device,
+                queue,
+                (MIX_BUCKET_OFFSETS * 4) as u64,
+                bytemuck::cast_slice(&self.mix_bucket_indices),
+            )?;
+        }
+        if grown {
+            self.mix_bg_dirty = true;
+        }
         // scratch 归还（下块复用，零分配）
         self.mix_events = events;
         self.mix_starts = starts;
@@ -121,10 +163,10 @@ impl GpuSynth {
 
     pub(crate) fn rebuild_bind_groups(&mut self) {
         let device = &self.res.ctx.device;
-        let mut entries: Vec<wgpu::BindGroupEntry> = Vec::with_capacity(13);
+        let mut entries: Vec<wgpu::BindGroupEntry> = Vec::with_capacity(14);
         entries.push(wgpu::BindGroupEntry {
             binding: 0,
-            resource: self.params_buf.buffer().as_entire_binding(),
+            resource: self.params_dyn_buf.buffer().as_entire_binding(),
         });
         for (i, chunk) in self.samples_chunks.iter().enumerate() {
             entries.push(wgpu::BindGroupEntry {
@@ -149,6 +191,18 @@ impl GpuSynth {
                 binding: crate::gpu::VOICE_OUT_BINDING,
                 resource: self.voice_out_buf.buffer().as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: CHUNK_PARAMS_RENDER_BINDING,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &self.chunk_params_buf,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: crate::gpu::PARAMS_STATIC_BINDING,
+                resource: self.params_static_buf.buffer().as_entire_binding(),
+            },
         ]);
         self.render_bg = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("render bind group"),
@@ -169,7 +223,7 @@ impl GpuSynth {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.voice_chans_buf.buffer().as_entire_binding(),
+                    resource: self.mix_buckets_buf.buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -178,6 +232,18 @@ impl GpuSynth {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.mix_params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.mix_partial_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: CHUNK_PARAMS_MIX_BINDING,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.chunk_params_buf,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
+                    }),
                 },
             ],
         }));
@@ -201,7 +267,7 @@ impl GpuSynth {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.voice_chans_buf.buffer().as_entire_binding(),
+                    resource: self.mix_buckets_buf.buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -210,6 +276,18 @@ impl GpuSynth {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.mix_params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.mix_partial_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: CHUNK_PARAMS_MIX_BINDING,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.chunk_params_buf,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(ChunkParams::SIZE as u64),
+                    }),
                 },
             ],
         }));

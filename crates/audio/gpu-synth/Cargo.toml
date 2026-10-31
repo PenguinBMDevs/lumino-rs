@@ -7,9 +7,12 @@ license = "MIT OR Apache-2.0"
 keywords = ["midi", "audio", "gpu", "wgpu", "soundfont"]
 categories = ["multimedia::audio", "rendering::gpu"]
 
-# 注意：本 crate 刻意不继承工作区 lint（不写 `[lints] workspace = true`），
-# 因为它沿用上游 `.unwrap()` 风格，与 AGENTS.md 的 `unwrap_used` 强约束冲突。
-# 作为 vendored 子 crate 原样搬入。
+# REF-LGS-018：继承工作区 lint（`mod_module_files` + `unwrap_used = deny`）。
+# 本 crate 原先作为 vendored 子 crate 原样搬入、刻意不继承；现已是现役后端
+# （REND-016 / AUD-004 / AUD-008 已接线），质量口径与仓库对齐。
+# 白名单（合理保留项 + 理由）见 `crates/audio/gpu-synth/LINTS.md`。
+[lints]
+workspace = true
 
 [features]
 default = []

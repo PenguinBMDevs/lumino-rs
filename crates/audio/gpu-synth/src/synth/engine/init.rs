@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::gpu::ChunkParams;
+
 impl GpuSynth {
     /// Creates a new synthesizer with the given configuration, initializing
     /// the GPU device (a wgpu adapter is picked automatically).
@@ -57,8 +59,15 @@ impl GpuSynth {
         let params_buf = GrowableBuffer::new(
             device,
             queue,
-            "voice params",
-            (VoiceParams::SIZE * pool) as u64,
+            "voice params dyn",
+            (VoiceParamsDyn::SIZE * pool) as u64,
+            wgpu::BufferUsages::STORAGE,
+        );
+        let params_static_buf = GrowableBuffer::new(
+            device,
+            queue,
+            "voice params static",
+            (VoiceParamsStatic::SIZE * pool) as u64,
             wgpu::BufferUsages::STORAGE,
         );
         let samples_chunks = (0..SAMPLES_CHUNKS)
@@ -98,11 +107,12 @@ impl GpuSynth {
             (VoiceState::SIZE * pool) as u64,
             wgpu::BufferUsages::STORAGE,
         );
+        let chunk_size = res.chunk_size;
         let voice_out_buf = GrowableBuffer::with_max_capacity(
             device,
             queue,
             "voice out",
-            (pool * block * 2 * 4) as u64,
+            (pool * chunk_size * 2 * 4) as u64,
             MAX_VOICE_OUT_BYTES,
             wgpu::BufferUsages::STORAGE,
         );
@@ -156,13 +166,34 @@ impl GpuSynth {
                 wgpu::BufferUsages::MAP_READ,
             ),
         ];
-        let voice_chans_buf = GrowableBuffer::new(
+        let mix_buckets_buf = GrowableBuffer::new(
             device,
             queue,
-            "voice channels",
-            (pool * 4) as u64,
+            "mix buckets",
+            ((MIX_BUCKET_OFFSETS + pool) * 4) as u64,
             wgpu::BufferUsages::STORAGE,
         );
+        // Every (frame, channel) partial is written by the gather pass before
+        // the reduce pass reads it, so an uninitialized allocation is safe.
+        let mix_partial_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mix partial"),
+            size: (chunk_size * config.midi_channels * 6 * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let chunks = config.block_size.div_ceil(chunk_size).max(1);
+        let chunk_align = u64::from(
+            device
+                .limits()
+                .min_uniform_buffer_offset_alignment
+                .max(ChunkParams::SIZE as u32),
+        );
+        let chunk_params_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("chunk params"),
+            size: (chunks as u64 * chunk_align).max(ChunkParams::SIZE as u64),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let mix_events_buf = GrowableBuffer::new(
             device,
             queue,
@@ -178,7 +209,7 @@ impl GpuSynth {
         });
 
         // Zero the dynamic storage buffers that are read every dispatch.
-        let zero = vec![0u8; VoiceParams::SIZE * pool];
+        let zero = vec![0u8; VoiceParamsDyn::SIZE * pool];
         if !zero.is_empty() {
             res.ctx.queue.write_buffer(params_buf.buffer(), 0, &zero);
         }
@@ -190,11 +221,6 @@ impl GpuSynth {
         if !zero.is_empty() {
             res.ctx.queue.write_buffer(env_buf.buffer(), 0, &zero);
         }
-        let zero = vec![0u8; pool * 4];
-        let mut voice_chans_buf = voice_chans_buf;
-        if !zero.is_empty() {
-            let _ = voice_chans_buf.write(&res.ctx.device, &res.ctx.queue, 0, &zero);
-        }
 
         // REND-015 #115: 每块 `apply_events` 开头会重置；这里只是给字段一个
         // 合法初值（首块应用事件前不会有裁剪）。
@@ -205,7 +231,8 @@ impl GpuSynth {
             base_max_voices: max_voices,
             res,
             sf: None,
-            params_buf,
+            params_dyn_buf: params_buf,
+            params_static_buf,
             samples_chunks,
             sinc_buf,
             env_buf,
@@ -216,7 +243,11 @@ impl GpuSynth {
             out_readback_cur: 0,
             states_readback,
             states_readback_cur: 0,
-            voice_chans_buf,
+            mix_buckets_buf,
+            mix_partial_buf,
+            chunk_params_buf,
+            chunk_align,
+            chunk_params_bytes: Vec::new(),
             mix_events_buf,
             mix_params_buf,
             render_bg: None,
@@ -234,6 +265,8 @@ impl GpuSynth {
             offline_cursor: 0,
             pending_mix_events: Vec::new(),
             active_voice_count: 0,
+            peak_voice_count: 0,
+            voice_frames: 0,
             limiter_gain: 1.0,
             limiter_tail: Vec::new(),
             last_out: None,
@@ -245,8 +278,17 @@ impl GpuSynth {
             mix_starts: Vec::new(),
             upload_params: Vec::new(),
             upload_states: Vec::new(),
-            upload_env_stages: Vec::new(),
             upload_chans: Vec::new(),
+            static_table: Vec::new(),
+            slot_free: Vec::new(),
+            slot_count: 0,
+            dirty_slots: Vec::new(),
+            static_runs: Vec::new(),
+            env_pool: EnvTemplatePool::default(),
+            fade_env_template: u32::MAX,
+            mix_bucket_offsets: Vec::new(),
+            mix_bucket_cursor: Vec::new(),
+            mix_bucket_indices: Vec::new(),
             note_counter: 0,
             voice_id_counter: 0,
             spawn_budget: vec![0; midi_channels * 128],
@@ -325,13 +367,25 @@ impl GpuSynth {
         bank: u16,
         preset: u16,
     ) -> Result<(), SynthError> {
-        let sf = SoundFont::load(
+        // REF-LGS-014：走进程级缓存——实时/导出/端口重建共用同一份解析结果。
+        // 先取到新句柄再替换 `self.sf`：替换前旧核心仍存活，重建路径必命中。
+        let t = std::time::Instant::now();
+        let sf = SoundFont::load_cached(
             path,
             bank,
             preset,
             self.config.use_effects,
             self.config.sample_rate,
         )?;
+        let shared = self
+            .sf
+            .as_ref()
+            .is_some_and(|old| old.shares_core_with(&sf));
+        tracing::info!(
+            "LGS 音色库加载完成（{} ms，CPU 采样 {} B，共用已有解析: {shared}）",
+            t.elapsed().as_millis(),
+            sf.memory_bytes()
+        );
         self.sf = Some(sf);
         Ok(())
     }
@@ -339,95 +393,6 @@ impl GpuSynth {
     /// Unloads the current soundfont.
     pub fn unload_soundfont(&mut self) {
         self.sf = None;
-    }
-
-    /// 清空实时合成状态（文档切换、同布局轻量复位；REND-002 实时多端口）。
-    ///
-    /// 对齐 XSynth `reset_channel_state` 语义：清通道控制器/程序/弯音状态与
-    /// 全部声部/事件队列，保留引擎、音频流与已上传采样（不重建、不重开设备）。
-    pub fn reset_channel_state(&mut self) {
-        for c in &mut self.channels {
-            *c = ChannelState::new();
-        }
-        self.voices.clear();
-        for q in self.key_voices.iter_mut() {
-            q.clear();
-        }
-        self.spawn_budget.fill(0);
-        self.active_notes.fill(0);
-        self.pending_events.clear();
-        self.pending_mix_events.clear();
-        self.offline_events.clear();
-        self.offline_cursor = 0;
-        self.active_voice_count = 0;
-        self.prev_voice_ids.clear();
-        self.last_out = None;
-        self.last_states = None;
-        self.pending = None;
-        self.voice_templates.clear();
-        self.limiter_gain = 1.0;
-        self.limiter_tail.clear();
-    }
-
-    /// Returns the number of currently active voices.
-    pub fn voice_count(&self) -> usize {
-        self.voices.len()
-    }
-
-    /// Diagnostics: `(voices, released, ended)` - how many voices exist,
-    /// how many have a release scheduled, and how many the GPU marked ended.
-    #[doc(hidden)]
-    pub fn debug_voice_lifecycle(&self) -> (usize, usize, usize) {
-        let released = self
-            .voices
-            .iter()
-            .filter(|v| v.released || v.release_at != u64::MAX)
-            .count();
-        let ended = self.voices.iter().filter(|v| v.state.ended != 0).count();
-        (self.voices.len(), released, ended)
-    }
-
-    /// Diagnostics: details of the first voice's GPU state.
-    #[doc(hidden)]
-    pub fn debug_voice_state(&self) -> Option<(u32, u32, u32, u32, u64, u64)> {
-        let v = self.voices.first()?;
-        Some((
-            v.state.is_released,
-            v.state.ended,
-            v.state.env_stage,
-            v.state.env_t,
-            v.release_at,
-            v.start_at,
-        ))
-    }
-
-    /// Diagnostics: per-voice `(key, vel, speed, amp, released, ended,
-    /// env_stage, env_t, release_at, gpu_is_released, env_from)`.
-    #[doc(hidden)]
-    pub fn debug_voices(&self) -> Vec<VoiceDebugInfo> {
-        self.voices
-            .iter()
-            .map(|v| {
-                (
-                    v.key,
-                    v.vel,
-                    v.speed,
-                    v.amp,
-                    v.released || v.release_at != u64::MAX,
-                    v.state.ended != 0,
-                    v.state.env_stage,
-                    v.state.env_t,
-                    v.release_at,
-                    v.state.is_released,
-                    v.state.env_from,
-                )
-            })
-            .collect()
-    }
-
-    /// The number of frames rendered so far.
-    pub fn rendered_frames(&self) -> u64 {
-        self.global_frame
     }
 
     // ------------------------------------------------------------------
