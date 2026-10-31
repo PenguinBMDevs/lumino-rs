@@ -360,6 +360,34 @@ mod tests {
         assert_eq!(gain_a.to_bits(), gain_b.to_bits());
     }
 
+    /// REF-LGS-015：64/128 帧的小缓冲**连续多块**不得 panic（历史 DEBT-04 #121
+    /// 的 `raw.len() - 512` 负索引就发生在第二块），且输出必须有限并受
+    /// `soft_knee` 的 1.0 上界约束。
+    #[test]
+    fn small_blocks_run_many_blocks_without_panicking() {
+        for frames in [64usize, 128] {
+            let input = signal(frames * 32);
+            let mut out = input.clone();
+            let (mut tail, mut gain) = (Vec::new(), 1.0f32);
+            for chunk in out.chunks_mut(frames * 2) {
+                limit_block(chunk, &mut tail, &mut gain, 48_000.0);
+            }
+            assert!(
+                out.iter().all(|v| v.is_finite()),
+                "frames={frames}：输出必须是有限值"
+            );
+            assert!(
+                out.iter().all(|v| v.abs() <= 1.0),
+                "frames={frames}：soft_knee 必须把幅度压在 1.0 以内"
+            );
+            assert!(
+                gain > 0.0 && gain < 1.0,
+                "frames={frames}：经历爆音后增益应处于恢复中，got {gain}"
+            );
+            assert_eq!(tail.len(), 256 * 2, "延迟线长度与块长无关");
+        }
+    }
+
     /// 小块（窗口 ≥ 块长）退化为单次 `limit_block`：实时路径零行为变化。
     #[test]
     fn small_block_falls_back_to_single_call() {

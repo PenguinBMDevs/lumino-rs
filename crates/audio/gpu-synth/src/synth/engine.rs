@@ -142,8 +142,11 @@ pub struct GpuSynth {
     params_dyn_buf: GrowableBuffer,
     /// REF-LGS-010: 静态声部参数表（槽位索引，只在分配槽位时写）。
     params_static_buf: GrowableBuffer,
-    /// Resampled sample data, split across several capped chunks so no
-    /// single storage binding exceeds the 128 MiB limit (D3D12).
+    /// Resampled sample data, split across `SAMPLES_CHUNKS` chunks of
+    /// `SAMPLES_CHUNK_BYTES` each, so one storage binding never exceeds the
+    /// 1 GiB chunk. 1 GiB fits under the 2 GiB-1 binding limit requested in
+    /// `gpu/context.rs` (clamped down to whatever the adapter reports, e.g.
+    /// 128 MiB on lavapipe — see `required_limits`).
     samples_chunks: Vec<GrowableBuffer>,
     sinc_buf: wgpu::Buffer,
     env_buf: GrowableBuffer,

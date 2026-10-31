@@ -143,21 +143,22 @@ impl GpuSynth {
     ///
     /// The lookahead design resolves the contradiction: the mix block is
     /// already fully computed in RAM when the limiter runs, so the gain at
-    /// frame `i` can be derived from the PEAK OF THE NEXT 64 FRAMES (1 ms @
-    /// 64 kHz) instead of the past. The gain is therefore fully settled
-    /// BEFORE the loud samples arrive: no overshoot, no fast modulation
-    /// during onsets. The output is the mix delayed by 1 ms (a fixed,
-    /// inaudible latency - 1 ms is far below the ~10 ms humans perceive).
-    /// The gain itself still moves slowly (0.5 ms attack / 80 ms release),
-    /// so it never modulates the signal audibly.
+    /// frame `i` can be derived from the PEAK OF THE NEXT `LOOKAHEAD` FRAMES
+    /// (256 frames = 4 ms @ 64 kHz, see `limiter.rs`) instead of the past.
+    /// The gain is therefore fully settled BEFORE the loud samples arrive: no
+    /// overshoot, no fast modulation during onsets. The output is the mix
+    /// delayed by 4 ms (a fixed, inaudible latency - 4 ms is well below the
+    /// ~10 ms humans perceive). The gain itself still moves slowly (0.5 ms
+    /// attack / 80 ms release), so it never modulates the signal audibly.
     ///
-    /// The block's last 64 frames cannot see the next block, so their
+    /// The block's last `LOOKAHEAD` frames cannot see the next block, so their
     /// lookahead window is truncated; if the next block opens louder than
-    /// this block's tail, a brief (< 1 ms) overshoot passes through
+    /// this block's tail, a brief (< 4 ms) overshoot passes through
     /// `soft_knee` (a slope-continuous ceiling, not a flat-top clip).
     ///
     /// Below the 0.98 threshold (gain at unity) the limiter reduces to a
-    /// pure 1 ms delay - the waveform is preserved bit-exactly, just shifted.
+    /// pure `LOOKAHEAD`-frame delay - the waveform is preserved bit-exactly,
+    /// just shifted.
     pub(crate) fn apply_limiter(&mut self, out: &mut [f32]) {
         let sr = self.config.sample_rate as f32;
         // REF-LGS-008（A2）：块 ≥ 512 帧时按绝对帧对齐的 512 帧窗口处理，

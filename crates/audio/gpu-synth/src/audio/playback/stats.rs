@@ -27,7 +27,7 @@ impl PlaybackStatsReader {
     /// above 1.0 mean the render thread cannot keep up with realtime.
     ///
     /// 等价于 [`Self::average_renderer_load_window`] 的全环口径
-    /// （全环口径，现为 [`STATS_RING`] 块）。
+    /// （全环口径，现为 `STATS_RING` 块）。
     pub fn average_renderer_load(&self) -> f64 {
         self.average_renderer_load_window(STATS_RING)
     }

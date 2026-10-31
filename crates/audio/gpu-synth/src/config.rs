@@ -227,3 +227,45 @@ impl SynthConfig {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// REF-LGS-015：64/128 帧的实时小缓冲是**合法配置**——limiter 的延迟线已按
+    /// 通用推进修复（DEBT-04 #121），不再有 `n < LOOKAHEAD` 的切片下溢 panic。
+    #[test]
+    fn block_size_64_and_128_are_accepted() {
+        for block in [16usize, 64, 128, 256, 512, 1024, 2048, 4096, 8192] {
+            let cfg = SynthConfig {
+                block_size: block,
+                ..SynthConfig::default()
+            };
+            assert!(
+                cfg.validate().is_ok(),
+                "block_size={block} 应被接受：{:?}",
+                cfg.validate()
+            );
+        }
+    }
+
+    /// 非 2 的幂或 <16 的块长必须返回**带字段名与非法值**的错误，而不是 panic。
+    #[test]
+    fn invalid_block_sizes_are_rejected_with_a_message() {
+        for block in [0usize, 8, 17, 257, 3000] {
+            let cfg = SynthConfig {
+                block_size: block,
+                ..SynthConfig::default()
+            };
+            let err = cfg
+                .validate()
+                .expect_err(&format!("block_size={block} 应被拒绝"));
+            let msg = format!("{err}");
+            assert!(msg.contains("block_size"), "错误信息应指明字段：{msg}");
+            assert!(
+                msg.contains(&block.to_string()),
+                "错误信息应含非法值 {block}：{msg}"
+            );
+        }
+    }
+}
