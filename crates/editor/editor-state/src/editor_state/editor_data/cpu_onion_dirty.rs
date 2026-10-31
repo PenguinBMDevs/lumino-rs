@@ -67,17 +67,10 @@ impl CpuOnionDirty {
 
     /// 合并一个脏 tick 区间；相邻/重叠区间直接合并。
     pub fn push_range(&mut self, start: u32, end: u32) {
-        if end <= start || self.full {
+        if self.full {
             return;
         }
-        for range in &mut self.ranges {
-            if start <= range.1 && end >= range.0 {
-                range.0 = range.0.min(start);
-                range.1 = range.1.max(end);
-                return;
-            }
-        }
-        self.ranges.push((start, end));
+        push_dirty_range(&mut self.ranges, start, end);
     }
 }
 
@@ -88,6 +81,39 @@ pub const MAX_CPU_ONION_CHANGES: usize = 32;
 pub const MAX_CPU_ONION_DIRECT_EDITS: usize = 8192;
 /// 直接编辑提示：`(索引点, 是否溢出, 包围盒)`。
 pub type CpuOnionDirectHint = (Vec<(usize, usize)>, bool, Option<(usize, usize, usize)>);
+
+/// 脏 tick 区间数上限：超出后折叠为一个包围区间，杜绝内存无界增长。
+pub const MAX_CPU_ONION_RANGES: usize = 4096;
+
+/// 合并区间；到达上限后折叠为包围区间（仍然只重建区间，不整建）。
+pub(crate) fn push_dirty_range(out: &mut Vec<(u32, u32)>, start: u32, end: u32) {
+    if end <= start {
+        return;
+    }
+    for range in &mut *out {
+        if start <= range.1 && end >= range.0 {
+            range.0 = range.0.min(start);
+            range.1 = range.1.max(end);
+            return;
+        }
+    }
+    if out.len() >= MAX_CPU_ONION_RANGES {
+        let lo = out
+            .iter()
+            .map(|range| range.0)
+            .min()
+            .map_or(start, |lo| lo.min(start));
+        let hi = out
+            .iter()
+            .map(|range| range.1)
+            .max()
+            .map_or(end, |hi| hi.max(end));
+        out.clear();
+        out.push((lo, hi));
+        return;
+    }
+    out.push((start, end));
+}
 
 mod direct;
 
@@ -157,7 +183,7 @@ impl EditorData {
         if !self.cpu_onion_dirty_enabled || self.history_replay || end <= start {
             return;
         }
-        self.history_pending_ranges.push((start, end));
+        push_dirty_range(&mut self.history_pending_ranges, start, end);
         self.history_pending_full = false;
         let dirty = self
             .cpu_onion_dirty
@@ -228,8 +254,11 @@ impl EditorData {
             } else {
                 Vec::new()
             },
-            ranges: ranges.to_vec(),
+            ranges: Vec::new(),
         };
+        for &(lo, hi) in ranges {
+            push_dirty_range(&mut dirty.ranges, lo, hi);
+        }
         if dirty.ranges.is_empty() && changes.len() > MAX_CPU_ONION_CHANGES {
             dirty.changes.clear();
             for change in changes {
@@ -247,11 +276,9 @@ impl EditorData {
 
     /// 把一笔变更追加到「待挂历史」；超限后转脏区间，不再整建。
     fn push_history_pending(&mut self, change: CpuOnionChange) {
-        self.history_pending_ranges.extend(
-            note_change_range(change.old, change.new)
-                .into_iter()
-                .collect::<Vec<_>>(),
-        );
+        if let Some((lo, hi)) = note_change_range(change.old, change.new) {
+            push_dirty_range(&mut self.history_pending_ranges, lo, hi);
+        }
         if self.history_pending_full {
             return;
         }

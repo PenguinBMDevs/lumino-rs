@@ -5,6 +5,8 @@
 
 use lumino_midi_model::{ChunkedList, NoteEvent};
 
+use crate::editor_state::editor_data::cpu_onion_dirty::push_dirty_range;
+
 /// 把 `(track, index_lo, index_hi)` 索引区间翻成 tick 区间。
 ///
 /// `previous` 为空表示该轨不在历史快照里：只用当前值（仍不扫全文档）。
@@ -29,15 +31,5 @@ pub(super) fn direct_ranges(
 }
 
 pub(super) fn push_union(out: &mut Vec<(u32, u32)>, start: u32, end: u32) {
-    if end <= start {
-        return;
-    }
-    for range in &mut *out {
-        if start <= range.1 && end >= range.0 {
-            range.0 = range.0.min(start);
-            range.1 = range.1.max(end);
-            return;
-        }
-    }
-    out.push((start, end));
+    push_dirty_range(out, start, end);
 }

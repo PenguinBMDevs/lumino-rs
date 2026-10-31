@@ -4,7 +4,7 @@ use lumino_midi_model::NoteEvent;
 use lumino_note_core::note::Note;
 
 use super::super::EditorData;
-use super::{CpuOnionDirty, MAX_CPU_ONION_CHANGES};
+use super::{CpuOnionDirty, MAX_CPU_ONION_CHANGES, MAX_CPU_ONION_RANGES};
 
 /// 两音符、单轨（当前轨 = 0）的编辑器数据。
 fn data() -> EditorData {
@@ -149,6 +149,21 @@ fn undo_redo_replays_single_note_as_changes() {
     assert!(!redone.full, "单笔 redo 不得整帧兜底");
     assert_eq!(redone.changes.len(), 1);
     assert!(redone.changes[0].old.is_none() && redone.changes[0].new.is_some());
+}
+
+/// 脏区间列表必须有上限；超限折叠为包围区间，仍然不整建。
+#[test]
+fn dirty_ranges_are_bounded() {
+    let mut dirty = CpuOnionDirty::default();
+    for index in 0..(MAX_CPU_ONION_RANGES + 64) {
+        let base = index as u32 * 10;
+        dirty.push_range(base, base + 1);
+    }
+    assert!(!dirty.full, "区间超限不得升级整帧");
+    assert!(
+        dirty.ranges.len() <= MAX_CPU_ONION_RANGES,
+        "脏区间列表必须有界"
+    );
 }
 
 /// 直接 `track_notes_mut` 编辑的 undo 必须转成脏 tick 区间，不得整建。
