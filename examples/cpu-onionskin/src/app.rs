@@ -9,6 +9,7 @@
 //! - `events`：鼠标/键盘输入、编辑操作、事件循环等待
 
 mod canvas;
+mod coverage;
 mod events;
 mod frame;
 mod handler;

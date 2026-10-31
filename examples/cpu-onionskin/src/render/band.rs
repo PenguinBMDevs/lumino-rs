@@ -19,7 +19,9 @@ use crate::{
 pub enum LodMode {
     /// 全质量：完整高度 + 填充 + 2px 描边 + owner 稳定序。
     Exact,
-    /// 全曲总览：密度热力图。
+    /// 彩色覆盖光栅：真实轨道色 + 音符宽度，单元 ≤2px。
+    Coverage,
+    /// 兜底：全曲密度热力图（仅覆盖不可用且 ≥30 小节）。
     Overview,
 }
 
@@ -29,6 +31,7 @@ impl LodMode {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Exact => "exact",
+            Self::Coverage => "coverage",
             Self::Overview => "overview",
         }
     }
@@ -93,12 +96,12 @@ pub fn render_band(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
                 &job.camera,
                 job.x0,
                 job.simd,
-                job.mode != LodMode::Overview,
+                job.mode == LodMode::Exact,
             );
         });
 
-        if job.mode == LodMode::Overview {
-            // 总览热力图由后续密度金字塔模块接管；先保留背景。
+        if job.mode != LodMode::Exact {
+            // 覆盖/热力图由 density 模块整帧接管；这里只保留背景。
             return BandStats::default();
         }
 

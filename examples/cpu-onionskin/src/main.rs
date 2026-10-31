@@ -259,7 +259,7 @@ fn main() -> Result<()> {
     let density_start = Instant::now();
     let density = render::density::DensityPyramid::build(&document, workers);
     println!(
-        "[density] pyramid built in {} ms, {:.1} MiB",
+        "[density] coverage+heat pyramid built in {} ms, {:.1} MiB",
         density_start.elapsed().as_millis(),
         density.memory_mib()
     );

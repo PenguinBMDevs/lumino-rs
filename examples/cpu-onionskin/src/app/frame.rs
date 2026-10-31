@@ -7,7 +7,7 @@ use std::{
 
 use winit::event_loop::ActiveEventLoop;
 
-use super::{App, canvas::shift_canvas_pixels};
+use super::App;
 use crate::{
     camera::Camera,
     edit_overlay,
@@ -69,7 +69,7 @@ impl App {
         let size_same = self.last_width == width && self.last_height == height;
         let can_scroll = self.frame_valid
             && !self.content_dirty
-            && self.baseline_mode != LodMode::Overview
+            && !matches!(self.baseline_mode, LodMode::Overview | LodMode::Coverage)
             && zoom_same
             && size_same
             && dy.abs() < 0.01
@@ -171,10 +171,15 @@ impl App {
         }
 
         // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
-        // 所有全量帧一律 Exact（静止与滚动同一外观）。
+        // 编辑后覆盖位图失效：只有在当前缩放要用它时才整建，普通缩放不背这个成本。
+        if !self.density.coverage_valid() && self.density.coverage_applicable(&camera) {
+            self.density = density::DensityPyramid::build(&self.document, self.workers);
+        }
         let mode = self.choose_mode(&camera);
         let render_start = Instant::now();
-        let render_stats = if mode == LodMode::Overview {
+        let render_stats = if mode == LodMode::Coverage {
+            self.render_coverage_frame(&camera, width_usize, height_usize, estimate)
+        } else if mode == LodMode::Overview {
             // 总览是密度热力图，半分辨率渲染后再最近邻放大：1.4M 像素/帧
             // 降到 0.35M，纯绘制可稳定低于 12.5ms；热力图本身是块状色块，
             // 2× 放大不损失可读性。
@@ -295,24 +300,6 @@ impl App {
             self.idle_reported = true;
         }
         self.next_frame = Instant::now() + self.frame_interval;
-    }
-
-    fn shift_canvas(&mut self, dx: i32) {
-        let width = self.renderer.width() as usize;
-        let height = self.renderer.height() as usize;
-        if width == 0 || height == 0 {
-            return;
-        }
-        let keyboard = self
-            .camera
-            .as_ref()
-            .map_or(0, |camera| camera.keyboard_width.round().max(0.0) as usize)
-            .min(width);
-        let frame = self.renderer.frame_mut();
-        if frame.len() != width * height {
-            return;
-        }
-        shift_canvas_pixels(frame, width, height, keyboard, dx);
     }
 
     #[allow(clippy::too_many_arguments)]

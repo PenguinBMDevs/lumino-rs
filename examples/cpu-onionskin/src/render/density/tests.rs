@@ -1,4 +1,9 @@
-use super::*;
+use super::{render::heat_color, *};
+use crate::render::{
+    chrome::{COLOR_BG, COLOR_BLACK_ROW},
+    color::NoteStyle,
+};
+use lumino_midi_loader::{MidiDocument, NoteEvent};
 
 fn index(total_notes: u64, measure_ticks: u32) -> TrackIndex {
     TrackIndex {
@@ -105,6 +110,9 @@ fn level_selection_covers_a_pixel() {
             })
             .collect(),
         max_counts: vec![1; LEVELS],
+        coverage: Vec::new(),
+        total_ticks: 0,
+        coverage_valid: true,
     };
     assert_eq!(pyramid.level_for_zoom(1.0), 0);
     assert!(pyramid.bin_ticks(pyramid.level_for_zoom(0.0001)) >= 1);
@@ -114,4 +122,122 @@ fn level_selection_covers_a_pixel() {
 fn heat_color_zero_is_background() {
     assert_eq!(heat_color(0, 100), COLOR_BG);
     assert_ne!(heat_color(100, 100), COLOR_BG);
+}
+
+#[test]
+fn coverage_uses_track_color_and_main_track_blue() {
+    let mut document = MidiDocument::empty_with_tracks(2, 480);
+    document.insert_note(0, NoteEvent::new(0, 2000, 125, 100, 0));
+    document.insert_note(1, NoteEvent::new(0, 2000, 125, 100, 0));
+    let pyramid = DensityPyramid::build(&document, 1);
+    let mut coverage_camera = camera(0.01);
+    coverage_camera.scroll_y = 0.0;
+    let style = NoteStyle::new(2);
+    let mut frame = vec![0u32; 1920 * 1080];
+    let mut scratch = OverviewScratch::default();
+    let row = coverage_camera.key_to_y(125).round() as usize;
+
+    pyramid.render_coverage(
+        &mut frame,
+        1920,
+        1080,
+        &coverage_camera,
+        &style,
+        0,
+        &mut scratch,
+    );
+    assert_eq!(
+        frame[row * 1920],
+        style.main_fill,
+        "当前轨必须显示主轨蓝，不能从高缩放画面消失"
+    );
+
+    pyramid.render_coverage(
+        &mut frame,
+        1920,
+        1080,
+        &coverage_camera,
+        &style,
+        9,
+        &mut scratch,
+    );
+    assert_eq!(
+        frame[row * 1920],
+        style.fill(0, false),
+        "非当前轨必须用真实轨道色（first-wins 仍是轨 0）"
+    );
+
+    // 当前轨 1 是第二条候选：必须优先显示主轨蓝，不能被轨 0 遮掉。
+    pyramid.render_coverage(
+        &mut frame,
+        1920,
+        1080,
+        &coverage_camera,
+        &style,
+        1,
+        &mut scratch,
+    );
+    assert_eq!(
+        frame[row * 1920],
+        style.main_fill,
+        "当前轨即使不是 first-wins 第一条，也必须优先显示"
+    );
+}
+
+#[test]
+fn coverage_keeps_note_width_and_disables_at_normal_zoom() {
+    let mut document = MidiDocument::empty_with_tracks(1, 480);
+    document.insert_note(0, NoteEvent::new(0, 64, 125, 100, 0));
+    document.insert_note(0, NoteEvent::new(0, 480, 126, 100, 0));
+    let pyramid = DensityPyramid::build(&document, 1);
+    let style = NoteStyle::new(1);
+    let mut coverage_camera = camera(0.01);
+    coverage_camera.scroll_y = 0.0;
+    assert!(
+        pyramid.can_render_coverage(&coverage_camera),
+        "0.01 px/tick 必须启用覆盖光栅"
+    );
+    let mut frame = vec![0u32; 1920 * 1080];
+    let mut scratch = OverviewScratch::default();
+    pyramid.render_coverage(
+        &mut frame,
+        1920,
+        1080,
+        &coverage_camera,
+        &style,
+        0,
+        &mut scratch,
+    );
+    let short_row = coverage_camera.key_to_y(125).round() as usize;
+    let long_row = coverage_camera.key_to_y(126).round() as usize;
+    let short_pixels = (0..1920)
+        .filter(|x| frame[short_row * 1920 + x] != COLOR_BG)
+        .count();
+    let long_pixels = (0..1920)
+        .filter(|x| frame[long_row * 1920 + x] != COLOR_BLACK_ROW)
+        .count();
+    assert_eq!(short_pixels, 1, "64 tick 在 0.01 px/tick 下应为 1 列");
+    assert!(
+        (4..=6).contains(&long_pixels),
+        "480 tick 应保留约 5 列宽度（实际 {long_pixels}）"
+    );
+
+    let normal = camera(1.0);
+    assert!(
+        !pyramid.can_render_coverage(&normal),
+        "1 px/tick 必须回到 Exact"
+    );
+}
+
+#[test]
+fn coverage_invalidates_after_edit() {
+    let mut document = MidiDocument::empty_with_tracks(1, 480);
+    document.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));
+    let mut pyramid = DensityPyramid::build(&document, 1);
+    assert!(pyramid.coverage_valid());
+    pyramid.apply_note(0, 125, 1);
+    assert!(!pyramid.coverage_valid(), "编辑后覆盖层必须失效");
+    document.insert_note(0, NoteEvent::new(200, 300, 125, 100, 0));
+    let rebuilt = DensityPyramid::build(&document, 1);
+    assert!(rebuilt.coverage_valid());
 }
