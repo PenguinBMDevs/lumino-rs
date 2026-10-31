@@ -152,9 +152,13 @@ impl Editor {
         let Some(mut state) = self.shape_edit.take() else {
             return false;
         };
-        let k = state.current.k;
+        let k = state.original.k;
+        // 关键：每帧都从拖动前的 original 重算一次。
+        // 若在 state.current 上重复 apply_drag(start→current)，Move/Resize/Turn 会把
+        // 同一个 delta 累乘/累加，表现为抽搐与飞出屏幕。
+        let mut next = state.original.clone();
         if !apply_drag(
-            &mut state.current,
+            &mut next,
             state.handle,
             state.start,
             (tick, key),
@@ -164,6 +168,11 @@ impl Editor {
             self.shape_edit = Some(state);
             return false;
         }
+        if !finite_geometry(&next) {
+            self.shape_edit = Some(state);
+            return false;
+        }
+        state.current = next;
         let notes = self.shape_notes_of(&state.current, state.current.track as usize);
         match state.target {
             ShapeEditTarget::Drawn { drawn_id, .. } => {
@@ -318,6 +327,20 @@ impl Editor {
     pub(crate) fn is_shape_editing(&self) -> bool {
         self.shape_edit.is_some()
     }
+}
+
+fn finite_geometry(model: &ShapeModel) -> bool {
+    model
+        .geometry
+        .anchors
+        .iter()
+        .all(|anchor| anchor.pos.0.is_finite() && anchor.pos.1.is_finite())
+        && model.geometry.rect.is_none_or(|rect| {
+            rect.tick_lo.is_finite()
+                && rect.tick_hi.is_finite()
+                && rect.key_lo.is_finite()
+                && rect.key_hi.is_finite()
+        })
 }
 
 #[cfg(test)]

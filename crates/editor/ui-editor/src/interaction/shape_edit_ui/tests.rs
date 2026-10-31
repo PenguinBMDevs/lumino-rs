@@ -109,6 +109,7 @@ fn test_pending_composed_handle_edits_preview_and_undo() {
     let mut editor = editor_with_pending_composed();
     assert!(editor.enable_shape_edit(), "单支 composed 应进入手柄编辑");
     assert!(editor.begin_shape_edit(0.0, 64.0), "Nw 手柄应命中");
+    assert!(editor.update_shape_edit(0.0, 66.0));
     assert!(editor.update_shape_edit(0.0, 68.0));
     assert!(editor.finish_shape_edit());
 
