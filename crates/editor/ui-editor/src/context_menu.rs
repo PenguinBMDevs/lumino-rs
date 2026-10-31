@@ -4,7 +4,7 @@
 //! 菜单以垂直图标栏形式显示在右键位置附近，
 //! 模仿 ../yinhe 的选中后悬浮面板风格。
 
-use iced_core::{Alignment, Color, Length, Padding, Point};
+use iced_core::{Alignment, Color, Length, Padding, Point, Size};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
 use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
@@ -73,17 +73,32 @@ impl PianoRollContextMenuState {
 }
 
 /// 渲染上下文菜单覆盖层
-pub fn view(position: Point, target: ContextMenuTarget) -> Element<'static> {
-    let adjusted_position = Point::new(position.x + MENU_OFFSET_X, position.y + MENU_OFFSET_Y);
+///
+/// `available` 为编辑器可用区域；菜单会左右夹取，并在下方放不下时向上翻转，
+/// 避免条目被窗口底边裁掉（041C 待确认菜单已有 11 项）。
+pub fn view(position: Point, target: ContextMenuTarget, available: Size) -> Element<'static> {
+    let panel_height = menu_total_height(target);
+    let panel_width = PANEL_WIDTH + PANEL_PADDING * 2.0;
+    let x = (position.x + MENU_OFFSET_X).clamp(
+        0.0,
+        (available.width - panel_width - MENU_OFFSET_X).max(0.0),
+    );
+    let below = position.y + MENU_OFFSET_Y;
+    let y = if below + panel_height > available.height {
+        (position.y - panel_height - MENU_OFFSET_Y).max(0.0)
+    } else {
+        below
+    };
+    let y = y.min((available.height - panel_height).max(0.0));
 
     let menu_panel = menu_panel(target);
 
     container(menu_panel)
         .padding(Padding {
-            top: adjusted_position.y,
+            top: y,
             right: 0.0,
             bottom: 0.0,
-            left: adjusted_position.x,
+            left: x,
         })
         .width(Length::Fill)
         .height(Length::Fill)
@@ -154,14 +169,20 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
     }
 }
 
+/// 菜单总高度（含内边距）
+fn menu_total_height(target: ContextMenuTarget) -> f32 {
+    let count = menu_items(target).len();
+    count as f32 * BUTTON_SIZE
+        + count.saturating_sub(1) as f32 * BUTTON_SPACING
+        + PANEL_PADDING * 2.0
+}
+
 /// 构建菜单面板内容（条目集由作用目标决定）
 fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
     let items = menu_items(target);
     let buttons = items.iter().copied().map(menu_button).collect::<Vec<_>>();
 
-    let total_height = buttons.len() as f32 * BUTTON_SIZE
-        + (buttons.len().saturating_sub(1)) as f32 * BUTTON_SPACING
-        + PANEL_PADDING * 2.0;
+    let total_height = menu_total_height(target);
 
     let panel = container(
         column(buttons)
@@ -401,7 +422,15 @@ mod tests {
 
     #[test]
     fn test_view_returns_element() {
-        let _element = view(Point::new(50.0, 60.0), ContextMenuTarget::Notes);
-        let _element = view(Point::new(50.0, 60.0), ContextMenuTarget::DrawnShape);
+        let _element = view(
+            Point::new(50.0, 60.0),
+            ContextMenuTarget::Notes,
+            Size::new(1280.0, 720.0),
+        );
+        let _element = view(
+            Point::new(50.0, 60.0),
+            ContextMenuTarget::DrawnShape,
+            Size::new(1280.0, 720.0),
+        );
     }
 }

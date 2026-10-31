@@ -321,7 +321,9 @@ impl Editor {
                     polylines: composed
                         .results
                         .iter()
-                        .flat_map(|part| polylines_of_model(&part.model))
+                        .flat_map(|part| {
+                            polylines_of_model(&part.model, f32::from(self.editor_state.view.ppq))
+                        })
                         .collect(),
                 })
             }

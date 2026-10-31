@@ -289,7 +289,7 @@ pub fn draw(
     // DRAW-041C：Bake 前组合结果的预览（仍是 pending，✓ 才提交）
     for composed in &editor.editor_state.pending_composed {
         for part in &composed.results {
-            for points in polylines_of_model(&part.model) {
+            for points in polylines_of_model(&part.model, f32::from(editor.editor_state.view.ppq)) {
                 let screen: Vec<Point> = points
                     .iter()
                     .map(|&(tick, key)| editor.line_pos_screen_pos((tick, key)))

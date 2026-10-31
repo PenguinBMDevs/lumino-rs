@@ -188,6 +188,10 @@ impl Editor {
                     .push(crate::context_menu::view(
                         position,
                         self.context_menu.target,
+                        iced_core::Size::new(
+                            self.editor_state.canvas.size_x,
+                            self.editor_state.canvas.size_y,
+                        ),
                     ))
                     .into()
             }
@@ -252,6 +256,10 @@ impl Editor {
                     .push(crate::context_menu::view(
                         position,
                         self.context_menu.target,
+                        iced_core::Size::new(
+                            self.editor_state.canvas.size_x,
+                            self.editor_state.canvas.size_y,
+                        ),
                     ))
                     .into()
             }

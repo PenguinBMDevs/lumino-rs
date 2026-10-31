@@ -4,6 +4,7 @@
 //! 这里只做最小桥接：几何转换 + 保留原音符，不重新生成。
 
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle};
+use lumino_editor_state::shape_ops::copy_along_copies_of_points;
 use lumino_editor_state::shape_tool::shape_outline_path;
 use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeKind as UiShapeKind, ShapeSpec};
 
@@ -62,9 +63,11 @@ pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32)
     model
 }
 
-/// 模型的可渲染折线集合：Live 优先用各段 stroke，其它用整条几何。
-pub(crate) fn polylines_of_model(model: &ShapeModel) -> Vec<Vec<(f32, f32)>> {
-    if let Some(ShapeOp::Live(params)) = model.ops.iter().find(|op| matches!(op, ShapeOp::Live(_)))
+/// 模型的可渲染折线集合：Live 优先用各段 stroke，其它用整条几何；
+/// CopyAlong 额外展开副本折线（预览 + 镜像命中都覆盖副本）。
+pub(crate) fn polylines_of_model(model: &ShapeModel, ppq: f32) -> Vec<Vec<(f32, f32)>> {
+    let base = if let Some(ShapeOp::Live(params)) =
+        model.ops.iter().find(|op| matches!(op, ShapeOp::Live(_)))
     {
         let strokes: Vec<Vec<(f32, f32)>> = params
             .strokes
@@ -73,20 +76,44 @@ pub(crate) fn polylines_of_model(model: &ShapeModel) -> Vec<Vec<(f32, f32)>> {
             .map(|stroke| stroke.anchors.iter().map(|anchor| anchor.pos).collect())
             .collect();
         if !strokes.is_empty() {
-            return strokes;
+            strokes
+        } else {
+            geometry_polylines(model)
         }
+    } else {
+        geometry_polylines(model)
+    };
+    let Some(ShapeOp::CopyAlong(params)) = model
+        .ops
+        .iter()
+        .find(|op| matches!(op, ShapeOp::CopyAlong(_)))
+    else {
+        return base;
+    };
+    let mut out = base.clone();
+    for polyline in &base {
+        out.extend(copy_along_copies_of_points(
+            polyline,
+            params,
+            f64::from(ppq),
+        ));
     }
-    if !model.geometry.anchors.is_empty() {
-        return vec![
+    out
+}
+
+fn geometry_polylines(model: &ShapeModel) -> Vec<Vec<(f32, f32)>> {
+    if model.geometry.anchors.is_empty() {
+        Vec::new()
+    } else {
+        vec![
             model
                 .geometry
                 .anchors
                 .iter()
                 .map(|anchor| anchor.pos)
                 .collect(),
-        ];
+        ]
     }
-    Vec::new()
 }
 
 /// ShapeModel → 可渲染的 DrawnShapeSource

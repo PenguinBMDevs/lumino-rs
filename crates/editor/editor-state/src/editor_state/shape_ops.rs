@@ -57,7 +57,8 @@ pub use chain::{NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops};
 pub use chop::{ChopReport, apply as apply_chop};
 pub use claw::apply as apply_claw;
 pub use copypath::{
-    apply as copy_along_apply, copies as copy_along_copies, copy_notes as copy_along_notes,
+    apply as copy_along_apply, copies as copy_along_copies,
+    copies_of_points as copy_along_copies_of_points, copy_notes as copy_along_notes,
 };
 pub use cycle::apply as apply_cycle;
 pub use funnel::{

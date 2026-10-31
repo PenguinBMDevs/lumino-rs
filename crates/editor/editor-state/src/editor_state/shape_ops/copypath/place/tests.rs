@@ -56,6 +56,20 @@ fn test_every_beats_counts_spacing() {
 }
 
 #[test]
+fn test_copies_of_points_expands_geometry_for_hit_preview() {
+    let params = CopyPathParams {
+        pts: vec![[100.0, 0.0]],
+        mode: CopyMode::Count { n: 1 },
+        grp: Some([0.0, 60.0]),
+        ..CopyPathParams::default()
+    };
+    let copies = copies_of_points(&[(0.0, 60.0), (40.0, 60.0)], &params, 480.0);
+    assert_eq!(copies.len(), 1);
+    assert!((copies[0][0].0 - 50.0).abs() < 1e-3);
+    assert!((copies[0][1].0 - 90.0).abs() < 1e-3);
+}
+
+#[test]
 fn test_channel_shift() {
     let params = CopyPathParams {
         pts: vec![[100.0, 0.0]],

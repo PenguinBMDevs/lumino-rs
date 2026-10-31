@@ -124,5 +124,72 @@ pub fn copies(notes: &[ShapeNote], params: &CopyPathParams, ppq: f64) -> Vec<Sha
         .collect()
 }
 
+/// 几何预览/命中用：把一条折线按 CopyAlong 参数复制（不含原折线）。
+///
+/// 与 `copy_notes` 同一套 placement；只把音符换成折线点，供组合镜像/预览
+/// 覆盖副本范围（否则右键副本会落到 Notes 菜单）。
+pub fn copies_of_points(
+    points: &[(f32, f32)],
+    params: &CopyPathParams,
+    ppq: f64,
+) -> Vec<Vec<(f32, f32)>> {
+    if points.is_empty() || params.pts.is_empty() {
+        return Vec::new();
+    }
+    let rect = bbox_points(points);
+    let base = corner_a(&rect, Dir::Up);
+    let mut out = Vec::new();
+    for run in runs(params, base) {
+        let count = count_for(&run, params, ppq);
+        for place in place_on_run(&run, count, params.speed, params.size) {
+            out.push(
+                points
+                    .iter()
+                    .map(|&point| placed_point(point, &rect, &place, params))
+                    .collect(),
+            );
+        }
+    }
+    out
+}
+
+fn bbox_points(points: &[(f32, f32)]) -> ShapeRect {
+    let mut lo_t = f32::INFINITY;
+    let mut hi_t = f32::NEG_INFINITY;
+    let mut lo_k = f32::INFINITY;
+    let mut hi_k = f32::NEG_INFINITY;
+    for &(tick, key) in points {
+        lo_t = lo_t.min(tick);
+        hi_t = hi_t.max(tick);
+        lo_k = lo_k.min(key);
+        hi_k = hi_k.max(key);
+    }
+    ShapeRect::normalized(lo_t, lo_k, hi_t, hi_k)
+}
+
+fn placed_point(
+    point: (f32, f32),
+    rect: &ShapeRect,
+    place: &Placement,
+    params: &CopyPathParams,
+) -> (f32, f32) {
+    let width = (rect.tick_hi - rect.tick_lo).max(1e-6);
+    let height = (rect.key_hi - rect.key_lo).max(1e-6);
+    let mut local_x = point.0 - rect.tick_lo;
+    if flip_axis(params.flip, place.dir, FlipWay::Time) {
+        local_x = width - local_x;
+    }
+    let mut local_y = point.1 - rect.key_lo;
+    if flip_axis(params.flip, place.dir, FlipWay::Keys) {
+        local_y = height - local_y;
+    }
+    let x = place.corner.0 + local_x * place.scale[0];
+    let y = match place.dir {
+        Dir::Up => place.corner.1 + local_y * place.scale[1],
+        Dir::Down => place.corner.1 - local_y * place.scale[1],
+    };
+    (x, y)
+}
+
 #[cfg(test)]
 mod tests;
