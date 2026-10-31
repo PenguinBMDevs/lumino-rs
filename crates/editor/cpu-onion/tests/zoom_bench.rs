@@ -17,6 +17,7 @@ use std::{
 
 use lumino_cpu_onion::{CanvasCamera, CpuOnionRenderer, DensityPyramid, TrackIndex, uses_overview};
 use lumino_midi_loader::loader::load_parsed_midi;
+use lumino_midi_model::MidiDocument;
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
@@ -90,6 +91,7 @@ fn zoom_bench_real_midi() {
     let density_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     let bands = bands();
+    let mut density = density;
     let mut renderer = CpuOnionRenderer::new(bands, track_count);
     renderer.resize(WIDTH, HEIGHT);
     let muted = vec![false; track_count];
@@ -211,5 +213,20 @@ fn zoom_bench_real_midi() {
     println!(
         "UI snapshot: clone p50 {snap_p50:.3} p99 {snap_p99:.3} max {snap_max:.3} mean {snap_mean:.3} ms/帧 | old copy {copy_ms:.2} ms/帧"
     );
+
+    // 单笔删除后的覆盖脏区重建成本（不再整建 310M）。
+    if let Some(note) = document.track_notes(1).iter().next().copied() {
+        let mut edited = MidiDocument::clone(&document);
+        edited.remove_note(1, 0);
+        let edited_index = index.with_changes(1, &[note], &[]);
+        assert!(density.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), -1));
+        let edit_started = Instant::now();
+        let dirty_ok = density.rebuild_dirty_coverage(&edited, &edited_index);
+        let edit_ms = edit_started.elapsed().as_secs_f64() * 1000.0;
+        println!(
+            "edit dirty coverage: ok={dirty_ok} rebuild={edit_ms:.2} ms (note {}..{} key {})",
+            note.start_tick, note.end_tick, note.key
+        );
+    }
     assert!(frames > 0, "至少渲染一帧");
 }

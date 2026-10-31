@@ -1,7 +1,10 @@
 use super::{render::heat_color, *};
-use crate::render::{
-    chrome::{COLOR_BG, COLOR_BLACK_ROW},
-    color::NoteStyle,
+use crate::{
+    model::TrackIndex,
+    render::{
+        chrome::{COLOR_BG, COLOR_BLACK_ROW},
+        color::NoteStyle,
+    },
 };
 use lumino_midi_loader::{MidiDocument, NoteEvent};
 
@@ -113,6 +116,7 @@ fn level_selection_covers_a_pixel() {
         coverage: Vec::new(),
         total_ticks: 0,
         coverage_valid: true,
+        coverage_dirty: None,
     };
     assert_eq!(pyramid.level_for_zoom(1.0), 0);
     assert!(pyramid.bin_ticks(pyramid.level_for_zoom(0.0001)) >= 1);
@@ -230,12 +234,46 @@ fn coverage_keeps_note_width_and_disables_at_normal_zoom() {
 }
 
 #[test]
+fn dirty_coverage_rebuild_matches_full_after_edit() {
+    let mut before = MidiDocument::empty_with_tracks(2, 480);
+    let removed = NoteEvent::new(0, 480, 125, 100, 0);
+    let added = NoteEvent::new(100, 300, 126, 100, 0);
+    before.insert_note(0, removed);
+    before.insert_note(1, NoteEvent::new(0, 480, 125, 100, 1));
+    let mut pyramid = DensityPyramid::build(&before, 1);
+
+    let mut after = before.clone();
+    after.remove_note(0, 0);
+    after.insert_note(0, added);
+    let index = TrackIndex::build(&after);
+    pyramid.apply_note_range(removed.start_tick, removed.end_tick, 125, -1);
+    pyramid.apply_note_range(added.start_tick, added.end_tick, 126, 1);
+    assert!(!pyramid.coverage_valid());
+    assert!(
+        pyramid.rebuild_dirty_coverage(&after, &index),
+        "有脏区时必须局部重建"
+    );
+    assert!(pyramid.coverage_valid());
+
+    let full = DensityPyramid::build(&after, 1);
+    let mut camera = camera(0.01);
+    camera.scroll_y = 0.0;
+    let style = NoteStyle::new(2);
+    let mut patched = vec![0u32; 1920 * 1080];
+    let mut rebuilt = patched.clone();
+    let mut scratch = OverviewScratch::default();
+    pyramid.render_coverage(&mut patched, 1920, 1080, &camera, &style, 0, &mut scratch);
+    full.render_coverage(&mut rebuilt, 1920, 1080, &camera, &style, 0, &mut scratch);
+    assert_eq!(patched, rebuilt, "脏区局部重建必须与整建逐像素一致");
+}
+
+#[test]
 fn coverage_invalidates_after_edit() {
     let mut document = MidiDocument::empty_with_tracks(1, 480);
     document.insert_note(0, NoteEvent::new(0, 100, 125, 100, 0));
     let mut pyramid = DensityPyramid::build(&document, 1);
     assert!(pyramid.coverage_valid());
-    pyramid.apply_note(0, 125, 1);
+    pyramid.apply_note_range(0, 100, 125, 1);
     assert!(!pyramid.coverage_valid(), "编辑后覆盖层必须失效");
     document.insert_note(0, NoteEvent::new(200, 300, 125, 100, 0));
     let rebuilt = DensityPyramid::build(&document, 1);

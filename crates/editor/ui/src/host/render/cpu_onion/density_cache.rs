@@ -2,16 +2,17 @@
 //!
 //! 与文档快照/索引同生命周期：
 //! - 索引整建（加载 / 批量编辑 / 结构变化）→ 丢弃，下次进入总览时重建；
-//! - 单笔原子变更 → 若缓存正好对应「上一代文档」则原地 ±1（O(变更数)）；
+//! - 单笔原子变更 → 若缓存正好对应「上一代文档」则原地 ±1（O(变更数)），
+//!   覆盖层只标记受影响 tick 区间，下一次 ensure 局部重建；
 //! - 直接 `track_notes_mut` 编辑（拖动 / 批量 / 连奏）没有原子变更 → 代次对不上
 //!   → 保持过期，由 [`DensityCache::ensure`] 在下次进入总览时整建一次，
 //!   绝不用错数据渲染。
 //!
 //! 统计覆盖**全部音轨**，切轨 / 静音不需要重建；彩色覆盖光栅在渲染时按单元
-//! 内第一、第二候选过滤当前轨/静音轨。代价是单笔编辑后覆盖位图失效，下一次
-//! 使用前必须整建一次（删除音符时无法低成本找回下层轨道）。
+//! 内第一、第二候选过滤当前轨/静音轨。单笔编辑只标记受影响 tick 区间，下一次
+//! 使用前做**局部重建**（只扫该区间的音符），不再整建 310M 音符。
 
-use lumino_cpu_onion::DensityPyramid;
+use lumino_cpu_onion::{DensityPyramid, TrackIndex};
 use lumino_editor_state::CpuOnionChange;
 use lumino_midi_model::MidiDocument;
 
@@ -50,10 +51,12 @@ impl DensityCache {
         let mut valid = true;
         for change in changes {
             if let Some(old) = change.old {
-                valid &= pyramid.apply_note(old.start_tick, u16::from(old.key), -1);
+                valid &=
+                    pyramid.apply_note_range(old.start_tick, old.end_tick, u16::from(old.key), -1);
             }
             if let Some(new) = change.new {
-                valid &= pyramid.apply_note(new.start_tick, u16::from(new.key), 1);
+                valid &=
+                    pyramid.apply_note_range(new.start_tick, new.end_tick, u16::from(new.key), 1);
             }
         }
         if valid {
@@ -70,6 +73,7 @@ impl DensityCache {
         &mut self,
         new_gen: u64,
         document: &MidiDocument,
+        index: &TrackIndex,
         key_count: u16,
         workers: usize,
     ) -> Option<&DensityPyramid> {
@@ -77,11 +81,10 @@ impl DensityCache {
             .pyramid
             .as_ref()
             .is_some_and(|pyramid| !pyramid.coverage_valid());
-        if self.pyramid.is_none()
+        let shape_changed = self.pyramid.is_none()
             || self.built_gen != Some(new_gen)
-            || self.built_keys != key_count
-            || coverage_stale
-        {
+            || self.built_keys != key_count;
+        if shape_changed {
             let started = std::time::Instant::now();
             self.pyramid = Some(DensityPyramid::build(document, workers, key_count));
             self.built_gen = Some(new_gen);
@@ -91,6 +94,23 @@ impl DensityCache {
                 key_count,
                 ms = started.elapsed().as_millis(),
                 "[cpu-onion] 构建总览密度金字塔"
+            );
+        } else if coverage_stale {
+            let started = std::time::Instant::now();
+            let dirty_rebuilt = self
+                .pyramid
+                .as_mut()
+                .is_some_and(|pyramid| pyramid.rebuild_dirty_coverage(document, index));
+            if !dirty_rebuilt {
+                self.pyramid = Some(DensityPyramid::build(document, workers, key_count));
+            }
+            self.built_gen = Some(new_gen);
+            tracing::debug!(
+                doc_gen = new_gen,
+                key_count,
+                dirty = dirty_rebuilt,
+                ms = started.elapsed().as_millis(),
+                "[cpu-onion] 局部重建覆盖金字塔"
             );
         }
         self.pyramid.as_ref()

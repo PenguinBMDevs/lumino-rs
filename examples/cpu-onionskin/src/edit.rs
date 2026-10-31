@@ -135,7 +135,7 @@ impl Editor {
         if !Arc::make_mut(document).insert_note(track, note) {
             return;
         }
-        density.apply_note(note.start_tick, note.key, 1);
+        density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
         *index = Arc::new(index.with_changes(track, &[], &[note]));
         self.selection.clear();
         if let Some(position) = document.track_notes(track).position_of(&note) {
@@ -168,7 +168,7 @@ impl Editor {
             Arc::make_mut(document).remove_note(track, *position);
         }
         for note in &removed {
-            density.apply_note(note.start_tick, note.key, -1);
+            density.apply_note_range(note.start_tick, note.end_tick, note.key, -1);
         }
         *index = Arc::new(index.with_changes(track, &removed, &[]));
         self.selection.clear();
@@ -227,7 +227,7 @@ impl Editor {
             return;
         }
         for note in &added {
-            density.apply_note(note.start_tick, note.key, 1);
+            density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
         }
         *index = Arc::new(index.with_changes(track, &[], &added));
         self.selection.clear();

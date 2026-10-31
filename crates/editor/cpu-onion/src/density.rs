@@ -80,8 +80,10 @@ pub struct DensityPyramid {
     total_ticks: u32,
     /// 彩色覆盖光栅的 key × tick 单元（按 2:1 分层，保留前两条轨道）。
     coverage: Vec<CoverageLevel>,
-    /// 覆盖单元是否仍与文档一致；编辑后置 false，须整建后再使用。
+    /// 覆盖单元是否仍与文档一致；编辑后置 false，局部重建后恢复。
     coverage_valid: bool,
+    /// 待局部重建的 tick 区间 `[lo, hi)`；`None` = 没有脏区。
+    coverage_dirty: Option<(u32, u32)>,
 }
 
 impl std::fmt::Debug for DensityPyramid {
@@ -176,6 +178,7 @@ impl DensityPyramid {
             total_ticks: effective_ticks,
             coverage,
             coverage_valid: true,
+            coverage_dirty: None,
         }
     }
 
@@ -251,24 +254,38 @@ impl DensityPyramid {
 
     /// 编辑后增量更新：`delta = +1` 插入，`-1` 删除。
     ///
-    /// 返回 `false` 表示本次变更超出既有 bin 布局（新增 start_tick 越过末 bin），
+    /// 返回 `false` 表示本次变更超出既有 bin 布局（新增 end_tick 越过末 bin），
     /// 调用方必须丢弃金字塔改走整建——绝不把音符塞进错误的桶。
     ///
-    /// 删除只做饱和减法、不回收 `max_counts`（颜色略偏暗，下一次整建纠正）；
-    /// 与示例一致。
+    /// 覆盖层只记录脏 tick 区间，不在这里扫文档；缓存持有者下一次 ensure 时
+    /// 调用 [`Self::rebuild_dirty_coverage`] 做局部重建。
     pub fn apply_note(&mut self, start_tick: u32, key: u16, delta: i32) -> bool {
+        self.apply_note_range(start_tick, start_tick.saturating_add(1), key, delta)
+    }
+
+    /// 带 end_tick 的增量更新；覆盖脏区按 `[start_tick, end_tick)` 标记。
+    pub fn apply_note_range(
+        &mut self,
+        start_tick: u32,
+        end_tick: u32,
+        key: u16,
+        delta: i32,
+    ) -> bool {
         if delta == 0 || u32::from(key) >= u32::from(self.key_count) {
             return true;
         }
-        // 覆盖单元不做增量（删除时要找回下一条覆盖该格的音符，成本不受控）。
-        // 失效后本次起退回热力/Exact；缓存持有者下一次 ensure 时整建覆盖层。
-        self.coverage_valid = false;
         let Some(first) = self.levels.first() else {
             return false;
         };
         if (start_tick / first.bin_ticks.max(1)) as usize >= first.bins {
             return false;
         }
+        let end_tick = end_tick.max(start_tick.saturating_add(1));
+        if end_tick > self.total_ticks {
+            // 覆盖层右界已越过：必须整建才能扩 bin，不能把音符塞进末尾。
+            return false;
+        }
+        self.mark_coverage_dirty(start_tick, end_tick);
         let key = key as usize;
         let keys = self.key_count as usize;
         let magnitude = delta.unsigned_abs().min(u32::from(u16::MAX)) as u16;
@@ -289,9 +306,27 @@ impl DensityPyramid {
         }
         if delta > 0 {
             // 只影响「渲染右界」：长度变化不 rebin，避免一次改尾音就丢增量缓存。
-            self.total_ticks = self.total_ticks.max(start_tick);
+            self.total_ticks = self.total_ticks.max(end_tick);
         }
         true
+    }
+
+    /// 只重建编辑脏区覆盖的单元；没有脏区时返回 `false`（调用方应整建）。
+    ///
+    /// 成本 = 该 tick 区间内的候选音符 + 基础层 2:1 合并，不再扫全文档。
+    pub fn rebuild_dirty_coverage(&mut self, document: &MidiDocument, index: &TrackIndex) -> bool {
+        coverage::rebuild_dirty_coverage(self, document, index)
+    }
+
+    fn mark_coverage_dirty(&mut self, start_tick: u32, end_tick: u32) {
+        if self.coverage.is_empty() || end_tick <= start_tick {
+            return;
+        }
+        self.coverage_valid = false;
+        self.coverage_dirty = Some(match self.coverage_dirty {
+            Some((lo, hi)) => (lo.min(start_tick), hi.max(end_tick)),
+            None => (start_tick, end_tick),
+        });
     }
 }
 

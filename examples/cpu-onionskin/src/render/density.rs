@@ -14,6 +14,7 @@ use lumino_midi_loader::MidiDocument;
 use crate::{camera::Camera, model::TrackIndex};
 
 mod coverage;
+mod rebuild;
 mod render;
 
 pub use render::render_overview;
@@ -74,8 +75,10 @@ pub struct DensityPyramid {
     coverage: Vec<coverage::CoverageLevel>,
     /// 覆盖层有效总 tick（文档值或实际最大 end_tick 取大）。
     total_ticks: u32,
-    /// 编辑后覆盖层失效，下一次需要时整建。
+    /// 编辑后覆盖层失效，下一次需要时局部重建。
     coverage_valid: bool,
+    /// 待局部重建的 tick 区间 `[lo, hi)`。
+    coverage_dirty: Option<(u32, u32)>,
 }
 
 impl DensityPyramid {
@@ -172,6 +175,7 @@ impl DensityPyramid {
             coverage,
             total_ticks: coverage_ticks,
             coverage_valid: true,
+            coverage_dirty: None,
         }
     }
 
@@ -236,12 +240,23 @@ impl DensityPyramid {
         (counts + coverage) as f64 / (1024.0 * 1024.0)
     }
 
-    /// 编辑后增量更新热力计数；覆盖层失效（删除时找回下层轨道成本不可控）。
-    pub fn apply_note(&mut self, start_tick: u32, key: u8, delta: i32) {
-        if key as usize >= KEY_COUNT {
+    /// 带 end_tick 的增量更新；覆盖脏区按 `[start_tick, end_tick)` 标记。
+    pub fn apply_note_range(&mut self, start_tick: u32, end_tick: u32, key: u8, delta: i32) {
+        if key as usize >= KEY_COUNT || delta == 0 {
+            return;
+        }
+        let end_tick = end_tick.max(start_tick.saturating_add(1));
+        if end_tick > self.total_ticks {
+            // 覆盖右界已越过：下一次必须整建才能扩 bin。
+            self.coverage_dirty = None;
+            self.coverage_valid = false;
             return;
         }
         self.coverage_valid = false;
+        self.coverage_dirty = Some(match self.coverage_dirty {
+            Some((lo, hi)) => (lo.min(start_tick), hi.max(end_tick)),
+            None => (start_tick, end_tick),
+        });
         for (level_index, level) in self.levels.iter_mut().enumerate() {
             let bin = (start_tick / level.bin_ticks) as usize;
             let Some(cell) = level.cells.get_mut(bin * KEY_COUNT + key as usize) else {
@@ -256,6 +271,11 @@ impl DensityPyramid {
                 self.max_counts[level_index] = self.max_counts[level_index].max(*cell);
             }
         }
+    }
+
+    /// 只重建脏区覆盖单元；没有脏区时返回 `false`（调用方应整建）。
+    pub fn rebuild_dirty_coverage(&mut self, document: &MidiDocument, index: &TrackIndex) -> bool {
+        rebuild::rebuild_dirty_coverage(self, document, index)
     }
 }
 

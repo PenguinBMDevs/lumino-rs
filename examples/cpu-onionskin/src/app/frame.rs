@@ -171,8 +171,13 @@ impl App {
         }
 
         // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
-        // 编辑后覆盖位图失效：只有在当前缩放要用它时才整建，普通缩放不背这个成本。
-        if !self.density.coverage_valid() && self.density.coverage_applicable(&camera) {
+        // 编辑后只重建受影响 tick 区间；没有脏区信息才退回整建。
+        if !self.density.coverage_valid()
+            && self.density.coverage_applicable(&camera)
+            && !self
+                .density
+                .rebuild_dirty_coverage(&self.document, &self.index)
+        {
             self.density = density::DensityPyramid::build(&self.document, self.workers);
         }
         let mode = self.choose_mode(&camera);

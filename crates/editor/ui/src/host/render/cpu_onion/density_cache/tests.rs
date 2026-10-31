@@ -1,6 +1,6 @@
 //! 密度缓存生命周期单测：整建 / 增量 / 失效重建。
 
-use lumino_cpu_onion::CanvasCamera;
+use lumino_cpu_onion::{CanvasCamera, TrackIndex};
 use lumino_editor_state::CpuOnionChange;
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
@@ -34,8 +34,9 @@ fn document() -> MidiDocument {
 
 /// 渲染一次总览，返回 key 125 首列的 alpha（255 = 有密度，0 = 透明）。
 fn alpha(cache: &mut DensityCache, doc_gen: u64, document: &MidiDocument) -> u8 {
+    let index = TrackIndex::build(document);
     let pyramid = cache
-        .ensure(doc_gen, document, 128, 1)
+        .ensure(doc_gen, document, &index, 128, 1)
         .expect("密度金字塔必须可用");
     let camera = camera();
     let mut frame = vec![0u32; (WIDTH * HEIGHT) as usize];
@@ -64,7 +65,7 @@ fn apply_changes_updates_cells_and_rebuilds_stale_coverage() {
     let mut cache = DensityCache::default();
     assert_eq!(alpha(&mut cache, 1, &document), 255);
 
-    // 删除：计数增量已生效，但彩色覆盖位图失效；下一次 ensure 按最新文档整建。
+    // 删除：计数增量已生效，覆盖位图标记脏区；下一次 ensure 只重建脏区间。
     assert!(document.remove_note(1, 0).is_some());
     cache.apply_changes(
         Some(1),
@@ -84,6 +85,13 @@ fn apply_changes_updates_cells_and_rebuilds_stale_coverage() {
         "覆盖位图必须标记失效"
     );
     assert_eq!(alpha(&mut cache, 2, &document), 0, "删除后密度格必须清空");
+    assert!(
+        cache
+            .pyramid
+            .as_ref()
+            .is_some_and(|pyramid| pyramid.coverage_valid()),
+        "脏区局部重建后覆盖层必须恢复可用"
+    );
 
     // 插入：再 +1 恢复。
     assert!(document.insert_note(1, note()));

@@ -215,6 +215,61 @@ fn overview_never_switches_on_empty_document() {
 }
 
 #[test]
+fn dirty_coverage_rebuild_matches_full_after_edit() {
+    let mut before = MidiDocument::empty_with_tracks(3, 480);
+    let removed = NoteEvent::new(0, 2000, 125, 100, 0);
+    let added = NoteEvent::new(100, 300, 124, 100, 0);
+    before.insert_note(0, removed);
+    before.insert_note(1, NoteEvent::new(0, 2000, 125, 100, 1));
+    before.insert_note(2, NoteEvent::new(0, 2000, 125, 100, 2));
+
+    let mut pyramid = DensityPyramid::build(&before, 1, 128);
+    let mut after = before.clone();
+    after.remove_note(0, 0);
+    after.insert_note(0, added);
+    let index = TrackIndex::build(&after);
+    assert!(pyramid.apply_note_range(removed.start_tick, removed.end_tick, 125, -1));
+    assert!(pyramid.apply_note_range(added.start_tick, added.end_tick, 124, 1));
+    assert!(!pyramid.coverage_valid());
+    assert!(
+        pyramid.rebuild_dirty_coverage(&after, &index),
+        "有脏区时必须走局部重建"
+    );
+    assert!(pyramid.coverage_valid());
+
+    let full = DensityPyramid::build(&after, 1, 128);
+    let camera = camera(0.01);
+    let style = NoteStyle::new(3);
+    let mut patched = vec![0u32; (WIDTH * HEIGHT) as usize];
+    let mut rebuilt = patched.clone();
+    let mut scratch = OverviewScratch::default();
+    pyramid.render_coverage_with_scratch(
+        &mut patched,
+        WIDTH,
+        HEIGHT,
+        &camera,
+        &style,
+        0,
+        &[],
+        &mut scratch,
+    );
+    full.render_coverage_with_scratch(
+        &mut rebuilt,
+        WIDTH,
+        HEIGHT,
+        &camera,
+        &style,
+        0,
+        &[],
+        &mut scratch,
+    );
+    assert_eq!(
+        patched, rebuilt,
+        "脏区局部重建必须与整建逐像素一致（含删除后下层轨道回退）"
+    );
+}
+
+#[test]
 fn coverage_render_uses_first_wins_and_second_candidate_for_excluded_track() {
     let mut document = MidiDocument::empty_with_tracks(3, 480);
     // 同一像素格内三条轨：0 最先生效；0 是当前轨时取 1；0/1 都排除时取 2。

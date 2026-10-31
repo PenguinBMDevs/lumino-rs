@@ -272,6 +272,7 @@ impl CpuOnionState {
             self.density.ensure(
                 key.track_notes_gen,
                 snapshot.as_ref(),
+                index.as_ref(),
                 geometry.camera.key_count,
                 worker_bands(),
             )

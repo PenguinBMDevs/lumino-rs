@@ -22,9 +22,9 @@ const BASE_BIN_TICKS: u32 = 8;
 /// 层数：基础 bin × `2^0..=2^10`。
 const LEVELS: usize = 11;
 /// 空轨道槽。
-const EMPTY_TRACK: u16 = u16::MAX;
+pub(super) const EMPTY_TRACK: u16 = u16::MAX;
 /// 空单元：两条轨道槽都为空。
-const EMPTY_CELL: u32 = EMPTY_TRACK as u32 | ((EMPTY_TRACK as u32) << 16);
+pub(super) const EMPTY_CELL: u32 = EMPTY_TRACK as u32 | ((EMPTY_TRACK as u32) << 16);
 
 /// 彩色覆盖单元。
 #[derive(Debug, Clone)]
@@ -45,18 +45,18 @@ impl CoverageLevel {
 }
 
 #[inline]
-fn cell_first(cell: u32) -> u16 {
+pub(super) fn cell_first(cell: u32) -> u16 {
     (cell & 0xFFFF) as u16
 }
 
 #[inline]
-fn cell_second(cell: u32) -> u16 {
+pub(super) fn cell_second(cell: u32) -> u16 {
     (cell >> 16) as u16
 }
 
 /// 加入轨道：保留轨道下标最小的两条。
 #[inline]
-fn add_track(cell: &mut u32, track: u16) {
+pub(super) fn add_track(cell: &mut u32, track: u16) {
     let first = cell_first(*cell);
     if first == EMPTY_TRACK {
         *cell = u32::from(track) | (u32::from(EMPTY_TRACK) << 16);
@@ -73,7 +73,7 @@ fn add_track(cell: &mut u32, track: u16) {
 
 /// 合并两个单元，保留轨道下标最小的两条。
 #[inline]
-fn merge_cell(a: u32, b: u32) -> u32 {
+pub(super) fn merge_cell(a: u32, b: u32) -> u32 {
     let mut candidates = [EMPTY_TRACK; 4];
     let mut len = 0usize;
     for track in [cell_first(a), cell_second(a), cell_first(b), cell_second(b)] {
@@ -130,12 +130,20 @@ pub(super) fn build_coverage(document: &MidiDocument, total_ticks: u32) -> Vec<C
         }
     }
 
+    build_levels_from_base(
+        CoverageLevel {
+            bin_ticks,
+            bins,
+            cells,
+        },
+        KEY_COUNT,
+    )
+}
+
+/// 从基础层重建 2:1 金字塔（构建与脏区局部重建共用）。
+pub(super) fn build_levels_from_base(base: CoverageLevel, keys: usize) -> Vec<CoverageLevel> {
     let mut levels = Vec::with_capacity(LEVELS);
-    levels.push(CoverageLevel {
-        bin_ticks,
-        bins,
-        cells,
-    });
+    levels.push(base);
     while levels.len() < LEVELS {
         let Some(previous) = levels.last() else {
             break;
@@ -144,11 +152,11 @@ pub(super) fn build_coverage(document: &MidiDocument, total_ticks: u32) -> Vec<C
             break;
         }
         let next_bins = previous.bins.div_ceil(2);
-        let mut next_cells = vec![EMPTY_CELL; next_bins.saturating_mul(KEY_COUNT)];
+        let mut next_cells = vec![EMPTY_CELL; next_bins.saturating_mul(keys)];
         for bin in 0..next_bins {
-            for key in 0..KEY_COUNT {
+            for key in 0..keys {
                 let cell = merge_cell(previous.get(bin * 2, key), previous.get(bin * 2 + 1, key));
-                let index = bin.saturating_mul(KEY_COUNT).saturating_add(key);
+                let index = bin.saturating_mul(keys).saturating_add(key);
                 if let Some(slot) = next_cells.get_mut(index) {
                     *slot = cell;
                 }
