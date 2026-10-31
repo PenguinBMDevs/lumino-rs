@@ -18,13 +18,20 @@ use crate::Editor;
 use super::{ShapeItem, source_from_model, sym_reject_message};
 
 impl Editor {
-    /// 027 默认路径：沿 x 复制 3 份（Bake 前/后同口径）
-    pub(crate) fn default_copy_along_params(model: &ShapeModel) -> Option<CopyPathParams> {
+    /// 027 默认路径：固定半拍步长、复制 4 份（原图 + 4 = 5 个），Bake 前/后同口径。
+    ///
+    /// `CopyMode::Count { n }` 的落点是 `i / (n + 1)`，所以路径总长取
+    /// `step * (n + 1)` 才能让相邻副本正好相隔 `step`。
+    pub(crate) fn default_copy_along_params(
+        model: &ShapeModel,
+        ppq: f64,
+    ) -> Option<CopyPathParams> {
+        const COPIES: u32 = 4;
         let bounds = model.geometry.bounds()?;
-        let width = (bounds.2 - bounds.0).max(1.0);
+        let step = (ppq * 0.5).max(1.0);
         Some(CopyPathParams {
-            pts: vec![[width * 2.0, 0.0]],
-            mode: CopyMode::Count { n: 3 },
+            pts: vec![[(step * f64::from(COPIES + 1)) as f32, 0.0]],
+            mode: CopyMode::Count { n: COPIES },
             grp: Some([bounds.0, bounds.1]),
             ..CopyPathParams::default()
         })
@@ -219,7 +226,7 @@ impl Editor {
         self.replace_selected_with_many(items)
     }
 
-    /// 027：选中一个图形，沿默认路径复制 3 份
+    /// 027：选中一个图形，沿默认路径复制 4 份（半拍步长，原图 + 4 = 5 个）
     ///
     /// 副本是 `ShapeOp::CopyAlong` 这个 fx 页的产物：op 必须写回模型，
     /// 否则后续 `edit_shape` 按模型重生成时会把副本抹掉（DRAW-027 验收）。
@@ -230,7 +237,8 @@ impl Editor {
         let Some((drawn_id, _, mut model)) = self.selected_model_for_edit() else {
             return false;
         };
-        let Some(params) = Self::default_copy_along_params(&model) else {
+        let ppq = f64::from(self.editor_state.view.ppq);
+        let Some(params) = Self::default_copy_along_params(&model, ppq) else {
             return false;
         };
         let Some(selected) = self
@@ -243,7 +251,6 @@ impl Editor {
         else {
             return false;
         };
-        let ppq = f64::from(self.editor_state.view.ppq);
         let notes = copy_along_apply(&selected.notes, &params, ppq);
         model.ops.push(ShapeOp::CopyAlong(params));
         // 替换旧模型：清 id 让 ShapeStore 分配新 id，避免与刚标记删除的旧条目同 id

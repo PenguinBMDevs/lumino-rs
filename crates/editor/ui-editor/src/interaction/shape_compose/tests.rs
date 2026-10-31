@@ -3,7 +3,7 @@
 use super::*;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeOp};
+use lumino_core::shape::{CopyMode, ShapeGeometry, ShapeKind, ShapeOp};
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef, ShapeNote};
 
 fn shape_note(tick: f32, key: u16) -> ShapeNote {
@@ -358,8 +358,8 @@ fn test_copy_along_adds_copies() {
             .expect("选中")
             .notes
             .len(),
-        4,
-        "原音符 + 3 副本"
+        5,
+        "原音符 + 4 副本"
     );
 
     // 027：fx 页必须落盘；按模型重生成（移动形状）后副本仍在
@@ -388,7 +388,7 @@ fn test_copy_along_adds_copies() {
     assert!(editor.edit_shape(model_id, model), "按模型重估应成功");
     assert_eq!(
         editor.editor_state.shape_store.notes_of(model_id).len(),
-        4,
+        5,
         "移动形状重生成后副本不应消失"
     );
 }
@@ -598,6 +598,30 @@ fn setup_single_pending_curve(editor: &mut Editor) {
 }
 
 #[test]
+fn test_default_copy_along_uses_half_beat_step_and_four_copies() {
+    let mut model = lumino_core::shape::ShapeModel::new(0, 1, ShapeKind::Polyline, 1.0);
+    model.geometry = ShapeGeometry::from_points(vec![(0.0, 60.0), (40.0, 60.0)]);
+
+    let params = Editor::default_copy_along_params(&model, 480.0).expect("应有路径参数");
+    assert_eq!(params.mode, CopyMode::Count { n: 4 });
+    assert_eq!(
+        params.pts,
+        vec![[1200.0, 0.0]],
+        "路径长 = 半拍 × 5 段，Count 落点才等距"
+    );
+
+    let notes = [shape_note(0.0, 60)];
+    let copies = lumino_editor_state::shape_ops::copy_along_copies(&notes, &params, 480.0);
+    let mut ticks: Vec<f32> = copies.iter().map(|note| note.tick).collect();
+    ticks.sort_by(f32::total_cmp);
+    assert_eq!(
+        ticks,
+        vec![240.0, 480.0, 720.0, 960.0],
+        "半拍步长、4 份副本（总 5 个）"
+    );
+}
+
+#[test]
 fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
     let mut editor = empty_editor();
     setup_single_pending_rect(&mut editor);
@@ -615,6 +639,15 @@ fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
     );
     let pending_notes = composed.notes.len();
     assert!(pending_notes > 0);
+    let mut ticks: Vec<f32> = composed.notes.iter().map(|note| note.tick).collect();
+    ticks.sort_by(f32::total_cmp);
+    ticks.dedup();
+    let step = f32::from(editor.editor_state.view.ppq) * 0.5;
+    assert_eq!(
+        ticks,
+        vec![0.0, step, step * 2.0, step * 3.0, step * 4.0],
+        "original + 4 copies at half-beat steps"
+    );
     assert!(
         editor.editor_state.shape_tool.shapes.is_empty(),
         "来源应从 owning tool 摘除"

@@ -52,6 +52,7 @@ impl Editor {
             return false;
         }
         let track = self.editor_state.data.current_track;
+        let ppq = f64::from(self.editor_state.view.ppq);
         let mut sources = Vec::with_capacity(refs.len());
         let mut models = Vec::with_capacity(refs.len());
         let mut notes = Vec::with_capacity(refs.len());
@@ -122,7 +123,7 @@ impl Editor {
                 let Some(mut model) = models.pop() else {
                     return false;
                 };
-                let Some(params) = Self::default_copy_along_params(&model) else {
+                let Some(params) = Self::default_copy_along_params(&model, ppq) else {
                     return false;
                 };
                 model.ops.push(ShapeOp::CopyAlong(params));
