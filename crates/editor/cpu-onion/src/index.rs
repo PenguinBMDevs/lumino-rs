@@ -47,6 +47,9 @@ pub struct TrackIndex {
     /// 每轨最大音符长度（tick）。
     pub max_len: Vec<u32>,
     /// 音符长度第 10 百分位（至少 1 tick）；0 表示空文档。
+    ///
+    /// 总览 LOD 用它判断短音符是否**真正亚像素**（<1px）；1px 及以上仍画
+    /// 原始音符，避免高缩放被误切热力图。
     pub short_note_ticks: u32,
     /// 超过 [`LOOKBACK_TICKS`] 的音符（按轨，按 `start_tick` 升序）。
     pub long_notes: Vec<Vec<NoteEvent>>,

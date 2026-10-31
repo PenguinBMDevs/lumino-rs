@@ -23,8 +23,8 @@ impl CpuOnionRenderer {
         self.ensure_frame_size();
         compose::shift(&mut self.frame, &mut self.output, width, height, dx);
         if output_missing {
-            // `take_output` 后内部帧仍在、输出帧被移走：平移内部帧后必须
-            // 从它重建完整输出，否则窄条渲染只会留下新露出的那一列。
+            // 输出帧缺失（跨档换缓冲 / 尺寸变化）时内部帧仍在、输出帧被重置：
+            // 平移内部帧后必须从它重建完整输出，否则窄条渲染只会留下新露出的那一列。
             compose::write_output(
                 &self.frame,
                 width as usize,
@@ -40,7 +40,7 @@ impl CpuOnionRenderer {
         }
     }
 
-    /// 输出帧缺失时从内部帧重建；区域/窄条路径在 `take_output` 之后调用。
+    /// 输出帧缺失时从内部帧重建；区域/窄条路径在尺寸变化后调用。
     pub(super) fn ensure_output_current(&mut self) {
         let needed = self.width as usize * self.height as usize * 4;
         let missing = self.output.width != self.width

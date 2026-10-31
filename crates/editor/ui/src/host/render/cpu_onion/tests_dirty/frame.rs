@@ -153,6 +153,114 @@ fn deactivate_keeps_version_monotonic() {
 ///
 /// 只改 `scroll` 的布局测试无法覆盖这条：缩放同时改变 `zoom_x` / `zoom_y`，
 /// 旧帧若被复用，音符会停在旧像素位置，表现为「缩放后音符与网格错位」。
+/// 从总览缩放到 Exact：必须换掉整帧热力图，回到真实音符像素。
+///
+/// 这是 LOD 与纹理刷新的交界：低缩放走 Overview，高缩放第一帧必须
+/// `mode_changed → Full`，且新帧不能复用旧热力图纹理。
+#[test]
+fn one_tick_notes_stay_exact_at_high_zoom() {
+    let mut document = lumino_midi_model::MidiDocument::empty_with_tracks(2, 480);
+    document.insert_note(1, lumino_midi_model::NoteEvent::new(10, 11, 121, 100, 0));
+    let mut state = CpuOnionState::default();
+    let mut zoomed = key(1, 0);
+    zoomed.geometry.camera.zoom_x = 1.0;
+    zoomed.geometry.camera.zoom_y = 20.0;
+    let frame = state
+        .update(zoomed, &document, &[false; 2], None, None)
+        .frame
+        .expect("高缩放 Exact 帧应生成");
+
+    assert!(
+        alpha(&frame, 10, note_row(121)) > 0,
+        "1px 宽短音符在 1px/tick 下必须按 Exact 画出"
+    );
+    assert_eq!(
+        alpha(&frame, 40, note_row(121)),
+        0,
+        "不得退化成覆盖整列的密度热力图"
+    );
+}
+
+#[test]
+fn overview_to_exact_with_many_tracks_matches_full_render() {
+    let mut document = lumino_midi_model::MidiDocument::empty_with_tracks(8, 480);
+    for track in 0..8usize {
+        for index in 0..300u32 {
+            let start = index * 10 + track as u32;
+            document.insert_note(
+                track,
+                lumino_midi_model::NoteEvent::new(
+                    start,
+                    start + 10,
+                    40 + track as u8 * 5,
+                    100,
+                    track as u8,
+                ),
+            );
+        }
+    }
+    let mut state = CpuOnionState::default();
+    let mut overview_key = key(1, 0);
+    overview_key.geometry.camera.zoom_x = 0.01;
+    state
+        .update(overview_key, &document, &[false; 8], None, None)
+        .frame
+        .expect("总览帧应生成");
+
+    let mut exact_key = key(1, 0);
+    exact_key.geometry.camera.zoom_x = 1.0;
+    let exact = state
+        .update(exact_key, &document, &[false; 8], None, None)
+        .frame
+        .expect("Exact 帧应生成");
+    let mut reference = CpuOnionState::default();
+    let expected = reference
+        .update(exact_key, &document, &[false; 8], None, None)
+        .frame
+        .expect("参考帧应生成");
+    assert_eq!(
+        exact.pixels, expected.pixels,
+        "多轨/多音符下退出总览仍必须与冷启动 Exact 一致"
+    );
+}
+
+#[test]
+fn overview_to_exact_replaces_heatmap_with_notes() {
+    let document = document();
+    let mut state = CpuOnionState::default();
+    let mut overview_key = key(1, 0);
+    overview_key.geometry.camera.zoom_x = 0.01;
+    let overview = state
+        .update(overview_key, &document, &MUTED, None, None)
+        .frame
+        .expect("总览帧应生成");
+
+    let mut exact_key = key(1, 0);
+    exact_key.geometry.camera.zoom_x = 1.0;
+    let output = state.update(exact_key, &document, &MUTED, None, None);
+    assert!(output.rebuilt, "退出总览必须整帧重绘");
+    let frame = output.frame.expect("Exact 帧应生成");
+
+    let mut reference = CpuOnionState::default();
+    let expected = reference
+        .update(exact_key, &document, &MUTED, None, None)
+        .frame
+        .expect("参考 Exact 帧应生成");
+    assert_eq!(
+        frame.pixels, expected.pixels,
+        "退出总览后必须与冷启动 Exact 逐像素一致，不得残留热力图"
+    );
+    assert!(
+        !std::sync::Arc::ptr_eq(&overview.pixels, &frame.pixels),
+        "跨档必须换新像素缓冲，不能复用热力图纹理"
+    );
+    assert_ne!(frame.version, overview.version, "换档必须推进纹理版本");
+    assert!(
+        alpha(&frame, 50, note_row(121)) > 0,
+        "音符必须画回 key=121 的 Exact 行"
+    );
+}
+
 #[test]
 fn zoom_redraws_frame_at_new_camera_positions() {
     let document = document();

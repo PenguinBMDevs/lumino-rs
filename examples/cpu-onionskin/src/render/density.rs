@@ -9,8 +9,8 @@
 //! **按缩放比例，不按同屏音符数量**。以下任一条件成立时切密度热力图：
 //!
 //! - 1/16 音符宽度 `zoom_x × (measure_ticks / 16)` 低于 [`OVERVIEW_MIN_NOTE_PX`]；
-//! - **第 10 百分位短音符宽度** `zoom_x × short_note_ticks` 低于 `2px`
-//!   （黑乐谱里 1-tick 音符在低缩放下会退化成纯扫描，逐音符已无意义）；
+//! - 第 10 百分位短音符宽度 `zoom_x × short_note_ticks` 低于
+//!   [`SHORT_NOTE_MIN_PX`]（**真正亚像素**才切；1px 及以上保留原始音符）；
 //! - 单键行高 `zoom_y` 低于 [`OVERVIEW_MIN_NOTE_PX`]。
 //!
 //! `measure_ticks = PPQ × 4`，因此阈值随 PPQ 自适应；空文档不切换。
@@ -31,10 +31,8 @@ use crate::{
 /// 单键行高低于 2px 时，Exact 已经退化成亚像素线条/纯描边，热力图更可读。
 pub const OVERVIEW_MIN_NOTE_PX: f32 = 2.0;
 
-/// 短音符（第 10 百分位）仍能占满的最小物理像素宽度。
-///
-/// 与 1/16 阈值同为 2px：低于 2px 时 Exact 已退化成 1px 线条，热力图更可读。
-pub const SHORT_NOTE_MIN_PX: f32 = 2.0;
+/// 短音符（第 10 百分位）**真正亚像素**的阈值：低于 1px 才切总览。
+pub const SHORT_NOTE_MIN_PX: f32 = 1.0;
 
 /// 是否应切到总览密度 LOD（**只看缩放与内容长度，不看音符数量**）。
 ///

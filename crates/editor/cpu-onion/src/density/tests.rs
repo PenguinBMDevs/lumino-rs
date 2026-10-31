@@ -139,7 +139,7 @@ fn apply_note_outside_layout_requires_rebuild() {
 }
 
 #[test]
-fn overview_switches_when_short_notes_are_subpixel() {
+fn short_note_percentile_only_switches_when_truly_subpixel() {
     let mut document = MidiDocument::empty_with_tracks(2, 480);
     document.insert_note(1, NoteEvent::new(0, 2000, 60, 100, 0));
     // 1-tick 短音符进入第 10 百分位。
@@ -150,12 +150,17 @@ fn overview_switches_when_short_notes_are_subpixel() {
     let mut camera = camera(0.5);
     assert!(
         uses_overview(&index, &camera),
-        "短音符 0.5px 时逐音符只会退化成整曲扫描，必须切总览"
+        "短音符 0.5px 真正亚像素，允许切总览"
     );
     camera.zoom_x = 1.0;
-    assert!(uses_overview(&index, &camera), "短音符 1px 仍低于 2px 阈值");
+    assert!(
+        !uses_overview(&index, &camera),
+        "1px/tick 的短音符必须画原始音符，不能切热度图"
+    );
     camera.zoom_x = SHORT_NOTE_MIN_PX;
-    assert!(!uses_overview(&index, &camera), "短音符 2px 仍保持 Exact");
+    assert!(!uses_overview(&index, &camera), "1px 边界仍保持 Exact");
+    camera.zoom_x *= 0.999;
+    assert!(uses_overview(&index, &camera), "略低于 1px 才切总览");
 }
 
 #[test]

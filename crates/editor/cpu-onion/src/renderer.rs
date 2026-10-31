@@ -63,6 +63,8 @@ pub struct CpuOnionRenderer {
     simd: SimdLevel,
     visible_notes: u64,
     overview_scratch: crate::density::OverviewScratch,
+    /// 上一帧是否总览档；跨档时丢弃旧输出缓冲，杜绝热力图残影。
+    last_overview: Option<bool>,
 }
 
 impl CpuOnionRenderer {
@@ -94,6 +96,7 @@ impl CpuOnionRenderer {
             simd: SimdLevel::detect(),
             visible_notes: 0,
             overview_scratch: crate::density::OverviewScratch::default(),
+            last_overview: None,
         }
     }
 
@@ -102,7 +105,7 @@ impl CpuOnionRenderer {
         let expected_pixels = (width as usize).checked_mul(height as usize);
         if self.width == width && self.height == height && expected_pixels == Some(self.frame.len())
         {
-            // 输出帧可能已被 `take_output` 取走；尺寸没变时**不能**清内部帧，
+            // 输出帧可能因跨档/尺寸变化失效；尺寸没变时**不能**清内部帧，
             // 否则下一次窄条/区域重绘会从空帧重建。
             return;
         }
@@ -111,6 +114,7 @@ impl CpuOnionRenderer {
         self.frame = vec![0; expected_pixels.unwrap_or(0)];
         self.output = CpuFrame::default();
         self.visible_notes = 0;
+        self.last_overview = None;
     }
 
     /// 调色板切换后重建每轨颜色缓存。
@@ -165,10 +169,18 @@ impl CpuOnionRenderer {
 
         // 总览分支自己覆盖整帧（每一行都写入，无密度处写透明），不必先清两次
         // （`clear_frame` 会同时清内部帧 + 输出帧，1080p 白付 ~16MB 写入）。
-        if let Some(density) = density
-            && density.key_count() == camera.key_count
-            && crate::density::uses_overview(&index, camera)
-        {
+        //
+        // 跨档（Overview ↔ Exact）必须换一块全新输出缓冲：旧帧可能仍被 UI /
+        // GPU 上传侧持有，共享 Arc 时只靠 COW 也可能让下游拿错一帧。换缓冲 +
+        // 版本递增是纹理刷新的双保险。
+        let overview = density.is_some_and(|density| {
+            density.key_count() == camera.key_count && crate::density::uses_overview(&index, camera)
+        });
+        if self.last_overview != Some(overview) {
+            self.output = CpuFrame::new(width, height);
+            self.last_overview = Some(overview);
+        }
+        if overview && let Some(density) = density {
             let estimate = crate::density::overview_note_estimate(&index, camera);
             self.render_overview_full(camera, density, estimate);
             return &self.output;

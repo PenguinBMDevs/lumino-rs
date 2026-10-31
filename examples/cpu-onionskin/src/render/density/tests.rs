@@ -24,18 +24,18 @@ fn camera(zoom_x: f32) -> Camera {
 }
 
 #[test]
-fn overview_switches_when_short_notes_are_subpixel() {
-    // 黑乐谱短音符：1 tick。0.5 / 1 px/tick 均低于 2px，必须切总览；
-    // 2px/tick 才恢复逐音符绘制。
+fn overview_switches_only_when_short_notes_are_subpixel() {
+    // 黑乐谱短音符 1 tick：只有真正亚像素（<1px）才切总览；1px/tick 必须
+    // 保留原始音符，否则高缩放会被误显示成热度图。
     let mut index = index(1, 1920);
     index.short_note_ticks = 1;
     let mut camera = camera(0.5);
     camera.zoom_y = 20.0;
-    assert!(uses_overview(&index, &camera), "短音符 0.5px 必须切总览");
-    camera.zoom_x = 1.0;
-    assert!(uses_overview(&index, &camera), "短音符 1px 仍低于 2px 阈值");
+    assert!(uses_overview(&index, &camera), "短音符 0.5px 应切总览");
     camera.zoom_x = SHORT_NOTE_MIN_PX;
-    assert!(!uses_overview(&index, &camera), "短音符 2px 仍保持 Exact");
+    assert!(!uses_overview(&index, &camera), "短音符 1px 必须保持 Exact");
+    camera.zoom_x *= 0.999;
+    assert!(uses_overview(&index, &camera), "略低于 1px 才切总览");
 }
 
 #[test]
