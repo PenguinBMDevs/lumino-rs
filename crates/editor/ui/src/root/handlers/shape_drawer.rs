@@ -110,6 +110,13 @@ impl Root {
                     _ => state.status = Some("缩放百分比需在 25–200".to_string()),
                 }
             }
+            ShapeDrawerAction::ToggleAnchorBend => {
+                if state.doc.borrow_mut().toggle_selected_anchor_bend() {
+                    state.status = Some("已切换锚点弯折".to_string());
+                } else {
+                    state.status = Some("请先在 Select 工具下选中曲线锚点".to_string());
+                }
+            }
         }
     }
 }

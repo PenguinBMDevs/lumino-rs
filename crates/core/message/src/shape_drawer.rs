@@ -52,4 +52,6 @@ pub enum ShapeDrawerAction {
     SetScalePercent(String),
     /// 应用抽屉内缩放
     ApplyScale,
+    /// 切换选中锚点的 Smooth/Corner
+    ToggleAnchorBend,
 }

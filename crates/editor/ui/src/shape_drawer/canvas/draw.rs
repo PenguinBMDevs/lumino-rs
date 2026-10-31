@@ -2,7 +2,7 @@
 
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Text, path};
-use lumino_core::shape::{AreaMap, MAP_CELLS};
+use lumino_core::shape::{AnchorBend, AreaMap, MAP_CELLS, StrokeKind};
 
 use crate::shape_drawer::doc::{DrawerDoc, DrawerTool, DrawerView};
 use crate::{Renderer, Theme};
@@ -164,6 +164,9 @@ pub(super) fn draw_canvas(
             doc.is_selected(index),
         );
     }
+    if doc.tool == DrawerTool::Select {
+        draw_anchors(frame, doc, bounds, text);
+    }
     if doc.strokes.is_empty() {
         frame.fill_text(Text {
             content: "Draw a stroke, or pick a tool on the left".to_string(),
@@ -235,6 +238,53 @@ fn area_colour(colour: u8) -> Color {
     Color::from_rgba(r, g, b, 0.32)
 }
 
+/// 选中 stroke 的锚点/控制柄（仅在 Select 工具下绘制）
+fn draw_anchors(frame: &mut Frame<Renderer>, doc: &DrawerDoc, bounds: Rectangle, text: Color) {
+    let selected_color = Color::from_rgb(1.0, 0.72, 0.2);
+    let handle_color = Color::from_rgba(0.8, 0.85, 0.95, 0.85);
+    for &stroke_index in &doc.selection {
+        let Some(stroke) = doc.strokes.get(stroke_index) else {
+            continue;
+        };
+        for (anchor_index, anchor) in stroke.anchors.iter().enumerate() {
+            if stroke.kind == StrokeKind::Curve && anchor.bend != AnchorBend::Corner {
+                for handle in [anchor.in_handle_abs(), anchor.out_handle_abs()] {
+                    if handle == anchor.pos {
+                        continue;
+                    }
+                    let from = unit_to_local(anchor.pos, bounds, doc.view);
+                    let to = unit_to_local(handle, bounds, doc.view);
+                    let mut builder = path::Builder::new();
+                    builder.move_to(from);
+                    builder.line_to(to);
+                    frame.stroke(
+                        &builder.build(),
+                        canvas::Stroke::default()
+                            .with_color(handle_color)
+                            .with_width(1.0),
+                    );
+                    frame.fill_rectangle(
+                        Point::new(to.x - 2.0, to.y - 2.0),
+                        Size::new(4.0, 4.0),
+                        handle_color,
+                    );
+                }
+            }
+            let pos = unit_to_local(anchor.pos, bounds, doc.view);
+            let color = if doc.selected_anchor == Some((stroke_index, anchor_index)) {
+                selected_color
+            } else {
+                text
+            };
+            frame.fill_rectangle(
+                Point::new(pos.x - 3.0, pos.y - 3.0),
+                Size::new(6.0, 6.0),
+                color,
+            );
+        }
+    }
+}
+
 pub(super) fn draw_stroke(
     frame: &mut Frame<Renderer>,
     stroke: &lumino_core::shape::Stroke,
@@ -253,11 +303,32 @@ pub(super) fn draw_stroke(
         for window in stroke.anchors.windows(2) {
             let a = window[0];
             let b = window[1];
-            builder.bezier_curve_to(
-                unit_to_local(a.out_handle_abs(), bounds, view),
-                unit_to_local(b.in_handle_abs(), bounds, view),
-                unit_to_local(b.pos, bounds, view),
-            );
+            if a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner {
+                builder.line_to(unit_to_local(b.pos, bounds, view));
+            } else {
+                builder.bezier_curve_to(
+                    unit_to_local(a.out_handle_abs(), bounds, view),
+                    unit_to_local(b.in_handle_abs(), bounds, view),
+                    unit_to_local(b.pos, bounds, view),
+                );
+            }
+        }
+    } else if stroke.kind == lumino_core::shape::StrokeKind::Arc && stroke.anchors.len() >= 3 {
+        let a = stroke.anchors[0].pos;
+        let b = stroke.anchors[1].pos;
+        let c = stroke.anchors[2].pos;
+        let points = lumino_editor_state::shape_ops::arc_points_scaled(
+            (a.0 as f64, a.1 as f64),
+            (b.0 as f64, b.1 as f64),
+            (c.0 as f64, c.1 as f64),
+            1.0,
+        );
+        for point in points.iter().skip(1) {
+            builder.line_to(unit_to_local(
+                (point.0 as f32, point.1 as f32),
+                bounds,
+                view,
+            ));
         }
     } else {
         for anchor in &stroke.anchors[1..] {
@@ -300,7 +371,7 @@ pub(super) fn unit_side(bounds: Rectangle, view: DrawerView) -> f32 {
     width.min(height) * 0.85 * view.zoom.max(0.25)
 }
 
-fn unit_to_local(unit: (f32, f32), bounds: Rectangle, view: DrawerView) -> Point {
+pub(super) fn unit_to_local(unit: (f32, f32), bounds: Rectangle, view: DrawerView) -> Point {
     let rect = unit_rect(bounds, view);
     Point::new(rect.x + rect.width * unit.0, rect.y + rect.height * unit.1)
 }

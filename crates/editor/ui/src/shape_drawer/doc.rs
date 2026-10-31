@@ -7,11 +7,16 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use lumino_core::shape::{AreaMap, AreaSpot, ShapeDrawing, Stroke, StrokeRole};
+use lumino_core::shape::{
+    AnchorBend, AreaMap, AreaSpot, ShapeDrawing, Stroke, StrokeKind, StrokeRole,
+};
+use lumino_editor_state::shape_ops::arc_points_scaled;
 
+pub mod anchor_edit;
 mod areas;
 pub mod draft;
 mod transform;
+pub use anchor_edit::{AnchorDrag, AnchorPart};
 pub use draft::Draft;
 
 /// 抽屉工具
@@ -109,6 +114,8 @@ pub struct DrawerDoc {
     pub strokes: Vec<Stroke>,
     /// 选中的 stroke 下标
     pub selection: BTreeSet<usize>,
+    /// 当前选中的锚点（stroke 下标, anchor 下标）；DRAW-033B1a 落笔后编辑
+    pub selected_anchor: Option<(usize, usize)>,
     /// 与 strokes 等长的角色
     pub roles: Vec<StrokeRole>,
     /// 归一化区域点
@@ -135,6 +142,7 @@ impl Default for DrawerDoc {
             tool: DrawerTool::default(),
             strokes: Vec::new(),
             selection: BTreeSet::new(),
+            selected_anchor: None,
             roles: Vec::new(),
             areas: Vec::new(),
             area_mode: false,
@@ -155,6 +163,7 @@ impl DrawerDoc {
         self.tool = tool;
         if tool != DrawerTool::Select {
             self.selection.clear();
+            self.selected_anchor = None;
         }
     }
 
@@ -253,6 +262,7 @@ impl DrawerDoc {
 
     /// 点选最近的 stroke；命中返回 true
     pub fn select_at(&mut self, point: (f32, f32), tolerance: f32) -> bool {
+        self.selected_anchor = None;
         let mut best: Option<(usize, f32)> = None;
         for (index, stroke) in self.strokes.iter().enumerate() {
             let distance = stroke_distance(stroke, point);
@@ -293,6 +303,7 @@ impl DrawerDoc {
         self.roles.clear();
         self.areas.clear();
         self.selection.clear();
+        self.selected_anchor = None;
         true
     }
 
@@ -305,6 +316,7 @@ impl DrawerDoc {
             self.roles = vec![StrokeRole::default(); self.strokes.len()];
         }
         self.selection.clear();
+        self.selected_anchor = None;
         self.undo.clear();
         self.redo.clear();
         self.dirty = false;
@@ -338,6 +350,8 @@ pub struct DrawerInteraction {
     pub pan_start: Option<(f32, f32)>,
     /// Shift 是否按下（Rect/Circle 约束正方形/正圆）
     pub shift: bool,
+    /// 当前锚点/控制柄拖动
+    pub anchor_drag: Option<AnchorDrag>,
 }
 
 fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
@@ -350,10 +364,63 @@ fn stroke_distance(stroke: &Stroke, point: (f32, f32)) -> f32 {
     if anchors.len() == 1 {
         return distance(anchors[0].pos, point);
     }
+    if stroke.kind == StrokeKind::Curve {
+        for window in anchors.windows(2) {
+            let a = window[0];
+            let b = window[1];
+            if a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner {
+                best = best.min(segment_distance(a.pos, b.pos, point));
+                continue;
+            }
+            let c1 = a.out_handle_abs();
+            let c2 = b.in_handle_abs();
+            let mut previous = a.pos;
+            for step in 1..=16 {
+                let t = step as f32 / 16.0;
+                let current = bezier_point(a.pos, c1, c2, b.pos, t);
+                best = best.min(segment_distance(previous, current, point));
+                previous = current;
+            }
+        }
+        return best;
+    }
+    if stroke.kind == StrokeKind::Arc && anchors.len() >= 3 {
+        let points = arc_points_scaled(
+            (anchors[0].pos.0 as f64, anchors[0].pos.1 as f64),
+            (anchors[1].pos.0 as f64, anchors[1].pos.1 as f64),
+            (anchors[2].pos.0 as f64, anchors[2].pos.1 as f64),
+            1.0,
+        );
+        let mut previous = (points[0].0 as f32, points[0].1 as f32);
+        for arc_point in points.iter().skip(1) {
+            let current = (arc_point.0 as f32, arc_point.1 as f32);
+            best = best.min(segment_distance(previous, current, point));
+            previous = current;
+        }
+        return best;
+    }
     for window in anchors.windows(2) {
         best = best.min(segment_distance(window[0].pos, window[1].pos, point));
     }
     best
+}
+
+fn bezier_point(
+    a: (f32, f32),
+    c1: (f32, f32),
+    c2: (f32, f32),
+    b: (f32, f32),
+    t: f32,
+) -> (f32, f32) {
+    let mt = 1.0 - t;
+    let w0 = mt * mt * mt;
+    let w1 = 3.0 * mt * mt * t;
+    let w2 = 3.0 * mt * t * t;
+    let w3 = t * t * t;
+    (
+        a.0 * w0 + c1.0 * w1 + c2.0 * w2 + b.0 * w3,
+        a.1 * w0 + c1.1 * w1 + c2.1 * w2 + b.1 * w3,
+    )
 }
 
 fn segment_distance(a: (f32, f32), b: (f32, f32), p: (f32, f32)) -> f32 {

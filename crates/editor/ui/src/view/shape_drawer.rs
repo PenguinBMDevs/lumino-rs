@@ -8,6 +8,7 @@ use iced_widget::canvas::Canvas;
 use iced_widget::{
     MouseArea, Stack, button, column, container, row, scrollable, space, text, text_input,
 };
+use lumino_core::shape::{AnchorBend, StrokeKind};
 
 use crate::message::ShapeDrawerAction;
 use crate::shape_drawer::canvas::ShapeDrawerCanvas;
@@ -136,6 +137,27 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     ]
     .spacing(4);
 
+    let anchor_bend = {
+        let doc = state.doc.borrow();
+        doc.selected_anchor.and_then(|(stroke, anchor)| {
+            let stroke = doc.strokes.get(stroke)?;
+            if stroke.kind != StrokeKind::Curve {
+                return None;
+            }
+            stroke.anchors.get(anchor).map(|anchor| anchor.bend)
+        })
+    };
+    let bend_control: Element = match anchor_bend {
+        Some(bend) => button(if bend == AnchorBend::Corner {
+            "Bend: Corner"
+        } else {
+            "Bend: Smooth"
+        })
+        .on_press(Message::ShapeDrawer(ShapeDrawerAction::ToggleAnchorBend))
+        .into(),
+        None => space().into(),
+    };
+
     let panel = container(
         column![
             text("Shape Library").size(16).color(panel_text),
@@ -150,6 +172,7 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
             warning,
             insert_size,
             scale_row,
+            bend_control,
             button("Insert")
                 .width(Length::Fill)
                 .on_press(Message::ShapeDrawer(ShapeDrawerAction::Insert)),

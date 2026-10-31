@@ -11,15 +11,74 @@ use iced_core::mouse;
 use iced_core::{Point, Rectangle, keyboard::key};
 use iced_widget::canvas::{self, Frame, Geometry, Program};
 
-use crate::shape_drawer::doc::{Draft, DrawerDoc, DrawerInteraction, DrawerTool};
+use crate::shape_drawer::doc::{
+    AnchorDrag, AnchorPart, Draft, DrawerDoc, DrawerInteraction, DrawerTool, DrawerView,
+};
 use crate::{Message, Renderer, Theme};
 
 use draw::{
     TOOLBAR_WIDTH, ToolbarAction, draw_canvas, draw_stroke, draw_toolbar, local_to_unit,
-    toolbar_hit, unit_side,
+    toolbar_hit, unit_side, unit_to_local,
 };
 
 mod draw;
+
+use lumino_core::shape::{AnchorBend, StrokeKind};
+
+/// 命中选中 stroke 的锚点/控制柄（屏幕像素容差）
+fn hit_anchor(
+    doc: &DrawerDoc,
+    local: Point,
+    bounds: Rectangle,
+    view: DrawerView,
+) -> Option<(usize, usize, AnchorPart)> {
+    const TOLERANCE: f32 = 6.0;
+    let mut best: Option<(f32, usize, usize, AnchorPart)> = None;
+    for &stroke_index in &doc.selection {
+        let Some(stroke) = doc.strokes.get(stroke_index) else {
+            continue;
+        };
+        for (anchor_index, anchor) in stroke.anchors.iter().enumerate() {
+            let pos = unit_to_local(anchor.pos, bounds, view);
+            let distance = ((local.x - pos.x).powi(2) + (local.y - pos.y).powi(2)).sqrt();
+            if distance <= TOLERANCE && best.is_none_or(|(current, ..)| distance < current) {
+                best = Some((distance, stroke_index, anchor_index, AnchorPart::Pos));
+            }
+        }
+    }
+    if best.is_some() {
+        return best.map(|(_, s, a, part)| (s, a, part));
+    }
+    for &stroke_index in &doc.selection {
+        let Some(stroke) = doc.strokes.get(stroke_index) else {
+            continue;
+        };
+        if stroke.kind != StrokeKind::Curve {
+            continue;
+        }
+        for (anchor_index, anchor) in stroke.anchors.iter().enumerate() {
+            if anchor.bend == AnchorBend::Corner {
+                continue;
+            }
+            for part in [AnchorPart::In, AnchorPart::Out] {
+                let handle = match part {
+                    AnchorPart::In => anchor.in_handle_abs(),
+                    AnchorPart::Out => anchor.out_handle_abs(),
+                    AnchorPart::Pos => continue,
+                };
+                if handle == anchor.pos {
+                    continue;
+                }
+                let screen = unit_to_local(handle, bounds, view);
+                let distance = ((local.x - screen.x).powi(2) + (local.y - screen.y).powi(2)).sqrt();
+                if distance <= TOLERANCE && best.is_none_or(|(current, ..)| distance < current) {
+                    best = Some((distance, stroke_index, anchor_index, part));
+                }
+            }
+        }
+    }
+    best.map(|(_, s, a, part)| (s, a, part))
+}
 
 /// Canvas Program；doc/interaction 由 Root 持有，窗口重建不丢。
 #[derive(Debug, Clone)]
@@ -65,8 +124,35 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
                 }
                 let tool = self.doc.borrow().tool;
                 if tool == DrawerTool::Select {
+                    let mut doc = self.doc.borrow_mut();
                     let tolerance = 0.035 / view.zoom.max(0.25);
-                    self.doc.borrow_mut().select_at(unit, tolerance);
+                    let hit = hit_anchor(&doc, local, bounds, view);
+                    if let Some((stroke, anchor, part)) = hit {
+                        doc.selected_anchor = Some((stroke, anchor));
+                        self.interaction.borrow_mut().anchor_drag = Some(AnchorDrag {
+                            stroke,
+                            anchor,
+                            part,
+                            started: false,
+                        });
+                    } else {
+                        doc.select_at(unit, tolerance);
+                        self.interaction.borrow_mut().anchor_drag = None;
+                    }
+                } else if matches!(tool, DrawerTool::Curve | DrawerTool::Arc) {
+                    let mut interaction = self.interaction.borrow_mut();
+                    let committed = match interaction.draft.as_mut() {
+                        Some(draft) => draft.click(unit),
+                        None => {
+                            interaction.draft = Draft::begin(tool, unit);
+                            None
+                        }
+                    };
+                    drop(interaction);
+                    if let Some(stroke) = committed {
+                        self.interaction.borrow_mut().draft = None;
+                        self.doc.borrow_mut().commit_draft(Some(stroke));
+                    }
                 } else if let Some(draft) = Draft::begin(tool, unit) {
                     self.interaction.borrow_mut().draft = Some(draft);
                 }
@@ -80,6 +166,18 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
                 let local = Point::new(position.x - bounds.x, position.y - bounds.y);
                 let mut interaction = self.interaction.borrow_mut();
                 let shift = interaction.shift;
+                if let Some(mut drag) = interaction.anchor_drag {
+                    let view = self.doc.borrow().view;
+                    let unit = local_to_unit(local, bounds, view);
+                    let changed = {
+                        let mut doc = self.doc.borrow_mut();
+                        doc.drag_anchor(&mut drag, unit, shift)
+                    };
+                    interaction.anchor_drag = Some(drag);
+                    if changed {
+                        return Some(canvas::Action::request_redraw());
+                    }
+                }
                 if let Some(draft) = interaction.draft.as_mut() {
                     let view = self.doc.borrow().view;
                     let unit = local_to_unit(local, bounds, view);
@@ -111,6 +209,16 @@ impl Program<Message, Theme, Renderer> for ShapeDrawerCanvas {
             }
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 let mut interaction = self.interaction.borrow_mut();
+                if interaction.anchor_drag.take().is_some() {
+                    return Some(canvas::Action::request_redraw().and_capture());
+                }
+                if interaction
+                    .draft
+                    .as_ref()
+                    .is_some_and(Draft::is_multi_stage)
+                {
+                    return Some(canvas::Action::request_redraw().and_capture());
+                }
                 if let Some(draft) = interaction.draft.take() {
                     let stroke = draft.to_stroke();
                     drop(interaction);
@@ -312,6 +420,25 @@ mod tests {
         assert_eq!(
             drawer_cursor(bounds(), None, TOOLBAR_WIDTH),
             mouse::Interaction::Idle
+        );
+    }
+
+    #[test]
+    fn test_hit_anchor_prefers_anchor_over_handle() {
+        use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+        let mut doc = DrawerDoc::default();
+        doc.strokes.push(Stroke {
+            kind: StrokeKind::Curve,
+            anchors: vec![ShapeAnchor::new((0.5, 0.5)), ShapeAnchor::new((0.8, 0.5))],
+            rect: None,
+        });
+        doc.selection.insert(0);
+        let bounds = Rectangle::new(Point::new(0.0, 0.0), iced_core::Size::new(400.0, 400.0));
+        let view = DrawerView::default();
+        let position = unit_to_local((0.5, 0.5), bounds, view);
+        assert_eq!(
+            hit_anchor(&doc, position, bounds, view),
+            Some((0, 0, AnchorPart::Pos))
         );
     }
 }
