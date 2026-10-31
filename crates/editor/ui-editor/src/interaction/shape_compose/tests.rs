@@ -3,7 +3,7 @@
 use super::*;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
-use lumino_core::shape::{CopyMode, ShapeGeometry, ShapeKind, ShapeOp};
+use lumino_core::shape::{BetweenRole, CopyMode, ShapeGeometry, ShapeKind, ShapeOp};
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef, ShapeNote};
 
 fn shape_note(tick: f32, key: u16) -> ShapeNote {
@@ -477,7 +477,7 @@ fn test_pending_live_composition_stays_pending_until_bake() {
     assert!(editor.live_selected_shapes(), "pending 组合应成功");
     assert_eq!(editor.editor_state.pending_composed.len(), 1);
     assert!(editor.editor_state.shape_tool.shapes.is_empty());
-    let pending_notes = editor.editor_state.pending_composed[0].notes.len();
+    let pending_notes = editor.editor_state.pending_composed[0].note_count();
     assert!(pending_notes > 0);
     assert_eq!(
         editor.editor_state.data.current_track_notes().len(),
@@ -550,7 +550,7 @@ fn test_pending_join_composition_is_pending() {
     assert!(editor.join_selected_shapes());
     let composed = &editor.editor_state.pending_composed[0];
     assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Join);
-    assert!(!composed.notes.is_empty());
+    assert!(composed.note_count() > 0);
     assert!(editor.editor_state.shape_tool.shapes.is_empty());
     assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
 }
@@ -562,9 +562,131 @@ fn test_pending_merge_composition_is_pending() {
     assert!(editor.merge_selected_shapes());
     let composed = &editor.editor_state.pending_composed[0];
     assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Merge);
-    assert!(!composed.notes.is_empty());
+    assert!(composed.note_count() > 0);
     assert!(editor.editor_state.shape_tool.shapes.is_empty());
     assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+}
+
+#[test]
+fn test_pending_slice_produces_two_parts() {
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+
+    assert!(editor.slice_selected_vertical(), "pending Slice 应成功");
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Slice);
+    assert_eq!(composed.results.len(), 2, "竖切应产生左右两片");
+    let pending_notes = composed.note_count();
+    assert!(pending_notes > 0);
+    assert!(editor.editor_state.shape_tool.shapes.is_empty());
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+
+    assert!(editor.undo(), "undo 应回到单形状");
+    assert!(editor.editor_state.pending_composed.is_empty());
+    assert_eq!(editor.editor_state.shape_tool.shapes.len(), 1);
+    assert!(editor.redo(), "redo 应恢复两片");
+
+    assert!(editor.confirm_shape_tool(), "✓ 才提交两片");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes
+    );
+    assert_eq!(
+        editor.editor_state.shape_store.persisted_models().len(),
+        2,
+        "两片各保留一个只读模型"
+    );
+}
+
+#[test]
+fn test_pending_slice_open_curve_produces_two_parts() {
+    let mut editor = empty_editor();
+    setup_single_pending_curve(&mut editor);
+
+    assert!(
+        editor.slice_selected_vertical(),
+        "开放曲线也应能被竖切成两段"
+    );
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Slice);
+    assert_eq!(composed.results.len(), 2);
+    assert!(composed.note_count() > 0);
+}
+
+#[test]
+fn test_pending_between_produces_first_steps_last() {
+    let mut editor = empty_editor();
+    setup_pending_rects(&mut editor);
+
+    assert!(editor.create_between_selected(), "pending Between 应成功");
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Between);
+    assert_eq!(composed.results.len(), 7, "首 + 5 步 + 末");
+    let roles: Vec<BetweenRole> = composed
+        .results
+        .iter()
+        .filter_map(|part| {
+            part.model.ops.iter().find_map(|op| match op {
+                ShapeOp::Between(params) => Some(params.role),
+                _ => None,
+            })
+        })
+        .collect();
+    assert_eq!(roles.first(), Some(&BetweenRole::First));
+    assert_eq!(roles.last(), Some(&BetweenRole::Last));
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|role| **role == BetweenRole::Step)
+            .count(),
+        5,
+        "steps=5 应生成 5 个 Step"
+    );
+    let pending_notes = composed.note_count();
+    assert!(pending_notes > 0);
+    assert!(editor.editor_state.shape_tool.shapes.is_empty());
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+
+    assert!(editor.undo(), "undo 应回到两个 pending 形状");
+    assert!(editor.editor_state.pending_composed.is_empty());
+    assert_eq!(editor.editor_state.shape_tool.shapes.len(), 2);
+    assert!(editor.redo(), "redo 应恢复补间组");
+
+    assert!(editor.confirm_shape_tool(), "✓ 才提交补间");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes
+    );
+    assert_eq!(
+        editor.editor_state.shape_store.persisted_models().len(),
+        7,
+        "首/步/末各保留一个只读模型"
+    );
+
+    assert!(editor.undo(), "✓ 后 undo 应恢复补间组");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert_eq!(editor.editor_state.pending_composed[0].results.len(), 7);
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+    assert!(editor.redo(), "redo 应重新烘焙补间");
+    assert_eq!(
+        editor.editor_state.data.current_track_notes().len(),
+        pending_notes
+    );
+}
+
+#[test]
+fn test_shape_select_shows_confirm_for_composed_results() {
+    use crate::grid::shape_tool_box::shape_buttons_active;
+
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+    assert!(!shape_buttons_active(&editor), "无组合结果时不显示 ✓×");
+
+    assert!(editor.copy_along_selected());
+    assert!(
+        shape_buttons_active(&editor),
+        "ShapeSelect 下 composed 结果应可直接 ✓"
+    );
 }
 
 fn setup_single_pending_rect(editor: &mut Editor) {
@@ -636,12 +758,15 @@ fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
         "027 应以 CopyAlong 组合类型留在 pending"
     );
     assert!(
-        matches!(composed.model.ops.last(), Some(ShapeOp::CopyAlong(_))),
+        matches!(
+            composed.model().expect("单支").ops.last(),
+            Some(ShapeOp::CopyAlong(_))
+        ),
         "CopyAlong 参数必须写回模型，后续再生成才不会丢副本"
     );
-    let pending_notes = composed.notes.len();
+    let pending_notes = composed.note_count();
     assert!(pending_notes > 0);
-    let mut ticks: Vec<f32> = composed.notes.iter().map(|note| note.tick).collect();
+    let mut ticks: Vec<f32> = composed.notes().map(|note| note.tick).collect();
     ticks.sort_by(f32::total_cmp);
     ticks.dedup();
     let step = f32::from(editor.editor_state.view.ppq) * 0.5;
@@ -699,7 +824,7 @@ fn test_pending_copy_along_accepts_explicit_step_and_total_groups() {
     );
     let composed = &editor.editor_state.pending_composed[0];
     assert_eq!(composed.kind, lumino_editor_state::ComposedKind::CopyAlong);
-    let mut ticks: Vec<f32> = composed.notes.iter().map(|note| note.tick).collect();
+    let mut ticks: Vec<f32> = composed.notes().map(|note| note.tick).collect();
     ticks.sort_by(f32::total_cmp);
     ticks.dedup();
     assert_eq!(
@@ -722,15 +847,18 @@ fn test_pending_velocity_stays_pending_and_varies_velocity() {
         "028 应以 Velocity 组合类型留在 pending"
     );
     assert!(
-        matches!(composed.model.ops.last(), Some(ShapeOp::VelocityEnv(_))),
+        matches!(
+            composed.model().expect("单支").ops.last(),
+            Some(ShapeOp::VelocityEnv(_))
+        ),
         "渐强包络必须写回模型"
     );
-    let min = composed.notes.iter().map(|note| note.velocity).min();
-    let max = composed.notes.iter().map(|note| note.velocity).max();
+    let min = composed.notes().map(|note| note.velocity).min();
+    let max = composed.notes().map(|note| note.velocity).max();
     assert!(
         matches!((min, max), (Some(lo), Some(hi)) if hi > lo),
         "渐强应在预览音符上产生力度差：min={min:?} max={max:?} notes={}",
-        composed.notes.len()
+        composed.note_count()
     );
     assert_eq!(
         editor.editor_state.data.current_track_notes().len(),
@@ -738,7 +866,7 @@ fn test_pending_velocity_stays_pending_and_varies_velocity() {
         "组合结果不得提前写文档"
     );
 
-    let pending_notes = composed.notes.len();
+    let pending_notes = composed.note_count();
     assert!(editor.confirm_shape_tool());
     assert_eq!(
         editor.editor_state.data.current_track_notes().len(),

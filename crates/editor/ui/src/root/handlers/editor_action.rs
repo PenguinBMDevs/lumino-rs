@@ -183,10 +183,30 @@ impl Root {
                         let _ = self.editor.set_straighten(false);
                     }
                     PianoRollContextMenuItem::SliceVertical => {
-                        let _ = self.editor.slice_selected_vertical();
+                        if self.editor.slice_selected_vertical() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已竖切；✓ 后才写入音符"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::BetweenCreate => {
-                        let _ = self.editor.create_between_selected();
+                        if self.editor.create_between_selected() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已生成补间（首 + 步 + 末）；✓ 后才写入音符"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("补间失败：请恰好选中两个待确认形状/曲线"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::CopyAlong => {
                         if self.editor.copy_along_selected()

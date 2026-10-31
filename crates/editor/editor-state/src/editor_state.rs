@@ -29,7 +29,7 @@ pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
 pub mod pending_compose;
-pub use pending_compose::{ComposedKind, PendingComposed, PendingSource};
+pub use pending_compose::{ComposedKind, ComposedPart, PendingComposed, PendingSource};
 pub mod selection_set;
 pub mod shape_edit;
 pub mod shape_ops;

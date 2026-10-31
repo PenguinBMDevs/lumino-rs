@@ -8,10 +8,10 @@ use lumino_core::shape::{
     ShapeOp, StraightenParams, Sym, SymAxis, SymParams, VelocityEnv,
 };
 use lumino_editor_state::shape_ops::{
-    SymReject, between_blend, between_graph_at, copy_along_apply, cut_loops,
-    symmetric_shape_with_reason,
+    SymReject, copy_along_apply, cut_loops, ring_of, split_notes_vertical,
+    symmetric_shape_with_reason, sync_groups,
 };
-use lumino_editor_state::{ComposedKind, DrawnShapeSource, ShapeNote};
+use lumino_editor_state::{ComposedKind, DrawnShapeSource};
 
 use crate::Editor;
 
@@ -146,6 +146,9 @@ impl Editor {
 
     /// 025：选中一个图形，沿 bbox 中心竖切成两半
     pub fn slice_selected_vertical(&mut self) -> bool {
+        if self.pending_single_selection() {
+            return self.compose_pending(ComposedKind::Slice);
+        }
         let Some((_, _, model)) = self.selected_model_for_edit() else {
             return false;
         };
@@ -153,7 +156,7 @@ impl Editor {
             return false;
         };
         let cut = (x0 + x1) / 2.0;
-        let ring = geometry_ring(&model);
+        let ring = ring_of(&model);
         let Some((left, right)) = cut_loops(&[ring], (cut, y0 - 1.0), (cut, y1 + 1.0)) else {
             return false;
         };
@@ -181,6 +184,9 @@ impl Editor {
 
     /// 026：两个选中图形生成 5 个 Between 步
     pub fn create_between_selected(&mut self) -> bool {
+        if self.pending_selection_only() {
+            return self.compose_pending(ComposedKind::Between);
+        }
         let selected = self.selected_drawn_snapshot();
         if selected.len() != 2 {
             return false;
@@ -201,7 +207,7 @@ impl Editor {
             steps: 5,
             ..BetweenSet::default()
         };
-        let group_id = 1;
+        let group_id = self.next_between_group_id();
         first.ops.push(ShapeOp::Between(BetweenParams {
             id: group_id,
             role: BetweenRole::First,
@@ -209,7 +215,7 @@ impl Editor {
             sig: None,
             push: None,
             vel: None,
-            set: Some(set.clone()),
+            set: Some(set),
         }));
         last.ops.push(ShapeOp::Between(BetweenParams {
             id: group_id,
@@ -221,30 +227,25 @@ impl Editor {
             set: None,
         }));
         let track = selected[0].track;
-        let mut items = vec![
-            ShapeItem {
-                source: source_from_model(&first),
-                notes: selected[0].notes.clone(),
-                model: Some(first.clone()),
-            },
-            ShapeItem {
-                source: source_from_model(&last),
-                notes: selected[1].notes.clone(),
-                model: Some(last.clone()),
-            },
-        ];
-        for index in 1..=set.steps {
-            let at = f32::from(index) / f32::from(set.steps + 1);
-            let model = between_blend(&first, &last, between_graph_at(&set, at), set.rev);
-            let notes = self.shape_notes_of(&model, track);
-            items.insert(
-                index as usize,
-                ShapeItem {
-                    source: source_from_model(&model),
-                    notes,
-                    model: Some(model),
-                },
-            );
+        let mut shapes = vec![first, last];
+        for warning in sync_groups(&mut shapes) {
+            tracing::warn!(message = warning.message, "Between 组同步提示");
+        }
+        let last_index = shapes.len().saturating_sub(1);
+        let mut items = Vec::with_capacity(shapes.len());
+        for (index, model) in shapes.into_iter().enumerate() {
+            let notes = if index == 0 {
+                selected[0].notes.clone()
+            } else if index == last_index {
+                selected[1].notes.clone()
+            } else {
+                self.shape_notes_of(&model, track)
+            };
+            items.push(ShapeItem {
+                source: source_from_model(&model),
+                notes,
+                model: Some(model),
+            });
         }
         self.replace_selected_with_many(items)
     }
@@ -315,9 +316,11 @@ impl Editor {
                 if item.kind != ComposedKind::CopyAlong {
                     return None;
                 }
-                item.model.ops.iter().rev().find_map(|op| match op {
-                    ShapeOp::CopyAlong(params) => summarize_copy_params(params),
-                    _ => None,
+                item.results.iter().find_map(|part| {
+                    part.model.ops.iter().rev().find_map(|op| match op {
+                        ShapeOp::CopyAlong(params) => summarize_copy_params(params),
+                        _ => None,
+                    })
                 })
             })
             .or_else(|| {
@@ -362,58 +365,4 @@ fn summarize_copy_params(params: &CopyPathParams) -> Option<(u32, f32)> {
     let groups = n + 1;
     let step = params.pts.first().map(|pt| pt[0].abs() / groups as f32)?;
     Some((groups, step))
-}
-
-fn geometry_ring(model: &ShapeModel) -> Vec<(f32, f32)> {
-    let mut ring = model
-        .geometry
-        .anchors
-        .iter()
-        .map(|anchor| anchor.pos)
-        .collect::<Vec<_>>();
-    if ring.is_empty()
-        && let Some(rect) = model.geometry.rect
-    {
-        ring = vec![
-            (rect.tick_lo, rect.key_lo),
-            (rect.tick_hi, rect.key_lo),
-            (rect.tick_hi, rect.key_hi),
-            (rect.tick_lo, rect.key_hi),
-        ];
-    }
-    if let Some(first) = ring.first().copied()
-        && ring.last().copied() != Some(first)
-    {
-        ring.push(first);
-    }
-    ring
-}
-
-fn split_notes_vertical(notes: &[ShapeNote], cut: f32) -> (Vec<ShapeNote>, Vec<ShapeNote>) {
-    let mut left = Vec::new();
-    let mut right = Vec::new();
-    for note in notes {
-        let start = note.tick;
-        let end = note.tick + note.length.max(0.0);
-        if end <= cut {
-            left.push(*note);
-        } else if start >= cut {
-            right.push(*note);
-        } else {
-            if cut > start {
-                left.push(ShapeNote {
-                    length: cut - start,
-                    ..*note
-                });
-            }
-            if end > cut {
-                right.push(ShapeNote {
-                    tick: cut,
-                    length: end - cut,
-                    ..*note
-                });
-            }
-        }
-    }
-    (left, right)
 }

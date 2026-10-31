@@ -135,12 +135,14 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::PasteShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起先走 Bake 前组合会话，
-        // 019/021/022 在有 2+ 个 pending 矢量时可用；027/028 对单个 pending 矢量可用。
+        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起走 Bake 前组合会话。
+        // 019/021/022 需 2+ 个 pending；025/027/028 单对象；026 需恰好 2 个。
         ContextMenuTarget::PendingDrawnShape => &[
             PianoRollContextMenuItem::LiveShape,
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::SliceVertical,
+            PianoRollContextMenuItem::BetweenCreate,
             PianoRollContextMenuItem::CopyAlong,
             PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::CopyShapeText,
@@ -363,22 +365,24 @@ mod tests {
                 PianoRollContextMenuItem::LiveShape,
                 PianoRollContextMenuItem::JoinShapes,
                 PianoRollContextMenuItem::MergeShapes,
+                PianoRollContextMenuItem::SliceVertical,
+                PianoRollContextMenuItem::BetweenCreate,
                 PianoRollContextMenuItem::CopyAlong,
                 PianoRollContextMenuItem::VelocityUp,
                 PianoRollContextMenuItem::CopyShapeText,
                 PianoRollContextMenuItem::DeleteDrawnShape,
             ],
-            "待确认镜像可走 Bake 前组合、027/028 单对象参数、分享几何、删除"
+            "待确认镜像可走 019/021/022/025/026/027/028、分享几何、删除"
         );
         assert!(
             !items.iter().any(|item| matches!(
                 item,
                 PianoRollContextMenuItem::EditShape
                     | PianoRollContextMenuItem::SymmetryVertical
-                    | PianoRollContextMenuItem::SliceVertical
-                    | PianoRollContextMenuItem::BetweenCreate
+                    | PianoRollContextMenuItem::SymmetryHorizontal
+                    | PianoRollContextMenuItem::Straighten
             )),
-            "020/023/025/026 仍不得出现在待确认目标"
+            "020/023/024 仍不得出现在待确认目标"
         );
     }
 

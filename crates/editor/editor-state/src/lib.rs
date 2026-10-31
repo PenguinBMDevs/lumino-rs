@@ -26,8 +26,8 @@ pub use editor_state::{
     SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType, SelectionSet,
 };
 pub use editor_state::{
-    ComposedKind, DrawnShape, DrawnShapeSource, PendingComposed, PendingShapeRef, PendingSource,
-    ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote, ShapeSelectState,
+    ComposedKind, ComposedPart, DrawnShape, DrawnShapeSource, PendingComposed, PendingShapeRef,
+    PendingSource, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote, ShapeSelectState,
 };
 pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,

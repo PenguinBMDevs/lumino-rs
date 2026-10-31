@@ -318,7 +318,11 @@ impl Editor {
             PendingShapeRef::Composed(i) => {
                 let composed = self.editor_state.pending_composed.get(i)?;
                 Some(DrawnShapeSource::PolylineSet {
-                    polylines: polylines_of_model(&composed.model),
+                    polylines: composed
+                        .results
+                        .iter()
+                        .flat_map(|part| polylines_of_model(&part.model))
+                        .collect(),
                 })
             }
         }
@@ -541,9 +545,9 @@ impl Editor {
 
     /// 当前工具是否应暴露待确认右键菜单。
     ///
-    /// 选择工具对所有 pending 开放；绘制工具只对自己的 pending 来源开放，
-    /// 避免在被隐藏的待确认镜像上弹出菜单。组合结果由形状工具的预览层绘制，
-    /// 因此只随形状工具/选择工具开放。
+    /// 选择工具对所有 pending 开放；形状工具只对形状/组合结果开放。
+    /// 曲线/画笔的 pending 组合在 ShapeSelect 下完成（组合预览与 ✓× 由形状预览层承载），
+    /// 避免在 owner 工具里生成看不见、也无法确认的 composed 结果。
     pub(crate) fn pending_menu_allowed(&self, pending: PendingShapeRef) -> bool {
         match self.current_tool() {
             Tool::ShapeSelect => true,
@@ -551,8 +555,6 @@ impl Editor {
                 pending,
                 PendingShapeRef::Shape(_) | PendingShapeRef::Composed(_)
             ),
-            Tool::Curve => matches!(pending, PendingShapeRef::CurvePath(_)),
-            Tool::Brush => matches!(pending, PendingShapeRef::BrushStroke(_)),
             _ => false,
         }
     }
@@ -1362,8 +1364,8 @@ mod tests {
 
         editor.set_tool(Tool::Curve);
         assert!(
-            !editor.pending_menu_allowed(PendingShapeRef::Shape(0)),
-            "曲线工具不得对形状 pending 开菜单"
+            !editor.pending_menu_allowed(PendingShapeRef::CurvePath(0)),
+            "曲线工具不承载组合预览，应在 ShapeSelect 下组合"
         );
 
         editor.set_tool(Tool::Shape);

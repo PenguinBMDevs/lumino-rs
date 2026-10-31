@@ -299,12 +299,14 @@ impl Editor {
         // DRAW-041C：组合结果仍是 pending，✓ 时与普通 pending 一起提交。
         let composed_snapshot = self.editor_state.pending_composed.clone();
         let composed = std::mem::take(&mut self.editor_state.pending_composed);
-        payload.extend(composed.iter().flat_map(|item| {
-            item.notes.iter().map(|shape_note| {
-                let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
-                note.velocity = shape_note.velocity;
-                note.channel = shape_note.channel;
-                note
+        payload.extend(composed.iter().flat_map(|group| {
+            group.results.iter().flat_map(|part| {
+                part.notes.iter().map(|shape_note| {
+                    let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
+                    note.velocity = shape_note.velocity;
+                    note.channel = shape_note.channel;
+                    note
+                })
             })
         }));
         if payload.is_empty() {
@@ -379,7 +381,12 @@ impl Editor {
                 (model_from_source(&source, track, 1.0), notes)
             })
             .collect();
-        models.extend(composed.into_iter().map(|item| (item.model, item.notes)));
+        models.extend(composed.into_iter().flat_map(|group| {
+            group
+                .results
+                .into_iter()
+                .map(|part| (part.model, part.notes))
+        }));
         self.record_baked_shape_models(models);
         self.editor_state.shape_tool.clear_pending();
         self.editor_state.pending_composed.clear();

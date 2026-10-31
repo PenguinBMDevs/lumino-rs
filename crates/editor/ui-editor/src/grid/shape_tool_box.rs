@@ -18,9 +18,13 @@ use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
 use crate::interaction::shape_bridge::polylines_of_model;
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
+use lumino_editor_state::ShapeKind;
 use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
-use lumino_editor_state::{ComposedKind, PendingComposed, ShapeKind, ShapeNote};
 use lumino_ui_core::Renderer;
+
+mod composed;
+
+use composed::{composed_bounds, draw_composed_notes};
 
 /// 填充色块透明度（半透明叠加在网格上，√ 确认后成为实心音符）
 const FILL_ALPHA: f32 = 0.35;
@@ -72,82 +76,14 @@ fn shape_screen_aabb(editor: &Editor, spec: ShapeSpec) -> (f32, f32, f32, f32) {
     (min_x, max_x, min_y, max_y)
 }
 
-/// 组合结果在文档坐标下的包围盒。
+/// ✓× 按钮是否由当前工具操作。
 ///
-/// 027 的副本由 `ShapeOp::CopyAlong` 生成，不在 `model.geometry` 里；
-/// 悬浮按钮/预览需要用组合后的音符范围，否则会框不住副本。
-fn composed_bounds(composed: &PendingComposed) -> Option<(f32, f32, f32, f32)> {
-    if composed.kind == ComposedKind::CopyAlong && !composed.notes.is_empty() {
-        let mut lo_t = f32::INFINITY;
-        let mut hi_t = f32::NEG_INFINITY;
-        let mut lo_k = f32::INFINITY;
-        let mut hi_k = f32::NEG_INFINITY;
-        for note in &composed.notes {
-            lo_t = lo_t.min(note.tick);
-            hi_t = hi_t.max(note.tick + note.length.max(0.0));
-            lo_k = lo_k.min(f32::from(note.key));
-            hi_k = hi_k.max(f32::from(note.key));
-        }
-        if lo_t.is_finite() && hi_t.is_finite() {
-            return Some((lo_t, lo_k, hi_t, hi_k));
-        }
-    }
-    composed.model.geometry.bounds()
-}
-
-/// 027/028 的效果不能只靠轮廓表达：直接画组合后的音符块。
-///
-/// - 027：副本落在路径上，音符块就是 ✓ 会提交的最终位置；
-/// - 028：逐音符按力度调制透明度，渐强在提交前可见。
-fn draw_composed_notes(
-    frame: &mut canvas::Frame<Renderer>,
-    editor: &Editor,
-    composed: &PendingComposed,
-    base_color: Color,
-) -> bool {
-    if composed.notes.is_empty() {
-        return false;
-    }
-    match composed.kind {
-        ComposedKind::CopyAlong => {
-            let blocks: Vec<(f32, f32, u16)> = composed.notes.iter().map(note_block).collect();
-            fill_note_blocks(
-                frame,
-                editor,
-                &blocks,
-                Color {
-                    a: 0.55,
-                    ..base_color
-                },
-            )
-        }
-        ComposedKind::Velocity => {
-            let mut drawn = false;
-            for note in &composed.notes {
-                let alpha = (0.15 + f32::from(note.velocity) / 127.0 * 0.55).clamp(0.15, 0.7);
-                drawn |= fill_note_blocks(
-                    frame,
-                    editor,
-                    &[note_block(note)],
-                    Color {
-                        a: alpha,
-                        ..base_color
-                    },
-                );
-            }
-            drawn
-        }
-        _ => false,
-    }
-}
-
-/// 音符 → `fill_note_blocks` 的 `(tick_lo, tick_hi, key)`。
-fn note_block(note: &ShapeNote) -> (f32, f32, u16) {
-    (
-        note.tick,
-        (note.tick + note.length).max(note.tick + 1.0),
-        note.key,
-    )
+/// 形状工具始终可操作；选择工具只在存在组合结果时显示按钮，
+/// 让 041C 的 composed 结果在 ShapeSelect 下就能确认，不必切回形状工具。
+pub(crate) fn shape_buttons_active(editor: &Editor) -> bool {
+    editor.current_tool() == lumino_message::Tool::Shape
+        || (editor.current_tool() == lumino_message::Tool::ShapeSelect
+            && !editor.editor_state.pending_composed.is_empty())
 }
 
 /// 计算待确认图形 + 拖拽预览的共享悬浮按钮位置（垂直居中于包围盒中心）
@@ -156,7 +92,7 @@ pub fn shape_button_rects(editor: &Editor) -> Option<ShapeButtonRects> {
     if editor.editor_state.data.current_track == 0 {
         return None;
     }
-    if editor.current_tool() != lumino_message::Tool::Shape {
+    if !shape_buttons_active(editor) {
         return None;
     }
     let shape_tool = &editor.editor_state.shape_tool;
@@ -352,25 +288,27 @@ pub fn draw(
 
     // DRAW-041C：Bake 前组合结果的预览（仍是 pending，✓ 才提交）
     for composed in &editor.editor_state.pending_composed {
-        for points in polylines_of_model(&composed.model) {
-            let screen: Vec<Point> = points
-                .iter()
-                .map(|&(tick, key)| editor.line_pos_screen_pos((tick, key)))
-                .collect();
-            if screen.len() < 2 {
-                continue;
-            }
-            let path = Path::new(|p| {
-                p.move_to(screen[0]);
-                for point in &screen[1..] {
-                    p.line_to(*point);
+        for part in &composed.results {
+            for points in polylines_of_model(&part.model) {
+                let screen: Vec<Point> = points
+                    .iter()
+                    .map(|&(tick, key)| editor.line_pos_screen_pos((tick, key)))
+                    .collect();
+                if screen.len() < 2 {
+                    continue;
                 }
-            });
-            frame.stroke(
-                &path,
-                Stroke::default().with_color(base_color).with_width(2.0),
-            );
-            has_content = true;
+                let path = Path::new(|p| {
+                    p.move_to(screen[0]);
+                    for point in &screen[1..] {
+                        p.line_to(*point);
+                    }
+                });
+                frame.stroke(
+                    &path,
+                    Stroke::default().with_color(base_color).with_width(2.0),
+                );
+                has_content = true;
+            }
         }
         // 027/028 的产物无法只靠轮廓表达：叠加音符块预览。
         has_content |= draw_composed_notes(&mut frame, editor, composed, base_color);

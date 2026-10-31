@@ -22,8 +22,10 @@ pub struct BetweenWarning {
 
 /// 首/末变化后重算所有 Step
 ///
-/// 返回的 `Vec<ShapeModel>` 中，每个组按 `First, Step..., Last` 排列；
-/// 原有 Step 被替换，Key 保留。缺失首/末的组会被解绑并给出 warning。
+/// 返回的 `Vec<ShapeModel>` 中，每个组按 `First, Step/Key..., Last` 排列；
+/// 原有 Step 被替换，Key 保留。手改过的 Step（指纹不匹配）会降级为 Key，
+/// 后续不再被重算；周围的 Step 以相邻锚点（First / Key / Last）重新插值。
+/// 缺失首/末的组会被解绑并给出 warning。
 pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
     let ids = shapes.iter().filter_map(group_id).collect::<BTreeSet<_>>();
     let mut warnings = Vec::new();
@@ -66,12 +68,60 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
                 message: format!("Between 组 {id} 的 steps 已钳到 {steps}"),
             });
         }
+
+        // 手改过的 Step 降级为 Key：保留几何，不参与重算。
+        let mut keys = Vec::new();
+        for shape in shapes
+            .iter_mut()
+            .filter(|shape| group_id(shape) == Some(id))
+        {
+            match role_of(shape, id) {
+                Some(BetweenRole::Step) if is_modified(shape) => {
+                    if let Some(ShapeOp::Between(params)) = shape
+                        .ops
+                        .iter_mut()
+                        .find(|op| matches!(op, ShapeOp::Between(p) if p.id == id))
+                    {
+                        params.role = BetweenRole::Key;
+                    }
+                    keys.push(shape.clone());
+                }
+                Some(BetweenRole::Key) => keys.push(shape.clone()),
+                _ => {}
+            }
+        }
+        keys.sort_by(|a, b| at_of(a, id).total_cmp(&at_of(b, id)));
+
+        // 锚点：First / Key... / Last，按 at 排序；Key 落在 0/1 时跳过。
+        let mut anchors: Vec<(f32, ShapeModel)> = Vec::with_capacity(keys.len() + 2);
+        anchors.push((0.0, first.clone()));
+        for key in &keys {
+            let at = at_of(key, id);
+            if at > 0.0 && at < 1.0 {
+                anchors.push((at, key.clone()));
+            }
+        }
+        anchors.push((1.0, last.clone()));
+        anchors.sort_by(|a, b| a.0.total_cmp(&b.0));
+
         let base_id = shapes.iter().map(|shape| shape.id).max().unwrap_or(0) + 1;
-        let mut generated = Vec::with_capacity(steps as usize);
+        let mut generated: Vec<(f32, ShapeModel)> = Vec::with_capacity(steps as usize);
         for (offset, index) in (1..=steps).enumerate() {
             let at = f32::from(index) / f32::from(steps + 1);
-            let f = graph_at(&set, at);
-            let mut model = blend(&first, &last, f, set.rev);
+            // Key 占住某个步位时不再生成同名步。
+            if keys.iter().any(|key| (at_of(key, id) - at).abs() <= 1e-4) {
+                continue;
+            }
+            let model = if keys.is_empty() {
+                blend(&first, &last, graph_at(&set, at), set.rev)
+            } else {
+                let Some((a, b)) = bracket(&anchors, at) else {
+                    continue;
+                };
+                let local = ((at - a.0) / (b.0 - a.0).max(1e-6)).clamp(0.0, 1.0);
+                blend(&a.1, &b.1, local, set.rev)
+            };
+            let mut model = model;
             model.id = base_id + offset as u64;
             let params = BetweenParams {
                 id,
@@ -83,18 +133,29 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
                 set: None,
             };
             model.ops = vec![ShapeOp::Between(params)];
-            generated.push(model);
+            generated.push((at, model));
         }
+
+        let mut members: Vec<(f32, ShapeModel)> = keys
+            .into_iter()
+            .filter_map(|key| {
+                let at = at_of(&key, id);
+                (at > 0.0 && at < 1.0).then_some((at, key))
+            })
+            .chain(generated)
+            .collect();
+        members.sort_by(|a, b| a.0.total_cmp(&b.0));
+
         let original = std::mem::take(shapes);
-        let mut out = Vec::with_capacity(original.len() + generated.len());
+        let mut out = Vec::with_capacity(original.len() + members.len());
         for shape in original {
             if group_id(&shape) == Some(id) {
                 match role_of(&shape, id) {
                     Some(BetweenRole::First) => {
                         out.push(shape);
-                        out.append(&mut generated);
+                        out.extend(members.drain(..).map(|(_, model)| model));
                     }
-                    Some(BetweenRole::Step) => {}
+                    Some(BetweenRole::Step) | Some(BetweenRole::Key) => {}
                     _ => out.push(shape),
                 }
             } else {
@@ -104,6 +165,33 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
         *shapes = out;
     }
     warnings
+}
+
+fn at_of(shape: &ShapeModel, id: u64) -> f32 {
+    shape
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            ShapeOp::Between(p) if p.id == id => p.at,
+            _ => None,
+        })
+        .unwrap_or(0.5)
+        .clamp(0.0, 1.0)
+}
+
+/// 找到 `at` 两侧的锚点（`anchors` 已按 at 排序且至少含 0/1）
+fn bracket(
+    anchors: &[(f32, ShapeModel)],
+    at: f32,
+) -> Option<((f32, ShapeModel), (f32, ShapeModel))> {
+    for pair in anchors.windows(2) {
+        let a = &pair[0];
+        let b = &pair[1];
+        if at >= a.0 && at <= b.0 {
+            return Some((a.clone(), b.clone()));
+        }
+    }
+    None
 }
 
 /// 制作指纹：不含绝对位置/时间；平移后不变

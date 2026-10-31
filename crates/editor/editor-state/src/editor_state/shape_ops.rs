@@ -79,7 +79,9 @@ pub use mould::{SHORT as MOULD_SHORT, mould_rows};
 pub use nested::{ColouredSpan, nested_spans};
 pub use pattern::{LOOP_SAMPLES, MAX_POINTS, PatternReport, formed_path, formed_path_with_report};
 pub use polygon::{paths as polygon_paths, side_paths as polygon_side_paths, unit_loops};
-pub use slice::{crossings, cut_loops, inside as slice_inside};
+pub use slice::{
+    crossings, cut_loops, cut_open_vertical, inside as slice_inside, ring_of, split_notes_vertical,
+};
 pub use sliced::{CutKind, CutMark, CutRef, KnifeKind, outline_keys};
 pub use smooth::{smooth_path, straighten_shape, tolerance as straighten_tolerance};
 pub use strum::apply as apply_strum;
