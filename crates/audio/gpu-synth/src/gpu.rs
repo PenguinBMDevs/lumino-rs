@@ -72,13 +72,12 @@ pub const SAMPLES_CHUNK_WORDS: u32 = (SAMPLES_CHUNK_BYTES / 4) as u32;
 /// 最后一帧高半字补 0。量化点固定在**上传时**：不引入 dither（dither 只在导出
 /// 最终位深转换时加）。
 pub fn pack_samples_2x16snorm(samples: &[f32]) -> (Vec<u32>, f32) {
-    let max_abs = samples.iter().fold(0.0f32, |m, x| {
-        if x.is_finite() {
-            m.max(x.abs())
-        } else {
-            m
-        }
-    });
+    let max_abs = samples.iter().fold(
+        0.0f32,
+        |m, x| {
+            if x.is_finite() { m.max(x.abs()) } else { m }
+        },
+    );
     let gain = max_abs.max(1.0);
     let inv = 1.0 / gain;
     let quantize = |x: f32| -> u16 {
