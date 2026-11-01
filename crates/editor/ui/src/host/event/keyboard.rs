@@ -178,6 +178,8 @@ impl Host {
             (winit::keyboard::KeyCode::KeyC, true, _) => Some(message::EditorAction::Copy),
             (winit::keyboard::KeyCode::KeyV, true, _) => Some(message::EditorAction::Paste),
             (winit::keyboard::KeyCode::KeyA, true, _) => Some(message::EditorAction::SelectAll),
+            // Esc：退出「编辑图形」/取消该手势（编辑器内部只认编辑态）
+            (winit::keyboard::KeyCode::Escape, ..) => Some(message::EditorAction::EscapePressed),
             (winit::keyboard::KeyCode::KeyQ, true, _) => {
                 // Ctrl+Q 走独立路径（不走 EditorAction）
                 None
@@ -332,6 +334,19 @@ mod tests {
         assert!(!Host::match_save_shortcut(KeyCode::KeyS, false));
         assert!(!Host::match_save_shortcut(KeyCode::KeyA, true));
         assert!(!Host::match_save_shortcut(KeyCode::Space, true));
+    }
+
+    /// Esc：必须映射到 `EscapePressed`，否则「编辑图形」没有键盘退出口
+    #[test]
+    fn test_match_escape_shortcut() {
+        assert!(matches!(
+            Host::match_editor_shortcut(KeyCode::Escape, false, false),
+            Some(message::EditorAction::EscapePressed)
+        ));
+        assert!(matches!(
+            Host::match_editor_shortcut(KeyCode::Escape, true, true),
+            Some(message::EditorAction::EscapePressed)
+        ));
     }
 
     /// 空格键裁决：剪辑面板激活 → 切**剪辑面板独立传输**（与面板播放按钮同一消息）。

@@ -34,6 +34,8 @@ pub enum EditorAction {
     },
     /// 双击事件
     DoubleClicked(Point2),
+    /// Esc 键：取消当前手势 / 退出「编辑图形」
+    EscapePressed,
     /// 删除键按下（Delete 或 Backspace）
     DeletePressed,
     /// 剪切

@@ -89,6 +89,34 @@ fn screen_size(editor: &Editor, bounds: (f32, f32, f32, f32)) -> (f32, f32) {
 }
 
 #[test]
+fn test_escape_exits_edit_mode() {
+    let mut editor = editor_with_shape();
+    assert!(editor.is_shape_edit_armed());
+    editor.handle_action(EditorAction::EscapePressed);
+    assert!(!editor.is_shape_edit_armed(), "Esc 应退出编辑图形");
+    assert!(
+        editor.selection_box().is_some(),
+        "退出后 ShapeSelect 选框应回来"
+    );
+}
+
+#[test]
+fn test_escape_cancels_in_progress_anchor_drag() {
+    let mut editor = editor_with_shape();
+    let before = bounds_of(&editor);
+    let nw = editor.line_pos_screen_pos((before.0, before.3));
+    press_at(&mut editor, nw);
+    assert!(editor.is_shape_editing());
+    let target = editor.line_pos_screen_pos((before.0, before.3 + 3.0));
+    move_to(&mut editor, target);
+    assert!(bounds_of(&editor) != before, "拖动中几何已变");
+
+    editor.handle_action(EditorAction::EscapePressed);
+    assert!(!editor.is_shape_editing(), "Esc 应结束拖拽");
+    assert_eq!(bounds_of(&editor), before, "Esc 应丢弃未提交的锚点拖拽");
+}
+
+#[test]
 fn test_anchor_drag_moves_on_first_move() {
     let mut editor = editor_with_shape();
     let before = bounds_of(&editor);

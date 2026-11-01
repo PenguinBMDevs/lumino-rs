@@ -56,6 +56,7 @@ impl Editor {
             EditorAction::DoubleClicked(pos) => {
                 self.handle_double_clicked(iced_core::Point::new(pos.x, pos.y))
             }
+            EditorAction::EscapePressed => self.handle_escape_pressed(),
             EditorAction::DeletePressed => self.handle_delete_pressed(),
             EditorAction::Cut => self.cut_selected_notes(),
             EditorAction::Copy => {
@@ -217,6 +218,17 @@ impl Editor {
             && let Some((index, _)) = self.hit_test_note(pos)
         {
             self.delete_note_by_index(index);
+        }
+    }
+
+    /// 处理 Esc：退出「编辑图形」并丢弃未提交的锚点拖拽。
+    ///
+    /// 只接管编辑图形态；其余场景（音符拖动、框选）保持原语义不动，
+    /// 避免 Esc 在别的工具下变成「静默取消一半状态」。
+    pub(crate) fn handle_escape_pressed(&mut self) {
+        if self.is_shape_edit_armed() || self.is_shape_editing() {
+            self.exit_shape_edit();
+            self.grid_cache.clear();
         }
     }
 
