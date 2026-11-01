@@ -12,6 +12,9 @@ pub use lumino_ui_core::sidebar_event as sidebar;
 pub use lumino_ui_core::theme;
 pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
+/// 遮罩参数面板的编辑目标（DRAW-010）
+pub use interaction::MaskEditTarget;
+
 pub mod arrangement;
 pub mod context_menu;
 pub mod edit_view;

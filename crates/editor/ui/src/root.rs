@@ -45,6 +45,7 @@ mod draw_toolbar;
 mod editor_ops;
 mod file_dialog;
 pub mod handlers;
+mod mask_panel;
 mod memory;
 mod mixer_panel;
 mod state;
@@ -90,6 +91,8 @@ pub struct Root {
     pub toast: crate::toast::ToastManager,
     /// 浮动混音台面板状态（打开/关闭、拖拽偏移、最大化）
     pub(crate) mixer_panel: crate::root::mixer_panel::MixerPanelState,
+    /// 遮罩参数面板（DRAW-010）：右键「遮罩设置…」打开
+    pub(crate) mask_panel: crate::root::mask_panel::MaskPanelState,
     /// 窗口最大化/还原保护标志，阻止路由意外切换
     pub window_resize_guard: bool,
     /// 图片转 MIDI 后台转换结果接收端（`right_sidebar::ConvertResult`）
@@ -177,6 +180,7 @@ impl Root {
                 recording: editor::recording::RecordingState::new(),
                 toast: crate::toast::ToastManager::new(),
                 mixer_panel: crate::root::mixer_panel::MixerPanelState::default(),
+                mask_panel: crate::root::mask_panel::MaskPanelState::default(),
                 window_resize_guard: false,
                 pending_i2m: None,
                 pending_material_scan: None,

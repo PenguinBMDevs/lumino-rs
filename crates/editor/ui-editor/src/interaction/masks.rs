@@ -207,6 +207,72 @@ impl Editor {
         }
         out
     }
+}
+
+/// 遮罩参数面板的编辑目标
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaskEditTarget {
+    /// 待确认形状（`ShapeInstance.mask`）：预览即时生效，不写文档历史
+    Pending {
+        /// `shape_tool.shapes` 下标
+        index: usize,
+    },
+    /// 已 Bake 形状（`ShapeOp::Mask`）：面板改草稿，Apply 时一次 `edit_shape`
+    Baked {
+        /// ShapeStore 模型 id
+        model_id: u64,
+    },
+}
+
+impl Editor {
+    /// 当前选中对象的遮罩编辑目标（须单选中；多支组合/曲线路径不支持）
+    pub fn mask_edit_target(&mut self) -> Option<MaskEditTarget> {
+        if self.pending_single_selection() {
+            let mut selected = self.editor_state.shape_select.selected_shapes();
+            let shape = selected.next()?;
+            if selected.next().is_some() {
+                return None;
+            }
+            if let Some(PendingShapeRef::Shape(index)) = shape.pending {
+                return Some(MaskEditTarget::Pending { index });
+            }
+            return None;
+        }
+        let (_, model_id, _) = self.selected_model_for_edit()?;
+        Some(MaskEditTarget::Baked { model_id })
+    }
+
+    /// 目标当前的遮罩参数（无遮罩 → `None`）
+    pub fn mask_params_of(&self, target: MaskEditTarget) -> Option<MaskParams> {
+        match target {
+            MaskEditTarget::Pending { index } => self
+                .editor_state
+                .shape_tool
+                .shapes
+                .get(index)
+                .and_then(|shape| shape.mask.clone()),
+            MaskEditTarget::Baked { model_id } => self
+                .editor_state
+                .shape_store
+                .model(model_id)
+                .and_then(|model| mask_ops::params_of(model).cloned()),
+        }
+    }
+
+    /// 待确认形状即时设置遮罩（`None` = 清除）；已 Bake 请走 [`Self::set_mask`]
+    pub fn set_pending_mask(&mut self, index: usize, params: Option<MaskParams>) -> bool {
+        let Some(shape) = self.editor_state.shape_tool.shapes.get_mut(index) else {
+            return false;
+        };
+        if shape.mask == params {
+            return false;
+        }
+        shape.mask = params;
+        self.rebuild_pending_mirrors();
+        self.mark_notes_changed();
+        self.grid_cache.clear();
+        true
+    }
 
     /// 给形状设置/移除 Mask 标记（供工具栏/面板接线；一次 edit_shape 撤销单元）
     pub fn set_mask(&mut self, id: u64, params: Option<MaskParams>) -> bool {

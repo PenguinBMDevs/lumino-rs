@@ -19,6 +19,7 @@ mod deferred_remote_ops;
 mod document_sync;
 mod handler_behavior;
 mod help;
+mod mask_panel;
 mod mode_animation_guard;
 mod piano_roll;
 mod recover_track;

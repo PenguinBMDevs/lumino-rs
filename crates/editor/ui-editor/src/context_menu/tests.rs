@@ -69,6 +69,7 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
             PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::EditShape,
             PianoRollContextMenuItem::MaskToggle,
+            PianoRollContextMenuItem::MaskSettings,
             PianoRollContextMenuItem::SliceVertical,
             PianoRollContextMenuItem::BetweenCreate,
             PianoRollContextMenuItem::CopyAlong,

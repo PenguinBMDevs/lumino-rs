@@ -125,6 +125,8 @@ impl Root {
                 self.editor.context_menu.close();
             }
             PianoRollContextMenuAction::ItemClicked(item) => {
+                // 面板锚点要先取：`close()` 会清空 position
+                let menu_pos = self.editor.context_menu.position;
                 self.editor.context_menu.close();
                 match item {
                     PianoRollContextMenuItem::BatchEdit => {
@@ -191,6 +193,19 @@ impl Root {
                                 tr!("遮罩失败：请选中一个待确认/已 Bake 形状"),
                             );
                         }
+                    }
+                    PianoRollContextMenuItem::MaskSettings => {
+                        // 菜单坐标是 canvas 局部，覆盖层面板用窗口坐标
+                        let anchor = menu_pos
+                            .map(|pos| {
+                                let canvas = &self.editor.editor_state.canvas;
+                                iced_core::Point::new(
+                                    pos.x + canvas.offset_x,
+                                    pos.y + canvas.offset_y,
+                                )
+                            })
+                            .unwrap_or(iced_core::Point::new(320.0, 200.0));
+                        self.open_mask_panel(anchor);
                     }
                     PianoRollContextMenuItem::ShapeList => {
                         let _ = self.editor.open_shape_list();

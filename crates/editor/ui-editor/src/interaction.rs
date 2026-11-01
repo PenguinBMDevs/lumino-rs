@@ -27,6 +27,7 @@ pub(crate) mod shape_tool;
 pub(crate) mod text_tool;
 
 pub(crate) use batch_insert::BATCH_INSERT_THRESHOLD;
+pub use masks::MaskEditTarget;
 
 #[cfg(test)]
 mod tests;

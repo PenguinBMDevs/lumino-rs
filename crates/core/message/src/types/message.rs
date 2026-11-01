@@ -170,6 +170,8 @@ pub enum Message<W, S, Se, T> {
     Batch(Vec<Message<W, S, Se, T>>),
     /// 钢琴卷帘右键上下文菜单动作
     PianoRollContextMenu(PianoRollContextMenuAction),
+    /// 遮罩参数面板动作（DRAW-010）
+    MaskPanel(crate::mask_panel::MaskPanelAction),
     /// 右侧栏动作
     RightSidebar(RightSidebarAction),
     /// 云存储动作

@@ -92,6 +92,89 @@ fn test_pending_mask_preview_ghosts_and_visible_without_doc_notes() {
 }
 
 #[test]
+fn test_mask_edit_target_and_pending_params_round_trip() {
+    let mut editor = test_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    // 被遮对象 + 遮罩对象：成对时才会出现 ghost/visible 预览
+    pending_rect(&mut editor, 0.0, 480.0, 60, None);
+    pending_rect(&mut editor, 0.0, 200.0, 60, None);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(1))
+        .expect("pending 镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert_eq!(
+        editor.mask_edit_target(),
+        Some(MaskEditTarget::Pending { index: 1 }),
+        "待确认形状应走 Pending 目标"
+    );
+    assert_eq!(
+        editor.mask_params_of(MaskEditTarget::Pending { index: 1 }),
+        None
+    );
+    assert!(editor.mask_previews().is_empty(), "未启用时无预览");
+
+    let params = MaskParams {
+        size_keys: 4.0,
+        invert: true,
+        own: false,
+        ..MaskParams::default()
+    };
+    assert!(editor.set_pending_mask(1, Some(params.clone())));
+    assert_eq!(
+        editor.mask_params_of(MaskEditTarget::Pending { index: 1 }),
+        Some(params.clone()),
+        "面板读回同一份参数"
+    );
+    assert!(!editor.mask_previews().is_empty(), "参数生效后应有预览");
+
+    assert!(editor.set_pending_mask(1, None));
+    assert_eq!(
+        editor.mask_params_of(MaskEditTarget::Pending { index: 1 }),
+        None
+    );
+    assert!(editor.mask_previews().is_empty(), "关掉后预览清空");
+    assert_eq!(
+        editor.editor_state.data.track_notes(1).len(),
+        0,
+        "面板改参数不得写文档"
+    );
+}
+
+#[test]
+fn test_mask_edit_target_reads_baked_params() {
+    let mut editor = test_editor();
+    let model_id = editor.editor_state.shape_store.insert(mask_model(), 0);
+    let shape_id = editor.editor_state.shape_select.add(
+        1,
+        None,
+        lumino_editor_state::DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (480.0, 60.0), (480.0, 64.0), (0.0, 64.0)],
+        },
+        Vec::new(),
+    );
+    editor
+        .editor_state
+        .shape_select
+        .set_model_id(shape_id, Some(model_id));
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor.editor_state.shape_select.select_only(shape_id);
+
+    assert_eq!(
+        editor.mask_edit_target(),
+        Some(MaskEditTarget::Baked { model_id }),
+        "已 Bake 形状应走 Baked 目标"
+    );
+    let params = editor
+        .mask_params_of(MaskEditTarget::Baked { model_id })
+        .expect("应读到 Mask op");
+    assert!(!params.own, "读回的是模型里存的那份参数");
+}
+
+#[test]
 fn test_toggle_pending_mask_marks_and_unmarks_selected_shape() {
     let mut editor = test_editor();
     editor.set_tool(lumino_message::Tool::ShapeSelect);
