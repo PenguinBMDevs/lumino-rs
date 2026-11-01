@@ -86,12 +86,19 @@ fn speed_at(speed: Speed, x: f32) -> f32 {
 }
 
 /// 由参数构造路径；`grp` 为组 box 首起点，`base` 为形状包围盒原点
+///
+/// **起点只有一个权威**：有 `grp` 就用 `grp`，绝不用调用方传进来的 `base`。
+///
+/// 历史 bug：起点曾用 `base`（当前包围盒原点）。音符包围盒的 key 是**整数**
+/// （`ShapeNote.key: u16`），而 `grp` 是连续浮点；组合结果向下平移时两者相差
+/// 会在 ±1 键之间来回跨越，首段的 `b.y >= a.y` 判定随之反复翻转，
+/// `Dir::Down` 把副本上下镜像 —— 表现为「每经过一个音符中心/分界就翻一次」。
 pub fn runs(params: &CopyPathParams, base: Pt) -> Vec<Run> {
     if params.pts.is_empty() {
         return Vec::new();
     }
     let origin = params.grp.map(|grp| (grp[0], grp[1])).unwrap_or(base);
-    let mut points = vec![base];
+    let mut points = vec![origin];
     points.extend(
         params
             .pts
