@@ -119,3 +119,35 @@ pub(super) fn create_mix_reduce_pipeline(
     });
     Ok(pipeline)
 }
+
+#[cfg(test)]
+mod shader_tests {
+    /// REF-LGS-013B：hosted CI 没有 GPU，但 WGSL 的语法/类型错误必须在这里
+    /// 被挡住（而不是等到用户机器上 `create_shader_module` 才炸）。
+    ///
+    /// 覆盖三个 compute shader；render 的 `BLOCK` 字符串替换也校验一次
+    /// （运行时按 `SynthConfig::block_size` 替换）。
+    #[test]
+    fn shaders_parse_and_validate() {
+        let render = include_str!("shaders/render.wgsl");
+        let render_2k = render.replace("const BLOCK: u32 = 512u;", "const BLOCK: u32 = 2048u;");
+        let mix = include_str!("shaders/mix.wgsl");
+        let reduce = include_str!("shaders/mix_reduce.wgsl");
+
+        for (name, src) in [
+            ("render.wgsl", render),
+            ("render.wgsl@2048", render_2k.as_str()),
+            ("mix.wgsl", mix),
+            ("mix_reduce.wgsl", reduce),
+        ] {
+            let module = naga::front::wgsl::parse_str(src)
+                .unwrap_or_else(|e| panic!("{name} 解析失败: {e}"));
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|e| panic!("{name} 校验失败: {e}"));
+        }
+    }
+}
