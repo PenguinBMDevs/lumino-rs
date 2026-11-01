@@ -397,7 +397,6 @@ impl Editor {
         self.pending_composed_redo.clear();
         self.pending_edit_undo.clear();
         self.pending_edit_redo.clear();
-        self.shape_edit_armed = None;
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
@@ -410,7 +409,6 @@ impl Editor {
         self.pending_composed_redo.clear();
         self.pending_edit_undo.clear();
         self.pending_edit_redo.clear();
-        self.shape_edit_armed = None;
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
     }

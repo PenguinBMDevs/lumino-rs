@@ -83,12 +83,11 @@ pub struct EditHandles {
 }
 
 /// 计算手柄布局
-pub fn handles(shape: &ShapeModel, zoom: Zoom) -> Option<EditHandles> {
+pub fn handles(shape: &ShapeModel, _zoom: Zoom) -> Option<EditHandles> {
     let (x0, y0, x1, y1) = bounds(shape)?;
     let cx = (x0 + x1) / 2.0;
     let cy = (y0 + y1) / 2.0;
     let mut handles = vec![
-        (HandleKind::Move, (cx, cy)),
         (HandleKind::ResizeCorner(Corner::Nw), (x0, y1)),
         (HandleKind::ResizeCorner(Corner::Ne), (x1, y1)),
         (HandleKind::ResizeCorner(Corner::Sw), (x0, y0)),
@@ -97,8 +96,6 @@ pub fn handles(shape: &ShapeModel, zoom: Zoom) -> Option<EditHandles> {
         (HandleKind::Side(Side::Right), (x1, cy)),
         (HandleKind::Side(Side::Bottom), (cx, y0)),
         (HandleKind::Side(Side::Top), (cx, y1)),
-        (HandleKind::Turn, (cx, y1 + 12.0 / zoom.y.max(1.0))),
-        (HandleKind::Skew, (cx, y0 - 12.0 / zoom.y.max(1.0))),
     ];
     if matches!(shape.kind, ShapeKind::Curve) {
         for (index, anchor) in shape.geometry.anchors.iter().enumerate() {

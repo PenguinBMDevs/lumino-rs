@@ -32,7 +32,6 @@ impl Editor {
         let current = std::mem::replace(&mut self.editor_state.pending_composed, previous);
         self.pending_edit_redo.push(current);
         self.editor_state.shape_select.remove_pending_all();
-        self.shape_edit_armed = None;
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
         true
@@ -46,7 +45,6 @@ impl Editor {
         let current = std::mem::replace(&mut self.editor_state.pending_composed, next);
         self.pending_edit_undo.push(current);
         self.editor_state.shape_select.remove_pending_all();
-        self.shape_edit_armed = None;
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
         true

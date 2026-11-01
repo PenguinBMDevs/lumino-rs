@@ -69,61 +69,13 @@ impl Editor {
             )
     }
 
-    /// 为当前唯一选中的图形进入/退出手柄编辑模式。
-    ///
-    /// 041C 阶段 3：单支 pending composed 也允许进入。显式模式避免「中心 Move
-    /// 手柄」抢占普通框选/整组拖动。
-    pub fn enable_shape_edit(&mut self) -> bool {
-        if self.editor_state.shape_select.selection_len() != 1 {
-            return false;
-        }
-        let (drawn_id, pending, model_id) = {
-            let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
-                return false;
-            };
-            (shape.id, shape.pending, shape.model_id)
-        };
-        let target = match pending {
-            Some(PendingShapeRef::Composed(index)) => {
-                let Some(composed) = self.editor_state.pending_composed.get(index) else {
-                    return false;
-                };
-                if !Self::pending_handle_supported(composed) {
-                    return false;
-                }
-                ShapeEditTarget::PendingComposed { index }
-            }
-            Some(_) => return false,
-            None => {
-                let model_id = match model_id {
-                    Some(id) => id,
-                    None => match self.ensure_model_for_drawn(drawn_id) {
-                        Some(id) => id,
-                        None => return false,
-                    },
-                };
-                ShapeEditTarget::Drawn { drawn_id, model_id }
-            }
-        };
-        self.shape_edit_armed = if self.shape_edit_armed == Some(target) {
-            None
-        } else {
-            Some(target)
-        };
-        self.grid_cache.clear();
-        true
-    }
-
-    /// 命中手柄则进入拖拽；必须先通过「编辑形状」进入显式编辑模式。
+    /// 命中手柄/旋转区则进入拖拽；选择框内部仍交给普通整组移动。
     pub(crate) fn begin_shape_edit(&mut self, tick: f32, key: f32) -> bool {
         if self.current_tool() != lumino_message::Tool::ShapeSelect
             || self.editor_state.shape_select.selection_len() != 1
         {
             return false;
         }
-        let Some(armed) = self.shape_edit_armed else {
-            return false;
-        };
         let (drawn_id, pending, model_id) = {
             let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
@@ -146,8 +98,12 @@ impl Editor {
             }
             Some(_) => return false,
             None => {
-                let Some(model_id) = model_id else {
-                    return false;
+                let model_id = match model_id {
+                    Some(id) => id,
+                    None => match self.ensure_model_for_drawn(drawn_id) {
+                        Some(id) => id,
+                        None => return false,
+                    },
                 };
                 let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
                     return false;
@@ -159,16 +115,30 @@ impl Editor {
                 )
             }
         };
-        if target != armed {
-            return false;
-        }
 
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let Some(handle) = hit_test(&model, (tick, key), zoom, 10.0) else {
-            return false;
+        let screen = self.line_pos_screen_pos((tick, key));
+        let inside_box = self
+            .shape_bounds_screen(&model)
+            .is_some_and(|rect| Self::point_near_rect(rect, screen, 2.0));
+        let handle = hit_test(&model, (tick, key), zoom, 10.0).filter(|handle| {
+            self.handle_allowed(&model, *handle)
+                && (inside_box || matches!(handle, HandleKind::AnchorHandle(_) | HandleKind::Path))
+        });
+        let handle = match handle {
+            Some(handle) => handle,
+            None => {
+                // 角外旋转：对角线外侧一圈，类似画板/Office 的选框外旋转区。
+                if !self.box_handles_enabled(&model)
+                    || !self.in_shape_rotate_zone(&model, (tick, key))
+                {
+                    return false;
+                }
+                HandleKind::Turn
+            }
         };
         self.shape_edit = Some(ShapeEditState {
             target,
@@ -296,7 +266,6 @@ impl Editor {
         let Some(state) = self.shape_edit.take() else {
             return;
         };
-        self.shape_edit_armed = None;
         match state.target {
             ShapeEditTarget::Drawn { drawn_id, .. } => {
                 let source = source_from_model(&state.original);
@@ -342,13 +311,10 @@ impl Editor {
 
     /// 当前编辑/选中形状的手柄屏幕位置（用于渲染）
     pub(crate) fn shape_edit_handle_points(&self) -> Vec<Point> {
-        let Some(armed) = self.shape_edit_armed else {
-            return Vec::new();
-        };
         let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
             return Vec::new();
         };
-        let (target, model) = match drawn.pending {
+        let model = match drawn.pending {
             Some(PendingShapeRef::Composed(index)) => {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return Vec::new();
@@ -359,7 +325,7 @@ impl Editor {
                 let Some(part) = composed.results.first() else {
                     return Vec::new();
                 };
-                (ShapeEditTarget::PendingComposed { index }, &part.model)
+                &part.model
             }
             Some(_) => return Vec::new(),
             None => {
@@ -369,18 +335,9 @@ impl Editor {
                 let Some(model) = self.editor_state.shape_store.model(model_id) else {
                     return Vec::new();
                 };
-                (
-                    ShapeEditTarget::Drawn {
-                        drawn_id: drawn.id,
-                        model_id,
-                    },
-                    model,
-                )
+                model
             }
         };
-        if target != armed {
-            return Vec::new();
-        }
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
@@ -391,13 +348,9 @@ impl Editor {
         layout
             .handles
             .iter()
+            .filter(|(kind, _)| self.handle_allowed(model, *kind))
             .map(|(_, pos)| self.line_pos_screen_pos(*pos))
             .collect()
-    }
-
-    /// 是否正在显式手柄编辑模式（用于菜单状态/Toast）
-    pub fn is_shape_edit_armed(&self) -> bool {
-        self.shape_edit_armed.is_some()
     }
 
     /// 是否正在拖拽形状手柄
@@ -443,3 +396,5 @@ fn sane_geometry(model: &ShapeModel) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+mod cursor;

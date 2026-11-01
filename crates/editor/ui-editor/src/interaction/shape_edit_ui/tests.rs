@@ -3,6 +3,7 @@
 use super::*;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
+use iced_core::{Point, Rectangle, Size, mouse};
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef, ShapeNote};
 
 fn editor_with_shape() -> Editor {
@@ -26,7 +27,6 @@ fn editor_with_shape() -> Editor {
     editor.editor_state.shape_select.select_only(id);
     assert!(editor.ensure_model_for_drawn(id).is_some());
     editor.set_tool(lumino_message::Tool::ShapeSelect);
-    assert!(editor.enable_shape_edit(), "进入手柄编辑模式");
     editor
 }
 
@@ -86,7 +86,7 @@ fn editor_with_pending_composed() -> Editor {
         .shapes
         .push(lumino_editor_state::ShapeInstance {
             kind: lumino_editor_state::ShapeKind::Rectangle,
-            rect: (0.0, 60.0, 100.0, 64.0),
+            rect: (0.0, 60.0, 1000.0, 64.0),
             shift_constrained: false,
             filled: true,
             apex_high: true,
@@ -104,9 +104,45 @@ fn editor_with_pending_composed() -> Editor {
 }
 
 #[test]
+fn test_shape_handle_cursor_feedback() {
+    let editor = editor_with_pending_composed();
+    let model = &editor.editor_state.pending_composed[0].results[0].model;
+    let (x0, y0, x1, y1) = model.geometry.bounds().expect("几何");
+    let nw = editor.line_pos_screen_pos((x0, y1));
+    assert_eq!(
+        editor.shape_handle_interaction(nw),
+        Some(mouse::Interaction::ResizingDiagonallyDown),
+        "左上角应为对角缩放光标"
+    );
+    let left = editor.line_pos_screen_pos((x0, (y0 + y1) / 2.0));
+    assert_eq!(
+        editor.shape_handle_interaction(left),
+        Some(mouse::Interaction::ResizingHorizontally),
+        "左边中点应为水平拉伸光标"
+    );
+    let center = editor.line_pos_screen_pos(((x0 + x1) / 2.0, (y0 + y1) / 2.0));
+    assert_eq!(
+        editor.shape_handle_interaction(center),
+        Some(mouse::Interaction::Move),
+        "选框内部应为移动光标"
+    );
+    let a = editor.line_pos_screen_pos((x0, y0));
+    let b = editor.line_pos_screen_pos((x1, y1));
+    let rect = Rectangle::new(
+        Point::new(a.x.min(b.x), a.y.min(b.y)),
+        Size::new((b.x - a.x).abs(), (b.y - a.y).abs()),
+    );
+    let rotate = Point::new(rect.x + rect.width + 12.0, rect.y - 12.0);
+    assert_eq!(
+        editor.shape_handle_interaction(rotate),
+        Some(mouse::Interaction::Grab),
+        "角外应为旋转光标"
+    );
+}
+
+#[test]
 fn test_pending_handle_points_round_trip_to_hit_test() {
     let mut editor = editor_with_pending_composed();
-    assert!(editor.enable_shape_edit(), "先进入显式编辑模式");
     let points = editor.shape_edit_handle_points();
     assert!(!points.is_empty(), "单支 composed 应有手柄");
     for point in points {
@@ -159,7 +195,6 @@ fn test_pending_live_handle_keeps_source_notes() {
         .bounds()
         .expect("Live 应有展平几何");
 
-    assert!(editor.enable_shape_edit());
     assert!(editor.begin_shape_edit(bounds.0, bounds.3));
     assert!(editor.update_shape_edit(bounds.0, bounds.3 + 4.0));
     assert!(editor.finish_shape_edit());
@@ -173,7 +208,7 @@ fn test_pending_live_handle_keeps_source_notes() {
 }
 
 #[test]
-fn test_pending_handle_edit_requires_explicit_mode() {
+fn test_pending_handle_is_direct_without_mode() {
     let mut editor = editor_with_pending_composed();
     let bounds = editor.editor_state.pending_composed[0].results[0]
         .model
@@ -181,50 +216,29 @@ fn test_pending_handle_edit_requires_explicit_mode() {
         .bounds()
         .expect("几何");
     assert!(
-        !editor.begin_shape_edit(bounds.0, bounds.3),
-        "未进入编辑模式时，手柄不得抢占整组拖动"
-    );
-    assert!(!editor.is_shape_editing());
-
-    editor.editor_state.shape_select.clear_selection();
-    let id = editor
-        .editor_state
-        .shape_select
-        .pending_mirror(PendingShapeRef::Composed(0))
-        .expect("composed 镜像");
-    editor.editor_state.shape_select.select_only(id);
-    assert!(editor.enable_shape_edit(), "进入编辑模式");
-    assert!(
         editor.begin_shape_edit(bounds.0, bounds.3),
-        "进入模式后点手柄应开始编辑"
+        "选中对象后直接点角手柄应开始缩放，不需要编辑模式"
     );
     assert!(editor.is_shape_editing());
 }
 
 #[test]
-fn test_pending_turn_handle_rotates_geometry() {
+fn test_pending_rotate_zone_outside_corner() {
     let mut editor = editor_with_pending_composed();
-    assert!(editor.enable_shape_edit());
     let model = editor.editor_state.pending_composed[0].results[0]
         .model
         .clone();
-    let layout = edit_handles(
-        &model,
-        Zoom {
-            x: editor.editor_state.view.zoom_x,
-            y: editor.editor_state.view.zoom_y,
-        },
-    )
-    .expect("手柄布局");
-    let (_, turn_pos) = layout
-        .handles
-        .iter()
-        .find(|(kind, _)| matches!(kind, HandleKind::Turn))
-        .expect("Turn 手柄");
-    let screen = editor.line_pos_screen_pos(*turn_pos);
-    let tick = editor.pos_to_tick(screen);
-    let key = editor.pos_to_raw_key(screen);
-    assert!(editor.begin_shape_edit(tick, key), "Turn 手柄应命中");
+    let (x0, y0, x1, y1) = model.geometry.bounds().expect("几何");
+    let a = editor.line_pos_screen_pos((x0, y0));
+    let b = editor.line_pos_screen_pos((x1, y1));
+    let rect = Rectangle::new(
+        Point::new(a.x.min(b.x), a.y.min(b.y)),
+        Size::new((b.x - a.x).abs(), (b.y - a.y).abs()),
+    );
+    let rotate_screen = Point::new(rect.x + rect.width + 12.0, rect.y - 12.0);
+    let tick = editor.pos_to_tick(rotate_screen);
+    let key = editor.pos_to_raw_key(rotate_screen);
+    assert!(editor.begin_shape_edit(tick, key), "角外 12px 应进入旋转");
     assert!(editor.update_shape_edit(tick + 200.0, key - 200.0));
     assert!(editor.finish_shape_edit());
     assert_ne!(
@@ -256,7 +270,6 @@ fn test_pending_curve_path_handle_moves_anchor() {
         .expect("pending 曲线镜像");
     editor.editor_state.shape_select.select_only(id);
     assert!(editor.copy_along_selected(), "曲线应能组合成单支");
-    assert!(editor.enable_shape_edit(), "进入显式编辑模式");
 
     let before = editor.editor_state.pending_composed[0].results[0]
         .model
@@ -285,7 +298,6 @@ fn test_pending_composed_handle_edits_preview_and_undo() {
     use lumino_core::shape::ShapeOp;
 
     let mut editor = editor_with_pending_composed();
-    assert!(editor.enable_shape_edit(), "单支 composed 应进入手柄编辑");
     assert!(editor.begin_shape_edit(0.0, 64.0), "Nw 手柄应命中");
     assert!(editor.update_shape_edit(0.0, 66.0));
     assert!(editor.update_shape_edit(0.0, 68.0));

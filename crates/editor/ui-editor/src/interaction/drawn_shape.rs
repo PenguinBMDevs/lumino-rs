@@ -694,7 +694,9 @@ impl Editor {
                 } else if !self.editor_state.shape_select.is_selected(id) {
                     self.editor_state.shape_select.select_only(id);
                 }
+                // 已 Bake 图形预先绑定模型，手柄才能在选中后立即显示/命中。
                 if self.editor_state.shape_select.is_selected(id) {
+                    let _ = self.ensure_model_for_drawn(id);
                     self.editor_state.shape_select.begin_drag(tick, key);
                 }
             }
