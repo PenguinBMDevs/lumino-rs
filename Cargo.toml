@@ -32,9 +32,9 @@ resolver = "3"
 #   6335b11 每键上限只回收释放中声部 + Kill 淡出 1ms→5ms）。
 #   显式 rev 防止 `cargo update` 静默漂移而丢失修复。
 [patch.crates-io]
-xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
-xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
-xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
+xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 # iced 0.14 fork（PenguinBMDevs/iced，分支 lumino-android-0.14）：
 # 基线 = iced-rs/iced 0.14 分支 595af03（与 crates.io 已发布源码逐字节一致），
 # 其上仅 1 个提交，含三处 LUMINO 需要的改动：

@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 use xsynth_soundfonts::LoopMode;
-use xsynth_soundfonts::sf2::load_soundfont;
+use xsynth_soundfonts::sf2::Sf2Preset;
 
 use crate::error::SoundFontError;
 use crate::synth::dsp::{EnvelopeDescriptor, cents_factor};
@@ -34,6 +34,10 @@ mod load;
 mod regions;
 mod types;
 
+pub use cache::{
+    load_presets_cached, preset_cache_stats, reset_preset_cache_stats, reset_soundfont_cache_stats,
+    soundfont_cache_stats,
+};
 pub(crate) use types::{ResampleCache, ResampleEntry, SoundFontCore};
 pub use types::{SoundFont, Zone, ZonePositions};
 
