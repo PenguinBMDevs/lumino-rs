@@ -34,7 +34,7 @@ mod load;
 mod regions;
 mod types;
 
-pub(crate) use types::{ResampleMap, SoundFontCore};
+pub(crate) use types::{ResampleCache, ResampleEntry, SoundFontCore};
 pub use types::{SoundFont, Zone, ZonePositions};
 
 #[cfg(test)]

@@ -19,6 +19,7 @@ fn test_stats() -> PlaybackStatsReader {
         governor_level: Arc::new(AtomicU64::new(0)),
         sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
         sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
+        sample_resample_bytes: Arc::new(AtomicU64::new(0)),
     }
 }
 

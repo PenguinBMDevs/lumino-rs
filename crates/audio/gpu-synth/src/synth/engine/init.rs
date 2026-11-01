@@ -386,6 +386,13 @@ impl GpuSynth {
             t.elapsed().as_millis(),
             sf.memory_bytes()
         );
+        // REF-DATA-001：换音源 = 旧声部/旧采样池全部作废。先复位（清声部、
+        // 清 sample_offsets/游标、重建 chunk），再挂新句柄——否则旧声部的
+        // offset 会命中新音源的同 id 采样（潜在错音），且显存只增不减。
+        if self.sf.is_some() || !self.sample_offsets.is_empty() {
+            self.reset_channel_state();
+            self.reset_sample_pool();
+        }
         self.sf = Some(sf);
         Ok(())
     }
@@ -393,6 +400,8 @@ impl GpuSynth {
     /// Unloads the current soundfont.
     pub fn unload_soundfont(&mut self) {
         self.sf = None;
+        self.reset_channel_state();
+        self.reset_sample_pool();
     }
 
     // ------------------------------------------------------------------

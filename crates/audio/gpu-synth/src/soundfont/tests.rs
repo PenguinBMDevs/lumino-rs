@@ -81,6 +81,51 @@ fn memory_bytes_counts_native_and_resampled_cache() {
     );
 }
 
+/// REF-DATA-001：同率重采样是「别名」——缓存命中但不计字节，也不触发淘汰。
+#[test]
+fn same_rate_resample_aliases_native_and_is_free() {
+    let Some(path) = rich_sf2() else {
+        eprintln!("skip same_rate_resample_aliases_native_and_is_free: 未找到 rich.sf2");
+        return;
+    };
+    let mut sf = SoundFont::load(&path, 0, 0, true, 48_000).expect("rich.sf2 应可加载");
+    let native = sf.memory_bytes_split().0;
+    assert!(native > 0);
+
+    sf.cache_resampled(0, 48_000, sf.sample_data(0).clone());
+    let (n, r) = sf.memory_bytes_split();
+    assert_eq!(n, native, "原生字节不应变化");
+    assert_eq!(r, 0, "同率缓存与原生共享 Arc，不应计入重采样字节");
+}
+
+/// REF-DATA-001：异率缓存超过上限时按 LRU 淘汰，字节数保持有界。
+#[test]
+fn resample_cache_evicts_when_over_budget() {
+    let Some(path) = rich_sf2() else {
+        eprintln!("skip resample_cache_evicts_when_over_budget: 未找到 rich.sf2");
+        return;
+    };
+    let cap = super::accessors::RESAMPLE_CACHE_MAX_BYTES;
+    let mut sf = SoundFont::load(&path, 0, 0, true, 48_000).expect("rich.sf2 应可加载");
+
+    // 每份 128K f32 = 512 KiB；测试上限 1 MiB → 插入 3 份后必然淘汰 1 份。
+    let chunk = 128 * 1024;
+    for i in 0..3u32 {
+        let data: Arc<[f32]> = Arc::from(vec![0.0f32; chunk]);
+        sf.cache_resampled(0, 11_000 + i, data);
+    }
+    let (_, resample) = sf.memory_bytes_split();
+    assert!(
+        resample <= cap,
+        "重采样缓存必须保持有界：{resample} > {cap}"
+    );
+    assert_eq!(
+        sf.cache().map.len(),
+        2,
+        "三份 512 KiB 在 1 MiB 上限下应只剩两份"
+    );
+}
+
 /// REF-LGS-014：同一文件第二次 `load_cached` 复用同一个解析核心（采样数据
 /// 与重采样缓存都只有一份）。
 #[test]
