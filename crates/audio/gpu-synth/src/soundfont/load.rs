@@ -51,8 +51,9 @@ impl SoundFont {
         // SF2 path：必须传引擎采样率。XSynth 的加载器会把每份样本重采样到
         // 该目标率，并把 offset/loop 位置转换到该域；写死 44_100 会让 48 kHz
         // 音色库被错误重采样，播放时整体升高 ~147 cents。
-        let presets =
-            load_soundfont(path, sample_rate).map_err(|e| SoundFontError::Parse(format!("{e}")))?;
+        // REF-DATA-002：presets 走进程级缓存，XSynth 侧用同一个入口构建，
+        // 两栈共享解析结果与采样 `Arc`（不再各解析一遍）。
+        let presets = super::cache::load_presets_cached(path, sample_rate)?;
 
         let target = presets
             .iter()
@@ -63,6 +64,7 @@ impl SoundFont {
         for region in &target.regions {
             core.add_region(region);
         }
+        core.presets = Some(presets);
         Ok(core)
     }
 

@@ -115,6 +115,11 @@ pub(crate) struct SoundFontCore {
     /// one cache (REF-LGS-014). The lock is only held for a map lookup/insert,
     /// never while resampling.
     pub(super) resample_cache: Mutex<ResampleCache>,
+    /// REF-DATA-002：解析出本 core 的 SF2 presets（强引用）。
+    ///
+    /// 采样 `Arc` 与进程级 presets 缓存共享；持有它可保证缓存条目在 core
+    /// 存活期间不被回收，XSynth 侧也从同一份 presets 构建。SFZ 为 `None`。
+    pub(super) presets: Option<Arc<Vec<Sf2Preset>>>,
 }
 
 impl SoundFontCore {
@@ -129,6 +134,7 @@ impl SoundFontCore {
             use_effects,
             sample_rate,
             resample_cache: Mutex::new(ResampleCache::default()),
+            presets: None,
         }
     }
 }
