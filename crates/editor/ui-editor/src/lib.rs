@@ -69,6 +69,7 @@ mod tests {
     mod scroll;
     mod selection_precision;
     mod selection_remap;
+    mod shape_edit_e2e;
     mod spatial_index_staleness;
     mod state;
     pub(crate) mod test_helpers;

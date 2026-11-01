@@ -102,13 +102,12 @@ impl Editor {
                 ShapeEditTarget::Drawn { drawn_id, model_id }
             }
         };
-        // 以「当前是否真的处于编辑态」为切换依据：stale armed（换选后再选同一对象）
-        // 不会把用户点进「看起来没反应」的半个状态。
-        self.shape_edit_armed = if self.is_shape_edit_armed() {
-            None
-        } else {
-            Some(target)
-        };
+        // 已处于编辑态 → 本次为「退出」：丢弃未提交拖拽并恢复选框。
+        if self.is_shape_edit_armed() {
+            self.exit_shape_edit();
+            return true;
+        }
+        self.shape_edit_armed = Some(target);
         self.grid_cache.clear();
         true
     }
@@ -119,6 +118,19 @@ impl Editor {
     /// 不会出现「选框被隐藏、锚点却不在」的空窗。
     pub fn is_shape_edit_armed(&self) -> bool {
         self.armed_edit_target().is_some()
+    }
+
+    /// 退出「编辑图形」：丢弃未提交的拖拽，恢复 ShapeSelect 选框。
+    ///
+    /// 入口：双击空白处、右键「编辑图形」再点一次、切换工具。
+    pub fn exit_shape_edit(&mut self) -> bool {
+        let was = self.shape_edit_armed.is_some() || self.shape_edit.is_some();
+        if self.shape_edit.is_some() {
+            self.cancel_shape_edit();
+        }
+        self.shape_edit_armed = None;
+        self.grid_cache.clear();
+        was
     }
 
     /// 编辑态命中：8 点箱体（pending 额外中心）+ 角外 32px 旋转区。
@@ -147,14 +159,13 @@ impl Editor {
             y: self.editor_state.view.zoom_y,
         };
         let include_center = self.edit_allows_center(target);
-        let handle = match hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
-            Some(handle) => handle,
-            None => {
-                // 角外旋转：对角线外侧一圈，类似画板/Office 的选框外旋转区。
-                if !self.in_shape_rotate_zone(&model, (tick, key)) {
-                    return false;
-                }
-                HandleKind::Turn
+        // 旋转热区优先于锚点：角外那一圈必须能转，不能被角锚点的 10px 容差吃掉。
+        let handle = if self.in_shape_rotate_zone(&model, (tick, key)) {
+            HandleKind::Turn
+        } else {
+            match hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
+                Some(handle) => handle,
+                None => return false,
             }
         };
         self.shape_edit = Some(ShapeEditState {
@@ -178,8 +189,10 @@ impl Editor {
             return false;
         };
         let k = match state.handle {
-            // 旋转角必须在屏幕/拍–key 同一单位下计算；ShapeModel.k 是 beats per key。
-            HandleKind::Turn => state.original.k.max(1e-6) * f32::from(self.editor_state.view.ppq),
+            // 旋转比例必须是**屏幕像素**意义上的「1 key / 1 tick」，横纵卷帘都成立。
+            // 之前用 `model.k * ppq`（数据单位）会把它当成像素比例，屏幕上看就是
+            // 旋转被拉成极端椭圆，甚至触发几何守卫整帧丢弃 —— 表现为「旋转没实现」。
+            HandleKind::Turn => self.turn_aspect(),
             _ => state.original.k,
         };
         // 关键：每帧都从拖动前的 original 重算一次。
@@ -277,8 +290,7 @@ impl Editor {
         }
     }
 
-    /// 取消拖拽并恢复原几何（预留给 Esc）
-    #[allow(dead_code)]
+    /// 取消拖拽并恢复原几何（Esc / 退出编辑图形）
     pub(crate) fn cancel_shape_edit(&mut self) {
         let Some(state) = self.shape_edit.take() else {
             return;

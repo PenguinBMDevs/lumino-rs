@@ -687,6 +687,16 @@ impl Editor {
             self.grid_cache.clear();
             return;
         }
+        // 020 编辑图形：锚点/旋转热区之外只处理「框内拖动」。
+        //   单击不退出编辑态（拖动一次没抓准就丢状态，很难操作），
+        //   退出走双击空白处或右键「编辑图形」再点一次。
+        if self.is_shape_edit_armed() {
+            if self.point_in_selection_box(tick, key) {
+                self.editor_state.shape_select.begin_drag(tick, key);
+            }
+            self.grid_cache.clear();
+            return;
+        }
         match self.hit_test_drawn_shape(tick, key) {
             Some(id) => {
                 if additive {

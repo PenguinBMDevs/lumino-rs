@@ -18,7 +18,10 @@ impl Editor {
         }
         // 图形选中工具：拖动已绘制图形（仅更新叠加层预览偏移，不改 document）
         // 或空白处拉框框选（仅更新拉框矩形，不改 document）
-        if self.editor_state.shape_select.is_dragging()
+        // 020：编辑图形（锚点拖拽）也必须进这里——它不设置 shape_select.drag，
+        // 漏掉会让锚点「按下有、拖动无」，必须再点一次才动。
+        if self.is_shape_editing()
+            || self.editor_state.shape_select.is_dragging()
             || self.editor_state.shape_select.is_marqueeing()
         {
             let raw_tick = self.pos_to_tick(pos);

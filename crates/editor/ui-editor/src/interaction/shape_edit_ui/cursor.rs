@@ -11,6 +11,13 @@ use crate::Editor;
 
 use super::ShapeEditTarget;
 
+/// 角外旋转热区：横纵都超出编辑框的最小/最大像素
+const ROTATE_MIN_GAP: f32 = 3.0;
+const ROTATE_ZONE_PX: f32 = 32.0;
+/// `turn_aspect` 的探测步长（只用于量像素比例，不参与几何）
+const TURN_ASPECT_PROBE_TICKS: f32 = 100.0;
+const TURN_ASPECT_PROBE_KEYS: f32 = 10.0;
+
 impl Editor {
     /// 屏幕空间的选择框（模型几何包围盒，不做 padding）
     pub(super) fn shape_bounds_screen(&self, model: &ShapeModel) -> Option<Rectangle> {
@@ -70,7 +77,10 @@ impl Editor {
         self.shape_bounds_screen(model)
     }
 
-    /// 角外旋转区：编辑框四角外侧 32px 的对角区域。
+    /// 角外旋转区：编辑框四角外侧 3..32px 的对角区域。
+    ///
+    /// 只要横纵都出了编辑框就归旋转（哪怕还在角锚点的 10px 容差内）——
+    /// 否则那圈「角外」会被缩放抢走，用户永远摸不到旋转。
     pub(super) fn in_shape_rotate_zone(&self, model: &ShapeModel, logical: (f32, f32)) -> bool {
         let point = self.line_pos_screen_pos(logical);
         let Some(rect) = self.shape_bounds_screen(model) else {
@@ -92,10 +102,31 @@ impl Editor {
         } else {
             0.0
         };
-        dx > 0.0 && dy > 0.0 && dx <= 32.0 && dy <= 32.0
+        dx >= ROTATE_MIN_GAP && dy >= ROTATE_MIN_GAP && dx <= ROTATE_ZONE_PX && dy <= ROTATE_ZONE_PX
     }
 
-    /// 编辑态悬停光标：8+1 锚点 + 角外旋转。
+    /// 旋转用的「1 key 折合多少 tick」：直接量屏幕，横/纵卷帘都成立。
+    ///
+    /// `apply_drag(Turn)` 用它在 (tick, key) 空间里做**等比**旋转：
+    /// ```text
+    /// x' = cx + dx*cos - (dy*k)*sin
+    /// y' = cy + (dx/k)*sin + dy*cos
+    /// ```
+    /// `k` 必须是「1 key 的像素数 / 1 tick 的像素数」，否则会拿数据单位的
+    /// `model.k` 当比例，屏幕上看就是完全不同的缩放/扭曲。
+    pub(super) fn turn_aspect(&self) -> f32 {
+        let origin = self.line_pos_screen_pos((0.0, 0.0));
+        let tick_pt = self.line_pos_screen_pos((TURN_ASPECT_PROBE_TICKS, 0.0));
+        let key_pt = self.line_pos_screen_pos((0.0, TURN_ASPECT_PROBE_KEYS));
+        let px_per_tick = origin.distance(tick_pt) / TURN_ASPECT_PROBE_TICKS;
+        let px_per_key = origin.distance(key_pt) / TURN_ASPECT_PROBE_KEYS;
+        if px_per_tick <= f32::EPSILON || !px_per_tick.is_finite() {
+            return 1.0;
+        }
+        (px_per_key / px_per_tick).max(1e-4)
+    }
+
+    /// 编辑态悬停光标：8+1 锚点 + 角外旋转（旋转区优先，与命中同序）。
     ///
     /// 未进入「编辑图形」时返回 `None`，由普通 ShapeSelect 光标接管。
     pub(crate) fn shape_handle_interaction(&self, pos: Point) -> Option<mouse::Interaction> {
@@ -105,6 +136,11 @@ impl Editor {
         }
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_raw_key(pos);
+        // 角外旋转区优先：锚点容差 10px 会盖住拐角外的一小圈，
+        // 若先查锚点，用户会永远摸不到旋转。
+        if self.in_shape_rotate_zone(model, (tick, key)) {
+            return Some(mouse::Interaction::Grab);
+        }
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
@@ -127,9 +163,6 @@ impl Editor {
                 }
                 _ => mouse::Interaction::Grab,
             });
-        }
-        if self.in_shape_rotate_zone(model, (tick, key)) {
-            return Some(mouse::Interaction::Grab);
         }
         None
     }

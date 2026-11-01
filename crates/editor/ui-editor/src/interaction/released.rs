@@ -20,7 +20,10 @@ impl Editor {
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
         // 图形选中工具：结束拖动（提交移动）或结束空白拉框（按框命中选中）
-        if self.editor_state.shape_select.is_dragging()
+        // 020：编辑图形的锚点拖拽同样在这里收口（`finish_shape_edit`），否则松手
+        // 不提交、下一次按下会覆盖掉未完成的手柄状态。
+        if self.is_shape_editing()
+            || self.editor_state.shape_select.is_dragging()
             || self.editor_state.shape_select.is_marqueeing()
         {
             self.handle_shape_select_released();
