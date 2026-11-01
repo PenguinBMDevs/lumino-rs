@@ -61,7 +61,7 @@ pub(super) fn draw_composed_notes(
         return false;
     }
     match composed.kind {
-        ComposedKind::CopyAlong => {
+        ComposedKind::CopyAlong | ComposedKind::Single => {
             let blocks: Vec<(f32, f32, u16)> = composed.notes().map(note_block).collect();
             fill_note_blocks(
                 frame,

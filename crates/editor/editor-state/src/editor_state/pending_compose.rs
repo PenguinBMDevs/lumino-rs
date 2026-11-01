@@ -35,6 +35,11 @@ pub enum ComposedKind {
     CopyAlong,
     /// 028：单形状渐强力度包络（`ShapeOp::VelocityEnv`）
     Velocity,
+    /// 020：单个待确认形状/曲线转成的可编辑单支组合
+    ///
+    /// 参数化实例（kind + rect）表达不了旋转，进入「编辑图形」前统一提升成模型；
+    /// `sources` 保留原实例，`Ctrl+Z`（撤销组合）可还原回参数化形状。
+    Single,
 }
 
 /// 组合结果中的一支（Slice 的两片 / Between 的首末与步）

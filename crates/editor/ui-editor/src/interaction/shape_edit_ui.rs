@@ -66,6 +66,7 @@ impl Editor {
                     | ComposedKind::Join
                     | ComposedKind::CopyAlong
                     | ComposedKind::Velocity
+                    | ComposedKind::Single
             )
     }
 
@@ -73,6 +74,11 @@ impl Editor {
     pub fn enable_shape_edit(&mut self) -> bool {
         if self.editor_state.shape_select.selection_len() != 1 {
             return false;
+        }
+        // 已处于编辑态 → 本次为「退出」：丢弃未提交拖拽并恢复选框。
+        if self.is_shape_edit_armed() {
+            self.exit_shape_edit();
+            return true;
         }
         let (drawn_id, pending, model_id) = {
             let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
@@ -90,6 +96,13 @@ impl Editor {
                 }
                 ShapeEditTarget::PendingComposed { index }
             }
+            // 020：参数化待确认形状/曲线先提升成单支组合，再按组合编辑（可旋转）
+            Some(PendingShapeRef::Shape(_) | PendingShapeRef::CurvePath(_)) => {
+                if !self.promote_pending_for_edit() {
+                    return false;
+                }
+                return self.enable_shape_edit();
+            }
             Some(_) => return false,
             None => {
                 let model_id = match model_id {
@@ -102,11 +115,6 @@ impl Editor {
                 ShapeEditTarget::Drawn { drawn_id, model_id }
             }
         };
-        // 已处于编辑态 → 本次为「退出」：丢弃未提交拖拽并恢复选框。
-        if self.is_shape_edit_armed() {
-            self.exit_shape_edit();
-            return true;
-        }
         self.shape_edit_armed = Some(target);
         self.grid_cache.clear();
         true

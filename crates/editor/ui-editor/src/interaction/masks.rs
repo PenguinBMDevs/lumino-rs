@@ -126,6 +126,30 @@ impl Editor {
                 None => units.push((vec![member], None)),
             }
         }
+        // 020 提升出来的单支组合同样能带 Mask
+        for composed in &self.editor_state.pending_composed {
+            for part in &composed.results {
+                let Some(params) = mask_ops::params_of(&part.model) else {
+                    continue;
+                };
+                let Some(member) = member_of(&part.model, &part.notes, ppq, nkeys) else {
+                    continue;
+                };
+                match params.group {
+                    Some(group) => {
+                        if let Some((members, _)) = units
+                            .iter_mut()
+                            .find(|(_, existing)| *existing == Some(group))
+                        {
+                            members.push(member);
+                        } else {
+                            units.push((vec![member], Some(group)));
+                        }
+                    }
+                    None => units.push((vec![member], None)),
+                }
+            }
+        }
         units
             .into_iter()
             .map(|(members, _)| unit_area(&members))
@@ -204,6 +228,17 @@ impl Editor {
                     crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
                 out.extend(self.shape_notes_of(&model, track));
             }
+            // 020 单支组合的 own=false 同样用虚线段示意
+            for composed in &self.editor_state.pending_composed {
+                for part in &composed.results {
+                    if mask_ops::params_of(&part.model).is_some_and(|params| params.own) {
+                        continue;
+                    }
+                    if mask_ops::params_of(&part.model).is_some() {
+                        out.extend_from_slice(&part.notes);
+                    }
+                }
+            }
         }
         out
     }
@@ -217,6 +252,11 @@ pub enum MaskEditTarget {
         /// `shape_tool.shapes` 下标
         index: usize,
     },
+    /// 单支待确认组合（020 提升出来的 `Single`）：同样即时预览
+    PendingComposed {
+        /// `EditorState::pending_composed` 下标
+        index: usize,
+    },
     /// 已 Bake 形状（`ShapeOp::Mask`）：面板改草稿，Apply 时一次 `edit_shape`
     Baked {
         /// ShapeStore 模型 id
@@ -227,16 +267,24 @@ pub enum MaskEditTarget {
 impl Editor {
     /// 当前选中对象的遮罩编辑目标（须单选中；多支组合/曲线路径不支持）
     pub fn mask_edit_target(&mut self) -> Option<MaskEditTarget> {
-        if self.pending_single_selection() {
-            let mut selected = self.editor_state.shape_select.selected_shapes();
-            let shape = selected.next()?;
-            if selected.next().is_some() {
+        if let Some(shape) = self.editor_state.shape_select.selected_shapes().next() {
+            if self.editor_state.shape_select.selection_len() != 1 {
                 return None;
             }
-            if let Some(PendingShapeRef::Shape(index)) = shape.pending {
-                return Some(MaskEditTarget::Pending { index });
+            match shape.pending {
+                Some(PendingShapeRef::Shape(index)) => {
+                    return Some(MaskEditTarget::Pending { index });
+                }
+                Some(PendingShapeRef::Composed(index)) => {
+                    let composed = self.editor_state.pending_composed.get(index)?;
+                    if composed.kind != lumino_editor_state::ComposedKind::Single {
+                        return None;
+                    }
+                    return Some(MaskEditTarget::PendingComposed { index });
+                }
+                Some(_) => return None,
+                None => {}
             }
-            return None;
         }
         let (_, model_id, _) = self.selected_model_for_edit()?;
         Some(MaskEditTarget::Baked { model_id })
@@ -251,6 +299,12 @@ impl Editor {
                 .shapes
                 .get(index)
                 .and_then(|shape| shape.mask.clone()),
+            MaskEditTarget::PendingComposed { index } => self
+                .editor_state
+                .pending_composed
+                .get(index)
+                .and_then(|composed| composed.results.first())
+                .and_then(|part| mask_ops::params_of(&part.model).cloned()),
             MaskEditTarget::Baked { model_id } => self
                 .editor_state
                 .shape_store
@@ -269,6 +323,36 @@ impl Editor {
         }
         shape.mask = params;
         self.rebuild_pending_mirrors();
+        self.mark_notes_changed();
+        self.grid_cache.clear();
+        true
+    }
+
+    /// 单支待确认组合的遮罩：改写模型上的 `Mask` op 并重算预览音符
+    pub fn set_pending_composed_mask(&mut self, index: usize, params: Option<MaskParams>) -> bool {
+        let Some(composed) = self.editor_state.pending_composed.get(index) else {
+            return false;
+        };
+        let Some(mut model) = composed.results.first().map(|part| part.model.clone()) else {
+            return false;
+        };
+        model.ops.retain(|op| !matches!(op, ShapeOp::Mask(_)));
+        if let Some(params) = params {
+            model.ops.push(ShapeOp::Mask(params));
+        }
+        let track = model.track as usize;
+        let notes = self.shape_notes_of(&model, track);
+        let Some(part) = self
+            .editor_state
+            .pending_composed
+            .get_mut(index)
+            .and_then(|composed| composed.results.first_mut())
+        else {
+            return false;
+        };
+        part.model = model;
+        part.notes = notes;
+        self.refresh_pending_mirror_geometry();
         self.mark_notes_changed();
         self.grid_cache.clear();
         true

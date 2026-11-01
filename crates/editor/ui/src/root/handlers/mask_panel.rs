@@ -92,6 +92,11 @@ impl Root {
                     .set_pending_mask(index, self.mask_panel.params.clone());
                 self.mask_panel.dirty = false;
             }
+            MaskEditTarget::PendingComposed { index } => {
+                self.editor
+                    .set_pending_composed_mask(index, self.mask_panel.params.clone());
+                self.mask_panel.dirty = false;
+            }
             MaskEditTarget::Baked { .. } => {
                 self.mask_panel.dirty = true;
             }

@@ -282,6 +282,57 @@ fn test_enable_shape_edit_toggles_and_recovers_from_stale_target() {
 }
 
 #[test]
+fn test_pending_shape_promotes_to_single_composed_for_edit() {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor
+        .editor_state
+        .shape_tool
+        .shapes
+        .push(lumino_editor_state::ShapeInstance {
+            kind: lumino_editor_state::ShapeKind::Rectangle,
+            rect: (0.0, 60.0, 1000.0, 64.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: true,
+            mask: None,
+        });
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("pending 镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert!(
+        editor.enable_shape_edit(),
+        "待确认形状应能直接进入编辑图形（内部提升为单支组合）"
+    );
+    assert!(editor.is_shape_edit_armed());
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert_eq!(
+        editor.editor_state.pending_composed[0].kind,
+        ComposedKind::Single,
+        "参数化实例必须提升成可旋转的模型"
+    );
+    assert!(
+        editor.editor_state.shape_tool.shapes.is_empty(),
+        "原实例已被组合吸收"
+    );
+
+    let handles = editor.shape_edit_handles();
+    assert_eq!(handles.box_points.len(), 8, "提升后仍是严格 8 个锚点");
+    assert!(handles.center.is_some(), "单支组合应有中心锚点");
+
+    // 撤销组合 → 回到参数化形状
+    assert!(editor.undo_pending_compose());
+    assert_eq!(editor.editor_state.shape_tool.shapes.len(), 1);
+    assert!(editor.editor_state.pending_composed.is_empty());
+}
+
+#[test]
 fn test_switching_tool_exits_edit_mode() {
     let mut editor = editor_with_pending_composed();
     enter_edit(&mut editor);
