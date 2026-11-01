@@ -7,6 +7,10 @@ use std::f32::consts::PI;
 
 use lumino_core::shape::{ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 
+/// 缩放下限：角手柄拖过对边时比例会变负，直接镜像图形；编辑态钳到极小正值，
+/// 表现成「缩到底停住」，不再无提示翻转。
+const MIN_SCALE: f32 = 0.01;
+
 /// 逻辑坐标（tick, key）
 pub type Pt = (f32, f32);
 
@@ -189,10 +193,13 @@ pub fn apply_drag(
                 Corner::Sw => (x1, y1),
                 Corner::Se => (x0, y1),
             };
-            let mut sx = ratio(to.0, fx, from.0);
-            let mut sy = ratio(to.1, fy, from.1);
+            // 拖过对边时 ratio 会变负 —— 那会把图形直接镜像（上下/左右翻转）。
+            // 编辑态要求「拖到底就停住」，不允许无提示翻转，因此钳到最小正比例；
+            // 需要镜像请用 023 半边对称。
+            let mut sx = ratio(to.0, fx, from.0).max(MIN_SCALE);
+            let mut sy = ratio(to.1, fy, from.1).max(MIN_SCALE);
             if mods.ctrl {
-                let s = ((sx.abs() + sy.abs()) / 2.0).max(0.01);
+                let s = ((sx + sy) / 2.0).max(MIN_SCALE);
                 sx = s;
                 sy = s;
             }

@@ -68,6 +68,59 @@ fn test_hit_test_box_ignores_path_points() {
 }
 
 #[test]
+fn test_corner_drag_past_opposite_edge_does_not_mirror() {
+    // Nw 角：固定点在 (x1, y0)；向下拖过底边时比例会变负 → 曾经直接上下镜像
+    let mut shape = curve();
+    assert!(apply_drag(
+        &mut shape,
+        HandleKind::ResizeCorner(Corner::Nw),
+        (0.0, 64.0),
+        (0.0, 58.0),
+        Mods::default(),
+        1.0
+    ));
+    let keys: Vec<f32> = shape.geometry.anchors.iter().map(|a| a.pos.1).collect();
+    assert!(
+        keys[1] >= keys[0] && keys[1] >= keys[2],
+        "向下拖过对边不得上下镜像：{keys:?}"
+    );
+
+    // Ne 角：固定点在 (x0, y0)；向左拖过左边时同样不得左右镜像
+    let mut shape = curve();
+    assert!(apply_drag(
+        &mut shape,
+        HandleKind::ResizeCorner(Corner::Ne),
+        (120.0, 64.0),
+        (-60.0, 64.0),
+        Mods::default(),
+        1.0
+    ));
+    let ticks: Vec<f32> = shape.geometry.anchors.iter().map(|a| a.pos.0).collect();
+    assert!(
+        ticks[1] >= ticks[0] && ticks[2] >= ticks[1],
+        "向左拖过对边不得左右镜像：{ticks:?}"
+    );
+}
+
+#[test]
+fn test_corner_drag_past_edge_with_ctrl_does_not_mirror() {
+    let mut shape = curve();
+    assert!(apply_drag(
+        &mut shape,
+        HandleKind::ResizeCorner(Corner::Nw),
+        (0.0, 64.0),
+        (0.0, 58.0),
+        Mods {
+            ctrl: true,
+            shift: false,
+        },
+        1.0
+    ));
+    let keys: Vec<f32> = shape.geometry.anchors.iter().map(|a| a.pos.1).collect();
+    assert!(keys[1] >= keys[0], "Ctrl 等比也不得镜像：{keys:?}");
+}
+
+#[test]
 fn test_hit_test_corner_and_anchor() {
     let line = line();
     assert!(matches!(
