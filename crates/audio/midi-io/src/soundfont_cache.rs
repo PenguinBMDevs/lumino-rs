@@ -5,9 +5,28 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use xsynth_core::AudioStreamParams;
 use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
+
+/// REF-DATA-002 验证：进程级解析次数 / 缓存命中次数（诊断用）。
+static PARSE_COUNT: AtomicU64 = AtomicU64::new(0);
+static HIT_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// 读取 `(实际解析次数, 缓存命中次数)`。
+pub fn soundfont_cache_stats() -> (u64, u64) {
+    (
+        PARSE_COUNT.load(Ordering::Relaxed),
+        HIT_COUNT.load(Ordering::Relaxed),
+    )
+}
+
+/// 清零计数（测试隔离；不影响缓存内容）。
+pub fn reset_soundfont_cache_stats() {
+    PARSE_COUNT.store(0, Ordering::Relaxed);
+    HIT_COUNT.store(0, Ordering::Relaxed);
+}
 
 /// 音色库缓存 key: (文件路径, 采样率)
 type CacheKey = (PathBuf, u32);
@@ -81,6 +100,7 @@ pub fn load_soundfont_cached(
 
     // 先尝试从缓存获取
     if let Some(cached) = get_from_cache(path, sample_rate) {
+        HIT_COUNT.fetch_add(1, Ordering::Relaxed);
         tracing::info!("SoundfontCache: 命中缓存 {:?} (sr={})", path, sample_rate);
         return Ok(cached);
     }
@@ -96,6 +116,7 @@ pub fn load_soundfont_cached(
             );
             let soundfont = SampleSoundfont::new(path, params, Default::default())
                 .map_err(|e| format!("Failed to load soundfont: {:?}", e))?;
+            PARSE_COUNT.fetch_add(1, Ordering::Relaxed);
 
             let soundfont: Arc<dyn SoundfontBase> = Arc::new(soundfont);
 

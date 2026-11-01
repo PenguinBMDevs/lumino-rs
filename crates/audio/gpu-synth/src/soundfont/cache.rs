@@ -15,8 +15,27 @@
 
 use super::*;
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, Weak};
 use std::time::SystemTime;
+
+/// REF-DATA-002 验证：进程级解析次数 / 缓存命中次数（诊断用，不参与控制）。
+static PARSE_COUNT: AtomicU64 = AtomicU64::new(0);
+static HIT_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// 读取 `(实际解析次数, 缓存命中次数)`。
+pub fn soundfont_cache_stats() -> (u64, u64) {
+    (
+        PARSE_COUNT.load(Ordering::Relaxed),
+        HIT_COUNT.load(Ordering::Relaxed),
+    )
+}
+
+/// 清零计数（测试隔离；不影响缓存内容）。
+pub fn reset_soundfont_cache_stats() {
+    PARSE_COUNT.store(0, Ordering::Relaxed);
+    HIT_COUNT.store(0, Ordering::Relaxed);
+}
 
 /// 缓存键：文件身份 + 解析参数。路径不做 `canonicalize`（避免额外 IO 与
 /// Windows 长路径差异）；同一路径字符串 + mtime + size 足以识别文件内容。
@@ -95,6 +114,7 @@ impl SoundFont {
             // 顺手清理已无人持有的条目（Weak 失效），保持表小且无陈旧项。
             guard.retain(|_, w| w.strong_count() > 0);
             if let Some(core) = guard.get(&key).and_then(Weak::upgrade) {
+                HIT_COUNT.fetch_add(1, Ordering::Relaxed);
                 tracing::debug!(
                     "SoundFontCache: 命中 {:?} (sr={sample_rate} bank={bank} preset={preset}，样本 {} B)",
                     p,
@@ -106,6 +126,7 @@ impl SoundFont {
 
         tracing::debug!("SoundFontCache: 未命中，解析 {:?} (sr={sample_rate})", p);
         let core = Arc::new(Self::load_core(p, bank, preset, use_effects, sample_rate)?);
+        PARSE_COUNT.fetch_add(1, Ordering::Relaxed);
         lock_cache().insert(key, Arc::downgrade(&core));
         Ok(Self::from_core(core))
     }

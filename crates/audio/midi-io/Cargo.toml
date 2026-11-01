@@ -21,6 +21,10 @@ tracy = ["dep:tracy-client", "xsynth-realtime?/tracy", "xsynth-core/tracy"]
 # voice 阶段级性能探针：转发 xsynth-core 的 voice_probe feature（默认构建零开销）
 voice_probe = ["xsynth-core/voice_probe"]
 
+[dev-dependencies]
+# REF-DATA-002：跨栈解析计数验证需要在集成测试里构造 AudioStreamParams。
+xsynth-core = { workspace = true }
+
 [dependencies]
 lumino-core = { workspace = true }
 lumino-midi-model = { workspace = true }
