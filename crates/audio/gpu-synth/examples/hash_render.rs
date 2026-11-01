@@ -237,15 +237,27 @@ fn main() {
     synth.load_soundfont(sf2, 0, 0).expect("load_soundfont");
     let load_fresh = t_load.elapsed();
     if load_twice {
+        // REF-DATA-001：先预热把采样真正上传，再重载验证「换音源回收采样池」。
+        synth
+            .prewarm_midi_file(midi)
+            .expect("prewarm before reload");
+        let (gpu_before, cpu_before, resample_before) = synth.sample_memory_breakdown();
         // REF-LGS-014：旧句柄仍在 → 第二次加载应命中进程级缓存（不重新解析）。
         let t_cached = Instant::now();
         synth
             .load_soundfont(sf2, 0, 0)
             .expect("load_soundfont (cached)");
+        let (gpu_after, cpu_after, resample_after) = synth.sample_memory_breakdown();
         println!(
-            "load_fresh={:.1}ms load_cached={:.3}ms",
+            "load_fresh={:.1}ms load_cached={:.3}ms gpu_before_reload={} gpu_after_reload={} cpu_before_reload={} cpu_after_reload={} resample_before_reload={} resample_after_reload={}",
             load_fresh.as_secs_f64() * 1e3,
-            t_cached.elapsed().as_secs_f64() * 1e3
+            t_cached.elapsed().as_secs_f64() * 1e3,
+            gpu_before,
+            gpu_after,
+            cpu_before,
+            cpu_after,
+            resample_before,
+            resample_after
         );
     }
     if prewarm {
@@ -277,7 +289,8 @@ fn main() {
     let voice_frames = synth.voice_frames();
     let voices_peak = synth.peak_voice_count();
     let voice_frames_per_s = voice_frames as f64 / wall_secs;
-    let (sample_gpu_bytes, sample_cpu_bytes) = synth.sample_memory_bytes();
+    let (sample_gpu_bytes, sample_cpu_bytes, sample_resample_bytes) =
+        synth.sample_memory_breakdown();
 
     println!(
         "frames={} channels={} sample_rate={}",
@@ -298,8 +311,8 @@ fn main() {
         voices_peak, voice_frames, voice_frames_per_s
     );
     println!(
-        "sample_gpu_bytes={} sample_cpu_bytes={}",
-        sample_gpu_bytes, sample_cpu_bytes
+        "sample_gpu_bytes={} sample_cpu_bytes={} sample_resample_bytes={}",
+        sample_gpu_bytes, sample_cpu_bytes, sample_resample_bytes
     );
 
     if let Some(p) = raw_out {
@@ -340,6 +353,7 @@ fn main() {
                 "  \"voice_frames_per_s\": {:.1},\n",
                 "  \"sample_gpu_bytes\": {},\n",
                 "  \"sample_cpu_bytes\": {},\n",
+                "  \"sample_resample_bytes\": {},\n",
                 "  \"no_limiter\": {}\n",
                 "}}\n"
             ),
@@ -367,6 +381,7 @@ fn main() {
             voice_frames_per_s,
             sample_gpu_bytes,
             sample_cpu_bytes,
+            sample_resample_bytes,
             no_limiter
         );
         std::fs::write(p, json).expect("write json");

@@ -102,9 +102,11 @@ impl PlaybackStatsReader {
     }
 
     /// 发布采样内存（渲染线程侧，lock-free；低频调用）。
-    pub(crate) fn set_sample_memory(&self, gpu_bytes: u64, cpu_bytes: u64) {
+    pub(crate) fn set_sample_memory(&self, gpu_bytes: u64, cpu_bytes: u64, resample_bytes: u64) {
         self.sample_gpu_bytes.store(gpu_bytes, Ordering::Relaxed);
         self.sample_cpu_bytes.store(cpu_bytes, Ordering::Relaxed);
+        self.sample_resample_bytes
+            .store(resample_bytes, Ordering::Relaxed);
     }
 
     /// 清零累计计数（欠载 / 丢弃 NoteOn），供"每次开始播放"重置显示。
@@ -145,6 +147,7 @@ impl PlaybackStatsReader {
             dropped_note_ons: self.dropped_note_ons(),
             sample_gpu_bytes: self.sample_gpu_bytes.load(Ordering::Relaxed),
             sample_cpu_bytes: self.sample_cpu_bytes.load(Ordering::Relaxed),
+            sample_resample_bytes: self.sample_resample_bytes.load(Ordering::Relaxed),
         }
     }
 }
@@ -169,6 +172,7 @@ mod tests {
             governor_level: Arc::new(AtomicU64::new(0)),
             sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
             sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
+            sample_resample_bytes: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -240,10 +244,11 @@ mod tests {
     #[test]
     fn test_snapshot_exports_sample_memory() {
         let reader = test_reader(96_000);
-        reader.set_sample_memory(12 * 1024 * 1024, 34 * 1024 * 1024);
+        reader.set_sample_memory(12 * 1024 * 1024, 34 * 1024 * 1024, 5 * 1024 * 1024);
         let stats = reader.snapshot(375);
         assert_eq!(stats.sample_gpu_bytes, 12 * 1024 * 1024);
         assert_eq!(stats.sample_cpu_bytes, 34 * 1024 * 1024);
+        assert_eq!(stats.sample_resample_bytes, 5 * 1024 * 1024);
 
         reader.reset_counters();
         let stats = reader.snapshot(375);

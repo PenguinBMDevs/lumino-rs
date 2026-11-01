@@ -81,6 +81,7 @@ impl AudioPlayback {
             governor_level: Arc::new(AtomicU64::new(0)),
             sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
             sample_cpu_bytes: Arc::new(AtomicU64::new(0)),
+            sample_resample_bytes: Arc::new(AtomicU64::new(0)),
         };
         let cb_stats = stats.clone();
 
@@ -269,8 +270,9 @@ impl AudioPlayback {
                     // 每块热路径；状态栏是低频展示，25 块（约 0.25–0.5 s）
                     // 的更新粒度足够。
                     if mem_stat_countdown == 0 {
-                        let (gpu_bytes, cpu_bytes) = synth.sample_memory_bytes();
-                        thread_stats.set_sample_memory(gpu_bytes, cpu_bytes);
+                        let (gpu_bytes, cpu_bytes, resample_bytes) =
+                            synth.sample_memory_breakdown();
+                        thread_stats.set_sample_memory(gpu_bytes, cpu_bytes, resample_bytes);
                         mem_stat_countdown = 25;
                     } else {
                         mem_stat_countdown -= 1;

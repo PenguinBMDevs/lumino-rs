@@ -69,11 +69,23 @@ pub struct ZonePositions {
     pub sample_end: u32,
 }
 
-/// 重采样缓存表：`(sample id, target rate) -> 数据`。
-pub(crate) type ResampleMap = HashMap<(usize, u32), Arc<[f32]>>;
+/// 重采样缓存条目：数据 + 最近使用序号（REF-DATA-001 的 LRU 依据）。
+#[derive(Debug)]
+pub(crate) struct ResampleEntry {
+    pub data: Arc<[f32]>,
+    pub last_used: u64,
+}
 
-/// 重采样缓存（按 core 共享，REF-LGS-014）。
-pub(crate) type ResampleCache = Mutex<ResampleMap>;
+/// 重采样缓存（按 core 共享，REF-LGS-014；有界 + LRU，REF-DATA-001）。
+///
+/// `bytes` 只统计**非别名**条目：目标率与原生率相同时缓存项与
+/// `SoundFontCore::samples[id]` 是同一个 `Arc`，不额外占内存。
+#[derive(Debug, Default)]
+pub(crate) struct ResampleCache {
+    pub map: HashMap<(usize, u32), ResampleEntry>,
+    pub bytes: u64,
+    pub tick: u64,
+}
 
 /// 解析后的音色库核心（不可变）。
 ///
@@ -102,7 +114,7 @@ pub(crate) struct SoundFontCore {
     /// Lives in the core so every [`SoundFont`] handle of the same file shares
     /// one cache (REF-LGS-014). The lock is only held for a map lookup/insert,
     /// never while resampling.
-    pub(super) resample_cache: ResampleCache,
+    pub(super) resample_cache: Mutex<ResampleCache>,
 }
 
 impl SoundFontCore {
@@ -116,7 +128,7 @@ impl SoundFontCore {
             sample_ids: HashMap::new(),
             use_effects,
             sample_rate,
-            resample_cache: Mutex::new(HashMap::new()),
+            resample_cache: Mutex::new(ResampleCache::default()),
         }
     }
 }
