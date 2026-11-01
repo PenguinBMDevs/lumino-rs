@@ -196,11 +196,13 @@ pub fn apply_drag(
                 delta = (delta / snap).round() * snap;
             }
             let (sin, cos) = delta.sin_cos();
+            let scale = zoom_scale(k);
             transform(shape, |x, y| {
-                let (sx, sy) = ((x - cx) * zoom_scale(k), y - cy);
+                let dx = x - cx;
+                let dy = y - cy;
                 (
-                    cx + sx * cos - sy * sin / zoom_scale(k),
-                    cy + (sx * sin * zoom_scale(k) + sy * cos),
+                    cx + dx * cos - dy * scale * sin,
+                    cy + dx * sin / scale + dy * cos,
                 )
             })
         }

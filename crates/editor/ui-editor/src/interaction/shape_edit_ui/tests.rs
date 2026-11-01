@@ -225,7 +225,7 @@ fn test_pending_turn_handle_rotates_geometry() {
     let tick = editor.pos_to_tick(screen);
     let key = editor.pos_to_raw_key(screen);
     assert!(editor.begin_shape_edit(tick, key), "Turn 手柄应命中");
-    assert!(editor.update_shape_edit(tick + 80.0, key));
+    assert!(editor.update_shape_edit(tick + 200.0, key - 200.0));
     assert!(editor.finish_shape_edit());
     assert_ne!(
         editor.editor_state.pending_composed[0].results[0]

@@ -126,6 +126,25 @@ fn test_skew_is_integer_grid() {
 }
 
 #[test]
+fn test_turn_with_ppq_scale_keeps_geometry_sane() {
+    let mut shape = line();
+    apply_drag(
+        &mut shape,
+        HandleKind::Turn,
+        (120.0, 60.0),
+        (70.0, 121.0),
+        Mods::default(),
+        1920.0,
+    );
+    let (x0, y0, x1, y1) = shape.geometry.bounds().expect("应有 bounds");
+    assert!(x0.abs() < 1.0e7 && x1.abs() < 1.0e7, "tick 不应爆炸");
+    assert!(
+        (-256.0..=512.0).contains(&y0) && (-256.0..=512.0).contains(&y1),
+        "key 不应被 k² 放大"
+    );
+}
+
+#[test]
 fn test_move_updates_copy_along_group_anchor() {
     let mut shape = line();
     shape.ops.push(lumino_core::shape::ShapeOp::CopyAlong(

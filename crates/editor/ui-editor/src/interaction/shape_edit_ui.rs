@@ -210,7 +210,7 @@ impl Editor {
             self.shape_edit = Some(state);
             return false;
         }
-        if !finite_geometry(&next) {
+        if !finite_geometry(&next) || !sane_geometry(&next) {
             self.shape_edit = Some(state);
             return false;
         }
@@ -417,6 +417,27 @@ fn finite_geometry(model: &ShapeModel) -> bool {
                 && rect.tick_hi.is_finite()
                 && rect.key_lo.is_finite()
                 && rect.key_hi.is_finite()
+        })
+}
+
+/// 几何数值范围守卫：防止旋转/缩放的维度错误把 key 写成几百万，
+/// 后续填充生成按 key 行循环直接吃满内存（曾经导致 MEMORY_ABORT）。
+fn sane_geometry(model: &ShapeModel) -> bool {
+    const MAX_TICK: f32 = 1.0e7;
+    const MIN_KEY: f32 = -256.0;
+    const MAX_KEY: f32 = 512.0;
+    let key_ok = |key: f32| (MIN_KEY..=MAX_KEY).contains(&key);
+    let tick_ok = |tick: f32| tick.abs() <= MAX_TICK;
+    model
+        .geometry
+        .anchors
+        .iter()
+        .all(|anchor| tick_ok(anchor.pos.0) && key_ok(anchor.pos.1))
+        && model.geometry.rect.is_none_or(|rect| {
+            tick_ok(rect.tick_lo)
+                && tick_ok(rect.tick_hi)
+                && key_ok(rect.key_lo)
+                && key_ok(rect.key_hi)
         })
 }
 
