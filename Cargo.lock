@@ -4396,6 +4396,7 @@ dependencies = [
  "lumino-core",
  "lumino-midly",
  "memmap2",
+ "naga",
  "pollster",
  "rayon",
  "symphonia",

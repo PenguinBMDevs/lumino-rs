@@ -34,3 +34,7 @@ memmap2 = { workspace = true }
 symphonia = { version = "0.5", features = ["default"] }
 # REND-016 #139：观测打点需进文件日志（GUI release 无控制台，eprintln 会丢失）。
 tracing = { workspace = true }
+
+[dev-dependencies]
+# REF-LGS-013B：hosted CI 无 GPU，用 naga 静态校验 WGSL（与 wgpu 同版本）。
+naga = { workspace = true }
