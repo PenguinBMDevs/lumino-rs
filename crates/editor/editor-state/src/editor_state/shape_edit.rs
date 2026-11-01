@@ -83,7 +83,10 @@ pub struct EditHandles {
 }
 
 /// 计算手柄布局
-pub fn handles(shape: &ShapeModel, _zoom: Zoom) -> Option<EditHandles> {
+/// 箱体手柄：4 角 + 4 边，`include_center` 时额外加中心 Move。
+///
+/// 020 编辑态严格使用 8+1；曲线 Path 点不在此列。
+pub fn box_handles(shape: &ShapeModel, _zoom: Zoom, include_center: bool) -> Option<EditHandles> {
     let (x0, y0, x1, y1) = bounds(shape)?;
     let cx = (x0 + x1) / 2.0;
     let cy = (y0 + y1) / 2.0;
@@ -97,14 +100,8 @@ pub fn handles(shape: &ShapeModel, _zoom: Zoom) -> Option<EditHandles> {
         (HandleKind::Side(Side::Bottom), (cx, y0)),
         (HandleKind::Side(Side::Top), (cx, y1)),
     ];
-    if matches!(shape.kind, ShapeKind::Curve) {
-        for (index, anchor) in shape.geometry.anchors.iter().enumerate() {
-            handles.push((HandleKind::AnchorHandle(index as u16), anchor.pos));
-        }
-    } else if matches!(shape.kind, ShapeKind::Polyline | ShapeKind::Freehand) {
-        for anchor in &shape.geometry.anchors {
-            handles.push((HandleKind::Path, anchor.pos));
-        }
+    if include_center {
+        handles.push((HandleKind::Move, (cx, cy)));
     }
     Some(EditHandles {
         box_uv: [0.0, 0.0, 1.0, 1.0],
@@ -112,9 +109,42 @@ pub fn handles(shape: &ShapeModel, _zoom: Zoom) -> Option<EditHandles> {
     })
 }
 
+/// 全部手柄（箱体 + 曲线路径点），供纯函数/曲线工具使用。
+pub fn handles(shape: &ShapeModel, zoom: Zoom) -> Option<EditHandles> {
+    let mut layout = box_handles(shape, zoom, false)?;
+    if matches!(shape.kind, ShapeKind::Curve) {
+        for (index, anchor) in shape.geometry.anchors.iter().enumerate() {
+            layout
+                .handles
+                .push((HandleKind::AnchorHandle(index as u16), anchor.pos));
+        }
+    } else if matches!(shape.kind, ShapeKind::Polyline | ShapeKind::Freehand) {
+        for anchor in &shape.geometry.anchors {
+            layout.handles.push((HandleKind::Path, anchor.pos));
+        }
+    }
+    Some(layout)
+}
+
+/// 命中箱体手柄（不含 Path 点）。
+pub fn hit_test_box(
+    shape: &ShapeModel,
+    p: Pt,
+    zoom: Zoom,
+    tol_px: f32,
+    include_center: bool,
+) -> Option<HandleKind> {
+    let layout = box_handles(shape, zoom, include_center)?;
+    hit_test_layout(&layout, p, zoom, tol_px)
+}
+
 /// 命中最近手柄（像素容差）
 pub fn hit_test(shape: &ShapeModel, p: Pt, zoom: Zoom, tol_px: f32) -> Option<HandleKind> {
     let layout = handles(shape, zoom)?;
+    hit_test_layout(&layout, p, zoom, tol_px)
+}
+
+fn hit_test_layout(layout: &EditHandles, p: Pt, zoom: Zoom, tol_px: f32) -> Option<HandleKind> {
     layout
         .handles
         .iter()

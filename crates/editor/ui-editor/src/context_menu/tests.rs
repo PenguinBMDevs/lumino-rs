@@ -67,6 +67,7 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
             PianoRollContextMenuItem::LiveShape,
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::EditShape,
             PianoRollContextMenuItem::MaskToggle,
             PianoRollContextMenuItem::SliceVertical,
             PianoRollContextMenuItem::BetweenCreate,
@@ -75,17 +76,16 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
             PianoRollContextMenuItem::CopyShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-        "待确认镜像可走 010/019/021/022/025/026/027/028、分享几何、删除；020 手柄直接交互"
+        "待确认镜像可走 010/019/020/021/022/025/026/027/028、分享几何、删除"
     );
     assert!(
         !items.iter().any(|item| matches!(
             item,
-            PianoRollContextMenuItem::EditShape
-                | PianoRollContextMenuItem::SymmetryVertical
+            PianoRollContextMenuItem::SymmetryVertical
                 | PianoRollContextMenuItem::SymmetryHorizontal
                 | PianoRollContextMenuItem::Straighten
         )),
-        "020 不再需要编辑模式；023/024 仍不得出现"
+        "023/024 仍不得出现在待确认目标"
     );
 }
 

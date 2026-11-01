@@ -10,6 +10,8 @@
 //!   图形、从哪里可以拖动它们」明示出来。框内区域就是可拖动区（命中判定见
 //!   `interaction::drawn_shape` 的 `point_in_selection_box`）——渲染与命中同源。
 //! - **框选矩形**：空白处拉框时实时绘制半透明选择框。
+//! - **编辑图形**：020 进入编辑态时隐藏选中选框，改画细编辑框 + 8 个箱体锚点
+//!   （未 Bake 组合再加中心锚点），与 ShapeSelect 选框严格分层。
 //!
 //! 渲染口径与命中测试同源：形状工具图形走 `shape_vertices` / 椭圆，折线
 //! （曲线展平路径 / 画刷笔画）直接连点成线。仅在图形属于**当前音轨**且未被
@@ -18,9 +20,9 @@
 use crate::Editor;
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
-use lumino_editor_state::{DrawnShape, DrawnShapeSource};
 use lumino_ui_core::{Renderer, Theme};
+
+pub(super) use super::drawn_shape_outline::outline_path;
 
 /// 外发光描边宽度（像素）
 const GLOW_WIDTH: f32 = 7.0;
@@ -42,125 +44,10 @@ const BOX_STROKE_WIDTH: f32 = 1.5;
 const BOX_HANDLE_SIZE: f32 = 6.0;
 /// 选中选框描边透明度
 const BOX_STROKE_ALPHA: f32 = 0.85;
-
-/// 生成椭圆路径（本 iced 版本无 `Path::ellipse`，改用多边形逼近）
-fn ellipse_path(center: Point, rx: f32, ry: f32) -> Path {
-    const SEGMENTS: usize = 64;
-    Path::new(|p| {
-        for i in 0..=SEGMENTS {
-            let a = (i as f32 / SEGMENTS as f32) * 2.0 * std::f32::consts::PI;
-            let x = center.x + rx * a.cos();
-            let y = center.y + ry * a.sin();
-            if i == 0 {
-                p.move_to(Point::new(x, y));
-            } else {
-                p.line_to(Point::new(x, y));
-            }
-        }
-        p.close();
-    })
-}
-
-/// 图形轮廓 → 屏幕坐标路径
-///
-/// `dtick` / `dkey` 为额外预览偏移（拖拽移动进行中时传拖拽偏移，仅渲染层位移、
-/// 文档未改；常显轮廓与未拖拽的选中图形传 0）。
-fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> Option<Path> {
-    let px_per_tick = editor.editor_state.view.zoom_x;
-    let px_per_key = editor.editor_state.view.zoom_y;
-    match &shape.source {
-        DrawnShapeSource::Shape {
-            kind,
-            rect,
-            shift_constrained,
-            apex_high,
-            ..
-        } => {
-            let rect = (rect.0 + dtick, rect.1 + dkey, rect.2 + dtick, rect.3 + dkey);
-            let spec = ShapeSpec {
-                kind: *kind,
-                rect,
-                shift_constrained: *shift_constrained,
-                apex_high: *apex_high,
-            };
-            let rect = effective_rect(spec, px_per_tick, px_per_key);
-            if *kind == lumino_editor_state::ShapeKind::Circle {
-                let (cx0, cy0, cx1, cy1) = rect;
-                let mx = (cx0 + cx1) / 2.0;
-                let my = (cy0 + cy1) / 2.0;
-                let center = editor.line_pos_screen_pos((mx, my));
-                let left = editor.line_pos_screen_pos((cx0, my));
-                let right = editor.line_pos_screen_pos((cx1, my));
-                let top = editor.line_pos_screen_pos((mx, cy1));
-                let bottom = editor.line_pos_screen_pos((mx, cy0));
-                let rx = (right.x - left.x).abs() * 0.5;
-                let ry = (bottom.y - top.y).abs() * 0.5;
-                Some(ellipse_path(center, rx, ry))
-            } else {
-                let verts = shape_vertices(spec, px_per_tick, px_per_key)?;
-                let points: Vec<Point> = verts
-                    .iter()
-                    .map(|&(t, k)| editor.line_pos_screen_pos((t, k)))
-                    .collect();
-                Some(open_path(&points, true))
-            }
-        }
-        DrawnShapeSource::PolylineSet { polylines } => {
-            let shifted = |&(t, k): &(f32, f32)| (t + dtick, k + dkey);
-            let screen_sets: Vec<Vec<Point>> = polylines
-                .iter()
-                .filter(|points| !points.is_empty())
-                .map(|points| {
-                    points
-                        .iter()
-                        .map(|pt| editor.line_pos_screen_pos(shifted(pt)))
-                        .collect()
-                })
-                .collect();
-            if screen_sets.is_empty() {
-                return None;
-            }
-            Some(Path::new(|p| {
-                for points in &screen_sets {
-                    if points.len() < 2 {
-                        let pt = points[0];
-                        p.move_to(Point::new(pt.x - 4.0, pt.y));
-                        p.line_to(Point::new(pt.x + 4.0, pt.y));
-                        p.move_to(Point::new(pt.x, pt.y - 4.0));
-                        p.line_to(Point::new(pt.x, pt.y + 4.0));
-                        continue;
-                    }
-                    p.move_to(points[0]);
-                    for pt in &points[1..] {
-                        p.line_to(*pt);
-                    }
-                }
-            }))
-        }
-        DrawnShapeSource::Polyline { points } => {
-            if points.is_empty() {
-                return None;
-            }
-            let shifted = |&(t, k): &(f32, f32)| (t + dtick, k + dkey);
-            if points.len() < 2 {
-                // 单点笔画：以短十字代替（避免空路径）
-                let p = editor.line_pos_screen_pos(shifted(&points[0]));
-                let mark = Path::new(|b| {
-                    b.move_to(Point::new(p.x - 4.0, p.y));
-                    b.line_to(Point::new(p.x + 4.0, p.y));
-                    b.move_to(Point::new(p.x, p.y - 4.0));
-                    b.line_to(Point::new(p.x, p.y + 4.0));
-                });
-                return Some(mark);
-            }
-            let screen: Vec<Point> = points
-                .iter()
-                .map(|pt| editor.line_pos_screen_pos(shifted(pt)))
-                .collect();
-            Some(open_path(&screen, false))
-        }
-    }
-}
+/// 编辑图形：编辑框描边透明度
+const EDIT_BOX_ALPHA: f32 = 0.65;
+/// 编辑图形：锚点边长（像素）
+const EDIT_HANDLE_SIZE: f32 = 8.0;
 
 /// 选中集内**全部**图形的轮廓（同轨；含整组拖拽实时预览偏移）
 ///
@@ -168,7 +55,7 @@ fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> O
 /// **例外**：待确认镜像的几何已随拖动即时落位（见
 /// `Editor::sync_pending_drag_geometry`），偏移必须取 0——否则描边会与选框 / owning
 /// 预览分叉出双倍位移。
-fn selected_outlines(editor: &Editor) -> Vec<Path> {
+pub(super) fn selected_outlines(editor: &Editor) -> Vec<Path> {
     let track = editor.editor_state.data.current_track;
     let (dtick, dkey) = editor.drag_preview_delta();
     editor
@@ -184,22 +71,6 @@ fn selected_outlines(editor: &Editor) -> Vec<Path> {
             outline_path(editor, s, dt, dk)
         })
         .collect()
-}
-
-/// 连点成线；`close` = 首尾闭合
-fn open_path(points: &[Point], close: bool) -> Path {
-    Path::new(|p| {
-        let Some(first) = points.first() else {
-            return;
-        };
-        p.move_to(*first);
-        for pt in points.iter().skip(1) {
-            p.line_to(*pt);
-        }
-        if close {
-            p.close();
-        }
-    })
 }
 
 /// 两点决定的轴对齐矩形路径（框选用）
@@ -225,8 +96,10 @@ struct Overlay {
     selection_box: Option<Rectangle>,
     /// 框选拉框矩形
     marquee_path: Option<Path>,
-    /// 020 当前形状编辑手柄（屏幕坐标）
-    edit_handles: Vec<Point>,
+    /// 020 编辑图形：编辑框（进入编辑态时**替代**选中选框）
+    edit_box: Option<Rectangle>,
+    /// 020 编辑图形：8 个箱体锚点 + 可选中心锚点（屏幕坐标）
+    edit_handles: crate::interaction::shape_edit_ui::ShapeEditHandles,
 }
 
 impl Overlay {
@@ -253,24 +126,34 @@ impl Overlay {
             let b = editor.line_pos_screen_pos((t1, k1));
             rect_path(a, b)
         });
+        // 编辑图形态与 ShapeSelect 选框严格分离：进入后隐藏蓝色选框，
+        // 只留 8+1 锚点与细编辑框，避免两层框叠在一起抢点击。
+        let editing = editor.is_shape_edit_armed();
         Self {
             idle_paths,
             selected_paths: selected_outlines(editor),
             // 选中选框：与命中判定同源（`Editor::selection_box`），
             // 保证「看到的框」就是「抓得住的框」。
-            selection_box: editor.selection_box(),
+            selection_box: if editing {
+                None
+            } else {
+                editor.selection_box()
+            },
             marquee_path,
-            edit_handles: editor.shape_edit_handle_points(),
+            edit_box: editor.shape_edit_box(),
+            edit_handles: editor.shape_edit_handles(),
         }
     }
 
-    /// 四者皆无 → 不产生空几何
+    /// 全部为空 → 不产生空几何
     fn is_empty(&self) -> bool {
         self.idle_paths.is_empty()
             && self.selected_paths.is_empty()
             && self.selection_box.is_none()
             && self.marquee_path.is_none()
-            && self.edit_handles.is_empty()
+            && self.edit_box.is_none()
+            && self.edit_handles.box_points.is_empty()
+            && self.edit_handles.center.is_none()
     }
 }
 
@@ -321,10 +204,44 @@ pub fn draw(
         }
     }
 
-    // 020 手柄：小圆点，压在形状的 box/锚点位置
-    for point in &overlay.edit_handles {
-        let circle = Path::circle(*point, 5.0);
-        frame.fill(&circle, strong);
+    // 020 编辑图形：细编辑框 + 8 个方形锚点 + 中心锚点（未 Bake 组合才有）
+    if let Some(rect) = overlay.edit_box {
+        let box_color = Color::from_rgba(strong.r, strong.g, strong.b, EDIT_BOX_ALPHA);
+        frame.stroke(
+            &Path::rectangle(rect.position(), rect.size()),
+            Stroke::default().with_width(1.0).with_color(box_color),
+        );
+    }
+    let white = Color::WHITE;
+    let half = EDIT_HANDLE_SIZE / 2.0;
+    for point in &overlay.edit_handles.box_points {
+        let square = Path::rectangle(
+            Point::new(point.x - half, point.y - half),
+            Size::new(EDIT_HANDLE_SIZE, EDIT_HANDLE_SIZE),
+        );
+        frame.fill(&square, white);
+        frame.stroke(
+            &square,
+            Stroke::default().with_width(1.5).with_color(strong),
+        );
+    }
+    if let Some(center) = overlay.edit_handles.center {
+        let radius = half + 1.0;
+        let circle = Path::circle(center, radius);
+        frame.fill(&circle, white);
+        frame.stroke(
+            &circle,
+            Stroke::default().with_width(1.5).with_color(strong),
+        );
+        // 十字：示意「整体平移」
+        let arm = radius - 2.0;
+        let cross = Path::new(|p| {
+            p.move_to(Point::new(center.x - arm, center.y));
+            p.line_to(Point::new(center.x + arm, center.y));
+            p.move_to(Point::new(center.x, center.y - arm));
+            p.line_to(Point::new(center.x, center.y + arm));
+        });
+        frame.stroke(&cross, Stroke::default().with_width(1.2).with_color(strong));
     }
 
     // 选中选框：外侧描边 + 四角实心手柄（手柄压在框角上，便于识别「可拖动」）
@@ -380,193 +297,4 @@ pub fn draw(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Editor;
-    use crate::tests::test_helpers::seed_notes;
-    use lumino_editor_state::ShapeKind;
-
-    /// 非 Conductor 轨（track 1）+ 一个已登记的矩形图形（逻辑 0..4 × key 60..64）
-    fn editor_with_rect() -> Editor {
-        let mut editor = Editor::new();
-        seed_notes(&mut editor, 2, 1, &[]);
-        editor.editor_state.shape_select.add(
-            1,
-            None,
-            DrawnShapeSource::Shape {
-                kind: ShapeKind::Rectangle,
-                rect: (0.0, 60.0, 4.0, 64.0),
-                shift_constrained: false,
-                apex_high: true,
-                filled: false,
-            },
-            Vec::new(),
-        );
-        editor
-    }
-
-    fn polyline(points: Vec<(f32, f32)>) -> DrawnShape {
-        DrawnShape {
-            id: 0,
-            model_id: None,
-            track: 1,
-            group: None,
-            source: DrawnShapeSource::Polyline { points },
-            notes: Vec::new(),
-            hidden_by_creation: false,
-            deleted: false,
-            ever_deleted: false,
-            moves: Vec::new(),
-            pending: None,
-        }
-    }
-
-    #[test]
-    fn test_outline_path_covers_shape_and_polyline_forms() {
-        let editor = editor_with_rect();
-        let shape = &editor.editor_state.shape_select.shapes()[0];
-        assert!(
-            outline_path(&editor, shape, 0.0, 0.0).is_some(),
-            "形状工具图形应产生轮廓路径"
-        );
-        assert!(
-            outline_path(&editor, &polyline(vec![(0.0, 60.0), (4.0, 64.0)]), 0.0, 0.0).is_some(),
-            "折线应产生路径"
-        );
-        assert!(
-            outline_path(&editor, &polyline(vec![(0.0, 60.0)]), 0.0, 0.0).is_some(),
-            "单点笔画应退化为十字而非空路径"
-        );
-        assert!(
-            outline_path(&editor, &polyline(Vec::new()), 0.0, 0.0).is_none(),
-            "空折线不应产生路径"
-        );
-    }
-
-    #[test]
-    fn test_rect_path_accepts_reversed_corners() {
-        // 反向两角 → 仍能规范化成矩形路径（仅构建，不断言像素）
-        let _p = rect_path(Point::new(10.0, 20.0), Point::new(2.0, 5.0));
-    }
-
-    #[test]
-    fn test_overlay_includes_selection_box_only_when_selected() {
-        let mut editor = editor_with_rect();
-        // 未选中且非鼠标工具 → 无内容，不产出几何
-        let overlay = Overlay::collect(&editor);
-        assert!(overlay.selection_box.is_none(), "未选中不应有选框");
-        assert!(overlay.selected_paths.is_empty());
-        assert!(overlay.is_empty(), "无内容时不应产出几何");
-
-        // 选中后 → 有选框，叠加层非空（渲染侧不再返回 None）
-        let id = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select_only(id);
-        let overlay = Overlay::collect(&editor);
-        let rect = overlay.selection_box.expect("选中后应有选框");
-        assert!(rect.width > 0.0 && rect.height > 0.0, "选框必须有面积");
-        assert_eq!(overlay.selected_paths.len(), 1, "选中高亮仍应保留");
-        assert!(!overlay.is_empty(), "有选框时应产出几何");
-    }
-
-    #[test]
-    fn test_mouse_tool_shows_idle_outlines_and_marquee() {
-        use lumino_message::Tool;
-        let mut editor = editor_with_rect();
-        // 再加一个图形，验证「常显轮廓排除已选中者」：被选中者单独走高亮
-        editor.editor_state.shape_select.add(
-            1,
-            None,
-            DrawnShapeSource::Shape {
-                kind: ShapeKind::Rectangle,
-                rect: (8.0, 60.0, 12.0, 64.0),
-                shift_constrained: false,
-                apex_high: true,
-                filled: false,
-            },
-            Vec::new(),
-        );
-        editor.set_tool(Tool::ShapeSelect);
-        let first = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select_only(first);
-        editor
-            .editor_state
-            .shape_select
-            .begin_marquee(0.0, 60.0, false);
-        editor.editor_state.shape_select.update_marquee(20.0, 70.0);
-
-        let overlay = Overlay::collect(&editor);
-        assert_eq!(
-            overlay.idle_paths.len(),
-            1,
-            "常显轮廓应排除已选中的那一个（它走高亮）"
-        );
-        assert_eq!(overlay.selected_paths.len(), 1);
-        assert!(overlay.marquee_path.is_some(), "拉框中应画出拉框矩形");
-        assert!(overlay.selection_box.is_some());
-    }
-
-    #[test]
-    fn test_overlay_glows_every_selected_shape_and_boxes_union() {
-        use lumino_message::Tool;
-        let mut editor = editor_with_rect();
-        // 第二个图形（并列在右下），用于验证「多选 → 逐个高亮 + 选框取并集」
-        let second = editor.editor_state.shape_select.add(
-            1,
-            None,
-            DrawnShapeSource::Shape {
-                kind: ShapeKind::Rectangle,
-                rect: (20.0, 40.0, 24.0, 44.0),
-                shift_constrained: false,
-                apex_high: true,
-                filled: false,
-            },
-            Vec::new(),
-        );
-        editor.set_tool(Tool::ShapeSelect);
-        let first = editor.editor_state.shape_select.shapes()[0].id;
-        editor
-            .editor_state
-            .shape_select
-            .select_all_of([first, second]);
-
-        let overlay = Overlay::collect(&editor);
-        assert_eq!(
-            overlay.selected_paths.len(),
-            2,
-            "多选时每个选中图形都应有发光描边"
-        );
-        assert_eq!(overlay.idle_paths.len(), 0, "全部被选中 → 无常显轮廓");
-        let rect = overlay.selection_box.expect("多选应有并集选框");
-        // 并集外接框应同时包住两个图形的角点
-        for c in [
-            editor.line_pos_screen_pos((0.0, 60.0)),
-            editor.line_pos_screen_pos((4.0, 64.0)),
-            editor.line_pos_screen_pos((20.0, 40.0)),
-            editor.line_pos_screen_pos((24.0, 44.0)),
-        ] {
-            assert!(
-                rect.contains(c),
-                "并集选框应包住各选中图形角点 {c:?}，实际 {rect:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_selection_box_encloses_shape_screen_bounds() {
-        let mut editor = editor_with_rect();
-        let id = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select_only(id);
-        let rect = editor.selection_box().expect("应有选框");
-        // 图形逻辑 0..4 × 60..64 的屏幕两角都应落在选框内部（选框只增不减）
-        let corners = [
-            editor.line_pos_screen_pos((0.0, 60.0)),
-            editor.line_pos_screen_pos((4.0, 64.0)),
-        ];
-        for c in corners {
-            assert!(
-                rect.contains(c),
-                "选框应包住图形屏幕角点 {c:?}，实际 {rect:?}"
-            );
-        }
-    }
-}
+mod tests;

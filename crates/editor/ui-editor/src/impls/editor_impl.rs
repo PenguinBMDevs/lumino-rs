@@ -49,6 +49,7 @@ impl Editor {
                 pending_drag_applied: (0.0, 0.0),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 shape_edit: None,
+                shape_edit_armed: None,
                 pending_composed_redo: Vec::new(),
                 pending_edit_undo: Vec::new(),
                 pending_edit_redo: Vec::new(),

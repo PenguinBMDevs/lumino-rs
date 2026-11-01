@@ -21,6 +21,53 @@ fn zoom() -> Zoom {
 }
 
 #[test]
+fn test_box_handles_are_strictly_eight_plus_optional_center() {
+    for model in [line(), curve()] {
+        let eight = box_handles(&model, zoom(), false).expect("应有箱体手柄");
+        assert_eq!(eight.handles.len(), 8, "严格 8 个箱体锚点");
+        assert!(
+            eight.handles.iter().all(|(kind, _)| !matches!(
+                kind,
+                HandleKind::Move | HandleKind::Path | HandleKind::AnchorHandle(_)
+            )),
+            "箱体锚点不得混入中心/Path 点：{:?}",
+            eight.handles
+        );
+
+        let nine = box_handles(&model, zoom(), true).expect("应有箱体手柄");
+        assert_eq!(nine.handles.len(), 9, "8 + 1 中心");
+        assert!(matches!(nine.handles[8].0, HandleKind::Move));
+    }
+}
+
+#[test]
+fn test_hit_test_box_ignores_path_points() {
+    let curve = curve();
+    // 曲线中间锚点 (60, 64) 在完整手柄集里可命中路径点（优先于同位置的边锚点）
+    assert!(matches!(
+        hit_test(&curve, (60.0, 64.0), zoom(), 4.0),
+        Some(HandleKind::AnchorHandle(_)) | Some(HandleKind::Path)
+    ));
+    // 箱体命中只认 4 角 + 4 边 + 可选中心：远离锚点的位置不命中
+    assert_eq!(
+        hit_test_box(&curve, (100.0, 62.0), zoom(), 4.0, false),
+        None
+    );
+    assert_eq!(
+        hit_test_box(&curve, (0.0, 64.0), zoom(), 4.0, false),
+        Some(HandleKind::ResizeCorner(Corner::Nw))
+    );
+    assert_eq!(
+        hit_test_box(&curve, (60.0, 60.0), zoom(), 4.0, true),
+        Some(HandleKind::Side(Side::Bottom))
+    );
+    assert_eq!(
+        hit_test_box(&curve, (60.0, 62.0), zoom(), 4.0, true),
+        Some(HandleKind::Move)
+    );
+}
+
+#[test]
 fn test_hit_test_corner_and_anchor() {
     let line = line();
     assert!(matches!(

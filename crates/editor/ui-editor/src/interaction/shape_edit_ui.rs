@@ -9,7 +9,7 @@
 use iced_core::Point;
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::editor_state::{
-    HandleKind, Mods, Zoom, apply_drag, edit_handles, hit_test,
+    HandleKind, Mods, Zoom, apply_drag, box_handles, hit_test_box,
 };
 use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, ShapeNote};
 
@@ -69,20 +69,18 @@ impl Editor {
             )
     }
 
-    /// 命中手柄/旋转区则进入拖拽；选择框内部仍交给普通整组移动。
-    pub(crate) fn begin_shape_edit(&mut self, tick: f32, key: f32) -> bool {
-        if self.current_tool() != lumino_message::Tool::ShapeSelect
-            || self.editor_state.shape_select.selection_len() != 1
-        {
+    /// 进入/退出「编辑图形」模式；进入后隐藏 ShapeSelect 选框。
+    pub fn enable_shape_edit(&mut self) -> bool {
+        if self.editor_state.shape_select.selection_len() != 1 {
             return false;
         }
         let (drawn_id, pending, model_id) = {
-            let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
+            let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
             };
-            (drawn.id, drawn.pending, drawn.model_id)
+            (shape.id, shape.pending, shape.model_id)
         };
-        let (target, model, original_composed) = match pending {
+        let target = match pending {
             Some(PendingShapeRef::Composed(index)) => {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return false;
@@ -90,11 +88,7 @@ impl Editor {
                 if !Self::pending_handle_supported(composed) {
                     return false;
                 }
-                (
-                    ShapeEditTarget::PendingComposed { index },
-                    composed.results[0].model.clone(),
-                    self.editor_state.pending_composed.clone(),
-                )
+                ShapeEditTarget::PendingComposed { index }
             }
             Some(_) => return false,
             None => {
@@ -105,36 +99,59 @@ impl Editor {
                         None => return false,
                     },
                 };
-                let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
-                    return false;
-                };
-                (
-                    ShapeEditTarget::Drawn { drawn_id, model_id },
-                    model,
-                    Vec::new(),
-                )
+                ShapeEditTarget::Drawn { drawn_id, model_id }
             }
+        };
+        // 以「当前是否真的处于编辑态」为切换依据：stale armed（换选后再选同一对象）
+        // 不会把用户点进「看起来没反应」的半个状态。
+        self.shape_edit_armed = if self.is_shape_edit_armed() {
+            None
+        } else {
+            Some(target)
+        };
+        self.grid_cache.clear();
+        true
+    }
+
+    /// 是否处于「编辑图形」态。
+    ///
+    /// 以**当前选中目标是否仍匹配**为准：换选/取消选中后自动失效，
+    /// 不会出现「选框被隐藏、锚点却不在」的空窗。
+    pub fn is_shape_edit_armed(&self) -> bool {
+        self.armed_edit_target().is_some()
+    }
+
+    /// 编辑态命中：8 点箱体（pending 额外中心）+ 角外 32px 旋转区。
+    ///
+    /// 未进入「编辑图形」时一律不接管：锚点只是示意，不会和 ShapeSelect 选框抢点击。
+    pub(crate) fn begin_shape_edit(&mut self, tick: f32, key: f32) -> bool {
+        if self.current_tool() != lumino_message::Tool::ShapeSelect {
+            return false;
+        }
+        let (target, model, original_composed) = {
+            let Some((target, model)) = self.armed_edit_target() else {
+                return false;
+            };
+            let model = model.clone();
+            let composed = match target {
+                ShapeEditTarget::PendingComposed { .. } => {
+                    self.editor_state.pending_composed.clone()
+                }
+                ShapeEditTarget::Drawn { .. } => Vec::new(),
+            };
+            (target, model, composed)
         };
 
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let screen = self.line_pos_screen_pos((tick, key));
-        let inside_box = self
-            .shape_bounds_screen(&model)
-            .is_some_and(|rect| Self::point_near_rect(rect, screen, 2.0));
-        let handle = hit_test(&model, (tick, key), zoom, 10.0).filter(|handle| {
-            self.handle_allowed(&model, *handle)
-                && (inside_box || matches!(handle, HandleKind::AnchorHandle(_) | HandleKind::Path))
-        });
-        let handle = match handle {
+        let include_center = self.edit_allows_center(target);
+        let handle = match hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
             Some(handle) => handle,
             None => {
                 // 角外旋转：对角线外侧一圈，类似画板/Office 的选框外旋转区。
-                if !self.box_handles_enabled(&model)
-                    || !self.in_shape_rotate_zone(&model, (tick, key))
-                {
+                if !self.in_shape_rotate_zone(&model, (tick, key)) {
                     return false;
                 }
                 HandleKind::Turn
@@ -309,54 +326,47 @@ impl Editor {
         }
     }
 
-    /// 当前编辑/选中形状的手柄屏幕位置（用于渲染）
-    pub(crate) fn shape_edit_handle_points(&self) -> Vec<Point> {
-        let Some(drawn) = self.editor_state.shape_select.selected_shapes().next() else {
-            return Vec::new();
-        };
-        let model = match drawn.pending {
-            Some(PendingShapeRef::Composed(index)) => {
-                let Some(composed) = self.editor_state.pending_composed.get(index) else {
-                    return Vec::new();
-                };
-                if !Self::pending_handle_supported(composed) {
-                    return Vec::new();
-                }
-                let Some(part) = composed.results.first() else {
-                    return Vec::new();
-                };
-                &part.model
-            }
-            Some(_) => return Vec::new(),
-            None => {
-                let Some(model_id) = drawn.model_id else {
-                    return Vec::new();
-                };
-                let Some(model) = self.editor_state.shape_store.model(model_id) else {
-                    return Vec::new();
-                };
-                model
-            }
+    /// 编辑态锚点（屏幕坐标）：8 个箱体锚点 + 可选中心锚点。
+    pub(crate) fn shape_edit_handles(&self) -> ShapeEditHandles {
+        let Some((target, model)) = self.armed_edit_target() else {
+            return ShapeEditHandles::default();
         };
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let Some(layout) = edit_handles(model, zoom) else {
-            return Vec::new();
+        let include_center = self.edit_allows_center(target);
+        let Some(layout) = box_handles(model, zoom, include_center) else {
+            return ShapeEditHandles::default();
         };
-        layout
+        let (center, box_kinds): (Vec<_>, Vec<_>) = layout
             .handles
-            .iter()
-            .filter(|(kind, _)| self.handle_allowed(model, *kind))
-            .map(|(_, pos)| self.line_pos_screen_pos(*pos))
-            .collect()
+            .into_iter()
+            .partition(|(kind, _)| matches!(kind, HandleKind::Move));
+        ShapeEditHandles {
+            box_points: box_kinds
+                .into_iter()
+                .map(|(_, pos)| self.line_pos_screen_pos(pos))
+                .collect(),
+            center: center
+                .first()
+                .map(|(_, pos)| self.line_pos_screen_pos(*pos)),
+        }
     }
 
     /// 是否正在拖拽形状手柄
     pub(crate) fn is_shape_editing(&self) -> bool {
         self.shape_edit.is_some()
     }
+}
+
+/// 编辑态锚点屏幕位置：8 个箱体锚点 + 可选中心锚点。
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct ShapeEditHandles {
+    /// 4 角 + 4 边中点
+    pub box_points: Vec<Point>,
+    /// 中心锚点（仅未 Bake 组合）
+    pub center: Option<Point>,
 }
 
 fn finite_geometry(model: &ShapeModel) -> bool {
@@ -396,5 +406,7 @@ fn sane_geometry(model: &ShapeModel) -> bool {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ops;
 
 mod cursor;

@@ -162,7 +162,19 @@ impl Root {
                         let _ = self.editor.merge_selected_shapes();
                     }
                     PianoRollContextMenuItem::EditShape => {
-                        // 020 手柄已改为选框直接交互：不再需要显式编辑模式
+                        if self.editor.enable_shape_edit() {
+                            let message = if self.editor.is_shape_edit_armed() {
+                                tr!("已进入编辑图形：角=缩放，边=拉伸，角外=旋转，中心=移动")
+                            } else {
+                                tr!("已退出编辑图形")
+                            };
+                            self.toast.push(crate::toast::ToastLevel::Info, message);
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("编辑图形失败：请选中一个已 Bake 图形或单支待确认组合"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::PaintAreas => {
                         let _ = self.editor.begin_area_paint();

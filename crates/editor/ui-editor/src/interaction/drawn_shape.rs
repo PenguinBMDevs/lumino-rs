@@ -715,6 +715,11 @@ impl Editor {
                 }
             }
         }
+        // 编辑图形绑定「当前这一个目标」：换选/取消选中后自动失效，
+        // 避免下次选中同一对象时凭空回到编辑态。
+        if !self.is_shape_edit_armed() {
+            self.shape_edit_armed = None;
+        }
         // 仅叠加层视觉变化（文档未变）：清网格缓存驱动重绘。
         // **不能**用 `mark_notes_changed()`——那会置 notes_changed 并重建空间索引（O(N)）。
         self.grid_cache.clear();
