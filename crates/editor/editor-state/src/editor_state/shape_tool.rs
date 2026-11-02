@@ -77,6 +77,8 @@ pub struct ShapeSpec {
 /// 拖拽预览图形：`(几何参数, 是否填充)`。
 pub type ShapePreview = (ShapeSpec, bool);
 
+use lumino_core::shape::MaskParams;
+
 /// 单条待确认图形实例
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeInstance {
@@ -90,6 +92,8 @@ pub struct ShapeInstance {
     pub filled: bool,
     /// 三角形顶点朝向（语义见 [`ShapeSpec::apex_high`]）
     pub apex_high: bool,
+    /// DRAW-010：待确认 Mask 标记（仅 ✓ 前预览使用；`None` = 普通图形）
+    pub mask: Option<MaskParams>,
 }
 
 impl ShapeInstance {

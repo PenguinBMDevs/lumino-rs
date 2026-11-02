@@ -1,3 +1,8 @@
+//! `UiConfig` 序列化 / 默认值契约测试。
+//!
+//! 独立文件：`config.rs` 已超过 400 行上限（AGENTS.md 文件长度红线），
+//! 测试整体搬到同目录子模块，**不改变任何用例**。
+
 use super::*;
 
 /// DRAW-038：已看过的帮助 tip 必须能落盘/读回；旧配置缺字段默认为空。
@@ -19,6 +24,33 @@ fn test_seen_help_tips_roundtrip_and_default() {
         .remove("seen_help_tips");
     let restored: UiConfig = serde_json::from_value(value).expect("旧配置应可读");
     assert!(restored.seen_help_tips.is_empty());
+}
+
+/// REF-LGS-009：离线导出块长默认 2048；旧配置缺字段时同样回落到 2048
+/// （不破坏老 `config.json`）。
+#[test]
+fn test_lgs_offline_block_size_default_and_legacy() {
+    assert_eq!(
+        UiConfig::default().lgs_offline_block_size,
+        2048,
+        "离线导出块长默认应为 2048"
+    );
+
+    let mut value = serde_json::to_value(UiConfig::default()).expect("UiConfig 应能序列化");
+    let removed = value
+        .as_object_mut()
+        .expect("UiConfig 序列化结果应为 JSON 对象")
+        .remove("lgs_offline_block_size");
+    assert!(
+        removed.is_some(),
+        "默认配置应写出 lgs_offline_block_size 键"
+    );
+
+    let restored: UiConfig = serde_json::from_value(value).expect("旧配置应能反序列化");
+    assert_eq!(
+        restored.lgs_offline_block_size, 2048,
+        "旧配置缺字段应回落到默认 2048"
+    );
 }
 
 /// 旧配置（UI-010 之前写入的 `config.json`）缺少 `gpu_last_check_time`：

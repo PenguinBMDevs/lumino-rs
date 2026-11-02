@@ -41,3 +41,8 @@ lumino-diagnostics = { workspace = true }
 [dev-dependencies]
 naga = { workspace = true }
 png = { workspace = true }
+# GPU/CPU 洋葱皮像素一致性对比（tests/cpu_gpu_parity）：CPU 侧渲染器与
+# 文档/调色板事实源只在测试期引入，生产依赖图不变（无循环：cpu-onion 不依赖 gfx）。
+lumino-cpu-onion = { workspace = true }
+lumino-midi-model = { workspace = true }
+lumino-extras = { workspace = true }

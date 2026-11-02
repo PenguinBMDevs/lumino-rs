@@ -7,8 +7,8 @@
 //! 子模块组织：
 //! - `data`: 渲染数据类型定义
 //! - `frame`: 帧准备逻辑（FPS计算、播放状态）
-//! - `notes`: 音符实例更新
 //! - `viewport`: 视口信息收集
+//! - `onion_skin` / `cpu_onion`: GPU / CPU 洋葱皮（Q3 A/B）
 //! - `separate_thread`: 分离渲染线程模式
 //! - `ui`: iced UI 渲染
 
@@ -22,6 +22,7 @@ use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
 
 // 子模块声明
 pub(crate) mod arrangement_geometry;
+pub(crate) mod cpu_onion;
 mod data;
 mod frame;
 pub(crate) mod mask_preview;
@@ -30,8 +31,6 @@ pub(crate) mod onion_skin;
 mod separate_thread;
 mod ui;
 pub(crate) mod viewport;
-
-// 公开子模块的公共类型
 
 impl Host {
     /// 主渲染入口

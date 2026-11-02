@@ -150,6 +150,12 @@ impl AdmissionState {
 
     /// 真实时钟放行判定 + 丢弃计数 + 配对记录 + 限频告警。
     pub(crate) fn note_on_allowed(&self, channel: u8, key: u8) -> bool {
+        // REF-LGS-012 快速路径：未启用 / Normal·High（rate<=0）恒放行——
+        // 与 `allow_note_on_at` 的判定完全一致，但省掉每事件一次 `now_us()`
+        // （`SystemTime::now()` 在注入热路径上比令牌桶本身更贵）。
+        if !self.enabled() || rate_for_level(self.level()) <= 0 {
+            return true;
+        }
         let allowed = self.allow_note_on_at(now_us());
         if allowed {
             return true;
@@ -235,8 +241,33 @@ impl EventSender {
 
     /// 发送一个 MIDI 事件（NoteOn 受限速闸约束；其余全放行）。
     pub fn send(&self, channel: u8, event: MidiEvent) {
-        // 闸判定：true = 本次事件被拦截（NoteOn 限速丢弃 / NoteOff 配对抵消）。
-        let gated_out = match &event {
+        if self.gated_out(channel, event) {
+            return;
+        }
+        let _ = self.tx.send((channel, event, Instant::now()));
+    }
+
+    /// REF-LGS-012：批量发送（同一调度 tick 共用**一次**墙钟时间戳）。
+    ///
+    /// 与逐条 [`Self::send`] 的准入/配对语义完全一致；差别只有时间戳：批量内的
+    /// 事件共享一次 `Instant::now()`。`drain.rs` 的 age 判定是「过期才丢弃」，
+    /// 同一 tick 的事件本来就应当同年龄，因此语义不变而每事件省一次时钟读取。
+    pub fn send_batch(&self, events: &[(u8, MidiEvent)]) {
+        if events.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        for &(channel, event) in events {
+            if self.gated_out(channel, event) {
+                continue;
+            }
+            let _ = self.tx.send((channel, event, now));
+        }
+    }
+
+    /// 发送端准入闸判定：`true` = 本次事件被拦截（限速丢弃 / NoteOff 配对抵消）。
+    fn gated_out(&self, channel: u8, event: MidiEvent) -> bool {
+        match &event {
             MidiEvent::NoteOn { key, vel } if *vel > 0 => {
                 !self.admission.note_on_allowed(channel, *key)
             }
@@ -244,11 +275,7 @@ impl EventSender {
             // vel == 0 的 NoteOn 与 NoteOff 同语义（配对抵消）。
             MidiEvent::NoteOn { key, .. } => self.admission.note_off_paired(channel, *key),
             _ => false,
-        };
-        if gated_out {
-            return;
         }
-        let _ = self.tx.send((channel, event, Instant::now()));
     }
 }
 

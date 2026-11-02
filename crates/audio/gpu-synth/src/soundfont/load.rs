@@ -4,6 +4,12 @@ use super::*;
 type SfzSampleData = (Vec<Arc<[f32]>>, u32);
 
 impl SoundFont {
+    /// Parses a soundfont **without** the process-wide cache.
+    ///
+    /// Use [`SoundFont::load_cached`] on the engine path so realtime playback,
+    /// offline export and port-layout rebuilds share one copy of the samples
+    /// (REF-LGS-014). This uncached entry point is for tests/tools that want a
+    /// guaranteed fresh parse.
     pub fn load(
         path: impl AsRef<Path>,
         bank: u16,
@@ -11,53 +17,65 @@ impl SoundFont {
         use_effects: bool,
         sample_rate: u32,
     ) -> Result<Self, SoundFontError> {
-        let p = path.as_ref();
-        let is_sfz = p
+        Ok(Self::from_core(Arc::new(Self::load_core(
+            path.as_ref(),
+            bank,
+            preset,
+            use_effects,
+            sample_rate,
+        )?)))
+    }
+
+    /// Wraps a parsed core in a handle (the cache lives in the core, so every
+    /// handle of the same core shares it).
+    pub(crate) fn from_core(core: Arc<SoundFontCore>) -> Self {
+        Self { core }
+    }
+
+    /// Parses the file into an immutable [`SoundFontCore`] (no cache involved).
+    pub(crate) fn load_core(
+        path: &Path,
+        bank: u16,
+        preset: u16,
+        use_effects: bool,
+        sample_rate: u32,
+    ) -> Result<SoundFontCore, SoundFontError> {
+        let is_sfz = path
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.eq_ignore_ascii_case("sfz"))
             .unwrap_or(false);
         if is_sfz {
-            return Self::load_sfz(p, bank, preset, use_effects, sample_rate);
+            return Self::load_sfz_core(path, bank, preset, use_effects, sample_rate);
         }
         // SF2 path：必须传引擎采样率。XSynth 的加载器会把每份样本重采样到
         // 该目标率，并把 offset/loop 位置转换到该域；写死 44_100 会让 48 kHz
         // 音色库被错误重采样，播放时整体升高 ~147 cents。
-        let presets =
-            load_soundfont(p, sample_rate).map_err(|e| SoundFontError::Parse(format!("{e}")))?;
+        // REF-DATA-002：presets 走进程级缓存，XSynth 侧用同一个入口构建，
+        // 两栈共享解析结果与采样 `Arc`（不再各解析一遍）。
+        let presets = super::cache::load_presets_cached(path, sample_rate)?;
 
         let target = presets
             .iter()
             .find(|p| p.bank == bank && p.preset == preset)
             .ok_or(SoundFontError::MissingPreset(bank, preset))?;
 
-        let mut sf = Self {
-            bank,
-            preset,
-            samples: Vec::new(),
-            zone_matrix: (0..128 * 128).map(|_| Vec::new()).collect(),
-            zones: Vec::new(),
-            sample_ids: HashMap::new(),
-            use_effects,
-            sample_rate,
-            resample_cache: HashMap::new(),
-        };
-
+        let mut core = SoundFontCore::new(bank, preset, use_effects, sample_rate);
         for region in &target.regions {
-            sf.add_region(region);
+            core.add_region(region);
         }
-
-        Ok(sf)
+        core.presets = Some(presets);
+        Ok(core)
     }
 
     /// Loads an SFZ file (bank/preset ignored, kept for API symmetry).
-    fn load_sfz(
+    fn load_sfz_core(
         path: &Path,
         bank: u16,
         preset: u16,
         use_effects: bool,
         sample_rate: u32,
-    ) -> Result<Self, SoundFontError> {
+    ) -> Result<SoundFontCore, SoundFontError> {
         use xsynth_soundfonts::sfz::parse_soundfont;
 
         let regions = parse_soundfont(path)
@@ -75,17 +93,7 @@ impl SoundFont {
             })
             .collect::<Result<_, _>>()?;
 
-        let mut sf = Self {
-            bank,
-            preset,
-            samples: Vec::new(),
-            zone_matrix: (0..128 * 128).map(|_| Vec::new()).collect(),
-            zones: Vec::new(),
-            sample_ids: HashMap::new(),
-            use_effects,
-            sample_rate,
-            resample_cache: HashMap::new(),
-        };
+        let mut core = SoundFontCore::new(bank, preset, use_effects, sample_rate);
 
         for region in regions {
             // CC triggered regions (key -1) not supported
@@ -97,10 +105,10 @@ impl SoundFont {
                 Some(v) => v,
                 None => continue,
             };
-            sf.add_sfz_region(&region, sample_data, *native_rate);
+            core.add_sfz_region(&region, sample_data, *native_rate);
         }
 
-        Ok(sf)
+        Ok(core)
     }
 
     /// Loads an SFZ sample file at its native rate (no resampling), returns per-channel Arc<[f32]> and rate.

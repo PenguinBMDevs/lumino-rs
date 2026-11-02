@@ -73,7 +73,7 @@ impl GpuSynth {
 
     pub(crate) fn handle_event(&mut self, ev: TimedEvent) -> Result<(), SynthError> {
         let ch = ev.channel() as usize;
-        if ch >= self.config.midi_channels {
+        if !crate::midi::port::channel_in_range(ev.channel(), self.config.midi_channels) {
             // 配置与事件流不同步（例如多端口事件喂给单端口引擎）：丢弃并只告警一次。
             static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
             if WARNED.set(()).is_ok() {

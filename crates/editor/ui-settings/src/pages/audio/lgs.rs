@@ -77,6 +77,33 @@ pub(super) fn render_lgs_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
+    // REF-LGS-009：离线导出块长（只影响导出，不影响实时；固定候选集避免脏值）。
+    // 离线对延迟不敏感，块长越大每块固定成本越摊薄；2048 是收益/内存的平衡点。
+    let offline_block_options = vec![512usize, 1024, 2048, 4096, 8192];
+    col = col.push(
+        row![
+            with_setting_tooltip_inline(
+                text(format!(
+                    "{}: {}",
+                    t.lgs_offline_buffer, settings.synth.lgs_offline_block_size
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(Length::Fill),
+                t.lgs_offline_buffer_hint,
+            ),
+            pick_list(
+                offline_block_options,
+                Some(settings.synth.lgs_offline_block_size),
+                |v| Message::Settings(crate::Event::LgsOfflineBlockSizeChanged(v))
+            )
+            .width(160.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(20));
+
     // 每键最大同音数：0=不限制，1..128 拖拽 + 自定义输入
     let lgs_voices = settings.synth.lgs_max_voices_per_key;
     let display_voices = if lgs_voices == 0 {

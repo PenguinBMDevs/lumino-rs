@@ -83,6 +83,12 @@ pub struct PlaybackStatsReader {
     dropped_note_ons: Arc<AtomicU64>,
     /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。
     governor_level: Arc<AtomicU64>,
+    /// REF-LGS-013：采样数据占用的 GPU 显存字节（`samples_chunks` 实际分配）。
+    sample_gpu_bytes: Arc<AtomicU64>,
+    /// REF-LGS-013：采样数据占用的 CPU 内存字节（原生样本 + 重采样缓存）。
+    sample_cpu_bytes: Arc<AtomicU64>,
+    /// REF-DATA-001：其中重采样缓存占用的字节（不含与原生共享 Arc 的同率条目）。
+    sample_resample_bytes: Arc<AtomicU64>,
 }
 
 /// Number of recent render-load samples kept for the moving average.
@@ -114,6 +120,12 @@ pub struct GpuBufferStats {
     pub governor_level: u64,
     /// 累计被丢弃的过期 NoteOn 数（正常素材应恒为 0）
     pub dropped_note_ons: u64,
+    /// REF-LGS-013：采样数据占用的 GPU 显存字节（`samples_chunks` 实际分配）。
+    pub sample_gpu_bytes: u64,
+    /// REF-LGS-013：采样数据占用的 CPU 内存字节（原生样本 + 重采样缓存）。
+    pub sample_cpu_bytes: u64,
+    /// REF-DATA-001：其中重采样缓存占用的字节（同率别名不计）。
+    pub sample_resample_bytes: u64,
 }
 
 /// 实时播放控制命令（REND-002 实时多端口）：不重开音频流的轻量操作。

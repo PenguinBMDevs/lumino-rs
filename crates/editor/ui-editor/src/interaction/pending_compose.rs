@@ -3,9 +3,19 @@
 //! 组合只改 pending：来源从 owning tool 摘除，结果进入
 //! `EditorState::pending_composed`，✓ 才写文档音符。
 
-use lumino_core::shape::{MergeParams, ShapeOp};
-use lumino_editor_state::shape_ops::{gate_merge, join, to_live};
-use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, PendingSource};
+mod edit;
+
+use lumino_core::shape::{
+    BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeGeometry, ShapeKind, ShapeModel,
+    ShapeOp,
+};
+use lumino_editor_state::shape_ops::{
+    cut_loops, cut_open_vertical, gate_merge, join, ring_of, split_notes_vertical, sync_groups,
+    to_live,
+};
+use lumino_editor_state::{
+    ComposedKind, ComposedPart, PendingComposed, PendingShapeRef, PendingSource,
+};
 
 use crate::Editor;
 use crate::interaction::shape_bridge::model_from_source;
@@ -86,21 +96,24 @@ impl Editor {
             notes.push(model_notes);
         }
 
-        let (mut model, composed_notes) = match kind {
+        let mut results: Vec<ComposedPart> = match kind {
             ComposedKind::Live => {
                 let Ok((model, _warnings)) = to_live(&models) else {
                     return false;
                 };
-                (model, notes.into_iter().flatten().collect::<Vec<_>>())
+                vec![ComposedPart {
+                    model,
+                    notes: notes.into_iter().flatten().collect(),
+                }]
             }
             ComposedKind::Join => {
                 let Some(joined) = join(&models, 1.0, 1.0) else {
                     return false;
                 };
-                (
-                    joined.model,
-                    notes.into_iter().flatten().collect::<Vec<_>>(),
-                )
+                vec![ComposedPart {
+                    model: joined.model,
+                    notes: notes.into_iter().flatten().collect(),
+                }]
             }
             ComposedKind::Merge => {
                 if models.len() != 2 {
@@ -124,7 +137,80 @@ impl Editor {
                 }
                 let mut model = models[0].clone();
                 model.ops.push(ShapeOp::Merge(params));
-                (model, merged)
+                vec![ComposedPart {
+                    model,
+                    notes: merged,
+                }]
+            }
+            ComposedKind::Slice => {
+                if models.len() != 1 {
+                    return false;
+                }
+                let model = &models[0];
+                let Some((x0, y0, x1, y1)) = model.geometry.bounds() else {
+                    return false;
+                };
+                let cut = (x0 + x1) / 2.0;
+                let Some((left, right)) = split_slice_parts(model, cut, y0, y1) else {
+                    return false;
+                };
+                let (left_notes, right_notes) = split_notes_vertical(&notes[0], cut);
+                vec![
+                    ComposedPart {
+                        model: polyline_model(left, track, model.k),
+                        notes: left_notes,
+                    },
+                    ComposedPart {
+                        model: polyline_model(right, track, model.k),
+                        notes: right_notes,
+                    },
+                ]
+            }
+            ComposedKind::Between => {
+                if models.len() != 2 {
+                    return false;
+                }
+                let set = BetweenSet {
+                    steps: 5,
+                    ..BetweenSet::default()
+                };
+                let group_id = self.next_between_group_id();
+                let mut first = models[0].clone();
+                let mut last = models[1].clone();
+                first.ops.push(ShapeOp::Between(BetweenParams {
+                    id: group_id,
+                    role: BetweenRole::First,
+                    at: Some(0.0),
+                    sig: None,
+                    push: None,
+                    vel: None,
+                    set: Some(set),
+                }));
+                last.ops.push(ShapeOp::Between(BetweenParams {
+                    id: group_id,
+                    role: BetweenRole::Last,
+                    at: Some(1.0),
+                    sig: None,
+                    push: None,
+                    vel: None,
+                    set: None,
+                }));
+                // 首/末只在 pending 会话内变化；sync_groups 负责生成步，
+                // 手改过的 Step 会在纯函数里降级为 Key 并保留。
+                let mut shapes = vec![first, last];
+                for warning in sync_groups(&mut shapes) {
+                    tracing::warn!(message = warning.message, "Between 组同步提示");
+                }
+                shapes
+                    .into_iter()
+                    .map(|model| {
+                        let part_notes = self.shape_notes_of(&model, track);
+                        ComposedPart {
+                            model,
+                            notes: part_notes,
+                        }
+                    })
+                    .collect()
             }
             ComposedKind::CopyAlong => {
                 if models.len() != 1 {
@@ -138,7 +224,10 @@ impl Editor {
                 };
                 model.ops.push(ShapeOp::CopyAlong(params));
                 let composed_notes = self.shape_notes_of(&model, track);
-                (model, composed_notes)
+                vec![ComposedPart {
+                    model,
+                    notes: composed_notes,
+                }]
             }
             ComposedKind::Velocity => {
                 if models.len() != 1 {
@@ -154,10 +243,17 @@ impl Editor {
                     .ops
                     .push(ShapeOp::VelocityEnv(Self::rising_velocity_env()));
                 let composed_notes = self.shape_notes_of(&model, track);
-                (model, composed_notes)
+                vec![ComposedPart {
+                    model,
+                    notes: composed_notes,
+                }]
             }
+            // 只在「进入编辑图形」时直接构造，不走这里
+            ComposedKind::Single => return false,
         };
-        model.id = 0;
+        for part in &mut results {
+            part.model.id = 0;
+        }
 
         let mut shape_indices = Vec::new();
         let mut curve_indices = Vec::new();
@@ -180,11 +276,12 @@ impl Editor {
         let composed_index = self.editor_state.pending_composed.len();
         self.editor_state.pending_composed.push(PendingComposed {
             kind,
-            model,
-            notes: composed_notes,
+            results,
             sources,
         });
         self.pending_composed_redo.clear();
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         if let Some(id) = self
@@ -207,6 +304,8 @@ impl Editor {
             self.restore_pending_source(source.clone());
         }
         self.pending_composed_redo.push(item);
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
@@ -222,12 +321,95 @@ impl Editor {
             self.remove_pending_source(source);
         }
         self.editor_state.pending_composed.push(item);
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
         true
     }
 
+    /// 020：把当前选中的单个待确认形状/曲线提升为可编辑的单支组合。
+    ///
+    /// 参数化实例（`ShapeInstance` 只有 kind + rect）表达不了旋转，所以进入
+    /// 「编辑图形」前统一提升为模型；`sources` 保留原实例，
+    /// `Ctrl+Z`（撤销组合）能还原回参数化形状。
+    pub(crate) fn promote_pending_for_edit(&mut self) -> bool {
+        let reference = {
+            let mut selected = self.editor_state.shape_select.selected_shapes();
+            let Some(shape) = selected.next() else {
+                return false;
+            };
+            if selected.next().is_some() {
+                return false;
+            }
+            match shape.pending {
+                Some(reference @ (PendingShapeRef::Shape(_) | PendingShapeRef::CurvePath(_))) => {
+                    reference
+                }
+                _ => return false,
+            }
+        };
+        let track = self.editor_state.data.current_track;
+        let Some(source) = self.pending_source(reference) else {
+            return false;
+        };
+        let mut model = crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
+        // 待确认 Mask 标记要跟着模型走，否则提升后预览会莫名消失
+        let pending_source = match reference {
+            PendingShapeRef::Shape(index) => {
+                let Some(shape) = self.editor_state.shape_tool.shapes.get(index).cloned() else {
+                    return false;
+                };
+                if let Some(params) = shape.mask.clone() {
+                    model.ops.push(ShapeOp::Mask(params));
+                }
+                PendingSource::Shape(shape)
+            }
+            PendingShapeRef::CurvePath(index) => {
+                let Some(path) = self.editor_state.line_tool.paths.get(index).cloned() else {
+                    return false;
+                };
+                PendingSource::CurvePath(path)
+            }
+            PendingShapeRef::Composed(_) | PendingShapeRef::BrushStroke(_) => return false,
+        };
+        let notes = self.shape_notes_of(&model, track);
+        let index = self.editor_state.pending_composed.len();
+        self.editor_state
+            .pending_composed
+            .push(PendingComposed::single(
+                ComposedKind::Single,
+                model,
+                notes,
+                vec![pending_source],
+            ));
+        match reference {
+            PendingShapeRef::Shape(i) => {
+                self.editor_state.shape_tool.shapes.remove(i);
+            }
+            PendingShapeRef::CurvePath(i) => {
+                self.editor_state.line_tool.paths.remove(i);
+            }
+            _ => {}
+        }
+        self.pending_composed_redo.clear();
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
+        self.editor_state.shape_select.remove_pending_all();
+        self.rebuild_pending_mirrors();
+        if let Some(id) = self
+            .editor_state
+            .shape_select
+            .pending_mirror(PendingShapeRef::Composed(index))
+        {
+            self.editor_state.shape_select.select_only(id);
+        }
+        self.grid_cache.clear();
+        true
+    }
+
+    /// 下一个可用的 Between 组 id：扫描已 Bake 模型与 pending 结果，避免跨组碰撞。
     fn restore_pending_source(&mut self, source: PendingSource) {
         match source {
             PendingSource::Shape(shape) => self.editor_state.shape_tool.shapes.push(shape),
@@ -261,4 +443,40 @@ impl Editor {
             }
         }
     }
+}
+
+/// 两/多段闭环拍平成一条折线模型（Slice 的左右两片）
+fn polyline_model(points: Vec<Vec<(f32, f32)>>, track: usize, k: f32) -> ShapeModel {
+    let points: Vec<(f32, f32)> = points.into_iter().flatten().collect();
+    let mut model = ShapeModel::new(0, track as u16, ShapeKind::Polyline, k);
+    model.geometry = ShapeGeometry::from_points(points);
+    model
+}
+
+/// 竖切两半的几何集合（与外层 Vec 分支同形）
+type SliceHalves = (Vec<Vec<(f32, f32)>>, Vec<Vec<(f32, f32)>>);
+
+/// 闭环优先走 `cut_loops`；开放折线（曲线/弧的展平）走竖线切段。
+fn split_slice_parts(model: &ShapeModel, cut: f32, y0: f32, y1: f32) -> Option<SliceHalves> {
+    if model.geometry.closed {
+        cut_loops(&[ring_of(model)], (cut, y0 - 1.0), (cut, y1 + 1.0))
+            .or_else(|| split_open_model(model, cut))
+    } else {
+        split_open_model(model, cut)
+    }
+}
+
+/// 开放折线的竖切回退（`cut_loops` 只处理闭环）。
+fn split_open_model(model: &ShapeModel, cut: f32) -> Option<SliceHalves> {
+    let points = if model.geometry.closed || model.geometry.anchors.is_empty() {
+        ring_of(model)
+    } else {
+        model
+            .geometry
+            .anchors
+            .iter()
+            .map(|anchor| anchor.pos)
+            .collect()
+    };
+    cut_open_vertical(&points, cut).map(|(left, right)| (vec![left], vec![right]))
 }

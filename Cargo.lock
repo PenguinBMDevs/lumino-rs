@@ -1464,9 +1464,11 @@ dependencies = [
  "lumino-extras",
  "lumino-midi-loader",
  "png 0.17.16",
+ "raw-window-handle",
  "softbuffer",
  "sysinfo",
  "tokio",
+ "tracy-client",
  "windows 0.62.2",
  "winit",
 ]
@@ -4261,6 +4263,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-cpu-onion"
+version = "0.2.1"
+dependencies = [
+ "lumino-extras",
+ "lumino-midi-loader",
+ "lumino-midi-model",
+ "tokio",
+]
+
+[[package]]
 name = "lumino-diagnostics"
 version = "0.2.1"
 dependencies = [
@@ -4358,9 +4370,12 @@ dependencies = [
  "im",
  "log",
  "lumino-core",
+ "lumino-cpu-onion",
  "lumino-diagnostics",
  "lumino-editor-state",
+ "lumino-extras",
  "lumino-midi-loader",
+ "lumino-midi-model",
  "lumino-midiplayer",
  "lumino-note-core",
  "naga",
@@ -4381,6 +4396,7 @@ dependencies = [
  "lumino-core",
  "lumino-midly",
  "memmap2",
+ "naga",
  "pollster",
  "rayon",
  "symphonia",
@@ -4628,6 +4644,7 @@ dependencies = [
  "log",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-cpu-onion",
  "lumino-diagnostics",
  "lumino-editor-state",
  "lumino-export",
@@ -10452,7 +10469,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xsynth-core"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=6335b11378e7c0b3a932b7590b3043712e2f1048#6335b11378e7c0b3a932b7590b3043712e2f1048"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=3fd31db15c7dc7c996fb242a78fa77fd00300e26#3fd31db15c7dc7c996fb242a78fa77fd00300e26"
 dependencies = [
  "atomic_refcell",
  "biquad",
@@ -10473,7 +10490,7 @@ dependencies = [
 [[package]]
 name = "xsynth-realtime"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=6335b11378e7c0b3a932b7590b3043712e2f1048#6335b11378e7c0b3a932b7590b3043712e2f1048"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=3fd31db15c7dc7c996fb242a78fa77fd00300e26#3fd31db15c7dc7c996fb242a78fa77fd00300e26"
 dependencies = [
  "atomic_refcell",
  "bytemuck",
@@ -10493,7 +10510,7 @@ dependencies = [
 [[package]]
 name = "xsynth-soundfonts"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=6335b11378e7c0b3a932b7590b3043712e2f1048#6335b11378e7c0b3a932b7590b3043712e2f1048"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=3fd31db15c7dc7c996fb242a78fa77fd00300e26#3fd31db15c7dc7c996fb242a78fa77fd00300e26"
 dependencies = [
  "encoding_rs",
  "encoding_rs_io",

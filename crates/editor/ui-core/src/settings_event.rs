@@ -4,8 +4,8 @@
 
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{
-    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
-    SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, OnionSkinBackend,
+    SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
 
 /// MIDI 输出类型（顶层选择）
@@ -55,6 +55,8 @@ pub enum Event {
     XSynthSoftNpsGateChanged(bool),
     /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂）变更
     LgsBlockSizeChanged(usize),
+    /// LGS (GPU) 离线导出块长（2 的幂）变更；REF-LGS-009
+    LgsOfflineBlockSizeChanged(usize),
     /// LGS (GPU) 每键最大同音数变更（0=不限制）
     LgsMaxVoicesChanged(usize),
     /// LGS (GPU) 全局最大复音数（硬上限/量程）变更（0 = 自动；REND-016 #139）
@@ -119,6 +121,8 @@ pub enum Event {
     HiresCooldownChanged(String),
     /// 高精度洋葱皮贴图 GPU 显存上限变更（MB）
     HiresGpuMemLimitChanged(String),
+    /// 洋葱皮渲染后端变更（GPU / CPU；加载 MIDI 后由面板锁定态拦截）
+    OnionSkinBackendChanged(OnionSkinBackend),
     /// 播放时键盘颜色指示是否启用
     PlaybackKeyColorsEnabledChanged(bool),
     /// 添加音轨行为变更

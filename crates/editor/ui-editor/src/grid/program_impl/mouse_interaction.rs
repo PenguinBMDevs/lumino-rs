@@ -106,6 +106,20 @@ pub(crate) fn handle(
         }
         EditState::Scrubbing => mouse::Interaction::Grabbing,
         EditState::Idle => {
+            // 020：形状手柄/旋转区优先于普通选框光标
+            if editor.current_tool() == Tool::ShapeSelect {
+                if editor.is_shape_editing() {
+                    return mouse::Interaction::Grabbing;
+                }
+                if let Some(cursor_pos) = cursor.position() {
+                    let local_pos =
+                        iced_core::Point::new(cursor_pos.x - bounds.x, cursor_pos.y - bounds.y);
+                    if let Some(interaction) = editor.shape_handle_interaction(local_pos) {
+                        return interaction;
+                    }
+                }
+            }
+
             // 先检查是否悬停在循环区域手柄上
             {
                 puffin::profile_scope!("loop_range_hit_test");

@@ -201,10 +201,18 @@ impl Root {
         );
     }
 
-    /// Runner 销毁 `.lmdeltrack` 后调用：释放 reserved_track_id
+    /// Runner 销毁 `.lmdeltrack` 后调用：物理清空该轨音符并释放 reserved_track_id。
     pub fn apply_track_permanently_deleted(&mut self, track_id: u16) {
         let id = track_id as usize;
+        // 缓存已销毁，音符不再可恢复；清空轨道内容，CPU 洋葱皮按 tick 区间减轨。
+        self.editor
+            .editor_state
+            .data
+            .remove_track_notes_physical(id);
         self.sidebar.release_reserved_track_id(id);
-        tracing::info!("Root: 已永久销毁音轨缓存 track_id={}，释放 reserved ID", id);
+        tracing::info!(
+            "Root: 已永久销毁音轨缓存 track_id={}，物理清空音符并释放 reserved ID",
+            id
+        );
     }
 }

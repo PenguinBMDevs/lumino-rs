@@ -172,10 +172,18 @@ impl Root {
                 // 互斥路由：已在钢琴瀑布流预览面板 → 收起；否则切换到该面板。
                 // 与其他右侧栏按钮对称：避免其他面板打开后本按钮只收起面板、
                 // active_panel 仍指向旧面板导致无法切回。
-                if self
+                let already_active = self
                     .right_sidebar
-                    .is_panel_active(RightSidebarPanel::PianoWaterfall)
+                    .is_panel_active(RightSidebarPanel::PianoWaterfall);
+                // CPU 洋葱皮后端：预览面板渲染离屏 wgpu 键盘纹理，CPU 下无帧可画。
+                // 只拦「打开/切换」（在改 `panel_visible`/`active_panel` 之前），
+                // 「收起」放行——否则万一面板是打开态，用户连关都关不掉。
+                if !already_active
+                    && self.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持钢琴瀑布流预览"))
                 {
+                    return true;
+                }
+                if already_active {
                     self.right_sidebar.panel_visible = false;
                 } else {
                     self.right_sidebar

@@ -6,6 +6,19 @@
 use super::super::EditorData;
 use lumino_note_core::note::Note;
 
+/// 插入音符集合的 tick 区间（只读，不复制音符）。
+fn events_range(events: &[lumino_midi_model::NoteEvent]) -> Option<(u32, u32)> {
+    let mut range: Option<(u32, u32)> = None;
+    for note in events {
+        let end = note.end_tick.max(note.start_tick.saturating_add(1));
+        range = Some(match range {
+            Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+            None => (note.start_tick, end),
+        });
+    }
+    range
+}
+
 impl EditorData {
     /// 批量插入（按值），返回占位列表（兼容旧签名）。
     ///
@@ -22,8 +35,15 @@ impl EditorData {
             .map(|n| super::super::accessors::note_to_event(n.clone()))
             .collect();
         let n = events.len();
+        let range = events_range(&events);
         let inserted = doc.batch_insert_notes(self.current_track, events);
         if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量插入无法用原子变更表达 → 整帧兜底
+            if let Some((lo, hi)) = range {
+                self.record_cpu_onion_range(lo, hi);
+            } else {
+                self.record_cpu_onion_full();
+            }
             // 结构性大插入：主轨段重建（TrackDelta），不走全量会话兜底
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
@@ -50,7 +70,16 @@ impl EditorData {
             .map(|n| super::super::accessors::note_to_event(n.clone()))
             .collect();
         let n = events.len();
+        let range = events_range(&events);
         let inserted = doc.batch_insert_notes(track_id, events);
+        if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量插入 → 整帧兜底（与目标轨是否为当前轨无关）
+            if let Some((lo, hi)) = range {
+                self.record_cpu_onion_range(lo, hi);
+            } else {
+                self.record_cpu_onion_full();
+            }
+        }
         if inserted > 0 && track_id == self.current_track {
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
@@ -76,7 +105,16 @@ impl EditorData {
             return Vec::new();
         };
         let n = events.len();
+        let range = events_range(&events);
         let inserted = doc.batch_insert_notes_sorted(track_id, events);
+        if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量粘贴 → 整帧兜底
+            if let Some((lo, hi)) = range {
+                self.record_cpu_onion_range(lo, hi);
+            } else {
+                self.record_cpu_onion_full();
+            }
+        }
         if inserted > 0 && track_id == self.current_track {
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
@@ -98,7 +136,16 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return;
         };
+        let range = events_range(&events);
         let inserted = doc.batch_insert_notes_sorted(track_id, events);
+        if inserted > 0 {
+            // CPU 洋葱皮（Step 5a）：批量粘贴 → 整帧兜底
+            if let Some((lo, hi)) = range {
+                self.record_cpu_onion_range(lo, hi);
+            } else {
+                self.record_cpu_onion_full();
+            }
+        }
         if inserted > 0 && track_id == self.current_track {
             self.mark_main_track_struct_changed();
             self.mark_current_track_changed();

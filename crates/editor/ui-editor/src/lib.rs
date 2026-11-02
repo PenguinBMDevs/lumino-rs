@@ -12,6 +12,9 @@ pub use lumino_ui_core::sidebar_event as sidebar;
 pub use lumino_ui_core::theme;
 pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
+/// 遮罩参数面板的编辑目标（DRAW-010）
+pub use interaction::MaskEditTarget;
+
 pub mod arrangement;
 pub mod context_menu;
 pub mod edit_view;
@@ -69,6 +72,7 @@ mod tests {
     mod scroll;
     mod selection_precision;
     mod selection_remap;
+    mod shape_edit_e2e;
     mod spatial_index_staleness;
     mod state;
     pub(crate) mod test_helpers;
@@ -237,8 +241,14 @@ pub struct Editor {
     pub context_menu: context_menu::PianoRollContextMenuState,
     /// 020 Custom edit 的手柄拖拽状态
     pub(crate) shape_edit: Option<crate::interaction::shape_edit_ui::ShapeEditState>,
+    /// 020 显式编辑目标（None = 普通 ShapeSelect 选框）
+    pub(crate) shape_edit_armed: Option<crate::interaction::shape_edit_ui::ShapeEditTarget>,
     /// DRAW-041C：Bake 前组合会话的 redo 栈（与 `editor_state.pending_composed` 成对）
     pub(crate) pending_composed_redo: Vec<lumino_editor_state::PendingComposed>,
+    /// DRAW-041C 阶段 3：pending composed 手柄编辑的 undo 快照
+    pub(crate) pending_edit_undo: Vec<Vec<lumino_editor_state::PendingComposed>>,
+    /// DRAW-041C 阶段 3：pending composed 手柄编辑的 redo 快照
+    pub(crate) pending_edit_redo: Vec<Vec<lumino_editor_state::PendingComposed>>,
     /// DRAW-032B：区域着色会话（仅鼠标工具、唯一选中图形时）
     pub(crate) area_paint: Option<crate::interaction::area_paint::AreaPaintState>,
     /// DRAW-041B/032B：ShapeStore 模型列表是否展开

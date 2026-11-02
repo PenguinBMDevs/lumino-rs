@@ -36,5 +36,15 @@ pub(crate) fn handle(editor: &Editor, position: Option<Point>) -> mouse::Interac
             mouse::Interaction::Idle
         };
     }
+    if editor.current_tool() == Tool::ShapeSelect {
+        if editor.is_shape_editing() {
+            return mouse::Interaction::Grabbing;
+        }
+        if let Some(local_pos) = position
+            && let Some(interaction) = editor.shape_handle_interaction(local_pos)
+        {
+            return interaction;
+        }
+    }
     mouse::Interaction::Idle
 }

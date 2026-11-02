@@ -24,7 +24,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::interaction::bake::BakePending;
-use lumino_core::shape::ShapeModel;
+use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
 use lumino_editor_state::{DrawnShapeSource, ShapeNote};
 use lumino_note_core::history::CreateOp;
@@ -299,12 +299,14 @@ impl Editor {
         // DRAW-041C：组合结果仍是 pending，✓ 时与普通 pending 一起提交。
         let composed_snapshot = self.editor_state.pending_composed.clone();
         let composed = std::mem::take(&mut self.editor_state.pending_composed);
-        payload.extend(composed.iter().flat_map(|item| {
-            item.notes.iter().map(|shape_note| {
-                let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
-                note.velocity = shape_note.velocity;
-                note.channel = shape_note.channel;
-                note
+        payload.extend(composed.iter().flat_map(|group| {
+            group.results.iter().flat_map(|part| {
+                part.notes.iter().map(|shape_note| {
+                    let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
+                    note.velocity = shape_note.velocity;
+                    note.channel = shape_note.channel;
+                    note
+                })
             })
         }));
         if payload.is_empty() {
@@ -376,14 +378,25 @@ impl Editor {
                     filled: shape.filled,
                     apex_high: shape.apex_high,
                 };
-                (model_from_source(&source, track, 1.0), notes)
+                let mut model = model_from_source(&source, track, 1.0);
+                if let Some(mask) = &shape.mask {
+                    model.ops.push(ShapeOp::Mask(mask.clone()));
+                }
+                (model, notes)
             })
             .collect();
-        models.extend(composed.into_iter().map(|item| (item.model, item.notes)));
+        models.extend(composed.into_iter().flat_map(|group| {
+            group
+                .results
+                .into_iter()
+                .map(|part| (part.model, part.notes))
+        }));
         self.record_baked_shape_models(models);
         self.editor_state.shape_tool.clear_pending();
         self.editor_state.pending_composed.clear();
         self.pending_composed_redo.clear();
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
         true
@@ -394,6 +407,8 @@ impl Editor {
         self.editor_state.shape_tool.clear_pending();
         self.editor_state.pending_composed.clear();
         self.pending_composed_redo.clear();
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
     }

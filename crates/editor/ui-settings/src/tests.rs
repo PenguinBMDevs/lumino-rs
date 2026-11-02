@@ -224,3 +224,83 @@ fn test_gpu_status_events_update_fields() {
     panel.update(Event::GpuLoadDisplayChanged(GpuLoadDisplay::ShortAverage));
     assert_eq!(panel.synth.gpu_load_display, GpuLoadDisplay::ShortAverage);
 }
+
+// ── 洋葱皮渲染后端（Step 4a：加载 MIDI 后禁止切换）──
+
+/// 面板从 `UiConfig::onion_skin_backend` 初始化后端；锁定态恒为 `false`（会话态）。
+#[test]
+fn test_onion_backend_init_from_config() {
+    use lumino_core::storage::config::OnionSkinBackend;
+
+    let panel = SettingsPanel::new(&UiConfig::default());
+    assert_eq!(
+        panel.hires.backend,
+        OnionSkinBackend::Gpu,
+        "默认后端必须仍是 GPU（行为不变）"
+    );
+    assert!(!panel.hires.backend_locked, "面板初始不应锁定");
+
+    let config = UiConfig {
+        onion_skin_backend: OnionSkinBackend::Cpu,
+        ..UiConfig::default()
+    };
+    let panel = SettingsPanel::new(&config);
+    assert_eq!(
+        panel.hires.backend,
+        OnionSkinBackend::Cpu,
+        "必须镜像 UiConfig 的后端选择"
+    );
+    assert!(
+        !panel.hires.backend_locked,
+        "backend_locked 是会话态，不来自 UiConfig"
+    );
+}
+
+/// 未锁定：切换事件生效。
+#[test]
+fn test_onion_backend_event_applies_when_unlocked() {
+    use lumino_core::storage::config::OnionSkinBackend;
+
+    let mut panel = SettingsPanel::new(&UiConfig::default());
+    panel.update(Event::OnionSkinBackendChanged(OnionSkinBackend::Cpu));
+    assert_eq!(panel.hires.backend, OnionSkinBackend::Cpu);
+    panel.update(Event::OnionSkinBackendChanged(OnionSkinBackend::Gpu));
+    assert_eq!(panel.hires.backend, OnionSkinBackend::Gpu);
+}
+
+/// 已锁定（主窗口加载 MIDI）：事件被忽略，后端保持不变。
+#[test]
+fn test_onion_backend_event_ignored_when_locked() {
+    use lumino_core::storage::config::OnionSkinBackend;
+
+    let mut panel = SettingsPanel::new(&UiConfig::default());
+    panel.hires.backend_locked = true;
+    panel.update(Event::OnionSkinBackendChanged(OnionSkinBackend::Cpu));
+    assert_eq!(
+        panel.hires.backend,
+        OnionSkinBackend::Gpu,
+        "锁定后不得切换后端（用户硬约束：加载 MIDI 后禁止切换）"
+    );
+
+    // 从 CPU 起步、锁定后也不得切回 GPU（锁定语义是「禁止切换」，不是单向门）
+    let config = UiConfig {
+        onion_skin_backend: OnionSkinBackend::Cpu,
+        ..UiConfig::default()
+    };
+    let mut panel = SettingsPanel::new(&config);
+    panel.hires.backend_locked = true;
+    panel.update(Event::OnionSkinBackendChanged(OnionSkinBackend::Gpu));
+    assert_eq!(panel.hires.backend, OnionSkinBackend::Cpu);
+}
+
+/// 设置页在锁定/未锁定两种状态下都能构建（锁定 → 只读行，未锁定 → 下拉行）。
+#[test]
+fn test_onion_skin_page_builds_in_both_lock_states() {
+    let mut panel = SettingsPanel::new(&UiConfig::default());
+    // 未锁定：构建包含 pick_list 的行
+    let _unlocked = crate::pages::onion_skin::view(&panel);
+
+    // 已锁定：构建只读展示行（不得 panic，也不得留下可操作控件分支）
+    panel.hires.backend_locked = true;
+    let _locked = crate::pages::onion_skin::view(&panel);
+}

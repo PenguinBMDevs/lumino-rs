@@ -175,7 +175,7 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                             )));
                         }
                     }
-                    if self.editor.current_tool() == lumino_message::Tool::Shape
+                    if crate::grid::shape_tool_box::shape_buttons_active(self.editor)
                         && let Some(btns) =
                             crate::grid::shape_tool_box::shape_button_rects(self.editor)
                     {

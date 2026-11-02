@@ -66,6 +66,8 @@ pub struct SynthSettings {
     pub xsynth_soft_nps_gate: bool,
     /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂，默认 512）
     pub lgs_block_size: usize,
+    /// LGS (GPU) 离线导出块长（2 的幂，默认 2048；REF-LGS-009，只影响导出）
+    pub lgs_offline_block_size: usize,
     /// LGS (GPU) 每个 (通道, 键) 最大同音数（0=不限制，默认 4）
     pub lgs_max_voices_per_key: usize,
     /// LGS (GPU) 全局最大复音数（硬上限/量程；None = 自动 = 16384；REND-016 #139）
@@ -183,6 +185,14 @@ pub struct HiresSettings {
     pub cooldown_secs: u64,
     /// GPU 显存使用上限（MB）
     pub gpu_mem_limit_mb: u32,
+    /// 洋葱皮渲染后端（GPU / CPU；初始化自 `UiConfig::onion_skin_backend`）
+    pub backend: lumino_core::storage::config::OnionSkinBackend,
+    /// 后端选择是否锁定（**会话态**，不来自 `UiConfig`：主窗口加载 MIDI 后为 true）。
+    ///
+    /// 锁定期间 `OnionSkinBackendChanged` 被忽略、设置页只读展示当前后端——
+    /// 这是「加载 MIDI 后禁止切换后端」用户硬约束的第一道闸（第二道在
+    /// `Host::apply_settings`，第三道在 runner 持久化守卫）。
+    pub backend_locked: bool,
 }
 
 /// 日志与监控设置

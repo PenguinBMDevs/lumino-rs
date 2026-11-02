@@ -1,5 +1,46 @@
 use super::*;
 
+/// REF-LGS-008（A2）：limiter 的内部处理窗口（帧）。
+///
+/// 增益轨迹必须只依赖**信号与绝对帧位置**，不依赖渲染块怎么切：
+/// `limit_block` 会在窗口末尾 256 帧（`LOOKAHEAD`）把窗口外的未来样本回退成
+/// 「整窗峰值」，如果窗口边界跟着渲染块走，块长一变增益就变（实测开限幅时
+/// 512 vs 2048 的首个差异在帧 304、96% 样本不同）。
+///
+/// 因此 render block ≥ 512 帧时，`apply_limiter` 把它切成绝对帧对齐的 512 帧
+/// 窗口逐个处理——这与 block=512 的处理序列**完全相同**，所以大块长的限幅
+/// 输出与 512 档逐位一致。block < 512（实时小缓冲）时窗口 = 块长，行为与
+/// 历史完全一致（不引入额外延迟）。
+pub(crate) const LIMITER_WINDOW: usize = 512;
+
+/// Splits a stereo stream into limiter windows and runs [`limit_block`] on each.
+///
+/// `window` is the processing granularity in frames. The caller passes
+/// `min(block_frames, LIMITER_WINDOW)`, so:
+/// - `block >= 512`: every block decomposes into the same absolute-aligned
+///   512-frame windows regardless of the block size (A2 invariant);
+/// - `block < 512`: one window per block, i.e. the historical behaviour.
+///
+/// Bit-exactness with `block = 512` is guaranteed by construction: the window
+/// sequence, the carried delay-line `tail` and the carried `gain` are identical.
+pub(crate) fn limit_stream(
+    out: &mut [f32],
+    tail: &mut Vec<f32>,
+    gain: &mut f32,
+    sample_rate: f32,
+    window: usize,
+) {
+    let frames = out.len() / 2;
+    if window == 0 || window >= frames {
+        limit_block(out, tail, gain, sample_rate);
+        return;
+    }
+    let stride = window * 2;
+    for chunk in out.chunks_mut(stride) {
+        limit_block(chunk, tail, gain, sample_rate);
+    }
+}
+
 /// Block limiter core, factored out of `GpuSynth::apply_limiter` so it can be
 /// unit-tested without a GPU device.
 ///
@@ -219,4 +260,153 @@ pub(crate) fn write_samples(
         remaining = &remaining[take..];
     }
     Ok(grown)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Deterministic stereo test signal with quiet and loud stretches, so the
+    /// limiter actually attacks and releases inside the stream.
+    fn signal(frames: usize) -> Vec<f32> {
+        let mut state = 0x1234_5678u32;
+        let mut out = Vec::with_capacity(frames * 2);
+        for f in 0..frames {
+            // Loud burst in the middle, quiet elsewhere: exercises clamp-free
+            // unity regions, attack and release.
+            let amp = if (1000..1400).contains(&f) { 3.5 } else { 0.3 };
+            for _ in 0..2 {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = ((state >> 8) as f32 / 8_388_608.0) - 1.0;
+                out.push(noise * amp);
+            }
+        }
+        out
+    }
+
+    fn run_per_window(input: &[f32], window: usize) -> (Vec<f32>, Vec<f32>, f32) {
+        let mut out = input.to_vec();
+        let mut tail = Vec::new();
+        let mut gain = 1.0f32;
+        for chunk in out.chunks_mut(window * 2) {
+            limit_block(chunk, &mut tail, &mut gain, 48_000.0);
+        }
+        (out, tail, gain)
+    }
+
+    /// A2 核心不变量：把整段一次性喂给 `limit_stream` 必须与逐窗调用
+    /// `limit_block` **逐位**相同（增益/延迟线都一致）。
+    #[test]
+    fn limit_stream_equals_per_window_calls() {
+        let input = signal(2048);
+        let (want, want_tail, want_gain) = run_per_window(&input, LIMITER_WINDOW);
+
+        let mut got = input.clone();
+        let mut tail = Vec::new();
+        let mut gain = 1.0f32;
+        limit_stream(&mut got, &mut tail, &mut gain, 48_000.0, LIMITER_WINDOW);
+
+        assert_eq!(
+            got.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            want.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            "windowed stream must be bit-identical to per-window blocks"
+        );
+        assert_eq!(gain.to_bits(), want_gain.to_bits());
+        assert_eq!(
+            tail.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            want_tail.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+    }
+
+    /// 外层怎么切块不影响结果：一段 2048 帧，一次处理 vs 两次 1024 帧处理。
+    #[test]
+    fn limit_stream_ignores_outer_block_split() {
+        let input = signal(2048);
+
+        let mut one = input.clone();
+        let (mut tail_a, mut gain_a) = (Vec::new(), 1.0f32);
+        limit_stream(&mut one, &mut tail_a, &mut gain_a, 48_000.0, LIMITER_WINDOW);
+
+        let mut split = input.clone();
+        let (mut tail_b, mut gain_b) = (Vec::new(), 1.0f32);
+        for chunk in split.chunks_mut(1024 * 2) {
+            limit_stream(chunk, &mut tail_b, &mut gain_b, 48_000.0, LIMITER_WINDOW);
+        }
+
+        assert_eq!(
+            one.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            split.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+        assert_eq!(gain_a.to_bits(), gain_b.to_bits());
+    }
+
+    /// block = 512 时窗口等于块长，行为必须与改动前（单次 `limit_block`）
+    /// 完全一致——这是唯一权威基线。
+    #[test]
+    fn block_512_is_unchanged() {
+        let input = signal(512);
+        let mut a = input.clone();
+        let (mut tail_a, mut gain_a) = (Vec::new(), 1.0f32);
+        limit_block(&mut a, &mut tail_a, &mut gain_a, 48_000.0);
+
+        let mut b = input.clone();
+        let (mut tail_b, mut gain_b) = (Vec::new(), 1.0f32);
+        limit_stream(&mut b, &mut tail_b, &mut gain_b, 48_000.0, 512);
+
+        assert_eq!(
+            a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            b.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+        assert_eq!(gain_a.to_bits(), gain_b.to_bits());
+    }
+
+    /// REF-LGS-015：64/128 帧的小缓冲**连续多块**不得 panic（历史 DEBT-04 #121
+    /// 的 `raw.len() - 512` 负索引就发生在第二块），且输出必须有限并受
+    /// `soft_knee` 的 1.0 上界约束。
+    #[test]
+    fn small_blocks_run_many_blocks_without_panicking() {
+        for frames in [64usize, 128] {
+            let input = signal(frames * 32);
+            let mut out = input.clone();
+            let (mut tail, mut gain) = (Vec::new(), 1.0f32);
+            for chunk in out.chunks_mut(frames * 2) {
+                limit_block(chunk, &mut tail, &mut gain, 48_000.0);
+            }
+            assert!(
+                out.iter().all(|v| v.is_finite()),
+                "frames={frames}：输出必须是有限值"
+            );
+            assert!(
+                out.iter().all(|v| v.abs() <= 1.0),
+                "frames={frames}：soft_knee 必须把幅度压在 1.0 以内"
+            );
+            assert!(
+                gain > 0.0 && gain < 1.0,
+                "frames={frames}：经历爆音后增益应处于恢复中，got {gain}"
+            );
+            assert_eq!(tail.len(), 256 * 2, "延迟线长度与块长无关");
+        }
+    }
+
+    /// 小块（窗口 ≥ 块长）退化为单次 `limit_block`：实时路径零行为变化。
+    #[test]
+    fn small_block_falls_back_to_single_call() {
+        for frames in [16usize, 64, 128, 256] {
+            let input = signal(frames);
+            let mut a = input.clone();
+            let (mut tail_a, mut gain_a) = (Vec::new(), 1.0f32);
+            limit_block(&mut a, &mut tail_a, &mut gain_a, 48_000.0);
+
+            let mut b = input.clone();
+            let (mut tail_b, mut gain_b) = (Vec::new(), 1.0f32);
+            limit_stream(&mut b, &mut tail_b, &mut gain_b, 48_000.0, frames);
+
+            assert_eq!(
+                a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                b.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                "frames={frames} must keep the historical single-call path"
+            );
+            assert_eq!(gain_a.to_bits(), gain_b.to_bits());
+        }
+    }
 }

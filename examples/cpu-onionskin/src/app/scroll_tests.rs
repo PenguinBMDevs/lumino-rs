@@ -12,6 +12,84 @@ use crate::{
 };
 
 #[test]
+fn early_coverage_is_pixel_exact() {
+    let mut document = MidiDocument::empty_with_tracks(2, 480);
+    // 洋葱皮轨：足够密，能触发"画布已覆盖"提前退出。
+    for tick in (0..1200).step_by(2) {
+        for key in 55..72 {
+            document.insert_note(1, NoteEvent::new(tick, tick + 2, key, 100, 0));
+        }
+    }
+    // 主轨少量音符，验证主轨 pass 仍完整绘制。
+    for tick in (0..1200).step_by(40) {
+        document.insert_note(0, NoteEvent::new(tick, tick + 6, 60, 100, 0));
+    }
+    let document = Arc::new(document);
+    let index = Arc::new(TrackIndex::build(&document));
+    let style = Arc::new(NoteStyle::new(2));
+    let runtime = || {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("tokio runtime")
+    };
+    let width = 480u32;
+    let height = 240u32;
+    let mut early = Renderer::new(runtime(), 2, Arc::clone(&style), SimdLevel::Scalar);
+    let mut full = Renderer::new(runtime(), 2, Arc::clone(&style), SimdLevel::Scalar);
+    let mut column = Renderer::new(runtime(), 2, Arc::clone(&style), SimdLevel::Scalar);
+    early.resize(width, height);
+    full.resize(width, height);
+    column.resize(width, height);
+    full.set_early_coverage(false);
+    column.set_early_coverage(false);
+    column.set_column_major(true);
+    let mut camera = Camera::new(width, height, 1.0, 1600, 480, 1.0);
+    camera.scroll_x = 0.0;
+    camera.target_scroll_x = 0.0;
+    camera.center_on_key(60);
+
+    early.render(
+        Arc::clone(&document),
+        Arc::clone(&index),
+        &camera,
+        0,
+        LodMode::Exact,
+    );
+    full.render(
+        Arc::clone(&document),
+        Arc::clone(&index),
+        &camera,
+        0,
+        LodMode::Exact,
+    );
+    column.render(document, index, &camera, 0, LodMode::Exact);
+    let mut diff = 0usize;
+    let mut first = None;
+    for (pixel, reference) in early.frame().iter().zip(full.frame()) {
+        if pixel != reference {
+            diff += 1;
+            if first.is_none() {
+                first = Some((*pixel, *reference));
+            }
+        }
+    }
+    assert_eq!(diff, 0, "early coverage must be pixel exact: {first:?}");
+    let mut diff = 0usize;
+    let mut first = None;
+    for (pixel, reference) in full.frame().iter().zip(column.frame()) {
+        if pixel != reference {
+            diff += 1;
+            if first.is_none() {
+                first = Some((*pixel, *reference));
+            }
+        }
+    }
+    assert_eq!(diff, 0, "column-major must be pixel exact: {first:?}");
+}
+
+#[test]
 fn incremental_scroll_matches_full_render() {
     let mut document = MidiDocument::empty_with_tracks(2, 480);
     // 主轨：覆盖视口内外，含跨小节/长音符。

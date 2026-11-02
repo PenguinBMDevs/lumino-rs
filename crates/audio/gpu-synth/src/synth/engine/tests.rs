@@ -1,10 +1,11 @@
+use super::limiter::limit_block;
 use super::types::{
     MAX_SPAWNS_PER_KEY_PER_BLOCK, MAX_TRIM_FADES_PER_BLOCK, fade_complete, fade_frames,
     trim_fade_budget_for, trim_hysteresis, trimmed_group_count,
 };
 use super::voice_alloc::select_release_note_id;
 use super::{
-    ChannelState, RenderCheckpoint, checkpoint_ok, limit_block, order_port_key_evictions,
+    ChannelState, RenderCheckpoint, checkpoint_ok, order_port_key_evictions,
     select_damper_release_groups, select_evictions, spawn_budget_allows,
 };
 use crate::config::SynthConfig;

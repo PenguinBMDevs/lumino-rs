@@ -7,6 +7,11 @@
 //!
 //! 注：`handle_animation_tick` 内部取真实时钟，故推进类断言用「有界等待」而非固定
 //! 帧数；序列硬超时（4s）保证了一定的终止性。
+//!
+//! ⚠️ **发声边界**：把序列推进到落地的用例会触发**真实音频输出**（内置「钢管落地」，
+//! 见 `lumino_midi_io::ui_sfx`），故标为 `#[ignore]`——`cargo test` 默认不运行，
+//! 只有人工确认（且允许出声）后加 `--ignored` 才执行。转动推进这段无声音的接线由
+//! `test_animation_tick_advances_spin_without_landing` 常驻覆盖，避免留下覆盖空洞。
 
 use crate::Message;
 use crate::root::Root;
@@ -75,7 +80,52 @@ fn test_fifteen_clicks_trigger_airborne_sequence() {
     }
 }
 
+/// 接线护栏（**全程静音**）：`AnimationTick` 必须真的推进起飞后的转动角。
+///
+/// 与下面的完整序列用例互补——那条会推进到落地并触发真实音频输出（默认
+/// `#[ignore]`），本用例只走起播后的两帧，相位仍在 `Spin`，不可能进入
+/// `Fall` / `Impact`，因此 `cargo test` 跑到它不会出声。
 #[test]
+fn test_animation_tick_advances_spin_without_landing() {
+    let _guard = lock();
+    reset_logo_vanished();
+    let (mut root, mut router) = fixture();
+    for _ in 0..15 {
+        click_logo(&mut root, &mut router);
+    }
+    assert!(root.state.about_egg.is_airborne(), "满 15 连点应起飞");
+
+    // 首帧 dt≈0（起点相位时间为最后一次点击），隔一帧后转动角必须真的增长
+    assert!(root.try_handle_direct(&Message::AnimationTick));
+    std::thread::sleep(Duration::from_millis(16));
+    assert!(root.try_handle_direct(&Message::AnimationTick));
+    assert!(
+        root.state.about_egg.spin_angle() > 0.0,
+        "AnimationTick 应推进彩蛋转动角（接线正确性）"
+    );
+
+    // 静音护栏：两帧后仍在转动相位，且不得有落地信号（有信号就会被处理器取走去播音频）
+    assert_eq!(
+        root.state.about_egg.phase(),
+        EggPhase::Spin,
+        "起播两帧内不得进入落地相位（否则本用例会出声）"
+    );
+    assert!(
+        !root.state.about_egg.take_impact_signal(),
+        "未落地前不得产生落地信号"
+    );
+    // 飞行路径视图可构建（含最顶层悬浮层 Stack 组装）
+    {
+        let _ = root.view();
+    }
+}
+
+/// ⚠️ **会播放声音**：本用例把彩蛋推进到落地，触发真实音频输出（内置「钢管落地」）。
+///
+/// 因此默认 `#[ignore]`，`cargo test` 不运行；需要验证完整序列时再人工执行：
+/// `cargo test -p lumino-ui --lib test_animation_tick_advances_and_sequence_terminates -- --ignored`
+#[test]
+#[ignore = "会播放「钢管落地」音效（真实音频输出）：默认禁止运行，需人工确认后加 --ignored 执行"]
 fn test_animation_tick_advances_and_sequence_terminates() {
     let _guard = lock();
     reset_logo_vanished();

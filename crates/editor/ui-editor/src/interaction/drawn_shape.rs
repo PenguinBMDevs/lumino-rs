@@ -318,7 +318,13 @@ impl Editor {
             PendingShapeRef::Composed(i) => {
                 let composed = self.editor_state.pending_composed.get(i)?;
                 Some(DrawnShapeSource::PolylineSet {
-                    polylines: polylines_of_model(&composed.model),
+                    polylines: composed
+                        .results
+                        .iter()
+                        .flat_map(|part| {
+                            polylines_of_model(&part.model, f32::from(self.editor_state.view.ppq))
+                        })
+                        .collect(),
                 })
             }
         }
@@ -541,9 +547,9 @@ impl Editor {
 
     /// 当前工具是否应暴露待确认右键菜单。
     ///
-    /// 选择工具对所有 pending 开放；绘制工具只对自己的 pending 来源开放，
-    /// 避免在被隐藏的待确认镜像上弹出菜单。组合结果由形状工具的预览层绘制，
-    /// 因此只随形状工具/选择工具开放。
+    /// 选择工具对所有 pending 开放；形状工具只对形状/组合结果开放。
+    /// 曲线/画笔的 pending 组合在 ShapeSelect 下完成（组合预览与 ✓× 由形状预览层承载），
+    /// 避免在 owner 工具里生成看不见、也无法确认的 composed 结果。
     pub(crate) fn pending_menu_allowed(&self, pending: PendingShapeRef) -> bool {
         match self.current_tool() {
             Tool::ShapeSelect => true,
@@ -551,8 +557,6 @@ impl Editor {
                 pending,
                 PendingShapeRef::Shape(_) | PendingShapeRef::Composed(_)
             ),
-            Tool::Curve => matches!(pending, PendingShapeRef::CurvePath(_)),
-            Tool::Brush => matches!(pending, PendingShapeRef::BrushStroke(_)),
             _ => false,
         }
     }
@@ -683,6 +687,16 @@ impl Editor {
             self.grid_cache.clear();
             return;
         }
+        // 020 编辑图形：锚点/旋转热区之外只处理「框内拖动」。
+        //   单击不退出编辑态（拖动一次没抓准就丢状态，很难操作），
+        //   退出走双击空白处或右键「编辑图形」再点一次。
+        if self.is_shape_edit_armed() {
+            if self.point_in_selection_box(tick, key) {
+                self.editor_state.shape_select.begin_drag(tick, key);
+            }
+            self.grid_cache.clear();
+            return;
+        }
         match self.hit_test_drawn_shape(tick, key) {
             Some(id) => {
                 if additive {
@@ -690,7 +704,9 @@ impl Editor {
                 } else if !self.editor_state.shape_select.is_selected(id) {
                     self.editor_state.shape_select.select_only(id);
                 }
+                // 已 Bake 图形预先绑定模型，手柄才能在选中后立即显示/命中。
                 if self.editor_state.shape_select.is_selected(id) {
+                    let _ = self.ensure_model_for_drawn(id);
                     self.editor_state.shape_select.begin_drag(tick, key);
                 }
             }
@@ -708,6 +724,11 @@ impl Editor {
                         .begin_marquee(snapped, key, additive);
                 }
             }
+        }
+        // 编辑图形绑定「当前这一个目标」：换选/取消选中后自动失效，
+        // 避免下次选中同一对象时凭空回到编辑态。
+        if !self.is_shape_edit_armed() {
+            self.shape_edit_armed = None;
         }
         // 仅叠加层视觉变化（文档未变）：清网格缓存驱动重绘。
         // **不能**用 `mark_notes_changed()`——那会置 notes_changed 并重建空间索引（O(N)）。
@@ -1362,8 +1383,8 @@ mod tests {
 
         editor.set_tool(Tool::Curve);
         assert!(
-            !editor.pending_menu_allowed(PendingShapeRef::Shape(0)),
-            "曲线工具不得对形状 pending 开菜单"
+            !editor.pending_menu_allowed(PendingShapeRef::CurvePath(0)),
+            "曲线工具不承载组合预览，应在 ShapeSelect 下组合"
         );
 
         editor.set_tool(Tool::Shape);

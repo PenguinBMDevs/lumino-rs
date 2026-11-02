@@ -5,8 +5,8 @@ use crate::{camera::Camera, edit_overlay, render::chrome};
 use winit::event_loop::ActiveEventLoop;
 
 impl App {
-    /// 总览增量覆盖层：键盘/标尺只在相机变化时重画，帧率 HUD 每帧更新。
-    pub(super) fn draw_overview_overlays(
+    /// 键盘/标尺按相机脏标记重画，HUD 每帧更新。
+    pub(super) fn draw_cached_overlays(
         &mut self,
         camera: &Camera,
         width: usize,
@@ -95,12 +95,18 @@ impl App {
             return;
         }
         self.bench_reported = true;
-        let label = if self.overview {
-            "overview-heatmap"
+        let (label, min_fps, p99_budget) = if self.bench_zoom {
+            // 用户目标是平均帧率：100fps 底线、130 优秀、200 理想。
+            // p99 继续打印，门槛按 60fps 单帧预算，不用它替代平均 FPS。
+            ("zoom-fullframe", 100.0, 16.67)
+        } else if self.overview {
+            ("overview-heatmap", 60.0, 16.67)
         } else {
-            "scroll-strip"
+            ("scroll-strip", 60.0, 16.67)
         };
-        let pass = self.stats.print_bench(label, self.overview);
+        let pass = self
+            .stats
+            .print_bench(label, self.overview, min_fps, p99_budget);
         self.bench_pass = Some(pass);
         event_loop.exit();
     }

@@ -200,6 +200,7 @@ impl EditorData {
         // 协作同步关闭时跳过收集。
         let collab_sync = self.collab_sync_enabled;
         let mut sync_entries: Vec<CollabTransformSyncEntry> = Vec::new();
+        let mut changed_indices: Vec<usize> = Vec::new();
 
         if let Some(track) = self
             .document
@@ -237,6 +238,7 @@ impl EditorData {
                                     track_idx,
                                 ));
                             }
+                            changed_indices.push(idx);
                             tied += 1;
                         }
                     }
@@ -246,6 +248,7 @@ impl EditorData {
         self.pending_collab_transform_sync.extend(sync_entries);
 
         if tied > 0 {
+            self.record_cpu_onion_direct_indices(track_idx, &changed_indices);
             self.mark_current_track_changed();
         }
         tied

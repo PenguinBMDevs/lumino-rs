@@ -7,7 +7,7 @@ use std::{
 
 use winit::event_loop::ActiveEventLoop;
 
-use super::{App, canvas::shift_canvas_pixels};
+use super::App;
 use crate::{
     camera::Camera,
     edit_overlay,
@@ -69,7 +69,7 @@ impl App {
         let size_same = self.last_width == width && self.last_height == height;
         let can_scroll = self.frame_valid
             && !self.content_dirty
-            && self.baseline_mode != LodMode::Overview
+            && !matches!(self.baseline_mode, LodMode::Overview | LodMode::Coverage)
             && zoom_same
             && size_same
             && dy.abs() < 0.01
@@ -171,10 +171,13 @@ impl App {
         }
 
         // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
-        // 所有全量帧一律 Exact（静止与滚动同一外观）。
+        // 编辑后只重建受影响 tick 区间；没有脏区信息才退回整建。
+        self.ensure_density_ready(&camera);
         let mode = self.choose_mode(&camera);
         let render_start = Instant::now();
-        let render_stats = if mode == LodMode::Overview {
+        let render_stats = if mode == LodMode::Coverage {
+            self.render_coverage_frame(&camera, width_usize, height_usize, estimate)
+        } else if mode == LodMode::Overview {
             // 总览是密度热力图，半分辨率渲染后再最近邻放大：1.4M 像素/帧
             // 降到 0.35M，纯绘制可稳定低于 12.5ms；热力图本身是块状色块，
             // 2× 放大不损失可读性。
@@ -191,6 +194,7 @@ impl App {
                 small_height,
                 &small_camera,
                 &self.density,
+                &mut self.overview_scratch,
             );
             let mut x_map = vec![0usize; width_usize];
             for (x, slot) in x_map.iter_mut().enumerate() {
@@ -203,13 +207,22 @@ impl App {
             let frame = self.renderer.frame_mut();
             let top = (camera.ruler_height.round().max(0.0) as usize).min(height_usize);
             let left = (camera.keyboard_width.round().max(0.0) as usize).min(width_usize);
-            for y in top..height_usize {
-                let source_row =
-                    &self.overview_buf[y_map[y] * small_width..(y_map[y] + 1) * small_width];
-                let destination = &mut frame[y * width_usize..(y + 1) * width_usize];
-                for x in left..width_usize {
-                    destination[x] = source_row[x_map[x]];
+            // 最近邻放大：同一源行通常覆盖 2 个目标行，先展开一次再整行拷贝，
+            // 避免每个目标像素都做一次源采样。
+            let mut expanded = vec![0u32; width_usize];
+            let mut last_source_row = usize::MAX;
+            for (y, &source_y) in y_map.iter().enumerate().take(height_usize).skip(top) {
+                if source_y != last_source_row {
+                    let source_row =
+                        &self.overview_buf[source_y * small_width..(source_y + 1) * small_width];
+                    for (x, slot) in expanded.iter_mut().enumerate().skip(left) {
+                        *slot = source_row[x_map[x]];
+                    }
+                    last_source_row = source_y;
                 }
+                let row_start = y * width_usize;
+                frame[row_start + left..row_start + width_usize]
+                    .copy_from_slice(&expanded[left..width_usize]);
             }
             RenderStats {
                 visible_notes: estimate,
@@ -230,11 +243,9 @@ impl App {
         let render_done = Instant::now();
 
         let hud = self.hud_text(mode.name(), estimate);
-        if mode == LodMode::Overview && self.frame_valid {
-            self.draw_overview_overlays(&camera, width_usize, height_usize, &hud);
-        } else {
-            self.draw_overlays(&camera, width_usize, height_usize, &hud);
-        }
+        // 键盘只随纵向相机变化，标尺只随横向相机变化：全量帧也按脏标记
+        // 重画，避免每帧重复画左侧 1080×120 的键盘。
+        self.draw_cached_overlays(&camera, width_usize, height_usize, &hud);
         self.draw_edit_selection(&camera, width_usize);
         let overlay_done = Instant::now();
         if mode == LodMode::Overview && self.frame_valid && !self.frame_index.is_multiple_of(30) {
@@ -287,24 +298,6 @@ impl App {
             self.idle_reported = true;
         }
         self.next_frame = Instant::now() + self.frame_interval;
-    }
-
-    fn shift_canvas(&mut self, dx: i32) {
-        let width = self.renderer.width() as usize;
-        let height = self.renderer.height() as usize;
-        if width == 0 || height == 0 {
-            return;
-        }
-        let keyboard = self
-            .camera
-            .as_ref()
-            .map_or(0, |camera| camera.keyboard_width.round().max(0.0) as usize)
-            .min(width);
-        let frame = self.renderer.frame_mut();
-        if frame.len() != width * height {
-            return;
-        }
-        shift_canvas_pixels(frame, width, height, keyboard, dx);
     }
 
     #[allow(clippy::too_many_arguments)]

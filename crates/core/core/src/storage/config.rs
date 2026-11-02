@@ -8,8 +8,8 @@ mod enums;
 
 pub use autoscroll::{AutoScrollConfig, AutoScrollMode};
 pub use enums::{
-    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
-    SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, OnionSkinBackend,
+    SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
 
 use defaults::*;
@@ -118,6 +118,12 @@ pub struct UiConfig {
     /// LGS (GPU) 每块渲染帧数（GPU 一次 dispatch 的帧数，2 的幂，至少 16）
     #[serde(default = "default_lgs_block_size")]
     pub lgs_block_size: usize,
+    /// LGS (GPU) **离线导出**块长（帧，2 的幂，512..8192；REF-LGS-009）。
+    ///
+    /// 只影响离线导出（`lumino-export` 的 GPU 后端），实时播放仍用
+    /// [`Self::lgs_block_size`]。默认 2048；脏值在导出侧归一化并告警。
+    #[serde(default = "default_lgs_offline_block_size")]
+    pub lgs_offline_block_size: usize,
     /// LGS (GPU) 每个 (通道, 键) 最大同音数
     #[serde(default = "default_lgs_max_voices_per_key")]
     pub lgs_max_voices_per_key: usize,
@@ -154,6 +160,11 @@ pub struct UiConfig {
     /// 力度面板显示样式（默认曲线=折线图，false=柱状图）
     #[serde(default = "default_true")]
     pub velocity_curve_style: bool,
+    /// 洋葱皮渲染后端（默认 GPU，旧配置缺字段时落回 GPU，行为不变）
+    ///
+    /// Step 3 只提供运行时开关（无设置页 UI）；持久化与设置项由 Step 4 接入。
+    #[serde(default)]
+    pub onion_skin_backend: OnionSkinBackend,
     /// 高精度洋葱皮贴图：是否启用
     #[serde(default = "default_true")]
     pub hires_onion_enabled: bool,
@@ -293,6 +304,7 @@ impl Default for UiConfig {
             xsynth_max_voices_per_key: default_max_voices_per_key(),
             lgs_sample_rate: default_lgs_sample_rate(),
             lgs_block_size: default_lgs_block_size(),
+            lgs_offline_block_size: default_lgs_offline_block_size(),
             lgs_max_voices_per_key: default_lgs_max_voices_per_key(),
             lgs_global_voice_limit: None,
             lgs_soft_nps_gate: true,
@@ -315,6 +327,7 @@ impl Default for UiConfig {
             enable_256key: false,
             note_count_display: NoteCountDisplay::default(),
             velocity_curve_style: true,
+            onion_skin_backend: OnionSkinBackend::Gpu,
             hires_onion_enabled: true,
             hires_measures_per_group: default_hires_measures_per_group(),
             hires_tile_width_px: default_hires_tile_width(),
@@ -346,8 +359,13 @@ impl Default for UiConfig {
     }
 }
 
+/// `UiConfig` 序列化/默认值测试（独立文件：本文件已超过 400 行，不得继续塞行）
 #[cfg(test)]
 mod autosave_tests;
 
 #[cfg(test)]
 mod tests;
+
+/// 洋葱皮后端配置测试（独立文件：本文件已超过 400 行，不得继续塞行）
+#[cfg(test)]
+mod tests_onion_backend;

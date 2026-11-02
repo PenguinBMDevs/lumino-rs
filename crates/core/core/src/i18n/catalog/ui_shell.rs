@@ -171,6 +171,62 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "SFZ 文件" => Some("SFZ Files"),
         "SVG 矢量图" => Some("SVG Vector Images"),
         "WebP 图片" => Some("WebP Images"),
+        // 洋葱皮渲染后端切换（「加载 MIDI 后禁止切换」用户硬约束的 Toast 文案）
+        "加载 MIDI 后不可切换洋葱皮渲染方式，请先关闭 MIDI 工程" => Some(
+            "The onion skin renderer cannot be changed after loading MIDI; close the MIDI project first",
+        ),
+        "请先返回钢琴卷帘、关闭视频导出面板并停止导出后再切换 CPU 洋葱皮" => {
+            Some(
+                "Return to the piano roll, close the video export panel and stop exporting before switching to CPU onion skin",
+            )
+        }
+        "已切回横向卷帘：CPU 洋葱皮不支持纵向卷帘" => Some(
+            "Switched back to the horizontal roll: CPU onion skin does not support vertical roll",
+        ),
+        // 洋葱皮后端 = CPU 时各不兼容入口的拦截文案（Step 4b，入口一入口一条）
+        "CPU 洋葱皮后端不支持纵向卷帘" => {
+            Some("The CPU onion skin renderer does not support the vertical roll")
+        }
+        "CPU 洋葱皮后端不支持工程走带视图" => {
+            Some("The CPU onion skin renderer does not support the arrangement view")
+        }
+        "CPU 洋葱皮后端不支持全屏瀑布流" => {
+            Some("The CPU onion skin renderer does not support the full-screen waterfall")
+        }
+        "CPU 洋葱皮后端不支持钢琴瀑布流预览" => {
+            Some("The CPU onion skin renderer does not support the piano waterfall preview")
+        }
+        "CPU 洋葱皮后端不支持视频导出" => {
+            Some("The CPU onion skin renderer does not support video export")
+        }
+        "已关闭钢琴瀑布流预览面板：CPU 洋葱皮不支持该预览" => Some(
+            "Closed the piano waterfall preview panel: CPU onion skin does not support this preview",
+        ),
+        // DRAW-041C：待确认组合（掩膜 / 竖切 / 补间 / 编辑）的状态与失败提示
+        "编辑形状失败：请选中一个已 Bake 图形或单支待确认组合" => {
+            Some("Edit shape failed: select a baked shape or a single pending composition")
+        }
+        "已切换遮罩（仅预览；✓ 后固定）" => {
+            Some("Mask toggled (preview only; applied after ✓)")
+        }
+        "遮罩失败：请选中一个待确认/已 Bake 形状" => {
+            Some("Mask failed: select a pending or baked shape")
+        }
+        "已竖切；✓ 后才写入音符" => Some("Sliced vertically; notes are written after ✓"),
+        "竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
+            Some("Slice failed: select a pending shape/curve; composed results must be ✓ first")
+        }
+        "已生成补间（首 + 步 + 末）；✓ 后才写入音符" => {
+            Some("Tween generated (first + step + last); notes are written after ✓")
+        }
+        "补间失败：请恰好选中两个待确认形状/曲线" => {
+            Some("Tween failed: select exactly two pending shapes/curves")
+        }
+        // DRAW-041C 阶段 3：020 显式手柄编辑的进入/退出提示
+        "已进入手柄编辑；拖小圆点，Shift 关闭 15° 旋转吸附" => Some(
+            "Handle edit mode on; drag the dots, Shift disables 15° rotation snapping",
+        ),
+        "已退出手柄编辑" => Some("Handle edit mode off"),
         _ => None,
     }
 }

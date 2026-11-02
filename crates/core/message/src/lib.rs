@@ -20,6 +20,8 @@ pub mod help;
 pub mod history;
 pub mod load_confirm;
 pub mod loop_range;
+/// 遮罩参数面板动作（DRAW-010）
+pub mod mask_panel;
 pub mod project_settings;
 pub mod recover_track;
 pub mod right_sidebar;
@@ -49,6 +51,7 @@ pub use help::HelpAction;
 pub use history::HistoryAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
+pub use mask_panel::MaskPanelAction;
 pub use project_settings::ProjectSettingsAction;
 pub use recover_track::RecoverTrackAction;
 pub use right_sidebar::{I2mConfigField, RightSidebarAction};

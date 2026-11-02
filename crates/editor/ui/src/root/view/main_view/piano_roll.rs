@@ -262,6 +262,10 @@ impl Root {
         if let Some(panel) = crate::root::mixer_panel::view_mixer_panel(self) {
             stack = stack.push(panel);
         }
+        // 遮罩参数面板（DRAW-010）：右键「遮罩设置…」，非阻塞、点击面板外关闭
+        if let Some(panel) = crate::root::mask_panel::view_mask_panel(self) {
+            stack = stack.push(panel);
+        }
         // 音符绘制悬浮工具条（非阻塞覆盖层，浮在卷帘区域上方、默认底部居中、可拖拽；
         // 由工具栏「绘制入口」按钮开关，仅在钢琴卷帘视图可见）。
         // 颜料桶「分音符填充」小面板亦挂在其上（`draw_tool_toolbar` 内锚定于胶囊上方）。

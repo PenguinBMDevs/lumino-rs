@@ -17,20 +17,33 @@ pub(super) fn bind_entry(
     }
 }
 
+/// REF-LGS-002: uniform binding addressed with a dynamic offset (one slot
+/// per render/mix frame chunk).
+pub(super) fn bind_entry_dynamic_uniform(
+    binding: u32,
+    min_size: u64,
+) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: wgpu::BufferSize::new(min_size),
+        },
+        count: None,
+    }
+}
+
 pub(super) fn create_render_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     block_size: usize,
 ) -> Result<wgpu::ComputePipeline, SynthError> {
-    let source = include_str!("shaders/render.wgsl")
-        .replace(
-            "const BLOCK: u32 = 512u;",
-            &format!("const BLOCK: u32 = {block_size}u;"),
-        )
-        .replace(
-            "const SEGS: u32 = 16u;",
-            &format!("const SEGS: u32 = {}u;", RENDER_SEGMENTS),
-        );
+    let source = include_str!("shaders/render.wgsl").replace(
+        "const BLOCK: u32 = 512u;",
+        &format!("const BLOCK: u32 = {block_size}u;"),
+    );
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("render.wgsl"),
         source: wgpu::ShaderSource::Wgsl(source.into()),
@@ -78,4 +91,63 @@ pub(super) fn create_mix_pipeline(
         cache: None,
     });
     Ok(pipeline)
+}
+
+/// REF-LGS-001: the tiny channel-reduce pass (see `mix_reduce.wgsl`).
+pub(super) fn create_mix_reduce_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+) -> Result<wgpu::ComputePipeline, SynthError> {
+    let source = include_str!("shaders/mix_reduce.wgsl");
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("mix_reduce.wgsl"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("lumino mix reduce"),
+        layout: Some(
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mix reduce layout"),
+                bind_group_layouts: &[layout],
+                push_constant_ranges: &[],
+            }),
+        ),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    Ok(pipeline)
+}
+
+#[cfg(test)]
+mod shader_tests {
+    /// REF-LGS-013B：hosted CI 没有 GPU，但 WGSL 的语法/类型错误必须在这里
+    /// 被挡住（而不是等到用户机器上 `create_shader_module` 才炸）。
+    ///
+    /// 覆盖三个 compute shader；render 的 `BLOCK` 字符串替换也校验一次
+    /// （运行时按 `SynthConfig::block_size` 替换）。
+    #[test]
+    fn shaders_parse_and_validate() {
+        let render = include_str!("shaders/render.wgsl");
+        let render_2k = render.replace("const BLOCK: u32 = 512u;", "const BLOCK: u32 = 2048u;");
+        let mix = include_str!("shaders/mix.wgsl");
+        let reduce = include_str!("shaders/mix_reduce.wgsl");
+
+        for (name, src) in [
+            ("render.wgsl", render),
+            ("render.wgsl@2048", render_2k.as_str()),
+            ("mix.wgsl", mix),
+            ("mix_reduce.wgsl", reduce),
+        ] {
+            let module = naga::front::wgsl::parse_str(src)
+                .unwrap_or_else(|e| panic!("{name} 解析失败: {e}"));
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|e| panic!("{name} 校验失败: {e}"));
+        }
+    }
 }

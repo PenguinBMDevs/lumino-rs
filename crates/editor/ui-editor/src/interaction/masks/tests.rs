@@ -41,6 +41,178 @@ fn note(track: usize) -> ShapeNote {
     }
 }
 
+fn pending_rect(editor: &mut Editor, tick0: f32, tick1: f32, key: u16, mask: Option<MaskParams>) {
+    editor
+        .editor_state
+        .shape_tool
+        .shapes
+        .push(lumino_editor_state::ShapeInstance {
+            kind: lumino_editor_state::ShapeKind::Rectangle,
+            rect: (tick0, key as f32, tick1, key as f32 + 4.0),
+            shift_constrained: false,
+            filled: true,
+            apex_high: true,
+            mask,
+        });
+}
+
+#[test]
+fn test_pending_mask_preview_ghosts_and_visible_without_doc_notes() {
+    let mut editor = test_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    pending_rect(&mut editor, 0.0, 480.0, 60, None);
+    pending_rect(
+        &mut editor,
+        200.0,
+        300.0,
+        60,
+        Some(MaskParams {
+            size_keys: 0.0,
+            own: false,
+            ..MaskParams::default()
+        }),
+    );
+
+    let previews = editor.mask_previews();
+    assert!(!previews.is_empty(), "pending 遮罩应产出预览");
+    let ghosts: usize = previews.iter().map(|preview| preview.ghosts.len()).sum();
+    let visible: usize = previews.iter().map(|preview| preview.visible.len()).sum();
+    assert!(ghosts > 0, "ghost 保留原音符");
+    assert!(visible > 0, "遮罩内应有可见片段");
+    assert!(visible <= ghosts);
+    assert_eq!(
+        editor.editor_state.data.track_notes(1).len(),
+        0,
+        "pending 遮罩只预览，不写文档"
+    );
+    assert!(
+        !editor.mask_outline_notes().is_empty(),
+        "own=false 的 pending mask 应提供虚线轮廓"
+    );
+}
+
+#[test]
+fn test_mask_edit_target_and_pending_params_round_trip() {
+    let mut editor = test_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    // 被遮对象 + 遮罩对象：成对时才会出现 ghost/visible 预览
+    pending_rect(&mut editor, 0.0, 480.0, 60, None);
+    pending_rect(&mut editor, 0.0, 200.0, 60, None);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(1))
+        .expect("pending 镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert_eq!(
+        editor.mask_edit_target(),
+        Some(MaskEditTarget::Pending { index: 1 }),
+        "待确认形状应走 Pending 目标"
+    );
+    assert_eq!(
+        editor.mask_params_of(MaskEditTarget::Pending { index: 1 }),
+        None
+    );
+    assert!(editor.mask_previews().is_empty(), "未启用时无预览");
+
+    let params = MaskParams {
+        size_keys: 4.0,
+        invert: true,
+        own: false,
+        ..MaskParams::default()
+    };
+    assert!(editor.set_pending_mask(1, Some(params.clone())));
+    assert_eq!(
+        editor.mask_params_of(MaskEditTarget::Pending { index: 1 }),
+        Some(params.clone()),
+        "面板读回同一份参数"
+    );
+    assert!(!editor.mask_previews().is_empty(), "参数生效后应有预览");
+
+    assert!(editor.set_pending_mask(1, None));
+    assert_eq!(
+        editor.mask_params_of(MaskEditTarget::Pending { index: 1 }),
+        None
+    );
+    assert!(editor.mask_previews().is_empty(), "关掉后预览清空");
+    assert_eq!(
+        editor.editor_state.data.track_notes(1).len(),
+        0,
+        "面板改参数不得写文档"
+    );
+}
+
+#[test]
+fn test_mask_edit_target_reads_baked_params() {
+    let mut editor = test_editor();
+    let model_id = editor.editor_state.shape_store.insert(mask_model(), 0);
+    let shape_id = editor.editor_state.shape_select.add(
+        1,
+        None,
+        lumino_editor_state::DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (480.0, 60.0), (480.0, 64.0), (0.0, 64.0)],
+        },
+        Vec::new(),
+    );
+    editor
+        .editor_state
+        .shape_select
+        .set_model_id(shape_id, Some(model_id));
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor.editor_state.shape_select.select_only(shape_id);
+
+    assert_eq!(
+        editor.mask_edit_target(),
+        Some(MaskEditTarget::Baked { model_id }),
+        "已 Bake 形状应走 Baked 目标"
+    );
+    let params = editor
+        .mask_params_of(MaskEditTarget::Baked { model_id })
+        .expect("应读到 Mask op");
+    assert!(!params.own, "读回的是模型里存的那份参数");
+}
+
+#[test]
+fn test_toggle_pending_mask_marks_and_unmarks_selected_shape() {
+    let mut editor = test_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    pending_rect(&mut editor, 0.0, 250.0, 60, None);
+    pending_rect(&mut editor, 0.0, 480.0, 60, None);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("pending 镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert!(editor.toggle_mask_selected());
+    assert!(editor.editor_state.shape_tool.shapes[0].mask.is_some());
+    assert!(!editor.mask_previews().is_empty(), "标记后应有预览");
+
+    assert!(editor.toggle_mask_selected());
+    assert!(editor.editor_state.shape_tool.shapes[0].mask.is_none());
+    assert!(editor.mask_previews().is_empty(), "取消后预览清空");
+}
+
+#[test]
+fn test_confirm_records_pending_mask_op_in_readonly_model() {
+    let mut editor = test_editor();
+    pending_rect(&mut editor, 0.0, 480.0, 60, Some(MaskParams::default()));
+    assert!(editor.confirm_shape_tool(), "✓ 应写入音符");
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .persisted_models()
+            .iter()
+            .any(|model| model.ops.iter().any(|op| matches!(op, ShapeOp::Mask(_)))),
+        "只读模型应保留 Mask op"
+    );
+}
+
 #[test]
 fn test_preview_returns_ghost_and_visible_without_touching_notes() {
     let mut editor = test_editor();

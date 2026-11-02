@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "notes": [
+    "路径相对仓库根目录；夹具在 test-file/bench（gitignored）。",
+    "多端口用例用 --auto-channels，由文件端口上界推导 16/32/64/128/256 通道。",
+    "sustained* 用例不传 --channels，保持历史默认 16（003 对照基线）。",
+    "运行：python scripts/lgs_ab.py --baseline <exe> --after <exe> [--only name]"
+  ],
+  "cases": [
+    {
+      "name": "sustained65536@4096",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 4096
+    },
+    {
+      "name": "sustained65536@8192",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 8192
+    },
+    {
+      "name": "sustained2048@512",
+      "midi": "test-file/bench/sustained2048.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512
+    },
+    {
+      "name": "sustained65536@512",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512
+    },
+    {
+      "name": "sustained65536@2048",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 2048
+    },
+    {
+      "name": "cc_storm_10s_200ept@512",
+      "midi": "test-file/bench/cc_storm_10s_200ept.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512,
+      "notes": "REF-LGS-004 高事件密度夹具（≈2k CC/块，16 声部）"
+    },
+    {
+      "name": "multiport_1p_16ch@512",
+      "midi": "test-file/bench/multiport_1p_16ch.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 1440000,
+      "block": 512,
+      "auto_channels": true
+    },
+    {
+      "name": "multiport_2p_32ch@512",
+      "midi": "test-file/bench/multiport_2p_32ch.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 1440000,
+      "block": 512,
+      "auto_channels": true
+    },
+    {
+      "name": "multiport_4p_64ch@512",
+      "midi": "test-file/bench/multiport_4p_64ch.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 1440000,
+      "block": 512,
+      "auto_channels": true
+    },
+    {
+      "name": "multiport_8p_128ch@512",
+      "midi": "test-file/bench/multiport_8p_128ch.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 1440000,
+      "block": 512,
+      "auto_channels": true
+    },
+    {
+      "name": "multiport_16p_256ch@512",
+      "midi": "test-file/bench/multiport_16p_256ch.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 1440000,
+      "block": 512,
+      "auto_channels": true
+    },
+    {
+      "name": "multiport_16p_256ch@2048",
+      "midi": "test-file/bench/multiport_16p_256ch.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 1440000,
+      "block": 2048,
+      "auto_channels": true
+    },
+    {
+      "name": "sustained65536@512-unfiltered",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 512,
+      "extra_args": ["--no-effects"]
+    },
+    {
+      "name": "sustained65536@2048-unfiltered",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 2048,
+      "extra_args": ["--no-effects"]
+    },
+    {
+      "name": "sustained65536@4096-unfiltered",
+      "midi": "test-file/bench/sustained65536.mid",
+      "sf2": "test-file/bench/rich.sf2",
+      "frames": 480000,
+      "block": 4096,
+      "extra_args": ["--no-effects"]
+    }
+  ],
+  "gating": {
+    "midi": "test-file/bench/gate_2p_32ch.mid",
+    "sf2": "test-file/bench/rich.sf2",
+    "frames": 192000,
+    "block": 512,
+    "narrow_channels": 16,
+    "wide_channels": 32
+  }
+}

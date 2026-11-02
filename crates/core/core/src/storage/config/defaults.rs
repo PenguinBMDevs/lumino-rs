@@ -30,6 +30,14 @@ pub(super) fn default_lgs_sample_rate() -> u32 {
 pub(super) fn default_lgs_block_size() -> usize {
     512
 }
+/// REF-LGS-009：离线导出的 GPU 渲染块长（帧）。
+///
+/// 离线导出对延迟不敏感，2048 是实测收益/内存的平衡点（见
+/// `docs/2026-10-31-REF-LGS-009-离线默认块长.md`）：比 512 快 2.5×，
+/// 而 4096/8192 的额外收益只有 ~20–30%、每块内存与尾延迟翻倍。
+pub(super) fn default_lgs_offline_block_size() -> usize {
+    2048
+}
 pub(super) fn default_lgs_max_voices_per_key() -> usize {
     4
 }

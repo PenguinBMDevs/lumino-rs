@@ -87,8 +87,13 @@ pub struct AudioRenderConfig {
     /// - `≥2`：事件按块对齐后整块渲染（对齐 GPU 的块式 `apply_events`），
     ///   块内事件最多提前该帧数生效，调用次数从"事件数"降到"音频帧数 / B"。
     ///
-    /// 默认 256；GPU 后端不消费此字段。
+    /// 默认 256；GPU 后端不消费此字段（见 [`Self::gpu_block_size`]）。
     pub block_frames: u32,
+    /// GPU 后端离线渲染块长（帧，2 的幂）。
+    ///
+    /// REF-LGS-009：只被 GPU 后端消费，CPU 后端忽略。默认 2048；非法值
+    /// （0 / 非 2 的幂 / 超出 512..8192）在 `build_synth_config` 归一化并告警。
+    pub gpu_block_size: usize,
 
     // ── 多端口（REND-002）──
     /// 待渲染 MIDI 文档使用到的最大 MIDI 端口号（FF 21；空/单端口为 0）。
@@ -140,6 +145,7 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("key_high", &self.key_high)
             .field("note_force_end_delay", &self.note_force_end_delay)
             .field("block_frames", &self.block_frames)
+            .field("gpu_block_size", &self.gpu_block_size)
             .field("midi_max_port", &self.midi_max_port)
             .field("backend", &self.backend)
             .field(
@@ -376,6 +382,7 @@ impl Default for AudioRenderConfig {
             filter_key: false,
             note_force_end_delay: 0,
             block_frames: 256,
+            gpu_block_size: 2048,
             midi_max_port: 0,
             backend: AudioBackendKind::Cpu,
             progress_callback: None,

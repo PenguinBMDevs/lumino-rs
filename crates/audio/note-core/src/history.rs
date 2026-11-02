@@ -13,9 +13,8 @@ use std::time::Instant;
 
 mod entry;
 pub use entry::{CreateEntry, CreateOp, HistoryEntry, MoveOp, OperationEntry};
-
 mod snapshot;
-pub use snapshot::EditorSnapshot;
+pub use snapshot::{EditorSnapshot, SnapshotNoteChange};
 
 /// 操作类型（决定是否走合并窗口、是否参与逻辑撤销链）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -353,6 +352,26 @@ impl History {
     /// 查看 redo 栈顶
     pub fn redo_back(&self) -> Option<&HistoryEntry> {
         self.redo_stack.back()
+    }
+
+    /// 把上一笔操作的按值变更挂到栈顶快照（undo 时回放派生缓存）。
+    ///
+    /// 只对快照条目有效：Operation/Create 本身已保存精确 old/new，
+    /// 无需再挂；栈顶不是快照时静默忽略。
+    pub fn attach_last_note_changes(
+        &mut self,
+        changes: Vec<SnapshotNoteChange>,
+        ranges: Vec<(u32, u32)>,
+        full: bool,
+    ) {
+        let Some(HistoryEntry::Snapshot(snapshot)) = self.undo_stack.back_mut() else {
+            return;
+        };
+        let track = snapshot.current_track;
+        let same_track = changes.iter().all(|change| change.track == track);
+        snapshot.note_changes = if same_track { changes } else { Vec::new() };
+        snapshot.dirty_ranges = ranges;
+        snapshot.note_changes_full = full || !same_track;
     }
 
     /// 查看 redo 栈底（测试用）

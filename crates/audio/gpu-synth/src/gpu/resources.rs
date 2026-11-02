@@ -1,4 +1,7 @@
-use super::pipelines::{bind_entry, create_mix_pipeline, create_render_pipeline};
+use super::pipelines::{
+    bind_entry, bind_entry_dynamic_uniform, create_mix_pipeline, create_mix_reduce_pipeline,
+    create_render_pipeline,
+};
 use super::*;
 
 /// Reference-counted GPU resources shared by the engine.
@@ -8,14 +11,18 @@ pub struct GpuResources {
     pub ctx: Arc<GpuContext>,
     /// Render pipeline (pass 1).
     pub render_pipeline: wgpu::ComputePipeline,
-    /// Mix pipeline (pass 2).
+    /// Mix pipeline (pass 2a: per-channel gather).
     pub mix_pipeline: wgpu::ComputePipeline,
+    /// Mix reduce pipeline (pass 2b: channel sum).
+    pub mix_reduce_pipeline: wgpu::ComputePipeline,
     /// Render bind group layout.
     pub render_layout: wgpu::BindGroupLayout,
     /// Mix bind group layout.
     pub mix_layout: wgpu::BindGroupLayout,
     /// Block size compiled into the shaders.
     pub block_size: usize,
+    /// REF-LGS-002: frames per render/mix dispatch (divides `block_size`).
+    pub chunk_size: usize,
     /// Max voices compiled into the shaders.
     pub max_voices: usize,
 }
@@ -34,8 +41,9 @@ impl GpuResources {
         let device = &ctx.device;
 
         // --- render bind group layout ---
-        // binding 0: voice params, 1..=8: sample chunks, 9: sinc table,
-        // 10: env stages, 11: voice states (rw), 12: voice output (rw).
+        // binding 0: voice params, 1..=4: sample chunks, 5: sinc table,
+        // 6: env stages, 7: voice states (rw), 8: voice output (rw),
+        // 9: per-chunk params (dynamic uniform, REF-LGS-002).
         let mut render_entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::with_capacity(13);
         render_entries.push(bind_entry(
             0,
@@ -68,6 +76,16 @@ impl GpuResources {
             VOICE_OUT_BINDING,
             wgpu::ShaderStages::COMPUTE,
             wgpu::BufferBindingType::Storage { read_only: false },
+        ));
+        render_entries.push(bind_entry_dynamic_uniform(
+            CHUNK_PARAMS_RENDER_BINDING,
+            ChunkParams::SIZE as u64,
+        ));
+        // REF-LGS-010: 静态声部参数表（按槽位索引，只在分配槽位时写）。
+        render_entries.push(bind_entry(
+            PARAMS_STATIC_BINDING,
+            wgpu::ShaderStages::COMPUTE,
+            wgpu::BufferBindingType::Storage { read_only: true },
         ));
         let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("render bind group layout"),
@@ -103,19 +121,29 @@ impl GpuResources {
                     wgpu::ShaderStages::COMPUTE,
                     wgpu::BufferBindingType::Uniform,
                 ),
+                bind_entry(
+                    5,
+                    wgpu::ShaderStages::COMPUTE,
+                    wgpu::BufferBindingType::Storage { read_only: false },
+                ),
+                bind_entry_dynamic_uniform(CHUNK_PARAMS_MIX_BINDING, ChunkParams::SIZE as u64),
             ],
         });
 
-        let render_pipeline = create_render_pipeline(device, &render_layout, block_size)?;
+        let chunk_size = crate::gpu::render_chunk_size(block_size);
+        let render_pipeline = create_render_pipeline(device, &render_layout, chunk_size)?;
         let mix_pipeline = create_mix_pipeline(device, &mix_layout)?;
+        let mix_reduce_pipeline = create_mix_reduce_pipeline(device, &mix_layout)?;
 
         Ok(Self {
             ctx,
             render_pipeline,
             mix_pipeline,
+            mix_reduce_pipeline,
             render_layout,
             mix_layout,
             block_size,
+            chunk_size,
             max_voices,
         })
     }

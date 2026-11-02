@@ -3,6 +3,10 @@
 //! 只做几何：折线与切线求交、点是否在闭环内、闭环沿直线切成两半。
 //! 片的簿记在 `sliced.rs`，饼干模在 `mould.rs`。
 
+use lumino_core::shape::ShapeModel;
+
+use crate::ShapeNote;
+
 /// 几何容差
 pub const EPS: f64 = 1e-9;
 
@@ -217,6 +221,115 @@ fn distance(a: Pt, b: Pt) -> f32 {
 
 fn to64(p: Pt) -> (f64, f64) {
     (f64::from(p.0), f64::from(p.1))
+}
+
+/// 把开放折线沿竖线 `x = cut` 分成左右两条；交点同时插入两侧。
+///
+/// 返回 `None` 表示没有交点或某一侧不足两个点（无法成段）。
+pub fn cut_open_vertical(points: &[Pt], cut: f32) -> Option<(Vec<Pt>, Vec<Pt>)> {
+    if points.len() < 2 {
+        return None;
+    }
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    let push_start = |point: Pt, left: &mut Vec<Pt>, right: &mut Vec<Pt>| {
+        if point.0 <= cut {
+            left.push(point);
+        } else {
+            right.push(point);
+        }
+    };
+    push_start(points[0], &mut left, &mut right);
+    let mut crossed = false;
+    for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let da = a.0 - cut;
+        let db = b.0 - cut;
+        if (da <= 0.0 && db > 0.0) || (da >= 0.0 && db < 0.0) {
+            let span = b.0 - a.0;
+            let t = if span.abs() < 1e-6 {
+                1.0
+            } else {
+                (cut - a.0) / span
+            };
+            let cross = (cut, a.1 + (b.1 - a.1) * t);
+            left.push(cross);
+            right.push(cross);
+            if db > 0.0 {
+                right.push(b);
+            } else {
+                left.push(b);
+            }
+            crossed = true;
+        } else if db <= 0.0 {
+            left.push(b);
+        } else {
+            right.push(b);
+        }
+    }
+    dedup_adjacent(&mut left);
+    dedup_adjacent(&mut right);
+    (crossed && left.len() >= 2 && right.len() >= 2).then_some((left, right))
+}
+
+fn dedup_adjacent(points: &mut Vec<Pt>) {
+    points.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-4);
+}
+
+/// 模型的可切轮廓：优先锚点；无锚点时用 rect 四角；最后补回起点闭合。
+pub fn ring_of(model: &ShapeModel) -> Vec<Pt> {
+    let mut ring = model
+        .geometry
+        .anchors
+        .iter()
+        .map(|anchor| anchor.pos)
+        .collect::<Vec<_>>();
+    if ring.is_empty()
+        && let Some(rect) = model.geometry.rect
+    {
+        ring = vec![
+            (rect.tick_lo, rect.key_lo),
+            (rect.tick_hi, rect.key_lo),
+            (rect.tick_hi, rect.key_hi),
+            (rect.tick_lo, rect.key_hi),
+        ];
+    }
+    if let Some(first) = ring.first().copied()
+        && ring.last().copied() != Some(first)
+    {
+        ring.push(first);
+    }
+    ring
+}
+
+/// 按竖切线 `cut` 把音符分成左右两片；跨切线的音符在切口处一分为二。
+pub fn split_notes_vertical(notes: &[ShapeNote], cut: f32) -> (Vec<ShapeNote>, Vec<ShapeNote>) {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for note in notes {
+        let start = note.tick;
+        let end = note.tick + note.length.max(0.0);
+        if end <= cut {
+            left.push(*note);
+        } else if start >= cut {
+            right.push(*note);
+        } else {
+            if cut > start {
+                left.push(ShapeNote {
+                    length: cut - start,
+                    ..*note
+                });
+            }
+            if end > cut {
+                right.push(ShapeNote {
+                    tick: cut,
+                    length: end - cut,
+                    ..*note
+                });
+            }
+        }
+    }
+    (left, right)
 }
 
 fn to32(p: (f64, f64)) -> Pt {

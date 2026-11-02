@@ -5,9 +5,67 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use xsynth_core::AudioStreamParams;
-use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
+use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase, VoiceSpawner};
+
+/// REF-DATA-002：从 presets 构建的次数 / 缓存命中次数（诊断用）。
+static BUILD_COUNT: AtomicU64 = AtomicU64::new(0);
+static HIT_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// 读取 `(构建次数, 缓存命中次数)`。
+pub fn soundfont_cache_stats() -> (u64, u64) {
+    (
+        BUILD_COUNT.load(Ordering::Relaxed),
+        HIT_COUNT.load(Ordering::Relaxed),
+    )
+}
+
+/// 清零计数（测试隔离；不影响缓存内容）。
+pub fn reset_soundfont_cache_stats() {
+    BUILD_COUNT.store(0, Ordering::Relaxed);
+    HIT_COUNT.store(0, Ordering::Relaxed);
+}
+
+/// REF-DATA-002：持有共享 presets 的 XSynth soundfont。
+///
+/// `SampleSoundfont` 本身不保留 `Sf2Preset`，而采样 `Arc` 的存活依赖
+/// `Sf2Preset`；这里持有 `Arc` 让 presets 缓存（`Weak`）在播放期间不被回收，
+/// 从而与 LGS 共享同一份采样数据。
+#[derive(Debug)]
+struct PresetBackedSoundfont {
+    inner: SampleSoundfont,
+    _presets: Arc<Vec<xsynth_soundfonts::sf2::Sf2Preset>>,
+}
+
+impl SoundfontBase for PresetBackedSoundfont {
+    fn stream_params(&self) -> &AudioStreamParams {
+        self.inner.stream_params()
+    }
+
+    fn get_attack_voice_spawners_at(
+        &self,
+        bank: u8,
+        preset: u8,
+        key: u8,
+        vel: u8,
+    ) -> Vec<Box<dyn VoiceSpawner>> {
+        self.inner
+            .get_attack_voice_spawners_at(bank, preset, key, vel)
+    }
+
+    fn get_release_voice_spawners_at(
+        &self,
+        bank: u8,
+        preset: u8,
+        key: u8,
+        vel: u8,
+    ) -> Vec<Box<dyn VoiceSpawner>> {
+        self.inner
+            .get_release_voice_spawners_at(bank, preset, key, vel)
+    }
+}
 
 /// 音色库缓存 key: (文件路径, 采样率)
 type CacheKey = (PathBuf, u32);
@@ -81,6 +139,7 @@ pub fn load_soundfont_cached(
 
     // 先尝试从缓存获取
     if let Some(cached) = get_from_cache(path, sample_rate) {
+        HIT_COUNT.fetch_add(1, Ordering::Relaxed);
         tracing::info!("SoundfontCache: 命中缓存 {:?} (sr={})", path, sample_rate);
         return Ok(cached);
     }
@@ -94,10 +153,29 @@ pub fn load_soundfont_cached(
                 path,
                 sample_rate
             );
-            let soundfont = SampleSoundfont::new(path, params, Default::default())
-                .map_err(|e| format!("Failed to load soundfont: {:?}", e))?;
-
-            let soundfont: Arc<dyn SoundfontBase> = Arc::new(soundfont);
+            let soundfont: Arc<dyn SoundfontBase> = if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("sfz"))
+            {
+                // SFZ 的采样分散在多个文件，单文件 mtime 不能代表内容，
+                // 不参与 REF-DATA-002 的 presets 共享。
+                Arc::new(
+                    SampleSoundfont::new(path, params, Default::default())
+                        .map_err(|e| format!("Failed to load soundfont: {:?}", e))?,
+                )
+            } else {
+                // REF-DATA-002：SF2 走与 LGS 共用的 presets 缓存，避免二次解析。
+                let presets = lumino_gpu_synth::soundfont::load_presets_cached(path, sample_rate)
+                    .map_err(|e| format!("Failed to load soundfont presets: {e}"))?;
+                let inner =
+                    SampleSoundfont::from_presets((*presets).clone(), params, Default::default());
+                Arc::new(PresetBackedSoundfont {
+                    inner,
+                    _presets: presets,
+                })
+            };
+            BUILD_COUNT.fetch_add(1, Ordering::Relaxed);
 
             // 添加到缓存
             add_to_cache(path, sample_rate, Arc::clone(&soundfont));

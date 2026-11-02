@@ -22,6 +22,8 @@ lumino-export = { workspace = true }
 lumino-project = { workspace = true }
 lumino-editor-state = { workspace = true }
 lumino-gfx = { workspace = true }
+# Step 3（Q3 B）：CPU 洋葱皮光栅核心（非当前轨的透明叠加层）
+lumino-cpu-onion = { workspace = true }
 lumino-message = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }

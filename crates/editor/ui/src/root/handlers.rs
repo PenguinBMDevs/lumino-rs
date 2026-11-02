@@ -16,14 +16,17 @@ use crate::message::Message;
 use crate::root::Root;
 
 // 重新导出子模块
+pub mod animation_tick;
 pub mod arrangement;
 pub mod cloud;
 pub mod collaboration;
 pub mod core_window;
+pub mod cpu_guard;
 pub mod dialog;
 pub mod editor_action;
 pub mod help;
 pub mod loop_range;
+pub mod mask_panel;
 pub mod material;
 pub mod settings;
 pub mod shape_drawer;
@@ -147,6 +150,10 @@ impl Root {
             }
             Message::PianoRollContextMenu(action) => {
                 self.handle_piano_roll_context_menu(action.clone());
+                true
+            }
+            Message::MaskPanel(action) => {
+                self.handle_mask_panel(*action);
                 true
             }
             Message::RightSidebar(action) => {

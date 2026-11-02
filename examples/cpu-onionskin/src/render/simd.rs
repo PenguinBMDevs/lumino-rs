@@ -9,6 +9,10 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimdLevel {
     /// AVX2（x86_64）。
+    // 非 x86_64 上 `detect()` 永远不会返回该档位（机器码路径本身也已 cfg 掉），
+    // 枚举值仍需保留给测试与 `name()` 做跨平台断言；CI 的 `-D warnings`
+    // 会把「从未构造」升为编译错误，故按目标架构局部豁免。
+    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
     Avx2,
     /// 标量兜底。
     Scalar,
@@ -67,6 +71,10 @@ pub fn fill_row(row: &mut [u32], x0: i32, x1: i32, value: u32, level: SimdLevel)
 /// 并把这些像素的 owner 设为 `owner_value`。
 ///
 /// 洋葱皮：`owner_value=1, owner_limit=0`；主轨：`owner_value=2, owner_limit=1`。
+///
+/// `count_coverage` 为真时返回本段中**原本 owner==0** 的像素数，供洋葱皮
+/// pass 判断"画布是否已经铺满、后续轨能否整轨跳过"；为假时返回 0，不付
+/// 额外统计开销。
 #[allow(clippy::too_many_arguments)]
 pub fn masked_fill_row(
     row: &mut [u32],
@@ -77,13 +85,14 @@ pub fn masked_fill_row(
     owner_value: u32,
     owner_limit: u32,
     level: SimdLevel,
-) {
+    count_coverage: bool,
+) -> usize {
     debug_assert_eq!(row.len(), owner.len());
     let len = row.len() as i32;
     let start = x0.clamp(0, len) as usize;
     let end = x1.clamp(0, len) as usize;
     if start >= end {
-        return;
+        return 0;
     }
     let dst = &mut row[start..end];
     let own = &mut owner[start..end];
@@ -92,13 +101,13 @@ pub fn masked_fill_row(
             #[cfg(target_arch = "x86_64")]
             // SAFETY: 仅在本机确认 AVX2 后调用；dst/own 等长切片，循环内不越界。
             unsafe {
-                masked_fill_row_avx2(dst, own, value, owner_value, owner_limit);
+                masked_fill_row_avx2(dst, own, value, owner_value, owner_limit, count_coverage)
             }
             #[cfg(not(target_arch = "x86_64"))]
-            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit);
+            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit, count_coverage)
         }
         SimdLevel::Scalar => {
-            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit);
+            masked_fill_row_scalar(dst, own, value, owner_value, owner_limit, count_coverage)
         }
     }
 }
@@ -109,13 +118,19 @@ fn masked_fill_row_scalar(
     value: u32,
     owner_value: u32,
     owner_limit: u32,
-) {
+    count_coverage: bool,
+) -> usize {
+    let mut covered = 0usize;
     for (pixel, slot) in dst.iter_mut().zip(owner.iter_mut()) {
         if *slot <= owner_limit {
+            if count_coverage && *slot == 0 {
+                covered += 1;
+            }
             *pixel = value;
             *slot = owner_value;
         }
     }
+    covered
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -148,10 +163,12 @@ unsafe fn masked_fill_row_avx2(
     value: u32,
     owner_value: u32,
     owner_limit: u32,
-) {
+    count_coverage: bool,
+) -> usize {
     use std::arch::x86_64::{
-        __m256i, _mm256_blendv_epi8, _mm256_cmpgt_epi32, _mm256_loadu_si256,
-        _mm256_maskstore_epi32, _mm256_movemask_epi8, _mm256_set1_epi32, _mm256_storeu_si256,
+        __m256i, _mm256_blendv_epi8, _mm256_castsi256_ps, _mm256_cmpeq_epi32, _mm256_cmpgt_epi32,
+        _mm256_loadu_si256, _mm256_maskstore_epi32, _mm256_movemask_epi8, _mm256_movemask_ps,
+        _mm256_set1_epi32, _mm256_setzero_si256, _mm256_storeu_si256,
     };
 
     let len = dst.len();
@@ -160,12 +177,19 @@ unsafe fn masked_fill_row_avx2(
     let color = _mm256_set1_epi32(value as i32);
     let new_owner = _mm256_set1_epi32(owner_value as i32);
     let limit = _mm256_set1_epi32(owner_limit.saturating_add(1) as i32);
+    let zero = _mm256_setzero_si256();
+    let mut covered = 0usize;
     let mut i = 0usize;
     // SAFETY: 每轮 i + 8 <= len；load/store 均在切片长度内，maskstore 的掩码
     // 只选择已加载的 8 个 lane。
     unsafe {
         while i + 8 <= len {
             let owners = _mm256_loadu_si256(owner_ptr.add(i) as *const __m256i);
+            if count_coverage {
+                let zero_mask = _mm256_cmpeq_epi32(owners, zero);
+                covered += (_mm256_movemask_ps(_mm256_castsi256_ps(zero_mask)) as u32).count_ones()
+                    as usize;
+            }
             let mask = _mm256_cmpgt_epi32(limit, owners);
             let bits = _mm256_movemask_epi8(mask);
             if bits == -1 {
@@ -179,13 +203,15 @@ unsafe fn masked_fill_row_avx2(
             i += 8;
         }
     }
-    masked_fill_row_scalar(
-        &mut dst[i..],
-        &mut owner[i..],
-        value,
-        owner_value,
-        owner_limit,
-    );
+    covered
+        + masked_fill_row_scalar(
+            &mut dst[i..],
+            &mut owner[i..],
+            value,
+            owner_value,
+            owner_limit,
+            count_coverage,
+        )
 }
 
 #[cfg(test)]
@@ -209,7 +235,18 @@ mod tests {
         for (index, slot) in owner.iter_mut().enumerate() {
             *slot = (index % 3) as u32;
         }
-        masked_fill_row(&mut row, &mut owner, 0, 24, 0xABCD, 1, 0, SimdLevel::Scalar);
+        let covered = masked_fill_row(
+            &mut row,
+            &mut owner,
+            0,
+            24,
+            0xABCD,
+            1,
+            0,
+            SimdLevel::Scalar,
+            true,
+        );
+        assert_eq!(covered, 8, "只有 owner==0 的 8 个像素计入覆盖");
         for index in 0..24 {
             if index % 3 == 0 {
                 assert_eq!(row[index], 0xABCD);
@@ -234,7 +271,7 @@ mod tests {
             scalar_owner[index] = (index % 4) as u32;
             simd_owner[index] = scalar_owner[index];
         }
-        masked_fill_row(
+        let scalar_covered = masked_fill_row(
             &mut scalar_row,
             &mut scalar_owner,
             2,
@@ -243,8 +280,9 @@ mod tests {
             1,
             1,
             SimdLevel::Scalar,
+            true,
         );
-        masked_fill_row(
+        let simd_covered = masked_fill_row(
             &mut simd_row,
             &mut simd_owner,
             2,
@@ -253,8 +291,10 @@ mod tests {
             1,
             1,
             SimdLevel::Avx2,
+            true,
         );
         assert_eq!(scalar_row, simd_row);
         assert_eq!(scalar_owner, simd_owner);
+        assert_eq!(scalar_covered, simd_covered);
     }
 }

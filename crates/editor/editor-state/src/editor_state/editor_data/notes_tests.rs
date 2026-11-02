@@ -127,3 +127,49 @@ fn test_apply_drag_state_streaming_preserves_length_on_left_move() {
     assert_eq!(view.tick, 200.0);
     assert_eq!(view.length, 480.0, "左移后长度必须保持 480");
 }
+
+#[test]
+fn drag_records_bounded_cpu_onion_changes() {
+    let mut data = EditorData::with_f32_notes(
+        1,
+        &[
+            Note::new(0.0, 60, 1.0),
+            Note::new(10.0, 62, 1.0),
+            Note::new(20.0, 64, 1.0),
+        ],
+    );
+    data.set_cpu_onion_dirty_enabled(true);
+
+    let mut bv = BitVec::from_elem(3, false);
+    bv.set(0, true);
+    bv.set(2, true);
+    let mut drag_state = DragState::new(bv, 0, 60);
+    drag_state.set_delta(5, -2);
+    assert_eq!(data.apply_drag_state_streaming(&drag_state, 127), 2);
+
+    let dirty = data.cpu_onion_dirty().expect("拖动必须记录 CPU 洋葱皮脏区");
+    assert!(!dirty.full, "小拖拽不得退化成整帧兜底");
+    assert_eq!(dirty.changes.len(), 2, "每个被移动音符一条 old/new");
+    let first = dirty.changes[0];
+    assert_eq!(first.track, 1);
+    assert_eq!(first.old.expect("old 必须存在").start_tick, 0);
+    assert_eq!(first.new.expect("new 必须存在").start_tick, 5);
+}
+
+#[test]
+fn large_drag_falls_back_to_dirty_range_instead_of_full() {
+    let notes: Vec<Note> = (0..40)
+        .map(|i| Note::new(i as f32 * 10.0, 60, 1.0))
+        .collect();
+    let mut data = EditorData::with_f32_notes(1, &notes);
+    data.set_cpu_onion_dirty_enabled(true);
+
+    let bv = BitVec::from_elem(40, true);
+    let mut drag_state = DragState::new(bv, 0, 60);
+    drag_state.set_delta(5, 0);
+    assert!(data.apply_drag_state_streaming(&drag_state, 127) > 0);
+
+    let dirty = data.cpu_onion_dirty().expect("大批量拖动必须有记录");
+    assert!(!dirty.full, "超过变更上限不得整帧兜底");
+    assert!(!dirty.ranges.is_empty(), "必须转成脏 tick 区间");
+}

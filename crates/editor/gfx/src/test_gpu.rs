@@ -11,6 +11,11 @@
 //! - 需要独立 limits/feature 的探测（如 `device_check`）仍自行创建设备，不经此处；
 //! - `LUMINO_GFX_TEST_FALLBACK=1` 强制回退适配器（Windows WARP / Linux llvmpipe），
 //!   用于本地复现 CI 软渲染行为。
+//! - ⚠️ Windows DX12：**驻留的共享设备 + 其他用例反复创建/销毁自己的 Device**
+//!   会让整个 DX12 栈停摆（2026-10-31 CI 实测：随后 `request_adapter` 返回
+//!   `NotFound`，44 个 GPU 回读用例连锁报 `Buffer ... is invalid`，CPU 用例全绿）。
+//!   因此不要在 `device_check` 探测用例之前拉起共享设备；需要在早期跑 GPU 的
+//!   用例请自带一次性设备（见 `cpu_onion_renderer::tests_support::transient_device`）。
 
 use std::sync::OnceLock;
 

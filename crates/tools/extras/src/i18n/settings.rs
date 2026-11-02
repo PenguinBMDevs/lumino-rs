@@ -119,6 +119,10 @@ pub struct SettingsTranslations {
     pub lgs_buffer: &'static str,
     /// LGS (GPU) 缓冲区大小提示
     pub lgs_buffer_hint: &'static str,
+    /// LGS (GPU) 离线导出块长标签（REF-LGS-009）
+    pub lgs_offline_buffer: &'static str,
+    /// LGS (GPU) 离线导出块长提示（REF-LGS-009）
+    pub lgs_offline_buffer_hint: &'static str,
     /// 状态栏 GPU 缓冲状态指示器总开关
     pub gpu_buffer_status: &'static str,
     /// 状态栏 GPU 缓冲状态指示器提示

@@ -1,7 +1,9 @@
 use super::*;
 
 /// 辅助函数：构造测试用指纹
-fn make_fp(
+///
+/// `pub(super)`：CPU 单轨模式测试（`tests_cpu`）复用同一套构造器与断言。
+pub(super) fn make_fp(
     track_gen: u64,
     mute_fp: u64,
     current_track: usize,
@@ -20,7 +22,7 @@ fn make_fp(
 }
 
 /// 构造带音轨级脏标记的指纹
-fn make_fp_dirty(
+pub(super) fn make_fp_dirty(
     track_gen: u64,
     current_track: usize,
     dirty_tracks: std::collections::HashSet<usize>,
@@ -39,7 +41,7 @@ fn make_fp_dirty(
 }
 
 /// 构造带主轨结构性脏标记的指纹（gen 未变，仅有结构性变化）
-fn make_fp_main_struct(current_track: usize) -> OnionSkinFingerprint {
+pub(super) fn make_fp_main_struct(current_track: usize) -> OnionSkinFingerprint {
     OnionSkinFingerprint {
         track_gen: 42,
         mute_fp: 0,
@@ -53,14 +55,14 @@ fn make_fp_main_struct(current_track: usize) -> OnionSkinFingerprint {
     }
 }
 
-fn assert_none(action: &OnionSkinAction) {
+pub(super) fn assert_none(action: &OnionSkinAction) {
     assert!(
         matches!(action, OnionSkinAction::None),
         "期望 None，实际 {action:?}"
     );
 }
 
-fn assert_full(action: &OnionSkinAction) {
+pub(super) fn assert_full(action: &OnionSkinAction) {
     assert!(
         matches!(action, OnionSkinAction::Full),
         "期望 Full，实际 {action:?}"

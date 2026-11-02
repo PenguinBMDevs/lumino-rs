@@ -60,6 +60,12 @@ impl GpuSynth {
         let _ = self.readback(&mut buf);
 
         // Restore state: drop the warm-up voice and reset the timeline.
+        // REF-LGS-010: 预热声部的静态槽位必须回收，否则每次预热泄漏一个槽位。
+        if let Some(v) = self.voices.first()
+            && v.slot != VoiceParamsDyn::NO_SLOT
+        {
+            self.slot_free.push(v.slot);
+        }
         self.voices = saved_voices;
         for q in self.key_voices.iter_mut() {
             q.clear();
@@ -85,6 +91,7 @@ impl GpuSynth {
         };
         let rate = self.config.sample_rate;
         let curves = self.config.envelope_curves;
+        let midi_channels = self.config.midi_channels;
         // Bitmap over the (channel x key x vel) grid: the HashMap lookup per
         // event cost ~50ns x 200M events on black-MIDI; this is O(1) array
         // indexing. Templates are built for the DEFAULT channel state only
@@ -92,6 +99,11 @@ impl GpuSynth {
         // building on demand.
         let mut seen: Vec<u8> = vec![0; self.config.midi_channels * 128 * 128];
         for ev in events {
+            // REND-002 #87：配置通道空间小于文件端口上界时必须丢弃，
+            // 否则下面按 `channel*128*128` 索引会越界 panic。
+            if !crate::midi::port::channel_in_range(ev.channel(), midi_channels) {
+                continue;
+            }
             let MidiEvent::NoteOn { key, vel } = ev.event() else {
                 continue;
             };
@@ -157,7 +169,12 @@ impl GpuSynth {
             // why prewarming "Rekt Apple!!.mid" took 90+ seconds.
             let mut seen: Vec<u8> = vec![0; 128 * 128];
             let mut wanted: Vec<usize> = Vec::new();
+            let midi_channels = self.config.midi_channels;
             for ev in events {
+                // 与渲染路径一致：超出配置通道空间的事件直接丢弃。
+                if !crate::midi::port::channel_in_range(ev.channel(), midi_channels) {
+                    continue;
+                }
                 let MidiEvent::NoteOn { key, vel } = ev.event() else {
                     continue;
                 };
@@ -175,31 +192,25 @@ impl GpuSynth {
             wanted.sort_unstable();
             wanted.dedup();
             let rate = self.config.sample_rate;
-            let pre: Vec<(usize, Arc<[f32]>)> = wanted
+            let pre: Vec<PreparedSample> = wanted
                 .par_iter()
-                .map(|&id| (id, sf.resample_uncached(id, rate)))
+                .map(|&id| {
+                    let data = sf.resample_uncached(id, rate);
+                    let (words, gain) = crate::gpu::pack_samples_2x16snorm(&data);
+                    (id, data, words, gain)
+                })
                 .collect();
-            let Some(sf) = self.sf.as_mut() else {
+            let Some(_sf) = self.sf.as_mut() else {
                 return Err(SynthError::Gpu(
                     "soundfont missing during prewarm upload".into(),
                 ));
             };
-            let device = &self.res.ctx.device;
-            let queue = &self.res.ctx.queue;
             let mut grown = false;
-            for (id, data) in pre {
-                sf.cache_resampled(id, rate, data.clone());
-                let len = data.len() as u32;
-                let offset = self.samples_next_offset;
-                grown |= write_samples(
-                    &mut self.samples_chunks,
-                    device,
-                    queue,
-                    offset as u64 * 4,
-                    bytemuck::cast_slice(&data),
-                )?;
-                self.sample_offsets.insert(id, (offset, len));
-                self.samples_next_offset = offset + len;
+            for (id, data, words, gain) in pre {
+                if let Some(sf) = self.sf.as_mut() {
+                    sf.cache_resampled(id, rate, data.clone());
+                }
+                grown |= self.upload_sample_packed(id, data.len() as u32, &words, gain)?;
             }
             if grown {
                 self.render_bg_dirty = true;

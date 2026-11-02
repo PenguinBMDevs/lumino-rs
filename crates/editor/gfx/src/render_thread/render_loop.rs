@@ -35,6 +35,12 @@ pub struct Renderers {
     pub arrangement: crate::ArrangementRenderer,
     /// CC 柱状条渲染器
     pub cc_bar: crate::CcBarRenderer,
+    /// CPU 洋葱皮透明叠加层渲染器（B 方案：背景网格之后、GPU 洋葱皮之前）
+    ///
+    /// 仅在 `RenderParams::cpu_onion_frame` 为 `Some` 时参与绘制；默认 `None`
+    /// 时零行为变化。管线携带只读 `DEPTH_FORMAT` 状态，**只适用于带 depth
+    /// attachment 的 UI 通道**（导出通道无 depth，本步不接）。
+    pub cpu_onion: crate::CpuOnionRenderer,
     /// 洋葱皮常驻数据内容世代（`onion_skin` 常驻字节被改写时递增，单调 wrapping）。
     ///
     /// 契约：**任何改写 `onion_skin` 常驻字节的路径都必须经
@@ -66,6 +72,7 @@ impl Renderers {
             ruler: crate::RulerRenderer::new(device, format),
             arrangement: crate::ArrangementRenderer::new(device, format),
             cc_bar: crate::CcBarRenderer::new(device, format),
+            cpu_onion: crate::CpuOnionRenderer::new(device, queue, format),
             onion_epoch: 0,
             gpu_epoch: epoch,
         }
@@ -92,6 +99,10 @@ impl Renderers {
             ruler: crate::RulerRenderer::new_without_depth(device, format),
             arrangement: crate::ArrangementRenderer::new_without_depth(device, format),
             cc_bar: crate::CcBarRenderer::new_without_depth(device, format),
+            // 导出通道无 depth attachment：本渲染器的管线带只读 DEPTH_FORMAT 状态，
+            // 与无 depth 的 pass 不兼容——本步不接导出，`execute_render_pass` 以
+            // `has_depth` 为前置条件，导出路径（cpu_onion_frame 恒 None）不会绘制。
+            cpu_onion: crate::CpuOnionRenderer::new(device, queue, format),
             onion_epoch: 0,
             gpu_epoch: epoch,
         }

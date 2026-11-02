@@ -3,6 +3,8 @@
 use crate::host::Host;
 use crate::window;
 
+mod onion;
+
 impl Host {
     /// 应用画刷「绘制行为」配置到主窗口（对话框 Save 后由 runner 调用）
     pub fn apply_brush_settings(&mut self, config: lumino_core::BrushConfig) {
@@ -91,7 +93,7 @@ impl Host {
     }
 
     /// 应用设置面板配置到主窗口
-    pub fn apply_settings(&mut self, settings: crate::settings::SettingsPanel, theme: String) {
+    pub fn apply_settings(&mut self, mut settings: crate::settings::SettingsPanel, theme: String) {
         // 同步主题
         if self.root.window.theme.to_string() != theme {
             tracing::info!("同步主题: {} -> {}", self.root.window.theme, theme);
@@ -103,6 +105,10 @@ impl Host {
             self.render_ctx.render_cache.note_viewport_hash = 0;
             self.render_ctx.render_cache.note_render_viewport = None;
         }
+
+        // 洋葱皮渲染后端：锁定/模式不兼容时拒绝并把值回写成运行时真值，
+        // 必须早于 `root.apply_settings`（否则主 Root 会记下一个没生效的后端）。
+        self.apply_onion_backend_switch(&mut settings);
 
         self.root.apply_settings(settings);
         self.ui_dirty = true;

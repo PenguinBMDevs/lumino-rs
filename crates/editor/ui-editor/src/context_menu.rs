@@ -4,7 +4,7 @@
 //! 菜单以垂直图标栏形式显示在右键位置附近，
 //! 模仿 ../yinhe 的选中后悬浮面板风格。
 
-use iced_core::{Alignment, Color, Length, Padding, Point};
+use iced_core::{Alignment, Color, Length, Padding, Point, Size};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
 use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
@@ -73,17 +73,32 @@ impl PianoRollContextMenuState {
 }
 
 /// 渲染上下文菜单覆盖层
-pub fn view(position: Point, target: ContextMenuTarget) -> Element<'static> {
-    let adjusted_position = Point::new(position.x + MENU_OFFSET_X, position.y + MENU_OFFSET_Y);
+///
+/// `available` 为编辑器可用区域；菜单会左右夹取，并在下方放不下时向上翻转，
+/// 避免条目被窗口底边裁掉（041C 待确认菜单已有 11 项）。
+pub fn view(position: Point, target: ContextMenuTarget, available: Size) -> Element<'static> {
+    let panel_height = menu_total_height(target);
+    let panel_width = PANEL_WIDTH + PANEL_PADDING * 2.0;
+    let x = (position.x + MENU_OFFSET_X).clamp(
+        0.0,
+        (available.width - panel_width - MENU_OFFSET_X).max(0.0),
+    );
+    let below = position.y + MENU_OFFSET_Y;
+    let y = if below + panel_height > available.height {
+        (position.y - panel_height - MENU_OFFSET_Y).max(0.0)
+    } else {
+        below
+    };
+    let y = y.min((available.height - panel_height).max(0.0));
 
     let menu_panel = menu_panel(target);
 
     container(menu_panel)
         .padding(Padding {
-            top: adjusted_position.y,
+            top: y,
             right: 0.0,
             bottom: 0.0,
-            left: adjusted_position.x,
+            left: x,
         })
         .width(Length::Fill)
         .height(Length::Fill)
@@ -123,6 +138,8 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::EditShape,
             PianoRollContextMenuItem::PaintAreas,
+            PianoRollContextMenuItem::MaskToggle,
+            PianoRollContextMenuItem::MaskSettings,
             PianoRollContextMenuItem::SymmetryVertical,
             PianoRollContextMenuItem::SymmetryHorizontal,
             PianoRollContextMenuItem::Straighten,
@@ -135,12 +152,17 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::PasteShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起先走 Bake 前组合会话，
-        // 019/021/022 在有 2+ 个 pending 矢量时可用；027/028 对单个 pending 矢量可用。
+        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起走 Bake 前组合会话。
+        // 019/021/022 需 2+ 个 pending；025/027/028 单对象；026 需恰好 2 个。
         ContextMenuTarget::PendingDrawnShape => &[
             PianoRollContextMenuItem::LiveShape,
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::EditShape,
+            PianoRollContextMenuItem::MaskToggle,
+            PianoRollContextMenuItem::MaskSettings,
+            PianoRollContextMenuItem::SliceVertical,
+            PianoRollContextMenuItem::BetweenCreate,
             PianoRollContextMenuItem::CopyAlong,
             PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::CopyShapeText,
@@ -149,14 +171,20 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
     }
 }
 
+/// 菜单总高度（含内边距）
+fn menu_total_height(target: ContextMenuTarget) -> f32 {
+    let count = menu_items(target).len();
+    count as f32 * BUTTON_SIZE
+        + count.saturating_sub(1) as f32 * BUTTON_SPACING
+        + PANEL_PADDING * 2.0
+}
+
 /// 构建菜单面板内容（条目集由作用目标决定）
 fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
     let items = menu_items(target);
     let buttons = items.iter().copied().map(menu_button).collect::<Vec<_>>();
 
-    let total_height = buttons.len() as f32 * BUTTON_SIZE
-        + (buttons.len().saturating_sub(1)) as f32 * BUTTON_SPACING
-        + PANEL_PADDING * 2.0;
+    let total_height = menu_total_height(target);
 
     let panel = container(
         column(buttons)
@@ -220,6 +248,8 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::MergeShapes => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::EditShape => Icon::Gear,
         PianoRollContextMenuItem::PaintAreas => Icon::Gear,
+        PianoRollContextMenuItem::MaskToggle => Icon::Gear,
+        PianoRollContextMenuItem::MaskSettings => Icon::Gear,
         PianoRollContextMenuItem::ShapeList => Icon::Gear,
         PianoRollContextMenuItem::SymmetryVertical => Icon::ContextMenuCopy,
         PianoRollContextMenuItem::SymmetryHorizontal => Icon::ContextMenuPaste,
@@ -249,8 +279,10 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::JoinShapes => tr!("连接图形"),
         PianoRollContextMenuItem::SplitJoinedShape => tr!("还原连接"),
         PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
-        PianoRollContextMenuItem::EditShape => tr!("编辑形状"),
+        PianoRollContextMenuItem::EditShape => tr!("编辑图形"),
         PianoRollContextMenuItem::PaintAreas => tr!("区域着色"),
+        PianoRollContextMenuItem::MaskToggle => tr!("切换遮罩"),
+        PianoRollContextMenuItem::MaskSettings => tr!("遮罩设置…"),
         PianoRollContextMenuItem::ShapeList => tr!("形状列表"),
         PianoRollContextMenuItem::SymmetryVertical => tr!("竖轴对称"),
         PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),
@@ -293,105 +325,4 @@ fn tooltip_style(_theme: &Theme) -> container::Style {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_state_open_close() {
-        let mut state = PianoRollContextMenuState::default();
-        assert!(!state.open);
-        assert!(state.position.is_none());
-        assert_eq!(state.target, ContextMenuTarget::Notes, "默认目标为音符");
-
-        state.open(Point::new(100.0, 200.0), ContextMenuTarget::Notes);
-        assert!(state.open);
-        assert_eq!(state.position, Some(Point::new(100.0, 200.0)));
-
-        state.close();
-        assert!(!state.open);
-        assert!(state.position.is_none());
-    }
-
-    #[test]
-    fn test_state_open_records_target() {
-        let mut state = PianoRollContextMenuState::default();
-        state.open(Point::new(10.0, 20.0), ContextMenuTarget::DrawnShape);
-        assert_eq!(state.target, ContextMenuTarget::DrawnShape);
-        // 关闭不清空 target（仅控制可见性），重新打开会覆盖
-        state.close();
-        assert_eq!(state.target, ContextMenuTarget::DrawnShape);
-    }
-
-    #[test]
-    fn test_item_icon_mapping() {
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::Cut),
-            lumino_ui_core::resources::icon::Icon::ContextMenuCut
-        );
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::Copy),
-            lumino_ui_core::resources::icon::Icon::ContextMenuCopy
-        );
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::Paste),
-            lumino_ui_core::resources::icon::Icon::ContextMenuPaste
-        );
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::Delete),
-            lumino_ui_core::resources::icon::Icon::ContextMenuDelete
-        );
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::SelectAll),
-            lumino_ui_core::resources::icon::Icon::ContextMenuSelectAll
-        );
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::BatchEdit),
-            lumino_ui_core::resources::icon::Icon::Gear
-        );
-        assert_eq!(
-            item_icon(PianoRollContextMenuItem::DeleteDrawnShape),
-            lumino_ui_core::resources::icon::Icon::ContextMenuDelete
-        );
-    }
-
-    #[test]
-    fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
-        let items = menu_items(ContextMenuTarget::PendingDrawnShape);
-        assert_eq!(
-            items,
-            &[
-                PianoRollContextMenuItem::LiveShape,
-                PianoRollContextMenuItem::JoinShapes,
-                PianoRollContextMenuItem::MergeShapes,
-                PianoRollContextMenuItem::CopyAlong,
-                PianoRollContextMenuItem::VelocityUp,
-                PianoRollContextMenuItem::CopyShapeText,
-                PianoRollContextMenuItem::DeleteDrawnShape,
-            ],
-            "待确认镜像可走 Bake 前组合、027/028 单对象参数、分享几何、删除"
-        );
-        assert!(
-            !items.iter().any(|item| matches!(
-                item,
-                PianoRollContextMenuItem::EditShape
-                    | PianoRollContextMenuItem::SymmetryVertical
-                    | PianoRollContextMenuItem::SliceVertical
-                    | PianoRollContextMenuItem::BetweenCreate
-            )),
-            "020/023/025/026 仍不得出现在待确认目标"
-        );
-    }
-
-    #[test]
-    fn test_menu_panel_size() {
-        let _element = menu_panel(ContextMenuTarget::Notes);
-        let _element = menu_panel(ContextMenuTarget::DrawnShape);
-        let _element = menu_panel(ContextMenuTarget::PendingDrawnShape);
-    }
-
-    #[test]
-    fn test_view_returns_element() {
-        let _element = view(Point::new(50.0, 60.0), ContextMenuTarget::Notes);
-        let _element = view(Point::new(50.0, 60.0), ContextMenuTarget::DrawnShape);
-    }
-}
+mod tests;

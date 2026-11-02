@@ -125,6 +125,8 @@ impl Root {
                 self.editor.context_menu.close();
             }
             PianoRollContextMenuAction::ItemClicked(item) => {
+                // 面板锚点要先取：`close()` 会清空 position
+                let menu_pos = self.editor.context_menu.position;
                 self.editor.context_menu.close();
                 match item {
                     PianoRollContextMenuItem::BatchEdit => {
@@ -162,10 +164,48 @@ impl Root {
                         let _ = self.editor.merge_selected_shapes();
                     }
                     PianoRollContextMenuItem::EditShape => {
-                        let _ = self.editor.enable_shape_edit();
+                        if self.editor.enable_shape_edit() {
+                            let message = if self.editor.is_shape_edit_armed() {
+                                tr!("已进入编辑图形：角=缩放，边=拉伸，角外=旋转，中心=移动")
+                            } else {
+                                tr!("已退出编辑图形")
+                            };
+                            self.toast.push(crate::toast::ToastLevel::Info, message);
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("编辑图形失败：请选中一个已 Bake 图形或单支待确认组合"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::PaintAreas => {
                         let _ = self.editor.begin_area_paint();
+                    }
+                    PianoRollContextMenuItem::MaskToggle => {
+                        if self.editor.toggle_mask_selected() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已切换遮罩（仅预览；✓ 后固定）"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("遮罩失败：请选中一个待确认/已 Bake 形状"),
+                            );
+                        }
+                    }
+                    PianoRollContextMenuItem::MaskSettings => {
+                        // 菜单坐标是 canvas 局部，覆盖层面板用窗口坐标
+                        let anchor = menu_pos
+                            .map(|pos| {
+                                let canvas = &self.editor.editor_state.canvas;
+                                iced_core::Point::new(
+                                    pos.x + canvas.offset_x,
+                                    pos.y + canvas.offset_y,
+                                )
+                            })
+                            .unwrap_or(iced_core::Point::new(320.0, 200.0));
+                        self.open_mask_panel(anchor);
                     }
                     PianoRollContextMenuItem::ShapeList => {
                         let _ = self.editor.open_shape_list();
@@ -183,10 +223,30 @@ impl Root {
                         let _ = self.editor.set_straighten(false);
                     }
                     PianoRollContextMenuItem::SliceVertical => {
-                        let _ = self.editor.slice_selected_vertical();
+                        if self.editor.slice_selected_vertical() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已竖切；✓ 后才写入音符"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::BetweenCreate => {
-                        let _ = self.editor.create_between_selected();
+                        if self.editor.create_between_selected() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已生成补间（首 + 步 + 末）；✓ 后才写入音符"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("补间失败：请恰好选中两个待确认形状/曲线"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::CopyAlong => {
                         if self.editor.copy_along_selected()

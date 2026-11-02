@@ -6,4 +6,4 @@ pub mod path;
 pub mod place;
 
 pub use path::{Dir, Placement, Pt, Run, corner_a, place_on_run, runs};
-pub use place::{apply, copies, copy_notes};
+pub use place::{apply, copies, copies_of_points, copy_notes};

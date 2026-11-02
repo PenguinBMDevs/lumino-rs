@@ -1,43 +1,114 @@
 // lumino-gpu-synth render kernel (pass 1).
 //
-// One invocation renders one voice for the whole block (BLOCK frames),
-// producing `BLOCK * 2` interleaved stereo samples into `voice_out`.
+// One invocation renders one voice for one FRAME CHUNK (BLOCK frames), where
+// BLOCK is the per-dispatch chunk size injected at pipeline creation
+// (REF-LGS-002: `min(block_size, MIX_CHUNK_FRAMES)`). The kernel writes
+// `BLOCK * 2` interleaved stereo samples into `voice_out`; the CPU dispatches
+// it once per chunk so the buffer is reused instead of being sized for the
+// whole block.
 //
 // The voice state (playback position, envelope stage, filter state) is
-// read from_val `states` at the start of the block and written back at the end,
-// so voices can span arbitrary many blocks.
+// read from `states` at the start of the chunk and written back at the end,
+// so voices can span arbitrary many chunks/blocks.
 //
 // Signal chain (mirrors XSynth's stereo voice):
 //   sample(L/R) * amp(velocity volume) * pan_gain(L/R) * envelope
 //   -> per-channel biquad low-pass (if enabled)
 // The channel volume/expression/pan controllers are applied in the mix pass.
 
-struct VoiceParams {
-    is_active: u32,          // 0 = slot unused
-    sample_offset: u32,   // offset of the sample data inside `samples`
-    sample_offset_r: u32,  // offset of the right-channel sample data
-    sample_len: u32,      // length of the (first channel) sample data
+// REF-LGS-010: 声部参数拆成「静态表 + 动态表」。
+// 静态字段在声部生命周期内不变，只在槽位分配时上传一次；每块只上传
+// 动态字段。`combine` 在每次 invocation 开头拼成局部结构体，后续热循环
+// 直接读寄存器（与旧版 `let p = params[voice]` 等价）。
+struct VoiceParamsStatic {
     offset: u32,          // playback start offset (converted domain)
     sample_end: u32,      // voice ends when time >= sample_end (conv(sample_end) - conv(offset))
     loop_mode: u32,       // 0 = no loop, 1 = continuous, 2 = sustain
     loop_start: u32,      // data-relative loop start (converted domain)
     loop_end: u32,        // data-relative loop end (converted domain)
-    speed: f32,           // samples advanced per output frame
     amp: f32,             // static amplitude (volume * velocity curve)
-    pan_l: f32,           // left gain from_val the zone pan
-    pan_r: f32,           // right gain from_val the zone pan
+    pan_l: f32,           // left gain from the zone pan
+    pan_r: f32,           // right gain from the zone pan
     filter_on: u32,
     b0: f32, b1: f32, b2: f32, a1: f32, a2: f32,
-    env_base: u32,        // index of this voice's first stage in `env_stages`
+    interp: u32,          // 0 = linear, 1 = 64-point sinc
+    channels: u32,        // 1 = mono, 2 = stereo pair
+}
+
+struct VoiceParamsDyn {
+    slot: u32,            // index into `params_static`
+    is_active: u32,       // 0 = slot unused
+    release_at: u32,      // absolute global frame at which release starts (0xFFFFFFFF = none)
+    env_base: u32,        // start index of this voice's envelope template (REF-LGS-011)
     env_count: u32,       // number of stages
     release_idx: u32,     // stage index (relative to env_base) to jump to on release
     finished_idx: u32,    // index of the terminal stage
-    release_at: u32,      // absolute global frame at which release starts (0xFFFFFFFF = none)
-    base_frame: u32,      // absolute global frame of this block's first sample
-    interp: u32,          // 0 = linear, 1 = 64-point sinc
-    channels: u32,        // 1 = mono, 2 = stereo pair
+    sample_offset: u32,   // offset of the sample data inside `samples`
+    sample_offset_r: u32, // offset of the right-channel sample data
+    sample_gain: f32,     // REF-LGS-007: pool normalization gain (packed / gain)
+    sample_gain_r: f32,
     start_at: u32,        // absolute global frame at which the voice starts (gated before)
-    channel: u32,         // MIDI channel (0-15), used by the mix pass
+    speed: f32,           // samples advanced per output frame
+}
+
+struct VoiceParams {
+    is_active: u32,
+    sample_offset: u32,
+    sample_offset_r: u32,
+    sample_gain: f32,
+    sample_gain_r: f32,
+    offset: u32,
+    sample_end: u32,
+    loop_mode: u32,
+    loop_start: u32,
+    loop_end: u32,
+    speed: f32,
+    amp: f32,
+    pan_l: f32,
+    pan_r: f32,
+    filter_on: u32,
+    b0: f32, b1: f32, b2: f32, a1: f32, a2: f32,
+    env_base: u32,
+    env_count: u32,
+    release_idx: u32,
+    finished_idx: u32,
+    release_at: u32,
+    interp: u32,
+    channels: u32,
+    start_at: u32,
+}
+
+fn combine(d: VoiceParamsDyn, s: VoiceParamsStatic) -> VoiceParams {
+    var p: VoiceParams;
+    p.is_active = d.is_active;
+    p.sample_offset = d.sample_offset;
+    p.sample_offset_r = d.sample_offset_r;
+    p.sample_gain = d.sample_gain;
+    p.sample_gain_r = d.sample_gain_r;
+    p.offset = s.offset;
+    p.sample_end = s.sample_end;
+    p.loop_mode = s.loop_mode;
+    p.loop_start = s.loop_start;
+    p.loop_end = s.loop_end;
+    p.speed = d.speed;
+    p.amp = s.amp;
+    p.pan_l = s.pan_l;
+    p.pan_r = s.pan_r;
+    p.filter_on = s.filter_on;
+    p.b0 = s.b0;
+    p.b1 = s.b1;
+    p.b2 = s.b2;
+    p.a1 = s.a1;
+    p.a2 = s.a2;
+    p.env_base = d.env_base;
+    p.env_count = d.env_count;
+    p.release_idx = d.release_idx;
+    p.finished_idx = d.finished_idx;
+    p.release_at = d.release_at;
+    p.interp = s.interp;
+    p.channels = s.channels;
+    p.start_at = d.start_at;
+    return p;
 }
 
 struct VoiceState {
@@ -61,19 +132,30 @@ struct EnvStageGpu {
     duration: u32,
 }
 
-@group(0) @binding(0) var<storage, read> params: array<VoiceParams>;
-// Sample data lives in fixed-size chunks so that no single storage binding
-// exceeds the device's per-binding size limit. CHUNK_F32 must match
-// SAMPLES_CHUNK_BYTES / 4 in gpu.rs (1 GiB of f32).
-const CHUNK_F32: u32 = 268435456u;
-@group(0) @binding(1) var<storage, read> samples0: array<f32>;
-@group(0) @binding(2) var<storage, read> samples1: array<f32>;
-@group(0) @binding(3) var<storage, read> samples2: array<f32>;
-@group(0) @binding(4) var<storage, read> samples3: array<f32>;
+// REF-LGS-002: frame-chunk parameters (uniform, dynamic offset).
+struct ChunkParams {
+    render_frame_base: u32, // global frame of this chunk's first sample
+    mix_frame_base: u32,    // block-relative frame of this chunk's first sample
+    chunk_size: u32,
+    _pad: u32,
+}
+
+@group(0) @binding(0) var<storage, read> params: array<VoiceParamsDyn>;
+// REF-LGS-007: 采样池按 **u32 字**寻址，每个字装 2 帧 snorm16（2 B/帧，池减半）。
+// CHUNK_WORDS 必须与 SAMPLES_CHUNK_WORDS（gpu.rs = 1 GiB / 4 B）一致。
+const CHUNK_WORDS: u32 = 268435456u;
+@group(0) @binding(1) var<storage, read> samples0: array<u32>;
+@group(0) @binding(2) var<storage, read> samples1: array<u32>;
+@group(0) @binding(3) var<storage, read> samples2: array<u32>;
+@group(0) @binding(4) var<storage, read> samples3: array<u32>;
 @group(0) @binding(5) var<storage, read> sinc_table: array<f32>;
 @group(0) @binding(6) var<storage, read> env_stages: array<EnvStageGpu>;
 @group(0) @binding(7) var<storage, read_write> states: array<VoiceState>;
 @group(0) @binding(8) var<storage, read_write> voice_out: array<f32>;
+// Binding 9 = CHUNK_PARAMS_RENDER_BINDING (render layout; keep in sync).
+@group(0) @binding(9) var<uniform> chunk: ChunkParams;
+// REF-LGS-010: 静态声部参数表（槽位索引；只在分配槽位时上传）。
+@group(0) @binding(10) var<storage, read> params_static: array<VoiceParamsStatic>;
 
 const VOICES_PER_GROUP: u32 = 128u;
 const SINC_PHASES: u32 = 4096u;
@@ -108,29 +190,37 @@ fn env_eval(kind: u32, from_val: f32, target_val: f32, f_in: f32) -> f32 {
     return target_val;
 }
 
-// Reads one f32 from the chunked samples buffer; out-of-bounds reads
-// yield 0.0. CHUNK_F32 = 1<<28, so shift/mask is cheaper than div/mod
+// REF-LGS-006: cache the four storage-buffer lengths once per invocation
+// instead of calling `arrayLength` on every sample fetch.
+var<private> g_sample_len0: u32;
+var<private> g_sample_len1: u32;
+var<private> g_sample_len2: u32;
+var<private> g_sample_len3: u32;
+
+// Reads one sample from the chunked pool; out-of-bounds reads yield 0.0.
+//
+// REF-LGS-007: two snorm16 frames are packed into one u32 (low half = even
+// sample index, high half = odd). `offset`/`idx` stay in **sample** units, so
+// the word index is `(offset + idx) >> 1`; the half is picked with `& 1`.
+// CHUNK_WORDS = 1<<28, so shift/mask is cheaper than div/mod
 // (flame graph: raw_sample is hottest GPU function at 25k voices).
 fn raw_sample(offset: u32, idx: u32) -> f32 {
     let i = offset + idx;
-    let chunk = i >> 28u;
-    let off = i & 268435455u;
+    let word = i >> 1u;
+    let chunk = word >> 28u;
+    let off = word & 268435455u;
+    var packed = 0u;
     if (chunk == 0u) {
-        if (off < arrayLength(&samples0)) { return samples0[off]; }
-        return 0.0;
+        if (off < g_sample_len0) { packed = samples0[off]; }
+    } else if (chunk == 1u) {
+        if (off < g_sample_len1) { packed = samples1[off]; }
+    } else if (chunk == 2u) {
+        if (off < g_sample_len2) { packed = samples2[off]; }
+    } else if (chunk == 3u) {
+        if (off < g_sample_len3) { packed = samples3[off]; }
     }
-    if (chunk == 1u) {
-        if (off < arrayLength(&samples1)) { return samples1[off]; }
-        return 0.0;
-    }
-    if (chunk == 2u) {
-        if (off < arrayLength(&samples2)) { return samples2[off]; }
-        return 0.0;
-    }
-    if (chunk == 3u) {
-        if (off < arrayLength(&samples3)) { return samples3[off]; }
-    }
-    return 0.0;
+    let pair = unpack2x16snorm(packed);
+    return select(pair.y, pair.x, (i & 1u) == 0u);
 }
 
 // Computes the looped position for a data-relative absolute index.
@@ -161,7 +251,7 @@ fn linear_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_lo
     let a = loop_pos(p, pos_abs, released, last_loop);
     let v0 = raw_sample(p.sample_offset, a);
     let v1 = raw_sample(p.sample_offset, a + 1u);
-    return v0 * (1.0 - frac) + v1 * frac;
+    return (v0 * (1.0 - frac) + v1 * frac) * p.sample_gain;
 }
 
 fn sinc_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_loop: u32) -> f32 {
@@ -175,26 +265,52 @@ fn sinc_interp(p: VoiceParams, pos_abs: u32, frac: f32, released: u32, last_loop
             acc += c * raw_sample(p.sample_offset, a);
         }
     }
-    return acc;
+    return acc * p.sample_gain;
 }
 
 // ---------- state advance ----------
+
+// REF-LGS-006: cached envelope-stage parameters. The 12 B `env_stages` read
+// is done once per stage transition instead of once per frame; the divisor
+// is cached too, but the IEEE division itself is kept (bit-exact).
+struct StageCache {
+    idx: u32,
+    kind: u32,
+    target_val: f32,
+    duration: u32,
+    denom: u32,
+}
+
+fn load_stage(p: VoiceParams, idx: u32) -> StageCache {
+    if (idx < p.env_count) {
+        let es = env_stages[p.env_base + idx];
+        return StageCache(idx, es.kind, es.target_val, es.duration, max(es.duration, 1u));
+    }
+    return StageCache(idx, 0u, 0.0, 0u, 1u);
+}
 
 // The result of advancing a voice by one frame.
 struct AdvanceResult {
     st: VoiceState,
     env_value: f32,
+    stage: StageCache,
 }
 
 // Advances the voice state by exactly one output frame at absolute `frame`.
 // Mirrors the per-frame logic of the old monolithic loop: release
 // scheduling, envelope progression, sample-end check and position advance.
-// The filter is disabled in this configuration (`use_effects = false`), so
-// the state advance has no signal dependency and can be replayed by every
-// segment thread to fast-forward to its start.
-fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> AdvanceResult {
+// The biquad filter state is updated separately in the frame loop, so this
+// helper is pure (no signal dependency).
+fn advance_frame(
+    p: VoiceParams,
+    st: VoiceState,
+    env_value: f32,
+    frame: u32,
+    stage: StageCache,
+) -> AdvanceResult {
     var s = st;
     var ev = env_value;
+    var sc = stage;
 
     // --- release scheduling (sample-accurate) ---
     if (p.release_at != 0xFFFFFFFFu && frame >= p.release_at && s.is_released == 0u) {
@@ -207,6 +323,8 @@ fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> 
         // samples after release; otherwise the release tail is computed from a
         // stale/block-start position and jumps.
         s.last_loop_pos = s.int_time;
+        // The jump switches stages this very frame: refresh the cache now.
+        sc = load_stage(p, p.release_idx);
     }
 
     // --- envelope ---
@@ -216,21 +334,23 @@ fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> 
         // the voice ends, mirroring XSynth's `envelope.ended()`.
         s.ended = 1u;
     } else if (stage_idx < p.env_count) {
-        let es = env_stages[p.env_base + stage_idx];
-        if (es.kind == 3u) {
-            ev = es.target_val; // hold
+        if (sc.idx != stage_idx) {
+            sc = load_stage(p, stage_idx);
+        }
+        if (sc.kind == 3u) {
+            ev = sc.target_val; // hold
         } else {
             // Defensive: a zero-duration stage must never divide by zero
             // (the CPU collapses those; this is a last-resort guard so a
             // pathological envelope cannot poison the output with NaN).
-            let denom = max(es.duration, 1u);
-            let prog = f32(s.env_t) / f32(denom);
-            ev = env_eval(es.kind, s.env_from, es.target_val, prog);
+            let prog = f32(s.env_t) / f32(sc.denom);
+            ev = env_eval(sc.kind, s.env_from, sc.target_val, prog);
             s.env_t = s.env_t + 1u;
-            if (s.env_t >= es.duration) {
+            if (s.env_t >= sc.duration) {
                 s.env_from = ev;
                 s.env_stage = stage_idx + 1u;
                 s.env_t = 0u;
+                sc = load_stage(p, s.env_stage);
             }
         }
     }
@@ -261,17 +381,15 @@ fn advance_frame(p: VoiceParams, st: VoiceState, env_value: f32, frame: u32) -> 
     s.int_time = s.int_time + carry;
     s.frac = frac;
 
-    return AdvanceResult(s, ev);
+    return AdvanceResult(s, ev, sc);
 }
 
 // ---------- main ----------
 
-// Each workgroup (y = SEGS segments) renders one voice; the shader
-// fast-forwards the state to its segment start, so the GPU parallelism is
-// voices x segments. The default below is replaced at pipeline creation
-// with the engine's `RENDER_SEGMENTS` (see `create_render_pipeline`).
-const SEGS: u32 = 16u;
-const SEG_LEN: u32 = BLOCK / SEGS;
+// One invocation renders one voice for the whole frame chunk (REF-LGS-005:
+// the old 4-segment split + per-segment fast-forward was measured to be
+// slower than one thread per voice on the 5080; the replay cost outweighed
+// the extra parallelism, and filtered voices already ran single-segment).
 
 @compute
 @workgroup_size(VOICES_PER_GROUP)
@@ -280,30 +398,24 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (voice >= arrayLength(&params)) {
         return;
     }
-    let p = params[voice];
-    if (p.is_active == 0u) {
+    let d = params[voice];
+    if (d.is_active == 0u) {
         return;
     }
+    // REF-LGS-010: static fields live in the slot-indexed table (written once
+    // per slot); only the dynamic fields are re-uploaded every chunk.
+    let p = combine(d, params_static[d.slot]);
+    // REF-LGS-006: hoist the storage-buffer lengths out of the sample loop.
+    g_sample_len0 = arrayLength(&samples0);
+    g_sample_len1 = arrayLength(&samples1);
+    g_sample_len2 = arrayLength(&samples2);
+    g_sample_len3 = arrayLength(&samples3);
 
     var st = states[voice];
     let out_base = voice * BLOCK * 2u;
-    let seg = gid.y;
-    // Filtered voices (use_effects = true) have signal-dependent biquad
-    // state that cannot be fast-forwarded, so they run single-segment:
-    // segment 0 renders the whole block, the other segments just zero their
-    // output range.
-    let is_filtered = p.filter_on != 0u;
-    let seg_start = select(seg * SEG_LEN, 0u, is_filtered);
-    let seg_end = select(min(seg_start + SEG_LEN, BLOCK), BLOCK, is_filtered);
-    if (is_filtered && seg > 0u) {
-        // Filtered (biquad) voices are rendered entirely by segment 0: the
-        // filter state is signal-dependent and cannot be fast-forwarded, so the
-        // other segments must leave this voice's output untouched. The old code
-        // zeroed the WHOLE block here, racing with segment 0's real writes and
-        // corrupting the signal at the segment boundary (a "chunk" boundary in
-        // the voice block) - a source of crackle/pops for filtered voices.
-        return;
-    }
+    // REF-LGS-002: hoist the chunk base out of the per-frame loop (a
+    // uniform load inside the hot loop costs ~4% at block 512).
+    let frame_base = chunk.render_frame_base;
 
     // NOTE: the loop-sustain release position is captured at the moment of
     // release inside `advance_frame` (so it tracks the true loop position),
@@ -318,26 +430,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // start, injecting a one-frame envelope error at each 512-frame block
     // boundary - the block-rate click/pop artifact audible in quiet tails.
     var env_value = st.env_value;
+    // REF-LGS-006: one stage-table read per stage transition (not per frame).
+    var stage = load_stage(p, st.env_stage);
 
-    // Fast-forward the state to this segment's start. No sample reads, only
-    // release/envelope/position logic; frames before `start_at` are gated
-    // (no state advance, like the original loop's `continue`).
-    for (var k = 0u; k < seg_start; k = k + 1u) {
-        let frame = p.base_frame + k;
-        if (frame < p.start_at) {
-            continue;
-        }
-        let adv = advance_frame(p, st, env_value, frame);
-        st = adv.st;
-        env_value = adv.env_value;
-        if (st.ended == 1u) {
-            break; // finished voices stay silent; no more state to advance
-        }
-    }
-
-    var f = seg_start;
-    while (f < seg_end) {
-        let frame = p.base_frame + f;
+    var f = 0u;
+    while (f < BLOCK) {
+        let frame = frame_base + f;
 
         // --- start gating: the voice is silent before its note-on frame ---
         if (frame < p.start_at) {
@@ -362,6 +460,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             if (p.channels == 2u) {
                 var p_r = p;
                 p_r.sample_offset = p.sample_offset_r;
+                p_r.sample_gain = p.sample_gain_r;
                 if (p.interp == 1u) {
                     sample_r = sinc_interp(p_r, pos_abs, st.frac, st.is_released, st.last_loop_pos);
                 } else {
@@ -377,8 +476,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         var value_l = sample_l * p.amp * p.pan_l * env_value;
         var value_r = sample_r * p.amp * p.pan_r * env_value;
 
-        // --- per-channel biquad low-pass (XSynth stereo voice structure;
-        // only active for filtered voices, which run single-segment) ---
+        // --- per-channel biquad low-pass (XSynth stereo voice structure) ---
         if (p.filter_on != 0u) {
             let yl = p.b0 * value_l + p.b1 * st.lx1 + p.b2 * st.lx2
                    - p.a1 * st.ly1 - p.a2 * st.ly2;
@@ -398,20 +496,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         voice_out[out_idx + 1u] = value_r;
 
         // --- advance to the next frame ---
-        let adv = advance_frame(p, st, env_value, frame);
+        let adv = advance_frame(p, st, env_value, frame, stage);
         st = adv.st;
         env_value = adv.env_value;
+        stage = adv.stage;
 
         f = f + 1u;
     }
 
-    // Persist the state from the last segment only (all segments compute
-    // the same value; writing once avoids needless storage traffic).
-    // Filtered voices are single-segment and persist from segment 0.
-    if (seg == SEGS - 1u || (is_filtered && seg == 0u)) {
-        st.env_value = env_value;
-        states[voice] = st;
-    }
+    // Persist the state after the chunk (one thread owns the whole voice).
+    st.env_value = env_value;
+    states[voice] = st;
 }
 
 

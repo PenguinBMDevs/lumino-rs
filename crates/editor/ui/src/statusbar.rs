@@ -301,7 +301,7 @@ impl StatusBar {
 }
 
 /// 构建 GPU 指标组（Q 队列毫秒 + 趋势箭头 / LOAD / V / UR /
-/// 异常时附 GOV、DROP）。
+/// 采样内存 GMEM/CMEM，异常时附 GOV、DROP）。
 fn build_gpu_section<'a>(
     stats: GpuBufferStats,
     trend: QueueTrend,
@@ -332,6 +332,16 @@ fn build_gpu_section<'a>(
     .spacing(6)
     .align_y(iced_core::Alignment::Center);
 
+    // REF-LGS-013：采样内存（GPU / CPU）。未加载音源时为 0，不占位。
+    if stats.sample_gpu_bytes > 0 || stats.sample_cpu_bytes > 0 {
+        row = row.push(space().width(8));
+        row = row.push(metric_label("GMEM"));
+        row = row.push(metric_value(mem_mb(stats.sample_gpu_bytes)));
+        row = row.push(space().width(8));
+        row = row.push(metric_label("CMEM"));
+        row = row.push(metric_value(mem_mb(stats.sample_cpu_bytes)));
+    }
+
     // 防爆治理指标：仅在异常（级别 >0 或发生过丢弃）时出现，
     // 且受「显示防爆治理指标」副开关控制。
     if flags.show_governor {
@@ -354,6 +364,15 @@ fn build_gpu_section<'a>(
     }
 
     row.into()
+}
+
+/// 字节 → MB 文本（1 位小数；0 显示 "0"）。REF-LGS-013 状态栏用。
+fn mem_mb(bytes: u64) -> String {
+    if bytes == 0 {
+        "0".to_string()
+    } else {
+        format!("{:.1}M", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 /// 指标标签（弱色小字，仿照 yinhe mode_bar 的 `metric` 标签）
@@ -490,5 +509,14 @@ mod tests {
 
         assert!(bar.set_gpu_stats(None), "清空（切非 LGS）应标脏");
         assert!(bar.gpu_stats.is_none(), "快照应已被清空");
+    }
+
+    /// REF-LGS-013：采样内存显示为 MB、1 位小数；0 不显示单位。
+    #[test]
+    fn test_mem_mb_format() {
+        assert_eq!(mem_mb(0), "0");
+        assert_eq!(mem_mb(1024 * 1024), "1.0M");
+        assert_eq!(mem_mb(3 * 1024 * 1024 / 2), "1.5M");
+        assert_eq!(mem_mb(17 * 1024 * 1024 + 1024 * 1024 / 10), "17.1M");
     }
 }

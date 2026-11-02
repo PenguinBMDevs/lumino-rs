@@ -1,8 +1,10 @@
 //! 音符拖动流式应用与绘制完成（自 `notes.rs` 拆分，保持各文件 < 400 行）
 
+use super::super::cpu_onion_dirty::MAX_CPU_ONION_CHANGES;
 use super::DragState;
 use super::EditorData;
 use super::Note;
+use lumino_midi_model::NoteEvent;
 use lumino_note_core::history::CreateOp;
 
 impl EditorData {
@@ -10,10 +12,25 @@ impl EditorData {
     ///
     /// 只修改 `drag_state` 选中的音符（直接改 document 当前轨）。
     /// 返回实际被修改的音符数。
+    ///
+    /// CPU 洋葱皮（开启时）：记录**有界**的 old/new 原子变更（≤
+    /// [`MAX_CPU_ONION_CHANGES`] 条），让总览密度走增量而不是整建；超过上限
+    /// 直接记整帧兜底。只为密度服务，不改动拖动/重排/内存处理本身。
     pub fn apply_drag_state_streaming(&mut self, drag_state: &DragState, max_key: u16) -> usize {
         if drag_state.is_delta_zero() {
             return 0;
         }
+
+        let track_id = self.current_track;
+        // GPU 后端 / 已有 full 时完全不收集，保持原零开销路径。
+        let collect_changes = self.cpu_onion_dirty_enabled()
+            && !self
+                .cpu_onion_dirty
+                .as_ref()
+                .is_some_and(|dirty| dirty.full);
+        let mut onion_changes: Vec<(NoteEvent, NoteEvent)> = Vec::new();
+        let mut onion_range: Option<(u32, u32)> = None;
+        let mut onion_truncated = false;
 
         let mut modified = 0usize;
         // 记录实际被修改的索引（主音轨增量事件：等价 UpdateRange）
@@ -23,13 +40,14 @@ impl EditorData {
         if let Some(track) = self
             .document
             .as_mut()
-            .and_then(|doc| doc.track_notes_mut(self.current_track))
+            .and_then(|doc| doc.track_notes_mut(track_id))
         {
             for (note_idx, selected) in drag_state.selected.iter().enumerate() {
                 if !selected || note_idx >= track.len() {
                     continue;
                 }
                 if let Some(note) = track.get_mut(note_idx) {
+                    let old_event = *note;
                     let mut note_f = super::accessors::event_to_note(note);
                     if drag_state.apply_to_note(&mut note_f, max_key) {
                         note.start_tick = super::accessors::f32_to_tick(note_f.tick);
@@ -42,6 +60,21 @@ impl EditorData {
                         note.key = note_f.key as u8;
                         modified += 1;
                         modified_indices.push(note_idx);
+                        if collect_changes {
+                            let end = note
+                                .end_tick
+                                .max(note.start_tick.saturating_add(1))
+                                .max(old_event.end_tick);
+                            onion_range = Some(match onion_range {
+                                Some((lo, hi)) => (lo.min(old_event.start_tick), hi.max(end)),
+                                None => (old_event.start_tick, end),
+                            });
+                            if onion_changes.len() < MAX_CPU_ONION_CHANGES {
+                                onion_changes.push((old_event, *note));
+                            } else {
+                                onion_truncated = true;
+                            }
+                        }
                     }
                 }
             }
@@ -60,6 +93,16 @@ impl EditorData {
                 self.record_update_ranges_streamed(&modified_indices);
             }
         }
+
+        if collect_changes {
+            for (old, new) in onion_changes {
+                self.record_cpu_onion_change(track_id, Some(old), Some(new));
+            }
+            if onion_truncated && let Some((lo, hi)) = onion_range {
+                self.record_cpu_onion_range(lo, hi);
+            }
+        }
+
         modified
     }
 

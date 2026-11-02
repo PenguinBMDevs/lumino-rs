@@ -11,6 +11,7 @@ use lumino_midi_model::NoteEvent;
 use lumino_note_core::note::Note;
 
 mod marks;
+mod physical_track;
 mod read;
 mod write;
 

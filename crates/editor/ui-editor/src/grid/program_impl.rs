@@ -119,7 +119,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                         }
                     }
                     // 形状工具：优先响应悬浮 √× 按钮
-                    if self.editor.current_tool() == Tool::Shape
+                    if crate::grid::shape_tool_box::shape_buttons_active(self.editor)
                         && let Some(btns) =
                             crate::grid::shape_tool_box::shape_button_rects(self.editor)
                     {

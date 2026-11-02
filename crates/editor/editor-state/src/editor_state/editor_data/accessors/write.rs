@@ -56,6 +56,8 @@ impl EditorData {
         // `Root::arrangement_max_tick_end`（走带滚动条范围）、`OnionSkinState`
         // 与走带选区命中音符缓存。跨轨插入必须**精确**标记受影响轨：若按
         // `{current_track}` 标记，洋葱皮会对真实变化轨错误豁免 → 漏渲染。
+        // CPU 洋葱皮脏区（Step 5a）：单笔插入 = (None, Some(new))，关闭时零开销。
+        self.record_cpu_onion_change(track_id, None, Some(event));
         if track_id == self.current_track {
             self.mark_current_track_changed();
         } else {
@@ -80,10 +82,13 @@ impl EditorData {
 
     /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
     /// document 为空时返回 false。
+    ///
+    /// 扩轨改变轨道数，CPU 洋葱皮的每轨几何缓存全部失效 → 记整帧兜底。
     pub fn ensure_track(&mut self, track_id: usize) -> bool {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
+        // 空轨不改变任何计数/覆盖；索引在下一帧按文档轨数扩数组即可。
         while doc.track_count() <= track_id {
             doc.add_empty_track();
         }
@@ -104,6 +109,8 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
         }
+        // CPU 洋葱皮脏区（Step 5a）：单笔删除 = (Some(removed), None)
+        self.record_cpu_onion_change(track_id, Some(removed), None);
         // 2026-09 补版本号：同 `insert_note_with_id`，删除此前不 bump gen
         self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         Some(removed)
@@ -117,6 +124,9 @@ impl EditorData {
         self.modified = true;
         let event = note_to_event(note.clone());
         let start_tick = event.start_tick;
+        // CPU 洋葱皮脏区需要「修改前」的音符；越界索引取不到则保持 None
+        // （此时 `update_note` 必然返回 false，脏区也不会落账）。
+        let previous = doc.track_notes(track_id).get(index).copied();
         if !doc.update_note(track_id, index, event) {
             return false;
         }
@@ -137,23 +147,65 @@ impl EditorData {
                 note,
             });
         }
+        // CPU 洋葱皮脏区（Step 5a）：更新 = (Some(old), Some(new))
+        self.record_cpu_onion_change(track_id, previous, Some(event));
         // 2026-09 补版本号：同 `insert_note_with_id`，更新此前不 bump gen
         self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         true
     }
 
     /// 整轨替换音符（undo/redo 快照恢复专用）。
+    ///
+    /// CPU 洋葱皮：整轨替换转成 tick 区间，密度只重建该区间。
     pub fn replace_track_notes(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> bool {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
         self.modified = true;
-        doc.replace_track_notes(track_id, notes)
+        let mut range = super::super::cpu_onion_dirty::notes_range(notes.iter());
+        if range.is_none() {
+            range = super::super::cpu_onion_dirty::notes_range(doc.track_notes(track_id).iter());
+        }
+        let replaced = doc.replace_track_notes(track_id, notes);
+        if replaced {
+            if let Some((lo, hi)) = range {
+                self.record_cpu_onion_range(lo, hi);
+            } else {
+                self.record_cpu_onion_full();
+            }
+        }
+        replaced
+    }
+
+    /// 整轨替换 + **有界原子变更**（异步 MoveOp 提交专用）。
+    ///
+    /// 与 [`Self::replace_track_notes`] 相同的替换语义，但 CPU 洋葱皮不记整帧，
+    /// 而是记录调用方从 `MoveOp` 提炼的 old/new（≤ `MAX_CPU_ONION_CHANGES`）；
+    /// 让总览密度走增量。超过上限的批量提交仍由调用方走整帧兜底，保持原有
+    /// 批量编辑的内存/处理行为不变。
+    pub(crate) fn replace_track_notes_with_cpu_onion_changes(
+        &mut self,
+        track_id: usize,
+        notes: Vec<NoteEvent>,
+        changes: &[super::super::cpu_onion_dirty::CpuOnionChange],
+    ) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        self.modified = true;
+        let replaced = doc.replace_track_notes(track_id, notes);
+        if replaced {
+            for change in changes {
+                self.record_cpu_onion_change(change.track, change.old, change.new);
+            }
+        }
+        replaced
     }
 
     /// 整轨替换音符（undo/redo 快照恢复专用，O(块数) 浅拷贝版）。
     ///
     /// 直接共享快照块 Arc，不做数据复制（1600W 音符工程 undo/redo 免整轨拷贝）。
+    /// CPU 洋葱皮：同 [`Self::replace_track_notes`]，记整帧兜底。
     pub fn replace_track_notes_chunked(
         &mut self,
         track_id: usize,
@@ -163,7 +215,11 @@ impl EditorData {
             return false;
         };
         self.modified = true;
-        doc.replace_track_notes_chunked(track_id, notes)
+        let replaced = doc.replace_track_notes_chunked(track_id, notes);
+        if replaced {
+            self.record_cpu_onion_full();
+        }
+        replaced
     }
 
     // ── 增量事件记录 ─────────────────────────────────────────
@@ -196,6 +252,8 @@ impl EditorData {
     /// 每个区间内部再按 [`REORDER_SPAN_CHUNK`] 分块（16MB/块，与渲染侧设备内
     /// 搬移块一致），避免超大单消息与瞬时内存峰值。
     pub fn push_reorder_ranges_events(&mut self, ranges: &[(usize, usize)]) {
+        let track_id = self.current_track;
+        self.record_cpu_onion_direct_ranges(track_id, ranges);
         for &(lo, hi) in ranges {
             #[cfg(debug_assertions)]
             self.debug_assert_track_sorted_around(&[lo, hi]);
@@ -226,6 +284,8 @@ impl EditorData {
         if indices.is_empty() {
             return;
         }
+        let track_id = self.current_track;
+        self.record_cpu_onion_direct_indices(track_id, indices);
         self.push_update_range_events(indices);
         self.mark_current_track_changed();
         self.note_delta_dirty = false;
@@ -242,6 +302,8 @@ impl EditorData {
         if indices.is_empty() {
             return;
         }
+        let track_id = self.current_track;
+        self.record_cpu_onion_direct_indices(track_id, indices);
         self.push_update_range_events(indices);
         self.mark_current_track_changed();
         self.note_delta_dirty = false;

@@ -98,7 +98,7 @@ impl Lgs {
             "LGS (GPU): 音频流已启动（耗时 {}ms）",
             t_stream.elapsed().as_millis()
         );
-        let event_tx = Arc::new(Mutex::new(playback.event_sender()));
+        let event_tx = Arc::new(SharedEventTx::new(playback.event_sender()));
         let control_tx = Arc::new(Mutex::new(playback.control_sender()));
         let velocity_filter = Arc::new(AtomicU8::new(options.velocity_filter_threshold));
         // 统计读取器（克隆句柄，读取无锁原子）

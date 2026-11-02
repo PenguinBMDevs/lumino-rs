@@ -2,6 +2,7 @@
 
 use super::super::super::selection_set::SelectionSet;
 
+use super::super::cpu_onion_dirty::MAX_CPU_ONION_CHANGES;
 use super::EditorData;
 use super::editing::merge_descending_ranges;
 
@@ -84,12 +85,55 @@ impl EditorData {
         if ranges.is_empty() {
             return 0;
         }
+        // 小批量删除保留按值 old：撤销可局部重建；超过上限才整帧兜底。
+        let total: usize = ranges.iter().map(|(_, count)| *count).sum();
+        let mut removed_notes = None;
+        let mut removed_range: Option<(u32, u32)> = None;
+        if self.cpu_onion_dirty_enabled && !self.history_replay {
+            let track = self.track_notes(track_id);
+            if total <= MAX_CPU_ONION_CHANGES {
+                let mut notes = Vec::with_capacity(total);
+                for &(index, count) in ranges {
+                    for offset in 0..count {
+                        if let Some(note) = track.get(index.saturating_add(offset)) {
+                            notes.push(*note);
+                        }
+                    }
+                }
+                removed_notes = Some(notes);
+            } else {
+                // 大批量删除仍只记 tick 区间：扫描被删索引，不扫全文档。
+                for &(index, count) in ranges {
+                    for offset in 0..count {
+                        let Some(note) = track.get(index.saturating_add(offset)) else {
+                            continue;
+                        };
+                        let end = note.end_tick.max(note.start_tick.saturating_add(1));
+                        removed_range = Some(match removed_range {
+                            Some((lo, hi)) => (lo.min(note.start_tick), hi.max(end)),
+                            None => (note.start_tick, end),
+                        });
+                    }
+                }
+            }
+        }
         let deleted = match self.document.as_mut() {
             Some(doc) => doc.remove_note_ranges(track_id, ranges),
             None => 0,
         };
         if deleted == 0 {
             return 0;
+        }
+
+        if let Some(notes) = removed_notes.filter(|notes| notes.len() == deleted) {
+            for note in notes {
+                self.record_cpu_onion_change(track_id, Some(note), None);
+            }
+        } else if let Some((lo, hi)) = removed_range {
+            // 大批量删除：只记 tick 区间，密度按区间局部重建。
+            self.record_cpu_onion_range(lo, hi);
+        } else {
+            self.record_cpu_onion_full();
         }
 
         // 事件区间裁剪到删除前长度（防御越界索引：实际删除数可能小于区间和）；

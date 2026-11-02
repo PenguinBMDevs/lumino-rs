@@ -3,15 +3,18 @@
 //! 方法实现已拆分为同级子模块：
 //! - `automation`：自动化 lane 管理、编辑与导出
 //! - `automation_sync`：lane → `document.control_events` 单一权威同步
+//! - `cpu_onion_dirty`：CPU 洋葱皮脏区元数据（Step 5a，默认关闭）
 //! - `notes`：音符 CRUD、分割、合并、选择框
 //! - `history`：Undo/Redo 历史记录
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use cpu_onion_dirty::CpuOnionDirty;
+
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::automation::AutomationLane;
-use lumino_note_core::history::History;
+use lumino_note_core::history::{History, SnapshotNoteChange};
 use lumino_note_core::midi_types::TempoPoint;
 use lumino_note_core::note::Note;
 
@@ -20,6 +23,7 @@ pub(crate) mod async_commit;
 mod automation;
 mod automation_sync;
 mod construct;
+pub mod cpu_onion_dirty;
 mod history;
 mod note_store_ops;
 mod notes;
@@ -69,6 +73,42 @@ pub struct EditorData {
     /// 洋葱皮跳过范围内时，`stream_onion_skin_instances` 可豁免全量重建上传，
     /// 避免编辑主音轨（最常见热路径，拖动音符每帧触发）导致其他音轨全量重传。
     pub onion_dirty_tracks: Option<HashSet<usize>>,
+    /// CPU 洋葱皮脏区记录开关（默认 `false`）。
+    ///
+    /// 默认后端是 GPU：无条件记录会让 GPU 用户的拖动/批量编辑白付 `Vec` 分配与
+    /// `NoteEvent` 拷贝。由 Host 在切到 CPU 后端时开启、切回 GPU 时关闭并清空
+    /// （见 [`Self::set_cpu_onion_dirty_enabled`]）。
+    pub cpu_onion_dirty_enabled: bool,
+    /// 自上次 CPU 洋葱皮渲染层消费以来的脏区（`None` = 无变化）。
+    ///
+    /// 与 [`Self::note_delta_events`] 互补：后者只覆盖**当前轨**的 GPU 段内增量，
+    /// 本字段覆盖**任意轨**的按值原子变更（含非当前轨，即 CPU 洋葱皮要画的那部分）。
+    /// 记录点见 `editor_data/cpu_onion_dirty.rs` 模块头；批量/整轨替换/区间删除
+    /// 一律记 [`CpuOnionDirty::full`]。
+    pub cpu_onion_dirty: Option<CpuOnionDirty>,
+    /// 自上一笔历史入栈以来的按值变更（undo/redo 时挂到快照上）。
+    ///
+    /// 由 [`Self::record_cpu_onion_change`] 同步积累，与渲染层消费的
+    /// [`Self::cpu_onion_dirty`] 分离——后者每帧被 take，历史回放需要保留到
+    /// 用户撤销那一刻。超过 [`MAX_CPU_ONION_CHANGES`] 时升级为 full。
+    pub(crate) history_pending_changes: Vec<SnapshotNoteChange>,
+    /// 待挂历史的脏 tick 区间（单笔变更数超限时仍有局部范围）。
+    pub(crate) history_pending_ranges: Vec<(u32, u32)>,
+    /// 待挂历史的直接编辑索引区间 `(track, lo, hi)`（闭区间）。
+    pub(crate) history_pending_direct: Vec<(usize, usize, usize)>,
+    /// 待挂历史的变更是否已无法用逐音符/区间表达。
+    pub(crate) history_pending_full: bool,
+    /// undo/redo 回放期间置位：内部写路径不得再污染历史待挂变更。
+    pub(crate) history_replay: bool,
+    /// 直接 `track_notes_mut` 等长编辑的索引提示（当前轨，按记录顺序）。
+    ///
+    /// 这类写路径没有按值 old/new，但索引稳定；CPU 洋葱皮用上一帧文档快照
+    /// 与当前文档按索引差分，避免整份密度金字塔重建。
+    pub(crate) cpu_onion_direct_edits: Vec<(usize, usize)>,
+    /// 索引提示超过上限时改用索引包围盒 `(track, lo, hi)`，仍不整建。
+    pub(crate) cpu_onion_direct_bbox: Option<(usize, usize, usize)>,
+    /// 索引提示超过单点上限，已折叠为包围盒。
+    pub(crate) cpu_onion_direct_overflow: bool,
     /// 音符唯一权威源（独占所有权，2026-08 单一权威源改造）
     ///
     /// 原 `notes` / `track_notes` 冗余层已删除，音符数据只存在于 `document`。
