@@ -33,6 +33,10 @@ mod point_tests;
 #[cfg(test)]
 mod direct_tests;
 
+/// 视频导出（无 depth 变体）绘制前的 cull 契约探针（CPU 等价方案 P0 取证）
+#[cfg(test)]
+mod export_path_tests;
+
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
     /// GPU 音符缓冲区
@@ -121,6 +125,18 @@ impl NoteRenderer {
     /// 获取上次上传的实例数量（用于诊断）
     pub fn last_upload_count(&self) -> u32 {
         self.last_upload_count
+    }
+
+    /// 是否具备 VS 直绘管线（决定绘制前的准备入口，见 `render_pass` 分支）。
+    ///
+    /// - `true`：`prepare_direct`（只写相机 uniform，**不跑 cull**）+ `draw_direct`；
+    /// - `false`：**必须**走 `prepare_pass`（compute cull 写入 indirect 参数）+ `draw`，
+    ///   否则 `draw_indirect` 的参数永不写入，一个音符都不画
+    ///   （取证见 `note_renderer/export_path_tests`）。
+    ///
+    /// 视频导出变体按 `needs_depth=false` 创建，无直绘管线 → 走 cull 路径。
+    pub fn has_direct_pipeline(&self) -> bool {
+        self.direct_pipeline.is_some()
     }
 
     /// 获取可见索引缓冲区的 GPU 字节占用（用于诊断）

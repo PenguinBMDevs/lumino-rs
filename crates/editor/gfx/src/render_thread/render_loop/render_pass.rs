@@ -142,9 +142,23 @@ pub fn execute_render_pass(
             .renderers
             .onion_skin
             .prepare_direct(camera, &ctx.queue);
-    } else {
+    } else if frame.renderers.note.has_direct_pipeline() {
         // 预览层恒直绘（可见占比 ≈ 100%，见上），洋葱皮仍走 cull
         frame.renderers.note.prepare_direct(camera, &ctx.queue);
+        frame
+            .renderers
+            .onion_skin
+            .prepare_pass(encoder, camera, &ctx.queue);
+    } else {
+        // 无直绘管线的音符渲染器（视频导出的 `needs_depth=false` 变体）：
+        // **必须**跑 compute cull。`draw_direct` 在缺少直绘管线时会回退到
+        // `draw_with_pipeline` → `draw_indirect`，而 indirect 参数只由 cull 写入；
+        // 若此处沿用 `prepare_direct`（只写相机 uniform），参数恒为 0 ⇒
+        // 整帧一个音符都不画（取证：`note_renderer/export_path_tests`）。
+        frame
+            .renderers
+            .note
+            .prepare_pass(encoder, camera, &ctx.queue);
         frame
             .renderers
             .onion_skin
