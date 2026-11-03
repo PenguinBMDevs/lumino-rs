@@ -90,8 +90,14 @@ define_icons! {
     (PaintBucket, "../../../../../resources/icons/toolbar/paint-bucket.svg"),
     // 「音符画工具箱」入口图标（工具栏开关按钮，固定不随激活工具切换）
     (DrawToolbox, "../../../../../resources/icons/toolbar/draw-toolbox.svg"),
-    // 颜料桶右侧的「绘制工具选择面板」触发小三角
-    (ToolPanelCaret, "../../../../../resources/icons/toolbar/caret-down.svg"),
+    // 洋葱皮音轨的「洋葱」图形（工具栏全局显示开关的主图标）
+    (OnionSkin, "../../../../../resources/icons/toolbar/onion-skin.svg"),
+    // 工具栏**分裂式开关**右侧的「下拉三角」：视觉上标出"此处可展开选项"。
+    //
+    // 原名 `ToolPanelCaret`（当年挂在颜料桶右侧触发旧「绘制工具选择面板」）：该面板
+    // 已迁到音符画悬浮工具条，本资源自那以后无调用点。现由洋葱皮全局开关重新启用，
+    // 名字收敛为与语义无关的 `CaretDown`——后续任何分裂按钮都可复用它。
+    (CaretDown, "../../../../../resources/icons/toolbar/caret-down.svg"),
     // 悬浮条**右端「粗细」按钮**的图标：上下两条粗细不同的横线。
     // 文件沿用它原本的名字 `stroke-settings.svg`（SVG 术语里 stroke-width 就是线宽/粗细）；
     // 该图标此前从未被任何视图渲染过（旧「绘制工具下拉」的描边设置条目胎死腹中），本轮激活。

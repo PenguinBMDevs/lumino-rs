@@ -20,6 +20,8 @@ impl Toolbar {
             shift_pressed: false,
             custom_precision_dialog: CustomPrecisionDialog::default(),
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
+            // 洋葱皮默认**关闭**：其它音轨的幽灵音符不显示，需用户显式打开
+            onion_skin_enabled: false,
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             ppq_edit_error: None,
@@ -221,6 +223,19 @@ impl Toolbar {
                     }
                 };
                 tracing::debug!("工具栏: 自动滚动模式切换为 {:?}", self.auto_scroll_mode);
+            }
+            Event::ToggleOnionSkin => {
+                // 纯开/关（默认关）：不碰当前工具、填充态与任何浮层状态。
+                // 渲染侧（GPU 常驻实例流 / CPU 叠加层）读同一字段作为闸门。
+                self.onion_skin_enabled = !self.onion_skin_enabled;
+                tracing::debug!(
+                    "工具栏: 洋葱皮显示切换为 {}",
+                    if self.onion_skin_enabled {
+                        "开"
+                    } else {
+                        "关"
+                    }
+                );
             }
             Event::ToggleLoop => {
                 self.is_looping = !self.is_looping;

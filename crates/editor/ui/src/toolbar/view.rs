@@ -9,6 +9,7 @@
 mod controls;
 pub(crate) mod curve_tool_group;
 mod detection_dashboard;
+mod onion_skin;
 pub(crate) mod snap_icon;
 mod status;
 mod toolbar_view;

@@ -145,6 +145,11 @@ impl Event {
         Message::Toolbar(Self::ToggleLoop)
     }
 
+    /// 构造"洋葱皮全局显示开关"的工具栏消息（默认关闭，见 `Toolbar::onion_skin_enabled`）
+    pub const fn toggle_onion_skin() -> Message {
+        Message::Toolbar(Self::ToggleOnionSkin)
+    }
+
     /// 构造"开始拖拽调整高度"的工具栏消息
     pub fn resize_drag_started() -> Message {
         Message::Toolbar(Self::ResizeDragStarted(Point::new(0.0, 0.0)))

@@ -16,6 +16,8 @@ mod resize;
 pub(crate) mod shape_dropdown;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_onion_skin;
 pub(crate) mod thickness_dropdown;
 pub mod types;
 mod update;
@@ -97,6 +99,11 @@ pub struct Toolbar {
     pub custom_precision_dialog: CustomPrecisionDialog,
     /// 自动滚动模式
     pub auto_scroll_mode: lumino_core::storage::config::AutoScrollMode,
+    /// **洋葱皮全局显示开关**（`false` = 不显示其它音轨的幽灵音符，**默认关闭**）
+    ///
+    /// 唯一真源：工具栏右侧「洋葱皮」按钮（`view/onion_skin.rs`）只改这里；
+    /// GPU 常驻实例流与 CPU 叠加层读同一字段，不另存第二份开关。
+    pub onion_skin_enabled: bool,
     /// PPQ 编辑模式（true = 正在编辑）
     pub ppq_editing: bool,
     /// PPQ 编辑缓冲区（允许整数表达式，如 `480*2`）

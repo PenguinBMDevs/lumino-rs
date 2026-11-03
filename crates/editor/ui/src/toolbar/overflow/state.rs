@@ -19,6 +19,8 @@ pub enum ToolbarGroup {
     Dashboard,
     /// 工具选择区（指针/铅笔/橡皮/曲线/量化/变速/翻转/分割/合并/移调/连奏/精度）
     Tools,
+    /// 洋葱皮全局显示开关（其它音轨的幽灵音符；右侧，默认关闭）
+    OnionSkin,
     /// 自动滚动模式
     AutoScroll,
     /// 协作按钮
@@ -34,6 +36,7 @@ impl ToolbarGroup {
         ToolbarGroup::UndoRedo,
         ToolbarGroup::Dashboard,
         ToolbarGroup::Tools,
+        ToolbarGroup::OnionSkin,
         ToolbarGroup::AutoScroll,
         ToolbarGroup::Collaboration,
     ];
@@ -49,13 +52,22 @@ impl ToolbarGroup {
     ];
 
     /// 右侧分组（靠右排列）
-    pub const RIGHT: &[ToolbarGroup] = &[ToolbarGroup::AutoScroll, ToolbarGroup::Collaboration];
+    ///
+    /// 洋葱皮开关排在最左：它属于"卷帘显示选项"，与自动滚动同族；
+    /// 协作是应用级入口，固定压在最右。
+    pub const RIGHT: &[ToolbarGroup] = &[
+        ToolbarGroup::OnionSkin,
+        ToolbarGroup::AutoScroll,
+        ToolbarGroup::Collaboration,
+    ];
 
     /// 分组收起优先级（数字越小越优先被折叠）
     pub fn collapse_priority(self) -> usize {
         match self {
             ToolbarGroup::Collaboration => 0,
-            ToolbarGroup::AutoScroll => 1,
+            // 与 AutoScroll 同级：两个都是"显示开关"。同值时稳定排序按 [`Self::ORDER`]
+            // 先后决定，洋葱皮在前，故先被折叠——新功能让位给既有自动滚动。
+            ToolbarGroup::OnionSkin | ToolbarGroup::AutoScroll => 1,
             ToolbarGroup::Dashboard => 2,
             ToolbarGroup::Tools => 3,
             ToolbarGroup::Loop => 4,
@@ -74,6 +86,7 @@ impl ToolbarGroup {
             ToolbarGroup::UndoRedo => 96.0,
             ToolbarGroup::Dashboard => 201.0,
             ToolbarGroup::Tools => 568.0,
+            ToolbarGroup::OnionSkin => 56.0,
             ToolbarGroup::AutoScroll => 50.0,
             ToolbarGroup::Collaboration => 50.0,
         }
@@ -88,6 +101,7 @@ impl ToolbarGroup {
             ToolbarGroup::UndoRedo => 16.0,
             ToolbarGroup::Dashboard => 16.0,
             ToolbarGroup::Tools => 0.0,
+            ToolbarGroup::OnionSkin => 16.0,
             ToolbarGroup::AutoScroll => 16.0,
             ToolbarGroup::Collaboration => 0.0,
         }

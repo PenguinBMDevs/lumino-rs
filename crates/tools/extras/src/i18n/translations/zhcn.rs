@@ -52,6 +52,8 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     auto_scroll_scrolling: "自动滚动: 滚动",
     auto_scroll_off: "自动滚动: 关闭",
     auto_scroll_tooltip: "切换自动滚动模式",
+    onion_skin: "洋葱皮",
+    onion_skin_tooltip: "切换洋葱皮显示",
     collaboration_label: "多人协作",
     collaboration_tooltip: "打开协作面板",
     toolbar_more: "更多工具",

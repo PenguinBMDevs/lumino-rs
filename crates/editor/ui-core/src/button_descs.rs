@@ -68,6 +68,8 @@ pub enum ButtonId {
     Loop,
     /// 自动滚动开关
     AutoScroll,
+    /// 洋葱皮全局显示开关（其它音轨的幽灵音符）
+    OnionSkin,
     /// 协作面板
     Collaboration,
     /// 更多工具菜单
@@ -107,6 +109,7 @@ fn button_name(id: ButtonId, t: &MainTranslations) -> &'static str {
         // 动态按钮使用中性角色名，保证 i18n 下稳定
         ButtonId::Loop => t.toggle_loop_tooltip,
         ButtonId::AutoScroll => t.auto_scroll_tooltip,
+        ButtonId::OnionSkin => t.onion_skin,
         ButtonId::Collaboration => t.collaboration_tooltip,
         ButtonId::More => t.toolbar_more,
         ButtonId::ImageToMidi => t.tool_image_to_midi,
@@ -149,6 +152,10 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("Redo", "重做已撤销操作"),
     ("Loop", "打开循环播放区域"),
     ("AutoScroll", "切换自动滚动模式"),
+    (
+        "OnionSkin",
+        "切换洋葱皮显示：显示其它音轨的幽灵音符（默认关闭）",
+    ),
     ("Collaboration", "打开多人协作面板"),
     ("More", "打开更多工具菜单"),
     ("ImageToMidi", "图片转MIDI（功能开发中）"),
@@ -202,6 +209,10 @@ const DESC_EN: &[(&str, &str)] = &[
     ("Redo", "Redo undone action"),
     ("Loop", "Toggle loop region"),
     ("AutoScroll", "Toggle auto-scroll"),
+    (
+        "OnionSkin",
+        "Toggle onion skin: ghost notes of other tracks (off by default)",
+    ),
     ("Collaboration", "Open realtime collaboration panel"),
     ("More", "Open more tools menu"),
     ("ImageToMidi", "Image to MIDI (coming soon)"),
@@ -257,6 +268,7 @@ impl ButtonId {
             ButtonId::Redo => "Redo",
             ButtonId::Loop => "Loop",
             ButtonId::AutoScroll => "AutoScroll",
+            ButtonId::OnionSkin => "OnionSkin",
             ButtonId::Collaboration => "Collaboration",
             ButtonId::More => "More",
             ButtonId::ImageToMidi => "ImageToMidi",

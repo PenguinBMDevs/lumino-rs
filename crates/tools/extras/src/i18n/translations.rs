@@ -114,6 +114,13 @@ pub struct MainTranslations {
     pub auto_scroll_off: &'static str,
     /// 切换自动滚动模式提示
     pub auto_scroll_tooltip: &'static str,
+    /// 洋葱皮（其它音轨幽灵音符的全局显示开关；按钮名 + 悬停描述的角色名）
+    pub onion_skin: &'static str,
+    /// 切换洋葱皮显示提示
+    ///
+    /// 与 [`Self::onion_skin`] 分开：按钮名用于底部状态栏 `按钮名 - 说明`，
+    /// 悬停提示用于 tooltip；两者语调不同（名词 / 祈使句），复用会串味。
+    pub onion_skin_tooltip: &'static str,
     /// 多人协作标签
     pub collaboration_label: &'static str,
     /// 打开协作面板提示

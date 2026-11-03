@@ -65,6 +65,15 @@ pub enum Event {
     OpenMemoryMonitorDialog,
     /// 自动滚动模式切换
     AutoScrollModeChanged,
+    /// 切换「洋葱皮」全局显示开关（工具栏右侧单独按钮触发；**默认关闭**）
+    ///
+    /// 语义：`false` = 不显示其它音轨的幽灵音符（默认），`true` = 显示。
+    /// 开关状态唯一真源 = `Toolbar::onion_skin_enabled`——渲染侧（GPU 常驻实例流 /
+    /// CPU 叠加层）读同一字段，不另存第二份状态。
+    ///
+    /// ⚠️ 与「洋葱皮选项」分离：按钮右侧预留的下拉三角后续会发**选项类**事件，
+    /// 本事件只负责开/关，不做任何"模式/范围"切换。
+    ToggleOnionSkin,
     /// 循环播放切换
     ToggleLoop,
     /// 开始拖拽调整高度

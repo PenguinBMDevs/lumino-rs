@@ -52,6 +52,8 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     auto_scroll_scrolling: "Auto-Scroll: Scroll",
     auto_scroll_off: "Auto-Scroll: Off",
     auto_scroll_tooltip: "Toggle Auto-Scroll Mode",
+    onion_skin: "Onion Skin",
+    onion_skin_tooltip: "Toggle Onion Skin Display",
     collaboration_label: "Collaborate",
     collaboration_tooltip: "Open Collaboration Panel",
     toolbar_more: "More Tools",

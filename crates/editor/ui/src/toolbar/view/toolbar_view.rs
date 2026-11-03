@@ -17,7 +17,7 @@ impl Toolbar {
     /// - 录制按钮（record.rs）
     /// - 播放控制、循环、工具、调整手柄、撤销/重做（controls.rs）
     /// - 精度选择器已并入工具选择区框内（controls.rs，内容定义于 status.rs）
-    /// - 自动滚动、协作（status.rs）
+    /// - 洋葱皮全局显示开关、自动滚动、协作（onion_skin.rs / status.rs）
     /// - 检测仪表盘（detection_dashboard.rs）
     ///
     /// 新增 `available_width` 用于自动折叠：宽度不足时，低优先级分组会被收到
@@ -223,6 +223,9 @@ impl Toolbar {
                 language,
                 arrangement_mode,
             ),
+            ToolbarGroup::OnionSkin => {
+                self.render_onion_skin_button(content_height, palette, t, window)
+            }
             ToolbarGroup::AutoScroll => {
                 self.render_auto_scroll_button(content_height, palette, t, window)
             }
