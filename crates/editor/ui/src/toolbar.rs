@@ -18,6 +18,8 @@ pub(crate) mod shape_dropdown;
 mod tests;
 #[cfg(test)]
 mod tests_onion_skin;
+#[cfg(test)]
+mod tests_overflow;
 pub(crate) mod thickness_dropdown;
 pub mod types;
 mod update;

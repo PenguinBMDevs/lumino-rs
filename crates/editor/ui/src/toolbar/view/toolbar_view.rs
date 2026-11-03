@@ -1,12 +1,18 @@
 //! 工具栏主视图函数
 //!
 //! 组装各子模块提供的渲染方法，构建完整的工具栏布局。
-//! 支持根据可用宽度自动折叠低优先级分组到“更多”按钮的溢出菜单。
+//!
+//! # 折叠与「更多」按钮
+//!
+//! 布局拆成两段：**内容区**（左侧分组 + 让位空格 + 右侧分组）与**「更多」按钮**。
+//! 内容区宽度不足时由 `compute_overflow` 提前折掉条目/分组（见
+//! `toolbar/overflow/interaction.rs`），并为其加裁剪兜底；「更多」按钮在裁剪容器
+//! **之外**、以固定宽度渲染——它的尺寸不参与压缩，也永远不会被内容顶出可视区。
 
-use iced_core::Alignment;
-use iced_widget::{Column, Row, container, space};
+use iced_core::{Alignment, Length};
+use iced_widget::{Column, Row, container, row, space};
 
-use crate::toolbar::overflow::ToolbarGroup;
+use crate::toolbar::overflow::{MORE_BUTTON_WIDTH, MORE_GAP, ToolItem, ToolbarGroup};
 use crate::toolbar::{ButtonId, RESIZE_HANDLE_HEIGHT, Toolbar, ToolbarPerfContext};
 use crate::{Element, Theme, window};
 
@@ -21,7 +27,7 @@ impl Toolbar {
     /// - 检测仪表盘（detection_dashboard.rs）
     ///
     /// 新增 `available_width` 用于自动折叠：宽度不足时，低优先级分组会被收到
-    /// “更多”(⋮) 按钮的弹出菜单中。
+    /// “更多”(⋮) 按钮的弹出菜单中；**主工具栏内部**则按条目逐个折叠。
     pub fn toolbar_view<'a>(
         &'a self,
         window: &'a window::Window,
@@ -37,9 +43,10 @@ impl Toolbar {
         // 计算内容区域高度（总高度减去手柄高度）
         let content_height = self.height - RESIZE_HANDLE_HEIGHT;
 
-        let (visible_groups, hidden_groups) =
-            self.compute_overflow_groups(available_width, arrangement_mode);
-        let has_overflow = !hidden_groups.is_empty();
+        let overflow = self.compute_overflow(available_width, arrangement_mode);
+        let has_overflow = overflow.has_overflow();
+        let visible_groups = &overflow.visible_groups;
+        let visible_tools = &overflow.visible_tools;
 
         let mut toolbar_elements: Vec<Element<'a>> = Vec::new();
         let right_visible = ToolbarGroup::RIGHT
@@ -49,7 +56,7 @@ impl Toolbar {
         // 左侧分组：Record / Playback / Loop / UndoRedo / Dashboard / Tools
         self.push_left_groups(
             &mut toolbar_elements,
-            &visible_groups,
+            visible_groups,
             right_visible || has_overflow,
             content_height,
             palette,
@@ -59,40 +66,48 @@ impl Toolbar {
             language,
             perf,
             arrangement_mode,
+            visible_tools,
         );
 
-        // 右侧分组：AutoScroll / Collaboration
+        // 右侧分组：OnionSkin / AutoScroll / Collaboration
         self.push_right_groups(
             &mut toolbar_elements,
-            &visible_groups,
+            visible_groups,
             content_height,
             palette,
             t,
             window,
             arrangement_mode,
+            visible_tools,
         );
 
-        // 更多按钮：只要存在隐藏分组就显示
+        // 内容区：折叠时加裁剪兜底（估算偏小也不会把「更多」推出可视区）
+        let content_area =
+            container(Row::with_children(toolbar_elements).align_y(Alignment::Center))
+                .width(Length::Fill)
+                .clip(has_overflow);
+
+        // 「更多」按钮：固定宽度，独立于内容区（不得被压缩/裁剪）
+        let mut bar_items: Vec<Element<'a>> = vec![content_area.into()];
         if has_overflow {
-            toolbar_elements.push(space().width(16).into());
-            toolbar_elements.push(self.render_more_button(content_height, palette, t, window));
+            bar_items.push(space().width(MORE_GAP).into());
+            bar_items.push(self.render_more_button(content_height, palette, t, window));
         }
 
-        let toolbar_content =
-            container(Row::with_children(toolbar_elements).align_y(Alignment::Center))
-                .width(iced_widget::core::Length::Fill)
-                .height(iced_widget::core::Length::Fixed(content_height))
-                .padding([8, 16])
-                .style(move |_theme: &Theme| {
-                    container::Style::default().background(palette.background.weakest.color)
-                });
+        let toolbar_content = container(row(bar_items).align_y(Alignment::Center))
+            .width(Length::Fill)
+            .height(Length::Fixed(content_height))
+            .padding([8, 16])
+            .style(move |_theme: &Theme| {
+                container::Style::default().background(palette.background.weakest.color)
+            });
 
         let resize_handle = self.render_resize_handle(palette);
 
         // 组合工具栏内容和调整手柄
         Column::with_children(vec![toolbar_content.into(), resize_handle])
-            .width(iced_widget::core::Length::Fill)
-            .height(iced_widget::core::Length::Fixed(self.height))
+            .width(Length::Fill)
+            .height(Length::Fixed(self.height))
             .into()
     }
 
@@ -111,6 +126,7 @@ impl Toolbar {
         language: lumino_extras::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
         arrangement_mode: bool,
+        visible_tools: &[ToolItem],
     ) {
         let left_groups = ToolbarGroup::LEFT;
         for (i, group) in left_groups.iter().enumerate() {
@@ -128,13 +144,14 @@ impl Toolbar {
                 language,
                 perf,
                 arrangement_mode,
+                visible_tools,
             ));
 
             let is_last_left = left_groups[i + 1..]
                 .iter()
                 .all(|g| !visible_groups.contains(g));
             if is_last_left && has_right_or_more {
-                elements.push(space().width(iced_widget::core::Length::Fill).into());
+                elements.push(space().width(Length::Fill).into());
             } else if !is_last_left {
                 elements.push(space().width(group.spacing_after()).into());
             }
@@ -152,6 +169,7 @@ impl Toolbar {
         t: &'static lumino_extras::i18n::MainTranslations,
         window: &'a window::Window,
         arrangement_mode: bool,
+        visible_tools: &[ToolItem],
     ) {
         let right_groups = ToolbarGroup::RIGHT;
         for (i, group) in right_groups.iter().enumerate() {
@@ -174,6 +192,7 @@ impl Toolbar {
                     tempo_points: &[],
                 },
                 arrangement_mode,
+                visible_tools,
             ));
 
             if i < right_groups.len() - 1 {
@@ -195,6 +214,7 @@ impl Toolbar {
         language: lumino_extras::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
         arrangement_mode: bool,
+        visible_tools: &[ToolItem],
     ) -> Element<'a> {
         match group {
             ToolbarGroup::Record => {
@@ -222,6 +242,7 @@ impl Toolbar {
                 window,
                 language,
                 arrangement_mode,
+                visible_tools,
             ),
             ToolbarGroup::OnionSkin => {
                 self.render_onion_skin_button(content_height, palette, t, window)
@@ -236,6 +257,10 @@ impl Toolbar {
     }
 
     /// 渲染“更多”按钮（触发溢出菜单）
+    ///
+    /// ⚠️ 宽度**固定**为 [`MORE_BUTTON_WIDTH`]（= 普通工具按钮宽）：需求是
+    /// "更多按钮永远保持大小不变、不被裁掉"，所以它既不吃 `Fill`、也不参与压缩，
+    /// 由 `compute_overflow` 在预算里预先留好它的位置。
     fn render_more_button<'a>(
         &'a self,
         content_height: f32,
@@ -254,6 +279,7 @@ impl Toolbar {
             window,
             Some(Event::button_hovered(Some(ButtonId::More))),
         ))
+        .width(Length::Fixed(MORE_BUTTON_WIDTH))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .style(move |_theme: &Theme| {

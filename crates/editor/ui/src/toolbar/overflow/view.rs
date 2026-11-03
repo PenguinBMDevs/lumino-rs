@@ -6,7 +6,7 @@ use iced_core::{Alignment, Color, Length, Padding};
 use iced_widget::{Space, button, column, container, mouse_area, row, tooltip};
 
 use crate::resources::icon;
-use crate::toolbar::overflow::state::{OverflowMenuItem, ToolbarGroup};
+use crate::toolbar::overflow::state::{OverflowMenuItem, ToolbarOverflow};
 use crate::toolbar::{Event, Toolbar};
 use crate::{Element, Theme};
 
@@ -28,22 +28,20 @@ const TOOLTIP_TEXT_COLOR: Color = Color::from_rgba(0.95, 0.95, 0.95, 1.0);
 
 impl Toolbar {
     /// 渲染溢出菜单面板
+    ///
+    /// 菜单内容 = 折叠结果里**所有可操作的缺席者**：整组折叠的分组条目 +
+    /// 主工具栏被逐项折掉的按钮（见 [`Toolbar::overflow_menu_items`]）。
     pub fn render_overflow_menu<'a>(
         &'a self,
-        hidden_groups: &[ToolbarGroup],
+        overflow: &ToolbarOverflow,
         has_selection: bool,
         language: lumino_extras::i18n::Language,
         panel_background: Color,
         theme: &'a Theme,
         arrangement_mode: bool,
     ) -> Element<'a> {
-        let buttons = self.build_overflow_buttons(
-            hidden_groups,
-            has_selection,
-            language,
-            theme,
-            arrangement_mode,
-        );
+        let buttons =
+            self.build_overflow_buttons(overflow, has_selection, language, theme, arrangement_mode);
         let (grid, panel_width, panel_height) = Self::build_overflow_panel(buttons);
 
         let panel = container(grid)
@@ -62,18 +60,17 @@ impl Toolbar {
         panel.into()
     }
 
-    /// 收集隐藏分组的按钮列表
+    /// 收集折叠结果的按钮列表
     fn build_overflow_buttons<'a>(
         &'a self,
-        hidden_groups: &[ToolbarGroup],
+        overflow: &ToolbarOverflow,
         has_selection: bool,
         language: lumino_extras::i18n::Language,
         theme: &'a Theme,
         arrangement_mode: bool,
     ) -> Vec<Element<'a>> {
-        hidden_groups
-            .iter()
-            .flat_map(|g| self.group_overflow_items(*g, has_selection, language, arrangement_mode))
+        self.overflow_menu_items(overflow, has_selection, language, arrangement_mode)
+            .into_iter()
             .map(|item| overflow_menu_button(item, theme))
             .collect()
     }

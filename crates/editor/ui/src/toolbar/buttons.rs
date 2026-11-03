@@ -1,12 +1,37 @@
 //! 工具栏按钮辅助函数
 //!
 //! 提供带悬浮提示（tooltip）的工具栏按钮工厂函数。
+//!
+//! # 尺寸契约（供 `overflow` 的宽度预算使用）
+//!
+//! 工具栏折叠是按**预估宽度**决策的（渲染前拿不到真实布局），所以按钮的几何必须
+//! 有唯一来源：工厂函数只从下面的常量取图标尺寸与内边距，`overflow` 只从
+//! [`TOOL_SELECTOR_WIDTH`] / [`TOOL_BUTTON_WIDTH`] 取按钮宽度。
+//! **改按钮内边距或图标尺寸 = 同时改预算**，否则会出现"要么白折叠、要么溢出被裁"。
 
 use crate::resources::icon;
 use crate::toolbar::{Event, Tool};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 use iced_widget::button;
+
+/// 工具选择器图标边长（`tool_selector` / `tool_selector_custom`）
+const TOOL_SELECTOR_ICON: u32 = 17;
+/// 普通工具按钮图标边长（`tool_button` / `flip_button`）
+const TOOL_BUTTON_ICON: u32 = 20;
+/// 以上两类按钮的统一内边距（四边相同）
+const TOOL_BUTTON_PADDING: u16 = 4;
+
+/// 工具选择器按钮的固定宽度（图标 + 左右内边距）
+///
+/// 预算口径：`tool_selector` 的宽度**必须**等于本值。
+pub const TOOL_SELECTOR_WIDTH: f32 = TOOL_SELECTOR_ICON as f32 + (TOOL_BUTTON_PADDING as f32) * 2.0;
+
+/// 普通工具按钮的固定宽度（图标 + 左右内边距）
+///
+/// 预算口径：`tool_button` / `flip_button` 的宽度**必须**等于本值；
+/// 「更多」按钮也用 `tool_button`，故其宽度同源。
+pub const TOOL_BUTTON_WIDTH: f32 = TOOL_BUTTON_ICON as f32 + (TOOL_BUTTON_PADDING as f32) * 2.0;
 
 /// 工具按钮
 pub fn tool_button<'a>(
@@ -19,8 +44,8 @@ pub fn tool_button<'a>(
     let palette = window.theme.extended_palette();
     let btn = button(icon::view_with_size_and_theme(
         icon_enum,
-        20,
-        20,
+        TOOL_BUTTON_ICON,
+        TOOL_BUTTON_ICON,
         Some(&window.theme),
     ))
     .on_press(on_press)
@@ -40,7 +65,7 @@ pub fn tool_button<'a>(
         }
         .with_background(bg)
     })
-    .padding(4);
+    .padding(TOOL_BUTTON_PADDING);
 
     let btn = apply_hover(btn, on_hover_msg);
 
@@ -59,8 +84,8 @@ pub fn flip_button<'a>(
     let palette = window.theme.extended_palette();
     let btn = button(icon::view_with_size_and_theme(
         icon_enum,
-        20,
-        20,
+        TOOL_BUTTON_ICON,
+        TOOL_BUTTON_ICON,
         Some(&window.theme),
     ))
     .style(move |_theme: &Theme, status| {
@@ -81,7 +106,7 @@ pub fn flip_button<'a>(
         }
         .with_background(bg)
     })
-    .padding(4);
+    .padding(TOOL_BUTTON_PADDING);
 
     let btn = if enabled { btn.on_press(on_press) } else { btn };
 
@@ -126,8 +151,8 @@ pub fn tool_selector_custom<'a>(
 
     let btn = button(icon::view_with_size_and_theme(
         icon_enum,
-        17,
-        17,
+        TOOL_SELECTOR_ICON,
+        TOOL_SELECTOR_ICON,
         Some(&window.theme),
     ))
     .on_press(on_press)
@@ -150,7 +175,7 @@ pub fn tool_selector_custom<'a>(
         }
         .with_background(bg)
     })
-    .padding(iced_core::Padding::new(4.0));
+    .padding(iced_core::Padding::new(TOOL_BUTTON_PADDING as f32));
 
     let btn = apply_hover(btn, on_hover_msg);
 

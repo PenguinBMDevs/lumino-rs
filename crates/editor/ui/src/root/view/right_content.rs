@@ -55,12 +55,13 @@ fn with_toolbar_overlay<'a>(
 
     // 工具栏「更多工具」溢出菜单
     if root.toolbar.overflow_menu_open {
-        let (_, hidden) = root
+        // 与工具栏渲染同一份折叠结果（纯函数，同宽度必然同结果）
+        let overflow = root
             .toolbar
-            .compute_overflow_groups(available_width, arrangement_mode);
-        if !hidden.is_empty() {
+            .compute_overflow(available_width, arrangement_mode);
+        if overflow.has_overflow() {
             let menu = root.toolbar.render_overflow_menu(
-                &hidden,
+                &overflow,
                 has_selection,
                 root.settings.display.language,
                 panel_background,

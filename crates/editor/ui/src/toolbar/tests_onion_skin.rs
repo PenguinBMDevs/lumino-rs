@@ -1,7 +1,8 @@
 //! 洋葱皮全局开关的工具栏行为测试（默认值 / 开合 / 分组可见性）
 //!
 //! 视图层（`view/onion_skin.rs`）只负责把点击翻成 `Event::ToggleOnionSkin`；
-//! 可测语义全部收敛在 `Toolbar::update` 与溢出分组计算里，故测试落在这里。
+//! 可测语义全部收敛在 `Toolbar::update` 与宽度预算（`compute_overflow`）里，
+//! 故测试落在这里。
 
 use super::*;
 use crate::toolbar::overflow::ToolbarGroup;
@@ -58,18 +59,20 @@ fn test_toggle_onion_skin_leaves_tool_state_untouched() {
 fn test_onion_skin_group_visible_only_in_piano_roll() {
     let toolbar = Toolbar::new();
 
-    let (visible, hidden) = toolbar.compute_overflow_groups(4000.0, false);
+    let piano_roll = toolbar.compute_overflow(4000.0, false);
     assert!(
-        visible.contains(&ToolbarGroup::OnionSkin),
+        piano_roll.visible_groups.contains(&ToolbarGroup::OnionSkin),
         "钢琴卷帘工具栏应包含洋葱皮开关分组"
     );
-    assert!(hidden.is_empty(), "宽度充足时不应折叠任何分组");
+    assert!(!piano_roll.has_overflow(), "宽度充足时不应折叠任何内容");
 
-    let onion = visible
+    let onion = piano_roll
+        .visible_groups
         .iter()
         .position(|group| *group == ToolbarGroup::OnionSkin)
         .expect("可见分组里应有洋葱皮");
-    let auto_scroll = visible
+    let auto_scroll = piano_roll
+        .visible_groups
         .iter()
         .position(|group| *group == ToolbarGroup::AutoScroll)
         .expect("可见分组里应有自动滚动");
@@ -78,40 +81,43 @@ fn test_onion_skin_group_visible_only_in_piano_roll() {
         "洋葱皮开关应排在自动滚动左侧（同为显示开关，卷帘选项靠内）"
     );
 
-    let (visible_arrangement, hidden_arrangement) = toolbar.compute_overflow_groups(4000.0, true);
+    let arrangement = toolbar.compute_overflow(4000.0, true);
     assert!(
-        !visible_arrangement.contains(&ToolbarGroup::OnionSkin),
+        !arrangement
+            .visible_groups
+            .contains(&ToolbarGroup::OnionSkin),
         "工程走带模式不应出现洋葱皮开关"
     );
     assert!(
-        hidden_arrangement.is_empty(),
+        !arrangement.hidden_groups.contains(&ToolbarGroup::OnionSkin),
         "按模式排除的分组不得进入溢出菜单"
     );
 }
 
-/// 宽度不足时洋葱皮先被折叠：与自动滚动同为"显示开关"优先级，但 ORDER 在前，
-/// 稳定排序决定它先让位（新功能不抢既有按钮的常驻位置）。
+/// 洋葱皮与自动滚动同为"显示开关"优先级，但 ORDER 在前：窄窗时洋葱皮先让位。
+///
+/// 用"最大仍被折叠的宽度"作判据，避免把某一条像素宽度写死在测试里
+/// （宽度常量改动不该让行为测试变红，只有**顺序**变化才该变红）。
+fn collapse_threshold(toolbar: &Toolbar, group: ToolbarGroup) -> Option<u32> {
+    (320..=2400).rev().find(|width| {
+        toolbar
+            .compute_overflow(*width as f32, false)
+            .hidden_groups
+            .contains(&group)
+    })
+}
+
 #[test]
 fn test_onion_skin_collapses_before_auto_scroll() {
     let toolbar = Toolbar::new();
 
-    let total: f32 = ToolbarGroup::ORDER
-        .iter()
-        .map(|group| group.width() + group.spacing_after())
-        .sum();
-    // 恰好容得下"除洋葱皮以外"的全部分组
-    let available =
-        total - (ToolbarGroup::OnionSkin.width() + ToolbarGroup::OnionSkin.spacing_after());
+    let onion =
+        collapse_threshold(&toolbar, ToolbarGroup::OnionSkin).expect("足够窄时洋葱皮开关应被折叠");
+    let auto_scroll =
+        collapse_threshold(&toolbar, ToolbarGroup::AutoScroll).expect("足够窄时自动滚动应被折叠");
 
-    let (visible, hidden) = toolbar.compute_overflow_groups(available, false);
     assert!(
-        hidden.contains(&ToolbarGroup::OnionSkin),
-        "宽度不足时洋葱皮应先被折叠到溢出菜单"
+        onion >= auto_scroll,
+        "洋葱皮应先于自动滚动折叠（onion@{onion} 应不窄于 auto@{auto_scroll}）"
     );
-    assert!(
-        !hidden.contains(&ToolbarGroup::AutoScroll),
-        "自动滚动与洋葱皮同优先级但 ORDER 靠后，应晚于洋葱皮折叠"
-    );
-    assert!(!visible.contains(&ToolbarGroup::OnionSkin));
-    assert!(visible.contains(&ToolbarGroup::AutoScroll));
 }
