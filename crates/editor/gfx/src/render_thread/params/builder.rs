@@ -66,6 +66,7 @@ pub struct RenderParamsBuilder {
     vs_cull_mode: bool,
     cpu_onion_frame: Option<crate::CpuOnionFrame>,
     cpu_onion_active: bool,
+    onion_visible: bool,
 }
 
 impl RenderParamsBuilder {
@@ -295,6 +296,15 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置洋葱皮全局开关（默认 `false`，语义见 [`RenderParams::onion_visible`]）。
+    ///
+    /// 只闸渲染通道里的 hires 贴图洋葱皮叠加层；GPU 实例层由
+    /// `OnionSkinStreamMsg::SetViewState` 的 `onion_visible` 独立控制。
+    pub fn onion_visible(mut self, visible: bool) -> Self {
+        self.onion_visible = visible;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -357,6 +367,7 @@ impl RenderParamsBuilder {
             vs_cull_mode: self.vs_cull_mode,
             cpu_onion_frame: self.cpu_onion_frame,
             cpu_onion_active: self.cpu_onion_active,
+            onion_visible: self.onion_visible,
         }
     }
 }

@@ -243,10 +243,15 @@ pub fn execute_render_pass(
 
         // 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）
         //
+        // 洋葱皮全局开关关闭（`!params.onion_visible`）时整块跳过：高精度贴图
+        // 同样是「其它音轨的幽灵音符」，只藏 GPU 实例层会留下一份幽灵贴图
+        // （用户要求「关闭就彻底关闭」）。贴图资源不卸载——关闭只是不画。
+        //
         // CPU 洋葱皮后端（`cpu_onion_active`）跳过本块：非当前轨的洋葱皮由 CPU
         // 透明叠加层负责，hires 贴图再叠一层会**双重绘制**（互相遮挡、白付采样），
         // 且该叠加层是半废稿（Step 4/后续卡片整体改造）。默认 `false` → 行为不变。
-        if !params.cpu_onion_active
+        if params.onion_visible
+            && !params.cpu_onion_active
             && let Some(waterfall) = frame.texture_waterfall_renderer.as_ref()
         {
             let has_depth = depth_view.is_some();

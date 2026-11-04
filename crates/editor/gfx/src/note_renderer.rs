@@ -160,17 +160,26 @@ impl NoteRenderer {
         )
     }
 
-    /// 更新视图状态（当前音轨 + 静音位图）
+    /// 更新视图状态（当前音轨 + 洋葱皮开关 + 静音位图）
     ///
     /// 统一全量渲染（2026-08-06）：主音轨 = 洋葱皮 buffer 中 `current_track`
-    /// 编码（track_idx+1）对应的段。切轨/静音变化只更新本 uniform，
-    /// **GPU 音符数据零重传**（颜色/深度由 shader 动态判定）。
+    /// 编码（track_idx+1）对应的段。切轨/静音/洋葱皮开关变化只更新本 uniform，
+    /// **GPU 音符数据零重传**（颜色/深度/可见性由 shader 动态判定）。
     ///
     /// `current_track` 为 track_idx+1 编码（0 = 无主音轨），
-    /// `muted_tracks` 为静音音轨索引列表（shader 中静音轨仅主轨身份时显示）。
-    pub fn set_view_state(&self, queue: &wgpu::Queue, current_track: u32, muted_tracks: &[usize]) {
+    /// `muted_tracks` 为静音音轨索引列表（shader 中静音轨仅主轨身份时显示），
+    /// `onion_visible` 为洋葱皮全局开关（`false` → 只有主音轨落到视口内，
+    /// 其余轨实例退化零面积几何，数据仍常驻显存）。
+    pub fn set_view_state(
+        &self,
+        queue: &wgpu::Queue,
+        current_track: u32,
+        muted_tracks: &[usize],
+        onion_visible: bool,
+    ) {
         let mut state = crate::note_renderer::types::ViewState::new();
         state.current_track = current_track;
+        state.set_onion_visible(onion_visible);
         for &track in muted_tracks {
             state.set_muted(track, true);
         }
@@ -274,12 +283,26 @@ mod tests {
     }
 
     /// 测试 ViewState 与 WGSL 结构体内存布局一致：
-    /// 4 bytes current_track + 12 bytes padding + 2048 u32 静音位图 = 8208 bytes。
+    /// 4 bytes current_track + 4 bytes onion_visible + 8 bytes padding
+    /// + 2048 u32 静音位图 = 8208 bytes。
     #[test]
     fn test_view_state_byte_layout() {
         assert_eq!(std::mem::size_of::<ViewState>(), 8208);
         assert_eq!(std::mem::offset_of!(ViewState, current_track), 0);
+        assert_eq!(std::mem::offset_of!(ViewState, onion_visible), 4);
         assert_eq!(std::mem::offset_of!(ViewState, muted_bits), 16);
+    }
+
+    /// 洋葱皮开关是 uniform 里的独立字：默认隐藏（产品默认），
+    /// 置位后 `!= 0`（shader 侧 `onion_visible != 0u` 判定）。
+    #[test]
+    fn test_view_state_onion_visible_flag() {
+        let mut state = ViewState::new();
+        assert_eq!(state.onion_visible, 0, "ViewState 默认必须隐藏洋葱皮");
+        state.set_onion_visible(true);
+        assert_eq!(state.onion_visible, 1);
+        state.set_onion_visible(false);
+        assert_eq!(state.onion_visible, 0);
     }
 
     /// 测试 ViewState 静音位图与 shader 位索引一致（覆盖跨 vec4 边界）。

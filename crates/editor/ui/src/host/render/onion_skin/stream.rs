@@ -95,6 +95,7 @@ impl Host {
             && !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                 current_track: track_id as u32 + 1,
                 muted_tracks: fp.muted_tracks.clone(),
+                onion_visible: fp.onion_visible,
             })
         {
             tracing::warn!("[onion-skin] CPU 单轨 ViewState 未送达（切轨状态可能滞后至下次同步）");

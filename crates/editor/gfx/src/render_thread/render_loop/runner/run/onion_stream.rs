@@ -155,12 +155,16 @@ pub(super) fn drain_onion_skin_stream(
             Ok(crate::OnionSkinStreamMsg::SetViewState {
                 current_track,
                 muted_tracks,
+                onion_visible,
             }) => {
-                // 切轨/静音零重传：只更新 ViewState uniform，GPU 数据不动
+                // 切轨/静音/洋葱皮开关零重传：只更新 ViewState uniform，GPU 数据不动
                 *current_track_encoded = current_track;
-                renderers
-                    .onion_skin
-                    .set_view_state(&ctx.queue, current_track, &muted_tracks);
+                renderers.onion_skin.set_view_state(
+                    &ctx.queue,
+                    current_track,
+                    &muted_tracks,
+                    onion_visible,
+                );
             }
             Ok(crate::OnionSkinStreamMsg::PreviewInstances(instances)) => {
                 // 预览音符（Drawing/hover/i2m）：独立预览渲染器整体替换

@@ -77,15 +77,19 @@ pub enum OnionSkinStreamMsg {
         /// 段内删除区间（降序，(index, count)）
         ranges: Vec<(usize, usize)>,
     },
-    /// 视图状态更新：当前音轨（track_idx+1）+ 静音音轨集合
+    /// 视图状态更新：当前音轨（track_idx+1）+ 洋葱皮开关 + 静音音轨集合
     ///
-    /// 统一全量渲染：主音轨 = 全量 buffer 中 `current_track` 段，切轨/静音
-    /// 只更新 uniform（shader 动态主轨着色/静音隐藏），**零数据重传**。
+    /// 统一全量渲染：主音轨 = 全量 buffer 中 `current_track` 段，切轨/静音/
+    /// 洋葱皮开关只更新 uniform（shader 动态主轨着色/静音隐藏/洋葱皮显隐），
+    /// **零数据重传**。
     SetViewState {
         /// 当前主音轨编码：track_idx + 1（0 = 无主音轨）
         current_track: u32,
         /// 静音音轨 id 集合
         muted_tracks: Vec<usize>,
+        /// 洋葱皮是否可见（工具栏全局开关；`false` 时只画主音轨，
+        /// 其余轨实例常驻显存但不落片元——关闭不卸载数据）
+        onion_visible: bool,
     },
     /// 预览音符实例替换（Drawing / hover / i2m 预览，独立预览渲染器）
     ///

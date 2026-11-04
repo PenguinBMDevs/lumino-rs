@@ -30,6 +30,7 @@ impl OnionSkinState {
     ///
     /// GPU 模式：
     /// - 未初始化 / force_full → `Full`（首次上传 / 未知变化兜底）
+    /// - 洋葱皮开关变化 → `ViewState`（只改 uniform 开关位，数据零重传）
     /// - 布局变化（切轨/静音）→ `ViewState`（全量 buffer 常驻所有轨，只发 uniform
     ///   零重传；调色板变化 → `Full`，实例颜色固化需重传）
     /// - 音符数据变化：主轨结构性变化 → 当前轨加入 `Delta`（单轨段重建）；
@@ -45,6 +46,13 @@ impl OnionSkinState {
         // 未知变化兜底（undo/redo/散改/加载）：全量会话分块重建段表
         if self.force_full {
             return OnionSkinAction::Full;
+        }
+        // 洋葱皮全局开关（工具栏）：只切显示语义 → `ViewState` uniform 零重传。
+        // 关闭**不卸载** GPU 数据（用户硬约束：GPU 模式下关闭洋葱皮只不显示），
+        // 重新打开即时生效。此判断先于 CPU 分支：CPU 后端虽无洋葱皮实例在显存，
+        // 开关位仍须与工具栏同步，否则切回 GPU 后端时状态错位。
+        if fp.onion_visible != self.last_onion_visible {
+            return OnionSkinAction::ViewState;
         }
         if self.cpu_current_only {
             return self.decide_action_cpu(fp);
@@ -97,8 +105,8 @@ impl OnionSkinState {
     /// - 调色板变化 → `None`（当前轨颜色由 shader 主轨蓝强制覆盖，实例色无效）
     /// - 未知来源（`onion_dirty_tracks == None`）→ `Full`（保守正确性）
     ///
-    /// 永不返回 `Delta` / `ViewState`：CPU 模式没有多段，也没有「只改显示语义」的
-    /// 场景（当前轨身份变化本身就是段身份变化）。
+    /// 永不返回 `Delta`：CPU 模式没有多段。（洋葱皮开关的 `ViewState` 由上层
+    /// [`Self::decide_action`] 统一处理，本分支不重复判断。）
     fn decide_action_cpu(&self, fp: &OnionSkinFingerprint) -> OnionSkinAction {
         if fp.current_track != self.last_current_track
             || fp.track_count != self.last_track_count

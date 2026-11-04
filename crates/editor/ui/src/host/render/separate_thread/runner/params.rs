@@ -266,6 +266,10 @@ impl Host {
             // 叠加层（半废稿本步不改造），并绘制 `cpu_onion_frame` 透明帧。
             .cpu_onion_frame(data.cpu_onion_frame)
             .cpu_onion_active(self.onion_skin_backend == OnionSkinBackend::Cpu)
+            // 洋葱皮全局开关（工具栏，默认关闭）：只闸渲染通道里的 hires 贴图
+            // 洋葱皮叠加层——GPU 实例层由 `SetViewState.onion_visible` 走 uniform，
+            // 两条路径都从同一真源取值，关闭即「彻底关闭」。
+            .onion_visible(self.onion_skin_visible())
             .build()
     }
 }

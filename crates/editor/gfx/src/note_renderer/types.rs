@@ -208,24 +208,35 @@ pub struct RenderUniform {
     pub cull: CullUniform,
 }
 
-/// 视图状态 uniform：当前音轨 + 静音位图
+/// 视图状态 uniform：当前音轨 + 洋葱皮显示开关 + 静音位图
 ///
 /// 统一全量渲染（2026-08-06）：洋葱皮 buffer 持有所有轨全部音符，
-/// 「哪个轨是主音轨 / 哪些轨静音」由本 uniform 低频更新（切轨/静音变化），
-/// GPU 数据零重传——shader 据 `current_track` 把主音轨染成主轨色、
-/// 深度压到主音轨区（`MAIN_DEPTH_REGION_BITS`，覆盖全部洋葱皮轨道）、
+/// 「哪个轨是主音轨 / 哪些轨静音 / 是否显示洋葱皮」由本 uniform 低频更新
+/// （切轨/静音/工具栏开关），GPU 数据零重传——shader 据 `current_track` 把主音轨
+/// 染成主轨色、深度压到主音轨区（`MAIN_DEPTH_REGION_BITS`，覆盖全部洋葱皮轨道）、
 /// 静音轨仅主轨身份时显示。
 ///
-/// 布局：`current_track`（track_idx+1，0=无）+ 2048 u32 静音位图（65536 轨上限，
-/// 支持未来大编制工程）。字节布局与 shader `ViewState`（vec4 数组）严格一致：
-/// 2048 u32 == 512 × vec4<`u32`>。
+/// 洋葱皮开关（2026-11-04）：`onion_visible = 0` 时**只有主音轨**实例落到视口内，
+/// 其余轨实例退化为零面积几何（与静音轨同一技巧）——GPU 常驻数据不卸载、不失效，
+/// 重新打开时只是把该字写回 1，**零重传、即时生效**（用户硬约束：GPU 模式下关闭
+/// 洋葱皮不卸载数据，只不显示）。
+///
+/// 布局：`current_track`（track_idx+1，0=无）、`onion_visible`、2 个 u32 填充，
+/// 之后是 2048 u32 静音位图（65536 轨上限，支持未来大编制工程）。
+/// 字节布局与 shader `ViewState`（vec4 数组）严格一致：
+/// 2048 u32 == 512 组 vec4。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewState {
     /// 当前音轨编码：track_idx + 1（0 = 无主音轨）
     pub current_track: u32,
+    /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏，非 0 = 显示
+    ///
+    /// 默认 0（工具栏开关默认关闭）：renderer 首帧 uniform 即隐藏洋葱皮，
+    /// 与产品默认一致；打开时由 UI 线程发 `SetViewState` 写回 1。
+    pub onion_visible: u32,
     /// 对齐填充（保持 muted_bits 16 字节对齐）
-    pub _padding: [u32; 3],
+    pub _padding: [u32; 2],
     /// 静音音轨位图：`muted_bits[t / 32]` 的 bit `t % 32` = 音轨 t 静音
     pub muted_bits: [u32; ViewState::MUTED_WORDS],
 }
@@ -234,14 +245,25 @@ impl ViewState {
     /// 静音位图字数量（65536 轨上限，为超大编制工程预留）
     pub const MUTED_WORDS: usize = 2048;
 
-    /// 空视图状态（无主音轨、无静音）
+    /// 空视图状态（无主音轨、洋葱皮**隐藏**、无静音）
+    ///
+    /// 洋葱皮默认隐藏 = 产品默认（工具栏开关默认关闭）：renderer 初始 uniform
+    /// 即不显示洋葱皮，无需等待 UI 线程第一条消息。
     #[must_use]
     pub fn new() -> Self {
         Self {
             current_track: 0,
-            _padding: [0; 3],
+            onion_visible: 0,
+            _padding: [0; 2],
             muted_bits: [0; Self::MUTED_WORDS],
         }
+    }
+
+    /// 设置洋葱皮（非主音轨实例）是否可见
+    ///
+    /// 只改 uniform 一个字，GPU 常驻实例数据不动（关闭不卸载、打开零重传）。
+    pub fn set_onion_visible(&mut self, visible: bool) {
+        self.onion_visible = u32::from(visible);
     }
 
     /// 设置音轨静音状态（越界防御：超出位图容量静默忽略）

@@ -63,6 +63,7 @@ impl Default for RenderParamsBuilder {
             vs_cull_mode: base.vs_cull_mode,
             cpu_onion_frame: base.cpu_onion_frame,
             cpu_onion_active: base.cpu_onion_active,
+            onion_visible: base.onion_visible,
         }
     }
 }

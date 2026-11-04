@@ -316,7 +316,7 @@ pub(super) fn probe_region_depth(
     ];
 
     let mut onion = NoteRenderer::new_onion_skin(device, queue, format, crate::GpuEpoch::INITIAL);
-    onion.set_view_state(queue, 1, &[]);
+    onion.set_view_state(queue, 1, &[], true);
     onion.upload_instances(&notes, device, queue);
     write_camera(&onion, queue);
     // 手工可见顺序：主音轨先画、洋葱皮后画（绕开 cull 的随机输出顺序）

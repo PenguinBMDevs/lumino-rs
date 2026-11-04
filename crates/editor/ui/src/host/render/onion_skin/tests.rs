@@ -18,6 +18,8 @@ pub(super) fn make_fp(
         muted_tracks: Vec::new(),
         main_track_struct_dirty: false,
         track_count: 64,
+        // 默认指纹 = 工具栏开关默认关闭
+        onion_visible: false,
     }
 }
 
@@ -37,6 +39,7 @@ pub(super) fn make_fp_dirty(
         muted_tracks,
         main_track_struct_dirty: false,
         track_count: 64,
+        onion_visible: false,
     }
 }
 
@@ -52,6 +55,7 @@ pub(super) fn make_fp_main_struct(current_track: usize) -> OnionSkinFingerprint 
         main_track_struct_dirty: true,
         // 当前轨存在于文档（守卫通过）；越界用例单独覆写
         track_count: current_track + 1,
+        onion_visible: false,
     }
 }
 

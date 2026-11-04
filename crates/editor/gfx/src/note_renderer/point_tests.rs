@@ -8,7 +8,9 @@
 //! 2. **静音轨不得出现**——`vs_point` 的静音判定必须与 `vs_main` 同口径；
 //! 3. **长度 ≤ 0 的音符不得出现**——与 `cull.wgsl` 的 `length > 0.0` 同口径；
 //! 4. **点管线缺失时必须回退 quad 路径**，不得静默不画（预览层与导出无 depth
-//!    变体都没有点管线）。
+//!    变体都没有点管线）；
+//! 5. **洋葱皮全局开关关闭时只画主音轨**（`ViewState.onion_visible == 0`）——
+//!    实例数据常驻显存，重新打开零重传即时恢复。
 //!
 //! 深度契约由 `depth_tests.rs::test_shader_sources_share_depth_contract` 覆盖
 //! （`vs_point` 与 `vs_main` 共用同一个 `region_depth` 与同一 `global_index` 语义）。
@@ -127,12 +129,17 @@ fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAtt
 }
 
 /// 用点图元路径渲染一帧并回读像素。
-fn render_points(notes: &[NoteInstance], current_track: u32, muted: &[usize]) -> Vec<u8> {
+fn render_points(
+    notes: &[NoteInstance],
+    current_track: u32,
+    muted: &[usize],
+    onion_visible: bool,
+) -> Vec<u8> {
     let (device, queue) = crate::test_gpu::shared_device();
 
     let mut renderer =
         NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
-    renderer.set_view_state(&queue, current_track, muted);
+    renderer.set_view_state(&queue, current_track, muted, onion_visible);
     renderer.upload_instances(notes, &device, &queue);
     renderer.prepare_direct(subpixel_camera(), &queue);
 
@@ -271,7 +278,7 @@ fn test_point_mode_paints_every_subpixel_note() {
         encode(1, 2),
     ));
 
-    let pixels = render_points(&notes, 1, &[]);
+    let pixels = render_points(&notes, 1, &[], true);
     let rows = covered_rows(&pixels);
     let covered = covered_pixels(&pixels);
 
@@ -308,7 +315,7 @@ fn test_point_mode_respects_muted_tracks() {
         NoteInstance::new(0.0, 70, 120.0, NOTE_COLOR, encode(2, 2)),
     ];
 
-    let pixels = render_points(&notes, 1, &[1]);
+    let pixels = render_points(&notes, 1, &[1], true);
     let rows = covered_rows(&pixels);
 
     assert!(
@@ -367,3 +374,9 @@ fn test_draw_points_falls_back_without_point_pipeline() {
         "无点管线时 draw_points 必须回退 quad 路径绘制，而不是静默不画"
     );
 }
+
+/// **契约 5**：洋葱皮全局开关关闭时只画主音轨（真实 GPU 回读证据）。
+///
+/// 独立文件以保持本文件 < 400 行；渲染与断言辅助复用本模块。
+#[cfg(test)]
+mod onion_toggle;

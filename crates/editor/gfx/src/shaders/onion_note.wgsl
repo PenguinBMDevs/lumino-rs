@@ -1,9 +1,14 @@
 // 统一全量音符渲染着色器（洋葱皮 + 主音轨一体）。
 //
 // 数据模型：GPU buffer 持**所有轨全部音符**（`border_width` 高 16 位 = track_idx+1）；
-// 「谁是主音轨」由 `ViewState.current_track` 低频更新（切轨零重传）：主音轨染主轨蓝 +
-// 主音轨区深度；静音且非主音轨 → 视口外退化几何（不产生片元）；其余用实例色 + 洋葱皮区
-// 深度。与 `note.wgsl` 的差异：无预览哨兵分支（预览音符走独立渲染器）。
+// 「谁是主音轨 / 洋葱皮是否显示」由 `ViewState` 低频更新（切轨/工具栏开关零重传）：
+// 主音轨染主轨蓝 + 主音轨区深度；静音且非主音轨 / 洋葱皮开关关闭时的非主音轨 →
+// 视口外退化几何（不产生片元）；其余用实例色 + 洋葱皮区深度。
+// 与 `note.wgsl` 的差异：无预览哨兵分支（预览音符走独立渲染器）。
+//
+// 洋葱皮全局开关（2026-11-04）：`ViewState.onion_visible == 0` 时**只画主音轨**，
+// GPU 常驻实例一个字节都不动——关闭不卸载数据，重新打开即时生效、零重传
+// （用户硬约束）。cull 仍按全量跑（不区分轨道），隐藏实例靠 VS 退化几何剔除。
 //
 // 入口：`vs_main`（cull + 可见索引）/ `vs_direct`（VS 内自判可见，无 cull）/
 // `vs_point`（点图元）。完整背景、深度推导、PREF-004/005 取舍见同目录 `README.md`。
@@ -55,10 +60,11 @@ struct CameraUniform {
     _padding: vec2<f32>,
 }
 
-/// 视图状态：当前音轨（track_idx+1）+ 静音位图（512 × vec4 = 65536 轨）
+/// 视图状态：当前音轨（track_idx+1）+ 洋葱皮显示开关 + 静音位图（512 × vec4 = 65536 轨）
 struct ViewState {
     current_track: u32,
-    _pad0: u32,
+    /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏（工具栏开关默认关闭）
+    onion_visible: u32,
     _pad1: u32,
     _pad2: u32,
     muted_bits: array<vec4<u32>, 512>,
@@ -125,6 +131,14 @@ fn is_muted_track(track_enc: u32) -> bool {
     return ((v[word % 4u] >> bit) & 1u) != 0u;
 }
 
+/// 洋葱皮（非主音轨实例）是否可见（工具栏全局开关）。
+///
+/// 关闭时只画主音轨：其余轨实例走「视口外零面积几何」分支，不产生片元。
+/// 实例数据常驻显存不卸载，重新打开只是本 uniform 写回 1（零重传、即时生效）。
+fn onion_enabled() -> bool {
+    return view_state.onion_visible != 0u;
+}
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
@@ -162,9 +176,10 @@ fn vs_main(
     // 主音轨判定：track 编码 == 当前音轨编码（track_idx+1）
     let track_enc = instance.border_width >> 16u;
     let is_main = track_enc == view_state.current_track;
-    // 静音且非主音轨 → 不渲染（退化为视口外零面积几何，见下方输出分支）
+    // 非主音轨在「洋葱皮开关关闭」或「该轨静音」时 → 不渲染
+    //（退化为视口外零面积几何，见下方输出分支）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || !is_muted;
+    let show = is_main || (onion_enabled() && !is_muted);
 
     // 稳定深度（与绘制顺序无关，语义见文件头）：
     //   主音轨 → 主音轨区（最前，覆盖全部洋葱皮）；
@@ -184,9 +199,9 @@ fn vs_main(
     if (show) {
         output.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
     } else {
-        // 静音轨：4 个顶点重合到视口外的同一点 → 零面积 → 不产生任何片元。
-        // 不再依赖 NDC z=2.0 的「超出深度范围被裁剪」——那要求 depth attachment
-        // 参与；退化几何与 depth attachment 是否存在无关（导出路径无 depth）。
+        // 静音轨 / 洋葱皮开关关闭的非主音轨：4 个顶点重合到视口外的同一点 → 零面积 →
+        // 不产生任何片元。不再依赖 NDC z=2.0 的「超出深度范围被裁剪」——那要求
+        // depth attachment 参与；退化几何与 depth attachment 是否存在无关（导出路径无 depth）。
         output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
     }
     output.color = color;
@@ -259,8 +274,9 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
 
     let track_enc = instance.border_width >> 16u;
     let is_main = track_enc == view_state.current_track;
+    // 洋葱皮开关关闭 / 该轨静音 → 非主音轨不落点（与 vs_main 同口径）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || !is_muted;
+    let show = is_main || (onion_enabled() && !is_muted);
 
     // 稳定深度：与 vs_main 同一公式、同一 global_index 语义（见文件头深度说明）
     let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, is_main);
@@ -349,8 +365,9 @@ fn vs_direct(
 
     let track_enc = instance.border_width >> 16u;
     let is_main = track_enc == view_state.current_track;
+    // 洋葱皮开关关闭 / 该轨静音 → 非主音轨不绘制（与 vs_main 同口径）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || !is_muted;
+    let show = is_main || (onion_enabled() && !is_muted);
 
     // 稳定深度：与 vs_main 同一公式。`instance_index` 与 cull 路径写入可见缓冲的
     // `local_index` 是同一个值（chunk 内源索引）⇒ 两条路径深度逐位一致。
@@ -367,8 +384,8 @@ fn vs_direct(
     if (show && in_view) {
         output.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
     } else {
-        // 静音轨 / 视口外 / 非法长度：4 个顶点退化到视口外同一点 → 零面积 → 无片元。
-        // 与静音轨分支同技巧，且与 depth attachment 是否存在无关。
+        // 洋葱皮关闭 / 静音 / 视口外 / 非法长度：4 个顶点退化到视口外同一点 →
+        // 零面积 → 无片元。与静音轨分支同技巧，且与 depth attachment 是否存在无关。
         output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
     }
     output.color = color;

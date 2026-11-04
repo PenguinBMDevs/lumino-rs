@@ -15,7 +15,14 @@ GPU buffer 持有**所有轨全部音符**：`NoteInstance.border_width` 低 16 
 |---|---|---|---|
 | 主音轨（`track_enc == current_track`） | 强制主轨蓝 `MAIN_TRACK_COLOR` | 主音轨区（最前） | 正常 quad |
 | 静音且非主音轨 | — | — | 退化为视口外同一点（零面积，不产生片元） |
+| 非主音轨且洋葱皮开关关闭（`ViewState.onion_visible == 0`） | — | — | 同退化（零面积） |
 | 其余（洋葱皮） | 实例固化的调色板色 | 洋葱皮区 | 正常 quad |
+
+`ViewState.onion_visible`（2026-11-04）是工具栏的洋葱皮全局开关：关闭时**只画主音轨**，
+GPU 常驻实例数据不卸载、段表不失效，重新打开只需把该 uniform 字写回 1 ⇒ 零重传、
+即时生效（用户硬约束：GPU 模式下关闭洋葱皮不卸载数据，只是不显示）。三条顶点入口
+（`vs_main` / `vs_direct` / `vs_point`）共用同一谓词 `is_main || (onion_enabled() && !is_muted)`
+——改一处必须三处同步，否则各路径画面不一致。
 
 与旧 `note.wgsl` 的差异：**无预览哨兵分支**（预览音符走独立渲染器 `note.wgsl`）。
 2026-08-07 起顶点输入从完整 `NoteInstance` 改为 `u32` 可见索引。

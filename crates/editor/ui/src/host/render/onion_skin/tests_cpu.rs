@@ -1,7 +1,9 @@
 //! CPU 单轨模式（Q3 B）洋葱皮决策测试。
 //!
 //! 语义：GPU 洋葱皮 buffer 只驻留当前轨（非当前轨/静音轨由 CPU 叠加层负责），
-//! 因此只有「段内容 / 段身份」变化才重传，且**永不**产出 `Delta` / `ViewState`。
+//! 因此只有「段内容 / 段身份」变化才重传，且**永不**产出 `Delta`
+//!（洋葱皮开关的 `ViewState` 由 `decide_action` 上层统一处理，
+//! 见 `tests_toggle.rs::onion_toggle_in_cpu_mode_emits_view_state`）。
 //! 独立文件以保持 `tests.rs` < 400 行；构造器与断言复用 `tests` 模块。
 
 use super::tests::{assert_full, assert_none, make_fp, make_fp_dirty, make_fp_main_struct};
@@ -115,6 +117,9 @@ fn cpu_mode_never_emits_delta_or_view_state() {
                                     muted_tracks: vec![4],
                                     main_track_struct_dirty: struct_dirty,
                                     track_count,
+                                    // 开关位固定为「已同步态」：可见性变化在两种后端下
+                                    // 都走 ViewState，由 `tests_toggle.rs` 单独覆盖
+                                    onion_visible: false,
                                 };
                                 let action = state.decide_action(&fp);
                                 assert!(

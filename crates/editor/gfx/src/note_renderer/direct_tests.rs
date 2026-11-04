@@ -111,8 +111,8 @@ fn render(notes: &[NoteInstance], camera: CameraUniform, direct: bool) -> Vec<u8
 
     let mut renderer =
         NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
-    // current_track = 1（track_enc 1）；track_idx 2（track_enc 3）静音
-    renderer.set_view_state(&queue, 1, &[2]);
+    // current_track = 1（track_enc 1）；track_idx 2（track_enc 3）静音；洋葱皮显示
+    renderer.set_view_state(&queue, 1, &[2], true);
     renderer.upload_instances(notes, &device, &queue);
 
     let size = wgpu::Extent3d {

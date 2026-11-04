@@ -155,7 +155,8 @@ pub fn render_gpu(
 ) -> Vec<u8> {
     let (_, device, queue) = shared();
     let mut renderer = NoteRenderer::new_onion_skin(device, queue, FORMAT, GpuEpoch::INITIAL);
-    renderer.set_view_state(queue, current_track_enc, muted_tracks);
+    // 洋葱皮显示（CPU/GPU 逐像素对比的前提：两侧都画全部非静音轨）
+    renderer.set_view_state(queue, current_track_enc, muted_tracks, true);
     renderer.upload_instances(instances, device, queue);
 
     let extent = wgpu::Extent3d {

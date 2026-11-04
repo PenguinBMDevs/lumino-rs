@@ -150,11 +150,12 @@ impl Host {
                     self.stream_onion_skin_full(&fp, wgpu_thread, Some(fp.current_track));
                 } else {
                     self.stream_onion_skin_full(&fp, wgpu_thread, None);
-                    // 全量会话重建后必须设置 current_track / 静音位图，否则 shader
-                    // 不知道哪个段是主音轨，主音轨事件级增量也找不到段。
+                    // 全量会话重建后必须设置 current_track / 静音位图 / 洋葱皮开关，
+                    // 否则 shader 不知道哪个段是主音轨，主音轨事件级增量也找不到段。
                     if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                         current_track: fp.current_track as u32 + 1,
                         muted_tracks: fp.muted_tracks.clone(),
+                        onion_visible: fp.onion_visible,
                     }) {
                         tracing::warn!(
                             "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"
@@ -190,19 +191,22 @@ impl Host {
                         }
                     }
                     OnionSkinAction::ViewState => {
-                        // 切轨/静音零重传：只发 ViewState uniform（当前音轨 + 静音集合）
+                        // 切轨/静音/洋葱皮开关零重传：只发 ViewState uniform
+                        //（当前音轨 + 静音集合 + 开关位）
                         if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                             current_track: fp.current_track as u32 + 1,
                             muted_tracks: fp.muted_tracks.clone(),
+                            onion_visible: fp.onion_visible,
                         }) {
                             tracing::warn!(
                                 "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"
                             );
                         }
                         tracing::debug!(
-                            "[onion-skin] 视图状态更新：current_track={}，静音 {:?}（零数据重传）",
+                            "[onion-skin] 视图状态更新：current_track={}，静音 {:?}，洋葱皮={}（零数据重传）",
                             fp.current_track,
-                            fp.muted_tracks
+                            fp.muted_tracks,
+                            fp.onion_visible
                         );
                     }
                     OnionSkinAction::Full => {

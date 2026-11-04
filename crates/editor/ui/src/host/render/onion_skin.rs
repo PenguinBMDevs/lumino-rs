@@ -24,9 +24,13 @@
 //!
 //! `OnionSkinState::set_cpu_current_only(true)` 后（后端 = `OnionSkinBackend::Cpu`），
 //! GPU 洋葱皮 buffer **只驻留当前轨**（非当前轨/静音轨由 CPU 叠加层负责），因此：
-//! - 决策分支只产出 `Full` / `None`，**不再产出** `Delta` / `ViewState`；
+//! - CPU 决策分支只产出 `Full` / `None`，**不产出** `Delta`（无多段可增量）；
 //! - 全量会话走 `stream_onion_skin_full(..., Some(current_track))` 单轨会话；
 //! - 非当前轨的 `pending_track_remove_ranges` 直接丢弃（GPU 无该轨数据）。
+//!
+//! 例外：洋葱皮全局开关（工具栏）变化在**两种后端下**都产出 `ViewState`
+//!（见 `decide.rs`）——CPU 后端显存里虽然没有洋葱皮实例，开关位仍必须与工具栏
+//! 同步，否则切回 GPU 后端时状态错位。
 //!
 //! 子模块组织（保持每个文件 < 400 行）：
 //! - `state`：`OnionSkinState` 状态缓存（指纹、降级节流、CPU 单轨开关）
@@ -42,6 +46,8 @@ mod instance_stream;
 mod state;
 mod stream;
 
+use crate::host::Host;
+
 pub(crate) use decide::OnionSkinAction;
 pub(crate) use fingerprint::OnionSkinFingerprint;
 pub(crate) use fingerprint::mute_fingerprint_of;
@@ -55,6 +61,19 @@ const ONION_SKIN_BORDER_WIDTH: u32 = 1;
 #[inline]
 fn onion_border_width(track_idx: usize) -> u32 {
     ONION_SKIN_BORDER_WIDTH | (((track_idx as u32) + 1) << 16)
+}
+
+impl Host {
+    /// 洋葱皮全局开关是否可见（工具栏按钮，默认关闭）。
+    ///
+    /// **唯一真源** = `Toolbar::onion_skin_enabled`。三条绘制路径都从这里取值，
+    /// 任何一侧自行读 `Toolbar` 字段都会立刻变成第二真源：
+    /// - GPU 实例层：`SetViewState.onion_visible` → shader 只画主音轨（数据不卸载）；
+    /// - CPU 光栅层：`update_cpu_onion_frame` 返回 `None`（帧挂起、脏区保留）；
+    /// - hires 贴图层：`RenderParams::onion_visible` 跳过叠加层（贴图不卸载）。
+    pub(crate) fn onion_skin_visible(&self) -> bool {
+        self.root.toolbar.onion_skin_enabled
+    }
 }
 
 /// 流式上传分块大小（每块 ≤ 800 万实例 = 128 MB，大块减少传输次数）
@@ -79,3 +98,8 @@ mod tests;
 #[cfg(test)]
 #[path = "onion_skin/tests_cpu.rs"]
 mod tests_cpu;
+
+/// 洋葱皮全局开关（工具栏按钮）决策测试（独立文件，保持 `tests.rs` < 400 行）
+#[cfg(test)]
+#[path = "onion_skin/tests_toggle.rs"]
+mod tests_toggle;

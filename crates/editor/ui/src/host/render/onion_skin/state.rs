@@ -25,6 +25,8 @@ pub(crate) struct OnionSkinState {
     pub(super) last_palette_idx: u8,
     /// 上次同步到渲染侧的文档轨数（段表长度；轨数变化 → `TrackLayout` 增量同步）
     pub(super) last_track_count: usize,
+    /// 上次同步到渲染侧的洋葱皮开关（工具栏按钮；变化 → `ViewState` 零重传）
+    pub(super) last_onion_visible: bool,
     /// 是否已初始化（首次上传）
     pub(super) initialized: bool,
     /// 强制全量重建标志（未知变化兜底：undo/redo/散改/加载后主音轨段
@@ -49,6 +51,7 @@ impl Default for OnionSkinState {
             last_current_track: usize::MAX,
             last_palette_idx: u8::MAX,
             last_track_count: 0,
+            last_onion_visible: false,
             initialized: false,
             force_full: false,
             cpu_current_only: false,
@@ -119,6 +122,7 @@ impl OnionSkinState {
         self.last_current_track = fp.current_track;
         self.last_palette_idx = fp.palette_idx;
         self.last_track_count = fp.track_count;
+        self.last_onion_visible = fp.onion_visible;
         self.initialized = true;
         self.force_full = false;
     }

@@ -182,6 +182,17 @@ pub struct RenderParams {
     /// （如纵向卷帘本步不生成 CPU 帧）时，洋葱皮就只是暂时缺失，不会回退到
     /// GPU 全轨数据。
     pub cpu_onion_active: bool,
+    /// 洋葱皮全局开关（工具栏按钮，默认 `false` = 关闭）。
+    ///
+    /// 只影响**本帧的洋葱皮叠加层**：
+    /// - `true`：按原顺序绘制 hires 贴图洋葱皮层（`texture_waterfall_renderer`）；
+    /// - `false`：跳过该叠加层（用户要求「关闭就彻底关闭」——高精度贴图也是洋葱皮，
+    ///   只藏 GPU 实例层会留下一份幽灵贴图）。
+    ///
+    /// GPU 实例层的显隐走 `OnionSkinStreamMsg::SetViewState.onion_visible`（uniform），
+    /// **不经过本字段**：那条路径零重传、数据常驻；本字段只用于渲染通道里的叠加层，
+    /// 贴图资源同样不卸载（关闭只是不画）。
+    pub onion_visible: bool,
 }
 
 impl Default for RenderParams {
@@ -240,6 +251,7 @@ impl Default for RenderParams {
             vs_cull_mode: false,
             cpu_onion_frame: None,
             cpu_onion_active: false,
+            onion_visible: false,
         }
     }
 }

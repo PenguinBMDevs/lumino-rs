@@ -28,6 +28,10 @@ pub(crate) struct OnionSkinFingerprint {
     pub(super) main_track_struct_dirty: bool,
     /// 文档当前音轨总数（段表长度基准；变化 → `TrackLayout` 增量同步）
     pub(super) track_count: usize,
+    /// 洋葱皮全局开关（工具栏按钮；`false` = 只画主音轨，数据仍常驻）
+    ///
+    /// 变化只切显示语义 → `ViewState` uniform 零重传（不重建会话、不卸载数据）。
+    pub(super) onion_visible: bool,
 }
 
 impl OnionSkinState {
@@ -77,6 +81,7 @@ impl OnionSkinState {
                 .as_ref()
                 .map(|doc| doc.track_count())
                 .unwrap_or(0),
+            onion_visible: host.onion_skin_visible(),
         }
     }
 }

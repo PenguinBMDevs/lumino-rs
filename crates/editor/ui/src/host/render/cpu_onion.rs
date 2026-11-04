@@ -113,12 +113,19 @@ impl Host {
     /// 「只更新快照/索引」的帧都不置位，否则纯滚动/当前轨拖动会退化成每帧等待
     /// 渲染线程，present 节奏崩掉。
     pub(crate) fn update_cpu_onion_frame(&mut self, render_scroll_x: f32) -> Option<CpuOnionFrame> {
-        // 默认后端是 GPU：本步完全不参与，零行为变化
-        if self.onion_skin_backend != OnionSkinBackend::Cpu {
-            self.cpu_onion_state.deactivate();
-            // 防御：异常路径下残留的脏区不得泄漏到下一次切回 CPU
-            self.root.editor.editor_state.data.clear_cpu_onion_dirty();
-            return None;
+        match cpu_onion_frame_gate(self.onion_skin_backend, self.onion_skin_visible()) {
+            // 默认后端是 GPU：本步完全不参与，零行为变化
+            CpuOnionFrameGate::Deactivate => {
+                self.cpu_onion_state.deactivate();
+                // 防御：异常路径下残留的脏区不得泄漏到下一次切回 CPU
+                self.root.editor.editor_state.data.clear_cpu_onion_dirty();
+                return None;
+            }
+            // 洋葱皮全局开关关闭：本帧不画，但**不卸载、不 drop 脏区**——
+            // 渲染器/帧缓存/脏区全部保留，重新打开时按累积脏区一次性补齐
+            // （`track_notes_gen` 变化另有整帧兜底）。关闭期间不为编辑付光栅化成本。
+            CpuOnionFrameGate::Hidden => return None,
+            CpuOnionFrameGate::Draw => {}
         }
         let output = self.build_cpu_onion_output(render_scroll_x);
         // 区域重绘时把脏区打出来（trace）：gfx 侧按它做局部上传，出问题时这是
@@ -267,6 +274,35 @@ fn collect_muted_tracks(tracks: &[Track], track_count: usize) -> (Vec<bool>, Vec
     (muted, ids)
 }
 
+/// CPU 洋葱皮帧的生成本帧闸门（纯函数：Host 侧只做派发，契约可单测）。
+///
+/// 三态而不是两个 `if`：`Deactivate` 与 `Hidden` 的**处置完全不同**——混在一起
+/// 很容易把「关闭洋葱皮开关」写成「停用 CPU 后端」，那会 drop 帧缓存并把关闭
+/// 期间累积的脏区静默丢掉（重新打开时画面停在旧内容）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CpuOnionFrameGate {
+    /// 生成 / 复用帧
+    Draw,
+    /// 后端不是 CPU：停用渲染器并清脏区（默认 GPU 后端路径）
+    Deactivate,
+    /// 洋葱皮全局开关关闭：本帧不画，渲染器 / 帧缓存 / 脏区全部保留
+    Hidden,
+}
+
+/// 判定本帧 CPU 洋葱皮帧的处置（后端优先：非 CPU 后端一律停用）。
+pub(crate) fn cpu_onion_frame_gate(
+    backend: OnionSkinBackend,
+    onion_visible: bool,
+) -> CpuOnionFrameGate {
+    if backend != OnionSkinBackend::Cpu {
+        CpuOnionFrameGate::Deactivate
+    } else if onion_visible {
+        CpuOnionFrameGate::Draw
+    } else {
+        CpuOnionFrameGate::Hidden
+    }
+}
+
 /// CPU 洋葱皮帧生成测试（独立文件，保持本文件 < 400 行）
 #[cfg(test)]
 #[path = "cpu_onion/tests.rs"]
@@ -275,3 +311,7 @@ mod tests;
 #[cfg(test)]
 #[path = "cpu_onion/tests_dirty.rs"]
 mod tests_dirty;
+/// 洋葱皮全局开关闸门测试（独立文件，保持本文件 < 400 行）
+#[cfg(test)]
+#[path = "cpu_onion/tests_gate.rs"]
+mod tests_gate;
