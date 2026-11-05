@@ -19,7 +19,7 @@
 //!
 //! # 单一判定源
 //!
-//! 判定只有一处：[`Root::is_cpu_onion_backend`]——读主 `Root.settings.hires.backend`
+//! 判定只有一处：[`Root::is_cpu_onion_backend`]——读主 `Root.settings.onion_skin.backend`
 //! （设置应用后与运行时真源 `Host::onion_skin_backend()` 一致）。
 //! 文案按**入口**登记在本模块，各 handler 里不再复制「判后端 + 拼文案 + 弹 Toast」
 //! 三段式，只保留一次 [`Root::cpu_entry_blocked`] 调用。
@@ -50,7 +50,7 @@ impl Root {
     /// `apply_onion_backend_switch` 再 `root.apply_settings`，被拒绝的请求会被回写成
     /// 运行时真值，因此本判定与 `Host::onion_skin_backend()` 恒等。
     pub(crate) fn is_cpu_onion_backend(&self) -> bool {
-        self.settings.hires.backend == OnionSkinBackend::Cpu
+        self.settings.onion_skin.backend == OnionSkinBackend::Cpu
     }
 
     /// 统一拒绝：弹 Warning Toast 并返回 `false`（「本次事件未生效」的统一信号）。

@@ -224,30 +224,14 @@ impl SettingsPanel {
                 self.display.language = language;
                 tracing::debug!("设置: 界面语言偏好切换为 {preference:?}（生效语言 {language}）");
             }
-            // 高精度洋葱皮贴图设置
-            Event::HiresOnionEnabledChanged(v) => {
-                self.hires.onion_enabled = v;
-            }
-            Event::HiresMeasuresPerGroupChanged(s) => {
-                parse_setting(&s, |v: u32| self.hires.measures_per_group = v.clamp(1, 16));
-            }
-            Event::HiresTileWidthChanged(s) => {
-                parse_setting(&s, |v: u32| self.hires.tile_width_px = v.clamp(480, 7680));
-            }
-            Event::HiresCooldownChanged(s) => {
-                parse_setting(&s, |v: u64| self.hires.cooldown_secs = v.clamp(3, 60));
-            }
-            Event::HiresGpuMemLimitChanged(s) => {
-                // 用户硬约束：不得限制 GPU 内存使用——移除 clamp(128, 4096)
-                parse_setting(&s, |v: u32| self.hires.gpu_mem_limit_mb = v);
-            }
+            // 洋葱皮渲染后端（加载 MIDI 后锁定，见 `backend_locked`）
             Event::OnionSkinBackendChanged(backend) => {
                 // 锁定态（主窗口已加载 MIDI）忽略切换请求：后端选择必须在
                 // 「没有 MIDI 工程」时做出，避免运行中切换导致缓存/渲染语义错位。
-                if self.hires.backend_locked {
+                if self.onion_skin.backend_locked {
                     tracing::debug!("设置: 洋葱皮渲染方式已锁定，忽略切换请求 {backend:?}");
                 } else {
-                    self.hires.backend = backend;
+                    self.onion_skin.backend = backend;
                 }
             }
             Event::PlaybackKeyColorsEnabledChanged(v) => {

@@ -84,13 +84,8 @@ impl Host {
             return;
         };
 
-        // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
-        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done) {
-            tracing::warn!("[onion-skin] 全量会话中止：Done 未送达（降级补发接管）");
-            return;
-        }
-
-        // CPU 单轨会话：段表只有当前轨一条，完成后同步 ViewState（含越界安全清空）
+        // CPU 单轨会话：段表只有当前轨一条，ViewState 在 `Done` 之前同步
+        //（drain 在 `Done` 处 break，之后的 uniform 消息会晚一帧才生效）
         if let Some(track_id) = only_current
             && !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                 current_track: track_id as u32 + 1,
@@ -99,6 +94,12 @@ impl Host {
             })
         {
             tracing::warn!("[onion-skin] CPU 单轨 ViewState 未送达（切轨状态可能滞后至下次同步）");
+        }
+
+        // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
+        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done) {
+            tracing::warn!("[onion-skin] 全量会话中止：Done 未送达（降级补发接管）");
+            return;
         }
 
         tracing::debug!(

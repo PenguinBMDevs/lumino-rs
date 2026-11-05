@@ -106,13 +106,18 @@ fn overlap_scene() -> Vec<NoteInstance> {
 ///
 /// `direct = true` 走 `prepare_direct` + `draw_direct`（VS cull）；
 /// `false` 走 `prepare_pass` + `draw`（compute cull + 可见索引）。
-fn render(notes: &[NoteInstance], camera: CameraUniform, direct: bool) -> Vec<u8> {
+fn render(
+    notes: &[NoteInstance],
+    camera: CameraUniform,
+    direct: bool,
+    onion_visible: bool,
+) -> Vec<u8> {
     let (device, queue) = crate::test_gpu::shared_device();
 
     let mut renderer =
         NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
-    // current_track = 1（track_enc 1）；track_idx 2（track_enc 3）静音；洋葱皮显示
-    renderer.set_view_state(&queue, 1, &[2], true);
+    // current_track = 1（track_enc 1）；track_idx 2（track_enc 3）静音
+    renderer.set_view_state(&queue, 1, &[2], onion_visible);
     renderer.upload_instances(notes, &device, &queue);
 
     let size = wgpu::Extent3d {
@@ -256,6 +261,10 @@ fn covered_pixels(pixels: &[u8]) -> usize {
 /// 覆盖两种缩放档位：常规缩放（quad 有面积）与亚像素全景（quad 亚像素宽）。
 /// 亚像素档位下两者都可能只覆盖很少像素——因此额外断言常规档位必须有覆盖，
 /// 防止「两边都画空」这种假绿。
+///
+/// 2026-11-04：洋葱皮总开关关闭时 cull 会在**裁剪阶段**丢弃非主音轨实例
+///（`cull*.wgsl::track_visible`），可见集合因此改变——两条路径必须仍然逐位
+/// 一致，故开关两种状态各验一遍。
 #[test]
 fn test_direct_path_pixels_match_cull_path() {
     let notes = overlap_scene();
@@ -267,27 +276,36 @@ fn test_direct_path_pixels_match_cull_path() {
         ),
     ];
 
-    for (label, cam) in cases {
-        let cull = render(&notes, cam, false);
-        let direct = render(&notes, cam, true);
-        assert_eq!(
-            covered_pixels(&cull),
-            covered_pixels(&direct),
-            "{label}：两条路径覆盖像素数不一致"
-        );
-        assert_eq!(
-            cull, direct,
-            "{label}：VS cull 直绘与 compute cull 路径像素不一致——\
-             说明改绘制序/改混合产生了视觉差异（REND-001 前提被破坏）"
-        );
+    for onion_visible in [true, false] {
+        let onion_label = if onion_visible {
+            "洋葱皮开"
+        } else {
+            "洋葱皮关"
+        };
+        for (label, cam) in &cases {
+            let cull = render(&notes, *cam, false, onion_visible);
+            let direct = render(&notes, *cam, true, onion_visible);
+            assert_eq!(
+                covered_pixels(&cull),
+                covered_pixels(&direct),
+                "{label}（{onion_label}）：两条路径覆盖像素数不一致"
+            );
+            assert_eq!(
+                cull, direct,
+                "{label}（{onion_label}）：VS cull 直绘与 compute cull 路径像素不一致——\
+                 说明改绘制序/改混合/改轨道闸门产生了视觉差异（REND-001 前提被破坏）"
+            );
+        }
     }
 
-    // 反假绿守卫：常规档位必须真的画出东西
-    let normal = render(&notes, camera([2.0, 10.0], 127.0), true);
-    assert!(
-        covered_pixels(&normal) > 0,
-        "直绘路径在常规缩放下必须产生片元（否则上面的相等断言是空对空）"
-    );
+    // 反假绿守卫：常规档位必须真的画出东西（开关两种状态各一次）
+    for onion_visible in [true, false] {
+        let normal = render(&notes, camera([2.0, 10.0], 127.0), true, onion_visible);
+        assert!(
+            covered_pixels(&normal) > 0,
+            "直绘路径在常规缩放下必须产生片元（否则上面的相等断言是空对空，洋葱皮={onion_visible}）"
+        );
+    }
 }
 
 /// **契约 2**：`vs_direct` 自判可见与 `cull.wgsl` 同口径——视口外、长度 ≤ 0、
@@ -305,7 +323,7 @@ fn test_direct_path_self_culls_invisible_notes() {
         NoteInstance::new(0.0, 120, 100.0, NOTE_COLOR, encode(3, 2)),
     ];
 
-    let pixels = render(&notes, camera([2.0, 10.0], 127.0), true);
+    let pixels = render(&notes, camera([2.0, 10.0], 127.0), true, true);
     assert_eq!(
         covered_pixels(&pixels),
         0,

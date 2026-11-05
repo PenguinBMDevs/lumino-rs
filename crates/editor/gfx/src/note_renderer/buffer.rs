@@ -175,6 +175,8 @@ impl NoteRenderer {
     /// - binding 2:   实例 buffer 切片 [chunk_start × 16, chunk 字节范围)
     /// - binding 3:   可见索引 buffer 切片 [chunk_start × 4, chunk_len × 4)
     /// - binding 4:   indirect buffer 槽位（idx × slot_align，32B DrawIndirectArgs）
+    /// - binding 5:   视图状态 uniform（当前音轨 / 洋葱皮开关 / 静音位图；整 buffer，
+    ///   与 render bind group 的 binding 1 同源，零额外显存）
     ///
     /// 分区基准 = 实例 buffer 与可见索引 buffer 容量的**较小值**（按实例数对齐，
     /// 可见 buffer 字节数 = 容量 × 4）。两者独立扩容，分区必须同步，
@@ -188,6 +190,7 @@ impl NoteRenderer {
         visible_instance_buffer: &wgpu::Buffer,
         indirect_buffer: &wgpu::Buffer,
         cull_uniform_buffer: &wgpu::Buffer,
+        view_state_buffer: &wgpu::Buffer,
         viewport_buffer: &wgpu::Buffer,
         cull_uniform_buffer_size: u64,
         bind_group_layout: &wgpu::BindGroupLayout,
@@ -299,6 +302,10 @@ impl NoteRenderer {
                                 super::types::DrawIndirectArgs,
                             >() as u64),
                         }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: view_state_buffer.as_entire_binding(),
                     },
                 ],
             }));

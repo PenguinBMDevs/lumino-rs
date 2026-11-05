@@ -69,19 +69,6 @@ pub(super) fn default_lgs_velocity_filter_threshold() -> u8 {
     1
 }
 
-pub(super) fn default_hires_measures_per_group() -> u32 {
-    4
-}
-pub(super) fn default_hires_tile_width() -> u32 {
-    1920
-}
-pub(super) fn default_hires_cooldown() -> u64 {
-    10
-}
-pub(super) fn default_hires_gpu_mem_limit() -> u32 {
-    512
-}
-
 pub(super) fn default_history_total_limit() -> usize {
     100
 }

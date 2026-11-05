@@ -15,6 +15,13 @@ impl Host {
         config: lumino_gfx::TextureWaterfallConfig,
         midi_hash: String,
     ) {
+        // 关闸即停生成（2026-11-04）：总开关管「显示」也管「生成」，关闭期间
+        // 不烘焙任何贴图。注：本方法当前**全仓无调用方**（该叠加层尚未接线），
+        // 此闸门是接线前的唯一入口约束，防止将来接上后无视总开关空烧显存。
+        if !self.onion_skin_visible() {
+            tracing::debug!("[waterfall] 洋葱皮总开关关闭，跳过高精度贴图生成");
+            return;
+        }
         // 存下上下文供重生成使用
         self.waterfall_midi_hash = Some(midi_hash.clone());
         self.waterfall_gen_info = Some((ppq, key_count, total_ticks));
@@ -89,6 +96,11 @@ impl Host {
     /// `group_notes` 需包含该 `track_idx` 所在 track_group 的所有音轨音符，
     /// runner 将使用这些最新数据重新合并 group tile，避免读取过期缓存。
     pub fn send_waterfall_regen(&mut self, params: lumino_gfx::WaterfallTrackParams) {
+        // 最后一道关闸（冷静期到期由 runner 调用时也要过）：总开关关闭即不投递。
+        if !self.onion_skin_visible() {
+            tracing::debug!("[waterfall] 洋葱皮总开关关闭，丢弃高精度贴图重生成投递");
+            return;
+        }
         self.send_waterfall_track_cmd(lumino_gfx::render_thread::ControlCommand::regenerate_track(
             params,
         ));
@@ -139,6 +151,12 @@ impl Host {
     /// 重生成以音轨组为单位，使用整个 track_group 的最新音符数据，
     /// 避免同组其他音轨被覆盖为旧数据或空数据。
     pub fn force_waterfall_regen(&mut self, track_idx: u16) {
+        // 关闸即停生成（2026-11-04）：总开关关闭时不烘焙贴图，且**保留脏标记**
+        //（在 `remove` 之前返回），开关重新打开后仍能按脏集合补算，不丢更新。
+        if !self.onion_skin_visible() {
+            tracing::debug!("[waterfall] 洋葱皮总开关关闭，跳过高精度贴图重生成（保留脏标记）");
+            return;
+        }
         if !self.waterfall_dirty_tracks.remove(&track_idx) {
             return; // 该音轨不脏，不触发
         }

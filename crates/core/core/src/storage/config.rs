@@ -165,21 +165,6 @@ pub struct UiConfig {
     /// Step 3 只提供运行时开关（无设置页 UI）；持久化与设置项由 Step 4 接入。
     #[serde(default)]
     pub onion_skin_backend: OnionSkinBackend,
-    /// 高精度洋葱皮贴图：是否启用
-    #[serde(default = "default_true")]
-    pub hires_onion_enabled: bool,
-    /// 高精度洋葱皮贴图：每组小节数（1-16）
-    #[serde(default = "default_hires_measures_per_group")]
-    pub hires_measures_per_group: u32,
-    /// 高精度洋葱皮贴图：贴图宽度像素（480-7680）
-    #[serde(default = "default_hires_tile_width")]
-    pub hires_tile_width_px: u32,
-    /// 高精度洋葱皮贴图：编辑后重生成冷静期秒数（3-60）
-    #[serde(default = "default_hires_cooldown")]
-    pub hires_cooldown_secs: u64,
-    /// 高精度洋葱皮贴图：GPU 显存上限 MB（128-4096）
-    #[serde(default = "default_hires_gpu_mem_limit")]
-    pub hires_gpu_mem_limit_mb: u32,
     /// 播放时键盘颜色指示（默认关闭以节省内存和性能）
     #[serde(default)]
     pub playback_key_colors_enabled: bool,
@@ -328,11 +313,6 @@ impl Default for UiConfig {
             note_count_display: NoteCountDisplay::default(),
             velocity_curve_style: true,
             onion_skin_backend: OnionSkinBackend::Gpu,
-            hires_onion_enabled: true,
-            hires_measures_per_group: default_hires_measures_per_group(),
-            hires_tile_width_px: default_hires_tile_width(),
-            hires_cooldown_secs: default_hires_cooldown(),
-            hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
             playback_key_colors_enabled: false,
             track_add_behavior: TrackAddBehavior::default(),
             selected_palette: String::new(),

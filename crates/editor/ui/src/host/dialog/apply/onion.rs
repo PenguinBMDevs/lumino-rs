@@ -109,22 +109,22 @@ impl Host {
     /// 且 `OnionSkinBackendChanged` 事件在面板侧被忽略（第二道闸在
     /// [`Host::apply_onion_backend_switch`]，第三道在 runner 的持久化守卫）。
     pub fn set_settings_onion_backend_locked(&mut self, locked: bool) {
-        self.root.settings.hires.backend_locked = locked;
+        self.root.settings.onion_skin.backend_locked = locked;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
 
     /// 应用设置面板请求的洋葱皮后端（必须在 `root.apply_settings` **之前**调用）。
     ///
-    /// 无论裁决结果如何，都会把 `settings.hires.backend_locked` 写成运行时锁定态，
-    /// 并把 `settings.hires.backend` 归一化为运行时真值——随后
+    /// 无论裁决结果如何，都会把 `settings.onion_skin.backend_locked` 写成运行时锁定态，
+    /// 并把 `settings.onion_skin.backend` 归一化为运行时真值——随后
     /// `root.apply_settings(settings)` 才能保证主 Root 的设置与渲染行为一致。
     pub(crate) fn apply_onion_backend_switch(&mut self, settings: &mut SettingsPanel) {
         let old = self.onion_skin_backend;
         let locked = self.onion_backend_locked();
         let ctx = SwitchContext {
             old,
-            requested: settings.hires.backend,
+            requested: settings.onion_skin.backend,
             locked,
             vertical_roll: self.root.editor.editor_state.is_vertical_roll,
             arrangement: self.root.is_arrangement_mode(),
@@ -137,15 +137,15 @@ impl Host {
         match plan_switch(ctx) {
             SwitchPlan::Keep => {}
             SwitchPlan::Switch => {
-                self.set_onion_skin_backend(settings.hires.backend);
-                if settings.hires.backend == OnionSkinBackend::Cpu {
+                self.set_onion_skin_backend(settings.onion_skin.backend);
+                if settings.onion_skin.backend == OnionSkinBackend::Cpu {
                     self.evict_cpu_incompatible_panels();
                 }
             }
             SwitchPlan::ForceHorizontalThenSwitch => {
                 // 纵向卷帘下 CPU 坐标未转置（见 `cpu_onion` 模块头），先退回横向再切。
                 self.root.force_horizontal_roll();
-                self.set_onion_skin_backend(settings.hires.backend);
+                self.set_onion_skin_backend(settings.onion_skin.backend);
                 self.root.toast.push(
                     ToastLevel::Info,
                     tr!("已切回横向卷帘：CPU 洋葱皮不支持纵向卷帘"),
@@ -155,7 +155,7 @@ impl Host {
             }
             SwitchPlan::RejectLocked => {
                 // 拒绝：把被拒值回写成运行时值，避免面板/主 Root 记住一个没生效的值。
-                settings.hires.backend = old;
+                settings.onion_skin.backend = old;
                 self.root.toast.push(
                     ToastLevel::Warning,
                     tr!("加载 MIDI 后不可切换洋葱皮渲染方式，请先关闭 MIDI 工程"),
@@ -163,7 +163,7 @@ impl Host {
                 tracing::warn!("洋葱皮后端切换被拒绝：加载 MIDI 后不可切换（保持 {old:?}）");
             }
             SwitchPlan::RejectIncompatibleMode => {
-                settings.hires.backend = old;
+                settings.onion_skin.backend = old;
                 self.root.toast.push(
                     ToastLevel::Warning,
                     tr!("请先返回钢琴卷帘、关闭视频导出面板并停止导出后再切换 CPU 洋葱皮"),
@@ -176,7 +176,7 @@ impl Host {
 
         // 锁定态同步：主 Root.settings 的会话锁定字段由主窗口说了算，
         // 不信任来自对话框的面板值（对话框是独立 Root，无法自行判定文档状态）。
-        settings.hires.backend_locked = locked;
+        settings.onion_skin.backend_locked = locked;
     }
 
     /// 切到 CPU 后的界面清退：右侧栏钢琴瀑布流预览面板不兼容，直接关闭并提示。

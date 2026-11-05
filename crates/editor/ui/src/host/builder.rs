@@ -75,16 +75,11 @@ impl Host {
         ui_config: &config::UiConfig,
     ) -> Self {
         let key_count = if ui_config.enable_256key { 256 } else { 128 };
-        let waterfall_config = lumino_gfx::TextureWaterfallConfig {
-            enabled: ui_config.hires_onion_enabled,
-            measures_per_group: ui_config.hires_measures_per_group,
-            tile_width_px: ui_config.hires_tile_width_px,
-            cooldown_secs: ui_config.hires_cooldown_secs,
-            gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
-            render_mode: lumino_gfx::TextureWaterfallRenderMode::default(),
-            group_tile_mem_limit_mb: crate::constants::memory::DEFAULT_GROUP_TILE_MEM_LIMIT_MB,
-            cache_dir: lumino_gfx::TextureWaterfallConfig::default().cache_dir,
-        };
+        // 高精度贴图叠加层的参数不再来自设置页（2026-11-05 删除全部 4 个旋钮）：
+        // 该叠加层当前没有任何生成生产者，取库默认值 = 「允许生成 + 不限制显存」
+        //（库默认 `gpu_mem_limit_mb = u32::MAX`，符合「不得限制 GPU 内存使用」硬约束）。
+        // 显隐的唯一真源仍是工具栏洋葱皮总开关（`RenderParams::onion_visible`）。
+        let waterfall_config = lumino_gfx::TextureWaterfallConfig::default();
         let midi_hash = lumino_gfx::compute_waterfall_cache_hash(b"empty-project");
         let ppq = lumino_core::view_state::DEFAULT_PPQ;
         let total_ticks = lumino_core::view_state::DEFAULT_TOTAL_TICKS;

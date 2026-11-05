@@ -111,16 +111,6 @@ pub enum Event {
     ScanAudioOutputs,
     /// 界面语言偏好变更（跟随系统 / 固定语言；UI-018）
     LanguagePreferenceChanged(LanguagePreference),
-    /// 高精度洋葱皮贴图是否启用
-    HiresOnionEnabledChanged(bool),
-    /// 高精度洋葱皮贴图每组小节数变更
-    HiresMeasuresPerGroupChanged(String),
-    /// 高精度洋葱皮贴图宽度变更
-    HiresTileWidthChanged(String),
-    /// 高精度洋葱皮贴图编辑后重生成冷静期变更
-    HiresCooldownChanged(String),
-    /// 高精度洋葱皮贴图 GPU 显存上限变更（MB）
-    HiresGpuMemLimitChanged(String),
     /// 洋葱皮渲染后端变更（GPU / CPU；加载 MIDI 后由面板锁定态拦截）
     OnionSkinBackendChanged(OnionSkinBackend),
     /// 播放时键盘颜色指示是否启用

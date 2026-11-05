@@ -1,8 +1,10 @@
 use super::types::CameraUniform;
-use super::types::DrawIndirectArgs;
 use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::note_renderer::NoteRenderer;
+
+// 缓冲 / 绑定组构造拆到子模块，保持本文件 < 400 行（REF-001）
+mod buffers;
 
 impl NoteRenderer {
     /// 创建新的音符渲染器（默认带 depth attachment）
@@ -279,6 +281,7 @@ impl NoteRenderer {
             cull_uniform_buffer.inner(),
             &cull_uniform_buffer_size,
             viewport_buffer.inner(),
+            view_state_buffer.inner(),
             &cull_bind_group_layout,
         );
 
@@ -308,22 +311,6 @@ impl NoteRenderer {
             direct_pipeline,
             vertical_direct_pipeline,
         }
-    }
-
-    /// 构建间接绘制初始化模板（MAX_CHUNKS 槽位 × 默认 DrawIndirectArgs）。
-    ///
-    /// `prepare_pass` 每帧将其写回 indirect buffer 做重置；预计算后每帧零分配。
-    fn build_indirect_template(slot_align: u64) -> Vec<u8> {
-        let slot_count = super::chunk::MAX_CHUNKS;
-        let mut template = vec![0u8; (slot_count as u64 * slot_align) as usize];
-        let default_args = DrawIndirectArgs::default();
-        let default_bytes = bytemuck::bytes_of(&default_args);
-        for idx in 0..slot_count {
-            let offset = (idx as u64) * slot_align;
-            template[offset as usize..offset as usize + default_bytes.len()]
-                .copy_from_slice(default_bytes);
-        }
-        template
     }
 
     /// 创建所有 GPU 缓冲区（音符实例缓冲、可见索引缓冲、间接绘制缓冲、
@@ -392,32 +379,6 @@ impl NoteRenderer {
             viewport_buffer,
             cull_uniform_buffer,
             slot_bytes,
-        )
-    }
-
-    /// 创建计算 bind groups（分块切片）。
-    #[allow(clippy::too_many_arguments)]
-    fn build_cull_bind_groups(
-        device: &wgpu::Device,
-        chunk_layout: &super::chunk::ChunkLayout,
-        gpu_note_buffer: &crate::gpu_note_buffer::GpuNoteBuffer,
-        visible_instance_buffer: &wgpu::Buffer,
-        indirect_buffer: &wgpu::Buffer,
-        cull_uniform_buffer: &wgpu::Buffer,
-        cull_uniform_buffer_size: &u64,
-        viewport_buffer: &wgpu::Buffer,
-        cull_bind_group_layout: &wgpu::BindGroupLayout,
-    ) -> Vec<wgpu::BindGroup> {
-        Self::create_cull_bind_groups(
-            device,
-            chunk_layout,
-            gpu_note_buffer.buffer(),
-            visible_instance_buffer,
-            indirect_buffer,
-            cull_uniform_buffer,
-            viewport_buffer,
-            *cull_uniform_buffer_size,
-            cull_bind_group_layout,
         )
     }
 }

@@ -73,30 +73,6 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "连接" => Some("Connect"),
         "管理文件" => Some("Manage Files"),
         "洋葱皮设置" => Some("Onion Skin Settings"),
-        "启用高精度洋葱皮贴图" => Some("Enable high-precision onion skin tiles"),
-        "启用后将在钢琴卷帘上叠加高精度预渲染贴图，编辑后自动重生成。" => {
-            Some(
-                "When enabled, high-precision prerendered tiles are overlaid on the piano roll and regenerated after edits.",
-            )
-        }
-        "每组小节数 (1-16)" => Some("Measures per group (1-16)"),
-        "组内小节数越大单张贴图越长，内存占用越高。" => {
-            Some("More measures per group means longer tiles and higher memory usage.")
-        }
-        "贴图宽度像素 (480-7680)" => Some("Tile width in pixels (480-7680)"),
-        "贴图宽度越大越清晰但内存占用越高，建议不超过 3840。" => {
-            Some("Larger tiles are sharper but use more memory; 3840 or less is recommended.")
-        }
-        "编辑后重生成冷静期秒数 (3-60)" => {
-            Some("Regeneration cooldown after edits, seconds (3-60)")
-        }
-        "停止编辑后等待指定秒数再重生成贴图，避免频繁重绘。" => Some(
-            "Wait this many seconds after editing stops before regenerating tiles, avoiding frequent redraws.",
-        ),
-        "GPU 显存上限 MB (128-4096)" => Some("GPU memory limit MB (128-4096)"),
-        "GPU 显存上限越大可同时显示越多贴图。" => {
-            Some("A higher GPU memory limit allows more tiles to be shown at once.")
-        }
         "洋葱皮渲染方式" => Some("Onion skin renderer"),
         "加载 MIDI 后不可切换，请先关闭 MIDI 工程" => {
             Some("Cannot be changed after loading MIDI; close the MIDI project first")

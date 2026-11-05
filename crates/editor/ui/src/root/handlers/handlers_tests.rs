@@ -37,7 +37,7 @@ fn create_root() -> Root {
 /// 三个守卫测试模块共用：入口闸、出口闸、过渡态守卫都必须同时验证 CPU 拦截与 GPU 回归。
 pub(super) fn root_with_backend(backend: OnionSkinBackend) -> Root {
     let mut root = Root::new(&UiConfig::default());
-    root.settings.hires.backend = backend;
+    root.settings.onion_skin.backend = backend;
     root
 }
 

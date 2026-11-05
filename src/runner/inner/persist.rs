@@ -5,6 +5,13 @@
 use super::super::window_manager::WindowManager;
 use super::*;
 
+// 纯判据辅助函数拆到子模块，保持本文件 < 400 行（REF-001）
+mod helpers;
+use helpers::{
+    display_or_empty, parse_autosave_interval_mins, should_persist_language,
+    should_persist_onion_backend,
+};
+
 struct ConfigDiff {
     synth_changed: bool,
     xsynth_changed: bool,
@@ -16,42 +23,6 @@ struct ConfigDiff {
     audio_output_changed: bool,
     /// 界面语言偏好或生效语言变更（UI-018：需落盘 + 重建 macOS 原生菜单）
     language_changed: bool,
-}
-
-fn display_or_empty(s: &str) -> &str {
-    if s.is_empty() { "(空)" } else { s }
-}
-
-/// UI-020：语言字段是否应落盘。
-///
-/// 环境变量（`LUMINO_LANG`）只影响本次启动：来源为 env 且用户本次未显式
-/// 改语言时不落盘（防止排障覆盖被任意一次设置保存物化成固定语言）；
-/// 用户真实改过语言（`language_changed`）时照常写入意图。
-fn should_persist_language(language_from_env: bool, language_changed: bool) -> bool {
-    !language_from_env || language_changed
-}
-
-/// 解析自动保存间隔输入（分钟）：越界值收敛到 1..=120，非法输入返回
-/// `None`（落盘时保留旧值，不阻塞其他设置项的保存）。
-fn parse_autosave_interval_mins(s: &str) -> Option<u32> {
-    s.trim().parse::<u32>().ok().map(|v| v.clamp(1, 120))
-}
-
-/// 洋葱皮渲染后端是否应落盘（「加载 MIDI 后禁止切换后端」的第三道闸）。
-///
-/// 两个条件**任一**为真即不写，保留旧配置：
-/// - `backend_locked`：设置面板处于锁定会话态（主窗口注入）；
-/// - `midi_loaded`：主窗口会话已加载**真实** MIDI/工程（空白工程不算）。
-///
-/// 为什么两个都要：设置对话框可能在「无 MIDI」时打开、之后才加载 MIDI，
-/// 此时对话框面板里的 `backend_locked` 仍是打开那一刻的 `false`——
-/// 只信面板字段会把「加载 MIDI 后本不该生效的后端」写到下次启动。
-///
-/// 为什么判据是 `midi_loaded` 而不是「有没有文档」：启动/新建/关闭工程都会挂一份
-/// 2 轨空白 `MidiDocument`，用「有文档」判会把空白工程也挡在落盘之外——
-/// 用户在空白工程里选的后端永远存不下来（见 `host::session_lock`）。
-fn should_persist_onion_backend(backend_locked: bool, midi_loaded: bool) -> bool {
-    !backend_locked && !midi_loaded
 }
 
 impl RunnerInner {
@@ -100,7 +71,7 @@ impl RunnerInner {
         // 否则锁定态下（面板值 vs 旧配置不同、但运行时保持不变）会每帧都被判成
         // 「有变更」→ 每帧 `patch` + 写盘，白白打爆磁盘。
         let onion_backend_changed =
-            persist_onion_backend && new.hires.backend != old.onion_skin_backend;
+            persist_onion_backend && new.onion_skin.backend != old.onion_skin_backend;
         let other_changed = language_changed
             || onion_backend_changed
             || new.editing.selection_box_mode != old.selection_box_mode
@@ -180,7 +151,7 @@ impl RunnerInner {
         // 刻意不查 `document.is_some()`——空白工程也挂着 2 轨空文档，那样会永远不落盘。
         let midi_loaded = self.window_state.window.ui().onion_backend_locked();
         let persist_onion_backend =
-            should_persist_onion_backend(new.hires.backend_locked, midi_loaded);
+            should_persist_onion_backend(new.onion_skin.backend_locked, midi_loaded);
         let diff = match Self::config_diff(new, old, &current_theme, persist_onion_backend) {
             Some(d) => d,
             None if !auto_scroll_mode_changed => return,
@@ -359,15 +330,10 @@ impl RunnerInner {
             config.ui.enable_256key = new.display.enable_256key;
             config.ui.note_count_display = new.display.note_count_display;
             config.ui.velocity_curve_style = new.display.velocity_curve_style;
-            config.ui.hires_onion_enabled = new.hires.onion_enabled;
-            config.ui.hires_measures_per_group = new.hires.measures_per_group;
-            config.ui.hires_tile_width_px = new.hires.tile_width_px;
-            config.ui.hires_cooldown_secs = new.hires.cooldown_secs;
-            config.ui.hires_gpu_mem_limit_mb = new.hires.gpu_mem_limit_mb;
             // 洋葱皮渲染后端：锁定/有 MIDI 文档时保留旧配置（见
             // `should_persist_onion_backend`——锁定后运行时值本来也切不动）。
             if persist_onion_backend {
-                config.ui.onion_skin_backend = new.hires.backend;
+                config.ui.onion_skin_backend = new.onion_skin.backend;
             }
             config.ui.playback_key_colors_enabled = new.display.playback_key_colors_enabled;
             config.ui.track_add_behavior = new.editing.track_add_behavior;

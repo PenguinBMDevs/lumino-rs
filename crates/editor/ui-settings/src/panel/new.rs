@@ -7,8 +7,8 @@
 //! `Event` 全变体的**编译期穷尽**，不引入 `_ => {}` 通配臂。
 
 use crate::{
-    AutoScrollSettings, CloudSettings, DisplaySettings, EditingSettings, HiresSettings,
-    LoggingSettings, MidiSettings, SettingsPanel, SynthSettings,
+    AutoScrollSettings, CloudSettings, DisplaySettings, EditingSettings, LoggingSettings,
+    MidiSettings, OnionSkinSettings, SettingsPanel, SynthSettings,
 };
 
 impl SettingsPanel {
@@ -98,12 +98,7 @@ impl SettingsPanel {
                 winmm_outputs: Vec::new(),
                 selected_winmm_output: ui_config.system_output_device_id,
             },
-            hires: HiresSettings {
-                onion_enabled: ui_config.hires_onion_enabled,
-                measures_per_group: ui_config.hires_measures_per_group,
-                tile_width_px: ui_config.hires_tile_width_px,
-                cooldown_secs: ui_config.hires_cooldown_secs,
-                gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            onion_skin: OnionSkinSettings {
                 backend: ui_config.onion_skin_backend,
                 // 会话态：由主窗口通过 `set_settings_onion_backend_locked` 注入，
                 // 面板自身永远从「未锁定」起步（无 MIDI 时新建面板即可切换）。

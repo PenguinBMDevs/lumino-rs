@@ -217,6 +217,7 @@ impl NoteRenderer {
             self.visible_instance_buffer.inner(),
             self.indirect_buffer.inner(),
             self.cull_uniform_buffer.inner(),
+            self.view_state_buffer.inner(),
             self.viewport_buffer.inner(),
             self.cull_uniform_buffer_size,
             &self.cull_bind_group_layout,

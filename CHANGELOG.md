@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 洋葱皮 · 删除死设置项「启用高精度洋葱皮贴图」+ 关闭态裁剪闸门
+
+- **删除死设置**：设置页该勾选框只控制 `TextureWaterfallConfig.enabled`，而钢琴卷帘的
+  高精度贴图叠加层**没有任何生成生产者**（`Host::generate_texture_waterfall` /
+  `force_waterfall_regen` 全仓无调用方 ⇒ `texture_waterfall_renderer` 永远 `None`），
+  勾选与否零差异。连同 `HiresOnionEnabledChanged` 事件、`HiresSettings.onion_enabled`、
+  `UiConfig::hires_onion_enabled` 与 2 条 i18n 文案一并清除。旧配置文件里的该键由
+  serde 默认忽略（无 `deny_unknown_fields`），无需迁移。
+- **优化①：轨道闸门前移到 compute cull** — `cull.wgsl` / `cull_vertical.wgsl` 新增
+  binding 5 读同一个 `ViewState`（零额外显存），`track_visible()` 在裁剪阶段丢弃隐藏
+  实例：不写可见索引、不进 `indirect.instance_count`，省掉被隐藏实例的整趟顶点着色器
+  （cull ≈0.10 ns/实例 vs VS ≈0.65 ns/实例）。三条豁免必须保留：预览哨兵 `0xFFFFFFFF`、
+  `current_track == 0`（视图状态未建立：视频导出变体/首帧）、主音轨。
+- **优化②：总开关同时管「生成」** — `generate_texture_waterfall`、`force_waterfall_regen`
+  （**保留脏标记**，开关打开后补算）、`send_waterfall_regen` 三道闸，关闭即不烘焙贴图。
+- **顺序修正** — `SetViewState` 提到 Full 会话**之前**发送：drain 在 `Done` 处 `break`，
+  排在 `Done` 之后的消息会晚一帧生效，那一帧既没有正确闸门也没有正确的 `current_track`。
+- **验证** — 新增 `test_cull_path_drops_onion_when_disabled`（回读 `indirect.instance_count`：
+  关闭 = 1、打开 = 2，证明 cull 真的丢了实例而非 VS 退化）+ cull shader 源码契约测试；
+  `test_direct_path_pixels_match_cull_path` 扩展到开关两种状态逐位像素一致。
+- **REF-001** — `note_renderer/init.rs` 426→384、`runner/inner/persist.rs` 406→377
+  （拆分出 `init/buffers.rs`、`persist/helpers.rs`，非压缩代码）。
+- **续删余下 4 个旋钮（2026-11-05）** — 每组小节数 / 贴图宽度 / 冷静期 / 显存上限
+  连同 `UiConfig::hires_*` 字段、4 个 `Hires*Changed` 事件、4 个默认值函数、8 条 i18n
+  文案一并清除；`HiresSettings` 只剩渲染后端，更名为 `OnionSkinSettings`（字段
+  `hires` → `onion_skin`）。`TextureWaterfallConfig` 改用库默认值
+  （`gpu_mem_limit_mb = u32::MAX`，与「不得限制 GPU 内存使用」硬约束一致）。
+- **i18n 欠账补齐** — DRAW-041C 遮罩/编辑图形功能有 8 条调用点文案未登记（`图形`
+  措辞变体，与既有 `形状` 条目字面不同），逐字补齐英文；`test_every_call_site_key_is_translated`
+  在 HEAD 上是红的，本次转绿（`lumino-core` 276 passed）。
+
 ### DRAW-039 · 自动保存补全与崩溃日志可见化
 
 - **周期自动保存**（默认关闭，间隔 5 分钟，1..=120 可调）：仅在工程 dirty 时写入

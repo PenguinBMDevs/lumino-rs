@@ -172,19 +172,9 @@ pub struct MidiSettings {
     pub selected_winmm_output: Option<u32>,
 }
 
-/// 高精度洋葱皮贴图设置
+/// 洋葱皮设置（渲染后端 + 会话锁定态）
 #[derive(Debug, Clone)]
-pub struct HiresSettings {
-    /// 是否启用高精度洋葱皮贴图
-    pub onion_enabled: bool,
-    /// 每组小节数
-    pub measures_per_group: u32,
-    /// 贴图瓦片宽度（像素）
-    pub tile_width_px: u32,
-    /// 重新生成冷却时间（秒）
-    pub cooldown_secs: u64,
-    /// GPU 显存使用上限（MB）
-    pub gpu_mem_limit_mb: u32,
+pub struct OnionSkinSettings {
     /// 洋葱皮渲染后端（GPU / CPU；初始化自 `UiConfig::onion_skin_backend`）
     pub backend: lumino_core::storage::config::OnionSkinBackend,
     /// 后端选择是否锁定（**会话态**，不来自 `UiConfig`：主窗口加载 MIDI 后为 true）。
@@ -245,8 +235,8 @@ pub struct SettingsPanel {
     pub auto_scroll: AutoScrollSettings,
     /// MIDI 设备
     pub midi: MidiSettings,
-    /// 高精度洋葱皮
-    pub hires: HiresSettings,
+    /// 洋葱皮（渲染后端 + 锁定态）
+    pub onion_skin: OnionSkinSettings,
     /// 日志与监控
     pub logging: LoggingSettings,
     /// 云存储

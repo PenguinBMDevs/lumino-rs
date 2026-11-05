@@ -113,6 +113,20 @@ impl NoteRenderer {
                     },
                     count: None,
                 },
+                // binding 5：视图状态 uniform（当前音轨 + 洋葱皮开关 + 静音位图）。
+                // 2026-11-04：cull 也要参与轨道闸门——洋葱皮关闭时在裁剪阶段就丢掉
+                // 非主音轨实例，省下整条渲染链路的 VS 与可见索引写（不只是 VS 里退化）。
+                // 与 render bind group 的 binding 1 是**同一个 buffer**（零额外显存）。
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }

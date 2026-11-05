@@ -212,7 +212,27 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "遮罩失败：请选中一个待确认/已 Bake 形状" => {
             Some("Mask failed: select a pending or baked shape")
         }
-        "已竖切；✓ 后才写入音符" => Some("Sliced vertically; notes are written after ✓"),
+        // 2026-11-05：DRAW-041C 遮罩/编辑图形的调用点用的是「图形」措辞，
+        // 与上面「形状」条目不同字面 ⇒ 必须逐字登记，否则 i18n 覆盖率测试红灯。
+        "已应用遮罩" => Some("Mask applied"),
+        "应用遮罩失败：目标图形已不可编辑" => {
+            Some("Failed to apply mask: the target shape is no longer editable")
+        }
+        "编辑图形" => Some("Edit Shape"),
+        "编辑图形失败：请选中一个已 Bake 图形或单支待确认组合" => {
+            Some("Edit shape failed: select a baked shape or a single pending composition")
+        }
+        "已进入编辑图形：角=缩放，边=拉伸，角外=旋转，中心=移动" => Some(
+            "Editing shape: corners = scale, edges = stretch, outside corner = rotate, center = move",
+        ),
+        "已退出编辑图形" => Some("Exited shape editing"),
+        "遮罩设置…" => Some("Mask Settings…"),
+        "遮罩设置失败：请选中一个待确认形状或已 Bake 图形" => {
+            Some("Failed to open mask settings: select a pending or baked shape")
+        }
+        "已竖切；✓ 后才写入音符" => {
+            Some("Sliced vertically; notes are written after ✓")
+        }
         "竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
             Some("Slice failed: select a pending shape/curve; composed results must be ✓ first")
         }
@@ -223,9 +243,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Tween failed: select exactly two pending shapes/curves")
         }
         // DRAW-041C 阶段 3：020 显式手柄编辑的进入/退出提示
-        "已进入手柄编辑；拖小圆点，Shift 关闭 15° 旋转吸附" => Some(
-            "Handle edit mode on; drag the dots, Shift disables 15° rotation snapping",
-        ),
+        "已进入手柄编辑；拖小圆点，Shift 关闭 15° 旋转吸附" => {
+            Some("Handle edit mode on; drag the dots, Shift disables 15° rotation snapping")
+        }
         "已退出手柄编辑" => Some("Handle edit mode off"),
         _ => None,
     }

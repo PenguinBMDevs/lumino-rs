@@ -34,12 +34,68 @@ struct DrawIndirectArgs {
     _padding: vec4<u32>,
 };
 
+/// 视图状态：与 `onion_note.wgsl` 逐字一致（当前音轨 + 洋葱皮开关 + 静音位图）
+struct ViewState {
+    current_track: u32,
+    /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏（工具栏开关默认关闭）
+    onion_visible: u32,
+    _pad1: u32,
+    _pad2: u32,
+    muted_bits: array<vec4<u32>, 512>,
+};
+
+/// 预览音符哨兵（`border_width`）：预览层（`note.wgsl`）不走轨道语义
+const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFFFFFFu;
+
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
 @group(0) @binding(1) var<uniform> cull_info: CullUniform;
 @group(0) @binding(2) var<storage, read> all_instances: array<NoteInstance>;
 // 2026-08-07：可见缓冲不再重包 NoteInstance，只输出 source index（u32），显存占用降为 1/4。
 @group(0) @binding(3) var<storage, read_write> visible_instances: array<u32>;
 @group(0) @binding(4) var<storage, read_write> indirect_args: DrawIndirectArgs;
+@group(0) @binding(5) var<uniform> view_state: ViewState;
+
+/// 查询静音位图（track_enc = track_idx+1；0 恒为未静音）
+fn is_muted_track(track_enc: u32) -> bool {
+    if (track_enc == 0u) {
+        return false;
+    }
+    let track_idx = track_enc - 1u;
+    let word = track_idx / 32u;
+    let bit = track_idx % 32u;
+    if (word >= 2048u) {
+        return false;
+    }
+    let v = view_state.muted_bits[word / 4u];
+    return ((v[word % 4u] >> bit) & 1u) != 0u;
+}
+
+/// 轨道闸门：该实例是否允许进入可见列表（判据与 `onion_note.wgsl` 的 `show` 同义）。
+///
+/// 与 VS 里退化相比，这里省掉的是**整条渲染链路**：被拒实例不写可见索引 ⇒
+/// 顶点着色器不会为它跑一遍、draw 的实例数也不含它（关洋葱皮省一趟 VS）。
+///
+/// 三条豁免必须保留，否则会误杀：
+/// 1. 预览哨兵恒保留——预览层的实例没有真实 track_enc；
+/// 2. `current_track == 0`（视图状态未建立：视频导出变体从不调用
+///    `set_view_state`、主窗口首帧）→ **不做闸门**，保持删除前行为；
+/// 3. 主音轨恒保留（静音的主音轨仍要显示，与 VS 同口径）。
+fn track_visible(border_width: u32) -> bool {
+    if (border_width == PREVIEW_BORDER_SENTINEL) {
+        return true;
+    }
+    if (view_state.current_track == 0u) {
+        return true;
+    }
+    let track_enc = border_width >> 16u;
+    if (track_enc == view_state.current_track) {
+        return true;
+    }
+    if (view_state.onion_visible == 0u) {
+        return false;
+    }
+    return !is_muted_track(track_enc);
+}
 
 // workgroup 共享内存：批量原子操作的临时存储
 var<workgroup> wg_count: atomic<u32>;
@@ -70,7 +126,7 @@ fn main(
         // key 从 key_color 低 8 位解码（与 wasabi/note.wgsl 一致）
         let key = f32(instance.key_color & 0xFFu);
 
-        if (length > 0.0) {
+        if (length > 0.0 && track_visible(instance.border_width)) {
             let screen_min_x = tick * camera.zoom.x - camera.scroll.x
                                + camera.keyboard_width + camera.canvas_offset.x;
 

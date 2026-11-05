@@ -38,11 +38,58 @@ struct DrawIndirectArgs {
     _padding: vec4<u32>,
 };
 
+/// 视图状态：与 `onion_note.wgsl` 逐字一致（当前音轨 + 洋葱皮开关 + 静音位图）
+struct ViewState {
+    current_track: u32,
+    /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏（工具栏开关默认关闭）
+    onion_visible: u32,
+    _pad1: u32,
+    _pad2: u32,
+    muted_bits: array<vec4<u32>, 512>,
+};
+
+/// 预览音符哨兵（`border_width`）：预览层（`note.wgsl`）不走轨道语义
+const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFFFFFFu;
+
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
 @group(0) @binding(1) var<uniform> cull_info: CullUniform;
 @group(0) @binding(2) var<storage, read> all_instances: array<NoteInstance>;
 @group(0) @binding(3) var<storage, read_write> visible_instances: array<u32>;
 @group(0) @binding(4) var<storage, read_write> indirect_args: DrawIndirectArgs;
+@group(0) @binding(5) var<uniform> view_state: ViewState;
+
+/// 查询静音位图（track_enc = track_idx+1；0 恒为未静音）
+fn is_muted_track(track_enc: u32) -> bool {
+    if (track_enc == 0u) {
+        return false;
+    }
+    let track_idx = track_enc - 1u;
+    let word = track_idx / 32u;
+    let bit = track_idx % 32u;
+    if (word >= 2048u) {
+        return false;
+    }
+    let v = view_state.muted_bits[word / 4u];
+    return ((v[word % 4u] >> bit) & 1u) != 0u;
+}
+
+/// 轨道闸门（与横向 `cull.wgsl` 逐字同义，改动必须两处同步）。
+fn track_visible(border_width: u32) -> bool {
+    if (border_width == PREVIEW_BORDER_SENTINEL) {
+        return true;
+    }
+    if (view_state.current_track == 0u) {
+        return true;
+    }
+    let track_enc = border_width >> 16u;
+    if (track_enc == view_state.current_track) {
+        return true;
+    }
+    if (view_state.onion_visible == 0u) {
+        return false;
+    }
+    return !is_muted_track(track_enc);
+}
 
 var<workgroup> wg_count: atomic<u32>;
 var<workgroup> wg_indices: array<u32, 256>;
@@ -67,7 +114,7 @@ fn main(
         let length = instance.start_length.y;
         let key = f32(instance.key_color & 0xFFu);
 
-        if (length > 0.0) {
+        if (length > 0.0 && track_visible(instance.border_width)) {
             // 纵向头部对齐键盘顶部：X = key*zoom_y - scroll_y, Y = grid_bottom - (tick+len)*zoom + scroll
             let grid_bottom = camera.canvas_offset.y + camera.canvas_size.y - camera.keyboard_width;
             let screen_min_x = key * camera.zoom.y - camera.scroll.y + camera.canvas_offset.x;

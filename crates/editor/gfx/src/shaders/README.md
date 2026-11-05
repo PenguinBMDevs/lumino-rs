@@ -24,6 +24,26 @@ GPU 常驻实例数据不卸载、段表不失效，重新打开只需把该 uni
 （`vs_main` / `vs_direct` / `vs_point`）共用同一谓词 `is_main || (onion_enabled() && !is_muted)`
 ——改一处必须三处同步，否则各路径画面不一致。
 
+### 轨道闸门前移到 compute cull（2026-11-04）
+
+`cull.wgsl` / `cull_vertical.wgsl` 通过 binding 5 也读同一个 `ViewState`（与 render
+bind group 的 binding 1 是**同一个 buffer**，零额外显存），用 `track_visible()` 在
+裁剪阶段就丢掉隐藏实例。相比「只在 VS 里退化成零面积」，这省掉被隐藏实例的**整趟
+顶点着色器**与可见索引写，并让 `indirect` 实例数里不再含它们（cull 成本约 0.10 ns/实例，
+VS 约 0.65 ns/实例 ⇒ 大工程关洋葱皮即省一档 VS 时间）。
+
+三条豁免必须保留，否则误杀：
+
+1. **预览哨兵** `border_width == 0xFFFF_FFFF` 恒保留——预览层 `note.wgsl` 不走轨道语义，
+   且 `renderers.note` 在产出环境从不调用 `set_view_state`；
+2. `current_track == 0`（视图状态未建立：视频导出变体、首帧）**不做任何过滤**，
+   保持接入本闸门之前的行为；
+3. 主音轨恒保留（主音轨被静音时仍显示，与 VS 同口径）。
+
+**顺序保证**：`SetViewState` 由 UI 在 `Full` 会话**之前**发出（`instance_stream.rs`）——
+渲染线程的 drain 在 `Done` 处 `break`，排在 `Done` 之后的消息会晚一帧生效，那样
+首帧既没有段表也没有正确的闸门。改这个发送顺序前先读该注释。
+
 与旧 `note.wgsl` 的差异：**无预览哨兵分支**（预览音符走独立渲染器 `note.wgsl`）。
 2026-08-07 起顶点输入从完整 `NoteInstance` 改为 `u32` 可见索引。
 
@@ -31,8 +51,8 @@ GPU 常驻实例数据不卸载、段表不失效，重新打开只需把该 uni
 
 | 入口 | 顶点输入 | 可见性判定 | 用途 |
 |---|---|---|---|
-| `vs_main` | 可见索引（cull 产出） | `cull.wgsl` compute pass | 默认路径 |
-| `vs_direct` | `@builtin(instance_index)`（源索引） | 本入口自判（谓词与 `cull.wgsl` 逐字一致） | 省掉整趟 cull pass（PREF-005） |
+| `vs_main` | 可见索引（cull 产出） | `cull.wgsl` compute pass（含轨道闸门，隐藏实例连 VS 都不跑） | 默认路径 |
+| `vs_direct` | `@builtin(instance_index)`（源索引） | 本入口自判（轨道/静音/视口谓词与 `cull.wgsl` 同口径，隐藏实例在此退化为零面积） | 省掉整趟 cull pass（PREF-005） |
 | `vs_point` | `@builtin(instance_index)` | 本入口自判 | 亚像素档位点图元（PREF-004 P1） |
 
 ### 深度语义：区域化位空间映射（与 `note.wgsl` 同义，2026-09 加固）
