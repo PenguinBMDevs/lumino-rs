@@ -8,6 +8,7 @@ use lumino_message::{DotType, NotePrecision, Tool, TupletType};
 use super::{Event, FlipHorizontalMode, ShapeType, ToolPanelItem};
 use crate::Message;
 use crate::button_descs::ButtonId;
+use crate::onion_skin_mode::OnionSkinMode;
 
 impl Event {
     /// 构造"播放"的工具栏消息
@@ -148,6 +149,21 @@ impl Event {
     /// 构造"洋葱皮全局显示开关"的工具栏消息（默认关闭，见 `Toolbar::onion_skin_enabled`）
     pub const fn toggle_onion_skin() -> Message {
         Message::Toolbar(Self::ToggleOnionSkin)
+    }
+
+    /// 构造"开合洋葱皮选项下拉"的工具栏消息
+    pub const fn toggle_onion_skin_menu() -> Message {
+        Message::Toolbar(Self::ToggleOnionSkinMenu)
+    }
+
+    /// 构造"关闭洋葱皮选项下拉"的工具栏消息
+    pub const fn close_onion_skin_menu() -> Message {
+        Message::Toolbar(Self::CloseOnionSkinMenu)
+    }
+
+    /// 构造"选择洋葱皮显示范围"的工具栏消息
+    pub const fn onion_skin_mode_selected(mode: OnionSkinMode) -> Message {
+        Message::Toolbar(Self::OnionSkinModeSelected(mode))
     }
 
     /// 构造"开始拖拽调整高度"的工具栏消息

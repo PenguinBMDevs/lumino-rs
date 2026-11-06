@@ -120,6 +120,8 @@ fn cpu_mode_never_emits_delta_or_view_state() {
                                     // 开关位固定为「已同步态」：可见性变化在两种后端下
                                     // 都走 ViewState，由 `tests_toggle.rs` 单独覆盖
                                     onion_visible: false,
+                                    onion_mode:
+                                        lumino_ui_core::onion_skin_mode::OnionSkinMode::AllTracks,
                                 };
                                 let action = state.decide_action(&fp);
                                 assert!(

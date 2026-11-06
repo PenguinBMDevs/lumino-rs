@@ -139,7 +139,7 @@ fn render_points(
 
     let mut renderer =
         NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
-    renderer.set_view_state(&queue, current_track, muted, onion_visible);
+    renderer.set_view_state(&queue, current_track, muted, onion_visible, (1, u32::MAX));
     renderer.upload_instances(notes, &device, &queue);
     renderer.prepare_direct(subpixel_camera(), &queue);
 

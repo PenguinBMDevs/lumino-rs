@@ -17,7 +17,7 @@ pub use project::{
     },
     folder::FolderPaths,
     load::load_project,
-    metadata::ProjectMetadata,
+    metadata::{ProjectMetadata, SettingsMetadata},
     save::{encode_archive, encode_archive_with_time, save_to_archive, save_to_folder},
     track::{LmtrackData, LmtrackHeader, TrackMeta},
 };

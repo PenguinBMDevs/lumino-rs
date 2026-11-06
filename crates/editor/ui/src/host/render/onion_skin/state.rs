@@ -27,6 +27,11 @@ pub(crate) struct OnionSkinState {
     pub(super) last_track_count: usize,
     /// 上次同步到渲染侧的洋葱皮开关（工具栏按钮；变化 → `ViewState` 零重传）
     pub(super) last_onion_visible: bool,
+    /// 上次构建时的洋葱皮显示范围（track_enc 闭区间；空区间 = `(1, 0)`）
+    ///
+    /// 默认空区间：与 `onion_visible` 默认 `false` 一致——首帧不显示洋葱皮，
+    /// 首次 `needs_rebuild` 必因（可能是）范围不等而走一次 `ViewState`，无副作用。
+    pub(super) last_onion_range: (u32, u32),
     /// 是否已初始化（首次上传）
     pub(super) initialized: bool,
     /// 强制全量重建标志（未知变化兜底：undo/redo/散改/加载后主音轨段
@@ -52,6 +57,7 @@ impl Default for OnionSkinState {
             last_palette_idx: u8::MAX,
             last_track_count: 0,
             last_onion_visible: false,
+            last_onion_range: super::range::EMPTY_ONION_RANGE,
             initialized: false,
             force_full: false,
             cpu_current_only: false,
@@ -123,6 +129,7 @@ impl OnionSkinState {
         self.last_palette_idx = fp.palette_idx;
         self.last_track_count = fp.track_count;
         self.last_onion_visible = fp.onion_visible;
+        self.last_onion_range = fp.onion_range();
         self.initialized = true;
         self.force_full = false;
     }

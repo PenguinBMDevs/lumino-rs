@@ -110,12 +110,13 @@ fn render_cull(
     current_track: u32,
     muted: &[usize],
     onion_visible: bool,
+    onion_range: (u32, u32),
 ) -> (Vec<u8>, u32) {
     let (device, queue) = crate::test_gpu::shared_device();
 
     let mut renderer =
         NoteRenderer::new_onion_skin(&device, &queue, FORMAT, crate::GpuEpoch::INITIAL);
-    renderer.set_view_state(&queue, current_track, muted, onion_visible);
+    renderer.set_view_state(&queue, current_track, muted, onion_visible, onion_range);
     renderer.upload_instances(notes, &device, &queue);
 
     let (color, _depth, color_view, depth_view) = make_textures(&device, "onion_cull_color");
@@ -156,7 +157,7 @@ fn test_cull_path_drops_onion_when_disabled() {
         NoteInstance::new(0.0, 120, 120.0, NOTE_COLOR, encode(2, 2)),
     ];
 
-    let (hidden, hidden_count) = render_cull(&notes, 1, &[], false);
+    let (hidden, hidden_count) = render_cull(&notes, 1, &[], false, (1, u32::MAX));
     let hidden = covered_rows(&hidden);
     assert!(
         hidden.contains(&cull_row(110)),
@@ -175,7 +176,7 @@ fn test_cull_path_drops_onion_when_disabled() {
         "关闭洋葱皮后 cull 只应放行主音轨 1 个实例（隐藏实例连 VS 都不该跑）"
     );
 
-    let (shown, shown_count) = render_cull(&notes, 1, &[], true);
+    let (shown, shown_count) = render_cull(&notes, 1, &[], true, (1, u32::MAX));
     let shown = covered_rows(&shown);
     assert!(
         shown.contains(&cull_row(120)),
@@ -206,6 +207,12 @@ fn test_cull_shaders_carry_track_gate() {
         for needle in [
             "@group(0) @binding(5) var<uniform> view_state: ViewState;",
             "onion_visible: u32,",
+            // 显示范围（2026-11-05）：上/下一个音轨靠它裁剪，缺了就等于永久"全部音轨"
+            "onion_first: u32,",
+            "onion_last: u32,",
+            // cull 侧是「越界即拒」写法（与 VS 侧的 >= 等价，方向相反）
+            "track_enc < view_state.onion_first",
+            "track_enc > view_state.onion_last",
             "fn track_visible(border_width: u32) -> bool {",
             "if (view_state.current_track == 0u) {",
             "&& track_visible(instance.border_width)",
@@ -228,5 +235,69 @@ fn test_cull_shaders_carry_track_gate() {
     assert!(
         vs.contains("view_state.onion_visible != 0u"),
         "onion_note.wgsl 缺少洋葱皮开关判据"
+    );
+    assert!(
+        vs.contains("fn onion_enabled(track_enc: u32) -> bool {")
+            && vs.contains("track_enc <= view_state.onion_last"),
+        "onion_note.wgsl 的洋葱皮判据必须带显示范围（上/下一个音轨靠它生效）"
+    );
+}
+
+/// **契约 5d**：显示范围真的落到像素上（上一个 / 下一个音轨 / 空区间）。
+///
+/// 范围是 UI 解析好再下发的 track_enc 闭区间；这里直接喂区间，验证三段语义：
+/// 1. `(1,1)` → 只多画「上一个」，主轨照常（`is_main` 优先于范围）；
+/// 2. `(3,3)` → 只多画「下一个」，范围外的上一个必须消失；
+/// 3. 空区间 `(1,0)` → 只有主轨（cull 放行数 = 1）。
+#[test]
+fn test_cull_path_limits_onion_to_range() {
+    let notes = vec![
+        // 上一个音轨（enc 1）→ key 110 → 行 175
+        NoteInstance::new(0.0, 110, 120.0, NOTE_COLOR, encode(1, 2)),
+        // 主音轨（enc 2，current_track=2）→ key 115 → 行 125
+        NoteInstance::new(0.0, 115, 120.0, NOTE_COLOR, encode(2, 2)),
+        // 下一个音轨（enc 3）→ key 120 → 行 75
+        NoteInstance::new(0.0, 120, 120.0, NOTE_COLOR, encode(3, 2)),
+    ];
+
+    let (prev, prev_count) = render_cull(&notes, 2, &[], true, (1, 1));
+    let prev = covered_rows(&prev);
+    assert!(
+        prev.contains(&cull_row(110)),
+        "「上一个音轨」范围必须放行 enc=1（行 {}），实覆盖 {:?}",
+        cull_row(110),
+        prev
+    );
+    assert!(
+        prev.contains(&cull_row(115)),
+        "主音轨不受范围限制，必须照常绘制（行 {}）",
+        cull_row(115)
+    );
+    assert!(
+        !prev.contains(&cull_row(120)),
+        "范围外的「下一个音轨」必须隐藏（行 {}）",
+        cull_row(120)
+    );
+    assert_eq!(prev_count, 2, "主轨 + 上一个 = 2 个实例过 cull");
+
+    let (next, next_count) = render_cull(&notes, 2, &[], true, (3, 3));
+    let next = covered_rows(&next);
+    assert!(
+        next.contains(&cull_row(120)),
+        "「下一个音轨」范围必须放行 enc=3（行 {}），实覆盖 {:?}",
+        cull_row(120),
+        next
+    );
+    assert!(
+        !next.contains(&cull_row(110)),
+        "换到下一个音轨后，上一个音轨必须消失（不能残留）"
+    );
+    assert_eq!(next_count, 2, "主轨 + 下一个 = 2 个实例过 cull");
+
+    // 空区间（指定音轨未接入 / 首末轨无邻居）：只剩主音轨
+    let (_empty, empty_count) = render_cull(&notes, 2, &[], true, (1, 0));
+    assert_eq!(
+        empty_count, 1,
+        "空区间只放行主音轨（cull 侧就裁掉全部洋葱皮实例）"
     );
 }

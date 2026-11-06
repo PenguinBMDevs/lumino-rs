@@ -6,6 +6,7 @@ use iced_core::Point;
 use lumino_message::{DotType, NotePrecision, Tool, TupletType};
 
 use crate::button_descs::ButtonId;
+use crate::onion_skin_mode::OnionSkinMode;
 
 // 子模块（`Event` 的 `Message` 构造器）
 mod constructors;
@@ -76,9 +77,19 @@ pub enum Event {
     /// - CPU 光栅帧：关闭时不出帧（渲染器/脏区保留，重新打开补齐）；
     /// - hires 贴图叠加层：`RenderParams::onion_visible` 跳过该层（贴图不卸载）。
     ///
-    /// ⚠️ 与「洋葱皮选项」分离：按钮右侧预留的下拉三角后续会发**选项类**事件，
-    /// 本事件只负责开/关，不做任何"模式/范围"切换。
+    /// ⚠️ 本事件只负责开/关；「显示范围（全部/上一个/下一个/指定）」由按钮右侧
+    /// 下拉三角发 [`Event::OnionSkinModeSelected`]，两者互不覆盖：关掉开关时
+    /// 模式仍然保留，重新打开即按原模式显示。
     ToggleOnionSkin,
+    /// 开合「洋葱皮选项」下拉菜单（按钮右侧三角触发）
+    ToggleOnionSkinMenu,
+    /// 关闭「洋葱皮选项」下拉菜单（点空白处 / 选中某项 / 其它下拉打开时）
+    CloseOnionSkinMenu,
+    /// 选择洋葱皮显示范围模式
+    ///
+    /// 未实现的模式（[`OnionSkinMode::SpecificTrack`]）由处理方拦下并提示，
+    /// **不得写入 `Toolbar::onion_skin_mode`**——否则会出现一个什么都没做的勾选态。
+    OnionSkinModeSelected(OnionSkinMode),
     /// 循环播放切换
     ToggleLoop,
     /// 开始拖拽调整高度

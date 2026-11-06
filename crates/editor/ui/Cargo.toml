@@ -14,6 +14,10 @@ workspace = true
 [features]
 default = []
 
+[package.metadata.cargo-machete]
+# 特性钉：release 下 iced_renderer 未启用 wgpu/tiny-skia 会 compile_error。
+ignored = ["iced_renderer"]
+
 [dependencies]
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
@@ -46,22 +50,14 @@ iced_winit = { workspace = true }
 iced_widget = { workspace = true, features = ["image", "wgpu", "svg"] }
 iced_core = { workspace = true }
 image = { workspace = true }
-once_cell = { workspace = true }
 lumino-platform = { workspace = true }
 tracing = { workspace = true }
 # Android 上 tracing 无 logcat 桥（不可见），触摸链路打点必须走 log 门面
 log = { workspace = true }
-resvg = { workspace = true }
-usvg = { workspace = true }
-tiny-skia = { workspace = true }
 serde_json = { workspace = true }
-im = { workspace = true }
 puffin = { workspace = true }
 winit = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
 rayon = { workspace = true }
-parking_lot = { workspace = true }
 i2m-rs = { workspace = true }
 
 [dev-dependencies]

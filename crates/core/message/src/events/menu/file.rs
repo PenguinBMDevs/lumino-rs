@@ -36,6 +36,12 @@ pub enum Event {
     /// 形状不进 `ParsedMidi`（那层只承载 MIDI 语义），由加载侧在其**之后**单独发一条事件：
     /// 文档装载路径会清空形状存储，顺序反了会把刚加载的形状再清掉。
     ProjectShapes(Vec<lumino_core::shape::ShapeModel>),
+    /// 打开工程时随工程携带的洋葱皮显示范围模式（`all_tracks` / `previous_track` / …）
+    ///
+    /// 用 `String` 而不是枚举：`OnionSkinMode` 在 ui-core 里，message crate 不能反向
+    /// 依赖；解析（含未知值落回默认）由 UI 侧做，见 `OnionSkinMode::from_str_lossy`。
+    /// 与 `ProjectShapes` 同理，加载侧在 `MidiParsed` **之后**单独发一条事件。
+    ProjectOnionSkinMode(String),
     /// MIDI 解析失败
     MidiParseError(String),
     /// 显示进度（消息和进度 0.0-1.0）

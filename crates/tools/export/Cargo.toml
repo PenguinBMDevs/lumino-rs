@@ -15,7 +15,6 @@ workspace = true
 lumino-core = { workspace = true }
 lumino-project = { workspace = true }
 lumino-extras = { workspace = true }
-lumino-note-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-diagnostics = { workspace = true }
@@ -23,10 +22,6 @@ lumino-midiplayer = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 midly = { workspace = true }
-bytes = { workspace = true }
-encoding_rs = { workspace = true }
-num-bigint = { workspace = true }
-tokio = { workspace = true }
 zstd = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
@@ -35,7 +30,6 @@ toml = { workspace = true }
 xxhash-rust = { workspace = true }
 # 音频渲染依赖
 xsynth-core = { workspace = true }
-xsynth-soundfonts = { workspace = true }
 lumino-gpu-synth = { workspace = true }
 hound = { workspace = true }
 memmap2 = { workspace = true }

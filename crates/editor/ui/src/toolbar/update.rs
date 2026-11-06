@@ -22,6 +22,9 @@ impl Toolbar {
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
             // 洋葱皮默认**关闭**：其它音轨的幽灵音符不显示，需用户显式打开
             onion_skin_enabled: false,
+            // 显示范围默认「全部音轨」：与删除模式字段前的老行为一致
+            onion_skin_mode: lumino_ui_core::onion_skin_mode::OnionSkinMode::default(),
+            onion_skin_menu_open: false,
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             ppq_edit_error: None,
@@ -89,6 +92,23 @@ impl Toolbar {
             self.shape_dropdown_open = false;
         }
 
+        // 洋葱皮选项下拉打开时，除以下情况外其余操作先关闭下拉：
+        // - 再次点击三角（ToggleOnionSkinMenu）用于切换关闭
+        // - 悬停事件不应关闭下拉（重绘会让 mouse_area 重发 on_enter，会把刚打开的菜单关掉）
+        // - 显式关闭事件（CloseOnionSkinMenu，DropDown 的 on_dismiss）
+        // - 选中某个模式（OnionSkinModeSelected）：事件体内自行收口
+        if self.onion_skin_menu_open
+            && !matches!(
+                event,
+                Event::ToggleOnionSkinMenu
+                    | Event::ButtonHovered(_)
+                    | Event::CloseOnionSkinMenu
+                    | Event::OnionSkinModeSelected(_)
+            )
+        {
+            self.onion_skin_menu_open = false;
+        }
+
         // 「粗细」悬浮面板打开时，除以下情况外其余操作先关闭面板：
         // - 再次点击「粗细」按钮（ToggleThicknessPanel）用于切换关闭
         // - 悬停事件不应关闭面板
@@ -118,6 +138,12 @@ impl Toolbar {
             )
         {
             self.text_params_open = false;
+        }
+
+        // 洋葱皮事件（开关 / 下拉开合 / 选择范围）集中到 `update_onion_skin.rs`，
+        // 命中即返回；外部动作收起下拉的守卫已在上面统一跑过。
+        if self.update_onion_skin_event(&event) {
+            return;
         }
 
         match event {
@@ -224,19 +250,12 @@ impl Toolbar {
                 };
                 tracing::debug!("工具栏: 自动滚动模式切换为 {:?}", self.auto_scroll_mode);
             }
-            Event::ToggleOnionSkin => {
-                // 纯开/关（默认关）：不碰当前工具、填充态与任何浮层状态。
-                // 渲染侧（GPU 常驻实例流 / CPU 叠加层）读同一字段作为闸门。
-                self.onion_skin_enabled = !self.onion_skin_enabled;
-                tracing::debug!(
-                    "工具栏: 洋葱皮显示切换为 {}",
-                    if self.onion_skin_enabled {
-                        "开"
-                    } else {
-                        "关"
-                    }
-                );
-            }
+            // 洋葱皮事件已在上方 `update_onion_skin_event` 处理并提前返回；
+            // 保留空臂只为让本 match 保持穷尽（删掉会编译失败）。
+            Event::ToggleOnionSkin
+            | Event::ToggleOnionSkinMenu
+            | Event::CloseOnionSkinMenu
+            | Event::OnionSkinModeSelected(_) => {}
             Event::ToggleLoop => {
                 self.is_looping = !self.is_looping;
                 tracing::debug!("工具栏: 循环播放切换为 {}", self.is_looping);

@@ -90,6 +90,10 @@ pub enum OnionSkinStreamMsg {
         /// 洋葱皮是否可见（工具栏全局开关；`false` 时只画主音轨，
         /// 其余轨实例常驻显存但不落片元——关闭不卸载数据）
         onion_visible: bool,
+        /// 洋葱皮显示范围的 track_enc 闭区间（`first > last` = 空区间）
+        ///
+        /// 由 UI 按工具栏下拉模式解析好再下发，shader 只做区间比较。
+        onion_range: (u32, u32),
     },
     /// 预览音符实例替换（Drawing / hover / i2m 预览，独立预览渲染器）
     ///

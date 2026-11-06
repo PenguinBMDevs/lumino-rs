@@ -60,13 +60,14 @@ struct CameraUniform {
     _padding: vec2<f32>,
 }
 
-/// 视图状态：当前音轨（track_idx+1）+ 洋葱皮显示开关 + 静音位图（512 × vec4 = 65536 轨）
+/// 视图状态：当前音轨（track_idx+1）+ 洋葱皮开关 + 洋葱皮显示范围 + 静音位图
 struct ViewState {
     current_track: u32,
     /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏（工具栏开关默认关闭）
     onion_visible: u32,
-    _pad1: u32,
-    _pad2: u32,
+    /// 洋葱皮显示范围（track_enc 闭区间；`first > last` = 空区间）
+    onion_first: u32,
+    onion_last: u32,
     muted_bits: array<vec4<u32>, 512>,
 }
 
@@ -131,12 +132,13 @@ fn is_muted_track(track_enc: u32) -> bool {
     return ((v[word % 4u] >> bit) & 1u) != 0u;
 }
 
-/// 洋葱皮（非主音轨实例）是否可见（工具栏全局开关）。
-///
-/// 关闭时只画主音轨：其余轨实例走「视口外零面积几何」分支，不产生片元。
-/// 实例数据常驻显存不卸载，重新打开只是本 uniform 写回 1（零重传、即时生效）。
-fn onion_enabled() -> bool {
-    return view_state.onion_visible != 0u;
+/// 洋葱皮（非主音轨实例）是否可见 = 全局开关 **且** 落在显示范围内。
+/// 范围由 UI 解析成 track_enc 闭区间（`first > last` = 空区间，恒不命中）；
+/// 超范围与关闭开关同样走「视口外零面积几何」，实例常驻显存不卸载（零重传）。
+fn onion_enabled(track_enc: u32) -> bool {
+    return view_state.onion_visible != 0u
+        && track_enc >= view_state.onion_first
+        && track_enc <= view_state.onion_last;
 }
 
 @vertex
@@ -179,7 +181,7 @@ fn vs_main(
     // 非主音轨在「洋葱皮开关关闭」或「该轨静音」时 → 不渲染
     //（退化为视口外零面积几何，见下方输出分支）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || (onion_enabled() && !is_muted);
+    let show = is_main || (onion_enabled(track_enc) && !is_muted);
 
     // 稳定深度（与绘制顺序无关，语义见文件头）：
     //   主音轨 → 主音轨区（最前，覆盖全部洋葱皮）；
@@ -276,7 +278,7 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
     let is_main = track_enc == view_state.current_track;
     // 洋葱皮开关关闭 / 该轨静音 → 非主音轨不落点（与 vs_main 同口径）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || (onion_enabled() && !is_muted);
+    let show = is_main || (onion_enabled(track_enc) && !is_muted);
 
     // 稳定深度：与 vs_main 同一公式、同一 global_index 语义（见文件头深度说明）
     let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, is_main);
@@ -367,7 +369,7 @@ fn vs_direct(
     let is_main = track_enc == view_state.current_track;
     // 洋葱皮开关关闭 / 该轨静音 → 非主音轨不绘制（与 vs_main 同口径）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || (onion_enabled() && !is_muted);
+    let show = is_main || (onion_enabled(track_enc) && !is_muted);
 
     // 稳定深度：与 vs_main 同一公式。`instance_index` 与 cull 路径写入可见缓冲的
     // `local_index` 是同一个值（chunk 内源索引）⇒ 两条路径深度逐位一致。

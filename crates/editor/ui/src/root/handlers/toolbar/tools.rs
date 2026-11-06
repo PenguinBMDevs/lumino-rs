@@ -104,6 +104,22 @@ impl ToolbarHandler {
         }
     }
 
+    /// 洋葱皮显示范围：未接入的「指定音轨」给一次明确提示
+    ///
+    /// 工具栏不持有 Toast（它只改自身状态），所以「点了但功能没做」这件事必须在
+    /// root 层说清楚——否则用户点完菜单什么都不发生，会当成 bug 而不是"待接入"。
+    /// 已接入的模式无需额外处理：`Toolbar::update` 已写好状态，渲染侧经指纹取用。
+    pub(crate) fn sync_onion_skin_mode(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        if let crate::toolbar::Event::OnionSkinModeSelected(mode) = event
+            && !mode.is_implemented()
+        {
+            root.toast.push(
+                crate::toast::ToastLevel::Info,
+                lumino_core::tr!("「指定音轨」的洋葱皮暂未接入，请先用全部 / 上一个 / 下一个"),
+            );
+        }
+    }
+
     /// 处理撤销/重做
     pub(crate) fn handle_toolbar_undo_redo(&self, _root: &mut Root, event: &crate::toolbar::Event) {
         if matches!(event, crate::toolbar::Event::Undo) {

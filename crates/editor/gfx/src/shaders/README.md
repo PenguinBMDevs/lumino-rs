@@ -21,8 +21,14 @@ GPU buffer 持有**所有轨全部音符**：`NoteInstance.border_width` 低 16 
 `ViewState.onion_visible`（2026-11-04）是工具栏的洋葱皮全局开关：关闭时**只画主音轨**，
 GPU 常驻实例数据不卸载、段表不失效，重新打开只需把该 uniform 字写回 1 ⇒ 零重传、
 即时生效（用户硬约束：GPU 模式下关闭洋葱皮不卸载数据，只是不显示）。三条顶点入口
-（`vs_main` / `vs_direct` / `vs_point`）共用同一谓词 `is_main || (onion_enabled() && !is_muted)`
+（`vs_main` / `vs_direct` / `vs_point`）共用同一谓词 `is_main || (onion_enabled(track_enc) && !is_muted)`
 ——改一处必须三处同步，否则各路径画面不一致。
+
+`ViewState.onion_first` / `onion_last`（2026-11-05）是**显示范围**：track_enc 闭区间，
+`first > last` 表示空区间。工具栏下拉的四种模式（全部 / 上一个 / 下一个 / 指定）由 UI
+侧解析成区间（`ui::host::render::onion_skin::range::onion_track_range`），shader 只做
+区间比较、**不懂业务模式**。切范围与切开关同理：只写 uniform，数据零重传。
+范围只作用于 GPU 实例层；CPU 后端的叠加层由 CPU 光栅器合成，不消费该区间。
 
 ### 轨道闸门前移到 compute cull（2026-11-04）
 

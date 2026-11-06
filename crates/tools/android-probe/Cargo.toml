@@ -16,11 +16,14 @@ crate-type = ["cdylib"]
 [lints]
 workspace = true
 
+[package.metadata.cargo-machete]
+# 特性钉：release 下 iced_renderer 未启用渲染器特性会 compile_error。
+ignored = ["iced_renderer"]
+
 [dependencies]
 log = { workspace = true }
 winit = { workspace = true }
 futures = { workspace = true }
-iced_core = { workspace = true }
 iced_widget = { workspace = true }
 # iced_widget 依赖 iced_renderer；release 构建下 iced_renderer 若无渲染器特性会
 # 直接 compile_error（iced 的硬约束），故显式带上 wgpu/tiny-skia。
@@ -29,6 +32,4 @@ iced_wgpu = { workspace = true }
 iced_winit = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = { workspace = true }
-ndk-context = { workspace = true }
 android_logger = { workspace = true }

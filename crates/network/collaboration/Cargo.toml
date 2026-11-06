@@ -22,10 +22,6 @@ thiserror = { workspace = true }
 
 # WebSocket客户端（非Windows用rustls，Windows用native-tls）
 futures = { workspace = true }
-url = { workspace = true }
-
-# 异步运行时工具
-tokio-util = { workspace = true }
 
 # HTTP 客户端（非Windows用rustls，Windows用native-tls）
 
@@ -36,8 +32,3 @@ reqwest = { workspace = true, features = ["json", "rustls", "query", "stream"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 tokio-tungstenite = { workspace = true, features = ["native-tls"] }
 reqwest = { workspace = true, features = ["json", "native-tls", "query", "stream"] }
-
-[dev-dependencies]
-tokio-test = { workspace = true }
-tracing-subscriber = { workspace = true }
-chrono = { workspace = true }

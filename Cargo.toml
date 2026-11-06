@@ -284,24 +284,16 @@ winit = { workspace = true }
 futures = { workspace = true }
 directories = { workspace = true }
 toml = { workspace = true }
-bytemuck = { workspace = true }
 lumino-platform = { workspace = true }
 midly = { workspace = true }
 tokio = { workspace = true }
-zstd = { workspace = true }
-rgb = { workspace = true }
 iced_core = { workspace = true }
-iced = { workspace = true }
 puffin = { workspace = true }
 puffin_http = { workspace = true }
 png = { workspace = true }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
-parking_lot = { workspace = true }
 chrono = { workspace = true }
-rustc-hash = { workspace = true }
-rayon = { workspace = true }
-i2m-rs = { workspace = true }
 
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -315,6 +307,12 @@ raw-window-handle = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }
+
+[package.metadata.cargo-machete]
+# 白名单（工具误报，均有明确理由）：
+# - iced_renderer：特性钉，见 [dev-dependencies] 注释（release 下缺渲染器特性会 compile_error）
+# - embed-resource：仅在 build.rs 使用，machete 默认不分析 build 脚本
+ignored = ["iced_renderer", "embed-resource"]
 
 [package.metadata.deb]
 # maintainer = "PenguinBMDevs"
@@ -374,15 +372,12 @@ strip = true
 embed-resource = { workspace = true }
 
 [dev-dependencies]
+# 特性钉：iced_renderer 在 release/bench profile 下未启用 wgpu/tiny-skia 会
+# 直接 compile_error（iced/renderer/src/lib.rs），显式带上 workspace 特性。
 iced_renderer = { workspace = true }
-iced_wgpu = { workspace = true }
-iced_winit = { workspace = true }
-iced_widget = { workspace = true }
 iced_core = { workspace = true }
-iced = { workspace = true, features = ["image"] }
 wgpu = { workspace = true }
 chrono = { workspace = true }
-tokio-test = { workspace = true }
 # 剪贴板探测示例 (examples/domino_clipboard_probe.rs) 依赖
 encoding_rs = { workspace = true }
 lumino-midi-model = { workspace = true }

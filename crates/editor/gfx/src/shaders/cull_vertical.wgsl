@@ -38,13 +38,15 @@ struct DrawIndirectArgs {
     _padding: vec4<u32>,
 };
 
-/// 视图状态：与 `onion_note.wgsl` 逐字一致（当前音轨 + 洋葱皮开关 + 静音位图）
+/// 视图状态：与 `onion_note.wgsl` 逐字一致（当前音轨 + 洋葱皮开关 + 显示范围 + 静音位图）
 struct ViewState {
     current_track: u32,
     /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏（工具栏开关默认关闭）
     onion_visible: u32,
-    _pad1: u32,
-    _pad2: u32,
+    /// 洋葱皮显示范围的 track_enc 下界（含）；`first > last` = 空区间
+    onion_first: u32,
+    /// 洋葱皮显示范围的 track_enc 上界（含）
+    onion_last: u32,
     muted_bits: array<vec4<u32>, 512>,
 };
 
@@ -85,7 +87,9 @@ fn track_visible(border_width: u32) -> bool {
     if (track_enc == view_state.current_track) {
         return true;
     }
-    if (view_state.onion_visible == 0u) {
+    if (view_state.onion_visible == 0u
+        || track_enc < view_state.onion_first
+        || track_enc > view_state.onion_last) {
         return false;
     }
     return !is_muted_track(track_enc);

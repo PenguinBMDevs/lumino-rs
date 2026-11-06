@@ -23,7 +23,6 @@ path = "src/main.rs"
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-lumino-core = { workspace = true }
 lumino-diagnostics = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-midi-loader = { workspace = true }

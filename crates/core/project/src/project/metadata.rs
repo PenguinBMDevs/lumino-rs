@@ -151,7 +151,7 @@ pub struct LoadedMetadata {
 }
 
 /// 工程设置
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SettingsMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// 主题名称
@@ -171,6 +171,13 @@ pub struct SettingsMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// 力度过滤阈值
     pub velocity_filter_threshold: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 洋葱皮显示范围模式（`all_tracks` / `previous_track` / `next_track` /
+    /// `specific_track`；**工程范围记忆**，2026-11-05）
+    ///
+    /// 存字符串而不是枚举：工程文件是用户可读的 TOML，且旧版客户端要能忽略
+    /// 本版本的新取值（解析侧宽松落回默认，见 `OnionSkinMode::from_str_lossy`）。
+    pub onion_skin_mode: Option<String>,
 }
 
 /// 统计信息

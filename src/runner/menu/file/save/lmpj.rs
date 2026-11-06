@@ -28,6 +28,11 @@ struct LmpjSnapshot {
     copyright: String,
     working_time_seconds: f64,
     project_name: String,
+    /// 洋葱皮显示范围模式（**工程范围记忆**，2026-11-05）
+    ///
+    /// 必须在主线程快照时读取（工具栏状态不进后台线程），后台组包时写进
+    /// `metadata.toml` 的 `[settings]` 段。
+    onion_skin_mode: String,
 }
 
 impl LmpjSnapshot {
@@ -39,6 +44,12 @@ impl LmpjSnapshot {
         project.metadata.project.author = self.author;
         project.metadata.project.copyright = self.copyright;
         project.set_working_time_seconds(self.working_time_seconds);
+        // 工程范围内记忆洋葱皮显示范围：只写这一项，其余 `[settings]` 字段保持
+        // `None`（本任务不接管自动滚动/主题等既有全局项的归属）。
+        project.metadata.settings = Some(lumino_export::SettingsMetadata {
+            onion_skin_mode: Some(self.onion_skin_mode),
+            ..Default::default()
+        });
         project
     }
 }
@@ -59,7 +70,7 @@ impl RunnerInner {
 
     /// 主线程轻量快照：不组包、不排序、不分配逐音符 compact 事件。
     fn snapshot_lmpj_project(&self, save_path: &Path) -> Option<LmpjSnapshot> {
-        let (document, shapes, author, copyright) = {
+        let (document, shapes, author, copyright, onion_skin_mode) = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             // 单一权威源：无文档 = 没有可保存的音符。
@@ -67,7 +78,8 @@ impl RunnerInner {
             let shapes = ui.root().editor.shapes_snapshot();
             let author = ui.get_project_author();
             let copyright = ui.get_project_copyright();
-            (document, shapes, author, copyright)
+            let onion_skin_mode = ui.onion_skin_mode().as_str().to_string();
+            (document, shapes, author, copyright, onion_skin_mode)
         };
 
         let project_name = save_path
@@ -82,6 +94,7 @@ impl RunnerInner {
             copyright,
             working_time_seconds: self.session_tracker.current_editing_secs(),
             project_name,
+            onion_skin_mode,
         })
     }
 
@@ -235,6 +248,7 @@ mod tests {
             copyright: "Copyright".into(),
             working_time_seconds: 42.0,
             project_name: "Project".into(),
+            onion_skin_mode: "previous_track".into(),
         };
 
         let project = snapshot.into_project();
@@ -251,5 +265,24 @@ mod tests {
             Some(42),
             "累计创作时长应取快照时刻"
         );
+        // 工程范围记忆：洋葱皮显示范围必须落进 metadata.toml 的 [settings] 段
+        assert_eq!(
+            project
+                .metadata
+                .settings
+                .as_ref()
+                .and_then(|s| s.onion_skin_mode.as_deref()),
+            Some("previous_track"),
+            "洋葱皮显示范围必须随工程保存（工程范围记忆）"
+        );
+        // 本任务只接管这一项：其余 [settings] 字段必须保持 None（不越权写别人字段）
+        let settings = project
+            .metadata
+            .settings
+            .as_ref()
+            .expect("settings 段应存在");
+        assert!(settings.auto_scroll_mode.is_none());
+        assert!(settings.theme.is_none());
+        assert!(settings.enable_256key.is_none());
     }
 }

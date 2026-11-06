@@ -14,6 +14,8 @@ pub mod color;
 pub mod font;
 pub mod help;
 pub mod message;
+/// 洋葱皮显示范围模式（工具栏下拉；工程文件持久化共用同一字符串口径）
+pub mod onion_skin_mode;
 pub mod settings_event;
 pub mod sidebar_event;
 /// 各功能子系统的状态类型模块

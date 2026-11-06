@@ -83,3 +83,66 @@ fn onion_toggle_in_cpu_mode_emits_view_state() {
 
     assert_view_state_only(&state.decide_action(&fp_with_visibility(true)));
 }
+
+// ── 显示范围（工具栏下拉，2026-11-05）──
+
+/// 带指定显示范围的指纹（其余字段取默认构造；开关恒为开）
+fn fp_with_mode(mode: lumino_ui_core::onion_skin_mode::OnionSkinMode) -> OnionSkinFingerprint {
+    let mut fp = make_fp(42, 0, 3, 0);
+    fp.onion_visible = true;
+    fp.onion_mode = mode;
+    fp
+}
+
+/// 切范围（全部 → 上一个）：同样只发 `ViewState`，GPU 数据零重传。
+#[test]
+fn onion_mode_change_emits_view_state_only() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut state = OnionSkinState::default();
+    state.mark_built(&fp_with_mode(OnionSkinMode::AllTracks));
+
+    assert_view_state_only(&state.decide_action(&fp_with_mode(OnionSkinMode::PreviousTrack)));
+}
+
+/// 范围未变 → `None`（每帧调用不得刷 uniform）。
+#[test]
+fn onion_mode_unchanged_is_none() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut state = OnionSkinState::default();
+    state.mark_built(&fp_with_mode(OnionSkinMode::NextTrack));
+    assert_none(&state.decide_action(&fp_with_mode(OnionSkinMode::NextTrack)));
+}
+
+/// 切轨会**连带改变范围**（上一个/下一个是相对当前轨的）：
+/// 必须产出 `ViewState`，否则切轨后洋葱皮还停在旧的邻居轨上。
+#[test]
+fn current_track_change_updates_relative_range() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut state = OnionSkinState::default();
+    let mut fp = fp_with_mode(OnionSkinMode::PreviousTrack);
+    // 当前轨 3（enc 4）→ 范围 (3,3)
+    assert_eq!(fp.onion_range(), (3, 3));
+    state.mark_built(&fp);
+
+    // 切到轨 5（enc 6）→ 范围应变 (5,5)
+    fp.current_track = 5;
+    assert_eq!(fp.onion_range(), (5, 5), "范围必须跟着当前轨走");
+    assert_view_state_only(&state.decide_action(&fp));
+}
+
+/// 范围在 `mark_built` 后被记录：同一指纹重复驱动不重复发消息。
+#[test]
+fn onion_mode_value_is_recorded_after_sync() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut state = OnionSkinState::default();
+    state.mark_built(&fp_with_mode(OnionSkinMode::AllTracks));
+
+    let fp = fp_with_mode(OnionSkinMode::PreviousTrack);
+    assert_view_state_only(&state.decide_action(&fp));
+    state.mark_built(&fp);
+    assert_none(&state.decide_action(&fp));
+}
