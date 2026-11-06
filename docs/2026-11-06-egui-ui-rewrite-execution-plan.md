@@ -1,0 +1,120 @@
+# egui UI 层重写执行计划
+
+> 状态：执行中
+> 分支：`feat/wgpu-upgrade`
+> 决策人：用户 / 主 Agent
+> 最后更新：2026-11-06
+
+## 一、已确认决策
+
+1. **草稿阶段 GPU 组合**：`egui 0.37 + wgpu 30` 独立 example，不碰现有 `wgpu 27` 主程序。
+2. **重构阶段时序**：先做 `egui-wgpu 0.37 → wgpu 27` 桥接，保持主程序可运行；UI 替换完成后再把 `lumino-gfx` 等迁到 `wgpu 30`，切回官方 `egui-wgpu`。
+3. **首批视觉基线**：主窗口 Chrome + 设置页 + 一个对话框 + 钢琴卷帘骨架。
+4. **Agent 并行策略**：
+   - 单个 Agent 的任务：允许 Agent 自行运行 `cargo check/fmt/clippy/test`。
+   - 多个 Agent 并行的任务：**禁止任何 Agent 运行编译/测试/格式化**，由主 Agent 统一编译与验收。
+5. **视觉验收标准**：
+   - 几何严格：布局、控件矩形、边框、像素边界一致。
+   - 颜色容差：非文字区域通道差 ≤ 2（或 ΔE ≤ 2）。
+   - 文字区域：截图 diff + 人工复核，不追求逐像素一致。
+6. **GPU 验收**：所有 wgpu 独立渲染画面在迁移前后必须通过基线图对比；无损坏、无外观变化。
+
+## 二、不可突破的边界
+
+- 不改 `lumino-editor-state` 的文档/选区/历史模型。
+- 不改 `lumino-message` 的处理器语义；只允许把 `iced_widget::text_editor::Action` 换成中性枚举。
+- 不改 `lumino-gfx` 的音符场渲染语义；wgpu30 迁移只做 API 适配。
+- 不移除现有测试；只新增 UI 截图/GPU 基线测试。
+- 不在主分支直接替换默认 UI；所有重构在独立 crate / 独立分支完成，最后一次性切换。
+
+## 三、验收工具链
+
+### 3.1 iced 基线
+
+- 使用 `iced_test 0.14` 的 `Simulator::with_size` + `snapshot` / `matches_image`。
+- 固定场景：
+  - `main_chrome`：1600×1000，TokyoNightStorm，zh-CN，无光标。
+  - `settings_general`：1200×800，设置页选中「常规」。
+  - `save_confirm_dialog`：560×260，保存确认对话框。
+  - `piano_roll_skeleton`：1600×1000，空工程 + 钢琴卷帘骨架。
+- DPI：1.0 / 1.25 / 1.5 三档。
+- 输出：`tests/ui-baseline/iced/{scene}@{dpi}.png`。
+
+### 3.2 egui 草稿
+
+- 使用 `egui 0.37` + `egui_kittest 0.37`（`wgpu` feature）或 `Context::request_screenshot`。
+- 同一 `SceneSpec`、同一尺寸、同一字体/主题 token。
+- 输出：`tests/ui-baseline/egui/{scene}@{dpi}.png`。
+
+### 3.3 对比
+
+- `ui-diff` 工具：
+  - 尺寸不一致：直接失败。
+  - 几何：背景掩码 + 边缘图，允许 1px 膨胀容差。
+  - 颜色：非文字区域逐像素通道差，容差 2。
+  - 输出 `*.diff.png` 与 JSON 报告。
+- 人工复核：文字、图标、抗锯齿、阴影等区域。
+
+### 3.4 GPU 基线
+
+- 复用 `crates/editor/gfx/tests` 的离屏渲染 + 回读设施。
+- 覆盖：钢琴卷帘横向/纵向、洋葱皮 GPU/CPU、走带、力度/CC、贴图瀑布流、MIDITrail、视频导出、设备重连前后。
+- 输出：`tests/gpu-baseline/{scene}.png`。
+- wgpu30 迁移前后逐像素对比；允许硬件后端舍入差 1 级通道值。
+
+## 四、任务分解
+
+### Phase 0：基线与 UI 草稿
+
+| 编号 | 任务 | Agent | 编译权 | 交付 |
+|---|---|---|---|---|
+| 0.1 | 视觉基线工具链（iced 侧）+ 场景清单 | 1 个 | 允许 | `lumino-ui-parity` crate、4 张 iced 基线图、diff 工具 |
+| 0.2 | egui 草稿骨架 + 截图 | 1 个 | 允许 | `ui-parity` 的 egui backend、4 张 egui 草稿图 |
+| 0.3 | 主窗口 Chrome 移植与对齐 | 1 个 | 允许 | `lumino-ui-egui` chrome 模块、对比通过 |
+| 0.4 | 设置页 + 对话框移植与对齐 | 2 个并行 | **禁止** | 设置页框架 + 保存确认/设置对话框 |
+| 0.5 | 钢琴卷帘骨架移植与对齐 | 1 个 | 允许 | painter overlay、命中/滚动骨架 |
+| 0.6 | GPU 基线捕获 | 1 个 | 允许 | 8+ 张 GPU 基线图、对比脚本 |
+
+### Phase 1：wgpu30 迁移
+
+| 编号 | 任务 | Agent | 编译权 | 交付 |
+|---|---|---|---|---|
+| 1.1 | `egui-wgpu 0.37 → wgpu27` 桥接 crate | 1 个 | 允许 | 临时 `lumino-egui-wgpu27`，主程序可叠 egui |
+| 1.2 | `lumino-gfx` wgpu30 机械迁移 | 1 个 | 允许 | API 迁移、GPU 基线通过 |
+| 1.3 | `gpu-synth` / `midiplayer` / `ui` keyboard renderer wgpu30 | 1 个 | 允许 | 全部 wgpu 用户统一到 30 |
+| 1.4 | 切回官方 `egui-wgpu 0.37`，删除桥接 | 1 个 | 允许 | 单一 wgpu30、官方 renderer |
+
+### Phase 2：UI 层全量替换
+
+| 编号 | 任务 | Agent | 编译权 | 交付 |
+|---|---|---|---|---|
+| 2.1 | `lumino-ui-egui-core`：主题/字体/图标/控件/消息队列 | 1 个 | 允许 | 可复用 UI 基础层 |
+| 2.2 | Chrome 全量：标题栏/菜单/工具栏/左右栏/状态栏/Toast | 2 个并行 | **禁止** | 与 iced 视觉一致 |
+| 2.3 | 设置 + 21 类对话框 | 2 个并行 | **禁止** | 10 页设置、全部对话框 |
+| 2.4 | 钢琴卷帘绘制 + 交互 + 工具栏 + 力度 | 2 个并行 | **禁止** | 全工具 parity |
+| 2.5 | 走带/瀑布流/视频剪辑/协作/云 | 2 个并行 | **禁止** | 全面板 parity |
+| 2.6 | Android/macOS/Windows/Linux 平台层 | 1 个 | 允许 | IME/DPI/原生菜单 |
+| 2.7 | 移除 iced、清理、文档、全量测试 | 1 个 | 允许 | 默认 egui UI，iced 依赖删除 |
+
+## 五、每个任务的验收流程
+
+1. 主 Agent 读取 Agent 工作报告与 `git diff`。
+2. 检查是否越界修改、是否偷工减料、是否新增 `unwrap/expect`。
+3. 单 Agent 任务：运行 `cargo check -p <crate>`、`cargo fmt --check`、`cargo clippy -p <crate> --all-targets -- -D warnings`、相关测试。
+4. 多 Agent 并行任务：主 Agent 统一编译/格式化/测试。
+5. 运行 `ui-diff` / GPU 基线对比。
+6. 人工复核文字/图标区域。
+7. 合格 → 提交/进入下一任务；不合格 → 重派，同一 Agent 重派不超过 2 次。
+
+## 六、回滚策略
+
+- 每个任务独立提交；UI 草稿与生产代码隔离。
+- Phase 1 桥接 crate 独立，可随时删除。
+- wgpu30 迁移保留 `wgpu27` 分支/标签；GPU 基线不通过则回滚该迁移提交。
+- 最终切换前保留 iced UI crate，不删除旧代码。
+
+## 七、当前任务
+
+**Task 0.1：视觉基线工具链（iced 侧）**
+
+见下一条 Agent 任务卡。
