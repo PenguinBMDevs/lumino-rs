@@ -31,9 +31,7 @@ raw-window-handle = { workspace = true }
 softbuffer = { workspace = true }
 sysinfo = { workspace = true }
 tokio = { workspace = true }
-tracy-client = { version = "0.19.0", optional = true, default-features = false, features = [
-    "enable",
-] }
+tracy-client = { workspace = true, optional = true }
 winit = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]

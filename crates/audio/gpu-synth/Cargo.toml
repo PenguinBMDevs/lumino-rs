@@ -29,7 +29,7 @@ pollster = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 rayon = { workspace = true }
-symphonia = { version = "0.5", features = ["default"] }
+symphonia = { workspace = true }
 # REND-016 #139：观测打点需进文件日志（GUI release 无控制台，eprintln 会丢失）。
 tracing = { workspace = true }
 

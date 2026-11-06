@@ -3,7 +3,7 @@
 //! 线程模型的超时包装与廉价探测已拆到 `timeout.rs`（原文件超 400 行红线）。
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use lumino_core::{tr, trf};
 
@@ -86,7 +86,7 @@ fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
     #[cfg(debug_assertions)]
     if std::env::var_os("LUMINO_DEBUG_CHECK_HANG").is_some() {
         tracing::warn!("LUMINO_DEBUG_CHECK_HANG 已设置：模拟全量检测挂起 60 秒");
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(std::time::Duration::from_secs(60));
     }
 
     if debug_force_fail_requested() {

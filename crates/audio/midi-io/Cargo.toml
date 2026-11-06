@@ -44,10 +44,8 @@ cpal = { workspace = true }
 # 内置 UI 音效（`ui_sfx`）解码：symphonia 已由 lumino-gpu-synth 引入（default 特性集
 # **不含 mp3**），此处只在同一版本上追加 mp3 编解码能力 —— cargo 特性合并后仍为单份
 # symphonia 构建，仅多出同族的 `symphonia-bundle-mp3`（MPL-2.0，与现有 symphonia 同源）。
-symphonia = { version = "0.5", features = ["mp3"] }
-tracy-client = { version = "0.19.0", optional = true, default-features = false, features = [
-    "enable",
-] }
+symphonia = { workspace = true, features = ["mp3"] }
+tracy-client = { workspace = true, optional = true }
 
 # 系统 MIDI 后端（midir）无 Android 实现：midir 的 backend 模块在 android 上为空，
 # 连 crate 自身都编不过（common.rs 无条件 use backend::{MidiInput, ...}）。
