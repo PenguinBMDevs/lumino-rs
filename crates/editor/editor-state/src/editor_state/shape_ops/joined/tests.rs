@@ -2,7 +2,7 @@
 
 use super::super::bezier::to_bezier;
 use super::*;
-use lumino_core::shape::ShapeFill;
+use lumino_core::shape::{ShapeFill, TumourParams};
 
 fn shape(id: u64, kind: ShapeKind, anchors: &[(f32, f32)]) -> ShapeModel {
     let mut shape = ShapeModel::new(id, 1, kind, 1.0);
@@ -61,6 +61,40 @@ fn test_split_here_and_separate() {
     let mut changed = joined.clone();
     changed.model.geometry.anchors[0].pos.0 += 10.0;
     assert!(split_separate(&changed).is_none());
+}
+
+#[test]
+fn test_join_keeps_per_segment_tumours() {
+    let mut first = shape(1, ShapeKind::Line, &[(0.0, 60.0), (100.0, 60.0)]);
+    let mut second = shape(
+        2,
+        ShapeKind::Curve,
+        &[(100.0, 60.0), (150.0, 64.0), (200.0, 60.0)],
+    );
+    let third = shape(
+        3,
+        ShapeKind::Arc,
+        &[(200.0, 60.0), (250.0, 66.0), (300.0, 60.0)],
+    );
+    let first_tumour = TumourParams {
+        size: 3.0,
+        ..TumourParams::default()
+    };
+    let second_tumour = TumourParams {
+        size: 6.0,
+        ..TumourParams::default()
+    };
+    first.ops.push(ShapeOp::Tumours(first_tumour.clone()));
+    second.ops.push(ShapeOp::Tumours(second_tumour.clone()));
+
+    let joined = join(&[first, second, third], 1.0, 1.0).expect("应可连接");
+    assert_eq!(joined.params.tumours.len(), 3, "每个来源段各一份 tumours");
+    assert_eq!(joined.params.tumours[0], Some(first_tumour));
+    assert_eq!(joined.params.tumours[1], Some(second_tumour));
+    assert_eq!(
+        joined.params.tumours[2], None,
+        "没有 tumours 的段必须保持 None"
+    );
 }
 
 #[test]

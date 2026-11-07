@@ -2,6 +2,7 @@
 
 use super::*;
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeOp};
+use lumino_editor_state::ShapeNote;
 
 #[test]
 fn test_live_then_split_restores_shapes() {
@@ -284,4 +285,40 @@ fn test_merge_two_shapes() {
         2,
         "Merge 不应丢文档音符"
     );
+}
+
+#[test]
+fn test_join_three_shapes_keeps_document_notes() {
+    let mut editor = empty_editor();
+    let a = add_polyline(
+        &mut editor,
+        vec![(0.0, 60.0), (50.0, 60.0)],
+        vec![shape_note(0.0, 60)],
+    );
+    let b = add_polyline(
+        &mut editor,
+        vec![(50.0, 60.0), (100.0, 64.0)],
+        vec![shape_note(50.0, 61)],
+    );
+    let c = add_polyline(
+        &mut editor,
+        vec![(100.0, 64.0), (150.0, 60.0)],
+        vec![shape_note(100.0, 62)],
+    );
+    editor.editor_state.shape_select.select_all_of([a, b, c]);
+    let before: Vec<ShapeNote> = editor
+        .editor_state
+        .shape_select
+        .selected_shapes()
+        .flat_map(|shape| shape.notes.iter().copied())
+        .collect();
+
+    assert!(editor.join_selected_shapes(), "三段应可连接");
+    let after: Vec<ShapeNote> = editor
+        .editor_state
+        .shape_select
+        .selected_shapes()
+        .flat_map(|shape| shape.notes.iter().copied())
+        .collect();
+    assert_eq!(before, after, "连接后用户可见音符必须逐条不变（三段图形）");
 }
