@@ -126,9 +126,15 @@ impl Toolbar {
                 .size(14)
                 .color(palette.background.weak.text),
             space().width(8),
-            DropDown::new(underlay, menu, self.snap_picker_open)
-                .width(iced_core::Length::Fixed(190.0))
-                .on_dismiss(Event::close_snap_picker()),
+            DropDown::new(
+                underlay,
+                menu,
+                // egui 叠加层接管后，下拉由 egui 画在 band 之外；iced 只保留
+                // 触发按钮占位，否则会有一份重复菜单画在卷帘区（盖不住）。
+                self.snap_picker_open && !crate::host::overlay_enabled(),
+            )
+            .width(iced_core::Length::Fixed(190.0))
+            .on_dismiss(Event::close_snap_picker()),
         ]
         .align_y(Alignment::Center)
         .into()

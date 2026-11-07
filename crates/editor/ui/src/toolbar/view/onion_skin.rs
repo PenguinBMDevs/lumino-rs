@@ -178,10 +178,15 @@ impl Toolbar {
             });
 
         // 贴右边缘展开：按钮在工具栏最右侧，居中对齐会把菜单推出窗口
-        let dropdown = DropDown::new(underlay, menu, self.onion_skin_menu_open)
-            .width(Length::Fixed(MENU_WIDTH))
-            .alignment(iced_aw::drop_down::Alignment::BottomEnd)
-            .on_dismiss(Event::close_onion_skin_menu());
+        // （叠加层接管后由 egui 画同一份菜单，iced 不再重复绘制）。
+        let dropdown = DropDown::new(
+            underlay,
+            menu,
+            self.onion_skin_menu_open && !crate::host::overlay_enabled(),
+        )
+        .width(Length::Fixed(MENU_WIDTH))
+        .alignment(iced_aw::drop_down::Alignment::BottomEnd)
+        .on_dismiss(Event::close_onion_skin_menu());
 
         container(dropdown)
             .height(content_height)

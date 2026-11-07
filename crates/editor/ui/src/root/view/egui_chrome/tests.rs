@@ -1,8 +1,15 @@
 //! `egui_chrome` 的模型装配单测：状态映射与瞬态让位。
 
 use super::*;
+use lumino_core::SnapSpec;
 use lumino_extras::i18n::Language;
-use lumino_ui_egui::chrome::{DialogModel, DialogPalette, MenuEntry, SettingsPalette};
+use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+use lumino_ui_egui::chrome::{
+    DialogModel, DialogPalette, MenuEntry, SettingsPalette, ToolbarAction,
+};
+
+use crate::Message;
+use crate::toolbar::Event as ToolbarEvent;
 
 fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
     sidebar.egui_model(Language::ZhCn, false)
@@ -360,14 +367,26 @@ fn iced_popups_disable_the_overlay() {
         "原生标题栏的 iced 菜单需要让位"
     );
 
-    // 工具栏下拉（吸附 / 洋葱皮 / 溢出 / 工具面板 …）同理。
-    let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
-    toolbar.toolbar.snap_picker_open = true;
-    assert!(toolbar.egui_chrome_model().toolbar.is_none());
+    // 工具栏弹层同理：精度 / 洋葱皮范围已由 egui 接管，不再让位。
+    let mut snap = Root::new(&lumino_core::storage::config::UiConfig::default());
+    snap.toolbar.snap_picker_open = true;
+    assert!(
+        snap.egui_chrome_model().toolbar.is_some(),
+        "egui 精度下拉展开时仍应画工具栏 band"
+    );
 
+    let mut onion = Root::new(&lumino_core::storage::config::UiConfig::default());
+    onion.toolbar.onion_skin_menu_open = true;
+    assert!(onion.egui_chrome_model().toolbar.is_some());
+
+    // 悬浮工具条及其锚定面板仍由 iced 绘制：打开时整块让位。
     let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
     toolbar.toolbar.tool_panel_open = true;
     assert!(toolbar.egui_chrome_model().sidebar.is_none());
+
+    let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
+    toolbar.toolbar.overflow_menu_open = true;
+    assert!(toolbar.egui_chrome_model().toolbar.is_none());
 }
 
 #[test]
@@ -417,4 +436,79 @@ fn check_entries(root: &Root, entries: &[MenuEntry]) -> usize {
         }
     }
     count
+}
+
+#[test]
+fn toolbar_popup_model_and_actions_follow_production_state() {
+    let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
+    assert!(
+        root.egui_chrome_model()
+            .toolbar
+            .expect("默认视图应渲染工具栏")
+            .snap_menu
+            .is_none(),
+        "默认精度下拉关闭"
+    );
+
+    root.toolbar.snap_picker_open = true;
+    let model = root.egui_chrome_model();
+    let snap = model
+        .toolbar
+        .expect("默认视图应渲染工具栏")
+        .snap_menu
+        .expect("精度下拉应打开");
+    assert_eq!(snap.items.len(), SnapSpec::presets().len(), "预设数量一致");
+    assert_eq!(
+        snap.items.iter().filter(|item| item.selected).count(),
+        1,
+        "恰有一个当前规格"
+    );
+    assert_eq!(snap.custom_label, "Custom…");
+
+    root.toolbar.snap_picker_open = false;
+    root.toolbar.onion_skin_menu_open = true;
+    let model = root.egui_chrome_model();
+    let onion = model
+        .toolbar
+        .expect("默认视图应渲染工具栏")
+        .onion_menu
+        .expect("洋葱皮范围菜单应打开");
+    assert_eq!(onion.items.len(), 4, "全部/上一个/下一个/指定");
+    assert_eq!(onion.items[0].label, "显示全部音轨");
+    assert!(onion.items[0].selected, "默认选中「显示全部音轨」");
+    assert!(!onion.items[1].selected);
+
+    // 动作 → 生产 Message（与 iced 按钮同一批构造器）。
+    assert!(matches!(
+        root.toolbar_action_message(ToolbarAction::ToggleSnapPicker),
+        Some(Message::Toolbar(ToolbarEvent::ToggleSnapPicker))
+    ));
+    let triple = SnapSpec::Note {
+        notes: 8,
+        dots: 0,
+        div: 3,
+    };
+    assert!(matches!(
+        root.toolbar_action_message(ToolbarAction::SnapSpec(triple)),
+        Some(Message::Toolbar(ToolbarEvent::SnapSpecChanged(spec))) if spec == triple
+    ));
+    assert!(matches!(
+        root.toolbar_action_message(ToolbarAction::SnapCustom),
+        Some(Message::Batch(_))
+    ));
+    assert!(matches!(
+        root.toolbar_action_message(ToolbarAction::ToggleOnionSkin),
+        Some(Message::Toolbar(ToolbarEvent::ToggleOnionSkin))
+    ));
+    assert!(matches!(
+        root.toolbar_action_message(ToolbarAction::OnionMode(1)),
+        Some(Message::Toolbar(ToolbarEvent::OnionSkinModeSelected(
+            OnionSkinMode::PreviousTrack
+        )))
+    ));
+    assert!(
+        root.toolbar_action_message(ToolbarAction::OnionMode(4))
+            .is_none(),
+        "越界下标不得产生消息"
+    );
 }

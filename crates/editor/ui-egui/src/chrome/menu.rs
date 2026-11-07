@@ -71,6 +71,15 @@ pub fn clear_blocked(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove_temp::<Vec<Rect>>(Id::unique(BLOCKED_ID)));
 }
 
+/// 追加本帧的占用矩形（标题栏菜单与工具栏弹层共用同一份清单）。
+pub fn extend_blocked(ctx: &egui::Context, rects: impl IntoIterator<Item = Rect>) {
+    let mut current: Vec<Rect> = ctx
+        .data(|d| d.get_temp(Id::unique(BLOCKED_ID)))
+        .unwrap_or_default();
+    current.extend(rects);
+    ctx.data_mut(|d| d.insert_temp(Id::unique(BLOCKED_ID), current));
+}
+
 /// 菜单标签列表：优先使用可交互菜单树，否则退回纯标签。
 pub fn labels(model: &TitlebarModel) -> Vec<String> {
     match &model.menu {
@@ -173,10 +182,9 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &TitlebarModel) {
     }
 
     // 标签也算菜单占用区：点在标签上时由 `show_labels` 切换，不应触发 iced。
-    ui.ctx().data_mut(|d| {
-        d.insert_temp(Id::unique(BLOCKED_ID), blocked);
-        d.insert_temp(Id::unique(STATE_ID), state);
-    });
+    extend_blocked(ui.ctx(), blocked);
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(Id::unique(STATE_ID), state));
 }
 
 fn panel_height(entries: &[MenuEntry]) -> f32 {

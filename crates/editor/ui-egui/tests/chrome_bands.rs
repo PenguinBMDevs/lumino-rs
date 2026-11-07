@@ -5,8 +5,10 @@
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use lumino_core::SnapSpec;
 use lumino_ui_egui::chrome::{
-    self, ChromeModel, MenuBarModel, MenuEntry, MenuModel, StatusbarModel, TitlebarModel,
+    self, ChromeModel, MenuBarModel, MenuEntry, MenuModel, OnionMenuModel, SnapMenuItem,
+    SnapMenuModel, StatusbarModel, TitlebarModel, ToolbarAction, ToolbarModel,
 };
 use lumino_ui_egui::icons::IconCache;
 
@@ -212,4 +214,119 @@ fn click(harness: &mut Harness<'static>, pos: egui::Pos2) {
         modifiers: egui::Modifiers::default(),
     });
     harness.run();
+}
+
+/// 工具栏弹层：精度框点击 → 开合动作；预设行 → 具体 `SnapSpec`；
+/// 洋葱皮下三角 → 开合动作；范围行 → `OnionMode(index)`。
+#[test]
+fn toolbar_popups_dispatch_snap_and_onion_actions() {
+    let model = std::rc::Rc::new(std::cell::RefCell::new(ChromeModel {
+        dialog: None,
+        titlebar: None,
+        sidebar: None,
+        right_sidebar: None,
+        piano_roll: None,
+        toolbar: Some(ToolbarModel::default()),
+        statusbar: statusbar(None),
+    }));
+    let actions = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut icons = IconCache::default();
+    let model_w = model.clone();
+    let actions_w = actions.clone();
+    let mut harness = Harness::builder()
+        // 工具栏固定分组宽：960px 会把精度框排到视口外，取真实窗口量级。
+        .with_size(egui::vec2(1600.0, 900.0))
+        // 工具栏图标按钮没有可访问名称（生产版也没有）；本测试只验证点击路由。
+        .with_accessibility_check(false)
+        .build_ui(move |ui| {
+            chrome::show_bands(ui, &model_w.borrow(), &mut icons);
+            if let Some(action) = chrome::toolbar_popup::take_action(ui.ctx()) {
+                actions_w.borrow_mut().push(action);
+            }
+        });
+    harness.run();
+
+    // 精度框：点击回传开合动作。
+    let snap_trigger =
+        chrome::toolbar_popup::snap_trigger(&harness.ctx).expect("工具栏应记录精度框矩形");
+    click(&mut harness, snap_trigger.center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ToolbarAction::ToggleSnapPicker),
+        "点精度框应请求开合下拉"
+    );
+
+    // 模拟生产打开下拉（下一帧由生产状态驱动），点第一行预设。
+    let quarter = SnapSpec::Note {
+        notes: 4,
+        dots: 0,
+        div: 1,
+    };
+    model
+        .borrow_mut()
+        .toolbar
+        .as_mut()
+        .expect("工具栏")
+        .snap_menu = Some(SnapMenuModel {
+        items: vec![SnapMenuItem {
+            spec: quarter,
+            label: "1/4".to_owned(),
+            selected: true,
+        }],
+        custom_label: "Custom…".to_owned(),
+    });
+    harness.run();
+    let panel = chrome::toolbar_popup::snap_panel_rect(snap_trigger, 1, true);
+    let row = egui::pos2(panel.center().x, panel.top() + 6.0 + 12.0);
+    click(&mut harness, row);
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ToolbarAction::SnapSpec(quarter)),
+        "点预设行应回传具体吸附规格"
+    );
+
+    // 自定义行 → 打开自定义精度对话框。
+    let custom_row = egui::pos2(panel.center().x, panel.top() + 6.0 + 24.0 + 2.0 + 12.0);
+    click(&mut harness, custom_row);
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ToolbarAction::SnapCustom),
+        "点 Custom… 应请求打开自定义精度对话框"
+    );
+
+    // 洋葱皮下三角 → 开合动作；范围行 → 模式下标。
+    let (_, caret) =
+        chrome::toolbar_popup::onion_triggers(&harness.ctx).expect("工具栏应记录洋葱皮触发器");
+    click(&mut harness, caret.center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ToolbarAction::ToggleOnionMenu),
+        "点下三角应请求开合洋葱皮范围菜单"
+    );
+
+    model
+        .borrow_mut()
+        .toolbar
+        .as_mut()
+        .expect("工具栏")
+        .onion_menu = Some(OnionMenuModel {
+        items: (0..4)
+            .map(|index| lumino_ui_egui::chrome::OnionMenuItem {
+                label: format!("模式 {index}"),
+                selected: index == 0,
+            })
+            .collect(),
+    });
+    harness.run();
+    let onion_panel = chrome::toolbar_popup::onion_panel_rect(caret, 4);
+    let second = egui::pos2(
+        onion_panel.center().x,
+        onion_panel.top() + 6.0 + 22.0 + 2.0 + 11.0,
+    );
+    click(&mut harness, second);
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ToolbarAction::OnionMode(1)),
+        "点第二个范围应回传下标 1"
+    );
 }

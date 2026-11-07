@@ -172,7 +172,14 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     // 内容 = 16px 吸附图标 + 6 + 13px 文本，内边距 8 → 57×26。
     let box_w = layout::PRECISION_W;
     let box_h = layout::PRECISION_H;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(box_w, box_h), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(box_w, box_h), Sense::click());
+    super::super::toolbar_popup::set_snap_trigger(ui.ctx(), rect);
+    if response.clicked() {
+        super::super::toolbar_popup::push_action(
+            ui.ctx(),
+            super::super::toolbar_popup::ToolbarAction::ToggleSnapPicker,
+        );
+    }
     ui.painter().rect(
         rect,
         CornerRadius::same(4),

@@ -165,7 +165,10 @@ impl EguiOverlay {
     }
 
     /// 渲染一帧外壳并提交到目标纹理。
-    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Option<usize>, Vec<Rect>) {
+    fn draw(
+        &mut self,
+        frame: OverlayFrame<'_>,
+    ) -> (Option<usize>, Option<chrome::ToolbarAction>, Vec<Rect>) {
         self.frames = self.frames.wrapping_add(1);
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
@@ -192,8 +195,9 @@ impl EguiOverlay {
             chrome::show_bands(ui, frame.model, icons);
         });
 
-        // `run_ui` 不返回闭包值：菜单点击与占用矩形通过 egui 内存回传。
+        // `run_ui` 不返回闭包值：菜单/工具栏点击与占用矩形通过 egui 内存回传。
         let menu_action = chrome::menu::take_action(&ctx);
+        let toolbar_action = chrome::toolbar_popup::take_action(&ctx);
         let blocked = chrome::menu::take_blocked(&ctx);
 
         let mut textures = output.textures_delta;
@@ -231,7 +235,7 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
-        (menu_action, blocked)
+        (menu_action, toolbar_action, blocked)
     }
 }
 
@@ -262,7 +266,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (menu_action, blocked) = overlay.draw(OverlayFrame {
+        let (menu_action, toolbar_action, blocked) = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -279,6 +283,14 @@ impl Host {
         if let Some(index) = menu_action
             && let Some(message) = self.root.menu_action_message(index)
         {
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
+        if let Some(action) = toolbar_action
+            && let Some(message) = self.root.toolbar_action_message(action)
+        {
+            tracing::info!("egui 工具栏动作：{action:?}");
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);

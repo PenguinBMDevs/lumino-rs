@@ -69,6 +69,8 @@ fn model() -> ChromeModel {
             recording: false,
             onion: false,
             auto_scroll: AutoScrollMode::ScrollingIndicator,
+            snap_menu: None,
+            onion_menu: None,
         }),
         statusbar: StatusbarModel {
             left: "就绪".to_owned(),

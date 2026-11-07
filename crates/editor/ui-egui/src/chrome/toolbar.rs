@@ -147,8 +147,21 @@ fn right_side(
         ui.painter()
             .rect_filled(onion_rect, CornerRadius::same(4), theme::SELECTED_BG);
     }
-    icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
-    icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
+    let onion = icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
+    let caret = icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
+    super::toolbar_popup::set_onion_triggers(ui.ctx(), onion_rect, caret_rect);
+    if onion.clicked() {
+        super::toolbar_popup::push_action(
+            ui.ctx(),
+            super::toolbar_popup::ToolbarAction::ToggleOnionSkin,
+        );
+    }
+    if caret.clicked() {
+        super::toolbar_popup::push_action(
+            ui.ctx(),
+            super::toolbar_popup::ToolbarAction::ToggleOnionMenu,
+        );
+    }
     let scroll_icon = match model.auto_scroll {
         AutoScrollMode::FixedIndicatorLeft => Icon::ArrowsLeftRight,
         AutoScrollMode::ScrollingIndicator => Icon::Scroll,
@@ -257,7 +270,7 @@ fn icon_at(
     rect: Rect,
     icon_size: f32,
     selected: bool,
-) {
+) -> egui::Response {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -272,7 +285,7 @@ fn icon_at(
     } else {
         egui::Button::image(image).frame(false)
     };
-    child.add(button);
+    child.add(button)
 }
 
 /// 当前工具是否对应工具区里的第 N 个选择器（0..=3）。

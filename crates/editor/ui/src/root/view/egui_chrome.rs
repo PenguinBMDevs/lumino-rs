@@ -5,6 +5,7 @@
 
 mod dialogs;
 mod menu;
+mod toolbar;
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
@@ -243,14 +244,14 @@ impl Root {
 
     /// 是否存在仍由 iced 绘制、且会被叠加层盖住的弹出层。
     ///
-    /// 自绘标题栏的菜单已由 egui 接管（`TitlebarModel::menu`）；只有系统原生
-    /// 标题栏模式下 iced 仍负责菜单下拉。工具栏下拉/工具面板尚未迁移，
-    /// 打开时叠加层必须整块让位，否则会被不透明 band 盖住。
+    /// 自绘标题栏的菜单与工具栏的精度/洋葱皮下拉已由 egui 接管
+    /// （`TitlebarModel::menu`、`ToolbarModel::snap_menu/onion_menu`）；
+    /// 只有系统原生标题栏模式下 iced 仍负责菜单下拉。工具栏的悬浮工具条
+    /// 及其锚定面板尚未迁移，打开时叠加层必须整块让位，否则会被不透明
+    /// band 盖住。
     fn has_iced_popup(&self) -> bool {
         let iced_menu = self.settings.synth.use_native_titlebar && self.state.is_menu_open;
         iced_menu
-            || self.toolbar.snap_picker_open
-            || self.toolbar.onion_skin_menu_open
             || self.toolbar.overflow_menu_open
             || self.toolbar.tool_panel_open
             || self.toolbar.brush_dropdown_open
@@ -350,6 +351,8 @@ impl Root {
                 recording: toolbar.recording,
                 onion: toolbar.onion,
                 auto_scroll: toolbar.auto_scroll,
+                snap_menu: toolbar::snap_menu(&self.toolbar),
+                onion_menu: toolbar::onion_menu(&self.toolbar),
             })
         } else {
             None

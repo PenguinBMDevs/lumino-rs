@@ -430,13 +430,48 @@ callback / 多视口 / 截图能力。
     `capture_iced` 18/18、`capture_egui` 12/12、`compare_egui` 与上一步逐项一致
     （main_chrome 1.23%/1.87%/1.62%，settings 2.97%/3.55%/3.04%），基线文件零改动。
 
-**Task 1.3（下一步）：工具栏下拉 / 提示迁移**
+**Task 1.3（第九步）：精度 / 洋葱皮下拉迁移 — 已完成**
 
-- 现状：标题栏（含菜单/子菜单）、工具栏、左侧栏、右侧栏图标列、状态栏、
-  保存确认对话框、设置「常规」页（深/浅/英文，小窗口可滚）已由 egui 绘制；
-  工具栏下拉（吸附 / 洋葱皮 / 溢出 / 画笔 / 粗细 / 形状 / 文字参数 / 工具面板）
-  与其余设置页仍 iced——这是 `has_iced_popup` 让位逻辑仅剩的来源。
-- 下一步：逐块迁移工具栏下拉并改为 egui 弹层，随后可删除整块让位；
-  再逐页建模其余设置页与右侧栏面板内容。
+- 新增 `chrome/toolbar_popup.rs`：精度下拉（15 个预设 + `Custom…`）与洋葱皮
+  范围菜单（4 项，矢量勾选）由 egui 画在 band 之外，几何对齐 iced
+  （宽 190 / 内边距 6 / 项高 24 / 13px 文本 / 白色 10% 悬停）。
+- 精度框与洋葱皮图标/下三角在 egui 工具栏里变为真实命中区，点击回传
+  `ToolbarAction`（开合 / 预设 `SnapSpec` / 自定义 / 模式下标），生产侧
+  `Root::toolbar_action_message` 翻译成与 iced 按钮同一批 `toolbar::Event`
+  构造器；`Host` 在叠加层绘制后取走动作并 `process_message`。
+- 占用矩形：两个弹层的触发区与面板都追加进 `menu::extend_blocked`，
+  命中时 `handle_events` 提前返回——点击不再落到下层 iced。
+- iced 侧 `status.rs` / `onion_skin.rs` 的 `DropDown` 在叠加层启用时强制关闭，
+  只保留触发按钮占位，避免卷帘区出现第二份菜单。
+- `has_iced_popup` 去掉 `snap_picker_open` / `onion_skin_menu_open`；
+  只剩「原生标题栏菜单 + 悬浮工具条及其锚定面板 + 溢出菜单」。
+- 验收：
+  - `chrome_bands` 5/5：新增 `toolbar_popups_dispatch_snap_and_onion_actions`
+    （点精度框 → `ToggleSnapPicker`；点预设 → `SnapSpec(1/4)`；点 Custom…
+    → `SnapCustom`；点下三角 → `ToggleOnionMenu`；点第二项 → `OnionMode(1)`）；
+  - `egui_chrome` 18/18：新增模型/动作测试（15 个预设且恰有一个当前项、
+    4 个范围且默认选中「全部」、`SnapSpecChanged`/`OnionSkinModeSelected`
+    解析、越界下标返回 `None`）；让位测试改为「精度/洋葱皮不再让位、
+    悬浮工具条/溢出菜单仍让位」；
+  - 真实窗口（`LUMINO_EGUI_OVERLAY=1`，ppp=1.25）：
+    - 点精度框（屏幕 1694,94）→ 下拉完整展开 15 项 + `Custom…`，
+      每项矢量音符小图分明；点「1/8」后弹层关闭、精度框文本变为 `1/8`；
+    - 点洋葱皮下三角（2375,94）→ 右对齐展开 4 项且勾选「显示全部音轨」；
+      点「显示上一个音轨」→ 勾选迁移到该项；日志确认动作序列为
+      `ToggleOnionMenu` → `OnionMode(1)` → `ToggleOnionMenu`，无重复/泄漏；
+    - 证据图：`target/snap-open-crop.png`、`target/snap-after2-crop.png`、
+      `target/onion-final-crop.png`。
+  - `clippy -D warnings`、`check --bin lumino-rs`、`capture_iced` 18/18、
+    `capture_egui` 12/12、`compare_egui` 逐项与上一步一致，基线零改动。
+
+**Task 1.3（下一步）：悬浮工具条 + 溢出菜单迁移**
+
+- 现状：标题栏（含菜单/子菜单）、工具栏（含精度/洋葱皮下拉）、左侧栏、
+  右侧栏图标列、状态栏、保存确认对话框、设置「常规」页已由 egui 绘制；
+  悬浮工具条（画刷/形状/颜料桶/文字参数/粗细面板）与「更多」溢出菜单仍 iced
+  ——这是 `has_iced_popup` 让位逻辑仅剩的来源。
+- 下一步：先迁移「更多」溢出菜单（网格图标 + tooltip，需把折叠结果镜像成
+  带图标与动作的模型），再迁移悬浮工具条及其五个锚定面板，之后可删除
+  整块让位；最后逐页建模其余设置页与右侧栏面板内容。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

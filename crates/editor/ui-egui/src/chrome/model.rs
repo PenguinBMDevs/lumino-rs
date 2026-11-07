@@ -7,6 +7,7 @@
 use egui::Color32;
 
 use super::piano_roll::PianoRollView;
+use lumino_core::SnapSpec;
 use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollMode;
 
@@ -415,6 +416,46 @@ pub struct ToolbarModel {
     pub onion: bool,
     /// 自动滚动模式（决定右侧图标）。
     pub auto_scroll: AutoScrollMode,
+    /// 精度下拉（`Some` = 由 egui 绘制；`None` = 关闭）。
+    pub snap_menu: Option<SnapMenuModel>,
+    /// 洋葱皮范围菜单（`Some` = 打开）。
+    pub onion_menu: Option<OnionMenuModel>,
+}
+
+/// 精度（吸附）下拉的内容。
+#[derive(Debug, Clone, Default)]
+pub struct SnapMenuModel {
+    /// 预设项（与 `SnapSpec::presets()` 同序）。
+    pub items: Vec<SnapMenuItem>,
+    /// 自定义项标签（生产固定为 `Custom…`）。
+    pub custom_label: String,
+}
+
+/// 单个精度预设。
+#[derive(Debug, Clone)]
+pub struct SnapMenuItem {
+    /// 吸附规格（点击后原样回传生产）。
+    pub spec: SnapSpec,
+    /// 显示文本（`SnapSpec::text()`）。
+    pub label: String,
+    /// 是否为当前规格。
+    pub selected: bool,
+}
+
+/// 洋葱皮「显示范围」菜单。
+#[derive(Debug, Clone, Default)]
+pub struct OnionMenuModel {
+    /// 四个范围（顺序 = `OnionSkinMode::all()`）。
+    pub items: Vec<OnionMenuItem>,
+}
+
+/// 单个洋葱皮范围项。
+#[derive(Debug, Clone)]
+pub struct OnionMenuItem {
+    /// 本地化显示名。
+    pub label: String,
+    /// 是否为当前模式。
+    pub selected: bool,
 }
 
 impl Default for ToolbarModel {
@@ -433,6 +474,8 @@ impl Default for ToolbarModel {
             recording: false,
             onion: false,
             auto_scroll: AutoScrollMode::ScrollingIndicator,
+            snap_menu: None,
+            onion_menu: None,
         }
     }
 }
