@@ -36,7 +36,7 @@ fn gpu() -> &'static (wgpu::Instance, wgpu::Device, wgpu::Queue) {
     })
 }
 
-fn create_target(device: &wgpu::Device) -> wgpu::Texture {
+fn create_target(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("egui_bridge_test_target"),
         size: wgpu::Extent3d {
@@ -47,7 +47,7 @@ fn create_target(device: &wgpu::Device) -> wgpu::Texture {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: FORMAT,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     })
@@ -71,7 +71,12 @@ fn clear(encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, color: wg
     });
 }
 
-fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<Color32> {
+fn readback(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    format: wgpu::TextureFormat,
+) -> Vec<Color32> {
     // WIDTH * 4 = 256，天然满足 bytes_per_row 的 256 对齐。
     let bytes_per_row = WIDTH * 4;
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
@@ -120,7 +125,11 @@ fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture)
             let pixels = chunks
                 .iter()
                 .map(|pixel| {
-                    Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3])
+                    if format == wgpu::TextureFormat::Bgra8UnormSrgb {
+                        Color32::from_rgba_unmultiplied(pixel[2], pixel[1], pixel[0], pixel[3])
+                    } else {
+                        Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3])
+                    }
                 })
                 .collect();
             drop(data);
@@ -172,14 +181,21 @@ fn white_texture_delta() -> egui::TexturesDelta {
     delta
 }
 
-/// 渲染给定图元并回读。
+/// 渲染给定图元并回读（`Rgba8UnormSrgb`）。
 fn render(primitives: &[ClippedPrimitive]) -> Vec<Color32> {
+    render_with_format(primitives, FORMAT)
+}
+
+fn render_with_format(
+    primitives: &[ClippedPrimitive],
+    format: wgpu::TextureFormat,
+) -> Vec<Color32> {
     let (_, device, queue) = gpu();
-    let mut painter = Painter::new(device, FORMAT);
+    let mut painter = Painter::new(device, format);
     let mut textures = white_texture_delta();
     painter.update_textures(device, queue, &mut textures);
 
-    let target = create_target(device);
+    let target = create_target(device, format);
     let view = target.create_view(&wgpu::TextureViewDescriptor::default());
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("egui_bridge_test_encoder"),
@@ -198,7 +214,7 @@ fn render(primitives: &[ClippedPrimitive]) -> Vec<Color32> {
     );
     assert_eq!(drawn, primitives.len(), "所有图元都应被提交绘制");
     queue.submit(Some(encoder.finish()));
-    readback(device, queue, &target)
+    readback(device, queue, &target, format)
 }
 
 fn pixel(pixels: &[Color32], x: u32, y: u32) -> Color32 {
@@ -247,6 +263,33 @@ fn scissor_clips_to_left_half() {
     );
 }
 
+/// 半透明叠加必须按目标格式选择正确的片元入口：
+/// sRGB 目标在线性空间混合（结果更暗），gamma 目标直接混合 gamma 值。
+#[test]
+fn srgb_target_blends_in_linear_space() {
+    let full = Rect::from_min_size(Pos2::ZERO, egui::vec2(WIDTH as f32, HEIGHT as f32));
+    let background = Color32::from_rgb(0x40, 0x40, 0x40);
+    let overlay = Color32::from_rgba_premultiplied(0x80, 0x80, 0x80, 0x80);
+    let primitives = [colored_quad(full, background), colored_quad(full, overlay)];
+    let cases = [
+        // 线性混合：0.216 + 0.498 * 0.0513 → sRGB ≈ 135。
+        (wgpu::TextureFormat::Rgba8UnormSrgb, 135),
+        (wgpu::TextureFormat::Bgra8UnormSrgb, 135),
+        // gamma 混合：0.502 + 0.498 * 0.251 ≈ 160。
+        (wgpu::TextureFormat::Rgba8Unorm, 160),
+    ];
+    for (format, expected) in cases {
+        let pixels = render_with_format(&primitives, format);
+        let expected = Color32::from_rgb(expected, expected, expected);
+        assert_channel_close(
+            pixel(&pixels, 32, 32),
+            expected,
+            2,
+            &format!("{format:?} 半透明混合"),
+        );
+    }
+}
+
 #[test]
 fn egui_text_upload_uses_font_atlas() {
     let (_, device, queue) = gpu();
@@ -279,7 +322,7 @@ fn egui_text_upload_uses_font_atlas() {
     let mut textures = output.textures_delta;
     painter.update_textures(device, queue, &mut textures);
 
-    let target = create_target(device);
+    let target = create_target(device, FORMAT);
     let view = target.create_view(&wgpu::TextureViewDescriptor::default());
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("egui_bridge_text_encoder"),
@@ -298,7 +341,7 @@ fn egui_text_upload_uses_font_atlas() {
     );
     queue.submit(Some(encoder.finish()));
 
-    let pixels = readback(device, queue, &target);
+    let pixels = readback(device, queue, &target, FORMAT);
     assert_channel_close(pixel(&pixels, 1, 1), BG, 1, "面板背景");
     let bright = pixels
         .iter()

@@ -19,6 +19,8 @@ default = []
 ignored = ["iced_renderer"]
 
 [dependencies]
+egui = { workspace = true }
+lumino-egui-bridge = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }

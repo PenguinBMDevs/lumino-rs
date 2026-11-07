@@ -35,6 +35,8 @@ impl Host {
                 texture_view,
                 &self.render_ctx.viewport,
             );
+            // 叠加层必须在 present 之后重画，否则会被缓存内容覆盖。
+            self.render_egui_overlay(frame, texture_view);
             return;
         }
 
@@ -94,6 +96,7 @@ impl Host {
             texture_view,
             &self.render_ctx.viewport,
         );
+        self.render_egui_overlay(frame, texture_view);
 
         // 处理消息（在 interface 被释放之后，避免借用冲突）
         let mut has_state_change = false;

@@ -24,6 +24,7 @@ use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
 pub(crate) mod arrangement_geometry;
 pub(crate) mod cpu_onion;
 mod data;
+pub(crate) mod egui_overlay;
 mod frame;
 pub(crate) mod mask_preview;
 pub(crate) mod note_worker;

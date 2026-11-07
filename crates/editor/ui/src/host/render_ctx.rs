@@ -156,6 +156,8 @@ pub(crate) struct RenderContext {
     /// 钢琴瀑布流面板键盘离屏渲染器（按需懒创建，跨帧复用管线）
     pub keyboard_renderer:
         Option<crate::right_sidebar::piano_waterfall::keyboard_renderer::KeyboardRenderer>,
+    /// 实验性 egui 叠加层（`LUMINO_EGUI_OVERLAY=1` 时首次绘制懒创建）
+    pub egui_overlay: Option<crate::host::render::egui_overlay::EguiOverlay>,
 }
 
 impl RenderContext {
@@ -227,6 +229,7 @@ impl RenderContext {
             font,
             uses_shared_engine: use_shared_engine,
             keyboard_renderer: None,
+            egui_overlay: None,
         }
     }
 

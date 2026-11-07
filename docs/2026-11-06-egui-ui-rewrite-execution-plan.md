@@ -197,10 +197,25 @@ callback / 多视口 / 截图能力。
 - 已知限制（迁移到 wgpu30 后由官方 `egui-wgpu` 覆盖）：不支持 `PaintCallback`、多视口、
   nearest / repeat 采样；顶点/索引缓冲按帧重建，暂未做容量复用。
 
+### Task 1.2（第一步）：真实窗口叠加验证 — 已完成
+
+- 新增 `crates/editor/ui/src/host/render/egui_overlay.rs`，由 `LUMINO_EGUI_OVERLAY=1`
+  开关（默认关闭）。在 iced `present` 之后、`with_frame` 的 `frame.present()` 之前绘制，
+  Device/Queue 与 iced 完全共用。
+- 实测环境证据（Windows / Vulkan，窗口 2560×1540 @1.25）：
+  - surface 格式为 `Bgra8UnormSrgb` → 走 sRGB 片元入口；
+  - 叠加层首帧 `primitives=1 drawn=1`，stderr 无 wgpu 校验错误；
+  - 截图中右上角 HUD（`egui overlay · wgpu27` / `Bgra8UnormSrgb` / `2560×1540`）正常显示。
+- 为生产格式补测试：`lumino-egui-bridge` 新增 `Bgra8UnormSrgb` 半透明混合用例，
+  同时验证 sRGB 目标线性混合（≈135）与 gamma 目标直接混合（≈160）。
+- 截图注意：PowerShell 截屏前必须调用 `SetProcessDPIAware()`，否则 ppp>1 时只截到
+  窗口左侧（右半部分被裁掉），会误判「叠加层没显示」。
+
 ## 八、当前任务
 
-**Task 1.2：主程序接线（在 wgpu27 上叠加 egui 层）**
+**Task 1.3：egui Chrome 最小可交互替换**
 
-- 前置：Task 1.1 已完成；`lumino-gfx` 的 wgpu 版本仍与 iced 共用 Device，不能单边升级。
-- 交付：`lumino-ui` 在现有 iced 渲染之后调用桥接绘制 egui 层；先做可开关的最小叠加验证，
-  再逐步替换 Chrome。
+- 现状：桥接与真实窗口叠加已验证；`lumino-ui-egui` 仍只有 4 个静态场景草稿，
+  尚不能承接生产 UI 的消息/交互。
+- 下一步：先在叠加层里接入真实 `Root` 状态（标题栏 / 工具栏 / 状态栏只读渲染），
+  再逐块接管输入；`lumino-gfx` 的 wgpu30 迁移继续等待 iced 退出渲染路径。

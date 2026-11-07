@@ -4942,6 +4942,7 @@ dependencies = [
 name = "lumino-ui"
 version = "0.2.1"
 dependencies = [
+ "egui",
  "i2m-rs",
  "iced_aw",
  "iced_core",
@@ -4956,6 +4957,7 @@ dependencies = [
  "lumino-cpu-onion",
  "lumino-diagnostics",
  "lumino-editor-state",
+ "lumino-egui-bridge",
  "lumino-export",
  "lumino-extras",
  "lumino-gfx",
