@@ -23,6 +23,8 @@ pub enum SceneId {
     SettingsGeneral,
     /// 设置对话框「常规」页（浅色主题）。
     SettingsGeneralLight,
+    /// 设置对话框「常规」页（英文界面）。
+    SettingsGeneralEn,
     /// 未保存更改确认对话框。
     SaveConfirmDialog,
     /// 空工程的钢琴卷帘骨架（键盘、标尺、播放指示线、滚动条、力度面板）。
@@ -31,10 +33,11 @@ pub enum SceneId {
 
 impl SceneId {
     /// 全部基线场景（顺序即 `capture_iced` 的输出顺序）。
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::MainChrome,
         Self::SettingsGeneral,
         Self::SettingsGeneralLight,
+        Self::SettingsGeneralEn,
         Self::SaveConfirmDialog,
         Self::PianoRollSkeleton,
     ];
@@ -45,6 +48,7 @@ impl SceneId {
             Self::MainChrome => "main_chrome",
             Self::SettingsGeneral => "settings_general",
             Self::SettingsGeneralLight => "settings_general_light",
+            Self::SettingsGeneralEn => "settings_general_en",
             Self::SaveConfirmDialog => "save_confirm_dialog",
             Self::PianoRollSkeleton => "piano_roll_skeleton",
         }
@@ -54,7 +58,9 @@ impl SceneId {
     pub fn logical_size(self) -> (u32, u32) {
         match self {
             Self::MainChrome | Self::PianoRollSkeleton => (1600, 1000),
-            Self::SettingsGeneral | Self::SettingsGeneralLight => (1200, 800),
+            Self::SettingsGeneral | Self::SettingsGeneralLight | Self::SettingsGeneralEn => {
+                (1200, 800)
+            }
             Self::SaveConfirmDialog => (560, 260),
         }
     }
@@ -87,6 +93,10 @@ impl Scene {
             // 浅色主题基线：用于验证 egui 调色板注入后的整窗渲染。
             config.theme = iced_core::Theme::Light.to_string();
         }
+        if id == SceneId::SettingsGeneralEn {
+            // 英文界面基线：用于验证设置对话框文案全部来自生产翻译表。
+            config.language = Language::EnUs;
+        }
         // 与生产启动顺序一致：先解析全局字体，再构造读取 `ui_font()` 的组件。
         let _font = lumino_ui_core::font::init(&config);
 
@@ -103,9 +113,9 @@ impl Scene {
                 view.scroll_x = 8.0 * bar_pixels;
                 root
             }
-            SceneId::SettingsGeneral | SceneId::SettingsGeneralLight => {
-                Root::new_settings_dialog(&config.theme, &config)
-            }
+            SceneId::SettingsGeneral
+            | SceneId::SettingsGeneralLight
+            | SceneId::SettingsGeneralEn => Root::new_settings_dialog(&config.theme, &config),
             SceneId::SaveConfirmDialog => {
                 let mut root =
                     Root::new_dialog_with_config(&config.theme, DialogType::SaveConfirm, &config);
@@ -161,6 +171,7 @@ mod tests {
         assert_eq!(SceneId::MainChrome.logical_size(), (1600, 1000));
         assert_eq!(SceneId::SettingsGeneral.logical_size(), (1200, 800));
         assert_eq!(SceneId::SettingsGeneralLight.logical_size(), (1200, 800));
+        assert_eq!(SceneId::SettingsGeneralEn.logical_size(), (1200, 800));
         assert_eq!(SceneId::SaveConfirmDialog.logical_size(), (560, 260));
         assert_eq!(SceneId::PianoRollSkeleton.logical_size(), (1600, 1000));
     }
@@ -180,6 +191,10 @@ mod tests {
             "settings_general_light-dpi100.png"
         );
         assert_eq!(
+            SceneId::SettingsGeneralEn.baseline_file_name(1.25),
+            "settings_general_en-dpi125.png"
+        );
+        assert_eq!(
             SceneId::SaveConfirmDialog.baseline_file_name(1.5),
             "save_confirm_dialog-dpi150.png"
         );
@@ -195,6 +210,12 @@ mod tests {
                 iced_core::Theme::TokyoNightStorm
             };
             assert_eq!(scene.root.theme(), expected);
+            let expected_language = if id == SceneId::SettingsGeneralEn {
+                Language::EnUs
+            } else {
+                Language::ZhCn
+            };
+            assert_eq!(scene.config.language, expected_language);
             // view() 只做布局树构造，不触发 GPU；可安全在普通单测中执行。
             let element = scene.root.view();
             drop(element);

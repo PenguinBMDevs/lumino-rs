@@ -97,8 +97,19 @@ pub const TRAFFIC_ICON: f32 = 10.0;
 pub const SETTINGS_MENU_W: f32 = 200.0;
 /// 设置页内容内边距。
 pub const SETTINGS_PADDING: f32 = 20.0;
-/// 设置菜单项高度。
-pub const SETTINGS_MENU_ROW_H: f32 = 48.0;
+/// 设置菜单项高度（iced 基线逐行间距 52）。
+pub const SETTINGS_MENU_ROW_H: f32 = 52.0;
+/// 设置页内容外边距。
+pub const SETTINGS_MARGIN: f32 = 16.0;
+/// 设置页确认按钮宽度。
+pub const SETTINGS_CONFIRM_W: f32 = 100.0;
+/// 设置页确认按钮高度。
+pub const SETTINGS_CONFIRM_H: f32 = 34.0;
+/// 设置页确认按钮与容器的间距。
+pub const SETTINGS_CONFIRM_GAP: f32 = 16.0;
+/// 设置菜单项数量（常规 / 音频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 /
+/// 云管理 / 兼容性 / 关于）。
+pub const SETTINGS_MENU_ITEMS: usize = 10;
 /// 设置表单行高。
 pub const SETTINGS_FORM_ROW_H: f32 = 72.0;
 

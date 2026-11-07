@@ -165,7 +165,7 @@ pub fn combo_box(
     ui: &mut egui::Ui,
     id: &str,
     selected: &str,
-    options: &[&str],
+    options: &[String],
     width: f32,
     palette: &SettingsPalette,
 ) -> bool {
@@ -193,8 +193,8 @@ pub fn combo_box(
             for option in options {
                 if ui
                     .selectable_label(
-                        *option == selected,
-                        RichText::new(*option).size(SETTINGS_COMBO_TEXT),
+                        option.as_str() == selected,
+                        RichText::new(option.as_str()).size(SETTINGS_COMBO_TEXT),
                     )
                     .clicked()
                 {

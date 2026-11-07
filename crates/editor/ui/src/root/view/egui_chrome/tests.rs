@@ -2,6 +2,7 @@
 
 use super::*;
 use lumino_extras::i18n::Language;
+use lumino_ui_egui::chrome::{DialogModel, DialogPalette, SettingsPalette};
 
 fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
     sidebar.egui_model(Language::ZhCn, false)
@@ -263,16 +264,68 @@ fn settings_dialog_model_carries_general_page_values() {
         panic!("设置对话框「常规」页应整窗接管");
     };
     assert_eq!(values.selected, 0);
+    assert_eq!(values.labels.menu.len(), 10);
+    assert_eq!(values.labels.title, "常规");
+    assert_eq!(values.labels.confirm, "确认");
+    assert_eq!(values.labels.eraser_options.len(), 2);
+    assert_eq!(values.labels.track_add_options.len(), 2);
     assert!(!values.eraser.is_empty(), "橡皮擦行为应来自真实设置");
     assert!(!values.track_add.is_empty(), "添加音轨行为应来自真实设置");
     assert_eq!(
         values.log_retention,
-        root.settings.editing.history_total_limit.to_string()
+        root.settings.logging.log_retention_count.to_string(),
+        "日志保留份数必须来自 logging（不是历史条数）"
     );
 
     // 其它页面尚未建模：整块交回 iced。
     root.settings.selected_menu_index = 1;
     assert!(root.egui_chrome_model().dialog.is_none());
+}
+
+#[test]
+fn settings_dialog_labels_follow_language() {
+    let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
+    let config = lumino_core::storage::config::UiConfig {
+        language: lumino_extras::i18n::Language::EnUs,
+        ..lumino_core::storage::config::UiConfig::default()
+    };
+    let root = Root::new_settings_dialog(&theme, &config);
+
+    let model = root.egui_chrome_model();
+    let Some(DialogModel::Settings(values)) = model.dialog else {
+        panic!("英文界面下设置对话框也应整窗接管");
+    };
+    let t = lumino_extras::i18n::settings_translations(lumino_extras::i18n::Language::EnUs);
+    assert_eq!(values.labels.title, t.general_title);
+    assert_eq!(values.labels.confirm, t.confirm);
+    assert_eq!(values.labels.menu.len(), 10);
+    assert_eq!(values.labels.menu[0], t.general);
+    assert_eq!(values.labels.menu[8], t.compatibility);
+    assert_eq!(values.labels.menu[9], t.about);
+    assert_eq!(values.labels.eraser_label, t.eraser_behavior);
+    assert_eq!(values.labels.log_label, t.log_retention_count);
+    assert_eq!(values.eraser, "Default (Shift+drag)");
+    assert_eq!(values.track_add, "Auto-switch to new track");
+}
+
+#[test]
+fn settings_dialog_defers_when_menu_would_scroll() {
+    let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
+    let config = lumino_core::storage::config::UiConfig::default();
+    let root = Root::new_settings_dialog(&theme, &config);
+
+    // 默认对话框 720×540 逻辑点：菜单放不下（需要 iced 的滚动条与滚动位置）。
+    assert!(
+        root.egui_chrome_model_for(egui::vec2(720.0, 540.0))
+            .dialog
+            .is_none(),
+        "菜单需要滚动时必须交回 iced"
+    );
+    // 高度足够（1200×800）→ 整窗接管。
+    assert!(matches!(
+        root.egui_chrome_model_for(egui::vec2(1200.0, 800.0)).dialog,
+        Some(DialogModel::Settings(_))
+    ));
 }
 
 #[test]

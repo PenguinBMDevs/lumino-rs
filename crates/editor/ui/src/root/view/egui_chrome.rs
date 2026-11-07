@@ -3,19 +3,18 @@
 //! 只做数据搬运，不含任何渲染逻辑；渲染在 `lumino_ui_egui::chrome::show_bands`。
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
 
+mod dialogs;
+
 use lumino_core::storage::config::NoteCountDisplay;
-use lumino_core::tr;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, DialogModel, DialogPalette, RightSidebarModel, RightSidebarPanelKind, RollBar,
-    SaveConfirmModel, SettingsPalette, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel,
-    SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
+    ChromeModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SidebarGroup, SidebarModel,
+    SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use crate::root::Root;
 use crate::sidebar::{RollBarButton, Route, Sidebar};
-use crate::state::root_state::DialogType;
 use crate::toolbar::ToolbarPerfContext;
 use lumino_ui_egui::layout;
 
@@ -42,7 +41,7 @@ fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
 }
 
 /// iced 颜色（线性浮点）→ egui 颜色。
-fn color32(color: iced_core::Color) -> egui::Color32 {
+pub(super) fn color32(color: iced_core::Color) -> egui::Color32 {
     let to_u8 = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     egui::Color32::from_rgb(to_u8(color.r), to_u8(color.g), to_u8(color.b))
 }
@@ -258,101 +257,23 @@ impl Root {
             || self.toolbar.text_params_open
     }
 
-    /// 生产 iced 调色板 → 设置对话框调色板。
-    ///
-    /// 深色下 `border` / `text_dim` 没有一一对应的 iced 角色，沿用与既有像素
-    /// 基线一致的常量；浅色下取 `background.strong` 作为分隔线/次级文字。
-    fn settings_palette(&self) -> SettingsPalette {
-        let palette = self.window.theme.extended_palette();
-        let dark = palette.background.weakest.color.r < 0.5;
-        SettingsPalette {
-            titlebar: color32(palette.background.neutral.color),
-            background: color32(palette.background.base.color),
-            panel: color32(palette.background.weakest.color),
-            toolbar: color32(palette.background.weak.color),
-            card: color32(palette.background.base.color),
-            border: if dark {
-                SettingsPalette::DARK.border
-            } else {
-                color32(palette.background.strong.color)
-            },
-            input_border: color32(palette.background.strong.color),
-            text: color32(palette.background.base.text),
-            text_dim: if dark {
-                SettingsPalette::DARK.text_dim
-            } else {
-                color32(palette.background.strong.color)
-            },
-            accent: color32(palette.primary.base.color),
-            accent_strong: color32(palette.primary.strong.color),
-        }
-    }
-
-    /// 生产 iced 调色板 → 对话框调色板（深/浅主题都成立）。
-    fn dialog_palette(&self) -> DialogPalette {
-        let palette = self.window.theme.extended_palette();
-        DialogPalette {
-            titlebar: color32(palette.background.neutral.color),
-            background: color32(palette.background.base.color),
-            text: color32(palette.background.base.text),
-            primary: color32(palette.primary.base.color),
-            primary_border: color32(palette.primary.weak.color),
-            secondary: color32(palette.background.weak.color),
-            secondary_border: color32(palette.background.weaker.color),
-        }
-    }
-
-    /// 已支持整窗接管的对话框（当前仅「未保存更改确认」）。
-    ///
-    /// 其余对话框（设置 / 导出 / 历史 …）仍由 iced 绘制：整块返回空模型，
-    /// 叠加层不画任何东西，避免把主窗口 band 盖到对话框上。
-    fn egui_dialog_model(&self) -> Option<DialogModel> {
-        match self.state.dialog_type {
-            DialogType::SaveConfirm => Some(DialogModel::SaveConfirm(SaveConfirmModel {
-                titlebar: !self.settings.synth.use_native_titlebar,
-                palette: self.dialog_palette(),
-                message: tr!("是否保留未保存的更改?").to_string(),
-                save: tr!("保存").to_string(),
-                close: tr!("关闭").to_string(),
-                cancel: tr!("取消").to_string(),
-            })),
-            DialogType::Settings => {
-                // 只接管「常规」页且界面语言为中文（其余页面/语言的文案尚未建模）。
-                let language = self.settings.display.language;
-                if language != lumino_extras::i18n::Language::ZhCn
-                    || self.settings.selected_menu_index != 0
-                {
-                    return None;
-                }
-                let editing = &self.settings.editing;
-                Some(DialogModel::Settings(SettingsSnapshot {
-                    palette: self.settings_palette(),
-                    selected: self.settings.selected_menu_index,
-                    eraser: lumino_extras::i18n::eraser_behavior_name(
-                        editing.eraser_behavior,
-                        language,
-                    )
-                    .to_owned(),
-                    track_add: lumino_extras::i18n::track_add_behavior_name(
-                        editing.track_add_behavior,
-                        language,
-                    )
-                    .to_owned(),
-                    log_retention: editing.history_total_limit.to_string(),
-                }))
-            }
-            _ => None,
-        }
-    }
-
     /// 构造 egui 外壳快照（标题栏 + 工具栏 + 左侧栏 + 状态栏，只读）。
+    ///
+    /// 无宿主尺寸时按足够大的窗口（1600×1000 逻辑点）假设；仅供单测/离线使用，
+    /// 真实叠加层用 [`Root::egui_chrome_model_for`] 传入实际视口。
+    #[cfg(test)]
     pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
+        self.egui_chrome_model_for(egui::vec2(1600.0, 1000.0))
+    }
+
+    /// 按宿主窗口的**逻辑**尺寸构造快照；`viewport` 用于判断设置菜单是否需要滚动。
+    pub(crate) fn egui_chrome_model_for(&self, viewport: egui::Vec2) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
         // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 iced），
         // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
         if self.state.is_dialog_window {
             return ChromeModel {
-                dialog: self.egui_dialog_model(),
+                dialog: self.egui_dialog_model(viewport),
                 ..ChromeModel::default()
             };
         }

@@ -137,7 +137,10 @@ impl Host {
         let size = self.render_ctx.viewport.physical_size();
         let pixels_per_point = self.render_ctx.viewport.scale_factor();
         let app_frame = self.frame_count;
-        let model = self.root.egui_chrome_model();
+        // 叠加层模型需要逻辑尺寸：设置菜单能否完整显示取决于窗口高度。
+        let scale = pixels_per_point.max(f32::EPSILON);
+        let logical = egui::vec2(size.width as f32 / scale, size.height as f32 / scale);
+        let model = self.root.egui_chrome_model_for(logical);
         // Device/Queue 是 Arc 句柄，克隆避免与 `egui_overlay` 的可变借用冲突。
         let device = self.render_ctx.device.clone();
         let queue = self.render_ctx.queue.clone();

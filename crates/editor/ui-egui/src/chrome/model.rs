@@ -35,7 +35,9 @@ pub enum DialogModel {
     /// 未保存更改确认（`DialogType::SaveConfirm`）。
     SaveConfirm(SaveConfirmModel),
     /// 设置对话框「常规」页（`DialogType::Settings`，仅 `selected == 0`）。
-    Settings(SettingsSnapshot),
+    ///
+    /// 装箱：`SettingsSnapshot` 含全部文案与调色板，比确认对话框大一个数量级。
+    Settings(Box<SettingsSnapshot>),
 }
 
 /// 设置对话框调色板：由生产 iced `extended_palette` 映射。
@@ -88,11 +90,41 @@ impl SettingsPalette {
     };
 }
 
+/// 设置对话框的本地化文案（来自生产 `settings_translations`）。
+///
+/// 渲染层不持有任何语言常量：中/英文都由生产侧填入，换语言只换数据。
+#[derive(Debug, Clone, Default)]
+pub struct SettingsLabels {
+    /// 左侧菜单（顺序与图标列一致：常规 / 音频 / 界面 / 快捷键 / 洋葱皮 /
+    /// 调色板 / 编辑 / 云管理 / 兼容性 / 关于）。
+    pub menu: Vec<String>,
+    /// 页面标题（「常规」）。
+    pub title: String,
+    /// 橡皮擦行为标签。
+    pub eraser_label: String,
+    /// 橡皮擦行为选项（两项，与生产 `pick_list` 同序）。
+    pub eraser_options: Vec<String>,
+    /// 添加音轨行为标签。
+    pub track_add_label: String,
+    /// 添加音轨行为选项（两项，与生产 `pick_list` 同序）。
+    pub track_add_options: Vec<String>,
+    /// 日志分区标题。
+    pub log_section: String,
+    /// 日志保留份数标签。
+    pub log_label: String,
+    /// 日志输入框占位符（生产 `text_input("10", ...)`）。
+    pub log_placeholder: String,
+    /// 确认按钮。
+    pub confirm: String,
+}
+
 /// 设置对话框整窗所需的真实状态（值来自生产 `SettingsPanel`）。
 #[derive(Debug, Clone, Default)]
 pub struct SettingsSnapshot {
     /// 调色板（深/浅主题）。
     pub palette: SettingsPalette,
+    /// 本地化文案。
+    pub labels: SettingsLabels,
     /// 当前菜单索引（只接管 0 = 常规页）。
     pub selected: usize,
     /// 橡皮擦行为（本地化后的显示文本）。

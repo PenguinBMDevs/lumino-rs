@@ -363,11 +363,30 @@ callback / 多视口 / 截图能力。
   浅色基线逐点一致 + 菜单墨迹一致**）；`egui_chrome` 14/14；`ui-parity` 12/12；
   真机浅色设置对话框 `primitives=28 drawn=28`（此前 drawn=0），截图确认浅色下拉/输入框。
 
-**Task 1.3（下一步）：设置其它页面 + 菜单栏迁移**
+**Task 1.3（第六步）：设置对话框本地化 + 表单错位修复 — 已完成**
 
-- 现状：标题栏 / 工具栏 / 左侧栏 / 右侧栏图标列 / 状态栏由 egui 用真实状态绘制；
-  保存确认对话框整窗接管（深色主题）；其他对话框与 iced 弹出层仍整块交回 iced。
-- 下一步：把设置页（至少「常规」页）的页面内容与文案接入模型，使设置对话框可整窗接管；
-  随后把菜单栏迁到 egui（含输入路由），消除标题栏闩锁与 tooltip 遮挡。
+- 文案不再写死在渲染层：`SettingsLabels` 由 `Root::settings_labels(language)` 从生产
+  `settings_translations` / `eraser_behavior_name` / `track_add_behavior_name` 填充，
+  中英文共用一条链路；移除中文闸门（仍只接管「常规」页）。
+- **错位修复**：表单控件列由固定 104px 改为「标签实测宽度 + 32」
+  （生产 `row![label, space(16), pick_list].spacing(8)`），英文 `Add Track Behavior:`
+  不再被下拉框压住。
+- **数据修复**：日志保留份数改读 `logging.log_retention_count`（原误读历史条数）。
+- 设置菜单行高 48 → **52**（iced 基线逐行 52）。
+- 菜单滚动让位：叠加层不消费滚轮、无法复刻 iced `scrollable`；窗口逻辑高度
+  < 672 时整块交回 iced（默认 900×675 对话框 `drawn=0`），高度足够才整窗接管。
+- 验收：
+  - `settings_bands` 3/3（深色 <5%、浅色表面色逐点一致、英文菜单/橡皮擦/日志行
+    墨迹与英文基线一致）；
+  - `SceneId::SettingsGeneralEn` + 3 张英文 iced 基线（`capture_iced` 18/18）；
+  - 真实窗口 `LUMINO_LANG=en-US`：默认尺寸 `drawn=0`（让位）；放大到 1500×1000 后
+    与 overlay-off 同尺寸截图差异 4.19%，截图 10 个英文菜单项齐全、表单无重叠。
+
+**Task 1.3（下一步）：菜单栏迁移 + 输入路由**
+
+- 现状：标题栏 / 工具栏 / 左侧栏 / 右侧栏图标列 / 状态栏、保存确认对话框、
+  设置「常规」页（深/浅/英文）已由 egui 用真实状态绘制；菜单栏与其余页面仍 iced。
+- 下一步：把菜单栏与其下拉/提示迁到 egui 并接通输入路由，删除 `egui_titlebar_latch`
+  与 `has_iced_popup` 让位逻辑；随后逐页建模其余设置页，消除「仅常规页 + 菜单滚动让位」。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。
