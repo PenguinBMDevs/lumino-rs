@@ -5,6 +5,8 @@
 //! 这样同一份渲染代码既能被离线场景复用，也能被真实窗口叠加层复用。
 
 use egui::Color32;
+
+use super::piano_roll::PianoRollView;
 use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollMode;
 
@@ -17,6 +19,10 @@ pub struct ChromeModel {
     pub toolbar: Option<ToolbarModel>,
     /// 左侧栏；`None` = 不接管（拖拽 / 重命名 / 菜单等瞬态）。
     pub sidebar: Option<SidebarModel>,
+    /// 右侧栏图标列；`None` = 不接管（当前视图不渲染右侧栏）。
+    pub right_sidebar: Option<RightSidebarModel>,
+    /// 钢琴卷帘骨架；`None` = 不接管（纵向卷帘 / 循环 / 拍号变化 / 洋葱皮 / 协作光标）。
+    pub piano_roll: Option<PianoRollView>,
     /// 状态栏。
     pub statusbar: StatusbarModel,
 }
@@ -179,6 +185,47 @@ impl Default for SidebarModel {
             track_list_title: "音轨列表".to_owned(),
             add_track_label: "添加音轨".to_owned(),
         }
+    }
+}
+
+/// 右侧栏面板（与 iced `RightSidebarPanel` 一一对应）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RightSidebarPanelKind {
+    /// 图片转 MIDI。
+    ImageToMidi,
+    /// 素材库。
+    Materials,
+    /// 钢琴瀑布流。
+    PianoWaterfall,
+}
+
+/// 右侧栏（48px 图标列 + 可选面板）的只读状态。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RightSidebarModel {
+    /// 面板是否可见（仅影响面板区域，图标列常驻）。
+    pub panel_visible: bool,
+    /// 面板宽度（含 6px 拖拽手柄）。
+    pub panel_width: f32,
+    /// 点亮的图标（`None` = 三个按钮均未点亮）。
+    pub active: Option<RightSidebarPanelKind>,
+    /// 图标列顶边（标题栏 + 工具栏高度）。
+    pub top_inset: f32,
+}
+
+impl RightSidebarModel {
+    /// 图标列宽度（固定 48）。
+    pub const fn bar_width(&self) -> f32 {
+        48.0
+    }
+
+    /// 右侧栏总宽度（面板 + 图标列）。
+    pub fn total_width(&self) -> f32 {
+        self.bar_width()
+            + if self.panel_visible {
+                self.panel_width
+            } else {
+                0.0
+            }
     }
 }
 

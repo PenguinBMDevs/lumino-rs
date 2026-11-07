@@ -12,7 +12,6 @@ use egui::{Color32, Rect, Vec2};
 use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel};
 use crate::icons::Icon;
 use crate::theme;
-use crate::widgets;
 
 /// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。
 pub(crate) const ROUTE_BAR_W: f32 = 48.0;
@@ -170,18 +169,75 @@ fn route_button(
     );
 }
 
-/// 右侧栏：图标列（面板默认收起，无激活指示条）。
-pub fn show_right(ui: &mut egui::Ui, state: &mut ChromeState) {
+/// 右侧栏图标列：48px 宽、按钮 48×48 + 2px 间距、灯条贴右边缘。
+///
+/// 只绘制图标列（`model.panel_visible` 的面板保持在 iced：其中含素材扫描、
+/// 图片转换等复杂交互，本层暂不接管）。
+pub fn show_right_model(
+    ui: &mut egui::Ui,
+    model: &super::RightSidebarModel,
+    icons: &mut crate::icons::IconCache,
+) {
     let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 0, theme::ROUTE_BAR_BG);
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        for icon in [
-            Icon::ImageToMidi,
-            Icon::MaterialLibrary,
-            Icon::PianoWaterfall,
-        ] {
-            widgets::route_button(ui, &mut state.icons, icon, None, true);
-        }
-    });
+    let left = rect.left();
+    for (index, icon) in [
+        Icon::ImageToMidi,
+        Icon::MaterialLibrary,
+        Icon::PianoWaterfall,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let y = rect.top() + index as f32 * (RIGHT_BTN + RIGHT_BTN_GAP);
+        right_button(ui, icons, icon, left, y, model.active);
+    }
 }
+
+/// 右侧栏按钮边长与间距（生产 `Column::spacing(2)`）。
+const RIGHT_BTN: f32 = 48.0;
+const RIGHT_BTN_GAP: f32 = 2.0;
+
+/// 单个右侧栏按钮：图标在 46px 内容区居中（左侧灯条在右边缘 2px）。
+fn right_button(
+    ui: &egui::Ui,
+    icons: &mut crate::icons::IconCache,
+    icon: Icon,
+    left: f32,
+    y: f32,
+    active: Option<super::RightSidebarPanelKind>,
+) {
+    let rect = Rect::from_min_size(egui::pos2(left, y), Vec2::splat(RIGHT_BTN));
+    let lit = matches!(
+        (active, icon),
+        (
+            Some(super::RightSidebarPanelKind::ImageToMidi),
+            Icon::ImageToMidi
+        ) | (
+            Some(super::RightSidebarPanelKind::Materials),
+            Icon::MaterialLibrary
+        ) | (
+            Some(super::RightSidebarPanelKind::PianoWaterfall),
+            Icon::PianoWaterfall
+        )
+    );
+    if lit {
+        ui.painter().rect_filled(
+            Rect::from_min_size(
+                egui::pos2(rect.right() - 2.0, rect.top()),
+                Vec2::new(2.0, rect.height()),
+            ),
+            0,
+            theme::ACCENT,
+        );
+    }
+    // 内容区 = 48 - 2（灯条），图标 20 居中 → 起点 = 左 + 13。
+    let icon_rect = Rect::from_min_size(
+        egui::pos2(rect.left() + 13.0, rect.center().y - RIGHT_ICON / 2.0),
+        Vec2::splat(RIGHT_ICON),
+    );
+    icons.paint(ui.painter(), icon, icon_rect);
+}
+
+/// 右侧栏图标尺寸（生产 20×20）。
+const RIGHT_ICON: f32 = 20.0;

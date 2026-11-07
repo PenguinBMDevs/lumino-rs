@@ -10,8 +10,9 @@ use egui_kittest::Harness;
 use image::RgbaImage;
 use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollMode;
+use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    self, ChromeModel, SidebarModel, StatusbarModel, TitlebarModel, ToolbarModel,
+    self, ChromeModel, RightSidebarModel, SidebarModel, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 use lumino_ui_egui::icons::IconCache;
 
@@ -39,6 +40,19 @@ fn model() -> ChromeModel {
             ],
         }),
         sidebar: Some(SidebarModel::default()),
+        piano_roll: Some(PianoRollView {
+            left_inset: 248.0,
+            top_inset: 102.0,
+            right_inset: 48.0,
+            bottom_inset: 20.0,
+            ..Default::default()
+        }),
+        right_sidebar: Some(RightSidebarModel {
+            panel_visible: false,
+            panel_width: 200.0,
+            active: None,
+            top_inset: 102.0,
+        }),
         toolbar: Some(ToolbarModel {
             left_inset: 248.0,
             bpm: "120.0".to_owned(),
@@ -124,6 +138,45 @@ fn ink_runs(image: &RgbaImage, y0: u32, y1: u32, x0: u32, x1: u32, bg: [u8; 3]) 
     }
     if let Some(from) = start {
         runs.push((from, x1));
+    }
+    runs
+}
+
+/// 某一列带内与背景差异超过阈值的行区间 `(start, end)`（含端点）。
+fn ink_row_runs(
+    image: &RgbaImage,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+    bg: [u8; 3],
+) -> Vec<(u32, u32)> {
+    let mut runs = Vec::new();
+    let mut start: Option<u32> = None;
+    for y in y0..=y1 {
+        let mut ink = false;
+        for x in x0..=x1 {
+            let pixel = image.get_pixel(x, y).0;
+            let delta = (0..3)
+                .map(|channel| i32::from(pixel[channel]) - i32::from(bg[channel]))
+                .map(i32::abs)
+                .sum::<i32>();
+            if delta > 40 {
+                ink = true;
+                break;
+            }
+        }
+        match (ink, start) {
+            (true, None) => start = Some(y),
+            (false, Some(from)) => {
+                runs.push((from, y - 1));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(from) = start {
+        runs.push((from, y1));
     }
     runs
 }
@@ -265,4 +318,93 @@ fn bands_match_iced_geometry() {
     let bands_add = ink_runs(&bands, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
     let iced_add = ink_runs(&baseline, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
     assert_runs_close(&bands_add, &iced_add, "添加音轨行");
+
+    // 右侧栏图标列：x 1552..1599，从工具栏下沿（102）到状态栏上沿（980）。
+    assert_ne!(
+        &bands.get_pixel(1551, 110).0[..3],
+        &[0x33, 0x39, 0x57],
+        "图标列不得越过左边界 1552"
+    );
+    assert_eq!(
+        &bands.get_pixel(1552, 110).0[..3],
+        &[0x33, 0x39, 0x57],
+        "右侧栏图标列底色应为 `background.weaker`"
+    );
+    assert_eq!(
+        &bands.get_pixel(1552, 101).0[..3],
+        &[0x2A, 0x2F, 0x47],
+        "图标列不得覆盖工具栏"
+    );
+    assert_eq!(
+        &bands.get_pixel(1552, 979).0[..3],
+        &[0x33, 0x39, 0x57],
+        "图标列下沿应止于状态栏上沿"
+    );
+    assert_eq!(
+        &bands.get_pixel(1552, 980).0[..3],
+        &STATUSBAR_BG,
+        "图标列不得覆盖状态栏"
+    );
+
+    // 三个图标（20×20）在 48×48 按钮内居中，按钮间 2px 间距。
+    let bands_icons = ink_row_runs(&bands, 1552, 1599, 100, 260, [0x33, 0x39, 0x57]);
+    let iced_icons = ink_row_runs(&baseline, 1552, 1599, 100, 260, [0x33, 0x39, 0x57]);
+    assert_runs_close(&bands_icons, &iced_icons, "右侧栏图标行");
+
+    // 钢琴卷帘骨架：键盘列 / 标尺 / 滚动条，网格区域必须保持透明（下层是 wgpu）。
+    assert_eq!(
+        bands.get_pixel(800, 500).0[3],
+        0,
+        "卷帘中网格区域不得被叠加层覆盖（wgpu 音符需要透出）"
+    );
+    assert_eq!(
+        &bands.get_pixel(300, 140).0[..3],
+        &[0x2A, 0x2F, 0x47],
+        "白键底色应为 `background.weakest`"
+    );
+    assert_eq!(
+        &bands.get_pixel(300, 150).0[..3],
+        &[0x24, 0x28, 0x3B],
+        "黑键底色应为 `background.base`"
+    );
+    assert_eq!(
+        &bands.get_pixel(300, 126).0[..3],
+        &[0x27, 0x2C, 0x41],
+        "琴键分隔线应为 50% 混合的 `background.base`"
+    );
+    assert_eq!(
+        &bands.get_pixel(400, 110).0[..3],
+        &[0x24, 0x28, 0x3B],
+        "标尺底色应为 `background.base`"
+    );
+    let bands_keys = merge_runs(&ink_runs(&bands, 127, 145, 250, 366, [0x2A, 0x2F, 0x47]), 4);
+    let iced_keys = merge_runs(
+        &ink_runs(&baseline, 127, 145, 250, 366, [0x2A, 0x2F, 0x47]),
+        4,
+    );
+    assert_runs_close(&bands_keys, &iced_keys, "键盘首键音名");
+
+    let bands_ruler = ink_runs(&bands, 104, 124, 372, 700, [0x24, 0x28, 0x3B]);
+    let iced_ruler = ink_runs(&baseline, 104, 124, 372, 700, [0x24, 0x28, 0x3B]);
+    assert_runs_close(&bands_ruler, &iced_ruler, "标尺小节号");
+
+    // 滚动条：垂直滑块 104..381、水平滑块 250..271（iced 基线）。
+    assert_eq!(
+        &bands.get_pixel(1540, 200).0[..3],
+        &[0x39, 0x40, 0x63],
+        "垂直滚动条滑块应为 `background.weak`"
+    );
+    assert_eq!(
+        &bands.get_pixel(1540, 500).0[..3],
+        &[0x44, 0x4D, 0x79],
+        "垂直滚动条轨道应为 `background.strong`"
+    );
+    assert_eq!(
+        &bands.get_pixel(260, 968).0[..3],
+        &[0x39, 0x40, 0x63],
+        "水平滚动条滑块应为 `background.weak`"
+    );
+    let bands_vthumb = ink_row_runs(&bands, 1532, 1551, 100, 980, [0x44, 0x4D, 0x79]);
+    let iced_vthumb = ink_row_runs(&baseline, 1532, 1551, 100, 980, [0x44, 0x4D, 0x79]);
+    assert_runs_close(&bands_vthumb, &iced_vthumb, "垂直滚动条滑块");
 }

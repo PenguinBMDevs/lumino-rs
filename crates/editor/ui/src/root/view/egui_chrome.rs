@@ -5,14 +5,28 @@
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
+use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
-    TitlebarModel, ToolbarModel,
+    ChromeModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SidebarGroup, SidebarModel,
+    SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use crate::root::Root;
 use crate::sidebar::{RollBarButton, Route, Sidebar};
 use crate::toolbar::ToolbarPerfContext;
+use lumino_ui_egui::layout;
+
+/// 钢琴卷帘骨架接管开关：默认关闭。
+///
+/// 生产里卷帘的键盘 / 标尺 / 网格由 `lumino-gfx` 的 wgpu 通道绘制（含主题化
+/// 配色），iced canvas 的同名几何被它整块覆盖。egui 骨架在 gfx 退出该区域之前
+/// 默认不接管，否则会把用户当前的网格配色盖成 iced 的深色键盘（视觉回归）。
+/// 需要实验时置 `LUMINO_EGUI_PIANOROLL=1`。
+fn piano_roll_overlay_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED
+        .get_or_init(|| std::env::var_os("LUMINO_EGUI_PIANOROLL").is_some_and(|value| value != "0"))
+}
 
 /// iced 分组 → egui 分组。
 fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
@@ -111,6 +125,119 @@ impl Sidebar {
 }
 
 impl Root {
+    /// 卷帘骨架模型：只在 iced 用纯 UI 绘制的场合接管。
+    ///
+    /// 以下情形必须让位给 iced（否则会盖掉动态内容）：
+    /// - 纵向卷帘（布局不同）；
+    /// - 循环区间开启（标尺里画循环带与把手）；
+    /// - 拍号在工程中途变化（标尺分段）；
+    /// - 洋葱皮开启（琴键带彩色覆盖层）；
+    /// - 协作远程光标（光标可落在键盘/标尺上）；
+    /// - 当前不是钢琴卷帘视图（走带 / 导出面板 / 卷帘关闭）。
+    fn egui_piano_roll_model(&self) -> Option<PianoRollView> {
+        let left_inset = 48.0
+            + if self.sidebar.panel_visible {
+                self.sidebar.panel_width
+            } else {
+                0.0
+            };
+        let right_inset = if self.right_sidebar_visible() {
+            48.0 + if self.right_sidebar.panel_visible {
+                self.right_sidebar.panel_width
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        if self.sidebar.is_vertical_roll()
+            || !self.right_sidebar_visible()
+            || self.toolbar.onion_skin_enabled
+            || !self.editor.remote_cursors.is_empty()
+            || self
+                .editor
+                .loop_range
+                .as_ref()
+                .is_some_and(|range| range.enabled())
+        {
+            return None;
+        }
+        let signatures = self.editor.editor_state.data.time_signatures.as_slice();
+        if signatures.len() > 1 {
+            return None;
+        }
+
+        let view = &self.editor.editor_state.view;
+        let canvas = self.editor.editor_state.canvas;
+        if canvas.size_x <= 0.0 || canvas.size_y <= 0.0 {
+            return None;
+        }
+
+        // 拍号 → 每小节 tick（默认 4/4）。
+        let (numerator, denominator) = signatures.first().map_or((4u8, 4u8), |&(_, n, d)| (n, d));
+        let ppq = view.ppq;
+        let ticks_per_measure =
+            f32::from(ppq) * 4.0 * f32::from(numerator) / f32::from(denominator.max(1));
+
+        // 滚动条按 iced `ScrollbarWidget::thumb_geometry` 的口径换算成比例：
+        // 水平 viewport 缺省为轨道长度；垂直 viewport 为画布高 - 标尺高。
+        let (max_x, max_y) = self.editor.editor_state.max_scroll;
+        let track_x = (canvas.size_x + 16.0).max(1.0);
+        let track_y = (canvas.size_y - 4.0).max(1.0);
+        let viewport_y = (canvas.size_y - view.ruler_height).max(0.0);
+        let scrollable_x = (max_x - track_x).max(0.0);
+        let scrollable_y = (max_y - viewport_y).max(0.0);
+        let thumb = |track: f32, viewport: f32, max: f32| {
+            if max <= viewport {
+                1.0
+            } else {
+                (track * viewport / max).max(20.0).min(track) / track
+            }
+        };
+        let scroll_ratio = |scroll: f32, scrollable: f32| {
+            if scrollable <= 0.0 {
+                0.0
+            } else {
+                scroll.clamp(0.0, scrollable) / scrollable
+            }
+        };
+
+        let playhead_x = self
+            .editor
+            .get_playback_indicator_screen_x()
+            .unwrap_or(view.keyboard_width);
+
+        Some(PianoRollView {
+            keyboard_width: view.keyboard_width,
+            ruler_height: view.ruler_height,
+            key_height: view.zoom_y,
+            scroll_y: view.scroll_y,
+            visible_keys: view.visible_key_count,
+            zoom_x: view.zoom_x,
+            scroll_x: view.scroll_x,
+            ppq,
+            ticks_per_measure,
+            playhead_offset: playhead_x - view.keyboard_width,
+            scroll_x_ratio: scroll_ratio(view.scroll_x, scrollable_x),
+            scroll_y_ratio: scroll_ratio(view.scroll_y, scrollable_y),
+            thumb_x_ratio: thumb(track_x, track_x, max_x),
+            thumb_y_ratio: thumb(track_y, viewport_y, max_y),
+            left_inset,
+            top_inset: (if self.settings.synth.use_native_titlebar {
+                0.0
+            } else {
+                layout::TITLEBAR_H
+            }) + layout::TOOLBAR_H,
+            right_inset,
+            bottom_inset: layout::STATUSBAR_H
+                + if self.sidebar.automation_panel_visible {
+                    self.visual.velocity_panel_height
+                } else {
+                    0.0
+                },
+        })
+    }
+
     /// 构造 egui 外壳快照（标题栏 + 工具栏 + 左侧栏 + 状态栏，只读）。
     pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
         let language = self.settings.display.language;
@@ -118,6 +245,7 @@ impl Root {
         let waterfall = self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall;
 
         // 系统原生标题栏模式下，顶部 30px 由操作系统绘制，egui 不接管。
+        let titlebar_present = !self.settings.synth.use_native_titlebar;
         let titlebar = (!self.settings.synth.use_native_titlebar).then(|| TitlebarModel {
             focused: self.window.is_focused,
             menus: vec![
@@ -186,10 +314,53 @@ impl Root {
             None
         };
 
+        // 右侧栏图标列：仅在实际渲染右侧栏的视图接管（走带 / 瀑布流 / 导出面板
+        // / 卷帘关闭时 iced 不渲染右栏）。面板本身保持在 iced（素材扫描、图片
+        // 转换等交互复杂），这里只接管 48px 图标列。
+        let active_panel = match self.right_sidebar.active_panel {
+            crate::right_sidebar::RightSidebarPanel::ImageToMidi => {
+                RightSidebarPanelKind::ImageToMidi
+            }
+            crate::right_sidebar::RightSidebarPanel::Materials => RightSidebarPanelKind::Materials,
+            crate::right_sidebar::RightSidebarPanel::PianoWaterfall => {
+                RightSidebarPanelKind::PianoWaterfall
+            }
+        };
+        let right_sidebar = if self.right_sidebar_visible() {
+            Some(RightSidebarModel {
+                panel_visible: self.right_sidebar.panel_visible,
+                panel_width: self.right_sidebar.panel_width,
+                active: if self.right_sidebar.panel_visible {
+                    Some(active_panel)
+                } else {
+                    None
+                },
+                top_inset: (if titlebar_present {
+                    layout::TITLEBAR_H
+                } else {
+                    0.0
+                }) + if shows_toolbar {
+                    layout::TOOLBAR_H
+                } else {
+                    0.0
+                },
+            })
+        } else {
+            None
+        };
+
+        let piano_roll = if piano_roll_overlay_enabled() {
+            self.egui_piano_roll_model()
+        } else {
+            None
+        };
+
         ChromeModel {
             titlebar,
             toolbar,
             sidebar,
+            right_sidebar,
+            piano_roll,
             statusbar: StatusbarModel {
                 left: status.left_text,
                 left_accent: status.left_accent,
@@ -203,88 +374,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use lumino_extras::i18n::Language;
-
-    fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
-        sidebar.egui_model(Language::ZhCn, false)
-    }
-
-    #[test]
-    fn sidebar_model_describes_default_panel() {
-        let model = sidebar_model(&Sidebar::new()).expect("默认状态应可接管");
-        assert!(model.panel_visible);
-        assert_eq!(model.panel, SidebarPanel::Tracks);
-        assert!(model.file_active);
-        assert_eq!(model.tracks.len(), 2);
-        assert!(model.tracks[0].conductor);
-        assert!(model.tracks[0].selected);
-        assert_eq!(model.tracks[1].label, "A01");
-        assert_eq!(model.tracks[1].name, "Setup");
-        assert!((model.total_width() - 248.0).abs() < f32::EPSILON);
-        assert!(!model.track_list_title.is_empty());
-        assert!(!model.add_track_label.is_empty());
-    }
-
-    #[test]
-    fn sidebar_model_hides_panel_without_disabling_takeover() {
-        let mut sidebar = Sidebar::new();
-        sidebar.panel_visible = false;
-        let model = sidebar_model(&sidebar).expect("隐藏面板不是瞬态 UI");
-        assert!(!model.panel_visible);
-        assert!(!model.file_active);
-        assert!((model.total_width() - 48.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn sidebar_model_defers_to_iced_while_transient() {
-        let mut renaming = Sidebar::new();
-        renaming.renaming_track = Some((1, "草稿".to_owned()));
-        assert!(sidebar_model(&renaming).is_none(), "重命名中不得接管");
-
-        let mut menu = Sidebar::new();
-        menu.track_context_menu.target_track_id = Some(1);
-        assert!(sidebar_model(&menu).is_none(), "音轨菜单打开时不得接管");
-
-        let mut menu = Sidebar::new();
-        menu.panel_context_menu.is_open = true;
-        assert!(sidebar_model(&menu).is_none(), "面板菜单打开时不得接管");
-
-        let mut picking = Sidebar::new();
-        picking.color_picking_track = Some(1);
-        assert!(sidebar_model(&picking).is_none(), "取色中不得接管");
-
-        let mut picking = Sidebar::new();
-        picking.port_picking_track = Some(1);
-        assert!(sidebar_model(&picking).is_none(), "端口选择中不得接管");
-
-        let mut picking = Sidebar::new();
-        picking.channel_picking_track = Some(1);
-        assert!(sidebar_model(&picking).is_none(), "通道选择中不得接管");
-
-        let mut resizing = Sidebar::new();
-        resizing.is_resizing = true;
-        assert!(sidebar_model(&resizing).is_none(), "拖拽宽度时不得接管");
-    }
-
-    #[test]
-    fn sidebar_model_allows_candidate_reorder() {
-        // 仅按下（候选）未激活时，插入指示线尚未出现，可以继续由 egui 接管。
-        let mut sidebar = Sidebar::new();
-        sidebar.track_reorder = Some(crate::sidebar::TrackReorderState {
-            track_id: 1,
-            started_at: std::time::Instant::now(),
-            press_pos: iced_core::Point::new(0.0, 0.0),
-            active: false,
-            hover_index: None,
-        });
-        assert!(sidebar_model(&sidebar).is_some());
-
-        if let Some(state) = sidebar.track_reorder.as_mut() {
-            state.active = true;
-            state.hover_index = Some(1);
-        }
-        assert!(sidebar_model(&sidebar).is_none(), "拖拽激活时不得接管");
-    }
-}
+mod tests;

@@ -1,0 +1,186 @@
+//! `egui_chrome` 的模型装配单测：状态映射与瞬态让位。
+
+use super::*;
+use lumino_extras::i18n::Language;
+
+fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
+    sidebar.egui_model(Language::ZhCn, false)
+}
+
+#[test]
+fn sidebar_model_describes_default_panel() {
+    let model = sidebar_model(&Sidebar::new()).expect("默认状态应可接管");
+    assert!(model.panel_visible);
+    assert_eq!(model.panel, SidebarPanel::Tracks);
+    assert!(model.file_active);
+    assert_eq!(model.tracks.len(), 2);
+    assert!(model.tracks[0].conductor);
+    assert!(model.tracks[0].selected);
+    assert_eq!(model.tracks[1].label, "A01");
+    assert_eq!(model.tracks[1].name, "Setup");
+    assert!((model.total_width() - 248.0).abs() < f32::EPSILON);
+    assert!(!model.track_list_title.is_empty());
+    assert!(!model.add_track_label.is_empty());
+}
+
+#[test]
+fn sidebar_model_hides_panel_without_disabling_takeover() {
+    let mut sidebar = Sidebar::new();
+    sidebar.panel_visible = false;
+    let model = sidebar_model(&sidebar).expect("隐藏面板不是瞬态 UI");
+    assert!(!model.panel_visible);
+    assert!(!model.file_active);
+    assert!((model.total_width() - 48.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn sidebar_model_defers_to_iced_while_transient() {
+    let mut renaming = Sidebar::new();
+    renaming.renaming_track = Some((1, "草稿".to_owned()));
+    assert!(sidebar_model(&renaming).is_none(), "重命名中不得接管");
+
+    let mut menu = Sidebar::new();
+    menu.track_context_menu.target_track_id = Some(1);
+    assert!(sidebar_model(&menu).is_none(), "音轨菜单打开时不得接管");
+
+    let mut menu = Sidebar::new();
+    menu.panel_context_menu.is_open = true;
+    assert!(sidebar_model(&menu).is_none(), "面板菜单打开时不得接管");
+
+    let mut picking = Sidebar::new();
+    picking.color_picking_track = Some(1);
+    assert!(sidebar_model(&picking).is_none(), "取色中不得接管");
+
+    let mut picking = Sidebar::new();
+    picking.port_picking_track = Some(1);
+    assert!(sidebar_model(&picking).is_none(), "端口选择中不得接管");
+
+    let mut picking = Sidebar::new();
+    picking.channel_picking_track = Some(1);
+    assert!(sidebar_model(&picking).is_none(), "通道选择中不得接管");
+
+    let mut resizing = Sidebar::new();
+    resizing.is_resizing = true;
+    assert!(sidebar_model(&resizing).is_none(), "拖拽宽度时不得接管");
+}
+
+#[test]
+fn sidebar_model_allows_candidate_reorder() {
+    // 仅按下（候选）未激活时，插入指示线尚未出现，可以继续由 egui 接管。
+    let mut sidebar = Sidebar::new();
+    sidebar.track_reorder = Some(crate::sidebar::TrackReorderState {
+        track_id: 1,
+        started_at: std::time::Instant::now(),
+        press_pos: iced_core::Point::new(0.0, 0.0),
+        active: false,
+        hover_index: None,
+    });
+    assert!(sidebar_model(&sidebar).is_some());
+
+    if let Some(state) = sidebar.track_reorder.as_mut() {
+        state.active = true;
+        state.hover_index = Some(1);
+    }
+    assert!(sidebar_model(&sidebar).is_none(), "拖拽激活时不得接管");
+}
+
+#[test]
+fn right_sidebar_model_follows_visibility_and_active_panel() {
+    let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
+
+    let model = root.egui_chrome_model();
+    let right = model.right_sidebar.expect("钢琴卷帘视图应接管右侧栏");
+    assert!(!right.panel_visible);
+    assert!(right.active.is_none(), "面板收起时无点亮图标");
+    assert!(
+        (right.top_inset - 102.0).abs() < f32::EPSILON,
+        "图标列顶边 = 标题栏 30 + 工具栏 72"
+    );
+    assert!((right.total_width() - 48.0).abs() < f32::EPSILON);
+
+    // 面板打开：点亮当前面板，总宽 = 48 + panel_width。
+    root.right_sidebar.panel_visible = true;
+    root.right_sidebar.active_panel = crate::right_sidebar::RightSidebarPanel::Materials;
+    let right = root.egui_chrome_model().right_sidebar.expect("仍应接管");
+    assert_eq!(right.active, Some(RightSidebarPanelKind::Materials));
+    assert!((right.total_width() - 248.0).abs() < f32::EPSILON);
+
+    // 卷帘关闭后 iced 不渲染右侧栏，叠加层同步退出。
+    root.sidebar.piano_roll_visible = false;
+    assert!(root.egui_chrome_model().right_sidebar.is_none());
+}
+
+#[test]
+fn piano_roll_model_tracks_editor_view_state() {
+    let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
+    // 首帧布局前画布尺寸为 0（生产里由 iced 布局回填）。
+    root.editor.editor_state.canvas.size_x = 1280.0;
+    root.editor.editor_state.canvas.size_y = 858.0;
+    let piano = root.egui_piano_roll_model().expect("默认工程应可接管");
+
+    // 内缩：左 48+200、上 30+72、右 48（右侧栏图标列）、下 20（状态栏）。
+    assert!((piano.left_inset - 248.0).abs() < f32::EPSILON);
+    assert!((piano.top_inset - 102.0).abs() < f32::EPSILON);
+    assert!((piano.right_inset - 48.0).abs() < f32::EPSILON);
+    assert!((piano.bottom_inset - 20.0).abs() < f32::EPSILON);
+    assert!((piano.keyboard_width - 120.0).abs() < f32::EPSILON);
+    assert!((piano.ruler_height - 24.0).abs() < f32::EPSILON);
+    assert_eq!(piano.visible_keys, 128);
+    assert!((piano.playhead_offset - 0.0).abs() < f32::EPSILON);
+
+    // 视口 → 卷帘区域换算。
+    let area = piano.area(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(1600.0, 1000.0),
+    ));
+    assert!((area.left() - 248.0).abs() < f32::EPSILON);
+    assert!((area.top() - 102.0).abs() < f32::EPSILON);
+    assert!((area.right() - 1552.0).abs() < f32::EPSILON);
+    assert!((area.bottom() - 980.0).abs() < f32::EPSILON);
+
+    // 缩放/滚动直接来自 Editor 视图状态。
+    root.editor.editor_state.view.zoom_x = 0.05;
+    root.editor.editor_state.view.scroll_x = 3072.0;
+    let piano = root.egui_piano_roll_model().expect("改缩放不应退出接管");
+    assert!((piano.zoom_x - 0.05).abs() < f32::EPSILON);
+    assert!((piano.scroll_x - 3072.0).abs() < f32::EPSILON);
+    assert!((piano.bar_pixels() - 384.0).abs() < 0.01);
+}
+
+#[test]
+fn piano_roll_model_defers_to_iced_for_dynamic_overlays() {
+    // 洋葱皮：琴键带彩色覆盖层。
+    let mut onion = Root::new(&lumino_core::storage::config::UiConfig::default());
+    onion.toolbar.onion_skin_enabled = true;
+    assert!(onion.egui_piano_roll_model().is_none());
+
+    // 纵向卷帘：键盘在底部，布局不同。
+    let mut vertical = Root::new(&lumino_core::storage::config::UiConfig::default());
+    vertical.sidebar.roll_bar_active = Some(crate::sidebar::RollBarButton::Vertical);
+    assert!(vertical.egui_piano_roll_model().is_none());
+
+    // 协作远程光标可落在键盘/标尺上。
+    let mut remote = Root::new(&lumino_core::storage::config::UiConfig::default());
+    remote.editor.remote_cursors.insert(
+        "peer".to_owned(),
+        (
+            iced_core::Point::new(10.0, 10.0),
+            "#FF0000".to_owned(),
+            "peer".to_owned(),
+        ),
+    );
+    assert!(remote.egui_piano_roll_model().is_none());
+
+    // 工程中途改拍号：标尺按拍号分段。
+    let mut meter = Root::new(&lumino_core::storage::config::UiConfig::default());
+    meter.editor.editor_state.data.time_signatures = vec![(0, 4, 4), (7680, 3, 4)];
+    assert!(meter.egui_piano_roll_model().is_none());
+}
+
+#[test]
+fn piano_roll_overlay_is_off_by_default() {
+    // 生产里卷帘骨架由 `lumino-gfx` 绘制；egui 骨架默认不接管，避免把
+    // 用户当前的网格配色盖成 iced 深色键盘。
+    let root = Root::new(&lumino_core::storage::config::UiConfig::default());
+    assert!(root.egui_chrome_model().piano_roll.is_none());
+}

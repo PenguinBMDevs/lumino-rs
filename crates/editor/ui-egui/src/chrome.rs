@@ -8,8 +8,8 @@ pub mod titlebar;
 pub mod toolbar;
 
 pub use model::{
-    ChromeModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
-    TitlebarModel, ToolbarModel,
+    ChromeModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SidebarGroup, SidebarModel,
+    SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use egui::{Frame, Margin, Panel, Stroke};
@@ -34,8 +34,9 @@ impl ChromeState {
     pub fn piano_roll_skeleton() -> Self {
         Self {
             piano_roll: piano_roll::PianoRollView {
-                first_measure: 9,
-                pixels_per_measure: 384.0,
+                // iced PianoRollSkeleton：zoom_x=0.05、滚动到第 9 小节。
+                zoom_x: 0.05,
+                scroll_x: 8.0 * 384.0,
                 ..Default::default()
             },
             ..Self::default()
@@ -84,7 +85,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
         .resizable(false)
         .show_separator_line(false)
         .frame(panel_frame(theme::ROUTE_BAR_BG))
-        .show(ui, |ui| sidebar::show_right(ui, state));
+        .show(ui, |ui| {
+            sidebar::show_right_model(ui, &RightSidebarModel::default(), &mut state.icons)
+        });
 
     egui::CentralPanel::default()
         .frame(panel_frame(theme::BASE_BG))
@@ -169,6 +172,41 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             sidebar::show_model(&mut child, sidebar, icons);
+        }
+    }
+
+    // 右侧栏 band：生产布局是 `column![toolbar, row![editor, right_bar]]`，
+    // 因此图标列从标题栏 + 工具栏下沿开始、到状态栏上沿结束，宽 48。
+    if let Some(right) = &model.right_sidebar {
+        let full = root.max_rect();
+        let top = (full.top() + right.top_inset).max(full.top());
+        let bottom = (full.bottom() - layout::STATUSBAR_H).max(top);
+        let width = right.bar_width().max(0.0).min(full.width());
+        let band = egui::Rect::from_min_max(
+            egui::pos2(full.right() - width, top),
+            egui::pos2(full.right(), bottom),
+        );
+        if band.width() > 0.0 && band.height() > 0.0 {
+            let mut child = root.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(band)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            sidebar::show_right_model(&mut child, right, icons);
+        }
+    }
+
+    // 钢琴卷帘骨架 band：只画键盘列 / 标尺行 / 两条滚动条，
+    // 中央网格区域保持透明（下层是 `lumino-gfx` 的 wgpu 音符与网格）。
+    if let Some(piano) = &model.piano_roll {
+        let area = piano.area(root.max_rect());
+        if area.width() > 0.0 && area.height() > 0.0 {
+            let child = root.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(area)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            piano_roll::draw_chrome(&child, piano);
         }
     }
 
