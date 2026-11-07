@@ -95,7 +95,7 @@ lumino-ui-core = { path = "crates/editor/ui-core", version = "0.2.1-crates-io-pr
 lumino-ui-settings = { path = "crates/editor/ui-settings", version = "0.2.1-crates-io-preview1" }
 lumino-ui-editor = { path = "crates/editor/ui-editor", version = "0.2.1-crates-io-preview1" }
 lumino-ui-parity = { path = "crates/editor/ui-parity", version = "0.2.1-crates-io-preview1" }
-lumino-ui-egui = { path = "crates/editor/ui-egui", version = "0.2.1-crates-io-preview1" }
+lumino-ui-egui = { path = "crates/editor/ui-egui", version = "0.2.1-crates-io-preview1", default-features = false }
 lumino-egui-bridge = { path = "crates/editor/egui-bridge", version = "0.2.1-crates-io-preview1" }
 lumino-collaboration = { path = "crates/network/collaboration", version = "0.2.1-crates-io-preview1" }
 lumino-note-core = { path = "crates/audio/note-core", version = "0.2.1-crates-io-preview1" }

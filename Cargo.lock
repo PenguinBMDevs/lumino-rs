@@ -4971,6 +4971,7 @@ dependencies = [
  "lumino-project",
  "lumino-ui-core",
  "lumino-ui-editor",
+ "lumino-ui-egui",
  "lumino-ui-settings",
  "puffin",
  "rayon",

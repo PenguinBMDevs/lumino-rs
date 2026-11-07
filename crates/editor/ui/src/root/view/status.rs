@@ -27,7 +27,7 @@ impl Root {
     }
 
     /// 当前工程音符总量（O(轨道数)；UI-015 状态栏显示用）
-    fn editor_note_count(&self) -> usize {
+    pub(super) fn editor_note_count(&self) -> usize {
         let Some(doc) = self.editor.editor_state.data.document.as_ref() else {
             return 0;
         };

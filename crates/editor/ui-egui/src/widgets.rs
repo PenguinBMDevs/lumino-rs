@@ -15,9 +15,14 @@ pub fn label(ui: &mut egui::Ui, text: impl Into<String>, size: f32, color: Color
 
 /// 可点击的菜单文本（标题栏菜单 / 设置菜单）。
 pub fn menu_label(ui: &mut egui::Ui, text: &str, selected: bool) -> Response {
+    menu_label_sized(ui, text, selected, theme::font::BODY)
+}
+
+/// 指定字号的菜单文本。
+pub fn menu_label_sized(ui: &mut egui::Ui, text: &str, selected: bool, size: f32) -> Response {
     let color = if selected { theme::ACCENT } else { theme::TEXT };
     ui.add(
-        egui::Label::new(RichText::new(text).size(theme::font::BODY).color(color))
+        egui::Label::new(RichText::new(text).size(size).color(color))
             .selectable(false)
             .sense(Sense::click()),
     )
@@ -88,6 +93,14 @@ pub fn traffic_button(
     let image = cache.default_image(ui.ctx(), icon, layout::TRAFFIC_ICON);
     let button = egui::Button::image(image).frame(false);
     let response = ui.add_sized([layout::TRAFFIC_BTN_W, layout::TRAFFIC_BTN_H], button);
+    // 纯图标按钮必须提供可访问名，否则无障碍树里是无名按钮。
+    let label = match icon {
+        Icon::WindowClose => "关闭窗口",
+        Icon::WindowMax => "最大化窗口",
+        Icon::WindowMin => "最小化窗口",
+        _ => "窗口按钮",
+    };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     if response.hovered() {
         ui.painter().rect_filled(
             response.rect,

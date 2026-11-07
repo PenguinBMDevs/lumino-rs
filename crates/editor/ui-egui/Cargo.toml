@@ -11,13 +11,19 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["capture"]
+# 无头截图（`egui_kittest` 会引入 egui-wgpu + wgpu30）。生产 UI 依赖本 crate 时
+# 必须 `default-features = false`，否则主程序会同时链接 wgpu27 与 wgpu30。
+capture = ["dep:egui_kittest"]
+
 [dependencies]
 lumino-core = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-editor-state = { workspace = true }
 egui = { workspace = true }
 egui_extras = { workspace = true }
-egui_kittest = { workspace = true }
+egui_kittest = { workspace = true, optional = true }
 fontdb = { workspace = true }
 resvg = { workspace = true }
 usvg = { workspace = true }

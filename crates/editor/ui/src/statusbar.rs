@@ -12,6 +12,23 @@ use super::Element;
 use crate::Theme;
 use performance::PerfData;
 
+/// egui 叠加层用的状态栏快照（与 `view` 同源，避免两套规则漂移）。
+#[derive(Debug, Clone)]
+pub(crate) struct StatusSnapshot {
+    /// 左侧描述文本。
+    pub left_text: String,
+    /// 左侧文本是否用强调色（FPS 高亮样式）。
+    pub left_accent: bool,
+    /// CPU 占用百分比。
+    pub cpu_percent: f32,
+    /// 进程内存（MB）。
+    pub memory_mb: f32,
+    /// 平滑后的 FPS；`None` = 尚未采样。
+    pub fps: Option<f32>,
+    /// 右侧补充文本。
+    pub right_text: String,
+}
+
 /// 状态栏 GPU 缓冲状态指示器的显示参数（由 Root 按用户设置构造）。
 #[derive(Debug, Clone, Copy)]
 pub struct GpuStatusFlags {
@@ -193,6 +210,38 @@ impl StatusBar {
     /// 是否处于 FPS 高亮样式（仅当左侧无描述文字且存在 FPS 值时）
     pub fn use_fps_style(&self) -> bool {
         self.hover_label.is_none() && self.info.left_text.is_empty() && self.fps.is_some()
+    }
+
+    /// egui 叠加层快照：左文本规则与 [`Self::view`] 完全一致。
+    pub(crate) fn egui_snapshot(
+        &self,
+        language: Language,
+        note_count: Option<usize>,
+    ) -> StatusSnapshot {
+        let translations = main_translations(language);
+        let left_text = if let Some(id) = self.hover_label {
+            let (name, desc) = lumino_ui_core::button_descs::button_desc(id, language);
+            format!("{} - {}", name, desc)
+        } else if !self.info.left_text.is_empty() {
+            self.info.left_text.clone()
+        } else if let Some(count) = note_count {
+            format!(
+                "{}: {}",
+                translations.note_count_label,
+                lumino_extras::i18n::format_thousands(count as u64)
+            )
+        } else {
+            translations.status_ready.to_string()
+        };
+
+        StatusSnapshot {
+            left_text,
+            left_accent: self.use_fps_style(),
+            cpu_percent: self.perf_data.cpu_usage,
+            memory_mb: self.perf_data.memory_mb,
+            fps: self.fps,
+            right_text: self.info.right_text.clone(),
+        }
     }
 
     pub fn view<'a>(

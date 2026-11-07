@@ -10,6 +10,7 @@
 //! - 复杂排版优先使用 `egui_extras` 的 `TableBuilder` / `StripBuilder`，
 //!   表单优先使用 `egui::Grid`，避免手写绝对坐标堆叠。
 
+#[cfg(feature = "capture")]
 pub mod capture;
 pub mod chrome;
 pub mod dialog;
@@ -21,5 +22,6 @@ pub mod settings;
 pub mod theme;
 pub mod widgets;
 
+#[cfg(feature = "capture")]
 pub use capture::CapturedImage;
 pub use scene::{DPI_SCALES, SceneId, baseline_dir, baseline_file_name};

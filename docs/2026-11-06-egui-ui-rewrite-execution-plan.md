@@ -209,13 +209,40 @@ callback / 多视口 / 截图能力。
 - 为生产格式补测试：`lumino-egui-bridge` 新增 `Bgra8UnormSrgb` 半透明混合用例，
   同时验证 sRGB 目标线性混合（≈135）与 gamma 目标直接混合（≈160）。
 - 截图注意：PowerShell 截屏前必须调用 `SetProcessDPIAware()`，否则 ppp>1 时只截到
-  窗口左侧（右半部分被裁掉），会误判「叠加层没显示」。
+  窗口左侧（右半部分被裁掉），会误判「叠加层没显示」。窗口被 `ShowWindow(SW_RESTORE)`
+  还原后不再是全屏，必须用 `SW_MAXIMIZE` 并校验 client 尺寸。
+
+### Task 1.3（第一步）：真实状态接管标题栏 + 状态栏 — 已完成
+
+- 新增只读视图模型 `lumino-ui-egui::chrome::{ChromeModel, TitlebarModel, StatusbarModel}`：
+  `lumino-ui-egui` 不依赖 iced，生产侧 `Root::egui_chrome_model()`（`root/view/egui_chrome.rs`）
+  负责把真实状态填进模型。
+- 状态栏快照 `StatusBar::egui_snapshot()` 与生产 `view()` 共用同一套左文本规则
+  （悬停说明 / 状态消息 / 音符数 / 就绪）与 FPS 高亮判定，避免两套规则漂移。
+- `chrome::show_bands()` 只画两条不透明 band（标题栏 30 / 状态栏 20），其余区域
+  完全不绘制，因此下层 iced 画面保持可见，输入仍全部由 iced 处理。
+- 关键几何修正（以 iced 基线实测为准）：
+  - 菜单项宽度 = 文本宽 + 17（中文 14px 下 45px 节距），字号 14；
+  - 状态栏右组 label→value 间距 1、组间 14；`right_text` 即使为空也占 8px 行位
+    （此前少 8px，导致整组右移）；
+  - 叠加层设置 `ctx.set_pixels_per_point(真实 DPI)`，否则字体图集按 1× 生成再被
+    着色器放大，几何正确但字形发虚；
+  - `egui_kittest` 会给根 Ui 加 8px 外缩进，`show_bands` 内部按 `viewport_rect`
+    重建根 Ui（生产接线时为无操作）。
+- 验收证据：
+  - `tests/bands_pixels.rs`：1600×1000 @1x，与 iced 基线逐列比较墨迹区间——
+    标题栏（logo + 四菜单）、状态栏左侧、状态栏三组指标全部通过（容差 4px，
+    吸收 cosmic-text / egui 的字形宽度差异）；band 底色逐字节一致。
+  - `tests/chrome_bands.rs`：模型 → 可访问节点（菜单 / 指标 / 空 FPS 隐藏指标组 /
+    原生标题栏跳过顶部 band）。
+  - 真实窗口（2560×1540 @1.25，`Bgra8UnormSrgb`）：标题栏菜单起点
+    `21..38 / 70..105 / 126..161 / 183..217 / 239..273`（1.25× 基线 ±2px），
+    状态栏右侧墨迹止于 2539（≤ 内容右界 2540），首帧 `primitives=7`。
 
 ## 八、当前任务
 
-**Task 1.3：egui Chrome 最小可交互替换**
+**Task 1.3（第二步）：工具栏接管与输入路由**
 
-- 现状：桥接与真实窗口叠加已验证；`lumino-ui-egui` 仍只有 4 个静态场景草稿，
-  尚不能承接生产 UI 的消息/交互。
-- 下一步：先在叠加层里接入真实 `Root` 状态（标题栏 / 工具栏 / 状态栏只读渲染），
-  再逐块接管输入；`lumino-gfx` 的 wgpu30 迁移继续等待 iced 退出渲染路径。
+- 现状：标题栏 / 状态栏已由 egui 用真实状态绘制；工具栏 / 侧栏 / 钢琴卷帘仍是 iced。
+- 下一步：按同样方式接管工具栏（只读 + 命中热区先不消费事件），随后接入指针/键盘
+  路由；`lumino-gfx` 的 wgpu30 迁移继续等待 iced 退出渲染路径。

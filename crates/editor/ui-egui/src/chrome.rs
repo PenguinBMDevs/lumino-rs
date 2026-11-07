@@ -1,10 +1,13 @@
 ﻿//! 主窗口外壳：标题栏 + 工具栏 + 左右侧栏 + 状态栏 + 钢琴卷帘骨架。
 
+mod model;
 pub mod piano_roll;
 pub mod sidebar;
 pub mod statusbar;
 pub mod titlebar;
 pub mod toolbar;
+
+pub use model::{ChromeModel, StatusbarModel, TitlebarModel};
 
 use egui::{Frame, Margin, Panel, Stroke};
 
@@ -121,6 +124,49 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     egui::CentralPanel::default()
         .frame(panel_frame(theme::BASE_BG))
         .show(ui, |ui| piano_roll::show(ui, state));
+}
+
+/// 只渲染标题栏与状态栏（真实窗口叠加层用）。
+///
+/// 其余区域不绘制任何东西，保持下层 iced 画面可见；两条 band 用不透明底色
+/// 完全覆盖同位置的 iced 版本，避免文字重影。标题栏为 `None`（系统原生
+/// 标题栏）时跳过顶部 band。
+pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache) {
+    theme::apply(ui.ctx());
+    crate::fonts::install(ui.ctx());
+
+    // `egui_kittest`（以及部分宿主）给到的 Ui 带 8px 外缩进；Panel 需要铺满视口，
+    // 否则 band 会整体内缩、与 iced 原位置错开。生产接线时根 Ui 本就是全屏，
+    // 这里重建等价于无操作。
+    let full = ui.ctx().viewport_rect();
+    let mut root = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(full)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    root.set_clip_rect(full);
+    root.spacing_mut().item_spacing = egui::Vec2::ZERO;
+
+    if let Some(titlebar) = &model.titlebar {
+        let focused = titlebar.focused;
+        Panel::top("lumino-titlebar-band")
+            .exact_size(layout::TITLEBAR_H)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(panel_frame(if focused {
+                theme::TITLEBAR_BG
+            } else {
+                theme::ROUTE_BAR_BG
+            }))
+            .show(&mut root, |ui| titlebar::show_model(ui, titlebar, icons));
+    }
+
+    Panel::bottom("lumino-statusbar-band")
+        .exact_size(layout::STATUSBAR_H)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(panel_frame(theme::TOOLBAR_BG))
+        .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
 }
 
 pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {

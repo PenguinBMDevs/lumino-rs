@@ -1,60 +1,109 @@
 //! 自定义标题栏：菜单、拖动区、窗口控制按钮。
+//!
+//! 几何取自生产 iced 标题栏实测（`tests/ui-baseline/iced/main_chrome-dpi100.png`）：
+//! logo 区 48 宽、菜单项 = 文本宽 + 17（中文 14px 下即 45，与基线 45px 节距一致）、
+//! 右侧三个窗口按钮各 45×29。
 
-use egui::{Align, Layout, Vec2};
+use egui::{Align, FontId, Layout, Vec2};
 use egui_extras::{Size, StripBuilder};
 
-use super::ChromeState;
-use crate::icons::Icon;
+use super::{ChromeState, TitlebarModel};
+use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 use crate::widgets;
 
-const MENU_ITEM_W: f32 = 48.0;
+/// logo 区宽度（生产 `logo::view` 固定 48）。
 const LOGO_W: f32 = 48.0;
-const MENU_TOTAL_W: f32 = LOGO_W + MENU_ITEM_W * 4.0;
+/// 菜单项左右内边距合计（45 − 28 = 17，实测）。
+const MENU_ITEM_PAD_X: f32 = 17.0;
+/// 菜单文本字号（生产 `Text::new` 默认 14）。
+const MENU_FONT: f32 = 14.0;
+/// 窗口控制按钮区宽度。
 const TRAFFIC_TOTAL_W: f32 = layout::TRAFFIC_BTN_W * 3.0;
 
-/// 渲染标题栏。
+/// 草稿场景入口：固定中文菜单、聚焦态。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
+    let model = TitlebarModel {
+        focused: true,
+        menus: vec![
+            "文件".to_owned(),
+            "编辑".to_owned(),
+            "视图".to_owned(),
+            "帮助".to_owned(),
+        ],
+    };
+    show_model(ui, &model, &mut state.icons);
+}
+
+/// 按真实状态渲染标题栏。
+pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCache) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::TITLEBAR_BG);
+    ui.painter().rect_filled(
+        rect,
+        0,
+        if model.focused {
+            theme::TITLEBAR_BG
+        } else {
+            theme::ROUTE_BAR_BG
+        },
+    );
+
+    // 菜单项宽度随文本宽度变化（英文菜单比中文宽），逐项测量后布局。
+    let widths: Vec<f32> = model
+        .menus
+        .iter()
+        .map(|label| text_width(ui, label) + MENU_ITEM_PAD_X)
+        .collect();
+    let menu_total: f32 = LOGO_W + widths.iter().sum::<f32>();
 
     StripBuilder::new(ui)
-        .size(Size::exact(MENU_TOTAL_W))
+        .size(Size::exact(menu_total))
         .size(Size::remainder())
         .size(Size::exact(TRAFFIC_TOTAL_W))
         .horizontal(|mut strip| {
-            strip.cell(|ui| menu(ui, state));
+            strip.cell(|ui| menu(ui, &model.menus, &widths, icons));
             strip.cell(|ui| {
                 ui.allocate_space(ui.available_size());
             });
-            strip.cell(|ui| traffic(ui, state));
+            strip.cell(|ui| traffic(ui, icons));
         });
 }
 
-fn menu(ui: &mut egui::Ui, state: &mut ChromeState) {
+fn text_width(ui: &egui::Ui, label: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            label.to_owned(),
+            FontId::proportional(MENU_FONT),
+            theme::TEXT,
+        )
+        .size()
+        .x
+}
+
+fn menu(ui: &mut egui::Ui, labels: &[String], widths: &[f32], icons: &mut IconCache) {
     ui.horizontal_centered(|ui| {
         ui.add_space(15.0);
-        ui.add(state.icons.default_image(ui.ctx(), Icon::LogoInApp, 18.0));
+        ui.add(icons.default_image(ui.ctx(), Icon::LogoInApp, 18.0));
         ui.add_space(15.0);
-        for item in ["文件", "编辑", "视图", "帮助"] {
+        for (label, width) in labels.iter().zip(widths) {
             ui.allocate_ui_with_layout(
-                Vec2::new(MENU_ITEM_W, layout::TITLEBAR_H),
+                Vec2::new(*width, layout::TITLEBAR_H),
                 Layout::centered_and_justified(egui::Direction::TopDown),
                 |ui| {
-                    widgets::menu_label(ui, item, false);
+                    widgets::menu_label_sized(ui, label, false, MENU_FONT);
                 },
             );
         }
     });
 }
 
-fn traffic(ui: &mut egui::Ui, state: &mut ChromeState) {
+fn traffic(ui: &mut egui::Ui, icons: &mut IconCache) {
     ui.spacing_mut().item_spacing.x = 0.0;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        widgets::traffic_button(ui, &mut state.icons, Icon::WindowClose, true);
-        widgets::traffic_button(ui, &mut state.icons, Icon::WindowMax, false);
-        widgets::traffic_button(ui, &mut state.icons, Icon::WindowMin, false);
+        widgets::traffic_button(ui, icons, Icon::WindowClose, true);
+        widgets::traffic_button(ui, icons, Icon::WindowMax, false);
+        widgets::traffic_button(ui, icons, Icon::WindowMin, false);
     });
 }

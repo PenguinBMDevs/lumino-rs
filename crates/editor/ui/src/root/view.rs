@@ -5,6 +5,7 @@
 //! - `overlays`: 覆盖层/弹窗视图（进度窗口、对话框）
 //! - `status`: 状态栏视图
 
+mod egui_chrome;
 mod main_view;
 mod overlays;
 mod right_content;
