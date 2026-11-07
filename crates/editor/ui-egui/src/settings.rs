@@ -170,25 +170,32 @@ fn menu_row(ui: &mut egui::Ui, state: &mut SettingsState, index: usize, label: &
         state.selected = index;
     }
 
-    let mut row_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(Vec2::new(24.0, 0.0)))
-            .layout(Layout::left_to_right(Align::Center)),
+    // 生产 iced：菜单容器内边距 8 + 菜单项水平内边距 16 → 内容起点 +24；
+    // 图标容器 24 宽（图标 18 居中）、间距 8、箭头 12px 右对齐（右内边距 24）。
+    let content_left = rect.left() + 26.0;
+    let icon_rect = Rect::from_center_size(
+        egui::pos2(content_left + 12.0, rect.center().y),
+        Vec2::splat(18.0),
     );
-    row_ui.spacing_mut().item_spacing.x = 8.0;
-    row_ui.add(state.icons.default_image(row_ui.ctx(), icon, 18.0));
-    row_ui.add(egui::Label::new(
-        RichText::new(label)
-            .size(theme::font::LABEL)
-            .color(if selected { theme::ACCENT } else { theme::TEXT }),
-    ));
-    row_ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui.add(egui::Label::new(
-            RichText::new(">")
-                .size(theme::font::SMALL)
-                .color(theme::TEXT_DIM),
-        ));
-    });
+    widgets::centered_icon(ui, &mut state.icons, icon, 18.0, icon_rect);
+    ui.painter().text(
+        egui::pos2(content_left + 32.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(theme::font::LABEL),
+        if selected {
+            theme::ACCENT_STRONG
+        } else {
+            theme::TEXT
+        },
+    );
+    ui.painter().text(
+        egui::pos2(rect.right() - 26.0, rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        ">",
+        egui::FontId::proportional(theme::font::SMALL + 1.0),
+        theme::TEXT_DIM,
+    );
 }
 
 fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
