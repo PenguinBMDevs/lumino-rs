@@ -28,12 +28,19 @@ impl Root {
         });
 
         // 工具栏：与 iced 仪表盘共用同一套 tick→BPM/时间换算。
+        // 仅在实际渲染工具栏的视图里接管（瀑布流 / 导出面板 / 渲染器面板没有工具栏）。
         let perf = ToolbarPerfContext {
             playback_tick: self.editor.playback_position,
             ppq: self.editor.editor_state.view.ppq,
             tempo_points: &self.editor.editor_state.data.tempo_points,
         };
         let toolbar = self.toolbar.egui_snapshot(&perf);
+        let shows_toolbar = self.state.current_mode
+            != crate::titlebar::mode_toggle::AppMode::Waterfall
+            && (self.sidebar.is_arrangement_route()
+                || (!self.sidebar.audio_export_visible
+                    && !self.sidebar.video_export_visible
+                    && self.sidebar.piano_roll_visible));
 
         let note_count = match self.settings.display.note_count_display {
             NoteCountDisplay::StatusBar => Some(self.editor_note_count()),
@@ -45,7 +52,7 @@ impl Root {
 
         ChromeModel {
             titlebar,
-            toolbar: Some(ToolbarModel {
+            toolbar: shows_toolbar.then(|| ToolbarModel {
                 left_inset: self.sidebar.width() as f32,
                 bpm: toolbar.bpm,
                 ppq: toolbar.ppq,
