@@ -247,6 +247,29 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Handle edit mode on; drag the dots, Shift disables 15° rotation snapping")
         }
         "已退出手柄编辑" => Some("Handle edit mode off"),
+        // DRAW-041C：组合入口拒绝必须给可见提示（混合选区 / 画刷 / 组合结果未 ✓）
+        "转为活形状失败：请选中两个及以上待确认/已 Bake 图形" => {
+            Some("Convert to live shape failed: select two or more pending/baked shapes")
+        }
+        "连接图形失败：请选中至少两个待确认/已 Bake 图形" => {
+            Some("Join failed: select at least two pending/baked shapes")
+        }
+        "门控合并失败：请恰好选中两个待确认/已 Bake 图形" => {
+            Some("Gate merge failed: select exactly two pending/baked shapes")
+        }
+        "沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
+            Some(
+                "Copy along path failed: select one pending shape/curve; composed results must be ✓ first",
+            )
+        }
+        "已应用力度渐强；✓ 后才写入音符" => {
+            Some("Velocity ramp applied; notes are written after ✓")
+        }
+        "力度渐强失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
+            Some(
+                "Velocity ramp failed: select one pending shape/curve; composed results must be ✓ first",
+            )
+        }
         _ => None,
     }
 }

@@ -151,17 +151,32 @@ impl Root {
                         let _ = self.handle_editor_action(EditorAction::DeletePressed);
                     }
                     PianoRollContextMenuItem::LiveShape => {
-                        let _ = self.editor.live_selected_shapes();
+                        if !self.editor.live_selected_shapes() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("转为活形状失败：请选中两个及以上待确认/已 Bake 图形"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::SplitLiveShape
                     | PianoRollContextMenuItem::SplitJoinedShape => {
                         let _ = self.editor.split_composed_shape();
                     }
                     PianoRollContextMenuItem::JoinShapes => {
-                        let _ = self.editor.join_selected_shapes();
+                        if !self.editor.join_selected_shapes() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("连接图形失败：请选中至少两个待确认/已 Bake 图形"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::MergeShapes => {
-                        let _ = self.editor.merge_selected_shapes();
+                        if !self.editor.merge_selected_shapes() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("门控合并失败：请恰好选中两个待确认/已 Bake 图形"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::EditShape => {
                         if self.editor.enable_shape_edit() {
@@ -249,17 +264,32 @@ impl Root {
                         }
                     }
                     PianoRollContextMenuItem::CopyAlong => {
-                        if self.editor.copy_along_selected()
-                            && let Some(summary) = self.editor.copy_along_summary()
-                        {
+                        if self.editor.copy_along_selected() {
+                            if let Some(summary) = self.editor.copy_along_summary() {
+                                self.toast.push(
+                                    crate::toast::ToastLevel::Info,
+                                    format!("沿路径复制：{summary}"),
+                                );
+                            }
+                        } else {
                             self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                format!("沿路径复制：{summary}"),
+                                crate::toast::ToastLevel::Warning,
+                                tr!("沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
                             );
                         }
                     }
                     PianoRollContextMenuItem::VelocityUp => {
-                        let _ = self.editor.velocity_up_selected();
+                        if self.editor.velocity_up_selected() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已应用力度渐强；✓ 后才写入音符"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("力度渐强失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::CopyShapeText => {
                         let mut models = self.editor.selected_shape_models();

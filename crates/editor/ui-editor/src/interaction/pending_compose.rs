@@ -4,15 +4,15 @@
 //! `EditorState::pending_composed`，✓ 才写文档音符。
 
 mod edit;
+mod promote;
+mod slice;
 
-use lumino_core::shape::{
-    BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeGeometry, ShapeKind, ShapeModel,
-    ShapeOp,
-};
+use lumino_core::shape::{BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeOp};
 use lumino_editor_state::shape_ops::{
-    cut_loops, cut_open_vertical, gate_merge, join, ring_of, split_notes_vertical, sync_groups,
-    to_live,
+    gate_merge, join, split_notes_vertical, sync_groups, to_live,
 };
+
+use self::slice::{polyline_model, split_slice_parts};
 use lumino_editor_state::{
     ComposedKind, ComposedPart, PendingComposed, PendingShapeRef, PendingSource,
 };
@@ -328,155 +328,4 @@ impl Editor {
         self.grid_cache.clear();
         true
     }
-
-    /// 020：把当前选中的单个待确认形状/曲线提升为可编辑的单支组合。
-    ///
-    /// 参数化实例（`ShapeInstance` 只有 kind + rect）表达不了旋转，所以进入
-    /// 「编辑图形」前统一提升为模型；`sources` 保留原实例，
-    /// `Ctrl+Z`（撤销组合）能还原回参数化形状。
-    pub(crate) fn promote_pending_for_edit(&mut self) -> bool {
-        let reference = {
-            let mut selected = self.editor_state.shape_select.selected_shapes();
-            let Some(shape) = selected.next() else {
-                return false;
-            };
-            if selected.next().is_some() {
-                return false;
-            }
-            match shape.pending {
-                Some(reference @ (PendingShapeRef::Shape(_) | PendingShapeRef::CurvePath(_))) => {
-                    reference
-                }
-                _ => return false,
-            }
-        };
-        let track = self.editor_state.data.current_track;
-        let Some(source) = self.pending_source(reference) else {
-            return false;
-        };
-        let mut model = crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
-        // 待确认 Mask 标记要跟着模型走，否则提升后预览会莫名消失
-        let pending_source = match reference {
-            PendingShapeRef::Shape(index) => {
-                let Some(shape) = self.editor_state.shape_tool.shapes.get(index).cloned() else {
-                    return false;
-                };
-                if let Some(params) = shape.mask.clone() {
-                    model.ops.push(ShapeOp::Mask(params));
-                }
-                PendingSource::Shape(shape)
-            }
-            PendingShapeRef::CurvePath(index) => {
-                let Some(path) = self.editor_state.line_tool.paths.get(index).cloned() else {
-                    return false;
-                };
-                PendingSource::CurvePath(path)
-            }
-            PendingShapeRef::Composed(_) | PendingShapeRef::BrushStroke(_) => return false,
-        };
-        let notes = self.shape_notes_of(&model, track);
-        let index = self.editor_state.pending_composed.len();
-        self.editor_state
-            .pending_composed
-            .push(PendingComposed::single(
-                ComposedKind::Single,
-                model,
-                notes,
-                vec![pending_source],
-            ));
-        match reference {
-            PendingShapeRef::Shape(i) => {
-                self.editor_state.shape_tool.shapes.remove(i);
-            }
-            PendingShapeRef::CurvePath(i) => {
-                self.editor_state.line_tool.paths.remove(i);
-            }
-            _ => {}
-        }
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
-        self.editor_state.shape_select.remove_pending_all();
-        self.rebuild_pending_mirrors();
-        if let Some(id) = self
-            .editor_state
-            .shape_select
-            .pending_mirror(PendingShapeRef::Composed(index))
-        {
-            self.editor_state.shape_select.select_only(id);
-        }
-        self.grid_cache.clear();
-        true
-    }
-
-    /// 下一个可用的 Between 组 id：扫描已 Bake 模型与 pending 结果，避免跨组碰撞。
-    fn restore_pending_source(&mut self, source: PendingSource) {
-        match source {
-            PendingSource::Shape(shape) => self.editor_state.shape_tool.shapes.push(shape),
-            PendingSource::CurvePath(path) => self.editor_state.line_tool.paths.push(path),
-        }
-    }
-
-    fn remove_pending_source(&mut self, source: &PendingSource) {
-        match source {
-            PendingSource::Shape(shape) => {
-                if let Some(index) = self
-                    .editor_state
-                    .shape_tool
-                    .shapes
-                    .iter()
-                    .position(|item| item == shape)
-                {
-                    self.editor_state.shape_tool.shapes.remove(index);
-                }
-            }
-            PendingSource::CurvePath(path) => {
-                if let Some(index) = self
-                    .editor_state
-                    .line_tool
-                    .paths
-                    .iter()
-                    .position(|item| item == path)
-                {
-                    self.editor_state.line_tool.paths.remove(index);
-                }
-            }
-        }
-    }
-}
-
-/// 两/多段闭环拍平成一条折线模型（Slice 的左右两片）
-fn polyline_model(points: Vec<Vec<(f32, f32)>>, track: usize, k: f32) -> ShapeModel {
-    let points: Vec<(f32, f32)> = points.into_iter().flatten().collect();
-    let mut model = ShapeModel::new(0, track as u16, ShapeKind::Polyline, k);
-    model.geometry = ShapeGeometry::from_points(points);
-    model
-}
-
-/// 竖切两半的几何集合（与外层 Vec 分支同形）
-type SliceHalves = (Vec<Vec<(f32, f32)>>, Vec<Vec<(f32, f32)>>);
-
-/// 闭环优先走 `cut_loops`；开放折线（曲线/弧的展平）走竖线切段。
-fn split_slice_parts(model: &ShapeModel, cut: f32, y0: f32, y1: f32) -> Option<SliceHalves> {
-    if model.geometry.closed {
-        cut_loops(&[ring_of(model)], (cut, y0 - 1.0), (cut, y1 + 1.0))
-            .or_else(|| split_open_model(model, cut))
-    } else {
-        split_open_model(model, cut)
-    }
-}
-
-/// 开放折线的竖切回退（`cut_loops` 只处理闭环）。
-fn split_open_model(model: &ShapeModel, cut: f32) -> Option<SliceHalves> {
-    let points = if model.geometry.closed || model.geometry.anchors.is_empty() {
-        ring_of(model)
-    } else {
-        model
-            .geometry
-            .anchors
-            .iter()
-            .map(|anchor| anchor.pos)
-            .collect()
-    };
-    cut_open_vertical(&points, cut).map(|(left, right)| (vec![left], vec![right]))
 }
