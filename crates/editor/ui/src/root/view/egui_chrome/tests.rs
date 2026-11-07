@@ -284,9 +284,9 @@ fn settings_dialog_model_carries_general_page_values() {
         "日志保留份数必须来自 logging（不是历史条数）"
     );
 
-    // 云管理等尚未迁移的页面仍整块交回 iced。
+    // 云管理页也已接管（10/10 设置页全部由 egui 绘制）。
     root.settings.selected_menu_index = 7;
-    assert!(root.egui_chrome_model().dialog.is_none());
+    assert!(root.egui_chrome_model().dialog.is_some());
 }
 
 #[test]

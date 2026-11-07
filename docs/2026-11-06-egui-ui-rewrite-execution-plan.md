@@ -687,13 +687,42 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/rem-palette.png`、`rem-editing2.png`、
     `rem-editing-toggle.png`、`rem-about.png`、`rem-echo.png`。
 
-**Task 1.3（下一步）：云管理页 + 右侧栏面板内容**
+**Task 1.3（第十六步）：云管理页 + 设置窗口输入独占 — 已完成**
 
-- 现状：设置「常规 / 音频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 / 兼容性 /
-  关于」九页已由 egui 绘制；云管理页仍 iced（连接列表与 CloudAction 需要
-  索引动作通道）。
-- 下一步：迁移云管理页（连接列表 / 连接断开 / 管理文件 / 删除 / 添加，
-  动作携带连接 id），随后右侧栏面板内容（素材 / 音轨属性 / 混音器等）；
-  继续保持「状态镜像 + 动作回传」模式。
+- 新增 `CloudPageModel / CloudConnModel`（连接 id / 名称+协议 / 地址 / 状态 /
+  在线标记 / 三个按钮文本）与 `settings/cloud.rs`：告警条按实际宽度换行、
+  「添加连接」强调按钮、连接列表（左侧名称+地址，右侧状态圆点+断开/管理/删除）；
+  在线状态用**自绘绿/红圆点**替代 emoji（egui 默认字体缺 🟢/🔴 字形）。
+- 动作：`CloudAdd / CloudConnect(id) / CloudDisconnect(id) / CloudManage /
+  CloudDelete(id)` → `Message::Cloud(CloudAction::...)`；离线连接的「管理文件」
+  禁用（无动作）。
+- **设置窗口整窗消费输入**：10/10 设置页已由 egui 绘制，设置对话框的鼠标按键
+  只给 egui，不再落到下层 iced。修复真实缺陷：云管理「添加连接」原先会同时
+  触发 egui 与 iced，打开**两个**「添加云存储」窗口。
+- **标题栏按钮接通**：自绘最小化 / 最大化 / 关闭回传
+  `WindowTraffic(Minimize/ToggleMaximize/Close)`，关闭映射为
+  `SettingsDialogAction::CloseDialog`，最小化/最大化映射为
+  `window::Event::traffic_action`。保存确认等其它对话框暂不消费输入
+  （其按钮仍依赖让位）。
+- 验收：
+  - `settings_cloud_bands` 1/1（添加 / 断开 / 连接 / 删除 / 管理 / 离线禁用）；
+  - `settings_cloud_tests` 1/1（连接行镜像 + 5 个 CloudAction 翻译）；
+  - `egui_chrome` 27/27；`ui-egui` 全量、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；`capture_iced` 18/18、
+    `capture_egui` 12/12、`compare_egui` 与上一步逐项一致，基线零改动；
+  - 真实窗口：云管理页显示两条真实连接（CBMS [SFTP] / 111 [WebDAV]）与
+    绿点「在线」；点「管理文件」→ `CloudManage`；点「添加连接」→ `CloudAdd`
+    且**只出现一个**「添加云存储」窗口；点标题栏关闭 →
+    `WindowTraffic(Close)` 且设置窗口关闭。
+  - 证据图：`target/cl-page2.png`、`cl-final.png`、`cl-add2.png`。
+
+**Task 1.3（下一步）：右侧栏面板内容**
+
+- 现状：设置对话框 **10/10 页**全部由 egui 绘制，并且设置窗口整窗消费输入、
+  标题栏按钮已接通。标题栏菜单、工具栏（含弹层）、悬浮工具条与五个面板、
+  左侧栏、右侧栏图标列、状态栏均已是 egui。
+- 下一步：迁移右侧栏面板内容（素材 / 音轨属性 / 混音器等），继续保持
+  「状态镜像 + 动作回传」模式；之后收口保存确认对话框的按钮动作与原生标题栏
+  菜单让位。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

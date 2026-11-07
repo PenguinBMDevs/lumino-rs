@@ -77,12 +77,10 @@ fn migrated_settings_pages_are_taken_over_only() {
     assert_eq!(compat.domino_enabled, cfg!(windows));
     assert!(!compat.result_lines.is_empty(), "至少有「尚未检测」结果行");
 
-    // 未迁移页面（云管理）仍交回 iced。
+    // 云管理页（第 7 页）也已接管：10/10 设置页全部由 egui 绘制。
     root.settings.selected_menu_index = 7;
-    assert!(
-        root.egui_chrome_model().dialog.is_none(),
-        "未迁移页面必须整块让位"
-    );
+    let values = settings_model(&mut root);
+    assert!(matches!(values.page, SettingsPageModel::Cloud(_)));
 }
 
 #[test]

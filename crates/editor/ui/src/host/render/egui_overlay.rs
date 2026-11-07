@@ -284,7 +284,10 @@ impl Host {
                 };
                 self.egui_input
                     .button(button, *state == winit::event::ElementState::Pressed);
-                self.egui_pointer_blocked()
+                // 设置窗口由 egui 整窗绘制：按键只给 egui，避免同一击同时触发
+                // 下层 iced 控件（例如云管理「添加连接」打开两个窗口）。
+                // 保存确认等其它对话框的按钮仍依赖 let-through，暂不消费。
+                self.settings_dialog_window() || self.egui_pointer_blocked()
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
@@ -319,6 +322,15 @@ impl Host {
             }
             _ => false,
         }
+    }
+
+    /// 当前窗口是否为设置对话框（全部 10 页已由 egui 绘制，可整窗消费输入）。
+    fn settings_dialog_window(&self) -> bool {
+        self.root.state.is_dialog_window
+            && matches!(
+                self.root.state.dialog_type,
+                crate::state::root_state::DialogType::Settings
+            )
     }
 
     /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。

@@ -10,6 +10,17 @@ use crate::chrome::{AudioField, UiField};
 
 const ACTION_ID: &str = "lumino.settings.action";
 
+/// 设置窗口的自绘标题栏按钮。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowControl {
+    /// 最小化。
+    Minimize,
+    /// 最大化 / 还原。
+    ToggleMaximize,
+    /// 关闭。
+    Close,
+}
+
 /// 设置对话框产生的动作（不依赖 iced）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
@@ -101,6 +112,18 @@ pub enum SettingsAction {
     },
     /// 主题卡片点击（规范主题名）。
     UiTheme(String),
+    /// 云管理：打开「添加连接」面板。
+    CloudAdd,
+    /// 云管理：连接已保存的连接（id）。
+    CloudConnect(String),
+    /// 云管理：断开连接（id）。
+    CloudDisconnect(String),
+    /// 云管理：打开文件管理面板。
+    CloudManage,
+    /// 云管理：删除连接（id）。
+    CloudDelete(String),
+    /// 设置窗口标题栏按钮。
+    WindowTraffic(WindowControl),
     /// 「确认」（关闭设置窗口并应用）。
     Confirm,
 }

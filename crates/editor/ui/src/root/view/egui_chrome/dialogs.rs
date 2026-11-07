@@ -5,12 +5,14 @@
 
 use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
 use lumino_core::tr;
+use lumino_message::CloudAction;
 use lumino_ui_core::state::{GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiState};
 use lumino_ui_egui::chrome::{
     CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, OnionSkinPageModel,
     SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
     ShortcutsPageModel,
 };
+use lumino_ui_egui::settings::WindowControl;
 
 use crate::Message;
 use crate::message::SettingsDialogAction;
@@ -128,6 +130,7 @@ impl Root {
                     4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),
                     5 => SettingsPageModel::Ui(Box::new(super::settings_pages::palette_page(self))),
                     6 => SettingsPageModel::Ui(Box::new(super::settings_pages::editing_page(self))),
+                    7 => SettingsPageModel::Cloud(super::settings_pages::cloud_page(self)),
                     9 => SettingsPageModel::Ui(Box::new(super::settings_pages::about_page(self))),
                     8 => SettingsPageModel::Compatibility(self.compatibility_page(language)),
                     _ => return None,
@@ -309,6 +312,20 @@ impl Root {
             | A::UiTheme(_) => {
                 return super::settings_ui::action_message(self, action);
             }
+            A::CloudAdd => Message::Cloud(CloudAction::OpenConnectPanel),
+            A::CloudConnect(id) => Message::Cloud(CloudAction::ConnectExisting(id.clone())),
+            A::CloudDisconnect(id) => Message::Cloud(CloudAction::Disconnect(id.clone())),
+            A::CloudManage => Message::Cloud(CloudAction::OpenBrowserPanel),
+            A::CloudDelete(id) => Message::Cloud(CloudAction::DeleteConnection(id.clone())),
+            A::WindowTraffic(control) => match control {
+                WindowControl::Close => Message::SettingsDialog(SettingsDialogAction::CloseDialog),
+                WindowControl::Minimize => {
+                    crate::window::Event::traffic_action(&crate::window::TrafficAction::Minimize)
+                }
+                WindowControl::ToggleMaximize => crate::window::Event::traffic_action(
+                    &crate::window::TrafficAction::ToggleMaximize,
+                ),
+            },
             A::Confirm => Message::SettingsDialog(SettingsDialogAction::CloseDialog),
         })
     }

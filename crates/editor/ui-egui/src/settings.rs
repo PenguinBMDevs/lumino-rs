@@ -8,11 +8,12 @@
 
 mod action;
 mod audio;
+mod cloud;
 mod general;
 mod pages;
 mod ui;
 
-pub use action::{SettingsAction, take_action};
+pub use action::{SettingsAction, WindowControl, take_action};
 
 use egui::{Align, Color32, CornerRadius, Layout, Rect, RichText, Sense, Stroke, Vec2};
 use egui_extras::{Column, TableBuilder};
@@ -40,6 +41,8 @@ pub struct SettingsHits {
     pub ui_rows: Vec<(crate::chrome::UiField, Rect)>,
     /// 界面页主题卡片矩形（规范主题名 → 矩形）。
     pub theme_cards: Vec<(String, Rect)>,
+    /// 云管理页按钮矩形（键 → 矩形；键形如 `add` / `connect:<id>`）。
+    pub cloud_buttons: Vec<(String, Rect)>,
 }
 
 /// 读取本帧命中区（未渲染对应页面时为空）。
@@ -171,9 +174,24 @@ fn titlebar(ui: &mut egui::Ui, palette: &SettingsPalette, cache: &mut IconCache)
     ui.spacing_mut().item_spacing.x = 0.0;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        widgets::traffic_button(ui, cache, Icon::WindowClose, true);
-        widgets::traffic_button(ui, cache, Icon::WindowMax, false);
-        widgets::traffic_button(ui, cache, Icon::WindowMin, false);
+        if widgets::traffic_button(ui, cache, Icon::WindowClose, true).clicked() {
+            action::push_action(
+                ui.ctx(),
+                SettingsAction::WindowTraffic(WindowControl::Close),
+            );
+        }
+        if widgets::traffic_button(ui, cache, Icon::WindowMax, false).clicked() {
+            action::push_action(
+                ui.ctx(),
+                SettingsAction::WindowTraffic(WindowControl::ToggleMaximize),
+            );
+        }
+        if widgets::traffic_button(ui, cache, Icon::WindowMin, false).clicked() {
+            action::push_action(
+                ui.ctx(),
+                SettingsAction::WindowTraffic(WindowControl::Minimize),
+            );
+        }
     });
 }
 
@@ -350,6 +368,12 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
             let height = ui::content_height(&model, rect.width());
             scroll_page(ui, rect, "settings-ui-scroll", height, |ui, content| {
                 ui::show(ui, content, &model, palette, &mut state.icons);
+            });
+        }
+        SettingsPageModel::Cloud(model) => {
+            let height = cloud::content_height(&model, rect.width());
+            scroll_page(ui, rect, "settings-cloud-scroll", height, |ui, content| {
+                cloud::show(ui, content, &model, palette);
             });
         }
     }

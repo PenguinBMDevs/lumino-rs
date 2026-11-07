@@ -4,9 +4,10 @@
 //! logo/回声洞使用专用行。
 
 use egui::Color32;
+use lumino_core::{tr, trf};
 use lumino_extras::i18n::settings_translations;
 use lumino_ui_core::state::about_egg::{ABOUT_LOGO_SHAKE_AMPLITUDE, ABOUT_LOGO_SIZE};
-use lumino_ui_egui::chrome::{UiField, UiPageModel, UiRow};
+use lumino_ui_egui::chrome::{CloudConnModel, CloudPageModel, UiField, UiPageModel, UiRow};
 
 use crate::root::Root;
 
@@ -163,6 +164,43 @@ pub(super) fn palette_page(root: &Root) -> UiPageModel {
     UiPageModel {
         title: t.palette_title.to_owned(),
         rows,
+    }
+}
+
+/// 云管理页。
+pub(super) fn cloud_page(root: &Root) -> CloudPageModel {
+    let cloud = &root.settings.cloud;
+    CloudPageModel {
+        title: tr!("云存储管理").to_string(),
+        alert: cloud
+            .alert
+            .as_deref()
+            .map(|message| trf!("⚠ 云存储提醒：{msg}", msg = message)),
+        add_label: tr!("添加连接").to_string(),
+        empty_text: tr!("尚未添加云存储连接。支持 FTP / SFTP / WebDAV，连接信息仅存储在本机。")
+            .to_string(),
+        rows: cloud
+            .connections
+            .iter()
+            .map(|conn| CloudConnModel {
+                id: conn.id.clone(),
+                title: format!("{} [{}]", conn.name, conn.protocol),
+                address: conn.address.clone(),
+                status: if conn.online {
+                    tr!("在线").to_string()
+                } else {
+                    tr!("离线").to_string()
+                },
+                online: conn.online,
+                connect_label: if conn.online {
+                    tr!("断开").to_string()
+                } else {
+                    tr!("连接").to_string()
+                },
+                manage_label: tr!("管理文件").to_string(),
+                delete_label: tr!("删除").to_string(),
+            })
+            .collect(),
     }
 }
 

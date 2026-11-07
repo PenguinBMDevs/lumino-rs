@@ -23,6 +23,8 @@ pub enum SettingsPageModel {
     Audio(AudioPageModel),
     /// 界面页（语言 / 主题卡片 / 字体 / 交互 / 自动滚动）。
     Ui(Box<super::UiPageModel>),
+    /// 云管理页（连接列表）。
+    Cloud(super::CloudPageModel),
 }
 
 /// 快捷键页。
