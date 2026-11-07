@@ -10,7 +10,7 @@ use egui_kittest::kittest::Queryable;
 use lumino_ui_egui::chrome::{
     self, AudioControlModel, AudioField, AudioPageModel, AudioRowModel, ChromeModel, CompatLine,
     CompatibilityPageModel, DialogModel, OnionSkinPageModel, SettingsLabels, SettingsPageModel,
-    SettingsPalette, SettingsSnapshot,
+    SettingsPalette, SettingsSnapshot, ThemeCardModel, UiField, UiPageModel, UiRow,
 };
 use lumino_ui_egui::settings::{SettingsAction, take_action};
 
@@ -217,6 +217,102 @@ fn audio_page_dispatches_field_actions() {
         actions.borrow().last(),
         Some(&SettingsAction::AudioCombo {
             field: AudioField::OutputType,
+            index: 2,
+        })
+    );
+}
+
+fn theme_card(display: &str, value: &str, selected: bool) -> ThemeCardModel {
+    let color = egui::Color32::from_rgb(0x22, 0x22, 0x22);
+    ThemeCardModel {
+        display: display.to_owned(),
+        value: value.to_owned(),
+        selected,
+        bg: color,
+        title: egui::Color32::WHITE,
+        control: color,
+        bar_primary: color,
+        bar_secondary: color,
+        accent: color,
+        line: color,
+        line_soft: color,
+    }
+}
+
+/// 界面页：主题卡片 / 开关 / 下拉回传字段动作。
+#[test]
+fn ui_page_dispatches_theme_and_fields() {
+    let page = UiPageModel {
+        title: "界面".to_owned(),
+        rows: vec![
+            UiRow::ThemeCards {
+                label: "主题".to_owned(),
+                cards: vec![
+                    theme_card("Dark", "Dark", true),
+                    theme_card("Light", "Light", false),
+                ],
+            },
+            UiRow::Checkbox {
+                field: UiField::Enable256Key,
+                label: "256".to_owned(),
+                hint: String::new(),
+                checked: false,
+            },
+            UiRow::Combo {
+                field: UiField::Language,
+                label: "Language".to_owned(),
+                hint: String::new(),
+                options: vec!["System".to_owned(), "中文".to_owned(), "English".to_owned()],
+                selected: 0,
+                width: 200.0,
+            },
+        ],
+    };
+    let (mut harness, actions) = harness(snapshot(SettingsPageModel::Ui(Box::new(page))));
+
+    let hits = lumino_ui_egui::settings::hits(&harness.ctx);
+    let light = hits
+        .theme_cards
+        .iter()
+        .find(|(value, _)| value == "Light")
+        .map(|(_, rect)| *rect)
+        .expect("Light 卡片");
+    click(&mut harness, light.center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::UiTheme("Light".to_owned()))
+    );
+
+    let hits = lumino_ui_egui::settings::hits(&harness.ctx);
+    let check = hits
+        .ui_rows
+        .iter()
+        .find(|(field, _)| *field == UiField::Enable256Key)
+        .map(|(_, rect)| *rect)
+        .expect("256 开关");
+    click(&mut harness, check.center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::UiToggle {
+            field: UiField::Enable256Key,
+            checked: true,
+        })
+    );
+
+    let hits = lumino_ui_egui::settings::hits(&harness.ctx);
+    let combo = hits
+        .ui_rows
+        .iter()
+        .find(|(field, _)| *field == UiField::Language)
+        .map(|(_, rect)| *rect)
+        .expect("语言下拉");
+    click(&mut harness, combo.center());
+    harness.get_by_label("English").click();
+    harness.run();
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::UiCombo {
+            field: UiField::Language,
             index: 2,
         })
     );

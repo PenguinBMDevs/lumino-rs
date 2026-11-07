@@ -8,10 +8,12 @@ use egui::Color32;
 
 mod settings_audio;
 mod settings_page;
+mod settings_ui;
 mod tool_panel;
 mod toolbar;
 pub use settings_audio::*;
 pub use settings_page::*;
+pub use settings_ui::*;
 pub use tool_panel::*;
 pub use toolbar::*;
 

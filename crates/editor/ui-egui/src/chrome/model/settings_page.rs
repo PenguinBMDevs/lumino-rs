@@ -21,6 +21,8 @@ pub enum SettingsPageModel {
     Compatibility(CompatibilityPageModel),
     /// 音频页（输出类型 / 设备 / 引擎专属参数）。
     Audio(AudioPageModel),
+    /// 界面页（语言 / 主题卡片 / 字体 / 交互 / 自动滚动）。
+    Ui(Box<super::UiPageModel>),
 }
 
 /// 快捷键页。

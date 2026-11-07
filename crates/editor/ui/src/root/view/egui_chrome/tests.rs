@@ -284,8 +284,8 @@ fn settings_dialog_model_carries_general_page_values() {
         "日志保留份数必须来自 logging（不是历史条数）"
     );
 
-    // 界面等尚未迁移的页面仍整块交回 iced。
-    root.settings.selected_menu_index = 2;
+    // 调色板等尚未迁移的页面仍整块交回 iced。
+    root.settings.selected_menu_index = 5;
     assert!(root.egui_chrome_model().dialog.is_none());
 }
 

@@ -13,9 +13,9 @@ pub mod toolbar_popup;
 
 pub use model::{
     AudioControlModel, AudioField, AudioPageModel, AudioRowModel, BrushPanelModel,
-    FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel, ThicknessPanelModel,
-    ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner,
-    ToolPanelSettingsPanel,
+    FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel, ThemeCardModel,
+    ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
+    ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow,
 };
 pub use model::{
     ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, MenuBarModel,

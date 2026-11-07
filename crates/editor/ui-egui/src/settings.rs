@@ -10,6 +10,7 @@ mod action;
 mod audio;
 mod general;
 mod pages;
+mod ui;
 
 pub use action::{SettingsAction, take_action};
 
@@ -35,6 +36,10 @@ pub struct SettingsHits {
     pub menu_rows: Vec<Rect>,
     /// 音频页控件矩形（字段 → 矩形）。
     pub audio_rows: Vec<(crate::chrome::AudioField, Rect)>,
+    /// 界面页控件矩形（字段 → 矩形）。
+    pub ui_rows: Vec<(crate::chrome::UiField, Rect)>,
+    /// 界面页主题卡片矩形（规范主题名 → 矩形）。
+    pub theme_cards: Vec<(String, Rect)>,
 }
 
 /// 读取本帧命中区（未渲染对应页面时为空）。
@@ -339,6 +344,12 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
             let height = audio::content_height(&model);
             scroll_page(ui, rect, "settings-audio-scroll", height, |ui, content| {
                 audio::show(ui, content, &model, palette);
+            });
+        }
+        SettingsPageModel::Ui(model) => {
+            let height = ui::content_height(&model, rect.width());
+            scroll_page(ui, rect, "settings-ui-scroll", height, |ui, content| {
+                ui::show(ui, content, &model, palette);
             });
         }
     }

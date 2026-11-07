@@ -6,7 +6,7 @@
 
 use lumino_core::storage::config::{EraserBehavior, OnionSkinBackend, TrackAddBehavior};
 
-use crate::chrome::AudioField;
+use crate::chrome::{AudioField, UiField};
 
 const ACTION_ID: &str = "lumino.settings.action";
 
@@ -66,6 +66,41 @@ pub enum SettingsAction {
         /// 字段。
         field: AudioField,
     },
+    /// 界面页下拉选择。
+    UiCombo {
+        /// 字段。
+        field: UiField,
+        /// 选项下标。
+        index: usize,
+    },
+    /// 界面页文本输入。
+    UiText {
+        /// 字段。
+        field: UiField,
+        /// 新文本。
+        value: String,
+    },
+    /// 界面页开关。
+    UiToggle {
+        /// 字段。
+        field: UiField,
+        /// 新状态。
+        checked: bool,
+    },
+    /// 界面页滑杆。
+    UiSlider {
+        /// 字段。
+        field: UiField,
+        /// 新值。
+        value: f32,
+    },
+    /// 界面页按钮。
+    UiButton {
+        /// 字段。
+        field: UiField,
+    },
+    /// 主题卡片点击（规范主题名）。
+    UiTheme(String),
     /// 「确认」（关闭设置窗口并应用）。
     Confirm,
 }

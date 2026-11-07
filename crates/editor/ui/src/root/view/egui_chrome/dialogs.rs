@@ -123,6 +123,7 @@ impl Root {
                 let page = match selected {
                     0 => SettingsPageModel::General,
                     1 => SettingsPageModel::Audio(super::settings_audio::page(self)),
+                    2 => SettingsPageModel::Ui(Box::new(super::settings_ui::page(self))),
                     3 => SettingsPageModel::Shortcuts(shortcuts_page(language)),
                     4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),
                     8 => SettingsPageModel::Compatibility(self.compatibility_page(language)),
@@ -296,6 +297,14 @@ impl Root {
             | A::AudioToggle { .. }
             | A::AudioButton { .. } => {
                 return super::settings_audio::action_message(self, action);
+            }
+            A::UiCombo { .. }
+            | A::UiText { .. }
+            | A::UiToggle { .. }
+            | A::UiSlider { .. }
+            | A::UiButton { .. }
+            | A::UiTheme(_) => {
+                return super::settings_ui::action_message(self, action);
             }
             A::Confirm => Message::SettingsDialog(SettingsDialogAction::CloseDialog),
         })

@@ -5,11 +5,12 @@ use lumino_core::storage::config::{
     EraserBehavior, OnionSkinBackend, SynthBackend, TrackAddBehavior,
 };
 use lumino_ui_core::settings_event::OutputType;
-use lumino_ui_egui::chrome::{AudioField, DialogModel, SettingsPageModel};
+use lumino_ui_egui::chrome::{AudioField, DialogModel, SettingsPageModel, UiField, UiRow};
 use lumino_ui_egui::settings::SettingsAction;
 
 use crate::Message;
 use crate::message::SettingsDialogAction;
+use crate::settings::Event;
 
 fn settings_root() -> Root {
     let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
@@ -79,8 +80,8 @@ fn migrated_settings_pages_are_taken_over_only() {
     assert_eq!(compat.domino_enabled, cfg!(windows));
     assert!(!compat.result_lines.is_empty(), "至少有「尚未检测」结果行");
 
-    // 未迁移页面（界面）仍交回 iced。
-    root.settings.selected_menu_index = 2;
+    // 未迁移页面（调色板）仍交回 iced。
+    root.settings.selected_menu_index = 5;
     assert!(
         root.egui_chrome_model().dialog.is_none(),
         "未迁移页面必须整块让位"
@@ -208,6 +209,117 @@ fn audio_page_reflects_backend_and_maps_actions() {
         Some(Message::Settings(
             crate::settings::Event::SoundfontPathChanged(path)
         )) if path == "C:/sf2/demo.sf2"
+    ));
+}
+
+#[test]
+fn ui_page_reflects_settings_and_maps_actions() {
+    let mut root = settings_root();
+    root.settings.selected_menu_index = 2;
+    root.settings.display.enable_256key = true;
+    root.settings.editing.program_font_path = "C:/fonts/demo.ttf".to_owned();
+    root.settings.editing.automation_line_thickness = 3.5;
+
+    let values = settings_model(&mut root);
+    let SettingsPageModel::Ui(page) = values.page else {
+        panic!("第 2 页应为界面");
+    };
+    assert!(!page.title.is_empty());
+    let has_field = |field| {
+        page.rows.iter().any(|row| match row {
+            UiRow::Combo { field: f, .. }
+            | UiRow::Text { field: f, .. }
+            | UiRow::Checkbox { field: f, .. }
+            | UiRow::Slider { field: f, .. }
+            | UiRow::Button { field: f, .. } => *f == field,
+            _ => false,
+        })
+    };
+    for field in [
+        UiField::Language,
+        UiField::ProgramFontName,
+        UiField::ProgramFontPath,
+        UiField::BrowseProgramFont,
+        UiField::IconHidpi,
+        UiField::NoteCountDisplay,
+        UiField::AutoScrollFixed,
+        UiField::AutoScrollTrigger,
+        UiField::AutoScrollReturn,
+        UiField::SelectionBoxMode,
+        UiField::Enable256Key,
+        UiField::VelocityCurveStyle,
+        UiField::PlaybackKeyColors,
+        UiField::AutomationLineThickness,
+        UiField::MonitorRefreshInterval,
+    ] {
+        assert!(has_field(field), "界面页缺少 {field:?}");
+    }
+    let cards = page
+        .rows
+        .iter()
+        .find_map(|row| match row {
+            UiRow::ThemeCards { cards, .. } => Some(cards),
+            _ => None,
+        })
+        .expect("主题卡片行");
+    assert_eq!(
+        cards.len(),
+        lumino_ui_core::Theme::ALL.len() + 1,
+        "高对比度 + 注册表全部主题"
+    );
+    assert_eq!(cards[0].display, "高对比度");
+
+    // 动作 → 生产 Message。
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiTheme("Light".to_owned())),
+        Some(Message::Window(crate::window::Event::Theme(value))) if value == "Light"
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiCombo {
+            field: UiField::Language,
+            index: 2,
+        }),
+        Some(Message::Settings(Event::LanguagePreferenceChanged(
+            lumino_core::locale::LanguagePreference::Fixed(_)
+        )))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiCombo {
+            field: UiField::NoteCountDisplay,
+            index: 1,
+        }),
+        Some(Message::Settings(Event::NoteCountDisplayChanged(
+            lumino_core::storage::config::NoteCountDisplay::StatusBar
+        )))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiToggle {
+            field: UiField::Enable256Key,
+            checked: true,
+        }),
+        Some(Message::Settings(Event::Enable256keyChanged(true)))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiText {
+            field: UiField::AutoScrollFixed,
+            value: "120".to_owned(),
+        }),
+        Some(Message::Settings(Event::AutoScrollFixedPositionChanged(value)))
+            if value == "120"
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiSlider {
+            field: UiField::MonitorRefreshInterval,
+            value: 250.0,
+        }),
+        Some(Message::Settings(Event::MonitorRefreshIntervalChanged(value)))
+            if (value - 250.0).abs() < f32::EPSILON
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiButton {
+            field: UiField::BrowseProgramFont,
+        }),
+        Some(Message::Settings(Event::BrowseProgramFont))
     ));
 }
 
