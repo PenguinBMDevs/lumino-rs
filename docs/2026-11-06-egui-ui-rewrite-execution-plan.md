@@ -27,6 +27,17 @@
 - 不移除现有测试；只新增 UI 截图/GPU 基线测试。
 - 不在主分支直接替换默认 UI；所有重构在独立 crate / 独立分支完成，最后一次性切换。
 
+### 执行发现（2026-11-07）
+
+主程序的 `iced_wgpu::Engine` 与 `lumino-gfx` 共用**同一个 `wgpu::Device/Queue`**
+（`crates/editor/ui/src/host/render_ctx.rs::WgpuResources`），因此 wgpu 版本被硬绑定：
+iced 侧停留在 27 时，gfx 无法单独升到 30。这确认了「先做 27 桥接、后整体升 30」
+的时序是必要的；「先把 gfx 升到 30、保留 iced」在 iced 仍参与渲染时不可行。
+
+桥接实现建议（比整体移植 egui-wgpu 小一个量级）：只实现「egui 网格 → wgpu27 绘制」的
+最小 painter——顶点/索引缓冲、字体图集纹理、scissor、sRGB 混合；不移植 egui-wgpu 的
+callback / 多视口 / 截图能力。
+
 ## 三、验收工具链
 
 ### 3.1 iced 基线
