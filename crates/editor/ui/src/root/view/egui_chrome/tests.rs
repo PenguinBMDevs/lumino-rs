@@ -228,6 +228,29 @@ fn light_theme_dialogs_stay_with_iced() {
 }
 
 #[test]
+fn settings_dialog_model_carries_general_page_values() {
+    let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
+    let config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new_settings_dialog(&theme, &config);
+
+    let model = root.egui_chrome_model();
+    let Some(DialogModel::Settings(values)) = model.dialog else {
+        panic!("设置对话框「常规」页应整窗接管");
+    };
+    assert_eq!(values.selected, 0);
+    assert!(!values.eraser.is_empty(), "橡皮擦行为应来自真实设置");
+    assert!(!values.track_add.is_empty(), "添加音轨行为应来自真实设置");
+    assert_eq!(
+        values.log_retention,
+        root.settings.editing.history_total_limit.to_string()
+    );
+
+    // 其它页面尚未建模：整块交回 iced。
+    root.settings.selected_menu_index = 1;
+    assert!(root.egui_chrome_model().dialog.is_none());
+}
+
+#[test]
 fn progress_and_warning_windows_are_not_covered() {
     let config = lumino_core::storage::config::UiConfig::default();
 

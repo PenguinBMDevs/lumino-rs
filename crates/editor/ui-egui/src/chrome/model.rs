@@ -34,6 +34,21 @@ pub struct ChromeModel {
 pub enum DialogModel {
     /// 未保存更改确认（`DialogType::SaveConfirm`）。
     SaveConfirm(SaveConfirmModel),
+    /// 设置对话框「常规」页（`DialogType::Settings`，仅 `selected == 0`）。
+    Settings(SettingsSnapshot),
+}
+
+/// 设置对话框整窗所需的真实状态（值来自生产 `SettingsPanel`）。
+#[derive(Debug, Clone, Default)]
+pub struct SettingsSnapshot {
+    /// 当前菜单索引（只接管 0 = 常规页）。
+    pub selected: usize,
+    /// 橡皮擦行为（本地化后的显示文本）。
+    pub eraser: String,
+    /// 添加音轨行为（本地化后的显示文本）。
+    pub track_add: String,
+    /// 日志文件保留份数。
+    pub log_retention: String,
 }
 
 /// 保存确认对话框的文案与标题栏开关。

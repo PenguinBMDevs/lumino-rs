@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use egui_kittest::Harness;
 use image::RgbaImage;
-use lumino_ui_egui::chrome::{self, ChromeModel, DialogModel, SaveConfirmModel};
+use lumino_ui_egui::chrome::{self, ChromeModel, DialogModel, SaveConfirmModel, SettingsSnapshot};
 use lumino_ui_egui::icons::IconCache;
 
 const WIDTH: u32 = 560;
@@ -235,4 +235,66 @@ fn save_confirm_bands_match_iced_geometry() {
     }
     let ratio = different as f64 / f64::from(WIDTH * HEIGHT);
     assert!(ratio < 0.05, "保存确认对话框整窗差异率过高：{:.4}", ratio);
+}
+
+/// 设置对话框「常规」页整窗：`show_bands` 的输出必须与 iced 基线同几何。
+#[test]
+fn settings_dialog_bands_match_iced_geometry() {
+    const W: u32 = 1200;
+    const H: u32 = 800;
+    let model = ChromeModel {
+        dialog: Some(DialogModel::Settings(SettingsSnapshot {
+            selected: 0,
+            eraser: "默认 (Shift+拖动框选)".to_owned(),
+            track_add: "自动跳转到新音轨".to_owned(),
+            log_retention: "10".to_owned(),
+        })),
+        ..ChromeModel::default()
+    };
+    let mut icons = IconCache::default();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(W as f32, H as f32))
+        .with_pixels_per_point(1.0)
+        .with_render_cursor(false)
+        .with_accessibility_check(false)
+        .with_context_setup(|ctx| {
+            lumino_ui_egui::theme::apply(ctx);
+            lumino_ui_egui::fonts::install(ctx);
+        })
+        .build_ui(move |ui| chrome::show_bands(ui, &model, &mut icons));
+    harness.run();
+    let bands = harness.render().expect("设置对话框需要可用的渲染器");
+
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("测试目录必须有工作区根")
+        .join("tests/ui-baseline/iced/settings_general-dpi100.png");
+    let baseline = image::open(&path)
+        .expect("读取 iced 基线失败（先运行 capture_iced）")
+        .to_rgba8();
+
+    // 标题栏 / 内容 / 菜单底色（与场景一致）。
+    assert_eq!(&bands.get_pixel(10, 15).0[..3], &[0x3F, 0x46, 0x6E]);
+    assert_eq!(&bands.get_pixel(10, 40).0[..3], &[0x24, 0x28, 0x3B]);
+    assert_eq!(&bands.get_pixel(45, 300).0[..3], &[0x39, 0x40, 0x63]);
+
+    // 整窗差异率：与场景同级（<5%）。
+    let mut different = 0_u64;
+    for y in 0..H {
+        for x in 0..W {
+            let a = bands.get_pixel(x, y).0;
+            let b = baseline.get_pixel(x, y).0;
+            let delta = (0..3)
+                .map(|c| i32::from(a[c]) - i32::from(b[c]))
+                .map(i32::abs)
+                .max()
+                .unwrap_or(0);
+            if delta > 2 {
+                different += 1;
+            }
+        }
+    }
+    let ratio = different as f64 / f64::from(W * H);
+    assert!(ratio < 0.05, "设置对话框整窗差异率过高：{:.4}", ratio);
 }

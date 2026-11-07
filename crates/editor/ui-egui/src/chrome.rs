@@ -9,8 +9,8 @@ pub mod toolbar;
 
 pub use model::{
     ChromeModel, DialogModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel,
-    ToolbarModel,
+    SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
+    TitlebarModel, ToolbarModel,
 };
 
 use egui::{Frame, Margin, Panel, Stroke};
@@ -121,6 +121,18 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     if let Some(dialog) = &model.dialog {
         match dialog {
             DialogModel::SaveConfirm(save) => dialog::show_model(&mut root, save, icons),
+            DialogModel::Settings(values) => {
+                // 复用设置场景渲染器：图标缓存由叠加层提供。
+                let mut state = crate::settings::SettingsState {
+                    icons: std::mem::take(icons),
+                    selected: values.selected,
+                    eraser: values.eraser.clone(),
+                    track_add: values.track_add.clone(),
+                    log_retention: values.log_retention.clone(),
+                };
+                crate::settings::show(&mut root, &mut state);
+                *icons = state.icons;
+            }
         }
         return;
     }

@@ -9,8 +9,8 @@ use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
     ChromeModel, DialogModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel,
-    ToolbarModel,
+    SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
+    TitlebarModel, ToolbarModel,
 };
 
 use crate::root::Root;
@@ -284,6 +284,30 @@ impl Root {
                 close: tr!("关闭").to_string(),
                 cancel: tr!("取消").to_string(),
             })),
+            DialogType::Settings => {
+                // 只接管「常规」页且界面语言为中文（其余页面/语言的文案尚未建模）。
+                let language = self.settings.display.language;
+                if language != lumino_extras::i18n::Language::ZhCn
+                    || self.settings.selected_menu_index != 0
+                {
+                    return None;
+                }
+                let editing = &self.settings.editing;
+                Some(DialogModel::Settings(SettingsSnapshot {
+                    selected: self.settings.selected_menu_index,
+                    eraser: lumino_extras::i18n::eraser_behavior_name(
+                        editing.eraser_behavior,
+                        language,
+                    )
+                    .to_owned(),
+                    track_add: lumino_extras::i18n::track_add_behavior_name(
+                        editing.track_add_behavior,
+                        language,
+                    )
+                    .to_owned(),
+                    log_retention: editing.history_total_limit.to_string(),
+                }))
+            }
             _ => None,
         }
     }
