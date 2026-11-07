@@ -42,6 +42,8 @@ pub struct Drag {
     pub to: (f32, f32),
     /// Formula 工具使用的公式
     pub formula: Option<String>,
+    /// Formula 预设（目前支持 `wave`）
+    pub preset: Option<String>,
     /// Formula 工具的圈数
     pub loops: f32,
 }
@@ -53,6 +55,7 @@ impl Drag {
             from,
             to,
             formula: None,
+            preset: None,
             loops: VEL_LOOPS,
         }
     }
@@ -104,10 +107,13 @@ pub fn apply_vel_tool(
         }
         VelTool::Formula => {
             let loops = drag.effective_loops();
-            let src = drag
-                .formula
-                .as_deref()
-                .unwrap_or("50 + height * sin(x * 2 * pi * loops)");
+            let src = if drag.preset.as_deref() == Some("wave") {
+                "50 + height * sin(x * 2 * pi * loops)"
+            } else {
+                drag.formula
+                    .as_deref()
+                    .unwrap_or("50 + height * sin(x * 2 * pi * loops)")
+            };
             let vars = BTreeMap::from([
                 ("height".to_string(), f64::from(VEL_HEIGHT)),
                 ("loops".to_string(), f64::from(loops)),

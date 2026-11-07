@@ -66,6 +66,21 @@ fn test_env_applies_over_note_span() {
 }
 
 #[test]
+fn test_env_follows_shape_translation() {
+    let env = VelocityEnv::new(vec![[0.0, 20.0], [1.0, 100.0]]);
+    let mut notes = vec![note(0.0, 100.0), note(100.0, 0.0)];
+    apply_env_to_notes(&mut notes, &env);
+    let before: Vec<u8> = notes.iter().map(|note| note.velocity).collect();
+
+    for note in &mut notes {
+        note.tick += 1000.0;
+    }
+    apply_env_to_notes(&mut notes, &env);
+    let after: Vec<u8> = notes.iter().map(|note| note.velocity).collect();
+    assert_eq!(before, after, "整体平移后同一 u 的力度必须不变");
+}
+
+#[test]
 fn test_pencil_produces_legal_envelope() {
     let mut env = VelocityEnv::default();
     let points = apply_vel_tool(
@@ -94,7 +109,7 @@ fn test_formula_loops_produce_periods() {
         &mut env,
         VelTool::Formula,
         &Drag {
-            formula: Some("50 + height * sin(x * 2 * pi * loops)".into()),
+            preset: Some("wave".into()),
             loops: 4.0,
             ..Drag::new((0.0, 0.0), (1.0, 0.0))
         },
