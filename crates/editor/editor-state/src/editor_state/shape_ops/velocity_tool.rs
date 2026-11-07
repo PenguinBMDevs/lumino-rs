@@ -42,6 +42,8 @@ pub struct Drag {
     pub to: (f32, f32),
     /// Formula 工具使用的公式
     pub formula: Option<String>,
+    /// Formula 工具的圈数
+    pub loops: f32,
 }
 
 impl Drag {
@@ -51,7 +53,13 @@ impl Drag {
             from,
             to,
             formula: None,
+            loops: VEL_LOOPS,
         }
+    }
+
+    /// 实际生效圈数：上限 `VEL_MOST_LOOPS`，避免上游踩过的“更多会冻住程序”
+    pub fn effective_loops(&self) -> f32 {
+        self.loops.clamp(0.0, VEL_MOST_LOOPS)
     }
 }
 
@@ -95,12 +103,16 @@ pub fn apply_vel_tool(
             env.points = points;
         }
         VelTool::Formula => {
+            let loops = drag.effective_loops();
             let src = drag
                 .formula
                 .as_deref()
-                .unwrap_or("50 + height * sin(x * 2 * pi * 4)");
-            let vars = BTreeMap::from([("height".to_string(), f64::from(VEL_HEIGHT))]);
-            let expr = compile(src, &["height"]).ok();
+                .unwrap_or("50 + height * sin(x * 2 * pi * loops)");
+            let vars = BTreeMap::from([
+                ("height".to_string(), f64::from(VEL_HEIGHT)),
+                ("loops".to_string(), f64::from(loops)),
+            ]);
+            let expr = compile(src, &["height", "loops"]).ok();
             env.points = (0..FORMULA_POINTS)
                 .map(|index| {
                     let u = index as f32 / (FORMULA_POINTS - 1) as f32;
