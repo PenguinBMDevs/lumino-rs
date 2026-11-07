@@ -94,7 +94,25 @@ pub const SETTINGS_MENU_ROW_H: f32 = 48.0;
 /// 设置表单行高。
 pub const SETTINGS_FORM_ROW_H: f32 = 72.0;
 
-/// 侧边栏音轨行高。
-pub const TRACK_ROW_H: f32 = 34.0;
-/// 音轨列表首行相对面板顶部的偏移（标题行 24 + 面板内边距 8）。
+/// 左侧栏拖拽手柄宽度（iced `RESIZE_HANDLE_WIDTH`）。
+pub const SIDEBAR_RESIZE_W: f32 = 6.0;
+/// 音轨列表滚动条槽宽度（iced `scrollable` 的 8px）。
+pub const SIDEBAR_SCROLLBAR_W: f32 = 8.0;
+/// 音轨行高（14px 文本行高 17 + 行内边距 8 + 按钮内边距 10）。
+pub const TRACK_ROW_H: f32 = 35.0;
+/// 「添加音轨」行高（图标 18 + 行内边距 12 + 按钮内边距 10）。
+pub const TRACK_ADD_ROW_H: f32 = 40.0;
+/// 音轨行按钮水平内边距（iced `button::DEFAULT_PADDING` 左右各 10）。
+pub const TRACK_BUTTON_PAD_X: f32 = 10.0;
+/// 音轨行内容内边距（`row!().padding(4)`）。
+pub const TRACK_ROW_PAD: f32 = 4.0;
+/// 「添加音轨」行内容内边距（`row!().padding(6)`）。
+pub const TRACK_ADD_ROW_PAD: f32 = 6.0;
+/// 音轨编号 / 指挥轨图标列宽度（含 2px 左内边距）。
+pub const TRACK_LABEL_COL_W: f32 = 36.0;
+/// 「添加音轨」图标列宽度。
+pub const TRACK_ADD_ICON_COL_W: f32 = 24.0;
+/// 音轨行内的列间距。
+pub const TRACK_COL_GAP: f32 = 4.0;
+/// 音轨列表首行相对面板顶部的偏移（标题行 24 = 面板内边距 8 + 标题 16）。
 pub const TRACK_LIST_HEADER_H: f32 = 24.0;
