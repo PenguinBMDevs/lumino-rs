@@ -51,8 +51,21 @@ impl Editor {
             self.editor_state.line_tool.min_note_division,
             self.editor_state.view.ppq,
         );
+        // 圆弧模式：满 3 点后按屏幕空间采样；不足 3 点按折线预览（半成品）
+        let poly: Vec<(f64, f64)> = if self.editor_state.line_tool.arc_mode {
+            self.line_arc_points(path)
+                .map(|points| {
+                    points
+                        .into_iter()
+                        .map(|(tick, key)| (f64::from(tick), f64::from(key)))
+                        .collect()
+                })
+                .unwrap_or_else(|| geom::flatten_path(path))
+        } else {
+            geom::flatten_path(path)
+        };
         stroke_band::outline_blocks(
-            &geom::flatten_path(path),
+            &poly,
             self.draw_thickness(),
             px_per_tick,
             px_per_key,
@@ -71,7 +84,27 @@ impl Editor {
             tracing::debug!("曲线工具: Conductor 轨道禁止放置音符");
             return false;
         }
-        let line_paths = self.editor_state.line_tool.paths.clone();
+        let arc_mode = self.editor_state.line_tool.arc_mode;
+        let original_paths = self.editor_state.line_tool.paths.clone();
+        // 圆弧模式：把满 3 点的弧按屏幕空间采样成折线，走同一条
+        // `flatten→outline_notes` 链路；不足 3 点的半成品不生成音符。
+        let line_paths: Vec<Vec<BezierAnchor>> = if arc_mode {
+            original_paths
+                .iter()
+                .map(|path| {
+                    self.line_arc_points(path)
+                        .map(|points| {
+                            points
+                                .into_iter()
+                                .map(BezierAnchor::new)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        } else {
+            original_paths.clone()
+        };
         let fill_marks = self.editor_state.line_tool.fill.clone();
         // 全局绘制粗细（纵向 key 层数）+ 视图像素尺度：加粗沿线段法线做，需要 zoom
         let thickness = self.draw_thickness();
@@ -233,24 +266,36 @@ impl Editor {
         // DRAW-041B / 242C：每条路径保留只读模型；有 Fill 标记时暂不保留，
         // 因为填充音符没有可靠的 per-path 归属，避免区域编辑误删。
         if fill_marks.is_empty() && per_path_notes.len() == line_paths.len() {
+            let arc_k = self.line_arc_k() as f32;
             let models = line_paths
                 .iter()
+                .enumerate()
                 .zip(per_path_notes)
-                .filter(|(path, _)| path.len() >= 2)
-                .map(|(path, notes)| {
-                    let mut model = ShapeModel::new(0, track as u16, ShapeKind::Curve, 1.0);
+                .filter(|((_, path), _)| path.len() >= 2)
+                .map(|((index, path), notes)| {
+                    // 圆弧：落盘保留原始 3 个锚点 + 绘制时 k（跨 zoom 不重算）；
+                    // 普通曲线：沿用采样折线锚点（原行为）。
+                    let (kind, anchors, k) = match (arc_mode, original_paths.get(index)) {
+                        (true, Some(source)) if source.len() >= 3 => {
+                            (ShapeKind::Arc, source[..3].to_vec(), arc_k)
+                        }
+                        _ => (ShapeKind::Curve, path.clone(), 1.0),
+                    };
+                    let mut model = ShapeModel::new(0, track as u16, kind, k);
                     model.geometry = ShapeGeometry {
-                        anchors: path.clone(),
+                        anchors,
                         rect: None,
                         closed: false,
                     };
-                    let closed = path.first().is_some_and(|first| {
-                        path.last().is_some_and(|last| {
-                            (first.pos.0 - last.pos.0).abs() < 1e-3
-                                && (first.pos.1 - last.pos.1).abs() < 1e-3
-                        })
-                    });
-                    model.geometry.closed = closed;
+                    // 曲线闭合判定沿用原逻辑；弧是开放路径，不做闭合。
+                    if kind != ShapeKind::Arc {
+                        model.geometry.closed = path.first().is_some_and(|first| {
+                            path.last().is_some_and(|last| {
+                                (first.pos.0 - last.pos.0).abs() < 1e-3
+                                    && (first.pos.1 - last.pos.1).abs() < 1e-3
+                            })
+                        });
+                    }
                     (model, notes)
                 })
                 .collect();

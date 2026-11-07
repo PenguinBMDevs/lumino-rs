@@ -35,6 +35,8 @@ pub(crate) mod stroke_band;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_arc;
+#[cfg(test)]
 mod tests_confirm;
 #[cfg(test)]
 mod tests_fill;
@@ -64,11 +66,7 @@ pub enum LineToolHit {
 }
 
 impl Editor {
-    /// 路径按下处理
-    ///
-    /// - 存在创建中的路径（最后一条 < 2 锚点）：续完端点（吸附到周围锚点）；
-    ///   否则新建路径（保留已有路径）。
-    /// - 完整路径：按 控制柄 > 锚点 > 曲线段 > 空白 的优先级分发。
+    /// 圆弧模式按下：落一个点（a → b → c），不做命中/拖动分发
     pub(super) fn handle_line_tool_pressed(
         &mut self,
         pos: Point,
@@ -76,6 +74,38 @@ impl Editor {
         snapped_key: f32,
     ) {
         let raw = self.pos_to_line_raw(pos);
+        // 三点圆弧模式：点击依次落 a / b / c，满 3 点完成一段弧
+        if self.editor_state.line_tool.arc_mode {
+            self.push_arc_draft_point(raw, (snapped_tick, snapped_key));
+            return;
+        }
+        self.handle_line_tool_pressed_bezier(pos, raw, snapped_tick, snapped_key);
+    }
+
+    /// 圆弧模式落点：a / c 吸附（tick 网格 + 周围锚点），b 自由（经过点）
+    fn push_arc_draft_point(&mut self, raw: (f32, f32), snapped: (f32, f32)) {
+        let is_middle = self
+            .editor_state
+            .line_tool
+            .arc_draft
+            .and_then(|idx| self.editor_state.line_tool.paths.get(idx))
+            .is_some_and(|path| path.len() == 1);
+        let pos = if is_middle {
+            raw
+        } else {
+            self.snap_new_anchor(raw, &[]).unwrap_or(snapped)
+        };
+        self.editor_state.line_tool.push_arc_anchor(pos);
+    }
+
+    /// 贝塞尔路径按下处理（原逻辑；圆弧模式不走这里）
+    fn handle_line_tool_pressed_bezier(
+        &mut self,
+        pos: Point,
+        raw: (f32, f32),
+        snapped_tick: f32,
+        snapped_key: f32,
+    ) {
         // 端点设置：创建/续完路径（连续追加合并为一次撤销）
         if !self.editor_state.line_tool.is_complete()
             || self.editor_state.line_tool.creating_path().is_some()
@@ -325,6 +355,10 @@ impl Editor {
     /// 双击处理：命中锚点（含与其重合的控制柄）→ 删除中间锚点（端点不可删），
     /// 删除后记录一次历史
     pub(super) fn handle_line_tool_double_clicked(&mut self, pos: Point) {
+        // 圆弧模式只落三点，不支持双击删锚点
+        if self.editor_state.line_tool.arc_mode {
+            return;
+        }
         match self.line_tool_hit_test(pos) {
             // 命中锚点（含与其重合的控制柄）且删除成功（中间锚点）→ 记录历史
             Some(LineToolHit::Anchor { path, idx })

@@ -134,6 +134,16 @@ pub struct LineToolState {
     /// 属**模式设置**（与 `fill_division` 同级）：√ 确认 / × 取消后仍保留
     /// （`reset` 显式保留）。改档位只影响之后生成的音符，不改写已有音符。
     pub min_note_division: Option<u32>,
+    /// **三点圆弧模式**（DRAW-014）：开启后每次点击依次落下 a / b / c 三点，
+    /// 满 3 点即完成一段弧（下一次点击开始新弧）。
+    ///
+    /// 与 `fill_enabled` 同级，属**模式设置**：√ 确认 / × 取消后由 `reset` 保留；
+    /// 切到普通曲线工具（`Curve`）时由工具栏显式关闭。
+    pub arc_mode: bool,
+    /// 圆弧模式当前草稿路径索引；满 3 点后清空，避免继续往已完成弧上追加。
+    ///
+    /// 只用于圆弧落点，不参与普通曲线的锚点创建。
+    pub arc_draft: Option<usize>,
     /// 路径编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
     ///
     /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
@@ -162,6 +172,8 @@ impl Default for LineToolState {
             // 历史栈初始含空状态（撤销基准）
             path_history: vec![PathSnapshot::default()],
             path_history_index: 0,
+            arc_mode: false,
+            arc_draft: None,
         }
     }
 }
@@ -178,9 +190,12 @@ impl LineToolState {
         self.paths.iter().any(|p| !p.is_empty())
     }
 
-    /// 是否存在完整路径（>= 2 个锚点）
+    /// 是否存在完整路径
+    ///
+    /// 贝塞尔模式：>= 2 个锚点；三点圆弧模式：>= 3 个锚点（两点只是半成品弧）。
     pub fn is_complete(&self) -> bool {
-        self.paths.iter().any(|p| p.len() >= 2)
+        let need = if self.arc_mode { 3 } else { 2 };
+        self.paths.iter().any(|p| p.len() >= need)
     }
 
     /// 当前创建中的路径索引：最后一条未完整（< 2 锚点）的路径
@@ -195,6 +210,47 @@ impl LineToolState {
         };
         path.push(BezierAnchor::new(pos));
         self.recompute_auto_handles();
+    }
+
+    /// 开关三点圆弧模式（DRAW-014）
+    ///
+    /// 关闭时中断圆弧草稿（不删除已落下的点：它们仍可按普通折线确认/继续编辑）。
+    pub fn set_arc_mode(&mut self, enabled: bool) {
+        if self.arc_mode == enabled {
+            return;
+        }
+        self.arc_mode = enabled;
+        self.arc_draft = None;
+    }
+
+    /// 圆弧模式落一个点：草稿未满 3 点时追加，否则开始新弧
+    ///
+    /// 返回 `true` 表示新建了路径（调用方据此决定历史入栈方式）。
+    /// 每段弧的 3 次点击合并为**一次撤销**（更新栈顶快照）。
+    pub fn push_arc_anchor(&mut self, pos: (f32, f32)) -> bool {
+        let draft = self
+            .arc_draft
+            .filter(|&idx| self.paths.get(idx).is_some_and(|p| p.len() < 3));
+        match draft {
+            Some(idx) => {
+                if let Some(path) = self.paths.get_mut(idx) {
+                    path.push(BezierAnchor::new(pos));
+                    if path.len() >= 3 {
+                        self.arc_draft = None;
+                    }
+                    self.recompute_auto_handles();
+                }
+                // 同一段弧的连续落点合并为一条历史（撤销一次移除整段弧）
+                self.merge_top_path_history();
+                false
+            }
+            None => {
+                self.paths.push(vec![BezierAnchor::new(pos)]);
+                self.arc_draft = Some(self.paths.len() - 1);
+                self.push_path_history();
+                true
+            }
+        }
     }
 
     /// 在指定路径的段 [index-1, index] 之间插入锚点（index ∈ 1..=len），
@@ -314,6 +370,17 @@ impl LineToolState {
         }
     }
 
+    /// 合并到栈顶（先截断撤销后残留的重做分支）
+    ///
+    /// 圆弧模式一次落 3 点：第 2/3 点不新增历史条目，只把栈顶快照更新为最新状态，
+    /// 于是 Ctrl+Z 一次即可撤掉整段弧。
+    pub fn merge_top_path_history(&mut self) {
+        if self.path_history_index + 1 < self.path_history.len() {
+            self.path_history.truncate(self.path_history_index + 1);
+        }
+        self.update_top_path_history();
+    }
+
     /// 撤销一次路径编辑；无可撤销返回 false
     pub fn undo_path(&mut self) -> bool {
         if self.path_history_index == 0 {
@@ -323,6 +390,8 @@ impl LineToolState {
         let snap = &self.path_history[self.path_history_index];
         self.paths = snap.paths.clone();
         self.fill = snap.fill.clone();
+        // 撤销会重建路径列表，草稿索引不再可信
+        self.arc_draft = None;
         true
     }
 
@@ -355,9 +424,12 @@ impl LineToolState {
     pub fn reset(&mut self) {
         let fill_division = self.fill_division;
         let min_note_division = self.min_note_division;
+        let arc_mode = self.arc_mode;
         *self = Self::default();
         self.fill_division = fill_division;
         self.min_note_division = min_note_division;
+        // 圆弧模式是工具模式设置：√ 确认 / × 取消后保持，避免用户每次重开
+        self.arc_mode = arc_mode;
     }
 
     /// 仅收敛**未完成的交互手势**（拖动锚点 / 控制柄 / 整条路径），保留路径、填充标记与路径历史

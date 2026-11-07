@@ -19,6 +19,7 @@ impl ToolbarHandler {
     pub(crate) fn sync_toolbar_tool_state(&self, root: &mut Root, event: &crate::toolbar::Event) {
         if let crate::toolbar::Event::ToolSelected(tool) = event {
             root.editor.set_tool(*tool);
+            root.editor.set_line_arc_mode(false);
         }
         // 面板内选择工具：把工具栏已更新的 current_tool / fill_enabled 镜像到编辑器。
         // 注意：`view_arrangement` 每帧会用 `editor.current_tool()` 反向覆盖
@@ -28,6 +29,7 @@ impl ToolbarHandler {
             crate::toolbar::Event::ToolPanelItemSelected(_) => {
                 root.editor.set_tool(root.toolbar.current_tool);
                 root.editor.set_fill_enabled(root.toolbar.fill_enabled);
+                root.editor.set_line_arc_mode(root.toolbar.arc_mode);
             }
             // 再次点击已启用条目：先镜像「选择」结果，再落下该工具的设置副作用。
             crate::toolbar::Event::ToolPanelItemSettingsRequested(item) => match item {
@@ -41,6 +43,7 @@ impl ToolbarHandler {
                     // 画刷 / 形状等：镜像工具与填充状态；设置下拉的开关由工具栏侧处理。
                     root.editor.set_tool(root.toolbar.current_tool);
                     root.editor.set_fill_enabled(root.toolbar.fill_enabled);
+                    root.editor.set_line_arc_mode(root.toolbar.arc_mode);
                 }
             },
             _ => {}

@@ -215,8 +215,10 @@ pub enum ShapeType {
 pub enum ToolPanelItem {
     /// 鼠标工具（图形选中）：点选已确认的绘制图形，选中的图形高亮描边
     Mouse,
-    /// 曲线工具
+    /// 曲线工具（贝塞尔）
     Curve,
+    /// 三点圆弧工具（DRAW-014）：复用曲线工具的画布与确认链路，按 3 点定圆
+    Arc,
     /// 填充桶
     FillBucket,
     /// 画刷工具

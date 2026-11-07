@@ -35,6 +35,7 @@ impl Toolbar {
             brush: BrushConfig::new(),
             thickness_panel_open: false,
             fill_enabled: false,
+            arc_mode: false,
             shape_dropdown_open: false,
             current_shape: ShapeType::default(),
             text_params_open: false,
@@ -136,6 +137,8 @@ impl Toolbar {
                 self.current_tool = tool;
                 // 切换工具即离开任何共存态：填充桶仅曲线/形状可共存，切到其它工具一律关闭
                 self.fill_enabled = false;
+                // 三点圆弧属于曲线工具的落点模式：任何显式工具切换都退出
+                self.arc_mode = false;
                 // 关闭附着于工具栏的下拉（画刷/形状），避免工具切换后残留；
                 // 但**不关闭**音符绘制悬浮工具条——它是独立常驻浮层，与工具切换无关。
                 self.brush_dropdown_open = false;
@@ -143,6 +146,10 @@ impl Toolbar {
             }
             Event::FillToggled(enabled) => {
                 self.fill_enabled = enabled;
+                if enabled {
+                    // 填充与三点圆弧落点互斥：开启填充即退出圆弧模式
+                    self.arc_mode = false;
+                }
                 tracing::debug!("工具栏: 颜料桶填充模式切换为 {}", enabled);
             }
             Event::Quantize => {
@@ -534,6 +541,8 @@ impl Toolbar {
     /// `ToolPanelItemSettingsRequested`（已启用条目再次点击：选择 + 打开设置）复用，
     /// 避免两处选择逻辑漂移。
     fn apply_tool_panel_item(&mut self, item: ToolPanelItem) {
+        // 除「圆弧」外，任何工具条目选择都退出三点圆弧模式
+        self.arc_mode = item == ToolPanelItem::Arc;
         match item {
             ToolPanelItem::Mouse => {
                 // 鼠标工具（图形选中）：独立工具，不与填充桶共存；
@@ -544,6 +553,11 @@ impl Toolbar {
             ToolPanelItem::Curve => {
                 // 曲线工具：独立基础工具，选中后关闭填充共存态
                 // （填充由「填充桶」条目单独开启）
+                self.current_tool = Tool::Curve;
+                self.fill_enabled = false;
+            }
+            ToolPanelItem::Arc => {
+                // 三点圆弧：复用曲线工具的画布与确认链路，仅落点语义不同
                 self.current_tool = Tool::Curve;
                 self.fill_enabled = false;
             }

@@ -115,7 +115,13 @@ impl Root {
                 ToolPanelItem::Curve,
                 icon::Curve,
                 lumino_ui_core::help::tool_tip(Tool::Curve, language).unwrap_or(t.tool_curve),
-                cur == Tool::Curve,
+                cur == Tool::Curve && !self.toolbar.arc_mode,
+            ),
+            (
+                ToolPanelItem::Arc,
+                icon::ArcTool,
+                lumino_core::tr!("三点圆弧"),
+                cur == Tool::Curve && self.toolbar.arc_mode,
             ),
             (
                 ToolPanelItem::FillBucket,
@@ -698,9 +704,9 @@ mod tests {
     }
 
     /// 条目行内的固定槽位数（也是 `find_row` 的定位依据）：
-    /// `0` = 拖拽柄、`1` = 分隔线、`2..=7` = 6 个绘制工具、`8` = 分隔线、
-    /// `9` = 右端设置区的「粗细」按钮、`10` = 右端设置区的「设置」按钮（齿轮）。
-    const ROW_SLOTS: usize = 2 + 6 + 3;
+    /// `0` = 拖拽柄、`1` = 分隔线、`2..=8` = 7 个绘制工具、`9` = 分隔线、
+    /// `10` = 右端设置区的「粗细」按钮、`11` = 右端设置区的「设置」按钮（齿轮）。
+    const ROW_SLOTS: usize = 2 + 7 + 3;
     /// 右端设置区的「粗细」按钮（齿轮左侧）在条目行内的槽位号。
     const THICKNESS_SLOT: usize = ROW_SLOTS - 2;
     /// 右端设置区的「设置」按钮（齿轮）在条目行内的槽位号。
@@ -725,14 +731,14 @@ mod tests {
 
         // 三个有窗口内设置的入口各验一次：面板必须居中于**各自**的按钮（而非某个固定位置）。
         // 槽位号见上方 `ROW_SLOTS` 注释；
-        // items 顺序：Mouse(0) Curve(1) FillBucket(2) Brush(3) Shape(4) Text(5)
-        check_panel_center(&renderer, 2 + 3, "画刷", |root| {
+        // items 顺序：Mouse(0) Curve(1) Arc(2) FillBucket(3) Brush(4) Shape(5) Text(6)
+        check_panel_center(&renderer, 2 + 4, "画刷", |root| {
             root.toolbar.brush_dropdown_open = true;
         });
-        check_panel_center(&renderer, 2 + 4, "形状", |root| {
+        check_panel_center(&renderer, 2 + 5, "形状", |root| {
             root.toolbar.shape_dropdown_open = true;
         });
-        check_panel_center(&renderer, 2 + 2, "颜料桶", |root| {
+        check_panel_center(&renderer, 2 + 3, "颜料桶", |root| {
             root.state.fill_division_dialog.is_open = true;
         });
     }
@@ -754,9 +760,9 @@ mod tests {
         Some(row.children().map(|child| child.bounds()).collect())
     }
 
-    /// 6 个绘制工具按钮（槽位 `2..=7`）的右缘最大值 = **工具图标区**的右边界。
+    /// 7 个绘制工具按钮（槽位 `2..=8`）的右缘最大值 = **工具图标区**的右边界。
     fn tool_slots_max_right(slots: &[Rectangle]) -> f32 {
-        (2..2 + 6)
+        (2..2 + 7)
             .filter_map(|i| slots.get(i))
             .map(|r| r.x + r.width)
             .fold(f32::MIN, f32::max)

@@ -25,6 +25,8 @@ impl Editor {
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;
+            // 三点圆弧是曲线工具的落点模式：离开曲线工具即退出
+            self.editor_state.line_tool.set_arc_mode(false);
         }
         // 形状工具：离开时关闭其填充桶（避免遗留影响其他工具）
         if tool != Tool::Shape {
@@ -67,6 +69,16 @@ impl Editor {
     /// 颜料桶填充模式是否开启
     pub fn fill_enabled(&self) -> bool {
         self.editor_state.line_tool.fill_enabled
+    }
+
+    /// 开关三点圆弧模式（DRAW-014，由悬浮工具条「圆弧」条目同步）
+    pub fn set_line_arc_mode(&mut self, enabled: bool) {
+        self.editor_state.line_tool.set_arc_mode(enabled);
+    }
+
+    /// 三点圆弧模式是否开启
+    pub fn line_arc_mode(&self) -> bool {
+        self.editor_state.line_tool.arc_mode
     }
 
     /// **全局绘制粗细**（层数，1-100；1 层 = 单 key 高的像素宽度）

@@ -106,6 +106,30 @@ pub(crate) fn flatten_path(path: &[BezierAnchor]) -> Vec<(f64, f64)> {
     out
 }
 
+/// 圆弧模式：三点锚点（tick, key）→ 屏幕空间采样折线（tick, key）
+///
+/// `k` = 绘制时的 beats per key（`x = beats / k`）。不足 3 点或 `k`/`ppq`
+/// 非法时返回 `None`，调用方回退为折线预览。退化三点（共线 / 重合）由
+/// `arc_points_scaled` 返回折线点，不会 panic。
+pub(crate) fn flatten_arc_path(path: &[BezierAnchor], k: f64, ppq: f64) -> Option<Vec<(f32, f32)>> {
+    if path.len() < 3 || !k.is_finite() || k <= 0.0 || !ppq.is_finite() || ppq <= 0.0 {
+        return None;
+    }
+    let to_arc = |a: &BezierAnchor| (f64::from(a.pos.0) / ppq, f64::from(a.pos.1));
+    let points = lumino_editor_state::shape_ops::arc_points_scaled(
+        to_arc(&path[0]),
+        to_arc(&path[1]),
+        to_arc(&path[2]),
+        k,
+    );
+    Some(
+        points
+            .into_iter()
+            .map(|(beat, key)| ((beat * ppq) as f32, key as f32))
+            .collect(),
+    )
+}
+
 /// 三次贝塞尔曲线点（f64，展平专用）
 fn bezier_point64(
     a: (f64, f64),
@@ -163,11 +187,39 @@ fn control_slope(a: (f64, f64), cp1: (f64, f64), cp2: (f64, f64), b: (f64, f64))
     }
 }
 
+impl crate::Editor {
+    /// 圆弧模式的 `k`（beats per key）：屏幕空间 1 key 宽 / 1 拍宽
+    ///
+    /// `zoom_x` 是 px/tick、`zoom_y` 是 px/key ⇒ `k = (px/key) / (px/tick · ppq)`。
+    /// 与 `shape_drawer::fit::arc_k_for_rect` 同一口径；跨 zoom 不重算，随 `ShapeModel.k` 落盘。
+    pub(crate) fn line_arc_k(&self) -> f64 {
+        let ppq = f64::from(self.editor_state.view.ppq);
+        let px_per_beat = f64::from(self.editor_state.view.zoom_x) * ppq;
+        let px_per_key = f64::from(self.editor_state.view.zoom_y);
+        if ppq > 0.0 && px_per_beat > 0.0 && px_per_key > 0.0 {
+            px_per_key / px_per_beat
+        } else {
+            1.0
+        }
+    }
+
+    /// 圆弧模式：三点锚点 → 采样折线（tick, key）；不足 3 点返回 `None`
+    ///
+    /// 与 `shape_notes_of` 的 `ShapeKind::Arc` 生成路径同源：
+    /// 两者都先换算到 `(beats, keys)` 屏幕空间，再调 `arc_points_scaled`。
+    pub(crate) fn line_arc_points(&self, path: &[BezierAnchor]) -> Option<Vec<(f32, f32)>> {
+        flatten_arc_path(
+            path,
+            self.line_arc_k(),
+            f64::from(self.editor_state.view.ppq),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lumino_editor_state::{AnchorBend, BezierAnchor};
-
     #[test]
     fn test_flatten_straight_is_two_points() {
         // 自动柄 = 精确直线 → 只取两端点（不做任何按精度的格点采样）

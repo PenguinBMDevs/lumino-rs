@@ -69,6 +69,10 @@ pub fn line_bend_button_rects(editor: &Editor) -> Option<LineBendRects> {
     if editor.current_tool() != Tool::Curve {
         return None;
     }
+    // 圆弧模式只落三点，不做锚点弯折编辑（与命中分发一致）
+    if editor.editor_state.line_tool.arc_mode {
+        return None;
+    }
     let (path_idx, anchor_idx) = editor.editor_state.line_tool.selected_anchor()?;
     let path = editor.editor_state.line_tool.paths.get(path_idx)?;
     if anchor_idx == 0 || anchor_idx + 1 >= path.len() {
@@ -104,21 +108,34 @@ pub fn line_bend_button_rects(editor: &Editor) -> Option<LineBendRects> {
 }
 
 /// 全部路径锚点的屏幕包围盒 (min_x, max_x, min_y, max_y)
+///
+/// 圆弧模式下用采样点而非仅 3 个锚点：圆心在锚点之外，弧鼓出去的部分
+/// 也要进包围盒，否则 √× 按钮会压在弧上。
 fn paths_bounds(editor: &Editor) -> Option<(f32, f32, f32, f32)> {
     let paths = &editor.editor_state.line_tool.paths;
     let mut bounds: Option<(f32, f32, f32, f32)> = None;
+    let mut extend = |p: Point| {
+        bounds = Some(match bounds {
+            None => (p.x, p.x, p.y, p.y),
+            Some((min_x, max_x, min_y, max_y)) => (
+                min_x.min(p.x),
+                max_x.max(p.x),
+                min_y.min(p.y),
+                max_y.max(p.y),
+            ),
+        });
+    };
     for path in paths {
+        if editor.editor_state.line_tool.arc_mode
+            && let Some(points) = editor.line_arc_points(path)
+        {
+            for (tick, key) in points {
+                extend(editor.line_pos_screen_pos((tick, key)));
+            }
+            continue;
+        }
         for anchor in path {
-            let p = editor.line_pos_screen_pos(anchor.pos);
-            bounds = Some(match bounds {
-                None => (p.x, p.x, p.y, p.y),
-                Some((min_x, max_x, min_y, max_y)) => (
-                    min_x.min(p.x),
-                    max_x.max(p.x),
-                    min_y.min(p.y),
-                    max_y.max(p.y),
-                ),
-            });
+            extend(editor.line_pos_screen_pos(anchor.pos));
         }
     }
     bounds
@@ -201,8 +218,27 @@ pub fn draw(
     let white = iced_core::Color::WHITE;
 
     for (pi, path) in line.paths.iter().enumerate() {
-        // 曲线段（贝塞尔；控制柄与锚点重合时退化为直线）：固定宽度的**引导线**
-        if path.len() >= 2 {
+        // 曲线段：普通模式画贝塞尔引导线；圆弧模式画采样折线（与 √ 产物同源）
+        let arc_points = if line.arc_mode {
+            editor.line_arc_points(path)
+        } else {
+            None
+        };
+        if let Some(points) = &arc_points {
+            for pair in points.windows(2) {
+                let pa = editor.line_pos_screen_pos(pair[0]);
+                let pb = editor.line_pos_screen_pos(pair[1]);
+                let curve = Path::new(|p| {
+                    p.move_to(pa);
+                    p.line_to(pb);
+                });
+                let stroke = Stroke::default()
+                    .with_width(OUTLINE_GUIDE_WIDTH)
+                    .with_color(anchor_color);
+                frame.stroke(&curve, stroke);
+                has_content = true;
+            }
+        } else if path.len() >= 2 {
             for pair in path.windows(2) {
                 let (a, b) = (pair[0], pair[1]);
                 let pa = editor.line_pos_screen_pos(a.pos);
@@ -241,34 +277,36 @@ pub fn draw(
         // 控制柄 / 锚点只在曲线工具下可交互；ShapeSelect 只负责组合后的 020 手柄。
         // 否则用户会把待确认曲线的锚点当成可选对象，点下去却触发整条曲线的框选拖动。
         if editor.current_tool() == Tool::Curve {
-            // 控制柄（辅助线 + 方块，常驻显示）
-            for (ai, anchor) in path.iter().enumerate() {
-                let ap = editor.line_pos_screen_pos(anchor.pos);
-                for side in line.visible_handle_sides(pi, ai) {
-                    let h_abs = match side {
-                        lumino_editor_state::HandleSide::In => anchor.in_handle_abs(),
-                        lumino_editor_state::HandleSide::Out => anchor.out_handle_abs(),
-                    };
-                    let hp = editor.line_pos_screen_pos(h_abs);
-                    // 锚点 → 控制柄辅助线
-                    let handle_connector = Path::new(|p| {
-                        p.move_to(ap);
-                        p.line_to(hp);
-                    });
-                    let connector_stroke = Stroke::default()
-                        .with_width(HANDLE_LINE_WIDTH)
-                        .with_color(handle_line_color);
-                    frame.stroke(&handle_connector, connector_stroke);
-                    // 控制柄方块
-                    let rect = Rectangle::new(
-                        Point::new(hp.x - HANDLE_SIZE * 0.5, hp.y - HANDLE_SIZE * 0.5),
-                        Size::new(HANDLE_SIZE, HANDLE_SIZE),
-                    );
-                    let path = Path::rectangle(rect.position(), rect.size());
-                    frame.fill(&path, anchor_color);
-                    let ring = Stroke::default().with_width(1.0).with_color(white);
-                    frame.stroke(&path, ring);
-                    has_content = true;
+            // 控制柄（辅助线 + 方块，常驻显示）；圆弧模式没有可拖控制柄
+            if !line.arc_mode {
+                for (ai, anchor) in path.iter().enumerate() {
+                    let ap = editor.line_pos_screen_pos(anchor.pos);
+                    for side in line.visible_handle_sides(pi, ai) {
+                        let h_abs = match side {
+                            lumino_editor_state::HandleSide::In => anchor.in_handle_abs(),
+                            lumino_editor_state::HandleSide::Out => anchor.out_handle_abs(),
+                        };
+                        let hp = editor.line_pos_screen_pos(h_abs);
+                        // 锚点 → 控制柄辅助线
+                        let handle_connector = Path::new(|p| {
+                            p.move_to(ap);
+                            p.line_to(hp);
+                        });
+                        let connector_stroke = Stroke::default()
+                            .with_width(HANDLE_LINE_WIDTH)
+                            .with_color(handle_line_color);
+                        frame.stroke(&handle_connector, connector_stroke);
+                        // 控制柄方块
+                        let rect = Rectangle::new(
+                            Point::new(hp.x - HANDLE_SIZE * 0.5, hp.y - HANDLE_SIZE * 0.5),
+                            Size::new(HANDLE_SIZE, HANDLE_SIZE),
+                        );
+                        let path = Path::rectangle(rect.position(), rect.size());
+                        frame.fill(&path, anchor_color);
+                        let ring = Stroke::default().with_width(1.0).with_color(white);
+                        frame.stroke(&path, ring);
+                        has_content = true;
+                    }
                 }
             }
 

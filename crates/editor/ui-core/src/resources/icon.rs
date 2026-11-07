@@ -87,6 +87,8 @@ define_icons! {
     (Pencil, "../../../../../resources/icons/toolbar/note-draw-tool.svg"),
     (Eraser, "../../../../../resources/icons/toolbar/eraser-tool.svg"),
     (Curve, "../../../../../resources/icons/toolbar/curve-tool.svg"),
+    // 三点圆弧工具（DRAW-014）
+    (ArcTool, "../../../../../resources/icons/toolbar/arc-tool.svg"),
     (PaintBucket, "../../../../../resources/icons/toolbar/paint-bucket.svg"),
     // 「音符画工具箱」入口图标（工具栏开关按钮，固定不随激活工具切换）
     (DrawToolbox, "../../../../../resources/icons/toolbar/draw-toolbox.svg"),

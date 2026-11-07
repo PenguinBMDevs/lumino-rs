@@ -137,6 +137,8 @@ pub struct Toolbar {
     pub thickness_panel_open: bool,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
+    /// 三点圆弧模式（DRAW-014）：与 `fill_enabled` 同级，选中「圆弧」条目时为 true
+    pub arc_mode: bool,
     /// 形状工具下拉是否打开（悬浮条「形状」条目再次点击触发，菜单选择矩形/圆形/三角形）
     pub shape_dropdown_open: bool,
     /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存

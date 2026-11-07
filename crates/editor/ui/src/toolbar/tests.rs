@@ -514,3 +514,26 @@ fn test_thickness_panel_exclusive_and_closed_by_external_actions() {
         "齿轮请求照旧按'外部一动作即收起'处理（新面板不享受例外）"
     );
 }
+
+/// 「圆弧」条目：复用曲线工具，但把落点模式切到三点圆弧（DRAW-014）
+#[test]
+fn test_arc_item_selects_curve_and_toggles_arc_mode() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+
+    toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Arc));
+    assert_eq!(toolbar.current_tool, Tool::Curve, "圆弧复用曲线工具");
+    assert!(toolbar.arc_mode, "圆弧条目应开启三点圆弧模式");
+    assert!(!toolbar.fill_enabled, "圆弧与填充互斥");
+
+    // 再点曲线条目：退出圆弧模式
+    toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Curve));
+    assert_eq!(toolbar.current_tool, Tool::Curve);
+    assert!(!toolbar.arc_mode, "切回曲线应关闭圆弧模式");
+
+    // 任何显式工具切换也退出圆弧
+    toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Arc));
+    assert!(toolbar.arc_mode);
+    toolbar.update(Event::ToolSelected(Tool::Pencil));
+    assert!(!toolbar.arc_mode, "ToolSelected 应关闭圆弧模式");
+}

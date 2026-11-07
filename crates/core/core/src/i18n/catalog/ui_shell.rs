@@ -276,6 +276,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "实体化失败：遮罩没有可见片段或目标已失效" => {
             Some("Bake mask failed: no visible pieces or the target is no longer available")
         }
+        // DRAW-014：三点圆弧工具
+        "三点圆弧" => Some("Arc Tool (3 points)"),
         _ => None,
     }
 }

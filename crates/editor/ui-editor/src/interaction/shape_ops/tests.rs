@@ -364,6 +364,38 @@ fn test_arc_shape_uses_three_point_circle() {
     assert!(hi >= 66, "弧应经过中间点 key=66，实际最高 {hi}");
 }
 
+/// DRAW-014：生成结果与「先按屏幕空间求弧再映射」的参考实现逐音符一致。
+///
+/// 参考实现独立走一遍 `(tick,key) → (beats,key) → arc_points_scaled → tick`
+/// 的映射，再喂给同一条描边链路；若 `shape_notes_of` 误把弧当成折线
+/// （例如直接 `flatten_path(anchors)`），逐音符比对会立刻失败。
+#[test]
+fn test_arc_notes_match_screen_space_reference() {
+    let editor = editor_with_track(1);
+    let model = arc_shape(66.0);
+    let notes = editor.shape_notes_of(&model, 1);
+
+    let ppq = f64::from(editor.editor_state.view.ppq);
+    let to_beat = |tick: f32, key: f32| (f64::from(tick) / ppq, f64::from(key));
+    let reference: Vec<(f64, f64)> = lumino_editor_state::shape_ops::arc_points_scaled(
+        to_beat(0.0, 60.0),
+        to_beat(240.0, 66.0),
+        to_beat(480.0, 60.0),
+        lumino_editor_state::shape_ops::arc_k_or_one(f64::from(model.k)),
+    )
+    .into_iter()
+    .map(|(beat, key)| (beat * ppq, key))
+    .collect();
+
+    let key_count = editor.editor_state.view.key_count as i32;
+    let min_ticks = crate::interaction::line_tool::paths::min_note_length_ticks(
+        editor.editor_state.line_tool.min_note_division,
+        editor.editor_state.view.ppq,
+    );
+    let expected = editor.shape_outline_notes(&reference, 1, key_count, min_ticks, false, &model);
+    assert_eq!(notes, expected, "Arc 生成必须与屏幕空间参考逐音符一致");
+}
+
 #[test]
 fn test_collinear_arc_falls_back_to_polyline() {
     let editor = editor_with_track(1);
