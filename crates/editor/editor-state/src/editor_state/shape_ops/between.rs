@@ -217,7 +217,52 @@ pub fn fingerprint(shape: &ShapeModel) -> u64 {
         mix(&mut hash, anchor.out_handle.0.to_bits() as u64);
         mix(&mut hash, anchor.out_handle.1.to_bits() as u64);
     }
+    // Step 上的 Tumours / Pattern 也是“手改”的一部分；Between 标记本身不参与指纹。
+    for op in &shape.ops {
+        match op {
+            ShapeOp::Tumours(params) => {
+                mix(&mut hash, 0x10);
+                mix(&mut hash, u64::from(params.on));
+                mix(&mut hash, params.shape as u64);
+                mix(&mut hash, params.side as u64);
+                mix(&mut hash, params.wrap as u64);
+                mix(&mut hash, params.size.to_bits() as u64);
+                mix(&mut hash, params.length.to_bits() as u64);
+                mix(&mut hash, params.dist.to_bits() as u64);
+                mix(&mut hash, params.start.to_bits() as u64);
+                mix(&mut hash, params.end.to_bits() as u64);
+                mix(&mut hash, params.ease.to_bits() as u64);
+                mix(&mut hash, params.rot.to_bits() as u64);
+                mix(&mut hash, params.slant.to_bits() as u64);
+                mix(&mut hash, params.k.to_bits() as u64);
+                mix(&mut hash, u64::from(params.fit));
+                mix(&mut hash, u64::from(params.seed));
+                mix(&mut hash, u64::from(params.mirror));
+            }
+            ShapeOp::Pattern(params) => {
+                mix(&mut hash, 0x20);
+                mix(&mut hash, params.loops.to_bits() as u64);
+                mix(&mut hash, params.scale.to_bits() as u64);
+                mix(&mut hash, params.k.to_bits() as u64);
+                mix_str(&mut hash, &params.preset);
+                mix_str(&mut hash, &params.formula);
+                for (key, value) in &params.vars {
+                    mix_str(&mut hash, key);
+                    mix(&mut hash, value.to_bits());
+                }
+            }
+            ShapeOp::Between(_) => {}
+            _ => {}
+        }
+    }
     hash
+}
+
+fn mix_str(hash: &mut u64, value: &str) {
+    mix(hash, value.len() as u64);
+    for byte in value.bytes() {
+        mix(hash, u64::from(byte));
+    }
 }
 
 /// Step 是否被手改（指纹不匹配）

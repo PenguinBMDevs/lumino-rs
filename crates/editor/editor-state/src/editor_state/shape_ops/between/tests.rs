@@ -319,6 +319,34 @@ fn test_sync_fades_one_sided_pattern_at_middle() {
 }
 
 #[test]
+fn test_fingerprint_detects_tumour_and_pattern_edits() {
+    for op in [
+        ShapeOp::Tumours(TumourParams::default()),
+        ShapeOp::Pattern(PatternParams::default()),
+    ] {
+        let mut step = line(1);
+        step.ops.push(op);
+        let sig = fingerprint(&step);
+        step.ops.push(ShapeOp::Between(params(
+            7,
+            BetweenRole::Step,
+            Some(0.5),
+            None,
+        )));
+        if let Some(ShapeOp::Between(between)) = step.ops.last_mut() {
+            between.sig = Some(sig);
+        }
+        assert!(!is_modified(&step), "生成时的指纹应匹配");
+        match step.ops.first_mut() {
+            Some(ShapeOp::Tumours(tumour)) => tumour.size += 1.0,
+            Some(ShapeOp::Pattern(pattern)) => pattern.scale += 1.0,
+            _ => unreachable!(),
+        }
+        assert!(is_modified(&step), "手改 Tumours/Pattern 参数应降级为 Key");
+    }
+}
+
+#[test]
 fn test_sync_clamps_steps_to_most_steps() {
     let mut first = line(1);
     first.ops.push(ShapeOp::Between(params(
