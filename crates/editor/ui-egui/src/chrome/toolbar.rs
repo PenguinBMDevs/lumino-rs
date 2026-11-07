@@ -9,15 +9,22 @@
 mod tools;
 
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, Sense, Stroke, Vec2};
+use lumino_core::Tool;
+use lumino_core::storage::config::AutoScrollMode;
 
-use super::ChromeState;
+use super::{ChromeState, ToolbarModel};
 use crate::icons::Icon;
 use crate::layout;
 use crate::theme;
 use crate::widgets;
 
-/// 渲染工具栏。
+/// 草稿场景入口：使用默认状态（与 iced 基线一致）。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
+    show_model(ui, &ToolbarModel::default(), &mut state.icons);
+}
+
+/// 渲染工具栏。
+pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::icons::IconCache) {
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0, theme::PANEL_BG);
 
@@ -30,7 +37,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     group(
         ui,
         Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::RECORD_GROUP_W, h)),
-        record,
+        |ui| record(ui, model.recording),
     );
     x += layout::RECORD_GROUP_W + 4.0;
 
@@ -38,7 +45,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     group(
         ui,
         Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::PLAYBACK_GROUP_W, h)),
-        |ui| playback(ui, &mut state.icons),
+        |ui| playback(ui, icons, model.playing),
     );
     x += layout::PLAYBACK_GROUP_W + 8.0;
 
@@ -48,10 +55,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
         Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::LOOP_GROUP_W, h)),
         |ui| {
             ui.add_space((layout::LOOP_GROUP_W - layout::TOOL_BUTTON_W) / 2.0);
+            let icon = if model.looping {
+                Icon::ArrowsLeftRight
+            } else {
+                Icon::Ban
+            };
             widgets::icon_button(
                 ui,
-                &mut state.icons,
-                Icon::Ban,
+                icons,
+                icon,
                 layout::TOOL_BUTTON_ICON,
                 Vec2::splat(layout::TOOL_BUTTON_W),
                 false,
@@ -70,7 +82,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
             for icon in [Icon::Undo, Icon::Redo, Icon::Clock] {
                 widgets::icon_button(
                     ui,
-                    &mut state.icons,
+                    icons,
                     icon,
                     layout::TOOL_BUTTON_ICON,
                     Vec2::splat(layout::TOOL_BUTTON_W),
@@ -85,7 +97,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     group(
         ui,
         Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::DASHBOARD_GROUP_W, h)),
-        dashboard,
+        |ui| dashboard(ui, model),
     );
     x += layout::DASHBOARD_GROUP_W + 16.0;
 
@@ -93,14 +105,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     group(
         ui,
         Rect::from_min_size(egui::pos2(x, y), Vec2::new(tools::width(ui), h)),
-        |ui| tools::show(ui, &mut state.icons),
+        |ui| tools::show(ui, icons, model),
     );
 
-    right_side(ui, content, state);
+    right_side(ui, content, icons, model);
 }
 
 /// 右侧显示开关：OnionSkin(+caret) / AutoScroll / More。
-fn right_side(ui: &mut egui::Ui, content: Rect, state: &mut ChromeState) {
+fn right_side(
+    ui: &mut egui::Ui,
+    content: Rect,
+    icons: &mut crate::icons::IconCache,
+    model: &ToolbarModel,
+) {
     let more_right = content.right() - layout::TOOLBAR_PAD_X;
     let more = Rect::from_min_size(
         egui::pos2(more_right - layout::MORE_BUTTON_W, content.top() + 19.0),
@@ -125,31 +142,20 @@ fn right_side(ui: &mut egui::Ui, content: Rect, state: &mut ChromeState) {
         Vec2::splat(layout::RIGHT_TOOL_W),
     );
 
-    icon_at(
-        ui,
-        &mut state.icons,
-        Icon::OnionSkin,
-        onion_rect,
-        20.0,
-        false,
-    );
-    icon_at(
-        ui,
-        &mut state.icons,
-        Icon::CaretDown,
-        caret_rect,
-        12.0,
-        false,
-    );
-    icon_at(ui, &mut state.icons, Icon::Scroll, scroll_rect, 20.0, false);
-    icon_at(
-        ui,
-        &mut state.icons,
-        Icon::EllipsisVertical,
-        more,
-        18.0,
-        false,
-    );
+    // 洋葱皮开启：`background.strong` 底色（与工具选中态同源）。
+    if model.onion {
+        ui.painter()
+            .rect_filled(onion_rect, CornerRadius::same(4), theme::SELECTED_BG);
+    }
+    icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
+    icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
+    let scroll_icon = match model.auto_scroll {
+        AutoScrollMode::FixedIndicatorLeft => Icon::ArrowsLeftRight,
+        AutoScrollMode::ScrollingIndicator => Icon::Scroll,
+        AutoScrollMode::Off => Icon::Ban,
+    };
+    icon_at(ui, icons, scroll_icon, scroll_rect, 20.0, false);
+    icon_at(ui, icons, Icon::EllipsisVertical, more, 18.0, false);
 }
 
 /// 分组容器：先铺底色，再在其中布局。
@@ -168,19 +174,21 @@ fn group<R>(ui: &mut egui::Ui, rect: Rect, add: impl FnOnce(&mut egui::Ui) -> R)
     add(&mut child)
 }
 
-fn record(ui: &mut egui::Ui) {
+fn record(ui: &mut egui::Ui, recording: bool) {
     let rect = ui.max_rect();
     let (_, response) = ui.allocate_exact_size(rect.size(), Sense::click());
     let _ = response;
-    // iced 录制红点直径 8（基线实测 8×7）。
+    // iced 录制红点直径 8（基线实测 8×7）；录制中保持红点（图标语义由状态栏承担）。
+    let _ = recording;
     ui.painter()
         .circle_filled(rect.center(), 4.0, theme::RECORD_RED);
 }
 
-fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache) {
+fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, playing: bool) {
     let total = layout::TOOL_BUTTON_W * 3.0 + 8.0;
     ui.add_space((layout::PLAYBACK_GROUP_W - total) / 2.0);
-    for (index, icon) in [Icon::SkipBackward, Icon::Play, Icon::SkipForward]
+    let center_icon = if playing { Icon::Pause } else { Icon::Play };
+    for (index, icon) in [Icon::SkipBackward, center_icon, Icon::SkipForward]
         .into_iter()
         .enumerate()
     {
@@ -198,7 +206,7 @@ fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache) {
     }
 }
 
-fn dashboard(ui: &mut egui::Ui) {
+fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
     let rect = ui.max_rect();
     let split = rect.left() + layout::DASHBOARD_CELL_W;
     ui.painter().rect_filled(
@@ -213,14 +221,14 @@ fn dashboard(ui: &mut egui::Ui) {
     metric(
         ui,
         Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
-        "120.0",
-        "PPQ 1920",
+        &model.bpm,
+        &model.ppq,
     );
     metric(
         ui,
         Rect::from_min_max(egui::pos2(split, rect.top()), rect.max),
-        "1.1",
-        "00:00.00",
+        &model.position,
+        &model.time,
     );
 }
 
@@ -265,4 +273,12 @@ fn icon_at(
         egui::Button::image(image).frame(false)
     };
     child.add(button);
+}
+
+/// 当前工具是否对应工具区里的第 N 个选择器（0..=3）。
+pub(super) fn tool_selected(model: &ToolbarModel, index: usize) -> bool {
+    matches!(
+        (index, model.tool),
+        (0, Tool::Pointer) | (1, Tool::PointerYSelect) | (2, Tool::Pencil) | (3, Tool::Eraser)
+    )
 }

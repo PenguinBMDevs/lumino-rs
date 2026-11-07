@@ -18,7 +18,7 @@
 use iced_core::Alignment;
 use iced_widget::{button, column, container, row, space, text, text_input};
 
-use crate::toolbar::{Event, Toolbar};
+use crate::toolbar::{Event, Toolbar, ToolbarPerfContext};
 use crate::{Element, Theme};
 use lumino_note_core::midi_types::TempoPoint;
 
@@ -257,4 +257,55 @@ fn format_position(tick: f32, ppq: u16) -> String {
     let bar = (tick / ticks_per_bar).floor().max(0.0) as u32 + 1;
     let beat = (((tick % ticks_per_bar) / ppq).floor()).max(0.0) as u32 + 1;
     format!("{bar}.{beat}")
+}
+
+/// egui 工具栏快照：只读文本 + 状态位，供 `lumino-ui-egui` 渲染。
+#[derive(Debug, Clone)]
+pub(crate) struct ToolbarSnapshot {
+    /// BPM 文本（1 位小数）。
+    pub bpm: String,
+    /// PPQ 文本（`PPQ {ppq}`）。
+    pub ppq: String,
+    /// 播放位置「小节.拍」。
+    pub position: String,
+    /// 播放时间 `mm:ss.cs`。
+    pub time: String,
+    /// 吸附规格文本。
+    pub snap: String,
+    /// 当前工具。
+    pub tool: lumino_core::Tool,
+    /// 绘制工具面板是否打开。
+    pub draw_panel_open: bool,
+    /// 是否正在播放。
+    pub playing: bool,
+    /// 是否循环播放。
+    pub looping: bool,
+    /// 是否正在录制。
+    pub recording: bool,
+    /// 洋葱皮开关。
+    pub onion: bool,
+    /// 自动滚动模式。
+    pub auto_scroll: lumino_core::storage::config::AutoScrollMode,
+}
+
+impl Toolbar {
+    /// 生成 egui 工具栏快照，与 iced 仪表盘使用同一套换算函数。
+    pub(crate) fn egui_snapshot(&self, perf: &ToolbarPerfContext) -> ToolbarSnapshot {
+        let bpm = bpm_at_tick(perf.tempo_points, perf.playback_tick);
+        let time_secs = tick_to_seconds(perf.tempo_points, perf.ppq, perf.playback_tick);
+        ToolbarSnapshot {
+            bpm: format!("{bpm:.1}"),
+            ppq: format!("PPQ {}", perf.ppq),
+            position: format_position(perf.playback_tick, perf.ppq),
+            time: format_time(time_secs),
+            snap: self.snap_spec.text(),
+            tool: self.current_tool,
+            draw_panel_open: self.tool_panel_open,
+            playing: self.is_playing,
+            looping: self.is_looping,
+            recording: self.is_recording,
+            onion: self.onion_skin_enabled,
+            auto_scroll: self.auto_scroll_mode,
+        }
+    }
 }

@@ -2,6 +2,8 @@
 
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Sense, Stroke, Vec2};
 
+use super::super::ToolbarModel;
+use super::tool_selected;
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
@@ -89,6 +91,14 @@ pub(super) const TOOLS: &[ToolEntry] = &[
 ];
 
 /// 分组宽度：条目 + 间距 + 「精度:」标签与精度框（对应 iced 的 `Length::Shrink`）。
+/// 工具条目高亮：前四个选择器映射 `Tool`，第 5 个（绘制工具箱）映射面板开关。
+fn tool_highlighted(model: &ToolbarModel, index: usize, item: &ToolEntry) -> bool {
+    if item.icon == Icon::DrawToolbox {
+        return model.draw_panel_open;
+    }
+    tool_selected(model, index)
+}
+
 pub(super) fn width(ui: &egui::Ui) -> f32 {
     let items: f32 = TOOLS
         .iter()
@@ -114,8 +124,8 @@ pub(super) fn width(ui: &egui::Ui) -> f32 {
 }
 
 /// 渲染工具选择区内容。
-pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache) {
-    for item in TOOLS {
+pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarModel) {
+    for (index, item) in TOOLS.iter().enumerate() {
         ui.add_space(item.gap_before);
         let (icon_size, width) = if item.selector {
             (layout::TOOL_SELECTOR_ICON, layout::TOOL_SELECTOR_W)
@@ -128,7 +138,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache) {
             item.icon,
             icon_size,
             Vec2::new(width, layout::TOOL_BUTTON_W),
-            item.icon == Icon::MousePointer,
+            tool_highlighted(model, index, item),
         );
     }
 
@@ -178,7 +188,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache) {
     child.spacing_mut().item_spacing.x = 6.0;
     child.add(cache.default_image(child.ctx(), Icon::MusicNote, 16.0));
     child.add(egui::Label::new(
-        egui::RichText::new("1/4")
+        egui::RichText::new(&model.snap)
             .size(theme::font::BODY)
             .color(theme::TEXT_ON_WEAK),
     ));

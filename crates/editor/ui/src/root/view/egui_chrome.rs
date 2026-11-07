@@ -5,12 +5,13 @@
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
-use lumino_ui_egui::chrome::{ChromeModel, StatusbarModel, TitlebarModel};
+use lumino_ui_egui::chrome::{ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
 
 use crate::root::Root;
+use crate::toolbar::ToolbarPerfContext;
 
 impl Root {
-    /// 构造 egui 外壳快照（标题栏 + 状态栏，只读）。
+    /// 构造 egui 外壳快照（标题栏 + 工具栏 + 状态栏，只读）。
     pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
         let language = self.settings.display.language;
         let translations = main_translations(language);
@@ -26,6 +27,14 @@ impl Root {
             ],
         });
 
+        // 工具栏：与 iced 仪表盘共用同一套 tick→BPM/时间换算。
+        let perf = ToolbarPerfContext {
+            playback_tick: self.editor.playback_position,
+            ppq: self.editor.editor_state.view.ppq,
+            tempo_points: &self.editor.editor_state.data.tempo_points,
+        };
+        let toolbar = self.toolbar.egui_snapshot(&perf);
+
         let note_count = match self.settings.display.note_count_display {
             NoteCountDisplay::StatusBar => Some(self.editor_note_count()),
             NoteCountDisplay::ProjectSettings => None,
@@ -36,6 +45,21 @@ impl Root {
 
         ChromeModel {
             titlebar,
+            toolbar: Some(ToolbarModel {
+                left_inset: self.sidebar.width() as f32,
+                bpm: toolbar.bpm,
+                ppq: toolbar.ppq,
+                position: toolbar.position,
+                time: toolbar.time,
+                snap: toolbar.snap,
+                tool: toolbar.tool,
+                draw_panel_open: toolbar.draw_panel_open,
+                playing: toolbar.playing,
+                looping: toolbar.looping,
+                recording: toolbar.recording,
+                onion: toolbar.onion,
+                auto_scroll: toolbar.auto_scroll,
+            }),
             statusbar: StatusbarModel {
                 left: status.left_text,
                 left_accent: status.left_accent,

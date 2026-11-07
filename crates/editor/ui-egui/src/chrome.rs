@@ -7,7 +7,7 @@ pub mod statusbar;
 pub mod titlebar;
 pub mod toolbar;
 
-pub use model::{ChromeModel, StatusbarModel, TitlebarModel};
+pub use model::{ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
 
 use egui::{Frame, Margin, Panel, Stroke};
 
@@ -160,6 +160,26 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 theme::ROUTE_BAR_BG
             }))
             .show(&mut root, |ui| titlebar::show_model(ui, titlebar, icons));
+    }
+
+    // 工具栏 band：从左侧栏右边缘开始，铺满剩余宽度（生产 `row![sidebar,
+    // column![toolbar, ...]]`），不覆盖左侧栏。
+    if let Some(toolbar) = &model.toolbar {
+        let full = root.max_rect();
+        let inset = toolbar.left_inset.max(0.0).min(full.width());
+        let band = egui::Rect::from_min_size(
+            egui::pos2(full.left() + inset, full.top() + layout::TITLEBAR_H),
+            egui::Vec2::new(full.width() - inset, layout::TOOLBAR_H),
+        );
+        if band.width() > 0.0 {
+            root.painter().rect_filled(band, 0, theme::PANEL_BG);
+            let mut child = root.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(band)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            toolbar::show_model(&mut child, toolbar, icons);
+        }
     }
 
     Panel::bottom("lumino-statusbar-band")

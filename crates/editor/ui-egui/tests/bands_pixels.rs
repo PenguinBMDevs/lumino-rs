@@ -8,7 +8,9 @@ use std::path::PathBuf;
 
 use egui_kittest::Harness;
 use image::RgbaImage;
-use lumino_ui_egui::chrome::{self, ChromeModel, StatusbarModel, TitlebarModel};
+use lumino_core::Tool;
+use lumino_core::storage::config::AutoScrollMode;
+use lumino_ui_egui::chrome::{self, ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
 use lumino_ui_egui::icons::IconCache;
 
 const WIDTH: u32 = 1600;
@@ -33,6 +35,21 @@ fn model() -> ChromeModel {
                 "视图".to_owned(),
                 "帮助".to_owned(),
             ],
+        }),
+        toolbar: Some(ToolbarModel {
+            left_inset: 248.0,
+            bpm: "120.0".to_owned(),
+            ppq: "PPQ 1920".to_owned(),
+            position: "1.1".to_owned(),
+            time: "00:00.00".to_owned(),
+            snap: "1/4".to_owned(),
+            tool: Tool::Pointer,
+            draw_panel_open: false,
+            playing: false,
+            looping: false,
+            recording: false,
+            onion: false,
+            auto_scroll: AutoScrollMode::ScrollingIndicator,
         }),
         statusbar: StatusbarModel {
             left: "就绪".to_owned(),
@@ -176,4 +193,19 @@ fn bands_match_iced_geometry() {
     let bands_right = merge_runs(&ink_runs(&bands, 982, 997, 1330, 1599, STATUSBAR_BG), 6);
     let iced_right = merge_runs(&ink_runs(&baseline, 982, 997, 1330, 1599, STATUSBAR_BG), 6);
     assert_runs_close(&bands_right, &iced_right, "状态栏指标");
+
+    // 工具栏 band：必须从左侧栏右缘 248 开始（band 内为 PANEL_BG，band 外不绘制）。
+    assert_ne!(
+        &bands.get_pixel(247, 60).0[..3],
+        &[0x2A, 0x2F, 0x47],
+        "工具栏 band 不得覆盖左侧栏区域"
+    );
+    assert_eq!(
+        &bands.get_pixel(248, 60).0[..3],
+        &[0x2A, 0x2F, 0x47],
+        "工具栏 band 左边界应为左侧栏宽度 248"
+    );
+    let bands_toolbar = ink_runs(&bands, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
+    let iced_toolbar = ink_runs(&baseline, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
+    assert_runs_close(&bands_toolbar, &iced_toolbar, "工具栏");
 }
