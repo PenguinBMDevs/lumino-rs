@@ -4,14 +4,20 @@
 //! - 自制标题栏 30px（系统原生标题栏时跳过）；
 //! - 提示语 16px、垂直居中于内容区顶部 90px；
 //! - 三个按钮 90×35、间距 10，水平居中于内容区，顶边 = 内容区 + 126。
+//!
+//! 颜色全部来自 [`DialogPalette`]（生产 iced `extended_palette` 映射），
+//! 因此深色 / 浅色主题都能整窗接管。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Stroke, Vec2};
 
-use crate::chrome::SaveConfirmModel;
+use crate::chrome::{DialogPalette, SaveConfirmModel};
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 use crate::widgets;
+
+/// 主按钮文字色（生产固定深色，保证在强调色上的对比度）。
+const ON_PRIMARY: Color32 = Color32::from_rgb(0x12, 0x1A, 0x2A);
 
 /// 对话框草稿状态（场景入口用）。
 #[derive(Default)]
@@ -20,10 +26,11 @@ pub struct DialogState {
     pub icons: IconCache,
 }
 
-/// 场景入口：与生产同文案的保存确认对话框。
+/// 场景入口：与生产同文案、同深色调色板的保存确认对话框。
 pub fn show(ui: &mut egui::Ui, state: &mut DialogState) {
     let model = SaveConfirmModel {
         titlebar: true,
+        palette: DialogPalette::DARK,
         message: "是否保留未保存的更改?".to_owned(),
         save: "保存".to_owned(),
         close: "关闭".to_owned(),
@@ -53,18 +60,18 @@ pub fn show_model(ui: &mut egui::Ui, model: &SaveConfirmModel, icons: &mut IconC
             .exact_size(layout::TITLEBAR_H)
             .resizable(false)
             .show_separator_line(false)
-            .frame(crate::chrome::panel_frame(theme::TITLEBAR_BG))
-            .show(&mut root, |ui| titlebar(ui, icons));
+            .frame(crate::chrome::panel_frame(model.palette.titlebar))
+            .show(&mut root, |ui| titlebar(ui, model.palette, icons));
     }
 
     egui::CentralPanel::default()
-        .frame(crate::chrome::panel_frame(theme::BASE_BG))
+        .frame(crate::chrome::panel_frame(model.palette.background))
         .show(&mut root, |ui| content(ui, model));
 }
 
-fn titlebar(ui: &mut egui::Ui, cache: &mut IconCache) {
+fn titlebar(ui: &mut egui::Ui, palette: DialogPalette, cache: &mut IconCache) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::TITLEBAR_BG);
+    ui.painter().rect_filled(rect, 0, palette.titlebar);
     ui.spacing_mut().item_spacing.x = 0.0;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -75,16 +82,17 @@ fn titlebar(ui: &mut egui::Ui, cache: &mut IconCache) {
 }
 
 fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
+    let palette = model.palette;
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::BASE_BG);
+    ui.painter().rect_filled(rect, 0, palette.background);
 
     ui.painter().text(
         egui::pos2(rect.center().x, rect.top() + 90.0),
         Align2::CENTER_CENTER,
         &model.message,
-        // 生产 iced：提示语 16px（	ext(...).size(16)）。
+        // 生产 iced：提示语 16px（`text(...).size(16)`）。
         FontId::proportional(theme::font::SECTION),
-        theme::TEXT,
+        palette.text,
     );
 
     let button_w = 90.0;
@@ -98,9 +106,9 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
         ui,
         Rect::from_min_size(egui::pos2(start_x, y), Vec2::new(button_w, button_h)),
         &model.save,
-        theme::ACCENT,
-        Color32::from_rgb(0x12, 0x1A, 0x2A),
-        theme::ACCENT_DARK,
+        palette.primary,
+        ON_PRIMARY,
+        palette.primary_border,
     );
     put_button(
         ui,
@@ -109,9 +117,9 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
             Vec2::new(button_w, button_h),
         ),
         &model.close,
-        theme::TOOLBAR_BG,
-        theme::TEXT,
-        theme::ROUTE_BAR_BG,
+        palette.secondary,
+        palette.text,
+        palette.secondary_border,
     );
     put_button(
         ui,
@@ -120,9 +128,9 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
             Vec2::new(button_w, button_h),
         ),
         &model.cancel,
-        theme::TOOLBAR_BG,
-        theme::TEXT,
-        theme::ROUTE_BAR_BG,
+        palette.secondary,
+        palette.text,
+        palette.secondary_border,
     );
 }
 

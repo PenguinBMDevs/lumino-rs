@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use egui_kittest::Harness;
 use image::RgbaImage;
-use lumino_ui_egui::chrome::{self, ChromeModel, DialogModel, SaveConfirmModel, SettingsSnapshot};
+use lumino_ui_egui::chrome::{
+    self, ChromeModel, DialogModel, DialogPalette, SaveConfirmModel, SettingsSnapshot,
+};
 use lumino_ui_egui::icons::IconCache;
 
 const WIDTH: u32 = 560;
@@ -17,6 +19,7 @@ fn model() -> ChromeModel {
     ChromeModel {
         dialog: Some(DialogModel::SaveConfirm(SaveConfirmModel {
             titlebar: true,
+            palette: DialogPalette::DARK,
             message: "是否保留未保存的更改?".to_owned(),
             save: "保存".to_owned(),
             close: "关闭".to_owned(),

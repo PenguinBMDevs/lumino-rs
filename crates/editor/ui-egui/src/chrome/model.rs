@@ -51,11 +51,45 @@ pub struct SettingsSnapshot {
     pub log_retention: String,
 }
 
+/// 对话框调色板：由生产 iced `extended_palette` 映射，深/浅主题都能整窗接管。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DialogPalette {
+    /// 自制标题栏底色（`background.neutral`）。
+    pub titlebar: Color32,
+    /// 内容底色（`background.base`）。
+    pub background: Color32,
+    /// 正文色（`background.base.text`）。
+    pub text: Color32,
+    /// 主按钮底色（`primary.base`）。
+    pub primary: Color32,
+    /// 主按钮边框（`primary.weak`）。
+    pub primary_border: Color32,
+    /// 次按钮底色（`background.weak`）。
+    pub secondary: Color32,
+    /// 次按钮边框（`background.weaker`）。
+    pub secondary_border: Color32,
+}
+
+impl DialogPalette {
+    /// 深色主题（Tokyo Night Storm）映射，与既有像素基线一致。
+    pub const DARK: Self = Self {
+        titlebar: Color32::from_rgb(0x3F, 0x46, 0x6E),
+        background: Color32::from_rgb(0x24, 0x28, 0x3B),
+        text: Color32::from_rgb(0xB6, 0xC4, 0xFA),
+        primary: Color32::from_rgb(0x2A, 0xC3, 0xDE),
+        primary_border: Color32::from_rgb(0x28, 0x9D, 0xB4),
+        secondary: Color32::from_rgb(0x39, 0x40, 0x63),
+        secondary_border: Color32::from_rgb(0x33, 0x39, 0x57),
+    };
+}
+
 /// 保存确认对话框的文案与标题栏开关。
 #[derive(Debug, Clone)]
 pub struct SaveConfirmModel {
     /// 是否绘制自制标题栏（系统原生标题栏时为 `false`）。
     pub titlebar: bool,
+    /// 调色板（深/浅主题）。
+    pub palette: DialogPalette,
     /// 提示语。
     pub message: String,
     /// 主按钮（保存）。

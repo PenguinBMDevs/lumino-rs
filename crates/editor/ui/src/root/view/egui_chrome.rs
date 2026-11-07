@@ -8,9 +8,9 @@ use lumino_core::tr;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, DialogModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
-    TitlebarModel, ToolbarModel,
+    ChromeModel, DialogModel, DialogPalette, RightSidebarModel, RightSidebarPanelKind, RollBar,
+    SaveConfirmModel, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack,
+    StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use crate::root::Root;
@@ -258,33 +258,48 @@ impl Root {
             || self.toolbar.text_params_open
     }
 
+    /// 生产 iced 调色板 → 对话框调色板（深/浅主题都成立）。
+    fn dialog_palette(&self) -> DialogPalette {
+        let palette = self.window.theme.extended_palette();
+        DialogPalette {
+            titlebar: color32(palette.background.neutral.color),
+            background: color32(palette.background.base.color),
+            text: color32(palette.background.base.text),
+            primary: color32(palette.primary.base.color),
+            primary_border: color32(palette.primary.weak.color),
+            secondary: color32(palette.background.weak.color),
+            secondary_border: color32(palette.background.weaker.color),
+        }
+    }
+
     /// 已支持整窗接管的对话框（当前仅「未保存更改确认」）。
     ///
     /// 其余对话框（设置 / 导出 / 历史 …）仍由 iced 绘制：整块返回空模型，
     /// 叠加层不画任何东西，避免把主窗口 band 盖到对话框上。
     fn egui_dialog_model(&self) -> Option<DialogModel> {
-        // 本层只有深色调色板；浅色主题的对话框仍由 iced 绘制，避免整窗配色错乱。
-        if self
-            .window
-            .theme
-            .extended_palette()
-            .background
-            .weakest
-            .color
-            .r
-            > 0.5
-        {
-            return None;
-        }
         match self.state.dialog_type {
             DialogType::SaveConfirm => Some(DialogModel::SaveConfirm(SaveConfirmModel {
                 titlebar: !self.settings.synth.use_native_titlebar,
+                palette: self.dialog_palette(),
                 message: tr!("是否保留未保存的更改?").to_string(),
                 save: tr!("保存").to_string(),
                 close: tr!("关闭").to_string(),
                 cancel: tr!("取消").to_string(),
             })),
             DialogType::Settings => {
+                // 设置页仍用深色常量，浅色主题交回 iced（调色板注入待后续）。
+                if self
+                    .window
+                    .theme
+                    .extended_palette()
+                    .background
+                    .weakest
+                    .color
+                    .r
+                    > 0.5
+                {
+                    return None;
+                }
                 // 只接管「常规」页且界面语言为中文（其余页面/语言的文案尚未建模）。
                 let language = self.settings.display.language;
                 if language != lumino_extras::i18n::Language::ZhCn

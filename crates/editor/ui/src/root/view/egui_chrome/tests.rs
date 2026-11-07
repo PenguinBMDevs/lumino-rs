@@ -213,6 +213,11 @@ fn save_confirm_dialog_model_carries_localized_text() {
         panic!("保存确认对话框必须整窗接管");
     };
     assert!(save.titlebar, "对话框默认使用自制标题栏");
+    assert_eq!(
+        save.palette,
+        DialogPalette::DARK,
+        "深色主题映射应与基线一致"
+    );
     assert!(!save.message.is_empty());
     assert!(!save.save.is_empty());
     assert!(!save.close.is_empty());
@@ -220,11 +225,23 @@ fn save_confirm_dialog_model_carries_localized_text() {
 }
 
 #[test]
-fn light_theme_dialogs_stay_with_iced() {
-    // 本层只有深色调色板：浅色主题的对话框必须整块交回 iced。
+fn light_theme_dialogs_use_injected_palette() {
     let light = lumino_ui_core::Theme::Light.to_string();
     let root = Root::new_dialog(&light, crate::state::root_state::DialogType::SaveConfirm);
-    assert!(root.egui_chrome_model().dialog.is_none());
+    let model = root.egui_chrome_model();
+    let Some(DialogModel::SaveConfirm(save)) = model.dialog else {
+        panic!("浅色主题的保存确认对话框也应整窗接管（调色板来自 iced）");
+    };
+    assert_ne!(
+        save.palette.background,
+        DialogPalette::DARK.background,
+        "浅色调色板必须来自生产主题，而不是深色常量"
+    );
+
+    // 设置页仍用深色常量 → 浅色主题交回 iced。
+    let settings =
+        Root::new_settings_dialog(&light, &lumino_core::storage::config::UiConfig::default());
+    assert!(settings.egui_chrome_model().dialog.is_none());
 }
 
 #[test]

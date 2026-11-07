@@ -1,4 +1,4 @@
-﻿//! 主窗口外壳：标题栏 + 工具栏 + 左右侧栏 + 状态栏 + 钢琴卷帘骨架。
+//! 主窗口外壳：标题栏 + 工具栏 + 左右侧栏 + 状态栏 + 钢琴卷帘骨架。
 
 mod model;
 pub mod piano_roll;
@@ -8,9 +8,9 @@ pub mod titlebar;
 pub mod toolbar;
 
 pub use model::{
-    ChromeModel, DialogModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
-    TitlebarModel, ToolbarModel,
+    ChromeModel, DialogModel, DialogPalette, RightSidebarModel, RightSidebarPanelKind, RollBar,
+    SaveConfirmModel, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack,
+    StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use egui::{Frame, Margin, Panel, Stroke};
