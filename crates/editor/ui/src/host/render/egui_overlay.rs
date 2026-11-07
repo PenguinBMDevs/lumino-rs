@@ -12,9 +12,9 @@
 //!
 //! # 输入
 //!
-//! 叠加层是**纯显示层**：指针移动 / 滚轮 / 修饰键 / 焦点会同步给 egui
-//! （悬停高亮、`ScrollArea` 滚动都要用到），但**不回填按键与鼠标按键**——
-//! 输入动作仍由下层 iced 执行。回填点击会让 egui 出现「按下了却没反应」的假态。
+//! 指针移动 / 滚轮 / 修饰键 / 焦点同步给 egui（悬停高亮、`ScrollArea` 滚动、
+//! 菜单点击都要用到）。鼠标按键只在**菜单占用区**（标题栏菜单标签、已展开的
+//! 下拉/子面板）内消费；其余区域仍把事件交给 iced，动作由 iced 执行。
 
 use egui::{Rect, Vec2};
 use iced_wgpu::wgpu;
@@ -44,10 +44,12 @@ pub(crate) struct EguiOverlay {
 pub(crate) struct OverlayInput {
     /// 待提交给 egui 的事件。
     events: Vec<egui::Event>,
-    /// 当前修饰键状态（滚轮事件需要随附）。
+    /// 当前修饰键状态（滚轮/按键事件需要随附）。
     modifiers: egui::Modifiers,
     /// 窗口是否持有焦点（`RawInput::focused`）。
     focused: bool,
+    /// 最近一次指针位置（逻辑点），鼠标按键事件需要。
+    pointer: Option<egui::Pos2>,
 }
 
 impl Default for OverlayInput {
@@ -57,6 +59,7 @@ impl Default for OverlayInput {
             modifiers: egui::Modifiers::default(),
             // 与 egui 的 `RawInput::focused` 默认值一致：窗口可见即可交互。
             focused: true,
+            pointer: None,
         }
     }
 }
@@ -64,6 +67,7 @@ impl Default for OverlayInput {
 impl OverlayInput {
     /// 指针移动到窗口内（逻辑点）。
     fn pointer_moved(&mut self, position: egui::Pos2) {
+        self.pointer = Some(position);
         if matches!(self.events.last(), Some(egui::Event::PointerMoved(_))) {
             self.events.pop();
         }
@@ -72,7 +76,21 @@ impl OverlayInput {
 
     /// 指针离开窗口。
     fn pointer_left(&mut self) {
+        self.pointer = None;
         self.events.push(egui::Event::PointerGone);
+    }
+
+    /// 鼠标按键（左/右/中）。
+    fn button(&mut self, button: egui::PointerButton, pressed: bool) {
+        let Some(pos) = self.pointer else {
+            return;
+        };
+        self.events.push(egui::Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers: self.modifiers,
+        });
     }
 
     /// 滚轮：单位沿用 winit 语义（行 / 像素），换算交给 egui。
@@ -147,7 +165,7 @@ impl EguiOverlay {
     }
 
     /// 渲染一帧外壳并提交到目标纹理。
-    fn draw(&mut self, frame: OverlayFrame<'_>) {
+    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Option<usize>, Vec<Rect>) {
         self.frames = self.frames.wrapping_add(1);
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
@@ -173,6 +191,10 @@ impl EguiOverlay {
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
         });
+
+        // `run_ui` 不返回闭包值：菜单点击与占用矩形通过 egui 内存回传。
+        let menu_action = chrome::menu::take_action(&ctx);
+        let blocked = chrome::menu::take_blocked(&ctx);
 
         let mut textures = output.textures_delta;
         self.painter
@@ -209,6 +231,7 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
+        (menu_action, blocked)
     }
 }
 
@@ -239,7 +262,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        overlay.draw(OverlayFrame {
+        let (menu_action, blocked) = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -251,16 +274,27 @@ impl Host {
             events,
             focused,
         });
+        // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
+        self.egui_blocked = blocked;
+        if let Some(index) = menu_action
+            && let Some(message) = self.root.menu_action_message(index)
+        {
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
     }
 
     /// 把 winit 指针 / 滚轮 / 修饰键 / 焦点事件转成 egui 事件。
     ///
-    /// **只观察不消费**：同一事件随后仍交给 iced，叠加层不接管输入动作。
-    pub(crate) fn capture_egui_overlay_input(&mut self, event: &winit::event::WindowEvent) {
+    /// 返回 `true` 表示该事件落在 egui 的菜单占用区（标题栏/下拉面板）内，
+    /// 调用方必须**不**再把它交给 iced——否则会同时触发下层工具栏/侧栏的点击。
+    /// 其余区域保持「只观察不消费」，动作仍由 iced 执行。
+    pub(crate) fn capture_egui_overlay_input(&mut self, event: &winit::event::WindowEvent) -> bool {
         use winit::event::{MouseScrollDelta, WindowEvent};
 
         if !overlay_enabled() {
-            return;
+            return false;
         }
         let scale = self.window_ctx.window.scale_factor() as f32;
         let scale = if scale > 0.0 { scale } else { 1.0 };
@@ -270,20 +304,35 @@ impl Host {
                     position.x as f32 / scale,
                     position.y as f32 / scale,
                 ));
+                false
             }
-            WindowEvent::CursorLeft { .. } => self.egui_input.pointer_left(),
-            WindowEvent::MouseWheel { delta, .. } => match delta {
-                MouseScrollDelta::LineDelta(x, y) => {
-                    self.egui_input
-                        .wheel(egui::MouseWheelUnit::Line, egui::vec2(*x, *y));
+            WindowEvent::CursorLeft { .. } => {
+                self.egui_input.pointer_left();
+                false
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                match delta {
+                    MouseScrollDelta::LineDelta(x, y) => {
+                        self.egui_input
+                            .wheel(egui::MouseWheelUnit::Line, egui::vec2(*x, *y));
+                    }
+                    MouseScrollDelta::PixelDelta(position) => {
+                        self.egui_input.wheel(
+                            egui::MouseWheelUnit::Point,
+                            egui::vec2(position.x as f32, position.y as f32) / scale,
+                        );
+                    }
                 }
-                MouseScrollDelta::PixelDelta(position) => {
-                    self.egui_input.wheel(
-                        egui::MouseWheelUnit::Point,
-                        egui::vec2(position.x as f32, position.y as f32) / scale,
-                    );
-                }
-            },
+                self.egui_pointer_blocked()
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let Some(button) = pointer_button(*button) else {
+                    return false;
+                };
+                self.egui_input
+                    .button(button, *state == winit::event::ElementState::Pressed);
+                self.egui_pointer_blocked()
+            }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
                 let super_key = state.contains(winit::keyboard::ModifiersState::SUPER);
@@ -300,15 +349,37 @@ impl Host {
                         control
                     },
                 });
+                false
             }
-            WindowEvent::Focused(focused) => self.egui_input.focus(*focused),
-            _ => {}
+            WindowEvent::Focused(focused) => {
+                self.egui_input.focus(*focused);
+                false
+            }
+            _ => false,
         }
+    }
+
+    /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。
+    fn egui_pointer_blocked(&self) -> bool {
+        self.egui_input
+            .pointer
+            .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
+    }
+}
+
+/// winit 鼠标键 → egui 指针键（其余侧键不参与菜单）。
+fn pointer_button(button: winit::event::MouseButton) -> Option<egui::PointerButton> {
+    use winit::event::MouseButton;
+    match button {
+        MouseButton::Left => Some(egui::PointerButton::Primary),
+        MouseButton::Right => Some(egui::PointerButton::Secondary),
+        MouseButton::Middle => Some(egui::PointerButton::Middle),
+        _ => None,
     }
 }
 
 /// 环境变量开关（只读一次；`0` 视为关闭）。
-fn overlay_enabled() -> bool {
+pub(crate) fn overlay_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED
         .get_or_init(|| std::env::var_os("LUMINO_EGUI_OVERLAY").is_some_and(|value| value != "0"))

@@ -444,6 +444,47 @@ pub struct TitlebarModel {
     pub focused: bool,
     /// 菜单标签（文件 / 编辑 / 视图 / 帮助，按当前语言）。
     pub menus: Vec<String>,
+    /// 可交互菜单树（`None` = 只画标签，交互仍交给 iced）。
+    pub menu: Option<MenuBarModel>,
+}
+
+/// 标题栏菜单栏（生产 `titlebar::menu` 的数据镜像）。
+#[derive(Debug, Clone, Default)]
+pub struct MenuBarModel {
+    /// 四个主菜单（文件 / 编辑 / 视图 / 帮助）。
+    pub menus: Vec<MenuModel>,
+}
+
+/// 单个主菜单。
+#[derive(Debug, Clone, Default)]
+pub struct MenuModel {
+    /// 菜单标签。
+    pub label: String,
+    /// 菜单项。
+    pub entries: Vec<MenuEntry>,
+}
+
+/// 菜单项（与生产 `titlebar::menu::MenuItem` 一一对应）。
+#[derive(Debug, Clone)]
+pub enum MenuEntry {
+    /// 可点击动作；`action` 是在整棵菜单树里的遍历序号。
+    Action {
+        /// 本地化显示名。
+        label: String,
+        /// 是否可点击（生产 `ActionDisabled` 为 `false`）。
+        enabled: bool,
+        /// 动作序号。
+        action: usize,
+    },
+    /// 分隔线。
+    Separator,
+    /// 子菜单（当前生产只有一级）。
+    Submenu {
+        /// 本地化显示名。
+        label: String,
+        /// 子项。
+        entries: Vec<MenuEntry>,
+    },
 }
 
 /// 状态栏状态。

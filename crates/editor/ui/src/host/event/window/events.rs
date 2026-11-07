@@ -92,9 +92,10 @@ impl Host {
     ) {
         use winit::event::WindowEvent::*;
 
-        // egui 叠加层是纯显示层：先把指针 / 滚轮 / 修饰键 / 焦点同步过去
-        // （悬停高亮与 `ScrollArea` 滚动依赖它们），随后仍走 iced 的事件转换。
-        self.capture_egui_overlay_input(&event);
+        // 先把指针 / 滚轮 / 修饰键 / 焦点同步给 egui 叠加层（悬停高亮、
+        // `ScrollArea` 滚动、菜单点击依赖它们），随后仍走 iced 的事件转换。
+        // 命中 egui 菜单占用区时，本次事件只给 egui（见下方提前返回）。
+        let consumed_by_egui = self.capture_egui_overlay_input(&event);
 
         match &event {
             Resized(_) => self.handle_resized_event(),
@@ -150,6 +151,13 @@ impl Host {
                 "[TOUCH] 排队 iced 事件 cursor_available={available} cursor={pos:?} queue={}",
                 self.events.len()
             );
+        }
+
+        if consumed_by_egui {
+            // 菜单接管了这次点击/滚轮：只请求重绘（egui 悬停态需要更新），
+            // 不再把事件塞进 iced 队列，避免同时点中下层工具栏/侧栏。
+            self.window_ctx.window.request_redraw();
+            return;
         }
 
         self.convert_and_queue_window_event(&event, modifiers);

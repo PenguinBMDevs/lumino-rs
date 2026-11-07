@@ -400,12 +400,43 @@ callback / 多视口 / 截图能力。
   - `clippy -D warnings` / `check --bin lumino-rs` / `capture_iced` 18/18 /
     `capture_egui` 12/12 / `compare_egui` 与上一步完全一致。
 
-**Task 1.3（下一步）：菜单栏迁移 + 标题栏输入接管**
+**Task 1.3（第八步）：菜单栏迁移 + 点击路由 — 已完成**
 
-- 现状：标题栏 / 工具栏 / 左侧栏 / 右侧栏图标列 / 状态栏、保存确认对话框、
-  设置「常规」页（深/浅/英文，小窗口可滚）已由 egui 用真实状态绘制；菜单栏与
-  其余设置页仍 iced。
-- 下一步：把菜单栏与其下拉/提示迁到 egui 并接通点击路由，删除
-  `egui_titlebar_latch` 与 `has_iced_popup` 让位逻辑；随后逐页建模其余设置页。
+- 生产菜单树镜像进 egui：`titlebar::menu::menus()` →
+  `MenuBarModel / MenuModel / MenuEntry`（动作只带整棵树的遍历序号），
+  点击写回序号，`Root::menu_action_message(index)` 再解析回 `Message` 交给
+  `process_message`。模型与解析共用同一遍历顺序，单测覆盖全部 25 个动作。
+- 下拉面板画在整窗 root 末尾（不再被标题栏 30px 裁剪）；面板宽 200、菜单项 28、
+  分隔线 9、标签偏移 +9，与 iced_aw 几何一致。一级子菜单右贴父行，并**持久化
+  展开状态**：指针从父行斜向移入子面板不会闪断（本轮修掉的真实交互缺陷）。
+- 输入路由：`OverlayInput.pointer` 记录指针位置后回填鼠标按键；叠加层每帧发布
+  菜单占用矩形（标签 + 下拉 + 子面板），`Host::egui_blocked` 命中时
+  `handle_events` 提前返回——点击只给 egui，不再触发下层工具栏/侧栏。
+  自绘标题栏模式下 iced 菜单换成 `menu::view_placeholder`（同宽、零输入）；
+  系统原生标题栏仍保留 iced 菜单与整块让位。
+- 删除 `egui_titlebar_latch`（状态、setter、mouse 钩子、单测）；
+  `has_iced_popup` 只剩「原生标题栏菜单 + 尚未迁移的工具栏下拉」。
+- 验收：
+  - `chrome_bands` 4/4：新增 `menu_opens_and_dispatches_actions`
+    （点标签展开 → 点禁用项无动作 → 悬停子菜单 → 子项回传序号 2 并关闭）；
+  - `egui_chrome` 单测 17/17（`titlebar_menu_model_resolves_every_action`
+    覆盖 4 个菜单共 25 个动作；`iced_popups_disable_the_overlay` 改为
+    「自绘标题栏菜单不再让位、原生标题栏仍让位」）；
+  - 真实窗口（`LUMINO_EGUI_OVERLAY=1`）：点「文件」展开 14 项 + 2 分隔线，
+    「导出为素材」灰显；悬停「导出工程」右侧展开两项子菜单且无重叠；
+    点「设置」后 `Settings` 窗口出现（`830,432 900×675`），证明点击 → 序号 →
+    `Message` → `process_message` 全链路通；
+  - `clippy -D warnings`（ui / ui-egui / ui-parity）、`check --bin lumino-rs`、
+    `capture_iced` 18/18、`capture_egui` 12/12、`compare_egui` 与上一步逐项一致
+    （main_chrome 1.23%/1.87%/1.62%，settings 2.97%/3.55%/3.04%），基线文件零改动。
+
+**Task 1.3（下一步）：工具栏下拉 / 提示迁移**
+
+- 现状：标题栏（含菜单/子菜单）、工具栏、左侧栏、右侧栏图标列、状态栏、
+  保存确认对话框、设置「常规」页（深/浅/英文，小窗口可滚）已由 egui 绘制；
+  工具栏下拉（吸附 / 洋葱皮 / 溢出 / 画笔 / 粗细 / 形状 / 文字参数 / 工具面板）
+  与其余设置页仍 iced——这是 `has_iced_popup` 让位逻辑仅剩的来源。
+- 下一步：逐块迁移工具栏下拉并改为 egui 弹层，随后可删除整块让位；
+  再逐页建模其余设置页与右侧栏面板内容。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

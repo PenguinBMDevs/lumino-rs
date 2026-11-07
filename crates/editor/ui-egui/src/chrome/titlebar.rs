@@ -4,10 +4,10 @@
 //! logo 区 48 宽、菜单项 = 文本宽 + 17（中文 14px 下即 45，与基线 45px 节距一致）、
 //! 右侧三个窗口按钮各 45×29。
 
-use egui::{Align, FontId, Layout, Vec2};
+use egui::{Align, FontId, Layout};
 use egui_extras::{Size, StripBuilder};
 
-use super::{ChromeState, TitlebarModel};
+use super::{ChromeState, TitlebarModel, menu as menu_panel};
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
@@ -32,6 +32,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
             "视图".to_owned(),
             "帮助".to_owned(),
         ],
+        menu: None,
     };
     show_model(ui, &model, &mut state.icons);
 }
@@ -50,8 +51,8 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
     );
 
     // 菜单项宽度随文本宽度变化（英文菜单比中文宽），逐项测量后布局。
-    let widths: Vec<f32> = model
-        .menus
+    let labels = menu_panel::labels(model);
+    let widths: Vec<f32> = labels
         .iter()
         .map(|label| text_width(ui, label) + MENU_ITEM_PAD_X)
         .collect();
@@ -62,7 +63,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
         .size(Size::remainder())
         .size(Size::exact(TRAFFIC_TOTAL_W))
         .horizontal(|mut strip| {
-            strip.cell(|ui| menu(ui, &model.menus, &widths, icons));
+            strip.cell(|ui| menu(ui, model, &widths, icons));
             strip.cell(|ui| {
                 ui.allocate_space(ui.available_size());
             });
@@ -81,20 +82,13 @@ fn text_width(ui: &egui::Ui, label: &str) -> f32 {
         .x
 }
 
-fn menu(ui: &mut egui::Ui, labels: &[String], widths: &[f32], icons: &mut IconCache) {
+fn menu(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32], icons: &mut IconCache) {
     ui.horizontal_centered(|ui| {
         ui.add_space(15.0);
         ui.add(icons.default_image(ui.ctx(), Icon::LogoInApp, 18.0));
         ui.add_space(15.0);
-        for (label, width) in labels.iter().zip(widths) {
-            ui.allocate_ui_with_layout(
-                Vec2::new(*width, layout::TITLEBAR_H),
-                Layout::centered_and_justified(egui::Direction::TopDown),
-                |ui| {
-                    widgets::menu_label_sized(ui, label, false, MENU_FONT);
-                },
-            );
-        }
+        // 标签支持点击/悬停；矩形写回 egui 内存，供下拉面板定位。
+        let _ = menu_panel::show_labels(ui, model, widths);
     });
 }
 

@@ -39,6 +39,7 @@ fn model() -> ChromeModel {
                 "视图".to_owned(),
                 "帮助".to_owned(),
             ],
+            menu: None,
         }),
         sidebar: Some(SidebarModel::default()),
         piano_roll: Some(PianoRollView {

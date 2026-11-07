@@ -90,6 +90,7 @@ impl Host {
             root,
             events: Vec::new(),
             egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
+            egui_blocked: Vec::new(),
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,

@@ -45,8 +45,12 @@ impl Titlebar {
 
         // 自定义标题栏模式
         // 将菜单区域和可拖动区域分离，避免鼠标事件冲突
+        let egui_menus = crate::host::overlay_enabled();
         let menu_row = if cfg!(target_os = "macos") {
             row![]
+        } else if egui_menus {
+            // 叠加层接管菜单：iced 只保留同宽的占位（不吃输入、不画下拉）。
+            row![logo::view(window), menu::view_placeholder(language)].align_y(Alignment::Center)
         } else {
             row![
                 logo::view(window),

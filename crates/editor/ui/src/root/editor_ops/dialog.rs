@@ -24,18 +24,6 @@ impl Root {
         self.state.is_menu_open = open;
     }
 
-    /// 设置 egui 叠加层的标题栏闩锁；返回是否发生了变化。
-    ///
-    /// iced 菜单栏下拉画在叠加层下方且不可探测，因此在标题栏内按下即让位，
-    /// 下一次在别处按下时恢复覆盖（误判只会暂时回落到 iced，不会丢功能）。
-    pub(crate) fn set_egui_titlebar_latch(&mut self, latched: bool) -> bool {
-        if self.state.egui_titlebar_latch == latched {
-            return false;
-        }
-        self.state.egui_titlebar_latch = latched;
-        true
-    }
-
     /// 获取当前是否应该渲染预览音符
     pub fn should_render_preview_note(&self) -> bool {
         !self.state.is_menu_open && !self.is_progress_window

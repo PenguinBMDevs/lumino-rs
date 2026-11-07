@@ -2,7 +2,7 @@
 
 use super::*;
 use lumino_extras::i18n::Language;
-use lumino_ui_egui::chrome::{DialogModel, DialogPalette, SettingsPalette};
+use lumino_ui_egui::chrome::{DialogModel, DialogPalette, MenuEntry, SettingsPalette};
 
 fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
     sidebar.egui_model(Language::ZhCn, false)
@@ -342,15 +342,23 @@ fn progress_and_warning_windows_are_not_covered() {
 
 #[test]
 fn iced_popups_disable_the_overlay() {
-    // 菜单栏下拉：打开时必须整块让位，否则菜单会被不透明 band 盖住。
+    // 自绘标题栏的菜单已由 egui 接管：`is_menu_open` 不再触发整块让位。
     let mut menu = Root::new(&lumino_core::storage::config::UiConfig::default());
     menu.state.is_menu_open = true;
     let model = menu.egui_chrome_model();
-    assert!(model.titlebar.is_none(), "菜单打开时不得画标题栏 band");
-    assert!(model.sidebar.is_none(), "菜单打开时不得画左侧栏 band");
-    assert!(model.toolbar.is_none(), "菜单打开时不得画工具栏 band");
-    assert!(model.right_sidebar.is_none());
-    assert!(model.statusbar.fps.is_none());
+    assert!(
+        model.titlebar.is_some() && model.toolbar.is_some(),
+        "egui 菜单展开时仍应画外壳"
+    );
+
+    // 系统原生标题栏模式仍由 iced 画菜单下拉：打开时让位。
+    let mut native = Root::new(&lumino_core::storage::config::UiConfig::default());
+    native.settings.synth.use_native_titlebar = true;
+    native.state.is_menu_open = true;
+    assert!(
+        native.egui_chrome_model().toolbar.is_none(),
+        "原生标题栏的 iced 菜单需要让位"
+    );
 
     // 工具栏下拉（吸附 / 洋葱皮 / 溢出 / 工具面板 …）同理。
     let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
@@ -360,12 +368,53 @@ fn iced_popups_disable_the_overlay() {
     let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
     toolbar.toolbar.tool_panel_open = true;
     assert!(toolbar.egui_chrome_model().sidebar.is_none());
+}
 
-    // 标题栏闩锁（菜单栏下拉不可探测）：按下后让位，下一次别处按下恢复。
-    let mut latch = Root::new(&lumino_core::storage::config::UiConfig::default());
-    assert!(latch.set_egui_titlebar_latch(true), "闩锁状态应发生变化");
-    assert!(latch.egui_chrome_model().titlebar.is_none());
-    assert!(!latch.set_egui_titlebar_latch(true), "重复置位不算变化");
-    assert!(latch.set_egui_titlebar_latch(false));
-    assert!(latch.egui_chrome_model().titlebar.is_some());
+#[test]
+fn titlebar_menu_model_resolves_every_action() {
+    let root = Root::new(&lumino_core::storage::config::UiConfig::default());
+    let model = root.egui_chrome_model();
+    let titlebar = model.titlebar.expect("自绘标题栏应有模型");
+    let bar = titlebar.menu.expect("应带可交互菜单树");
+    assert_eq!(bar.menus.len(), 4, "文件/编辑/视图/帮助");
+    assert_eq!(
+        bar.menus[0].label,
+        lumino_extras::i18n::main_translations(Language::ZhCn).menu_file
+    );
+
+    // 整棵树的每个动作序号都必须能解析回生产 `Message`。
+    let mut actions = 0;
+    for menu in &bar.menus {
+        actions += check_entries(&root, &menu.entries);
+    }
+    assert_eq!(actions, 25, "14 文件 + 7 编辑 + 3 视图 + 1 帮助");
+    assert!(root.menu_action_message(usize::MAX).is_none());
+
+    // 空工程没有框选：导出为素材置灰。
+    let translations = lumino_extras::i18n::main_translations(Language::ZhCn);
+    let export = bar.menus[0].entries.iter().find_map(|entry| match entry {
+        MenuEntry::Action { label, enabled, .. } if *label == translations.file_export_material => {
+            Some(*enabled)
+        }
+        _ => None,
+    });
+    assert_eq!(export, Some(false), "无框选时导出为素材应禁用");
+}
+
+fn check_entries(root: &Root, entries: &[MenuEntry]) -> usize {
+    let mut count = 0;
+    for entry in entries {
+        match entry {
+            MenuEntry::Action { action, .. } => {
+                assert!(
+                    root.menu_action_message(*action).is_some(),
+                    "动作序号 {action} 必须能解析"
+                );
+                count += 1;
+            }
+            MenuEntry::Submenu { entries, .. } => count += check_entries(root, entries),
+            MenuEntry::Separator => {}
+        }
+    }
+    count
 }

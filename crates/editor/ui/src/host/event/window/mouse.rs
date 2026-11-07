@@ -18,20 +18,6 @@ impl Host {
             self.window_ctx.is_mouse_pressed = state == ElementState::Pressed;
         }
 
-        // egui 叠加层的标题栏闩锁：菜单栏下拉画在叠加层下方且不可探测，
-        // 因此在标题栏内按下即让位，下一次在别处按下时恢复覆盖。
-        if button == winit::event::MouseButton::Left && state == ElementState::Pressed {
-            let in_titlebar = self
-                .window_ctx
-                .cursor_position
-                .is_some_and(|point| point.y < lumino_ui_egui::layout::TITLEBAR_H)
-                && !self.root.use_native_titlebar;
-            if self.root.set_egui_titlebar_latch(in_titlebar) {
-                self.ui_dirty = true;
-                self.window_ctx.window.request_redraw();
-            }
-        }
-
         // 全局监听鼠标释放事件，结束工具栏拖拽状态
         if button == winit::event::MouseButton::Left
             && state == ElementState::Released

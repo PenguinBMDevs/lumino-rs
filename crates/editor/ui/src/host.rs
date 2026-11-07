@@ -37,6 +37,9 @@ mod window_ctx;
 use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
+/// 叠加层开关（标题栏菜单是否由 egui 接管）。
+pub(crate) use render::egui_overlay::overlay_enabled;
+
 pub use cache::RenderCache;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
@@ -61,9 +64,11 @@ pub struct Host {
     pub(crate) events: Vec<iced_core::Event>,
     /// egui 叠加层输入缓冲（指针位置 / 滚轮 / 修饰键 / 焦点）。
     ///
-    /// 叠加层是纯显示层：这些事件只影响 egui 的悬停与滚动状态，
-    /// 真正的交互动作仍由 `events` 里的 iced 事件执行。
+    /// 事件先喂给 egui；鼠标按键只在菜单占用区内被消费，
+    /// 其余仍由 `events` 里的 iced 事件执行。
     pub(crate) egui_input: render::egui_overlay::OverlayInput,
+    /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 iced 队列。
+    pub(crate) egui_blocked: Vec<egui::Rect>,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
     /// 上次 FPS 更新时间

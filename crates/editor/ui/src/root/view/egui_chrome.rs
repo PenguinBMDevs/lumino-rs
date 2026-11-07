@@ -4,6 +4,7 @@
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
 
 mod dialogs;
+mod menu;
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
@@ -240,13 +241,14 @@ impl Root {
         })
     }
 
-    /// 是否存在由 iced 绘制的弹出层（菜单栏下拉 / 工具栏下拉 / 工具面板）。
+    /// 是否存在仍由 iced 绘制、且会被叠加层盖住的弹出层。
     ///
-    /// 这些弹层画在 egui 叠加层**下方**，打开时叠加层必须整块让位，否则会被
-    /// 不透明 band 盖住——用户能看到菜单项的黑影却点不到。
+    /// 自绘标题栏的菜单已由 egui 接管（`TitlebarModel::menu`）；只有系统原生
+    /// 标题栏模式下 iced 仍负责菜单下拉。工具栏下拉/工具面板尚未迁移，
+    /// 打开时叠加层必须整块让位，否则会被不透明 band 盖住。
     fn has_iced_popup(&self) -> bool {
-        self.state.is_menu_open
-            || self.state.egui_titlebar_latch
+        let iced_menu = self.settings.synth.use_native_titlebar && self.state.is_menu_open;
+        iced_menu
             || self.toolbar.snap_picker_open
             || self.toolbar.onion_skin_menu_open
             || self.toolbar.overflow_menu_open
@@ -279,19 +281,20 @@ impl Root {
         }
 
         let language = self.settings.display.language;
-        let translations = main_translations(language);
         let waterfall = self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall;
 
         // 系统原生标题栏模式下，顶部 30px 由操作系统绘制，egui 不接管。
         let titlebar_present = !self.settings.synth.use_native_titlebar;
-        let titlebar = (!self.settings.synth.use_native_titlebar).then(|| TitlebarModel {
+        let menu_configs = crate::titlebar::menu::menus(language, self.export_material_enabled());
+        let menu_bar = menu::menu_bar_model(&menu_configs, language);
+        let titlebar = titlebar_present.then(|| TitlebarModel {
             focused: self.window.is_focused,
-            menus: vec![
-                translations.menu_file.to_owned(),
-                translations.menu_edit.to_owned(),
-                translations.menu_view.to_owned(),
-                translations.menu_help.to_owned(),
-            ],
+            menus: menu_bar
+                .menus
+                .iter()
+                .map(|item| item.label.clone())
+                .collect(),
+            menu: Some(menu_bar),
         });
 
         // 工具栏：与 iced 仪表盘共用同一套 tick→BPM/时间换算。

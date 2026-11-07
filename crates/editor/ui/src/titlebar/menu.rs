@@ -172,6 +172,31 @@ pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
     ]
 }
 
+/// 叠加层接管菜单时的占位：几何与 [`view`] 一致，但**不接收任何输入**、不画下拉。
+///
+/// 只用于自绘标题栏模式；系统原生标题栏模式仍用 [`view`]。
+pub fn view_placeholder<'a>(language: Language) -> Element<'a> {
+    let items: Vec<Element<'a>> = [
+        MenuKind::File,
+        MenuKind::Edit,
+        MenuKind::View,
+        MenuKind::Help,
+    ]
+    .into_iter()
+    .map(|kind| {
+        container(text(kind.display_name(language)).size(14.0))
+            .padding([2, 8])
+            .height(Length::Fill)
+            .align_y(Alignment::Center)
+            .into()
+    })
+    .collect();
+    iced_widget::Row::with_children(items)
+        .spacing(1)
+        .align_y(Alignment::Center)
+        .into()
+}
+
 /// 渲染标题栏菜单栏视图
 pub fn view<'a>(language: Language, export_material_enabled: bool) -> Element<'a> {
     let menus = menus(language, export_material_enabled)

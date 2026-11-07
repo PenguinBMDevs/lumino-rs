@@ -1,5 +1,6 @@
 //! 主窗口外壳：标题栏 + 工具栏 + 左右侧栏 + 状态栏 + 钢琴卷帘骨架。
 
+pub mod menu;
 mod model;
 pub mod piano_roll;
 pub mod sidebar;
@@ -8,9 +9,10 @@ pub mod titlebar;
 pub mod toolbar;
 
 pub use model::{
-    ChromeModel, DialogModel, DialogPalette, RightSidebarModel, RightSidebarPanelKind, RollBar,
-    SaveConfirmModel, SettingsLabels, SettingsPalette, SettingsSnapshot, SidebarGroup,
-    SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
+    ChromeModel, DialogModel, DialogPalette, MenuBarModel, MenuEntry, MenuModel, RightSidebarModel,
+    RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels, SettingsPalette,
+    SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
+    TitlebarModel, ToolbarModel,
 };
 
 use egui::{Frame, Margin, Panel, Stroke};
@@ -116,6 +118,8 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     );
     root.set_clip_rect(full);
     root.spacing_mut().item_spacing = egui::Vec2::ZERO;
+    // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 iced 点击）。
+    menu::clear_blocked(ui.ctx());
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。
     if let Some(dialog) = &model.dialog {
@@ -239,6 +243,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         .show_separator_line(false)
         .frame(panel_frame(theme::TOOLBAR_BG))
         .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
+
+    // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
+    if let Some(titlebar) = &model.titlebar {
+        menu::show_overlay(&mut root, titlebar);
+    }
 }
 
 pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
