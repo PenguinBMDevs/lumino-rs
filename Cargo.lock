@@ -4651,6 +4651,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-egui-bridge"
+version = "0.2.1"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "pollster 0.4.0",
+ "tracing",
+ "wgpu 27.0.1",
+]
+
+[[package]]
 name = "lumino-export"
 version = "0.2.1"
 dependencies = [
@@ -5029,8 +5040,10 @@ dependencies = [
  "image",
  "lumino-core",
  "lumino-editor-state",
+ "lumino-egui-bridge",
  "lumino-extras",
  "once_cell",
+ "pollster 0.4.0",
  "resvg 0.44.0",
  "serde",
  "serde_json",
@@ -5038,6 +5051,7 @@ dependencies = [
  "tiny-skia",
  "tracing",
  "usvg 0.44.0",
+ "wgpu 27.0.1",
 ]
 
 [[package]]

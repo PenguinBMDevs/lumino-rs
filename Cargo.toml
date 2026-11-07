@@ -8,7 +8,7 @@ members = [
     "crates/audio/gpu-synth",
     # editor — UI / 渲染 / 编辑
     "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings", "crates/editor/ui-parity", "crates/editor/ui-egui",
-    "crates/editor/cpu-onion",
+    "crates/editor/egui-bridge", "crates/editor/cpu-onion",
     # network — 协作 / 云
     "crates/network/cloud", "crates/network/collaboration",
     # tools — 工具 / 导出
@@ -96,6 +96,7 @@ lumino-ui-settings = { path = "crates/editor/ui-settings", version = "0.2.1-crat
 lumino-ui-editor = { path = "crates/editor/ui-editor", version = "0.2.1-crates-io-preview1" }
 lumino-ui-parity = { path = "crates/editor/ui-parity", version = "0.2.1-crates-io-preview1" }
 lumino-ui-egui = { path = "crates/editor/ui-egui", version = "0.2.1-crates-io-preview1" }
+lumino-egui-bridge = { path = "crates/editor/egui-bridge", version = "0.2.1-crates-io-preview1" }
 lumino-collaboration = { path = "crates/network/collaboration", version = "0.2.1-crates-io-preview1" }
 lumino-note-core = { path = "crates/audio/note-core", version = "0.2.1-crates-io-preview1" }
 lumino-editor-state = { path = "crates/editor/editor-state", version = "0.2.1-crates-io-preview1" }

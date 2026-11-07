@@ -171,6 +171,36 @@ callback / 多视口 / 截图能力。
   走带 `arrangement`、力度 `cc_bar`、`midiconsole`、`miditrail`、瀑布流、视频导出。
   接入点已留在 `tests/gpu_baseline/main.rs`。
 
+### Task 1.1：`egui-wgpu 0.37 → wgpu27` 最小绘制桥 — 已完成
+
+- 新增 `crates/editor/egui-bridge`（package `lumino-egui-bridge`，依赖 `egui 0.37` + `wgpu 27`）。
+- 实现范围（刻意不移植整个 `egui-wgpu`，2900 行 → 约 520 行）：
+  - `TexturesDelta` 全量 / 分块上传，纹理格式 `Rgba8Unorm`（与 egui-wgpu 一致）；
+  - `ClippedPrimitive` 顶点 / 索引缓冲、scissor、预乘 alpha 混合；
+  - gamma / sRGB 双片元入口，按目标格式选择（同 egui-wgpu）；
+  - 与 `RendererOptions::PREDICTABLE` 相同的四抽头双线性 + ClampToEdge 采样；
+  - scissor 的四边 `round` + `clamp` 规则逐行对齐 `ScissorRect::new`。
+- 验收：
+  - `crates/editor/egui-bridge/tests/painter.rs`：纯色 sRGB 往返、scissor 裁剪、字体图集文字三组 GPU 测试；
+  - `crates/editor/ui-egui/tests/bridge_parity.rs`：4 个场景（main_chrome / settings / dialog /
+    piano_roll）用桥接渲染，与 egui-kittest 基线逐像素对比：
+
+    | 场景 | 超容差像素 | 最大通道差 | 平均通道差 |
+    |---|---|---|---|
+    | main_chrome | 0 | 1 | 0.002 |
+    | settings_general | 0 | 2 | 0.004 |
+    | save_confirm_dialog | 0 | 1 | 0.008 |
+    | piano_roll_skeleton | 0 | 1 | 0.003 |
+
+- 关键发现：`egui_kittest` 无表面时目标格式是 `Rgba8Unorm`（gamma 路径）；生产 UI 通道是
+  `Rgba8UnormSrgb`。桥接两条路径都已实现，对比测试必须用 gamma 目标才能与基线逐字节对齐。
+- 已知限制（迁移到 wgpu30 后由官方 `egui-wgpu` 覆盖）：不支持 `PaintCallback`、多视口、
+  nearest / repeat 采样；顶点/索引缓冲按帧重建，暂未做容量复用。
+
 ## 八、当前任务
 
-**Task 1.1：`egui-wgpu 0.37 → wgpu27` 桥接（保持主程序可运行）**
+**Task 1.2：主程序接线（在 wgpu27 上叠加 egui 层）**
+
+- 前置：Task 1.1 已完成；`lumino-gfx` 的 wgpu 版本仍与 iced 共用 Device，不能单边升级。
+- 交付：`lumino-ui` 在现有 iced 渲染之后调用桥接绘制 egui 层；先做可开关的最小叠加验证，
+  再逐步替换 Chrome。

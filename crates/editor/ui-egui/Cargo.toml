@@ -38,3 +38,8 @@ path = "src/bin/capture_egui.rs"
 [[bin]]
 name = "compare_egui"
 path = "src/bin/compare_egui.rs"
+
+[dev-dependencies]
+lumino-egui-bridge = { workspace = true }
+pollster = { workspace = true }
+wgpu = { workspace = true }
