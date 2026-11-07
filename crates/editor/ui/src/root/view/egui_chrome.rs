@@ -6,6 +6,7 @@
 mod dialogs;
 mod gates;
 mod menu;
+mod settings_audio;
 mod tool_panel;
 mod toolbar;
 

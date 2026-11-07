@@ -122,6 +122,7 @@ impl Root {
                 // 已迁移页面：常规 / 快捷键 / 洋葱皮 / 兼容性；其余页面整块交回 iced。
                 let page = match selected {
                     0 => SettingsPageModel::General,
+                    1 => SettingsPageModel::Audio(super::settings_audio::page(self)),
                     3 => SettingsPageModel::Shortcuts(shortcuts_page(language)),
                     4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),
                     8 => SettingsPageModel::Compatibility(self.compatibility_page(language)),
@@ -289,6 +290,13 @@ impl Root {
             }
             A::RunGpuCheck => Message::Settings(Event::RunGpuCompatibilityCheck),
             A::CopyGpuDiagnostics => Message::Settings(Event::CopyGpuDiagnostics),
+            A::AudioCombo { .. }
+            | A::AudioSlider { .. }
+            | A::AudioText { .. }
+            | A::AudioToggle { .. }
+            | A::AudioButton { .. } => {
+                return super::settings_audio::action_message(self, action);
+            }
             A::Confirm => Message::SettingsDialog(SettingsDialogAction::CloseDialog),
         })
     }

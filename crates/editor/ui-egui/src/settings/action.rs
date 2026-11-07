@@ -6,6 +6,8 @@
 
 use lumino_core::storage::config::{EraserBehavior, OnionSkinBackend, TrackAddBehavior};
 
+use crate::chrome::AudioField;
+
 const ACTION_ID: &str = "lumino.settings.action";
 
 /// 设置对话框产生的动作（不依赖 iced）。
@@ -31,13 +33,55 @@ pub enum SettingsAction {
     RunGpuCheck,
     /// 复制 GPU 诊断信息。
     CopyGpuDiagnostics,
+    /// 音频页下拉选择（下标按模型选项顺序）。
+    AudioCombo {
+        /// 字段。
+        field: AudioField,
+        /// 选项下标。
+        index: usize,
+    },
+    /// 音频页滑杆变化。
+    AudioSlider {
+        /// 字段。
+        field: AudioField,
+        /// 新值。
+        value: f32,
+    },
+    /// 音频页文本输入（原样回传，合法性由生产解析）。
+    AudioText {
+        /// 字段。
+        field: AudioField,
+        /// 新文本。
+        value: String,
+    },
+    /// 音频页开关。
+    AudioToggle {
+        /// 字段。
+        field: AudioField,
+        /// 新状态。
+        checked: bool,
+    },
+    /// 音频页按钮。
+    AudioButton {
+        /// 字段。
+        field: AudioField,
+    },
     /// 「确认」（关闭设置窗口并应用）。
     Confirm,
 }
 
 /// 记录本帧要回传给生产的动作。
+///
+/// **先到先得**：一帧内只保留第一个动作，避免页面重排后新控件被同帧点击误命中
+/// 而覆盖掉真正的动作（例如下拉选项触发的页面切换）。
 pub fn push_action(ctx: &egui::Context, action: SettingsAction) {
-    // `remove_temp` 要求 `Default`：用 `Option` 承载，取用时展平。
+    let pending = ctx
+        .data(|d| d.get_temp::<Option<SettingsAction>>(egui::Id::unique(ACTION_ID)))
+        .flatten()
+        .is_some();
+    if pending {
+        return;
+    }
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
 }
 

@@ -5,6 +5,8 @@
 //!
 //! 全部文案由生产侧按当前语言预计算，`lumino-ui-egui` 不做 i18n。
 
+use super::AudioPageModel;
+
 /// 设置对话框的页面内容。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum SettingsPageModel {
@@ -17,6 +19,8 @@ pub enum SettingsPageModel {
     OnionSkin(OnionSkinPageModel),
     /// 兼容性页（GPU 检查 / 启动开关 / Domino 剪贴板）。
     Compatibility(CompatibilityPageModel),
+    /// 音频页（输出类型 / 设备 / 引擎专属参数）。
+    Audio(AudioPageModel),
 }
 
 /// 快捷键页。

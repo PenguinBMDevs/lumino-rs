@@ -20,7 +20,7 @@ const PAD: f32 = 20.0;
 /// 元素间距。
 const GAP: f32 = 10.0;
 
-fn title(ui: &egui::Ui, x: f32, base: f32, text: &str, palette: &SettingsPalette) {
+pub(super) fn title(ui: &egui::Ui, x: f32, base: f32, text: &str, palette: &SettingsPalette) {
     ui.painter().text(
         Pos2::new(x, base + PAD + 10.0),
         Align2::LEFT_CENTER,
@@ -234,7 +234,7 @@ pub(super) fn compatibility(
 }
 
 /// 页内文本宽度。
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
+pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
     ui.painter()
         .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
         .size()
@@ -242,7 +242,7 @@ fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
 }
 
 /// 页内按钮：`background.weak` 底 + 1px 边框；禁用态文字变暗。
-fn action_button(
+pub(super) fn action_button(
     ui: &mut egui::Ui,
     rect: Rect,
     label: &str,

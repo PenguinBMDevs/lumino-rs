@@ -587,13 +587,50 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/st-shortcuts.png`、`st-onion.png`、`st-onion-cpu.png`、
     `st-compat2.png`、`st-compat3.png`、`st-compat-toggle2.png`、`st-log.png`。
 
-**Task 1.3（下一步）：其余设置页 + 右侧栏面板内容**
+**Task 1.3（第十三步）：音频页（XSynth / LGS / 系统 MIDI）— 已完成**
+
+- 新增 `settings_audio.rs`（页面模型构建 + XSynth 行）、
+  `settings_audio/pages.rs`（LGS / 系统 MIDI 行）、
+  `settings_audio/actions.rs`（字段动作 → 生产 `settings::Event`）：
+  - 顶层输出类型（内置合成器 / KDMAPI / 系统 MIDI）与内置引擎（XSynth / LGS）
+    下拉切换，页面随后端动态变化；
+  - 音频播放输出设备 / WinMM 播表 / MIDI 输入设备下拉 + 刷新按钮（无设备时灰字）；
+  - XSynth：音色库路径 + 浏览、缓冲（5–100ms）、每键最大同音数（滑杆 + 自定义
+    输入）、全局复音上限、复音软目标比例、过载保命闸、力度过滤；
+  - LGS：音色库、块大小（2^6–2^13）、离线导出块长、每键最大同音数、全局复音
+    上限、保命闸、响度过滤、GPU 缓冲状态 / 治理指标开关、LOAD 显示口径；
+  - 系统 MIDI：WinMM 输出设备（播报表）。
+- 页面内容可能高于卡片：新增页面级 `ScrollArea`（常规页保持原几何，像素基线
+  不变）；兼容性页过长的结果也不再被裁掉。
+- 修复真实窗口两处缺陷：
+  1. 切换输出类型后，新页面同位置的滑杆被上一次弹层点击的自动 ID 误命中并
+     回传 `AudioSlider`；给每行滑杆/输入框加稳定 ID，并把比例值对齐到步进网格
+     （非网格初值会被 egui 首帧纠正并误报 changed）。
+  2. 右侧控件行的长标签（如「全局最大复音数: 自动 (16384)」）会压到滑杆上；
+     改为按可用宽度截断并加省略号。
+- `SettingsAction::push_action` 改为**一帧只保留第一个动作**，避免页面重排时新
+  控件被同一帧的点击连带触发。
+- 验收：
+  - `settings_pages_bands` 5/5：新增音频页字段动作（下拉 / 开关 / 按钮）；
+  - `egui_chrome` 24/24：新增音频页三种后端行镜像 + 全部字段动作翻译；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口（720×540 逻辑）：切到音频页（`MenuSelected(1)`）→ KDMAPI 页只有
+    输出类型与 MIDI 设备；切「内置合成器」→ XSynth 行（`AudioCombo(OutputType,0)`）；
+    引擎切 LGS（`AudioCombo(Engine,1)`）→ LGS 行、滚动正常；切换保命闸
+    （`AudioToggle(LgsGate,false)`）；确认关闭（`Confirm`），下次打开仍为 LGS；
+    长标签截断后不再压住滑杆。
+  - 证据图：`target/au-xsynth2.png`、`au-lgs.png`、`au-lgs2.png`、
+    `au-lgs-toggle.png`、`au-final.png`。
+
+**Task 1.3（下一步）：界面页 + 其余设置页 + 右侧栏面板内容**
 
 - 现状：标题栏（菜单/子菜单）、工具栏（精度/洋葱皮下拉、溢出菜单、折叠布局）、
   悬浮工具条及其五个锚定面板、左侧栏、右侧栏图标列、状态栏、保存确认对话框、
-  设置「常规 / 快捷键 / 洋葱皮 / 兼容性」四页已由 egui 绘制。
-- 下一步：迁移音频（含 LGS / 输出 / XSynth 子页）、界面（主题卡片 / 字体 /
-  交互 / 自动滚动）、编辑、调色板、云管理、关于页，最后是右侧栏面板内容
-  （素材 / 音轨属性 / 混音器等）；继续保持「状态镜像 + 动作回传」模式。
+  设置「常规 / 音频 / 快捷键 / 洋葱皮 / 兼容性」五页已由 egui 绘制。
+- 下一步：迁移界面（主题卡片 / 字体 / 交互 / 自动滚动）、编辑、调色板、
+  云管理、关于页，最后是右侧栏面板内容（素材 / 音轨属性 / 混音器等）；
+  继续保持「状态镜像 + 动作回传」模式。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

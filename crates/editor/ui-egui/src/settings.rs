@@ -7,6 +7,7 @@
 //! - 「确认」按钮在卡片之外、右下角 100×34。
 
 mod action;
+mod audio;
 mod general;
 mod pages;
 
@@ -32,6 +33,8 @@ pub struct SettingsHits {
     pub compat_checks: Vec<(String, Rect)>,
     /// 左侧菜单行矩形（按菜单顺序）。
     pub menu_rows: Vec<Rect>,
+    /// 音频页控件矩形（字段 → 矩形）。
+    pub audio_rows: Vec<(crate::chrome::AudioField, Rect)>,
 }
 
 /// 读取本帧命中区（未渲染对应页面时为空）。
@@ -332,7 +335,45 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
         SettingsPageModel::Shortcuts(model) => pages::shortcuts(ui, rect, &model, palette),
         SettingsPageModel::OnionSkin(model) => pages::onion_skin(ui, rect, &model, palette),
         SettingsPageModel::Compatibility(model) => pages::compatibility(ui, rect, &model, palette),
+        SettingsPageModel::Audio(model) => {
+            let height = audio::content_height(&model);
+            scroll_page(ui, rect, "settings-audio-scroll", height, |ui, content| {
+                audio::show(ui, content, &model, palette);
+            });
+        }
     }
+}
+
+/// 页面内容滚动容器：只用于高度可能超出卡片的页面（常规页保持原几何）。
+fn scroll_page(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: &str,
+    content_height: f32,
+    add: impl FnOnce(&mut egui::Ui, Rect),
+) {
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::top_down(egui::Align::Min)),
+    );
+    {
+        let scroll = &mut child.spacing_mut().scroll;
+        scroll.bar_width = 8.0;
+        scroll.bar_inner_margin = 0.0;
+        scroll.bar_outer_margin = 0.0;
+        scroll.floating = false;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt(id)
+        .auto_shrink([false, false])
+        .show(&mut child, |ui| {
+            let (_, content) = ui.allocate_space(Vec2::new(
+                ui.available_width(),
+                content_height.max(ui.available_height()),
+            ));
+            add(ui, content);
+        });
 }
 
 fn confirm(ui: &mut egui::Ui, rect: Rect, palette: &SettingsPalette, label: &str) {

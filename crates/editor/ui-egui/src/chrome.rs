@@ -12,9 +12,10 @@ pub mod toolbar;
 pub mod toolbar_popup;
 
 pub use model::{
-    BrushPanelModel, FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel,
-    ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
-    ToolPanelPanelOwner, ToolPanelSettingsPanel,
+    AudioControlModel, AudioField, AudioPageModel, AudioRowModel, BrushPanelModel,
+    FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel, ThicknessPanelModel,
+    ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner,
+    ToolPanelSettingsPanel,
 };
 pub use model::{
     ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, MenuBarModel,

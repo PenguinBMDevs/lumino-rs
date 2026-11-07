@@ -8,8 +8,9 @@ use std::rc::Rc;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use lumino_ui_egui::chrome::{
-    self, ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, OnionSkinPageModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
+    self, AudioControlModel, AudioField, AudioPageModel, AudioRowModel, ChromeModel, CompatLine,
+    CompatibilityPageModel, DialogModel, OnionSkinPageModel, SettingsLabels, SettingsPageModel,
+    SettingsPalette, SettingsSnapshot,
 };
 use lumino_ui_egui::settings::{SettingsAction, take_action};
 
@@ -128,6 +129,96 @@ fn onion_combo_dispatches_backend() {
         Some(&SettingsAction::OnionSkinBackend(
             lumino_core::storage::config::OnionSkinBackend::Cpu
         ))
+    );
+}
+
+fn row(field: AudioField, control: AudioControlModel) -> AudioRowModel {
+    AudioRowModel {
+        field,
+        label: field_label(field),
+        hint: String::new(),
+        control,
+        width: 160.0,
+    }
+}
+
+fn field_label(field: AudioField) -> String {
+    format!("{field:?}")
+}
+
+/// 音频页：下拉 / 开关 / 按钮都回传字段级动作。
+#[test]
+fn audio_page_dispatches_field_actions() {
+    let page = AudioPageModel {
+        title: "音频".to_owned(),
+        rows: vec![
+            row(
+                AudioField::OutputType,
+                AudioControlModel::Combo {
+                    options: vec![
+                        "Built-in".to_owned(),
+                        "KDMAPI".to_owned(),
+                        "System".to_owned(),
+                    ],
+                    selected: 0,
+                },
+            ),
+            row(
+                AudioField::XSynthGate,
+                AudioControlModel::Checkbox { checked: false },
+            ),
+            row(AudioField::BrowseSoundfont, AudioControlModel::Button),
+        ],
+    };
+    let (mut harness, actions) = harness(snapshot(SettingsPageModel::Audio(page)));
+
+    let hits = lumino_ui_egui::settings::hits(&harness.ctx);
+    let gate = hits
+        .audio_rows
+        .iter()
+        .find(|(field, _)| *field == AudioField::XSynthGate)
+        .map(|(_, rect)| *rect)
+        .expect("开关矩形");
+    click(&mut harness, gate.center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::AudioToggle {
+            field: AudioField::XSynthGate,
+            checked: true,
+        })
+    );
+
+    let hits = lumino_ui_egui::settings::hits(&harness.ctx);
+    let browse = hits
+        .audio_rows
+        .iter()
+        .find(|(field, _)| *field == AudioField::BrowseSoundfont)
+        .map(|(_, rect)| *rect)
+        .expect("按钮矩形");
+    click(&mut harness, browse.center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::AudioButton {
+            field: AudioField::BrowseSoundfont,
+        })
+    );
+
+    let hits = lumino_ui_egui::settings::hits(&harness.ctx);
+    let combo = hits
+        .audio_rows
+        .iter()
+        .find(|(field, _)| *field == AudioField::OutputType)
+        .map(|(_, rect)| *rect)
+        .expect("下拉矩形");
+    click(&mut harness, combo.center());
+    harness.get_by_label("System").click();
+    harness.run();
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::AudioCombo {
+            field: AudioField::OutputType,
+            index: 2,
+        })
     );
 }
 
