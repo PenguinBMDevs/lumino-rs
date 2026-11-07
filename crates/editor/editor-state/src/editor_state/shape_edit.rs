@@ -7,6 +7,11 @@ use std::f32::consts::PI;
 
 use lumino_core::shape::{ShapeKind, ShapeModel, ShapeOp, ShapeRect};
 
+mod group;
+
+use group::box_op;
+pub use group::{apply_group_drag, union_bounds, union_model};
+
 /// 缩放下限：角手柄拖过对边时比例会变负，直接镜像图形；编辑态钳到极小正值，
 /// 表现成「缩到底停住」，不再无提示翻转。
 const MIN_SCALE: f32 = 0.01;
@@ -179,72 +184,15 @@ pub fn apply_drag(
     mods: Mods,
     k: f32,
 ) -> bool {
-    let Some((x0, y0, x1, y1)) = bounds(shape) else {
+    let Some(bounds) = bounds(shape) else {
         return false;
     };
+    if let Some(op) = box_op(bounds, kind, from, to, mods, k) {
+        return transform(shape, |x, y| op.apply(x, y));
+    }
     let dx = to.0 - from.0;
     let dy = to.1 - from.1;
     match kind {
-        HandleKind::Move => transform(shape, |x, y| (x + dx, y + dy)),
-        HandleKind::ResizeCorner(corner) => {
-            let (fx, fy) = match corner {
-                Corner::Nw => (x1, y0),
-                Corner::Ne => (x0, y0),
-                Corner::Sw => (x1, y1),
-                Corner::Se => (x0, y1),
-            };
-            // 拖过对边时 ratio 会变负 —— 那会把图形直接镜像（上下/左右翻转）。
-            // 编辑态要求「拖到底就停住」，不允许无提示翻转，因此钳到最小正比例；
-            // 需要镜像请用 023 半边对称。
-            let mut sx = ratio(to.0, fx, from.0).max(MIN_SCALE);
-            let mut sy = ratio(to.1, fy, from.1).max(MIN_SCALE);
-            if mods.ctrl {
-                let s = ((sx + sy) / 2.0).max(MIN_SCALE);
-                sx = s;
-                sy = s;
-            }
-            transform(shape, |x, y| (fx + (x - fx) * sx, fy + (y - fy) * sy))
-        }
-        HandleKind::Side(side) => {
-            let width = (x1 - x0).max(1e-6);
-            let height = (y1 - y0).max(1e-6);
-            let (sx, sy) = match side {
-                Side::Left => (((x1 - to.0) / width).max(0.01), 1.0),
-                Side::Right => (((to.0 - x0) / width).max(0.01), 1.0),
-                Side::Bottom => (1.0, ((y1 - to.1) / height).max(0.01)),
-                Side::Top => (1.0, ((to.1 - y0) / height).max(0.01)),
-            };
-            transform(shape, |x, y| {
-                let fx = if matches!(side, Side::Left) { x1 } else { x0 };
-                let fy = if matches!(side, Side::Bottom) { y1 } else { y0 };
-                (fx + (x - fx) * sx, fy + (y - fy) * sy)
-            })
-        }
-        HandleKind::Turn => {
-            let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-            let a0 = ((from.1 - cy) * zoom_scale(k)).atan2(from.0 - cx);
-            let a1 = ((to.1 - cy) * zoom_scale(k)).atan2(to.0 - cx);
-            let mut delta = a1 - a0;
-            if !mods.shift {
-                let snap = PI / 12.0;
-                delta = (delta / snap).round() * snap;
-            }
-            let (sin, cos) = delta.sin_cos();
-            let scale = zoom_scale(k);
-            transform(shape, |x, y| {
-                let dx = x - cx;
-                let dy = y - cy;
-                (
-                    cx + dx * cos - dy * scale * sin,
-                    cy + dx * sin / scale + dy * cos,
-                )
-            })
-        }
-        HandleKind::Skew => {
-            let shear = ((to.0 - from.0) / k.max(0.01)).round() * k.max(0.01);
-            let center = (y0 + y1) / 2.0;
-            transform(shape, |x, y| (x + shear * (y - center), y))
-        }
         HandleKind::AnchorHandle(index) => {
             let Some(anchor) = shape.geometry.anchors.get_mut(usize::from(index)) else {
                 return false;
@@ -263,6 +211,7 @@ pub fn apply_drag(
             anchor.pos = (anchor.pos.0 + dx, anchor.pos.1 + dy);
             true
         }
+        _ => false,
     }
 }
 

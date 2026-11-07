@@ -38,6 +38,7 @@ impl Editor {
             self.shape_list_open = false;
             // 020「编辑图形」是鼠标工具的子状态：离开即退出，回来不会突然少掉选框。
             self.shape_edit_armed = None;
+            self.shape_group_edit = None;
         }
         self.rebuild_pending_mirrors();
     }

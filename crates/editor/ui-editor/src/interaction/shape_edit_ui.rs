@@ -9,13 +9,15 @@
 use iced_core::Point;
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::editor_state::{
-    HandleKind, Mods, Zoom, apply_drag, box_handles, hit_test_box,
+    HandleKind, Mods, Zoom, apply_drag, apply_group_drag, box_handles, hit_test_box, union_model,
 };
 use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, ShapeNote};
 
 use crate::Editor;
 
 use super::shape_bridge::source_from_model;
+
+mod group;
 
 /// 手柄编辑目标
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,8 @@ pub(crate) enum ShapeEditTarget {
         /// `EditorState::pending_composed` 下标
         index: usize,
     },
+    /// 多选组（仅 ✓ 前 pending 组合；成员见 `Editor::shape_group_edit`）
+    Group,
 }
 
 /// 一次形状手柄拖拽
@@ -49,6 +53,8 @@ pub(crate) struct ShapeEditState {
     pub original_composed: Vec<PendingComposed>,
     /// 当前预览模型
     pub current: ShapeModel,
+    /// 组编辑成员（拖动前模型；单目标为空）
+    pub group_parts: Vec<group::GroupPart>,
     /// Ctrl / Shift
     pub mods: Mods,
 }
@@ -72,14 +78,41 @@ impl Editor {
 
     /// 进入/退出「编辑图形」模式；进入后隐藏 ShapeSelect 选框。
     pub fn enable_shape_edit(&mut self) -> bool {
-        if self.editor_state.shape_select.selection_len() != 1 {
-            return false;
-        }
         // 已处于编辑态 → 本次为「退出」：丢弃未提交拖拽并恢复选框。
         if self.is_shape_edit_armed() {
             self.exit_shape_edit();
             return true;
         }
+        let selected = self.editor_state.shape_select.selection_len();
+        // 多选组：仅 ✓ 前 pending 组合，且每个成员都必须能可靠重生成。
+        if selected >= 2 {
+            let mut indexes = Vec::new();
+            for shape in self.editor_state.shape_select.selected_shapes() {
+                let Some(PendingShapeRef::Composed(index)) = shape.pending else {
+                    return false;
+                };
+                let Some(composed) = self.editor_state.pending_composed.get(index) else {
+                    return false;
+                };
+                if !Self::pending_handle_supported(composed) {
+                    return false;
+                }
+                if !indexes.contains(&index) {
+                    indexes.push(index);
+                }
+            }
+            if indexes.len() < 2 {
+                return false;
+            }
+            self.shape_edit_armed = Some(ShapeEditTarget::Group);
+            self.shape_group_edit = Some(indexes);
+            self.grid_cache.clear();
+            return true;
+        }
+        if selected != 1 {
+            return false;
+        }
+        self.shape_group_edit = None;
         let (drawn_id, pending, model_id) = {
             let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
@@ -137,6 +170,7 @@ impl Editor {
             self.cancel_shape_edit();
         }
         self.shape_edit_armed = None;
+        self.shape_group_edit = None;
         self.grid_cache.clear();
         was
     }
@@ -148,18 +182,21 @@ impl Editor {
         if self.current_tool() != lumino_message::Tool::ShapeSelect {
             return false;
         }
-        let (target, model, original_composed) = {
+        let (target, model, original_composed, group_parts) = {
             let Some((target, model)) = self.armed_edit_target() else {
                 return false;
             };
-            let model = model.clone();
             let composed = match target {
-                ShapeEditTarget::PendingComposed { .. } => {
+                ShapeEditTarget::PendingComposed { .. } | ShapeEditTarget::Group => {
                     self.editor_state.pending_composed.clone()
                 }
                 ShapeEditTarget::Drawn { .. } => Vec::new(),
             };
-            (target, model, composed)
+            let parts = match target {
+                ShapeEditTarget::Group => self.group_parts().unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            (target, model, composed, parts)
         };
 
         let zoom = Zoom {
@@ -183,6 +220,7 @@ impl Editor {
             original: model.clone(),
             original_composed,
             current: model,
+            group_parts,
             mods: Mods {
                 ctrl: self.ctrl_pressed(),
                 shift: self.shift_pressed(),
@@ -206,6 +244,36 @@ impl Editor {
         // 关键：每帧都从拖动前的 original 重算一次。
         // 若在 state.current 上重复 apply_drag(start→current)，Move/Resize/Turn 会把
         // 同一个 delta 累乘/累加，表现为抽搐与飞出屏幕。
+        if matches!(state.target, ShapeEditTarget::Group) {
+            let mut models: Vec<ShapeModel> = state
+                .group_parts
+                .iter()
+                .map(|part| part.model.clone())
+                .collect();
+            if !apply_group_drag(
+                &mut models,
+                state.handle,
+                state.start,
+                (tick, key),
+                state.mods,
+                k,
+            ) {
+                self.shape_edit = Some(state);
+                return false;
+            }
+            if models
+                .iter()
+                .any(|model| !finite_geometry(model) || !sane_geometry(model))
+            {
+                self.shape_edit = Some(state);
+                return false;
+            }
+            self.write_group_parts(&state.group_parts, &models);
+            state.current = union_model(&models).unwrap_or_else(|| state.current.clone());
+            self.grid_cache.clear();
+            self.shape_edit = Some(state);
+            return true;
+        }
         let mut next = state.original.clone();
         if !apply_drag(
             &mut next,
@@ -241,6 +309,8 @@ impl Editor {
                 }
                 self.refresh_pending_mirror_geometry();
             }
+            // 组分支已在上方提前返回
+            ShapeEditTarget::Group => {}
         }
         self.grid_cache.clear();
         self.shape_edit = Some(state);
@@ -252,7 +322,10 @@ impl Editor {
         let Some(state) = self.shape_edit.take() else {
             return false;
         };
-        let changed = state.current != state.original;
+        let changed = match state.target {
+            ShapeEditTarget::Group => self.editor_state.pending_composed != state.original_composed,
+            _ => state.current != state.original,
+        };
         match state.target {
             ShapeEditTarget::Drawn { drawn_id, model_id } => {
                 if !changed {
@@ -295,6 +368,23 @@ impl Editor {
                 self.grid_cache.clear();
                 true
             }
+            ShapeEditTarget::Group => {
+                if !changed {
+                    self.restore_group_snapshot(state.original_composed);
+                    self.grid_cache.clear();
+                    return false;
+                }
+                // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
+                self.pending_edit_undo.push(state.original_composed);
+                while self.pending_edit_undo.len() > 64 {
+                    self.pending_edit_undo.remove(0);
+                }
+                self.pending_edit_redo.clear();
+                self.pending_composed_redo.clear();
+                self.refresh_pending_mirror_geometry();
+                self.grid_cache.clear();
+                true
+            }
         }
     }
 
@@ -311,6 +401,9 @@ impl Editor {
             ShapeEditTarget::PendingComposed { index } => {
                 self.restore_pending_part(index, &state.original);
                 self.refresh_pending_mirror_geometry();
+            }
+            ShapeEditTarget::Group => {
+                self.restore_group_snapshot(state.original_composed);
             }
         }
         self.grid_cache.clear();
@@ -356,7 +449,7 @@ impl Editor {
             y: self.editor_state.view.zoom_y,
         };
         let include_center = self.edit_allows_center(target);
-        let Some(layout) = box_handles(model, zoom, include_center) else {
+        let Some(layout) = box_handles(&model, zoom, include_center) else {
             return ShapeEditHandles::default();
         };
         let (center, box_kinds): (Vec<_>, Vec<_>) = layout

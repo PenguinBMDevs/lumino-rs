@@ -310,3 +310,97 @@ fn test_anchor_handle_moves_only_target() {
     assert_eq!(shape.geometry.anchors[1].pos, (70.0, 66.0));
     assert_eq!(shape.geometry.anchors[0].pos, (0.0, 60.0));
 }
+
+fn rect_model(x0: f32, y0: f32, x1: f32, y1: f32, id: u64) -> ShapeModel {
+    let mut model = ShapeModel::new(id, 1, ShapeKind::Custom, 1.0);
+    model.geometry = ShapeGeometry::from_rect(lumino_core::shape::ShapeRect {
+        tick_lo: x0,
+        key_lo: y0,
+        tick_hi: x1,
+        key_hi: y1,
+    });
+    model
+}
+
+fn group() -> Vec<ShapeModel> {
+    vec![
+        rect_model(0.0, 60.0, 100.0, 64.0, 1),
+        rect_model(200.0, 60.0, 300.0, 64.0, 2),
+    ]
+}
+
+#[test]
+fn test_union_model_is_joint_box() {
+    let models = group();
+    let union = union_model(&models).expect("应有联合 box");
+    let (x0, y0, x1, y1) = bounds(&union).expect("联合模型应有 bounds");
+    assert_eq!((x0, y0, x1, y1), (0.0, 60.0, 300.0, 64.0));
+}
+
+#[test]
+fn test_group_move_keeps_relative_layout() {
+    let mut models = group();
+    assert!(apply_group_drag(
+        &mut models,
+        HandleKind::Move,
+        (0.0, 0.0),
+        (50.0, 2.0),
+        Mods::default(),
+        1.0
+    ));
+    for model in &models {
+        assert_eq!(
+            model.geometry.rect.expect("rect").tick_lo,
+            50.0 + if model.id == 2 { 200.0 } else { 0.0 }
+        );
+        assert_eq!(model.geometry.rect.expect("rect").key_lo, 62.0);
+    }
+}
+
+#[test]
+fn test_group_resize_scales_each_member_about_joint_box() {
+    let mut models = group();
+    // 联合 box = (0,60)-(300,64)；Se 固定 (0,60)，x 拉到 600 ⇒ sx=2，sy=1
+    assert!(apply_group_drag(
+        &mut models,
+        HandleKind::ResizeCorner(Corner::Se),
+        (300.0, 60.0),
+        (600.0, 60.0),
+        Mods::default(),
+        1.0
+    ));
+    let a = models[0].geometry.rect.expect("rect");
+    let b = models[1].geometry.rect.expect("rect");
+    assert!((a.tick_lo - 0.0).abs() < 1e-3 && (a.tick_hi - 200.0).abs() < 1e-3);
+    assert!((b.tick_lo - 400.0).abs() < 1e-3 && (b.tick_hi - 600.0).abs() < 1e-3);
+    // y 方向不变
+    assert!((a.key_lo - 60.0).abs() < 1e-3 && (a.key_hi - 64.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_group_turn_keeps_member_distance() {
+    let models = group();
+    let mut turned = models.clone();
+    let center = |model: &ShapeModel| {
+        let rect = model.geometry.rect.expect("rect");
+        (
+            (rect.tick_lo + rect.tick_hi) / 2.0,
+            (rect.key_lo + rect.key_hi) / 2.0,
+        )
+    };
+    let before = dist2(center(&models[0]), center(&models[1]));
+    assert!(apply_group_drag(
+        &mut turned,
+        HandleKind::Turn,
+        (300.0, 62.0),
+        (150.0, 212.0),
+        Mods::default(),
+        1.0
+    ));
+    let after = dist2(center(&turned[0]), center(&turned[1]));
+    assert!(
+        (before - after).abs() < 1e-2,
+        "旋转应保持成员中心距离：before={before}, after={after}"
+    );
+    assert_ne!(turned, models, "90° 旋转必须改变成员参数");
+}

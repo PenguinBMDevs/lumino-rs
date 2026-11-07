@@ -341,3 +341,146 @@ fn test_switching_tool_exits_edit_mode() {
     assert!(editor.shape_edit_handles().box_points.is_empty());
     assert!(editor.shape_edit_box().is_none());
 }
+
+/// 两个待确认单支组合：box (0..1000, 60..64) 与 (2000..3000, 60..64)
+fn editor_with_two_pending_composed() -> Editor {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    let make = |x0: f32, x1: f32| {
+        let mut model =
+            lumino_core::shape::ShapeModel::new(0, 1, lumino_core::shape::ShapeKind::Custom, 1.0);
+        model.geometry =
+            lumino_core::shape::ShapeGeometry::from_rect(lumino_core::shape::ShapeRect {
+                tick_lo: x0,
+                key_lo: 60.0,
+                key_hi: 64.0,
+                tick_hi: x1,
+            });
+        model
+    };
+    for (x0, x1) in [(0.0, 1000.0), (2000.0, 3000.0)] {
+        editor
+            .editor_state
+            .pending_composed
+            .push(lumino_editor_state::PendingComposed::single(
+                lumino_editor_state::ComposedKind::Single,
+                make(x0, x1),
+                Vec::new(),
+                Vec::new(),
+            ));
+    }
+    let id0 = editor.editor_state.shape_select.add_pending(
+        1,
+        PendingShapeRef::Composed(0),
+        DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (1000.0, 64.0)],
+        },
+    );
+    let id1 = editor.editor_state.shape_select.add_pending(
+        1,
+        PendingShapeRef::Composed(1),
+        DrawnShapeSource::Polyline {
+            points: vec![(2000.0, 60.0), (3000.0, 64.0)],
+        },
+    );
+    editor.editor_state.shape_select.select_all_of([id0, id1]);
+    editor
+}
+
+#[test]
+fn test_group_edit_union_box_and_move() {
+    let mut editor = editor_with_two_pending_composed();
+    enter_edit(&mut editor);
+    assert!(matches!(
+        editor.shape_edit_armed,
+        Some(ShapeEditTarget::Group)
+    ));
+    assert_eq!(editor.shape_group_edit.as_deref(), Some(&[0usize, 1][..]));
+    let union = editor.group_union_model().expect("联合 box");
+    assert_eq!(
+        union.geometry.bounds().expect("bounds"),
+        (0.0, 60.0, 3000.0, 64.0)
+    );
+
+    // 中心命中 = 组平移
+    assert!(editor.begin_shape_edit(1500.0, 62.0), "中心应命中 Move");
+    assert!(editor.update_shape_edit(1600.0, 64.0));
+    assert!(editor.finish_shape_edit());
+    for (index, x0) in [100.0f32, 2100.0].into_iter().enumerate() {
+        let rect = editor.editor_state.pending_composed[index].results[0]
+            .model
+            .geometry
+            .rect
+            .expect("rect");
+        assert!(
+            (rect.tick_lo - x0).abs() < 1e-3,
+            "成员 {index} 应整体 +100 tick"
+        );
+        assert!(
+            (rect.key_lo - 62.0).abs() < 1e-3,
+            "成员 {index} 应整体 +2 key"
+        );
+    }
+    assert_eq!(editor.pending_edit_undo.len(), 1, "一次组拖动 = 一次 undo");
+}
+
+#[test]
+fn test_group_resize_scales_members_about_joint_box() {
+    let mut editor = editor_with_two_pending_composed();
+    enter_edit(&mut editor);
+    // 联合 box Se 角 = (3000, 60)，拖到 6000 ⇒ sx=2、sy=1
+    assert!(editor.begin_shape_edit(3000.0, 60.0), "角点应命中");
+    assert!(editor.update_shape_edit(6000.0, 60.0));
+    assert!(editor.finish_shape_edit());
+    let a = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .geometry
+        .rect
+        .expect("rect");
+    let b = editor.editor_state.pending_composed[1].results[0]
+        .model
+        .geometry
+        .rect
+        .expect("rect");
+    assert!((a.tick_lo - 0.0).abs() < 1e-3 && (a.tick_hi - 2000.0).abs() < 1e-3);
+    assert!((b.tick_lo - 4000.0).abs() < 1e-3 && (b.tick_hi - 6000.0).abs() < 1e-3);
+    assert!((a.key_lo - 60.0).abs() < 1e-3 && (a.key_hi - 64.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_group_cancel_restores_all_members() {
+    let mut editor = editor_with_two_pending_composed();
+    enter_edit(&mut editor);
+    let before = editor.editor_state.pending_composed.clone();
+    assert!(editor.begin_shape_edit(1500.0, 62.0));
+    assert!(editor.update_shape_edit(1700.0, 64.0));
+    editor.cancel_shape_edit();
+    assert_eq!(
+        editor.editor_state.pending_composed, before,
+        "取消应恢复全部成员"
+    );
+    assert!(editor.pending_edit_undo.is_empty(), "取消不入 undo 栈");
+}
+
+#[test]
+fn test_group_edit_rejects_baked_selection() {
+    let mut editor = editor_with_shape();
+    let first = editor.editor_state.shape_select.selected_ids()[0];
+    let second = editor.editor_state.shape_select.add(
+        1,
+        None,
+        DrawnShapeSource::Polyline {
+            points: vec![(2000.0, 60.0), (3000.0, 64.0)],
+        },
+        Vec::new(),
+    );
+    editor
+        .editor_state
+        .shape_select
+        .select_all_of([first, second]);
+    assert!(
+        !editor.enable_shape_edit(),
+        "已 Bake 多选不支持组编辑（041C 基线：仅 ✓ 前 pending）"
+    );
+}

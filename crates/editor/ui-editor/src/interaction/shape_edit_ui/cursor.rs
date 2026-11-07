@@ -34,8 +34,25 @@ impl Editor {
     ///
     /// 渲染（8+1 锚点/编辑框）、命中、光标都从这里取同一份目标与模型，
     /// 避免「看得见的锚点」与「点得中的锚点」分叉。
-    pub(super) fn armed_edit_target(&self) -> Option<(ShapeEditTarget, &ShapeModel)> {
+    pub(super) fn armed_edit_target(&self) -> Option<(ShapeEditTarget, ShapeModel)> {
         let armed = self.shape_edit_armed?;
+        if matches!(armed, ShapeEditTarget::Group) {
+            let indexes = self.shape_group_edit.as_ref()?;
+            let selected: Vec<usize> = self
+                .editor_state
+                .shape_select
+                .selected_shapes()
+                .filter_map(|shape| match shape.pending {
+                    Some(PendingShapeRef::Composed(index)) => Some(index),
+                    _ => None,
+                })
+                .collect();
+            if !indexes.iter().all(|index| selected.contains(index)) {
+                return None;
+            }
+            let model = self.group_union_model()?;
+            return Some((armed, model));
+        }
         if self.editor_state.shape_select.selection_len() != 1 {
             return None;
         }
@@ -48,7 +65,7 @@ impl Editor {
                 }
                 (
                     ShapeEditTarget::PendingComposed { index },
-                    &composed.results.first()?.model,
+                    composed.results.first()?.model.clone(),
                 )
             }
             Some(_) => return None,
@@ -59,22 +76,25 @@ impl Editor {
                         drawn_id: drawn.id,
                         model_id,
                     },
-                    self.editor_state.shape_store.model(model_id)?,
+                    self.editor_state.shape_store.model(model_id)?.clone(),
                 )
             }
         };
         (target == armed).then_some((target, model))
     }
 
-    /// 编辑目标是否允许中心锚点：只有未 Bake 的单支组合可整体平移。
+    /// 编辑目标是否允许中心锚点：未 Bake 的单支组合与多选组都可整体平移。
     pub(super) fn edit_allows_center(&self, target: ShapeEditTarget) -> bool {
-        matches!(target, ShapeEditTarget::PendingComposed { .. })
+        matches!(
+            target,
+            ShapeEditTarget::PendingComposed { .. } | ShapeEditTarget::Group
+        )
     }
 
     /// 编辑框（屏幕矩形）；未进入「编辑图形」→ `None`。
     pub(crate) fn shape_edit_box(&self) -> Option<Rectangle> {
         let (_, model) = self.armed_edit_target()?;
-        self.shape_bounds_screen(model)
+        self.shape_bounds_screen(&model)
     }
 
     /// 角外旋转区：编辑框四角外侧 3..32px 的对角区域。
@@ -138,7 +158,7 @@ impl Editor {
         let key = self.pos_to_raw_key(pos);
         // 角外旋转区优先：锚点容差 10px 会盖住拐角外的一小圈，
         // 若先查锚点，用户会永远摸不到旋转。
-        if self.in_shape_rotate_zone(model, (tick, key)) {
+        if self.in_shape_rotate_zone(&model, (tick, key)) {
             return Some(mouse::Interaction::Grab);
         }
         let zoom = Zoom {
@@ -146,7 +166,7 @@ impl Editor {
             y: self.editor_state.view.zoom_y,
         };
         let include_center = self.edit_allows_center(target);
-        if let Some(handle) = hit_test_box(model, (tick, key), zoom, 10.0, include_center) {
+        if let Some(handle) = hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
             return Some(match handle {
                 HandleKind::Move => mouse::Interaction::Move,
                 HandleKind::ResizeCorner(Corner::Nw | Corner::Se) => {
