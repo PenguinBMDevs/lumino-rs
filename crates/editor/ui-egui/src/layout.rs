@@ -107,7 +107,7 @@ pub const SIDEBAR_RESIZE_W: f32 = 6.0;
 /// 音轨列表滚动条槽宽度（iced `scrollable` 的 8px）。
 pub const SIDEBAR_SCROLLBAR_W: f32 = 8.0;
 /// 音轨行高（14px 文本行高 17 + 行内边距 8 + 按钮内边距 10）。
-pub const TRACK_ROW_H: f32 = 35.0;
+pub const TRACK_ROW_H: f32 = 36.0;
 /// 「添加音轨」行高（图标 18 + 行内边距 12 + 按钮内边距 10）。
 pub const TRACK_ADD_ROW_H: f32 = 40.0;
 /// 音轨行按钮水平内边距（iced `button::DEFAULT_PADDING` 左右各 10）。

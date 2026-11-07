@@ -7,7 +7,10 @@ pub mod statusbar;
 pub mod titlebar;
 pub mod toolbar;
 
-pub use model::{ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
+pub use model::{
+    ChromeModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
+    TitlebarModel, ToolbarModel,
+};
 
 use egui::{Frame, Margin, Panel, Stroke};
 
@@ -15,54 +18,15 @@ use crate::icons::IconCache;
 use crate::layout;
 use crate::theme;
 
-/// 音轨列表草稿数据（与生产 `Sidebar.tracks` 的最小子集）。
-#[derive(Debug, Clone)]
-pub struct TrackRow {
-    /// 轨道标签（Conductor / A01）。
-    pub label: String,
-    /// 轨道名称。
-    pub name: String,
-    /// 是否指挥轨。
-    pub conductor: bool,
-    /// 是否选中。
-    pub selected: bool,
-    /// 轨道颜色（None = 默认）。
-    pub color: Option<egui::Color32>,
-}
-
 /// 主窗口草稿状态。
+#[derive(Default)]
 pub struct ChromeState {
     /// 图标缓存。
     pub icons: IconCache,
-    /// 音轨列表。
-    pub tracks: Vec<TrackRow>,
+    /// 左侧栏（路由栏 + 音轨列表）。
+    pub sidebar: SidebarModel,
     /// 钢琴卷帘视图。
     pub piano_roll: piano_roll::PianoRollView,
-}
-
-impl Default for ChromeState {
-    fn default() -> Self {
-        Self {
-            icons: IconCache::default(),
-            tracks: vec![
-                TrackRow {
-                    label: "Conductor".to_owned(),
-                    name: "Conductor".to_owned(),
-                    conductor: true,
-                    selected: true,
-                    color: None,
-                },
-                TrackRow {
-                    label: "A01".to_owned(),
-                    name: "Setup".to_owned(),
-                    conductor: false,
-                    selected: false,
-                    color: None,
-                },
-            ],
-            piano_roll: piano_roll::PianoRollView::default(),
-        }
-    }
 }
 
 impl ChromeState {
@@ -179,6 +143,32 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             toolbar::show_model(&mut child, toolbar, icons);
+        }
+    }
+
+    // 左侧栏 band：生产布局是 `column![titlebar, row![sidebar, content], statusbar]`，
+    // 因此左侧栏从标题栏下沿开始、到状态栏上沿结束，宽度 = 48 + panel_width。
+    if let Some(sidebar) = &model.sidebar {
+        let full = root.max_rect();
+        let top = if model.titlebar.is_some() {
+            full.top() + layout::TITLEBAR_H
+        } else {
+            full.top()
+        };
+        let bottom = full.bottom() - layout::STATUSBAR_H;
+        let width = sidebar.total_width().max(0.0).min(full.width());
+        let band = egui::Rect::from_min_max(
+            egui::pos2(full.left(), top),
+            egui::pos2(full.left() + width, bottom.max(top)),
+        );
+        if band.width() > 0.0 && band.height() > 0.0 {
+            root.painter().rect_filled(band, 0, theme::PANEL_BG);
+            let mut child = root.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(band)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            sidebar::show_model(&mut child, sidebar, icons);
         }
     }
 

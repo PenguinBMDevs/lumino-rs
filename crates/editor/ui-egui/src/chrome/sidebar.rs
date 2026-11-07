@@ -1,98 +1,173 @@
-//! 左侧音轨栏 / 右侧图标栏。
+//! 左侧栏：路由栏（48）+ 音轨面板（`panel_width`）。
 //!
-//! 路由栏条目与生产 `ROUTES` 一一对应：分组父按钮激活时点亮 `parent_color`，
-//! 子路由激活时点亮 `child_color`，其余条目只显示图标。
+//! 路由栏条目与生产 `ROUTES` 一一对应：
+//! - 组父按钮常驻，激活时点亮 `parent_color`；
+//! - 子按钮仅在所属分组激活时出现，激活时点亮 `child_color`；
+//! - 底部依次为横向 / 纵向卷帘按钮（`roll_bar_visible` 时）与混音台入口。
 
 mod track_list;
 
-use egui::{Color32, Vec2};
-use egui_extras::{Size, StripBuilder};
+use egui::{Color32, Rect, Vec2};
 
-use super::ChromeState;
+use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel};
 use crate::icons::Icon;
-use crate::layout;
 use crate::theme;
 use crate::widgets;
 
-/// 路由条目：图标 + 激活时的指示条颜色。
-struct RouteEntry {
-    icon: Icon,
-    active_color: Option<Color32>,
-}
-
-/// PianoRoll 分组父色（`GroupId::PianoRoll::parent_color`）。
-const PIANO_ROLL_PARENT: Color32 = Color32::from_rgb(0xD9, 0x26, 0x26);
-/// PianoRoll 子路由色（`GroupId::PianoRoll::child_color`）。
-const PIANO_ROLL_CHILD: Color32 = Color32::from_rgb(0xA6, 0x59, 0x59);
+/// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。
+pub(crate) const ROUTE_BAR_W: f32 = 48.0;
+/// 路由按钮边长（生产 `bar_button` 固定 48×48）。
+const ROUTE_BTN: f32 = 48.0;
+/// 路由图标尺寸（生产 20×20）。
+const ROUTE_ICON: f32 = 20.0;
 
 /// 左侧栏：路由栏 + 音轨面板。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
-    let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::PANEL_BG);
-    let route = egui::Rect::from_min_size(rect.min, Vec2::new(layout::ROUTE_BAR_W, rect.height()));
-    ui.painter().rect_filled(route, 0, theme::ROUTE_BAR_BG);
-
-    StripBuilder::new(ui)
-        .size(Size::exact(layout::ROUTE_BAR_W))
-        .size(Size::remainder())
-        .horizontal(|mut strip| {
-            strip.cell(|ui| route_bar(ui, state));
-            strip.cell(|ui| track_list::show(ui, state));
-        });
+    show_model(ui, &state.sidebar.clone(), &mut state.icons);
 }
 
-fn route_bar(ui: &mut egui::Ui, state: &mut ChromeState) {
-    // 与 `sidebar::core::types::ROUTES` 同序（Space 用 add_space 表达）。
-    const TOP: &[RouteEntry] = &[
-        RouteEntry {
-            icon: Icon::Keys,
-            active_color: Some(PIANO_ROLL_PARENT),
-        },
-        RouteEntry {
-            icon: Icon::FolderTree,
-            active_color: Some(PIANO_ROLL_CHILD),
-        },
-        RouteEntry {
-            icon: Icon::WaveForm,
-            active_color: None,
-        },
-        RouteEntry {
-            icon: Icon::Arrangement,
-            active_color: None,
-        },
-        RouteEntry {
-            icon: Icon::PlayCircle,
-            active_color: None,
-        },
-        RouteEntry {
-            icon: Icon::Download,
-            active_color: None,
-        },
-        RouteEntry {
-            icon: Icon::VideoCamera,
-            active_color: None,
-        },
-        RouteEntry {
-            icon: Icon::MusicNote,
-            active_color: None,
-        },
-    ];
+/// 按只读模型渲染左侧栏。
+pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::icons::IconCache) {
+    let rect = ui.max_rect();
+    ui.painter().rect_filled(rect, 0, theme::PANEL_BG);
+    let route = Rect::from_min_size(rect.min, Vec2::new(ROUTE_BAR_W, rect.height()));
+    ui.painter().rect_filled(route, 0, theme::ROUTE_BAR_BG);
 
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        for entry in TOP {
-            widgets::route_button(ui, &mut state.icons, entry.icon, entry.active_color, false);
+    route_bar(ui, rect, model, icons);
+
+    if model.panel_visible {
+        let panel = Rect::from_min_size(
+            egui::pos2(rect.left() + ROUTE_BAR_W, rect.top()),
+            Vec2::new((model.panel_width - 6.0).max(0.0), rect.height()),
+        );
+        match model.panel {
+            SidebarPanel::Tracks => track_list::show_model(ui, panel, model, icons),
+            SidebarPanel::AddTrackOnly => track_list::show_add_track(ui, panel, model, icons),
+            SidebarPanel::Blank => {}
         }
-        ui.add_space((ui.available_height() - 3.0 * layout::ROUTE_BAR_W - 8.0).max(0.0));
-        for (index, icon) in [Icon::RollBarHorizontal, Icon::RollBarVertical, Icon::Mixer]
-            .into_iter()
-            .enumerate()
-        {
-            // 水平卷帘为当前布局，点亮；其余熄灭。
-            let color = (index == 0).then_some(PIANO_ROLL_CHILD);
-            widgets::route_button(ui, &mut state.icons, icon, color, false);
-        }
-    });
+    }
+}
+
+/// 路由栏：顶部条目 + 底部卷帘/混音台。
+fn route_bar(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    model: &SidebarModel,
+    icons: &mut crate::icons::IconCache,
+) {
+    let left = rect.left();
+    let mut y = rect.top();
+
+    // PianoRoll 组父按钮：卷帘可见即点亮。
+    let active = model
+        .piano_roll_visible
+        .then(|| SidebarGroup::PianoRoll.parent_color());
+    route_button(ui, icons, Icon::Keys, left, y, active);
+    y += ROUTE_BTN;
+
+    if model.active_group == Some(SidebarGroup::PianoRoll) {
+        let active = model
+            .file_active
+            .then(|| SidebarGroup::PianoRoll.child_color());
+        route_button(ui, icons, Icon::FolderTree, left, y, active);
+        y += ROUTE_BTN;
+
+        let active = model
+            .automation_panel_visible
+            .then(|| SidebarGroup::PianoRoll.child_color());
+        route_button(ui, icons, Icon::WaveForm, left, y, active);
+        y += ROUTE_BTN;
+    }
+
+    let active = (model.active_group == Some(SidebarGroup::Project))
+        .then(|| SidebarGroup::Project.parent_color());
+    route_button(ui, icons, Icon::Arrangement, left, y, active);
+    y += ROUTE_BTN;
+
+    let active = model
+        .waterfall
+        .then(|| SidebarGroup::Waterfall.parent_color());
+    route_button(ui, icons, Icon::PlayCircle, left, y, active);
+    y += ROUTE_BTN;
+
+    let active = (model.active_group == Some(SidebarGroup::Renderer))
+        .then(|| SidebarGroup::Renderer.parent_color());
+    route_button(ui, icons, Icon::Download, left, y, active);
+    y += ROUTE_BTN;
+
+    if model.active_group == Some(SidebarGroup::Renderer) {
+        let active = model
+            .video_export_visible
+            .then(|| SidebarGroup::Renderer.child_color());
+        route_button(ui, icons, Icon::VideoCamera, left, y, active);
+        y += ROUTE_BTN;
+
+        let active = model
+            .audio_export_visible
+            .then(|| SidebarGroup::Renderer.child_color());
+        route_button(ui, icons, Icon::MusicNote, left, y, active);
+    }
+
+    // 底部：卷帘方向（可选）+ 混音台（常驻）。
+    let mut bottom: Vec<(Icon, Option<Color32>)> = Vec::new();
+    if model.roll_bar_visible {
+        bottom.push((
+            Icon::RollBarHorizontal,
+            (model.roll_bar_active == Some(RollBar::Horizontal))
+                .then(|| SidebarGroup::PianoRoll.child_color()),
+        ));
+        bottom.push((
+            Icon::RollBarVertical,
+            (model.roll_bar_active == Some(RollBar::Vertical))
+                .then(|| SidebarGroup::PianoRoll.child_color()),
+        ));
+    }
+    bottom.push((
+        if model.mixer_open {
+            Icon::MixerActive
+        } else {
+            Icon::Mixer
+        },
+        model
+            .mixer_open
+            .then(|| SidebarGroup::PianoRoll.child_color()),
+    ));
+
+    let mut by = rect.bottom() - ROUTE_BTN * bottom.len() as f32;
+    for (icon, active) in bottom {
+        route_button(ui, icons, icon, left, by, active);
+        by += ROUTE_BTN;
+    }
+}
+
+/// 单个路由按钮：左侧 2px 灯条 + 20×20 图标（图标起点 = 左 + 14）。
+fn route_button(
+    ui: &egui::Ui,
+    icons: &mut crate::icons::IconCache,
+    icon: Icon,
+    left: f32,
+    y: f32,
+    active: Option<Color32>,
+) {
+    if let Some(color) = active {
+        ui.painter().rect_filled(
+            Rect::from_min_size(egui::pos2(left, y), Vec2::new(2.0, ROUTE_BTN)),
+            0,
+            color,
+        );
+    }
+    let icon_rect = Rect::from_min_size(
+        egui::pos2(left + 14.0, y + (ROUTE_BTN - ROUTE_ICON) / 2.0),
+        Vec2::splat(ROUTE_ICON),
+    );
+    ui.painter().image(
+        icons
+            .texture(ui.ctx(), icon, ROUTE_ICON, icon.default_tint())
+            .id(),
+        icon_rect,
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
 }
 
 /// 右侧栏：图标列（面板默认收起，无激活指示条）。

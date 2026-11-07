@@ -1,58 +1,52 @@
-//! 左侧音轨列表：编号 / 名称分列对齐。
+//! 左侧音轨列表：编号 / 名称分列对齐（只读模型版）。
 //!
 //! 几何来自生产 iced `sidebar/panel.rs` + `sidebar/panel/track_item.rs`：
-//! - 面板内容宽 194（200 - 6px 拖拽手柄），列内边距 8，右侧 8px 滚动条槽；
+//! - 面板内容宽 = panel_width - 6（拖拽手柄），列内边距 8，右侧 8px 滚动条槽；
 //! - 行按钮水平内边距 10，行内容内边距 4（添加行为 6）；
-//! - 第一列固定 36 宽（含 2px 左内边距），列间距 4 → 名称列起点 = 行左 + 54；
-//! - 独奏 `S` 右对齐到内容右边界；
-//! - 音轨行高 35（14px 文本行高 17 + 内边距 8 + 按钮内边距 10），
-//!   添加行高 40（图标 18 + 内边距 12 + 按钮内边距 10）。
+//! - 第一列固定 36 宽（含 2px 左内边距），列间距 4 → 名称列起点 = 行左 + 54
+//!   （指挥轨图标同列，保证所有名称纵向对齐）；
+//! - 独奏 `S` 右对齐到内容右边界（独奏时用警告色）；
+//! - 音轨行高 35，添加行高 40。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, Sense, Vec2};
 use egui_extras::{Column, TableBuilder};
 
-use super::super::{ChromeState, TrackRow};
+use super::super::{SidebarModel, SidebarTrack};
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 
 /// 渲染音轨列表（标题 + 行 + 添加音轨）。
-pub(super) fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
-    let panel = ui.max_rect();
-    // 生产 iced：`row![content(194), resize_handle(6)]`，滚动条 8 占内容右侧。
-    let content_right = panel.left() + layout::SIDEBAR_PANEL_W - layout::SIDEBAR_RESIZE_W;
-    let list_left = panel.left() + 8.0;
-    let list_right = content_right - layout::SIDEBAR_SCROLLBAR_W;
-    let list_top = panel.top() + layout::TRACK_LIST_HEADER_H;
-
-    let tracks = state.tracks.clone();
-    let icons = &mut state.icons;
-    let mut selected = tracks.iter().position(|track| track.selected).unwrap_or(0);
+pub(super) fn show_model(
+    ui: &mut egui::Ui,
+    content: Rect,
+    model: &SidebarModel,
+    icons: &mut IconCache,
+) {
+    let list_left = content.left() + 8.0;
+    // iced 的滚动条不占布局宽度（内容溢出时覆盖在右侧 8px 上），
+    // 因此行宽 = 面板内容宽 - 左右各 8px 内边距。
+    let list_right = content.right() - 8.0;
+    let list_top = content.top() + layout::TRACK_LIST_HEADER_H;
 
     ui.painter().text(
-        egui::pos2(list_left, panel.top() + 15.0),
+        egui::pos2(list_left, content.top() + 15.0),
         Align2::LEFT_CENTER,
-        "音轨列表",
+        &model.track_list_title,
         FontId::proportional(12.0),
         theme::TEXT,
     );
 
-    let rows_height = layout::TRACK_ROW_H * tracks.len() as f32;
+    let rows_height = layout::TRACK_ROW_H * model.tracks.len() as f32;
     let list_rect = Rect::from_min_size(
         egui::pos2(list_left, list_top),
-        Vec2::new(
-            list_right - list_left,
-            rows_height + layout::TRACK_ADD_ROW_H,
-        ),
+        Vec2::new(list_right - list_left, rows_height),
     );
     ui.painter().rect_filled(list_rect, 0, theme::BASE_BG);
 
     let mut list_ui = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(Rect::from_min_size(
-                list_rect.min,
-                Vec2::new(list_rect.width(), rows_height),
-            ))
+            .max_rect(list_rect)
             .layout(Layout::top_down(Align::Min)),
     );
 
@@ -61,40 +55,41 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
         .striped(false)
         .column(Column::remainder())
         .body(|body| {
-            body.rows(layout::TRACK_ROW_H, tracks.len(), |mut row| {
+            body.rows(layout::TRACK_ROW_H, model.tracks.len(), |mut row| {
                 let index = row.index();
-                row.col(|ui| {
-                    if track_row(ui, &tracks[index], icons).clicked() {
-                        selected = index;
-                    }
-                });
+                row.col(|ui| track_row(ui, &model.tracks[index], icons));
             });
         });
-
-    for (index, track) in state.tracks.iter_mut().enumerate() {
-        track.selected = index == selected;
-    }
 
     let add_rect = Rect::from_min_size(
         egui::pos2(list_left, list_top + rows_height),
         Vec2::new(list_rect.width(), layout::TRACK_ADD_ROW_H),
     );
-    let mut add_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(add_rect)
-            .layout(Layout::top_down(Align::Min)),
+    add_track_row(ui, add_rect, &model.add_track_label, icons);
+}
+
+/// 仅「添加音轨」行（`Route::Arrangement`）：面板内边距 8，行宽 = 内容宽 - 16。
+pub(super) fn show_add_track(
+    ui: &mut egui::Ui,
+    content: Rect,
+    model: &SidebarModel,
+    icons: &mut IconCache,
+) {
+    let rect = Rect::from_min_size(
+        egui::pos2(content.left() + 8.0, content.top() + 8.0),
+        Vec2::new((content.width() - 16.0).max(0.0), layout::TRACK_ADD_ROW_H),
     );
-    add_track_row(&mut add_ui, &mut state.icons);
+    add_track_row(ui, rect, &model.add_track_label, icons);
 }
 
 /// 单个音轨行：编号列（固定 36）+ 名称列（固定起点）+ 右侧独奏。
-fn track_row(ui: &mut egui::Ui, track: &TrackRow, cache: &mut IconCache) -> egui::Response {
+fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), layout::TRACK_ROW_H),
-        Sense::click(),
+        Sense::hover(),
     );
 
-    let text_color = track.color.unwrap_or(theme::TEXT);
+    let text_color = track_text_color(track);
     let background = row_background(track, response.hovered());
     ui.painter()
         .rect_filled(rect, CornerRadius::same(6), background);
@@ -113,14 +108,7 @@ fn track_row(ui: &mut egui::Ui, track: &TrackRow, cache: &mut IconCache) -> egui
             egui::pos2(column_left + 9.0, rect.center().y),
             Vec2::splat(18.0),
         );
-        ui.painter().image(
-            cache
-                .texture(ui.ctx(), Icon::Clock, 18.0, Icon::Clock.default_tint())
-                .id(),
-            icon_rect,
-            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            Color32::WHITE,
-        );
+        cache.paint(ui.painter(), Icon::Clock, icon_rect);
     } else {
         ui.painter().text(
             egui::pos2(column_left, rect.center().y),
@@ -131,8 +119,14 @@ fn track_row(ui: &mut egui::Ui, track: &TrackRow, cache: &mut IconCache) -> egui
         );
     }
 
-    // 第二列：名称，起点固定，长度截断到独奏按钮之前。
-    let name_left = inner.left() + layout::TRACK_LABEL_COL_W + layout::TRACK_COL_GAP;
+    // 第二列：名称。指挥轨图标列 24 宽（生产 `track_item` 的图标容器），
+    // 普通轨编号列 36 宽，因此指挥轨名称起点比其它轨早 12px（与 iced 一致）。
+    let label_col = if track.conductor {
+        layout::TRACK_ADD_ICON_COL_W
+    } else {
+        layout::TRACK_LABEL_COL_W
+    };
+    let name_left = inner.left() + label_col + layout::TRACK_COL_GAP;
     let name_rect = Rect::from_min_max(
         egui::pos2(name_left, rect.top()),
         egui::pos2(inner.right() - 12.0, rect.bottom()),
@@ -151,45 +145,31 @@ fn track_row(ui: &mut egui::Ui, track: &TrackRow, cache: &mut IconCache) -> egui
         .truncate(),
     );
 
-    // 独奏按钮右对齐到内容右边界。
+    // 独奏按钮右对齐到内容右边界（独奏时警告色）。
     ui.painter().text(
         egui::pos2(inner.right(), rect.center().y),
         Align2::RIGHT_CENTER,
         "S",
         FontId::proportional(theme::font::LABEL),
-        text_color,
+        if track.soloed {
+            theme::WARNING
+        } else {
+            text_color
+        },
     );
-
-    response
 }
 
 /// 「添加音轨」行：图标列 24 + 列间距 4。
-fn add_track_row(ui: &mut egui::Ui, cache: &mut IconCache) {
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), layout::TRACK_ADD_ROW_H),
-        Sense::click(),
-    );
-    let background = if response.hovered() {
-        theme::TOOLBAR_BG
-    } else {
-        theme::BASE_BG
-    };
+fn add_track_row(ui: &mut egui::Ui, rect: Rect, label: &str, cache: &mut IconCache) {
     ui.painter()
-        .rect_filled(rect, CornerRadius::same(6), background);
+        .rect_filled(rect, CornerRadius::same(6), theme::BASE_BG);
 
     let inner_left = rect.left() + layout::TRACK_BUTTON_PAD_X + layout::TRACK_ADD_ROW_PAD;
     let icon_rect = Rect::from_min_size(
         egui::pos2(inner_left + 2.0, rect.center().y - 9.0),
         Vec2::splat(18.0),
     );
-    ui.painter().image(
-        cache
-            .texture(ui.ctx(), Icon::Plus, 18.0, Icon::Plus.default_tint())
-            .id(),
-        icon_rect,
-        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        Color32::WHITE,
-    );
+    cache.paint(ui.painter(), Icon::Plus, icon_rect);
 
     ui.painter().text(
         egui::pos2(
@@ -197,14 +177,31 @@ fn add_track_row(ui: &mut egui::Ui, cache: &mut IconCache) {
             rect.center().y,
         ),
         Align2::LEFT_CENTER,
-        "添加音轨",
+        label,
         FontId::proportional(theme::font::LABEL),
         theme::TEXT,
     );
 }
 
+/// 音轨文本色：自定义色按亮度取黑/白，默认主题正文色。
+fn track_text_color(track: &SidebarTrack) -> Color32 {
+    match track.color {
+        Some(color) => {
+            let luminance = 0.299 * f32::from(color.r())
+                + 0.587 * f32::from(color.g())
+                + 0.114 * f32::from(color.b());
+            if luminance > 127.5 {
+                Color32::BLACK
+            } else {
+                Color32::WHITE
+            }
+        }
+        None => theme::TEXT,
+    }
+}
+
 /// 行底色：与 iced `track_button_background` 同规则。
-fn row_background(track: &TrackRow, hovered: bool) -> Color32 {
+fn row_background(track: &SidebarTrack, hovered: bool) -> Color32 {
     match (track.color, track.selected, hovered) {
         (Some(color), true, _) => blend(color, theme::SELECTED_BG, 0.35),
         (Some(color), false, true) => blend(color, theme::TOOLBAR_BG, 0.25),

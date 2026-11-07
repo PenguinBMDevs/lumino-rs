@@ -38,6 +38,7 @@ fn bands_expose_menu_labels_and_status_metrics() {
                 "帮助".to_owned(),
             ],
         }),
+        sidebar: None,
         toolbar: None,
         statusbar: statusbar(Some(58.5)),
     });
@@ -61,6 +62,7 @@ fn bands_expose_menu_labels_and_status_metrics() {
 fn native_titlebar_skips_top_band_but_keeps_statusbar() {
     let mut harness = harness(ChromeModel {
         titlebar: None,
+        sidebar: None,
         toolbar: None,
         statusbar: statusbar(Some(60.0)),
     });
@@ -80,6 +82,7 @@ fn native_titlebar_skips_top_band_but_keeps_statusbar() {
 fn missing_fps_hides_metric_group() {
     let mut harness = harness(ChromeModel {
         titlebar: None,
+        sidebar: None,
         toolbar: None,
         statusbar: statusbar(None),
     });

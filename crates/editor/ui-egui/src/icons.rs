@@ -222,6 +222,20 @@ impl IconCache {
     ) -> egui::Image<'static> {
         self.image(ctx, icon, size, icon.default_tint())
     }
+
+    /// 在指定矩形内直接绘制图标（不参与布局，只走 painter）。
+    ///
+    /// 用于音轨行、列表等「位置由外部几何决定」的场合。
+    pub fn paint(&mut self, painter: &egui::Painter, icon: Icon, rect: egui::Rect) {
+        let size = rect.width().min(rect.height());
+        let texture = self.texture(painter.ctx(), icon, size, icon.default_tint());
+        painter.image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
 }
 
 fn rasterize(icon: Icon, size: u32, tint: Option<Color32>) -> Result<ColorImage, IconError> {

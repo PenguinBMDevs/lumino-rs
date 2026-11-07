@@ -10,7 +10,9 @@ use egui_kittest::Harness;
 use image::RgbaImage;
 use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollMode;
-use lumino_ui_egui::chrome::{self, ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
+use lumino_ui_egui::chrome::{
+    self, ChromeModel, SidebarModel, StatusbarModel, TitlebarModel, ToolbarModel,
+};
 use lumino_ui_egui::icons::IconCache;
 
 const WIDTH: u32 = 1600;
@@ -36,6 +38,7 @@ fn model() -> ChromeModel {
                 "帮助".to_owned(),
             ],
         }),
+        sidebar: Some(SidebarModel::default()),
         toolbar: Some(ToolbarModel {
             left_inset: 248.0,
             bpm: "120.0".to_owned(),
@@ -194,11 +197,11 @@ fn bands_match_iced_geometry() {
     let iced_right = merge_runs(&ink_runs(&baseline, 982, 997, 1330, 1599, STATUSBAR_BG), 6);
     assert_runs_close(&bands_right, &iced_right, "状态栏指标");
 
-    // 工具栏 band：必须从左侧栏右缘 248 开始（band 内为 PANEL_BG，band 外不绘制）。
-    assert_ne!(
-        &bands.get_pixel(247, 60).0[..3],
-        &[0x2A, 0x2F, 0x47],
-        "工具栏 band 不得覆盖左侧栏区域"
+    // 工具栏 band：必须从左侧栏右缘 248 开始，不覆盖路由栏。
+    assert_eq!(
+        &bands.get_pixel(10, 60).0[..3],
+        &[0x33, 0x39, 0x57],
+        "工具栏 band 不得覆盖左侧栏路由栏"
     );
     assert_eq!(
         &bands.get_pixel(248, 60).0[..3],
@@ -208,4 +211,58 @@ fn bands_match_iced_geometry() {
     let bands_toolbar = ink_runs(&bands, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
     let iced_toolbar = ink_runs(&baseline, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
     assert_runs_close(&bands_toolbar, &iced_toolbar, "工具栏");
+
+    // 左侧栏 band：标题栏下沿到状态栏上沿，宽 48（路由栏）+ 200（面板）。
+    assert_eq!(
+        &bands.get_pixel(20, 29).0[..3],
+        &TITLEBAR_BG,
+        "左侧栏不得覆盖标题栏"
+    );
+    assert_eq!(
+        &bands.get_pixel(20, 30).0[..3],
+        &[0x33, 0x39, 0x57],
+        "路由栏底色应为 `background.weaker`"
+    );
+    assert_eq!(
+        &bands.get_pixel(20, 979).0[..3],
+        &[0x33, 0x39, 0x57],
+        "左侧栏 band 下沿应止于状态栏上沿"
+    );
+    assert_eq!(
+        &bands.get_pixel(20, 980).0[..3],
+        &STATUSBAR_BG,
+        "左侧栏不得覆盖状态栏"
+    );
+
+    // 音轨面板：行宽 = 内容宽 - 左右 8px（滚动条不占布局宽度），
+    // 行高 36（14px 文本行高 18 + 行内边距 8 + 按钮内边距 10）。
+    assert_eq!(
+        &bands.get_pixel(200, 70).0[..3],
+        &[0x44, 0x4D, 0x79],
+        "选中音轨行底色应为 `background.strong`"
+    );
+    assert_eq!(
+        &bands.get_pixel(200, 110).0[..3],
+        &[0x24, 0x28, 0x3B],
+        "未选中音轨行底色应为 `background.base`"
+    );
+    assert_eq!(
+        &bands.get_pixel(233, 120).0[..3],
+        &[0x24, 0x28, 0x3B],
+        "音轨行右边界应为面板内容右缘 - 8"
+    );
+    assert_eq!(
+        &bands.get_pixel(234, 120).0[..3],
+        &[0x2A, 0x2F, 0x47],
+        "音轨行右侧应为面板底色（8px 内边距）"
+    );
+
+    // 路由栏图标列与音轨行文本：墨迹区间与 iced 基线一致。
+    let bands_route = ink_runs(&bands, 38, 960, 2, 47, [0x33, 0x39, 0x57]);
+    let iced_route = ink_runs(&baseline, 38, 960, 2, 47, [0x33, 0x39, 0x57]);
+    assert_runs_close(&bands_route, &iced_route, "路由栏图标");
+
+    let bands_add = ink_runs(&bands, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
+    let iced_add = ink_runs(&baseline, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
+    assert_runs_close(&bands_add, &iced_add, "添加音轨行");
 }
