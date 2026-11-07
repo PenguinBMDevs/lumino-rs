@@ -61,12 +61,14 @@ impl ShapeEntry {
 enum ShapeGroupRecord {
     /// 创建
     Created { group: u64, id: u64 },
-    /// 参数变更
+    /// 参数变更（模型 + 生成音符一起快照；一次 undo 必须把力度等音符字段一并还原）
     Edited {
         group: u64,
         id: u64,
         before: Box<ShapeModel>,
         after: Box<ShapeModel>,
+        before_notes: Vec<ShapeNote>,
+        after_notes: Vec<ShapeNote>,
     },
     /// 删除
     Deleted { group: u64, id: u64 },
@@ -178,19 +180,51 @@ impl ShapeStore {
 
     /// 修改形状参数（记录前后像）；形状不存在返回 `false`
     pub fn edit(&mut self, id: u64, new_model: ShapeModel, group: u64) -> bool {
+        self.edit_inner(id, new_model, None, group)
+    }
+
+    /// 修改形状参数 + 生成音符；模型与音符一起记录前后像，
+    /// 保证一次 undo 能还原力度/通道等音符字段。
+    pub fn edit_with_notes(
+        &mut self,
+        id: u64,
+        new_model: ShapeModel,
+        new_notes: Vec<ShapeNote>,
+        group: u64,
+    ) -> bool {
+        self.edit_inner(id, new_model, Some(new_notes), group)
+    }
+
+    fn edit_inner(
+        &mut self,
+        id: u64,
+        new_model: ShapeModel,
+        new_notes: Option<Vec<ShapeNote>>,
+        group: u64,
+    ) -> bool {
         let Some(index) = self.index_of(id) else {
             return false;
         };
         let before = self.entries[index].model.clone();
+        let before_notes = self.entries[index].notes.clone();
         let mut new_model = new_model;
         new_model.id = id;
         self.entries[index].model = new_model.clone();
+        let after_notes = match new_notes {
+            Some(notes) => {
+                self.entries[index].notes = notes.clone();
+                notes
+            }
+            None => self.entries[index].notes.clone(),
+        };
         if group != 0 {
             self.push_record(ShapeGroupRecord::Edited {
                 group,
                 id,
                 before: Box::new(before),
                 after: Box::new(new_model),
+                before_notes,
+                after_notes,
             });
         }
         true
@@ -311,9 +345,15 @@ impl ShapeStore {
             ShapeGroupRecord::Created { id, .. } => {
                 self.set_flag(*id, |e| e.hidden_by_creation = true);
             }
-            ShapeGroupRecord::Edited { id, before, .. } => {
+            ShapeGroupRecord::Edited {
+                id,
+                before,
+                before_notes,
+                ..
+            } => {
                 if let Some(index) = self.index_of(*id) {
                     self.entries[index].model = (**before).clone();
+                    self.entries[index].notes = before_notes.clone();
                 }
             }
             ShapeGroupRecord::Deleted { id, .. } => {
@@ -327,9 +367,15 @@ impl ShapeStore {
             ShapeGroupRecord::Created { id, .. } => {
                 self.set_flag(*id, |e| e.hidden_by_creation = false);
             }
-            ShapeGroupRecord::Edited { id, after, .. } => {
+            ShapeGroupRecord::Edited {
+                id,
+                after,
+                after_notes,
+                ..
+            } => {
                 if let Some(index) = self.index_of(*id) {
                     self.entries[index].model = (**after).clone();
+                    self.entries[index].notes = after_notes.clone();
                 }
             }
             ShapeGroupRecord::Deleted { id, .. } => {

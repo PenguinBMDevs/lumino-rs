@@ -122,3 +122,75 @@ fn test_velocity_up_writes_env_op() {
             .any(|op| matches!(op, ShapeOp::VelocityEnv(_)))
     );
 }
+
+#[test]
+fn test_velocity_up_only_changes_selected_and_undoes_once() {
+    let mut editor = empty_editor();
+    let selected = add_polyline(
+        &mut editor,
+        vec![(0.0, 60.0), (40.0, 60.0)],
+        vec![shape_note(0.0, 60), shape_note(20.0, 61)],
+    );
+    let other = add_polyline(
+        &mut editor,
+        vec![(100.0, 64.0), (140.0, 64.0)],
+        vec![shape_note(100.0, 64), shape_note(120.0, 65)],
+    );
+    editor.editor_state.shape_select.select_only(selected);
+    let model_id = editor
+        .ensure_model_for_drawn(selected)
+        .expect("选中形状应有模型");
+    let selected_before: Vec<u8> = editor
+        .editor_state
+        .shape_store
+        .notes_of(model_id)
+        .iter()
+        .map(|note| note.velocity)
+        .collect();
+    let other_before: Vec<u8> = editor
+        .editor_state
+        .shape_select
+        .shapes()
+        .iter()
+        .find(|shape| shape.id == other)
+        .expect("非选中形状仍在")
+        .notes
+        .iter()
+        .map(|note| note.velocity)
+        .collect();
+
+    assert!(editor.velocity_up_selected());
+    let selected_after: Vec<u8> = editor
+        .editor_state
+        .shape_store
+        .notes_of(model_id)
+        .iter()
+        .map(|note| note.velocity)
+        .collect();
+    assert_ne!(selected_after, selected_before, "选中形状应被写入力度包络");
+    let other_after: Vec<u8> = editor
+        .editor_state
+        .shape_select
+        .shapes()
+        .iter()
+        .find(|shape| shape.id == other)
+        .expect("非选中形状仍在")
+        .notes
+        .iter()
+        .map(|note| note.velocity)
+        .collect();
+    assert_eq!(other_after, other_before, "非选中形状力度必须不变");
+
+    assert!(editor.undo(), "一次应用应只压一条历史");
+    let selected_undone: Vec<u8> = editor
+        .editor_state
+        .shape_store
+        .notes_of(model_id)
+        .iter()
+        .map(|note| note.velocity)
+        .collect();
+    assert_eq!(
+        selected_undone, selected_before,
+        "一次 undo 应逐音符还原力度"
+    );
+}

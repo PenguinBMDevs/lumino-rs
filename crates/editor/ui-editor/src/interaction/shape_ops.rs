@@ -201,8 +201,9 @@ impl Editor {
         self.remove_shape_notes(track, &old_notes);
         let sounding: &[ShapeNote] = if silent { &[] } else { &new_notes };
         let written = self.write_shape_notes(track, sounding);
-        self.editor_state.shape_store.edit(id, new_model, group);
-        self.editor_state.shape_store.assign_notes(id, written);
+        self.editor_state
+            .shape_store
+            .edit_with_notes(id, new_model, written, group);
         if silent {
             self.editor_state
                 .shape_store
