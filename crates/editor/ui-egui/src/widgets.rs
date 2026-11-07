@@ -2,6 +2,7 @@
 
 use egui::{Align, Color32, CornerRadius, FontId, Layout, Response, RichText, Sense, Stroke, Vec2};
 
+use crate::chrome::SettingsPalette;
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
@@ -166,6 +167,7 @@ pub fn combo_box(
     selected: &str,
     options: &[&str],
     width: f32,
+    palette: &SettingsPalette,
 ) -> bool {
     let mut changed = false;
     // 生产 `pick_list` 高 32、左右内边距 8、边框 `background.strong`；
@@ -174,11 +176,17 @@ pub fn combo_box(
     let previous_interact = ui.spacing().interact_size;
     ui.spacing_mut().button_padding.x = 8.0;
     ui.spacing_mut().interact_size.y = layout::SETTINGS_COMBO_H;
+    // 生产 `pick_list` 按钮底色 = `background.weak`、文字 = `background.base.text`；
+    // egui 默认按钮底色是中性灰，深浅主题都必须显式对齐。
+    let previous_visuals = ui.visuals().clone();
+    ui.visuals_mut().widgets.inactive.weak_bg_fill = palette.toolbar;
+    ui.visuals_mut().widgets.inactive.bg_fill = palette.toolbar;
+    ui.visuals_mut().widgets.inactive.fg_stroke.color = palette.text;
     let response = egui::ComboBox::from_id_salt(id)
         .selected_text(
             RichText::new(selected)
                 .size(SETTINGS_COMBO_TEXT)
-                .color(theme::TEXT),
+                .color(palette.text),
         )
         .width(width)
         .show_ui(ui, |ui| {
@@ -196,11 +204,12 @@ pub fn combo_box(
         });
     ui.spacing_mut().button_padding = previous_padding;
     ui.spacing_mut().interact_size = previous_interact;
+    *ui.visuals_mut() = previous_visuals;
     let rect = response.response.rect;
     ui.painter().rect_stroke(
         rect,
         egui::CornerRadius::same(4),
-        Stroke::new(1.0, theme::SELECTED_BG),
+        Stroke::new(1.0, palette.input_border),
         egui::StrokeKind::Inside,
     );
     changed
@@ -208,14 +217,19 @@ pub fn combo_box(
 
 /// 单行数字输入框：外观对齐生产 `text_input`（高 31、1px `background.strong`
 /// 边框、背景 `background.base`、左内边距 8、字号 16）。
-pub fn numeric_input(ui: &mut egui::Ui, value: &mut String, width: f32) -> Response {
+pub fn numeric_input(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    width: f32,
+    palette: &SettingsPalette,
+) -> Response {
     let (rect, _) =
         ui.allocate_exact_size(Vec2::new(width, layout::SETTINGS_INPUT_H), Sense::click());
     ui.painter().rect(
         rect,
         CornerRadius::same(4),
-        theme::BASE_BG,
-        Stroke::new(1.0, theme::SELECTED_BG),
+        palette.background,
+        Stroke::new(1.0, palette.input_border),
         egui::StrokeKind::Inside,
     );
     let mut child = ui.new_child(
@@ -227,7 +241,7 @@ pub fn numeric_input(ui: &mut egui::Ui, value: &mut String, width: f32) -> Respo
         egui::TextEdit::singleline(value)
             .frame(egui::Frame::NONE)
             .font(FontId::proportional(SETTINGS_INPUT_TEXT))
-            .text_color(theme::TEXT)
+            .text_color(palette.text)
             .desired_width(f32::INFINITY),
     )
 }

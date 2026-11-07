@@ -9,6 +9,7 @@
 use egui::{Align, Color32, CornerRadius, Layout, Rect, RichText, Sense, Stroke, Vec2};
 use egui_extras::{Column, TableBuilder};
 
+use crate::chrome::SettingsPalette;
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
@@ -58,6 +59,11 @@ const MENU_ROW_H: f32 = 52.0;
 
 /// 渲染设置对话框。
 pub fn show(ui: &mut egui::Ui, state: &mut SettingsState) {
+    show_with(ui, state, &SettingsPalette::DARK);
+}
+
+/// 按调色板渲染设置对话框（真实窗口叠加层与场景共用）。
+pub fn show_with(ui: &mut egui::Ui, state: &mut SettingsState, palette: &SettingsPalette) {
     theme::apply(ui.ctx());
     crate::fonts::install(ui.ctx());
     ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -66,17 +72,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut SettingsState) {
         .exact_size(layout::TITLEBAR_H)
         .resizable(false)
         .show_separator_line(false)
-        .frame(crate::chrome::panel_frame(theme::TITLEBAR_BG))
-        .show(ui, |ui| titlebar(ui, &mut state.icons));
+        .frame(crate::chrome::panel_frame(palette.titlebar))
+        .show(ui, |ui| titlebar(ui, palette, &mut state.icons));
 
     egui::CentralPanel::default()
-        .frame(crate::chrome::panel_frame(theme::BASE_BG))
-        .show(ui, |ui| content(ui, state));
+        .frame(crate::chrome::panel_frame(palette.background))
+        .show(ui, |ui| content(ui, state, palette));
 }
 
-fn titlebar(ui: &mut egui::Ui, cache: &mut IconCache) {
+fn titlebar(ui: &mut egui::Ui, palette: &SettingsPalette, cache: &mut IconCache) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::TITLEBAR_BG);
+    ui.painter().rect_filled(rect, 0, palette.titlebar);
     ui.spacing_mut().item_spacing.x = 0.0;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -86,9 +92,9 @@ fn titlebar(ui: &mut egui::Ui, cache: &mut IconCache) {
     });
 }
 
-fn content(ui: &mut egui::Ui, state: &mut SettingsState) {
+fn content(ui: &mut egui::Ui, state: &mut SettingsState, palette: &SettingsPalette) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::BASE_BG);
+    ui.painter().rect_filled(rect, 0, palette.background);
 
     const MARGIN: f32 = 16.0;
     const BUTTON_W: f32 = 100.0;
@@ -117,30 +123,30 @@ fn content(ui: &mut egui::Ui, state: &mut SettingsState) {
     );
 
     ui.painter()
-        .rect_filled(container, CornerRadius::same(16), theme::PANEL_BG);
+        .rect_filled(container, CornerRadius::same(16), palette.panel);
     ui.painter()
-        .rect_filled(menu_rect, CornerRadius::same(16), theme::TOOLBAR_BG);
+        .rect_filled(menu_rect, CornerRadius::same(16), palette.toolbar);
     ui.painter().rect_stroke(
         menu_rect,
         CornerRadius::same(16),
-        Stroke::new(1.0, theme::BORDER),
+        Stroke::new(1.0, palette.border),
         egui::StrokeKind::Inside,
     );
     ui.painter()
-        .rect_filled(card_rect, CornerRadius::same(16), theme::CARD_BG);
+        .rect_filled(card_rect, CornerRadius::same(16), palette.card);
     ui.painter().rect_stroke(
         card_rect,
         CornerRadius::same(16),
-        Stroke::new(1.0, theme::BORDER),
+        Stroke::new(1.0, palette.border),
         egui::StrokeKind::Inside,
     );
 
-    menu(ui, menu_rect, state);
-    form(ui, card_rect, state);
-    confirm(ui, confirm_rect);
+    menu(ui, menu_rect, state, palette);
+    form(ui, card_rect, state, palette);
+    confirm(ui, confirm_rect, palette);
 }
 
-fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
+fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &SettingsPalette) {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect.shrink2(Vec2::new(1.0, 1.0)))
@@ -156,13 +162,20 @@ fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
                 let index = row.index();
                 row.col(|ui| {
                     let (label, icon) = MENU_ITEMS[index];
-                    menu_row(ui, state, index, label, icon);
+                    menu_row(ui, state, index, label, icon, palette);
                 });
             });
         });
 }
 
-fn menu_row(ui: &mut egui::Ui, state: &mut SettingsState, index: usize, label: &str, icon: Icon) {
+fn menu_row(
+    ui: &mut egui::Ui,
+    state: &mut SettingsState,
+    index: usize,
+    label: &str,
+    icon: Icon,
+    palette: &SettingsPalette,
+) {
     let selected = state.selected == index;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), MENU_ROW_H), Sense::click());
@@ -184,9 +197,9 @@ fn menu_row(ui: &mut egui::Ui, state: &mut SettingsState, index: usize, label: &
         label,
         egui::FontId::proportional(theme::font::LABEL),
         if selected {
-            theme::ACCENT_STRONG
+            palette.accent_strong
         } else {
-            theme::TEXT
+            palette.text
         },
     );
     ui.painter().text(
@@ -198,7 +211,7 @@ fn menu_row(ui: &mut egui::Ui, state: &mut SettingsState, index: usize, label: &
     );
 }
 
-fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
+fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &SettingsPalette) {
     let pad = layout::SETTINGS_PADDING;
     let left = rect.left() + pad;
     let base = rect.top();
@@ -208,21 +221,39 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
         egui::Align2::LEFT_CENTER,
         "常规",
         egui::FontId::proportional(theme::font::TITLE),
-        theme::TEXT,
+        palette.text,
     );
 
     // 表单：标签 / 控件两列，第一列宽度固定（行位置相对卡片顶部，与 iced 一致）。
     let label_x = left;
     let field_x = left + 104.0;
-    form_row(ui, state, label_x, field_x, base + 99.0, "橡皮擦行为:", 0);
-    form_row(ui, state, label_x, field_x, base + 171.0, "添加音轨时:", 1);
+    form_row(
+        ui,
+        state,
+        label_x,
+        field_x,
+        base + 99.0,
+        "橡皮擦行为:",
+        0,
+        palette,
+    );
+    form_row(
+        ui,
+        state,
+        label_x,
+        field_x,
+        base + 171.0,
+        "添加音轨时:",
+        1,
+        palette,
+    );
 
     ui.painter().text(
         egui::pos2(left, base + 236.0),
         egui::Align2::LEFT_CENTER,
         "日志",
         egui::FontId::proportional(theme::font::SECTION),
-        theme::TEXT,
+        palette.text,
     );
 
     let log_label = "日志文件保留份数:";
@@ -231,7 +262,7 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
         .layout_no_wrap(
             log_label.to_owned(),
             egui::FontId::proportional(theme::font::LABEL),
-            theme::TEXT,
+            palette.text,
         )
         .size()
         .x;
@@ -240,7 +271,7 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
         egui::Align2::LEFT_CENTER,
         log_label,
         egui::FontId::proportional(theme::font::LABEL),
-        theme::TEXT,
+        palette.text,
     );
     // 生产 iced 的行布局：`row![label, space(16), input]`，行间距 8 →
     // 标签与输入框之间实际 32px（8+16+8）。
@@ -256,9 +287,10 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
             .max_rect(input_rect)
             .layout(Layout::top_down(Align::Min)),
     );
-    widgets::numeric_input(&mut input_ui, &mut state.log_retention, 80.0);
+    widgets::numeric_input(&mut input_ui, &mut state.log_retention, 80.0, palette);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn form_row(
     ui: &mut egui::Ui,
     state: &mut SettingsState,
@@ -267,13 +299,14 @@ fn form_row(
     center_y: f32,
     label: &str,
     index: usize,
+    palette: &SettingsPalette,
 ) {
     ui.painter().text(
         egui::pos2(label_x, center_y),
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(theme::font::LABEL),
-        theme::TEXT,
+        palette.text,
     );
 
     let combo_rect =
@@ -288,16 +321,16 @@ fn form_row(
     } else {
         (&state.track_add, ["自动跳转到新音轨", "停留在当前音轨"])
     };
-    widgets::combo_box(&mut combo_ui, label, value, &options, 200.0);
+    widgets::combo_box(&mut combo_ui, label, value, &options, 200.0, palette);
 }
 
-fn confirm(ui: &mut egui::Ui, rect: Rect) {
+fn confirm(ui: &mut egui::Ui, rect: Rect, palette: &SettingsPalette) {
     let button = egui::Button::new(
         RichText::new("确认")
             .size(theme::font::LABEL)
             .color(Color32::from_rgb(0x12, 0x1A, 0x2A)),
     )
-    .fill(theme::ACCENT)
+    .fill(palette.accent)
     .corner_radius(CornerRadius::same(4));
     ui.put(rect, button);
 }

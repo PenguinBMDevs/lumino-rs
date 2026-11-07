@@ -197,8 +197,8 @@ fn dialog_windows_do_not_receive_main_chrome() {
     assert!(model.piano_roll.is_none(), "对话框不得画卷帘骨架");
     assert!(model.statusbar.fps.is_none(), "对话框不得画状态栏");
     assert!(
-        model.dialog.is_none(),
-        "设置对话框暂未接管，必须整块交回 iced"
+        matches!(model.dialog, Some(DialogModel::Settings(_))),
+        "设置对话框已整窗接管（调色板来自生产主题）"
     );
 }
 
@@ -238,10 +238,18 @@ fn light_theme_dialogs_use_injected_palette() {
         "浅色调色板必须来自生产主题，而不是深色常量"
     );
 
-    // 设置页仍用深色常量 → 浅色主题交回 iced。
+    // 设置页同样注入调色板：浅色主题也整窗接管。
     let settings =
         Root::new_settings_dialog(&light, &lumino_core::storage::config::UiConfig::default());
-    assert!(settings.egui_chrome_model().dialog.is_none());
+    let model = settings.egui_chrome_model();
+    let Some(DialogModel::Settings(values)) = model.dialog else {
+        panic!("浅色主题的设置对话框也应整窗接管");
+    };
+    assert_ne!(
+        values.palette.background,
+        SettingsPalette::DARK.background,
+        "浅色设置调色板必须来自生产主题"
+    );
 }
 
 #[test]

@@ -9,8 +9,8 @@ pub mod toolbar;
 
 pub use model::{
     ChromeModel, DialogModel, DialogPalette, RightSidebarModel, RightSidebarPanelKind, RollBar,
-    SaveConfirmModel, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack,
-    StatusbarModel, TitlebarModel, ToolbarModel,
+    SaveConfirmModel, SettingsPalette, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel,
+    SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use egui::{Frame, Margin, Panel, Stroke};
@@ -130,7 +130,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     track_add: values.track_add.clone(),
                     log_retention: values.log_retention.clone(),
                 };
-                crate::settings::show(&mut root, &mut state);
+                crate::settings::show_with(&mut root, &mut state, &values.palette);
                 *icons = state.icons;
             }
         }

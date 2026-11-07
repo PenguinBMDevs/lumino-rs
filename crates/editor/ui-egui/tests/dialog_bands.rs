@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use egui_kittest::Harness;
 use image::RgbaImage;
 use lumino_ui_egui::chrome::{
-    self, ChromeModel, DialogModel, DialogPalette, SaveConfirmModel, SettingsSnapshot,
+    self, ChromeModel, DialogModel, DialogPalette, SaveConfirmModel, SettingsPalette,
+    SettingsSnapshot,
 };
 use lumino_ui_egui::icons::IconCache;
 
@@ -247,6 +248,7 @@ fn settings_dialog_bands_match_iced_geometry() {
     const H: u32 = 800;
     let model = ChromeModel {
         dialog: Some(DialogModel::Settings(SettingsSnapshot {
+            palette: SettingsPalette::DARK,
             selected: 0,
             eraser: "默认 (Shift+拖动框选)".to_owned(),
             track_add: "自动跳转到新音轨".to_owned(),
@@ -300,4 +302,100 @@ fn settings_dialog_bands_match_iced_geometry() {
     }
     let ratio = different as f64 / f64::from(W * H);
     assert!(ratio < 0.05, "设置对话框整窗差异率过高：{:.4}", ratio);
+}
+
+/// 浅色主题：调色板由生产主题注入后，设置对话框的表面颜色必须与 iced 基线一致。
+#[test]
+fn settings_dialog_light_theme_uses_injected_palette() {
+    const W: u32 = 1200;
+    const H: u32 = 800;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("测试目录必须有工作区根")
+        .join("tests/ui-baseline/iced/settings_general_light-dpi100.png");
+    let baseline = image::open(&path)
+        .expect("读取浅色 iced 基线失败（先运行 capture_iced）")
+        .to_rgba8();
+
+    let sample = |x: u32, y: u32| {
+        let p = baseline.get_pixel(x, y).0;
+        egui::Color32::from_rgb(p[0], p[1], p[2])
+    };
+    // 表面颜色直接取自浅色 iced 基线（标题栏/内容/容器/菜单/卡片）。
+    let titlebar = sample(10, 15);
+    let background = sample(10, 40);
+    let panel = sample(20, 300);
+    let toolbar = sample(45, 300);
+    let card = sample(1000, 300);
+    assert_ne!(
+        background,
+        SettingsPalette::DARK.background,
+        "浅色基线必须是浅色主题"
+    );
+
+    let model = ChromeModel {
+        dialog: Some(DialogModel::Settings(SettingsSnapshot {
+            palette: SettingsPalette {
+                titlebar,
+                background,
+                panel,
+                toolbar,
+                card,
+                ..SettingsPalette::DARK
+            },
+            selected: 0,
+            eraser: "默认 (Shift+拖动框选)".to_owned(),
+            track_add: "自动跳转到新音轨".to_owned(),
+            log_retention: "10".to_owned(),
+        })),
+        ..ChromeModel::default()
+    };
+    let mut icons = IconCache::default();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(W as f32, H as f32))
+        .with_pixels_per_point(1.0)
+        .with_render_cursor(false)
+        .with_accessibility_check(false)
+        .with_context_setup(|ctx| {
+            lumino_ui_egui::theme::apply(ctx);
+            lumino_ui_egui::fonts::install(ctx);
+        })
+        .build_ui(move |ui| chrome::show_bands(ui, &model, &mut icons));
+    harness.run();
+    let bands = harness.render().expect("浅色设置对话框需要可用的渲染器");
+
+    // 表面颜色逐点一致：说明调色板注入链路正确。
+    for (label, x, y, expected) in [
+        ("标题栏", 10, 15, titlebar),
+        ("内容", 10, 40, background),
+        ("容器", 20, 300, panel),
+        ("菜单", 45, 300, toolbar),
+        ("卡片", 1000, 300, card),
+    ] {
+        assert_eq!(
+            &bands.get_pixel(x, y).0[..3],
+            &[expected.r(), expected.g(), expected.b()],
+            "{label}底色与 iced 浅色基线不一致"
+        );
+    }
+
+    // 菜单文字几何与浅色基线一致（颜色差异不影响墨迹列区间）。
+    let bands_menu = ink_runs(
+        &bands,
+        84,
+        104,
+        60,
+        230,
+        [toolbar.r(), toolbar.g(), toolbar.b()],
+    );
+    let iced_menu = ink_runs(
+        &baseline,
+        84,
+        104,
+        60,
+        230,
+        [toolbar.r(), toolbar.g(), toolbar.b()],
+    );
+    assert_runs_close(&bands_menu, &iced_menu, "浅色设置菜单首行");
 }

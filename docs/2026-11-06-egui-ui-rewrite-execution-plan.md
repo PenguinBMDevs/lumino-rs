@@ -351,7 +351,19 @@ callback / 多视口 / 截图能力。
   - 真实窗口（2560×1540 @1.25）：菜单让位可见、设置对话框 `drawn=0`、添加音轨点击后
     左侧栏即时出现新轨道（输入 → 状态 → egui band 闭环）。
 
-**Task 1.3（下一步）：设置对话框内容模型 + 菜单栏迁移**
+**Task 1.3（第五步）：设置对话框调色板注入 + 浅色基线 — 已完成**
+
+- `SettingsPalette`（11 角色）由 `Root::settings_palette()` 从 iced `extended_palette`
+  注入，`settings::show_with` 全量使用；`widgets::combo_box` / `numeric_input` 也接收
+  调色板（下拉底色 `background.weak`、输入框 `background.base` + `background.strong` 边框）。
+- 移除设置页浅色闸门：浅色主题下设置对话框整窗接管。
+- `ui-parity` 新增 `SettingsGeneralLight` 场景（`Theme::Light`），`capture_iced` 产出
+  3 张浅色 iced 基线（15/15 校验通过）。
+- 验收：`dialog_bands` 3/3（深色保存确认 2.75%、深色设置 <5%、**浅色设置表面颜色与
+  浅色基线逐点一致 + 菜单墨迹一致**）；`egui_chrome` 14/14；`ui-parity` 12/12；
+  真机浅色设置对话框 `primitives=28 drawn=28`（此前 drawn=0），截图确认浅色下拉/输入框。
+
+**Task 1.3（下一步）：设置其它页面 + 菜单栏迁移**
 
 - 现状：标题栏 / 工具栏 / 左侧栏 / 右侧栏图标列 / 状态栏由 egui 用真实状态绘制；
   保存确认对话框整窗接管（深色主题）；其他对话框与 iced 弹出层仍整块交回 iced。

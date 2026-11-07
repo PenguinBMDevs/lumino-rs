@@ -38,9 +38,61 @@ pub enum DialogModel {
     Settings(SettingsSnapshot),
 }
 
+/// 设置对话框调色板：由生产 iced `extended_palette` 映射。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsPalette {
+    /// 自制标题栏（`background.neutral`）。
+    pub titlebar: Color32,
+    /// 内容底色（`background.base`）。
+    pub background: Color32,
+    /// 容器底色（`background.weakest`）。
+    pub panel: Color32,
+    /// 菜单底色（`background.weak`）。
+    pub toolbar: Color32,
+    /// 卡片底色。
+    pub card: Color32,
+    /// 菜单/卡片边框。
+    pub border: Color32,
+    /// 输入控件边框（`background.strong`）。
+    pub input_border: Color32,
+    /// 正文（`background.base.text`）。
+    pub text: Color32,
+    /// 次级文字。
+    pub text_dim: Color32,
+    /// 强调色（`primary.base`）。
+    pub accent: Color32,
+    /// 强调色强（`primary.strong`）。
+    pub accent_strong: Color32,
+}
+
+impl Default for SettingsPalette {
+    fn default() -> Self {
+        Self::DARK
+    }
+}
+
+impl SettingsPalette {
+    /// 深色主题（Tokyo Night Storm），与既有像素基线一致。
+    pub const DARK: Self = Self {
+        titlebar: Color32::from_rgb(0x3F, 0x46, 0x6E),
+        background: Color32::from_rgb(0x24, 0x28, 0x3B),
+        panel: Color32::from_rgb(0x2A, 0x2F, 0x47),
+        toolbar: Color32::from_rgb(0x39, 0x40, 0x63),
+        card: Color32::from_rgb(0x24, 0x28, 0x3B),
+        border: Color32::from_rgb(0x3F, 0x45, 0x5C),
+        input_border: Color32::from_rgb(0x44, 0x4D, 0x79),
+        text: Color32::from_rgb(0xB6, 0xC4, 0xFA),
+        text_dim: Color32::from_rgb(0x7A, 0x82, 0xA8),
+        accent: Color32::from_rgb(0x2A, 0xC3, 0xDE),
+        accent_strong: Color32::from_rgb(0x00, 0xA3, 0xBD),
+    };
+}
+
 /// 设置对话框整窗所需的真实状态（值来自生产 `SettingsPanel`）。
 #[derive(Debug, Clone, Default)]
 pub struct SettingsSnapshot {
+    /// 调色板（深/浅主题）。
+    pub palette: SettingsPalette,
     /// 当前菜单索引（只接管 0 = 常规页）。
     pub selected: usize,
     /// 橡皮擦行为（本地化后的显示文本）。

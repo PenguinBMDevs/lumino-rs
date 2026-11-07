@@ -9,8 +9,8 @@ use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
     ChromeModel, DialogModel, DialogPalette, RightSidebarModel, RightSidebarPanelKind, RollBar,
-    SaveConfirmModel, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack,
-    StatusbarModel, TitlebarModel, ToolbarModel,
+    SaveConfirmModel, SettingsPalette, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel,
+    SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 
 use crate::root::Root;
@@ -258,6 +258,36 @@ impl Root {
             || self.toolbar.text_params_open
     }
 
+    /// 生产 iced 调色板 → 设置对话框调色板。
+    ///
+    /// 深色下 `border` / `text_dim` 没有一一对应的 iced 角色，沿用与既有像素
+    /// 基线一致的常量；浅色下取 `background.strong` 作为分隔线/次级文字。
+    fn settings_palette(&self) -> SettingsPalette {
+        let palette = self.window.theme.extended_palette();
+        let dark = palette.background.weakest.color.r < 0.5;
+        SettingsPalette {
+            titlebar: color32(palette.background.neutral.color),
+            background: color32(palette.background.base.color),
+            panel: color32(palette.background.weakest.color),
+            toolbar: color32(palette.background.weak.color),
+            card: color32(palette.background.base.color),
+            border: if dark {
+                SettingsPalette::DARK.border
+            } else {
+                color32(palette.background.strong.color)
+            },
+            input_border: color32(palette.background.strong.color),
+            text: color32(palette.background.base.text),
+            text_dim: if dark {
+                SettingsPalette::DARK.text_dim
+            } else {
+                color32(palette.background.strong.color)
+            },
+            accent: color32(palette.primary.base.color),
+            accent_strong: color32(palette.primary.strong.color),
+        }
+    }
+
     /// 生产 iced 调色板 → 对话框调色板（深/浅主题都成立）。
     fn dialog_palette(&self) -> DialogPalette {
         let palette = self.window.theme.extended_palette();
@@ -287,19 +317,6 @@ impl Root {
                 cancel: tr!("取消").to_string(),
             })),
             DialogType::Settings => {
-                // 设置页仍用深色常量，浅色主题交回 iced（调色板注入待后续）。
-                if self
-                    .window
-                    .theme
-                    .extended_palette()
-                    .background
-                    .weakest
-                    .color
-                    .r
-                    > 0.5
-                {
-                    return None;
-                }
                 // 只接管「常规」页且界面语言为中文（其余页面/语言的文案尚未建模）。
                 let language = self.settings.display.language;
                 if language != lumino_extras::i18n::Language::ZhCn
@@ -309,6 +326,7 @@ impl Root {
                 }
                 let editing = &self.settings.editing;
                 Some(DialogModel::Settings(SettingsSnapshot {
+                    palette: self.settings_palette(),
                     selected: self.settings.selected_menu_index,
                     eraser: lumino_extras::i18n::eraser_behavior_name(
                         editing.eraser_behavior,
