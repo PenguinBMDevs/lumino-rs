@@ -239,10 +239,33 @@ callback / 多视口 / 截图能力。
     `21..38 / 70..105 / 126..161 / 183..217 / 239..273`（1.25× 基线 ±2px），
     状态栏右侧墨迹止于 2539（≤ 内容右界 2540），首帧 `primitives=7`。
 
+### Task 1.3（第一步补充）：场景错位 / 重叠修复 — 已完成
+
+- 以 iced 源码（`grid/keyboard.rs`、`grid/playback_indicator.rs`、
+  `scrollbar_widget`、`toolbar/buttons.rs`、`ui-settings`）与基线像素为准逐项对齐。
+- 钢琴卷帘：
+  - 音名居中于键盘宽度、纯白（原 `center-12` + `TEXT_MUTED`）；
+  - 键位描边改 `BASE_BG`（原 `BORDER` 过亮）；播放线中心对齐 + 8×8 倒三角 + `#FF3333`；
+  - 布局改为 `column![row![canvas, vscroll], hscroll]`，水平滚动条横跨全宽；
+    滚动条轨道 `SELECTED_BG`、滑块 `TOOLBAR_BG`、2px 内缩、按比例定位。
+- 工具栏：精度下拉 57×26（`TOOLBAR_BG` 底 + `SELECTED_BG` 边框、16 图标 + 13 文本、
+  标签 14 且用 `TEXT_ON_WEAK`）；工具间距按 `ToolItem::gap_before`（默认 4、
+  Split/TransposeDown/Tie = 8）；录制红点 14→8。
+- 设置页：`pick_list` 32 高 / 内边距 8 / 字号 16；`text_input` 80×31、
+  `BASE_BG` 底 + `SELECTED_BG` 边框；日志行改为「标签宽 + 32 间距」消除与输入框重叠；
+  菜单项按「容器 8 + 项 16 + 图标容器 24 + 间距 8 + 箭头 12」重排。
+- 对话框：按钮强制 90×35（`ui.put` 会收缩内容），主按钮边框 `ACCENT_DARK`、
+  次按钮 `ROUTE_BAR_BG`。
+- 验收（`compare_egui`，dpi100 over_tol / mean）：
+  `main_chrome` 2.99%/1.59 → **1.65%/1.07**；`piano_roll` 2.92%/1.52 → **1.80%/1.16**；
+  `settings_general` 3.42%/1.49 → **2.98%/1.02**；`save_confirm_dialog` 3.39%/2.63 → **2.88%/2.31**。
+  差异图确认无结构性错位，残余为字形 1px 重影与 0.5px 分数布局。
+
 ## 八、当前任务
 
 **Task 1.3（第二步）：工具栏接管与输入路由**
 
-- 现状：标题栏 / 状态栏已由 egui 用真实状态绘制；工具栏 / 侧栏 / 钢琴卷帘仍是 iced。
+- 现状：标题栏 / 状态栏已由 egui 用真实状态绘制；四个场景的错位/重叠已清零；
+  工具栏 / 侧栏 / 钢琴卷帘在场景层已对齐，但尚未接入真实窗口状态。
 - 下一步：按同样方式接管工具栏（只读 + 命中热区先不消费事件），随后接入指针/键盘
   路由；`lumino-gfx` 的 wgpu30 迁移继续等待 iced 退出渲染路径。
