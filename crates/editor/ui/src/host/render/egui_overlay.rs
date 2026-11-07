@@ -254,7 +254,9 @@ impl Host {
         let size = self.render_ctx.viewport.physical_size();
         let pixels_per_point = self.render_ctx.viewport.scale_factor();
         let app_frame = self.frame_count;
-        let model = self.root.egui_chrome_model();
+        // 工具栏折叠（溢出菜单）依赖实际可用宽度：与生产 `responsive` 同口径。
+        let logical_width = size.width as f32 / pixels_per_point;
+        let model = self.root.egui_chrome_model_for(logical_width);
         // 取走本帧累积的指针 / 滚轮 / 修饰键 / 焦点事件。
         let events = self.egui_input.take();
         let focused = self.egui_input.focused();
@@ -287,13 +289,20 @@ impl Host {
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);
         }
-        if let Some(action) = toolbar_action
-            && let Some(message) = self.root.toolbar_action_message(action)
-        {
-            tracing::info!("egui 工具栏动作：{action:?}");
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
+        if let Some(action) = toolbar_action {
+            // 溢出项需要按「同一视口宽度」重算折叠结果，单独解析。
+            let message = match action {
+                chrome::ToolbarAction::OverflowItem(index) => {
+                    self.root.overflow_action_message(index, logical_width)
+                }
+                other => self.root.toolbar_action_message(other),
+            };
+            if let Some(message) = message {
+                tracing::info!("egui 工具栏动作：{action:?}");
+                self.ui_dirty = true;
+                self.window_ctx.window.request_redraw();
+                let _ = self.process_message(message);
+            }
         }
     }
 

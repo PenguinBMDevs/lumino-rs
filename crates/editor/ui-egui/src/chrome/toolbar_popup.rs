@@ -55,6 +55,12 @@ pub enum ToolbarAction {
     OnionMode(usize),
     /// 关闭洋葱皮范围菜单。
     CloseOnionMenu,
+    /// 开合「更多」溢出菜单。
+    ToggleOverflowMenu,
+    /// 点击溢出菜单项（下标 = 渲染时的菜单顺序）。
+    OverflowItem(usize),
+    /// 关闭溢出菜单（外部点击 / Esc）。
+    CloseOverflowMenu,
 }
 
 /// 记录本帧要回传给生产的动作。
@@ -74,7 +80,8 @@ pub fn clear_action(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove_temp::<Option<ToolbarAction>>(Id::unique(ACTION_ID)));
 }
 
-fn has_action(ctx: &egui::Context) -> bool {
+/// 本帧是否已有待回传动作（避免「点击菜单项」与「外部点击关闭」互相覆盖）。
+pub(super) fn action_pending(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<Option<ToolbarAction>>(Id::unique(ACTION_ID)))
         .flatten()
         .is_some()
@@ -91,7 +98,12 @@ pub fn set_onion_triggers(ctx: &egui::Context, button: Rect, caret: Rect) {
     if previous != Some((button, caret)) {
         tracing::debug!("工具栏洋葱皮触发区：button={button:?} caret={caret:?}");
     }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ONION_TRIGGER_ID), (button, caret)));
+    ctx.data_mut(|d| d.insert_temp(Id::unique(ONION_TRIGGER_ID), Some((button, caret))));
+}
+
+/// 洋葱皮分组被折叠时清掉触发矩形（避免残留吞掉下层 iced 点击）。
+pub fn clear_onion_triggers(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.remove_temp::<Option<(Rect, Rect)>>(Id::unique(ONION_TRIGGER_ID)));
 }
 
 /// 便于测试 / 弹层定位：精度下拉的触发矩形。
@@ -101,7 +113,8 @@ pub fn snap_trigger(ctx: &egui::Context) -> Option<Rect> {
 
 /// 便于测试 / 弹层定位：洋葱皮（主按钮，下拉三角）矩形。
 pub fn onion_triggers(ctx: &egui::Context) -> Option<(Rect, Rect)> {
-    ctx.data(|d| d.get_temp(Id::unique(ONION_TRIGGER_ID)))
+    ctx.data(|d| d.get_temp::<Option<(Rect, Rect)>>(Id::unique(ONION_TRIGGER_ID)))
+        .flatten()
 }
 
 /// 精度下拉面板矩形（在触发框下方、左对齐）。
@@ -149,7 +162,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel) {
 
     // 点击面板与触发区以外关闭；Esc 同样关闭（与 iced `DropDown::on_dismiss` 对齐）。
     let ctx = ui.ctx();
-    if !has_action(ctx)
+    if !action_pending(ctx)
         && ui.input(|i| i.pointer.any_click())
         && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
         && !blocked.iter().any(|rect| rect.contains(pos))
@@ -160,7 +173,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel) {
             push_action(ctx, ToolbarAction::CloseOnionMenu);
         }
     }
-    if !has_action(ctx) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if !action_pending(ctx) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         if model.snap_menu.is_some() {
             push_action(ctx, ToolbarAction::CloseSnapPicker);
         } else if model.onion_menu.is_some() {

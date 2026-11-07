@@ -379,14 +379,27 @@ fn iced_popups_disable_the_overlay() {
     onion.toolbar.onion_skin_menu_open = true;
     assert!(onion.egui_chrome_model().toolbar.is_some());
 
+    // 溢出菜单已由 egui 接管：不再让位（内容按真实宽度重算）。
+    let mut overflow = Root::new(&lumino_core::storage::config::UiConfig::default());
+    overflow.toolbar.overflow_menu_open = true;
+    let model = overflow.egui_chrome_model_for(900.0);
+    assert!(
+        model.toolbar.is_some(),
+        "egui 溢出菜单展开时仍应画工具栏 band"
+    );
+    assert!(
+        model
+            .toolbar
+            .expect("工具栏")
+            .overflow_menu
+            .is_some_and(|menu| !menu.items.is_empty()),
+        "900px 视口应产生溢出项"
+    );
+
     // 悬浮工具条及其锚定面板仍由 iced 绘制：打开时整块让位。
     let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
     toolbar.toolbar.tool_panel_open = true;
     assert!(toolbar.egui_chrome_model().sidebar.is_none());
-
-    let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
-    toolbar.toolbar.overflow_menu_open = true;
-    assert!(toolbar.egui_chrome_model().toolbar.is_none());
 }
 
 #[test]
@@ -508,6 +521,49 @@ fn toolbar_popup_model_and_actions_follow_production_state() {
     ));
     assert!(
         root.toolbar_action_message(ToolbarAction::OnionMode(4))
+            .is_none(),
+        "越界下标不得产生消息"
+    );
+}
+
+#[test]
+fn toolbar_overflow_follows_width_and_resolves_items() {
+    let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
+
+    // 宽窗口：不折叠、无「更多」、协作按钮可见。
+    let wide = root.egui_chrome_model_for(2400.0).toolbar.expect("工具栏");
+    assert!(!wide.more_visible, "宽窗口不应出现更多按钮");
+    assert!(wide.collaboration_visible, "无溢出时协作按钮常显");
+    assert_eq!(wide.visible_tools, 14, "工具区全部可见");
+    assert!(wide.groups.dashboard && wide.groups.tools);
+    assert!(wide.overflow_menu.is_none());
+
+    // 窄窗口：折叠 + 「更多」+ 协作被收进菜单；菜单打开后有项。
+    root.toolbar.overflow_menu_open = true;
+    let narrow = root.egui_chrome_model_for(900.0).toolbar.expect("工具栏");
+    assert!(narrow.more_visible, "窄窗口应出现更多按钮");
+    assert!(!narrow.collaboration_visible, "溢出时协作最先折叠");
+    assert!(narrow.visible_tools < 14, "窄窗口应逐项折叠工具");
+    let menu = narrow.overflow_menu.expect("溢出菜单应打开");
+    assert!(!menu.items.is_empty());
+
+    // 每个可用项都能解析回生产 Message；禁用项不产生消息。
+    let mut enabled = 0;
+    let mut disabled = 0;
+    for (index, item) in menu.items.iter().enumerate() {
+        let message = root.overflow_action_message(index, 900.0);
+        if item.enabled {
+            assert!(message.is_some(), "第 {index} 项应可解析");
+            enabled += 1;
+        } else {
+            assert!(message.is_none(), "禁用项不得产生消息");
+            disabled += 1;
+        }
+    }
+    assert!(enabled > 0);
+    assert!(disabled > 0, "无选中时翻转/移调应置灰并出现在菜单里");
+    assert!(
+        root.overflow_action_message(menu.items.len(), 900.0)
             .is_none(),
         "越界下标不得产生消息"
     );

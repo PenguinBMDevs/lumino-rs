@@ -2,6 +2,7 @@
 
 pub mod menu;
 mod model;
+pub mod overflow;
 pub mod piano_roll;
 pub mod sidebar;
 pub mod statusbar;
@@ -11,9 +12,10 @@ pub mod toolbar_popup;
 
 pub use model::{
     ChromeModel, DialogModel, DialogPalette, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem,
-    OnionMenuModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPalette, SettingsSnapshot, SidebarGroup, SidebarModel, SidebarPanel,
-    SidebarTrack, SnapMenuItem, SnapMenuModel, StatusbarModel, TitlebarModel, ToolbarModel,
+    OnionMenuModel, OverflowItemModel, OverflowMenuModel, RightSidebarModel, RightSidebarPanelKind,
+    RollBar, SaveConfirmModel, SettingsLabels, SettingsPalette, SettingsSnapshot, SidebarGroup,
+    SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, StatusbarModel,
+    TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -253,6 +255,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 工具栏弹层同样画在 band 之外（向下展开会盖住卷帘区）。
     if let Some(toolbar) = &model.toolbar {
         toolbar_popup::show_overlay(&mut root, toolbar);
+        overflow::show_overlay(&mut root, toolbar, icons);
     }
 }
 

@@ -464,14 +464,48 @@ callback / 多视口 / 截图能力。
   - `clippy -D warnings`、`check --bin lumino-rs`、`capture_iced` 18/18、
     `capture_egui` 12/12、`compare_egui` 逐项与上一步一致，基线零改动。
 
-**Task 1.3（下一步）：悬浮工具条 + 溢出菜单迁移**
+**Task 1.3（第十步）：溢出菜单 + 折叠感知工具栏 — 已完成**
 
-- 现状：标题栏（含菜单/子菜单）、工具栏（含精度/洋葱皮下拉）、左侧栏、
-  右侧栏图标列、状态栏、保存确认对话框、设置「常规」页已由 egui 绘制；
-  悬浮工具条（画刷/形状/颜料桶/文字参数/粗细面板）与「更多」溢出菜单仍 iced
-  ——这是 `has_iced_popup` 让位逻辑仅剩的来源。
-- 下一步：先迁移「更多」溢出菜单（网格图标 + tooltip，需把折叠结果镜像成
-  带图标与动作的模型），再迁移悬浮工具条及其五个锚定面板，之后可删除
-  整块让位；最后逐页建模其余设置页与右侧栏面板内容。
+- 新增 `chrome/overflow.rs`：把生产 `compute_overflow` + `overflow_menu_items`
+  镜像成图标网格（列优先、40px 按钮 / 20px 图标 / 4px 间距 / 8px 内边距，
+  白 12% 悬停、`background.weakest×0.9` 面板底），右对齐窗口右缘内缩 4、
+  顶边贴工具栏下沿；点击回传 `ToolbarAction::OverflowItem(index)`。
+- **折叠结果接进 egui 工具栏**：`ToolbarModel` 新增 `groups`（8 个分组可见性）、
+  `visible_tools`（工具前缀）、`collaboration_visible`、`more_visible`、
+  `overflow_menu`。窄窗口下 egui 现在真的会隐藏被折叠的分组/工具，而不是
+  继续画在右侧按钮下面。
+- **修复协作按钮被假「更多」盖住**：无溢出时 iced 不画 More、协作图标常显；
+  旧 egui 无条件画 More（不可用且遮住下层协作按钮）。现在 `more_visible` 来自
+  真实折叠结果：无溢出画协作（点击穿透到 iced），有溢出画 More 并把协作收进
+  菜单。
+- **修复双击开关**：「更多」触发区此前只在菜单打开时进入占用列表，首次点击
+  同时落到 iced，`ToggleOverflowMenu` 触发两次（开→关，面板闪一帧）。现在
+  触发区**始终**占用；溢出项另按同一视口宽度重算解析
+  （`Root::overflow_action_message(index, viewport_width)`）。
+- iced 侧 `with_toolbar_overlay` 在叠加层启用时直接返回内容，不再画第二份；
+  `has_iced_popup` 去掉 `overflow_menu_open`，只剩原生标题栏菜单 + 悬浮工具条
+  及其锚定面板。
+- 验收：
+  - `chrome_bands` 5/5 + `overflow_bands` 2/2（网格项下标、禁用项无动作、
+    点 More 开合、无溢出无触发矩形）；
+  - `egui_chrome` 19/19（新增「宽窗口无 More/协作可见/工具全显」、
+    「900px 折叠 + 溢出项逐个可解析 + 禁用项为 None + 越界 None」）；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口：2048 逻辑宽（无溢出）右端显示协作图标（点击打开协作窗口）；
+    1200×800 逻辑（溢出）显示 More → 12 项 4×3 网格；点第 12 项后日志
+    `ToggleOverflowMenu` → `OverflowItem(11)` → 协作窗口出现；
+  - 证据图：`target/wide-right.png`、`target/overflow-grid.png`、
+    `target/overflow-click.png`。
+
+**Task 1.3（下一步）：悬浮工具条 + 五个锚定面板**
+
+- 现状：标题栏（菜单/子菜单）、工具栏（精度/洋葱皮下拉、溢出菜单、折叠布局）、
+  左侧栏、右侧栏图标列、状态栏、保存确认对话框、设置「常规」页已由 egui 绘制；
+  悬浮工具条（画刷/形状/颜料桶/文字参数/粗细面板）仍 iced——这是
+  `has_iced_popup` 让位逻辑仅剩的来源。
+- 下一步：迁移悬浮工具条（拖拽 + 6 个工具按钮 + 齿轮）及其五个锚定面板，
+  之后可删除整块让位；最后逐页建模其余设置页与右侧栏面板内容。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

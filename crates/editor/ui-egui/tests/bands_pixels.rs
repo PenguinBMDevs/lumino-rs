@@ -71,6 +71,11 @@ fn model() -> ChromeModel {
             auto_scroll: AutoScrollMode::ScrollingIndicator,
             snap_menu: None,
             onion_menu: None,
+            groups: lumino_ui_egui::chrome::ToolbarGroupsModel::default(),
+            visible_tools: usize::MAX,
+            collaboration_visible: false,
+            more_visible: true,
+            overflow_menu: None,
         }),
         statusbar: StatusbarModel {
             left: "就绪".to_owned(),

@@ -4,6 +4,7 @@
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
 
 mod dialogs;
+mod gates;
 mod menu;
 mod toolbar;
 
@@ -19,18 +20,6 @@ use crate::root::Root;
 use crate::sidebar::{RollBarButton, Route, Sidebar};
 use crate::toolbar::ToolbarPerfContext;
 use lumino_ui_egui::layout;
-
-/// 钢琴卷帘骨架接管开关：默认关闭。
-///
-/// 生产里卷帘的键盘 / 标尺 / 网格由 `lumino-gfx` 的 wgpu 通道绘制（含主题化
-/// 配色），iced canvas 的同名几何被它整块覆盖。egui 骨架在 gfx 退出该区域之前
-/// 默认不接管，否则会把用户当前的网格配色盖成 iced 的深色键盘（视觉回归）。
-/// 需要实验时置 `LUMINO_EGUI_PIANOROLL=1`。
-fn piano_roll_overlay_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED
-        .get_or_init(|| std::env::var_os("LUMINO_EGUI_PIANOROLL").is_some_and(|value| value != "0"))
-}
 
 /// iced 分组 → egui 分组。
 fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
@@ -242,26 +231,17 @@ impl Root {
         })
     }
 
-    /// 是否存在仍由 iced 绘制、且会被叠加层盖住的弹出层。
+    /// 构造 egui 外壳快照（标题栏 + 工具栏 + 左侧栏 + 状态栏，只读）。
     ///
-    /// 自绘标题栏的菜单与工具栏的精度/洋葱皮下拉已由 egui 接管
-    /// （`TitlebarModel::menu`、`ToolbarModel::snap_menu/onion_menu`）；
-    /// 只有系统原生标题栏模式下 iced 仍负责菜单下拉。工具栏的悬浮工具条
-    /// 及其锚定面板尚未迁移，打开时叠加层必须整块让位，否则会被不透明
-    /// band 盖住。
-    fn has_iced_popup(&self) -> bool {
-        let iced_menu = self.settings.synth.use_native_titlebar && self.state.is_menu_open;
-        iced_menu
-            || self.toolbar.overflow_menu_open
-            || self.toolbar.tool_panel_open
-            || self.toolbar.brush_dropdown_open
-            || self.toolbar.thickness_panel_open
-            || self.toolbar.shape_dropdown_open
-            || self.toolbar.text_params_open
+    /// 测试使用固定视口宽度；真实叠加层走 [`Self::egui_chrome_model_for`]，
+    /// 因为工具栏折叠（溢出菜单）依赖实际可用宽度。
+    #[cfg(test)]
+    pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
+        self.egui_chrome_model_for(1280.0)
     }
 
-    /// 构造 egui 外壳快照（标题栏 + 工具栏 + 左侧栏 + 状态栏，只读）。
-    pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
+    /// 按真实视口宽度构造 egui 外壳快照。
+    pub(crate) fn egui_chrome_model_for(&self, viewport_width: f32) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
         // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 iced），
         // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
@@ -337,6 +317,14 @@ impl Root {
 
         // 工具栏模型：只在 iced 实际渲染工具栏的视图里接管。
         let toolbar = if shows_toolbar {
+            // 与生产 `responsive` 同一可用宽度 / 折叠纯函数：溢出菜单内容必须
+            // 和工具栏实际折叠结果一致（同宽度必然同结果）。
+            let arrangement_mode = self.sidebar.is_arrangement_route();
+            let overflow = self.toolbar.compute_overflow(
+                toolbar::right_content_width(self, viewport_width),
+                arrangement_mode,
+            );
+            let has_selection = self.editor.selected_notes_count() > 0;
             Some(ToolbarModel {
                 left_inset: sidebar_width,
                 bpm: toolbar.bpm,
@@ -353,6 +341,19 @@ impl Root {
                 auto_scroll: toolbar.auto_scroll,
                 snap_menu: toolbar::snap_menu(&self.toolbar),
                 onion_menu: toolbar::onion_menu(&self.toolbar),
+                groups: toolbar::groups(&overflow),
+                visible_tools: toolbar::visible_tools(&overflow, arrangement_mode),
+                collaboration_visible: overflow
+                    .visible_groups
+                    .contains(&crate::toolbar::overflow::ToolbarGroup::Collaboration),
+                more_visible: overflow.has_overflow(),
+                overflow_menu: toolbar::overflow_menu(
+                    &self.toolbar,
+                    &overflow,
+                    has_selection,
+                    language,
+                    arrangement_mode,
+                ),
             })
         } else {
             None
@@ -393,7 +394,7 @@ impl Root {
             None
         };
 
-        let piano_roll = if piano_roll_overlay_enabled() {
+        let piano_roll = if gates::piano_roll_overlay_enabled() {
             self.egui_piano_roll_model()
         } else {
             None

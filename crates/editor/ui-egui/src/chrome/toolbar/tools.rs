@@ -99,9 +99,10 @@ fn tool_highlighted(model: &ToolbarModel, index: usize, item: &ToolEntry) -> boo
     tool_selected(model, index)
 }
 
-pub(super) fn width(ui: &egui::Ui) -> f32 {
+pub(super) fn width(ui: &egui::Ui, visible: usize) -> f32 {
     let items: f32 = TOOLS
         .iter()
+        .take(visible)
         .map(|item| {
             if item.selector {
                 layout::TOOL_SELECTOR_W
@@ -110,7 +111,7 @@ pub(super) fn width(ui: &egui::Ui) -> f32 {
             }
         })
         .sum();
-    let gaps: f32 = TOOLS.iter().map(|item| item.gap_before).sum();
+    let gaps: f32 = TOOLS.iter().take(visible).map(|item| item.gap_before).sum();
     let label = ui
         .painter()
         .layout_no_wrap(
@@ -125,7 +126,8 @@ pub(super) fn width(ui: &egui::Ui) -> f32 {
 
 /// 渲染工具选择区内容。
 pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarModel) {
-    for (index, item) in TOOLS.iter().enumerate() {
+    let visible = model.visible_tools.min(TOOLS.len());
+    for (index, item) in TOOLS.iter().take(visible).enumerate() {
         ui.add_space(item.gap_before);
         let (icon_size, width) = if item.selector {
             (layout::TOOL_SELECTOR_ICON, layout::TOOL_SELECTOR_W)

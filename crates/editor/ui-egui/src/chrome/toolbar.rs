@@ -34,52 +34,37 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
     let mut x = content.left() + layout::TOOLBAR_PAD_X;
 
     // Record
-    group(
-        ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::RECORD_GROUP_W, h)),
-        |ui| record(ui, model.recording),
-    );
-    x += layout::RECORD_GROUP_W + 4.0;
+    if model.groups.record {
+        group(
+            ui,
+            Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::RECORD_GROUP_W, h)),
+            |ui| record(ui, model.recording),
+        );
+        x += layout::RECORD_GROUP_W + 4.0;
+    }
 
     // Playback
-    group(
-        ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::PLAYBACK_GROUP_W, h)),
-        |ui| playback(ui, icons, model.playing),
-    );
-    x += layout::PLAYBACK_GROUP_W + 8.0;
+    if model.groups.playback {
+        group(
+            ui,
+            Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::PLAYBACK_GROUP_W, h)),
+            |ui| playback(ui, icons, model.playing),
+        );
+        x += layout::PLAYBACK_GROUP_W + 8.0;
+    }
 
     // Loop
-    group(
-        ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::LOOP_GROUP_W, h)),
-        |ui| {
-            ui.add_space((layout::LOOP_GROUP_W - layout::TOOL_BUTTON_W) / 2.0);
-            let icon = if model.looping {
-                Icon::ArrowsLeftRight
-            } else {
-                Icon::Ban
-            };
-            widgets::icon_button(
-                ui,
-                icons,
-                icon,
-                layout::TOOL_BUTTON_ICON,
-                Vec2::splat(layout::TOOL_BUTTON_W),
-                false,
-            );
-        },
-    );
-    x += layout::LOOP_GROUP_W + 8.0;
-
-    // Undo / Redo / Clock
-    group(
-        ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::UNDO_REDO_GROUP_W, h)),
-        |ui| {
-            let total = layout::TOOL_BUTTON_W * 3.0;
-            ui.add_space((layout::UNDO_REDO_GROUP_W - total) / 2.0);
-            for icon in [Icon::Undo, Icon::Redo, Icon::Clock] {
+    if model.groups.looping {
+        group(
+            ui,
+            Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::LOOP_GROUP_W, h)),
+            |ui| {
+                ui.add_space((layout::LOOP_GROUP_W - layout::TOOL_BUTTON_W) / 2.0);
+                let icon = if model.looping {
+                    Icon::ArrowsLeftRight
+                } else {
+                    Icon::Ban
+                };
                 widgets::icon_button(
                     ui,
                     icons,
@@ -88,30 +73,63 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
                     Vec2::splat(layout::TOOL_BUTTON_W),
                     false,
                 );
-            }
-        },
-    );
-    x += layout::UNDO_REDO_GROUP_W + 16.0;
+            },
+        );
+        x += layout::LOOP_GROUP_W + 8.0;
+    }
+
+    // Undo / Redo / Clock
+    if model.groups.undo_redo {
+        group(
+            ui,
+            Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::UNDO_REDO_GROUP_W, h)),
+            |ui| {
+                let total = layout::TOOL_BUTTON_W * 3.0;
+                ui.add_space((layout::UNDO_REDO_GROUP_W - total) / 2.0);
+                for icon in [Icon::Undo, Icon::Redo, Icon::Clock] {
+                    widgets::icon_button(
+                        ui,
+                        icons,
+                        icon,
+                        layout::TOOL_BUTTON_ICON,
+                        Vec2::splat(layout::TOOL_BUTTON_W),
+                        false,
+                    );
+                }
+            },
+        );
+        x += layout::UNDO_REDO_GROUP_W + 16.0;
+    }
 
     // Dashboard
-    group(
-        ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::DASHBOARD_GROUP_W, h)),
-        |ui| dashboard(ui, model),
-    );
-    x += layout::DASHBOARD_GROUP_W + 16.0;
+    if model.groups.dashboard {
+        group(
+            ui,
+            Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::DASHBOARD_GROUP_W, h)),
+            |ui| dashboard(ui, model),
+        );
+        x += layout::DASHBOARD_GROUP_W + 16.0;
+    }
 
     // Tools（宽度由条目尺寸累加，对应 iced 的 `Length::Shrink`）
-    group(
-        ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(tools::width(ui), h)),
-        |ui| tools::show(ui, icons, model),
-    );
+    if model.groups.tools {
+        let visible = visible_tool_count(model);
+        group(
+            ui,
+            Rect::from_min_size(egui::pos2(x, y), Vec2::new(tools::width(ui, visible), h)),
+            |ui| tools::show(ui, icons, model),
+        );
+    }
 
     right_side(ui, content, icons, model);
 }
 
-/// 右侧显示开关：OnionSkin(+caret) / AutoScroll / More。
+/// 工具区可见条目数（`ALL` 前缀；模型默认 `usize::MAX` = 全部）。
+fn visible_tool_count(model: &ToolbarModel) -> usize {
+    model.visible_tools.min(tools::TOOLS.len())
+}
+
+/// 右侧显示开关：OnionSkin(+caret) / AutoScroll / Collaboration / More。
 fn right_side(
     ui: &mut egui::Ui,
     content: Rect,
@@ -123,6 +141,8 @@ fn right_side(
         egui::pos2(more_right - layout::MORE_BUTTON_W, content.top() + 19.0),
         Vec2::new(layout::MORE_BUTTON_W, layout::RIGHT_TOOL_W),
     );
+    // 右侧三组的位置以「虚拟 More」为基准：无溢出时 More 消失、协作按钮补位，
+    // 生产布局里两者宽度相近，洋葱皮/自动滚动的实际位置几乎不变。
     let scroll_rect = Rect::from_min_size(
         egui::pos2(
             more.left() - 36.0 - layout::RIGHT_TOOL_W,
@@ -142,33 +162,63 @@ fn right_side(
         Vec2::splat(layout::RIGHT_TOOL_W),
     );
 
-    // 洋葱皮开启：`background.strong` 底色（与工具选中态同源）。
-    if model.onion {
-        ui.painter()
-            .rect_filled(onion_rect, CornerRadius::same(4), theme::SELECTED_BG);
+    if model.more_visible {
+        let more_button = icon_at(ui, icons, Icon::EllipsisVertical, more, 18.0, false);
+        super::overflow::set_trigger(ui.ctx(), more, content);
+        if more_button.clicked() {
+            super::toolbar_popup::push_action(
+                ui.ctx(),
+                super::toolbar_popup::ToolbarAction::ToggleOverflowMenu,
+            );
+        }
+    } else {
+        super::overflow::clear_trigger(ui.ctx());
+        // 无溢出时协作按钮常显；点击不消费，落到下层 iced 的同位置按钮。
+        if model.collaboration_visible {
+            let collab = Rect::from_min_size(
+                egui::pos2(
+                    content.right() - layout::TOOLBAR_PAD_X - 4.0 - layout::RIGHT_TOOL_W,
+                    content.top() + 17.0,
+                ),
+                Vec2::splat(layout::RIGHT_TOOL_W),
+            );
+            icon_at(ui, icons, Icon::Users, collab, 18.0, false);
+        }
     }
-    let onion = icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
-    let caret = icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
-    super::toolbar_popup::set_onion_triggers(ui.ctx(), onion_rect, caret_rect);
-    if onion.clicked() {
-        super::toolbar_popup::push_action(
-            ui.ctx(),
-            super::toolbar_popup::ToolbarAction::ToggleOnionSkin,
-        );
+
+    if model.groups.onion {
+        // 洋葱皮开启：`background.strong` 底色（与工具选中态同源）。
+        if model.onion {
+            ui.painter()
+                .rect_filled(onion_rect, CornerRadius::same(4), theme::SELECTED_BG);
+        }
+        let onion = icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
+        let caret = icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
+        super::toolbar_popup::set_onion_triggers(ui.ctx(), onion_rect, caret_rect);
+        if onion.clicked() {
+            super::toolbar_popup::push_action(
+                ui.ctx(),
+                super::toolbar_popup::ToolbarAction::ToggleOnionSkin,
+            );
+        }
+        if caret.clicked() {
+            super::toolbar_popup::push_action(
+                ui.ctx(),
+                super::toolbar_popup::ToolbarAction::ToggleOnionMenu,
+            );
+        }
+    } else {
+        super::toolbar_popup::clear_onion_triggers(ui.ctx());
     }
-    if caret.clicked() {
-        super::toolbar_popup::push_action(
-            ui.ctx(),
-            super::toolbar_popup::ToolbarAction::ToggleOnionMenu,
-        );
+
+    if model.groups.auto_scroll {
+        let scroll_icon = match model.auto_scroll {
+            AutoScrollMode::FixedIndicatorLeft => Icon::ArrowsLeftRight,
+            AutoScrollMode::ScrollingIndicator => Icon::Scroll,
+            AutoScrollMode::Off => Icon::Ban,
+        };
+        icon_at(ui, icons, scroll_icon, scroll_rect, 20.0, false);
     }
-    let scroll_icon = match model.auto_scroll {
-        AutoScrollMode::FixedIndicatorLeft => Icon::ArrowsLeftRight,
-        AutoScrollMode::ScrollingIndicator => Icon::Scroll,
-        AutoScrollMode::Off => Icon::Ban,
-    };
-    icon_at(ui, icons, scroll_icon, scroll_rect, 20.0, false);
-    icon_at(ui, icons, Icon::EllipsisVertical, more, 18.0, false);
 }
 
 /// 分组容器：先铺底色，再在其中布局。

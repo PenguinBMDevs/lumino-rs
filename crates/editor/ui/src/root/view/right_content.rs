@@ -36,7 +36,8 @@ fn with_toolbar_overlay<'a>(
     has_selection: bool,
     arrangement_mode: bool,
 ) -> Element<'a> {
-    if !root.toolbar.overflow_menu_open {
+    // egui 叠加层接管溢出菜单时，iced 不再画第二份（点击也由叠加层消费）。
+    if !root.toolbar.overflow_menu_open || crate::host::overlay_enabled() {
         return content;
     }
 
