@@ -545,12 +545,55 @@ callback / 多视口 / 截图能力。
     `target/tp-thickness3.png`、`target/tp-shape2.png`、`target/tp-text4.png`、
     `target/tp-font2.png`、`target/tp-typed.png`、`target/drag-after2.png`。
 
+**Task 1.3（第十二步）：设置交互通道 + 快捷键/洋葱皮/兼容性页 — 已完成**
+
+- **补上设置动作通道**：此前设置「常规」页只是可视化，交互从未回传生产（点下拉、
+  改输入框、确认都不会生效）。新增 `settings/action.rs`：
+  `SettingsAction`（菜单切换 / 橡皮擦 / 加轨 / 日志保留 / 洋葱皮后端 / GPU 三项 /
+  检查 / 复制 / 确认）+ `take_action`；设置窗口的 Host 在绘制后取走动作，
+  `Root::settings_action_message` 翻译成 `Message::Settings(...)` /
+  `Message::SettingsDialog(CloseDialog)` 再走 `process_message`。
+- **菜单真正可切页**：点击左侧菜单回传 `MenuSelected(index)`，生产
+  `selected_menu_index` 更新；已迁移页面继续整窗接管，未迁移页面（音频等）自动
+  交回 iced。
+- **新迁移三页**（`settings/pages.rs`）：
+  - 快捷键页：标题 + 占位说明（与 iced 同文案）；
+  - 洋葱皮页：渲染后端 GPU/CPU 下拉（加载 MIDI 后只读展示 + 锁定提示）、
+    CPU 能力边界提示；选择回传 `OnionSkinBackend`（生产锁定态会忽略切换）；
+  - 兼容性页：检查 / 复制诊断按钮（检测中/冷却/锁定/无结果时禁用）、结果区
+    按卡片宽度**自动换行**（修复真实窗口里多行详情互相重叠）、启动检查 /
+    启动警告 / Domino 三个开关（非 Windows 下 Domino 只读置灰）。
+- **General 页接线**：橡皮擦 / 加轨下拉与日志输入改为回传动作；确认按钮回传
+  `Confirm` → 关闭设置窗口并应用。
+- **模型**：`SettingsSnapshot.page: SettingsPageModel`（General / Shortcuts /
+  OnionSkin / Compatibility）；页面文案与结果行全部由生产按当前语言预计算，
+  `lumino-ui-egui` 不做 i18n。命中区（菜单行 / 下拉 / 按钮 / 开关）写入
+  egui 内存，供无头测试与真实窗口自动化定位。
+- 验收：
+  - `settings_pages_bands` 4/4：菜单切页 / 确认 / 洋葱皮下拉 → CPU /
+    检查按钮 + 两个开关；
+  - `egui_chrome` 23/23：新增「仅已迁移页面接管（1 页交回 iced、3/4/8 接管，
+    锁定态与开关镜像）」「设置动作全部翻译成生产 Message」；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口（`LUMINO_EGUI_OVERLAY=1`，ppp=1.25，设置窗口 720×540 逻辑）：
+    - 点「快捷键」→ 页面切换（日志 `MenuSelected(3)`，标题 + 占位说明）；
+    - 点「洋葱皮」→ 下拉选 CPU → `OnionSkinBackend(Cpu)`，下拉与生产状态同步；
+    - 点「兼容性」→「检查 GPU 兼容性」→ `RunGpuCheck`，结果换行显示且
+      不覆盖按钮/开关；两个开关切换各回传一次动作，勾选状态与生产一致；
+    - 常规页日志输入改为 25 → `LogRetention("2")` / `("25")`；
+    - 点「确认」→ `Confirm` → 设置窗口关闭。
+  - 证据图：`target/st-shortcuts.png`、`st-onion.png`、`st-onion-cpu.png`、
+    `st-compat2.png`、`st-compat3.png`、`st-compat-toggle2.png`、`st-log.png`。
+
 **Task 1.3（下一步）：其余设置页 + 右侧栏面板内容**
 
 - 现状：标题栏（菜单/子菜单）、工具栏（精度/洋葱皮下拉、溢出菜单、折叠布局）、
   悬浮工具条及其五个锚定面板、左侧栏、右侧栏图标列、状态栏、保存确认对话框、
-  设置「常规」页已由 egui 绘制。
-- 下一步：逐页建模其余设置页（音频 / 外观 / 快捷键 …）与右侧栏面板内容
-  （素材 / 音轨属性 / 混音器等），继续保持「状态镜像 + 动作回传」模式。
+  设置「常规 / 快捷键 / 洋葱皮 / 兼容性」四页已由 egui 绘制。
+- 下一步：迁移音频（含 LGS / 输出 / XSynth 子页）、界面（主题卡片 / 字体 /
+  交互 / 自动滚动）、编辑、调色板、云管理、关于页，最后是右侧栏面板内容
+  （素材 / 音轨属性 / 混音器等）；继续保持「状态镜像 + 动作回传」模式。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

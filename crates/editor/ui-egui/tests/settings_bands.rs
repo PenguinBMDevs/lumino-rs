@@ -75,6 +75,7 @@ fn settings_dialog_bands_match_iced_geometry() {
             eraser: "默认 (Shift+拖动框选)".to_owned(),
             track_add: "自动跳转到新音轨".to_owned(),
             log_retention: "10".to_owned(),
+            page: lumino_ui_egui::chrome::SettingsPageModel::General,
         }))),
         ..ChromeModel::default()
     };
@@ -172,6 +173,7 @@ fn settings_dialog_light_theme_uses_injected_palette() {
             eraser: "默认 (Shift+拖动框选)".to_owned(),
             track_add: "自动跳转到新音轨".to_owned(),
             log_retention: "10".to_owned(),
+            page: lumino_ui_egui::chrome::SettingsPageModel::General,
         }))),
         ..ChromeModel::default()
     };
@@ -254,6 +256,7 @@ fn settings_dialog_english_labels_match_iced_geometry() {
             track_add: track_add_behavior_name(TrackAddBehavior::AutoSwitch, Language::EnUs)
                 .to_owned(),
             log_retention: "10".to_owned(),
+            page: lumino_ui_egui::chrome::SettingsPageModel::General,
         }))),
         ..ChromeModel::default()
     };
@@ -310,6 +313,7 @@ fn settings_menu_scrolls_to_last_item_on_small_window() {
             track_add: track_add_behavior_name(TrackAddBehavior::AutoSwitch, Language::ZhCn)
                 .to_owned(),
             log_retention: "10".to_owned(),
+            page: lumino_ui_egui::chrome::SettingsPageModel::General,
         }))),
         ..ChromeModel::default()
     };

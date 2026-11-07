@@ -6,8 +6,10 @@
 
 use egui::Color32;
 
+mod settings_page;
 mod tool_panel;
 mod toolbar;
+pub use settings_page::*;
 pub use tool_panel::*;
 pub use toolbar::*;
 
@@ -138,6 +140,8 @@ pub struct SettingsSnapshot {
     pub track_add: String,
     /// 日志文件保留份数。
     pub log_retention: String,
+    /// 当前页内容（未迁移的页面整窗交回 iced，不在此建模）。
+    pub page: SettingsPageModel,
 }
 
 /// 对话框调色板：由生产 iced `extended_palette` 映射，深/浅主题都能整窗接管。

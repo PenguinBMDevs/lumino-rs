@@ -17,11 +17,12 @@ pub use model::{
     ToolPanelPanelOwner, ToolPanelSettingsPanel,
 };
 pub use model::{
-    ChromeModel, DialogModel, DialogPalette, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem,
-    OnionMenuModel, OverflowItemModel, OverflowMenuModel, RightSidebarModel, RightSidebarPanelKind,
-    RollBar, SaveConfirmModel, SettingsLabels, SettingsPalette, SettingsSnapshot, SidebarGroup,
-    SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, StatusbarModel,
-    TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, MenuBarModel,
+    MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel,
+    OverflowMenuModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
+    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
+    StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -144,6 +145,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     track_add: values.track_add.clone(),
                     log_retention: values.log_retention.clone(),
                     labels: values.labels.clone(),
+                    page: values.page.clone(),
                 };
                 crate::settings::show_with(&mut root, &mut state, &values.palette);
                 *icons = state.icons;

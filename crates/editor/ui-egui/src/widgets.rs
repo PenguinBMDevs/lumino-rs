@@ -168,8 +168,8 @@ pub fn combo_box(
     options: &[String],
     width: f32,
     palette: &SettingsPalette,
-) -> bool {
-    let mut changed = false;
+) -> Option<usize> {
+    let mut selected_index = None;
     // 生产 `pick_list` 高 32、左右内边距 8、边框 `background.strong`；
     // egui 默认按 `interact_size.y`(18) + 文本只有 24 高，必须显式对齐。
     let previous_padding = ui.spacing().button_padding;
@@ -190,7 +190,7 @@ pub fn combo_box(
         )
         .width(width)
         .show_ui(ui, |ui| {
-            for option in options {
+            for (index, option) in options.iter().enumerate() {
                 if ui
                     .selectable_label(
                         option.as_str() == selected,
@@ -198,7 +198,7 @@ pub fn combo_box(
                     )
                     .clicked()
                 {
-                    changed = true;
+                    selected_index = Some(index);
                 }
             }
         });
@@ -212,7 +212,7 @@ pub fn combo_box(
         Stroke::new(1.0, palette.input_border),
         egui::StrokeKind::Inside,
     );
-    changed
+    selected_index
 }
 
 /// 单行数字输入框：外观对齐生产 `text_input`（高 31、1px `background.strong`

@@ -201,12 +201,22 @@ impl Host {
             events,
             focused,
         });
+        // 设置对话框动作：菜单切换 / 表单变更 / 确认（独立 OS 窗口同样是叠加层宿主）。
+        let settings_action = lumino_ui_egui::settings::take_action(&overlay.ctx);
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
         self.egui_blocked = blocked;
         self.egui_input.set_wants_keyboard(wants_keyboard);
         if let Some(index) = menu_action
             && let Some(message) = self.root.menu_action_message(index)
         {
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
+        if let Some(action) = settings_action
+            && let Some(message) = self.root.settings_action_message(&action)
+        {
+            tracing::info!("egui 设置动作：{action:?}");
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);

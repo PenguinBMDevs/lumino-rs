@@ -6,10 +6,44 @@
 //! - 卡片内边距 20，标题 18px，表单行距 72；
 //! - 「确认」按钮在卡片之外、右下角 100×34。
 
+mod action;
+mod general;
+mod pages;
+
+pub use action::{SettingsAction, take_action};
+
 use egui::{Align, Color32, CornerRadius, Layout, Rect, RichText, Sense, Stroke, Vec2};
 use egui_extras::{Column, TableBuilder};
 
-use crate::chrome::{SettingsLabels, SettingsPalette};
+use crate::chrome::{SettingsLabels, SettingsPageModel, SettingsPalette};
+
+const HITS_ID: &str = "lumino.settings.hits";
+
+/// 本帧可点击控件的矩形（下划线页面渲染时填充）。
+#[derive(Debug, Clone, Default)]
+pub struct SettingsHits {
+    /// 洋葱皮后端下拉框。
+    pub onion_combo: Option<Rect>,
+    /// 兼容性「检查」按钮。
+    pub compat_check: Option<Rect>,
+    /// 兼容性「复制诊断」按钮。
+    pub compat_copy: Option<Rect>,
+    /// 兼容性开关（标签 → 对钩框矩形）。
+    pub compat_checks: Vec<(String, Rect)>,
+    /// 左侧菜单行矩形（按菜单顺序）。
+    pub menu_rows: Vec<Rect>,
+}
+
+/// 读取本帧命中区（未渲染对应页面时为空）。
+pub fn hits(ctx: &egui::Context) -> SettingsHits {
+    ctx.data(|d| d.get_temp(egui::Id::unique(HITS_ID)))
+        .unwrap_or_default()
+}
+
+/// 页面渲染时写入命中区。
+pub(super) fn set_hits(ctx: &egui::Context, hits: SettingsHits) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(HITS_ID), hits));
+}
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
@@ -29,6 +63,8 @@ pub struct SettingsState {
     pub log_retention: String,
     /// 本地化文案（真实窗口由 `SettingsSnapshot` 注入，场景用中文默认值）。
     pub labels: SettingsLabels,
+    /// 当前页内容（未迁移页面不会走到这里）。
+    pub page: SettingsPageModel,
 }
 
 impl Default for SettingsState {
@@ -40,6 +76,7 @@ impl Default for SettingsState {
             track_add: DEFAULT_TRACK_ADD.to_owned(),
             log_retention: "10".to_owned(),
             labels: default_labels(),
+            page: SettingsPageModel::General,
         }
     }
 }
@@ -106,6 +143,7 @@ pub fn show_with(ui: &mut egui::Ui, state: &mut SettingsState, palette: &Setting
     theme::apply(ui.ctx());
     crate::fonts::install(ui.ctx());
     ui.spacing_mut().item_spacing = Vec2::ZERO;
+    set_hits(ui.ctx(), SettingsHits::default());
 
     egui::Panel::top("settings-titlebar")
         .exact_size(layout::TITLEBAR_H)
@@ -250,8 +288,12 @@ fn menu_row(
         Vec2::new(ui.available_width(), layout::SETTINGS_MENU_ROW_H),
         Sense::click(),
     );
+    let mut hits = hits(ui.ctx());
+    hits.menu_rows.push(rect);
+    set_hits(ui.ctx(), hits);
     if response.clicked() {
         state.selected = index;
+        action::push_action(ui.ctx(), SettingsAction::MenuSelected(index));
     }
 
     // 生产 iced：菜单容器内边距 8 + 菜单项水平内边距 16 → 内容起点 +24；
@@ -282,136 +324,15 @@ fn menu_row(
     );
 }
 
+/// 按当前页分发（页面模型逐帧克隆：字符串量级很小，避免与 `&mut state` 冲突）。
 fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &SettingsPalette) {
-    let pad = layout::SETTINGS_PADDING;
-    let left = rect.left() + pad;
-    let base = rect.top();
-
-    // 文案副本：下方控件需要可变借用 `state`（输入框）。
-    let title = state.labels.title.clone();
-    let eraser_label = state.labels.eraser_label.clone();
-    let eraser_options = state.labels.eraser_options.clone();
-    let track_add_label = state.labels.track_add_label.clone();
-    let track_add_options = state.labels.track_add_options.clone();
-    let log_section = state.labels.log_section.clone();
-    let log_label = state.labels.log_label.clone();
-
-    ui.painter().text(
-        egui::pos2(left, base + 30.0),
-        egui::Align2::LEFT_CENTER,
-        &title,
-        egui::FontId::proportional(theme::font::TITLE),
-        palette.text,
-    );
-
-    // 表单：标签 + 间距 32（8+16+8，与生产 `row![label, space(16), pick_list]` 一致），
-    // 控件起点随标签实际宽度变化——英文标签更长，固定列宽会压住下拉框。
-    let label_x = left;
-    form_row(
-        ui,
-        RowGeometry {
-            label_x,
-            center_y: base + 99.0,
-        },
-        &eraser_label,
-        &state.eraser,
-        &eraser_options,
-        palette,
-    );
-    form_row(
-        ui,
-        RowGeometry {
-            label_x,
-            center_y: base + 171.0,
-        },
-        &track_add_label,
-        &state.track_add,
-        &track_add_options,
-        palette,
-    );
-
-    ui.painter().text(
-        egui::pos2(left, base + 236.0),
-        egui::Align2::LEFT_CENTER,
-        &log_section,
-        egui::FontId::proportional(theme::font::SECTION),
-        palette.text,
-    );
-
-    let log_label_width = ui
-        .painter()
-        .layout_no_wrap(
-            log_label.clone(),
-            egui::FontId::proportional(theme::font::LABEL),
-            palette.text,
-        )
-        .size()
-        .x;
-    ui.painter().text(
-        egui::pos2(label_x, base + 291.0),
-        egui::Align2::LEFT_CENTER,
-        &log_label,
-        egui::FontId::proportional(theme::font::LABEL),
-        palette.text,
-    );
-    // 生产 iced 的行布局：`row![label, space(16), input]`，行间距 8 →
-    // 标签与输入框之间实际 32px（8+16+8）。
-    let input_rect = Rect::from_min_size(
-        egui::pos2(
-            label_x + log_label_width + 32.0,
-            base + 291.0 - layout::SETTINGS_INPUT_H / 2.0,
-        ),
-        Vec2::new(80.0, layout::SETTINGS_INPUT_H),
-    );
-    let mut input_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(input_rect)
-            .layout(Layout::top_down(Align::Min)),
-    );
-    widgets::numeric_input(&mut input_ui, &mut state.log_retention, 80.0, palette);
-}
-
-/// 表单行几何（标签列起点 / 行中心）。
-#[derive(Debug, Clone, Copy)]
-struct RowGeometry {
-    label_x: f32,
-    center_y: f32,
-}
-
-fn form_row(
-    ui: &mut egui::Ui,
-    geometry: RowGeometry,
-    label: &str,
-    value: &str,
-    options: &[String],
-    palette: &SettingsPalette,
-) {
-    let label_font = egui::FontId::proportional(theme::font::LABEL);
-    let label_width = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), label_font.clone(), palette.text)
-        .size()
-        .x;
-    ui.painter().text(
-        egui::pos2(geometry.label_x, geometry.center_y),
-        egui::Align2::LEFT_CENTER,
-        label,
-        label_font,
-        palette.text,
-    );
-
-    // 生产：`row![label, space(16), pick_list].spacing(8)` → 标签与控件间 8+16+8 = 32。
-    let field_x = geometry.label_x + label_width + 32.0;
-    let combo_rect = Rect::from_min_size(
-        egui::pos2(field_x, geometry.center_y - 16.0),
-        Vec2::new(200.0, 32.0),
-    );
-    let mut combo_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(combo_rect)
-            .layout(Layout::top_down(Align::Min)),
-    );
-    widgets::combo_box(&mut combo_ui, label, value, options, 200.0, palette);
+    let page = state.page.clone();
+    match page {
+        SettingsPageModel::General => general::show(ui, rect, state, palette),
+        SettingsPageModel::Shortcuts(model) => pages::shortcuts(ui, rect, &model, palette),
+        SettingsPageModel::OnionSkin(model) => pages::onion_skin(ui, rect, &model, palette),
+        SettingsPageModel::Compatibility(model) => pages::compatibility(ui, rect, &model, palette),
+    }
 }
 
 fn confirm(ui: &mut egui::Ui, rect: Rect, palette: &SettingsPalette, label: &str) {
@@ -422,5 +343,8 @@ fn confirm(ui: &mut egui::Ui, rect: Rect, palette: &SettingsPalette, label: &str
     )
     .fill(palette.accent)
     .corner_radius(CornerRadius::same(4));
-    ui.put(rect, button);
+    let response = ui.put(rect, button);
+    if response.clicked() {
+        action::push_action(ui.ctx(), SettingsAction::Confirm);
+    }
 }
