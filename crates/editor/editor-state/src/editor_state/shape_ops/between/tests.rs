@@ -1,7 +1,9 @@
 //! Between 组同步测试
 
 use super::*;
-use lumino_core::shape::{BetweenSet, ShapeGeometry, ShapeKind};
+use std::collections::BTreeMap;
+
+use lumino_core::shape::{BetweenSet, PatternParams, ShapeGeometry, ShapeKind, TumourParams};
 
 fn line(id: u64) -> ShapeModel {
     let mut model = ShapeModel::new(id, 1, ShapeKind::Line, 1.0);
@@ -154,4 +156,194 @@ fn test_fingerprint_translation_invariant_and_modified() {
     assert!(!is_modified(&step));
     step.geometry.anchors[0].pos.1 += 1.0;
     assert!(is_modified(&step));
+}
+
+fn group_with_ops(first_ops: Vec<ShapeOp>, last_ops: Vec<ShapeOp>) -> Vec<ShapeModel> {
+    let mut first = line(1);
+    first.ops.extend(first_ops);
+    first.ops.push(ShapeOp::Between(params(
+        7,
+        BetweenRole::First,
+        Some(0.0),
+        Some(BetweenSet {
+            steps: 3,
+            ..BetweenSet::default()
+        }),
+    )));
+    let mut last = line(2);
+    last.ops.extend(last_ops);
+    last.ops.push(ShapeOp::Between(params(
+        7,
+        BetweenRole::Last,
+        Some(1.0),
+        None,
+    )));
+    let mut shapes = vec![first, last];
+    sync_groups(&mut shapes);
+    shapes
+}
+
+fn step_at(shapes: &[ShapeModel], at: f32) -> &ShapeModel {
+    shapes
+        .iter()
+        .find(|shape| {
+            role_of(shape, 7) == Some(BetweenRole::Step)
+                && (super::at_of(shape, 7) - at).abs() < 1e-4
+        })
+        .expect("应生成对应步")
+}
+
+fn tumour_size(shape: &ShapeModel) -> Option<f32> {
+    shape.ops.iter().find_map(|op| match op {
+        ShapeOp::Tumours(params) => Some(params.size),
+        _ => None,
+    })
+}
+
+fn pattern_height(shape: &ShapeModel) -> Option<f64> {
+    shape.ops.iter().find_map(|op| match op {
+        ShapeOp::Pattern(params) => Some(
+            params
+                .vars
+                .get("height")
+                .copied()
+                .unwrap_or(f64::from(params.scale)),
+        ),
+        _ => None,
+    })
+}
+
+#[test]
+fn test_sync_fades_one_sided_tumours_at_middle() {
+    let first_only = group_with_ops(
+        vec![ShapeOp::Tumours(TumourParams {
+            size: 4.0,
+            ..TumourParams::default()
+        })],
+        Vec::new(),
+    );
+    assert!(
+        (tumour_size(step_at(&first_only, 0.25)).expect("步应保留 tumours") - 2.0).abs() < 1e-3
+    );
+    assert!(
+        tumour_size(step_at(&first_only, 0.5))
+            .expect("步应保留 tumours")
+            .abs()
+            < 1e-3
+    );
+    assert!(
+        tumour_size(step_at(&first_only, 0.75))
+            .expect("步应保留 tumours")
+            .abs()
+            < 1e-3
+    );
+
+    let last_only = group_with_ops(
+        Vec::new(),
+        vec![ShapeOp::Tumours(TumourParams {
+            size: 4.0,
+            ..TumourParams::default()
+        })],
+    );
+    assert!(
+        tumour_size(step_at(&last_only, 0.25))
+            .expect("步应保留 tumours")
+            .abs()
+            < 1e-3
+    );
+    assert!(
+        tumour_size(step_at(&last_only, 0.5))
+            .expect("步应保留 tumours")
+            .abs()
+            < 1e-3
+    );
+    assert!((tumour_size(step_at(&last_only, 0.75)).expect("步应保留 tumours") - 2.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_sync_interpolates_two_sided_tumours() {
+    let shapes = group_with_ops(
+        vec![ShapeOp::Tumours(TumourParams {
+            size: 4.0,
+            ..TumourParams::default()
+        })],
+        vec![ShapeOp::Tumours(TumourParams {
+            size: 8.0,
+            ..TumourParams::default()
+        })],
+    );
+    assert!((tumour_size(step_at(&shapes, 0.25)).expect("步应保留 tumours") - 5.0).abs() < 1e-3);
+    assert!((tumour_size(step_at(&shapes, 0.5)).expect("步应保留 tumours") - 6.0).abs() < 1e-3);
+    assert!((tumour_size(step_at(&shapes, 0.75)).expect("步应保留 tumours") - 7.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_sync_fades_one_sided_pattern_at_middle() {
+    let pattern = PatternParams {
+        vars: BTreeMap::from([("height".to_string(), 4.0)]),
+        ..PatternParams::default()
+    };
+    let first_only = group_with_ops(vec![ShapeOp::Pattern(pattern.clone())], Vec::new());
+    assert!(
+        (pattern_height(step_at(&first_only, 0.25)).expect("步应保留 pattern") - 2.0).abs() < 1e-3
+    );
+    assert!(
+        pattern_height(step_at(&first_only, 0.5))
+            .expect("步应保留 pattern")
+            .abs()
+            < 1e-3
+    );
+    assert!(
+        pattern_height(step_at(&first_only, 0.75))
+            .expect("步应保留 pattern")
+            .abs()
+            < 1e-3
+    );
+
+    let last_only = group_with_ops(Vec::new(), vec![ShapeOp::Pattern(pattern)]);
+    assert!(
+        pattern_height(step_at(&last_only, 0.25))
+            .expect("步应保留 pattern")
+            .abs()
+            < 1e-3
+    );
+    assert!(
+        pattern_height(step_at(&last_only, 0.5))
+            .expect("步应保留 pattern")
+            .abs()
+            < 1e-3
+    );
+    assert!(
+        (pattern_height(step_at(&last_only, 0.75)).expect("步应保留 pattern") - 2.0).abs() < 1e-3
+    );
+}
+
+#[test]
+fn test_sync_clamps_steps_to_most_steps() {
+    let mut first = line(1);
+    first.ops.push(ShapeOp::Between(params(
+        7,
+        BetweenRole::First,
+        Some(0.0),
+        Some(BetweenSet {
+            steps: 999,
+            ..BetweenSet::default()
+        }),
+    )));
+    let mut last = line(2);
+    last.ops.push(ShapeOp::Between(params(
+        7,
+        BetweenRole::Last,
+        Some(1.0),
+        None,
+    )));
+    let mut shapes = vec![first, last];
+    let warnings = sync_groups(&mut shapes);
+    assert_eq!(shapes.len(), 502, "First + 500 Step + Last");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.message.contains("500")),
+        "应报告 steps 钳到 500"
+    );
 }

@@ -132,7 +132,11 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
                 vel: None,
                 set: None,
             };
-            model.ops = vec![ShapeOp::Between(params)];
+            // 保留 blend 产出的 Tumours / Pattern；只替换 Between 标记。
+            let mut ops = std::mem::take(&mut model.ops);
+            ops.retain(|op| !matches!(op, ShapeOp::Between(_)));
+            ops.push(ShapeOp::Between(params));
+            model.ops = ops;
             generated.push((at, model));
         }
 
