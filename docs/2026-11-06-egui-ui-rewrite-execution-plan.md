@@ -113,8 +113,42 @@
 - wgpu30 迁移保留 `wgpu27` 分支/标签；GPU 基线不通过则回滚该迁移提交。
 - 最终切换前保留 iced UI crate，不删除旧代码。
 
-## 七、当前任务
+## 七、执行记录
 
-**Task 0.1：视觉基线工具链（iced 侧）**
+### Task 0.1：视觉基线工具链（iced 侧）— 已完成
 
-见下一条 Agent 任务卡。
+- 分支 `feat/egui-ui-ref`，提交 `902df0d1 feat(ui): 引入 UI 一致性校验工具链与重构计划`。
+- 交付：`crates/editor/ui-parity`（`capture_iced` / `ui-diff` / `scene` / `diff`）、
+  `tests/ui-baseline/iced/` 12 张基线图（4 场景 × 3 DPI）。
+
+### Task 0.2：egui 草稿骨架 + 截图 — 已完成
+
+- **Sub-agent 版本已回退**：其实现靠手调像素、图标是手绘近似、未使用 `egui_extras`
+  网格，与验收要求不符。本任务由主 Agent 重写。
+- 交付：`crates/editor/ui-egui`
+  - 真实 SVG 图标（`resources/icons/**` 原图 + 生产尺寸 + 暗色染色规则）；
+  - 生产调色板精确值（由 `dump_palette` 从 iced `Extended` 导出，非采样近似）；
+  - 主窗口 Chrome（标题栏 / 工具栏分组 / 左右路由栏 / 音轨列表 / 状态栏 / 钢琴卷帘骨架）；
+  - 设置页（`egui_extras::TableBuilder` 菜单 + 表单双列）、保存确认对话框；
+  - `capture_egui` / `compare_egui` 两个可执行工具。
+- 布局事实（来自 iced 源码 + 基线像素双向核对）：
+  - 根结构 `column![titlebar, row![left_bar, column![toolbar, row![editor, right_bar]]], statusbar]`；
+  - 工具栏分组：50px 高、圆角 4、`background.weak`；分组间距 4/8/8/16/16/0；
+  - 左侧栏 `48 + 200`，面板内边距 8，标题 12px，行高 34 + 行距 2；
+  - 滚动条厚度 20（`V_SCROLLBAR_WIDTH` / `H_SCROLLBAR_HEIGHT`）；
+  - 路由栏激活指示条 2px，父组用 `parent_color`、当前路由用 `child_color`。
+- 视觉对比（`compare_egui`，容差 2）：
+
+  | 场景 | 超容差像素占比 | 平均通道差 |
+  |---|---|---|
+  | main_chrome | 3.0% – 3.6% | 1.66 – 1.75 |
+  | settings_general | 3.4% – 4.0% | 1.49 – 1.65 |
+  | save_confirm_dialog | 3.2% – 3.9% | 2.63 – 2.91 |
+  | piano_roll_skeleton | 2.9% – 3.6% | 1.57 – 1.70 |
+
+  残差集中在字形栅格化（egui 字体栈 vs iced cosmic-text）与图标抗锯齿，几何/色块已对齐。
+- 质量门：`cargo check` / `cargo clippy -D warnings` / `cargo test` 全绿；所有源文件 < 400 行。
+
+## 八、当前任务
+
+**Task 0.3：主窗口 Chrome 生产化接入**
