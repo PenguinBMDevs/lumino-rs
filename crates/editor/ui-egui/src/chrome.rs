@@ -72,6 +72,7 @@ impl ChromeState {
             piano_roll: piano_roll::PianoRollView {
                 first_measure: 9,
                 pixels_per_measure: 384.0,
+                ..Default::default()
             },
             ..Self::default()
         }

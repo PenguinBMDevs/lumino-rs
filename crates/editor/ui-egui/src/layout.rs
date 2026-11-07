@@ -65,7 +65,15 @@ pub const RIGHT_TOOL_GAP: f32 = 16.0;
 /// 「更多」按钮宽度。
 pub const MORE_BUTTON_W: f32 = 28.0;
 /// 精度选择器宽度。
-pub const PRECISION_W: f32 = 66.0;
+/// 设置页输入框高度（生产 `text_input` 31）。
+pub const SETTINGS_INPUT_H: f32 = 31.0;
+/// 设置页下拉框高度（生产 `pick_list` 32）。
+pub const SETTINGS_COMBO_H: f32 = 32.0;
+
+/// 精度下拉宽度（生产：16px 图标 + 6 + 13px 文本 + 左右内边距 8 + 1px 边框）。
+pub const PRECISION_W: f32 = 57.0;
+/// 精度下拉高度（生产按钮内容高 24 + 上下边框）。
+pub const PRECISION_H: f32 = 26.0;
 
 /// 工具栏工具按钮图标尺寸。
 pub const TOOL_BUTTON_ICON: f32 = 20.0;

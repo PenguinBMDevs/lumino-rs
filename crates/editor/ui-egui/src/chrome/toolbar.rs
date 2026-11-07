@@ -92,7 +92,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     // Tools（宽度由条目尺寸累加，对应 iced 的 `Length::Shrink`）
     group(
         ui,
-        Rect::from_min_size(egui::pos2(x, y), Vec2::new(tools::width(), h)),
+        Rect::from_min_size(egui::pos2(x, y), Vec2::new(tools::width(ui), h)),
         |ui| tools::show(ui, &mut state.icons),
     );
 
@@ -172,8 +172,9 @@ fn record(ui: &mut egui::Ui) {
     let rect = ui.max_rect();
     let (_, response) = ui.allocate_exact_size(rect.size(), Sense::click());
     let _ = response;
+    // iced 录制红点直径 8（基线实测 8×7）。
     ui.painter()
-        .circle_filled(rect.center(), 7.0, theme::RECORD_RED);
+        .circle_filled(rect.center(), 4.0, theme::RECORD_RED);
 }
 
 fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache) {

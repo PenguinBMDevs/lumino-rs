@@ -218,23 +218,38 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState) {
         theme::TEXT,
     );
 
+    let log_label = "日志文件保留份数:";
+    let log_label_width = ui
+        .painter()
+        .layout_no_wrap(
+            log_label.to_owned(),
+            egui::FontId::proportional(theme::font::LABEL),
+            theme::TEXT,
+        )
+        .size()
+        .x;
     ui.painter().text(
         egui::pos2(label_x, base + 291.0),
         egui::Align2::LEFT_CENTER,
-        "日志文件保留份数:",
+        log_label,
         egui::FontId::proportional(theme::font::LABEL),
         theme::TEXT,
     );
-    let input_rect = Rect::from_center_size(
-        egui::pos2(field_x + 39.0, base + 291.0),
-        Vec2::new(78.0, 26.0),
+    // 生产 iced 的行布局：`row![label, space(16), input]`，行间距 8 →
+    // 标签与输入框之间实际 32px（8+16+8）。
+    let input_rect = Rect::from_min_size(
+        egui::pos2(
+            label_x + log_label_width + 32.0,
+            base + 291.0 - layout::SETTINGS_INPUT_H / 2.0,
+        ),
+        Vec2::new(80.0, layout::SETTINGS_INPUT_H),
     );
     let mut input_ui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(input_rect)
             .layout(Layout::top_down(Align::Min)),
     );
-    widgets::numeric_input(&mut input_ui, &mut state.log_retention, 78.0);
+    widgets::numeric_input(&mut input_ui, &mut state.log_retention, 80.0);
 }
 
 fn form_row(

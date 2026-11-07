@@ -1,8 +1,6 @@
 //! 小型控件工厂：把生产 iced 的按钮 / 图标 / 文本尺寸契约搬到 egui。
 
-use egui::{
-    Align2, Color32, CornerRadius, FontId, Layout, Response, RichText, Sense, Stroke, Vec2,
-};
+use egui::{Align, Color32, CornerRadius, FontId, Layout, Response, RichText, Sense, Stroke, Vec2};
 
 use crate::icons::{Icon, IconCache};
 use crate::layout;
@@ -156,6 +154,11 @@ pub fn small_text_button(ui: &mut egui::Ui, text: &str, selected: bool) -> Respo
     ui.add_sized([44.0, 26.0], button)
 }
 
+/// 设置页下拉框字号（iced `pick_list` 默认 16）。
+const SETTINGS_COMBO_TEXT: f32 = 16.0;
+/// 设置页输入框字号（iced `text_input` 默认 16）。
+const SETTINGS_INPUT_TEXT: f32 = 16.0;
+
 /// 下拉框（设置页 / 工具栏）。
 pub fn combo_box(
     ui: &mut egui::Ui,
@@ -165,10 +168,16 @@ pub fn combo_box(
     width: f32,
 ) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(id)
+    // 生产 `pick_list` 高 32、左右内边距 8、边框 `background.strong`；
+    // egui 默认按 `interact_size.y`(18) + 文本只有 24 高，必须显式对齐。
+    let previous_padding = ui.spacing().button_padding;
+    let previous_interact = ui.spacing().interact_size;
+    ui.spacing_mut().button_padding.x = 8.0;
+    ui.spacing_mut().interact_size.y = layout::SETTINGS_COMBO_H;
+    let response = egui::ComboBox::from_id_salt(id)
         .selected_text(
             RichText::new(selected)
-                .size(theme::font::BODY)
+                .size(SETTINGS_COMBO_TEXT)
                 .color(theme::TEXT),
         )
         .width(width)
@@ -177,7 +186,7 @@ pub fn combo_box(
                 if ui
                     .selectable_label(
                         *option == selected,
-                        RichText::new(*option).size(theme::font::BODY),
+                        RichText::new(*option).size(SETTINGS_COMBO_TEXT),
                     )
                     .clicked()
                 {
@@ -185,17 +194,41 @@ pub fn combo_box(
                 }
             }
         });
+    ui.spacing_mut().button_padding = previous_padding;
+    ui.spacing_mut().interact_size = previous_interact;
+    let rect = response.response.rect;
+    ui.painter().rect_stroke(
+        rect,
+        egui::CornerRadius::same(4),
+        Stroke::new(1.0, theme::SELECTED_BG),
+        egui::StrokeKind::Inside,
+    );
     changed
 }
 
-/// 单行数字输入框。
+/// 单行数字输入框：外观对齐生产 `text_input`（高 31、1px `background.strong`
+/// 边框、背景 `background.base`、左内边距 8、字号 16）。
 pub fn numeric_input(ui: &mut egui::Ui, value: &mut String, width: f32) -> Response {
-    ui.add_sized(
-        [width, 26.0],
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(width, layout::SETTINGS_INPUT_H), Sense::click());
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(4),
+        theme::BASE_BG,
+        Stroke::new(1.0, theme::SELECTED_BG),
+        egui::StrokeKind::Inside,
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(Vec2::new(8.0, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    child.add(
         egui::TextEdit::singleline(value)
-            .font(FontId::proportional(theme::font::BODY))
+            .frame(egui::Frame::NONE)
+            .font(FontId::proportional(SETTINGS_INPUT_TEXT))
             .text_color(theme::TEXT)
-            .align(Align2::CENTER_CENTER),
+            .desired_width(f32::INFINITY),
     )
 }
 

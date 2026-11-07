@@ -25,6 +25,8 @@ pub const BORDER: Color32 = Color32::from_rgb(0x3F, 0x45, 0x5C);
 pub const TEXT: Color32 = Color32::from_rgb(0xB6, 0xC4, 0xFA);
 /// 次级文字。
 pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x96, 0xA3, 0xBD);
+/// `background.weak` 上的正文（iced `background.weak.text`）。
+pub const TEXT_ON_WEAK: Color32 = Color32::from_rgb(0xD2, 0xE4, 0xFF);
 /// 更弱的文字 / 分隔符。
 pub const TEXT_DIM: Color32 = Color32::from_rgb(0x7A, 0x82, 0xA8);
 /// 强调色（iced `primary.base`）。
@@ -41,6 +43,8 @@ pub const WARNING: Color32 = Color32::from_rgb(0xE0, 0xAF, 0x68);
 pub const DANGER: Color32 = Color32::from_rgb(0xF7, 0x76, 0x8E);
 /// 录制红点。
 pub const RECORD_RED: Color32 = Color32::from_rgb(0xE5, 0x48, 0x4D);
+/// 播放指示线（iced `Color::from_rgb(1.0, 0.2, 0.2)`）。
+pub const PLAYHEAD: Color32 = Color32::from_rgb(0xFF, 0x33, 0x33);
 /// 左侧 / 右侧路由栏激活指示条（钢琴卷帘分组色）。
 pub const ROUTE_INDICATOR: Color32 = Color32::from_rgb(0xA6, 0x59, 0x59);
 /// Windows 关闭按钮 hover 红。

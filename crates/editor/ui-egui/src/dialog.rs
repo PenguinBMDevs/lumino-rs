@@ -1,6 +1,6 @@
 //! 对话框草稿：未保存更改确认。
 
-use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Vec2};
+use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Stroke, Vec2};
 
 use crate::icons::{Icon, IconCache};
 use crate::layout;
@@ -57,11 +57,11 @@ fn content(ui: &mut egui::Ui) {
     );
 
     let button_w = 90.0;
-    let button_h = 32.0;
+    let button_h = 35.0;
     let gap = 10.0;
     let total = button_w * 3.0 + gap * 2.0;
     let start_x = rect.center().x - total / 2.0;
-    let y = rect.top() + 127.0;
+    let y = rect.top() + 126.0;
 
     put_button(
         ui,
@@ -69,6 +69,7 @@ fn content(ui: &mut egui::Ui) {
         "保存",
         theme::ACCENT,
         Color32::from_rgb(0x12, 0x1A, 0x2A),
+        theme::ACCENT_DARK,
     );
     put_button(
         ui,
@@ -79,6 +80,7 @@ fn content(ui: &mut egui::Ui) {
         "关闭",
         theme::TOOLBAR_BG,
         theme::TEXT,
+        theme::ROUTE_BAR_BG,
     );
     put_button(
         ui,
@@ -89,10 +91,19 @@ fn content(ui: &mut egui::Ui) {
         "取消",
         theme::TOOLBAR_BG,
         theme::TEXT,
+        theme::ROUTE_BAR_BG,
     );
 }
 
-fn put_button(ui: &mut egui::Ui, rect: Rect, text: &str, fill: Color32, text_color: Color32) {
+#[allow(clippy::too_many_arguments)]
+fn put_button(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    text: &str,
+    fill: Color32,
+    text_color: Color32,
+    border: Color32,
+) {
     ui.put(
         rect,
         egui::Button::new(
@@ -101,6 +112,8 @@ fn put_button(ui: &mut egui::Ui, rect: Rect, text: &str, fill: Color32, text_col
                 .color(text_color),
         )
         .fill(fill)
+        .stroke(Stroke::new(1.0, border))
+        .min_size(rect.size())
         .corner_radius(CornerRadius::same(4)),
     );
 }
