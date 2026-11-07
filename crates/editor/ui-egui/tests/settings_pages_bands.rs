@@ -318,6 +318,7 @@ fn ui_page_dispatches_theme_and_fields() {
     );
 }
 
+/// 编辑 / 调色板 / 关于行：文本、开关、色块、logo/回声洞点击。
 /// 兼容性页：检查按钮、两个开关。
 #[test]
 fn compatibility_buttons_and_toggles_dispatch() {

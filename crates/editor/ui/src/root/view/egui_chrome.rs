@@ -7,6 +7,7 @@ mod dialogs;
 mod gates;
 mod menu;
 mod settings_audio;
+mod settings_pages;
 mod settings_ui;
 mod tool_panel;
 mod toolbar;
@@ -433,6 +434,8 @@ impl Root {
     }
 }
 
+#[cfg(test)]
+mod settings_audio_tests;
 #[cfg(test)]
 mod settings_page_tests;
 #[cfg(test)]

@@ -658,12 +658,42 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/ui-page.png`、`ui-dracula.png`、`ui-scrolled.png`、
     `ui-bottom3.png`、`ui-bottom4.png`、`ui-toggle.png`。
 
-**Task 1.3（下一步）：编辑 / 调色板 / 云管理 / 关于页 + 右侧栏面板内容**
+**Task 1.3（第十五步）：编辑 / 调色板 / 关于页 — 已完成**
 
-- 现状：标题栏（菜单/子菜单）、工具栏（精度/洋葱皮下拉、溢出菜单、折叠布局）、
-  悬浮工具条及其五个锚定面板、左侧栏、右侧栏图标列、状态栏、保存确认对话框、
-  设置「常规 / 音频 / 界面 / 快捷键 / 洋葱皮 / 兼容性」六页已由 egui 绘制。
-- 下一步：迁移编辑、调色板、云管理、关于页，最后是右侧栏面板内容
-  （素材 / 音轨属性 / 混音器等）；继续保持「状态镜像 + 动作回传」模式。
+- 复用界面页的通用行模型（`UiPageModel` / `UiRow` / `UiField`），新增行：
+  `Swatches`（28×28 色块、每行 12 个、圆角预览容器）、`AboutLogo`
+  （64px logo，摇晃偏移由生产状态给出，可点击）、`EchoCave`
+  （打字机前缀 + 闪烁不透明度，整行可点）。
+- 三页内容：
+  - **编辑**：操作历史（总条数 / 单条上限 / 合并窗口）、自动保存（开关 + 间隔）、
+    Tempo BPM 上限（预设 256…65536 + 自定义入口，选自定义打开输入弹窗）、
+    编辑拦截 Toast 开关；
+  - **调色板**：调色板下拉（加载 MIDI 后锁定为只读提示）、颜色预览标题、
+    当前调色板全部色块网格；
+  - **关于**：logo（点击上报彩蛋）、标题 / 应用名 / 版本 / 描述、回声洞文本
+    （点击切换下一条）。
+- 动作沿用 `UiText/UiToggle/UiCombo/UiButton`，字段扩展 10 个；`settings_ui/actions`
+  统一翻译成 `settings::Event`（含 Tempo 自定义入口与调色板规范名）。
+- 验收：
+  - `settings_pages_bands` 6/6 + `settings_extra_bands` 1/1（文本 / 开关 /
+    logo / 回声洞点击）；
+  - `egui_chrome` 25/25 + `settings_audio_tests` 1/1（三页行镜像与动作翻译）；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 与上一步逐项一致，基线零改动；
+  - 真实窗口（720×540 逻辑）：调色板页色块网格与下拉；编辑页文本/开关
+    （`UiToggle { AutosaveEnabled }`）；关于页 logo 与回声洞点击
+    （`UiButton { AboutLogoClicked / EchoCaveClicked }`）；确认关闭。
+  - 证据图：`target/rem-palette.png`、`rem-editing2.png`、
+    `rem-editing-toggle.png`、`rem-about.png`、`rem-echo.png`。
+
+**Task 1.3（下一步）：云管理页 + 右侧栏面板内容**
+
+- 现状：设置「常规 / 音频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 / 兼容性 /
+  关于」九页已由 egui 绘制；云管理页仍 iced（连接列表与 CloudAction 需要
+  索引动作通道）。
+- 下一步：迁移云管理页（连接列表 / 连接断开 / 管理文件 / 删除 / 添加，
+  动作携带连接 id），随后右侧栏面板内容（素材 / 音轨属性 / 混音器等）；
+  继续保持「状态镜像 + 动作回传」模式。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

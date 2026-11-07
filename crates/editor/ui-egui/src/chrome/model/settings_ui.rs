@@ -106,6 +106,27 @@ pub enum UiRow {
         /// 卡片。
         cards: Vec<ThemeCardModel>,
     },
+    /// 调色板色块预览（28×28，每行 12 个）。
+    Swatches {
+        /// 颜色。
+        colors: Vec<Color32>,
+    },
+    /// 关于页 logo（可点击，摇晃偏移由生产状态给出）。
+    AboutLogo {
+        /// 水平偏移（摇晃）。
+        dx: f32,
+        /// logo 尺寸。
+        size: f32,
+        /// 是否显示（进程内消失后不再出现）。
+        visible: bool,
+    },
+    /// 关于页「回声洞」彩蛋文本。
+    EchoCave {
+        /// 当前应显示的文本（打字机前缀）。
+        text: String,
+        /// 不透明度（闪烁阶段 < 1）。
+        opacity: f32,
+    },
 }
 
 /// 界面页可交互字段。
@@ -145,6 +166,26 @@ pub enum UiField {
     AutomationLineThickness,
     /// 底边栏监控刷新间隔。
     MonitorRefreshInterval,
+    /// 编辑：操作日志总条数上限。
+    HistoryTotalLimit,
+    /// 编辑：单条日志条目上限。
+    HistoryEntryLimit,
+    /// 编辑：合并窗口（毫秒）。
+    MergeWindowMs,
+    /// 编辑：自动保存开关。
+    AutosaveEnabled,
+    /// 编辑：自动保存间隔（分钟）。
+    AutosaveInterval,
+    /// 编辑：Tempo BPM 上限（预设 / 自定义）。
+    TempoMaxBpm,
+    /// 编辑：拦截时 Toast 提示。
+    InterceptNotification,
+    /// 调色板选择。
+    Palette,
+    /// 关于页 logo 点击。
+    AboutLogoClicked,
+    /// 关于页回声洞点击。
+    EchoCaveClicked,
 }
 
 /// 单张主题卡片。

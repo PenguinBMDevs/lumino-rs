@@ -126,6 +126,9 @@ impl Root {
                     2 => SettingsPageModel::Ui(Box::new(super::settings_ui::page(self))),
                     3 => SettingsPageModel::Shortcuts(shortcuts_page(language)),
                     4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),
+                    5 => SettingsPageModel::Ui(Box::new(super::settings_pages::palette_page(self))),
+                    6 => SettingsPageModel::Ui(Box::new(super::settings_pages::editing_page(self))),
+                    9 => SettingsPageModel::Ui(Box::new(super::settings_pages::about_page(self))),
                     8 => SettingsPageModel::Compatibility(self.compatibility_page(language)),
                     _ => return None,
                 };

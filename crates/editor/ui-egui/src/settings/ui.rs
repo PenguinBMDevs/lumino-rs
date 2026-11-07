@@ -3,13 +3,14 @@
 //! 通用行绘制：下拉、文本、开关、滑杆、按钮、小节标题与主题卡片网格。
 //! 主题卡片按 158×96 固定比例自适应列数，点击回传规范主题名。
 
-use egui::{Align, Align2, FontId, Layout, Pos2, Rect, Sense, Vec2};
+use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Pos2, Rect, Sense, Stroke, Vec2};
 
 use super::super::chrome::{SettingsPalette, UiField, UiPageModel, UiRow};
 use super::super::widgets as egui_widgets;
 use super::action::{self, SettingsAction};
 use super::pages::{action_button, text_width, title};
 use super::set_hits;
+use crate::icons::{Icon, IconCache};
 
 mod widgets;
 use widgets::{checkbox_row, draw_label, draw_theme_card};
@@ -39,6 +40,18 @@ fn row_height(row: &UiRow, width: f32) -> f32 {
             let rows = cards.len().div_ceil(cols).max(1) as f32;
             22.0 + rows * CARD_H + (rows - 1.0) * CARD_GAP
         }
+        UiRow::Swatches { colors } => {
+            let rows = colors.len().div_ceil(12).max(1) as f32;
+            20.0 + rows * 28.0 + (rows - 1.0) * 2.0
+        }
+        UiRow::AboutLogo { size, visible, .. } => {
+            if *visible {
+                size + 10.0
+            } else {
+                0.0
+            }
+        }
+        UiRow::EchoCave { .. } => 18.0,
     }
 }
 
@@ -58,7 +71,13 @@ pub(super) fn content_height(model: &UiPageModel, width: f32) -> f32 {
 }
 
 /// 绘制页面。
-pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &UiPageModel, palette: &SettingsPalette) {
+pub(super) fn show(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    model: &UiPageModel,
+    palette: &SettingsPalette,
+    icons: &mut IconCache,
+) {
     let x = rect.left() + PAD;
     title(ui, x, rect.top(), &model.title, palette);
     let mut y = rect.top() + PAD + TITLE_BLOCK;
@@ -289,6 +308,80 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &UiPageModel, palette: 
                     let mut hits = super::hits(ui.ctx());
                     hits.theme_cards.push((card.value.clone(), card_rect));
                     set_hits(ui.ctx(), hits);
+                }
+            }
+            UiRow::Swatches { colors } => {
+                let panel =
+                    Rect::from_min_size(Pos2::new(x, y), Vec2::new(rect.width() - PAD * 2.0, h));
+                ui.painter().rect(
+                    panel,
+                    CornerRadius::same(21),
+                    palette.toolbar,
+                    Stroke::new(1.0, palette.input_border),
+                    egui::StrokeKind::Inside,
+                );
+                let start = panel.min + Vec2::splat(10.0);
+                for (index, color) in colors.iter().enumerate() {
+                    let col = index % 12;
+                    let row = index / 12;
+                    let swatch = Rect::from_min_size(
+                        Pos2::new(start.x + col as f32 * 30.0, start.y + row as f32 * 30.0),
+                        Vec2::splat(28.0),
+                    );
+                    ui.painter().rect(
+                        swatch,
+                        CornerRadius::same(3),
+                        *color,
+                        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 0, 0, 38)),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+            }
+            UiRow::AboutLogo { dx, size, visible } => {
+                if *visible {
+                    let logo = Rect::from_min_size(Pos2::new(x + 7.0 + dx, y), Vec2::splat(*size));
+                    icons.paint(ui.painter(), Icon::LogoInApp, logo);
+                    hit = Some((UiField::AboutLogoClicked, logo));
+                    let response = ui.interact(
+                        logo.expand(7.0),
+                        egui::Id::unique("ui-about-logo"),
+                        Sense::click(),
+                    );
+                    if response.clicked() {
+                        action::push_action(
+                            ui.ctx(),
+                            SettingsAction::UiButton {
+                                field: UiField::AboutLogoClicked,
+                            },
+                        );
+                    }
+                }
+            }
+            UiRow::EchoCave { text, opacity } => {
+                let row =
+                    Rect::from_min_size(Pos2::new(x, y), Vec2::new(rect.width() - PAD * 2.0, 18.0));
+                let color = Color32::from_rgba_unmultiplied(
+                    palette.text.r(),
+                    palette.text.g(),
+                    palette.text.b(),
+                    (255.0 * opacity.clamp(0.0, 1.0)).round() as u8,
+                );
+                ui.painter().text(
+                    Pos2::new(row.left(), row.center().y),
+                    Align2::LEFT_CENTER,
+                    text,
+                    FontId::proportional(12.0),
+                    color,
+                );
+                hit = Some((UiField::EchoCaveClicked, row));
+                let response = ui.interact(row, egui::Id::unique("ui-echo-cave"), Sense::click());
+                if response.clicked() {
+                    action::push_action(
+                        ui.ctx(),
+                        SettingsAction::UiButton {
+                            field: UiField::EchoCaveClicked,
+                        },
+                    );
                 }
             }
         }

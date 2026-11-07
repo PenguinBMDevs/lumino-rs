@@ -40,6 +40,20 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
                 };
                 Message::Settings(Event::SelectionBoxModeChanged(mode))
             }
+            UiField::TempoMaxBpm => {
+                const PRESETS: [f64; 9] = [
+                    256.0, 512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32767.0, 65536.0,
+                ];
+                if let Some(bpm) = PRESETS.get(*index) {
+                    Message::Settings(Event::TempoMaxBpmChanged(*bpm))
+                } else {
+                    Message::Settings(Event::TempoMaxBpmCustomOpen)
+                }
+            }
+            UiField::Palette => {
+                let name = (*root.settings.display.available_palettes.get(*index)?).to_owned();
+                Message::Settings(Event::PaletteChanged(name))
+            }
             _ => return None,
         },
         SettingsAction::UiText { field, value } => match field {
@@ -58,6 +72,16 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
             UiField::AutoScrollReturn => {
                 Message::Settings(Event::AutoScrollPageReturnPositionChanged(value.clone()))
             }
+            UiField::HistoryTotalLimit => {
+                Message::Settings(Event::HistoryTotalLimitChanged(value.clone()))
+            }
+            UiField::HistoryEntryLimit => {
+                Message::Settings(Event::HistoryEntryLimitChanged(value.clone()))
+            }
+            UiField::MergeWindowMs => Message::Settings(Event::MergeWindowMsChanged(value.clone())),
+            UiField::AutosaveInterval => {
+                Message::Settings(Event::AutosaveIntervalMinsChanged(value.clone()))
+            }
             _ => return None,
         },
         SettingsAction::UiToggle { field, checked } => match field {
@@ -69,6 +93,10 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
             }
             UiField::PlaybackKeyColors => {
                 Message::Settings(Event::PlaybackKeyColorsEnabledChanged(*checked))
+            }
+            UiField::AutosaveEnabled => Message::Settings(Event::AutosaveEnabledChanged(*checked)),
+            UiField::InterceptNotification => {
+                Message::Settings(Event::InterceptNotificationChanged(*checked))
             }
             _ => return None,
         },
@@ -83,6 +111,12 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
         },
         SettingsAction::UiButton { field } if *field == UiField::BrowseProgramFont => {
             Message::Settings(Event::BrowseProgramFont)
+        }
+        SettingsAction::UiButton { field } if *field == UiField::AboutLogoClicked => {
+            Message::Settings(Event::AboutLogoClicked)
+        }
+        SettingsAction::UiButton { field } if *field == UiField::EchoCaveClicked => {
+            Message::Settings(Event::EchoCaveClicked)
         }
         _ => return None,
     })

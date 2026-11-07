@@ -1,11 +1,8 @@
 //! 设置对话框：已迁移页面的模型镜像与动作翻译。
 
 use super::*;
-use lumino_core::storage::config::{
-    EraserBehavior, OnionSkinBackend, SynthBackend, TrackAddBehavior,
-};
-use lumino_ui_core::settings_event::OutputType;
-use lumino_ui_egui::chrome::{AudioField, DialogModel, SettingsPageModel, UiField, UiRow};
+use lumino_core::storage::config::{EraserBehavior, OnionSkinBackend, TrackAddBehavior};
+use lumino_ui_egui::chrome::{DialogModel, SettingsPageModel, UiField, UiRow};
 use lumino_ui_egui::settings::SettingsAction;
 
 use crate::Message;
@@ -80,136 +77,12 @@ fn migrated_settings_pages_are_taken_over_only() {
     assert_eq!(compat.domino_enabled, cfg!(windows));
     assert!(!compat.result_lines.is_empty(), "至少有「尚未检测」结果行");
 
-    // 未迁移页面（调色板）仍交回 iced。
-    root.settings.selected_menu_index = 5;
+    // 未迁移页面（云管理）仍交回 iced。
+    root.settings.selected_menu_index = 7;
     assert!(
         root.egui_chrome_model().dialog.is_none(),
         "未迁移页面必须整块让位"
     );
-}
-
-#[test]
-fn audio_page_reflects_backend_and_maps_actions() {
-    let mut root = settings_root();
-    root.settings.selected_menu_index = 1;
-
-    // XSynth：顶层选择 + 引擎 + 设备 + 音色库 + 参数行。
-    root.settings.synth.backend = SynthBackend::XSynth;
-    let values = settings_model(&mut root);
-    let SettingsPageModel::Audio(page) = values.page else {
-        panic!("第 1 页应为音频");
-    };
-    let fields: Vec<AudioField> = page.rows.iter().map(|row| row.field).collect();
-    for field in [
-        AudioField::OutputType,
-        AudioField::Engine,
-        AudioField::MidiDevice,
-        AudioField::SoundfontPath,
-        AudioField::XSynthBuffer,
-        AudioField::XSynthMaxVoices,
-        AudioField::XSynthGlobalLimit,
-        AudioField::XSynthRatio,
-        AudioField::XSynthGate,
-        AudioField::XSynthVelocity,
-    ] {
-        assert!(fields.contains(&field), "XSynth 页缺少 {field:?}");
-    }
-    assert!(!page.title.is_empty());
-
-    // LGS：块大小 / 离线块 / GPU 指标。
-    root.settings.synth.backend = SynthBackend::Lgs;
-    let values = settings_model(&mut root);
-    let SettingsPageModel::Audio(page) = values.page else {
-        panic!("音频页");
-    };
-    let fields: Vec<AudioField> = page.rows.iter().map(|row| row.field).collect();
-    for field in [
-        AudioField::LgsBlock,
-        AudioField::LgsOfflineBlock,
-        AudioField::LgsMaxVoices,
-        AudioField::LgsGlobalLimit,
-        AudioField::LgsGate,
-        AudioField::LgsGpuBufferStatus,
-        AudioField::LgsGpuGovernorMetrics,
-        AudioField::LgsGpuLoadDisplay,
-    ] {
-        assert!(fields.contains(&field), "LGS 页缺少 {field:?}");
-    }
-
-    // System：WinMM 输出。
-    root.settings.synth.backend = SynthBackend::System;
-    let values = settings_model(&mut root);
-    let SettingsPageModel::Audio(page) = values.page else {
-        panic!("音频页");
-    };
-    assert!(
-        page.rows
-            .iter()
-            .any(|row| row.field == AudioField::WinmmOutput),
-        "系统 MIDI 页应有 WinMM 输出选择"
-    );
-
-    // 动作 → 生产 Message。
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioCombo {
-            field: AudioField::OutputType,
-            index: 2,
-        }),
-        Some(Message::Settings(
-            crate::settings::Event::OutputTypeChanged(OutputType::System)
-        ))
-    ));
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioCombo {
-            field: AudioField::Engine,
-            index: 1,
-        }),
-        Some(Message::Settings(
-            crate::settings::Event::SynthBackendChanged(SynthBackend::Lgs)
-        ))
-    ));
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioSlider {
-            field: AudioField::XSynthBuffer,
-            value: 20.0,
-        }),
-        Some(Message::Settings(crate::settings::Event::XSynthBufferChanged(
-            value
-        ))) if (value - 20.0).abs() < f64::EPSILON
-    ));
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioSlider {
-            field: AudioField::LgsBlock,
-            value: 10.0,
-        }),
-        Some(Message::Settings(
-            crate::settings::Event::LgsBlockSizeChanged(1024)
-        ))
-    ));
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioToggle {
-            field: AudioField::XSynthGate,
-            checked: true,
-        }),
-        Some(Message::Settings(
-            crate::settings::Event::XSynthSoftNpsGateChanged(true)
-        ))
-    ));
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioButton {
-            field: AudioField::BrowseSoundfont,
-        }),
-        Some(Message::Settings(crate::settings::Event::BrowseSoundfont))
-    ));
-    assert!(matches!(
-        root.settings_action_message(&SettingsAction::AudioText {
-            field: AudioField::SoundfontPath,
-            value: "C:/sf2/demo.sf2".to_owned(),
-        }),
-        Some(Message::Settings(
-            crate::settings::Event::SoundfontPathChanged(path)
-        )) if path == "C:/sf2/demo.sf2"
-    ));
 }
 
 #[test]
@@ -320,6 +193,111 @@ fn ui_page_reflects_settings_and_maps_actions() {
             field: UiField::BrowseProgramFont,
         }),
         Some(Message::Settings(Event::BrowseProgramFont))
+    ));
+}
+
+#[test]
+fn editing_palette_about_pages_reflect_state_and_map_actions() {
+    let mut root = settings_root();
+
+    // 编辑页。
+    root.settings.selected_menu_index = 6;
+    let values = settings_model(&mut root);
+    let SettingsPageModel::Ui(page) = values.page else {
+        panic!("第 6 页应为编辑");
+    };
+    assert!(!page.title.is_empty());
+    assert!(page.rows.iter().any(|row| matches!(
+        row,
+        UiRow::Text {
+            field: UiField::HistoryTotalLimit,
+            ..
+        }
+    )));
+    assert!(page.rows.iter().any(|row| matches!(
+        row,
+        UiRow::Combo {
+            field: UiField::TempoMaxBpm,
+            ..
+        }
+    )));
+
+    // 调色板页：色块数量与生产调色板一致。
+    root.settings.selected_menu_index = 5;
+    let values = settings_model(&mut root);
+    let SettingsPageModel::Ui(page) = values.page else {
+        panic!("第 5 页应为调色板");
+    };
+    let swatches = page
+        .rows
+        .iter()
+        .find_map(|row| match row {
+            UiRow::Swatches { colors } => Some(colors.len()),
+            _ => None,
+        })
+        .expect("应渲染色块");
+    assert!(swatches > 0);
+
+    // 关于页：logo + 回声洞。
+    root.settings.selected_menu_index = 9;
+    let values = settings_model(&mut root);
+    let SettingsPageModel::Ui(page) = values.page else {
+        panic!("第 9 页应为关于");
+    };
+    assert!(
+        page.rows
+            .iter()
+            .any(|row| matches!(row, UiRow::AboutLogo { .. } | UiRow::EchoCave { .. }))
+    );
+
+    // 动作翻译。
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiText {
+            field: UiField::HistoryTotalLimit,
+            value: "200".to_owned(),
+        }),
+        Some(Message::Settings(Event::HistoryTotalLimitChanged(value))) if value == "200"
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiToggle {
+            field: UiField::AutosaveEnabled,
+            checked: true,
+        }),
+        Some(Message::Settings(Event::AutosaveEnabledChanged(true)))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiCombo {
+            field: UiField::TempoMaxBpm,
+            index: 2,
+        }),
+        Some(Message::Settings(Event::TempoMaxBpmChanged(value)))
+            if (value - 1024.0).abs() < f64::EPSILON
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiCombo {
+            field: UiField::TempoMaxBpm,
+            index: 9,
+        }),
+        Some(Message::Settings(Event::TempoMaxBpmCustomOpen))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiCombo {
+            field: UiField::Palette,
+            index: 0,
+        }),
+        Some(Message::Settings(Event::PaletteChanged(_)))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiButton {
+            field: UiField::AboutLogoClicked,
+        }),
+        Some(Message::Settings(Event::AboutLogoClicked))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiButton {
+            field: UiField::EchoCaveClicked,
+        }),
+        Some(Message::Settings(Event::EchoCaveClicked))
     ));
 }
 

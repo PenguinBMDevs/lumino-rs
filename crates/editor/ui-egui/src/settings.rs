@@ -349,7 +349,7 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
         SettingsPageModel::Ui(model) => {
             let height = ui::content_height(&model, rect.width());
             scroll_page(ui, rect, "settings-ui-scroll", height, |ui, content| {
-                ui::show(ui, content, &model, palette);
+                ui::show(ui, content, &model, palette, &mut state.icons);
             });
         }
     }
