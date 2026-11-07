@@ -39,7 +39,7 @@ pub fn lock_gpu() -> MutexGuard<'static, ()> {
 }
 
 /// 共享测试设备（首次调用创建，进程内复用）。
-fn shared() -> &'static (wgpu::Instance, wgpu::Device, wgpu::Queue) {
+pub fn shared() -> &'static (wgpu::Instance, wgpu::Device, wgpu::Queue) {
     SHARED.get_or_init(|| {
         use futures::executor::block_on;
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -222,7 +222,7 @@ pub fn render_gpu(
 }
 
 /// 回读整帧 RGBA8。
-fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
+pub fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let bytes_per_row = W * 4;
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("cpu_gpu_parity_staging"),

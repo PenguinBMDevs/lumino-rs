@@ -149,6 +149,17 @@
   残差集中在字形栅格化（egui 字体栈 vs iced cosmic-text）与图标抗锯齿，几何/色块已对齐。
 - 质量门：`cargo check` / `cargo clippy -D warnings` / `cargo test` 全绿；所有源文件 < 400 行。
 
+### Task 0.6：GPU 基线捕获 — 部分完成（v1）
+
+- 新增 `crates/editor/gfx/tests/gpu_baseline`（复用 `cpu_gpu_parity` 的离屏设备与回读）：
+  - `note_renderer`：音符实例主路径（洋葱皮 / indirect draw）；
+  - `grid_renderer`：无限网格（背景 / 黑键区 / 小节 / 拍 / 细分线）；
+  - `ruler_renderer`：时间标尺刻度。
+- 基线产物：`tests/gpu-baseline/{scene}.png`；逐像素比较，容差 ±1 通道。
+- **未覆盖**（需要产品级场景夹具，Phase 1.2 迁移前补齐）：
+  走带 `arrangement`、力度 `cc_bar`、`midiconsole`、`miditrail`、瀑布流、视频导出。
+  接入点已留在 `tests/gpu_baseline/main.rs`。
+
 ## 八、当前任务
 
-**Task 0.3：主窗口 Chrome 生产化接入**
+**Task 1.1：`egui-wgpu 0.37 → wgpu27` 桥接（保持主程序可运行）**
