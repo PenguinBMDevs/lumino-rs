@@ -89,6 +89,7 @@ impl Host {
             window_ctx,
             root,
             events: Vec::new(),
+            egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,

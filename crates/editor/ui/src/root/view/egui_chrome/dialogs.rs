@@ -8,7 +8,6 @@ use lumino_core::tr;
 use lumino_ui_egui::chrome::{
     DialogModel, DialogPalette, SaveConfirmModel, SettingsLabels, SettingsPalette, SettingsSnapshot,
 };
-use lumino_ui_egui::layout;
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
@@ -98,11 +97,11 @@ impl Root {
         }
     }
 
-    /// 已支持整窗接管的对话框（当前仅「未保存更改确认」）。
+    /// 已支持整窗接管的对话框（保存确认 / 设置「常规」页）。
     ///
-    /// 其余对话框（设置 / 导出 / 历史 …）仍由 iced 绘制：整块返回空模型，
+    /// 其余对话框（导出 / 历史 …）与其余设置页仍由 iced 绘制：整块返回空模型，
     /// 叠加层不画任何东西，避免把主窗口 band 盖到对话框上。
-    pub(super) fn egui_dialog_model(&self, viewport: egui::Vec2) -> Option<DialogModel> {
+    pub(super) fn egui_dialog_model(&self) -> Option<DialogModel> {
         match self.state.dialog_type {
             DialogType::SaveConfirm => Some(DialogModel::SaveConfirm(SaveConfirmModel {
                 titlebar: !self.settings.synth.use_native_titlebar,
@@ -115,24 +114,6 @@ impl Root {
             DialogType::Settings => {
                 // 只接管「常规」页：其余页面的表单尚未建模，整块交回 iced。
                 if self.settings.selected_menu_index != 0 {
-                    return None;
-                }
-                // 菜单放不下时交回 iced：叠加层不消费滚轮事件，无法复刻 iced
-                // `scrollable` 的滚动位置与滚动条，硬画会把「云管理/兼容性/关于」
-                // 三页藏起来（削减 UI）。
-                let titlebar_h = if self.settings.synth.use_native_titlebar {
-                    0.0
-                } else {
-                    layout::TITLEBAR_H
-                };
-                let menu_space = viewport.y
-                    - titlebar_h
-                    - 2.0 * layout::SETTINGS_MARGIN
-                    - layout::SETTINGS_CONFIRM_H
-                    - layout::SETTINGS_CONFIRM_GAP
-                    - 2.0 * layout::SETTINGS_PADDING;
-                let menu_needed = layout::SETTINGS_MENU_ROW_H * layout::SETTINGS_MENU_ITEMS as f32;
-                if menu_space < menu_needed {
                     return None;
                 }
                 let language = self.settings.display.language;

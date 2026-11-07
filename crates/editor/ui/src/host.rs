@@ -59,6 +59,11 @@ pub struct Host {
     pub(crate) root: root::Root,
     /// 事件列表
     pub(crate) events: Vec<iced_core::Event>,
+    /// egui 叠加层输入缓冲（指针位置 / 滚轮 / 修饰键 / 焦点）。
+    ///
+    /// 叠加层是纯显示层：这些事件只影响 egui 的悬停与滚动状态，
+    /// 真正的交互动作仍由 `events` 里的 iced 事件执行。
+    pub(crate) egui_input: render::egui_overlay::OverlayInput,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
     /// 上次 FPS 更新时间

@@ -309,23 +309,20 @@ fn settings_dialog_labels_follow_language() {
 }
 
 #[test]
-fn settings_dialog_defers_when_menu_would_scroll() {
+fn settings_dialog_takes_over_at_any_window_size() {
     let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
     let config = lumino_core::storage::config::UiConfig::default();
     let root = Root::new_settings_dialog(&theme, &config);
 
-    // 默认对话框 720×540 逻辑点：菜单放不下（需要 iced 的滚动条与滚动位置）。
+    // 默认对话框 720×540 逻辑点：菜单放不下，但菜单现在能滚（滚轮事件已同步
+    // 给 egui），因此仍整窗接管，不再把「云管理/兼容性/关于」交回 iced。
     assert!(
-        root.egui_chrome_model_for(egui::vec2(720.0, 540.0))
-            .dialog
-            .is_none(),
-        "菜单需要滚动时必须交回 iced"
+        matches!(
+            root.egui_chrome_model().dialog,
+            Some(DialogModel::Settings(_))
+        ),
+        "菜单需要滚动时也必须整窗接管（由 egui 自己滚）"
     );
-    // 高度足够（1200×800）→ 整窗接管。
-    assert!(matches!(
-        root.egui_chrome_model_for(egui::vec2(1200.0, 800.0)).dialog,
-        Some(DialogModel::Settings(_))
-    ));
 }
 
 #[test]

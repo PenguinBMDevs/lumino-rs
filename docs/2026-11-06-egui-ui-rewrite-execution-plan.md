@@ -382,11 +382,30 @@ callback / 多视口 / 截图能力。
   - 真实窗口 `LUMINO_LANG=en-US`：默认尺寸 `drawn=0`（让位）；放大到 1500×1000 后
     与 overlay-off 同尺寸截图差异 4.19%，截图 10 个英文菜单项齐全、表单无重叠。
 
-**Task 1.3（下一步）：菜单栏迁移 + 输入路由**
+**Task 1.3（第七步）：叠加层输入路由 + 设置菜单真滚动 — 已完成**
+
+- 叠加层不再是「零输入」：`OverlayInput` 收集指针移动 / 滚轮 / 修饰键 / 焦点，
+  由 `Host::capture_egui_overlay_input` 在 `handle_events` 里同步（**只观察不消费**，
+  动作仍由 iced 执行；不回填鼠标按键，避免出现「按下却没反应」的假态）。
+- 设置菜单放不下时改用 `egui::ScrollArea`（8px 实体滚动条，对齐 iced `scrollable`）；
+  放得下时仍走原 `TableBuilder` 路径，既有像素基线逐点不变。
+- **删除「菜单放不下就整窗交回 iced」的闸门**：默认 720×540 逻辑点也整窗接管，
+  滚轮可滚到第 10 项。`Root::egui_chrome_model_for(viewport)` 随之删除。
+- 验收：
+  - `settings_bands` 4/4：新增 `settings_menu_scrolls_to_last_item_on_small_window`
+    （720×540；注入 PointerMoved + MouseWheel 后首项滚出、末项「关于」可见）；
+  - 真实窗口（`LUMINO_LANG=en-US`，720×540 逻辑点）：叠加层首帧
+    `primitives=28 drawn=28`（原 `drawn=0`）；向对话框投递 `WM_MOUSEMOVE` +
+    `WM_MOUSEWHEEL` 后截图显示菜单从 General 滚到 About，滚动条到底；
+  - `clippy -D warnings` / `check --bin lumino-rs` / `capture_iced` 18/18 /
+    `capture_egui` 12/12 / `compare_egui` 与上一步完全一致。
+
+**Task 1.3（下一步）：菜单栏迁移 + 标题栏输入接管**
 
 - 现状：标题栏 / 工具栏 / 左侧栏 / 右侧栏图标列 / 状态栏、保存确认对话框、
-  设置「常规」页（深/浅/英文）已由 egui 用真实状态绘制；菜单栏与其余页面仍 iced。
-- 下一步：把菜单栏与其下拉/提示迁到 egui 并接通输入路由，删除 `egui_titlebar_latch`
-  与 `has_iced_popup` 让位逻辑；随后逐页建模其余设置页，消除「仅常规页 + 菜单滚动让位」。
+  设置「常规」页（深/浅/英文，小窗口可滚）已由 egui 用真实状态绘制；菜单栏与
+  其余设置页仍 iced。
+- 下一步：把菜单栏与其下拉/提示迁到 egui 并接通点击路由，删除
+  `egui_titlebar_latch` 与 `has_iced_popup` 让位逻辑；随后逐页建模其余设置页。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

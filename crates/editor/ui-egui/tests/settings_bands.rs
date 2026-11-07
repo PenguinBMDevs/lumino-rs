@@ -16,7 +16,7 @@ use lumino_ui_egui::chrome::{
 };
 use lumino_ui_egui::icons::IconCache;
 
-use common::{assert_runs_close, assert_runs_close_with, ink_runs};
+use common::{assert_runs_close, assert_runs_close_with, ink_row_runs, ink_runs};
 
 /// `egui_kittest` 的 wgpu 渲染器不是线程安全的：同一测试二进制内的像素测试
 /// 必须串行执行（并行时偶发 `STATUS_ACCESS_VIOLATION`）。
@@ -289,4 +289,75 @@ fn settings_dialog_english_labels_match_iced_geometry() {
     let bands_log = ink_runs(&bands, 282, 300, 256, 700, [0x24, 0x28, 0x3B]);
     let iced_log = ink_runs(&baseline, 282, 300, 256, 700, [0x24, 0x28, 0x3B]);
     assert_runs_close_with(&bands_log, &iced_log, 8, "英文设置日志行");
+}
+
+/// 小窗口（720×540 逻辑点）：10 个菜单项放不下，但菜单必须能由 egui 自己滚，
+/// 不能因为「放不下」把整窗交回 iced（那会削减接管范围）。
+#[test]
+fn settings_menu_scrolls_to_last_item_on_small_window() {
+    let _guard = gpu_lock();
+    const W: u32 = 720;
+    const H: u32 = 540;
+    /// 菜单底色（`SettingsPalette::DARK.toolbar`）。
+    const MENU_BG: [u8; 3] = [0x39, 0x40, 0x63];
+
+    let model = ChromeModel {
+        dialog: Some(DialogModel::Settings(Box::new(SettingsSnapshot {
+            palette: SettingsPalette::DARK,
+            labels: settings_labels(Language::ZhCn),
+            selected: 0,
+            eraser: eraser_behavior_name(EraserBehavior::Default, Language::ZhCn).to_owned(),
+            track_add: track_add_behavior_name(TrackAddBehavior::AutoSwitch, Language::ZhCn)
+                .to_owned(),
+            log_retention: "10".to_owned(),
+        }))),
+        ..ChromeModel::default()
+    };
+    let mut icons = IconCache::default();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(W as f32, H as f32))
+        .with_pixels_per_point(1.0)
+        .with_render_cursor(false)
+        .with_accessibility_check(false)
+        .with_context_setup(|ctx| {
+            lumino_ui_egui::theme::apply(ctx);
+            lumino_ui_egui::fonts::install(ctx);
+        })
+        .build_ui(move |ui| chrome::show_bands(ui, &model, &mut icons));
+    harness.run();
+
+    // 菜单可视区 y = 66..454（30 标题栏 + 16 外边距 + 20 内边距起，扣确认按钮区）。
+    let before = harness.render().expect("设置对话框需要可用的渲染器");
+    assert!(
+        !ink_row_runs(&before, 94, 220, 84, 102, MENU_BG).is_empty(),
+        "滚动前首项「常规」应在菜单顶部"
+    );
+    assert!(
+        ink_row_runs(&before, 94, 220, 420, 446, MENU_BG).is_empty(),
+        "滚动前第 10 项「关于」在可视区之外（不能提前出现）"
+    );
+
+    // 滚轮只对指针悬停的 `ScrollArea` 生效：先把指针放到菜单上。
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(120.0, 300.0)));
+    harness.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, -20.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run_steps(60);
+
+    let after = harness.render().expect("设置对话框需要可用的渲染器");
+    assert!(
+        ink_row_runs(&after, 94, 220, 84, 102, MENU_BG).is_empty(),
+        "滚到底后首项「常规」应移出可视区"
+    );
+    assert!(
+        !ink_row_runs(&after, 94, 220, 420, 440, MENU_BG).is_empty(),
+        "滚轮滚到底后第 10 项「关于」必须可见（菜单项一个都不能少）"
+    );
 }

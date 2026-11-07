@@ -107,9 +107,6 @@ pub const SETTINGS_CONFIRM_W: f32 = 100.0;
 pub const SETTINGS_CONFIRM_H: f32 = 34.0;
 /// 设置页确认按钮与容器的间距。
 pub const SETTINGS_CONFIRM_GAP: f32 = 16.0;
-/// 设置菜单项数量（常规 / 音频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 /
-/// 云管理 / 兼容性 / 关于）。
-pub const SETTINGS_MENU_ITEMS: usize = 10;
 /// 设置表单行高。
 pub const SETTINGS_FORM_ROW_H: f32 = 72.0;
 

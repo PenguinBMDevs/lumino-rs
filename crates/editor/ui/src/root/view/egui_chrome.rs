@@ -258,22 +258,13 @@ impl Root {
     }
 
     /// 构造 egui 外壳快照（标题栏 + 工具栏 + 左侧栏 + 状态栏，只读）。
-    ///
-    /// 无宿主尺寸时按足够大的窗口（1600×1000 逻辑点）假设；仅供单测/离线使用，
-    /// 真实叠加层用 [`Root::egui_chrome_model_for`] 传入实际视口。
-    #[cfg(test)]
     pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
-        self.egui_chrome_model_for(egui::vec2(1600.0, 1000.0))
-    }
-
-    /// 按宿主窗口的**逻辑**尺寸构造快照；`viewport` 用于判断设置菜单是否需要滚动。
-    pub(crate) fn egui_chrome_model_for(&self, viewport: egui::Vec2) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
         // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 iced），
         // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
         if self.state.is_dialog_window {
             return ChromeModel {
-                dialog: self.egui_dialog_model(viewport),
+                dialog: self.egui_dialog_model(),
                 ..ChromeModel::default()
             };
         }

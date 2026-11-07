@@ -187,7 +187,7 @@ fn content(ui: &mut egui::Ui, state: &mut SettingsState, palette: &SettingsPalet
 }
 
 fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &SettingsPalette) {
-    // 先取一份文案副本：表格闭包需要可变借用 `state`（点击切换页签）。
+    // 先取一份文案副本：行闭包需要可变借用 `state`（点击切换页签）。
     let labels = state.labels.menu.clone();
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -195,18 +195,45 @@ fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
             .layout(Layout::top_down(Align::Min)),
     );
 
-    TableBuilder::new(&mut child)
-        .id_salt("settings-menu-table")
-        .striped(false)
-        .column(Column::remainder())
-        .body(|body| {
-            body.rows(layout::SETTINGS_MENU_ROW_H, MENU_ICONS.len(), |mut row| {
-                let index = row.index();
-                row.col(|ui| {
-                    let label = labels.get(index).map_or("", String::as_str);
-                    menu_row(ui, state, index, label, MENU_ICONS[index], palette);
+    // 10 项全部放得下时不引入 `ScrollArea`：既有像素基线逐点不变。
+    let needed = layout::SETTINGS_MENU_ROW_H * MENU_ICONS.len() as f32;
+    if needed <= child.max_rect().height() {
+        TableBuilder::new(&mut child)
+            .id_salt("settings-menu-table")
+            .striped(false)
+            .column(Column::remainder())
+            .body(|body| {
+                body.rows(layout::SETTINGS_MENU_ROW_H, MENU_ICONS.len(), |mut row| {
+                    let index = row.index();
+                    row.col(|ui| {
+                        let label = labels.get(index).map_or("", String::as_str);
+                        menu_row(ui, state, index, label, MENU_ICONS[index], palette);
+                    });
                 });
             });
+        return;
+    }
+
+    // 放不下时才是真滚动列表：叠加层已把滚轮同步给 egui，能滚到最后一项，
+    // 因此不必再把整窗交回 iced（不削减任何菜单项）。
+    // 滚动条按 iced `scrollable` 的 8px 实体条对齐（不悬浮）。
+    {
+        let scroll = &mut child.spacing_mut().scroll;
+        scroll.bar_width = 8.0;
+        scroll.bar_inner_margin = 0.0;
+        scroll.bar_outer_margin = 0.0;
+        scroll.floating = false;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt("settings-menu-scroll")
+        .auto_shrink([false, false])
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+        .show(&mut child, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (index, icon) in MENU_ICONS.iter().enumerate() {
+                let label = labels.get(index).map_or("", String::as_str);
+                menu_row(ui, state, index, label, *icon, palette);
+            }
         });
 }
 

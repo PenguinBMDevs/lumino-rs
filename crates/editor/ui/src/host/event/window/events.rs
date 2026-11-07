@@ -92,6 +92,10 @@ impl Host {
     ) {
         use winit::event::WindowEvent::*;
 
+        // egui 叠加层是纯显示层：先把指针 / 滚轮 / 修饰键 / 焦点同步过去
+        // （悬停高亮与 `ScrollArea` 滚动依赖它们），随后仍走 iced 的事件转换。
+        self.capture_egui_overlay_input(&event);
+
         match &event {
             Resized(_) => self.handle_resized_event(),
             Focused(r) => self.handle_focused_event(*r),
