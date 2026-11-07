@@ -95,6 +95,26 @@ impl Editor {
         None
     }
 
+    /// 圆弧模式锚点命中：只认**已完成弧**（>= 3 点）的前三个锚点
+    ///
+    /// 圆弧模式下没有控制柄，也不做段插入；命中即进入自由拖动。
+    /// 草稿弧（1-2 点）不参与命中，点击继续落点。
+    pub(super) fn line_arc_anchor_hit_test(&self, pos: Point) -> Option<(usize, usize)> {
+        let line = &self.editor_state.line_tool;
+        for (pi, path) in line.paths.iter().enumerate() {
+            if path.len() < 3 {
+                continue;
+            }
+            for (ai, anchor) in path.iter().take(3).enumerate() {
+                let ap = self.line_pos_screen_pos(anchor.pos);
+                if (pos.x - ap.x).hypot(pos.y - ap.y) <= ANCHOR_HIT_RADIUS {
+                    return Some((pi, ai));
+                }
+            }
+        }
+        None
+    }
+
     /// 放置吸附：返回距离 `raw`（屏幕距离）<= 阈值、且未被 `exclude` 排除的
     /// 最近锚点位置（跨全部路径）；无则返回 None。
     ///

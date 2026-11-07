@@ -188,11 +188,21 @@ fn control_slope(a: (f64, f64), cp1: (f64, f64), cp2: (f64, f64), b: (f64, f64))
 }
 
 impl crate::Editor {
-    /// 圆弧模式的 `k`（beats per key）：屏幕空间 1 key 宽 / 1 拍宽
+    /// 圆弧模式当前使用的 `k`（beats per key）：优先绘制时冻结值
+    ///
+    /// **缩放不重算**：`arc_k` 在本次绘制会话第一次落点时写入，之后只随
+    /// `ShapeModel.k` 落盘；没有冻结值（例如测试直接塞路径）才回退到实时视图比例。
+    pub(crate) fn line_arc_k(&self) -> f64 {
+        match self.editor_state.line_tool.arc_k {
+            Some(k) if k.is_finite() && k > 0.0 => f64::from(k),
+            _ => self.live_arc_k(),
+        }
+    }
+
+    /// 按**当前视图**计算的 beats per key（只用于首次落点时冻结）
     ///
     /// `zoom_x` 是 px/tick、`zoom_y` 是 px/key ⇒ `k = (px/key) / (px/tick · ppq)`。
-    /// 与 `shape_drawer::fit::arc_k_for_rect` 同一口径；跨 zoom 不重算，随 `ShapeModel.k` 落盘。
-    pub(crate) fn line_arc_k(&self) -> f64 {
+    pub(crate) fn live_arc_k(&self) -> f64 {
         let ppq = f64::from(self.editor_state.view.ppq);
         let px_per_beat = f64::from(self.editor_state.view.zoom_x) * ppq;
         let px_per_key = f64::from(self.editor_state.view.zoom_y);

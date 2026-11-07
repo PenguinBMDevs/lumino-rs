@@ -216,11 +216,11 @@ fn test_reset_keeps_min_note_division() {
 fn test_arc_mode_collects_three_points_as_one_undo() {
     let mut state = LineToolState::default();
     state.set_arc_mode(true);
-    assert!(state.push_arc_anchor((0.0, 60.0)), "第一点开始新弧");
+    assert!(state.push_arc_anchor((0.0, 60.0), 0.2), "第一点开始新弧");
     assert!(!state.is_complete(), "1 点不是完整圆弧");
-    assert!(!state.push_arc_anchor((480.0, 66.0)), "第二点追加");
+    assert!(!state.push_arc_anchor((480.0, 66.0), 0.2), "第二点追加");
     assert!(!state.is_complete(), "2 点不是完整圆弧");
-    assert!(!state.push_arc_anchor((960.0, 60.0)), "第三点追加");
+    assert!(!state.push_arc_anchor((960.0, 60.0), 0.2), "第三点追加");
     assert!(state.is_complete(), "3 点才是完整圆弧");
     assert_eq!(state.paths.len(), 1);
     assert_eq!(state.paths[0].len(), 3);
@@ -231,7 +231,7 @@ fn test_arc_mode_collects_three_points_as_one_undo() {
     assert!(state.arc_mode, "撤销不应关闭圆弧模式");
 
     // 下一笔开始新弧
-    assert!(state.push_arc_anchor((0.0, 70.0)));
+    assert!(state.push_arc_anchor((0.0, 70.0), 0.2));
     assert_eq!(state.paths.len(), 1);
     assert_eq!(state.paths[0].len(), 1);
 }
@@ -240,7 +240,7 @@ fn test_arc_mode_collects_three_points_as_one_undo() {
 fn test_arc_mode_survives_reset_and_cancel_interaction() {
     let mut state = LineToolState::default();
     state.set_arc_mode(true);
-    state.push_arc_anchor((0.0, 60.0));
+    state.push_arc_anchor((0.0, 60.0), 0.2);
     state.interaction = LineToolInteraction::DraggingLine {
         path: 0,
         segment: 0,
@@ -253,4 +253,23 @@ fn test_arc_mode_survives_reset_and_cancel_interaction() {
     state.set_arc_mode(false);
     assert!(!state.arc_mode);
     assert_eq!(state.arc_draft, None);
+}
+
+#[test]
+fn test_arc_k_freezes_on_first_point_and_undo_restores() {
+    let mut state = LineToolState::default();
+    state.set_arc_mode(true);
+    assert_eq!(state.arc_k, None);
+
+    state.push_arc_anchor((0.0, 60.0), 0.2);
+    assert_eq!(state.arc_k, Some(0.2), "首次落点冻结视图 k");
+    // 后续落点即使传入不同 k 也不覆盖（缩放不重算）
+    state.push_arc_anchor((480.0, 66.0), 0.9);
+    state.push_arc_anchor((960.0, 60.0), 0.9);
+    assert_eq!(state.arc_k, Some(0.2));
+
+    // 撤销回首个点之前：arc_k 一并回到 None
+    assert!(state.undo_path());
+    assert_eq!(state.arc_k, None, "撤销到空状态应清掉冻结 k");
+    assert!(state.paths.is_empty());
 }

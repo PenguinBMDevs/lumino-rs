@@ -78,6 +78,8 @@ pub type LinePath = Vec<BezierAnchor>;
 pub struct PathSnapshot {
     /// 全部路径（每条 = 锚点链）
     pub paths: Vec<LinePath>,
+    /// 圆弧模式绘制时冻结的 beats-per-key（DRAW-014）
+    pub arc_k: Option<f32>,
     /// 已填充格点（逻辑坐标：tick = snap 倍数、key 整数格）
     pub fill: Vec<(f32, u16)>,
     /// 颜料桶填充切分档位（x 分音符；`None` = 整块不切分）
@@ -144,6 +146,12 @@ pub struct LineToolState {
     ///
     /// 只用于圆弧落点，不参与普通曲线的锚点创建。
     pub arc_draft: Option<usize>,
+    /// **绘制时冻结的 `k`**（beats per key，DRAW-014）
+    ///
+    /// 首次落圆弧点时按当时视图比例写入；之后缩放视图不再重算——
+    /// 数据形状优先，缩放只是视图变换。√ 时原样写入 `ShapeModel.k`，
+    /// 保证「画的时候看到的」与「确认后生成的」一致。
+    pub arc_k: Option<f32>,
     /// 路径编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
     ///
     /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
@@ -174,6 +182,7 @@ impl Default for LineToolState {
             path_history_index: 0,
             arc_mode: false,
             arc_draft: None,
+            arc_k: None,
         }
     }
 }
@@ -225,9 +234,9 @@ impl LineToolState {
 
     /// 圆弧模式落一个点：草稿未满 3 点时追加，否则开始新弧
     ///
-    /// 返回 `true` 表示新建了路径（调用方据此决定历史入栈方式）。
-    /// 每段弧的 3 次点击合并为**一次撤销**（更新栈顶快照）。
-    pub fn push_arc_anchor(&mut self, pos: (f32, f32)) -> bool {
+    /// `k` = 当前视图的 beats-per-key；**只在会话第一次落点时冻结**，
+    /// 之后缩放视图不再重算（数据形状优先）。返回 `true` 表示新建了路径。
+    pub fn push_arc_anchor(&mut self, pos: (f32, f32), k: f32) -> bool {
         let draft = self
             .arc_draft
             .filter(|&idx| self.paths.get(idx).is_some_and(|p| p.len() < 3));
@@ -245,6 +254,10 @@ impl LineToolState {
                 false
             }
             None => {
+                // 本会话第一次落点：冻结当时视图的 k，之后缩放不改数据形状
+                if self.arc_k.is_none() && k.is_finite() && k > 0.0 {
+                    self.arc_k = Some(k);
+                }
                 self.paths.push(vec![BezierAnchor::new(pos)]);
                 self.arc_draft = Some(self.paths.len() - 1);
                 self.push_path_history();
@@ -350,6 +363,7 @@ impl LineToolState {
     pub fn snapshot(&self) -> PathSnapshot {
         PathSnapshot {
             paths: self.paths.clone(),
+            arc_k: self.arc_k,
             fill: self.fill.clone(),
             fill_division: self.fill_division,
         }
@@ -389,6 +403,7 @@ impl LineToolState {
         self.path_history_index -= 1;
         let snap = &self.path_history[self.path_history_index];
         self.paths = snap.paths.clone();
+        self.arc_k = snap.arc_k;
         self.fill = snap.fill.clone();
         // 撤销会重建路径列表，草稿索引不再可信
         self.arc_draft = None;
@@ -403,6 +418,7 @@ impl LineToolState {
         self.path_history_index += 1;
         let snap = &self.path_history[self.path_history_index];
         self.paths = snap.paths.clone();
+        self.arc_k = snap.arc_k;
         self.fill = snap.fill.clone();
         true
     }

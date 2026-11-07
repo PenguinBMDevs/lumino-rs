@@ -131,3 +131,80 @@ fn test_incomplete_arc_is_not_confirmable() {
         "两点不是完整圆弧，√ 不应出现"
     );
 }
+
+#[test]
+fn test_arc_k_frozen_when_view_zooms() {
+    let mut editor = arc_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    press(&mut editor, 0.0, 60.0);
+    press(&mut editor, 480.0, 66.0);
+    press(&mut editor, 960.0, 60.0);
+
+    let frozen = editor
+        .editor_state
+        .line_tool
+        .arc_k
+        .expect("首个弧点应冻结 k");
+    let path = editor.editor_state.line_tool.paths[0].clone();
+    let before = editor.line_arc_points(&path).expect("三点弧应可采样");
+
+    // 缩放视图：数据形状必须保持不变（形状优先，k 不重算）
+    editor.editor_state.view.zoom_y *= 4.0;
+    let after = editor.line_arc_points(&path).expect("缩放后仍应可采样");
+    assert_eq!(before, after, "缩放视图不应改变弧的采样点");
+    assert!(
+        (editor.line_arc_k() - f64::from(frozen)).abs() < 1e-6,
+        "line_arc_k 必须继续使用冻结值"
+    );
+
+    // √ 落盘的 k 也必须是绘制时的值，而不是缩放后的视图比例
+    assert!(editor.confirm_line_tool());
+    let entry = editor
+        .editor_state
+        .shape_store
+        .iter()
+        .find(|entry| entry.model.kind == ShapeKind::Arc)
+        .expect("应登记 Arc 模型");
+    assert!(
+        (entry.model.k - frozen).abs() < 1e-3,
+        "模型 k 应为绘制时冻结值 {frozen}，实际 {}",
+        entry.model.k
+    );
+}
+
+#[test]
+fn test_arc_anchor_can_be_dragged_after_completion() {
+    let mut editor = arc_editor();
+    press(&mut editor, 0.0, 60.0);
+    press(&mut editor, 480.0, 66.0);
+    press(&mut editor, 960.0, 60.0);
+
+    let start = editor.editor_state.line_tool.paths[0][1].pos;
+    let screen = editor.line_pos_screen_pos(start);
+    editor.handle_line_tool_pressed(screen, start.0, start.1);
+    assert!(
+        matches!(
+            editor.editor_state.line_tool.interaction,
+            LineToolInteraction::DraggingAnchor { path: 0, idx: 1 }
+        ),
+        "点击已完成弧的锚点应进入拖动，而不是开始新弧"
+    );
+
+    editor.handle_line_tool_moved(0.0, 0.0, start.0 + 120.0, start.1 + 4.0);
+    let moved = editor.editor_state.line_tool.paths[0][1].pos;
+    assert!(
+        (moved.0 - (start.0 + 120.0)).abs() < 1.0 && (moved.1 - (start.1 + 4.0)).abs() < 1e-3,
+        "经过点应自由跟随拖动，实际 {moved:?}"
+    );
+
+    editor.handle_line_tool_released();
+    assert_eq!(
+        editor.editor_state.line_tool.interaction,
+        LineToolInteraction::SelectedAnchor { path: 0, idx: 1 }
+    );
+    assert!(editor.editor_state.line_tool.undo_path());
+    assert!(
+        (editor.editor_state.line_tool.paths[0][1].pos.0 - start.0).abs() < 1e-3,
+        "一次 Ctrl+Z 应还原拖动前的锚点"
+    );
+}

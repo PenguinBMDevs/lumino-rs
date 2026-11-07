@@ -74,8 +74,19 @@ impl Editor {
         snapped_key: f32,
     ) {
         let raw = self.pos_to_line_raw(pos);
-        // 三点圆弧模式：点击依次落 a / b / c，满 3 点完成一段弧
+        // 三点圆弧模式：已完成弧的锚点可自由拖动；否则点击依次落 a / b / c
         if self.editor_state.line_tool.arc_mode {
+            if let Some((path, idx)) = self.line_arc_anchor_hit_test(pos) {
+                let line = &mut self.editor_state.line_tool;
+                line.arc_draft = None;
+                line.drag_start_snap = (snapped_tick, snapped_key);
+                line.drag_start_raw = raw;
+                line.drag_anchor_orig = line.paths[path][idx];
+                line.drag_confirmed = true;
+                line.last_push_path = None;
+                line.interaction = LineToolInteraction::DraggingAnchor { path, idx };
+                return;
+            }
             self.push_arc_draft_point(raw, (snapped_tick, snapped_key));
             return;
         }
@@ -95,7 +106,10 @@ impl Editor {
         } else {
             self.snap_new_anchor(raw, &[]).unwrap_or(snapped)
         };
-        self.editor_state.line_tool.push_arc_anchor(pos);
+        // 首次落点冻结当前视图的 k；之后缩放视图不再改形状
+        self.editor_state
+            .line_tool
+            .push_arc_anchor(pos, self.live_arc_k() as f32);
     }
 
     /// 贝塞尔路径按下处理（原逻辑；圆弧模式不走这里）
