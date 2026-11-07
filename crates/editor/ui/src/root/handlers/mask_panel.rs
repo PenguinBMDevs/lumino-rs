@@ -39,6 +39,10 @@ impl Root {
             self.apply_mask_panel();
             return;
         }
+        if matches!(action, MaskPanelAction::ApplyAsShape) {
+            self.apply_mask_as_shape();
+            return;
+        }
 
         match action {
             MaskPanelAction::SetEnabled(false) => {
@@ -77,7 +81,7 @@ impl Root {
                 self.mask_panel.params = Some(params);
                 self.push_mask_params();
             }
-            MaskPanelAction::Close | MaskPanelAction::Apply => {}
+            MaskPanelAction::Close | MaskPanelAction::Apply | MaskPanelAction::ApplyAsShape => {}
         }
     }
 
@@ -116,6 +120,22 @@ impl Root {
         } else {
             self.toast
                 .push(ToastLevel::Warning, tr!("应用遮罩失败：目标图形已不可编辑"));
+        }
+    }
+
+    /// 已 Bake：把遮罩可见片段实体化为新形状（原形状/遮罩不变）
+    fn apply_mask_as_shape(&mut self) {
+        let Some(MaskEditTarget::Baked { model_id }) = self.mask_panel.target else {
+            return;
+        };
+        if self.editor.apply_mask(model_id).is_some() {
+            self.mask_panel.hide();
+            self.toast.push(ToastLevel::Info, tr!("已实体化遮罩"));
+        } else {
+            self.toast.push(
+                ToastLevel::Warning,
+                tr!("实体化失败：遮罩没有可见片段或目标已失效"),
+            );
         }
     }
 }

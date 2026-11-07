@@ -22,4 +22,6 @@ pub enum MaskPanelAction {
     SetShow(MaskShow),
     /// 已 Bake：把草稿写入（一次 `edit_shape` 撤销单元）
     Apply,
+    /// 已 Bake：把遮罩透出的可见片段实体化为新形状（原形状/遮罩不变）
+    ApplyAsShape,
 }

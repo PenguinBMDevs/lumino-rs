@@ -136,4 +136,9 @@ fn test_baked_mask_panel_needs_apply() {
         .expect("Apply 后应写入 Mask op");
     assert!((params.size_keys - 5.0).abs() < 1e-3);
     assert_eq!(params.own, MaskParams::default().own);
+
+    // 实体化入口已接线：当前没有可见片段，应失败并保持面板
+    root.update(Message::MaskPanel(MaskPanelAction::ApplyAsShape));
+    assert!(root.mask_panel.open, "无可见片段时实体化应失败");
+    assert!(!root.toast.is_empty(), "应给出失败提示");
 }

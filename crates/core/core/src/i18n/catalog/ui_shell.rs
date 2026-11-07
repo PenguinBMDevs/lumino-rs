@@ -270,6 +270,12 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "Velocity ramp failed: select one pending shape/curve; composed results must be ✓ first",
             )
         }
+        // DRAW-010：遮罩实体化入口
+        "实体化" => Some("Bake to Shape"),
+        "已实体化遮罩" => Some("Mask baked to a new shape"),
+        "实体化失败：遮罩没有可见片段或目标已失效" => {
+            Some("Bake mask failed: no visible pieces or the target is no longer available")
+        }
         _ => None,
     }
 }

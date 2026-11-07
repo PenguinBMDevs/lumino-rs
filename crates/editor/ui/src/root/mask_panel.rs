@@ -9,6 +9,7 @@
 use iced_core::{Alignment, Background, Border, Color, Length, Padding, Point};
 use iced_widget::{button, column, container, mouse_area, row, slider, text};
 use lumino_core::shape::{MaskParams, MaskShow};
+use lumino_core::tr;
 use lumino_message::MaskPanelAction;
 use lumino_ui_editor::MaskEditTarget;
 use lumino_ui_settings::components::with_setting_tooltip_inline;
@@ -173,6 +174,17 @@ pub(crate) fn view_mask_panel(root: &crate::root::Root) -> Option<Element<'stati
                 button(text(apply_label).size(12))
                     .padding([3, 10])
                     .on_press(msg(MaskPanelAction::Apply)),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        );
+        body = body.push(
+            row![
+                text("可见片段写成新形状").size(11).color(text_color),
+                iced_widget::Space::new().width(Length::Fill),
+                button(text(tr!("实体化")).size(12))
+                    .padding([3, 10])
+                    .on_press(msg(MaskPanelAction::ApplyAsShape)),
             ]
             .spacing(6)
             .align_y(Alignment::Center),
