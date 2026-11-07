@@ -19,16 +19,10 @@ pub(super) fn piano_roll_overlay_enabled() -> bool {
 impl Root {
     /// 是否存在仍由 iced 绘制、且会被叠加层盖住的弹出层。
     ///
-    /// 自绘标题栏的菜单、工具栏的精度/洋葱皮下拉与「更多」溢出菜单已由 egui
-    /// 接管；只有系统原生标题栏模式下 iced 仍负责菜单下拉。悬浮工具条及其
-    /// 锚定面板尚未迁移，打开时叠加层必须整块让位，否则会被不透明 band 盖住。
+    /// 自绘标题栏的菜单、工具栏的精度/洋葱皮下拉与「更多」溢出菜单、悬浮绘制
+    /// 工具条及其五个锚定面板已由 egui 接管；只有系统原生标题栏模式下 iced 仍
+    /// 负责菜单下拉。
     pub(super) fn has_iced_popup(&self) -> bool {
-        let iced_menu = self.settings.synth.use_native_titlebar && self.state.is_menu_open;
-        iced_menu
-            || self.toolbar.tool_panel_open
-            || self.toolbar.brush_dropdown_open
-            || self.toolbar.thickness_panel_open
-            || self.toolbar.shape_dropdown_open
-            || self.toolbar.text_params_open
+        self.settings.synth.use_native_titlebar && self.state.is_menu_open
     }
 }

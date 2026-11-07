@@ -6,6 +6,7 @@
 mod dialogs;
 mod gates;
 mod menu;
+mod tool_panel;
 mod toolbar;
 
 use lumino_core::storage::config::NoteCountDisplay;
@@ -400,10 +401,21 @@ impl Root {
             None
         };
 
+        let tool_panel_top = (if titlebar_present {
+            lumino_ui_egui::layout::TITLEBAR_H
+        } else {
+            0.0
+        }) + if shows_toolbar {
+            lumino_ui_egui::layout::TOOLBAR_H
+        } else {
+            0.0
+        };
+
         ChromeModel {
             dialog: None,
             titlebar,
             toolbar,
+            tool_panel: tool_panel::model(self, sidebar_width, tool_panel_top),
             sidebar,
             right_sidebar,
             piano_roll,
@@ -421,3 +433,5 @@ impl Root {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tool_panel_tests;

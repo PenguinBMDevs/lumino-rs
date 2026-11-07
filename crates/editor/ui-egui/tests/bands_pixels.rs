@@ -77,6 +77,7 @@ fn model() -> ChromeModel {
             more_visible: true,
             overflow_menu: None,
         }),
+        tool_panel: None,
         statusbar: StatusbarModel {
             left: "就绪".to_owned(),
             left_accent: true,

@@ -48,6 +48,7 @@ fn bands_expose_menu_labels_and_status_metrics() {
         right_sidebar: None,
         piano_roll: None,
         toolbar: None,
+        tool_panel: None,
         statusbar: statusbar(Some(58.5)),
     });
     harness.run();
@@ -75,6 +76,7 @@ fn native_titlebar_skips_top_band_but_keeps_statusbar() {
         right_sidebar: None,
         piano_roll: None,
         toolbar: None,
+        tool_panel: None,
         statusbar: statusbar(Some(60.0)),
     });
     harness.run();
@@ -98,6 +100,7 @@ fn missing_fps_hides_metric_group() {
         right_sidebar: None,
         piano_roll: None,
         toolbar: None,
+        tool_panel: None,
         statusbar: statusbar(None),
     });
     harness.run();
@@ -150,6 +153,7 @@ fn menu_opens_and_dispatches_actions() {
         right_sidebar: None,
         piano_roll: None,
         toolbar: None,
+        tool_panel: None,
         statusbar: statusbar(None),
     };
 
@@ -227,6 +231,7 @@ fn toolbar_popups_dispatch_snap_and_onion_actions() {
         right_sidebar: None,
         piano_roll: None,
         toolbar: Some(ToolbarModel::default()),
+        tool_panel: None,
         statusbar: statusbar(None),
     }));
     let actions = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));

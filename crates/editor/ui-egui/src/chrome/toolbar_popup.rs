@@ -7,10 +7,11 @@
 //! `background.strong` 1px 边框；菜单项 13px 文本、悬停白色 10%。
 
 use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Sense, Stroke, Vec2};
-use lumino_core::SnapSpec;
+use lumino_core::{SnapSpec, TextParams};
 
 use super::ToolbarModel;
 use super::menu;
+use super::{ShapeKind, ToolPanelItemKind};
 use crate::theme;
 
 /// 面板宽度（生产 `MENU_WIDTH`）。
@@ -37,7 +38,7 @@ const SNAP_TRIGGER_ID: &str = "lumino.toolbar.snap-trigger";
 const ONION_TRIGGER_ID: &str = "lumino.toolbar.onion-triggers";
 
 /// 工具栏弹层产生的动作（不依赖 iced，生产侧负责翻译成 `Message`）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ToolbarAction {
     /// 开合精度下拉。
     ToggleSnapPicker,
@@ -61,6 +62,56 @@ pub enum ToolbarAction {
     OverflowItem(usize),
     /// 关闭溢出菜单（外部点击 / Esc）。
     CloseOverflowMenu,
+    /// 点击悬浮条条目；`settings` = 已启用且该条目有设置（弹面板）。
+    ToolPanelItem {
+        /// 条目种类。
+        kind: ToolPanelItemKind,
+        /// 是否是「再次点击已启用条目 → 弹出设置」。
+        settings: bool,
+    },
+    /// 开合「粗细」面板。
+    ThicknessToggle,
+    /// 打开「音符画设置」独立窗口。
+    OpenDrawSettings,
+    /// 悬浮条起拖。
+    ToolPanelDragStarted,
+    /// 悬浮条拖拽中（逻辑屏幕坐标）。
+    ToolPanelDragged {
+        /// 光标 x。
+        x: f32,
+        /// 光标 y。
+        y: f32,
+    },
+    /// 悬浮条松手（生产侧做默认位吸附）。
+    ToolPanelDragEnded,
+    /// 关闭画刷面板。
+    CloseBrushPanel,
+    /// 关闭形状面板。
+    CloseShapePanel,
+    /// 关闭分音符填充面板。
+    CloseFillPanel,
+    /// 关闭文字参数面板。
+    CloseTextPanel,
+    /// 关闭「粗细」面板。
+    CloseThicknessPanel,
+    /// 选择基本图形。
+    ShapeSelected(ShapeKind),
+    /// 打开「形状抽屉」窗口。
+    OpenShapeDrawer,
+    /// 打开「绘制行为」对话框。
+    BrushSettingsOpen,
+    /// 全局绘制粗细变化。
+    ThicknessChanged(u8),
+    /// 分音符填充输入变化。
+    FillDivisionChanged(String),
+    /// 分音符填充「确定」。
+    FillDivisionConfirm,
+    /// 「关闭填充」（停用颜料桶）。
+    FillDisable,
+    /// 文字参数整体变化。
+    TextParamsChanged(TextParams),
+    /// 文字布局模式切换（目标由生产按当前模式推导）。
+    TextLayoutModeToggle,
 }
 
 /// 记录本帧要回传给生产的动作。

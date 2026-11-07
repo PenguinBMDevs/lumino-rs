@@ -499,13 +499,58 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/wide-right.png`、`target/overflow-grid.png`、
     `target/overflow-click.png`。
 
-**Task 1.3（下一步）：悬浮工具条 + 五个锚定面板**
+**Task 1.3（第十一步）：悬浮工具条 + 五个锚定面板 — 已完成**
+
+- 新增 `chrome/tool_panel.rs`（胶囊 + 拖拽 + 锚定定位）与
+  `tool_panel/panels.rs`（画刷 / 形状 / 粗细）、`panels/fill.rs`（分音符填充）、
+  `text_panel.rs` + `text_panel/font.rs`（文字参数 + 字体下拉）：
+  - 胶囊几何完全对齐生产：34px 按钮 / 22px 图标 / 4px 间距 / 5px 内边距 /
+    全圆角，左端拖拽柄（两根竖条）+ 两条分隔线 + 六个绘制工具 + 右端
+    「粗细」与齿轮；
+  - 面板宽 248、圆角 8、`background.weakest×0.9` 底 + `background.strong` 边框，
+    锚定在**触发按钮正上方**（水平居中、越界吸附、顶部空间不足下翻）；
+  - 分音符填充含真实 `TextEdit`（键盘输入经叠加层转发并只在文本编辑聚焦时
+    消费，避免触发 iced 快捷键）；字体列表为自绘弹层，矩形同样进入占用列表。
+- **折叠/拖拽语义复用生产状态机**：点击回传 `ToolPanelItem { kind, settings }`
+  （`settings` 由生产按「已启用且有设置」算好），拖拽回传
+  `ToolPanelDragStarted/Dragged/Ended`，生产侧继续用 `tool_panel_offset`
+  累积位移并在松手时做默认位吸附。
+- **修复拖拽收尾丢失**：释放帧 `grip.dragged()` 已为 false、只有
+  `drag_stopped()` 为 true；旧写法会回退到未拖拽的胶囊响应丢掉结束事件，
+  已把 `drag_stopped` 纳入响应选择并在释放帧优先回传 `DragEnded`。
+- **修复输入框点击**：`TextEdit` 放在子 UI 中，命中区与生产输入框一致；
+  点击后 `text_edit_focused=true`，键盘事件只给 egui。
+- iced 侧 `view_draw_toolbar` 在叠加层启用时不再绘制（避免两份胶囊）；
+  `has_iced_popup` 只剩「系统原生标题栏菜单」一项。
+- 验收：
+  - `tool_panel_bands` 5/5：条目/粗细/齿轮路由、形状选择与抽屉、粗细面板
+    外部点击关闭、输入框键入回传、拖拽 Started→Ended（释放帧必须为 Ended）；
+  - `egui_chrome` 21/21：新增悬浮条模型镜像（六条目、选中态、形状图标、
+    五个面板内容）与动作翻译（含拖拽、关闭、文字参数、模式切换）；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口（`LUMINO_EGUI_OVERLAY=1`，ppp=1.25）：
+    - 「绘制工具箱」按钮 → 胶囊出现在卷帘底部居中（六工具 + 分隔 + 粗细 + 齿轮）；
+    - 画刷两次点击 → 胶囊上方弹出「粗细设置 1 层 / 100」面板；
+    - 点「粗细」→ 面板展开，拖滑杆 → `ThicknessChanged(70)` 且值文本更新；
+    - 形状两次点击 → 三图形 + 齿轮面板，点圆形 → 胶囊形状图标变为圆形；
+    - 文字两次点击 → 11 行完整参数面板（字体/字号/字重/斜体/单位/字距/行距/
+      对齐/阈值/增长/模式），字体下拉展开且盖住面板内容；
+    - 颜料桶两次点击 → 分音符填充面板，点击输入框后键入 `16` →
+      `FillDivisionChanged("1")`、`FillDivisionChanged("16")`，输入框显示 `16`；
+    - 拖拽柄拖动 120px → `ToolPanelDragStarted` → 多次 `ToolPanelDragged` →
+      `ToolPanelDragEnded`，胶囊实际右移并保持新位置；
+  - 证据图：`target/tp-open3.png`、`target/tp-brush2.png`、
+    `target/tp-thickness3.png`、`target/tp-shape2.png`、`target/tp-text4.png`、
+    `target/tp-font2.png`、`target/tp-typed.png`、`target/drag-after2.png`。
+
+**Task 1.3（下一步）：其余设置页 + 右侧栏面板内容**
 
 - 现状：标题栏（菜单/子菜单）、工具栏（精度/洋葱皮下拉、溢出菜单、折叠布局）、
-  左侧栏、右侧栏图标列、状态栏、保存确认对话框、设置「常规」页已由 egui 绘制；
-  悬浮工具条（画刷/形状/颜料桶/文字参数/粗细面板）仍 iced——这是
-  `has_iced_popup` 让位逻辑仅剩的来源。
-- 下一步：迁移悬浮工具条（拖拽 + 6 个工具按钮 + 齿轮）及其五个锚定面板，
-  之后可删除整块让位；最后逐页建模其余设置页与右侧栏面板内容。
+  悬浮工具条及其五个锚定面板、左侧栏、右侧栏图标列、状态栏、保存确认对话框、
+  设置「常规」页已由 egui 绘制。
+- 下一步：逐页建模其余设置页（音频 / 外观 / 快捷键 …）与右侧栏面板内容
+  （素材 / 音轨属性 / 混音器等），继续保持「状态镜像 + 动作回传」模式。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

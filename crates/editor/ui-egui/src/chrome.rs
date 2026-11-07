@@ -7,9 +7,15 @@ pub mod piano_roll;
 pub mod sidebar;
 pub mod statusbar;
 pub mod titlebar;
+pub mod tool_panel;
 pub mod toolbar;
 pub mod toolbar_popup;
 
+pub use model::{
+    BrushPanelModel, FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel,
+    ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
+    ToolPanelPanelOwner, ToolPanelSettingsPanel,
+};
 pub use model::{
     ChromeModel, DialogModel, DialogPalette, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem,
     OnionMenuModel, OverflowItemModel, OverflowMenuModel, RightSidebarModel, RightSidebarPanelKind,
@@ -256,6 +262,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     if let Some(toolbar) = &model.toolbar {
         toolbar_popup::show_overlay(&mut root, toolbar);
         overflow::show_overlay(&mut root, toolbar, icons);
+    }
+    // 悬浮绘制工具条最后画：它的锚定面板要盖在卷帘与工具栏弹层之上。
+    if let Some(tool_panel) = &model.tool_panel {
+        tool_panel::show_overlay(&mut root, tool_panel, icons);
+    } else {
+        tool_panel::clear_triggers(ui.ctx());
     }
 }
 

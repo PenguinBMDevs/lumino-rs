@@ -396,10 +396,14 @@ fn iced_popups_disable_the_overlay() {
         "900px 视口应产生溢出项"
     );
 
-    // 悬浮工具条及其锚定面板仍由 iced 绘制：打开时整块让位。
+    // 悬浮工具条及其锚定面板已由 egui 接管：打开时不再让位，模型带胶囊。
     let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
     toolbar.toolbar.tool_panel_open = true;
-    assert!(toolbar.egui_chrome_model().sidebar.is_none());
+    let model = toolbar.egui_chrome_model();
+    assert!(model.sidebar.is_some(), "悬浮条打开时仍应画外壳");
+    let panel = model.tool_panel.expect("悬浮条应交给 egui");
+    assert_eq!(panel.items.len(), 6, "六个绘制工具常显");
+    assert!(panel.panel.is_none(), "默认没有打开的面板");
 }
 
 #[test]
@@ -493,7 +497,7 @@ fn toolbar_popup_model_and_actions_follow_production_state() {
 
     // 动作 → 生产 Message（与 iced 按钮同一批构造器）。
     assert!(matches!(
-        root.toolbar_action_message(ToolbarAction::ToggleSnapPicker),
+        root.toolbar_action_message(&ToolbarAction::ToggleSnapPicker),
         Some(Message::Toolbar(ToolbarEvent::ToggleSnapPicker))
     ));
     let triple = SnapSpec::Note {
@@ -502,25 +506,25 @@ fn toolbar_popup_model_and_actions_follow_production_state() {
         div: 3,
     };
     assert!(matches!(
-        root.toolbar_action_message(ToolbarAction::SnapSpec(triple)),
+        root.toolbar_action_message(&ToolbarAction::SnapSpec(triple)),
         Some(Message::Toolbar(ToolbarEvent::SnapSpecChanged(spec))) if spec == triple
     ));
     assert!(matches!(
-        root.toolbar_action_message(ToolbarAction::SnapCustom),
+        root.toolbar_action_message(&ToolbarAction::SnapCustom),
         Some(Message::Batch(_))
     ));
     assert!(matches!(
-        root.toolbar_action_message(ToolbarAction::ToggleOnionSkin),
+        root.toolbar_action_message(&ToolbarAction::ToggleOnionSkin),
         Some(Message::Toolbar(ToolbarEvent::ToggleOnionSkin))
     ));
     assert!(matches!(
-        root.toolbar_action_message(ToolbarAction::OnionMode(1)),
+        root.toolbar_action_message(&ToolbarAction::OnionMode(1)),
         Some(Message::Toolbar(ToolbarEvent::OnionSkinModeSelected(
             OnionSkinMode::PreviousTrack
         )))
     ));
     assert!(
-        root.toolbar_action_message(ToolbarAction::OnionMode(4))
+        root.toolbar_action_message(&ToolbarAction::OnionMode(4))
             .is_none(),
         "越界下标不得产生消息"
     );

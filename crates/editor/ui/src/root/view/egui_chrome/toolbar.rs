@@ -60,10 +60,10 @@ fn onion_label(mode: OnionSkinMode) -> &'static str {
 
 impl Root {
     /// 工具栏弹层动作 → 生产 `Message`。
-    pub(crate) fn toolbar_action_message(&self, action: ToolbarAction) -> Option<Message> {
+    pub(crate) fn toolbar_action_message(&self, action: &ToolbarAction) -> Option<Message> {
         Some(match action {
             ToolbarAction::ToggleSnapPicker => toolbar::Event::toggle_snap_picker(),
-            ToolbarAction::SnapSpec(spec) => toolbar::Event::snap_spec_changed(spec),
+            ToolbarAction::SnapSpec(spec) => toolbar::Event::snap_spec_changed(*spec),
             ToolbarAction::SnapCustom => Message::Batch(vec![
                 Message::CustomPrecision(CustomPrecisionAction::OpenDialog),
                 toolbar::Event::close_snap_picker(),
@@ -72,7 +72,7 @@ impl Root {
             ToolbarAction::ToggleOnionSkin => toolbar::Event::toggle_onion_skin(),
             ToolbarAction::ToggleOnionMenu => toolbar::Event::toggle_onion_skin_menu(),
             ToolbarAction::OnionMode(index) => {
-                let mode = *OnionSkinMode::all().get(index)?;
+                let mode = *OnionSkinMode::all().get(*index)?;
                 toolbar::Event::onion_skin_mode_selected(mode)
             }
             ToolbarAction::CloseOnionMenu => toolbar::Event::close_onion_skin_menu(),
@@ -81,6 +81,8 @@ impl Root {
             // 溢出项按「同宽度重算折叠结果」解析，需要视口宽度，见
             // [`Root::overflow_action_message`]（Host 单独调用）。
             ToolbarAction::OverflowItem(_) => return None,
+            // 悬浮条及其锚定面板的动作在独立模块里翻译（保持单文件行数纪律）。
+            other => return super::tool_panel::action_message(self, other),
         })
     }
 

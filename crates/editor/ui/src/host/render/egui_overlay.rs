@@ -25,6 +25,10 @@ use lumino_ui_egui::icons::IconCache;
 
 use crate::host::Host;
 
+mod input;
+pub(crate) use input::OverlayInput;
+use input::pointer_button;
+
 /// 叠加层状态（首次启用时创建，跨帧保留纹理与管线）。
 pub(crate) struct EguiOverlay {
     /// egui 上下文。
@@ -35,102 +39,6 @@ pub(crate) struct EguiOverlay {
     painter: Painter,
     /// 叠加层已绘制帧数。
     frames: u32,
-}
-
-/// 叠加层输入缓冲：只收「影响显示态」的事件（悬停 / 滚轮 / 修饰键 / 焦点）。
-///
-/// 与 iced 的事件队列同策略：连续指针移动只保留最后一次，避免一帧内堆积
-/// 成百上千个中间位置。
-pub(crate) struct OverlayInput {
-    /// 待提交给 egui 的事件。
-    events: Vec<egui::Event>,
-    /// 当前修饰键状态（滚轮/按键事件需要随附）。
-    modifiers: egui::Modifiers,
-    /// 窗口是否持有焦点（`RawInput::focused`）。
-    focused: bool,
-    /// 最近一次指针位置（逻辑点），鼠标按键事件需要。
-    pointer: Option<egui::Pos2>,
-}
-
-impl Default for OverlayInput {
-    fn default() -> Self {
-        Self {
-            events: Vec::new(),
-            modifiers: egui::Modifiers::default(),
-            // 与 egui 的 `RawInput::focused` 默认值一致：窗口可见即可交互。
-            focused: true,
-            pointer: None,
-        }
-    }
-}
-
-impl OverlayInput {
-    /// 指针移动到窗口内（逻辑点）。
-    fn pointer_moved(&mut self, position: egui::Pos2) {
-        self.pointer = Some(position);
-        if matches!(self.events.last(), Some(egui::Event::PointerMoved(_))) {
-            self.events.pop();
-        }
-        self.events.push(egui::Event::PointerMoved(position));
-    }
-
-    /// 指针离开窗口。
-    fn pointer_left(&mut self) {
-        self.pointer = None;
-        self.events.push(egui::Event::PointerGone);
-    }
-
-    /// 鼠标按键（左/右/中）。
-    fn button(&mut self, button: egui::PointerButton, pressed: bool) {
-        let Some(pos) = self.pointer else {
-            return;
-        };
-        self.events.push(egui::Event::PointerButton {
-            pos,
-            button,
-            pressed,
-            modifiers: self.modifiers,
-        });
-    }
-
-    /// 滚轮：单位沿用 winit 语义（行 / 像素），换算交给 egui。
-    fn wheel(&mut self, unit: egui::MouseWheelUnit, delta: egui::Vec2) {
-        self.events.push(egui::Event::MouseWheel {
-            unit,
-            delta,
-            phase: egui::TouchPhase::Move,
-            source: egui::MouseWheelSource::Wheel,
-            modifiers: self.modifiers,
-        });
-    }
-
-    /// 修饰键变化（只有真的变化才入队）。
-    fn set_modifiers(&mut self, modifiers: egui::Modifiers) {
-        if self.modifiers == modifiers {
-            return;
-        }
-        self.modifiers = modifiers;
-        self.events.push(egui::Event::ModifiersChanged(modifiers));
-    }
-
-    /// 窗口焦点变化。
-    fn focus(&mut self, focused: bool) {
-        if self.focused == focused {
-            return;
-        }
-        self.focused = focused;
-        self.events.push(egui::Event::WindowFocused(focused));
-    }
-
-    /// 取走本帧事件（缓冲清空）。
-    fn take(&mut self) -> Vec<egui::Event> {
-        std::mem::take(&mut self.events)
-    }
-
-    /// 窗口是否持有焦点。
-    fn focused(&self) -> bool {
-        self.focused
-    }
 }
 
 /// 一帧叠加层绘制输入。
@@ -165,10 +73,18 @@ impl EguiOverlay {
     }
 
     /// 渲染一帧外壳并提交到目标纹理。
+    ///
+    /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
+    /// 调用方据此决定下一帧按键事件是否只给 egui。
     fn draw(
         &mut self,
         frame: OverlayFrame<'_>,
-    ) -> (Option<usize>, Option<chrome::ToolbarAction>, Vec<Rect>) {
+    ) -> (
+        Option<usize>,
+        Option<chrome::ToolbarAction>,
+        Vec<Rect>,
+        bool,
+    ) {
         self.frames = self.frames.wrapping_add(1);
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
@@ -235,7 +151,12 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
-        (menu_action, toolbar_action, blocked)
+        (
+            menu_action,
+            toolbar_action,
+            blocked,
+            self.ctx.text_edit_focused(),
+        )
     }
 }
 
@@ -268,7 +189,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (menu_action, toolbar_action, blocked) = overlay.draw(OverlayFrame {
+        let (menu_action, toolbar_action, blocked, wants_keyboard) = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -282,6 +203,7 @@ impl Host {
         });
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
         self.egui_blocked = blocked;
+        self.egui_input.set_wants_keyboard(wants_keyboard);
         if let Some(index) = menu_action
             && let Some(message) = self.root.menu_action_message(index)
         {
@@ -291,9 +213,9 @@ impl Host {
         }
         if let Some(action) = toolbar_action {
             // 溢出项需要按「同一视口宽度」重算折叠结果，单独解析。
-            let message = match action {
+            let message = match &action {
                 chrome::ToolbarAction::OverflowItem(index) => {
-                    self.root.overflow_action_message(index, logical_width)
+                    self.root.overflow_action_message(*index, logical_width)
                 }
                 other => self.root.toolbar_action_message(other),
             };
@@ -372,6 +294,15 @@ impl Host {
                 });
                 false
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.egui_input.key(event);
+                // 只有 egui 正在编辑文本时才消费：否则快捷键仍要落到 iced。
+                self.egui_input.wants_keyboard()
+            }
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
+                self.egui_input.text(text);
+                self.egui_input.wants_keyboard()
+            }
             WindowEvent::Focused(focused) => {
                 self.egui_input.focus(*focused);
                 false
@@ -385,17 +316,6 @@ impl Host {
         self.egui_input
             .pointer
             .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
-    }
-}
-
-/// winit 鼠标键 → egui 指针键（其余侧键不参与菜单）。
-fn pointer_button(button: winit::event::MouseButton) -> Option<egui::PointerButton> {
-    use winit::event::MouseButton;
-    match button {
-        MouseButton::Left => Some(egui::PointerButton::Primary),
-        MouseButton::Right => Some(egui::PointerButton::Secondary),
-        MouseButton::Middle => Some(egui::PointerButton::Middle),
-        _ => None,
     }
 }
 

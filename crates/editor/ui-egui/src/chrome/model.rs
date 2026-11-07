@@ -6,7 +6,9 @@
 
 use egui::Color32;
 
+mod tool_panel;
 mod toolbar;
+pub use tool_panel::*;
 pub use toolbar::*;
 
 use super::piano_roll::PianoRollView;
@@ -20,6 +22,8 @@ pub struct ChromeModel {
     pub titlebar: Option<TitlebarModel>,
     /// 工具栏；`None` = 不接管。
     pub toolbar: Option<ToolbarModel>,
+    /// 悬浮绘制工具条（含锚定面板）；`None` = 未打开或不接管。
+    pub tool_panel: Option<ToolPanelModel>,
     /// 左侧栏；`None` = 不接管（拖拽 / 重命名 / 菜单等瞬态）。
     pub sidebar: Option<SidebarModel>,
     /// 右侧栏图标列；`None` = 不接管（当前视图不渲染右侧栏）。

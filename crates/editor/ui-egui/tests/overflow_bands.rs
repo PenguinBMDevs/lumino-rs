@@ -69,6 +69,7 @@ fn overflow_menu_dispatches_items_and_ignores_disabled() {
             }),
             ..ToolbarModel::default()
         }),
+        tool_panel: None,
         statusbar: statusbar(None),
     }));
     let actions = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -136,6 +137,7 @@ fn no_overflow_hides_more_button() {
             collaboration_visible: true,
             ..ToolbarModel::default()
         }),
+        tool_panel: None,
         statusbar: statusbar(None),
     };
     let mut icons = IconCache::default();
