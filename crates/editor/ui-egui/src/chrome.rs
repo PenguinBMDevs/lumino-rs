@@ -8,12 +8,14 @@ pub mod titlebar;
 pub mod toolbar;
 
 pub use model::{
-    ChromeModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SidebarGroup, SidebarModel,
-    SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
+    ChromeModel, DialogModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel,
+    ToolbarModel,
 };
 
 use egui::{Frame, Margin, Panel, Stroke};
 
+use crate::dialog;
 use crate::icons::IconCache;
 use crate::layout;
 use crate::theme;
@@ -114,6 +116,14 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     );
     root.set_clip_rect(full);
     root.spacing_mut().item_spacing = egui::Vec2::ZERO;
+
+    // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。
+    if let Some(dialog) = &model.dialog {
+        match dialog {
+            DialogModel::SaveConfirm(save) => dialog::show_model(&mut root, save, icons),
+        }
+        return;
+    }
 
     if let Some(titlebar) = &model.titlebar {
         let focused = titlebar.focused;

@@ -184,3 +184,90 @@ fn piano_roll_overlay_is_off_by_default() {
     let root = Root::new(&lumino_core::storage::config::UiConfig::default());
     assert!(root.egui_chrome_model().piano_roll.is_none());
 }
+
+#[test]
+fn dialog_windows_do_not_receive_main_chrome() {
+    let config = lumino_core::storage::config::UiConfig::default();
+    let root = Root::new_settings_dialog(&config.theme, &config);
+    let model = root.egui_chrome_model();
+    assert!(model.titlebar.is_none(), "对话框不得画主窗口标题栏");
+    assert!(model.toolbar.is_none(), "对话框不得画工具栏");
+    assert!(model.sidebar.is_none(), "对话框不得画左侧栏");
+    assert!(model.right_sidebar.is_none(), "对话框不得画右侧栏");
+    assert!(model.piano_roll.is_none(), "对话框不得画卷帘骨架");
+    assert!(model.statusbar.fps.is_none(), "对话框不得画状态栏");
+    assert!(
+        model.dialog.is_none(),
+        "设置对话框暂未接管，必须整块交回 iced"
+    );
+}
+
+#[test]
+fn save_confirm_dialog_model_carries_localized_text() {
+    // 深色主题下才整窗接管（本层只有深色调色板）。
+    let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
+    let root = Root::new_dialog(&theme, crate::state::root_state::DialogType::SaveConfirm);
+    let model = root.egui_chrome_model();
+    assert!(model.titlebar.is_none(), "整窗模型不再叠加主窗口标题栏");
+    let Some(DialogModel::SaveConfirm(save)) = model.dialog else {
+        panic!("保存确认对话框必须整窗接管");
+    };
+    assert!(save.titlebar, "对话框默认使用自制标题栏");
+    assert!(!save.message.is_empty());
+    assert!(!save.save.is_empty());
+    assert!(!save.close.is_empty());
+    assert!(!save.cancel.is_empty());
+}
+
+#[test]
+fn light_theme_dialogs_stay_with_iced() {
+    // 本层只有深色调色板：浅色主题的对话框必须整块交回 iced。
+    let light = lumino_ui_core::Theme::Light.to_string();
+    let root = Root::new_dialog(&light, crate::state::root_state::DialogType::SaveConfirm);
+    assert!(root.egui_chrome_model().dialog.is_none());
+}
+
+#[test]
+fn progress_and_warning_windows_are_not_covered() {
+    let config = lumino_core::storage::config::UiConfig::default();
+
+    let progress = Root::new_progress(&config.theme, &config);
+    let model = progress.egui_chrome_model();
+    assert!(model.titlebar.is_none() && model.statusbar.fps.is_none());
+    assert!(model.dialog.is_none());
+
+    let warning = Root::new_device_warning(&config.theme, &config, "测试".to_owned());
+    let model = warning.egui_chrome_model();
+    assert!(model.titlebar.is_none() && model.statusbar.fps.is_none());
+    assert!(model.dialog.is_none());
+}
+
+#[test]
+fn iced_popups_disable_the_overlay() {
+    // 菜单栏下拉：打开时必须整块让位，否则菜单会被不透明 band 盖住。
+    let mut menu = Root::new(&lumino_core::storage::config::UiConfig::default());
+    menu.state.is_menu_open = true;
+    let model = menu.egui_chrome_model();
+    assert!(model.titlebar.is_none(), "菜单打开时不得画标题栏 band");
+    assert!(model.sidebar.is_none(), "菜单打开时不得画左侧栏 band");
+    assert!(model.toolbar.is_none(), "菜单打开时不得画工具栏 band");
+    assert!(model.right_sidebar.is_none());
+    assert!(model.statusbar.fps.is_none());
+
+    // 工具栏下拉（吸附 / 洋葱皮 / 溢出 / 工具面板 …）同理。
+    let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
+    toolbar.toolbar.snap_picker_open = true;
+    assert!(toolbar.egui_chrome_model().toolbar.is_none());
+
+    let mut toolbar = Root::new(&lumino_core::storage::config::UiConfig::default());
+    toolbar.toolbar.tool_panel_open = true;
+    assert!(toolbar.egui_chrome_model().sidebar.is_none());
+
+    // 标题栏闩锁（菜单栏下拉不可探测）：按下后让位，下一次别处按下恢复。
+    let mut latch = Root::new(&lumino_core::storage::config::UiConfig::default());
+    assert!(latch.set_egui_titlebar_latch(true), "闩锁状态应发生变化");
+    assert!(latch.egui_chrome_model().titlebar.is_none());
+    assert!(!latch.set_egui_titlebar_latch(true), "重复置位不算变化");
+    assert!(latch.set_egui_titlebar_latch(false));
+    assert!(latch.egui_chrome_model().titlebar.is_some());
+}

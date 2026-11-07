@@ -1,35 +1,65 @@
-//! 对话框草稿：未保存更改确认。
+//! 对话框：未保存更改确认（整窗）。
+//!
+//! 几何来自生产 iced `view/save_confirm_dialog.rs`：
+//! - 自制标题栏 30px（系统原生标题栏时跳过）；
+//! - 提示语 16px、垂直居中于内容区顶部 90px；
+//! - 三个按钮 90×35、间距 10，水平居中于内容区，顶边 = 内容区 + 126。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Stroke, Vec2};
 
+use crate::chrome::SaveConfirmModel;
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 use crate::widgets;
 
-/// 对话框草稿状态。
+/// 对话框草稿状态（场景入口用）。
 #[derive(Default)]
 pub struct DialogState {
     /// 图标缓存（必须跨帧存活，否则纹理会在渲染前被释放）。
     pub icons: IconCache,
 }
 
-/// 渲染保存确认对话框。
+/// 场景入口：与生产同文案的保存确认对话框。
 pub fn show(ui: &mut egui::Ui, state: &mut DialogState) {
+    let model = SaveConfirmModel {
+        titlebar: true,
+        message: "是否保留未保存的更改?".to_owned(),
+        save: "保存".to_owned(),
+        close: "关闭".to_owned(),
+        cancel: "取消".to_owned(),
+    };
+    show_model(ui, &model, &mut state.icons);
+}
+
+/// 按只读模型渲染整窗（真实窗口叠加层与场景共用）。
+pub fn show_model(ui: &mut egui::Ui, model: &SaveConfirmModel, icons: &mut IconCache) {
     theme::apply(ui.ctx());
     crate::fonts::install(ui.ctx());
     ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
 
-    egui::Panel::top("save-confirm-titlebar")
-        .exact_size(layout::TITLEBAR_H)
-        .resizable(false)
-        .show_separator_line(false)
-        .frame(crate::chrome::panel_frame(theme::TITLEBAR_BG))
-        .show(ui, |ui| titlebar(ui, &mut state.icons));
+    // `egui_kittest`（以及部分宿主）给到的 Ui 带 8px 外缩进；Panel 需要铺满视口。
+    let full = ui.ctx().viewport_rect();
+    let mut root = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(full)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    root.set_clip_rect(full);
+    root.spacing_mut().item_spacing = egui::Vec2::ZERO;
+
+    if model.titlebar {
+        egui::Panel::top("save-confirm-titlebar")
+            .exact_size(layout::TITLEBAR_H)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(crate::chrome::panel_frame(theme::TITLEBAR_BG))
+            .show(&mut root, |ui| titlebar(ui, icons));
+    }
 
     egui::CentralPanel::default()
         .frame(crate::chrome::panel_frame(theme::BASE_BG))
-        .show(ui, content);
+        .show(&mut root, |ui| content(ui, model));
 }
 
 fn titlebar(ui: &mut egui::Ui, cache: &mut IconCache) {
@@ -44,15 +74,16 @@ fn titlebar(ui: &mut egui::Ui, cache: &mut IconCache) {
     });
 }
 
-fn content(ui: &mut egui::Ui) {
+fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
     let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 0, theme::BASE_BG);
 
     ui.painter().text(
         egui::pos2(rect.center().x, rect.top() + 90.0),
         Align2::CENTER_CENTER,
-        "是否保留未保存的更改?",
-        FontId::proportional(theme::font::TITLE),
+        &model.message,
+        // 生产 iced：提示语 16px（	ext(...).size(16)）。
+        FontId::proportional(theme::font::SECTION),
         theme::TEXT,
     );
 
@@ -66,7 +97,7 @@ fn content(ui: &mut egui::Ui) {
     put_button(
         ui,
         Rect::from_min_size(egui::pos2(start_x, y), Vec2::new(button_w, button_h)),
-        "保存",
+        &model.save,
         theme::ACCENT,
         Color32::from_rgb(0x12, 0x1A, 0x2A),
         theme::ACCENT_DARK,
@@ -77,7 +108,7 @@ fn content(ui: &mut egui::Ui) {
             egui::pos2(start_x + button_w + gap, y),
             Vec2::new(button_w, button_h),
         ),
-        "关闭",
+        &model.close,
         theme::TOOLBAR_BG,
         theme::TEXT,
         theme::ROUTE_BAR_BG,
@@ -88,14 +119,13 @@ fn content(ui: &mut egui::Ui) {
             egui::pos2(start_x + (button_w + gap) * 2.0, y),
             Vec2::new(button_w, button_h),
         ),
-        "取消",
+        &model.cancel,
         theme::TOOLBAR_BG,
         theme::TEXT,
         theme::ROUTE_BAR_BG,
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn put_button(
     ui: &mut egui::Ui,
     rect: Rect,

@@ -135,6 +135,12 @@ pub enum DialogType {
 pub struct RootState {
     /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
     pub is_menu_open: bool,
+    /// egui 叠加层的「标题栏菜单可能打开」闩锁。
+    ///
+    /// iced 的菜单栏下拉绘制在叠加层**下方**，且 iced_aw 不暴露打开状态。
+    /// 在标题栏内按下鼠标即置位、下一次其它位置按下时清除：置位期间叠加层
+    /// 整块让位，保证菜单可见可点；误判的代价只是暂不覆盖（回落到 iced）。
+    pub(crate) egui_titlebar_latch: bool,
     /// 对话框结果（用于独立窗口模式）
     pub dialog_result: Option<crate::host::DialogResult>,
     /// 是否是对话框窗口（用于自定义精度对话框等）
@@ -224,6 +230,7 @@ impl RootState {
         puffin::profile_scope!("root_state_new");
         Self {
             is_menu_open: false,
+            egui_titlebar_latch: false,
             dialog_result: None,
             is_dialog_window: false,
             dialog_type: DialogType::None,

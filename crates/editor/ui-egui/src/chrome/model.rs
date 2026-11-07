@@ -13,6 +13,8 @@ use lumino_core::storage::config::AutoScrollMode;
 /// 主窗口外壳的只读快照。
 #[derive(Debug, Clone, Default)]
 pub struct ChromeModel {
+    /// 独立对话框整窗（设置 / 保存确认 …）；`Some` 时只画对话框，不画任何 band。
+    pub dialog: Option<DialogModel>,
     /// 标题栏；`None` = 使用系统原生标题栏，egui 不接管。
     pub titlebar: Option<TitlebarModel>,
     /// 工具栏；`None` = 不接管。
@@ -25,6 +27,28 @@ pub struct ChromeModel {
     pub piano_roll: Option<PianoRollView>,
     /// 状态栏。
     pub statusbar: StatusbarModel,
+}
+
+/// 独立对话框窗口的只读模型。
+#[derive(Debug, Clone)]
+pub enum DialogModel {
+    /// 未保存更改确认（`DialogType::SaveConfirm`）。
+    SaveConfirm(SaveConfirmModel),
+}
+
+/// 保存确认对话框的文案与标题栏开关。
+#[derive(Debug, Clone)]
+pub struct SaveConfirmModel {
+    /// 是否绘制自制标题栏（系统原生标题栏时为 `false`）。
+    pub titlebar: bool,
+    /// 提示语。
+    pub message: String,
+    /// 主按钮（保存）。
+    pub save: String,
+    /// 次按钮（放弃更改并关闭）。
+    pub close: String,
+    /// 次按钮（取消）。
+    pub cancel: String,
 }
 
 /// 路由栏分组（灯条颜色来源）。

@@ -30,6 +30,7 @@ const STATUSBAR_BG: [u8; 3] = [0x39, 0x40, 0x63];
 fn model() -> ChromeModel {
     // 取值与 iced 基线捕获一致：就绪 + 0.0% / 0.0 MB / 60.0。
     ChromeModel {
+        dialog: None,
         titlebar: Some(TitlebarModel {
             focused: true,
             menus: vec![

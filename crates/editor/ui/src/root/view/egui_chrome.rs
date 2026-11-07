@@ -4,15 +4,18 @@
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
 
 use lumino_core::storage::config::NoteCountDisplay;
+use lumino_core::tr;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SidebarGroup, SidebarModel,
-    SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
+    ChromeModel, DialogModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel,
+    ToolbarModel,
 };
 
 use crate::root::Root;
 use crate::sidebar::{RollBarButton, Route, Sidebar};
+use crate::state::root_state::DialogType;
 use crate::toolbar::ToolbarPerfContext;
 use lumino_ui_egui::layout;
 
@@ -238,8 +241,74 @@ impl Root {
         })
     }
 
+    /// 是否存在由 iced 绘制的弹出层（菜单栏下拉 / 工具栏下拉 / 工具面板）。
+    ///
+    /// 这些弹层画在 egui 叠加层**下方**，打开时叠加层必须整块让位，否则会被
+    /// 不透明 band 盖住——用户能看到菜单项的黑影却点不到。
+    fn has_iced_popup(&self) -> bool {
+        self.state.is_menu_open
+            || self.state.egui_titlebar_latch
+            || self.toolbar.snap_picker_open
+            || self.toolbar.onion_skin_menu_open
+            || self.toolbar.overflow_menu_open
+            || self.toolbar.tool_panel_open
+            || self.toolbar.brush_dropdown_open
+            || self.toolbar.thickness_panel_open
+            || self.toolbar.shape_dropdown_open
+            || self.toolbar.text_params_open
+    }
+
+    /// 已支持整窗接管的对话框（当前仅「未保存更改确认」）。
+    ///
+    /// 其余对话框（设置 / 导出 / 历史 …）仍由 iced 绘制：整块返回空模型，
+    /// 叠加层不画任何东西，避免把主窗口 band 盖到对话框上。
+    fn egui_dialog_model(&self) -> Option<DialogModel> {
+        // 本层只有深色调色板；浅色主题的对话框仍由 iced 绘制，避免整窗配色错乱。
+        if self
+            .window
+            .theme
+            .extended_palette()
+            .background
+            .weakest
+            .color
+            .r
+            > 0.5
+        {
+            return None;
+        }
+        match self.state.dialog_type {
+            DialogType::SaveConfirm => Some(DialogModel::SaveConfirm(SaveConfirmModel {
+                titlebar: !self.settings.synth.use_native_titlebar,
+                message: tr!("是否保留未保存的更改?").to_string(),
+                save: tr!("保存").to_string(),
+                close: tr!("关闭").to_string(),
+                cancel: tr!("取消").to_string(),
+            })),
+            _ => None,
+        }
+    }
+
     /// 构造 egui 外壳快照（标题栏 + 工具栏 + 左侧栏 + 状态栏，只读）。
     pub(crate) fn egui_chrome_model(&self) -> ChromeModel {
+        // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
+        // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 iced），
+        // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
+        if self.state.is_dialog_window {
+            return ChromeModel {
+                dialog: self.egui_dialog_model(),
+                ..ChromeModel::default()
+            };
+        }
+        if self.is_progress_window || self.is_device_warning_window {
+            return ChromeModel::default();
+        }
+
+        // iced 的弹出层（菜单栏下拉、工具栏下拉、工具面板）绘制在叠加层**下方**，
+        // 一旦打开必须整块让位，否则会被不透明 band 盖住（菜单看得见点不着）。
+        if self.has_iced_popup() {
+            return ChromeModel::default();
+        }
+
         let language = self.settings.display.language;
         let translations = main_translations(language);
         let waterfall = self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall;
@@ -356,6 +425,7 @@ impl Root {
         };
 
         ChromeModel {
+            dialog: None,
             titlebar,
             toolbar,
             sidebar,

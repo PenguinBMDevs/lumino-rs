@@ -29,6 +29,7 @@ fn harness(model: ChromeModel) -> Harness<'static> {
 #[test]
 fn bands_expose_menu_labels_and_status_metrics() {
     let mut harness = harness(ChromeModel {
+        dialog: None,
         titlebar: Some(TitlebarModel {
             focused: true,
             menus: vec![
@@ -63,6 +64,7 @@ fn bands_expose_menu_labels_and_status_metrics() {
 #[test]
 fn native_titlebar_skips_top_band_but_keeps_statusbar() {
     let mut harness = harness(ChromeModel {
+        dialog: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,
@@ -85,6 +87,7 @@ fn native_titlebar_skips_top_band_but_keeps_statusbar() {
 #[test]
 fn missing_fps_hides_metric_group() {
     let mut harness = harness(ChromeModel {
+        dialog: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,
