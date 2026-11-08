@@ -18,6 +18,8 @@ use crate::Message;
 use crate::right_sidebar::{RightSidebarPanel, palette_algorithms};
 use crate::root::Root;
 
+mod materials;
+
 /// 右侧栏模型：图标列 + 已接管的面板内容。
 pub(super) fn model(
     root: &Root,
@@ -66,7 +68,10 @@ pub(super) fn content(root: &Root) -> Option<RightSidebarPanelModel> {
         RightSidebarPanel::ImageToMidi => {
             Some(RightSidebarPanelModel::ImageToMidi(i2m_model(root)))
         }
-        RightSidebarPanel::Materials | RightSidebarPanel::PianoWaterfall => None,
+        RightSidebarPanel::Materials => {
+            Some(RightSidebarPanelModel::Materials(materials::model(root)))
+        }
+        RightSidebarPanel::PianoWaterfall => None,
     }
 }
 
@@ -136,6 +141,9 @@ fn i2m_model(root: &Root) -> I2mPanelModel {
 
 /// 面板动作 → 生产 `Message`。
 pub(super) fn action_message(action: &PanelAction) -> Option<Message> {
+    if let Some(message) = materials::action_message(action) {
+        return Some(message);
+    }
     Some(match action {
         PanelAction::SelectImageFile => Message::RightSidebar(SidebarAction::SelectImageFile),
         PanelAction::I2mConfigTextChanged { field, text } => {
@@ -148,6 +156,7 @@ pub(super) fn action_message(action: &PanelAction) -> Option<Message> {
             Message::RightSidebar(SidebarAction::I2mPaletteChanged(*index))
         }
         PanelAction::ConvertClicked => Message::RightSidebar(SidebarAction::ConvertClicked),
+        _ => return None,
     })
 }
 

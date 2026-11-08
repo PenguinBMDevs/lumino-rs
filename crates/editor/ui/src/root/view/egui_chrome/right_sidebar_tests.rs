@@ -4,10 +4,12 @@ use super::*;
 use lumino_message::RightSidebarAction as SidebarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction as PanelAction;
 use lumino_ui_egui::chrome::{
-    I2mControlModel, I2mField, RightSidebarPanelKind, RightSidebarPanelModel,
+    I2mControlModel, I2mField, MaterialContextMenuItem, MaterialMenuKind, MaterialsPanelModel,
+    RightSidebarPanelKind, RightSidebarPanelModel,
 };
 
 use crate::Message;
+use crate::right_sidebar::material::{MaterialEntry, MaterialSource};
 use crate::right_sidebar::{RightSidebarPanel, palette_algorithms};
 
 fn root() -> Root {
@@ -78,11 +80,18 @@ fn i2m_model_mirrors_config_and_selection() {
     assert!(!convert.enabled);
     assert_ne!(convert.label, idle_label, "转换中应改文案");
 
-    // 只接管 I2M：素材库 / 瀑布流仍由 iced 绘制。
+    // 素材库也已接管；瀑布流（gfx 纹理）仍由 iced 绘制。
     root.right_sidebar.active_panel = RightSidebarPanel::Materials;
     let model = root.egui_chrome_model();
     let right = model.right_sidebar.expect("右侧栏");
-    assert!(right.content.is_none(), "素材库内容尚未接管");
+    assert!(
+        matches!(right.content, Some(RightSidebarPanelModel::Materials(_))),
+        "素材库内容应由 egui 接管"
+    );
+    root.right_sidebar.active_panel = RightSidebarPanel::PianoWaterfall;
+    let model = root.egui_chrome_model();
+    let right = model.right_sidebar.expect("右侧栏");
+    assert!(right.content.is_none(), "瀑布流内容仍由 iced 绘制");
 }
 
 #[test]
@@ -110,5 +119,184 @@ fn panel_actions_map_to_right_sidebar_messages() {
     assert!(matches!(
         root.right_sidebar_action_message(&PanelAction::ConvertClicked),
         Some(Message::RightSidebar(SidebarAction::ConvertClicked))
+    ));
+}
+
+fn materials_panel(root: &mut Root) -> MaterialsPanelModel {
+    let model = root.egui_chrome_model();
+    let right = model.right_sidebar.expect("默认视图应渲染右侧栏");
+    assert_eq!(right.active, Some(RightSidebarPanelKind::Materials));
+    let Some(RightSidebarPanelModel::Materials(panel)) = right.content else {
+        panic!("素材库面板应由 egui 接管");
+    };
+    panel
+}
+
+fn push_entry(root: &mut Root, name: &str, source: MaterialSource, valid: bool) {
+    root.right_sidebar.materials.entries.push(MaterialEntry {
+        name: name.to_owned(),
+        author: "作者".to_owned(),
+        source,
+        path: Some(std::path::PathBuf::from("C:/materials/a.lmmaterial")),
+        data: None,
+        multi_track: false,
+        track_count: 2,
+        valid,
+        preview: None,
+    });
+}
+
+#[test]
+fn materials_model_mirrors_library_state() {
+    let mut root = root();
+    root.right_sidebar.panel_visible = true;
+    root.right_sidebar.active_panel = RightSidebarPanel::Materials;
+    push_entry(&mut root, "内置 A", MaterialSource::BuiltIn, true);
+    push_entry(&mut root, "损坏素材", MaterialSource::BuiltIn, false);
+    push_entry(&mut root, "我的素材", MaterialSource::User, true);
+    root.right_sidebar.materials.add_menu_open = true;
+    root.right_sidebar.materials.renaming_material = Some((2, "新名称".to_owned()));
+    root.right_sidebar.materials.context_menu_target = Some(2);
+    root.right_sidebar.materials.context_menu_pos = Some((30.0, 40.0));
+
+    let panel = materials_panel(&mut root);
+    assert_eq!(panel.title, "素材库");
+    assert!(panel.add_label.starts_with("+ "));
+    assert_eq!(panel.rename_placeholder, "素材名称");
+    assert_eq!(panel.sections.len(), 2, "内置 + 用户两个分区");
+    assert_eq!(panel.sections[0].entries.len(), 2);
+    assert!(!panel.sections[0].entries[1].valid);
+    assert_eq!(
+        panel.sections[1].entries[0].renaming.as_deref(),
+        Some("新名称")
+    );
+    assert!(
+        panel.sections[0].entries[0]
+            .tooltip
+            .iter()
+            .any(|line| line.contains("内置 A")),
+        "悬停提示应含名称"
+    );
+    assert!(
+        !panel.sections[0].entries[1].tooltip.is_empty(),
+        "无效素材也有提示"
+    );
+    let menu = panel.add_menu.expect("添加菜单应展开");
+    assert_eq!(menu.len(), 2);
+    assert_eq!(menu[0].kind, MaterialMenuKind::DownloadFromWeb);
+    let ctx = panel.context_menu.expect("右键菜单应展开");
+    assert_eq!(ctx.index, 2);
+    assert!(ctx.can_edit, "用户素材可编辑");
+    assert_eq!((ctx.x, ctx.y), (30.0, 40.0));
+
+    // 内置素材的右键菜单置灰。
+    root.right_sidebar.materials.context_menu_target = Some(0);
+    let panel = materials_panel(&mut root);
+    assert!(panel.context_menu.is_some_and(|ctx| !ctx.can_edit));
+
+    // 空列表：未初始化显示「素材无效」，已初始化显示分区占位。
+    root.right_sidebar.materials.entries.clear();
+    root.right_sidebar.materials.scanning = false;
+    let panel = materials_panel(&mut root);
+    assert!(panel.placeholder.is_some());
+    root.right_sidebar.materials.scanning = true;
+    let panel = materials_panel(&mut root);
+    assert!(panel.placeholder.is_some());
+}
+
+#[test]
+fn materials_actions_map_to_messages() {
+    let root = root();
+
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialAdd),
+        Some(Message::RightSidebar(SidebarAction::MaterialAddClicked))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialMenu(
+            MaterialMenuKind::DownloadFromWeb
+        )),
+        Some(Message::RightSidebar(
+            SidebarAction::MaterialDownloadFromWeb
+        ))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialMenu(
+            MaterialMenuKind::ImportFromLocal
+        )),
+        Some(Message::RightSidebar(
+            SidebarAction::MaterialImportFromLocal
+        ))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialDragStarted(3)),
+        Some(Message::RightSidebar(SidebarAction::MaterialDragStarted(3)))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialContextMenuClosed),
+        Some(Message::RightSidebar(
+            SidebarAction::MaterialContextMenuClosed
+        ))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialRenameInput(
+            "新名称".to_owned()
+        )),
+        Some(Message::RightSidebar(
+            SidebarAction::MaterialRenameInputChanged(value)
+        )) if value == "新名称"
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::MaterialRenameConfirmed),
+        Some(Message::RightSidebar(
+            SidebarAction::MaterialRenameConfirmed
+        ))
+    ));
+
+    // 右键菜单项逐项映射。
+    for (item, expected) in [
+        (
+            MaterialContextMenuItem::Rename,
+            lumino_message::MaterialContextMenuItem::Rename,
+        ),
+        (
+            MaterialContextMenuItem::Delete,
+            lumino_message::MaterialContextMenuItem::Delete,
+        ),
+        (
+            MaterialContextMenuItem::UploadToCloud,
+            lumino_message::MaterialContextMenuItem::UploadToCloud,
+        ),
+    ] {
+        assert!(matches!(
+            root.right_sidebar_action_message(&PanelAction::MaterialContextMenuItemClicked {
+                index: 4,
+                item,
+            }),
+            Some(Message::RightSidebar(
+                SidebarAction::MaterialContextMenuItemClicked(4, got)
+            )) if got == expected
+        ));
+    }
+
+    // 右键打开：先同步局部光标，再打开菜单（顺序不可交换）。
+    let Some(Message::Batch(items)) =
+        root.right_sidebar_action_message(&PanelAction::MaterialContextMenuOpened {
+            index: 2,
+            x: 12.5,
+            y: 34.5,
+        })
+    else {
+        panic!("右键打开应产生 Batch");
+    };
+    assert_eq!(items.len(), 2);
+    assert!(matches!(
+        &items[0],
+        Message::RightSidebar(SidebarAction::MaterialCursorMoved(x, y))
+            if (*x - 12.5).abs() < f32::EPSILON && (*y - 34.5).abs() < f32::EPSILON
+    ));
+    assert!(matches!(
+        &items[1],
+        Message::RightSidebar(SidebarAction::MaterialContextMenuOpened(2))
     ));
 }

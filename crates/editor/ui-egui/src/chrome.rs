@@ -15,7 +15,9 @@ pub mod toolbar_popup;
 pub use model::{
     AudioControlModel, AudioField, AudioPageModel, AudioRowModel, BrushPanelModel, CloudConnModel,
     CloudPageModel, FillDivisionPanelModel, I2mControlModel, I2mConvertModel, I2mField,
-    I2mPanelModel, I2mRowModel, RightSidebarPanelModel, ShapeKind, ShapePanelModel,
+    I2mPanelModel, I2mRowModel, MaterialContextLabels, MaterialContextMenuItem,
+    MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind,
+    MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind, ShapePanelModel,
     TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
     ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
     UiPageModel, UiRow,
@@ -262,7 +264,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 );
                 if content_rect.width() > 0.0 {
                     right_panel::set_panel_rect(ui.ctx(), content_rect);
-                    right_panel::show(&mut root, content_rect, content);
+                    right_panel::show(&mut root, content_rect, content, icons);
                 }
             } else {
                 right_panel::clear_panel_rect(ui.ctx());

@@ -756,12 +756,51 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/rs-final-panel.png`、`rs-final-palette.png`、
     `rs-palette-picked2.png`、`rs-typed3.png`、`rs-resized.png`。
 
-**Task 1.3（下一步）：素材库面板 + 保存确认动作 + 原生标题栏菜单**
+**Task 1.3（第十八步）：右侧栏素材库面板 + 拖出桥 — 已完成**
+
+- 新增 `MaterialsPanelModel`（标题 / 添加按钮与下拉 / 分区列表 / 重命名缓冲 /
+  右键菜单 + 文案 / 悬停提示行）与 `right_panel/materials.rs` +
+  `materials/ctx.rs`：列表条目 `background.weaker` 底、圆角 4、内边距 `[6,8]`；
+  添加按钮全宽主色（`primary.weak` → 悬停 `primary.base`）；右键菜单 56×144
+  （40px 图标按钮 ×3、近黑底、圆角 8），在鼠标右下方展开并在贴近右/下缘时
+  翻转；内置素材菜单项置灰。
+- 交互全部接通：添加菜单开合 / 从 web 下载 / 从本地选取、素材右键菜单
+  （重命名 / 删除 / 上传到云）、重命名输入与回车确认、覆盖背景关闭、
+  悬停提示（名称 / 作者 / 位置 / 轨道数 / 来源）。
+- **拖出桥**：素材项在**按下瞬间**回传 `MaterialDragStarted(index)`（不是
+  click 释放），跟随预览与松手放置继续由 iced 编辑器状态机驱动；面板内容区
+  整块占用，按下不会同时落到 iced，而光标移动与卷帘内释放仍走 iced。
+- 右键位置：`MaterialContextMenuOpened { index, x, y }` 在生产侧展开为
+  `Batch([CursorMoved(x,y), ContextMenuOpened(index)])`，保证菜单锚定在
+  按下时的面板局部坐标。
+- 叠加层启用时 iced 的素材库面板内容改为同宽占位，避免两份列表 / 菜单重影；
+  删除确认弹窗仍由 iced 主窗口叠加层承接（不迁移，避免削减功能）。
+- 验收：
+  - `materials_bands` 6/6：添加菜单、有效素材按下拖出、无效素材无动作、
+    右键坐标（面板局部）、菜单项（可编辑 / 置灰）、覆盖背景关闭、重命名
+    输入与回车；
+  - `egui_chrome` 31/31：素材库模型镜像（分区 / 重命名 / 右键目标与位置 /
+    添加菜单 / 悬停行）与全部动作翻译（含 Batch 顺序）；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 与上一步逐项一致，基线零改动；
+  - 真实窗口（ppp=1.25）：素材库显示 11 个内置素材（扫描 12 个含测试用户素材）；
+    添加菜单展开两项，「从本地选取」只弹出一个文件对话框
+    （`MaterialMenu(ImportFromLocal)`）；内置素材右键菜单置灰且点击无动作，
+    点空白 → `MaterialContextMenuClosed`；用户素材右键菜单可用，
+    重命名输入 `MaterialRenameInput` → 回车 `MaterialRenameConfirmed` 且磁盘
+    文件已改名；按住「圆」拖入卷帘 → 日志「已进入拖出跟随模式」、拖拽中截图
+    可见预览跟随，松手进入放置预览（Placing）。
+  - 证据图：`target/mat-panel2.png`、`mat-menu.png`、`mat-ctx.png`、
+    `mat-import.png`、`mat-user-ctx2.png`、`mat-rename.png`、
+    `mat-renamed2.png`、`mat-drag-mid.png`、`mat-placing.png`。
+
+**Task 1.3（下一步）：保存确认动作 + 原生标题栏菜单 + 瀑布流面板**
 
 - 现状：设置 10/10 页、标题栏菜单、工具栏与弹层、悬浮工具条与五个面板、
-  左侧栏、右侧栏图标列与 I2M 面板、状态栏均已是 egui。
-- 下一步：迁移右侧栏素材库面板（列表 / 重命名 / 右键菜单 / 添加菜单），
-  需要为「拖拽出到卷帘」补一条 egui → iced 的拖拽桥；随后给保存确认对话框
-  建模按钮动作，并处理系统原生标题栏模式下的 iced 菜单让位。
+  左侧栏、右侧栏图标列 + I2M + 素材库、状态栏均已是 egui。
+- 下一步：给保存确认对话框建模按钮动作（不再依赖 iced let-through）；
+  处理系统原生标题栏模式下的 iced 菜单让位；钢琴瀑布流面板内容是
+  `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道拆分后再接管。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

@@ -1,16 +1,18 @@
-//! 右侧栏面板内容模型（当前接管「图片转 MIDI」）。
+//! 右侧栏面板内容模型（图片转 MIDI / 素材库）。
 //!
 //! 面板几何与生产一致：总宽 `panel_width` = 左侧 6px 拖拽手柄 + 内容区
 //! `panel_width - 6`，右侧是固定 48px 图标列。拖拽手柄**不**进入占用列表，
 //! 让 iced 继续处理缩放拖拽；内容区整块占用，点击不会再落到 iced 同名控件。
 //!
-//! 全部文案与配置文本由生产侧预计算，`lumino-ui-egui` 不做 i18n。
+//! 全部文案、工具提示行与配置文本由生产侧预计算，`lumino-ui-egui` 不做 i18n。
 
 /// 右侧栏内容面板（互斥，同一时刻只有一个）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RightSidebarPanelModel {
     /// 图片转 MIDI。
     ImageToMidi(I2mPanelModel),
+    /// 素材库。
+    Materials(MaterialsPanelModel),
 }
 
 /// 图片转 MIDI 面板。
@@ -91,4 +93,102 @@ pub struct I2mConvertModel {
     pub label: String,
     /// 是否可点（转换中禁用）。
     pub enabled: bool,
+}
+
+/// 素材库面板。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MaterialsPanelModel {
+    /// 面板标题（「素材库」）。
+    pub title: String,
+    /// 「添加素材」按钮文本。
+    pub add_label: String,
+    /// 添加下拉菜单（`None` = 收起）。
+    pub add_menu: Option<Vec<MaterialMenuEntryModel>>,
+    /// 列表占位文本（未初始化 / 空列表）。
+    pub placeholder: Option<String>,
+    /// 重命名输入框占位符（「素材名称」）。
+    pub rename_placeholder: String,
+    /// 分区（内置素材 / 用户素材），空分区不出现。
+    pub sections: Vec<MaterialSectionModel>,
+    /// 右键菜单文案。
+    pub context_labels: MaterialContextLabels,
+    /// 右键上下文菜单（`None` = 关闭）。
+    pub context_menu: Option<MaterialContextMenuModel>,
+}
+
+/// 右键菜单文案（生产侧按当前语言预计算）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MaterialContextLabels {
+    /// 重命名。
+    pub rename: String,
+    /// 删除。
+    pub delete: String,
+    /// 上传到云。
+    pub upload: String,
+}
+
+/// 添加下拉菜单项。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialMenuEntryModel {
+    /// 显示文本。
+    pub label: String,
+    /// 菜单项种类。
+    pub kind: MaterialMenuKind,
+}
+
+/// 添加下拉菜单项种类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialMenuKind {
+    /// 从 web 下载。
+    DownloadFromWeb,
+    /// 从本地选取。
+    ImportFromLocal,
+}
+
+/// 一个素材分区。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialSectionModel {
+    /// 分区标题（「内置素材」/「用户素材」）。
+    pub label: String,
+    /// 条目。
+    pub entries: Vec<MaterialItemModel>,
+}
+
+/// 单个素材条目。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialItemModel {
+    /// 生产列表索引（动作回传）。
+    pub index: usize,
+    /// 显示名称。
+    pub name: String,
+    /// 是否有效（无效条目置灰且不可拖出）。
+    pub valid: bool,
+    /// 重命名缓冲（`Some` = 该条目处于重命名编辑态）。
+    pub renaming: Option<String>,
+    /// 悬停提示行（名称 / 作者 / 位置 / 轨道数 / 来源）。
+    pub tooltip: Vec<String>,
+}
+
+/// 素材右键上下文菜单。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialContextMenuModel {
+    /// 目标条目索引。
+    pub index: usize,
+    /// 是否可编辑（内置素材全部置灰）。
+    pub can_edit: bool,
+    /// 面板局部坐标 x（快照）。
+    pub x: f32,
+    /// 面板局部坐标 y（快照）。
+    pub y: f32,
+}
+
+/// 右键菜单项。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialContextMenuItem {
+    /// 重命名。
+    Rename,
+    /// 删除。
+    Delete,
+    /// 上传到云。
+    UploadToCloud,
 }
