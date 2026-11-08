@@ -348,7 +348,7 @@ fn progress_and_warning_windows_are_not_covered() {
 }
 
 #[test]
-fn iced_popups_disable_the_overlay() {
+fn iced_popups_no_longer_disable_the_overlay() {
     // 自绘标题栏的菜单已由 egui 接管：`is_menu_open` 不再触发整块让位。
     let mut menu = Root::new(&lumino_core::storage::config::UiConfig::default());
     menu.state.is_menu_open = true;
@@ -358,14 +358,26 @@ fn iced_popups_disable_the_overlay() {
         "egui 菜单展开时仍应画外壳"
     );
 
-    // 系统原生标题栏模式仍由 iced 画菜单下拉：打开时让位。
+    // 系统原生标题栏模式：Windows/Linux 的 30px 菜单栏行也由 egui 接管，
+    // iced 只保留同宽占位，不再整块让位。
     let mut native = Root::new(&lumino_core::storage::config::UiConfig::default());
     native.settings.synth.use_native_titlebar = true;
     native.state.is_menu_open = true;
+    let model = native.egui_chrome_model();
     assert!(
-        native.egui_chrome_model().toolbar.is_none(),
-        "原生标题栏的 iced 菜单需要让位"
+        model.toolbar.is_some(),
+        "原生标题栏模式不再需要 iced 菜单让位"
     );
+    if !cfg!(target_os = "macos") {
+        let titlebar = model.titlebar.expect("原生标题栏的菜单栏应由 egui 绘制");
+        assert!(titlebar.menu_only, "原生模式只画菜单栏，无 logo/窗口控制");
+        assert_eq!(
+            titlebar.menus,
+            vec!["文件", "编辑", "视图", "帮助"],
+            "菜单标签与自绘标题栏一致"
+        );
+        assert!(model.right_sidebar.is_some(), "右侧栏仍应画在菜单栏下方");
+    }
 
     // 工具栏弹层同理：精度 / 洋葱皮范围已由 egui 接管，不再让位。
     let mut snap = Root::new(&lumino_core::storage::config::UiConfig::default());

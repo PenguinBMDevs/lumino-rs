@@ -147,9 +147,13 @@ impl Titlebar {
         language: Language,
         export_material_enabled: bool,
     ) -> Element<'a> {
-        // 菜单在最左侧，没有 logo 和窗口控制按钮
+        // 菜单在最左侧，没有 logo 和窗口控制按钮。
+        // 叠加层接管菜单时 iced 只保留同宽占位（不吃输入、不画下拉），
+        // 菜单标签与下拉由 egui 绘制。
         let row = if cfg!(target_os = "macos") {
             row![]
+        } else if crate::host::overlay_enabled() {
+            row![menu::view_placeholder(language)]
         } else {
             row![menu::view(language, export_material_enabled)]
         };

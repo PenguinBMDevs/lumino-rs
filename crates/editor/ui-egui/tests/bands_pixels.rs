@@ -40,6 +40,7 @@ fn model() -> ChromeModel {
                 "帮助".to_owned(),
             ],
             menu: None,
+            menu_only: false,
         }),
         sidebar: Some(SidebarModel::default()),
         piano_roll: Some(PianoRollView {

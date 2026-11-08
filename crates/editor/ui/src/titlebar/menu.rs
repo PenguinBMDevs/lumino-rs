@@ -174,7 +174,7 @@ pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
 
 /// 叠加层接管菜单时的占位：几何与 [`view`] 一致，但**不接收任何输入**、不画下拉。
 ///
-/// 只用于自绘标题栏模式；系统原生标题栏模式仍用 [`view`]。
+/// 自绘标题栏与系统原生标题栏两种模式都走这里（菜单标签与下拉由 egui 绘制）。
 pub fn view_placeholder<'a>(language: Language) -> Element<'a> {
     let items: Vec<Element<'a>> = [
         MenuKind::File,

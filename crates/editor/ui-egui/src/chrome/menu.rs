@@ -40,6 +40,8 @@ const BLOCKED_ID: &str = "lumino.menu.blocked";
 struct MenuState {
     /// 当前展开的主菜单索引。
     open: Option<usize>,
+    /// 当前展开是「悬停切换」打开的：随后点击该标签不应立即关闭。
+    hover_opened: bool,
     /// 当前展开的子菜单项索引（`open` 菜单内）。
     submenu: Option<usize>,
     /// 上一帧子面板的矩形：指针停在里面时保持展开（否则斜向下移会闪断）。
@@ -116,12 +118,18 @@ pub fn show_labels(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32]) -> 
 
         if interactive {
             if response.clicked() {
-                state.open = if selected { None } else { Some(index) };
+                if selected && !state.hover_opened {
+                    state.open = None;
+                } else {
+                    state.open = Some(index);
+                }
+                state.hover_opened = false;
                 state.submenu = None;
                 state.submenu_rect = None;
             } else if response.hovered() && state.open.is_some() && state.open != Some(index) {
                 // 已经展开时，悬停到别的标签直接切换（与 iced 菜单一致）。
                 state.open = Some(index);
+                state.hover_opened = true;
                 state.submenu = None;
                 state.submenu_rect = None;
             }
@@ -172,11 +180,13 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &TitlebarModel) {
         && !blocked.iter().any(|rect| rect.contains(pos))
     {
         state.open = None;
+        state.hover_opened = false;
         state.submenu = None;
         state.submenu_rect = None;
     }
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         state.open = None;
+        state.hover_opened = false;
         state.submenu = None;
         state.submenu_rect = None;
     }
@@ -272,6 +282,7 @@ fn draw_panel(
                     ui.ctx()
                         .data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), *action));
                     state.open = None;
+                    state.hover_opened = false;
                     state.submenu = None;
                     state.submenu_rect = None;
                 }
@@ -354,6 +365,12 @@ fn draw_panel(
 /// 便于单测：当前展开的主菜单索引。
 pub fn open_index(ctx: &egui::Context) -> Option<usize> {
     read_state(ctx).open
+}
+
+/// 便于单测：本帧菜单标签矩形（按标签顺序）。
+pub fn label_rects(ctx: &egui::Context) -> Vec<Rect> {
+    ctx.data(|d| d.get_temp(Id::unique(LABELS_ID)))
+        .unwrap_or_default()
 }
 
 /// 便于单测：悬停高亮色（与生产 `background.weaker` 对齐）。

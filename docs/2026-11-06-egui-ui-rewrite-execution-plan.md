@@ -830,12 +830,45 @@ callback / 多视口 / 截图能力。
   在本机会以隐藏窗口阻塞 UI 线程（表现为界面不响应）；删除该文件后恢复正常。
   这是既有启动提示行为，与本步改动无关。
 
-**Task 1.3（下一步）：原生标题栏菜单 + 瀑布流面板 + 卷帘骨架**
+**Task 1.3（第二十步）：系统原生标题栏菜单由 egui 接管 — 已完成**
 
-- 现状：设置 10/10 页、标题栏菜单、工具栏与弹层、悬浮工具条与五个面板、
-  左侧栏、右侧栏图标列 + I2M + 素材库、状态栏、保存确认对话框均已是 egui。
-- 下一步：处理系统原生标题栏模式下的 iced 菜单让位（`has_iced_popup`）；
-  钢琴瀑布流面板内容是 `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道拆分后
-  再接管。
+- `TitlebarModel` 新增 `menu_only`：系统原生标题栏模式下，egui 只画客户端顶部
+  30px 菜单栏（从 x=0 起、无 logo / 窗口控制 / 拖动区），标签宽 = 文本宽 + 17
+  （左右 8px 内边距 + 1px 间距），与 iced `menu::view_placeholder` 同几何。
+- iced 侧 `view_native_titlebar` 在叠加层启用时改用
+  `menu::view_placeholder`（同宽占位、不吃输入、不画下拉），原生模式的菜单
+  标签与下拉全部由 egui 绘制。
+- **移除 `has_iced_popup` 让位**：`egui_chrome_model_for` 不再在
+  `use_native_titlebar && is_menu_open` 时返回空模型；原生模式与自绘标题栏
+  共用同一套菜单状态机、下拉面板与动作通道。
+- 顺带修正：原生模式（Windows/Linux）顶部仍有 30px 菜单栏行，
+  `PianoRollView.top_inset` 与工具栏 / 右侧栏 / 悬浮工具条的顶部偏移统一按
+  「标题栏行 + 工具栏」计算（macOS 原生模式没有该行，保持 0）。
+- **修复悬停切换后的点击缺陷**：菜单展开时悬停到其他标签会切换展开项，
+  随后点击该标签会被误判为「再次点击关闭」。`MenuState` 增加
+  `hover_opened`：悬停切换后点击保持展开，点击其他标签或菜单项 / 空白 /
+  Esc 时复位。
+- 验收：
+  - `menubar_bands` 4/4：菜单从 x=0 起、无 logo / 无窗口控制、标签首尾相接；
+    点击标签展开面板并回传动作序号；悬停切换后点击保持展开；
+  - `egui_chrome` 32/32：原生标题栏 + `is_menu_open` 时仍返回菜单栏 /
+    工具栏 / 右侧栏模型（不再整块让位），菜单标签与自绘模式一致；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口（ppp=1.25，临时将配置切到原生标题栏 + Tokyo Night Storm 验证后
+    已还原）：系统标题栏下方出现 egui 菜单栏（文件/编辑/视图/帮助，从 x=0 起）；
+    点「文件」展开下拉，再点「工程设置」打开工程设置窗口；
+    先开「编辑」（误点为「视图」）再悬停/点击「文件」，菜单保持展开不关闭。
+  - 证据图：`target/native-2.png`、`native-top2.png`、`native-filemenu2.png`、
+    `native-switch1.png`、`native-switch2.png`、`native-settings.png`。
+
+**Task 1.3（下一步）：瀑布流面板 + 卷帘骨架**
+
+- 现状：设置 10/10 页、标题栏菜单（自绘 + 系统原生两种模式）、工具栏与弹层、
+  悬浮工具条与五个面板、左侧栏、右侧栏图标列 + I2M + 素材库、状态栏、
+  保存确认对话框均已是 egui。
+- 下一步：钢琴瀑布流面板内容是 `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道
+  拆分后再接管。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

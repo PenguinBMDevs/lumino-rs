@@ -422,6 +422,8 @@ pub struct TitlebarModel {
     pub menus: Vec<String>,
     /// 可交互菜单树（`None` = 只画标签，交互仍交给 iced）。
     pub menu: Option<MenuBarModel>,
+    /// 系统原生标题栏模式：只画 30px 菜单栏（无 logo、窗口控制、拖动区）。
+    pub menu_only: bool,
 }
 
 /// 标题栏菜单栏（生产 `titlebar::menu` 的数据镜像）。

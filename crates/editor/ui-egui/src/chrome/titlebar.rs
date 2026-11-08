@@ -33,6 +33,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
             "帮助".to_owned(),
         ],
         menu: None,
+        menu_only: false,
     };
     show_model(ui, &model, &mut state.icons);
 }
@@ -56,6 +57,16 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
         .iter()
         .map(|label| text_width(ui, label) + MENU_ITEM_PAD_X)
         .collect();
+
+    if model.menu_only {
+        // 系统原生标题栏：客户端顶部只有 30px 菜单栏（iced `view_native_titlebar`
+        // 的占位行），菜单从 x=0 开始，没有 logo / 窗口控制 / 拖动区。
+        ui.horizontal_centered(|ui| {
+            let _ = menu_panel::show_labels(ui, model, &widths);
+        });
+        return;
+    }
+
     let menu_total: f32 = LOGO_W + widths.iter().sum::<f32>();
 
     StripBuilder::new(ui)

@@ -221,7 +221,9 @@ impl Root {
             thumb_x_ratio: thumb(track_x, track_x, max_x),
             thumb_y_ratio: thumb(track_y, viewport_y, max_y),
             left_inset,
-            top_inset: (if self.settings.synth.use_native_titlebar {
+            // Windows/Linux 的两种标题栏模式在客户端顶部都有 30px 菜单栏行；
+            // macOS 原生模式没有（主内容直接从工具栏开始）。
+            top_inset: (if cfg!(target_os = "macos") && self.settings.synth.use_native_titlebar {
                 0.0
             } else {
                 layout::TITLEBAR_H
@@ -260,17 +262,15 @@ impl Root {
             return ChromeModel::default();
         }
 
-        // iced 的弹出层（菜单栏下拉、工具栏下拉、工具面板）绘制在叠加层**下方**，
-        // 一旦打开必须整块让位，否则会被不透明 band 盖住（菜单看得见点不着）。
-        if self.has_iced_popup() {
-            return ChromeModel::default();
-        }
-
         let language = self.settings.display.language;
         let waterfall = self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall;
 
-        // 系统原生标题栏模式下，顶部 30px 由操作系统绘制，egui 不接管。
-        let titlebar_present = !self.settings.synth.use_native_titlebar;
+        // Windows/Linux 的系统原生标题栏模式在客户端顶部仍保留 30px 菜单栏行
+        // （iced `view_native_titlebar`）；叠加层接管后由 egui 画菜单标签与下拉。
+        // macOS 原生模式没有这一行（iced 返回空行，主内容不含标题栏）→ 跳过。
+        let native = self.settings.synth.use_native_titlebar;
+        let egui_menubar = native && !cfg!(target_os = "macos");
+        let titlebar_present = !native || egui_menubar;
         let menu_configs = crate::titlebar::menu::menus(language, self.export_material_enabled());
         let menu_bar = menu::menu_bar_model(&menu_configs, language);
         let titlebar = titlebar_present.then(|| TitlebarModel {
@@ -281,6 +281,7 @@ impl Root {
                 .map(|item| item.label.clone())
                 .collect(),
             menu: Some(menu_bar),
+            menu_only: native,
         });
 
         // 工具栏：与 iced 仪表盘共用同一套 tick→BPM/时间换算。
