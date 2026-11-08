@@ -484,3 +484,56 @@ fn test_group_edit_rejects_baked_selection() {
         "已 Bake 多选不支持组编辑（041C 基线：仅 ✓ 前 pending）"
     );
 }
+
+#[test]
+fn test_group_edit_promotes_plain_pending_shapes() {
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    for (x0, x1) in [(0.0, 100.0), (200.0, 300.0)] {
+        editor
+            .editor_state
+            .shape_tool
+            .shapes
+            .push(lumino_editor_state::ShapeInstance {
+                kind: lumino_editor_state::ShapeKind::Rectangle,
+                rect: (x0, 60.0, x1, 64.0),
+                shift_constrained: false,
+                filled: true,
+                apex_high: true,
+                mask: None,
+            });
+    }
+    editor.rebuild_pending_mirrors();
+    let id0 = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("pending 0");
+    let id1 = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(1))
+        .expect("pending 1");
+    editor.editor_state.shape_select.select_all_of([id0, id1]);
+
+    assert!(
+        editor.enable_shape_edit(),
+        "多选待确认形状应先批量提升再进入组编辑"
+    );
+    assert!(matches!(
+        editor.shape_edit_armed,
+        Some(ShapeEditTarget::Group)
+    ));
+    assert_eq!(editor.shape_group_edit.as_deref(), Some(&[0usize, 1][..]));
+    assert!(
+        editor.editor_state.shape_tool.shapes.is_empty(),
+        "原参数化实例应被提升移走"
+    );
+    assert_eq!(editor.editor_state.pending_composed.len(), 2);
+    let union = editor.group_union_model().expect("联合 box");
+    assert_eq!(
+        union.geometry.bounds().expect("bounds"),
+        (0.0, 60.0, 300.0, 64.0)
+    );
+}

@@ -84,11 +84,41 @@ impl Editor {
             return true;
         }
         let selected = self.editor_state.shape_select.selection_len();
-        // 多选组：仅 ✓ 前 pending 组合，且每个成员都必须能可靠重生成。
+        // 多选组：仅 ✓ 前 pending；形状/曲线先批量提升为单支组合。
         if selected >= 2 {
+            let refs: Vec<PendingShapeRef> = self
+                .editor_state
+                .shape_select
+                .selected_shapes()
+                .filter_map(|shape| shape.pending)
+                .collect();
+            if refs.len() != selected {
+                return false;
+            }
+            let all_composed = refs
+                .iter()
+                .all(|reference| matches!(reference, PendingShapeRef::Composed(_)));
+            let all_plain = refs.iter().all(|reference| {
+                matches!(
+                    reference,
+                    PendingShapeRef::Shape(_) | PendingShapeRef::CurvePath(_)
+                )
+            });
+            if all_plain {
+                let Some(indexes) = self.promote_pending_group_for_edit(&refs) else {
+                    return false;
+                };
+                self.shape_edit_armed = Some(ShapeEditTarget::Group);
+                self.shape_group_edit = Some(indexes);
+                self.grid_cache.clear();
+                return true;
+            }
+            if !all_composed {
+                return false;
+            }
             let mut indexes = Vec::new();
-            for shape in self.editor_state.shape_select.selected_shapes() {
-                let Some(PendingShapeRef::Composed(index)) = shape.pending else {
+            for reference in refs {
+                let PendingShapeRef::Composed(index) = reference else {
                     return false;
                 };
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
