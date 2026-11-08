@@ -98,8 +98,10 @@ impl Root {
             background: color32(palette.background.base.color),
             text: color32(palette.background.base.text),
             primary: color32(palette.primary.base.color),
+            primary_hover: color32(palette.primary.strong.color),
             primary_border: color32(palette.primary.weak.color),
             secondary: color32(palette.background.weak.color),
+            secondary_hover: color32(palette.background.strong.color),
             secondary_border: color32(palette.background.weaker.color),
         }
     }
@@ -327,6 +329,29 @@ impl Root {
                 ),
             },
             A::Confirm => Message::SettingsDialog(SettingsDialogAction::CloseDialog),
+        })
+    }
+
+    /// 保存确认对话框动作 → 生产 `Message`。
+    pub(crate) fn save_confirm_action_message(
+        &self,
+        action: &lumino_ui_egui::dialog::SaveConfirmAction,
+    ) -> Option<Message> {
+        use lumino_ui_egui::dialog::SaveConfirmAction as A;
+        Some(match action {
+            A::Save => Message::SaveConfirm(crate::message::SaveConfirmAction::Save),
+            A::Discard => Message::SaveConfirm(crate::message::SaveConfirmAction::Discard),
+            // 窗口关闭按钮等价于取消（不保存、继续编辑）。
+            A::Cancel | A::CloseWindow => {
+                Message::SaveConfirm(crate::message::SaveConfirmAction::Cancel)
+            }
+            A::DragWindow => crate::window::Event::drag(),
+            A::Minimize => {
+                crate::window::Event::traffic_action(&crate::window::TrafficAction::Minimize)
+            }
+            A::ToggleMaximize => {
+                crate::window::Event::traffic_action(&crate::window::TrafficAction::ToggleMaximize)
+            }
         })
     }
 }

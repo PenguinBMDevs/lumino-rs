@@ -163,10 +163,14 @@ pub struct DialogPalette {
     pub text: Color32,
     /// 主按钮底色（`primary.base`）。
     pub primary: Color32,
+    /// 主按钮悬停底色（`primary.strong`）。
+    pub primary_hover: Color32,
     /// 主按钮边框（`primary.weak`）。
     pub primary_border: Color32,
     /// 次按钮底色（`background.weak`）。
     pub secondary: Color32,
+    /// 次按钮悬停底色（`background.strong`）。
+    pub secondary_hover: Color32,
     /// 次按钮边框（`background.weaker`）。
     pub secondary_border: Color32,
 }
@@ -178,8 +182,10 @@ impl DialogPalette {
         background: Color32::from_rgb(0x24, 0x28, 0x3B),
         text: Color32::from_rgb(0xB6, 0xC4, 0xFA),
         primary: Color32::from_rgb(0x2A, 0xC3, 0xDE),
+        primary_hover: Color32::from_rgb(0x00, 0xA3, 0xBD),
         primary_border: Color32::from_rgb(0x28, 0x9D, 0xB4),
         secondary: Color32::from_rgb(0x39, 0x40, 0x63),
+        secondary_hover: Color32::from_rgb(0x44, 0x4D, 0x79),
         secondary_border: Color32::from_rgb(0x33, 0x39, 0x57),
     };
 }

@@ -407,6 +407,8 @@ impl Root {
 #[cfg(test)]
 mod right_sidebar_tests;
 #[cfg(test)]
+mod save_confirm_tests;
+#[cfg(test)]
 mod settings_audio_tests;
 #[cfg(test)]
 mod settings_cloud_tests;

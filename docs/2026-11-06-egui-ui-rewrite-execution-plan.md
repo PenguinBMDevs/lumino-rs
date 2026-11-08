@@ -795,12 +795,47 @@ callback / 多视口 / 截图能力。
     `mat-import.png`、`mat-user-ctx2.png`、`mat-rename.png`、
     `mat-renamed2.png`、`mat-drag-mid.png`、`mat-placing.png`。
 
-**Task 1.3（下一步）：保存确认动作 + 原生标题栏菜单 + 瀑布流面板**
+**Task 1.3（第十九步）：保存确认对话框按钮与标题栏动作 — 已完成**
+
+- `lumino-ui-egui/src/dialog.rs` 新增 `SaveConfirmAction`
+  （`Save / Discard / Cancel / DragWindow / Minimize / ToggleMaximize /
+  CloseWindow`）与独立动作通道；三个内容按钮（90×35、间距 10、水平居中）、
+  自制标题栏红绿灯、标题栏空白区按下拖动全部接通。`DialogPalette` 补
+  `primary_hover`（`primary.strong`）与 `secondary_hover`
+  （`background.strong`），悬停色与 iced 一致。
+- 生产侧 `save_confirm_action_message` 映射：`Save / Discard / Cancel` →
+  `Message::SaveConfirm(...)`；窗口关闭按钮等价于取消；`DragWindow` →
+  `window::Event::drag()`；最小化 / 最大化 → `TrafficAction`。
+- 输入独占：`dialog_input_exclusive()` 覆盖 `Settings | SaveConfirm`，
+  保存确认窗口的鼠标按键只给 egui，不再落到同窗口的 iced 按钮
+  （否则同一击会触发两次动作）。
+- **修复真实错位/裁切缺陷**：对话框窗口按内容测量为 169 逻辑高（内容区
+  139），原先固定的 `+126` 按钮顶边会越过窗口底边把三个按钮裁掉。现在
+  保持场景基线偏移不变，仅在会溢出时整体上移（底部保留 24px），
+  场景像素基线与 `compare_egui` 数字零变化。
+- 验收：
+  - `save_confirm_bands` 5/5：三个内容按钮、标题栏红绿灯、
+    标题栏拖动（且红绿灯不在拖动区）、原生标题栏模式无标题栏命中区；
+  - `egui_chrome` 32/32：七个动作到生产消息的映射（含关闭按钮 = Cancel）；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口（ppp=1.25）：改 BPM 置脏后关闭主窗口，保存确认窗口
+    424×211 物理（338.75×169 逻辑），提示与三个按钮完整可见；
+    点「取消」→ 日志 `egui 保存确认动作：Cancel`、对话框关闭、主窗口保留；
+    点「关闭」（Discard）→ 日志 `Discard` 且应用退出。
+  - 证据图：`target/sc-dlg1.png`、`sc-dlg2.png`、`sc-w4.png`、`sc-w5.png`。
+- 环境注意：反复 `Stop-Process` 会留下
+  `config/autosave/autosave.lmpj`，下次启动的原生「恢复自动保存」模态框
+  在本机会以隐藏窗口阻塞 UI 线程（表现为界面不响应）；删除该文件后恢复正常。
+  这是既有启动提示行为，与本步改动无关。
+
+**Task 1.3（下一步）：原生标题栏菜单 + 瀑布流面板 + 卷帘骨架**
 
 - 现状：设置 10/10 页、标题栏菜单、工具栏与弹层、悬浮工具条与五个面板、
-  左侧栏、右侧栏图标列 + I2M + 素材库、状态栏均已是 egui。
-- 下一步：给保存确认对话框建模按钮动作（不再依赖 iced let-through）；
-  处理系统原生标题栏模式下的 iced 菜单让位；钢琴瀑布流面板内容是
-  `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道拆分后再接管。
+  左侧栏、右侧栏图标列 + I2M + 素材库、状态栏、保存确认对话框均已是 egui。
+- 下一步：处理系统原生标题栏模式下的 iced 菜单让位（`has_iced_popup`）；
+  钢琴瀑布流面板内容是 `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道拆分后
+  再接管。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

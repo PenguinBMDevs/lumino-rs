@@ -207,6 +207,8 @@ impl Host {
             });
         // 设置对话框动作：菜单切换 / 表单变更 / 确认（独立 OS 窗口同样是叠加层宿主）。
         let settings_action = lumino_ui_egui::settings::take_action(&overlay.ctx);
+        // 保存确认对话框动作：三个按钮 + 标题栏红绿灯 / 拖动。
+        let dialog_action = lumino_ui_egui::dialog::take_action(&overlay.ctx);
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
         // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
         // 鼠标事件才出现。
@@ -219,6 +221,14 @@ impl Host {
         if let Some(index) = menu_action
             && let Some(message) = self.root.menu_action_message(index)
         {
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
+        if let Some(action) = dialog_action
+            && let Some(message) = self.root.save_confirm_action_message(&action)
+        {
+            tracing::info!("egui 保存确认动作：{action:?}");
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);
@@ -302,10 +312,10 @@ impl Host {
                 };
                 self.egui_input
                     .button(button, *state == winit::event::ElementState::Pressed);
-                // 设置窗口由 egui 整窗绘制：按键只给 egui，避免同一击同时触发
-                // 下层 iced 控件（例如云管理「添加连接」打开两个窗口）。
-                // 保存确认等其它对话框的按钮仍依赖 let-through，暂不消费。
-                self.settings_dialog_window() || self.egui_pointer_blocked()
+                // 设置 / 保存确认窗口由 egui 整窗绘制：按键只给 egui，避免同一击
+                // 同时触发下层 iced 控件（例如云管理「添加连接」打开两个窗口）。
+                // 其余对话框仍依赖 iced let-through，不消费。
+                self.dialog_input_exclusive() || self.egui_pointer_blocked()
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
@@ -342,12 +352,14 @@ impl Host {
         }
     }
 
-    /// 当前窗口是否为设置对话框（全部 10 页已由 egui 绘制，可整窗消费输入）。
-    fn settings_dialog_window(&self) -> bool {
+    /// 当前窗口是否为**整窗由 egui 绘制**的对话框（设置 / 保存确认），
+    /// 这类窗口必须消费鼠标按键，不能再落到 iced。
+    fn dialog_input_exclusive(&self) -> bool {
         self.root.state.is_dialog_window
             && matches!(
                 self.root.state.dialog_type,
                 crate::state::root_state::DialogType::Settings
+                    | crate::state::root_state::DialogType::SaveConfirm
             )
     }
 
