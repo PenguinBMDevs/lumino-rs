@@ -175,12 +175,18 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 工具栏 band：从左侧栏右边缘开始，铺满剩余宽度（生产 `row![sidebar,
-    // column![toolbar, ...]]`），不覆盖左侧栏。
+    // column![toolbar, ...]]`），不覆盖左侧栏。顶部偏移跟随标题栏 band：
+    // macOS 原生标题栏模式没有 30px 菜单栏行（iced 主内容直接从工具栏开始）。
     if let Some(toolbar) = &model.toolbar {
         let full = root.max_rect();
         let inset = toolbar.left_inset.max(0.0).min(full.width());
+        let top = if model.titlebar.is_some() {
+            full.top() + layout::TITLEBAR_H
+        } else {
+            full.top()
+        };
         let band = egui::Rect::from_min_size(
-            egui::pos2(full.left() + inset, full.top() + layout::TITLEBAR_H),
+            egui::pos2(full.left() + inset, top),
             egui::Vec2::new(full.width() - inset, layout::TOOLBAR_H),
         );
         if band.width() > 0.0 {
