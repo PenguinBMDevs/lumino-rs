@@ -19,6 +19,7 @@ use crate::message::SettingsDialogAction;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 
+mod history;
 mod project_settings;
 
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
@@ -147,6 +148,7 @@ impl Root {
             DialogType::ProjectSettings => Some(DialogModel::ProjectSettings(Box::new(
                 self.project_settings_model(),
             ))),
+            DialogType::History => Some(DialogModel::History(Box::new(self.history_model()))),
             _ => None,
         }
     }

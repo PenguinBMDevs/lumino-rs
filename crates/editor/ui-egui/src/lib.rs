@@ -15,6 +15,7 @@ pub mod capture;
 pub mod chrome;
 pub mod dialog;
 pub mod fonts;
+pub mod history;
 pub mod icons;
 pub mod layout;
 pub mod project_settings;

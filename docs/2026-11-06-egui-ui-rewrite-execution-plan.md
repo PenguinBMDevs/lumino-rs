@@ -1034,9 +1034,37 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/ps3-screen.png`、`ps2-dialog.png`、`ps2-scroll2.png`、
     `ps2-edit.png`、`ps-off-screen.png`（iced 对照）。
 
-**Task 1.3（下一步）：其余 iced-only 对话框迁移**
+**Task 1.3（第二十六步）：撤销历史对话框迁移到 egui — 已完成**
 
-- 现状：保存确认 / 设置 / 工程设置已是 egui；历史、导出进度、批量编辑、
-  变速、自定义精度、帮助、云管理等仍由 iced 绘制。
-- 下一步：按「历史 → 批量编辑 → 变速 / 自定义精度 → 导出进度」顺序迁移，
-  每个对话框沿用「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程。
+- **模型**：`HistoryModel`（`titlebar` / 标题 / 提示 / 行列表 / 计数 / 关闭文案）+
+  `HistoryRowModel { index, label, current, future }`；
+  `DialogModel::History(Box<...>)`。
+- **渲染**：`ui-egui/src/history.rs` 对齐生产：整窗 base 底 + 1px `strong` 边框
+  （圆角 8）、内边距 16、标题 18px、提示 12px、行高 32 + 间距 2；
+  当前行 `primary.weak` 底 +「▶」标记、未来步骤 `strong.text` 浅色、悬停 6% 白；
+  行文本左对齐（不是按钮居中）；底部「current / total」+ 主色「关闭」按钮；
+  列表 8px 实体滚动条。标题 / 提示 / 计数用 Label 进入可访问树。
+- **标题栏让位**：与工程设置一致——顶部 30px iced 自制标题栏（红绿灯 / 拖动）
+  仍由 iced 绘制，`dialog_input_exclusive` 对 History 在该区域内不消费点击。
+- **动作**：行点击 → `HistoryAction::Jump(index)`，关闭 → `Close` →
+  `Message::History(...)`（窗口 Root 设置 `DialogResult::HistoryJump/Cancel`）。
+- 验收：
+  - `history_bands` 2/2：行点击（含未来步骤与初始状态）回传正确下标、
+    关闭按钮回传 `Close`、计数与提示可访问；
+  - `egui_chrome` 38/38：模型镜像（行数 / 当前 / 未来 / 计数 / 标题栏标记）
+    与两个动作映射；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；`capture_iced` 18/18、
+    `capture_egui` 12/12，基线零改动；
+  - 真实窗口（ppp=1.25、Light）：工具栏时钟按钮打开「撤销历史」，顶部 iced
+    标题栏可见；标题 / 提示 /「▶ 初始状态」当前行高亮 / 计数 / 主色关闭按钮
+    与 iced 版本逐项一致；点「关闭」→ 日志 `egui 撤销历史动作：Close` 且
+    对话框关闭。
+  - 证据图：`target/hist3-dialog.png`、`hist2-dialog.png`（egui）、
+    `hist-off-dialog.png`（iced 对照）。
+
+**Task 1.3（下一步）：批量编辑 / 变速 / 自定义精度 / 导出进度对话框**
+
+- 现状：保存确认 / 设置 / 工程设置 / 撤销历史已是 egui；其余对话框仍由 iced 绘制。
+- 下一步：按「批量编辑 → 变速 → 自定义精度 → 导出进度」顺序迁移，
+  每个沿用「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程。

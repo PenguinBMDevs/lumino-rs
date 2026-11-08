@@ -244,6 +244,8 @@ impl Host {
         let dialog_action = lumino_ui_egui::dialog::take_action(&overlay.ctx);
         // 工程设置对话框：字段编辑 / 确定 / 取消。
         let project_action = lumino_ui_egui::project_settings::take_action(&overlay.ctx);
+        // 撤销历史：行跳转 / 关闭。
+        let history_action = lumino_ui_egui::history::take_action(&overlay.ctx);
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
         // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
         // 鼠标事件才出现。
@@ -272,6 +274,14 @@ impl Host {
             && let Some(message) = self.root.project_settings_action_message(&action)
         {
             tracing::info!("egui 工程设置动作：{action:?}");
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
+        if let Some(action) = history_action
+            && let Some(message) = self.root.history_action_message(&action)
+        {
+            tracing::info!("egui 撤销历史动作：{action:?}");
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);
@@ -404,9 +414,10 @@ impl Host {
         match self.root.state.dialog_type {
             crate::state::root_state::DialogType::Settings
             | crate::state::root_state::DialogType::SaveConfirm => true,
-            // 工程设置的顶部 30px 自制标题栏（红绿灯 / 拖动）仍由 iced 绘制：
-            // 该区域内的按键不消费，其余内容区只给 egui。
-            crate::state::root_state::DialogType::ProjectSettings => {
+            // 工程设置 / 撤销历史的顶部 30px 自制标题栏（红绿灯 / 拖动）仍由
+            // iced 绘制：该区域内的按键不消费，其余内容区只给 egui。
+            crate::state::root_state::DialogType::ProjectSettings
+            | crate::state::root_state::DialogType::History => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input
