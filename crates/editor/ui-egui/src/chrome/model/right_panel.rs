@@ -1,4 +1,4 @@
-//! 右侧栏面板内容模型（图片转 MIDI / 素材库）。
+//! 右侧栏面板内容模型（图片转 MIDI / 素材库 / 钢琴瀑布流）。
 //!
 //! 面板几何与生产一致：总宽 `panel_width` = 左侧 6px 拖拽手柄 + 内容区
 //! `panel_width - 6`，右侧是固定 48px 图标列。拖拽手柄**不**进入占用列表，
@@ -13,6 +13,28 @@ pub enum RightSidebarPanelModel {
     ImageToMidi(I2mPanelModel),
     /// 素材库。
     Materials(MaterialsPanelModel),
+    /// 钢琴瀑布流预览（内容是外部离屏纹理）。
+    PianoWaterfall(WaterfallPanelModel),
+}
+
+/// 钢琴瀑布流离屏纹理在桥接层的 egui 纹理 ID。
+///
+/// 宿主每帧把 `lumino-gfx` 渲染出的纹理视图注册到该 ID，模型只携带这个 ID；
+/// 面板关闭时宿主注销，egui 侧不会持有 wgpu 资源。
+pub const WATERFALL_TEXTURE_ID: egui::TextureId = egui::TextureId::User(0x4C55_4D49_4E46);
+
+/// 钢琴瀑布流面板。
+///
+/// 瀑布流内容由 `lumino-gfx` 侧离屏渲染成 wgpu 纹理，宿主把它注册成 egui
+/// 外部纹理后由本模型引用：`texture = None` 表示纹理尚未就绪（显示占位文案）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WaterfallPanelModel {
+    /// 面板标题（「钢琴瀑布流预览」）。
+    pub title: String,
+    /// 纹理未就绪时的占位文案。
+    pub empty_hint: String,
+    /// 已注册的 egui 外部纹理。
+    pub texture: Option<egui::TextureId>,
 }
 
 /// 图片转 MIDI 面板。

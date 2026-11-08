@@ -12,6 +12,7 @@ use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::chrome::{
     self, ChromeModel, I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel,
     RightSidebarModel, RightSidebarPanelKind, RightSidebarPanelModel, StatusbarModel,
+    WaterfallPanelModel,
 };
 
 fn statusbar() -> StatusbarModel {
@@ -225,4 +226,59 @@ fn convert_button_only_when_file_selected() {
         actions.borrow().last(),
         Some(&RightSidebarAction::ConvertClicked)
     );
+}
+
+// ── 钢琴瀑布流面板（外部离屏纹理）─────────────────────────────────────
+
+fn waterfall_chrome(texture: Option<egui::TextureId>) -> ChromeModel {
+    ChromeModel {
+        right_sidebar: Some(RightSidebarModel {
+            panel_visible: true,
+            panel_width: 200.0,
+            active: Some(RightSidebarPanelKind::PianoWaterfall),
+            top_inset: 102.0,
+            resizing: false,
+            content: Some(RightSidebarPanelModel::PianoWaterfall(
+                WaterfallPanelModel {
+                    title: "钢琴瀑布流预览".to_owned(),
+                    empty_hint: "（键盘渲染中或面板不可见）".to_owned(),
+                    texture,
+                },
+            )),
+        }),
+        statusbar: statusbar(),
+        ..ChromeModel::default()
+    }
+}
+
+/// 面板几何与 I2M / 素材库一致：内容区整块占用，6px 手柄留给 iced。
+#[test]
+fn waterfall_panel_band_blocks_content_and_keeps_handle() {
+    let (harness, actions) = harness(waterfall_chrome(None));
+    let rect =
+        lumino_ui_egui::chrome::right_panel::panel_rect(&harness.ctx).expect("应记录面板内容矩形");
+    assert!((rect.width() - 194.0).abs() < 0.5, "内容宽度 {rect:?}");
+    assert!((rect.top() - 102.0).abs() < 0.5, "顶边 {rect:?}");
+
+    let blocked = chrome::menu::take_blocked(&harness.ctx);
+    assert!(blocked.contains(&rect), "内容区必须进入占用列表");
+    let handle = egui::pos2(rect.left() - 3.0, rect.center().y);
+    assert!(
+        !blocked.iter().any(|block| block.contains(handle)),
+        "拖拽手柄必须留给 iced"
+    );
+    assert!(actions.borrow().is_empty(), "面板本身不应产生动作");
+}
+
+/// 带外部纹理 ID 时同样只占内容区，且不会触发任何回传动作。
+#[test]
+fn waterfall_panel_accepts_external_texture() {
+    let (mut harness, actions) = harness(waterfall_chrome(Some(egui::TextureId::User(0x4C55))));
+    let rect =
+        lumino_ui_egui::chrome::right_panel::panel_rect(&harness.ctx).expect("应记录面板内容矩形");
+    // 点内容区中心：只被 egui 吃掉，没有动作。
+    click(&mut harness, rect.center());
+    assert!(actions.borrow().is_empty(), "瀑布流面板没有可回传动作");
+    let blocked = chrome::menu::take_blocked(&harness.ctx);
+    assert!(blocked.contains(&rect));
 }

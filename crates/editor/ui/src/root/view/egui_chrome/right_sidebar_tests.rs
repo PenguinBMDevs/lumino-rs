@@ -80,7 +80,7 @@ fn i2m_model_mirrors_config_and_selection() {
     assert!(!convert.enabled);
     assert_ne!(convert.label, idle_label, "转换中应改文案");
 
-    // 素材库也已接管；瀑布流（gfx 纹理）仍由 iced 绘制。
+    // 素材库与钢琴瀑布流也已接管；瀑布流内容是外部离屏纹理。
     root.right_sidebar.active_panel = RightSidebarPanel::Materials;
     let model = root.egui_chrome_model();
     let right = model.right_sidebar.expect("右侧栏");
@@ -91,7 +91,13 @@ fn i2m_model_mirrors_config_and_selection() {
     root.right_sidebar.active_panel = RightSidebarPanel::PianoWaterfall;
     let model = root.egui_chrome_model();
     let right = model.right_sidebar.expect("右侧栏");
-    assert!(right.content.is_none(), "瀑布流内容仍由 iced 绘制");
+    assert!(
+        matches!(
+            right.content,
+            Some(RightSidebarPanelModel::PianoWaterfall(_))
+        ),
+        "瀑布流面板骨架/内容也应由 egui 接管"
+    );
 }
 
 #[test]
@@ -299,4 +305,28 @@ fn materials_actions_map_to_messages() {
         &items[1],
         Message::RightSidebar(SidebarAction::MaterialContextMenuOpened(2))
     ));
+}
+
+#[test]
+fn waterfall_panel_model_carries_title_and_texture_state() {
+    let mut root = root();
+    root.right_sidebar.panel_visible = true;
+    root.right_sidebar.active_panel = RightSidebarPanel::PianoWaterfall;
+
+    let model = root.egui_chrome_model();
+    let right = model.right_sidebar.expect("右侧栏应可见");
+    assert_eq!(
+        right.active,
+        Some(RightSidebarPanelKind::PianoWaterfall),
+        "激活图标应指向钢琴瀑布流"
+    );
+    let Some(RightSidebarPanelModel::PianoWaterfall(panel)) = right.content else {
+        panic!("钢琴瀑布流面板应由 egui 接管（内容是外部离屏纹理）");
+    };
+    assert_eq!(panel.title, "钢琴瀑布流预览");
+    assert!(!panel.empty_hint.is_empty(), "纹理未就绪时要有占位文案");
+    assert!(
+        panel.texture.is_none(),
+        "无头测试没有 gfx 纹理，模型不得凭空携带纹理 ID"
+    );
 }

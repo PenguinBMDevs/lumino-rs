@@ -20,7 +20,7 @@ pub use model::{
     MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind, ShapePanelModel,
     TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
     ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
-    UiPageModel, UiRow,
+    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };
 pub use model::{
     ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, MenuBarModel,

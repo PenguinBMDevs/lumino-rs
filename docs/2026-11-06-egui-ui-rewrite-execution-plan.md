@@ -901,12 +901,43 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/theme-after2.png`、`theme-before.png`、`iced-light.png`、
     `light4-settings.png`、`light5-savedlg.png`、`light3-filemenu-v.png`。
 
-**Task 1.3（下一步）：瀑布流面板 + 卷帘骨架**
+**Task 1.3（第二十二步）：钢琴瀑布流面板接入 egui（gfx 纹理通道拆分）— 已完成**
 
-- 现状：设置 10/10 页、标题栏菜单（自绘 + 系统原生两种模式）、工具栏与弹层、
-  悬浮工具条与五个面板、左侧栏、右侧栏图标列 + I2M + 素材库、状态栏、
-  保存确认对话框均已是 egui；外壳配色已跟随 iced 主题。
-- 下一步：钢琴瀑布流面板内容是 `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道
-  拆分后再接管。
-- 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
-  `LUMINO_EGUI_PIANOROLL`。
+- **桥接层外部纹理**：`lumino-egui-bridge` 的 `Painter` 新增
+  `set_external_texture / clear_external_texture`，按 `Arc<TextureView>` 指针
+  识别同一张纹理（重复注册空操作、离屏纹理重建自动换绑）；egui 图元采样时
+  先查自身上传纹理，再查外部纹理。`painter.rs` 拆成
+  `painter.rs` / `painter/texture.rs` / `painter/scissor.rs`（< 400 行）。
+- **模型**：`RightSidebarPanelModel::PianoWaterfall(WaterfallPanelModel)`
+  （标题 / 占位文案 / `Option<egui::TextureId>`）+
+  `WATERFALL_TEXTURE_ID` 常量；渲染在 `right_panel/waterfall.rs`：
+  标题 14px、间距 8、内容区 1:1 铺满（与 iced 同几何），纹理未就绪时
+  居中显示 11px 占位文案。
+- **生产接线**：`egui_chrome/right_sidebar.rs` 为 PianoWaterfall 返回内容
+  模型（纹理就绪时带 ID）；`render_egui_overlay` 每帧把
+  `right_sidebar.piano_waterfall.waterfall_view`（`lumino-gfx` 离屏渲染产物）
+  注册到桥接层，面板关闭即注销。
+- **消除二次采样**：叠加层启用时 iced `piano_waterfall::panel` 只返回同宽同高
+  占位（保留布局、不建 shader 图元），同一张离屏纹理只被 egui 采样一次。
+- 验收：
+  - `egui-bridge` 6/6：新增「外部纹理颜色往返」「视图换绑后采样新纹理」，
+    真实 GPU + 回读，色差 ≤1；
+  - `right_sidebar_bands` 7/7：瀑布流面板几何（内容宽 194、顶边 102）、
+    内容区整块占用、6px 手柄留给 iced、带外部纹理 ID 时点击不产生动作；
+  - `egui_chrome` 34/34：瀑布流面板返回内容模型（标题 / 占位文案 / 无纹理
+    时不携带 ID），素材库与瀑布流均不再是 `None`；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，基线零改动；
+  - 真实窗口（ppp=1.25、Light）：点右侧栏第三个图标打开「钢琴瀑布流预览」，
+    标题与底部键盘可见；与关闭叠加层时的 iced 渲染逐像素对照，键盘条位置、
+    黑键分布、面板宽度一致（仅字体/工具提示差异），无重影。
+  - 证据图：`target/wf2-panel.png`、`wf2-keyboard.png`（egui）、
+    `wf-panel-iced.png`、`wf-iced-keyboard.png`（iced 对照）。
+
+**Task 1.3（下一步）：卷帘骨架接管（`LUMINO_EGUI_PIANOROLL`）**
+
+- 现状：右侧栏三个面板（I2M / 素材库 / 钢琴瀑布流）全部由 egui 绘制，
+  瀑布流内容经桥接层直接采样 `lumino-gfx` 离屏纹理。
+- 下一步：让 `lumino-gfx` 的卷帘通道停止绘制键盘 / 标尺 / 网格（保留音符），
+  把该区域交给 egui 骨架，再打开 `LUMINO_EGUI_PIANOROLL` 并在真实窗口逐区对照。

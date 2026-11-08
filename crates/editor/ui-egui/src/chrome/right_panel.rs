@@ -17,6 +17,7 @@ use crate::icons::IconCache;
 mod hits;
 mod i2m;
 mod materials;
+mod waterfall;
 mod widgets;
 
 pub use hits::{button_rect, clear_panel_rect, field_rect, panel_rect, rect};
@@ -95,6 +96,7 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, panel: &RightSidebarPanelModel, icons
     match panel {
         RightSidebarPanelModel::ImageToMidi(model) => i2m::show(ui, rect, model),
         RightSidebarPanelModel::Materials(model) => materials::show(ui, rect, model, icons),
+        RightSidebarPanelModel::PianoWaterfall(model) => waterfall::show(ui, rect, model),
     }
     // 内容区整块占用：点击 / 滚轮只给 egui。拖拽手柄（内容区左侧 6px）不在
     // 本矩形内，iced 仍能收到缩放拖拽。

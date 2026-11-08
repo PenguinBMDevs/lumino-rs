@@ -1,16 +1,17 @@
 //! 右侧栏面板内容：模型镜像与动作翻译。
 //!
-//! 当前接管「图片转 MIDI」：参数文本缓冲与调色板下标全部来自生产
-//! `RightSidebar.config`，动作原样回传 `Message::RightSidebar(...)`。
-//! 素材库（拖拽出到卷帘）与钢琴瀑布流（gfx 纹理）仍由 iced 绘制，
-//! 因此 `content` 只为 I2M 返回 `Some`。
+//! 当前接管「图片转 MIDI」「素材库」「钢琴瀑布流」：参数文本缓冲与调色板下标
+//! 全部来自生产 `RightSidebar.config`，动作原样回传 `Message::RightSidebar(...)`。
+//! 钢琴瀑布流的内容是 `lumino-gfx` 离屏纹理，宿主注册成 egui 外部纹理后由
+//! `RightSidebarPanelModel::PianoWaterfall` 引用。
 
-use lumino_core::tr;
+use lumino_core::{tr, trf};
+use lumino_extras::i18n::main_translations;
 use lumino_message::{I2mConfigField, RightSidebarAction as SidebarAction};
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction as PanelAction;
 use lumino_ui_egui::chrome::{
     I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, RightSidebarModel,
-    RightSidebarPanelKind, RightSidebarPanelModel,
+    RightSidebarPanelKind, RightSidebarPanelModel, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };
 use lumino_ui_egui::layout;
 
@@ -71,7 +72,24 @@ pub(super) fn content(root: &Root) -> Option<RightSidebarPanelModel> {
         RightSidebarPanel::Materials => {
             Some(RightSidebarPanelModel::Materials(materials::model(root)))
         }
-        RightSidebarPanel::PianoWaterfall => None,
+        RightSidebarPanel::PianoWaterfall => Some(RightSidebarPanelModel::PianoWaterfall(
+            waterfall_model(root),
+        )),
+    }
+}
+
+/// 钢琴瀑布流面板模型：标题 / 占位文案 / 离屏纹理（已注册时才有 ID）。
+fn waterfall_model(root: &Root) -> WaterfallPanelModel {
+    let language = root.settings.display.language;
+    let t = main_translations(language);
+    let state = &root.right_sidebar.piano_waterfall;
+    WaterfallPanelModel {
+        title: trf!("{name}预览", name = t.piano_waterfall),
+        empty_hint: tr!("（键盘渲染中或面板不可见）").to_string(),
+        texture: state
+            .waterfall_view
+            .is_some()
+            .then_some(WATERFALL_TEXTURE_ID),
     }
 }
 

@@ -56,6 +56,25 @@ pub(super) fn panel<'a>(
     language: Language,
     _window: &'a window::Window,
 ) -> Element<'a> {
+    // 叠加层接管时：瀑布流内容由 egui 用同一张离屏纹理绘制（宿主把它注册成
+    // egui 外部纹理），iced 只保留同宽同高占位，避免同一纹理被采样两次。
+    if crate::host::overlay_enabled() {
+        return container(
+            iced_widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .width(Length::Fixed(
+            right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
+        ))
+        .height(Length::Fill)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style::default().background(palette.background.weakest.color)
+        })
+        .into();
+    }
+
     let t = main_translations(language);
     let state = &right_sidebar.piano_waterfall;
 

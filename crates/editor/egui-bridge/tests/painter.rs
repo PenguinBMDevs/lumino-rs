@@ -349,3 +349,148 @@ fn egui_text_upload_uses_font_atlas() {
         .count();
     assert!(bright > 10, "文字未渲染：亮色像素只有 {bright} 个");
 }
+
+// ── 外部纹理（离屏渲染产物）────────────────────────────────────────────
+
+/// 带 UV 的贴图四边形（顶点色白，颜色完全来自外部纹理）。
+fn textured_quad(id: TextureId) -> ClippedPrimitive {
+    use egui::epaint::Vertex;
+
+    let mut mesh = Mesh {
+        texture_id: id,
+        ..Default::default()
+    };
+    let corners = [
+        (Pos2::new(0.0, 0.0), Pos2::new(0.0, 0.0)),
+        (Pos2::new(WIDTH as f32, 0.0), Pos2::new(1.0, 0.0)),
+        (Pos2::new(WIDTH as f32, HEIGHT as f32), Pos2::new(1.0, 1.0)),
+        (Pos2::new(0.0, HEIGHT as f32), Pos2::new(0.0, 1.0)),
+    ];
+    for (pos, uv) in corners {
+        mesh.vertices.push(Vertex {
+            pos,
+            uv,
+            color: Color32::WHITE,
+        });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ClippedPrimitive {
+        clip_rect: Rect::from_min_size(Pos2::ZERO, egui::vec2(WIDTH as f32, HEIGHT as f32)),
+        primitive: Primitive::Mesh(mesh),
+    }
+}
+
+/// 创建一张用纯色清屏的离屏纹理，返回视图（与瀑布流渲染产物同口径）。
+fn offscreen_view(color: Color32) -> std::sync::Arc<wgpu::TextureView> {
+    let (_, device, queue) = gpu();
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("egui_bridge_test_offscreen"),
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = std::sync::Arc::new(texture.create_view(&wgpu::TextureViewDescriptor::default()));
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("egui_bridge_test_offscreen_encoder"),
+    });
+    clear(
+        &mut encoder,
+        &view,
+        wgpu::Color {
+            r: f64::from(color.r()) / 255.0,
+            g: f64::from(color.g()) / 255.0,
+            b: f64::from(color.b()) / 255.0,
+            a: f64::from(color.a()) / 255.0,
+        },
+    );
+    queue.submit(Some(encoder.finish()));
+    view
+}
+
+/// 用给定外部视图渲染一整屏贴图四边形并回读。
+fn render_external(view: &std::sync::Arc<wgpu::TextureView>) -> Vec<Color32> {
+    const ID: TextureId = TextureId::User(0xE1);
+    let (_, device, queue) = gpu();
+    let mut painter = Painter::new(device, FORMAT);
+    painter.set_external_texture(device, ID, view);
+
+    let target = create_target(device, FORMAT);
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("egui_bridge_test_external_encoder"),
+    });
+    clear(&mut encoder, &target_view, wgpu::Color::BLACK);
+    let drawn = painter.render(
+        device,
+        queue,
+        &mut encoder,
+        &target_view,
+        Screen {
+            size_px: [WIDTH, HEIGHT],
+            pixels_per_point: 1.0,
+        },
+        &[textured_quad(ID)],
+    );
+    assert_eq!(drawn, 1, "外部纹理四边形应被提交绘制");
+    queue.submit(Some(encoder.finish()));
+    readback(device, queue, &target, FORMAT)
+}
+
+#[test]
+fn external_texture_roundtrips_offscreen_color() {
+    let color = Color32::from_rgb(0xF7, 0x76, 0x8E);
+    let pixels = render_external(&offscreen_view(color));
+    assert_channel_close(pixel(&pixels, 32, 32), color, 1, "外部纹理中心");
+    assert_channel_close(pixel(&pixels, 0, 0), color, 1, "外部纹理左上");
+}
+
+#[test]
+fn external_texture_rebinds_when_view_changes() {
+    const ID: TextureId = TextureId::User(0xE2);
+    let (_, device, queue) = gpu();
+    let mut painter = Painter::new(device, FORMAT);
+
+    let first = offscreen_view(Color32::from_rgb(0x2A, 0xC3, 0xDE));
+    let second = offscreen_view(Color32::from_rgb(0x9E, 0xCE, 0x6A));
+    painter.set_external_texture(device, ID, &first);
+    // 同一指针重复注册是空操作，不得重建。
+    painter.set_external_texture(device, ID, &first);
+    // 新视图（离屏纹理重建）必须换绑。
+    painter.set_external_texture(device, ID, &second);
+
+    let target = create_target(device, FORMAT);
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("egui_bridge_test_rebind_encoder"),
+    });
+    clear(&mut encoder, &target_view, wgpu::Color::BLACK);
+    painter.render(
+        device,
+        queue,
+        &mut encoder,
+        &target_view,
+        Screen {
+            size_px: [WIDTH, HEIGHT],
+            pixels_per_point: 1.0,
+        },
+        &[textured_quad(ID)],
+    );
+    queue.submit(Some(encoder.finish()));
+
+    let pixels = readback(device, queue, &target, FORMAT);
+    assert_channel_close(
+        pixel(&pixels, 32, 32),
+        Color32::from_rgb(0x9E, 0xCE, 0x6A),
+        1,
+        "换绑后的新视图",
+    );
+}

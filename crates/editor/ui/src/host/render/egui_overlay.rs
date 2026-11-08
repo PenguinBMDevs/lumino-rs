@@ -53,6 +53,8 @@ struct OverlayFrame<'a> {
     model: &'a ChromeModel,
     /// 本帧色板（跟随窗口主题）。
     palette: lumino_ui_egui::theme::Palette,
+    /// 钢琴瀑布流离屏纹理（面板可见且已渲染时才注册）。
+    waterfall: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -92,6 +94,19 @@ impl EguiOverlay {
 
         // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
         lumino_ui_egui::theme::set_palette(frame.palette);
+
+        // 钢琴瀑布流：把 lumino-gfx 的离屏纹理注册成 egui 外部纹理。
+        // 面板关闭 / 纹理未就绪时注销，避免 egui 引用已释放的视图。
+        match &frame.waterfall {
+            Some(view) => self.painter.set_external_texture(
+                frame.device,
+                lumino_ui_egui::chrome::WATERFALL_TEXTURE_ID,
+                view,
+            ),
+            None => self
+                .painter
+                .clear_external_texture(lumino_ui_egui::chrome::WATERFALL_TEXTURE_ID),
+        }
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
         // 再由着色器放大会发虚（几何位置不变，但字形明显更糊）。
@@ -187,6 +202,16 @@ impl Host {
         let logical_width = size.width as f32 / pixels_per_point;
         let model = self.root.egui_chrome_model_for(logical_width);
         let palette = self.root.egui_palette();
+        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（iced 侧同位置
+        // 只保留占位，不会二次采样同一张纹理）。
+        let waterfall = {
+            let sidebar = &self.root.right_sidebar;
+            (sidebar.panel_visible
+                && sidebar.active_panel == crate::right_sidebar::RightSidebarPanel::PianoWaterfall
+                && self.root.right_sidebar_visible())
+            .then(|| sidebar.piano_waterfall.waterfall_view.clone())
+            .flatten()
+        };
         // 取走本帧累积的指针 / 滚轮 / 修饰键 / 焦点事件。
         let events = self.egui_input.take();
         let focused = self.egui_input.focused();
@@ -209,6 +234,7 @@ impl Host {
                 app_frame,
                 model: &model,
                 palette,
+                waterfall,
                 events,
                 focused,
             });
