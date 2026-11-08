@@ -25,10 +25,11 @@ pub use model::{
 pub use model::{
     ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, MenuBarModel,
     MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel,
-    OverflowMenuModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
-    StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    OverflowMenuModel, ProjectNoteCountModel, ProjectSettingsModel, RightSidebarModel,
+    RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels, SettingsPageModel,
+    SettingsPalette, SettingsSnapshot, ShortcutsPageModel, SidebarGroup, SidebarModel,
+    SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, StatusbarModel, TitlebarModel,
+    ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -155,6 +156,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 };
                 crate::settings::show_with(&mut root, &mut state, &values.palette);
                 *icons = state.icons;
+            }
+            DialogModel::ProjectSettings(model) => {
+                crate::project_settings::show(&mut root, model);
             }
         }
         return;

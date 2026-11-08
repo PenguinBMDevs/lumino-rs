@@ -242,6 +242,8 @@ impl Host {
         let settings_action = lumino_ui_egui::settings::take_action(&overlay.ctx);
         // 保存确认对话框动作：三个按钮 + 标题栏红绿灯 / 拖动。
         let dialog_action = lumino_ui_egui::dialog::take_action(&overlay.ctx);
+        // 工程设置对话框：字段编辑 / 确定 / 取消。
+        let project_action = lumino_ui_egui::project_settings::take_action(&overlay.ctx);
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
         // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
         // 鼠标事件才出现。
@@ -262,6 +264,14 @@ impl Host {
             && let Some(message) = self.root.save_confirm_action_message(&action)
         {
             tracing::info!("egui 保存确认动作：{action:?}");
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
+        if let Some(action) = project_action
+            && let Some(message) = self.root.project_settings_action_message(&action)
+        {
+            tracing::info!("egui 工程设置动作：{action:?}");
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);
@@ -388,12 +398,23 @@ impl Host {
     /// 当前窗口是否为**整窗由 egui 绘制**的对话框（设置 / 保存确认），
     /// 这类窗口必须消费鼠标按键，不能再落到 iced。
     fn dialog_input_exclusive(&self) -> bool {
-        self.root.state.is_dialog_window
-            && matches!(
-                self.root.state.dialog_type,
-                crate::state::root_state::DialogType::Settings
-                    | crate::state::root_state::DialogType::SaveConfirm
-            )
+        if !self.root.state.is_dialog_window {
+            return false;
+        }
+        match self.root.state.dialog_type {
+            crate::state::root_state::DialogType::Settings
+            | crate::state::root_state::DialogType::SaveConfirm => true,
+            // 工程设置的顶部 30px 自制标题栏（红绿灯 / 拖动）仍由 iced 绘制：
+            // 该区域内的按键不消费，其余内容区只给 egui。
+            crate::state::root_state::DialogType::ProjectSettings => {
+                self.root.settings.synth.use_native_titlebar
+                    || self
+                        .egui_input
+                        .pointer
+                        .is_none_or(|pos| pos.y >= lumino_ui_egui::layout::TITLEBAR_H)
+            }
+            _ => false,
+        }
     }
 
     /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。

@@ -53,6 +53,59 @@ pub enum DialogModel {
     ///
     /// 装箱：`SettingsSnapshot` 含全部文案与调色板，比确认对话框大一个数量级。
     Settings(Box<SettingsSnapshot>),
+    /// 工程设置（`DialogType::ProjectSettings`，系统原生标题栏，整窗内容）。
+    ProjectSettings(Box<ProjectSettingsModel>),
+}
+
+/// 工程设置对话框：全部文案与只读值由生产侧预计算。
+#[derive(Debug, Clone, Default)]
+pub struct ProjectSettingsModel {
+    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时 iced 绘制）。
+    ///
+    /// egui 只接管标题栏以下的内容区；标题栏（红绿灯 / 拖动）仍由 iced 绘制，
+    /// 避免遮掉窗口控制按钮。
+    pub titlebar: bool,
+    /// 窗口标题「工程信息设置」。
+    pub title: String,
+    /// 项目名称标签 / 值 / 空值占位。
+    pub name_label: String,
+    pub name: String,
+    pub name_hint: String,
+    /// BPM 标签 / 值（输入框右侧固定「BPM」单位）。
+    pub bpm_label: String,
+    pub bpm: String,
+    /// 版权信息标签 / 值 / 占位。
+    pub copyright_label: String,
+    pub copyright: String,
+    pub copyright_hint: String,
+    /// 作者标签 / 值 / 占位。
+    pub author_label: String,
+    pub author: String,
+    pub author_hint: String,
+    /// 拍号标签 / 分子 / 分母。
+    pub time_signature_label: String,
+    pub numerator: String,
+    pub denominator: String,
+    /// 创建日期标签 / 值。
+    pub created_label: String,
+    pub created: String,
+    /// 累计创作时间标签 / 值。
+    pub editing_time_label: String,
+    pub editing_time: String,
+    /// 音符总量（仅 `NoteCountDisplay::ProjectSettings` 时出现）。
+    pub note_count: Option<ProjectNoteCountModel>,
+    /// 按钮文案。
+    pub ok: String,
+    pub cancel: String,
+}
+
+/// 工程设置里的「音符总量」只读行。
+#[derive(Debug, Clone, Default)]
+pub struct ProjectNoteCountModel {
+    /// 标签（「音符总量」）。
+    pub label: String,
+    /// 已格式化的数值（千位分隔）。
+    pub value: String,
 }
 
 /// 设置对话框调色板：由生产 iced `extended_palette` 映射。

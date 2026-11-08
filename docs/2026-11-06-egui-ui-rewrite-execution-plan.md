@@ -999,9 +999,44 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/light-final.png`、`dark-on2.png`、`dark-on2-keys.png`、
     `dark-off.png`、`dark-off-keys.png`。
 
-**Task 1.3（下一步）：剩余对话框迁移（工程设置 / 导出 / 历史 …）**
+**Task 1.3（第二十五步）：工程设置对话框迁移到 egui — 已完成**
 
-- 现状：主窗口外壳、右侧栏三面板、保存确认与设置对话框已是 egui；
-  卷帘骨架默认接管，gfx 只画网格线 / 音符 / 洋葱皮。
-- 下一步：把 `ProjectSettings` 等 iced-only 对话框迁到 egui（动作通道 + 无头
-  band 测试 + 真实窗口），逐步删除 iced 对话框与 `lumino-ui` 中的 iced 依赖。
+- **模型**：`ProjectSettingsModel`（标题 / 六个输入字段与占位 / 只读创建日期与
+  累计创作时间 / 可选的音符总量行 / 按钮文案 / `titlebar` 标记），
+  `DialogModel::ProjectSettings(Box<...>)`。
+- **渲染**：`ui-egui/src/project_settings.rs` 整窗绘制内容：24px 内边距、标题
+  18px、标签与只读值 14px、输入框 `background.base` 底 + 1px `strong` 边框、
+  圆角 4、BPM 行带单位、拍号 60 宽双输入、底部取消 / 确定（100×34、
+  间距 12），表单在 8px 实体滚动条内滚动（与生产 `scrollable(form)` 一致）。
+- **关键修复（UI 元素不被削减）**：工程设置窗口是非原生标题栏模式下的
+  **自制 iced 标题栏**（30px，含最小化/最大化/关闭与拖动）。egui 只接管
+  标题栏以下的内容区：顶部 30px 继续由 iced 绘制，`dialog_input_exclusive`
+  对 ProjectSettings 在该区域内不消费点击（红绿灯 / 拖动仍可用）。
+- **动作通道**：`NameChanged / TempoChanged / CopyrightChanged / AuthorChanged /
+  NumeratorChanged / DenominatorChanged / Confirm / Cancel` →
+  `Message::ProjectSettings(...)`（取消 = `CloseDialog`），在
+  `egui_overlay` 里统一处理；输入合法性仍由生产侧校验。
+- 代码组织：`egui_chrome/dialogs.rs` 拆出 `dialogs/project_settings.rs`
+  （模型装配 + 动作映射），两个文件分别 340 / 79 行。
+- 验收：
+  - `project_settings_bands` 3/3：确定 / 取消按钮、名称输入回传新文本、
+    只读行与全部标签进入可访问树；
+  - `egui_chrome` 36/36：模型镜像（字段 / 拍号 / 创建日期空值→「未知」/
+    音符总量两位置互斥 / 标题栏标记）与八个动作映射；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；`capture_iced` 18/18、
+    `capture_egui` 12/12，基线零改动；
+  - 真实窗口（ppp=1.25、Light）：工程设置对话框顶部 iced 自制标题栏完整可见，
+    内容区布局与 iced 版本一致（输入框白底细边框、BPM 单位、拍号 60 宽、
+    按钮在底部）；BPM 改为 96 → 日志 `egui 工程设置动作：TempoChanged("96")`，
+    点「确定」→ `Confirm` + `应用工程设置 ... BPM=96` 且对话框关闭；
+    点标题栏「×」可正常关闭（iced 标题栏未被遮挡）。
+  - 证据图：`target/ps3-screen.png`、`ps2-dialog.png`、`ps2-scroll2.png`、
+    `ps2-edit.png`、`ps-off-screen.png`（iced 对照）。
+
+**Task 1.3（下一步）：其余 iced-only 对话框迁移**
+
+- 现状：保存确认 / 设置 / 工程设置已是 egui；历史、导出进度、批量编辑、
+  变速、自定义精度、帮助、云管理等仍由 iced 绘制。
+- 下一步：按「历史 → 批量编辑 → 变速 / 自定义精度 → 导出进度」顺序迁移，
+  每个对话框沿用「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程。

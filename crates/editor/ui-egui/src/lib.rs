@@ -17,6 +17,7 @@ pub mod dialog;
 pub mod fonts;
 pub mod icons;
 pub mod layout;
+pub mod project_settings;
 pub mod scene;
 pub mod settings;
 pub mod theme;

@@ -410,6 +410,8 @@ impl Root {
 }
 
 #[cfg(test)]
+mod project_settings_tests;
+#[cfg(test)]
 mod right_sidebar_tests;
 #[cfg(test)]
 mod save_confirm_tests;

@@ -19,6 +19,8 @@ use crate::message::SettingsDialogAction;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 
+mod project_settings;
+
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
 fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
     let t = lumino_extras::i18n::settings_translations(language);
@@ -142,6 +144,9 @@ impl Root {
                     page,
                 })))
             }
+            DialogType::ProjectSettings => Some(DialogModel::ProjectSettings(Box::new(
+                self.project_settings_model(),
+            ))),
             _ => None,
         }
     }
