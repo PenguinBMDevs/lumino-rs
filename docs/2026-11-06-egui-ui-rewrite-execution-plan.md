@@ -1108,9 +1108,49 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/be-egui4.png`、`be-egui-edit.png`（egui，对话框窗口截图）、
     `be-off-dialog.png`（iced 对照）。
 
-**Task 1.3（下一步）：变速 / 自定义精度 / 导出进度对话框**
+**Task 1.3（第二十八步）：变速对话框迁移到 egui — 已完成**
 
-- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑已是 egui；
+- **模型**：`SpeedChangeModel`（`titlebar` / 标题 / 倍率标签与占位 / 当前倍率 /
+  提示 / 按钮）+ `DialogModel::SpeedChange(Box<...>)`。
+- **渲染**：`ui-egui/src/speed_change.rs` 对齐生产：
+  - 各区块按**固定纵向偏移**摆放（标题 0 / 倍率行 50 / 提示 96 / 按钮 145）——
+    iced 的 `column.spacing(4)` 会叠加到每个 `space()` 上，等价于
+    「title → 24 → row → 12 → hint → 24 → buttons」；egui 行高不同，
+    用显式偏移才能得到同一套盒子位置；
+  - 输入框 120×33、手绘外框（`base` 底 + 1px `strong` 边框、圆角 4）——
+    `Frame` 会被 `TextEdit` 行高撑高（实测比生产高 5px），因此固定盒子 +
+    内缩子 `Ui` 放文本；
+  - 按钮 34 高、宽度 = 文本宽 + 48（生产 `padding([8,24])`）、间距 12。
+- **真实窗口暴露并修复的三处偏差**：
+  - 输入框底色原用 `background.weak`；生产 `text_input` 自身再画 base 底，
+    实测可见底色是 **base**（白），已改正；
+  - 输入框高度被 `TextEdit` 行高撑到 47 物理像素（生产 41），改手绘固定盒；
+  - 提示文案原用 `text_muted`（#383838），生产 `strong.text` 实测最深像素为
+    纯黑，改用正文色。
+- **标题栏让位**：与其余对话框一致，顶部 30px iced 自制标题栏（红绿灯 / 拖动）
+  仍由 iced 绘制，`dialog_input_exclusive` 对 SpeedChange 在该区域不消费点击。
+- **动作**：`FactorChanged(text)` / `Confirm` / `Cancel` →
+  `Message::SpeedChange(...)`（`Cancel` = `CloseDialog`）；小数 / 分数解析仍由
+  生产侧负责。
+- 验收：
+  - `speed_change_bands` 3/3：确定 / 取消、倍率输入回传 `FactorChanged`、
+    标题与提示可访问；
+  - `egui_chrome` 42/42：模型镜像（倍率 / 标签 / 占位 / 提示 / 标题栏标记）
+    与三个动作映射；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；`capture_iced` 18/18、
+    `capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（ppp=1.25、Light，Ctrl+点工具栏「变速」）：对话框 309×320
+    与 iced 版本逐项对照——输入框盒子 149×40 vs 149×41（起点差 1px）、
+    确定按钮 92×39 vs 94×41、提示行 198-212 vs 197-211、标题 72-93 vs 73-94；
+    输入 `1/3` → 依次回传 `FactorChanged("1")/("1/")/("1/3")`，点确定 →
+    `Confirm` + `应用音符变速: 倍率=0.33333334`，对话框关闭。
+  - 证据图：`target/sc-dialog5.png`、`sc-edit.png`（egui）、
+    `sc-dialog-iced.png`（iced 对照）、`sc-compare4.png`（并排）。
+
+**Task 1.3（下一步）：自定义精度 / 导出进度对话框**
+
+- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速已是 egui；
   其余对话框仍由 iced 绘制。
-- 下一步：按「变速 → 自定义精度 → 导出进度」顺序迁移，每个沿用
+- 下一步：按「自定义精度 → 导出进度」顺序迁移，每个沿用
   「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程。

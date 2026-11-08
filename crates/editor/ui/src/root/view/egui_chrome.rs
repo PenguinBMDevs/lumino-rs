@@ -426,6 +426,8 @@ mod settings_cloud_tests;
 #[cfg(test)]
 mod settings_page_tests;
 #[cfg(test)]
+mod speed_change_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tool_panel_tests;

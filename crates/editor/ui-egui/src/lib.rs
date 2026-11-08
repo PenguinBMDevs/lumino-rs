@@ -22,6 +22,7 @@ pub mod layout;
 pub mod project_settings;
 pub mod scene;
 pub mod settings;
+pub mod speed_change;
 pub mod theme;
 pub mod widgets;
 

@@ -29,8 +29,8 @@ pub use model::{
     OverflowItemModel, OverflowMenuModel, ProjectNoteCountModel, ProjectSettingsModel,
     RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels,
     SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel, SidebarGroup,
-    SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, StatusbarModel,
-    TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel,
+    StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -166,6 +166,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::BatchEdit(model) => {
                 crate::batch_edit::show(&mut root, model);
+            }
+            DialogModel::SpeedChange(model) => {
+                crate::speed_change::show(&mut root, model);
             }
         }
         return;

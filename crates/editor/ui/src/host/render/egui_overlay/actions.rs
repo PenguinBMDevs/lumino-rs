@@ -10,6 +10,7 @@ use lumino_ui_egui::dialog::SaveConfirmAction;
 use lumino_ui_egui::history::HistoryAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
 use lumino_ui_egui::settings::SettingsAction;
+use lumino_ui_egui::speed_change::SpeedChangeAction;
 
 use crate::host::Host;
 
@@ -23,6 +24,7 @@ pub(super) struct OverlayActions {
     pub project: Option<ProjectSettingsAction>,
     pub history: Option<HistoryAction>,
     pub batch_edit: Option<BatchEditAction>,
+    pub speed_change: Option<SpeedChangeAction>,
 }
 
 impl OverlayActions {
@@ -37,6 +39,7 @@ impl OverlayActions {
             project: lumino_ui_egui::project_settings::take_action(ctx),
             history: lumino_ui_egui::history::take_action(ctx),
             batch_edit: lumino_ui_egui::batch_edit::take_action(ctx),
+            speed_change: lumino_ui_egui::speed_change::take_action(ctx),
         }
     }
 }
@@ -71,6 +74,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.speed_change
+            && let Some(message) = self.root.speed_change_action_message(&action)
+        {
+            tracing::info!("egui 变速动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.settings

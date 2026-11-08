@@ -334,7 +334,8 @@ impl Host {
             // 仍由 iced 绘制：该区域内的按键不消费，其余内容区只给 egui。
             crate::state::root_state::DialogType::ProjectSettings
             | crate::state::root_state::DialogType::History
-            | crate::state::root_state::DialogType::BatchEdit => {
+            | crate::state::root_state::DialogType::BatchEdit
+            | crate::state::root_state::DialogType::SpeedChange => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input

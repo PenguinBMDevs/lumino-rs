@@ -19,6 +19,29 @@ pub enum DialogModel {
     History(Box<HistoryModel>),
     /// 批量编辑（`DialogType::BatchEdit`）。
     BatchEdit(Box<BatchEditModel>),
+    /// 变速（`DialogType::SpeedChange`）。
+    SpeedChange(Box<SpeedChangeModel>),
+}
+
+/// 变速对话框：标题 / 倍率行 / 提示 / 按钮。
+#[derive(Debug, Clone, Default)]
+pub struct SpeedChangeModel {
+    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    pub titlebar: bool,
+    /// 标题「变速」。
+    pub title: String,
+    /// 倍率标签（「倍率(S):」）。
+    pub factor_label: String,
+    /// 倍率输入框占位（「如: 0.5 或 1/3」）。
+    pub factor_hint: String,
+    /// 当前倍率文本。
+    pub factor: String,
+    /// 提示（「支持小数 (0.5) 或分数 (1/3)」）。
+    pub hint: String,
+    /// 确定按钮。
+    pub ok: String,
+    /// 取消按钮。
+    pub cancel: String,
 }
 
 /// 工程设置对话框：全部文案与只读值由生产侧预计算。

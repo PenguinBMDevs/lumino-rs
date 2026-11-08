@@ -22,6 +22,7 @@ use crate::state::root_state::DialogType;
 mod batch_edit;
 mod history;
 mod project_settings;
+mod speed_change;
 
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
 fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
@@ -153,6 +154,9 @@ impl Root {
             DialogType::BatchEdit => {
                 Some(DialogModel::BatchEdit(Box::new(self.batch_edit_model())))
             }
+            DialogType::SpeedChange => Some(DialogModel::SpeedChange(Box::new(
+                self.speed_change_model(),
+            ))),
             _ => None,
         }
     }
