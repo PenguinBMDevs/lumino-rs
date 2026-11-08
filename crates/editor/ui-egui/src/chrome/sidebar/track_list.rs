@@ -34,7 +34,7 @@ pub(super) fn show_model(
         Align2::LEFT_CENTER,
         &model.track_list_title,
         FontId::proportional(12.0),
-        theme::TEXT,
+        theme::text(),
     );
 
     let rows_height = layout::TRACK_ROW_H * model.tracks.len() as f32;
@@ -42,7 +42,7 @@ pub(super) fn show_model(
         egui::pos2(list_left, list_top),
         Vec2::new(list_right - list_left, rows_height),
     );
-    ui.painter().rect_filled(list_rect, 0, theme::BASE_BG);
+    ui.painter().rect_filled(list_rect, 0, theme::base_bg());
 
     let mut list_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -152,7 +152,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
         "S",
         FontId::proportional(theme::font::LABEL),
         if track.soloed {
-            theme::WARNING
+            theme::warning()
         } else {
             text_color
         },
@@ -162,7 +162,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
 /// 「添加音轨」行：图标列 24 + 列间距 4。
 fn add_track_row(ui: &mut egui::Ui, rect: Rect, label: &str, cache: &mut IconCache) {
     ui.painter()
-        .rect_filled(rect, CornerRadius::same(6), theme::BASE_BG);
+        .rect_filled(rect, CornerRadius::same(6), theme::base_bg());
 
     let inner_left = rect.left() + layout::TRACK_BUTTON_PAD_X + layout::TRACK_ADD_ROW_PAD;
     let icon_rect = Rect::from_min_size(
@@ -179,7 +179,7 @@ fn add_track_row(ui: &mut egui::Ui, rect: Rect, label: &str, cache: &mut IconCac
         Align2::LEFT_CENTER,
         label,
         FontId::proportional(theme::font::LABEL),
-        theme::TEXT,
+        theme::text(),
     );
 }
 
@@ -196,19 +196,19 @@ fn track_text_color(track: &SidebarTrack) -> Color32 {
                 Color32::WHITE
             }
         }
-        None => theme::TEXT,
+        None => theme::text(),
     }
 }
 
 /// 行底色：与 iced `track_button_background` 同规则。
 fn row_background(track: &SidebarTrack, hovered: bool) -> Color32 {
     match (track.color, track.selected, hovered) {
-        (Some(color), true, _) => blend(color, theme::SELECTED_BG, 0.35),
-        (Some(color), false, true) => blend(color, theme::TOOLBAR_BG, 0.25),
+        (Some(color), true, _) => blend(color, theme::selected_bg(), 0.35),
+        (Some(color), false, true) => blend(color, theme::toolbar_bg(), 0.25),
         (Some(color), false, false) => color,
-        (None, true, _) => theme::SELECTED_BG,
-        (None, false, true) => theme::TOOLBAR_BG,
-        (None, false, false) => theme::BASE_BG,
+        (None, true, _) => theme::selected_bg(),
+        (None, false, true) => theme::toolbar_bg(),
+        (None, false, false) => theme::base_bg(),
     }
 }
 

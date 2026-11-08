@@ -863,11 +863,49 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/native-2.png`、`native-top2.png`、`native-filemenu2.png`、
     `native-switch1.png`、`native-switch2.png`、`native-settings.png`。
 
+**Task 1.3（第二十一步）：egui 外壳跟随 iced 主题 — 已完成**
+
+- `lumino-ui-egui/src/theme.rs` 从「Tokyo Night Storm 常量」改为语义色板
+  `Palette` + `PaletteSeed`：所有 `theme::XXX` 常量改为按当前色板取色的
+  访问函数（182 处调用点机械替换，渲染代码不改结构）。
+- 生产侧新增 `egui_chrome/palette.rs`：`Root::egui_palette()` 直接从
+  `Theme::extended_palette()` 取 `background.* / primary.* / success /
+  warning / danger`，再由 `Palette::from_seed` 派生 iced 没有直接给出的
+  颜色（边框 / 次级文字 / 悬停填充 / 浅色卡片底色 / 强调色上的文字）。
+  叠加层每帧在 `run_ui` 前 `set_palette`，因此 Light / Dark / Solarized /
+  Catppuccin / Tokyo Night 等所有内置主题都与 iced 同色。
+- **修复默认配置（Light）下的双主题叠层**：此前 egui 外壳固定深色，而
+  iced 内容是浅色；现在标题栏 / 工具栏 / 左栏 / 状态栏 / 对话框全部跟随。
+- 顺带修复的主题相关缺陷：
+  - `Icon::default_tint` 原为固定白色 → 浅色主题下所有图标不可见；改为
+    深色染白、浅色染黑（与 iced `should_invert_icon` 同规则）；
+  - 浅色主题滚动条滑块原为正文色（纯黑），改为 iced 的
+    `background.strong`；深色主题保持历史口径；
+  - 强调色按钮文字统一走 `theme::on_accent()`（浅色主题为白字，深色为
+    深字），替换 4 处硬编码 `#121A2A`；
+  - 设置 / 保存确认对话框的调色板改由 `Root::egui_palette()` 派生，
+    不再有「深色常量兜底」分支。
+- 验收：
+  - `theme_palette` 4/4：TNS 种子逐色还原历史字面量、Light 种子派生浅色
+    外壳（含次级文字对比度）、深色种子仍为深色、**实际渲染**的 band
+    底色随色板变化（浅色 #D6D6D6 / #DEDEDE，深色 #3F466E）；
+  - `egui_chrome` 33/33（新增 `egui_palette_follows_the_window_theme`：
+    Light 配置派生浅色、TNS 精确还原、高对比度主题仍为黑底）；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步完全一致，`tests/ui-baseline` 零改动；
+  - 真实窗口（ppp=1.25，用户默认 Light 配置）：标题栏 / 工具栏 / 左侧栏 /
+    状态栏与 iced 内容同色，图标深色可见、状态栏次级文字可读；
+    文件菜单、设置对话框（含滚动条）、工程设置、保存确认对话框均为浅色，
+    主按钮白字；取消 → `Cancel` + 对话框关闭、关闭（Discard）→ 应用退出。
+  - 证据图：`target/theme-after2.png`、`theme-before.png`、`iced-light.png`、
+    `light4-settings.png`、`light5-savedlg.png`、`light3-filemenu-v.png`。
+
 **Task 1.3（下一步）：瀑布流面板 + 卷帘骨架**
 
 - 现状：设置 10/10 页、标题栏菜单（自绘 + 系统原生两种模式）、工具栏与弹层、
   悬浮工具条与五个面板、左侧栏、右侧栏图标列 + I2M + 素材库、状态栏、
-  保存确认对话框均已是 egui。
+  保存确认对话框均已是 egui；外壳配色已跟随 iced 主题。
 - 下一步：钢琴瀑布流面板内容是 `lumino-gfx` 的 wgpu 纹理视图，需要 gfx 通道
   拆分后再接管。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开

@@ -15,7 +15,7 @@ mod ui;
 
 pub use action::{SettingsAction, WindowControl, take_action};
 
-use egui::{Align, Color32, CornerRadius, Layout, Rect, RichText, Sense, Stroke, Vec2};
+use egui::{Align, CornerRadius, Layout, Rect, RichText, Sense, Stroke, Vec2};
 use egui_extras::{Column, TableBuilder};
 
 use crate::chrome::{SettingsLabels, SettingsPageModel, SettingsPalette};
@@ -280,14 +280,7 @@ fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
 
     // 放不下时才是真滚动列表：叠加层已把滚轮同步给 egui，能滚到最后一项，
     // 因此不必再把整窗交回 iced（不削减任何菜单项）。
-    // 滚动条按 iced `scrollable` 的 8px 实体条对齐（不悬浮）。
-    {
-        let scroll = &mut child.spacing_mut().scroll;
-        scroll.bar_width = 8.0;
-        scroll.bar_inner_margin = 0.0;
-        scroll.bar_outer_margin = 0.0;
-        scroll.floating = false;
-    }
+    style_scroll(&mut child);
     egui::ScrollArea::vertical()
         .id_salt("settings-menu-scroll")
         .auto_shrink([false, false])
@@ -379,6 +372,27 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
     }
 }
 
+/// 统一滚动条口径：8px 宽、贴边、非浮动（对齐 iced `scrollable`）。
+///
+/// 浅色主题下 egui 默认用正文色画滑块（纯黑），与 iced 的
+/// `background.strong` 滑块不一致；这里按色板改成浅灰。深色主题保持
+/// 历史口径（像素基线依赖它）。
+fn style_scroll(ui: &mut egui::Ui) {
+    let scroll = &mut ui.spacing_mut().scroll;
+    scroll.bar_width = 8.0;
+    scroll.bar_inner_margin = 0.0;
+    scroll.bar_outer_margin = 0.0;
+    scroll.floating = false;
+
+    let palette = crate::theme::palette();
+    if !palette.is_dark {
+        let visuals = ui.visuals_mut();
+        visuals.widgets.inactive.fg_stroke.color = palette.selected_bg;
+        visuals.widgets.hovered.fg_stroke.color = palette.hover_border;
+        visuals.widgets.active.fg_stroke.color = palette.active_bg;
+    }
+}
+
 /// 页面内容滚动容器：只用于高度可能超出卡片的页面（常规页保持原几何）。
 fn scroll_page(
     ui: &mut egui::Ui,
@@ -392,13 +406,7 @@ fn scroll_page(
             .max_rect(rect)
             .layout(Layout::top_down(egui::Align::Min)),
     );
-    {
-        let scroll = &mut child.spacing_mut().scroll;
-        scroll.bar_width = 8.0;
-        scroll.bar_inner_margin = 0.0;
-        scroll.bar_outer_margin = 0.0;
-        scroll.floating = false;
-    }
+    style_scroll(&mut child);
     egui::ScrollArea::vertical()
         .id_salt(id)
         .auto_shrink([false, false])
@@ -415,7 +423,7 @@ fn confirm(ui: &mut egui::Ui, rect: Rect, palette: &SettingsPalette, label: &str
     let button = egui::Button::new(
         RichText::new(label)
             .size(theme::font::LABEL)
-            .color(Color32::from_rgb(0x12, 0x1A, 0x2A)),
+            .color(theme::on_accent()),
     )
     .fill(palette.accent)
     .corner_radius(CornerRadius::same(4));

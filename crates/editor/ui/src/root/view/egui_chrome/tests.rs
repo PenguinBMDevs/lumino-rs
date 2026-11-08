@@ -7,6 +7,7 @@ use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 use lumino_ui_egui::chrome::{
     DialogModel, DialogPalette, MenuEntry, RightSidebarPanelKind, SettingsPalette, ToolbarAction,
 };
+use lumino_ui_egui::theme::Palette;
 
 use crate::Message;
 use crate::toolbar::Event as ToolbarEvent;
@@ -583,4 +584,38 @@ fn toolbar_overflow_follows_width_and_resolves_items() {
             .is_none(),
         "越界下标不得产生消息"
     );
+}
+
+#[test]
+fn egui_palette_follows_the_window_theme() {
+    // 默认配置就是 Light：外壳必须派生浅色，不能固定为深色。
+    let light = Root::new(&lumino_core::storage::config::UiConfig::default());
+    let palette = light.egui_palette();
+    assert!(!palette.is_dark, "默认配置（Light）必须派生浅色外壳");
+    assert_eq!(
+        palette.titlebar_bg,
+        egui::Color32::from_rgb(0xD6, 0xD6, 0xD6),
+        "标题栏应取 Light 的 background.neutral"
+    );
+    assert_ne!(palette, Palette::TOKYO_NIGHT_STORM);
+
+    // 历史基线主题必须逐色还原（场景像素基线依赖它）。
+    let storm = Root::new(&lumino_core::storage::config::UiConfig {
+        theme: lumino_ui_core::Theme::TokyoNightStorm.to_string(),
+        ..Default::default()
+    });
+    assert_eq!(
+        storm.egui_palette(),
+        Palette::TOKYO_NIGHT_STORM,
+        "Tokyo Night Storm 必须精确还原历史色板"
+    );
+
+    // 高对比度主题走自定义色板：黑底 + 黄强调。
+    let hc = Root::new(&lumino_core::storage::config::UiConfig {
+        theme: lumino_ui_core::theme::HIGH_CONTRAST_DISPLAY.to_owned(),
+        ..Default::default()
+    });
+    let palette = hc.egui_palette();
+    assert!(palette.is_dark, "高对比度是深色主题");
+    assert_eq!(palette.base_bg, egui::Color32::BLACK, "高对比度底为纯黑");
 }

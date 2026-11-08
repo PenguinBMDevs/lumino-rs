@@ -20,8 +20,7 @@ use crate::layout;
 use crate::theme;
 use crate::widgets;
 
-/// 主按钮文字色（生产固定深色，保证在强调色上的对比度）。
-const ON_PRIMARY: Color32 = Color32::from_rgb(0x12, 0x1A, 0x2A);
+/// 主按钮文字色由 `theme::on_accent()` 按主题亮度决定（深色强调 → 深字，浅色 → 白字）。
 const ACTION_ID: &str = "lumino.save-confirm.action";
 const RECTS_ID: &str = "lumino.save-confirm.rects";
 
@@ -215,7 +214,7 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
         &model.save,
         palette.primary,
         palette.primary_hover,
-        ON_PRIMARY,
+        theme::on_accent(),
         palette.primary_border,
         "dialog:save",
     );

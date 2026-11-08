@@ -39,7 +39,7 @@ pub fn show(ui: &mut egui::Ui) {
 /// 按真实状态渲染状态栏。
 pub fn show_model(ui: &mut egui::Ui, model: &StatusbarModel) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::TOOLBAR_BG);
+    ui.painter().rect_filled(rect, 0, theme::toolbar_bg());
 
     // 生产 `padding([0, 8])`：水平 8，垂直 0。
     let inner = egui::Rect::from_min_max(
@@ -58,9 +58,9 @@ pub fn show_model(ui: &mut egui::Ui, model: &StatusbarModel) {
         Layout::left_to_right(Align::Center),
         |ui| {
             let color = if model.left_accent {
-                theme::ACCENT_STRONG
+                theme::accent_strong()
             } else {
-                theme::TEXT
+                theme::text()
             };
             ui.add(
                 egui::Label::new(egui::RichText::new(&model.left).size(FONT).color(color))
@@ -80,7 +80,7 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
     // 生产布局里 `right_text` 恒占一个行位：即使为空串，perf 组右边仍留 8px。
     ui.add_space(8.0);
     if !model.right.is_empty() {
-        widgets::label(ui, &model.right, FONT, theme::TEXT);
+        widgets::label(ui, &model.right, FONT, theme::text());
         ui.add_space(8.0);
     }
     if !model.has_metrics() {
@@ -101,10 +101,10 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
 /// 单个指标：`label` 弱色、`value` 强调色。
 fn metric(ui: &mut egui::Ui, label: &str, value: &str) {
     widgets::label(ui, value, FONT, accent_value());
-    widgets::label(ui, label, FONT, theme::TEXT_MUTED);
+    widgets::label(ui, label, FONT, theme::text_muted());
 }
 
 /// 指标数值颜色（`palette.primary.strong`）。
 fn accent_value() -> Color32 {
-    theme::ACCENT_STRONG
+    theme::accent_strong()
 }

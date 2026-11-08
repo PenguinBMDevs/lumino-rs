@@ -217,8 +217,8 @@ pub(super) fn show(
     ui.painter().rect(
         button,
         CornerRadius::same(4),
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::BORDER),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::border()),
         egui::StrokeKind::Inside,
     );
     let response = ui.interact(

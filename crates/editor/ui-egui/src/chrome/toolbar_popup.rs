@@ -239,8 +239,8 @@ fn draw_panel(ui: &egui::Ui, rect: Rect) {
     ui.painter().rect(
         rect,
         6,
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::SELECTED_BG),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
 }
@@ -269,13 +269,13 @@ fn draw_snap_panel(
             Pos2::new(row.left() + 8.0, row.center().y - GLYPH / 2.0),
             Vec2::splat(GLYPH),
         );
-        snap_glyph(ui, glyph, item.spec, theme::TEXT_ON_WEAK);
+        snap_glyph(ui, glyph, item.spec, theme::text_on_weak());
         ui.painter().text(
             Pos2::new(glyph.right() + 6.0, row.center().y),
             Align2::LEFT_CENTER,
             &item.label,
             FontId::proportional(TEXT_SIZE),
-            theme::TEXT_ON_WEAK,
+            theme::text_on_weak(),
         );
         if response.clicked() {
             push_action(ui.ctx(), ToolbarAction::SnapSpec(item.spec));
@@ -299,14 +299,14 @@ fn draw_snap_panel(
         ui,
         glyph,
         SnapSpec::Custom { ticks: 1 },
-        theme::TEXT_ON_WEAK,
+        theme::text_on_weak(),
     );
     ui.painter().text(
         Pos2::new(glyph.right() + 6.0, row.center().y),
         Align2::LEFT_CENTER,
         &menu.custom_label,
         FontId::proportional(TEXT_SIZE),
-        theme::TEXT_ON_WEAK,
+        theme::text_on_weak(),
     );
     if response.clicked() {
         push_action(ui.ctx(), ToolbarAction::SnapCustom);
@@ -344,7 +344,7 @@ fn draw_onion_panel(
         );
         if item.selected {
             // 矢量勾：不依赖字体（egui 默认字体没有 U+2713）。
-            let stroke = Stroke::new(1.6, theme::TEXT_ON_WEAK);
+            let stroke = Stroke::new(1.6, theme::text_on_weak());
             let x = check.left() + 3.0;
             let y = check.center().y;
             ui.painter()
@@ -359,7 +359,7 @@ fn draw_onion_panel(
             Align2::LEFT_CENTER,
             &item.label,
             FontId::proportional(TEXT_SIZE),
-            theme::TEXT_ON_WEAK,
+            theme::text_on_weak(),
         );
         if response.clicked() {
             push_action(ui.ctx(), ToolbarAction::OnionMode(index));

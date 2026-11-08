@@ -75,21 +75,21 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
         .exact_size(layout::TITLEBAR_H)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::TITLEBAR_BG))
+        .frame(panel_frame(theme::titlebar_bg()))
         .show(ui, |ui| titlebar::show(ui, state));
 
     Panel::bottom("lumino-statusbar")
         .exact_size(layout::STATUSBAR_H)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::TOOLBAR_BG))
+        .frame(panel_frame(theme::toolbar_bg()))
         .show(ui, statusbar::show);
 
     Panel::left("lumino-sidebar")
         .exact_size(layout::SIDEBAR_W)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::PANEL_BG))
+        .frame(panel_frame(theme::panel_bg()))
         .show(ui, |ui| sidebar::show(ui, state));
 
     // 生产 iced 结构：`column![toolbar, row![editor, right_bar]]`——
@@ -98,20 +98,20 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
         .exact_size(layout::TOOLBAR_H)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::PANEL_BG))
+        .frame(panel_frame(theme::panel_bg()))
         .show(ui, |ui| toolbar::show(ui, state));
 
     Panel::right("lumino-right-sidebar")
         .exact_size(layout::RIGHT_SIDEBAR_W)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::ROUTE_BAR_BG))
+        .frame(panel_frame(theme::route_bar_bg()))
         .show(ui, |ui| {
             sidebar::show_right_model(ui, &RightSidebarModel::default(), &mut state.icons)
         });
 
     egui::CentralPanel::default()
-        .frame(panel_frame(theme::BASE_BG))
+        .frame(panel_frame(theme::base_bg()))
         .show(ui, |ui| piano_roll::show(ui, state));
 }
 
@@ -167,9 +167,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             .resizable(false)
             .show_separator_line(false)
             .frame(panel_frame(if focused {
-                theme::TITLEBAR_BG
+                theme::titlebar_bg()
             } else {
-                theme::ROUTE_BAR_BG
+                theme::route_bar_bg()
             }))
             .show(&mut root, |ui| titlebar::show_model(ui, titlebar, icons));
     }
@@ -190,7 +190,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             egui::Vec2::new(full.width() - inset, layout::TOOLBAR_H),
         );
         if band.width() > 0.0 {
-            root.painter().rect_filled(band, 0, theme::PANEL_BG);
+            root.painter().rect_filled(band, 0, theme::panel_bg());
             let mut child = root.new_child(
                 egui::UiBuilder::new()
                     .max_rect(band)
@@ -216,7 +216,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             egui::pos2(full.left() + width, bottom.max(top)),
         );
         if band.width() > 0.0 && band.height() > 0.0 {
-            root.painter().rect_filled(band, 0, theme::PANEL_BG);
+            root.painter().rect_filled(band, 0, theme::panel_bg());
             let mut child = root.new_child(
                 egui::UiBuilder::new()
                     .max_rect(band)
@@ -259,9 +259,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     handle,
                     0,
                     if right.resizing {
-                        theme::ACCENT_STRONG
+                        theme::accent_strong()
                     } else {
-                        theme::PANEL_BG
+                        theme::panel_bg()
                     },
                 );
                 let content_rect = egui::Rect::from_min_max(
@@ -311,7 +311,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         .exact_size(layout::STATUSBAR_H)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::TOOLBAR_BG))
+        .frame(panel_frame(theme::toolbar_bg()))
         .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。

@@ -169,8 +169,8 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
     ui.painter().rect(
         pill,
         CornerRadius::same((PILL_H / 2.0) as u8),
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::SELECTED_BG),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
 
@@ -199,7 +199,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
             Vec2::new(BAR_W, BAR_H),
         );
         ui.painter()
-            .rect_filled(bar, CornerRadius::same(1), theme::SELECTED_BG);
+            .rect_filled(bar, CornerRadius::same(1), theme::selected_bg());
     }
     let grip_resp = ui.interact(
         grip,
@@ -219,7 +219,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
                 Vec2::new(1.0, DIVIDER_H),
             ),
             0,
-            theme::SELECTED_BG,
+            theme::selected_bg(),
         );
     };
     divider(ui, x);
@@ -378,7 +378,7 @@ fn item_cell(
 ) -> egui::Response {
     let response = ui.interact(rect, Id::unique(id), Sense::click());
     let background = if selected {
-        Some(theme::SELECTED_BG)
+        Some(theme::selected_bg())
     } else if response.is_pointer_button_down_on() {
         Some(egui::Color32::from_rgb(0x55, 0x5E, 0x8F))
     } else if response.hovered() {

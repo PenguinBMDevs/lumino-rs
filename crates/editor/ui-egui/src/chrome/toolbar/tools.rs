@@ -117,7 +117,7 @@ pub(super) fn width(ui: &egui::Ui, visible: usize) -> f32 {
         .layout_no_wrap(
             "精度:".to_owned(),
             FontId::proportional(theme::font::LABEL),
-            theme::TEXT_ON_WEAK,
+            theme::text_on_weak(),
         )
         .size()
         .x;
@@ -153,7 +153,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
         .layout_no_wrap(
             label.to_owned(),
             FontId::proportional(theme::font::LABEL),
-            theme::TEXT_ON_WEAK,
+            theme::text_on_weak(),
         )
         .size()
         .x;
@@ -166,7 +166,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
         Align2::CENTER_CENTER,
         label,
         FontId::proportional(theme::font::LABEL),
-        theme::TEXT_ON_WEAK,
+        theme::text_on_weak(),
     );
     ui.add_space(8.0);
 
@@ -185,8 +185,8 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     ui.painter().rect(
         rect,
         CornerRadius::same(4),
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::SELECTED_BG),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
     let mut child = ui.new_child(
@@ -199,6 +199,6 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     child.add(egui::Label::new(
         egui::RichText::new(&model.snap)
             .size(theme::font::BODY)
-            .color(theme::TEXT_ON_WEAK),
+            .color(theme::text_on_weak()),
     ));
 }

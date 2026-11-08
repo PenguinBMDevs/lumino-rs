@@ -107,7 +107,8 @@ pub fn show_labels(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32]) -> 
             |ui| {
                 let hovered = interactive && ui.rect_contains_pointer(ui.max_rect());
                 if hovered || selected {
-                    ui.painter().rect_filled(ui.max_rect(), 4, theme::PANEL_BG);
+                    ui.painter()
+                        .rect_filled(ui.max_rect(), 4, theme::panel_bg());
                 }
                 // 用 Label 而不是纯 painter：保留可访问树里的菜单名。
                 widgets::menu_label_sized(ui, label, selected, FONT)
@@ -218,11 +219,11 @@ fn draw_panel(
     top_level: bool,
 ) {
     blocked.push(panel);
-    ui.painter().rect_filled(panel, 6.0, theme::CARD_BG);
+    ui.painter().rect_filled(panel, 6.0, theme::card_bg());
     ui.painter().rect_stroke(
         panel,
         6.0,
-        Stroke::new(1.0, theme::BORDER),
+        Stroke::new(1.0, theme::border()),
         egui::StrokeKind::Inside,
     );
 
@@ -249,7 +250,7 @@ fn draw_panel(
                         Pos2::new(row.left() + 4.0, line_y),
                         Pos2::new(row.right() - 4.0, line_y),
                     ],
-                    Stroke::new(1.0, theme::BORDER),
+                    Stroke::new(1.0, theme::border()),
                 );
             }
             MenuEntry::Action {
@@ -264,12 +265,12 @@ fn draw_panel(
                 );
                 if response.hovered() && *enabled {
                     hovered_action = true;
-                    ui.painter().rect_filled(row, 4, theme::PANEL_BG);
+                    ui.painter().rect_filled(row, 4, theme::panel_bg());
                 }
                 let color = if *enabled {
-                    theme::TEXT
+                    theme::text()
                 } else {
-                    theme::TEXT_DIM
+                    theme::text_dim()
                 };
                 ui.painter().text(
                     Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
@@ -295,21 +296,21 @@ fn draw_panel(
                 );
                 let hovered = response.hovered();
                 if hovered {
-                    ui.painter().rect_filled(row, 4, theme::PANEL_BG);
+                    ui.painter().rect_filled(row, 4, theme::panel_bg());
                 }
                 ui.painter().text(
                     Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
                     Align2::LEFT_CENTER,
                     label,
                     FontId::proportional(FONT),
-                    theme::TEXT,
+                    theme::text(),
                 );
                 ui.painter().text(
                     Pos2::new(row.right() - TEXT_PAD_X, row.center().y),
                     Align2::RIGHT_CENTER,
                     "›",
                     FontId::proportional(FONT + 2.0),
-                    theme::TEXT_DIM,
+                    theme::text_dim(),
                 );
                 submenu_rows.push((index, row));
                 if hovered {
@@ -374,4 +375,6 @@ pub fn label_rects(ctx: &egui::Context) -> Vec<Rect> {
 }
 
 /// 便于单测：悬停高亮色（与生产 `background.weaker` 对齐）。
-pub const HOVER_BG: Color32 = theme::PANEL_BG;
+pub fn hover_bg() -> Color32 {
+    theme::panel_bg()
+}

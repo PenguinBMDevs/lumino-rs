@@ -17,8 +17,8 @@ pub(super) fn field(ui: &mut egui::Ui, rect: Rect, model: &TextParamsPanelModel)
     ui.painter().rect(
         rect,
         CornerRadius::same(4),
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::BORDER),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::border()),
         egui::StrokeKind::Inside,
     );
     ui.painter().text(
@@ -77,7 +77,7 @@ pub(super) fn popup(
         popup,
         CornerRadius::same(6),
         panels::panel_bg(),
-        Stroke::new(1.0, theme::SELECTED_BG),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
     let mut child = ui.new_child(

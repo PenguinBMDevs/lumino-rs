@@ -182,7 +182,7 @@ fn menu_opens_and_dispatches_actions() {
     let panel = image.get_pixel(60, 40).0;
     assert_eq!(
         &panel[..3],
-        &lumino_ui_egui::theme::CARD_BG.to_array()[..3],
+        &lumino_ui_egui::theme::card_bg().to_array()[..3],
         "下拉面板应画在标题栏下方（面板底色 background.base）"
     );
 

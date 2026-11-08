@@ -75,7 +75,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
         Align2::LEFT_CENTER,
         &model.title,
         FontId::proportional(theme::font::LABEL),
-        theme::TEXT_ON_WEAK,
+        theme::text_on_weak(),
     );
     y += HEADER_H + GAP;
 
@@ -87,9 +87,9 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
         select,
         &model.select_image,
         ButtonStyle {
-            fill: theme::TOOLBAR_BG,
-            hover: theme::BASE_BG,
-            text: theme::TEXT,
+            fill: theme::toolbar_bg(),
+            hover: theme::base_bg(),
+            text: theme::text(),
             enabled: true,
         },
     )
@@ -103,7 +103,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
             Align2::LEFT_CENTER,
             hint,
             FontId::proportional(12.0),
-            theme::SELECTED_BG,
+            theme::selected_bg(),
         );
     }
     y += BUTTON_H + GAP;
@@ -114,7 +114,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
         Align2::LEFT_CENTER,
         &model.config_title,
         FontId::proportional(12.0),
-        theme::TEXT_ON_WEAK,
+        theme::text_on_weak(),
     );
     y += SECTION_H + ROW_GAP;
 
@@ -131,12 +131,12 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
             rect,
             &convert.label,
             ButtonStyle {
-                fill: theme::TOOLBAR_BG,
-                hover: theme::ACCENT_STRONG,
+                fill: theme::toolbar_bg(),
+                hover: theme::accent_strong(),
                 text: if convert.enabled {
-                    theme::TEXT
+                    theme::text()
                 } else {
-                    theme::TEXT_MUTED
+                    theme::text_muted()
                 },
                 enabled: convert.enabled,
             },
@@ -156,7 +156,7 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
         Align2::LEFT_CENTER,
         &row.label,
         FontId::proportional(12.0),
-        theme::TEXT_MUTED,
+        theme::text_muted(),
     );
 
     match &row.control {
@@ -198,7 +198,7 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
                 Align2::LEFT_CENTER,
                 "~",
                 FontId::proportional(12.0),
-                theme::TEXT_MUTED,
+                theme::text_muted(),
             );
             x += tilde_w + 4.0;
             let end = Rect::from_min_size(Pos2::new(x, y), Vec2::new(INPUT_W, ROW_H));
@@ -234,8 +234,8 @@ fn input(ui: &mut egui::Ui, rect: Rect, field: I2mField, text: &str) -> Option<S
     ui.painter().rect(
         rect,
         CornerRadius::same(4),
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::SELECTED_BG),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
     let mut value = text.to_owned();
@@ -251,7 +251,7 @@ fn input(ui: &mut egui::Ui, rect: Rect, field: I2mField, text: &str) -> Option<S
                     .frame(egui::Frame::NONE)
                     .margin(Margin::ZERO)
                     .font(FontId::proportional(12.0))
-                    .text_color(theme::TEXT)
+                    .text_color(theme::text())
                     .desired_width(f32::INFINITY),
             )
         })
@@ -267,11 +267,11 @@ fn combo(ui: &mut egui::Ui, options: &[String], selected: &str) -> Option<usize>
     ui.spacing_mut().button_padding = Vec2::new(6.0, 3.0);
     ui.spacing_mut().interact_size.y = ROW_H;
     let previous_visuals = ui.visuals().clone();
-    ui.visuals_mut().widgets.inactive.weak_bg_fill = theme::TOOLBAR_BG;
-    ui.visuals_mut().widgets.inactive.bg_fill = theme::TOOLBAR_BG;
-    ui.visuals_mut().widgets.inactive.fg_stroke.color = theme::TEXT;
+    ui.visuals_mut().widgets.inactive.weak_bg_fill = theme::toolbar_bg();
+    ui.visuals_mut().widgets.inactive.bg_fill = theme::toolbar_bg();
+    ui.visuals_mut().widgets.inactive.fg_stroke.color = theme::text();
     let response = egui::ComboBox::from_id_salt("lumino.right-sidebar.i2m.palette")
-        .selected_text(RichText::new(selected).size(12.0).color(theme::TEXT))
+        .selected_text(RichText::new(selected).size(12.0).color(theme::text()))
         .width(COMBO_W)
         .show_ui(ui, |ui| {
             for (index, option) in options.iter().enumerate() {
@@ -292,7 +292,7 @@ fn combo(ui: &mut egui::Ui, options: &[String], selected: &str) -> Option<usize>
     ui.painter().rect_stroke(
         response.response.rect,
         CornerRadius::same(4),
-        Stroke::new(1.0, theme::SELECTED_BG),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
     chosen

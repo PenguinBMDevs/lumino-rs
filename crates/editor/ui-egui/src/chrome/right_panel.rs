@@ -90,7 +90,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<RightSidebarAction> {
 
 /// 绘制面板内容（`rect` = 手柄右侧的内容区）。
 pub fn show(ui: &mut egui::Ui, rect: Rect, panel: &RightSidebarPanelModel, icons: &mut IconCache) {
-    ui.painter().rect_filled(rect, 0, crate::theme::PANEL_BG);
+    ui.painter().rect_filled(rect, 0, crate::theme::panel_bg());
     clear_rects(ui.ctx());
     match panel {
         RightSidebarPanelModel::ImageToMidi(model) => i2m::show(ui, rect, model),

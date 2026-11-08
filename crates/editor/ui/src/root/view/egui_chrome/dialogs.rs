@@ -19,8 +19,6 @@ use crate::message::SettingsDialogAction;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 
-use super::color32;
-
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
 fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
     let t = lumino_extras::i18n::settings_translations(language);
@@ -60,49 +58,37 @@ fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
 }
 
 impl Root {
-    /// 生产 iced 调色板 → 设置对话框调色板。
-    ///
-    /// 深色下 `border` / `text_dim` 没有一一对应的 iced 角色，沿用与既有像素
-    /// 基线一致的常量；浅色下取 `background.strong` 作为分隔线/次级文字。
+    /// 设置对话框调色板：直接跟随当前窗口主题的 egui 色板（与 iced 同源）。
     fn settings_palette(&self) -> SettingsPalette {
-        let palette = self.window.theme.extended_palette();
-        let dark = palette.background.weakest.color.r < 0.5;
+        let palette = self.egui_palette();
         SettingsPalette {
-            titlebar: color32(palette.background.neutral.color),
-            background: color32(palette.background.base.color),
-            panel: color32(palette.background.weakest.color),
-            toolbar: color32(palette.background.weak.color),
-            card: color32(palette.background.base.color),
-            border: if dark {
-                SettingsPalette::DARK.border
-            } else {
-                color32(palette.background.strong.color)
-            },
-            input_border: color32(palette.background.strong.color),
-            text: color32(palette.background.base.text),
-            text_dim: if dark {
-                SettingsPalette::DARK.text_dim
-            } else {
-                color32(palette.background.strong.color)
-            },
-            accent: color32(palette.primary.base.color),
-            accent_strong: color32(palette.primary.strong.color),
+            titlebar: palette.titlebar_bg,
+            background: palette.base_bg,
+            panel: palette.panel_bg,
+            toolbar: palette.toolbar_bg,
+            card: palette.card_bg,
+            border: palette.border,
+            input_border: palette.selected_bg,
+            text: palette.text,
+            text_dim: palette.text_dim,
+            accent: palette.accent,
+            accent_strong: palette.accent_strong,
         }
     }
 
-    /// 生产 iced 调色板 → 对话框调色板（深/浅主题都成立）。
+    /// 保存确认对话框调色板：同样跟随当前窗口主题。
     fn dialog_palette(&self) -> DialogPalette {
-        let palette = self.window.theme.extended_palette();
+        let palette = self.egui_palette();
         DialogPalette {
-            titlebar: color32(palette.background.neutral.color),
-            background: color32(palette.background.base.color),
-            text: color32(palette.background.base.text),
-            primary: color32(palette.primary.base.color),
-            primary_hover: color32(palette.primary.strong.color),
-            primary_border: color32(palette.primary.weak.color),
-            secondary: color32(palette.background.weak.color),
-            secondary_hover: color32(palette.background.strong.color),
-            secondary_border: color32(palette.background.weaker.color),
+            titlebar: palette.titlebar_bg,
+            background: palette.base_bg,
+            text: palette.text,
+            primary: palette.accent,
+            primary_hover: palette.accent_strong,
+            primary_border: palette.accent_dark,
+            secondary: palette.toolbar_bg,
+            secondary_hover: palette.selected_bg,
+            secondary_border: palette.route_bar_bg,
         }
     }
 

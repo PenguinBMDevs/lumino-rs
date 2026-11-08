@@ -107,8 +107,8 @@ fn text_input(ui: &mut egui::Ui, rect: Rect, value: &str) {
     ui.painter().rect(
         rect,
         CornerRadius::same(4),
-        theme::TOOLBAR_BG,
-        Stroke::new(1.0, theme::BORDER),
+        theme::toolbar_bg(),
+        Stroke::new(1.0, theme::border()),
         egui::StrokeKind::Inside,
     );
     let mut text = value.to_owned();

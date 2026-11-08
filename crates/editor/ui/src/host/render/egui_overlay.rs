@@ -51,6 +51,8 @@ struct OverlayFrame<'a> {
     pixels_per_point: f32,
     app_frame: u32,
     model: &'a ChromeModel,
+    /// 本帧色板（跟随窗口主题）。
+    palette: lumino_ui_egui::theme::Palette,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -87,6 +89,9 @@ impl EguiOverlay {
         bool,
     ) {
         self.frames = self.frames.wrapping_add(1);
+
+        // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
+        lumino_ui_egui::theme::set_palette(frame.palette);
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
         // 再由着色器放大会发虚（几何位置不变，但字形明显更糊）。
@@ -181,6 +186,7 @@ impl Host {
         // 工具栏折叠（溢出菜单）依赖实际可用宽度：与生产 `responsive` 同口径。
         let logical_width = size.width as f32 / pixels_per_point;
         let model = self.root.egui_chrome_model_for(logical_width);
+        let palette = self.root.egui_palette();
         // 取走本帧累积的指针 / 滚轮 / 修饰键 / 焦点事件。
         let events = self.egui_input.take();
         let focused = self.egui_input.focused();
@@ -202,6 +208,7 @@ impl Host {
                 pixels_per_point,
                 app_frame,
                 model: &model,
+                palette,
                 events,
                 focused,
             });

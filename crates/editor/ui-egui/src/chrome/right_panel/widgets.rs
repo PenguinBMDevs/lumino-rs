@@ -48,7 +48,7 @@ pub(super) fn button(
 /// 文本宽度（比例字体度量）。
 pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
     ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::TEXT)
+        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
         .size()
         .x
 }

@@ -101,7 +101,7 @@ impl PianoRollView {
 /// 场景入口：铺满底色后绘制骨架（生产由 wgpu 绘制的网格区域在这里只是底色）。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::BASE_BG);
+    ui.painter().rect_filled(rect, 0, theme::base_bg());
     let view = state.piano_roll;
     draw_chrome(ui, &view);
 }
@@ -157,7 +157,7 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
 fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) {
     let painter = ui.painter();
     // iced `keyboard_background_color`（暗色 = `background.base`）。
-    painter.rect_filled(rect, 0, theme::BASE_BG);
+    painter.rect_filled(rect, 0, theme::base_bg());
 
     let key_h = view.key_height.max(1.0);
     let max_key = f32::from(view.visible_keys.saturating_sub(1));
@@ -173,9 +173,9 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
         );
         let black = is_key_dark(index);
         let base = if black {
-            theme::BASE_BG
+            theme::base_bg()
         } else {
-            theme::PANEL_BG
+            theme::panel_bg()
         };
         // 256 键扩展区（128..）在暗色下提亮 15%（iced 同规则）。
         let fill = if index >= 128 { tint(base, 1.15) } else { base };
@@ -184,7 +184,7 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
         // 顶/底边各把一小半落在键内，形成 `#272C41` 的 50% 混合分隔线。egui 的
         // `rect_stroke` 在这里会被相邻按键的填充覆盖掉底边，因此直接按 iced 的
         // 合成结果画两条 50% 混合线。
-        let edge = mix(fill, theme::BASE_BG, 0.5);
+        let edge = mix(fill, theme::base_bg(), 0.5);
         painter.rect_stroke(
             key_rect,
             0,
@@ -210,7 +210,7 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
     let painter = ui.painter();
     // iced 标尺底色 = `background.base`；边框与刻度线同为 `background.base`
     // （暗色下不可见），因此只复刻底色与文字。
-    painter.rect_filled(rect, 0, theme::BASE_BG);
+    painter.rect_filled(rect, 0, theme::base_bg());
 
     let bar = view.bar_pixels();
     let scroll_ticks = view.scroll_x / view.zoom_x.max(f32::EPSILON);
@@ -250,7 +250,7 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
                     Vec2::new(PLAYHEAD_WIDTH, rect.height()),
                 ),
                 0,
-                theme::PLAYHEAD,
+                theme::playhead(),
             );
             let half = PLAYHEAD_TRIANGLE / 2.0;
             painter.add(egui::Shape::convex_polygon(
@@ -259,7 +259,7 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
                     egui::pos2(center + half, rect.top()),
                     egui::pos2(center, rect.top() + PLAYHEAD_TRIANGLE),
                 ],
-                theme::PLAYHEAD,
+                theme::playhead(),
                 egui::Stroke::NONE,
             ));
         }
@@ -273,7 +273,7 @@ fn scrollbar(ui: &egui::Ui, rect: Rect, scroll_ratio: f32, thumb_ratio: f32, ver
         return;
     }
     let painter = ui.painter();
-    painter.rect_filled(rect, 0, theme::SELECTED_BG);
+    painter.rect_filled(rect, 0, theme::selected_bg());
 
     let track = rect.shrink(THUMB_GAP);
     let (length, offset) = if vertical {
@@ -295,7 +295,7 @@ fn scrollbar(ui: &egui::Ui, rect: Rect, scroll_ratio: f32, thumb_ratio: f32, ver
             Vec2::new(thumb_len, track.height()),
         )
     };
-    painter.rect_filled(thumb, 0, theme::TOOLBAR_BG);
+    painter.rect_filled(thumb, 0, theme::toolbar_bg());
 }
 
 /// 是否黑键（iced `is_key_dark`）。
@@ -344,4 +344,6 @@ const THUMB_GAP: f32 = 2.0;
 const THUMB_MIN_SIZE: f32 = 20.0;
 
 /// 中央区域底色（供外部检查）。
-pub const BACKGROUND: Color32 = theme::BASE_BG;
+pub fn background() -> Color32 {
+    theme::base_bg()
+}

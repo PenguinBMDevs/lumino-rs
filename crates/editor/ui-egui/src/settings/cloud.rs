@@ -4,6 +4,8 @@
 
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Vec2};
 
+use crate::theme;
+
 use super::super::chrome::{CloudPageModel, SettingsPalette};
 use super::action::{self, SettingsAction};
 use super::pages::text_width;
@@ -96,7 +98,7 @@ pub(super) fn show(
         Align2::CENTER_CENTER,
         &model.add_label,
         FontId::proportional(13.0),
-        Color32::from_rgb(0x12, 0x1A, 0x2A),
+        theme::on_accent(),
     );
     if response.clicked() {
         action::push_action(ui.ctx(), SettingsAction::CloudAdd);

@@ -82,7 +82,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
         Align2::LEFT_CENTER,
         &model.title,
         FontId::proportional(theme::font::LABEL),
-        theme::TEXT_ON_WEAK,
+        theme::text_on_weak(),
     );
     y += HEADER_H + GAP;
 
@@ -94,9 +94,9 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
         add,
         CornerRadius::same(4),
         if response.hovered() {
-            theme::ACCENT
+            theme::accent()
         } else {
-            theme::ACCENT_DARK
+            theme::accent_dark()
         },
     );
     ui.painter().text(
@@ -104,7 +104,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
         Align2::CENTER_CENTER,
         &model.add_label,
         FontId::proportional(theme::font::BODY),
-        theme::TEXT,
+        theme::text(),
     );
     if response.clicked() {
         push_action(ui.ctx(), RightSidebarAction::MaterialAdd);
@@ -119,7 +119,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
             + items.len().saturating_sub(1) as f32 * MENU_GAP;
         let panel = Rect::from_min_size(Pos2::new(left, y), Vec2::new(width, panel_h));
         ui.painter()
-            .rect_filled(panel, CornerRadius::same(4), theme::TOOLBAR_BG);
+            .rect_filled(panel, CornerRadius::same(4), theme::toolbar_bg());
         let mut item_y = panel.top() + MENU_PAD;
         for entry in items {
             let inner = Rect::from_min_size(
@@ -134,14 +134,14 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
             let response = ui.interact(inner, Id::unique(key), Sense::click());
             if response.hovered() {
                 ui.painter()
-                    .rect_filled(inner, CornerRadius::same(4), theme::BASE_BG);
+                    .rect_filled(inner, CornerRadius::same(4), theme::base_bg());
             }
             ui.painter().text(
                 Pos2::new(inner.left() + 6.0, inner.center().y),
                 Align2::LEFT_CENTER,
                 &entry.label,
                 FontId::proportional(12.0),
-                theme::TEXT,
+                theme::text(),
             );
             if response.clicked() {
                 push_action(ui.ctx(), RightSidebarAction::MaterialMenu(entry.kind));
@@ -159,7 +159,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
             Align2::LEFT_CENTER,
             placeholder,
             FontId::proportional(12.0),
-            theme::TEXT_MUTED,
+            theme::text_muted(),
         );
         y += 18.0;
     }
@@ -169,7 +169,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
             Align2::LEFT_CENTER,
             &section.label,
             FontId::proportional(12.0),
-            theme::TEXT_MUTED,
+            theme::text_muted(),
         );
         y += SECTION_H + SECTION_GAP;
         for item in &section.entries {
@@ -208,7 +208,7 @@ fn draw_item(
     let rect = Rect::from_min_size(Pos2::new(left, y), Vec2::new(width, ITEM_H));
     record_rect(ui.ctx(), format!("material:item:{}", item.index), rect);
     ui.painter()
-        .rect_filled(rect, CornerRadius::same(4), theme::ROUTE_BAR_BG);
+        .rect_filled(rect, CornerRadius::same(4), theme::route_bar_bg());
 
     if let Some(buffer) = &item.renaming {
         let input_rect = rect.shrink2(Vec2::new(ITEM_PAD_X, 3.0));
@@ -220,8 +220,8 @@ fn draw_item(
         ui.painter().rect(
             input_rect,
             CornerRadius::same(2),
-            theme::BASE_BG,
-            Stroke::new(1.0, theme::SELECTED_BG),
+            theme::base_bg(),
+            Stroke::new(1.0, theme::selected_bg()),
             egui::StrokeKind::Inside,
         );
         let mut text = buffer.clone();
@@ -237,11 +237,11 @@ fn draw_item(
                         .frame(egui::Frame::NONE)
                         .margin(Margin::ZERO)
                         .font(FontId::proportional(12.0))
-                        .text_color(theme::TEXT)
+                        .text_color(theme::text())
                         .hint_text(
                             egui::RichText::new(rename_placeholder)
                                 .size(12.0)
-                                .color(theme::TEXT_DIM),
+                                .color(theme::text_dim()),
                         )
                         .desired_width(f32::INFINITY),
                 )
@@ -257,9 +257,9 @@ fn draw_item(
     }
 
     let color = if item.valid {
-        theme::TEXT_ON_WEAK
+        theme::text_on_weak()
     } else {
-        theme::TEXT_DIM
+        theme::text_dim()
     };
     ui.painter().text(
         Pos2::new(left + ITEM_PAD_X, rect.center().y),

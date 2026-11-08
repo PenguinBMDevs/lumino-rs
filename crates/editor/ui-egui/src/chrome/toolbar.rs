@@ -26,7 +26,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 /// 渲染工具栏。
 pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::icons::IconCache) {
     let full = ui.max_rect();
-    ui.painter().rect_filled(full, 0, theme::PANEL_BG);
+    ui.painter().rect_filled(full, 0, theme::panel_bg());
 
     let content = Rect::from_min_size(full.min, Vec2::new(full.width(), layout::TOOLBAR_CONTENT_H));
     let y = content.top() + layout::TOOLBAR_PAD_Y;
@@ -190,7 +190,7 @@ fn right_side(
         // 洋葱皮开启：`background.strong` 底色（与工具选中态同源）。
         if model.onion {
             ui.painter()
-                .rect_filled(onion_rect, CornerRadius::same(4), theme::SELECTED_BG);
+                .rect_filled(onion_rect, CornerRadius::same(4), theme::selected_bg());
         }
         let onion = icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
         let caret = icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
@@ -226,7 +226,7 @@ fn group<R>(ui: &mut egui::Ui, rect: Rect, add: impl FnOnce(&mut egui::Ui) -> R)
     ui.painter().rect_filled(
         rect,
         CornerRadius::same(layout::TOOLBAR_GROUP_RADIUS),
-        theme::TOOLBAR_BG,
+        theme::toolbar_bg(),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -244,7 +244,7 @@ fn record(ui: &mut egui::Ui, recording: bool) {
     // iced 录制红点直径 8（基线实测 8×7）；录制中保持红点（图标语义由状态栏承担）。
     let _ = recording;
     ui.painter()
-        .circle_filled(rect.center(), 4.0, theme::RECORD_RED);
+        .circle_filled(rect.center(), 4.0, theme::record_red());
 }
 
 fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, playing: bool) {
@@ -278,7 +278,7 @@ fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
             Vec2::new(1.0, rect.height() - 16.0),
         ),
         0,
-        theme::BORDER,
+        theme::border(),
     );
 
     metric(
@@ -301,14 +301,14 @@ fn metric(ui: &egui::Ui, rect: Rect, value: &str, sub: &str) {
         Align2::CENTER_CENTER,
         value,
         FontId::proportional(theme::font::BODY),
-        theme::ACCENT,
+        theme::accent(),
     );
     ui.painter().text(
         egui::pos2(rect.center().x, rect.top() + 31.0),
         Align2::CENTER_CENTER,
         sub,
         FontId::proportional(theme::font::SMALL),
-        theme::TEXT_MUTED,
+        theme::text_muted(),
     );
 }
 
@@ -329,7 +329,7 @@ fn icon_at(
     let image = cache.default_image(child.ctx(), icon, icon_size);
     let button = if selected {
         egui::Button::image(image)
-            .fill(theme::SELECTED_BG)
+            .fill(theme::selected_bg())
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(4))
     } else {

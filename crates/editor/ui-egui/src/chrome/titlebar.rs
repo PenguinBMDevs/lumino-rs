@@ -45,9 +45,9 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
         rect,
         0,
         if model.focused {
-            theme::TITLEBAR_BG
+            theme::titlebar_bg()
         } else {
-            theme::ROUTE_BAR_BG
+            theme::route_bar_bg()
         },
     );
 
@@ -87,7 +87,7 @@ fn text_width(ui: &egui::Ui, label: &str) -> f32 {
         .layout_no_wrap(
             label.to_owned(),
             FontId::proportional(MENU_FONT),
-            theme::TEXT,
+            theme::text(),
         )
         .size()
         .x

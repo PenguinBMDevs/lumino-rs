@@ -55,7 +55,7 @@ pub fn panel_rect(band: Rect, items: usize) -> Rect {
 
 /// 面板底色：工具栏底色压暗 10%（生产 `panel_background`）。
 fn panel_bg() -> egui::Color32 {
-    let base = theme::PANEL_BG;
+    let base = theme::panel_bg();
     let dim = |c: u8| (c as f32 * 0.9) as u8;
     egui::Color32::from_rgb(dim(base.r()), dim(base.g()), dim(base.b()))
 }

@@ -28,9 +28,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 /// 按只读模型渲染左侧栏。
 pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::icons::IconCache) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::PANEL_BG);
+    ui.painter().rect_filled(rect, 0, theme::panel_bg());
     let route = Rect::from_min_size(rect.min, Vec2::new(ROUTE_BAR_W, rect.height()));
-    ui.painter().rect_filled(route, 0, theme::ROUTE_BAR_BG);
+    ui.painter().rect_filled(route, 0, theme::route_bar_bg());
 
     route_bar(ui, rect, model, icons);
 
@@ -179,7 +179,7 @@ pub fn show_right_model(
     icons: &mut crate::icons::IconCache,
 ) {
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0, theme::ROUTE_BAR_BG);
+    ui.painter().rect_filled(rect, 0, theme::route_bar_bg());
     let left = rect.left();
     for (index, icon) in [
         Icon::ImageToMidi,
@@ -228,7 +228,7 @@ fn right_button(
                 Vec2::new(2.0, rect.height()),
             ),
             0,
-            theme::ACCENT,
+            theme::accent(),
         );
     }
     // 内容区 = 48 - 2（灯条），图标 20 居中 → 起点 = 左 + 13。

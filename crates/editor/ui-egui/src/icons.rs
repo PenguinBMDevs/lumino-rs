@@ -138,12 +138,17 @@ impl Icon {
         matches!(self, Self::Lumino | Self::LogoInApp | Self::MixerActive)
     }
 
-    /// 暗色主题下的默认染色。
+    /// 当前主题下的默认染色。
+    ///
+    /// 与 iced 同规则：深色主题整体染白（覆盖 SVG 内硬编码的黑色），浅色主题
+    /// 保持黑色原色。品牌 / 固定色图标不染色。
     pub fn default_tint(self) -> Option<Color32> {
         if self.keep_color() {
             None
-        } else {
+        } else if crate::theme::palette().is_dark {
             Some(Color32::WHITE)
+        } else {
+            Some(Color32::BLACK)
         }
     }
 

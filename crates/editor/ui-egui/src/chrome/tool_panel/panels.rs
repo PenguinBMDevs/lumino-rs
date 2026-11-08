@@ -39,7 +39,7 @@ const SHAPE_ICON: f32 = 36.0;
 
 /// 面板底色：工具栏底色（`background.weakest`）压暗 10%。
 pub(super) fn panel_bg() -> Color32 {
-    let base = theme::PANEL_BG;
+    let base = theme::panel_bg();
     let dim = |c: u8| (c as f32 * 0.9) as u8;
     Color32::from_rgb(dim(base.r()), dim(base.g()), dim(base.b()))
 }
@@ -84,7 +84,7 @@ pub(super) fn show(
         rect,
         CornerRadius::same(8),
         panel_bg(),
-        Stroke::new(1.0, theme::SELECTED_BG),
+        Stroke::new(1.0, theme::selected_bg()),
         egui::StrokeKind::Inside,
     );
     match panel {

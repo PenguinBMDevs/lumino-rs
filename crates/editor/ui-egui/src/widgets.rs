@@ -19,7 +19,11 @@ pub fn menu_label(ui: &mut egui::Ui, text: &str, selected: bool) -> Response {
 
 /// 指定字号的菜单文本。
 pub fn menu_label_sized(ui: &mut egui::Ui, text: &str, selected: bool, size: f32) -> Response {
-    let color = if selected { theme::ACCENT } else { theme::TEXT };
+    let color = if selected {
+        theme::accent()
+    } else {
+        theme::text()
+    };
     ui.add(
         egui::Label::new(RichText::new(text).size(size).color(color))
             .selectable(false)
@@ -73,7 +77,7 @@ pub fn icon_button(
     let image = cache.default_image(ui.ctx(), icon, icon_size);
     let button = if selected {
         egui::Button::image(image)
-            .fill(theme::SELECTED_BG)
+            .fill(theme::selected_bg())
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(4))
     } else {
@@ -105,9 +109,9 @@ pub fn traffic_button(
             response.rect,
             0,
             if close {
-                theme::CLOSE_HOVER
+                theme::close_hover()
             } else {
-                theme::SELECTED_BG
+                theme::selected_bg()
             },
         );
     }
@@ -119,9 +123,9 @@ pub fn accent_button(ui: &mut egui::Ui, text: &str, size: Vec2) -> Response {
     let button = egui::Button::new(
         RichText::new(text)
             .size(theme::font::LABEL)
-            .color(Color32::from_rgb(0x12, 0x1A, 0x2A)),
+            .color(theme::on_accent()),
     )
-    .fill(theme::ACCENT)
+    .fill(theme::accent())
     .corner_radius(CornerRadius::same(4));
     ui.add_sized(size, button)
 }
@@ -131,9 +135,9 @@ pub fn secondary_button(ui: &mut egui::Ui, text: &str, size: Vec2) -> Response {
     let button = egui::Button::new(
         RichText::new(text)
             .size(theme::font::LABEL)
-            .color(theme::TEXT),
+            .color(theme::text()),
     )
-    .fill(theme::TOOLBAR_BG)
+    .fill(theme::toolbar_bg())
     .corner_radius(CornerRadius::same(4));
     ui.add_sized(size, button)
 }
@@ -141,14 +145,14 @@ pub fn secondary_button(ui: &mut egui::Ui, text: &str, size: Vec2) -> Response {
 /// 工具栏小文本按钮（精度 / 数值）。
 pub fn small_text_button(ui: &mut egui::Ui, text: &str, selected: bool) -> Response {
     let fill = if selected {
-        theme::SELECTED_BG
+        theme::selected_bg()
     } else {
-        theme::TOOLBAR_BG
+        theme::toolbar_bg()
     };
     let button = egui::Button::new(
         RichText::new(text)
             .size(theme::font::SMALL)
-            .color(theme::TEXT),
+            .color(theme::text()),
     )
     .fill(fill)
     .corner_radius(CornerRadius::same(3));
