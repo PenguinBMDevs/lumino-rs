@@ -6,12 +6,14 @@
 
 use egui::Color32;
 
+mod right_panel;
 mod settings_audio;
 mod settings_cloud;
 mod settings_page;
 mod settings_ui;
 mod tool_panel;
 mod toolbar;
+pub use right_panel::*;
 pub use settings_audio::*;
 pub use settings_cloud::*;
 pub use settings_page::*;
@@ -372,7 +374,7 @@ pub enum RightSidebarPanelKind {
 }
 
 /// 右侧栏（48px 图标列 + 可选面板）的只读状态。
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RightSidebarModel {
     /// 面板是否可见（仅影响面板区域，图标列常驻）。
     pub panel_visible: bool,
@@ -382,6 +384,10 @@ pub struct RightSidebarModel {
     pub active: Option<RightSidebarPanelKind>,
     /// 图标列顶边（标题栏 + 工具栏高度）。
     pub top_inset: f32,
+    /// 是否正在拖拽调整面板宽度（决定手柄底色）。
+    pub resizing: bool,
+    /// 已接管的面板内容；`None` = 内容仍由 iced 绘制（素材库 / 瀑布流）。
+    pub content: Option<RightSidebarPanelModel>,
 }
 
 impl RightSidebarModel {

@@ -77,7 +77,15 @@ pub fn view<'a>(
             RightSidebarPanel::PianoWaterfall => {
                 crate::right_sidebar::piano_waterfall::panel(right_sidebar, language, window)
             }
-            RightSidebarPanel::ImageToMidi => i2m_panel(right_sidebar, window, language),
+            RightSidebarPanel::ImageToMidi => {
+                if crate::host::overlay_enabled() {
+                    // egui 叠加层接管面板内容：这里只保留同宽占位，避免两份
+                    // 内容（文字 / 输入框）重影。拖拽手柄仍由 iced 负责。
+                    Space::new().width(Length::Fill).height(Length::Fill).into()
+                } else {
+                    i2m_panel(right_sidebar, window, language)
+                }
+            }
         };
 
         // 调整大小手柄（放在面板左侧边缘，紧贴主内容区——面板向右栏图标列方向

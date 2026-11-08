@@ -88,12 +88,14 @@ impl OverlayInput {
             });
         }
         // 文本提交只取可打印字符：Ctrl/Alt 组合留给快捷键，不当作输入。
+        // 部分平台会给编辑键（退格 / 回车 / Tab）同时附带控制字符文本，
+        // 必须过滤——它们由 `Event::Key` 处理，重复插入会污染输入缓冲。
         if pressed
             && !self.modifiers.ctrl
             && !self.modifiers.alt
-            && let Some(text) = &event.text
+            && let Some(text) = event.text.as_deref().and_then(printable)
         {
-            self.events.push(egui::Event::Text(text.to_string()));
+            self.events.push(egui::Event::Text(text));
         }
     }
 
@@ -230,4 +232,24 @@ pub(super) fn egui_key(key: &winit::keyboard::Key) -> Option<egui::Key> {
         }
         _ => return None,
     })
+}
+
+/// 可打印文本：过滤控制字符（编辑键由 `Event::Key` 处理）。
+fn printable(text: &str) -> Option<String> {
+    (!text.is_empty() && !text.chars().any(char::is_control)).then(|| text.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::printable;
+
+    #[test]
+    fn printable_filters_control_characters() {
+        assert_eq!(printable("16").as_deref(), Some("16"));
+        assert_eq!(printable("中文"), Some("中文".to_owned()));
+        assert_eq!(printable("\u{8}"), None, "退格控制字符不得插入");
+        assert_eq!(printable("\r"), None, "回车必须在插入前被拦截");
+        assert_eq!(printable("\t"), None);
+        assert_eq!(printable(""), None);
+    }
 }

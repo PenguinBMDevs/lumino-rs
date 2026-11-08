@@ -716,13 +716,52 @@ callback / 多视口 / 截图能力。
     `WindowTraffic(Close)` 且设置窗口关闭。
   - 证据图：`target/cl-page2.png`、`cl-final.png`、`cl-add2.png`。
 
-**Task 1.3（下一步）：右侧栏面板内容**
+**Task 1.3（第十七步）：右侧栏「图片转 MIDI」面板 + 弹层重绘修复 — 已完成**
 
-- 现状：设置对话框 **10/10 页**全部由 egui 绘制，并且设置窗口整窗消费输入、
-  标题栏按钮已接通。标题栏菜单、工具栏（含弹层）、悬浮工具条与五个面板、
-  左侧栏、右侧栏图标列、状态栏均已是 egui。
-- 下一步：迁移右侧栏面板内容（素材 / 音轨属性 / 混音器等），继续保持
-  「状态镜像 + 动作回传」模式；之后收口保存确认对话框的按钮动作与原生标题栏
-  菜单让位。
+- 新增 `chrome/model/right_panel.rs`（`RightSidebarPanelModel` / `I2mPanelModel`
+  / 行与控件枚举 / `I2mField`）与 `chrome/right_panel.rs`（渲染 + 动作通道），
+  并把面板 band 扩到「`panel_width` + 48 图标列」：左侧 6px 拖拽手柄继续交给
+  iced（缩放拖拽照常），内容区 `panel_width - 6` 整块进入 egui 占用列表。
+- 面板内容对齐生产：标题 / 「选择图片文件」/ 「转换参数」/ Key 范围（双输入 +
+  「~」）/ 目标高度 / 每像素 tick / 颜色数 / 调色板下拉；按钮与输入框
+  （42×22、`background.weak` 底、1px `background.strong` 边框）逐项复刻；
+  「转换为 MIDI」仅在已选择文件时出现，转换中禁用并改文案。
+- 动作：`SelectImageFile / I2mConfigTextChanged(field,text) / I2mPaletteChanged /
+  ConvertClicked` → `Message::RightSidebar(...)`；生产侧在
+  `egui_chrome/right_sidebar.rs` 统一构建模型与翻译动作。
+- 叠加层启用时 iced 的 I2M 面板内容（`view.rs` 分发）改为同宽占位，避免两份
+  文字 / 输入框重影；素材库与瀑布流仍走 iced（拖拽出卷帘 / gfx 纹理依赖）。
+- **修复两个真实缺陷**：
+  1. 编辑键（退格等）在部分平台同时带控制字符 `text`，被当作文本插入输入框，
+     与 `Key::Backspace` 叠加污染缓冲；`OverlayInput` 增加可打印字符过滤
+     （含单测）。
+  2. egui 弹层（ComboBox / Tooltip）首帧是「测量 pass」不产生图元，叠加层没有
+     按 `has_requested_repaint()` 再排一帧，导致主窗口下拉菜单要等下一次鼠标
+     事件才出现；现在按需补一帧重绘。
+- 验收：
+  - `right_sidebar_bands` 5/5：band 几何（194 宽 / 右缘贴图标列 / 手柄不占用）、
+    选择图片、配置输入（键入回传）、调色板下拉（选中下标）、转换按钮可见性；
+  - `egui_chrome` 29/29：新增 I2M 模型镜像（5 行、调色板下标、已选文件提示、
+    转换中禁用）与四个动作翻译；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 与上一步逐项一致，基线零改动；
+  - 真实窗口（ppp=1.25）：点右栏 I2M 图标 → 面板按生产几何出现；
+    「选择图片文件」→ `SelectImageFile` 且只弹出一个文件对话框；
+    目标高度输入框退格清空再键入 → `I2mConfigTextChanged` 依次
+    `""` / `"4"` / `"42"`，输入框显示 42；
+    调色板下拉正常展开（17 个本地化选项）→ 选「八叉树」→
+    `I2mPaletteChanged(3)` 且显示同步；拖拽左缘手柄 → 面板变宽、控件重新右对齐，
+    iced 缩放链路未被占用列表打断。
+  - 证据图：`target/rs-final-panel.png`、`rs-final-palette.png`、
+    `rs-palette-picked2.png`、`rs-typed3.png`、`rs-resized.png`。
+
+**Task 1.3（下一步）：素材库面板 + 保存确认动作 + 原生标题栏菜单**
+
+- 现状：设置 10/10 页、标题栏菜单、工具栏与弹层、悬浮工具条与五个面板、
+  左侧栏、右侧栏图标列与 I2M 面板、状态栏均已是 egui。
+- 下一步：迁移右侧栏素材库面板（列表 / 重命名 / 右键菜单 / 添加菜单），
+  需要为「拖拽出到卷帘」补一条 egui → iced 的拖拽桥；随后给保存确认对话框
+  建模按钮动作，并处理系统原生标题栏模式下的 iced 菜单让位。
 - 卷帘骨架仍由 `lumino-gfx` wgpu 通道拥有，等该通道拆分/迁移后再打开
   `LUMINO_EGUI_PIANOROLL`。

@@ -4,6 +4,7 @@ pub mod menu;
 mod model;
 pub mod overflow;
 pub mod piano_roll;
+pub mod right_panel;
 pub mod sidebar;
 pub mod statusbar;
 pub mod titlebar;
@@ -13,9 +14,11 @@ pub mod toolbar_popup;
 
 pub use model::{
     AudioControlModel, AudioField, AudioPageModel, AudioRowModel, BrushPanelModel, CloudConnModel,
-    CloudPageModel, FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel,
-    ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
-    ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow,
+    CloudPageModel, FillDivisionPanelModel, I2mControlModel, I2mConvertModel, I2mField,
+    I2mPanelModel, I2mRowModel, RightSidebarPanelModel, ShapeKind, ShapePanelModel,
+    TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
+    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
+    UiPageModel, UiRow,
 };
 pub use model::{
     ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, MenuBarModel,
@@ -216,24 +219,70 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 右侧栏 band：生产布局是 `column![toolbar, row![editor, right_bar]]`，
-    // 因此图标列从标题栏 + 工具栏下沿开始、到状态栏上沿结束，宽 48。
+    // 因此图标列从标题栏 + 工具栏下沿开始、到状态栏上沿结束。面板可见且内容
+    // 已由 egui 接管时，band 扩到「面板宽 + 48」，覆盖 iced 的同位置内容。
     if let Some(right) = &model.right_sidebar {
         let full = root.max_rect();
         let top = (full.top() + right.top_inset).max(full.top());
         let bottom = (full.bottom() - layout::STATUSBAR_H).max(top);
-        let width = right.bar_width().max(0.0).min(full.width());
+        let content = right
+            .content
+            .as_ref()
+            .filter(|_| right.panel_visible && bottom > top);
+        let total = if content.is_some() {
+            right.panel_width + right.bar_width()
+        } else {
+            right.bar_width()
+        };
+        let width = total.max(0.0).min(full.width());
         let band = egui::Rect::from_min_max(
             egui::pos2(full.right() - width, top),
             egui::pos2(full.right(), bottom),
         );
         if band.width() > 0.0 && band.height() > 0.0 {
+            if let Some(content) = content {
+                // 手柄 6px（生产 `RESIZE_HANDLE_WIDTH`）留在左侧，不进入占用列表：
+                // iced 仍负责缩放拖拽，只有内容区改由 egui 处理。
+                let handle = egui::Rect::from_min_max(
+                    band.min,
+                    egui::pos2((band.left() + 6.0).min(band.right()), band.bottom()),
+                );
+                root.painter().rect_filled(
+                    handle,
+                    0,
+                    if right.resizing {
+                        theme::ACCENT_STRONG
+                    } else {
+                        theme::PANEL_BG
+                    },
+                );
+                let content_rect = egui::Rect::from_min_max(
+                    egui::pos2(handle.right(), band.top()),
+                    egui::pos2(band.right() - right.bar_width(), band.bottom()),
+                );
+                if content_rect.width() > 0.0 {
+                    right_panel::set_panel_rect(ui.ctx(), content_rect);
+                    right_panel::show(&mut root, content_rect, content);
+                }
+            } else {
+                right_panel::clear_panel_rect(ui.ctx());
+            }
+
+            let bar = egui::Rect::from_min_max(
+                egui::pos2(band.right() - right.bar_width(), band.top()),
+                band.max,
+            );
             let mut child = root.new_child(
                 egui::UiBuilder::new()
-                    .max_rect(band)
+                    .max_rect(bar)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             sidebar::show_right_model(&mut child, right, icons);
+        } else {
+            right_panel::clear_panel_rect(ui.ctx());
         }
+    } else {
+        right_panel::clear_panel_rect(ui.ctx());
     }
 
     // 钢琴卷帘骨架 band：只画键盘列 / 标尺行 / 两条滚动条，

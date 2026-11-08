@@ -54,6 +54,7 @@ fn model() -> ChromeModel {
             panel_width: 200.0,
             active: None,
             top_inset: 102.0,
+            ..Default::default()
         }),
         toolbar: Some(ToolbarModel {
             left_inset: 248.0,

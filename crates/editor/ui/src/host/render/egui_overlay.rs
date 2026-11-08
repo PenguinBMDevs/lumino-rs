@@ -82,6 +82,7 @@ impl EguiOverlay {
     ) -> (
         Option<usize>,
         Option<chrome::ToolbarAction>,
+        Option<chrome::right_panel::RightSidebarAction>,
         Vec<Rect>,
         bool,
     ) {
@@ -114,6 +115,7 @@ impl EguiOverlay {
         // `run_ui` 不返回闭包值：菜单/工具栏点击与占用矩形通过 egui 内存回传。
         let menu_action = chrome::menu::take_action(&ctx);
         let toolbar_action = chrome::toolbar_popup::take_action(&ctx);
+        let panel_action = chrome::right_panel::take_action(&ctx);
         let blocked = chrome::menu::take_blocked(&ctx);
 
         let mut textures = output.textures_delta;
@@ -154,6 +156,7 @@ impl EguiOverlay {
         (
             menu_action,
             toolbar_action,
+            panel_action,
             blocked,
             self.ctx.text_edit_focused(),
         )
@@ -189,20 +192,27 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (menu_action, toolbar_action, blocked, wants_keyboard) = overlay.draw(OverlayFrame {
-            device: &device,
-            queue: &queue,
-            view,
-            format,
-            size_px: [size.width, size.height],
-            pixels_per_point,
-            app_frame,
-            model: &model,
-            events,
-            focused,
-        });
+        let (menu_action, toolbar_action, panel_action, blocked, wants_keyboard) =
+            overlay.draw(OverlayFrame {
+                device: &device,
+                queue: &queue,
+                view,
+                format,
+                size_px: [size.width, size.height],
+                pixels_per_point,
+                app_frame,
+                model: &model,
+                events,
+                focused,
+            });
         // 设置对话框动作：菜单切换 / 表单变更 / 确认（独立 OS 窗口同样是叠加层宿主）。
         let settings_action = lumino_ui_egui::settings::take_action(&overlay.ctx);
+        // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
+        // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
+        // 鼠标事件才出现。
+        if overlay.ctx.has_requested_repaint() {
+            self.window_ctx.window.request_redraw();
+        }
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
         self.egui_blocked = blocked;
         self.egui_input.set_wants_keyboard(wants_keyboard);
@@ -217,6 +227,14 @@ impl Host {
             && let Some(message) = self.root.settings_action_message(&action)
         {
             tracing::info!("egui 设置动作：{action:?}");
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+            let _ = self.process_message(message);
+        }
+        if let Some(action) = panel_action
+            && let Some(message) = self.root.right_sidebar_action_message(&action)
+        {
+            tracing::info!("egui 右侧栏动作：{action:?}");
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
             let _ = self.process_message(message);

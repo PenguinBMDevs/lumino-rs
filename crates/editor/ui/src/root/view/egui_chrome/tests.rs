@@ -5,7 +5,7 @@ use lumino_core::SnapSpec;
 use lumino_extras::i18n::Language;
 use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 use lumino_ui_egui::chrome::{
-    DialogModel, DialogPalette, MenuEntry, SettingsPalette, ToolbarAction,
+    DialogModel, DialogPalette, MenuEntry, RightSidebarPanelKind, SettingsPalette, ToolbarAction,
 };
 
 use crate::Message;

@@ -1,0 +1,162 @@
+//! 右侧栏面板内容：模型镜像与动作翻译。
+//!
+//! 当前接管「图片转 MIDI」：参数文本缓冲与调色板下标全部来自生产
+//! `RightSidebar.config`，动作原样回传 `Message::RightSidebar(...)`。
+//! 素材库（拖拽出到卷帘）与钢琴瀑布流（gfx 纹理）仍由 iced 绘制，
+//! 因此 `content` 只为 I2M 返回 `Some`。
+
+use lumino_core::tr;
+use lumino_message::{I2mConfigField, RightSidebarAction as SidebarAction};
+use lumino_ui_egui::chrome::right_panel::RightSidebarAction as PanelAction;
+use lumino_ui_egui::chrome::{
+    I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, RightSidebarModel,
+    RightSidebarPanelKind, RightSidebarPanelModel,
+};
+use lumino_ui_egui::layout;
+
+use crate::Message;
+use crate::right_sidebar::{RightSidebarPanel, palette_algorithms};
+use crate::root::Root;
+
+/// 右侧栏模型：图标列 + 已接管的面板内容。
+pub(super) fn model(
+    root: &Root,
+    titlebar_present: bool,
+    shows_toolbar: bool,
+) -> Option<RightSidebarModel> {
+    if !root.right_sidebar_visible() {
+        return None;
+    }
+    let active = match root.right_sidebar.active_panel {
+        RightSidebarPanel::ImageToMidi => RightSidebarPanelKind::ImageToMidi,
+        RightSidebarPanel::Materials => RightSidebarPanelKind::Materials,
+        RightSidebarPanel::PianoWaterfall => RightSidebarPanelKind::PianoWaterfall,
+    };
+    Some(RightSidebarModel {
+        panel_visible: root.right_sidebar.panel_visible,
+        panel_width: root.right_sidebar.panel_width,
+        active: root.right_sidebar.panel_visible.then_some(active),
+        top_inset: (if titlebar_present {
+            layout::TITLEBAR_H
+        } else {
+            0.0
+        }) + if shows_toolbar {
+            layout::TOOLBAR_H
+        } else {
+            0.0
+        },
+        resizing: root.right_sidebar.is_resizing,
+        content: content(root),
+    })
+}
+
+impl Root {
+    /// 右侧栏面板动作 → 生产 `Message`。
+    pub(crate) fn right_sidebar_action_message(&self, action: &PanelAction) -> Option<Message> {
+        action_message(action)
+    }
+}
+
+/// 当前页面的右侧栏内容；未接管的面板返回 `None`（继续由 iced 绘制）。
+pub(super) fn content(root: &Root) -> Option<RightSidebarPanelModel> {
+    if !root.right_sidebar.panel_visible || !root.right_sidebar_visible() {
+        return None;
+    }
+    match root.right_sidebar.active_panel {
+        RightSidebarPanel::ImageToMidi => {
+            Some(RightSidebarPanelModel::ImageToMidi(i2m_model(root)))
+        }
+        RightSidebarPanel::Materials | RightSidebarPanel::PianoWaterfall => None,
+    }
+}
+
+fn i2m_model(root: &Root) -> I2mPanelModel {
+    let sidebar = &root.right_sidebar;
+    let cfg = &sidebar.config;
+    let palette_options: Vec<String> = palette_algorithms()
+        .into_iter()
+        .map(|(name, _)| name.to_owned())
+        .collect();
+    let selected = sidebar.selected_image_path.is_some();
+
+    I2mPanelModel {
+        title: tr!("图片转 MIDI").to_string(),
+        select_image: tr!("选择图片文件").to_string(),
+        selected_hint: selected.then(|| tr!("选择了一个图片文件").to_string()),
+        config_title: tr!("转换参数").to_string(),
+        rows: vec![
+            I2mRowModel {
+                label: tr!("Key 范围").to_string(),
+                control: I2mControlModel::KeyRange {
+                    start_field: I2mField::StartKey,
+                    start_text: cfg.start_key_text.clone(),
+                    end_field: I2mField::EndKey,
+                    end_text: cfg.end_key_text.clone(),
+                },
+            },
+            I2mRowModel {
+                label: tr!("目标高度").to_string(),
+                control: I2mControlModel::Input {
+                    field: I2mField::TargetHeight,
+                    text: cfg.target_height_text.clone(),
+                },
+            },
+            I2mRowModel {
+                label: tr!("每像素 tick").to_string(),
+                control: I2mControlModel::Input {
+                    field: I2mField::TicksPerPixel,
+                    text: cfg.ticks_per_pixel_text.clone(),
+                },
+            },
+            I2mRowModel {
+                label: tr!("颜色数").to_string(),
+                control: I2mControlModel::Input {
+                    field: I2mField::ColorCount,
+                    text: cfg.color_count_text.clone(),
+                },
+            },
+            I2mRowModel {
+                label: tr!("调色板").to_string(),
+                control: I2mControlModel::Palette {
+                    options: palette_options,
+                    selected: cfg.palette_index,
+                },
+            },
+        ],
+        convert: selected.then(|| I2mConvertModel {
+            label: if sidebar.converting {
+                tr!("转换中...").to_string()
+            } else {
+                tr!("转换为 MIDI").to_string()
+            },
+            enabled: !sidebar.converting,
+        }),
+    }
+}
+
+/// 面板动作 → 生产 `Message`。
+pub(super) fn action_message(action: &PanelAction) -> Option<Message> {
+    Some(match action {
+        PanelAction::SelectImageFile => Message::RightSidebar(SidebarAction::SelectImageFile),
+        PanelAction::I2mConfigTextChanged { field, text } => {
+            Message::RightSidebar(SidebarAction::I2mConfigTextChanged {
+                field: config_field(*field),
+                text: text.clone(),
+            })
+        }
+        PanelAction::I2mPaletteChanged(index) => {
+            Message::RightSidebar(SidebarAction::I2mPaletteChanged(*index))
+        }
+        PanelAction::ConvertClicked => Message::RightSidebar(SidebarAction::ConvertClicked),
+    })
+}
+
+fn config_field(field: I2mField) -> I2mConfigField {
+    match field {
+        I2mField::StartKey => I2mConfigField::StartKey,
+        I2mField::EndKey => I2mConfigField::EndKey,
+        I2mField::TargetHeight => I2mConfigField::TargetHeight,
+        I2mField::TicksPerPixel => I2mConfigField::TicksPerPixel,
+        I2mField::ColorCount => I2mConfigField::ColorCount,
+    }
+}

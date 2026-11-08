@@ -6,6 +6,7 @@
 mod dialogs;
 mod gates;
 mod menu;
+mod right_sidebar;
 mod settings_audio;
 mod settings_pages;
 mod settings_ui;
@@ -16,8 +17,8 @@ use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SidebarGroup, SidebarModel,
-    SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
+    ChromeModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
+    TitlebarModel, ToolbarModel,
 };
 
 use crate::root::Root;
@@ -363,40 +364,9 @@ impl Root {
             None
         };
 
-        // 右侧栏图标列：仅在实际渲染右侧栏的视图接管（走带 / 瀑布流 / 导出面板
-        // / 卷帘关闭时 iced 不渲染右栏）。面板本身保持在 iced（素材扫描、图片
-        // 转换等交互复杂），这里只接管 48px 图标列。
-        let active_panel = match self.right_sidebar.active_panel {
-            crate::right_sidebar::RightSidebarPanel::ImageToMidi => {
-                RightSidebarPanelKind::ImageToMidi
-            }
-            crate::right_sidebar::RightSidebarPanel::Materials => RightSidebarPanelKind::Materials,
-            crate::right_sidebar::RightSidebarPanel::PianoWaterfall => {
-                RightSidebarPanelKind::PianoWaterfall
-            }
-        };
-        let right_sidebar = if self.right_sidebar_visible() {
-            Some(RightSidebarModel {
-                panel_visible: self.right_sidebar.panel_visible,
-                panel_width: self.right_sidebar.panel_width,
-                active: if self.right_sidebar.panel_visible {
-                    Some(active_panel)
-                } else {
-                    None
-                },
-                top_inset: (if titlebar_present {
-                    layout::TITLEBAR_H
-                } else {
-                    0.0
-                }) + if shows_toolbar {
-                    layout::TOOLBAR_H
-                } else {
-                    0.0
-                },
-            })
-        } else {
-            None
-        };
+        // 右侧栏模型：图标列 + 已接管的面板内容（I2M）；素材库 / 瀑布流的内容
+        // 仍由 iced 绘制，模型里 `content` 为 `None`。
+        let right_sidebar = right_sidebar::model(self, titlebar_present, shows_toolbar);
 
         let piano_roll = if gates::piano_roll_overlay_enabled() {
             self.egui_piano_roll_model()
@@ -434,6 +404,8 @@ impl Root {
     }
 }
 
+#[cfg(test)]
+mod right_sidebar_tests;
 #[cfg(test)]
 mod settings_audio_tests;
 #[cfg(test)]
