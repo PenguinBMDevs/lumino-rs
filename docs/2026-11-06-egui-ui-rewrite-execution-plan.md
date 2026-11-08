@@ -971,10 +971,37 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/roll-gate3.png`、`roll-gate-keys3.png`（gate 开）、
     `roll-off2.png`、`roll-off-keys-zoom.png`（gate 关 = gfx）。
 
-**Task 1.3（下一步）：卷帘骨架默认接管 + 暗色口径对齐**
+**Task 1.3（第二十四步）：卷帘骨架默认接管（删除门控）+ 暗色生产口径 + 基线重算 — 已完成**
 
-- 现状：`LUMINO_EGUI_PIANOROLL=1` 时骨架与 gfx 已逐像素对齐；默认仍关闭，
-  因为暗色骨架仍走历史 iced-canvas 口径（键线为 50% 混合、左上角不画标尺底色），
-  与 gfx 生产口径有两处 1px 级差异，且暗色像素基线尚未重算。
-- 下一步：暗色也切到生产口径，重算 `piano_roll_skeleton` 三张 egui 基线，
-  然后把 gate 默认打开并删除环境变量分支。
+- **默认接管**：删除 `egui_chrome/gates.rs` 与 `LUMINO_EGUI_PIANOROLL`
+  （`Root::egui_piano_roll_model()` 直接进入模型）；`egui_piano_roll_active()`
+  只剩「overlay 开 + 模型非空」两个条件，模型为空时 gfx 继续画骨架。
+- **暗色切生产口径**：骨架统一走 `roll_*` 色板（不再有「暗色 50% 混合描边」的
+  历史分支）；并修正一处真实差异——生产 gfx 的暗色键盘**没有可见键线**
+  （只靠键色区分），亮色才有 1 像素 `strongest` 键线；左上角（标尺同高）
+  统一画标尺底色 + 顶部键音名，与 gfx 一致。
+- **基线重算（有意变更）**：`main_chrome` / `piano_roll_skeleton` 各 3 张 egui
+  基线按新骨架重算（`capture_egui` 12/12 校验通过）。`compare_egui` 对 iced
+  基线的差异随之变化（piano_roll 1.00: 19514→26186；1.25: 53658→45789；
+  main_chrome 1.00: 20212→26439；1.25: 55255→47955）——这是向**生产 gfx**
+  对齐的结果，不是回归；真实窗口逐像素对照见下。
+- 验收：
+  - `bands_pixels` 通过（暗色首行断言改为白键底色 = 生产无键线）；
+    `theme_palette` 5/5；`egui_chrome` 34/34；`lumino-gfx` 273/273；
+    `ui-egui` 全量、`ui-parity` 12/12；
+  - `clippy -D warnings`、`check --bin lumino-rs`；`capture_iced` 18/18、
+    `capture_egui` 12/12（6 张新基线）；
+  - 真实窗口（ppp=1.25）不设任何卷帘环境变量：
+    - 暗色（临时切 Tokyo Night Storm，验证后已还原 Light）：
+      键盘行 `36/42` 与 overlay 关闭（gfx）逐像素一致，网格区域 **0 像素差异**，
+      标尺仅文字抗锯齿差；键盘标签行有字体抗锯齿差；
+    - 亮色：键盘行 `245/190/222/206` 与 gfx 一致，网格区域仅 939 px 网格线 AA。
+  - 证据图：`target/light-final.png`、`dark-on2.png`、`dark-on2-keys.png`、
+    `dark-off.png`、`dark-off-keys.png`。
+
+**Task 1.3（下一步）：剩余对话框迁移（工程设置 / 导出 / 历史 …）**
+
+- 现状：主窗口外壳、右侧栏三面板、保存确认与设置对话框已是 egui；
+  卷帘骨架默认接管，gfx 只画网格线 / 音符 / 洋葱皮。
+- 下一步：把 `ProjectSettings` 等 iced-only 对话框迁到 egui（动作通道 + 无头
+  band 测试 + 真实窗口），逐步删除 iced 对话框与 `lumino-ui` 中的 iced 依赖。

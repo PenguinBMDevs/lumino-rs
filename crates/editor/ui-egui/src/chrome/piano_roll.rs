@@ -164,7 +164,7 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
     let dark = theme::palette().is_dark;
     // 被标尺压住顶部的那个键：生产里角上显示它的音名（键盘列左上角）。
     let mut corner_label: Option<String> = None;
-    // 亮色主题的键线：每个键顶边一条（1 物理像素），与生产 gfx 的键盘一致。
+    // 键线：每个键顶边一条 1 物理像素线，与生产 gfx 的键盘一致。
     let mut key_tops: Vec<f32> = Vec::new();
     for index in 0..view.visible_keys {
         let world_y = (max_key - f32::from(index)) * key_h;
@@ -196,16 +196,8 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
             base
         };
         painter.rect_filled(key_rect, 0, fill);
-        if dark {
-            // 历史口径（不参与像素基线变更）：居中 1px 描边，暗色下边框色与
-            // 内容底同色，合成结果是 50% 混合的分隔线。
-            painter.rect_stroke(
-                key_rect,
-                0,
-                egui::Stroke::new(1.0, mix(fill, theme::base_bg(), 0.5)),
-                egui::StrokeKind::Inside,
-            );
-        } else if y + key_h > ruler_h {
+        // 暗色生产键盘没有可见键线（gfx 只靠键色区分），亮色才有 1px 键线。
+        if !dark && y + key_h > ruler_h {
             key_tops.push(key_rect.top().max(rect.top() + ruler_h));
         }
         // 音名：键盘宽度中点、主题文字色、11px（iced `KEY_LABEL_FONT_SIZE`）。
@@ -220,10 +212,7 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
 
     // 左上角与标尺同高的一条是「标尺盖住键盘」的区域：生产用它自己的底色
     // （`ruler_background_color`）覆盖，并保留被压住那个键的音名。
-    //
-    // 深色主题保持历史 iced-canvas 口径（暗底上两者肉眼无差），避免改动既有
-    // 像素基线；亮色主题按生产实测色对齐。
-    if ruler_h > 0.0 && !dark {
+    if ruler_h > 0.0 {
         let corner = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ruler_h));
         painter.rect_filled(corner, 0, theme::roll_ruler_bg());
         if let Some(label) = &corner_label {
@@ -370,16 +359,6 @@ fn tint(color: Color32, factor: f32) -> Color32 {
         scale(color.g()),
         scale(color.b()),
         color.a(),
-    )
-}
-
-/// 线性混合两个不透明颜色（`t` = `to` 占比）。
-fn mix(from: Color32, to: Color32, t: f32) -> Color32 {
-    let blend = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
-    Color32::from_rgb(
-        blend(from.r(), to.r()),
-        blend(from.g(), to.g()),
-        blend(from.b(), to.b()),
     )
 }
 

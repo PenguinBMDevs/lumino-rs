@@ -4,7 +4,6 @@
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
 
 mod dialogs;
-mod gates;
 mod menu;
 mod palette;
 mod right_sidebar;
@@ -129,9 +128,7 @@ impl Root {
     /// 必须与模型装配同源：模型为空（循环区间 / 中途变拍号 / 洋葱皮 / 协作光标 /
     /// 非卷帘视图 …）时 gfx 仍要绘制键盘与标尺，否则整块骨架会消失。
     pub(crate) fn egui_piano_roll_active(&self) -> bool {
-        crate::host::overlay_enabled()
-            && gates::piano_roll_overlay_enabled()
-            && self.egui_piano_roll_model().is_some()
+        crate::host::overlay_enabled() && self.egui_piano_roll_model().is_some()
     }
 
     /// 卷帘骨架模型：只在 iced 用纯 UI 绘制的场合接管。
@@ -376,15 +373,11 @@ impl Root {
             None
         };
 
-        // 右侧栏模型：图标列 + 已接管的面板内容（I2M）；素材库 / 瀑布流的内容
-        // 仍由 iced 绘制，模型里 `content` 为 `None`。
+        // 右侧栏模型：图标列 + 已接管的面板内容（I2M / 素材库 / 瀑布流）。
         let right_sidebar = right_sidebar::model(self, titlebar_present, shows_toolbar);
 
-        let piano_roll = if gates::piano_roll_overlay_enabled() {
-            self.egui_piano_roll_model()
-        } else {
-            None
-        };
+        // 卷帘骨架：默认接管（模型为空时 gfx 继续绘制自己的键盘/标尺）。
+        let piano_roll = self.egui_piano_roll_model();
 
         let tool_panel_top = (if titlebar_present {
             lumino_ui_egui::layout::TITLEBAR_H
