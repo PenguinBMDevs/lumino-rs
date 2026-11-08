@@ -74,6 +74,18 @@ pub struct Palette {
     pub route_indicator: Color32,
     /// Windows 关闭按钮 hover 红。
     pub close_hover: Color32,
+    /// 钢琴卷帘：键盘列底色（iced `keyboard_background_color`）。
+    pub roll_keyboard_bg: Color32,
+    /// 钢琴卷帘：白键（iced `white_key_color`）。
+    pub roll_white_key: Color32,
+    /// 钢琴卷帘：黑键（iced `black_key_color`）。
+    pub roll_black_key: Color32,
+    /// 钢琴卷帘：琴键分隔线（iced `key_line_color`）。
+    pub roll_key_line: Color32,
+    /// 钢琴卷帘：标尺底色（iced `ruler_background_color`）。
+    pub roll_ruler_bg: Color32,
+    /// 钢琴卷帘：音名 / 小节号文字（iced `text_color`）。
+    pub roll_text: Color32,
 }
 
 /// 从 iced `Extended` 调色板摘出的语义种子（生产侧构造，ui-egui 无需依赖 iced）。
@@ -93,6 +105,8 @@ pub struct PaletteSeed {
     pub neutral: Color32,
     /// `background.strong`。
     pub strong: Color32,
+    /// `background.strongest`。
+    pub strongest: Color32,
     /// `background.base.text`。
     pub text: Color32,
     /// `background.weak.text`。
@@ -142,6 +156,13 @@ impl Palette {
         playhead: Color32::from_rgb(0xFF, 0x33, 0x33),
         route_indicator: Color32::from_rgb(0xA6, 0x59, 0x59),
         close_hover: Color32::from_rgb(0xC4, 0x2B, 0x1C),
+        // 卷帘骨架（iced `ThemeExt` 的 Tokyo Night Storm 口径）。
+        roll_keyboard_bg: Color32::from_rgb(0x24, 0x28, 0x3B),
+        roll_white_key: Color32::from_rgb(0x2A, 0x2F, 0x47),
+        roll_black_key: Color32::from_rgb(0x24, 0x28, 0x3B),
+        roll_key_line: Color32::from_rgb(0x39, 0x40, 0x63),
+        roll_ruler_bg: Color32::from_rgb(0x24, 0x28, 0x3B),
+        roll_text: Color32::WHITE,
     };
 
     /// 由 iced 调色板种子派生完整语义色板。
@@ -205,6 +226,25 @@ impl Palette {
             playhead: Self::TOKYO_NIGHT_STORM.playhead,
             route_indicator: Self::TOKYO_NIGHT_STORM.route_indicator,
             close_hover: Self::TOKYO_NIGHT_STORM.close_hover,
+            // 卷帘骨架：与 iced `ThemeExt` 逐条同规则。
+            roll_keyboard_bg: if seed.is_dark { base } else { seed.weak },
+            roll_white_key: if seed.is_dark {
+                seed.weakest
+            } else {
+                seed.weak
+            },
+            roll_black_key: if seed.is_dark { base } else { seed.strong },
+            roll_key_line: if seed.is_dark {
+                seed.weak
+            } else {
+                seed.strongest
+            },
+            roll_ruler_bg: if seed.is_dark { base } else { seed.weakest },
+            roll_text: if seed.is_dark {
+                Color32::WHITE
+            } else {
+                Color32::BLACK
+            },
         }
     }
 }
@@ -269,6 +309,12 @@ color_getters!(
     playhead,
     route_indicator,
     close_hover,
+    roll_keyboard_bg,
+    roll_white_key,
+    roll_black_key,
+    roll_key_line,
+    roll_ruler_bg,
+    roll_text,
 );
 
 /// 字体尺寸（逻辑点）。

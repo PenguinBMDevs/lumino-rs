@@ -61,6 +61,7 @@ pub struct RenderParamsBuilder {
     fps: f32,
     skip_scene_render: bool,
     is_vertical_roll: bool,
+    skip_roll_chrome: bool,
     content_dirty: bool,
     subpixel_note_mode: bool,
     vs_cull_mode: bool,
@@ -261,6 +262,13 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 叠加层接管卷帘骨架时置位：gfx 不再绘制键盘 / 标尺（网格裁剪区去掉
+    /// 键盘列与标尺行，标尺实例不提交），中央网格线与音符保持不变。
+    pub fn skip_roll_chrome(mut self, skip: bool) -> Self {
+        self.skip_roll_chrome = skip;
+        self
+    }
+
     /// 设置本帧是否携带必须在 present 前立即可见的内容变化。
     ///
     /// `false`（纯视口变化帧）时 UI 线程跳过 `wait_for_frame`；默认 `true`（保守等待）。
@@ -362,6 +370,7 @@ impl RenderParamsBuilder {
             fps: self.fps,
             skip_scene_render: self.skip_scene_render,
             is_vertical_roll: self.is_vertical_roll,
+            skip_roll_chrome: self.skip_roll_chrome,
             content_dirty: self.content_dirty,
             subpixel_note_mode: self.subpixel_note_mode,
             vs_cull_mode: self.vs_cull_mode,

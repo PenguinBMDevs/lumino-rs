@@ -156,16 +156,24 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
 /// 键盘列：左上角缝隙（标尺高）+ 琴键区。
 fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) {
     let painter = ui.painter();
-    // iced `keyboard_background_color`（暗色 = `background.base`）。
-    painter.rect_filled(rect, 0, theme::base_bg());
+    // iced `keyboard_background_color`（暗色 = `background.base`，亮色 = `weak`）。
+    painter.rect_filled(rect, 0, theme::roll_keyboard_bg());
 
     let key_h = view.key_height.max(1.0);
     let max_key = f32::from(view.visible_keys.saturating_sub(1));
+    let dark = theme::palette().is_dark;
+    // 被标尺压住顶部的那个键：生产里角上显示它的音名（键盘列左上角）。
+    let mut corner_label: Option<String> = None;
+    // 亮色主题的键线：每个键顶边一条（1 物理像素），与生产 gfx 的键盘一致。
+    let mut key_tops: Vec<f32> = Vec::new();
     for index in 0..view.visible_keys {
         let world_y = (max_key - f32::from(index)) * key_h;
         let y = world_y - view.scroll_y + ruler_h;
         if y + key_h < ruler_h || y > rect.height() {
             continue;
+        }
+        if y < ruler_h && corner_label.is_none() {
+            corner_label = Some(note_name(index));
         }
         let key_rect = Rect::from_min_size(
             egui::pos2(rect.left(), rect.top() + y),
@@ -173,32 +181,74 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
         );
         let black = is_key_dark(index);
         let base = if black {
-            theme::base_bg()
+            theme::roll_black_key()
         } else {
-            theme::panel_bg()
+            theme::roll_white_key()
         };
-        // 256 键扩展区（128..）在暗色下提亮 15%（iced 同规则）。
-        let fill = if index >= 128 { tint(base, 1.15) } else { base };
+        // 256 键扩展区（128..）：亮色压暗 15%、暗色提亮 15%（iced 同规则）。
+        let fill = if index >= 128 {
+            if dark {
+                tint(base, 1.15)
+            } else {
+                tint(base, 0.85)
+            }
+        } else {
+            base
+        };
         painter.rect_filled(key_rect, 0, fill);
-        // iced 的 1px 描边是**居中**画在按键矩形边上的（`canvas::Frame::stroke`）：
-        // 顶/底边各把一小半落在键内，形成 `#272C41` 的 50% 混合分隔线。egui 的
-        // `rect_stroke` 在这里会被相邻按键的填充覆盖掉底边，因此直接按 iced 的
-        // 合成结果画两条 50% 混合线。
-        let edge = mix(fill, theme::base_bg(), 0.5);
-        painter.rect_stroke(
-            key_rect,
-            0,
-            egui::Stroke::new(1.0, edge),
-            egui::StrokeKind::Inside,
-        );
-        // 音名：键盘宽度中点、纯白、11px（iced `KEY_LABEL_FONT_SIZE`）。
+        if dark {
+            // 历史口径（不参与像素基线变更）：居中 1px 描边，暗色下边框色与
+            // 内容底同色，合成结果是 50% 混合的分隔线。
+            painter.rect_stroke(
+                key_rect,
+                0,
+                egui::Stroke::new(1.0, mix(fill, theme::base_bg(), 0.5)),
+                egui::StrokeKind::Inside,
+            );
+        } else if y + key_h > ruler_h {
+            key_tops.push(key_rect.top().max(rect.top() + ruler_h));
+        }
+        // 音名：键盘宽度中点、主题文字色、11px（iced `KEY_LABEL_FONT_SIZE`）。
         painter.text(
             egui::pos2(rect.center().x, key_rect.center().y),
             Align2::CENTER_CENTER,
             note_name(index),
             FontId::proportional(theme::font::SMALL),
-            Color32::WHITE,
+            theme::roll_text(),
         );
+    }
+
+    // 左上角与标尺同高的一条是「标尺盖住键盘」的区域：生产用它自己的底色
+    // （`ruler_background_color`）覆盖，并保留被压住那个键的音名。
+    //
+    // 深色主题保持历史 iced-canvas 口径（暗底上两者肉眼无差），避免改动既有
+    // 像素基线；亮色主题按生产实测色对齐。
+    if ruler_h > 0.0 && !dark {
+        let corner = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ruler_h));
+        painter.rect_filled(corner, 0, theme::roll_ruler_bg());
+        if let Some(label) = &corner_label {
+            painter.text(
+                corner.center(),
+                Align2::CENTER_CENTER,
+                label,
+                FontId::proportional(theme::font::SMALL),
+                theme::roll_text(),
+            );
+        }
+        // 键线最后画：每个键顶边压成 1 个物理像素（与生产 gfx 的整数像素对齐）。
+        let ppp = ui.ctx().pixels_per_point().max(f32::EPSILON);
+        let line_h = 1.0 / ppp;
+        for top in key_tops {
+            let snapped = (top * ppp).floor() / ppp;
+            painter.rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(rect.left(), snapped),
+                    Vec2::new(rect.width(), line_h),
+                ),
+                0,
+                theme::roll_key_line(),
+            );
+        }
     }
 }
 
@@ -208,9 +258,8 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
         return;
     }
     let painter = ui.painter();
-    // iced 标尺底色 = `background.base`；边框与刻度线同为 `background.base`
-    // （暗色下不可见），因此只复刻底色与文字。
-    painter.rect_filled(rect, 0, theme::base_bg());
+    // iced 标尺底色：暗色 = `background.base`，亮色 = `background.weakest`。
+    painter.rect_filled(rect, 0, theme::roll_ruler_bg());
 
     let bar = view.bar_pixels();
     let scroll_ticks = view.scroll_x / view.zoom_x.max(f32::EPSILON);
@@ -231,7 +280,7 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
                 Align2::LEFT_TOP,
                 measure.to_string(),
                 FontId::proportional(12.5),
-                Color32::WHITE,
+                theme::roll_text(),
             );
         }
         measure += 1;

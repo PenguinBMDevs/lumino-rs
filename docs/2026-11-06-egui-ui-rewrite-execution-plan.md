@@ -935,9 +935,46 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/wf2-panel.png`、`wf2-keyboard.png`（egui）、
     `wf-panel-iced.png`、`wf-iced-keyboard.png`（iced 对照）。
 
-**Task 1.3（下一步）：卷帘骨架接管（`LUMINO_EGUI_PIANOROLL`）**
+**Task 1.3（第二十三步）：卷帘骨架接管开关打通（`LUMINO_EGUI_PIANOROLL`）— 已完成（默认仍关闭）**
 
-- 现状：右侧栏三个面板（I2M / 素材库 / 钢琴瀑布流）全部由 egui 绘制，
-  瀑布流内容经桥接层直接采样 `lumino-gfx` 离屏纹理。
-- 下一步：让 `lumino-gfx` 的卷帘通道停止绘制键盘 / 标尺 / 网格（保留音符），
-  把该区域交给 egui 骨架，再打开 `LUMINO_EGUI_PIANOROLL` 并在真实窗口逐区对照。
+- **egui 骨架配色改为生产口径**：`Palette` 新增 6 个卷帘色
+  （`roll_keyboard_bg` / `roll_white_key` / `roll_black_key` / `roll_key_line`
+  / `roll_ruler_bg` / `roll_text`），逐条对应 iced `ThemeExt`
+  （`keyboard_background_color` / `white_key_color` / `black_key_color` /
+  `key_line_color` / `ruler_background_color` / `text_color`）。
+  `PianoRollView` 骨架不再用通用 `base/panel` 常量：亮色键盘 = `weak`、
+  黑键 = `strong`、键线 = `strongest`、标尺 = `weakest`、文字 = 黑；
+  256 键扩展区按 iced 规则（亮 ×0.85 / 暗 ×1.15）。
+- **修复真实窗口暴露的两处错位**：
+  - 键线由「每个键四周 1px 描边」改为「每键顶边一条 1 物理像素线」，
+    与 gfx 键盘的单线边界一致（原先相邻键的双描边把每个键挤掉 2px）；
+  - 键盘列左上角（标尺同高）按生产画成标尺底色 + 顶部键音名，
+    不再把被压住的键填成黑键色（原先是一条 120×30 的深色块）。
+- **gfx 通道让位**：`RenderParams` 新增 `skip_roll_chrome`；置位时网格绘制的
+  裁剪区去掉键盘列与标尺行（`skip_roll_chrome_scissor` + 单测），
+  `RulerRenderer` 不再提交，音符 / 洋葱皮 / 网格线 / CC 条全部保留。
+- **接线**：`Root::egui_piano_roll_active()` 与骨架模型**同源**
+  （overlay + gate + `egui_piano_roll_model().is_some()`），模型为空
+  （循环区间 / 中途变拍号 / 洋葱皮 / 协作光标 / 非卷帘视图）时 gfx 仍画骨架；
+  `params.rs` 用该值设置 `skip_roll_chrome`。
+- 验收：
+  - `theme_palette` 5/5：新增「亮色卷帘骨架实渲染」——键盘底 / 白键 / 黑键 /
+    键线 / 标尺 / 文字六种颜色与生产实测值逐字节一致；
+  - `lumino-gfx` 273/273（新增 3 例裁剪区单测）；`egui_chrome` 34/34；
+  - `ui-egui` 全量、`ui-parity` 12/12；`clippy -D warnings`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12、
+    `compare_egui` 逐项与上一步一致，`tests/ui-baseline` 零改动；
+  - 真实窗口（ppp=1.25、Light、`LUMINO_EGUI_PIANOROLL=1`）：键盘行颜色
+    222/206、边界 190、标尺 245、角上 G#9 与生产逐像素一致（剩余差异仅为
+    字体抗锯齿）；网格区域与关闭骨架时逐像素一致（仅 939 px 网格线 AA 差异）；
+    关闭 gate 后键盘/标尺仍由 gfx 绘制，行颜色与改动前一致。
+  - 证据图：`target/roll-gate3.png`、`roll-gate-keys3.png`（gate 开）、
+    `roll-off2.png`、`roll-off-keys-zoom.png`（gate 关 = gfx）。
+
+**Task 1.3（下一步）：卷帘骨架默认接管 + 暗色口径对齐**
+
+- 现状：`LUMINO_EGUI_PIANOROLL=1` 时骨架与 gfx 已逐像素对齐；默认仍关闭，
+  因为暗色骨架仍走历史 iced-canvas 口径（键线为 50% 混合、左上角不画标尺底色），
+  与 gfx 生产口径有两处 1px 级差异，且暗色像素基线尚未重算。
+- 下一步：暗色也切到生产口径，重算 `piano_roll_skeleton` 三张 egui 基线，
+  然后把 gate 默认打开并删除环境变量分支。

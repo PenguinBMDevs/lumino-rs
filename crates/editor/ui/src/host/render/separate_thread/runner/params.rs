@@ -259,6 +259,7 @@ impl Host {
             .velocity_panel_rect(velocity_panel_rect)
             .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
             .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
+            .skip_roll_chrome(self.root.egui_piano_roll_active())
             .content_dirty(content_dirty)
             .subpixel_note_mode(subpixel_note_mode)
             .vs_cull_mode(vs_cull_mode)

@@ -27,6 +27,7 @@ impl Root {
             weak: color32(ext.background.weak.color),
             neutral: color32(ext.background.neutral.color),
             strong: color32(ext.background.strong.color),
+            strongest: color32(ext.background.strongest.color),
             text: color32(ext.background.base.text),
             text_on_weak: color32(ext.background.weak.text),
             primary: color32(ext.primary.base.color),

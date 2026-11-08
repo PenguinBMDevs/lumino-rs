@@ -51,6 +51,7 @@ fn light_seed() -> PaletteSeed {
         weak: rgb(0xDEDEDE),
         neutral: rgb(0xD6D6D6),
         strong: rgb(0xCECECE),
+        strongest: rgb(0xBEBEBE),
         text: rgb(0x000000),
         text_on_weak: rgb(0x000000),
         primary: rgb(0x5865F2),
@@ -72,6 +73,7 @@ fn tokyo_night_storm_seed() -> PaletteSeed {
         weak: rgb(0x394063),
         neutral: rgb(0x3F466E),
         strong: rgb(0x444D79),
+        strongest: rgb(0x505A8E),
         text: rgb(0xB6C4FA),
         text_on_weak: rgb(0xD2E4FF),
         primary: rgb(0x2AC3DE),
@@ -114,6 +116,13 @@ fn light_seed_derives_light_chrome() {
     );
     assert_eq!(palette.text, Color32::BLACK);
     assert_eq!(palette.on_accent, Color32::WHITE, "深色强调色上必须用白字");
+    // 卷帘骨架：与 iced `ThemeExt` 的亮色口径一致（生产实测值）。
+    assert_eq!(palette.roll_keyboard_bg, rgb(0xDEDEDE));
+    assert_eq!(palette.roll_white_key, rgb(0xDEDEDE));
+    assert_eq!(palette.roll_black_key, rgb(0xCECECE));
+    assert_eq!(palette.roll_key_line, rgb(0xBEBEBE));
+    assert_eq!(palette.roll_ruler_bg, rgb(0xF5F5F5));
+    assert_eq!(palette.roll_text, Color32::BLACK);
 
     // 次级文字应介于正文与底色之间（可读且明显弱化）。
     let luminance = |c: Color32| {
@@ -209,4 +218,63 @@ fn rendered_bands_follow_the_palette() {
         &[0x3F, 0x46, 0x6E],
         "默认色板仍是历史基线（像素基线零变化）"
     );
+}
+
+/// 卷帘骨架在亮色主题下必须用 iced `ThemeExt` 的生产配色：
+/// 键盘底 `weak`、白键 `weak`、黑键 `strong`、键线 `strongest`、标尺 `weakest`、
+/// 文字黑色。任一颜色退回深色常量都会在真实窗口里变成"黑键盘盖在浅色内容上"。
+#[test]
+fn rendered_piano_roll_skeleton_follows_light_palette() {
+    use lumino_ui_egui::chrome::piano_roll::PianoRollView;
+
+    let _guard = PaletteGuard::new(Palette::from_seed(&light_seed()));
+    let model = ChromeModel {
+        piano_roll: Some(PianoRollView {
+            keyboard_width: 120.0,
+            ruler_height: 24.0,
+            key_height: 20.0,
+            visible_keys: 128,
+            ..PianoRollView::default()
+        }),
+        ..ChromeModel::default()
+    };
+    let mut icons = IconCache::default();
+    let mut harness = Harness::builder()
+        .wgpu()
+        .with_size(egui::vec2(400.0, 300.0))
+        .with_pixels_per_point(1.0)
+        .with_render_cursor(false)
+        .with_accessibility_check(false)
+        .with_context_setup(|ctx| {
+            lumino_ui_egui::theme::apply(ctx);
+            lumino_ui_egui::fonts::install(ctx);
+        })
+        .build_ui(move |ui| chrome::show_bands(ui, &model, &mut icons));
+    harness.run();
+    let image = harness
+        .render()
+        .expect("卷帘骨架像素测试需要可用的 wgpu 渲染器");
+
+    let pixel = |x: u32, y: u32| image.get_pixel(x, y).0;
+    assert_eq!(
+        &pixel(200, 10)[..3],
+        &[0xF5, 0xF5, 0xF5],
+        "标尺底 = weakest"
+    );
+    assert_eq!(
+        &pixel(60, 24)[..3],
+        &[0xBE, 0xBE, 0xBE],
+        "琴键分隔线 = strongest"
+    );
+    assert_eq!(&pixel(60, 30)[..3], &[0xDE, 0xDE, 0xDE], "白键 = weak");
+    assert_eq!(&pixel(60, 50)[..3], &[0xCE, 0xCE, 0xCE], "黑键 = strong");
+
+    // 音名文字必须是深色（浅色主题下不能再用白字）。
+    let mut darkest = 255_u8;
+    for y in 26..44 {
+        for x in 40..80 {
+            darkest = darkest.min(pixel(x, y)[0]);
+        }
+    }
+    assert!(darkest < 100, "音名文字应为深色，实际最暗 {darkest}");
 }
