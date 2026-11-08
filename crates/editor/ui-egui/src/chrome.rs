@@ -23,13 +23,14 @@ pub use model::{
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };
 pub use model::{
-    ChromeModel, CompatLine, CompatibilityPageModel, DialogModel, DialogPalette, HistoryModel,
-    HistoryRowModel, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel,
-    OnionSkinPageModel, OverflowItemModel, OverflowMenuModel, ProjectNoteCountModel,
-    ProjectSettingsModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
-    StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, ChromeModel, CompatLine,
+    CompatibilityPageModel, DialogModel, DialogPalette, HistoryModel, HistoryRowModel,
+    MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel,
+    OverflowItemModel, OverflowMenuModel, ProjectNoteCountModel, ProjectSettingsModel,
+    RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels,
+    SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel, SidebarGroup,
+    SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, StatusbarModel,
+    TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -162,6 +163,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::History(model) => {
                 crate::history::show(&mut root, model);
+            }
+            DialogModel::BatchEdit(model) => {
+                crate::batch_edit::show(&mut root, model);
             }
         }
         return;

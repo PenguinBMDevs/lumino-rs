@@ -1,0 +1,109 @@
+//! 叠加层动作分发：把 egui 各通道的动作翻译成生产 `Message` 并交给 `Host`。
+//!
+//! 从 `egui_overlay.rs` 拆出（REF-001：单文件 < 400 行）。动作在 `run_ui` 之后
+//! 统一取走，保证一帧内不遗漏、顺序稳定（先控件后弹层）。
+
+use lumino_ui_egui::batch_edit::BatchEditAction;
+use lumino_ui_egui::chrome::ToolbarAction;
+use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
+use lumino_ui_egui::dialog::SaveConfirmAction;
+use lumino_ui_egui::history::HistoryAction;
+use lumino_ui_egui::project_settings::ProjectSettingsAction;
+use lumino_ui_egui::settings::SettingsAction;
+
+use crate::host::Host;
+
+/// 一帧内 egui 各通道产生的动作集合。
+pub(super) struct OverlayActions {
+    pub menu: Option<usize>,
+    pub toolbar: Option<ToolbarAction>,
+    pub panel: Option<RightSidebarAction>,
+    pub settings: Option<SettingsAction>,
+    pub dialog: Option<SaveConfirmAction>,
+    pub project: Option<ProjectSettingsAction>,
+    pub history: Option<HistoryAction>,
+    pub batch_edit: Option<BatchEditAction>,
+}
+
+impl OverlayActions {
+    /// 从 egui 内存取走本帧全部动作。
+    pub(super) fn take(ctx: &egui::Context) -> Self {
+        Self {
+            menu: lumino_ui_egui::chrome::menu::take_action(ctx),
+            toolbar: lumino_ui_egui::chrome::toolbar_popup::take_action(ctx),
+            panel: lumino_ui_egui::chrome::right_panel::take_action(ctx),
+            settings: lumino_ui_egui::settings::take_action(ctx),
+            dialog: lumino_ui_egui::dialog::take_action(ctx),
+            project: lumino_ui_egui::project_settings::take_action(ctx),
+            history: lumino_ui_egui::history::take_action(ctx),
+            batch_edit: lumino_ui_egui::batch_edit::take_action(ctx),
+        }
+    }
+}
+
+impl Host {
+    /// 应用本帧动作：每个动作最多产生一条 `Message`，按固定顺序处理。
+    pub(super) fn apply_overlay_actions(&mut self, actions: OverlayActions, logical_width: f32) {
+        if let Some(index) = actions.menu
+            && let Some(message) = self.root.menu_action_message(index)
+        {
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.dialog
+            && let Some(message) = self.root.save_confirm_action_message(&action)
+        {
+            tracing::info!("egui 保存确认动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.project
+            && let Some(message) = self.root.project_settings_action_message(&action)
+        {
+            tracing::info!("egui 工程设置动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.history
+            && let Some(message) = self.root.history_action_message(&action)
+        {
+            tracing::info!("egui 撤销历史动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.batch_edit
+            && let Some(message) = self.root.batch_edit_action_message(&action)
+        {
+            tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.settings
+            && let Some(message) = self.root.settings_action_message(&action)
+        {
+            tracing::info!("egui 设置动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.panel
+            && let Some(message) = self.root.right_sidebar_action_message(&action)
+        {
+            tracing::info!("egui 右侧栏动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.toolbar {
+            // 溢出项需要按「同一视口宽度」重算折叠结果，单独解析。
+            let message = match &action {
+                ToolbarAction::OverflowItem(index) => {
+                    self.root.overflow_action_message(*index, logical_width)
+                }
+                other => self.root.toolbar_action_message(other),
+            };
+            if let Some(message) = message {
+                tracing::info!("egui 工具栏动作：{action:?}");
+                self.dispatch_overlay_message(message);
+            }
+        }
+    }
+
+    /// 标记重绘并投递消息（所有叠加层动作共用）。
+    fn dispatch_overlay_message(&mut self, message: crate::Message) {
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+        let _ = self.process_message(message);
+    }
+}

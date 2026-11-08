@@ -25,6 +25,7 @@ use lumino_ui_egui::icons::IconCache;
 
 use crate::host::Host;
 
+mod actions;
 mod input;
 pub(crate) use input::OverlayInput;
 use input::pointer_button;
@@ -80,16 +81,7 @@ impl EguiOverlay {
     ///
     /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
     /// 调用方据此决定下一帧按键事件是否只给 egui。
-    fn draw(
-        &mut self,
-        frame: OverlayFrame<'_>,
-    ) -> (
-        Option<usize>,
-        Option<chrome::ToolbarAction>,
-        Option<chrome::right_panel::RightSidebarAction>,
-        Vec<Rect>,
-        bool,
-    ) {
+    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Vec<Rect>, bool) {
         self.frames = self.frames.wrapping_add(1);
 
         // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
@@ -132,10 +124,8 @@ impl EguiOverlay {
             chrome::show_bands(ui, frame.model, icons);
         });
 
-        // `run_ui` 不返回闭包值：菜单/工具栏点击与占用矩形通过 egui 内存回传。
-        let menu_action = chrome::menu::take_action(&ctx);
-        let toolbar_action = chrome::toolbar_popup::take_action(&ctx);
-        let panel_action = chrome::right_panel::take_action(&ctx);
+        // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
+        // 这里只要占用矩形与文本焦点。
         let blocked = chrome::menu::take_blocked(&ctx);
 
         let mut textures = output.textures_delta;
@@ -173,13 +163,7 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
-        (
-            menu_action,
-            toolbar_action,
-            panel_action,
-            blocked,
-            self.ctx.text_edit_focused(),
-        )
+        (blocked, self.ctx.text_edit_focused())
     }
 }
 
@@ -223,29 +207,22 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (menu_action, toolbar_action, panel_action, blocked, wants_keyboard) =
-            overlay.draw(OverlayFrame {
-                device: &device,
-                queue: &queue,
-                view,
-                format,
-                size_px: [size.width, size.height],
-                pixels_per_point,
-                app_frame,
-                model: &model,
-                palette,
-                waterfall,
-                events,
-                focused,
-            });
-        // 设置对话框动作：菜单切换 / 表单变更 / 确认（独立 OS 窗口同样是叠加层宿主）。
-        let settings_action = lumino_ui_egui::settings::take_action(&overlay.ctx);
-        // 保存确认对话框动作：三个按钮 + 标题栏红绿灯 / 拖动。
-        let dialog_action = lumino_ui_egui::dialog::take_action(&overlay.ctx);
-        // 工程设置对话框：字段编辑 / 确定 / 取消。
-        let project_action = lumino_ui_egui::project_settings::take_action(&overlay.ctx);
-        // 撤销历史：行跳转 / 关闭。
-        let history_action = lumino_ui_egui::history::take_action(&overlay.ctx);
+        let (blocked, wants_keyboard) = overlay.draw(OverlayFrame {
+            device: &device,
+            queue: &queue,
+            view,
+            format,
+            size_px: [size.width, size.height],
+            pixels_per_point,
+            app_frame,
+            model: &model,
+            palette,
+            waterfall,
+            events,
+            focused,
+        });
+        // 各通道动作统一取走并分发（`actions.rs`）。
+        let actions = actions::OverlayActions::take(&overlay.ctx);
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
         // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
         // 鼠标事件才出现。
@@ -255,68 +232,7 @@ impl Host {
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
         self.egui_blocked = blocked;
         self.egui_input.set_wants_keyboard(wants_keyboard);
-        if let Some(index) = menu_action
-            && let Some(message) = self.root.menu_action_message(index)
-        {
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
-        }
-        if let Some(action) = dialog_action
-            && let Some(message) = self.root.save_confirm_action_message(&action)
-        {
-            tracing::info!("egui 保存确认动作：{action:?}");
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
-        }
-        if let Some(action) = project_action
-            && let Some(message) = self.root.project_settings_action_message(&action)
-        {
-            tracing::info!("egui 工程设置动作：{action:?}");
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
-        }
-        if let Some(action) = history_action
-            && let Some(message) = self.root.history_action_message(&action)
-        {
-            tracing::info!("egui 撤销历史动作：{action:?}");
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
-        }
-        if let Some(action) = settings_action
-            && let Some(message) = self.root.settings_action_message(&action)
-        {
-            tracing::info!("egui 设置动作：{action:?}");
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
-        }
-        if let Some(action) = panel_action
-            && let Some(message) = self.root.right_sidebar_action_message(&action)
-        {
-            tracing::info!("egui 右侧栏动作：{action:?}");
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
-            let _ = self.process_message(message);
-        }
-        if let Some(action) = toolbar_action {
-            // 溢出项需要按「同一视口宽度」重算折叠结果，单独解析。
-            let message = match &action {
-                chrome::ToolbarAction::OverflowItem(index) => {
-                    self.root.overflow_action_message(*index, logical_width)
-                }
-                other => self.root.toolbar_action_message(other),
-            };
-            if let Some(message) = message {
-                tracing::info!("egui 工具栏动作：{action:?}");
-                self.ui_dirty = true;
-                self.window_ctx.window.request_redraw();
-                let _ = self.process_message(message);
-            }
-        }
+        self.apply_overlay_actions(actions, logical_width);
     }
 
     /// 把 winit 指针 / 滚轮 / 修饰键 / 焦点事件转成 egui 事件。
@@ -414,10 +330,11 @@ impl Host {
         match self.root.state.dialog_type {
             crate::state::root_state::DialogType::Settings
             | crate::state::root_state::DialogType::SaveConfirm => true,
-            // 工程设置 / 撤销历史的顶部 30px 自制标题栏（红绿灯 / 拖动）仍由
-            // iced 绘制：该区域内的按键不消费，其余内容区只给 egui。
+            // 工程设置 / 撤销历史 / 批量编辑的顶部 30px 自制标题栏（红绿灯 / 拖动）
+            // 仍由 iced 绘制：该区域内的按键不消费，其余内容区只给 egui。
             crate::state::root_state::DialogType::ProjectSettings
-            | crate::state::root_state::DialogType::History => {
+            | crate::state::root_state::DialogType::History
+            | crate::state::root_state::DialogType::BatchEdit => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input

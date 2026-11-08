@@ -10,6 +10,7 @@
 //! - 复杂排版优先使用 `egui_extras` 的 `TableBuilder` / `StripBuilder`，
 //!   表单优先使用 `egui::Grid`，避免手写绝对坐标堆叠。
 
+pub mod batch_edit;
 #[cfg(feature = "capture")]
 pub mod capture;
 pub mod chrome;

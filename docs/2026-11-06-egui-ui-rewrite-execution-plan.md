@@ -1063,8 +1063,54 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/hist3-dialog.png`、`hist2-dialog.png`（egui）、
     `hist-off-dialog.png`（iced 对照）。
 
-**Task 1.3（下一步）：批量编辑 / 变速 / 自定义精度 / 导出进度对话框**
+**Task 1.3（第二十七步）：批量编辑对话框迁移到 egui + 模型拆分 — 已完成**
 
-- 现状：保存确认 / 设置 / 工程设置 / 撤销历史已是 egui；其余对话框仍由 iced 绘制。
-- 下一步：按「批量编辑 → 变速 → 自定义精度 → 导出进度」顺序迁移，
-  每个沿用「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程。
+- **模型**：`BatchEditModel`（`titlebar` / 标题 / 「设置」「格式」小节标题 /
+  四行输入 / 格式说明 / 按钮）+ `BatchEditRowModel { field, label,
+  placeholder, value }` + `BatchEditFieldModel`（Velocity / Gate / Key / Tick）；
+  `DialogModel::BatchEdit(Box<...>)`。
+- **渲染**：`ui-egui/src/batch_edit.rs` 对齐生产：整窗 base 底、内边距 24、
+  标题 18px、两张圆角 16 卡片（1px `strong` 边框、内边距 16）、
+  行 = 固定 110 宽标签列 + 8 + 120×28 输入（`base` 底 + 1px `strong` 边框）、
+  行间距 12，底部右对齐「确定」（主色）/「取消」（次要）。
+- **真实窗口暴露并修复的两处错位**：
+  - `add_sized(110, label)` 让标签在 110 宽里居中 → 与生产左对齐不符，且
+    `allocate_ui_with_layout` 只按内容宽度前进、把输入框提前；改为
+    `allocate_exact_size` 占满标签列后放子 `Ui`（左对齐）；
+  - 输入框底色原为 `background.weak`，生产 `text_input` 外框实际是
+    `background.base` —— 改正后卡片内输入框与 iced 一致。
+- **标题栏让位**：与工程设置 / 历史一致，顶部 30px iced 自制标题栏继续由
+  iced 绘制，`dialog_input_exclusive` 对 BatchEdit 在顶部区域不消费点击。
+- **动作**：`InputChanged(field, text)` / `Confirm` / `Cancel` →
+  `Message::BatchEdit(...)`（`Cancel` = `CloseDialog`）；表达式解析与范围
+  校验仍由生产侧负责。
+- **顺带拆分（REF-001，全部 < 400 行）**：
+  - `egui_chrome/dialogs.rs` 363 行 → 抽出 `dialogs/batch_edit.rs`；
+  - `chrome/model.rs` 552 行 → `model/{dialog,sidebar,chrome}.rs` +
+    `model/{batch_edit,history}.rs`；
+  - `egui_overlay.rs` 380 行 → 动作分发抽到 `egui_overlay/actions.rs`
+    （`OverlayActions::take` + `apply_overlay_actions`），`draw` 返回值从
+    5 元组收敛为 `(blocked, wants_keyboard)`。
+- 验收：
+  - `batch_edit_bands` 3/3：确定 / 取消按钮、力度输入回传
+    `InputChanged(Velocity, "+20")`、小节标题与格式说明可访问；
+  - `egui_chrome` 40/40：模型镜像（四行字段 / 占位 / 值 / 四行格式说明 /
+    标题栏标记）与满载动作映射；
+  - `ui-egui` 全量（含 history / project_settings / batch_edit / theme_palette /
+    bands_pixels）、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；`capture_iced` 18/18、
+    `capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（ppp=1.25、Light，逻辑窗 318×614）：从卷帘右键菜单打开
+    「批量编辑」，顶部 iced 标题栏可见；标题 / 两张卡片 / 四行标签与输入 /
+    格式四行 / 底部按钮与 iced 版本逐项一致；力度输入 `+20` → 日志
+    `egui 批量编辑动作：InputChanged(Velocity, "+20")`，点「确定」 →
+    `Confirm` + `应用批量编辑: velocity=+20`，对话框关闭。
+  - 证据图：`target/be-egui4.png`、`be-egui-edit.png`（egui，对话框窗口截图）、
+    `be-off-dialog.png`（iced 对照）。
+
+**Task 1.3（下一步）：变速 / 自定义精度 / 导出进度对话框**
+
+- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑已是 egui；
+  其余对话框仍由 iced 绘制。
+- 下一步：按「变速 → 自定义精度 → 导出进度」顺序迁移，每个沿用
+  「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程。

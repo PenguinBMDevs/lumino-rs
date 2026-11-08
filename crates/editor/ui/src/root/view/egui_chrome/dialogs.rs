@@ -19,6 +19,7 @@ use crate::message::SettingsDialogAction;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 
+mod batch_edit;
 mod history;
 mod project_settings;
 
@@ -149,6 +150,9 @@ impl Root {
                 self.project_settings_model(),
             ))),
             DialogType::History => Some(DialogModel::History(Box::new(self.history_model()))),
+            DialogType::BatchEdit => {
+                Some(DialogModel::BatchEdit(Box::new(self.batch_edit_model())))
+            }
             _ => None,
         }
     }
