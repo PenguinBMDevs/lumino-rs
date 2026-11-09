@@ -258,8 +258,7 @@ impl Host {
         });
         // 视频导出面板：整块替换右侧内容区（与音频导出同形态）。
         let video_export = (self.root.sidebar.video_export_visible
-            && !self.root.is_arrangement_mode()
-            && self.root.video_export_mode_supported())
+            && !self.root.is_arrangement_mode())
         .then(|| {
             let left = model
                 .sidebar

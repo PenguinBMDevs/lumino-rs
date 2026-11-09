@@ -84,6 +84,8 @@ pub enum VideoRow {
         max: f32,
         /// 步长。
         step: f32,
+        /// 滑杆宽（生产 200 / 140）。
+        slider_width: f32,
         /// 右侧数值格式（如 `1.0x` / `7.5` / `24 px`）。
         value_text: String,
         /// 回传 id。
@@ -112,6 +114,50 @@ pub enum VideoRow {
         width: f32,
         /// 回传 id。
         id: u16,
+    },
+    /// 多行文本域（模板编辑器）。
+    TextArea {
+        /// 标签。
+        label: String,
+        /// 当前值。
+        value: String,
+        /// 占位。
+        hint: String,
+        /// 高度。
+        height: f32,
+        /// 回传 id。
+        id: u16,
+    },
+    /// 「标签 + 输入 + 行尾按钮」（路径 + 浏览）。
+    TextButton {
+        /// 标签。
+        label: String,
+        /// 标签列宽。
+        label_width: f32,
+        /// 当前值。
+        value: String,
+        /// 占位。
+        hint: String,
+        /// 输入宽（0 = 填满到按钮左侧）。
+        width: f32,
+        /// 输入回传 id。
+        text_id: u16,
+        /// 行尾按钮（自带 id）。
+        button: VideoButton,
+    },
+    /// 一行两个「标签 + 输入」（生产的分辨率 / 数值对）。
+    TextPair {
+        /// 左列。
+        left: TextPairCell,
+        /// 右列。
+        right: TextPairCell,
+        /// 两列之间的分隔（如「x」；空串 = 仅间距）。
+        separator: String,
+    },
+    /// 显式竖向间距（生产用 `space().height(n)` 分隔子区块）。
+    Gap {
+        /// 高度。
+        height: f32,
     },
     /// 只读文本行（说明 / 提示）。
     Label {
@@ -189,4 +235,21 @@ pub enum VideoExportAction {
         /// 回传 id。
         id: u16,
     },
+}
+
+/// 数值对中的一列。
+#[derive(Debug, Clone, Default)]
+pub struct TextPairCell {
+    /// 标签（空串 = 无标签）。
+    pub label: String,
+    /// 标签列宽。
+    pub label_width: f32,
+    /// 当前值。
+    pub value: String,
+    /// 占位。
+    pub hint: String,
+    /// 输入宽。
+    pub width: f32,
+    /// 回传 id。
+    pub id: u16,
 }

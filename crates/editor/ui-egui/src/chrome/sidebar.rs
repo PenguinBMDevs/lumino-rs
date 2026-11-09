@@ -19,7 +19,6 @@ pub(crate) const ROUTE_BAR_W: f32 = 48.0;
 const ROUTE_BTN: f32 = 48.0;
 /// 路由图标尺寸（生产 20×20）。
 const ROUTE_ICON: f32 = 20.0;
-
 /// 左侧栏：路由栏 + 音轨面板。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     show_model(ui, &state.sidebar.clone(), &mut state.icons);
@@ -32,6 +31,8 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
     let route = Rect::from_min_size(rect.min, Vec2::new(ROUTE_BAR_W, rect.height()));
     ui.painter().rect_filled(route, 0, theme::route_bar_bg());
 
+    // 路由栏点击仍由 iced 处理（egui 只负责绘制），不要把这一列计入占用区，
+    // 否则 iced 的路由按钮会收不到事件、整列变成死区。
     route_bar(ui, rect, model, icons);
 
     if model.panel_visible {
@@ -94,6 +95,7 @@ fn route_bar(
     route_button(ui, icons, Icon::Download, left, y, active);
     y += ROUTE_BTN;
 
+    // 渲染组子按钮（视频 / 音频导出）：仅组激活时出现。
     if model.active_group == Some(SidebarGroup::Renderer) {
         let active = model
             .video_export_visible

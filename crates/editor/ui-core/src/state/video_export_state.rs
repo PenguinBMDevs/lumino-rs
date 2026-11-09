@@ -73,7 +73,7 @@ pub struct VideoExportDialogState {
     // ── 计数器设置（参考 Zenith-MIDI NoteCountRender 设置面板） ──
     /// 计数器文本模板
     pub counter_text: String,
-    /// 计数器文本模板多行编辑器内容（iced text_editor 状态，绑定 wgpu 渲染器）
+    /// 计数器文本模板多行编辑器内容（iced text_editor 状态，默认（未启用叠加层）路径使用）
     pub counter_editor: iced_widget::text_editor::Content<iced_wgpu::Renderer>,
     /// 计数器对齐方式（"左上"/"右上"/"左下"/"右下"/"顶部分散"/"底部分散"）
     pub counter_alignment: String,

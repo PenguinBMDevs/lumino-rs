@@ -163,6 +163,13 @@ impl DialogHandler {
                 st.counter_editor.perform(action);
                 st.counter_text = st.counter_editor.text();
             }
+            V::CounterTextChanged(text) => {
+                let st = &mut root.state.video_export_dialog;
+                st.counter_text = text;
+                // 同步 iced 编辑器内容：默认（未启用叠加层）路径仍用 iced 渲染。
+                st.counter_editor =
+                    iced_widget::text_editor::Content::with_text(st.counter_text.as_str());
+            }
             V::CounterAlignmentChanged(v) => {
                 root.state.video_export_dialog.counter_alignment = v;
             }
@@ -233,12 +240,10 @@ impl DialogHandler {
                     _ => crate::state::root_state::COUNTER_DEFAULT_TEXT,
                 };
                 st.counter_text = template.to_string();
-                st.counter_editor = iced_widget::text_editor::Content::with_text(template);
             }
             V::CounterResetText => {
                 let st = &mut root.state.video_export_dialog;
                 st.counter_text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
-                st.counter_editor = iced_widget::text_editor::Content::with_text(&st.counter_text);
             }
             V::CounterBrowseCsv => {
                 root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {

@@ -1,71 +1,29 @@
 //! 视频导出面板：生产状态 → egui 模型，以及通用控件动作 → `VideoExportAction`。
 //!
-//! 本轮迁移「MIDI 数据源 / 渲染设置（含 MidiConsole）/ 预览 / 导出位置 / 按钮」；
-//! 计数器与数据曲线两套附加设置控件数量大，仍由 iced 视图渲染（见计划文档）。
+//! 覆盖全部渲染模式的设置：MIDI 数据源 / 渲染设置（含 MidiConsole）/
+//! 计数器（`counter` 子模块）/ 数据曲线（`data_curve` 子模块）/ 预览 / 导出位置 / 按钮。
+
+mod counter;
+mod data_curve;
+mod rows;
 
 use lumino_core::tr;
 use lumino_message::events::window::video::RenderMode;
 use lumino_ui_egui::chrome::{
-    VideoButton, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoPreviewModel,
-    VideoRow, VideoSection,
+    VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoPreviewModel, VideoRow,
+    VideoSection,
 };
 use lumino_ui_egui::video_export::VideoExportAction as EguiAction;
+
+use rows::{button, gap, label, pick, text, text_button};
 
 use crate::Message;
 use crate::message::VideoExportAction as Prod;
 use crate::state::root_state::{MIDITRAIL_Z_FAR_MAX, VideoExportDialogState};
+use crate::view::video_export_dialog::counter_settings_font::SYSTEM_FONT_FAMILIES;
 use crate::view::video_export_dialog::helpers;
 
-/// 计数器 / 数据曲线模式暂未迁移（控件多，下一步补齐）。
-pub(crate) fn mode_supported(mode: &str) -> bool {
-    mode != "计数器" && mode != "数据曲线"
-}
-
-fn pick(label: &str, label_width: f32, options: Vec<String>, selected: usize, id: u16) -> VideoRow {
-    VideoRow::Pick {
-        label: label.to_string(),
-        label_width,
-        options,
-        selected,
-        width: 200.0,
-        id,
-    }
-}
-
-fn text(label: &str, label_width: f32, value: &str, hint: &str, width: f32, id: u16) -> VideoRow {
-    VideoRow::Text {
-        label: label.to_string(),
-        label_width,
-        value: value.to_string(),
-        hint: hint.to_string(),
-        width,
-        id,
-    }
-}
-
-fn label(text: &str, size: f32, muted: bool) -> VideoRow {
-    VideoRow::Label {
-        text: text.to_string(),
-        size,
-        muted,
-    }
-}
-
-fn button(label: &str, id: u16, fill: VideoButtonFill, width: f32) -> VideoButton {
-    VideoButton {
-        label: label.to_string(),
-        id,
-        fill,
-        width,
-    }
-}
-
 impl crate::root::Root {
-    /// 当前渲染风格是否已由 egui 接管（计数器 / 数据曲线仍走 iced）。
-    pub(crate) fn video_export_mode_supported(&self) -> bool {
-        mode_supported(&self.state.video_export_dialog.render_mode)
-    }
-
     /// 构建视频导出面板模型（`rect` = 整块右侧内容区）。
     pub(crate) fn video_export_panel_model(&self, rect: egui::Rect) -> VideoExportPanelModel {
         let state = &self.state.video_export_dialog;
@@ -92,6 +50,20 @@ impl crate::root::Root {
                 7 => Prod::MiditrailViewModeChanged(["Normal", "Top"].get(*index)?.to_string()),
                 12 => Prod::FpsChanged(*[24u32, 30, 60, 120].get(*index)?),
                 13 => Prod::MidiConsoleBackendChanged(["GPU", "CPU"].get(*index)?.to_string()),
+                103 => Prod::CounterFontModeChanged(counter::FONT_MODES.get(*index)?.to_string()),
+                104 => {
+                    Prod::CounterFontFamilyChanged(SYSTEM_FONT_FAMILIES.get(*index)?.to_string())
+                }
+                107 => Prod::CounterAlignmentChanged(counter::ALIGNMENTS.get(*index)?.to_string()),
+                200 => Prod::DataCurveTextChanged {
+                    field: "metric".to_string(),
+                    value: data_curve::METRICS.get(*index)?.to_string(),
+                },
+                217 => Prod::DataCurveFontModeChanged(counter::FONT_MODES.get(*index)?.to_string()),
+                218 => Prod::DataCurveTextChanged {
+                    field: "font_family".to_string(),
+                    value: SYSTEM_FONT_FAMILIES.get(*index)?.to_string(),
+                },
                 _ => return None,
             },
             EguiAction::Slider { id, value } => match id {
@@ -107,16 +79,56 @@ impl crate::root::Root {
                     }
                 }
                 8 => Prod::MiditrailZFarChanged(*value),
+                108 => Prod::CounterFontSizeChanged(value.round().clamp(7.0, 256.0) as u32),
+                216 => Prod::DataCurveFontSizeChanged(value.round().clamp(7.0, 256.0) as u32),
                 _ => return None,
             },
             EguiAction::Toggle { id, value } => match id {
                 9 => Prod::Miditrail3DNotesChanged(*value),
+                109 => Prod::CounterUseCommasChanged(*value),
+                110 => Prod::CounterPaddingZeroesChanged(*value),
+                111 => Prod::CounterSaveCsvChanged(*value),
+                234 => Prod::DataCurveBoolChanged {
+                    field: "abbreviate".to_string(),
+                    value: *value,
+                },
+                235 => Prod::DataCurveBoolChanged {
+                    field: "show_text".to_string(),
+                    value: *value,
+                },
+                236 => Prod::DataCurveBoolChanged {
+                    field: "show_bars".to_string(),
+                    value: *value,
+                },
                 _ => return None,
             },
             EguiAction::Text { id, value } => match id {
                 10 => Prod::WidthChanged(value.clone()),
                 11 => Prod::HeightChanged(value.clone()),
                 14 => Prod::OutputPathChanged(value.clone()),
+                100 => Prod::CounterTextChanged(value.clone()),
+                105 => Prod::CounterFontPathChanged(value.clone()),
+                112 => Prod::CounterCsvPathChanged(value.clone()),
+                114 => Prod::CounterCsvFormatChanged(value.clone()),
+                120..=127 => Prod::CounterPadChanged {
+                    field: counter::PAD_FIELDS.get(usize::from(*id) - 120)?.to_string(),
+                    value: value.trim().parse::<u32>().unwrap_or(0),
+                },
+                201 => curve_number("graph_duration", value)?,
+                202 => curve_number("zoom_smoothness", value)?,
+                203 => curve_number("graph_smoothness", value)?,
+                204 => curve_number("padding_mul", value)?,
+                210 => curve_text("bg_color", value),
+                211 => curve_text("line_color", value),
+                212 => curve_text("text_color", value),
+                213 => curve_text("bar_color", value),
+                214 => curve_number("line_thickness", value)?,
+                215 => curve_number("bar_thickness", value)?,
+                219 => curve_text("font_path", value),
+                230 => curve_number("text_x_offset", value)?,
+                231 => curve_number("text_y_offset", value)?,
+                232 => curve_number("milestone_scale_mul", value)?,
+                233 => curve_number("abbreviate_digits", value)?,
                 _ => return None,
             },
             EguiAction::Button { id } => match id {
@@ -124,10 +136,32 @@ impl crate::root::Root {
                 16 => Prod::BrowseOutput,
                 17 => Prod::ClosePanel,
                 18 => Prod::StartExport,
+                101 => Prod::CounterLoadTemplate("default".to_string()),
+                102 => Prod::CounterLoadTemplate("full".to_string()),
+                106 => Prod::CounterBrowseFont,
+                113 => Prod::CounterBrowseCsv,
+                128 => Prod::CounterResetPadding,
+                220 => Prod::DataCurveBrowseFont,
                 _ => return None,
             },
         };
         Some(Message::VideoExport(prod))
+    }
+}
+
+/// 数据曲线数值型字段（解析失败按 0 处理，与 iced 视图同口径）。
+fn curve_number(field: &str, value: &str) -> Option<Prod> {
+    Some(Prod::DataCurveNumberChanged {
+        field: field.to_string(),
+        value: value.trim().parse::<f32>().unwrap_or(0.0),
+    })
+}
+
+/// 数据曲线文本型字段（颜色 / 字体路径）。
+fn curve_text(field: &str, value: &str) -> Prod {
+    Prod::DataCurveTextChanged {
+        field: field.to_string(),
+        value: value.to_string(),
     }
 }
 
@@ -179,6 +213,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .iter()
                 .position(|v| *v == state.container)
                 .unwrap_or(0),
+            200.0,
             1,
         ),
         pick(
@@ -192,6 +227,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .iter()
                 .position(|v| *v == state.codec)
                 .unwrap_or(0),
+            200.0,
             2,
         ),
         pick(
@@ -202,6 +238,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .iter()
                 .position(|v| *v == state.backend)
                 .unwrap_or(0),
+            200.0,
             3,
         ),
         pick(
@@ -212,6 +249,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .iter()
                 .position(|v| *v == state.quality)
                 .unwrap_or(1),
+            200.0,
             4,
         ),
         pick(
@@ -222,6 +260,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .iter()
                 .position(|m| m.to_string() == state.render_mode)
                 .unwrap_or(0),
+            200.0,
             5,
         ),
         VideoRow::Slider {
@@ -231,6 +270,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             min: 0.1,
             max: 10.0,
             step: 0.1,
+            slider_width: 200.0,
             value_text: format!("{speed:.1}x"),
             id: 6,
         },
@@ -241,6 +281,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             100.0,
             vec!["Normal".to_string(), "Top".to_string()],
             if is_top { 1 } else { 0 },
+            200.0,
             7,
         ));
         settings.push(VideoRow::Slider {
@@ -250,6 +291,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             min: 0.1,
             max: MIDITRAIL_Z_FAR_MAX,
             step: 0.1,
+            slider_width: 200.0,
             value_text: format!("{:.1}", state.miditrail_z_far),
             id: 8,
         });
@@ -277,12 +319,21 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             .iter()
             .position(|v| *v == state.fps)
             .unwrap_or(1),
+        200.0,
         12,
     ));
     sections.push(VideoSection {
         title: tr!("渲染设置").to_string(),
         rows: settings,
     });
+
+    // 计数器 / 数据曲线附加设置（各自独立分区，与 iced 顺序一致）。
+    if state.render_mode == "计数器" {
+        sections.push(counter::section(state));
+    }
+    if state.render_mode == "数据曲线" {
+        sections.push(data_curve::section(state));
+    }
 
     // MidiConsole 附加设置。
     if state.render_mode == "MidiConsole" {
@@ -297,6 +348,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 } else {
                     0
                 },
+                200.0,
                 13,
             )],
         });

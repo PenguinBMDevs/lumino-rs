@@ -1590,8 +1590,52 @@ callback / 多视口 / 截图能力。
   该图标（逐个尝试 6 个图标只切换了走带/卷帘视图）。面板渲染路径与已真机验证的
   音频导出同源，风险集中在控件行几何，已由模型测试 + 无头渲染覆盖。
 
-**Task 1.3（下一步）：视频导出计数器 / 数据曲线设置 + 编辑器画布接管**
+**Task 1.3（第四十四步）：视频导出计数器 / 数据曲线设置迁移到 egui — 已完成**
 
-- 现状：视频导出主体已 egui；计数器与数据曲线两套附加设置仍由 iced 渲染。
-- 下一步：补齐这两套设置（同样用 `VideoRow` 表驱动），移除模式闸门；随后把
-  编辑器画布从 iced 通道交给 egui/wgpu，最后做 iced 归零检查。
+- **通用控件扩展**：新增 `VideoRow::{TextArea, TextPair, TextButton, Gap}` +
+  `TextPairCell`，`Slider` 增加 `slider_width`（生产 200 / 140 两档）。
+  `TextArea` 走多行 `TextEdit`（模板编辑器），`TextButton` = 标签 + 填满输入 +
+  行尾按钮（路径 + 浏览），`Gap` 对应生产 `space().height(n)`。
+- **计数器分区**（`egui_chrome/video_export/counter.rs`）：模板说明 / 多行模板 /
+  恢复默认 + 完整模板 / 字体来源下拉 + 三分支（内置提示 / 系统字体下拉 / 自定义
+  路径+浏览）/ 对齐 / 字号滑杆 / 千分位 / 补零 / CSV 开关 + 路径 + 格式 /
+  8 项补零宽度（两列四行）+ 恢复默认。
+- **数据曲线分区**（`data_curve.rs`）：数据来源 / 曲线参数（4 数值）/ 外观
+  （4 颜色 + 2 线宽 + 字号 + 字体三分支）/ 文字与刻度（4 数值 + 3 开关）。
+- **模式闸门移除**：`mode_supported` 删除，叠加层对全部渲染风格接管；
+  `view_video_export_panel` 在叠加层启用时无条件返回同尺寸占位。
+- **动作映射补齐**：`CounterFontMode/Family/Alignment/FontSize/UseCommas/
+  PaddingZeroes/SaveCsv/Text/TextChanged/FontPath/CsvPath/CsvFormat/PadChanged/
+  LoadTemplate/BrowseFont/BrowseCsv/ResetPadding` 与
+  `DataCurveText/Number/Bool/FontSize/FontMode/BrowseFont` 全部按 `id` 回传；
+  后续 id 见各分区（计数器 100–128，数据曲线 200–236）。
+- **文件拆分**（400 行红线）：`ui-egui/src/video_export.rs` 301 行 +
+  `video_export/widgets.rs` 207 行；生产侧 `egui_chrome/video_export.rs` 371 行 +
+  `video_export/rows.rs` 79 行 + `counter.rs` 204 行 + `data_curve.rs` 196 行。
+- 验收：
+  - `video_export_bands` 8/8（三分区内容、按钮 id、复选框、下拉 / 文本回传、
+    计数器全部控件、数据曲线全部控件、补零输入回传 `Text(121)`、模板域回传
+    `Text(100)`）；
+  - `egui_chrome` 869/869（`video_export_tests` 23 个：三分区行构成、字体三分支、
+    8 补零行 / 4 两列行、数据曲线 7 两列行、全部动作映射与越界 / 未知 id 拒绝）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **真机未能复现（阻塞项，附证据）**：左侧路由栏「渲染组 → 视频导出」图标点击
+  未能稳定命中。叠加层日志给出侧栏 band 矩形 `(0,30)-(248,1212)`（ppp=1.25），
+  而窗口逻辑尺寸约 1650×997 —— band 高度超出窗口，图标实际落点与
+  `route_button` 的 48px 步进不一致（实测步进 ≈64 逻辑像素），因此在无法目视
+  对齐的情况下用自动化坐标点不中。**这是叠加层 band 矩形/坐标口径的既有偏差
+  （绘制 ↔ 命中错位）**，需要在下一步连同「路由栏改由 egui 接管点击」一起修；
+  本轮尝试过让 egui 接管路由点击（新增 `SidebarRoute` 通道 + 占用矩形），
+  但会与输入坐标口径不一致叠加，导致整列变死区，已回滚，保持 iced 处理点击。
+
+**Task 1.3（下一步）：叠加层坐标口径修正 + 路由栏接管 + 编辑器画布**
+
+- 待修（优先级最高）：`show_bands` 的根 `viewport_rect()` 与
+  `pixels_per_point` 口径不一致，导致 band 逻辑尺寸偏大（侧栏 1212 vs 应有
+  ≈947），进而使 egui 绘制与命中整体错位。修完后：
+  1. 路由栏改由 egui 点击并占用（避免 iced 同位置按钮双重响应）；
+  2. 用可靠的图标坐标补真机验收视频导出面板（含计数器 / 数据曲线）。
+- 随后：编辑器画布（卷帘音符 / 走带）从 iced 通道交给 egui/wgpu，最后做 iced
+  归零检查。
