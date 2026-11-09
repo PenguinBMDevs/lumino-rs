@@ -21,6 +21,7 @@ use crate::state::root_state::DialogType;
 
 mod batch_edit;
 mod brush_settings;
+mod cloud_browser;
 mod cloud_connect;
 mod collaboration;
 mod custom_precision;
@@ -194,6 +195,12 @@ impl Root {
             ))),
             DialogType::Collaboration => Some(DialogModel::Collaboration(Box::new(
                 self.collaboration_model(),
+            ))),
+            DialogType::CloudBrowser => Some(DialogModel::CloudBrowser(Box::new(
+                self.cloud_browser_model(),
+            ))),
+            DialogType::CloudNotice => Some(DialogModel::CloudNotice(Box::new(
+                self.cloud_notice_model(),
             ))),
             _ => None,
         }

@@ -3,9 +3,9 @@
 use egui::Color32;
 
 use super::{
-    BatchEditModel, BrushSettingsModel, CloudConnectModel, CollaborationModel, DrawSettingsModel,
-    HelpModel, HistoryModel, LoadConfirmModel, MemoryMonitorModel, RecoverTrackModel,
-    SettingsPageModel,
+    BatchEditModel, BrushSettingsModel, CloudBrowserModel, CloudConnectModel, CloudNoticeModel,
+    CollaborationModel, DrawSettingsModel, HelpModel, HistoryModel, LoadConfirmModel,
+    MemoryMonitorModel, RecoverTrackModel, SettingsPageModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -45,6 +45,10 @@ pub enum DialogModel {
     RecoverTrack(Box<RecoverTrackModel>),
     /// 多人协作（`DialogType::Collaboration`）。
     Collaboration(Box<CollaborationModel>),
+    /// 云存储连接面板（`DialogType::CloudConnect`）。
+    CloudBrowser(Box<CloudBrowserModel>),
+    /// 云存储断连提醒（`DialogType::CloudNotice`）。
+    CloudNotice(Box<CloudNoticeModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

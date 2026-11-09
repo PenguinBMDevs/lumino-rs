@@ -16,6 +16,7 @@ pub mod brush_settings;
 #[cfg(feature = "capture")]
 pub mod capture;
 pub mod chrome;
+pub mod cloud_browser;
 pub mod cloud_connect;
 pub mod collaboration;
 pub mod custom_precision;

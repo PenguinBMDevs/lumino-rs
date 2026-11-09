@@ -8,6 +8,7 @@ use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::brush_settings::BrushSettingsAction;
 use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
+use lumino_ui_egui::cloud_browser::CloudBrowserAction;
 use lumino_ui_egui::cloud_connect::CloudConnectAction;
 use lumino_ui_egui::collaboration::CollaborationAction;
 use lumino_ui_egui::custom_precision::CustomPrecisionAction;
@@ -45,6 +46,7 @@ pub(super) struct OverlayActions {
     pub brush_settings: Option<BrushSettingsAction>,
     pub recover_track: Option<RecoverTrackAction>,
     pub collaboration: Option<CollaborationAction>,
+    pub cloud_browser: Option<CloudBrowserAction>,
 }
 
 impl OverlayActions {
@@ -70,6 +72,7 @@ impl OverlayActions {
             brush_settings: lumino_ui_egui::brush_settings::take_action(ctx),
             recover_track: lumino_ui_egui::recover_track::take_action(ctx),
             collaboration: lumino_ui_egui::collaboration::take_action(ctx),
+            cloud_browser: lumino_ui_egui::cloud_browser::take_action(ctx),
         }
     }
 }
@@ -104,6 +107,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.cloud_browser
+            && let Some(message) = self.root.cloud_browser_action_message(&action)
+        {
+            tracing::info!("egui 云浏览动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.collaboration

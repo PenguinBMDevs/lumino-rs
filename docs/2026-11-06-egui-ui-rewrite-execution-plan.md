@@ -1452,9 +1452,48 @@ callback / 多视口 / 截图能力。
   因此 iced 与 egui 两个版本点「关闭」后窗口都不会关闭（iced 版实测同样不关）。
   记录为待修问题，本轮不改动协议层。
 
-**Task 1.3（下一步）：云文件浏览 / 断连提醒 / 形状抽屉 / 视频导出**
+**Task 1.3（第四十步）：云文件浏览面板 + 断连提醒迁移到 egui — 已完成**
 
-- 现状：除云文件浏览（+断连提醒）、形状抽屉、视频导出外，其余对话框与面板
-  均已迁到 egui（含音频导出整块面板）。
-- 下一步：云文件浏览（359 行）、形状抽屉（237，含自绘画布）、视频导出（约 2000
-  行）；随后编辑器画布与 iced 归零证明。
+- **模型**：`CloudBrowserModel`（设备下拉 / 工具栏按钮与可用态 / 导航 / 新建文件夹 /
+  保存目标区 / 条目 / 空态 / 提示 / 重命名与删除确认文案）+
+  `CloudDeviceModel` / `CloudEntryModel` / `CloudEntryActionKind` /
+  `CloudEntryLabels` / `CloudSavePanelModel`；`CloudNoticeModel`（标题 / 正文 /
+  「知道了」）；`DialogModel::{CloudBrowser, CloudNotice}`。
+- **渲染**：`ui-egui/src/cloud_browser.rs` 对齐生产：内边距 16、列间距 8；
+  工具栏（设备下拉填满 + 刷新 / 断开 / 粘贴 / 清空剪贴板）、导航行（← 返回 + 路径）、
+  新建文件夹行、可选保存目标区（`weak` 底 + 圆角 6 + 内边距 10）、可滚动条目列表
+  （8px 实体滚动条）、12px 提示；条目行 = 名称（目录可点进）+ 80 宽大小 +
+  行尾无底色小按钮；删除确认态替换行尾区。
+- **真实窗口逐项校准（ppp=1.25）**：
+  - 列表 10 行的行首 y：iced `202/236/269/303/337/370/404/437/471/505` vs egui
+    `201/235/269/302/336/370/404/437/471/505`（≤1 物理像素）；
+  - 工具按钮发现两处差异并修正：**iced 默认 `button` 是主色底**（egui 原为灰底）；
+    禁用态是主色 `scale_alpha` 叠底色（实测 ≈0.285），从 `(196,198,249)` 调到
+    目标 `(209,210,250)`，实测 `(207,211,251)`（ΔR/G/B ≤2）；
+  - 新建文件夹输入框高度 30→31.5（iced 盒高 38 物理像素）。
+- **动作**：`SelectDevice(index)` / `Refresh` / `Disconnect` / `Paste` /
+  `ClearClipboard` / `Back` / `EnterDir` / `NewFolderInputChanged` / `NewFolder` /
+  `SaveHere` / `Download` / `Copy` / `Cut` / `StartRename` / `RequestDelete` /
+  `RenameInputChanged` / `RenameConfirm` / `RenameCancel` / `DeleteEntry` /
+  `DeleteCancel` / `DismissNotice` → `Message::Cloud(...)`；设备下标越界不产生消息。
+- 验收：
+  - `cloud_browser_bands` 7/7（工具栏与条目可访问、刷新/断开/返回、目录进入、
+    下载载荷、保存区 + 保存到此、删除确认、提醒 + 知道了）；
+  - `egui_chrome` 72/72（浏览与提醒模型镜像、扩展名过滤、save_mode/busy 两态、
+    动作映射与越界拒绝）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（设置 → 云管理 → 「管理文件」）：面板与 iced 版本逐行一致；点目录
+    行 → `egui 云浏览动作：EnterDir("/Torrent Junction")` 且路径与列表刷新；
+    点「刷新」→ `Refresh`。
+  - 证据图：`target/cbv-final.png`、`cbv-iced.png`。
+- **已知字体差异**：条目名前的 📁/📄 在 iced 用系统彩色 emoji，egui 落到 NotoEmoji
+  的单色字形；文字内容一致，属两套字体栈差异。
+
+**Task 1.3（下一步）：形状抽屉 / 视频导出**
+
+- 现状：除形状抽屉（含自绘画布）与视频导出（约 2000 行、9 个子模块）外，其余
+  对话框与面板均已迁到 egui。
+- 下一步：形状抽屉（237 行 + `ShapeDrawerCanvas`）、视频导出；随后编辑器画布与
+  iced 归零证明。

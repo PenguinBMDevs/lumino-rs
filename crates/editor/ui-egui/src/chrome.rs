@@ -26,20 +26,21 @@ pub use model::{
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
-    BrushTrackChoice, ChromeModel, CloudConnectModel, CloudField, CloudFieldModel, CloudProtocol,
-    CloudProtocolOptionModel, CollaborationConnectView, CollaborationConnectingView,
-    CollaborationInRoomView, CollaborationModel, CollaborationRoomActionsView,
-    CollaborationViewModel, CompatLine, CompatibilityPageModel, CustomPrecisionModel, DialogModel,
-    DialogPalette, DotOptionModel, DrawSettingsModel, ExportMessageKind, ExportProgressModel,
-    HelpModel, HelpSectionModel, HelpTopicBodyModel, HelpTopicRowModel, HistoryModel,
-    HistoryRowModel, LoadConfirmModel, MemoryMetricModel, MemoryMonitorModel, MemoryRowModel,
-    MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel,
-    OverflowItemModel, OverflowMenuModel, ProjectNoteCountModel, ProjectSettingsModel,
-    RecoverTrackModel, RecoverTrackRowModel, RecoverTrackSelection, RightSidebarModel,
-    RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels, SettingsPageModel,
-    SettingsPalette, SettingsSnapshot, ShortcutsPageModel, SidebarGroup, SidebarModel,
-    SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
-    TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    BrushTrackChoice, ChromeModel, CloudBrowserModel, CloudConnectModel, CloudDeviceModel,
+    CloudEntryActionKind, CloudEntryLabels, CloudEntryModel, CloudField, CloudFieldModel,
+    CloudNoticeModel, CloudProtocol, CloudProtocolOptionModel, CloudSavePanelModel,
+    CollaborationConnectView, CollaborationConnectingView, CollaborationInRoomView,
+    CollaborationModel, CollaborationRoomActionsView, CollaborationViewModel, CompatLine,
+    CompatibilityPageModel, CustomPrecisionModel, DialogModel, DialogPalette, DotOptionModel,
+    DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel,
+    HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel,
+    MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
+    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
+    ProjectNoteCountModel, ProjectSettingsModel, RecoverTrackModel, RecoverTrackRowModel,
+    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
+    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
+    SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -208,6 +209,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::Collaboration(model) => {
                 crate::collaboration::show(&mut root, model);
+            }
+            DialogModel::CloudBrowser(model) => {
+                crate::cloud_browser::show(&mut root, model);
+            }
+            DialogModel::CloudNotice(model) => {
+                crate::cloud_browser::show_notice(&mut root, model);
             }
         }
         return;

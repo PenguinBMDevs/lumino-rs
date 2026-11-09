@@ -417,6 +417,8 @@ mod batch_edit_tests;
 #[cfg(test)]
 mod brush_settings_tests;
 #[cfg(test)]
+mod cloud_browser_tests;
+#[cfg(test)]
 mod cloud_connect_tests;
 #[cfg(test)]
 mod collaboration_tests;

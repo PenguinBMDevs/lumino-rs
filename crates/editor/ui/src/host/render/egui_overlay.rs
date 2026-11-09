@@ -376,7 +376,9 @@ impl Host {
             | crate::state::root_state::DialogType::LoadConfirm
             | crate::state::root_state::DialogType::BrushSettings
             | crate::state::root_state::DialogType::RecoverTrack
-            | crate::state::root_state::DialogType::Collaboration => {
+            | crate::state::root_state::DialogType::Collaboration
+            | crate::state::root_state::DialogType::CloudBrowser
+            | crate::state::root_state::DialogType::CloudNotice => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input
