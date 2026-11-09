@@ -1755,10 +1755,33 @@ callback / 多视口 / 截图能力。
   - 真机（默认无环境变量）：主窗口标题栏 / 菜单（视图菜单可展开）/ 工具栏 / 左侧
     音轨列表 / 卷帘画布 / 右侧栏 / 状态栏全部正常，egui 叠加层日志出现。
 
-**Task 1.3（下一步）：继续清空 `lumino-ui` 的 39 个 iced 依赖**
+**Task 1.3（第五十步）：删除形状抽屉的 iced `Program` 与 iced 视图（-777 行）**
 
-1. 删 iced 视频导出视图（`view/video_export_dialog/*` 9 个文件）与
-   `panels.rs` 的 iced 分支，把 `available_backends()` 迁到 egui 侧；
-2. 删 `ShapeDrawerCanvas` + `canvas/draw.rs` 的 iced `Program`（抽屉已全 egui）；
-3. 按依赖倒序清理 `main_view` / `right_sidebar` / `toolbar` 的 iced 占位，
-   每删一类就跑一次全量验收 + 截图，直到 `cargo tree -p lumino-ui | grep '^iced'` 为空。
+- **删除**：
+  - `view/shape_drawer.rs` 的 iced 面板 + `Canvas`（258 → 28 行）：整窗只返回同尺寸
+    底色占位，面板 / 分割线 / 画布全部由 egui 绘制；
+  - `shape_drawer/canvas.rs` 的 `ShapeDrawerCanvas` 与 `impl Program`（224 → 7 行）：
+    只保留 `draw`（几何换算）与 `input`（事件逻辑）两个后端无关模块；
+  - `canvas/draw.rs` 的 iced 绘制（`draw_toolbar` / `draw_canvas` / `draw_areas` /
+    `draw_anchors` / `draw_stroke` / 调色板，420 → 124 行）：只留
+    `unit_rect` / `unit_side` / `unit_to_local` / `local_to_unit` 与工具栏命中；
+  - `canvas/input.rs` 的 `unfocused`（仅 iced Program 使用；egui 每帧从输入重建 shift）。
+- 净删除 **777 行** iced 视图代码（26 insertions / 777 deletions）。
+- 验收：`lumino-ui` lib **867/867**（随 iced Program 一起删掉 3 个 `drawer_cursor`
+  单测）、`lumino-gfx` 273/273、`lumino-message` 47/47、`lumino-ui-core` 95/95、
+  `ui-parity` 12/12、`ui-egui` 全量（`theme_palette` 单线程 5/5）；
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **依赖计数不变（39）**：`iced_widget::canvas` 仍被 arrangement / 视频剪辑 /
+  吸附图标使用，所以删除不会掉依赖；依赖下降要等这些视图也迁走。
+- **已知回退（仅调试路径）**：`LUMINO_EGUI_OVERLAY=0` 时形状抽屉现在是空白
+  （iced 视图已删）。默认路径（叠加层开启）不受影响。
+
+**Task 1.3（下一步）：视频导出进度覆盖层 → egui，然后删整块 iced 设置视图**
+
+1. 迁 `view_video_export_dialog/handlers.rs` 的四种覆盖层（导出中 / 编码中 / 完成 /
+   失败）到 egui：`VideoExportOverlayModel` + 动作通道（取消导出 / 强制完成 / 确定）；
+2. `panels.rs` 的 iced 设置面板分支改为**恒返回占位**，删除
+   `view/video_export_dialog/*` 9 个文件，把 `available_backends()` 与
+   `SYSTEM_FONT_FAMILIES` 迁到 `root/view/egui_chrome/video_export/`；
+3. 之后按依赖倒序清理 `main_view` / `right_sidebar` / `toolbar` 的 iced 占位。

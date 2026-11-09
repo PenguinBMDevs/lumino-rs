@@ -268,11 +268,3 @@ pub(crate) fn undo(doc: &Rc<RefCell<DrawerDoc>>) {
 pub(crate) fn redo(doc: &Rc<RefCell<DrawerDoc>>) {
     doc.borrow_mut().redo();
 }
-
-/// 失焦：清空瞬态（草稿 / 平移 / shift）。
-pub(crate) fn unfocused(interaction: &Rc<RefCell<DrawerInteraction>>) {
-    let mut inter = interaction.borrow_mut();
-    inter.draft = None;
-    inter.pan_start = None;
-    inter.shift = false;
-}
