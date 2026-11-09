@@ -26,6 +26,7 @@ mod draw_settings;
 mod export_progress;
 mod help;
 mod history;
+mod load_confirm;
 mod memory_monitor;
 mod project_settings;
 mod speed_change;
@@ -178,6 +179,9 @@ impl Root {
             ))),
             DialogType::DrawSettings => Some(DialogModel::DrawSettings(Box::new(
                 self.draw_settings_model(),
+            ))),
+            DialogType::LoadConfirm => Some(DialogModel::LoadConfirm(Box::new(
+                self.load_confirm_model(),
             ))),
             _ => None,
         }

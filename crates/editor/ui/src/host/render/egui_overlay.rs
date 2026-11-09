@@ -372,7 +372,8 @@ impl Host {
             | crate::state::root_state::DialogType::Help
             | crate::state::root_state::DialogType::CloudConnect
             | crate::state::root_state::DialogType::MemoryMonitor
-            | crate::state::root_state::DialogType::DrawSettings => {
+            | crate::state::root_state::DialogType::DrawSettings
+            | crate::state::root_state::DialogType::LoadConfirm => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input

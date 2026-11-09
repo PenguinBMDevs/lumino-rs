@@ -4,7 +4,7 @@ use egui::Color32;
 
 use super::{
     BatchEditModel, CloudConnectModel, DrawSettingsModel, HelpModel, HistoryModel,
-    MemoryMonitorModel, SettingsPageModel,
+    LoadConfirmModel, MemoryMonitorModel, SettingsPageModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -36,6 +36,8 @@ pub enum DialogModel {
     MemoryMonitor(Box<MemoryMonitorModel>),
     /// 音符画设置（`DialogType::DrawSettings`）。
     DrawSettings(Box<DrawSettingsModel>),
+    /// 加载确认（`DialogType::LoadConfirm`）。
+    LoadConfirm(Box<LoadConfirmModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

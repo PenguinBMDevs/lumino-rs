@@ -13,6 +13,7 @@ use lumino_ui_egui::dialog::SaveConfirmAction;
 use lumino_ui_egui::draw_settings::DrawSettingsAction;
 use lumino_ui_egui::help::HelpAction;
 use lumino_ui_egui::history::HistoryAction;
+use lumino_ui_egui::load_confirm::LoadConfirmAction;
 use lumino_ui_egui::memory_monitor::MemoryMonitorAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
 use lumino_ui_egui::settings::SettingsAction;
@@ -37,6 +38,7 @@ pub(super) struct OverlayActions {
     pub memory_monitor: Option<MemoryMonitorAction>,
     pub draw_settings: Option<DrawSettingsAction>,
     pub audio_export: Option<AudioExportAction>,
+    pub load_confirm: Option<LoadConfirmAction>,
 }
 
 impl OverlayActions {
@@ -58,6 +60,7 @@ impl OverlayActions {
             memory_monitor: lumino_ui_egui::memory_monitor::take_action(ctx),
             draw_settings: lumino_ui_egui::draw_settings::take_action(ctx),
             audio_export: lumino_ui_egui::audio_export::take_action(ctx),
+            load_confirm: lumino_ui_egui::load_confirm::take_action(ctx),
         }
     }
 }
@@ -92,6 +95,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.load_confirm
+            && let Some(message) = self.root.load_confirm_action_message(&action)
+        {
+            tracing::info!("egui 载入确认动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.audio_export

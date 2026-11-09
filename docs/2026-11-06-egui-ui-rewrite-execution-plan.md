@@ -1343,9 +1343,32 @@ callback / 多视口 / 截图能力。
   waterfall / piano-roll 骨架一致（同一 egui 帧 + 不透明 band），风险集中在
   矩形计算，已由单元测试与模型镜像覆盖。
 
-**Task 1.3（下一步）：视频导出 / 形状抽屉 / 协作 / 载入确认 / 恢复音轨**
+**Task 1.3（第三十六步）：载入确认对话框迁移到 egui — 已完成**
+
+- **模型**：`LoadConfirmModel`（`titlebar` / 文件名行 / 大小行 / 路径行 / 提示 /
+  两个按钮）+ `DialogModel::LoadConfirm`。
+- **渲染**：`ui-egui/src/load_confirm.rs` 对齐生产：内边距 24；三行文件信息
+  （14px 文件名 / 14px 大小 / 12px 弱色路径，行间 6）、13px 弱色提示（上方 16）、
+  按钮行（上方 24）：100×34「取消」（`background.weak` 底）+ 12 + 100×34 主色
+  「加载」。
+- **动作**：`Confirm` / `Cancel` → `Message::LoadConfirm(Confirm / CloseDialog)`；
+  标题栏让位与其他对话框一致。
+- 验收：
+  - `load_confirm_bands` 2/2（三行信息 + 提示 + 两按钮可访问；确认 / 取消回传）；
+  - `egui_chrome` 59/59（模型镜像 + 两个动作）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **真机入口不可达（现状缺陷，已记录）**：`OpenLoadConfirmDialog` 事件与
+  `DialogManager::open_load_confirm` 都**没有任何调用方**——「大文件加载确认」
+  在当前代码里是死路径（没有被任何打开工程流程触发）。迁移保持了完整 UI 与
+  动作，但无法通过真实窗口复现；后续接入「大文件确认」时直接复用本模型。
+
+**Task 1.3（下一步）：恢复音轨 / 画刷设置 / 协作 / 云文件浏览 / 形状抽屉 / 视频导出**
 
 - 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 / 自定义精度 /
-  导出进度 / Help / 云连接 / 内存监控 / 音符画设置 / 音频导出面板已是 egui。
-- 下一步：视频导出面板（与音频导出同族，复用 panel 形态）、形状抽屉、
-  协作、载入确认、恢复音轨、画刷设置；最后攻编辑器画布与 iced 归零证明。
+  导出进度 / Help / 云连接 / 内存监控 / 音符画设置 / 载入确认 / 音频导出面板
+  已是 egui。
+- 下一步：恢复音轨（374 行）、画刷设置（174）、协作（376）、云文件浏览（359）、
+  形状抽屉（237，含自绘画布）、视频导出（约 2000 行，9 个子模块）；最后攻编辑器
+  画布与 iced 归零证明。

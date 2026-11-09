@@ -29,9 +29,9 @@ pub use model::{
     CloudField, CloudFieldModel, CloudProtocol, CloudProtocolOptionModel, CompatLine,
     CompatibilityPageModel, CustomPrecisionModel, DialogModel, DialogPalette, DotOptionModel,
     DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel,
-    HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel, MemoryMetricModel,
-    MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem,
-    OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
+    HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel,
+    MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
+    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
     ProjectNoteCountModel, ProjectSettingsModel, RightSidebarModel, RightSidebarPanelKind, RollBar,
     SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
     ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem,
@@ -193,6 +193,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::DrawSettings(model) => {
                 crate::draw_settings::show(&mut root, model);
+            }
+            DialogModel::LoadConfirm(model) => {
+                crate::load_confirm::show(&mut root, model);
             }
         }
         return;

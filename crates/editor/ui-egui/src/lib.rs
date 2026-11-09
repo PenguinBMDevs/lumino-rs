@@ -25,6 +25,7 @@ pub mod help;
 pub mod history;
 pub mod icons;
 pub mod layout;
+pub mod load_confirm;
 pub mod memory_monitor;
 pub mod project_settings;
 pub mod scene;
