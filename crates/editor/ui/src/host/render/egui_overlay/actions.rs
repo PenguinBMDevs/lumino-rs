@@ -25,6 +25,7 @@ use lumino_ui_egui::settings::SettingsAction;
 use lumino_ui_egui::shape_canvas::ShapeCanvasAction;
 use lumino_ui_egui::shape_drawer::ShapeDrawerAction;
 use lumino_ui_egui::speed_change::SpeedChangeAction;
+use lumino_ui_egui::video_export::VideoExportAction;
 
 use crate::host::Host;
 
@@ -52,6 +53,7 @@ pub(super) struct OverlayActions {
     pub cloud_browser: Option<CloudBrowserAction>,
     pub shape_drawer: Option<ShapeDrawerAction>,
     pub shape_canvas: Vec<ShapeCanvasAction>,
+    pub video_export: Option<VideoExportAction>,
 }
 
 impl OverlayActions {
@@ -80,6 +82,7 @@ impl OverlayActions {
             cloud_browser: lumino_ui_egui::cloud_browser::take_action(ctx),
             shape_drawer: lumino_ui_egui::shape_drawer::take_action(ctx),
             shape_canvas: lumino_ui_egui::shape_canvas::take_actions(ctx),
+            video_export: lumino_ui_egui::video_export::take_action(ctx),
         }
     }
 }
@@ -134,6 +137,12 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.video_export
+            && let Some(message) = self.root.video_export_action_message(&action)
+        {
+            tracing::info!("egui 视频导出动作：{action:?}");
+            self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.shape_drawer
             && let Some(message) = self.root.shape_drawer_action_message(&action)

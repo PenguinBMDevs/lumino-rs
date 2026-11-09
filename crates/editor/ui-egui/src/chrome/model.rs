@@ -24,6 +24,7 @@ mod settings_ui;
 mod shape_drawer;
 mod tool_panel;
 mod toolbar;
+mod video_export;
 pub use audio_export::*;
 pub use batch_edit::*;
 pub use brush_settings::*;
@@ -44,6 +45,7 @@ pub use settings_ui::*;
 pub use shape_drawer::*;
 pub use tool_panel::*;
 pub use toolbar::*;
+pub use video_export::*;
 
 use super::piano_roll::PianoRollView;
 

@@ -15,6 +15,7 @@ mod shape_canvas;
 mod shape_drawer;
 mod tool_panel;
 mod toolbar;
+mod video_export;
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
@@ -462,3 +463,5 @@ mod speed_change_tests;
 mod tests;
 #[cfg(test)]
 mod tool_panel_tests;
+#[cfg(test)]
+mod video_export_tests;

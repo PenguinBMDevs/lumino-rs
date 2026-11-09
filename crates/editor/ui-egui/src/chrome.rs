@@ -41,7 +41,9 @@ pub use model::{
     SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton,
     ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel,
     SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
-    SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel, VideoButton,
+    VideoButtonFill, VideoExportAction, VideoExportModel, VideoExportPanelModel, VideoPreviewModel,
+    VideoRow, VideoSection,
 };
 pub use toolbar_popup::ToolbarAction;
 

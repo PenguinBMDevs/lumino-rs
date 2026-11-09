@@ -59,6 +59,23 @@ impl Root {
     pub(crate) fn view_video_export_panel(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_video_export_panel");
 
+        // 叠加层接管时：与音频导出同形态的占位（egui 在同一矩形上不透明覆盖）。
+        if crate::host::overlay_enabled() && self.video_export_mode_supported() {
+            let palette = self.window.theme.extended_palette();
+            return container(
+                iced_widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced_core::Background::Color(palette.background.base.color)),
+                ..Default::default()
+            })
+            .into();
+        }
+
         let theme = &self.window.theme;
         let palette = theme.extended_palette();
 

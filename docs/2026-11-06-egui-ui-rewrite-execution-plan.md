@@ -1559,9 +1559,39 @@ callback / 多视口 / 截图能力。
 - **注**：`ShapeDrawerCanvas` 的 iced `Program` 实现仍保留（未接线的旧路径），
   但抽屉窗口在叠加层下已完全不经过它；后续清理 iced 时可整块删除。
 
-**Task 1.3（下一步）：视频导出面板迁移**
+**Task 1.3（第四十三步）：视频导出面板主体迁移到 egui — 已完成（两套模式附加设置待补）**
 
-- 现状：除视频导出（约 2000 行、9 个子模块）外，全部对话框与面板已是 egui；
-  形状抽屉画布也已由 egui painter 接管。
-- 下一步：视频导出按「渲染设置 + 输出 + 按钮」分块迁移，沿用 panel 形态；
-  随后编辑器画布与 iced 归零证明。
+- **形态**：与音频导出同族的整块右侧内容区面板（`VideoExportPanelModel { rect, content }`），
+  不放进 `DialogModel`；叠加层绘制并把矩形推入点击占用，`view_video_export_panel`
+  在叠加层启用且模式受支持时返回同尺寸占位。
+- **通用控件模型**（避免为 70 个控件各写一套类型）：
+  `VideoRow::{Pick, Slider, Toggle, Text, Label, Buttons}` + `VideoButton`
+  （Primary / Neutral / Danger），每个控件带 `id`；动作统一为
+  `VideoExportAction::{Pick, Slider, Toggle, Text, Button}`，由生产侧按 `id` 翻回
+  `message::VideoExportAction`。
+- **已迁移**：标题、MIDI 数据源（路径 + 浏览 + 提示）、渲染设置（渲染格式 / 编码器 /
+  加速 / 质量 / 渲染风格 / 下落速度 / 视图模式 / Z 显示距离 / 3D 音符 / 分辨率 /
+  帧率）、MidiConsole 分区（渲染后端）、导出位置、预览区（空态 + 等比框）、
+  关闭 / 开始导出按钮。
+- **渲染**：`ui-egui/src/video_export.rs` 对齐生产：内边距 24、分区标题 16px、
+  标签列 100（部分 50/70）、控件 200 宽、行距 8、分区 16、按钮 34 高；
+  下拉用 ComboBox、滑杆用 `Slider`（隐藏自带数值，右侧独立数值文本）、
+  复选框 / 文本 / 只读标签逐行对齐。
+- **模式闸门**：渲染风格为「计数器」「数据曲线」时仍由 iced 渲染整面板
+  （两套附加设置控件多，下一步补齐），其余模式走 egui。
+- 验收：
+  - `video_export_bands` 4/4（分区与控件可访问、按钮 id、复选框、下拉与文本回传）；
+  - `egui_chrome` 84/84（面板模型：三分区、瀑布流无 MidiConsole、MIDITrail 追加
+    三行、MidiConsole 独立分区、模式闸门、控件动作映射与越界/未知 id 拒绝）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **未做真机复现**：入口是左侧路由栏图标（`Route::VideoExport`），本轮未能定位到
+  该图标（逐个尝试 6 个图标只切换了走带/卷帘视图）。面板渲染路径与已真机验证的
+  音频导出同源，风险集中在控件行几何，已由模型测试 + 无头渲染覆盖。
+
+**Task 1.3（下一步）：视频导出计数器 / 数据曲线设置 + 编辑器画布接管**
+
+- 现状：视频导出主体已 egui；计数器与数据曲线两套附加设置仍由 iced 渲染。
+- 下一步：补齐这两套设置（同样用 `VideoRow` 表驱动），移除模式闸门；随后把
+  编辑器画布从 iced 通道交给 egui/wgpu，最后做 iced 归零检查。

@@ -62,6 +62,8 @@ struct OverlayFrame<'a> {
     shape_drawer: Option<lumino_ui_egui::chrome::ShapeDrawerModel>,
     /// 形状抽屉右侧画布（egui painter 版）。
     shape_canvas: Option<lumino_ui_egui::shape_canvas::ShapeCanvasModel>,
+    /// 视频导出面板（整块替换右侧内容区）。
+    video_export: Option<lumino_ui_egui::chrome::VideoExportPanelModel>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -147,6 +149,9 @@ impl EguiOverlay {
             if let Some(canvas) = &frame.shape_canvas {
                 lumino_ui_egui::shape_canvas::show(ui, canvas);
             }
+            if let Some(panel) = &frame.video_export {
+                lumino_ui_egui::video_export::show_panel(ui, panel);
+            }
         });
 
         // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
@@ -165,6 +170,9 @@ impl EguiOverlay {
         }
         if let Some(canvas) = &frame.shape_canvas {
             blocked.push(canvas.rect);
+        }
+        if let Some(panel) = &frame.video_export {
+            blocked.push(panel.rect);
         }
 
         let mut textures = output.textures_delta;
@@ -248,6 +256,26 @@ impl Host {
             self.root
                 .shape_canvas_model(rect, &self.root.egui_palette())
         });
+        // 视频导出面板：整块替换右侧内容区（与音频导出同形态）。
+        let video_export = (self.root.sidebar.video_export_visible
+            && !self.root.is_arrangement_mode()
+            && self.root.video_export_mode_supported())
+        .then(|| {
+            let left = model
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.total_width())
+                .unwrap_or(48.0);
+            let top = if self.root.settings.synth.use_native_titlebar {
+                0.0
+            } else {
+                lumino_ui_egui::layout::TITLEBAR_H
+            };
+            self.root.video_export_panel_model(egui::Rect::from_min_max(
+                egui::pos2(left, top),
+                egui::pos2(logical_width, logical_height),
+            ))
+        });
         // 音频导出面板：整块替换右侧内容区（工具栏 / 画布 / 状态栏）。
         let audio_export = (self.root.sidebar.audio_export_visible
             && !self.root.is_arrangement_mode())
@@ -306,6 +334,7 @@ impl Host {
             audio_export,
             shape_drawer,
             shape_canvas,
+            video_export,
             events,
             focused,
         });
