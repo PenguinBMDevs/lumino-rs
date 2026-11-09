@@ -12,6 +12,7 @@
 
 pub mod audio_export;
 pub mod batch_edit;
+pub mod brush_settings;
 #[cfg(feature = "capture")]
 pub mod capture;
 pub mod chrome;

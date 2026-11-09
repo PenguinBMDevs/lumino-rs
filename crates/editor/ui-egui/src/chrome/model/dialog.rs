@@ -3,8 +3,8 @@
 use egui::Color32;
 
 use super::{
-    BatchEditModel, CloudConnectModel, DrawSettingsModel, HelpModel, HistoryModel,
-    LoadConfirmModel, MemoryMonitorModel, SettingsPageModel,
+    BatchEditModel, BrushSettingsModel, CloudConnectModel, DrawSettingsModel, HelpModel,
+    HistoryModel, LoadConfirmModel, MemoryMonitorModel, SettingsPageModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -38,6 +38,8 @@ pub enum DialogModel {
     DrawSettings(Box<DrawSettingsModel>),
     /// 加载确认（`DialogType::LoadConfirm`）。
     LoadConfirm(Box<LoadConfirmModel>),
+    /// 画刷设置（`DialogType::BrushSettings`）。
+    BrushSettings(Box<BrushSettingsModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

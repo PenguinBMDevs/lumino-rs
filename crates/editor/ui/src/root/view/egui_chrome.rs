@@ -415,6 +415,8 @@ mod audio_export_tests;
 #[cfg(test)]
 mod batch_edit_tests;
 #[cfg(test)]
+mod brush_settings_tests;
+#[cfg(test)]
 mod cloud_connect_tests;
 #[cfg(test)]
 mod custom_precision_tests;

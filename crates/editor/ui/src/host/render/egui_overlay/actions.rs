@@ -5,6 +5,7 @@
 
 use lumino_ui_egui::audio_export::AudioExportAction;
 use lumino_ui_egui::batch_edit::BatchEditAction;
+use lumino_ui_egui::brush_settings::BrushSettingsAction;
 use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::cloud_connect::CloudConnectAction;
@@ -39,6 +40,7 @@ pub(super) struct OverlayActions {
     pub draw_settings: Option<DrawSettingsAction>,
     pub audio_export: Option<AudioExportAction>,
     pub load_confirm: Option<LoadConfirmAction>,
+    pub brush_settings: Option<BrushSettingsAction>,
 }
 
 impl OverlayActions {
@@ -61,6 +63,7 @@ impl OverlayActions {
             draw_settings: lumino_ui_egui::draw_settings::take_action(ctx),
             audio_export: lumino_ui_egui::audio_export::take_action(ctx),
             load_confirm: lumino_ui_egui::load_confirm::take_action(ctx),
+            brush_settings: lumino_ui_egui::brush_settings::take_action(ctx),
         }
     }
 }
@@ -95,6 +98,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.brush_settings
+            && let Some(message) = self.root.brush_settings_action_message(&action)
+        {
+            tracing::info!("egui 画刷设置动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.load_confirm

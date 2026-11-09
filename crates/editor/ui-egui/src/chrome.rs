@@ -25,18 +25,18 @@ pub use model::{
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };
 pub use model::{
-    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, ChromeModel, CloudConnectModel,
-    CloudField, CloudFieldModel, CloudProtocol, CloudProtocolOptionModel, CompatLine,
-    CompatibilityPageModel, CustomPrecisionModel, DialogModel, DialogPalette, DotOptionModel,
-    DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel,
-    HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel,
-    MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
-    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
-    ProjectNoteCountModel, ProjectSettingsModel, RightSidebarModel, RightSidebarPanelKind, RollBar,
-    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
-    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem,
-    SnapMenuModel, SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel,
-    ToolbarModel,
+    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
+    BrushTrackChoice, ChromeModel, CloudConnectModel, CloudField, CloudFieldModel, CloudProtocol,
+    CloudProtocolOptionModel, CompatLine, CompatibilityPageModel, CustomPrecisionModel,
+    DialogModel, DialogPalette, DotOptionModel, DrawSettingsModel, ExportMessageKind,
+    ExportProgressModel, HelpModel, HelpSectionModel, HelpTopicBodyModel, HelpTopicRowModel,
+    HistoryModel, HistoryRowModel, LoadConfirmModel, MemoryMetricModel, MemoryMonitorModel,
+    MemoryRowModel, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel,
+    OnionSkinPageModel, OverflowItemModel, OverflowMenuModel, ProjectNoteCountModel,
+    ProjectSettingsModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
+    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
+    SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -196,6 +196,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::LoadConfirm(model) => {
                 crate::load_confirm::show(&mut root, model);
+            }
+            DialogModel::BrushSettings(model) => {
+                crate::brush_settings::show(&mut root, model);
             }
         }
         return;

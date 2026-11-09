@@ -6,6 +6,7 @@
 
 mod audio_export;
 mod batch_edit;
+mod brush_settings;
 mod cloud_connect;
 mod draw_settings;
 mod help;
@@ -21,6 +22,7 @@ mod tool_panel;
 mod toolbar;
 pub use audio_export::*;
 pub use batch_edit::*;
+pub use brush_settings::*;
 pub use cloud_connect::*;
 pub use draw_settings::*;
 pub use help::*;

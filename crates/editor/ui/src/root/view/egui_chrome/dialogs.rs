@@ -20,6 +20,7 @@ use crate::root::Root;
 use crate::state::root_state::DialogType;
 
 mod batch_edit;
+mod brush_settings;
 mod cloud_connect;
 mod custom_precision;
 mod draw_settings;
@@ -182,6 +183,9 @@ impl Root {
             ))),
             DialogType::LoadConfirm => Some(DialogModel::LoadConfirm(Box::new(
                 self.load_confirm_model(),
+            ))),
+            DialogType::BrushSettings => Some(DialogModel::BrushSettings(Box::new(
+                self.brush_settings_model(),
             ))),
             _ => None,
         }
