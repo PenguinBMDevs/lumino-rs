@@ -416,6 +416,8 @@ mod cloud_connect_tests;
 #[cfg(test)]
 mod custom_precision_tests;
 #[cfg(test)]
+mod draw_settings_tests;
+#[cfg(test)]
 mod export_progress_tests;
 #[cfg(test)]
 mod help_tests;

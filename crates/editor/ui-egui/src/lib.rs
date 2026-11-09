@@ -17,6 +17,7 @@ pub mod chrome;
 pub mod cloud_connect;
 pub mod custom_precision;
 pub mod dialog;
+pub mod draw_settings;
 pub mod export_progress;
 pub mod fonts;
 pub mod help;

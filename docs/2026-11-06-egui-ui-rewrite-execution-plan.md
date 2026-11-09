@@ -1291,10 +1291,26 @@ callback / 多视口 / 截图能力。
     `egui 内存监控动作：Close` 且窗口关闭。
   - 证据图：`target/mem-egui4.png`、`mem-iced.png`、`mem-compare.png`。
 
+**Task 1.3（第三十四步）：音符画设置对话框迁移到 egui — 已完成**
+
+- **模型**：`DrawSettingsModel`（标题 / 占位说明 / 关闭）+ `DialogModel::DrawSettings`；
+  文案与生产同源（`tool_panel_settings` / `draw_settings_placeholder` / `file_close`）。
+- **渲染**：`ui-egui/src/draw_settings.rs` 对齐生产：内边距 16、标题 18px、
+  说明 13px 自动换行、间距 12、底部右对齐「关闭」。
+- **动作**：`Close` → `Message::DrawSettings(CloseDialog)`；标题栏让位与其他
+  对话框一致。
+- 验收：
+  - `draw_settings_bands` 1/1（标题 / 占位说明 / 关闭动作）；
+  - `egui_chrome` 53/53（模型镜像 + 关闭映射）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真机入口（悬浮工具条齿轮）本轮未自动化复现：该入口需要先打开悬浮条再点
+    齿轮，坐标不稳定；对话框本身是 3 元素占位页，已由无头测试覆盖。
+
 **Task 1.3（下一步）：音频导出表单（350 行 + 5 个子模块）**
 
 - 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 /
-  自定义精度 / 导出进度 / Help / 云连接 / 内存监控已是 egui。
-- 下一步：音频导出表单（标题 / 工程信息 / 音频设置 / 事件过滤 / 输出路径 /
-  按钮六个区块）体量最大，按区块拆分模型与渲染，先落「音频设置 + 按钮」，
-  再补其余区块；随后形状抽屉、视频导出、协作、载入确认、恢复音轨。
+  自定义精度 / 导出进度 / Help / 云连接 / 内存监控 / 音符画设置已是 egui。
+- 下一步：音频导出表单按区块拆分迁移（音频设置 + 按钮先行），随后形状抽屉、
+  视频导出、协作、载入确认、恢复音轨；最后攻编辑器画布并做 iced 归零证明。

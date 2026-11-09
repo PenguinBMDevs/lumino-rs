@@ -9,6 +9,7 @@ use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::cloud_connect::CloudConnectAction;
 use lumino_ui_egui::custom_precision::CustomPrecisionAction;
 use lumino_ui_egui::dialog::SaveConfirmAction;
+use lumino_ui_egui::draw_settings::DrawSettingsAction;
 use lumino_ui_egui::help::HelpAction;
 use lumino_ui_egui::history::HistoryAction;
 use lumino_ui_egui::memory_monitor::MemoryMonitorAction;
@@ -33,6 +34,7 @@ pub(super) struct OverlayActions {
     pub help: Option<HelpAction>,
     pub cloud_connect: Option<CloudConnectAction>,
     pub memory_monitor: Option<MemoryMonitorAction>,
+    pub draw_settings: Option<DrawSettingsAction>,
 }
 
 impl OverlayActions {
@@ -52,6 +54,7 @@ impl OverlayActions {
             help: lumino_ui_egui::help::take_action(ctx),
             cloud_connect: lumino_ui_egui::cloud_connect::take_action(ctx),
             memory_monitor: lumino_ui_egui::memory_monitor::take_action(ctx),
+            draw_settings: lumino_ui_egui::draw_settings::take_action(ctx),
         }
     }
 }
@@ -86,6 +89,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.draw_settings
+            && let Some(message) = self.root.draw_settings_action_message(&action)
+        {
+            tracing::info!("egui 音符画设置动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.memory_monitor

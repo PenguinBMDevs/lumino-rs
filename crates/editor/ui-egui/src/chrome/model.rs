@@ -6,6 +6,7 @@
 
 mod batch_edit;
 mod cloud_connect;
+mod draw_settings;
 mod help;
 mod history;
 mod memory_monitor;
@@ -18,6 +19,7 @@ mod tool_panel;
 mod toolbar;
 pub use batch_edit::*;
 pub use cloud_connect::*;
+pub use draw_settings::*;
 pub use help::*;
 pub use history::*;
 pub use memory_monitor::*;

@@ -3,8 +3,8 @@
 use egui::Color32;
 
 use super::{
-    BatchEditModel, CloudConnectModel, HelpModel, HistoryModel, MemoryMonitorModel,
-    SettingsPageModel,
+    BatchEditModel, CloudConnectModel, DrawSettingsModel, HelpModel, HistoryModel,
+    MemoryMonitorModel, SettingsPageModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -34,6 +34,8 @@ pub enum DialogModel {
     CloudConnect(Box<CloudConnectModel>),
     /// 内存监控（`DialogType::MemoryMonitor`）。
     MemoryMonitor(Box<MemoryMonitorModel>),
+    /// 音符画设置（`DialogType::DrawSettings`）。
+    DrawSettings(Box<DrawSettingsModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

@@ -22,6 +22,7 @@ use crate::state::root_state::DialogType;
 mod batch_edit;
 mod cloud_connect;
 mod custom_precision;
+mod draw_settings;
 mod export_progress;
 mod help;
 mod history;
@@ -174,6 +175,9 @@ impl Root {
             ))),
             DialogType::MemoryMonitor => Some(DialogModel::MemoryMonitor(Box::new(
                 self.memory_monitor_model(),
+            ))),
+            DialogType::DrawSettings => Some(DialogModel::DrawSettings(Box::new(
+                self.draw_settings_model(),
             ))),
             _ => None,
         }
