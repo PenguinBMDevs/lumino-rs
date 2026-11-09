@@ -1711,11 +1711,31 @@ callback / 多视口 / 截图能力。
 - **既有缺陷（与本次改动无关）**：`theme_palette` 并行执行会 `STATUS_ACCESS_VIOLATION`
   （`git stash` 后复现），单线程全绿；已按单线程口径验收。
 
-**Task 1.3（下一步）：定位画布遮挡层 → 翻转 `LUMINO_EGUI_CANVAS` 默认值**
+**Task 1.3（第四十八步）：编辑器画布底层改由 egui 采样（默认开启，逐像素等价）**
 
-1. 在 `LUMINO_EGUI_CANVAS=1` 下把底层 image 临时改成纯色/红染，确认图元可见性；
-2. 逐层关闭 `show_bands` 里的候选绘制（piano_roll 网格/滚动条、右侧栏、工具面板），
-   找出遮挡者并改为「有底层时不画」；
-3. 三条视图路径（卷帘 / 走带 / 瀑布流）真机对照后，翻默认值并删除 iced 侧占位；
-4. 随后删 iced 视频导出视图与 `ShapeDrawerCanvas::Program`，把 `lumino-ui` 的
-   40 个 iced 依赖逐项清零。
+- **排查结论（两轮实测）**：
+  1. 把底层 image 临时染成纯红 → 画布区整块变红、纹理里的小节线清晰可见，
+     证明**图元与纹理都在生效**，之前「播放指示线消失」是点击移动了播放头造成的假象；
+  2. 恢复白色叠加后仍有系统性偏暗（mean max-channel 24，样本 (206,206,206) vs
+     (232,232,232)、(155,155,155) vs (205,205,205)）→ **sRGB 双重解码**。
+- **修复**：`latest_texture_view()` 用**线性**格式（`Bgra8Unorm` / `Rgba8Unorm`）
+  创建采样视图（gfx 已按 sRGB 编码一次，egui 不能再解码一次）。
+- **默认翻转**：`LUMINO_EGUI_CANVAS` 默认开启（`=0` 可回退旧 blit 通道）；
+  剪辑面板 / 瀑布流分支显式清空 `egui_editor_texture`，避免残留旧底层。
+- 验收（真机 ppp=1.25，平铺逐像素比对画布区 1600×1100）：
+  - 卷帘：默认（egui 采样）vs `LUMINO_EGUI_CANVAS=0`（blit）→ **mean 0.0 / worst 0**；
+  - 走带：同上 → **mean 0.0 / worst 0**；
+  - 瀑布流：切到播放器视图正常（该路径不用编辑器底层，已显式清空）。
+- 自动化：`lumino-ui` lib 870/870、`lumino-gfx` 273/273（单线程）、`ui-parity` 12/12、
+  `ui-egui` 全量（`theme_palette` 单线程）、`clippy -D warnings`、`fmt --check`、
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- 证据图：`target/d1.png`（红染验证）、`canvas-on7.png` / `canvas-off3.png`
+  （卷帘 0 差）、`arr-default.png` / `arr-blit.png`（走带 0 差）。
+
+**Task 1.3（下一步）：删除 iced 侧画布占位与残留视图**
+
+1. 删 `layers`/iced 通道里编辑器画布的绘制与占位（现在 egui 已完全接管底层）；
+2. 删 iced 视频导出视图 + `counter_editor` / `CounterTextAction`；
+3. 删 `ShapeDrawerCanvas::Program`；
+4. 逐项移除 `lumino-ui` 的 40 个 iced 依赖，以
+   `cargo tree -p lumino-ui | grep '^iced'` 为空作为归零证据。

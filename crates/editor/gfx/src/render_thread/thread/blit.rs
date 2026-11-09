@@ -286,8 +286,18 @@ impl WgpuRenderThread {
         {
             return Some(std::sync::Arc::clone(view));
         }
-        let view =
-            std::sync::Arc::new(texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        // 采样视图必须用**线性**格式：gfx 写的是 sRGB 纹理（着色器输出已编码一次），
+        // egui 的着色器再按 sRGB 解码一次会整体压暗（真机实测通道差 10~30）。
+        let linear = match texture.inner().format() {
+            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
+            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
+            _ => None,
+        };
+        let descriptor = wgpu::TextureViewDescriptor {
+            format: linear,
+            ..Default::default()
+        };
+        let view = std::sync::Arc::new(texture.create_view(&descriptor));
         if let Ok(mut cache) = self.latest_view.lock() {
             *cache = Some((key, std::sync::Arc::clone(&view)));
         }

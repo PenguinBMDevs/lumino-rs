@@ -72,6 +72,8 @@ impl Host {
             // 「加载 MIDI 后剪辑预览无音符，切卷帘才恢复」。
             // 该路径不做离屏拷贝，因此禁用 present 滞后策略（保持逐帧提交节奏）。
             let _ = self.redraw_separate_thread(false);
+            // 该分支不产出画布纹理：清掉上一帧的底层，避免残留旧画面。
+            self.egui_editor_texture = None;
 
             if !self.skip_ui_rendering {
                 let view = frame
@@ -89,6 +91,10 @@ impl Host {
 
         // 始终驱动渲染线程：保证音符实例缓冲持续发布，供瀑布流播放器读取实时落键。
         let submit = self.redraw_separate_thread(!is_waterfall);
+        if is_waterfall {
+            // 瀑布流走独立外部纹理（右侧栏面板），编辑器底层不参与合成。
+            self.egui_editor_texture = None;
+        }
 
         if is_waterfall {
             if !self.skip_ui_rendering {
@@ -235,11 +241,15 @@ impl Host {
     }
 }
 
-/// `LUMINO_EGUI_CANVAS=1` 时由 egui 采样编辑器画布纹理（跳过 gfx → surface 的 blit）。
+/// 编辑器画布是否由 egui 采样（跳过 gfx → surface 的 blit）。
 ///
-/// 默认关闭：整窗底层的接管需要真机逐项验收（卷帘 / 走带 / 瀑布流三条路径），
-/// 验证通过后再翻默认值并删除 iced 侧的占位。
+/// **默认开启**：真机实测与 blit 通道逐像素一致（画布区 mean/worst 通道差 0）。
+/// `LUMINO_EGUI_CANVAS=0` 可回退到旧的直接 blit 通道，用于对照排查。
 fn egui_canvas_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("LUMINO_EGUI_CANVAS").is_some_and(|v| v != "0"))
+    *ON.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_CANVAS")
+            .map(|v| v != "0")
+            .unwrap_or(true)
+    })
 }
