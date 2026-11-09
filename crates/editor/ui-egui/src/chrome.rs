@@ -25,13 +25,14 @@ pub use model::{
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, ChromeModel, CompatLine,
     CompatibilityPageModel, CustomPrecisionModel, DialogModel, DialogPalette, DotOptionModel,
-    ExportMessageKind, ExportProgressModel, HistoryModel, HistoryRowModel, MenuBarModel, MenuEntry,
-    MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel,
-    OverflowMenuModel, ProjectNoteCountModel, ProjectSettingsModel, RightSidebarModel,
-    RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels, SettingsPageModel,
-    SettingsPalette, SettingsSnapshot, ShortcutsPageModel, SidebarGroup, SidebarModel,
-    SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
-    TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel, HelpTopicBodyModel,
+    HelpTopicRowModel, HistoryModel, HistoryRowModel, MenuBarModel, MenuEntry, MenuModel,
+    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
+    ProjectNoteCountModel, ProjectSettingsModel, RightSidebarModel, RightSidebarPanelKind, RollBar,
+    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
+    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem,
+    SnapMenuModel, SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel,
+    ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -176,6 +177,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::ExportProgress(model) => {
                 crate::export_progress::show(&mut root, model);
+            }
+            DialogModel::Help(model) => {
+                crate::help::show(&mut root, model);
             }
         }
         return;

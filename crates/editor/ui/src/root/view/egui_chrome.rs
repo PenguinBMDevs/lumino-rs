@@ -416,6 +416,8 @@ mod custom_precision_tests;
 #[cfg(test)]
 mod export_progress_tests;
 #[cfg(test)]
+mod help_tests;
+#[cfg(test)]
 mod history_tests;
 #[cfg(test)]
 mod project_settings_tests;

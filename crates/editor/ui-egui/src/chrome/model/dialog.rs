@@ -2,7 +2,7 @@
 
 use egui::Color32;
 
-use super::{BatchEditModel, HistoryModel, SettingsPageModel};
+use super::{BatchEditModel, HelpModel, HistoryModel, SettingsPageModel};
 
 /// 独立对话框窗口的只读模型。
 #[derive(Debug, Clone)]
@@ -25,6 +25,8 @@ pub enum DialogModel {
     CustomPrecision(Box<CustomPrecisionModel>),
     /// 音频导出进度（`DialogType::ExportProgress`，只读）。
     ExportProgress(Box<ExportProgressModel>),
+    /// Help 窗口（`DialogType::Help`）。
+    Help(Box<HelpModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

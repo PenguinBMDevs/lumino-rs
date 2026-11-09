@@ -8,6 +8,7 @@ use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::custom_precision::CustomPrecisionAction;
 use lumino_ui_egui::dialog::SaveConfirmAction;
+use lumino_ui_egui::help::HelpAction;
 use lumino_ui_egui::history::HistoryAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
 use lumino_ui_egui::settings::SettingsAction;
@@ -27,6 +28,7 @@ pub(super) struct OverlayActions {
     pub batch_edit: Option<BatchEditAction>,
     pub speed_change: Option<SpeedChangeAction>,
     pub custom_precision: Option<CustomPrecisionAction>,
+    pub help: Option<HelpAction>,
 }
 
 impl OverlayActions {
@@ -43,6 +45,7 @@ impl OverlayActions {
             batch_edit: lumino_ui_egui::batch_edit::take_action(ctx),
             speed_change: lumino_ui_egui::speed_change::take_action(ctx),
             custom_precision: lumino_ui_egui::custom_precision::take_action(ctx),
+            help: lumino_ui_egui::help::take_action(ctx),
         }
     }
 }
@@ -77,6 +80,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.help
+            && let Some(message) = self.root.help_action_message(&action)
+        {
+            tracing::info!("egui 帮助动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.custom_precision

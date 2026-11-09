@@ -18,6 +18,7 @@ pub mod custom_precision;
 pub mod dialog;
 pub mod export_progress;
 pub mod fonts;
+pub mod help;
 pub mod history;
 pub mod icons;
 pub mod layout;
