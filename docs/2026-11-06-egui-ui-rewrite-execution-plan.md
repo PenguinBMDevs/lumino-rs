@@ -1815,11 +1815,39 @@ callback / 多视口 / 截图能力。
 - **依赖计数仍为 39**：iced 仍是 `lumino-ui` 的整栈依赖（Element/Message/Theme），
   删除视图不改变 crate 依赖；归零需要把剩余视图全部改写后整体摘除 `iced_*`。
 
-**Task 1.3（下一步）：迁移 arrangement / 视频剪辑 / 吸附图标的 iced canvas**
+**Task 1.3（第五十二步）：试删 iced `SnapIcon`（已回退）+ 归零路线的硬约束**
 
-- `main_view/arrangement.rs` 的三个 `iced_widget::canvas::Canvas`（轨道列表 / 点击层 /
-  标尺）：几何与命中已有 egui 版画布底层桥，可直接复用；
-- `view/video_clip/timeline.rs` + `timeline_canvas.rs`（`TimelineCanvas` Program）；
-- `toolbar/view/snap_icon.rs`（`SnapIcon` Program）。
-- 三者迁完后 `iced_widget::canvas` 不再被引用，再按依赖倒序摘除 `lumino-ui` 的
-  `iced_*` 依赖，以 `cargo tree -p lumino-ui | grep '^iced'` 为空作为归零证据。
+- **尝试**：`toolbar/view/snap_icon.rs` 的 16×16 矢量小图（`iced_widget::canvas`
+  的 `SnapIcon` Program）改为同尺寸 `Space` 占位——egui 侧早有等价绘制
+  （`ui-egui/src/chrome/toolbar_popup.rs::snap_glyph`，符头/符干/符尾/附点/
+  连音/小节线逐项一致）。
+- **结果**：`capture_iced` 立刻报 **6 张基线不一致**（工具栏在钢琴卷帘场景里，
+  占位把图标抹掉了）。按验收纪律不能删基线掩盖，**已 `git checkout` 回退**，
+  回退后 18/18 恢复。
+- **由此得到的硬约束（重要）**：
+  - `capture_iced` 用 `LUMINO_EGUI_OVERLAY=0` 渲染**纯 iced 通道**，因此任何
+    出现在基线场景里的 iced 视图都**不能先删**——包括工具栏（吸附图标 / 精度
+    下拉）、卷帘骨架、状态栏；
+  - 反过来，不出现在基线场景里的视图（形状抽屉、视频导出设置/覆盖层）可以先删，
+    这也是前两步能安全落地（-777 / -1650 行）而基线仍 18/18 的原因；
+  - 结论：**iced 的移除必须是一次性整栈替换**，而不是按控件逐个删。逐个删会在
+    「基线变红」和「不敢删基线」之间死锁。
+- 现状（`cargo tree` 实测）：`lumino-ui-egui` = 0、`lumino-message` = 0、
+  `lumino-ui` = **39**。39 这个数字在 `iced_widget` / `iced_core` / `iced_wgpu`
+  仍被 `Element`/`Message`/`Theme` 整树使用时不会下降。
+
+**Task 1.3（下一步）：整栈替换的收尾方案（需按此顺序，不能跳步）**
+
+1. **补齐 egui 侧最后三块画布**（先共存，不动 iced）：
+   `arrangement`（轨道列表 / 标尺 / 点击层）、`video_clip/timeline`
+   （`TimelineCanvas`）、`toolbar` 的吸附小图（egui 已有 `snap_glyph`）。
+   共用已建成的外部纹理桥与 `LUMINO_EGUI_CANVAS` 底层。
+2. **真机逐视图对照**：在 `LUMINO_EGUI_OVERLAY=1` 下把 egui 版本与
+   `LUMINO_EGUI_OVERLAY=0` 的 iced 版本截图比对（几何严格、非文字区 Δ≤2），
+   三条路径（卷帘 / 走带 / 瀑布流）全绿后才进入第 3 步。
+3. **一次性删除 iced 整树**：`Element`/`Message`/`Theme` 视图层、
+   `iced_*` 依赖、`capture_iced` 基线工具（此时已无 iced 可渲染，属于工具退役，
+   不是「改基线掩盖回归」）；`tests/ui-baseline/iced/` 归档保留，`capture_egui`
+   继续作为唯一视觉门禁。
+4. **归零证据**：`cargo tree -p lumino-ui | grep '^iced'` 输出为空，且
+   `cargo test` / `clippy -D warnings` / `capture_egui` 全绿。
