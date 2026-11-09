@@ -422,6 +422,8 @@ mod help_tests;
 #[cfg(test)]
 mod history_tests;
 #[cfg(test)]
+mod memory_monitor_tests;
+#[cfg(test)]
 mod project_settings_tests;
 #[cfg(test)]
 mod right_sidebar_tests;

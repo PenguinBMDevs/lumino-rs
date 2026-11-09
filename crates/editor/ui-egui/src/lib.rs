@@ -23,6 +23,7 @@ pub mod help;
 pub mod history;
 pub mod icons;
 pub mod layout;
+pub mod memory_monitor;
 pub mod project_settings;
 pub mod scene;
 pub mod settings;

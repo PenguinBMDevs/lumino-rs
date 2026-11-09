@@ -1265,9 +1265,36 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/cloud-connect-egui3.png`、`cloud-connect-iced.png`、
     `cloud-compare.png`。
 
-**Task 1.3（下一步）：音频导出 / 视频导出 / 形状抽屉 / 内存监控**
+**Task 1.3（第三十三步）：内存监控对话框迁移到 egui — 已完成**
+
+- **模型**：`MemoryMonitorModel`（标题 / 三行总指标 / 子系统分类 / 空文案 /
+  说明 / 关闭）+ `MemoryMetricModel` / `MemoryRowModel`；
+  `DialogModel::MemoryMonitor`。快照在**生产侧**采样（`Snapshot::capture()` +
+  `get_current_rss()`），窗口以 ~300ms 心跳重绘，数字持续刷新。
+- **渲染**：`ui-egui/src/memory_monitor.rs` 对齐生产：内边距 24、标题 18px、
+  三行指标（14px，数值右对齐、强调色）、「按子系统分类」14px + 子系统
+  13px 行（名称左 / 数值右）、11px 自动换行说明、底部右对齐主色「关闭」
+  （100×34）。行文本用 `Label` 而非 `painter.text`，保证可访问树可断言。
+- **真实窗口逐行校准**（ppp=1.25）：标题→指标 23、指标行盒 26、指标→分类 22、
+  分类→行 18、行盒 16、行→说明 26（按 iced 1.5 倍行高折算），校准后
+  标题/三行指标/分类标题/两行子系统/说明逐行与 iced 相差 ≤4 物理像素。
+- 验收：
+  - `memory_monitor_bands` 3/3（指标与行可访问、关闭动作、空态）；
+  - `egui_chrome` 51/51（模型镜像：3 指标 + MB 格式 + 子系统行；关闭动作
+    映射为 `CloseMemoryMonitorDialog`）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口：点状态栏 MEM（物理 2420,1528）打开 300×439 对话框；与 iced
+    同位置对照——墨迹行 iced `73/130/168/206/259/302/328/379…` vs egui
+    `72/132/168/207/259/304/329/380…`；点「关闭」→ 日志
+    `egui 内存监控动作：Close` 且窗口关闭。
+  - 证据图：`target/mem-egui4.png`、`mem-iced.png`、`mem-compare.png`。
+
+**Task 1.3（下一步）：音频导出表单（350 行 + 5 个子模块）**
 
 - 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 /
-  自定义精度 / 导出进度 / Help / 云连接已是 egui。
-- 下一步：音频导出表单（350 行）、视频导出（28 行壳 + 面板）、形状抽屉
-  （237 行）、内存监控（154 行）。
+  自定义精度 / 导出进度 / Help / 云连接 / 内存监控已是 egui。
+- 下一步：音频导出表单（标题 / 工程信息 / 音频设置 / 事件过滤 / 输出路径 /
+  按钮六个区块）体量最大，按区块拆分模型与渲染，先落「音频设置 + 按钮」，
+  再补其余区块；随后形状抽屉、视频导出、协作、载入确认、恢复音轨。

@@ -25,6 +25,7 @@ mod custom_precision;
 mod export_progress;
 mod help;
 mod history;
+mod memory_monitor;
 mod project_settings;
 mod speed_change;
 
@@ -170,6 +171,9 @@ impl Root {
             DialogType::Help => Some(DialogModel::Help(Box::new(self.help_model()))),
             DialogType::CloudConnect => Some(DialogModel::CloudConnect(Box::new(
                 self.cloud_connect_model(),
+            ))),
+            DialogType::MemoryMonitor => Some(DialogModel::MemoryMonitor(Box::new(
+                self.memory_monitor_model(),
             ))),
             _ => None,
         }
