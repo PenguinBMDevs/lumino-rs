@@ -174,3 +174,15 @@ fn test_tiny_drag_does_not_create_shape() {
     draft.update((0.5001, 0.5001));
     assert!(draft.to_stroke().is_none());
 }
+
+#[test]
+fn test_area_colour_limit_follows_use10() {
+    let mut doc = DrawerDoc::default();
+    assert!(!doc.set_area_colour(16), "未启用通道 10 时色号 16 应被拒绝");
+    assert!(doc.set_max_colour(16), "上限应能从 15 提升到 16");
+    assert!(doc.set_area_colour(16), "启用通道 10 后 16 应可选");
+    assert_eq!(doc.area_colour, 16);
+
+    assert!(doc.set_max_colour(15), "上限应能回落");
+    assert_eq!(doc.area_colour, 15, "上限回落后当前色应被夹取");
+}

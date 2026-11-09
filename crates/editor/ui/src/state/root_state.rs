@@ -51,6 +51,10 @@ pub struct ShapeDrawerState {
     pub panel_width: f32,
     /// 是否正在拖动库/画布分割线
     pub panel_dragging: bool,
+    /// 区域色号上限（DRAW-032：由主窗口注入，15 / 16）
+    ///
+    /// 抽屉是独立窗口，只有自己的 Root；不能读 `editor_state.use10`（那份永远是 false）。
+    pub max_colour: u8,
     /// 插入宽度（拍）
     pub insert_beats_text: String,
     /// 插入高度（key）
@@ -75,6 +79,7 @@ impl Default for ShapeDrawerState {
             clipboard: Vec::new(),
             panel_width: 250.0,
             panel_dragging: false,
+            max_colour: 15,
             insert_beats_text: "4".to_string(),
             insert_keys_text: "12".to_string(),
             insert_fit_contain: false,

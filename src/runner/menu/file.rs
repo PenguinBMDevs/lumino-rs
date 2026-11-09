@@ -103,6 +103,7 @@ impl RunnerInner {
                 // 加载后回填工程设置对话框，修复"保存后重新打开显示空白"
                 let project_author = parsed.author.clone();
                 let project_copyright = parsed.copyright.clone();
+                let project_use10 = parsed.use10;
 
                 // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(parsed);
@@ -130,7 +131,11 @@ impl RunnerInner {
                 self.window_state
                     .window
                     .ui_mut()
-                    .set_project_author_and_copyright(project_author, project_copyright);
+                    .set_project_author_and_copyright(
+                        project_author,
+                        project_copyright,
+                        project_use10,
+                    );
 
                 // 设置工程创建时间（从文件系统获取）
                 self.session_tracker.created_at = self
@@ -215,6 +220,8 @@ impl RunnerInner {
                 // 将真实数据设置到 UI 状态中
                 let note_count = self.window_state.window.ui().get_editor_note_count();
                 let note_count_display = self.window_state.window.ui().note_count_display();
+                // DRAW-032：勾选状态随对话框数据快照带过去（独立窗口只有自己的 Root）
+                let use10 = self.window_state.window.ui().get_project_use10();
                 self.window_state.window.ui_mut().set_project_settings_data(
                     lumino_ui::root::ProjectSettingsDialogData {
                         title: display_title.clone(),
@@ -226,6 +233,7 @@ impl RunnerInner {
                         note_count,
                         note_count_display,
                         time_signatures,
+                        use10,
                     },
                 );
 

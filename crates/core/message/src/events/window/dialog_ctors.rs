@@ -176,6 +176,7 @@ impl Event {
         copyright: String,
         author: String,
         time_signatures: Vec<(u32, u8, u8)>,
+        use10: bool,
     ) -> Self {
         Self::dialog(dialog::Event::ApplyProjectSettings {
             title,
@@ -183,6 +184,7 @@ impl Event {
             copyright,
             author,
             time_signatures,
+            use10,
         })
     }
     /// 构造开始音频导出事件

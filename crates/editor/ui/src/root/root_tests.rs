@@ -318,11 +318,16 @@ fn test_reset_project_settings_restores_defaults() {
         note_count: 12345,
         note_count_display: lumino_core::storage::config::NoteCountDisplay::ProjectSettings,
         time_signatures: vec![(0, 6, 8)],
+        use10: true,
     });
     assert_eq!(root.state.project_settings_dialog.title, "我的工程");
     assert_eq!(root.state.project_settings_dialog.tempo, "96");
     assert_eq!(root.state.project_settings_dialog.author, "张三");
     assert_eq!(root.state.project_settings_dialog.note_count, 12345);
+    assert!(
+        root.state.project_settings_dialog.use10,
+        "启用通道 10 应随对话框数据回填（独立窗口快照）"
+    );
 
     // 关闭工程：工程设置必须恢复默认值，不得残留
     root.reset_project_settings();

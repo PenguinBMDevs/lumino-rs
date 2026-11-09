@@ -35,5 +35,12 @@ pub fn project_to_parsed_midi(
         // （常规 MIDI 文件加载路径为空，此处从 .lmpj metadata.project 读取）
         author: project.metadata.project.author.clone(),
         copyright: project.metadata.project.copyright.clone(),
+        // 工程级「启用通道 10」（DRAW-032）；旧工程无 settings 段时为 false
+        use10: project
+            .metadata
+            .settings
+            .as_ref()
+            .and_then(|settings| settings.use10)
+            .unwrap_or(false),
     })
 }

@@ -34,6 +34,9 @@ pub const AREA_OUTSIDE: u8 = u8::MAX - 1;
 /// 网格中“区域边界”的哨兵值
 pub const AREA_BOUNDARY: u8 = u8::MAX - 2;
 
+/// 网格中“区域颜色交界”的哨兵值（DRAW-032 `borders`：交界格按描边通道生成）
+pub const AREA_BORDER: u8 = u8::MAX - 3;
+
 /// 区域色在中间音符合成阶段的锁定基址。
 ///
 /// `ShapeNote.channel` 只有 0..=15 是合法 MIDI 通道；区域着色先写成

@@ -55,6 +55,8 @@ pub enum DialogResult {
         author: String,
         /// 拍号变化列表 (tick, 分子, 分母)
         time_signatures: Vec<(u32, u8, u8)>,
+        /// 启用通道 10（DRAW-032）
+        use10: bool,
     },
     /// 设置结果
     Settings {

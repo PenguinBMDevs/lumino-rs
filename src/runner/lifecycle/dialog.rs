@@ -165,6 +165,7 @@ impl RunnerInner {
                 copyright,
                 author,
                 time_signatures,
+                use10,
             } => {
                 tracing::info!(
                     "应用工程设置(对话框结果): 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
@@ -181,12 +182,15 @@ impl RunnerInner {
                     copyright.clone(),
                     author.clone(),
                     time_signatures.clone(),
+                    *use10,
                 );
                 // 更新主窗口标题
                 self.window_state
                     .window
                     .window()
                     .set_title(&format!("{} - Lumino", title));
+                // DRAW-032：已打开的形状抽屉是独立窗口，需显式推送新上限
+                self.sync_shape_drawer_use10(*use10);
             }
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置到主窗口，主题: {}", theme);

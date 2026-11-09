@@ -122,6 +122,8 @@ pub struct EditorState {
     pub shape_store: shape_store::ShapeStore,
     /// Bake 前组合会话（DRAW-041C）：组合结果仍是 pending，✓ 才提交
     pub pending_composed: Vec<pending_compose::PendingComposed>,
+    /// 工程级「启用通道 10」（DRAW-032）：区域色号上限 15 → 16
+    pub use10: bool,
 }
 
 impl Default for EditorState {
@@ -155,6 +157,7 @@ impl EditorState {
             shape_select: drawn_shape::ShapeSelectState::default(),
             shape_store: shape_store::ShapeStore::new(),
             pending_composed: Vec::new(),
+            use10: false,
         }
     }
 

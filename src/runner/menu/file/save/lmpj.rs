@@ -28,6 +28,8 @@ struct LmpjSnapshot {
     copyright: String,
     working_time_seconds: f64,
     project_name: String,
+    /// 工程级「启用通道 10」（DRAW-032）
+    use10: bool,
 }
 
 impl LmpjSnapshot {
@@ -38,6 +40,12 @@ impl LmpjSnapshot {
         project.metadata.project.name = self.project_name;
         project.metadata.project.author = self.author;
         project.metadata.project.copyright = self.copyright;
+        // DRAW-032：工程级「启用通道 10」随工程落盘
+        project
+            .metadata
+            .settings
+            .get_or_insert_with(Default::default)
+            .use10 = Some(self.use10);
         project.set_working_time_seconds(self.working_time_seconds);
         project
     }
@@ -59,7 +67,7 @@ impl RunnerInner {
 
     /// 主线程轻量快照：不组包、不排序、不分配逐音符 compact 事件。
     fn snapshot_lmpj_project(&self, save_path: &Path) -> Option<LmpjSnapshot> {
-        let (document, shapes, author, copyright) = {
+        let (document, shapes, author, copyright, use10) = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             // 单一权威源：无文档 = 没有可保存的音符。
@@ -67,7 +75,8 @@ impl RunnerInner {
             let shapes = ui.root().editor.shapes_snapshot();
             let author = ui.get_project_author();
             let copyright = ui.get_project_copyright();
-            (document, shapes, author, copyright)
+            let use10 = ui.get_project_use10();
+            (document, shapes, author, copyright, use10)
         };
 
         let project_name = save_path
@@ -82,6 +91,7 @@ impl RunnerInner {
             copyright,
             working_time_seconds: self.session_tracker.current_editing_secs(),
             project_name,
+            use10,
         })
     }
 
@@ -235,6 +245,7 @@ mod tests {
             copyright: "Copyright".into(),
             working_time_seconds: 42.0,
             project_name: "Project".into(),
+            use10: true,
         };
 
         let project = snapshot.into_project();
@@ -242,6 +253,15 @@ mod tests {
         assert_eq!(project.metadata.project.name, "Project");
         assert_eq!(project.metadata.project.author, "Author");
         assert_eq!(project.metadata.project.copyright, "Copyright");
+        assert_eq!(
+            project
+                .metadata
+                .settings
+                .as_ref()
+                .and_then(|settings| settings.use10),
+            Some(true),
+            "启用通道 10 应随工程落盘"
+        );
         assert_eq!(
             project
                 .metadata

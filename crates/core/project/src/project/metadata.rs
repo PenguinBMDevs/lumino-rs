@@ -151,26 +151,29 @@ pub struct LoadedMetadata {
 }
 
 /// 工程设置
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SettingsMetadata {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 主题名称
     pub theme: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 合成器后端
     pub synth_backend: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 音色库路径
     pub soundfont_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 自动滚动模式
     pub auto_scroll_mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 是否启用 256 键位
     pub enable_256key: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 力度过滤阈值
     pub velocity_filter_threshold: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
+    pub use10: Option<bool>,
 }
 
 /// 统计信息

@@ -87,6 +87,7 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
 
     let area_mode = state.doc.borrow().area_mode;
     let area_colour = state.doc.borrow().area_colour;
+    let max_colour = state.doc.borrow().max_colour;
     let area_toggle = button(if area_mode { "Area: on" } else { "Area" })
         .width(Length::Fill)
         .on_press(Message::ShapeDrawer(ShapeDrawerAction::ToggleAreaMode));
@@ -95,7 +96,7 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     } else {
         "single closed stroke only".to_string()
     };
-    let swatches = (0..=15u8)
+    let swatches = (0..=max_colour)
         .map(|colour| {
             button(text(format!("{colour}")))
                 .on_press(Message::ShapeDrawer(ShapeDrawerAction::SetAreaColour(

@@ -4,7 +4,9 @@
 //! 把 `ShapeStyle.areas` 落到网格，以及把生成侧的 `RowSpan` 按区域色切开。
 //! 区域只影响**内部填充**；描边/门长/其它 Notes 算子仍走原链路。
 
-use lumino_core::shape::{ALL_COLOURS, AreaMap, AreaSpot, MAP_CELLS, ShapeRect, most_colours};
+use lumino_core::shape::{
+    ALL_COLOURS, AREA_BORDER, AreaMap, AreaSpot, MAP_CELLS, ShapeRect, most_colours,
+};
 
 use super::masks::RowSpan;
 
@@ -75,6 +77,20 @@ impl AreaContext {
 /// 一条长音切成上千段。边界格会向两格内的邻居借色，最多允许一格误差
 /// （对齐上游“细碎片取邻居色”的取舍）。
 pub fn row_pieces_coloured(rows: &[RowSpan], map: &AreaMap, box_: ShapeRect) -> Vec<(RowSpan, u8)> {
+    row_pieces_coloured_with_borders(rows, map, box_, false)
+}
+
+/// 同 [`row_pieces_coloured`]，但可按 `borders` 标出**颜色交界格**。
+///
+/// `borders = true` 时，与相邻格区域色不同的格子返回 [`AREA_BORDER`]；
+/// 调用方应把这类格子按**描边通道**生成（DRAW-032：交界处也算描边，替换该格填充）。
+/// 空区域（色号 0）、轮廓边界与形状外部不参与交界判定。
+pub fn row_pieces_coloured_with_borders(
+    rows: &[RowSpan],
+    map: &AreaMap,
+    box_: ShapeRect,
+    borders: bool,
+) -> Vec<(RowSpan, u8)> {
     let width = box_.tick_hi - box_.tick_lo;
     let height = box_.key_hi - box_.key_lo;
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
@@ -132,7 +148,13 @@ pub fn row_pieces_coloured(rows: &[RowSpan], map: &AreaMap, box_: ShapeRect) -> 
             if end <= start {
                 continue;
             }
-            let colour = sample_colour(map, (col as f32 + 0.5) / cells, v);
+            let u = (col as f32 + 0.5) / cells;
+            let base = sample_colour(map, u, v);
+            let colour = if borders {
+                border_colour(map, col, v, base)
+            } else {
+                base
+            };
             push_merged(
                 &mut out,
                 RowSpan {
@@ -171,6 +193,35 @@ fn sample_colour(map: &AreaMap, u: f32, v: f32) -> u8 {
         }
     }
     lumino_core::shape::AREA_UNASSIGNED
+}
+
+/// `borders`：把与 4 邻域区域色不同的格子标成 [`AREA_BORDER`]
+///
+/// 空区域（0）、轮廓/外部哨兵、以及未着色格不参与交界判定：
+/// 「空 = 不产音符」是硬语义，不能被描边复活。
+fn border_colour(map: &AreaMap, col: usize, v: f32, base: u8) -> u8 {
+    if base == 0 || base > ALL_COLOURS {
+        return base;
+    }
+    let n = usize::from(MAP_CELLS);
+    let cells = f32::from(MAP_CELLS);
+    let row = ((v * cells) as usize).min(n - 1);
+    // 区域之间隔着一列 AREA_BOUNDARY（rasterize 最后画的轮廓线），
+    // 所以必须跨格看：1 格是普通相邻，2 格用于越过边界线本身。
+    for step in 1..=2i32 {
+        for (dc, dr) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+            let c = col as i32 + dc * step;
+            let r = row as i32 + dr * step;
+            if c < 0 || r < 0 || c >= n as i32 || r >= n as i32 {
+                continue;
+            }
+            let neighbour = map.area_at((c as f32 + 0.5) / cells, (r as f32 + 0.5) / cells);
+            if neighbour <= ALL_COLOURS && neighbour != 0 && neighbour != base {
+                return AREA_BORDER;
+            }
+        }
+    }
+    base
 }
 
 fn push_merged(out: &mut Vec<(RowSpan, u8)>, span: RowSpan, colour: u8) {

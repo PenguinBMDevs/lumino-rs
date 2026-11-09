@@ -76,6 +76,12 @@ impl RunnerInner {
             // 作者/版权：素材文件继承工程设置对话框中填写的作者与版权
             project.metadata.project.author = ui.get_project_author();
             project.metadata.project.copyright = ui.get_project_copyright();
+            // 工程级「启用通道 10」（DRAW-032）：素材沿用所属工程的色号上限
+            project
+                .metadata
+                .settings
+                .get_or_insert_with(Default::default)
+                .use10 = Some(ui.get_project_use10());
             project
         };
 

@@ -24,9 +24,24 @@ impl DrawerDoc {
         true
     }
 
-    /// 设置区域色号（0..=15）
+    /// 设置区域色号上限（DRAW-032：15 / 16）
+    ///
+    /// 上限变化会使已缓存的区域网格失效：`use10` 关闭时 colour=16 的点会被跳过，
+    /// 打开后必须重建，否则画布预览与生成结果不一致。
+    pub fn set_max_colour(&mut self, max: u8) -> bool {
+        if self.max_colour == max {
+            return false;
+        }
+        self.max_colour = max;
+        self.area_colour = self.area_colour.min(max);
+        self.revision = self.revision.wrapping_add(1);
+        *self.area_cache.borrow_mut() = None;
+        true
+    }
+
+    /// 设置区域色号（0..=max_colour）
     pub fn set_area_colour(&mut self, colour: u8) -> bool {
-        if colour > 15 {
+        if colour > self.max_colour {
             return false;
         }
         self.area_colour = colour;
@@ -38,7 +53,7 @@ impl DrawerDoc {
         let paths = self.area_paths()?;
         let mut map = AreaMap::rasterize(&paths, false);
         for spot in &self.areas {
-            if spot.colour <= 15 {
+            if spot.colour <= self.max_colour {
                 map.paint_area(spot.u, spot.v, spot.colour);
             }
         }
@@ -62,7 +77,7 @@ impl DrawerDoc {
 
     /// 在点击位置着色/清除；一次点击 = 一次撤销单元。
     pub fn paint_area(&mut self, u: f32, v: f32, colour: u8) -> bool {
-        if colour > 15 || !self.can_area_paint() {
+        if colour > self.max_colour || !self.can_area_paint() {
             return false;
         }
         let Some(base) = self.area_map_cached() else {

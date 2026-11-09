@@ -67,6 +67,7 @@ impl LmpjData {
             // 旧版 LMPJ 格式无作者/版权字段，按空处理
             author: String::new(),
             copyright: String::new(),
+            use10: false,
         }
     }
 }
@@ -99,6 +100,11 @@ pub struct ParsedMidi {
     /// 由 `project_to_parsed_midi` 从工程元数据 `metadata.project.copyright` 回填，
     /// 供 Runner 加载后恢复工程设置面板的版权字段。不参与序列化。
     pub copyright: String,
+    /// 工程级「启用通道 10」（DRAW-032）：仅 `.lmpj` 工程文件携带。
+    ///
+    /// 由 `project_to_parsed_midi` 从 `metadata.settings.use10` 回填；
+    /// 常规 MIDI 文件与旧工程为 `false`。不参与序列化。
+    pub use10: bool,
 }
 
 impl serde::Serialize for ParsedMidi {
@@ -126,6 +132,8 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
             // 旧数据没有作者/版权字段，反序列化后按空处理
             author: String::new(),
             copyright: String::new(),
+            // 旧数据没有 use10，反序列化后按 false 处理
+            use10: false,
         })
     }
 }

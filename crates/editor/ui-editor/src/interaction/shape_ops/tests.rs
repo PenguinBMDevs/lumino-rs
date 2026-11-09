@@ -189,6 +189,42 @@ fn test_areas_follow_geometry_translation() {
     }
 }
 
+#[test]
+fn test_use10_allows_colour_16_as_channel_10() {
+    let mut editor = editor_with_track(1);
+    let model = area_shape(16);
+
+    // 未启用通道 10：colour=16 被跳过，区域点不生效（退回普通填充，channel 0）
+    let off = editor.shape_notes_of(&model, 1);
+    assert!(
+        off.iter().all(|note| note.channel == 0),
+        "use10=false 时 colour=16 不应生效"
+    );
+
+    editor.editor_state.use10 = true;
+    let on = editor.shape_notes_of(&model, 1);
+    assert!(!on.is_empty(), "use10=true 时 colour=16 应可生成音符");
+    assert!(
+        on.iter().all(|note| note.channel == 9),
+        "colour=16 应映射到 GM 通道 10（内部索引 9），实际 {:?}",
+        on.iter().map(|note| note.channel).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_borders_without_colour_boundary_keeps_fill_channel() {
+    let editor = editor_with_track(1);
+    let mut model = area_shape(3);
+    model.style.borders = true;
+    model.style.colour_slot = 7;
+    let notes = editor.shape_notes_of(&model, 1);
+    assert!(!notes.is_empty());
+    assert!(
+        notes.iter().all(|note| note.channel == 3),
+        "单色区域没有颜色交界，borders 不得把填充改成描边通道"
+    );
+}
+
 fn arc_shape(mid_key: f32) -> ShapeModel {
     let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);

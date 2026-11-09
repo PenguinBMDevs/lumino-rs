@@ -56,7 +56,10 @@ impl Editor {
             return false;
         }
         // 形状自身 colour_slot 默认 0；0 是“空”，作为画笔默认值会一上来就擦除。
-        let colour = model.style.colour_slot.clamp(1, 15);
+        let colour = model
+            .style
+            .colour_slot
+            .clamp(1, lumino_core::shape::most_colours(self.editor_state.use10));
         self.area_paint = Some(AreaPaintState {
             drawn_id: Some(drawn.id),
             model_id,
@@ -81,7 +84,10 @@ impl Editor {
         {
             return false;
         }
-        let colour = model.style.colour_slot.clamp(1, 15);
+        let colour = model
+            .style
+            .colour_slot
+            .clamp(1, lumino_core::shape::most_colours(self.editor_state.use10));
         self.area_paint = Some(AreaPaintState {
             drawn_id: None,
             model_id,
@@ -203,12 +209,13 @@ impl Editor {
         self.area_paint.map(|state| state.colour)
     }
 
-    /// 选择画笔色号（0..=15）
+    /// 选择画笔色号（0..=15，启用通道 10 时 0..=16）
     pub fn set_area_paint_colour(&mut self, colour: u8) -> bool {
         let Some(state) = &mut self.area_paint else {
             return false;
         };
-        if colour > 15 {
+        let max = lumino_core::shape::most_colours(self.editor_state.use10);
+        if colour > max {
             return false;
         }
         state.colour = colour;

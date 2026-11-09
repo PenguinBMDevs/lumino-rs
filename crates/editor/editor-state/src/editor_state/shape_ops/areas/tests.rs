@@ -142,3 +142,93 @@ fn test_translation_keeps_relative_region() {
     assert_eq!(a[0].1, b[0].1);
     assert!((b[0].0.start - a[0].0.start - 500.0).abs() < 0.3);
 }
+
+/// 两片相邻且颜色不同：`borders` 应把交界格标成 `AREA_BORDER`
+fn two_colour_regions() -> AreaContext {
+    let mut paths = vec![square(0.0, 100.0)];
+    paths.push(vec![(50.0, 0.0), (50.0, 100.0)]);
+    AreaContext::build(
+        &paths,
+        box_100(),
+        &[
+            AreaSpot {
+                u: 0.25,
+                v: 0.5,
+                colour: 4,
+            },
+            AreaSpot {
+                u: 0.75,
+                v: 0.5,
+                colour: 5,
+            },
+        ],
+        false,
+        false,
+    )
+    .expect("两片都应着色")
+}
+
+#[test]
+fn test_borders_marks_colour_boundary() {
+    let ctx = two_colour_regions();
+    let plain = row_pieces_coloured(&[row(50, 0.0, 100.0)], &ctx.map, ctx.box_);
+    assert!(
+        plain.iter().all(|(_, colour)| *colour != AREA_BORDER),
+        "borders=false 不得标交界"
+    );
+
+    let bordered =
+        row_pieces_coloured_with_borders(&[row(50, 0.0, 100.0)], &ctx.map, ctx.box_, true);
+    assert!(
+        bordered.iter().any(|(_, colour)| *colour == AREA_BORDER),
+        "颜色交界处应出现 AREA_BORDER：{bordered:?}"
+    );
+    // 交界带必须落在中线附近（网格误差 <= 1 格 ≈ 0.1 tick）
+    let border_span: f32 = bordered
+        .iter()
+        .filter(|(_, colour)| *colour == AREA_BORDER)
+        .map(|(span, _)| span.end - span.start)
+        .sum();
+    assert!(border_span > 0.0, "交界带不能为空");
+    let first_border = bordered
+        .iter()
+        .find(|(_, colour)| *colour == AREA_BORDER)
+        .map(|(span, _)| span.start)
+        .expect("应有交界段");
+    assert!(
+        (first_border - 50.0).abs() <= 0.2,
+        "交界应从 u=0.5 附近开始，实际 {first_border}"
+    );
+}
+
+#[test]
+fn test_borders_keeps_empty_region_silent() {
+    // 一半着色、一半空：空区域不参与交界判定，不能被描边复活
+    let mut paths = vec![square(0.0, 100.0)];
+    paths.push(vec![(50.0, 0.0), (50.0, 100.0)]);
+    let ctx = AreaContext::build(
+        &paths,
+        box_100(),
+        &[
+            AreaSpot {
+                u: 0.25,
+                v: 0.5,
+                colour: 4,
+            },
+            AreaSpot {
+                u: 0.75,
+                v: 0.5,
+                colour: 0,
+            },
+        ],
+        false,
+        false,
+    )
+    .expect("两片应建立上下文");
+    let bordered =
+        row_pieces_coloured_with_borders(&[row(50, 0.0, 100.0)], &ctx.map, ctx.box_, true);
+    assert!(
+        bordered.iter().all(|(_, colour)| *colour != AREA_BORDER),
+        "空区域侧不得产生交界描边：{bordered:?}"
+    );
+}

@@ -21,4 +21,6 @@ pub enum ProjectSettingsAction {
     TimeSignatureNumeratorChanged(String),
     /// 拍号分母变更
     TimeSignatureDenominatorChanged(String),
+    /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
+    Use10Changed(bool),
 }

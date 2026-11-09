@@ -25,6 +25,26 @@ impl RunnerInner {
         }
     }
 
+    /// DRAW-032：把「启用通道 10」推送到**已打开**的形状抽屉（独立窗口）
+    ///
+    /// 抽屉是独立 Root，读不到主窗口的 `editor_state.use10`；工程设置确认后
+    /// 必须显式推送，否则用户得关掉抽屉重开才能看到第 16 个色号。
+    pub(crate) fn sync_shape_drawer_use10(&mut self, use10: bool) {
+        let Some(id) = self
+            .window_state
+            .dialog_manager
+            .first_dialog_id_of_type(lumino_ui::state::root_state::DialogType::ShapeDrawer)
+        else {
+            return;
+        };
+        if let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
+            && let Some(ui) = dialog.ui_mut()
+        {
+            ui.set_shape_drawer_use10(use10);
+            dialog.request_redraw();
+        }
+    }
+
     /// 将对话框结果应用到主窗口 UI
     pub(crate) fn apply_dialog_result_to_ui(ui: &mut lumino_ui::Host, result: DialogResult) {
         match result {
@@ -42,6 +62,7 @@ impl RunnerInner {
                 copyright,
                 author,
                 time_signatures,
+                use10,
             } => {
                 tracing::info!(
                     "应用工程设置: 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
@@ -51,7 +72,7 @@ impl RunnerInner {
                     author,
                     time_signatures.len()
                 );
-                ui.apply_project_settings(title, tempo, copyright, author, time_signatures);
+                ui.apply_project_settings(title, tempo, copyright, author, time_signatures, use10);
             }
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置，主题: {}", theme);

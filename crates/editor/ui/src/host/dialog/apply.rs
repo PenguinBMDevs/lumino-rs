@@ -71,8 +71,14 @@ impl Host {
     }
 
     /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权（关闭工程后重开面板显示正确值）
-    pub fn set_project_author_and_copyright(&mut self, author: String, copyright: String) {
-        self.root.apply_loaded_project_metadata(author, copyright);
+    pub fn set_project_author_and_copyright(
+        &mut self,
+        author: String,
+        copyright: String,
+        use10: bool,
+    ) {
+        self.root
+            .apply_loaded_project_metadata(author, copyright, use10);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -85,9 +91,10 @@ impl Host {
         copyright: String,
         author: String,
         time_signatures: Vec<(u32, u8, u8)>,
+        use10: bool,
     ) {
         self.root
-            .apply_project_settings(title, tempo, copyright, author, time_signatures);
+            .apply_project_settings(title, tempo, copyright, author, time_signatures, use10);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

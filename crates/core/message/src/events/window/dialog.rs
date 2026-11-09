@@ -149,6 +149,8 @@ pub enum Event {
         author: String,
         /// 拍号变化列表 (tick, 分子, 分母)
         time_signatures: Vec<(u32, u8, u8)>,
+        /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
+        use10: bool,
     },
     /// 开始音频导出
     ///

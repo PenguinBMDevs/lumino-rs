@@ -44,7 +44,7 @@ pub use arc::{
     ARC_STEP, arc_k_or_one, arc_points, arc_points_scaled, arc_span, circle_through, rotate_k,
     stretch_k,
 };
-pub use areas::{AreaContext, row_pieces_coloured};
+pub use areas::{AreaContext, row_pieces_coloured, row_pieces_coloured_with_borders};
 pub use between::{
     BetweenWarning, blend as between_blend, fingerprint as between_fingerprint,
     graph_at as between_graph_at, is_modified as between_is_modified, sync_groups,

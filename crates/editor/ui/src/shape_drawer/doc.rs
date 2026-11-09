@@ -122,8 +122,10 @@ pub struct DrawerDoc {
     pub areas: Vec<AreaSpot>,
     /// 是否处于区域着色模式
     pub area_mode: bool,
-    /// 当前区域色（0..=15）
+    /// 当前区域色（0..=max_colour）
     pub area_colour: u8,
+    /// 区域色号上限（DRAW-032：工程未启用通道 10 时为 15，启用后为 16）
+    pub max_colour: u8,
     /// 画布视图
     pub view: DrawerView,
     /// 是否有未保存修改
@@ -147,6 +149,7 @@ impl Default for DrawerDoc {
             areas: Vec::new(),
             area_mode: false,
             area_colour: 1,
+            max_colour: 15,
             view: DrawerView::default(),
             dirty: false,
             revision: 0,

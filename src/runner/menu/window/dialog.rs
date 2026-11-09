@@ -159,6 +159,7 @@ impl RunnerInner {
                 copyright,
                 author,
                 time_signatures,
+                use10,
             } => {
                 tracing::info!(
                     "应用工程设置: 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
@@ -170,7 +171,15 @@ impl RunnerInner {
                 );
                 // 应用设置到主窗口
                 let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_project_settings(title, tempo, copyright, author, time_signatures);
+                main_ui.apply_project_settings(
+                    title,
+                    tempo,
+                    copyright,
+                    author,
+                    time_signatures,
+                    use10,
+                );
+                self.sync_shape_drawer_use10(use10);
             }
             OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
             OpenBatchEditDialog => self.open_dialog_traced(DialogType::BatchEdit, "批量编辑"),

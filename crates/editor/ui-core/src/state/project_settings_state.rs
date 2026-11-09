@@ -28,6 +28,8 @@ pub struct ProjectSettingsDialogState {
     pub time_signature_numerator: String,
     /// 拍号分母（字符串形式便于输入框绑定；人类可读，如 4、8、16）
     pub time_signature_denominator: String,
+    /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
+    pub use10: bool,
 }
 
 impl Default for ProjectSettingsDialogState {
@@ -44,6 +46,7 @@ impl Default for ProjectSettingsDialogState {
             note_count_display: NoteCountDisplay::default(),
             time_signature_numerator: "4".to_string(),
             time_signature_denominator: "4".to_string(),
+            use10: false,
         }
     }
 }

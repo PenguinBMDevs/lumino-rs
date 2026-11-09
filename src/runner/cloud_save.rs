@@ -54,6 +54,12 @@ impl RunnerInner {
                     // 作者/版权随云保存持久化（与本地保存一致）
                     project.metadata.project.author = author;
                     project.metadata.project.copyright = copyright;
+                    // 工程级「启用通道 10」（DRAW-032）随云保存持久化
+                    project
+                        .metadata
+                        .settings
+                        .get_or_insert_with(Default::default)
+                        .use10 = Some(ui.get_project_use10());
                     project
                 }
                 None => {

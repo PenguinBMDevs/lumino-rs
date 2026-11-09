@@ -50,6 +50,11 @@ impl DialogHandler {
                         .time_signature_denominator = value;
                 }
             }
+            ProjectSettingsAction::Use10Changed(value) => {
+                // 独立窗口只有自己的 Root：这里只更新对话框状态，
+                // 真正写入生成侧在「确定」后的 ApplyProjectSettings 链路。
+                root.state.project_settings_dialog.use10 = value;
+            }
         }
         None
     }
@@ -80,6 +85,7 @@ impl DialogHandler {
                 copyright,
                 author,
                 time_signatures: vec![(0, numerator, denominator)],
+                use10: dialog.use10,
             });
             root.state.project_settings_dialog.is_open = false;
         } else {

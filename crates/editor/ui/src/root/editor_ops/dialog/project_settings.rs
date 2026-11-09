@@ -25,6 +25,8 @@ pub struct ProjectSettingsDialogData {
     pub note_count_display: lumino_core::storage::config::NoteCountDisplay,
     /// 拍号变化列表 (tick, 分子, 分母)
     pub time_signatures: Vec<(u32, u8, u8)>,
+    /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
+    pub use10: bool,
 }
 
 impl Root {
@@ -35,6 +37,9 @@ impl Root {
     /// 程序全局状态中（修复：关闭工程后工程设置面板仍显示旧工程数据）。
     pub fn reset_project_settings(&mut self) {
         self.state.project_settings_dialog.reset();
+        // 工程级「启用通道 10」同样属于工程数据：关闭/新建工程必须归零，
+        // 否则上一工程的色号上限会污染下一工程的生成结果。
+        self.editor.editor_state.use10 = false;
     }
 
     /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权。
@@ -42,9 +47,17 @@ impl Root {
     /// 加载工程时 `reset_project_settings` 会清空对话框状态；本方法在重置之后
     /// 调用，将磁盘元数据中的作者/版权写入对话框状态，使关闭工程后再次打开
     /// 工程设置面板仍能看到之前保存的值（修复：版权/作者保存后重新打开显示空白）。
-    pub fn apply_loaded_project_metadata(&mut self, author: String, copyright: String) {
+    pub fn apply_loaded_project_metadata(
+        &mut self,
+        author: String,
+        copyright: String,
+        use10: bool,
+    ) {
         self.state.project_settings_dialog.author = author;
         self.state.project_settings_dialog.copyright = copyright;
+        self.state.project_settings_dialog.use10 = use10;
+        // 生成侧读的是编辑器状态，必须同步，否则「保存了但生成不变」
+        self.editor.editor_state.use10 = use10;
     }
 
     /// 轻量更新音符总量（UI-015：工程设置对话框打开期间同步刷新）。
@@ -80,6 +93,7 @@ impl Root {
         self.state
             .project_settings_dialog
             .time_signature_denominator = denominator.to_string();
+        self.state.project_settings_dialog.use10 = data.use10;
     }
 
     /// 应用工程设置到主窗口
@@ -90,6 +104,7 @@ impl Root {
         copyright: String,
         author: String,
         time_signatures: Vec<(u32, u8, u8)>,
+        use10: bool,
     ) {
         tracing::info!(
             "应用工程设置: 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
@@ -105,6 +120,10 @@ impl Root {
         self.state.project_settings_dialog.copyright = copyright;
         self.state.project_settings_dialog.author = author;
         self.state.project_settings_dialog.tempo = format!("{:.0}", tempo);
+        // DRAW-032：工程级「启用通道 10」由对话框确认后写入生成侧
+        self.state.project_settings_dialog.use10 = use10;
+        self.editor.editor_state.use10 = use10;
+        self.editor.grid_cache.clear();
 
         // 同步到编辑器 tempo 数据（用户编辑的源，同时同步 document.tempo_changes）
         self.editor.editor_state.data.set_tempo_points(vec![
@@ -143,6 +162,7 @@ impl Root {
         String,
         f64,
         Vec<(u32, u8, u8)>,
+        bool,
     ) {
         let dialog = &self.state.project_settings_dialog;
         // 从编辑器 tempo_points 读取当前 BPM（反映工程设置和指挥轨道编辑的变更）
@@ -181,6 +201,7 @@ impl Root {
             created_display,
             editing_time,
             time_signatures,
+            self.editor.editor_state.use10,
         )
     }
 }

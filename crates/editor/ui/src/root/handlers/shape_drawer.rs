@@ -9,6 +9,13 @@ use lumino_core::shape::{ShapeDrawing, ShapeLibrary, delete_drawing, save_drawin
 impl Root {
     /// 处理形状抽屉动作；文件 I/O 与插入请求在此收口，Canvas 只做画板。
     pub(crate) fn handle_shape_drawer_action(&mut self, action: ShapeDrawerAction) {
+        // DRAW-032：区域色号上限由主窗口注入（抽屉是独立窗口，自己那份 editor_state 不参与生成）
+        let max_colour = self.state.shape_drawer.max_colour;
+        self.state
+            .shape_drawer
+            .doc
+            .borrow_mut()
+            .set_max_colour(max_colour);
         let state = &mut self.state.shape_drawer;
         match action {
             ShapeDrawerAction::SetName(name) => {

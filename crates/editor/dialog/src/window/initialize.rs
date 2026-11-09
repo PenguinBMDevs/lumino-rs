@@ -101,6 +101,7 @@ impl DialogWindow {
                     created_display,
                     editing_time,
                     time_signatures,
+                    use10,
                 ) = main_ui.get_project_settings_data();
                 ui.set_project_settings_data(lumino_ui::root::ProjectSettingsDialogData {
                     title,
@@ -112,6 +113,7 @@ impl DialogWindow {
                     note_count: main_ui.get_editor_note_count(),
                     note_count_display: main_ui.note_count_display(),
                     time_signatures,
+                    use10,
                 });
             }
             DialogType::Settings => {
@@ -171,6 +173,8 @@ impl DialogWindow {
                 if let Some(dir) = pending.shapes_dir.as_deref() {
                     ui.set_shape_drawer_dir(dir.to_path_buf());
                 }
+                // DRAW-032：区域色号上限由主窗口注入（抽屉是独立 Root）
+                ui.set_shape_drawer_use10(main_ui.get_project_use10());
                 ui.set_shape_drawer_dialog_open(true);
             }
             DialogType::History => {

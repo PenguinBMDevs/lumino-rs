@@ -197,7 +197,8 @@ fn draw_areas(frame: &mut Frame<Renderer>, area: Option<&AreaMap>, unit: Rectang
         let mut col = 0;
         while col < cells {
             let colour = map.cells[row * cells + col];
-            if colour == 0 || colour > 15 {
+            // 0 = 空（不着色）；色号上限由 use10 决定，最大 16（通道 10）
+            if colour == 0 || colour > 16 {
                 col += 1;
                 continue;
             }
@@ -216,7 +217,7 @@ fn draw_areas(frame: &mut Frame<Renderer>, area: Option<&AreaMap>, unit: Rectang
 }
 
 fn area_colour(colour: u8) -> Color {
-    const COLOURS: [(f32, f32, f32); 16] = [
+    const COLOURS: [(f32, f32, f32); 17] = [
         (0.0, 0.0, 0.0),
         (0.95, 0.25, 0.25),
         (0.95, 0.55, 0.20),
@@ -233,8 +234,10 @@ fn area_colour(colour: u8) -> Color {
         (0.35, 0.50, 0.95),
         (0.70, 0.55, 0.90),
         (0.90, 0.60, 0.45),
+        // 16 = 通道 10（GM 鼓组）：用中性灰区分，避免与 1..15 的音高色混淆
+        (0.62, 0.62, 0.62),
     ];
-    let (r, g, b) = COLOURS[usize::from(colour.min(15))];
+    let (r, g, b) = COLOURS[usize::from(colour.min(16))];
     Color::from_rgba(r, g, b, 0.32)
 }
 

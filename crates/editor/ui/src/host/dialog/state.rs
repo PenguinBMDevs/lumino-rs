@@ -199,6 +199,20 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 注入区域色号上限（DRAW-032）：抽屉是独立窗口，必须由主窗口主动推送
+    pub fn set_shape_drawer_use10(&mut self, use10: bool) {
+        let max = lumino_core::shape::most_colours(use10);
+        self.root.state.shape_drawer.max_colour = max;
+        self.root
+            .state
+            .shape_drawer
+            .doc
+            .borrow_mut()
+            .set_max_colour(max);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 把抽屉当前图形插入主工程（当前轨道 + 播放头；尺寸/比例来自抽屉插入参数）。
     pub fn insert_shape_drawing(
         &mut self,
@@ -319,6 +333,7 @@ impl Host {
         String,
         f64,
         Vec<(u32, u8, u8)>,
+        bool,
     ) {
         self.root.get_project_settings_data()
     }
@@ -336,6 +351,13 @@ impl Host {
     /// 获取当前工程的版权信息（工程设置对话框填写）
     pub fn get_project_copyright(&self) -> String {
         self.root.state.project_settings_dialog.copyright.clone()
+    }
+
+    /// 获取工程级「启用通道 10」（DRAW-032）
+    ///
+    /// 以编辑器状态为唯一权威源（生成侧实时读取同一字段）。
+    pub fn get_project_use10(&self) -> bool {
+        self.root.editor.editor_state.use10
     }
 
     /// 获取并清空对话框结果

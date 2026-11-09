@@ -229,6 +229,7 @@ pub async fn load_parsed_midi(
         // 常规 MIDI 文件无作者/版权信息
         author: String::new(),
         copyright: String::new(),
+        use10: false,
     })
 }
 
@@ -304,6 +305,7 @@ pub async fn load_parsed_midi_from_bytes(
         // 字节加载路径无作者/版权信息
         author: String::new(),
         copyright: String::new(),
+        use10: false,
     })
 }
 

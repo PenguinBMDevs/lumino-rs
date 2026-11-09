@@ -1,5 +1,5 @@
 use iced_core::Length;
-use iced_widget::{button, column, container, row, scrollable, space, text, text_input};
+use iced_widget::{button, checkbox, column, container, row, scrollable, space, text, text_input};
 use lumino_core::tr;
 use lumino_extras::i18n::{Language, main_translations};
 
@@ -94,6 +94,17 @@ pub fn view_project_settings_dialog<'a>(
     )
     .width(Length::Fill)
     .style(input_style);
+
+    // 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
+    let use10_row = row![
+        checkbox(state.use10).on_toggle(|value| Message::ProjectSettings(
+            ProjectSettingsAction::Use10Changed(value)
+        )),
+        text(tr!("启用通道 10")).size(14).style(label_style),
+        space().width(8),
+        text(tr!("区域色号上限 16")).size(12).style(readonly_style),
+    ]
+    .align_y(iced_core::Alignment::Center);
 
     // 拍号（单拍号编辑，tick 固定为 0）
     let time_signature_label = text(tr!("拍号")).size(14).style(label_style);
@@ -223,6 +234,8 @@ pub fn view_project_settings_dialog<'a>(
         space().height(12),
         author_label,
         author_input,
+        space().height(12),
+        use10_row,
         space().height(12),
         time_signature_label,
         time_signature_row,
