@@ -1419,9 +1419,42 @@ callback / 多视口 / 截图能力。
   是否是 iced `mouse_area` 与 egui band 的命中冲突——菜单本身由 egui 绘制，
   已在 `egui_chrome` 侧有模型覆盖。
 
-**Task 1.3（下一步）：协作 / 云文件浏览 / 形状抽屉 / 视频导出**
+**Task 1.3（第三十九步）：多人协作对话框迁移到 egui — 已完成**
 
-- 现状：除协作、云文件浏览/断连提醒、形状抽屉、视频导出外，其余对话框与面板
-  均已迁到 egui。
-- 下一步：协作（376 行）、云文件浏览（359）、形状抽屉（237，含自绘画布）、
-  视频导出（约 2000 行）；随后编辑器画布与 iced 归零证明。
+- **模型**：`CollaborationModel`（标题 / 关闭 / `CollaborationViewModel`）+
+  `Connect`（地址 / 端口 / 用户 / 密码 / 邀请码 + 连接 + 状态）、
+  `Connecting`（状态 + 提示）、`RoomActions`（房间名 + 创建 + 「- 或 -」+
+  邀请码 + 加入）、`InRoom`（房间行 + 邀请码 + 复制 + 断开）；
+  `DialogModel::Collaboration`。
+- **渲染**：`ui-egui/src/collaboration.rs` 对齐生产：内边距 24；标题行 20px +
+  弹性 + 「关闭」（12px）；其下 20 放当前视图。输入框 36 高（`base` 底 +
+  1px `strong` 边框、圆角 4、内边距 `[9,8]`）、行距 13；主色「连接」/「创建房间」、
+  次要「加入房间」、危险「断开连接」；密码掩码。
+- **真实窗口逐行校准**：输入框盒顶/底 iced `128/173, 189/234, 250/295, 311/356`
+  vs egui `127/171, 189/233, 250/294, 311/355`（≤1 物理像素）；
+  标题 `80..97`、关闭 `80..92`、连接按钮 `377..419` vs `378..418` 均一致。
+- **动作**：`HostChanged` / `PortChanged` / `UsernameChanged` / `PasswordChanged` /
+  `InviteCodeChanged` / `RoomNameChanged` / `Connect(port)` / `CreateRoom` /
+  `JoinRoom` / `CopyInviteCode` / `Disconnect` / `CloseDialog` →
+  `Message::Collaboration(...)`；端口解析失败回落到 `DEFAULT_PORT`，空邀请码为 `None`。
+- 验收：
+  - `collaboration_bands` 7/7（连接视图字段、连接按钮带端口、连接中、房间创建 /
+    加入、复制 / 断开、关闭、地址输入回传）；
+  - `egui_chrome` 68/68（四视图模型镜像 + 动作映射 + 默认端口回落）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（ppp=1.25、Light，工具栏右侧协作按钮 → 800×600 窗口）：
+    与 iced 版本逐盒对照见上；点「关闭」→ 日志 `egui 协作动作：CloseDialog`。
+  - 证据图：`target/co-egui2.png`、`co-iced.png`。
+- **发现的既有缺陷（非迁移引入）**：`CollaborationAction::CloseDialog` 只把
+  `is_open` 置 false，`close_collaboration_dialog()` 事件构造器**没有任何调用方**，
+  因此 iced 与 egui 两个版本点「关闭」后窗口都不会关闭（iced 版实测同样不关）。
+  记录为待修问题，本轮不改动协议层。
+
+**Task 1.3（下一步）：云文件浏览 / 断连提醒 / 形状抽屉 / 视频导出**
+
+- 现状：除云文件浏览（+断连提醒）、形状抽屉、视频导出外，其余对话框与面板
+  均已迁到 egui（含音频导出整块面板）。
+- 下一步：云文件浏览（359 行）、形状抽屉（237，含自绘画布）、视频导出（约 2000
+  行）；随后编辑器画布与 iced 归零证明。

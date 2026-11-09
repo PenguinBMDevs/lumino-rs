@@ -3,8 +3,9 @@
 use egui::Color32;
 
 use super::{
-    BatchEditModel, BrushSettingsModel, CloudConnectModel, DrawSettingsModel, HelpModel,
-    HistoryModel, LoadConfirmModel, MemoryMonitorModel, RecoverTrackModel, SettingsPageModel,
+    BatchEditModel, BrushSettingsModel, CloudConnectModel, CollaborationModel, DrawSettingsModel,
+    HelpModel, HistoryModel, LoadConfirmModel, MemoryMonitorModel, RecoverTrackModel,
+    SettingsPageModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -42,6 +43,8 @@ pub enum DialogModel {
     BrushSettings(Box<BrushSettingsModel>),
     /// 找回删除音轨（`DialogType::RecoverTrack`）。
     RecoverTrack(Box<RecoverTrackModel>),
+    /// 多人协作（`DialogType::Collaboration`）。
+    Collaboration(Box<CollaborationModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

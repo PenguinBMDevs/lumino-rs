@@ -419,6 +419,8 @@ mod brush_settings_tests;
 #[cfg(test)]
 mod cloud_connect_tests;
 #[cfg(test)]
+mod collaboration_tests;
+#[cfg(test)]
 mod custom_precision_tests;
 #[cfg(test)]
 mod draw_settings_tests;

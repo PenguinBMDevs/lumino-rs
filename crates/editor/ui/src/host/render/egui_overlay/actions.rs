@@ -9,6 +9,7 @@ use lumino_ui_egui::brush_settings::BrushSettingsAction;
 use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::cloud_connect::CloudConnectAction;
+use lumino_ui_egui::collaboration::CollaborationAction;
 use lumino_ui_egui::custom_precision::CustomPrecisionAction;
 use lumino_ui_egui::dialog::SaveConfirmAction;
 use lumino_ui_egui::draw_settings::DrawSettingsAction;
@@ -43,6 +44,7 @@ pub(super) struct OverlayActions {
     pub load_confirm: Option<LoadConfirmAction>,
     pub brush_settings: Option<BrushSettingsAction>,
     pub recover_track: Option<RecoverTrackAction>,
+    pub collaboration: Option<CollaborationAction>,
 }
 
 impl OverlayActions {
@@ -67,6 +69,7 @@ impl OverlayActions {
             load_confirm: lumino_ui_egui::load_confirm::take_action(ctx),
             brush_settings: lumino_ui_egui::brush_settings::take_action(ctx),
             recover_track: lumino_ui_egui::recover_track::take_action(ctx),
+            collaboration: lumino_ui_egui::collaboration::take_action(ctx),
         }
     }
 }
@@ -101,6 +104,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.collaboration
+            && let Some(message) = self.root.collaboration_action_message(&action)
+        {
+            tracing::info!("egui 协作动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.recover_track

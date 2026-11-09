@@ -22,6 +22,7 @@ use crate::state::root_state::DialogType;
 mod batch_edit;
 mod brush_settings;
 mod cloud_connect;
+mod collaboration;
 mod custom_precision;
 mod draw_settings;
 mod export_progress;
@@ -190,6 +191,9 @@ impl Root {
             ))),
             DialogType::RecoverTrack => Some(DialogModel::RecoverTrack(Box::new(
                 self.recover_track_model(),
+            ))),
+            DialogType::Collaboration => Some(DialogModel::Collaboration(Box::new(
+                self.collaboration_model(),
             ))),
             _ => None,
         }

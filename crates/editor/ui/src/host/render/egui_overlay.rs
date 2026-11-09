@@ -375,7 +375,8 @@ impl Host {
             | crate::state::root_state::DialogType::DrawSettings
             | crate::state::root_state::DialogType::LoadConfirm
             | crate::state::root_state::DialogType::BrushSettings
-            | crate::state::root_state::DialogType::RecoverTrack => {
+            | crate::state::root_state::DialogType::RecoverTrack
+            | crate::state::root_state::DialogType::Collaboration => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input
