@@ -24,6 +24,7 @@ use lumino_ui_egui::chrome::{
     ChromeModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
     TitlebarModel, ToolbarModel,
 };
+use lumino_ui_egui::chrome::{SidebarRouteIcon, SidebarRouteItem};
 
 use crate::root::Root;
 use crate::sidebar::{RollBarButton, Route, Sidebar};
@@ -101,12 +102,53 @@ impl Sidebar {
             })
             .collect();
 
+        // 路由栏条目：与 `sidebar/route.rs`（iced）同一套可见性 / 点亮规则，
+        // 顺序即 `ROUTES` 顺序。两边同源，绘制与命中不会再错位。
+        let active_group = self.active_group.map(sidebar_group);
+        let mut route_items = vec![SidebarRouteItem {
+            icon: SidebarRouteIcon::PianoRoll,
+            active: self.piano_roll_visible,
+        }];
+        if active_group == Some(SidebarGroup::PianoRoll) {
+            route_items.push(SidebarRouteItem {
+                icon: SidebarRouteIcon::File,
+                active: file_active,
+            });
+            route_items.push(SidebarRouteItem {
+                icon: SidebarRouteIcon::Automation,
+                active: self.automation_panel_visible,
+            });
+        }
+        route_items.push(SidebarRouteItem {
+            icon: SidebarRouteIcon::Project,
+            active: active_group == Some(SidebarGroup::Project),
+        });
+        route_items.push(SidebarRouteItem {
+            icon: SidebarRouteIcon::Waterfall,
+            active: false,
+        });
+        route_items.push(SidebarRouteItem {
+            icon: SidebarRouteIcon::Renderer,
+            active: active_group == Some(SidebarGroup::Renderer),
+        });
+        if active_group == Some(SidebarGroup::Renderer) {
+            route_items.push(SidebarRouteItem {
+                icon: SidebarRouteIcon::VideoExport,
+                active: self.video_export_visible,
+            });
+            route_items.push(SidebarRouteItem {
+                icon: SidebarRouteIcon::AudioExport,
+                active: self.audio_export_visible,
+            });
+        }
+
         Some(SidebarModel {
             panel_visible: self.panel_visible,
             panel_width: self.panel_width,
             piano_roll_visible: self.piano_roll_visible,
             waterfall: false,
-            active_group: self.active_group.map(sidebar_group),
+            active_group,
+            route_items,
             automation_panel_visible: self.automation_panel_visible,
             audio_export_visible: self.audio_export_visible,
             video_export_visible: self.video_export_visible,

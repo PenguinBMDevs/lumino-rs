@@ -17,6 +17,57 @@ fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
 }
 
 #[test]
+fn sidebar_model_carries_route_items() {
+    // 默认：PianoRoll 组激活 → Keys + File + Automation，再 Project / Waterfall /
+    // Renderer（渲染组未激活，不含两个导出子按钮）。
+    let model = sidebar_model(&Sidebar::new()).expect("默认状态应可接管");
+    let icons: Vec<SidebarRouteIcon> = model.route_items.iter().map(|item| item.icon).collect();
+    assert_eq!(
+        icons,
+        vec![
+            SidebarRouteIcon::PianoRoll,
+            SidebarRouteIcon::File,
+            SidebarRouteIcon::Automation,
+            SidebarRouteIcon::Project,
+            SidebarRouteIcon::Waterfall,
+            SidebarRouteIcon::Renderer,
+        ],
+        "默认路由栏条目"
+    );
+
+    // 渲染组激活 → 追加视频 / 音频导出；两个子按钮的点亮跟随可见标志。
+    let mut sidebar = Sidebar::new();
+    sidebar.active_group = Some(crate::sidebar::GroupId::Renderer);
+    sidebar.video_export_visible = true;
+    let model = sidebar_model(&sidebar).expect("渲染组激活不是瞬态 UI");
+    let tail: Vec<SidebarRouteIcon> = model
+        .route_items
+        .iter()
+        .skip(model.route_items.len() - 2)
+        .map(|item| item.icon)
+        .collect();
+    assert_eq!(
+        tail,
+        vec![SidebarRouteIcon::VideoExport, SidebarRouteIcon::AudioExport],
+        "渲染组子按钮顺序"
+    );
+    assert!(
+        model
+            .route_items
+            .iter()
+            .any(|item| item.icon == SidebarRouteIcon::VideoExport && item.active),
+        "视频导出可见时应点亮"
+    );
+    assert!(
+        !model
+            .route_items
+            .iter()
+            .any(|item| item.icon == SidebarRouteIcon::AudioExport && item.active),
+        "音频导出不可见时不应点亮"
+    );
+}
+
+#[test]
 fn sidebar_model_describes_default_panel() {
     let model = sidebar_model(&Sidebar::new()).expect("默认状态应可接管");
     assert!(model.panel_visible);

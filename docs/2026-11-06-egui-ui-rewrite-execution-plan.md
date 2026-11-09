@@ -1630,12 +1630,36 @@ callback / 多视口 / 截图能力。
   本轮尝试过让 egui 接管路由点击（新增 `SidebarRoute` 通道 + 占用矩形），
   但会与输入坐标口径不一致叠加，导致整列变死区，已回滚，保持 iced 处理点击。
 
-**Task 1.3（下一步）：叠加层坐标口径修正 + 路由栏接管 + 编辑器画布**
+**Task 1.3（第四十五步）：路由栏条目表由生产装配（错位根因收敛）— 已完成**
 
-- 待修（优先级最高）：`show_bands` 的根 `viewport_rect()` 与
-  `pixels_per_point` 口径不一致，导致 band 逻辑尺寸偏大（侧栏 1212 vs 应有
-  ≈947），进而使 egui 绘制与命中整体错位。修完后：
-  1. 路由栏改由 egui 点击并占用（避免 iced 同位置按钮双重响应）；
-  2. 用可靠的图标坐标补真机验收视频导出面板（含计数器 / 数据曲线）。
-- 随后：编辑器画布（卷帘音符 / 走带）从 iced 通道交给 egui/wgpu，最后做 iced
-  归零检查。
+- **纠错**：上一轮把「侧栏 band `(0,30)-(248,1212)`」判成坐标口径错误是**误判**——
+  `diag-z.ps1` 输出的是**逻辑**矩形（2062×1246），物理即 2560×1540，与叠加层
+  自报的 `size=[2560,1540] ppp=1.25` 完全一致；侧栏 1182 高 = 1232 − 30 − 20 正确。
+- **新增**：`SidebarModel.route_items: Vec<SidebarRouteItem>` +
+  `SidebarRouteIcon`（8 个语义项）。生产侧按 `sidebar/route.rs` 同一套可见性 /
+  点亮规则装配：PianoRoll → (File, Automation 仅组激活) → Project → Waterfall →
+  Renderer → (VideoExport, AudioExport 仅组激活)。`route_bar` 优先按表绘制，
+  表为空时走旧内置推导（保证离线场景 / 截图基线的像素不变）。
+- **调试设施**：`LUMINO_EGUI_DEBUG_RECTS=1` 时逐个打印路由按钮矩形
+  （icon / x / y / w / h / active），真机对齐不必再靠截图猜坐标。
+- 验收：
+  - `egui_chrome` 89/89（新增「默认 6 项 + 渲染组激活追加 2 项 + 点亮跟随可见」）；
+  - `lumino-ui` lib 870/870、`ui-egui` 全量、`clippy -D warnings`、`fmt --check`；
+  - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真机（ppp=1.25）实拍矩形：Keys y=30、FolderTree 78、WaveForm 126、
+    Arrangement 174、PlayCircle 222、Download 270（步进 48，与 iced 同口径）。
+- **仍未解决（根因已收窄到 iced 侧）**：真机点击 y=247 物理（逻辑约 198，落在
+  egui 绘制的 Arrangement 174..222 内）实际产生 `GroupToggled(Waterfall)`；
+  即 **iced 路由栏的按钮落点与 egui 绘制的落点仍相差约一格**。egui 侧已确认
+  按 30 + 48k 绘制且与生产模型一致，因此差异只能来自 iced `sidebar/route.rs`
+  的列内边距 / 间距（`bar_button` 之外还有一处 48 级别的偏移）。
+
+**Task 1.3（下一步）：把 iced 路由栏的落点量出来 → 两边统一**
+
+- 方法：在 `sidebar/route.rs` 的 `view` 里按 `Event` 打点（或复用
+  `LUMINO_EGUI_DEBUG_RECTS` 的思路给 iced 也加一个 gated 打印），得到 iced 每个
+  `bar_button` 的实际屏幕 y，再决定是「egui 绘制跟随 iced 的偏移」还是
+  「把 iced 的列内边距改成 0 让两边都从 30 开始」。
+- 对齐后：路由栏改由 egui 接管点击 + 计入占用区（`SidebarRoute` 通道代码已在
+  `2abe055c` 之后的实验中被验证可用，回滚时删除，需要时可重新加回）。
+- 随后补视频导出面板（计数器 / 数据曲线）真机截图，再进入编辑器画布接管。

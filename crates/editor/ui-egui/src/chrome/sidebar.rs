@@ -9,12 +9,19 @@ mod track_list;
 
 use egui::{Color32, Rect, Vec2};
 
-use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel};
+use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon};
 use crate::icons::Icon;
 use crate::theme;
 
 /// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。
 pub(crate) const ROUTE_BAR_W: f32 = 48.0;
+
+/// 调试开关：`LUMINO_EGUI_DEBUG_RECTS=1` 时把每个路由按钮的矩形打进日志，
+/// 用于和 iced 的命中盒逐项对齐（真机验收不必再靠截图猜坐标）。
+fn debug_rects() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0"))
+}
 /// 路由按钮边长（生产 `bar_button` 固定 48×48）。
 const ROUTE_BTN: f32 = 48.0;
 /// 路由图标尺寸（生产 20×20）。
@@ -57,6 +64,28 @@ fn route_bar(
 ) {
     let left = rect.left();
     let mut y = rect.top();
+
+    // 生产已给出条目表时按表绘制：顺序 / 可见性 / 点亮与 iced 同源，
+    // 避免两边各自推导导致「看到的图标」与「点得中的按钮」错位。
+    if !model.route_items.is_empty() {
+        for item in &model.route_items {
+            let icon = match item.icon {
+                SidebarRouteIcon::PianoRoll => Icon::Keys,
+                SidebarRouteIcon::File => Icon::FolderTree,
+                SidebarRouteIcon::Automation => Icon::WaveForm,
+                SidebarRouteIcon::Project => Icon::Arrangement,
+                SidebarRouteIcon::Waterfall => Icon::PlayCircle,
+                SidebarRouteIcon::Renderer => Icon::Download,
+                SidebarRouteIcon::VideoExport => Icon::VideoCamera,
+                SidebarRouteIcon::AudioExport => Icon::MusicNote,
+            };
+            let active = item.active.then(|| route_indicator(item.icon));
+            route_button(ui, icons, icon, left, y, active);
+            y += ROUTE_BTN;
+        }
+        route_bar_bottom(ui, rect, model, icons);
+        return;
+    }
 
     // PianoRoll 组父按钮：卷帘可见即点亮。
     let active = model
@@ -110,6 +139,31 @@ fn route_bar(
     }
 
     // 底部：卷帘方向（可选）+ 混音台（常驻）。
+    route_bar_bottom(ui, rect, model, icons);
+}
+
+/// 灯条颜色（按条目所属分组）。
+fn route_indicator(icon: SidebarRouteIcon) -> Color32 {
+    match icon {
+        SidebarRouteIcon::PianoRoll | SidebarRouteIcon::File | SidebarRouteIcon::Automation => {
+            SidebarGroup::PianoRoll.child_color()
+        }
+        SidebarRouteIcon::Project => SidebarGroup::Project.parent_color(),
+        SidebarRouteIcon::Waterfall => SidebarGroup::Waterfall.parent_color(),
+        SidebarRouteIcon::Renderer
+        | SidebarRouteIcon::VideoExport
+        | SidebarRouteIcon::AudioExport => SidebarGroup::Renderer.child_color(),
+    }
+}
+
+/// 路由栏底部：卷帘方向按钮 + 混音台入口。
+fn route_bar_bottom(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    model: &SidebarModel,
+    icons: &mut crate::icons::IconCache,
+) {
+    let left = rect.left();
     let mut bottom: Vec<(Icon, Option<Color32>)> = Vec::new();
     if model.roll_bar_visible {
         bottom.push((
@@ -150,6 +204,17 @@ fn route_button(
     y: f32,
     active: Option<Color32>,
 ) {
+    if debug_rects() {
+        tracing::warn!(
+            icon = ?icon,
+            x = left,
+            y,
+            w = ROUTE_BAR_W,
+            h = ROUTE_BTN,
+            active = active.is_some(),
+            "DEBUG route button rect"
+        );
+    }
     if let Some(color) = active {
         ui.painter().rect_filled(
             Rect::from_min_size(egui::pos2(left, y), Vec2::new(2.0, ROUTE_BTN)),

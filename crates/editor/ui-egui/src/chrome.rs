@@ -40,10 +40,10 @@ pub use model::{
     RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
     SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton,
     ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
-    SpeedChangeModel, StatusbarModel, TextPairCell, TitlebarModel, ToolbarGroupsModel,
-    ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
-    VideoExportPanelModel, VideoPreviewModel, VideoRow, VideoSection,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack,
+    SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel, TextPairCell, TitlebarModel,
+    ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction,
+    VideoExportModel, VideoExportPanelModel, VideoPreviewModel, VideoRow, VideoSection,
 };
 pub use toolbar_popup::ToolbarAction;
 

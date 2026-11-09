@@ -77,6 +77,36 @@ pub struct SidebarTrack {
     pub soloed: bool,
 }
 
+/// 路由栏图标（与生产 `ROUTES` 一一对应）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarRouteIcon {
+    /// 钢琴卷帘组父按钮。
+    PianoRoll,
+    /// 音轨列表子按钮。
+    File,
+    /// 自动化面板子按钮。
+    Automation,
+    /// 工程走带组父按钮。
+    Project,
+    /// 播放器（瀑布流）组父按钮。
+    Waterfall,
+    /// 渲染组父按钮。
+    Renderer,
+    /// 视频导出子按钮。
+    VideoExport,
+    /// 音频导出子按钮。
+    AudioExport,
+}
+
+/// 路由栏条目（顺序即绘制顺序，与生产 `ROUTES` 同源）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarRouteItem {
+    /// 图标。
+    pub icon: SidebarRouteIcon,
+    /// 是否点亮灯条。
+    pub active: bool,
+}
+
 /// 左侧栏（路由栏 48 + 面板 `panel_width`）的只读状态。
 #[derive(Debug, Clone)]
 pub struct SidebarModel {
@@ -90,6 +120,8 @@ pub struct SidebarModel {
     pub waterfall: bool,
     /// 当前激活分组。
     pub active_group: Option<SidebarGroup>,
+    /// 路由栏条目（生产装配；空 = 走内置推导，仅离线场景）。
+    pub route_items: Vec<SidebarRouteItem>,
     /// 自动化面板是否可见。
     pub automation_panel_visible: bool,
     /// 音频导出面板是否可见。
@@ -133,6 +165,7 @@ impl Default for SidebarModel {
             piano_roll_visible: true,
             waterfall: false,
             active_group: Some(SidebarGroup::PianoRoll),
+            route_items: Vec::new(),
             automation_panel_visible: false,
             audio_export_visible: false,
             video_export_visible: false,
