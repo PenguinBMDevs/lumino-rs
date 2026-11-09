@@ -13,12 +13,14 @@ pub mod toolbar;
 pub mod toolbar_popup;
 
 pub use model::{
-    AudioControlModel, AudioField, AudioPageModel, AudioRowModel, BrushPanelModel, CloudConnModel,
-    CloudPageModel, FillDivisionPanelModel, I2mControlModel, I2mConvertModel, I2mField,
-    I2mPanelModel, I2mRowModel, MaterialContextLabels, MaterialContextMenuItem,
-    MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind,
-    MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind, ShapePanelModel,
-    TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
+    AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,
+    AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel, AudioPageModel,
+    AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle, AudioToggleId,
+    BrushPanelModel, CloudConnModel, CloudPageModel, FillDivisionPanelModel, I2mControlModel,
+    I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
+    MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel,
+    MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind,
+    ShapePanelModel, TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
     ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };

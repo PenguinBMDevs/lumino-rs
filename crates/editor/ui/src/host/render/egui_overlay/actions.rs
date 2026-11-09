@@ -3,6 +3,7 @@
 //! 从 `egui_overlay.rs` 拆出（REF-001：单文件 < 400 行）。动作在 `run_ui` 之后
 //! 统一取走，保证一帧内不遗漏、顺序稳定（先控件后弹层）。
 
+use lumino_ui_egui::audio_export::AudioExportAction;
 use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
@@ -35,6 +36,7 @@ pub(super) struct OverlayActions {
     pub cloud_connect: Option<CloudConnectAction>,
     pub memory_monitor: Option<MemoryMonitorAction>,
     pub draw_settings: Option<DrawSettingsAction>,
+    pub audio_export: Option<AudioExportAction>,
 }
 
 impl OverlayActions {
@@ -55,6 +57,7 @@ impl OverlayActions {
             cloud_connect: lumino_ui_egui::cloud_connect::take_action(ctx),
             memory_monitor: lumino_ui_egui::memory_monitor::take_action(ctx),
             draw_settings: lumino_ui_egui::draw_settings::take_action(ctx),
+            audio_export: lumino_ui_egui::audio_export::take_action(ctx),
         }
     }
 }
@@ -89,6 +92,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.audio_export
+            && let Some(message) = self.root.audio_export_action_message(&action)
+        {
+            tracing::info!("egui 音频导出动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.draw_settings

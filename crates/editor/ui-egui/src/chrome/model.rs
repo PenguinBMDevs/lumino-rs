@@ -4,6 +4,7 @@
 //! （`Root::egui_chrome_model`）把状态填进这里的纯数据类型，egui 只负责绘制。
 //! 这样同一份渲染代码既能被离线场景复用，也能被真实窗口叠加层复用。
 
+mod audio_export;
 mod batch_edit;
 mod cloud_connect;
 mod draw_settings;
@@ -17,6 +18,7 @@ mod settings_page;
 mod settings_ui;
 mod tool_panel;
 mod toolbar;
+pub use audio_export::*;
 pub use batch_edit::*;
 pub use cloud_connect::*;
 pub use draw_settings::*;

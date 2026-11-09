@@ -56,6 +56,8 @@ struct OverlayFrame<'a> {
     palette: lumino_ui_egui::theme::Palette,
     /// 钢琴瀑布流离屏纹理（面板可见且已渲染时才注册）。
     waterfall: Option<std::sync::Arc<wgpu::TextureView>>,
+    /// 音频导出面板（整块接管右侧内容区）。
+    audio_export: Option<lumino_ui_egui::chrome::AudioExportPanelModel>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -126,7 +128,11 @@ impl EguiOverlay {
 
         // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
         // 这里只要占用矩形与文本焦点。
-        let blocked = chrome::menu::take_blocked(&ctx);
+        let mut blocked = chrome::menu::take_blocked(&ctx);
+        // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 iced。
+        if let Some(panel) = &frame.audio_export {
+            blocked.push(panel.rect);
+        }
 
         let mut textures = output.textures_delta;
         self.painter
@@ -184,7 +190,30 @@ impl Host {
         let app_frame = self.frame_count;
         // 工具栏折叠（溢出菜单）依赖实际可用宽度：与生产 `responsive` 同口径。
         let logical_width = size.width as f32 / pixels_per_point;
+        let logical_height = size.height as f32 / pixels_per_point;
         let model = self.root.egui_chrome_model_for(logical_width);
+        // 音频导出面板：整块替换右侧内容区（工具栏 / 画布 / 状态栏）。
+        let audio_export = (self.root.sidebar.audio_export_visible
+            && !self.root.is_arrangement_mode())
+        .then(|| {
+            let left = model
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.total_width())
+                .unwrap_or(48.0);
+            let top = if model.titlebar.is_some() {
+                lumino_ui_egui::layout::TITLEBAR_H
+            } else {
+                0.0
+            };
+            lumino_ui_egui::chrome::AudioExportPanelModel {
+                rect: egui::Rect::from_min_max(
+                    egui::pos2(left, top),
+                    egui::pos2(logical_width, logical_height),
+                ),
+                content: self.root.audio_export_model(),
+            }
+        });
         let palette = self.root.egui_palette();
         // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（iced 侧同位置
         // 只保留占位，不会二次采样同一张纹理）。
@@ -218,6 +247,7 @@ impl Host {
             model: &model,
             palette,
             waterfall,
+            audio_export,
             events,
             focused,
         });

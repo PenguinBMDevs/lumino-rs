@@ -16,6 +16,24 @@ impl Root {
     pub(crate) fn view_audio_export_panel(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_audio_export_panel");
 
+        // 叠加层接管时：整块面板由 egui 绘制（同一矩形、不透明覆盖）；
+        // 这里返回同尺寸占位，避免 iced 侧再排一次表单（双层文字/双重响应）。
+        if crate::host::overlay_enabled() {
+            let palette = self.window.theme.extended_palette();
+            return container(
+                iced_widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced_core::Background::Color(palette.background.base.color)),
+                ..Default::default()
+            })
+            .into();
+        }
+
         let theme = &self.window.theme;
         let palette = theme.extended_palette();
 
