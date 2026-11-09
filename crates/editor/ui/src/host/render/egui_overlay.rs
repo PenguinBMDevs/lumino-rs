@@ -532,9 +532,16 @@ fn input_scale(ppp: f32) -> f32 {
     ppp * ppp
 }
 
-/// 环境变量开关（只读一次；`0` 视为关闭）。
+/// egui 叠加层是否启用。
+///
+/// **默认开启**：外壳 band / 对话框 / 面板 / 编辑器画布底层均已迁到 egui，
+/// iced 侧只在下方保留同位置内容（已被不透明覆盖），后续逐步删除。
+/// `LUMINO_EGUI_OVERLAY=0` 可回退到纯 iced 通道，用于对照排查。
 pub(crate) fn overlay_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED
-        .get_or_init(|| std::env::var_os("LUMINO_EGUI_OVERLAY").is_some_and(|value| value != "0"))
+    *ENABLED.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_OVERLAY")
+            .map(|value| value != "0")
+            .unwrap_or(true)
+    })
 }

@@ -24,6 +24,13 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    // iced 基线必须在**纯 iced 通道**下渲染：叠加层默认开启后，iced 视图会返回
+    // 同尺寸占位（内容由 egui 绘制），直接渲染会与基线不符。
+    // SAFETY：进程刚启动、尚无其他线程读取环境变量。
+    unsafe {
+        std::env::set_var("LUMINO_EGUI_OVERLAY", "0");
+    }
+
     let args = Args::parse();
     let out_dir = args.out_dir.unwrap_or_else(baseline_dir);
 

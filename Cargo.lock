@@ -4747,7 +4747,6 @@ dependencies = [
 name = "lumino-message"
 version = "0.2.1"
 dependencies = [
- "iced_widget",
  "lumino-core",
  "lumino-midi-loader",
  "lumino-note-core",

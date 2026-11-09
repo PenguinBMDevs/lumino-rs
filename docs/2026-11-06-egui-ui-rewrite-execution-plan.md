@@ -1732,10 +1732,33 @@ callback / 多视口 / 截图能力。
 - 证据图：`target/d1.png`（红染验证）、`canvas-on7.png` / `canvas-off3.png`
   （卷帘 0 差）、`arr-default.png` / `arr-blit.png`（走带 0 差）。
 
-**Task 1.3（下一步）：删除 iced 侧画布占位与残留视图**
+**Task 1.3（第四十九步）：egui 叠加层改默认开启 + 删除 iced 文本模板编辑器**
 
-1. 删 `layers`/iced 通道里编辑器画布的绘制与占位（现在 egui 已完全接管底层）；
-2. 删 iced 视频导出视图 + `counter_editor` / `CounterTextAction`；
-3. 删 `ShapeDrawerCanvas::Program`；
-4. 逐项移除 `lumino-ui` 的 40 个 iced 依赖，以
-   `cargo tree -p lumino-ui | grep '^iced'` 为空作为归零证据。
+- **默认翻转**：`LUMINO_EGUI_OVERLAY` 默认开启（`=0` 回退纯 iced，用于对照）。
+  外壳 band / 对话框 / 面板 / 编辑器画布底层都已迁到 egui，iced 只在其下方保留
+  同位置内容并被不透明覆盖。
+- **`capture_iced` 强制关闭叠加层**：它是 iced 视觉基线工具，叠加层开启后 iced
+  视图返回占位、18 张基线会有 6 张不符；在 `main` 最先设置
+  `LUMINO_EGUI_OVERLAY=0`（进程刚启动、无并发读环境变量）。
+- **删除 iced 文本模板编辑器**（`lumino-message` 由此彻底 iced-free）：
+  - 移除 `message::VideoExportAction::CounterTextAction(iced_widget::text_editor::Action)`；
+  - 移除 `VideoExportDialogState::counter_editor` 与 Handler 里的 `perform` 同步；
+  - iced 视图改为只读展示 `counter_text`（编辑由 egui 多行编辑器负责）；
+  - `crates/core/message/Cargo.toml` 去掉 `iced_widget` 依赖。
+- 验收：
+  - `cargo tree -p lumino-message | grep '^iced'` → **空（0）**；
+  - `cargo tree -p lumino-ui | grep '^iced'` → **39**（原 40）；
+  - `lumino-message` 47/47、`lumino-ui` lib 870/870、`lumino-ui-core` 95/95、
+    `lumino-gfx` 273/273、`ui-parity` 12/12、`ui-egui` 全量（`theme_palette` 单线程）；
+  - `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真机（默认无环境变量）：主窗口标题栏 / 菜单（视图菜单可展开）/ 工具栏 / 左侧
+    音轨列表 / 卷帘画布 / 右侧栏 / 状态栏全部正常，egui 叠加层日志出现。
+
+**Task 1.3（下一步）：继续清空 `lumino-ui` 的 39 个 iced 依赖**
+
+1. 删 iced 视频导出视图（`view/video_export_dialog/*` 9 个文件）与
+   `panels.rs` 的 iced 分支，把 `available_backends()` 迁到 egui 侧；
+2. 删 `ShapeDrawerCanvas` + `canvas/draw.rs` 的 iced `Program`（抽屉已全 egui）；
+3. 按依赖倒序清理 `main_view` / `right_sidebar` / `toolbar` 的 iced 占位，
+   每删一类就跑一次全量验收 + 截图，直到 `cargo tree -p lumino-ui | grep '^iced'` 为空。

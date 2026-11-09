@@ -59,11 +59,16 @@ fn template_section<'a>(
         color: Some(label_color),
     };
 
-    let editor = iced_widget::text_editor::TextEditor::new(&state.counter_editor)
-        .on_action(|action| Message::VideoExport(VideoExportAction::CounterTextAction(action)))
-        .placeholder("Notes: {nc} / {tn}\nBPM: {bpm}")
-        .height(iced_core::Pixels(140.0))
-        .padding(8);
+    // 模板编辑由 egui 多行编辑器接管（`ui-egui/src/video_export.rs` 的 TextArea）；
+    // iced 侧仅展示当前文本，避免两套编辑器状态并存。
+    let editor = container(
+        text(&state.counter_text)
+            .size(12)
+            .width(iced_core::Length::Fill),
+    )
+    .width(iced_core::Length::Fill)
+    .height(iced_core::Pixels(140.0))
+    .padding(8);
 
     column![
         text(tr!("文本模板（支持 {nc} {nps} {bpm} 等占位符，\\n 换行）"))
