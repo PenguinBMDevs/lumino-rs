@@ -21,6 +21,7 @@ use lumino_ui_egui::memory_monitor::MemoryMonitorAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
 use lumino_ui_egui::recover_track::RecoverTrackAction;
 use lumino_ui_egui::settings::SettingsAction;
+use lumino_ui_egui::shape_drawer::ShapeDrawerAction;
 use lumino_ui_egui::speed_change::SpeedChangeAction;
 
 use crate::host::Host;
@@ -47,6 +48,7 @@ pub(super) struct OverlayActions {
     pub recover_track: Option<RecoverTrackAction>,
     pub collaboration: Option<CollaborationAction>,
     pub cloud_browser: Option<CloudBrowserAction>,
+    pub shape_drawer: Option<ShapeDrawerAction>,
 }
 
 impl OverlayActions {
@@ -73,6 +75,7 @@ impl OverlayActions {
             recover_track: lumino_ui_egui::recover_track::take_action(ctx),
             collaboration: lumino_ui_egui::collaboration::take_action(ctx),
             cloud_browser: lumino_ui_egui::cloud_browser::take_action(ctx),
+            shape_drawer: lumino_ui_egui::shape_drawer::take_action(ctx),
         }
     }
 }
@@ -107,6 +110,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.shape_drawer
+            && let Some(message) = self.root.shape_drawer_action_message(&action)
+        {
+            tracing::info!("egui 形状抽屉动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.cloud_browser

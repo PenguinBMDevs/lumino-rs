@@ -58,6 +58,8 @@ struct OverlayFrame<'a> {
     waterfall: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 音频导出面板（整块接管右侧内容区）。
     audio_export: Option<lumino_ui_egui::chrome::AudioExportPanelModel>,
+    /// 形状抽屉左侧面板（右侧画布仍由 iced 绘制）。
+    shape_drawer: Option<lumino_ui_egui::chrome::ShapeDrawerModel>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -124,6 +126,14 @@ impl EguiOverlay {
         let icons = &mut self.icons;
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
+            // 音频导出：整块面板覆盖右侧内容区。
+            if let Some(panel) = &frame.audio_export {
+                lumino_ui_egui::audio_export::show_panel(ui, panel);
+            }
+            // 形状抽屉：只覆盖左侧面板，右侧画布留给 iced。
+            if let Some(panel) = &frame.shape_drawer {
+                lumino_ui_egui::shape_drawer::show(ui, panel);
+            }
         });
 
         // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
@@ -131,6 +141,10 @@ impl EguiOverlay {
         let mut blocked = chrome::menu::take_blocked(&ctx);
         // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 iced。
         if let Some(panel) = &frame.audio_export {
+            blocked.push(panel.rect);
+        }
+        // 形状抽屉：只占用左侧面板（分割线与画布留给 iced）。
+        if let Some(panel) = &frame.shape_drawer {
             blocked.push(panel.rect);
         }
 
@@ -192,6 +206,21 @@ impl Host {
         let logical_width = size.width as f32 / pixels_per_point;
         let logical_height = size.height as f32 / pixels_per_point;
         let model = self.root.egui_chrome_model_for(logical_width);
+        // 形状抽屉：左侧面板由 egui 绘制，右侧画布仍走 iced。
+        let shape_drawer = (self.root.state.dialog_type
+            == crate::state::root_state::DialogType::ShapeDrawer)
+            .then(|| {
+                let width = self.root.state.shape_drawer.panel_width;
+                let top = if model.titlebar.is_some() {
+                    lumino_ui_egui::layout::TITLEBAR_H
+                } else {
+                    0.0
+                };
+                self.root.shape_drawer_model(egui::Rect::from_min_max(
+                    egui::pos2(0.0, top),
+                    egui::pos2(width, logical_height),
+                ))
+            });
         // 音频导出面板：整块替换右侧内容区（工具栏 / 画布 / 状态栏）。
         let audio_export = (self.root.sidebar.audio_export_visible
             && !self.root.is_arrangement_mode())
@@ -248,6 +277,7 @@ impl Host {
             palette,
             waterfall,
             audio_export,
+            shape_drawer,
             events,
             focused,
         });

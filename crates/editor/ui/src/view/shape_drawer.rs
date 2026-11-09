@@ -158,7 +158,7 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
         None => space().into(),
     };
 
-    let panel = container(
+    let panel_full = container(
         column![
             text("Shape Library").size(16).color(panel_text),
             scrollable(column(rows).spacing(2)).height(Length::Fill),
@@ -188,6 +188,17 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
         text_color: Some(panel_text),
         ..Default::default()
     });
+
+    // 叠加层接管左侧面板时：留同宽透明占位，保证画布位置与 iced 单独渲染完全一致
+    // （面板内容由 egui 在同一矩形上不透明覆盖，点击也由 egui 消费）。
+    let panel: Element<'a> = if crate::host::overlay_enabled() {
+        iced_widget::Space::new()
+            .width(Length::Fixed(state.panel_width))
+            .height(Length::Fill)
+            .into()
+    } else {
+        panel_full.into()
+    };
 
     let splitter = MouseArea::new(
         container(space())

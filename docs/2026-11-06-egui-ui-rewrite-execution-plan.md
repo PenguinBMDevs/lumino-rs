@@ -1491,9 +1491,47 @@ callback / 多视口 / 截图能力。
 - **已知字体差异**：条目名前的 📁/📄 在 iced 用系统彩色 emoji，egui 落到 NotoEmoji
   的单色字形；文字内容一致，属两套字体栈差异。
 
-**Task 1.3（下一步）：形状抽屉 / 视频导出**
+**Task 1.3（第四十一步）：形状抽屉左侧面板迁移到 egui — 已完成**
 
-- 现状：除形状抽屉（含自绘画布）与视频导出（约 2000 行、9 个子模块）外，其余
-  对话框与面板均已迁到 egui。
-- 下一步：形状抽屉（237 行 + `ShapeDrawerCanvas`）、视频导出；随后编辑器画布与
-  iced 归零证明。
+- **形态**：右侧画布仍由 iced 的 `Canvas` 绘制（含工具条 / 网格 / 命中）。egui 只接管
+  左侧面板（`panel_width` 宽），分割线（6px）留给 iced 拖动，保证现有交互零回归。
+- **模型**：`ShapeDrawerModel`（rect / 标题 / 库行 / 名称输入 / 文件与编辑动作 /
+  面积开关与 16 色块 / 状态与 warning / Size 与 Scale 行 / 弯折 / Insert）+
+  `ShapeRowModel` / `ShapeActionButton` / `ShapeSwatchModel` / `ShapePanelAction`
+  （21 个动作）；不放进 `DialogModel`，由叠加层按 `dialog_type == ShapeDrawer` 单独绘制。
+- **渲染**：`ui-egui/src/shape_drawer.rs` 对齐生产：面板内边距 10、列间距 6；
+  标题 16px；库行整行主色底 + 白字（选中态靠「● 」前缀，与 iced 同）；
+  动作按钮可折行；色块按宽度折行；Size/Scale 行固定小输入框。
+- **宿主**：`OverlayFrame.shape_drawer` + 只把面板矩形推入 `blocked`（分割线与画布
+  仍归 iced）；`view_shape_drawer` 在叠加层启用时把左侧面板换成同宽透明占位，
+  所以画布位置与 iced 单独渲染完全一致。
+- **修掉的两个真问题**：
+  - 面板按钮宽度原只加文本宽 → egui 内边距挤占文字，出现「Ne / Sav / Renam」
+    折行；改为「文本宽 + `button_padding*2` + 2」，并让动作行真正折行（原实现
+    直接丢弃溢出按钮 = 少 UI）。
+  - 面板缺 30px 标题栏让位 → 内容整体上移 30 逻辑像素并盖住 iced 标题栏；
+    补 `body = rect + TITLEBAR_H`。
+- **顺带补齐**：`run_ui` 里原先**没有**绘制音频导出面板与形状抽屉面板的调用
+  （只有占用矩形），本轮把两者都接上；音频导出面板此前仅通过模型测试，属于
+  漏接线。
+- 验收：
+  - `shape_drawer_bands` 7/7（库行与全部按钮可访问、库选择、文件/编辑动作、
+    面积开关与色块、Insert/Apply、名称输入、弯折按钮仅在曲线锚点时出现）；
+  - `egui_chrome` 75/75（面板模型镜像：库选中前缀 / 16 色块 / 动作文案 /
+    save 与弯折状态；21 个动作映射 + 载荷）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（1000×700、ppp=1.25，工具栏工具条 → 形状 → 齿轮）：面板与 iced
+    同窗对照——标题墨迹 58..74 vs 56..76、库行 89/129/169 起 vs 85/126/167
+    （行高与间距一致，整体 +3 物理像素），按钮同为 iced 默认主色底。
+    证据图：`target/sd-egui8.png`、`sd-iced.png`。
+- **已知差异**：色块换行位置（egui 7/7/2 vs iced 7/6/3，因 iced 行允许溢出面板
+  宽度）与底部若干行的累计偏移（≤15 物理像素）；画布仍属 iced。
+
+**Task 1.3（下一步）：形状抽屉画布移植 / 视频导出**
+
+- 现状：形状抽屉除画布外的全部 UI 已是 egui；视频导出（约 2000 行、9 个子模块）
+  仍完全由 iced 绘制。
+- 下一步：把 `ShapeDrawerCanvas`（436 行 + `canvas/draw.rs` 419 行 + `doc.rs` 412 行）
+  的绘制与命中移植到 egui painter；随后视频导出；最后编辑器画布与 iced 归零证明。

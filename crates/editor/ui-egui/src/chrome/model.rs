@@ -21,6 +21,7 @@ mod settings_audio;
 mod settings_cloud;
 mod settings_page;
 mod settings_ui;
+mod shape_drawer;
 mod tool_panel;
 mod toolbar;
 pub use audio_export::*;
@@ -40,6 +41,7 @@ pub use settings_audio::*;
 pub use settings_cloud::*;
 pub use settings_page::*;
 pub use settings_ui::*;
+pub use shape_drawer::*;
 pub use tool_panel::*;
 pub use toolbar::*;
 

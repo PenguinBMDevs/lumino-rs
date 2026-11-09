@@ -38,7 +38,8 @@ pub use model::{
     OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
     ProjectNoteCountModel, ProjectSettingsModel, RecoverTrackModel, RecoverTrackRowModel,
     RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
+    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton,
+    ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel,
     SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
     SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
