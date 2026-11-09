@@ -4,7 +4,7 @@ use egui::Color32;
 
 use super::{
     BatchEditModel, BrushSettingsModel, CloudConnectModel, DrawSettingsModel, HelpModel,
-    HistoryModel, LoadConfirmModel, MemoryMonitorModel, SettingsPageModel,
+    HistoryModel, LoadConfirmModel, MemoryMonitorModel, RecoverTrackModel, SettingsPageModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -40,6 +40,8 @@ pub enum DialogModel {
     LoadConfirm(Box<LoadConfirmModel>),
     /// 画刷设置（`DialogType::BrushSettings`）。
     BrushSettings(Box<BrushSettingsModel>),
+    /// 找回删除音轨（`DialogType::RecoverTrack`）。
+    RecoverTrack(Box<RecoverTrackModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

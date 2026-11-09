@@ -33,10 +33,11 @@ pub use model::{
     HistoryModel, HistoryRowModel, LoadConfirmModel, MemoryMetricModel, MemoryMonitorModel,
     MemoryRowModel, MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel,
     OnionSkinPageModel, OverflowItemModel, OverflowMenuModel, ProjectNoteCountModel,
-    ProjectSettingsModel, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel,
-    SpeedChangeModel, StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
+    ProjectSettingsModel, RecoverTrackModel, RecoverTrackRowModel, RecoverTrackSelection,
+    RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel, SettingsLabels,
+    SettingsPageModel, SettingsPalette, SettingsSnapshot, ShortcutsPageModel, SidebarGroup,
+    SidebarModel, SidebarPanel, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel,
+    StatusbarModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -199,6 +200,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::BrushSettings(model) => {
                 crate::brush_settings::show(&mut root, model);
+            }
+            DialogModel::RecoverTrack(model) => {
+                crate::recover_track::show(&mut root, model);
             }
         }
         return;

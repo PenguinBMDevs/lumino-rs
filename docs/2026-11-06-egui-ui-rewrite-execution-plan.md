@@ -1390,11 +1390,38 @@ callback / 多视口 / 截图能力。
   被胶囊遮挡 1–2 像素，自动化未点中。入口链路（生产 `BrushSettingsOpen`）与
   已真机验证的悬浮条一致，对话框本身由 6 个无头用例覆盖。
 
-**Task 1.3（下一步）：恢复音轨 / 协作 / 云文件浏览 / 形状抽屉 / 视频导出**
+**Task 1.3（第三十八步）：找回删除音轨对话框迁移到 egui — 已完成**
 
-- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 / 自定义精度 /
-  导出进度 / Help / 云连接 / 内存监控 / 音符画设置 / 载入确认 / 画刷设置 /
-  音频导出面板已是 egui。
-- 下一步：恢复音轨（374 行）、协作（376）、云文件浏览（359）、形状抽屉（237，
-  含自绘画布）、视频导出（约 2000 行，9 个子模块）；最后攻编辑器画布与 iced
-  归零证明。
+- **模型**：`RecoverTrackModel`（标题 / 提示 / 表头三列 / 条目 / 空态 / 选中载荷 /
+  can_act / 三个按钮）+ `RecoverTrackRowModel`（文件名 / 删除时间 / 音符总数 /
+  选中态）+ `RecoverTrackSelection`（path / original_index / track_id）；
+  `DialogModel::RecoverTrack`。
+- **渲染**：`ui-egui/src/recover_track.rs` 对齐生产：内边距 24、列间距 4；
+  标题 18px、12px 提示；36 高表头（`background.weak` 底 + 1px 边框、圆角 4，
+  三列 240 / 180 / 右对齐）；列表区 400 高（`base` 底 + 1px 边框，行高 36、
+  行距 2，悬停 `weak` 底、选中 `primary.base` 底 + `on_accent` 字，8px 实体
+  滚动条）；空态 80 高居中；底部右对齐「永久删除」（危险色）/「恢复」（主色）/
+  「关闭」（次要），未选中时前两个置灰。
+- **单元格改用 `Label` 子 `Ui`**（而非 `painter.text`）：表头与行文本进入可访问树，
+  左右对齐用 `Layout::right_to_left` 实现。
+- **动作**：`SelectionChanged` / `Restore{path,original_index}` /
+  `PermanentlyDelete{path,track_id}` / `CloseDialog` → `Message::RecoverTrack(...)`。
+- 验收：
+  - `recover_track_bands` 5/5：表头与行文本可访问、行点击回传下标、恢复与
+    永久删除携带完整载荷、关闭、空态；
+  - `egui_chrome` 64/64：模型镜像（两行条目 / 选中载荷 / can_act 两态）与
+    四类动作映射；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **真机入口未打通**：入口是左侧音轨列表面板**空白区右键** → 「找回已删除的音轨」。
+  自动化在物理 (75,412) 右键未弹出菜单（行内右键只会选中音轨），未继续追查
+  是否是 iced `mouse_area` 与 egui band 的命中冲突——菜单本身由 egui 绘制，
+  已在 `egui_chrome` 侧有模型覆盖。
+
+**Task 1.3（下一步）：协作 / 云文件浏览 / 形状抽屉 / 视频导出**
+
+- 现状：除协作、云文件浏览/断连提醒、形状抽屉、视频导出外，其余对话框与面板
+  均已迁到 egui。
+- 下一步：协作（376 行）、云文件浏览（359）、形状抽屉（237，含自绘画布）、
+  视频导出（约 2000 行）；随后编辑器画布与 iced 归零证明。

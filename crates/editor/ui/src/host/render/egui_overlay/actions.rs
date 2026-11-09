@@ -17,6 +17,7 @@ use lumino_ui_egui::history::HistoryAction;
 use lumino_ui_egui::load_confirm::LoadConfirmAction;
 use lumino_ui_egui::memory_monitor::MemoryMonitorAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
+use lumino_ui_egui::recover_track::RecoverTrackAction;
 use lumino_ui_egui::settings::SettingsAction;
 use lumino_ui_egui::speed_change::SpeedChangeAction;
 
@@ -41,6 +42,7 @@ pub(super) struct OverlayActions {
     pub audio_export: Option<AudioExportAction>,
     pub load_confirm: Option<LoadConfirmAction>,
     pub brush_settings: Option<BrushSettingsAction>,
+    pub recover_track: Option<RecoverTrackAction>,
 }
 
 impl OverlayActions {
@@ -64,6 +66,7 @@ impl OverlayActions {
             audio_export: lumino_ui_egui::audio_export::take_action(ctx),
             load_confirm: lumino_ui_egui::load_confirm::take_action(ctx),
             brush_settings: lumino_ui_egui::brush_settings::take_action(ctx),
+            recover_track: lumino_ui_egui::recover_track::take_action(ctx),
         }
     }
 }
@@ -98,6 +101,12 @@ impl Host {
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.recover_track
+            && let Some(message) = self.root.recover_track_action_message(&action)
+        {
+            tracing::info!("egui 找回音轨动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.brush_settings

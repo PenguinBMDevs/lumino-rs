@@ -29,6 +29,7 @@ pub mod layout;
 pub mod load_confirm;
 pub mod memory_monitor;
 pub mod project_settings;
+pub mod recover_track;
 pub mod scene;
 pub mod settings;
 pub mod speed_change;

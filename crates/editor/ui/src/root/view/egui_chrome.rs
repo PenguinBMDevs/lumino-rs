@@ -435,6 +435,8 @@ mod memory_monitor_tests;
 #[cfg(test)]
 mod project_settings_tests;
 #[cfg(test)]
+mod recover_track_tests;
+#[cfg(test)]
 mod right_sidebar_tests;
 #[cfg(test)]
 mod save_confirm_tests;

@@ -30,6 +30,7 @@ mod history;
 mod load_confirm;
 mod memory_monitor;
 mod project_settings;
+mod recover_track;
 mod speed_change;
 
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
@@ -186,6 +187,9 @@ impl Root {
             ))),
             DialogType::BrushSettings => Some(DialogModel::BrushSettings(Box::new(
                 self.brush_settings_model(),
+            ))),
+            DialogType::RecoverTrack => Some(DialogModel::RecoverTrack(Box::new(
+                self.recover_track_model(),
             ))),
             _ => None,
         }
