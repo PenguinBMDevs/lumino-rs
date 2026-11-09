@@ -23,7 +23,8 @@ pub use model::{
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };
 pub use model::{
-    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, ChromeModel, CompatLine,
+    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, ChromeModel, CloudConnectModel,
+    CloudField, CloudFieldModel, CloudProtocol, CloudProtocolOptionModel, CompatLine,
     CompatibilityPageModel, CustomPrecisionModel, DialogModel, DialogPalette, DotOptionModel,
     ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel, HelpTopicBodyModel,
     HelpTopicRowModel, HistoryModel, HistoryRowModel, MenuBarModel, MenuEntry, MenuModel,
@@ -180,6 +181,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::Help(model) => {
                 crate::help::show(&mut root, model);
+            }
+            DialogModel::CloudConnect(model) => {
+                crate::cloud_connect::show(&mut root, model);
             }
         }
         return;

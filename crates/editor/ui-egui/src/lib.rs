@@ -14,6 +14,7 @@ pub mod batch_edit;
 #[cfg(feature = "capture")]
 pub mod capture;
 pub mod chrome;
+pub mod cloud_connect;
 pub mod custom_precision;
 pub mod dialog;
 pub mod export_progress;

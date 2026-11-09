@@ -20,6 +20,7 @@ use crate::root::Root;
 use crate::state::root_state::DialogType;
 
 mod batch_edit;
+mod cloud_connect;
 mod custom_precision;
 mod export_progress;
 mod help;
@@ -167,6 +168,9 @@ impl Root {
                 self.export_progress_model(),
             ))),
             DialogType::Help => Some(DialogModel::Help(Box::new(self.help_model()))),
+            DialogType::CloudConnect => Some(DialogModel::CloudConnect(Box::new(
+                self.cloud_connect_model(),
+            ))),
             _ => None,
         }
     }

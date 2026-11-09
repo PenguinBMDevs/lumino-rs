@@ -2,7 +2,7 @@
 
 use egui::Color32;
 
-use super::{BatchEditModel, HelpModel, HistoryModel, SettingsPageModel};
+use super::{BatchEditModel, CloudConnectModel, HelpModel, HistoryModel, SettingsPageModel};
 
 /// 独立对话框窗口的只读模型。
 #[derive(Debug, Clone)]
@@ -27,6 +27,8 @@ pub enum DialogModel {
     ExportProgress(Box<ExportProgressModel>),
     /// Help 窗口（`DialogType::Help`）。
     Help(Box<HelpModel>),
+    /// 云存储连接面板（`DialogType::CloudConnect`）。
+    CloudConnect(Box<CloudConnectModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

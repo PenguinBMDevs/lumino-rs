@@ -5,6 +5,7 @@
 //! 这样同一份渲染代码既能被离线场景复用，也能被真实窗口叠加层复用。
 
 mod batch_edit;
+mod cloud_connect;
 mod help;
 mod history;
 mod right_panel;
@@ -15,6 +16,7 @@ mod settings_ui;
 mod tool_panel;
 mod toolbar;
 pub use batch_edit::*;
+pub use cloud_connect::*;
 pub use help::*;
 pub use history::*;
 pub use right_panel::*;
