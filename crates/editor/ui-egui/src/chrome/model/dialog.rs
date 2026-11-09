@@ -21,6 +21,46 @@ pub enum DialogModel {
     BatchEdit(Box<BatchEditModel>),
     /// 变速（`DialogType::SpeedChange`）。
     SpeedChange(Box<SpeedChangeModel>),
+    /// 自定义精度（`DialogType::CustomPrecision`）。
+    CustomPrecision(Box<CustomPrecisionModel>),
+}
+
+/// 自定义精度对话框：三连音数 / 分音符 / 附点 / 除数 / 错误行 / 按钮。
+#[derive(Debug, Clone, Default)]
+pub struct CustomPrecisionModel {
+    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    pub titlebar: bool,
+    /// 三连音数（默认 3）。
+    pub tuplet_count: String,
+    /// 分音符时值（默认 4）。
+    pub note_value: String,
+    /// 「分音符」标签。
+    pub note_label: String,
+    /// 「附点」标签。
+    pub dot_label: String,
+    /// 附点选项（4 个）。
+    pub dots: Vec<DotOptionModel>,
+    /// 「除以」标签。
+    pub divide_label: String,
+    /// 除数（默认 1）。
+    pub divisor: String,
+    /// 上一次提交失败的原因。
+    pub error: Option<String>,
+    /// 确定按钮。
+    pub ok: String,
+    /// 取消按钮。
+    pub cancel: String,
+}
+
+/// 附点分段按钮。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DotOptionModel {
+    /// 对应生产 `DotType`。
+    pub dot: lumino_core::DotType,
+    /// 已本地化的选项名。
+    pub label: String,
+    /// 是否选中。
+    pub selected: bool,
 }
 
 /// 变速对话框：标题 / 倍率行 / 提示 / 按钮。

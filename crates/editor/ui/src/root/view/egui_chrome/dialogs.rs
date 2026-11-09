@@ -20,6 +20,7 @@ use crate::root::Root;
 use crate::state::root_state::DialogType;
 
 mod batch_edit;
+mod custom_precision;
 mod history;
 mod project_settings;
 mod speed_change;
@@ -156,6 +157,9 @@ impl Root {
             }
             DialogType::SpeedChange => Some(DialogModel::SpeedChange(Box::new(
                 self.speed_change_model(),
+            ))),
+            DialogType::CustomPrecision => Some(DialogModel::CustomPrecision(Box::new(
+                self.custom_precision_model(),
             ))),
             _ => None,
         }

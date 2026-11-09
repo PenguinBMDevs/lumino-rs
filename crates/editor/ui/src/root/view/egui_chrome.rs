@@ -412,6 +412,8 @@ impl Root {
 #[cfg(test)]
 mod batch_edit_tests;
 #[cfg(test)]
+mod custom_precision_tests;
+#[cfg(test)]
 mod history_tests;
 #[cfg(test)]
 mod project_settings_tests;

@@ -335,7 +335,8 @@ impl Host {
             crate::state::root_state::DialogType::ProjectSettings
             | crate::state::root_state::DialogType::History
             | crate::state::root_state::DialogType::BatchEdit
-            | crate::state::root_state::DialogType::SpeedChange => {
+            | crate::state::root_state::DialogType::SpeedChange
+            | crate::state::root_state::DialogType::CustomPrecision => {
                 self.root.settings.synth.use_native_titlebar
                     || self
                         .egui_input
