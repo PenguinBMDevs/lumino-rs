@@ -69,6 +69,9 @@ pub struct Host {
     pub(crate) egui_input: render::egui_overlay::OverlayInput,
     /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 iced 队列。
     pub(crate) egui_blocked: Vec<egui::Rect>,
+    /// 编辑器画布（卷帘 / 走带）离屏纹理视图；`Some` 时 egui 采样它作底层，
+    /// 并跳过 gfx → surface 的直接 blit。
+    pub(crate) egui_editor_texture: Option<std::sync::Arc<iced_wgpu::wgpu::TextureView>>,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
     /// 上次 FPS 更新时间

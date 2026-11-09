@@ -64,6 +64,8 @@ struct OverlayFrame<'a> {
     shape_canvas: Option<lumino_ui_egui::shape_canvas::ShapeCanvasModel>,
     /// 视频导出面板（整块替换右侧内容区）。
     video_export: Option<lumino_ui_egui::chrome::VideoExportPanelModel>,
+    /// 编辑器画布（卷帘 / 走带）离屏纹理；`Some` 时 egui 整窗采样它作底层。
+    editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -106,6 +108,26 @@ impl EguiOverlay {
             None => self
                 .painter
                 .clear_external_texture(lumino_ui_egui::chrome::WATERFALL_TEXTURE_ID),
+        }
+
+        // 编辑器画布：把 gfx 的离屏纹理注册成 egui 外部纹理，并由 egui 画成底层。
+        match &frame.editor_texture {
+            Some(view) => {
+                self.painter.set_external_texture(
+                    frame.device,
+                    lumino_ui_egui::chrome::EDITOR_TEXTURE_ID,
+                    view,
+                );
+                lumino_ui_egui::chrome::set_base_texture(
+                    &self.ctx,
+                    Some(lumino_ui_egui::chrome::EDITOR_TEXTURE_ID),
+                );
+            }
+            None => {
+                self.painter
+                    .clear_external_texture(lumino_ui_egui::chrome::EDITOR_TEXTURE_ID);
+                lumino_ui_egui::chrome::set_base_texture(&self.ctx, None);
+            }
         }
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
@@ -334,6 +356,7 @@ impl Host {
             shape_drawer,
             shape_canvas,
             video_export,
+            editor_texture: self.egui_editor_texture.clone(),
             events,
             focused,
         });

@@ -16,8 +16,8 @@ pub use model::{
     AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,
     AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel, AudioPageModel,
     AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle, AudioToggleId,
-    BrushPanelModel, CloudConnModel, CloudPageModel, FillDivisionPanelModel, I2mControlModel,
-    I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
+    BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID, FillDivisionPanelModel,
+    I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
     MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel,
     MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind,
     ShapePanelModel, TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
@@ -135,6 +135,22 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 /// 其余区域不绘制任何东西，保持下层 iced 画面可见；两条 band 用不透明底色
 /// 完全覆盖同位置的 iced 版本，避免文字重影。标题栏为 `None`（系统原生
 /// 标题栏）时跳过顶部 band。
+/// 记录本帧的底层画布纹理（`None` = 不画底层，走原通道）。
+pub fn set_base_texture(ctx: &egui::Context, id: Option<egui::TextureId>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.base-texture"), id));
+}
+
+/// 本帧是否由 egui 采样底层画布纹理。
+pub fn base_texture_active(ctx: &egui::Context) -> bool {
+    base_texture(ctx).is_some()
+}
+
+/// 取走本帧的底层画布纹理。
+fn base_texture(ctx: &egui::Context) -> Option<egui::TextureId> {
+    ctx.data(|d| d.get_temp::<Option<egui::TextureId>>(egui::Id::unique("lumino.base-texture")))
+        .flatten()
+}
+
 pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache) {
     theme::apply(ui.ctx());
     crate::fonts::install(ui.ctx());
@@ -150,6 +166,17 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     );
     root.set_clip_rect(full);
     root.spacing_mut().item_spacing = egui::Vec2::ZERO;
+    // 底层画布：整窗采样 lumino-gfx 的离屏纹理（取代 gfx → surface 的 blit）。
+    // 必须最先画，后面的 band / 面板都在它上面。
+    if let Some(id) = base_texture(ui.ctx()) {
+        root.painter().image(
+            id,
+            full,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+
     // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 iced 点击）。
     menu::clear_blocked(ui.ctx());
 

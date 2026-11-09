@@ -124,7 +124,14 @@ impl Host {
                 tracing::warn!("device lost 置位：本帧放弃 blit 与 iced 渲染（等待重连）");
                 return;
             }
-            wgpu_thread.copy_offscreen_to_surface(frame, &gfx.device, &gfx.queue);
+            // 叠加层接管底层时：把离屏纹理交给 egui 采样，跳过直接 blit，
+            // 否则同一帧会被写两遍（egui 之后还会整窗画一遍）。
+            if crate::host::overlay_enabled() && egui_canvas_enabled() {
+                self.egui_editor_texture = wgpu_thread.latest_texture_view();
+            } else {
+                self.egui_editor_texture = None;
+                wgpu_thread.copy_offscreen_to_surface(frame, &gfx.device, &gfx.queue);
+            }
         }
 
         // 提交了「免等待」帧且登记了收尾时，渲染线程不会主动唤醒 UI：
@@ -226,4 +233,13 @@ impl Host {
 
         true
     }
+}
+
+/// `LUMINO_EGUI_CANVAS=1` 时由 egui 采样编辑器画布纹理（跳过 gfx → surface 的 blit）。
+///
+/// 默认关闭：整窗底层的接管需要真机逐项验收（卷帘 / 走带 / 瀑布流三条路径），
+/// 验证通过后再翻默认值并删除 iced 侧的占位。
+fn egui_canvas_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("LUMINO_EGUI_CANVAS").is_some_and(|v| v != "0"))
 }

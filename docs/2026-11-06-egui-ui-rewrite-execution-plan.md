@@ -1686,14 +1686,36 @@ callback / 多视口 / 截图能力。
     千分位勾选可见）、**数据曲线**（数据来源 / 曲线参数 4 项 / 外观 4 色 + 2 线宽 +
     字号 24 px）。证据图：`target/r2.png`、`r3-counter.png`、`r4-curve.png`。
 
-**Task 1.3（下一步）：编辑器画布（卷帘 / 走带）从 iced 通道交给 egui/wgpu**
+**Task 1.3（第四十七步）：编辑器画布 → egui 外部纹理通道（脚手架，默认关闭）**
 
-- 现状：画布仍由 `lumino-gfx` 经 iced 通道绘制；`lumino-ui` 仍有 40 个 iced 依赖；
-  iced 视频导出视图仍是叠加层关闭时的默认路径；`ShapeDrawerCanvas` 的 iced
-  `Program` 仍编译。
-- 下一步：
-  1. 用已建成的外部纹理桥（瀑布流同款）把卷帘 / 走带输出交给 egui 采样，
-     iced 侧只留占位；
-  2. 把叠加层改为默认开启，删掉 iced 视频导出视图与 `ShapeDrawerCanvas`，
-     逐步移除 `lumino-ui` 的 iced 依赖；
-  3. 最后做工作区级 iced 归零检查（`cargo tree -p lumino-ui` 无 iced-*）。
+- **能力**：`WgpuRenderThread::latest_texture_view()` —— 把渲染线程的离屏纹理视图
+  按代次缓存后交给 UI 线程（`Arc<TextureView>`，`Arc::as_ptr` 判代次，免每帧重建）。
+- **接线**：`Host.egui_editor_texture`；`OverlayFrame.editor_texture`；叠加层用
+  `Painter::set_external_texture(EDITOR_TEXTURE_ID)` 注册，并在 `show_bands` 最底层
+  整窗采样（`chrome::set_base_texture` / `base_texture_active`）。
+- **开关**：`LUMINO_EGUI_CANVAS=1` 时**跳过** gfx → surface 的 `copy_offscreen_to_surface`，
+  由 egui 画底层；默认关闭，行为与之前逐像素一致。
+- **已修**：接管底层时 `piano_roll::show` 不再铺不透明底色（否则会盖掉底层画布）。
+- 验收（默认路径）：
+  - `lumino-gfx` 273/273、`lumino-ui` lib 870/870、`ui-parity` 12/12、
+    `ui-egui` 全量（`theme_palette` 需 `--test-threads=1`，见下）；
+  - `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **未通过（诚实记录）**：`LUMINO_EGUI_CANVAS=1` 真机运行时，画布区域的
+  **播放指示线（红色）消失**——`primitives` 从 62 增到 63（底层 image 已进
+  tessellation），说明图元在画、但画布区域仍被某层不透明内容遮挡或纹理未采到。
+  已排除 `piano_roll` 底色（已在该模式下跳过）。CA=1 vs CA=0 的画布裁剪区
+  平均通道差 26.4、最大 94，差异集中在缺失的指示线与网格边缘。
+  因此该通道**尚未完成**，默认关闭，下一步要继续定位遮挡层
+  （候选：`draw_chrome` 的网格/滚动条底色、瀑布流右侧栏面板、工具面板空态）。
+- **既有缺陷（与本次改动无关）**：`theme_palette` 并行执行会 `STATUS_ACCESS_VIOLATION`
+  （`git stash` 后复现），单线程全绿；已按单线程口径验收。
+
+**Task 1.3（下一步）：定位画布遮挡层 → 翻转 `LUMINO_EGUI_CANVAS` 默认值**
+
+1. 在 `LUMINO_EGUI_CANVAS=1` 下把底层 image 临时改成纯色/红染，确认图元可见性；
+2. 逐层关闭 `show_bands` 里的候选绘制（piano_roll 网格/滚动条、右侧栏、工具面板），
+   找出遮挡者并改为「有底层时不画」；
+3. 三条视图路径（卷帘 / 走带 / 瀑布流）真机对照后，翻默认值并删除 iced 侧占位；
+4. 随后删 iced 视频导出视图与 `ShapeDrawerCanvas::Program`，把 `lumino-ui` 的
+   40 个 iced 依赖逐项清零。

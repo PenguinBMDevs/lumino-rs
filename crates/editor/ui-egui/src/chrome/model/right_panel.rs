@@ -23,6 +23,12 @@ pub enum RightSidebarPanelModel {
 /// 面板关闭时宿主注销，egui 侧不会持有 wgpu 资源。
 pub const WATERFALL_TEXTURE_ID: egui::TextureId = egui::TextureId::User(0x4C55_4D49_4E46);
 
+/// 编辑器画布（卷帘 / 走带）离屏纹理的 egui 外部纹理 ID。
+///
+/// 由 `lumino-gfx` 渲染线程产出、宿主每帧注册；egui 在最底层整窗采样它，
+/// 取代原先「gfx 直接 blit 到 surface」的通道。
+pub const EDITOR_TEXTURE_ID: egui::TextureId = egui::TextureId::User(0x4C55_4D49_4E45);
+
 /// 钢琴瀑布流面板。
 ///
 /// 瀑布流内容由 `lumino-gfx` 侧离屏渲染成 wgpu 纹理，宿主把它注册成 egui
