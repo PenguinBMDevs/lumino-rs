@@ -4,7 +4,7 @@
 //! 几何对齐生产 iced 视图：内边距 24、分区标题 16px、标签列宽按行给定、
 //! 控件默认 200 宽、行间距 8、分区之间 16。
 
-use egui::{Align, FontId, RichText, Vec2};
+use egui::{Align, FontId, RichText, Stroke, Vec2};
 
 pub use crate::chrome::VideoExportAction;
 mod widgets;
@@ -73,9 +73,14 @@ fn content(ui: &mut egui::Ui, model: &VideoExportModel) {
         scroll.floating = false;
     }
     let visuals = ui.visuals_mut();
-    visuals.widgets.inactive.fg_stroke.color = theme::selected_bg();
-    visuals.widgets.hovered.fg_stroke.color = theme::hover_border();
-    visuals.widgets.active.fg_stroke.color = theme::active_bg();
+    // 复选框的框线与勾选笔都用 `widgets.*.fg_stroke`：默认弱色在浅色面板上几乎看不见。
+    visuals.widgets.inactive.fg_stroke = Stroke::new(1.5, theme::accent());
+    // 滑杆轨道与复选框底都用 g_fill：不能设成面板底色，否则轨道会看不见。
+    visuals.widgets.inactive.bg_fill = theme::selected_bg();
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, theme::selected_bg());
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.5, theme::accent());
+    visuals.widgets.hovered.bg_fill = theme::toolbar_bg();
+    visuals.widgets.active.fg_stroke = Stroke::new(1.5, theme::accent());
 
     egui::ScrollArea::vertical()
         .id_salt("lumino.video-export.scroll")

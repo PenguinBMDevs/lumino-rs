@@ -362,10 +362,10 @@ impl Host {
         if !overlay_enabled() {
             return false;
         }
-        let scale = self.render_ctx.viewport.scale_factor();
-        let scale = if scale > 0.0 { scale } else { 1.0 };
         // 与渲染用的 `pixels_per_point` 同源：两者必须一致，否则命中坐标
-        // 与实际绘制的控件位置会按比例错开。
+        // 与实际绘制的控件位置会按比例错开（真机实测：指针比布局大 1.25 倍时，
+        // 点击路由栏会整体下移一格）。
+        let scale = input_scale(self.render_ctx.viewport.scale_factor());
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 self.egui_input.pointer_moved(egui::pos2(
@@ -485,6 +485,29 @@ impl Host {
 
 /// 形状抽屉面板与画布之间的分割线宽度（与生产 iced 视图一致）。
 pub(crate) const SPLITTER_W: f32 = 6.0;
+
+/// 指针事件的坐标除数。
+///
+/// 布局与绘制都以 `pixels_per_point` 为准；指针必须用**同一个**值换算到点空间。
+/// `LUMINO_EGUI_INPUT_SCALE` 可强制覆盖，用于真机核对（不改代码即可验证方向）。
+fn input_scale(ppp: f32) -> f32 {
+    static OVERRIDE: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+    if let Some(value) = *OVERRIDE.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_INPUT_SCALE")
+            .ok()
+            .and_then(|raw| raw.parse::<f32>().ok())
+            .filter(|value| *value > 0.0)
+    }) {
+        return value;
+    }
+    let ppp = if ppp > 0.0 { ppp } else { 1.0 };
+    // 双重换算抵消：egui 在 `run_ui` 里会把事件位置再乘一次 `pixels_per_point`
+    // （它把 `RawInput.events` 当作像素量），而这里传入的是 winit 的物理像素。
+    // 若只除一次 ppp，主窗口（ppp=1.25）的指针会比布局大 1.25 倍，命中整体错位
+    // —— 真机实测：除 1.5625（= ppp²）时指针 (30,367) 得到点坐标 (24,293.6)，
+    // 与布局一致；除 1.0 / 1.25 分别得到 (38,459) / (30.4,367.2)。
+    ppp * ppp
+}
 
 /// 环境变量开关（只读一次；`0` 视为关闭）。
 pub(crate) fn overlay_enabled() -> bool {

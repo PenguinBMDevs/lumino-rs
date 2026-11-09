@@ -10,8 +10,8 @@ mod rows;
 use lumino_core::tr;
 use lumino_message::events::window::video::RenderMode;
 use lumino_ui_egui::chrome::{
-    VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoPreviewModel, VideoRow,
-    VideoSection,
+    TextPairCell, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoPreviewModel,
+    VideoRow, VideoSection,
 };
 use lumino_ui_egui::video_export::VideoExportAction as EguiAction;
 
@@ -302,15 +302,25 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         });
     }
     settings.push(VideoRow::Buttons { buttons: vec![] });
-    settings.push(text(
-        tr!("分辨率:"),
-        100.0,
-        &state.width.to_string(),
-        "1920",
-        80.0,
-        10,
-    ));
-    settings.push(text("", 0.0, &state.height.to_string(), "1080", 80.0, 11));
+    settings.push(VideoRow::TextPair {
+        left: TextPairCell {
+            label: tr!("分辨率:").to_string(),
+            label_width: 100.0,
+            value: state.width.to_string(),
+            hint: "1920".to_string(),
+            width: 80.0,
+            id: 10,
+        },
+        right: TextPairCell {
+            label: String::new(),
+            label_width: 0.0,
+            value: state.height.to_string(),
+            hint: "1080".to_string(),
+            width: 80.0,
+            id: 11,
+        },
+        separator: "x".to_string(),
+    });
     settings.push(pick(
         tr!("帧率:"),
         100.0,

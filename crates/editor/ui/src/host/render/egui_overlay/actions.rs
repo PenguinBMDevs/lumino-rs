@@ -9,6 +9,7 @@ use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::brush_settings::BrushSettingsAction;
 use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
+use lumino_ui_egui::chrome::sidebar::{SidebarRoute, take_route_action};
 use lumino_ui_egui::cloud_browser::CloudBrowserAction;
 use lumino_ui_egui::cloud_connect::CloudConnectAction;
 use lumino_ui_egui::collaboration::CollaborationAction;
@@ -54,6 +55,7 @@ pub(super) struct OverlayActions {
     pub shape_drawer: Option<ShapeDrawerAction>,
     pub shape_canvas: Vec<ShapeCanvasAction>,
     pub video_export: Option<VideoExportAction>,
+    pub sidebar_route: Option<SidebarRoute>,
 }
 
 impl OverlayActions {
@@ -83,6 +85,7 @@ impl OverlayActions {
             shape_drawer: lumino_ui_egui::shape_drawer::take_action(ctx),
             shape_canvas: lumino_ui_egui::shape_canvas::take_actions(ctx),
             video_export: lumino_ui_egui::video_export::take_action(ctx),
+            sidebar_route: take_route_action(ctx),
         }
     }
 }
@@ -137,6 +140,33 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(route) = actions.sidebar_route {
+            use crate::sidebar::Event as SidebarEvent;
+            let event = match route {
+                SidebarRoute::PianoRollGroup => {
+                    SidebarEvent::GroupToggled(crate::sidebar::GroupId::PianoRoll)
+                }
+                SidebarRoute::ProjectGroup => {
+                    SidebarEvent::GroupToggled(crate::sidebar::GroupId::Project)
+                }
+                SidebarRoute::WaterfallGroup => {
+                    SidebarEvent::GroupToggled(crate::sidebar::GroupId::Waterfall)
+                }
+                SidebarRoute::RendererGroup => {
+                    SidebarEvent::GroupToggled(crate::sidebar::GroupId::Renderer)
+                }
+                SidebarRoute::FilePanel => SidebarEvent::PanelToggled(crate::sidebar::Route::File),
+                SidebarRoute::AutomationPanel => SidebarEvent::AutomationPanelToggled,
+                SidebarRoute::VideoExport => {
+                    SidebarEvent::RouteUpdated(crate::sidebar::Route::VideoExport)
+                }
+                SidebarRoute::AudioExport => {
+                    SidebarEvent::RouteUpdated(crate::sidebar::Route::AudioExport)
+                }
+            };
+            tracing::info!("egui 路由栏动作：{route:?}");
+            self.dispatch_overlay_message(crate::message::Message::Sidebar(event));
         }
         if let Some(action) = actions.video_export
             && let Some(message) = self.root.video_export_action_message(&action)

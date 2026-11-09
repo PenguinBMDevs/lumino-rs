@@ -1654,12 +1654,46 @@ callback / 多视口 / 截图能力。
   按 30 + 48k 绘制且与生产模型一致，因此差异只能来自 iced `sidebar/route.rs`
   的列内边距 / 间距（`bar_button` 之外还有一处 48 级别的偏移）。
 
-**Task 1.3（下一步）：把 iced 路由栏的落点量出来 → 两边统一**
+**Task 1.3（第四十六步）：主窗口指针坐标 1.25× 错位修复 + 路由栏接管 — 已完成**
 
-- 方法：在 `sidebar/route.rs` 的 `view` 里按 `Event` 打点（或复用
-  `LUMINO_EGUI_DEBUG_RECTS` 的思路给 iced 也加一个 gated 打印），得到 iced 每个
-  `bar_button` 的实际屏幕 y，再决定是「egui 绘制跟随 iced 的偏移」还是
-  「把 iced 的列内边距改成 0 让两边都从 30 开始」。
-- 对齐后：路由栏改由 egui 接管点击 + 计入占用区（`SidebarRoute` 通道代码已在
-  `2abe055c` 之后的实验中被验证可用，回滚时删除，需要时可重新加回）。
-- 随后补视频导出面板（计数器 / 数据曲线）真机截图，再进入编辑器画布接管。
+- **根因（真机实测）**：叠加层把 `RawInput.events` 当作像素量，而 egui 在 `run_ui`
+  里又按 `pixels_per_point` 换算一次，导致主窗口（ppp=1.25）里指针比布局大 1.25 倍。
+  实测：光标物理 (30,367) → egui 看到 `(30.4, 367.2)`（应为 `(24, 293.6)`）；
+  代入后所有"怪现象"全部自洽——点 247 落在 PlayCircle → `GroupToggled(Waterfall)`、
+  点 367 超出路由栏 → 无事件、点 168 → Automation、点 210 → Project。
+- **修复**：新增 `input_scale(ppp)`，默认 `ppp * ppp`（抵消 egui 的二次换算），
+  `LUMINO_EGUI_INPUT_SCALE` 可覆盖以便核对。实测除 1.5625 时指针为
+  `(24.3, 293.8)`，与布局一致。**这是主窗口所有 egui 命中（标题栏菜单 / 工具栏 /
+  面板）的通用修复**；独立对话框窗口 ppp=1.0，行为不变。
+- **路由栏接管**（坐标修正后才可行）：`SidebarRoute` 8 项语义枚举 + 动作通道，
+  `route_button` 注册 `interact` 并推送动作，整列计入 `blocked`（同一次点击不会
+  再落到 iced）；生产侧按 `GroupToggled / PanelToggled / AutomationPanelToggled /
+  RouteUpdated` 分发。
+- **视频导出面板打磨**（真机暴露）：
+  - 复选框勾选笔与滑杆轨道共用 `widgets.inactive.fg_stroke/bg_fill`：默认弱色在
+    浅色面板上勾选不可见；改为勾选笔 `accent`、轨道 `selected_bg`（设成面板底色
+    会让轨道消失，已用真机截图确认）。
+  - 分辨率从两行改为「标签 + 1920 x 1080」一行（与 iced 同）。
+- 验收：
+  - `sidebar_route_bands` 3/3（8 个槽位逐一映射、越界槽位不产出、底部按钮不误判）；
+  - `video_export_bands` 8/8、`egui_chrome` 89/89、`lumino-ui` lib 870/870、
+    `lumino-gfx` 273/273、`ui-parity` 12/12；`clippy -D warnings`、`fmt --check`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+    `tests/ui-baseline` 零改动；
+  - **真机**（ppp=1.25）：路由栏点击产出 `egui 路由栏动作：RendererGroup` →
+    `VideoExport`；视频导出面板三种模式实拍：默认（Lumino瀑布流）、
+    **计数器**（模板 / 恢复默认·完整模板 / 字体三分支提示 / 对齐 / 字号 40 px /
+    千分位勾选可见）、**数据曲线**（数据来源 / 曲线参数 4 项 / 外观 4 色 + 2 线宽 +
+    字号 24 px）。证据图：`target/r2.png`、`r3-counter.png`、`r4-curve.png`。
+
+**Task 1.3（下一步）：编辑器画布（卷帘 / 走带）从 iced 通道交给 egui/wgpu**
+
+- 现状：画布仍由 `lumino-gfx` 经 iced 通道绘制；`lumino-ui` 仍有 40 个 iced 依赖；
+  iced 视频导出视图仍是叠加层关闭时的默认路径；`ShapeDrawerCanvas` 的 iced
+  `Program` 仍编译。
+- 下一步：
+  1. 用已建成的外部纹理桥（瀑布流同款）把卷帘 / 走带输出交给 egui 采样，
+     iced 侧只留占位；
+  2. 把叠加层改为默认开启，删掉 iced 视频导出视图与 `ShapeDrawerCanvas`，
+     逐步移除 `lumino-ui` 的 iced 依赖；
+  3. 最后做工作区级 iced 归零检查（`cargo tree -p lumino-ui` 无 iced-*）。

@@ -7,7 +7,7 @@
 
 mod track_list;
 
-use egui::{Color32, Rect, Vec2};
+use egui::{Color32, Rect, Sense, Vec2};
 
 use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon};
 use crate::icons::Icon;
@@ -15,6 +15,48 @@ use crate::theme;
 
 /// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。
 pub(crate) const ROUTE_BAR_W: f32 = 48.0;
+
+/// 路由栏条目（与生产 `ROUTES` 语义一一对应，不含 iced 类型）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SidebarRoute {
+    /// 钢琴卷帘组父按钮。
+    PianoRollGroup,
+    /// 音轨列表子按钮。
+    FilePanel,
+    /// 自动化面板子按钮。
+    AutomationPanel,
+    /// 工程走带组父按钮。
+    ProjectGroup,
+    /// 播放器（瀑布流）组父按钮。
+    WaterfallGroup,
+    /// 渲染组父按钮。
+    RendererGroup,
+    /// 视频导出子按钮。
+    VideoExport,
+    /// 音频导出子按钮。
+    AudioExport,
+}
+
+/// 路由栏动作通道。
+const ROUTE_ACTION_ID: &str = "lumino.sidebar.route-action";
+
+/// 记录本帧路由栏点击（一帧一条）。
+pub fn push_route_action(ctx: &egui::Context, route: SidebarRoute) {
+    if ctx
+        .data(|d| d.get_temp::<Option<SidebarRoute>>(egui::Id::unique(ROUTE_ACTION_ID)))
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ROUTE_ACTION_ID), Some(route)));
+}
+
+/// 取走本帧路由栏点击。
+pub fn take_route_action(ctx: &egui::Context) -> Option<SidebarRoute> {
+    ctx.data_mut(|d| d.remove_temp::<Option<SidebarRoute>>(egui::Id::unique(ROUTE_ACTION_ID)))
+        .flatten()
+}
 
 /// 调试开关：`LUMINO_EGUI_DEBUG_RECTS=1` 时把每个路由按钮的矩形打进日志，
 /// 用于和 iced 的命中盒逐项对齐（真机验收不必再靠截图猜坐标）。
@@ -40,6 +82,9 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
 
     // 路由栏点击仍由 iced 处理（egui 只负责绘制），不要把这一列计入占用区，
     // 否则 iced 的路由按钮会收不到事件、整列变成死区。
+    // 点击由 egui 处理：整列计入占用区，避免同一次点击又落到下面的 iced 按钮上。
+    super::menu::extend_blocked(ui.ctx(), [route]);
+
     route_bar(ui, rect, model, icons);
 
     if model.panel_visible {
@@ -80,7 +125,17 @@ fn route_bar(
                 SidebarRouteIcon::AudioExport => Icon::MusicNote,
             };
             let active = item.active.then(|| route_indicator(item.icon));
-            route_button(ui, icons, icon, left, y, active);
+            let route = match item.icon {
+                SidebarRouteIcon::PianoRoll => SidebarRoute::PianoRollGroup,
+                SidebarRouteIcon::File => SidebarRoute::FilePanel,
+                SidebarRouteIcon::Automation => SidebarRoute::AutomationPanel,
+                SidebarRouteIcon::Project => SidebarRoute::ProjectGroup,
+                SidebarRouteIcon::Waterfall => SidebarRoute::WaterfallGroup,
+                SidebarRouteIcon::Renderer => SidebarRoute::RendererGroup,
+                SidebarRouteIcon::VideoExport => SidebarRoute::VideoExport,
+                SidebarRouteIcon::AudioExport => SidebarRoute::AudioExport,
+            };
+            route_button(ui, icons, icon, left, y, active, Some(route));
             y += ROUTE_BTN;
         }
         route_bar_bottom(ui, rect, model, icons);
@@ -91,37 +146,85 @@ fn route_bar(
     let active = model
         .piano_roll_visible
         .then(|| SidebarGroup::PianoRoll.parent_color());
-    route_button(ui, icons, Icon::Keys, left, y, active);
+    route_button(
+        ui,
+        icons,
+        Icon::Keys,
+        left,
+        y,
+        active,
+        Some(SidebarRoute::PianoRollGroup),
+    );
     y += ROUTE_BTN;
 
     if model.active_group == Some(SidebarGroup::PianoRoll) {
         let active = model
             .file_active
             .then(|| SidebarGroup::PianoRoll.child_color());
-        route_button(ui, icons, Icon::FolderTree, left, y, active);
+        route_button(
+            ui,
+            icons,
+            Icon::FolderTree,
+            left,
+            y,
+            active,
+            Some(SidebarRoute::FilePanel),
+        );
         y += ROUTE_BTN;
 
         let active = model
             .automation_panel_visible
             .then(|| SidebarGroup::PianoRoll.child_color());
-        route_button(ui, icons, Icon::WaveForm, left, y, active);
+        route_button(
+            ui,
+            icons,
+            Icon::WaveForm,
+            left,
+            y,
+            active,
+            Some(SidebarRoute::AutomationPanel),
+        );
         y += ROUTE_BTN;
     }
 
     let active = (model.active_group == Some(SidebarGroup::Project))
         .then(|| SidebarGroup::Project.parent_color());
-    route_button(ui, icons, Icon::Arrangement, left, y, active);
+    route_button(
+        ui,
+        icons,
+        Icon::Arrangement,
+        left,
+        y,
+        active,
+        Some(SidebarRoute::ProjectGroup),
+    );
     y += ROUTE_BTN;
 
     let active = model
         .waterfall
         .then(|| SidebarGroup::Waterfall.parent_color());
-    route_button(ui, icons, Icon::PlayCircle, left, y, active);
+    route_button(
+        ui,
+        icons,
+        Icon::PlayCircle,
+        left,
+        y,
+        active,
+        Some(SidebarRoute::WaterfallGroup),
+    );
     y += ROUTE_BTN;
 
     let active = (model.active_group == Some(SidebarGroup::Renderer))
         .then(|| SidebarGroup::Renderer.parent_color());
-    route_button(ui, icons, Icon::Download, left, y, active);
+    route_button(
+        ui,
+        icons,
+        Icon::Download,
+        left,
+        y,
+        active,
+        Some(SidebarRoute::RendererGroup),
+    );
     y += ROUTE_BTN;
 
     // 渲染组子按钮（视频 / 音频导出）：仅组激活时出现。
@@ -129,13 +232,29 @@ fn route_bar(
         let active = model
             .video_export_visible
             .then(|| SidebarGroup::Renderer.child_color());
-        route_button(ui, icons, Icon::VideoCamera, left, y, active);
+        route_button(
+            ui,
+            icons,
+            Icon::VideoCamera,
+            left,
+            y,
+            active,
+            Some(SidebarRoute::VideoExport),
+        );
         y += ROUTE_BTN;
 
         let active = model
             .audio_export_visible
             .then(|| SidebarGroup::Renderer.child_color());
-        route_button(ui, icons, Icon::MusicNote, left, y, active);
+        route_button(
+            ui,
+            icons,
+            Icon::MusicNote,
+            left,
+            y,
+            active,
+            Some(SidebarRoute::AudioExport),
+        );
     }
 
     // 底部：卷帘方向（可选）+ 混音台（常驻）。
@@ -190,7 +309,7 @@ fn route_bar_bottom(
 
     let mut by = rect.bottom() - ROUTE_BTN * bottom.len() as f32;
     for (icon, active) in bottom {
-        route_button(ui, icons, icon, left, by, active);
+        route_button(ui, icons, icon, left, by, active, None);
         by += ROUTE_BTN;
     }
 }
@@ -203,17 +322,35 @@ fn route_button(
     left: f32,
     y: f32,
     active: Option<Color32>,
+    route: Option<SidebarRoute>,
 ) {
-    if debug_rects() {
-        tracing::warn!(
-            icon = ?icon,
-            x = left,
-            y,
-            w = ROUTE_BAR_W,
-            h = ROUTE_BTN,
-            active = active.is_some(),
-            "DEBUG route button rect"
-        );
+    // 路由栏由 egui 不透明绘制，必须同时接管点击：否则 iced 的同位置按钮被盖住，
+    // 或者两边各自命中导致「打开又立刻关闭」。
+    let hit = Rect::from_min_size(egui::pos2(left, y), Vec2::new(ROUTE_BAR_W, ROUTE_BTN));
+    let response = ui.interact(
+        hit,
+        egui::Id::unique(("lumino.route", left as i32, y as i32)),
+        Sense::click(),
+    );
+    if let Some(route) = route {
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(
+                egui::Role::Button,
+                true,
+                active.is_some(),
+                format!("{route:?}"),
+            )
+        });
+        if debug_rects() {
+            tracing::warn!(?route, x = left, y, "DEBUG route button rect");
+        }
+        if response.clicked() {
+            push_route_action(ui.ctx(), route);
+        }
+    }
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(hit, 0, Color32::from_white_alpha(10));
     }
     if let Some(color) = active {
         ui.painter().rect_filled(

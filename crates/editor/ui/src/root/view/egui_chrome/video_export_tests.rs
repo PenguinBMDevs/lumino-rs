@@ -44,8 +44,11 @@ fn panel_model_has_all_main_sections() {
             .any(|r| matches!(r, VideoRow::Slider { id: 6, .. }))
     );
     assert!(
-        rows.iter()
-            .any(|r| matches!(r, VideoRow::Text { id: 10, .. }))
+        rows.iter().any(|r| matches!(
+            r,
+            VideoRow::TextPair { left, .. } if left.id == 10
+        )),
+        "分辨率应折成「标签 + 1920 x 1080」一行"
     );
     assert!(
         rows.iter()
