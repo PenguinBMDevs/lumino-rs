@@ -6,18 +6,20 @@
 //! 041C 阶段 3：目标既可以是已 Bake 的 DrawnShape（走 `edit_shape`），
 //! 也可以是单支 `PendingComposed`（只改 pending model + 预览音符）。
 
-use iced_core::Point;
-use lumino_core::shape::{ShapeModel, ShapeOp};
+use lumino_core::shape::ShapeModel;
 use lumino_editor_state::editor_state::{
-    HandleKind, Mods, Zoom, apply_drag, apply_group_drag, box_handles, hit_test_box, union_model,
+    HandleKind, Mods, Zoom, apply_drag, apply_group_drag, hit_test_box, union_model,
 };
-use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, ShapeNote};
+use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef};
 
 use crate::Editor;
+use crate::interaction::shape_bridge::source_from_model;
 
-use super::shape_bridge::source_from_model;
-
+mod commit;
 mod group;
+mod handles;
+
+pub(crate) use handles::ShapeEditHandles;
 
 /// 手柄编辑目标
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +236,10 @@ impl Editor {
             y: self.editor_state.view.zoom_y,
         };
         let include_center = self.edit_allows_center(target);
+        let mods = Mods {
+            ctrl: self.ctrl_pressed(),
+            shift: self.shift_pressed(),
+        };
         // 旋转热区优先于锚点：角外那一圈必须能转，不能被角锚点的 10px 容差吃掉。
         let handle = if self.in_shape_rotate_zone(&model, (tick, key)) {
             HandleKind::Turn
@@ -243,6 +249,12 @@ impl Editor {
                 None => return false,
             }
         };
+        // DRAW-020：Shift + 边手柄 = 倾斜（按整 key 滑动）；不按 Shift 时仍是单边拉伸。
+        let handle = if mods.shift {
+            skew_from_side(handle)
+        } else {
+            handle
+        };
         self.shape_edit = Some(ShapeEditState {
             target,
             handle,
@@ -251,10 +263,7 @@ impl Editor {
             original_composed,
             current: model,
             group_parts,
-            mods: Mods {
-                ctrl: self.ctrl_pressed(),
-                shift: self.shift_pressed(),
-            },
+            mods,
         });
         true
     }
@@ -347,169 +356,18 @@ impl Editor {
         true
     }
 
-    /// 松手提交；无实际变化或失败时恢复原几何
-    pub(crate) fn finish_shape_edit(&mut self) -> bool {
-        let Some(state) = self.shape_edit.take() else {
-            return false;
-        };
-        let changed = match state.target {
-            ShapeEditTarget::Group => self.editor_state.pending_composed != state.original_composed,
-            _ => state.current != state.original,
-        };
-        match state.target {
-            ShapeEditTarget::Drawn { drawn_id, model_id } => {
-                if !changed {
-                    let source = source_from_model(&state.original);
-                    self.editor_state.shape_select.set_source(drawn_id, source);
-                    return false;
-                }
-                let ok = self.edit_shape(model_id, state.current);
-                if !ok {
-                    let source = source_from_model(&state.original);
-                    self.editor_state.shape_select.set_source(drawn_id, source);
-                }
-                self.grid_cache.clear();
-                ok
-            }
-            ShapeEditTarget::PendingComposed { index } => {
-                if !changed {
-                    self.restore_pending_part(index, &state.original);
-                    self.refresh_pending_mirror_geometry();
-                    self.grid_cache.clear();
-                    return false;
-                }
-                let notes = self.part_notes_for_edit(&state.current, state.current.track as usize);
-                if let Some(part) = self
-                    .editor_state
-                    .pending_composed
-                    .get_mut(index)
-                    .and_then(|composed| composed.results.first_mut())
-                {
-                    part.model = state.current;
-                    part.notes = notes;
-                }
-                self.pending_edit_undo.push(state.original_composed);
-                while self.pending_edit_undo.len() > 64 {
-                    self.pending_edit_undo.remove(0);
-                }
-                self.pending_edit_redo.clear();
-                self.pending_composed_redo.clear();
-                self.refresh_pending_mirror_geometry();
-                self.grid_cache.clear();
-                true
-            }
-            ShapeEditTarget::Group => {
-                if !changed {
-                    self.restore_group_snapshot(state.original_composed);
-                    self.grid_cache.clear();
-                    return false;
-                }
-                // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
-                self.pending_edit_undo.push(state.original_composed);
-                while self.pending_edit_undo.len() > 64 {
-                    self.pending_edit_undo.remove(0);
-                }
-                self.pending_edit_redo.clear();
-                self.pending_composed_redo.clear();
-                self.refresh_pending_mirror_geometry();
-                self.grid_cache.clear();
-                true
-            }
-        }
-    }
-
-    /// 取消拖拽并恢复原几何（Esc / 退出编辑图形）
-    pub(crate) fn cancel_shape_edit(&mut self) {
-        let Some(state) = self.shape_edit.take() else {
-            return;
-        };
-        match state.target {
-            ShapeEditTarget::Drawn { drawn_id, .. } => {
-                let source = source_from_model(&state.original);
-                self.editor_state.shape_select.set_source(drawn_id, source);
-            }
-            ShapeEditTarget::PendingComposed { index } => {
-                self.restore_pending_part(index, &state.original);
-                self.refresh_pending_mirror_geometry();
-            }
-            ShapeEditTarget::Group => {
-                self.restore_group_snapshot(state.original_composed);
-            }
-        }
-        self.grid_cache.clear();
-    }
-
-    fn restore_pending_part(&mut self, index: usize, model: &ShapeModel) {
-        let notes = self.part_notes_for_edit(model, model.track as usize);
-        if let Some(part) = self
-            .editor_state
-            .pending_composed
-            .get_mut(index)
-            .and_then(|composed| composed.results.first_mut())
-        {
-            part.model = model.clone();
-            part.notes = notes;
-        }
-    }
-
-    /// Live 的结果音符来自各 `from` 的原始音符；直接按展平几何重生成会得到
-    /// 一条错误的连接线。其余单支模型可按当前 model 重生成。
-    fn part_notes_for_edit(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
-        if let Some(ShapeOp::Live(params)) =
-            model.ops.iter().find(|op| matches!(op, ShapeOp::Live(_)))
-            && !params.from.is_empty()
-        {
-            let mut notes = Vec::new();
-            for from in &params.from {
-                notes.extend(self.shape_notes_of(from, from.track as usize));
-            }
-            notes
-        } else {
-            self.shape_notes_of(model, track)
-        }
-    }
-
-    /// 编辑态锚点（屏幕坐标）：8 个箱体锚点 + 可选中心锚点。
-    pub(crate) fn shape_edit_handles(&self) -> ShapeEditHandles {
-        let Some((target, model)) = self.armed_edit_target() else {
-            return ShapeEditHandles::default();
-        };
-        let zoom = Zoom {
-            x: self.editor_state.view.zoom_x,
-            y: self.editor_state.view.zoom_y,
-        };
-        let include_center = self.edit_allows_center(target);
-        let Some(layout) = box_handles(&model, zoom, include_center) else {
-            return ShapeEditHandles::default();
-        };
-        let (center, box_kinds): (Vec<_>, Vec<_>) = layout
-            .handles
-            .into_iter()
-            .partition(|(kind, _)| matches!(kind, HandleKind::Move));
-        ShapeEditHandles {
-            box_points: box_kinds
-                .into_iter()
-                .map(|(_, pos)| self.line_pos_screen_pos(pos))
-                .collect(),
-            center: center
-                .first()
-                .map(|(_, pos)| self.line_pos_screen_pos(*pos)),
-        }
-    }
-
     /// 是否正在拖拽形状手柄
     pub(crate) fn is_shape_editing(&self) -> bool {
         self.shape_edit.is_some()
     }
 }
 
-/// 编辑态锚点屏幕位置：8 个箱体锚点 + 可选中心锚点。
-#[derive(Debug, Default, Clone, PartialEq)]
-pub(crate) struct ShapeEditHandles {
-    /// 4 角 + 4 边中点
-    pub box_points: Vec<Point>,
-    /// 中心锚点（仅未 Bake 组合）
-    pub center: Option<Point>,
+/// Shift + 边手柄 = 倾斜；角点/中心/旋转热区不受影响。
+fn skew_from_side(handle: HandleKind) -> HandleKind {
+    match handle {
+        HandleKind::Side(_) => HandleKind::Skew,
+        other => other,
+    }
 }
 
 fn finite_geometry(model: &ShapeModel) -> bool {

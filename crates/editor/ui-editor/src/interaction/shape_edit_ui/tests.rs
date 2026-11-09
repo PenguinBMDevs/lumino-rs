@@ -537,3 +537,69 @@ fn test_group_edit_promotes_plain_pending_shapes() {
         (0.0, 60.0, 300.0, 64.0)
     );
 }
+
+#[test]
+fn test_shift_side_handle_tilts_by_whole_keys() {
+    let mut editor = editor_with_pending_composed();
+    enter_edit(&mut editor);
+    let bounds = model_bounds(&editor);
+    let cx = (bounds.0 + bounds.2) / 2.0;
+    let before = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .clone();
+
+    // 不按 Shift：同一点仍是单边拉伸
+    assert!(editor.begin_shape_edit(cx, bounds.1), "下边中点应命中");
+    assert!(
+        matches!(
+            editor.shape_edit.as_ref().map(|state| state.handle),
+            Some(HandleKind::Side(_))
+        ),
+        "不按 Shift 时下边中点应是单边拉伸"
+    );
+    editor.cancel_shape_edit();
+
+    // 按住 Shift：同一点变成倾斜
+    editor.set_shift_pressed(true);
+    assert!(
+        editor.begin_shape_edit(cx, bounds.1),
+        "Shift+下边中点应命中"
+    );
+    let state = editor.shape_edit.as_ref().expect("应进入拖拽");
+    assert!(
+        matches!(state.handle, HandleKind::Skew),
+        "Shift+边手柄应进入倾斜，实际 {:?}",
+        state.handle
+    );
+    let k = state.original.k;
+    assert!(editor.update_shape_edit(cx + 10.4, bounds.1));
+    assert!(editor.finish_shape_edit());
+    editor.set_shift_pressed(false);
+
+    let after = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .clone();
+    let center = (bounds.1 + bounds.3) / 2.0;
+    let mut shear: Option<f32> = None;
+    for (old, new) in before.geometry.anchors.iter().zip(&after.geometry.anchors) {
+        let dy = old.pos.1 - center;
+        if dy.abs() < 1e-6 {
+            continue;
+        }
+        let value = (new.pos.0 - old.pos.0) / dy;
+        if let Some(prev) = shear {
+            assert!(
+                (value - prev).abs() < 1e-3,
+                "同一 shear 应作用到所有行：{prev} vs {value}"
+            );
+        }
+        shear = Some(value);
+    }
+    let shear = shear.expect("应有非中心行锚点参与倾斜");
+    assert!(shear.abs() > 1e-6, "拖动应真的产生倾斜");
+    let steps = shear / k;
+    assert!(
+        (steps - steps.round()).abs() < 1e-3,
+        "倾斜每 key 位移应为 k={k} 的整数倍，实际 shear={shear}"
+    );
+}

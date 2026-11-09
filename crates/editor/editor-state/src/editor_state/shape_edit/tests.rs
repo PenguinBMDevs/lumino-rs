@@ -212,17 +212,35 @@ fn test_turn_snaps_15_degrees_and_shift_disables() {
 
 #[test]
 fn test_skew_is_integer_grid() {
-    let mut shape = line();
+    let mut shape = ShapeModel::new(3, 1, ShapeKind::Line, 4.0);
+    shape.geometry = ShapeGeometry::from_points([(0.0, 60.0), (120.0, 68.0)]);
+    let before = shape.geometry.anchors.clone();
     apply_drag(
         &mut shape,
         HandleKind::Skew,
-        (0.0, 60.0),
-        (10.4, 60.0),
+        (0.0, 64.0),
+        (10.4, 64.0),
         Mods::default(),
-        1.0,
+        4.0,
     );
-    let dx = shape.geometry.anchors[0].pos.0;
-    assert!((dx - 10.0 * (60.0 - 60.0)).abs() < 1e-6, "中心行不应移动");
+    // box 中心 key = 64；shear = round(10.4 / 4) * 4 = 12
+    let mut shear: Option<f32> = None;
+    for (old, new) in before.iter().zip(&shape.geometry.anchors) {
+        let dy = old.pos.1 - 64.0;
+        if dy.abs() < 1e-6 {
+            continue;
+        }
+        let value = (new.pos.0 - old.pos.0) / dy;
+        if let Some(prev) = shear {
+            assert!((value - prev).abs() < 1e-6, "同一 shear 应作用到所有行");
+        }
+        shear = Some(value);
+    }
+    let shear = shear.expect("应有非中心行锚点");
+    assert!(
+        (shear - 12.0).abs() < 1e-6,
+        "shear 应为整 key 的整数倍，实际 {shear}"
+    );
 }
 
 #[test]

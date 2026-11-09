@@ -167,6 +167,10 @@ impl Editor {
         };
         let include_center = self.edit_allows_center(target);
         if let Some(handle) = hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
+            // Shift + 边手柄 = 倾斜（与 `begin_shape_edit` 同口径）
+            if self.shift_pressed() && matches!(handle, HandleKind::Side(_)) {
+                return Some(mouse::Interaction::ResizingHorizontally);
+            }
             return Some(match handle {
                 HandleKind::Move => mouse::Interaction::Move,
                 HandleKind::ResizeCorner(Corner::Nw | Corner::Se) => {
