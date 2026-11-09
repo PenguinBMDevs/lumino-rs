@@ -1148,7 +1148,7 @@ callback / 多视口 / 截图能力。
   - 证据图：`target/sc-dialog5.png`、`sc-edit.png`（egui）、
     `sc-dialog-iced.png`（iced 对照）、`sc-compare4.png`（并排）。
 
-**Task 1.3（第二十九步）：自定义精度对话框迁移到 egui — 已完成（真实窗口待解锁）**
+**Task 1.3（第二十九步）：自定义精度对话框迁移到 egui — 已完成**
 
 - **模型**：`CustomPrecisionModel`（`titlebar` / 三连音数 / 分音符 / 「分音符」
   与「附点」「除以」标签 / 附点选项 / 除数 / 错误行 / 按钮）+
@@ -1160,27 +1160,27 @@ callback / 多视口 / 截图能力。
   34 高、间距 12），两列间距 20、右列相对左列垂直居中。
 - **动作**：`TupletCountChanged` / `NoteValueChanged` / `DotTypeChanged(DotType)` /
   `DivisorChanged` / `Confirm` / `Cancel` → `Message::CustomPrecision(...)`。
-- **顺带补的回归测试**：`toolbar_snap_bands` 2/2 —— 点击精度框必须产生
-  `ToolbarAction::ToggleSnapPicker`、菜单「Custom…」必须产生 `SnapCustom`
-  （这两个动作是打开本对话框的唯一入口）。
+- **入口回归测试**：`toolbar_snap_bands` 2/2 —— 点击精度框必须产生
+  `ToolbarAction::ToggleSnapPicker`、菜单「Custom…」必须产生 `SnapCustom`。
 - 验收：
-  - `custom_precision_bands` 4/4（确定 / 取消 / 分音符与除数输入回传 /
-    附点按钮回传 `DotType` / 错误行可访问）；
-  - `egui_chrome` 44/44（模型镜像：四个附点选项与选中态、错误行、标签；
-    六个动作映射）；
-  - `ui-egui` 全量（含 `toolbar_snap_bands`）、`lumino-gfx` 273/273、
-    `ui-parity` 12/12；`clippy -D warnings`、`check --bin lumino-rs`；
-    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
-- **未完成项（已在真实窗口复现，下一步修复）**：叠加层启用时，工具栏行的
-  egui 交互控件（精度框 / 洋葱皮下箭头）点击无响应，因此本对话框还无法从
-  真实窗口打开。无头测试证明几何与命中逻辑正确，问题在真实窗口的 egui 输入
-  映射/命中区域；标题栏菜单点击正常。修复后再补本对话框的真实窗口对照。
+  - `custom_precision_bands` 4/4；`egui_chrome` 44/44（模型镜像 + 六个动作）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（ppp=1.25、Light）：精度下拉 → `Custom…` 打开对话框（494×190），
+    与 iced 版本同区域对比——输入框区包围盒完全一致 (41,79)-(219,109)、
+    附点按钮起点与宽度一致 (82,137) 起、确定按钮 iced (466,99)-(590,140) vs
+    egui (467,103)-(589,143)（垂直低 4 物理像素，宽高一致，取消同偏移）；
+  - 证据图：`target/cp-egui.png`、`cp-iced.png`、`cp-compare.png`。
+- **顺带把输入换算与渲染同源**：`capture_egui_overlay_input` 改用
+  `render_ctx.viewport.scale_factor()`（与 `pixels_per_point` 同源），
+  避免两处各自取 scale 漂移。排查过程中的「点不中」实际是**自动化脚本
+  DPI-unaware**（`SetCursorPos` 需要逻辑坐标 = 物理 ÷ 1.25），产品侧无缺陷。
 
-**Task 1.3（下一步）：修复工具栏行的 egui 点击（叠加层输入映射）**
+**Task 1.3（下一步）：导出进度对话框 / 帮助 / 云管理**
 
-- 现象：`LUMINO_EGUI_OVERLAY=1` 时点击精度框（物理 ~1670..1740, y≈68..95）与
-  洋葱皮下箭头无任何动作日志；同一窗口标题栏「文件」菜单点击正常。
-- 下一步：给精度框加临时日志确认 `response.clicked()` 是否触发；若未触发，
-  检查叠加层的 `screen_rect` / `pixels_per_point` 与实际 surface 尺寸
-  （首帧日志 `size=[2560, 1540] ppp=1.25`，而窗口客户区为 2048×1232）是否
-  导致命中坐标偏移，修正后回归 `toolbar_snap_bands` 与洋葱皮菜单。
+- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 / 自定义精度
+  已是 egui；导出进度、帮助、云管理、音频/视频导出、形状抽屉等仍由 iced 绘制。
+- 下一步：按「导出进度 → 帮助 → 云管理」顺序迁移，沿用
+  「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程；
+  真实窗口自动化统一把物理坐标 ÷1.25 后再 `SetCursorPos`。

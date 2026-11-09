@@ -246,8 +246,10 @@ impl Host {
         if !overlay_enabled() {
             return false;
         }
-        let scale = self.window_ctx.window.scale_factor() as f32;
+        let scale = self.render_ctx.viewport.scale_factor();
         let scale = if scale > 0.0 { scale } else { 1.0 };
+        // 与渲染用的 `pixels_per_point` 同源：两者必须一致，否则命中坐标
+        // 与实际绘制的控件位置会按比例错开。
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 self.egui_input.pointer_moved(egui::pos2(
