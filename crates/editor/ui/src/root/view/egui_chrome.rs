@@ -3,6 +3,7 @@
 //! 只做数据搬运，不含任何渲染逻辑；渲染在 `lumino_ui_egui::chrome::show_bands`。
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
 
+mod arrangement;
 mod audio_export_panel;
 mod dialogs;
 mod menu;

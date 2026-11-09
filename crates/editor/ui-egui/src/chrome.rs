@@ -1,5 +1,6 @@
 //! 主窗口外壳：标题栏 + 工具栏 + 左右侧栏 + 状态栏 + 钢琴卷帘骨架。
 
+pub mod arrangement;
 pub mod menu;
 mod model;
 pub mod overflow;
@@ -13,16 +14,17 @@ pub mod toolbar;
 pub mod toolbar_popup;
 
 pub use model::{
-    AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,
-    AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel, AudioPageModel,
-    AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle, AudioToggleId,
-    BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID, FillDivisionPanelModel,
-    I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
-    MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel,
-    MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind,
-    ShapePanelModel, TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
-    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
-    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
+    ArrangementRulerModel, AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel,
+    AudioExportModel, AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel,
+    AudioPageModel, AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle,
+    AudioToggleId, BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID,
+    FillDivisionPanelModel, I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel,
+    MaterialContextLabels, MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel,
+    MaterialMenuEntryModel, MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel,
+    RightSidebarPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel, ThemeCardModel,
+    ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
+    ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow, WATERFALL_TEXTURE_ID,
+    WaterfallPanelModel,
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
@@ -143,6 +145,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 /// 其余区域不绘制任何东西，保持下层 iced 画面可见；两条 band 用不透明底色
 /// 完全覆盖同位置的 iced 版本，避免文字重影。标题栏为 `None`（系统原生
 /// 标题栏）时跳过顶部 band。
+/// 记录本帧的走带标尺模型（`None` = 不接管或不在走带路由）。
+pub fn set_arrangement(ctx: &egui::Context, model: Option<ArrangementRulerModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.arrangement"), model));
+}
+
+/// 取走本帧的走带标尺模型。
+fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementRulerModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<ArrangementRulerModel>>(egui::Id::unique("lumino.arrangement"))
+    })
+    .flatten()
+}
+
 /// 记录本帧的底层画布纹理（`None` = 不画底层，走原通道）。
 pub fn set_base_texture(ctx: &egui::Context, id: Option<egui::TextureId>) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.base-texture"), id));
@@ -187,6 +202,31 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
 
     // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 iced 点击）。
     menu::clear_blocked(ui.ctx());
+
+    // 走带标尺：`LUMINO_EGUI_ARRANGEMENT=1` 时由 egui 绘制（默认关闭，先与 iced 并存）。
+    // 几何与 iced `view_arrangement` 同源：内容区左缘 = 左侧栏宽，顶部 = 标题栏 + 工具栏，
+    // 标尺再让出 160px 音轨列与 20px 垂直滚动条。
+    if let Some(arrangement) = arrangement_model(ui.ctx())
+        && arrangement_enabled()
+    {
+        let full = root.max_rect();
+        // 内容原点由生产侧给出（工具栏高度可拖拽，不能硬编码）。
+        let left = full.left() + arrangement.left_inset;
+        let top = full.top() + arrangement.top_inset;
+        let right = full.right()
+            - model
+                .right_sidebar
+                .as_ref()
+                .map_or(0.0, |r| r.total_width());
+        let rect = egui::Rect::from_min_max(
+            egui::pos2(left + ARRANGEMENT_TRACK_LIST_W, top),
+            egui::pos2(
+                (right - ARRANGEMENT_SCROLLBAR_W).max(left + ARRANGEMENT_TRACK_LIST_W),
+                top + arrangement::RULER_HEIGHT,
+            ),
+        );
+        arrangement::show_ruler(&root, rect, &arrangement);
+    }
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。
     if let Some(dialog) = &model.dialog {
@@ -438,4 +478,19 @@ pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
         .inner_margin(Margin::ZERO)
         .outer_margin(Margin::ZERO)
         .stroke(Stroke::new(0.0, egui::Color32::TRANSPARENT))
+}
+
+/// 走带音轨列宽（生产 `TRACK_LIST_WIDTH`）。
+const ARRANGEMENT_TRACK_LIST_W: f32 = 160.0;
+/// 走带垂直滚动条宽（生产布局固定 20）。
+const ARRANGEMENT_SCROLLBAR_W: f32 = 20.0;
+
+/// 走带视图是否已由 egui 接管（`LUMINO_EGUI_ARRANGEMENT=1`；默认关闭）。
+fn arrangement_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_ARRANGEMENT")
+            .map(|v| v != "0")
+            .unwrap_or(false)
+    })
 }

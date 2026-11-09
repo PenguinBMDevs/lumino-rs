@@ -66,6 +66,8 @@ struct OverlayFrame<'a> {
     video_export: Option<lumino_ui_egui::chrome::VideoExportPanelModel>,
     /// 编辑器画布（卷帘 / 走带）离屏纹理；`Some` 时 egui 整窗采样它作底层。
     editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
+    /// 走带标尺模型；`Some` 且开关打开时由 egui 绘制。
+    arrangement: Option<lumino_ui_egui::chrome::ArrangementRulerModel>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -150,6 +152,9 @@ impl EguiOverlay {
 
         let ctx = self.ctx.clone();
         let icons = &mut self.icons;
+        // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
+        lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
+
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
             // 音频导出：整块面板覆盖右侧内容区。
@@ -356,6 +361,7 @@ impl Host {
             shape_drawer,
             shape_canvas,
             video_export,
+            arrangement: self.root.arrangement_ruler_model(),
             editor_texture: self.egui_editor_texture.clone(),
             events,
             focused,
