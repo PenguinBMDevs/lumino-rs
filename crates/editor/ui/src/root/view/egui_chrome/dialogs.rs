@@ -21,6 +21,7 @@ use crate::state::root_state::DialogType;
 
 mod batch_edit;
 mod custom_precision;
+mod export_progress;
 mod history;
 mod project_settings;
 mod speed_change;
@@ -160,6 +161,9 @@ impl Root {
             ))),
             DialogType::CustomPrecision => Some(DialogModel::CustomPrecision(Box::new(
                 self.custom_precision_model(),
+            ))),
+            DialogType::ExportProgress => Some(DialogModel::ExportProgress(Box::new(
+                self.export_progress_model(),
             ))),
             _ => None,
         }

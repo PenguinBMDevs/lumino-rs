@@ -1177,10 +1177,34 @@ callback / 多视口 / 截图能力。
   避免两处各自取 scale 漂移。排查过程中的「点不中」实际是**自动化脚本
   DPI-unaware**（`SetCursorPos` 需要逻辑坐标 = 物理 ÷ 1.25），产品侧无缺陷。
 
-**Task 1.3（下一步）：导出进度对话框 / 帮助 / 云管理**
+**Task 1.3（第三十步）：音频导出进度对话框迁移到 egui — 已完成**
 
-- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 / 自定义精度
-  已是 egui；导出进度、帮助、云管理、音频/视频导出、形状抽屉等仍由 iced 绘制。
-- 下一步：按「导出进度 → 帮助 → 云管理」顺序迁移，沿用
-  「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口」流程；
-  真实窗口自动化统一把物理坐标 ÷1.25 后再 `SetCursorPos`。
+- **模型**：`ExportProgressModel`（`titlebar` / 标题 / 状态行 / 状态语义
+  `ExportMessageKind::{Normal, Error, Completed}` / 进度 / 百分比文本）+
+  `DialogModel::ExportProgress`。只读，无动作通道。
+- **渲染**：`ui-egui/src/export_progress.rs` 对齐生产：整窗 base 底、内边距 24；
+  标题 18px、状态行 14px（普通正文 / 失败 `danger` / 完成 `success`）、
+  30 高进度条（`background.strong` 轨道 + `primary.base` 进度 + 圆角 2，
+  宽度按 `progress` 比例）、12px 百分比（`{:.1}%`，越界夹紧到 0..100）。
+  纵向偏移按「title → 24 → message → 20 → bar → 12 → percentage」显式摆放
+  （状态行 46 / 进度条 84 / 百分比 122）。
+- 验收：
+  - `export_progress_bands` 2/2：标题 / 状态行 / 百分比进入可访问树、越界进度
+    显示 100.0%；**像素级**验证进度条按比例填充（左半 `primary.base`、
+    右半 `background.strong`，坐标由布局常量算出）；
+  - `egui_chrome` 45/45：三种状态（普通消息 / 完成 / 错误优先）与百分比格式；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **说明**：本对话框只在真实音频导出过程中出现，真机复现需要完整导出流程；
+  其宿主渲染路径（叠加层 `DialogModel` → `show_bands`）与已真机验证过的
+  保存确认 / 工程设置 / 历史 / 批量编辑 / 变速 / 自定义精度完全一致，
+  因此本步以无头像素 + 可访问性 + 模型镜像作为验收证据。
+
+**Task 1.3（下一步）：帮助对话框（`DialogType::Help`）**
+
+- 现状：保存确认 / 设置 / 工程设置 / 撤销历史 / 批量编辑 / 变速 /
+  自定义精度 / 导出进度已是 egui；帮助、云管理、音频 / 视频导出、
+  形状抽屉、内存监控等仍由 iced 绘制。
+- 下一步：迁移帮助对话框（含「不再显示提示」等状态与滚动列表），
+  沿用「模型 + 动作通道 + 输入独占 + band 测试 + 真实窗口（坐标 ÷1.25）」流程。

@@ -16,6 +16,7 @@ pub mod capture;
 pub mod chrome;
 pub mod custom_precision;
 pub mod dialog;
+pub mod export_progress;
 pub mod fonts;
 pub mod history;
 pub mod icons;

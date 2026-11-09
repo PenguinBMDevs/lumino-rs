@@ -23,6 +23,37 @@ pub enum DialogModel {
     SpeedChange(Box<SpeedChangeModel>),
     /// 自定义精度（`DialogType::CustomPrecision`）。
     CustomPrecision(Box<CustomPrecisionModel>),
+    /// 音频导出进度（`DialogType::ExportProgress`，只读）。
+    ExportProgress(Box<ExportProgressModel>),
+}
+
+/// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。
+#[derive(Debug, Clone, Default)]
+pub struct ExportProgressModel {
+    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    pub titlebar: bool,
+    /// 标题「音频导出」。
+    pub title: String,
+    /// 状态行文本（错误信息 / 「导出完成」/ 进度消息）。
+    pub message: String,
+    /// 状态行语义（决定颜色）。
+    pub kind: ExportMessageKind,
+    /// 进度 0.0..=1.0。
+    pub progress: f32,
+    /// 百分比文本（「33.1%」）。
+    pub percentage: String,
+}
+
+/// 状态行语义。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExportMessageKind {
+    /// 普通进度消息。
+    #[default]
+    Normal,
+    /// 导出失败（危险色）。
+    Error,
+    /// 导出完成（成功色）。
+    Completed,
 }
 
 /// 自定义精度对话框：三连音数 / 分音符 / 附点 / 除数 / 错误行 / 按钮。
