@@ -34,6 +34,7 @@ pub mod project_settings;
 pub mod recover_track;
 pub mod scene;
 pub mod settings;
+pub mod shape_canvas;
 pub mod shape_drawer;
 pub mod speed_change;
 pub mod theme;

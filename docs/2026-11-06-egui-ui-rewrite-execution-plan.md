@@ -1529,9 +1529,39 @@ callback / 多视口 / 截图能力。
 - **已知差异**：色块换行位置（egui 7/7/2 vs iced 7/6/3，因 iced 行允许溢出面板
   宽度）与底部若干行的累计偏移（≤15 物理像素）；画布仍属 iced。
 
-**Task 1.3（下一步）：形状抽屉画布移植 / 视频导出**
+**Task 1.3（第四十二步）：形状抽屉画布移植到 egui painter — 已完成**
 
-- 现状：形状抽屉除画布外的全部 UI 已是 egui；视频导出（约 2000 行、9 个子模块）
-  仍完全由 iced 绘制。
-- 下一步：把 `ShapeDrawerCanvas`（436 行 + `canvas/draw.rs` 419 行 + `doc.rs` 412 行）
-  的绘制与命中移植到 egui painter；随后视频导出；最后编辑器画布与 iced 归零证明。
+- **事件逻辑抽离**：新增 `shape_drawer/canvas/input.rs`（按下 / 移动 / 松开 / 中键平移 /
+  滚轮缩放 / 工具栏 / 删除 / 撤销重做 / 失焦），iced `Canvas::update` 改为逐事件
+  委托，egui 画布调用同一套函数 —— 两边行为由同一份代码保证。
+- **绘制抽离**：生产侧 `egui_chrome/shape_canvas.rs` 把 `DrawerDoc` 算成图元
+  （线 / 三次贝塞尔 / 折线 / 实心矩形（面积）/ 方块（锚点）/ 文本）+ 工具栏按钮，
+  复用 `canvas::draw` 的 `unit_rect/unit_side/unit_to_local/local_to_unit`；
+  `ui-egui/src/shape_canvas.rs` 只做 painter 绘制与输入归一化。
+- **整窗接管**：叠加层启用时 `view_shape_drawer` 直接返回空白占位（iced 只保留
+  30px 标题栏），面板 + 6px 分割线（可拖动改宽度）+ 画布全部由 egui 绘制；
+  占用列表覆盖面板到画布整块。
+- **动作通道改为队列**：同一帧可能同时产生「按下 + 移动 + 松开」，通道从
+  `Option` 改为 `Vec`，`take_actions()` 按顺序回传后逐条应用到文档。
+- 验收：
+  - `shape_canvas_bands` 5/5（工具栏按钮回传下标、置灰按钮不回传、画布点击回传
+    Press+Release、拖动回传 Moved+Release、分割线拖动回传 Splitter）；
+  - `egui_chrome` 80/80（画布模型：10 个按钮 / 14 条网格与单位框线 / 空提示与库
+    路径 / 描边图元 / Undo-Del 置灰规则；工具切换、分割线夹紧、按下+移动+松开
+    提交描边）；
+  - `ui-egui` 全量、`lumino-gfx` 273/273、`ui-parity` 12/12；
+    `clippy -D warnings`、`check --bin lumino-rs`；
+    `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - 真实窗口（1000×700、ppp=1.25）：单位框包围盒 iced `528,136..1170,778` vs
+    egui `528,135..1171,779`（≤1 物理像素）；工具条 10 个按钮同字同色；
+    点「Line」→ 工具高亮切换，在画布拖一条斜线 → 描边即时出现（空提示消失），
+    再点「Undo」可撤销。证据图：`target/sc-egui3.png`、`sc-draw.png`、`sd-iced.png`。
+- **注**：`ShapeDrawerCanvas` 的 iced `Program` 实现仍保留（未接线的旧路径），
+  但抽屉窗口在叠加层下已完全不经过它；后续清理 iced 时可整块删除。
+
+**Task 1.3（下一步）：视频导出面板迁移**
+
+- 现状：除视频导出（约 2000 行、9 个子模块）外，全部对话框与面板已是 egui；
+  形状抽屉画布也已由 egui painter 接管。
+- 下一步：视频导出按「渲染设置 + 输出 + 按钮」分块迁移，沿用 panel 形态；
+  随后编辑器画布与 iced 归零证明。

@@ -58,8 +58,10 @@ struct OverlayFrame<'a> {
     waterfall: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 音频导出面板（整块接管右侧内容区）。
     audio_export: Option<lumino_ui_egui::chrome::AudioExportPanelModel>,
-    /// 形状抽屉左侧面板（右侧画布仍由 iced 绘制）。
+    /// 形状抽屉左侧面板。
     shape_drawer: Option<lumino_ui_egui::chrome::ShapeDrawerModel>,
+    /// 形状抽屉右侧画布（egui painter 版）。
+    shape_canvas: Option<lumino_ui_egui::shape_canvas::ShapeCanvasModel>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -130,9 +132,20 @@ impl EguiOverlay {
             if let Some(panel) = &frame.audio_export {
                 lumino_ui_egui::audio_export::show_panel(ui, panel);
             }
-            // 形状抽屉：只覆盖左侧面板，右侧画布留给 iced。
+            // 形状抽屉：左侧面板 + 分割线 + 右侧画布全部由 egui 绘制。
             if let Some(panel) = &frame.shape_drawer {
                 lumino_ui_egui::shape_drawer::show(ui, panel);
+                lumino_ui_egui::shape_canvas::show_splitter(
+                    ui,
+                    egui::Rect::from_min_size(
+                        egui::pos2(panel.rect.right(), panel.rect.top()),
+                        egui::vec2(SPLITTER_W, panel.rect.height()),
+                    ),
+                    frame.palette.selected_bg,
+                );
+            }
+            if let Some(canvas) = &frame.shape_canvas {
+                lumino_ui_egui::shape_canvas::show(ui, canvas);
             }
         });
 
@@ -143,9 +156,15 @@ impl EguiOverlay {
         if let Some(panel) = &frame.audio_export {
             blocked.push(panel.rect);
         }
-        // 形状抽屉：只占用左侧面板（分割线与画布留给 iced）。
+        // 形状抽屉：面板 + 分割线 + 画布整块接管。
         if let Some(panel) = &frame.shape_drawer {
-            blocked.push(panel.rect);
+            blocked.push(egui::Rect::from_min_max(
+                panel.rect.min,
+                egui::pos2(panel.rect.right() + SPLITTER_W, panel.rect.bottom()),
+            ));
+        }
+        if let Some(canvas) = &frame.shape_canvas {
+            blocked.push(canvas.rect);
         }
 
         let mut textures = output.textures_delta;
@@ -206,21 +225,29 @@ impl Host {
         let logical_width = size.width as f32 / pixels_per_point;
         let logical_height = size.height as f32 / pixels_per_point;
         let model = self.root.egui_chrome_model_for(logical_width);
-        // 形状抽屉：左侧面板由 egui 绘制，右侧画布仍走 iced。
-        let shape_drawer = (self.root.state.dialog_type
+        // 形状抽屉：面板 + 画布都由 egui 绘制（iced 只保留标题栏）。
+        let shape_panel_rect = (self.root.state.dialog_type
             == crate::state::root_state::DialogType::ShapeDrawer)
             .then(|| {
                 let width = self.root.state.shape_drawer.panel_width;
-                let top = if model.titlebar.is_some() {
-                    lumino_ui_egui::layout::TITLEBAR_H
-                } else {
+                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 iced 仍画 30px 自制标题栏，
+                // 因此这里按 `use_native_titlebar` 判断（与画布动作端的 rect 同源）。
+                let top = if self.root.settings.synth.use_native_titlebar {
                     0.0
+                } else {
+                    lumino_ui_egui::layout::TITLEBAR_H
                 };
-                self.root.shape_drawer_model(egui::Rect::from_min_max(
-                    egui::pos2(0.0, top),
-                    egui::pos2(width, logical_height),
-                ))
+                egui::Rect::from_min_max(egui::pos2(0.0, top), egui::pos2(width, logical_height))
             });
+        let shape_drawer = shape_panel_rect.map(|rect| self.root.shape_drawer_model(rect));
+        let shape_canvas = shape_panel_rect.map(|panel_rect| {
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(panel_rect.right() + SPLITTER_W, panel_rect.top()),
+                egui::pos2(logical_width, panel_rect.bottom()),
+            );
+            self.root
+                .shape_canvas_model(rect, &self.root.egui_palette())
+        });
         // 音频导出面板：整块替换右侧内容区（工具栏 / 画布 / 状态栏）。
         let audio_export = (self.root.sidebar.audio_export_visible
             && !self.root.is_arrangement_mode())
@@ -278,6 +305,7 @@ impl Host {
             waterfall,
             audio_export,
             shape_drawer,
+            shape_canvas,
             events,
             focused,
         });
@@ -426,6 +454,9 @@ impl Host {
             .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
     }
 }
+
+/// 形状抽屉面板与画布之间的分割线宽度（与生产 iced 视图一致）。
+pub(crate) const SPLITTER_W: f32 = 6.0;
 
 /// 环境变量开关（只读一次；`0` 视为关闭）。
 pub(crate) fn overlay_enabled() -> bool {

@@ -3,6 +3,7 @@
 //! 从 `egui_overlay.rs` 拆出（REF-001：单文件 < 400 行）。动作在 `run_ui` 之后
 //! 统一取走，保证一帧内不遗漏、顺序稳定（先控件后弹层）。
 
+use super::SPLITTER_W;
 use lumino_ui_egui::audio_export::AudioExportAction;
 use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::brush_settings::BrushSettingsAction;
@@ -21,6 +22,7 @@ use lumino_ui_egui::memory_monitor::MemoryMonitorAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
 use lumino_ui_egui::recover_track::RecoverTrackAction;
 use lumino_ui_egui::settings::SettingsAction;
+use lumino_ui_egui::shape_canvas::ShapeCanvasAction;
 use lumino_ui_egui::shape_drawer::ShapeDrawerAction;
 use lumino_ui_egui::speed_change::SpeedChangeAction;
 
@@ -49,6 +51,7 @@ pub(super) struct OverlayActions {
     pub collaboration: Option<CollaborationAction>,
     pub cloud_browser: Option<CloudBrowserAction>,
     pub shape_drawer: Option<ShapeDrawerAction>,
+    pub shape_canvas: Vec<ShapeCanvasAction>,
 }
 
 impl OverlayActions {
@@ -76,6 +79,7 @@ impl OverlayActions {
             collaboration: lumino_ui_egui::collaboration::take_action(ctx),
             cloud_browser: lumino_ui_egui::cloud_browser::take_action(ctx),
             shape_drawer: lumino_ui_egui::shape_drawer::take_action(ctx),
+            shape_canvas: lumino_ui_egui::shape_canvas::take_actions(ctx),
         }
     }
 }
@@ -111,6 +115,25 @@ impl Host {
         {
             tracing::info!("egui 批量编辑动作：{action:?}");
             self.dispatch_overlay_message(message);
+        }
+        if !actions.shape_canvas.is_empty() {
+            // 画布动作直接改文档（与 iced Canvas 同一套逻辑），不走消息队列。
+            let size = self.render_ctx.viewport.logical_size();
+            let panel = self.root.state.shape_drawer.panel_width + SPLITTER_W;
+            let top = if self.root.settings.synth.use_native_titlebar {
+                0.0
+            } else {
+                lumino_ui_egui::layout::TITLEBAR_H
+            };
+            let canvas_rect = egui::Rect::from_min_max(
+                egui::pos2(panel, top),
+                egui::pos2(size.width, size.height),
+            );
+            for action in &actions.shape_canvas {
+                self.root.apply_shape_canvas_action(action, canvas_rect);
+            }
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
         }
         if let Some(action) = actions.shape_drawer
             && let Some(message) = self.root.shape_drawer_action_message(&action)

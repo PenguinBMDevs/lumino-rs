@@ -7,11 +7,11 @@ use lumino_core::shape::{AnchorBend, AreaMap, MAP_CELLS, StrokeKind};
 use crate::shape_drawer::doc::{DrawerDoc, DrawerTool, DrawerView};
 use crate::{Renderer, Theme};
 
-pub(super) const TOOLBAR_WIDTH: f32 = 104.0;
-pub(super) const TOOLBAR_TOP: f32 = 16.0;
-pub(super) const ROW_HEIGHT: f32 = 30.0;
-pub(super) const ROW_GAP: f32 = 4.0;
-pub(super) const PADDING: f32 = 18.0;
+pub(crate) const TOOLBAR_WIDTH: f32 = 104.0;
+pub(crate) const TOOLBAR_TOP: f32 = 16.0;
+pub(crate) const ROW_HEIGHT: f32 = 30.0;
+pub(crate) const ROW_GAP: f32 = 4.0;
+pub(crate) const PADDING: f32 = 18.0;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum ToolbarAction {
@@ -347,7 +347,7 @@ pub(super) fn draw_stroke(
     );
 }
 
-pub(super) fn unit_rect(bounds: Rectangle, view: DrawerView) -> Rectangle {
+pub(crate) fn unit_rect(bounds: Rectangle, view: DrawerView) -> Rectangle {
     let side = unit_side(bounds, view);
     let area = Rectangle::new(
         Point::new(TOOLBAR_WIDTH + PADDING, PADDING),
@@ -365,18 +365,18 @@ pub(super) fn unit_rect(bounds: Rectangle, view: DrawerView) -> Rectangle {
     )
 }
 
-pub(super) fn unit_side(bounds: Rectangle, view: DrawerView) -> f32 {
+pub(crate) fn unit_side(bounds: Rectangle, view: DrawerView) -> f32 {
     let width = (bounds.width - TOOLBAR_WIDTH - PADDING * 2.0).max(1.0);
     let height = (bounds.height - PADDING * 2.0).max(1.0);
     width.min(height) * 0.85 * view.zoom.max(0.25)
 }
 
-pub(super) fn unit_to_local(unit: (f32, f32), bounds: Rectangle, view: DrawerView) -> Point {
+pub(crate) fn unit_to_local(unit: (f32, f32), bounds: Rectangle, view: DrawerView) -> Point {
     let rect = unit_rect(bounds, view);
     Point::new(rect.x + rect.width * unit.0, rect.y + rect.height * unit.1)
 }
 
-pub(super) fn local_to_unit(local: Point, bounds: Rectangle, view: DrawerView) -> (f32, f32) {
+pub(crate) fn local_to_unit(local: Point, bounds: Rectangle, view: DrawerView) -> (f32, f32) {
     let rect = unit_rect(bounds, view);
     let u = ((local.x - rect.x) / rect.width).clamp(0.0, 1.0);
     let v = ((local.y - rect.y) / rect.height).clamp(0.0, 1.0);

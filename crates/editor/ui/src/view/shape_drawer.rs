@@ -17,6 +17,18 @@ use crate::{Element, Message, Theme};
 
 /// 渲染形状抽屉。
 pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Element<'a> {
+    // 叠加层接管时：面板 / 分割线 / 画布全部由 egui 绘制，iced 只保留标题栏。
+    if crate::host::overlay_enabled() {
+        let bg = theme.extended_palette().background.base.color;
+        return container(space())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(bg)),
+                ..Default::default()
+            })
+            .into();
+    }
     let palette = theme.extended_palette();
     let panel_bg = palette.background.base.color;
     let panel_text = palette.background.base.text;
@@ -189,16 +201,7 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
         ..Default::default()
     });
 
-    // 叠加层接管左侧面板时：留同宽透明占位，保证画布位置与 iced 单独渲染完全一致
-    // （面板内容由 egui 在同一矩形上不透明覆盖，点击也由 egui 消费）。
-    let panel: Element<'a> = if crate::host::overlay_enabled() {
-        iced_widget::Space::new()
-            .width(Length::Fixed(state.panel_width))
-            .height(Length::Fill)
-            .into()
-    } else {
-        panel_full.into()
-    };
+    let panel: Element<'a> = panel_full.into();
 
     let splitter = MouseArea::new(
         container(space())

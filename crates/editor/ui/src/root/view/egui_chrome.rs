@@ -11,6 +11,7 @@ mod right_sidebar;
 mod settings_audio;
 mod settings_pages;
 mod settings_ui;
+mod shape_canvas;
 mod shape_drawer;
 mod tool_panel;
 mod toolbar;
@@ -451,6 +452,8 @@ mod settings_audio_tests;
 mod settings_cloud_tests;
 #[cfg(test)]
 mod settings_page_tests;
+#[cfg(test)]
+mod shape_canvas_tests;
 #[cfg(test)]
 mod shape_drawer_tests;
 #[cfg(test)]
