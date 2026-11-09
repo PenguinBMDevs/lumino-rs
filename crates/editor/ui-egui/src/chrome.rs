@@ -125,8 +125,14 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
             sidebar::show_right_model(ui, &RightSidebarModel::default(), &mut state.icons)
         });
 
+    // 底层由 egui 采样 gfx 离屏纹理时，中央面板不能再铺不透明底色（会盖掉画布）。
+    let central_frame = if base_texture_active(ui.ctx()) {
+        egui::Frame::NONE
+    } else {
+        panel_frame(theme::base_bg())
+    };
     egui::CentralPanel::default()
-        .frame(panel_frame(theme::base_bg()))
+        .frame(central_frame)
         .show(ui, |ui| piano_roll::show(ui, state));
 }
 
