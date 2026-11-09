@@ -27,6 +27,7 @@ use lumino_ui_egui::shape_canvas::ShapeCanvasAction;
 use lumino_ui_egui::shape_drawer::ShapeDrawerAction;
 use lumino_ui_egui::speed_change::SpeedChangeAction;
 use lumino_ui_egui::video_export::VideoExportAction;
+use lumino_ui_egui::video_export_overlay::VideoOverlayAction;
 
 use crate::host::Host;
 
@@ -56,6 +57,7 @@ pub(super) struct OverlayActions {
     pub shape_canvas: Vec<ShapeCanvasAction>,
     pub video_export: Option<VideoExportAction>,
     pub sidebar_route: Option<SidebarRoute>,
+    pub video_overlay: Option<VideoOverlayAction>,
 }
 
 impl OverlayActions {
@@ -86,6 +88,7 @@ impl OverlayActions {
             shape_canvas: lumino_ui_egui::shape_canvas::take_actions(ctx),
             video_export: lumino_ui_egui::video_export::take_action(ctx),
             sidebar_route: take_route_action(ctx),
+            video_overlay: lumino_ui_egui::video_export_overlay::take_action(ctx),
         }
     }
 }
@@ -140,6 +143,12 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.video_overlay
+            && let Some(message) = self.root.video_overlay_action_message(&action)
+        {
+            tracing::info!("egui 视频导出覆盖层动作：{action:?}");
+            self.dispatch_overlay_message(message);
         }
         if let Some(route) = actions.sidebar_route {
             use crate::sidebar::Event as SidebarEvent;

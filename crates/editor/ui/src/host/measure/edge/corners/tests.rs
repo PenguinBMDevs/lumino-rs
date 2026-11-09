@@ -52,6 +52,17 @@ fn every_declared_state_actually_changes_the_layout() {
             failures.push(format!("{dialog_type:?}: 状态清单为空"));
             continue;
         };
+
+        // iced 视图已退化为整窗占位的对话框：状态不再影响布局，比较无意义
+        // （状态覆盖由 egui 模型测试保证，见 `layout_is_state_invariant`）。
+        if layout_is_state_invariant(dialog_type) {
+            // 仍然逐个渲染一遍：保留「每种状态都能排出来」的冒烟覆盖。
+            for (_, apply) in &states {
+                let _ = signature(&renderer, dialog_type, apply, &ui_config);
+            }
+            continue;
+        }
+
         let reference = signature(&renderer, dialog_type, reference, &ui_config);
 
         for (suffix, apply) in states.iter().skip(1) {

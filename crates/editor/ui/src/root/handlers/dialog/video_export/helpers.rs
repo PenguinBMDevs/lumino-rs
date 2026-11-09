@@ -7,8 +7,8 @@ use std::str::FromStr;
 
 use crate::host::DialogResult;
 use crate::root::Root;
+use crate::state::root_state::VideoExportDialogState;
 use crate::state::root_state::VideoExportOverlayState;
-use crate::view::video_export_dialog::state::VideoExportDialogState;
 
 /// 重置视频导出对话框的 overlay / 预览帧 / 缓存，并在对话框窗口中登记取消结果。
 pub(crate) fn reset_video_export_overlay(root: &mut Root) {

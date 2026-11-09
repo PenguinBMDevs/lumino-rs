@@ -34,6 +34,7 @@ mod memory_monitor;
 mod project_settings;
 mod recover_track;
 mod speed_change;
+mod video_export_overlay;
 
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
 fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
@@ -202,6 +203,9 @@ impl Root {
             DialogType::CloudNotice => Some(DialogModel::CloudNotice(Box::new(
                 self.cloud_notice_model(),
             ))),
+            DialogType::VideoExport => self
+                .video_export_overlay_model()
+                .map(|model| DialogModel::VideoExportOverlay(Box::new(model))),
             _ => None,
         }
     }

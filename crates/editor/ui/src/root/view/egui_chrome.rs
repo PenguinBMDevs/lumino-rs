@@ -506,4 +506,6 @@ mod tests;
 #[cfg(test)]
 mod tool_panel_tests;
 #[cfg(test)]
+mod video_export_overlay_tests;
+#[cfg(test)]
 mod video_export_tests;

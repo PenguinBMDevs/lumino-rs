@@ -22,5 +22,4 @@ pub mod settings_dialog;
 pub mod shape_drawer;
 pub mod speed_change_dialog;
 pub mod video_clip;
-pub mod video_export_dialog;
 pub mod widgets;

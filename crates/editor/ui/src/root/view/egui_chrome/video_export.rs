@@ -3,6 +3,7 @@
 //! 覆盖全部渲染模式的设置：MIDI 数据源 / 渲染设置（含 MidiConsole）/
 //! 计数器（`counter` 子模块）/ 数据曲线（`data_curve` 子模块）/ 预览 / 导出位置 / 按钮。
 
+mod backends;
 mod counter;
 mod data_curve;
 mod rows;
@@ -20,8 +21,7 @@ use rows::{button, gap, label, pick, text, text_button};
 use crate::Message;
 use crate::message::VideoExportAction as Prod;
 use crate::state::root_state::{MIDITRAIL_Z_FAR_MAX, VideoExportDialogState};
-use crate::view::video_export_dialog::counter_settings_font::SYSTEM_FONT_FAMILIES;
-use crate::view::video_export_dialog::helpers;
+use backends::{SYSTEM_FONT_FAMILIES, available_backends};
 
 impl crate::root::Root {
     /// 构建视频导出面板模型（`rect` = 整块右侧内容区）。
@@ -44,7 +44,7 @@ impl crate::root::Root {
                         .get(*index)?
                         .to_string(),
                 ),
-                3 => Prod::BackendChanged(helpers::available_backends().get(*index)?.clone()),
+                3 => Prod::BackendChanged(available_backends().get(*index)?.clone()),
                 4 => Prod::QualityChanged(["低", "中", "高"].get(*index)?.to_string()),
                 5 => Prod::RenderModeChanged(RenderMode::ALL.get(*index)?.to_string()),
                 7 => Prod::MiditrailViewModeChanged(["Normal", "Top"].get(*index)?.to_string()),
@@ -233,8 +233,8 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         pick(
             tr!("加速:"),
             100.0,
-            helpers::available_backends(),
-            helpers::available_backends()
+            available_backends(),
+            available_backends()
                 .iter()
                 .position(|v| *v == state.backend)
                 .unwrap_or(0),

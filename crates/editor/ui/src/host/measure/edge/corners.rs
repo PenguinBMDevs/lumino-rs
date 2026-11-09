@@ -95,6 +95,16 @@ pub(super) fn root_for(
     Some(root)
 }
 
+/// 该对话框的 iced 视图是否**已退化为整窗占位**（各状态布局天然一致）。
+///
+/// 视频导出：设置面板与进度覆盖层都已迁到 egui（`DialogModel::VideoExportOverlay`
+/// / `VideoExportPanelModel`），iced 侧只返回同尺寸底色以维持窗口测量，因此
+/// 「状态是否真的改变布局」在 iced 侧不再成立——状态覆盖改由
+/// `egui_chrome::dialogs::video_export_overlay` 的模型测试保证。
+fn layout_is_state_invariant(dialog_type: DialogType) -> bool {
+    matches!(dialog_type, DialogType::VideoExport)
+}
+
 /// 某个对话框类型需要扫描的状态清单（至少一项；后缀为空 = 默认状态）
 fn dialog_states(dialog_type: DialogType) -> Vec<(String, Setup)> {
     match dialog_type {

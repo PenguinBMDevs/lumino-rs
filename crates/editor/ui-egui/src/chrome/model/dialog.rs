@@ -5,7 +5,7 @@ use egui::Color32;
 use super::{
     BatchEditModel, BrushSettingsModel, CloudBrowserModel, CloudConnectModel, CloudNoticeModel,
     CollaborationModel, DrawSettingsModel, HelpModel, HistoryModel, LoadConfirmModel,
-    MemoryMonitorModel, RecoverTrackModel, SettingsPageModel,
+    MemoryMonitorModel, RecoverTrackModel, SettingsPageModel, VideoExportOverlayModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -49,6 +49,8 @@ pub enum DialogModel {
     CloudBrowser(Box<CloudBrowserModel>),
     /// 云存储断连提醒（`DialogType::CloudNotice`）。
     CloudNotice(Box<CloudNoticeModel>),
+    /// 视频导出进度覆盖层（`DialogType::VideoExport` 的导出中/收尾/完成/失败）。
+    VideoExportOverlay(Box<VideoExportOverlayModel>),
 }
 
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。

@@ -21,7 +21,7 @@ use crate::view::{
     project_settings_dialog::view_project_settings_dialog,
     recover_track_dialog::view_recover_track_dialog, save_confirm_dialog::view_save_confirm_dialog,
     settings_dialog::view_settings_dialog, shape_drawer::view_shape_drawer,
-    speed_change_dialog::view_speed_change_dialog, video_export_dialog::view_video_export_overlay,
+    speed_change_dialog::view_speed_change_dialog,
 };
 use crate::{Element, Theme};
 
@@ -184,31 +184,17 @@ impl Root {
                 view_export_progress_dialog(&self.state.export_progress_dialog, &self.window.theme)
             }
             DialogType::VideoExport => {
-                // 对话框是进度窗口：overlay != None 时渲染进度覆盖层
-                // overlay == None 时显示"准备中..."占位（不应发生，创建时已设为 Exporting）
-                if let Some(overlay) =
-                    view_video_export_overlay(&self.state.video_export_dialog, &self.window.theme)
-                {
-                    overlay
-                } else {
-                    container(
-                        column![
-                            text(tr!("准备中...")).size(16),
-                            space().height(20),
-                            progress_bar(0.0..=1.0, 0.0),
-                        ]
-                        .spacing(12)
-                        .align_x(iced_core::Alignment::Center),
-                    )
+                // 进度覆盖层由 egui 绘制（`DialogModel::VideoExportOverlay`）；
+                // iced 只返回同尺寸底色，保证窗口测量与拖拽不变。
+                let bg = self.window.theme.palette().background;
+                container(space())
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .padding(40)
-                    .style(|theme: &Theme| container::Style {
-                        background: Some(iced_core::Background::Color(theme.palette().background)),
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(iced_core::Background::Color(bg)),
                         ..Default::default()
                     })
                     .into()
-                }
             }
             DialogType::MemoryMonitor => {
                 view_memory_monitor_dialog(&self.state.memory_monitor_dialog, &self.window.theme)

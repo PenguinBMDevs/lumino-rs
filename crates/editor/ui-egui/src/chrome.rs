@@ -43,7 +43,9 @@ pub use model::{
     SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack,
     SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel, TextPairCell, TitlebarModel,
     ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction,
-    VideoExportModel, VideoExportPanelModel, VideoPreviewModel, VideoRow, VideoSection,
+    VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction,
+    VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
+    VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -251,6 +253,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::CloudNotice(model) => {
                 crate::cloud_browser::show_notice(&mut root, model);
+            }
+            DialogModel::VideoExportOverlay(model) => {
+                crate::video_export_overlay::show(&mut root, model);
             }
         }
         return;

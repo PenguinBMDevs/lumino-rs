@@ -39,6 +39,7 @@ pub mod shape_drawer;
 pub mod speed_change;
 pub mod theme;
 pub mod video_export;
+pub mod video_export_overlay;
 pub mod widgets;
 
 #[cfg(feature = "capture")]

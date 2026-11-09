@@ -8,7 +8,6 @@ use lumino_core::{tr, trf};
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_clip::preview::{PreviewGate, preview_gate, preview_placeholder};
-use crate::view::video_export_dialog::view_video_export_dialog;
 use crate::{Element, Theme};
 
 impl Root {
@@ -54,45 +53,25 @@ impl Root {
         .into()
     }
 
-    /// 渲染视频渲染面板（在主界面钢琴卷帘区域显示）
-    /// 导出进度+预览已移至独立 VideoExport 对话框窗口
+    /// 渲染视频渲染面板（在主界面钢琴卷帘区域显示）。
+    ///
+    /// 整块由 egui 绘制（`VideoExportPanelModel`）；iced 只保留同尺寸底色占位，
+    /// 避免双层表单与双重响应。
     pub(crate) fn view_video_export_panel(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_video_export_panel");
 
-        // 叠加层接管时：与音频导出同形态的占位（egui 在同一矩形上不透明覆盖）。
-        if crate::host::overlay_enabled() {
-            let palette = self.window.theme.extended_palette();
-            return container(
-                iced_widget::Space::new()
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_theme: &Theme| container::Style {
-                background: Some(iced_core::Background::Color(palette.background.base.color)),
-                ..Default::default()
-            })
-            .into();
-        }
-
-        let theme = &self.window.theme;
-        let palette = theme.extended_palette();
-
+        let palette = self.window.theme.extended_palette();
         container(
-            container(scrollable(view_video_export_dialog(
-                &self.state.video_export_dialog,
-                theme,
-            )))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_theme: &iced_core::Theme| container::Style {
-                background: Some(iced_core::Background::Color(palette.background.base.color)),
-                ..Default::default()
-            }),
+            iced_widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill),
         )
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(iced_core::Background::Color(palette.background.base.color)),
+            ..Default::default()
+        })
         .into()
     }
 

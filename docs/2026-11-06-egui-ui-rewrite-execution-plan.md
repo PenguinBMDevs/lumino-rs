@@ -1777,11 +1777,49 @@ callback / 多视口 / 截图能力。
 - **已知回退（仅调试路径）**：`LUMINO_EGUI_OVERLAY=0` 时形状抽屉现在是空白
   （iced 视图已删）。默认路径（叠加层开启）不受影响。
 
-**Task 1.3（下一步）：视频导出进度覆盖层 → egui，然后删整块 iced 设置视图**
+**Task 1.3（第五十一步）：视频导出进度覆盖层 → egui，删除整块 iced 设置视图（-1650 行）**
 
-1. 迁 `view_video_export_dialog/handlers.rs` 的四种覆盖层（导出中 / 编码中 / 完成 /
-   失败）到 egui：`VideoExportOverlayModel` + 动作通道（取消导出 / 强制完成 / 确定）；
-2. `panels.rs` 的 iced 设置面板分支改为**恒返回占位**，删除
-   `view/video_export_dialog/*` 9 个文件，把 `available_backends()` 与
-   `SYSTEM_FONT_FAMILIES` 迁到 `root/view/egui_chrome/video_export/`；
-3. 之后按依赖倒序清理 `main_view` / `right_sidebar` / `toolbar` 的 iced 占位。
+- **覆盖层迁 egui**（`ui-egui/src/video_export_overlay.rs`，332 行）：
+  四态模型 `VideoOverlayView::{Exporting, Finalizing, Completed, Error}`；排版采用
+  「先排计划（`Vec<Row>`）再落笔」，据此算出总高做整体垂直居中（避免两层测量）；
+  动作通道 `VideoOverlayAction::{CancelExport, ForceFinish, Dismiss}` →
+  `VideoExportAction::{CancelExport, ForceFinish, DismissOverlay}`。
+- **生产模型**（`egui_chrome/dialogs/video_export_overlay.rs`）：`DialogType::VideoExport`
+  且 `overlay != None` 时产出 `DialogModel::VideoExportOverlay`；帧/时间/百分比/
+  渲染速度/倍率/预计剩余全部在模型层格式化，渲染层只排版。
+- **删除 iced 视图**：整目录 `view/video_export_dialog/`（10 个文件）+
+  `view/video_export_dialog.rs`；`panels.rs::view_video_export_panel` 恒返回底色占位；
+  `overlays.rs` 的 `DialogType::VideoExport` 分支改为同尺寸占位。
+- **常量迁移**：`available_backends()` 与 `SYSTEM_FONT_FAMILIES` 迁到
+  `egui_chrome/video_export/backends.rs`（纯数据，无 iced）。
+- **测量测试同步**：iced 视图已退化为整窗占位，`VideoExport` 各状态布局天然相同，
+  `host::measure` 的「状态必须改变布局」对它不再成立——新增
+  `layout_is_state_invariant()`（附理由）跳过比较但仍逐态渲染冒烟；四态覆盖改由
+  `egui_chrome/video_export_overlay_tests.rs`（3 个用例）在模型层保证：导出中的
+  帧/时间/进度/百分比、封装中的强制完成行、完成态的 5 条统计、失败态的原始错误详情，
+  以及空闲态不产出覆盖层模型、三个动作的消息映射。
+- 验收：
+  - `lumino-ui` lib **864/864**、`ui-egui` 全量（`theme_palette` 单线程 5/5）、
+    `lumino-gfx` 273/273、`ui-parity` 12/12；
+  - `clippy -D warnings`（ui / ui-egui / message / ui-core / gfx）、`fmt --check`、
+    `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+    `tests/ui-baseline` 零改动；
+  - **真机**（ppp=1.25）：路由栏 `RendererGroup` → `VideoExport` 打开设置面板（全 egui）；
+    点「开始导出」弹出 650×700 进度窗口，egui 渲染「视频导出中 / 预览框 / 帧 0/0 /
+    时间 0:00 / 0:00 / 进度条 / 0.0% / 渲染速度 0.0 fps / 速度 0.0x 原速 /
+    预计剩余: 计算中... / 取消导出」；点「取消导出」窗口关闭（动作链路打通）。
+    证据图：`target/h1.png`（设置面板）、`h2.png`（进度覆盖层）、`h3.png`（取消后关闭）。
+- **观察到（既有，与本次无关）**：空文档导出时 gfx 报
+  `Buffer::buffer_unmap: Buffer is not mapped`（`lumino_gfx::context::create`
+  uncaptured error）。该路径不经过任何 UI 代码，属于空 MIDI 导出的既有缺陷，另行处理。
+- **依赖计数仍为 39**：iced 仍是 `lumino-ui` 的整栈依赖（Element/Message/Theme），
+  删除视图不改变 crate 依赖；归零需要把剩余视图全部改写后整体摘除 `iced_*`。
+
+**Task 1.3（下一步）：迁移 arrangement / 视频剪辑 / 吸附图标的 iced canvas**
+
+- `main_view/arrangement.rs` 的三个 `iced_widget::canvas::Canvas`（轨道列表 / 点击层 /
+  标尺）：几何与命中已有 egui 版画布底层桥，可直接复用；
+- `view/video_clip/timeline.rs` + `timeline_canvas.rs`（`TimelineCanvas` Program）；
+- `toolbar/view/snap_icon.rs`（`SnapIcon` Program）。
+- 三者迁完后 `iced_widget::canvas` 不再被引用，再按依赖倒序摘除 `lumino-ui` 的
+  `iced_*` 依赖，以 `cargo tree -p lumino-ui | grep '^iced'` 为空作为归零证据。
