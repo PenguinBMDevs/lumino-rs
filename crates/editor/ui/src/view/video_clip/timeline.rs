@@ -4,12 +4,10 @@
 //! [`ScrollbarWidget`] 滚动条行（滑块拖拽滚动、边缘拖拽缩放，卷帘同款样式）。
 
 use iced_core::Length;
-use iced_widget::{column, container, row, text};
-use lumino_core::{tr, trf};
+use iced_widget::{column, container};
 use lumino_ui_core::state::video_clip_state::{ClipTrackEdit, VideoClipState};
 
 use crate::Theme;
-use crate::resources::icon::{self, Icon};
 
 /// 将 tick 转换为秒（与 `video_export.rs` 的 `ticks_to_seconds` 一致）。
 ///
@@ -94,12 +92,6 @@ pub struct TimelinePaneParams<'a> {
     pub clip: &'a VideoClipState,
     /// 时间轴可视宽度（由面板 responsive 计算传入）
     pub viewport_w: f32,
-    /// Ctrl 键状态（Ctrl+滚轮缩放）
-    /// 当前播放位置（秒）；走带线画在其对应屏幕坐标，
-    /// 播放中因滚动自动跟随恒定钉在 [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X)
-    pub playhead_secs: f32,
-    /// 是否正在播放（播放中禁用标尺点击/拖拽定位）
-    pub is_playing: bool,
     /// 视频轨素材编辑（偏移/首尾裁剪）
     pub video_edit: ClipTrackEdit,
     /// 音频轨素材编辑（偏移/首尾裁剪）
@@ -109,8 +101,6 @@ pub struct TimelinePaneParams<'a> {
 /// 渲染剪辑带时间轴
 pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::Element<'static> {
     let palette = theme.extended_palette();
-    let weak_text = palette.background.weak.text;
-    let strong_text = palette.background.strong.text;
     let weak_color = palette.background.weak.color;
     let strong_color = palette.background.strong.color;
 
@@ -125,29 +115,20 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
             .width(Length::Fill)
             .height(Length::Fill),
     );
-    // 剪辑面板独立传输按钮（与卷帘 PlaybackManager 完全无关）
-    // 以 SVG 图标渲染（复用 app 级图标管线，禁止 emoji）
-    let play_icon = if params.is_playing {
-        Icon::Pause
-    } else {
-        Icon::Play
-    };
-    let play_btn = iced_widget::button(icon::view_with_size_and_theme(
-        play_icon,
-        16,
-        16,
-        Some(theme),
-    ))
-    .on_press(Message::VideoClip(VideoClipAction::ClipPlayToggled))
-    .padding([2, 6]);
-    let rewind_btn = iced_widget::button(icon::view_with_size_and_theme(
-        Icon::SkipBackward,
-        16,
-        16,
-        Some(theme),
-    ))
-    .on_press(Message::VideoClip(VideoClipAction::ClipRewound))
-    .padding([2, 6]);
+    // 标题行（「剪辑带」+ 倒带/播放按钮 + 时长/位置/缩放信息）已全部由 egui
+    // 绘制并接管点击（`ui-egui` 的 `video_clip_timeline::show_title_row`）。
+    // iced 侧保留同高探测行：探针提供实测矩形，egui 在该矩形内自绘，
+    // 不存在跨框架文本度量对齐问题。
+    let title_row = crate::view::video_clip::rect_probe::probe(
+        "renderer::timeline_title",
+        iced_widget::container(
+            iced_widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fixed(20.0)),
+        )
+        .width(Length::Fill)
+        .padding([4, 8]),
+    );
 
     // 卷帘同款水平滚动条：滑块拖拽滚动 + 边缘拖拽缩放（视口宽随消息携带，无状态反向同步）
     use crate::message::{Message, VideoClipAction};
@@ -187,29 +168,8 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
 
     container(
         column![
-            // 标题行：独立传输按钮 + 时长/位置信息
-            row![
-                text(tr!("剪辑带"))
-                    .size(12)
-                    .style(move |_t: &Theme| text::Style {
-                        color: Some(strong_text)
-                    }),
-                rewind_btn,
-                play_btn,
-                text(trf!(
-                    "时长 {dur}s  位置 {pos}s  缩放 {zoom}x   空格 播放/暂停",
-                    dur = format!("{:.1}", duration_secs),
-                    pos = format!("{:.1}", params.playhead_secs),
-                    zoom = format!("{:.1}", params.clip.zoom)
-                ))
-                .size(11)
-                .style(move |_t: &Theme| text::Style {
-                    color: Some(weak_text)
-                }),
-            ]
-            .align_y(iced_core::Alignment::Center)
-            .spacing(4)
-            .padding([4, 8]),
+            // 标题行占位（内容由 egui 在探针矩形内自绘）
+            title_row,
             timeline_canvas,
             h_scrollbar,
         ]

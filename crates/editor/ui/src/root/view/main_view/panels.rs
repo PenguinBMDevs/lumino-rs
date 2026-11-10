@@ -60,8 +60,6 @@ impl Root {
         let ppq = self.editor.editor_state.view.ppq;
         let tempos: Vec<(u32, f32)> = self.tempo_pairs();
         // 剪辑面板独立传输时钟（秒域，与卷帘 PlaybackManager 完全无关）
-        let playhead_secs = self.state.video_clip.clip_position_secs;
-        let is_playing = self.state.video_clip.clip_playing;
         let video_edit = self.state.video_clip.video_edit;
         let audio_edit = self.state.video_clip.audio_edit;
 
@@ -164,8 +162,6 @@ impl Root {
                         tempos: &tempos,
                         clip: &self.state.video_clip,
                         viewport_w: timeline_viewport_w,
-                        playhead_secs,
-                        is_playing,
                         video_edit,
                         audio_edit,
                     },

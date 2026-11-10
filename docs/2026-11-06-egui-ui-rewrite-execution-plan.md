@@ -2740,3 +2740,33 @@ callback / 多视口 / 截图能力。
    iced 工具栏含 `SnapIcon`）都与 `capture_iced` 图像耦合，需先退役该工具；
 2. `root/text_params_panel.rs` 属于工具栏菜单，随工具栏一起处理；
 3. **需要用户确认**：退役 `capture_iced`（归档原图、改由 `capture_egui` 做唯一门禁）。
+
+**Task 1.3（第八十八步）：剪辑带标题行与传输按钮迁 egui**
+
+- **egui 自绘标题行**：`video_clip_timeline::show_title_row` —— 标题「剪辑带」12px +
+  倒带 / 播放暂停按钮（28×20，图标 16）+ 信息文本 11px，左边距 8、间距 4，
+  与 iced 原布局同口径；点击经 `VideoTimelineAction::{Rewound, PlayToggled}` 下发。
+- **消除跨框架度量对齐**：iced 侧标题行退化为**同高探测占位**
+  （`renderer::timeline_title`，内容高 20 + padding 4/8），egui 在该实测矩形内
+  自绘全部内容——不存在「egui 文本宽度 vs iced 文本宽度」差几像素的问题。
+- **精简 iced 视图**：删除 `play_btn` / `rewind_btn` / 「剪辑带」与信息文本，
+  `TimelinePaneParams` 去掉仅标题行使用的 `playhead_secs` / `is_playing`；
+  `panels.rs` 同步去掉这两个局部变量。
+- **动作映射**：`PlayToggled → VideoClipAction::ClipPlayToggled`、
+  `Rewound → ClipRewound`（新增 1 个单测）。
+- **无头点击验证**（`tests/video_timeline_transport.rs`，3 个用例）：
+  横向扫标题行可点到 `Rewound` 与 `PlayToggled`；`title_row = None` 时不产出任何
+  传输动作；播放态只切换图标、点击仍是 `PlayToggled`。
+  （真机入口需要「渲染器组 → 子面板」两级导航，本轮未做端到端点击，
+  由上述 kittest 覆盖命中与动作。）
+- 验收：`lumino-ui` lib 847/847、`ui-egui` lib 35/35 + 新集成 3/3、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 剪辑带水平滚动条（拖拽 + 边缘缩放）是 `timeline.rs` 仅剩的 iced 部分，
+   迁完后该文件只剩容器与两处探针；
+2. 基线耦合面（工具栏 / 状态栏 / 左栏 / 标题栏菜单 / 右栏图标列）
+   需 `capture_iced` 退役后才能删；
+3. **需要用户确认**：退役 `capture_iced`。

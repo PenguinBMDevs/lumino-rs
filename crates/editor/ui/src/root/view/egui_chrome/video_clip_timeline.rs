@@ -38,6 +38,24 @@ impl Root {
             trim_out: edit.trim_out_secs,
         };
 
+        // 标题行矩形：内容（标题 / 传输按钮 / 信息）已全部由 egui 自绘。
+        let title_row = crate::view::video_clip::rect_probe::last_rect("renderer::timeline_title")
+            .map(|rect| {
+                egui::Rect::from_min_size(
+                    egui::pos2(rect.x, rect.y),
+                    egui::vec2(rect.width, rect.height),
+                )
+            });
+        let language = self.settings.display.language;
+        let title = lumino_core::tr!("剪辑带").to_string();
+        let info = format!(
+            "时长 {:.1}s  位置 {:.1}s  缩放 {:.1}x   {}",
+            duration_secs,
+            clip.clip_position_secs,
+            clip.zoom,
+            lumino_core::tr!("空格 播放/暂停")
+        );
+        let _ = language;
         Some((
             egui::Rect::from_min_size(
                 egui::pos2(bounds.x, bounds.y),
@@ -51,6 +69,10 @@ impl Root {
                 video: clip_edit(&clip.video_edit),
                 audio: clip_edit(&clip.audio_edit),
                 viewport_w: bounds.width,
+                title_row,
+                title,
+                info,
+                playing: clip.clip_playing,
             },
         ))
     }
@@ -100,7 +122,46 @@ impl Root {
                 x: clip.timeline_scroll_x + dx,
                 viewport_w,
             },
+            VideoTimelineAction::PlayToggled => VideoClipAction::ClipPlayToggled,
+            VideoTimelineAction::Rewound => VideoClipAction::ClipRewound,
         };
         crate::Message::VideoClip(action)
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use crate::state::root_state::DialogType;
+
+    fn root() -> Root {
+        Root::new_dialog(
+            &lumino_ui_core::Theme::TokyoNightStorm.to_string(),
+            DialogType::VideoExport,
+        )
+    }
+
+    #[test]
+    fn transport_actions_map_to_video_clip_messages() {
+        let root = root();
+        for (action, ok) in [
+            (
+                VideoTimelineAction::PlayToggled,
+                matches!(
+                    root.video_timeline_action_message(&VideoTimelineAction::PlayToggled, 100.0),
+                    crate::Message::VideoClip(VideoClipAction::ClipPlayToggled)
+                ),
+            ),
+            (
+                VideoTimelineAction::Rewound,
+                matches!(
+                    root.video_timeline_action_message(&VideoTimelineAction::Rewound, 100.0),
+                    crate::Message::VideoClip(VideoClipAction::ClipRewound)
+                ),
+            ),
+        ] {
+            let _ = action;
+            assert!(ok);
+        }
     }
 }

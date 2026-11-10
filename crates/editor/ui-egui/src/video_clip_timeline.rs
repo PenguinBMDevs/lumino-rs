@@ -6,7 +6,7 @@
 //!
 //! 与 iced 的差异：不依赖 `iced_widget::canvas`，只用 egui painter。
 
-use egui::{Align2, CornerRadius, FontId, Rect};
+use egui::{Align2, CornerRadius, FontId, Rect, Vec2};
 
 use crate::theme;
 
@@ -84,6 +84,14 @@ pub struct VideoTimelineModel {
     pub audio: ClipEdit,
     /// 时间轴可视宽度（像素，滚动/缩放消息需要）。
     pub viewport_w: f32,
+    /// 标题行矩形（探针实测）；`None` = 未布局，不画标题行。
+    pub title_row: Option<Rect>,
+    /// 标题文案（「剪辑带」）。
+    pub title: String,
+    /// 信息行文案（时长 / 位置 / 缩放 / 快捷键提示）。
+    pub info: String,
+    /// 是否正在播放（决定播放/暂停图标）。
+    pub playing: bool,
 }
 
 impl VideoTimelineModel {
@@ -105,6 +113,10 @@ impl Default for VideoTimelineModel {
             video: ClipEdit::default(),
             audio: ClipEdit::default(),
             viewport_w: 1.0,
+            title_row: None,
+            title: String::new(),
+            info: String::new(),
+            playing: false,
         }
     }
 }
@@ -211,6 +223,98 @@ pub fn ticks(model: &VideoTimelineModel, width: f32) -> Vec<(f32, bool)> {
 /// 主刻度标签 10px `weak.text`、视频条 `rgb(0.2,0.6,0.95)`、音频条
 /// `rgb(0.25,0.75,0.35)`、把手为 45% 白（8×40，y+4）、标签白色 11px（x+10 居中）、
 /// 走带线 `rgb(0.95,0.25,0.25)` 宽 2。
+/// 标题行：标题 + 倒带/播放按钮 + 信息文本（全部 egui 自绘，左侧对齐）。
+///
+/// 与 iced 原布局同口径：行内左边距 8、间距 4、按钮 28×20（图标 16 + 内边距 6/2）、
+/// 标题 12px、信息 11px。行矩形由 iced 的探测占位提供，跨框架不存在文本度量对齐。
+pub fn show_title_row(
+    ui: &egui::Ui,
+    model: &VideoTimelineModel,
+    icons: &mut crate::icons::IconCache,
+) {
+    let Some(rect) = model.title_row else {
+        return;
+    };
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+    let painter = ui.painter().with_clip_rect(rect);
+    let cy = rect.center().y;
+    let mut x = rect.left() + 8.0;
+
+    // 标题（12px，正文色）。
+    painter.text(
+        egui::pos2(x, cy),
+        Align2::LEFT_CENTER,
+        &model.title,
+        FontId::proportional(12.0),
+        theme::text(),
+    );
+    x += text_width(ui, &model.title, 12.0) + 4.0;
+
+    let btn = Vec2::new(BUTTON_W, BUTTON_H);
+    let rewind = Rect::from_min_size(egui::pos2(x, cy - BUTTON_H / 2.0), btn);
+    x += BUTTON_W + 4.0;
+    let play = Rect::from_min_size(egui::pos2(x, cy - BUTTON_H / 2.0), btn);
+    x += BUTTON_W + 4.0;
+
+    let rewind_resp = ui.interact(
+        rewind,
+        egui::Id::unique("lumino.timeline.rewind"),
+        egui::Sense::click(),
+    );
+    let play_resp = ui.interact(
+        play,
+        egui::Id::unique("lumino.timeline.play"),
+        egui::Sense::click(),
+    );
+    for (resp, rect) in [(&rewind_resp, rewind), (&play_resp, play)] {
+        if resp.hovered() {
+            painter.rect_filled(rect, 4, theme::toolbar_bg());
+        }
+    }
+    if rewind_resp.clicked() {
+        crate::chrome::push_video_timeline_action(ui.ctx(), VideoTimelineAction::Rewound);
+    }
+    if play_resp.clicked() {
+        crate::chrome::push_video_timeline_action(ui.ctx(), VideoTimelineAction::PlayToggled);
+    }
+    let icon_size = 16.0;
+    let rewind_icon = Rect::from_center_size(rewind.center(), Vec2::splat(icon_size));
+    icons.paint(&painter, crate::icons::Icon::SkipBackward, rewind_icon);
+    let play_icon = if model.playing {
+        crate::icons::Icon::Pause
+    } else {
+        crate::icons::Icon::Play
+    };
+    let play_icon_rect = Rect::from_center_size(play.center(), Vec2::splat(icon_size));
+    icons.paint(&painter, play_icon, play_icon_rect);
+
+    // 信息文本（11px，次级色）。
+    painter.text(
+        egui::pos2(x, cy),
+        Align2::LEFT_CENTER,
+        &model.info,
+        FontId::proportional(11.0),
+        theme::text_muted(),
+    );
+
+    // 标题行由 egui 独占：iced 的同位占位行不再需要事件。
+    crate::chrome::menu::extend_blocked(ui.ctx(), [rect]);
+}
+
+/// 单行文本宽度（与绘制同源：同一字号与字体族）。
+fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
+    ui.painter()
+        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
+        .size()
+        .x
+}
+
+/// 传输按钮尺寸（图标 16 + 内边距 6/2，与 iced 同口径）。
+const BUTTON_W: f32 = 28.0;
+const BUTTON_H: f32 = 20.0;
+
 pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
         return;
@@ -366,6 +470,10 @@ pub enum VideoTimelineAction {
     },
     /// 水平滚动（像素）。
     ScrollX(f32),
+    /// 播放 / 暂停（剪辑面板独立传输时钟）。
+    PlayToggled,
+    /// 回到起点。
+    Rewound,
 }
 
 /// 拖拽会话（跨帧保存）。
@@ -597,6 +705,10 @@ mod tests {
             video: ClipEdit::default(),
             audio: ClipEdit::default(),
             viewport_w: 400.0,
+            title_row: None,
+            title: "剪辑带".to_string(),
+            info: String::new(),
+            playing: false,
         }
     }
 

@@ -342,6 +342,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     if video_timeline_enabled()
         && let Some((rect, timeline)) = video_timeline(ui.ctx())
     {
+        crate::video_clip_timeline::show_title_row(&root, &timeline, icons);
         crate::video_clip_timeline::show(&root, rect, &timeline);
         // 时间轴由 egui 接管输入：整块占用，避免 iced 的同位画布再处理一次。
         menu::extend_blocked(ui.ctx(), [rect]);
@@ -647,7 +648,7 @@ fn arrangement_enabled() -> bool {
 const VIDEO_TIMELINE_ACTION_ID: &str = "lumino.video-timeline.action";
 
 /// 追加本帧时间轴动作。
-fn push_video_timeline_action(
+pub(crate) fn push_video_timeline_action(
     ctx: &egui::Context,
     action: crate::video_clip_timeline::VideoTimelineAction,
 ) {
