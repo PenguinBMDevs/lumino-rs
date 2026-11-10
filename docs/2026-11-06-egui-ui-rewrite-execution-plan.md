@@ -1836,42 +1836,62 @@ callback / 多视口 / 截图能力。
   `lumino-ui` = **39**。39 这个数字在 `iced_widget` / `iced_core` / `iced_wgpu`
   仍被 `Element`/`Message`/`Theme` 整树使用时不会下降。
 
-**Task 1.3（第五十三步）：egui 走带标尺（共存脚手架，默认关闭）**
+**Task 1.3（第五十三步）：egui 走带标尺（共存脚手架，默认关闭）— 已完成**
 
-- **新增** `ui-egui/src/chrome/arrangement.rs`（72 行）：按 iced
-  `arrangement/ruler.rs` 同口径绘制——底色 + 底部 1px 边框、每个小节边界一条
-  竖线、小节号画在边界右侧 4px / 顶部 4px、相邻标签 < 38px 时只画线、字号 12.5。
-- **小节计算** `chrome/arrangement/measures.rs`（180 行，5 个单测）：与 iced
-  `MeasureIterator` 同口径（同 tick 拍号去重、段 0 从 tick 0 起、跨段不足一小节按
-  1 计、编号跨拍号变化连续），并加了 4096 条防御上限。
-- **通道**：不加 `ChromeModel` 字段（会破坏大量测试字面量），改走 ctx-data：
-  `chrome::set_arrangement(ctx, Option<ArrangementRulerModel>)`；叠加层每帧从
-  `Root::arrangement_ruler_model()` 取模型塞入。
-- **开关**：`LUMINO_EGUI_ARRANGEMENT=1` 才绘制，默认关闭——不动 iced、不碰
-  `capture_iced` 基线。
-- 验收：`ui-egui` 11/11（含 5 个 measures 用例）、`lumino-ui` lib 864/864、
-  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
-  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
-- **真机实测（ppp=1.25，开关打开）**：标尺正确画出 1..5 小节号与刻度线
-  （`target/arr-egui-ruler.png`），左缘与走带区左缘对齐。
-- **发现的 2px 错位（翻转前必须修）**：
-  - iced 走带内容原点实测 = 逻辑 **104**（物理 130）；egui 用
-    `TITLEBAR_H(30) + toolbar.height(72)` = 逻辑 **102**，整体高 2 逻辑 px
-    （2.5 物理），底部边框落在 161 而非 165 物理；
-  - 已知 `toolbar.height` 运行时为 72，故 2px 来自 iced 布局（候选：
-    `column!` 间距 / 工具栏底部 handle 的绘制范围），**不是** egui 公式算错；
-  - 另观察到：本构建下 **iced 走带标尺只画了底色，没有小节号与刻度线**
-    （`arr-on.png` 标尺带内无暗像素），egui 版是有内容的——两者内容不等价，
-    翻转开关前需要确认这是 iced 既有缺陷还是本构建的特例。
-- 因此开关保持默认关闭：`OVERLAY=1` 下走带画面与改动前逐像素一致。
+- **新增** `ui-egui/src/chrome/arrangement.rs`：按 iced `arrangement/ruler.rs`
+  同口径绘制——底色 + 底部 1px 边框、每个小节边界一条竖线、小节号在边界右侧 4px /
+  顶部 4px、相邻标签 < 38px 只画线、字号 12.5。
+- **小节计算** `chrome/arrangement/measures.rs`（5 个单测）：同 tick 拍号去重、
+  段 0 从 tick 0 起、跨段不足一小节按 1 计、编号跨拍号变化连续 + 4096 条防御上限。
+- **通道**：不往 `ChromeModel` 加字段（会破坏 40+ 处测试字面量），走 ctx-data
+  `chrome::set_arrangement`；生产侧 `Root::arrangement_ruler_model()` 提供模型。
+- **开关**：`LUMINO_EGUI_ARRANGEMENT=1`，默认关闭（不动 iced、不碰基线）。
+- 验收：`ui-egui` 11/11、`lumino-ui` lib 864/864、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
 
-**Task 1.3（下一步）：对齐走带内容原点 + 补轨道列 / 点击层**
+**Task 1.3（第五十四步）：更正「2px 错位」误判 —— 几何实际一致（实测）**
 
-1. 量出 iced 那 2px 的真实来源（给 `column!` / 工具栏容器加一次性 rect dump），
-   让 egui 与 iced 的内容原点严格同源；
-2. 实现 egui 轨道列（160px：行底色 / 色块徽标 / 标签 / 通道 / 静音独奏按钮 /
-   拖拽指示线）与点击层（选择 / 移动 / 缩放）；
-3. 真机对照 `OVERLAY=1` vs `=0` 的走带区（几何严格、非文字区 Δ≤2），全绿后再
-   翻 `LUMINO_EGUI_ARRANGEMENT` 默认值；
-4. 之后是 `video_clip/timeline`、吸附小图，最后一次性删除 iced 整树与
-   `capture_iced`（工具退役），以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+上一轮把「iced 走带标尺比 egui 低 2 逻辑 px」写成了待修缺陷，**这个结论是错的**。
+本轮用两条独立证据把它推翻：
+
+1. **权威几何 dump**（`LUMINO_DEBUG_ARRANGEMENT=1`，加在
+   `host/render/viewport.rs::collect_viewport_info`）：
+   ```
+   sidebar_width=48.0 toolbar_height=72.0 titlebar_offset=30.0 native_titlebar=false
+   offset_x=208.0 offset_y=130.0 size_w=1820.0 size_h=1062.0
+   logical_w=2048.0 logical_h=1232.0
+   ```
+   `offset_y = 130 = 30(标题栏) + 72(工具栏) + 28(标尺)`，
+   `offset_x = 208 = 48(侧栏) + 160(音轨列)` —— 与 egui 的
+   `top_inset = TITLEBAR_H + toolbar.height`、`left_inset = 48 + panel_width`
+   **逐值相等**。
+2. **同构建 A/B 实拍**（`target/ab-off.png` / `ab-on.png`，x=1000 逐行取色）：
+   ```
+   off（iced 标尺）: 245 →(128) 240 →(162) 245 →(163) 251(泳道)
+   on （egui 标尺）: 245 →(160) 232/206/232(1px 边框) →(163) 251(泳道)
+   ```
+   两者**泳道都从 163 物理像素开始**（=130 逻辑 × 1.25 + 取整），即布局完全一致；
+   差异只在标尺带内部。
+
+**颜色也不是错，是 iced 那层没画**：`iced_weakest = 0.9606`（≈245）与
+egui `panel_bg/roll_ruler_bg = (245,245,245)` 相同；标尺带里的 240 是 wgpu
+整窗 clear 色（`colors.bg`）透出来的结果 —— 也就是说**这个状态下 iced 的走带标尺
+只留透明，没有画底色、刻度线与小节号**（`ab-off.png` 标尺带内暗像素数为 0），
+egui 版则完整绘制。这不是「错位/重叠」，是 iced 侧的空绘制。
+
+- 结论：**几何无需修正**，`top_inset`/`left_inset` 已严格同源；
+  默认开关暂不翻转的原因改为「内容差异需要人工确认」（egui 会补出 iced 缺失的
+  标尺内容），而不是「像素错位」。
+- 复现方式：`LUMINO_EGUI_ARRANGEMENT=1`，进入走带路由，比较标尺带；
+  证据图 `target/ab-off.png`、`ab-on.png`。
+
+**Task 1.3（下一步）：补 egui 走带轨道列与点击层**
+
+1. 轨道列（160px）：行底色（含 zebra）、未配色时的左侧色块、`display_label`、
+   通道号、Conductor 标识、静音/独奏按钮、拖拽排序指示线与遮罩；
+2. 点击层：选择 / 移动 / 缩放 / 框选，与 iced `ArrangementClickCanvas` 同语义；
+3. 三者（标尺 + 轨道列 + 点击层）在 `OVERLAY=1` 下真机对照 `OVERLAY=0`，
+   几何严格、非文字区 Δ≤2 后翻 `LUMINO_EGUI_ARRANGEMENT` 默认值；
+4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役
+   `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
