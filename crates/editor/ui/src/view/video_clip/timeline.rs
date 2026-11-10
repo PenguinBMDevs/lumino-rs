@@ -5,7 +5,6 @@
 
 use iced_core::Length;
 use iced_widget::{column, container};
-use lumino_ui_core::state::video_clip_state::{ClipTrackEdit, VideoClipState};
 
 use crate::Theme;
 
@@ -80,45 +79,18 @@ pub(crate) fn seconds_to_ticks(secs: f64, ppq: u32, tempos: &[(u32, f32)]) -> u6
     ticks.max(0.0) as u64
 }
 
-/// 剪辑带时间轴视图参数（打包传入，避免长参数列表）
-pub struct TimelinePaneParams<'a> {
-    /// 内容总长（tick，调用方传入真实轨尾标，见 `Root::clip_real_total_ticks`）
-    pub total_ticks: u32,
-    /// PPQ（每四分音符 tick 数）
-    pub ppq: u16,
-    /// Tempo 映射 `(tick, bpm)`
-    pub tempos: &'a [(u32, f32)],
-    /// 剪辑视口状态（zoom 与 timeline_scroll_x 驱动内容与滚动条）
-    pub clip: &'a VideoClipState,
-    /// 时间轴可视宽度（由面板 responsive 计算传入）
-    pub viewport_w: f32,
-    /// 视频轨素材编辑（偏移/首尾裁剪）
-    pub video_edit: ClipTrackEdit,
-    /// 音频轨素材编辑（偏移/首尾裁剪）
-    pub audio_edit: ClipTrackEdit,
-}
-
-/// 渲染剪辑带时间轴
-pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::Element<'static> {
+/// 渲染剪辑带时间轴的**占位骨架**。
+///
+/// 内容（标题行 / 传输按钮 / 标尺与双轨 / 播放头 / 水平滚动条）已全部由 egui
+/// 绘制并接管输入；iced 侧只保留同尺寸结构与三个探针，为 egui 提供实测矩形：
+/// - `renderer::timeline_title`（标题行）
+/// - `renderer::clip_canvas`（标尺 + 双轨画布）
+/// - `renderer::timeline_scrollbar`（水平滚动条）
+pub fn timeline_pane(theme: &Theme) -> crate::Element<'static> {
     let palette = theme.extended_palette();
     let weak_color = palette.background.weak.color;
     let strong_color = palette.background.strong.color;
 
-    let duration_secs = duration_seconds(params.total_ticks, params.ppq, params.tempos) as f32;
-
-    // 内容区 Canvas（标尺 + 双轨 + 走带指示线）
-    // 时间轴画布由 egui 绘制（ui-egui 的 video_clip_timeline）；
-    // iced 侧保留同尺寸占位，探针继续提供真实矩形。
-    let timeline_canvas = crate::view::video_clip::rect_probe::probe(
-        "renderer::clip_canvas",
-        iced_widget::container(iced_widget::Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill),
-    );
-    // 标题行（「剪辑带」+ 倒带/播放按钮 + 时长/位置/缩放信息）已全部由 egui
-    // 绘制并接管点击（`ui-egui` 的 `video_clip_timeline::show_title_row`）。
-    // iced 侧保留同高探测行：探针提供实测矩形，egui 在该矩形内自绘，
-    // 不存在跨框架文本度量对齐问题。
     let title_row = crate::view::video_clip::rect_probe::probe(
         "renderer::timeline_title",
         iced_widget::container(
@@ -129,53 +101,27 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
         .width(Length::Fill)
         .padding([4, 8]),
     );
-
-    // 卷帘同款水平滚动条：滑块拖拽滚动 + 边缘拖拽缩放（视口宽随消息携带，无状态反向同步）
-    use crate::message::{Message, VideoClipAction};
-    let viewport_w = params.viewport_w;
-    // 内容宽度：与 egui 侧同一公式（内容秒长 × 每秒像素 × 缩放）。
-    let content_secs = {
-        let video_end = params.video_edit.offset_secs
-            + params.video_edit.trim_in_secs
-            + params.video_edit.visible_len(duration_secs);
-        let audio_end = params.audio_edit.offset_secs
-            + params.audio_edit.trim_in_secs
-            + params.audio_edit.visible_len(duration_secs);
-        duration_secs.max(video_end).max(audio_end)
-    };
-    let content_width =
-        content_secs * lumino_ui_egui::video_clip_timeline::PIXELS_PER_SEC * params.clip.zoom;
-
-    let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
-        params.clip.timeline_scroll_x,
-        content_width,
-        params.clip.zoom,
-        Some(viewport_w.max(1.0)),
-        move |scroll| {
-            Message::VideoClip(VideoClipAction::TimelineScroll {
-                x: scroll,
-                viewport_w,
-            })
-        },
-        move |zoom, ratio| {
-            Message::VideoClip(VideoClipAction::TimelineZoom {
-                zoom,
-                fixed_ratio: ratio,
-                viewport_w,
-            })
-        },
+    let canvas = crate::view::video_clip::rect_probe::probe(
+        "renderer::clip_canvas",
+        iced_widget::container(iced_widget::Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill),
+    );
+    let scrollbar = crate::view::video_clip::rect_probe::probe(
+        "renderer::timeline_scrollbar",
+        iced_widget::container(
+            iced_widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fixed(20.0)),
+        )
+        .width(Length::Fill),
     );
 
     container(
-        column![
-            // 标题行占位（内容由 egui 在探针矩形内自绘）
-            title_row,
-            timeline_canvas,
-            h_scrollbar,
-        ]
-        .spacing(4)
-        .width(Length::Fill)
-        .height(Length::Fill),
+        column![title_row, canvas, scrollbar]
+            .spacing(4)
+            .width(Length::Fill)
+            .height(Length::Fill),
     )
     .width(Length::Fill)
     .height(Length::Fixed(super::layout::TIMELINE_HEIGHT))

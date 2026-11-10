@@ -86,6 +86,10 @@ pub struct VideoTimelineModel {
     pub viewport_w: f32,
     /// 标题行矩形（探针实测）；`None` = 未布局，不画标题行。
     pub title_row: Option<Rect>,
+    /// 水平滚动条矩形（探针实测）；`None` = 未布局。
+    pub scrollbar: Option<Rect>,
+    /// 内容像素宽（`content_secs × PIXELS_PER_SEC × zoom`）。
+    pub content_w: f32,
     /// 标题文案（「剪辑带」）。
     pub title: String,
     /// 信息行文案（时长 / 位置 / 缩放 / 快捷键提示）。
@@ -114,6 +118,8 @@ impl Default for VideoTimelineModel {
             audio: ClipEdit::default(),
             viewport_w: 1.0,
             title_row: None,
+            scrollbar: None,
+            content_w: 0.0,
             title: String::new(),
             info: String::new(),
             playing: false,
@@ -706,6 +712,8 @@ mod tests {
             audio: ClipEdit::default(),
             viewport_w: 400.0,
             title_row: None,
+            scrollbar: None,
+            content_w: 0.0,
             title: "剪辑带".to_string(),
             info: String::new(),
             playing: false,

@@ -2770,3 +2770,31 @@ callback / 多视口 / 截图能力。
 2. 基线耦合面（工具栏 / 状态栏 / 左栏 / 标题栏菜单 / 右栏图标列）
    需 `capture_iced` 退役后才能删；
 3. **需要用户确认**：退役 `capture_iced`。
+
+**Task 1.3（第八十九步）：剪辑带水平滚动条迁 egui —— iced `timeline.rs` 只剩占位骨架**
+
+- **新建** `ui-egui/src/video_timeline_scrollbar.rs`：
+  - 几何照搬 iced `ScrollbarWidget`：轨道内缩 2px、滑块-轨道间隙 2px、滑块最小 20px、
+    边缘命中 6px；
+  - 交互：滑块拖拽 → `ScrollX(新滚动 − 当前)`（绝对值换算成增量）；
+    左/右边缘拖拽 → `Zoom { factor, fixed_ratio = 1/0 }`；
+    内容未溢出时禁止继续缩小（与 iced 的 `content_fits` 判断一致）；
+    点轨道空白 → 直接定位；
+  - 拖拽数学抽成纯函数 `thumb_drag_scroll` / `edge_drag_zoom`（4 个单测：
+    半程比例、超程钳制、双向缩放、满屏禁止缩小）。
+- **模型扩展**：`VideoTimelineModel` 增加 `scrollbar: Option<Rect>`（探针
+  `renderer::timeline_scrollbar`）与 `content_w`（`content_secs × 80 × zoom`，
+  与 iced 同式；`viewport_w` 用画布实测宽）。
+- **iced 视图清空**：`timeline.rs` 的 `timeline_pane` 不再接收任何参数，只剩
+  「标题行 / 画布 / 滚动条」三个探针 + 固定 200 高的容器；删除
+  `TimelinePaneParams`、滚动条 widget、内容宽/秒长计算（迁到生产模型）与
+  `layout::renderer_panel_available_width`（已无使用者，连带其测试）。
+- 验收：`lumino-ui` lib 847/847、`ui-egui` lib 40/40、传输 kittest 3/3、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）—— 已无非阻塞项**
+
+剪辑带全部内容（标题 / 传输 / 画布 / 滚动条）均已迁 egui。剩余 iced 面
+（工具栏含 `SnapIcon`、状态栏、左栏面板、标题栏菜单、右栏图标列像素）全部
+出现在 `capture_iced` 的 6 个基线场景中，必须先用用户决策退役该工具。

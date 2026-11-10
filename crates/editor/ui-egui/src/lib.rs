@@ -45,6 +45,7 @@ pub mod video_clip_timeline;
 pub mod video_export;
 pub mod video_export_overlay;
 pub mod video_preview;
+pub mod video_timeline_scrollbar;
 pub mod widgets;
 
 #[cfg(feature = "capture")]

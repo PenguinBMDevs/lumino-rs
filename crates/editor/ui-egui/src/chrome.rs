@@ -343,6 +343,18 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         && let Some((rect, timeline)) = video_timeline(ui.ctx())
     {
         crate::video_clip_timeline::show_title_row(&root, &timeline, icons);
+        if let Some(bar) = timeline.scrollbar
+            && let Some(action) = crate::video_timeline_scrollbar::show(
+                &root,
+                bar,
+                timeline.scroll_x,
+                timeline.content_w,
+                timeline.viewport_w,
+                timeline.zoom,
+            )
+        {
+            push_video_timeline_action(ui.ctx(), action);
+        }
         crate::video_clip_timeline::show(&root, rect, &timeline);
         // 时间轴由 egui 接管输入：整块占用，避免 iced 的同位画布再处理一次。
         menu::extend_blocked(ui.ctx(), [rect]);

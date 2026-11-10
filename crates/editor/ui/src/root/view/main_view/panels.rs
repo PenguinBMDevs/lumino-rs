@@ -56,12 +56,7 @@ impl Root {
         let export_state = self.state.video_export_dialog.clone();
         let theme = self.window.theme.clone();
         // 真实内容长度：优先文档轨尾标（与播放停止点同源），空工程回退画布默认
-        let total_ticks = self.clip_real_total_ticks();
-        let ppq = self.editor.editor_state.view.ppq;
-        let tempos: Vec<(u32, f32)> = self.tempo_pairs();
         // 剪辑面板独立传输时钟（秒域，与卷帘 PlaybackManager 完全无关）
-        let video_edit = self.state.video_clip.video_edit;
-        let audio_edit = self.state.video_clip.audio_edit;
 
         responsive(move |size: Size| {
             let palette = theme.extended_palette();
@@ -79,9 +74,6 @@ impl Root {
             size_cell
                 .borrow_mut()
                 .replace((preview_w as u32, preview_h as u32));
-            // 时间轴可视宽度（剪辑带滚动条/滚动的钳制基准，随消息携带）
-            let timeline_viewport_w =
-                crate::view::video_clip::layout::renderer_panel_available_width(size);
 
             // 左侧轨道占位（后续接入真实轨道列表）
             let left_panel = container(
@@ -154,18 +146,7 @@ impl Root {
 
             let timeline = crate::view::video_clip::rect_probe::probe(
                 "renderer::timeline",
-                crate::view::video_clip::timeline::timeline_pane(
-                    &theme,
-                    crate::view::video_clip::timeline::TimelinePaneParams {
-                        total_ticks,
-                        ppq,
-                        tempos: &tempos,
-                        clip: &self.state.video_clip,
-                        viewport_w: timeline_viewport_w,
-                        video_edit,
-                        audio_edit,
-                    },
-                ),
+                crate::view::video_clip::timeline::timeline_pane(&theme),
             );
             let settings =
                 {

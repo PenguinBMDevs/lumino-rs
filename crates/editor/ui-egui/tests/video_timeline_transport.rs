@@ -21,6 +21,8 @@ fn model(title_row: Option<Rect>, playing: bool) -> VideoTimelineModel {
         audio: ClipEdit::default(),
         viewport_w: 400.0,
         title_row,
+        scrollbar: None,
+        content_w: 0.0,
         title: "剪辑带".to_string(),
         info: "时长 10.0s".to_string(),
         playing,

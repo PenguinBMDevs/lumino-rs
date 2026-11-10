@@ -46,6 +46,31 @@ impl Root {
                     egui::vec2(rect.width, rect.height),
                 )
             });
+        let scrollbar = crate::view::video_clip::rect_probe::last_rect(
+            "renderer::timeline_scrollbar",
+        )
+        .map(|rect| {
+            egui::Rect::from_min_size(
+                egui::pos2(rect.x, rect.y),
+                egui::vec2(rect.width, rect.height),
+            )
+        });
+        let visible_len = |edit: &lumino_ui_core::state::video_clip_state::ClipTrackEdit| {
+            (duration_secs - edit.trim_in_secs - edit.trim_out_secs).max(0.0)
+        };
+        let content_secs = duration_secs
+            .max(
+                clip.video_edit.offset_secs
+                    + clip.video_edit.trim_in_secs
+                    + visible_len(&clip.video_edit),
+            )
+            .max(
+                clip.audio_edit.offset_secs
+                    + clip.audio_edit.trim_in_secs
+                    + visible_len(&clip.audio_edit),
+            );
+        let content_w =
+            content_secs * lumino_ui_egui::video_clip_timeline::PIXELS_PER_SEC * clip.zoom;
         let language = self.settings.display.language;
         let title = lumino_core::tr!("剪辑带").to_string();
         let info = format!(
@@ -70,6 +95,8 @@ impl Root {
                 audio: clip_edit(&clip.audio_edit),
                 viewport_w: bounds.width,
                 title_row,
+                scrollbar,
+                content_w,
                 title,
                 info,
                 playing: clip.clip_playing,
