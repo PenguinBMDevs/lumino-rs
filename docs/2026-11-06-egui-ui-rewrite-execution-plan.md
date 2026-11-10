@@ -2033,3 +2033,34 @@ callback / 多视口 / 截图能力。
 3. 两处清完后 `iced_widget::canvas` 不再被引用，再按依赖倒序摘除
    `lumino-ui` 的 `iced_*`，退役 `capture_iced`，以
    `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十五步）：视频剪辑时间轴的 egui 实现（先落地绘制/命中，含单测）**
+
+- 基线确认：`capture_iced` 的 6 个场景是
+  `MainChrome / SettingsGeneral(×3) / SaveConfirmDialog / PianoRollSkeleton`，
+  **视频剪辑面板不在其中**——因此该面板的迁移不会动 iced 基线。
+- **新增** `ui-egui/src/video_clip_timeline.rs`（约 300 行，3 个单测）：
+  - 常量与 iced 同口径（`PIXELS_PER_SEC=80`、`RULER_HEIGHT=24`、
+    `TRACK_HEIGHT=48`、`TRACK_SPACING=8`、主刻度 5s / 次刻度 1s、
+    圆角 6、把手视觉 8 / 命中 16）；
+  - `TrackGeom`（由可见区间 + 缩放 + 滚动算屏幕几何）、`HitZone`
+    （`Ruler` / `Body` / `Head` / `Tail`）与 `hit_test` 纯函数；
+  - `show()` 用 egui painter 画标尺（主/次刻度 + 秒标签）、双轨圆角条
+    （首尾把手）与走带线。
+- 单测：刻度间隔、命中区三分（含把手 16px 容差）、几何随缩放/滚动变化。
+- **尚未接线**：egui 叠加层当前不覆盖「视频剪辑（渲染器入口）」面板，
+  直接删 iced 时间轴会丢 UI；下一步先把面板本体迁到 egui（或让叠加层覆盖该区），
+  再把 iced `TimelineCanvas` 换成占位并删除 `timeline_canvas*`。
+- 验收：`ui-egui` 21/21、`lumino-ui` lib 864/864、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：迁视频剪辑面板本体，替换 iced 时间轴**
+
+1. 在 `ui-egui` 增加渲染器入口面板（视频剪辑）绘制 + 模型，复用本步的
+   `video_clip_timeline`；
+2. 叠加层覆盖该区域后，把 iced `view/video_clip/timeline.rs` 改为占位并删除
+   `timeline_canvas*`（`iced_widget::canvas` 只剩 `snap_icon` 一处）；
+3. 工具栏整体删除时一并处理 `SnapIcon`（单独占位会破 6 张 iced 基线）；
+4. 之后摘除 `lumino-ui` 的 `iced_*`、退役 `capture_iced`，以
+   `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
