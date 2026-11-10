@@ -332,3 +332,21 @@ fn subtree_size(node: &iced_core::layout::Node, size: &mut usize) {
         subtree_size(child, size);
     }
 }
+
+/// 人工排查：打印每种对话框的当前窗口尺寸（用于钉死尺寸前的取证）。
+///
+/// 运行：`cargo test -p lumino-ui --lib debug_dump_dialog_window_sizes -- --ignored --nocapture`
+#[test]
+#[ignore = "人工排查工具，需要时用 --ignored 显式运行"]
+fn debug_dump_dialog_window_sizes() {
+    let Some(renderer) = headless_renderer() else {
+        eprintln!("跳过：无可用 GPU 适配器");
+        return;
+    };
+    let ui_config = UiConfig::default();
+    for dialog_type in ALL_DIALOGS {
+        let root = Root::new_dialog_with_config(&ui_config.theme, dialog_type, &ui_config);
+        let size = decide_dialog_window_size(&root, &renderer, dialog_type, WORK_AREA);
+        println!("SIZE {dialog_type:?} {:.0}x{:.0}", size.width, size.height);
+    }
+}

@@ -2410,3 +2410,38 @@ callback / 多视口 / 截图能力。
    `capture_iced` 的 5 个场景里，需要先决定该工具的去留；
 2. 迁右栏剩余 iced 面板；
 3. 摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十七步）：删除 10 个「已由 egui 整窗接管」的 iced 对话框视图（−1668 行）**
+
+- 先取证尺寸：新增 `debug_dump_dialog_window_sizes`（`#[ignore]` 人工工具）打印
+  `decide_dialog_window_size` 的结果，拿到每个对话框的**当前真实尺寸**：
+  ```
+  CustomPrecision 489x190  SpeedChange 247x256  BatchEdit 319x614
+  MemoryMonitor 300x402    DrawSettings 460x172  LoadConfirm 420x233
+  ExportProgress 406x233   Help 900x620         History 440x560
+  ProjectSettings 450x480  BrushSettings 480x600
+  ```
+- **把尺寸钉死**（`DialogSizeHint::pinned`）后，窗口不再依赖 iced 测量；
+  `overlays.rs` 引入 `dialog_placeholder(theme)`（满窗底色），分支改用它。
+- **删除** 10 个 iced 视图文件：`help_dialog` / `history_dialog` /
+  `project_settings_dialog` / `brush_settings_dialog` / `custom_precision_dialog` /
+  `speed_change_dialog` / `batch_edit_dialog` / `memory_monitor_dialog` /
+  `draw_settings_dialog`（+ `overlays.rs` 的对应 import 与 `view.rs` 的 `pub mod`）。
+  这些对话框在 egui 侧都有 `DialogModel` 与模型测试（`*_tests.rs`）。
+- **刻意保留 `load_confirm_dialog`**：其正文含超长路径、会折行，窗口高度随内容变化，
+  钉死会裁内容——仍由 iced 测量（`boxed(420)`），等 egui 侧接管弹窗尺寸后再迁。
+- `dialog_preferred_size` 的 3 个单测同步：`CustomPrecision`/`MemoryMonitor` 已钉死，
+  改用仍为 `auto()`/无上限的 `SaveConfirm` / `RecoverTrack` 验证「贴合内容」「不超工作区」；
+  「需要宽度搜索」清单改为只剩这两个。
+- 验收：`lumino-ui` lib 850/850、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 继续迁剩余 iced 对话框（Collaboration / CloudConnect / CloudBrowser / CloudNotice /
+   RecoverTrack 等**多状态**对话框：需先钉死尺寸并把状态覆盖移到 egui 模型测试，
+   同时给 `layout_is_state_invariant` 加对应条目）；
+2. 迁右栏剩余 iced 面板；
+3. 待 `capture_iced` 去留确认后删 iced 工具栏（含 `SnapIcon`），摘 `lumino-ui` 的
+   `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

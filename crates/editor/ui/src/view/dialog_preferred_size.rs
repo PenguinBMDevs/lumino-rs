@@ -178,11 +178,11 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // 这些视图里没有 `Fill` 宽度的占位控件，宽度只由 Fixed 输入框 / 下拉 /
         // 按钮 / 标签决定 ⇒ `measure_min_fitting_width` 量出的就是内容真实所需宽度。
         // 自定义精度：Form 面板全 Fixed（旧值 480；实测内容需要 ≈488，旧值会裁 8px）
-        DialogType::CustomPrecision => DialogSizeHint::auto(),
+        DialogType::CustomPrecision => DialogSizeHint::pinned(489.0, 190.0),
         // 变速：内容全 Fixed（旧 400×250）
-        DialogType::SpeedChange => DialogSizeHint::auto(),
+        DialogType::SpeedChange => DialogSizeHint::pinned(247.0, 256.0),
         // 批量编辑：内容全 Fixed（旧 420×640）
-        DialogType::BatchEdit => DialogSizeHint::auto(),
+        DialogType::BatchEdit => DialogSizeHint::pinned(319.0, 614.0),
         // 保存确认：三个 90px 按钮 + 文案（旧 380×180；实测内容只需 ≈338）
         DialogType::SaveConfirm => DialogSizeHint::auto(),
 
@@ -191,7 +191,7 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // 列变宽时窗口自动跟着变宽（旧值 560 作为下限）
         DialogType::RecoverTrack => DialogSizeHint::at_least_width(560.0),
         // 音频导出进度：**当前 Runner 侧无打开路径**（死视图），仅为穷尽性保留
-        DialogType::ExportProgress => DialogSizeHint::at_least_width(400.0),
+        DialogType::ExportProgress => DialogSizeHint::pinned(406.0, 233.0),
 
         // ── 宽度钉在原值区间：`Fill` 占多数内容（自动量会退到最小值）──────
         // 加载确认：超长路径是不可断词 token，自动宽度会被它撑爆 ⇒ 钉住并按旧值折行
@@ -201,9 +201,9 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // 云连接：6 个 `Fill` 输入框 ⇒ 宽度是自由参数（旧 480×515）
         DialogType::CloudConnect => DialogSizeHint::boxed(480.0),
         // 内存监控：长说明句需固定折行宽度（旧 300×440）
-        DialogType::MemoryMonitor => DialogSizeHint::boxed(300.0),
+        DialogType::MemoryMonitor => DialogSizeHint::pinned(300.0, 402.0),
         // 音符画设置：长占位文案需固定折行宽度（旧 460×420）
-        DialogType::DrawSettings => DialogSizeHint::boxed(460.0),
+        DialogType::DrawSettings => DialogSizeHint::pinned(460.0, 172.0),
         // 帮助：左侧列表 + 右侧滚动正文，尺寸固定，避免测量被滚动区压成 0
         DialogType::Help => DialogSizeHint::pinned(900.0, 620.0),
         // 形状抽屉：B0 空窗先钉死 1000×700；B1 画板接入后再评估测量
@@ -437,7 +437,8 @@ mod tests {
     /// 内容比上限矮 ⇒ 窗口贴合内容（本卡的核心收益）。
     #[test]
     fn test_recommend_hugs_short_content() {
-        let hint = dialog_size_hint(DialogType::CustomPrecision);
+        // 用仍为 uto() 的对话框验证「贴合内容」；已钉死的尺寸不再参与该规则。
+        let hint = dialog_size_hint(DialogType::SaveConfirm);
         let size = recommend_window_size(hint, WORK_AREA, 488.0, 180.0);
 
         assert_eq!(size.width, 488.0, "宽度取调用方算好的值");
@@ -471,8 +472,9 @@ mod tests {
     /// 未声明上限的对话框仍受**工作区**约束（不超可见区域）。
     #[test]
     fn test_recommend_never_exceeds_work_area() {
-        let hint = dialog_size_hint(DialogType::MemoryMonitor);
-        let size = recommend_window_size(hint, WORK_AREA, 300.0, 5000.0);
+        // 用仍无声明上限的对话框验证「不超工作区」。
+        let hint = dialog_size_hint(DialogType::RecoverTrack);
+        let size = recommend_window_size(hint, WORK_AREA, 560.0, 5000.0);
 
         assert_eq!(size.height, WORK_AREA.height);
     }
@@ -545,6 +547,11 @@ mod tests {
             DialogType::CloudConnect,
             DialogType::MemoryMonitor,
             DialogType::DrawSettings,
+            DialogType::CustomPrecision,
+            DialogType::SpeedChange,
+            DialogType::BatchEdit,
+            DialogType::LoadConfirm,
+            DialogType::ExportProgress,
             DialogType::Settings,
             DialogType::ProjectSettings,
             DialogType::CloudBrowser,
@@ -559,13 +566,7 @@ mod tests {
         }
 
         // 完全自动 / 只保留下限：需要搜索
-        for dialog_type in [
-            DialogType::CustomPrecision,
-            DialogType::SpeedChange,
-            DialogType::BatchEdit,
-            DialogType::SaveConfirm,
-            DialogType::RecoverTrack,
-        ] {
+        for dialog_type in [DialogType::SaveConfirm, DialogType::RecoverTrack] {
             assert!(
                 dialog_size_hint(dialog_type).needs_width_search(WORK_AREA.width),
                 "{dialog_type:?} 的宽度交给了自动计算，应触发搜索"

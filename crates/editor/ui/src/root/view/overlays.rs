@@ -10,20 +10,30 @@ use lumino_core::tr;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    about_egg::view as view_about_egg, batch_edit_dialog::view_batch_edit_dialog,
-    brush_settings_dialog::view_brush_settings_dialog,
-    collaboration_dialog::view_collaboration_dialog,
-    custom_precision_dialog::view_custom_precision_dialog,
-    draw_settings_dialog::view_draw_settings_dialog,
-    export_progress_dialog::view_export_progress_dialog, help_dialog::view_help_dialog,
-    history_dialog::view_history_dialog, load_confirm_dialog::view_load_confirm_dialog,
-    memory_monitor_dialog::view_memory_monitor_dialog,
-    project_settings_dialog::view_project_settings_dialog,
-    recover_track_dialog::view_recover_track_dialog, save_confirm_dialog::view_save_confirm_dialog,
-    settings_dialog::view_settings_dialog, shape_drawer::view_shape_drawer,
-    speed_change_dialog::view_speed_change_dialog,
+    about_egg::view as view_about_egg, collaboration_dialog::view_collaboration_dialog,
+    export_progress_dialog::view_export_progress_dialog,
+    load_confirm_dialog::view_load_confirm_dialog, recover_track_dialog::view_recover_track_dialog,
+    save_confirm_dialog::view_save_confirm_dialog, settings_dialog::view_settings_dialog,
+    shape_drawer::view_shape_drawer,
 };
 use crate::{Element, Theme};
+
+/// 对话框的同尺寸底色占位。
+///
+/// 内容已由 egui 叠加层整窗绘制（各对话框都有对应的 `DialogModel`），iced 侧只需
+/// 一块与窗口等大的背景，避免窗口透明/闪白。窗口尺寸由 `dialog_preferred_size`
+/// 决定（这些对话框已钉死宽高，不依赖 iced 测量）。
+fn dialog_placeholder<'a>(theme: &Theme) -> Element<'a> {
+    let bg = theme.palette().background;
+    container(space())
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(iced_core::Background::Color(bg)),
+            ..Default::default()
+        })
+        .into()
+}
 
 impl Root {
     /// 渲染进度窗口
@@ -142,11 +152,8 @@ impl Root {
             DialogType::LoadConfirm => {
                 view_load_confirm_dialog(&self.state.load_confirm_dialog, &self.window.theme)
             }
-            DialogType::ProjectSettings => view_project_settings_dialog(
-                &self.state.project_settings_dialog,
-                &self.window.theme,
-                self.settings.display.language,
-            ),
+            // 工程设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::ProjectSettings => dialog_placeholder(&self.window.theme),
             DialogType::Settings => {
                 // 字体列表仅在设置对话框中使用（字体下拉菜单），
                 // 通过全局 OnceLock 懒加载：首次访问触发扫描并缓存，后续零开销。
@@ -159,17 +166,12 @@ impl Root {
                     lumino_note_core::font_scanner::get_cached_fonts(),
                 )
             }
-            DialogType::SpeedChange => {
-                view_speed_change_dialog(&self.state.speed_change_dialog, &self.window.theme)
-            }
-            DialogType::BatchEdit => {
-                view_batch_edit_dialog(&self.state.batch_edit_dialog, &self.window.theme)
-            }
-            DialogType::CustomPrecision => view_custom_precision_dialog(
-                &self.state.custom_precision_dialog,
-                &self.window.theme,
-                self.settings.display.language,
-            ),
+            // 变速：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::SpeedChange => dialog_placeholder(&self.window.theme),
+            // 批量编辑：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::BatchEdit => dialog_placeholder(&self.window.theme),
+            // 自定义精度：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::CustomPrecision => dialog_placeholder(&self.window.theme),
             // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
             // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。
             DialogType::None => container(space())
@@ -196,35 +198,25 @@ impl Root {
                     })
                     .into()
             }
-            DialogType::MemoryMonitor => {
-                view_memory_monitor_dialog(&self.state.memory_monitor_dialog, &self.window.theme)
-            }
+            // 内存监控：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::MemoryMonitor => dialog_placeholder(&self.window.theme),
             DialogType::RecoverTrack => {
                 view_recover_track_dialog(&self.state.recover_track_dialog, &self.window.theme)
             }
             DialogType::SaveConfirm => {
                 view_save_confirm_dialog(&self.state.save_confirm_dialog, &self.window.theme)
             }
-            DialogType::BrushSettings => view_brush_settings_dialog(
-                &self.state.brush_settings_draft,
-                &self.state.brush_settings_tracks,
-                &self.window.theme,
-                self.settings.display.language,
-            ),
-            DialogType::DrawSettings => {
-                view_draw_settings_dialog(&self.window.theme, self.settings.display.language)
-            }
-            DialogType::Help => view_help_dialog(
-                &self.state.help_dialog,
-                &self.window.theme,
-                self.settings.display.language,
-            ),
+            // 画刷设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::BrushSettings => dialog_placeholder(&self.window.theme),
+            // 音符画设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::DrawSettings => dialog_placeholder(&self.window.theme),
+            // 帮助：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::Help => dialog_placeholder(&self.window.theme),
             DialogType::ShapeDrawer => {
                 view_shape_drawer(&self.state.shape_drawer, &self.window.theme)
             }
-            DialogType::History => {
-                view_history_dialog(&self.state.history_dialog, &self.window.theme)
-            }
+            // 撤销历史：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::History => dialog_placeholder(&self.window.theme),
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 crate::view::cloud_dialog::view_cloud_dialog(self, &self.window.theme)
