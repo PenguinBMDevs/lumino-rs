@@ -14,17 +14,17 @@ pub mod toolbar;
 pub mod toolbar_popup;
 
 pub use model::{
-    ArrangementRulerModel, AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel,
-    AudioExportModel, AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel,
-    AudioPageModel, AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle,
-    AudioToggleId, BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID,
-    FillDivisionPanelModel, I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel,
-    MaterialContextLabels, MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel,
-    MaterialMenuEntryModel, MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel,
-    RightSidebarPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel, ThemeCardModel,
-    ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
-    ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow, WATERFALL_TEXTURE_ID,
-    WaterfallPanelModel,
+    ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel, ArrangementTrackRow,
+    AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,
+    AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel, AudioPageModel,
+    AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle, AudioToggleId,
+    BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID, FillDivisionPanelModel,
+    I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
+    MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel,
+    MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind,
+    ShapePanelModel, TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
+    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
+    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
@@ -146,16 +146,14 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 /// 完全覆盖同位置的 iced 版本，避免文字重影。标题栏为 `None`（系统原生
 /// 标题栏）时跳过顶部 band。
 /// 记录本帧的走带标尺模型（`None` = 不接管或不在走带路由）。
-pub fn set_arrangement(ctx: &egui::Context, model: Option<ArrangementRulerModel>) {
+pub fn set_arrangement(ctx: &egui::Context, model: Option<ArrangementModel>) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.arrangement"), model));
 }
 
 /// 取走本帧的走带标尺模型。
-fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementRulerModel> {
-    ctx.data(|d| {
-        d.get_temp::<Option<ArrangementRulerModel>>(egui::Id::unique("lumino.arrangement"))
-    })
-    .flatten()
+fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementModel> {
+    ctx.data(|d| d.get_temp::<Option<ArrangementModel>>(egui::Id::unique("lumino.arrangement")))
+        .flatten()
 }
 
 /// 记录本帧的底层画布纹理（`None` = 不画底层，走原通道）。
@@ -209,23 +207,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     if let Some(arrangement) = arrangement_model(ui.ctx())
         && arrangement_enabled()
     {
-        let full = root.max_rect();
-        // 内容原点由生产侧给出（工具栏高度可拖拽，不能硬编码）。
-        let left = full.left() + arrangement.left_inset;
-        let top = full.top() + arrangement.top_inset;
-        let right = full.right()
-            - model
-                .right_sidebar
-                .as_ref()
-                .map_or(0.0, |r| r.total_width());
-        let rect = egui::Rect::from_min_max(
-            egui::pos2(left + ARRANGEMENT_TRACK_LIST_W, top),
-            egui::pos2(
-                (right - ARRANGEMENT_SCROLLBAR_W).max(left + ARRANGEMENT_TRACK_LIST_W),
-                top + arrangement::RULER_HEIGHT,
-            ),
-        );
-        arrangement::show_ruler(&root, rect, &arrangement);
+        arrangement::show(&root, root.max_rect(), &arrangement);
     }
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。
@@ -479,11 +461,6 @@ pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
         .outer_margin(Margin::ZERO)
         .stroke(Stroke::new(0.0, egui::Color32::TRANSPARENT))
 }
-
-/// 走带音轨列宽（生产 `TRACK_LIST_WIDTH`）。
-const ARRANGEMENT_TRACK_LIST_W: f32 = 160.0;
-/// 走带垂直滚动条宽（生产布局固定 20）。
-const ARRANGEMENT_SCROLLBAR_W: f32 = 20.0;
 
 /// 走带视图是否已由 egui 接管（`LUMINO_EGUI_ARRANGEMENT=1`；默认关闭）。
 fn arrangement_enabled() -> bool {
