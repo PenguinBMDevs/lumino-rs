@@ -68,6 +68,8 @@ struct OverlayFrame<'a> {
     editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 走带标尺模型；`Some` 且开关打开时由 egui 绘制。
     arrangement: Option<lumino_ui_egui::chrome::ArrangementModel>,
+    /// 素材删除确认（模态）；`Some` 时由 egui 绘制并接管输入。
+    material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteModel>,
     /// 混音台（布局 + 模型）；`Some` 时由 egui 绘制并接管输入。
     mixer: Option<(
         lumino_ui_egui::mixer::MixerLayout,
@@ -174,6 +176,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
         lumino_ui_egui::chrome::set_mixer(&ctx, frame.mixer.clone());
+        lumino_ui_egui::chrome::set_material_delete(&ctx, frame.material_delete.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -383,6 +386,7 @@ impl Host {
             video_export,
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(),
+            material_delete: self.root.material_delete_model(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),
                 size.height as f32 / pixels_per_point.max(1e-3),

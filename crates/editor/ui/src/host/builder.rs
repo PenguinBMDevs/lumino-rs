@@ -162,6 +162,11 @@ impl Host {
             root.mixer_panel.open = true;
             root.mixer_panel.maximized = true;
         }
+        // 调试开关：启动即弹出素材删除确认（无真实素材时名字为空）。
+        if std::env::var("LUMINO_MATERIAL_DELETE").is_ok_and(|v| v != "0") {
+            root.right_sidebar.materials.pending_delete = Some(0);
+            root.right_sidebar.materials.pending_delete_name = Some("钢琴音色.json".to_string());
+        }
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 

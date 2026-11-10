@@ -6,6 +6,7 @@
 mod arrangement;
 mod audio_export_panel;
 mod dialogs;
+mod material_delete;
 mod menu;
 mod mixer;
 mod palette;

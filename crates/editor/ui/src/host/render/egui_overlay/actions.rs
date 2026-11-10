@@ -63,6 +63,7 @@ pub(super) struct OverlayActions {
     pub lane: Vec<lumino_message::arrangement_action::ArrangementAction>,
     pub video_timeline: Vec<lumino_ui_egui::video_clip_timeline::VideoTimelineAction>,
     pub mixer: Vec<lumino_ui_egui::mixer::MixerAction>,
+    pub material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteAction>,
 }
 
 impl OverlayActions {
@@ -98,6 +99,7 @@ impl OverlayActions {
             lane: lumino_ui_egui::chrome::arrangement::take_lane_actions(ctx),
             video_timeline: lumino_ui_egui::chrome::take_video_timeline_actions(ctx),
             mixer: lumino_ui_egui::chrome::take_mixer_actions(ctx),
+            material_delete: lumino_ui_egui::chrome::take_material_delete_action(ctx),
         }
     }
 }
@@ -152,6 +154,11 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.material_delete {
+            tracing::info!("egui 素材删除动作：{action:?}");
+            let message = self.root.material_delete_action_message(action);
+            self.dispatch_overlay_message(message);
         }
         for action in &actions.mixer {
             if let Some(message) = self.root.mixer_action_message(action) {

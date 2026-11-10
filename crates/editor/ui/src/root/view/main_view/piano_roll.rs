@@ -254,9 +254,6 @@ impl Root {
         if let Some(toast_overlay) = self.toast.view(&self.window.theme) {
             stack = stack.push(toast_overlay);
         }
-        if let Some(dialog) = self.view_material_delete_dialog() {
-            stack = stack.push(dialog);
-        }
         // 混音台浮动面板由 egui 绘制并接管输入（`lumino-ui-egui::mixer`），
         // iced 侧不再有视图（原 `view_mixer_panel` 已删除）。
         // 遮罩参数面板（DRAW-010）：右键「遮罩设置…」，非阻塞、点击面板外关闭
@@ -281,31 +278,5 @@ impl Root {
             stack = stack.push(tip);
         }
         stack.into()
-    }
-
-    /// 素材删除确认对话框（主窗口覆盖层：全屏遮罩 + 居中卡片）
-    ///
-    /// 由 `right_sidebar.materials.pending_delete` 驱动；无待确认项时返回 None。
-    /// 素材名优先取快照（列表刷新后仍可正确展示），回退到列表条目。
-    pub(crate) fn view_material_delete_dialog(&self) -> Option<Element<'static>> {
-        let index = self.right_sidebar.materials.pending_delete?;
-        let name = self
-            .right_sidebar
-            .materials
-            .pending_delete_name
-            .clone()
-            .or_else(|| {
-                self.right_sidebar
-                    .materials
-                    .entries
-                    .get(index)
-                    .map(|e| e.name.clone())
-            })
-            .unwrap_or_default();
-        Some(crate::right_sidebar::material_delete_dialog::view(
-            name,
-            index,
-            self.settings.display.language,
-        ))
     }
 }

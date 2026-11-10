@@ -72,27 +72,31 @@ mod tests {
     }
 
     #[test]
-    fn test_material_delete_dialog_hidden_when_no_pending() {
+    fn test_material_delete_hidden_when_no_pending() {
         let root = create_root();
-        assert!(root.view_material_delete_dialog().is_none());
+        assert!(root.material_delete_model().is_none());
     }
 
     #[test]
-    fn test_material_delete_dialog_shown_when_pending() {
+    fn test_material_delete_model_shown_when_pending() {
         let mut root = create_root();
         push_entry(&mut root, "测试素材");
         root.right_sidebar.materials.pending_delete = Some(0);
-        assert!(root.view_material_delete_dialog().is_some());
+        let model = root
+            .material_delete_model()
+            .expect("有待确认项时应产出模型");
+        assert_eq!(model.index, 0);
+        assert_eq!(model.name, "测试素材");
     }
 
     #[test]
-    fn test_material_delete_dialog_name_fallback_to_entry() {
+    fn test_material_delete_name_fallback_to_entry() {
         // 无快照名时回退到列表条目名称
         let mut root = create_root();
         push_entry(&mut root, "回退名");
         root.right_sidebar.materials.pending_delete = Some(0);
-        let element = root.view_material_delete_dialog();
-        assert!(element.is_some());
+        let model = root.material_delete_model().expect("模型");
+        assert_eq!(model.name, "回退名");
     }
 
     #[test]

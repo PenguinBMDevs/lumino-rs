@@ -156,7 +156,7 @@ pub fn set_window_size(ctx: &egui::Context, size: egui::Vec2) {
 }
 
 /// 取本帧真实窗口逻辑尺寸。
-fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
+pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
 }
 
@@ -169,6 +169,26 @@ pub fn set_arrangement(ctx: &egui::Context, model: Option<ArrangementModel>) {
 fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementModel> {
     ctx.data(|d| d.get_temp::<Option<ArrangementModel>>(egui::Id::unique("lumino.arrangement")))
         .flatten()
+}
+
+/// 记录本帧的素材删除确认模型（`None` = 无待确认项）。
+pub fn set_material_delete(
+    ctx: &egui::Context,
+    model: Option<crate::material_delete::MaterialDeleteModel>,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.material-delete"), model));
+}
+
+/// 取走本帧的素材删除确认模型。
+fn material_delete_model(
+    ctx: &egui::Context,
+) -> Option<crate::material_delete::MaterialDeleteModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<crate::material_delete::MaterialDeleteModel>>(egui::Id::unique(
+            "lumino.material-delete",
+        ))
+    })
+    .flatten()
 }
 
 /// 记录本帧的混音台模型（`None` = 面板未打开）。
@@ -527,6 +547,17 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         }
     }
 
+    // 素材删除确认：全屏遮罩 + 居中卡片（模态，整窗占用）。
+    if let Some(delete) = material_delete_model(ui.ctx()) {
+        let full = window_size(ui.ctx())
+            .map(|size| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), size))
+            .unwrap_or_else(|| root.max_rect());
+        if let Some(action) = crate::material_delete::show(&root, full, &delete) {
+            push_material_delete_action(ui.ctx(), action);
+        }
+        menu::extend_blocked(ui.ctx(), [full]);
+    }
+
     if let Some(titlebar) = &model.titlebar {
         menu::show_overlay(&mut root, titlebar);
     }
@@ -614,4 +645,33 @@ pub fn take_mixer_actions(ctx: &egui::Context) -> Vec<crate::mixer::MixerAction>
         d.remove_temp::<Vec<crate::mixer::MixerAction>>(egui::Id::unique(MIXER_ACTION_ID))
     })
     .unwrap_or_default()
+}
+
+/// 素材删除确认动作通道。
+const MATERIAL_DELETE_ACTION_ID: &str = "lumino.material-delete.action";
+
+fn push_material_delete_action(
+    ctx: &egui::Context,
+    action: crate::material_delete::MaterialDeleteAction,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(MATERIAL_DELETE_ACTION_ID), action));
+}
+
+/// 取走本帧素材删除确认动作。
+pub fn take_material_delete_action(
+    ctx: &egui::Context,
+) -> Option<crate::material_delete::MaterialDeleteAction> {
+    let action = ctx.data(|d| {
+        d.get_temp::<crate::material_delete::MaterialDeleteAction>(egui::Id::unique(
+            MATERIAL_DELETE_ACTION_ID,
+        ))
+    });
+    if action.is_some() {
+        ctx.data_mut(|d| {
+            d.remove::<crate::material_delete::MaterialDeleteAction>(egui::Id::unique(
+                MATERIAL_DELETE_ACTION_ID,
+            ))
+        });
+    }
+    action
 }

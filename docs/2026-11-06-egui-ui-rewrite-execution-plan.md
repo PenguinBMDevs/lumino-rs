@@ -2506,3 +2506,33 @@ callback / 多视口 / 截图能力。
 **仍需用户确认**：退役 `capture_iced`（归档保留基线原图，改由 `capture_egui` 做唯一
 视觉门禁）——这是删除 iced 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）
 与摘除 `lumino-ui` 的 `iced_*` 的唯一前置条件。
+
+**Task 1.3（第八十步）：素材删除确认迁 egui（右栏迁移第一批，−181 行 iced）**
+
+- **新建 egui 模型**：`ui-egui/src/material_delete.rs`（约 230 行，2 单测）——
+  `MaterialDeleteModel{title,name,warning,cancel,delete,index}` +
+  `MaterialDeleteAction{Cancel,Confirm(index)}`；绘制按「先排计划再算总高」：
+  全屏 45% 黑遮罩 + 居中卡片（宽 440、内边距 24、圆角 8；标题 16 / 素材名 14 主色 /
+  危险提示 13 危险色 / 按钮 `padding[8,24]` 14px），命中优先级「删除 → 取消 →
+  卡片外点击取消」。
+- **生产侧** `egui_chrome/material_delete.rs`：从
+  `right_sidebar.materials.pending_delete(+_name)` 装配模型（快照名优先、回退列表条目），
+  动作用 `right_sidebar_action_message` 同款构造器映射
+  `MaterialDeleteConfirmed / MaterialDeleteCancelled`。
+- **通道**：`chrome::set_material_delete` / `take_material_delete_action`；
+  绘制块放在**所有 band 之后**（实测放在 band 之前时遮罩被 band 整块盖住、只剩卡片可见），
+  整窗 `extend_blocked`（模态）。3 单测：模型镜像、无待确认项不产出、动作映射。
+- **删除 iced 视图**：`right_sidebar/material_delete_dialog.rs`（181 行）+ 模块声明 +
+  `piano_roll` 的挂载与 `view_material_delete_dialog`；`main_view` 的 3 个用例改测模型。
+- **真机**（`LUMINO_MATERIAL_DELETE=1`）：卡片居中、`取消/删除` 可点；
+  点删除 → `素材删除动作：Confirm(0)`，点取消 → `Cancel`；
+  遮罩生效（同点像素 240 → 184，关闭后回到 240）。证据：`target/md1.png` / `md2.png`。
+- 验收：`lumino-ui` lib 850/850、`ui-egui` 32/32、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：右栏剩余视图**
+
+`material_context_menu`（269 行，右键菜单）→ `materials_view`（331 行 + tip 101）→
+`piano_waterfall`（wgpu 键盘/瀑布流，18 文件；属「wgpu 管线整体接 egui」）。
+素材列表本身是 wgpu 绘制的，迁移时需同时把其输出接入 egui 外部纹理。

@@ -29,6 +29,7 @@ pub mod history;
 pub mod icons;
 pub mod layout;
 pub mod load_confirm;
+pub mod material_delete;
 pub mod memory_monitor;
 pub mod mixer;
 pub mod project_settings;
