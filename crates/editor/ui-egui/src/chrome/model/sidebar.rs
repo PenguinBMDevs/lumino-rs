@@ -209,6 +209,17 @@ pub enum RightSidebarPanelKind {
     PianoWaterfall,
 }
 
+/// 右侧栏图标列单项（顺序即自上而下）。
+///
+/// 文案由生产侧格式化（`ui-egui` 不引 i18n）；`kind` 决定点亮态与回传动作。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RightSidebarRailItem {
+    /// 对应面板。
+    pub kind: RightSidebarPanelKind,
+    /// 悬停提示文案。
+    pub label: String,
+}
+
 /// 右侧栏（48px 图标列 + 可选面板）的只读状态。
 #[derive(Debug, Clone, Default)]
 pub struct RightSidebarModel {
@@ -224,6 +235,8 @@ pub struct RightSidebarModel {
     pub resizing: bool,
     /// 已接管的面板内容；`None` = 内容仍由 iced 绘制（素材库 / 瀑布流）。
     pub content: Option<RightSidebarPanelModel>,
+    /// 图标列按钮（自上而下）。为空时回退到内置的三项顺序（仅为测试便利）。
+    pub rail: Vec<RightSidebarRailItem>,
 }
 
 impl RightSidebarModel {

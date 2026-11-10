@@ -28,6 +28,8 @@ const ACTION_ID: &str = "lumino.right-sidebar.action";
 /// 右侧栏面板产生的动作（不依赖 iced）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RightSidebarAction {
+    /// 点击图标列按钮（切换/展开对应面板）。
+    RailClicked(super::model::RightSidebarPanelKind),
     /// 点击「选择图片文件」。
     SelectImageFile,
     /// 配置文本变化（原样回传，生产负责合法性校验）。

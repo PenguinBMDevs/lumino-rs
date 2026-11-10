@@ -71,6 +71,7 @@ fn chrome(model: MaterialsPanelModel) -> ChromeModel {
             top_inset: 102.0,
             resizing: false,
             content: Some(RightSidebarPanelModel::Materials(model)),
+            rail: Vec::new(),
         }),
         statusbar: statusbar(),
         ..ChromeModel::default()

@@ -41,15 +41,15 @@ pub use model::{
     MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
     OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
     ProjectNoteCountModel, ProjectSettingsModel, RecoverTrackModel, RecoverTrackRowModel,
-    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton,
-    ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack,
-    SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel, TextPairCell, TitlebarModel,
-    ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction,
-    VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction,
-    VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
-    VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
+    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar,
+    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
+    ShapeActionButton, ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel,
+    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
+    SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
+    TextPairCell, TitlebarModel, ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill,
+    VideoExportAction, VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel,
+    VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing,
+    VideoOverlayProgress, VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -158,6 +158,17 @@ pub fn set_window_size(ctx: &egui::Context, size: egui::Vec2) {
 /// 取本帧真实窗口逻辑尺寸。
 pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
+}
+
+/// 本帧的窗口逻辑矩形（原点 0,0；优先用宿主注入的真实尺寸）。
+///
+/// 三条 band 都贴窗口边（工具栏铺满、左/右栏贴两侧），直接依赖 `root.max_rect()`
+/// 会隐含「Ui 与窗口等大」这一前提；宿主已注入真实尺寸时以它为准更稳。
+/// 未注入时（如 `capture_egui` 的离屏 harness）回退到 `max_rect`，行为不变。
+fn window_rect(ui: &egui::Ui) -> egui::Rect {
+    window_size(ui.ctx())
+        .map(|size| egui::Rect::from_min_size(egui::Pos2::ZERO, size))
+        .unwrap_or_else(|| ui.max_rect())
 }
 
 /// 记录本帧的走带标尺模型（`None` = 不接管或不在走带路由）。
@@ -401,7 +412,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // column![toolbar, ...]]`），不覆盖左侧栏。顶部偏移跟随标题栏 band：
     // macOS 原生标题栏模式没有 30px 菜单栏行（iced 主内容直接从工具栏开始）。
     if let Some(toolbar) = &model.toolbar {
-        let full = root.max_rect();
+        let full = window_rect(&root);
         let inset = toolbar.left_inset.max(0.0).min(full.width());
         let top = if model.titlebar.is_some() {
             full.top() + layout::TITLEBAR_H
@@ -426,7 +437,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 左侧栏 band：生产布局是 `column![titlebar, row![sidebar, content], statusbar]`，
     // 因此左侧栏从标题栏下沿开始、到状态栏上沿结束，宽度 = 48 + panel_width。
     if let Some(sidebar) = &model.sidebar {
-        let full = root.max_rect();
+        let full = window_rect(&root);
         let top = if model.titlebar.is_some() {
             full.top() + layout::TITLEBAR_H
         } else {
@@ -453,7 +464,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 因此图标列从标题栏 + 工具栏下沿开始、到状态栏上沿结束。面板可见且内容
     // 已由 egui 接管时，band 扩到「面板宽 + 48」，覆盖 iced 的同位置内容。
     if let Some(right) = &model.right_sidebar {
-        let full = root.max_rect();
+        let full = window_rect(&root);
         let top = (full.top() + right.top_inset).max(full.top());
         let bottom = (full.bottom() - layout::STATUSBAR_H).max(top);
         let content = right

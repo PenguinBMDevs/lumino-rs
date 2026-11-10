@@ -11,7 +11,8 @@ use lumino_message::{I2mConfigField, RightSidebarAction as SidebarAction};
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction as PanelAction;
 use lumino_ui_egui::chrome::{
     I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, RightSidebarModel,
-    RightSidebarPanelKind, RightSidebarPanelModel, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
+    RightSidebarPanelKind, RightSidebarPanelModel, RightSidebarRailItem, WATERFALL_TEXTURE_ID,
+    WaterfallPanelModel,
 };
 use lumino_ui_egui::layout;
 
@@ -50,6 +51,7 @@ pub(super) fn model(
         },
         resizing: root.right_sidebar.is_resizing,
         content: content(root),
+        rail: rail_items(root.settings.display.language),
     })
 }
 
@@ -60,6 +62,24 @@ impl Root {
     }
 }
 
+/// 图标列三项（文案取 i18n，顺序与 iced `view.rs` 一致）。
+fn rail_items(language: lumino_extras::i18n::Language) -> Vec<RightSidebarRailItem> {
+    let t = main_translations(language);
+    vec![
+        RightSidebarRailItem {
+            kind: RightSidebarPanelKind::ImageToMidi,
+            label: t.tool_image_to_midi.to_string(),
+        },
+        RightSidebarRailItem {
+            kind: RightSidebarPanelKind::Materials,
+            label: t.material_library.to_string(),
+        },
+        RightSidebarRailItem {
+            kind: RightSidebarPanelKind::PianoWaterfall,
+            label: t.piano_waterfall.to_string(),
+        },
+    ]
+}
 /// 当前页面的右侧栏内容；未接管的面板返回 `None`（继续由 iced 绘制）。
 pub(super) fn content(root: &Root) -> Option<RightSidebarPanelModel> {
     if !root.right_sidebar.panel_visible || !root.right_sidebar_visible() {
@@ -163,6 +183,11 @@ pub(super) fn action_message(action: &PanelAction) -> Option<Message> {
         return Some(message);
     }
     Some(match action {
+        PanelAction::RailClicked(kind) => Message::RightSidebar(match kind {
+            RightSidebarPanelKind::ImageToMidi => SidebarAction::ImageToMidiClicked,
+            RightSidebarPanelKind::Materials => SidebarAction::MaterialLibraryClicked,
+            RightSidebarPanelKind::PianoWaterfall => SidebarAction::PianoWaterfallClicked,
+        }),
         PanelAction::SelectImageFile => Message::RightSidebar(SidebarAction::SelectImageFile),
         PanelAction::I2mConfigTextChanged { field, text } => {
             Message::RightSidebar(SidebarAction::I2mConfigTextChanged {

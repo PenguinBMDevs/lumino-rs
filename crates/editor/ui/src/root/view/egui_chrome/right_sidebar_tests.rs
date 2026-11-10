@@ -308,6 +308,50 @@ fn materials_actions_map_to_messages() {
 }
 
 #[test]
+fn rail_items_are_filled_in_iced_order() {
+    let root = root();
+    let model = root.egui_chrome_model();
+    let right = model.right_sidebar.expect("右侧栏应可见");
+    let kinds: Vec<RightSidebarPanelKind> = right.rail.iter().map(|item| item.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            RightSidebarPanelKind::ImageToMidi,
+            RightSidebarPanelKind::Materials,
+            RightSidebarPanelKind::PianoWaterfall,
+        ],
+        "图标列顺序必须与 iced `view.rs` 一致（图片转 MIDI / 素材库 / 瀑布流）"
+    );
+    assert!(
+        right.rail.iter().all(|item| !item.label.is_empty()),
+        "每个图标都要有悬停提示文案"
+    );
+}
+
+#[test]
+fn rail_clicks_map_to_panel_toggles() {
+    let root = root();
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::RailClicked(
+            RightSidebarPanelKind::ImageToMidi
+        )),
+        Some(Message::RightSidebar(SidebarAction::ImageToMidiClicked))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::RailClicked(
+            RightSidebarPanelKind::Materials
+        )),
+        Some(Message::RightSidebar(SidebarAction::MaterialLibraryClicked))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::RailClicked(
+            RightSidebarPanelKind::PianoWaterfall
+        )),
+        Some(Message::RightSidebar(SidebarAction::PianoWaterfallClicked))
+    ));
+}
+
+#[test]
 fn waterfall_panel_model_carries_title_and_texture_state() {
     let mut root = root();
     root.right_sidebar.panel_visible = true;

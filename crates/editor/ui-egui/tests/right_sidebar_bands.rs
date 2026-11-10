@@ -91,6 +91,7 @@ fn chrome(convert: bool) -> ChromeModel {
             top_inset: 102.0,
             resizing: false,
             content: Some(RightSidebarPanelModel::ImageToMidi(panel_model(convert))),
+            rail: Vec::new(),
         }),
         statusbar: statusbar(),
         ..ChromeModel::default()
@@ -245,6 +246,7 @@ fn waterfall_chrome(texture: Option<egui::TextureId>) -> ChromeModel {
                     texture,
                 },
             )),
+            rail: Vec::new(),
         }),
         statusbar: statusbar(),
         ..ChromeModel::default()

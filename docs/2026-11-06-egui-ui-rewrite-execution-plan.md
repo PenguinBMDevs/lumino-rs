@@ -2536,3 +2536,39 @@ callback / 多视口 / 截图能力。
 `material_context_menu`（269 行，右键菜单）→ `materials_view`（331 行 + tip 101）→
 `piano_waterfall`（wgpu 键盘/瀑布流，18 文件；属「wgpu 管线整体接 egui」）。
 素材列表本身是 wgpu 绘制的，迁移时需同时把其输出接入 egui 外部纹理。
+
+**Task 1.3（第八十一步）：右侧栏图标列点击迁 egui（iced 只留像素占位）**
+
+- **图标列交互迁 egui**：`chrome/sidebar.rs::show_right_model` 由「只绘制」改为
+  「绘制 + 命中 + 动作」——每格 48×48 做 `ui.interact`，悬停加白 10% 底色，
+  `on_hover_text` 显示提示（文案来自 i18n，经新字段 `RightSidebarModel.rail` 传入），
+  点击下发 `RightSidebarAction::RailClicked(kind)`；整列 `extend_blocked`，
+  iced 的同位置按钮不再收到事件。
+- 生产侧 `right_sidebar.rs`：`rail_items(language)` 装配三项（图片转 MIDI / 素材库 /
+  瀑布流，顺序与 iced `view.rs` 一致）；`RailClicked` 映射回
+  `ImageToMidiClicked / MaterialLibraryClicked / PianoWaterfallClicked`。
+  新增 2 个单测：顺序 + 文案非空、逐项映射。
+- **修正绘制顺序**：灯条原先画在悬停底色之前会被覆盖；改为悬停 → 灯条 → 图标。
+- **band 锚定**：三条 band（工具栏 / 左栏 / 右栏）改用新助手 `window_rect(ui)`
+  （宿主注入的真实窗口尺寸，未注入时回退 `max_rect`），不再隐含依赖 Ui 尺寸。
+- **iced 视图保留但只作像素占位**：真机基线 `capture_iced` 会渲染纯 iced 树，
+  删掉 iced 图标列会让 6 张基线失配（工具条/侧栏图标的像素消失）。按纪律
+  **不得重生成基线**，因此 iced 图标列暂留绘制（点击已被 egui 拦下），
+  待 `capture_iced` 退役后与工具栏一并删除。
+- **真机**（DPI-aware 自动化，窗口左移避免屏幕裁边）：
+  - 依次点击三格 → `egui 右侧栏动作：RailClicked(ImageToMidi / Materials / PianoWaterfall)`
+    各 1 条（无重复处理）；
+  - 面板内容随点击切换且完整（素材库列表 / 图片转 MIDI 参数表）；
+  - 灯条取证：右缘 `(88,101,242)` 只出现在当前激活那格，其余为底色 `(232,232,232)`。
+- 验收：`lumino-ui` lib 852/852（+2）、`ui-egui` 32/32、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 右侧栏 6px 缩放手柄迁 egui（`ResizeDragStarted/Dragged/Ended`），随后删除
+   iced `right_sidebar/view.rs` 与 `materials_view` / `material_context_menu` 整树；
+2. `piano_waterfall` 的 `WaterfallProgram`（iced shader）改为全 egui 外部纹理，
+   删除 `waterfall_primitive.rs`；
+3. 待 `capture_iced` 退役确认后删 iced 工具栏（含 `SnapIcon`）与图标列，
+   摘 `lumino-ui` 的 `iced_*`。

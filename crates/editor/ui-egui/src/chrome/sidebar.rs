@@ -416,8 +416,8 @@ fn route_button(
 
 /// 右侧栏图标列：48px 宽、按钮 48×48 + 2px 间距、灯条贴右边缘。
 ///
-/// 只绘制图标列（`model.panel_visible` 的面板保持在 iced：其中含素材扫描、
-/// 图片转换等复杂交互，本层暂不接管）。
+/// 图标列由 egui **独占**：绘制 + 点击 + 动作通道（`RailClicked`）。
+/// 因此整列计入占用区，否则同一次点击会同时被 egui 与 iced 的旧按钮各处理一次。
 pub fn show_right_model(
     ui: &mut egui::Ui,
     model: &super::RightSidebarModel,
@@ -426,24 +426,57 @@ pub fn show_right_model(
     let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 0, theme::route_bar_bg());
     let left = rect.left();
-    for (index, icon) in [
-        Icon::ImageToMidi,
-        Icon::MaterialLibrary,
-        Icon::PianoWaterfall,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    // 生产侧总会给出三项（含 i18n 文案）；测试构造的模型可能为空，回退到内置顺序。
+    let fallback = [
+        (
+            super::RightSidebarPanelKind::ImageToMidi,
+            Icon::ImageToMidi,
+            "",
+        ),
+        (
+            super::RightSidebarPanelKind::Materials,
+            Icon::MaterialLibrary,
+            "",
+        ),
+        (
+            super::RightSidebarPanelKind::PianoWaterfall,
+            Icon::PianoWaterfall,
+            "",
+        ),
+    ];
+    let items: Vec<(super::RightSidebarPanelKind, Icon, &str)> = if model.rail.is_empty() {
+        fallback
+            .iter()
+            .map(|(kind, icon, label)| (*kind, *icon, *label))
+            .collect()
+    } else {
+        model
+            .rail
+            .iter()
+            .map(|item| {
+                let icon = match item.kind {
+                    super::RightSidebarPanelKind::ImageToMidi => Icon::ImageToMidi,
+                    super::RightSidebarPanelKind::Materials => Icon::MaterialLibrary,
+                    super::RightSidebarPanelKind::PianoWaterfall => Icon::PianoWaterfall,
+                };
+                (item.kind, icon, item.label.as_str())
+            })
+            .collect()
+    };
+
+    for (index, (kind, icon, label)) in items.into_iter().enumerate() {
         let y = rect.top() + index as f32 * (RIGHT_BTN + RIGHT_BTN_GAP);
-        right_button(ui, icons, icon, left, y, model.active);
+        right_button(ui, icons, icon, left, y, model.active, Some((kind, label)));
     }
+    // 整列占用：点击只给 egui（iced 的同位置按钮不再收到事件）。
+    super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 
 /// 右侧栏按钮边长与间距（生产 `Column::spacing(2)`）。
 const RIGHT_BTN: f32 = 48.0;
 const RIGHT_BTN_GAP: f32 = 2.0;
 
-/// 单个右侧栏按钮：图标在 46px 内容区居中（左侧灯条在右边缘 2px）。
+/// 单个右侧栏按钮：图标在 46px 内容区居中（灯条在右边缘 2px）。
 fn right_button(
     ui: &egui::Ui,
     icons: &mut crate::icons::IconCache,
@@ -451,6 +484,7 @@ fn right_button(
     left: f32,
     y: f32,
     active: Option<super::RightSidebarPanelKind>,
+    route: Option<(super::RightSidebarPanelKind, &str)>,
 ) {
     let rect = Rect::from_min_size(egui::pos2(left, y), Vec2::splat(RIGHT_BTN));
     let lit = matches!(
@@ -466,6 +500,30 @@ fn right_button(
             Icon::PianoWaterfall
         )
     );
+    if let Some((kind, label)) = route {
+        let response = ui.interact(
+            rect,
+            egui::Id::unique(("lumino.right-rail", y as i32)),
+            egui::Sense::click(),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, true, lit, format!("{kind:?}"))
+        });
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect, 0, Color32::from_white_alpha(10));
+        }
+        if response.clicked() {
+            super::right_panel::push_action(
+                ui.ctx(),
+                super::right_panel::RightSidebarAction::RailClicked(kind),
+            );
+        }
+        if !label.is_empty() {
+            response.on_hover_text(label);
+        }
+    }
+    // 灯条画在悬停底色之后，避免被覆盖。
     if lit {
         ui.painter().rect_filled(
             Rect::from_min_size(
