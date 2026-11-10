@@ -1866,42 +1866,51 @@ callback / 多视口 / 截图能力。
 
 **Task 1.3（第五十五步）：egui 走带轨道列（共存脚手架，默认关闭）**
 
-- **新增** `ui-egui/src/chrome/arrangement/track_list.rs`（241 行），按 iced
-  `track_list/draw.rs` 同口径：
-  - 行底色：选中 → `base` 混主色 16%（对应 `palette.primary.weak`）；
-    未选中 → 斑马纹（浅色 `0.97`/`0.94`，深色 `0.20`/`0.15`）；
-  - 未配色音轨：左侧 8px 灰块（`0.6` 浅 / `0.5` 深）；
-  - 行高 ≥ 30：第一行「三位编号 + 标签」（标签规则 `Master` / `A01` / 自定义），
-    第二行音轨名；字号 `clamp(h*0.25, 8..13)`；
-  - 右侧 18×18 的 `M`/`S` 按钮（间距 2、右边距 6；主控轨不画；静音用 `danger`、
-    独奏用 `warning`）；
-  - 拖拽排序：被拖行叠 25% 黑遮罩、插入位置 3px 主色横线；
-  - 右缘 1px 分隔线（浅色黑 8%、深色白 6%）。
-- **模型**：`ArrangementModel { ruler, track_list }`、`ArrangementTrackRow`、
-  `ArrangementTrackListModel`；生产侧从 `sidebar.tracks` / `track_reorder` 装配
-  （`id` / `name` / `display_label` / `channel` / `is_conductor` / 选中 / 静音 / 独奏 /
-  `color`），行高 `track_height * zoom_y`，滚动 `viewport.scroll_y`。
-- **入口合并**：`arrangement::show(ui, full, model)` 内部算标尺与轨道列矩形
-  （轨道列 = 左 160px，标尺 = 右侧内容宽，底部让出状态栏 20 + 水平滚动条 20）。
-- **本阶段只绘制、不接管输入**：点击/拖拽仍由 iced 处理，用于共存对照。
-- 验收：`ui-egui` 11/11、`lumino-ui` lib 864/864、`clippy -D warnings`、
-  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
-  `tests/ui-baseline` 零改动。
-- **真机（ppp=1.25，开关打开）** `target/arr3-crop.png`：
-  - 轨道列两行渲染正确：`000 Master / Conductor`（白底）、`001 A01 / Setup`（选中：
-    浅蓝底 + 深蓝字 + `M`/`S` 按钮）；行高 48 逻辑、左侧 8px 灰块；
-  - 行边界与右侧泳道带**逐行对齐**；
-  - 标尺小节号 `1/2/3` 与泳道竖线对齐（标签相对刻度 +4 逻辑 px）。
-- **途中修掉的缺陷**：首版把选中行做成 `selected_bg + on_accent`（灰底白字），
-  真机一片糊；改为「主色弱底 + 主色强字」才与 iced 语义一致。
+- `ui-egui/src/chrome/arrangement/track_list.rs`：行底色（选中 = `base` 混主色 16%，
+  未选中斑马纹 0.97/0.94 浅、0.20/0.15 深）、未配色 8px 灰块、两行文字、18×18 M/S、
+  拖拽 25% 遮罩 + 3px 插入线、右缘 1px 分隔线。
+- 模型 `ArrangementModel { ruler, track_list }`；生产侧从 `sidebar.tracks` 装配。
 
-**Task 1.3（下一步）：走带点击层 + 翻转开关**
+**Task 1.3（第五十六步）：egui 走带轨道列接管输入（选择 / 多选 / M·S / 拖拽排序）**
 
-1. egui 点击层：轨道行选择（单击 / Ctrl 多选 / Shift 范围）与 M/S 按钮命中，
-   与 iced `track_list/handlers.rs` 同语义；命中盒与绘制同源（同一行矩形）；
-2. 走带主体点击层（选择 / 移动 / 缩放 / 框选）对齐 `ArrangementClickCanvas`；
-3. 真机 `OVERLAY=1` vs `=0` 对照（几何严格、非文字区 Δ≤2）通过后翻
-   `LUMINO_EGUI_ARRANGEMENT` 默认值——注意 egui 会**补出 iced 当前缺失的标尺/轨道列
-   内容**，属于修复而非等价，需确认接受；
-4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役 `capture_iced`，
-   以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+- **命中盒与绘制同源**：新增 `row_rects(rect, model)` 一次算出行矩形与 M/S 矩形，
+  绘制与输入都读它——杜绝“看到的位置点不到”。
+- **交互语义与 iced `track_list/handlers.rs` 对齐**：
+  - 单击行 → `Select { id, ids }` → 生产侧 `track_selected + tracks_selected +
+    track_reorder_started`（等价 iced 按下行为，保留长按拖拽候选）；
+  - Shift + 单击 → 以「上一次点击行下标」为锚点做范围选择（锚点存 ctx-data）；
+  - M / S 命中 → `ToggleMute` / `ToggleSolo` → `track_mute_toggled` /
+    `track_solo_toggled`；
+  - 按下期间指针**变化时**上报 `ReorderMoved { x, y }`（局部坐标 + 滚动偏移），
+    释放 → `ReorderEnded`；长按计时 / 激活 / 插入位置 / 提交排序全部沿用生产侧
+    既有状态机（`Sidebar::handle_track_reorder_*`），没有重写一套。
+- **占用区**：轨道列整块加入 `menu::extend_blocked`，同一次点击不再落到下方 iced
+  的 `TrackListCanvas`（否则两边选择逻辑不同步会“点了又跳回去”）。
+- **踩坑**：首版按下期间每帧都发 `ReorderMoved`（日志刷屏）；改为「指针位置变化才发」，
+  实测一次点击只产生 1 条 `ReorderMoved` + 1 条 `ReorderEnded`。
+- **另一处踩坑**：`sidebar_event` 里 `track_reorder_*` 是**构造器（返回 Message）**，
+  与枚举变体 `TrackReorderMoved { x, y }` 不是同一类型；混用会得到
+  「expected `Sidebar`, found `Message<…>`」这类反向报错，最终统一用构造器。
+- 验收：
+  - `ui-egui` 11/11、`lumino-ui` lib 864/864、`lumino-gfx` 273/273
+    （`--test-threads=1`）、`clippy -D warnings`、`fmt --check`、
+    `check --bin lumino-rs`；
+  - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
+  - **真机**（`LUMINO_EGUI_ARRANGEMENT=1`，ppp=1.25）：
+    `target/in2-mute.png` —— 点 M 后该按钮变红（`ToggleMute(1)`）；
+    `target/in2-row1.png` —— 点第一行后高亮从 `001 A01` 移到 `000 Master`
+    （`Select { id: 0, ids: [0] }`），静音状态保留；
+    日志确认点击链路：`ToggleMute(1)` → `Select { id: 0, ids: [0] }` →
+    1 条 `ReorderMoved` → `ReorderEnded`。
+
+**Task 1.3（下一步）：走带主体点击层 + 翻转开关**
+
+1. 走带主体（泳道区）点击层：选择 / 移动 / 缩放 / 框选，对齐
+   `ArrangementClickCanvas`，命中盒同样与 wgpu 网格同源（canvas offset/size 已由
+   `arrangement_geometry` 给出）；
+2. 标尺点击/拖拽设置光标与滚轮缩放（当前仍由 iced 处理，接管后要一并实现，
+   否则功能回退）；
+3. 三块（标尺 / 轨道列 / 泳道）全绿后翻 `LUMINO_EGUI_ARRANGEMENT` 默认值——
+   注意 egui 会补出 iced 当前缺失的标尺与轨道列内容，属修复而非等价；
+4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役
+   `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

@@ -4,7 +4,8 @@
 //! （`arrangement_view.viewport` + `editor_state` + `sidebar.tracks`）。
 
 use lumino_ui_egui::chrome::{
-    ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel, ArrangementTrackRow,
+    ArrangementModel, ArrangementRulerModel, ArrangementTrackAction, ArrangementTrackListModel,
+    ArrangementTrackRow,
 };
 
 use crate::root::Root;
@@ -75,6 +76,32 @@ impl Root {
                 drag_track: reorder.map(|state| state.track_id),
                 drop_index: reorder.and_then(|state| state.hover_index),
             },
+        })
+    }
+}
+
+impl Root {
+    /// egui 轨道列动作 → 生产 `Message`。
+    ///
+    /// 与 iced `track_list/handlers.rs` 同语义：单击 = 选择 + 多选集合 + 注册拖拽候选；
+    /// M/S 命中只切换开关；移动/释放交给生产侧的拖拽排序状态机。
+    pub(crate) fn arrangement_action_message(
+        &self,
+        action: &ArrangementTrackAction,
+    ) -> Option<crate::Message> {
+        use crate::sidebar::Event as SidebarEvent;
+        Some(match action {
+            ArrangementTrackAction::Select { id, ids } => crate::Message::Batch(vec![
+                SidebarEvent::track_selected(*id),
+                SidebarEvent::tracks_selected(ids.clone()),
+                SidebarEvent::track_reorder_started(*id),
+            ]),
+            ArrangementTrackAction::ToggleMute(id) => SidebarEvent::track_mute_toggled(*id),
+            ArrangementTrackAction::ToggleSolo(id) => SidebarEvent::track_solo_toggled(*id),
+            ArrangementTrackAction::ReorderMoved { x, y } => {
+                SidebarEvent::track_reorder_moved(*x, *y)
+            }
+            ArrangementTrackAction::ReorderEnded => SidebarEvent::track_reorder_ended(None),
         })
     }
 }

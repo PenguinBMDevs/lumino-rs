@@ -8,6 +8,7 @@ use lumino_ui_egui::audio_export::AudioExportAction;
 use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::brush_settings::BrushSettingsAction;
 use lumino_ui_egui::chrome::ToolbarAction;
+use lumino_ui_egui::chrome::arrangement::ArrangementTrackAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::chrome::sidebar::{SidebarRoute, take_route_action};
 use lumino_ui_egui::cloud_browser::CloudBrowserAction;
@@ -58,6 +59,7 @@ pub(super) struct OverlayActions {
     pub video_export: Option<VideoExportAction>,
     pub sidebar_route: Option<SidebarRoute>,
     pub video_overlay: Option<VideoOverlayAction>,
+    pub arrangement: Option<ArrangementTrackAction>,
 }
 
 impl OverlayActions {
@@ -89,6 +91,7 @@ impl OverlayActions {
             video_export: lumino_ui_egui::video_export::take_action(ctx),
             sidebar_route: take_route_action(ctx),
             video_overlay: lumino_ui_egui::video_export_overlay::take_action(ctx),
+            arrangement: lumino_ui_egui::chrome::arrangement::take_action(ctx),
         }
     }
 }
@@ -143,6 +146,12 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = &actions.arrangement
+            && let Some(message) = self.root.arrangement_action_message(action)
+        {
+            tracing::info!("egui 走带动作：{action:?}");
+            self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.video_overlay
             && let Some(message) = self.root.video_overlay_action_message(&action)

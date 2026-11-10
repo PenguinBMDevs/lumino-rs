@@ -35,10 +35,53 @@ const STATUSBAR_H: f32 = 20.0;
 /// 底部水平滚动条高度。
 const H_SCROLLBAR_H: f32 = 20.0;
 
-/// 绘制整个走带视图（顶部标尺 + 左侧轨道列）。
+/// 本帧的轨道列动作。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArrangementTrackAction {
+    /// 选择一组音轨（已按 Shift 语义算好）。
+    Select {
+        /// 点击的音轨 ID（单选 / 双击语义）。
+        id: usize,
+        /// 选择集合（单选时只含 `id`）。
+        ids: Vec<usize>,
+    },
+    /// 切换静音。
+    ToggleMute(usize),
+    /// 切换独奏。
+    ToggleSolo(usize),
+    /// 拖拽移动（列表局部坐标，已加滚动偏移）。
+    ReorderMoved {
+        /// 局部 x。
+        x: f32,
+        /// 局部 y。
+        y: f32,
+    },
+    /// 结束拖拽（排序由生产侧按内部插入位置执行）。
+    ReorderEnded,
+}
+
+/// 动作通道（一帧一条）。
+const ACTION_ID: &str = "lumino.arrangement.action";
+
+/// 记录本帧动作。
+pub fn push_action(ctx: &egui::Context, action: ArrangementTrackAction) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), action));
+}
+
+/// 取走本帧动作。
+pub fn take_action(ctx: &egui::Context) -> Option<ArrangementTrackAction> {
+    let action = ctx.data(|d| d.get_temp::<ArrangementTrackAction>(egui::Id::unique(ACTION_ID)));
+    if action.is_some() {
+        ctx.data_mut(|d| d.remove::<ArrangementTrackAction>(egui::Id::unique(ACTION_ID)));
+    }
+    action
+}
+
+/// 绘制并处理输入（顶部标尺 + 左侧轨道列）。
 ///
 /// `full` = 窗口逻辑矩形；内容原点由模型给出（工具栏高度可拖拽，不能硬编码）。
-pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) {
+/// 轨道列整块计入 egui 占用区：点击不再落到下方 iced 的同位置 Canvas。
+pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<ArrangementTrackAction> {
     let left = full.left() + model.ruler.left_inset;
     let top = full.top() + model.ruler.top_inset;
     let right = (full.right() - V_SCROLLBAR_W).max(left);
@@ -55,6 +98,10 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) {
         egui::pos2(left + TRACK_LIST_W, bottom.max(ruler.bottom())),
     );
     track_list::show(ui, lanes, &model.track_list);
+    // 轨道列由 egui 接管点击：整块占用，避免 iced 同位置 Canvas 二次响应
+    // （两边选择逻辑不同步时会出现“点了又跳回去”）。
+    super::menu::extend_blocked(ui.ctx(), [lanes]);
+    track_list::interact(ui, lanes, &model.track_list)
 }
 
 /// 计算某 tick 对应的屏幕 x（`rect` 左缘 = 走带区左缘）。

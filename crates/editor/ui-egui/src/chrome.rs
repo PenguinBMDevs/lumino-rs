@@ -13,6 +13,7 @@ pub mod tool_panel;
 pub mod toolbar;
 pub mod toolbar_popup;
 
+pub use arrangement::ArrangementTrackAction;
 pub use model::{
     ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel, ArrangementTrackRow,
     AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,
@@ -204,10 +205,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 走带标尺：`LUMINO_EGUI_ARRANGEMENT=1` 时由 egui 绘制（默认关闭，先与 iced 并存）。
     // 几何与 iced `view_arrangement` 同源：内容区左缘 = 左侧栏宽，顶部 = 标题栏 + 工具栏，
     // 标尺再让出 160px 音轨列与 20px 垂直滚动条。
-    if let Some(arrangement) = arrangement_model(ui.ctx())
-        && arrangement_enabled()
+    if arrangement_enabled()
+        && let Some(arrangement) = arrangement_model(ui.ctx())
+        && let Some(action) = arrangement::show(&root, root.max_rect(), &arrangement)
     {
-        arrangement::show(&root, root.max_rect(), &arrangement);
+        arrangement::push_action(ui.ctx(), action);
     }
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。

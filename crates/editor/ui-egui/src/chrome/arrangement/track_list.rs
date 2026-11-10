@@ -1,21 +1,17 @@
-//! 走带左侧轨道列（160px）的 egui 绘制。
+//! 走带左侧轨道列（160px）的绘制与命中。
 //!
-//! 与 iced `ui-editor/src/arrangement/track_list/draw.rs` 同口径：
-//! - 行底色：选中 → 主色弱调；否则斑马纹（浅色 0.97 / 0.94，深色 0.20 / 0.15）；
-//! - 未设置音轨颜色时左侧画 8px 灰块；
-//! - 第一行小字：三位编号 + 标签（`Master` / `A01` / 自定义）；
-//! - 第二行：音轨名；
-//! - 行高 ≥ 30 时右侧画 18×18 的 M / S 按钮（主控轨不画）；
-//! - 拖拽排序：被拖行叠 25% 黑遮罩，插入位置画 3px 主色横线；
-//! - 右缘 1px 分隔线。
+//! 绘制与 iced `ui-editor/src/arrangement/track_list/draw.rs` 同口径；
+//! 命中盒由 [`row_rects`] **同一份矩形**给出，保证“看到的就是点得到的”。
 //!
-//! 本阶段**只绘制不接管输入**（点击仍由 iced 处理），用于共存对照。
+//! 交互语义与 iced `track_list/handlers.rs` 一致：单击选择、Shift 范围选择、
+//! M/S 开关、按下注册拖拽排序候选（长按/移动激活由生产侧统一计时）。
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect};
 
 use crate::theme;
 
-use crate::chrome::{ArrangementTrackListModel, ArrangementTrackRow};
+use super::super::{ArrangementTrackListModel, ArrangementTrackRow};
+use super::ArrangementTrackAction;
 
 /// 未配色时的左侧色块宽度（像素）。
 const BADGE_WIDTH: f32 = 8.0;
@@ -30,6 +26,57 @@ const DROP_HEIGHT: f32 = 3.0;
 /// 行高低于该值时不画静音/独奏按钮与两行文字。
 const DETAIL_MIN_HEIGHT: f32 = 30.0;
 
+/// 一行的命中矩形（绘制与输入共用）。
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RowRects {
+    /// 音轨 ID。
+    pub(super) id: usize,
+    /// 整行。
+    pub(super) row: Rect,
+    /// 静音按钮（主控轨为 `None`）。
+    pub(super) mute: Option<Rect>,
+    /// 独奏按钮（主控轨为 `None`）。
+    pub(super) solo: Option<Rect>,
+}
+
+/// 按模型算出每一行的矩形（含 M/S 按钮）。
+pub(super) fn row_rects(rect: Rect, model: &ArrangementTrackListModel) -> Vec<RowRects> {
+    let row_h = model.track_height.max(1.0);
+    model
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(index, track)| {
+            let y = rect.top() + index as f32 * row_h - model.scroll_y;
+            let row =
+                Rect::from_min_size(egui::pos2(rect.left(), y), egui::vec2(rect.width(), row_h));
+            let (mute, solo) = if track.conductor || row_h < DETAIL_MIN_HEIGHT {
+                (None, None)
+            } else {
+                let total = 2.0 * BTN_SIZE + BTN_GAP;
+                let start_x = rect.right() - total - 6.0;
+                let top = y + (row_h - BTN_SIZE) * 0.5;
+                (
+                    Some(Rect::from_min_size(
+                        egui::pos2(start_x, top),
+                        egui::vec2(BTN_SIZE, BTN_SIZE),
+                    )),
+                    Some(Rect::from_min_size(
+                        egui::pos2(start_x + BTN_SIZE + BTN_GAP, top),
+                        egui::vec2(BTN_SIZE, BTN_SIZE),
+                    )),
+                )
+            };
+            RowRects {
+                id: track.id,
+                row,
+                mute,
+                solo,
+            }
+        })
+        .collect()
+}
+
 /// 绘制轨道列（`rect` = 160px 宽的内容区）。
 pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
@@ -41,11 +88,8 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
 
     let row_h = model.track_height.max(1.0);
     let is_light = !theme::palette().is_dark;
-    let first = (model.scroll_y / row_h).floor().max(0.0) as usize;
-    let visible = (rect.height() / row_h).ceil().max(0.0) as usize + 2;
-    let last = (first + visible).min(model.tracks.len());
 
-    for index in first..last {
+    for index in 0..model.tracks.len() {
         let Some(track) = model.tracks.get(index) else {
             continue;
         };
@@ -59,7 +103,7 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
         let bg = match track.color {
             Some(color) if track.selected => blend(color, theme::selected_bg(), 0.35),
             Some(color) => color,
-            // 选中：主色弱调（对应 iced \palette.primary.weak\），不是灰底，
+            // 选中：主色弱调（对应 iced `palette.primary.weak`），不是灰底，
             // 否则配合白字会糊成一片。
             None if track.selected => blend(theme::base_bg(), theme::accent(), 0.16),
             None if index % 2 == 0 => {
@@ -98,7 +142,7 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
         }
 
         let text_color = if track.selected && track.color.is_none() {
-            // 对应 iced \palette.primary.strong\：深主色在浅主色底上可读。
+            // 对应 iced `palette.primary.strong`：深主色在浅主色底上可读。
             theme::accent_strong()
         } else if track.color.is_some() {
             contrast_text(bg)
@@ -117,7 +161,6 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
             } else {
                 track.label.clone()
             };
-            // 第一行：编号（左）+ 标签（右移 32）。
             painter.text(
                 egui::pos2(text_x, y + row_h * 0.30),
                 Align2::LEFT_CENTER,
@@ -132,7 +175,6 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
                 FontId::proportional(small),
                 text_color,
             );
-            // 第二行：音轨名。
             let name_size = (row_h * 0.25).clamp(9.0, 13.0);
             painter.text(
                 egui::pos2(text_x, y + row_h * 0.70),
@@ -146,7 +188,6 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
                 draw_buttons(painter, rect, y, row_h, track, is_light, text_color);
             }
         } else {
-            // 窄行：单行编号 + 名称。
             let size = (row_h * 0.45).clamp(8.0, 14.0);
             let text_x = rect.left() + BADGE_WIDTH + TEXT_MARGIN;
             painter.text(
@@ -265,4 +306,97 @@ fn contrast_text(bg: Color32) -> Color32 {
     } else {
         Color32::WHITE
     }
+}
+
+/// Shift 多选锚点（按窗口记住上一次点击的行下标）。
+fn anchor_id(rect: Rect) -> egui::Id {
+    egui::Id::unique(("lumino.arrangement.anchor", rect.left() as i32))
+}
+
+/// 处理轨道列输入，返回本帧动作。
+///
+/// 命中盒与绘制同源（[`row_rects`]）；`rect` 必须与绘制时相同。
+pub(super) fn interact(
+    ui: &egui::Ui,
+    rect: Rect,
+    model: &ArrangementTrackListModel,
+) -> Option<ArrangementTrackAction> {
+    let rows = row_rects(rect, model);
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let pressed = ui.input(|i| i.pointer.any_pressed() && i.pointer.primary_pressed());
+    let released = ui.input(|i| i.pointer.primary_released());
+    let shift = ui.input(|i| i.modifiers.shift);
+    let scrolling = ui.input(|i| i.pointer.primary_down());
+
+    // 按下：先判 M/S，再判选择 + 注册拖拽候选。
+    if pressed
+        && let Some(pos) = pointer
+        && rect.contains(pos)
+    {
+        for row in &rows {
+            if let Some(btn) = row.mute
+                && btn.contains(pos)
+            {
+                return Some(ArrangementTrackAction::ToggleMute(row.id));
+            }
+            if let Some(btn) = row.solo
+                && btn.contains(pos)
+            {
+                return Some(ArrangementTrackAction::ToggleSolo(row.id));
+            }
+            if row.row.contains(pos) {
+                let index = model.tracks.iter().position(|t| t.id == row.id)?;
+                let anchor = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<usize>(anchor_id(rect)))
+                    .unwrap_or(index);
+                let ids = if shift {
+                    let (lo, hi) = (anchor.min(index), anchor.max(index));
+                    model.tracks[lo..=hi].iter().map(|t| t.id).collect()
+                } else {
+                    vec![row.id]
+                };
+                if !shift {
+                    ui.ctx().data_mut(|d| d.insert_temp(anchor_id(rect), index));
+                }
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(egui::Id::unique("lumino.arrangement.dragging"), row.id)
+                });
+                return Some(ArrangementTrackAction::Select { id: row.id, ids });
+            }
+        }
+    }
+
+    // 按下期间：指针位置**变化时**才上报（生产侧据此激活/更新插入位置），
+    // 否则每帧一条消息会把事件队列刷爆。
+    if scrolling
+        && let Some(pos) = pointer
+        && ui
+            .ctx()
+            .data(|d| d.get_temp::<usize>(egui::Id::unique("lumino.arrangement.dragging")))
+            .is_some()
+    {
+        let last = ui
+            .ctx()
+            .data(|d| d.get_temp::<egui::Pos2>(egui::Id::unique("lumino.arrangement.last")));
+        if last != Some(pos) {
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(egui::Id::unique("lumino.arrangement.last"), pos));
+            return Some(ArrangementTrackAction::ReorderMoved {
+                x: pos.x - rect.left(),
+                y: pos.y - rect.top() + model.scroll_y,
+            });
+        }
+    }
+
+    // 释放：结束拖拽。
+    if released
+        && ui
+            .ctx()
+            .data_mut(|d| d.remove_temp::<usize>(egui::Id::unique("lumino.arrangement.dragging")))
+            .is_some()
+    {
+        return Some(ArrangementTrackAction::ReorderEnded);
+    }
+    None
 }
