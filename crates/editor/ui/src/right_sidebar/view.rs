@@ -5,7 +5,7 @@ mod sidebar_button;
 use sidebar_button::sidebar_button;
 
 use iced_core::{Color, Length};
-use iced_widget::{Column, Row, Space, button, container, mouse_area, tooltip};
+use iced_widget::{Column, Row, Space, button, container, tooltip};
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_message::RightSidebarAction;
 
@@ -85,26 +85,22 @@ pub fn view<'a>(
             }
         };
 
-        // 调整大小手柄（放在面板左侧边缘，紧贴主内容区——面板向右栏图标列方向
-        // 展开，左侧边界才是用户肉眼可见的可拖拽边缘）
-        let resize_handle = mouse_area(
-            container(
-                Space::new()
-                    .width(Length::Fixed(RESIZE_HANDLE_WIDTH))
-                    .height(Length::Fill),
-            )
-            .style(move |_theme: &Theme| {
-                let bg = if right_sidebar.is_resizing {
-                    palette.primary.strong.color
-                } else {
-                    palette.background.weakest.color
-                };
-                container::Style::default().background(bg)
-            }),
+        // 调整大小手柄（面板左侧边缘）：**像素占位**。按下/松开与宽度跟随
+        // 已由 egui 手柄接管（`chrome::right_panel::show_handle`），iced 侧仅
+        // 保留同色条以保证纯 iced 基线（`capture_iced`）不变。
+        let resize_handle = container(
+            Space::new()
+                .width(Length::Fixed(RESIZE_HANDLE_WIDTH))
+                .height(Length::Fill),
         )
-        .interaction(iced_core::mouse::Interaction::ResizingHorizontally)
-        .on_press(Message::RightSidebar(RightSidebarAction::ResizeDragStarted))
-        .on_release(Message::RightSidebar(RightSidebarAction::ResizeDragEnded));
+        .style(move |_theme: &Theme| {
+            let bg = if right_sidebar.is_resizing {
+                palette.primary.strong.color
+            } else {
+                palette.background.weakest.color
+            };
+            container::Style::default().background(bg)
+        });
 
         // 调整手柄 + 面板内容（手柄在面板左侧）
         let panel_with_handle = Row::new().push(resize_handle).push(panel_content);

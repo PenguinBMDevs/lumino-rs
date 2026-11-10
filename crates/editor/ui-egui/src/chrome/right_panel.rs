@@ -30,6 +30,10 @@ const ACTION_ID: &str = "lumino.right-sidebar.action";
 pub enum RightSidebarAction {
     /// 点击图标列按钮（切换/展开对应面板）。
     RailClicked(super::model::RightSidebarPanelKind),
+    /// 按下 6px 缩放手柄（开始拖拽面板宽度）。
+    ResizeStarted,
+    /// 松开缩放手柄（结束拖拽）。
+    ResizeEnded,
     /// 点击「选择图片文件」。
     SelectImageFile,
     /// 配置文本变化（原样回传，生产负责合法性校验）。
@@ -89,6 +93,48 @@ pub fn push_action(ctx: &egui::Context, action: RightSidebarAction) {
 pub fn take_action(ctx: &egui::Context) -> Option<RightSidebarAction> {
     ctx.data_mut(|d| d.remove_temp::<Option<RightSidebarAction>>(Id::unique(ACTION_ID)))
         .flatten()
+}
+
+/// 绘制 6px 缩放手柄并接管拖拽（按下/松开 → 生产侧 start/end_resize）。
+///
+/// 宽度跟随仍由宿主处理：iced 每条 `CursorMoved` 都会调用
+/// `RightSidebar::update_resize_position`，这里只需正确发出起止信号。
+pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
+    ui.painter().rect_filled(
+        rect,
+        0,
+        if resizing {
+            crate::theme::accent_strong()
+        } else {
+            crate::theme::panel_bg()
+        },
+    );
+    let response = ui.interact(
+        rect,
+        Id::unique("lumino.right-sidebar.handle"),
+        egui::Sense::click_and_drag(),
+    );
+    let response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+
+    // 起止信号必须**成对**发出：不能依赖生产状态 `resizing` 的时序——iced 在
+    // 鼠标松开时会先走 `handle_release_all` 直接 `end_resize()`，等到下一帧
+    // `resizing` 已经是 false，就再也发不出 Ended。这里用 egui 自己的边沿状态。
+    let dragging_id = Id::unique("lumino.right-sidebar.handle.dragging");
+    let started = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(dragging_id))
+        .unwrap_or(false);
+    let down = response.is_pointer_button_down_on();
+    if down && !started {
+        ui.ctx().data_mut(|d| d.insert_temp(dragging_id, true));
+        push_action(ui.ctx(), RightSidebarAction::ResizeStarted);
+    } else if !down && started {
+        ui.ctx().data_mut(|d| d.insert_temp(dragging_id, false));
+        push_action(ui.ctx(), RightSidebarAction::ResizeEnded);
+    }
+
+    // 手柄由 egui 独占：iced 的 mouse_area 不再收到按下/松开。
+    super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 
 /// 绘制面板内容（`rect` = 手柄右侧的内容区）。

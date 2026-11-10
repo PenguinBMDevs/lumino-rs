@@ -489,15 +489,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     band.min,
                     egui::pos2((band.left() + 6.0).min(band.right()), band.bottom()),
                 );
-                root.painter().rect_filled(
-                    handle,
-                    0,
-                    if right.resizing {
-                        theme::accent_strong()
-                    } else {
-                        theme::panel_bg()
-                    },
-                );
+                right_panel::show_handle(&root, handle, right.resizing);
                 let content_rect = egui::Rect::from_min_max(
                     egui::pos2(handle.right(), band.top()),
                     egui::pos2(band.right() - right.bar_width(), band.bottom()),

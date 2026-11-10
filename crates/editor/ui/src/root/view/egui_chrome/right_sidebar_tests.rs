@@ -352,6 +352,19 @@ fn rail_clicks_map_to_panel_toggles() {
 }
 
 #[test]
+fn resize_handle_actions_map_to_drag_events() {
+    let root = root();
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::ResizeStarted),
+        Some(Message::RightSidebar(SidebarAction::ResizeDragStarted))
+    ));
+    assert!(matches!(
+        root.right_sidebar_action_message(&PanelAction::ResizeEnded),
+        Some(Message::RightSidebar(SidebarAction::ResizeDragEnded))
+    ));
+}
+
+#[test]
 fn waterfall_panel_model_carries_title_and_texture_state() {
     let mut root = root();
     root.right_sidebar.panel_visible = true;

@@ -2620,3 +2620,32 @@ callback / 多视口 / 截图能力。
    `right_sidebar/view.rs` 只剩图标列像素，可整体并入「待退役」清单；
 2. `piano_waterfall` 的 iced `WaterfallProgram`（shader 图元）改为全 egui 外部纹理；
 3. 待 `capture_iced` 退役确认后删 iced 工具栏（含 `SnapIcon`）与图标列。
+
+**Task 1.3（第八十四步）：右侧栏 6px 缩放手柄迁 egui（起止信号成对）**
+
+- `right_panel::show_handle(ui, rect, resizing)`：绘制手柄底色 + `ui.interact`
+  （`click_and_drag`）+ `ResizeHorizontal` 光标；按下/松开经
+  `RightSidebarAction::ResizeStarted/ResizeEnded` 回传。
+- **成对信号**：不用生产状态 `resizing` 做边沿判断——iced 在鼠标松开时会先走
+  `handle_release_all` 直接 `end_resize()`，下一帧 `resizing` 已为 false，
+  Ended 永远发不出去（首轮真机实测只拿到 `ResizeStarted`）。改为在 egui 侧用
+  ctx-data 记录「本手柄是否处于拖拽」，保证 Start/End 各一次。
+- 宽度跟随仍由宿主：iced 每条 `CursorMoved` 调
+  `RightSidebar::update_resize_position`（`input.rs`），故 egui 只需起止。
+- `right_sidebar/view.rs` 的手柄去掉 `mouse_area`/`on_press`/`on_release`，
+  只留同色占位（`capture_iced` 面板隐藏时不渲染，像素不变）。
+- 新增 1 个单测：`ResizeStarted/Ended → ResizeDragStarted/Ended`。
+- **真机**（DPI-aware；面板默认 200 宽）：
+  - 按下手柄（逻辑 1803）向左拖 80px → 手柄变强调色、面板由 200 增到 **280**；
+  - 松开后指针移到别处，宽度保持 280（无幽灵拖拽）；
+  - 日志：`RailClicked(Materials)` → `ResizeStarted` → `ResizeEnded` 各 1 条。
+- 验收：`lumino-ui` lib 842/842（+1）、`ui-egui` 32/32、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. `piano_waterfall` 的 iced `WaterfallProgram`/`waterfall_primitive` 改为
+   全 egui 外部纹理（wgpu 管线整体接入）；
+2. 右侧栏 `view.rs` 只剩图标列 + 占位，等 `capture_iced` 退役后整块删除；
+3. 需要用户确认：退役 `capture_iced`（归档原图、改由 `capture_egui` 做唯一门禁）。

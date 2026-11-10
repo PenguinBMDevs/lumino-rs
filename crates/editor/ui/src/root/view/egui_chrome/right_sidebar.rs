@@ -183,6 +183,8 @@ pub(super) fn action_message(action: &PanelAction) -> Option<Message> {
         return Some(message);
     }
     Some(match action {
+        PanelAction::ResizeStarted => Message::RightSidebar(SidebarAction::ResizeDragStarted),
+        PanelAction::ResizeEnded => Message::RightSidebar(SidebarAction::ResizeDragEnded),
         PanelAction::RailClicked(kind) => Message::RightSidebar(match kind {
             RightSidebarPanelKind::ImageToMidi => SidebarAction::ImageToMidiClicked,
             RightSidebarPanelKind::Materials => SidebarAction::MaterialLibraryClicked,
