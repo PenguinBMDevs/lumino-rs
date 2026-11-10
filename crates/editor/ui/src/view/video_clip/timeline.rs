@@ -95,7 +95,6 @@ pub struct TimelinePaneParams<'a> {
     /// 时间轴可视宽度（由面板 responsive 计算传入）
     pub viewport_w: f32,
     /// Ctrl 键状态（Ctrl+滚轮缩放）
-    pub ctrl_pressed: bool,
     /// 当前播放位置（秒）；走带线画在其对应屏幕坐标，
     /// 播放中因滚动自动跟随恒定钉在 [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X)
     pub playhead_secs: f32,
@@ -117,22 +116,12 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
 
     let duration_secs = duration_seconds(params.total_ticks, params.ppq, params.tempos) as f32;
 
-    let canvas_data = super::timeline_canvas::TimelineCanvas {
-        duration_secs,
-        zoom: params.clip.zoom,
-        scroll_x: params.clip.timeline_scroll_x,
-        ctrl_pressed: params.ctrl_pressed,
-        playhead_secs: params.playhead_secs,
-        is_playing: params.is_playing,
-        video_edit: params.video_edit,
-        audio_edit: params.audio_edit,
-    };
-    let content_width = canvas_data.content_width();
-
     // 内容区 Canvas（标尺 + 双轨 + 走带指示线）
+    // 时间轴画布由 egui 绘制（ui-egui 的 video_clip_timeline）；
+    // iced 侧保留同尺寸占位，探针继续提供真实矩形。
     let timeline_canvas = crate::view::video_clip::rect_probe::probe(
         "renderer::clip_canvas",
-        iced_widget::canvas::Canvas::new(canvas_data)
+        iced_widget::container(iced_widget::Space::new())
             .width(Length::Fill)
             .height(Length::Fill),
     );
@@ -163,6 +152,19 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
     // 卷帘同款水平滚动条：滑块拖拽滚动 + 边缘拖拽缩放（视口宽随消息携带，无状态反向同步）
     use crate::message::{Message, VideoClipAction};
     let viewport_w = params.viewport_w;
+    // 内容宽度：与 egui 侧同一公式（内容秒长 × 每秒像素 × 缩放）。
+    let content_secs = {
+        let video_end = params.video_edit.offset_secs
+            + params.video_edit.trim_in_secs
+            + params.video_edit.visible_len(duration_secs);
+        let audio_end = params.audio_edit.offset_secs
+            + params.audio_edit.trim_in_secs
+            + params.audio_edit.visible_len(duration_secs);
+        duration_secs.max(video_end).max(audio_end)
+    };
+    let content_width =
+        content_secs * lumino_ui_egui::video_clip_timeline::PIXELS_PER_SEC * params.clip.zoom;
+
     let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
         params.clip.timeline_scroll_x,
         content_width,

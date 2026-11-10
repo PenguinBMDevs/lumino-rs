@@ -38,13 +38,33 @@ pub enum ClipTrack {
     Audio,
 }
 
-/// 轨道素材的可见区间（秒，已含偏移与裁剪）。
+/// 轨道素材的**原始编辑量**（秒）：
+/// 可见区间 = `[offset + trim_in, offset + duration - trim_out]`。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct ClipSpan {
-    /// 可见起点（秒）。
-    pub start: f32,
-    /// 可见长度（秒）。
-    pub len: f32,
+pub struct ClipEdit {
+    /// 整体偏移。
+    pub offset: f32,
+    /// 首端裁剪。
+    pub trim_in: f32,
+    /// 尾端裁剪。
+    pub trim_out: f32,
+}
+
+impl ClipEdit {
+    /// 可见起点。
+    pub fn visible_start(&self) -> f32 {
+        self.offset + self.trim_in
+    }
+
+    /// 可见长度（源长 `duration`）。
+    pub fn visible_len(&self, duration: f32) -> f32 {
+        (duration - self.trim_in - self.trim_out).max(0.0)
+    }
+
+    /// 可见区间 `(start, len)`。
+    pub fn span(&self, duration: f32) -> (f32, f32) {
+        (self.visible_start(), self.visible_len(duration))
+    }
 }
 
 /// 时间轴数据（每帧由生产侧装配）。
@@ -58,18 +78,20 @@ pub struct VideoTimelineModel {
     pub scroll_x: f32,
     /// 播放位置（秒）。
     pub playhead_secs: f32,
-    /// 视频轨可见区间。
-    pub video: ClipSpan,
-    /// 音频轨可见区间。
-    pub audio: ClipSpan,
+    /// 视频轨原始编辑量。
+    pub video: ClipEdit,
+    /// 音频轨原始编辑量。
+    pub audio: ClipEdit,
+    /// 时间轴可视宽度（像素，滚动/缩放消息需要）。
+    pub viewport_w: f32,
 }
 
 impl VideoTimelineModel {
     /// 内容秒长：素材源长与两条轨道右缘取大（越界部分可滚回）。
     pub fn content_secs(&self) -> f32 {
-        let vr = self.video.start + self.video.len;
-        let ar = self.audio.start + self.audio.len;
-        self.duration_secs.max(vr).max(ar)
+        let (vs, vl) = self.video.span(self.duration_secs);
+        let (as_, al) = self.audio.span(self.duration_secs);
+        self.duration_secs.max(vs + vl).max(as_ + al)
     }
 }
 
@@ -80,8 +102,9 @@ impl Default for VideoTimelineModel {
             zoom: 1.0,
             scroll_x: 0.0,
             playhead_secs: 0.0,
-            video: ClipSpan::default(),
-            audio: ClipSpan::default(),
+            video: ClipEdit::default(),
+            audio: ClipEdit::default(),
+            viewport_w: 1.0,
         }
     }
 }
@@ -99,10 +122,10 @@ pub struct TrackGeom {
 
 impl TrackGeom {
     /// 由可见区间算屏幕几何（局部坐标，相对时间轴控件）。
-    pub fn new(span: ClipSpan, pps_zoom: f32, scroll_x: f32, y: f32) -> Self {
+    pub fn new(span: (f32, f32), pps_zoom: f32, scroll_x: f32, y: f32) -> Self {
         Self {
-            x: span.start * pps_zoom - scroll_x,
-            w: (span.len * pps_zoom).max(0.0),
+            x: span.0 * pps_zoom - scroll_x,
+            w: (span.1 * pps_zoom).max(0.0),
             y,
         }
     }
@@ -136,11 +159,16 @@ pub fn hit_test(local: egui::Pos2, model: &VideoTimelineModel, width: f32) -> Op
         return Some(HitZone::Ruler);
     }
     let pps = PIXELS_PER_SEC * model.zoom;
-    for (track, span) in [
+    for (track, edit) in [
         (ClipTrack::Video, model.video),
         (ClipTrack::Audio, model.audio),
     ] {
-        let geom = TrackGeom::new(span, pps, model.scroll_x, TrackGeom::track_y(track));
+        let geom = TrackGeom::new(
+            edit.span(model.duration_secs),
+            pps,
+            model.scroll_x,
+            TrackGeom::track_y(track),
+        );
         let bar = Rect::from_min_size(egui::pos2(geom.x, geom.y), egui::vec2(geom.w, TRACK_HEIGHT));
         if !bar.contains(local) {
             continue;
@@ -230,7 +258,7 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
     }
 
     // 双轨条。
-    for (track, span, color, label) in [
+    for (track, edit, color, label) in [
         (
             ClipTrack::Video,
             model.video,
@@ -244,7 +272,12 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
             "音频",
         ),
     ] {
-        let geom = TrackGeom::new(span, pps, model.scroll_x, TrackGeom::track_y(track));
+        let geom = TrackGeom::new(
+            edit.span(model.duration_secs),
+            pps,
+            model.scroll_x,
+            TrackGeom::track_y(track),
+        );
         if geom.w <= 0.0 || geom.x > rect.width() || geom.x + geom.w < 0.0 {
             continue;
         }
@@ -291,22 +324,44 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
     }
 }
 
-/// 时间轴交互动作（由 egui 输入产生，生产侧映射成 `VideoClipAction`）。
+/// 裁剪端。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipEdge {
+    /// 首端。
+    Start,
+    /// 尾端。
+    End,
+}
+
+/// 时间轴交互动作（egui 输入 → 生产侧映射成 `VideoClipAction`）。
+///
+/// 拖动/裁剪都产出**绝对值**（不做增量累加），与 iced 的
+/// `ClipTrackOffsetChanged` / `ClipTrimChanged` 语义一致，避免漂移。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VideoTimelineAction {
-    /// 定位播放头到指定秒。
+    /// 定位播放头（秒）。
     Seek(f32),
-    /// 拖动素材条（秒偏移）。
-    DragBy(f32),
-    /// 裁剪起始（秒增量，负值=向右裁）。
-    TrimIn(f32),
-    /// 裁剪结束（秒增量）。
-    TrimOut(f32),
-    /// 滚轮缩放（倍率因子）与锚点比例。
+    /// 素材整体偏移改为该值（秒）。
+    SetOffset {
+        /// 目标轨道。
+        track: ClipTrack,
+        /// 新偏移。
+        offset: f32,
+    },
+    /// 裁剪量改为该值（秒）。
+    SetTrim {
+        /// 目标轨道。
+        track: ClipTrack,
+        /// 裁剪端。
+        edge: ClipEdge,
+        /// 新裁剪量。
+        secs: f32,
+    },
+    /// 滚轮缩放。
     Zoom {
         /// 缩放因子。
         factor: f32,
-        /// 锚点比例 0..1。
+        /// 锚点比例。
         fixed_ratio: f32,
     },
     /// 水平滚动（像素）。
@@ -320,6 +375,8 @@ pub struct DragSession {
     pub zone: HitZone,
     /// 起始指针局部坐标。
     pub origin: egui::Pos2,
+    /// 基准值（偏移 / trim_in / trim_out，秒）。
+    pub base: f32,
 }
 
 /// 按下：按命中区产出动作并返回拖拽会话（标尺/把手/条身都需要后续移动）。
@@ -333,19 +390,41 @@ pub fn press(
     };
     let pps = (PIXELS_PER_SEC * model.zoom).max(1e-6);
     let secs_at = |x: f32| (x + model.scroll_x) / pps;
+    let edit = |track: ClipTrack| match track {
+        ClipTrack::Video => model.video,
+        ClipTrack::Audio => model.audio,
+    };
     match zone {
         HitZone::Ruler => (
             Some(VideoTimelineAction::Seek(secs_at(local.x).max(0.0))),
             Some(DragSession {
                 zone,
                 origin: local,
+                base: 0.0,
             }),
         ),
-        _ => (
+        HitZone::Body(track) => (
             None,
             Some(DragSession {
                 zone,
                 origin: local,
+                base: edit(track).offset,
+            }),
+        ),
+        HitZone::Head(track) => (
+            None,
+            Some(DragSession {
+                zone,
+                origin: local,
+                base: edit(track).trim_in,
+            }),
+        ),
+        HitZone::Tail(track) => (
+            None,
+            Some(DragSession {
+                zone,
+                origin: local,
+                base: edit(track).trim_out,
             }),
         ),
     }
@@ -363,9 +442,22 @@ pub fn drag(
         HitZone::Ruler => Some(VideoTimelineAction::Seek(
             ((local.x + model.scroll_x) / pps).max(0.0),
         )),
-        HitZone::Body(_) => Some(VideoTimelineAction::DragBy(dx_secs)),
-        HitZone::Head(_) => Some(VideoTimelineAction::TrimIn(dx_secs)),
-        HitZone::Tail(_) => Some(VideoTimelineAction::TrimOut(dx_secs)),
+        HitZone::Body(track) => Some(VideoTimelineAction::SetOffset {
+            track,
+            offset: (session.base + dx_secs).max(0.0),
+        }),
+        HitZone::Head(track) => Some(VideoTimelineAction::SetTrim {
+            track,
+            edge: ClipEdge::Start,
+            secs: (session.base + dx_secs)
+                .clamp(0.0, (model.duration_secs - model.video.trim_out).max(0.0)),
+        }),
+        HitZone::Tail(track) => Some(VideoTimelineAction::SetTrim {
+            track,
+            edge: ClipEdge::End,
+            secs: (session.base - dx_secs)
+                .clamp(0.0, (model.duration_secs - model.video.trim_in).max(0.0)),
+        }),
     }
 }
 
@@ -396,24 +488,115 @@ pub fn wheel(
     }
 }
 
+/// 交互会话在 ctx-data 里的键。
+const SESSION_ID: &str = "lumino.video-timeline.drag";
+
+/// 处理本帧输入，返回动作（矩形与绘制同源，命中不会错位）。
+pub fn interact(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) -> Vec<VideoTimelineAction> {
+    let (pointer, pressed, released, down) = ui.input(|i| {
+        (
+            i.pointer.interact_pos(),
+            i.pointer.any_pressed() && i.pointer.primary_pressed(),
+            i.pointer.primary_released(),
+            i.pointer.primary_down(),
+        )
+    });
+    let mut actions = Vec::new();
+
+    // 滚轮：Ctrl 缩放 / 其它横向滚动。
+    if let Some(pos) = pointer
+        && rect.contains(pos)
+        && let Some(delta) = wheel_lines(ui)
+        && let Some(action) = wheel(
+            egui::pos2(pos.x - rect.left(), pos.y - rect.top()),
+            delta,
+            ui.input(|i| i.modifiers.ctrl),
+            ui.input(|i| i.modifiers.shift),
+            rect.width(),
+        )
+    {
+        actions.push(action);
+        return actions;
+    }
+
+    let local = pointer.map(|p| egui::pos2(p.x - rect.left(), p.y - rect.top()));
+
+    // 按下：开拖拽会话（标尺按下同时 Seek）。
+    if pressed
+        && let Some(local) = local
+        && let Some(pos) = pointer
+        && rect.contains(pos)
+    {
+        let (action, session) = press(local, model, rect.width());
+        if let Some(session) = session {
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(egui::Id::unique(SESSION_ID), session));
+        }
+        if let Some(action) = action {
+            actions.push(action);
+        }
+        return actions;
+    }
+
+    // 拖动：按会话类型产出绝对动作；Seek 在秒值不变时不重复上报。
+    if down
+        && let Some(local) = local
+        && let Some(session) = ui
+            .ctx()
+            .data(|d| d.get_temp::<DragSession>(egui::Id::unique(SESSION_ID)))
+        && let Some(action) = drag(local, session, model)
+    {
+        let skip = matches!(action, VideoTimelineAction::Seek(secs)
+            if ui.ctx().data(|d| d.get_temp::<f32>(egui::Id::unique("lumino.video-timeline.seek"))) == Some(secs));
+        if !skip {
+            if let VideoTimelineAction::Seek(secs) = action {
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(egui::Id::unique("lumino.video-timeline.seek"), secs)
+                });
+            }
+            actions.push(action);
+        }
+        return actions;
+    }
+
+    // 释放：结束会话。
+    if released {
+        ui.ctx()
+            .data_mut(|d| d.remove::<DragSession>(egui::Id::unique(SESSION_ID)));
+    }
+    actions
+}
+
+/// 本帧滚轮刻度（Line 原样、Point / 50）。
+fn wheel_lines(ui: &egui::Ui) -> Option<f32> {
+    let mut out = None;
+    ui.input(|i| {
+        for event in &i.raw.events {
+            if let egui::Event::MouseWheel { unit, delta, .. } = event {
+                out = Some(match unit {
+                    egui::MouseWheelUnit::Line => delta.y,
+                    egui::MouseWheelUnit::Point => delta.y / 50.0,
+                    egui::MouseWheelUnit::Page => delta.y * 10.0,
+                });
+            }
+        }
+    });
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn model() -> VideoTimelineModel {
         VideoTimelineModel {
-            duration_secs: 60.0,
+            duration_secs: 30.0,
             zoom: 1.0,
             scroll_x: 0.0,
             playhead_secs: 0.0,
-            video: ClipSpan {
-                start: 0.0,
-                len: 30.0,
-            },
-            audio: ClipSpan {
-                start: 0.0,
-                len: 30.0,
-            },
+            video: ClipEdit::default(),
+            audio: ClipEdit::default(),
+            viewport_w: 400.0,
         }
     }
 
@@ -430,38 +613,46 @@ mod tests {
     }
 
     #[test]
-    fn drag_uses_zone_semantics() {
+    fn drag_uses_zone_semantics_with_absolute_values() {
         let m = model();
         let y_body = TrackGeom::track_y(ClipTrack::Video) + TRACK_HEIGHT / 2.0;
+        // 条身拖动：基准 offset=0，右移 160px = +2s → 绝对 offset=2s。
         let session = DragSession {
             zone: HitZone::Body(ClipTrack::Video),
             origin: egui::pos2(300.0, y_body),
+            base: 0.0,
         };
-        // 右移 160px = 2s。
         let action = drag(egui::pos2(460.0, y_body), session, &m);
         assert!(
-            matches!(action, Some(VideoTimelineAction::DragBy(d)) if (d - 2.0).abs() < 1e-3),
-            "条身拖动应产出 +2s，实际 {action:?}"
+            matches!(action, Some(VideoTimelineAction::SetOffset { track, offset })
+                if track == ClipTrack::Video && (offset - 2.0).abs() < 1e-3),
+            "条身拖动应产出绝对 offset=+2s，实际 {action:?}"
         );
 
+        // 起始把手：基准 trim_in=1s，右移 80px = +1s → trim_in=2s。
         let head = DragSession {
             zone: HitZone::Head(ClipTrack::Video),
             origin: egui::pos2(8.0, y_body),
+            base: 1.0,
         };
-        let action = drag(egui::pos2(168.0, y_body), head, &m);
+        let action = drag(egui::pos2(88.0, y_body), head, &m);
         assert!(
-            matches!(action, Some(VideoTimelineAction::TrimIn(d)) if (d - 2.0).abs() < 1e-3),
-            "起始把手拖动应产出 TrimIn(+2s)，实际 {action:?}"
+            matches!(action, Some(VideoTimelineAction::SetTrim { edge, secs, .. })
+                if edge == ClipEdge::Start && (secs - 2.0).abs() < 1e-3),
+            "起始把手应产出 trim_in=2s，实际 {action:?}"
         );
 
+        // 结束把手：基准 trim_out=0，左移 80px → trim_out=+1s。
         let tail = DragSession {
             zone: HitZone::Tail(ClipTrack::Video),
             origin: egui::pos2(300.0, y_body),
+            base: 0.0,
         };
         let action = drag(egui::pos2(220.0, y_body), tail, &m);
         assert!(
-            matches!(action, Some(VideoTimelineAction::TrimOut(d)) if (d + 1.0).abs() < 1e-3),
-            "结束把手左移应产出 TrimOut(-1s)，实际 {action:?}"
+            matches!(action, Some(VideoTimelineAction::SetTrim { edge, secs, .. })
+                if edge == ClipEdge::End && (secs - 1.0).abs() < 1e-3),
+            "结束把手左移应产出 trim_out=1s，实际 {action:?}"
         );
     }
 
@@ -523,15 +714,7 @@ mod tests {
 
     #[test]
     fn track_geometry_uses_zoom_and_scroll() {
-        let g = TrackGeom::new(
-            ClipSpan {
-                start: 10.0,
-                len: 5.0,
-            },
-            160.0,
-            100.0,
-            0.0,
-        );
+        let g = TrackGeom::new((10.0, 5.0), 160.0, 100.0, 0.0);
         assert!((g.x - (10.0 * 160.0 - 100.0)).abs() < 0.01);
         assert!((g.w - 5.0 * 160.0).abs() < 0.01);
     }

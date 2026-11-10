@@ -16,8 +16,7 @@ impl Root {
     /// 内容秒长含素材带整体右移后的越界部分（见 [`Root::clip_timeline_content_secs`]），
     /// 与画布侧 `TimelineCanvas::content_width` 同源，滚动条不会比画布窄。
     pub(crate) fn clip_timeline_base_width(&self) -> f32 {
-        (self.clip_timeline_content_secs()
-            * crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC)
+        (self.clip_timeline_content_secs() * lumino_ui_egui::video_clip_timeline::PIXELS_PER_SEC)
             .max(400.0)
     }
 
@@ -98,8 +97,8 @@ impl Root {
             .video_clip
             .advance_clip_transport(dt_secs, content_secs);
         if self.state.video_clip.clip_playing {
-            let pps_zoom = crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC
-                * self.state.video_clip.zoom;
+            let pps_zoom =
+                lumino_ui_egui::video_clip_timeline::PIXELS_PER_SEC * self.state.video_clip.zoom;
             let pos = self.state.video_clip.clip_position_secs;
             self.state.video_clip.timeline_scroll_x =
                 (pos * pps_zoom - crate::view::video_clip::layout::PLAYHEAD_X).max(0.0);

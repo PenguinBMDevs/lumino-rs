@@ -91,7 +91,6 @@ impl Root {
         // 真实内容长度：优先文档轨尾标（与播放停止点同源），空工程回退画布默认
         let total_ticks = self.clip_real_total_ticks();
         let ppq = self.editor.editor_state.view.ppq;
-        let ctrl_pressed = self.toolbar.ctrl_pressed;
         let tempos: Vec<(u32, f32)> = self.tempo_pairs();
         // 剪辑面板独立传输时钟（秒域，与卷帘 PlaybackManager 完全无关）
         let playhead_secs = self.state.video_clip.clip_position_secs;
@@ -215,7 +214,6 @@ impl Root {
                     tempos: &tempos,
                     clip: &self.state.video_clip,
                     viewport_w: timeline_viewport_w,
-                    ctrl_pressed,
                     playhead_secs,
                     is_playing,
                     video_edit,

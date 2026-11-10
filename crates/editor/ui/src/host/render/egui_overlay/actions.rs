@@ -61,6 +61,7 @@ pub(super) struct OverlayActions {
     pub video_overlay: Option<VideoOverlayAction>,
     pub arrangement: Option<ArrangementAction>,
     pub lane: Vec<lumino_message::arrangement_action::ArrangementAction>,
+    pub video_timeline: Vec<lumino_ui_egui::video_clip_timeline::VideoTimelineAction>,
 }
 
 impl OverlayActions {
@@ -94,6 +95,7 @@ impl OverlayActions {
             video_overlay: lumino_ui_egui::video_export_overlay::take_action(ctx),
             arrangement: lumino_ui_egui::chrome::arrangement::take_action(ctx),
             lane: lumino_ui_egui::chrome::arrangement::take_lane_actions(ctx),
+            video_timeline: lumino_ui_egui::chrome::take_video_timeline_actions(ctx),
         }
     }
 }
@@ -148,6 +150,13 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        for action in &actions.video_timeline {
+            tracing::info!("egui 时间轴动作：{action:?}");
+            let message = self
+                .root
+                .video_timeline_action_message(action, self.root.state.video_clip.preview_width);
+            self.dispatch_overlay_message(message);
         }
         for action in &actions.lane {
             tracing::info!("egui 泳道动作：{action:?}");

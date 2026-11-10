@@ -2132,3 +2132,38 @@ callback / 多视口 / 截图能力。
 3. 删除 `timeline_canvas*` → `iced_widget::canvas` 只剩 `snap_icon`；
 4. 工具栏整体删除时一并处理 `SnapIcon`；之后摘 `lumino-ui` 的 `iced_*`、
    退役 `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十八步）：时间轴接管（block + 占位）+ 删除 iced 画布**
+
+- **模型升级**：`VideoTimelineModel` 的轨道改为原始编辑量
+  `ClipEdit{offset, trim_in, trim_out}`（+ `viewport_w`）；动作改为**绝对值**：
+  `SetOffset{track, offset}` / `SetTrim{track, edge, secs}` / `Seek` / `Zoom` /
+  `ScrollX`，与 iced `ClipTrackOffsetChanged` / `ClipTrimChanged` 同语义，避免增量漂移。
+- **输入接管**：`video_clip_timeline::interact` 处理按下/拖动/释放/滚轮
+  （滚轮 Ctrl 缩放、其它横向滚动；Seek 秒值不变时不重复上报）；矩形计入
+  `menu::extend_blocked`，iced 画布不再收到事件。
+- **生产映射**：`Root::video_timeline_action_message` → `VideoClipAction`
+  （`TimelineSeek` / `ClipTrackOffsetChanged` / `ClipTrimChanged` /
+  `TimelineZoom` / `TimelineScroll`），动作经 `take_video_timeline_actions` 分发。
+- **删除 iced 画布**：`timeline_pane` 里的 `Canvas` 换成同尺寸占位
+  （探针仍挂在同一位置提供真实矩形）；删除 `timeline_canvas.rs` +
+  `timeline_canvas/`（draw / interact / tests），`PIXELS_PER_SEC` 等常量改由
+  `lumino_ui_egui::video_clip_timeline` 单一来源提供。
+- **`iced_widget::canvas` 引用只剩一处**：`toolbar/view/snap_icon.rs`。
+- 真机（`LUMINO_EGUI_CLIP_TIMELINE=1`）：点击剪辑带标尺 → 日志
+  `时间轴动作：Seek(5.25)`，并映射为 `TimelineSeek` 分发；整次点击仅 2 条
+  （按下 + 拖动分支），无刷屏。
+- 验收：`lumino-ui` lib 853/853、`ui-egui` 24/24、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **开关仍默认关闭**：`LUMINO_EGUI_CLIP_TIMELINE` 未设时走 iced（当前 iced 侧
+  已是空占位，需要人工确认可见变化后再翻默认）。
+
+**Task 1.3（下一步）：翻时间轴默认 + 处理 SnapIcon/工具栏**
+
+1. 确认剪辑带视觉（ruler/双轨/把手/走带线）与 iced 旧版一致后，把
+   `LUMINO_EGUI_CLIP_TIMELINE` 默认打开（`=0` 回退）；
+2. `SnapIcon`：单独占位实测破 6 张 iced 基线，必须与 iced 工具栏整体删除同批做；
+3. 之后 `lumino-ui` 仅剩整树 iced 视图（工具栏 / 右栏 / 混音台等），逐个迁移并
+   摘除 `iced_*`，退役 `capture_iced`，以
+   `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

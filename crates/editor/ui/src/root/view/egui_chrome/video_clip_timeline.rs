@@ -3,7 +3,10 @@
 //! 矩形不按常量正推（预览卡会被收缩/居中，实测差 ≈172 逻辑像素），
 //! 而是读 `rect_probe` 在 iced 布局里记录的真实 bounds。
 
-use lumino_ui_egui::video_clip_timeline::{ClipSpan, VideoTimelineModel};
+use lumino_message::video_clip::{ClipTrack, ClipTrimEdge, VideoClipAction};
+use lumino_ui_egui::video_clip_timeline::{
+    ClipEdge, ClipEdit, VideoTimelineAction, VideoTimelineModel,
+};
 
 use crate::root::Root;
 
@@ -29,9 +32,10 @@ impl Root {
             crate::view::video_clip::timeline::duration_seconds(total_ticks, ppq, &tempos) as f32;
         let clip = &self.state.video_clip;
 
-        let span = |edit: &lumino_ui_core::state::video_clip_state::ClipTrackEdit| ClipSpan {
-            start: edit.visible_start(),
-            len: edit.visible_len(duration_secs),
+        let clip_edit = |edit: &lumino_ui_core::state::video_clip_state::ClipTrackEdit| ClipEdit {
+            offset: edit.offset_secs,
+            trim_in: edit.trim_in_secs,
+            trim_out: edit.trim_out_secs,
         };
 
         Some((
@@ -44,9 +48,59 @@ impl Root {
                 zoom: clip.zoom,
                 scroll_x: clip.timeline_scroll_x,
                 playhead_secs: clip.clip_position_secs,
-                video: span(&clip.video_edit),
-                audio: span(&clip.audio_edit),
+                video: clip_edit(&clip.video_edit),
+                audio: clip_edit(&clip.audio_edit),
+                viewport_w: bounds.width,
             },
         ))
+    }
+}
+
+impl Root {
+    /// 时间轴动作 → `VideoClipAction`（拖动/裁剪均为**绝对值**，与 iced 同语义）。
+    pub(crate) fn video_timeline_action_message(
+        &self,
+        action: &VideoTimelineAction,
+        viewport_w: f32,
+    ) -> crate::Message {
+        let track = |t: lumino_ui_egui::video_clip_timeline::ClipTrack| match t {
+            lumino_ui_egui::video_clip_timeline::ClipTrack::Video => ClipTrack::Video,
+            lumino_ui_egui::video_clip_timeline::ClipTrack::Audio => ClipTrack::Audio,
+        };
+        let clip = &self.state.video_clip;
+        let action = match action {
+            VideoTimelineAction::Seek(secs) => VideoClipAction::TimelineSeek { secs: *secs },
+            VideoTimelineAction::SetOffset { track: t, offset } => {
+                VideoClipAction::ClipTrackOffsetChanged {
+                    track: track(*t),
+                    offset_secs: *offset,
+                }
+            }
+            VideoTimelineAction::SetTrim {
+                track: t,
+                edge,
+                secs,
+            } => VideoClipAction::ClipTrimChanged {
+                track: track(*t),
+                edge: match edge {
+                    ClipEdge::Start => ClipTrimEdge::Start,
+                    ClipEdge::End => ClipTrimEdge::End,
+                },
+                trim_secs: *secs,
+            },
+            VideoTimelineAction::Zoom {
+                factor,
+                fixed_ratio,
+            } => VideoClipAction::TimelineZoom {
+                zoom: clip.zoom * factor,
+                fixed_ratio: *fixed_ratio,
+                viewport_w,
+            },
+            VideoTimelineAction::ScrollX(dx) => VideoClipAction::TimelineScroll {
+                x: clip.timeline_scroll_x + dx,
+                viewport_w,
+            },
+        };
+        crate::Message::VideoClip(action)
     }
 }

@@ -248,6 +248,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         && let Some((rect, timeline)) = video_timeline(ui.ctx())
     {
         crate::video_clip_timeline::show(&root, rect, &timeline);
+        // 时间轴由 egui 接管输入：整块占用，避免 iced 的同位画布再处理一次。
+        menu::extend_blocked(ui.ctx(), [rect]);
+        for action in crate::video_clip_timeline::interact(&root, rect, &timeline) {
+            push_video_timeline_action(ui.ctx(), action);
+        }
     }
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。
@@ -515,4 +520,35 @@ fn arrangement_enabled() -> bool {
             .map(|v| v != "0")
             .unwrap_or(true)
     })
+}
+
+/// 时间轴动作通道（一帧可多条）。
+const VIDEO_TIMELINE_ACTION_ID: &str = "lumino.video-timeline.action";
+
+/// 追加本帧时间轴动作。
+fn push_video_timeline_action(
+    ctx: &egui::Context,
+    action: crate::video_clip_timeline::VideoTimelineAction,
+) {
+    let mut actions = ctx
+        .data(|d| {
+            d.get_temp::<Vec<crate::video_clip_timeline::VideoTimelineAction>>(egui::Id::unique(
+                VIDEO_TIMELINE_ACTION_ID,
+            ))
+        })
+        .unwrap_or_default();
+    actions.push(action);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(VIDEO_TIMELINE_ACTION_ID), actions));
+}
+
+/// 取走本帧时间轴动作。
+pub fn take_video_timeline_actions(
+    ctx: &egui::Context,
+) -> Vec<crate::video_clip_timeline::VideoTimelineAction> {
+    ctx.data_mut(|d| {
+        d.remove_temp::<Vec<crate::video_clip_timeline::VideoTimelineAction>>(egui::Id::unique(
+            VIDEO_TIMELINE_ACTION_ID,
+        ))
+    })
+    .unwrap_or_default()
 }
