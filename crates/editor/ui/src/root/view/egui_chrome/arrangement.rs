@@ -77,6 +77,24 @@ impl Root {
                     vp.canvas_size.y,
                 ),
                 track_height: vp.track_height,
+                tool: self.editor.current_tool(),
+                selection: self
+                    .editor
+                    .editor_state
+                    .data
+                    .arrange_selection
+                    .rects
+                    .first()
+                    .map(|&(ts, te, _kl, _kh, tl, th)| {
+                        (ts as f64, te as f64, tl as usize, th as usize)
+                    }),
+                selected_notes: self
+                    .editor
+                    .arrangement_selected_notes()
+                    .iter()
+                    .copied()
+                    .collect(),
+                precision: self.toolbar.snap_spec,
             }),
             track_list: ArrangementTrackListModel {
                 tracks,

@@ -64,6 +64,13 @@ pub enum ArrangementAction {
     SelectTrack(usize),
     /// 横向滚动（像素）。
     ScrollX(f32),
+    /// 横向缩放（`fixed_ratio` = 指针在泳道内的相对位置 0..1）。
+    ZoomX {
+        /// 目标缩放（每 tick 像素）。
+        zoom: f32,
+        /// 缩放锚点比例。
+        fixed_ratio: f32,
+    },
     /// 纵向滚动（像素）。
     ScrollY(f32),
 }
@@ -117,6 +124,7 @@ impl ArrangementAction {
             Self::DragSelectionRect(rect) => Message::ArrangementDragSelectionRect(rect),
             Self::SelectTrack(id) => select_track(id),
             Self::ScrollX(x) => Message::ArrangementScrollX(x),
+            Self::ZoomX { zoom, fixed_ratio } => Message::ArrangementZoomX { zoom, fixed_ratio },
             Self::ScrollY(y) => Message::ArrangementScrollY(y),
         }
     }

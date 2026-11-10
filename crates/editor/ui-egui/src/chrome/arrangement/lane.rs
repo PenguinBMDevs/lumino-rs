@@ -96,10 +96,13 @@ pub fn cursor_at(x: f32, y: f32) -> ArrangementCursor {
 /// 泳道输入状态在 ctx-data 中的键（`Program::State` 的 egui 等价物）。
 const STATE_ID: &str = "lumino.arrangement.lane-state";
 
+/// 中键平移状态（视图局部坐标）。
+const PAN_ID: &str = "lumino.arrangement.lane-pan";
+
 /// egui 侧驱动：把本帧指针事件喂给共享 handler，返回动作。
 ///
-/// `lane_model` 给出泳道矩形（`arrangement_geometry` 的 offset/size）。
-/// 本阶段不占用命中区，iced 仍会处理同一事件（A/B 对照期）。
+/// `lane_model` 携带真实输入（工具 / 选区 / 选中音符 / 精度），
+/// 滚轮与中键平移在此实现（等价 iced `ArrangementClickCanvas` 的导航逻辑）。
 pub fn show(
     ui: &egui::Ui,
     lane_model: &crate::chrome::ArrangementLaneModel,
@@ -107,36 +110,121 @@ pub fn show(
     track_list: &crate::chrome::ArrangementTrackListModel,
 ) -> Vec<ArrangementAction> {
     let rect = lane_model.rect;
-    let (pointer, pressed, released, moved) = ui.input(|i| {
+    let zoom_x = ruler.zoom_x.max(1e-6);
+    let zoom_y = (track_list.track_height / lane_model.track_height.max(1e-6)).max(1e-6);
+    let mut viewport = ArrangementViewport {
+        scroll_x: ruler.scroll_x,
+        scroll_y: track_list.scroll_y,
+        zoom_x,
+        zoom_y,
+        track_height: lane_model.track_height,
+        canvas_offset: Point2::new(rect.x, rect.y),
+        canvas_size: Point2::new(rect.width, rect.height),
+        total_ticks: ruler.total_ticks,
+        ppq: ruler.ppq,
+        ..ArrangementViewport::default()
+    };
+
+    let (
+        pointer,
+        left_pressed,
+        left_released,
+        middle_pressed,
+        middle_released,
+        middle_down,
+        moving,
+    ) = ui.input(|i| {
         (
             i.pointer.interact_pos(),
             i.pointer.any_pressed() && i.pointer.primary_pressed(),
             i.pointer.primary_released(),
-            i.pointer.is_moving() && i.pointer.primary_down(),
+            i.pointer.button_pressed(egui::PointerButton::Middle),
+            i.pointer.button_released(egui::PointerButton::Middle),
+            i.pointer.button_down(egui::PointerButton::Middle),
+            i.pointer.is_moving(),
         )
     });
-    let inside = pointer
-        .map(|p| rect.contains(Point2::new(p.x, p.y)))
-        .unwrap_or(false);
+    let Some(pos) = pointer else {
+        return Vec::new();
+    };
+    let local = Point2::new(pos.x - rect.x, pos.y - rect.y);
+    let inside = rect.contains(Point2::new(pos.x, pos.y));
+    let mut actions = Vec::new();
 
-    // 一次只喂一个事件：按下 > 移动 > 释放（与 iced 的逐事件投递等价）。
-    let event = if pressed && inside {
+    // ── 中键平移（等价 iced 的 middle_drag） ──
+    if middle_pressed && inside {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(egui::Id::unique(PAN_ID), local);
+        });
+    } else if middle_down {
+        if let Some(start) = ui
+            .ctx()
+            .data(|d| d.get_temp::<Point2>(egui::Id::unique(PAN_ID)))
+        {
+            let delta = local - start;
+            if delta.x != 0.0 || delta.y != 0.0 {
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(egui::Id::unique(PAN_ID), local);
+                });
+                actions.push(ArrangementAction::ScrollX(
+                    (ruler.scroll_x - delta.x).max(0.0),
+                ));
+                actions.push(ArrangementAction::ScrollY(
+                    (track_list.scroll_y - delta.y).max(0.0),
+                ));
+                return actions;
+            }
+        }
+    } else if middle_released {
+        ui.ctx()
+            .data_mut(|d| d.remove::<Point2>(egui::Id::unique(PAN_ID)));
+    }
+
+    // ── 滚轮：Ctrl 缩放 / Shift 横向 / 普通纵向 ──
+    if inside && let Some(delta) = wheel_delta(ui) {
+        let (dx, dy) = match delta {
+            ArrangementScroll::Lines { x, y } => (x * 30.0, y * 30.0),
+            ArrangementScroll::Pixels { x, y } => (x, y),
+        };
+        if ui.input(|i| i.modifiers.ctrl) {
+            let lines = match delta {
+                ArrangementScroll::Lines { y, .. } => y,
+                ArrangementScroll::Pixels { y, .. } => y / 50.0,
+            }
+            .clamp(-1.0, 1.0);
+            if lines.abs() > f32::EPSILON {
+                actions.push(ArrangementAction::ZoomX {
+                    zoom: zoom_x * (1.0 + lines * 0.1),
+                    fixed_ratio: (local.x / rect.width.max(1.0)).clamp(0.0, 1.0),
+                });
+                return actions;
+            }
+        } else if ui.input(|i| i.modifiers.shift) {
+            actions.push(ArrangementAction::ScrollX((ruler.scroll_x + dx).max(0.0)));
+            return actions;
+        } else {
+            actions.push(ArrangementAction::ScrollY(
+                (track_list.scroll_y - dy).max(0.0),
+            ));
+            return actions;
+        }
+    }
+
+    // ── 工具事件：按下 > 移动 > 释放（一次只喂一个，与 iced 逐事件投递等价） ──
+    let event = if left_pressed && inside {
         Some(pressed_left())
-    } else if moved {
+    } else if moving && ui.input(|i| i.pointer.primary_down()) {
         Some(moved_event())
-    } else if released {
+    } else if left_released {
         Some(released_left())
     } else {
         None
     };
     let Some(event) = event else {
-        return Vec::new();
-    };
-    let Some(pos) = pointer else {
-        return Vec::new();
+        return actions;
     };
 
-    // 交互状态跨帧保存（Rc 便于放进 ctx-data）。
+    // 交互状态跨帧保存（egui ctx-data 要求 Send+Sync，用 Arc<Mutex>）。
     let state = ui
         .ctx()
         .data(|d| {
@@ -152,42 +240,54 @@ pub fn show(
             state
         });
 
-    // 视口：与生产一致（滚动/缩放/行高）；变更只影响本帧计算，滚动仍由生产消息驱动。
-    let zoom_y = (track_list.track_height / lane_model.track_height.max(1e-6)).max(1e-6);
-    let mut viewport = ArrangementViewport {
-        scroll_x: ruler.scroll_x,
-        scroll_y: track_list.scroll_y,
-        zoom_x: ruler.zoom_x,
-        zoom_y,
-        track_height: lane_model.track_height,
-        canvas_offset: Point2::new(rect.x, rect.y),
-        canvas_size: Point2::new(rect.width, rect.height),
-        total_ticks: ruler.total_ticks,
-        ppq: ruler.ppq,
-        ..ArrangementViewport::default()
-    };
-
     let lane_ctx = LaneContext {
         rect,
-        tool: Tool::Pointer,
+        tool: lane_model.tool,
         track_count: track_list.tracks.len().max(1),
-        selection: None,
-        selected_notes: &[],
+        selection: lane_model.selection,
+        selected_notes: &lane_model.selected_notes,
         ppq: ruler.ppq,
-        precision: SnapSpec::default(),
+        precision: lane_model.precision,
         time_signatures: &ruler.time_signatures,
         ctrl: ui.input(|i| i.modifiers.ctrl),
         shift: ui.input(|i| i.modifiers.shift),
     };
 
     let mut state = state.lock().expect("lane state lock");
-    feed(
+    actions.extend(feed(
         &mut state,
         &mut viewport,
         event,
         cursor_at(pos.x, pos.y),
         &lane_ctx,
-    )
+    ));
+    actions
+}
+
+/// 本帧滚轮增量（Line 直接给刻度，Point 换算成刻度/像素两用）。
+fn wheel_delta(ui: &egui::Ui) -> Option<ArrangementScroll> {
+    let mut out: Option<ArrangementScroll> = None;
+    ui.input(|i| {
+        for event in &i.raw.events {
+            if let egui::Event::MouseWheel { unit, delta, .. } = event {
+                out = Some(match unit {
+                    egui::MouseWheelUnit::Line => ArrangementScroll::Lines {
+                        x: delta.x,
+                        y: delta.y,
+                    },
+                    egui::MouseWheelUnit::Point => ArrangementScroll::Pixels {
+                        x: delta.x,
+                        y: delta.y,
+                    },
+                    egui::MouseWheelUnit::Page => ArrangementScroll::Lines {
+                        x: delta.x * 10.0,
+                        y: delta.y * 10.0,
+                    },
+                });
+            }
+        }
+    });
+    out
 }
 
 #[cfg(test)]

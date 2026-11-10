@@ -78,12 +78,20 @@ pub struct ArrangementTrackListModel {
 }
 
 /// 泳道区（wgu 渲染区）命中矩形。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrangementLaneModel {
     /// 屏幕矩形（逻辑点，来自 `arrangement_geometry` 的 offset/size）。
     pub rect: lumino_message::types::geometry::Rect2,
     /// 每轨基础高度（像素，未乘 `zoom_y`）。
     pub track_height: f32,
+    /// 当前工具（决定交互语义）。
+    pub tool: lumino_core::Tool,
+    /// 已提交的框选矩形（`tick_start, tick_end, track_lo, track_hi`）。
+    pub selection: Option<(f64, f64, usize, usize)>,
+    /// 选中音符快照（移动时的 ghost 预览用）。
+    pub selected_notes: Vec<(f64, f64, usize, u8)>,
+    /// 吸附精度。
+    pub precision: lumino_core::SnapSpec,
 }
 
 /// 走带视图模型。
