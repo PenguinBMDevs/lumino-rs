@@ -2445,3 +2445,37 @@ callback / 多视口 / 截图能力。
 2. 迁右栏剩余 iced 面板；
 3. 待 `capture_iced` 去留确认后删 iced 工具栏（含 `SnapIcon`），摘 `lumino-ui` 的
    `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十八步）：删除 3 个多状态 iced 对话框（云存储三态 + 找回音轨，−1006 行）**
+
+- **先按状态取证**：新增 `debug_dump_multistate_sizes`（`#[ignore]` 人工工具）遍历
+  `corners::dialog_states`，打印每个状态的窗口尺寸，取**最大值**钉死：
+  ```
+  CloudConnect  480x446 / 480x476（连接失败更高）→ 钉 480x476
+  CloudBrowser  720x520 (两态同)                 → 钉 720x520
+  CloudNotice   440x165 / 440x182（长提醒更高）   → 钉 440x182
+  RecoverTrack  565x655 (两态同)                 → 钉 565x655
+  ```
+- `overlays.rs` 的 `CloudConnect | CloudBrowser | CloudNotice` 与 `RecoverTrack`
+  分支改用 `dialog_placeholder`；删除 `view/cloud_dialog.rs`（212 行）、
+  `view/cloud_browser.rs`（371 行）、`view/recover_track_dialog.rs`（383 行）。
+- `layout_is_state_invariant` 增加这 4 个类型（iced 侧已是整窗占位，状态不再改变布局）；
+  状态覆盖由 egui 模型测试保证（`cloud_connect_tests` / `cloud_browser_tests` /
+  `recover_track_tests`）。corners 仍逐态渲染冒烟。
+- **刻意保留 `collaboration_dialog`**：其 egui 视图是**绝对坐标布局、没有滚动容器**，
+  钉死 800×600 后房内成员多时会裁内容；只有缩小到 600 才不裁，但那是「削减功能」。
+  因此恢复 iced 视图并保持 `floored(800,600)`（内容高时按测量增长），
+  等 egui 侧改成滚动布局后再迁。`layout_is_state_invariant` 不含 Collaboration。
+- 顺带清理：`DialogSizeHint::at_least_width` 已无使用者（RecoverTrack / ExportProgress
+  都已钉死），删除；`ruler_sees_squeeze_inside_real_dialog_views` 只用仍有真实 iced
+  视图的样本（设置页 2），占位对话框没有可挤控件。
+- 验收：`lumino-ui` lib 849/849、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. egui 协作面板改为滚动布局后迁 `collaboration_dialog`；
+2. 迁右栏剩余 iced 面板；
+3. 待 `capture_iced` 去留确认后删 iced 工具栏（含 `SnapIcon`），摘 `lumino-ui` 的
+   `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

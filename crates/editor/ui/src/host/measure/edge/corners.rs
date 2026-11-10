@@ -102,7 +102,14 @@ pub(super) fn root_for(
 /// 「状态是否真的改变布局」在 iced 侧不再成立——状态覆盖改由
 /// `egui_chrome::dialogs::video_export_overlay` 的模型测试保证。
 fn layout_is_state_invariant(dialog_type: DialogType) -> bool {
-    matches!(dialog_type, DialogType::VideoExport)
+    matches!(
+        dialog_type,
+        DialogType::VideoExport
+            | DialogType::CloudConnect
+            | DialogType::CloudBrowser
+            | DialogType::CloudNotice
+            | DialogType::RecoverTrack
+    )
 }
 
 /// 某个对话框类型需要扫描的状态清单（至少一项；后缀为空 = 默认状态）

@@ -12,9 +12,8 @@ use crate::state::root_state::DialogType;
 use crate::view::{
     about_egg::view as view_about_egg, collaboration_dialog::view_collaboration_dialog,
     export_progress_dialog::view_export_progress_dialog,
-    load_confirm_dialog::view_load_confirm_dialog, recover_track_dialog::view_recover_track_dialog,
-    save_confirm_dialog::view_save_confirm_dialog, settings_dialog::view_settings_dialog,
-    shape_drawer::view_shape_drawer,
+    load_confirm_dialog::view_load_confirm_dialog, save_confirm_dialog::view_save_confirm_dialog,
+    settings_dialog::view_settings_dialog, shape_drawer::view_shape_drawer,
 };
 use crate::{Element, Theme};
 
@@ -200,9 +199,8 @@ impl Root {
             }
             // 内存监控：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::MemoryMonitor => dialog_placeholder(&self.window.theme),
-            DialogType::RecoverTrack => {
-                view_recover_track_dialog(&self.state.recover_track_dialog, &self.window.theme)
-            }
+            // 找回删除音轨：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::RecoverTrack => dialog_placeholder(&self.window.theme),
             DialogType::SaveConfirm => {
                 view_save_confirm_dialog(&self.state.save_confirm_dialog, &self.window.theme)
             }
@@ -218,8 +216,9 @@ impl Root {
             // 撤销历史：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::History => dialog_placeholder(&self.window.theme),
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
+            // 云存储三类：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
-                crate::view::cloud_dialog::view_cloud_dialog(self, &self.window.theme)
+                dialog_placeholder(&self.window.theme)
             }
         };
 

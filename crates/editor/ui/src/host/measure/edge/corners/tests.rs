@@ -81,3 +81,34 @@ fn every_declared_state_actually_changes_the_layout() {
         failures.join("\n  ")
     );
 }
+
+/// 人工排查：打印多状态对话框**每种状态**的窗口尺寸（钉死尺寸前的取证）。
+///
+/// 运行：`cargo test -p lumino-ui --lib debug_dump_multistate_sizes -- --ignored --nocapture`
+#[test]
+#[ignore = "人工排查工具，需要时用 --ignored 显式运行"]
+fn debug_dump_multistate_sizes() {
+    use crate::host::measure::decide_dialog_window_size;
+
+    let Some(renderer) = headless_renderer() else {
+        eprintln!("跳过：无可用 GPU 适配器");
+        return;
+    };
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    for dialog_type in ALL_DIALOGS {
+        let states = dialog_states(dialog_type);
+        if states.len() <= 1 {
+            continue;
+        }
+        for (label, _) in &states {
+            let Some(root) = root_for(dialog_type, label, &ui_config) else {
+                continue;
+            };
+            let size = decide_dialog_window_size(&root, &renderer, dialog_type, WORK_AREA);
+            println!(
+                "SIZE {dialog_type:?}{label} {:.0}x{:.0}",
+                size.width, size.height
+            );
+        }
+    }
+}

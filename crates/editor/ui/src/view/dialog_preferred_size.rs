@@ -88,18 +88,6 @@ impl DialogSizeHint {
         }
     }
 
-    /// 宽度**只在原值基础上增长**（下限 = 原值，上限放到工作区）
-    ///
-    /// 用于内容宽度可测（表格列宽等 Fixed 内容）、但换行宽度需要兜底的对话框。
-    const fn at_least_width(width_floor: f32) -> Self {
-        Self {
-            width_floor,
-            width_cap: None,
-            min_height: None,
-            max_height: None,
-        }
-    }
-
     /// 宽度**钉在原值区间**（下限 = 上限 = 原值）
     ///
     /// 用于 `Fill` 占多数内容（不会被挤溢出 ⇒ 自动宽度会一路退到最小值，
@@ -189,7 +177,7 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // ── 宽度只在下限基础上增长：内容宽度可测，但换行宽度需兜底 ────────
         // 找回删除音轨：表格列全 Fixed（240+180+80）⇒ 所需宽度可测；
         // 列变宽时窗口自动跟着变宽（旧值 560 作为下限）
-        DialogType::RecoverTrack => DialogSizeHint::at_least_width(560.0),
+        DialogType::RecoverTrack => DialogSizeHint::pinned(565.0, 655.0),
         // 音频导出进度：**当前 Runner 侧无打开路径**（死视图），仅为穷尽性保留
         DialogType::ExportProgress => DialogSizeHint::pinned(406.0, 233.0),
 
@@ -197,9 +185,9 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // 加载确认：超长路径是不可断词 token，自动宽度会被它撑爆 ⇒ 钉住并按旧值折行
         DialogType::LoadConfirm => DialogSizeHint::boxed(420.0),
         // 云提醒：纯文本驱动，需固定折行宽度（旧 440×200）
-        DialogType::CloudNotice => DialogSizeHint::boxed(440.0),
+        DialogType::CloudNotice => DialogSizeHint::pinned(440.0, 182.0),
         // 云连接：6 个 `Fill` 输入框 ⇒ 宽度是自由参数（旧 480×515）
-        DialogType::CloudConnect => DialogSizeHint::boxed(480.0),
+        DialogType::CloudConnect => DialogSizeHint::pinned(480.0, 476.0),
         // 内存监控：长说明句需固定折行宽度（旧 300×440）
         DialogType::MemoryMonitor => DialogSizeHint::pinned(300.0, 402.0),
         // 音符画设置：长占位文案需固定折行宽度（旧 460×420）
@@ -473,8 +461,8 @@ mod tests {
     #[test]
     fn test_recommend_never_exceeds_work_area() {
         // 用仍无声明上限的对话框验证「不超工作区」。
-        let hint = dialog_size_hint(DialogType::RecoverTrack);
-        let size = recommend_window_size(hint, WORK_AREA, 560.0, 5000.0);
+        let hint = dialog_size_hint(DialogType::SaveConfirm);
+        let size = recommend_window_size(hint, WORK_AREA, 380.0, 5000.0);
 
         assert_eq!(size.height, WORK_AREA.height);
     }
@@ -565,12 +553,10 @@ mod tests {
             );
         }
 
-        // 完全自动 / 只保留下限：需要搜索
-        for dialog_type in [DialogType::SaveConfirm, DialogType::RecoverTrack] {
-            assert!(
-                dialog_size_hint(dialog_type).needs_width_search(WORK_AREA.width),
-                "{dialog_type:?} 的宽度交给了自动计算，应触发搜索"
-            );
-        }
+        // 完全自动：需要搜索（其余对话框已按实测尺寸钉死）
+        assert!(
+            dialog_size_hint(DialogType::SaveConfirm).needs_width_search(WORK_AREA.width),
+            "SaveConfirm 的宽度交给自动计算，应触发搜索"
+        );
     }
 }
