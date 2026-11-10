@@ -1,56 +1,23 @@
 //! 音频/视频导出面板与瀑布流全屏播放器
 
 use iced_core::{Length, Size};
-use iced_widget::{Space, column, container, responsive, row, scrollable};
+use iced_widget::{Space, column, container, responsive, row};
 
 use lumino_core::{tr, trf};
 
 use crate::root::Root;
-use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_clip::preview::{PreviewGate, preview_gate, preview_placeholder};
 use crate::{Element, Theme};
 
 impl Root {
-    /// 渲染音频渲染面板（在主界面钢琴卷帘区域显示）
+    /// 渲染音频渲染面板（在主界面钢琴卷帘区域显示）。
+    ///
+    /// 内容已**完全**由 egui 绘制（`audio_export::show_panel`，含参数表 / 进度 /
+    /// 暂停与取消）。iced 侧只保留铺满内容区的占位，原 `view/audio_export_dialog.rs`
+    /// 已删除。
     pub(crate) fn view_audio_export_panel(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_audio_export_panel");
-
-        // 叠加层接管时：整块面板由 egui 绘制（同一矩形、不透明覆盖）；
-        // 这里返回同尺寸占位，避免 iced 侧再排一次表单（双层文字/双重响应）。
-        if crate::host::overlay_enabled() {
-            let palette = self.window.theme.extended_palette();
-            return container(
-                iced_widget::Space::new()
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_theme: &Theme| container::Style {
-                background: Some(iced_core::Background::Color(palette.background.base.color)),
-                ..Default::default()
-            })
-            .into();
-        }
-
-        let theme = &self.window.theme;
-        let palette = theme.extended_palette();
-
-        container(
-            container(scrollable(view_audio_export_dialog(
-                &self.state.audio_export_dialog,
-                theme,
-            )))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_theme: &iced_core::Theme| container::Style {
-                background: Some(iced_core::Background::Color(palette.background.base.color)),
-                ..Default::default()
-            }),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        Space::new().width(Length::Fill).height(Length::Fill).into()
     }
 
     /// 渲染视频渲染面板（在主界面钢琴卷帘区域显示）。

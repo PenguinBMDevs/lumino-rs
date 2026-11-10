@@ -2685,3 +2685,24 @@ callback / 多视口 / 截图能力。
    可先用内置示例素材补齐；
 2. 右侧栏 `view.rs` 只剩图标列像素 + 占位，等 `capture_iced` 退役后整块删除；
 3. **需要用户确认**：退役 `capture_iced`（归档原图、改由 `capture_egui` 做唯一门禁）。
+
+**Task 1.3（第八十六步）：删除 iced 音频导出面板视图（−1056 行）**
+
+- 音频导出面板内容已**完全**由 egui 绘制（`audio_export::show_panel`：参数表 /
+  进度 / 暂停与取消，整块覆盖右侧内容区）。`panels.rs::view_audio_export_panel`
+  改为铺满内容区的 `Space` 占位，删除：
+  - `view/audio_export_dialog.rs`（367）
+  - `view/audio_export_dialog/{buttons,event_filter,output_path,project_info,title}.rs`
+    （555）
+  - `view/widgets.rs`（92，删除后已无使用者：`dialog_label_style` 等 5 个样式助手）
+- 音频导出不在任何基线场景内（`capture_iced` 18/18 不变）。
+- 验收：`lumino-ui` lib 844/844、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. `root/mask_panel.rs`（298，遮罩参数面板，尚未有 egui 等价实现）→ 建模型 + 绘制 + 命中；
+2. `statusbar.rs` / `sidebar/panel.rs` / `titlebar/menu.rs` 都出现在基线里，
+   需与 `capture_iced` 退役一并处理；
+3. **需要用户确认**：退役 `capture_iced`。
