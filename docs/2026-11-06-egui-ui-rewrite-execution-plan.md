@@ -1936,3 +1936,33 @@ callback / 多视口 / 截图能力。
 3. 对齐后把泳道矩形计入 `blocked`，再翻 `LUMINO_EGUI_ARRANGEMENT` 默认值；
 4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役 `capture_iced`，
    以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十二步）：泳道补齐真实输入 + 滚轮/中键导航 — 已完成**
+
+- `ArrangementLaneModel` 增加 `tool` / `selection` / `selected_notes` / `precision`：
+  生产侧分别取 `editor.current_tool()`、`arrange_selection.rects[0]`（u16 → usize）、
+  `arrangement_selected_notes()`、`toolbar.snap_spec`；`ppq/time_signatures` 复用 ruler。
+- `lane::show` 新增导航（等价 iced `ArrangementClickCanvas::handle_navigation_event`）：
+  - 中键按下/拖动 → `ScrollX/ScrollY`（状态存 ctx-data，等价 `middle_drag`）；
+  - 滚轮：`Ctrl` → `ZoomX{zoom, fixed_ratio}`（每刻度 ×1.1）、`Shift` → 横向、
+    普通 → 纵向；`Line/Point/Page` 三种单位都换算。
+- 中立动作补 `ZoomX`（`lumino-message::ArrangementAction`）→ `Message::ArrangementZoomX`。
+- 真机实测（ppp=1.25，Pointer 工具）：
+  - 拖拽框选：`DragSelectionRect(Some((13440,17280,1,2)))` … `(13440,24960,1,4)`，
+    释放提交 `SelectionChanged(Some((13440,24960,1,4)))`；截图可见半透明框选矩形
+    （`target/lane2-select.png`）；
+  - `Ctrl` + 滚轮 3 格：`ZoomX{0.0315 → 0.0381 → 0.0461, fixed_ratio: 0.2813}`，
+    网格间距变宽、锚点不动，框选矩形保持同一 tick 区间（`target/lane2-zoom.png`）。
+- 验收：`lumino-ui` lib 864/864、`ui-egui` 15/15、`arrangement-core` 通过、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **仍未 block**：橡皮 / 曲线与「移动已有选择」需要真实 MIDI 才能验证，开关保持默认关闭。
+
+**Task 1.3（下一步）：橡皮/曲线/移动选择真机验证 → block + 翻默认**
+
+1. 用一份 MIDI（或先画几个音符）验证 `MoveNotes` / `Erase` / `AddNote` 三条路径在
+   `=1` 与 `=0` 下结果一致；
+2. 通过后把泳道矩形加入 `blocked`（此时 iced 的 click canvas 不再收到事件），
+   再翻 `LUMINO_EGUI_ARRANGEMENT` 默认值；
+3. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役 `capture_iced`，
+   以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
