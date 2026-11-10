@@ -2064,3 +2064,35 @@ callback / 多视口 / 截图能力。
 3. 工具栏整体删除时一并处理 `SnapIcon`（单独占位会破 6 张 iced 基线）；
 4. 之后摘除 `lumino-ui` 的 `iced_*`、退役 `capture_iced`，以
    `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十六步）：视频剪辑时间轴动作层（scrub / 移动 / 裁剪 / 滚轮）**
+
+- `video_clip_timeline` 新增：
+  - `VideoTimelineAction`：`Seek(f32)` / `DragBy(f32)` / `TrimIn(f32)` /
+    `TrimOut(f32)` / `Zoom{factor, fixed_ratio}` / `ScrollX(f32)`；
+  - `DragSession { zone, origin }`；`press()` 按 `HitZone` 产出动作并开启会话
+    （标尺按下即 `Seek`）；`drag()` 按会话类型产出秒域增量；`wheel()` Ctrl 缩放
+    （每刻度 ×1.1、锚点=指针比例），普通/Shift 横向滚动。
+- 单测 3 个：标尺按下 → `Seek(1.0)`；条身右移 160px → `DragBy(+2s)`、
+  起始把手 → `TrimIn(+2s)`、结束把手左移 → `TrimOut(-1s)`；Ctrl 滚轮 → ×1.1 /
+  锚点 0.25，普通滚轮 → `ScrollX(-60)`。
+- 验收：`ui-egui` 24/24、`clippy -D warnings`、`fmt --check`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：先量出渲染器面板时间轴的真实矩形，再接线**
+
+本轮实测（真机 2560×1600 物理 / ppp=1.25，`target/vc0.png`）：渲染器入口面板为
+「左侧轨道列（≈220）+ 右侧 header / 16:9 预览卡 / 时间轴（200 高）/ 导出设置」，
+时间轴可视带（标尺 + 双轨条）实测起点约 y≈930 物理（≈744 逻辑），而按
+`layout.rs` 常量（`HEADER_HEIGHT + RULER + TIMELINE_HEIGHT + SETTINGS + spacing`）
+正推得到 ≈916 逻辑——**两者不一致**，说明预览卡在可用高不足时被居中/收缩，
+线性叠加常量会直接错位。因此接线前必须先 dump 真实矩形（在 iced 布局里打点或用
+`icorn` 式一次测量），不得用常量猜。
+
+1. 给 `view_renderer_panel` 的 timeline 容器加一次性 rect dump（`LUMINO_DEBUG_CLIP`）；
+2. 用实测矩形把 egui 时间轴画到同一位置（先默认关闭、不 block），像素对照
+   `target/vc0.png` 的时间轴带（标尺/双轨/走带线）；
+3. 对齐后 block 该矩形 + 把 `view/video_clip/timeline.rs` 的 Canvas 换占位、
+   删除 `timeline_canvas*`（`iced_widget::canvas` 只剩 `snap_icon`）；
+4. 工具栏整体删除时一并处理 `SnapIcon`；之后摘除 `lumino-ui` 的 `iced_*`、
+   退役 `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

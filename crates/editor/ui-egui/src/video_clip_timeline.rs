@@ -248,6 +248,111 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
     }
 }
 
+/// 时间轴交互动作（由 egui 输入产生，生产侧映射成 `VideoClipAction`）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VideoTimelineAction {
+    /// 定位播放头到指定秒。
+    Seek(f32),
+    /// 拖动素材条（秒偏移）。
+    DragBy(f32),
+    /// 裁剪起始（秒增量，负值=向右裁）。
+    TrimIn(f32),
+    /// 裁剪结束（秒增量）。
+    TrimOut(f32),
+    /// 滚轮缩放（倍率因子）与锚点比例。
+    Zoom {
+        /// 缩放因子。
+        factor: f32,
+        /// 锚点比例 0..1。
+        fixed_ratio: f32,
+    },
+    /// 水平滚动（像素）。
+    ScrollX(f32),
+}
+
+/// 拖拽会话（跨帧保存）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DragSession {
+    /// 起始区。
+    pub zone: HitZone,
+    /// 起始指针局部坐标。
+    pub origin: egui::Pos2,
+}
+
+/// 按下：按命中区产出动作并返回拖拽会话（标尺/把手/条身都需要后续移动）。
+pub fn press(
+    local: egui::Pos2,
+    model: &VideoTimelineModel,
+    width: f32,
+) -> (Option<VideoTimelineAction>, Option<DragSession>) {
+    let Some(zone) = hit_test(local, model, width) else {
+        return (None, None);
+    };
+    let pps = (PIXELS_PER_SEC * model.zoom).max(1e-6);
+    let secs_at = |x: f32| (x + model.scroll_x) / pps;
+    match zone {
+        HitZone::Ruler => (
+            Some(VideoTimelineAction::Seek(secs_at(local.x).max(0.0))),
+            Some(DragSession {
+                zone,
+                origin: local,
+            }),
+        ),
+        _ => (
+            None,
+            Some(DragSession {
+                zone,
+                origin: local,
+            }),
+        ),
+    }
+}
+
+/// 拖动：按会话类型产出增量动作（秒域）。
+pub fn drag(
+    local: egui::Pos2,
+    session: DragSession,
+    model: &VideoTimelineModel,
+) -> Option<VideoTimelineAction> {
+    let pps = (PIXELS_PER_SEC * model.zoom).max(1e-6);
+    let dx_secs = (local.x - session.origin.x) / pps;
+    match session.zone {
+        HitZone::Ruler => Some(VideoTimelineAction::Seek(
+            ((local.x + model.scroll_x) / pps).max(0.0),
+        )),
+        HitZone::Body(_) => Some(VideoTimelineAction::DragBy(dx_secs)),
+        HitZone::Head(_) => Some(VideoTimelineAction::TrimIn(dx_secs)),
+        HitZone::Tail(_) => Some(VideoTimelineAction::TrimOut(dx_secs)),
+    }
+}
+
+/// 滚轮：Ctrl 缩放、Shift/普通横向滚动（与卷帘/剪辑带同口径）。
+pub fn wheel(
+    local: egui::Pos2,
+    lines: f32,
+    ctrl: bool,
+    shift: bool,
+    width: f32,
+) -> Option<VideoTimelineAction> {
+    let step = lines.clamp(-1.0, 1.0);
+    if step.abs() < f32::EPSILON {
+        return None;
+    }
+    if ctrl {
+        Some(VideoTimelineAction::Zoom {
+            factor: 1.0 + step * 0.1,
+            fixed_ratio: if width > 0.0 {
+                (local.x / width).clamp(0.0, 1.0)
+            } else {
+                0.5
+            },
+        })
+    } else {
+        let _ = shift;
+        Some(VideoTimelineAction::ScrollX(-step * 60.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +372,69 @@ mod tests {
                 len: 30.0,
             },
         }
+    }
+
+    #[test]
+    fn press_on_ruler_seeks_and_opens_session() {
+        let m = model();
+        let (action, session) = press(egui::pos2(80.0, 10.0), &m, 400.0);
+        // 80px / 80pps = 1s。
+        assert!(
+            matches!(action, Some(VideoTimelineAction::Seek(s)) if (s - 1.0).abs() < 1e-3),
+            "标尺按下应 Seek 到 1s，实际 {action:?}"
+        );
+        assert!(matches!(session.map(|s| s.zone), Some(HitZone::Ruler)));
+    }
+
+    #[test]
+    fn drag_uses_zone_semantics() {
+        let m = model();
+        let y_body = TrackGeom::track_y(ClipTrack::Video) + TRACK_HEIGHT / 2.0;
+        let session = DragSession {
+            zone: HitZone::Body(ClipTrack::Video),
+            origin: egui::pos2(300.0, y_body),
+        };
+        // 右移 160px = 2s。
+        let action = drag(egui::pos2(460.0, y_body), session, &m);
+        assert!(
+            matches!(action, Some(VideoTimelineAction::DragBy(d)) if (d - 2.0).abs() < 1e-3),
+            "条身拖动应产出 +2s，实际 {action:?}"
+        );
+
+        let head = DragSession {
+            zone: HitZone::Head(ClipTrack::Video),
+            origin: egui::pos2(8.0, y_body),
+        };
+        let action = drag(egui::pos2(168.0, y_body), head, &m);
+        assert!(
+            matches!(action, Some(VideoTimelineAction::TrimIn(d)) if (d - 2.0).abs() < 1e-3),
+            "起始把手拖动应产出 TrimIn(+2s)，实际 {action:?}"
+        );
+
+        let tail = DragSession {
+            zone: HitZone::Tail(ClipTrack::Video),
+            origin: egui::pos2(300.0, y_body),
+        };
+        let action = drag(egui::pos2(220.0, y_body), tail, &m);
+        assert!(
+            matches!(action, Some(VideoTimelineAction::TrimOut(d)) if (d + 1.0).abs() < 1e-3),
+            "结束把手左移应产出 TrimOut(-1s)，实际 {action:?}"
+        );
+    }
+
+    #[test]
+    fn wheel_ctrl_zooms_otherwise_scrolls() {
+        let zoom = wheel(egui::pos2(100.0, 10.0), 1.0, true, false, 400.0);
+        assert!(
+            matches!(zoom, Some(VideoTimelineAction::Zoom { factor, fixed_ratio })
+                if (factor - 1.1).abs() < 1e-4 && (fixed_ratio - 0.25).abs() < 1e-4),
+            "Ctrl+滚轮应产出 ×1.1、锚点 0.25，实际 {zoom:?}"
+        );
+        let scroll = wheel(egui::pos2(100.0, 10.0), 1.0, false, false, 400.0);
+        assert!(
+            matches!(scroll, Some(VideoTimelineAction::ScrollX(d)) if (d + 60.0).abs() < 1e-3),
+            "普通滚轮应横向滚动 -60px，实际 {scroll:?}"
+        );
     }
 
     #[test]
