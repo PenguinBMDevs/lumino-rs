@@ -206,8 +206,24 @@ impl Host {
                 SidebarRoute::AudioExport => {
                     SidebarEvent::RouteUpdated(crate::sidebar::Route::AudioExport)
                 }
+                // 底部按钮：构造器直接返回 `Message`（不是 `Event` 变体），提前分发。
+                SidebarRoute::RollBarHorizontal | SidebarRoute::RollBarVertical => {
+                    let button = match route {
+                        SidebarRoute::RollBarHorizontal => {
+                            lumino_ui_core::sidebar_event::RollBarButton::Horizontal
+                        }
+                        _ => lumino_ui_core::sidebar_event::RollBarButton::Vertical,
+                    };
+                    tracing::info!("egui 路由栏动作：{route:?}");
+                    self.dispatch_overlay_message(SidebarEvent::roll_bar_toggled(button));
+                    return;
+                }
+                SidebarRoute::MixerToggle => {
+                    tracing::info!("egui 路由栏动作：{route:?}");
+                    self.dispatch_overlay_message(SidebarEvent::mixer_panel_toggled());
+                    return;
+                }
             };
-            tracing::info!("egui 路由栏动作：{route:?}");
             self.dispatch_overlay_message(crate::message::Message::Sidebar(event));
         }
         if let Some(action) = actions.video_export

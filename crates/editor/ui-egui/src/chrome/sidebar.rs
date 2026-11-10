@@ -35,6 +35,12 @@ pub enum SidebarRoute {
     VideoExport,
     /// 音频导出子按钮。
     AudioExport,
+    /// 底部：横向卷帘方向。
+    RollBarHorizontal,
+    /// 底部：纵向卷帘方向。
+    RollBarVertical,
+    /// 底部：混音台开关。
+    MixerToggle,
 }
 
 /// 路由栏动作通道。
@@ -80,9 +86,10 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
     let route = Rect::from_min_size(rect.min, Vec2::new(ROUTE_BAR_W, rect.height()));
     ui.painter().rect_filled(route, 0, theme::route_bar_bg());
 
-    // 路由栏只由 egui **绘制**，点击仍交给 iced 的按钮处理。
-    // 绝不能把这一列计入占用区：egui 并不消费路由点击，占用会让整列变成死区
-    // （真机表现：底栏混音台按钮永远点不开）。
+    // 路由栏由 egui **独占**：绘制 + 点击 + 动作通道（含底部卷帘方向与混音台）。
+    // 因此必须计入占用区，否则同一次点击会同时被 egui 和 iced 各处理一次
+    // （表现为「打开又立刻关闭」，或命中到 iced 的旧偏移坐标）。
+    super::menu::extend_blocked(ui.ctx(), [route]);
 
     route_bar(ui, rect, model, icons);
 
@@ -306,9 +313,25 @@ fn route_bar_bottom(
             .then(|| SidebarGroup::PianoRoll.child_color()),
     ));
 
-    let mut by = rect.bottom() - ROUTE_BTN * bottom.len() as f32;
-    for (icon, active) in bottom {
-        route_button(ui, icons, icon, left, by, active, None);
+    // Ui 的高度可能是无界的（父级 `max_rect` 未定高），直接用 `rect.bottom()`
+    // 会把底部按钮推到屏幕外（实测有一趟 pass 底缘 = 7980）。钳到视口内（让出状态栏）。
+    let viewport_bottom = ui.ctx().viewport_rect().bottom() - 20.0;
+    let bottom_edge = rect.bottom().min(viewport_bottom);
+    if debug_rects() {
+        tracing::warn!(?rect, viewport_bottom, bottom_edge, "DEBUG route bar rect");
+    }
+    let mut by = bottom_edge - ROUTE_BTN * bottom.len() as f32;
+    // 底部按钮同样经动作通道下发：`ui.interact` 会吃掉点击，
+    // 传 `None` 就成了「吃了事件还不响应」的死按钮（真机表现：混音台点不开）。
+    let mut routes = Vec::new();
+    if model.roll_bar_visible {
+        routes.push(SidebarRoute::RollBarHorizontal);
+        routes.push(SidebarRoute::RollBarVertical);
+    }
+    routes.push(SidebarRoute::MixerToggle);
+
+    for ((icon, active), route) in bottom.into_iter().zip(routes) {
+        route_button(ui, icons, icon, left, by, active, Some(route));
         by += ROUTE_BTN;
     }
 }
@@ -331,6 +354,17 @@ fn route_button(
         egui::Id::unique(("lumino.route", left as i32, y as i32)),
         Sense::click(),
     );
+    if debug_rects() {
+        tracing::warn!(
+            ?route,
+            x = left,
+            y,
+            hovered = response.hovered(),
+            clicked = response.clicked(),
+            pointer = ?ui.ctx().pointer_latest_pos(),
+            "DEBUG route button rect"
+        );
+    }
     if let Some(route) = route {
         response.widget_info(|| {
             egui::WidgetInfo::selected(
@@ -340,9 +374,6 @@ fn route_button(
                 format!("{route:?}"),
             )
         });
-        if debug_rects() {
-            tracing::warn!(?route, x = left, y, "DEBUG route button rect");
-        }
         if response.clicked() {
             push_route_action(ui.ctx(), route);
         }

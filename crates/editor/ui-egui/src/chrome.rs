@@ -265,15 +265,6 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         arrangement::push_action(ui.ctx(), action);
     }
 
-    // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 iced 面板）。
-    if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
-        crate::mixer::show(&root, &layout, &mixer);
-        menu::extend_blocked(ui.ctx(), [layout.panel]);
-        for action in crate::mixer::interact(&root, &layout, &mixer) {
-            push_mixer_action(ui.ctx(), action);
-        }
-    }
-
     // 视频剪辑时间轴（渲染器入口面板内）：先默认关闭，仅做与 iced 的像素对照。
     if video_timeline_enabled()
         && let Some((rect, timeline)) = video_timeline(ui.ctx())
@@ -514,6 +505,15 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
+    // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 iced 面板）。
+    if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
+        crate::mixer::show(&root, &layout, &mixer);
+        menu::extend_blocked(ui.ctx(), [layout.panel]);
+        for action in crate::mixer::interact(&root, &layout, &mixer) {
+            push_mixer_action(ui.ctx(), action);
+        }
+    }
+
     if let Some(titlebar) = &model.titlebar {
         menu::show_overlay(&mut root, titlebar);
     }

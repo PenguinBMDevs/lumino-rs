@@ -235,5 +235,10 @@ fn bar_button<'a>(
         })
         .on_press(message);
 
-    widget::with_tooltip(btn, tooltip, iced_widget::tooltip::Position::Right).into()
+    // 布局探针（`LUMINO_DEBUG_CLIP=1` 时打印）：路由按钮的真实屏幕矩形。
+    // 用于核对 iced 命中盒与 egui 绘制是否同源（tooltip 已是 `&'static str`，直接当标签）。
+    crate::view::video_clip::rect_probe::probe(
+        tooltip,
+        widget::with_tooltip(btn, tooltip, iced_widget::tooltip::Position::Right),
+    )
 }

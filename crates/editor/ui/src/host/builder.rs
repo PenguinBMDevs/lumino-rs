@@ -151,11 +151,17 @@ impl Host {
             !is_progress,
             false,
         );
-        let root = if is_progress {
+        let mut root = if is_progress {
             root::Root::new_progress(&ui_config.theme, ui_config)
         } else {
             root::Root::new(ui_config)
         };
+        // 调试开关：启动即打开混音台（`LUMINO_MIXER_OPEN=1`）。
+        // 用途：路由栏底部入口在部分环境下收不到点击，无法稳定进入面板做真机对照。
+        if std::env::var("LUMINO_MIXER_OPEN").is_ok_and(|v| v != "0") {
+            root.mixer_panel.open = true;
+            root.mixer_panel.maximized = true;
+        }
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 

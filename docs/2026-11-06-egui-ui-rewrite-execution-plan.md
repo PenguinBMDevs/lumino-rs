@@ -2304,3 +2304,45 @@ callback / 多视口 / 截图能力。
 3. 通过后把 iced 混音台面板换同尺寸占位（探针保留），继续右栏面板；
 4. 待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）等整树 iced 视图，
    摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十四步）：量出 iced 路由栏真实矩形 + 修混音台绘制层级（面板已真机可见）**
+
+- **路由按钮探针**：`sidebar/route.rs::bar_button` 套 `rect_probe::probe(tooltip, ..)`
+  （`tooltip` 本身是 `&'static str`，直接当标签）。实测（逻辑坐标，ppp=1.25）：
+  ```
+  钢琴卷帘组 30..78   音轨列表 78..126   自动化面板 126..174
+  工程走带  174..222  播放器   222..270  渲染器    270..318
+  横向卷帘 1068..1116 纵向卷帘 1116..1164 混音台  1164..1212
+  ```
+  即 **iced 路由栏命中盒与绘制同源**（点物理 (30,300)→逻辑 240 命中 `Waterfall`，
+  与 222..270 一致）。上一轮「数百像素偏移」的判断**被推翻**——那是把点错位置的
+  结果误归因成偏移。
+- **真因**：`chrome/sidebar.rs::route_bar_bottom` 给底部三个按钮传 `route = None`。
+  `ui.interact` 照样占位/吃事件，但既不产动作、也不通知 iced ⇒ 混音台入口永远点不开。
+  已为 `SidebarRoute` 增加 `RollBarHorizontal / RollBarVertical / MixerToggle` 并接入
+  动作通道（构造器直接返回 `Message`，故在 `actions.rs` 里提前分发）。
+- **无界 Ui 钳制**：`route_bar_bottom` 用 `rect.bottom()`，某些 pass 里 Ui 高度无界
+  （实测底缘 7980），底部按钮被推到屏幕外。改为
+  `min(viewport_rect.bottom() - 20)`。
+- **混音台绘制层级**：面板原先画在 band 之前，被卷帘的底色整块盖住。移到
+  `show_bands` 末尾（菜单浮层之前）。真机 `target/mix8-open.png`：
+  左下出现「混音台」标题 + `A01` 两条通道（推子/电平/P·M·S），几何与 iced 面板一致。
+- **调试开关**：`LUMINO_MIXER_OPEN=1` 启动即打开混音台（`host/builder.rs`），
+  用于在入口点击不可用时做面板级对照；不影响正常使用。
+- **仍未闭环**：混音台推子/声像/M·S 的真机点击未取到 `混音台动作`。已定位两个
+  独立原因并记录：① egui 叠加层只在 iced 重绘时运行，egui 独占区域内的点击可能
+  采样不到（需宿主在 `ctx.request_repaint()` 时驱动重绘）；② 路由按钮
+  `response.clicked()=true` 已实测出现，但动作未从 `take_route_action` 取出
+  （下一轮先查该通道）。两处都不影响本轮已交付的「面板正确显示 + 动作映射」。
+- 验收：`ui-egui` 28/28、`lumino-ui` lib 857/857、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 修 `take_route_action` 通道（clicked 已为 true 却不产出动作）；
+2. 宿主在 `egui_ctx.request_repaint()` 时驱动一次重绘，使 egui 独占区域的点击可靠；
+3. 完成混音台推子/声像/M·S/拖拽真机 A/B，随后把 iced 混音台换成占位（探针保留）；
+4. 迁移右栏剩余 iced 面板；待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）
+   等整树 iced 视图，摘 `lumino-ui` 的 `iced_*`，以
+   `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
