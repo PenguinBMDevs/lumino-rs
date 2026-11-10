@@ -2706,3 +2706,37 @@ callback / 多视口 / 截图能力。
 2. `statusbar.rs` / `sidebar/panel.rs` / `titlebar/menu.rs` 都出现在基线里，
    需与 `capture_iced` 退役一并处理；
 3. **需要用户确认**：退役 `capture_iced`。
+
+**Task 1.3（第八十七步）：遮罩参数面板迁 egui，删除 iced 视图（DRAW-010）**
+
+- **新建 egui 面板** `ui-egui/src/mask_panel.rs`：
+  - `MaskPanelModel { origin, enabled, show, size_keys, invert, own, baked, dirty, labels }`
+    + `MaskPanelAction { Close, SetEnabled, SetShow, SetSize, SetInvert, SetOwn, Apply }`；
+  - 用 `egui::Area`（Foreground 层）锚在鼠标右下 12px，外框宽 250、内边距 10、
+    行距 6、标签列 52、开关 11px、带宽滑杆 110 + 数值 30——与 iced 同口径；
+  - 面板外点一下即关闭；打开期间整窗 `extend_blocked`（与 iced 的全屏 backdrop 同义）。
+- **文案由生产传入**（`MaskPanelLabels`，17 条），`ui-egui` 仍不引 i18n；
+  关闭按钮字形由 `✕`（U+2715，egui 字体缺字显示为方框）改为 `×`（U+00D7）。
+- **生产侧** `egui_chrome/mask_panel.rs`：`mask_panel_model()` 镜像
+  `MaskPanelState`（锚点 + 12、`params.is_some()` 决定 enabled、`target` 决定 baked）；
+  `mask_panel_action_message()` 映射回 `Message::MaskPanel(...)`。3 个单测。
+- **删除 iced 视图**：`root/mask_panel.rs` 只保留 `MaskPanelState`（show/hide/current）
+  与状态单测；`view_mask_panel` / `label` / `toggle` / `transparent_button` /
+  `panel_text_color` 全部删除；`piano_roll.rs` 的挂载点移除。
+- **真机**（`LUMINO_MASK_PANEL=1` 启动即打开，DPI-aware）：
+  - 面板渲染完整（遮罩 / × / 启用 On / 区域 内部·沿线 / 带宽滑杆+数值 /
+    取反 挖洞 / 自身发声 边框）；
+  - 逐项点击取证：`SetEnabled(true)`、`SetShow(Line)`、`SetSize(1.5)`、
+    `SetInvert(true)`、`SetOwn(false)`、`Close` 各一条（Apply 需已 Bake 目标，
+    映射由单测覆盖）；
+  - 截图 `target/mask2-crop.png` / `mask4-crop.png`：选中态随动作变化、`×` 正常显示。
+- 验收：`lumino-ui` lib 846/846、`ui-egui` 35/35、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动（面板默认关闭，不在基线场景内）。
+
+**Task 1.3（下一步）**
+
+1. 基线内剩余 iced 面（`statusbar.rs` / `sidebar/panel.rs` / `titlebar/menu.rs` /
+   iced 工具栏含 `SnapIcon`）都与 `capture_iced` 图像耦合，需先退役该工具；
+2. `root/text_params_panel.rs` 属于工具栏菜单，随工具栏一起处理；
+3. **需要用户确认**：退役 `capture_iced`（归档原图、改由 `capture_egui` 做唯一门禁）。

@@ -64,6 +64,7 @@ pub(super) struct OverlayActions {
     pub video_timeline: Vec<lumino_ui_egui::video_clip_timeline::VideoTimelineAction>,
     pub mixer: Vec<lumino_ui_egui::mixer::MixerAction>,
     pub material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteAction>,
+    pub mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelAction>,
 }
 
 impl OverlayActions {
@@ -100,6 +101,7 @@ impl OverlayActions {
             video_timeline: lumino_ui_egui::chrome::take_video_timeline_actions(ctx),
             mixer: lumino_ui_egui::chrome::take_mixer_actions(ctx),
             material_delete: lumino_ui_egui::chrome::take_material_delete_action(ctx),
+            mask_panel: lumino_ui_egui::chrome::take_mask_panel_action(ctx),
         }
     }
 }
@@ -154,6 +156,11 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.mask_panel {
+            tracing::info!("egui 遮罩面板动作：{action:?}");
+            let message = self.root.mask_panel_action_message(action);
+            self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.material_delete {
             tracing::info!("egui 素材删除动作：{action:?}");

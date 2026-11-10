@@ -162,6 +162,15 @@ impl Host {
             root.mixer_panel.open = true;
             root.mixer_panel.maximized = true;
         }
+        // 调试开关：启动即打开遮罩参数面板（`LUMINO_MASK_PANEL=1`）。
+        // 用途：验证 egui 面板的绘制与命中（真机入口需要先选中形状再右键）。
+        if std::env::var("LUMINO_MASK_PANEL").is_ok_and(|v| v != "0") {
+            root.mask_panel.show(
+                lumino_ui_editor::MaskEditTarget::Pending { index: 0 },
+                None,
+                iced_core::Point::new(600.0, 300.0),
+            );
+        }
         // 调试开关：启动即进入全屏瀑布流模式（`LUMINO_START_WATERFALL=1`）。
         // 用途：验证 wgpu 离屏纹理经 egui 外部纹理铺放的链路（无法用点击稳定进入时）。
         if std::env::var("LUMINO_START_WATERFALL").is_ok_and(|v| v != "0") {

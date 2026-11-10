@@ -161,6 +161,21 @@ pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
 }
 
+/// 记录本帧的遮罩参数面板模型（`None` = 面板未打开）。
+pub fn set_mask_panel(ctx: &egui::Context, model: Option<crate::mask_panel::MaskPanelModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.mask-panel"), model));
+}
+
+/// 取本帧的遮罩参数面板模型。
+fn mask_panel(ctx: &egui::Context) -> Option<crate::mask_panel::MaskPanelModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<crate::mask_panel::MaskPanelModel>>(egui::Id::unique(
+            "lumino.mask-panel",
+        ))
+    })
+    .flatten()
+}
+
 /// 记录本帧的纹理预览模型（渲染器面板 16:9 卡片 / 全屏瀑布流）。
 pub fn set_video_preview(ctx: &egui::Context, model: Option<TexturePreviewModel>) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.video-preview"), model));
@@ -564,6 +579,14 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         }
     }
 
+    // 遮罩参数面板：锚在鼠标右下，点面板外关闭；打开期间整窗占用。
+    if let Some(mask) = mask_panel(ui.ctx()) {
+        let full = window_rect(&root);
+        if let Some(action) = crate::mask_panel::show(&root, full, &mask) {
+            push_mask_panel_action(ui.ctx(), action);
+        }
+    }
+
     // 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）：画在所有 band 之后、
     // 浮层之前——内容区在 band 中央，但必须盖住其下的 iced 占位。
     if let Some(preview) = video_preview(ui.ctx()) {
@@ -694,6 +717,26 @@ pub fn take_material_delete_action(
             d.remove::<crate::material_delete::MaterialDeleteAction>(egui::Id::unique(
                 MATERIAL_DELETE_ACTION_ID,
             ))
+        });
+    }
+    action
+}
+
+/// 遮罩面板动作通道。
+const MASK_PANEL_ACTION_ID: &str = "lumino.mask-panel.action";
+
+fn push_mask_panel_action(ctx: &egui::Context, action: crate::mask_panel::MaskPanelAction) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(MASK_PANEL_ACTION_ID), action));
+}
+
+/// 取走本帧遮罩面板动作。
+pub fn take_mask_panel_action(ctx: &egui::Context) -> Option<crate::mask_panel::MaskPanelAction> {
+    let action = ctx.data(|d| {
+        d.get_temp::<crate::mask_panel::MaskPanelAction>(egui::Id::unique(MASK_PANEL_ACTION_ID))
+    });
+    if action.is_some() {
+        ctx.data_mut(|d| {
+            d.remove::<crate::mask_panel::MaskPanelAction>(egui::Id::unique(MASK_PANEL_ACTION_ID))
         });
     }
     action
