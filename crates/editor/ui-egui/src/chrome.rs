@@ -13,7 +13,7 @@ pub mod tool_panel;
 pub mod toolbar;
 pub mod toolbar_popup;
 
-pub use arrangement::ArrangementTrackAction;
+pub use arrangement::ArrangementAction;
 pub use model::{
     ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel, ArrangementTrackRow,
     AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,

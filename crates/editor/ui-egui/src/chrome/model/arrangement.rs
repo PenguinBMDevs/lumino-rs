@@ -19,6 +19,8 @@ pub struct ArrangementRulerModel {
     pub top_inset: f32,
     /// 拍号变化表（原样传入；绘制侧负责同 tick 去重）。
     pub time_signatures: Vec<(u32, u8, u8)>,
+    /// 乐曲总 tick 数（点击设光标的钳制上界）。
+    pub total_ticks: u32,
 }
 
 impl Default for ArrangementRulerModel {
@@ -30,6 +32,7 @@ impl Default for ArrangementRulerModel {
             left_inset: 48.0,
             top_inset: 102.0,
             time_signatures: vec![(0, 4, 4)],
+            total_ticks: 0,
         }
     }
 }

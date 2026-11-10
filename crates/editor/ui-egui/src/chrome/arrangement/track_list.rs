@@ -11,7 +11,7 @@ use egui::{Align2, Color32, CornerRadius, FontId, Rect};
 use crate::theme;
 
 use super::super::{ArrangementTrackListModel, ArrangementTrackRow};
-use super::ArrangementTrackAction;
+use super::ArrangementAction;
 
 /// 未配色时的左侧色块宽度（像素）。
 const BADGE_WIDTH: f32 = 8.0;
@@ -320,7 +320,7 @@ pub(super) fn interact(
     ui: &egui::Ui,
     rect: Rect,
     model: &ArrangementTrackListModel,
-) -> Option<ArrangementTrackAction> {
+) -> Option<ArrangementAction> {
     let rows = row_rects(rect, model);
     let pointer = ui.input(|i| i.pointer.interact_pos());
     let pressed = ui.input(|i| i.pointer.any_pressed() && i.pointer.primary_pressed());
@@ -337,12 +337,12 @@ pub(super) fn interact(
             if let Some(btn) = row.mute
                 && btn.contains(pos)
             {
-                return Some(ArrangementTrackAction::ToggleMute(row.id));
+                return Some(ArrangementAction::ToggleMute(row.id));
             }
             if let Some(btn) = row.solo
                 && btn.contains(pos)
             {
-                return Some(ArrangementTrackAction::ToggleSolo(row.id));
+                return Some(ArrangementAction::ToggleSolo(row.id));
             }
             if row.row.contains(pos) {
                 let index = model.tracks.iter().position(|t| t.id == row.id)?;
@@ -362,7 +362,7 @@ pub(super) fn interact(
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(egui::Id::unique("lumino.arrangement.dragging"), row.id)
                 });
-                return Some(ArrangementTrackAction::Select { id: row.id, ids });
+                return Some(ArrangementAction::Select { id: row.id, ids });
             }
         }
     }
@@ -382,7 +382,7 @@ pub(super) fn interact(
         if last != Some(pos) {
             ui.ctx()
                 .data_mut(|d| d.insert_temp(egui::Id::unique("lumino.arrangement.last"), pos));
-            return Some(ArrangementTrackAction::ReorderMoved {
+            return Some(ArrangementAction::ReorderMoved {
                 x: pos.x - rect.left(),
                 y: pos.y - rect.top() + model.scroll_y,
             });
@@ -396,7 +396,7 @@ pub(super) fn interact(
             .data_mut(|d| d.remove_temp::<usize>(egui::Id::unique("lumino.arrangement.dragging")))
             .is_some()
     {
-        return Some(ArrangementTrackAction::ReorderEnded);
+        return Some(ArrangementAction::ReorderEnded);
     }
     None
 }

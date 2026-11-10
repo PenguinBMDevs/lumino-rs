@@ -8,7 +8,7 @@ use lumino_ui_egui::audio_export::AudioExportAction;
 use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::brush_settings::BrushSettingsAction;
 use lumino_ui_egui::chrome::ToolbarAction;
-use lumino_ui_egui::chrome::arrangement::ArrangementTrackAction;
+use lumino_ui_egui::chrome::arrangement::ArrangementAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
 use lumino_ui_egui::chrome::sidebar::{SidebarRoute, take_route_action};
 use lumino_ui_egui::cloud_browser::CloudBrowserAction;
@@ -59,7 +59,7 @@ pub(super) struct OverlayActions {
     pub video_export: Option<VideoExportAction>,
     pub sidebar_route: Option<SidebarRoute>,
     pub video_overlay: Option<VideoOverlayAction>,
-    pub arrangement: Option<ArrangementTrackAction>,
+    pub arrangement: Option<ArrangementAction>,
 }
 
 impl OverlayActions {

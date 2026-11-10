@@ -1873,44 +1873,45 @@ callback / 多视口 / 截图能力。
 
 **Task 1.3（第五十六步）：egui 走带轨道列接管输入（选择 / 多选 / M·S / 拖拽排序）**
 
-- **命中盒与绘制同源**：新增 `row_rects(rect, model)` 一次算出行矩形与 M/S 矩形，
-  绘制与输入都读它——杜绝“看到的位置点不到”。
-- **交互语义与 iced `track_list/handlers.rs` 对齐**：
-  - 单击行 → `Select { id, ids }` → 生产侧 `track_selected + tracks_selected +
-    track_reorder_started`（等价 iced 按下行为，保留长按拖拽候选）；
-  - Shift + 单击 → 以「上一次点击行下标」为锚点做范围选择（锚点存 ctx-data）；
-  - M / S 命中 → `ToggleMute` / `ToggleSolo` → `track_mute_toggled` /
-    `track_solo_toggled`；
-  - 按下期间指针**变化时**上报 `ReorderMoved { x, y }`（局部坐标 + 滚动偏移），
-    释放 → `ReorderEnded`；长按计时 / 激活 / 插入位置 / 提交排序全部沿用生产侧
-    既有状态机（`Sidebar::handle_track_reorder_*`），没有重写一套。
-- **占用区**：轨道列整块加入 `menu::extend_blocked`，同一次点击不再落到下方 iced
-  的 `TrackListCanvas`（否则两边选择逻辑不同步会“点了又跳回去”）。
-- **踩坑**：首版按下期间每帧都发 `ReorderMoved`（日志刷屏）；改为「指针位置变化才发」，
-  实测一次点击只产生 1 条 `ReorderMoved` + 1 条 `ReorderEnded`。
-- **另一处踩坑**：`sidebar_event` 里 `track_reorder_*` 是**构造器（返回 Message）**，
-  与枚举变体 `TrackReorderMoved { x, y }` 不是同一类型；混用会得到
-  「expected `Sidebar`, found `Message<…>`」这类反向报错，最终统一用构造器。
+- 命中盒与绘制同源（`row_rects`）；单击 → `track_selected + tracks_selected +
+  track_reorder_started`；Shift 范围选择（锚点存 ctx-data）；M/S →
+  `track_mute_toggled/track_solo_toggled`；拖拽移动/释放沿用生产侧
+  `Sidebar::handle_track_reorder_*` 状态机。轨道列整块计入 `blocked`。
+
+**Task 1.3（第五十七步）：标尺点击设光标 + 滚轮缩放（egui 接管）**
+
+- **动作**：`ArrangementAction` 新增 `CursorSet(f64)` 与
+  `ZoomX { zoom, fixed_ratio }`（枚举由 `ArrangementTrackAction` 更名，
+  统一承载标尺与轨道列动作）。
+- **点击/拖拽设光标**：按下与拖动都发 `CursorSet`，tick 由
+  `(local_x + scroll_x) / zoom_x` 计算并钳到 `[0, total_ticks]`；拖动状态存 ctx，
+  指针移出标尺不断；**tick 未变化不重复上报**（否则按住时每帧一条）。
+- **滚轮缩放**：读 `Event::MouseWheel` 的 `unit`（Line = 1 行、Point / 50 换算成行），
+  钳 ±1 行、每行 10%，与 iced `zoom_factor_from_delta` 同口径；`fixed_ratio =
+  local_x / ruler_width`，由生产侧 `ArrangementZoomX` 完成锚点缩放。
+- 标尺整条计入 `blocked`，同一次点击不再落到 iced 的 `ArrangementRulerCanvas`。
+- **踩坑（真机两轮才修对）**：
+  1. 用 `smooth_scroll_delta` 有两宗罪：方向与 iced 相反、每格只有 ~4 点导致
+     缩放幅度被 `/50` 稀释（实测每格仅 ×0.99）；改用原始 `Event::MouseWheel.unit`
+     后实测每格 ×1.1，方向与 iced 一致（上滚放大）；
+  2. 按住拖动时每帧重发 `CursorSet`（一次点击 9+ 条日志），改为「tick 变化才发」。
 - 验收：
-  - `ui-egui` 11/11、`lumino-ui` lib 864/864、`lumino-gfx` 273/273
-    （`--test-threads=1`）、`clippy -D warnings`、`fmt --check`、
-    `check --bin lumino-rs`；
+  - `ui-egui` 13/13（新增 `tick_at_subtracts_scroll_and_clamps`、
+    `tick_to_x_inverts_tick_at`）；`lumino-ui` lib 864/864、`lumino-gfx` 273/273；
+  - `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
   - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
   - **真机**（`LUMINO_EGUI_ARRANGEMENT=1`，ppp=1.25）：
-    `target/in2-mute.png` —— 点 M 后该按钮变红（`ToggleMute(1)`）；
-    `target/in2-row1.png` —— 点第一行后高亮从 `001 A01` 移到 `000 Master`
-    （`Select { id: 0, ids: [0] }`），静音状态保留；
-    日志确认点击链路：`ToggleMute(1)` → `Select { id: 0, ids: [0] }` →
-    1 条 `ReorderMoved` → `ReorderEnded`。
+    `target/rl4-cursor.png` —— 点击标尺在 x=800 处落下红色播放指示线（日志
+    `CursorSet(16588.8)`，整个点击只 1 条）；
+    `target/rl4-zoomin.png` —— 6 格滚轮后小节间距变宽、`fixed_ratio` 保持
+    0.237（指针锚点不动），日志 zoom `0.0286 → 0.0461`（每格 ×1.1）。
 
-**Task 1.3（下一步）：走带主体点击层 + 翻转开关**
+**Task 1.3（下一步）：泳道区点击层（接管前必须补齐，否则功能回退）**
 
-1. 走带主体（泳道区）点击层：选择 / 移动 / 缩放 / 框选，对齐
-   `ArrangementClickCanvas`，命中盒同样与 wgpu 网格同源（canvas offset/size 已由
-   `arrangement_geometry` 给出）；
-2. 标尺点击/拖拽设置光标与滚轮缩放（当前仍由 iced 处理，接管后要一并实现，
-   否则功能回退）；
-3. 三块（标尺 / 轨道列 / 泳道）全绿后翻 `LUMINO_EGUI_ARRANGEMENT` 默认值——
-   注意 egui 会补出 iced 当前缺失的标尺与轨道列内容，属修复而非等价；
+1. 用 `arrangement_geometry` 的 canvas offset/size 做命中区（与 wgpu 网格同源）；
+2. 选择 / 移动 / 缩放 / 框选语义对齐 `ArrangementClickCanvas`，动作走
+   `ArrangementAction` 通道；
+3. 与标尺、轨道列一起做真机 A/B（`OVERLAY=1` vs `=0`），全绿后翻
+   `LUMINO_EGUI_ARRANGEMENT` 默认值；
 4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役
    `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

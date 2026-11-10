@@ -4,7 +4,7 @@
 //! （`arrangement_view.viewport` + `editor_state` + `sidebar.tracks`）。
 
 use lumino_ui_egui::chrome::{
-    ArrangementModel, ArrangementRulerModel, ArrangementTrackAction, ArrangementTrackListModel,
+    ArrangementAction, ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel,
     ArrangementTrackRow,
 };
 
@@ -67,6 +67,7 @@ impl Root {
                 left_inset,
                 top_inset,
                 time_signatures: self.editor.editor_state.data.time_signatures.clone(),
+                total_ticks: vp.total_ticks,
             },
             track_list: ArrangementTrackListModel {
                 tracks,
@@ -87,21 +88,28 @@ impl Root {
     /// M/S 命中只切换开关；移动/释放交给生产侧的拖拽排序状态机。
     pub(crate) fn arrangement_action_message(
         &self,
-        action: &ArrangementTrackAction,
+        action: &ArrangementAction,
     ) -> Option<crate::Message> {
         use crate::sidebar::Event as SidebarEvent;
         Some(match action {
-            ArrangementTrackAction::Select { id, ids } => crate::Message::Batch(vec![
+            ArrangementAction::Select { id, ids } => crate::Message::Batch(vec![
                 SidebarEvent::track_selected(*id),
                 SidebarEvent::tracks_selected(ids.clone()),
                 SidebarEvent::track_reorder_started(*id),
             ]),
-            ArrangementTrackAction::ToggleMute(id) => SidebarEvent::track_mute_toggled(*id),
-            ArrangementTrackAction::ToggleSolo(id) => SidebarEvent::track_solo_toggled(*id),
-            ArrangementTrackAction::ReorderMoved { x, y } => {
-                SidebarEvent::track_reorder_moved(*x, *y)
+            ArrangementAction::ToggleMute(id) => SidebarEvent::track_mute_toggled(*id),
+            ArrangementAction::ToggleSolo(id) => SidebarEvent::track_solo_toggled(*id),
+            ArrangementAction::ReorderMoved { x, y } => SidebarEvent::track_reorder_moved(*x, *y),
+            ArrangementAction::ReorderEnded => SidebarEvent::track_reorder_ended(None),
+            ArrangementAction::CursorSet(tick) => {
+                return Some(crate::Message::ArrangementCursorSet(*tick));
             }
-            ArrangementTrackAction::ReorderEnded => SidebarEvent::track_reorder_ended(None),
+            ArrangementAction::ZoomX { zoom, fixed_ratio } => {
+                return Some(crate::Message::ArrangementZoomX {
+                    zoom: *zoom,
+                    fixed_ratio: *fixed_ratio,
+                });
+            }
         })
     }
 }
