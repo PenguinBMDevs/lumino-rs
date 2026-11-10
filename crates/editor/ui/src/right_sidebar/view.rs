@@ -72,14 +72,10 @@ pub fn view<'a>(
         // 面板内容按路由分发：素材库面板 / 图片转 MIDI 面板
         let panel_content: Element<'a> = match right_sidebar.active_panel {
             RightSidebarPanel::Materials => {
-                if crate::host::overlay_enabled() {
-                    // egui 叠加层接管素材库面板内容（列表 / 重命名 / 右键菜单 /
-                    // 添加菜单 / 拖出）。保留同宽占位避免两份内容重影；面板缩放手柄
-                    // 仍由 iced 处理。
-                    Space::new().width(Length::Fill).height(Length::Fill).into()
-                } else {
-                    crate::right_sidebar::materials_view::panel(right_sidebar, language, window)
-                }
+                // 素材库面板内容已**完全**由 egui 绘制（列表 / 重命名 / 右键菜单 /
+                // 添加菜单 / 拖出）。iced 侧只保留同宽占位，避免两份内容重影；
+                // 原 `materials_view` + `material_context_menu` 视图已删除。
+                Space::new().width(Length::Fill).height(Length::Fill).into()
             }
             RightSidebarPanel::PianoWaterfall => {
                 crate::right_sidebar::piano_waterfall::panel(right_sidebar, language, window)

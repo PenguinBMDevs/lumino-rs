@@ -2572,3 +2572,26 @@ callback / 多视口 / 截图能力。
    删除 `waterfall_primitive.rs`；
 3. 待 `capture_iced` 退役确认后删 iced 工具栏（含 `SnapIcon`）与图标列，
    摘 `lumino-ui` 的 `iced_*`。
+
+**Task 1.3（第八十二步）：删除 iced 素材库面板视图与右键菜单（−792 行）**
+
+- 素材库面板内容早已**完全**由 egui 接管（列表 / 重命名 / 右键菜单 / 添加菜单 /
+  拖出到卷帘），iced 侧只剩 `overlay_enabled()` 分支里的同宽占位。本步把该分支
+  固定为占位并删除对应整树：
+  - `right_sidebar/materials_view.rs`（331）
+  - `right_sidebar/materials_view/tip.rs`（101）
+  - `right_sidebar/materials_view/tests.rs`（81，被测视图已删）
+  - `right_sidebar/material_context_menu.rs`（269）
+- **保留** iced 图标列绘制：`capture_iced` 会渲染纯 iced 树，删掉会让 6 张基线失配
+  （工具条/侧栏图标像素消失）。点击已由 egui 拦下（上一提交），这里只留像素。
+- 验收：`lumino-ui` lib 841/841（−11，删掉的是被删视图的私有单测；egui 素材面板
+  另有 `materials_bands.rs` 覆盖）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 删除 `right_sidebar/view/i2m_panel.rs` / `i2m_config.rs`（图片转 MIDI 面板已由
+   egui 绘制，iced 侧同样只剩占位）；
+2. 右侧栏 6px 缩放手柄迁 egui，随后 `view.rs` 只保留图标列像素；
+3. `piano_waterfall` 的 iced `WaterfallProgram`（shader 图元）改为全 egui 外部纹理。

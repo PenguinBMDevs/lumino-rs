@@ -5,8 +5,6 @@
 pub mod convert;
 pub(crate) mod core;
 pub mod material;
-mod material_context_menu;
-mod materials_view;
 pub(crate) mod piano_waterfall;
 mod resize;
 pub mod view;
