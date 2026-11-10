@@ -2251,3 +2251,28 @@ callback / 多视口 / 截图能力。
 2. 通过后把 iced 面板换成同尺寸占位（探针保留），再迁右栏剩余 iced 面板；
 3. 待 `capture_iced` 去留确认后，删除工具栏（含 `SnapIcon`）等整树 iced 视图，
    摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十二步）：混音台接线改为确定性单测验证（真机入口仍待定位）**
+
+- 真机尝试：扫描左侧栏底部图标（物理 y = 1364 / 1425 / 1484 / 1559 四个 run），
+  逐个点击 — `mixer::panel` 矩形计数始终为 0，面板未打开，故真机 A/B 仍缺证据。
+- 改为**确定性单测**（`egui_chrome/mixer_tests.rs`，4 个用例）：
+  - 注入探针矩形（`rect_probe::set_rect_for_test`，测试专用）+ 打开面板 +
+    `maximized/master_volume=100` → `mixer_model()` 产出布局与模型；
+    断言面板贴底（底缘 = 探针 y+height）、标题 28、通道条数 = 音轨数、主控存在、
+    主控音量 = 100/127；
+  - 面板关闭 / 无矩形 → `None`；
+  - 8 个动作（`DragStarted/DragBy/DragEnded/Mute/Solo/MasterVolume/Gain/Pan`）
+    全部能映射出消息；越界下标（`Mute(99)`）返回 `None`；
+  - `hit_test`：条内 → `Fader(0)`、标题 → `Title`。
+- 验收：`lumino-ui` lib **857/857**（含 12 个 mixer 相关）、`ui-egui` 28/28、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 真机 A/B 仍缺「入口坐标」这一个外部输入：请给混音台按钮的物理坐标，或点开后的截图；
+2. 拿到后验证推子/声像/M·S/拖拽，再把 iced 面板换同尺寸占位（探针保留）；
+3. 之后迁右栏剩余 iced 面板；待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）
+   等整树 iced 视图，摘 `lumino-ui` 的 `iced_*`，以
+   `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

@@ -17,6 +17,14 @@ fn rects() -> &'static std::sync::Mutex<std::collections::HashMap<&'static str, 
     RECTS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
+/// 测试注入：写入某个 label 的矩形（仅测试使用）。
+#[cfg(test)]
+pub fn set_rect_for_test(label: &'static str, rect: iced_core::Rectangle) {
+    if let Ok(mut map) = rects().lock() {
+        map.insert(label, rect);
+    }
+}
+
 /// 读取某个 label 最近一次的布局矩形（逻辑坐标）。
 pub fn last_rect(label: &'static str) -> Option<Rectangle> {
     rects().lock().ok()?.get(label).copied()

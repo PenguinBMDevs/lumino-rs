@@ -485,6 +485,8 @@ mod load_confirm_tests;
 #[cfg(test)]
 mod memory_monitor_tests;
 #[cfg(test)]
+mod mixer_tests;
+#[cfg(test)]
 mod project_settings_tests;
 #[cfg(test)]
 mod recover_track_tests;
