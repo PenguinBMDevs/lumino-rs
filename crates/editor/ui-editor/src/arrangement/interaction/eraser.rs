@@ -2,8 +2,8 @@
 
 use iced_core::{Point, mouse};
 use iced_widget::canvas;
+use lumino_message::arrangement_action::ArrangementAction;
 
-use crate::Message;
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::auto_scroll::auto_scroll_on_drag;
 use crate::arrangement::interaction::geometry::{arrange_snapped_bounds, clamped_local, local_pos};
@@ -57,11 +57,11 @@ pub fn handle_eraser_event(
                         ctx.ppq,
                         ctx.time_signatures,
                     );
-                    output.push(Message::ArrangementDragSelectionRect(Some((
+                    output.push(ArrangementAction::DragSelectionRect(Some((
                         t_start, t_end, track_lo, track_hi,
                     ))));
                 } else {
-                    output.push(Message::ArrangementDragSelectionRect(None));
+                    output.push(ArrangementAction::DragSelectionRect(None));
                 }
 
                 auto_scroll_on_drag(
@@ -76,7 +76,7 @@ pub fn handle_eraser_event(
         }
         canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
             state.primary_down = false;
-            output.push(Message::ArrangementDragSelectionRect(None));
+            output.push(ArrangementAction::DragSelectionRect(None));
             if let Some((start_music, end_local)) = state.eraser_drag.take() {
                 let start_pixel = Point::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
@@ -95,7 +95,7 @@ pub fn handle_eraser_event(
                         ctx.ppq,
                         ctx.time_signatures,
                     );
-                    output.push(Message::ArrangementErase {
+                    output.push(ArrangementAction::Erase {
                         tick_start: t_start,
                         tick_end: t_end,
                         track_lo,

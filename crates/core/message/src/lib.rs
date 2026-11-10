@@ -4,6 +4,7 @@
 //! Message 枚举定义在 `types::message` 子模块中，通过 pub use 链重新导出。
 //! Message 是泛型的，由上层 crate（lumino-ui）实例化具体的 UI 事件类型。
 
+pub mod arrangement_action;
 pub mod audio_export;
 pub mod batch_edit;
 pub mod brush_settings;

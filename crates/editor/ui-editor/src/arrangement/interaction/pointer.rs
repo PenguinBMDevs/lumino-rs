@@ -2,10 +2,10 @@
 
 use iced_core::{Point, mouse};
 use iced_widget::canvas;
+use lumino_message::arrangement_action::ArrangementAction;
 
 use lumino_core::SnapSpec;
 
-use crate::Message;
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::auto_scroll::auto_scroll_on_drag;
 use crate::arrangement::interaction::geometry::{
@@ -30,13 +30,13 @@ pub fn handle_pointer_event(
     if !state.primary_down {
         if state.drag.is_some() {
             state.drag = None;
-            output.push(Message::ArrangementDragSelectionRect(None));
+            output.push(ArrangementAction::DragSelectionRect(None));
         }
         if state.move_drag.is_some() {
             state.move_drag = None;
             state.move_orig_sel = None;
-            output.push(Message::ArrangementGhostNotesUpdated(Vec::new()));
-            output.push(Message::ArrangementDragSelectionRect(None));
+            output.push(ArrangementAction::GhostNotes(Vec::new()));
+            output.push(ArrangementAction::DragSelectionRect(None));
         }
     }
 
@@ -58,12 +58,12 @@ pub fn handle_pointer_event(
                     let origin = (click_tick, click_track_f);
                     state.move_drag = Some((origin, origin));
                     state.drag = None;
-                    output.push(Message::ArrangementGhostNotesUpdated(Vec::new()));
+                    output.push(ArrangementAction::GhostNotes(Vec::new()));
                 } else {
                     // 开始新的框选
                     let start_track_y = (local.y + viewport.scroll_y) / viewport.lane_height();
                     state.drag = Some(((click_tick, start_track_y), local));
-                    output.push(Message::ArrangementSelectionCleared);
+                    output.push(ArrangementAction::SelectionCleared);
                 }
             }
         }
@@ -83,7 +83,7 @@ pub fn handle_pointer_event(
                     ctx.precision,
                     ctx.time_signatures,
                 );
-                output.push(Message::ArrangementGhostNotesUpdated(ghosts));
+                output.push(ArrangementAction::GhostNotes(ghosts));
 
                 // 计算移动拖拽中的偏移选择矩形（GPU 渲染用）
                 let snapped_origin =
@@ -96,14 +96,14 @@ pub fn handle_pointer_event(
                     let new_lo = (track_lo as i32 + dtr).max(0) as usize;
                     let new_hi = (track_hi as i32 + dtr).max(0) as usize;
                     if dt != 0 || dtr != 0 {
-                        output.push(Message::ArrangementDragSelectionRect(Some((
+                        output.push(ArrangementAction::DragSelectionRect(Some((
                             t_start + dt as f64,
                             t_end + dt as f64,
                             new_lo,
                             new_hi,
                         ))));
                     } else {
-                        output.push(Message::ArrangementDragSelectionRect(None));
+                        output.push(ArrangementAction::DragSelectionRect(None));
                     }
                 }
 
@@ -142,11 +142,11 @@ pub fn handle_pointer_event(
                         ctx.ppq,
                         ctx.time_signatures,
                     );
-                    output.push(Message::ArrangementDragSelectionRect(Some((
+                    output.push(ArrangementAction::DragSelectionRect(Some((
                         t_start, t_end, track_lo, track_hi,
                     ))));
                 } else {
-                    output.push(Message::ArrangementDragSelectionRect(None));
+                    output.push(ArrangementAction::DragSelectionRect(None));
                 }
 
                 // 框选时同样支持边缘自动滚动
@@ -165,8 +165,8 @@ pub fn handle_pointer_event(
             // 移动释放
             if let Some(((origin_t, origin_tr), (current_t, current_tr))) = state.move_drag.take() {
                 state.move_drag = None;
-                output.push(Message::ArrangementGhostNotesUpdated(Vec::new()));
-                output.push(Message::ArrangementDragSelectionRect(None));
+                output.push(ArrangementAction::GhostNotes(Vec::new()));
+                output.push(ArrangementAction::DragSelectionRect(None));
                 let snapped_origin =
                     snap_tick(origin_t, ctx.precision, ctx.ppq, ctx.time_signatures);
                 let snapped_current =
@@ -178,7 +178,7 @@ pub fn handle_pointer_event(
                     // 选择在拖拽期间未被清空，arrange_move_notes 可直接找到音符并偏移。
                     // 移动提交后由 arrange_move_notes 把选择集冻结为本次移动的音符
                     // （精确集合，落点区域内既有音符不进入选择——框选误伤修复）。
-                    output.push(Message::ArrangementMoveNotes {
+                    output.push(ArrangementAction::MoveNotes {
                         delta_ticks,
                         delta_tracks,
                     });
@@ -190,7 +190,7 @@ pub fn handle_pointer_event(
             // 框选释放
             if let Some((start_music, end_local)) = state.drag.take() {
                 state.drag = None;
-                output.push(Message::ArrangementDragSelectionRect(None));
+                output.push(ArrangementAction::DragSelectionRect(None));
                 let start_pixel = Point::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,
@@ -205,14 +205,12 @@ pub fn handle_pointer_event(
                     let tick = viewport.x_to_tick(start_pixel.x + viewport.scroll_x);
                     let snapped =
                         snap_tick(tick, ctx.precision, ctx.ppq, ctx.time_signatures).max(0.0);
-                    output.push(Message::ArrangementSelectionCleared);
-                    output.push(Message::ArrangementCursorSet(snapped));
+                    output.push(ArrangementAction::SelectionCleared);
+                    output.push(ArrangementAction::CursorSet(snapped));
 
                     let track_idx = start_music.1.floor() as usize;
                     if track_idx < ctx.track_count {
-                        output.push(lumino_ui_core::sidebar_event::Event::track_selected(
-                            track_idx,
-                        ));
+                        output.push(ArrangementAction::SelectTrack(track_idx));
                     }
                 } else {
                     let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
@@ -223,7 +221,7 @@ pub fn handle_pointer_event(
                         ctx.ppq,
                         ctx.time_signatures,
                     );
-                    output.push(Message::ArrangementSelectionChanged(Some((
+                    output.push(ArrangementAction::SelectionChanged(Some((
                         t_start, t_end, track_lo, track_hi,
                     ))));
                 }

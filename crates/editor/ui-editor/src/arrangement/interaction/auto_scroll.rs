@@ -2,11 +2,11 @@
 //!
 //! 移植自 yinhe `selection/drag.rs` 的 `auto_scroll_on_drag`。
 
+use lumino_message::arrangement_action::ArrangementAction;
 use std::time::Instant;
 
 use iced_core::{Point, Rectangle};
 
-use crate::Message;
 use crate::arrangement::ArrangementViewport;
 
 /// 边缘触发距离（像素）。
@@ -27,7 +27,7 @@ pub fn auto_scroll_on_drag(
     viewport: &mut ArrangementViewport,
     track_count: usize,
     last_time: &mut Option<Instant>,
-    output: &mut Vec<Message>,
+    output: &mut Vec<ArrangementAction>,
 ) -> (f32, f32) {
     let now = Instant::now();
     let dt = last_time
@@ -64,10 +64,10 @@ pub fn auto_scroll_on_drag(
     let actual_dy = viewport.scroll_y - old_y;
 
     if actual_dx != 0.0 {
-        output.push(Message::ArrangementScrollX(viewport.scroll_x));
+        output.push(ArrangementAction::ScrollX(viewport.scroll_x));
     }
     if actual_dy != 0.0 {
-        output.push(Message::ArrangementScrollY(viewport.scroll_y));
+        output.push(ArrangementAction::ScrollY(viewport.scroll_y));
     }
 
     (actual_dx, actual_dy)

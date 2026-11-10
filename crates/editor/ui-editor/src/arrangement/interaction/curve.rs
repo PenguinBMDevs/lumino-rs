@@ -2,10 +2,10 @@
 
 use iced_core::mouse;
 use iced_widget::canvas;
+use lumino_message::arrangement_action::ArrangementAction;
 
 use lumino_core::SnapSpec;
 
-use crate::Message;
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::geometry::{local_pos, snap_tick};
 use crate::arrangement::interaction::{
@@ -58,7 +58,7 @@ pub fn handle_curve_event(
                 snap_tick(end_tick, ctx.precision, ctx.ppq, ctx.time_signatures).max(0.0);
             let duration = (snapped_end - start_tick).max(1.0);
 
-            output.push(Message::ArrangementAddNote {
+            output.push(ArrangementAction::AddNote {
                 track,
                 tick: start_tick,
                 duration,

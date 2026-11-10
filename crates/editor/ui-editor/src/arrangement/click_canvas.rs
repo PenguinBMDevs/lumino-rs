@@ -12,6 +12,8 @@ use lumino_core::{SnapSpec, Tool};
 
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::curve::curve_preview_note;
+use lumino_message::arrangement_action::ArrangementAction;
+
 use crate::arrangement::interaction::{
     ArrangementInteractionContext, ArrangementInteractionState, handle_event,
 };
@@ -193,13 +195,11 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
             ctrl_pressed: self.ctrl_pressed,
             shift_pressed: self.shift_pressed,
         };
-        let messages = handle_event(state, &mut viewport, &ctx);
-
-        match messages.len() {
-            0 => None,
-            1 => messages.into_iter().next().map(canvas::Action::publish),
-            _ => Some(canvas::Action::publish(Message::Batch(messages))),
-        }
+        let actions = handle_event(state, &mut viewport, &ctx);
+        ArrangementAction::batch_into_message(actions, |id| {
+            Message::Sidebar(lumino_ui_core::sidebar_event::Event::TrackSelected(id))
+        })
+        .map(canvas::Action::publish)
     }
 
     fn draw(

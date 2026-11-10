@@ -3,7 +3,7 @@
 //! 移植自 yinhe 的 `arrange/view_ui.rs` 中的选择/移动/橡皮擦交互，
 //! 以及 `selection/drag.rs` 中的拖拽自动滚动行为。
 //! 本模块是无状态纯函数 + 状态结构体，负责把 iced canvas 事件翻译为
-//! `Message`，由 `Root` 统一修改 `EditorData` / `ArrangementView`。
+//! **框架无关的** `ArrangementAction`，由各 UI 侧在边界转换成自己的消息。
 
 use std::time::Instant;
 
@@ -12,8 +12,8 @@ use iced_widget::canvas;
 
 use lumino_core::{SnapSpec, Tool};
 
-use crate::Message;
 use crate::arrangement::ArrangementViewport;
+use lumino_message::arrangement_action::ArrangementAction;
 
 pub mod auto_scroll;
 pub mod curve;
@@ -64,7 +64,7 @@ impl ArrangementInteractionState {
 }
 
 /// 一次事件处理可能产生的多条消息。
-pub type InteractionOutput = Vec<Message>;
+pub type InteractionOutput = Vec<ArrangementAction>;
 
 /// 工程走带交互上下文。
 ///

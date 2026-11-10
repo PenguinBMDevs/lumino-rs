@@ -1880,38 +1880,41 @@ callback / 多视口 / 截图能力。
 
 **Task 1.3（第五十七步）：标尺点击设光标 + 滚轮缩放（egui 接管）**
 
-- **动作**：`ArrangementAction` 新增 `CursorSet(f64)` 与
-  `ZoomX { zoom, fixed_ratio }`（枚举由 `ArrangementTrackAction` 更名，
-  统一承载标尺与轨道列动作）。
-- **点击/拖拽设光标**：按下与拖动都发 `CursorSet`，tick 由
-  `(local_x + scroll_x) / zoom_x` 计算并钳到 `[0, total_ticks]`；拖动状态存 ctx，
-  指针移出标尺不断；**tick 未变化不重复上报**（否则按住时每帧一条）。
-- **滚轮缩放**：读 `Event::MouseWheel` 的 `unit`（Line = 1 行、Point / 50 换算成行），
-  钳 ±1 行、每行 10%，与 iced `zoom_factor_from_delta` 同口径；`fixed_ratio =
-  local_x / ruler_width`，由生产侧 `ArrangementZoomX` 完成锚点缩放。
-- 标尺整条计入 `blocked`，同一次点击不再落到 iced 的 `ArrangementRulerCanvas`。
-- **踩坑（真机两轮才修对）**：
-  1. 用 `smooth_scroll_delta` 有两宗罪：方向与 iced 相反、每格只有 ~4 点导致
-     缩放幅度被 `/50` 稀释（实测每格仅 ×0.99）；改用原始 `Event::MouseWheel.unit`
-     后实测每格 ×1.1，方向与 iced 一致（上滚放大）；
-  2. 按住拖动时每帧重发 `CursorSet`（一次点击 9+ 条日志），改为「tick 变化才发」。
+- `ArrangementAction`（原 `ArrangementTrackAction` 更名）新增 `CursorSet(f64)` /
+  `ZoomX { zoom, fixed_ratio }`；滚轮读 `Event::MouseWheel.unit`（Line=1 行、
+  Point/50），钳 ±1 行、每行 10%，与 iced `zoom_factor_from_delta` 同口径。
+- 标尺计入 `blocked`；点击落播放线、上滚放大锚点不动（真机 `rl4-*.png`）。
+
+**Task 1.3（第五十八步）：走带交互层去 iced 化 —— 中立动作层（单源重构第 1/3 步）**
+
+背景：泳道点击层（`ArrangementClickCanvas`）的 942 行交互逻辑直接产出 iced
+`Message`、直接吃 `canvas::Event`，egui 侧无法复用（且 `lumino-ui-egui` 不能引
+`lumino-ui-editor`，否则 iced 依赖立刻非零）。
+
+- **新增** `lumino-message/src/arrangement_action.rs`：框架无关的
+  `ArrangementAction`（12 个变体，与 `Message::Arrangement*` 一一对应）+
+  `into_message` / `batch_into_message`（单条直出、多条 `Batch`、空不产出），
+  侧栏选中用注入闭包翻译（`Message::Sidebar` 的载荷是泛型参数，本 crate 无法构造）。
+  2 个单测锁定映射与批处理语义。
+- **交互层改造**：`InteractionOutput = Vec<ArrangementAction>`；
+  `pointer/eraser/curve/auto_scroll` 全部改为产出中立动作；`click_canvas.rs` 在
+  `update` 边界一次性转成 `Message`（`batch_into_message`）。
+- 效果：**交互逻辑从此与 UI 框架无关**，egui 只需构造同样的输入并接动作，
+  不必复制一套选择/移动/框选语义（避免两套实现发散）。
 - 验收：
-  - `ui-egui` 13/13（新增 `tick_at_subtracts_scroll_and_clamps`、
-    `tick_to_x_inverts_tick_at`）；`lumino-ui` lib 864/864、`lumino-gfx` 273/273；
-  - `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
-  - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动；
-  - **真机**（`LUMINO_EGUI_ARRANGEMENT=1`，ppp=1.25）：
-    `target/rl4-cursor.png` —— 点击标尺在 x=800 处落下红色播放指示线（日志
-    `CursorSet(16588.8)`，整个点击只 1 条）；
-    `target/rl4-zoomin.png` —— 6 格滚轮后小节间距变宽、`fixed_ratio` 保持
-    0.237（指针锚点不动），日志 zoom `0.0286 → 0.0461`（每格 ×1.1）。
+  - `lumino-message` 49/49（新增 2 个动作映射用例）；
+  - `lumino-ui-editor` lib 中 `arrangement` 相关 **90/90**；
+  - `lumino-ui` lib 864/864；`clippy -D warnings`（message / ui-editor）、
+    `fmt --check`、`check --bin lumino-rs`；
+  - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
 
-**Task 1.3（下一步）：泳道区点击层（接管前必须补齐，否则功能回退）**
+**Task 1.3（下一步）：中立事件层（第 2/3 步）**
 
-1. 用 `arrangement_geometry` 的 canvas offset/size 做命中区（与 wgpu 网格同源）；
-2. 选择 / 移动 / 缩放 / 框选语义对齐 `ArrangementClickCanvas`，动作走
-   `ArrangementAction` 通道；
-3. 与标尺、轨道列一起做真机 A/B（`OVERLAY=1` vs `=0`），全绿后翻
-   `LUMINO_EGUI_ARRANGEMENT` 默认值；
-4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役
-   `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+1. 在 `lumino-message` 定义 `ArrangementEvent`（按键 / 移动 / 滚轮 / 修饰键 /
+   光标离开）与 `ArrangementCursor`（`Option<Point2>` + 是否在界内）；
+2. 交互层把 `canvas::Event` / `mouse::Cursor` 替换为上述中立类型（约 11 处模式匹配，
+   机械替换）；`click_canvas` 在 `update` 入口做一次转换；
+3. 第 3/3 步：egui 侧用 `arrangement_geometry` 的 canvas offset/size 建命中区，
+   构造中立事件喂给同一个 `handle_event`，动作走 `ArrangementAction` 通道 →
+   生产侧映射；真机 A/B（`=1` vs `=0`）验证选择/移动/框选后再 block 泳道区。
+4. 之后 timeline / 吸附小图 → 一次性删 iced 整树并退役 `capture_iced`。
