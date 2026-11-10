@@ -290,6 +290,129 @@ pub fn show(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) {
     }
 }
 
+/// 混音台动作（egui 输入 → 生产侧映射成 `Event`）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MixerAction {
+    /// 标题栏按下（开始拖拽面板）。
+    DragStarted,
+    /// 拖拽增量（逻辑像素）。
+    DragBy {
+        /// 横向增量。
+        dx: f32,
+        /// 纵向增量。
+        dy: f32,
+    },
+    /// 拖拽结束。
+    DragEnded,
+    /// 第 `index` 条音量（0..=1）。
+    Gain {
+        /// 通道条下标。
+        index: usize,
+        /// 音量。
+        value: f32,
+    },
+    /// 第 `index` 条声像（-1..=1）。
+    Pan {
+        /// 通道条下标。
+        index: usize,
+        /// 声像。
+        value: f32,
+    },
+    /// 第 `index` 条静音切换。
+    Mute(usize),
+    /// 第 `index` 条独奏切换。
+    Solo(usize),
+    /// 主音量（0..=1）。
+    MasterVolume(f32),
+}
+
+/// 拖拽状态（ctx-data）。
+const DRAG_ID: &str = "lumino.mixer.drag";
+
+/// 处理本帧输入，返回动作（矩形与绘制同源）。
+pub fn interact(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) -> Vec<MixerAction> {
+    let (pointer, pressed, released, down, delta) = ui.input(|i| {
+        (
+            i.pointer.interact_pos(),
+            i.pointer.any_pressed() && i.pointer.primary_pressed(),
+            i.pointer.primary_released(),
+            i.pointer.primary_down(),
+            i.pointer.delta(),
+        )
+    });
+    let mut actions = Vec::new();
+
+    if pressed
+        && let Some(pos) = pointer
+        && layout.title.contains(pos)
+    {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique(DRAG_ID), true));
+        actions.push(MixerAction::DragStarted);
+        return actions;
+    }
+
+    if down
+        && ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(egui::Id::unique(DRAG_ID)))
+            .unwrap_or(false)
+    {
+        if delta.x != 0.0 || delta.y != 0.0 {
+            actions.push(MixerAction::DragBy {
+                dx: delta.x,
+                dy: delta.y,
+            });
+        }
+        return actions;
+    }
+
+    if released {
+        let was = ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(egui::Id::unique(DRAG_ID)))
+            .unwrap_or(false);
+        if was {
+            ui.ctx()
+                .data_mut(|d| d.remove::<bool>(egui::Id::unique(DRAG_ID)));
+        }
+        let dragging = was;
+        if dragging {
+            actions.push(MixerAction::DragEnded);
+        }
+        return actions;
+    }
+
+    // 点击：推子/声像/静音/独奏。
+    if pressed
+        && let Some(pos) = pointer
+        && let Some(hit) = hit_test(pos, layout, model)
+    {
+        match hit {
+            MixerHit::Title => {}
+            MixerHit::Fader(index) => {
+                let strip = layout.strip_rect(index, model.scroll_x);
+                let top = strip.top() + 16.0;
+                let bottom = strip.bottom() - 48.0;
+                let value = ((bottom - pos.y) / (bottom - top).max(1.0)).clamp(0.0, 1.0);
+                actions.push(MixerAction::Gain { index, value });
+            }
+            MixerHit::Pan(index) => {
+                let strip = layout.strip_rect(index, model.scroll_x);
+                let third = strip.width() / 3.0;
+                let rel = ((pos.x - strip.left()) / third).clamp(0.0, 1.0);
+                actions.push(MixerAction::Pan {
+                    index,
+                    value: rel * 2.0 - 1.0,
+                });
+            }
+            MixerHit::Mute(index) => actions.push(MixerAction::Mute(index)),
+            MixerHit::Solo(index) => actions.push(MixerAction::Solo(index)),
+        }
+    }
+    actions
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -158,6 +158,25 @@ fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementModel> {
         .flatten()
 }
 
+/// 记录本帧的混音台模型（`None` = 面板未打开）。
+pub fn set_mixer(
+    ctx: &egui::Context,
+    model: Option<(crate::mixer::MixerLayout, crate::mixer::MixerModel)>,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.mixer"), model));
+}
+
+fn mixer_model(
+    ctx: &egui::Context,
+) -> Option<(crate::mixer::MixerLayout, crate::mixer::MixerModel)> {
+    ctx.data(|d| {
+        d.get_temp::<Option<(crate::mixer::MixerLayout, crate::mixer::MixerModel)>>(
+            egui::Id::unique("lumino.mixer"),
+        )
+    })
+    .flatten()
+}
+
 /// 记录本帧的视频剪辑时间轴模型（`None` = 不接管或不在渲染器入口）。
 pub fn set_video_timeline(
     ctx: &egui::Context,
@@ -244,6 +263,15 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         && let Some(action) = arrangement::show(&root, root.max_rect(), &arrangement)
     {
         arrangement::push_action(ui.ctx(), action);
+    }
+
+    // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 iced 面板）。
+    if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
+        crate::mixer::show(&root, &layout, &mixer);
+        menu::extend_blocked(ui.ctx(), [layout.panel]);
+        for action in crate::mixer::interact(&root, &layout, &mixer) {
+            push_mixer_action(ui.ctx(), action);
+        }
     }
 
     // 视频剪辑时间轴（渲染器入口面板内）：先默认关闭，仅做与 iced 的像素对照。
@@ -552,6 +580,25 @@ pub fn take_video_timeline_actions(
         d.remove_temp::<Vec<crate::video_clip_timeline::VideoTimelineAction>>(egui::Id::unique(
             VIDEO_TIMELINE_ACTION_ID,
         ))
+    })
+    .unwrap_or_default()
+}
+
+/// 混音台动作通道。
+const MIXER_ACTION_ID: &str = "lumino.mixer.action";
+
+fn push_mixer_action(ctx: &egui::Context, action: crate::mixer::MixerAction) {
+    let mut actions = ctx
+        .data(|d| d.get_temp::<Vec<crate::mixer::MixerAction>>(egui::Id::unique(MIXER_ACTION_ID)))
+        .unwrap_or_default();
+    actions.push(action);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(MIXER_ACTION_ID), actions));
+}
+
+/// 取走本帧混音台动作。
+pub fn take_mixer_actions(ctx: &egui::Context) -> Vec<crate::mixer::MixerAction> {
+    ctx.data_mut(|d| {
+        d.remove_temp::<Vec<crate::mixer::MixerAction>>(egui::Id::unique(MIXER_ACTION_ID))
     })
     .unwrap_or_default()
 }

@@ -2217,3 +2217,37 @@ callback / 多视口 / 截图能力。
 2. 右栏剩余 iced 面板（素材右键菜单 / 通道选择器等）逐个迁；
 3. 待 `capture_iced` 去留确认后，删除工具栏（含 `SnapIcon`）等整树 iced 视图，
    摘除 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十一步）：混音台接线（模型 / 绘制 / 输入 / 动作映射）**
+
+- **探针**：`piano_roll.rs` 给 iced 混音台面板套 `rect_probe::probe("mixer::panel")`，
+  提供真实矩形（面板由生产按 `offset/maximized` 锚定，常量推算不可靠）。
+- **生产模型** `egui_chrome/mixer.rs`：`mixer_model()` 读取探针矩形，装配
+  `MixerLayout` + `MixerModel`——通道名取 `display_label`，增益/声像取
+  `sidebar.mixer_strip(id)`，静音/独奏取 `Track`，电平取
+  `playback.manager.last_frame().channel_levels[channel]`，主控取
+  `mixer_panel.master_volume` 与 `master_level`。
+- **绘制与输入**：`chrome::set_mixer` 通道；`mixer::show` 画面板（标题栏 / 推子 /
+  电平 / P·M·S 三格），面板矩形计入 `menu::extend_blocked`，
+  `mixer::interact` 产出 `MixerAction`（`DragStarted/DragBy/DragEnded`、`Gain`、
+  `Pan`、`Mute`、`Solo`、`MasterVolume`）。
+- **动作映射** `Root::mixer_action_message`：拖拽 → `mixer_panel_drag_*`，
+  推子 → `track_gain_changed`（0..1 → 0..127 → 增益），声像 → `track_pan_changed`，
+  M/S → `track_mute_toggled` / `track_solo_toggled`，主控 →
+  `mixer_panel_master_volume_changed`。
+- **未替换 iced 面板**：egui 面板以不透明底覆盖同位 iced 面板并接管点击，
+  视觉/交互均以 egui 为准；iced 面板暂留作矩形来源与回退。
+- 验收：`lumino-ui` lib 853/853、`ui-egui` 28/28、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **真机未取到证据（阻塞）**：混音台入口按钮的物理坐标未定位（左侧栏底部图标
+  依次为滚动/卷帘方向/混音台，自动点击依次命中了「音轨列表」面板与空白），
+  因此面板未打开、探针无矩形、`混音台动作` 为 0。需要人工给出入口坐标或
+  一次手动点击后的截图，才能完成真机 A/B。
+
+**Task 1.3（下一步）**
+
+1. 人工定位混音台入口（或提供点击后的截图），完成真机 A/B（推子/声像/M/S/拖拽）；
+2. 通过后把 iced 面板换成同尺寸占位（探针保留），再迁右栏剩余 iced 面板；
+3. 待 `capture_iced` 去留确认后，删除工具栏（含 `SnapIcon`）等整树 iced 视图，
+   摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

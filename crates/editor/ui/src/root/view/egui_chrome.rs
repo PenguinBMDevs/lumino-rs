@@ -7,6 +7,7 @@ mod arrangement;
 mod audio_export_panel;
 mod dialogs;
 mod menu;
+mod mixer;
 mod palette;
 mod right_sidebar;
 mod settings_audio;
