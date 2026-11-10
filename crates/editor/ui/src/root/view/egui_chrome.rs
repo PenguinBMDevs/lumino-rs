@@ -20,6 +20,7 @@ mod tool_panel;
 mod toolbar;
 mod video_clip_timeline;
 mod video_export;
+mod video_preview;
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;

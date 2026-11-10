@@ -162,6 +162,11 @@ impl Host {
             root.mixer_panel.open = true;
             root.mixer_panel.maximized = true;
         }
+        // 调试开关：启动即进入全屏瀑布流模式（`LUMINO_START_WATERFALL=1`）。
+        // 用途：验证 wgpu 离屏纹理经 egui 外部纹理铺放的链路（无法用点击稳定进入时）。
+        if std::env::var("LUMINO_START_WATERFALL").is_ok_and(|v| v != "0") {
+            root.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
+        }
         // 调试开关：启动即弹出素材删除确认（无真实素材时名字为空）。
         if std::env::var("LUMINO_MATERIAL_DELETE").is_ok_and(|v| v != "0") {
             root.right_sidebar.materials.pending_delete = Some(0);

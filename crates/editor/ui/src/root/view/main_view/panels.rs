@@ -1,7 +1,7 @@
 //! 音频/视频导出面板与瀑布流全屏播放器
 
 use iced_core::{Length, Size};
-use iced_widget::{column, container, responsive, row, scrollable, text};
+use iced_widget::{Space, column, container, responsive, row, scrollable};
 
 use lumino_core::{tr, trf};
 
@@ -121,21 +121,25 @@ impl Root {
             // 左侧轨道占位（后续接入真实轨道列表）
             let left_panel = container(
                 iced_widget::column![
-                    iced_widget::text(tr!("轨道")).size(12).style(move |_t: &iced_core::Theme| {
-                        iced_widget::text::Style {
-                            color: Some(weak_text)
-                        }
-                    }),
-                    iced_widget::space().height(8),
-                    iced_widget::text(tr!("（轨道列表占位）"))
-                        .size(11)
-                        .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
-                            color: Some(strong_text)
+                    iced_widget::text(tr!("轨道"))
+                        .size(12)
+                        .style(move |_t: &iced_core::Theme| {
+                            iced_widget::text::Style {
+                                color: Some(weak_text),
+                            }
                         }),
+                    iced_widget::space().height(8),
+                    iced_widget::text(tr!("（轨道列表占位）")).size(11).style(
+                        move |_t: &iced_core::Theme| iced_widget::text::Style {
+                            color: Some(strong_text)
+                        }
+                    ),
                 ]
                 .padding(12),
             )
-            .width(Length::Fixed(crate::view::video_clip::layout::LEFT_RESERVED))
+            .width(Length::Fixed(
+                crate::view::video_clip::layout::LEFT_RESERVED,
+            ))
             .height(Length::Fill)
             .style(move |_t: &iced_core::Theme| container::Style {
                 background: Some(weakest_color.into()),
@@ -164,36 +168,15 @@ impl Root {
                     PreviewGate::WaitingRender => {
                         preview_placeholder(tr!("瀑布流预览（等待渲染…）"), strong_text)
                     }
-                    PreviewGate::Waterfall => match waterfall_view.clone() {
-                        Some(view) => {
-                            // 复用右侧栏同款 WaterfallPrimitive shader
-                            struct PreviewProgram {
-                                view: std::sync::Arc<iced_wgpu::wgpu::TextureView>,
-                            }
-                            impl iced_widget::shader::Program<crate::Message> for PreviewProgram {
-                                type State = ();
-                                type Primitive =
-                                    crate::right_sidebar::piano_waterfall::waterfall_primitive::WaterfallPrimitive;
-                                fn draw(
-                                    &self,
-                                    _state: &Self::State,
-                                    _cursor: iced_core::mouse::Cursor,
-                                    _bounds: iced_core::Rectangle,
-                                ) -> Self::Primitive {
-                                    crate::right_sidebar::piano_waterfall::waterfall_primitive::WaterfallPrimitive::new(
-                                        self.view.clone(),
-                                    )
-                                }
-                            }
-                            iced_widget::shader::Shader::new(PreviewProgram { view })
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .into()
-                        }
-                        // 门控判定纹理就绪却取不到视图：不静默显示空画面，退占位
-                        None => preview_placeholder(tr!("瀑布流预览（纹理缺失）"), strong_text),
-                    },
+                    // 瀑布流画面由 egui 用同一张离屏纹理铺放（探针给出实测矩形）；
+                    // iced 只留铺满黑盒的空内容，避免同一纹理被采样两次。
+                    PreviewGate::Waterfall => {
+                        Space::new().width(Length::Fill).height(Length::Fill).into()
+                    }
                 };
+            // 实测内容区矩形：egui 侧按它铺瀑布流纹理（布局常量正推会错位）。
+            let preview_content =
+                crate::view::video_clip::rect_probe::probe("renderer::preview", preview_content);
             // 严格 16:9 预览卡片：几何结构由可测试的 preview_card 构建（黑底 Fixed 盒 + 居中包装），
             // 禁止 center_x/center_y(Fill)——它们会把 Fixed 覆盖成 Fill（16:9 回归根因）
             let preview_card = crate::view::video_clip::preview::preview_card(
@@ -207,54 +190,55 @@ impl Root {
             let timeline = crate::view::video_clip::rect_probe::probe(
                 "renderer::timeline",
                 crate::view::video_clip::timeline::timeline_pane(
-                &theme,
-                crate::view::video_clip::timeline::TimelinePaneParams {
-                    total_ticks,
-                    ppq,
-                    tempos: &tempos,
-                    clip: &self.state.video_clip,
-                    viewport_w: timeline_viewport_w,
-                    playhead_secs,
-                    is_playing,
-                    video_edit,
-                    audio_edit,
-                },
+                    &theme,
+                    crate::view::video_clip::timeline::TimelinePaneParams {
+                        total_ticks,
+                        ppq,
+                        tempos: &tempos,
+                        clip: &self.state.video_clip,
+                        viewport_w: timeline_viewport_w,
+                        playhead_secs,
+                        is_playing,
+                        video_edit,
+                        audio_edit,
+                    },
                 ),
             );
-            let settings = {
-                let s = &export_state;
-                iced_widget::column![
-                    iced_widget::text(tr!("导出设置（复用）"))
-                        .size(14)
+            let settings =
+                {
+                    let s = &export_state;
+                    iced_widget::column![
+                        iced_widget::text(tr!("导出设置（复用）")).size(14).style(
+                            move |_t: &iced_core::Theme| iced_widget::text::Style {
+                                color: Some(neutral_text)
+                            }
+                        ),
+                        iced_widget::space().height(8),
+                        iced_widget::text(trf!(
+                            "格式: {container}  编码: {codec}  质量: {quality}",
+                            container = s.container,
+                            codec = s.codec,
+                            // `quality` 是规范数据值（高/中/低），显示层单独取词
+                            quality = lumino_core::i18n::tr_dyn(&s.quality)
+                        ))
+                        .size(12)
                         .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
-                            color: Some(neutral_text)
+                            color: Some(weak_text)
                         }),
-                    iced_widget::space().height(8),
-                    iced_widget::text(trf!(
-                        "格式: {container}  编码: {codec}  质量: {quality}",
-                        container = s.container,
-                        codec = s.codec,
-                        // `quality` 是规范数据值（高/中/低），显示层单独取词
-                        quality = lumino_core::i18n::tr_dyn(&s.quality)
-                    ))
-                    .size(12)
-                    .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
-                        color: Some(weak_text)
-                    }),
-                    iced_widget::text(trf!(
-                        "分辨率: {width}x{height}  帧率: {fps}  速度: {speed}x",
-                        width = s.width,
-                        height = s.height,
-                        fps = s.fps,
-                        speed = format!("{:.1}", s.waterfall_speed)
-                    ))
-                    .size(12)
-                    .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
-                        color: Some(weak_text)
-                    }),
-                ]
-                .width(Length::Fill)
-            };
+                        iced_widget::text(trf!(
+                            "分辨率: {width}x{height}  帧率: {fps}  速度: {speed}x",
+                            width = s.width,
+                            height = s.height,
+                            fps = s.fps,
+                            speed = format!("{:.1}", s.waterfall_speed)
+                        ))
+                        .size(12)
+                        .style(move |_t: &iced_core::Theme| iced_widget::text::Style {
+                            color: Some(weak_text)
+                        }),
+                    ]
+                    .width(Length::Fill)
+                };
 
             // 设置区固定高度：与 layout::SETTINGS_HEIGHT 预留严格一致，
             // 禁止 Fill——否则与预览包装器平分剩余高度，挤压预览区（16:9 回归根因之二）
@@ -264,7 +248,9 @@ impl Root {
                     .height(Length::Fill),
             )
             .width(Length::Fill)
-            .height(Length::Fixed(crate::view::video_clip::layout::SETTINGS_HEIGHT))
+            .height(Length::Fixed(
+                crate::view::video_clip::layout::SETTINGS_HEIGHT,
+            ))
             .padding(8)
             .style(move |_t: &iced_core::Theme| container::Style {
                 background: Some(base_color.into()),
@@ -272,11 +258,13 @@ impl Root {
             });
 
             let header = iced_widget::row![
-                iced_widget::text(tr!("视频剪辑")).size(18).style(move |_t: &iced_core::Theme| {
-                    iced_widget::text::Style {
-                        color: Some(neutral_text)
-                    }
-                }),
+                iced_widget::text(tr!("视频剪辑"))
+                    .size(18)
+                    .style(move |_t: &iced_core::Theme| {
+                        iced_widget::text::Style {
+                            color: Some(neutral_text),
+                        }
+                    }),
                 iced_widget::space().width(Length::Fill),
                 iced_widget::text(trf!("缩放 {zoom}x", zoom = format!("{:.1}", clip_zoom)))
                     .size(12)
@@ -310,24 +298,17 @@ impl Root {
         puffin::profile_scope!("root_view_waterfall_player");
 
         let size_cell = &self.waterfall_player.size;
-        let view_opt = self.waterfall_player.view.clone();
 
         responsive(move |size: Size| {
             let w = (size.width.max(1.0)) as u32;
             let h = (size.height.max(1.0)) as u32;
             size_cell.borrow_mut().replace((w, h));
 
-            match &view_opt {
-                Some(v) => {
-                    crate::right_sidebar::piano_waterfall::waterfall_shader_element(v.clone())
-                }
-                None => text(tr!("（瀑布流渲染中…）"))
-                    .size(18)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().background.neutral.text),
-                    })
-                    .into(),
-            }
+            // 画面由 egui 铺放同一张离屏纹理（探针给出实测矩形）；iced 只留空内容。
+            // 纹理未就绪时 egui 不画，露出本层底色（与 iced 原先的深底一致）。
+            let content: crate::Element<'_> =
+                Space::new().width(Length::Fill).height(Length::Fill).into();
+            crate::view::video_clip::rect_probe::probe("waterfall::player", content)
         })
         .into()
     }

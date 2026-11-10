@@ -52,8 +52,6 @@ pub(crate) const KEY_HEIGHT_RATIO: f32 = 0.0675;
 pub(crate) const MIN_KEY_HEIGHT: f32 = 36.0;
 /// 键盘最大高度（像素）
 pub(crate) const MAX_KEY_HEIGHT: f32 = 140.0;
-/// 面板内容内边距（用于计算键盘实际绘制宽度）
-pub(crate) const PANEL_PADDING: f32 = 8.0;
 /// compute 工作组大小
 const WORKGROUP_SIZE: u32 = 64;
 /// 活跃键颜色缓冲支持的最大键数（覆盖 128 与 256 键两种模式）

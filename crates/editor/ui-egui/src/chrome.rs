@@ -40,16 +40,17 @@ pub use model::{
     HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel,
     MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
     OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
-    ProjectNoteCountModel, ProjectSettingsModel, RecoverTrackModel, RecoverTrackRowModel,
-    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar,
-    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
-    ShapeActionButton, ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel,
-    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
-    SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
-    TextPairCell, TitlebarModel, ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill,
-    VideoExportAction, VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel,
-    VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing,
-    VideoOverlayProgress, VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
+    ProjectNoteCountModel, ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel,
+    RecoverTrackRowModel, RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind,
+    RightSidebarRailItem, RollBar, SaveConfirmModel, SettingsLabels, SettingsPageModel,
+    SettingsPalette, SettingsSnapshot, ShapeActionButton, ShapeDrawerModel, ShapePanelAction,
+    ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel,
+    SidebarRouteIcon, SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel,
+    SpeedChangeModel, StatusbarModel, TextPairCell, TexturePreviewModel, TitlebarModel,
+    ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction,
+    VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction,
+    VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
+    VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
 pub use toolbar_popup::ToolbarAction;
 
@@ -158,6 +159,19 @@ pub fn set_window_size(ctx: &egui::Context, size: egui::Vec2) {
 /// 取本帧真实窗口逻辑尺寸。
 pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
+}
+
+/// 记录本帧的纹理预览模型（渲染器面板 16:9 卡片 / 全屏瀑布流）。
+pub fn set_video_preview(ctx: &egui::Context, model: Option<TexturePreviewModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.video-preview"), model));
+}
+
+/// 取本帧的纹理预览模型。
+fn video_preview(ctx: &egui::Context) -> Option<TexturePreviewModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<TexturePreviewModel>>(egui::Id::unique("lumino.video-preview"))
+    })
+    .flatten()
 }
 
 /// 本帧的窗口逻辑矩形（原点 0,0；优先用宿主注入的真实尺寸）。
@@ -548,6 +562,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         for action in crate::mixer::interact(&root, &layout, &mixer) {
             push_mixer_action(ui.ctx(), action);
         }
+    }
+
+    // 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）：画在所有 band 之后、
+    // 浮层之前——内容区在 band 中央，但必须盖住其下的 iced 占位。
+    if let Some(preview) = video_preview(ui.ctx()) {
+        crate::video_preview::show(&root, &preview);
     }
 
     // 素材删除确认：全屏遮罩 + 居中卡片（模态，整窗占用）。

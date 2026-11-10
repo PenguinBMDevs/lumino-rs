@@ -27,6 +27,7 @@ mod tool_panel;
 mod toolbar;
 mod video_export;
 mod video_export_overlay;
+mod video_preview;
 pub use arrangement::*;
 pub use audio_export::*;
 pub use batch_edit::*;
@@ -50,6 +51,7 @@ pub use tool_panel::*;
 pub use toolbar::*;
 pub use video_export::*;
 pub use video_export_overlay::*;
+pub use video_preview::*;
 
 use super::piano_roll::PianoRollView;
 

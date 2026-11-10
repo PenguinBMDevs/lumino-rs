@@ -2649,3 +2649,39 @@ callback / 多视口 / 截图能力。
    全 egui 外部纹理（wgpu 管线整体接入）；
 2. 右侧栏 `view.rs` 只剩图标列 + 占位，等 `capture_iced` 退役后整块删除；
 3. 需要用户确认：退役 `capture_iced`（归档原图、改由 `capture_egui` 做唯一门禁）。
+
+**Task 2.1（第八十五步）：渲染器预览 / 全屏瀑布流改由 egui 采样 wgpu 纹理，删除 iced shader 图元（−461 行）**
+
+- **新增 egui 侧纹理预览通道**：
+  - `chrome/model/video_preview.rs`：`TexturePreviewModel { rects, texture }` +
+    `RENDER_PREVIEW_TEXTURE_ID`（与右侧栏 `WATERFALL_TEXTURE_ID` 分开，避免互相覆盖）；
+  - `ui-egui/src/video_preview.rs`：按矩形 1:1 铺图；`texture = None` 时不画，
+    保留 iced 占位文本（避免两套文案叠加）；
+  - `chrome::set_video_preview` / 绘制点放在所有 band 之后、浮层之前。
+- **宿主注册纹理**：`OverlayFrame::render_preview` 每帧把 `waterfall_player.view`
+  注册成 egui 外部纹理（未就绪时注销，避免引用已释放视图）。
+- **生产模型**（`egui_chrome/video_preview.rs`）：全屏 `AppMode::Waterfall` 用
+  `waterfall::player` 矩形；否则渲染器入口用 `renderer::preview` 矩形。两块矩形
+  都由 **iced 布局探针**给出实测坐标（常量正推会错位）。门控与 iced 同源：
+  先判播放头在不在素材带，再判纹理是否就绪（`preview_gate`）。
+- **探针**：`panels.rs` 给预览内容（16:9 黑盒内）与全屏播放器各加一个
+  `rect_probe::probe`，取代原先的 shader 直绘。
+- **删除 iced shader 通道**：
+  - `right_sidebar/piano_waterfall/waterfall_primitive.rs`（235 行，wgpu 渲染管线 +
+    自定义 shader 采样）；
+  - `WaterfallProgram` / `waterfall_shader_element` / `panel_header`（`piano_waterfall.rs`）；
+  - `panels.rs` 里的 `PreviewProgram`（16:9 卡片）与全屏播放器的 `Shader` 分支。
+  - 右侧栏 `panel()` 恒为同宽占位；`keyboard_renderer`（离屏渲染）保留。
+- **真机**（`LUMINO_START_WATERFALL=1` 启动即进全屏瀑布流，DPI-aware）：
+  `target/wf-player.png` 底部键盘完整呈现——**唯一**绘制来源是 egui 外部纹理
+  （iced 侧此时是一个空 `Space`），证明链路生效。
+- 验收：`lumino-ui` lib 844/844、`ui-egui` 33/33、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动（基线场景都不带视频素材，门控为占位）。
+
+**Task 2.2（下一步）**
+
+1. 渲染器面板预览的真机 A/B 需要一段视频素材（当前只能验证全屏路径与门控模型）；
+   可先用内置示例素材补齐；
+2. 右侧栏 `view.rs` 只剩图标列像素 + 占位，等 `capture_iced` 退役后整块删除；
+3. **需要用户确认**：退役 `capture_iced`（归档原图、改由 `capture_egui` 做唯一门禁）。

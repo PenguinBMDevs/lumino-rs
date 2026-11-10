@@ -54,6 +54,8 @@ struct OverlayFrame<'a> {
     model: &'a ChromeModel,
     /// 本帧色板（跟随窗口主题）。
     palette: lumino_ui_egui::theme::Palette,
+    /// 渲染器预览 / 全屏瀑布流的离屏纹理（二者互斥；就绪时才注册）。
+    render_preview: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 钢琴瀑布流离屏纹理（面板可见且已渲染时才注册）。
     waterfall: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 音频导出面板（整块接管右侧内容区）。
@@ -68,6 +70,8 @@ struct OverlayFrame<'a> {
     editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 走带标尺模型；`Some` 且开关打开时由 egui 绘制。
     arrangement: Option<lumino_ui_egui::chrome::ArrangementModel>,
+    /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
+    video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
     /// 素材删除确认（模态）；`Some` 时由 egui 绘制并接管输入。
     material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteModel>,
     /// 混音台（布局 + 模型）；`Some` 时由 egui 绘制并接管输入。
@@ -124,6 +128,18 @@ impl EguiOverlay {
                 .clear_external_texture(lumino_ui_egui::chrome::WATERFALL_TEXTURE_ID),
         }
 
+        // 渲染器预览 / 全屏瀑布流：同一张 `waterfall_player.view` 纹理。
+        match &frame.render_preview {
+            Some(view) => self.painter.set_external_texture(
+                frame.device,
+                lumino_ui_egui::chrome::RENDER_PREVIEW_TEXTURE_ID,
+                view,
+            ),
+            None => self
+                .painter
+                .clear_external_texture(lumino_ui_egui::chrome::RENDER_PREVIEW_TEXTURE_ID),
+        }
+
         // 编辑器画布：把 gfx 的离屏纹理注册成 egui 外部纹理，并由 egui 画成底层。
         match &frame.editor_texture {
             Some(view) => {
@@ -177,6 +193,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
         lumino_ui_egui::chrome::set_mixer(&ctx, frame.mixer.clone());
         lumino_ui_egui::chrome::set_material_delete(&ctx, frame.material_delete.clone());
+        lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -387,6 +404,8 @@ impl Host {
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(),
             material_delete: self.root.material_delete_model(),
+            video_preview: self.root.video_preview_model(),
+            render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),
                 size.height as f32 / pixels_per_point.max(1e-3),
