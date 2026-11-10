@@ -1,8 +1,8 @@
 //! Eraser 工具：拖拽矩形擦除音符
 
-use iced_core::{Point, mouse};
-use iced_widget::canvas;
 use lumino_message::arrangement_action::ArrangementAction;
+use lumino_message::arrangement_event::{ArrangementEvent, ArrangementPointerButton};
+use lumino_message::types::geometry::Point2;
 
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::auto_scroll::auto_scroll_on_drag;
@@ -20,7 +20,7 @@ pub fn handle_eraser_event(
     let mut output = InteractionOutput::new();
 
     match ctx.event {
-        canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+        ArrangementEvent::ButtonPressed(ArrangementPointerButton::Left) => {
             state.primary_down = true;
             if let Some(pos) = ctx.cursor.position() {
                 if !ctx.bounds.contains(pos) {
@@ -32,7 +32,7 @@ pub fn handle_eraser_event(
                 state.eraser_drag = Some(((start_tick, start_track_f), local));
             }
         }
-        canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+        ArrangementEvent::CursorMoved => {
             if let Some((start_music, _)) = state.eraser_drag
                 && let Some(pos) = ctx.cursor.position()
             {
@@ -40,7 +40,7 @@ pub fn handle_eraser_event(
                 state.eraser_drag = Some((start_music, local));
 
                 // 计算拖拽中的框选矩形（GPU 渲染用）
-                let start_pixel = Point::new(
+                let start_pixel = Point2::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,
                 );
@@ -74,11 +74,11 @@ pub fn handle_eraser_event(
                 );
             }
         }
-        canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+        ArrangementEvent::ButtonReleased(ArrangementPointerButton::Left) => {
             state.primary_down = false;
             output.push(ArrangementAction::DragSelectionRect(None));
             if let Some((start_music, end_local)) = state.eraser_drag.take() {
-                let start_pixel = Point::new(
+                let start_pixel = Point2::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,
                 );

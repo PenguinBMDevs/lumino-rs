@@ -1,8 +1,7 @@
 //! Curve 工具：在走带上拖拽绘制音符
 
-use iced_core::mouse;
-use iced_widget::canvas;
 use lumino_message::arrangement_action::ArrangementAction;
+use lumino_message::arrangement_event::{ArrangementEvent, ArrangementPointerButton};
 
 use lumino_core::SnapSpec;
 
@@ -25,7 +24,7 @@ pub fn handle_curve_event(
     let mut output = InteractionOutput::new();
 
     match ctx.event {
-        canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+        ArrangementEvent::ButtonPressed(ArrangementPointerButton::Left) => {
             if let Some(pos) = ctx.cursor.position() {
                 if !ctx.bounds.contains(pos) {
                     return output;
@@ -41,7 +40,7 @@ pub fn handle_curve_event(
                 state.curve_drag = Some(((snapped, track), local));
             }
         }
-        canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+        ArrangementEvent::CursorMoved => {
             if let Some((start, _)) = state.curve_drag
                 && let Some(pos) = ctx.cursor.position()
             {
@@ -49,7 +48,7 @@ pub fn handle_curve_event(
                 state.curve_drag = Some((start, local));
             }
         }
-        canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+        ArrangementEvent::ButtonReleased(ArrangementPointerButton::Left) => {
             let Some(((start_tick, track), end_local)) = state.curve_drag.take() else {
                 return output;
             };

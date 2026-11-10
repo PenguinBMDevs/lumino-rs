@@ -1,6 +1,6 @@
 //! 工程走带交互几何工具函数
 
-use iced_core::{Point, Rectangle};
+use lumino_message::types::geometry::{Point2, Rect2};
 
 use lumino_core::SnapSpec;
 
@@ -8,14 +8,14 @@ use crate::arrangement::ArrangementViewport;
 
 /// 将屏幕坐标转换为 Canvas 局部坐标。
 #[inline]
-pub fn local_pos(pos: Point, bounds: Rectangle) -> Point {
-    Point::new(pos.x - bounds.x, pos.y - bounds.y)
+pub fn local_pos(pos: Point2, bounds: Rect2) -> Point2 {
+    Point2::new(pos.x - bounds.x, pos.y - bounds.y)
 }
 
 /// 将屏幕坐标限制在 Canvas 边界内后转换为局部坐标。
 #[inline]
-pub fn clamped_local(pos: Point, bounds: Rectangle) -> Point {
-    Point::new(
+pub fn clamped_local(pos: Point2, bounds: Rect2) -> Point2 {
+    Point2::new(
         pos.x.clamp(bounds.x, bounds.x + bounds.width) - bounds.x,
         pos.y.clamp(bounds.y, bounds.y + bounds.height) - bounds.y,
     )
@@ -23,7 +23,7 @@ pub fn clamped_local(pos: Point, bounds: Rectangle) -> Point {
 
 /// 判断局部坐标是否落在给定选择矩形内。
 pub fn inside_selection_rect(
-    local: Point,
+    local: Point2,
     arr_sel_rect: Option<(f64, f64, usize, usize)>,
     viewport: &ArrangementViewport,
 ) -> bool {
@@ -80,8 +80,8 @@ fn ts_segment_at(tick: f64, time_signatures: &[(u32, u8, u8)]) -> (u32, u8, u8) 
 /// 返回 `(view_sx, view_ex, view_sy, view_ey, t_start, t_end, track_lo, track_hi)`。
 #[allow(clippy::too_many_arguments)]
 pub fn arrange_snapped_bounds(
-    start: Point,
-    end: Point,
+    start: Point2,
+    end: Point2,
     viewport: &ArrangementViewport,
     precision: SnapSpec,
     ppq: u16,

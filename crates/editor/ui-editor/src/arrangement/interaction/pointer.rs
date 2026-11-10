@@ -1,8 +1,8 @@
 //! Pointer 工具：框选 + 移动已有选择
 
-use iced_core::{Point, mouse};
-use iced_widget::canvas;
 use lumino_message::arrangement_action::ArrangementAction;
+use lumino_message::arrangement_event::{ArrangementEvent, ArrangementPointerButton};
+use lumino_message::types::geometry::Point2;
 
 use lumino_core::SnapSpec;
 
@@ -41,7 +41,7 @@ pub fn handle_pointer_event(
     }
 
     match ctx.event {
-        canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+        ArrangementEvent::ButtonPressed(ArrangementPointerButton::Left) => {
             state.primary_down = true;
             if let Some(pos) = ctx.cursor.position() {
                 let local = local_pos(pos, ctx.bounds);
@@ -67,7 +67,7 @@ pub fn handle_pointer_event(
                 }
             }
         }
-        canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+        ArrangementEvent::CursorMoved => {
             // 更新 move_drag 当前位置并生成 ghost 预览
             if let Some((origin, _)) = state.move_drag
                 && let Some(pos) = ctx.cursor.position()
@@ -125,7 +125,7 @@ pub fn handle_pointer_event(
                 state.drag = Some((start_music, local));
 
                 // 计算拖拽中的框选矩形（GPU 渲染用）
-                let start_pixel = Point::new(
+                let start_pixel = Point2::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,
                 );
@@ -160,7 +160,7 @@ pub fn handle_pointer_event(
                 );
             }
         }
-        canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+        ArrangementEvent::ButtonReleased(ArrangementPointerButton::Left) => {
             state.primary_down = false;
             // 移动释放
             if let Some(((origin_t, origin_tr), (current_t, current_tr))) = state.move_drag.take() {
@@ -191,7 +191,7 @@ pub fn handle_pointer_event(
             if let Some((start_music, end_local)) = state.drag.take() {
                 state.drag = None;
                 output.push(ArrangementAction::DragSelectionRect(None));
-                let start_pixel = Point::new(
+                let start_pixel = Point2::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,
                 );

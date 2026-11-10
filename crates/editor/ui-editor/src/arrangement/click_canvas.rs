@@ -13,6 +13,10 @@ use lumino_core::{SnapSpec, Tool};
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::curve::curve_preview_note;
 use lumino_message::arrangement_action::ArrangementAction;
+use lumino_message::arrangement_event::{
+    ArrangementCursor, ArrangementEvent, ArrangementPointerButton, ArrangementScroll,
+};
+use lumino_message::types::geometry::{Point2, Rect2};
 
 use crate::arrangement::interaction::{
     ArrangementInteractionContext, ArrangementInteractionState, handle_event,
@@ -54,16 +58,15 @@ impl ArrangementClickCanvas {
     fn handle_navigation_event(
         &self,
         state: &mut ArrangementInteractionState,
-        event: &canvas::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
+        event: &ArrangementEvent,
+        bounds: Rect2,
+        cursor: ArrangementCursor,
         track_count: usize,
     ) -> Option<canvas::Action<Message>> {
-        use iced_core::mouse;
         use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
 
         match event {
-            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {
+            ArrangementEvent::ButtonPressed(ArrangementPointerButton::Middle) => {
                 if let Some(pos) = cursor.position()
                     && bounds.contains(pos)
                 {
@@ -73,7 +76,7 @@ impl ArrangementClickCanvas {
                 }
                 None
             }
-            canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            ArrangementEvent::CursorMoved => {
                 let start = state.middle_drag?;
                 let pos = cursor.position()?;
                 let current = crate::arrangement::interaction::geometry::local_pos(pos, bounds);
@@ -93,11 +96,11 @@ impl ArrangementClickCanvas {
                     Message::ArrangementScrollY(viewport.scroll_y),
                 ])))
             }
-            canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Middle)) => {
+            ArrangementEvent::ButtonReleased(ArrangementPointerButton::Middle) => {
                 state.middle_drag = None;
                 None
             }
-            canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            ArrangementEvent::WheelScrolled { delta } => {
                 let pos = cursor.position()?;
                 if !bounds.contains(pos) {
                     return None;
@@ -106,7 +109,7 @@ impl ArrangementClickCanvas {
 
                 if self.ctrl_pressed {
                     // Ctrl + 滚轮：水平缩放（与钢琴卷帘标尺区一致：平滑步进 + 指针锚点）
-                    let factor = crate::zoom::zoom_factor_from_delta(delta)?;
+                    let factor = zoom_factor_from_scroll(delta)?;
                     return Some(canvas::Action::publish(Message::ArrangementZoomX {
                         zoom: self.viewport.zoom_x * factor,
                         fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
@@ -118,10 +121,10 @@ impl ArrangementClickCanvas {
                 }
 
                 let (mut dx, mut dy) = match delta {
-                    mouse::ScrollDelta::Lines { x, y } => {
+                    ArrangementScroll::Lines { x, y } => {
                         (x * SCROLL_LINES_SCALE, y * SCROLL_LINES_SCALE)
                     }
-                    mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                    ArrangementScroll::Pixels { x, y } => (*x, *y),
                 };
                 dx = dx.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
                 dy = dy.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
@@ -160,6 +163,62 @@ impl ArrangementClickCanvas {
     }
 }
 
+/// iced 事件 → 中立事件（不关心的类型返回 `None`，交互层本来也忽略它们）。
+fn to_neutral_event(event: &canvas::Event) -> Option<ArrangementEvent> {
+    use iced_core::mouse;
+    let button = |b: mouse::Button| match b {
+        mouse::Button::Left => Some(ArrangementPointerButton::Left),
+        mouse::Button::Right => Some(ArrangementPointerButton::Right),
+        mouse::Button::Middle => Some(ArrangementPointerButton::Middle),
+        _ => None,
+    };
+    Some(match event {
+        canvas::Event::Mouse(mouse::Event::ButtonPressed(b)) => {
+            ArrangementEvent::ButtonPressed(button(*b)?)
+        }
+        canvas::Event::Mouse(mouse::Event::ButtonReleased(b)) => {
+            ArrangementEvent::ButtonReleased(button(*b)?)
+        }
+        canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => ArrangementEvent::CursorMoved,
+        canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            ArrangementEvent::WheelScrolled {
+                delta: match delta {
+                    mouse::ScrollDelta::Lines { x, y } => ArrangementScroll::Lines { x: *x, y: *y },
+                    mouse::ScrollDelta::Pixels { x, y } => {
+                        ArrangementScroll::Pixels { x: *x, y: *y }
+                    }
+                },
+            }
+        }
+        _ => return None,
+    })
+}
+
+/// iced 光标 → 中立光标。
+fn to_neutral_cursor(cursor: mouse::Cursor) -> ArrangementCursor {
+    cursor
+        .position()
+        .map_or(ArrangementCursor::unavailable(), |p| {
+            ArrangementCursor::available(Point2::new(p.x, p.y))
+        })
+}
+
+/// 滚轮 → 缩放因子（与 `zoom::zoom_factor_from_delta` 同口径）。
+fn zoom_factor_from_scroll(delta: &ArrangementScroll) -> Option<f32> {
+    use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+    let _ = (SCROLL_LINES_SCALE, SCROLL_MAX_DELTA);
+    let lines = match delta {
+        ArrangementScroll::Lines { y, .. } => *y,
+        ArrangementScroll::Pixels { y, .. } => *y / 50.0,
+    };
+    let step = lines.clamp(-1.0, 1.0);
+    if step.abs() < f32::EPSILON {
+        None
+    } else {
+        Some(1.0 + step * 0.1)
+    }
+}
+
 impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
     type State = ArrangementInteractionState;
 
@@ -172,9 +231,14 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
     ) -> Option<canvas::Action<Message>> {
         puffin::profile_function!();
 
+        // iced 事件/光标/矩形 → 中立类型（交互层只认中立类型）
+        let neutral_event = to_neutral_event(event)?;
+        let bounds2 = Rect2::new(bounds.x, bounds.y, bounds.width, bounds.height);
+        let cursor2 = to_neutral_cursor(cursor);
+
         // 中键拖拽平移与滚轮缩放/滚动优先于工具事件
         if let Some(action) =
-            self.handle_navigation_event(state, event, bounds, cursor, self.track_count)
+            self.handle_navigation_event(state, &neutral_event, bounds2, cursor2, self.track_count)
         {
             return Some(action);
         }
@@ -182,9 +246,9 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
         // viewport 可变副本：交互可能修改滚动（自动滚动预览）
         let mut viewport = self.viewport.clone();
         let ctx = ArrangementInteractionContext {
-            event,
-            bounds,
-            cursor,
+            event: &neutral_event,
+            bounds: bounds2,
+            cursor: cursor2,
             current_tool: self.current_tool,
             track_count: self.track_count,
             arr_sel_rect: self.arr_sel_rect,

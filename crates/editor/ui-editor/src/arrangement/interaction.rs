@@ -2,18 +2,19 @@
 //!
 //! 移植自 yinhe 的 `arrange/view_ui.rs` 中的选择/移动/橡皮擦交互，
 //! 以及 `selection/drag.rs` 中的拖拽自动滚动行为。
-//! 本模块是无状态纯函数 + 状态结构体，负责把 iced canvas 事件翻译为
+//! 本模块是无状态纯函数 + 状态结构体，负责把**中立事件**（ArrangementEvent）翻译为
 //! **框架无关的** `ArrangementAction`，由各 UI 侧在边界转换成自己的消息。
 
 use std::time::Instant;
 
-use iced_core::{Point, Rectangle, mouse};
-use iced_widget::canvas;
+use lumino_message::types::geometry::{Point2, Rect2};
 
 use lumino_core::{SnapSpec, Tool};
 
 use crate::arrangement::ArrangementViewport;
 use lumino_message::arrangement_action::ArrangementAction;
+use lumino_message::arrangement_event::ArrangementCursor;
+use lumino_message::arrangement_event::ArrangementEvent;
 
 pub mod auto_scroll;
 pub mod curve;
@@ -29,27 +30,27 @@ pub use geometry::{arrange_snapped_bounds, snap_tick};
 #[derive(Debug, Default, Clone)]
 pub struct ArrangementInteractionState {
     /// 框选/选择框拖拽起点（音乐坐标 + 视图起点像素）
-    pub drag: Option<((f64, f32), Point)>,
+    pub drag: Option<((f64, f32), Point2)>,
     /// 移动已有选择：((origin_tick, origin_track_f), (current_tick, current_track_f))
     pub move_drag: Option<((f64, f32), (f64, f32))>,
     /// 移动开始时保存的原始选择矩形
     pub move_orig_sel: Option<(f64, f64, usize, usize)>,
     /// 橡皮擦拖拽
-    pub eraser_drag: Option<((f64, f32), Point)>,
+    pub eraser_drag: Option<((f64, f32), Point2)>,
     /// 切割工具拖拽
-    pub razor_drag: Option<((f64, f32), Point)>,
+    pub razor_drag: Option<((f64, f32), Point2)>,
     /// 当前鼠标是否在已有选择矩形内（仅用于 Pointer 工具光标）
     pub hover_inside_selection: bool,
     /// 当前鼠标位置（视图局部坐标）
-    pub last_local_pos: Option<Point>,
+    pub last_local_pos: Option<Point2>,
     /// 上次自动滚动时间，用于计算时间步长
     pub last_auto_scroll_time: Option<Instant>,
     /// 主鼠标键（左键）当前是否处于按下状态，用于检测丢失的释放事件。
     pub primary_down: bool,
     /// 中键拖拽起始位置（视图局部坐标），用于平移视口。
-    pub middle_drag: Option<Point>,
+    pub middle_drag: Option<Point2>,
     /// Curve 工具拖拽绘制音符：起点（tick, track）与当前局部坐标。
-    pub curve_drag: Option<((f64, usize), Point)>,
+    pub curve_drag: Option<((f64, usize), Point2)>,
 }
 
 impl ArrangementInteractionState {
@@ -73,11 +74,11 @@ pub type InteractionOutput = Vec<ArrangementAction>;
 #[derive(Debug)]
 pub struct ArrangementInteractionContext<'a> {
     /// 当前事件
-    pub event: &'a canvas::Event,
+    pub event: &'a ArrangementEvent,
     /// Canvas 屏幕区域
-    pub bounds: Rectangle,
+    pub bounds: Rect2,
     /// 鼠标光标状态
-    pub cursor: mouse::Cursor,
+    pub cursor: ArrangementCursor,
     /// 当前工具
     pub current_tool: Tool,
     /// 当前总轨道数
@@ -117,7 +118,7 @@ pub fn handle_event(
     if let Some(pos) = ctx.cursor.position() {
         state.last_local_pos = Some(geometry::local_pos(pos, ctx.bounds));
         state.hover_inside_selection = geometry::inside_selection_rect(
-            state.last_local_pos.unwrap_or(Point::new(0.0, 0.0)),
+            state.last_local_pos.unwrap_or(Point2::new(0.0, 0.0)),
             ctx.arr_sel_rect,
             viewport,
         );

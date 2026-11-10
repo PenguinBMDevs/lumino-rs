@@ -5,6 +5,7 @@
 //! Message 是泛型的，由上层 crate（lumino-ui）实例化具体的 UI 事件类型。
 
 pub mod arrangement_action;
+pub mod arrangement_event;
 pub mod audio_export;
 pub mod batch_edit;
 pub mod brush_settings;

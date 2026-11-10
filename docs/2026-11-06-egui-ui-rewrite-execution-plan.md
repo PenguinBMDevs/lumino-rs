@@ -1885,36 +1885,42 @@ callback / 多视口 / 截图能力。
   Point/50），钳 ±1 行、每行 10%，与 iced `zoom_factor_from_delta` 同口径。
 - 标尺计入 `blocked`；点击落播放线、上滚放大锚点不动（真机 `rl4-*.png`）。
 
-**Task 1.3（第五十八步）：走带交互层去 iced 化 —— 中立动作层（单源重构第 1/3 步）**
+**Task 1.3（第五十八步）：走带交互层去 iced 化 —— 中立动作层（1/3）**
 
-背景：泳道点击层（`ArrangementClickCanvas`）的 942 行交互逻辑直接产出 iced
-`Message`、直接吃 `canvas::Event`，egui 侧无法复用（且 `lumino-ui-egui` 不能引
-`lumino-ui-editor`，否则 iced 依赖立刻非零）。
+- 新增 `lumino-message/src/arrangement_action.rs`：`ArrangementAction`（12 变体，
+  与 `Message::Arrangement*` 一一对应）+ `into_message` / `batch_into_message`。
+- `InteractionOutput = Vec<ArrangementAction>`，交互层不再直接产出 iced `Message`。
 
-- **新增** `lumino-message/src/arrangement_action.rs`：框架无关的
-  `ArrangementAction`（12 个变体，与 `Message::Arrangement*` 一一对应）+
-  `into_message` / `batch_into_message`（单条直出、多条 `Batch`、空不产出），
-  侧栏选中用注入闭包翻译（`Message::Sidebar` 的载荷是泛型参数，本 crate 无法构造）。
-  2 个单测锁定映射与批处理语义。
-- **交互层改造**：`InteractionOutput = Vec<ArrangementAction>`；
-  `pointer/eraser/curve/auto_scroll` 全部改为产出中立动作；`click_canvas.rs` 在
-  `update` 边界一次性转成 `Message`（`batch_into_message`）。
-- 效果：**交互逻辑从此与 UI 框架无关**，egui 只需构造同样的输入并接动作，
-  不必复制一套选择/移动/框选语义（避免两套实现发散）。
+**Task 1.3（第五十九步）：交互层中立事件层（2/3）—— 交互模块已无 iced 引用**
+
+- **新增** `lumino-message/src/arrangement_event.rs`：`ArrangementEvent`
+  （按下/释放/移动/滚轮）、`ArrangementCursor`（`Option<Point2>`）、
+  `ArrangementScroll`（Lines/Pixels）、`ArrangementPointerButton`；另在
+  `types/geometry.rs` 补 `Rect2`（含 `contains`）与 `Point2` 的 `Add`/`Sub`。
+- **交互层替换**：`ArrangementInteractionContext` 的 `event` / `cursor` / `bounds`
+  改为 `&ArrangementEvent` / `ArrangementCursor` / `Rect2`；`pointer` / `eraser` /
+  `curve` / `auto_scroll` / `geometry` 全部改用中立类型（`Point2` / `Rect2`）。
+- **边界只转一次**：`click_canvas::update` 用 `to_neutral_event` /
+  `to_neutral_cursor` / `Rect2` 做一次转换，导航逻辑（中键平移、Ctrl 滚轮缩放、
+  Shift 横向滚动）也改吃中立事件（缩放因子用同口径的
+  `zoom_factor_from_scroll`）。
+- **实测结果**：`interaction.rs` + `interaction/*` 里 **iced 引用归零**
+  （只剩一行历史注释），即这 942 行交互逻辑已可被任意 UI 框架复用。
 - 验收：
-  - `lumino-message` 49/49（新增 2 个动作映射用例）；
-  - `lumino-ui-editor` lib 中 `arrangement` 相关 **90/90**；
+  - `lumino-ui-editor` 的 `arrangement` 相关 **90/90**（含 click_canvas 的
+    wheel/cursor 单测，它们仍用 iced 构造输入、走 `update` 的转换路径）；
+  - `lumino-message` 51/51（新增事件/光标/矩形用例）；
   - `lumino-ui` lib 864/864；`clippy -D warnings`（message / ui-editor）、
     `fmt --check`、`check --bin lumino-rs`；
   - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
 
-**Task 1.3（下一步）：中立事件层（第 2/3 步）**
+**Task 1.3（下一步）：egui 接同一份 handler（3/3）**
 
-1. 在 `lumino-message` 定义 `ArrangementEvent`（按键 / 移动 / 滚轮 / 修饰键 /
-   光标离开）与 `ArrangementCursor`（`Option<Point2>` + 是否在界内）；
-2. 交互层把 `canvas::Event` / `mouse::Cursor` 替换为上述中立类型（约 11 处模式匹配，
-   机械替换）；`click_canvas` 在 `update` 入口做一次转换；
-3. 第 3/3 步：egui 侧用 `arrangement_geometry` 的 canvas offset/size 建命中区，
-   构造中立事件喂给同一个 `handle_event`，动作走 `ArrangementAction` 通道 →
-   生产侧映射；真机 A/B（`=1` vs `=0`）验证选择/移动/框选后再 block 泳道区。
+1. `ArrangementViewport` 的 `canvas_offset/size` 由 iced `Point` 改为 `Point2`
+   （或在 egui 侧构造只读视图），使 `handle_event` 可被 egui 调用；
+2. egui 用 `arrangement_geometry` 的 offset/size 建泳道命中区，把
+   `PointerMoved/Pressed/Released/Wheel` 转成 `ArrangementEvent` 喂同一份逻辑，
+   产出的 `ArrangementAction` 走通道 → 生产侧映射（复用
+   `arrangement_action_message` 的同类写法）；
+3. 真机 A/B（`=1` vs `=0`）验证选择/移动/框选后再把泳道区计入 `blocked`；
 4. 之后 timeline / 吸附小图 → 一次性删 iced 整树并退役 `capture_iced`。

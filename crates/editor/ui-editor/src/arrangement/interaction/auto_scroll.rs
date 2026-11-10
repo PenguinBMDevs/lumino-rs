@@ -5,7 +5,7 @@
 use lumino_message::arrangement_action::ArrangementAction;
 use std::time::Instant;
 
-use iced_core::{Point, Rectangle};
+use lumino_message::types::geometry::{Point2, Rect2};
 
 use crate::arrangement::ArrangementViewport;
 
@@ -22,8 +22,8 @@ const MAX_DT: f32 = 0.05;
 /// 通过 `output` 发布 `ArrangementScrollX` / `ArrangementScrollY` 消息，
 /// 由 `Root` 应用到真实视口。
 pub fn auto_scroll_on_drag(
-    pos: Point,
-    bounds: Rectangle,
+    pos: Point2,
+    bounds: Rect2,
     viewport: &mut ArrangementViewport,
     track_count: usize,
     last_time: &mut Option<Instant>,

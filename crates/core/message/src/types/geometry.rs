@@ -36,3 +36,49 @@ impl Size2 {
         Self { width, height }
     }
 }
+
+/// 中立的矩形（左上角 + 宽高）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rect2 {
+    /// 左缘。
+    pub x: f32,
+    /// 上缘。
+    pub y: f32,
+    /// 宽度。
+    pub width: f32,
+    /// 高度。
+    pub height: f32,
+}
+
+impl Rect2 {
+    /// 构造矩形。
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// 是否包含某点（含边界）。
+    pub fn contains(&self, p: Point2) -> bool {
+        p.x >= self.x && p.x <= self.x + self.width && p.y >= self.y && p.y <= self.y + self.height
+    }
+}
+
+impl std::ops::Sub for Point2 {
+    type Output = Point2;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Point2::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
+impl std::ops::Add for Point2 {
+    type Output = Point2;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Point2::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
