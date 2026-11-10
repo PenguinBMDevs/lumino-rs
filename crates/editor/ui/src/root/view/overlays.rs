@@ -10,8 +10,7 @@ use lumino_core::tr;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    about_egg::view as view_about_egg, collaboration_dialog::view_collaboration_dialog,
-    export_progress_dialog::view_export_progress_dialog,
+    about_egg::view as view_about_egg, export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog, save_confirm_dialog::view_save_confirm_dialog,
     settings_dialog::view_settings_dialog, shape_drawer::view_shape_drawer,
 };
@@ -145,9 +144,8 @@ impl Root {
 
         // 对话框窗口 - 根据类型显示不同内容
         let content: Element<'_> = match self.state.dialog_type {
-            DialogType::Collaboration => {
-                view_collaboration_dialog(&self.state.collaboration_dialog, &self.window.theme)
-            }
+            // 协作：内容由 egui 整窗接管，iced 只留同尺寸底色。
+            DialogType::Collaboration => dialog_placeholder(&self.window.theme),
             DialogType::LoadConfirm => {
                 view_load_confirm_dialog(&self.state.load_confirm_dialog, &self.window.theme)
             }

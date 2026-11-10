@@ -222,7 +222,7 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // ── 内容随状态变化：必须声明高度下限 ──────────────────────────
         // 协作：连接 / 连接中 / 房间操作 / 房间内 四态内容高度不同，
         // 开局态未必最高 ⇒ 用旧高度 600 兜底（内容更高时仍按测量增长）
-        DialogType::Collaboration => DialogSizeHint::floored(800.0, 600.0),
+        DialogType::Collaboration => DialogSizeHint::pinned(800.0, 600.0),
         // 视频导出：Exporting / Finalizing / Completed / Error 四态 + 进度刷新，
         // 同样按旧高度 560 兜底
         DialogType::VideoExport => DialogSizeHint::floored(520.0, 560.0),

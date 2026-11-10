@@ -2479,3 +2479,30 @@ callback / 多视口 / 截图能力。
 2. 迁右栏剩余 iced 面板；
 3. 待 `capture_iced` 去留确认后删 iced 工具栏（含 `SnapIcon`），摘 `lumino-ui` 的
    `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十九步）：迁移协作对话框，删除最后一个多状态 iced 对话框（−392 行）**
+
+- **先核对内容形状**：egui 的四个协作视图（连接 / 连接中 / 房间操作 / 房间内）全部是
+  **定高绝对布局**——`in_room` 只有「房间行 / 邀请码 / 复制 / 断开」，**没有成员列表**，
+  因此钉死 800×600 不会裁内容（先前担心的「房内成员多」并不存在）。
+- `dialog_preferred_size`：`Collaboration` 由 `floored(800,600)` 改 `pinned(800,600)`；
+  `layout_is_state_invariant` 加入 `DialogType::Collaboration`（iced 侧已是整窗占位，
+  四态覆盖由 `collaboration_tests` 在 egui 模型层保证，corners 仍逐态渲染冒烟）。
+- `overlays.rs` 的 Collaboration 分支改 `dialog_placeholder`；删除
+  `view/collaboration_dialog.rs`（386 行）与 `pub mod`。
+- 验收：`lumino-ui` lib 849/849、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：右栏 iced 面板（体量大，需拆解）**
+
+`right_sidebar/` 约 4000 行，包含：`core`（布局/状态）、`material` +
+`materials_view`（素材列表绘制）、`material_context_menu`、`material_delete_dialog`、
+`piano_waterfall`（wgpu 键盘/瀑布流渲染，18 个文件）、`resize`、`view/i2m_*`。
+建议按「素材列表 → 右键菜单 → 删除确认 → i2m 面板 → 瀑布流」分批，每批保持
+`capture_iced` / `capture_egui` 不动；`piano_waterfall` 本身是 wgpu 渲染，
+属于「wgpu 管线整体接 egui」的一部分，需先把其输出接入 egui 外部纹理。
+
+**仍需用户确认**：退役 `capture_iced`（归档保留基线原图，改由 `capture_egui` 做唯一
+视觉门禁）——这是删除 iced 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）
+与摘除 `lumino-ui` 的 `iced_*` 的唯一前置条件。

@@ -105,6 +105,7 @@ fn layout_is_state_invariant(dialog_type: DialogType) -> bool {
     matches!(
         dialog_type,
         DialogType::VideoExport
+            | DialogType::Collaboration
             | DialogType::CloudConnect
             | DialogType::CloudBrowser
             | DialogType::CloudNotice
