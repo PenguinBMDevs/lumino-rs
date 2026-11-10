@@ -4,7 +4,6 @@ use iced_core::Length;
 use iced_widget::{button, column, container};
 use lumino_ui_core::constants::editor::ARRANGEMENT_RULER_HEIGHT;
 
-use crate::editor::arrangement::ArrangementRulerCanvas;
 use crate::resources::icon::{self, Icon};
 use crate::root::Root;
 use crate::sidebar::Event as SidebarEvent;
@@ -13,8 +12,10 @@ use crate::{Element, Theme};
 impl Root {
     /// 渲染工程走带视图
     ///
-    /// 左侧音轨列表（Canvas）+ 右侧 wgpu 渲染区域。
-    /// 音符由 WGPU ArrangementRenderer 绘制，不再使用 CPU 端 Canvas 预计算。
+    /// 左侧音轨列表 + 右侧 wgpu 渲染区域（`iced` 侧只做布局占位）。
+    ///
+    /// 轨道列 / 标尺 / 泳道输入全部由 egui 接管；wgpu 负责画网格与音符，
+    /// 其输出经 egui 外部纹理合成。
     pub(crate) fn view_arrangement(&self, available_width: f32) -> Element<'_> {
         puffin::profile_scope!("root_view_arrangement");
 
@@ -26,74 +27,9 @@ impl Root {
         let total_height = track_count as f32 * TRACK_HEIGHT * vp.zoom_y;
         let ppu = vp.zoom_x; // pixels_per_tick
 
-        // 左侧音轨列表 Canvas（与走带区域共享 scroll_y，实现同步滚动）
-        let track_data: Vec<(usize, String)> = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| (track.id, track.name.clone()))
-            .collect();
-
-        // 收集每轨的显示标签、通道号、Conductor 标识等元数据，
-        // 确保走带视图的通道标签与侧边栏一致。
-        let track_labels: Vec<String> = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| track.display_label.clone())
-            .collect();
-        let track_channels: Vec<u8> = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| track.channel)
-            .collect();
-        let track_conductors: Vec<bool> = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| track.is_conductor)
-            .collect();
-
-        // 静音/独奏状态：单一来源为 `sidebar.tracks`（同时驱动播放过滤）。
-        // 走带视图每帧按视觉顺序（与 track_data 对齐）派生到 TrackListCanvas，
-        // 经 ensure_state 同步到绘制缓冲，避免走带与卷帘两套状态发散。
-        let track_mutes: Vec<bool> = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| track.is_muted)
-            .collect();
-        let track_solos: Vec<bool> = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| track.is_soloed)
-            .collect();
-
-        let track_list_canvas = crate::editor::arrangement::TrackListCanvas::new(
-            track_data,
-            self.sidebar.selected_track,
-            vp.scroll_y,
-            TRACK_HEIGHT * vp.zoom_y,
-            total_height,
-        )
-        .with_labels(track_labels)
-        .with_channels(track_channels)
-        .with_conductors(track_conductors)
-        .with_mutes(track_mutes)
-        .with_solos(track_solos)
-        // 长按激活拖拽排序（Sidebar 统一计时），驱动走带指示线与遮罩绘制
-        .with_drag_active(
-            self.sidebar
-                .track_reorder
-                .as_ref()
-                .is_some_and(|r| r.active),
-        )
-        // Ctrl+滚轮垂直缩放：同步走带视口 zoom_y 与窗口级 Ctrl 键状态
-        .with_zoom_y(vp.zoom_y)
-        .with_ctrl_pressed(self.toolbar.ctrl_pressed);
-        let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
+        // 轨道列由 egui 绘制（`ui-egui` 的 arrangement::track_list）；
+        // iced 只保留同尺寸占位，保证布局与命中基准不变。
+        let track_list = iced_widget::Space::new()
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fill);
 
@@ -132,50 +68,13 @@ impl Root {
             .with_background(bg)
         });
 
-        // 左侧栏：音轨列表 Canvas 直接填满高度，与右侧走带区域对齐。
-        // add_track_btn 移至底部水平滚动条行，避免占用 Canvas 高度导致最后一轨截断。
+        // 左侧栏：轨道列占位与右侧走带区域对齐（绘制在 egui 侧）。
 
-        // 右侧走带区域 — 由 WGPU ArrangementRenderer 渲染
-        // 使用空容器作为占位，不设置背景色，让 wgpu 渲染可见
-        // 上方叠加透明 Canvas 捕获点击事件以移动演奏指示线
-        let track_count = self.sidebar.tracks.len();
-        let arr_sel_rect = self
-            .editor
-            .editor_state
-            .data
-            .arrange_selection
-            .rects
-            .first()
-            .map(|&(ts, te, _kl, _kh, tl, th)| (ts as f64, te as f64, tl as usize, th as usize));
-        let click_canvas = crate::editor::arrangement::ArrangementClickCanvas {
-            viewport: vp.clone(),
-            current_tool: self.editor.current_tool(),
-            track_count,
-            arr_sel_rect,
-            selected_notes: self.editor.arrangement_selected_notes(),
-            ppq: self.editor.editor_state.view.ppq,
-            precision: self.toolbar.snap_spec,
-            time_signatures: self.editor.editor_state.data.time_signatures.clone(),
-            ctrl_pressed: self.toolbar.ctrl_pressed,
-            shift_pressed: self.toolbar.shift_pressed,
-        };
-        let arrangement_area = iced_widget::Stack::new()
+        // 右侧走带区域：wgpu 渲染可见（空容器不加背景色），输入由 egui 处理。
+        // 走带主体（泳道）由 wgpu 渲染、输入由 egui 接管；iced 侧只保留占位。
+        let arrangement_area = iced_widget::container(iced_widget::Space::new())
             .width(Length::Fill)
-            .height(Length::Fill)
-            .push(
-                iced_widget::container(
-                    iced_widget::column![]
-                        .width(Length::Fill)
-                        .height(Length::Fill),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill),
-            )
-            .push(
-                iced_widget::canvas::Canvas::new(click_canvas)
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            );
+            .height(Length::Fill);
 
         // 水平滚动条：使用 cached_max_tick_end（已由 arrangement_max_tick_end() 更新），
         // 回退到 total_ticks 确保至少 4 小节宽度
@@ -213,13 +112,10 @@ impl Root {
         // 顶部时间标尺：走带主体是 WGPU 线框（无文字层），这里补 28px Canvas
         // 小节号标尺。它与下方走带区共用同一个 `scroll_x/zoom_x`，点击/拖拽
         // 发 `ArrangementCursorSet`，滚轮缩放与钢琴卷帘标尺一致。
-        let ruler = iced_widget::canvas::Canvas::new(ArrangementRulerCanvas {
-            viewport: vp.clone(),
-            ppq: self.editor.editor_state.view.ppq,
-            time_signatures: self.editor.editor_state.data.time_signatures.clone(),
-        })
-        .width(Length::Fill)
-        .height(Length::Fixed(ARRANGEMENT_RULER_HEIGHT));
+        // 顶部标尺由 egui 绘制；iced 侧占位保持 28px 高度。
+        let ruler = iced_widget::container(iced_widget::Space::new())
+            .width(Length::Fill)
+            .height(Length::Fixed(ARRANGEMENT_RULER_HEIGHT));
 
         // 三列顶部各留 28px：音轨列表/走带区/垂直滚动条从标尺下方开始，
         // 保证 lane 行与标尺刻度在同一 y 基准上。左右两角用同色背景补齐，

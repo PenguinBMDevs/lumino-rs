@@ -2001,3 +2001,35 @@ callback / 多视口 / 截图能力。
 2. `video_clip/timeline`（`TimelineCanvas`）与 `toolbar/view/snap_icon` 同法迁移；
 3. 三者清完后 `iced_widget::canvas` 不再被引用，再按依赖倒序摘除 `lumino-ui` 的
    `iced_*`，退役 `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十四步）：删除 iced 走带三件套（Program + 挂载）— 已完成**
+
+- **删除文件**：`ui-editor/src/arrangement/{click_canvas,ruler,track_list}.rs`、
+  `track_list/`、以及已无引用的旧 `interaction.rs` / `interaction/`（已迁入
+  `lumino-arrangement-core`）。
+- **`view_arrangement`**：三块 iced `Canvas` 换成同尺寸占位
+  （轨道列 160px `Space`、泳道 `container(Space)`、标尺 28px 容器），
+  同时删掉只为 Canvas 收集的 `track_data/labels/channels/conductors/mutes/solos`
+  与 `arr_selection` 局部变量。
+- `lumino-ui-editor/src/arrangement.rs` 只保留
+  `pub use lumino_arrangement_core::{interaction, ArrangementViewport}` + `ArrangementView`。
+- **真机（默认路径）**：走带仍完整渲染——轨道列 `000 Master / Conductor`、
+  `001 A01 / Setup` + M/S、标尺 `1..10` + 刻度线、泳道网格（
+  `target/del1-arrangement.png`），确认删除 iced Canvas 后无空洞、无叠影。
+- 验收：`ui-editor` lib 911/911、`lumino-ui` lib 864/864、`ui-egui` 18/18；
+  `clippy -D warnings`（ui-editor/ui/arrangement-core/ui-egui）、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+- **剩余 `iced_widget::canvas` 引用**（下一步）：
+  `toolbar/view/snap_icon.rs`、`view/video_clip/timeline.rs`、
+  `timeline_canvas{,/draw,/interact,/tests}.rs`。
+
+**Task 1.3（下一步）：迁 video_clip/timeline 与吸附小图**
+
+1. `TimelineCanvas`（视频剪辑时间轴）按同样方式迁 egui：数据/交互照搬，
+   iced 侧留占位；先确认视频剪辑面板不在 `capture_iced` 基线场景内；
+2. `SnapIcon`：egui 已有 `snap_glyph`，但直接占位会改 iced 工具栏像素
+   （实测 `capture_iced` 6 张基线不一致）——需与工具栏整体删除一起做；
+3. 两处清完后 `iced_widget::canvas` 不再被引用，再按依赖倒序摘除
+   `lumino-ui` 的 `iced_*`，退役 `capture_iced`，以
+   `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

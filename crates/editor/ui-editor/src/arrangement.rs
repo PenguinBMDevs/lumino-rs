@@ -2,12 +2,9 @@
 //!
 //! 音符由 WGPU ArrangementRenderer 渲染。
 
-pub mod click_canvas;
-pub mod ruler;
-pub mod track_list;
-
-// 视口与交互逻辑已下沉到 iced-free 的 `lumino-arrangement-core`：
-// iced 与 egui 各自把原生事件转成 `ArrangementEvent` 后调用同一份处理逻辑。
+// 视口与交互逻辑在 iced-free 的 `lumino-arrangement-core`；
+// 渲染与输入由 egui 侧接管（`lumino-ui-egui`），iced 侧不再有走带画布。
+// 说明：三个 `*Canvas`（点击层 / 轨道列 / 标尺）已随 egui 接管删除。
 pub use lumino_arrangement_core::interaction;
 pub use lumino_arrangement_core::viewport::ArrangementViewport;
 
@@ -28,10 +25,6 @@ impl ArrangementView {
         Self::default()
     }
 }
-
-pub use click_canvas::ArrangementClickCanvas;
-pub use ruler::ArrangementRulerCanvas;
-pub use track_list::TrackListCanvas;
 
 #[cfg(test)]
 mod tests {
