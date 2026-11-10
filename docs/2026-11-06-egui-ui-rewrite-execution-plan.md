@@ -2167,3 +2167,27 @@ callback / 多视口 / 截图能力。
 3. 之后 `lumino-ui` 仅剩整树 iced 视图（工具栏 / 右栏 / 混音台等），逐个迁移并
    摘除 `iced_*`，退役 `capture_iced`，以
    `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十九步）：剪辑带时间轴翻默认（已实拍确认）**
+
+- `LUMINO_EGUI_CLIP_TIMELINE` **默认开启**（`=0` 仅对照排查）。
+  原因：iced `TimelineCanvas` 已在上一轮删除，关闭开关只剩空白占位。
+- 真机（默认路径，不设任何环境变量，`target/clipdef.png`）：
+  - 标尺 `0s / 5s / 10s / 15s / 20s` + 主/次刻度；
+  - 视频轨（蓝，`视频` 标签 + 首尾白色把手）、音频轨（绿，`音频`）；
+  - 红色走带线在 0s 处；
+  - 上方 16:9 预览、`剪辑带` 传输行、导出设置均由 iced 渲染，未受影响。
+- 验收：`ui-egui` 24/24、`lumino-ui` lib 853/853、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：SnapIcon / iced 工具栏 —— 需要先决定 capture_iced 的去留**
+
+- 现状：`iced_widget::canvas` 只剩 `toolbar/view/snap_icon.rs` 一处。
+- 但**不能**现在单独替换：工具栏出现在 `capture_iced` 的 5 个基线场景里
+  （`PianoRollSkeleton` 等），单独占位实测会破 6 张基线；而整体删除 iced 工具栏
+  会让这 18 张基线**全部**失配。
+- 因此顺序必须调整：先**退役 `capture_iced`**（iced 视图开始成片删除后它已无法履行
+  “双实现像素对照”的职责），保留 `tests/ui-baseline/iced/` 作为历史归档，
+  以 `capture_egui` 作为唯一视觉门禁；然后再迁工具栏（含 SnapIcon）与其余 iced 视图。
+- 需要确认：是否同意在上述前提下退役 `capture_iced`（不是删除基线图，而是停止用它做门禁）。

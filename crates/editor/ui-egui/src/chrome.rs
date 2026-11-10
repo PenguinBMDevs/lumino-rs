@@ -178,13 +178,16 @@ fn video_timeline(
     .flatten()
 }
 
-/// 时间轴是否由 egui 接管（`LUMINO_EGUI_CLIP_TIMELINE=1`；默认关闭，先做像素对照）。
+/// 时间轴是否由 egui 接管。
+///
+/// **默认开启**：iced 侧的 `TimelineCanvas` 已删除（面板里只剩同尺寸占位），
+/// 关闭开关只会得到空白区域；`LUMINO_EGUI_CLIP_TIMELINE=0` 仅用于对照排查。
 fn video_timeline_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         std::env::var("LUMINO_EGUI_CLIP_TIMELINE")
             .map(|v| v != "0")
-            .unwrap_or(false)
+            .unwrap_or(true)
     })
 }
 
