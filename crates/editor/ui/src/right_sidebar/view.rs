@@ -1,20 +1,17 @@
 //! 右侧栏视图渲染
 
-mod i2m_config;
-mod i2m_panel;
 mod sidebar_button;
 
-use i2m_panel::i2m_panel;
 use sidebar_button::sidebar_button;
 
-use iced_core::{Alignment, Color, Length};
+use iced_core::{Color, Length};
 use iced_widget::{Column, Row, Space, button, container, mouse_area, tooltip};
 use lumino_extras::i18n::{Language, main_translations};
-use lumino_message::{I2mConfigField, RightSidebarAction};
+use lumino_message::RightSidebarAction;
 
 use crate::resources::icon::{self, Icon};
 use crate::right_sidebar::core::{
-    RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar, RightSidebarPanel, palette_algorithms,
+    RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar, RightSidebarPanel,
 };
 use crate::widget;
 use crate::{Element, Message, Theme, window};
@@ -81,13 +78,10 @@ pub fn view<'a>(
                 crate::right_sidebar::piano_waterfall::panel(right_sidebar, language, window)
             }
             RightSidebarPanel::ImageToMidi => {
-                if crate::host::overlay_enabled() {
-                    // egui 叠加层接管面板内容：这里只保留同宽占位，避免两份
-                    // 内容（文字 / 输入框）重影。拖拽手柄仍由 iced 负责。
-                    Space::new().width(Length::Fill).height(Length::Fill).into()
-                } else {
-                    i2m_panel(right_sidebar, window, language)
-                }
+                // 图片转 MIDI 面板内容已**完全**由 egui 绘制（选图 / 参数表 /
+                // 调色板 / 转换按钮）。iced 侧只保留同宽占位，避免两份内容重影；
+                // 原 `view/i2m_panel` + `view/i2m_config` 视图已删除。
+                Space::new().width(Length::Fill).height(Length::Fill).into()
             }
         };
 

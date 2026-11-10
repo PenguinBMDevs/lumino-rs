@@ -2595,3 +2595,28 @@ callback / 多视口 / 截图能力。
    egui 绘制，iced 侧同样只剩占位）；
 2. 右侧栏 6px 缩放手柄迁 egui，随后 `view.rs` 只保留图标列像素；
 3. `piano_waterfall` 的 iced `WaterfallProgram`（shader 图元）改为全 egui 外部纹理。
+
+**Task 1.3（第八十三步）：删除 iced 图片转 MIDI 面板视图（−251 行）**
+
+- 图片转 MIDI 面板内容已**完全**由 egui 绘制（选图按钮 / Key 范围 / 目标高度 /
+  每像素 tick / 颜色数 / 调色板 / 转换按钮）。`view.rs` 的 ImageToMidi 分支固定为
+  同宽占位，删除：
+  - `right_sidebar/view/i2m_panel.rs`（121）
+  - `right_sidebar/view/i2m_config.rs`（117）
+- 顺带清理 `view.rs` 的三处失效 import（`Alignment` / `I2mConfigField` /
+  `palette_algorithms`）。
+- **保留** `view/sidebar_button.rs` 与图标列：`capture_iced` 的 6 张基线含图标像素。
+- 真机（窗口左移避免屏幕裁边）：点击第 1 格 → 面板显示完整参数表
+  （`图片转 MIDI` / `选择图片文件` / `Key 范围 21~108` / `目标高度 0` /
+  `每像素 tick 1` / `颜色数 16` / `调色板 K-Means++`），证明 iced 视图删除后
+  内容未退化（`target/i2m-after-del.png`）。
+- 验收：`lumino-ui` lib 841/841、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`；`capture_iced` 18/18、`capture_egui` 12/12，
+  `tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 右侧栏 6px 缩放手柄迁 egui（`ResizeDragStarted/Dragged/Ended`）；此后
+   `right_sidebar/view.rs` 只剩图标列像素，可整体并入「待退役」清单；
+2. `piano_waterfall` 的 iced `WaterfallProgram`（shader 图元）改为全 egui 外部纹理；
+3. 待 `capture_iced` 退役确认后删 iced 工具栏（含 `SnapIcon`）与图标列。
