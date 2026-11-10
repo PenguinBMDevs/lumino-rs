@@ -1891,36 +1891,48 @@ callback / 多视口 / 截图能力。
   与 `Message::Arrangement*` 一一对应）+ `into_message` / `batch_into_message`。
 - `InteractionOutput = Vec<ArrangementAction>`，交互层不再直接产出 iced `Message`。
 
-**Task 1.3（第五十九步）：交互层中立事件层（2/3）—— 交互模块已无 iced 引用**
+**Task 1.3（第五十九步）：交互层中立事件层（2/3）**
 
-- **新增** `lumino-message/src/arrangement_event.rs`：`ArrangementEvent`
-  （按下/释放/移动/滚轮）、`ArrangementCursor`（`Option<Point2>`）、
-  `ArrangementScroll`（Lines/Pixels）、`ArrangementPointerButton`；另在
-  `types/geometry.rs` 补 `Rect2`（含 `contains`）与 `Point2` 的 `Add`/`Sub`。
-- **交互层替换**：`ArrangementInteractionContext` 的 `event` / `cursor` / `bounds`
-  改为 `&ArrangementEvent` / `ArrangementCursor` / `Rect2`；`pointer` / `eraser` /
-  `curve` / `auto_scroll` / `geometry` 全部改用中立类型（`Point2` / `Rect2`）。
-- **边界只转一次**：`click_canvas::update` 用 `to_neutral_event` /
-  `to_neutral_cursor` / `Rect2` 做一次转换，导航逻辑（中键平移、Ctrl 滚轮缩放、
-  Shift 横向滚动）也改吃中立事件（缩放因子用同口径的
-  `zoom_factor_from_scroll`）。
-- **实测结果**：`interaction.rs` + `interaction/*` 里 **iced 引用归零**
-  （只剩一行历史注释），即这 942 行交互逻辑已可被任意 UI 框架复用。
+- `lumino-message/src/arrangement_event.rs`：`ArrangementEvent` / `ArrangementCursor` /
+  `ArrangementScroll` / `ArrangementPointerButton`；`types/geometry` 补 `Rect2` 与
+  `Point2` 的 `Add`/`Sub`。交互层改吃中立事件，`click_canvas::update` 入口转一次。
+- 结果：`interaction.rs` + `interaction/*` 里 iced 引用归零。
+
+**Task 1.3（第六十步）：交互层下沉到 iced-free crate（3/3 前半）**
+
+- **新增 crate** `crates/editor/arrangement-core`（`lumino-arrangement-core`，依赖仅
+  `lumino-core` / `lumino-message` / `puffin`）：
+  - `viewport.rs`：`ArrangementViewport`（`canvas_offset/size` 从 iced `Point` 改为
+    `Point2`）+ X 轴缩放上下限、`DEFAULT_MIN_TICKS` 三个常量的**单一来源**；
+  - `interaction*`：942 行交互逻辑原样迁入。
+- `lumino-ui-editor` 改为 `pub use lumino_arrangement_core::interaction;` +
+  `pub use ...::viewport::ArrangementViewport;`，只保留 iced 画布适配；
+  `lumino-ui-core` 的 `MIN/MAX_ARRANGEMENT_ZOOM_X` 改为 re-export（避免两份常量漂移）。
+- `lumino-ui-egui` 新增对 `lumino-arrangement-core` / `lumino-message` 的依赖，
+  新增 `chrome/arrangement/lane.rs`：egui 事件 → `ArrangementEvent` → **同一个**
+  `handle_event`，动作直接是 `ArrangementAction`。
+- 依赖实测：`lumino-ui-egui` **0 iced**（加了两个新依赖后仍为 0）、
+  `lumino-arrangement-core` **0 iced**、`lumino-message` **0 iced**。
 - 验收：
-  - `lumino-ui-editor` 的 `arrangement` 相关 **90/90**（含 click_canvas 的
-    wheel/cursor 单测，它们仍用 iced 构造输入、走 `update` 的转换路径）；
-  - `lumino-message` 51/51（新增事件/光标/矩形用例）；
-  - `lumino-ui` lib 864/864；`clippy -D warnings`（message / ui-editor）、
+  - 新增 `lane.rs` 2 个用例：**egui crate 直接驱动共享 handler**（点击产出
+    `SelectionCleared` + `CursorSet`；拖拽产出 `DragSelectionRect` → 释放
+    `SelectionChanged`）；
+  - `lumino-arrangement-core` 5/5（pointer 的 ghost key 用例随迁）；
+  - `lumino-ui-editor` arrangement 85/85（原 90，5 个随迁；总数不变）；
+  - `lumino-ui-egui` 15/15、`lumino-ui` lib 864/864；
+  - `clippy -D warnings`（arrangement-core / ui-editor / ui-egui / ui / message）、
     `fmt --check`、`check --bin lumino-rs`；
   - `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+- **踩坑**：抽取 viewport 时把 `ArrangementView`（视口 + ghost + 框选矩形）一起切掉，
+  `lumino-ui` 立刻报 `cannot find ArrangementView` —— 已补回；`canvas_size/offset`
+  从 iced `Point` 换 `Point2` 后，`collect.rs` 写入点需要显式构造 `Point2`。
 
-**Task 1.3（下一步）：egui 接同一份 handler（3/3）**
+**Task 1.3（下一步）：把 lane 接到真机（3/3 后半）**
 
-1. `ArrangementViewport` 的 `canvas_offset/size` 由 iced `Point` 改为 `Point2`
-   （或在 egui 侧构造只读视图），使 `handle_event` 可被 egui 调用；
-2. egui 用 `arrangement_geometry` 的 offset/size 建泳道命中区，把
-   `PointerMoved/Pressed/Released/Wheel` 转成 `ArrangementEvent` 喂同一份逻辑，
-   产出的 `ArrangementAction` 走通道 → 生产侧映射（复用
-   `arrangement_action_message` 的同类写法）；
-3. 真机 A/B（`=1` vs `=0`）验证选择/移动/框选后再把泳道区计入 `blocked`；
-4. 之后 timeline / 吸附小图 → 一次性删 iced 整树并退役 `capture_iced`。
+1. 生产侧构建 `LaneContext`（用 `arrangement_geometry` 的 offset/size 作为 `rect`），
+   在 egui 侧把 `PointerMoved/Pressed/Released` 与滚轮转成 `ArrangementEvent`；
+2. `ArrangementAction` 通道 → 生产映射（`cursor/selection/drag_rect/ghost` 等已有
+   同名 `Message`），先不 `blocked`，真机 A/B（`=1` vs `=0`）确认选择/移动/框选一致；
+3. 对齐后把泳道矩形计入 `blocked`，再翻 `LUMINO_EGUI_ARRANGEMENT` 默认值；
+4. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役 `capture_iced`，
+   以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

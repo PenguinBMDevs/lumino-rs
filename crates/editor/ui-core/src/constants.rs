@@ -51,10 +51,10 @@ pub mod editor {
         /// 故给音高轴一个更高的专用上限，保证键盘可放大到填满并保留缩放手感。
         pub const MAX_PITCH_ZOOM: f32 = 48.0;
 
-        /// 走带视图 X 轴最小缩放
-        pub const MIN_ARRANGEMENT_ZOOM_X: f32 = 0.01;
-        /// 走带视图 X 轴最大缩放
-        pub const MAX_ARRANGEMENT_ZOOM_X: f32 = 10.0;
+        /// 走带视图 X 轴最大缩放（单一来源：`lumino-arrangement-core`）
+        pub use lumino_arrangement_core::viewport::MAX_ARRANGEMENT_ZOOM_X;
+        /// 走带视图 X 轴最小缩放（单一来源：`lumino-arrangement-core`）
+        pub use lumino_arrangement_core::viewport::MIN_ARRANGEMENT_ZOOM_X;
         /// 走带视图 Y 轴最小缩放
         pub const MIN_ARRANGEMENT_ZOOM_Y: f32 = 0.2;
         /// 走带视图 Y 轴最大缩放

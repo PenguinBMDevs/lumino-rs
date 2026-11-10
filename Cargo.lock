@@ -4547,6 +4547,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-arrangement-core"
+version = "0.2.1"
+dependencies = [
+ "lumino-core",
+ "lumino-message",
+ "puffin",
+]
+
+[[package]]
 name = "lumino-cloud"
 version = "0.2.1"
 dependencies = [
@@ -4988,6 +4997,7 @@ dependencies = [
  "iced_core",
  "iced_wgpu",
  "iced_widget",
+ "lumino-arrangement-core",
  "lumino-core",
  "lumino-extras",
  "lumino-message",
@@ -5010,6 +5020,7 @@ dependencies = [
  "iced_wgpu",
  "iced_widget",
  "im",
+ "lumino-arrangement-core",
  "lumino-core",
  "lumino-diagnostics",
  "lumino-editor-state",
@@ -5040,10 +5051,12 @@ dependencies = [
  "egui_kittest",
  "fontdb 0.23.0",
  "image",
+ "lumino-arrangement-core",
  "lumino-core",
  "lumino-editor-state",
  "lumino-egui-bridge",
  "lumino-extras",
+ "lumino-message",
  "once_cell",
  "pollster 0.4.0",
  "resvg 0.44.0",

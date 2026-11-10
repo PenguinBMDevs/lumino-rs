@@ -8,6 +8,7 @@
 //!
 //! 坐标约定：`tick_to_x = tick * zoom_x - scroll_x`（与 wgpu 网格同源）。
 
+pub mod lane;
 mod measures;
 mod track_list;
 

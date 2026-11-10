@@ -19,6 +19,8 @@ capture = ["dep:egui_kittest"]
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-message = { workspace = true }
+lumino-arrangement-core = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-editor-state = { workspace = true }
 egui = { workspace = true }
