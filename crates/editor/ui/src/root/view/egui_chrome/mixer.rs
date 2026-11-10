@@ -1,17 +1,26 @@
-//! 混音台：生产状态 → egui 模型（真实矩形来自 iced 面板探针）。
+//! 混音台：生产状态 → egui 模型。
+//!
+//! 面板矩形按**窗口真实尺寸**锚定（左下角、状态栏之上），不再依赖 iced 面板的
+//! 探针矩形——探针测的是 iced 的「全屏外层容器」，不是可见面板本体。
 
 use lumino_ui_egui::mixer::{MixerLayout, MixerModel, MixerStrip};
 
 use crate::root::Root;
 
 impl Root {
-    /// 混音台模型 + 布局；面板未打开时返回 `None`。
-    pub(crate) fn mixer_model(&self) -> Option<(MixerLayout, MixerModel)> {
+    /// 窗口逻辑宽度/高度由宿主每帧传入（`size_px / ppp`）。
+    pub(crate) fn mixer_model(
+        &self,
+        window_w: f32,
+        window_h: f32,
+    ) -> Option<(MixerLayout, MixerModel)> {
         if !self.mixer_panel.open {
             return None;
         }
-        let bounds = crate::view::video_clip::rect_probe::last_rect("mixer::panel")?;
-        if bounds.width <= 0.0 {
+        // 底缘 = 窗口高 − 状态栏；左缘 = 面板偏移。
+        let bottom = window_h - STATUSBAR_H;
+        let left = self.mixer_panel.offset.0;
+        if bottom <= 0.0 || window_w <= 0.0 {
             return None;
         }
 
@@ -63,10 +72,13 @@ impl Root {
             strips,
             master,
         };
-        let layout = MixerLayout::new(bounds.x, bounds.y + bounds.height, bounds.width, &model);
+        let layout = MixerLayout::new(left, bottom, window_w, &model);
         Some((layout, model))
     }
 }
+
+/// 状态栏高度（与 `layout::STATUSBAR_H` 一致；此处避免跨 crate 依赖）。
+const STATUSBAR_H: f32 = 20.0;
 
 impl Root {
     /// 混音台动作 → 生产消息（构造函数已直接返回 `Message`）。

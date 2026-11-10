@@ -13,16 +13,6 @@ fn root() -> Root {
 }
 
 fn open_mixer(root: &mut Root) {
-    // 注入探针矩形（真机里来自 iced 面板布局）。
-    crate::view::video_clip::rect_probe::set_rect_for_test(
-        "mixer::panel",
-        iced_core::Rectangle {
-            x: 60.0,
-            y: 300.0,
-            width: 400.0,
-            height: 280.0,
-        },
-    );
     root.mixer_panel.open = true;
     root.mixer_panel.maximized = true;
     root.mixer_panel.master_volume = 100;
@@ -32,10 +22,12 @@ fn open_mixer(root: &mut Root) {
 fn mixer_model_is_built_from_state() {
     let mut root = root();
     open_mixer(&mut root);
-    let (layout, model) = root.mixer_model().expect("面板打开且矩形已知时应产出模型");
+    let (layout, model) = root
+        .mixer_model(2048.0, 1232.0)
+        .expect("面板打开且矩形已知时应产出模型");
 
-    // 布局贴底：面板底缘 = 探针 y+height。
-    assert!((layout.panel.bottom() - 580.0).abs() < 0.01);
+    // 布局贴底：面板底缘 = 窗口高 − 状态栏（1232 − 20 = 1212）。
+    assert!((layout.panel.bottom() - 1212.0).abs() < 0.01);
     assert!((layout.body.top() - layout.panel.top() - 28.0).abs() < 0.01);
 
     // 通道条数量 = 音轨数；主控条存在。
@@ -50,7 +42,10 @@ fn mixer_model_is_built_from_state() {
 fn mixer_closed_or_unknown_rect_yields_none() {
     let mut root = root();
     root.mixer_panel.open = false;
-    assert!(root.mixer_model().is_none(), "关闭时不产出模型");
+    assert!(
+        root.mixer_model(2048.0, 1232.0).is_none(),
+        "关闭时不产出模型"
+    );
 }
 
 #[test]
@@ -95,7 +90,7 @@ fn mixer_actions_map_to_sidebar_events() {
 fn mixer_hit_test_reaches_fader_and_buttons() {
     let mut root = root();
     open_mixer(&mut root);
-    let (layout, model) = root.mixer_model().expect("模型");
+    let (layout, model) = root.mixer_model(2048.0, 1232.0).expect("模型");
     // 第一条推子中部。
     let strip = layout.strip_rect(0, model.scroll_x);
     let fader = egui::pos2(strip.center().x, strip.top() + 60.0);

@@ -147,6 +147,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 /// 其余区域不绘制任何东西，保持下层 iced 画面可见；两条 band 用不透明底色
 /// 完全覆盖同位置的 iced 版本，避免文字重影。标题栏为 `None`（系统原生
 /// 标题栏）时跳过顶部 band。
+/// 记录本帧真实窗口逻辑尺寸（由宿主提供）。
+///
+/// 路由栏底部按钮必须按**窗口高度**锚定：`ui.max_rect()` / `viewport_rect()`
+/// 在某些 frame 会给出无界值（实测有一趟为 7980），按它算会把底部按钮推出屏幕。
+pub fn set_window_size(ctx: &egui::Context, size: egui::Vec2) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.window-size"), size));
+}
+
+/// 取本帧真实窗口逻辑尺寸。
+fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
+    ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
+}
+
 /// 记录本帧的走带标尺模型（`None` = 不接管或不在走带路由）。
 pub fn set_arrangement(ctx: &egui::Context, model: Option<ArrangementModel>) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.arrangement"), model));

@@ -2346,3 +2346,41 @@ callback / 多视口 / 截图能力。
 4. 迁移右栏剩余 iced 面板；待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）
    等整树 iced 视图，摘 `lumino-ui` 的 `iced_*`，以
    `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十五步）：修复 egui 指针缩放（ppp² → ppp）——窗口下部 20% 不可点的真因，混音台真机 A/B 通过**
+
+- **根因**：`egui_overlay.rs::input_scale` 返回 `ppp * ppp`（1.5625），而绘制用
+  `pixels_per_point = 1.25`。winit 的 `CursorMoved.position` 是**物理像素**，
+  多除一次 ppp 后 egui 记到的指针比实际小 1.25 倍。
+  实测取证：客户端逻辑 (24,240) 在 egui 里变成 `(19.2,192)`；
+  混音台推子 (104,1040) 变成 `(83.2,832)`（面板顶 932 → 永远命中不到）。
+  因此 **窗口下方约 20% 的区域在 egui 里根本点不到**——路由栏底部按钮、
+  混音台、以及任何贴底控件都受影响。
+- **修复**：`input_scale` 只除一次 ppp；`LUMINO_EGUI_INPUT_SCALE` 保留为排查覆盖。
+- **配套修复**：
+  1. `route_bar_bottom` 改用宿主注入的**真实窗口高度**（新增
+     `chrome::set_window_size`，`ui.max_rect()/viewport_rect()` 在部分 frame 为 7980），
+     并抽出纯函数 `bottom_bar_origin(bottom_edge, count)` + 2 个单测
+     （混音台必须贴到状态栏上沿 1164..1212）；
+  2. 宿主每收到一个 egui 输入事件就 `request_redraw()`：叠加层只在 `present` 时运行，
+     不重绘则事件永远滞留在缓冲里；
+  3. 混音台面板矩形改为按窗口尺寸锚定（左下、状态栏之上），不再依赖 iced 面板探针
+     （探针测的是 iced 的全屏外层容器，不是可见面板）；`mixer_model(w, h)` 显式
+     接收窗口逻辑尺寸，单测断言底缘 = `H − 20`。
+- **真机 A/B（默认路径 + `LUMINO_MIXER_OPEN=1`，DPI-aware 自动化）**：
+  - 面板 (56,932)-(956,1212)，两条 `A01` 通道；
+  - 点推子 → `混音台动作：Gain { index: 0, value: 0.5172 }`，
+    截图推子位置随之变化；
+  - 点 M → `混音台动作：Mute(0)`，截图 M 按钮变红；
+  - 点声像 → `混音台动作：Pan { index: 0, value: -0.5636 }`。
+  三者均映射为 `track_gain_changed` / `track_mute_toggled` / `track_pan_changed` 并分发。
+- 验收：`ui-egui` 30/30（新增 2 个底栏锚定用例）、`lumino-ui` lib 857/857、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 把 iced 混音台面板换成同尺寸占位（egui 已完全接管绘制与输入，探针不再需要）；
+2. 迁右栏剩余 iced 面板；
+3. 待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）等整树 iced 视图，
+   摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

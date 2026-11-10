@@ -162,6 +162,14 @@ impl EguiOverlay {
 
         let ctx = self.ctx.clone();
         let icons = &mut self.icons;
+        // 真实窗口逻辑尺寸：路由栏底部按钮据此锚定（`ui.max_rect()` 可能无界）。
+        lumino_ui_egui::chrome::set_window_size(
+            &ctx,
+            egui::vec2(
+                frame.size_px[0] as f32 / frame.pixels_per_point.max(1e-3),
+                frame.size_px[1] as f32 / frame.pixels_per_point.max(1e-3),
+            ),
+        );
         // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
@@ -375,7 +383,10 @@ impl Host {
             video_export,
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(),
-            mixer: self.root.mixer_model(),
+            mixer: self.root.mixer_model(
+                size.width as f32 / pixels_per_point.max(1e-3),
+                size.height as f32 / pixels_per_point.max(1e-3),
+            ),
             editor_texture: self.egui_editor_texture.clone(),
             events,
             focused,
@@ -405,6 +416,10 @@ impl Host {
         if !overlay_enabled() {
             return false;
         }
+        // 输入事件必须驱动一次重绘：叠加层只在 `present` 时运行，
+        // 若这帧不再重绘，缓冲里的事件永远得不到处理（真机表现：egui 独占区域
+        // 内的点击「像没反应」——`pointer` 一直是 `None`、帧数停在个位数）。
+        self.window_ctx.window.request_redraw();
         // 与渲染用的 `pixels_per_point` 同源：两者必须一致，否则命中坐标
         // 与实际绘制的控件位置会按比例错开（真机实测：指针比布局大 1.25 倍时，
         // 点击路由栏会整体下移一格）。
@@ -544,12 +559,13 @@ fn input_scale(ppp: f32) -> f32 {
         return value;
     }
     let ppp = if ppp > 0.0 { ppp } else { 1.0 };
-    // 双重换算抵消：egui 在 `run_ui` 里会把事件位置再乘一次 `pixels_per_point`
-    // （它把 `RawInput.events` 当作像素量），而这里传入的是 winit 的物理像素。
-    // 若只除一次 ppp，主窗口（ppp=1.25）的指针会比布局大 1.25 倍，命中整体错位
-    // —— 真机实测：除 1.5625（= ppp²）时指针 (30,367) 得到点坐标 (24,293.6)，
-    // 与布局一致；除 1.0 / 1.25 分别得到 (38,459) / (30.4,367.2)。
-    ppp * ppp
+    // winit 的 `CursorMoved.position` 是**物理像素**，egui 用逻辑点：只除一次 ppp。
+    //
+    // 此前这里多除了一次（ppp²），指针坐标比绘制位置小 1.25 倍。真机取证：
+    // 客户端逻辑 (24,240) 在 egui 里变成 (19.2,192)，于是窗口下方约 20% 的区域
+    // 永远命中不到——混音台与路由栏底部按钮「点了没反应」都是这个原因。
+    // `LUMINO_EGUI_INPUT_SCALE` 仍可强制覆盖用于排查。
+    ppp
 }
 
 /// egui 叠加层是否启用。

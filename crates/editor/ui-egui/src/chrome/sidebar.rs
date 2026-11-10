@@ -314,13 +314,16 @@ fn route_bar_bottom(
     ));
 
     // Ui 的高度可能是无界的（父级 `max_rect` 未定高），直接用 `rect.bottom()`
-    // 会把底部按钮推到屏幕外（实测有一趟 pass 底缘 = 7980）。钳到视口内（让出状态栏）。
-    let viewport_bottom = ui.ctx().viewport_rect().bottom() - 20.0;
+    // 会把底部按钮推到屏幕外（实测有一趟 pass 底缘 = 7980）。
+    // 因此优先用宿主给出的真实窗口高度锚定，其次才回退到 Ui/视口。
+    let viewport_bottom = super::window_size(ui.ctx())
+        .map(|size| size.y - super::layout::STATUSBAR_H)
+        .unwrap_or_else(|| ui.ctx().viewport_rect().bottom() - super::layout::STATUSBAR_H);
     let bottom_edge = rect.bottom().min(viewport_bottom);
     if debug_rects() {
         tracing::warn!(?rect, viewport_bottom, bottom_edge, "DEBUG route bar rect");
     }
-    let mut by = bottom_edge - ROUTE_BTN * bottom.len() as f32;
+    let mut by = bottom_bar_origin(bottom_edge, bottom.len());
     // 底部按钮同样经动作通道下发：`ui.interact` 会吃掉点击，
     // 传 `None` 就成了「吃了事件还不响应」的死按钮（真机表现：混音台点不开）。
     let mut routes = Vec::new();
@@ -334,6 +337,14 @@ fn route_bar_bottom(
         route_button(ui, icons, icon, left, by, active, Some(route));
         by += ROUTE_BTN;
     }
+}
+
+/// 底部按钮组的第一项 y：整组贴 `bottom_edge` 向上排。
+///
+/// 抽成纯函数的原因：UI 侧 `rect.bottom()` 在部分 frame 会无界（实测 7980），
+/// 这里只接受**已钳制**的底缘，便于单测锁定「混音台永远贴底」这一不变量。
+fn bottom_bar_origin(bottom_edge: f32, count: usize) -> f32 {
+    bottom_edge - ROUTE_BTN * count as f32
 }
 
 /// 单个路由按钮：左侧 2px 灯条 + 20×20 图标（图标起点 = 左 + 14）。
@@ -475,3 +486,28 @@ fn right_button(
 
 /// 右侧栏图标尺寸（生产 20×20）。
 const RIGHT_ICON: f32 = 20.0;
+
+#[cfg(test)]
+mod bottom_bar_tests {
+    use super::*;
+
+    #[test]
+    fn bottom_bar_stacks_up_from_window_bottom() {
+        // 窗口 1232、状态栏 20 → 底缘 1212；三个按钮（横/纵/混音台）。
+        let origin = bottom_bar_origin(1212.0, 3);
+        assert!((origin - 1068.0).abs() < 0.01);
+        // 混音台是最后一项 → 恰好贴底（1164..1212）。
+        let mixer_y = origin + 2.0 * ROUTE_BTN;
+        assert!((mixer_y - 1164.0).abs() < 0.01);
+        assert!(
+            (mixer_y + ROUTE_BTN - 1212.0).abs() < 0.01,
+            "混音台必须贴到状态栏上沿"
+        );
+    }
+
+    #[test]
+    fn bottom_bar_handles_single_button() {
+        // 只有混音台时：直接贴底。
+        assert!((bottom_bar_origin(1212.0, 1) - 1164.0).abs() < 0.01);
+    }
+}
