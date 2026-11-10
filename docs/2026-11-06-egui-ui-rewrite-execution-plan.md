@@ -2276,3 +2276,31 @@ callback / 多视口 / 截图能力。
 3. 之后迁右栏剩余 iced 面板；待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）
    等整树 iced 视图，摘 `lumino-ui` 的 `iced_*`，以
    `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十三步）：修复路由栏死区（真实缺陷）+ 坐标偏移仍待定位**
+
+- **缺陷**：`ui-egui/src/chrome/sidebar.rs` 里残留 `menu::extend_blocked([route])`。
+  egui 并不消费路由栏点击（点击仍交给 iced），整列计入占用区 ⇒ **死区**：
+  底栏混音台/卷帘方向按钮永远点不开。已删除该行并补注释说明「只绘制、不占用」。
+- **修复后实测**（同一次运行，`RUST_LOG=warn` + 临时 sidebar 事件日志）：
+  - 点轨道行（物理 100,180）→ `TrackReorderMoved/Ended/Cancelled`（iced 正常收到）；
+  - 点路由栏物理 (30,1485) → `GroupToggled(Waterfall)`；
+  - 点路由栏物理 (30,247) → `GroupToggled(Renderer)`。
+- **新问题（阻塞）**：修复死区后点击确实到达 iced，但 **iced 路由栏的命中坐标与绘制
+  位置仍大幅不一致**——按 egui 绘制（`route_bar_bottom` 贴底、48 步进）推算混音台
+  应在物理 ≈1485，实际该点命中的是 `Waterfall` 组（egui 里位于逻辑 222≈物理 278）。
+  即 iced 侧路由栏的命中盒与 egui 绘制存在数百逻辑像素级偏移，混音台入口无法用
+  坐标推算命中。
+- 验收：`lumino-ui` lib 857/857、`ui-egui` 28/28、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 给 iced 路由栏加一次性 rect dump（同 `rect_probe` 思路，打在
+   `sidebar/route.rs` 的 `bar_button` 上），把 iced 每个按钮的真实 y 打出来，
+   与 egui `route_bar_bottom` 的 48 步进逐项对齐；
+2. 对齐后再点混音台入口，完成推子/声像/M·S/拖拽真机 A/B；
+3. 通过后把 iced 混音台面板换同尺寸占位（探针保留），继续右栏面板；
+4. 待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）等整树 iced 视图，
+   摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

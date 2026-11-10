@@ -80,10 +80,9 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
     let route = Rect::from_min_size(rect.min, Vec2::new(ROUTE_BAR_W, rect.height()));
     ui.painter().rect_filled(route, 0, theme::route_bar_bg());
 
-    // 路由栏点击仍由 iced 处理（egui 只负责绘制），不要把这一列计入占用区，
-    // 否则 iced 的路由按钮会收不到事件、整列变成死区。
-    // 点击由 egui 处理：整列计入占用区，避免同一次点击又落到下面的 iced 按钮上。
-    super::menu::extend_blocked(ui.ctx(), [route]);
+    // 路由栏只由 egui **绘制**，点击仍交给 iced 的按钮处理。
+    // 绝不能把这一列计入占用区：egui 并不消费路由点击，占用会让整列变成死区
+    // （真机表现：底栏混音台按钮永远点不开）。
 
     route_bar(ui, rect, model, icons);
 
