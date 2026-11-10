@@ -130,9 +130,12 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
     let content_width = canvas_data.content_width();
 
     // 内容区 Canvas（标尺 + 双轨 + 走带指示线）
-    let timeline_canvas = iced_widget::canvas::Canvas::new(canvas_data)
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let timeline_canvas = crate::view::video_clip::rect_probe::probe(
+        "renderer::clip_canvas",
+        iced_widget::canvas::Canvas::new(canvas_data)
+            .width(Length::Fill)
+            .height(Length::Fill),
+    );
     // 剪辑面板独立传输按钮（与卷帘 PlaybackManager 完全无关）
     // 以 SVG 图标渲染（复用 app 级图标管线，禁止 emoji）
     let play_icon = if params.is_playing {

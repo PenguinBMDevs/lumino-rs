@@ -68,6 +68,11 @@ struct OverlayFrame<'a> {
     editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 走带标尺模型；`Some` 且开关打开时由 egui 绘制。
     arrangement: Option<lumino_ui_egui::chrome::ArrangementModel>,
+    /// 视频剪辑时间轴（真实矩形 + 模型）；`Some` 且开关打开时由 egui 绘制。
+    video_timeline: Option<(
+        egui::Rect,
+        lumino_ui_egui::video_clip_timeline::VideoTimelineModel,
+    )>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -154,6 +159,7 @@ impl EguiOverlay {
         let icons = &mut self.icons;
         // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
+        lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -362,6 +368,7 @@ impl Host {
             shape_canvas,
             video_export,
             arrangement: self.root.arrangement_model(),
+            video_timeline: self.root.video_timeline_model(),
             editor_texture: self.egui_editor_texture.clone(),
             events,
             focused,

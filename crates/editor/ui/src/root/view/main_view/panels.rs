@@ -205,7 +205,9 @@ impl Root {
                 preview_content,
             );
 
-            let timeline = crate::view::video_clip::timeline::timeline_pane(
+            let timeline = crate::view::video_clip::rect_probe::probe(
+                "renderer::timeline",
+                crate::view::video_clip::timeline::timeline_pane(
                 &theme,
                 crate::view::video_clip::timeline::TimelinePaneParams {
                     total_ticks,
@@ -219,6 +221,7 @@ impl Root {
                     video_edit,
                     audio_edit,
                 },
+                ),
             );
             let settings = {
                 let s = &export_state;

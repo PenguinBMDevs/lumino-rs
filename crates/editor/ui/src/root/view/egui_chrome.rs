@@ -16,6 +16,7 @@ mod shape_canvas;
 mod shape_drawer;
 mod tool_panel;
 mod toolbar;
+mod video_clip_timeline;
 mod video_export;
 
 use lumino_core::storage::config::NoteCountDisplay;

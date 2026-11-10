@@ -158,6 +158,36 @@ fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementModel> {
         .flatten()
 }
 
+/// 记录本帧的视频剪辑时间轴模型（`None` = 不接管或不在渲染器入口）。
+pub fn set_video_timeline(
+    ctx: &egui::Context,
+    model: Option<(egui::Rect, crate::video_clip_timeline::VideoTimelineModel)>,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.video-timeline"), model));
+}
+
+/// 取走本帧的视频剪辑时间轴模型。
+fn video_timeline(
+    ctx: &egui::Context,
+) -> Option<(egui::Rect, crate::video_clip_timeline::VideoTimelineModel)> {
+    ctx.data(|d| {
+        d.get_temp::<Option<(egui::Rect, crate::video_clip_timeline::VideoTimelineModel)>>(
+            egui::Id::unique("lumino.video-timeline"),
+        )
+    })
+    .flatten()
+}
+
+/// 时间轴是否由 egui 接管（`LUMINO_EGUI_CLIP_TIMELINE=1`；默认关闭，先做像素对照）。
+fn video_timeline_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_CLIP_TIMELINE")
+            .map(|v| v != "0")
+            .unwrap_or(false)
+    })
+}
+
 /// 记录本帧的底层画布纹理（`None` = 不画底层，走原通道）。
 pub fn set_base_texture(ctx: &egui::Context, id: Option<egui::TextureId>) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.base-texture"), id));
@@ -211,6 +241,13 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         && let Some(action) = arrangement::show(&root, root.max_rect(), &arrangement)
     {
         arrangement::push_action(ui.ctx(), action);
+    }
+
+    // 视频剪辑时间轴（渲染器入口面板内）：先默认关闭，仅做与 iced 的像素对照。
+    if video_timeline_enabled()
+        && let Some((rect, timeline)) = video_timeline(ui.ctx())
+    {
+        crate::video_clip_timeline::show(&root, rect, &timeline);
     }
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。

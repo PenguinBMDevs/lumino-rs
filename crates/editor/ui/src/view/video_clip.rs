@@ -5,5 +5,6 @@
 
 pub mod layout;
 pub mod preview;
+pub mod rect_probe;
 pub mod timeline;
 pub mod timeline_canvas;

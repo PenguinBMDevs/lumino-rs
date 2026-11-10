@@ -6,7 +6,7 @@
 //!
 //! 与 iced 的差异：不依赖 `iced_widget::canvas`，只用 egui painter。
 
-use egui::{Align2, CornerRadius, FontId, Rect, Stroke};
+use egui::{Align2, CornerRadius, FontId, Rect};
 
 use crate::theme;
 
@@ -62,6 +62,15 @@ pub struct VideoTimelineModel {
     pub video: ClipSpan,
     /// 音频轨可见区间。
     pub audio: ClipSpan,
+}
+
+impl VideoTimelineModel {
+    /// 内容秒长：素材源长与两条轨道右缘取大（越界部分可滚回）。
+    pub fn content_secs(&self) -> f32 {
+        let vr = self.video.start + self.video.len;
+        let ar = self.audio.start + self.audio.len;
+        self.duration_secs.max(vr).max(ar)
+    }
 }
 
 impl Default for VideoTimelineModel {
@@ -168,82 +177,116 @@ pub fn ticks(model: &VideoTimelineModel, width: f32) -> Vec<(f32, bool)> {
 }
 
 /// 绘制时间轴（`rect` = 控件区域）。
+///
+/// 颜色/几何逐项对齐 iced `timeline_canvas/draw.rs`：
+/// 背景 `weakest`、标尺主刻度 `strong` 12px / 次刻度 `weak` 6px（贴底）、
+/// 主刻度标签 10px `weak.text`、视频条 `rgb(0.2,0.6,0.95)`、音频条
+/// `rgb(0.25,0.75,0.35)`、把手为 45% 白（8×40，y+4）、标签白色 11px（x+10 居中）、
+/// 走带线 `rgb(0.95,0.25,0.25)` 宽 2。
 pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
         return;
     }
     let painter = ui.painter().with_clip_rect(rect);
-    painter.rect_filled(rect, 0, theme::base_bg());
+    // 与 iced `palette.background.weakest` 同源。
+    painter.rect_filled(rect, 0, theme::panel_bg());
 
     let pps = PIXELS_PER_SEC * model.zoom;
-    // 标尺底 + 刻度。
-    painter.rect_filled(
-        Rect::from_min_size(rect.min, egui::vec2(rect.width(), RULER_HEIGHT)),
-        0,
-        theme::roll_ruler_bg(),
-    );
-    for (t, major) in ticks(model, rect.width()) {
+    if pps <= 0.0 {
+        return;
+    }
+    // 标尺：刻度贴底，主 12px / 次 6px。
+    let start_sec = (model.scroll_x / pps).floor().max(0.0);
+    let end_sec = ((model.scroll_x + rect.width()) / pps).min(model.content_secs());
+    let mut t = start_sec;
+    while t <= end_sec {
+        let is_major = (t % MAJOR_INTERVAL).abs() < 0.01;
+        let tick_h = if is_major { 12.0 } else { 6.0 };
         let x = rect.left() + t * pps - model.scroll_x;
-        if x < rect.left() - 1.0 || x > rect.right() {
+        if x >= rect.left() - 1.0 && x <= rect.right() + 1.0 {
+            painter.rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(x, rect.top() + RULER_HEIGHT - tick_h),
+                    egui::vec2(1.0, tick_h),
+                ),
+                0,
+                if is_major {
+                    theme::selected_bg()
+                } else {
+                    theme::toolbar_bg()
+                },
+            );
+            if is_major {
+                painter.text(
+                    egui::pos2(x + 3.0, rect.top() + 2.0),
+                    Align2::LEFT_TOP,
+                    format!("{t:.0}s"),
+                    FontId::proportional(10.0),
+                    theme::text_muted(),
+                );
+            }
+        }
+        t += MINOR_INTERVAL;
+    }
+
+    // 双轨条。
+    for (track, span, color, label) in [
+        (
+            ClipTrack::Video,
+            model.video,
+            egui::Color32::from_rgb(51, 153, 242),
+            "视频",
+        ),
+        (
+            ClipTrack::Audio,
+            model.audio,
+            egui::Color32::from_rgb(64, 191, 89),
+            "音频",
+        ),
+    ] {
+        let geom = TrackGeom::new(span, pps, model.scroll_x, TrackGeom::track_y(track));
+        if geom.w <= 0.0 || geom.x > rect.width() || geom.x + geom.w < 0.0 {
             continue;
         }
-        painter.rect_filled(
-            Rect::from_min_size(
-                egui::pos2(x, if major { 6.0 } else { 14.0 }),
-                egui::vec2(1.0, RULER_HEIGHT - if major { 6.0 } else { 14.0 }),
-            ),
-            0,
-            theme::text_muted(),
+        let body = Rect::from_min_size(
+            egui::pos2(rect.left() + geom.x, rect.top() + geom.y),
+            egui::vec2(geom.w, TRACK_HEIGHT),
         );
-        if major {
+        painter.rect_filled(body, CornerRadius::same(TRACK_CORNER_RADIUS as u8), color);
+        // 首尾把手：45% 白，8×40，y+4，圆角 2。
+        for hx in [geom.x, geom.x + geom.w - HANDLE_WIDTH] {
+            painter.rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(rect.left() + hx, rect.top() + geom.y + 4.0),
+                    egui::vec2(HANDLE_WIDTH, TRACK_HEIGHT - 8.0),
+                ),
+                CornerRadius::same(2),
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 115),
+            );
+        }
+        // 标签：x+10、垂直居中、白色 11px。
+        let label_x = geom.x + 10.0;
+        if label_x > -60.0 && label_x < rect.width() {
             painter.text(
-                egui::pos2(x + 3.0, 2.0),
+                egui::pos2(
+                    rect.left() + label_x,
+                    rect.top() + geom.y + (TRACK_HEIGHT - 14.0) / 2.0,
+                ),
                 Align2::LEFT_TOP,
-                format!("{}s", t as i64),
-                FontId::proportional(10.0),
-                theme::text(),
+                label,
+                FontId::proportional(11.0),
+                egui::Color32::WHITE,
             );
         }
     }
 
-    // 双轨条 + 把手。
-    for (track, span) in [
-        (ClipTrack::Video, model.video),
-        (ClipTrack::Audio, model.audio),
-    ] {
-        let geom = TrackGeom::new(span, pps, model.scroll_x, TrackGeom::track_y(track));
-        if geom.w <= 0.0 {
-            continue;
-        }
-        let bar = Rect::from_min_size(
-            egui::pos2(rect.left() + geom.x, rect.top() + geom.y),
-            egui::vec2(geom.w, TRACK_HEIGHT),
-        );
-        if !bar.intersects(rect) {
-            continue;
-        }
-        painter.rect(
-            bar,
-            CornerRadius::same(TRACK_CORNER_RADIUS as u8),
-            theme::card_bg(),
-            Stroke::new(1.0, theme::border()),
-            egui::StrokeKind::Inside,
-        );
-        for handle in [
-            Rect::from_min_max(bar.min, egui::pos2(bar.left() + HANDLE_WIDTH, bar.bottom())),
-            Rect::from_min_max(egui::pos2(bar.right() - HANDLE_WIDTH, bar.top()), bar.max),
-        ] {
-            painter.rect_filled(handle, CornerRadius::same(2), theme::accent());
-        }
-    }
-
-    // 走带线。
+    // 走带线：宽 2，纵贯全高。
     let x = rect.left() + model.playhead_secs * pps - model.scroll_x;
-    if x >= rect.left() && x <= rect.right() {
+    if x >= rect.left() - 2.0 && x <= rect.right() + 2.0 {
         painter.rect_filled(
-            Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(1.0, rect.height())),
+            Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(2.0, rect.height())),
             0,
-            theme::playhead(),
+            egui::Color32::from_rgb(242, 64, 64),
         );
     }
 }

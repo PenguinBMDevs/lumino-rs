@@ -2096,3 +2096,39 @@ callback / 多视口 / 截图能力。
    删除 `timeline_canvas*`（`iced_widget::canvas` 只剩 `snap_icon`）；
 4. 工具栏整体删除时一并处理 `SnapIcon`；之后摘除 `lumino-ui` 的 `iced_*`、
    退役 `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十七步）：量出时间轴真实矩形 + egui 时间轴接线（默认关闭）**
+
+- **布局探针** `view/video_clip/rect_probe.rs`：只透传的 iced 包装 widget，
+  在 `draw` 时把 `layout.bounds()` 记到全局表（`last_rect(label)`）并按
+  `LUMINO_DEBUG_CLIP=1` 打印。
+  - 实测：面板 `x=292, y=915.4, w=1744, h=200`；
+    **画布** `x=300, y=955.4, w=1728, h=128`（逻辑，ppp=1.25）。
+  - 由此反推面板内部：`padding 8 + 标题 28 + spacing 4 + 画布 128 + 4 + 滚动条 20 = 200`。
+    之前“按常量正推 ≈916”与实测 915.4 其实吻合——上一轮把 **ruler 顶**误当面板顶，
+    多算了一段；这次以探针为准。
+- **接线**：`chrome::set_video_timeline` 通道；生产侧 `video_timeline_model()` 从
+  `last_rect("renderer::clip_canvas")` 取真实矩形并装配
+  `VideoTimelineModel`（时长/缩放/滚动/播放头/双轨可见区间，全部走既有
+  `duration_seconds` / `ClipTrackEdit`）。
+- **绘制对齐**：`video_clip_timeline::show` 逐项复刻 iced
+  `timeline_canvas/draw.rs`：背景 `weakest`、主刻度 `strong` 12px / 次刻度 `weak` 6px
+  贴底、主刻度标签 10px `weak.text`、视频条 `rgb(51,153,242)`、音频条
+  `rgb(64,191,89)`、把手 45% 白 8×40（y+4，圆角 2）、标签白 11px（x+10 居中）、
+  走带线 `rgb(242,64,64)` 宽 2。
+- **对照**（`LUMINO_EGUI_CLIP_TIMELINE=1` vs 未设，同构建）：
+  画布裁剪区逐像素 mean **0.469**，>2 的像素 **0.6%**（集中在文字抗锯齿；
+  该次截图右缘混入了其它窗口，重叠区域基本一致）。
+- **开关**：`LUMINO_EGUI_CLIP_TIMELINE` 默认关闭；未 block、未替换 iced 画布。
+- 验收：`ui-egui` 24/24、`lumino-ui` lib 864/864、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：时间轴接管 + 删除 iced 画布**
+
+1. 用同一矩形 block 输入，并把 `timeline_pane` 里的 iced `Canvas` 换同尺寸占位；
+2. 把 `press/drag/wheel` 动作映射到 `VideoClipAction`（`ClipSeek` / `ClipTrim*` /
+   `TimelineScroll` / `TimelineZoom`），真机验证 scrub、条身拖动、首尾裁剪；
+3. 删除 `timeline_canvas*` → `iced_widget::canvas` 只剩 `snap_icon`；
+4. 工具栏整体删除时一并处理 `SnapIcon`；之后摘 `lumino-ui` 的 `iced_*`、
+   退役 `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
