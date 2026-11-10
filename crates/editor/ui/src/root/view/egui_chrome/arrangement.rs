@@ -4,8 +4,8 @@
 //! （`arrangement_view.viewport` + `editor_state` + `sidebar.tracks`）。
 
 use lumino_ui_egui::chrome::{
-    ArrangementAction, ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel,
-    ArrangementTrackRow,
+    ArrangementAction, ArrangementLaneModel, ArrangementModel, ArrangementRulerModel,
+    ArrangementTrackListModel, ArrangementTrackRow,
 };
 
 use crate::root::Root;
@@ -69,6 +69,15 @@ impl Root {
                 time_signatures: self.editor.editor_state.data.time_signatures.clone(),
                 total_ticks: vp.total_ticks,
             },
+            lane: Some(ArrangementLaneModel {
+                rect: lumino_message::types::geometry::Rect2::new(
+                    vp.canvas_offset.x,
+                    vp.canvas_offset.y,
+                    vp.canvas_size.x,
+                    vp.canvas_size.y,
+                ),
+                track_height: vp.track_height,
+            }),
             track_list: ArrangementTrackListModel {
                 tracks,
                 track_height: vp.track_height * vp.zoom_y,
@@ -111,5 +120,21 @@ impl Root {
                 });
             }
         })
+    }
+}
+
+impl Root {
+    /// 泳道动作（`lumino-arrangement-core` 的 `ArrangementAction`）→ 生产 `Message`。
+    ///
+    /// 与 iced `click_canvas` 的映射同一份语义：走带交互只有这一套实现，
+    /// 两侧差异只在「事件怎么来」。
+    pub(crate) fn lane_action_message(
+        &self,
+        action: &lumino_message::arrangement_action::ArrangementAction,
+    ) -> crate::Message {
+        use crate::sidebar::Event as SidebarEvent;
+        action
+            .clone()
+            .into_message(|id| crate::Message::Sidebar(SidebarEvent::TrackSelected(id)))
     }
 }

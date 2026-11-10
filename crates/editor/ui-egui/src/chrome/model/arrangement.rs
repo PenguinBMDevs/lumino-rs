@@ -77,6 +77,15 @@ pub struct ArrangementTrackListModel {
     pub drop_index: Option<usize>,
 }
 
+/// 泳道区（wgu 渲染区）命中矩形。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArrangementLaneModel {
+    /// 屏幕矩形（逻辑点，来自 `arrangement_geometry` 的 offset/size）。
+    pub rect: lumino_message::types::geometry::Rect2,
+    /// 每轨基础高度（像素，未乘 `zoom_y`）。
+    pub track_height: f32,
+}
+
 /// 走带视图模型。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ArrangementModel {
@@ -84,4 +93,6 @@ pub struct ArrangementModel {
     pub ruler: ArrangementRulerModel,
     /// 左侧轨道列。
     pub track_list: ArrangementTrackListModel,
+    /// 泳道区命中矩形；`None` = 尚未拿到布局（跳过输入）。
+    pub lane: Option<ArrangementLaneModel>,
 }

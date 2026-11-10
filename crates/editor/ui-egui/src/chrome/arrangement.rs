@@ -118,7 +118,45 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
     if let Some(action) = ruler_input(ui, ruler, &model.ruler) {
         return Some(action);
     }
+    // 泳道区：同一份交互逻辑（`lumino-arrangement-core`）的 egui 适配。
+    // 本阶段**不占用命中区**（iced 仍会处理同一事件），用于 A/B 对照。
+    if let Some(lane_model) = &model.lane {
+        for action in lane::show(ui, lane_model, &model.ruler, &model.track_list) {
+            push_lane_action(ui.ctx(), action);
+        }
+    }
     track_list::interact(ui, lanes, &model.track_list)
+}
+
+/// 泳道动作通道（一帧可多条，与工具语义一致）。
+const LANE_ACTION_ID: &str = "lumino.arrangement.lane-action";
+
+/// 追加本帧泳道动作。
+fn push_lane_action(
+    ctx: &egui::Context,
+    action: lumino_message::arrangement_action::ArrangementAction,
+) {
+    let mut actions = ctx
+        .data(|d| {
+            d.get_temp::<Vec<lumino_message::arrangement_action::ArrangementAction>>(
+                egui::Id::unique(LANE_ACTION_ID),
+            )
+        })
+        .unwrap_or_default();
+    actions.push(action);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(LANE_ACTION_ID), actions));
+}
+
+/// 取走本帧泳道动作。
+pub fn take_lane_actions(
+    ctx: &egui::Context,
+) -> Vec<lumino_message::arrangement_action::ArrangementAction> {
+    ctx.data_mut(|d| {
+        d.remove_temp::<Vec<lumino_message::arrangement_action::ArrangementAction>>(
+            egui::Id::unique(LANE_ACTION_ID),
+        )
+    })
+    .unwrap_or_default()
 }
 
 /// 计算某 tick 对应的屏幕 x（`rect` 左缘 = 走带区左缘）。

@@ -15,17 +15,18 @@ pub mod toolbar_popup;
 
 pub use arrangement::ArrangementAction;
 pub use model::{
-    ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel, ArrangementTrackRow,
-    AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel, AudioExportModel,
-    AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel, AudioPageModel,
-    AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle, AudioToggleId,
-    BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID, FillDivisionPanelModel,
-    I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
-    MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel,
-    MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel, RightSidebarPanelModel, ShapeKind,
-    ShapePanelModel, TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
-    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
-    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
+    ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel,
+    ArrangementTrackRow, AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel,
+    AudioExportModel, AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel,
+    AudioPageModel, AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle,
+    AudioToggleId, BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID,
+    FillDivisionPanelModel, I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel,
+    MaterialContextLabels, MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel,
+    MaterialMenuEntryModel, MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel,
+    RightSidebarPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel, ThemeCardModel,
+    ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
+    ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow, WATERFALL_TEXTURE_ID,
+    WaterfallPanelModel,
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,

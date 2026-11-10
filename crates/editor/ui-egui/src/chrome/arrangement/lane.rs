@@ -77,7 +77,7 @@ pub fn released_left() -> ArrangementEvent {
 }
 
 /// 指针移动。
-pub fn moved() -> ArrangementEvent {
+pub fn moved_event() -> ArrangementEvent {
     ArrangementEvent::CursorMoved
 }
 
@@ -91,6 +91,103 @@ pub fn wheel_lines(x: f32, y: f32) -> ArrangementEvent {
 /// 屏幕坐标 → 中立光标。
 pub fn cursor_at(x: f32, y: f32) -> ArrangementCursor {
     ArrangementCursor::available(Point2::new(x, y))
+}
+
+/// 泳道输入状态在 ctx-data 中的键（`Program::State` 的 egui 等价物）。
+const STATE_ID: &str = "lumino.arrangement.lane-state";
+
+/// egui 侧驱动：把本帧指针事件喂给共享 handler，返回动作。
+///
+/// `lane_model` 给出泳道矩形（`arrangement_geometry` 的 offset/size）。
+/// 本阶段不占用命中区，iced 仍会处理同一事件（A/B 对照期）。
+pub fn show(
+    ui: &egui::Ui,
+    lane_model: &crate::chrome::ArrangementLaneModel,
+    ruler: &crate::chrome::ArrangementRulerModel,
+    track_list: &crate::chrome::ArrangementTrackListModel,
+) -> Vec<ArrangementAction> {
+    let rect = lane_model.rect;
+    let (pointer, pressed, released, moved) = ui.input(|i| {
+        (
+            i.pointer.interact_pos(),
+            i.pointer.any_pressed() && i.pointer.primary_pressed(),
+            i.pointer.primary_released(),
+            i.pointer.is_moving() && i.pointer.primary_down(),
+        )
+    });
+    let inside = pointer
+        .map(|p| rect.contains(Point2::new(p.x, p.y)))
+        .unwrap_or(false);
+
+    // 一次只喂一个事件：按下 > 移动 > 释放（与 iced 的逐事件投递等价）。
+    let event = if pressed && inside {
+        Some(pressed_left())
+    } else if moved {
+        Some(moved_event())
+    } else if released {
+        Some(released_left())
+    } else {
+        None
+    };
+    let Some(event) = event else {
+        return Vec::new();
+    };
+    let Some(pos) = pointer else {
+        return Vec::new();
+    };
+
+    // 交互状态跨帧保存（Rc 便于放进 ctx-data）。
+    let state = ui
+        .ctx()
+        .data(|d| {
+            d.get_temp::<std::sync::Arc<std::sync::Mutex<ArrangementInteractionState>>>(
+                egui::Id::unique(STATE_ID),
+            )
+        })
+        .unwrap_or_else(|| {
+            let state =
+                std::sync::Arc::new(std::sync::Mutex::new(ArrangementInteractionState::default()));
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state.clone()));
+            state
+        });
+
+    // 视口：与生产一致（滚动/缩放/行高）；变更只影响本帧计算，滚动仍由生产消息驱动。
+    let zoom_y = (track_list.track_height / lane_model.track_height.max(1e-6)).max(1e-6);
+    let mut viewport = ArrangementViewport {
+        scroll_x: ruler.scroll_x,
+        scroll_y: track_list.scroll_y,
+        zoom_x: ruler.zoom_x,
+        zoom_y,
+        track_height: lane_model.track_height,
+        canvas_offset: Point2::new(rect.x, rect.y),
+        canvas_size: Point2::new(rect.width, rect.height),
+        total_ticks: ruler.total_ticks,
+        ppq: ruler.ppq,
+        ..ArrangementViewport::default()
+    };
+
+    let lane_ctx = LaneContext {
+        rect,
+        tool: Tool::Pointer,
+        track_count: track_list.tracks.len().max(1),
+        selection: None,
+        selected_notes: &[],
+        ppq: ruler.ppq,
+        precision: SnapSpec::default(),
+        time_signatures: &ruler.time_signatures,
+        ctrl: ui.input(|i| i.modifiers.ctrl),
+        shift: ui.input(|i| i.modifiers.shift),
+    };
+
+    let mut state = state.lock().expect("lane state lock");
+    feed(
+        &mut state,
+        &mut viewport,
+        event,
+        cursor_at(pos.x, pos.y),
+        &lane_ctx,
+    )
 }
 
 #[cfg(test)]
@@ -173,7 +270,7 @@ mod tests {
         let actions = feed(
             &mut state,
             &mut viewport,
-            moved(),
+            moved_event(),
             cursor_at(500.0, 250.0),
             &lane(),
         );
