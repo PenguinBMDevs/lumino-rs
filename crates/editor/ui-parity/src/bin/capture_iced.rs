@@ -29,6 +29,7 @@ fn main() -> Result<()> {
     // SAFETY：进程刚启动、尚无其他线程读取环境变量。
     unsafe {
         std::env::set_var("LUMINO_EGUI_OVERLAY", "0");
+        std::env::set_var("LUMINO_EGUI_ARRANGEMENT", "0");
     }
 
     let args = Args::parse();

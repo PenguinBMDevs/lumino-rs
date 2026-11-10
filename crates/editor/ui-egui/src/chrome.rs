@@ -466,11 +466,16 @@ pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
 }
 
 /// 走带视图是否已由 egui 接管（`LUMINO_EGUI_ARRANGEMENT=1`；默认关闭）。
+/// 走带视图是否由 egui 接管（**默认开启**；`LUMINO_EGUI_ARRANGEMENT=0` 回退 iced）。
+///
+/// 实测：egui 的泳道点击落点与指针一致，而 iced 的 click canvas 存在
+/// canvas 偏移量级（≈208 逻辑像素）的既有偏差；标尺/轨道列在 iced 侧完全不绘制内容。
+/// 因此默认走 egui 属于修复，而不是等价切换。
 fn arrangement_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         std::env::var("LUMINO_EGUI_ARRANGEMENT")
             .map(|v| v != "0")
-            .unwrap_or(false)
+            .unwrap_or(true)
     })
 }

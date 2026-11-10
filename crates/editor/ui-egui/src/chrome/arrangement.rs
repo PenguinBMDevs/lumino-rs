@@ -121,11 +121,22 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
     // 泳道区：同一份交互逻辑（`lumino-arrangement-core`）的 egui 适配。
     // 本阶段**不占用命中区**（iced 仍会处理同一事件），用于 A/B 对照。
     if let Some(lane_model) = &model.lane {
+        // 泳道区由 egui 接管输入：整块计入占用区，iced 的 click canvas 不再收到事件
+        // （否则同一次点击会被两边各处理一次，且 iced 那份有既有坐标偏移）。
+        super::menu::extend_blocked(ui.ctx(), [lane_rect(lane_model)]);
         for action in lane::show(ui, lane_model, &model.ruler, &model.track_list) {
             push_lane_action(ui.ctx(), action);
         }
     }
     track_list::interact(ui, lanes, &model.track_list)
+}
+
+/// 泳道命中矩形（`Rect2` → egui `Rect`）。
+fn lane_rect(lane: &crate::chrome::ArrangementLaneModel) -> Rect {
+    Rect::from_min_size(
+        egui::pos2(lane.rect.x, lane.rect.y),
+        egui::vec2(lane.rect.width, lane.rect.height),
+    )
 }
 
 /// 泳道动作通道（一帧可多条，与工具语义一致）。

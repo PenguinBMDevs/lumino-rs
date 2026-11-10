@@ -1966,3 +1966,38 @@ callback / 多视口 / 截图能力。
    再翻 `LUMINO_EGUI_ARRANGEMENT` 默认值；
 3. 之后 `video_clip/timeline`、吸附小图 → 一次性删 iced 整树并退役 `capture_iced`，
    以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第六十三步）：泳道 block + 走带接管默认开启 — 已完成**
+
+- **工具/选区接线验证**（`lane.rs` 5 个用例）：
+  - `SelectionCleared + CursorSet`（点击，释放时提交）；
+  - `DragSelectionRect` → `SelectionChanged`（框选）；
+  - `move_selection_enters_move_drag`：在已提交选区内按下 → `move_drag` 置位
+    （证明 `selection` 真的传进共享 handler）；
+  - `eraser_press_enters_eraser_drag` + 拖动产出擦除范围预览（证明 `tool` 生效）；
+  - `curve_press_enters_curve_drag`（同上）。
+- **block**：泳道矩形加入 `menu::extend_blocked`，iced `ArrangementClickCanvas`
+  不再收到事件（否则同一次点击两边各处理一次，且 iced 那份有既有偏移）。
+- **默认翻转**：`LUMINO_EGUI_ARRANGEMENT` 默认开启（`=0` 回退 iced）；
+  `capture_iced` 显式设 `LUMINO_EGUI_ARRANGEMENT=0`，保证 iced 基线工具仍渲染纯 iced。
+- **真机（默认路径，不设任何环境变量）**：
+  - 走带视图由 egui 绘制：轨道列（`000 Master / Conductor`、`001 A01 / Setup` + M/S）、
+    标尺 `1..10` 与刻度线、泳道网格齐全（`target/block2-default.png`）；
+  - 点击泳道（物理 x=900）：播放线落在 **x≈885**（与指针一致），日志
+    `SelectionCleared → DragSelectionRect(None) → SelectionCleared → CursorSet(19200.0)`，
+    共 4 条、无重复处理（iced 已被 block）；
+  - 对照：iced 路径同一点击落在 x≈1135（偏 +208 逻辑），即本次默认切换**修复**了
+    该既有偏移。
+- 验收：`ui-egui` 18/18、`lumino-ui` lib 864/864、`ui-parity` 12/12、
+  `clippy -D warnings`（ui-egui/ui/ui-parity/arrangement-core/message/ui-editor）、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）：删 iced 走带视图 + 迁 timeline / 吸附小图**
+
+1. `ArrangementClickCanvas` / `TrackListCanvas` / `ArrangementRulerCanvas`
+   的 iced 实现已无生产路径（默认走 egui）——可先删画布 Program 与视图挂载，
+   保留 `\(=0\)` 回退兼容一个版本；
+2. `video_clip/timeline`（`TimelineCanvas`）与 `toolbar/view/snap_icon` 同法迁移；
+3. 三者清完后 `iced_widget::canvas` 不再被引用，再按依赖倒序摘除 `lumino-ui` 的
+   `iced_*`，退役 `capture_iced`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
