@@ -59,6 +59,11 @@ impl Event {
         Message::Sidebar(Self::MixerPanelDragged(dx, dy))
     }
 
+    /// 构造"混音台面板拖拽增量"的侧边栏消息（egui 侧逐帧位移）
+    pub const fn mixer_panel_drag_delta(dx: f32, dy: f32) -> Message {
+        Message::Sidebar(Self::MixerPanelDragDelta { dx, dy })
+    }
+
     /// 构造"混音台浮动面板拖拽开始"的侧边栏消息
     pub const fn mixer_panel_drag_started() -> Message {
         Message::Sidebar(Self::MixerPanelDragStarted)

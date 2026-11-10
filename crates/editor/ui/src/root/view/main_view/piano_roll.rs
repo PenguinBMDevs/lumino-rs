@@ -257,11 +257,8 @@ impl Root {
         if let Some(dialog) = self.view_material_delete_dialog() {
             stack = stack.push(dialog);
         }
-        // 混音台浮动面板（非阻塞覆盖层，打开时叠加于最上层；
-        // 入口按钮在左侧栏底部，点亮表示面板打开）
-        if let Some(panel) = crate::root::mixer_panel::view_mixer_panel(self) {
-            stack = stack.push(panel);
-        }
+        // 混音台浮动面板由 egui 绘制并接管输入（`lumino-ui-egui::mixer`），
+        // iced 侧不再有视图（原 `view_mixer_panel` 已删除）。
         // 遮罩参数面板（DRAW-010）：右键「遮罩设置…」，非阻塞、点击面板外关闭
         if let Some(panel) = crate::root::mask_panel::view_mask_panel(self) {
             stack = stack.push(panel);

@@ -46,6 +46,16 @@ pub enum Event {
     MixerPanelMaximizeToggled,
     /// 混音台浮动面板拖拽（鼠标移动时的相对坐标，单位为逻辑像素）
     MixerPanelDragged(f32, f32),
+    /// 混音台面板拖拽**增量**（egui 侧逐帧给出位移，单位为逻辑像素）
+    ///
+    /// 与 [`Self::MixerPanelDragged`] 的区别：那个携带的是绝对光标位置、由状态机
+    /// 自己求差；这里直接是位移，处理端只做累加，避免把增量当坐标导致漂移。
+    MixerPanelDragDelta {
+        /// 横向位移。
+        dx: f32,
+        /// 纵向位移（屏幕坐标向下为正）。
+        dy: f32,
+    },
     /// 混音台浮动面板拖拽开始（标题栏按下）
     MixerPanelDragStarted,
     /// 混音台浮动面板拖拽结束（松开）

@@ -92,7 +92,7 @@ impl Root {
         let track_id = |index: usize| self.sidebar.tracks.get(index).map(|t| t.id);
         Some(match action {
             A::DragStarted => SidebarEvent::mixer_panel_drag_started(),
-            A::DragBy { dx, dy } => SidebarEvent::mixer_panel_dragged(*dx, *dy),
+            A::DragBy { dx, dy } => SidebarEvent::mixer_panel_drag_delta(*dx, *dy),
             A::DragEnded => SidebarEvent::mixer_panel_drag_ended(),
             A::Gain { index, value } => {
                 let gain =

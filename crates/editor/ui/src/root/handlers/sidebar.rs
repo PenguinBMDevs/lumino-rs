@@ -171,6 +171,12 @@ impl Root {
                         }
                     }
                 }
+                // egui 侧直接给位移：累加到 offset（无需 last_cursor 求差）。
+                sidebar::Event::MixerPanelDragDelta { dx, dy } => {
+                    let (ox, oy) = self.mixer_panel.offset;
+                    self.mixer_panel.offset =
+                        ((ox + dx).clamp(48.0, 4000.0), (oy - dy).clamp(0.0, 2000.0));
+                }
                 // 主音量变化：更新状态并即时同步到播放引擎（全局缩放所有通道增益）。
                 sidebar::Event::MixerPanelMasterVolumeChanged(v) => {
                     self.mixer_panel.master_volume = v.clamp(0, sidebar::MIXER_MAX_VOLUME);

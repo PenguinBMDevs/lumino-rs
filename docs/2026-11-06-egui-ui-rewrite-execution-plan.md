@@ -2384,3 +2384,29 @@ callback / 多视口 / 截图能力。
 2. 迁右栏剩余 iced 面板；
 3. 待 `capture_iced` 去留确认后删工具栏（含 `SnapIcon`）等整树 iced 视图，
    摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+
+**Task 1.3（第七十六步）：删除 iced 混音台视图（面板本体 + strips），混音台由 egui 独占**
+
+- **删除**：`root/mixer_panel.rs` 的视图部分（`view_mixer_panel` / `build_header` /
+  `build_body` / `strip_in_view` / `placeholder_strip` / `panel_background` 与
+  `strips` 子模块 260+ 行）；`piano_roll.rs` 里的挂载点。文件保留为**纯状态**
+  （`MixerPanelState`：`open/maximized/offset/dragging/last_cursor/master_volume/scroll_x`），
+  供 egui 模型与既有消息处理器共用。
+- **拖拽语义补正**：egui 侧给的是**位移**，而 `MixerPanelDragged` 携带绝对坐标
+  （由状态机求差）。新增 `Event::MixerPanelDragDelta { dx, dy }` + 构造器，
+  egui 的 `DragBy` 改走这条；处理端直接累加 `offset`（x +dx、y −dy，夹在
+  48..4000 / 0..2000），不再把增量当坐标导致漂移。
+- **真机回归（`LUMINO_MIXER_OPEN=1`）**：面板 `(56,932)-(956,1212)`、两条 `A01`、
+  推子/电平/P·M·S 全部由 egui 绘制；点推子 → `Gain{0, 0.517}`、点 M → `Mute(0)`，
+  截图 M 变红——**删除 iced 视图后功能未退化**（`target/mix26-mute.png`）。
+- 验收：`lumino-ui` lib 854/854（原 857，删除的 3 个用例属于被删的 iced 视图）、
+  `ui-egui` 30/30、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_iced` 18/18、`capture_egui` 12/12，`tests/ui-baseline` 零改动
+  （混音台不在基线场景内，删除不影响）。
+
+**Task 1.3（下一步）**
+
+1. 删 iced 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）——它在
+   `capture_iced` 的 5 个场景里，需要先决定该工具的去留；
+2. 迁右栏剩余 iced 面板；
+3. 摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
