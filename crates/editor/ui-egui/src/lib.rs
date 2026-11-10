@@ -30,6 +30,7 @@ pub mod icons;
 pub mod layout;
 pub mod load_confirm;
 pub mod memory_monitor;
+pub mod mixer;
 pub mod project_settings;
 pub mod recover_track;
 pub mod scene;

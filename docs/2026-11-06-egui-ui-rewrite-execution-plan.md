@@ -2191,3 +2191,29 @@ callback / 多视口 / 截图能力。
   “双实现像素对照”的职责），保留 `tests/ui-baseline/iced/` 作为历史归档，
   以 `capture_egui` 作为唯一视觉门禁；然后再迁工具栏（含 SnapIcon）与其余 iced 视图。
 - 需要确认：是否同意在上述前提下退役 `capture_iced`（不是删除基线图，而是停止用它做门禁）。
+
+**Task 1.3（第七十步）：混音台 egui 实现（布局/命中/绘制，未接线）**
+
+- **工具栏 A/B 复核**（上一步的视觉门禁）：`OVERLAY=1` vs `0` 截取工具栏带
+  （物理 2190×86）逐像素 mean **4.844**、>2 的像素 **5.73%**，集中在文字/图标的
+  抗锯齿；结构（分组、图标、`精度 1/4` 药丸、右侧滚轮/协作）一致。
+  即工具栏在 egui 侧已是等价实现，可随时进入删除阶段（待 `capture_iced` 去留决定）。
+- **新增** `ui-egui/src/mixer.rs`（约 330 行，4 个单测）：与 iced
+  `root/mixer_panel{,/strips}.rs` 同口径——条宽 88 / 间距 8 / 步进 96、
+  推子高 180、电平条宽 6、裁剪外扩 2 步进、面板最大宽 900、标题栏 28；
+  `MixerLayout`（锚底布局、`strip_rect`、`visible` 裁剪）、`MixerHit`
+  （Title / Fader / Pan / Mute / Solo）与 `hit_test`、`show()` 画推子/电平/三格按钮。
+- 单测：贴底锚点与标题/主体分层、步进与滚动、视口裁剪（含外扩）、命中三分。
+- **尚未接线**：混音台仍是 iced 浮动面板；下一步用生产侧状态（`mixer_panel`
+  `offset/maximized/master_volume` + `sidebar.tracks` 音量/声像/静音/独奏 +
+  电平）建模型，接 `TrackGainChanged` / `TrackPanChanged` / 拖拽，再替换 iced 面板。
+- 验收：`ui-egui` 28/28、`lumino-ui` lib 853/853、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`；`capture_iced` 18/18、
+  `capture_egui` 12/12，`tests/ui-baseline` 零改动。
+
+**Task 1.3（下一步）**
+
+1. 混音台接线（模型 + 拖拽/推子/静音独奏）+ 真机 A/B，随后替换 iced 面板；
+2. 右栏剩余 iced 面板（素材右键菜单 / 通道选择器等）逐个迁；
+3. 待 `capture_iced` 去留确认后，删除工具栏（含 `SnapIcon`）等整树 iced 视图，
+   摘除 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
