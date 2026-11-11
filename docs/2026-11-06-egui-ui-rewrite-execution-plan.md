@@ -3058,25 +3058,33 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin`。
   触达 iced 的源文件 74 → **73**。
 
-**Task 3.12（下一步，需先确认范围）**
+**Task 3.12（第一百零二步）：删除 3 个 iced 对话框视图，尺寸静态化**
 
-剩余「真实渲染的 iced 对话框视图」只有 5 个 + 2 个浮层：
+- **尺寸静态化**（先取证再改）：
+  `cargo test -p lumino-ui --lib debug_dump_dialog_window_sizes -- --ignored --nocapture`
+  实测 `SaveConfirm 338×169`（内容下限）/ `LoadConfirm 420×233` /
+  `ShapeDrawer 1000×700`。据此：
+  - `SaveConfirm`：`auto()`（宽高皆测量）→ `pinned(380×180)`（取旧产品尺寸，
+    留 egui 卡片内边距余量）；
+  - `LoadConfirm`：`boxed(420)` + 测量高度 → `pinned(420×233)`；
+  - `ShapeDrawer`：本就是 `pinned(1000×700)`。
+- **删除**：`view/shape_drawer.rs`、`view/save_confirm_dialog.rs`、
+  `view/load_confirm_dialog.rs`；`overlays.rs` 三处改 `dialog_placeholder`。
+- **`DialogSizeHint::auto()` 删除**（已无使用者），4 条相关单测改为以
+  `VideoExport`（唯一仍由测量驱动高度的对话框）验证「贴合内容 / 不超工作区 /
+  测量不可用 → ZERO」，并断言**所有**对话框的宽度区间都已退化为一点。
+- **真机**（DPI-aware）：画一个音符后 Alt+F4 → 未保存确认窗口出现，
+  实测窗口 **475×225 物理 = 380×180 逻辑**，内容完整
+  （标题栏 + 「是否保留未保存的更改?」+ 保存/关闭/取消），无裁剪。
+- 验证：`capture_egui` 12/12 零基线改动、`lumino-ui` lib 787/787、
+  `clippy -D warnings`、`fmt --check`、`check --bin`。
+  触达 iced 的源文件 73 → **70**。
 
-| 视图 | 尺寸来源 | 删除前置条件 |
-|---|---|---|
-| `save_confirm_dialog` | `auto()`（宽高都靠测量） | 先钉死尺寸（旧产品尺寸 380×180） |
-| `load_confirm_dialog` | `boxed(420)`（高度靠测量） | 先钉死高度 |
-| `shape_drawer` | `pinned(1000×700)` | egui `shape_canvas` 已接管，可直接删 |
-| `settings_dialog` | `pinned(720×540)` | **内容在另一个 crate**（`lumino-ui-settings` 的 `settings::view`），需连同该 crate 一起迁 |
-| `about_egg` | 叠加在设置窗顶层 | 彩蛋动画需先补 egui 版本 |
-| `toast`（276 行） | 主窗口浮层 | 需先补 egui toast |
-| `help_tip`（91 行） | 主窗口浮层 | 需先补 egui 提示 |
+**Task 3.13（下一步）**
 
-~~`export_progress_dialog`~~（本步已删）。
-
-**结构性问题（必须由用户决策）**：即使上述视图全部清完，`lumino-ui` 仍依赖
-`iced_renderer` / `iced_wgpu` / `iced_winit` / `iced_widget` / `iced_core`——
-因为 `host.rs` / `render_ctx.rs` / `host/event/window/*` 是 **iced 运行时**
-（事件循环、窗口管理、离屏渲染调度、IME/HiDPI）。要让
-`cargo tree -p lumino-ui | grep '^iced'` 归零，必须用 winit + wgpu + egui
-直接替换该运行时（等于重写应用外壳），这不是「删视图」而是新架构工程。
+1. 仍渲染的 iced 视图只剩：`settings_dialog`（内容在 `lumino-ui-settings` crate）、
+   `about_egg`（设置窗彩蛋）、`toast`（276）、`help_tip`（91）；
+2. 先补 `toast` / `help_tip` 的 egui 版本（主窗口浮层，无窗口尺寸问题），
+   再迁 `lumino-ui-settings`，最后处理彩蛋；
+3. 运行时层（`host`/`render_ctx`/`host/event/window`）仍是 iced，
+   零 iced 依赖收口需要替换运行时（待范围确认）。

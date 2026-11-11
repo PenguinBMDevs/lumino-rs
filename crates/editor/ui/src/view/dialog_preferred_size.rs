@@ -76,18 +76,6 @@ pub struct DialogSizeHint {
 }
 
 impl DialogSizeHint {
-    /// 宽度**完全自动**、高度由测量驱动（内容全部 Fixed 驱动时才可用）
-    ///
-    /// 实测可自动的 4 类：自定义精度 / 变速 / 批量编辑 / 保存确认。
-    const fn auto() -> Self {
-        Self {
-            width_floor: 0.0,
-            width_cap: None,
-            min_height: None,
-            max_height: None,
-        }
-    }
-
     /// 宽度**钉在原值区间**（下限 = 上限 = 原值）
     ///
     /// 用于 `Fill` 占多数内容（不会被挤溢出 ⇒ 自动宽度会一路退到最小值，
@@ -171,8 +159,9 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::SpeedChange => DialogSizeHint::pinned(247.0, 256.0),
         // 批量编辑：内容全 Fixed（旧 420×640）
         DialogType::BatchEdit => DialogSizeHint::pinned(319.0, 614.0),
-        // 保存确认：三个 90px 按钮 + 文案（旧 380×180；实测内容只需 ≈338）
-        DialogType::SaveConfirm => DialogSizeHint::auto(),
+        // 保存确认：尺寸静态化（原 `auto()` 依赖 iced 视图测量，视图已删除）。
+        // 取旧产品尺寸 380×180（实测内容下限 338×169，留出 egui 卡片内边距余量）。
+        DialogType::SaveConfirm => DialogSizeHint::pinned(380.0, 180.0),
 
         // ── 宽度只在下限基础上增长：内容宽度可测，但换行宽度需兜底 ────────
         // 找回删除音轨：表格列全 Fixed（240+180+80）⇒ 所需宽度可测；
@@ -182,8 +171,9 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::ExportProgress => DialogSizeHint::pinned(406.0, 233.0),
 
         // ── 宽度钉在原值区间：`Fill` 占多数内容（自动量会退到最小值）──────
-        // 加载确认：超长路径是不可断词 token，自动宽度会被它撑爆 ⇒ 钉住并按旧值折行
-        DialogType::LoadConfirm => DialogSizeHint::boxed(420.0),
+        // 加载确认：超长路径是不可断词 token，宽度钉住 420；高度实测 233。
+        // （原来高度交给 iced 视图测量，视图删除后必须静态化）
+        DialogType::LoadConfirm => DialogSizeHint::pinned(420.0, 233.0),
         // 云提醒：纯文本驱动，需固定折行宽度（旧 440×200）
         DialogType::CloudNotice => DialogSizeHint::pinned(440.0, 182.0),
         // 云连接：6 个 `Fill` 输入框 ⇒ 宽度是自由参数（旧 480×515）
@@ -422,17 +412,17 @@ mod tests {
 
     const WORK_AREA: Size = Size::new(1920.0, 1040.0);
 
-    /// 内容比上限矮 ⇒ 窗口贴合内容（本卡的核心收益）。
+    /// 内容高于下限但未触顶 ⇒ 窗口贴合内容（本卡的核心收益）。
     #[test]
     fn test_recommend_hugs_short_content() {
-        // 用仍为 uto() 的对话框验证「贴合内容」；已钉死的尺寸不再参与该规则。
-        let hint = dialog_size_hint(DialogType::SaveConfirm);
-        let size = recommend_window_size(hint, WORK_AREA, 488.0, 180.0);
+        // VideoExport 是仅剩的「高度受测量驱动」对话框（floored：下限 560、无上限）。
+        let hint = dialog_size_hint(DialogType::VideoExport);
+        let size = recommend_window_size(hint, WORK_AREA, 520.0, 700.0);
 
-        assert_eq!(size.width, 488.0, "宽度取调用方算好的值");
+        assert_eq!(size.width, 520.0, "宽度取调用方算好的值");
         assert_eq!(
-            size.height, 180.0,
-            "内容 180 高时应贴合 180，而不是旧的硬编码值"
+            size.height, 700.0,
+            "内容 700 高时应贴合 700（高于下限 560）"
         );
     }
 
@@ -460,9 +450,9 @@ mod tests {
     /// 未声明上限的对话框仍受**工作区**约束（不超可见区域）。
     #[test]
     fn test_recommend_never_exceeds_work_area() {
-        // 用仍无声明上限的对话框验证「不超工作区」。
-        let hint = dialog_size_hint(DialogType::SaveConfirm);
-        let size = recommend_window_size(hint, WORK_AREA, 380.0, 5000.0);
+        // VideoExport 无 `max_height`：内容再长也由工作区兜住。
+        let hint = dialog_size_hint(DialogType::VideoExport);
+        let size = recommend_window_size(hint, WORK_AREA, 520.0, 5000.0);
 
         assert_eq!(size.height, WORK_AREA.height);
     }
@@ -470,11 +460,12 @@ mod tests {
     /// 测量不可用（0 / NaN / 负 / ∞）必须返回 `ZERO`，让调用方回退种子尺寸。
     #[test]
     fn test_recommend_signals_unusable_measurement() {
-        let hint = dialog_size_hint(DialogType::SaveConfirm);
+        // VideoExport（floored）仍走测量；钉死的对话框不受测量影响。
+        let hint = dialog_size_hint(DialogType::VideoExport);
 
         for measured_height in [0.0_f32, -1.0, f32::NAN, f32::INFINITY] {
             assert_eq!(
-                recommend_window_size(hint, WORK_AREA, 338.0, measured_height),
+                recommend_window_size(hint, WORK_AREA, 520.0, measured_height),
                 Size::ZERO,
                 "高度 {measured_height} 应判为不可用"
             );
@@ -483,7 +474,7 @@ mod tests {
         // 宽度非法（0 / NaN / 负）同样不可用
         for width in [0.0_f32, -1.0, f32::NAN] {
             assert_eq!(
-                recommend_window_size(hint, WORK_AREA, width, 180.0),
+                recommend_window_size(hint, WORK_AREA, width, 700.0),
                 Size::ZERO,
                 "宽度 {width} 应判为不可用"
             );
@@ -526,37 +517,14 @@ mod tests {
         }
     }
 
-    /// 只有「宽度区间有宽度」的对话框才需要跑搜索（省掉 9 次布局）。
+    /// 所有对话框的宽度区间都已按实测尺寸钉死 ⇒ 不再触发宽度搜索。
     #[test]
     fn test_width_search_only_when_interval_is_wide() {
-        // `boxed` / `pinned` / `floored`：区间退化为一点 ⇒ 不需要搜索
-        for dialog_type in [
-            DialogType::LoadConfirm,
-            DialogType::CloudConnect,
-            DialogType::MemoryMonitor,
-            DialogType::DrawSettings,
-            DialogType::CustomPrecision,
-            DialogType::SpeedChange,
-            DialogType::BatchEdit,
-            DialogType::LoadConfirm,
-            DialogType::ExportProgress,
-            DialogType::Settings,
-            DialogType::ProjectSettings,
-            DialogType::CloudBrowser,
-            DialogType::BrushSettings,
-            DialogType::Collaboration,
-            DialogType::VideoExport,
-        ] {
+        for dialog_type in ALL_DIALOGS {
             assert!(
                 !dialog_size_hint(dialog_type).needs_width_search(WORK_AREA.width),
                 "{dialog_type:?} 的宽度区间已退化为一点，不应触发搜索"
             );
         }
-
-        // 完全自动：需要搜索（其余对话框已按实测尺寸钉死）
-        assert!(
-            dialog_size_hint(DialogType::SaveConfirm).needs_width_search(WORK_AREA.width),
-            "SaveConfirm 的宽度交给自动计算，应触发搜索"
-        );
     }
 }

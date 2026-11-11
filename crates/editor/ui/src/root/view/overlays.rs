@@ -9,11 +9,7 @@ use lumino_core::tr;
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
-use crate::view::{
-    about_egg::view as view_about_egg, load_confirm_dialog::view_load_confirm_dialog,
-    save_confirm_dialog::view_save_confirm_dialog, settings_dialog::view_settings_dialog,
-    shape_drawer::view_shape_drawer,
-};
+use crate::view::{about_egg::view as view_about_egg, settings_dialog::view_settings_dialog};
 use crate::{Element, Theme};
 
 /// 对话框的同尺寸底色占位。
@@ -146,9 +142,8 @@ impl Root {
         let content: Element<'_> = match self.state.dialog_type {
             // 协作：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::Collaboration => dialog_placeholder(&self.window.theme),
-            DialogType::LoadConfirm => {
-                view_load_confirm_dialog(&self.state.load_confirm_dialog, &self.window.theme)
-            }
+            // 加载确认：内容由 egui 整窗接管，iced 只留同尺寸底色（420×233 钉死）。
+            DialogType::LoadConfirm => dialog_placeholder(&self.window.theme),
             // 工程设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::ProjectSettings => dialog_placeholder(&self.window.theme),
             DialogType::Settings => {
@@ -199,18 +194,16 @@ impl Root {
             DialogType::MemoryMonitor => dialog_placeholder(&self.window.theme),
             // 找回删除音轨：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::RecoverTrack => dialog_placeholder(&self.window.theme),
-            DialogType::SaveConfirm => {
-                view_save_confirm_dialog(&self.state.save_confirm_dialog, &self.window.theme)
-            }
+            // 保存确认：内容由 egui 整窗接管，iced 只留同尺寸底色（338×169 钉死）。
+            DialogType::SaveConfirm => dialog_placeholder(&self.window.theme),
             // 画刷设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::BrushSettings => dialog_placeholder(&self.window.theme),
             // 音符画设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::DrawSettings => dialog_placeholder(&self.window.theme),
             // 帮助：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::Help => dialog_placeholder(&self.window.theme),
-            DialogType::ShapeDrawer => {
-                view_shape_drawer(&self.state.shape_drawer, &self.window.theme)
-            }
+            // 形状抽屉：面板 / 分割线 / 画布全部由 egui 绘制，iced 只留同尺寸底色。
+            DialogType::ShapeDrawer => dialog_placeholder(&self.window.theme),
             // 撤销历史：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::History => dialog_placeholder(&self.window.theme),
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
