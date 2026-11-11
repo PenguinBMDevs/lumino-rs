@@ -97,15 +97,30 @@ fn sidebar_model_hides_panel_without_disabling_takeover() {
 fn sidebar_model_defers_to_iced_while_transient() {
     let mut renaming = Sidebar::new();
     renaming.renaming_track = Some((1, "草稿".to_owned()));
-    assert!(sidebar_model(&renaming).is_none(), "重命名中不得接管");
+    let model = sidebar_model(&renaming).expect("重命名由 egui 绘制输入框，仍须接管");
+    assert!(
+        model
+            .tracks
+            .iter()
+            .any(|track| track.renaming && track.id == 1 && track.rename_buffer == "草稿")
+    );
 
     let mut menu = Sidebar::new();
     menu.track_context_menu.target_track_id = Some(1);
-    assert!(sidebar_model(&menu).is_none(), "音轨菜单打开时不得接管");
+    let model = sidebar_model(&menu).expect("音轨菜单由 egui 绘制，仍须接管");
+    assert_eq!(
+        model.context_menu.as_ref().map(|menu| menu.track_id),
+        Some(1)
+    );
 
     let mut menu = Sidebar::new();
     menu.panel_context_menu.is_open = true;
-    assert!(sidebar_model(&menu).is_none(), "面板菜单打开时不得接管");
+    menu.panel_context_menu.mouse_pos = Some((120.0, 140.0));
+    let model = sidebar_model(&menu).expect("面板菜单由 egui 绘制，仍须接管");
+    assert_eq!(
+        model.panel_menu.as_ref().map(|menu| menu.pos),
+        Some(egui::pos2(120.0, 140.0))
+    );
 
     let mut picking = Sidebar::new();
     picking.color_picking_track = Some(1);

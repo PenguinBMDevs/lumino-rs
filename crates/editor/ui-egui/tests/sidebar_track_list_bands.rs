@@ -21,6 +21,8 @@ fn track(id: usize, label: &str, name: &str, selected: bool) -> SidebarTrack {
         selected,
         conductor: false,
         soloed: false,
+        renaming: false,
+        rename_buffer: String::new(),
     }
 }
 
@@ -134,6 +136,46 @@ fn rows_and_add_row_are_blocked_from_iced() {
             .iter()
             .any(|r| r.contains(Pos2::new(layout::ROUTE_BAR_W + 80.0, add_y))),
         "添加行必须进入占用区"
+    );
+}
+
+#[test]
+fn right_click_opens_track_menu_and_blank_opens_panel_menu() {
+    let right = |h: &mut Harness<'static>, pos: Pos2| {
+        let mut input = RawInput::default();
+        input.events.push(Event::PointerMoved(pos));
+        input.events.push(Event::PointerButton {
+            pos,
+            button: PointerButton::Secondary,
+            pressed: true,
+            modifiers: Default::default(),
+        });
+        input.events.push(Event::PointerButton {
+            pos,
+            button: PointerButton::Secondary,
+            pressed: false,
+            modifiers: Default::default(),
+        });
+        *h.input_mut() = input;
+        h.run();
+    };
+
+    // 行右键 → 打开该行菜单（带回音轨 ID）。
+    let (mut h, actions) = harness(model());
+    right(&mut h, row_center(1));
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&sidebar::SidebarPanelAction::OpenTrackMenu(3)),
+        "右键第 2 行应打开音轨 3 的菜单"
+    );
+
+    // 面板空白右键 → 打开面板菜单。
+    let (mut h, actions) = harness(model());
+    right(&mut h, Pos2::new(layout::ROUTE_BAR_W + 40.0, 400.0));
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&sidebar::SidebarPanelAction::OpenPanelMenu),
+        "右键空白应打开面板菜单"
     );
 }
 

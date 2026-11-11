@@ -24,7 +24,8 @@ pub use model::{
     I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels, MaterialContextMenuItem,
     MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind,
     MaterialSectionModel, MaterialsPanelModel, MetricTone, RightSidebarPanelModel, ShapeKind,
-    ShapePanelModel, TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
+    ShapePanelModel, SidebarMenuEntry, SidebarPanelMenuModel, SidebarTrackMenuModel,
+    TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
     ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone,
     underrun_tone,
@@ -53,7 +54,7 @@ pub use model::{
     VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
     VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
-pub use sidebar::{SidebarPanelAction, take_panel_action};
+pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
 pub use toolbar_popup::{ToolbarAction, ToolbarCommand};
 
 use egui::{Frame, Margin, Panel, Stroke};

@@ -57,17 +57,17 @@ pub(super) fn color32(color: iced_core::Color) -> egui::Color32 {
 impl Sidebar {
     /// 是否存在必须由 iced 独占绘制的瞬态 UI。
     ///
-    /// 重命名输入框、拖拽插入线、上下文菜单、颜色/端口/通道选择器、宽度拖拽
-    /// 都依赖 iced 自己的命中与焦点管理；这些状态下叠加层不得接管左侧栏，
-    /// 否则会出现「egui 盖住 iced 输入框，输入却进 iced」的错位。
+    /// 重命名输入框、拖拽插入线、颜色/端口/通道选择器、宽度拖拽都依赖 iced 自己的
+    /// 命中与焦点管理；这些状态下叠加层不得接管左侧栏，否则会出现「egui 盖住 iced
+    /// 输入框，输入却进 iced」的错位。
+    ///
+    /// 注意：音轨/面板右键菜单与**行内重命名**都已由 egui 绘制并接管
+    /// （`chrome/sidebar/menu.rs`、`track_list.rs`）；若仍在此返回 `None`，
+    /// 底层画布纹理会盖住 iced 的绘制，真机表现为「左栏整块空白」。
     fn has_transient_ui(&self) -> bool {
-        self.renaming_track.is_some()
-            || self
-                .track_reorder
-                .as_ref()
-                .is_some_and(|state| state.active)
-            || self.track_context_menu.target_track_id.is_some()
-            || self.panel_context_menu.is_open
+        self.track_reorder
+            .as_ref()
+            .is_some_and(|state| state.active)
             || self.color_picking_track.is_some()
             || self.port_picking_track.is_some()
             || self.channel_picking_track.is_some()
@@ -107,6 +107,16 @@ impl Sidebar {
                 selected: track.id == self.selected_track,
                 conductor: track.is_conductor,
                 soloed: track.is_soloed,
+                renaming: self
+                    .renaming_track
+                    .as_ref()
+                    .is_some_and(|(id, _)| *id == track.id),
+                rename_buffer: self
+                    .renaming_track
+                    .as_ref()
+                    .filter(|(id, _)| *id == track.id)
+                    .map(|(_, buf)| buf.clone())
+                    .unwrap_or_default(),
             })
             .collect();
 
@@ -172,6 +182,8 @@ impl Sidebar {
             tracks,
             track_list_title: translations.sidebar_track_list.to_owned(),
             add_track_label: translations.sidebar_add_track.to_owned(),
+            context_menu: sidebar_panel::track_menu(self),
+            panel_menu: sidebar_panel::panel_menu(self),
         })
     }
 }

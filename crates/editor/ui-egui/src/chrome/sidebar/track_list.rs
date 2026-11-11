@@ -37,6 +37,16 @@ pub(super) fn show_model(
         theme::text(),
     );
 
+    // 面板空白右键：行在内层会上移（egui 后注册者优先命中），因此这里先注册背景层。
+    let backdrop = ui.interact(
+        content,
+        egui::Id::unique("lumino.sidebar.panel-bg"),
+        Sense::click(),
+    );
+    if backdrop.secondary_clicked() {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenPanelMenu);
+    }
+
     // 内容底色只铺「音轨行 + 添加行」的高度（与 iced 的可滚动内容同高），
     // 面板其余区域仍透出面板底色——否则整块面板会比 iced 多一层底色。
     let content_height = layout::TRACK_ROW_H * model.tracks.len() as f32 + layout::TRACK_ADD_ROW_H;
@@ -59,13 +69,14 @@ pub(super) fn show_model(
             .layout(Layout::top_down(Align::Min)),
     );
     list_ui.spacing_mut().item_spacing.y = 0.0;
+    let mut rows: Vec<(usize, Rect)> = Vec::new();
     egui::ScrollArea::vertical()
         .id_salt("lumino-track-list")
         .auto_shrink([false, false])
         .show(&mut list_ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for track in &model.tracks {
-                track_row(ui, track, icons);
+                rows.push((track.id, track_row(ui, track, icons)));
             }
             let (add_rect, _) = ui.allocate_exact_size(
                 Vec2::new(ui.available_width(), layout::TRACK_ADD_ROW_H),
@@ -73,6 +84,18 @@ pub(super) fn show_model(
             );
             add_track_row(ui, add_rect, &model.add_track_label, icons);
         });
+
+    // 右键菜单（由生产状态驱动）：行菜单锚在该行上，空白菜单锚在触发点。
+    if let Some(menu_model) = &model.context_menu
+        && let Some((_, anchor)) = rows.iter().find(|(id, _)| *id == menu_model.track_id)
+    {
+        let action = super::menu::track_menu(ui, content, *anchor, menu_model, icons);
+        super::menu::emit(ui.ctx(), action);
+    }
+    if let Some(menu_model) = &model.panel_menu {
+        let action = super::menu::panel_menu(ui, content, menu_model, icons);
+        super::menu::emit(ui.ctx(), action);
+    }
 }
 
 /// 仅「添加音轨」行（`Route::Arrangement`）：面板内边距 8，行宽 = 内容宽 - 16。
@@ -93,7 +116,7 @@ pub(super) fn show_add_track(
 ///
 /// 行由 egui **独占**点击：命中即 `SelectTrack(id)` 并计入占用区，避免 iced
 /// 的同位行按钮再处理一次（两侧选择同一个音轨时不会报错，但会造成两次重绘）。
-fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
+fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> Rect {
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), layout::TRACK_ROW_H),
         Sense::click(),
@@ -101,8 +124,15 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
     if response.clicked() {
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::SelectTrack(track.id));
     }
+    if response.secondary_clicked() {
+        // 右键由 egui 接管（iced 的同位行按钮已不再收到该事件）。
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenTrackMenu(track.id));
+    }
     // 行命中区由 egui 独占（iced 的同位行按钮不再处理同一次点击）。
-    super::super::menu::extend_blocked(ui.ctx(), [rect]);
+    // 例外：行内重命名时输入框仍由 iced 绘制，必须让指针进去。
+    if !track.renaming {
+        super::super::menu::extend_blocked(ui.ctx(), [rect]);
+    }
 
     let text_color = track_text_color(track);
     let background = row_background(track, response.hovered());
@@ -151,17 +181,61 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
             .max_rect(name_rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    name_ui.add(
-        egui::Label::new(
-            egui::RichText::new(&track.name)
-                .size(theme::font::LABEL)
-                .color(text_color),
-        )
-        // egui 默认 `selectable_labels = true`：名称标签会自己吃掉指针事件，
-        // 表现为「点音轨名选不中音轨」（只有点行内空白才有效）。这里显式关闭。
-        .selectable(false)
-        .truncate(),
-    );
+    if track.renaming {
+        // 行内重命名由 egui 绘制输入框（iced 版本会被底层画布纹理盖住）。
+        let mut buffer = track.rename_buffer.clone();
+        let input_id = egui::Id::unique(("lumino.track-rename", track.id));
+        // 进入重命名的首帧抢一次焦点（否则按键仍落到 iced，输入进不来）。
+        let focused = egui::Id::unique(("lumino.track-rename-focus", track.id));
+        if !ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(focused).unwrap_or(false))
+        {
+            ui.ctx().data_mut(|d| d.insert_temp(focused, true));
+            name_ui.memory_mut(|m| m.request_focus(input_id));
+        }
+        let response = name_ui.add(
+            egui::TextEdit::singleline(&mut buffer)
+                .id(input_id)
+                .font(FontId::proportional(theme::font::LABEL))
+                .margin(Vec2::new(2.0, 0.0))
+                .desired_width(name_rect.width().max(40.0)),
+        );
+        if response.changed() {
+            panel_action::push_panel_action(
+                ui.ctx(),
+                SidebarPanelAction::RenameChanged {
+                    track_id: track.id,
+                    value: buffer,
+                },
+            );
+        }
+        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            panel_action::push_panel_action(
+                ui.ctx(),
+                SidebarPanelAction::RenameConfirmed(track.id),
+            );
+        }
+    } else {
+        // 退出重命名：清掉「已抢焦点」标记，下次进入可再次聚焦。
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(
+                egui::Id::unique(("lumino.track-rename-focus", track.id)),
+                false,
+            )
+        });
+        name_ui.add(
+            egui::Label::new(
+                egui::RichText::new(&track.name)
+                    .size(theme::font::LABEL)
+                    .color(text_color),
+            )
+            // egui 默认 `selectable_labels = true`：名称标签会自己吃掉指针事件，
+            // 表现为「点音轨名选不中音轨」（只有点行内空白才有效）。这里显式关闭。
+            .selectable(false)
+            .truncate(),
+        );
+    }
 
     // 独奏按钮右对齐到内容右边界（独奏时警告色）。
     ui.painter().text(
@@ -175,6 +249,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
             text_color
         },
     );
+    rect
 }
 
 /// 「添加音轨」行：图标列 24 + 列间距 4。

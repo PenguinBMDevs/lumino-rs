@@ -67,6 +67,7 @@ pub(super) struct OverlayActions {
     pub mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelAction>,
     pub statusbar: Option<lumino_ui_egui::chrome::statusbar::StatusbarAction>,
     pub sidebar_panel: Option<lumino_ui_egui::chrome::SidebarPanelAction>,
+    pub sidebar_menu: Option<lumino_ui_egui::chrome::SidebarMenuAction>,
 }
 
 impl OverlayActions {
@@ -106,6 +107,7 @@ impl OverlayActions {
             mask_panel: lumino_ui_egui::chrome::take_mask_panel_action(ctx),
             statusbar: lumino_ui_egui::chrome::statusbar::take_action(ctx),
             sidebar_panel: lumino_ui_egui::chrome::take_panel_action(ctx),
+            sidebar_menu: lumino_ui_egui::chrome::take_menu_action(ctx),
         }
     }
 }
@@ -160,6 +162,12 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.sidebar_menu
+            && let Some(message) = self.root.sidebar_menu_action_message(action)
+        {
+            tracing::info!("egui 音轨菜单动作：{action:?}");
+            self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.sidebar_panel {
             tracing::info!("egui 音轨列表动作：{action:?}");

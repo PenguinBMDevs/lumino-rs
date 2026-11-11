@@ -77,6 +77,10 @@ pub struct SidebarTrack {
     pub conductor: bool,
     /// 是否独奏。
     pub soloed: bool,
+    /// 是否正在行内重命名（该行由 egui 绘制输入框）。
+    pub renaming: bool,
+    /// 重命名草稿（仅 `renaming` 时有意义）。
+    pub rename_buffer: String,
 }
 
 /// 路由栏图标（与生产 `ROUTES` 一一对应）。
@@ -146,6 +150,37 @@ pub struct SidebarModel {
     pub track_list_title: String,
     /// 「添加音轨」文本。
     pub add_track_label: String,
+    /// 音轨行右键菜单（`None` = 未打开）。
+    pub context_menu: Option<SidebarTrackMenuModel>,
+    /// 面板空白右键菜单（`None` = 未打开）。
+    pub panel_menu: Option<SidebarPanelMenuModel>,
+}
+
+/// 右键菜单条目（图标 + 本地化文案；点击回传下标）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidebarMenuEntry {
+    /// 图标。
+    pub icon: crate::icons::Icon,
+    /// 悬停提示 / 无障碍文案。
+    pub label: String,
+}
+
+/// 音轨行右键菜单（顺序即生产 `TrackContextMenuItem` 的顺序）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidebarTrackMenuModel {
+    /// 目标音轨 ID。
+    pub track_id: usize,
+    /// 五个条目：删除 / 重命名 / 设置颜色 / 设置通道 / 设置端口。
+    pub entries: Vec<SidebarMenuEntry>,
+}
+
+/// 面板空白右键菜单。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SidebarPanelMenuModel {
+    /// 触发位置（窗口逻辑坐标）。
+    pub pos: egui::Pos2,
+    /// 条目（当前只有「找回删除音轨」）。
+    pub entries: Vec<SidebarMenuEntry>,
 }
 
 impl SidebarModel {
@@ -185,6 +220,8 @@ impl Default for SidebarModel {
                     selected: true,
                     conductor: true,
                     soloed: false,
+                    renaming: false,
+                    rename_buffer: String::new(),
                 },
                 SidebarTrack {
                     id: 1,
@@ -194,10 +231,14 @@ impl Default for SidebarModel {
                     selected: false,
                     conductor: false,
                     soloed: false,
+                    renaming: false,
+                    rename_buffer: String::new(),
                 },
             ],
             track_list_title: "音轨列表".to_owned(),
             add_track_label: "添加音轨".to_owned(),
+            context_menu: None,
+            panel_menu: None,
         }
     }
 }
