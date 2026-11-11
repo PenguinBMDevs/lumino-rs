@@ -2934,10 +2934,41 @@ callback / 多视口 / 截图能力。
   （**无需更新任何基线**：删除的是 iced 侧像素，egui 渲染未变）。
   触达 iced 的源文件 99 → **91**，`cargo tree` 仍为 39（待全部视图删除后收口）。
 
-**Task 3.5（下一步）**
+**Task 3.5（第九十四步）：音轨列表行点击 / 添加行迁 egui；修掉添加行重叠与「点名选不中」**
 
-1. 左栏面板（`sidebar/panel.rs` + `sidebar/panel_tests.rs`，约 690 行）：
-   先核对 egui `sidebar.rs` 已覆盖的轨道行 / 分组 / 拖拽，再换同宽占位并删除；
-2. 标题栏菜单（`titlebar/menu.rs`）与 `root/text_params_panel.rs`
-   （后者仍被 `draw_toolbar` 复用，需先迁悬浮工具条或其设置面板）；
-3. 最后摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+- **行命中**：`track_row` 由 `Sense::hover()` 改为 `Sense::click()`，点击回传
+  `SidebarPanelAction::SelectTrack(track.id)`（**生产音轨 ID**，不是列表下标——
+  重排后下标会错位）；`SidebarTrack` 新增 `id` 字段（生产 `track.id` 填充）。
+- **添加行命中**：点击回传 `AddTrack`；行与添加行的矩形都 `extend_blocked`，
+  避免 iced 的同位按钮再处理一次（表现为「一次点击加两条音轨」）。
+- **新增动作通道** `chrome/sidebar/panel_action.rs`（一帧只保留第一个），
+  生产侧 `egui_chrome/sidebar_panel.rs` 映射为
+  `sidebar::Event::track_selected(id)` / `add_track()`；宿主 `actions.rs` 统一分发。
+- **修复两个真实缺陷**：
+  1. **音轨名吞点击**：egui 默认 `selectable_labels = true`，`Label` 会自己吃掉
+     指针事件——点音轨**名字**选不中音轨（只有点行内空白有效）。名称标签改为
+     `.selectable(false)`。
+  2. **添加行与最后一行重叠**：原用 `TableBuilder` 逐行渲染，但表格实际行距
+     ≈41px 而行高按 36px 计算，导致「添加音轨」行上移约 10px **压在最后一条
+     音轨的下半部分**。改为手工逐行 + `ScrollArea`（`item_spacing.y = 0`），
+     行距精确等于 36，添加行紧随其后。
+- **基线更新（仅 2 场景 × 3 DPI）**：修掉重叠后添加行下移，diff bbox 实测
+  `(56,126)-(234,166)` 只覆盖添加行区域；左侧对照（旧/新）确认音轨行完整、
+  添加行独立不再压住上一行。其余 6 个场景零改动。
+- **无头验证**（`sidebar_track_list_bands.rs`，4 用例）：三行点击各自回传
+  音轨 ID（7/3/11，故意非 0..n）；点添加行**恰好**一条 `AddTrack`；
+  行与添加行都在占用区；空白面板不产生动作。
+- **真机**（DPI-aware）：
+  - 点 A01 行 → `egui 音轨列表动作：SelectTrack(1)` 恰一条，选中高亮移动；
+  - 点「添加音轨」→ `AddTrack` 恰一条，列表新增**一条**音轨（`A01 A01`），
+    添加行完整位于列表下方（`target/tr2-crop.png`）。
+- 验收：`lumino-ui` lib 844/844、`ui-egui` 全部集成测试（含新 4 用例）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；`capture_egui` 12/12。
+
+**Task 3.6（下一步）**
+
+1. 音轨列表剩余交互：右键菜单（行级 / 面板级）、行内重命名、颜色 / 端口 /
+   通道选择器、拖拽排序（`track_reorder.rs`，383 行）；
+2. 完成后把 `sidebar/panel.rs` + `panel/*` + 4 个 picker + 2 个菜单
+   （约 2100 行）换成同宽占位并删除；
+3. 标题栏菜单 `titlebar/menu.rs`（411 行）；最后摘 `lumino-ui` 的 `iced_*`。

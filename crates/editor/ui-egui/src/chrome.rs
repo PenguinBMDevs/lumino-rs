@@ -53,6 +53,7 @@ pub use model::{
     VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
     VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
+pub use sidebar::{SidebarPanelAction, take_panel_action};
 pub use toolbar_popup::{ToolbarAction, ToolbarCommand};
 
 use egui::{Frame, Margin, Panel, Stroke};

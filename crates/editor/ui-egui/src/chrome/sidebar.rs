@@ -5,6 +5,7 @@
 //! - 子按钮仅在所属分组激活时出现，激活时点亮 `child_color`；
 //! - 底部依次为横向 / 纵向卷帘按钮（`roll_bar_visible` 时）与混音台入口。
 
+mod panel_action;
 mod track_list;
 
 use egui::{Color32, Rect, Sense, Vec2};
@@ -12,6 +13,7 @@ use egui::{Color32, Rect, Sense, Vec2};
 use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon};
 use crate::icons::Icon;
 use crate::theme;
+pub use panel_action::{SidebarPanelAction, take_panel_action};
 
 /// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。
 pub(crate) const ROUTE_BAR_W: f32 = 48.0;

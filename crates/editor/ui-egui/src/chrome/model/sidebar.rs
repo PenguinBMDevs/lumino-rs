@@ -63,6 +63,8 @@ pub enum SidebarPanel {
 /// 左侧栏的一条音轨（只读）。
 #[derive(Debug, Clone)]
 pub struct SidebarTrack {
+    /// 生产音轨 ID（`Event::TrackSelected` 用它，不能用列表下标——重排后会错位）。
+    pub id: usize,
     /// 音轨编号（`A01`）；指挥轨也保留字段，渲染时显示图标。
     pub label: String,
     /// 音轨名称。
@@ -176,6 +178,7 @@ impl Default for SidebarModel {
             panel: SidebarPanel::Tracks,
             tracks: vec![
                 SidebarTrack {
+                    id: 0,
                     label: "Conductor".to_owned(),
                     name: "Conductor".to_owned(),
                     color: None,
@@ -184,6 +187,7 @@ impl Default for SidebarModel {
                     soloed: false,
                 },
                 SidebarTrack {
+                    id: 1,
                     label: "A01".to_owned(),
                     name: "Setup".to_owned(),
                     color: None,

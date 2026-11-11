@@ -17,6 +17,7 @@ mod settings_pages;
 mod settings_ui;
 mod shape_canvas;
 mod shape_drawer;
+mod sidebar_panel;
 mod tool_panel;
 mod toolbar;
 mod video_clip_timeline;
@@ -99,6 +100,7 @@ impl Sidebar {
             .tracks
             .iter()
             .map(|track| SidebarTrack {
+                id: track.id,
                 label: track.display_label.clone(),
                 name: track.name.clone(),
                 color: track.color.map(color32),

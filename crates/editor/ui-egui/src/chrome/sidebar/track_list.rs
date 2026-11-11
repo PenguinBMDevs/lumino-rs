@@ -9,9 +9,9 @@
 //! - 音轨行高 35，添加行高 40。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, Sense, Vec2};
-use egui_extras::{Column, TableBuilder};
 
 use super::super::{SidebarModel, SidebarTrack};
+use super::panel_action::{self, SidebarPanelAction};
 use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
@@ -37,35 +37,42 @@ pub(super) fn show_model(
         theme::text(),
     );
 
-    let rows_height = layout::TRACK_ROW_H * model.tracks.len() as f32;
-    let list_rect = Rect::from_min_size(
+    // 内容底色只铺「音轨行 + 添加行」的高度（与 iced 的可滚动内容同高），
+    // 面板其余区域仍透出面板底色——否则整块面板会比 iced 多一层底色。
+    let content_height = layout::TRACK_ROW_H * model.tracks.len() as f32 + layout::TRACK_ADD_ROW_H;
+    let background = Rect::from_min_size(
         egui::pos2(list_left, list_top),
-        Vec2::new(list_right - list_left, rows_height),
+        Vec2::new(list_right - list_left, content_height),
     );
-    ui.painter().rect_filled(list_rect, 0, theme::base_bg());
+    ui.painter().rect_filled(background, 0, theme::base_bg());
 
+    // 手工逐行布局（不再用 `TableBuilder`）：表格的行间距会把「添加音轨」行
+    // 推到最后一行的下半部分（实测行距 ≈ 41 vs 行高 36 → 10px 重叠）。
+    // iced 的 `column![...rows, add]` 是 0 间距，这里保持一致。
+    let list_area = Rect::from_min_max(
+        egui::pos2(list_left, list_top),
+        egui::pos2(list_right, content.bottom()),
+    );
     let mut list_ui = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(list_rect)
+            .max_rect(list_area)
             .layout(Layout::top_down(Align::Min)),
     );
-
-    TableBuilder::new(&mut list_ui)
+    list_ui.spacing_mut().item_spacing.y = 0.0;
+    egui::ScrollArea::vertical()
         .id_salt("lumino-track-list")
-        .striped(false)
-        .column(Column::remainder())
-        .body(|body| {
-            body.rows(layout::TRACK_ROW_H, model.tracks.len(), |mut row| {
-                let index = row.index();
-                row.col(|ui| track_row(ui, &model.tracks[index], icons));
-            });
+        .auto_shrink([false, false])
+        .show(&mut list_ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for track in &model.tracks {
+                track_row(ui, track, icons);
+            }
+            let (add_rect, _) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), layout::TRACK_ADD_ROW_H),
+                Sense::hover(),
+            );
+            add_track_row(ui, add_rect, &model.add_track_label, icons);
         });
-
-    let add_rect = Rect::from_min_size(
-        egui::pos2(list_left, list_top + rows_height),
-        Vec2::new(list_rect.width(), layout::TRACK_ADD_ROW_H),
-    );
-    add_track_row(ui, add_rect, &model.add_track_label, icons);
 }
 
 /// 仅「添加音轨」行（`Route::Arrangement`）：面板内边距 8，行宽 = 内容宽 - 16。
@@ -83,11 +90,19 @@ pub(super) fn show_add_track(
 }
 
 /// 单个音轨行：编号列（固定 36）+ 名称列（固定起点）+ 右侧独奏。
+///
+/// 行由 egui **独占**点击：命中即 `SelectTrack(id)` 并计入占用区，避免 iced
+/// 的同位行按钮再处理一次（两侧选择同一个音轨时不会报错，但会造成两次重绘）。
 fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), layout::TRACK_ROW_H),
-        Sense::hover(),
+        Sense::click(),
     );
+    if response.clicked() {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::SelectTrack(track.id));
+    }
+    // 行命中区由 egui 独占（iced 的同位行按钮不再处理同一次点击）。
+    super::super::menu::extend_blocked(ui.ctx(), [rect]);
 
     let text_color = track_text_color(track);
     let background = row_background(track, response.hovered());
@@ -142,6 +157,9 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
                 .size(theme::font::LABEL)
                 .color(text_color),
         )
+        // egui 默认 `selectable_labels = true`：名称标签会自己吃掉指针事件，
+        // 表现为「点音轨名选不中音轨」（只有点行内空白才有效）。这里显式关闭。
+        .selectable(false)
         .truncate(),
     );
 
@@ -163,6 +181,20 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) {
 fn add_track_row(ui: &mut egui::Ui, rect: Rect, label: &str, cache: &mut IconCache) {
     ui.painter()
         .rect_filled(rect, CornerRadius::same(6), theme::base_bg());
+    // 命中区与绘制同源；点击只给 egui（否则 iced 的添加按钮会再加一条音轨）。
+    let response = ui.interact(
+        rect,
+        egui::Id::unique(("lumino.add-track", rect.top() as i32)),
+        Sense::click(),
+    );
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(6), theme::toolbar_bg());
+    }
+    if response.clicked() {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::AddTrack);
+    }
+    super::super::menu::extend_blocked(ui.ctx(), [rect]);
 
     let inner_left = rect.left() + layout::TRACK_BUTTON_PAD_X + layout::TRACK_ADD_ROW_PAD;
     let icon_rect = Rect::from_min_size(
