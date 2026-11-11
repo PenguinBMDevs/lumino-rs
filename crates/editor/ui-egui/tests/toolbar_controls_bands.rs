@@ -217,6 +217,63 @@ fn ppq_cell_enters_edit_and_edit_emits_changes() {
 }
 
 #[test]
+fn bottom_strip_drives_height_resize() {
+    // 底部 6px：按下 → ResizeStarted；拖拽 → ResizeDragged；松开 → ResizeEnded。
+    let (mut h, actions) = harness(model());
+    let pos = Pos2::new(700.0, layout::TOOLBAR_H - 3.0);
+    let mut input = RawInput::default();
+    input.events.push(Event::PointerMoved(pos));
+    input.events.push(Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
+    *h.input_mut() = input;
+    h.run();
+    assert!(
+        actions
+            .borrow()
+            .iter()
+            .any(|a| matches!(a, ToolbarAction::ResizeStarted)),
+        "按下底边应开始调整高度：{:?}",
+        actions.borrow()
+    );
+
+    let moved = Pos2::new(700.0, layout::TOOLBAR_H + 10.0);
+    let mut input = RawInput::default();
+    input.events.push(Event::PointerMoved(moved));
+    *h.input_mut() = input;
+    h.run();
+    assert!(
+        actions
+            .borrow()
+            .iter()
+            .any(|a| matches!(a, ToolbarAction::ResizeDragged(_))),
+        "拖拽应回传光标 y：{:?}",
+        actions.borrow()
+    );
+
+    let mut input = RawInput::default();
+    input.events.push(Event::PointerButton {
+        pos: moved,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
+    *h.input_mut() = input;
+    h.run();
+    assert!(
+        actions
+            .borrow()
+            .iter()
+            .any(|a| matches!(a, ToolbarAction::ResizeEnded)),
+        "松开应结束调整：{:?}",
+        actions.borrow()
+    );
+}
+
+#[test]
 fn auto_scroll_and_collaboration_emit_actions() {
     let y = mid_y();
     // 自动滚动固定在右侧（与「虚拟 More」为基准）。

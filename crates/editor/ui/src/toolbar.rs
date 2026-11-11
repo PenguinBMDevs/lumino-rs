@@ -3,14 +3,17 @@
 //! 该模块已拆分为以下子模块：
 //! - `types`: 类型定义（NotePrecision, TupletType, DotType, Tool 等）
 //! - `event`: 工具栏事件枚举和工厂方法
-//! - `view`: 视图渲染逻辑
+//! - `placeholder`: iced 侧同尺寸占位 + egui 快照（视图已全部迁到 egui）
+//! - `curve_tool_group`: 悬浮工具条设置下拉（`root/draw_toolbar.rs` 复用）
 
 pub(crate) mod brush_dropdown;
 mod buttons;
+pub(crate) mod curve_tool_group;
 mod default;
 pub mod event;
 pub(crate) mod fill_division_dropdown;
 pub(crate) mod overflow;
+mod placeholder;
 mod record;
 mod resize;
 pub(crate) mod shape_dropdown;
@@ -24,7 +27,6 @@ pub(crate) mod thickness_dropdown;
 pub mod types;
 mod update;
 mod update_onion_skin;
-mod view;
 
 pub use event::{Event, FlipHorizontalMode, ShapeType, ToolPanelItem};
 pub use lumino_ui_core::button_descs::ButtonId;
@@ -33,8 +35,8 @@ pub use types::{
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,
 };
 // 供 `root/draw_toolbar.rs` 复用「工具设置下拉」悬浮层（曲线工具组）——该 widget 定义在
-// 私有 `view::curve_tool_group` 内，此处以 crate 可见性再导出，避免把整个 `view` 模块外放。
-pub(crate) use view::curve_tool_group::CurveToolGroup;
+// `toolbar/curve_tool_group.rs`，此处以 crate 可见性再导出，避免把整个模块外放。
+pub(crate) use curve_tool_group::CurveToolGroup;
 
 use lumino_core::BrushConfig;
 pub use lumino_core::SnapSpec;

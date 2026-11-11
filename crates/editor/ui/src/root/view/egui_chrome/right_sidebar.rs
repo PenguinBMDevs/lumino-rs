@@ -45,7 +45,7 @@ pub(super) fn model(
         } else {
             0.0
         }) + if shows_toolbar {
-            layout::TOOLBAR_H
+            root.toolbar.height
         } else {
             0.0
         },

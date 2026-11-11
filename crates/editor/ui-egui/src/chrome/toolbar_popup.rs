@@ -146,6 +146,12 @@ pub enum ToolbarAction {
     ToggleToolPanel,
     /// 工具区命令按钮（量化 / 变速 / 翻转 / 分割 / 合并 / 移调 / 连奏）。
     ToolCommand(ToolbarCommand),
+    /// 按下底部 6px 手柄（开始拖拽调整工具栏高度）。
+    ResizeStarted,
+    /// 拖拽中（携带当前光标逻辑 y）。
+    ResizeDragged(f32),
+    /// 松开手柄。
+    ResizeEnded,
 }
 
 /// 工具区的命令按钮（非工具选择器）。

@@ -18,6 +18,7 @@ mod tools;
 use egui::{Align, CornerRadius, Layout, Rect, Stroke, Vec2};
 use lumino_core::Tool;
 
+use super::toolbar_popup::{self, ToolbarAction};
 use super::{ChromeState, ToolbarModel};
 use crate::icons::Icon;
 use crate::layout;
@@ -36,8 +37,15 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         tracing::warn!(?full, "DEBUG toolbar band");
     }
 
-    let content = Rect::from_min_size(full.min, Vec2::new(full.width(), layout::TOOLBAR_CONTENT_H));
-    let y = content.top() + layout::TOOLBAR_PAD_Y;
+    let content = Rect::from_min_size(
+        full.min,
+        Vec2::new(
+            full.width(),
+            (full.height() - layout::TOOLBAR_RESIZE_H).max(0.0),
+        ),
+    );
+    // 高度被用户拖高时，分组整体垂直居中（默认 72 时等于 `TOOLBAR_PAD_Y`）。
+    let y = content.top() + ((content.height() - layout::TOOLBAR_GROUP_H) / 2.0).max(0.0);
     let h = layout::TOOLBAR_GROUP_H;
     let mut x = content.left() + layout::TOOLBAR_PAD_X;
 
@@ -102,6 +110,47 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
     }
 
     right_side::show(ui, content, icons, model);
+    resize_handle(ui, full);
+}
+
+/// 底部 6px 高度拖拽手柄（iced `render_resize_handle` 的等价实现）。
+///
+/// 宽度跟随仍由宿主处理（`input.rs` 在 `is_toolbar_resizing` 时按光标 y 调
+/// `Toolbar::update_resize_position`），这里只发成对的起止信号与拖拽位置。
+fn resize_handle(ui: &egui::Ui, full: Rect) {
+    let rect = Rect::from_min_max(
+        egui::pos2(
+            full.left(),
+            (full.bottom() - layout::TOOLBAR_RESIZE_H).max(full.top()),
+        ),
+        full.max,
+    );
+    if rect.height() <= 0.0 {
+        return;
+    }
+    let response = ui.interact(
+        rect,
+        egui::Id::unique("lumino.toolbar.resize"),
+        egui::Sense::click_and_drag(),
+    );
+    let response = response.on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    let dragging_id = egui::Id::unique("lumino.toolbar.resizing");
+    let started = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(dragging_id))
+        .unwrap_or(false);
+    let down = response.is_pointer_button_down_on();
+    if down && !started {
+        ui.ctx().data_mut(|d| d.insert_temp(dragging_id, true));
+        toolbar_popup::push_action(ui.ctx(), ToolbarAction::ResizeStarted);
+    } else if down && let Some(pos) = ui.ctx().pointer_latest_pos() {
+        toolbar_popup::push_action(ui.ctx(), ToolbarAction::ResizeDragged(pos.y));
+    } else if !down && started {
+        ui.ctx().data_mut(|d| d.insert_temp(dragging_id, false));
+        toolbar_popup::push_action(ui.ctx(), ToolbarAction::ResizeEnded);
+    }
+    // 手柄由 egui 独占（iced 侧已无同位置控件）。
+    super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 
 /// 工具区可见条目数（`ALL` 前缀；模型默认 `usize::MAX` = 全部）。

@@ -16,7 +16,7 @@ impl Root {
     ///
     /// 轨道列 / 标尺 / 泳道输入全部由 egui 接管；wgpu 负责画网格与音符，
     /// 其输出经 egui 外部纹理合成。
-    pub(crate) fn view_arrangement(&self, available_width: f32) -> Element<'_> {
+    pub(crate) fn view_arrangement(&self, _available_width: f32) -> Element<'_> {
         puffin::profile_scope!("root_view_arrangement");
 
         const TRACK_LIST_WIDTH: f32 = 160.0;
@@ -145,11 +145,6 @@ impl Root {
         let arrangement_row =
             iced_widget::row![track_list_column, arrangement_column, v_scrollbar_column];
 
-        let perf_ctx = crate::toolbar::ToolbarPerfContext {
-            playback_tick: self.editor.playback_position,
-            ppq: self.editor.editor_state.view.ppq,
-            tempo_points: &self.editor.editor_state.data.tempo_points,
-        };
         // 底部行：添加音轨按钮（左侧，与音轨列表等宽）+ 水平滚动条（右侧填充）
         // 两者高度均为 20px，与原 h_scrollbar 占用空间一致，不影响 viewport 计算
         let bottom_row = iced_widget::row![add_track_btn, h_scrollbar]
@@ -157,14 +152,7 @@ impl Root {
             .height(Length::Fixed(20.0));
 
         column![
-            self.toolbar.toolbar_view(
-                &self.window,
-                false,
-                self.settings.display.language,
-                &perf_ctx,
-                available_width,
-                true,
-            ),
+            self.toolbar.toolbar_view(),
             // 走带视图不渲染右侧栏：右侧栏只属于钢琴卷帘编辑区，
             // 跟随钢琴卷帘 UI 显隐（见 right_sidebar_visible）。
             arrangement_row.height(Length::Fill),

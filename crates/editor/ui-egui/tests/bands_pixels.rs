@@ -80,6 +80,7 @@ fn model() -> ChromeModel {
             ppq_editing: false,
             ppq_buffer: "1920".to_owned(),
             ppq_error: None,
+            height: lumino_ui_egui::layout::TOOLBAR_H,
         }),
         tool_panel: None,
         statusbar: StatusbarModel {

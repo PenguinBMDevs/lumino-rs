@@ -11,6 +11,7 @@ mod items;
 pub mod state;
 pub mod view;
 
+#[cfg(test)]
 pub use interaction::{MORE_BUTTON_WIDTH, MORE_GAP};
 pub use state::*;
 pub use view::*;

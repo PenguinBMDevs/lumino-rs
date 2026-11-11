@@ -2896,10 +2896,48 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 845/845、`ui-egui` 全部集成测试（含新 5 用例）、
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；`capture_egui` 12/12。
 
-**Task 3.4（下一步）**
+**Task 3.4（第九十三步）：删除 iced 工具栏整树（含最后一个 `iced_widget::canvas` 用户），高度拖拽迁 egui**
 
-1. 删除 iced `toolbar/view/` 整树（含最后一个 `iced_widget::canvas` 用户
-   `SnapIcon`），把 `Toolbar::view` 换成同尺寸占位；同时删除
-   `root/text_params_panel.rs`（随工具栏菜单）；
-2. 左栏面板（`sidebar/panel.rs`）、标题栏菜单（`titlebar/menu.rs`）同样处理；
+- **删除 iced `toolbar/view/` 整树（2010 行）**：`controls` / `status` /
+  `detection_dashboard` / `onion_skin` / `tools` / `tools/arrangement` /
+  `tools/curve_group` / `snap_icon`（最后一个 `iced_widget::canvas` 用户）/
+  `toolbar_view` / `view.rs` 全部移除。
+- **保留 `curve_tool_group`**：它被 `root/draw_toolbar.rs`（悬浮工具条，尚未迁移）
+  复用，移动到 `toolbar/curve_tool_group.rs` 并保持 `pub(crate)` 导出。
+- **`Toolbar::toolbar_view()` 改为同尺寸占位**：新文件 `toolbar/placeholder.rs`，
+  高度 = `self.height`、底色 = `background.weakest`，只保证高度/底色与 egui band
+  一致；同时把 `egui_snapshot` 从被删的 `detection_dashboard.rs` 迁到该文件
+  （BPM / 时间 / 位置换算函数随迁，新增 `height` 字段）。
+- **调用点收敛**：`piano_roll.rs`（2）、`arrangement.rs`（1）、
+  `root_tests/speed_change.rs`（2）共 5 处改为无参调用；随之删除 3 处
+  `ToolbarPerfContext` 局部构造与 2 处失效 import，`view_arrangement` /
+  `right_content` 闭包的宽度参数改为 `_available_width`（工具栏不再需要预算）。
+- **工具栏高度拖拽迁 egui**（原 iced `render_resize_handle` 在删除范围内）：
+  - `ToolbarModel.height` + `ToolbarAction::{ResizeStarted, ResizeDragged, ResizeEnded}`；
+  - 工具栏 band 底部 6px 手柄：按下/拖拽/松开经 `toolbar::Event::resize_*`
+    回传，宽度跟随仍由宿主 `input.rs` 按光标 y 调用 `update_resize_position`；
+  - band 高度改用 `model.height`，分组在 band 内**垂直居中**；生产
+    `piano_roll.top_inset` / `tool_panel_top` / 右栏 `top_inset` 三处常量
+    `TOOLBAR_H` 全部改为实时 `toolbar.height`（否则拖高后右栏与卷帘顶部重叠）。
+- **`buttons.rs` 收缩为尺寸契约**：仅保留 `TOOL_SELECTOR_WIDTH` / `TOOL_BUTTON_WIDTH`
+  （`overflow` 预算仍需要），删除 190 行视图工厂。
+- **无头验证**（`toolbar_controls_bands.rs` +1 用例 = 6）：底边按下 →
+  `ResizeStarted`、拖拽 → `ResizeDragged(y)`、松开 → `ResizeEnded`。
+- **真机**（DPI-aware）：
+  - 点击逐项仍各产生**恰好一条**：`Play / Pause / ToggleLoop`；
+  - 拖底边向下 40px：`DEBUG toolbar band` 实测 `[[248,30]-[2048,102]]` →
+    `[[248,30]-[2048,142]]`，日志 `ResizeStarted → ResizeDragged(98.4…128.8) →
+    ResizeEnded`；截图确认分组垂直居中、钢琴卷帘从 142 开始、右栏图标列同起点，
+    无重叠/缝隙（`target/tb7-top.png`）。
+- 验收：`lumino-ui` lib 844/844、`ui-egui` lib 42/42 + 全部集成测试、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；`capture_egui` 12/12
+  （**无需更新任何基线**：删除的是 iced 侧像素，egui 渲染未变）。
+  触达 iced 的源文件 99 → **91**，`cargo tree` 仍为 39（待全部视图删除后收口）。
+
+**Task 3.5（下一步）**
+
+1. 左栏面板（`sidebar/panel.rs` + `sidebar/panel_tests.rs`，约 690 行）：
+   先核对 egui `sidebar.rs` 已覆盖的轨道行 / 分组 / 拖拽，再换同宽占位并删除；
+2. 标题栏菜单（`titlebar/menu.rs`）与 `root/text_params_panel.rs`
+   （后者仍被 `draw_toolbar` 复用，需先迁悬浮工具条或其设置面板）；
 3. 最后摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

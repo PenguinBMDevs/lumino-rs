@@ -80,7 +80,7 @@ impl Root {
                     self,
                     has_selection,
                     false,
-                    move |available_width| {
+                    move |_available_width| {
                         let velocity_panel = if self.sidebar.automation_panel_visible {
                             self.editor.velocity_panel.view(
                                 &self.editor,
@@ -102,19 +102,7 @@ impl Root {
                                 fixed_ratio,
                             },
                         );
-                        let perf_ctx = crate::toolbar::ToolbarPerfContext {
-                            playback_tick: self.editor.playback_position,
-                            ppq: self.editor.editor_state.view.ppq,
-                            tempo_points: &self.editor.editor_state.data.tempo_points,
-                        };
-                        let toolbar = self.toolbar.toolbar_view(
-                            &self.window,
-                            has_selection,
-                            self.settings.display.language,
-                            &perf_ctx,
-                            available_width,
-                            false,
-                        );
+                        let toolbar = self.toolbar.toolbar_view();
                         let right_bar = if self.right_sidebar_visible() {
                             right_sidebar::view::view(&self.right_sidebar)
                         } else {
@@ -142,7 +130,7 @@ impl Root {
                     self,
                     has_selection,
                     false,
-                    move |available_width| {
+                    move |_available_width| {
                         let velocity_panel = if self.sidebar.automation_panel_visible {
                             self.editor.velocity_panel.view(
                                 &self.editor,
@@ -164,19 +152,7 @@ impl Root {
                                 fixed_ratio,
                             },
                         );
-                        let perf_ctx = crate::toolbar::ToolbarPerfContext {
-                            playback_tick: self.editor.playback_position,
-                            ppq: self.editor.editor_state.view.ppq,
-                            tempo_points: &self.editor.editor_state.data.tempo_points,
-                        };
-                        let toolbar = self.toolbar.toolbar_view(
-                            &self.window,
-                            has_selection,
-                            self.settings.display.language,
-                            &perf_ctx,
-                            available_width,
-                            false,
-                        );
+                        let toolbar = self.toolbar.toolbar_view();
                         // 右侧栏渲染条件收口：仅钢琴卷帘编辑区渲染（防御性兜底，
                         // 正常情况下该分支即满足 right_sidebar_visible）
                         let right_bar = if self.right_sidebar_visible() {

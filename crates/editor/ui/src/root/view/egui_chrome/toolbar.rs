@@ -127,6 +127,9 @@ impl Root {
                 ToolbarCommand::TransposeUpOctave => toolbar::Event::transpose_up(12),
                 ToolbarCommand::Tie => toolbar::Event::tie(),
             },
+            ToolbarAction::ResizeStarted => toolbar::Event::resize_drag_started(),
+            ToolbarAction::ResizeDragged(_) => toolbar::Event::resize_dragged(),
+            ToolbarAction::ResizeEnded => toolbar::Event::resize_drag_ended(),
             // 悬浮条及其锚定面板的动作在独立模块里翻译（保持单文件行数纪律）。
             other => return super::tool_panel::action_message(self, other),
         })

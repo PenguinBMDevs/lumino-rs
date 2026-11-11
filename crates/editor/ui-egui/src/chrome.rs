@@ -464,7 +464,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         };
         let band = egui::Rect::from_min_size(
             egui::pos2(full.left() + inset, top),
-            egui::Vec2::new(full.width() - inset, layout::TOOLBAR_H),
+            egui::Vec2::new(full.width() - inset, toolbar.height.max(1.0)),
         );
         if band.width() > 0.0 {
             root.painter().rect_filled(band, 0, theme::panel_bg());

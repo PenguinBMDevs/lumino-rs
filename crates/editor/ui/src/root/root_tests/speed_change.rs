@@ -10,7 +10,6 @@ use crate::root::handlers;
 use crate::root::handlers::MessageHandler;
 use crate::state::root_state::DialogType;
 use crate::toolbar;
-use crate::toolbar::ToolbarPerfContext;
 use lumino_core::storage::config::UiConfig;
 
 #[test]
@@ -74,32 +73,10 @@ fn test_speed_change_button_always_enabled_in_view() {
     let ui_config = UiConfig::default();
     let root = Root::new(&ui_config);
 
-    // 构造检测仪表盘所需的性能上下文（与产品运行时一致的数据来源）
-    let perf_ctx = ToolbarPerfContext {
-        playback_tick: root.editor.playback_position,
-        ppq: root.editor.editor_state.view.ppq,
-        tempo_points: &root.editor.editor_state.data.tempo_points,
-    };
-
-    // 有选中 -> view
-    let _element = root.toolbar.toolbar_view(
-        &root.window,
-        true,
-        root.settings.display.language,
-        &perf_ctx,
-        1920.0,
-        false,
-    );
-
-    // 无选中 -> view（不应 panic/assert）
-    let _element = root.toolbar.toolbar_view(
-        &root.window,
-        false,
-        root.settings.display.language,
-        &perf_ctx,
-        1920.0,
-        false,
-    );
+    // 工具栏视图已全部迁到 egui：这里只验证 iced 占位仍能按任意宽度/选中态构造，
+    // 不会 panic（占位与选中态无关，保留两次调用覆盖旧断言语义）。
+    let _element = root.toolbar.toolbar_view();
+    let _element = root.toolbar.toolbar_view();
 
     // 验证通过：两种情况下 view 均正常返回
 }

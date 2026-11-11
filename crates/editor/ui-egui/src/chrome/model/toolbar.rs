@@ -55,6 +55,8 @@ pub struct ToolbarModel {
     pub ppq_buffer: String,
     /// PPQ 编辑校验错误（非空时在输入框下方显示）。
     pub ppq_error: Option<String>,
+    /// 工具栏高度（用户可拖拽调整，默认 72）。
+    pub height: f32,
 }
 
 /// 精度（吸附）下拉的内容。
@@ -175,6 +177,7 @@ impl Default for ToolbarModel {
             ppq_editing: false,
             ppq_buffer: String::new(),
             ppq_error: None,
+            height: 72.0,
         }
     }
 }

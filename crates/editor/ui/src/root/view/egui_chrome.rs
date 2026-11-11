@@ -287,7 +287,7 @@ impl Root {
                 0.0
             } else {
                 layout::TITLEBAR_H
-            }) + layout::TOOLBAR_H,
+            }) + self.toolbar.height,
             right_inset,
             bottom_inset: layout::STATUSBAR_H
                 + if self.sidebar.automation_panel_visible {
@@ -431,6 +431,7 @@ impl Root {
                 ppq_editing: self.toolbar.ppq_editing,
                 ppq_buffer: self.toolbar.ppq_edit_buffer.clone(),
                 ppq_error: self.toolbar.ppq_edit_error.clone(),
+                height: toolbar.height,
             })
         } else {
             None
@@ -447,7 +448,7 @@ impl Root {
         } else {
             0.0
         }) + if shows_toolbar {
-            lumino_ui_egui::layout::TOOLBAR_H
+            self.toolbar.height
         } else {
             0.0
         };
