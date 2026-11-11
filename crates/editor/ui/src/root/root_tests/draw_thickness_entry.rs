@@ -50,7 +50,14 @@ fn test_thickness_entry_toggles_in_window_panel_without_window_events() {
         root.toolbar.tool_panel_open,
         "点「粗细」不应关闭悬浮工具条（面板锚点在它身上）"
     );
-    assert!(root.view_draw_toolbar().is_some(), "悬浮条仍应正常渲染");
+    // 悬浮条由 egui 绘制：用主窗口 Root 验证模型可构建
+    // （本用例的 Root 是对话框窗口，`egui_chrome_model` 不产出主窗外壳）。
+    let mut main = Root::new(&lumino_core::storage::config::UiConfig::default());
+    main.toolbar.tool_panel_open = true;
+    assert!(
+        main.egui_chrome_model().tool_panel.is_some(),
+        "悬浮条仍应正常渲染（egui 模型）"
+    );
 
     // 再点一次收起（开合语义）
     root.update(Event::toggle_thickness_panel());

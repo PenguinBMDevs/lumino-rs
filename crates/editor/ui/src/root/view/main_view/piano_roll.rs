@@ -216,16 +216,8 @@ impl Root {
             stack = stack.push(toast_overlay);
         }
         // 混音台浮动面板由 egui 绘制并接管输入（`lumino-ui-egui::mixer`），
-        // iced 侧不再有视图（原 `view_mixer_panel` 已删除）。
-        // 音符绘制悬浮工具条（非阻塞覆盖层，浮在卷帘区域上方、默认底部居中、可拖拽；
-        // 由工具栏「绘制入口」按钮开关，仅在钢琴卷帘视图可见）。
-        // 颜料桶「分音符填充」小面板亦挂在其上（`draw_tool_toolbar` 内锚定于胶囊上方）。
-        // egui 叠加层接管悬浮条时不再画 iced 版本（否则会出现两份胶囊与面板）。
-        if !crate::host::overlay_enabled()
-            && let Some(draw_toolbar) = self.view_draw_toolbar()
-        {
-            stack = stack.push(draw_toolbar);
-        }
+        // 音符绘制悬浮工具条由 egui 绘制并接管输入（`chrome::tool_panel`），
+        // iced 侧视图（原 `root/draw_toolbar.rs`）已删除。
         // 首次使用帮助提示：最上层、右下角、非模态；显示即已读。
         if let Some(tip) = crate::view::help_tip::view_help_tip(
             self.state.help_tips.active_topic(),

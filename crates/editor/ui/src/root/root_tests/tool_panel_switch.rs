@@ -143,8 +143,7 @@ fn test_toolbar_update_sets_current_tool_before_sync() {
     );
 }
 
-/// 渲染冒烟测试：音符绘制悬浮工具条在打开状态下构建不应 panic，
-/// 间接保证面板结构（胶囊背景 + 图标独占按钮）可正常构建。
+/// 渲染冒烟测试：悬浮工具条模型在打开状态下构建不应 panic。
 #[test]
 fn test_render_draw_toolbar_does_not_panic() {
     let _guard = crate::test_helpers::event_queue_lock();
@@ -153,5 +152,6 @@ fn test_render_draw_toolbar_does_not_panic() {
     let ui_config = UiConfig::default();
     let mut root = Root::new(&ui_config);
     root.toolbar.tool_panel_open = true;
-    let _element = root.view_draw_toolbar();
+    let model = root.egui_chrome_model();
+    assert!(model.tool_panel.is_some(), "打开态应产出悬浮条模型");
 }

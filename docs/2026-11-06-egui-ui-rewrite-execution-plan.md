@@ -3012,10 +3012,32 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 807/807、`ui-egui` 全部集成测试、`clippy -D warnings`、
   `fmt --check`、`check --bin lumino-rs`。触达 iced 的源文件 83 → **82**。
 
-**Task 3.9（下一步）**
+**Task 3.9（第九十九步）：删除 iced 悬浮绘制工具条整块（-1900 行）**
 
-1. `root/draw_toolbar.rs`（1193 行，悬浮工具条）+ `root/text_params_panel.rs`：
-   egui `chrome::tool_panel` 已覆盖条目与设置面板，需补齐拖拽锚定/吸附后删除；
-2. 其余 iced 视图（音符画工具栏下拉、设置页残留等）逐个清除；
-3. 最后摘 `lumino-ui` 的 `iced_*`（`iced_renderer` / `iced_wgpu` / `iced_winit` /
-   `iced_widget` / `iced_core`），以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+- **删除**：`root/draw_toolbar.rs`（1193 行，悬浮胶囊 + 设置面板 + 拖拽覆盖层）、
+  `root/text_params_panel.rs`（文字参数面板，仅被它复用）、
+  `toolbar/curve_tool_group.rs`（悬浮层 widget），以及随之失效的 4 个下拉渲染器
+  `toolbar/{brush_dropdown,fill_division_dropdown,shape_dropdown,thickness_dropdown}.rs`
+  （egui 侧 `chrome/tool_panel` 与 `toolbar_popup` 已覆盖同等 UI）。
+- `piano_roll.rs` 去掉 `!overlay_enabled()` 的 iced 挂载分支；
+  `root.rs` / `toolbar.rs` 清理对应 `mod` 与再导出。
+- **3 个用例改测 egui 模型**：`draw_settings_panel` / `draw_thickness_entry` 里的
+  「悬浮条仍应渲染」改为用主窗口 Root 断言 `egui_chrome_model().tool_panel.is_some()`
+  （这两个用例的 Root 是对话框窗口，按设计不产出主窗外壳）；
+  `tool_panel_switch` 的渲染冒烟同样改为模型断言。
+- **验证**：
+  - `capture_egui` 12/12 零基线改动（基线场景里悬浮条默认关闭）；
+  - 真机（DPI-aware）：点工具栏「绘制入口」按钮 → `ToggleToolPanel`，
+    底部胶囊正常出现（鼠标/曲线/颜料桶/画刷/形状/文字/齿轮），由 egui 独占绘制。
+  - 单测 807 → **787**（−20 条均为 `draw_toolbar` 的私有渲染/居中用例；
+    egui 侧 `tool_panel_bands` 5 条覆盖条目、设置面板与几何）。
+- 验收：`lumino-ui` lib 787/787、`ui-egui` 全部集成测试、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`。触达 iced 的源文件 83 → **76**。
+
+**Task 3.10（下一步）**
+
+1. 继续清理剩余 iced 视图（设置页残留、音符画下拉的 iced 包装等），
+   每删一块都跑 `capture_egui` 12/12 + 真机确认；
+2. 当 `lumino-ui` 只剩占位与状态层时，摘 `iced_renderer` / `iced_wgpu` /
+   `iced_winit` / `iced_widget` / `iced_core`；
+3. 最终以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

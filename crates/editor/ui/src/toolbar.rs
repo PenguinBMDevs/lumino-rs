@@ -4,26 +4,20 @@
 //! - `types`: 类型定义（NotePrecision, TupletType, DotType, Tool 等）
 //! - `event`: 工具栏事件枚举和工厂方法
 //! - `placeholder`: iced 侧同尺寸占位 + egui 快照（视图已全部迁到 egui）
-//! - `curve_tool_group`: 悬浮工具条设置下拉（`root/draw_toolbar.rs` 复用）
 
-pub(crate) mod brush_dropdown;
 mod buttons;
-pub(crate) mod curve_tool_group;
 mod default;
 pub mod event;
-pub(crate) mod fill_division_dropdown;
 pub(crate) mod overflow;
 mod placeholder;
 mod record;
 mod resize;
-pub(crate) mod shape_dropdown;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_onion_skin;
 #[cfg(test)]
 mod tests_overflow;
-pub(crate) mod thickness_dropdown;
 pub mod types;
 mod update;
 mod update_onion_skin;
@@ -34,9 +28,6 @@ pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,
 };
-// 供 `root/draw_toolbar.rs` 复用「工具设置下拉」悬浮层（曲线工具组）——该 widget 定义在
-// `toolbar/curve_tool_group.rs`，此处以 crate 可见性再导出，避免把整个模块外放。
-pub(crate) use curve_tool_group::CurveToolGroup;
 
 use lumino_core::BrushConfig;
 pub use lumino_core::SnapSpec;

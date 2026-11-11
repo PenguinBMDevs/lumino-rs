@@ -41,7 +41,6 @@ pub struct MemoryBreakdown {
 mod arrangement;
 mod collaboration;
 mod document;
-mod draw_toolbar;
 mod editor_ops;
 mod file_dialog;
 pub mod handlers;
@@ -49,7 +48,6 @@ mod mask_panel;
 mod memory;
 mod mixer_panel;
 mod state;
-mod text_params_panel;
 mod view;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;
