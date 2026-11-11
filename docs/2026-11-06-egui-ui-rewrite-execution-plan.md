@@ -3034,10 +3034,25 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 787/787、`ui-egui` 全部集成测试、`clippy -D warnings`、
   `fmt --check`、`check --bin lumino-rs`。触达 iced 的源文件 83 → **76**。
 
-**Task 3.10（下一步）**
+**Task 3.10（第一百步）：删除 iced 溢出菜单视图与录制按钮视图（-290 行）**
 
-1. 继续清理剩余 iced 视图（设置页残留、音符画下拉的 iced 包装等），
-   每删一块都跑 `capture_egui` 12/12 + 真机确认；
-2. 当 `lumino-ui` 只剩占位与状态层时，摘 `iced_renderer` / `iced_wgpu` /
-   `iced_winit` / `iced_widget` / `iced_core`；
-3. 最终以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+- **删除** `toolbar/overflow/view.rs`（186 行：面板网格、按钮样式、tooltip、
+  定位函数）与 `toolbar/record.rs`（102 行）——egui 的 `chrome::overflow` 与
+  `chrome::toolbar::controls` 已覆盖同等 UI，这两份 iced 视图在叠加层开启时
+  永远不会被看到，却每帧仍在构建。
+- `toolbar/overflow.rs` 收敛为 `state` + `interaction` + `items`（纯数据/折叠决策）。
+- `root/view/right_content.rs` 从 80 行压到 20 行：溢出菜单覆盖层已归 egui，
+  只保留 `responsive` 包装（参数改为 `_root/_has_selection/_arrangement_mode`）。
+- 验证：`capture_egui` 12/12 零基线改动（大窗口无溢出，且叠加层本就覆盖）；
+  `lumino-ui` lib 787/787、`clippy -D warnings`、`fmt --check`、`check --bin`。
+  触达 iced 的源文件 76 → **74**。
+
+**Task 3.11（下一步）**
+
+1. iced 对话框视图（`root/view/overlays.rs` 引用的 `settings_dialog` / `save_confirm_dialog` /
+   `load_confirm_dialog` / `export_progress_dialog` / `about_egg` / `shape_drawer`）：
+   egui 已整窗绘制并接管输入，删除前需要把**对话框窗口尺寸**从「测量 iced 视图」
+   （`host/measure/dialog_sizes.rs`）改为静态尺寸表；
+2. `toast.rs`（276 行）与 `view/help_tip.rs`（91 行）仍是 iced 视图，需先补 egui 版本；
+3. 之后 `lumino-ui` 只剩 iced 运行时（host/runner/window）与占位，
+   届时摘 `iced_renderer` / `iced_wgpu` / `iced_winit` / `iced_widget` / `iced_core`。

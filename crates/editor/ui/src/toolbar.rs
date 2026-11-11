@@ -10,7 +10,6 @@ mod default;
 pub mod event;
 pub(crate) mod overflow;
 mod placeholder;
-mod record;
 mod resize;
 #[cfg(test)]
 mod tests;

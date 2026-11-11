@@ -1,80 +1,21 @@
 //! 右侧内容区域视图
 //!
-//! 提供工具栏溢出菜单覆盖层和 responsive 包装，使工具栏能感知实际可用宽度。
-//! 溢出菜单框体为矩形，自动计算边长贴近正方形，匹配按钮排列方式；
-//! 背景色贴近工具栏背景色。
+//! 只保留 `responsive` 包装：工具栏溢出菜单、音轨列表菜单、悬浮工具条等
+//! 覆盖层全部由 egui 绘制并接管点击（`lumino-ui-egui::chrome`），
+//! iced 侧不再叠第二份。
 
-use iced_core::{Color, Size};
-use iced_widget::{Stack, responsive};
+use iced_core::Size;
+use iced_widget::responsive;
 
 use crate::Element;
 use crate::root::Root;
-use crate::toolbar::overflow;
 
-/// 将右侧内容包装在 responsive 中，并在工具栏溢出菜单打开时叠加覆盖层。
-///
-/// `has_selection` 用于控制溢出菜单中依赖选中的工具按钮是否可用。
-/// `build_content` 接收实际可用宽度，负责构建工具栏与下方内容。
+/// 将右侧内容包装在 `responsive` 中（构建回调接收实际可用宽度）。
 pub fn wrap_right_content<'a>(
-    root: &'a Root,
-    has_selection: bool,
-    arrangement_mode: bool,
+    _root: &'a Root,
+    _has_selection: bool,
+    _arrangement_mode: bool,
     build_content: impl Fn(f32) -> Element<'a> + 'a,
 ) -> Element<'a> {
-    responsive(move |size: Size| {
-        let content = build_content(size.width);
-        with_toolbar_overlay(root, content, size.width, has_selection, arrangement_mode)
-    })
-    .into()
-}
-
-/// 叠加工具栏溢出菜单（点击外部区域关闭）
-fn with_toolbar_overlay<'a>(
-    root: &'a Root,
-    content: Element<'a>,
-    available_width: f32,
-    has_selection: bool,
-    arrangement_mode: bool,
-) -> Element<'a> {
-    // egui 叠加层接管溢出菜单时，iced 不再画第二份（点击也由叠加层消费）。
-    if !root.toolbar.overflow_menu_open || crate::host::overlay_enabled() {
-        return content;
-    }
-
-    // 计算面板背景色：贴近工具栏背景色
-    let palette = root.window.theme.extended_palette();
-    let toolbar_bg = palette.background.weakest.color;
-    // 稍微加深一点，使菜单框更显眼
-    let panel_background = Color::from_rgba(
-        toolbar_bg.r * 0.9,
-        toolbar_bg.g * 0.9,
-        toolbar_bg.b * 0.9,
-        toolbar_bg.a,
-    );
-
-    let mut stack = Stack::new().push(content);
-
-    // 工具栏「更多工具」溢出菜单
-    if root.toolbar.overflow_menu_open {
-        // 与工具栏渲染同一份折叠结果（纯函数，同宽度必然同结果）
-        let overflow = root
-            .toolbar
-            .compute_overflow(available_width, arrangement_mode);
-        if overflow.has_overflow() {
-            let menu = root.toolbar.render_overflow_menu(
-                &overflow,
-                has_selection,
-                root.settings.display.language,
-                panel_background,
-                &root.window.theme,
-                arrangement_mode,
-            );
-            let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
-            stack = stack
-                .push(overflow::background_close_overlay())
-                .push(menu_overlay);
-        }
-    }
-
-    stack.into()
+    responsive(move |size: Size| build_content(size.width)).into()
 }
