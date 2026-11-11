@@ -116,6 +116,9 @@ pub fn show_labels(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32]) -> 
         );
         let rect = inner.response.rect;
         let response = inner.inner;
+        if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
+            tracing::warn!(index, label = label.as_str(), ?rect, "DEBUG menubar label");
+        }
 
         if interactive {
             if response.clicked() {

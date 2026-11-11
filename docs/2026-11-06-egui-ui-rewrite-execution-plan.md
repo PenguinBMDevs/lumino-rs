@@ -2991,11 +2991,31 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 807/807、`ui-egui` 全部集成测试、`clippy -D warnings`、
   `fmt --check`、`check --bin lumino-rs`。触达 iced 的源文件 92 → **83**。
 
-**Task 3.8（下一步）**
+**Task 3.8（第九十八步）：删除 iced 标题栏菜单渲染（iced_aw MenuBar），只留同宽占位**
 
-1. 删除 iced 标题栏菜单 `titlebar/menu.rs`（411 行）——egui 侧 `chrome::titlebar` +
-   `chrome::menu` 已接管菜单树与动作；
-2. 迁移 `root/draw_toolbar.rs`（悬浮工具条，1193 行）与 `root/text_params_panel.rs`：
-   egui 侧 `chrome::tool_panel` 已覆盖条目与设置面板，需补齐拖拽锚定/吸附后删除；
-3. 之后逐个删除剩余 iced 视图，最后摘 `lumino-ui` 的 `iced_*`，
-   以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。
+- **`titlebar/menu.rs` 拆成「数据 + 占位」**：保留 `MenuKind` / `MenuItem` /
+  `MenuConfig` / `file_menu…menus()` / `display_name` / `event_display_name` /
+  `view_placeholder`；删除 `view`、`menu_items`、`submenu_button`、`menu_button`、
+  `base_button`、`disabled_button`、`button_template`、`base_split`
+  （约 160 行）与 `MENU_WIDTH`。
+- **`titlebar.rs` 两条渲染分支合并**：自绘标题栏与系统原生标题栏都直接用
+  `menu::view_placeholder(language)`（此前只有 `overlay_enabled()` 时才走占位）；
+  `export_material_enabled` 仅影响 egui 模型，iced 侧显式 `let _ =`。
+- **移除 `iced_aw` 依赖**（`crates/editor/ui/Cargo.toml`），
+  因为代码中已无任何 `iced_aw` 引用：
+  `cargo tree -p lumino-ui | grep '^iced'` **39 → 32**。
+- **诊断增强**：`chrome/menu.rs::show_labels` 在 `LUMINO_EGUI_DEBUG_RECTS=1` 时
+  打印每个菜单标签的矩形。真机实测 `文件 48..93 / 编辑 93..138 / 视图 138..183 /
+  帮助 183..228`——点 (110,15) 落在「编辑」是**正确**的（此前误判为错位）。
+- 验证：`capture_egui` 12/12 零基线改动（叠加层开启时本来就渲染占位）；
+  真机点「编辑」弹出撤销/重做/剪切/复制/粘贴/全选/查找，菜单命中与绘制一致。
+- 验收：`lumino-ui` lib 807/807、`ui-egui` 全部集成测试、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`。触达 iced 的源文件 83 → **82**。
+
+**Task 3.9（下一步）**
+
+1. `root/draw_toolbar.rs`（1193 行，悬浮工具条）+ `root/text_params_panel.rs`：
+   egui `chrome::tool_panel` 已覆盖条目与设置面板，需补齐拖拽锚定/吸附后删除；
+2. 其余 iced 视图（音符画工具栏下拉、设置页残留等）逐个清除；
+3. 最后摘 `lumino-ui` 的 `iced_*`（`iced_renderer` / `iced_wgpu` / `iced_winit` /
+   `iced_widget` / `iced_core`），以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

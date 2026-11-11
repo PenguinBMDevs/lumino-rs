@@ -45,18 +45,13 @@ impl Titlebar {
 
         // 自定义标题栏模式
         // 将菜单区域和可拖动区域分离，避免鼠标事件冲突
-        let egui_menus = crate::host::overlay_enabled();
         let menu_row = if cfg!(target_os = "macos") {
             row![]
-        } else if egui_menus {
-            // 叠加层接管菜单：iced 只保留同宽的占位（不吃输入、不画下拉）。
-            row![logo::view(window), menu::view_placeholder(language)].align_y(Alignment::Center)
         } else {
-            row![
-                logo::view(window),
-                menu::view(language, export_material_enabled)
-            ]
-            .align_y(Alignment::Center)
+            // 菜单标签与下拉全部由 egui 绘制；iced 只保留同宽占位
+            // （不吃输入、不画下拉）。`export_material_enabled` 只影响 egui 模型。
+            let _ = export_material_enabled;
+            row![logo::view(window), menu::view_placeholder(language)].align_y(Alignment::Center)
         };
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
@@ -148,14 +143,12 @@ impl Titlebar {
         export_material_enabled: bool,
     ) -> Element<'a> {
         // 菜单在最左侧，没有 logo 和窗口控制按钮。
-        // 叠加层接管菜单时 iced 只保留同宽占位（不吃输入、不画下拉），
-        // 菜单标签与下拉由 egui 绘制。
+        // 菜单标签与下拉由 egui 绘制；iced 只保留同宽占位（不吃输入、不画下拉）。
+        let _ = export_material_enabled;
         let row = if cfg!(target_os = "macos") {
             row![]
-        } else if crate::host::overlay_enabled() {
-            row![menu::view_placeholder(language)]
         } else {
-            row![menu::view(language, export_material_enabled)]
+            row![menu::view_placeholder(language)]
         };
 
         let inner = container(row)
