@@ -10,9 +10,9 @@ use lumino_core::tr;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    about_egg::view as view_about_egg, export_progress_dialog::view_export_progress_dialog,
-    load_confirm_dialog::view_load_confirm_dialog, save_confirm_dialog::view_save_confirm_dialog,
-    settings_dialog::view_settings_dialog, shape_drawer::view_shape_drawer,
+    about_egg::view as view_about_egg, load_confirm_dialog::view_load_confirm_dialog,
+    save_confirm_dialog::view_save_confirm_dialog, settings_dialog::view_settings_dialog,
+    shape_drawer::view_shape_drawer,
 };
 use crate::{Element, Theme};
 
@@ -179,9 +179,9 @@ impl Root {
                     ..Default::default()
                 })
                 .into(),
-            DialogType::ExportProgress => {
-                view_export_progress_dialog(&self.state.export_progress_dialog, &self.window.theme)
-            }
+            // 音频导出进度：内容已由 egui 整窗接管，iced 只留同尺寸底色
+            // （该对话框的尺寸是钉死的 406×233，不依赖 iced 测量）。
+            DialogType::ExportProgress => dialog_placeholder(&self.window.theme),
             DialogType::VideoExport => {
                 // 进度覆盖层由 egui 绘制（`DialogModel::VideoExportOverlay`）；
                 // iced 只返回同尺寸底色，保证窗口测量与拖拽不变。

@@ -3047,12 +3047,36 @@ callback / 多视口 / 截图能力。
   `lumino-ui` lib 787/787、`clippy -D warnings`、`fmt --check`、`check --bin`。
   触达 iced 的源文件 76 → **74**。
 
-**Task 3.11（下一步）**
+**Task 3.11（第一百零一步）：删除 iced 音频导出进度对话框视图（死视图）**
 
-1. iced 对话框视图（`root/view/overlays.rs` 引用的 `settings_dialog` / `save_confirm_dialog` /
-   `load_confirm_dialog` / `export_progress_dialog` / `about_egg` / `shape_drawer`）：
-   egui 已整窗绘制并接管输入，删除前需要把**对话框窗口尺寸**从「测量 iced 视图」
-   （`host/measure/dialog_sizes.rs`）改为静态尺寸表；
-2. `toast.rs`（276 行）与 `view/help_tip.rs`（91 行）仍是 iced 视图，需先补 egui 版本；
-3. 之后 `lumino-ui` 只剩 iced 运行时（host/runner/window）与占位，
-   届时摘 `iced_renderer` / `iced_wgpu` / `iced_winit` / `iced_widget` / `iced_core`。
+- `DialogType::ExportProgress` 改为 `dialog_placeholder`（同尺寸底色），
+  删除 `view/export_progress_dialog.rs` 与 `view.rs` 的模块声明。
+- 依据 `dialog_size_hint`：该对话框尺寸已钉死 **406×233**，不依赖 iced 测量；
+  注释亦标明「当前 Runner 侧无打开路径（死视图）」，内容由 egui 的
+  `DialogModel::ExportProgress` 绘制。
+- 验证：`capture_egui` 12/12 零基线改动、`lumino-ui` lib 787/787、
+  `clippy -D warnings`、`fmt --check`、`check --bin`。
+  触达 iced 的源文件 74 → **73**。
+
+**Task 3.12（下一步，需先确认范围）**
+
+剩余「真实渲染的 iced 对话框视图」只有 5 个 + 2 个浮层：
+
+| 视图 | 尺寸来源 | 删除前置条件 |
+|---|---|---|
+| `save_confirm_dialog` | `auto()`（宽高都靠测量） | 先钉死尺寸（旧产品尺寸 380×180） |
+| `load_confirm_dialog` | `boxed(420)`（高度靠测量） | 先钉死高度 |
+| `shape_drawer` | `pinned(1000×700)` | egui `shape_canvas` 已接管，可直接删 |
+| `settings_dialog` | `pinned(720×540)` | **内容在另一个 crate**（`lumino-ui-settings` 的 `settings::view`），需连同该 crate 一起迁 |
+| `about_egg` | 叠加在设置窗顶层 | 彩蛋动画需先补 egui 版本 |
+| `toast`（276 行） | 主窗口浮层 | 需先补 egui toast |
+| `help_tip`（91 行） | 主窗口浮层 | 需先补 egui 提示 |
+
+~~`export_progress_dialog`~~（本步已删）。
+
+**结构性问题（必须由用户决策）**：即使上述视图全部清完，`lumino-ui` 仍依赖
+`iced_renderer` / `iced_wgpu` / `iced_winit` / `iced_widget` / `iced_core`——
+因为 `host.rs` / `render_ctx.rs` / `host/event/window/*` 是 **iced 运行时**
+（事件循环、窗口管理、离屏渲染调度、IME/HiDPI）。要让
+`cargo tree -p lumino-ui | grep '^iced'` 归零，必须用 winit + wgpu + egui
+直接替换该运行时（等于重写应用外壳），这不是「删视图」而是新架构工程。
