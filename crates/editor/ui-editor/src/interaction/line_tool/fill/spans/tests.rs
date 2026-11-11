@@ -113,6 +113,33 @@ fn test_row_spans_degenerate_polygon_is_empty() {
     assert!(row_spans(&[(1.0, 1.0)], 1.0).is_empty());
 }
 
+/// 同一条自交路径里两个重叠方框：奇偶取消重叠，union 填满并集
+#[test]
+fn test_row_spans_union_fills_overlap_in_single_poly() {
+    let poly = vec![
+        (0.0, 2.0),
+        (10.0, 2.0),
+        (10.0, 5.0),
+        (0.0, 5.0),
+        (0.0, 2.0),
+        (5.0, 2.0),
+        (15.0, 2.0),
+        (15.0, 5.0),
+        (5.0, 5.0),
+        (5.0, 2.0),
+    ];
+    assert_eq!(
+        row_spans(&poly, 3.5),
+        vec![(0.0, 5.0), (10.0, 15.0)],
+        "even-odd：重叠区间被取消"
+    );
+    assert_eq!(
+        row_spans_with(&poly, 3.5, true),
+        vec![(0.0, 15.0)],
+        "union：非零环绕，重叠处也填"
+    );
+}
+
 // ── 区域身份 ──
 
 #[test]

@@ -96,11 +96,47 @@ impl Root {
             ShapeDrawerAction::SetAreaColour(colour) => {
                 if state.doc.borrow_mut().set_area_colour(colour) {
                     state.status = Some(format!("区域色：{colour}"));
+                } else if colour > state.doc.borrow().max_colour {
+                    // DRAW-032：16 = GM 通道 10，需工程级开关；不静默失败
+                    state.status = Some(
+                        "16 仅用于通道 10：请先在「工程设置 → 启用通道 10」中开启".to_string(),
+                    );
                 }
             }
             ShapeDrawerAction::ClearAreas => {
                 if state.doc.borrow_mut().clear_areas() {
                     state.status = Some("已清空区域色".to_string());
+                }
+            }
+            ShapeDrawerAction::CycleFill => {
+                let fill = state.doc.borrow_mut().cycle_fill();
+                state.status = Some(format!("填充：{fill:?}"));
+            }
+            ShapeDrawerAction::CycleAlign => {
+                let align = state.doc.borrow_mut().cycle_align();
+                state.status = Some(format!("落位：{align:?}"));
+            }
+            ShapeDrawerAction::CycleEnds => {
+                let ends = state.doc.borrow_mut().cycle_ends();
+                state.status = Some(format!("末端：{ends:?}"));
+            }
+            ShapeDrawerAction::ToggleUnion => {
+                let on = state.doc.borrow_mut().toggle_union();
+                state.status = Some(format!("重叠填充：{}", if on { "开" } else { "关" }));
+            }
+            ShapeDrawerAction::ToggleApart => {
+                let on = state.doc.borrow_mut().toggle_apart();
+                state.status = Some(format!("描边独立通道：{}", if on { "开" } else { "关" }));
+            }
+            ShapeDrawerAction::ToggleBorders => {
+                let on = state.doc.borrow_mut().toggle_borders();
+                state.status = Some(format!("交界描边：{}", if on { "开" } else { "关" }));
+            }
+            ShapeDrawerAction::SetGateBeats(beats) => {
+                if state.doc.borrow_mut().set_gate_beats(beats) {
+                    state.status = Some(format!("门长：{beats:.4} 拍"));
+                } else {
+                    state.status = Some("门长需在 0.001..=8 拍之间".to_string());
                 }
             }
             ShapeDrawerAction::SetInsertBeats(text) => state.insert_beats_text = text,

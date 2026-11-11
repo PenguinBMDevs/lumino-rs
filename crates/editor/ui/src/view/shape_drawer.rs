@@ -8,7 +8,7 @@ use iced_widget::canvas::Canvas;
 use iced_widget::{
     MouseArea, Stack, button, column, container, row, scrollable, space, text, text_input,
 };
-use lumino_core::shape::{AnchorBend, StrokeKind};
+use lumino_core::shape::{AnchorBend, ShapeFill, SpamAlign, SpamEnds, StrokeKind};
 
 use crate::message::ShapeDrawerAction;
 use crate::shape_drawer::canvas::ShapeDrawerCanvas;
@@ -96,7 +96,8 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
     } else {
         "single closed stroke only".to_string()
     };
-    let swatches = (0..=max_colour)
+    // DRAW-032：16 号色常驻显示（= GM 通道 10）。未启用工程开关时点击会被拒绝并给出提示。
+    let swatches = (0..=16u8)
         .map(|colour| {
             button(text(format!("{colour}")))
                 .on_press(Message::ShapeDrawer(ShapeDrawerAction::SetAreaColour(
@@ -105,6 +106,75 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
                 .into()
         })
         .collect::<Vec<Element<'_>>>();
+    let use10_hint = if max_colour >= 16 {
+        "16 = GM 通道 10"
+    } else {
+        "16 = 通道 10（需在工程设置启用）"
+    };
+
+    // DRAW-011：填充档位与三开关
+    let (fill, align, ends, union, apart, borders, gate_beats) = {
+        let doc = state.doc.borrow();
+        (
+            doc.fill,
+            doc.align,
+            doc.ends,
+            doc.union,
+            doc.apart,
+            doc.borders,
+            doc.gate_beats,
+        )
+    };
+    let fill_label = match fill {
+        ShapeFill::Empty => "Fill: Empty",
+        ShapeFill::Fill => "Fill: Fill",
+        ShapeFill::Spam => "Fill: Spam",
+        ShapeFill::OutlineSpam => "Fill: Outline",
+    };
+    let align_label = match align {
+        SpamAlign::Auto => "Align: Auto",
+        SpamAlign::Aligned => "Align: Aligned",
+        SpamAlign::Centred => "Align: Centred",
+    };
+    let ends_label = match ends {
+        SpamEnds::Round => "Ends: Round",
+        SpamEnds::Keep => "Ends: Keep",
+        SpamEnds::Drop => "Ends: Drop",
+        SpamEnds::Min => "Ends: Min",
+        SpamEnds::Stretch => "Ends: Stretch",
+    };
+    let fill_row = row![
+        action_button(fill_label, ShapeDrawerAction::CycleFill),
+        action_button(align_label, ShapeDrawerAction::CycleAlign),
+        action_button(ends_label, ShapeDrawerAction::CycleEnds),
+    ]
+    .spacing(4)
+    .wrap();
+    let gate_step = 0.0625f32;
+    let gate_row = row![
+        text("Gate").size(11),
+        button("-").on_press(Message::ShapeDrawer(ShapeDrawerAction::SetGateBeats(
+            (gate_beats - gate_step).max(0.001)
+        ))),
+        text(format!("{gate_beats:.3}")).size(11),
+        button("+").on_press(Message::ShapeDrawer(ShapeDrawerAction::SetGateBeats(
+            gate_beats + gate_step
+        ))),
+    ]
+    .spacing(4)
+    .align_y(iced_core::Alignment::Center);
+    let flag = |name: &'static str, on: bool, action: ShapeDrawerAction| -> Element<'_> {
+        button(text(format!("{name}: {}", if on { "On" } else { "Off" })))
+            .on_press(Message::ShapeDrawer(action))
+            .into()
+    };
+    let switch_row = row![
+        flag("Union", union, ShapeDrawerAction::ToggleUnion),
+        flag("Apart", apart, ShapeDrawerAction::ToggleApart),
+        flag("Borders", borders, ShapeDrawerAction::ToggleBorders),
+    ]
+    .spacing(4)
+    .wrap();
     let area_actions = row![
         area_toggle,
         button("Clear").on_press(Message::ShapeDrawer(ShapeDrawerAction::ClearAreas)),
@@ -159,27 +229,39 @@ pub fn view_shape_drawer<'a>(state: &ShapeDrawerState, theme: &'a Theme) -> Elem
         None => space().into(),
     };
 
+    // DRAW-011：控件区尽量压在一屏内（面板最小高度 670px）
+    let controls = column![
+        name_input,
+        file_actions,
+        edit_actions,
+        area_actions,
+        area_palette,
+        text(format!("{use10_hint} · {area_hint}"))
+            .size(10)
+            .color(panel_text),
+        fill_row,
+        gate_row,
+        switch_row,
+        status,
+        warning,
+        insert_size,
+        scale_row,
+        bend_control,
+        button("Insert")
+            .width(Length::Fill)
+            .on_press(Message::ShapeDrawer(ShapeDrawerAction::Insert)),
+    ]
+    .spacing(3)
+    .width(Length::Fill);
+
     let panel = container(
         column![
             text("Shape Library").size(16).color(panel_text),
             scrollable(column(rows).spacing(2)).height(Length::Fill),
-            name_input,
-            file_actions,
-            edit_actions,
-            area_actions,
-            area_palette,
-            text(area_hint).size(10).color(panel_text),
-            status,
-            warning,
-            insert_size,
-            scale_row,
-            bend_control,
-            button("Insert")
-                .width(Length::Fill)
-                .on_press(Message::ShapeDrawer(ShapeDrawerAction::Insert)),
+            controls,
         ]
-        .spacing(6)
-        .padding(10)
+        .spacing(3)
+        .padding(6)
         .height(Length::Fill),
     )
     .width(Length::Fixed(state.panel_width))

@@ -229,6 +229,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         // DRAW-032：工程设置「启用通道 10」开关
         "启用通道 10" => Some("Enable channel 10"),
         "区域色号上限 16" => Some("Area colour max 16"),
+        "区域着色 · 16 需启用通道 10" => Some("Area painting · 16 requires channel 10"),
         "遮罩设置…" => Some("Mask Settings…"),
         "遮罩设置失败：请选中一个待确认形状或已 Bake 图形" => {
             Some("Failed to open mask settings: select a pending or baked shape")

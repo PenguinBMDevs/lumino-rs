@@ -5,7 +5,7 @@
 //! 模仿 ../yinhe 的选中后悬浮面板风格。
 
 use iced_core::{Alignment, Color, Length, Padding, Point, Size};
-use iced_widget::{Space, button, column, container, mouse_area, tooltip};
+use iced_widget::{Space, button, column, container, mouse_area, scrollable, tooltip};
 use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
@@ -77,7 +77,13 @@ impl PianoRollContextMenuState {
 /// `available` 为编辑器可用区域；菜单会左右夹取，并在下方放不下时向上翻转，
 /// 避免条目被窗口底边裁掉（041C 待确认菜单已有 11 项）。
 pub fn view(position: Point, target: ContextMenuTarget, available: Size) -> Element<'static> {
-    let panel_height = menu_total_height(target);
+    // 菜单项过多时限制面板高度并允许滚动，否则超出窗口的条目会被直接裁掉
+    let mut panel_height = menu_total_height(target);
+    let max_height = (available.height - 16.0).max(BUTTON_SIZE + PANEL_PADDING * 2.0);
+    let scrollable_menu = panel_height > max_height;
+    if scrollable_menu {
+        panel_height = max_height;
+    }
     let panel_width = PANEL_WIDTH + PANEL_PADDING * 2.0;
     let x = (position.x + MENU_OFFSET_X).clamp(
         0.0,
@@ -91,7 +97,7 @@ pub fn view(position: Point, target: ContextMenuTarget, available: Size) -> Elem
     };
     let y = y.min((available.height - panel_height).max(0.0));
 
-    let menu_panel = menu_panel(target);
+    let menu_panel = menu_panel(target, scrollable_menu, panel_height);
 
     container(menu_panel)
         .padding(Padding {
@@ -180,25 +186,32 @@ fn menu_total_height(target: ContextMenuTarget) -> f32 {
 }
 
 /// 构建菜单面板内容（条目集由作用目标决定）
-fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
+fn menu_panel(target: ContextMenuTarget, scroll: bool, panel_height: f32) -> Element<'static> {
     let items = menu_items(target);
     let buttons = items.iter().copied().map(menu_button).collect::<Vec<_>>();
 
-    let total_height = menu_total_height(target);
+    let list = column(buttons)
+        .spacing(BUTTON_SPACING)
+        .align_x(Alignment::Center);
+    let body: Element<'static> = if scroll {
+        scrollable(list)
+            .height(Length::Fixed(
+                (panel_height - PANEL_PADDING * 2.0).max(BUTTON_SIZE),
+            ))
+            .into()
+    } else {
+        list.into()
+    };
 
-    let panel = container(
-        column(buttons)
-            .spacing(BUTTON_SPACING)
-            .align_x(Alignment::Center),
-    )
-    .padding(PANEL_PADDING)
-    .width(Length::Fixed(PANEL_WIDTH))
-    .height(Length::Fixed(total_height))
-    .style(|_theme: &Theme| container::Style {
-        background: Some(iced_core::Background::Color(PANEL_BACKGROUND)),
-        border: iced_core::Border::default().rounded(8),
-        ..Default::default()
-    });
+    let panel = container(body)
+        .padding(PANEL_PADDING)
+        .width(Length::Fixed(PANEL_WIDTH))
+        .height(Length::Fixed(panel_height))
+        .style(|_theme: &Theme| container::Style {
+            background: Some(iced_core::Background::Color(PANEL_BACKGROUND)),
+            border: iced_core::Border::default().rounded(8),
+            ..Default::default()
+        });
 
     // 用 mouse_area 包裹面板，吞掉菜单背景上的点击事件，
     // 避免触发下层的关闭覆盖层。按钮作为子元素仍会优先响应点击。

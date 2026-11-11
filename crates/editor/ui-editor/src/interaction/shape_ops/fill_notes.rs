@@ -5,9 +5,11 @@
 
 use crate::Editor;
 use crate::interaction::line_tool::fill::spam_layout::{Span, place_gates};
-use crate::interaction::line_tool::fill::spans::row_spans;
+use crate::interaction::line_tool::fill::spans::row_spans_with;
 use crate::interaction::line_tool::{paths, stroke_band};
-use lumino_core::shape::{AREA_UNASSIGNED, GateRangeParams, RangeDir, ShapeModel, ShapeOp};
+use lumino_core::shape::{
+    AREA_UNASSIGNED, COLOUR_SLOT_MAX, GateRangeParams, RangeDir, ShapeModel, ShapeOp,
+};
 use lumino_editor_state::ShapeNote;
 use lumino_editor_state::shape_ops::gate_range::{
     fit_squares, keys_gate, normalize, range_squares,
@@ -39,6 +41,13 @@ impl Editor {
         );
         let velocity = model.style.velocity.max(1);
         let gate = self.spam_gate_ticks(model);
+        // DRAW-011 `apart`：描边与内部走不同通道。默认描边为通道 0；
+        // 开启后描边改用形状的 colour_slot（内部仍走区域色 / 0）。
+        let stroke_channel = if model.style.apart {
+            model.style.colour_slot.min(COLOUR_SLOT_MAX)
+        } else {
+            0
+        };
         let mut out = Vec::new();
         for note in paths::keep_longest(&raw) {
             if note.key < 0 || note.key >= key_count {
@@ -62,7 +71,7 @@ impl Editor {
                         key,
                         length: span.end - span.start,
                         velocity,
-                        channel: 0,
+                        channel: stroke_channel,
                     });
                 }
             } else {
@@ -72,7 +81,7 @@ impl Editor {
                     key,
                     length,
                     velocity,
-                    channel: 0,
+                    channel: stroke_channel,
                 });
             }
         }
@@ -139,7 +148,7 @@ impl Editor {
         let k1 = k1.max(k0.saturating_add(1));
         let row_spans_all: Vec<(u16, Vec<Span>)> = (0..key_count)
             .map(|key| {
-                let spans = row_spans(&poly32, key as f32)
+                let spans = row_spans_with(&poly32, key as f32, model.style.union)
                     .into_iter()
                     .map(|(start, end)| Span { start, end })
                     .collect();

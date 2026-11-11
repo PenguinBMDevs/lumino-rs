@@ -54,4 +54,18 @@ pub enum ShapeDrawerAction {
     ApplyScale,
     /// 切换选中锚点的 Smooth/Corner
     ToggleAnchorBend,
+    /// 循环填充模式（DRAW-011：Empty → Fill → Spam → OutlineSpam）
+    CycleFill,
+    /// 循环 Spam 落位（Auto → Aligned → Centred）
+    CycleAlign,
+    /// 循环末端策略（Round → Keep → Drop → Min → Stretch）
+    CycleEnds,
+    /// 切换「重叠处也填充」
+    ToggleUnion,
+    /// 切换「描边与内部走不同通道」
+    ToggleApart,
+    /// 切换「颜色交界处也算描边」
+    ToggleBorders,
+    /// 设置 Spam 门长（拍）
+    SetGateBeats(f32),
 }

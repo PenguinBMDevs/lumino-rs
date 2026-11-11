@@ -68,6 +68,7 @@ fn drawing(id: &'static str, name: &'static str, points: Vec<(f32, f32)>) -> Sha
         }],
         areas: Vec::new(),
         roles: vec![StrokeRole::default()],
+        ..ShapeDrawing::new(id, name)
     }
 }
 

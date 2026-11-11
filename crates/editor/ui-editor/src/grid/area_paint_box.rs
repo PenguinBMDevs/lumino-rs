@@ -16,21 +16,22 @@ const SWATCH: f32 = 22.0;
 const GAP: f32 = 3.0;
 const PAD: f32 = 6.0;
 const LABEL_H: f32 = 18.0;
-const COLS: usize = 4;
-const ROWS: usize = 4;
+const COLS: usize = 5;
 const CLOSE_SIZE: f32 = 16.0;
 
 /// 调色板各矩形（画布坐标）
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AreaPaletteRects {
     /// 整个面板
     pub panel: Rectangle,
-    /// 16 个色块（0..=15）
-    pub swatches: [Rectangle; 16],
+    /// 色块（0..=15；启用通道 10 时含 16）
+    pub swatches: Vec<Rectangle>,
     /// 关闭按钮
     pub close: Rectangle,
     /// 当前色号
     pub active: u8,
+    /// 当前工程是否启用通道 10（16 号色是否可用）
+    pub use10: bool,
 }
 
 /// 命中结果
@@ -38,6 +39,8 @@ pub struct AreaPaletteRects {
 pub enum AreaPaintHit {
     /// 选中某色号
     Colour(u8),
+    /// 色块存在但当前工程不可用（16 且未启用通道 10）：消费点击、不写入
+    DisabledColour(u8),
     /// 退出着色模式
     Close,
     /// 面板背景（消费点击，不落到画布）
@@ -53,8 +56,12 @@ pub fn palette_rects(editor: &Editor) -> Option<AreaPaletteRects> {
         .selection_box()
         .or_else(|| editor.area_paint_bounds())?;
     let content = content_bounds(editor);
+    // DRAW-032：16 号色常驻显示（= GM 通道 10）；未启用时只展示、不可选。
+    let use10 = editor.editor_state.use10;
+    let count: usize = 17;
+    let rows = count.div_ceil(COLS);
     let width = PAD * 2.0 + SWATCH * COLS as f32 + GAP * (COLS - 1) as f32;
-    let height = PAD * 2.0 + LABEL_H + SWATCH * ROWS as f32 + GAP * (ROWS - 1) as f32;
+    let height = PAD * 2.0 + LABEL_H + SWATCH * rows as f32 + GAP * (rows - 1) as f32;
     if content.width < width + 4.0 || content.height < height + 4.0 {
         return None;
     }
@@ -73,17 +80,17 @@ pub fn palette_rects(editor: &Editor) -> Option<AreaPaletteRects> {
         (content.y + content.height - height - 2.0).max(content.y + 2.0),
     );
     let panel = Rectangle::new(Point::new(x, y), Size::new(width, height));
-    let mut swatches = [Rectangle::new(Point::new(0.0, 0.0), Size::new(0.0, 0.0)); 16];
-    for (slot, rect) in swatches.iter_mut().enumerate() {
+    let mut swatches = Vec::with_capacity(count);
+    for slot in 0..count {
         let col = slot % COLS;
         let row = slot / COLS;
-        *rect = Rectangle::new(
+        swatches.push(Rectangle::new(
             Point::new(
                 x + PAD + col as f32 * (SWATCH + GAP),
                 y + PAD + LABEL_H + row as f32 * (SWATCH + GAP),
             ),
             Size::new(SWATCH, SWATCH),
-        );
+        ));
     }
     let close = Rectangle::new(
         Point::new(x + width - PAD - CLOSE_SIZE, y + PAD),
@@ -94,6 +101,7 @@ pub fn palette_rects(editor: &Editor) -> Option<AreaPaletteRects> {
         swatches,
         close,
         active: editor.area_paint_colour().unwrap_or(0),
+        use10,
     })
 }
 
@@ -105,7 +113,11 @@ pub fn hit(editor: &Editor, point: Point) -> Option<AreaPaintHit> {
     }
     for (slot, rect) in rects.swatches.iter().enumerate() {
         if rect.contains(point) {
-            return Some(AreaPaintHit::Colour(slot as u8));
+            let colour = slot as u8;
+            if colour == 16 && !rects.use10 {
+                return Some(AreaPaintHit::DisabledColour(colour));
+            }
+            return Some(AreaPaintHit::Colour(colour));
         }
     }
     rects.panel.contains(point).then_some(AreaPaintHit::Panel)
@@ -115,6 +127,8 @@ pub fn hit(editor: &Editor, point: Point) -> Option<AreaPaintHit> {
 pub fn action_for_hit(hit: AreaPaintHit) -> Option<EditorAction> {
     match hit {
         AreaPaintHit::Colour(colour) => Some(EditorAction::AreaPaintSetColour(colour)),
+        // 未启用通道 10：消费点击但不写入（面板标题已给出原因）
+        AreaPaintHit::DisabledColour(_) => None,
         AreaPaintHit::Close => Some(EditorAction::AreaPaintEnd),
         AreaPaintHit::Panel => None,
     }
@@ -169,8 +183,13 @@ pub fn draw(
             .with_color(palette.background.strong.color),
     );
     // canvas 文本必须用 Advanced shaping：Basic 不会走系统 CJK 回退。
+    let title = if rects.use10 {
+        tr!("区域着色").to_string()
+    } else {
+        tr!("区域着色 · 16 需启用通道 10").to_string()
+    };
     frame.fill_text(canvas::Text {
-        content: tr!("区域着色").to_string(),
+        content: title,
         position: Point::new(rects.panel.x + PAD, rects.panel.y + PAD - 1.0),
         max_width: rects.panel.width - PAD * 2.0 - CLOSE_SIZE,
         line_height: iced_core::text::LineHeight::Relative(1.0),
@@ -196,12 +215,19 @@ pub fn draw(
 
     for (slot, rect) in rects.swatches.iter().enumerate() {
         let colour = slot_color(slot as u8);
+        // 16 且未启用通道 10：半透明表示"可见但不可选"
+        let disabled = slot == 16 && !rects.use10;
+        let fill = if disabled {
+            Color { a: 0.30, ..colour }
+        } else {
+            colour
+        };
         let path = Path::rounded_rectangle(
             rect.position(),
             rect.size(),
             iced_core::border::Radius::from(3.0),
         );
-        frame.fill(&path, colour);
+        frame.fill(&path, fill);
         frame.stroke(
             &path,
             Stroke::default()
@@ -244,7 +270,9 @@ fn slot_color(slot: u8) -> Color {
         12 => Color::from_rgb8(150, 160, 70),
         13 => Color::from_rgb8(150, 210, 90),
         14 => Color::from_rgb8(100, 100, 180),
-        _ => Color::from_rgb8(180, 180, 180),
+        15 => Color::from_rgb8(120, 200, 160),
+        // 16 = GM 通道 10（打击乐）：用中性灰，与音高色区分
+        _ => Color::from_rgb8(96, 96, 96),
     }
 }
 
@@ -307,9 +335,59 @@ mod tests {
     }
 
     #[test]
+    fn test_palette_colour_16_requires_use10() {
+        let mut editor = Editor::new();
+        seed_notes(&mut editor, 2, 1, &[]);
+        editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
+        let drawn_id = editor.editor_state.shape_select.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (0.0, 60.0, 100.0, 64.0),
+                shift_constrained: false,
+                filled: true,
+                apex_high: false,
+            },
+            Vec::new(),
+        );
+        editor
+            .editor_state
+            .shape_select
+            .set_model_id(drawn_id, Some(1));
+        editor.editor_state.shape_select.select_only(drawn_id);
+        editor.area_paint = Some(AreaPaintState {
+            drawn_id: Some(drawn_id),
+            model_id: 1,
+            colour: 3,
+        });
+        let centre = |r: &Rectangle| Point::new(r.x + r.width * 0.5, r.y + r.height * 0.5);
+
+        // 未启用：16 号色可见但不可选（消费点击、不写入）
+        let rects = palette_rects(&editor).expect("应显示调色板");
+        assert_eq!(rects.swatches.len(), 17, "16 号色应常驻显示");
+        assert!(!rects.use10);
+        assert_eq!(
+            hit(&editor, centre(&rects.swatches[16])),
+            Some(AreaPaintHit::DisabledColour(16))
+        );
+
+        // 启用后：同一格可选
+        editor.editor_state.use10 = true;
+        let rects = palette_rects(&editor).expect("应显示调色板");
+        assert!(rects.use10);
+        assert_eq!(
+            hit(&editor, centre(&rects.swatches[16])),
+            Some(AreaPaintHit::Colour(16))
+        );
+    }
+
+    #[test]
     fn test_slot_colours_are_distinct() {
         let mut seen = std::collections::BTreeSet::new();
-        for slot in 0..16 {
+        for slot in 0..17 {
             let c = slot_color(slot);
             assert!(seen.insert((c.r.to_bits(), c.g.to_bits(), c.b.to_bits())));
         }

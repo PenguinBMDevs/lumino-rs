@@ -225,6 +225,46 @@ fn test_borders_without_colour_boundary_keeps_fill_channel() {
     );
 }
 
+#[test]
+fn test_apart_sends_outline_to_colour_slot() {
+    let editor = editor_with_track(1);
+    let mut model = closed_shape(ShapeFill::Empty, 0.25);
+    model.style.colour_slot = 3;
+
+    let plain = editor.shape_notes_of(&model, 1);
+    assert!(!plain.is_empty(), "描边图应产生音符");
+    assert!(
+        plain.iter().all(|note| note.channel == 0),
+        "apart=false 时描边仍是通道 0"
+    );
+
+    model.style.apart = true;
+    let apart = editor.shape_notes_of(&model, 1);
+    assert!(!apart.is_empty());
+    assert!(
+        apart.iter().all(|note| note.channel == 3),
+        "apart=true 时描边应走 colour_slot，实际 {:?}",
+        apart.iter().map(|note| note.channel).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_apart_does_not_change_interior() {
+    let editor = editor_with_track(1);
+    let mut model = closed_shape(ShapeFill::Fill, 0.25);
+    model.style.colour_slot = 3;
+
+    let before = editor.shape_notes_of(&model, 1);
+    model.style.apart = true;
+    let after = editor.shape_notes_of(&model, 1);
+
+    assert_eq!(before.len(), after.len(), "apart 不应增删内部音符");
+    assert!(
+        after.iter().all(|note| note.channel == 0),
+        "内部通道不受 apart 影响"
+    );
+}
+
 fn arc_shape(mid_key: f32) -> ShapeModel {
     let mut model = ShapeModel::new(0, 1, ShapeKind::Arc, 1.0);
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (240.0, mid_key), (480.0, 60.0)]);

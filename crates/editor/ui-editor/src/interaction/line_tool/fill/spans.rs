@@ -31,6 +31,14 @@ fn asc(a: &f32, b: &f32) -> Ordering {
 /// 水平边跨不了音高行，直接跳过；相邻两个「层」（行边界 + 落在行内的拐点）
 /// 之间没有拐点，所以每条边在那里都是直的一段，每对交点恰好构成一个梯形。
 pub(crate) fn row_spans(poly: &[(f32, f32)], q: f32) -> Vec<(f32, f32)> {
+    row_spans_with(poly, q, false)
+}
+
+/// 同 [`row_spans`]，但可选**非零环绕**（DRAW-011 `union`）。
+///
+/// `union = false`：奇偶规则（重叠处取消）；
+/// `union = true`：环绕数非零即填充（重叠处也填）。
+pub(crate) fn row_spans_with(poly: &[(f32, f32)], q: f32, union: bool) -> Vec<(f32, f32)> {
     let (lo, hi) = (q - 0.5, q + 0.5);
     let mut edges: Vec<(f32, f32, f32, f32)> = Vec::new();
     for w in poly.windows(2) {
@@ -61,19 +69,20 @@ pub(crate) fn row_spans(poly: &[(f32, f32)], q: f32) -> Vec<(f32, f32)> {
     let x_at = |e: &(f32, f32, f32, f32), y: f32| e.0 + (e.2 - e.0) * (y - e.1) / (e.3 - e.1);
 
     // 每条边在每个它穿过的层隙里各出现一次（逐边展开 → 层隙内保持左右次序）
-    let mut entries: Vec<(usize, f32, f32, f32)> = Vec::new();
+    // 元组：层隙下标、中点 x、xa.min、xa.max、方向（+1 = y 递增）
+    let mut entries: Vec<(usize, f32, f32, f32, i32)> = Vec::new();
     for e in &edges {
         let from = level_at(e.1.min(e.3).max(lo));
         let to = level_at(e.1.max(e.3).min(hi));
+        let dir = if e.3 > e.1 { 1 } else { -1 };
         for g in from..to {
             let (y0, y1) = (levels[g], levels[g + 1]);
             let (xa, xb) = (x_at(e, y0), x_at(e, y1));
-            entries.push((g, (xa + xb) * 0.5, xa.min(xb), xa.max(xb)));
+            entries.push((g, (xa + xb) * 0.5, xa.min(xb), xa.max(xb), dir));
         }
     }
     entries.sort_by(|a, b| a.0.cmp(&b.0).then(asc(&a.1, &b.1)));
 
-    // 每个层隙内从左到右：第 1 与第 2、第 3 与第 4 … 配对（even-odd）
     let mut spans: Vec<(f32, f32)> = Vec::new();
     let mut i = 0;
     while i < entries.len() {
@@ -82,10 +91,26 @@ pub(crate) fn row_spans(poly: &[(f32, f32)], q: f32) -> Vec<(f32, f32)> {
         while end < entries.len() && entries[end].0 == gap {
             end += 1;
         }
-        let mut k = i;
-        while k + 1 < end {
-            spans.push((entries[k].2, entries[k + 1].3));
-            k += 2;
+        if union {
+            // 非零环绕：0→非 0 起、非 0→0 收
+            let mut winding = 0i32;
+            let mut start = 0.0f32;
+            for entry in &entries[i..end] {
+                let before = winding;
+                winding += entry.4;
+                if before == 0 && winding != 0 {
+                    start = entry.2;
+                } else if before != 0 && winding == 0 {
+                    spans.push((start, entry.3));
+                }
+            }
+        } else {
+            // 奇偶：第 1 与第 2、第 3 与第 4 … 配对
+            let mut k = i;
+            while k + 1 < end {
+                spans.push((entries[k].2, entries[k + 1].3));
+                k += 2;
+            }
         }
         i = end;
     }

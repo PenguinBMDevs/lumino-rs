@@ -92,9 +92,14 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
 
 #[test]
 fn test_menu_panel_size() {
-    let _element = menu_panel(ContextMenuTarget::Notes);
-    let _element = menu_panel(ContextMenuTarget::DrawnShape);
-    let _element = menu_panel(ContextMenuTarget::PendingDrawnShape);
+    for target in [
+        ContextMenuTarget::Notes,
+        ContextMenuTarget::DrawnShape,
+        ContextMenuTarget::PendingDrawnShape,
+    ] {
+        let _element = menu_panel(target, false, menu_total_height(target));
+        let _element = menu_panel(target, true, 480.0);
+    }
 }
 
 #[test]

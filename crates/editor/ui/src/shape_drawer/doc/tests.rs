@@ -186,3 +186,29 @@ fn test_area_colour_limit_follows_use10() {
     assert!(doc.set_max_colour(15), "上限应能回落");
     assert_eq!(doc.area_colour, 15, "上限回落后当前色应被夹取");
 }
+
+#[test]
+fn test_fill_style_round_trips_through_drawing() {
+    let mut doc = DrawerDoc::default();
+    assert_eq!(doc.cycle_fill(), ShapeFill::Fill);
+    assert_eq!(doc.cycle_align(), SpamAlign::Aligned);
+    assert_eq!(doc.cycle_ends(), SpamEnds::Keep);
+    assert!(doc.toggle_union());
+    assert!(doc.toggle_apart());
+    assert!(doc.toggle_borders());
+    assert!(doc.set_gate_beats(0.125));
+    assert!(!doc.set_gate_beats(0.0), "非法门长应被拒绝");
+
+    let drawing = doc.to_drawing("id".into(), "name".into());
+    assert_eq!(drawing.fill, ShapeFill::Fill);
+    assert_eq!(drawing.align, SpamAlign::Aligned);
+    assert_eq!(drawing.ends, SpamEnds::Keep);
+    assert!(drawing.union && drawing.apart && drawing.borders);
+    assert!((drawing.gate_beats - 0.125).abs() < 1e-6);
+
+    let mut back = DrawerDoc::default();
+    back.load_drawing(&drawing);
+    assert_eq!(back.fill, ShapeFill::Fill);
+    assert_eq!(back.align, SpamAlign::Aligned);
+    assert!(back.borders, "开关应随库图形往返");
+}

@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use lumino_core::shape::{
-    AnchorBend, AreaMap, AreaSpot, ShapeDrawing, Stroke, StrokeKind, StrokeRole,
+    AnchorBend, AreaMap, AreaSpot, ShapeDrawing, ShapeFill, SpamAlign, SpamEnds, Stroke,
+    StrokeKind, StrokeRole,
 };
 use lumino_editor_state::shape_ops::arc_points_scaled;
 
@@ -126,6 +127,20 @@ pub struct DrawerDoc {
     pub area_colour: u8,
     /// 区域色号上限（DRAW-032：工程未启用通道 10 时为 15，启用后为 16）
     pub max_colour: u8,
+    /// 填充模式（DRAW-011）
+    pub fill: ShapeFill,
+    /// Spam 门长（拍）
+    pub gate_beats: f32,
+    /// Spam 落位（DRAW-011）
+    pub align: SpamAlign,
+    /// 末端余量（DRAW-011）
+    pub ends: SpamEnds,
+    /// 重叠处也填充（DRAW-011）
+    pub union: bool,
+    /// 描边与内部走不同通道（DRAW-011）
+    pub apart: bool,
+    /// 颜色交界处也算描边（DRAW-011）
+    pub borders: bool,
     /// 画布视图
     pub view: DrawerView,
     /// 是否有未保存修改
@@ -150,6 +165,13 @@ impl Default for DrawerDoc {
             area_mode: false,
             area_colour: 1,
             max_colour: 15,
+            fill: ShapeFill::Empty,
+            gate_beats: 0.0625,
+            align: SpamAlign::Auto,
+            ends: SpamEnds::Round,
+            union: false,
+            apart: false,
+            borders: false,
             view: DrawerView::default(),
             dirty: false,
             revision: 0,
@@ -315,6 +337,13 @@ impl DrawerDoc {
         self.strokes = drawing.strokes.clone();
         self.roles = drawing.roles.clone();
         self.areas = drawing.areas.clone();
+        self.fill = drawing.fill;
+        self.gate_beats = drawing.gate_beats;
+        self.align = drawing.align;
+        self.ends = drawing.ends;
+        self.union = drawing.union;
+        self.apart = drawing.apart;
+        self.borders = drawing.borders;
         if self.roles.len() != self.strokes.len() {
             self.roles = vec![StrokeRole::default(); self.strokes.len()];
         }
@@ -325,6 +354,80 @@ impl DrawerDoc {
         self.dirty = false;
         self.area_mode = false;
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// 循环填充模式（DRAW-011）
+    pub fn cycle_fill(&mut self) -> ShapeFill {
+        self.fill = match self.fill {
+            ShapeFill::Empty => ShapeFill::Fill,
+            ShapeFill::Fill => ShapeFill::Spam,
+            ShapeFill::Spam => ShapeFill::OutlineSpam,
+            ShapeFill::OutlineSpam => ShapeFill::Empty,
+        };
+        self.touch_style();
+        self.fill
+    }
+
+    /// 循环 Spam 落位（DRAW-011）
+    pub fn cycle_align(&mut self) -> SpamAlign {
+        self.align = match self.align {
+            SpamAlign::Auto => SpamAlign::Aligned,
+            SpamAlign::Aligned => SpamAlign::Centred,
+            SpamAlign::Centred => SpamAlign::Auto,
+        };
+        self.touch_style();
+        self.align
+    }
+
+    /// 循环末端策略（DRAW-011）
+    pub fn cycle_ends(&mut self) -> SpamEnds {
+        self.ends = match self.ends {
+            SpamEnds::Round => SpamEnds::Keep,
+            SpamEnds::Keep => SpamEnds::Drop,
+            SpamEnds::Drop => SpamEnds::Min,
+            SpamEnds::Min => SpamEnds::Stretch,
+            SpamEnds::Stretch => SpamEnds::Round,
+        };
+        self.touch_style();
+        self.ends
+    }
+
+    /// 切换 `union`（DRAW-011）
+    pub fn toggle_union(&mut self) -> bool {
+        self.union = !self.union;
+        self.touch_style();
+        self.union
+    }
+
+    /// 切换 `apart`（DRAW-011）
+    pub fn toggle_apart(&mut self) -> bool {
+        self.apart = !self.apart;
+        self.touch_style();
+        self.apart
+    }
+
+    /// 切换 `borders`（DRAW-011）
+    pub fn toggle_borders(&mut self) -> bool {
+        self.borders = !self.borders;
+        self.touch_style();
+        self.borders
+    }
+
+    /// 设置门长（拍）；非法值拒绝
+    pub fn set_gate_beats(&mut self, beats: f32) -> bool {
+        if !beats.is_finite() || !(0.001..=8.0).contains(&beats) {
+            return false;
+        }
+        self.gate_beats = beats;
+        self.touch_style();
+        true
+    }
+
+    /// 样式变化：标脏并让区域缓存失效
+    fn touch_style(&mut self) {
+        self.dirty = true;
+        self.revision = self.revision.wrapping_add(1);
+        *self.area_cache.borrow_mut() = None;
     }
 
     /// 导出为库图形；roles 不足时补默认值。
@@ -340,6 +443,13 @@ impl DrawerDoc {
             strokes: self.strokes.clone(),
             areas: self.areas.clone(),
             roles,
+            fill: self.fill,
+            gate_beats: self.gate_beats,
+            align: self.align,
+            ends: self.ends,
+            union: self.union,
+            apart: self.apart,
+            borders: self.borders,
         }
     }
 }

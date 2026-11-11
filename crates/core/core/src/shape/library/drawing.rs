@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{CoreError, Result};
 use crate::shape::{
     AreaSpot, DrawingParams, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
-    ShapeRect, ShapeStyle, Stroke, StrokeRole,
+    ShapeRect, ShapeStyle, SpamAlign, SpamEnds, Stroke, StrokeRole,
 };
 
 /// 库内名称/ID 的最大字符数
@@ -29,6 +29,32 @@ pub struct ShapeDrawing {
     pub areas: Vec<AreaSpot>,
     /// 与 strokes 等长的角色；空 = 全部默认
     pub roles: Vec<StrokeRole>,
+    /// 填充模式（DRAW-011）；带 areas / roles.filled 且为 Empty 时插入会自动升级为 Fill
+    #[serde(default)]
+    pub fill: ShapeFill,
+    /// Spam 门长（拍，DRAW-011）
+    #[serde(default = "default_gate_beats")]
+    pub gate_beats: f32,
+    /// Spam 落位（DRAW-011）
+    #[serde(default)]
+    pub align: SpamAlign,
+    /// 末端余量（DRAW-011）
+    #[serde(default)]
+    pub ends: SpamEnds,
+    /// 重叠处也填充（DRAW-011）
+    #[serde(default)]
+    pub union: bool,
+    /// 描边与内部走不同通道（DRAW-011）
+    #[serde(default)]
+    pub apart: bool,
+    /// 颜色交界处也算描边（DRAW-011 / DRAW-032）
+    #[serde(default)]
+    pub borders: bool,
+}
+
+/// 旧库文件没有 gate 字段：与 `ShapeStyle::default()` 保持一致（1/16 拍）
+fn default_gate_beats() -> f32 {
+    0.0625
 }
 
 impl ShapeDrawing {
@@ -40,6 +66,13 @@ impl ShapeDrawing {
             strokes: Vec::new(),
             areas: Vec::new(),
             roles: Vec::new(),
+            fill: ShapeFill::Empty,
+            gate_beats: default_gate_beats(),
+            align: SpamAlign::Auto,
+            ends: SpamEnds::Round,
+            union: false,
+            apart: false,
+            borders: false,
         }
     }
 
@@ -127,11 +160,18 @@ impl ShapeDrawing {
         // filled，就把模型切到 Fill，避免“预览有色、插入无音符”。
         let filled = !self.areas.is_empty() || self.roles.iter().any(|role| role.filled);
         model.style = ShapeStyle {
-            fill: if filled {
+            // 未显式选填充时，带区域色/填充笔画的图形自动用 Fill，避免“预览有色、插入无音符”
+            fill: if filled && self.fill == ShapeFill::Empty {
                 ShapeFill::Fill
             } else {
-                ShapeFill::Empty
+                self.fill
             },
+            gate_beats: self.gate_beats,
+            align: self.align,
+            ends: self.ends,
+            union: self.union,
+            apart: self.apart,
+            borders: self.borders,
             areas: self.areas.clone(),
             ..ShapeStyle::default()
         };
