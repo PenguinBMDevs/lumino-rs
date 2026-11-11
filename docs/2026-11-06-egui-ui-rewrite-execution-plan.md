@@ -2854,10 +2854,52 @@ callback / 多视口 / 截图能力。
   `statusbar_bands` 3/3、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
   `capture_egui` 12/12；`tests/ui-baseline` 零改动（无头场景无 LGS 快照，GPU 组不绘制）。
 
-**Task 3.3（下一步）**
+**Task 3.3（第九十二步）：工具栏交互全部迁 egui（走带 / 循环 / 撤销重做 / PPQ 编辑 / 右侧开关 / 工具区）**
 
-1. 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）：先逐项核对
-   precision / auto-scroll / collaboration / onion-skin / undo-redo / loop /
-   playback / detection dashboard / overflow 的 egui 覆盖度；
-2. 左栏面板、标题栏菜单；
-3. 最后摘 `lumino-ui` 的 `iced_*`。
+- **补齐 egui 工具栏缺失的交互**（此前只画不接）：
+  - `controls`（新文件）：录制（`RecordToggled`）、走带（`SkipBackward` /
+    `Play` / `Pause` / `SkipForward`，图标随 `playing` 切换）、循环
+    （`ToggleLoop`，图标 `Ban ↔ ArrowsLeftRight`）、撤销 / 重做 / 历史
+    （`Undo` / `Redo` / `OpenHistory`）、检测仪表盘；
+  - **PPQ 编辑**：模型新增 `ppq_editing` / `ppq_buffer` / `ppq_error`；
+    非编辑态整列可点 → `PpqEditToggled`；编辑态画 `TextEdit`（首次进入自动聚焦），
+    输入 → `PpqEditChanged`，回车 → `PpqEditConfirmed`；错误文本**裁剪在本列内**
+    （实测「数值 1920960 超出允许范围 24..32767」会压到右侧「位置 / 时间」列）；
+  - `right_side`（新文件）：洋葱皮 / 下拉 / 自动滚动（`AutoScrollModeChanged`）/
+    协作（`OpenCollaborationDialog`）/「更多」；协作按钮不再「点击不消费、落到 iced」。
+  - `tools`：14 个条目全部接线——前 4 个选择器 → `ToolSelected(Tool)`，
+    第 5 个 → `ToggleToolPanel`，其余 → `ToolCommand(量化 / 变速 / 翻转 / 分割 /
+    合并 / 移调 / 连奏)`；修饰键与 iced 同口径（移调默认 ±1、Ctrl ±12；
+    水平翻转默认居中、Shift 向右、Ctrl 向左）。
+- **修复两个真实的「错位/重叠」缺陷**：
+  1. `widgets::icon_button` 原用 `egui::Button`：`spacing.interact_size`（40×18）
+     与 frame 内边距被算进最小尺寸，实测**选中态按钮占 42px、其余 29px**，
+     相邻工具按钮命中区互抢（点第 2 个选择器却选中第 1 个）。改为按请求尺寸
+     `allocate_exact_size` + 自绘（选中底色 / 悬停底色 / 图标），几何精确等同 iced。
+     新增 `tests/toolbar_controls_bands.rs` 断言四个选择器命中区宽度差 ≤ 6px。
+  2. 工具栏 band 未计入占用区 → 同一次点击先被 iced 按钮处理（启动播放），
+     再被 egui 处理（此时 `playing` 已为 true → 发 Pause），真机表现为
+     「点播放先响一下又停」。现在整块 band 计入 `extend_blocked`，
+     **底部 6px 缩放手柄仍留给 iced**（高度拖拽尚未迁移）。
+- **基线更新（仅 2 个场景 × 3 DPI）**：`icon_button` 几何修正后
+  `main_chrome` / `piano_roll_skeleton` 的工具栏间距收紧。已用「iced 归档图 /
+  旧 egui / 新 egui」三方对照确认新布局更接近 iced 参考图（`target/diff-toolbar-3way.png`），
+  差异只落在工具栏 band（dpi100 bbox `844..1391 × 49..77`），其余 6 个场景零改动。
+- **无头验证**（`toolbar_controls_bands.rs`，5 用例）：走带三键与播放态 Pause、
+  循环 / 撤销 / 重做 / 历史 / 录制、PPQ 进入编辑 + 输入 + 回车、
+  自动滚动与协作、工具区 9 个动作顺序 + 命中区宽度一致性。
+- **真机**（DPI-aware，窗口 2048×1232，工具栏 band 实测 `[248,30]-[2048,102]`）：
+  逐项点击产出**恰好一条**动作：
+  `Play → Pause → ToggleLoop → Undo → Redo → OpenHistory → ToolSelected(Pencil)
+  → ToolCommand(Quantize)`；截图确认播放图标随状态切换、循环图标变 ↔、
+  铅笔高亮、位置推进到 `00:01.83`。
+- 验收：`lumino-ui` lib 845/845、`ui-egui` 全部集成测试（含新 5 用例）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；`capture_egui` 12/12。
+
+**Task 3.4（下一步）**
+
+1. 删除 iced `toolbar/view/` 整树（含最后一个 `iced_widget::canvas` 用户
+   `SnapIcon`），把 `Toolbar::view` 换成同尺寸占位；同时删除
+   `root/text_params_panel.rs`（随工具栏菜单）；
+2. 左栏面板（`sidebar/panel.rs`）、标题栏菜单（`titlebar/menu.rs`）同样处理；
+3. 最后摘 `lumino-ui` 的 `iced_*`，以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

@@ -4,19 +4,24 @@
 //! - 背景 = `background.weakest`（PANEL_BG）；
 //! - 每个分组是一个 50px 高、圆角 4 的 `background.weak`（TOOLBAR_BG）容器；
 //! - 分组间距：录制 4 / 播放 8 / 循环 8 / 撤销 16 / 仪表盘 16 / 工具 0；
-//! - 右侧 OnionSkin / AutoScroll / More 直接贴在工具栏底色上。
+//! - 右侧 OnionSkin / AutoScroll / Collaboration / More 直接贴在工具栏底色上。
+//!
+//! 分组绘制拆到三个子模块（单文件行数纪律）：
+//! - [`controls`]：录制 / 走带 / 循环 / 撤销重做 / 检测仪表盘；
+//! - [`tools`]：工具选择区 + 精度下拉；
+//! - [`right_side`]：洋葱皮 / 自动滚动 / 协作 / 「更多」。
 
+mod controls;
+mod right_side;
 mod tools;
 
-use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, Sense, Stroke, Vec2};
+use egui::{Align, CornerRadius, Layout, Rect, Stroke, Vec2};
 use lumino_core::Tool;
-use lumino_core::storage::config::AutoScrollMode;
 
 use super::{ChromeState, ToolbarModel};
 use crate::icons::Icon;
 use crate::layout;
 use crate::theme;
-use crate::widgets;
 
 /// 草稿场景入口：使用默认状态（与 iced 基线一致）。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
@@ -27,6 +32,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::icons::IconCache) {
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0, theme::panel_bg());
+    if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
+        tracing::warn!(?full, "DEBUG toolbar band");
+    }
 
     let content = Rect::from_min_size(full.min, Vec2::new(full.width(), layout::TOOLBAR_CONTENT_H));
     let y = content.top() + layout::TOOLBAR_PAD_Y;
@@ -38,7 +46,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::RECORD_GROUP_W, h)),
-            |ui| record(ui, model.recording),
+            |ui| controls::record(ui, model.recording),
         );
         x += layout::RECORD_GROUP_W + 4.0;
     }
@@ -48,7 +56,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::PLAYBACK_GROUP_W, h)),
-            |ui| playback(ui, icons, model.playing),
+            |ui| controls::playback(ui, icons, model.playing),
         );
         x += layout::PLAYBACK_GROUP_W + 8.0;
     }
@@ -58,22 +66,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::LOOP_GROUP_W, h)),
-            |ui| {
-                ui.add_space((layout::LOOP_GROUP_W - layout::TOOL_BUTTON_W) / 2.0);
-                let icon = if model.looping {
-                    Icon::ArrowsLeftRight
-                } else {
-                    Icon::Ban
-                };
-                widgets::icon_button(
-                    ui,
-                    icons,
-                    icon,
-                    layout::TOOL_BUTTON_ICON,
-                    Vec2::splat(layout::TOOL_BUTTON_W),
-                    false,
-                );
-            },
+            |ui| controls::loop_button(ui, icons, model.looping),
         );
         x += layout::LOOP_GROUP_W + 8.0;
     }
@@ -83,20 +76,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::UNDO_REDO_GROUP_W, h)),
-            |ui| {
-                let total = layout::TOOL_BUTTON_W * 3.0;
-                ui.add_space((layout::UNDO_REDO_GROUP_W - total) / 2.0);
-                for icon in [Icon::Undo, Icon::Redo, Icon::Clock] {
-                    widgets::icon_button(
-                        ui,
-                        icons,
-                        icon,
-                        layout::TOOL_BUTTON_ICON,
-                        Vec2::splat(layout::TOOL_BUTTON_W),
-                        false,
-                    );
-                }
-            },
+            |ui| controls::undo_redo(ui, icons),
         );
         x += layout::UNDO_REDO_GROUP_W + 16.0;
     }
@@ -106,7 +86,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::DASHBOARD_GROUP_W, h)),
-            |ui| dashboard(ui, model),
+            |ui| controls::dashboard(ui, model),
         );
         x += layout::DASHBOARD_GROUP_W + 16.0;
     }
@@ -121,7 +101,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         );
     }
 
-    right_side(ui, content, icons, model);
+    right_side::show(ui, content, icons, model);
 }
 
 /// 工具区可见条目数（`ALL` 前缀；模型默认 `usize::MAX` = 全部）。
@@ -129,100 +109,8 @@ fn visible_tool_count(model: &ToolbarModel) -> usize {
     model.visible_tools.min(tools::TOOLS.len())
 }
 
-/// 右侧显示开关：OnionSkin(+caret) / AutoScroll / Collaboration / More。
-fn right_side(
-    ui: &mut egui::Ui,
-    content: Rect,
-    icons: &mut crate::icons::IconCache,
-    model: &ToolbarModel,
-) {
-    let more_right = content.right() - layout::TOOLBAR_PAD_X;
-    let more = Rect::from_min_size(
-        egui::pos2(more_right - layout::MORE_BUTTON_W, content.top() + 19.0),
-        Vec2::new(layout::MORE_BUTTON_W, layout::RIGHT_TOOL_W),
-    );
-    // 右侧三组的位置以「虚拟 More」为基准：无溢出时 More 消失、协作按钮补位，
-    // 生产布局里两者宽度相近，洋葱皮/自动滚动的实际位置几乎不变。
-    let scroll_rect = Rect::from_min_size(
-        egui::pos2(
-            more.left() - 36.0 - layout::RIGHT_TOOL_W,
-            content.top() + 17.0,
-        ),
-        Vec2::splat(layout::RIGHT_TOOL_W),
-    );
-    let caret_rect = Rect::from_min_size(
-        egui::pos2(scroll_rect.left() - 32.0 - 16.0, content.top() + 17.0),
-        Vec2::new(16.0, layout::RIGHT_TOOL_W),
-    );
-    let onion_rect = Rect::from_min_size(
-        egui::pos2(
-            caret_rect.left() - layout::RIGHT_TOOL_W,
-            content.top() + 17.0,
-        ),
-        Vec2::splat(layout::RIGHT_TOOL_W),
-    );
-
-    if model.more_visible {
-        let more_button = icon_at(ui, icons, Icon::EllipsisVertical, more, 18.0, false);
-        super::overflow::set_trigger(ui.ctx(), more, content);
-        if more_button.clicked() {
-            super::toolbar_popup::push_action(
-                ui.ctx(),
-                super::toolbar_popup::ToolbarAction::ToggleOverflowMenu,
-            );
-        }
-    } else {
-        super::overflow::clear_trigger(ui.ctx());
-        // 无溢出时协作按钮常显；点击不消费，落到下层 iced 的同位置按钮。
-        if model.collaboration_visible {
-            let collab = Rect::from_min_size(
-                egui::pos2(
-                    content.right() - layout::TOOLBAR_PAD_X - 4.0 - layout::RIGHT_TOOL_W,
-                    content.top() + 17.0,
-                ),
-                Vec2::splat(layout::RIGHT_TOOL_W),
-            );
-            icon_at(ui, icons, Icon::Users, collab, 18.0, false);
-        }
-    }
-
-    if model.groups.onion {
-        // 洋葱皮开启：`background.strong` 底色（与工具选中态同源）。
-        if model.onion {
-            ui.painter()
-                .rect_filled(onion_rect, CornerRadius::same(4), theme::selected_bg());
-        }
-        let onion = icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
-        let caret = icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
-        super::toolbar_popup::set_onion_triggers(ui.ctx(), onion_rect, caret_rect);
-        if onion.clicked() {
-            super::toolbar_popup::push_action(
-                ui.ctx(),
-                super::toolbar_popup::ToolbarAction::ToggleOnionSkin,
-            );
-        }
-        if caret.clicked() {
-            super::toolbar_popup::push_action(
-                ui.ctx(),
-                super::toolbar_popup::ToolbarAction::ToggleOnionMenu,
-            );
-        }
-    } else {
-        super::toolbar_popup::clear_onion_triggers(ui.ctx());
-    }
-
-    if model.groups.auto_scroll {
-        let scroll_icon = match model.auto_scroll {
-            AutoScrollMode::FixedIndicatorLeft => Icon::ArrowsLeftRight,
-            AutoScrollMode::ScrollingIndicator => Icon::Scroll,
-            AutoScrollMode::Off => Icon::Ban,
-        };
-        icon_at(ui, icons, scroll_icon, scroll_rect, 20.0, false);
-    }
-}
-
 /// 分组容器：先铺底色，再在其中布局。
-fn group<R>(ui: &mut egui::Ui, rect: Rect, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(super) fn group<R>(ui: &mut egui::Ui, rect: Rect, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.painter().rect_filled(
         rect,
         CornerRadius::same(layout::TOOLBAR_GROUP_RADIUS),
@@ -237,83 +125,8 @@ fn group<R>(ui: &mut egui::Ui, rect: Rect, add: impl FnOnce(&mut egui::Ui) -> R)
     add(&mut child)
 }
 
-fn record(ui: &mut egui::Ui, recording: bool) {
-    let rect = ui.max_rect();
-    let (_, response) = ui.allocate_exact_size(rect.size(), Sense::click());
-    let _ = response;
-    // iced 录制红点直径 8（基线实测 8×7）；录制中保持红点（图标语义由状态栏承担）。
-    let _ = recording;
-    ui.painter()
-        .circle_filled(rect.center(), 4.0, theme::record_red());
-}
-
-fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, playing: bool) {
-    let total = layout::TOOL_BUTTON_W * 3.0 + 8.0;
-    ui.add_space((layout::PLAYBACK_GROUP_W - total) / 2.0);
-    let center_icon = if playing { Icon::Pause } else { Icon::Play };
-    for (index, icon) in [Icon::SkipBackward, center_icon, Icon::SkipForward]
-        .into_iter()
-        .enumerate()
-    {
-        if index > 0 {
-            ui.add_space(4.0);
-        }
-        widgets::icon_button(
-            ui,
-            cache,
-            icon,
-            layout::TOOL_BUTTON_ICON,
-            Vec2::splat(layout::TOOL_BUTTON_W),
-            false,
-        );
-    }
-}
-
-fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
-    let rect = ui.max_rect();
-    let split = rect.left() + layout::DASHBOARD_CELL_W;
-    ui.painter().rect_filled(
-        Rect::from_min_size(
-            egui::pos2(split, rect.top() + 8.0),
-            Vec2::new(1.0, rect.height() - 16.0),
-        ),
-        0,
-        theme::border(),
-    );
-
-    metric(
-        ui,
-        Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
-        &model.bpm,
-        &model.ppq,
-    );
-    metric(
-        ui,
-        Rect::from_min_max(egui::pos2(split, rect.top()), rect.max),
-        &model.position,
-        &model.time,
-    );
-}
-
-fn metric(ui: &egui::Ui, rect: Rect, value: &str, sub: &str) {
-    ui.painter().text(
-        egui::pos2(rect.center().x, rect.top() + 15.0),
-        Align2::CENTER_CENTER,
-        value,
-        FontId::proportional(theme::font::BODY),
-        theme::accent(),
-    );
-    ui.painter().text(
-        egui::pos2(rect.center().x, rect.top() + 31.0),
-        Align2::CENTER_CENTER,
-        sub,
-        FontId::proportional(theme::font::SMALL),
-        theme::text_muted(),
-    );
-}
-
 /// 固定矩形内的居中图标按钮。
-fn icon_at(
+pub(super) fn icon_at(
     ui: &mut egui::Ui,
     cache: &mut crate::icons::IconCache,
     icon: Icon,

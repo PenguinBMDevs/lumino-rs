@@ -53,7 +53,7 @@ pub use model::{
     VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
     VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
-pub use toolbar_popup::ToolbarAction;
+pub use toolbar_popup::{ToolbarAction, ToolbarCommand};
 
 use egui::{Frame, Margin, Panel, Stroke};
 
@@ -474,6 +474,20 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             toolbar::show_model(&mut child, toolbar, icons);
+            // 工具栏由 egui 独占：整块计入占用区，否则同一次点击会先被 iced 的
+            // 按钮处理（例如 iced Play 启动播放），再被 egui 处理（此时
+            // `playing` 已变 true → 发 Pause），表现为「点播放先响一下又停」。
+            // 底部 `TOOLBAR_RESIZE_H` 条仍留给 iced（工具栏高度拖拽尚未迁移）。
+            let blocked = egui::Rect::from_min_max(
+                band.min,
+                egui::pos2(
+                    band.right(),
+                    (band.bottom() - layout::TOOLBAR_RESIZE_H).max(band.top()),
+                ),
+            );
+            if blocked.height() > 0.0 {
+                menu::extend_blocked(ui.ctx(), [blocked]);
+            }
         }
     }
 

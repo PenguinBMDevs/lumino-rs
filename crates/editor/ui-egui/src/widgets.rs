@@ -1,6 +1,8 @@
 //! 小型控件工厂：把生产 iced 的按钮 / 图标 / 文本尺寸契约搬到 egui。
 
-use egui::{Align, Color32, CornerRadius, FontId, Layout, Response, RichText, Sense, Stroke, Vec2};
+use egui::{
+    Align, Color32, CornerRadius, FontId, Layout, Rect, Response, RichText, Sense, Stroke, Vec2,
+};
 
 use crate::chrome::SettingsPalette;
 use crate::icons::{Icon, IconCache};
@@ -74,16 +76,24 @@ pub fn icon_button(
     button_size: Vec2,
     selected: bool,
 ) -> Response {
+    // 自绘而不是 `egui::Button`：`Button` 会把 `spacing.interact_size`（40×18）
+    // 和 frame 内边距算进最小尺寸，导致「请求 25px 实际占 42px」——相邻工具按钮
+    // 命中区互相重叠（真机表现：点第 2 个选择器却选中第 1 个）。
+    // 这里按请求尺寸精确分配并手绘，几何与生产（iced）逐像素一致。
+    let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
+    if selected {
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(4), theme::selected_bg());
+    } else if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(4), theme::hover_bg());
+    }
     let image = cache.default_image(ui.ctx(), icon, icon_size);
-    let button = if selected {
-        egui::Button::image(image)
-            .fill(theme::selected_bg())
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(4))
-    } else {
-        egui::Button::image(image).frame(false)
-    };
-    ui.add_sized(button_size, button)
+    image.paint_at(
+        ui,
+        Rect::from_center_size(rect.center(), Vec2::splat(icon_size)),
+    );
+    response
 }
 
 /// 标题栏窗口按钮（45×29，图标 10）。

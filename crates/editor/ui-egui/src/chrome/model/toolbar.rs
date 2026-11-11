@@ -49,6 +49,12 @@ pub struct ToolbarModel {
     pub more_visible: bool,
     /// 溢出菜单内容（`Some` = 打开；生产折叠结果为空时始终 `None`）。
     pub overflow_menu: Option<OverflowMenuModel>,
+    /// PPQ 是否处于编辑态（`true` 时仪表盘第一列画输入框）。
+    pub ppq_editing: bool,
+    /// PPQ 编辑缓冲文本。
+    pub ppq_buffer: String,
+    /// PPQ 编辑校验错误（非空时在输入框下方显示）。
+    pub ppq_error: Option<String>,
 }
 
 /// 精度（吸附）下拉的内容。
@@ -166,6 +172,9 @@ impl Default for ToolbarModel {
             collaboration_visible: false,
             more_visible: true,
             overflow_menu: None,
+            ppq_editing: false,
+            ppq_buffer: String::new(),
+            ppq_error: None,
         }
     }
 }

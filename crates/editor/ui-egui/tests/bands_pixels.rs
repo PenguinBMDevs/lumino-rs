@@ -77,6 +77,9 @@ fn model() -> ChromeModel {
             collaboration_visible: false,
             more_visible: true,
             overflow_menu: None,
+            ppq_editing: false,
+            ppq_buffer: "1920".to_owned(),
+            ppq_error: None,
         }),
         tool_panel: None,
         statusbar: StatusbarModel {

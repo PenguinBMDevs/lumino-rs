@@ -428,6 +428,9 @@ impl Root {
                     language,
                     arrangement_mode,
                 ),
+                ppq_editing: self.toolbar.ppq_editing,
+                ppq_buffer: self.toolbar.ppq_edit_buffer.clone(),
+                ppq_error: self.toolbar.ppq_edit_error.clone(),
             })
         } else {
             None

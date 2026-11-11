@@ -7,7 +7,7 @@
 //! `background.strong` 1px 边框；菜单项 13px 文本、悬停白色 10%。
 
 use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Sense, Stroke, Vec2};
-use lumino_core::{SnapSpec, TextParams};
+use lumino_core::{SnapSpec, TextParams, Tool};
 
 use super::ToolbarModel;
 use super::menu;
@@ -112,6 +112,74 @@ pub enum ToolbarAction {
     TextParamsChanged(TextParams),
     /// 文字布局模式切换（目标由生产按当前模式推导）。
     TextLayoutModeToggle,
+    /// 点击录制按钮（开始 / 停止由模型 `recording` 决定）。
+    RecordToggled,
+    /// 倒带（上一个小节 / 开头）。
+    SkipBackward,
+    /// 播放。
+    Play,
+    /// 暂停。
+    Pause,
+    /// 快进（下一个小节 / 末尾）。
+    SkipForward,
+    /// 开 / 关循环播放。
+    ToggleLoop,
+    /// 撤销。
+    Undo,
+    /// 重做。
+    Redo,
+    /// 打开撤销历史对话框。
+    OpenHistory,
+    /// 开 / 关 PPQ 编辑。
+    PpqEditToggled,
+    /// PPQ 编辑输入变化。
+    PpqEditChanged(String),
+    /// PPQ 编辑确认（回车）。
+    PpqEditConfirmed,
+    /// 切换自动滚动模式。
+    AutoScrollModeChanged,
+    /// 打开协作对话框。
+    OpenCollaborationDialog,
+    /// 选择工具（工具区前四个选择器）。
+    ToolSelected(Tool),
+    /// 开合「音符绘制悬浮工具条」。
+    ToggleToolPanel,
+    /// 工具区命令按钮（量化 / 变速 / 翻转 / 分割 / 合并 / 移调 / 连奏）。
+    ToolCommand(ToolbarCommand),
+}
+
+/// 工具区的命令按钮（非工具选择器）。
+///
+/// 每个变体对应 iced `ToolItem` 里一个按钮的 `on_press`；水平翻转的三档由
+/// 修饰键决定（默认居中 / Shift 向右 / Ctrl 向左），与 iced 同口径。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolbarCommand {
+    /// 量化选中音符。
+    Quantize,
+    /// 音符变速。
+    SpeedChange,
+    /// 垂直翻转。
+    FlipVertical,
+    /// 水平翻转（居中，默认）。
+    FlipHorizontalCenter,
+    /// 水平翻转（向右，Shift）。
+    FlipHorizontalRight,
+    /// 水平翻转（向左，Ctrl）。
+    FlipHorizontalLeft,
+    /// 分割。
+    Split,
+    /// 合并。
+    Glue,
+    /// 向下移调 1 个半音。
+    TransposeDown,
+    /// 向下移调 1 个八度（Ctrl）。
+    TransposeDownOctave,
+    /// 向上移调 1 个半音。
+    TransposeUp,
+    /// 向上移调 1 个八度（Ctrl）。
+    TransposeUpOctave,
+    /// 同音连奏。
+    Tie,
 }
 
 /// 记录本帧要回传给生产的动作。

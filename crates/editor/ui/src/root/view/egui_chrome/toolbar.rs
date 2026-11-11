@@ -9,7 +9,7 @@ use lumino_core::tr;
 use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 use lumino_ui_egui::chrome::{
     OnionMenuItem, OnionMenuModel, OverflowItemModel, OverflowMenuModel, SnapMenuItem,
-    SnapMenuModel, ToolbarAction, ToolbarGroupsModel,
+    SnapMenuModel, ToolbarAction, ToolbarCommand, ToolbarGroupsModel,
 };
 use lumino_ui_egui::icons::Icon;
 
@@ -81,6 +81,52 @@ impl Root {
             // 溢出项按「同宽度重算折叠结果」解析，需要视口宽度，见
             // [`Root::overflow_action_message`]（Host 单独调用）。
             ToolbarAction::OverflowItem(_) => return None,
+            // 走带 / 撤销 / 仪表盘 / 右侧开关 / 工具区：与 iced 按钮同一批构造器。
+            ToolbarAction::RecordToggled => {
+                if self.toolbar.is_recording {
+                    toolbar::Event::record_stop()
+                } else {
+                    toolbar::Event::record()
+                }
+            }
+            ToolbarAction::SkipBackward => toolbar::Event::skip_backward(),
+            ToolbarAction::Play => toolbar::Event::play(),
+            ToolbarAction::Pause => toolbar::Event::pause(),
+            ToolbarAction::SkipForward => toolbar::Event::skip_forward(),
+            ToolbarAction::ToggleLoop => toolbar::Event::toggle_loop(),
+            ToolbarAction::Undo => toolbar::Event::undo(),
+            ToolbarAction::Redo => toolbar::Event::redo(),
+            ToolbarAction::OpenHistory => toolbar::Event::open_history_dialog(),
+            ToolbarAction::PpqEditToggled => {
+                toolbar::Event::ppq_edit_toggled(self.editor.editor_state.view.ppq)
+            }
+            ToolbarAction::PpqEditChanged(text) => toolbar::Event::ppq_edit_changed(text.clone()),
+            ToolbarAction::PpqEditConfirmed => toolbar::Event::ppq_edit_confirmed(),
+            ToolbarAction::AutoScrollModeChanged => toolbar::Event::auto_scroll_mode_changed(),
+            ToolbarAction::OpenCollaborationDialog => toolbar::Event::open_collaboration_dialog(),
+            ToolbarAction::ToolSelected(tool) => toolbar::Event::tool_selected(*tool),
+            ToolbarAction::ToggleToolPanel => toolbar::Event::toggle_tool_panel(),
+            ToolbarAction::ToolCommand(command) => match command {
+                ToolbarCommand::Quantize => toolbar::Event::quantize(),
+                ToolbarCommand::SpeedChange => toolbar::Event::speed_change(),
+                ToolbarCommand::FlipVertical => toolbar::Event::flip_vertical(),
+                ToolbarCommand::FlipHorizontalCenter => {
+                    toolbar::Event::flip_horizontal(toolbar::FlipHorizontalMode::Center)
+                }
+                ToolbarCommand::FlipHorizontalRight => {
+                    toolbar::Event::flip_horizontal(toolbar::FlipHorizontalMode::Right)
+                }
+                ToolbarCommand::FlipHorizontalLeft => {
+                    toolbar::Event::flip_horizontal(toolbar::FlipHorizontalMode::Left)
+                }
+                ToolbarCommand::Split => toolbar::Event::split(),
+                ToolbarCommand::Glue => toolbar::Event::glue(),
+                ToolbarCommand::TransposeDown => toolbar::Event::transpose_down(1),
+                ToolbarCommand::TransposeDownOctave => toolbar::Event::transpose_down(12),
+                ToolbarCommand::TransposeUp => toolbar::Event::transpose_up(1),
+                ToolbarCommand::TransposeUpOctave => toolbar::Event::transpose_up(12),
+                ToolbarCommand::Tie => toolbar::Event::tie(),
+            },
             // 悬浮条及其锚定面板的动作在独立模块里翻译（保持单文件行数纪律）。
             other => return super::tool_panel::action_message(self, other),
         })

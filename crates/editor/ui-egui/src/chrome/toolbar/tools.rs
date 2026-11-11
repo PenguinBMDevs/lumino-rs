@@ -1,8 +1,10 @@
 //! 工具栏「工具选择区」：条目表、宽度预算与渲染。
 
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Sense, Stroke, Vec2};
+use lumino_core::Tool;
 
 use super::super::ToolbarModel;
+use super::super::toolbar_popup::{self, ToolbarAction, ToolbarCommand};
 use super::tool_selected;
 use crate::icons::{Icon, IconCache};
 use crate::layout;
@@ -124,6 +126,51 @@ pub(super) fn width(ui: &egui::Ui, visible: usize) -> f32 {
     items + gaps + 8.0 + label + 8.0 + layout::PRECISION_W
 }
 
+/// 条目 → 动作（前四个是工具选择器，第 5 个是悬浮条开关，其余是命令）。
+///
+/// 修饰键与 iced 同口径：移调默认 ±1 半音、Ctrl ±12；水平翻转默认居中、
+/// Shift 向右、Ctrl 向左。
+fn action_for(icon: Icon, modifiers: egui::Modifiers) -> Option<ToolbarAction> {
+    let command = |c| Some(ToolbarAction::ToolCommand(c));
+    Some(match icon {
+        Icon::MousePointer => ToolbarAction::ToolSelected(Tool::Pointer),
+        Icon::MousePointerYSelect => ToolbarAction::ToolSelected(Tool::PointerYSelect),
+        Icon::Pencil => ToolbarAction::ToolSelected(Tool::Pencil),
+        Icon::Eraser => ToolbarAction::ToolSelected(Tool::Eraser),
+        Icon::DrawToolbox => ToolbarAction::ToggleToolPanel,
+        Icon::Quantize => return command(ToolbarCommand::Quantize),
+        Icon::Speed => return command(ToolbarCommand::SpeedChange),
+        Icon::FlipVertical => return command(ToolbarCommand::FlipVertical),
+        Icon::FlipHorizontal => {
+            return command(if modifiers.shift {
+                ToolbarCommand::FlipHorizontalRight
+            } else if modifiers.ctrl {
+                ToolbarCommand::FlipHorizontalLeft
+            } else {
+                ToolbarCommand::FlipHorizontalCenter
+            });
+        }
+        Icon::Split => return command(ToolbarCommand::Split),
+        Icon::Glue => return command(ToolbarCommand::Glue),
+        Icon::TransposeDown => {
+            return command(if modifiers.ctrl {
+                ToolbarCommand::TransposeDownOctave
+            } else {
+                ToolbarCommand::TransposeDown
+            });
+        }
+        Icon::TransposeUp => {
+            return command(if modifiers.ctrl {
+                ToolbarCommand::TransposeUpOctave
+            } else {
+                ToolbarCommand::TransposeUp
+            });
+        }
+        Icon::Tie => return command(ToolbarCommand::Tie),
+        _ => return None,
+    })
+}
+
 /// 渲染工具选择区内容。
 pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarModel) {
     let visible = model.visible_tools.min(TOOLS.len());
@@ -134,7 +181,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
         } else {
             (layout::TOOL_BUTTON_ICON, layout::TOOL_BUTTON_W)
         };
-        widgets::icon_button(
+        let response = widgets::icon_button(
             ui,
             cache,
             item.icon,
@@ -142,8 +189,13 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
             Vec2::new(width, layout::TOOL_BUTTON_W),
             tool_highlighted(model, index, item),
         );
+        if response.clicked() {
+            let modifiers = ui.input(|i| i.modifiers);
+            if let Some(action) = action_for(item.icon, modifiers) {
+                toolbar_popup::push_action(ui.ctx(), action);
+            }
+        }
     }
-
     ui.add_space(8.0);
 
     // 「精度:」标签在框外（与生产 iced 一致：14px、`background.weak.text`）。
