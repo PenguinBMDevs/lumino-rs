@@ -65,13 +65,11 @@ impl Sidebar {
     /// （`chrome/sidebar/menu.rs`、`track_list.rs`）；若仍在此返回 `None`，
     /// 底层画布纹理会盖住 iced 的绘制，真机表现为「左栏整块空白」。
     fn has_transient_ui(&self) -> bool {
+        // 只剩拖拽排序与宽度拖拽：取色器 / 端口 / 通道选择器、右键菜单、行内重命名
+        // 均已由 egui 绘制（返回 None 会让底层画布纹理盖住 iced 绘制 → 左栏空白）。
         self.track_reorder
             .as_ref()
             .is_some_and(|state| state.active)
-            || self.color_picking_track.is_some()
-            || self.port_picking_track.is_some()
-            || self.channel_picking_track.is_some()
-            || self.is_resizing
     }
 
     /// 构造左侧栏只读模型；存在瞬态 UI 时返回 `None`，交给 iced 继续绘制。
@@ -184,6 +182,9 @@ impl Sidebar {
             add_track_label: translations.sidebar_add_track.to_owned(),
             context_menu: sidebar_panel::track_menu(self),
             panel_menu: sidebar_panel::panel_menu(self),
+            color_picker: sidebar_panel::color_picker(self),
+            numeric_picker: sidebar_panel::numeric_picker(self),
+            resizing: self.is_resizing,
         })
     }
 }

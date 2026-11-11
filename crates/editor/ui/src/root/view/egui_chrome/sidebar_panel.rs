@@ -27,6 +27,22 @@ impl Root {
                 Event::track_rename_changed(track_id, value.clone())
             }
             SidebarPanelAction::RenameConfirmed(id) => Event::track_rename_confirmed(id),
+            SidebarPanelAction::ColorPicked { track_id, rgb } => Event::track_color_selected(
+                track_id,
+                iced_core::Color::from_rgb8(rgb.0, rgb.1, rgb.2),
+            ),
+            SidebarPanelAction::ColorReset(id) => Event::track_color_reset(id),
+            SidebarPanelAction::ColorPickerClosed(id) => Event::track_color_picker_closed(id),
+            SidebarPanelAction::PortPicked { track_id, value } => {
+                Event::track_port_selected(track_id, value)
+            }
+            SidebarPanelAction::PortPickerClosed(id) => Event::track_port_picker_closed(id),
+            SidebarPanelAction::ChannelPicked { track_id, value } => {
+                Event::track_channel_selected(track_id, value)
+            }
+            SidebarPanelAction::ChannelPickerClosed(id) => Event::track_channel_picker_closed(id),
+            SidebarPanelAction::ResizeStarted => Event::resize_drag_started(),
+            SidebarPanelAction::ResizeEnded => Event::resize_drag_ended(),
         }
     }
 
@@ -59,6 +75,47 @@ const TRACK_MENU_ITEMS: [TrackContextMenuItem; 5] = [
 
 /// 面板空白菜单条目顺序（与 iced `panel_context_menu::panel` 一致）。
 const PANEL_MENU_ITEMS: [PanelContextMenuItem; 1] = [PanelContextMenuItem::RecoverDeletedTrack];
+
+/// 音轨取色器模型；未打开时返回 `None`。
+pub(super) fn color_picker(
+    sidebar: &crate::sidebar::Sidebar,
+) -> Option<lumino_ui_egui::chrome::SidebarColorPickerModel> {
+    sidebar
+        .color_picking_track
+        .map(|track_id| lumino_ui_egui::chrome::SidebarColorPickerModel { track_id })
+}
+
+/// 端口 / 通道选择器模型；未打开时返回 `None`。
+pub(super) fn numeric_picker(
+    sidebar: &crate::sidebar::Sidebar,
+) -> Option<lumino_ui_egui::chrome::SidebarNumericPickerModel> {
+    use lumino_ui_egui::chrome::{SidebarNumericPickerKind, SidebarNumericPickerModel};
+    let (track_id, kind, choices) = if let Some(id) = sidebar.port_picking_track {
+        (
+            id,
+            SidebarNumericPickerKind::Port,
+            crate::sidebar::Sidebar::PORT_CHOICES,
+        )
+    } else {
+        let id = sidebar.channel_picking_track?;
+        (
+            id,
+            SidebarNumericPickerKind::Channel,
+            crate::sidebar::Sidebar::CHANNEL_CHOICES,
+        )
+    };
+    let track = sidebar.tracks.iter().find(|track| track.id == track_id)?;
+    let current = match kind {
+        SidebarNumericPickerKind::Port => track.port,
+        SidebarNumericPickerKind::Channel => track.channel,
+    };
+    Some(SidebarNumericPickerModel {
+        track_id,
+        kind,
+        current,
+        choices,
+    })
+}
 
 /// 音轨行菜单模型；菜单未打开时返回 `None`。
 pub(super) fn track_menu(sidebar: &crate::sidebar::Sidebar) -> Option<SidebarTrackMenuModel> {

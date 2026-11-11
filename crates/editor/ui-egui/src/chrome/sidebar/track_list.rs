@@ -96,6 +96,20 @@ pub(super) fn show_model(
         let action = super::menu::panel_menu(ui, content, menu_model, icons);
         super::menu::emit(ui.ctx(), action);
     }
+
+    // 取色器 / 端口·通道选择器：同样锚定到目标行。
+    if let Some(picker) = &model.color_picker
+        && let Some((_, anchor)) = rows.iter().find(|(id, _)| *id == picker.track_id)
+    {
+        let action = super::picker::color_picker(ui, content, *anchor, picker);
+        super::picker::emit(ui.ctx(), action);
+    }
+    if let Some(picker) = &model.numeric_picker
+        && let Some((_, anchor)) = rows.iter().find(|(id, _)| *id == picker.track_id)
+    {
+        let action = super::picker::numeric_picker(ui, content, *anchor, picker);
+        super::picker::emit(ui.ctx(), action);
+    }
 }
 
 /// 仅「添加音轨」行（`Route::Arrangement`）：面板内边距 8，行宽 = 内容宽 - 16。

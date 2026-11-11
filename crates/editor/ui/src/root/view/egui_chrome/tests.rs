@@ -124,19 +124,34 @@ fn sidebar_model_defers_to_iced_while_transient() {
 
     let mut picking = Sidebar::new();
     picking.color_picking_track = Some(1);
-    assert!(sidebar_model(&picking).is_none(), "取色中不得接管");
+    let model = sidebar_model(&picking).expect("取色器由 egui 绘制，仍须接管");
+    assert_eq!(model.color_picker.map(|picker| picker.track_id), Some(1));
 
     let mut picking = Sidebar::new();
     picking.port_picking_track = Some(1);
-    assert!(sidebar_model(&picking).is_none(), "端口选择中不得接管");
+    let model = sidebar_model(&picking).expect("端口选择器由 egui 绘制，仍须接管");
+    assert_eq!(
+        model.numeric_picker,
+        Some(lumino_ui_egui::chrome::SidebarNumericPickerModel {
+            track_id: 1,
+            kind: lumino_ui_egui::chrome::SidebarNumericPickerKind::Port,
+            current: 0,
+            choices: Sidebar::PORT_CHOICES,
+        })
+    );
 
     let mut picking = Sidebar::new();
     picking.channel_picking_track = Some(1);
-    assert!(sidebar_model(&picking).is_none(), "通道选择中不得接管");
+    let model = sidebar_model(&picking).expect("通道选择器由 egui 绘制，仍须接管");
+    assert_eq!(
+        model.numeric_picker.map(|picker| picker.kind),
+        Some(lumino_ui_egui::chrome::SidebarNumericPickerKind::Channel)
+    );
 
     let mut resizing = Sidebar::new();
     resizing.is_resizing = true;
-    assert!(sidebar_model(&resizing).is_none(), "拖拽宽度时不得接管");
+    let model = sidebar_model(&resizing).expect("宽度拖拽由 egui 绘制手柄，仍须接管");
+    assert!(model.resizing, "手柄需要拿到拖拽态以切换底色");
 }
 
 #[test]

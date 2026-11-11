@@ -154,6 +154,12 @@ pub struct SidebarModel {
     pub context_menu: Option<SidebarTrackMenuModel>,
     /// 面板空白右键菜单（`None` = 未打开）。
     pub panel_menu: Option<SidebarPanelMenuModel>,
+    /// 音轨取色器（`None` = 未打开）。
+    pub color_picker: Option<SidebarColorPickerModel>,
+    /// 端口 / 通道选择器（`None` = 未打开）。
+    pub numeric_picker: Option<SidebarNumericPickerModel>,
+    /// 是否正在拖拽调整面板宽度（决定右侧 6px 手柄底色）。
+    pub resizing: bool,
 }
 
 /// 右键菜单条目（图标 + 本地化文案；点击回传下标）。
@@ -181,6 +187,35 @@ pub struct SidebarPanelMenuModel {
     pub pos: egui::Pos2,
     /// 条目（当前只有「找回删除音轨」）。
     pub entries: Vec<SidebarMenuEntry>,
+}
+
+/// 音轨取色器（`None` = 未打开）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarColorPickerModel {
+    /// 目标音轨 ID。
+    pub track_id: usize,
+}
+
+/// 数值选择器种类（端口 / 通道）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarNumericPickerKind {
+    /// 端口（0..=15，显示 1..=16）。
+    Port,
+    /// 通道（0..=15，显示 1..=16）。
+    Channel,
+}
+
+/// 音轨端口 / 通道选择器。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarNumericPickerModel {
+    /// 目标音轨 ID。
+    pub track_id: usize,
+    /// 种类。
+    pub kind: SidebarNumericPickerKind,
+    /// 当前值（内部 0 基）。
+    pub current: u8,
+    /// 可选数量（4 的倍数）。
+    pub choices: u8,
 }
 
 impl SidebarModel {
@@ -239,6 +274,9 @@ impl Default for SidebarModel {
             add_track_label: "添加音轨".to_owned(),
             context_menu: None,
             panel_menu: None,
+            color_picker: None,
+            numeric_picker: None,
+            resizing: false,
         }
     }
 }

@@ -7,6 +7,7 @@
 
 mod menu;
 mod panel_action;
+mod picker;
 mod track_list;
 
 use egui::{Color32, Rect, Sense, Vec2};
@@ -108,6 +109,40 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
             SidebarPanel::AddTrackOnly => track_list::show_add_track(ui, panel, model, icons),
             SidebarPanel::Blank => {}
         }
+        // 右侧 6px 缩放手柄：iced 版本会被底层画布纹理盖住，这里由 egui 绘制并接管。
+        let handle = Rect::from_min_size(
+            egui::pos2(panel.right(), panel.top()),
+            Vec2::new(6.0, panel.height()),
+        );
+        ui.painter().rect_filled(
+            handle,
+            0,
+            if model.resizing {
+                theme::accent_strong()
+            } else {
+                theme::panel_bg()
+            },
+        );
+        let response = ui.interact(
+            handle,
+            egui::Id::unique("lumino.sidebar.resize"),
+            egui::Sense::click_and_drag(),
+        );
+        let response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        let dragging = egui::Id::unique("lumino.sidebar.resizing");
+        let started = ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(dragging))
+            .unwrap_or(false);
+        let down = response.is_pointer_button_down_on();
+        if down && !started {
+            ui.ctx().data_mut(|d| d.insert_temp(dragging, true));
+            panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ResizeStarted);
+        } else if !down && started {
+            ui.ctx().data_mut(|d| d.insert_temp(dragging, false));
+            panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ResizeEnded);
+        }
+        crate::chrome::menu::extend_blocked(ui.ctx(), [handle]);
     }
 }
 

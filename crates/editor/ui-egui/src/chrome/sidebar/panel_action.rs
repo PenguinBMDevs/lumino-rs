@@ -23,6 +23,39 @@ pub enum SidebarPanelAction {
     },
     /// 确认重命名（回车）。
     RenameConfirmed(usize),
+    /// 选中预设颜色（`rgb` 为 sRGB 分量）。
+    ColorPicked {
+        /// 音轨 ID。
+        track_id: usize,
+        /// 颜色分量。
+        rgb: (u8, u8, u8),
+    },
+    /// 恢复默认颜色。
+    ColorReset(usize),
+    /// 关闭取色器。
+    ColorPickerClosed(usize),
+    /// 选中端口（内部 0 基）。
+    PortPicked {
+        /// 音轨 ID。
+        track_id: usize,
+        /// 端口值。
+        value: u8,
+    },
+    /// 关闭端口选择器。
+    PortPickerClosed(usize),
+    /// 选中通道（内部 0 基）。
+    ChannelPicked {
+        /// 音轨 ID。
+        track_id: usize,
+        /// 通道值。
+        value: u8,
+    },
+    /// 关闭通道选择器。
+    ChannelPickerClosed(usize),
+    /// 按下面板右侧 6px 手柄（开始拖拽宽度）。
+    ResizeStarted,
+    /// 松开手柄。
+    ResizeEnded,
 }
 
 /// 动作通道 ID。
