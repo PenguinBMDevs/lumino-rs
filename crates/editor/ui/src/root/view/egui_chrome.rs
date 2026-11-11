@@ -67,9 +67,9 @@ impl Sidebar {
     fn has_transient_ui(&self) -> bool {
         // 只剩拖拽排序与宽度拖拽：取色器 / 端口 / 通道选择器、右键菜单、行内重命名
         // 均已由 egui 绘制（返回 None 会让底层画布纹理盖住 iced 绘制 → 左栏空白）。
-        self.track_reorder
-            .as_ref()
-            .is_some_and(|state| state.active)
+        // 已无瞬态 UI：拖拽排序、菜单、重命名、取色/端口/通道、宽度拖拽
+        // 全部由 egui 绘制并接管。
+        false
     }
 
     /// 构造左侧栏只读模型；存在瞬态 UI 时返回 `None`，交给 iced 继续绘制。
@@ -185,6 +185,14 @@ impl Sidebar {
             color_picker: sidebar_panel::color_picker(self),
             numeric_picker: sidebar_panel::numeric_picker(self),
             resizing: self.is_resizing,
+            reorder: self
+                .track_reorder
+                .as_ref()
+                .filter(|state| state.active)
+                .map(|state| lumino_ui_egui::chrome::SidebarReorderModel {
+                    track_id: state.track_id,
+                    hover_index: state.hover_index,
+                }),
         })
     }
 }

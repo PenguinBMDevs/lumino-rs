@@ -70,13 +70,29 @@ pub(super) fn show_model(
     );
     list_ui.spacing_mut().item_spacing.y = 0.0;
     let mut rows: Vec<(usize, Rect)> = Vec::new();
+    let mut reorder_started: Option<usize> = None;
+    let mut reorder_dragging: Option<usize> = None;
+    let mut reorder_ended = false;
     egui::ScrollArea::vertical()
         .id_salt("lumino-track-list")
         .auto_shrink([false, false])
         .show(&mut list_ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for track in &model.tracks {
-                rows.push((track.id, track_row(ui, track, icons)));
+                let response = track_row(ui, track, icons);
+                rows.push((track.id, response.rect));
+                if response.drag_started() {
+                    reorder_started = Some(track.id);
+                }
+                if response.dragged() {
+                    reorder_dragging = Some(track.id);
+                }
+                if response.drag_stopped() {
+                    reorder_ended = true;
+                }
+                if response.drag_stopped() {
+                    reorder_dragging = Some(track.id);
+                }
             }
             let (add_rect, _) = ui.allocate_exact_size(
                 Vec2::new(ui.available_width(), layout::TRACK_ADD_ROW_H),
@@ -84,6 +100,50 @@ pub(super) fn show_model(
             );
             add_track_row(ui, add_rect, &model.add_track_label, icons);
         });
+
+    // 拖拽排序：插入下标 = 指针上方的行数（含滚动与行的真实矩形）。
+    let insert_index = |ui: &egui::Ui| -> Option<usize> {
+        let pos = ui.ctx().pointer_latest_pos()?;
+        Some(
+            rows.iter()
+                .filter(|(_, rect)| rect.center().y < pos.y)
+                .count(),
+        )
+    };
+    if let Some(track_id) = reorder_started {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderStarted(track_id));
+    }
+    if reorder_ended {
+        if let Some(index) = insert_index(ui) {
+            panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderEnded { index });
+        }
+    } else if reorder_dragging.is_some()
+        && let Some(index) = insert_index(ui)
+    {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderMoved { index });
+    }
+
+    // 插入指示线：3px 强调色，画在目标行上沿（末位画在最后一行下沿）。
+    if let Some(reorder) = &model.reorder
+        && let Some(index) = reorder.hover_index
+    {
+        let y = rows
+            .get(index)
+            .map(|(_, rect)| rect.top())
+            .unwrap_or_else(|| {
+                rows.last()
+                    .map(|(_, rect)| rect.bottom())
+                    .unwrap_or(list_top)
+            });
+        ui.painter().rect_filled(
+            Rect::from_min_size(
+                egui::pos2(list_left, y - 1.5),
+                Vec2::new(list_right - list_left, 3.0),
+            ),
+            0,
+            theme::accent_strong(),
+        );
+    }
 
     // 右键菜单（由生产状态驱动）：行菜单锚在该行上，空白菜单锚在触发点。
     if let Some(menu_model) = &model.context_menu
@@ -130,10 +190,10 @@ pub(super) fn show_add_track(
 ///
 /// 行由 egui **独占**点击：命中即 `SelectTrack(id)` 并计入占用区，避免 iced
 /// 的同位行按钮再处理一次（两侧选择同一个音轨时不会报错，但会造成两次重绘）。
-fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> Rect {
+fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), layout::TRACK_ROW_H),
-        Sense::click(),
+        Sense::click_and_drag(),
     );
     if response.clicked() {
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::SelectTrack(track.id));
@@ -263,7 +323,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
             text_color
         },
     );
-    rect
+    response
 }
 
 /// 「添加音轨」行：图标列 24 + 列间距 4。

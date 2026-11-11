@@ -25,10 +25,11 @@ pub use model::{
     MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind,
     MaterialSectionModel, MaterialsPanelModel, MetricTone, RightSidebarPanelModel, ShapeKind,
     ShapePanelModel, SidebarColorPickerModel, SidebarMenuEntry, SidebarNumericPickerKind,
-    SidebarNumericPickerModel, SidebarPanelMenuModel, SidebarTrackMenuModel, TextParamsPanelModel,
-    ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
-    ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow, WATERFALL_TEXTURE_ID,
-    WaterfallPanelModel, governor_tone, load_tone, underrun_tone,
+    SidebarNumericPickerModel, SidebarPanelMenuModel, SidebarReorderModel, SidebarTrackMenuModel,
+    TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
+    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
+    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone,
+    underrun_tone,
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,

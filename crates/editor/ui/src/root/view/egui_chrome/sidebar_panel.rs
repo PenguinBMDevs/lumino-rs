@@ -43,6 +43,14 @@ impl Root {
             SidebarPanelAction::ChannelPickerClosed(id) => Event::track_channel_picker_closed(id),
             SidebarPanelAction::ResizeStarted => Event::resize_drag_started(),
             SidebarPanelAction::ResizeEnded => Event::resize_drag_ended(),
+            SidebarPanelAction::ReorderStarted(id) => Event::track_reorder_started(id),
+            SidebarPanelAction::ReorderMoved { index } => Event::track_reorder_moved(
+                0.0,
+                crate::sidebar::TRACK_ROW_OFFSET_Y
+                    + index as f32 * crate::sidebar::TRACK_ROW_HEIGHT,
+            ),
+            SidebarPanelAction::ReorderEnded { index } => Event::track_reorder_ended(Some(index)),
+            SidebarPanelAction::ReorderCancelled => Event::track_reorder_cancelled(),
         }
     }
 

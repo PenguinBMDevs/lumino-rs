@@ -56,6 +56,20 @@ pub enum SidebarPanelAction {
     ResizeStarted,
     /// 松开手柄。
     ResizeEnded,
+    /// 音轨行按下并开始拖拽（`drag_started`）。
+    ReorderStarted(usize),
+    /// 拖拽中：插入位置（`0..=tracks.len()`）。
+    ReorderMoved {
+        /// 目标插入下标。
+        index: usize,
+    },
+    /// 拖拽结束（生产用内部 hover_index 执行排序）。
+    ReorderEnded {
+        /// 最终插入下标（`0..=tracks.len()`）。
+        index: usize,
+    },
+    /// 拖拽被取消（指针离开列表）。
+    ReorderCancelled,
 }
 
 /// 动作通道 ID。

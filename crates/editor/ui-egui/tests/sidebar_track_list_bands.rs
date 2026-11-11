@@ -180,6 +180,64 @@ fn right_click_opens_track_menu_and_blank_opens_panel_menu() {
 }
 
 #[test]
+fn dragging_a_row_reports_reorder_start_move_and_end() {
+    let (mut h, actions) = harness(model());
+    let start = row_center(0);
+    let mut input = RawInput::default();
+    input.events.push(Event::PointerMoved(start));
+    input.events.push(Event::PointerButton {
+        pos: start,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
+    *h.input_mut() = input;
+    h.run();
+
+    // 逐步下移到第 3 行以下（越过 egui 的拖拽阈值并给出插入位）。
+    for step in 1..=8 {
+        let y = start.y + step as f32 * 14.0;
+        let mut input = RawInput::default();
+        input
+            .events
+            .push(Event::PointerMoved(Pos2::new(start.x, y)));
+        *h.input_mut() = input;
+        h.run();
+    }
+    let target = Pos2::new(start.x, row_center(2).y + 30.0);
+    let mut input = RawInput::default();
+    input.events.push(Event::PointerButton {
+        pos: target,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
+    *h.input_mut() = input;
+    h.run();
+
+    let got = actions.borrow();
+    assert!(
+        got.iter()
+            .any(|a| matches!(a, sidebar::SidebarPanelAction::ReorderStarted(7))),
+        "应回传 ReorderStarted(7)：{got:?}"
+    );
+    assert!(
+        got.iter().any(|a| matches!(
+            a,
+            sidebar::SidebarPanelAction::ReorderEnded { index } if *index >= 2
+        )),
+        "应回传最终插入下标（≥2）：{got:?}"
+    );
+    assert!(
+        got.iter().any(|a| matches!(
+            a,
+            sidebar::SidebarPanelAction::ReorderMoved { index } if *index >= 2
+        )),
+        "拖拽中应回传插入位置：{got:?}"
+    );
+}
+
+#[test]
 fn blank_area_of_panel_yields_no_action() {
     let (mut h, actions) = harness(SidebarModel {
         panel: SidebarPanel::Blank,

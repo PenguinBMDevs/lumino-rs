@@ -19,7 +19,7 @@ pub use core::{
     Route, RouteConfig, Sidebar, Track, gain_to_volume, volume_to_gain,
 };
 pub use event::Event;
-pub use track_reorder::TrackReorderState;
+pub use track_reorder::{TRACK_ROW_HEIGHT, TRACK_ROW_OFFSET_Y, TrackReorderState};
 
 // ── 单测拆分（避免单文件超 400 行）：直接挂载为同级 file 模块，
 //    避免 `mod.rs`（项目规范禁止）与目录/文件同名碰撞。

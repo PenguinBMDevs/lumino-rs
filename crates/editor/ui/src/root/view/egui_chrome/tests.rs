@@ -155,8 +155,8 @@ fn sidebar_model_defers_to_iced_while_transient() {
 }
 
 #[test]
-fn sidebar_model_allows_candidate_reorder() {
-    // 仅按下（候选）未激活时，插入指示线尚未出现，可以继续由 egui 接管。
+fn sidebar_model_carries_active_reorder() {
+    // 候选（未激活）不画指示线；激活后模型带出插入下标供 egui 绘制。
     let mut sidebar = Sidebar::new();
     sidebar.track_reorder = Some(crate::sidebar::TrackReorderState {
         track_id: 1,
@@ -165,13 +165,17 @@ fn sidebar_model_allows_candidate_reorder() {
         active: false,
         hover_index: None,
     });
-    assert!(sidebar_model(&sidebar).is_some());
+    let model = sidebar_model(&sidebar).expect("拖拽排序由 egui 绘制");
+    assert!(model.reorder.is_none(), "未激活不应画指示线");
 
     if let Some(state) = sidebar.track_reorder.as_mut() {
         state.active = true;
         state.hover_index = Some(1);
     }
-    assert!(sidebar_model(&sidebar).is_none(), "拖拽激活时不得接管");
+    let model = sidebar_model(&sidebar).expect("拖拽激活后仍由 egui 接管");
+    let reorder = model.reorder.expect("激活后应带出排序状态");
+    assert_eq!(reorder.track_id, 1);
+    assert_eq!(reorder.hover_index, Some(1));
 }
 
 #[test]

@@ -113,6 +113,15 @@ pub struct SidebarRouteItem {
     pub active: bool,
 }
 
+/// 拖拽排序状态（绘制插入指示线用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarReorderModel {
+    /// 被拖拽的音轨 ID。
+    pub track_id: usize,
+    /// 插入位置（`0..=tracks.len()`，已由生产按 conductor 首位不变量钳制）。
+    pub hover_index: Option<usize>,
+}
+
 /// 左侧栏（路由栏 48 + 面板 `panel_width`）的只读状态。
 #[derive(Debug, Clone)]
 pub struct SidebarModel {
@@ -160,6 +169,8 @@ pub struct SidebarModel {
     pub numeric_picker: Option<SidebarNumericPickerModel>,
     /// 是否正在拖拽调整面板宽度（决定右侧 6px 手柄底色）。
     pub resizing: bool,
+    /// 拖拽排序中（`None` = 未拖拽）；用于绘制插入指示线。
+    pub reorder: Option<SidebarReorderModel>,
 }
 
 /// 右键菜单条目（图标 + 本地化文案；点击回传下标）。
@@ -277,6 +288,7 @@ impl Default for SidebarModel {
             color_picker: None,
             numeric_picker: None,
             resizing: false,
+            reorder: None,
         }
     }
 }
