@@ -237,19 +237,45 @@ impl Root {
                     PianoRollContextMenuItem::StraightenOff => {
                         let _ = self.editor.set_straighten(false);
                     }
-                    PianoRollContextMenuItem::SliceVertical => {
-                        if self.editor.slice_selected_vertical() {
+                    PianoRollContextMenuItem::SliceCut => {
+                        if self.editor.begin_slice_cut() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Info,
-                                tr!("已竖切；✓ 后才写入音符"),
+                                tr!("拖出一条切割线：松手即切（Shift 自由角度）"),
                             );
                         } else {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
+                                tr!("切割失败：请选中一个待确认形状/曲线；已 Bake 形状不可再切"),
                             );
                         }
                     }
+                    PianoRollContextMenuItem::MouldShapes => match self.editor.mould_selected() {
+                        Ok(()) => {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("已切出内/外片；✓ 后才写入音符"),
+                            );
+                        }
+                        Err(lumino_ui_editor::MouldReject::Selection) => {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("饼干模失败：请选中 1 个待确认形状（或 2 个：刀 + 面团）"),
+                            );
+                        }
+                        Err(lumino_ui_editor::MouldReject::NoWalls) => {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("饼干模失败：先用鼠标工具选中要当刀的音符，再切到鼠标工具"),
+                            );
+                        }
+                        Err(lumino_ui_editor::MouldReject::NoGap) => {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("饼干模失败：刀的同一 key 行需要至少两条音符（中间才是空隙）"),
+                            );
+                        }
+                    },
                     PianoRollContextMenuItem::BetweenCreate => {
                         if self.editor.create_between_selected() {
                             self.toast.push(

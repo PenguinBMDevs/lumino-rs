@@ -16,6 +16,10 @@ impl Editor {
         if !self.is_inside_canvas(pos) {
             return;
         }
+        // DRAW-025：切割布防优先于一切画布交互
+        if self.slice_cut_active() && self.slice_cut_pressed(pos, shift) {
+            return;
+        }
 
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_key(pos);

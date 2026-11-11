@@ -5,7 +5,7 @@ use lumino_core::shape::ShapeOp;
 use lumino_editor_state::ShapeNote;
 
 #[test]
-fn test_slice_vertical_makes_two_shapes() {
+fn test_slice_vertical_rejects_baked_shape() {
     let mut editor = seeded_editor();
     let id = add_polyline(
         &mut editor,
@@ -20,8 +20,12 @@ fn test_slice_vertical_makes_two_shapes() {
         }],
     );
     editor.editor_state.shape_select.select_only(id);
-    assert!(editor.slice_selected_vertical(), "应能竖切");
-    assert_eq!(editor.editor_state.shape_select.selection_len(), 2);
+    // DEC-001：Bake 即定稿，已 Bake 形状不提供切割入口
+    assert!(
+        !editor.slice_selected_vertical(),
+        "已 Bake 形状不应再被切分"
+    );
+    assert_eq!(editor.editor_state.shape_select.selection_len(), 1);
 }
 
 #[test]

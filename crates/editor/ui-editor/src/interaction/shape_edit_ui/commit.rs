@@ -51,6 +51,10 @@ impl Editor {
                 {
                     part.model = state.current;
                     part.notes = notes;
+                    // DRAW-025：片轮廓改了就退化为普通形状（只清片身份，模型/音符不动）
+                    if let Some(cut) = &mut part.cut {
+                        cut.validate_against(&part.model);
+                    }
                 }
                 self.pending_edit_undo.push(state.original_composed);
                 while self.pending_edit_undo.len() > 64 {

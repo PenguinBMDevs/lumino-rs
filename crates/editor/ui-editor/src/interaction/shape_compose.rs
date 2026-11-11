@@ -320,3 +320,4 @@ mod tests;
 mod ops;
 
 pub(crate) use ops::CopyAlongSpec;
+pub use ops::MouldReject;

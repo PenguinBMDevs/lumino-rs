@@ -9,7 +9,8 @@ mod slice;
 
 use lumino_core::shape::{BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeOp};
 use lumino_editor_state::shape_ops::{
-    gate_merge, join, split_notes_vertical, sync_groups, to_live,
+    CutKind, CutMark, CutRef, KnifeKind, extend_line, gate_merge, join, mould_pieces, ring_of,
+    split_notes_line, sync_groups, to_live,
 };
 
 use self::slice::{polyline_model, split_slice_parts};
@@ -54,15 +55,36 @@ impl Editor {
     /// 把选中的 pending 形状/路径组合成一个 pending composed 结果。
     pub(super) fn compose_pending(&mut self, kind: ComposedKind) -> bool {
         let copy_spec = CopyAlongSpec::half_beat(self.editor_state.view.ppq);
-        self.compose_pending_with(kind, copy_spec)
+        self.compose_pending_with(kind, copy_spec, None, None)
     }
 
     /// 027 pending 入口：按显式 tick 步长/总组数组合。
     pub(super) fn compose_pending_copy_along(&mut self, spec: CopyAlongSpec) -> bool {
-        self.compose_pending_with(ComposedKind::CopyAlong, spec)
+        self.compose_pending_with(ComposedKind::CopyAlong, spec, None, None)
     }
 
-    fn compose_pending_with(&mut self, kind: ComposedKind, copy_spec: CopyAlongSpec) -> bool {
+    /// 025 pending 入口：按一条显式切线切割唯一选中的形状（DRAW-025）
+    pub(super) fn compose_pending_slice(&mut self, a: (f32, f32), b: (f32, f32)) -> bool {
+        let copy_spec = CopyAlongSpec::half_beat(self.editor_state.view.ppq);
+        self.compose_pending_with(ComposedKind::Slice, copy_spec, Some((a, b)), None)
+    }
+
+    /// 025 pending 入口：单形状 + 手画音符当刀（DRAW-025）
+    pub(super) fn compose_pending_mould(
+        &mut self,
+        walls: Vec<lumino_editor_state::ShapeNote>,
+    ) -> bool {
+        let copy_spec = CopyAlongSpec::half_beat(self.editor_state.view.ppq);
+        self.compose_pending_with(ComposedKind::Mould, copy_spec, None, Some(walls))
+    }
+
+    fn compose_pending_with(
+        &mut self,
+        kind: ComposedKind,
+        copy_spec: CopyAlongSpec,
+        slice_line: Option<((f32, f32), (f32, f32))>,
+        mould_walls: Option<Vec<lumino_editor_state::ShapeNote>>,
+    ) -> bool {
         let refs: Vec<PendingShapeRef> = self
             .editor_state
             .shape_select
@@ -101,19 +123,19 @@ impl Editor {
                 let Ok((model, _warnings)) = to_live(&models) else {
                     return false;
                 };
-                vec![ComposedPart {
+                vec![ComposedPart::plain(
                     model,
-                    notes: notes.into_iter().flatten().collect(),
-                }]
+                    notes.into_iter().flatten().collect(),
+                )]
             }
             ComposedKind::Join => {
                 let Some(joined) = join(&models, 1.0, 1.0) else {
                     return false;
                 };
-                vec![ComposedPart {
-                    model: joined.model,
-                    notes: notes.into_iter().flatten().collect(),
-                }]
+                vec![ComposedPart::plain(
+                    joined.model,
+                    notes.into_iter().flatten().collect(),
+                )]
             }
             ComposedKind::Merge => {
                 if models.len() != 2 {
@@ -137,10 +159,7 @@ impl Editor {
                 }
                 let mut model = models[0].clone();
                 model.ops.push(ShapeOp::Merge(params));
-                vec![ComposedPart {
-                    model,
-                    notes: merged,
-                }]
+                vec![ComposedPart::plain(model, merged)]
             }
             ComposedKind::Slice => {
                 if models.len() != 1 {
@@ -150,21 +169,61 @@ impl Editor {
                 let Some((x0, y0, x1, y1)) = model.geometry.bounds() else {
                     return false;
                 };
-                let cut = (x0 + x1) / 2.0;
-                let Some((left, right)) = split_slice_parts(model, cut, y0, y1) else {
+                // 未指定切线时退回 bbox 中心竖切（脚本/测试入口）
+                let (raw_a, raw_b) = slice_line
+                    .unwrap_or((((x0 + x1) / 2.0, y0 - 1.0), ((x0 + x1) / 2.0, y1 + 1.0)));
+                let Some((a, b)) = extend_line(raw_a, raw_b, (x0, y0, x1, y1)) else {
                     return false;
                 };
-                let (left_notes, right_notes) = split_notes_vertical(&notes[0], cut);
-                vec![
-                    ComposedPart {
-                        model: polyline_model(left, track, model.k),
-                        notes: left_notes,
-                    },
-                    ComposedPart {
-                        model: polyline_model(right, track, model.k),
-                        notes: right_notes,
-                    },
-                ]
+                let Some((first, second)) = split_slice_parts(model, a, b) else {
+                    return false;
+                };
+                let (first_notes, second_notes) = split_notes_line(&notes[0], a, b);
+                let closed = model.geometry.closed;
+                let mut parts = vec![
+                    ComposedPart::plain(polyline_model(first, track, model.k, closed), first_notes),
+                    ComposedPart::plain(
+                        polyline_model(second, track, model.k, closed),
+                        second_notes,
+                    ),
+                ];
+                attach_line_cut(&mut parts, model, a, b);
+                parts
+            }
+            ComposedKind::Mould => {
+                let (walls, dough_index) = match (mould_walls, models.len()) {
+                    // 推荐入口：单形状 + 手画音符当刀
+                    (Some(walls), 1) => (walls, 0),
+                    // 兼容旧口径：两个待确认形状，靠前者当刀
+                    (None, 2) => (notes[0].clone(), 1),
+                    _ => return false,
+                };
+                let dough = &models[dough_index];
+                let loops = vec![ring_of(dough)];
+                let ppq = u32::from(self.editor_state.view.ppq);
+                let pieces = mould_pieces(&walls, &notes[dough_index], &loops, ppq);
+                if pieces.is_empty() {
+                    return false;
+                }
+                pieces
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, piece)| {
+                        let model = polyline_model(vec![piece.ring], track, dough.k, true);
+                        let mut part = ComposedPart::plain(model, piece.notes);
+                        let mut cut = CutRef::for_piece(dough.clone(), &part.model, (0.0, None));
+                        cut.knife = None;
+                        cut.marks.push(CutMark {
+                            id: index as u32,
+                            at: index,
+                            u: index as f32,
+                            kind: CutKind::Split,
+                            dir: (0.0, 1.0),
+                        });
+                        part.cut = Some(cut);
+                        part
+                    })
+                    .collect()
             }
             ComposedKind::Between => {
                 if models.len() != 2 {
@@ -205,10 +264,7 @@ impl Editor {
                     .into_iter()
                     .map(|model| {
                         let part_notes = self.shape_notes_of(&model, track);
-                        ComposedPart {
-                            model,
-                            notes: part_notes,
-                        }
+                        ComposedPart::plain(model, part_notes)
                     })
                     .collect()
             }
@@ -224,10 +280,7 @@ impl Editor {
                 };
                 model.ops.push(ShapeOp::CopyAlong(params));
                 let composed_notes = self.shape_notes_of(&model, track);
-                vec![ComposedPart {
-                    model,
-                    notes: composed_notes,
-                }]
+                vec![ComposedPart::plain(model, composed_notes)]
             }
             ComposedKind::Velocity => {
                 if models.len() != 1 {
@@ -243,10 +296,7 @@ impl Editor {
                     .ops
                     .push(ShapeOp::VelocityEnv(Self::rising_velocity_env()));
                 let composed_notes = self.shape_notes_of(&model, track);
-                vec![ComposedPart {
-                    model,
-                    notes: composed_notes,
-                }]
+                vec![ComposedPart::plain(model, composed_notes)]
             }
             // 只在「进入编辑图形」时直接构造，不走这里
             ComposedKind::Single => return false,
@@ -327,5 +377,31 @@ impl Editor {
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
         true
+    }
+}
+
+/// 给沿直线切出的两片挂上片簿记（DRAW-025）
+///
+/// `part` 记「本片在原形状上的比例」：正侧（tick 较小）取 `0..0.5`，
+/// 负侧取 `0.5..` 到末尾；`marks` 记录切线方向，供后续调试/展示。
+fn attach_line_cut(
+    parts: &mut [ComposedPart],
+    whole: &lumino_core::shape::ShapeModel,
+    a: (f32, f32),
+    b: (f32, f32),
+) {
+    let dir = (b.0 - a.0, b.1 - a.1);
+    let spans = [(0.0, Some(0.5)), (0.5, None)];
+    for (index, part) in parts.iter_mut().enumerate() {
+        let mut cut = CutRef::for_piece(whole.clone(), &part.model, spans[index]);
+        cut.knife = Some(KnifeKind::Line);
+        cut.marks.push(CutMark {
+            id: index as u32,
+            at: index,
+            u: index as f32 * 0.5,
+            kind: CutKind::Slice,
+            dir,
+        });
+        part.cut = Some(cut);
     }
 }

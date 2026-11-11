@@ -39,3 +39,19 @@ fn test_cut_ref_invalidates_when_outline_changes() {
     assert!(cut.marks.is_empty(), "失效后切口标记应清除");
     assert!(cut.knife.is_none());
 }
+
+#[test]
+fn test_for_piece_tracks_piece_outline() {
+    let whole = shape();
+    // 切出的一片：只保留原形状的一段
+    let mut piece = shape();
+    piece.geometry = ShapeGeometry::from_points([(0.0, 60.0), (60.0, 60.0)]);
+    let mut cut = CutRef::for_piece(whole.clone(), &piece, (0.0, Some(0.5)));
+    assert!(cut.still_valid(&piece), "片簿记应比较本片轮廓");
+
+    // 改本片的一个锚点 → 失效
+    let mut moved = piece.clone();
+    moved.geometry.anchors[1].pos.1 += 3.0;
+    assert!(!cut.validate_against(&moved), "改本片轮廓应失效");
+    assert!(cut.knife.is_none());
+}

@@ -55,6 +55,8 @@ impl Editor {
                 pending_edit_undo: Vec::new(),
                 pending_edit_redo: Vec::new(),
                 area_paint: None,
+                slice_cut: None,
+                mould_walls: None,
                 shape_list_open: false,
                 baked_pending: std::collections::HashMap::new(),
                 selected_bounds: Cell::new(None),

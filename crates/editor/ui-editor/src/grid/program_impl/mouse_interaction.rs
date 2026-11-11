@@ -58,6 +58,15 @@ pub(crate) fn handle(
         };
     }
 
+    // DRAW-025：切割布防同样用十字光标
+    if editor.slice_cut_active() {
+        return if in_grid {
+            mouse::Interaction::Crosshair
+        } else {
+            mouse::Interaction::Idle
+        };
+    }
+
     if editor.current_tool() == Tool::Eraser {
         return if in_grid {
             mouse::Interaction::Crosshair

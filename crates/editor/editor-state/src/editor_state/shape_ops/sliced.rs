@@ -69,6 +69,16 @@ impl CutRef {
         }
     }
 
+    /// 由原形状 + 切出的这一片构造：`was` 取**本片**轮廓（DRAW-025 卡片语义）
+    ///
+    /// 与 [`Self::new`] 的区别：「改轮廓即失效」比较的是本片自己的轮廓，
+    /// 而不是原形状——原形状在组合后已从 pending 容器摘除。
+    pub fn for_piece(whole: ShapeModel, piece: &ShapeModel, part: (f32, Option<f32>)) -> Self {
+        let mut cut = Self::new(whole, part);
+        cut.was = outline_keys(piece);
+        cut
+    }
+
     /// 轮廓是否仍与切片时一致
     pub fn still_valid(&self, current: &ShapeModel) -> bool {
         self.was == outline_keys(current) && self.whole.kind == current.kind

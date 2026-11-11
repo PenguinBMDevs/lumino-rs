@@ -133,6 +133,20 @@ pub(crate) fn draw(
     }
 
     {
+        puffin::profile_scope!("draw::slice_box");
+        if let Some(cut_geom) = crate::grid::slice_box::draw(editor, renderer, bounds) {
+            geometries.push(cut_geom);
+        }
+    }
+
+    {
+        puffin::profile_scope!("draw::mould_knife_box");
+        if let Some(knife_geom) = crate::grid::mould_knife_box::draw(editor, renderer, bounds) {
+            geometries.push(knife_geom);
+        }
+    }
+
+    {
         puffin::profile_scope!("draw::shape_list_box");
         if let Some(list_geom) = crate::grid::shape_list_box::draw(editor, renderer, theme, bounds)
         {

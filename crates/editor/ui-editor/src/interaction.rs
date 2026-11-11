@@ -24,6 +24,7 @@ pub(crate) mod shape_compose;
 pub(crate) mod shape_edit_ui;
 pub(crate) mod shape_ops;
 pub(crate) mod shape_tool;
+pub(crate) mod slice_cut;
 pub(crate) mod text_tool;
 
 pub(crate) use batch_insert::BATCH_INSERT_THRESHOLD;
@@ -227,6 +228,10 @@ impl Editor {
     /// 只接管编辑图形态；其余场景（音符拖动、框选）保持原语义不动，
     /// 避免 Esc 在别的工具下变成「静默取消一半状态」。
     pub(crate) fn handle_escape_pressed(&mut self) {
+        // DRAW-025：Esc 先退出切割布防
+        if self.slice_cut_active() {
+            self.end_slice_cut();
+        }
         if self.is_shape_edit_armed() || self.is_shape_editing() {
             self.exit_shape_edit();
             self.grid_cache.clear();

@@ -7,15 +7,26 @@ use lumino_core::shape::{
     BetweenParams, BetweenRole, BetweenSet, CopyMode, CopyPathParams, ShapeKind, ShapeModel,
     ShapeOp, StraightenParams, Sym, SymAxis, SymParams, VelocityEnv,
 };
+use lumino_editor_state::ComposedKind;
+use lumino_editor_state::ShapeNote;
 use lumino_editor_state::shape_ops::{
-    SymReject, copy_along_apply, cut_loops, ring_of, split_notes_vertical,
-    symmetric_shape_with_reason, sync_groups,
+    SymReject, copy_along_apply, symmetric_shape_with_reason, sync_groups,
 };
-use lumino_editor_state::{ComposedKind, DrawnShapeSource};
 
 use crate::Editor;
 
 use super::{ShapeItem, source_from_model, sym_reject_message};
+
+/// Mould 失败原因（用于给用户精确提示）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouldReject {
+    /// 不是恰好一个/两个待确认形状（含混合选区 / 已 Bake 参与）
+    Selection,
+    /// 单形状入口没有「刀」：切到鼠标工具前没有选中手画音符
+    NoWalls,
+    /// 刀的同一 key 行没有空隙可切：需要至少两条墙音符
+    NoGap,
+}
 
 /// 027 一次沿路径复制的输入规格（参数面板接入前的代码级唯一来源）。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -144,42 +155,71 @@ impl Editor {
         ok
     }
 
-    /// 025：选中一个图形，沿 bbox 中心竖切成两半
+    /// 025：选中一个**待确认**图形，沿 bbox 中心竖切成两半
+    ///
+    /// DEC-001：已 Bake 形状不提供切割入口（音符是唯一权威）。
     pub fn slice_selected_vertical(&mut self) -> bool {
         if self.pending_single_selection() {
             return self.compose_pending(ComposedKind::Slice);
         }
-        let Some((_, _, model)) = self.selected_model_for_edit() else {
-            return false;
-        };
-        let Some((x0, y0, x1, y1)) = model.geometry.bounds() else {
-            return false;
-        };
-        let cut = (x0 + x1) / 2.0;
-        let ring = ring_of(&model);
-        let Some((left, right)) = cut_loops(&[ring], (cut, y0 - 1.0), (cut, y1 + 1.0)) else {
-            return false;
-        };
-        let selected = self.selected_drawn_snapshot();
-        let notes = selected[0].notes.clone();
-        let (left_notes, right_notes) = split_notes_vertical(&notes, cut);
-        let items = vec![
-            ShapeItem {
-                source: DrawnShapeSource::Polyline {
-                    points: left.into_iter().flatten().collect(),
-                },
-                notes: left_notes,
-                model: None,
-            },
-            ShapeItem {
-                source: DrawnShapeSource::Polyline {
-                    points: right.into_iter().flatten().collect(),
-                },
-                notes: right_notes,
-                model: None,
-            },
-        ];
-        self.replace_selected_with_many(items)
+        false
+    }
+
+    /// 025：饼干模——刀取「手画音符」，面团取当前待确认形状
+    ///
+    /// 两种入口：
+    /// - **推荐**：先用鼠标工具选中若干手画音符（它们当刀），再切到鼠标工具、
+    ///   选中**一个**待确认形状 → 空隙里就是内片；
+    /// - 兼容旧口径：选中**两个**待确认形状，靠前者当刀（它的音符需要同一行
+    ///   有 ≥2 段才能切出空隙）。
+    ///
+    /// 失败原因分开报，见 [`MouldReject`]。
+    pub fn mould_selected(&mut self) -> Result<(), MouldReject> {
+        let pending = self
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .filter(|shape| shape.pending.is_some())
+            .count();
+        if pending == 1 && self.pending_single_selection() {
+            let Some(walls) = self.mould_walls.clone().filter(|w| !w.is_empty()) else {
+                return Err(MouldReject::NoWalls);
+            };
+            return if self.compose_pending_mould(walls) {
+                // 刀已消费：清掉虚线框，避免下一刀沿用旧快照
+                self.mould_walls = None;
+                self.grid_cache.clear();
+                Ok(())
+            } else {
+                Err(MouldReject::NoGap)
+            };
+        }
+        if pending == 2 && self.pending_selection_only() {
+            return if self.compose_pending(ComposedKind::Mould) {
+                Ok(())
+            } else {
+                Err(MouldReject::NoGap)
+            };
+        }
+        Err(MouldReject::Selection)
+    }
+
+    /// 当前选中的手画音符（当前轨）→ 饼干模的刀
+    pub(crate) fn selected_document_notes(&self) -> Vec<ShapeNote> {
+        let track = self.editor_state.data.current_track;
+        let notes = self.editor_state.data.track_notes(track);
+        self.get_selected_indices()
+            .into_iter()
+            .filter_map(|index| notes.get(index))
+            .map(|note| ShapeNote {
+                track,
+                tick: note.start_tick as f32,
+                key: u16::from(note.key),
+                length: note.end_tick.saturating_sub(note.start_tick) as f32,
+                velocity: note.velocity,
+                channel: note.channel,
+            })
+            .collect()
     }
 
     /// 026：两个选中图形生成 5 个 Between 步

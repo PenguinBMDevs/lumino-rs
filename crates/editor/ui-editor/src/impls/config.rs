@@ -22,6 +22,14 @@ impl Editor {
     /// 镜像进图形选中域（`rebuild_pending_mirrors`）——否则用户看到图案却框不中、
     /// 拖不动（看得见却抓不住）。离开鼠标工具即撤掉镜像（其余工具由 owning 预览渲染）。
     pub fn set_tool(&mut self, tool: Tool) {
+        // DRAW-025：切到鼠标工具前，把「选中的手画音符」记成饼干模的刀。
+        // `set_tool` 会清空音符选中集（非 Pointer 工具），不先快照就丢了。
+        if tool == Tool::ShapeSelect {
+            let walls = self.selected_document_notes();
+            if !walls.is_empty() {
+                self.mould_walls = Some(walls);
+            }
+        }
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;

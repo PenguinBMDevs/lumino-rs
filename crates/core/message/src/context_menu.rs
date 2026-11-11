@@ -82,8 +82,10 @@ pub enum PianoRollContextMenuItem {
     Straighten,
     /// 取消扶正（DRAW-024）
     StraightenOff,
-    /// 竖切（DRAW-025）
-    SliceVertical,
+    /// 切割（DRAW-025；待确认形状拖直线切分）
+    SliceCut,
+    /// 饼干模（DRAW-025；先选刀、后选面团，按刀的音符行切面团）
+    MouldShapes,
     /// 创建补间（DRAW-026）
     BetweenCreate,
     /// 沿路径复制（DRAW-027）
@@ -114,7 +116,8 @@ impl PianoRollContextMenuItem {
             | Self::SymmetryHorizontal
             | Self::Straighten
             | Self::StraightenOff
-            | Self::SliceVertical
+            | Self::SliceCut
+            | Self::MouldShapes
             | Self::BetweenCreate
             | Self::CopyAlong
             | Self::VelocityUp

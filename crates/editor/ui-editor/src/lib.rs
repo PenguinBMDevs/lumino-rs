@@ -14,6 +14,7 @@ pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
 /// 遮罩参数面板的编辑目标（DRAW-010）
 pub use interaction::MaskEditTarget;
+pub use interaction::shape_compose::MouldReject;
 
 pub mod arrangement;
 pub mod context_menu;
@@ -253,6 +254,10 @@ pub struct Editor {
     pub(crate) pending_edit_redo: Vec<Vec<lumino_editor_state::PendingComposed>>,
     /// DRAW-032B：区域着色会话（仅鼠标工具、唯一选中图形时）
     pub(crate) area_paint: Option<crate::interaction::area_paint::AreaPaintState>,
+    /// DRAW-025：切割布防（待确认形状 + 拖出的切线）
+    pub(crate) slice_cut: Option<crate::interaction::slice_cut::SliceCutState>,
+    /// DRAW-025：饼干模的刀——切到鼠标工具前选中的手画音符快照
+    pub(crate) mould_walls: Option<Vec<lumino_editor_state::ShapeNote>>,
     /// DRAW-041B/032B：ShapeStore 模型列表是否展开
     pub(crate) shape_list_open: bool,
     /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）

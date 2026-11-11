@@ -240,6 +240,31 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
             Some("Slice failed: select a pending shape/curve; composed results must be ✓ first")
         }
+        // DRAW-025：切割改为布防拖线；饼干模按「刀→面团」两个待确认形状
+        "切割" => Some("Slice"),
+        "饼干模" => Some("Mould"),
+        "拖出一条切割线：松手即切（Shift 自由角度）" => {
+            Some("Drag a cut line; release to slice (Shift = free angle)")
+        }
+        "切割失败：请选中一个待确认形状/曲线；已 Bake 形状不可再切" => {
+            Some("Slice failed: select a pending shape/curve; baked shapes cannot be sliced")
+        }
+        "已切出内/外片；✓ 后才写入音符" => {
+            Some("Inner/outer pieces cut; notes are written after ✓")
+        }
+        "饼干模失败：请选中 1 个待确认形状（或 2 个：刀 + 面团）" => {
+            Some("Mould failed: select 1 pending shape (or 2: knife + dough)")
+        }
+        "饼干模失败：先用鼠标工具选中要当刀的音符，再切到鼠标工具" => {
+            Some(
+                "Mould failed: select the knife notes with the pointer tool, then switch to the mouse tool",
+            )
+        }
+        "饼干模失败：刀的同一 key 行需要至少两条音符（中间才是空隙）" => {
+            Some(
+                "Mould failed: the knife needs at least two notes on a key row (the gap between them is the piece)",
+            )
+        }
         "已生成补间（首 + 步 + 末）；✓ 后才写入音符" => {
             Some("Tween generated (first + step + last); notes are written after ✓")
         }

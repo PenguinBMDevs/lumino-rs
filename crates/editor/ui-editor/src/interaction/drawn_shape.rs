@@ -718,10 +718,11 @@ impl Editor {
                     if !additive {
                         self.editor_state.shape_select.clear_selection();
                     }
-                    let snapped = self.snap_tick(tick);
+                    // 框选按鼠标原始 tick：吸附会把不足一拍的拉框压成一条竖线，
+                    // 夹在两个 beat 之间的图形就永远框不中（DRAW-025 S4 实测）。
                     self.editor_state
                         .shape_select
-                        .begin_marquee(snapped, key, additive);
+                        .begin_marquee(tick, key, additive);
                 }
             }
         }
@@ -748,8 +749,8 @@ impl Editor {
             // 待确认镜像即时落位（owning 预览 / 镜像描边 / 选框共用同一份几何）
             self.sync_pending_drag_geometry();
         } else if self.editor_state.shape_select.is_marqueeing() {
-            let snapped = self.snap_tick(tick);
-            self.editor_state.shape_select.update_marquee(snapped, key);
+            // 与按下同口径：不吸附，避免把拉框压成竖线
+            self.editor_state.shape_select.update_marquee(tick, key);
         } else {
             return;
         }
@@ -1949,6 +1950,43 @@ mod tests {
             editor.editor_state.shape_select.selected_ids(),
             &[0, far],
             "框内全部图形都应被选中（按登记顺序）"
+        );
+    }
+
+    #[test]
+    fn test_marquee_selects_two_pending_mirrors() {
+        // S4 前置：两个待确认形状必须能被一次框选同时选中
+        let mut editor = Editor::new();
+        editor.editor_state.data.current_track = 1;
+        editor.set_tool(Tool::ShapeSelect);
+        for (t0, t1) in [(0.0_f32, 10.0_f32), (100.0, 110.0)] {
+            editor
+                .editor_state
+                .shape_tool
+                .shapes
+                .push(lumino_editor_state::ShapeInstance {
+                    kind: lumino_editor_state::ShapeKind::Rectangle,
+                    rect: (t0, 60.0, t1, 64.0),
+                    shift_constrained: false,
+                    filled: true,
+                    apex_high: true,
+                    mask: None,
+                });
+        }
+        editor.rebuild_pending_mirrors();
+        assert_eq!(
+            editor.editor_state.shape_select.pending_shapes().count(),
+            2,
+            "应有两个待确认镜像"
+        );
+
+        editor.handle_shape_select_pressed(200.0, 80.0, false);
+        editor.handle_shape_select_moved(-10.0, 55.0);
+        editor.handle_shape_select_released();
+        assert_eq!(
+            editor.editor_state.shape_select.selection_len(),
+            2,
+            "框选应同时选中两个待确认镜像"
         );
     }
 

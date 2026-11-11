@@ -218,3 +218,74 @@ fn test_shape_select_shows_confirm_for_composed_results() {
         "ShapeSelect 下 composed 结果应可直接 ✓"
     );
 }
+
+#[test]
+fn test_pending_mould_requires_exactly_two_shapes() {
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+    // 没有刀（切到鼠标工具前没选音符）→ 报 NoWalls，而不是笼统的选区错误
+    assert_eq!(
+        editor.mould_selected(),
+        Err(crate::MouldReject::NoWalls),
+        "单形状但没有刀时应提示先选音符"
+    );
+    assert!(
+        editor.editor_state.pending_composed.is_empty(),
+        "失败不应产生组合结果"
+    );
+}
+
+#[test]
+fn test_pending_mould_uses_selected_notes_as_knife() {
+    let mut editor = Editor::new();
+    // 文档里两条同 key、中间留空的音符 = 刀
+    seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[Note::new(0.0, 60, 100.0), Note::new(200.0, 60, 100.0)],
+    );
+    editor.editor_state.interaction.selected_notes = [0_usize, 1].into_iter().collect();
+    // 切到鼠标工具：`set_tool` 清空选中集之前先把它们快照成刀
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    assert!(editor.mould_walls.is_some(), "音符应被快照成刀");
+
+    // 面团：覆盖空隙的待确认填充矩形（keys 59..63）
+    add_pending_rect(&mut editor, 50.0, 350.0, 59);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("面团应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert_eq!(editor.mould_selected(), Ok(()), "单形状 + 手画音符应能切");
+    let composed = &editor.editor_state.pending_composed[0];
+    assert_eq!(composed.kind, lumino_editor_state::ComposedKind::Mould);
+    assert!(composed.results.len() >= 2, "至少外片 + 一个内片");
+    let outer = &composed.results[0];
+    assert!(
+        outer
+            .notes
+            .iter()
+            .all(|n| n.key != 60 || n.tick + n.length <= 100.0 + 1e-3 || n.tick >= 200.0 - 1e-3),
+        "外片不应包含空隙内的音符：{:?}",
+        outer
+            .notes
+            .iter()
+            .map(|n| (n.key, n.tick, n.length))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        composed.results[1..]
+            .iter()
+            .flat_map(|part| part.notes.iter())
+            .any(|n| n.key == 60 && n.tick >= 100.0 - 1e-3 && n.tick + n.length <= 200.0 + 1e-3),
+        "内片应包含空隙内的音符"
+    );
+    assert!(
+        editor.mould_walls.is_none(),
+        "刀被消费后应清空（虚线框消失）"
+    );
+}

@@ -14,6 +14,11 @@ impl Editor {
     /// 处理鼠标释放事件
     pub(crate) fn handle_released(&mut self) {
         crate::puffin_profiler::released_handle();
+        // DRAW-025：切割松手 = 按拖出的线切分（失败保留布防）
+        if self.slice_cut.is_some_and(|state| state.dragging) {
+            self.slice_cut_released();
+            return;
+        }
         // 框选结束：清除量化锚点（框选过程中的临时状态，任何一条松手路径都不再需要）。
         // 放在最前，保证 i2m / 文字 / 曲线等提前返回的分支同样被清理。
         self.marquee_anchor_tick = None;

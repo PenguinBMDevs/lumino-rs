@@ -6,6 +6,7 @@
 use lumino_core::shape::{ShapeModel, ShapeOp};
 
 use super::line_tool::LinePath;
+use super::shape_ops::CutRef;
 use super::shape_tool::ShapeInstance;
 use crate::ShapeNote;
 
@@ -27,8 +28,10 @@ pub enum ComposedKind {
     Join,
     /// 022：两形状门控合并
     Merge,
-    /// 025：单形状竖切成两片
+    /// 025：单形状沿直线切成两片
     Slice,
+    /// 025：两形状饼干模（先选刀、后选面团；刀的音符当墙）
+    Mould,
     /// 026：两形状生成首/步/末补间组
     Between,
     /// 027：单形状沿默认路径复制（`ShapeOp::CopyAlong`）
@@ -49,6 +52,19 @@ pub struct ComposedPart {
     pub model: ShapeModel,
     /// 预览音符；✓ 时写入文档
     pub notes: Vec<ShapeNote>,
+    /// Slice/Mould 的片簿记：记住原形状与切片时轮廓；轮廓一变即失效为普通形状
+    pub cut: Option<CutRef>,
+}
+
+impl ComposedPart {
+    /// 无片簿记的普通组合分支
+    pub fn plain(model: ShapeModel, notes: Vec<ShapeNote>) -> Self {
+        Self {
+            model,
+            notes,
+            cut: None,
+        }
+    }
 }
 
 /// 一次 Bake 前组合的结果；`sources` 用于撤销回 pending 矢量
@@ -72,9 +88,24 @@ impl PendingComposed {
     ) -> Self {
         Self {
             kind,
-            results: vec![ComposedPart { model, notes }],
+            results: vec![ComposedPart::plain(model, notes)],
             sources,
         }
+    }
+
+    /// 片簿记失效判定：轮廓改了就退化为普通形状（DRAW-025）
+    ///
+    /// 返回是否发生了失效（调用方可用于提示「片身份已清除」）。
+    pub fn validate_cuts(&mut self) -> bool {
+        let mut degraded = false;
+        for part in &mut self.results {
+            if let Some(cut) = &mut part.cut
+                && !cut.validate_against(&part.model)
+            {
+                degraded = true;
+            }
+        }
+        degraded
     }
 
     /// 全部预览音符（按支顺序）
@@ -170,10 +201,7 @@ mod tests {
         }));
         let mut composed = PendingComposed {
             kind: ComposedKind::CopyAlong,
-            results: vec![ComposedPart {
-                model,
-                notes: Vec::new(),
-            }],
+            results: vec![ComposedPart::plain(model, Vec::new())],
             sources: Vec::new(),
         };
 

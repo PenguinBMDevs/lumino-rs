@@ -11,6 +11,10 @@ impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: iced_core::Point) {
         crate::puffin_profiler::moved_handle();
+        // DRAW-025：切割拖线中，只更新切线预览
+        if self.slice_cut_moved(pos) {
+            return;
+        }
         // 画刷矢量笔画：落笔绘制/整体拖动中，跟随鼠标更新笔画几何（不写 document）
         if self.editor_state.brush_tool.is_active() {
             self.handle_brush_moved(pos);
