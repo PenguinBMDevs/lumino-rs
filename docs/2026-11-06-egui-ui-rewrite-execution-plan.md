@@ -2824,11 +2824,40 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
   `capture_egui` 12/12；`tests/ui-baseline` 除新增 `README.md` 外零改动。
 
-**Task 3.2（下一步）**
+**Task 3.2（第九十一步）：状态栏 GPU(LGS) 指标组与「点 MEM 打开内存监控」迁 egui，iced 视图换成 20px 占位**
 
-1. 状态栏：egui 侧缺 GPU(LGS) 指示段与「MEM 可点击打开内存监控」，
-   先补齐模型字段 + 点击动作并加测试，再把 iced `statusbar.rs` 视图换成 20px 占位；
-2. 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）：先逐项核对
+- **补齐 egui 状态栏缺失的功能**（不削减 UI）：
+  - 新模型 `GpuMetricsModel { queue_ms, trend, load, voice_count, underruns,
+    sample_gpu, sample_cpu, governor_level, dropped }` +
+    `GpuQueueTrend`（`↑ / ↓ / →`）+ `MetricTone`（常规 / 警告 / 危险）；
+  - 阈值与 iced `metrics.rs` 逐字一致：负载 `<60%` 常规 / `60–90%` 警告 /
+    `≥90%` 危险；欠载 `>0` 危险；治理级别 `0/1/≥2` 三档（2 个单测锁定）；
+  - 组内顺序按 iced：`GPU Q…ms<趋势>`、LOAD、V、UR、GMEM、CMEM、GOV、DROP，
+    选项字段（GMEM/CMEM 仅在加载音源时、GOV/DROP 仅在异常时）不占位；
+  - **MEM 可点击**：数值 `Label` 显式 `Sense::click()`（`Label` 默认不吃指针，
+    这是首轮真机点击无反应的根因），点击下发
+    `StatusbarAction::OpenMemoryMonitor` → `toolbar::Event::open_memory_monitor_dialog()`。
+- **rtl 顺序坑**：状态栏右侧指标组是 right-to-left 布局（先加的靠右），GPU 组一开始
+  整体反向（GPU 跑到最右）。改为**按视觉顺序倒序添加**，真机取证顺序为
+  `GPU / LOAD / V / UR / GMEM / CMEM / CPU / MEM / FPS`。
+- **iced 视图清空**：`statusbar.rs` 的 `view` 只返回同高（20px）同底色的占位容器；
+  删除 `statusbar/metrics.rs`（222 行）与已无使用者的 `QueueTrend::arrow`、
+  `Wrapping/row/space/text` 等 import。`root/view/status.rs` 去掉音符数 / GPU 开关
+  装配（已搬到 `egui_chrome`）。
+- **无头验证**（`tests/statusbar_bands.rs`，3 用例）：点 MEM 数值产出
+  `OpenMemoryMonitor`；非 MEM 区域不产出动作；带 GPU 的模型静态渲染无动作。
+- **真机**（DPI-aware）：状态栏完整显示
+  `GPU Q 254ms→  LOAD 14%  V 0  UR 0  GMEM 4.0M  CMEM 548.7M  CPU 9.7%  MEM 1344.0 MB  FPS 59.4`；
+  点 MEM（逻辑 x≈1974）→ 日志 `egui 状态栏动作：OpenMemoryMonitor`，
+  「内存占用详情」对话框正常弹出（`target/sb3-mem.png`）。
+- 验收：`lumino-ui` lib 845/845、`ui-egui` lib 42/42 + 全部集成测试、新
+  `statusbar_bands` 3/3、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_egui` 12/12；`tests/ui-baseline` 零改动（无头场景无 LGS 快照，GPU 组不绘制）。
+
+**Task 3.3（下一步）**
+
+1. 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）：先逐项核对
    precision / auto-scroll / collaboration / onion-skin / undo-redo / loop /
    playback / detection dashboard / overflow 的 egui 覆盖度；
-3. 左栏面板、标题栏菜单；最后摘 `lumino-ui` 的 `iced_*`。
+2. 左栏面板、标题栏菜单；
+3. 最后摘 `lumino-ui` 的 `iced_*`。

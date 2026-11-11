@@ -1,20 +1,17 @@
-mod metrics;
 pub mod performance;
 
 use iced_core::Length;
-use iced_core::widget::text::Wrapping;
-use iced_widget::{container, row, space, text};
+use iced_widget::{Space, container};
 use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_midi_io::GpuBufferStats;
 use lumino_ui_core::button_descs::ButtonId;
 
-use self::metrics::{build_gpu_section, metric_clickable_value, metric_label, metric_value};
 use super::Element;
 use crate::Theme;
 use performance::PerfData;
 
-/// egui 叠加层用的状态栏快照（与 `view` 同源，避免两套规则漂移）。
+/// egui 叠加层用的状态栏快照（与 egui 绘制同源，避免两套规则漂移）。
 #[derive(Debug, Clone)]
 pub(crate) struct StatusSnapshot {
     /// 左侧描述文本。
@@ -29,6 +26,8 @@ pub(crate) struct StatusSnapshot {
     pub fps: Option<f32>,
     /// 右侧补充文本。
     pub right_text: String,
+    /// GPU (LGS) 指标组；`None` = 不显示。
+    pub gpu: Option<GpuSnapshot>,
 }
 
 /// 状态栏 GPU 缓冲状态指示器的显示参数（由 Root 按用户设置构造）。
@@ -54,7 +53,7 @@ impl Default for GpuStatusFlags {
 
 /// 队列深度趋势（与上一次 4Hz 采样比较，±10ms 内视为持平）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum QueueTrend {
+pub enum QueueTrend {
     /// 上升（缓冲变深）
     Up,
     /// 下降（缓冲变浅，趋向欠载）
@@ -62,17 +61,6 @@ pub(crate) enum QueueTrend {
     /// 持平
     #[default]
     Flat,
-}
-
-impl QueueTrend {
-    /// 箭头显示字符。
-    pub(crate) fn arrow(self) -> &'static str {
-        match self {
-            QueueTrend::Up => "↑",
-            QueueTrend::Down => "↓",
-            QueueTrend::Flat => "→",
-        }
-    }
 }
 
 /// 队列趋势：与上一采样比较（±10ms 内视为持平，抑制 4Hz 抖动）。
@@ -111,6 +99,38 @@ pub struct StatusBar {
     gpu_stats: Option<GpuBufferStats>,
     /// 队列趋势（与上一次注入的快照比较）
     queue_trend: QueueTrend,
+}
+
+/// GPU (LGS) 指标快照（UI 无关：供 egui 状态栏装配模型）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuSnapshot {
+    /// 队列深度（毫秒）。
+    pub queue_ms: f64,
+    /// 队列趋势。
+    pub trend: QueueTrend,
+    /// 渲染负载（0..≈1+）。
+    pub load: f64,
+    /// 活跃声部数。
+    pub voice_count: u64,
+    /// 累计欠载次数。
+    pub underruns: u64,
+    /// 采样显存文本（`None` = 未加载音源）。
+    pub sample_gpu: Option<String>,
+    /// 采样内存文本（`None` = 未加载音源）。
+    pub sample_cpu: Option<String>,
+    /// 防爆治理级别（`None` = 未开启显示或为 0）。
+    pub governor_level: Option<u32>,
+    /// 被丢弃的过期 NoteOn 数（`None` = 未开启显示或为 0）。
+    pub dropped: Option<u64>,
+}
+
+/// 字节 → MB 文本（1 位小数；0 显示 "0"）。REF-LGS-013 状态栏用。
+fn mem_text(bytes: u64) -> String {
+    if bytes == 0 {
+        "0".to_string()
+    } else {
+        format!("{:.1}M", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 impl StatusBar {
@@ -175,10 +195,37 @@ impl StatusBar {
     }
 
     /// egui 叠加层快照：左文本规则与 [`Self::view`] 完全一致。
+    /// GPU 指标快照：设置关闭或后端未就绪时返回 `None`。
+    pub(crate) fn gpu_snapshot(&self, flags: GpuStatusFlags) -> Option<GpuSnapshot> {
+        if !flags.enabled {
+            return None;
+        }
+        let stats = self.gpu_stats?;
+        let load = match flags.load_mode {
+            GpuLoadDisplay::ShortAverage => stats.average_render_load,
+            GpuLoadDisplay::Instant => stats.render_load,
+        };
+        let has_samples = stats.sample_gpu_bytes > 0 || stats.sample_cpu_bytes > 0;
+        Some(GpuSnapshot {
+            queue_ms: stats.queue_ms,
+            trend: self.queue_trend,
+            load,
+            voice_count: stats.voice_count,
+            underruns: stats.underruns,
+            sample_gpu: has_samples.then(|| mem_text(stats.sample_gpu_bytes)),
+            sample_cpu: has_samples.then(|| mem_text(stats.sample_cpu_bytes)),
+            governor_level: (flags.show_governor && stats.governor_level > 0)
+                .then_some(stats.governor_level as u32),
+            dropped: (flags.show_governor && stats.dropped_note_ons > 0)
+                .then_some(stats.dropped_note_ons),
+        })
+    }
+
     pub(crate) fn egui_snapshot(
         &self,
         language: Language,
         note_count: Option<usize>,
+        gpu: GpuStatusFlags,
     ) -> StatusSnapshot {
         let translations = main_translations(language);
         let left_text = if let Some(id) = self.hover_label {
@@ -203,111 +250,25 @@ impl StatusBar {
             memory_mb: self.perf_data.memory_mb,
             fps: self.fps,
             right_text: self.info.right_text.clone(),
+            gpu: self.gpu_snapshot(gpu),
         }
     }
 
-    pub fn view<'a>(
-        &'a self,
-        language: Language,
-        note_count: Option<usize>,
-        gpu: GpuStatusFlags,
-    ) -> Element<'a> {
-        let translations = main_translations(language);
-
-        // 左侧描述区：优先显示悬停按钮的 `按钮名 - {解释说明}`，
-        // 其次为显式 left_text，再其次为音符总量（UI-015，下边栏模式），
-        // 最后为"就绪"
-        let left_text: String = if let Some(id) = self.hover_label {
-            let (name, desc) = lumino_ui_core::button_descs::button_desc(id, language);
-            format!("{} - {}", name, desc)
-        } else if !self.info.left_text.is_empty() {
-            self.info.left_text.clone()
-        } else if let Some(count) = note_count {
-            format!(
-                "{}: {}",
-                translations.note_count_label,
-                lumino_extras::i18n::format_thousands(count as u64)
-            )
-        } else {
-            translations.status_ready.to_string()
-        };
-        let use_fps_style = self.use_fps_style();
-
-        // 左侧预留描述区（固定宽度，避免 hover 时布局跳动）
-        // 说明文字强制单行显示：显式 `Wrapping::None` 关闭自动折行（iced 的
-        // `Text` 默认 `Wrapping::Word`，长描述会在 220px 内折成多行，把 20px 高的
-        // 状态栏“纵向拉长”），同时固定文本宽度为 220px 使其超出部分被裁剪。
-        let left_section: Element<'a> = container(
-            text(left_text)
-                .size(12)
-                .width(Length::Fixed(220.0))
-                .wrapping(Wrapping::None)
-                .style(move |theme: &Theme| {
-                    if use_fps_style {
-                        let palette = theme.extended_palette();
-                        text::Style {
-                            color: Some(palette.primary.strong.color),
-                        }
-                    } else {
-                        text::Style::default()
-                    }
-                }),
-        )
-        .width(Length::Fixed(220.0))
-        .into();
-
-        // 右侧性能指标组：CPU / MEM / FPS（仿照 yinhe mode_bar 底部栏的 metric 设计：
-        // label 用弱色、value 用强调色；MEM 可点击打开内存监控对话框）
-        let perf_section: Element<'a> = if let Some(fps) = self.fps {
-            row![
-                metric_label("CPU"),
-                metric_value(format!("{:.1}%", self.perf_data.cpu_usage)),
-                space().width(12),
-                metric_label("MEM"),
-                metric_clickable_value(
-                    format!("{:.1} MB", self.perf_data.memory_mb),
-                    crate::toolbar::Event::open_memory_monitor_dialog(),
-                ),
-                space().width(12),
-                metric_label("FPS"),
-                metric_value(format!("{:.1}", fps)),
-            ]
-            .align_y(iced_core::Alignment::Center)
+    /// 状态栏占位：内容已**全部**由 egui 绘制在同一个 20px band 内。
+    ///
+    /// 左侧描述（悬停提示 / 就绪 / 音符数）、GPU(LGS) 指标组、CPU / MEM / FPS、
+    /// 右侧补充文本，以及「点 MEM 打开内存监控」的交互，都由
+    /// `chrome::statusbar::show_model` 负责。iced 侧只保留同高同底色的占位，
+    /// 避免两份内容重影，也保证钢琴卷帘区高度不变。
+    pub fn view(&self) -> Element<'_> {
+        container(Space::new().width(Length::Fill))
+            .width(Length::Fill)
+            .height(20)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style::default().background(palette.background.weak.color)
+            })
             .into()
-        } else {
-            iced_widget::Space::new().into()
-        };
-
-        // GPU (LGS) 缓冲状态组——仅当设置开关开启且存在快照
-        // （LGS 后端）时显示；插在 CPU/MEM/FPS 组左侧。
-        let gpu_section: Option<Element<'a>> = if gpu.enabled {
-            self.gpu_stats
-                .map(|stats| build_gpu_section(stats, self.queue_trend, gpu))
-        } else {
-            None
-        };
-
-        let mut metrics_row = row![left_section, iced_widget::space().width(Length::Fill)];
-        if let Some(gpu_section) = gpu_section {
-            metrics_row = metrics_row.push(gpu_section);
-            metrics_row = metrics_row.push(iced_widget::space().width(12));
-        }
-        metrics_row = metrics_row.push(perf_section);
-        metrics_row = metrics_row.push(text(&self.info.right_text).size(12));
-
-        container(
-            metrics_row
-                .spacing(8)
-                .padding([0, 8])
-                .align_y(iced_core::Alignment::Center),
-        )
-        .width(Length::Fill)
-        .height(20)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style::default().background(palette.background.weak.color)
-        })
-        .into()
     }
 }
 

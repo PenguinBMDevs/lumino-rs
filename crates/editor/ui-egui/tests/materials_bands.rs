@@ -23,6 +23,7 @@ fn statusbar() -> StatusbarModel {
         memory_mb: 0.0,
         fps: None,
         right: String::new(),
+        gpu: None,
     }
 }
 

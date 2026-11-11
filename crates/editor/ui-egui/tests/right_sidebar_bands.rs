@@ -23,6 +23,7 @@ fn statusbar() -> StatusbarModel {
         memory_mb: 0.0,
         fps: None,
         right: String::new(),
+        gpu: None,
     }
 }
 
@@ -147,13 +148,14 @@ fn panel_band_geometry_matches_production() {
     assert!((rect.top() - 102.0).abs() < 0.5, "顶边 {rect:?}");
     assert!((rect.bottom() - 880.0).abs() < 0.5, "底边 {rect:?}");
 
-    // 内容区整块占用；左侧 6px 拖拽手柄不占用（iced 继续处理缩放拖拽）。
+    // 内容区整块占用；左侧 6px 拖拽手柄同样由 egui 独占
+    // （`show_handle` 发出 ResizeStarted/ResizeEnded，宽度跟随由宿主处理）。
     let blocked = chrome::menu::take_blocked(&harness.ctx);
     assert!(blocked.contains(&rect), "内容区必须进入占用列表");
     let handle = egui::pos2(rect.left() - 3.0, rect.center().y);
     assert!(
-        !blocked.iter().any(|block| block.contains(handle)),
-        "拖拽手柄必须留给 iced"
+        blocked.iter().any(|block| block.contains(handle)),
+        "6px 拖拽手柄必须由 egui 占用（否则同一次按下会被 iced 再处理一遍）"
     );
 }
 
@@ -253,7 +255,7 @@ fn waterfall_chrome(texture: Option<egui::TextureId>) -> ChromeModel {
     }
 }
 
-/// 面板几何与 I2M / 素材库一致：内容区整块占用，6px 手柄留给 iced。
+/// 面板几何与 I2M / 素材库一致：内容区与 6px 手柄都由 egui 占用。
 #[test]
 fn waterfall_panel_band_blocks_content_and_keeps_handle() {
     let (harness, actions) = harness(waterfall_chrome(None));
@@ -266,8 +268,8 @@ fn waterfall_panel_band_blocks_content_and_keeps_handle() {
     assert!(blocked.contains(&rect), "内容区必须进入占用列表");
     let handle = egui::pos2(rect.left() - 3.0, rect.center().y);
     assert!(
-        !blocked.iter().any(|block| block.contains(handle)),
-        "拖拽手柄必须留给 iced"
+        blocked.iter().any(|block| block.contains(handle)),
+        "6px 拖拽手柄必须由 egui 占用"
     );
     assert!(actions.borrow().is_empty(), "面板本身不应产生动作");
 }

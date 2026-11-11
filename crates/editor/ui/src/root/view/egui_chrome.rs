@@ -370,7 +370,15 @@ impl Root {
             NoteCountDisplay::StatusBar => Some(self.editor_note_count()),
             NoteCountDisplay::ProjectSettings => None,
         };
-        let status = self.statusbar.egui_snapshot(language, note_count);
+        // 状态栏 GPU 指示器：与 iced `view_status_section` 同源的三开关。
+        let gpu_flags = crate::statusbar::GpuStatusFlags {
+            enabled: self.settings.synth.gpu_buffer_status_enabled,
+            show_governor: self.settings.synth.gpu_governor_metrics_enabled,
+            load_mode: self.settings.synth.gpu_load_display,
+        };
+        let status = self
+            .statusbar
+            .egui_snapshot(language, note_count, gpu_flags);
         // 生产 `perf_section` 仅在 `fps` 已采样时渲染；同组隐藏 CPU 数值。
         let metrics_visible = status.fps.is_some();
 
@@ -456,7 +464,45 @@ impl Root {
                 memory_mb: status.memory_mb,
                 fps: status.fps,
                 right: status.right_text,
+                gpu: status
+                    .gpu
+                    .map(|gpu| lumino_ui_egui::chrome::GpuMetricsModel {
+                        queue_ms: gpu.queue_ms,
+                        trend: match gpu.trend {
+                            crate::statusbar::QueueTrend::Up => {
+                                lumino_ui_egui::chrome::GpuQueueTrend::Up
+                            }
+                            crate::statusbar::QueueTrend::Down => {
+                                lumino_ui_egui::chrome::GpuQueueTrend::Down
+                            }
+                            crate::statusbar::QueueTrend::Flat => {
+                                lumino_ui_egui::chrome::GpuQueueTrend::Flat
+                            }
+                        },
+                        load: gpu.load,
+                        voice_count: gpu.voice_count,
+                        underruns: gpu.underruns,
+                        sample_gpu: gpu.sample_gpu,
+                        sample_cpu: gpu.sample_cpu,
+                        governor_level: gpu.governor_level,
+                        dropped: gpu.dropped,
+                    }),
             },
+        }
+    }
+}
+
+impl Root {
+    /// 状态栏动作 → 生产消息。
+    pub(crate) fn statusbar_action_message(
+        &self,
+        action: lumino_ui_egui::chrome::statusbar::StatusbarAction,
+    ) -> crate::Message {
+        use lumino_ui_egui::chrome::statusbar::StatusbarAction;
+        match action {
+            StatusbarAction::OpenMemoryMonitor => {
+                crate::toolbar::Event::open_memory_monitor_dialog()
+            }
         }
     }
 }

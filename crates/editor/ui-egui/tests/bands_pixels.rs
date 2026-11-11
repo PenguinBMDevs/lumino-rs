@@ -86,6 +86,7 @@ fn model() -> ChromeModel {
             memory_mb: 0.0,
             fps: Some(60.0),
             right: String::new(),
+            gpu: None,
         },
     }
 }

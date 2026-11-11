@@ -67,6 +67,94 @@ pub struct StatusbarModel {
     pub fps: Option<f32>,
     /// 右侧补充文本（生产 `StatusInfo.right_text`）。
     pub right: String,
+    /// GPU (LGS) 指标组；`None` = 设置关闭或后端未就绪。
+    pub gpu: Option<GpuMetricsModel>,
+}
+
+/// GPU 队列趋势（`statusbar::QueueTrend` 的数据镜像）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuQueueTrend {
+    /// 上升（缓冲变深）。
+    Up,
+    /// 下降（缓冲变浅，趋向欠载）。
+    Down,
+    /// 持平。
+    #[default]
+    Flat,
+}
+
+impl GpuQueueTrend {
+    /// 箭头显示字符（与 iced `QueueTrend::arrow` 逐字一致）。
+    pub fn arrow(self) -> &'static str {
+        match self {
+            Self::Up => "↑",
+            Self::Down => "↓",
+            Self::Flat => "→",
+        }
+    }
+}
+
+/// 指标颜色档位（负载 / 欠载 / 治理级别共用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetricTone {
+    /// 常规（强调色）。
+    Normal,
+    /// 警告（黄）。
+    Warning,
+    /// 危险（红）。
+    Danger,
+}
+
+/// 负载分级：<60% 常规；60–90% 警告；≥90% 危险（1.0 = 90% 实时预算上限）。
+pub fn load_tone(load: f64) -> MetricTone {
+    if load >= 0.9 {
+        MetricTone::Danger
+    } else if load >= 0.6 {
+        MetricTone::Warning
+    } else {
+        MetricTone::Normal
+    }
+}
+
+/// 欠载分级：0 = 常规；>0 = 危险（欠载即已静音丢音）。
+pub fn underrun_tone(underruns: u64) -> MetricTone {
+    if underruns == 0 {
+        MetricTone::Normal
+    } else {
+        MetricTone::Danger
+    }
+}
+
+/// 治理级别分级：0=常规 / 1=警告 / ≥2=危险。
+pub fn governor_tone(level: u32) -> MetricTone {
+    match level {
+        0 => MetricTone::Normal,
+        1 => MetricTone::Warning,
+        _ => MetricTone::Danger,
+    }
+}
+
+/// 状态栏 GPU (LGS) 指标组（`statusbar::metrics::build_gpu_section` 的数据镜像）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuMetricsModel {
+    /// 队列深度（毫秒）。
+    pub queue_ms: f64,
+    /// 队列趋势。
+    pub trend: GpuQueueTrend,
+    /// 渲染负载（0..≈1+；`GpuLoadDisplay` 决定取瞬时还是短窗均值）。
+    pub load: f64,
+    /// 活跃声部数。
+    pub voice_count: u64,
+    /// 累计欠载次数。
+    pub underruns: u64,
+    /// 采样显存文本（`None` = 未加载音源，不占位）。
+    pub sample_gpu: Option<String>,
+    /// 采样内存文本（`None` = 未加载音源，不占位）。
+    pub sample_cpu: Option<String>,
+    /// 防爆治理级别（`None` = 未开启显示或级别为 0）。
+    pub governor_level: Option<u32>,
+    /// 被丢弃的过期 NoteOn 数（`None` = 未开启显示或为 0）。
+    pub dropped: Option<u64>,
 }
 
 impl StatusbarModel {

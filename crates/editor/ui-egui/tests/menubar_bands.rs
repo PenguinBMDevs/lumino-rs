@@ -32,6 +32,7 @@ fn model(menu: Option<MenuBarModel>) -> ChromeModel {
             memory_mb: 0.0,
             fps: None,
             right: String::new(),
+            gpu: None,
         },
         ..ChromeModel::default()
     }

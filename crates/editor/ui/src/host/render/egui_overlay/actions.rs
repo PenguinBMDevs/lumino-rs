@@ -65,6 +65,7 @@ pub(super) struct OverlayActions {
     pub mixer: Vec<lumino_ui_egui::mixer::MixerAction>,
     pub material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteAction>,
     pub mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelAction>,
+    pub statusbar: Option<lumino_ui_egui::chrome::statusbar::StatusbarAction>,
 }
 
 impl OverlayActions {
@@ -102,6 +103,7 @@ impl OverlayActions {
             mixer: lumino_ui_egui::chrome::take_mixer_actions(ctx),
             material_delete: lumino_ui_egui::chrome::take_material_delete_action(ctx),
             mask_panel: lumino_ui_egui::chrome::take_mask_panel_action(ctx),
+            statusbar: lumino_ui_egui::chrome::statusbar::take_action(ctx),
         }
     }
 }
@@ -156,6 +158,11 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.statusbar {
+            tracing::info!("egui 状态栏动作：{action:?}");
+            let message = self.root.statusbar_action_message(action);
+            self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.mask_panel {
             tracing::info!("egui 遮罩面板动作：{action:?}");
