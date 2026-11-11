@@ -122,12 +122,13 @@ pub(super) fn track_menu(
     );
     // 菜单本体与背景都计入占用，避免 iced 的同位菜单再处理一次。
     crate::chrome::menu::extend_blocked(ui.ctx(), [menu_rect(pos, model.entries.len())]);
+    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if let Some(index) = clicked {
         Some(SidebarMenuAction::TrackItem {
             track_id: model.track_id,
             index,
         })
-    } else if backdrop.clicked() {
+    } else if backdrop.clicked() || escape {
         Some(SidebarMenuAction::CloseTrackMenu)
     } else {
         None
@@ -152,9 +153,10 @@ pub(super) fn panel_menu(
         Sense::click(),
     );
     crate::chrome::menu::extend_blocked(ui.ctx(), [menu_rect(pos, model.entries.len())]);
+    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if let Some(index) = clicked {
         Some(SidebarMenuAction::PanelItem(index))
-    } else if backdrop.clicked() {
+    } else if backdrop.clicked() || escape {
         Some(SidebarMenuAction::ClosePanelMenu)
     } else {
         None

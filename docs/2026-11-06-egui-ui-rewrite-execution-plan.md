@@ -2965,10 +2965,37 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 844/844、`ui-egui` 全部集成测试（含新 4 用例）、
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；`capture_egui` 12/12。
 
-**Task 3.6（下一步）**
+**Task 3.7（第九十七步）：删除 iced 左侧栏整树（约 2100 行），只保留同宽占位**
 
-1. 音轨列表剩余交互：右键菜单（行级 / 面板级）、行内重命名、颜色 / 端口 /
-   通道选择器、拖拽排序（`track_reorder.rs`，383 行）；
-2. 完成后把 `sidebar/panel.rs` + `panel/*` + 4 个 picker + 2 个菜单
-   （约 2100 行）换成同宽占位并删除；
-3. 标题栏菜单 `titlebar/menu.rs`（411 行）；最后摘 `lumino-ui` 的 `iced_*`。
+- **删除**（9 个视图文件 + `panel/` 子目录）：
+  `sidebar/panel.rs`、`sidebar/panel/{track_item,color}.rs`、
+  `sidebar/{color_picker,numeric_picker,port_picker,channel_picker}.rs`、
+  `sidebar/{context_menu,panel_context_menu}.rs`、`sidebar/route.rs`，
+  以及三个仅测视图的 `panel_{color,port,channel}_tests.rs`。
+- **`sidebar/view.rs` 改为同宽占位**：宽度 = 48 + 可见面板宽（`Sidebar::width()`），
+  高度 Fill，无背景、无子控件；`view()` 签名收敛为无参，两处调用点
+  （`piano_roll.rs` / `panels.rs` 瀑布流）同步。
+- **`sidebar.rs` 只保留状态与事件处理**：`core` / `handling` / `track_reorder` /
+  `view`；顺手删掉因视图消失而失效的 `ppq` / `note_precision` 局部变量与
+  `widget::with_tooltip` 再导出。
+- **菜单 Esc 关闭**：`menu.rs` 的音轨/面板菜单在背景点击之外也接受 Esc
+  （iced 原 backdrop 可被 Esc 关闭；真机此前 Esc 无效）。
+- **验证**：
+  - `capture_egui` 12/12 且**零基线改动**——证明左栏像素已 100% 由 egui 覆盖，
+    删掉 iced 绘制没有任何视觉变化；
+  - 真机（DPI-aware）：选中行 `SelectTrack(1)`、右键 `OpenTrackMenu(1)`、
+    拖手柄 `ResizeStarted/Ended`，面板右缘实测 `248 → 296`（拖 48px 即宽 48px），
+    左栏始终正常显示；
+  - 单测从 844 → **807**（−37 条均为被删视图的私有单测；egui 侧
+    `sidebar_track_list_bands` 6 / `sidebar_menu_bands` 5 / `sidebar_picker_bands` 4 覆盖同等行为）。
+- 验收：`lumino-ui` lib 807/807、`ui-egui` 全部集成测试、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`。触达 iced 的源文件 92 → **83**。
+
+**Task 3.8（下一步）**
+
+1. 删除 iced 标题栏菜单 `titlebar/menu.rs`（411 行）——egui 侧 `chrome::titlebar` +
+   `chrome::menu` 已接管菜单树与动作；
+2. 迁移 `root/draw_toolbar.rs`（悬浮工具条，1193 行）与 `root/text_params_panel.rs`：
+   egui 侧 `chrome::tool_panel` 已覆盖条目与设置面板，需补齐拖拽锚定/吸附后删除；
+3. 之后逐个删除剩余 iced 视图，最后摘 `lumino-ui` 的 `iced_*`，
+   以 `cargo tree -p lumino-ui | grep '^iced'` 为空收口。

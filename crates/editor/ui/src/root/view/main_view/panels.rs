@@ -266,8 +266,6 @@ impl Root {
         puffin::profile_scope!("root_view_waterfall_fullscreen");
 
         let language = self.settings.display.language;
-        let ppq = self.editor.editor_state.view.ppq;
-        let note_precision = self.toolbar.snap_spec.ticks(ppq) as f32;
 
         // 全局导航栏（非钢琴卷帘内容）
         let titlebar = self.titlebar.view(
@@ -278,13 +276,7 @@ impl Root {
             language,
             false,
         );
-        let left_bar = self.sidebar.view(
-            &self.window,
-            language,
-            self.state.current_mode,
-            note_precision,
-            self.mixer_panel.open,
-        );
+        let left_bar = self.sidebar.view();
 
         // 仅瀑布流播放器（含键盘），铺满导航栏之外的全部区域
         let player = self.view_waterfall_player();

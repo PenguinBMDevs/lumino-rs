@@ -26,14 +26,7 @@ impl Root {
 
         // 左侧栏（包含图标栏和音轨面板）
         puffin::profile_scope!("root_view_sidebar");
-        let ppq = self.editor.editor_state.view.ppq;
-        let left_bar = self.sidebar.view(
-            &self.window,
-            self.settings.display.language,
-            self.state.current_mode,
-            self.toolbar.snap_spec.ticks(ppq) as f32,
-            self.mixer_panel.open,
-        );
+        let left_bar = self.sidebar.view();
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 全屏瀑布流播放器）
         puffin::profile_scope!("root_view_right_content");

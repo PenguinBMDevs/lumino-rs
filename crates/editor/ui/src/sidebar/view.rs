@@ -1,67 +1,30 @@
-use iced_widget::{container, row};
-use lumino_extras::i18n::Language;
+//! 左侧栏 iced 占位。
+//!
+//! 路由栏（48px 图标列）、音轨列表、右键菜单、行内重命名、取色器、
+//! 端口/通道选择器、拖拽排序、6px 宽度手柄**全部**由 egui 绘制并接管输入
+//! （`lumino-ui-egui::chrome::sidebar`）。
+//!
+//! iced 侧只保留同宽占位（路由栏 48 + 面板 `panel_width`），保证右侧内容区
+//! 起始位置与 iced 布局一致；任何像素都不再绘制，否则会与 egui 叠成两层。
 
-use super::core::{ROUTE_BAR_WIDTH, Sidebar};
-use super::{panel, route};
-use crate::titlebar::mode_toggle::AppMode;
-use crate::{Element, window};
+use iced_core::Length;
+use iced_widget::{Space, container};
+
+use super::core::Sidebar;
+use crate::Element;
 
 impl Sidebar {
-    /// 返回完整的侧边栏视图（包括路由图标栏和面板）
-    #[allow(clippy::too_many_arguments)]
-    pub fn view<'a>(
-        &'a self,
-        window: &'a window::Window,
-        language: Language,
-        current_mode: AppMode,
-        _snap_precision: f32,
-        mixer_panel_open: bool,
-    ) -> Element<'a> {
-        let panel = if self.panel_visible {
-            let sidebar_params = panel::SidebarViewParams {
-                route: self.panel_route,
-                tracks: &self.tracks,
-                selected_track: self.selected_track,
-                panel_width: self.panel_width,
-                is_resizing: self.is_resizing,
-                context_menu_target_id: self.track_context_menu.target_track_id,
-                renaming_track: self.renaming_track.as_ref(),
-                color_picking_track: self.color_picking_track,
-                port_picking_track: self.port_picking_track,
-                channel_picking_track: self.channel_picking_track,
-                panel_context_menu_open: self.panel_context_menu.is_open,
-                panel_context_menu_pos: self.panel_context_menu.mouse_pos,
-                track_reorder: self.track_reorder.as_ref(),
-            };
-            panel::view(sidebar_params, window, language)
-        } else {
-            iced_widget::container(iced_widget::space()).width(0).into()
-        };
-
-        // 卷帘底部按钮显隐：处于卷帘面板且非瀑布流模式（与右侧栏同源判定）
-        let roll_bar_visible = current_mode != AppMode::Waterfall && self.is_piano_roll_panel();
-        let route_params = route::RouteViewParams {
-            active: self.route,
-            panel_visible: self.panel_visible,
-            automation_panel_visible: self.automation_panel_visible,
-            piano_roll_visible: self.piano_roll_visible,
-            current_mode,
-            active_group: self.active_group,
-            audio_export_visible: self.audio_export_visible,
-            video_export_visible: self.video_export_visible,
-            roll_bar_active: self.roll_bar_active,
-            roll_bar_visible,
-            mixer_panel_open,
-        };
-
-        let inner = row![route::view(route_params, window, language), panel];
-
-        container(inner).into()
+    /// 渲染左侧栏占位（宽度 = 路由栏 + 可见面板宽）。
+    pub fn view(&self) -> Element<'_> {
+        container(Space::new())
+            .width(Length::Fixed(self.width() as f32))
+            .height(Length::Fill)
+            .into()
     }
 
-    /// 返回侧边栏占据的宽度（像素）
+    /// 返回侧边栏占据的宽度（像素）。
     pub fn width(&self) -> u32 {
-        (ROUTE_BAR_WIDTH
+        (super::core::ROUTE_BAR_WIDTH
             + if self.panel_visible {
                 self.panel_width
             } else {

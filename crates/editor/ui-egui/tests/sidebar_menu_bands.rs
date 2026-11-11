@@ -177,6 +177,33 @@ fn panel_menu_item_and_close() {
 }
 
 #[test]
+fn escape_closes_track_menu() {
+    let (mut h, actions) = harness(SidebarModel {
+        context_menu: Some(SidebarTrackMenuModel {
+            track_id: 3,
+            entries: entries(),
+        }),
+        ..base()
+    });
+    *h.input_mut() = RawInput {
+        events: vec![Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        }],
+        ..Default::default()
+    };
+    h.run();
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SidebarMenuAction::CloseTrackMenu),
+        "Esc 应关闭音轨菜单"
+    );
+}
+
+#[test]
 fn menu_rect_is_blocked_from_iced() {
     let (h, _) = harness(SidebarModel {
         context_menu: Some(SidebarTrackMenuModel {
