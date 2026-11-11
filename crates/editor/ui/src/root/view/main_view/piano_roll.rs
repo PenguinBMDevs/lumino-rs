@@ -116,11 +116,7 @@ impl Root {
                             false,
                         );
                         let right_bar = if self.right_sidebar_visible() {
-                            right_sidebar::view::view(
-                                &self.right_sidebar,
-                                &self.window,
-                                self.settings.display.language,
-                            )
+                            right_sidebar::view::view(&self.right_sidebar)
                         } else {
                             iced_widget::Space::new().into()
                         };
@@ -184,11 +180,7 @@ impl Root {
                         // 右侧栏渲染条件收口：仅钢琴卷帘编辑区渲染（防御性兜底，
                         // 正常情况下该分支即满足 right_sidebar_visible）
                         let right_bar = if self.right_sidebar_visible() {
-                            right_sidebar::view::view(
-                                &self.right_sidebar,
-                                &self.window,
-                                self.settings.display.language,
-                            )
+                            right_sidebar::view::view(&self.right_sidebar)
                         } else {
                             iced_widget::Space::new().into()
                         };

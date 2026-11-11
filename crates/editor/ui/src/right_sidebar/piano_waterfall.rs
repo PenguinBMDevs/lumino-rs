@@ -16,35 +16,7 @@ pub(crate) mod keyboard_renderer;
 
 use std::sync::Arc;
 
-use iced_core::Length;
 use iced_wgpu::wgpu;
-use iced_widget::{Space, container};
-
-use lumino_extras::i18n::Language;
-
-use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
-use crate::{Element, Theme, window};
-
-/// 渲染钢琴瀑布流预览面板内容。
-///
-/// 内容（标题 / 说明 / 键盘图像）已全部由 egui 绘制，iced 侧只保留同宽同高
-/// 占位，避免同一纹理被两套通道各采样一次。
-pub(super) fn panel<'a>(
-    right_sidebar: &'a RightSidebar,
-    _language: Language,
-    _window: &'a window::Window,
-) -> Element<'a> {
-    container(Space::new().width(Length::Fill).height(Length::Fill))
-        .width(Length::Fixed(
-            right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
-        ))
-        .height(Length::Fill)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style::default().background(palette.background.weakest.color)
-        })
-        .into()
-}
 
 /// 全屏瀑布流播放器的渲染状态。
 pub(crate) struct WaterfallPlayerState {

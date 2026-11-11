@@ -29,9 +29,5 @@ serde_json = { workspace = true }
 rayon = { workspace = true }
 
 [[bin]]
-name = "capture_iced"
-path = "src/bin/capture_iced.rs"
-
-[[bin]]
 name = "ui-diff"
 path = "src/bin/ui_diff.rs"

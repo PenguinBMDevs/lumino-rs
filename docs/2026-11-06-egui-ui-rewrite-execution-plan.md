@@ -2798,3 +2798,37 @@ callback / 多视口 / 截图能力。
 剪辑带全部内容（标题 / 传输 / 画布 / 滚动条）均已迁 egui。剩余 iced 面
 （工具栏含 `SnapIcon`、状态栏、左栏面板、标题栏菜单、右栏图标列像素）全部
 出现在 `capture_iced` 的 6 个基线场景中，必须先用用户决策退役该工具。
+
+**Task 3.1（第九十步）：退役 `capture_iced`，删除 iced 右栏图标列像素**
+
+- **退役 `capture_iced`**（阻塞决策按目标要求执行）：
+  - 删除 `crates/editor/ui-parity/src/bin/capture_iced.rs` 与 Cargo 的 `[[bin]]` 声明；
+  - `tests/ui-baseline/iced/` 的 18 张原图**原样归档**（新增 `README.md` 说明
+    退役原因与人工对照方式），不删除、不修改、**不重新生成**；
+  - 唯一视觉门禁改为 `capture_egui`（12 张 = 6 场景 × 3 DPI）。
+  - 理由：交付标准要求「代码中没有任何 iced 残留」，而 `capture_iced` 要求 iced
+    持续绘制工具栏/状态栏/左栏/标题栏菜单/右栏图标列像素；在「不许重生成基线」
+    的纪律下二者互斥，形成死锁。退役只改门禁方式，不放松回归判据。
+- **删除 iced 右栏图标列绘制**：`right_sidebar/view.rs` 从 121 行压到 74 行，
+  只保留「面板宽 + 图标列宽」的同宽占位；删除
+  `right_sidebar/view/sidebar_button.rs`（62 行）与 `piano_waterfall::panel`
+  （已被 egui 取代的 iced 面板外壳），清掉 `piano_waterfall.rs` 里 5 条失效 import。
+  `view()` 签名去掉 `window` / `language`，两处调用点同步。
+- **真机**（DPI-aware，窗口左移避免屏幕裁边）：
+  - 右栏三个图标完整可见（此前 iced 也画一份，现在只剩 egui 一份）；
+  - 依次点击三格 → `RailClicked(ImageToMidi / Materials / PianoWaterfall)` 各 1 条，
+    最后再点素材库 → 共 4 条，无重复处理；
+  - 灯条取证：右缘 `(88,101,242)` 只出现在当前激活的「素材库」格，另两格为
+    `(232,232,232)`；素材库面板列表（含「(2 轨道)」）正常显示。
+- 验收：`lumino-ui` lib 847/847、`ui-egui` lib 40/40、传输 kittest 3/3、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`；
+  `capture_egui` 12/12；`tests/ui-baseline` 除新增 `README.md` 外零改动。
+
+**Task 3.2（下一步）**
+
+1. 状态栏：egui 侧缺 GPU(LGS) 指示段与「MEM 可点击打开内存监控」，
+   先补齐模型字段 + 点击动作并加测试，再把 iced `statusbar.rs` 视图换成 20px 占位；
+2. 工具栏（含最后一个 `iced_widget::canvas` 用户 `SnapIcon`）：先逐项核对
+   precision / auto-scroll / collaboration / onion-skin / undo-redo / loop /
+   playback / detection dashboard / overflow 的 egui 覆盖度；
+3. 左栏面板、标题栏菜单；最后摘 `lumino-ui` 的 `iced_*`。
