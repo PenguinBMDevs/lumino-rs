@@ -8,12 +8,15 @@ use iced_core::{Border, Length};
 use iced_widget::{button, column, container, row, scrollable, space, text};
 
 use lumino_core::tr;
+use lumino_ui_core::resources::icon::{self, Icon};
 
 use crate::message::{HistoryAction, Message};
 use crate::state::root_state::{HistoryDialogState, HistoryKind};
 
 /// 列表行高
 const ROW_HEIGHT: f32 = 32.0;
+/// 当前步骤标记的图标边长（逻辑像素）
+const MARKER_SIZE: u32 = 16;
 
 /// 渲染撤销历史面板
 pub fn view_history_dialog<'a>(
@@ -23,9 +26,6 @@ pub fn view_history_dialog<'a>(
     let palette = theme.extended_palette();
     let text_color = palette.background.base.text;
     let hint_color = palette.background.strong.text;
-    let current_bg = palette.primary.weak.color;
-    let future_color = palette.background.strong.text;
-    let border_color = palette.background.strong.color;
 
     let title = text(tr!("撤销历史"))
         .size(18)
@@ -38,15 +38,20 @@ pub fn view_history_dialog<'a>(
             color: Some(hint_color),
         });
 
+    let colors = RowPalette {
+        current_bg: palette.primary.weak.color,
+        text: palette.background.base.text,
+        future: palette.background.strong.text,
+    };
+
     let mut rows: Vec<crate::Element<'a>> = Vec::with_capacity(state.steps.len() + 1);
     rows.push(history_row(
         0,
         tr!("初始状态"),
         state.current == 0,
         state.current > 0,
-        current_bg,
-        text_color,
-        future_color,
+        colors,
+        theme,
     ));
 
     for step in &state.steps {
@@ -57,9 +62,8 @@ pub fn view_history_dialog<'a>(
             history_label(step.kind),
             is_current,
             is_future,
-            current_bg,
-            text_color,
-            future_color,
+            colors,
+            theme,
         ));
     }
 
@@ -94,13 +98,25 @@ pub fn view_history_dialog<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .padding(16)
+    // DEBT-13：去掉内层圆角 + 边框。弹窗本身已有外框，这里再画 8px 圆角会
+    // 形成「窗中窗」；设置 / 保存确认等弹窗都只铺背景色，本窗口与之对齐。
     .style(move |_theme: &iced_core::Theme| container::Style {
         background: Some(iced_core::Background::Color(palette.background.base.color)),
-        border: Border::default().rounded(8).color(border_color).width(1),
         ..Default::default()
     });
 
     panel.into()
+}
+
+/// 时间线行配色（同一窗口内恒定；打包传递，避免函数参数膨胀）
+#[derive(Clone, Copy)]
+struct RowPalette {
+    /// 当前步骤行底色
+    current_bg: iced_core::Color,
+    /// 已发生步骤的文字色
+    text: iced_core::Color,
+    /// 未来步骤（可重做）的文字色
+    future: iced_core::Color,
 }
 
 fn history_row<'a>(
@@ -108,38 +124,56 @@ fn history_row<'a>(
     label: &'a str,
     is_current: bool,
     is_future: bool,
-    current_bg: iced_core::Color,
-    text_color: iced_core::Color,
-    future_color: iced_core::Color,
+    colors: RowPalette,
+    theme: &'a iced_core::Theme,
 ) -> crate::Element<'a> {
-    let color = if is_future { future_color } else { text_color };
-    let marker = if is_current { "▶ " } else { "  " };
-    let label = format!("{marker}{label}");
-    button(
+    let color = if is_future {
+        colors.future
+    } else {
+        colors.text
+    };
+    // DEBT-13：当前步骤标记改用项目图标体系（history-undo），不再用 "▶ "
+    // （U+25B6 在部分字体/平台会按 Emoji 呈现，且与既有图标体系不一致）。
+    // 非当前行放等宽 Space 占位，保证所有步骤名左边缘对齐、切换步骤时不跳动。
+    let marker: crate::Element<'a> = if is_current {
+        icon::view_with_size_and_theme(Icon::Undo, MARKER_SIZE, MARKER_SIZE, Some(theme))
+    } else {
+        space()
+            .width(Length::Fixed(MARKER_SIZE as f32))
+            .height(Length::Fixed(MARKER_SIZE as f32))
+            .into()
+    };
+
+    let content = row![
+        marker,
         text(label)
             .size(13)
             .style(move |_theme: &iced_core::Theme| text::Style { color: Some(color) }),
-    )
-    .width(Length::Fill)
-    .height(Length::Fixed(ROW_HEIGHT))
-    .padding([4, 8])
-    .style(move |_theme: &iced_core::Theme, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
-        iced_widget::button::Style {
-            background: Some(iced_core::Background::Color(if is_current {
-                current_bg
-            } else if hovered {
-                iced_core::Color::from_rgba(1.0, 1.0, 1.0, 0.06)
-            } else {
-                iced_core::Color::TRANSPARENT
-            })),
-            text_color: color,
-            border: Border::default().rounded(4),
-            ..Default::default()
-        }
-    })
-    .on_press(Message::History(HistoryAction::Jump(index)))
-    .into()
+    ]
+    .spacing(6)
+    .align_y(iced_core::Alignment::Center);
+
+    button(content)
+        .width(Length::Fill)
+        .height(Length::Fixed(ROW_HEIGHT))
+        .padding([4, 8])
+        .style(move |_theme: &iced_core::Theme, status| {
+            let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            iced_widget::button::Style {
+                background: Some(iced_core::Background::Color(if is_current {
+                    colors.current_bg
+                } else if hovered {
+                    iced_core::Color::from_rgba(1.0, 1.0, 1.0, 0.06)
+                } else {
+                    iced_core::Color::TRANSPARENT
+                })),
+                text_color: color,
+                border: Border::default().rounded(4),
+                ..Default::default()
+            }
+        })
+        .on_press(Message::History(HistoryAction::Jump(index)))
+        .into()
 }
 
 fn history_label(kind: HistoryKind) -> &'static str {
