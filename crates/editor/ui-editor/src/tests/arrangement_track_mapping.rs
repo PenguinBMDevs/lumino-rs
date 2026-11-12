@@ -90,6 +90,7 @@ fn test_razor_split_collab_sync_uses_real_ids() {
 
     // 全局事件缓冲区是单例，操作前先清空；用唯一签名（tick 7000/7005、key 113）
     // 过滤断言，与并行测试污染隔离（与 `pending_drag/collab_sync` 同范式）。
+    let _guard = crate::tests::test_helpers::event_queue_guard();
     let _ = events::take_events();
 
     let mut editor = Editor::default();

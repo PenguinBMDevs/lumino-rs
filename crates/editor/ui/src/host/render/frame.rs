@@ -8,6 +8,14 @@ impl Host {
     pub(super) fn process_frame_preparation(&mut self) {
         puffin::profile_function!();
 
+        // 上一批事件被控件捕获过 ⇒ 本帧强制重建一次。
+        // iced 在控件捕获事件后会丢弃 overlay 树，新展开的下拉层必须重新 build
+        // 才存在；而渲染结束时 `ui_dirty` 会被清零，所以标记必须在**下一帧开头**
+        // 消费，而不是在事件处理当帧（那会被同一帧的绘制吃掉）。
+        if std::mem::take(&mut self.repaint_after_capture) {
+            self.ui_dirty = true;
+        }
+
         // 处理待处理的事件队列（合并后的）
         // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
         self.process_pending_events();

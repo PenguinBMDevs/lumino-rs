@@ -17,19 +17,16 @@ use crate::tests::test_helpers;
 use lumino_editor_state::DragState;
 use lumino_message::events::window::sync::Event as SyncEvent;
 use lumino_message::events::{self, Event};
-use std::sync::Mutex;
 
-// 全局事件缓冲区是单例，跨测试并行运行会污染，串行化本模块事件断言。
-// 使用 `unwrap_or_else` 从中毒中恢复，避免某测试 panic 后级联炸毁其它测试。
-static EVENT_TEST_MUTEX: Mutex<()> = Mutex::new(());
+// 全局事件缓冲区是单例：使用 crate 级共享锁，与其它「计数事件」测试互斥
+// （旧实现是模块内私有锁，只能防同文件并行，挡不住别的模块 drain）。
+fn lock_event_guard() -> std::sync::MutexGuard<'static, ()> {
+    test_helpers::event_queue_guard()
+}
 
 /// 唯一魔数：本仓库其它测试不会用到该偏移组合，用于从并行污染中精确隔离。
 const SIG_TICK_OFFSET: f32 = 321.0;
 const SIG_KEY_OFFSET: i16 = 11;
-
-fn lock_event_guard() -> std::sync::MutexGuard<'static, ()> {
-    EVENT_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// 取出当前缓冲区中匹配本测试唯一签名的 `LocalNoteMoved` 事件。
 fn take_signature_moves() -> Vec<(f32, u16, f32, i16, usize)> {

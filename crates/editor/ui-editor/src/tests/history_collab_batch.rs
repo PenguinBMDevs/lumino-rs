@@ -8,7 +8,7 @@
 
 use crate::Editor;
 use crate::Note;
-use crate::tests::test_helpers::seed_notes;
+use crate::tests::test_helpers::{event_queue_guard, seed_notes};
 use lumino_message::events::{Event, take_events, window};
 use lumino_note_core::history::OpKind;
 
@@ -62,6 +62,8 @@ fn local_note_events(base_tick: f32, base_key: u16) -> Vec<String> {
 
 #[test]
 fn test_history_jump_broadcast_is_merged_and_equivalent() {
+    // 全局事件缓冲区是单例：拿 crate 级串行锁，避免与其它计数测试互相 drain。
+    let _guard = event_queue_guard();
     let base_tick = 9000.0;
     let base_key = 100;
 
@@ -96,6 +98,7 @@ fn test_history_jump_broadcast_is_merged_and_equivalent() {
 
 #[test]
 fn test_rejected_jump_leaves_batch_state_reset() {
+    let _guard = event_queue_guard();
     // 专属坐标段，避免与上一个测试的并行事件混淆
     let base_tick = 13000.0;
     let base_key = 30;

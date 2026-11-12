@@ -228,18 +228,40 @@ impl Host {
         };
 
         let mut messages = Vec::new();
-        let state = {
+        // 探针：本批是否含左键按下（用于「点了没反应」的定位，见下方 debug 日志）
+        let pressed_left = self.events.iter().any(|event| {
+            matches!(
+                event,
+                iced_core::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+            )
+        });
+        let (state, statuses) = {
             puffin::profile_scope!("update_ui");
-            interface
-                .update(
-                    &self.events,
-                    self.window_ctx.cursor,
-                    &mut self.render_ctx.renderer,
-                    &mut self.window_ctx.clipboard,
-                    &mut messages,
-                )
-                .0
+            interface.update(
+                &self.events,
+                self.window_ctx.cursor,
+                &mut self.render_ctx.renderer,
+                &mut self.window_ctx.clipboard,
+                &mut messages,
+            )
         };
+
+        // 控件捕获过输入 ⇒ 下一帧必须重建一次（见 `repaint_after_capture` 注释）。
+        let captured = statuses
+            .iter()
+            .any(|status| matches!(status, iced_core::event::Status::Captured));
+        if captured {
+            self.repaint_after_capture = true;
+            self.window_ctx.window.request_redraw();
+        } else if pressed_left {
+            // 没有任何控件消费这次左键：要么点在空白处，要么命中判定与视觉不一致。
+            // 这里把光标与事件数打出来，用于区分「光标不可用」和「bounds 不含该点」。
+            tracing::debug!(
+                "左键按下未被任何控件捕获: cursor={:?} events={}",
+                self.window_ctx.cursor,
+                self.events.len()
+            );
+        }
         let redraw_request = match &state {
             user_interface::State::Updated { redraw_request, .. } => *redraw_request,
             user_interface::State::Outdated => RedrawRequest::Wait,

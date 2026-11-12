@@ -69,6 +69,17 @@ pub struct Host {
     pub skip_ui_rendering: bool,
     /// UI 脏标记
     pub(crate) ui_dirty: bool,
+    /// 上一批事件里有控件「捕获」了输入：下一帧必须无条件重建一次。
+    ///
+    /// 为什么需要单独一位（而不是直接 `ui_dirty = true`）：
+    /// iced 在基础控件捕获事件后会丢弃当前 overlay 树，新展开的下拉层要**下一次
+    /// build** 才画得出来；而 `render_iced_ui` 画完就把 `ui_dirty` 清零，同一帧里
+    /// 置的脏标记会被立刻消费掉。于是「控件只改自身状态、不发消息」的交互
+    /// （下拉框展开 / 滚动条抓取）可能停在「状态已变、画面没变」——
+    /// 表现为点击后要再动一下鼠标（或等 Tooltip 的 500ms 定时器）才出现。
+    ///
+    /// 语义：捕获过输入 ⇒ 下一帧强制重建一次（一次性，消费即清零，不会自循环）。
+    pub(crate) repaint_after_capture: bool,
     /// CPU 使用率监控器
     pub(crate) cpu_monitor: CpuMonitor,
     /// 上一次 GPU 帧耗时（ms）

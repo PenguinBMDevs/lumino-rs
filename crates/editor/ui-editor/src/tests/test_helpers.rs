@@ -9,6 +9,20 @@ use crate::Editor;
 use crate::note::Note;
 use lumino_midi_loader::{MidiDocument, NoteEvent, TrackManager};
 
+/// 全局事件缓冲区（`lumino_message::events`）是进程级单例。
+///
+/// 任何「计数 / 精确比对事件」的测试都必须先拿这把锁：`take_events()` 会
+/// drain 整个缓冲区，并行测试之间会互相偷事件（表现为偶发多一条/少一条，
+/// 与测试本身逻辑无关）。锁只约束**本 crate 内**遵循约定的测试。
+static EVENT_QUEUE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// 取全局事件缓冲区串行锁（中毒时恢复，避免一个 panic 炸掉后续测试）。
+pub(crate) fn event_queue_guard() -> std::sync::MutexGuard<'static, ()> {
+    EVENT_QUEUE_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// 构造一个 `MidiDocument`，在第 `track_id` 轨写入 `notes`（按 start_tick 升序）
 ///
 /// `track_count` 会与 `track_id + 1` 取 max，保证目标音轨存在。

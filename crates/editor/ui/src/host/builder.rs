@@ -94,6 +94,7 @@ impl Host {
             frame_count: 0,
             skip_ui_rendering: false,
             ui_dirty: false,
+            repaint_after_capture: false,
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
             waterfall_dirty_tracks: std::collections::HashSet::new(),

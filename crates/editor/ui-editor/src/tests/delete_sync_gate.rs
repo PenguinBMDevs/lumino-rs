@@ -16,15 +16,14 @@ use crate::tests::test_helpers;
 use lumino_message::events::window::sync::Event as SyncEvent;
 use lumino_message::events::{self, Event};
 
-// 全局事件缓冲区单例：串行化本模块的事件断言（中毒时恢复，避免级联失败）
-static EVENT_TEST_MUTEX: Mutex<()> = Mutex::new(());
+// 全局事件缓冲区单例：使用 crate 级共享锁，与其它「计数事件」测试互斥。
+// （旧实现是模块内私有锁，只能防同文件并行，挡不住别的模块 drain。）
+fn lock_event_guard() -> std::sync::MutexGuard<'static, ()> {
+    test_helpers::event_queue_guard()
+}
 
 /// 唯一魔数：本仓库其它测试不会使用的 tick，用于精确隔离并行事件污染。
 const SIG_TICKS: [f32; 3] = [7777.0, 7788.0, 7799.0];
-
-fn lock_event_guard() -> std::sync::MutexGuard<'static, ()> {
-    EVENT_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// 取出缓冲区中 tick 命中本测试魔数的 `LocalNoteDeleted` 事件数。
 fn count_signature_deletes() -> usize {
