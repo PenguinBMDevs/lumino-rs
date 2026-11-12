@@ -3454,11 +3454,30 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试（含新 2 条）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.16（下一步）**
+**Task 4.16（第一百二十二步）：力度面板编辑输入迁 egui（力度拖拽 + 曲线绘制）**
 
-1. 曲线矢量填充的凹多边形三角化（消除 `PathShape` 凸性限制）；
-2. 把力度面板的**编辑输入**（拖拽力度柱 / CC 节点 / Tempo 节点 / resize）
-   从 iced Canvas 迁到 egui；
+- **新增 `ui-egui::velocity_panel::input`**（无 iced 依赖，本地复刻
+  `velocity_to_y` / `y_to_velocity` 公式）：
+  - 命中力度点（10px）→ `VelocityDragStart/Move/End`；
+  - 空白处按下 → `VelocityCurveStart`，拖动按起点/当前点线性插值生成
+    `VelocityCurvePaint`（有选中集时只影响选中音符），松开 → `VelocityCurveEnd`。
+- **职责边界**：仅在「力度模式 + 曲线工具」时 egui 接管数据区
+  （`blocked` 排除顶部 5px resize 手柄）；Tempo / CC / Bend 的输入仍由
+  iced Canvas 处理，resize 拖拽也保持原路径。
+- **模型扩展**：`VelocityPanelModel` 新增力度点快照 / 选中集 / 视图参数
+  （zoom_x / scroll_x / keyboard_width）/ `velocity_editing`。
+- **动作映射**：6 个新 `VelocityPanelAction` → `Message::Velocity(VelocityAction::...)`。
+- **真机**（DPI-aware）：A01 画一个音符 → 打开自动化面板 → 模式切到「力度」→
+  C 曲线工具；拖动力度锚点向下，日志 `VelocityDragMove(0, 87→46)`、`VelocityDragEnd`，
+  gfx 曲线锚点从 100 附近落到 46 附近（`target/ve2-before/after-crop.png`）。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.17（下一步）**
+
+1. Tempo / CC / Bend 的输入（拖拽锚点、右键删除、新增、滚轮缩放）迁 egui；
+2. 曲线矢量填充的凹多边形三角化；
 3. 切主窗口入口到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
    `host/event/window/*` 的 iced 依赖，最后摘掉
    `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

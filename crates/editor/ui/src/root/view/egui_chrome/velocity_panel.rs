@@ -2,11 +2,13 @@
 
 use lumino_extras::i18n::main_translations;
 use lumino_ui_editor::velocity::EditMode;
+use lumino_ui_editor::velocity::VelocityPanel;
 use lumino_ui_editor::velocity::widget::{
     VelocityCanvas, bend_value_to_y, generate_tempo_levels, tempo_bpm_to_y,
 };
 use lumino_ui_egui::velocity_panel::{
-    LineStrength, TOOLBAR_HEIGHT, VelocityPanelAction, VelocityPanelModel,
+    LineStrength, TOOLBAR_HEIGHT, VelocityPanelAction, VelocityPanelModel, VelocityPointModel,
+    VelocityView,
 };
 
 use crate::Message;
@@ -149,7 +151,28 @@ impl Root {
             }
         }
 
-        Some(VelocityPanelModel {
+        let velocity_editing =
+            is_velocity && self.editor.current_tool() == lumino_message::Tool::Curve;
+        let velocity_points = if velocity_editing {
+            VelocityPanel::build_velocity_points(es.data.current_track_notes())
+                .into_iter()
+                .map(|point| VelocityPointModel {
+                    note_index: point.note_index,
+                    tick: point.tick,
+                    velocity: point.velocity,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let has_selection = self.editor.has_selection();
+        let selected_notes = if has_selection {
+            es.interaction.selected_notes.iter().collect()
+        } else {
+            Vec::new()
+        };
+
+        let model = VelocityPanelModel {
             panel,
             toolbar,
             canvas: canvas_rect,
@@ -160,7 +183,33 @@ impl Root {
             info,
             hlines,
             vlines,
-        })
+            velocity_editing,
+            velocity_points,
+            has_selection,
+            selected_notes,
+            view: VelocityView {
+                zoom_x: view.zoom_x,
+                scroll_x: view.scroll_x,
+                keyboard_width: view.keyboard_width,
+            },
+        };
+        if velocity_editing && std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0")
+        {
+            let screen: Vec<(f32, f32)> = model
+                .velocity_points
+                .iter()
+                .map(|p| {
+                    (
+                        model.canvas.left() + p.tick * model.view.zoom_x - model.view.scroll_x
+                            + model.view.keyboard_width,
+                        model.canvas.top()
+                            + VelocityCanvas::velocity_to_y(p.velocity, model.canvas.height()),
+                    )
+                })
+                .collect();
+            tracing::info!(?screen, mode = %model.mode_label, "DEBUG velocity points");
+        }
+        Some(model)
     }
 
     /// egui 力度面板动作 → 生产消息。
@@ -170,6 +219,20 @@ impl Root {
             VelocityPanelAction::CcSelected(cc) => {
                 Message::Velocity(VelocityAction::CcOptionSelected(cc))
             }
+            VelocityPanelAction::VelocityDragStart(index, velocity) => {
+                Message::Velocity(VelocityAction::DragStart(index, velocity))
+            }
+            VelocityPanelAction::VelocityDragMove(index, velocity) => {
+                Message::Velocity(VelocityAction::DragMove(index, velocity))
+            }
+            VelocityPanelAction::VelocityDragEnd => Message::Velocity(VelocityAction::DragEnd),
+            VelocityPanelAction::VelocityCurveStart => {
+                Message::Velocity(VelocityAction::CurveStart)
+            }
+            VelocityPanelAction::VelocityCurvePaint(updates) => {
+                Message::Velocity(VelocityAction::CurvePaint(updates))
+            }
+            VelocityPanelAction::VelocityCurveEnd => Message::Velocity(VelocityAction::CurveEnd),
         }
     }
 }

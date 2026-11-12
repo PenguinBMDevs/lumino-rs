@@ -13,6 +13,40 @@ use lumino_message::CcOption;
 
 use crate::theme;
 
+mod input;
+
+/// 力度点快照（供 egui 输入命中/曲线绘制）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VelocityPointModel {
+    /// 音符索引（document 当前轨保序）。
+    pub note_index: usize,
+    /// 起始 tick。
+    pub tick: f32,
+    /// 力度 0..=127。
+    pub velocity: u8,
+}
+
+/// 时间轴视图参数（与钢琴卷帘同源）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VelocityView {
+    /// 横向缩放（px/tick）。
+    pub zoom_x: f32,
+    /// 横向滚动（px）。
+    pub scroll_x: f32,
+    /// 键盘列宽（px）。
+    pub keyboard_width: f32,
+}
+
+impl Default for VelocityView {
+    fn default() -> Self {
+        Self {
+            zoom_x: 0.1,
+            scroll_x: 0.0,
+            keyboard_width: 120.0,
+        }
+    }
+}
+
 /// 面板工具栏高度（与 iced `TOOLBAR_HEIGHT` 一致）。
 pub const TOOLBAR_HEIGHT: f32 = 28.0;
 /// 顶部 resize 手柄高度。
@@ -52,15 +86,37 @@ pub struct VelocityPanelModel {
     pub hlines: Vec<(f32, String)>,
     /// 垂直网格线（canvas 局部 x, 强度）。
     pub vlines: Vec<(f32, LineStrength)>,
+    /// 力度模式 + 曲线工具：egui 接管力度编辑。
+    pub velocity_editing: bool,
+    /// 力度点快照。
+    pub velocity_points: Vec<VelocityPointModel>,
+    /// 是否存在选中集（曲线绘制只影响选中音符）。
+    pub has_selection: bool,
+    /// 选中的音符索引。
+    pub selected_notes: Vec<usize>,
+    /// 时间轴视图参数。
+    pub view: VelocityView,
 }
 
 /// 本帧动作。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VelocityPanelAction {
     /// 切换模式（力度 → 速度 → CC → Bend）。
     ToggleMode,
     /// 选择 CC / Bend。
     CcSelected(CcOption),
+    /// 力度拖拽开始（note_index, 当前力度）。
+    VelocityDragStart(usize, u8),
+    /// 力度拖拽移动（note_index, 新力度）。
+    VelocityDragMove(usize, u8),
+    /// 力度拖拽结束。
+    VelocityDragEnd,
+    /// 力度曲线绘制开始。
+    VelocityCurveStart,
+    /// 力度曲线批量更新。
+    VelocityCurvePaint(Vec<(usize, u8)>),
+    /// 力度曲线绘制结束。
+    VelocityCurveEnd,
 }
 
 const ACTION_ID: &str = "lumino.velocity-panel.action";
@@ -287,6 +343,14 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
     } else if !model.cc_mode {
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::unique(CC_OPEN_ID), false));
+    }
+
+    // 力度模式 + 曲线工具：egui 接管数据区编辑（iced Canvas 不再收这一段）。
+    if model.velocity_editing {
+        blocked.push(input::blocking_rect(model.canvas));
+        if action.is_none() {
+            action = input::handle(ui, model);
+        }
     }
 
     (action, blocked)

@@ -20,6 +20,11 @@ fn model() -> VelocityPanelModel {
         info: "力度 0-127".to_owned(),
         hlines: vec![(10.0, "127".to_owned()), (100.0, "0".to_owned())],
         vlines: vec![(20.0, velocity_panel::LineStrength::Measure)],
+        velocity_editing: false,
+        velocity_points: Vec::new(),
+        has_selection: false,
+        selected_notes: Vec::new(),
+        view: velocity_panel::VelocityView::default(),
     }
 }
 
