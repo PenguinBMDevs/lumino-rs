@@ -18,6 +18,7 @@ mod settings_ui;
 mod shape_canvas;
 mod shape_drawer;
 mod sidebar_panel;
+mod toast;
 mod tool_panel;
 mod toolbar;
 mod video_clip_timeline;

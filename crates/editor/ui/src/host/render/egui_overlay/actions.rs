@@ -68,6 +68,7 @@ pub(super) struct OverlayActions {
     pub statusbar: Option<lumino_ui_egui::chrome::statusbar::StatusbarAction>,
     pub sidebar_panel: Option<lumino_ui_egui::chrome::SidebarPanelAction>,
     pub sidebar_menu: Option<lumino_ui_egui::chrome::SidebarMenuAction>,
+    pub help_tip: Option<lumino_ui_egui::chrome::toast::HelpTipAction>,
 }
 
 impl OverlayActions {
@@ -108,6 +109,7 @@ impl OverlayActions {
             statusbar: lumino_ui_egui::chrome::statusbar::take_action(ctx),
             sidebar_panel: lumino_ui_egui::chrome::take_panel_action(ctx),
             sidebar_menu: lumino_ui_egui::chrome::take_menu_action(ctx),
+            help_tip: lumino_ui_egui::chrome::take_help_tip_action(ctx),
         }
     }
 }
@@ -162,6 +164,11 @@ impl Host {
             }
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
+        }
+        if let Some(action) = actions.help_tip {
+            tracing::info!("egui 帮助提示动作：{action:?}");
+            let message = self.root.help_tip_action_message(action);
+            self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.sidebar_menu
             && let Some(message) = self.root.sidebar_menu_action_message(action)

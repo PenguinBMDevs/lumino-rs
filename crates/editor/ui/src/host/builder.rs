@@ -171,6 +171,16 @@ impl Host {
                 iced_core::Point::new(600.0, 300.0),
             );
         }
+        // 调试开关：启动即弹三条 Toast（`LUMINO_TOAST_DEMO=1`）。
+        // 用途：验证 egui 右下角 Toast 叠加层（正常入口需要触发保存/错误等事件）。
+        if std::env::var("LUMINO_TOAST_DEMO").is_ok_and(|v| v != "0") {
+            root.toast
+                .push(crate::toast::ToastLevel::Info, "信息：Toast 渲染正常");
+            root.toast
+                .push(crate::toast::ToastLevel::Warning, "警告：这是一条警告");
+            root.toast
+                .push(crate::toast::ToastLevel::Error, "错误：这是一条错误");
+        }
         // 调试开关：启动即进入全屏瀑布流模式（`LUMINO_START_WATERFALL=1`）。
         // 用途：验证 wgpu 离屏纹理经 egui 外部纹理铺放的链路（无法用点击稳定进入时）。
         if std::env::var("LUMINO_START_WATERFALL").is_ok_and(|v| v != "0") {

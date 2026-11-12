@@ -40,8 +40,9 @@ fn test_toast_level_default_duration() {
 fn test_toast_level_icon() {
     assert_eq!(ToastLevel::Info.icon(), "ℹ");
     assert_eq!(ToastLevel::Warning.icon(), "⚠");
-    assert_eq!(ToastLevel::Error.icon(), "✗");
-    assert_eq!(ToastLevel::Success.icon(), "✓");
+    // egui 默认字体缺 `✗`/`✓`，改用同字体可用的 `×`/`√`。
+    assert_eq!(ToastLevel::Error.icon(), "×");
+    assert_eq!(ToastLevel::Success.icon(), "√");
 }
 
 #[test]

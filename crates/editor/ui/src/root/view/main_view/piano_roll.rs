@@ -208,24 +208,14 @@ impl Root {
         };
 
         // 叠加层（自下而上）：Toast 通知层（右下角）→ 素材删除确认对话框（覆盖层样式）
-        let mut stack = iced_widget::Stack::new()
+        let stack = iced_widget::Stack::new()
             .push(main_content)
             .width(Length::Fill)
             .height(Length::Fill);
-        if let Some(toast_overlay) = self.toast.view(&self.window.theme) {
-            stack = stack.push(toast_overlay);
-        }
         // 混音台浮动面板由 egui 绘制并接管输入（`lumino-ui-egui::mixer`），
         // 音符绘制悬浮工具条由 egui 绘制并接管输入（`chrome::tool_panel`），
         // iced 侧视图（原 `root/draw_toolbar.rs`）已删除。
         // 首次使用帮助提示：最上层、右下角、非模态；显示即已读。
-        if let Some(tip) = crate::view::help_tip::view_help_tip(
-            self.state.help_tips.active_topic(),
-            &self.window,
-            self.settings.display.language,
-        ) {
-            stack = stack.push(tip);
-        }
         stack.into()
     }
 }

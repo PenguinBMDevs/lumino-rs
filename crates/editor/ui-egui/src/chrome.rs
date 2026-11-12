@@ -9,6 +9,7 @@ pub mod right_panel;
 pub mod sidebar;
 pub mod statusbar;
 pub mod titlebar;
+pub mod toast;
 pub mod tool_panel;
 pub mod toolbar;
 pub mod toolbar_popup;
@@ -20,16 +21,16 @@ pub use model::{
     AudioExportModel, AudioExportPanelModel, AudioField, AudioFilterModel, AudioOutputModel,
     AudioPageModel, AudioProjectModel, AudioRowModel, AudioSettingsModel, AudioToggle,
     AudioToggleId, BrushPanelModel, CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID,
-    FillDivisionPanelModel, GpuMetricsModel, GpuQueueTrend, I2mControlModel, I2mConvertModel,
-    I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels, MaterialContextMenuItem,
-    MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind,
-    MaterialSectionModel, MaterialsPanelModel, MetricTone, RightSidebarPanelModel, ShapeKind,
-    ShapePanelModel, SidebarColorPickerModel, SidebarMenuEntry, SidebarNumericPickerKind,
-    SidebarNumericPickerModel, SidebarPanelMenuModel, SidebarReorderModel, SidebarTrackMenuModel,
-    TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToolPanelItemKind,
-    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
-    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone,
-    underrun_tone,
+    FillDivisionPanelModel, GpuMetricsModel, GpuQueueTrend, HelpTipModel, I2mControlModel,
+    I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel, MaterialContextLabels,
+    MaterialContextMenuItem, MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel,
+    MaterialMenuKind, MaterialSectionModel, MaterialsPanelModel, MetricTone,
+    RightSidebarPanelModel, ShapeKind, ShapePanelModel, SidebarColorPickerModel, SidebarMenuEntry,
+    SidebarNumericPickerKind, SidebarNumericPickerModel, SidebarPanelMenuModel,
+    SidebarReorderModel, SidebarTrackMenuModel, TextParamsPanelModel, ThemeCardModel,
+    ThicknessPanelModel, ToastCardModel, ToastModel, ToolPanelItemKind, ToolPanelItemModel,
+    ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField, UiPageModel, UiRow,
+    WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone, underrun_tone,
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
@@ -600,6 +601,18 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         .frame(panel_frame(theme::toolbar_bg()))
         .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
 
+    // 右下角浮层：Toast 通知 + 首次使用帮助提示。
+    // iced 侧视图（`toast::view` / `view/help_tip.rs`）已删除，这里独占绘制。
+    let full_window = window_rect(&root);
+    if let Some(toast) = toast_model(ui.ctx()) {
+        crate::chrome::toast::show_toasts(&root, full_window, &toast);
+    }
+    if let Some(tip) = help_tip_model(ui.ctx())
+        && let Some(action) = crate::chrome::toast::show_help_tip(&root, full_window, &tip)
+    {
+        push_help_tip_action(ui.ctx(), action);
+    }
+
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
     // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 iced 面板）。
     if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
@@ -771,4 +784,44 @@ pub fn take_mask_panel_action(ctx: &egui::Context) -> Option<crate::mask_panel::
         });
     }
     action
+}
+
+/// 帮助提示动作通道。
+const HELP_TIP_ACTION_ID: &str = "lumino.help-tip.action";
+
+fn push_help_tip_action(ctx: &egui::Context, action: crate::chrome::toast::HelpTipAction) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(HELP_TIP_ACTION_ID), action));
+}
+
+/// 取走本帧帮助提示动作。
+pub fn take_help_tip_action(ctx: &egui::Context) -> Option<crate::chrome::toast::HelpTipAction> {
+    let action = ctx.data(|d| {
+        d.get_temp::<crate::chrome::toast::HelpTipAction>(egui::Id::unique(HELP_TIP_ACTION_ID))
+    });
+    if action.is_some() {
+        ctx.data_mut(|d| {
+            d.remove::<crate::chrome::toast::HelpTipAction>(egui::Id::unique(HELP_TIP_ACTION_ID))
+        });
+    }
+    action
+}
+
+/// 记录本帧 Toast 卡片（None = 不显示）。
+pub fn set_toast(ctx: &egui::Context, model: Option<ToastModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.toast"), model));
+}
+
+fn toast_model(ctx: &egui::Context) -> Option<ToastModel> {
+    ctx.data(|d| d.get_temp::<Option<ToastModel>>(egui::Id::unique("lumino.toast")))
+        .flatten()
+}
+
+/// 记录本帧首次使用帮助提示（None = 不显示）。
+pub fn set_help_tip(ctx: &egui::Context, model: Option<HelpTipModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.help-tip"), model));
+}
+
+fn help_tip_model(ctx: &egui::Context) -> Option<HelpTipModel> {
+    ctx.data(|d| d.get_temp::<Option<HelpTipModel>>(egui::Id::unique("lumino.help-tip")))
+        .flatten()
 }

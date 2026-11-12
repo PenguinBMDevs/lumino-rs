@@ -3080,11 +3080,30 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin`。
   触达 iced 的源文件 73 → **70**。
 
-**Task 3.13（下一步）**
+**Task 3.13（第一百零三步）：Toast 与首次使用帮助提示迁 egui**
 
-1. 仍渲染的 iced 视图只剩：`settings_dialog`（内容在 `lumino-ui-settings` crate）、
-   `about_egg`（设置窗彩蛋）、`toast`（276）、`help_tip`（91）；
-2. 先补 `toast` / `help_tip` 的 egui 版本（主窗口浮层，无窗口尺寸问题），
-   再迁 `lumino-ui-settings`，最后处理彩蛋；
-3. 运行时层（`host`/`render_ctx`/`host/event/window`）仍是 iced，
-   零 iced 依赖收口需要替换运行时（待范围确认）。
+- **新增 egui 浮层** `ui-egui/src/chrome/toast.rs` + 模型（`ToastCardModel` /
+  `ToastModel` / `HelpTipModel`）：
+  - Toast：右下角、避开状态栏 36、右边距 16；卡片内边距 10、圆角 6、间距 6、
+    最大宽 420，图标 16 + 文案 14、白字；
+  - 帮助提示：右下角内边距 16、卡片宽 360、内边距 14、圆角 8、1px 边框；
+    标题 15 / 正文 12 / 「查看帮助」「知道了」两个按钮。
+- **通道式接线**（与 mask_panel / video_preview 同模式）：`set_toast` /
+  `set_help_tip` + `take_help_tip_action`；生产侧新增
+  `egui_chrome/toast.rs`（`toast_model` / `help_tip_model` / 动作映射），
+  宿主 `apply_overlay_actions` 统一分发。
+- **删除 iced 视图**：`ToastManager::view`（改为 `egui_cards` 只给数据）、
+  `view/help_tip.rs`、`piano_roll.rs` 两处叠加；`ToastLevel::icon` 的
+  `✗`/`✓` 在 egui 默认字体中缺字（显示方框），改为 `×`/`√` 并更新单测。
+- **调试开关**：`LUMINO_TOAST_DEMO=1` 启动即弹三条 Toast（正常入口需触发保存/错误）。
+- **真机**（DPI-aware）：三条 Toast 右下角正确堆叠、蓝/橙/红配色与图标齐全，
+  无方框缺字（`target/td-crop.png`）。
+- 验证：`lumino-ui` lib 785/785、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 3.14（下一步）**
+
+1. 仍渲染的 iced 视图只剩 `settings_dialog`（内容在 `lumino-ui-settings` crate）
+   与设置窗内的 `about_egg` 彩蛋；
+2. 迁 `lumino-ui-settings`（egui 侧 `settings/` 已完整）并删除 iced 设置树；
+3. 运行时层（`host` / `render_ctx` / `host/event/window`）替换与否仍待决策。
