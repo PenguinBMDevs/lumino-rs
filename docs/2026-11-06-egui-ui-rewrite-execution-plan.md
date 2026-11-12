@@ -3184,7 +3184,11 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 774/774、`ui-egui` 全部集成测试（含新 4 用例）、
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 零基线改动（设置 / 保存确认自带标题栏，不受影响）。
-  触达 iced 的源文件 63 → **61**。
+  触达 iced 的源文件 63 → **61**；`titlebar/mode_toggle`、`menu::view_placeholder`、
+  `widget.rs` 三个死视图/再导出随后删除，61 → **59**。
+- **依赖收缩**：`crates/editor/ui/Cargo.toml` 移除**未使用**的 `iced_renderer`
+  直接依赖（渲染上下文走 `iced_wgpu`），`cargo tree -p lumino-ui | grep '^iced'`
+  **30 → 26**。
 
 **Task 3.17（下一步）**
 

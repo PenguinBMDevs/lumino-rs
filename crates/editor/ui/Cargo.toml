@@ -46,7 +46,6 @@ lumino-ui-editor = { workspace = true }
 # crates.io
 midly = { workspace = true }
 # crates.io
-iced_renderer = { workspace = true }
 iced_wgpu = { workspace = true, features = ["geometry", "svg"] }
 iced_winit = { workspace = true }
 iced_widget = { workspace = true, features = ["image", "wgpu", "svg"] }

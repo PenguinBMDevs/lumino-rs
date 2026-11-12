@@ -4914,7 +4914,6 @@ dependencies = [
  "egui",
  "i2m-rs",
  "iced_core",
- "iced_renderer",
  "iced_wgpu",
  "iced_widget",
  "iced_winit",
