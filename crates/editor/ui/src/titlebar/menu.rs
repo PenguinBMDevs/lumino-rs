@@ -1,9 +1,5 @@
-use iced_core::{Alignment, Length};
-use iced_widget::{container, text};
-
 use lumino_extras::i18n::{Language, main_translations};
 
-use crate::Element;
 use crate::event::Event;
 
 /// 菜单类型
@@ -166,31 +162,6 @@ pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
         view_menu(lang),
         help_menu(lang),
     ]
-}
-
-/// 叠加层接管菜单时的占位：几何与 [`view`] 一致，但**不接收任何输入**、不画下拉。
-///
-/// 自绘标题栏与系统原生标题栏两种模式都走这里（菜单标签与下拉由 egui 绘制）。
-pub fn view_placeholder<'a>(language: Language) -> Element<'a> {
-    let items: Vec<Element<'a>> = [
-        MenuKind::File,
-        MenuKind::Edit,
-        MenuKind::View,
-        MenuKind::Help,
-    ]
-    .into_iter()
-    .map(|kind| {
-        container(text(kind.display_name(language)).size(14.0))
-            .padding([2, 8])
-            .height(Length::Fill)
-            .align_y(Alignment::Center)
-            .into()
-    })
-    .collect();
-    iced_widget::Row::with_children(items)
-        .spacing(1)
-        .align_y(Alignment::Center)
-        .into()
 }
 
 /// 获取事件的友好显示名称
