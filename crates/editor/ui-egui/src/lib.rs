@@ -48,6 +48,7 @@ pub mod shape_canvas;
 pub mod shape_drawer;
 pub mod shape_preview;
 pub mod speed_change;
+pub mod text_tool;
 pub mod theme;
 pub mod video_clip_timeline;
 pub mod video_export;

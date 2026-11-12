@@ -39,6 +39,40 @@ pub struct TextToolButtonRects {
     pub mode: Rectangle,
 }
 
+impl Editor {
+    /// 文字工具预览图（RGBA，白蓝色文字 + alpha）。
+    ///
+    /// 与 √ 生成音符共用同一份栅格（`GlyphGrid` + `rasterize_glyph_alpha_for_tool`），
+    /// 供 egui 叠加层上传纹理直接铺放；无 iced 类型。
+    pub fn text_tool_preview_rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
+        let tt = &self.editor_state.text_tool;
+        let text = tt.text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let grid = GlyphGrid::from_state(
+            tt,
+            self.editor_state.view.snap_precision,
+            self.editor_state.is_vertical_roll,
+        );
+        let (w, h, alpha) = rasterize_glyph_alpha_for_tool(tt, text, grid.cols, grid.rows)?;
+        let (cr, cg, cb) = (
+            (TEXT_PREVIEW_COLOR.r * 255.0) as u16,
+            (TEXT_PREVIEW_COLOR.g * 255.0) as u16,
+            (TEXT_PREVIEW_COLOR.b * 255.0) as u16,
+        );
+        let ca = (TEXT_PREVIEW_COLOR.a * 255.0) as u16;
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for &a in &alpha {
+            rgba.push(cr as u8);
+            rgba.push(cg as u8);
+            rgba.push(cb as u8);
+            rgba.push((a as u16 * ca / 255) as u8);
+        }
+        Some((w, h, rgba))
+    }
+}
+
 /// 计算文本框在屏幕上的矩形 (left, top, right, bottom)
 ///
 /// - 横向：X = tick、Y = key（key 越大越靠上）；

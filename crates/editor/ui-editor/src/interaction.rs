@@ -145,6 +145,15 @@ impl Editor {
             EditorAction::TextToolTextChanged(s) => {
                 self.set_text_tool_text(s);
             }
+            EditorAction::TextToolConfirm => {
+                self.confirm_text_tool();
+            }
+            EditorAction::TextToolCancel => {
+                self.cancel_text_tool();
+            }
+            EditorAction::TextToolModeToggle => {
+                self.toggle_text_tool_mode();
+            }
             EditorAction::TextParamsChanged(params) => {
                 self.set_text_params(params);
             }

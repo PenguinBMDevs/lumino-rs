@@ -704,6 +704,18 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         crate::marquee::show(&root, &marquee);
     }
 
+    // 文字工具覆盖层（文本框 / 字形预览 / 输入框 / √× 模式按钮）。
+    // 取走模型（输入框需要 `&mut` 文字），下一帧生产侧会重新 set。
+    if let Some(mut model) = take_text_tool_model(ui.ctx()) {
+        if let Some(action) = crate::text_tool::show(&mut root, &mut model, icons) {
+            crate::text_tool::push_action(ui.ctx(), action);
+        }
+        let rects = model.blocking_rects();
+        if !rects.is_empty() {
+            menu::extend_blocked(ui.ctx(), rects);
+        }
+    }
+
     // 曲线锚点弯折按钮（曲线 / 折线）：在曲线预览之上、√× 之下。
     if let Some(buttons) = bend_buttons_model(ui.ctx()) {
         if let Some(bend) = crate::bend_buttons::show(&root, &buttons) {
@@ -1005,6 +1017,21 @@ fn bend_buttons_model(ctx: &egui::Context) -> Option<crate::bend_buttons::BendBu
     ctx.data(|d| {
         d.get_temp::<crate::bend_buttons::BendButtonsModel>(egui::Id::unique("lumino.bend-buttons"))
     })
+    .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧文字工具覆盖层（`None` = 不显示）。
+pub fn set_text_tool(ctx: &egui::Context, model: Option<crate::text_tool::TextToolModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.text-tool"), model));
+}
+
+fn take_text_tool_model(ctx: &egui::Context) -> Option<crate::text_tool::TextToolModel> {
+    ctx.data_mut(|d| {
+        d.remove_temp::<Option<crate::text_tool::TextToolModel>>(egui::Id::unique(
+            "lumino.text-tool",
+        ))
+    })
+    .flatten()
     .filter(|model| !model.is_empty())
 }
 

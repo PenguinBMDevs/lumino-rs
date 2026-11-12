@@ -14,10 +14,7 @@ mod visible_notes;
 pub(crate) use ghost::{copy_deltas_for_index, ghost_delta_for_index, is_copy_ghosted};
 
 use iced_core::{Length, Point};
-use iced_widget::Space;
 use iced_widget::canvas::Canvas;
-use iced_widget::container;
-use lumino_core::tr;
 
 use crate::grid::PianoRollGrid;
 use crate::scrollbar_widget;
@@ -272,37 +269,13 @@ impl Editor {
             && crate::grid::text_tool_box::box_rect_screen(self).is_some()
     }
 
-    /// 文字工具编辑态的 TextInput 覆盖层（定位在文本框屏幕矩形上）
+    /// 文字工具编辑态的 TextInput 覆盖层。
     ///
-    /// 仅当文本框激活且处于编辑态时返回 `Some`；横向 / 纵向卷帘均由
-    /// `box_rect_screen` 给出转置后的矩形（纵向：X = key、Y = tick），故两个方向都会叠加。
+    /// 已迁 egui（`ui-egui::text_tool`）：iced 侧必须**返回 None**，否则隐藏的
+    /// iced `TextInput` 仍会抢键盘焦点、与 egui 输入框各收一半按键。
     #[allow(clippy::type_complexity)]
     fn text_tool_input_overlay<'a>(&'a self) -> Option<Element<'a>> {
-        if !self.text_tool_input_overlay_active() {
-            return None;
-        }
-        let (left, top, right, bottom) = crate::grid::text_tool_box::box_rect_screen(self)?;
-        let box_w = (right - left).max(1.0);
-        let box_h = (bottom - top).max(1.0);
-        // 输入框只占文本框顶部一条（输入文字），下方区域留给画布绘制的「墨水格」实时预览
-        let input_h = box_h.min(28.0);
-        let input = container(
-            iced_widget::text_input(tr!("输入文字…"), &self.editor_state.text_tool.text)
-                .on_input(|s: String| {
-                    Message::EditorAction(crate::message::EditorAction::TextToolTextChanged(s))
-                })
-                .width(Length::Fixed(box_w)),
-        )
-        .width(Length::Fixed(box_w))
-        .height(Length::Fixed(input_h));
-        let overlay = iced_widget::column![]
-            .push(Space::new().height(Length::Fixed(top)))
-            .push(
-                iced_widget::row![]
-                    .push(Space::new().width(Length::Fixed(left)))
-                    .push(input),
-            );
-        Some(overlay.into())
+        None
     }
 
     /// 获取选择框的屏幕坐标（用于渲染选择框，转置支持）

@@ -104,7 +104,13 @@ impl Host {
                 // 鼠标重新进入窗口后强制重新应用光标（系统可能已重置）
                 self.window_ctx.applied_cursor = None;
             }
-            KeyboardInput { event, .. } => self.handle_keyboard_input_event(event, modifiers),
+            KeyboardInput { event, .. } => {
+                // egui 正在编辑文本（输入框 / 文本框）时，按键只给 egui：
+                // 否则裸字母会切工具（B/C/E/S…）、Ctrl+C 会复制音符，输入框直接失控。
+                if !consumed_by_egui {
+                    self.handle_keyboard_input_event(event, modifiers);
+                }
+            }
             Ime(ime) => {
                 // iced text_input 获得焦点时会 set_ime_allowed(true)，winit 随之发
                 // Ime::Enabled；失焦发 Disabled。裸字母快捷键据此让路。

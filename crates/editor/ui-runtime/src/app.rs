@@ -601,6 +601,10 @@ impl NativeApp {
                 .map(|root| root.bend_buttons_model())
                 .unwrap_or_default(),
         );
+        lumino_ui_egui::chrome::set_text_tool(
+            &self.ctx,
+            self.root.as_ref().and_then(|root| root.text_tool_model()),
+        );
 
         let raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, logical)),

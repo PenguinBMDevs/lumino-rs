@@ -36,7 +36,7 @@ pub mod selection_box;
 pub mod shape_list_box;
 pub mod shape_tool_box;
 pub mod state;
-pub(crate) mod text_tool_box;
+pub mod text_tool_box;
 pub mod theme;
 pub mod utils;
 pub mod vertical_bars;

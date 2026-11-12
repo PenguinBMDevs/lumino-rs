@@ -3402,10 +3402,38 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试（含新 3 用例）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.14（下一步）**
+**Task 4.14（第一百二十步）：文字工具覆盖层迁 egui（输入框 / 字形预览 / 三按钮）**
 
-1. 文字工具输入框（TextTool overlay）迁 egui；
-2. 曲线矢量填充的凹多边形三角化（消除 PathShape 凸性限制）；
-3. 迁力度面板（自动化 / 弯音 / CC），随后切主窗口入口到 `lumino-ui-runtime`，
-   删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖，最后摘掉
+- **新增 `ui-egui::text_tool`**：
+  - 文本框：灰色 3px 边框 + 0.78 灰 35% 填充；
+  - 字形预览：生产侧新增 `Editor::text_tool_preview_rgba()`（与 √ 生成音符同一份
+    `GlyphGrid` + `rasterize_glyph_alpha_for_tool`），egui 按签名缓存纹理并铺满框；
+  - 输入框：框顶 28px `TextEdit::singleline`，编辑态自动聚焦；
+  - √ / × / 模式按钮（绿 / 红 / 蓝 M·灰 N），矩形加入 `menu::blocked`。
+- **新增消息**：`EditorAction::{TextToolConfirm, TextToolCancel, TextToolModeToggle}`，
+  统一走 `Message::EditorAction`（此前 iced 画布直接调私有方法，egui 无入口）。
+- **关键输入修复**：`host/event/window/events.rs` 在 egui `wants_keyboard` 时
+  **跳过了 `handle_keyboard_input_event`** 的提前返回逻辑——原实现先跑工具快捷键
+  再检查 `consumed_by_egui`，导致输入框里打 `b` 会切画刷、文本框直接消失。
+  修复后裸字母快捷键让路，`a`/`b` 连续输入正常。
+- **iced 侧退场**：`text_tool_input_overlay` 返回 `None`（隐藏的 iced TextInput 会
+  抢键盘焦点、与 egui 各收一半按键）；`grid::text_tool_box` 模块与
+  `Editor::text_tool_allowed` 公开化。
+- **无头验证**（`text_tool_bands.rs`，4 条）：三按钮动作、输入 A → TextChanged、
+  覆盖层占用、非编辑态只留文本框。
+- **真机**（DPI-aware）：X 文字工具拖框 → 输入框 + 字形预览 + √/×/N 可见
+  （`target/tt2-typed-crop.png`）；输入 `a`、`b` → `TextChanged("a")`、
+  `TextChanged("ab")`，工具不再被 B 快捷键切走；点 √ → `Confirm`，
+  生成三行文字音符（`target/tt2-confirmed-crop.png`）。
+- 验收：`lumino-message` 53/53、`lumino-ui-editor` 908/908、
+  `lumino-ui` lib 776/776、`ui-egui` 全部集成测试（含新 4 条）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动。
+
+**Task 4.15（下一步）**
+
+1. 曲线矢量填充的凹多边形三角化（消除 `PathShape` 凸性限制）；
+2. 迁力度面板（自动化 / 弯音 / CC）；
+3. 切主窗口入口到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
+   `host/event/window/*` 的 iced 依赖，最后摘掉
    `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

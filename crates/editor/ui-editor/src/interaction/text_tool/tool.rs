@@ -50,7 +50,7 @@ impl Editor {
     ///
     /// Conductor 音轨（track 0）不可放置音符，整工具在 Conductor 轨上不可用
     /// （与铅笔等工具的 `current_track == 0` 守卫同源）。
-    pub(crate) fn text_tool_allowed(&self) -> bool {
+    pub fn text_tool_allowed(&self) -> bool {
         self.editor_state.data.current_track != 0
     }
 

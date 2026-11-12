@@ -27,6 +27,7 @@ mod shape_canvas;
 mod shape_drawer;
 mod shape_preview;
 mod sidebar_panel;
+mod text_tool;
 mod titlebar;
 mod toast;
 mod tool_panel;
@@ -402,6 +403,11 @@ impl Root {
         }
         if let Some(bend) = lumino_ui_egui::bend_buttons::take_action(ctx) {
             let message = self.bend_button_message(bend);
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = lumino_ui_egui::text_tool::take_action(ctx) {
+            let message = self.text_tool_message(action);
             self.update(message);
             applied += 1;
         }
