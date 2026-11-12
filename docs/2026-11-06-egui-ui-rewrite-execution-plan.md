@@ -3266,10 +3266,46 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 零基线改动。
 
-**Task 4.9（下一步）**
+**Task 4.9（第一百一十五步）：钢琴卷帘右键菜单迁 egui**
 
-1. 把主程序主窗口入口切到 `lumino-ui-runtime`（对话框先保留 iced 路径过渡）；
-2. 补齐右键菜单 / 滚轮缩放 / 键盘快捷键 / 框选到原生运行时，覆盖
-   `host/event/window/*` 的职责；
-3. 删除 `host/render/ui.rs` 与 `Theme`/`Renderer`/`Element` 别名，移除
-   `iced_wgpu`/`iced_winit`/`iced_core`/`iced_widget`，`cargo tree` 归零。
+- **条目表单一来源**：`lumino_message::context_menu` 新增
+  `menu_items(target)` 与 `item_label(item)`——条目集合/顺序与 tooltip 文案
+  由 message crate 维护，iced 与 egui 都只能取这一份（禁止各自复制）。
+  三个目标：Notes 8 项 / DrawnShape 20 项 / PendingDrawnShape 12 项。
+- **egui 绘制**：新增 `ui-egui::piano_roll_context_menu`：56px 宽图标条、
+  40×40 行高、4px 行距、8px 内边距、深色面板（与 iced 常量逐项一致）、
+  悬浮/按下白 alpha、右侧 tooltip（深底浅字）。**强制白色图标**
+  （新增 `IconCache::paint_tinted`）：浅色主题下 `default_tint()` 会把图标
+  染黑，在深色面板上几乎不可见（真机首版即此问题）。
+- **关闭语义**：只认**左键**空白处关闭。首版用 `any_click()`，右键打开菜单的
+  那次右键会被重放进同一帧并立刻触发 Close——真机表现为「菜单一闪而过/
+  完全不出现」；改为 `primary_clicked()` 后正常。
+- **输入占用**：菜单打开期间整块画布加入 `menu::blocked`（等价于 iced 旧
+  `background_close_overlay`），关闭用的那一次点击不会同时编辑画布。
+- **iced 侧退场**：删除 `ui-editor::context_menu::view` /
+  `background_close_overlay` / 按钮/样式/图标映射（约 280 行），
+  `rendering.rs` 的 ContextMenu 分支只保留内容层 + 原互斥语义；
+  状态 `PianoRollContextMenuState` 保留（输入仍由 iced Canvas 产生）。
+- **生产接线**：`Root::piano_roll_context_menu_model()`（canvas 局部坐标 →
+  窗口坐标 + 可用区）与 `piano_roll_context_menu_message()`；
+  `OverlayFrame` 新增 `piano_roll_menu`，`egui_overlay/actions.rs` 统一分发
+  `Message::PianoRollContextMenu`。
+- **无头验证**（`piano_roll_menu_bands.rs`，4 用例）：首行点击 → `Cut`；
+  画布空白点击 → `Close`；打开期间画布进入占用区；DrawnShape 20 行几何不越界。
+- **真机**（DPI-aware）：右键画布 → 深色图标条出现（8 项，图标白色清晰）；
+  点「全选」→ 日志 `egui 卷帘右键菜单：ItemClicked(SelectAll)`；
+  再次右键 + 点空白 → `Close`（首轮曾因 `any_click` 自关，已修）。
+  截图 `target/prm6-menu.png`。
+- 验收：`lumino-message` 53/53、`lumino-ui-editor` 908/908、
+  `lumino-ui` lib 774/774、`ui-egui` 全部集成测试（含新 4 用例）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 **零基线改动**。
+
+**Task 4.10（下一步）**
+
+1. 把编辑器画布的其余 iced 悬浮层（形状工具按钮 / I2M / 曲线 / 画刷 / 框选框）
+   逐个迁 egui，直到 iced Canvas 只负责绘制音符与网格；
+2. 迁移力度面板（自动化 / 弯音 / CC）到 egui，替换 iced `velocity` 视图；
+3. 主程序主窗口入口切到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
+   `host/event/window/*` 的 iced 依赖，最后摘掉
+   `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

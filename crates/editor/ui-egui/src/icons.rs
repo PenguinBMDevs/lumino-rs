@@ -232,8 +232,22 @@ impl IconCache {
     ///
     /// 用于音轨行、列表等「位置由外部几何决定」的场合。
     pub fn paint(&mut self, painter: &egui::Painter, icon: Icon, rect: egui::Rect) {
+        self.paint_tinted(painter, icon, rect, icon.default_tint());
+    }
+
+    /// 以固定染色的方式绘制图标（`None` = 保留原色）。
+    ///
+    /// 深色面板（如钢琴卷帘右键菜单）与应用主题无关，必须强制浅色，
+    /// 否则浅色主题下 `default_tint()` 会把图标染黑、几乎看不见。
+    pub fn paint_tinted(
+        &mut self,
+        painter: &egui::Painter,
+        icon: Icon,
+        rect: egui::Rect,
+        tint: Option<Color32>,
+    ) {
         let size = rect.width().min(rect.height());
-        let texture = self.texture(painter.ctx(), icon, size, icon.default_tint());
+        let texture = self.texture(painter.ctx(), icon, size, tint);
         painter.image(
             texture.id(),
             rect,

@@ -6,7 +6,7 @@
 use crate::Point2;
 
 /// 钢琴卷帘右键上下文菜单动作
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PianoRollContextMenuAction {
     /// 在指定位置打开菜单（canvas 局部坐标）
     Open {
@@ -121,6 +121,97 @@ impl PianoRollContextMenuItem {
             | Self::CopyShapeText => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
+    }
+}
+
+/// 目标对应的菜单条目集（iced / egui 两侧共用，禁止各自复制）。
+///
+/// 条目顺序即绘制顺序；视觉实现（图标 / 行高 / 悬浮色）由各 UI 层决定，
+/// 但**集合与顺序**必须唯一。
+pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] {
+    match target {
+        ContextMenuTarget::Notes => &[
+            PianoRollContextMenuItem::Cut,
+            PianoRollContextMenuItem::Copy,
+            PianoRollContextMenuItem::Paste,
+            PianoRollContextMenuItem::Delete,
+            PianoRollContextMenuItem::SelectAll,
+            PianoRollContextMenuItem::BatchEdit,
+            PianoRollContextMenuItem::ShapeList,
+            PianoRollContextMenuItem::PasteShapeText,
+        ],
+        ContextMenuTarget::DrawnShape => &[
+            PianoRollContextMenuItem::LiveShape,
+            PianoRollContextMenuItem::SplitLiveShape,
+            PianoRollContextMenuItem::JoinShapes,
+            PianoRollContextMenuItem::SplitJoinedShape,
+            PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::EditShape,
+            PianoRollContextMenuItem::PaintAreas,
+            PianoRollContextMenuItem::MaskToggle,
+            PianoRollContextMenuItem::MaskSettings,
+            PianoRollContextMenuItem::SymmetryVertical,
+            PianoRollContextMenuItem::SymmetryHorizontal,
+            PianoRollContextMenuItem::Straighten,
+            PianoRollContextMenuItem::StraightenOff,
+            PianoRollContextMenuItem::SliceVertical,
+            PianoRollContextMenuItem::BetweenCreate,
+            PianoRollContextMenuItem::CopyAlong,
+            PianoRollContextMenuItem::VelocityUp,
+            PianoRollContextMenuItem::CopyShapeText,
+            PianoRollContextMenuItem::PasteShapeText,
+            PianoRollContextMenuItem::DeleteDrawnShape,
+        ],
+        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起走 Bake 前组合会话。
+        // 019/021/022 需 2+ 个 pending；025/027/028 单对象；026 需恰好 2 个。
+        ContextMenuTarget::PendingDrawnShape => &[
+            PianoRollContextMenuItem::LiveShape,
+            PianoRollContextMenuItem::JoinShapes,
+            PianoRollContextMenuItem::MergeShapes,
+            PianoRollContextMenuItem::EditShape,
+            PianoRollContextMenuItem::MaskToggle,
+            PianoRollContextMenuItem::MaskSettings,
+            PianoRollContextMenuItem::SliceVertical,
+            PianoRollContextMenuItem::BetweenCreate,
+            PianoRollContextMenuItem::CopyAlong,
+            PianoRollContextMenuItem::VelocityUp,
+            PianoRollContextMenuItem::CopyShapeText,
+            PianoRollContextMenuItem::DeleteDrawnShape,
+        ],
+    }
+}
+
+/// 菜单项显示文本（i18n 跟随进程语言；供 iced / egui tooltip 共用）。
+pub fn item_label(item: PianoRollContextMenuItem) -> &'static str {
+    use lumino_core::tr;
+    match item {
+        PianoRollContextMenuItem::Cut => tr!("剪切"),
+        PianoRollContextMenuItem::Copy => tr!("复制"),
+        PianoRollContextMenuItem::Paste => tr!("粘贴"),
+        PianoRollContextMenuItem::Delete => tr!("删除"),
+        PianoRollContextMenuItem::SelectAll => tr!("全选"),
+        PianoRollContextMenuItem::BatchEdit => tr!("批量编辑"),
+        PianoRollContextMenuItem::DeleteDrawnShape => tr!("删除"),
+        PianoRollContextMenuItem::LiveShape => tr!("转为活形状"),
+        PianoRollContextMenuItem::SplitLiveShape => tr!("还原活形状"),
+        PianoRollContextMenuItem::JoinShapes => tr!("连接图形"),
+        PianoRollContextMenuItem::SplitJoinedShape => tr!("还原连接"),
+        PianoRollContextMenuItem::MergeShapes => tr!("门控合并"),
+        PianoRollContextMenuItem::EditShape => tr!("编辑图形"),
+        PianoRollContextMenuItem::PaintAreas => tr!("区域着色"),
+        PianoRollContextMenuItem::MaskToggle => tr!("切换遮罩"),
+        PianoRollContextMenuItem::MaskSettings => tr!("遮罩设置…"),
+        PianoRollContextMenuItem::ShapeList => tr!("形状列表"),
+        PianoRollContextMenuItem::SymmetryVertical => tr!("竖轴对称"),
+        PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),
+        PianoRollContextMenuItem::Straighten => tr!("扶正 50%"),
+        PianoRollContextMenuItem::StraightenOff => tr!("取消扶正"),
+        PianoRollContextMenuItem::SliceVertical => tr!("竖切"),
+        PianoRollContextMenuItem::BetweenCreate => tr!("创建补间"),
+        PianoRollContextMenuItem::CopyAlong => tr!("沿路径复制"),
+        PianoRollContextMenuItem::VelocityUp => tr!("力度渐强"),
+        PianoRollContextMenuItem::CopyShapeText => tr!("复制为分享文本"),
+        PianoRollContextMenuItem::PasteShapeText => tr!("从分享文本粘贴"),
     }
 }
 

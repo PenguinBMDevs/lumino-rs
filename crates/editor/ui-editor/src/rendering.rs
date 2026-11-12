@@ -180,20 +180,10 @@ impl Editor {
         // 纵向模式同样复用该互斥模型，右键上下文菜单不再缺失。
         match self.view_overlay() {
             Some(ViewOverlay::ContextMenu) => {
-                // 优先级函数已保证 position 为 Some；缺失按原点兜底（防御）
-                let position = self.context_menu.position.unwrap_or_default();
-                iced_widget::Stack::new()
-                    .push(content)
-                    .push(crate::context_menu::background_close_overlay())
-                    .push(crate::context_menu::view(
-                        position,
-                        self.context_menu.target,
-                        iced_core::Size::new(
-                            self.editor_state.canvas.size_x,
-                            self.editor_state.canvas.size_y,
-                        ),
-                    ))
-                    .into()
+                // 右键菜单已迁 egui（`ui-egui::piano_roll_context_menu`）：
+                // iced 不再绘制菜单/关闭遮罩，只保留内容层；文字输入覆盖层
+                // 仍按互斥逻辑隐藏，行为与迁移前一致。
+                content.into()
             }
             Some(ViewOverlay::TextToolInput) => {
                 // 优先级函数已保证激活；构造失败（理论不可达）退回纯内容
@@ -248,20 +238,8 @@ impl Editor {
         // 悬浮层互斥（优先级：右键菜单 > 文字输入覆盖层），同一时刻至多渲染一层
         match self.view_overlay() {
             Some(ViewOverlay::ContextMenu) => {
-                // 优先级函数已保证 position 为 Some；缺失按原点兜底（防御）
-                let position = self.context_menu.position.unwrap_or_default();
-                iced_widget::Stack::new()
-                    .push(editor_content)
-                    .push(crate::context_menu::background_close_overlay())
-                    .push(crate::context_menu::view(
-                        position,
-                        self.context_menu.target,
-                        iced_core::Size::new(
-                            self.editor_state.canvas.size_x,
-                            self.editor_state.canvas.size_y,
-                        ),
-                    ))
-                    .into()
+                // 右键菜单已迁 egui（见上）；iced 只保留内容层 + 互斥语义。
+                editor_content.into()
             }
             Some(ViewOverlay::TextToolInput) => {
                 // 优先级函数已保证激活；构造失败（理论不可达）退回纯内容

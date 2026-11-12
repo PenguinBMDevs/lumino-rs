@@ -79,6 +79,8 @@ struct OverlayFrame<'a> {
     help_tip: Option<lumino_ui_egui::chrome::HelpTipModel>,
     /// 「关于」页 logo 彩蛋飞行层（None = 不在飞行中）。
     egg: Option<lumino_ui_egui::chrome::EggModel>,
+    /// 钢琴卷帘右键菜单（None = 未打开）。
+    piano_roll_menu: Option<lumino_ui_egui::piano_roll_context_menu::PianoRollMenuModel>,
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
@@ -210,6 +212,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_toast(&ctx, Some(frame.toast.clone()));
         lumino_ui_egui::chrome::set_help_tip(&ctx, frame.help_tip.clone());
         lumino_ui_egui::chrome::set_egg(&ctx, frame.egg);
+        lumino_ui_egui::chrome::set_piano_roll_menu(&ctx, frame.piano_roll_menu);
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -450,6 +453,7 @@ impl Host {
             toast: self.root.egui_toast_model(),
             help_tip: self.root.egui_help_tip_model(),
             egg: self.root.egui_egg_model(),
+            piano_roll_menu: self.root.piano_roll_context_menu_model(),
             render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),

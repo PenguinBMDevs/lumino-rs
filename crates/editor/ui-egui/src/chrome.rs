@@ -682,6 +682,16 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     } else {
         tool_panel::clear_triggers(ui.ctx());
     }
+
+    // 钢琴卷帘右键菜单：最顶层（盖住卷帘与工具弹层）。
+    // 打开期间整块画布加入占用矩形：与 iced 旧 `background_close_overlay` 同语义，
+    // 关闭用的那一次点击不会同时落到画布上。
+    if let Some(menu) = piano_roll_menu(ui.ctx()) {
+        if let Some(action) = crate::piano_roll_context_menu::show(&root, &menu, icons) {
+            crate::piano_roll_context_menu::push_action(ui.ctx(), action);
+        }
+        menu::extend_blocked(ui.ctx(), [menu.available]);
+    }
 }
 
 pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
@@ -854,6 +864,25 @@ pub fn set_egg(ctx: &egui::Context, model: Option<EggModel>) {
 fn egg_model(ctx: &egui::Context) -> Option<EggModel> {
     ctx.data(|d| d.get_temp::<Option<EggModel>>(egui::Id::unique("lumino.about-egg")))
         .flatten()
+}
+
+/// 记录本帧钢琴卷帘右键菜单（`None` = 关闭）。
+pub fn set_piano_roll_menu(
+    ctx: &egui::Context,
+    model: Option<crate::piano_roll_context_menu::PianoRollMenuModel>,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.piano-roll-menu"), model));
+}
+
+fn piano_roll_menu(
+    ctx: &egui::Context,
+) -> Option<crate::piano_roll_context_menu::PianoRollMenuModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<crate::piano_roll_context_menu::PianoRollMenuModel>>(egui::Id::unique(
+            "lumino.piano-roll-menu",
+        ))
+    })
+    .flatten()
 }
 
 /// 记录本帧渲染器入口面板（`None` = 当前不是渲染器入口）。

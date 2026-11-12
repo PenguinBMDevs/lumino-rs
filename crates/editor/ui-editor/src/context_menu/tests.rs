@@ -1,4 +1,5 @@
 use super::*;
+use lumino_message::PianoRollContextMenuItem;
 
 #[test]
 fn test_state_open_close() {
@@ -21,46 +22,15 @@ fn test_state_open_records_target() {
     let mut state = PianoRollContextMenuState::default();
     state.open(Point::new(10.0, 20.0), ContextMenuTarget::DrawnShape);
     assert_eq!(state.target, ContextMenuTarget::DrawnShape);
-    // 关闭不清空 target（仅控制可见性），重新打开会覆盖
+    // 关闭不清 target（保持不可见性，避免下次打开被覆盖）
     state.close();
     assert_eq!(state.target, ContextMenuTarget::DrawnShape);
 }
 
-#[test]
-fn test_item_icon_mapping() {
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::Cut),
-        lumino_ui_core::resources::icon::Icon::ContextMenuCut
-    );
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::Copy),
-        lumino_ui_core::resources::icon::Icon::ContextMenuCopy
-    );
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::Paste),
-        lumino_ui_core::resources::icon::Icon::ContextMenuPaste
-    );
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::Delete),
-        lumino_ui_core::resources::icon::Icon::ContextMenuDelete
-    );
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::SelectAll),
-        lumino_ui_core::resources::icon::Icon::ContextMenuSelectAll
-    );
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::BatchEdit),
-        lumino_ui_core::resources::icon::Icon::Gear
-    );
-    assert_eq!(
-        item_icon(PianoRollContextMenuItem::DeleteDrawnShape),
-        lumino_ui_core::resources::icon::Icon::ContextMenuDelete
-    );
-}
-
+/// 条目集由 `lumino-message` 单点维护：待确认镜像不得出现 023/024 项。
 #[test]
 fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
-    let items = menu_items(ContextMenuTarget::PendingDrawnShape);
+    let items = lumino_message::context_menu::menu_items(ContextMenuTarget::PendingDrawnShape);
     assert_eq!(
         items,
         &[
@@ -87,26 +57,5 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
                 | PianoRollContextMenuItem::Straighten
         )),
         "023/024 仍不得出现在待确认目标"
-    );
-}
-
-#[test]
-fn test_menu_panel_size() {
-    let _element = menu_panel(ContextMenuTarget::Notes);
-    let _element = menu_panel(ContextMenuTarget::DrawnShape);
-    let _element = menu_panel(ContextMenuTarget::PendingDrawnShape);
-}
-
-#[test]
-fn test_view_returns_element() {
-    let _element = view(
-        Point::new(50.0, 60.0),
-        ContextMenuTarget::Notes,
-        Size::new(1280.0, 720.0),
-    );
-    let _element = view(
-        Point::new(50.0, 60.0),
-        ContextMenuTarget::DrawnShape,
-        Size::new(1280.0, 720.0),
     );
 }
