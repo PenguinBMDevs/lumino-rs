@@ -141,7 +141,7 @@ impl EguiOverlay {
     ///
     /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
     /// 调用方据此决定下一帧按键事件是否只给 egui。
-    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Vec<Rect>, bool) {
+    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Vec<Rect>, bool, egui::CursorIcon) {
         self.frames = self.frames.wrapping_add(1);
 
         // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
@@ -290,6 +290,7 @@ impl EguiOverlay {
         }
 
         let mut textures = output.textures_delta;
+        let egui_cursor = output.platform_output.cursor_icon;
         self.painter
             .update_textures(frame.device, frame.queue, &mut textures);
         let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
@@ -325,7 +326,7 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
-        (blocked, self.ctx.text_edit_focused())
+        (blocked, self.ctx.text_edit_focused(), egui_cursor)
     }
 }
 
@@ -465,7 +466,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (blocked, wants_keyboard) = overlay.draw(OverlayFrame {
+        let (blocked, wants_keyboard, egui_cursor) = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -519,6 +520,7 @@ impl Host {
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
         self.egui_blocked = blocked;
         self.egui_input.set_wants_keyboard(wants_keyboard);
+        self.apply_egui_cursor(egui_cursor);
         self.apply_overlay_actions(actions, logical_width);
     }
 

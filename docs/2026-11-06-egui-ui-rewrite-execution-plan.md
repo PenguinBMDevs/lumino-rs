@@ -3629,9 +3629,42 @@ callback / 多视口 / 截图能力。
   测试、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 零基线改动。
 
-**Task 4.22（下一步）**
+**Task 4.22（第一百二十九步）：滚动条拖拽迁 egui + Canvas 输入翻默认**
 
-1. 滚动条拖拽迁 egui（`piano_roll::interact`）：命中滑块/轨道 → `ScrollbarScrolled(X/Y)`；
-2. 纵向卷帘输入迁 `canvas_input`（布局 + 语义），然后翻 `LUMINO_EGUI_CANVAS_INPUT` 默认；
-3. 删除 `host/render/ui.rs` 的 iced 分支与 `host/event/window/*` 的 iced 路由；
-4. 曲线填充凹多边形三角化；摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。
+- **新增 `ui-egui::scrollbar`**（260 行）：`ScrollbarModel`（rect / scroll / max_scroll /
+  zoom / viewport / thumb_ratio / vertical）与 `show()`：
+  - **滑块拖拽**：`start_scroll + (delta/(track−thumb)) × 可滚动范围`（与 iced 同公式）；
+  - **轨道点击**：按命中比例直接跳转；
+  - **边缘拖拽（6px）**：`zoom = start_zoom / (1 + effective/start_thumb)`，
+    起始边 `fixed_ratio = 1.0`、结束边 `0.0`（向右拖起始边 = 放大，与 iced 同向）；
+  - 滚轮/缩放常量与 `lumino_ui_core::constants::scrollbar` 同源（6/20/2/2）；
+  - 光标：边缘 `ResizeHorizontal/Vertical`、滑块 `Grab`；状态按 id 存 egui 临时数据。
+- **`chrome/piano_roll`**：两条滚动条由纯绘制改为 `scrollbar::show`，动作经
+  `DirectedAction{vertical}` 通道回到宿主，映射为
+  `ScrollbarScrolled(X/Y)` / `ZoomXChanged` / `ZoomYChanged`；`PianoRollView` 增加
+  `max_scroll_x/max_scroll_y/viewport_y`，并保留 `thumb_*_ratio` 作为草稿场景的显式
+  比例（基线像素零改动）。
+- **光标**：`egui.platform_output.cursor_icon` 应用到 winit（仅指针落在 egui 占用区，
+  避免覆盖画布光标）；画布光标在命中占用区时让位。
+- **翻默认**：`LUMINO_EGUI_CANVAS_INPUT` 默认 **开启**（`=0` 回退 iced）。
+  `canvas_input_active()` 排除纵向卷帘 / 走带 / 瀑布流 / 导出与卷帘关闭——这些视图
+  仍完整保留 iced 通道，不做半迁移。
+- **验证**：
+  - 单测（`scrollbar_drag.rs`，4 条）：滑块拖 100px → `Scroll(≈506)`；轨道点击 →
+    `Scroll(≈1508)`；起始边右拖 → `Zoom>1, fixed_ratio=1`；垂直拖拽 → `vertical=true`
+    且滚动数百像素。
+  - 真机（默认开启，无环境变量）：`P` 切铅笔 → 拖拽落音符（`音符总数: 1`）；拖底部
+    滚动条 → 视图从 1–3 小节滚到 4–5 小节，日志
+    `egui 滚动条：DirectedAction { vertical: false, action: Scroll(2196.8) }`
+    （截图 `target/flip-note.png` / `flip-hscroll.png`）。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 912/912、`ui-egui` 全部集成
+  测试（含新 4 条 + `bands_pixels` 基线）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.23（下一步）**
+
+1. 删除 `host/render/ui.rs` 的 iced `UserInterface` 分支与 `host/event/window/*` 的
+   iced 事件转换（`RenderContext.renderer/cache/Engine` 一并移除）；
+2. 纵向卷帘输入迁 `canvas_input`；走带滚动条/加轨按钮迁 egui；
+3. 曲线填充凹多边形三角化；
+4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

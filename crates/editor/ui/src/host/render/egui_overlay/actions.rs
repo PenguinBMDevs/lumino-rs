@@ -75,6 +75,7 @@ pub(super) struct OverlayActions {
     pub bend_buttons: Option<lumino_editor_state::AnchorBend>,
     pub text_tool: Option<lumino_ui_egui::text_tool::TextToolAction>,
     pub velocity_panel: Option<lumino_ui_egui::velocity_panel::VelocityPanelAction>,
+    pub scrollbar: Option<lumino_ui_egui::scrollbar::DirectedAction>,
 }
 
 impl OverlayActions {
@@ -122,6 +123,7 @@ impl OverlayActions {
             bend_buttons: lumino_ui_egui::bend_buttons::take_action(ctx),
             text_tool: lumino_ui_egui::text_tool::take_action(ctx),
             velocity_panel: lumino_ui_egui::velocity_panel::take_action(ctx),
+            scrollbar: lumino_ui_egui::scrollbar::take_action(ctx),
         }
     }
 }
@@ -157,6 +159,24 @@ impl Host {
         if let Some(action) = actions.velocity_panel {
             tracing::info!("egui 力度面板：{action:?}");
             let message = self.root.velocity_panel_message(action);
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(directed) = actions.scrollbar {
+            let message = match (directed.vertical, directed.action) {
+                (true, lumino_ui_egui::scrollbar::ScrollbarAction::Scroll(y)) => {
+                    crate::message::Message::ScrollbarScrolledY(y)
+                }
+                (false, lumino_ui_egui::scrollbar::ScrollbarAction::Scroll(x)) => {
+                    crate::message::Message::ScrollbarScrolled(x)
+                }
+                (true, lumino_ui_egui::scrollbar::ScrollbarAction::Zoom { zoom, fixed_ratio }) => {
+                    crate::message::Message::ZoomYChanged { zoom, fixed_ratio }
+                }
+                (false, lumino_ui_egui::scrollbar::ScrollbarAction::Zoom { zoom, fixed_ratio }) => {
+                    crate::message::Message::ZoomXChanged { zoom, fixed_ratio }
+                }
+            };
+            tracing::info!("egui 滚动条：{directed:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(index) = actions.menu

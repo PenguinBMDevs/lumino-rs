@@ -13,26 +13,31 @@ use crate::host::Host;
 
 /// 画布输入是否由宿主直接驱动。
 ///
-/// 默认关闭：iced `Grid` 仍是输入来源。Canvas 交互全部验收后翻默认。
+/// **默认开启**：钢琴卷帘画布（音符编辑 / 框选 / 滚轮 / 右键菜单）与滚动条
+/// 均已由 egui + winit 直连接管。`LUMINO_EGUI_CANVAS_INPUT=0` 回退到 iced
+/// `Grid` 通道，用于对照排查。
 pub(crate) fn canvas_input_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         std::env::var("LUMINO_EGUI_CANVAS_INPUT")
             .map(|value| value != "0")
-            .unwrap_or(false)
+            .unwrap_or(true)
     })
 }
 
 impl Host {
     /// 主编辑器窗口：画布输入由本模块接管（对话框 / 进度窗没有画布）。
     ///
-    /// 纵向卷帘的布局与语义尚未迁移，仍走 iced 通道。
+    /// 纵向卷帘、走带与瀑布流/导出面板的布局与语义尚未迁移，仍走 iced 通道。
     pub(crate) fn canvas_input_active(&self) -> bool {
         canvas_input_enabled()
             && !self.root.state.is_dialog_window
             && !self.root.is_progress_window
             && !self.root.is_device_warning_window
             && !self.root.sidebar.is_vertical_roll()
+            && !self.root.is_arrangement_mode()
+            && self.root.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
+            && self.root.sidebar.piano_roll_visible
             && self.render_ctx.note_renderer.is_some()
     }
 
@@ -145,11 +150,19 @@ impl Host {
     /// 用编辑器当前状态刷新窗口光标形态。
     ///
     /// 复用 iced 侧的 `mouse_interaction` 判定（同一份语义），映射到 winit 图标。
+    /// 指针落在 egui 占用区（菜单 / 面板 / 滚动条）时不改：那些区域有自己的光标。
     fn refresh_canvas_cursor(&mut self) {
         let canvas = &self.root.editor.editor_state.canvas;
         let Some(position) = self.window_ctx.cursor_position else {
             return;
         };
+        if self
+            .egui_blocked
+            .iter()
+            .any(|rect| rect.contains(egui::pos2(position.x, position.y)))
+        {
+            return;
+        }
         let bounds = iced_core::Rectangle::new(
             iced_core::Point::new(canvas.offset_x, canvas.offset_y),
             iced_core::Size::new(canvas.size_x, canvas.size_y),
@@ -162,5 +175,44 @@ impl Host {
             cursor,
         );
         self.apply_cursor_interaction(interaction);
+    }
+
+    /// 应用 egui 请求的光标（仅当指针落在 egui 占用区内，避免覆盖画布光标）。
+    pub(crate) fn apply_egui_cursor(&mut self, icon: egui::CursorIcon) {
+        let Some(position) = self.window_ctx.cursor_position else {
+            return;
+        };
+        if !self
+            .egui_blocked
+            .iter()
+            .any(|rect| rect.contains(egui::pos2(position.x, position.y)))
+        {
+            return;
+        }
+        use winit::window::CursorIcon;
+        let icon = match icon {
+            egui::CursorIcon::Default => CursorIcon::Default,
+            egui::CursorIcon::PointingHand => CursorIcon::Pointer,
+            egui::CursorIcon::Grab => CursorIcon::Grab,
+            egui::CursorIcon::Grabbing => CursorIcon::Grabbing,
+            egui::CursorIcon::ResizeHorizontal => CursorIcon::EwResize,
+            egui::CursorIcon::ResizeVertical => CursorIcon::NsResize,
+            egui::CursorIcon::ResizeNwSe => CursorIcon::NwseResize,
+            egui::CursorIcon::ResizeNeSw => CursorIcon::NeswResize,
+            egui::CursorIcon::Text => CursorIcon::Text,
+            egui::CursorIcon::Crosshair => CursorIcon::Crosshair,
+            egui::CursorIcon::NotAllowed | egui::CursorIcon::NoDrop => CursorIcon::NotAllowed,
+            egui::CursorIcon::Wait => CursorIcon::Wait,
+            egui::CursorIcon::Progress => CursorIcon::Progress,
+            egui::CursorIcon::Help => CursorIcon::Help,
+            egui::CursorIcon::Move => CursorIcon::Move,
+            egui::CursorIcon::AllScroll => CursorIcon::AllScroll,
+            _ => CursorIcon::Default,
+        };
+        if self.window_ctx.applied_cursor != Some(Some(icon)) {
+            self.window_ctx.window.set_cursor(icon);
+            self.window_ctx.window.set_cursor_visible(true);
+            self.window_ctx.applied_cursor = Some(Some(icon));
+        }
     }
 }

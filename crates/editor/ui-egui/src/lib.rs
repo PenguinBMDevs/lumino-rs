@@ -43,6 +43,7 @@ pub mod project_settings;
 pub mod recover_track;
 pub mod renderer_panel;
 pub mod scene;
+pub mod scrollbar;
 pub mod settings;
 pub mod shape_canvas;
 pub mod shape_drawer;

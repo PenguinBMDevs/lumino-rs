@@ -35,6 +35,12 @@ pub struct PianoRollView {
     pub scroll_x_ratio: f32,
     /// 垂直滚动条：滚动比例。
     pub scroll_y_ratio: f32,
+    /// 内容总长度（像素，水平轴 `max_scroll.0`）。
+    pub max_scroll_x: f32,
+    /// 内容总长度（像素，垂直轴 `max_scroll.1`）。
+    pub max_scroll_y: f32,
+    /// 垂直滚动条的视口高度（画布高 − 标尺高）。
+    pub viewport_y: f32,
     /// 水平滚动条滑块占轨道长度的比例。
     pub thumb_x_ratio: f32,
     /// 垂直滚动条滑块占轨道长度的比例。
@@ -67,6 +73,9 @@ impl Default for PianoRollView {
             playhead_offset: 0.0,
             scroll_x_ratio: 0.0,
             scroll_y_ratio: 0.0,
+            max_scroll_x: 1300.0,
+            max_scroll_y: 854.0,
+            viewport_y: 830.0,
             thumb_x_ratio: 22.0 / 1300.0,
             thumb_y_ratio: 279.0 / 854.0,
             left_inset: 0.0,
@@ -138,23 +147,41 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
         ),
         view,
     );
-    scrollbar(
-        ui,
-        Rect::from_min_max(
+    scrollbar_cells(ui, area, view, canvas_w, canvas_h);
+}
+
+/// 两条滚动条：绘制 + 拖拽（滚动 / 边缘缩放）。
+fn scrollbar_cells(ui: &egui::Ui, area: Rect, view: &PianoRollView, canvas_w: f32, canvas_h: f32) {
+    let vertical = crate::scrollbar::ScrollbarModel {
+        rect: Rect::from_min_max(
             egui::pos2(area.left() + canvas_w, area.top()),
             egui::pos2(area.right(), area.top() + canvas_h),
         ),
-        view.scroll_y_ratio,
-        view.thumb_y_ratio,
-        true,
-    );
-    scrollbar(
-        ui,
-        Rect::from_min_max(egui::pos2(area.left(), area.top() + canvas_h), area.max),
-        view.scroll_x_ratio,
-        view.thumb_x_ratio,
-        false,
-    );
+        scroll: view.scroll_y,
+        max_scroll: view.max_scroll_y,
+        zoom: view.key_height,
+        viewport: Some(view.viewport_y),
+        thumb_ratio: Some(view.thumb_y_ratio),
+        vertical: true,
+    };
+    if crate::scrollbar::show(ui, "piano-roll-y", &vertical).is_some() {
+        super::menu::extend_blocked(ui.ctx(), [vertical.rect]);
+    }
+
+    let horizontal = crate::scrollbar::ScrollbarModel {
+        rect: Rect::from_min_max(egui::pos2(area.left(), area.top() + canvas_h), area.max),
+        scroll: view.scroll_x,
+        max_scroll: view.max_scroll_x,
+        zoom: view.zoom_x,
+        viewport: None,
+        thumb_ratio: Some(view.thumb_x_ratio),
+        vertical: false,
+    };
+    if crate::scrollbar::show(ui, "piano-roll-x", &horizontal).is_some() {
+        super::menu::extend_blocked(ui.ctx(), [horizontal.rect]);
+    }
+    // 两条滚动条整块占用：命中时不落到下层画布（拖拽/缩放不应同时编辑音符）。
+    super::menu::extend_blocked(ui.ctx(), [vertical.rect, horizontal.rect]);
 }
 
 /// 键盘列：左上角缝隙（标尺高）+ 琴键区。
@@ -310,36 +337,6 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
 
 /// iced `ScrollbarWidget` 外观：轨道 `background.strong`，滑块 `background.weak`，
 /// 四周内缩 2px，无圆角。
-fn scrollbar(ui: &egui::Ui, rect: Rect, scroll_ratio: f32, thumb_ratio: f32, vertical: bool) {
-    if rect.width() <= 0.0 || rect.height() <= 0.0 {
-        return;
-    }
-    let painter = ui.painter();
-    painter.rect_filled(rect, 0, theme::selected_bg());
-
-    let track = rect.shrink(THUMB_GAP);
-    let (length, offset) = if vertical {
-        (track.height(), track.top())
-    } else {
-        (track.width(), track.left())
-    };
-    let thumb_len = (length * thumb_ratio).max(THUMB_MIN_SIZE).min(length);
-    let start = offset + scroll_ratio.clamp(0.0, 1.0) * (length - thumb_len);
-
-    let thumb = if vertical {
-        Rect::from_min_size(
-            egui::pos2(track.left(), start),
-            Vec2::new(track.width(), thumb_len),
-        )
-    } else {
-        Rect::from_min_size(
-            egui::pos2(start, track.top()),
-            Vec2::new(thumb_len, track.height()),
-        )
-    };
-    painter.rect_filled(thumb, 0, theme::toolbar_bg());
-}
-
 /// 是否黑键（iced `is_key_dark`）。
 fn is_key_dark(key: u16) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
@@ -370,10 +367,6 @@ fn tint(color: Color32, factor: f32) -> Color32 {
 const PLAYHEAD_WIDTH: f32 = 2.0;
 /// 播放指示线顶部倒三角尺寸（`PLAYBACK_INDICATOR_TRIANGLE_SIZE`）。
 const PLAYHEAD_TRIANGLE: f32 = 8.0;
-/// 滚动条滑块与轨道的间距（`TRACK_THUMB_GAP` / `THUMB_TRACK_EDGE_GAP`）。
-const THUMB_GAP: f32 = 2.0;
-/// 滚动条滑块最小长度（`THUMB_MIN_SIZE_PX`）。
-const THUMB_MIN_SIZE: f32 = 20.0;
 
 /// 中央区域底色（供外部检查）。
 pub fn background() -> Color32 {
