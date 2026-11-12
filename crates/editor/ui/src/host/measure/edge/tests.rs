@@ -110,7 +110,9 @@ fn ruler_sees_squeeze_inside_real_dialog_views() {
     let ui_config = lumino_core::storage::config::UiConfig::default();
     // 注意：已退化为整窗占位的对话框（CloudBrowser/RecoverTrack 等）没有可挤的控件，
     // 不再适合作为「尺子能看见挤压」的样本；这里保留仍有真实 iced 视图的角落。
-    let corners = [("设置[页 2]", DialogType::Settings, "[页 2]")];
+    // ibl 真实 iced 对话框视图已全部退化为整窗占位（设置是本轮最后一个），
+    // 尺子没有可挤的样本；保留空清单让本用例在视图迁回 iced 时立刻重新生效。
+    let corners: [(&str, DialogType, &str); 0] = [];
 
     let mut blind = Vec::new();
 

@@ -105,6 +105,8 @@ fn layout_is_state_invariant(dialog_type: DialogType) -> bool {
     matches!(
         dialog_type,
         DialogType::VideoExport
+            // 设置对话框的 iced 视图已删除（egui 整窗绘制），状态不再改变 iced 布局。
+            | DialogType::Settings
             | DialogType::Collaboration
             | DialogType::CloudConnect
             | DialogType::CloudBrowser

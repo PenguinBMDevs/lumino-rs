@@ -9,7 +9,7 @@ use lumino_core::tr;
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
-use crate::view::{about_egg::view as view_about_egg, settings_dialog::view_settings_dialog};
+use crate::view::about_egg::view as view_about_egg;
 use crate::{Element, Theme};
 
 /// 对话框的同尺寸底色占位。
@@ -146,18 +146,9 @@ impl Root {
             DialogType::LoadConfirm => dialog_placeholder(&self.window.theme),
             // 工程设置：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::ProjectSettings => dialog_placeholder(&self.window.theme),
-            DialogType::Settings => {
-                // 字体列表仅在设置对话框中使用（字体下拉菜单），
-                // 通过全局 OnceLock 懒加载：首次访问触发扫描并缓存，后续零开销。
-                // 非设置对话框不走此路径，完全不受字体扫描影响。
-                view_settings_dialog(
-                    &self.settings,
-                    &self.state.about_egg,
-                    &self.state.echo_cave,
-                    &self.window,
-                    lumino_note_core::font_scanner::get_cached_fonts(),
-                )
-            }
+            // 设置：内容由 egui 整窗接管（chrome::settings 已覆盖所有页），
+            // iced 只留同尺寸底色（720×540 钉死）。
+            DialogType::Settings => dialog_placeholder(&self.window.theme),
             // 变速：内容由 egui 整窗接管，iced 只留同尺寸底色。
             DialogType::SpeedChange => dialog_placeholder(&self.window.theme),
             // 批量编辑：内容由 egui 整窗接管，iced 只留同尺寸底色。
