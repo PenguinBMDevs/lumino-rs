@@ -44,6 +44,7 @@ fn click(harness: &mut Harness<'static>, pos: egui::Pos2) {
 fn overflow_menu_dispatches_items_and_ignores_disabled() {
     let model = std::rc::Rc::new(std::cell::RefCell::new(ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,
@@ -129,6 +130,7 @@ fn overflow_menu_dispatches_items_and_ignores_disabled() {
 fn no_overflow_hides_more_button() {
     let model = ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,

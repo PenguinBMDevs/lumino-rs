@@ -1,12 +1,17 @@
-mod logo;
-/// 标题栏菜单模块
+//! 标题栏 iced 占位。
+//!
+//! 主窗口与对话框窗口的标题栏（菜单标签 / logo / 拖动 / 双击最大化 / 红绿灯）
+//! 已全部由 egui 绘制并接管（`chrome::titlebar` + `chrome::popup_titlebar`）。
+//! iced 侧只保留**同高 30px、同底色**的占位，保证下方内容区起点与布局不变。
+//!
+//! `menu` 仍提供菜单数据（`MenuConfig`/`menus`/`display_name`）与同宽占位；
+//! `mode_toggle` 只提供 `AppMode` 与切换动画状态，不含标题栏渲染。
+
 pub mod menu;
-/// 标题栏模式切换模块
 pub mod mode_toggle;
-mod traffic;
 
 use iced_core::{Alignment, Length};
-use iced_widget::{container, mouse_area, row, space};
+use iced_widget::{Space, container};
 
 use super::Element;
 use crate::titlebar::mode_toggle::AppMode;
@@ -28,143 +33,41 @@ impl Titlebar {
         Self
     }
 
-    /// 渲染标题栏视图
+    /// 渲染标题栏占位（30px，保留聚焦态底色）。
+    ///
+    /// 参数保留是为了不动两处调用点；视觉与命中全部由 egui 接管。
+    #[allow(clippy::too_many_arguments)]
     pub fn view<'a>(
         &'a self,
         window: &'a window::Window,
-        use_native_titlebar: bool,
+        _use_native_titlebar: bool,
         _current_mode: AppMode,
         _toggle_progress: f32,
-        language: Language,
-        export_material_enabled: bool,
+        _language: Language,
+        _export_material_enabled: bool,
     ) -> Element<'a> {
-        // 如果使用经典系统标题栏，只显示菜单（在最左侧）
-        if use_native_titlebar {
-            return self.view_native_titlebar(window, language, export_material_enabled);
-        }
-
-        // 自定义标题栏模式
-        // 将菜单区域和可拖动区域分离，避免鼠标事件冲突
-        let menu_row = if cfg!(target_os = "macos") {
-            row![]
-        } else {
-            // 菜单标签与下拉全部由 egui 绘制；iced 只保留同宽占位
-            // （不吃输入、不画下拉）。`export_material_enabled` 只影响 egui 模型。
-            let _ = export_material_enabled;
-            row![logo::view(window), menu::view_placeholder(language)].align_y(Alignment::Center)
-        };
-
-        // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
-
-        if cfg!(target_os = "macos") {
-            // macOS: 标题栏只保留菜单和弹性空间（FPS 在底部状态栏显示）
-            let mut row = menu_row;
-
-            row = row.push(space().width(Length::Fill));
-
-            container(row)
-                .width(Length::Fill)
-                .height(30)
-                .style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    container::Style::default().background(if window.is_focused {
-                        palette.background.neutral.color
-                    } else {
-                        palette.background.weaker.color
-                    })
-                })
-                .align_y(Alignment::Start)
-                .into()
-        } else {
-            // Windows/Linux: 左侧菜单（不可拖动）+ 中间可拖动区域 + 右侧窗口控制
-            let left_section = container(menu_row)
-                .height(Length::Fill)
-                .align_y(Alignment::Center);
-
-            // 中间可拖动区域
-            let drag_area = mouse_area(container(space().width(Length::Fill)).height(Length::Fill))
-                .on_press(window::Event::drag())
-                .on_double_click(window::Event::toggle_maximize());
-
-            // 右侧：窗口控制按钮（FPS 已移到底部状态栏显示）
-            let right_row = row![traffic::view(window)];
-
-            let right_section = container(right_row)
-                .height(Length::Fill)
-                .align_y(Alignment::Center);
-
-            container(row![left_section, drag_area, right_section])
-                .width(Length::Fill)
-                .height(30)
-                .style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    container::Style::default().background(if window.is_focused {
-                        palette.background.neutral.color
-                    } else {
-                        palette.background.weaker.color
-                    })
-                })
-                .align_y(Alignment::Start)
-                .into()
-        }
+        bar(window)
     }
 
-    /// 渲染弹窗专用的自制标题栏。
-    ///
-    /// 弹窗只需要窗口控制和拖动区域，不应携带主窗口的文件、编辑、视图、帮助菜单。
+    /// 渲染弹窗专用的自制标题栏占位（30px，拖动 / 红绿灯由 egui 接管）。
     pub fn view_popup<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
-        let drag_area = mouse_area(container(space().width(Length::Fill)).height(Length::Fill))
-            .on_press(window::Event::drag())
-            .on_double_click(window::Event::toggle_maximize());
-        let right_section = container(row![traffic::view(window)])
-            .height(Length::Fill)
-            .align_y(Alignment::Center);
-
-        container(row![drag_area, right_section])
-            .width(Length::Fill)
-            .height(30)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style::default().background(if window.is_focused {
-                    palette.background.neutral.color
-                } else {
-                    palette.background.weaker.color
-                })
-            })
-            .align_y(Alignment::Start)
-            .into()
+        bar(window)
     }
+}
 
-    /// 经典系统标题栏模式：只显示菜单，在最左侧
-    fn view_native_titlebar<'a>(
-        &'a self,
-        window: &'a window::Window,
-        language: Language,
-        export_material_enabled: bool,
-    ) -> Element<'a> {
-        // 菜单在最左侧，没有 logo 和窗口控制按钮。
-        // 菜单标签与下拉由 egui 绘制；iced 只保留同宽占位（不吃输入、不画下拉）。
-        let _ = export_material_enabled;
-        let row = if cfg!(target_os = "macos") {
-            row![]
-        } else {
-            row![menu::view_placeholder(language)]
-        };
-
-        let inner = container(row)
-            .width(Length::Fill)
-            .height(30)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style::default().background(if window.is_focused {
-                    palette.background.neutral.color
-                } else {
-                    palette.background.weaker.color
-                })
+/// 30px 占位条：底色跟随聚焦态，无子控件、不吃输入。
+fn bar<'a>(window: &'a window::Window) -> Element<'a> {
+    container(Space::new())
+        .width(Length::Fill)
+        .height(Length::Fixed(30.0))
+        .align_y(Alignment::Center)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style::default().background(if window.is_focused {
+                palette.background.neutral.color
+            } else {
+                palette.background.weaker.color
             })
-            .align_y(Alignment::Start);
-
-        // 不需要拖动和双击最大化（由系统标题栏处理）
-        inner.into()
-    }
+        })
+        .into()
 }

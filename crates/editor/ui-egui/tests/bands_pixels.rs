@@ -30,6 +30,7 @@ fn model() -> ChromeModel {
     // 取值与 iced 基线捕获一致：就绪 + 0.0% / 0.0 MB / 60.0。
     ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: Some(TitlebarModel {
             focused: true,
             menus: vec![

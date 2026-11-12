@@ -35,6 +35,7 @@ fn harness(model: ChromeModel) -> Harness<'static> {
 fn bands_expose_menu_labels_and_status_metrics() {
     let mut harness = harness(ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: Some(TitlebarModel {
             focused: true,
             menus: vec![
@@ -73,6 +74,7 @@ fn bands_expose_menu_labels_and_status_metrics() {
 fn native_titlebar_skips_top_band_but_keeps_statusbar() {
     let mut harness = harness(ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,
@@ -97,6 +99,7 @@ fn native_titlebar_skips_top_band_but_keeps_statusbar() {
 fn missing_fps_hides_metric_group() {
     let mut harness = harness(ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,
@@ -146,6 +149,7 @@ fn menu_opens_and_dispatches_actions() {
     };
     let model = ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: Some(TitlebarModel {
             focused: true,
             menus: vec!["文件".to_owned()],
@@ -229,6 +233,7 @@ fn click(harness: &mut Harness<'static>, pos: egui::Pos2) {
 fn toolbar_popups_dispatch_snap_and_onion_actions() {
     let model = std::rc::Rc::new(std::cell::RefCell::new(ChromeModel {
         dialog: None,
+        dialog_titlebar: None,
         titlebar: None,
         sidebar: None,
         right_sidebar: None,

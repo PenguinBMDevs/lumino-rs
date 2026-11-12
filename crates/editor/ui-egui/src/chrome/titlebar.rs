@@ -5,6 +5,7 @@
 //! 右侧三个窗口按钮各 45×29。
 
 use egui::{Align, FontId, Layout};
+
 use egui_extras::{Size, StripBuilder};
 
 use super::{ChromeState, TitlebarModel, menu as menu_panel};
@@ -12,6 +13,41 @@ use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 use crate::widgets;
+
+/// 标题栏动作（主窗口与对话框 popup 共用）。
+///
+/// `lumino-ui-egui` 不认识生产 `window::Event`，只回传语义动作；生产侧再翻译。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitlebarAction {
+    /// 按下拖动区：开始拖动窗口。
+    Drag,
+    /// 双击拖动区：切换最大化。
+    ToggleMaximize,
+    /// 最小化。
+    Minimize,
+    /// 关闭（走生产关闭流程，含未保存确认）。
+    Close,
+}
+
+const ACTION_ID: &str = "lumino.titlebar.action";
+
+/// 记录本帧标题栏动作（一帧一条）。
+pub fn push_titlebar_action(ctx: &egui::Context, action: TitlebarAction) {
+    if ctx
+        .data(|d| d.get_temp::<Option<TitlebarAction>>(egui::Id::unique(ACTION_ID)))
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+}
+
+/// 取走本帧标题栏动作。
+pub fn take_titlebar_action(ctx: &egui::Context) -> Option<TitlebarAction> {
+    ctx.data_mut(|d| d.remove_temp::<Option<TitlebarAction>>(egui::Id::unique(ACTION_ID)))
+        .flatten()
+}
 
 /// logo 区宽度（生产 `logo::view` 固定 48）。
 const LOGO_W: f32 = 48.0;
@@ -76,6 +112,19 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
         .horizontal(|mut strip| {
             strip.cell(|ui| menu(ui, model, &widths, icons));
             strip.cell(|ui| {
+                // 拖动区：按下拖动 → Drag；双击 → 切换最大化。
+                let rect = ui.max_rect();
+                let response = ui.interact(
+                    rect,
+                    egui::Id::unique("lumino.titlebar.drag"),
+                    egui::Sense::click_and_drag(),
+                );
+                if response.drag_started() {
+                    push_titlebar_action(ui.ctx(), TitlebarAction::Drag);
+                }
+                if response.double_clicked() {
+                    push_titlebar_action(ui.ctx(), TitlebarAction::ToggleMaximize);
+                }
                 ui.allocate_space(ui.available_size());
             });
             strip.cell(|ui| traffic(ui, icons));
@@ -107,8 +156,17 @@ fn traffic(ui: &mut egui::Ui, icons: &mut IconCache) {
     ui.spacing_mut().item_spacing.x = 0.0;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        widgets::traffic_button(ui, icons, Icon::WindowClose, true);
-        widgets::traffic_button(ui, icons, Icon::WindowMax, false);
-        widgets::traffic_button(ui, icons, Icon::WindowMin, false);
+        let close = widgets::traffic_button(ui, icons, Icon::WindowClose, true);
+        let max = widgets::traffic_button(ui, icons, Icon::WindowMax, false);
+        let min = widgets::traffic_button(ui, icons, Icon::WindowMin, false);
+        if close.clicked() {
+            push_titlebar_action(ui.ctx(), TitlebarAction::Close);
+        }
+        if max.clicked() {
+            push_titlebar_action(ui.ctx(), TitlebarAction::ToggleMaximize);
+        }
+        if min.clicked() {
+            push_titlebar_action(ui.ctx(), TitlebarAction::Minimize);
+        }
     });
 }

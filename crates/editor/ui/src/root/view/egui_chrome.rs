@@ -20,6 +20,7 @@ mod settings_ui;
 mod shape_canvas;
 mod shape_drawer;
 mod sidebar_panel;
+mod titlebar;
 mod toast;
 mod tool_panel;
 mod toolbar;
@@ -31,8 +32,8 @@ use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel,
-    TitlebarModel, ToolbarModel,
+    ChromeModel, PopupTitlebarModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel,
+    SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
 };
 use lumino_ui_egui::chrome::{SidebarRouteIcon, SidebarRouteItem};
 
@@ -339,13 +340,29 @@ impl Root {
         // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 iced），
         // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
         if self.state.is_dialog_window {
+            let dialog = self.egui_dialog_model();
+            let own_titlebar = dialog
+                .as_ref()
+                .is_some_and(lumino_ui_egui::chrome::DialogModel::draws_own_titlebar);
+            let dialog_titlebar = (!self.settings.synth.use_native_titlebar && !own_titlebar)
+                .then_some(PopupTitlebarModel {
+                    focused: self.window.is_focused,
+                });
             return ChromeModel {
-                dialog: self.egui_dialog_model(),
+                dialog,
+                dialog_titlebar,
                 ..ChromeModel::default()
             };
         }
         if self.is_progress_window || self.is_device_warning_window {
-            return ChromeModel::default();
+            let dialog_titlebar =
+                (!self.settings.synth.use_native_titlebar).then_some(PopupTitlebarModel {
+                    focused: self.window.is_focused,
+                });
+            return ChromeModel {
+                dialog_titlebar,
+                ..ChromeModel::default()
+            };
         }
 
         let language = self.settings.display.language;
@@ -481,6 +498,7 @@ impl Root {
 
         ChromeModel {
             dialog: None,
+            dialog_titlebar: None,
             titlebar,
             toolbar,
             tool_panel: tool_panel::model(self, sidebar_width, tool_panel_top),

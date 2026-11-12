@@ -62,6 +62,8 @@ use super::piano_roll::PianoRollView;
 pub struct ChromeModel {
     /// 独立对话框整窗（设置 / 保存确认 …）；`Some` 时只画对话框，不画任何 band。
     pub dialog: Option<DialogModel>,
+    /// 对话框自制标题栏（30px）；`None` = 系统原生标题栏或对话框自带标题栏。
+    pub dialog_titlebar: Option<crate::chrome::PopupTitlebarModel>,
     /// 标题栏；`None` = 使用系统原生标题栏，egui 不接管。
     pub titlebar: Option<TitlebarModel>,
     /// 工具栏；`None` = 不接管。

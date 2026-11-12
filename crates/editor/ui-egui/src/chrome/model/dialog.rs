@@ -53,6 +53,16 @@ pub enum DialogModel {
     VideoExportOverlay(Box<VideoExportOverlayModel>),
 }
 
+impl DialogModel {
+    /// 对话框是否自己绘制 30px 标题栏（此时不能再叠通用 popup 标题栏）。
+    ///
+    /// 只有保存确认与设置页自己画了红绿灯；其余对话框在 `titlebar == true` 时
+    /// 主动让出顶部 30px，交给 [`crate::chrome::PopupTitlebarModel`]。
+    pub fn draws_own_titlebar(&self) -> bool {
+        matches!(self, Self::SaveConfirm(_) | Self::Settings(_))
+    }
+}
+
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。
 #[derive(Debug, Clone, Default)]
 pub struct ExportProgressModel {

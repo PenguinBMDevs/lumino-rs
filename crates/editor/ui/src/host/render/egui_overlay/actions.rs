@@ -69,6 +69,7 @@ pub(super) struct OverlayActions {
     pub sidebar_panel: Option<lumino_ui_egui::chrome::SidebarPanelAction>,
     pub sidebar_menu: Option<lumino_ui_egui::chrome::SidebarMenuAction>,
     pub help_tip: Option<lumino_ui_egui::chrome::toast::HelpTipAction>,
+    pub titlebar: Option<lumino_ui_egui::chrome::TitlebarAction>,
 }
 
 impl OverlayActions {
@@ -110,6 +111,7 @@ impl OverlayActions {
             sidebar_panel: lumino_ui_egui::chrome::take_panel_action(ctx),
             sidebar_menu: lumino_ui_egui::chrome::take_menu_action(ctx),
             help_tip: lumino_ui_egui::chrome::take_help_tip_action(ctx),
+            titlebar: lumino_ui_egui::chrome::take_titlebar_action(ctx),
         }
     }
 }
@@ -117,6 +119,11 @@ impl OverlayActions {
 impl Host {
     /// 应用本帧动作：每个动作最多产生一条 `Message`，按固定顺序处理。
     pub(super) fn apply_overlay_actions(&mut self, actions: OverlayActions, logical_width: f32) {
+        if let Some(action) = actions.titlebar {
+            tracing::info!("egui 标题栏动作：{action:?}");
+            let message = self.root.titlebar_action_message(action);
+            self.dispatch_overlay_message(message);
+        }
         if let Some(index) = actions.menu
             && let Some(message) = self.root.menu_action_message(index)
         {

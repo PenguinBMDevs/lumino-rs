@@ -3156,12 +3156,41 @@ callback / 多视口 / 截图能力。
   `fmt --check`、`check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
   触达 iced 的源文件 68 → **63**。
 
-**Task 3.16（下一步）**
+**Task 3.16（第一百零六步）：删除 iced 标题栏视图，拖动 / 双击 / 红绿灯迁 egui**
 
-1. `titlebar*`（主窗口与对话框 popup 共用）：把拖动/双击最大化/红绿灯迁 egui
-   （`TitlebarAction` → `window::Event`），再换 30px 占位；
-2. iced **类型层**：`lumino-ui-core` 的 `Theme`/`Element`/`Message` re-export
-   使纯状态 crate 仍传递依赖 12 个 iced crate，需要剥离；
-3. 运行时层（`host` / `render_ctx` / `host/event/window`）仍是 iced
-   （窗口创建、事件循环、离屏渲染调度、IME/HiDPI）；零 iced 依赖的最后一公里
-   是 winit + wgpu + egui 直连替换，需单独立项。
+- **共享动作通道**：`chrome::titlebar` 新增 `TitlebarAction`
+  （`Drag` / `ToggleMaximize` / `Minimize` / `Close`）与取用函数；
+  主标题栏中间拖动区 `drag_started → Drag`、`double_clicked → ToggleMaximize`；
+  三个红绿灯点击 → `Close` / `ToggleMaximize` / `Minimize`。
+- **对话框 popup 标题栏**：新增 `chrome::popup_titlebar`（30px、聚焦/失焦底色、
+  右侧 45×29 红绿灯、剩余区域拖动）。`ChromeModel` 新增
+  `dialog_titlebar: Option<PopupTitlebarModel>`：
+  - 除保存确认 / 设置页（自带标题栏，`DialogModel::draws_own_titlebar`）外，
+    所有对话框在 `!use_native_titlebar` 时都由它接管；
+  - 进度窗 / 设备警告窗同样补上（此前依赖 iced `view_popup`）。
+- **生产映射**：新增 `egui_chrome/titlebar.rs`，把动作翻译成既有
+  `window::Event::{drag, toggle_maximize, traffic_action}`；
+  宿主 `apply_overlay_actions` 统一分发（含 `egui 标题栏动作` 日志）。
+- **iced 标题栏退化为占位**：`titlebar.rs` 只保留 30px 同底色占位
+  （`view` / `view_popup` 同签名），删除 `titlebar/logo.rs`、`titlebar/traffic.rs`；
+  菜单数据与 `mode_toggle` 保留。
+- **无头验证**（`titlebar_bands.rs`，4 用例）：主标题栏拖动 → `Drag`；
+  三个红绿灯 → `Close`/`ToggleMaximize`/`Minimize`；popup 拖动与关闭；
+  无 `dialog_titlebar` 时零动作。
+- **真机**（DPI-aware，重建后）：
+  `egui 标题栏动作：Drag` → 窗口矩形 `(-9,-9)-(2569,1549)` 变为
+  `(-305,102)-(2255,1642)`；双击 → `ToggleMaximize`；
+  点最右红绿灯 → `Close`，窗口关闭（`IsWindow=false`）。
+- 验收：`lumino-ui` lib 774/774、`ui-egui` 全部集成测试（含新 4 用例）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动（设置 / 保存确认自带标题栏，不受影响）。
+  触达 iced 的源文件 63 → **61**。
+
+**Task 3.17（下一步）**
+
+1. iced **类型层**：`lumino-ui-core` 的 `Theme` / `Element` / `Message` re-export
+   使纯状态 crate 仍传递依赖 12 个 iced crate，需要剥离（先 `Theme`/调色板）；
+2. 剩余 iced 文件主要是运行时：`host.rs` / `render_ctx.rs` / `host/event/window/*` /
+   `host/render/*`，以及 `titlebar/menu.rs` 的同宽占位与 `mode_toggle`；
+3. 运行时替换（winit + wgpu + egui 直连）是 `cargo tree` 归零的最后一公里，
+   需单独立项与整机回归。

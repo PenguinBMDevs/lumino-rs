@@ -6,6 +6,7 @@ pub mod menu;
 mod model;
 pub mod overflow;
 pub mod piano_roll;
+pub mod popup_titlebar;
 pub mod right_panel;
 pub mod sidebar;
 pub mod statusbar;
@@ -58,7 +59,9 @@ pub use model::{
     VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
     VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
 };
+pub use popup_titlebar::PopupTitlebarModel;
 pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
+pub use titlebar::{TitlebarAction, take_titlebar_action};
 pub use toolbar_popup::{ToolbarAction, ToolbarCommand};
 
 use egui::{Frame, Margin, Panel, Stroke};
@@ -374,6 +377,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         for action in crate::video_clip_timeline::interact(&root, rect, &timeline) {
             push_video_timeline_action(ui.ctx(), action);
         }
+    }
+
+    // 对话框自制标题栏（30px）：先画，随后各对话框内容让出该区域。
+    if let Some(bar) = &model.dialog_titlebar {
+        popup_titlebar::show(&mut root, bar, icons);
     }
 
     // 独立对话框窗口：整窗接管，不绘制任何主窗口 band。
