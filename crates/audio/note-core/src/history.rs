@@ -33,6 +33,10 @@ pub enum OpKind {
     AutomationEdit,
     /// MIDI 录制
     Recording,
+    /// 形状编辑（手柄 / 填充 / 算子 / 区域着色等模型提交，DRAW-035B）
+    ///
+    /// 运行时历史枚举，不参与落盘；粗粒度与既有 `OpKind` 一致。
+    ShapeEdit,
     /// 其他操作（默认）
     #[default]
     Other,

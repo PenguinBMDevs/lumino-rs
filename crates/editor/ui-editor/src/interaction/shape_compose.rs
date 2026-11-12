@@ -7,6 +7,7 @@ use lumino_core::shape::{MergeParams, ShapeModel, ShapeOp};
 use lumino_core::tr;
 use lumino_editor_state::shape_ops::{SymReject, gate_merge, join, to_live};
 use lumino_editor_state::{ComposedKind, DrawnShape, DrawnShapeSource, ShapeNote};
+use lumino_note_core::history::OpKind;
 
 use crate::Editor;
 
@@ -148,7 +149,7 @@ impl Editor {
         let Some(restored) = self.editor_state.shape_select.take_restore(id) else {
             return false;
         };
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         let notes = selected[0].notes.clone();
         self.remove_shape_notes(selected[0].track, &notes);
@@ -182,7 +183,7 @@ impl Editor {
             return false;
         }
         let track = selected[0].track;
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         for shape in &selected {
             self.remove_shape_notes(shape.track, &shape.notes);
@@ -256,7 +257,7 @@ impl Editor {
             return false;
         }
         let track = selected[0].track;
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         for shape in &selected {
             self.remove_shape_notes(shape.track, &shape.notes);

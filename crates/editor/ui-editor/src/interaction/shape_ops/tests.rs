@@ -913,3 +913,38 @@ fn test_regeneration_applies_tumours_geometry_op() {
         with_op.len()
     );
 }
+
+#[test]
+fn test_shape_edits_record_shape_edit_history_kind() {
+    // DRAW-035B：新建 / 改参数 / 删除形状都应显示为「形状编辑」，
+    // 而不是落到「其他操作」。
+    let mut editor = editor_with_track(1);
+    assert!(editor.create_shape(straight_shape(1, 480.0)));
+    assert_eq!(
+        editor.history_view().steps.last().map(|step| step.kind),
+        Some(lumino_note_core::history::OpKind::ShapeEdit),
+        "新建形状的历史步名应为 ShapeEdit"
+    );
+
+    let id = first_shape_id(&editor);
+    let mut model = editor
+        .editor_state
+        .shape_store
+        .model(id)
+        .cloned()
+        .expect("形状模型应存在");
+    model.geometry.translate(0.0, 1.0);
+    assert!(editor.edit_shape(id, model));
+    assert_eq!(
+        editor.history_view().steps.last().map(|step| step.kind),
+        Some(lumino_note_core::history::OpKind::ShapeEdit),
+        "修改形状参数的历史步名应为 ShapeEdit"
+    );
+
+    assert!(editor.delete_shape(id));
+    assert_eq!(
+        editor.history_view().steps.last().map(|step| step.kind),
+        Some(lumino_note_core::history::OpKind::ShapeEdit),
+        "删除形状的历史步名应为 ShapeEdit"
+    );
+}

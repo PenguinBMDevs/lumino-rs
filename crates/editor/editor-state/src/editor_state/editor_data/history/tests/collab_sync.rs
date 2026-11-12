@@ -103,3 +103,38 @@ fn test_undo_redo_create_populates_collab_create_sync() {
     assert_eq!(key2, 72);
     assert!(is_added2, "redo 创建应为添加（is_added=true）");
 }
+
+/// DRAW-035B 回归：多步回放期间待广播队列必须**累积**而非覆盖。
+///
+/// 批处理把 N 步 undo/redo 的回放合并到一次冲刷；若生产者仍用「覆盖」语义，
+/// 前面 N-1 步的广播会被最后一步抹掉，对端终态与本地不一致。
+#[test]
+fn test_multiple_undo_accumulates_collab_create_sync() {
+    let mut data = EditorData::with_f32_notes(0, &[]);
+    data.set_collab_sync_enabled(true);
+    for i in 0..3u16 {
+        let op = CreateOp {
+            track_id: 0,
+            note: NoteEvent::new(100 + u32::from(i) * 100, 100, 100 + i as u8, 100, 0),
+        };
+        data.apply_create_ops(std::slice::from_ref(&op), false);
+        // 独立分组：默认 push_note_create 会把 300ms 内的三次创建合并成一个 group
+        data.history.push_note_create_new_group(vec![op]);
+    }
+
+    // 连续撤销三步、中间不 drain（等价于 history_jump_to 的批处理）
+    for _ in 0..3 {
+        assert!(data.undo(), "逐步撤销应成功");
+    }
+    let pending = data.take_pending_collab_create_sync();
+    assert_eq!(
+        pending.len(),
+        3,
+        "三步撤销应累积 3 条广播，而不是只剩最后一步"
+    );
+    assert!(
+        pending.iter().all(|entry| !entry.6),
+        "撤销方向应全部是删除（is_added=false）"
+    );
+    assert_eq!(data.current_track_note_count(), 0);
+}

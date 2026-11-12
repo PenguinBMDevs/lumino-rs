@@ -204,7 +204,9 @@ impl EditorData {
                             sync.push((false, t.0, t.1, t.2, t.3, t.4, track));
                         }
                     }
-                    self.pending_collab_transform_sync = sync;
+                    // 累积而非覆盖：多步跳转时批处理会连续回放多步，
+                    // 队列必须保留每一步的变更，批次结束时一次性广播（DRAW-035B）。
+                    self.pending_collab_transform_sync.extend(sync);
                 } else {
                     self.apply_snapshot(*s);
                 }
@@ -252,7 +254,8 @@ impl EditorData {
                             }
                         }
                     }
-                    self.pending_collab_move_sync = sync;
+                    // 累积而非覆盖：多步跳转批处理期间连续回放多步，不能丢前几步（DRAW-035B）
+                    self.pending_collab_move_sync.extend(sync);
                 }
                 // Move/Create 历史统一走累积 helper（见 `c7d05a88`：内部写路径的
                 // 覆盖语义会让多步跳转丢掉上一步的脏集合）；CPU 洋葱皮的
@@ -324,7 +327,8 @@ impl EditorData {
                             is_added,
                         ));
                     }
-                    self.pending_collab_create_sync = sync;
+                    // 累积而非覆盖：多步跳转批处理期间连续回放多步，不能丢前几步（DRAW-035B）
+                    self.pending_collab_create_sync.extend(sync);
                 }
                 self.mark_tracks_changed_after_history(affected);
                 for op in &entry.ops {

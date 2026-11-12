@@ -20,6 +20,8 @@ pub enum HistoryKind {
     AutomationEdit,
     /// MIDI 录制
     Recording,
+    /// 形状编辑（手柄 / 填充 / 算子 / 区域着色）
+    ShapeEdit,
     /// 其他 / 未分类
     Other,
 }

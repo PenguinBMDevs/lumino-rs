@@ -18,6 +18,7 @@ fn history_kind(kind: OpKind) -> HistoryKind {
         OpKind::VelocityEdit => HistoryKind::VelocityEdit,
         OpKind::AutomationEdit => HistoryKind::AutomationEdit,
         OpKind::Recording => HistoryKind::Recording,
+        OpKind::ShapeEdit => HistoryKind::ShapeEdit,
         OpKind::Other | OpKind::ChainMarker => HistoryKind::Other,
     }
 }
@@ -443,3 +444,6 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 }
+
+#[cfg(test)]
+mod tests;

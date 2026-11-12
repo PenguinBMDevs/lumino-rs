@@ -61,6 +61,7 @@ mod tests {
     mod drawn_shape_marquee_e2e;
     mod flow;
     mod ghost;
+    mod history_collab_batch;
     mod interaction;
     mod interception;
     mod keyboard_colors_test;
@@ -280,6 +281,14 @@ pub struct Editor {
 
     /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
     pub(crate) playback_scan_state: impls::PlaybackScanState,
+
+    /// 协作广播批处理嵌套深度（DRAW-035B）：> 0 时只累积待广播队列，
+    /// 回到 0 时统一冲刷一次（多步历史跳转的广播批次数 N → 1）。
+    pub(crate) collab_batch_depth: u32,
+
+    /// 协作广播实际冲刷次数（仅测试计量：N 步跳转应为 1）
+    #[cfg(test)]
+    pub(crate) collab_broadcast_batches: u32,
 
     /// Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动，可靠通道）
     ///

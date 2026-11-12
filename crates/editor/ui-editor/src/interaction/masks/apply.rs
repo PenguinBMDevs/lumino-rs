@@ -5,6 +5,7 @@
 use lumino_core::shape::{ShapeKind, ShapeModel, ShapeStyle};
 use lumino_editor_state::ShapeNote;
 use lumino_editor_state::shape_ops::masks as mask_ops;
+use lumino_note_core::history::OpKind;
 
 use crate::Editor;
 
@@ -44,7 +45,7 @@ impl Editor {
         model.name = "Mask apply".to_string();
         model.style = ShapeStyle::default();
 
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         let written = self.write_shape_notes(0, &visible);
         let id = self.editor_state.shape_store.insert(model, group);

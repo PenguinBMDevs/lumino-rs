@@ -31,6 +31,7 @@ use lumino_editor_state::shape_ops::{
 };
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
+use lumino_note_core::history::OpKind;
 
 impl Editor {
     /// 形状参数 → 音符指纹
@@ -178,7 +179,7 @@ impl Editor {
         }
         let notes = self.shape_notes_of(&model, track);
         let silent = mask_silent(&model);
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         let sounding: &[ShapeNote] = if silent { &[] } else { &notes };
         let written = self.write_shape_notes(track, sounding);
@@ -203,7 +204,7 @@ impl Editor {
         let old_notes = self.editor_state.shape_store.notes_of(id).to_vec();
         let new_notes = self.shape_notes_of(&new_model, track);
         let silent = mask_silent(&new_model);
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         self.remove_shape_notes(track, &old_notes);
         let sounding: &[ShapeNote] = if silent { &[] } else { &new_notes };
@@ -233,7 +234,7 @@ impl Editor {
         };
         let track = model.track as usize;
         let notes = self.editor_state.shape_store.notes_of(id).to_vec();
-        self.push_history();
+        self.push_history_with_op_kind(OpKind::ShapeEdit);
         let group = self.current_history_group();
         self.remove_shape_notes(track, &notes);
         self.editor_state.shape_store.mark_deleted(id, group);

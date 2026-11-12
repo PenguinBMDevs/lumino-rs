@@ -272,6 +272,7 @@ fn test_op_kind_is_mergeable_only_note_create() {
     assert!(!OpKind::NoteDelete.is_mergeable());
     assert!(!OpKind::VelocityEdit.is_mergeable());
     assert!(!OpKind::Recording.is_mergeable());
+    assert!(!OpKind::ShapeEdit.is_mergeable());
     assert!(!OpKind::Other.is_mergeable());
     assert!(!OpKind::ChainMarker.is_mergeable());
 }

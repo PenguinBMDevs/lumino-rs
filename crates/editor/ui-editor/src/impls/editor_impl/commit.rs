@@ -13,6 +13,14 @@ impl Editor {
         self.editor_state.data.push_history();
     }
 
+    /// Push current state to history with an explicit op kind
+    ///
+    /// 形状参数提交（新建/改参数/删除/组合/区域着色/遮罩实体化）应使用
+    /// `OpKind::ShapeEdit`，让历史面板显示「形状编辑」而不是「其他操作」。
+    pub fn push_history_with_op_kind(&mut self, op_kind: lumino_note_core::history::OpKind) {
+        self.editor_state.data.push_history_with_op_kind(op_kind);
+    }
+
     /// 检查当前是否处于编辑状态（拦截 Undo/Redo/Save/Play/Export 用）
     ///
     /// 返回 `true` 当用户正在进行音符编辑（拖动/绘制/调整大小），

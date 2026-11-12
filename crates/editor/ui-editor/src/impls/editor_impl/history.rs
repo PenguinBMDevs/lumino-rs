@@ -111,9 +111,7 @@ impl Editor {
             self.invalidate_arrange_selection_after_history("撤销");
             self.grid_cache.clear();
             self.mark_notes_changed();
-            self.broadcast_pending_collab_sync();
-            self.broadcast_pending_collab_create_sync();
-            self.broadcast_pending_collab_transform_sync();
+            self.flush_collab_sync();
             tracing::info!("Editor: Undo 成功");
             true
         } else {
@@ -245,15 +243,32 @@ impl Editor {
             self.invalidate_arrange_selection_after_history("重做");
             self.grid_cache.clear();
             self.mark_notes_changed();
-            self.broadcast_pending_collab_sync();
-            self.broadcast_pending_collab_create_sync();
-            self.broadcast_pending_collab_transform_sync();
+            self.flush_collab_sync();
             tracing::info!("Editor: Redo 成功");
             true
         } else {
             tracing::info!("Editor: 没有可重做的操作");
             false
         }
+    }
+
+    /// 统一冲刷协作待广播队列（DRAW-035B）。
+    ///
+    /// 批处理期间（`collab_batch_depth > 0`，仅历史多步跳转使用）只累积不发射，
+    /// 由批处理结束时统一调用本方法；因此「一次跳 N 步」只产生 **1 批**广播，
+    /// 而不是逐步 undo/redo 的 N 批。单步 Ctrl+Z/Y 的 depth 恒为 0，
+    /// 调用时序与改动前一致。
+    fn flush_collab_sync(&mut self) {
+        if self.collab_batch_depth > 0 {
+            return;
+        }
+        #[cfg(test)]
+        {
+            self.collab_broadcast_batches += 1;
+        }
+        self.broadcast_pending_collab_sync();
+        self.broadcast_pending_collab_create_sync();
+        self.broadcast_pending_collab_transform_sync();
     }
 
     /// 把 `EditorData` 中累积的「撤销/重做音符移动」广播给协作对端。
@@ -425,23 +440,36 @@ impl Editor {
         if target == view.current {
             return true;
         }
-        if target < view.current {
+        // DRAW-035B：多步跳转抑制逐步广播，结束时统一冲刷一次。
+        // 深度用「始终配对」的加减（下方无提前 return），失败/中途拒绝路径同样
+        // 复位并广播已发生的变更，避免吞广播或把会话永久留在批处理态。
+        self.collab_batch_depth += 1;
+        let ok = if target < view.current {
+            let mut ok = true;
             for _ in target..view.current {
                 if !self.undo() {
-                    return false;
+                    ok = false;
+                    break;
                 }
             }
+            ok
         } else {
+            let mut ok = true;
             for _ in view.current..target {
                 if !self.redo() {
-                    return false;
+                    ok = false;
+                    break;
                 }
             }
-        }
+            ok
+        };
+        self.collab_batch_depth = self.collab_batch_depth.saturating_sub(1);
+        // 成功与中途失败都冲刷：队列里是已经发生的变更，不能丢
+        self.flush_collab_sync();
         // 多步跳转的脏标记由 `mark_tracks_changed_after_history` 在生产者侧
         // 累积（当前轨结构重建 + 洋葱皮受影响轨并集），这里不再强制全量重建。
         // 每一步 undo/redo 自身仍会清空中间态 note_delta_events 并标记变更。
-        true
+        ok
     }
 
     /// Check if undo is available

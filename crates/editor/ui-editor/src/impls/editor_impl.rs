@@ -64,6 +64,9 @@ impl Editor {
                 arrange_selection_cache:
                     crate::arrangement_ops::selection_cache::new_arrange_selection_cache(),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
+                collab_batch_depth: 0,
+                #[cfg(test)]
+                collab_broadcast_batches: 0,
                 ctrl_pressed: false,
                 shift_pressed: false,
                 remote_selections: std::collections::HashMap::new(),

@@ -151,6 +151,7 @@ fn history_label(kind: HistoryKind) -> &'static str {
         HistoryKind::VelocityEdit => tr!("调整力度"),
         HistoryKind::AutomationEdit => tr!("自动化编辑"),
         HistoryKind::Recording => tr!("MIDI 录制"),
+        HistoryKind::ShapeEdit => tr!("形状编辑"),
         HistoryKind::Other => tr!("其他操作"),
     }
 }

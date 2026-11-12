@@ -30,6 +30,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "调整力度" => Some("Adjust velocity"),
         "自动化编辑" => Some("Edit automation"),
         "MIDI 录制" => Some("MIDI recording"),
+        "形状编辑" => Some("Shape edit"),
         "其他操作" => Some("Other action"),
         "点击步骤跳转；初始状态为 0。" => {
             Some("Click a step to jump; the initial state is 0.")
