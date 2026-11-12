@@ -1,0 +1,25 @@
+[package]
+name = "lumino-ui-runtime"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "egui-runtime-probe"
+path = "src/main.rs"
+
+[dependencies]
+egui = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+lumino-egui-bridge = { path = "../egui-bridge" }

@@ -5050,6 +5050,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-ui-runtime"
+version = "0.2.1"
+dependencies = [
+ "egui",
+ "lumino-egui-bridge",
+ "pollster 0.4.0",
+ "tracing",
+ "tracing-subscriber",
+ "wgpu 27.0.1",
+ "winit",
+]
+
+[[package]]
 name = "lumino-ui-settings"
 version = "0.2.1"
 dependencies = [

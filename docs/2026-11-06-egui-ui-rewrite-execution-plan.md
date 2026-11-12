@@ -3206,11 +3206,28 @@ callback / 多视口 / 截图能力。
   `lumino-ui` lib 774/774、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 3.18（下一步）**
+**Task 4.1（原生运行时分支第一步）：`lumino-ui-runtime` 探针跑通**
 
-1. `lumino-ui` 的 iced 依赖已收敛为**运行时**：`iced_wgpu` / `iced_winit` /
-   `iced_core` / `iced_widget`（占位视图与 `Element`/`Theme`/`Renderer` 别名）；
-2. 运行时替换（winit + wgpu + egui 直连）是 `cargo tree` 归零的最后一公里：
-   需要重写窗口创建、事件循环、离屏渲染调度、IME/HiDPI，并做整机回归；
-3. `lumino-ui-core` 的 `Theme` / `Renderer` / `Element` 别名随运行时的
-   egui 化一起删除，届时 `cargo tree -p lumino-ui | grep '^iced'` 才能为空。
+- 新分支 `feat/egui-native-runtime`；新增 crate `crates/editor/ui-runtime`
+  （不接入主程序，`cargo tree -p lumino-ui` 不受影响）。
+- 运行时骨架：`winit 0.30` 事件循环 + `wgpu 27` Surface/Device/Queue +
+  `egui 0.37` + `lumino-egui-bridge`（项目自有的 wgpu 27 绘制器）。
+- 已打通：窗口创建、DPI（`set_pixels_per_point`）、Resize、鼠标移动/按键/滚轮、
+  键盘基础键、纹理增量上传、清屏 + egui 图元提交、Surface present、60Hz 重绘。
+- **真机探针**：`cargo run -p lumino-ui-runtime --bin egui-runtime-probe`
+  窗口 1280×720，界面文字/按钮正常，连续点击按钮计数 `0 → 1 → 2`
+  （截图 `target/probe2.png`），证明输入 → egui → wgpu 呈现整条链路可用。
+- 验收：`cargo check/clippy -D warnings/fmt --check` 通过；
+  主程序 `lumino-ui` lib 774/774、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动（新 crate 未接入主程序）。
+
+**Task 4.2（下一步）**
+
+1. 把 `NativeApp` 的窗口创建/事件循环替换进主程序 `src/runner`（先只接管主窗口，
+   保留 iced 渲染路径做 A/B）；
+2. 将 `Root::view` / `chrome::show_bands` 接入原生运行时：用 `egui::Context`
+   直接跑 `chrome`（base 纹理 + band + 浮层），逐步停用 iced `UserInterface`；
+3. 把 `ui-editor` 的命中/输入从 iced `UserInterface` 迁到 egui（音符点击/拖拽/框选），
+   然后删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖；
+4. 最后删除 `Theme`/`Renderer`/`Element` 别名与 `iced_*` 依赖，
+   `cargo tree -p lumino-ui | grep '^iced'` 归零。

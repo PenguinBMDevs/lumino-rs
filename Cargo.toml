@@ -9,6 +9,8 @@ members = [
     # editor — UI / 渲染 / 编辑
     "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings", "crates/editor/ui-parity", "crates/editor/ui-egui",
     "crates/editor/arrangement-core", "crates/editor/egui-bridge", "crates/editor/cpu-onion",
+    # 原生 egui 运行时（winit + wgpu + egui，无 iced）——专用分支的迁移目标
+    "crates/editor/ui-runtime",
     # network — 协作 / 云
     "crates/network/cloud", "crates/network/collaboration",
     # tools — 工具 / 导出
