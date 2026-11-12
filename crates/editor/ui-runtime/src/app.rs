@@ -30,6 +30,7 @@ pub struct NativeApp {
     ctx: egui::Context,
     icons: lumino_ui_egui::icons::IconCache,
     root: Option<lumino_ui::Root>,
+    canvas: Option<GfxCanvas>,
     events: Vec<EguiEvent>,
     pointer: Option<Pos2>,
     modifiers: ModifiersState,
@@ -43,6 +44,63 @@ struct Gpu {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     painter: Painter,
+}
+
+/// 编辑器画布：`lumino-gfx` 分离渲染线程 + 离屏纹理（供 egui 作为底层采样）。
+struct GfxCanvas {
+    thread: lumino_gfx::WgpuRenderThread,
+    /// 音符实例双缓冲；空画布也保留句柄，后续接入编辑器数据即可复用。
+    _buffer: Arc<lumino_gfx::SwappableBuffer<lumino_gfx::NoteInstance>>,
+}
+
+impl GfxCanvas {
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+    ) -> Result<Self, String> {
+        let (note_tx, note_rx) = std::sync::mpsc::channel();
+        let buffer = Arc::new(lumino_gfx::SwappableBuffer::new(0));
+        let thread = lumino_gfx::WgpuRenderThread::spawn(
+            device.clone(),
+            queue.clone(),
+            format,
+            lumino_gfx::GpuEpoch::INITIAL,
+            note_tx,
+            note_rx,
+            buffer.clone(),
+        )
+        .map_err(|error| format!("启动 gfx 渲染线程失败: {error}"))?;
+        Ok(Self {
+            thread,
+            _buffer: buffer,
+        })
+    }
+
+    /// 提交一帧并等待离屏纹理就绪，返回可采样的纹理视图。
+    fn render(
+        &self,
+        width: u32,
+        height: u32,
+        logical_width: f32,
+        logical_height: f32,
+        scale_factor: f32,
+    ) -> Option<Arc<wgpu::TextureView>> {
+        let params = lumino_gfx::RenderParams {
+            viewport_size: (width.max(1), height.max(1)),
+            logical_size: (logical_width, logical_height),
+            scale_factor,
+            canvas_size: (logical_width, logical_height),
+            // 与 egui 深色底色区分，便于真机确认底层纹理确实来自 gfx。
+            background_color: [0.07, 0.10, 0.16, 1.0],
+            color_bg: [0.07, 0.10, 0.16, 1.0],
+            content_dirty: true,
+            ..Default::default()
+        };
+        let frame_id = self.thread.send_params(params);
+        self.thread.wait_for_frame(frame_id);
+        self.thread.latest_texture_view()
+    }
 }
 
 impl Gpu {
@@ -161,7 +219,17 @@ impl ApplicationHandler for NativeApp {
             }
         };
         match Gpu::new(window.clone()) {
-            Ok(gpu) => self.gpu = Some(gpu),
+            Ok(gpu) => match GfxCanvas::new(&gpu.device, &gpu.queue, gpu.config.format) {
+                Ok(canvas) => {
+                    self.canvas = Some(canvas);
+                    self.gpu = Some(gpu);
+                }
+                Err(error) => {
+                    tracing::error!("初始化 gfx 画布失败: {error}");
+                    event_loop.exit();
+                    return;
+                }
+            },
             Err(error) => {
                 tracing::error!("初始化 wgpu 失败: {error}");
                 event_loop.exit();
@@ -278,11 +346,23 @@ impl NativeApp {
         };
         let size = window.inner_size();
         let ppp = window.scale_factor() as f32;
+        let logical = Vec2::new(size.width as f32 / ppp, size.height as f32 / ppp);
+
+        // gfx 编辑器画布 → egui 底层纹理（分离渲染线程，空场景先画背景）。
+        if let Some(canvas) = self.canvas.as_ref() {
+            if let Some(view) = canvas.render(size.width, size.height, logical.x, logical.y, ppp) {
+                gpu.painter
+                    .set_external_texture(&gpu.device, chrome::EDITOR_TEXTURE_ID, &view);
+                chrome::set_base_texture(&self.ctx, Some(chrome::EDITOR_TEXTURE_ID));
+            } else {
+                gpu.painter
+                    .clear_external_texture(chrome::EDITOR_TEXTURE_ID);
+                chrome::set_base_texture(&self.ctx, None);
+            }
+        }
+
         let raw = RawInput {
-            screen_rect: Some(Rect::from_min_size(
-                Pos2::ZERO,
-                Vec2::new(size.width as f32 / ppp, size.height as f32 / ppp),
-            )),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, logical)),
             events: std::mem::take(&mut self.events),
             time: self.start.map(|start| start.elapsed().as_secs_f64()),
             ..Default::default()
@@ -291,7 +371,7 @@ impl NativeApp {
         let mut root = self.root.take();
         let model = root
             .as_ref()
-            .map(|root| root.egui_chrome_model_native(size.width as f32 / ppp))
+            .map(|root| root.egui_chrome_model_native(logical.x))
             .unwrap_or_else(|| demo_model(0));
         let clicks = &mut self.clicks;
         let mut icons = std::mem::take(&mut self.icons);

@@ -5056,6 +5056,7 @@ dependencies = [
  "egui",
  "lumino-core",
  "lumino-egui-bridge",
+ "lumino-gfx",
  "lumino-ui",
  "lumino-ui-egui",
  "pollster 0.4.0",
