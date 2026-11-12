@@ -91,6 +91,11 @@ pub fn push_action(ctx: &egui::Context, vertical: bool, action: ScrollbarAction)
     });
 }
 
+/// 直接写入带方向的滚动条动作（纵向卷帘的时间轴需要先取反再上报）。
+pub fn push_directed(ctx: &egui::Context, directed: DirectedAction) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(directed)));
+}
+
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<DirectedAction> {
     ctx.data_mut(|d| d.remove_temp::<Option<DirectedAction>>(egui::Id::unique(ACTION_ID)))
@@ -174,6 +179,15 @@ impl ScrollbarModel {
 
 /// 绘制并处理一条滚动条的输入，返回本帧动作（同时写入动作通道）。
 pub fn show(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<ScrollbarAction> {
+    let action = show_raw(ui, id, model);
+    if let Some(action) = action {
+        push_action(ui.ctx(), model.vertical, action);
+    }
+    action
+}
+
+/// 同 [`show`]，但不写动作通道（调用方自行映射到自己的消息）。
+pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<ScrollbarAction> {
     if model.rect.width() <= 0.0 || model.rect.height() <= 0.0 {
         return None;
     }
@@ -299,8 +313,5 @@ pub fn show(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrollbar
         ctx.set_cursor_icon(icon);
     }
 
-    if let Some(action) = action {
-        push_action(ctx, model.vertical, action);
-    }
     action
 }

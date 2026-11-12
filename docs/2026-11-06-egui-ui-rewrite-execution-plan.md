@@ -3661,10 +3661,43 @@ callback / 多视口 / 截图能力。
   测试（含新 4 条 + `bands_pixels` 基线）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.23（下一步）**
+**Task 4.23（第一百三十步）：纵向卷帘迁 egui（骨架 + 输入）+ 走带滚动条/加轨迁 egui**
+
+- **纵向卷帘输入**：新增 `ui-editor::grid::canvas_input::vertical`（`dispatch` +
+  `cursor`），转置语义与 iced `VerticalRollGrid` 逐条对齐：左键（ShapeStore /
+  区域着色优先 → 双击 / `Pressed`）、右键菜单、移动（框选动画 + `Moved`）、释放、
+  滚轮（底部键盘缩音高 / Ctrl 缩放时间 / 双向滚动 + Shift 转置）、修饰键、失焦。
+  宿主按 `sidebar.is_vertical_roll()` 选择分派器；`canvas_input_active()` 不再排除
+  纵向卷帘。单测 3 条（时间轴滚动 / 键盘缩放 / Ctrl 随按下传递）。
+- **纵向骨架（egui）**：新增 `ui-egui::chrome::piano_roll::vertical`：底部横向键盘
+  （键宽 = `zoom_y`、256 键扩展配色、键宽 ≥14 时画音名）、左侧小节号（tick 0 在
+  键盘顶线、标签上移 12px 并钳制在画布内）、上下 1px 边框、两条滚动条（时间轴
+  `max_scroll_x - scroll_x` 取反、缩放 `fixed_ratio` 取反；音高轴视口 = 画布宽）。
+  `PianoRollView.vertical` 让 `draw_chrome` 分流；`egui_piano_roll_model` 不再排除
+  纵向（此前整块骨架缺失，真机只剩 wgpu 网格）。
+- **画布几何**：`sync_canvas_bounds` 扣掉两条 20px 滚动条（与 iced
+  `column![row![canvas, vscroll], hscroll]` 一致），纵向共用同一公式。
+- **走带滚动条/加轨按钮**：新增 `ui-egui::chrome::arrangement::scrollbars`
+  （`ArrangementScrollbarsModel` + `show_raw`），`ArrangementAction::{ScrollX,ScrollY,
+  ZoomY,AddTrack}`；iced 侧改为 20px `Space` 占位。修正底行几何：加轨按钮与水平
+  滚动条只占 20px，不再压住状态栏。
+- **拆分**：`arrangement.rs` 388 行 + `arrangement/scrollbars.rs` 121 行；
+  `piano_roll.rs` 388 + `piano_roll/vertical.rs` 194；`scrollbar.rs` 316。
+- **真机验证**（默认开启，无环境变量）：
+  - 走带：点击底部「+」→ 新增音轨 `002 A01`（`target/arr5-add.png`），日志
+    `egui 走带动作：AddTrack`；拖水平滚动条 → `ScrollX(3193.8)`，视图小节号 1–3
+    → 14–22；垂直条在内容不足时正确钳制为 0。
+  - 纵向卷帘：切纵向后底部键盘（256 键 × 6.77px 铺满 1732px）、小节号 1/2 与边框
+    正常显示（`target/vr2-note.png`）；铅笔纵向拖拽落下音符，状态栏「音符总数: 1」。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 912/912、`ui-egui` 全部集成
+  测试（新增 `arrangement_scrollbars` 3 条 + `scrollbar_drag` 4 条）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
+  12/12 零基线改动。
+
+**Task 4.24（下一步）**
 
 1. 删除 `host/render/ui.rs` 的 iced `UserInterface` 分支与 `host/event/window/*` 的
    iced 事件转换（`RenderContext.renderer/cache/Engine` 一并移除）；
-2. 纵向卷帘输入迁 `canvas_input`；走带滚动条/加轨按钮迁 egui；
+2. 走带泳道 / 瀑布流 / 导出面板的 iced 剩余输入收口后翻默认；
 3. 曲线填充凹多边形三角化；
 4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

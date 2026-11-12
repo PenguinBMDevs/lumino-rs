@@ -10,6 +10,7 @@
 
 pub mod lane;
 mod measures;
+mod scrollbars;
 mod track_list;
 
 use egui::{Align2, FontId, Rect};
@@ -68,6 +69,19 @@ pub enum ArrangementAction {
         /// 缩放锚点比例。
         fixed_ratio: f32,
     },
+    /// 水平滚动条。
+    ScrollX(f32),
+    /// 垂直滚动条。
+    ScrollY(f32),
+    /// 垂直滚动条边缘缩放。
+    ZoomY {
+        /// 目标缩放（每轨高度倍率）。
+        zoom: f32,
+        /// 缩放锚点比例。
+        fixed_ratio: f32,
+    },
+    /// 底部「添加音轨」。
+    AddTrack,
 }
 
 /// 动作通道（一帧一条）。
@@ -127,6 +141,10 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
         for action in lane::show(ui, lane_model, &model.ruler, &model.track_list) {
             push_lane_action(ui.ctx(), action);
         }
+    }
+    // 滚动条 + 底部「添加音轨」：整块由 egui 接管。
+    if let Some(action) = scrollbars::show(ui, full, left, right, top, bottom, model) {
+        push_action(ui.ctx(), action);
     }
     track_list::interact(ui, lanes, &model.track_list)
 }

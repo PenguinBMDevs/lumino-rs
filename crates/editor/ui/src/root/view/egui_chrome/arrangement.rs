@@ -5,7 +5,7 @@
 
 use lumino_ui_egui::chrome::{
     ArrangementAction, ArrangementLaneModel, ArrangementModel, ArrangementRulerModel,
-    ArrangementTrackListModel, ArrangementTrackRow,
+    ArrangementScrollbarsModel, ArrangementTrackListModel, ArrangementTrackRow,
 };
 
 use crate::root::Root;
@@ -59,7 +59,26 @@ impl Root {
             .as_ref()
             .filter(|state| state.active);
 
+        // 两条滚动条：与 iced `view_arrangement` 同口径。
+        const TRACK_HEIGHT: f32 = 48.0;
+        let max_tick_val = vp
+            .cached_max_tick_end
+            .max(vp.total_ticks as f32)
+            .max(960.0 * 4.0);
+        let max_scroll_x = (max_tick_val * vp.zoom_x).max(vp.canvas_size.x);
+        let max_scroll_y = self.sidebar.tracks.len() as f32 * TRACK_HEIGHT * vp.zoom_y;
+
         Some(ArrangementModel {
+            scrollbars: Some(ArrangementScrollbarsModel {
+                scroll_x: vp.scroll_x,
+                max_scroll_x,
+                zoom_x: vp.zoom_x,
+                viewport_x: vp.canvas_size.x,
+                scroll_y: vp.scroll_y,
+                max_scroll_y,
+                zoom_y: vp.zoom_y,
+                viewport_y: vp.canvas_size.y.max(1.0),
+            }),
             ruler: ArrangementRulerModel {
                 scroll_x: vp.scroll_x,
                 zoom_x: vp.zoom_x,
@@ -137,6 +156,19 @@ impl Root {
                     fixed_ratio: *fixed_ratio,
                 });
             }
+            ArrangementAction::ScrollX(x) => {
+                return Some(crate::Message::ArrangementScrollX(*x));
+            }
+            ArrangementAction::ScrollY(y) => {
+                return Some(crate::Message::ArrangementScrollY(*y));
+            }
+            ArrangementAction::ZoomY { zoom, fixed_ratio } => {
+                return Some(crate::Message::ArrangementZoomY {
+                    zoom: *zoom,
+                    fixed_ratio: *fixed_ratio,
+                });
+            }
+            ArrangementAction::AddTrack => SidebarEvent::add_track(),
         })
     }
 }

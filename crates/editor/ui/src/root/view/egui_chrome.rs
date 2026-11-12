@@ -244,8 +244,7 @@ impl Root {
         } else {
             0.0
         };
-        if self.sidebar.is_vertical_roll()
-            || !self.right_sidebar_visible()
+        if !self.right_sidebar_visible()
             || self.toolbar.onion_skin_enabled
             || !self.editor.remote_cursors.is_empty()
             || self
@@ -275,11 +274,26 @@ impl Root {
 
         // 滚动条按 iced `ScrollbarWidget::thumb_geometry` 的口径换算成比例：
         // 水平 viewport 缺省为轨道长度；垂直 viewport 为画布高 - 标尺高。
+        // 纵向卷帘转置：时间轴视口 = 画布高 - 键盘厚，音高轴视口 = 画布宽。
         let (max_x, max_y) = self.editor.editor_state.max_scroll;
-        let track_x = (canvas.size_x + 16.0).max(1.0);
-        let track_y = (canvas.size_y - 4.0).max(1.0);
-        let viewport_y = (canvas.size_y - view.ruler_height).max(0.0);
-        let scrollable_x = (max_x - track_x).max(0.0);
+        let vertical = self.sidebar.is_vertical_roll();
+        let grid_h = (canvas.size_y - view.keyboard_width).max(1.0);
+        let (track_x, track_y, viewport_x, viewport_y) = if vertical {
+            (
+                (canvas.size_y + 16.0).max(1.0),
+                (canvas.size_x - 4.0).max(1.0),
+                grid_h,
+                canvas.size_x,
+            )
+        } else {
+            (
+                (canvas.size_x + 16.0).max(1.0),
+                (canvas.size_y - 4.0).max(1.0),
+                (canvas.size_x + 16.0).max(1.0),
+                (canvas.size_y - view.ruler_height).max(0.0),
+            )
+        };
+        let scrollable_x = (max_x - viewport_x).max(0.0);
         let scrollable_y = (max_y - viewport_y).max(0.0);
         let thumb = |track: f32, viewport: f32, max: f32| {
             if max <= viewport {
@@ -317,7 +331,7 @@ impl Root {
             max_scroll_x: max_x,
             max_scroll_y: max_y,
             viewport_y,
-            thumb_x_ratio: thumb(track_x, track_x, max_x),
+            thumb_x_ratio: thumb(track_x, viewport_x, max_x),
             thumb_y_ratio: thumb(track_y, viewport_y, max_y),
             left_inset,
             // Windows/Linux 的两种标题栏模式在客户端顶部都有 30px 菜单栏行；
@@ -334,6 +348,7 @@ impl Root {
                 } else {
                     0.0
                 },
+            vertical,
         })
     }
 

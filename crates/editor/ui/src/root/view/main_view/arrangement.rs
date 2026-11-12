@@ -1,12 +1,10 @@
 //! 工程走带视图 — view_arrangement
 
 use iced_core::Length;
-use iced_widget::{button, column, container};
+use iced_widget::{column, container};
 use lumino_ui_core::constants::editor::ARRANGEMENT_RULER_HEIGHT;
 
-use crate::resources::icon::{self, Icon};
 use crate::root::Root;
-use crate::sidebar::Event as SidebarEvent;
 use crate::{Element, Theme};
 
 impl Root {
@@ -20,12 +18,8 @@ impl Root {
         puffin::profile_scope!("root_view_arrangement");
 
         const TRACK_LIST_WIDTH: f32 = 160.0;
-        const TRACK_HEIGHT: f32 = 48.0;
 
-        let track_count = self.sidebar.tracks.len();
-        let vp = &self.arrangement_view.viewport;
-        let total_height = track_count as f32 * TRACK_HEIGHT * vp.zoom_y;
-        let ppu = vp.zoom_x; // pixels_per_tick
+        // 轨道列 / 滚动条 / 加轨按钮均由 egui 绘制并接管输入，iced 只保留占位。
 
         // 轨道列由 egui 绘制（`ui-egui` 的 arrangement::track_list）；
         // iced 只保留同尺寸占位，保证布局与命中基准不变。
@@ -33,40 +27,8 @@ impl Root {
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fill);
 
-        // 添加音轨按钮（放在音轨列表底部，参考 yinhe 的 "+" 角落按钮）
-        let add_track_btn = button(
-            container(icon::view_with_size_and_theme(
-                Icon::Plus,
-                16,
-                16,
-                Some(&self.window.theme),
-            ))
-            .width(Length::Fill)
-            .height(Length::Fixed(20.0))
-            .align_x(iced_core::alignment::Horizontal::Center)
-            .align_y(iced_core::alignment::Vertical::Center),
-        )
-        .width(Length::Fixed(TRACK_LIST_WIDTH))
-        .height(Length::Fixed(20.0))
-        .on_press(SidebarEvent::add_track())
-        .style(|theme: &Theme, status| {
-            let palette = theme.extended_palette();
-            let bg = if status == iced_widget::button::Status::Hovered {
-                palette.background.weak.color
-            } else {
-                palette.background.base.color
-            };
-            iced_widget::button::Style {
-                text_color: palette.background.base.text,
-                border: iced_core::Border {
-                    radius: 0.0.into(),
-                    width: 0.0,
-                    color: iced_core::Color::TRANSPARENT,
-                },
-                ..Default::default()
-            }
-            .with_background(bg)
-        });
+        // 添加音轨按钮由 egui 绘制并接管（`ui-egui` 的 arrangement::scrollbars），
+        // iced 只保留同尺寸占位。
 
         // 左侧栏：轨道列占位与右侧走带区域对齐（绘制在 egui 侧）。
 
@@ -76,38 +38,18 @@ impl Root {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // 水平滚动条：使用 cached_max_tick_end（已由 arrangement_max_tick_end() 更新），
-        // 回退到 total_ticks 确保至少 4 小节宽度
-        let max_tick_val = vp
-            .cached_max_tick_end
-            .max(vp.total_ticks as f32)
-            .max(960.0 * 4.0);
-        let total_width = max_tick_val * ppu;
-        let max_scroll_x = total_width.max(vp.canvas_size.x);
-        let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
-            vp.scroll_x,
-            max_scroll_x,
-            vp.zoom_x,
-            Some(vp.canvas_size.x),
-            crate::Message::ArrangementScrollX,
-            |zoom, ratio| crate::Message::ArrangementZoomX {
-                zoom,
-                fixed_ratio: ratio,
-            },
-        );
+        // 水平滚动条：由 egui 绘制并接管输入（iced 只保留 20px 占位，
+        // 保持与 `arrangement_geometry` 完全一致的布局）。
+        let h_scrollbar: Element<'_> = iced_widget::Space::new()
+            .width(Length::Fill)
+            .height(Length::Fixed(20.0))
+            .into();
 
-        // 垂直滚动条
-        let v_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::vertical(
-            vp.scroll_y,
-            total_height,
-            vp.zoom_y,
-            Some(vp.canvas_size.y.max(1.0)),
-            crate::Message::ArrangementScrollY,
-            |zoom, ratio| crate::Message::ArrangementZoomY {
-                zoom,
-                fixed_ratio: ratio,
-            },
-        );
+        // 垂直滚动条：egui 接管，iced 保留 20px 宽占位。
+        let v_scrollbar: Element<'_> = iced_widget::Space::new()
+            .width(Length::Fixed(20.0))
+            .height(Length::Fill)
+            .into();
 
         // 顶部时间标尺：走带主体是 WGPU 线框（无文字层），这里补 28px Canvas
         // 小节号标尺。它与下方走带区共用同一个 `scroll_x/zoom_x`，点击/拖拽
@@ -146,7 +88,11 @@ impl Root {
             iced_widget::row![track_list_column, arrangement_column, v_scrollbar_column];
 
         // 底部行：添加音轨按钮（左侧，与音轨列表等宽）+ 水平滚动条（右侧填充）
-        // 两者高度均为 20px，与原 h_scrollbar 占用空间一致，不影响 viewport 计算
+        // 两者高度均为 20px；按钮由 egui 绘制并接管，iced 只保留同尺寸占位。
+        let add_track_btn: Element<'_> = iced_widget::Space::new()
+            .width(Length::Fixed(TRACK_LIST_WIDTH))
+            .height(Length::Fixed(20.0))
+            .into();
         let bottom_row = iced_widget::row![add_track_btn, h_scrollbar]
             .width(Length::Fill)
             .height(Length::Fixed(20.0));

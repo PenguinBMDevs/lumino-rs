@@ -8,6 +8,8 @@ use egui::{Align2, Color32, FontId, Rect, Vec2};
 use super::ChromeState;
 use crate::theme;
 
+mod vertical;
+
 /// 钢琴卷帘视图参数。
 #[derive(Debug, Clone, Copy)]
 pub struct PianoRollView {
@@ -53,6 +55,8 @@ pub struct PianoRollView {
     pub right_inset: f32,
     /// 卷帘区域相对视口的下内缩（状态栏 + 力度面板）。
     pub bottom_inset: f32,
+    /// 是否纵向卷帘（时间轴竖直、键盘在底部）。
+    pub vertical: bool,
 }
 
 impl Default for PianoRollView {
@@ -82,6 +86,7 @@ impl Default for PianoRollView {
             top_inset: 0.0,
             right_inset: 0.0,
             bottom_inset: 0.0,
+            vertical: false,
         }
     }
 }
@@ -130,6 +135,15 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
     let bar = crate::layout::SCROLLBAR;
     let canvas_w = (area.width() - bar).max(0.0);
     let canvas_h = (area.height() - bar).max(0.0);
+    // 纵向卷帘：时间轴竖直、键盘在底部，骨架另有一套绘制。
+    if view.vertical {
+        vertical::draw(ui, area, view);
+        if let Some(directed) = vertical::scrollbars(ui, area, view, canvas_w, canvas_h) {
+            crate::scrollbar::push_directed(ui.ctx(), directed);
+        }
+        super::menu::extend_blocked(ui.ctx(), [area]);
+        return;
+    }
     let keyboard_w = view.keyboard_width.clamp(0.0, canvas_w);
     let ruler_h = view.ruler_height.clamp(0.0, canvas_h);
 

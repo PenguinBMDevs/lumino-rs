@@ -28,13 +28,13 @@ pub(crate) fn canvas_input_enabled() -> bool {
 impl Host {
     /// 主编辑器窗口：画布输入由本模块接管（对话框 / 进度窗没有画布）。
     ///
-    /// 纵向卷帘、走带与瀑布流/导出面板的布局与语义尚未迁移，仍走 iced 通道。
+    /// 纵向卷帘与横向共用同一套分派（`canvas_input::vertical`）；走带、瀑布流
+    /// 与导出面板没有钢琴卷帘画布，仍走 iced 通道。
     pub(crate) fn canvas_input_active(&self) -> bool {
         canvas_input_enabled()
             && !self.root.state.is_dialog_window
             && !self.root.is_progress_window
             && !self.root.is_device_warning_window
-            && !self.root.sidebar.is_vertical_roll()
             && !self.root.is_arrangement_mode()
             && self.root.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
             && self.root.sidebar.piano_roll_visible
@@ -61,11 +61,19 @@ impl Host {
         if !self.canvas_input_active() {
             return;
         }
-        let message = lumino_ui_editor::grid::canvas_input::dispatch(
-            &self.root.editor,
-            &mut self.canvas_input,
-            event,
-        );
+        let message = if self.root.sidebar.is_vertical_roll() {
+            lumino_ui_editor::grid::canvas_input::vertical::dispatch(
+                &self.root.editor,
+                &mut self.canvas_input,
+                event,
+            )
+        } else {
+            lumino_ui_editor::grid::canvas_input::dispatch(
+                &self.root.editor,
+                &mut self.canvas_input,
+                event,
+            )
+        };
         if let Some(message) = message {
             self.process_message(message);
             self.window_ctx.window.request_redraw();
@@ -168,12 +176,19 @@ impl Host {
             iced_core::Size::new(canvas.size_x, canvas.size_y),
         );
         let cursor = iced_core::mouse::Cursor::Available(position);
-        let interaction = lumino_ui_editor::grid::program_impl::mouse_interaction::handle(
-            &self.root.editor,
-            &self.canvas_input,
-            bounds,
-            cursor,
-        );
+        let interaction = if self.root.sidebar.is_vertical_roll() {
+            lumino_ui_editor::grid::canvas_input::vertical::cursor(
+                &self.root.editor,
+                &self.canvas_input,
+            )
+        } else {
+            lumino_ui_editor::grid::program_impl::mouse_interaction::handle(
+                &self.root.editor,
+                &self.canvas_input,
+                bounds,
+                cursor,
+            )
+        };
         self.apply_cursor_interaction(interaction);
     }
 

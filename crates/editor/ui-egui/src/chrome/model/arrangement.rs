@@ -103,4 +103,27 @@ pub struct ArrangementModel {
     pub track_list: ArrangementTrackListModel,
     /// 泳道区命中矩形；`None` = 尚未拿到布局（跳过输入）。
     pub lane: Option<ArrangementLaneModel>,
+    /// 两条滚动条的取值；`None` = 尚未拿到布局。
+    pub scrollbars: Option<ArrangementScrollbarsModel>,
+}
+
+/// 走带两条滚动条的取值（与 iced `view_arrangement` 同源）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArrangementScrollbarsModel {
+    /// 水平滚动（像素）。
+    pub scroll_x: f32,
+    /// 水平内容总宽（像素）。
+    pub max_scroll_x: f32,
+    /// 每 tick 像素。
+    pub zoom_x: f32,
+    /// 水平视口（泳道区宽）。
+    pub viewport_x: f32,
+    /// 垂直滚动（像素）。
+    pub scroll_y: f32,
+    /// 垂直内容总高（像素）。
+    pub max_scroll_y: f32,
+    /// 每轨高度倍率。
+    pub zoom_y: f32,
+    /// 垂直视口（泳道区高）。
+    pub viewport_y: f32,
 }

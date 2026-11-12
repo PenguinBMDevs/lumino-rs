@@ -65,11 +65,6 @@ impl Host {
             ));
         }
 
-        // 纵向卷帘布局不同，尚未迁移：保持 iced 旧值。
-        if self.root.sidebar.is_vertical_roll() {
-            return None;
-        }
-
         // insets 与 `Root::egui_piano_roll_model` 完全同源（见 `egui_chrome.rs`）。
         let sidebar = &self.root.sidebar;
         let left = 48.0
@@ -99,8 +94,10 @@ impl Host {
                 0.0
             };
 
-        let width = (window_area.width() - left - right).max(1.0);
-        let height = (window_area.height() - top - bottom).max(1.0);
+        // 卷帘区（横向 / 纵向同布局）在两条滚动条内侧：与 iced
+        // `column![row![canvas, vscroll], hscroll]` 一致，两条 20px 都要扣掉。
+        let width = (window_area.width() - left - right - layout::SCROLLBAR).max(1.0);
+        let height = (window_area.height() - top - bottom - layout::SCROLLBAR).max(1.0);
         Some(((left, top), (width, height)))
     }
 }

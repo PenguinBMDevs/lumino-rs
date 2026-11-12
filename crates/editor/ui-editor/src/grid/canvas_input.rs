@@ -12,6 +12,8 @@ use super::PianoRollGrid;
 use super::state::GridInteractionState;
 use crate::Editor;
 
+pub mod vertical;
+
 /// 画布鼠标按钮。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanvasButton {
