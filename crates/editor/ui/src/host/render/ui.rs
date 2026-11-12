@@ -3,12 +3,44 @@ use iced_core::{Color, Event, renderer, window as iced_window};
 use iced_wgpu::wgpu;
 use iced_winit::runtime::user_interface::{self, UserInterface};
 
+/// egui 是否独占整窗渲染（生产路径）。
+///
+/// 默认开启：外壳 / 对话框 / 面板 / 编辑器画布底层全部由 egui 绘制，
+/// iced 只保留事件与测量代码。`LUMINO_EGUI_ONLY=0` 回退到「iced present +
+/// egui 叠加」的旧通道，用于对照排查。
+pub(crate) fn egui_only_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_ONLY")
+            .map(|value| value != "0")
+            .unwrap_or(true)
+    })
+}
+
+/// 主题色（egui 色板 `base_bg`）→ wgpu 清屏色（sRGB）。
+fn clear_color(palette: lumino_ui_egui::theme::Palette) -> wgpu::Color {
+    let base = palette.base_bg;
+    let srgb = |channel: u8| {
+        let value = f64::from(channel) / 255.0;
+        if value <= 0.040_45 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    wgpu::Color {
+        r: srgb(base.r()),
+        g: srgb(base.g()),
+        b: srgb(base.b()),
+        a: 1.0,
+    }
+}
+
 impl Host {
-    /// 渲染 iced UI 层
+    /// 渲染窗口画面。
     ///
-    /// `background` 为 `Some(color)` 时先以该颜色清屏（播放器模式用，与钢琴卷帘
-    /// 完全隔离）；为 `None` 时不清屏，叠在已 blit 到 surface 的卷帘 3D 场景之上
-    /// （编辑器模式用）。
+    /// `background` 为 `Some(color)` 时以该颜色覆盖整窗（无编辑器画布的窗口模式）；
+    /// 为 `None` 时由 egui 采样 gfx 离屏纹理作底层。
     pub(super) fn render_iced_ui(
         &mut self,
         frame: &wgpu::SurfaceTexture,
@@ -16,6 +48,22 @@ impl Host {
         background: Option<Color>,
     ) {
         puffin::profile_function!();
+
+        // 生产路径：egui 独占整窗，不再构建 iced widget 树、不再 `present`。
+        // 底层（gfx 离屏纹理）由 egui 以外部纹理采样后整窗绘制，其余 UI 全在 egui。
+        if egui_only_enabled() && crate::host::overlay_enabled() {
+            let clear = match background {
+                Some(color) => wgpu::Color {
+                    r: f64::from(color.r),
+                    g: f64::from(color.g),
+                    b: f64::from(color.b),
+                    a: 1.0,
+                },
+                None => clear_color(self.root.egui_palette()),
+            };
+            self.render_egui_overlay(frame, texture_view, Some(clear));
+            return;
+        }
 
         // 如果 UI 没有变更，跳过 UI 重建和绘制
         // 使用实例字段来确保至少渲染一次 UI，避免线程不安全的 static mut
@@ -36,7 +84,7 @@ impl Host {
                 &self.render_ctx.viewport,
             );
             // 叠加层必须在 present 之后重画，否则会被缓存内容覆盖。
-            self.render_egui_overlay(frame, texture_view);
+            self.render_egui_overlay(frame, texture_view, None);
             return;
         }
 
@@ -96,7 +144,7 @@ impl Host {
             texture_view,
             &self.render_ctx.viewport,
         );
-        self.render_egui_overlay(frame, texture_view);
+        self.render_egui_overlay(frame, texture_view, None);
 
         // 处理消息（在 interface 被释放之后，避免借用冲突）
         let mut has_state_change = false;

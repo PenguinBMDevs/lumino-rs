@@ -190,30 +190,7 @@ impl Gpu {
                 label: Some("lumino-runtime-encoder"),
             });
 
-        // 先清屏（Painter 采用 LoadOp::Load 叠加绘制）。
-        {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("lumino-runtime-clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.062,
-                            g: 0.066,
-                            b: 0.078,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        }
-
+        // 清屏由 `Painter` 的 clear 参数完成（单 pass：clear + 图元）。
         let primitives =
             ctx.tessellate(std::mem::take(&mut output.shapes), output.pixels_per_point);
         self.painter
@@ -226,6 +203,12 @@ impl Gpu {
             Screen {
                 size_px: [self.config.width, self.config.height],
                 pixels_per_point: output.pixels_per_point,
+                clear: Some(wgpu::Color {
+                    r: 0.062,
+                    g: 0.066,
+                    b: 0.078,
+                    a: 1.0,
+                }),
             },
             &primitives,
         );

@@ -3551,10 +3551,39 @@ callback / 多视口 / 截图能力。
   测试（含新 1 条）、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 零基线改动。
 
-**Task 4.20（下一步）**
+**Task 4.20（第一百二十六步）：egui 独占整窗——生产渲染路径切换**
 
-1. 切主窗口入口到 `lumino-ui-runtime`：egui overlay 增加可选 clear，
-   非对话框主窗口跳过 iced `present`，用环境变量保留回退；
-2. 删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 输入路由；
+- **`lumino-egui-bridge::Painter`**：`Screen` 增加 `clear: Option<wgpu::Color>`。
+  - `Some` → `LoadOp::Clear`（egui 独占整窗，单 pass：clear + 图元）；
+  - `None` → 原 `LoadOp::Load` 叠加语义（保留给叠加/测试路径）；
+  - 无图元但 `clear = Some` 时也必须清屏（否则空 UI 帧留残影）。
+- **`Host::render_iced_ui`**：新增 `egui_only_enabled()`（`LUMINO_EGUI_ONLY`，
+  **默认开启**，`=0` 回退旧通道）。命中时**不再构建 iced widget 树、不再
+  `present`**，只调 `render_egui_overlay(..., Some(clear))`：
+  - `background = Some(color)`（播放器 / 剪辑窗口）→ 用该色清屏；
+  - `background = None`（编辑器 / 对话框）→ 用主题 `base_bg` 清屏，
+    整窗底层由 egui 采样 gfx 离屏纹理绘制。
+- **`OverlayFrame`** 增加 `clear` 字段贯通到 `Painter::render`；
+  `ui-runtime` 的 `NativeApp::present` 删除独立 clear pass，改用同一参数。
+- **验证（真机，DPI-aware，2048×1232 逻辑 / ppp=1.25）**：
+  - 主窗口卷帘：egui-only 与 `LUMINO_EGUI_ONLY=0` 截图逐像素观感一致
+    （标题栏 / 工具栏 / 音轨列表 / 网格 / 状态栏），FPS 60；
+  - 文件菜单：`文件` 标签矩形 `[[48,0]-[93,30]]`，点击展开 15 项下拉（新建/打开/
+    保存/关闭/导入/云导入/云保存/导出 MIDI/导出工程/导出素材/工程设置/设置/退出）；
+  - 工程设置对话框：独立窗口整窗由 egui 绘制（工程信息设置 + 项目名称 / BPM /
+    版权 / 作者 / 拍号），无 iced 参与；
+  - 首帧日志 `egui 外壳首帧：size=[2560,1540] ppp=1.25 primitives=62 drawn=61`，
+    无 ERROR。
+- **测试**：`lumino-egui-bridge` 新增
+  `clear_without_primitives_still_fills_target`（空图元 + clear → 目标为清屏色）；
+  `painter` 7/7。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、`ui-egui` 全部集成
+  测试、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动。
+
+**Task 4.21（下一步）**
+
+1. 删除 `host/render/ui.rs` 的 iced 分支与 `host/event/window/*` 的 iced 输入路由；
+2. 用 winit 事件 + egui 输入替换 `iced_winit::runtime::UserInterface` 的剩余职责；
 3. 曲线矢量填充的凹多边形三角化；
 4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

@@ -194,6 +194,7 @@ fn render_scene(
         Screen {
             size_px: [width, height],
             pixels_per_point,
+            clear: None,
         },
         &primitives,
     );

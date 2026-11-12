@@ -51,6 +51,8 @@ pub struct Screen {
     pub size_px: [u32; 2],
     /// 每逻辑点的物理像素数（DPI 缩放）。
     pub pixels_per_point: f32,
+    /// 清屏色：`Some` = 先清屏再画（egui 独占整窗）；`None` = 叠加在已有画面上。
+    pub clear: Option<wgpu::Color>,
 }
 
 /// egui 绘制器。
@@ -211,7 +213,8 @@ impl Painter {
 
     /// 绘制一帧图元，返回实际提交的 draw 数。
     ///
-    /// 采用 `LoadOp::Load`，即叠加在已有画面上（UI 在 3D 场景之后绘制）。
+    /// `screen.clear = None` 时采用 `LoadOp::Load`，叠加在已有画面上（UI 在 3D 场景之后绘制）；
+    /// `Some(color)` 时先清屏再画（egui 独占整窗的生产渲染路径）。
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -221,7 +224,9 @@ impl Painter {
         screen: Screen,
         primitives: &[ClippedPrimitive],
     ) -> usize {
-        if primitives.is_empty() {
+        let clear = screen.clear;
+        // 独占路径即使没有图元也必须清屏：否则「空 UI 帧」会留下上一帧残影。
+        if primitives.is_empty() && clear.is_none() {
             return 0;
         }
 
@@ -268,6 +273,24 @@ impl Painter {
         }
 
         if draws.is_empty() {
+            // 没有可画图元：独占路径仍需清屏。
+            if let Some(color) = clear {
+                let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("lumino_egui_bridge_clear"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: target,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(color),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+            }
             return 0;
         }
 
@@ -288,7 +311,10 @@ impl Painter {
                 view: target,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    load: match clear {
+                        Some(color) => wgpu::LoadOp::Clear(color),
+                        None => wgpu::LoadOp::Load,
+                    },
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,

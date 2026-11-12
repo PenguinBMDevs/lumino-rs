@@ -116,6 +116,9 @@ struct OverlayFrame<'a> {
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
     focused: bool,
+    /// 清屏色：`Some` 表示 egui 独占整窗（生产渲染路径），
+    /// `None` 表示叠加在 iced `present` 之上（回退路径）。
+    clear: Option<wgpu::Color>,
 }
 
 impl EguiOverlay {
@@ -303,6 +306,7 @@ impl EguiOverlay {
             Screen {
                 size_px: frame.size_px,
                 pixels_per_point: frame.pixels_per_point,
+                clear: frame.clear,
             },
             &primitives,
         );
@@ -325,11 +329,15 @@ impl EguiOverlay {
 }
 
 impl Host {
-    /// 在 iced `present` 之后叠加 egui 外壳（默认关闭）。
+    /// 绘制 egui 外壳。
+    ///
+    /// `clear = Some(color)` 时 egui 独占整窗（先清屏再画，生产渲染路径）；
+    /// `None` 时叠加在 iced `present` 之上（`LUMINO_EGUI_ONLY=0` 回退路径）。
     pub(super) fn render_egui_overlay(
         &mut self,
         frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
+        clear: Option<wgpu::Color>,
     ) {
         if !overlay_enabled() {
             return;
@@ -494,6 +502,7 @@ impl Host {
             editor_texture: self.egui_editor_texture.clone(),
             events,
             focused,
+            clear,
         });
         // 各通道动作统一取走并分发（`actions.rs`）。
         let actions = actions::OverlayActions::take(&overlay.ctx);

@@ -209,6 +209,7 @@ fn render_with_format(
         Screen {
             size_px: [WIDTH, HEIGHT],
             pixels_per_point: 1.0,
+            clear: None,
         },
         primitives,
     );
@@ -336,6 +337,7 @@ fn egui_text_upload_uses_font_atlas() {
         Screen {
             size_px: [WIDTH, HEIGHT],
             pixels_per_point: output.pixels_per_point,
+            clear: None,
         },
         &primitives,
     );
@@ -437,6 +439,7 @@ fn render_external(view: &std::sync::Arc<wgpu::TextureView>) -> Vec<Color32> {
         Screen {
             size_px: [WIDTH, HEIGHT],
             pixels_per_point: 1.0,
+            clear: None,
         },
         &[textured_quad(ID)],
     );
@@ -481,6 +484,7 @@ fn external_texture_rebinds_when_view_changes() {
         Screen {
             size_px: [WIDTH, HEIGHT],
             pixels_per_point: 1.0,
+            clear: None,
         },
         &[textured_quad(ID)],
     );
@@ -492,5 +496,44 @@ fn external_texture_rebinds_when_view_changes() {
         Color32::from_rgb(0x9E, 0xCE, 0x6A),
         1,
         "换绑后的新视图",
+    );
+}
+
+/// 独占路径：没有图元时也必须执行清屏，否则空 UI 帧会留下上一帧残影。
+#[test]
+fn clear_without_primitives_still_fills_target() {
+    let (_, device, queue) = gpu();
+    let mut painter = Painter::new(device, FORMAT);
+    let target = create_target(device, FORMAT);
+    let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("egui_bridge_test_clear_only"),
+    });
+    let drawn = painter.render(
+        device,
+        queue,
+        &mut encoder,
+        &view,
+        Screen {
+            size_px: [WIDTH, HEIGHT],
+            pixels_per_point: 1.0,
+            clear: Some(wgpu::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+        },
+        &[],
+    );
+    assert_eq!(drawn, 0, "无图元时 draw 数为 0");
+    queue.submit(Some(encoder.finish()));
+
+    let pixels = readback(device, queue, &target, FORMAT);
+    assert_channel_close(
+        pixel(&pixels, 1, 1),
+        Color32::from_rgb(0xFF, 0x00, 0x00),
+        1,
+        "无图元的独占帧也必须清屏",
     );
 }
