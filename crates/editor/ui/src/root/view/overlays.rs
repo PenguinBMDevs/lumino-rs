@@ -10,8 +10,8 @@ use lumino_core::tr;
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    about_egg::view as view_about_egg, batch_edit_dialog::view_batch_edit_dialog,
-    brush_settings_dialog::view_brush_settings_dialog,
+    about_egg::view as view_about_egg, autosave_recover_dialog::view_autosave_recover_dialog,
+    batch_edit_dialog::view_batch_edit_dialog, brush_settings_dialog::view_brush_settings_dialog,
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     draw_settings_dialog::view_draw_settings_dialog,
@@ -219,6 +219,10 @@ impl Root {
             DialogType::SaveConfirm => {
                 view_save_confirm_dialog(&self.state.save_confirm_dialog, &self.window.theme)
             }
+            DialogType::AutosaveRecover => view_autosave_recover_dialog(
+                &self.state.autosave_recover_dialog,
+                &self.window.theme,
+            ),
             DialogType::BrushSettings => view_brush_settings_dialog(
                 &self.state.brush_settings_draft,
                 &self.state.brush_settings_tracks,

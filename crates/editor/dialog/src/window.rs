@@ -88,6 +88,7 @@ impl DialogWindow {
             DialogType::MemoryMonitor => (tr!("内存占用详情"), false),
             DialogType::RecoverTrack => (tr!("找回删除音轨"), true),
             DialogType::SaveConfirm => ("Lumino", false),
+            DialogType::AutosaveRecover => (tr!("恢复自动保存"), false),
             DialogType::CloudConnect => (tr!("连接云存储"), false),
             DialogType::CloudBrowser => (tr!("云存储文件"), true),
             DialogType::CloudNotice => (tr!("云存储提醒"), false),

@@ -9,6 +9,7 @@
 
 use crate::root::Root;
 
+pub mod autosave_recover;
 pub mod dialog_toggles;
 pub mod export;
 pub mod operations;

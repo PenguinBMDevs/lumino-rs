@@ -57,6 +57,19 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 打开自动保存恢复对话框（独立对话框窗口；DEBT-12）。
+    ///
+    /// `path` / `modified_at` 由 Runner 注入——恢复语义与文件系统都在 Runner 侧，
+    /// UI 只负责展示与产出用户选择。
+    pub fn set_autosave_recover_dialog(&mut self, path: String, modified_at: String) {
+        self.root.set_autosave_recover_dialog_open(true);
+        let state = &mut self.root.state.autosave_recover_dialog;
+        state.path = path;
+        state.modified_at = modified_at;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置自定义精度对话框是否打开（用于独立对话框窗口）
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
         self.root.set_custom_precision_dialog_open(open);

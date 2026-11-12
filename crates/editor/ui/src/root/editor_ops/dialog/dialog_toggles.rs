@@ -99,6 +99,16 @@ impl Root {
         }
     }
 
+    /// 设置自动保存恢复对话框是否打开（独立对话框窗口；DEBT-12）
+    pub fn set_autosave_recover_dialog_open(&mut self, open: bool) {
+        self.state.autosave_recover_dialog.is_open = open;
+        if open {
+            self.state.dialog_type = DialogType::AutosaveRecover;
+        } else if self.state.dialog_type == DialogType::AutosaveRecover {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 设置「音符画设置」对话框是否打开（独立 OS 窗口）
     ///
     /// 无独立状态位：该对话框本轮为占位面板，`dialog_type` 本身就是"开/关"的唯一来源

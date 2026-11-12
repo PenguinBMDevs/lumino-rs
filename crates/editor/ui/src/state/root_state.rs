@@ -2,15 +2,15 @@
 
 // 保持路径不变：crate::state::root_state::Xxx 通过 core 重导出
 pub use lumino_ui_core::state::{
-    AboutEggState, AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT,
-    COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
-    CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState, FillDivisionDialogState,
-    GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState, HistoryDialogState,
-    HistoryKind, HistoryStepView, LoadConfirmDialogState, MIDITRAIL_SPEED_DEFAULT,
-    MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX,
-    MemoryMonitorDialogState, ProjectSettingsDialogState, RecoverTrackDialogState,
-    RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState, ToggleAnimationState,
-    VideoClipState, VideoExportDialogState, VideoExportOverlayState,
+    AboutEggState, AudioExportDialogState, AutosaveRecoverDialogState, BatchEditDialogState,
+    COUNTER_DEFAULT_CSV_FORMAT, COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState,
+    CollaborationViewState, CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState,
+    FillDivisionDialogState, GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState,
+    HistoryDialogState, HistoryKind, HistoryStepView, LoadConfirmDialogState,
+    MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
+    MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
+    RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState,
+    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
 };
 
 use std::cell::RefCell;
@@ -118,6 +118,8 @@ pub enum DialogType {
     RecoverTrack,
     /// 保存确认对话框（关闭工程 / 打开另一个工程 / 退出前的未保存更改确认）
     SaveConfirm,
+    /// 自动保存恢复对话框（启动时询问是否恢复上次会话的自动保存；DEBT-12）
+    AutosaveRecover,
     /// 云存储连接面板（地址/协议/用户名/密码）
     CloudConnect,
     /// 云文件浏览面板（仿资源管理器）
@@ -172,6 +174,8 @@ pub struct RootState {
     pub recover_track_dialog: RecoverTrackDialogState,
     /// 保存确认对话框状态
     pub save_confirm_dialog: SaveConfirmDialogState,
+    /// 自动保存恢复对话框状态（DEBT-12）
+    pub autosave_recover_dialog: AutosaveRecoverDialogState,
     /// 视频剪辑面板状态（瀑布流预览 zoom/pan）
     pub video_clip: VideoClipState,
     /// 当前应用模式（编辑器/瀑布流）
@@ -245,6 +249,7 @@ impl RootState {
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             recover_track_dialog: RecoverTrackDialogState::default(),
             save_confirm_dialog: SaveConfirmDialogState::default(),
+            autosave_recover_dialog: AutosaveRecoverDialogState::default(),
             video_clip: VideoClipState::new(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),

@@ -1,5 +1,6 @@
 pub mod about_egg;
 pub mod audio_export_state;
+pub mod autosave_recover_state;
 pub mod batch_edit_state;
 pub mod collaboration_state;
 pub mod custom_precision_state;
@@ -20,6 +21,7 @@ pub mod video_export_state;
 
 pub use about_egg::AboutEggState;
 pub use audio_export_state::AudioExportDialogState;
+pub use autosave_recover_state::AutosaveRecoverDialogState;
 pub use batch_edit_state::{BatchEditDialogState, BatchEditOperation, parse_batch_edit_input};
 pub use collaboration_state::{CollaborationDialogState, CollaborationViewState};
 pub use custom_precision_state::CustomPrecisionDialogState;

@@ -5,6 +5,8 @@
 //! Message 是泛型的，由上层 crate（lumino-ui）实例化具体的 UI 事件类型。
 
 pub mod audio_export;
+/// 自动保存恢复对话框动作（DEBT-12）
+pub mod autosave_recover;
 pub mod batch_edit;
 pub mod brush_settings;
 pub mod cloud_action;
@@ -36,6 +38,7 @@ pub mod video_clip;
 pub mod video_export;
 
 pub use audio_export::AudioExportAction;
+pub use autosave_recover::AutosaveRecoverAction;
 pub use batch_edit::{BatchEditAction, BatchEditField};
 pub use brush_settings::BrushSettingsAction;
 pub use cloud_action::{CloudAction, CloudProtocolUi};

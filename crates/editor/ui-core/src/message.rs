@@ -12,13 +12,13 @@ pub use crate::{
 // 重新导出自 lumino-message 的所有公共类型
 pub use lumino_message::FillDivisionAction;
 pub use lumino_message::{
-    AudioAction, AudioChannels, AudioExportAction, AudioFormat, BatchEditAction, BatchEditField,
-    BrushSettingsAction, CcOption, CustomPrecisionAction, DotType, DrawSettingsAction,
-    EditorAction, HistoryAction, Interpolation, LoadConfirmAction, LoopRangeAction,
-    Message as GenericMessage, NotePrecision, PerfData, Point2, ProjectSettingsAction,
-    RecoverTrackAction, RightSidebarAction, SaveConfirmAction, SettingsDialogAction,
-    ShapeDrawerAction, Size2, SpeedChangeAction, SpeedFactor, ThreadingOption, Tool, TupletType,
-    VelocityAction, VideoClipAction, VideoExportAction,
+    AudioAction, AudioChannels, AudioExportAction, AudioFormat, AutosaveRecoverAction,
+    BatchEditAction, BatchEditField, BrushSettingsAction, CcOption, CustomPrecisionAction, DotType,
+    DrawSettingsAction, EditorAction, HistoryAction, Interpolation, LoadConfirmAction,
+    LoopRangeAction, Message as GenericMessage, NotePrecision, PerfData, Point2,
+    ProjectSettingsAction, RecoverTrackAction, RightSidebarAction, SaveConfirmAction,
+    SettingsDialogAction, ShapeDrawerAction, Size2, SpeedChangeAction, SpeedFactor,
+    ThreadingOption, Tool, TupletType, VelocityAction, VideoClipAction, VideoExportAction,
 };
 
 /// 具体化的消息类型

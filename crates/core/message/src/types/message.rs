@@ -6,6 +6,7 @@
 use crate::events::Event;
 
 use crate::audio_export::AudioExportAction;
+use crate::autosave_recover::AutosaveRecoverAction;
 use crate::batch_edit::BatchEditAction;
 use crate::brush_settings::BrushSettingsAction;
 use crate::cloud_action::CloudAction;
@@ -127,6 +128,8 @@ pub enum Message<W, S, Se, T> {
     LoadConfirm(LoadConfirmAction),
     /// 保存确认对话框动作（关闭/打开/退出前的未保存更改确认）
     SaveConfirm(SaveConfirmAction),
+    /// 自动保存恢复对话框动作（DEBT-12）
+    AutosaveRecover(AutosaveRecoverAction),
     /// 工程设置对话框动作
     ProjectSettings(ProjectSettingsAction),
     /// 设置对话框动作

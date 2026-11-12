@@ -163,6 +163,12 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "按「确定」恢复，按「取消」不恢复。" => {
             Some("Press OK to restore, or Cancel to discard.")
         }
+        // DEBT-12：应用内恢复对话框
+        "修改于" => Some("Modified"),
+        "修改时间未知" => Some("Modification time unknown"),
+        "恢复不会改动任何已有文件。" => {
+            Some("Restoring will not modify any existing files.")
+        }
         "已恢复自动保存，请另存为" => {
             Some("Autosave restored. Please use Save As to keep it.")
         }

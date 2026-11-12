@@ -35,6 +35,8 @@ pub struct PendingDialog {
     pub pending_brush_config: Option<BrushConfig>,
     /// ShapeDrawer 的待注入形状库目录
     pub shapes_dir: Option<PathBuf>,
+    /// AutosaveRecover 的候选文件修改时间（本地化文本）
+    pub pending_modified_at: Option<String>,
 }
 
 /// 对话框管理器

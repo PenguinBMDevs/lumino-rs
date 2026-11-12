@@ -56,6 +56,10 @@ impl RunnerInner {
                 // LoadConfirm 由 lifecycle.rs 处理，这里不应到达
                 tracing::warn!("LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
             }
+            DialogResult::AutosaveRecover(_) => {
+                // DEBT-12：恢复语义在 Runner 的 auto_save/recovery.rs 处理
+                tracing::warn!("AutosaveRecover 结果不应通过 apply_dialog_result_to_ui 处理");
+            }
             DialogResult::ProjectSettings {
                 title,
                 tempo,

@@ -132,6 +132,14 @@ impl RunnerInner {
             self.handle_save_confirm_result(SaveConfirmAction::Cancel);
         }
 
+        // DEBT-12：自动保存恢复对话框被 X 关闭 → 不做决定、不改名，文件保留。
+        if dialog_result.is_none()
+            && should_close
+            && dialog_type == Some(DialogType::AutosaveRecover)
+        {
+            self.dismiss_autosave_prompt();
+        }
+
         // 处理对话框返回的结果
         if let Some(result) = dialog_result {
             tracing::debug!("处理对话框结果: {:?}", std::mem::discriminant(&result));
@@ -148,6 +156,10 @@ impl RunnerInner {
                 // 保存确认对话框：保存 / 关闭（放弃）/ 取消 三选一
                 // 交由 RunnerInner 继续挂起的关闭动作或清空挂起状态。
                 self.handle_save_confirm_result(*choice);
+            }
+            DialogResult::AutosaveRecover(action) => {
+                // DEBT-12：恢复 / 不恢复（文件改名）由 Runner 的恢复状态机执行。
+                self.resolve_autosave_prompt(*action);
             }
             DialogResult::LoadConfirm => {
                 if let Some(path) = self.file_state.pending_load_path.take() {

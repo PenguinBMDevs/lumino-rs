@@ -28,7 +28,7 @@ use super::{
 pub(super) const WORK_AREA: Size = Size::new(1920.0, 1040.0);
 
 /// 全部「真实」对话框类型（`None` 除外）
-pub(super) const ALL_DIALOGS: [DialogType; 19] = [
+pub(super) const ALL_DIALOGS: [DialogType; 20] = [
     DialogType::CustomPrecision,
     DialogType::Collaboration,
     DialogType::LoadConfirm,
@@ -41,6 +41,7 @@ pub(super) const ALL_DIALOGS: [DialogType; 19] = [
     DialogType::MemoryMonitor,
     DialogType::RecoverTrack,
     DialogType::SaveConfirm,
+    DialogType::AutosaveRecover,
     DialogType::CloudConnect,
     DialogType::CloudBrowser,
     DialogType::CloudNotice,

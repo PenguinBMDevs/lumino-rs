@@ -1,6 +1,7 @@
 //! 对话框管理处理器 — 路由分发
 
 mod audio_export;
+mod autosave_recover;
 mod batch_edit;
 mod brush_settings;
 mod custom_precision;
@@ -48,6 +49,7 @@ impl MessageHandler for DialogHandler {
             Message::BatchEdit(action) => self.handle_batch_edit(root, action),
             Message::RecoverTrack(action) => self.handle_recover_track(root, action),
             Message::SaveConfirm(action) => self.handle_save_confirm(root, action),
+            Message::AutosaveRecover(action) => self.handle_autosave_recover(root, action),
             Message::BrushSettings(action) => self.handle_brush_settings(root, action),
             Message::DrawSettings(action) => self.handle_draw_settings(root, action),
             Message::FillDivision(action) => self.handle_fill_division(root, action),

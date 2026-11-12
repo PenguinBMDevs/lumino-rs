@@ -53,6 +53,7 @@ impl DialogManager {
             pending_title: None,
             pending_brush_config: None,
             shapes_dir: None,
+            pending_modified_at: None,
         });
     }
 
@@ -65,6 +66,7 @@ impl DialogManager {
             pending_title: Some(title),
             pending_brush_config: None,
             shapes_dir: None,
+            pending_modified_at: None,
         });
     }
 
@@ -77,6 +79,7 @@ impl DialogManager {
             pending_title: None,
             pending_brush_config: None,
             shapes_dir: None,
+            pending_modified_at: None,
         });
     }
 
@@ -89,6 +92,7 @@ impl DialogManager {
             pending_title: None,
             pending_brush_config: Some(config),
             shapes_dir: None,
+            pending_modified_at: None,
         });
     }
 
@@ -104,6 +108,7 @@ impl DialogManager {
             pending_title: None,
             pending_brush_config: None,
             shapes_dir: None,
+            pending_modified_at: None,
         });
     }
 
@@ -118,6 +123,23 @@ impl DialogManager {
             pending_title: None,
             pending_brush_config: None,
             shapes_dir: Some(shapes_dir),
+            pending_modified_at: None,
+        });
+    }
+
+    /// 请求打开自动保存恢复对话框（DEBT-12）。
+    ///
+    /// `path` / `modified_at` 由 Runner 注入（恢复语义与文件系统都在 Runner 侧，
+    /// Dialog 层只负责展示）。
+    pub fn open_autosave_recover(&mut self, path: String, modified_at: String) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::AutosaveRecover,
+            pending_path: Some(path),
+            pending_size_mb: None,
+            pending_title: None,
+            pending_brush_config: None,
+            shapes_dir: None,
+            pending_modified_at: Some(modified_at),
         });
     }
 

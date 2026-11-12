@@ -186,6 +186,10 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         // 保存确认：三个 90px 按钮 + 文案（旧 380×180；实测内容只需 ≈338）
         DialogType::SaveConfirm => DialogSizeHint::auto(),
 
+        // 自动保存恢复（DEBT-12）：完整文件路径是不可断词 token，自动宽度会被
+        // 长路径撑爆 ⇒ 钉住宽度并按文案折行（与「加载确认」同类处理）。
+        DialogType::AutosaveRecover => DialogSizeHint::boxed(520.0),
+
         // ── 宽度只在下限基础上增长：内容宽度可测，但换行宽度需兜底 ────────
         // 找回删除音轨：表格列全 Fixed（240+180+80）⇒ 所需宽度可测；
         // 列变宽时窗口自动跟着变宽（旧值 560 作为下限）
@@ -314,7 +318,7 @@ mod tests {
     use super::*;
 
     /// 全部「真实」对话框类型（`None` 除外）
-    const ALL_DIALOGS: [DialogType; 19] = [
+    const ALL_DIALOGS: [DialogType; 20] = [
         DialogType::CustomPrecision,
         DialogType::Collaboration,
         DialogType::LoadConfirm,
@@ -327,6 +331,7 @@ mod tests {
         DialogType::MemoryMonitor,
         DialogType::RecoverTrack,
         DialogType::SaveConfirm,
+        DialogType::AutosaveRecover,
         DialogType::CloudConnect,
         DialogType::CloudBrowser,
         DialogType::CloudNotice,

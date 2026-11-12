@@ -122,12 +122,29 @@ impl RunnerInner {
         let in_flight = Arc::clone(&self.autosave_in_flight);
         let cleanup_pending = Arc::clone(&self.autosave_cleanup_pending);
         let failed = Arc::clone(&self.autosave_failed);
+        // DEBT-12：只有「本会话已确认可信」的 main 才允许轮换覆盖 backup。
+        // 损坏的 main 在恢复失败路径已置 false，因此不会污染有效备份。
+        let trusted = Arc::clone(&self.autosave_main_trusted);
+        let trusted_for_task = Arc::clone(&trusted);
+        let backup_path = crate::runner::menu::file::auto_save::autosave_backup_path();
         let path_for_log = path.clone();
         tokio::spawn(async move {
             let path_for_task = path.clone();
             let result = tokio::task::spawn_blocking(move || {
                 if let Some(parent) = path_for_task.parent() {
                     let _ = std::fs::create_dir_all(parent);
+                }
+                let main_trusted = trusted_for_task.load(Ordering::SeqCst);
+                if crate::runner::menu::file::auto_save::may_rotate_backup(
+                    main_trusted,
+                    path_for_task.exists(),
+                ) && let Err(e) = std::fs::copy(&path_for_task, &backup_path)
+                {
+                    tracing::warn!(
+                        "自动保存轮换备份失败 {} -> {}: {e}",
+                        path_for_task.display(),
+                        backup_path.display()
+                    );
                 }
                 let project = snapshot.into_project();
                 lumino_export::save_to_archive(&project, &path_for_task)
@@ -137,16 +154,23 @@ impl RunnerInner {
             in_flight.store(false, Ordering::SeqCst);
             if cleanup_pending.swap(false, Ordering::SeqCst) {
                 let _ = std::fs::remove_file(&path_for_log);
+                trusted.store(false, Ordering::SeqCst);
             }
 
             match result {
-                Ok(Ok(())) => tracing::info!("周期自动保存完成: {:?}", path_for_log),
+                Ok(Ok(())) => {
+                    // 本次写入成功 → main 可信，下一轮可以安全轮换成 backup。
+                    trusted.store(true, Ordering::SeqCst);
+                    tracing::info!("周期自动保存完成: {:?}", path_for_log);
+                }
                 Ok(Err(e)) => {
                     failed.store(true, Ordering::SeqCst);
+                    trusted.store(false, Ordering::SeqCst);
                     tracing::warn!("周期自动保存写入失败 {:?}: {e}", path_for_log);
                 }
                 Err(e) => {
                     failed.store(true, Ordering::SeqCst);
+                    trusted.store(false, Ordering::SeqCst);
                     tracing::warn!("周期自动保存任务失败 {:?}: {e}", path_for_log);
                 }
             }

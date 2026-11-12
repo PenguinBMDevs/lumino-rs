@@ -43,6 +43,8 @@ pub enum DialogResult {
     Cancel,
     /// 保存确认对话框结果（关闭 / 打开 / 退出前的未保存更改确认）
     SaveConfirm(crate::message::SaveConfirmAction),
+    /// 自动保存恢复对话框（启动时是否恢复上次会话的自动保存；DEBT-12）
+    AutosaveRecover(crate::message::AutosaveRecoverAction),
     /// 项目设置
     ProjectSettings {
         /// 项目标题

@@ -246,6 +246,21 @@ pub(crate) struct RunnerInner {
     pub(crate) pending_crash_notice: bool,
     /// 启动时待处理的自动保存恢复提示。
     pub(crate) pending_autosave_prompt: bool,
+    /// 应用内恢复对话框已弹出、等待用户选择（DEBT-12）。
+    ///
+    /// 与 `pending_autosave_prompt` 的区别：后者是「还没弹」，本字段是「已弹出、
+    /// 结果未回」。退出清理必须两者都检查，否则会在用户决策前删掉文件。
+    pub(crate) autosave_prompt_pending: bool,
+    /// 恢复询问被用户关闭（未做决定）：正常退出必须**保留**自动保存文件。
+    ///
+    /// 误关窗口不该等于「放弃恢复」——否则关窗 + 正常退出会把用户唯一一份
+    /// 崩溃前内容删掉，下次启动再也看不到候选。
+    pub(crate) autosave_preserve_on_exit: bool,
+    /// 主自动保存文件是否「本会话已确认可信」（DEBT-12）。
+    ///
+    /// 只有可信的 main 才允许在下次写入前轮换为 backup；损坏的 main 在改名
+    /// `*-lost-*` 时同步置 false，防止覆盖有效备份。
+    pub(crate) autosave_main_trusted: Arc<AtomicBool>,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -440,6 +455,9 @@ impl Runner {
             startup_prompt_at: None,
             pending_crash_notice: false,
             pending_autosave_prompt: false,
+            autosave_prompt_pending: false,
+            autosave_preserve_on_exit: false,
+            autosave_main_trusted: Arc::new(AtomicBool::new(false)),
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）

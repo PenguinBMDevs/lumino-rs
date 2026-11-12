@@ -145,6 +145,13 @@ impl DialogWindow {
             DialogType::SaveConfirm => {
                 ui.set_save_confirm_dialog();
             }
+            DialogType::AutosaveRecover => {
+                // DEBT-12：路径与修改时间由 Runner 注入（Dialog 层不碰文件系统）
+                ui.set_autosave_recover_dialog(
+                    pending.pending_path.clone().unwrap_or_default(),
+                    pending.pending_modified_at.clone().unwrap_or_default(),
+                );
+            }
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 // 同步主窗口的云存储快照（连接列表/表单回显/提醒内容）。
                 // 云存储唯一数据源是主窗口 Root，对话框为独立 Root 需拉取。

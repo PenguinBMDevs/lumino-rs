@@ -21,6 +21,8 @@ use crate::storage;
 mod recovery;
 
 pub(crate) use recovery::AutosaveRecovery;
+/// DEBT-12：只有「本会话已确认可信」的 main 才允许轮换覆盖 backup。
+pub(crate) use recovery::may_rotate_backup;
 
 /// 自动保存子目录（配置目录下；与 cloud_tmp / deleted_tracks 同一套布局约定）。
 const AUTOSAVE_DIR_NAME: &str = "autosave";
@@ -114,6 +116,8 @@ impl RunnerInner {
         // 恢复加载/启动提示尚未处理时关闭：保留文件，避免把唯一副本删掉。
         if self.autosave_recovery.is_some()
             || self.pending_autosave_prompt
+            || self.autosave_prompt_pending
+            || self.autosave_preserve_on_exit
             || self.startup_prompt_at.is_some()
         {
             tracing::info!("正常退出：自动保存恢复尚未完成，保留文件");
