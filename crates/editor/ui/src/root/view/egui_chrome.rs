@@ -334,6 +334,14 @@ impl Root {
         self.egui_chrome_model_for(1280.0)
     }
 
+    /// 原生运行时（`lumino-ui-runtime`）使用的整窗外壳模型。
+    ///
+    /// 与叠加层共用同一份 `egui_chrome_model_for`；对外公开是为了让
+    /// winit + wgpu + egui 直连运行时在不依赖 `Host` 的情况下渲染生产外壳。
+    pub fn egui_chrome_model_native(&self, viewport_width: f32) -> ChromeModel {
+        self.egui_chrome_model_for(viewport_width)
+    }
+
     /// 按真实视口宽度构造 egui 外壳快照。
     pub(crate) fn egui_chrome_model_for(&self, viewport_width: f32) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。

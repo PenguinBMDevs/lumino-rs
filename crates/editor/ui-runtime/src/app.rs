@@ -29,6 +29,7 @@ pub struct NativeApp {
     gpu: Option<Gpu>,
     ctx: egui::Context,
     icons: lumino_ui_egui::icons::IconCache,
+    root: Option<lumino_ui::Root>,
     events: Vec<EguiEvent>,
     pointer: Option<Pos2>,
     modifiers: ModifiersState,
@@ -169,6 +170,9 @@ impl ApplicationHandler for NativeApp {
         }
         self.ctx.set_visuals(egui::Visuals::dark());
         self.ctx.set_pixels_per_point(window.scale_factor() as f32);
+        self.root = Some(lumino_ui::Root::new(
+            &lumino_core::storage::config::UiConfig::default(),
+        ));
         self.start = Some(Instant::now());
         self.window = Some(window);
     }
@@ -284,11 +288,15 @@ impl NativeApp {
             ..Default::default()
         };
 
+        let model = self
+            .root
+            .as_ref()
+            .map(|root| root.egui_chrome_model_native(size.width as f32 / ppp))
+            .unwrap_or_else(|| demo_model(0));
         let clicks = &mut self.clicks;
         let mut icons = std::mem::take(&mut self.icons);
         let output = self.ctx.run_ui(raw, |ui| {
             // 直接跑生产 egui 外壳（标题栏 / 工具栏 / 左右栏 / 状态栏）。
-            let model = demo_model(*clicks);
             chrome::show_bands(ui, &model, &mut icons);
 
             // 探针控件：验证输入仍能到达 egui。

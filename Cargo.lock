@@ -5054,7 +5054,9 @@ name = "lumino-ui-runtime"
 version = "0.2.1"
 dependencies = [
  "egui",
+ "lumino-core",
  "lumino-egui-bridge",
+ "lumino-ui",
  "lumino-ui-egui",
  "pollster 0.4.0",
  "tracing",
