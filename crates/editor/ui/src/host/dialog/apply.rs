@@ -76,11 +76,17 @@ impl Host {
         author: String,
         copyright: String,
         use10: bool,
+        i2m: Option<lumino_core::I2mSettings>,
     ) {
         self.root
-            .apply_loaded_project_metadata(author, copyright, use10);
+            .apply_loaded_project_metadata(author, copyright, use10, i2m);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+    }
+
+    /// 当前工程级图片转 MIDI 参数（保存 `.lmpj` / 云保存时写入 metadata）
+    pub fn get_project_i2m_config(&self) -> lumino_core::I2mSettings {
+        self.root.right_sidebar.config.to_settings()
     }
 
     /// 应用工程设置到主窗口

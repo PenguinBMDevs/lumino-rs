@@ -40,6 +40,9 @@ impl Root {
         // 工程级「启用通道 10」同样属于工程数据：关闭/新建工程必须归零，
         // 否则上一工程的色号上限会污染下一工程的生成结果。
         self.editor.editor_state.use10 = false;
+        // 图片转 MIDI 参数（DRAW-030）同属工程数据：重置到默认，
+        // 打开工程时再由 `apply_loaded_project_metadata` 回填。
+        self.right_sidebar.config = crate::right_sidebar::I2mConfig::default();
     }
 
     /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权。
@@ -52,12 +55,17 @@ impl Root {
         author: String,
         copyright: String,
         use10: bool,
+        i2m: Option<lumino_core::I2mSettings>,
     ) {
         self.state.project_settings_dialog.author = author;
         self.state.project_settings_dialog.copyright = copyright;
         self.state.project_settings_dialog.use10 = use10;
         // 生成侧读的是编辑器状态，必须同步，否则「保存了但生成不变」
         self.editor.editor_state.use10 = use10;
+        // DRAW-030：图片转 MIDI 参数随工程恢复；旧工程无该段时保持默认
+        if let Some(settings) = i2m {
+            self.right_sidebar.config = crate::right_sidebar::I2mConfig::from_settings(&settings);
+        }
     }
 
     /// 轻量更新音符总量（UI-015：工程设置对话框打开期间同步刷新）。

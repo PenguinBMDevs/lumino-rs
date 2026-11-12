@@ -97,6 +97,8 @@ pub struct Root {
     pub window_resize_guard: bool,
     /// 图片转 MIDI 后台转换结果接收端（`right_sidebar::ConvertResult`）
     pub(crate) pending_i2m: Option<std::sync::mpsc::Receiver<crate::right_sidebar::ConvertResult>>,
+    /// 本次后台转换对应的缓存键（完成后写入 `right_sidebar.i2m_cache`）
+    pub(crate) pending_i2m_key: Option<crate::right_sidebar::I2mCacheKey>,
     /// 素材扫描结果接收端（后台扫描完成后的素材列表）
     pub(crate) pending_material_scan:
         Option<std::sync::mpsc::Receiver<Vec<crate::right_sidebar::MaterialEntry>>>,
@@ -183,6 +185,7 @@ impl Root {
                 mask_panel: crate::root::mask_panel::MaskPanelState::default(),
                 window_resize_guard: false,
                 pending_i2m: None,
+                pending_i2m_key: None,
                 pending_material_scan: None,
                 pending_winmm_scan: None,
                 pending_midi_devices_scan: None,

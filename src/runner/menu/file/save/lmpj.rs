@@ -30,6 +30,8 @@ struct LmpjSnapshot {
     project_name: String,
     /// 工程级「启用通道 10」（DRAW-032）
     use10: bool,
+    /// 图片转 MIDI 参数（DRAW-030）
+    i2m: lumino_core::I2mSettings,
 }
 
 impl LmpjSnapshot {
@@ -46,6 +48,12 @@ impl LmpjSnapshot {
             .settings
             .get_or_insert_with(Default::default)
             .use10 = Some(self.use10);
+        // DRAW-030：图片转 MIDI 参数随工程落盘（重开工程不丢）
+        project
+            .metadata
+            .settings
+            .get_or_insert_with(Default::default)
+            .i2m = Some(self.i2m);
         project.set_working_time_seconds(self.working_time_seconds);
         project
     }
@@ -67,7 +75,7 @@ impl RunnerInner {
 
     /// 主线程轻量快照：不组包、不排序、不分配逐音符 compact 事件。
     fn snapshot_lmpj_project(&self, save_path: &Path) -> Option<LmpjSnapshot> {
-        let (document, shapes, author, copyright, use10) = {
+        let (document, shapes, author, copyright, use10, i2m) = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             // 单一权威源：无文档 = 没有可保存的音符。
@@ -76,7 +84,8 @@ impl RunnerInner {
             let author = ui.get_project_author();
             let copyright = ui.get_project_copyright();
             let use10 = ui.get_project_use10();
-            (document, shapes, author, copyright, use10)
+            let i2m = ui.get_project_i2m_config();
+            (document, shapes, author, copyright, use10, i2m)
         };
 
         let project_name = save_path
@@ -92,6 +101,7 @@ impl RunnerInner {
             working_time_seconds: self.session_tracker.current_editing_secs(),
             project_name,
             use10,
+            i2m,
         })
     }
 
@@ -246,6 +256,11 @@ mod tests {
             working_time_seconds: 42.0,
             project_name: "Project".into(),
             use10: true,
+            i2m: lumino_core::I2mSettings {
+                start_key: 36,
+                color_count: 8,
+                ..Default::default()
+            },
         };
 
         let project = snapshot.into_project();
@@ -262,6 +277,13 @@ mod tests {
             Some(true),
             "启用通道 10 应随工程落盘"
         );
+        let i2m = project
+            .metadata
+            .settings
+            .as_ref()
+            .and_then(|settings| settings.i2m.clone())
+            .expect("图片转 MIDI 参数应随工程落盘");
+        assert_eq!((i2m.start_key, i2m.color_count), (36, 8));
         assert_eq!(
             project
                 .metadata

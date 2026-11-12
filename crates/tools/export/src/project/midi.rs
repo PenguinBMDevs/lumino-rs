@@ -42,5 +42,11 @@ pub fn project_to_parsed_midi(
             .as_ref()
             .and_then(|settings| settings.use10)
             .unwrap_or(false),
+        // 图片转 MIDI 参数（DRAW-030）；旧工程无该段时为 None（面板保持默认）
+        i2m: project
+            .metadata
+            .settings
+            .as_ref()
+            .and_then(|settings| settings.i2m.clone()),
     })
 }

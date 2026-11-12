@@ -10,12 +10,13 @@ use sidebar_button::sidebar_button;
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{Column, Row, Space, button, container, mouse_area, tooltip};
 use lumino_extras::i18n::{Language, main_translations};
-use lumino_message::{I2mConfigField, RightSidebarAction};
+use lumino_message::{I2mConfigField, I2mSelectField, RightSidebarAction};
 
 use crate::resources::icon::{self, Icon};
 use crate::right_sidebar::core::{
-    RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar, RightSidebarPanel, palette_algorithms,
+    RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar, RightSidebarPanel,
 };
+use crate::right_sidebar::i2m_tables::palette_algorithms;
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 

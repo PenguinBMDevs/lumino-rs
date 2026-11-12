@@ -54,7 +54,7 @@ pub use loop_range::LoopRangeAction;
 pub use mask_panel::MaskPanelAction;
 pub use project_settings::ProjectSettingsAction;
 pub use recover_track::RecoverTrackAction;
-pub use right_sidebar::{I2mConfigField, RightSidebarAction};
+pub use right_sidebar::{I2mConfigField, I2mSelectField, RightSidebarAction};
 pub use save_confirm::SaveConfirmAction;
 pub use settings_dialog::SettingsDialogAction;
 pub use shape_drawer::ShapeDrawerAction;

@@ -4,6 +4,9 @@
 
 pub mod convert;
 pub(crate) mod core;
+pub(crate) mod i2m_cache;
+pub(crate) mod i2m_config;
+pub(crate) mod i2m_tables;
 pub mod material;
 mod material_context_menu;
 pub(crate) mod material_delete_dialog;
@@ -17,7 +20,12 @@ pub use core::{
     DEFAULT_PANEL_WIDTH as RIGHT_SIDEBAR_DEFAULT_WIDTH, MAX_PANEL_WIDTH as RIGHT_SIDEBAR_MAX_WIDTH,
     MIN_PANEL_WIDTH as RIGHT_SIDEBAR_MIN_WIDTH,
     RESIZE_HANDLE_WIDTH as RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH, RightSidebar, RightSidebarPanel,
-    palette_algorithms,
+};
+pub use i2m_cache::{I2mCacheEntry, I2mCacheKey};
+pub use i2m_config::I2mConfig;
+pub use i2m_tables::{
+    I2mBlend, blend_modes, color_id_methods, key_modes, note_length_modes, palette_algorithms,
+    resize_algorithms,
 };
 pub use material::{
     MaterialEntry, MaterialLibrary, MaterialSource, copy_material_to_user_dir,

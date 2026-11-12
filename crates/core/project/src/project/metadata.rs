@@ -174,6 +174,9 @@ pub struct SettingsMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
     pub use10: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// 图片转 MIDI 参数（DRAW-030）：重开工程不丢配置
+    pub i2m: Option<lumino_core::I2mSettings>,
 }
 
 /// 统计信息
@@ -354,6 +357,30 @@ mod tests {
             .nth(1)
             .expect("应包含 [material] 段");
         assert!(!material_section.contains("track_count"));
+    }
+
+    #[test]
+    fn test_i2m_settings_roundtrip() {
+        // DRAW-030：图片转 MIDI 参数随工程落盘，重开恢复
+        let mut meta = ProjectMetadata::default_with_name("I2M");
+        let mut i2m = lumino_core::I2mSettings::default();
+        i2m.start_key = 36;
+        i2m.color_count = 8;
+        i2m.brightness = 15;
+        i2m.palette = "octree".into();
+        i2m.blend = "spread".into();
+        meta.settings = Some(SettingsMetadata {
+            i2m: Some(i2m.clone()),
+            ..Default::default()
+        });
+
+        let toml_str = meta.to_toml_str().expect("序列化失败");
+        let decoded = ProjectMetadata::from_toml_str(&toml_str).expect("反序列化失败");
+        let restored = decoded
+            .settings
+            .and_then(|settings| settings.i2m)
+            .expect("应包含 i2m 段");
+        assert_eq!(restored, i2m);
     }
 
     #[test]

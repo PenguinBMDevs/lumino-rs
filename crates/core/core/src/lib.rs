@@ -6,6 +6,8 @@
 pub mod error;
 /// 运行时文案目录（i18n 长尾覆盖层：原文即 key，见模块文档）
 pub mod i18n;
+/// 图片转 MIDI 的工程级参数（DRAW-030）
+pub mod i2m;
 /// 文件 I/O 基础工具（原子替换等）
 pub mod io;
 /// 系统语言检测与界面语言偏好模块（UI-018）
@@ -24,6 +26,7 @@ pub mod types;
 pub mod view_state;
 
 pub use error::{CoreError, Result};
+pub use i2m::I2mSettings;
 pub use locale::{LanguagePreference, detect_system_language};
 pub use shape::{
     AnchorBend, AreaMap, AreaSpot, BetweenParams, BetweenRole, BetweenSet, ChopParams, ChopPiece,

@@ -3,8 +3,12 @@
 //! 提供多语言支持和调色板管理等扩展功能。
 
 pub mod i18n;
+/// 图片转 MIDI 的颜色后处理（DRAW-030）
+pub mod image_adjust;
 pub mod material;
 pub mod palette;
+
+pub use image_adjust::{Adjust, adjust_bgra};
 
 pub use material::{EmbeddedMaterial, embedded_materials};
 

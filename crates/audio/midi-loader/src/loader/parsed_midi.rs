@@ -230,6 +230,8 @@ pub async fn load_parsed_midi(
         author: String::new(),
         copyright: String::new(),
         use10: false,
+        // 常规 MIDI 文件无图片转 MIDI 参数
+        i2m: None,
     })
 }
 
@@ -306,6 +308,8 @@ pub async fn load_parsed_midi_from_bytes(
         author: String::new(),
         copyright: String::new(),
         use10: false,
+        // 字节加载路径无图片转 MIDI 参数
+        i2m: None,
     })
 }
 

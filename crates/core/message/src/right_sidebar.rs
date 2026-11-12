@@ -22,8 +22,13 @@ pub enum RightSidebarAction {
         /// 编辑文本
         text: String,
     },
-    /// 切换调色板算法（索引指向 `PALETTE_ALGORITHMS`）
-    I2mPaletteChanged(usize),
+    /// 切换 i2m 下拉选项（索引指向对应算法表）
+    I2mSelectionChanged {
+        /// 下拉字段
+        field: I2mSelectField,
+        /// 选项索引
+        index: usize,
+    },
     /// 开始拖拽调整面板宽度
     ResizeDragStarted,
     /// 拖拽中调整面板宽度
@@ -77,4 +82,31 @@ pub enum I2mConfigField {
     TicksPerPixel,
     /// 调色板颜色数（=生成音轨数）
     ColorCount,
+    /// 最长音符（像素行，0=不限）
+    MaxNoteLength,
+    /// 亮度百分比（-100..=100）
+    Brightness,
+    /// 对比度百分比（-100..=100）
+    Contrast,
+    /// 饱和度百分比（-100..=100）
+    Saturation,
+    /// 锐化百分比（0..=100）
+    Sharpen,
+}
+
+/// i2m 转换配置中的下拉字段
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum I2mSelectField {
+    /// 调色板算法
+    Palette,
+    /// key 映射
+    KeyMode,
+    /// 音符长度策略
+    NoteLengthMode,
+    /// 重采样算法
+    ResizeAlgorithm,
+    /// 颜色匹配口径
+    ColorIdMethod,
+    /// 混合模式
+    Blend,
 }

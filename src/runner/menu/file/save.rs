@@ -82,6 +82,12 @@ impl RunnerInner {
                 .settings
                 .get_or_insert_with(Default::default)
                 .use10 = Some(ui.get_project_use10());
+            // DRAW-030：图片转 MIDI 参数同样随素材落盘
+            project
+                .metadata
+                .settings
+                .get_or_insert_with(Default::default)
+                .i2m = Some(ui.get_project_i2m_config());
             project
         };
 

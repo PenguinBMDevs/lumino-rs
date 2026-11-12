@@ -83,6 +83,20 @@ impl Root {
                 let Some(path) = self.right_sidebar.selected_image_path.clone() else {
                     return true;
                 };
+                // 同一图片 + 同一参数：复用上次转换结果（× / √ 之后重开不再重算）
+                let cache_key = crate::right_sidebar::I2mCacheKey::new(
+                    &path,
+                    self.right_sidebar.config.to_settings(),
+                );
+                if let Some(preview) = crate::right_sidebar::I2mCacheEntry::lookup(
+                    &self.right_sidebar.i2m_cache,
+                    &cache_key,
+                ) {
+                    self.i2m_restore_tool = Some(self.toolbar.current_tool);
+                    self.finish_i2m_conversion(preview);
+                    tracing::info!("图片转 MIDI 命中缓存，跳过转换: {}", path.display());
+                    return true;
+                }
                 // 标记转换中：面板按钮禁用 + 编辑器进入等待框选阶段
                 self.right_sidebar.converting = true;
                 // 记录转换前的工具，√ 写入成功后还原
@@ -92,6 +106,7 @@ impl Root {
                 let thread_path = path.clone();
                 let thread_config = self.right_sidebar.config.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
+                self.pending_i2m_key = cache_key;
                 std::thread::spawn(move || {
                     let result =
                         crate::right_sidebar::convert::run_conversion(&thread_path, &thread_config);
@@ -130,15 +145,13 @@ impl Root {
                 true
             }
             I2mConfigTextChanged { field, text } => {
-                // 面板参数输入：仅接受数字，apply_text 内部 clamp 并同步文本缓冲
+                // 面板参数输入：仅接受数字（含负号），apply_text 内部 clamp 并同步文本缓冲
                 self.right_sidebar.config.apply_text(field, &text);
                 true
             }
-            I2mPaletteChanged(index) => {
-                // 面板调色板算法切换（索引指向 palette_algorithms）
-                if index < crate::right_sidebar::palette_algorithms().len() {
-                    self.right_sidebar.config.palette_index = index;
-                }
+            I2mSelectionChanged { field, index } => {
+                // 面板下拉切换（索引指向对应算法表；越界由配置层忽略）
+                self.right_sidebar.config.set_selection(field, index);
                 true
             }
             MaterialLibraryClicked => {
@@ -269,3 +282,6 @@ impl Root {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
