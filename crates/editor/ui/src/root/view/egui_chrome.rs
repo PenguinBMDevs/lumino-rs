@@ -6,9 +6,11 @@
 mod arrangement;
 mod audio_export_panel;
 mod context_menu;
+mod curve_preview;
 mod dialogs;
 mod editor_buttons;
 mod egg;
+mod image_to_midi;
 mod marquee;
 mod mask_panel;
 mod material_delete;

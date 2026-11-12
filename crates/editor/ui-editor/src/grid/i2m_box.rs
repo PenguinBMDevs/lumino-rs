@@ -8,14 +8,10 @@
 
 use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
-use crate::grid::utils::{clip_region_bounds, content_bounds};
+use crate::grid::utils::content_bounds;
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_editor_state::ImageToMidiMode;
+use iced_widget::canvas::Geometry;
 use lumino_ui_core::Renderer;
-use lumino_ui_core::constants::editor::{
-    SELECTION_BOX_FILL_COLOR, SELECTION_BOX_STROKE_COLOR, SELECTION_BOX_STROKE_WIDTH,
-};
 
 /// 按钮与区域框的间距
 const I2M_BUTTON_SPACING: f32 = 8.0;
@@ -67,43 +63,14 @@ pub fn i2m_button_rects(editor: &Editor) -> Option<I2mButtonRects> {
 /// 仅在 `Placing` 阶段绘制；`Selecting` 阶段的框选矩形由
 /// `selection_box::draw` 基于 `EditState::Selecting` 绘制。
 pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
+    _editor: &Editor,
+    _renderer: &Renderer,
     _theme: &lumino_ui_core::Theme,
-    bounds: Rectangle,
+    _bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
-    if editor.editor_state.image_to_midi.mode != ImageToMidiMode::Placing {
-        return None;
-    }
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    let mut has_content = false;
-    let content = content_bounds(editor);
-
-    // 区域框（常驻显示）：超出卷帘内容区的部分强制裁剪（数据不动）
-    // 样式与其他框选框统一：灰色 3px 边框 + 比边框浅的灰色半透明填充
-    if let Some(region) = editor.i2m_region_screen_bounds()
-        && let Some((left, right, top, bottom)) = clip_region_bounds(region, content)
-    {
-        let rect = Rectangle::new(
-            Point::new(left, top),
-            Size::new((right - left).max(1.0), (bottom - top).max(1.0)),
-        );
-        let path = Path::rectangle(rect.position(), rect.size());
-        frame.fill(&path, SELECTION_BOX_FILL_COLOR);
-        let stroke = Stroke::default()
-            .with_width(SELECTION_BOX_STROKE_WIDTH)
-            .with_color(SELECTION_BOX_STROKE_COLOR);
-        frame.stroke(&path, stroke);
-        has_content = true;
-    }
-
-    // √× 悬浮按钮已迁 egui（`ui-egui::editor_action_buttons`）。
-
-    if has_content {
-        Some(frame.into_geometry())
-    } else {
-        None
-    }
+    // 区域框与 √× 按钮均已迁 egui（`ui-egui::image_to_midi` /
+    // `editor_action_buttons`）：iced Canvas 不再绘制。
+    None
 }
 
 #[cfg(test)]

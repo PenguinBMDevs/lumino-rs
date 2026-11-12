@@ -91,6 +91,9 @@ pub(crate) fn clip_rect(rect: Rectangle, content: Rectangle) -> Option<Rectangle
 ///
 /// 与 [`clip_rect`] 等价，仅输入输出为四元组（素材区域框使用习惯）。
 /// 返回裁剪后的 `(left, right, top, bottom)`；完全在内容区外时返回 `None`。
+///
+/// egui 侧改为直接 `Rect::intersect`，本函数仅保留给单元测试做几何对照。
+#[cfg(test)]
 pub(crate) fn clip_region_bounds(
     region: (f32, f32, f32, f32),
     content: Rectangle,

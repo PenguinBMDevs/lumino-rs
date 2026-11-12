@@ -683,6 +683,16 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         tool_panel::clear_triggers(ui.ctx());
     }
 
+    // 图片转 MIDI 区域框（Placing）：在预览之下。
+    if let Some(region) = i2m_region_model(ui.ctx()) {
+        crate::image_to_midi::show(&root, &region);
+    }
+
+    // 曲线工具预览（路径 / 锚点 / 控制柄 / 产物块）。
+    if let Some(preview) = curve_preview_model(ui.ctx()) {
+        crate::curve_preview::show(&root, &preview);
+    }
+
     // 形状工具预览（待确认图形 + 拖拽）：在框选框之上、按钮之下。
     if let Some(preview) = shape_preview_model(ui.ctx()) {
         crate::shape_preview::show(&root, &preview);
@@ -947,6 +957,32 @@ fn shape_preview_model(ctx: &egui::Context) -> Option<crate::shape_preview::Shap
         ))
     })
     .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧曲线预览（空模型 = 不显示）。
+pub fn set_curve_preview(ctx: &egui::Context, model: crate::curve_preview::CurvePreviewModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.curve-preview"), model));
+}
+
+fn curve_preview_model(ctx: &egui::Context) -> Option<crate::curve_preview::CurvePreviewModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::curve_preview::CurvePreviewModel>(egui::Id::unique(
+            "lumino.curve-preview",
+        ))
+    })
+    .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧 I2M 区域框（`None` = 不显示）。
+pub fn set_i2m_region(ctx: &egui::Context, model: crate::image_to_midi::I2mRegionModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.i2m-region"), model));
+}
+
+fn i2m_region_model(ctx: &egui::Context) -> Option<crate::image_to_midi::I2mRegionModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::image_to_midi::I2mRegionModel>(egui::Id::unique("lumino.i2m-region"))
+    })
+    .filter(|model| model.rect.is_some())
 }
 
 /// 记录本帧渲染器入口面板（`None` = 当前不是渲染器入口）。

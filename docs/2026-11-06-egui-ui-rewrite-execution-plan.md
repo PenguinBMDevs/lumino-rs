@@ -3355,10 +3355,34 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.12（下一步）**
+**Task 4.12（第一百一十八步）：曲线预览与 I2M 区域框迁 egui**
 
-1. 迁曲线预览（路径 / 锚点 / 控制柄 / 填充环）与画刷预览、I2M 区域框到 egui；
-2. 迁曲线锚点弯折按钮（Smooth/Corner）与文字工具输入框；
+- **新增 `ui-egui::curve_preview`**：
+  - 曲线段：Corner 锚点走直线，其余走三次贝塞尔（`CubicBezierShape`），
+    固定 1.5px 引导线；
+  - 描边产物：`path_outline_blocks`（与 √ 写入同源）逐块实心矩形；
+  - 锚点：半径 6 实心圆 + 白描边 2px，选中锚点外加一圈；
+  - 控制柄：锚点→控制柄 1px 50% 辅助线 + 8×8 方块 + 白 1px 边框。
+- **几何同源**：`line_tool.paths` / `AnchorBend` / `in_handle_abs` / `out_handle_abs`
+  / `visible_handle_sides` / `selected_anchor` 直接取用；canvas 局部坐标 → 窗口坐标。
+- **新增 `ui-egui::image_to_midi`**：Placing 阶段区域框，灰色 3px 边框 +
+  0.78 灰 35% 填充，按内容区裁剪。
+- **生产 / 原生运行时接线**：`Root::curve_preview_model()` / `i2m_region_model()`
+  → `OverlayFrame` → `chrome::set_curve_preview` / `set_i2m_region`；
+  绘制顺序：I2M 框 → 曲线预览 → 形状预览 → 框选框 → √× 按钮 → 右键菜单。
+- **iced 侧退场**：`i2m_box::draw` 不再产出 Geometry（区域框与按钮均已迁）；
+  `path_outline_blocks` 改 `pub` 供 egui 复用。
+- **真机**（DPI-aware）：C 曲线工具点两下 → 蓝色产物块阶梯 + 细引导线 +
+  锚点圆 + 控制柄方块全部可见（`target/cv-0-crop.png`），√/× 同时叠加。
+- 验收：`lumino-ui` lib 774/774、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.13（下一步）**
+
+1. 迁曲线**填充预览**（切分档位音符块 / 矢量闭环 + 洞）与曲线弯折按钮
+   （Smooth/Corner）到 egui；
+2. 迁文字工具输入框（TextTool overlay）；
 3. 迁力度面板（自动化 / 弯音 / CC），随后切主窗口入口到 `lumino-ui-runtime`，
    删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖，最后摘掉
    `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。
