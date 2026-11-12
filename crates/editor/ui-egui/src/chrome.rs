@@ -704,6 +704,17 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         crate::marquee::show(&root, &marquee);
     }
 
+    // 曲线锚点弯折按钮（曲线 / 折线）：在曲线预览之上、√× 之下。
+    if let Some(buttons) = bend_buttons_model(ui.ctx()) {
+        if let Some(bend) = crate::bend_buttons::show(&root, &buttons) {
+            crate::bend_buttons::push_action(ui.ctx(), bend);
+        }
+        let rects: Vec<egui::Rect> = buttons.buttons.iter().map(|button| button.rect).collect();
+        if !rects.is_empty() {
+            menu::extend_blocked(ui.ctx(), rects);
+        }
+    }
+
     // 编辑器悬浮 √× 按钮（形状 / I2M / 曲线 / 画刷）：盖在卷帘之上，
     // 命中区加入占用，避免按下按钮的同一击又在画布上画音符。
     if let Some(buttons) = editor_buttons(ui.ctx()) {
@@ -983,6 +994,18 @@ fn i2m_region_model(ctx: &egui::Context) -> Option<crate::image_to_midi::I2mRegi
         d.get_temp::<crate::image_to_midi::I2mRegionModel>(egui::Id::unique("lumino.i2m-region"))
     })
     .filter(|model| model.rect.is_some())
+}
+
+/// 记录本帧曲线弯折按钮（空模型 = 不显示）。
+pub fn set_bend_buttons(ctx: &egui::Context, model: crate::bend_buttons::BendButtonsModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.bend-buttons"), model));
+}
+
+fn bend_buttons_model(ctx: &egui::Context) -> Option<crate::bend_buttons::BendButtonsModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::bend_buttons::BendButtonsModel>(egui::Id::unique("lumino.bend-buttons"))
+    })
+    .filter(|model| !model.is_empty())
 }
 
 /// 记录本帧渲染器入口面板（`None` = 当前不是渲染器入口）。

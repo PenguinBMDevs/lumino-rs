@@ -52,6 +52,10 @@ pub struct CurvePreviewModel {
     pub handles: Vec<Rect>,
     /// 锚点。
     pub anchors: Vec<AnchorMark>,
+    /// 填充预览：切分音符块。
+    pub fill_blocks: Vec<Rect>,
+    /// 填充预览：矢量闭环（tick/key 已转换为窗口点）。
+    pub fill_loops: Vec<Vec<Pos2>>,
 }
 
 impl CurvePreviewModel {
@@ -61,6 +65,8 @@ impl CurvePreviewModel {
             && self.blocks.is_empty()
             && self.anchors.is_empty()
             && self.handles.is_empty()
+            && self.fill_blocks.is_empty()
+            && self.fill_loops.is_empty()
     }
 }
 
@@ -69,6 +75,7 @@ pub fn show(ui: &egui::Ui, model: &CurvePreviewModel) {
     let painter = ui.painter();
     let base = theme::accent_strong();
     let helper = base.gamma_multiply(0.5);
+    let fill = base.gamma_multiply(0.35);
     for segment in &model.segments {
         match *segment {
             CurveSegment::Line(a, b) => {
@@ -85,6 +92,22 @@ pub fn show(ui: &egui::Ui, model: &CurvePreviewModel) {
                 ));
             }
         }
+    }
+    for block in &model.fill_blocks {
+        if block.width() > 0.0 && block.height() > 0.0 {
+            painter.rect_filled(*block, 0, fill);
+        }
+    }
+    for points in &model.fill_loops {
+        if points.len() < 3 {
+            continue;
+        }
+        painter.add(egui::Shape::Path(egui::epaint::PathShape {
+            points: points.clone(),
+            closed: true,
+            fill,
+            stroke: Stroke::new(1.0, base).into(),
+        }));
     }
     for block in &model.blocks {
         if block.width() > 0.0 && block.height() > 0.0 {

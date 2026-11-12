@@ -3378,11 +3378,34 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.13（下一步）**
+**Task 4.13（第一百一十九步）：曲线填充预览与弯折按钮迁 egui**
 
-1. 迁曲线**填充预览**（切分档位音符块 / 矢量闭环 + 洞）与曲线弯折按钮
-   （Smooth/Corner）到 egui；
-2. 迁文字工具输入框（TextTool overlay）；
+- **填充预览**：`ui-editor` 新增无 iced 的 `FillPreview`（切分音符块 + 填充闭环）；
+  egui 侧按块画半透明矩形，或按闭环用 `PathShape` 填充 + 轮廓描边。
+- **弯折按钮**（`ui-egui::bend_buttons`）：52×20、圆角 4、11px 文本；
+  当前态主题主色 + 白字 + 白边，另一态弱底 + 常规文字；两个按钮矩形
+  加入 `menu::blocked`，不会同时命中画布。
+- **生产接线补齐**：`Root::bend_buttons_model()` / `bend_button_message()`
+  → `OverlayFrame.bend_buttons` → `actions.rs` 分发
+  `Message::EditorAction(LineToolBend(...))`（此前只接了运行时，生产会丢动作）。
+- **iced 侧退场**：删除 `line_tool_box` 的弯折按钮绘制与 `program_impl` 命中，
+  `tr!` 导入移除。
+- **无头验证**：
+  - `ui` 单测 2 条：中间锚点 → 两枚按钮 + `LineToolBend` 映射；端点锚点 → 无按钮；
+  - `bend_buttons_bands.rs` 3 条：两个按钮分别回传 Smooth/Corner、按钮占用、空模型零占用。
+- **真机**（DPI-aware）：C 曲线两点 → 点线段中点插入中间锚点（自动选中）→
+  「曲线（选中）/ 折线」按钮出现在锚点上方；点「折线」→ 日志
+  `egui 弯折按钮：Corner`。截图 `target/bb5-crop.png`。
+- 已知限制：矢量闭环用 egui `PathShape` 填充（凸多边形完全正确；
+  凹多边形填充需后续自定义三角化），切分档位走音符块不受影响。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试（含新 3 用例）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.14（下一步）**
+
+1. 文字工具输入框（TextTool overlay）迁 egui；
+2. 曲线矢量填充的凹多边形三角化（消除 PathShape 凸性限制）；
 3. 迁力度面板（自动化 / 弯音 / CC），随后切主窗口入口到 `lumino-ui-runtime`，
    删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖，最后摘掉
    `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

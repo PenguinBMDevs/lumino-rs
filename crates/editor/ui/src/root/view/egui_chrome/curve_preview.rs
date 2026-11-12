@@ -45,6 +45,21 @@ impl Root {
         let mut connectors = Vec::new();
         let mut handles = Vec::new();
         let mut anchors = Vec::new();
+        let mut fill_blocks = Vec::new();
+        let mut fill_loops = Vec::new();
+
+        if let Some(fill) = lumino_ui_editor::grid::line_tool_box::fill_preview(editor) {
+            for (t0, t1, key) in fill.blocks {
+                fill_blocks.push(to_rect(t0, t1, key));
+            }
+            for lp in fill.loops {
+                fill_loops.push(
+                    lp.iter()
+                        .map(|&(tick, key)| to_point((tick, key)))
+                        .collect(),
+                );
+            }
+        }
 
         for (pi, path) in line.paths.iter().enumerate() {
             for pair in path.windows(2) {
@@ -92,12 +107,20 @@ impl Root {
             }
         }
 
-        CurvePreviewModel {
+        let model = CurvePreviewModel {
             segments,
             blocks,
             connectors,
             handles,
             anchors,
+            fill_blocks,
+            fill_loops,
+        };
+        if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
+            let points: Vec<(f32, f32)> =
+                model.anchors.iter().map(|a| (a.pos.x, a.pos.y)).collect();
+            tracing::info!(?points, "DEBUG curve anchors");
         }
+        model
     }
 }

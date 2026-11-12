@@ -91,6 +91,8 @@ struct OverlayFrame<'a> {
     curve_preview: lumino_ui_egui::curve_preview::CurvePreviewModel,
     /// 图片转 MIDI 区域框。
     i2m_region: lumino_ui_egui::image_to_midi::I2mRegionModel,
+    /// 曲线弯折按钮（空 = 不显示）。
+    bend_buttons: lumino_ui_egui::bend_buttons::BendButtonsModel,
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
@@ -228,6 +230,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_shape_preview(&ctx, frame.shape_preview.clone());
         lumino_ui_egui::chrome::set_curve_preview(&ctx, frame.curve_preview.clone());
         lumino_ui_egui::chrome::set_i2m_region(&ctx, frame.i2m_region);
+        lumino_ui_egui::chrome::set_bend_buttons(&ctx, frame.bend_buttons.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -474,6 +477,7 @@ impl Host {
             shape_preview: self.root.shape_preview_model(),
             curve_preview: self.root.curve_preview_model(),
             i2m_region: self.root.i2m_region_model(),
+            bend_buttons: self.root.bend_buttons_model(),
             render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),

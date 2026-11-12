@@ -73,23 +73,8 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                     // 图片转 MIDI / 曲线 / 形状 / 画刷的悬浮 √× 按钮已迁 egui
                     // （`ui-egui::editor_action_buttons`，命中区本帧加入占用），
                     // iced Canvas 不再做按钮命中，避免同一击双触发。
-                    // 曲线工具：选中锚点的弯折切换（DRAW-042，仍在 iced 绘制）
-                    if self.editor.current_tool() == Tool::Curve
-                        && let Some(btns) =
-                            crate::grid::line_tool_box::line_bend_button_rects(self.editor)
-                    {
-                        if btns.smooth.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::LineToolBend(lumino_editor_state::AnchorBend::Smooth),
-                            )));
-                        }
-                        if btns.corner.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::LineToolBend(lumino_editor_state::AnchorBend::Corner),
-                            )));
-                        }
-                    }
-                    // 形状工具 / 画刷的 √× 按钮已迁 egui（见上）。
+                    // 曲线工具：弯折按钮已迁 egui（`ui-egui::bend_buttons`）；
+                    // 形状工具 / 画刷的 √× 按钮也已迁 egui（见上）。
                     return self.handle_left_press(state, local_pos);
                 }
             }

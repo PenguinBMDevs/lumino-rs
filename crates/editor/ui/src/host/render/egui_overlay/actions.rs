@@ -72,6 +72,7 @@ pub(super) struct OverlayActions {
     pub titlebar: Option<lumino_ui_egui::chrome::TitlebarAction>,
     pub piano_roll_menu: Option<lumino_message::PianoRollContextMenuAction>,
     pub editor_buttons: Option<lumino_ui_egui::editor_action_buttons::EditorButtonAction>,
+    pub bend_buttons: Option<lumino_editor_state::AnchorBend>,
 }
 
 impl OverlayActions {
@@ -116,6 +117,7 @@ impl OverlayActions {
             titlebar: lumino_ui_egui::chrome::take_titlebar_action(ctx),
             piano_roll_menu: lumino_ui_egui::piano_roll_context_menu::take_action(ctx),
             editor_buttons: lumino_ui_egui::editor_action_buttons::take_action(ctx),
+            bend_buttons: lumino_ui_egui::bend_buttons::take_action(ctx),
         }
     }
 }
@@ -136,6 +138,11 @@ impl Host {
         if let Some(action) = actions.editor_buttons {
             tracing::info!("egui 编辑器按钮：{action:?}");
             let message = self.root.editor_button_message(action);
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(bend) = actions.bend_buttons {
+            tracing::info!("egui 弯折按钮：{bend:?}");
+            let message = self.root.bend_button_message(bend);
             self.dispatch_overlay_message(message);
         }
         if let Some(index) = actions.menu

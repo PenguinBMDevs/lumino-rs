@@ -5,6 +5,7 @@
 
 mod arrangement;
 mod audio_export_panel;
+mod bend_buttons;
 mod context_menu;
 mod curve_preview;
 mod dialogs;
@@ -396,6 +397,11 @@ impl Root {
         }
         if let Some(action) = lumino_ui_egui::editor_action_buttons::take_action(ctx) {
             let message = self.editor_button_message(action);
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(bend) = lumino_ui_egui::bend_buttons::take_action(ctx) {
+            let message = self.bend_button_message(bend);
             self.update(message);
             applied += 1;
         }

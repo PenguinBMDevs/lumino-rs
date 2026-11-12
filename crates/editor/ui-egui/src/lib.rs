@@ -12,6 +12,7 @@
 
 pub mod audio_export;
 pub mod batch_edit;
+pub mod bend_buttons;
 pub mod brush_settings;
 #[cfg(feature = "capture")]
 pub mod capture;

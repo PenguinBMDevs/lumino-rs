@@ -20,7 +20,6 @@ use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
 use crate::interaction::line_tool::fill::region::{FillRegion, fill_region};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_core::tr;
 use lumino_editor_state::AnchorBend;
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
@@ -309,48 +308,7 @@ pub fn draw(
         has_content = true;
     }
 
-    // 选中锚点的弯折切换：曲线 / 折线两态（DRAW-042）
-    if let Some(btns) = line_bend_button_rects(editor) {
-        let palette = theme.extended_palette();
-        let selected_bg = palette.primary.strong.color;
-        let normal_bg = palette.background.weak.color;
-        let text_color = palette.background.neutral.text;
-        for (rect, label, bend) in [
-            (btns.smooth, tr!("曲线"), AnchorBend::Smooth),
-            (btns.corner, tr!("折线"), AnchorBend::Corner),
-        ] {
-            let selected = btns.current == bend;
-            let path = Path::rounded_rectangle(
-                rect.position(),
-                rect.size(),
-                iced_core::border::Radius::from(4.0),
-            );
-            frame.fill(&path, if selected { selected_bg } else { normal_bg });
-            frame.stroke(
-                &path,
-                Stroke::default().with_width(1.0).with_color(if selected {
-                    white
-                } else {
-                    anchor_color
-                }),
-            );
-            // canvas 文本必须用 Advanced shaping：Basic 不会走系统 CJK 回退，
-            // 中文会显示成“口口”。
-            frame.fill_text(canvas::Text {
-                content: label.to_string(),
-                position: Point::new(rect.x + rect.width * 0.5, rect.y + 4.0),
-                max_width: rect.width,
-                line_height: iced_core::text::LineHeight::Relative(1.0),
-                size: iced_core::Pixels(11.0),
-                color: if selected { white } else { text_color },
-                font: lumino_ui_core::font::ui_font(),
-                align_x: iced_core::alignment::Horizontal::Center.into(),
-                align_y: iced_core::alignment::Vertical::Top,
-                shaping: iced_core::text::Shaping::Advanced,
-            });
-        }
-        has_content = true;
-    }
+    // 弯折切换按钮已迁 egui（`ui-egui::bend_buttons`）。
 
     // 共享悬浮按钮（存在完整路径后显示）已迁 egui：`ui-egui::editor_action_buttons`。
 
@@ -359,6 +317,24 @@ pub fn draw(
     } else {
         None
     }
+}
+
+/// 曲线填充预览（渲染层用；无 iced 依赖）。
+#[derive(Debug, Clone, Default)]
+pub struct FillPreview {
+    /// 切分档位开启时的逐条音符块 `(start_tick, end_tick, key)`；空 = 走矢量闭环。
+    pub blocks: Vec<(f32, f32, f32)>,
+    /// 需要显示的内部填充闭环（tick/key，首尾重复）。
+    pub loops: Vec<Vec<(f32, f32)>>,
+}
+
+/// 计算曲线填充预览（与 √ 生成的音符同源）。
+pub fn fill_preview(editor: &Editor) -> Option<FillPreview> {
+    let region = fill_region(editor)?;
+    Some(FillPreview {
+        blocks: region.blocks,
+        loops: region.filled_loops,
+    })
 }
 
 /// 构建填充路径（画布坐标）：填充边缘 = 闭环几何轮廓本身
