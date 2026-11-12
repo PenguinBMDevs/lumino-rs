@@ -3430,10 +3430,35 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 零基线改动。
 
-**Task 4.15（下一步）**
+**Task 4.15（第一百二十一步）：力度 / CC / Tempo 面板骨架迁 egui**
+
+- **面板结构**：`ui-egui::velocity_panel` 绘制工具栏（模式按钮 / CC 下拉 / 右侧信息）、
+  垂直网格（小节 / 拍 / 半拍）、水平网格与刻度标签、顶部 resize 手柄视觉。
+  **数据曲线仍由 `lumino-gfx` 画进底层纹理**（力度柱 / CC 折线 / Tempo 折线），
+  面板区域不铺背景——铺色会盖掉 gfx 曲线。
+- **CC 下拉**：自绘 129 项滚动列表（Bend + CC0..127），弹层矩形精确加入
+  `menu::blocked`，不会把点击漏给 iced 的隐藏 pick_list；数据区不占用，
+  力度/CC 编辑仍由 iced Canvas 处理（本轮不动输入语义）。
+- **动作**：`VelocityPanelAction::{ToggleMode, CcSelected}` → 生产
+  `Message::Velocity(VelocityAction::...)`；`OverlayFrame.velocity_panel` +
+  `actions.rs` + 原生运行时全部接线。
+- **几何**：面板 = 画布下方 20px 滚动条起、高度 `visual.velocity_panel_height`；
+  工具栏 28px；网格与刻度复用 `VelocityCanvas::velocity_to_y` /
+  `bend_value_to_y` / `tempo_bpm_to_y` / `generate_tempo_levels`（与 iced 同源）。
+- **无头验证**（`velocity_panel_bands.rs`，2 条）：模式按钮 → ToggleMode；
+  工具栏占用、数据区不占用。
+- **真机**（DPI-aware）：点左栏自动化路由 → 面板出现（工具栏 + 网格 + 刻度）；
+  点模式按钮两次 → 日志 `egui 力度面板：ToggleMode` ×2，切到 CC 模式后
+  CC 选择器显示 `1: Modulation Wheel`。截图 `target/vp3-0/1/2-crop.png`。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试（含新 2 条）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.16（下一步）**
 
 1. 曲线矢量填充的凹多边形三角化（消除 `PathShape` 凸性限制）；
-2. 迁力度面板（自动化 / 弯音 / CC）；
+2. 把力度面板的**编辑输入**（拖拽力度柱 / CC 节点 / Tempo 节点 / resize）
+   从 iced Canvas 迁到 egui；
 3. 切主窗口入口到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
    `host/event/window/*` 的 iced 依赖，最后摘掉
    `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

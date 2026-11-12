@@ -74,6 +74,7 @@ pub(super) struct OverlayActions {
     pub editor_buttons: Option<lumino_ui_egui::editor_action_buttons::EditorButtonAction>,
     pub bend_buttons: Option<lumino_editor_state::AnchorBend>,
     pub text_tool: Option<lumino_ui_egui::text_tool::TextToolAction>,
+    pub velocity_panel: Option<lumino_ui_egui::velocity_panel::VelocityPanelAction>,
 }
 
 impl OverlayActions {
@@ -120,6 +121,7 @@ impl OverlayActions {
             editor_buttons: lumino_ui_egui::editor_action_buttons::take_action(ctx),
             bend_buttons: lumino_ui_egui::bend_buttons::take_action(ctx),
             text_tool: lumino_ui_egui::text_tool::take_action(ctx),
+            velocity_panel: lumino_ui_egui::velocity_panel::take_action(ctx),
         }
     }
 }
@@ -150,6 +152,11 @@ impl Host {
         if let Some(action) = actions.text_tool {
             tracing::info!("egui 文字工具：{action:?}");
             let message = self.root.text_tool_message(action);
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.velocity_panel {
+            tracing::info!("egui 力度面板：{action:?}");
+            let message = self.root.velocity_panel_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(index) = actions.menu

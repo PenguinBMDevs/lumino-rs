@@ -95,6 +95,8 @@ struct OverlayFrame<'a> {
     bend_buttons: lumino_ui_egui::bend_buttons::BendButtonsModel,
     /// 文字工具覆盖层（None = 不显示）。
     text_tool: Option<lumino_ui_egui::text_tool::TextToolModel>,
+    /// 力度 / CC / Tempo 面板骨架（None = 不可见）。
+    velocity_panel: Option<lumino_ui_egui::velocity_panel::VelocityPanelModel>,
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
@@ -234,6 +236,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_i2m_region(&ctx, frame.i2m_region);
         lumino_ui_egui::chrome::set_bend_buttons(&ctx, frame.bend_buttons.clone());
         lumino_ui_egui::chrome::set_text_tool(&ctx, frame.text_tool.clone());
+        lumino_ui_egui::chrome::set_velocity_panel(&ctx, frame.velocity_panel.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -482,6 +485,7 @@ impl Host {
             i2m_region: self.root.i2m_region_model(),
             bend_buttons: self.root.bend_buttons_model(),
             text_tool: self.root.text_tool_model(),
+            velocity_panel: self.root.velocity_panel_model(),
             render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),

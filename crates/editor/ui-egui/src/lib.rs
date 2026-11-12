@@ -50,6 +50,7 @@ pub mod shape_preview;
 pub mod speed_change;
 pub mod text_tool;
 pub mod theme;
+pub mod velocity_panel;
 pub mod video_clip_timeline;
 pub mod video_export;
 pub mod video_export_overlay;

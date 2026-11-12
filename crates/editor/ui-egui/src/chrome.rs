@@ -610,6 +610,18 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         }
     }
 
+    // 力度 / CC / Tempo 面板骨架：工具栏 + 网格 + 刻度标签。
+    // 数据曲线由 gfx 画进底层纹理；本层不铺背景（否则盖住曲线）。
+    if let Some(panel) = velocity_panel_model(ui.ctx()) {
+        let (action, blocked) = crate::velocity_panel::show(&root, &panel);
+        if let Some(action) = action {
+            crate::velocity_panel::push_action(ui.ctx(), action);
+        }
+        if !blocked.is_empty() {
+            menu::extend_blocked(ui.ctx(), blocked);
+        }
+    }
+
     Panel::bottom("lumino-statusbar-band")
         .exact_size(layout::STATUSBAR_H)
         .resizable(false)
@@ -1018,6 +1030,23 @@ fn bend_buttons_model(ctx: &egui::Context) -> Option<crate::bend_buttons::BendBu
         d.get_temp::<crate::bend_buttons::BendButtonsModel>(egui::Id::unique("lumino.bend-buttons"))
     })
     .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧力度面板骨架（`None` = 面板不可见）。
+pub fn set_velocity_panel(
+    ctx: &egui::Context,
+    model: Option<crate::velocity_panel::VelocityPanelModel>,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.velocity-panel"), model));
+}
+
+fn velocity_panel_model(ctx: &egui::Context) -> Option<crate::velocity_panel::VelocityPanelModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<crate::velocity_panel::VelocityPanelModel>>(egui::Id::unique(
+            "lumino.velocity-panel",
+        ))
+    })
+    .flatten()
 }
 
 /// 记录本帧文字工具覆盖层（`None` = 不显示）。

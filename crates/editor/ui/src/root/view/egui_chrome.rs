@@ -32,6 +32,7 @@ mod titlebar;
 mod toast;
 mod tool_panel;
 mod toolbar;
+mod velocity_panel;
 mod video_clip_timeline;
 mod video_export;
 mod video_preview;
@@ -408,6 +409,11 @@ impl Root {
         }
         if let Some(action) = lumino_ui_egui::text_tool::take_action(ctx) {
             let message = self.text_tool_message(action);
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = lumino_ui_egui::velocity_panel::take_action(ctx) {
+            let message = self.velocity_panel_message(action);
             self.update(message);
             applied += 1;
         }

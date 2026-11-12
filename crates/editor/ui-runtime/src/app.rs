@@ -605,6 +605,12 @@ impl NativeApp {
             &self.ctx,
             self.root.as_ref().and_then(|root| root.text_tool_model()),
         );
+        lumino_ui_egui::chrome::set_velocity_panel(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .and_then(|root| root.velocity_panel_model()),
+        );
 
         let raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, logical)),
