@@ -48,6 +48,7 @@ mod mask_panel;
 mod memory;
 mod mixer_panel;
 mod state;
+pub(crate) mod video_clip_math;
 mod view;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;

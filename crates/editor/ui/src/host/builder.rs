@@ -162,6 +162,12 @@ impl Host {
             root.mixer_panel.open = true;
             root.mixer_panel.maximized = true;
         }
+        // 调试开关：启动即进入渲染器入口面板（`LUMINO_RENDERER_PANEL=1`）。
+        // 用途：验证 egui 自算几何的轨道占位 / 16:9 预览 / 时间轴 / 导出设置。
+        if std::env::var("LUMINO_RENDERER_PANEL").is_ok_and(|v| v != "0") {
+            root.sidebar.active_group = Some(lumino_ui_core::sidebar_event::GroupId::Renderer);
+            root.sidebar.piano_roll_visible = false;
+        }
         // 调试开关：启动即打开遮罩参数面板（`LUMINO_MASK_PANEL=1`）。
         // 用途：验证 egui 面板的绘制与命中（真机入口需要先选中形状再右键）。
         if std::env::var("LUMINO_MASK_PANEL").is_ok_and(|v| v != "0") {

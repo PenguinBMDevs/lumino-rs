@@ -345,6 +345,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         arrangement::push_action(ui.ctx(), action);
     }
 
+    // 渲染器入口面板（轨道占位 / 16:9 预览 / 时间轴卡片 / 导出设置）：
+    // 先画面板底，时间轴内部与纹理预览随后叠加。
+    if let Some(panel) = renderer_panel_model(ui.ctx()) {
+        crate::renderer_panel::show(&root, &panel);
+    }
+
     // 视频剪辑时间轴（渲染器入口面板内）：先默认关闭，仅做与 iced 的像素对照。
     if video_timeline_enabled()
         && let Some((rect, timeline)) = video_timeline(ui.ctx())
@@ -840,4 +846,21 @@ pub fn set_egg(ctx: &egui::Context, model: Option<EggModel>) {
 fn egg_model(ctx: &egui::Context) -> Option<EggModel> {
     ctx.data(|d| d.get_temp::<Option<EggModel>>(egui::Id::unique("lumino.about-egg")))
         .flatten()
+}
+
+/// 记录本帧渲染器入口面板（`None` = 当前不是渲染器入口）。
+pub fn set_renderer_panel(
+    ctx: &egui::Context,
+    model: Option<crate::renderer_panel::RendererPanelModel>,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.renderer-panel"), model));
+}
+
+fn renderer_panel_model(ctx: &egui::Context) -> Option<crate::renderer_panel::RendererPanelModel> {
+    ctx.data(|d| {
+        d.get_temp::<Option<crate::renderer_panel::RendererPanelModel>>(egui::Id::unique(
+            "lumino.renderer-panel",
+        ))
+    })
+    .flatten()
 }

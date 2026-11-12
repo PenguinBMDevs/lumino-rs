@@ -42,7 +42,7 @@ impl Root {
     pub(crate) fn clip_preview_tick(&self) -> Option<u64> {
         let source_len = self.clip_real_duration_secs() as f32;
         let src_secs = self.state.video_clip.video_source_secs_at(source_len)?;
-        Some(crate::view::video_clip::timeline::seconds_to_ticks(
+        Some(crate::root::video_clip_math::seconds_to_ticks(
             src_secs.max(0.0) as f64,
             self.editor.editor_state.view.ppq as u32,
             &self.tempo_pairs(),
@@ -53,11 +53,7 @@ impl Root {
     pub(crate) fn clip_real_duration_secs(&self) -> f64 {
         let v = &self.editor.editor_state.view;
         let tempos = self.tempo_pairs();
-        crate::view::video_clip::timeline::duration_seconds(
-            self.clip_real_total_ticks(),
-            v.ppq,
-            &tempos,
-        )
+        crate::root::video_clip_math::duration_seconds(self.clip_real_total_ticks(), v.ppq, &tempos)
     }
 
     /// 剪辑面板是否处于首级入口（Renderer 分组且未进入子面板/瀑布流模式）
@@ -101,7 +97,7 @@ impl Root {
                 lumino_ui_egui::video_clip_timeline::PIXELS_PER_SEC * self.state.video_clip.zoom;
             let pos = self.state.video_clip.clip_position_secs;
             self.state.video_clip.timeline_scroll_x =
-                (pos * pps_zoom - crate::view::video_clip::layout::PLAYHEAD_X).max(0.0);
+                (pos * pps_zoom - crate::root::video_clip_math::PLAYHEAD_X).max(0.0);
         }
     }
 
@@ -262,7 +258,7 @@ mod tests {
 
     /// 期望的画面锚点 tick（与生产实现同一换算，用于对齐断言）
     fn expected_tick(root: &Root, source_secs: f32) -> u64 {
-        crate::view::video_clip::timeline::seconds_to_ticks(
+        crate::root::video_clip_math::seconds_to_ticks(
             source_secs as f64,
             root.editor.editor_state.view.ppq as u32,
             &root.tempo_pairs(),

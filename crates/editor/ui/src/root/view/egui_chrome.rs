@@ -12,6 +12,7 @@ mod material_delete;
 mod menu;
 mod mixer;
 mod palette;
+mod renderer_panel;
 mod right_sidebar;
 mod settings_audio;
 mod settings_pages;

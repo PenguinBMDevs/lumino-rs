@@ -35,6 +35,7 @@ pub mod memory_monitor;
 pub mod mixer;
 pub mod project_settings;
 pub mod recover_track;
+pub mod renderer_panel;
 pub mod scene;
 pub mod settings;
 pub mod shape_canvas;

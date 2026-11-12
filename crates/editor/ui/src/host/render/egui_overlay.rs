@@ -66,6 +66,8 @@ struct OverlayFrame<'a> {
     shape_canvas: Option<lumino_ui_egui::shape_canvas::ShapeCanvasModel>,
     /// 视频导出面板（整块替换右侧内容区）。
     video_export: Option<lumino_ui_egui::chrome::VideoExportPanelModel>,
+    /// 渲染器入口面板（轨道 / 16:9 预览 / 时间轴卡片 / 导出设置）。
+    renderer_panel: Option<lumino_ui_egui::renderer_panel::RendererPanelModel>,
     /// 编辑器画布（卷帘 / 走带）离屏纹理；`Some` 时 egui 整窗采样它作底层。
     editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 走带标尺模型；`Some` 且开关打开时由 egui 绘制。
@@ -199,6 +201,7 @@ impl EguiOverlay {
         // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
+        lumino_ui_egui::chrome::set_renderer_panel(&ctx, frame.renderer_panel.clone());
         lumino_ui_egui::chrome::set_mixer(&ctx, frame.mixer.clone());
         lumino_ui_egui::chrome::set_material_delete(&ctx, frame.material_delete.clone());
         lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
@@ -313,6 +316,30 @@ impl Host {
         let logical_width = size.width as f32 / pixels_per_point;
         let logical_height = size.height as f32 / pixels_per_point;
         let model = self.root.egui_chrome_model_for(logical_width);
+        // 主内容区（标题栏下、状态栏上）：渲染器入口面板 / 时间轴 / 预览共用一份几何。
+        let window_area = egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(logical_width, logical_height),
+        );
+        let content_area = {
+            let left = model
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.total_width())
+                .unwrap_or(48.0);
+            let top = if model.titlebar.is_some() {
+                lumino_ui_egui::layout::TITLEBAR_H
+            } else {
+                0.0
+            };
+            egui::Rect::from_min_max(
+                egui::pos2(left, top),
+                egui::pos2(
+                    logical_width,
+                    (logical_height - lumino_ui_egui::layout::STATUSBAR_H).max(top),
+                ),
+            )
+        };
         // 形状抽屉：面板 + 画布都由 egui 绘制（iced 只保留标题栏）。
         let shape_panel_rect = (self.root.state.dialog_type
             == crate::state::root_state::DialogType::ShapeDrawer)
@@ -414,10 +441,11 @@ impl Host {
             shape_drawer,
             shape_canvas,
             video_export,
+            renderer_panel: self.root.renderer_panel_model(content_area),
             arrangement: self.root.arrangement_model(),
-            video_timeline: self.root.video_timeline_model(),
+            video_timeline: self.root.video_timeline_model(content_area),
             material_delete: self.root.material_delete_model(),
-            video_preview: self.root.video_preview_model(),
+            video_preview: self.root.video_preview_model(window_area, content_area),
             mask_panel: self.root.mask_panel_model(),
             toast: self.root.egui_toast_model(),
             help_tip: self.root.egui_help_tip_model(),

@@ -1,7 +1,7 @@
-//! 视频剪辑时间轴：生产状态 → egui 模型 + 真实矩形。
+//! 视频剪辑时间轴：生产状态 → egui 模型 + 矩形。
 //!
-//! 矩形不按常量正推（预览卡会被收缩/居中，实测差 ≈172 逻辑像素），
-//! 而是读 `rect_probe` 在 iced 布局里记录的真实 bounds。
+//! 矩形由 `root::video_clip_math::renderer_panel_layout` 单源计算（与渲染器面板、
+//! 预览纹理同一份），不再读 iced 布局探针。
 
 use lumino_message::video_clip::{ClipTrack, ClipTrimEdge, VideoClipAction};
 use lumino_ui_egui::video_clip_timeline::{
@@ -11,17 +11,17 @@ use lumino_ui_egui::video_clip_timeline::{
 use crate::root::Root;
 
 impl Root {
-    /// 渲染器入口面板里的时间轴模型（含真实矩形）；不在该面板时返回 `None`。
-    pub(crate) fn video_timeline_model(&self) -> Option<(egui::Rect, VideoTimelineModel)> {
+    /// 渲染器入口面板里的时间轴模型（几何由 `video_clip_math` 单源计算，不再读 iced 探针）。
+    pub(crate) fn video_timeline_model(
+        &self,
+        area: egui::Rect,
+    ) -> Option<(egui::Rect, VideoTimelineModel)> {
         if !self.is_renderer_entry_active() {
             return None;
         }
-        let Some(bounds) = crate::view::video_clip::rect_probe::last_rect("renderer::clip_canvas")
-        else {
-            tracing::warn!("DEBUG clip: no rect");
-            return None;
-        };
-        if bounds.width <= 0.0 || bounds.height <= 0.0 {
+        let layout = crate::root::video_clip_math::renderer_panel_layout(area);
+        let bounds = layout.clip_canvas;
+        if bounds.width() <= 0.0 || bounds.height() <= 0.0 {
             return None;
         }
 
@@ -29,7 +29,7 @@ impl Root {
         let ppq = self.editor.editor_state.view.ppq;
         let tempos = self.tempo_pairs();
         let duration_secs =
-            crate::view::video_clip::timeline::duration_seconds(total_ticks, ppq, &tempos) as f32;
+            crate::root::video_clip_math::duration_seconds(total_ticks, ppq, &tempos) as f32;
         let clip = &self.state.video_clip;
 
         let clip_edit = |edit: &lumino_ui_core::state::video_clip_state::ClipTrackEdit| ClipEdit {
@@ -38,23 +38,9 @@ impl Root {
             trim_out: edit.trim_out_secs,
         };
 
-        // 标题行矩形：内容（标题 / 传输按钮 / 信息）已全部由 egui 自绘。
-        let title_row = crate::view::video_clip::rect_probe::last_rect("renderer::timeline_title")
-            .map(|rect| {
-                egui::Rect::from_min_size(
-                    egui::pos2(rect.x, rect.y),
-                    egui::vec2(rect.width, rect.height),
-                )
-            });
-        let scrollbar = crate::view::video_clip::rect_probe::last_rect(
-            "renderer::timeline_scrollbar",
-        )
-        .map(|rect| {
-            egui::Rect::from_min_size(
-                egui::pos2(rect.x, rect.y),
-                egui::vec2(rect.width, rect.height),
-            )
-        });
+        // 标题行与滚动条矩形同样来自 `video_clip_math`（与预览/时间轴同一份布局）。
+        let title_row = Some(layout.timeline_title);
+        let scrollbar = Some(layout.timeline_scrollbar);
         let visible_len = |edit: &lumino_ui_core::state::video_clip_state::ClipTrackEdit| {
             (duration_secs - edit.trim_in_secs - edit.trim_out_secs).max(0.0)
         };
@@ -82,10 +68,7 @@ impl Root {
         );
         let _ = language;
         Some((
-            egui::Rect::from_min_size(
-                egui::pos2(bounds.x, bounds.y),
-                egui::vec2(bounds.width, bounds.height),
-            ),
+            bounds,
             VideoTimelineModel {
                 duration_secs,
                 zoom: clip.zoom,
@@ -93,7 +76,7 @@ impl Root {
                 playhead_secs: clip.clip_position_secs,
                 video: clip_edit(&clip.video_edit),
                 audio: clip_edit(&clip.audio_edit),
-                viewport_w: bounds.width,
+                viewport_w: bounds.width(),
                 title_row,
                 scrollbar,
                 content_w,

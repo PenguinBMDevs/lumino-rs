@@ -3127,16 +3127,41 @@ callback / 多视口 / 截图能力。
   触达 iced 的源文件 69 → **68**；`cargo tree -p lumino-ui | grep '^iced'`
   32 → **30**（`lumino-ui-settings` 不再直接依赖 iced）。
 
-**Task 3.15（下一步）**
+**Task 3.15（第一百零五步）：删除 iced 视频剪辑视图整树（view/video_clip/*），几何自算**
 
-1. iced **类型层**仍在：`lumino-ui-core` 的 `Theme` / `Element` / `Message`
-   等 re-export 了 `iced_*`，因此 `cargo tree -p lumino-ui-settings` 仍有 12 个
-   iced crate（传递依赖）；要归零必须把 `Theme`/调色板与 `settings_event`
-   从 iced 类型上剥离。
-2. 剩余 iced 视图：`view/video_clip/*`（预览/时间轴/rect_probe，egui 侧
-   `video_export_overlay` 与 `video_clip_timeline` 依赖其 probe 矩形，
-   需改成 egui 自算布局后再删）、`titlebar*`（拖动/双击/红绿灯仍由 iced 处理，
-   弹出对话框的 popup 标题栏也在用）。
+- **几何单源**：新增 `root/video_clip_math.rs`（纯计算，无 iced）：
+  - `renderer_panel_layout(area)` 一次算出轨道卡 / 标题 / 16:9 预览 / 时间轴卡片 /
+    标题行 / 画布 / 滚动条 / 设置卡（12 内边距、220 轨道列、12 列距、40 + 预览 +
+    200 + 80、4 行距、8 时间轴内边距，逐项对齐 iced 原常量）；
+  - `preview_size` / `renderer_preview_size`（16:9，最小 320×180）；
+  - `ticks_to_seconds` / `duration_seconds` / `seconds_to_ticks` 与
+    `PreviewGate`/`preview_gate`（原 `timeline.rs` / `preview.rs` 的纯逻辑）。
+- **删除** `view/video_clip/{preview,timeline,layout,rect_probe}.rs` 与
+  `video_clip.rs`（约 830 行），`rect_probe`（iced 布局探针）彻底退役。
+- **渲染器入口面板改 egui 整块绘制**：新增
+  `ui-egui/src/renderer_panel.rs` + `RendererPanelModel`（左轨道卡 / 标题 +
+  缩放 / base 底 + 黑盒 + 1px 边 / 时间轴卡 / 设置卡三行），
+  生产侧 `egui_chrome/renderer_panel.rs` 装配文案与导出设置摘要；
+  `view_renderer_panel` 与 `view_waterfall_player` 改为铺满占位。
+- **预览/时间轴改用自算矩形**：`video_timeline_model(area)` /
+  `video_preview_model(window, content)` 不再读探针；后者同时把离屏纹理尺寸
+  写回 `waterfall_player.size`（存储 = 显示）。
+- **新增调试开关** `LUMINO_RENDERER_PANEL=1`（启动即进渲染器入口）。
+- **真机**（DPI-aware，`LUMINO_EGUI_DEBUG_RECTS=1` 实测布局）：
+  `timeline_title [[500,924]-[2028,952]]`、`clip_canvas [[500,956]-[2028,1084]]`、
+  `preview [[529.8,86]-[1998.2,912]]`（16:9）；点播放 → 图标变暂停、
+  位置 `0.0s → 1.6s → 2.5s`；拖动视频素材带 → 画布内容变化；
+  左轨道卡 / 标题 / 预览黑盒 / 时间轴 / 设置卡全部在位，无错位、无重叠。
+- 验收：`lumino-ui` lib **774/774**、`ui-egui` 全部集成测试、`clippy -D warnings`、
+  `fmt --check`、`check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+  触达 iced 的源文件 68 → **63**。
+
+**Task 3.16（下一步）**
+
+1. `titlebar*`（主窗口与对话框 popup 共用）：把拖动/双击最大化/红绿灯迁 egui
+   （`TitlebarAction` → `window::Event`），再换 30px 占位；
+2. iced **类型层**：`lumino-ui-core` 的 `Theme`/`Element`/`Message` re-export
+   使纯状态 crate 仍传递依赖 12 个 iced crate，需要剥离；
 3. 运行时层（`host` / `render_ctx` / `host/event/window`）仍是 iced
    （窗口创建、事件循环、离屏渲染调度、IME/HiDPI）；零 iced 依赖的最后一公里
    是 winit + wgpu + egui 直连替换，需单独立项。
