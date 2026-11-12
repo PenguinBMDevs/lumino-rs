@@ -22,6 +22,7 @@ mod settings_pages;
 mod settings_ui;
 mod shape_canvas;
 mod shape_drawer;
+mod shape_preview;
 mod sidebar_panel;
 mod titlebar;
 mod toast;

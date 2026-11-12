@@ -683,6 +683,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         tool_panel::clear_triggers(ui.ctx());
     }
 
+    // 形状工具预览（待确认图形 + 拖拽）：在框选框之上、按钮之下。
+    if let Some(preview) = shape_preview_model(ui.ctx()) {
+        crate::shape_preview::show(&root, &preview);
+    }
+
     // 框选框（拖拽中 / 选中音符包围盒）：由 egui 绘制，
     // iced Canvas 的绘制层被底层纹理覆盖后不可见。
     if let Some(marquee) = marquee_model(ui.ctx()) {
@@ -928,6 +933,20 @@ pub fn set_marquee(ctx: &egui::Context, model: crate::marquee::MarqueeModel) {
 fn marquee_model(ctx: &egui::Context) -> Option<crate::marquee::MarqueeModel> {
     ctx.data(|d| d.get_temp::<crate::marquee::MarqueeModel>(egui::Id::unique("lumino.marquee")))
         .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧形状工具预览（空模型 = 不显示）。
+pub fn set_shape_preview(ctx: &egui::Context, model: crate::shape_preview::ShapePreviewModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.shape-preview"), model));
+}
+
+fn shape_preview_model(ctx: &egui::Context) -> Option<crate::shape_preview::ShapePreviewModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::shape_preview::ShapePreviewModel>(egui::Id::unique(
+            "lumino.shape-preview",
+        ))
+    })
+    .filter(|model| !model.is_empty())
 }
 
 /// 记录本帧渲染器入口面板（`None` = 当前不是渲染器入口）。

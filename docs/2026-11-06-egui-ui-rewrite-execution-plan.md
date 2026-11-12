@@ -3333,10 +3333,31 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试（含新 3 用例）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.11（下一步）**
+**Task 4.11（第一百一十七步）：形状工具预览迁 egui（描边产物 + 引导轮廓）**
 
-1. 迁形状 / 曲线 / 画刷 / I2M 的**预览图形**（描边产物块、填充多边形、路径、
-   区域框）到 egui——目前预览仍被底层纹理覆盖；
+- **新增 `ui-egui::shape_preview`**：
+  - 引导轮廓：固定 1.5px（与 iced `OUTLINE_GUIDE_WIDTH` 一致）；
+  - 填充：主题主色 35% 透明（与 iced `FILL_ALPHA` 一致）；
+  - 描边产物预览：`shape_outline_blocks`（与 √ 写入同源）逐块画实心矩形。
+- **几何同源**：`effective_rect` + `shape_vertices`（圆用 64 段多边形逼近），
+  canvas 局部坐标 → 窗口坐标；`ShapeInstance::spec()` / `ShapeToolState::preview_rect`
+  直接复用，待确认图形与实时拖拽都覆盖。
+- **生产 / 原生运行时接线**：`Root::shape_preview_model()` → `OverlayFrame.shape_preview`
+  → `chrome::set_shape_preview` → `show_bands` 在框选框之上、√× 按钮之下绘制。
+- **公开化**：`shape_outline_blocks` 改为 `pub`（egui 层复用同一份产物几何）。
+- **真机**（DPI-aware）：S 形状工具拖拽过程中蓝色描边预览实时跟随
+  （`target/sp-0-drag-crop.png`）；松开后待确认预览保留、√× 按钮叠加其上
+  （`target/sp-1-pending-crop.png`）；点 √ 后音符与预览逐块一致
+  （`target/sp-2-confirmed-crop.png`）。
+  注：默认吸附精度为 1/4 音符（1920 tick），拖拽 200px 落在 0..1920 tick
+  属正常吸附，预览 / 产物 / 按钮三者严格对齐（已用 debug 模型量化确认）。
+- 验收：`lumino-ui` lib 774/774、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.12（下一步）**
+
+1. 迁曲线预览（路径 / 锚点 / 控制柄 / 填充环）与画刷预览、I2M 区域框到 egui；
 2. 迁曲线锚点弯折按钮（Smooth/Corner）与文字工具输入框；
 3. 迁力度面板（自动化 / 弯音 / CC），随后切主窗口入口到 `lumino-ui-runtime`，
    删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖，最后摘掉

@@ -85,6 +85,8 @@ struct OverlayFrame<'a> {
     editor_buttons: lumino_ui_egui::editor_action_buttons::EditorButtonsModel,
     /// 框选框（空 = 不显示）。
     marquee: lumino_ui_egui::marquee::MarqueeModel,
+    /// 形状工具预览（空 = 不显示）。
+    shape_preview: lumino_ui_egui::shape_preview::ShapePreviewModel,
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
@@ -219,6 +221,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_piano_roll_menu(&ctx, frame.piano_roll_menu);
         lumino_ui_egui::chrome::set_editor_buttons(&ctx, frame.editor_buttons.clone());
         lumino_ui_egui::chrome::set_marquee(&ctx, frame.marquee.clone());
+        lumino_ui_egui::chrome::set_shape_preview(&ctx, frame.shape_preview.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -462,6 +465,7 @@ impl Host {
             piano_roll_menu: self.root.piano_roll_context_menu_model(),
             editor_buttons: self.root.editor_buttons_model(),
             marquee: self.root.marquee_model(),
+            shape_preview: self.root.shape_preview_model(),
             render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),

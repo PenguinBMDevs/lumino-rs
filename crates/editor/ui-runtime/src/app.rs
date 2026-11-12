@@ -573,6 +573,13 @@ impl NativeApp {
                 .map(|root| root.marquee_model())
                 .unwrap_or_default(),
         );
+        lumino_ui_egui::chrome::set_shape_preview(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .map(|root| root.shape_preview_model())
+                .unwrap_or_default(),
+        );
 
         let raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, logical)),
