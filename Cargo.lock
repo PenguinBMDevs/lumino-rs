@@ -5055,6 +5055,7 @@ version = "0.2.1"
 dependencies = [
  "egui",
  "lumino-egui-bridge",
+ "lumino-ui-egui",
  "pollster 0.4.0",
  "tracing",
  "tracing-subscriber",

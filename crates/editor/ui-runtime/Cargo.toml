@@ -23,3 +23,4 @@ pollster = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 lumino-egui-bridge = { path = "../egui-bridge" }
+lumino-ui-egui = { path = "../ui-egui", default-features = false }

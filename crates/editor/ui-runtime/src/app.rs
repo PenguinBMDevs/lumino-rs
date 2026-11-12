@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use egui::{Event as EguiEvent, PointerButton as EguiButton, Pos2, RawInput, Rect, Vec2};
 use lumino_egui_bridge::{Painter, Screen};
+use lumino_ui_egui::chrome::{self, ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -27,6 +28,7 @@ pub struct NativeApp {
     window: Option<Arc<Window>>,
     gpu: Option<Gpu>,
     ctx: egui::Context,
+    icons: lumino_ui_egui::icons::IconCache,
     events: Vec<EguiEvent>,
     pointer: Option<Pos2>,
     modifiers: ModifiersState,
@@ -283,25 +285,56 @@ impl NativeApp {
         };
 
         let clicks = &mut self.clicks;
-        let elapsed = self
-            .start
-            .map(|start| start.elapsed().as_secs_f64())
-            .unwrap_or(0.0);
+        let mut icons = std::mem::take(&mut self.icons);
         let output = self.ctx.run_ui(raw, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(140.0);
-                ui.heading("Lumino · egui native runtime");
-                ui.add_space(10.0);
-                ui.label("winit + wgpu 27 + lumino-egui-bridge（无 iced）");
-                ui.add_space(20.0);
-                ui.label(format!("运行 {elapsed:.1}s · 点击 {clicks} 次"));
-                if ui.button("点我 +1").clicked() {
-                    *clicks += 1;
-                }
-            });
+            // 直接跑生产 egui 外壳（标题栏 / 工具栏 / 左右栏 / 状态栏）。
+            let model = demo_model(*clicks);
+            chrome::show_bands(ui, &model, &mut icons);
+
+            // 探针控件：验证输入仍能到达 egui。
+            egui::Area::new(egui::Id::unique("lumino-runtime-probe"))
+                .fixed_pos(egui::pos2(24.0, 96.0))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.label("native runtime probe");
+                        if ui.button("点我 +1").clicked() {
+                            *clicks += 1;
+                        }
+                        ui.label(format!("clicks {clicks}"));
+                    });
+                });
         });
+        self.icons = icons;
 
         gpu.present(&self.ctx, output);
+    }
+}
+
+/// 探针用的最小外壳模型：标题栏 + 默认工具栏 + 状态栏。
+fn demo_model(clicks: u32) -> ChromeModel {
+    ChromeModel {
+        titlebar: Some(TitlebarModel {
+            focused: true,
+            menus: vec![
+                "文件".to_owned(),
+                "编辑".to_owned(),
+                "视图".to_owned(),
+                "帮助".to_owned(),
+            ],
+            menu: None,
+            menu_only: false,
+        }),
+        toolbar: Some(ToolbarModel::default()),
+        statusbar: StatusbarModel {
+            left: format!("Lumino egui native runtime · clicks {clicks}"),
+            left_accent: true,
+            cpu_percent: None,
+            memory_mb: 0.0,
+            fps: None,
+            right: String::new(),
+            gpu: None,
+        },
+        ..ChromeModel::default()
     }
 }
 
