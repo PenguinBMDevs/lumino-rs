@@ -16,7 +16,8 @@ pub mod help;
 pub mod message;
 /// 洋葱皮显示范围模式（工具栏下拉；工程文件持久化共用同一字符串口径）
 pub mod onion_skin_mode;
-pub mod settings_event;
+/// 设置面板事件（定义已迁到 `lumino-message`，此处只保持原路径再导出）
+pub use lumino_message::settings_event;
 pub mod sidebar_event;
 /// 各功能子系统的状态类型模块
 pub mod state;

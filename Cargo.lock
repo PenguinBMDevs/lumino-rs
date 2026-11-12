@@ -5058,7 +5058,6 @@ dependencies = [
  "lumino-message",
  "lumino-note-core",
  "lumino-platform",
- "lumino-ui-core",
  "tracing",
 ]
 

@@ -3,7 +3,7 @@
 //! 与 lumino-gfx 的报告类型解耦：Runner 负责把 gfx 报告投影为
 //! 「结论分类 + 纯文本详情」，UI 只消费这两项，不依赖图形栈类型。
 
-pub use lumino_message::events::window::GpuCheckOutcome;
+pub use crate::events::window::GpuCheckOutcome;
 
 /// GPU 兼容性检测结果（UI 展示用）
 #[derive(Debug, Clone, PartialEq, Eq)]

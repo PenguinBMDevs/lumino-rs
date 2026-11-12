@@ -3190,11 +3190,27 @@ callback / 多视口 / 截图能力。
   直接依赖（渲染上下文走 `iced_wgpu`），`cargo tree -p lumino-ui | grep '^iced'`
   **30 → 26**。
 
-**Task 3.17（下一步）**
+**Task 3.17（第一百零七步）：设置 crate 彻底摆脱 iced 传递依赖**
 
-1. iced **类型层**：`lumino-ui-core` 的 `Theme` / `Element` / `Message` re-export
-   使纯状态 crate 仍传递依赖 12 个 iced crate，需要剥离（先 `Theme`/调色板）；
-2. 剩余 iced 文件主要是运行时：`host.rs` / `render_ctx.rs` / `host/event/window/*` /
-   `host/render/*`，以及 `titlebar/menu.rs` 的同宽占位与 `mode_toggle`；
-3. 运行时替换（winit + wgpu + egui 直连）是 `cargo tree` 归零的最后一公里，
-   需单独立项与整机回归。
+- **把两个无 iced 的模块迁到 `lumino-message`**：
+  - `settings_event.rs`（设置面板事件枚举，仅依赖 `lumino-core`）；
+  - `gpu_compat_state.rs`（GPU 检测 UI 状态，仅依赖 `lumino-message::events::window`）。
+- **`lumino-ui-core` 保持原路径**：`pub use lumino_message::settings_event;`、
+  `pub use lumino_message::gpu_compat_state;`——`lumino_ui_core::settings_event::Event`
+  等既有引用无需改动。
+- **`lumino-ui-settings` 去掉 `lumino-ui-core` 依赖**：`Event` / `OutputType` /
+  `GpuCheck*` 改为直接从 `lumino-message` 引用；
+  `cargo tree -p lumino-ui-settings | grep '^iced'` **12 → 0**。
+- 验收：`lumino-message` / `lumino-ui-core` / `lumino-ui-settings` /
+  `lumino-ui` 全部 `check --all-targets` 通过、`lumino-ui-settings` lib 16/16、
+  `lumino-ui` lib 774/774、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 3.18（下一步）**
+
+1. `lumino-ui` 的 iced 依赖已收敛为**运行时**：`iced_wgpu` / `iced_winit` /
+   `iced_core` / `iced_widget`（占位视图与 `Element`/`Theme`/`Renderer` 别名）；
+2. 运行时替换（winit + wgpu + egui 直连）是 `cargo tree` 归零的最后一公里：
+   需要重写窗口创建、事件循环、离屏渲染调度、IME/HiDPI，并做整机回归；
+3. `lumino-ui-core` 的 `Theme` / `Renderer` / `Element` 别名随运行时的
+   egui 化一起删除，届时 `cargo tree -p lumino-ui | grep '^iced'` 才能为空。

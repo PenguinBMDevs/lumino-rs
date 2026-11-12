@@ -16,9 +16,9 @@ mod tests;
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
 use lumino_extras::i18n::Language;
-use lumino_ui_core::state::{GpuCheckRetryGate, GpuCheckUiState};
+use lumino_message::gpu_compat_state::{GpuCheckRetryGate, GpuCheckUiState};
 
-pub use lumino_ui_core::settings_event::Event;
+pub use lumino_message::settings_event::Event;
 
 /// 「关于」页在设置菜单中的索引（UI-006）
 ///

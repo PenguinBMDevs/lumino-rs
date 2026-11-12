@@ -19,6 +19,5 @@ lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-message = { workspace = true }
-lumino-ui-core = { workspace = true }
 lumino-platform = { workspace = true }
 tracing = { workspace = true }
