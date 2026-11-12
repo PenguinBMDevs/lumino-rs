@@ -3231,3 +3231,45 @@ callback / 多视口 / 截图能力。
    然后删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖；
 4. 最后删除 `Theme`/`Renderer`/`Element` 别名与 `iced_*` 依赖，
    `cargo tree -p lumino-ui | grep '^iced'` 归零。
+
+**Task 4.2–4.8（第一百零八至一百一十四步，同分支连续提交）**
+
+- **4.2 生产外壳**：`lumino-ui` 新增 `Root::egui_chrome_model_native(viewport_width)`；
+  运行时持有 `Root`，每帧 `chrome::show_bands` 渲染标题栏 / 工具栏 / 音轨列表 /
+  右栏 / 状态栏（`1411e40f`）。
+- **4.3 菜单回路**：`Root::apply_egui_menu_action(index)` 与 `Host` 共用
+  `menu_action_message`，点「文件」弹出完整菜单（`49e106aa`）。
+- **4.4 动作分发**：`Root::apply_egui_chrome_actions(ctx)` 统一处理菜单 / 工具栏 /
+  左栏 / 状态栏 / 标题栏动作；真机点铅笔，选中高亮迁移（`2cead1e9`）。
+- **4.5 gfx 画布**：运行时启动 `WgpuRenderThread`，离屏纹理注册到
+  `Painter::set_external_texture(EDITOR_TEXTURE_ID)` 并作为 egui 底层
+  （`d73df977`）。
+- **4.6 编辑器输入**：内容区局部坐标 `Pressed/Moved/Released` → `Message::EditorAction`，
+  不经过 iced `UserInterface`；Resize 时同步 `editor.set_canvas_size/offset`
+  （`6350ed01`）。
+- **4.7 音符显示（本步修复）**：两个根因都已定位并修复：
+  1. **track_enc 缺失**：`NoteInstance.border_width` 高 16 位必须写
+     `track_id + 1`（cull shader 据此区分主音轨 / 洋葱皮区间）；只写描边宽度
+     （`track_enc = 0`）会让**所有音符被裁掉**——真机表现就是「日志说上传了 1 个
+     音符，画布上什么都没有」。新增 `note_border_width()` + 单测锁死编码。
+  2. **相机参数不同源**：`RenderParams` 之前用 `Default`（scroll 0 / zoom 0.1×20 /
+     keyboard 60 / ruler 30 / ppq 1920），与编辑器视图（keyboard 120 / ruler 24 /
+     ppq 480）不一致；现改为逐字段取自 `editor_state.view` / `canvas`，
+     `canvas_offset` 同步为 `(SIDEBAR_W, TITLEBAR_H + toolbar.height)`。
+  3. **协议顺序**：`TrackLayout` 不能再夹在 `BeginSession..Done` 之间（渲染线程按
+     「交错」跳过并告警），改为 `Done` 之后单独补发；告警消失。
+- **真机证据**（DPI-aware，`png` 像素包围盒量化）：铅笔拖出音符后，蓝色音符
+  bbox = 逻辑 `(560.8, 406.4) - (943.2, 424.0)`，与「按下点 → 吸附后 tick 1920、
+  松开点 → tick 5760、key 113、zoom 0.1×20、offset (248,102)」的解析解逐像素一致；
+  画面中网格 / 键列 / 标尺 / 音符同图层对齐，无错位、无重叠。
+- 验收：`lumino-ui` lib 774/774、`lumino-ui-runtime` 1/1、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动。
+
+**Task 4.9（下一步）**
+
+1. 把主程序主窗口入口切到 `lumino-ui-runtime`（对话框先保留 iced 路径过渡）；
+2. 补齐右键菜单 / 滚轮缩放 / 键盘快捷键 / 框选到原生运行时，覆盖
+   `host/event/window/*` 的职责；
+3. 删除 `host/render/ui.rs` 与 `Theme`/`Renderer`/`Element` 别名，移除
+   `iced_wgpu`/`iced_winit`/`iced_core`/`iced_widget`，`cargo tree` 归零。

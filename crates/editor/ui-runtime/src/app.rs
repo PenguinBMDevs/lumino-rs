@@ -37,6 +37,8 @@ pub struct NativeApp {
     clicks: u32,
     /// 是否正在用 egui 指针驱动编辑器（按下 → Moved → Released）。
     editor_dragging: bool,
+    /// 最近一次同步到 gfx 渲染线程的音符世代（`track_notes_gen`）。
+    note_gen: Option<u64>,
     start: Option<Instant>,
 }
 
@@ -46,6 +48,14 @@ struct Gpu {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     painter: Painter,
+}
+
+/// 主音轨音符描边编码：低 16 位 = 描边像素，高 16 位 = `track_enc`（`track_id + 1`）。
+///
+/// cull shader 用 `track_enc` 区分「主音轨 / 洋葱皮可见区间」：只写描边宽度
+/// （`track_enc = 0`）会让所有音符被裁掉，画布看起来「什么都没画」。
+fn note_border_width(track_id: usize) -> u32 {
+    1 | (((track_id as u32) + 1) << 16)
 }
 
 /// 编辑器画布：`lumino-gfx` 分离渲染线程 + 离屏纹理（供 egui 作为底层采样）。
@@ -79,26 +89,47 @@ impl GfxCanvas {
         })
     }
 
-    /// 提交一帧并等待离屏纹理就绪，返回可采样的纹理视图。
-    fn render(
+    /// 全量上传所有轨道的音符实例（`OnionSkinStreamMsg` 会话）。
+    fn upload_notes(
         &self,
-        width: u32,
-        height: u32,
-        logical_width: f32,
-        logical_height: f32,
-        scale_factor: f32,
-    ) -> Option<Arc<wgpu::TextureView>> {
-        let params = lumino_gfx::RenderParams {
-            viewport_size: (width.max(1), height.max(1)),
-            logical_size: (logical_width, logical_height),
-            scale_factor,
-            canvas_size: (logical_width, logical_height),
-            // 与 egui 深色底色区分，便于真机确认底层纹理确实来自 gfx。
-            background_color: [0.07, 0.10, 0.16, 1.0],
-            color_bg: [0.07, 0.10, 0.16, 1.0],
-            content_dirty: true,
-            ..Default::default()
-        };
+        tracks: Vec<(usize, Vec<lumino_gfx::NoteInstance>)>,
+        track_count: usize,
+        current_track: usize,
+    ) {
+        use lumino_gfx::OnionSkinStreamMsg as Msg;
+
+        let total: usize = tracks.iter().map(|(_, instances)| instances.len()).sum();
+        tracing::info!(
+            "native note upload: tracks={track_count} current={current_track} notes={total}"
+        );
+        // 注意：`TrackLayout` **不能**夹在全量会话中（渲染线程会按“交错”跳过），
+        // 且 `Done` 会立即结束本轮 drain——因此布局补发放在 `Done` 之后，
+        // 由渲染线程下一轮 drain 应用（段表在 `Chunk` 流中已按轨构建）。
+        let mut ok = self.thread.send_onion_skin_msg(Msg::BeginSession);
+        ok &= self.thread.send_onion_skin_msg(Msg::Reserve { total });
+        for (track_id, instances) in tracks {
+            ok &= self.thread.send_onion_skin_msg(Msg::Chunk {
+                track_id,
+                instances,
+            });
+        }
+        ok &= self.thread.send_onion_skin_msg(Msg::SetViewState {
+            current_track: current_track as u32 + 1,
+            muted_tracks: Vec::new(),
+            onion_visible: false,
+            onion_range: (0, 0),
+        });
+        ok &= self.thread.send_onion_skin_msg(Msg::Done);
+        ok &= self
+            .thread
+            .send_onion_skin_msg(Msg::TrackLayout { track_count });
+        if !ok {
+            tracing::warn!("native note upload: 有消息未送达（会话可能残缺）");
+        }
+    }
+
+    /// 提交一帧并等待离屏纹理就绪，返回可采样的纹理视图。
+    fn render(&self, params: lumino_gfx::RenderParams) -> Option<Arc<wgpu::TextureView>> {
         let frame_id = self.thread.send_params(params);
         self.thread.wait_for_frame(frame_id);
         self.thread.latest_texture_view()
@@ -388,8 +419,13 @@ impl NativeApp {
                 .max(1.0);
         root.editor
             .set_canvas_size(iced_core::Point::new(width, height));
-        root.editor
-            .set_canvas_offset(iced_core::Point::new(0.0, 0.0));
+        // 画布在窗口中的真实原点（左栏右缘 / 标题栏 + 工具栏下缘）：
+        // 渲染线程的 `canvas_offset` 与 egui 的输入换算必须同源，否则音符
+        // 会画在错误位置（或落到 scissor 之外）。
+        root.editor.set_canvas_offset(iced_core::Point::new(
+            lumino_ui_egui::layout::SIDEBAR_W,
+            lumino_ui_egui::layout::TITLEBAR_H + root.toolbar.height,
+        ));
     }
 
     /// 窗口逻辑坐标 → 编辑器画布局部坐标（画布左上 = 左栏右缘 + 标题栏/工具栏下缘）。
@@ -432,9 +468,86 @@ impl NativeApp {
         let ppp = window.scale_factor() as f32;
         let logical = Vec2::new(size.width as f32 / ppp, size.height as f32 / ppp);
 
-        // gfx 编辑器画布 → egui 底层纹理（分离渲染线程，空场景先画背景）。
+        // 编辑器音符 → gfx 渲染线程（`track_notes_gen` 变化时全量上传）。
+        if let (Some(root), Some(canvas)) = (self.root.as_ref(), self.canvas.as_ref()) {
+            let generation = root.editor.editor_state.data.track_notes_gen;
+            if self.note_gen != Some(generation) {
+                let data = &root.editor.editor_state.data;
+                let document = data.document.as_ref();
+                let track_count = document.map_or(0, |doc| doc.track_count());
+                let tracks: Vec<(usize, Vec<lumino_gfx::NoteInstance>)> = document
+                    .map(|doc| {
+                        (0..track_count)
+                            .map(|track_id| {
+                                // 高 16 位 = track_enc（track_id + 1）：cull shader 据此
+                                // 判断「主音轨 / 洋葱皮可见区间」，低 16 位是描边像素。
+                                // 只写描边宽度（track_enc = 0）会让所有音符被裁掉。
+                                let border_width = note_border_width(track_id);
+                                let instances = doc
+                                    .track_notes(track_id)
+                                    .iter()
+                                    .map(|note| {
+                                        lumino_gfx::NoteInstance::new(
+                                            note.start_tick as f32,
+                                            note.key,
+                                            (note.end_tick.saturating_sub(note.start_tick)) as f32,
+                                            [0.30, 0.62, 0.95, 1.0],
+                                            border_width,
+                                        )
+                                    })
+                                    .collect();
+                                (track_id, instances)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                canvas.upload_notes(tracks, track_count, data.current_track);
+                self.note_gen = Some(generation);
+            }
+        }
+
+        // 渲染参数必须与编辑器视图同源（scroll / zoom / 画布原点 / 键数 / PPQ），
+        // 否则音符与点击位置不一致，甚至被 canvas scissor 裁掉。
+        let params = self
+            .root
+            .as_ref()
+            .map(|root| {
+                let es = &root.editor.editor_state;
+                let view = &es.view;
+                lumino_gfx::RenderParams {
+                    viewport_size: (size.width.max(1), size.height.max(1)),
+                    logical_size: (logical.x, logical.y),
+                    scale_factor: ppp,
+                    scroll: (view.scroll_x, view.scroll_y),
+                    zoom: (view.zoom_x, view.zoom_y),
+                    keyboard_width: view.keyboard_width,
+                    ruler_height: view.ruler_height,
+                    canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
+                    canvas_size: (es.canvas.size_x, es.canvas.size_y),
+                    ppq: view.ppq as f32,
+                    max_key_index: view.visible_key_count.saturating_sub(1) as f32,
+                    time_signatures: es.data.time_signatures.clone(),
+                    // 与 egui 深色底色区分，便于真机确认底层纹理确实来自 gfx。
+                    background_color: [0.07, 0.10, 0.16, 1.0],
+                    color_bg: [0.07, 0.10, 0.16, 1.0],
+                    content_dirty: true,
+                    ..Default::default()
+                }
+            })
+            .unwrap_or_else(|| lumino_gfx::RenderParams {
+                viewport_size: (size.width.max(1), size.height.max(1)),
+                logical_size: (logical.x, logical.y),
+                scale_factor: ppp,
+                canvas_size: (logical.x, logical.y),
+                background_color: [0.07, 0.10, 0.16, 1.0],
+                color_bg: [0.07, 0.10, 0.16, 1.0],
+                content_dirty: true,
+                ..Default::default()
+            });
+
+        // gfx 编辑器画布 → egui 底层纹理（分离渲染线程）。
         if let Some(canvas) = self.canvas.as_ref() {
-            if let Some(view) = canvas.render(size.width, size.height, logical.x, logical.y, ppp) {
+            if let Some(view) = canvas.render(params) {
                 gpu.painter
                     .set_external_texture(&gpu.device, chrome::EDITOR_TEXTURE_ID, &view);
                 chrome::set_base_texture(&self.ctx, Some(chrome::EDITOR_TEXTURE_ID));
@@ -553,4 +666,19 @@ fn egui_key(key: &Key) -> Option<egui::Key> {
         Key::Named(NamedKey::ArrowDown) => egui::Key::ArrowDown,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::note_border_width;
+
+    /// `track_enc` 必须写进 border_width 高 16 位：cull shader 用它区分主音轨，
+    /// 漏写会让画布上的所有音符被裁掉（真机表现为「画了但看不到」）。
+    #[test]
+    fn note_border_width_encodes_track_enc() {
+        assert_eq!(note_border_width(0) >> 16, 1);
+        assert_eq!(note_border_width(1) >> 16, 2);
+        assert_eq!(note_border_width(0) & 0xffff, 1);
+        assert_eq!(note_border_width(1) & 0xffff, 1);
+    }
 }
