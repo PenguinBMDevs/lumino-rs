@@ -31,6 +31,10 @@ fn model() -> VelocityPanelModel {
         tempo_max_bpm: 512.0,
         tempo_line_width: 2.0,
         eraser_tool: false,
+        automation_editing: false,
+        automation: None,
+        value_zoom: 1.0,
+        value_scroll: 0.0,
     }
 }
 
@@ -84,6 +88,86 @@ fn mode_button_toggles() {
         actions.borrow().last(),
         Some(&velocity_panel::VelocityPanelAction::ToggleMode)
     );
+}
+
+#[test]
+fn automation_right_click_deletes_anchor() {
+    let mut m = model();
+    m.automation_editing = true;
+    m.automation = Some(velocity_panel::AutomationLaneModel {
+        track_idx: 1,
+        lane_idx: Some(0),
+        controller: Some(1),
+        max_value: 127.0,
+        anchors: vec![velocity_panel::AutomationAnchor {
+            tick: 1920,
+            value: 64,
+        }],
+    });
+    // 锚点：x = 248 + 192 + 120 = 560；y = canvas.top + (h - 64/127*h)
+    let h = m.canvas.height();
+    let anchor = egui::pos2(560.0, m.canvas.top() + h - (64.0 / 127.0) * h);
+    let (mut h, actions) = harness(m);
+    click_button(&mut h, anchor, egui::PointerButton::Secondary);
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&velocity_panel::VelocityPanelAction::AutomationDelete {
+            track_idx: 1,
+            lane_idx: 0,
+            tick: 1920,
+        }),
+        "右键锚点应删除：{:?}",
+        actions.borrow()
+    );
+}
+
+#[test]
+fn automation_empty_click_adds_anchor() {
+    let mut m = model();
+    m.automation_editing = true;
+    m.automation = Some(velocity_panel::AutomationLaneModel {
+        track_idx: 1,
+        lane_idx: None,
+        controller: Some(7),
+        max_value: 127.0,
+        anchors: Vec::new(),
+    });
+    let (mut h, actions) = harness(m);
+    click(&mut h, egui::pos2(700.0, 1100.0));
+    match actions.borrow().last() {
+        Some(velocity_panel::VelocityPanelAction::AutomationAdd {
+            controller: Some(7),
+            tick,
+            value,
+            ..
+        }) => {
+            assert_eq!(*tick, 1920, "x=700 应吸附到 tick 1920");
+            assert!(*value <= 127, "CC 值必须 <= 127：{value}");
+        }
+        other => panic!("应新增 CC 锚点，实际：{other:?}"),
+    }
+}
+
+fn click_button(harness: &mut Harness<'static>, pos: egui::Pos2, button: egui::PointerButton) {
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::PointerMoved(pos));
+    input.events.push(egui::Event::PointerButton {
+        pos,
+        button,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    *harness.input_mut() = input;
+    harness.run();
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::PointerButton {
+        pos,
+        button,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    *harness.input_mut() = input;
+    harness.run();
 }
 
 #[test]

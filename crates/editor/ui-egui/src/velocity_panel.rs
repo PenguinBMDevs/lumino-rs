@@ -13,11 +13,18 @@ use lumino_message::CcOption;
 
 use crate::theme;
 
+mod action;
 mod draw;
 mod input;
 mod types;
 
-pub use types::{TempoPointModel, VelocityPointModel, VelocityView};
+pub use action::{VelocityPanelAction, push_action, take_action};
+pub use types::{
+    AutomationAnchor, AutomationLaneModel, TempoPointModel, VelocityPointModel, VelocityView,
+};
+
+/// CC 下拉弹层展开状态（egui 临时数据键）。
+const CC_OPEN_ID: &str = "lumino.velocity-panel.cc-open";
 
 /// 面板工具栏高度（与 iced `TOOLBAR_HEIGHT` 一致）。
 pub const TOOLBAR_HEIGHT: f32 = 28.0;
@@ -80,53 +87,14 @@ pub struct VelocityPanelModel {
     pub tempo_line_width: f32,
     /// 当前是否橡皮工具（点击删除 Tempo 点）。
     pub eraser_tool: bool,
-}
-
-/// 本帧动作。
-#[derive(Debug, Clone, PartialEq)]
-pub enum VelocityPanelAction {
-    /// 切换模式（力度 → 速度 → CC → Bend）。
-    ToggleMode,
-    /// 选择 CC / Bend。
-    CcSelected(CcOption),
-    /// 力度拖拽开始（note_index, 当前力度）。
-    VelocityDragStart(usize, u8),
-    /// 力度拖拽移动（note_index, 新力度）。
-    VelocityDragMove(usize, u8),
-    /// 力度拖拽结束。
-    VelocityDragEnd,
-    /// 力度曲线绘制开始。
-    VelocityCurveStart,
-    /// 力度曲线批量更新。
-    VelocityCurvePaint(Vec<(usize, u8)>),
-    /// 力度曲线绘制结束。
-    VelocityCurveEnd,
-    /// Tempo 拖拽开始（控制点索引）。
-    TempoDragStart(usize),
-    /// Tempo 拖拽移动（索引, BPM）。
-    TempoDragMove(usize, f64),
-    /// Tempo 拖拽结束。
-    TempoDragEnd,
-    /// Tempo 新增控制点（tick, BPM）。
-    TempoAdd(f32, f64),
-    /// Tempo 删除控制点。
-    TempoDelete(usize),
-    /// 双轴滚轮（时间轴 / 曲线）。
-    Wheel { delta_x: f32, delta_y: f32 },
-}
-
-const ACTION_ID: &str = "lumino.velocity-panel.action";
-const CC_OPEN_ID: &str = "lumino.velocity-panel.cc-open";
-
-/// 记录本帧动作（一帧一条）。
-pub fn push_action(ctx: &egui::Context, action: VelocityPanelAction) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
-}
-
-/// 取走本帧动作。
-pub fn take_action(ctx: &egui::Context) -> Option<VelocityPanelAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<VelocityPanelAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
+    /// CC / Bend 模式：egui 接管锚点编辑。
+    pub automation_editing: bool,
+    /// 自动化 lane 快照（无 lane 时为 `None`：新锚点会创建 lane）。
+    pub automation: Option<AutomationLaneModel>,
+    /// 自动化垂直缩放（1.0 = 满量程）。
+    pub value_zoom: f32,
+    /// 自动化垂直滚动（值空间，面板顶部对应的值）。
+    pub value_scroll: f32,
 }
 
 /// 绘制面板骨架与工具栏。
@@ -357,6 +325,12 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         blocked.push(input::blocking_rect(model.canvas));
         if action.is_none() {
             action = input::handle_tempo(ui, model);
+        }
+    } else if model.automation_editing {
+        // CC / Bend 模式：egui 接管锚点拖拽 / 新增 / 右键删除。
+        blocked.push(input::blocking_rect(model.canvas));
+        if action.is_none() {
+            action = input::handle_automation(ui, model);
         }
     }
 

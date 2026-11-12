@@ -3499,9 +3499,37 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.18（下一步）**
+**Task 4.18（第一百二十四步）：CC / Bend 自动化输入迁 egui**
 
-1. CC / Bend 输入（拖拽锚点、右键删除、新增）迁 egui；
+- **新增 `velocity_panel/input/automation.rs`**（拆出以保持 < 400 行）：
+  - 命中锚点（10px）→ `AutomationMove`；首个移动 `first = true`（生产侧记一次历史），
+    后续走 `AutomationBatch`，避免 60fps 拖拽塞满撤销栈；
+  - 空白处左键 → `AutomationAdd`（`controller = None` 即 Pitch Bend；值按
+    gfx `value_to_y` / `y_to_value` 互逆映射，tick 走 `snap_precision`）；
+  - 橡皮工具点击锚点 / **右键锚点** → `AutomationDelete`；
+  - 面板内滚轮 → `WheelScrolled`。
+- **模型**：`AutomationLaneModel`（track_idx / lane_idx / controller / max_value /
+  anchors）在 `egui_chrome/velocity_panel/automation.rs` 构建（CC 取 127 上限，
+  Bend 取 16383）；`automation_editing` 仅 CC/Bend + Curve/Eraser 时为真。
+- **职责边界**：命中时数据区加入 `menu::blocked`（resize 手柄仍归 iced）；
+  Tempo / Velocity 已有各自的输入分支，互不抢占。
+- **拆分**：`ui-egui/velocity_panel.rs` 338 行 + `action.rs` 76 + `input.rs` 307 +
+  `input/automation.rs` 180 + `draw.rs` 66 + `types.rs` 77；
+  `ui/.../velocity_panel.rs` 398 + `velocity_panel/automation.rs` 47。
+- **验证**：
+  - 无头（`velocity_panel_bands.rs`，4 条）：右键锚点 → `AutomationDelete`；
+    空白点击 → `AutomationAdd`（CC 值 ≤ 127、tick 吸附 1920）；模式按钮；占用区。
+  - 真机（DPI-aware，Bend 模式）：空白点击新增锚点
+    `AutomationAdd { tick: 1920, value: 9669 }`；拖动 → 76 条
+    `AutomationMove`（`first: true` 仅首条）；右键锚点 →
+    `AutomationDelete { lane_idx: 0, tick: 1920 }`。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试（含新 2 条）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.19（下一步）**
+
+1. 力度面板 resize 拖拽迁 egui（最后一个仍走 iced 的面板交互）；
 2. 曲线矢量填充的凹多边形三角化；
 3. 切主窗口入口到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
    `host/event/window/*` 的 iced 依赖，最后摘掉

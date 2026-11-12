@@ -80,6 +80,18 @@ struct EditState {
     drag_index: Option<usize>,
     curve: Option<(f32, u8)>,
     tempo_drag: Option<usize>,
+    auto: Option<AutoDrag>,
+    /// 本次拖拽是否已发过「记历史」的首个移动。
+    auto_first: bool,
+}
+
+/// 自动化锚点拖拽状态。
+#[derive(Debug, Clone, Copy)]
+struct AutoDrag {
+    track_idx: u16,
+    lane_idx: usize,
+    old_tick: u32,
+    old_value: u16,
 }
 
 /// 处理本帧力度编辑输入。
@@ -281,6 +293,10 @@ fn hit_test_tempo(model: &VelocityPanelModel, local: Vec2) -> Option<usize> {
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(index, _)| index)
 }
+
+mod automation;
+
+pub(super) use automation::handle as handle_automation;
 
 /// 数据区在力度编辑时从 iced 手里接管的矩形（保留顶部 resize 手柄给 iced）。
 pub(super) fn blocking_rect(canvas: Rect) -> Rect {

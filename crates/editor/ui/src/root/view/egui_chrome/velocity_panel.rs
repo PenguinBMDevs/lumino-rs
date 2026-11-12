@@ -1,5 +1,7 @@
 //! 力度 / CC / Tempo 面板：生产状态 → egui 骨架模型。
 
+mod automation;
+
 use lumino_extras::i18n::main_translations;
 use lumino_ui_editor::velocity::EditMode;
 use lumino_ui_editor::velocity::VelocityPanel;
@@ -193,6 +195,14 @@ impl Root {
             self.editor.current_tool(),
             lumino_message::Tool::Eraser | lumino_message::Tool::DrawEraser
         );
+        let curve_tool = self.editor.current_tool() == lumino_message::Tool::Curve;
+        let automation_editing =
+            (mode == EditMode::Bend || mode.is_cc()) && (curve_tool || eraser_tool);
+        let automation = if mode == EditMode::Bend || mode.is_cc() {
+            automation::lane_model(&es.data, mode == EditMode::Bend, vp.selected_cc)
+        } else {
+            None
+        };
 
         let model = VelocityPanelModel {
             panel,
@@ -221,6 +231,10 @@ impl Root {
             tempo_max_bpm: vp.tempo_max_bpm,
             tempo_line_width: vp.automation_line_thickness,
             eraser_tool,
+            automation_editing,
+            automation,
+            value_zoom: vp.value_zoom,
+            value_scroll: vp.value_scroll,
         };
         if velocity_editing && std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0")
         {
@@ -252,6 +266,37 @@ impl Root {
                 })
                 .collect();
             tracing::info!(?screen, "DEBUG tempo points");
+        }
+        if automation_editing
+            && std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0")
+        {
+            let anchors: Vec<(f32, f32)> = model
+                .automation
+                .as_ref()
+                .map(|lane| {
+                    lane.anchors
+                        .iter()
+                        .map(|a| {
+                            (
+                                model.canvas.left() + a.tick as f32 * model.view.zoom_x
+                                    - model.view.scroll_x
+                                    + model.view.keyboard_width,
+                                model.canvas.top()
+                                    + (model.canvas.height()
+                                        - (a.value as f32 / lane.max_value)
+                                            * model.canvas.height()),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            tracing::info!(
+                ?anchors,
+                lane_idx = ?model.automation.as_ref().and_then(|l| l.lane_idx),
+                controller = ?model.automation.as_ref().and_then(|l| l.controller),
+                canvas = ?model.canvas,
+                "DEBUG automation"
+            );
         }
         Some(model)
     }
@@ -290,6 +335,61 @@ impl Root {
             VelocityPanelAction::TempoDelete(index) => {
                 Message::Velocity(VelocityAction::TempoDelete(index))
             }
+            VelocityPanelAction::AutomationMove {
+                track_idx,
+                lane_idx,
+                old_tick,
+                old_value,
+                new_tick,
+                new_value,
+                first,
+            } => {
+                let edit = lumino_note_core::AutomationEdit::Move {
+                    track_idx,
+                    lane_idx,
+                    old_tick,
+                    old_value,
+                    new_tick,
+                    new_value,
+                };
+                if first {
+                    Message::Velocity(VelocityAction::AutomationEdit(edit))
+                } else {
+                    Message::Velocity(VelocityAction::AutomationBatch(vec![edit]))
+                }
+            }
+            VelocityPanelAction::AutomationAdd {
+                track_idx,
+                controller,
+                tick,
+                value,
+            } => {
+                let target = match controller {
+                    Some(controller) => lumino_note_core::AutomationTarget::CC { controller },
+                    None => lumino_note_core::AutomationTarget::PitchBend,
+                };
+                Message::Velocity(VelocityAction::AutomationEdit(
+                    lumino_note_core::AutomationEdit::Add {
+                        track_idx,
+                        target,
+                        channel: 0,
+                        tick,
+                        value,
+                        shape: lumino_note_core::SegmentShape::default(),
+                    },
+                ))
+            }
+            VelocityPanelAction::AutomationDelete {
+                track_idx,
+                lane_idx,
+                tick,
+            } => Message::Velocity(VelocityAction::AutomationEdit(
+                lumino_note_core::AutomationEdit::Delete {
+                    track_idx,
+                    lane_idx,
+                    tick,
+                },
+            )),
             VelocityPanelAction::Wheel { delta_x, delta_y } => {
                 Message::Velocity(VelocityAction::WheelScrolled { delta_x, delta_y })
             }
