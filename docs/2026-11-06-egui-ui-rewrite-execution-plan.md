@@ -3696,8 +3696,17 @@ callback / 多视口 / 截图能力。
 
 **Task 4.24（下一步）**
 
-1. 删除 `host/render/ui.rs` 的 iced `UserInterface` 分支与 `host/event/window/*` 的
-   iced 事件转换（`RenderContext.renderer/cache/Engine` 一并移除）；
-2. 走带泳道 / 瀑布流 / 导出面板的 iced 剩余输入收口后翻默认；
+1. 用 `LUMINO_EGUI_INPUT_ONLY=1` 已能驱动路由栏与文件菜单（见下），下一步把该开关翻默认：
+   删除 `host/event/window/*` 的 iced 事件转换与 `host/render/ui.rs` 的
+   `UserInterface` 分支（`RenderContext.renderer/cache/Engine` 一并移除）；
+2. 走带泳道 / 瀑布流 / 导出面板的 iced 剩余输入收口；
 3. 曲线填充凹多边形三角化；
 4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。
+
+**Task 4.24 前置探针（本轮已埋点）**
+
+- `LUMINO_EGUI_INPUT_ONLY=1` 时主窗口 `process_pending_events` 直接丢弃 iced 事件队列，
+  全部输入只由 egui/winit 消费。真机验证：路由栏切换、文件菜单展开 15 项、
+  `Esc` 关闭、状态栏刷新均正常（`target/only-menu.png`），无 ERROR/panic。
+- 说明：iced 事件链在钢琴卷帘 + 外壳范围内已无必要；剩下的差异集中在走带泳道 /
+  瀑布流 / 导出面板与各对话框的 egui 覆盖度，翻默认前需逐个回归。

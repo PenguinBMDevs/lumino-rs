@@ -206,6 +206,12 @@ impl Host {
             return;
         }
 
+        // 实验开关：整窗只由 egui 消费输入（验证 iced 事件链是否还有必要）。
+        if std::env::var("LUMINO_EGUI_INPUT_ONLY").is_ok_and(|v| v != "0") {
+            self.events.clear();
+            return;
+        }
+
         if self.events.is_empty() {
             return;
         }
