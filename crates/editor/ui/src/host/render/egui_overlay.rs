@@ -26,6 +26,7 @@ use lumino_ui_egui::icons::IconCache;
 use crate::host::Host;
 
 mod actions;
+mod canvas;
 mod input;
 pub(crate) use input::OverlayInput;
 use input::pointer_button;
@@ -356,6 +357,9 @@ impl Host {
             egui::pos2(0.0, 0.0),
             egui::vec2(logical_width, logical_height),
         );
+        // 画布几何：egui 是唯一布局来源（iced 不再参与，取代 `Grid` program
+        // 的 `CanvasBoundsChanged`）。
+        self.sync_canvas_bounds(&model, window_area);
         let content_area = {
             let left = model
                 .sidebar

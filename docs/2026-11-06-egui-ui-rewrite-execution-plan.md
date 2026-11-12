@@ -3581,9 +3581,30 @@ callback / 多视口 / 截图能力。
   测试、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 零基线改动。
 
+**Task 4.20（第一百二十七步）：画布几何同步通道（egui → 编辑器）**
+
+- 新增 `host/render/egui_overlay/canvas.rs`：用与 egui 外壳**完全同源**的 insets
+  （左 48+面板宽 / 右 48+右栏 / 上 标题栏+工具栏 / 下 状态栏+力度面板）算出
+  卷帘画布矩形，与 `editor_state.canvas` 不一致时发 `CanvasBoundsChanged`；
+  走带模式复用 `arrangement_geometry`，纵向卷帘（布局不同）暂不接管。
+- **默认关闭**（`LUMINO_EGUI_CANVAS_SYNC=1` 可开启）：iced `Grid` program 仍会
+  发 `CanvasBoundsChanged`，两个来源同时写会 ping-pong；等 Canvas 输入迁完、
+  `Grid` 删除后翻默认。
+- **排除的假回归**：临时关掉 iced 输入后卷帘整块变白——根因是 `canvas` 尺寸只在
+  iced `Grid` 的 `update()` 里写回，且 `egui_piano_roll_model` 又以
+  `canvas.size > 0` 为前提（鸡生蛋）。`canvas.rs` 正是为切断这个依赖而准备。
+- **对照验证**：`LUMINO_EGUI_CANVAS_SYNC=1` 下网格/键盘/标尺位置与 iced 通道一致
+  （真机截图），未出现抖动；纯 iced 模式（`LUMINO_EGUI_ONLY=0`）复现同一处
+  「撤销后键盘列消失 / BPM 框显示 1920」，确认与本轮渲染路径切换**无关**（既有问题）。
+- 验收：`lumino-ui` lib 776/776、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
 **Task 4.21（下一步）**
 
-1. 删除 `host/render/ui.rs` 的 iced 分支与 `host/event/window/*` 的 iced 输入路由；
-2. 用 winit 事件 + egui 输入替换 `iced_winit::runtime::UserInterface` 的剩余职责；
+1. Canvas 输入迁 egui/winit：`grid::program_impl::update` 的分派逻辑（左键按下 /
+   右键菜单 / 移动 / 松开 / 滚轮 / 修饰键）改为 UI 无关入口，由宿主用 winit 事件
+   直接调用（当前 iced `Grid` 是唯一输入来源）；
+2. 打开 `LUMINO_EGUI_CANVAS_SYNC`，删除 `host/render/ui.rs` 的 iced 分支与
+   `host/event/window/*` 的 iced 输入路由；
 3. 曲线矢量填充的凹多边形三角化；
 4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

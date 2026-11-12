@@ -30,7 +30,7 @@ pub(crate) mod mask_preview;
 pub(crate) mod note_worker;
 pub(crate) mod onion_skin;
 mod separate_thread;
-mod ui;
+pub(crate) mod ui;
 pub(crate) mod viewport;
 
 impl Host {
