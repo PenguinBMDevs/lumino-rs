@@ -3474,9 +3474,34 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.17（下一步）**
+**Task 4.17（第一百二十三步）：Tempo 输入与 Tempo 折线图迁 egui**
 
-1. Tempo / CC / Bend 的输入（拖拽锚点、右键删除、新增、滚轮缩放）迁 egui；
+- **Tempo 输入**（`ui-egui::velocity_panel::input::handle_tempo`）：
+  - 命中控制点（10px）→ `TempoDragStart/Move/End`；
+  - 空白处左键 → `TempoAdd(snap_tick(x), y_to_bpm(y))`（吸附精度取
+    `view.snap_precision`，与卷帘网格同源）；
+  - 橡皮工具（Eraser / DrawEraser）点击控制点 → `TempoDelete(idx)`；
+  - 右键控制点 → `TempoDelete(idx)`（与 iced 语义一致）。
+- **滚轮**：面板内双轴滚轮 → `WheelScrolled { delta_x, delta_y }`
+  （垂直 Pixels ÷50 换算档位，egui 0.37 用 `smooth_scroll_delta`）。
+- **Tempo 折线图**（`velocity_panel/draw.rs`）：gfx 只画力度/CC 曲线，
+  Tempo 由 egui 补——折线 + 4px 锚点 + BPM 文本 + **最后一个点向右无限延伸**
+  （BPM 恒定），颜色 `#338CFF`，线宽取 `automation_line_thickness`。
+- **职责边界**：仅 `Tempo + Curve/Eraser/DrawEraser` 时 egui 接管数据区；
+  `blocked` 排除顶部 5px resize 手柄，CC/Bend 输入与 resize 仍走 iced。
+- **拆分**（保持单文件 < 400 行）：`velocity_panel.rs` 364 行、
+  `types.rs` 45、`draw.rs` 66、`input.rs` 291。
+- **真机**（DPI-aware）：自动化面板默认 Tempo 模式 + C 曲线工具 →
+  蓝折线 + 默认 120 BPM 锚点可见；拖动锚点向下 → 日志
+  `TempoDragMove(0, 30.79)` ×N + `TempoDragEnd`，折线随之跌到 30 BPM
+  （`target/tp2-before/after-crop.png`）。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.18（下一步）**
+
+1. CC / Bend 输入（拖拽锚点、右键删除、新增）迁 egui；
 2. 曲线矢量填充的凹多边形三角化；
 3. 切主窗口入口到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
    `host/event/window/*` 的 iced 依赖，最后摘掉

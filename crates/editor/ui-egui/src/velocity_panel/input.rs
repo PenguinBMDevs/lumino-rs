@@ -33,18 +33,62 @@ fn y_to_velocity(y: f32, height: f32) -> u8 {
         .clamp(0.0, 127.0) as u8
 }
 
+/// BPM → 面板 Y（与 `tempo_bpm_to_y` 同公式）。
+pub(super) fn tempo_to_y(bpm: f64, max_bpm: f64, height: f32) -> f32 {
+    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE;
+    let normalized = ((bpm - 20.0) / (max_bpm - 20.0)) as f32;
+    height - normalized * (height - min_y)
+}
+
+/// 面板 Y → BPM（与 `VelocityCanvas::y_to_bpm` 同公式）。
+fn y_to_bpm(y: f32, height: f32, max_bpm: f64) -> f64 {
+    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE;
+    let clamped = y.clamp(min_y, height);
+    let normalized = (height - clamped) / (height - min_y);
+    20.0 + normalized as f64 * (max_bpm - 20.0)
+}
+
+/// tick → 吸附网格（floor，与 `ViewState::snap_tick` 一致）。
+fn snap_tick(tick: f32, precision: f32) -> f32 {
+    if precision <= 0.0 {
+        return tick;
+    }
+    (tick / precision).floor() * precision
+}
+
+/// 滚轮 → 双轴动作（Pixels ÷50，与 iced 同口径）。
+fn wheel_action(ui: &egui::Ui, rect: Rect) -> Option<VelocityPanelAction> {
+    let pos = ui.ctx().input(|i| i.pointer.latest_pos())?;
+    if !rect.contains(pos) {
+        return None;
+    }
+    let delta = ui.ctx().input(|i| i.smooth_scroll_delta);
+    let (dx, dy) = (delta.x, delta.y);
+    if dx.abs() < f32::EPSILON && dy.abs() < f32::EPSILON {
+        return None;
+    }
+    Some(VelocityPanelAction::Wheel {
+        delta_x: dx,
+        delta_y: dy / 50.0,
+    })
+}
+
 const STATE_ID: &str = "lumino.velocity-panel.edit-state";
 
 #[derive(Default, Clone)]
 struct EditState {
     drag_index: Option<usize>,
     curve: Option<(f32, u8)>,
+    tempo_drag: Option<usize>,
 }
 
 /// 处理本帧力度编辑输入。
 pub(super) fn handle(ui: &egui::Ui, model: &VelocityPanelModel) -> Option<VelocityPanelAction> {
     if !model.velocity_editing {
         return None;
+    }
+    if let Some(action) = wheel_action(ui, model.canvas) {
+        return Some(action);
     }
     let rect = model.canvas;
     let height = rect.height();
@@ -143,6 +187,93 @@ fn hit_test(model: &VelocityPanelModel, local: Vec2) -> Option<usize> {
             let x =
                 point.tick * model.view.zoom_x - model.view.scroll_x + model.view.keyboard_width;
             let y = velocity_to_y(point.velocity, model.canvas.height());
+            let d = ((local.x - x).powi(2) + (local.y - y).powi(2)).sqrt();
+            (index, d)
+        })
+        .filter(|(_, distance)| *distance < HIT_RADIUS)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(index, _)| index)
+}
+
+/// 处理本帧 Tempo 编辑输入（拖拽 / 新增 / 删除）。
+pub(super) fn handle_tempo(
+    ui: &egui::Ui,
+    model: &VelocityPanelModel,
+) -> Option<VelocityPanelAction> {
+    if !model.tempo_editing {
+        return None;
+    }
+    if let Some(action) = wheel_action(ui, model.canvas) {
+        return Some(action);
+    }
+    let rect = model.canvas;
+    let height = rect.height();
+    let pos = ui.ctx().input(|i| i.pointer.latest_pos())?;
+    let pressed = ui.ctx().input(|i| i.pointer.primary_pressed());
+    let right_clicked = ui.ctx().input(|i| i.pointer.secondary_clicked());
+    let released = ui.ctx().input(|i| i.pointer.primary_released());
+    let down = ui.ctx().input(|i| i.pointer.primary_down());
+    let local = Vec2::new(pos.x - rect.left(), pos.y - rect.top());
+    let in_canvas = rect.contains(pos) && local.y > RESIZE_HANDLE;
+
+    let mut state = ui
+        .ctx()
+        .data(|d| d.get_temp::<EditState>(egui::Id::unique(STATE_ID)))
+        .unwrap_or_default();
+    let mut action = None;
+
+    if right_clicked && in_canvas {
+        if let Some(idx) = hit_test_tempo(model, local) {
+            return Some(VelocityPanelAction::TempoDelete(idx));
+        }
+        return None;
+    }
+
+    if pressed && in_canvas {
+        if let Some(idx) = hit_test_tempo(model, local) {
+            if model.eraser_tool {
+                return Some(VelocityPanelAction::TempoDelete(idx));
+            }
+            state.tempo_drag = Some(idx);
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state));
+            return Some(VelocityPanelAction::TempoDragStart(idx));
+        }
+        if model.eraser_tool {
+            return None;
+        }
+        let tick = snap_tick(
+            ((local.x - model.view.keyboard_width + model.view.scroll_x) / model.view.zoom_x)
+                .max(0.0),
+            model.view.snap_precision,
+        );
+        let bpm = y_to_bpm(local.y, height, model.tempo_max_bpm).clamp(20.0, model.tempo_max_bpm);
+        return Some(VelocityPanelAction::TempoAdd(tick, bpm));
+    }
+
+    if down && let Some(idx) = state.tempo_drag {
+        let bpm = y_to_bpm(local.y, height, model.tempo_max_bpm).clamp(20.0, model.tempo_max_bpm);
+        action = Some(VelocityPanelAction::TempoDragMove(idx, bpm));
+    }
+
+    if released && state.tempo_drag.take().is_some() {
+        action = Some(VelocityPanelAction::TempoDragEnd);
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state));
+    }
+
+    action
+}
+
+fn hit_test_tempo(model: &VelocityPanelModel, local: Vec2) -> Option<usize> {
+    model
+        .tempo_points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let x =
+                point.tick * model.view.zoom_x - model.view.scroll_x + model.view.keyboard_width;
+            let y = tempo_to_y(point.bpm, model.tempo_max_bpm, model.canvas.height());
             let d = ((local.x - x).powi(2) + (local.y - y).powi(2)).sqrt();
             (index, d)
         })

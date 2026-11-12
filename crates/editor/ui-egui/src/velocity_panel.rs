@@ -8,44 +8,16 @@
 //!
 //! 面板背景不铺色：gfx 的清屏色已是 `background.base`，铺色会盖掉 gfx 数据曲线。
 
-use egui::{Align2, Color32, CornerRadius, FontId, Margin, Pos2, Rect, Stroke, StrokeKind, Vec2};
+use egui::{Align2, CornerRadius, FontId, Margin, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use lumino_message::CcOption;
 
 use crate::theme;
 
+mod draw;
 mod input;
+mod types;
 
-/// 力度点快照（供 egui 输入命中/曲线绘制）。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct VelocityPointModel {
-    /// 音符索引（document 当前轨保序）。
-    pub note_index: usize,
-    /// 起始 tick。
-    pub tick: f32,
-    /// 力度 0..=127。
-    pub velocity: u8,
-}
-
-/// 时间轴视图参数（与钢琴卷帘同源）。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct VelocityView {
-    /// 横向缩放（px/tick）。
-    pub zoom_x: f32,
-    /// 横向滚动（px）。
-    pub scroll_x: f32,
-    /// 键盘列宽（px）。
-    pub keyboard_width: f32,
-}
-
-impl Default for VelocityView {
-    fn default() -> Self {
-        Self {
-            zoom_x: 0.1,
-            scroll_x: 0.0,
-            keyboard_width: 120.0,
-        }
-    }
-}
+pub use types::{TempoPointModel, VelocityPointModel, VelocityView};
 
 /// 面板工具栏高度（与 iced `TOOLBAR_HEIGHT` 一致）。
 pub const TOOLBAR_HEIGHT: f32 = 28.0;
@@ -96,10 +68,22 @@ pub struct VelocityPanelModel {
     pub selected_notes: Vec<usize>,
     /// 时间轴视图参数。
     pub view: VelocityView,
+    /// Tempo 模式（决定是否绘制折线图，与工具无关）。
+    pub tempo_mode: bool,
+    /// Tempo 模式：egui 接管 Tempo 编辑。
+    pub tempo_editing: bool,
+    /// Tempo 控制点快照。
+    pub tempo_points: Vec<TempoPointModel>,
+    /// Tempo BPM 绘制上限。
+    pub tempo_max_bpm: f64,
+    /// Tempo 折线宽度。
+    pub tempo_line_width: f32,
+    /// 当前是否橡皮工具（点击删除 Tempo 点）。
+    pub eraser_tool: bool,
 }
 
 /// 本帧动作。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VelocityPanelAction {
     /// 切换模式（力度 → 速度 → CC → Bend）。
     ToggleMode,
@@ -117,6 +101,18 @@ pub enum VelocityPanelAction {
     VelocityCurvePaint(Vec<(usize, u8)>),
     /// 力度曲线绘制结束。
     VelocityCurveEnd,
+    /// Tempo 拖拽开始（控制点索引）。
+    TempoDragStart(usize),
+    /// Tempo 拖拽移动（索引, BPM）。
+    TempoDragMove(usize, f64),
+    /// Tempo 拖拽结束。
+    TempoDragEnd,
+    /// Tempo 新增控制点（tick, BPM）。
+    TempoAdd(f32, f64),
+    /// Tempo 删除控制点。
+    TempoDelete(usize),
+    /// 双轴滚轮（时间轴 / 曲线）。
+    Wheel { delta_x: f32, delta_y: f32 },
 }
 
 const ACTION_ID: &str = "lumino.velocity-panel.action";
@@ -154,7 +150,7 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
     // 模式按钮。
     let mode_rect = Rect::from_min_size(
         Pos2::new(model.toolbar.left() + 8.0, model.toolbar.top() + 4.0),
-        Vec2::new(text_width(ui, &model.mode_label, 12.0) + 16.0, 20.0),
+        Vec2::new(draw::text_width(ui, &model.mode_label, 12.0) + 16.0, 20.0),
     );
     let mode_fill = if model.mode_primary {
         theme::accent()
@@ -300,6 +296,11 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         );
     }
 
+    // Tempo 折线图（gfx 只画力度/CC 曲线，Tempo 图由 egui 补）。
+    if model.tempo_mode && !model.tempo_points.is_empty() {
+        draw::tempo_graph(painter, model);
+    }
+
     // CC 弹层（滚动列表，129 项）。
     if model.cc_mode && cc_open {
         let cc_rect = Rect::from_min_size(
@@ -351,14 +352,13 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         if action.is_none() {
             action = input::handle(ui, model);
         }
+    } else if model.tempo_editing {
+        // Tempo 模式：egui 接管拖拽 / 新增 / 删除（resize 手柄仍归 iced）。
+        blocked.push(input::blocking_rect(model.canvas));
+        if action.is_none() {
+            action = input::handle_tempo(ui, model);
+        }
     }
 
     (action, blocked)
-}
-
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
-        .size()
-        .x
 }

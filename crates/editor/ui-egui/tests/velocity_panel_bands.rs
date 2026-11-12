@@ -25,6 +25,12 @@ fn model() -> VelocityPanelModel {
         has_selection: false,
         selected_notes: Vec::new(),
         view: velocity_panel::VelocityView::default(),
+        tempo_editing: false,
+        tempo_mode: false,
+        tempo_points: Vec::new(),
+        tempo_max_bpm: 512.0,
+        tempo_line_width: 2.0,
+        eraser_tool: false,
     }
 }
 

@@ -171,6 +171,28 @@ impl Root {
         } else {
             Vec::new()
         };
+        let tempo_editing = is_tempo
+            && matches!(
+                self.editor.current_tool(),
+                lumino_message::Tool::Curve
+                    | lumino_message::Tool::Eraser
+                    | lumino_message::Tool::DrawEraser
+            );
+        let tempo_points = if is_tempo {
+            VelocityPanel::build_tempo_points(&self.editor)
+                .into_iter()
+                .map(|point| lumino_ui_egui::velocity_panel::TempoPointModel {
+                    tick: point.tick,
+                    bpm: point.bpm,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let eraser_tool = matches!(
+            self.editor.current_tool(),
+            lumino_message::Tool::Eraser | lumino_message::Tool::DrawEraser
+        );
 
         let model = VelocityPanelModel {
             panel,
@@ -191,7 +213,14 @@ impl Root {
                 zoom_x: view.zoom_x,
                 scroll_x: view.scroll_x,
                 keyboard_width: view.keyboard_width,
+                snap_precision: view.snap_precision,
             },
+            tempo_editing,
+            tempo_mode: is_tempo,
+            tempo_points,
+            tempo_max_bpm: vp.tempo_max_bpm,
+            tempo_line_width: vp.automation_line_thickness,
+            eraser_tool,
         };
         if velocity_editing && std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0")
         {
@@ -208,6 +237,21 @@ impl Root {
                 })
                 .collect();
             tracing::info!(?screen, mode = %model.mode_label, "DEBUG velocity points");
+        }
+        if tempo_editing && std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
+            let screen: Vec<(f32, f32)> = model
+                .tempo_points
+                .iter()
+                .map(|p| {
+                    (
+                        model.canvas.left() + p.tick * model.view.zoom_x - model.view.scroll_x
+                            + model.view.keyboard_width,
+                        model.canvas.top()
+                            + tempo_bpm_to_y(p.bpm, model.tempo_max_bpm, model.canvas.height()),
+                    )
+                })
+                .collect();
+            tracing::info!(?screen, "DEBUG tempo points");
         }
         Some(model)
     }
@@ -233,6 +277,22 @@ impl Root {
                 Message::Velocity(VelocityAction::CurvePaint(updates))
             }
             VelocityPanelAction::VelocityCurveEnd => Message::Velocity(VelocityAction::CurveEnd),
+            VelocityPanelAction::TempoDragStart(index) => {
+                Message::Velocity(VelocityAction::TempoDragStart(index))
+            }
+            VelocityPanelAction::TempoDragMove(index, bpm) => {
+                Message::Velocity(VelocityAction::TempoDragMove(index, bpm))
+            }
+            VelocityPanelAction::TempoDragEnd => Message::Velocity(VelocityAction::TempoDragEnd),
+            VelocityPanelAction::TempoAdd(tick, bpm) => {
+                Message::Velocity(VelocityAction::TempoAdd(tick, bpm))
+            }
+            VelocityPanelAction::TempoDelete(index) => {
+                Message::Velocity(VelocityAction::TempoDelete(index))
+            }
+            VelocityPanelAction::Wheel { delta_x, delta_y } => {
+                Message::Velocity(VelocityAction::WheelScrolled { delta_x, delta_y })
+            }
         }
     }
 }
