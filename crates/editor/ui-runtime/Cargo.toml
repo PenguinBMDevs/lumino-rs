@@ -25,5 +25,9 @@ tracing-subscriber = { workspace = true }
 lumino-egui-bridge = { path = "../egui-bridge" }
 lumino-ui-egui = { path = "../ui-egui", default-features = false }
 lumino-ui = { path = "../ui" }
+lumino-ui-core = { path = "../ui-core" }
+lumino-message = { workspace = true }
+lumino-midi-loader = { workspace = true }
 lumino-gfx = { path = "../gfx" }
 lumino-core = { workspace = true }
+iced_core = { workspace = true }

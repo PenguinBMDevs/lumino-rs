@@ -35,6 +35,8 @@ pub struct NativeApp {
     pointer: Option<Pos2>,
     modifiers: ModifiersState,
     clicks: u32,
+    /// 是否正在用 egui 指针驱动编辑器（按下 → Moved → Released）。
+    editor_dragging: bool,
     start: Option<Instant>,
 }
 
@@ -238,15 +240,26 @@ impl ApplicationHandler for NativeApp {
         }
         self.ctx.set_visuals(egui::Visuals::dark());
         self.ctx.set_pixels_per_point(window.scale_factor() as f32);
-        self.root = Some(lumino_ui::Root::new(
-            &lumino_core::storage::config::UiConfig::default(),
+        let mut root = lumino_ui::Root::new(&lumino_core::storage::config::UiConfig::default());
+        // 空工程 → 建两条音轨（0 指挥 / 1 普通），当前轨设为 1，便于铅笔落音符。
+        let mut doc = lumino_midi_loader::MidiDocument::empty_with_tracks(2, 480);
+        doc.tempo_changes = vec![(0, 120.0)];
+        doc.time_signatures = vec![(0, 4, 4)];
+        root.set_midi_document(doc);
+        root.editor.editor_state.view.ppq = 480;
+        root.editor.editor_state.data.current_track = 1;
+        // 走生产工具栏事件：同时更新 toolbar 与 editor 的工具状态。
+        root.update(lumino_ui_core::toolbar_event::Event::tool_selected(
+            lumino_core::Tool::Pencil,
         ));
+        self.root = Some(root);
+        self.sync_editor_canvas(&window);
         self.start = Some(Instant::now());
         self.window = Some(window);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let Some(window) = self.window.as_ref() else {
+        let Some(window) = self.window.clone() else {
             return;
         };
         let scale = window.scale_factor();
@@ -256,10 +269,12 @@ impl ApplicationHandler for NativeApp {
                 if let Some(gpu) = self.gpu.as_mut() {
                     gpu.resize(size.width, size.height);
                 }
+                self.sync_editor_canvas(&window);
                 window.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 self.ctx.set_pixels_per_point(window.scale_factor() as f32);
+                self.sync_editor_canvas(&window);
                 window.request_redraw();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -270,6 +285,11 @@ impl ApplicationHandler for NativeApp {
                 let pos = Pos2::new(logical.x, logical.y);
                 self.pointer = Some(pos);
                 self.events.push(EguiEvent::PointerMoved(pos));
+                if self.editor_dragging
+                    && let Some(local) = self.editor_local(pos)
+                {
+                    self.send_editor(lumino_message::EditorAction::Moved(local));
+                }
             }
             WindowEvent::CursorLeft { .. } => {
                 self.pointer = None;
@@ -283,6 +303,21 @@ impl ApplicationHandler for NativeApp {
                         pressed: state == ElementState::Pressed,
                         modifiers: modifiers(self.modifiers),
                     });
+                    if button == MouseButton::Left {
+                        if state == ElementState::Pressed {
+                            if let Some(local) = self.editor_local(pos) {
+                                self.send_editor(lumino_message::EditorAction::Pressed {
+                                    pos: local,
+                                    shift: self.modifiers.shift_key(),
+                                    ctrl: self.modifiers.control_key(),
+                                });
+                                self.editor_dragging = true;
+                            }
+                        } else if self.editor_dragging {
+                            self.send_editor(lumino_message::EditorAction::Released);
+                            self.editor_dragging = false;
+                        }
+                    }
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -340,6 +375,55 @@ impl ApplicationHandler for NativeApp {
 }
 
 impl NativeApp {
+    /// 把编辑器画布尺寸同步为「内容区」逻辑尺寸（iced 布局原本由 widget 写入）。
+    fn sync_editor_canvas(&mut self, window: &Window) {
+        let Some(root) = self.root.as_mut() else {
+            return;
+        };
+        let ppp = window.scale_factor() as f32;
+        let size = window.inner_size();
+        let width = (size.width as f32 / ppp - lumino_ui_egui::layout::SIDEBAR_W).max(1.0);
+        let height =
+            (size.height as f32 / ppp - lumino_ui_egui::layout::TITLEBAR_H - root.toolbar.height)
+                .max(1.0);
+        root.editor
+            .set_canvas_size(iced_core::Point::new(width, height));
+        root.editor
+            .set_canvas_offset(iced_core::Point::new(0.0, 0.0));
+    }
+
+    /// 窗口逻辑坐标 → 编辑器画布局部坐标（画布左上 = 左栏右缘 + 标题栏/工具栏下缘）。
+    fn editor_local(&self, pos: Pos2) -> Option<lumino_message::Point2> {
+        let left = lumino_ui_egui::layout::SIDEBAR_W;
+        let toolbar_h = self
+            .root
+            .as_ref()
+            .map(|root| root.toolbar.height)
+            .unwrap_or(72.0);
+        let top = lumino_ui_egui::layout::TITLEBAR_H + toolbar_h;
+        if pos.x < left || pos.y < top {
+            return None;
+        }
+        Some(lumino_message::Point2 {
+            x: pos.x - left,
+            y: pos.y - top,
+        })
+    }
+
+    fn send_editor(&mut self, action: lumino_message::EditorAction) {
+        tracing::debug!("native editor action: {action:?}");
+        if let Some(root) = self.root.as_mut() {
+            root.update(lumino_ui_core::Message::EditorAction(action));
+            tracing::debug!(
+                "native editor state: tool={:?} track={} count={} doc={}",
+                root.editor.editor_state.tool,
+                root.editor.editor_state.data.current_track,
+                root.editor.editor_state.data.current_track_note_count(),
+                root.editor.editor_state.data.document.is_some()
+            );
+        }
+    }
+
     fn render(&mut self) {
         let (Some(window), Some(gpu)) = (self.window.as_ref(), self.gpu.as_mut()) else {
             return;
@@ -373,6 +457,10 @@ impl NativeApp {
             .as_ref()
             .map(|root| root.egui_chrome_model_native(logical.x))
             .unwrap_or_else(|| demo_model(0));
+        let notes = root
+            .as_ref()
+            .map(|root| root.editor.editor_state.data.current_track_note_count())
+            .unwrap_or(0);
         let clicks = &mut self.clicks;
         let mut icons = std::mem::take(&mut self.icons);
         let output = self.ctx.run_ui(raw, |ui| {
@@ -393,6 +481,7 @@ impl NativeApp {
                             *clicks += 1;
                         }
                         ui.label(format!("clicks {clicks}"));
+                        ui.label(format!("notes {notes}"));
                     });
                 });
         });
