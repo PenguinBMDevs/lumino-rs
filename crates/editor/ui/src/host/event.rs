@@ -6,6 +6,7 @@
 //! - `self::window` — 窗口事件处理、UI 状态管理
 //! - `self::message` — 消息分发与处理
 
+pub(crate) mod canvas;
 mod input;
 mod keyboard;
 mod message;

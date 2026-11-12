@@ -91,6 +91,7 @@ impl Host {
             events: Vec::new(),
             egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
             egui_blocked: Vec::new(),
+            canvas_input: lumino_ui_editor::grid::GridInteractionState::default(),
             egui_editor_texture: None,
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),

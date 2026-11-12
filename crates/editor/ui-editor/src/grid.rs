@@ -18,6 +18,7 @@
 pub mod area_paint_box;
 pub mod bars;
 pub mod brush_tool_box;
+pub mod canvas_input;
 pub mod confirm_buttons;
 pub mod drawn_shape_box;
 pub mod drawn_shape_outline;

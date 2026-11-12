@@ -58,8 +58,10 @@ impl Host {
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }
-    }
 
+        // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：跟手移动 / 悬停预览。
+        self.dispatch_canvas_moved();
+    }
     /// 释放鼠标左键状态（用于拖拽窗口后的状态重置）
     pub fn release_left_mouse_button(&mut self) {
         // 释放鼠标左键

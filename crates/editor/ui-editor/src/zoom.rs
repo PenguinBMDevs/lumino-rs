@@ -17,9 +17,20 @@ pub const PIXEL_TO_LINE_SCALE: f32 = 50.0;
 ///
 /// 返回 `None` 表示无需缩放（增量为 0）。
 pub fn zoom_factor_from_delta(delta: &ScrollDelta) -> Option<f32> {
-    let line_delta = match delta {
-        ScrollDelta::Lines { y, .. } => *y,
-        ScrollDelta::Pixels { y, .. } => *y / PIXEL_TO_LINE_SCALE,
+    match delta {
+        ScrollDelta::Lines { y, .. } => zoom_factor_from_wheel(*y, false),
+        ScrollDelta::Pixels { y, .. } => zoom_factor_from_wheel(*y, true),
+    }
+}
+
+/// 计算缩放因子（原始增量 + 是否像素级）。
+///
+/// 像素级增量按 [`PIXEL_TO_LINE_SCALE`] 换算成刻度线，单次最多一个刻度。
+pub fn zoom_factor_from_wheel(delta_y: f32, precise: bool) -> Option<f32> {
+    let line_delta = if precise {
+        delta_y / PIXEL_TO_LINE_SCALE
+    } else {
+        delta_y
     };
     let step = line_delta.clamp(-1.0, 1.0);
     if step.abs() < f32::EPSILON {

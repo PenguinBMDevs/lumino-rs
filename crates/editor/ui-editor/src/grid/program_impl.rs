@@ -3,16 +3,18 @@
 //! 按职责拆分为以下子模块：
 //! - `mouse_interaction`: 鼠标交互反馈（光标形态）
 //! - `draw`: 各图层绘制
+//!
+//! 输入语义统一在 [`super::canvas_input::dispatch`]：本文件的 `update` 只负责
+//! 把 iced 事件翻译成 [`CanvasEvent`]（含画布坐标换算），再转调共享分派器。
 
 mod draw;
-mod mouse_interaction;
+pub mod mouse_interaction;
 
+use super::canvas_input::{CanvasButton, CanvasEvent, dispatch};
 use super::state::GridInteractionState;
-use crate::message::EditorAction;
 use crate::{Message, Renderer, Theme};
 use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
-use lumino_message::{ContextMenuTarget, Tool};
 
 impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
     type State = GridInteractionState;
@@ -52,151 +54,55 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             state.position = Some(local_pos);
         }
 
-        let cursor_over_bounds = cursor.position_over(bounds);
+        // `cursor_over_bounds` 决定按下/滚轮是否落在画布内；移动与释放不受限
+        // （拖拽移出画布后仍需继续跟手）。
+        let over = cursor.position_over(bounds);
+        let local = |position: iced_core::Point| (position.x - bounds.x, position.y - bounds.y);
 
-        match event {
+        let mapped = match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(position) = cursor_over_bounds {
-                    let local_pos =
-                        iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                    // ShapeStore 列表 / 区域着色优先于普通画布交互。
-                    if let Some(action) =
-                        crate::grid::shape_list_box::press_action(self.editor, local_pos)
-                    {
-                        return action.map(|action| Action::publish(Message::EditorAction(action)));
-                    }
-                    if let Some(action) =
-                        crate::grid::area_paint_box::press_action(self.editor, local_pos)
-                    {
-                        return action.map(|action| Action::publish(Message::EditorAction(action)));
-                    }
-                    // 图片转 MIDI / 曲线 / 形状 / 画刷的悬浮 √× 按钮已迁 egui
-                    // （`ui-egui::editor_action_buttons`，命中区本帧加入占用），
-                    // iced Canvas 不再做按钮命中，避免同一击双触发。
-                    // 曲线工具：弯折按钮已迁 egui（`ui-egui::bend_buttons`）；
-                    // 形状工具 / 画刷的 √× 按钮也已迁 egui（见上）。
-                    return self.handle_left_press(state, local_pos);
-                }
+                over.map(|position| CanvasEvent::Press {
+                    local: local(position),
+                    button: CanvasButton::Left,
+                })
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
-                if let Some(position) = cursor_over_bounds {
-                    let local_pos =
-                        iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                    if self.editor.shape_list_open {
-                        return Some(Action::publish(Message::EditorAction(
-                            EditorAction::ShapeListClose,
-                        )));
-                    }
-                    // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。
-                    if let Some(action) =
-                        crate::grid::area_paint_box::clear_action(self.editor, local_pos)
-                    {
-                        return Some(Action::publish(Message::EditorAction(action)));
-                    }
-                    // 仅在有效钢琴卷帘区域内打开右键菜单
-                    if self.editor.is_inside_canvas(local_pos) {
-                        // 待确认镜像：选择工具与它的 owner 工具都可直接右键；
-                        // 已确认图形只在对齐的鼠标工具下开放。
-                        let target = match self.editor.drawn_shape_pending_at_screen(local_pos) {
-                            Some(true) => self
-                                .editor
-                                .pending_ref_at_screen(local_pos)
-                                .filter(|pending| self.editor.pending_menu_allowed(*pending))
-                                .map_or(ContextMenuTarget::Notes, |_| {
-                                    ContextMenuTarget::PendingDrawnShape
-                                }),
-                            Some(false) if self.editor.current_tool() == Tool::ShapeSelect => {
-                                ContextMenuTarget::DrawnShape
-                            }
-                            _ => ContextMenuTarget::Notes,
-                        };
-                        return Some(Action::publish(Message::PianoRollContextMenu(
-                            lumino_message::PianoRollContextMenuAction::Open {
-                                position: lumino_message::Point2::new(local_pos.x, local_pos.y),
-                                target,
-                            },
-                        )));
-                    }
-                }
-            }
-            Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
-                state.shift_pressed = modifiers.shift();
-                state.control_pressed = modifiers.control();
-            }
-            Event::Window(iced_core::window::Event::Unfocused) => {
-                // 失焦时修饰键 Released 可能收不到，清掉避免 Shift 约束残留。
-                state.shift_pressed = false;
-                state.control_pressed = false;
-            }
-            Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-
-                // 更新框选框平滑动画
-                self.update_selection_box_animation(Some(local_pos));
-
-                if state.is_loop_dragging {
-                    return Some(Action::publish(Message::LoopRange(
-                        lumino_ui_core::message::LoopRangeAction::RulerMoved {
-                            x: local_pos.x,
-                            y: local_pos.y,
-                        },
-                    )));
-                }
-                if state.is_dragging_indicator {
-                    return Some(Action::publish(Message::EditorAction(
-                        EditorAction::IndicatorDragMove { x: local_pos.x },
-                    )));
-                }
-                if cursor_over_bounds.is_some() {
-                    return Some(Action::publish(Message::EditorAction(EditorAction::Moved(
-                        lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
-                    ))));
-                }
+                over.map(|position| CanvasEvent::Press {
+                    local: local(position),
+                    button: CanvasButton::Right,
+                })
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                // 清除框选框动画状态
-                self.editor.selection_box_anim.set(None);
-
-                if state.is_loop_dragging {
-                    state.is_loop_dragging = false;
-                    return Some(Action::publish(Message::LoopRange(
-                        lumino_ui_core::message::LoopRangeAction::RulerReleased,
-                    )));
-                }
-                if state.is_dragging_indicator {
-                    state.is_dragging_indicator = false;
-                }
-                return Some(Action::publish(Message::EditorAction(
-                    EditorAction::Released,
-                )));
+                Some(CanvasEvent::Release)
             }
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                if let Some(position) = cursor_over_bounds {
-                    let local_pos =
-                        iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                    let view = &self.editor.editor_state.view;
-                    // Ctrl 状态双通道合并：
-                    // - state.control_pressed：iced canvas 内 ModifiersChanged 事件（可能因焦点不送达）
-                    // - self.editor.ctrl_pressed()：host 窗口级 CtrlKeyChanged（可靠通道）
-                    // 两者兜底，保证 Ctrl+滚轮缩放语义稳定。
-                    let ctrl_pressed = state.control_pressed || self.editor.ctrl_pressed();
-                    // 标尺区域（顶部小节号栏）：Ctrl+滚轮缩放 X 轴，普通滚轮水平平移
-                    if local_pos.y < view.ruler_height {
-                        return self.handle_ruler_wheel_scroll(delta, ctrl_pressed, local_pos);
-                    }
-                    // 键盘区域（左侧琴键栏）：Ctrl+滚轮缩放 Y 轴
-                    if local_pos.x < view.keyboard_width {
-                        return self.handle_keyboard_wheel_scroll(delta, ctrl_pressed, local_pos);
-                    }
-                    if self.editor.is_inside_canvas(local_pos) {
-                        return self.handle_wheel_scroll(delta, state.shift_pressed);
-                    }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => Some(CanvasEvent::Move {
+                local: local(*position),
+            }),
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => over.map(|position| {
+                let (delta_x, delta_y, precise) = match delta {
+                    mouse::ScrollDelta::Lines { x, y } => (*x, *y, false),
+                    mouse::ScrollDelta::Pixels { x, y } => (*x, *y, true),
+                };
+                CanvasEvent::Wheel {
+                    local: local(position),
+                    delta_x,
+                    delta_y,
+                    precise,
                 }
+            }),
+            Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
+                Some(CanvasEvent::Modifiers {
+                    shift: modifiers.shift(),
+                    ctrl: modifiers.control(),
+                })
             }
-            _ => {}
-        }
+            Event::Window(iced_core::window::Event::Unfocused) => Some(CanvasEvent::FocusLost),
+            _ => None,
+        };
 
-        None
+        mapped
+            .and_then(|event| dispatch(self.editor, state, event))
+            .map(Action::publish)
     }
 
     fn mouse_interaction(

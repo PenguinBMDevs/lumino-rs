@@ -37,6 +37,7 @@ mod window_ctx;
 use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
+pub(crate) use event::canvas::canvas_input_enabled;
 /// 叠加层开关（标题栏菜单是否由 egui 接管）。
 pub(crate) use render::egui_overlay::overlay_enabled;
 
@@ -69,6 +70,8 @@ pub struct Host {
     pub(crate) egui_input: render::egui_overlay::OverlayInput,
     /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 iced 队列。
     pub(crate) egui_blocked: Vec<egui::Rect>,
+    /// 画布输入状态（winit / egui 直接驱动时的双击检测、拖拽标记等）。
+    pub(crate) canvas_input: lumino_ui_editor::grid::GridInteractionState,
     /// 编辑器画布（卷帘 / 走带）离屏纹理视图；`Some` 时 egui 采样它作底层，
     /// 并跳过 gfx → surface 的直接 blit。
     pub(crate) egui_editor_texture: Option<std::sync::Arc<iced_wgpu::wgpu::TextureView>>,

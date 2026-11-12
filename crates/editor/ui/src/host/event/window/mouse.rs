@@ -18,6 +18,10 @@ impl Host {
             self.window_ctx.is_mouse_pressed = state == ElementState::Pressed;
         }
 
+        // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：按下 / 释放直接进编辑器，
+        // 不再依赖 iced `Grid` program。
+        self.dispatch_canvas_button(state == ElementState::Pressed, button);
+
         // 全局监听鼠标释放事件，结束工具栏拖拽状态
         if button == winit::event::MouseButton::Left
             && state == ElementState::Released

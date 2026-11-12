@@ -3599,12 +3599,39 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 776/776、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.21（下一步）**
+**Task 4.21（第一百二十八步）：Canvas 输入迁出 iced（共享分派 + winit 直连）**
 
-1. Canvas 输入迁 egui/winit：`grid::program_impl::update` 的分派逻辑（左键按下 /
-   右键菜单 / 移动 / 松开 / 滚轮 / 修饰键）改为 UI 无关入口，由宿主用 winit 事件
-   直接调用（当前 iced `Grid` 是唯一输入来源）；
-2. 打开 `LUMINO_EGUI_CANVAS_SYNC`，删除 `host/render/ui.rs` 的 iced 分支与
-   `host/event/window/*` 的 iced 输入路由；
-3. 曲线矢量填充的凹多边形三角化；
-4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。
+- **新增 `ui-editor::grid::canvas_input`**（与 UI 框架无关）：
+  - `CanvasEvent { Press/Move/Release/Wheel/Modifiers/FocusLost }` + `CanvasButton`；
+  - `dispatch(editor, state, event) -> Option<Message>`：左键按下（ShapeStore / 区域着色
+    优先）、右键菜单（`ContextMenuTarget` 判定）、拖拽移动（循环区 / 指示线 /
+    `EditorAction::Moved`）、释放、滚轮分区（标尺缩放 X / 键盘列缩放 Y / 网格滚动）、
+    修饰键与失焦。
+- **`program_impl::update` 变成薄适配层**：只做画布坐标换算与 iced 事件映射，
+  再转调同一份 `dispatch`——两条路径语义不可能漂移。
+- **`grid::program` 的 `handle_*` 改为返回 `Option<Message>`**（去掉 `canvas::Action`
+  包装）；滚轮增量改为 `(delta_x, delta_y, precise)`，`zoom_factor_from_wheel`
+  新增像素/刻度双通道。
+- **宿主直连**：`host/event/canvas.rs` 把 winit 鼠标按下/释放、移动、滚轮、
+  修饰键、失焦（含触摸合成的指针与双指平移）翻译成 `CanvasEvent`；
+  `LUMINO_EGUI_CANVAS_INPUT=1` 时主窗口 `process_pending_events` 不再构建
+  iced widget 树，画布几何由上一卡的 `sync_canvas_bounds` 提供（同开关联动）。
+- **验证**：
+  - 单测（`grid::canvas_input::tests`，4 条）：铅笔按下-拖动-松开落下 **1 个音符**；
+    右键发 `PianoRollContextMenu::Open(600,320)`；标尺/键盘/网格滚轮各自路由；
+    修饰键与失焦状态同步。`lumino-ui-editor` **912/912**。
+  - 真机（`LUMINO_EGUI_CANVAS_INPUT=1`，PostMessage 驱动、AttachThreadInput 置前）：
+    `P` 切铅笔 → 拖拽 → 画布出现 1 个蓝色音符、状态栏 `音符总数: 1`；右键 →
+    图标式上下文菜单在指针处展开（截图 `target/pm4-note.png` / `pm4-menu.png`）。
+- **默认仍关闭**：翻默认前必须先迁「滚动条拖拽」（egui 只绘制、交互仍在 iced
+  `ScrollbarWidget`）与纵向卷帘（布局/语义不同）。开关打开时两者均自动保留 iced 通道。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 912/912、`ui-egui` 全部集成
+  测试、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动。
+
+**Task 4.22（下一步）**
+
+1. 滚动条拖拽迁 egui（`piano_roll::interact`）：命中滑块/轨道 → `ScrollbarScrolled(X/Y)`；
+2. 纵向卷帘输入迁 `canvas_input`（布局 + 语义），然后翻 `LUMINO_EGUI_CANVAS_INPUT` 默认；
+3. 删除 `host/render/ui.rs` 的 iced 分支与 `host/event/window/*` 的 iced 路由；
+4. 曲线填充凹多边形三角化；摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

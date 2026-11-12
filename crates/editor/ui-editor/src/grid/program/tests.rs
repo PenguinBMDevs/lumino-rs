@@ -1,24 +1,25 @@
 //! 钢琴卷帘网格滚轮交互单元测试
 //!
 //! 从 grid/program.rs 主文件拆出，因为主文件超过 400 行。
+//! 输入语义已抽到 `grid::canvas_input`；本文件锁定滚轮增量换算与分区路由。
 
 use super::PianoRollGrid;
+use super::wheel_delta;
 use crate::Editor;
 use iced_core::Point;
-use iced_core::mouse::ScrollDelta;
 use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor::SCROLL_LINES_SCALE;
 
 #[test]
 fn test_wheel_delta_lines_scale() {
-    let (dx, dy) = PianoRollGrid::wheel_delta(&ScrollDelta::Lines { x: 2.0, y: -1.0 });
+    let (dx, dy) = wheel_delta(2.0, -1.0, false);
     assert_eq!(dx, 2.0 * SCROLL_LINES_SCALE);
     assert_eq!(dy, -SCROLL_LINES_SCALE);
 }
 
 #[test]
 fn test_wheel_delta_pixels_unchanged() {
-    let (dx, dy) = PianoRollGrid::wheel_delta(&ScrollDelta::Pixels { x: 10.0, y: -25.0 });
+    let (dx, dy) = wheel_delta(10.0, -25.0, true);
     assert_eq!(dx, 10.0);
     assert_eq!(dy, -25.0);
 }
@@ -30,13 +31,8 @@ fn test_keyboard_wheel_without_ctrl_is_noop() {
     // B便捷缩放：键盘区滚轮无需 Ctrl 直接缩放 Y（对齐 yinhe 左区）
     let editor = Editor::new();
     let grid = PianoRollGrid::new(&editor);
-    let action = grid.handle_keyboard_wheel_scroll(
-        &ScrollDelta::Lines { x: 0.0, y: 1.0 },
-        false,
-        Point::new(30.0, 300.0),
-    );
-    let (msg, _, _) = action.expect("键盘区无Ctrl滚轮应缩放").into_inner();
-    assert!(matches!(msg, Some(Message::ZoomYChanged { .. })));
+    let message = grid.handle_keyboard_wheel_scroll(0.0, 1.0, false, Point::new(30.0, 300.0));
+    assert!(matches!(message, Some(Message::ZoomYChanged { .. })));
 }
 
 /// 互斥隔离：标尺区 Ctrl+滚轮只产生缩放，绝不产生平移（Scrolled）
@@ -44,17 +40,11 @@ fn test_keyboard_wheel_without_ctrl_is_noop() {
 fn test_ruler_wheel_ctrl_zooms_only() {
     let editor = Editor::new();
     let grid = PianoRollGrid::new(&editor);
-    let action = grid
-        .handle_ruler_wheel_scroll(
-            &ScrollDelta::Lines { x: 0.0, y: 1.0 },
-            true,
-            Point::new(430.0, 20.0),
-        )
+    let message = grid
+        .handle_ruler_wheel_scroll(0.0, 1.0, false, Point::new(430.0, 20.0))
         .expect("Ctrl+滚轮应产生动作");
-    // 展开 Action 检查是否只有 ZoomXChanged（缩放与平移互斥，二者不会同时发出）
-    let (message, _, _) = action.into_inner();
     match message {
-        Some(Message::ZoomXChanged { zoom, fixed_ratio }) => {
+        Message::ZoomXChanged { zoom, fixed_ratio } => {
             assert!(zoom > 0.0);
             assert!((0.0..=1.0).contains(&fixed_ratio));
         }
@@ -67,16 +57,11 @@ fn test_ruler_wheel_ctrl_zooms_only() {
 fn test_ruler_wheel_without_ctrl_pans_only() {
     let editor = Editor::new();
     let grid = PianoRollGrid::new(&editor);
-    let action = grid
-        .handle_ruler_wheel_scroll(
-            &ScrollDelta::Lines { x: 0.0, y: 1.0 },
-            false,
-            Point::new(430.0, 20.0),
-        )
+    let message = grid
+        .handle_ruler_wheel_scroll(0.0, 1.0, false, Point::new(430.0, 20.0))
         .expect("普通滚轮应产生动作");
-    let (message, _, _) = action.into_inner();
     match message {
-        Some(Message::ZoomXChanged { zoom, fixed_ratio }) => {
+        Message::ZoomXChanged { zoom, fixed_ratio } => {
             assert!(zoom > 0.0);
             assert!((0.0..=1.0).contains(&fixed_ratio));
         }
@@ -95,15 +80,14 @@ fn test_grid_wheel_horizontal_swipe_follows_finger() {
     let grid = PianoRollGrid::new(&editor);
 
     // 触控板左滑（像素增量 x < 0）
-    let action = grid
-        .handle_wheel_scroll(&ScrollDelta::Pixels { x: -100.0, y: 0.0 }, false)
+    let message = grid
+        .handle_wheel_scroll(-100.0, 0.0, true, false)
         .expect("触控板水平滑动应产生动作");
-    let (message, _, _) = action.into_inner();
     let (delta_x, delta_y) = match message {
-        Some(Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
+        Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
             delta_x,
             delta_y,
-        })) => (delta_x, delta_y),
+        }) => (delta_x, delta_y),
         other => panic!("网格区滚轮应发 Scrolled，实际为: {other:?}"),
     };
     assert!(delta_x < 0.0, "左滑应产生负 delta_x，实际={delta_x}");
@@ -124,20 +108,10 @@ fn test_ruler_wheel_actions_are_exclusive() {
     let editor = Editor::new();
     let grid = PianoRollGrid::new(&editor);
     // 同一个滚轮事件，在 Ctrl 按下/松开两种状态下均产生缩放
-    let ctrl_action = grid.handle_ruler_wheel_scroll(
-        &ScrollDelta::Lines { x: 0.0, y: -1.0 },
-        true,
-        Point::new(430.0, 20.0),
-    );
-    let plain_action = grid.handle_ruler_wheel_scroll(
-        &ScrollDelta::Lines { x: 0.0, y: -1.0 },
-        false,
-        Point::new(430.0, 20.0),
-    );
-    let ctrl_msg = ctrl_action.expect("Ctrl+滚轮应产生动作").into_inner().0;
-    let plain_msg = plain_action.expect("普通滚轮应产生动作").into_inner().0;
-    assert!(matches!(ctrl_msg, Some(Message::ZoomXChanged { .. })));
-    assert!(matches!(plain_msg, Some(Message::ZoomXChanged { .. })));
+    let ctrl_message = grid.handle_ruler_wheel_scroll(0.0, -1.0, false, Point::new(430.0, 20.0));
+    let plain_message = grid.handle_ruler_wheel_scroll(0.0, -1.0, false, Point::new(430.0, 20.0));
+    assert!(matches!(ctrl_message, Some(Message::ZoomXChanged { .. })));
+    assert!(matches!(plain_message, Some(Message::ZoomXChanged { .. })));
 }
 
 /// 斜向滚动（触控板双指对角线滑动）：单条事件携带双轴非零分量，
@@ -161,21 +135,14 @@ fn test_grid_wheel_diagonal_scrolls_both_axes() {
     let grid = PianoRollGrid::new(&editor);
 
     // 触控板左滑+上滑（像素增量 x<0, y<0）
-    let action = grid
-        .handle_wheel_scroll(
-            &ScrollDelta::Pixels {
-                x: -100.0,
-                y: -50.0,
-            },
-            false,
-        )
+    let message = grid
+        .handle_wheel_scroll(-100.0, -50.0, true, false)
         .expect("斜向滚动应产生动作");
-    let (message, _, _) = action.into_inner();
     let (delta_x, delta_y) = match message {
-        Some(Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
+        Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
             delta_x,
             delta_y,
-        })) => (delta_x, delta_y),
+        }) => (delta_x, delta_y),
         other => panic!("网格区滚轮应发 Scrolled，实际为: {other:?}"),
     };
     // 双轴分量都应非零

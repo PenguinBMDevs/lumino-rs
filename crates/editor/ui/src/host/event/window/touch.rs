@@ -285,6 +285,8 @@ impl Host {
                 .push(iced_core::Event::Mouse(mouse::Event::WheelScrolled {
                     delta: mouse::ScrollDelta::Pixels { x: dx, y: dy },
                 }));
+            // 画布输入直连：双指平移同样直接驱动编辑器（iced 队列在直连模式下被丢弃）。
+            self.dispatch_canvas_wheel(dx, dy, true);
             self.prev_pan_center = Some(center);
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();

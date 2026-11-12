@@ -32,6 +32,7 @@ impl Host {
             // 失焦时 Shift 的 Released 也可能收不到：主工具与工具栏都不能残留约束态。
             self.root.editor.set_shift_pressed(false);
             self.root.toolbar.shift_pressed = false;
+            self.dispatch_canvas_focus_lost();
         }
         self.route_message(message::Window::focused(focused));
     }
@@ -123,8 +124,19 @@ impl Host {
             MouseInput { state, button, .. } => {
                 self.handle_mouse_input_event(*state, *button);
             }
+            MouseWheel { delta, .. } => {
+                use winit::event::MouseScrollDelta;
+                let (dx, dy, precise) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (*x, *y, false),
+                    MouseScrollDelta::PixelDelta(position) => {
+                        (position.x as f32, position.y as f32, true)
+                    }
+                };
+                self.dispatch_canvas_wheel(dx, dy, precise);
+            }
             ModifiersChanged(new_modifiers) => {
                 self.handle_modifiers_changed_event(new_modifiers);
+                self.dispatch_canvas_modifiers(new_modifiers.state());
             }
             winit::event::WindowEvent::Touch(touch) => {
                 // 触摸手势层：单指合成指针并同步窗口级按下/抬起；
@@ -187,6 +199,12 @@ impl Host {
         // 触摸长按判定必须排在「事件为空就早退」之前：长按期间没有任何窗口
         // 事件，事件队列是空的，只有定时唤醒这一帧能把它判出来。
         self.poll_touch_long_press();
+
+        // 画布输入直连：iced 不再消费主窗口事件（否则同一击处理两次）。
+        if self.canvas_input_active() {
+            self.events.clear();
+            return;
+        }
 
         if self.events.is_empty() {
             return;

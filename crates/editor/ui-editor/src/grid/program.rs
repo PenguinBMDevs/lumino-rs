@@ -3,7 +3,6 @@
 use super::state::GridInteractionState;
 use crate::Editor;
 use iced_core::Point;
-use iced_widget::canvas::{self};
 use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
@@ -53,7 +52,7 @@ impl<'a> PianoRollGrid<'a> {
         &self,
         state: &mut GridInteractionState,
         local_pos: Point,
-    ) -> Option<canvas::Action<Message>> {
+    ) -> Option<Message> {
         use lumino_ui_core::message::EditorAction;
 
         let v = &self.editor.editor_state.view;
@@ -67,12 +66,12 @@ impl<'a> PianoRollGrid<'a> {
                 let loop_end_x = loop_range.end_tick() * v.zoom_x - v.scroll_x + v.keyboard_width;
                 if local_pos.x >= loop_start_x && local_pos.x <= loop_end_x {
                     state.is_loop_dragging = true;
-                    return Some(canvas::Action::publish(Message::LoopRange(
+                    return Some(Message::LoopRange(
                         lumino_ui_core::message::LoopRangeAction::RulerPressed {
                             x: local_pos.x,
                             y: local_pos.y,
                         },
-                    )));
+                    ));
                 }
             }
 
@@ -86,48 +85,45 @@ impl<'a> PianoRollGrid<'a> {
                 let hit_margin = 8.0; // 点击容差
                 if (local_pos.x - indicator_screen_x).abs() <= hit_margin {
                     state.is_dragging_indicator = true;
-                    return Some(canvas::Action::publish(Message::EditorAction(
-                        EditorAction::IndicatorDragStart { x: local_pos.x },
-                    )));
+                    return Some(Message::EditorAction(EditorAction::IndicatorDragStart {
+                        x: local_pos.x,
+                    }));
                 }
             }
 
             let tick = self.editor.x_to_tick(local_pos.x);
             let snapped_tick = self.editor.snap_tick(tick).max(0.0);
-            return Some(canvas::Action::publish(Message::EditorAction(
-                EditorAction::Scrubbed { tick: snapped_tick },
-            )));
+            return Some(Message::EditorAction(EditorAction::Scrubbed {
+                tick: snapped_tick,
+            }));
         }
 
         if self.detect_double_click(state, local_pos) {
-            Some(canvas::Action::publish(Message::EditorAction(
-                EditorAction::DoubleClicked(lumino_ui_core::message::Point2::new(
-                    local_pos.x,
-                    local_pos.y,
-                )),
+            Some(Message::EditorAction(EditorAction::DoubleClicked(
+                lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
             )))
         } else {
-            Some(canvas::Action::publish(Message::EditorAction(
-                EditorAction::Pressed {
-                    pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
-                    shift: state.shift_pressed,
-                    // 携带 canvas 本地 ModifiersChanged 的 Ctrl 状态（可靠通道），
-                    // 用于复制拖拽判定，与窗口级 CtrlKeyChanged 在 handle_action
-                    // 入口取 OR 合并，避免焦点丢失导致 Ctrl 漏判。
-                    ctrl: state.control_pressed,
-                },
-            )))
+            Some(Message::EditorAction(EditorAction::Pressed {
+                pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
+                shift: state.shift_pressed,
+                // 携带 canvas 本地 ModifiersChanged 的 Ctrl 状态（可靠通道），
+                // 用于复制拖拽判定，与窗口级 CtrlKeyChanged 在 handle_action
+                // 入口取 OR 合并，避免焦点丢失导致 Ctrl 漏判。
+                ctrl: state.control_pressed,
+            }))
         }
     }
 
     pub(super) fn handle_wheel_scroll(
         &self,
-        delta: &iced_core::mouse::ScrollDelta,
+        delta_x: f32,
+        delta_y: f32,
+        precise: bool,
         shift_pressed: bool,
-    ) -> Option<canvas::Action<Message>> {
+    ) -> Option<Message> {
         use lumino_ui_core::message::EditorAction;
 
-        let (mut delta_x, mut delta_y) = Self::wheel_delta(delta);
+        let (mut delta_x, mut delta_y) = wheel_delta(delta_x, delta_y, precise);
 
         // Shift+滚轮：将垂直滚动转换为水平滚动
         // 部分平台已自动转换（delta_x 非零），未转换的平台需要手动处理
@@ -141,16 +137,14 @@ impl<'a> PianoRollGrid<'a> {
 
         // 跟手修复：Pixels 为触控板高精度，单帧可达 200+，原 ±100 截断导致高速甩动“粘滞”
         // Lines 仍保持 ±100（≈3 档），Pixels 放宽到 ±400 保留动量
-        let (limit_x, limit_y) = match delta {
-            iced_core::mouse::ScrollDelta::Pixels { .. } => (400.0, 400.0),
-            _ => (SCROLL_MAX_DELTA, SCROLL_MAX_DELTA),
-        };
-        let delta_x = delta_x.clamp(-limit_x, limit_x);
-        let delta_y = delta_y.clamp(-limit_y, limit_y);
+        let limit = if precise { 400.0 } else { SCROLL_MAX_DELTA };
+        let delta_x = delta_x.clamp(-limit, limit);
+        let delta_y = delta_y.clamp(-limit, limit);
 
-        Some(canvas::Action::publish(Message::EditorAction(
-            EditorAction::Scrolled { delta_x, delta_y },
-        )))
+        Some(Message::EditorAction(EditorAction::Scrolled {
+            delta_x,
+            delta_y,
+        }))
     }
 
     /// 标尺区域（顶部小节号栏）滚轮处理：
@@ -158,54 +152,46 @@ impl<'a> PianoRollGrid<'a> {
     /// Ctrl 按下亦走同一路径，兼容旧习惯；普通滚轮不再产生水平平移（标尺即时间尺，平移由网格区双指/Shift 承接）
     pub(super) fn handle_ruler_wheel_scroll(
         &self,
-        delta: &iced_core::mouse::ScrollDelta,
-        _control_pressed: bool,
+        _delta_x: f32,
+        delta_y: f32,
+        precise: bool,
         local_pos: Point,
-    ) -> Option<canvas::Action<Message>> {
-        let factor = crate::zoom::zoom_factor_from_delta(delta)?;
+    ) -> Option<Message> {
+        let factor = crate::zoom::zoom_factor_from_wheel(delta_y, precise)?;
         let view = &self.editor.editor_state.view;
         let canvas = &self.editor.editor_state.canvas;
         let viewport_w = (canvas.size_x - view.keyboard_width).max(0.0);
-        Some(canvas::Action::publish(Message::ZoomXChanged {
+        Some(Message::ZoomXChanged {
             zoom: view.zoom_x * factor,
             fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
                 local_pos.x,
                 view.keyboard_width,
                 viewport_w,
             ),
-        }))
+        })
     }
 
     /// 键盘区域（左侧琴键栏）滚轮处理：
     /// 便捷缩放：滚动即 Y 轴缩放（无需 Ctrl），锚点跟鼠标 Y，对齐 yinhe `view_interaction.rs:191` 左区滚轮缩放
     pub(super) fn handle_keyboard_wheel_scroll(
         &self,
-        delta: &iced_core::mouse::ScrollDelta,
-        _control_pressed: bool,
+        _delta_x: f32,
+        delta_y: f32,
+        precise: bool,
         local_pos: Point,
-    ) -> Option<canvas::Action<Message>> {
-        let factor = crate::zoom::zoom_factor_from_delta(delta)?;
+    ) -> Option<Message> {
+        let factor = crate::zoom::zoom_factor_from_wheel(delta_y, precise)?;
         let view = &self.editor.editor_state.view;
         let canvas = &self.editor.editor_state.canvas;
         let viewport_h = (canvas.size_y - view.ruler_height).max(0.0);
-        Some(canvas::Action::publish(Message::ZoomYChanged {
+        Some(Message::ZoomYChanged {
             zoom: view.zoom_y * factor,
             fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
                 local_pos.y,
                 view.ruler_height,
                 viewport_h,
             ),
-        }))
-    }
-
-    /// 解析滚轮增量（Lines 乘以滚动刻度系数，Pixels 原样）→ (delta_x, delta_y)
-    fn wheel_delta(delta: &iced_core::mouse::ScrollDelta) -> (f32, f32) {
-        match delta {
-            iced_core::mouse::ScrollDelta::Lines { x, y } => {
-                (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
-            }
-            iced_core::mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-        }
+        })
     }
 
     /// 更新框选框的弹簧物理动画
@@ -213,6 +199,15 @@ impl<'a> PianoRollGrid<'a> {
     /// 委托给 Editor::update_selection_box_animation 执行。
     pub fn update_selection_box_animation(&self, mouse_pos: Option<Point>) {
         self.editor.update_selection_box_animation(mouse_pos);
+    }
+}
+
+/// 解析滚轮增量（Lines 乘以滚动刻度系数，Pixels 原样）→ (delta_x, delta_y)
+pub(super) fn wheel_delta(delta_x: f32, delta_y: f32, precise: bool) -> (f32, f32) {
+    if precise {
+        (delta_x, delta_y)
+    } else {
+        (delta_x * SCROLL_LINES_SCALE, delta_y * SCROLL_LINES_SCALE)
     }
 }
 

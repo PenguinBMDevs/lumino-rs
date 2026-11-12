@@ -15,16 +15,10 @@ const EPSILON: f32 = 0.01;
 
 /// 画布几何是否由 egui 驱动。
 ///
-/// **默认关闭**：iced `Grid` program 仍在 `update()` 里发 `CanvasBoundsChanged`，
-/// 两个来源同时写会互相覆盖（每帧 ping-pong）。等 Canvas 输入迁到 egui、`Grid`
-/// 被删除后，把它设为默认开启（或用 `LUMINO_EGUI_CANVAS_SYNC=1` 提前验证）。
+/// 与画布输入直连同开关：输入由宿主接管时，几何也必须由宿主写回
+/// （iced `Grid` 不再运行）。`LUMINO_EGUI_CANVAS_INPUT=1` 时两者同时生效。
 fn canvas_sync_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_CANVAS_SYNC")
-            .map(|value| value != "0")
-            .unwrap_or(false)
-    })
+    crate::host::canvas_input_enabled()
 }
 
 impl Host {

@@ -5,7 +5,7 @@ use crate::{EditState, Editor, HitType};
 use iced_core::{Rectangle, mouse};
 use lumino_message::Tool;
 
-pub(crate) fn handle(
+pub fn handle(
     editor: &Editor,
     state: &GridInteractionState,
     bounds: Rectangle,
