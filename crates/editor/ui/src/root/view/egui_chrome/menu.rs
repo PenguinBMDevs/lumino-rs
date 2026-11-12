@@ -76,6 +76,18 @@ impl Root {
         }
         None
     }
+
+    /// 原生运行时（winit + wgpu + egui）应用一次菜单点击。
+    ///
+    /// 与 `Host` 的 `apply_overlay_actions` 走同一份 `menu_action_message`，
+    /// 区别只是没有 iced 窗口上下文；返回 `false` 表示序号越界（禁用项也占号）。
+    pub fn apply_egui_menu_action(&mut self, index: usize) -> bool {
+        let Some(message) = self.menu_action_message(index) else {
+            return false;
+        };
+        self.update(message);
+        true
+    }
 }
 
 fn find_action(items: &[MenuItem], target: usize, next: &mut usize) -> Option<Message> {

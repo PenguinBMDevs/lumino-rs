@@ -288,8 +288,8 @@ impl NativeApp {
             ..Default::default()
         };
 
-        let model = self
-            .root
+        let mut root = self.root.take();
+        let model = root
             .as_ref()
             .map(|root| root.egui_chrome_model_native(size.width as f32 / ppp))
             .unwrap_or_else(|| demo_model(0));
@@ -298,6 +298,12 @@ impl NativeApp {
         let output = self.ctx.run_ui(raw, |ui| {
             // 直接跑生产 egui 外壳（标题栏 / 工具栏 / 左右栏 / 状态栏）。
             chrome::show_bands(ui, &model, &mut icons);
+            // 菜单点击 → 生产 `Message`（与 Host 同一份解析）。
+            if let Some(index) = chrome::menu::take_action(ui.ctx())
+                && let Some(root) = root.as_mut()
+            {
+                let _ = root.apply_egui_menu_action(index);
+            }
 
             // 探针控件：验证输入仍能到达 egui。
             egui::Area::new(egui::Id::unique("lumino-runtime-probe"))
@@ -312,6 +318,7 @@ impl NativeApp {
                     });
                 });
         });
+        self.root = root;
         self.icons = icons;
 
         gpu.present(&self.ctx, output);
