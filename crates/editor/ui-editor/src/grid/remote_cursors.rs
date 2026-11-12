@@ -8,24 +8,15 @@ use lumino_ui_core::Renderer;
 use lumino_ui_core::constants::editor as editor_constants;
 
 /// 绘制远程光标
+///
+/// **绘制路径禁止每帧日志**：本函数每帧调用，曾经在此对每个用户打 3 行
+/// `tracing::debug!`（数量 / 用户 / 转换坐标），协作会话下每秒数百行，
+/// 把其它模块的日志全部冲掉。需要临时排查时请用 puffin 作用域或断点，
+/// 不要往这里加日志。
 pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geometry<Renderer>> {
     let mut geometries = Vec::new();
 
-    tracing::debug!(
-        "远程光标绘制：remote_cursors 数量 = {}",
-        editor.remote_cursors.len()
-    );
-
-    for (user_id, (pos, color_str, username)) in editor.remote_cursors.iter() {
-        tracing::debug!(
-            "绘制用户 {} 的光标：位置=({}, {}), 颜色={}, 用户名={}",
-            user_id,
-            pos.x,
-            pos.y,
-            color_str,
-            username
-        );
-
+    for (pos, color_str, username) in editor.remote_cursors.values() {
         let color = parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
         let mut frame = Frame::new(renderer, bounds.size());
 
@@ -33,14 +24,6 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
         let view = &editor.editor_state.view;
         let cursor_x = pos.x - view.scroll_x;
         let cursor_y = pos.y - view.scroll_y;
-
-        tracing::debug!(
-            "转换后坐标：scroll=({}, {}), 绘制位置=({}, {})",
-            view.scroll_x,
-            view.scroll_y,
-            cursor_x,
-            cursor_y
-        );
 
         // 绘制圆圈光标
         draw_cursor_circle(
