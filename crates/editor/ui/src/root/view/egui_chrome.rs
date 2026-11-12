@@ -7,7 +7,9 @@ mod arrangement;
 mod audio_export_panel;
 mod context_menu;
 mod dialogs;
+mod editor_buttons;
 mod egg;
+mod marquee;
 mod mask_panel;
 mod material_delete;
 mod menu;
@@ -386,6 +388,11 @@ impl Root {
         }
         if let Some(action) = lumino_ui_egui::piano_roll_context_menu::take_action(ctx) {
             let message = self.piano_roll_context_menu_message(action);
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = lumino_ui_egui::editor_action_buttons::take_action(ctx) {
+            let message = self.editor_button_message(action);
             self.update(message);
             applied += 1;
         }

@@ -15,7 +15,7 @@
 //!   悬浮按钮，与 i2m 区域框按钮共用同一套视觉（`confirm_buttons` 模块）。
 
 use crate::Editor;
-use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
+use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
 use crate::interaction::line_tool::fill::region::{FillRegion, fill_region};
 use iced_core::{Point, Rectangle, Size};
@@ -352,22 +352,7 @@ pub fn draw(
         has_content = true;
     }
 
-    // 共享悬浮按钮（存在完整路径后显示）
-    if let Some(btns) = line_button_rects(editor) {
-        draw_button(
-            &mut frame,
-            btns.confirm,
-            &CONFIRM_ICON,
-            iced_core::Color::from_rgb8(46, 125, 50),
-        );
-        draw_button(
-            &mut frame,
-            btns.cancel,
-            &CANCEL_ICON,
-            iced_core::Color::from_rgb8(198, 40, 40),
-        );
-        has_content = true;
-    }
+    // 共享悬浮按钮（存在完整路径后显示）已迁 egui：`ui-egui::editor_action_buttons`。
 
     if has_content {
         Some(frame.into_geometry())

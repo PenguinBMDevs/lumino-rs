@@ -81,6 +81,10 @@ struct OverlayFrame<'a> {
     egg: Option<lumino_ui_egui::chrome::EggModel>,
     /// 钢琴卷帘右键菜单（None = 未打开）。
     piano_roll_menu: Option<lumino_ui_egui::piano_roll_context_menu::PianoRollMenuModel>,
+    /// 编辑器悬浮 √× 按钮（空 = 不显示）。
+    editor_buttons: lumino_ui_egui::editor_action_buttons::EditorButtonsModel,
+    /// 框选框（空 = 不显示）。
+    marquee: lumino_ui_egui::marquee::MarqueeModel,
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
@@ -213,6 +217,8 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_help_tip(&ctx, frame.help_tip.clone());
         lumino_ui_egui::chrome::set_egg(&ctx, frame.egg);
         lumino_ui_egui::chrome::set_piano_roll_menu(&ctx, frame.piano_roll_menu);
+        lumino_ui_egui::chrome::set_editor_buttons(&ctx, frame.editor_buttons.clone());
+        lumino_ui_egui::chrome::set_marquee(&ctx, frame.marquee.clone());
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -454,6 +460,8 @@ impl Host {
             help_tip: self.root.egui_help_tip_model(),
             egg: self.root.egui_egg_model(),
             piano_roll_menu: self.root.piano_roll_context_menu_model(),
+            editor_buttons: self.root.editor_buttons_model(),
+            marquee: self.root.marquee_model(),
             render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),

@@ -123,6 +123,8 @@ define_icons! {
     (ContextMenuPaste, "../../../../resources/icons/context-menu/paste-notes.svg"),
     (ContextMenuDelete, "../../../../resources/icons/context-menu/delete-item.svg"),
     (ContextMenuSelectAll, "../../../../resources/icons/context-menu/select-all-notes.svg"),
+    (ConfirmCheck, "../../../../resources/icons/toolbar/confirm-check.svg"),
+    (CancelCross, "../../../../resources/icons/toolbar/cancel-cross.svg"),
     (ContextMenuColorPalette, "../../../../resources/icons/context-menu/set-track-color.svg"),
     (ContextMenuChannel, "../../../../resources/icons/context-menu/set-midi-channel.svg"),
     (ContextMenuPort, "../../../../resources/icons/context-menu/set-midi-port.svg"),

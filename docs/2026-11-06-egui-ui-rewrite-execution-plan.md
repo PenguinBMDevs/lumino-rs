@@ -3301,11 +3301,43 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
   `capture_egui` 12/12 **零基线改动**。
 
-**Task 4.10（下一步）**
+**Task 4.10（第一百一十六步）：编辑器 √× 按钮与框选框迁 egui（修复被底图覆盖的视觉）**
 
-1. 把编辑器画布的其余 iced 悬浮层（形状工具按钮 / I2M / 曲线 / 画刷 / 框选框）
-   逐个迁 egui，直到 iced Canvas 只负责绘制音符与网格；
-2. 迁移力度面板（自动化 / 弯音 / CC）到 egui，替换 iced `velocity` 视图；
-3. 主程序主窗口入口切到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
-   `host/event/window/*` 的 iced 依赖，最后摘掉
+- **根因发现**：egui 叠加层把 gfx 离屏纹理作为**整窗底层**重绘，
+  iced Canvas 的绘制内容（形状预览 / 框选框 / 悬浮按钮 / 文本框）全部被盖住——
+  生产上这些元素一直「能点、看不见」。本轮把这些视觉逐个搬到 egui。
+- **√× 悬浮按钮**（`ui-egui::editor_action_buttons`）：形状 / 图片转 MIDI /
+  曲线 / 画刷四组共用 36×36、圆角 8、白 60% 边框、图标内缩 25%；
+  几何仍由 `ui-editor` 的 `*_button_rects` 计算（单一来源），
+  canvas 局部坐标 → 窗口坐标；点击回传 `EditorButtonAction`，
+  生产映射为 `EditorAction::ShapeToolConfirm/LineToolConfirm/BrushConfirm/...`
+  与 `RightSidebarAction::PlacementConfirm/Cancel`。
+- **图标强制白色**（`IconCache::paint_tinted` 已在右键菜单引入）：
+  浅色主题下深底按钮上的图标必须白，否则不可见。
+- **框选框**（`ui-egui::marquee`）：拖拽中（Selecting，Direct / 弹簧动画）
+  与选中音符包围盒；灰色 3px 边框 + 0.78 灰 35% 填充；按内容区裁剪；
+  canvas 局部坐标 → 窗口坐标。
+- **iced 侧退场**：删除四组 √× 的 Canvas 绘制与 `program_impl` 命中
+  （避免同一击双触发），`confirm_buttons` 只保留 `BUTTON_SIZE`；
+  删除横向 / 纵向 `selection_box::draw` 的 iced Geometry（避免与 egui 重复）。
+- **输入占用**：按钮矩形加入 `menu::blocked`，按下按钮的那一击不会同时在画布落音符。
+- **无头验证**（`editor_action_buttons_bands.rs`，3 用例）：确认 / 取消动作、
+  按钮占用、空模型零占用。
+- **真机**（DPI-aware）：
+  - S 形状工具拖出待确认形状 → 绿色 √ / 红色 × 出现（截图 `target/eb-0-crop.png`）；
+  - 点 √ → 日志 `egui 编辑器按钮：ShapeConfirm`，确认后的音符矩形可见
+    （`target/eb2-1-confirmed-crop.png`）；
+  - V 指针拖框选 → 灰色选框实时可见（`target/eb2-2-marquee-crop.png`）；
+    松开后选中包围盒保留（`target/eb2-3-crop.png`）。
+- 验收：`lumino-ui` lib 774/774、`lumino-ui-editor` 908/908、
+  `ui-egui` 全部集成测试（含新 3 用例）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.11（下一步）**
+
+1. 迁形状 / 曲线 / 画刷 / I2M 的**预览图形**（描边产物块、填充多边形、路径、
+   区域框）到 egui——目前预览仍被底层纹理覆盖；
+2. 迁曲线锚点弯折按钮（Smooth/Corner）与文字工具输入框；
+3. 迁力度面板（自动化 / 弯音 / CC），随后切主窗口入口到 `lumino-ui-runtime`，
+   删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 依赖，最后摘掉
    `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

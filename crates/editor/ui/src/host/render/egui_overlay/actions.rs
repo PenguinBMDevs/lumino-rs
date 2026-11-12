@@ -71,6 +71,7 @@ pub(super) struct OverlayActions {
     pub help_tip: Option<lumino_ui_egui::chrome::toast::HelpTipAction>,
     pub titlebar: Option<lumino_ui_egui::chrome::TitlebarAction>,
     pub piano_roll_menu: Option<lumino_message::PianoRollContextMenuAction>,
+    pub editor_buttons: Option<lumino_ui_egui::editor_action_buttons::EditorButtonAction>,
 }
 
 impl OverlayActions {
@@ -114,6 +115,7 @@ impl OverlayActions {
             help_tip: lumino_ui_egui::chrome::take_help_tip_action(ctx),
             titlebar: lumino_ui_egui::chrome::take_titlebar_action(ctx),
             piano_roll_menu: lumino_ui_egui::piano_roll_context_menu::take_action(ctx),
+            editor_buttons: lumino_ui_egui::editor_action_buttons::take_action(ctx),
         }
     }
 }
@@ -129,6 +131,11 @@ impl Host {
         if let Some(action) = actions.piano_roll_menu {
             tracing::info!("egui 卷帘右键菜单：{action:?}");
             let message = self.root.piano_roll_context_menu_message(action);
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.editor_buttons {
+            tracing::info!("egui 编辑器按钮：{action:?}");
+            let message = self.root.editor_button_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(index) = actions.menu

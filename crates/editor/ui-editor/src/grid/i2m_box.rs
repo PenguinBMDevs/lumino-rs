@@ -7,7 +7,7 @@
 //!   （iced canvas 绘制，wgpu 不参与这两个按钮的绘制）。
 
 use crate::Editor;
-use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
+use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::{clip_region_bounds, content_bounds};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
@@ -97,22 +97,7 @@ pub fn draw(
         has_content = true;
     }
 
-    // 悬浮按钮
-    if let Some(btns) = i2m_button_rects(editor) {
-        draw_button(
-            &mut frame,
-            btns.confirm,
-            &CONFIRM_ICON,
-            iced_core::Color::from_rgb8(46, 125, 50),
-        );
-        draw_button(
-            &mut frame,
-            btns.cancel,
-            &CANCEL_ICON,
-            iced_core::Color::from_rgb8(198, 40, 40),
-        );
-        has_content = true;
-    }
+    // √× 悬浮按钮已迁 egui（`ui-egui::editor_action_buttons`）。
 
     if has_content {
         Some(frame.into_geometry())

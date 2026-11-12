@@ -50,7 +50,7 @@ pub(crate) fn fill_note_blocks<K: Copy + Into<f32>>(
 /// 曲线工具 √× 按钮 / i2m 区域框按钮 / 选框裁剪均依赖本区域做钳制，
 /// 纵向模式下若沿用横向语义会把按钮错误钳到不存在的"标尺/键盘列"上
 /// （路径靠左时按钮甚至直接消失）。
-pub(crate) fn content_bounds(editor: &Editor) -> Rectangle {
+pub fn content_bounds(editor: &Editor) -> Rectangle {
     let view = &editor.editor_state.view;
     let canvas = &editor.editor_state.canvas;
     if editor.editor_state.is_vertical_roll {

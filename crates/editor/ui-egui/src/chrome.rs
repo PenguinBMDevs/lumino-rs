@@ -683,6 +683,24 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         tool_panel::clear_triggers(ui.ctx());
     }
 
+    // 框选框（拖拽中 / 选中音符包围盒）：由 egui 绘制，
+    // iced Canvas 的绘制层被底层纹理覆盖后不可见。
+    if let Some(marquee) = marquee_model(ui.ctx()) {
+        crate::marquee::show(&root, &marquee);
+    }
+
+    // 编辑器悬浮 √× 按钮（形状 / I2M / 曲线 / 画刷）：盖在卷帘之上，
+    // 命中区加入占用，避免按下按钮的同一击又在画布上画音符。
+    if let Some(buttons) = editor_buttons(ui.ctx()) {
+        if let Some(action) = crate::editor_action_buttons::show(&root, &buttons, icons) {
+            crate::editor_action_buttons::push_action(ui.ctx(), action);
+        }
+        let rects: Vec<egui::Rect> = buttons.buttons.iter().map(|button| button.rect).collect();
+        if !rects.is_empty() {
+            menu::extend_blocked(ui.ctx(), rects);
+        }
+    }
+
     // 钢琴卷帘右键菜单：最顶层（盖住卷帘与工具弹层）。
     // 打开期间整块画布加入占用矩形：与 iced 旧 `background_close_overlay` 同语义，
     // 关闭用的那一次点击不会同时落到画布上。
@@ -883,6 +901,33 @@ fn piano_roll_menu(
         ))
     })
     .flatten()
+}
+
+/// 记录本帧编辑器悬浮 √× 按钮（空模型 = 不显示）。
+pub fn set_editor_buttons(
+    ctx: &egui::Context,
+    model: crate::editor_action_buttons::EditorButtonsModel,
+) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.editor-buttons"), model));
+}
+
+fn editor_buttons(ctx: &egui::Context) -> Option<crate::editor_action_buttons::EditorButtonsModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::editor_action_buttons::EditorButtonsModel>(egui::Id::unique(
+            "lumino.editor-buttons",
+        ))
+    })
+    .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧框选框（空模型 = 不显示）。
+pub fn set_marquee(ctx: &egui::Context, model: crate::marquee::MarqueeModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.marquee"), model));
+}
+
+fn marquee_model(ctx: &egui::Context) -> Option<crate::marquee::MarqueeModel> {
+    ctx.data(|d| d.get_temp::<crate::marquee::MarqueeModel>(egui::Id::unique("lumino.marquee")))
+        .filter(|model| !model.is_empty())
 }
 
 /// 记录本帧渲染器入口面板（`None` = 当前不是渲染器入口）。

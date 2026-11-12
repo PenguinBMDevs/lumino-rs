@@ -558,6 +558,22 @@ impl NativeApp {
             }
         }
 
+        // 编辑器悬浮 √× 按钮（形状 / I2M / 曲线 / 画刷）。
+        lumino_ui_egui::chrome::set_editor_buttons(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .map(|root| root.editor_buttons_model())
+                .unwrap_or_default(),
+        );
+        lumino_ui_egui::chrome::set_marquee(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .map(|root| root.marquee_model())
+                .unwrap_or_default(),
+        );
+
         let raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, logical)),
             events: std::mem::take(&mut self.events),

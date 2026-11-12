@@ -11,6 +11,14 @@ use once_cell::sync::Lazy;
 
 /// 悬浮按钮边长（用户要求 30-40 像素，取 36）
 pub const BUTTON_SIZE: f32 = 36.0;
+
+/// `iced_core::Rectangle` → `(x, y, width, height)`。
+///
+/// 供不依赖 iced 的 UI 层（egui 悬浮按钮）复用同一份几何。
+pub fn rect_tuple(rect: Rectangle) -> (f32, f32, f32, f32) {
+    (rect.x, rect.y, rect.width, rect.height)
+}
+
 /// 按钮圆角半径
 pub const BUTTON_RADIUS: f32 = 8.0;
 /// 图标占按钮边长的比例（留白保证图标居中不贴边）

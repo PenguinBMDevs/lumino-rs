@@ -70,39 +70,10 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                     {
                         return action.map(|action| Action::publish(Message::EditorAction(action)));
                     }
-                    // 图片转 MIDI 放置模式：优先响应悬浮 √× 按钮
-                    if self.editor.editor_state.image_to_midi.mode
-                        == lumino_editor_state::ImageToMidiMode::Placing
-                        && let Some(btns) = crate::grid::i2m_box::i2m_button_rects(self.editor)
-                    {
-                        if btns.confirm.contains(local_pos) {
-                            return Some(Action::publish(Message::RightSidebar(
-                                lumino_message::RightSidebarAction::PlacementConfirm,
-                            )));
-                        }
-                        if btns.cancel.contains(local_pos) {
-                            return Some(Action::publish(Message::RightSidebar(
-                                lumino_message::RightSidebarAction::PlacementCancel,
-                            )));
-                        }
-                    }
-                    // 曲线工具直线模式：优先响应悬浮 √× 按钮
-                    if self.editor.current_tool() == Tool::Curve
-                        && let Some(btns) =
-                            crate::grid::line_tool_box::line_button_rects(self.editor)
-                    {
-                        if btns.confirm.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::LineToolConfirm,
-                            )));
-                        }
-                        if btns.cancel.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::LineToolCancel,
-                            )));
-                        }
-                    }
-                    // 曲线工具：选中锚点的弯折切换（DRAW-042）
+                    // 图片转 MIDI / 曲线 / 形状 / 画刷的悬浮 √× 按钮已迁 egui
+                    // （`ui-egui::editor_action_buttons`，命中区本帧加入占用），
+                    // iced Canvas 不再做按钮命中，避免同一击双触发。
+                    // 曲线工具：选中锚点的弯折切换（DRAW-042，仍在 iced 绘制）
                     if self.editor.current_tool() == Tool::Curve
                         && let Some(btns) =
                             crate::grid::line_tool_box::line_bend_button_rects(self.editor)
@@ -118,38 +89,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                             )));
                         }
                     }
-                    // 形状工具：优先响应悬浮 √× 按钮
-                    if crate::grid::shape_tool_box::shape_buttons_active(self.editor)
-                        && let Some(btns) =
-                            crate::grid::shape_tool_box::shape_button_rects(self.editor)
-                    {
-                        if btns.confirm.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::ShapeToolConfirm,
-                            )));
-                        }
-                        if btns.cancel.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::ShapeToolCancel,
-                            )));
-                        }
-                    }
-                    // 画刷矢量笔画：优先响应悬浮 √× 按钮（待确认笔画确认/丢弃）
-                    if self.editor.current_tool() == Tool::Brush
-                        && let Some(btns) =
-                            crate::grid::brush_tool_box::brush_button_rects(self.editor)
-                    {
-                        if btns.confirm.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::BrushConfirm,
-                            )));
-                        }
-                        if btns.cancel.contains(local_pos) {
-                            return Some(Action::publish(Message::EditorAction(
-                                EditorAction::BrushCancel,
-                            )));
-                        }
-                    }
+                    // 形状工具 / 画刷的 √× 按钮已迁 egui（见上）。
                     return self.handle_left_press(state, local_pos);
                 }
             }

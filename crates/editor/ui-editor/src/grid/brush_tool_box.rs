@@ -26,10 +26,10 @@
 //! 无需 GFX 管线/跨线程同步。
 
 use crate::Editor;
-use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
+use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::{clip_rect, content_bounds};
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry};
+use iced_widget::canvas::Geometry;
 use lumino_editor_state::brush_tool::cov::{self, MAX_KEY};
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
@@ -190,33 +190,14 @@ pub fn brush_cell_rect(editor: &Editor, t_start: i64, t_end: i64, key: u16) -> R
 /// 现在方块由 [`Editor::brush_preview_note_instances`] 产出、走音符的 wgpu 预览
 /// 通路（与 √ 生成的音符同一个着色器）；本函数只负责按钮（2 次图片绘制，微秒级）。
 pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
+    _editor: &Editor,
+    _renderer: &Renderer,
     _theme: &lumino_ui_core::Theme,
-    bounds: Rectangle,
+    _bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
-    if editor.current_tool() != Tool::Brush {
-        return None;
-    }
-    if !editor.editor_state.brush_tool.has_pending() {
-        return None;
-    }
-
-    let btns = brush_button_rects(editor)?;
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    draw_button(
-        &mut frame,
-        btns.confirm,
-        &CONFIRM_ICON,
-        iced_core::Color::from_rgb8(46, 125, 50),
-    );
-    draw_button(
-        &mut frame,
-        btns.cancel,
-        &CANCEL_ICON,
-        iced_core::Color::from_rgb8(198, 40, 40),
-    );
-    Some(frame.into_geometry())
+    // √× 悬浮按钮已迁 egui（`ui-egui::editor_action_buttons`）：
+    // 本函数不再产生 iced Geometry；几何仍由 `brush_button_rects` 提供。
+    None
 }
 
 #[cfg(test)]

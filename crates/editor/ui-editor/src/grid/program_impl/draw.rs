@@ -1,8 +1,6 @@
 //! Program trait `draw` 实现逻辑 — 各图层绘制
 
-use crate::grid::{
-    keyboard, playback_indicator, remote_cursors, remote_selection, ruler, selection_box,
-};
+use crate::grid::{keyboard, playback_indicator, remote_cursors, remote_selection, ruler};
 use crate::{Editor, Renderer, Theme};
 use iced_core::Rectangle;
 use iced_widget::canvas::Geometry;
@@ -69,13 +67,6 @@ pub(crate) fn draw(
             ruler::draw(editor, frame, bounds, theme);
         });
         geometries.push(ruler_geom);
-    }
-
-    {
-        puffin::profile_scope!("draw::selection_box");
-        if let Some(selection_geom) = selection_box::draw(editor, renderer, theme, bounds) {
-            geometries.push(selection_geom);
-        }
     }
 
     {
