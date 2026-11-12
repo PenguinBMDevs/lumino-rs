@@ -3,13 +3,12 @@
 //! 包含进度窗口和对话框窗口的渲染。
 
 use iced_core::Length;
-use iced_widget::{Stack, button, checkbox, column, container, progress_bar, row, space, text};
+use iced_widget::{button, checkbox, column, container, progress_bar, row, space, text};
 
 use lumino_core::tr;
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
-use crate::view::about_egg::view as view_about_egg;
 use crate::{Element, Theme};
 
 /// 对话框的同尺寸底色占位。
@@ -216,18 +215,8 @@ impl Root {
             .into()
         };
 
-        // 关于页 logo 彩蛋（UI-007）飞行层：置于**最顶层**——logo 脱落后可越过自有
-        // 标题栏在整窗范围内飞行（仍严格限制在窗口可见区内），且该层不捕获鼠标事件，
-        // 底层设置内容照常可点。
-        if self.state.dialog_type == DialogType::Settings && self.state.about_egg.is_airborne() {
-            return Stack::new()
-                .push(base)
-                .push(view_about_egg(&self.state.about_egg, &self.window.theme))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-        }
-
+        // 关于页 logo 彩蛋（UI-007）飞行层已迁 egui（`chrome::egg`），
+        // iced 只保留对话框底色；飞行层在 egui 顶层绘制且不捕获鼠标。
         base
     }
 }

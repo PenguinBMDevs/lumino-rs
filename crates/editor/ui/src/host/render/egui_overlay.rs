@@ -75,6 +75,8 @@ struct OverlayFrame<'a> {
     toast: lumino_ui_egui::chrome::ToastModel,
     /// 首次使用帮助提示（None = 不显示）。
     help_tip: Option<lumino_ui_egui::chrome::HelpTipModel>,
+    /// 「关于」页 logo 彩蛋飞行层（None = 不在飞行中）。
+    egg: Option<lumino_ui_egui::chrome::EggModel>,
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
@@ -204,6 +206,7 @@ impl EguiOverlay {
         // 右下角浮层：Toast 通知 + 首次使用帮助提示（iced 视图已删除）。
         lumino_ui_egui::chrome::set_toast(&ctx, Some(frame.toast.clone()));
         lumino_ui_egui::chrome::set_help_tip(&ctx, frame.help_tip.clone());
+        lumino_ui_egui::chrome::set_egg(&ctx, frame.egg);
 
         let output = ctx.run_ui(input, |ui| {
             chrome::show_bands(ui, frame.model, icons);
@@ -418,6 +421,7 @@ impl Host {
             mask_panel: self.root.mask_panel_model(),
             toast: self.root.egui_toast_model(),
             help_tip: self.root.egui_help_tip_model(),
+            egg: self.root.egui_egg_model(),
             render_preview: self.root.waterfall_player.view.clone(),
             mixer: self.root.mixer_model(
                 size.width as f32 / pixels_per_point.max(1e-3),

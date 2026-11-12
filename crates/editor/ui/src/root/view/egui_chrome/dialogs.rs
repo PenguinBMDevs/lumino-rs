@@ -414,3 +414,42 @@ fn shortcuts_page(language: lumino_extras::i18n::Language) -> ShortcutsPageModel
         placeholder: t.shortcuts_placeholder.to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use lumino_extras::i18n::{Language, settings_translations};
+
+    use super::settings_labels;
+
+    /// `MENU_INDEX_ABOUT` 必须与 egui 设置菜单表**绑定**（原 iced 菜单表已删除，
+    /// 绑定校验迁到这里——`settings_labels` 是菜单的真实数据源）。
+    ///
+    /// 漂移后果：索引 9 指向别的页时，关于页的回声洞打字机装填点会落到
+    /// 不存在的页面，且不会有任何编译错误。
+    #[test]
+    fn settings_menu_binds_about_index() {
+        for language in [Language::ZhCn, Language::EnUs] {
+            let labels = settings_labels(language);
+            let t = settings_translations(language);
+            let index = crate::settings::MENU_INDEX_ABOUT;
+            assert!(
+                index < labels.menu.len(),
+                "MENU_INDEX_ABOUT({index}) 越界（菜单共 {} 项）",
+                labels.menu.len()
+            );
+            assert_eq!(
+                labels.menu[index], t.about,
+                "MENU_INDEX_ABOUT({index}) 指向的不是「关于」页：彩蛋装填点已漂移"
+            );
+            assert_eq!(
+                labels
+                    .menu
+                    .iter()
+                    .filter(|label| **label == t.about)
+                    .count(),
+                1,
+                "「关于」项必须唯一"
+            );
+        }
+    }
+}

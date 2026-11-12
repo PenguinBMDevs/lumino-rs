@@ -5054,8 +5054,6 @@ dependencies = [
 name = "lumino-ui-settings"
 version = "0.2.1"
 dependencies = [
- "iced_core",
- "iced_widget",
  "lumino-core",
  "lumino-extras",
  "lumino-message",

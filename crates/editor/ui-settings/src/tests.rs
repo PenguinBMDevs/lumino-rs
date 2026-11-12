@@ -145,37 +145,10 @@ fn test_echo_cave_click_event_does_not_panic() {
     assert_eq!(panel.selected_menu_index, 0);
 }
 
-/// `MENU_INDEX_ABOUT` 必须与菜单表**绑定**，而不是一个能独立漂移的裸字面量。
-///
-/// 该常量同时驱动两件事：页面选择（`lib.rs::render_content_area`）与回声洞打字机
-/// 装填（`handlers/settings.rs`）。若将来在「关于」前后增删菜单项，两者会一起错位：
-/// 新项占住索引 9 会在**不存在的页面**上触发打字机，而菜单里的「关于」落到
-/// `render_placeholder`——**且不会有任何编译错误**。
-/// 上面的 `test_default_menu_index_is_not_about` 只锁「初始页不是关于页」，
-/// 锁不住这个漂移。
-#[test]
-fn test_menu_index_about_is_bound_to_menu_table() {
-    use lumino_extras::i18n::{Language, settings_translations};
-
-    let items = crate::menu::create_menu_items(Language::ZhCn);
-    let about = settings_translations(Language::ZhCn).about;
-
-    assert!(
-        MENU_INDEX_ABOUT < items.len(),
-        "MENU_INDEX_ABOUT({MENU_INDEX_ABOUT}) 越界（菜单共 {} 项）：装填点会落到不存在的页面",
-        items.len()
-    );
-    assert_eq!(
-        items[MENU_INDEX_ABOUT].0, about,
-        "MENU_INDEX_ABOUT({MENU_INDEX_ABOUT}) 指向的不是「关于」页：打字机装填点已漂移"
-    );
-    assert_eq!(
-        items.iter().filter(|(label, _)| *label == about).count(),
-        1,
-        "「关于」项必须唯一，否则 MENU_INDEX_ABOUT 的语义不明确"
-    );
-}
-
+// `MENU_INDEX_ABOUT` 的菜单表绑定校验已迁到真实消费侧
+// （`lumino-ui/src/root/view/egui_chrome/dialogs.rs` 的
+// `settings_labels` 单测：索引 9 必须等于「关于」）；本 crate 不再持有
+// 菜单表/视图，无法在此自证。
 // ── GPU 缓冲状态指示器设置 ──
 
 /// 面板初始化镜像 UiConfig 三个指示器字段；默认（配置默认）为开/开/3 秒平均。
@@ -293,14 +266,6 @@ fn test_onion_backend_event_ignored_when_locked() {
     assert_eq!(panel.onion_skin.backend, OnionSkinBackend::Cpu);
 }
 
-/// 设置页在锁定/未锁定两种状态下都能构建（锁定 → 只读行，未锁定 → 下拉行）。
-#[test]
-fn test_onion_skin_page_builds_in_both_lock_states() {
-    let mut panel = SettingsPanel::new(&UiConfig::default());
-    // 未锁定：构建包含 pick_list 的行
-    let _unlocked = crate::pages::onion_skin::view(&panel);
-
-    // 已锁定：构建只读展示行（不得 panic，也不得留下可操作控件分支）
-    panel.onion_skin.backend_locked = true;
-    let _locked = crate::pages::onion_skin::view(&panel);
-}
+// 洋葱皮页面的锁定/未锁定渲染由 egui 侧覆盖
+// （`ui-egui/tests/settings_bands.rs`：锁定 → 只读行、未锁定 → 下拉行）；
+// 本 crate 只剩状态机，上面几条 `OnionSkinBackendChanged` 用例即其语义门禁。

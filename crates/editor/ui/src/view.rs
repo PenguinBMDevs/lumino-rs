@@ -1,4 +1,3 @@
-pub mod about_egg;
 /// REF-001：对话框偏好排版宽度声明点（决策 D3：宽声明 / 高测量）
 pub mod dialog_preferred_size;
 pub mod video_clip;

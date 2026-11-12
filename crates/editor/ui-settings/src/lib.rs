@@ -1,34 +1,22 @@
-//! 设置面板模块
+//! 设置面板模块：**只保留状态与事件处理**
 //!
-//! 该模块已拆分为以下子模块：
-//! - `pages`: 各设置页面（常规、音频、界面、快捷键、关于）
-//! - `components`: 可复用组件（样式、常量）
-//! - `menu`: 设置面板菜单渲染
-//! - `panel`: 状态模型与事件处理（`SettingsPanel::new`/`update`）
-//! - `tests`: 单元测试
+//! 视图（菜单 + 10 个设置页 + 关于页彩蛋）已全部迁到 egui
+//! （`lumino-ui-egui::settings`）；iced 侧的 `pages` / `components` / `menu`
+//! 与 `view()` 已删除，本 crate 不再依赖 `iced_core` / `iced_widget`。
+//!
+//! 保留：
+//! - `panel`: 状态模型与事件处理（`SettingsPanel::new` / `update`）；
+//! - `panel/file_pickers`: 系统文件对话框（与 iced 无关）；
+//! - `tests`: 状态机单元测试。
 
-pub mod components;
-pub mod menu;
-pub mod pages;
 mod panel;
 #[cfg(test)]
 mod tests;
 
-use iced_core::{Border, Length};
-use iced_widget::{column, container, row, scrollable, text};
-
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
-use lumino_core::tr;
 use lumino_extras::i18n::Language;
-use lumino_ui_core::{
-    Element, Message, Theme,
-    state::{GpuCheckRetryGate, GpuCheckUiState},
-    window,
-};
-
-use components::*;
-use pages::*;
+use lumino_ui_core::state::{GpuCheckRetryGate, GpuCheckUiState};
 
 pub use lumino_ui_core::settings_event::Event;
 
@@ -258,124 +246,4 @@ pub struct CloudConnItem {
     pub address: String,
     /// 是否在线
     pub online: bool,
-}
-
-/// 渲染设置面板主视图
-///
-/// `egg` 为「关于」页 logo 彩蛋状态（UI-007）：仅关于页需要，其余页面忽略。
-/// `echo` 为「关于」页回声洞彩蛋状态（UI-006）：同上。
-pub fn view<'a>(
-    settings: &'a SettingsPanel,
-    window: &'a window::Window,
-    system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
-    egg: &'a lumino_ui_core::state::AboutEggState,
-    echo: &'a lumino_ui_core::state::EchoCaveState,
-) -> Element<'a> {
-    let menu_items = menu::create_menu_items(settings.display.language);
-
-    let menu_list = menu::render_menu_list(settings, window, &menu_items);
-    let content_area = render_content_area(settings, window, system_fonts, egg, echo);
-
-    let main_content = row![
-        menu_list,
-        iced_widget::space().width(SPACING_MAIN),
-        content_area,
-    ]
-    .spacing(SPACING_MENU_CONTENT)
-    .padding(PADDING_CONTENT);
-
-    container(main_content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(create_main_container_style())
-        .into()
-}
-
-fn render_content_area<'a>(
-    settings: &'a SettingsPanel,
-    window: &'a window::Window,
-    system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
-    egg: &'a lumino_ui_core::state::AboutEggState,
-    echo: &'a lumino_ui_core::state::EchoCaveState,
-) -> iced_widget::Container<'a, Message, Theme, lumino_ui_core::Renderer> {
-    let content = match settings.selected_menu_index {
-        0 => general_view(settings),
-        1 => audio_view(settings),
-        2 => ui_settings_view(settings, window, system_fonts),
-        3 => shortcuts_view(settings),
-        4 => onion_skin_view(settings),
-        5 => palette_view(settings),
-        6 => editing_view(settings),
-        7 => cloud_view(settings),
-        8 => compatibility_view(settings),
-        MENU_INDEX_ABOUT => about_view(settings, egg, echo),
-        _ => render_placeholder(tr!("设置内容区域")).into(),
-    };
-
-    let scrollable_content = scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(8).scroller_width(6),
-        ));
-
-    container(scrollable_content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(create_content_container_style())
-}
-
-fn create_content_container_style() -> impl Fn(&Theme) -> container::Style + 'static {
-    |theme: &Theme| {
-        let palette = theme.extended_palette();
-        container::Style {
-            background: Some(iced_core::Background::Color(palette.background.base.color)),
-            border: Border::default()
-                .rounded(BORDER_RADIUS_CONTENT)
-                .width(BORDER_WIDTH)
-                .color(palette.background.strong.color),
-            shadow: iced_core::Shadow {
-                color: iced_core::Color::from_rgba(
-                    SHADOW_COLOR_CONTENT[0],
-                    SHADOW_COLOR_CONTENT[1],
-                    SHADOW_COLOR_CONTENT[2],
-                    SHADOW_COLOR_CONTENT[3],
-                ),
-                offset: iced_core::Vector::new(SHADOW_OFFSET_CONTENT.0, SHADOW_OFFSET_CONTENT.1),
-                blur_radius: SHADOW_BLUR_CONTENT,
-            },
-            text_color: Some(palette.background.base.text),
-            snap: false,
-        }
-    }
-}
-
-fn create_main_container_style() -> impl Fn(&Theme) -> container::Style + 'static {
-    |theme: &Theme| {
-        let palette = theme.extended_palette();
-        container::Style {
-            background: Some(iced_core::Background::Color(
-                palette.background.weakest.color,
-            )),
-            text_color: Some(palette.background.base.text),
-            snap: false,
-            ..Default::default()
-        }
-    }
-}
-
-fn render_placeholder<'a>(
-    content: &'a str,
-) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
-    column![
-        text(tr!("设置"))
-            .size(TEXT_SIZE_TITLE)
-            .style(create_content_text_style()),
-        iced_widget::space().height(20),
-        text(content)
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_placeholder_text_style()),
-    ]
-    .spacing(SPACING_CONTENT)
-    .padding(PADDING_CONTENT)
 }

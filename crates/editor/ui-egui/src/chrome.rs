@@ -1,6 +1,7 @@
 //! 主窗口外壳：标题栏 + 工具栏 + 左右侧栏 + 状态栏 + 钢琴卷帘骨架。
 
 pub mod arrangement;
+pub mod egg;
 pub mod menu;
 mod model;
 pub mod overflow;
@@ -15,6 +16,7 @@ pub mod toolbar;
 pub mod toolbar_popup;
 
 pub use arrangement::ArrangementAction;
+pub use egg::EggModel;
 pub use model::{
     ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementTrackListModel,
     ArrangementTrackRow, AudioButtonsMode, AudioButtonsModel, AudioChoice, AudioControlModel,
@@ -612,6 +614,10 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     {
         push_help_tip_action(ui.ctx(), action);
     }
+    // 「关于」页 logo 彩蛋飞行层：最顶层、不捕获鼠标。
+    if let Some(egg) = egg_model(ui.ctx()) {
+        egg::show(&root, full_window, &egg, icons);
+    }
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
     // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 iced 面板）。
@@ -823,5 +829,15 @@ pub fn set_help_tip(ctx: &egui::Context, model: Option<HelpTipModel>) {
 
 fn help_tip_model(ctx: &egui::Context) -> Option<HelpTipModel> {
     ctx.data(|d| d.get_temp::<Option<HelpTipModel>>(egui::Id::unique("lumino.help-tip")))
+        .flatten()
+}
+
+/// 记录本帧「关于」页 logo 彩蛋飞行层（None = 不在飞行中）。
+pub fn set_egg(ctx: &egui::Context, model: Option<EggModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.about-egg"), model));
+}
+
+fn egg_model(ctx: &egui::Context) -> Option<EggModel> {
+    ctx.data(|d| d.get_temp::<Option<EggModel>>(egui::Id::unique("lumino.about-egg")))
         .flatten()
 }

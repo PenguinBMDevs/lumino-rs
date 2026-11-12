@@ -6,6 +6,7 @@
 mod arrangement;
 mod audio_export_panel;
 mod dialogs;
+mod egg;
 mod mask_panel;
 mod material_delete;
 mod menu;
