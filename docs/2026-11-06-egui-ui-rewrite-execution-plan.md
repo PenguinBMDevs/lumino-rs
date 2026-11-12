@@ -3101,9 +3101,42 @@ callback / 多视口 / 截图能力。
 - 验证：`lumino-ui` lib 785/785、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 3.14（下一步）**
+**Task 3.14（第一百零四步）：删除 iced 设置树与关于页彩蛋视图；设置 crate 去 iced 化**
 
-1. 仍渲染的 iced 视图只剩 `settings_dialog`（内容在 `lumino-ui-settings` crate）
-   与设置窗内的 `about_egg` 彩蛋；
-2. 迁 `lumino-ui-settings`（egui 侧 `settings/` 已完整）并删除 iced 设置树；
-3. 运行时层（`host` / `render_ctx` / `host/event/window`）替换与否仍待决策。
+- **`lumino-ui-settings` 收敛为纯状态 crate**：删除 `pages/`（10 个设置页）、
+  `components/`、`menu.rs` 与 `view()` / `render_content_area` / 样式函数，
+  移除 `iced_core` / `iced_widget` **直接依赖**；保留 `SettingsPanel` 状态机、
+  `panel/file_pickers`（系统文件对话框，与 iced 无关）与 16 条状态单测。
+- **删除 `view/settings_dialog.rs`**：`DialogType::Settings` 改
+  `dialog_placeholder`（720×540 钉死）；设置页内容由 `chrome::settings` 整窗绘制。
+- **「关于」页 logo 彩蛋（UI-007）迁 egui**：新增
+  `ui-egui/src/chrome/egg.rs`（`EggModel` + 旋转网格绘制，**不捕获鼠标**）与
+  生产侧 `egui_egg_model()`（位置 / 旋转角 / 透明度 / 方盒尺寸原样搬运）；
+  删除 `view/about_egg.rs` 与 `overlays.rs` 的顶层 Stack 叠加。
+- **`MENU_INDEX_ABOUT` 绑定校验迁到真实消费侧**：
+  `egui_chrome/dialogs.rs::settings_labels` 新增单测（中/英双语，索引 9 =
+  「关于」且唯一），替代已删除的 iced 菜单表断言。
+- **测量门禁同步**：`Settings` 加入 `layout_is_state_invariant`（iced 视图已退化
+  为占位），`edge/tests` 的 corners 清单置空（已无真实 iced 对话框视图可挤）。
+- **新增 `tests/egg_overlay.rs`（2 用例）**：飞行层绘制不 panic、
+  **不进入占用区**（不吃设置页点击）；无模型时零开销。
+- **验收**：`lumino-ui` lib 786/786、`lumino-ui-settings` lib 16/16、
+  `ui-egui` 全部集成测试、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 **零基线改动**
+  （设置对话框与 3 个变体都在基线里，证明删掉 iced 绘制后像素完全由 egui 提供）。
+  触达 iced 的源文件 69 → **68**；`cargo tree -p lumino-ui | grep '^iced'`
+  32 → **30**（`lumino-ui-settings` 不再直接依赖 iced）。
+
+**Task 3.15（下一步）**
+
+1. iced **类型层**仍在：`lumino-ui-core` 的 `Theme` / `Element` / `Message`
+   等 re-export 了 `iced_*`，因此 `cargo tree -p lumino-ui-settings` 仍有 12 个
+   iced crate（传递依赖）；要归零必须把 `Theme`/调色板与 `settings_event`
+   从 iced 类型上剥离。
+2. 剩余 iced 视图：`view/video_clip/*`（预览/时间轴/rect_probe，egui 侧
+   `video_export_overlay` 与 `video_clip_timeline` 依赖其 probe 矩形，
+   需改成 egui 自算布局后再删）、`titlebar*`（拖动/双击/红绿灯仍由 iced 处理，
+   弹出对话框的 popup 标题栏也在用）。
+3. 运行时层（`host` / `render_ctx` / `host/event/window`）仍是 iced
+   （窗口创建、事件循环、离屏渲染调度、IME/HiDPI）；零 iced 依赖的最后一公里
+   是 winit + wgpu + egui 直连替换，需单独立项。
