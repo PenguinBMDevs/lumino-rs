@@ -86,6 +86,8 @@ pub enum PianoRollContextMenuItem {
     SliceCut,
     /// 饼干模（DRAW-025；先选刀、后选面团，按刀的音符行切面团）
     MouldShapes,
+    /// 角度柔化：逐角点拖半径（DRAW-044；仅待确认形状）
+    RoundCorners,
     /// 创建补间（DRAW-026）
     BetweenCreate,
     /// 沿路径复制（DRAW-027）
@@ -118,6 +120,7 @@ impl PianoRollContextMenuItem {
             | Self::StraightenOff
             | Self::SliceCut
             | Self::MouldShapes
+            | Self::RoundCorners
             | Self::BetweenCreate
             | Self::CopyAlong
             | Self::VelocityUp

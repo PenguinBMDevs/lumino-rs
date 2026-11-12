@@ -59,8 +59,8 @@ pub fn apply_geometry_ops(
             ShapeOp::Live(_) | ShapeOp::Joined(_) => {}
             // Drawing 是源算子：多笔画展开在音符生成入口完成，链上不二次改路径。
             ShapeOp::Drawing(_) => {}
-            // Symmetry / Straighten 在 shape_notes_of 的锚点级入口展开；链上不重复处理。
-            ShapeOp::Symmetry(_) | ShapeOp::Straighten(_) => {}
+            // Symmetry / Straighten / Round 在 shape_notes_of 的锚点级入口展开；链上不重复处理。
+            ShapeOp::Symmetry(_) | ShapeOp::Straighten(_) | ShapeOp::Round(_) => {}
             // Text ? shape_notes_of ?????????????????
             ShapeOp::Text(_) => {}
             // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。

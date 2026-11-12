@@ -276,6 +276,19 @@ impl Root {
                             );
                         }
                     },
+                    PianoRollContextMenuItem::RoundCorners => {
+                        if self.editor.begin_round_corners() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("角度柔化：拖角点调半径（Esc 退出）"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("角度柔化失败：请选中一个待确认折线形状（至少 3 个角点）"),
+                            );
+                        }
+                    }
                     PianoRollContextMenuItem::BetweenCreate => {
                         if self.editor.create_between_selected() {
                             self.toast.push(

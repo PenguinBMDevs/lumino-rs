@@ -243,6 +243,19 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         // DRAW-025：切割改为布防拖线；饼干模按「刀→面团」两个待确认形状
         "切割" => Some("Slice"),
         "饼干模" => Some("Mould"),
+        "角度柔化" => Some("Round corners"),
+        "角度柔化：拖角点调半径（Esc 退出）" => {
+            Some("Round corners: drag a corner to set the radius (Esc to exit)")
+        }
+        "角度柔化失败：请选中一个待确认折线形状（至少 3 个角点）" => {
+            Some("Round corners failed: select a pending polyline shape with at least 3 corners")
+        }
+        "角度柔化 · 拖橙色角点调半径 · Esc 退出" => {
+            Some("Round corners · drag an orange corner to set radius · Esc to exit")
+        }
+        "没有可柔化的角：先把中间节点拖出直线（Esc 退出）" => Some(
+            "No roundable corner: drag a middle node off the straight line first (Esc to exit)",
+        ),
         "拖出一条切割线：松手即切（Shift 自由角度）" => {
             Some("Drag a cut line; release to slice (Shift = free angle)")
         }

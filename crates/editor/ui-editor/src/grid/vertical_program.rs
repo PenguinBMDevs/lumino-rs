@@ -438,6 +438,9 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
         if let Some(geom) = crate::grid::mould_knife_box::draw(self.editor, renderer, bounds) {
             geometries.push(geom);
         }
+        if let Some(geom) = crate::grid::round_corner_box::draw(self.editor, renderer, bounds) {
+            geometries.push(geom);
+        }
         if let Some(geom) = crate::grid::shape_list_box::draw(self.editor, renderer, theme, bounds)
         {
             geometries.push(geom);

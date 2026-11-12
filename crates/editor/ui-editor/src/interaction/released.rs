@@ -14,6 +14,10 @@ impl Editor {
     /// 处理鼠标释放事件
     pub(crate) fn handle_released(&mut self) {
         crate::puffin_profiler::released_handle();
+        // DRAW-044：柔化拖拽收口（一次拖拽 = 一次 pending 撤销）
+        if self.round_corners_active() && self.round_corner_released() {
+            return;
+        }
         // DRAW-025：切割松手 = 按拖出的线切分（失败保留布防）
         if self.slice_cut.is_some_and(|state| state.dragging) {
             self.slice_cut_released();

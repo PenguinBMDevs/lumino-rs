@@ -32,6 +32,7 @@ pub mod program;
 pub mod program_impl;
 pub mod remote_cursors;
 pub mod remote_selection;
+pub mod round_corner_box;
 pub mod ruler;
 pub mod selection_box;
 pub mod shape_list_box;

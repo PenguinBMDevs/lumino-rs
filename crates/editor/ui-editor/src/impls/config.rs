@@ -22,6 +22,16 @@ impl Editor {
     /// 镜像进图形选中域（`rebuild_pending_mirrors`）——否则用户看到图案却框不中、
     /// 拖不动（看得见却抓不住）。离开鼠标工具即撤掉镜像（其余工具由 owning 预览渲染）。
     pub fn set_tool(&mut self, tool: Tool) {
+        // DRAW-044：离开柔化模式必须收口，否则组合结果没有镜像、曲线看起来「消失」，
+        // 且遗留的拖拽快照会污染撤销栈。未改过半径时还原提升前的曲线。
+        if tool != Tool::ShapeSelect
+            && let Some(mode) = self.round_corner.clone()
+        {
+            self.end_round_corners();
+            if !mode.changed && mode.composed + 1 == self.editor_state.pending_composed.len() {
+                self.undo_pending_compose();
+            }
+        }
         // DRAW-025：切到鼠标工具前，把「选中的手画音符」记成饼干模的刀。
         // `set_tool` 会清空音符选中集（非 Pointer 工具），不先快照就丢了。
         if tool == Tool::ShapeSelect {

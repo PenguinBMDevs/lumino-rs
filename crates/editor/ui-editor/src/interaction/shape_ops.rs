@@ -27,7 +27,7 @@ use crate::{Editor, Note};
 use lumino_core::shape::{ShapeFill, ShapeKind, ShapeModel, ShapeOp};
 use lumino_editor_state::shape_ops::{
     NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops, arc_k_or_one, arc_points_scaled,
-    polygon_paths, straighten_shape, symmetric_shape,
+    polygon_paths, rounded_anchors, straighten_shape, symmetric_shape,
 };
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
@@ -52,6 +52,13 @@ impl Editor {
             return self.drawing_notes(model, params, track);
         }
         let mut anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
+        // 角度柔化（DRAW-044）：锚点级替换，先于扶正/对称；曲线/弧按下标套用会切错位置
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Round(params) => Some(params),
+            _ => None,
+        }) {
+            anchors = rounded_anchors(model, params, f64::from(self.editor_state.view.ppq));
+        }
         if let Some(params) = model.ops.iter().find_map(|op| match op {
             ShapeOp::Straighten(params) => Some(params),
             _ => None,

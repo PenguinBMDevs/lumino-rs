@@ -122,7 +122,7 @@ impl Editor {
 
     /// Live 的结果音符来自各 `from` 的原始音符；直接按展平几何重生成会得到
     /// 一条错误的连接线。其余单支模型可按当前 model 重生成。
-    pub(super) fn part_notes_for_edit(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
+    pub(crate) fn part_notes_for_edit(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
         if let Some(ShapeOp::Live(params)) =
             model.ops.iter().find(|op| matches!(op, ShapeOp::Live(_)))
             && !params.from.is_empty()

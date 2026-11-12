@@ -57,6 +57,7 @@ impl Editor {
                 area_paint: None,
                 slice_cut: None,
                 mould_walls: None,
+                round_corner: None,
                 shape_list_open: false,
                 baked_pending: std::collections::HashMap::new(),
                 selected_bounds: Cell::new(None),

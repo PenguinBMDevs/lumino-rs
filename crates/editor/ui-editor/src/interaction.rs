@@ -19,6 +19,7 @@ mod moved;
 pub(crate) mod pending_compose;
 mod pressed;
 mod released;
+pub(crate) mod round_corner;
 pub(crate) mod shape_bridge;
 pub(crate) mod shape_compose;
 pub(crate) mod shape_edit_ui;
@@ -228,6 +229,10 @@ impl Editor {
     /// 只接管编辑图形态；其余场景（音符拖动、框选）保持原语义不动，
     /// 避免 Esc 在别的工具下变成「静默取消一半状态」。
     pub(crate) fn handle_escape_pressed(&mut self) {
+        // DRAW-044：Esc 先退出柔化模式
+        if self.round_corners_active() {
+            self.end_round_corners();
+        }
         // DRAW-025：Esc 先退出切割布防
         if self.slice_cut_active() {
             self.end_slice_cut();

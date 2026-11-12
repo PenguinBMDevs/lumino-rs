@@ -258,6 +258,8 @@ pub struct Editor {
     pub(crate) slice_cut: Option<crate::interaction::slice_cut::SliceCutState>,
     /// DRAW-025：饼干模的刀——切到鼠标工具前选中的手画音符快照
     pub(crate) mould_walls: Option<Vec<lumino_editor_state::ShapeNote>>,
+    /// DRAW-044：角度柔化模式（逐角点拖半径）
+    pub(crate) round_corner: Option<crate::interaction::round_corner::RoundCornerMode>,
     /// DRAW-041B/032B：ShapeStore 模型列表是否展开
     pub(crate) shape_list_open: bool,
     /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）

@@ -11,6 +11,10 @@ impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: iced_core::Point) {
         crate::puffin_profiler::moved_handle();
+        // DRAW-044：柔化模式下拖动 = 调半径
+        if self.round_corners_active() && self.round_corner_moved(pos) {
+            return;
+        }
         // DRAW-025：切割拖线中，只更新切线预览
         if self.slice_cut_moved(pos) {
             return;

@@ -28,6 +28,7 @@ pub mod mould;
 pub mod nested;
 pub mod pattern;
 pub mod polygon;
+pub mod round;
 pub mod slice;
 pub mod slice_line;
 pub mod sliced;
@@ -84,6 +85,7 @@ pub use mould::{
 pub use nested::{ColouredSpan, nested_spans};
 pub use pattern::{LOOP_SAMPLES, MAX_POINTS, PatternReport, formed_path, formed_path_with_report};
 pub use polygon::{paths as polygon_paths, side_paths as polygon_side_paths, unit_loops};
+pub use round::{is_roundable, rounded_anchors, rounded_points};
 pub use slice::{
     Loops, Pt, crossings, cut_loops, cut_open_vertical, inside as slice_inside, ring_of,
     split_notes_vertical,

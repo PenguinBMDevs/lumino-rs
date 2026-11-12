@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use super::params::{
     BetweenParams, ChopParams, ClawParams, CopyPathParams, CycleParams, DrawingParams,
     FunnelParams, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, MaskParams,
-    MergeParams, NestedParams, PatternParams, PolygonParams, StraightenParams, StrumParams,
-    SustainParams, SymParams, TilesParams, TumourParams,
+    MergeParams, NestedParams, PatternParams, PolygonParams, RoundParams, StraightenParams,
+    StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
 };
 use super::text::TextOp;
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle, VelocityEnv};
@@ -79,6 +79,8 @@ pub enum ShapeOp {
     Text(TextOp),
     /// 形状库多笔绘图（Geometry；DRAW-033A）
     Drawing(DrawingParams),
+    /// 角度柔化：逐角点圆角（Geometry；DRAW-044）
+    Round(RoundParams),
 }
 
 /// 算子在链上的执行阶段
@@ -107,7 +109,8 @@ impl ShapeOp {
             | Self::Symmetry(_)
             | Self::Straighten(_)
             | Self::Text(_)
-            | Self::Drawing(_) => OpStage::Geometry,
+            | Self::Drawing(_)
+            | Self::Round(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -200,6 +203,9 @@ impl ShapeOp {
             }
             Self::Text(op) => op.validate(),
             Self::Drawing(params) => params.validate(),
+            Self::Round(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("Round 参数非法：{e}"))),
         }
     }
 }

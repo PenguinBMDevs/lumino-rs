@@ -147,6 +147,13 @@ pub(crate) fn draw(
     }
 
     {
+        puffin::profile_scope!("draw::round_corner_box");
+        if let Some(geom) = crate::grid::round_corner_box::draw(editor, renderer, bounds) {
+            geometries.push(geom);
+        }
+    }
+
+    {
         puffin::profile_scope!("draw::shape_list_box");
         if let Some(list_geom) = crate::grid::shape_list_box::draw(editor, renderer, theme, bounds)
         {

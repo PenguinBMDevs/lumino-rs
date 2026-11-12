@@ -63,9 +63,10 @@ pub use params::{
     DrawingParams, DrawingRef, FlipMode, FlipWay, FunnelParams, FunnelStart, GateRangeParams,
     GlueParams, JoinedParams, LiveShapeParams, LiveWarning, LoopCurve, MaskMode, MaskParams,
     MaskShow, MergeParams, NestedParams, NestedWay, PathKind, PatternParams, PatternRef, PolyStyle,
-    PolygonParams, RangeDir, RowRestart, Speed, StopsParams, StraightenParams, Stroke, StrokeKind,
-    StrokeRole, StrumParams, SustainParams, Sym, SymAxis, SymParams, TileBy, TileFlip, TileLayout,
-    TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap, factor_at,
+    PolygonParams, RangeDir, RoundCorner, RoundParams, RowRestart, Speed, StopsParams,
+    StraightenParams, Stroke, StrokeKind, StrokeRole, StrumParams, SustainParams, Sym, SymAxis,
+    SymParams, TileBy, TileFlip, TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape,
+    TumourSide, TumourWrap, factor_at,
 };
 pub use pattern_presets::{
     PATTERN_PRESETS, PatternPreset, pattern_from_preset, preset as pattern_preset,
