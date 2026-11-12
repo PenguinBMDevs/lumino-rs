@@ -342,6 +342,50 @@ impl Root {
         self.egui_chrome_model_for(viewport_width)
     }
 
+    /// 原生运行时：应用一帧 egui 动作（菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏）。
+    ///
+    /// 与 `Host::apply_overlay_actions` 共用同一批 `*_action_message` 映射；
+    /// 区别是不经过 iced 窗口上下文，直接 `Root::update`。返回已应用的动作数。
+    pub fn apply_egui_chrome_actions(&mut self, ctx: &egui::Context) -> usize {
+        use lumino_ui_egui::chrome as ui;
+
+        let mut applied = 0;
+        if let Some(index) = ui::menu::take_action(ctx)
+            && let Some(message) = self.menu_action_message(index)
+        {
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = ui::toolbar_popup::take_action(ctx)
+            && let Some(message) = self.toolbar_action_message(&action)
+        {
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = ui::take_panel_action(ctx) {
+            let message = self.sidebar_panel_action_message(action);
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = ui::take_menu_action(ctx)
+            && let Some(message) = self.sidebar_menu_action_message(action)
+        {
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = ui::statusbar::take_action(ctx) {
+            let message = self.statusbar_action_message(action);
+            self.update(message);
+            applied += 1;
+        }
+        if let Some(action) = ui::take_titlebar_action(ctx) {
+            let message = self.titlebar_action_message(action);
+            self.update(message);
+            applied += 1;
+        }
+        applied
+    }
+
     /// 按真实视口宽度构造 egui 外壳快照。
     pub(crate) fn egui_chrome_model_for(&self, viewport_width: f32) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。

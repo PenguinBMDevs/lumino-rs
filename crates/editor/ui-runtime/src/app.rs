@@ -298,11 +298,9 @@ impl NativeApp {
         let output = self.ctx.run_ui(raw, |ui| {
             // 直接跑生产 egui 外壳（标题栏 / 工具栏 / 左右栏 / 状态栏）。
             chrome::show_bands(ui, &model, &mut icons);
-            // 菜单点击 → 生产 `Message`（与 Host 同一份解析）。
-            if let Some(index) = chrome::menu::take_action(ui.ctx())
-                && let Some(root) = root.as_mut()
-            {
-                let _ = root.apply_egui_menu_action(index);
+            // 菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏动作 → 生产 `Message`。
+            if let Some(root) = root.as_mut() {
+                let _ = root.apply_egui_chrome_actions(ui.ctx());
             }
 
             // 探针控件：验证输入仍能到达 egui。
