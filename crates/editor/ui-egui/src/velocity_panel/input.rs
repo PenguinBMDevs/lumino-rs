@@ -74,6 +74,75 @@ fn wheel_action(ui: &egui::Ui, rect: Rect) -> Option<VelocityPanelAction> {
 }
 
 const STATE_ID: &str = "lumino.velocity-panel.edit-state";
+const RESIZE_STATE_ID: &str = "lumino.velocity-panel.resize-state";
+
+/// 面板高度下限（与 iced `VELOCITY_PANEL_MIN_HEIGHT` 一致）。
+const PANEL_MIN_HEIGHT: f32 = 60.0;
+/// 面板高度上限（与 iced `VELOCITY_PANEL_MAX_HEIGHT` 一致）。
+const PANEL_MAX_HEIGHT: f32 = 400.0;
+
+/// 顶部 resize 拖拽状态（`start_height = 0` = 未在拖拽）。
+#[derive(Default, Clone, Copy)]
+struct ResizeState {
+    start_y: f32,
+    start_height: f32,
+}
+
+/// 数据区顶部 resize 手柄命中矩形（画布顶端 5px）。
+pub(super) fn resize_zone(canvas: Rect) -> Rect {
+    Rect::from_min_size(canvas.min, Vec2::new(canvas.width(), RESIZE_HANDLE))
+}
+
+/// 面板 resize 拖拽：按下记基线，拖动改高度，松开清除。
+///
+/// 公式与 iced `handle_cursor_moved` 一致：
+/// `new_height = start_height + (start_y - y)`，钳制到 60..400，
+/// 与当前高度差 > 1px 才发动作（避免每帧抖动）。
+pub(super) fn handle_resize(
+    ui: &egui::Ui,
+    model: &VelocityPanelModel,
+) -> Option<VelocityPanelAction> {
+    let zone = resize_zone(model.canvas);
+    let pos = ui.ctx().input(|i| i.pointer.latest_pos())?;
+    let pressed = ui.ctx().input(|i| i.pointer.primary_pressed());
+    let released = ui.ctx().input(|i| i.pointer.primary_released());
+    let down = ui.ctx().input(|i| i.pointer.primary_down());
+
+    let mut state = ui
+        .ctx()
+        .data(|d| d.get_temp::<ResizeState>(egui::Id::unique(RESIZE_STATE_ID)))
+        .unwrap_or_default();
+
+    if zone.contains(pos) && !down {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+    }
+
+    if pressed && zone.contains(pos) {
+        state = ResizeState {
+            start_y: pos.y,
+            start_height: model.panel.height(),
+        };
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique(RESIZE_STATE_ID), state));
+        return None;
+    }
+
+    if down && state.start_height > 0.0 {
+        let new_height = (state.start_height + (state.start_y - pos.y))
+            .clamp(PANEL_MIN_HEIGHT, PANEL_MAX_HEIGHT);
+        if (new_height - model.panel.height()).abs() > 1.0 {
+            return Some(VelocityPanelAction::Resize(new_height));
+        }
+    }
+
+    if released && state.start_height > 0.0 {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(egui::Id::unique(RESIZE_STATE_ID), ResizeState::default());
+        });
+    }
+
+    None
+}
 
 #[derive(Default, Clone)]
 struct EditState {

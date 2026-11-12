@@ -3527,10 +3527,34 @@ callback / 多视口 / 截图能力。
   `ui-egui` 全部集成测试（含新 2 条）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.19（下一步）**
+**Task 4.19（第一百二十五步）：力度面板 resize 拖拽迁 egui**
 
-1. 力度面板 resize 拖拽迁 egui（最后一个仍走 iced 的面板交互）；
-2. 曲线矢量填充的凹多边形三角化；
-3. 切主窗口入口到 `lumino-ui-runtime`，删除 `host/render/ui.rs` 与
-   `host/event/window/*` 的 iced 依赖，最后摘掉
-   `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。
+- **新增 `velocity_panel::input::ResizeState` / `resize_zone` / `handle_resize`**：
+  命中区 = canvas 顶端 5px；按下记 `(start_y, start_height)`，拖动按
+  `new_height = start_height + (start_y - y)` 计算并钳制 60..400，与当前高度差
+  > 1px 才发 `Resize(height)`（与 iced `handle_cursor_moved` 同公式、同阈值）；
+  悬停未按下时设 `CursorIcon::ResizeVertical`。
+- **动作链**：`VelocityPanelAction::Resize(f32)` → `Message::VelocityPanelResize`，
+  与 iced 侧同名消息汇合。
+- **优先级**：`handle_resize` 在数据区编辑分支**之前**执行，且 resize 区常驻
+  `blocked`；命中后本帧不再分派力度 / Tempo / CC / Bend 输入，避免拖手柄时
+  顺带改数据。
+- **拆分**：`velocity_panel.rs` 340 行、`input.rs` 376、`input/automation.rs` 178、
+  `action.rs` 88、`ui/.../velocity_panel.rs` 399。
+- **验证**：
+  - 无头（`velocity_panel_bands.rs` 第 5 条）：手柄上拖 40px → `Resize(190)`
+    （150 高面板 + 40，误差 < 2px）。
+  - 真机（DPI-aware，Bend + Curve）：canvas 由 `[[248 1090]-[1980 1212]]` 变为
+    `[[248 1044.4]-[1980 1212]]`，日志 10 条 `Resize(154.8 … 195.6)`，
+    面板变高、工具栏与状态栏无重叠（截图 `target/rsz-panel.png`）。
+- 验收：`lumino-ui` lib 776/776、`lumino-ui-editor` 908/908、`ui-egui` 全部集成
+  测试（含新 1 条）、`clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、
+  `capture_egui` 12/12 零基线改动。
+
+**Task 4.20（下一步）**
+
+1. 切主窗口入口到 `lumino-ui-runtime`：egui overlay 增加可选 clear，
+   非对话框主窗口跳过 iced `present`，用环境变量保留回退；
+2. 删除 `host/render/ui.rs` 与 `host/event/window/*` 的 iced 输入路由；
+3. 曲线矢量填充的凹多边形三角化；
+4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。

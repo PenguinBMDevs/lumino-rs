@@ -393,6 +393,7 @@ impl Root {
             VelocityPanelAction::Wheel { delta_x, delta_y } => {
                 Message::Velocity(VelocityAction::WheelScrolled { delta_x, delta_y })
             }
+            VelocityPanelAction::Resize(height) => Message::VelocityPanelResize(height),
         }
     }
 }

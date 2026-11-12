@@ -99,11 +99,12 @@ pub struct VelocityPanelModel {
 
 /// 绘制面板骨架与工具栏。
 ///
-/// 返回 `(动作, 需要从 iced 手里接管的矩形)`：工具栏与 CC 弹层必须占用，
-/// 数据区的点击仍交给 iced Canvas（力度/CC 编辑逻辑不在本轮迁移范围）。
+/// 返回 `(动作, 需要从 iced 手里接管的矩形)`：工具栏 / CC 弹层 / 各模式的编辑区
+/// 与顶部 resize 手柄都必须占用；`Tempo` / `Velocity` / `CC` / `Bend` 的数据区
+/// 编辑均已迁 egui（resize 手柄的点击也不再落到 iced Canvas）。
 pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelAction>, Vec<Rect>) {
     let painter = ui.painter();
-    let mut blocked = vec![model.toolbar];
+    let mut blocked = vec![model.toolbar, input::resize_zone(model.canvas)];
 
     // 工具栏底色 + 底边线。
     painter.rect_filled(model.toolbar, CornerRadius::ZERO, theme::toolbar_bg());
@@ -314,18 +315,19 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
             .data_mut(|d| d.insert_temp(egui::Id::unique(CC_OPEN_ID), false));
     }
 
+    // 顶部 resize 手柄：优先于所有数据区交互（命中区已加入 blocked）。
+    if action.is_none() {
+        action = input::handle_resize(ui, model);
+    }
+
     // 力度模式 + 曲线工具：egui 接管数据区编辑（iced Canvas 不再收这一段）。
-    if model.velocity_editing {
+    if model.velocity_editing && action.is_none() {
         blocked.push(input::blocking_rect(model.canvas));
-        if action.is_none() {
-            action = input::handle(ui, model);
-        }
-    } else if model.tempo_editing {
-        // Tempo 模式：egui 接管拖拽 / 新增 / 删除（resize 手柄仍归 iced）。
+        action = input::handle(ui, model);
+    } else if model.tempo_editing && action.is_none() {
+        // Tempo 模式：egui 接管拖拽 / 新增 / 删除。
         blocked.push(input::blocking_rect(model.canvas));
-        if action.is_none() {
-            action = input::handle_tempo(ui, model);
-        }
+        action = input::handle_tempo(ui, model);
     } else if model.automation_editing {
         // CC / Bend 模式：egui 接管锚点拖拽 / 新增 / 右键删除。
         blocked.push(input::blocking_rect(model.canvas));

@@ -171,6 +171,41 @@ fn click_button(harness: &mut Harness<'static>, pos: egui::Pos2, button: egui::P
 }
 
 #[test]
+fn resize_handle_drag_changes_panel_height() {
+    let m = model();
+    let zone = egui::Rect::from_min_size(m.canvas.min, egui::vec2(m.canvas.width(), 5.0));
+    let start = zone.center();
+    let (mut h, actions) = harness(m);
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::PointerMoved(start));
+    input.events.push(egui::Event::PointerButton {
+        pos: start,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    *h.input_mut() = input;
+    h.run();
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::PointerMoved(egui::pos2(
+        start.x,
+        start.y - 40.0,
+    )));
+    *h.input_mut() = input;
+    h.run();
+    match actions.borrow().iter().rev().find_map(|a| match a {
+        velocity_panel::VelocityPanelAction::Resize(height) => Some(*height),
+        _ => None,
+    }) {
+        Some(height) => assert!(
+            (height - 190.0).abs() < 2.0,
+            "上拖 40px 应把 150 高的面板拉到 190，实际 {height}"
+        ),
+        None => panic!("应回传 Resize，实际：{:?}", actions.borrow()),
+    }
+}
+
+#[test]
 fn toolbar_is_blocked_but_canvas_is_not() {
     let (h, _) = harness(model());
     let blocked = chrome::menu::take_blocked(&h.ctx);

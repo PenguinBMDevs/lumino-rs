@@ -70,6 +70,8 @@ pub enum VelocityPanelAction {
     },
     /// 双轴滚轮（时间轴 / 曲线）。
     Wheel { delta_x: f32, delta_y: f32 },
+    /// 面板高度调整（顶部手柄拖拽）。
+    Resize(f32),
 }
 
 const ACTION_ID: &str = "lumino.velocity-panel.action";
