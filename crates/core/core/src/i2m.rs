@@ -108,14 +108,16 @@ mod tests {
 
     #[test]
     fn test_roundtrip_keeps_all_fields() {
-        let mut s = I2mSettings::default();
-        s.start_key = 36;
-        s.end_key = 96;
-        s.color_count = 4;
-        s.brightness = -25;
-        s.sharpen = 60;
-        s.palette = "octree".into();
-        s.blend = "spread".into();
+        let s = I2mSettings {
+            start_key: 36,
+            end_key: 96,
+            color_count: 4,
+            brightness: -25,
+            sharpen: 60,
+            palette: "octree".into(),
+            blend: "spread".into(),
+            ..I2mSettings::default()
+        };
         let text = toml::to_string(&s).expect("序列化失败");
         let decoded: I2mSettings = toml::from_str(&text).expect("反序列化失败");
         assert_eq!(decoded, s);

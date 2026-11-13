@@ -122,7 +122,7 @@ impl ProgressManager {
 
     /// 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
     ///
-    /// 进度窗口为无边框模式，系统标题栏已移除，窗口控制由 iced 渲染的
+    /// 进度窗口为无边框模式，系统标题栏已移除，窗口控制由 旧版 渲染的
     /// 自制标题栏（`Titlebar`）承担。动作需在 `redraw_requested`（事件队列已消费）
     /// 之后取出并应用到真实窗口。`Close` 直接关闭进度窗口（与 `CloseRequested` 一致）。
     fn apply_window_actions(&mut self) {

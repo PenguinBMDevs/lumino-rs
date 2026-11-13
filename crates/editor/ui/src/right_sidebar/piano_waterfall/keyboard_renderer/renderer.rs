@@ -1,5 +1,5 @@
-use iced_wgpu::wgpu;
 use lumino_gfx::GpuEpoch;
+use wgpu;
 use wgpu::util::DeviceExt;
 
 use super::instances::f32_slice_to_bytes;

@@ -1,4 +1,4 @@
-//! 设备检查警告窗：独立 winit 窗口 + gfx Context + iced Host 管理器。
+//! 设备检查警告窗：独立 winit 窗口 + gfx Context + 旧版 Host 管理器。
 //!
 //! 生命周期仿 `ProgressManager`：窗口创建 → 事件转发 → 用户操作回传 → 关闭。
 //! 警告窗只在"首启/未抑制 + 检测失败"时短暂存在；用户选择由
@@ -192,7 +192,7 @@ impl DeviceWarningWindow {
 
     /// 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
     ///
-    /// 无边框模式下窗口控制由 iced 渲染的自制标题栏承担，动作需在
+    /// 无边框模式下窗口控制由 旧版 渲染的自制标题栏承担，动作需在
     /// `redraw_requested`（事件队列已消费）之后取出并应用到真实窗口；
     /// 「关闭」视为「确认并关闭」（`close_requested` 由 `take_action` 转为 Quit）。
     fn apply_window_actions(&mut self) {

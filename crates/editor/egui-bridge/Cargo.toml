@@ -1,0 +1,21 @@
+[package]
+name = "lumino-egui-bridge"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+egui = { workspace = true }
+wgpu = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pollster = { workspace = true }

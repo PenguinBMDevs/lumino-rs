@@ -81,6 +81,13 @@ impl RunnerInner {
                     .load_shapes(shapes);
                 tracing::info!("工程形状已载入：{count} 个");
             }
+            ProjectOnionSkinMode(mode) => {
+                // 工程范围记忆：恢复洋葱皮显示范围（未知/待接入取值落回「全部音轨」）。
+                // 只恢复范围，不打开总开关——洋葱皮默认关闭是用户硬约束。
+                let mode = lumino_ui::OnionSkinMode::from_str_lossy(&mode);
+                self.window_state.window.ui_mut().set_onion_skin_mode(mode);
+                tracing::info!("工程洋葱皮显示范围已恢复：{mode:?}");
+            }
             MidiParsed(parsed) => {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 

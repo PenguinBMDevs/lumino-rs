@@ -1,5 +1,5 @@
 //! 坐标转换 — 委托到 ViewState，纵向卷帘转置支持
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 impl super::Editor {
     pub(super) fn tick_to_x(&self, tick: f32) -> f32 {

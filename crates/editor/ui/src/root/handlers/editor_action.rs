@@ -97,7 +97,7 @@ impl Root {
     pub(crate) fn handle_piano_roll_context_menu(&mut self, action: PianoRollContextMenuAction) {
         match action {
             PianoRollContextMenuAction::Open { position, target } => {
-                let pos = iced_core::Point::new(position.x, position.y);
+                let pos = lumino_ui_core::geom::Point::new(position.x, position.y);
                 match target {
                     // 图形目标：右键命中哪个图形就作用于它。若它**已在选中集内**则保持
                     // 整个多选不变（菜单「删除」作用于既有批量选区），与音符目标的语义一致。
@@ -241,12 +241,12 @@ impl Root {
                         let anchor = menu_pos
                             .map(|pos| {
                                 let canvas = &self.editor.editor_state.canvas;
-                                iced_core::Point::new(
+                                lumino_ui_core::geom::Point::new(
                                     pos.x + canvas.offset_x,
                                     pos.y + canvas.offset_y,
                                 )
                             })
-                            .unwrap_or(iced_core::Point::new(320.0, 200.0));
+                            .unwrap_or(lumino_ui_core::geom::Point::new(320.0, 200.0));
                         self.open_mask_panel(anchor);
                     }
                     PianoRollContextMenuItem::ShapeList => {

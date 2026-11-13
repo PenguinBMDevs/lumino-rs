@@ -72,6 +72,9 @@ impl ToolbarHandler {
         // 同步自动滚动模式（在 toolbar 更新之后）
         self.sync_auto_scroll_mode(root, &event);
 
+        // 同步洋葱皮显示范围（未接入的「指定音轨」在此提示）
+        self.sync_onion_skin_mode(root, &event);
+
         // 处理撤销/重做
         self.handle_toolbar_undo_redo(root, &event);
 

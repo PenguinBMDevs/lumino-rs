@@ -15,29 +15,18 @@
 //!   悬浮按钮，与 i2m 区域框按钮共用同一套视觉（`confirm_buttons` 模块）。
 
 use crate::Editor;
-use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
-use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
-use crate::interaction::line_tool::fill::region::{FillRegion, fill_region};
-use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_core::tr;
+use crate::grid::confirm_buttons::BUTTON_SIZE;
+use crate::grid::utils::content_bounds;
 use lumino_editor_state::AnchorBend;
 use lumino_message::Tool;
-use lumino_ui_core::Renderer;
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 /// 锚点半径（像素）
-const ANCHOR_RADIUS: f32 = 6.0;
 /// 锚点描边宽度（像素）
-const ANCHOR_STROKE_WIDTH: f32 = 2.0;
 /// 控制柄方块边长（像素）
-const HANDLE_SIZE: f32 = 8.0;
 /// 控制柄辅助线宽度（像素）
-const HANDLE_LINE_WIDTH: f32 = 1.0;
 /// 按钮组与路径包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
-/// 填充色块透明度（半透明色块叠在网格上，√ 确认后成为实心音符）
-const FILL_ALPHA: f32 = 0.35;
-
 /// 悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
 pub struct LineButtonRects {
@@ -190,291 +179,23 @@ pub fn line_button_rects(editor: &Editor) -> Option<LineButtonRects> {
 ///
 /// 几何在**曲线工具或鼠标工具（图形选中）**激活时绘制（后者让「画完切过去」的图案不消失，
 /// 见 `Editor::pending_preview_visible`）；√× 按钮仍只属于曲线工具。
-pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
-    theme: &lumino_ui_core::Theme,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    // Conductor 音轨（track 0）：整工具不可用，不绘制路径与 √× 按钮
-    if editor.editor_state.data.current_track == 0 {
-        return None;
-    }
-    if !editor.pending_preview_visible(Tool::Curve) {
-        return None;
-    }
-    let line = &editor.editor_state.line_tool;
-    if line.paths.is_empty() {
-        return None;
-    }
-    let selected = line.selected_anchor();
-
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    let mut has_content = false;
-    let anchor_color = theme.extended_palette().primary.strong.color;
-    // 控制柄辅助线：主题色 50% 透明度
-    let handle_line_color =
-        iced_core::Color::from_rgba(anchor_color.r, anchor_color.g, anchor_color.b, 0.5);
-    let white = iced_core::Color::WHITE;
-
-    for (pi, path) in line.paths.iter().enumerate() {
-        // 曲线段：普通模式画贝塞尔引导线；圆弧模式画采样折线（与 √ 产物同源）
-        let arc_points = if line.arc_mode {
-            editor.line_arc_points(path)
-        } else {
-            None
-        };
-        if let Some(points) = &arc_points {
-            for pair in points.windows(2) {
-                let pa = editor.line_pos_screen_pos(pair[0]);
-                let pb = editor.line_pos_screen_pos(pair[1]);
-                let curve = Path::new(|p| {
-                    p.move_to(pa);
-                    p.line_to(pb);
-                });
-                let stroke = Stroke::default()
-                    .with_width(OUTLINE_GUIDE_WIDTH)
-                    .with_color(anchor_color);
-                frame.stroke(&curve, stroke);
-                has_content = true;
-            }
-        } else if path.len() >= 2 {
-            for pair in path.windows(2) {
-                let (a, b) = (pair[0], pair[1]);
-                let pa = editor.line_pos_screen_pos(a.pos);
-                let pb = editor.line_pos_screen_pos(b.pos);
-                let corner = a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner;
-                let curve = if corner {
-                    Path::new(|p| {
-                        p.move_to(pa);
-                        p.line_to(pb);
-                    })
-                } else {
-                    let p1 = editor.line_pos_screen_pos(a.out_handle_abs());
-                    let p2 = editor.line_pos_screen_pos(b.in_handle_abs());
-                    Path::new(|p| {
-                        p.move_to(pa);
-                        p.bezier_curve_to(p1, p2, pb);
-                    })
-                };
-                let stroke = Stroke::default()
-                    .with_width(OUTLINE_GUIDE_WIDTH)
-                    .with_color(anchor_color);
-                frame.stroke(&curve, stroke);
-                has_content = true;
-            }
-        }
-        // 描边产物预览 = √ 会生成的音符块（与写入 / 逐路径归属同源）
-        if fill_note_blocks(
-            &mut frame,
-            editor,
-            &editor.path_outline_blocks(path),
-            anchor_color,
-        ) {
-            has_content = true;
-        }
-
-        // 控制柄 / 锚点只在曲线工具下可交互；ShapeSelect 只负责组合后的 020 手柄。
-        // 否则用户会把待确认曲线的锚点当成可选对象，点下去却触发整条曲线的框选拖动。
-        if editor.current_tool() == Tool::Curve {
-            // 控制柄（辅助线 + 方块，常驻显示）；圆弧模式没有可拖控制柄
-            if !line.arc_mode {
-                for (ai, anchor) in path.iter().enumerate() {
-                    let ap = editor.line_pos_screen_pos(anchor.pos);
-                    for side in line.visible_handle_sides(pi, ai) {
-                        let h_abs = match side {
-                            lumino_editor_state::HandleSide::In => anchor.in_handle_abs(),
-                            lumino_editor_state::HandleSide::Out => anchor.out_handle_abs(),
-                        };
-                        let hp = editor.line_pos_screen_pos(h_abs);
-                        // 锚点 → 控制柄辅助线
-                        let handle_connector = Path::new(|p| {
-                            p.move_to(ap);
-                            p.line_to(hp);
-                        });
-                        let connector_stroke = Stroke::default()
-                            .with_width(HANDLE_LINE_WIDTH)
-                            .with_color(handle_line_color);
-                        frame.stroke(&handle_connector, connector_stroke);
-                        // 控制柄方块
-                        let rect = Rectangle::new(
-                            Point::new(hp.x - HANDLE_SIZE * 0.5, hp.y - HANDLE_SIZE * 0.5),
-                            Size::new(HANDLE_SIZE, HANDLE_SIZE),
-                        );
-                        let path = Path::rectangle(rect.position(), rect.size());
-                        frame.fill(&path, anchor_color);
-                        let ring = Stroke::default().with_width(1.0).with_color(white);
-                        frame.stroke(&path, ring);
-                        has_content = true;
-                    }
-                }
-            }
-
-            // 锚点：实心圆 + 白色描边（明确标注路径锚点）
-            for (ai, anchor) in path.iter().enumerate() {
-                let ap = editor.line_pos_screen_pos(anchor.pos);
-                let path = Path::circle(ap, ANCHOR_RADIUS);
-                frame.fill(&path, anchor_color);
-                let ring = Stroke::default()
-                    .with_width(ANCHOR_STROKE_WIDTH)
-                    .with_color(white);
-                frame.stroke(&path, ring);
-                // 选中锚点：加一圈主题色外环，明确弯折切换作用于谁
-                if selected == Some((pi, ai)) {
-                    let selected_ring = Path::circle(ap, ANCHOR_RADIUS + 3.0);
-                    frame.stroke(
-                        &selected_ring,
-                        Stroke::default().with_width(2.0).with_color(white),
-                    );
-                }
-                has_content = true;
-            }
-        }
-    }
-
-    // 颜料桶填充预览：
-    // - 切分档位开启 → 画**逐条音符块**（与 √ 生成的音符同源，所见即所得）；
-    // - 未开切分 → 画矢量闭环（每行一条长音符，等价于整块填充）。
-    if let Some(region) = fill_region(editor) {
-        let fill_color =
-            iced_core::Color::from_rgba(anchor_color.r, anchor_color.g, anchor_color.b, FILL_ALPHA);
-        if region.blocks.is_empty() {
-            let path = build_fill_path(editor, &region);
-            frame.fill(&path, fill_color);
-        } else {
-            fill_note_blocks(&mut frame, editor, &region.blocks, fill_color);
-        }
-        has_content = true;
-    }
-
-    // 选中锚点的弯折切换：曲线 / 折线两态（DRAW-042）
-    if let Some(btns) = line_bend_button_rects(editor) {
-        let palette = theme.extended_palette();
-        let selected_bg = palette.primary.strong.color;
-        let normal_bg = palette.background.weak.color;
-        let text_color = palette.background.neutral.text;
-        for (rect, label, bend) in [
-            (btns.smooth, tr!("曲线"), AnchorBend::Smooth),
-            (btns.corner, tr!("折线"), AnchorBend::Corner),
-        ] {
-            let selected = btns.current == bend;
-            let path = Path::rounded_rectangle(
-                rect.position(),
-                rect.size(),
-                iced_core::border::Radius::from(4.0),
-            );
-            frame.fill(&path, if selected { selected_bg } else { normal_bg });
-            frame.stroke(
-                &path,
-                Stroke::default().with_width(1.0).with_color(if selected {
-                    white
-                } else {
-                    anchor_color
-                }),
-            );
-            // canvas 文本必须用 Advanced shaping：Basic 不会走系统 CJK 回退，
-            // 中文会显示成“口口”。
-            frame.fill_text(canvas::Text {
-                content: label.to_string(),
-                position: Point::new(rect.x + rect.width * 0.5, rect.y + 4.0),
-                max_width: rect.width,
-                line_height: iced_core::text::LineHeight::Relative(1.0),
-                size: iced_core::Pixels(11.0),
-                color: if selected { white } else { text_color },
-                font: lumino_ui_core::font::ui_font(),
-                align_x: iced_core::alignment::Horizontal::Center.into(),
-                align_y: iced_core::alignment::Vertical::Top,
-                shaping: iced_core::text::Shaping::Advanced,
-            });
-        }
-        has_content = true;
-    }
-
-    // 共享悬浮按钮（存在完整路径后显示）
-    if let Some(btns) = line_button_rects(editor) {
-        draw_button(
-            &mut frame,
-            btns.confirm,
-            &CONFIRM_ICON,
-            iced_core::Color::from_rgb8(46, 125, 50),
-        );
-        draw_button(
-            &mut frame,
-            btns.cancel,
-            &CANCEL_ICON,
-            iced_core::Color::from_rgb8(198, 40, 40),
-        );
-        has_content = true;
-    }
-
-    if has_content {
-        Some(frame.into_geometry())
-    } else {
-        None
-    }
-}
-
-/// 构建填充路径（画布坐标）：填充边缘 = 闭环几何轮廓本身
-///
-/// iced canvas 填充默认 NonZero（绕数）规则，与填充判定的 winding 一致：
-/// - 背景模式：顺时针范围矩形 + 全部闭环**反向**（洞）+ 已填闭环原方向
-///   （矩形 +1、反向环 -1 → 未填环内为 0 = 洞；已填环再 +1 → 填充）；
-/// - 内部模式：只画已填闭环（原方向）。
-fn build_fill_path(editor: &Editor, region: &FillRegion) -> Path {
-    Path::new(|p| {
-        if region.has_background {
-            let (min_t, min_k, max_t, max_k) = region.bounds;
-            let a = editor.line_pos_screen_pos((min_t, min_k));
-            let b = editor.line_pos_screen_pos((max_t, max_k));
-            // 背景范围矩形（顺时针 → 内部绕数 +1）
-            p.move_to(Point::new(a.x, a.y));
-            p.line_to(Point::new(b.x, a.y));
-            p.line_to(Point::new(b.x, b.y));
-            p.line_to(Point::new(a.x, b.y));
-            // 全部闭环反向 → 洞（未填图形内部不显示填充）
-            for lp in &region.all_loops {
-                draw_loop(p, lp, true, editor);
-            }
-            // 已填闭环原方向 → 与洞抵消后内部绕数 +1 → 显示填充
-            for lp in &region.filled_loops {
-                draw_loop(p, lp, false, editor);
-            }
-        } else {
-            for lp in &region.filled_loops {
-                draw_loop(p, lp, false, editor);
-            }
-        }
-    })
-}
-
-/// 画一个环（逻辑坐标 → 画布坐标），reversed = 反向作为洞（NonZero 规则下
-/// 矩形 +1 与反向环 -1 抵消 → 环内绕数 0 = 洞）
-fn draw_loop(p: &mut canvas::path::Builder, pts: &[(f32, f32)], reversed: bool, editor: &Editor) {
-    let n = pts.len();
-    let mut idx = if reversed { n.saturating_sub(1) } else { 0 };
-    let mut first = true;
-    loop {
-        let (tx, ty) = pts[idx];
-        let s = editor.line_pos_screen_pos((tx, ty));
-        if first {
-            p.move_to(Point::new(s.x, s.y));
-            first = false;
-        } else {
-            p.line_to(Point::new(s.x, s.y));
-        }
-        if reversed {
-            if idx == 0 {
-                break;
-            }
-            idx -= 1;
-        } else {
-            idx += 1;
-            if idx >= n {
-                break;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests;
+
+/// 曲线填充预览（与 √ 生成的音符同源）。
+#[derive(Debug, Clone, Default)]
+pub struct FillPreview {
+    /// 切分档位开启时的逐条音符块 (start_tick, end_tick, key)；空 = 走矢量闭环。
+    pub blocks: Vec<(f32, f32, f32)>,
+    /// 需要显示的内部填充闭环（tick/key，首尾重复）。
+    pub loops: Vec<Vec<(f32, f32)>>,
+}
+
+/// 计算曲线填充预览（与 √ 生成的音符同源）。
+pub fn fill_preview(editor: &Editor) -> Option<FillPreview> {
+    let region = crate::interaction::line_tool::fill::region::fill_region(editor)?;
+    Some(FillPreview {
+        blocks: region.blocks,
+        loops: region.filled_loops,
+    })
+}

@@ -11,8 +11,8 @@
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
-use iced_core::Point;
 use lumino_message::Tool;
+use lumino_ui_core::geom::Point;
 use lumino_ui_core::message::{EditorAction, Point2};
 
 /// 带画布尺寸的编辑器（`is_inside_canvas` 需要非零 canvas 尺寸），当前轨 = 1

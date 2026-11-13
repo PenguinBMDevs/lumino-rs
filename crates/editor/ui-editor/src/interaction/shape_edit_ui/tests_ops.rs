@@ -5,8 +5,8 @@ use super::tests::{
 };
 use super::*;
 use crate::tests::test_helpers::seed_notes;
-use iced_core::Point;
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
+use lumino_ui_core::geom::Point;
 
 #[test]
 fn test_begin_update_finish_changes_geometry() {

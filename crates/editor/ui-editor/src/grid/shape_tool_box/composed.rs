@@ -2,13 +2,7 @@
 //!
 //! 从 `shape_tool_box.rs` 拆出，避免主文件超过 400 行。
 
-use iced_core::Color;
-use iced_widget::canvas;
 use lumino_editor_state::{ComposedKind, PendingComposed, ShapeNote};
-use lumino_ui_core::Renderer;
-
-use crate::Editor;
-use crate::grid::utils::fill_note_blocks;
 
 /// 组合结果在文档坐标下的包围盒。
 ///
@@ -45,61 +39,4 @@ fn notes_bounds(notes: &[ShapeNote]) -> Option<(f32, f32, f32, f32)> {
         hi_k = hi_k.max(f32::from(note.key));
     }
     (lo_t.is_finite() && hi_t.is_finite()).then_some((lo_t, lo_k, hi_t, hi_k))
-}
-
-/// 027/028 的效果不能只靠轮廓表达：直接画组合后的音符块。
-///
-/// - 027：副本落在路径上，音符块就是 ✓ 会提交的最终位置；
-/// - 028：逐音符按力度调制透明度，渐强在提交前可见；
-/// - DEBT-14：抽屉 Insert 的预览必须是**音符块**（卡面「所见即所得」），
-///   轮廓只表达几何，用户无法据此判断最终会写入哪些音符。
-pub(super) fn draw_composed_notes(
-    frame: &mut canvas::Frame<Renderer>,
-    editor: &Editor,
-    composed: &PendingComposed,
-    base_color: Color,
-) -> bool {
-    if composed.notes().next().is_none() {
-        return false;
-    }
-    match composed.kind {
-        ComposedKind::CopyAlong | ComposedKind::Single | ComposedKind::Insert => {
-            let blocks: Vec<(f32, f32, u16)> = composed.notes().map(note_block).collect();
-            fill_note_blocks(
-                frame,
-                editor,
-                &blocks,
-                Color {
-                    a: 0.55,
-                    ..base_color
-                },
-            )
-        }
-        ComposedKind::Velocity => {
-            let mut drawn = false;
-            for note in composed.notes() {
-                let alpha = (0.15 + f32::from(note.velocity) / 127.0 * 0.55).clamp(0.15, 0.7);
-                drawn |= fill_note_blocks(
-                    frame,
-                    editor,
-                    &[note_block(note)],
-                    Color {
-                        a: alpha,
-                        ..base_color
-                    },
-                );
-            }
-            drawn
-        }
-        _ => false,
-    }
-}
-
-/// 音符 → `fill_note_blocks` 的 `(tick_lo, tick_hi, key)`。
-fn note_block(note: &ShapeNote) -> (f32, f32, u16) {
-    (
-        note.tick,
-        (note.tick + note.length).max(note.tick + 1.0),
-        note.key,
-    )
 }

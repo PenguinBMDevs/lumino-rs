@@ -62,7 +62,7 @@ impl DialogWindow {
 
     /// 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
     ///
-    /// 无边框模式下，系统标题栏已移除，窗口控制完全由 iced 渲染的自制
+    /// 无边框模式下，系统标题栏已移除，窗口控制完全由 旧版 渲染的自制
     /// 标题栏（`Titlebar`）承担：红绿灯按钮与拖动区通过 `window::Event`
     /// 消息，由 `Host::process_message` 写入 `pending_window_action` /
     /// `pending_drag`。这些动作必须在 `redraw()`（事件队列已被消费）之后

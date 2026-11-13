@@ -5,7 +5,7 @@
 //! 拆分原因：`editor_impl.rs` 接近 400 行限制，按职责拆分。
 
 use crate::Editor;
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 更新框选框的弹簧物理动画

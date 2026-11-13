@@ -3,10 +3,10 @@
 //! 包含：工具切换、光标/画布状态、总 ticks 和 PPQ、音符变更标志、缓存失效
 
 use crate::{CacheInvalidation, Editor};
-use iced_core::Point;
 use lumino_core::BrushConfig;
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
+use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 设置当前工具（委托到 editor_state）
@@ -222,15 +222,8 @@ impl Editor {
     /// 统一缓存失效（替代散落的 grid_cache.clear() 等调用）
     #[inline]
     pub fn invalidate_caches(&mut self, which: CacheInvalidation) {
-        if which.0 & CacheInvalidation::GRID.0 != 0 {
-            self.grid_cache.clear();
-        }
-        if which.0 & CacheInvalidation::KEYBOARD.0 != 0 {
-            self.keyboard_cache.clear();
-        }
-        if which.0 & CacheInvalidation::RULER.0 != 0 {
-            self.ruler_cache.clear();
-        }
+        let _ = which;
+        self.grid_cache.clear();
     }
 
     /// 重置编辑器内部状态到默认值（释放私有字段内存）

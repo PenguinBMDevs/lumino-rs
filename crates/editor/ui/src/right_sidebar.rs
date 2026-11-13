@@ -8,12 +8,8 @@ pub(crate) mod i2m_cache;
 pub(crate) mod i2m_config;
 pub(crate) mod i2m_tables;
 pub mod material;
-mod material_context_menu;
-pub(crate) mod material_delete_dialog;
-mod materials_view;
 pub(crate) mod piano_waterfall;
 mod resize;
-pub mod view;
 
 pub use convert::{ConvertResult, run_conversion};
 pub use core::{

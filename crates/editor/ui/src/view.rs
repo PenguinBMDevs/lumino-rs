@@ -1,27 +1,2 @@
-pub mod about_egg;
-pub mod audio_export_dialog;
-pub mod autosave_recover_dialog;
-pub mod batch_edit_dialog;
-pub mod brush_settings_dialog;
-pub mod cloud_browser;
-pub mod cloud_dialog;
-pub mod collaboration_dialog;
-pub mod custom_precision_dialog;
 /// REF-001：对话框偏好排版宽度声明点（决策 D3：宽声明 / 高测量）
 pub mod dialog_preferred_size;
-pub mod draw_settings_dialog;
-pub mod export_progress_dialog;
-pub mod help_dialog;
-pub mod help_tip;
-pub mod history_dialog;
-pub mod load_confirm_dialog;
-pub mod memory_monitor_dialog;
-pub mod project_settings_dialog;
-pub mod recover_track_dialog;
-pub mod save_confirm_dialog;
-pub mod settings_dialog;
-pub mod shape_drawer;
-pub mod speed_change_dialog;
-pub mod video_clip;
-pub mod video_export_dialog;
-pub mod widgets;

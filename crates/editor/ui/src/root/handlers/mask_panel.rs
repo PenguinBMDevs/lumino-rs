@@ -14,7 +14,7 @@ impl Root {
     /// 打开面板：锁定当前选中的遮罩编辑目标
     ///
     /// `anchor` 为窗口坐标（右键位置换算后）。
-    pub(crate) fn open_mask_panel(&mut self, anchor: iced_core::Point) {
+    pub(crate) fn open_mask_panel(&mut self, anchor: lumino_ui_core::geom::Point) {
         let Some(target) = self.editor.mask_edit_target() else {
             self.toast.push(
                 ToastLevel::Warning,

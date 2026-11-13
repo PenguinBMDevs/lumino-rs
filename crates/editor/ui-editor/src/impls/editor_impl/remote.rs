@@ -17,7 +17,7 @@ impl Editor {
         self.remote_cursors.insert(
             user_id.to_string(),
             (
-                iced_core::Point::new(x, y),
+                lumino_ui_core::geom::Point::new(x, y),
                 color.to_string(),
                 username.to_string(),
             ),

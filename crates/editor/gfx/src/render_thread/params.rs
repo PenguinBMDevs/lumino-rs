@@ -116,6 +116,9 @@ pub struct RenderParams {
     pub skip_scene_render: bool,
     /// 纵向卷帘模式：网格与音符使用转置着色器（复用同 MIDI GPU 数据，瀑布流风格纵向流动）
     pub is_vertical_roll: bool,
+    /// egui 叠加层接管卷帘骨架（键盘 / 标尺）时，gfx 只画网格线与音符：
+    /// 网格绘制的裁剪区去掉键盘列与标尺行，标尺实例也不再提交。
+    pub skip_roll_chrome: bool,
     /// 本帧是否携带「必须在 present 前立即可见」的内容变化。
     ///
     /// 语义（2026-10-01 滚动拖拽全程卡顿修复）：
@@ -246,6 +249,7 @@ impl Default for RenderParams {
             fps: 60.0,
             skip_scene_render: false,
             is_vertical_roll: false,
+            skip_roll_chrome: false,
             content_dirty: true,
             subpixel_note_mode: false,
             vs_cull_mode: false,

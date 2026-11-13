@@ -1,11 +1,11 @@
 use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid};
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
-use iced_core::Point;
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOp};
 use lumino_editor_state::text_tool::TextToolMode;
 use lumino_editor_state::{ShapeNote, note_to_event};
 use lumino_note_core::history::CreateOp;
+use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 文字工具：设置输入框文字（来自画布覆盖层 TextInput 的 on_input）
@@ -50,7 +50,7 @@ impl Editor {
     ///
     /// Conductor 音轨（track 0）不可放置音符，整工具在 Conductor 轨上不可用
     /// （与铅笔等工具的 `current_track == 0` 守卫同源）。
-    pub(crate) fn text_tool_allowed(&self) -> bool {
+    pub fn text_tool_allowed(&self) -> bool {
         self.editor_state.data.current_track != 0
     }
 
@@ -89,7 +89,7 @@ impl Editor {
                     return;
                 }
             }
-            // 框内点击（顶部输入条由 iced TextInput 覆盖，不会落到这里）：
+            // 框内点击（顶部输入条由 旧版 TextInput 覆盖，不会落到这里）：
             // 拖拽中间实心区域可整体移动文本框。
             if let Some((l, t, r, b)) = crate::grid::text_tool_box::box_rect_screen(self)
                 && pos.x >= l

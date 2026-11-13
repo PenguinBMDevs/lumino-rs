@@ -40,7 +40,7 @@ impl Editor {
     ///
     /// 逐路径独立生成：多条路径重叠时预览按各自路径各画一份，写入侧由跨路径
     /// `keep_longest` 收敛——重叠区域的**覆盖**两者相同，仅"归谁"不同。
-    pub(crate) fn path_outline_blocks(&self, path: &[BezierAnchor]) -> Vec<(f32, f32, u16)> {
+    pub fn path_outline_blocks(&self, path: &[BezierAnchor]) -> Vec<(f32, f32, u16)> {
         if path.len() < 2 {
             return Vec::new();
         }

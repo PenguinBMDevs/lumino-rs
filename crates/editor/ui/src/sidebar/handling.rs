@@ -55,6 +55,7 @@ impl Sidebar {
             MixerPanelDragStarted => {}
             MixerPanelDragEnded => {}
             MixerPanelDragged(_, _) => {}
+            MixerPanelDragDelta { .. } => {}
             MixerPanelMasterVolumeChanged(_) => {}
             MixerPanelScrolled(_) => {}
             TracksSelected(ids) => self.handle_tracks_selected(ids),
@@ -67,10 +68,10 @@ impl Sidebar {
             // 侧边栏无法获取按下坐标，传 (0,0) 使"按下后移动任意距离即激活"；
             // 移动激活/插入指示更新由每帧 AnimationTick 驱动重绘。
             TrackReorderStarted(id) => {
-                self.handle_track_reorder_started(id, iced_core::Point::new(0.0, 0.0));
+                self.handle_track_reorder_started(id, lumino_ui_core::geom::Point::new(0.0, 0.0));
             }
             TrackReorderMoved { x, y } => {
-                self.handle_track_reorder_moved(iced_core::Point::new(x, y));
+                self.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(x, y));
             }
             TrackReorderEnded(insert_index) => {
                 self.handle_track_reorder_ended(insert_index);

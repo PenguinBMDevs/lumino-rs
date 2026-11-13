@@ -3,7 +3,7 @@
 //! 触摸（Touch）指针合成与双指手势已迁到 `window/touch.rs`，本模块只负责
 //! 键盘、修饰键与两处缩放共用的 `Host::handle_pinch_gesture`。
 
-use iced_winit::winit;
+use winit;
 
 use crate::host::Host;
 use crate::message;

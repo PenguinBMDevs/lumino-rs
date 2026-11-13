@@ -359,6 +359,13 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "无（跟随调色板）" => Some("None (Use Palette)"),
         "扩散（误差）" => Some("Spread (Error Diffusion)"),
         "网点（4×4）" => Some("Pattern (4×4)"),
+        "是否保留未保存的更改?" => Some("Keep unsaved changes?"),
+        "空格 播放/暂停" => Some("Space Play/Pause"),
+        "跳过" => Some("Skip"),
+        "（暂无子系统数据）" => Some("(No subsystem data)"),
+        "此文件较大，加载可能需要一些时间…" => {
+            Some("This file is large; loading may take a while…")
+        }
         _ => None,
     }
 }

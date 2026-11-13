@@ -120,7 +120,7 @@ pub(super) fn measure_frame_paths(
         gpu.format,
         crate::GpuEpoch::INITIAL,
     );
-    renderer.set_view_state(&gpu.queue, 1, &[], true);
+    renderer.set_view_state(&gpu.queue, 1, &[], true, (1, u32::MAX));
     renderer.upload_instances(notes, &gpu.device, &gpu.queue);
 
     // **双向轮转取最小值**：单项测量会被顺序效应污染（第一项常测得偏慢——

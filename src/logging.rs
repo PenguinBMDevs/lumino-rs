@@ -64,9 +64,7 @@ pub fn init() {
         if metadata.target().starts_with("lumino") {
             // 交由 env_filter 接管控制
             true
-        } else if metadata.target().starts_with("iced_wgpu")
-            || metadata.target().starts_with("cryoglyph")
-        {
+        } else if metadata.target().starts_with("cryoglyph") {
             // 诊断放行（文本图集 trim/失效等内部日志）：实际档位仍由 RUST_LOG 控制
             // （默认 "info" 时其 debug/trace 不会输出，无日常噪音）
             true
@@ -109,8 +107,7 @@ pub fn init() {
             .with(file_layer)
             .init();
 
-        // `log` → `tracing` 桥：捕获 wgpu / iced_wgpu / iced 等依赖的 log 记录
-        // （RUST_LOG 控制档位；如 RUST_LOG=info,iced_wgpu=trace 观察文本图集行为）
+        // `log` → `tracing` 桥：捕获 wgpu 等依赖的 log 记录（RUST_LOG 控制档位）
         tracing_log::LogTracer::init().ok();
     }
 

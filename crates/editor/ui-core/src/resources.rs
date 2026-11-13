@@ -1,4 +1,3 @@
-/// 共享资源（图标）子模块
-pub mod icon;
+//! 共享图标数据（枚举 + HiDPI 兼容开关）。
 
-pub use icon::view as icon;
+pub mod icon;

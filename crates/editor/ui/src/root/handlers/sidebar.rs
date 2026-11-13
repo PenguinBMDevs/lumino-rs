@@ -85,6 +85,7 @@ impl Root {
     /// 返回是否需要重新渲染（仅供调用方决策；`Root::update` 始终将
     /// Sidebar 消息视为已处理，不会因无需重绘而把消息继续路由）
     pub(crate) fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
+        tracing::warn!("DEBUG sidebar event: {event:?}");
         // 窗口最大化/还原期间阻止路由被意外切换
         if self.window_resize_guard
             && matches!(
@@ -169,6 +170,12 @@ impl Root {
                             self.mixer_panel.last_cursor = Some((px, py));
                         }
                     }
+                }
+                // egui 侧直接给位移：累加到 offset（无需 last_cursor 求差）。
+                sidebar::Event::MixerPanelDragDelta { dx, dy } => {
+                    let (ox, oy) = self.mixer_panel.offset;
+                    self.mixer_panel.offset =
+                        ((ox + dx).clamp(48.0, 4000.0), (oy - dy).clamp(0.0, 2000.0));
                 }
                 // 主音量变化：更新状态并即时同步到播放引擎（全局缩放所有通道增益）。
                 sidebar::Event::MixerPanelMasterVolumeChanged(v) => {
@@ -340,7 +347,10 @@ impl Root {
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset_y = self.editor.editor_state.canvas.offset_y;
         self.editor
-            .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
+            .set_canvas_offset(lumino_ui_core::geom::Point::new(
+                sidebar_width,
+                current_offset_y,
+            ));
 
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {

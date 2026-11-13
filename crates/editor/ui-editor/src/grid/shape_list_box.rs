@@ -6,11 +6,9 @@
 
 use crate::Editor;
 use crate::grid::utils::content_bounds;
-use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_core::tr;
 use lumino_message::EditorAction;
-use lumino_ui_core::{Renderer, Theme};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 const PANEL_W: f32 = 230.0;
 const ROW_H: f32 = 24.0;
@@ -132,80 +130,6 @@ pub fn press_action(editor: &Editor, point: Point) -> Option<Option<EditorAction
 }
 
 /// 绘制列表
-pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
-    theme: &Theme,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    let rects = shape_list_rects(editor)?;
-    let palette = theme.extended_palette();
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    let panel_path = Path::rounded_rectangle(
-        rects.panel.position(),
-        rects.panel.size(),
-        iced_core::border::Radius::from(6.0),
-    );
-    frame.fill(&panel_path, palette.background.weakest.color);
-    frame.stroke(
-        &panel_path,
-        Stroke::default()
-            .with_width(1.0)
-            .with_color(palette.background.strong.color),
-    );
-    frame.fill_text(canvas::Text {
-        content: tr!("形状列表").to_string(),
-        position: Point::new(rects.panel.x + PAD, rects.panel.y + PAD - 1.0),
-        max_width: rects.panel.width - PAD * 2.0 - CLOSE,
-        line_height: iced_core::text::LineHeight::Relative(1.0),
-        size: iced_core::Pixels(12.0),
-        color: palette.background.neutral.text,
-        font: lumino_ui_core::font::ui_font(),
-        align_x: iced_core::alignment::Horizontal::Left.into(),
-        align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Advanced,
-    });
-    frame.fill_text(canvas::Text {
-        content: "×".to_string(),
-        position: Point::new(rects.close.x + 2.0, rects.close.y - 1.0),
-        max_width: CLOSE,
-        line_height: iced_core::text::LineHeight::Relative(1.0),
-        size: iced_core::Pixels(14.0),
-        color: palette.background.neutral.text,
-        font: lumino_ui_core::font::ui_font(),
-        align_x: iced_core::alignment::Horizontal::Center.into(),
-        align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Advanced,
-    });
-    for (index, (_, rect, name, editable)) in rects.rows.iter().enumerate() {
-        if index % 2 == 0 {
-            let bg = Path::rectangle(rect.position(), rect.size());
-            frame.fill(&bg, palette.background.weak.color);
-        }
-        frame.fill_text(canvas::Text {
-            content: if *editable {
-                name.clone()
-            } else {
-                format!("{name}（只读）")
-            },
-            position: Point::new(rect.x + 6.0, rect.y + 4.0),
-            max_width: rect.width - 12.0,
-            line_height: iced_core::text::LineHeight::Relative(1.0),
-            size: iced_core::Pixels(12.0),
-            color: if *editable {
-                palette.background.neutral.text
-            } else {
-                palette.background.strong.text
-            },
-            font: lumino_ui_core::font::ui_font(),
-            align_x: iced_core::alignment::Horizontal::Left.into(),
-            align_y: iced_core::alignment::Vertical::Top,
-            shaping: iced_core::text::Shaping::Advanced,
-        });
-    }
-    Some(frame.into_geometry())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

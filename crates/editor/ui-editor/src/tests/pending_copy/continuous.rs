@@ -110,7 +110,7 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
     // 无 Ctrl，在副本框内（tick 340 中心）按下 → DraggingSelection（移动副本）
     let copy_x = editor.editor_state.view.tick_to_x(340.0);
     let copy_y = editor.editor_state.view.key_to_y(60) + editor.editor_state.view.zoom_y / 2.0;
-    let copy_center = iced_core::Point::new(copy_x, copy_y);
+    let copy_center = lumino_ui_core::geom::Point::new(copy_x, copy_y);
     editor.set_ctrl_pressed(false);
     editor.handle_tool_pressed(copy_center, false, 340.0, 60);
 
@@ -127,7 +127,7 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
 
     // 拖动 +50 tick：340 → 390
     let moved_x = editor.editor_state.view.tick_to_x(390.0);
-    editor.handle_moved(iced_core::Point::new(moved_x, copy_y));
+    editor.handle_moved(lumino_ui_core::geom::Point::new(moved_x, copy_y));
 
     if let EditState::DraggingSelection { drag_state } = &editor.editor_state.interaction.edit_state
     {

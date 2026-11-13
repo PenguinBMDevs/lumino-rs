@@ -17,9 +17,8 @@ use crate::interaction::shape_bridge::source_from_model;
 
 mod commit;
 mod group;
+#[cfg(test)]
 mod handles;
-
-pub(crate) use handles::ShapeEditHandles;
 
 /// 手柄编辑目标
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

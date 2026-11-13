@@ -14,7 +14,12 @@ workspace = true
 [features]
 default = []
 
+[package.metadata.cargo-machete]
+
 [dependencies]
+egui = { workspace = true }
+lumino-egui-bridge = { workspace = true }
+lumino-ui-egui = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }
@@ -39,29 +44,16 @@ lumino-ui-editor = { workspace = true }
 # crates.io
 midly = { workspace = true }
 # crates.io
-iced_renderer = { workspace = true }
-iced_aw = { workspace = true }
-iced_wgpu = { workspace = true, features = ["geometry", "svg"] }
-iced_winit = { workspace = true }
-iced_widget = { workspace = true, features = ["image", "wgpu", "svg"] }
-iced_core = { workspace = true }
+wgpu = { workspace = true }
 image = { workspace = true }
-once_cell = { workspace = true }
 lumino-platform = { workspace = true }
 tracing = { workspace = true }
 # Android 上 tracing 无 logcat 桥（不可见），触摸链路打点必须走 log 门面
 log = { workspace = true }
-resvg = { workspace = true }
-usvg = { workspace = true }
-tiny-skia = { workspace = true }
 serde_json = { workspace = true }
-im = { workspace = true }
 puffin = { workspace = true }
 winit = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
 rayon = { workspace = true }
-parking_lot = { workspace = true }
 i2m-rs = { workspace = true }
 
 [dev-dependencies]

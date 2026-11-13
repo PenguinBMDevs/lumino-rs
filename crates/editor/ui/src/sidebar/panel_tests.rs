@@ -316,7 +316,7 @@ fn test_track_rename_cancelled_leaves_name() {
 /// 颜色选择会设置音轨选项卡颜色
 #[test]
 fn test_track_color_selected_sets_color() {
-    use iced_core::Color;
+    use lumino_ui_core::geom::Color;
 
     let mut sidebar = Sidebar::new();
     let track_id = sidebar.tracks[1].id;
@@ -341,7 +341,7 @@ fn test_track_color_selected_sets_color() {
 /// 重置颜色会清除音轨选项卡颜色并关闭选择器
 #[test]
 fn test_track_color_reset_clears_color() {
-    use iced_core::Color;
+    use lumino_ui_core::geom::Color;
 
     let mut sidebar = Sidebar::new();
     let track_id = sidebar.tracks[1].id;

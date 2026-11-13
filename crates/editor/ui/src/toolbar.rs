@@ -3,27 +3,23 @@
 //! 该模块已拆分为以下子模块：
 //! - `types`: 类型定义（NotePrecision, TupletType, DotType, Tool 等）
 //! - `event`: 工具栏事件枚举和工厂方法
-//! - `view`: 视图渲染逻辑
+//! - `placeholder`: 旧版 侧同尺寸占位 + egui 快照（视图已全部迁到 egui）
 
-pub(crate) mod brush_dropdown;
 mod buttons;
 mod default;
 pub mod event;
-pub(crate) mod fill_division_dropdown;
 pub(crate) mod overflow;
-mod record;
 mod resize;
-pub(crate) mod shape_dropdown;
+mod snapshot;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_onion_skin;
 #[cfg(test)]
 mod tests_overflow;
-pub(crate) mod thickness_dropdown;
 pub mod types;
 mod update;
-mod view;
+mod update_onion_skin;
 
 pub use event::{Event, FlipHorizontalMode, ShapeType, ToolPanelItem};
 pub use lumino_ui_core::button_descs::ButtonId;
@@ -31,9 +27,6 @@ pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,
 };
-// 供 `root/draw_toolbar.rs` 复用「工具设置下拉」悬浮层（曲线工具组）——该 widget 定义在
-// 私有 `view::curve_tool_group` 内，此处以 crate 可见性再导出，避免把整个 `view` 模块外放。
-pub(crate) use view::curve_tool_group::CurveToolGroup;
 
 use lumino_core::BrushConfig;
 pub use lumino_core::SnapSpec;
@@ -106,6 +99,15 @@ pub struct Toolbar {
     /// 唯一真源：工具栏右侧「洋葱皮」按钮（`view/onion_skin.rs`）只改这里；
     /// GPU 常驻实例流与 CPU 叠加层读同一字段，不另存第二份开关。
     pub onion_skin_enabled: bool,
+    /// **洋葱皮显示范围模式**（全部 / 上一个 / 下一个 / 指定；默认全部）
+    ///
+    /// 与 `onion_skin_enabled` 正交：开关管「显示不显示」，模式管「显示哪些轨」。
+    /// 关闭开关**不清模式**，重新打开即按原模式显示。
+    /// 持久化：随 `.lmpj` 工程文件落盘（`metadata.toml` 的 `[settings]` 段），
+    /// 见 `OnionSkinMode::as_str` 与 `SettingsMetadata::onion_skin_mode`。
+    pub onion_skin_mode: lumino_ui_core::onion_skin_mode::OnionSkinMode,
+    /// 「洋葱皮选项」下拉菜单是否打开（按钮右侧下拉三角开合）
+    pub onion_skin_menu_open: bool,
     /// PPQ 编辑模式（true = 正在编辑）
     pub ppq_editing: bool,
     /// PPQ 编辑缓冲区（允许整数表达式，如 `480*2`）
@@ -143,6 +145,6 @@ pub struct Toolbar {
     pub shape_dropdown_open: bool,
     /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存
     pub current_shape: ShapeType,
-    /// ??????????????????????????
+    /// 文字工具参数面板是否打开
     pub text_params_open: bool,
 }

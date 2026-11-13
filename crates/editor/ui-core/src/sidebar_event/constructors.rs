@@ -2,8 +2,8 @@
 //!
 //! 视图层只调用这些构造器，避免在 UI 代码中散落 `Message::Sidebar(...)` 包装。
 
-use iced_core::{Color, Point};
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
+use lumino_ui_core::geom::{Color, Point};
 
 use super::{Event, GroupId, RollBarButton, Route};
 use crate::Message;
@@ -57,6 +57,11 @@ impl Event {
     /// 构造"混音台浮动面板拖拽"的侧边栏消息
     pub const fn mixer_panel_dragged(dx: f32, dy: f32) -> Message {
         Message::Sidebar(Self::MixerPanelDragged(dx, dy))
+    }
+
+    /// 构造"混音台面板拖拽增量"的侧边栏消息（egui 侧逐帧位移）
+    pub const fn mixer_panel_drag_delta(dx: f32, dy: f32) -> Message {
+        Message::Sidebar(Self::MixerPanelDragDelta { dx, dy })
     }
 
     /// 构造"混音台浮动面板拖拽开始"的侧边栏消息

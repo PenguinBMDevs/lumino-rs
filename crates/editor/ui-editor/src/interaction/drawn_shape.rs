@@ -33,7 +33,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::{
     DrawnShapeSource, PendingShapeRef, ShapeMarquee, ShapeNote, shape_tool::ShapeSpec,
     shape_tool::point_in_shape,
@@ -42,6 +41,7 @@ use lumino_message::Tool;
 use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::TickIndexedEvents;
 use lumino_note_core::history::{HistoryEntry, MoveOp, OpKind};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 use crate::interaction::line_tool::geom::flatten_path;
 use crate::interaction::shape_bridge::polylines_of_model;
@@ -531,7 +531,7 @@ impl Editor {
     }
 
     /// 屏幕坐标处命中的已绘制图形 ID（供画布右键判定菜单目标）
-    pub fn drawn_shape_at_screen(&self, pos: iced_core::Point) -> Option<u64> {
+    pub fn drawn_shape_at_screen(&self, pos: lumino_ui_core::geom::Point) -> Option<u64> {
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_raw_key(pos);
         self.hit_test_drawn_shape(tick, key)
@@ -585,7 +585,7 @@ impl Editor {
     /// - `None`：没有命中图形。
     ///
     /// 这样右键菜单不会把 019–028 暴露给没有 `ShapeStore` 模型 / 音符的 pending 产物。
-    pub fn drawn_shape_pending_at_screen(&self, pos: iced_core::Point) -> Option<bool> {
+    pub fn drawn_shape_pending_at_screen(&self, pos: lumino_ui_core::geom::Point) -> Option<bool> {
         let id = self.drawn_shape_at_screen(pos)?;
         let hit_pending = self.editor_state.shape_select.pending_of(id).is_some();
         let selection_has_pending = self
@@ -1093,7 +1093,7 @@ impl Editor {
     ///
     /// 抽屉 Insert 的预览是一块块音符，用户点的是音符而不是细轮廓；
     /// 只按轮廓做 6px 容差会在填充图形内部完全打不中。
-    fn composed_notes_hit(&self, probe: iced_core::Point, index: usize) -> bool {
+    fn composed_notes_hit(&self, probe: lumino_ui_core::geom::Point, index: usize) -> bool {
         /// 音符块外扩（逻辑像素），避免边缘一两像素的抖动漏选
         const PAD: f32 = 2.0;
         let Some(composed) = self.editor_state.pending_composed.get(index) else {
@@ -1111,7 +1111,11 @@ impl Editor {
 }
 
 /// 折线命中：探测点到折线各段的屏幕距离是否 ≤ 容差
-fn polyline_hit(editor: &Editor, probe: iced_core::Point, points: &[(f32, f32)]) -> bool {
+fn polyline_hit(
+    editor: &Editor,
+    probe: lumino_ui_core::geom::Point,
+    points: &[(f32, f32)],
+) -> bool {
     if points.is_empty() {
         return false;
     }
@@ -2277,7 +2281,7 @@ mod tests {
         let mut editor = editor_with_selected_polyline();
         let top_y = editor.line_pos_screen_pos((0.0, 80.0)).y - SHAPE_BOX_PADDING_PX;
         let x = editor.line_pos_screen_pos((250.0, 70.0)).x;
-        let pos = iced_core::Point::new(x, top_y - 5.0);
+        let pos = lumino_ui_core::geom::Point::new(x, top_y - 5.0);
         let snapped = editor.snap_tick(editor.pos_to_tick(pos));
         editor.handle_tool_pressed(pos, false, snapped, 0);
         assert!(

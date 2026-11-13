@@ -7,7 +7,8 @@ pub mod custom_precision_state;
 pub mod echo_cave;
 pub mod export_progress_state;
 pub mod fill_division_state;
-pub mod gpu_compat_state;
+/// GPU 兼容性检测 UI 状态（定义已迁到 `lumino-message`）
+pub use lumino_message::gpu_compat_state;
 pub mod history_state;
 pub mod load_confirm_state;
 pub mod memory_monitor_state;

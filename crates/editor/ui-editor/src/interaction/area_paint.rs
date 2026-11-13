@@ -7,10 +7,10 @@
 //!
 //! 区域求解、切行与音符通道仍由 DRAW-032A 的 `AreaMap` 链路完成，本模块不重写算法。
 
-use iced_core::Point;
 use lumino_core::shape::{AreaSpot, ShapeFill};
 use lumino_message::Tool;
 use lumino_midi_model::TickIndexedEvents;
+use lumino_ui_core::geom::Point;
 
 use crate::Editor;
 use crate::interaction::line_tool::fill::spans::row_spans;
@@ -155,15 +155,15 @@ impl Editor {
     }
 
     /// 区域着色会话对应的屏幕包围框（列表入口没有 DrawnShape 选框）
-    pub(crate) fn area_paint_bounds(&self) -> Option<iced_core::Rectangle> {
+    pub(crate) fn area_paint_bounds(&self) -> Option<lumino_ui_core::geom::Rectangle> {
         let state = self.area_paint?;
         let model = self.editor_state.shape_store.model(state.model_id)?;
         let (tick_lo, key_lo, tick_hi, key_hi) = model.geometry.bounds()?;
         let a = self.line_pos_screen_pos((tick_lo, key_lo));
         let b = self.line_pos_screen_pos((tick_hi, key_hi));
-        Some(iced_core::Rectangle::new(
-            iced_core::Point::new(a.x.min(b.x) - 4.0, a.y.min(b.y) - 4.0),
-            iced_core::Size::new((a.x - b.x).abs() + 8.0, (a.y - b.y).abs() + 8.0),
+        Some(lumino_ui_core::geom::Rectangle::new(
+            lumino_ui_core::geom::Point::new(a.x.min(b.x) - 4.0, a.y.min(b.y) - 4.0),
+            lumino_ui_core::geom::Size::new((a.x - b.x).abs() + 8.0, (a.y - b.y).abs() + 8.0),
         ))
     }
 

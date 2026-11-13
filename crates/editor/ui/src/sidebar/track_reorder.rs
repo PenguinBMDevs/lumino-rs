@@ -32,7 +32,7 @@ pub struct TrackReorderState {
     /// 按下时间（长按计时起点）
     pub started_at: Instant,
     /// 按下位置（列表局部坐标，用于移动激活阈值判断）
-    pub press_pos: iced_core::Point,
+    pub press_pos: lumino_ui_core::geom::Point,
     /// 是否已激活拖拽（长按超时或移动超过阈值）
     pub active: bool,
     /// 当前插入位置指示（音轨间分割线位置，`0..=tracks.len()`）
@@ -57,7 +57,11 @@ impl Sidebar {
     /// 处理拖拽候选开始（左键按下音轨行）
     ///
     /// 覆盖式设置候选：先前未完成的拖拽候选被丢弃（等价于取消）。
-    pub fn handle_track_reorder_started(&mut self, track_id: usize, pos: iced_core::Point) {
+    pub fn handle_track_reorder_started(
+        &mut self,
+        track_id: usize,
+        pos: lumino_ui_core::geom::Point,
+    ) {
         let from = self.tracks.iter().position(|t| t.id == track_id);
         self.track_reorder = Some(TrackReorderState {
             track_id,
@@ -74,12 +78,12 @@ impl Sidebar {
     /// 移动超过阈值立即激活拖拽；激活后持续更新插入位置指示。
     /// 侧边栏的 `on_press` 无法提供按下坐标（传 `(0,0)`），首次移动事件
     /// 用于校准按下位置，避免"点击即激活"导致指示线闪烁。
-    pub fn handle_track_reorder_moved(&mut self, pos: iced_core::Point) {
+    pub fn handle_track_reorder_moved(&mut self, pos: lumino_ui_core::geom::Point) {
         let Some(state) = self.track_reorder.as_mut() else {
             return;
         };
         if !state.active {
-            if state.press_pos == iced_core::Point::new(0.0, 0.0) {
+            if state.press_pos == lumino_ui_core::geom::Point::new(0.0, 0.0) {
                 // 侧边栏场景：首个移动事件校准按下位置（走带 Canvas 传真实坐标，不受影响）
                 state.press_pos = pos;
                 return;
@@ -255,10 +259,10 @@ mod tests {
     #[test]
     fn test_hover_clamped_to_after_conductor() {
         let mut s = sidebar_with_ids(&[0, 1, 2, 3]);
-        s.handle_track_reorder_started(2, iced_core::Point::new(0.0, 0.0));
-        s.handle_track_reorder_moved(iced_core::Point::new(50.0, 100.0)); // 校准
+        s.handle_track_reorder_started(2, lumino_ui_core::geom::Point::new(0.0, 0.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(50.0, 100.0)); // 校准
         // 拖到列表顶部（conductor 上方）→ hover 钳制到 1
-        s.handle_track_reorder_moved(iced_core::Point::new(60.0, 2.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(60.0, 2.0));
         assert_eq!(
             s.track_reorder
                 .as_ref()
@@ -287,7 +291,7 @@ mod tests {
     #[test]
     fn test_reorder_ended_without_activation_does_not_sort() {
         let mut s = sidebar_with_ids(&[0, 1, 2, 3]);
-        s.handle_track_reorder_started(2, iced_core::Point::new(0.0, 0.0));
+        s.handle_track_reorder_started(2, lumino_ui_core::geom::Point::new(0.0, 0.0));
         assert!(s.track_reorder_pending());
         // 未激活直接结束 → 不排序
         s.handle_track_reorder_ended(Some(0));
@@ -298,10 +302,10 @@ mod tests {
     #[test]
     fn test_reorder_ended_with_activation_sorts() {
         let mut s = sidebar_with_ids(&[0, 1, 2, 3]);
-        s.handle_track_reorder_started(2, iced_core::Point::new(0.0, 0.0));
+        s.handle_track_reorder_started(2, lumino_ui_core::geom::Point::new(0.0, 0.0));
         // 首个移动事件校准按下位置（侧边栏 on_press 无坐标），随后移动激活
-        s.handle_track_reorder_moved(iced_core::Point::new(100.0, 40.0));
-        s.handle_track_reorder_moved(iced_core::Point::new(150.0, 5.0)); // 拖到列表顶部
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(100.0, 40.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(150.0, 5.0)); // 拖到列表顶部
         assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // Conductor 首位保护：顶部 hover 钳制到 1
         assert_eq!(
@@ -318,7 +322,7 @@ mod tests {
     #[test]
     fn test_reorder_timer_activates_after_long_press() {
         let mut s = sidebar_with_ids(&[0, 1, 2, 3]);
-        s.handle_track_reorder_started(2, iced_core::Point::new(0.0, 0.0));
+        s.handle_track_reorder_started(2, lumino_ui_core::geom::Point::new(0.0, 0.0));
         // 未超时：不激活
         s.update_track_reorder_timer(Instant::now());
         assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
@@ -332,29 +336,29 @@ mod tests {
     #[test]
     fn test_reorder_moved_calibrates_press_pos_first() {
         let mut s = sidebar_with_ids(&[0, 1, 2, 3]);
-        s.handle_track_reorder_started(1, iced_core::Point::new(0.0, 0.0));
+        s.handle_track_reorder_started(1, lumino_ui_core::geom::Point::new(0.0, 0.0));
         // 首次移动仅校准：不激活（防止点击闪烁指示线）
-        s.handle_track_reorder_moved(iced_core::Point::new(3.0, 3.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(3.0, 3.0));
         let state = s.track_reorder.as_ref().expect("拖拽候选应存在");
         assert!(!state.active);
-        assert_eq!(state.press_pos, iced_core::Point::new(3.0, 3.0));
+        assert_eq!(state.press_pos, lumino_ui_core::geom::Point::new(3.0, 3.0));
         // 校准后微小移动仍不激活
-        s.handle_track_reorder_moved(iced_core::Point::new(4.0, 4.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(4.0, 4.0));
         assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // 超过阈值（距校准点 > 8px）激活
-        s.handle_track_reorder_moved(iced_core::Point::new(20.0, 4.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(20.0, 4.0));
         assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
     }
 
     #[test]
     fn test_reorder_moved_updates_hover() {
         let mut s = sidebar_with_ids(&[0, 1, 2, 3]);
-        s.handle_track_reorder_started(1, iced_core::Point::new(0.0, 0.0));
+        s.handle_track_reorder_started(1, lumino_ui_core::geom::Point::new(0.0, 0.0));
         // 微小移动不激活也不更新 hover
-        s.handle_track_reorder_moved(iced_core::Point::new(2.0, 2.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(2.0, 2.0));
         assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // 超阈值移动激活并更新 hover（行高 34，起点 28）
-        s.handle_track_reorder_moved(iced_core::Point::new(50.0, 100.0));
+        s.handle_track_reorder_moved(lumino_ui_core::geom::Point::new(50.0, 100.0));
         let state = s.track_reorder.as_ref().expect("拖拽候选应存在");
         assert!(state.active);
         // (100-28)/34 ≈ 2.12 → round 2
@@ -366,7 +370,7 @@ mod tests {
         let mut state = TrackReorderState {
             track_id: 1,
             started_at: Instant::now(),
-            press_pos: iced_core::Point::new(0.0, 0.0),
+            press_pos: lumino_ui_core::geom::Point::new(0.0, 0.0),
             active: true,
             hover_index: None,
         };

@@ -17,7 +17,7 @@ impl DialogManager {
     /// Runner 会把这些事件交给主窗口（`src/runner/lifecycle/handler.rs`）：
     /// - `Resized`/`Moved` → 写进主窗口持久化的 `ui_state.w/h/x/y`
     ///   （`src/runner/window_manager.rs`）⇒ 主窗口下次启动套用对话框的尺寸/位置；
-    /// - 所有事件被转给主窗口的 iced 事件队列 ⇒ 光标/命中串台；
+    /// - 所有事件被转给主窗口的 旧版 事件队列 ⇒ 光标/命中串台；
     /// - `CloseRequested` → 被当成主窗口关闭请求 ⇒ 关掉一个还在初始化的对话框
     ///   会让整个应用退出。
     ///

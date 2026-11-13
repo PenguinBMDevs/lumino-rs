@@ -9,13 +9,13 @@
 //! 8 逻辑像素。触发后补一条 `Touch(FingerLost)` 先复位控件按压态（避免
 //! 「长按按钮 = 点了它 + 弹右键」），再补左键释放（让画布收尾），最后按下右键。
 //!
-//! 长按期间没有任何窗口事件，必须靠 iced 已有的 `RedrawRequest::At` 定时线程
+//! 长按期间没有任何窗口事件，必须靠 旧版 已有的 `RedrawRequest::At` 定时线程
 //! 唤醒一帧来判定，见 `Host::handle_redraw_request`。
 
 use std::time::{Duration, Instant};
 
-use iced_core::mouse;
-use iced_winit::{conversion, winit};
+use lumino_ui_core::geom::mouse;
+use winit;
 
 use crate::host::Host;
 
@@ -24,12 +24,12 @@ const LONG_PRESS_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl Host {
     /// 记录一次可能的长按起点，并安排一次定时唤醒
-    pub(super) fn begin_long_press(&mut self, origin: iced_core::Point) {
+    pub(super) fn begin_long_press(&mut self, origin: lumino_ui_core::geom::Point) {
         let deadline = Instant::now() + LONG_PRESS_TIMEOUT;
         self.touch_press_origin = Some(origin);
         self.touch_long_press_fired = false;
         self.touch_long_press_deadline = Some(deadline);
-        self.handle_redraw_request(iced_core::window::RedrawRequest::At(deadline));
+        self.schedule_redraw_at(deadline);
     }
 
     /// 取消**待判定**的长按（多指、拖动、仍有一指按着时都不能触发）
@@ -65,15 +65,8 @@ impl Host {
 
     /// 长按到点：结束左键按下并模拟一次右键按下
     ///
-    /// 先补 `Touch(FingerLost)` 再补 `ButtonReleased(Left)`：`FingerLost` 会让
-    /// `button` 一类控件复位按压态且**不**发布点击（`button.rs:334-338`），
-    /// 避免「长按工具栏按钮 = 点了它 + 弹右键」；随后的 `ButtonReleased`
-    /// 则保证画布/编辑器把按下中的编辑收尾。
+    /// 右键按下直连画布（旧版 控件层已删除，不再合成事件队列）。
     fn fire_long_press(&mut self) {
-        let Some(finger_id) = self.active_touches.keys().next().copied() else {
-            self.touch_long_press_deadline = None;
-            return;
-        };
         let Some(origin) = self.touch_press_origin else {
             self.touch_long_press_deadline = None;
             return;
@@ -85,29 +78,15 @@ impl Host {
             winit::event::MouseButton::Left,
         );
 
-        // 光标钉回按下点：右键菜单的落点由控件按 `cursor` 命中算出，
+        // 光标钉回按下点：右键菜单的落点由画布按 `cursor` 命中算出，
         // 长按期间手指可能抖了几像素，直接用当前光标会让菜单偏离目标。
         self.window_ctx.cursor_position = Some(origin);
         self.window_ctx.cursor = mouse::Cursor::Available(origin);
 
-        self.events.push(iced_core::Event::Touch(
-            iced_core::touch::Event::FingerLost {
-                id: iced_core::touch::Finger(finger_id),
-                position: origin,
-            },
-        ));
-        self.events
-            .push(iced_core::Event::Mouse(mouse::Event::ButtonReleased(
-                mouse::Button::Left,
-            )));
-        self.events
-            .push(iced_core::Event::Mouse(mouse::Event::CursorMoved {
-                position: origin,
-            }));
-        self.events
-            .push(iced_core::Event::Mouse(mouse::Event::ButtonPressed(
-                mouse::Button::Right,
-            )));
+        self.handle_mouse_input_event(
+            winit::event::ElementState::Pressed,
+            winit::event::MouseButton::Right,
+        );
 
         self.touch_long_press_fired = true;
         self.touch_long_press_deadline = None;
@@ -121,15 +100,13 @@ impl Host {
     /// 点击命中。
     pub(crate) fn release_touch_right_button(&mut self, touch: &winit::event::Touch) {
         let scale = self.window_ctx.window.scale_factor() as f32;
-        let position = conversion::cursor_position(touch.location, scale);
-        self.events
-            .push(iced_core::Event::Mouse(mouse::Event::ButtonReleased(
-                mouse::Button::Right,
-            )));
-        self.events
-            .push(iced_core::Event::Mouse(mouse::Event::CursorMoved {
-                position,
-            }));
+        let position = crate::host::convert::cursor_position(touch.location, scale);
+        self.window_ctx.cursor_position = Some(position);
+        self.window_ctx.cursor = mouse::Cursor::Available(position);
+        self.handle_mouse_input_event(
+            winit::event::ElementState::Released,
+            winit::event::MouseButton::Right,
+        );
         self.window_ctx.window.request_redraw();
     }
 }

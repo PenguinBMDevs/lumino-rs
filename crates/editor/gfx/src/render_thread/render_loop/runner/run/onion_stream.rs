@@ -156,14 +156,16 @@ pub(super) fn drain_onion_skin_stream(
                 current_track,
                 muted_tracks,
                 onion_visible,
+                onion_range,
             }) => {
-                // 切轨/静音/洋葱皮开关零重传：只更新 ViewState uniform，GPU 数据不动
+                // 切轨/静音/洋葱皮开关/显示范围零重传：只更新 ViewState uniform
                 *current_track_encoded = current_track;
                 renderers.onion_skin.set_view_state(
                     &ctx.queue,
                     current_track,
                     &muted_tracks,
                     onion_visible,
+                    onion_range,
                 );
             }
             Ok(crate::OnionSkinStreamMsg::PreviewInstances(instances)) => {

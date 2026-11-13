@@ -121,3 +121,105 @@ fn test_onion_skin_collapses_before_auto_scroll() {
         "洋葱皮应先于自动滚动折叠（onion@{onion} 应不窄于 auto@{auto_scroll}）"
     );
 }
+
+// ── 显示范围下拉（2026-11-05）──
+
+/// 默认范围必须是「全部音轨」：与没有模式字段前的老行为一致。
+#[test]
+fn test_onion_skin_mode_defaults_to_all_tracks() {
+    let toolbar = Toolbar::new();
+    assert_eq!(
+        toolbar.onion_skin_mode,
+        lumino_ui_core::onion_skin_mode::OnionSkinMode::AllTracks,
+        "默认范围应为全部音轨"
+    );
+    assert!(!toolbar.onion_skin_menu_open, "下拉菜单默认关闭");
+}
+
+/// 三角开合：一次打开、再一次关闭；显式关闭事件也能关。
+#[test]
+fn test_onion_skin_menu_toggles() {
+    let mut toolbar = Toolbar::new();
+
+    toolbar.update(Event::ToggleOnionSkinMenu);
+    assert!(toolbar.onion_skin_menu_open, "点三角应展开菜单");
+
+    toolbar.update(Event::ToggleOnionSkinMenu);
+    assert!(!toolbar.onion_skin_menu_open, "再点三角应收起菜单");
+
+    toolbar.update(Event::ToggleOnionSkinMenu);
+    toolbar.update(Event::CloseOnionSkinMenu);
+    assert!(!toolbar.onion_skin_menu_open, "显式关闭事件应收起菜单");
+}
+
+/// 选中范围 = 写入模式 + **顺手打开开关** + 收起菜单。
+///
+/// 自动打开的理由：用户从下拉里选范围，就是"我要看这些轨的洋葱皮"；若开关还是
+/// 关的，选完画面毫无变化，用户会当成功能坏了。
+#[test]
+fn test_selecting_mode_applies_and_enables_and_closes() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut toolbar = Toolbar::new();
+    toolbar.onion_skin_menu_open = true;
+    assert!(!toolbar.onion_skin_enabled, "前提：开关初始关闭");
+
+    toolbar.update(Event::OnionSkinModeSelected(OnionSkinMode::PreviousTrack));
+
+    assert_eq!(toolbar.onion_skin_mode, OnionSkinMode::PreviousTrack);
+    assert!(toolbar.onion_skin_enabled, "选范围应顺手打开开关");
+    assert!(!toolbar.onion_skin_menu_open, "选中后应收起菜单");
+}
+
+/// 「指定音轨」本轮未接入：**不得写入状态**（否则留下一个什么都没做的勾选态），
+/// 同时菜单仍要收起（用户完成了一次点击）。提示由 root handler 负责。
+#[test]
+fn test_unimplemented_mode_is_not_written() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut toolbar = Toolbar::new();
+    toolbar.onion_skin_mode = OnionSkinMode::NextTrack;
+    toolbar.onion_skin_menu_open = true;
+
+    toolbar.update(Event::OnionSkinModeSelected(OnionSkinMode::SpecificTrack));
+
+    assert_eq!(
+        toolbar.onion_skin_mode,
+        OnionSkinMode::NextTrack,
+        "未接入的模式不得覆盖当前模式"
+    );
+    assert!(!toolbar.onion_skin_menu_open, "点击后仍应收起菜单");
+}
+
+/// 关闭开关**不清模式**：重新打开时按原范围显示（用户硬约束：开关管显不显，模式管显哪些）。
+#[test]
+fn test_disabling_keeps_mode() {
+    use lumino_ui_core::onion_skin_mode::OnionSkinMode;
+
+    let mut toolbar = Toolbar::new();
+    toolbar.update(Event::OnionSkinModeSelected(OnionSkinMode::PreviousTrack));
+    toolbar.update(Event::ToggleOnionSkin);
+
+    assert!(!toolbar.onion_skin_enabled);
+    assert_eq!(
+        toolbar.onion_skin_mode,
+        OnionSkinMode::PreviousTrack,
+        "关闭开关不得重置显示范围"
+    );
+}
+
+/// 其它下拉/外部动作会把洋葱皮菜单收起（与画刷/形状下拉同一口径）。
+#[test]
+fn test_other_action_closes_onion_skin_menu() {
+    let mut toolbar = Toolbar::new();
+    toolbar.onion_skin_menu_open = true;
+
+    toolbar.update(Event::ToolSelected(Tool::Pencil));
+
+    assert!(!toolbar.onion_skin_menu_open, "外部动作应收起洋葱皮下拉");
+
+    // 悬停事件不得关闭（重绘会重发 on_enter，会把刚打开的菜单关掉）
+    toolbar.onion_skin_menu_open = true;
+    toolbar.update(Event::ButtonHovered(Some(ButtonId::OnionSkin)));
+    assert!(toolbar.onion_skin_menu_open, "悬停不应收起菜单");
+}

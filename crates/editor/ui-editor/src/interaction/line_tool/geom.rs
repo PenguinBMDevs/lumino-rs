@@ -3,8 +3,8 @@
 //! 包含：三次贝塞尔求值、点到曲线距离、贝塞尔**展平**（路径 → 折线点列，
 //! 供 [`super::paths`] 的逐音高行跨越计算使用）。
 
-use iced_core::Point;
 use lumino_editor_state::{AnchorBend, BezierAnchor};
+use lumino_ui_core::geom::Point;
 
 /// tick 方向展平容差（tick）：音符起点四舍五入到整 tick，取远小于半 tick 的值
 const TICK_TOL: f64 = 0.1;
@@ -217,7 +217,7 @@ impl crate::Editor {
     ///
     /// 与 `shape_notes_of` 的 `ShapeKind::Arc` 生成路径同源：
     /// 两者都先换算到 `(beats, keys)` 屏幕空间，再调 `arc_points_scaled`。
-    pub(crate) fn line_arc_points(&self, path: &[BezierAnchor]) -> Option<Vec<(f32, f32)>> {
+    pub fn line_arc_points(&self, path: &[BezierAnchor]) -> Option<Vec<(f32, f32)>> {
         flatten_arc_path(
             path,
             self.line_arc_k(),

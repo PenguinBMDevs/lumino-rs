@@ -144,11 +144,7 @@ impl Editor {
     /// 填充图形（`filled == true`）返回空：填充腿不生成描边、也不吃粗细，给它画一条
     /// 随粗细变宽的边框等于显示一个根本不会生成的产物。这条规则放在**唯一权威源**里
     /// （而不是渲染侧各自 `if`），避免又多一处会忘记的口径。
-    pub(crate) fn shape_outline_blocks(
-        &self,
-        spec: ShapeSpec,
-        filled: bool,
-    ) -> Vec<(f32, f32, u16)> {
+    pub fn shape_outline_blocks(&self, spec: ShapeSpec, filled: bool) -> Vec<(f32, f32, u16)> {
         if filled {
             return Vec::new();
         }

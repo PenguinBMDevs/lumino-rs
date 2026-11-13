@@ -43,6 +43,7 @@
 mod decide;
 mod fingerprint;
 mod instance_stream;
+mod range;
 mod state;
 mod stream;
 
@@ -51,6 +52,7 @@ use crate::host::Host;
 pub(crate) use decide::OnionSkinAction;
 pub(crate) use fingerprint::OnionSkinFingerprint;
 pub(crate) use fingerprint::mute_fingerprint_of;
+pub(crate) use range::onion_track_range;
 pub(crate) use state::OnionSkinState;
 
 /// 洋葱皮描边宽度（固定 1 像素，与主音轨一致）
@@ -73,6 +75,31 @@ impl Host {
     /// - hires 贴图层：`RenderParams::onion_visible` 跳过叠加层（贴图不卸载）。
     pub(crate) fn onion_skin_visible(&self) -> bool {
         self.root.toolbar.onion_skin_enabled
+    }
+
+    /// 洋葱皮显示范围模式（工具栏下拉；默认「全部音轨」）
+    ///
+    /// 与开关注入同一条链路：范围在指纹里解析成 enc 区间 → `SetViewState` 下发，
+    /// 数据零重传。**不要**在别处再读一次 `Toolbar` 字段（会变成第二真源）。
+    pub fn onion_skin_mode(&self) -> lumino_ui_core::onion_skin_mode::OnionSkinMode {
+        self.root.toolbar.onion_skin_mode
+    }
+
+    /// 应用工程文件里保存的洋葱皮显示范围（加载 `.lmpj` 后由 runner 调用）
+    ///
+    /// 只改工具栏状态：渲染侧下一帧经指纹比对自动走 `ViewState`（零重传）。
+    /// 未接入的模式（`SpecificTrack`）**忽略**——工程可能来自更新的版本，
+    /// 宁可不改也不要留下一个"显示不出东西"的状态。
+    /// 注意：这里只恢复**范围**，不打开总开关（用户硬约束：洋葱皮默认关闭）。
+    pub fn set_onion_skin_mode(&mut self, mode: lumino_ui_core::onion_skin_mode::OnionSkinMode) {
+        if !mode.is_implemented() {
+            tracing::debug!("[onion-skin] 忽略未接入的显示范围模式 {:?}", mode);
+            return;
+        }
+        if self.root.toolbar.onion_skin_mode != mode {
+            self.root.toolbar.onion_skin_mode = mode;
+            self.mark_dirty();
+        }
     }
 }
 

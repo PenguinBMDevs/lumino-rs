@@ -219,7 +219,7 @@ pub fn report_growth(rows: &[GrowthRow], thickness: u8, target_ms: f64) -> bool 
         );
     }
     println!(
-        "  注：三条路径均**不含** iced canvas 的 lyon 细分与逐块 `Frame::fill` —— \
+        "  注：三条路径均**不含** 旧版 canvas 的 lyon 细分与逐块 `Frame::fill` —— \
          真机 puffin 实测 8 万方块单帧 81.6ms（§18 改走 wgpu 的直接原因）"
     );
     if let (Some(first), Some(last)) = (rows.first(), rows.last()) {

@@ -4,6 +4,8 @@
 //! Message 枚举定义在 `types::message` 子模块中，通过 pub use 链重新导出。
 //! Message 是泛型的，由上层 crate（lumino-ui）实例化具体的 UI 事件类型。
 
+pub mod arrangement_action;
+pub mod arrangement_event;
 pub mod audio_export;
 /// 自动保存恢复对话框动作（DEBT-12）
 pub mod autosave_recover;
@@ -18,6 +20,8 @@ pub mod draw_settings;
 /// 事件系统模块
 pub mod events;
 pub mod fill_division;
+/// GPU 兼容性检测 UI 状态（从 `lumino-ui-core` 迁入，保持无 旧版 依赖）
+pub mod gpu_compat_state;
 pub mod help;
 pub mod history;
 pub mod load_confirm;
@@ -29,6 +33,8 @@ pub mod recover_track;
 pub mod right_sidebar;
 pub mod save_confirm;
 pub mod settings_dialog;
+/// 设置面板事件（仅枚举，从 `lumino-ui-core` 迁入，保持无 旧版 依赖）
+pub mod settings_event;
 /// 形状抽屉库/变换/插入动作
 pub mod shape_drawer;
 pub mod speed_change;

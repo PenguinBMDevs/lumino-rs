@@ -128,6 +128,16 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "The MIDI document contains no renderable events (0 notes); check whether the MIDI is loaded",
             )
         }
+        "仅 MP3/Ogg 有效；WAV/FLAC 忽略此项" => {
+            Some("Only MP3/Ogg are affected; WAV/FLAC ignore this option")
+        }
+        "音符键位过滤（仅保留指定键位范围内的音符；0=C-1, 60=C4, 127=G9）" => {
+            Some(
+                "Note key filter (keep only notes within the specified key range; 0=C-1, 60=C4, 127=G9)",
+            )
+        }
+        "预计剩余: {t}" => Some("Remaining: {t}"),
+        "预计剩余: 计算中..." => Some("Remaining: calculating..."),
         _ => None,
     }
 }

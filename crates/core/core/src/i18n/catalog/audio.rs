@@ -185,6 +185,11 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         // ── note-core：编辑模式显示名 ──
         "力度" => Some("Velocity"),
         "速度" => Some("Tempo"),
+        "每个音符 NoteOff 后额外延长该时长再释放，>0 可避免极短音被吞；0=禁用。" => {
+            Some(
+                "Extend each note after NoteOff before release; >0 avoids swallowed staccato notes; 0=disabled.",
+            )
+        }
         _ => None,
     }
 }

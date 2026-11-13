@@ -59,7 +59,7 @@ fn visible_notes() -> Vec<NoteInstance> {
 fn export_renderer_with_notes() -> (NoteRenderer, wgpu::Device, wgpu::Queue) {
     let (device, queue) = crate::test_gpu::shared_device();
     let mut renderer = NoteRenderer::new_without_depth(&device, &queue, FORMAT, GpuEpoch::INITIAL);
-    renderer.set_view_state(&queue, 1, &[], true);
+    renderer.set_view_state(&queue, 1, &[], true, (1, u32::MAX));
     renderer.upload_instances(&visible_notes(), &device, &queue);
     (renderer, device, queue)
 }

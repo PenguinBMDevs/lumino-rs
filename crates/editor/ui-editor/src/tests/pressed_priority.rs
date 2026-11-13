@@ -15,7 +15,7 @@ use crate::Editor;
 use crate::HitType;
 use crate::note::Note;
 use crate::tests::test_helpers;
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 /// 在选择框中心位置返回 Point（确保 Inside 命中）
 ///

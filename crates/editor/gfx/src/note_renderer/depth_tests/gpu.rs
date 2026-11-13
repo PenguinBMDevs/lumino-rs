@@ -24,7 +24,7 @@ fn test_overlap_pixels_are_draw_order_independent() {
 
     let mut onion = NoteRenderer::new_onion_skin(&device, &queue, format, crate::GpuEpoch::INITIAL);
     // track_enc = 1 为主音轨（主轨蓝 + 主音轨区深度）；洋葱皮显示
-    onion.set_view_state(&queue, 1, &[], true);
+    onion.set_view_state(&queue, 1, &[], true, (1, u32::MAX));
     onion.upload_instances(&onion_notes, &device, &queue);
 
     let mut note = NoteRenderer::new(&device, &queue, format, crate::GpuEpoch::INITIAL);
@@ -292,7 +292,7 @@ fn test_onion_skin_depthless_pipeline_is_pass_compatible() {
         format,
         crate::GpuEpoch::INITIAL,
     );
-    onion.set_view_state(&queue, 1, &[], true);
+    onion.set_view_state(&queue, 1, &[], true, (1, u32::MAX));
     onion.upload_instances(&notes, &device, &queue);
     write_camera(&onion, &queue);
     write_visible_order(&onion, &queue, &(0..notes.len() as u32).collect::<Vec<_>>());
@@ -339,7 +339,7 @@ fn test_onion_skin_depthless_pipeline_is_pass_compatible() {
     );
     // current_track = 1（主音轨 = track_enc 1）；轨道索引 1/2 静音
     // → track_enc 2（key 58）/ track_enc 3（key 56）必须被裁剪，仅主音轨可见
-    muted_onion.set_view_state(&queue, 1, &[1, 2], true);
+    muted_onion.set_view_state(&queue, 1, &[1, 2], true, (1, u32::MAX));
     muted_onion.upload_instances(&notes, &device, &queue);
     write_camera(&muted_onion, &queue);
     write_visible_order(

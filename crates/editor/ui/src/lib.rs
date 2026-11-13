@@ -9,6 +9,10 @@ pub mod constants {
     pub use lumino_ui_core::constants::*;
 }
 pub use lumino_ui_core::app_mode;
+/// 本地几何与颜色类型。
+pub use lumino_ui_core::geom;
+/// 洋葱皮显示范围模式（工具栏下拉，随 `.lmpj` 工程持久化）
+pub use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 pub use lumino_ui_editor as editor;
 pub mod event;
 pub mod host;
@@ -34,10 +38,9 @@ pub mod toolbar;
 pub mod util;
 mod view;
 pub mod wgpu_render_thread;
-pub(crate) mod widget;
 pub use lumino_ui_core::window;
 
-pub use host::{Host, NoteData, TrackNotes, prewarm_dialog_shared_engine};
+pub use host::{Host, NoteData, TrackNotes};
 pub(crate) use lumino_core::storage::config;
 pub use root::MemoryBreakdown;
 pub use root::Root;
@@ -45,7 +48,7 @@ pub use root::Root;
 pub mod theme {
     pub use lumino_ui_core::theme::*;
 }
-pub(crate) use lumino_ui_core::{Element, Message, Renderer, Theme};
+pub(crate) use lumino_ui_core::{Message, Theme};
 pub use state::root_state::CollaborationViewState;
 pub use wgpu_render_thread::{
     ControlCommand, RenderParams, RenderStats as WgpuRenderStats, WgpuRenderThread,

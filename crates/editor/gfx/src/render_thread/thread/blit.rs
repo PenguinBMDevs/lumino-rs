@@ -267,3 +267,40 @@ pub(crate) fn blit_cache_needs_rebuild(
 #[cfg(test)]
 #[path = "blit/tests.rs"]
 mod tests;
+
+impl WgpuRenderThread {
+    /// 当前离屏渲染结果的纹理视图（供 egui 外部纹理采样）。
+    ///
+    /// 纹理代次变化时重建并缓存视图：调用方每帧调用也不会造成额外分配。
+    /// 返回 `None` 表示尚未渲染出任何一帧。
+    pub fn latest_texture_view(&self) -> Option<std::sync::Arc<wgpu::TextureView>> {
+        let texture = self
+            .latest_texture
+            .try_lock()
+            .ok()
+            .and_then(|g| g.clone())?;
+        let key = std::sync::Arc::as_ptr(&texture) as usize;
+        if let Ok(cache) = self.latest_view.lock()
+            && let Some((cached_key, view)) = cache.as_ref()
+            && *cached_key == key
+        {
+            return Some(std::sync::Arc::clone(view));
+        }
+        // 采样视图必须用**线性**格式：gfx 写的是 sRGB 纹理（着色器输出已编码一次），
+        // egui 的着色器再按 sRGB 解码一次会整体压暗（真机实测通道差 10~30）。
+        let linear = match texture.inner().format() {
+            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
+            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
+            _ => None,
+        };
+        let descriptor = wgpu::TextureViewDescriptor {
+            format: linear,
+            ..Default::default()
+        };
+        let view = std::sync::Arc::new(texture.create_view(&descriptor));
+        if let Ok(mut cache) = self.latest_view.lock() {
+            *cache = Some((key, std::sync::Arc::clone(&view)));
+        }
+        Some(view)
+    }
+}

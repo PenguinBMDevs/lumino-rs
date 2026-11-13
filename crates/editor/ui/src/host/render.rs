@@ -2,7 +2,7 @@
 //!
 //! 渲染架构（分离渲染线程模式）：
 //! - 主窗口：UI 线程只负责状态更新和参数生成，WGPU 渲染在独立线程中（零拷贝数据共享）
-//! - 轻量窗口（dialog/progress）：无 wgpu_render_thread，直接渲染 iced UI
+//! - 轻量窗口（dialog/progress）：无 wgpu_render_thread，直接渲染 旧版 UI
 //!
 //! 子模块组织：
 //! - `data`: 渲染数据类型定义
@@ -10,9 +10,9 @@
 //! - `viewport`: 视口信息收集
 //! - `onion_skin` / `cpu_onion`: GPU / CPU 洋葱皮（Q3 A/B）
 //! - `separate_thread`: 分离渲染线程模式
-//! - `ui`: iced UI 渲染
+//! - `ui`: 旧版 UI 渲染
 
-use iced_wgpu::wgpu;
+use wgpu;
 
 use crate::host::Host;
 use crate::right_sidebar::core::RESIZE_HANDLE_WIDTH;
@@ -24,12 +24,13 @@ use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
 pub(crate) mod arrangement_geometry;
 pub(crate) mod cpu_onion;
 mod data;
+pub(crate) mod egui_overlay;
 mod frame;
 pub(crate) mod mask_preview;
 pub(crate) mod note_worker;
 pub(crate) mod onion_skin;
 mod separate_thread;
-mod ui;
+pub(crate) mod ui;
 pub(crate) mod viewport;
 
 impl Host {
@@ -37,7 +38,7 @@ impl Host {
     ///
     /// 根据是否启用 wgpu_render_thread 选择渲染路径：
     /// - 主窗口（已 `enable_separate_render_thread`）：走分离渲染线程，UI 线程只更新数据
-    /// - 轻量窗口（dialog/progress）：直接渲染 iced UI（无音符/网格渲染器）
+    /// - 轻量窗口（dialog/progress）：直接渲染 旧版 UI（无音符/网格渲染器）
     pub fn redraw_requested(
         &mut self,
         frame: &wgpu::SurfaceTexture,
@@ -70,24 +71,25 @@ impl Host {
             // 主窗口：分离渲染线程模式
             self.render_with_separate_thread(frame, gfx);
         } else {
-            // 轻量窗口（dialog/progress）：直接渲染 iced UI
+            // 轻量窗口（dialog/progress）：直接渲染 旧版 UI
             if !self.skip_ui_rendering {
-                self.render_iced_ui(frame, view, None);
+                self.render_ui(frame, view, None);
             }
         }
     }
 
-    /// 清除 UI 缓存以强制重绘
+    /// 请求下一帧重绘（原「清除 旧版 UI 缓存」入口；egui 侧无缓存树）。
     #[inline]
     pub(crate) fn clear_cache(&mut self) {
-        self.render_ctx.cache = std::mem::take(&mut self.render_ctx.cache);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
     }
 
     /// 按需离屏渲染钢琴瀑布流面板键盘（真·裸 wgpu）
     ///
     /// 仅在面板可见且为钢琴瀑布流面板时渲染；其余情况清空缓存以释放纹理。
     /// 渲染产物为离屏纹理视图（`Arc<wgpu::TextureView>`），缓存于 `RightSidebar.piano_waterfall`，
-    /// 由 iced `shader` 图元在自身渲染通道内直接合成（GPU→GPU，无 CPU 读回、不闪烁），
+    /// 由 旧版 `shader` 图元在自身渲染通道内直接合成（GPU→GPU，无 CPU 读回、不闪烁），
     /// 仅当（宽 / 高 / 键数 / 缩放 / 滚动 / 主音轨 / 音符数）任一参数变化时才重绘。
     ///
     /// 三条渲染路径的滚动来源**刻意不同**，改动时勿混用：
@@ -379,7 +381,7 @@ impl Host {
             .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device, epoch));
 
         // 同步离屏渲染：返回 Some 即拿到本帧纹理视图（无 CPU 读回、无异步）；
-        // iced `shader` 图元会在自身渲染通道内直接采样该视图合成（GPU→GPU，不闪烁）。
+        // 旧版 `shader` 图元会在自身渲染通道内直接采样该视图合成（GPU→GPU，不闪烁）。
         if let Some(view) = renderer.render_scene(
             &self.render_ctx.device,
             &self.render_ctx.queue,

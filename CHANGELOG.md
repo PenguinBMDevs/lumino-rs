@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 洋葱皮 · 按钮下拉「显示范围」+ 工程范围记忆（2026-11-05）
+
+- **分裂式按钮**：工具栏洋葱皮按钮右侧三角拆成独立命中区（首版只做开关时它是死区，
+  故未拆），点击展开「显示范围」下拉。
+- **四种范围**：显示全部音轨 / 上一个音轨 / 下一个音轨 / 指定音轨。菜单实现与
+  「音符精度」下拉同源（`iced_aw::DropDown` + `on_dismiss`，190px、同款圆角与悬停底色），
+  唯一差异是 `alignment(BottomEnd)`——按钮在右侧，居中会把菜单推出窗口。
+  **指定音轨本轮只留入口**：点击弹 Info Toast 说明待接入，且**不写入状态**
+  （避免留下一个什么都没做的勾选态）。
+- **选择即打开**：从菜单选范围会顺手打开总开关（否则选完画面无变化，用户会当成坏了）；
+  关闭开关**不清模式**，重新打开按原范围显示。
+- **渲染**：`ViewState` 的 `_pad1/_pad2` 复用为 `onion_first`/`onion_last`
+  （track_enc 闭区间，`first > last` = 空区间，**结构体大小不变 8208B**），
+  `onion_note*.wgsl` 与 `cull*.wgsl` 的闸门同时比较开关与区间；模式由 UI 侧
+  `onion_track_range()` 解析好再下发，shader 只做区间比较。切范围与切开关同为
+  `ViewState` 一条 uniform，GPU 数据零重传。
+- **工程范围记忆**：模式写进 `.lmpj` 的 `metadata.toml` `[settings].onion_skin_mode`
+  （`all_tracks` / `previous_track` / `next_track` / `specific_track`），随工程保存 →
+  打开工程自动恢复；不写全局 `UiConfig`（那是 app 范围，不是工程范围）。老工程无
+  `[settings]` 段 → `None` → 默认「全部音轨」，行为与加字段前完全一致。未知取值宽松
+  落回默认，不让一个显示模式搞砸工程加载。
+- **验证**：GPU 回读 `_cull_path_limits_onion_to_range`（区间放行/隐藏 + 空区间只留主轨，
+  并回读 `indirect.instance_count`），`onion_mode_change_emits_view_state_only`（零重传），
+  `current_track_change_updates_relative_range`（上一个/下一个随切轨联动），
+  `metadata.toml` 序列化往返 + 老工程零差异。
+
 ### 洋葱皮 · 删除死设置项「启用高精度洋葱皮贴图」+ 关闭态裁剪闸门
 
 - **删除死设置**：设置页该勾选框只控制 `TextureWaterfallConfig.enabled`，而钢琴卷帘的

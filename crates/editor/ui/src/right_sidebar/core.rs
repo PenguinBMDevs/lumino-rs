@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use iced_wgpu::wgpu;
-
 use crate::right_sidebar::i2m_cache::I2mCacheEntry;
 use crate::right_sidebar::i2m_config::I2mConfig;
 use crate::right_sidebar::material::MaterialLibrary;
@@ -68,7 +66,7 @@ pub struct RightSidebar {
 /// 钢琴瀑布流预览面板状态
 ///
 /// 持有离屏 wgpu 渲染得到的键盘纹理视图（`Arc<wgpu::TextureView>`），
-/// 由 iced `shader` 图元在自身渲染通道内直接采样合成（GPU→GPU，无 CPU 读回、无
+/// 由 旧版 `shader` 图元在自身渲染通道内直接采样合成（GPU→GPU，无 CPU 读回、无
 /// `image::Handle`、无图集重传），
 /// 因此与钢琴卷帘洋葱皮同样不闪烁。仅用脏签名避免每帧重绘。
 #[derive(Debug, Clone, Default)]

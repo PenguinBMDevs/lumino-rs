@@ -158,16 +158,18 @@ impl Host {
                         current_track: fp.current_track as u32 + 1,
                         muted_tracks: fp.muted_tracks.clone(),
                         onion_visible: fp.onion_visible,
+                        onion_range: fp.onion_range(),
                     }) {
                         tracing::warn!(
                             "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"
                         );
                     }
                     tracing::debug!(
-                        "[onion-skin] Full 会话前同步 ViewState: current_track={}，静音 {:?}，洋葱皮={}",
+                        "[onion-skin] Full 会话前同步 ViewState: current_track={}，静音 {:?}，洋葱皮={}，范围={:?}",
                         fp.current_track,
                         fp.muted_tracks,
-                        fp.onion_visible
+                        fp.onion_visible,
+                        fp.onion_range()
                     );
                     self.stream_onion_skin_full(&fp, wgpu_thread, None);
                 }
@@ -195,12 +197,13 @@ impl Host {
                         }
                     }
                     OnionSkinAction::ViewState => {
-                        // 切轨/静音/洋葱皮开关零重传：只发 ViewState uniform
-                        //（当前音轨 + 静音集合 + 开关位）
+                        // 切轨/静音/洋葱皮开关/显示范围零重传：只发 ViewState uniform
+                        //（当前音轨 + 静音集合 + 开关位 + 范围区间）
                         if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
                             current_track: fp.current_track as u32 + 1,
                             muted_tracks: fp.muted_tracks.clone(),
                             onion_visible: fp.onion_visible,
+                            onion_range: fp.onion_range(),
                         }) {
                             tracing::warn!(
                                 "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"

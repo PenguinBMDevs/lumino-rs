@@ -1,21 +1,9 @@
-//! Root 视图渲染子模块
+//! Root 视图子模块。
 //!
-//! 已拆分为以下子模块：
-//! - `main_view`: 主视图函数（root_view, view_main, view_arrangement 等）
-//! - `overlays`: 覆盖层/弹窗视图（进度窗口、对话框）
-//! - `status`: 状态栏视图
+//! 旧版 视图层已删除（egui 是唯一绘制通道），这里只剩：
+//! - `egui_chrome`：生产状态 → egui 模型的唯一构造入口；
+//! - `status`：状态栏用到的工程统计（音符总数）。
 
-mod main_view;
-mod overlays;
-mod right_content;
+mod egui_chrome;
 mod status;
-
-use crate::Element;
-use crate::root::Root;
-
-impl Root {
-    /// 渲染视图（委托给 root_view 实现）
-    pub fn view(&self) -> Element<'_> {
-        self.root_view()
-    }
-}
+mod visibility;

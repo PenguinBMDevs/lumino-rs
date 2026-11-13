@@ -2,7 +2,7 @@
 //!
 //! 该模块已拆分为以下子模块：
 //! - `types`: 类型定义和工具函数
-//! - `render`: 渲染逻辑（iced UI 和 wgpu 音符）
+//! - `render`: 渲染逻辑（旧版 UI 和 wgpu 音符）
 //! - `event`: 事件处理（窗口事件、输入）
 //! - `editor_ops`: 编辑器操作（音符、洋葱皮）
 //! - `dialog`: 对话框和协作功能
@@ -21,26 +21,32 @@ use crate::{message, root, settings};
 
 mod builder;
 mod cache;
+mod convert;
 mod dialog;
+mod dialog_size;
 mod editor_ops;
 mod event;
-mod measure;
 mod reconnect;
 mod render;
 mod render_ctx;
 mod render_thread;
 mod session_lock;
 pub mod types;
+mod viewport_geom;
 mod waterfall;
 mod window_ctx;
 
 use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
+pub(crate) use event::canvas::canvas_input_enabled;
+/// 叠加层开关（标题栏菜单是否由 egui 接管）。
+pub(crate) use render::egui_overlay::overlay_enabled;
+
 pub use cache::RenderCache;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
-/// UI 宿主 - 管理 iced 渲染和 wgpu 音符渲染
+/// UI 宿主 - 管理 旧版 渲染和 wgpu 音符渲染
 ///
 /// 线程模型：
 /// - UI线程（主线程）：处理事件、更新状态、生成渲染命令
@@ -57,23 +63,33 @@ pub struct Host {
     pub(crate) window_ctx: WindowContext,
     /// 应用状态根节点
     pub(crate) root: root::Root,
-    /// 事件列表
-    pub(crate) events: Vec<iced_core::Event>,
+    /// egui 叠加层输入缓冲（指针位置 / 滚轮 / 修饰键 / 焦点）。
+    ///
+    /// 事件先喂给 egui；鼠标按键只在菜单占用区内被消费，
+    /// 其余仍由 `events` 里的 旧版 事件执行。
+    pub(crate) egui_input: render::egui_overlay::OverlayInput,
+    /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 旧版 队列。
+    pub(crate) egui_blocked: Vec<egui::Rect>,
+    /// 画布输入状态（winit / egui 直接驱动时的双击检测、拖拽标记等）。
+    pub(crate) canvas_input: lumino_ui_editor::grid::GridInteractionState,
+    /// 编辑器画布（卷帘 / 走带）离屏纹理视图；`Some` 时 egui 采样它作底层，
+    /// 并跳过 gfx → surface 的直接 blit。
+    pub(crate) egui_editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
     /// 上次 FPS 更新时间
     pub(crate) last_fps_update: Instant,
     /// 帧计数器
     pub(crate) frame_count: u32,
-    /// 跳过 Iced UI 渲染（性能测试用）
+    /// 跳过 旧版 UI 渲染（性能测试用）
     pub skip_ui_rendering: bool,
     /// UI 脏标记
     pub(crate) ui_dirty: bool,
     /// 上一批事件里有控件「捕获」了输入：下一帧必须无条件重建一次。
     ///
     /// 为什么需要单独一位（而不是直接 `ui_dirty = true`）：
-    /// iced 在基础控件捕获事件后会丢弃当前 overlay 树，新展开的下拉层要**下一次
-    /// build** 才画得出来；而 `render_iced_ui` 画完就把 `ui_dirty` 清零，同一帧里
+    /// 旧版 在基础控件捕获事件后会丢弃当前 overlay 树，新展开的下拉层要**下一次
+    /// build** 才画得出来；而 `render_ui` 画完就把 `ui_dirty` 清零，同一帧里
     /// 置的脏标记会被立刻消费掉。于是「控件只改自身状态、不发消息」的交互
     /// （下拉框展开 / 滚动条抓取）可能停在「状态已变、画面没变」——
     /// 表现为点击后要再动一下鼠标（或等 Tooltip 的 500ms 定时器）才出现。
@@ -107,14 +123,14 @@ pub struct Host {
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
     /// 触摸捏合回退：多指触摸点（id -> 逻辑坐标），用于无 PinchGesture 平台合成缩放
-    pub(crate) active_touches: std::collections::HashMap<u64, iced_core::Point>,
+    pub(crate) active_touches: std::collections::HashMap<u64, lumino_ui_core::geom::Point>,
     /// 双指缩放的**锚点距离**（逻辑像素）。
     ///
     /// 只在「发出过一次缩放」或「手指数量变化」时前移：逐帧前移会让慢速捏合
     /// 每帧都落回阈值以下，表现为「慢慢捏合完全没反应」。
     pub(crate) pinch_anchor_distance: Option<f32>,
     /// 双指平移的上一个中点（逻辑坐标），仅在真正发出滚动增量时前移
-    pub(crate) prev_pan_center: Option<iced_core::Point>,
+    pub(crate) prev_pan_center: Option<lumino_ui_core::geom::Point>,
     /// 本次触摸会话是否已升级为多指手势（双指及以上出现过）
     ///
     /// 置位后即便手指降为单指也继续消费触摸，避免剩余手指的移动被当成拖拽。
@@ -122,16 +138,16 @@ pub struct Host {
     /// 触摸全部抬起后需要抑制 hover（下一批事件以 `Cursor::Unavailable` 重建）
     pub(crate) suppress_hover_after_touch: bool,
     /// 触摸长按模拟右键：首指按下点（长按抖动判定 + 右键落点）
-    pub(crate) touch_press_origin: Option<iced_core::Point>,
+    pub(crate) touch_press_origin: Option<lumino_ui_core::geom::Point>,
     /// 触摸长按的判定时刻（`None` = 无待判定长按）
     pub(crate) touch_long_press_deadline: Option<Instant>,
     /// 本次触摸是否已经触发过长按右键（抬手时只需释放右键）
     pub(crate) touch_long_press_fired: bool,
-    /// 文本输入法是否处于激活态（焦点在 text_input 时由 iced 打开）。
+    /// 文本输入法是否处于激活态（焦点在 text_input 时由 旧版 打开）。
     ///
     /// 裸字母快捷键必须在此状态下让路，否则用户在输入框里打字会切工具。
     pub(crate) ime_active: bool,
-    /// iced 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
+    /// 旧版 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
     pub(crate) redraw_at: std::sync::Arc<std::sync::Mutex<Option<Instant>>>,
     /// 定时重绘后台线程是否在运行（避免重复起线程）
     pub(crate) redraw_timer_active: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -222,44 +238,25 @@ impl Host {
         self.render_ctx.viewport =
             render::viewport::viewport_for(width, height, self.window_ctx.window.scale_factor());
 
-        // 置脏：`render_iced_ui` 在 `ui_dirty == false` 时走「仅 present 缓存帧」的
+        // 置脏：`render_ui` 在 `ui_dirty == false` 时走「仅 present 缓存帧」的
         // 早退路径（`host/render/ui.rs`），不置脏会出现"视口换了但界面还是旧布局"。
         self.ui_dirty = true;
     }
 
     /// 获取当前光标位置（逻辑坐标）
-    pub fn cursor_position(&self) -> Option<iced_core::Point> {
+    pub fn cursor_position(&self) -> Option<lumino_ui_core::geom::Point> {
         self.window_ctx.cursor_position
     }
 
     /// 标记 UI 脏，强制下一帧重绘时重建界面（而非使用渲染缓存）。
     ///
-    /// 主要用于内存监控等需要每帧重新捕获快照的对话框，在节流刷新前调用，
-    /// 确保 `render_iced_ui` 不因 `ui_dirty == false` 而跳过 `UserInterface::build`。
+    /// 主要用于内存监控等需要每帧重新捕获快照的对话框，在节流刷新前调用。
     pub fn mark_dirty(&mut self) {
         self.ui_dirty = true;
     }
 
-    /// 处理 iced 返回的重绘请求。
-    ///
-    /// `Tooltip` 的延迟显示依赖 `RedrawRequest::At` 的定时唤醒；若丢弃该请求，
-    /// 提示必须等下一次鼠标事件才会出现（表现为"鼠标不动就不弹提示"）。
-    pub(crate) fn handle_redraw_request(&mut self, request: iced_core::window::RedrawRequest) {
-        match request {
-            iced_core::window::RedrawRequest::NextFrame => {
-                self.ui_dirty = true;
-                self.window_ctx.window.request_redraw();
-            }
-            iced_core::window::RedrawRequest::At(at) => {
-                self.ui_dirty = true;
-                self.schedule_redraw_at(at);
-            }
-            iced_core::window::RedrawRequest::Wait => {}
-        }
-    }
-
     /// 安排一次定时重绘（保留最早时刻；复用单个后台线程）。
-    fn schedule_redraw_at(&self, at: Instant) {
+    pub(crate) fn schedule_redraw_at(&self, at: Instant) {
         let mut slot = match self.redraw_at.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -376,24 +373,6 @@ impl Host {
             self.message_router.route(&mut self.root, msg);
         }
     }
-}
-
-/// 在后台线程预热对话框共享的 iced Engine。
-///
-/// 主窗口创建后调用，可在用户打开第一个对话框前完成 pipeline 创建，
-/// 避免对话框初始化阻塞 900ms+。若线程未完成，首个对话框会经
-/// `ensure_shared_engine` 自行创建（epoch 同代，先到者生效）。
-pub fn prewarm_dialog_shared_engine(gfx: &lumino_gfx::Context) {
-    let adapter = gfx.adapter.clone();
-    let device = gfx.device.clone();
-    let queue = gfx.queue.clone();
-    let format = gfx.format;
-    let epoch = gfx.epoch();
-
-    std::thread::spawn(move || {
-        // REND-019 PR-B：经 ensure_shared_engine 写入（epoch 命中即复用）
-        let _ = render_ctx::ensure_shared_engine(&adapter, device, queue, format, epoch);
-    });
 }
 
 /// 洋葱皮音轨调色板（按音轨索引循环取色）

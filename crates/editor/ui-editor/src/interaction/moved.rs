@@ -9,7 +9,7 @@ use lumino_editor_state::editor_state::interaction_ops;
 
 impl Editor {
     /// 处理鼠标移动事件
-    pub(crate) fn handle_moved(&mut self, pos: iced_core::Point) {
+    pub(crate) fn handle_moved(&mut self, pos: lumino_ui_core::geom::Point) {
         crate::puffin_profiler::moved_handle();
         // DRAW-044：柔化模式下拖动 = 调半径
         if self.round_corners_active() && self.round_corner_moved(pos) {
@@ -192,7 +192,7 @@ impl Editor {
     /// 计算编辑状态的变化值
     pub(crate) fn calculate_edit_changes(
         &mut self,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
         tick: f32,
         key: u16,
         snapped_tick: f32,

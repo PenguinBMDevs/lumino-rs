@@ -117,6 +117,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "意外的消息类型" => Some("Unexpected message type"),
         "请使用 create_room_and_connect" => Some("Please use create_room_and_connect"),
         "请使用 join_room_and_connect" => Some("Please use join_room_and_connect"),
+        "云存储提示" => Some("Cloud Storage Notice"),
+        "正在上传 {name}（{pct}%）" => Some("Uploading {name} ({pct}%)"),
         _ => None,
     }
 }

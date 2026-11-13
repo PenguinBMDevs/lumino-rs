@@ -64,14 +64,20 @@ fn test_selection_box_hit_test_copy_box_only() {
     // 副本中心（tick 840）→ Inside（副本框命中 = 最新件框选）
     let copy_center_x = v.tick_to_x(840.0);
     assert_eq!(
-        editor.hit_test_selection_box(iced_core::Point::new(copy_center_x, copy_center_y)),
+        editor.hit_test_selection_box(lumino_ui_core::geom::Point::new(
+            copy_center_x,
+            copy_center_y
+        )),
         Some(crate::SelectionHitType::Inside),
         "副本位置应命中副本框内部"
     );
     // 原件中心（tick 240）→ 不命中任何框（原件不再框选，用户要求）
     let origin_center_x = v.tick_to_x(240.0);
     assert_eq!(
-        editor.hit_test_selection_box(iced_core::Point::new(origin_center_x, copy_center_y)),
+        editor.hit_test_selection_box(lumino_ui_core::geom::Point::new(
+            origin_center_x,
+            copy_center_y
+        )),
         None,
         "原件位置不应命中任何选择框（原件不保留框选）"
     );
@@ -79,7 +85,7 @@ fn test_selection_box_hit_test_copy_box_only() {
     // 副本框内 Ctrl+拖动 → 复制下一份（DraggingSelectionCopy）
     editor.set_ctrl_pressed(true);
     editor.handle_tool_pressed(
-        iced_core::Point::new(copy_center_x, copy_center_y),
+        lumino_ui_core::geom::Point::new(copy_center_x, copy_center_y),
         false,
         840.0,
         60,
@@ -104,7 +110,7 @@ fn test_selection_box_hit_test_copy_box_only() {
 
     // 原件位置（无框）Ctrl+按下 → priority 2 单音符命中 → 单音符编辑（移动原件）
     editor.handle_tool_pressed(
-        iced_core::Point::new(origin_center_x, copy_center_y),
+        lumino_ui_core::geom::Point::new(origin_center_x, copy_center_y),
         false,
         240.0,
         60,

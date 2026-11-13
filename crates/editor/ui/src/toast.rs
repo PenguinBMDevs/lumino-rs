@@ -8,7 +8,7 @@
 //!
 //! ## 渲染
 //! `Root::view_main` 在主视图渲染完成后，通过 `ToastManager::view` 获取叠加层，
-//! 使用 `iced_widget::Stack` 叠加在右下角。
+//! 由 egui 叠加层绘制在右下角。
 //!
 //! ## 过期清理
 //! 每帧 `AnimationTick` 触发 `ToastManager::cleanup_expired`，移除过期 Toast。
@@ -16,9 +16,7 @@
 
 use std::time::{Duration, Instant};
 
-use iced_core::{Alignment, Length, Padding};
-use iced_widget::{Column, container, row, text};
-use lumino_ui_core::{Element, Message, Theme};
+use lumino_ui_core::Theme;
 
 /// Toast 级别
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,8 +37,10 @@ impl ToastLevel {
         match self {
             ToastLevel::Info => "ℹ",
             ToastLevel::Warning => "⚠",
-            ToastLevel::Error => "✗",
-            ToastLevel::Success => "✓",
+            // egui 默认字体缺 ✗(U+2717) / ✓(U+2713)，会显示成方框；
+            // 换成同字体内可用的 ×(U+00D7) / √(U+221A)。
+            ToastLevel::Error => "×",
+            ToastLevel::Success => "√",
         }
     }
 
@@ -54,20 +54,20 @@ impl ToastLevel {
         }
     }
 
-    /// 背景色（基于 iced theme palette）
-    fn background_color(self, theme: &Theme) -> iced_core::Color {
+    /// 背景色（基于 旧版 theme palette）
+    fn background_color(self, theme: &Theme) -> lumino_ui_core::geom::Color {
         let palette = theme.extended_palette();
         match self {
             ToastLevel::Info => palette.primary.strong.color,
-            ToastLevel::Warning => iced_core::Color::from_rgb(0.95, 0.62, 0.17),
+            ToastLevel::Warning => lumino_ui_core::geom::Color::from_rgb(0.95, 0.62, 0.17),
             ToastLevel::Error => palette.danger.base.color,
             ToastLevel::Success => palette.success.base.color,
         }
     }
 
     /// 文字颜色
-    fn text_color(self) -> iced_core::Color {
-        iced_core::Color::WHITE
+    fn text_color(self) -> lumino_ui_core::geom::Color {
+        lumino_ui_core::geom::Color::WHITE
     }
 }
 
@@ -197,64 +197,30 @@ impl ToastManager {
         &self.toasts
     }
 
-    /// 渲染 Toast 叠加层
+    /// egui 叠加层用的只读卡片：图标 / 文案 / 底色 / 文字色。
     ///
-    /// 返回 `None` 表示当前无 Toast 需要渲染。
-    /// 返回 `Some(element)` 时，调用方应使用 `Stack::push` 叠加到主视图上。
-    pub fn view(&self, theme: &Theme) -> Option<Element<'_>> {
-        if self.toasts.is_empty() {
-            return None;
-        }
-
-        let mut col: Column<'_, Message, Theme, lumino_ui_core::Renderer> = Column::new()
-            .spacing(6)
-            .align_x(Alignment::End)
-            .max_width(420.0);
-
-        for toast in &self.toasts {
-            let bg = toast.level.background_color(theme);
-            let fg = toast.level.text_color();
-            let icon = toast.level.icon();
-            let message = toast.message.clone();
-
-            let card = container(
-                row![
-                    text(icon).color(fg).size(16),
-                    text(message).color(fg).size(14)
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-            )
-            .padding(Padding::new(10.0))
-            .style(move |_theme: &Theme| container::Style {
-                background: Some(iced_core::Background::Color(bg)),
-                border: iced_core::Border {
-                    radius: 6.0.into(),
-                    width: 0.0,
-                    color: iced_core::Color {
-                        a: 0.2,
-                        ..iced_core::Color::BLACK
-                    },
-                },
-                ..Default::default()
-            });
-
-            col = col.push(card);
-        }
-
-        let overlay = container(col)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::End)
-            .align_y(Alignment::End)
-            .padding(Padding {
-                top: 0.0,
-                bottom: 36.0, // 避开状态栏
-                left: 0.0,
-                right: 16.0,
-            });
-
-        Some(overlay.into())
+    /// 视图已迁到 egui（`lumino-ui-egui::chrome::toast`）；`lumino-ui-egui`
+    /// 不认识 `ToastLevel`，因此颜色在这里按主题算好再传过去。
+    pub fn egui_cards(
+        &self,
+        theme: &Theme,
+    ) -> Vec<(
+        String,
+        String,
+        lumino_ui_core::geom::Color,
+        lumino_ui_core::geom::Color,
+    )> {
+        self.toasts
+            .iter()
+            .map(|toast| {
+                (
+                    toast.level.icon().to_owned(),
+                    toast.message.clone(),
+                    toast.level.background_color(theme),
+                    toast.level.text_color(),
+                )
+            })
+            .collect()
     }
 }
 

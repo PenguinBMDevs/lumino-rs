@@ -18,8 +18,8 @@ pub use route::{RollBarButton, Route};
 #[cfg(test)]
 mod tests;
 
-use iced_core::{Color, Point};
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
+use lumino_ui_core::geom::{Color, Point};
 
 // ─── 事件（从 sidebar/event.rs 迁入） ───
 
@@ -46,6 +46,16 @@ pub enum Event {
     MixerPanelMaximizeToggled,
     /// 混音台浮动面板拖拽（鼠标移动时的相对坐标，单位为逻辑像素）
     MixerPanelDragged(f32, f32),
+    /// 混音台面板拖拽**增量**（egui 侧逐帧给出位移，单位为逻辑像素）
+    ///
+    /// 与 [`Self::MixerPanelDragged`] 的区别：那个携带的是绝对光标位置、由状态机
+    /// 自己求差；这里直接是位移，处理端只做累加，避免把增量当坐标导致漂移。
+    MixerPanelDragDelta {
+        /// 横向位移。
+        dx: f32,
+        /// 纵向位移（屏幕坐标向下为正）。
+        dy: f32,
+    },
     /// 混音台浮动面板拖拽开始（标题栏按下）
     MixerPanelDragStarted,
     /// 混音台浮动面板拖拽结束（松开）
@@ -88,7 +98,7 @@ pub enum Event {
     TrackContextMenuItemClicked(usize, TrackContextMenuItem),
     /// 打开音轨列表面板空白区域右键菜单
     ///
-    /// 注意：iced 0.14 的 `mouse_area::on_right_press` 仅传递 Message，
+    /// 注意：旧版 0.14 的 `mouse_area::on_right_press` 仅传递 Message，
     /// 无法获取点击坐标。菜单固定显示在面板右上角（由 `panel_context_menu`
     /// 模块的 `positioned_menu` 决定）。
     PanelContextMenuOpened,

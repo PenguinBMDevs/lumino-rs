@@ -116,8 +116,8 @@ impl SettingsPanel {
                 check_on_startup: ui_config.gpu_check_on_startup,
                 warning_suppressed: ui_config.gpu_warning_suppressed.unwrap_or(false),
                 domino_clipboard_enabled: ui_config.domino_clipboard_enabled,
-                check_state: lumino_ui_core::state::GpuCheckUiState::Idle,
-                retry_gate: lumino_ui_core::state::GpuCheckRetryGate::Ready,
+                check_state: lumino_message::gpu_compat_state::GpuCheckUiState::Idle,
+                retry_gate: lumino_message::gpu_compat_state::GpuCheckRetryGate::Ready,
                 copied: false,
             },
         }

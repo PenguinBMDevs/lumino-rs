@@ -157,8 +157,8 @@ impl ReconnectOps<SharedGpu> for Runner {
         Ok(())
     }
 
-    fn rebuild_iced(&mut self) -> Result<(), String> {
-        // iced Engine/Renderer 重建已并入各窗口 rebind 流程
+    fn rebuild_ui(&mut self) -> Result<(), String> {
+        // 旧版 Engine/Renderer 重建已并入各窗口 rebind 流程
         // （render_ctx::rebind_gpu）；保留独立步骤位以对齐 §1.4 状态机结构。
         Ok(())
     }

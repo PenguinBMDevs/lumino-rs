@@ -1,6 +1,6 @@
 //! Host 键盘快捷键处理子模块
 
-use iced_winit::winit;
+use winit;
 
 use crate::host::Host;
 use crate::{message, toolbar};
@@ -260,7 +260,7 @@ impl Host {
             return;
         }
 
-        // 文本输入框聚焦时，裸字母与编辑类组合键都交给 iced 处理；
+        // 文本输入框聚焦时，裸字母与编辑类组合键都交给 旧版 处理；
         // 否则在输入框里打字会切工具、Ctrl+C 会复制音符而不是文本。
         if self.ime_active {
             return;

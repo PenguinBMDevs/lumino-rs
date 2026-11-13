@@ -9,7 +9,7 @@
 //! **副本框**（选中音符 + 复制 delta）——**只保留最新件（副本）的框选**，
 //! 原件不再框选（用户要求）；非复制模式返回选中音符的单框。
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 use super::super::{EditState, Editor, SelectionHitType};
 use crate::rendering::{copy_deltas_for_index, is_copy_ghosted};

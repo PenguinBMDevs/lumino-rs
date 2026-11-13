@@ -177,6 +177,13 @@ pub struct SettingsMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// 图片转 MIDI 参数（DRAW-030）：重开工程不丢配置
     pub i2m: Option<lumino_core::I2mSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// 洋葱皮显示范围模式（`all_tracks` / `previous_track` / `next_track` /
+    /// `specific_track`；**工程范围记忆**，2026-11-05）
+    ///
+    /// 存字符串而不是枚举：工程文件是用户可读的 TOML，且旧版客户端要能忽略
+    /// 本版本的新取值（解析侧宽松落回默认，见 `OnionSkinMode::from_str_lossy`）。
+    pub onion_skin_mode: Option<String>,
 }
 
 /// 统计信息
@@ -363,12 +370,14 @@ mod tests {
     fn test_i2m_settings_roundtrip() {
         // DRAW-030：图片转 MIDI 参数随工程落盘，重开恢复
         let mut meta = ProjectMetadata::default_with_name("I2M");
-        let mut i2m = lumino_core::I2mSettings::default();
-        i2m.start_key = 36;
-        i2m.color_count = 8;
-        i2m.brightness = 15;
-        i2m.palette = "octree".into();
-        i2m.blend = "spread".into();
+        let i2m = lumino_core::I2mSettings {
+            start_key: 36,
+            color_count: 8,
+            brightness: 15,
+            palette: "octree".into(),
+            blend: "spread".into(),
+            ..lumino_core::I2mSettings::default()
+        };
         meta.settings = Some(SettingsMetadata {
             i2m: Some(i2m.clone()),
             ..Default::default()

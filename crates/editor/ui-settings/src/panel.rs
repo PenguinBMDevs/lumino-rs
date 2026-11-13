@@ -6,7 +6,7 @@
 
 use crate::{Event, SettingsPanel};
 use lumino_core::storage::config::SynthBackend;
-use lumino_ui_core::settings_event::OutputType;
+use lumino_message::settings_event::OutputType;
 
 mod file_pickers;
 mod new;

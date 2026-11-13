@@ -96,6 +96,12 @@ pub enum EditorAction {
     BrushCancel,
     /// 文字工具：输入框文字变更（画布覆盖层 TextInput 的 on_input）
     TextToolTextChanged(String),
+    /// 文字工具：确认并生成音符（√ 按钮）
+    TextToolConfirm,
+    /// 文字工具：取消并清空（× 按钮）
+    TextToolCancel,
+    /// 文字工具：切换正常 / key 范围合并（模式按钮）
+    TextToolModeToggle,
     /// ?????????????????? Parametric ???
     TextParamsChanged(TextParams),
     /// ??????? LegacyBox / Parametric ????

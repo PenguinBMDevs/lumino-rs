@@ -152,7 +152,7 @@ impl DialogManager {
     /// | 帧 | 推进的步骤 | 依据 |
     /// |----|-----------|------|
     /// | N   | 阶段 1 建窗（hidden）→ **同一次调用内**连做阶段 2 建 wgpu 上下文 | 建窗后 `initializing` 非空，函数尾部立刻命中 `gfx_ref().is_none()` 分支 |
-    /// | N+1 | 阶段 3 建 iced UI、注入状态、测量尺寸并显示窗口 | 需要上一帧的 gfx；UI 创建含字体扫描，是当初 900ms 卡顿的主因 |
+    /// | N+1 | 阶段 3 建 旧版 UI、注入状态、测量尺寸并显示窗口 | 需要上一帧的 gfx；UI 创建含字体扫描，是当初 900ms 卡顿的主因 |
     ///
     /// 即：**每帧最多推进到「下一个阶段」，而阶段 1 与阶段 2 会在同一帧连做**，
     /// 阶段 3 至少晚一帧。若真要"一帧一阶段"，需把阶段 2 挪到下一次调用的开头。
@@ -264,7 +264,7 @@ impl DialogManager {
     /// 更新所有对话框（渲染等）
     ///
     /// 内存监控对话框使用 `redraw_force` 确保每次刷新重建 UI 界面（`view()` 重新捕获 Snapshot），
-    /// 其他对话框走正常 `redraw`（若 `ui_dirty == false` 则进入 iced 缓存早退路径，无额外开销）。
+    /// 其他对话框走正常 `redraw`（若 `ui_dirty == false` 则进入 旧版 缓存早退路径，无额外开销）。
     pub fn update(&mut self) {
         for dialog in self.dialogs.values_mut() {
             if dialog.should_close() {

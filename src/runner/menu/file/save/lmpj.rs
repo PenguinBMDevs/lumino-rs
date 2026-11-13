@@ -32,6 +32,11 @@ struct LmpjSnapshot {
     use10: bool,
     /// 图片转 MIDI 参数（DRAW-030）
     i2m: lumino_core::I2mSettings,
+    /// 洋葱皮显示范围模式（**工程范围记忆**，2026-11-05）
+    ///
+    /// 必须在主线程快照时读取（工具栏状态不进后台线程），后台组包时写进
+    /// `metadata.toml` 的 `[settings]` 段。
+    onion_skin_mode: String,
 }
 
 impl LmpjSnapshot {
@@ -42,18 +47,15 @@ impl LmpjSnapshot {
         project.metadata.project.name = self.project_name;
         project.metadata.project.author = self.author;
         project.metadata.project.copyright = self.copyright;
-        // DRAW-032：工程级「启用通道 10」随工程落盘
-        project
-            .metadata
-            .settings
-            .get_or_insert_with(Default::default)
-            .use10 = Some(self.use10);
-        // DRAW-030：图片转 MIDI 参数随工程落盘（重开工程不丢）
-        project
-            .metadata
-            .settings
-            .get_or_insert_with(Default::default)
-            .i2m = Some(self.i2m);
+        // DRAW-032 / DRAW-030 / 洋葱皮范围：三项都写进 `[settings]` 段。
+        // 注意必须一次性构造，不能先写 use10/i2m 再用 `SettingsMetadata::default()`
+        // 覆盖（那会把刚写的两项清空）。
+        project.metadata.settings = Some(lumino_export::SettingsMetadata {
+            use10: Some(self.use10),
+            i2m: Some(self.i2m),
+            onion_skin_mode: Some(self.onion_skin_mode),
+            ..Default::default()
+        });
         project.set_working_time_seconds(self.working_time_seconds);
         project
     }
@@ -75,7 +77,7 @@ impl RunnerInner {
 
     /// 主线程轻量快照：不组包、不排序、不分配逐音符 compact 事件。
     fn snapshot_lmpj_project(&self, save_path: &Path) -> Option<LmpjSnapshot> {
-        let (document, shapes, author, copyright, use10, i2m) = {
+        let (document, shapes, author, copyright, use10, i2m, onion_skin_mode) = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             // 单一权威源：无文档 = 没有可保存的音符。
@@ -85,7 +87,16 @@ impl RunnerInner {
             let copyright = ui.get_project_copyright();
             let use10 = ui.get_project_use10();
             let i2m = ui.get_project_i2m_config();
-            (document, shapes, author, copyright, use10, i2m)
+            let onion_skin_mode = ui.onion_skin_mode().as_str().to_string();
+            (
+                document,
+                shapes,
+                author,
+                copyright,
+                use10,
+                i2m,
+                onion_skin_mode,
+            )
         };
 
         let project_name = save_path
@@ -102,6 +113,7 @@ impl RunnerInner {
             project_name,
             use10,
             i2m,
+            onion_skin_mode,
         })
     }
 
@@ -285,6 +297,7 @@ mod tests {
                 color_count: 8,
                 ..Default::default()
             },
+            onion_skin_mode: "previous_track".into(),
         };
 
         let project = snapshot.into_project();
@@ -317,5 +330,24 @@ mod tests {
             Some(42),
             "累计创作时长应取快照时刻"
         );
+        // 工程范围记忆：洋葱皮显示范围必须落进 metadata.toml 的 [settings] 段
+        assert_eq!(
+            project
+                .metadata
+                .settings
+                .as_ref()
+                .and_then(|s| s.onion_skin_mode.as_deref()),
+            Some("previous_track"),
+            "洋葱皮显示范围必须随工程保存（工程范围记忆）"
+        );
+        // 本任务只接管这一项：其余 [settings] 字段必须保持 None（不越权写别人字段）
+        let settings = project
+            .metadata
+            .settings
+            .as_ref()
+            .expect("settings 段应存在");
+        assert!(settings.auto_scroll_mode.is_none());
+        assert!(settings.theme.is_none());
+        assert!(settings.enable_256key.is_none());
     }
 }

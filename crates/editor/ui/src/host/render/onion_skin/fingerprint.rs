@@ -32,6 +32,25 @@ pub(crate) struct OnionSkinFingerprint {
     ///
     /// 变化只切显示语义 → `ViewState` uniform 零重传（不重建会话、不卸载数据）。
     pub(super) onion_visible: bool,
+    /// 洋葱皮显示范围模式（工具栏下拉：全部 / 上一个 / 下一个 / 指定）
+    ///
+    /// 与 `onion_visible` 正交：开关管显不显，模式管显哪些轨。模式变化同样只切
+    /// 显示语义（`ViewState`），所以指纹里必须带上它，否则切了模式画面不动。
+    pub(super) onion_mode: lumino_ui_core::onion_skin_mode::OnionSkinMode,
+}
+
+impl OnionSkinFingerprint {
+    /// 解析当前显示范围（track_enc 闭区间；`first > last` = 空区间）
+    ///
+    /// 单一解析点：GPU 下发与决策比较都用它，避免两处算出不同区间。
+    pub(super) fn onion_range(&self) -> (u32, u32) {
+        super::onion_track_range(
+            self.onion_mode,
+            self.current_track,
+            self.track_count,
+            self.onion_visible,
+        )
+    }
 }
 
 impl OnionSkinState {
@@ -82,6 +101,7 @@ impl OnionSkinState {
                 .map(|doc| doc.track_count())
                 .unwrap_or(0),
             onion_visible: host.onion_skin_visible(),
+            onion_mode: host.onion_skin_mode(),
         }
     }
 }

@@ -5,7 +5,7 @@
 //!
 //! DEC-001：已 Bake 形状不提供任何切割入口（音符是唯一权威）。
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 use crate::Editor;
 

@@ -5,7 +5,7 @@
 //! 所有音符数据均以 `MidiDocument` 为唯一权威源（2026-08 单一权威源改造），
 //! 不再经 `NoteView` 等派生视图承载身份字段。
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 use super::Editor;
 

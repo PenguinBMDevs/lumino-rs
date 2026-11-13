@@ -81,7 +81,7 @@ pub use project::save_project_to_folder_with_entry;
 pub use project::{
     LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
-    metadata::ProjectMetadata,
+    metadata::{ProjectMetadata, SettingsMetadata},
     track::{LmtrackData, TrackMeta},
 };
 /// 从磁盘加载 Lumino 工程文件（兼容旧版 LMPJ）

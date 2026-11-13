@@ -56,12 +56,15 @@ struct CameraUniform {
     _padding: vec2<f32>,
 }
 
+/// 视图状态：当前音轨（track_idx+1）+ 洋葱皮开关 + 洋葱皮显示范围 + 静音位图
 struct ViewState {
     current_track: u32,
     /// 洋葱皮（非主音轨实例）是否可见：0 = 隐藏（工具栏开关默认关闭）
     onion_visible: u32,
-    _pad1: u32,
-    _pad2: u32,
+    /// 洋葱皮显示范围的 track_enc 下界（含）；`first > last` = 空区间
+    onion_first: u32,
+    /// 洋葱皮显示范围的 track_enc 上界（含）
+    onion_last: u32,
     muted_bits: array<vec4<u32>, 512>,
 }
 
@@ -122,8 +125,10 @@ fn is_muted_track(track_enc: u32) -> bool {
 
 /// 洋葱皮（非主音轨实例）是否可见（工具栏全局开关，与横向版同语义）：
 /// 关闭时只画主音轨，其余轨实例退化零面积几何，数据仍常驻显存。
-fn onion_enabled() -> bool {
-    return view_state.onion_visible != 0u;
+fn onion_enabled(track_enc: u32) -> bool {
+    return view_state.onion_visible != 0u
+        && track_enc >= view_state.onion_first
+        && track_enc <= view_state.onion_last;
 }
 
 @vertex
@@ -160,7 +165,7 @@ fn vs_main(
     let is_main = track_enc == view_state.current_track;
     // 洋葱皮开关关闭 / 该轨静音 → 非主音轨不绘制（与横向版同口径）
     let is_muted = is_muted_track(track_enc);
-    let show = is_main || (onion_enabled() && !is_muted);
+    let show = is_main || (onion_enabled(track_enc) && !is_muted);
 
     // 稳定深度（与绘制顺序无关，语义见文件头）：
     //   主音轨 → 主音轨区（最前，覆盖全部洋葱皮）；

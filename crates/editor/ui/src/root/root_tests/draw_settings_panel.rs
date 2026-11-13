@@ -46,7 +46,14 @@ fn test_gear_emits_open_dialog_window_event() {
         root.toolbar.tool_panel_open,
         "请求开窗后悬浮条应保持打开（齿轮不托管对话框开关）"
     );
-    assert!(root.view_draw_toolbar().is_some(), "悬浮条仍应正常渲染");
+    // 悬浮条现在由 egui 绘制（`chrome::tool_panel`）：用主窗口 Root 验证模型可构建
+    // （本用例的 Root 是对话框窗口，`egui_chrome_model` 按设计不产出主窗外壳）。
+    let mut main = Root::new(&lumino_core::storage::config::UiConfig::default());
+    main.toolbar.tool_panel_open = true;
+    assert!(
+        main.egui_chrome_model().tool_panel.is_some(),
+        "悬浮条仍应正常渲染（egui 模型）"
+    );
 }
 
 /// DRAW-033B0：形状下拉里的抽屉入口必须发独立窗口事件，而不是主窗口浮层。
@@ -172,7 +179,7 @@ fn test_draw_settings_dialog_root_renders() {
         "对话框类型应为 DrawSettings（否则 overlay 会落到空容器分支）"
     );
 
-    let _element = root.view();
+    let _element = root.egui_chrome_model();
 }
 
 /// 场景 5：对话框内「关闭」→ `DialogResult::Cancel`（Runner 据此收尾关窗）。

@@ -5,8 +5,8 @@
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
-use iced_core::Point;
 use lumino_message::Tool;
+use lumino_ui_core::geom::Point;
 
 /// 测试音符选中功能
 #[test]
@@ -133,7 +133,7 @@ fn test_track_switching_does_not_set_notes_changed() {
 #[test]
 fn test_delete_after_box_select() {
     let mut editor = Editor::new();
-    use iced_core::Point;
+    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::EditorAction;
 
     // 3 个音符：tick 0/480/960，key 60/64/67
@@ -198,7 +198,7 @@ fn test_delete_after_box_select() {
 #[test]
 fn test_delete_after_box_select_with_hover_on_selected_note() {
     let mut editor = Editor::new();
-    use iced_core::Point;
+    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::EditorAction;
 
     test_helpers::seed_notes(

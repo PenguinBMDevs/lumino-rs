@@ -26,7 +26,12 @@ fn test_move_and_copy_both_pending_commit_in_correct_order() {
     editor.pending_copy_drag_state = Some(copy_drag);
 
     // 点击空白处：flush → 先 drain 移动异步提交，再提交复制
-    editor.handle_tool_pressed(iced_core::Point::new(9999.0, 9999.0), false, 9999.0, 0);
+    editor.handle_tool_pressed(
+        lumino_ui_core::geom::Point::new(9999.0, 9999.0),
+        false,
+        9999.0,
+        0,
+    );
 
     let data = &editor.editor_state.data;
     // 音符 A 已移动（tick 0 → 100），B 保持（240），副本 B'（290）已写入

@@ -233,7 +233,7 @@ fn test_button_rects_none_without_strokes_or_wrong_tool() {
 //
 // BUG：`Program::draw` 的 bounds.position 是画布组件在窗口里的偏移
 // （左侧栏宽 + 音轨列表、工具栏高 + 标题栏），而帧内绘制坐标是画布局部坐标
-// （iced 在调用前 `with_translation(bounds.x, bounds.y)`）。旧实现把 bounds 当
+// （旧版 在调用前 `with_translation(bounds.x, bounds.y)`）。旧实现把 bounds 当
 // 局部矩形用 → 可见窗口整体右移 offset_x、下移 offset_y → 笔画左上角被裁掉。
 
 /// 真实布局偏移：左侧栏 240px + 标题栏 30px + 工具栏 54px = (240, 84)

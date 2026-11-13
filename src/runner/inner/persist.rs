@@ -254,7 +254,7 @@ impl RunnerInner {
                 display_or_empty(&new.editing.program_font_path),
             );
             // UI-001：字体在启动时经 lumino_ui_core::font::init 解析一次，重启程序后生效；
-            // 不再重建窗口（重建成本高且主窗口会闪烁，iced 0.14 的 Renderer 默认字体不可热更），
+            // 不再重建窗口（重建成本高且主窗口会闪烁，旧版 0.14 的 Renderer 默认字体不可热更），
             // 设置面板内有「字体修改将在重启程序后生效」的显式提示。
         }
         if diff.language_changed {
@@ -264,7 +264,7 @@ impl RunnerInner {
                 new.display.language,
                 new.display.language_preference,
             );
-            // macOS 原生菜单是 NSMenu（iced 不参与绘制），启动时静态构建、语言变更后
+            // macOS 原生菜单是 NSMenu（旧版 不参与绘制），启动时静态构建、语言变更后
             // 必须显式重建，否则菜单栏会停在旧语言（UI-018 缺陷 D-1）。
             #[cfg(target_os = "macos")]
             if let Err(e) = crate::platform::macos::init(new.display.language) {

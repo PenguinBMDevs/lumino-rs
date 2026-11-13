@@ -202,10 +202,12 @@ fn test_settings_roundtrip() {
 
 #[test]
 fn test_settings_unknown_ids_fall_back_to_default() {
-    let mut settings = lumino_core::I2mSettings::default();
-    settings.palette = "no_such_palette".into();
-    settings.key_mode = "no_such_mode".into();
-    settings.blend = "no_such_blend".into();
+    let settings = lumino_core::I2mSettings {
+        palette: "no_such_palette".into(),
+        key_mode: "no_such_mode".into(),
+        blend: "no_such_blend".into(),
+        ..lumino_core::I2mSettings::default()
+    };
     let cfg = I2mConfig::from_settings(&settings);
     assert_eq!(cfg.palette_index, 0);
     assert_eq!(cfg.key_mode_index, 0);
@@ -214,12 +216,14 @@ fn test_settings_unknown_ids_fall_back_to_default() {
 
 #[test]
 fn test_settings_values_are_clamped() {
-    let mut settings = lumino_core::I2mSettings::default();
-    settings.start_key = 200;
-    settings.ticks_per_pixel = 0;
-    settings.color_count = 0;
-    settings.brightness = 999;
-    settings.sharpen = -10;
+    let settings = lumino_core::I2mSettings {
+        start_key: 200,
+        ticks_per_pixel: 0,
+        color_count: 0,
+        brightness: 999,
+        sharpen: -10,
+        ..lumino_core::I2mSettings::default()
+    };
     let cfg = I2mConfig::from_settings(&settings);
     assert_eq!(cfg.start_key, 127);
     assert_eq!(cfg.ticks_per_pixel, 1);

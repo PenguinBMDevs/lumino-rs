@@ -10,11 +10,11 @@
 //! `EditState::Selecting`，不耦合音符选择/选择框机制。
 
 use crate::Editor;
-use iced_core::Point;
 use lumino_editor_state::editor_state::hit_test;
 use lumino_editor_state::{
     EditState, I2mInteraction, ImageToMidiMode, RegionRect, SelectionHitType,
 };
+use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 放置模式下的鼠标按下处理

@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use iced_winit::winit;
+use winit;
 
 use lumino_core::storage::config::OnionSkinBackend;
 
@@ -23,23 +23,15 @@ impl Host {
     ///
     /// `needs_renderers` 仅主窗口为 `true`；dialog/progress 等轻量窗口不需要
     /// 音符/网格渲染器，跳过创建可显著降低初始化开销。
-    ///
-    /// `use_shared_engine` 为 `true` 时复用对话框共享的 iced Engine；
-    /// 主窗口 / progress 窗口保持独立 Engine 以保留 WindowNotifier。
     fn create_render_and_window_context(
         window: Arc<winit::window::Window>,
         width: u32,
         height: u32,
-        ui_config: &config::UiConfig,
+        _ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
         needs_renderers: bool,
-        use_shared_engine: bool,
     ) -> (RenderContext, WindowContext) {
         let viewport = viewport_for(width, height, window.scale_factor());
-
-        // 全局字体入口（UI-001）：启动解析一次（path 优先 → name → 默认），
-        // 各窗口/组件统一从 lumino_ui_core::font 取字体（字体切换重启生效）
-        let font = lumino_ui_core::font::init(ui_config);
 
         let note_renderer = needs_renderers.then(|| {
             lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format, gfx.epoch())
@@ -49,17 +41,9 @@ impl Host {
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
-            adapter: gfx.adapter.clone(),
             epoch: gfx.epoch(),
         };
-        let render_ctx = RenderContext::new(
-            &wgpu_resources,
-            viewport,
-            note_renderer,
-            font,
-            &window,
-            use_shared_engine,
-        );
+        let render_ctx = RenderContext::new(&wgpu_resources, viewport, note_renderer);
 
         (render_ctx, WindowContext::new(window))
     }
@@ -88,7 +72,10 @@ impl Host {
             render_ctx,
             window_ctx,
             root,
-            events: Vec::new(),
+            egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
+            egui_blocked: Vec::new(),
+            canvas_input: lumino_ui_editor::grid::GridInteractionState::default(),
+            egui_editor_texture: None,
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
@@ -147,13 +134,53 @@ impl Host {
             ui_config,
             gfx,
             !is_progress,
-            false,
         );
-        let root = if is_progress {
+        let mut root = if is_progress {
             root::Root::new_progress(&ui_config.theme, ui_config)
         } else {
             root::Root::new(ui_config)
         };
+        // 调试开关：启动即打开混音台（`LUMINO_MIXER_OPEN=1`）。
+        // 用途：路由栏底部入口在部分环境下收不到点击，无法稳定进入面板做真机对照。
+        if std::env::var("LUMINO_MIXER_OPEN").is_ok_and(|v| v != "0") {
+            root.mixer_panel.open = true;
+            root.mixer_panel.maximized = true;
+        }
+        // 调试开关：启动即进入渲染器入口面板（`LUMINO_RENDERER_PANEL=1`）。
+        // 用途：验证 egui 自算几何的轨道占位 / 16:9 预览 / 时间轴 / 导出设置。
+        if std::env::var("LUMINO_RENDERER_PANEL").is_ok_and(|v| v != "0") {
+            root.sidebar.active_group = Some(lumino_ui_core::sidebar_event::GroupId::Renderer);
+            root.sidebar.piano_roll_visible = false;
+        }
+        // 调试开关：启动即打开遮罩参数面板（`LUMINO_MASK_PANEL=1`）。
+        // 用途：验证 egui 面板的绘制与命中（真机入口需要先选中形状再右键）。
+        if std::env::var("LUMINO_MASK_PANEL").is_ok_and(|v| v != "0") {
+            root.mask_panel.show(
+                lumino_ui_editor::MaskEditTarget::Pending { index: 0 },
+                None,
+                lumino_ui_core::geom::Point::new(600.0, 300.0),
+            );
+        }
+        // 调试开关：启动即弹三条 Toast（`LUMINO_TOAST_DEMO=1`）。
+        // 用途：验证 egui 右下角 Toast 叠加层（正常入口需要触发保存/错误等事件）。
+        if std::env::var("LUMINO_TOAST_DEMO").is_ok_and(|v| v != "0") {
+            root.toast
+                .push(crate::toast::ToastLevel::Info, "信息：Toast 渲染正常");
+            root.toast
+                .push(crate::toast::ToastLevel::Warning, "警告：这是一条警告");
+            root.toast
+                .push(crate::toast::ToastLevel::Error, "错误：这是一条错误");
+        }
+        // 调试开关：启动即进入全屏瀑布流模式（`LUMINO_START_WATERFALL=1`）。
+        // 用途：验证 wgpu 离屏纹理经 egui 外部纹理铺放的链路（无法用点击稳定进入时）。
+        if std::env::var("LUMINO_START_WATERFALL").is_ok_and(|v| v != "0") {
+            root.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
+        }
+        // 调试开关：启动即弹出素材删除确认（无真实素材时名字为空）。
+        if std::env::var("LUMINO_MATERIAL_DELETE").is_ok_and(|v| v != "0") {
+            root.right_sidebar.materials.pending_delete = Some(0);
+            root.right_sidebar.materials.pending_delete_name = Some("钢琴音色.json".to_string());
+        }
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 
@@ -166,9 +193,8 @@ impl Host {
         gfx: &lumino_gfx::Context,
         dialog_type: crate::state::root_state::DialogType,
     ) -> Self {
-        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
-            window, width, height, ui_config, gfx, false, true,
-        );
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = {
             puffin::profile_scope!("dialog_root_new");
             root::Root::new_dialog_with_config(&ui_config.theme, dialog_type, ui_config)
@@ -181,7 +207,7 @@ impl Host {
 
     /// 创建设备检查警告窗口 Host
     ///
-    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 iced Engine。
+    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 旧版 Engine。
     pub fn new_device_warning(
         window: Arc<winit::window::Window>,
         width: u32,
@@ -190,9 +216,8 @@ impl Host {
         gfx: &lumino_gfx::Context,
         detail: &str,
     ) -> Self {
-        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
-            window, width, height, ui_config, gfx, false, false,
-        );
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = root::Root::new_device_warning(&ui_config.theme, ui_config, detail.to_string());
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
@@ -205,9 +230,8 @@ impl Host {
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
     ) -> Self {
-        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
-            window, width, height, ui_config, gfx, false, true,
-        );
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = {
             puffin::profile_scope!("settings_root_new");
             root::Root::new_settings_dialog(&ui_config.theme, ui_config)

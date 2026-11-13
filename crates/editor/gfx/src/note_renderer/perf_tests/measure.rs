@@ -36,7 +36,7 @@ pub(super) fn measure(gpu: &BenchGpu, count: usize, zoomed: bool, iters: usize) 
         crate::GpuEpoch::INITIAL,
     );
     // 主音轨 = track_enc 1；无静音轨（与「主轨可见 + 洋葱皮显示」生产态一致）
-    renderer.set_view_state(&gpu.queue, 1, &[], true);
+    renderer.set_view_state(&gpu.queue, 1, &[], true, (1, u32::MAX));
     renderer.upload_instances(&notes, &gpu.device, &gpu.queue);
     let camera = if zoomed {
         zoomed_camera()

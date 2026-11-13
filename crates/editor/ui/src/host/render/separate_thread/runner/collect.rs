@@ -67,14 +67,14 @@ impl Host {
             palette.base.color
         };
         let arr_measure_line = if is_light {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.8,
-                ..iced_core::Color::BLACK
+                ..lumino_ui_core::geom::Color::BLACK
             }
         } else {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.8,
-                ..iced_core::Color::WHITE
+                ..lumino_ui_core::geom::Color::WHITE
             }
         };
         let colors = ArrangementViewColors {
@@ -179,8 +179,10 @@ impl Host {
                 th,
                 tbo,
             );
-            self.root.arrangement_view.viewport.canvas_size = geometry.size;
-            self.root.arrangement_view.viewport.canvas_offset = geometry.offset;
+            self.root.arrangement_view.viewport.canvas_size =
+                lumino_message::types::geometry::Point2::new(geometry.size.x, geometry.size.y);
+            self.root.arrangement_view.viewport.canvas_offset =
+                lumino_message::types::geometry::Point2::new(geometry.offset.x, geometry.offset.y);
         }
 
         let (mut scroll, zoom) = if self.root.is_arrangement_mode() {

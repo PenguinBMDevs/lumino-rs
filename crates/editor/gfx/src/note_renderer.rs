@@ -170,16 +170,20 @@ impl NoteRenderer {
     /// `muted_tracks` 为静音音轨索引列表（shader 中静音轨仅主轨身份时显示），
     /// `onion_visible` 为洋葱皮全局开关（`false` → 只有主音轨落到视口内，
     /// 其余轨实例退化零面积几何，数据仍常驻显存）。
+    /// `onion_range` 为洋葱皮显示范围的 track_enc 闭区间
+    /// （`(first, last)`，`first > last` = 空区间），由 UI 按工具栏下拉模式解析。
     pub fn set_view_state(
         &self,
         queue: &wgpu::Queue,
         current_track: u32,
         muted_tracks: &[usize],
         onion_visible: bool,
+        onion_range: (u32, u32),
     ) {
         let mut state = crate::note_renderer::types::ViewState::new();
         state.current_track = current_track;
         state.set_onion_visible(onion_visible);
+        state.set_onion_range(onion_range.0, onion_range.1);
         for &track in muted_tracks {
             state.set_muted(track, true);
         }

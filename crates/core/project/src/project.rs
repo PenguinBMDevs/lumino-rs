@@ -22,7 +22,7 @@ pub use deleted_track::{
     DeletedNote, DeletedTrackData, DeletedTrackEntry, DeletedTrackMetadata, delete_permanently,
     list_deleted_tracks, load_deleted_track, save_deleted_track,
 };
-pub use metadata::ProjectMetadata;
+pub use metadata::{ProjectMetadata, SettingsMetadata};
 pub use track::{LmtrackData, LmtrackHeader, TrackMeta, TrackVisibilitySer};
 
 use std::path::PathBuf;

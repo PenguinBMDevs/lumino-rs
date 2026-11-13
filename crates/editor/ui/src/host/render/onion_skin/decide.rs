@@ -54,6 +54,12 @@ impl OnionSkinState {
         if fp.onion_visible != self.last_onion_visible {
             return OnionSkinAction::ViewState;
         }
+        // 显示范围（全部 / 上一个 / 下一个 / 指定）变化：与开关同属「只切显示语义」
+        // → 同样只发 `ViewState`，GPU 数据零重传。放在 CPU 分支之前，理由同上：
+        // 切回 GPU 后端时范围必须已经是最新值。
+        if fp.onion_range() != self.last_onion_range {
+            return OnionSkinAction::ViewState;
+        }
         if self.cpu_current_only {
             return self.decide_action_cpu(fp);
         }

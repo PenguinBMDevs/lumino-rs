@@ -193,7 +193,23 @@ pub fn execute_render_pass(
             ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
 
         // 绘制背景网格（纵向 wgpu 转置版：键盘在底部，Key 范围八度分割更明显）
-        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+        //
+        // 叠加层接管卷帘骨架时（`skip_roll_chrome`）：网格绘制的裁剪区去掉
+        // 键盘列与标尺行，这两块由 egui 用同一套主题色绘制（键盘 / 标尺），
+        // 中央网格线仍由本通道绘制，音符不受影响。
+        let grid_scissor = skip_roll_chrome_scissor(
+            (scissor_x, scissor_y, scissor_width, scissor_height),
+            params.keyboard_width,
+            params.ruler_height,
+            scale,
+            params.skip_roll_chrome && !params.is_vertical_roll,
+        );
+        render_pass.set_scissor_rect(
+            grid_scissor.0,
+            grid_scissor.1,
+            grid_scissor.2,
+            grid_scissor.3,
+        );
         if params.is_vertical_roll {
             frame.renderers.vertical_grid.draw(&mut render_pass, 1);
         } else {
@@ -285,7 +301,10 @@ pub fn execute_render_pass(
         }
 
         // 绘制标尺（纵向已由 wgpu 网格 + Canvas 小节号文本接管，跳过横向 RulerRenderer）
-        if !params.is_vertical_roll {
+        //
+        // 叠加层接管骨架时标尺由 egui 绘制（`skip_roll_chrome`），本通道不再提交
+        // 标尺实例，避免同一行像素被两套渲染叠加。
+        if !params.is_vertical_roll && !params.skip_roll_chrome {
             let ruler_count = frame.renderers.ruler.instance_count();
             if ruler_count > 0 {
                 render_pass.set_scissor_rect(0, 0, width, height);
@@ -343,5 +362,62 @@ pub fn update_stats(
         }
         *frame_count = 0;
         *fps_update_time = Instant::now();
+    }
+}
+
+/// 叠加层接管卷帘骨架时的网格裁剪区：去掉键盘列（左）与标尺行（上）。
+///
+/// `scissor` 为 `(x, y, w, h)`（物理像素）；`skip = false` 时原样返回。
+/// 平移量按 `scale_factor` 换算并夹紧到原裁剪区内，避免负宽高。
+fn skip_roll_chrome_scissor(
+    scissor: (u32, u32, u32, u32),
+    keyboard_width: f32,
+    ruler_height: f32,
+    scale_factor: f32,
+    skip: bool,
+) -> (u32, u32, u32, u32) {
+    if !skip {
+        return scissor;
+    }
+    let (x, y, w, h) = scissor;
+    let dx = ((keyboard_width * scale_factor) as u32).min(w);
+    let dy = ((ruler_height * scale_factor) as u32).min(h);
+    (x + dx, y + dy, w - dx, h - dy)
+}
+
+#[cfg(test)]
+mod scissor_tests {
+    use super::skip_roll_chrome_scissor;
+
+    #[test]
+    fn skip_disabled_is_passthrough() {
+        let scissor = (10, 20, 300, 200);
+        assert_eq!(
+            skip_roll_chrome_scissor(scissor, 120.0, 24.0, 1.0, false),
+            scissor
+        );
+    }
+
+    #[test]
+    fn skip_removes_keyboard_column_and_ruler_row() {
+        // 1x：键盘 120、标尺 24，画布从 (248, 102) 起。
+        assert_eq!(
+            skip_roll_chrome_scissor((248, 102, 1000, 800), 120.0, 24.0, 1.0, true),
+            (368, 126, 880, 776)
+        );
+        // 1.25x：按物理像素缩放。
+        assert_eq!(
+            skip_roll_chrome_scissor((310, 128, 1250, 1000), 120.0, 24.0, 1.25, true),
+            (460, 158, 1100, 970)
+        );
+    }
+
+    #[test]
+    fn skip_clamps_to_original_scissor() {
+        // 键盘 / 标尺比画布还大时不得产生负宽高。
+        assert_eq!(
+            skip_roll_chrome_scissor((0, 0, 100, 40), 999.0, 999.0, 1.0, true),
+            (100, 40, 0, 0)
+        );
     }
 }

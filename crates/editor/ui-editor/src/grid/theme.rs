@@ -1,6 +1,5 @@
 //! 主题颜色工具
 
-use iced_core::Border;
 use lumino_ui_core::Theme;
 
 /// 主题扩展工具 trait
@@ -9,34 +8,34 @@ pub trait ThemeExt {
     fn is_light(&self) -> bool;
 
     /// 获取键盘背景色
-    fn keyboard_background_color(&self) -> iced_core::Color;
+    fn keyboard_background_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取白键颜色
-    fn white_key_color(&self) -> iced_core::Color;
+    fn white_key_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取黑键颜色
-    fn black_key_color(&self) -> iced_core::Color;
+    fn black_key_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取边框颜色
-    fn border_color(&self) -> iced_core::Color;
+    fn border_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取标尺背景色
-    fn ruler_background_color(&self) -> iced_core::Color;
+    fn ruler_background_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取文本颜色（亮色=黑，暗色=白）
-    fn text_color(&self) -> iced_core::Color;
+    fn text_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取小节线颜色
-    fn bar_line_color(&self) -> iced_core::Color;
+    fn bar_line_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取拍线颜色
-    fn beat_line_color(&self) -> iced_core::Color;
+    fn beat_line_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取半拍线颜色
-    fn half_beat_line_color(&self) -> iced_core::Color;
+    fn half_beat_line_color(&self) -> lumino_ui_core::geom::Color;
 
     /// 获取网格线颜色
-    fn grid_line_color(&self) -> iced_core::Color;
+    fn grid_line_color(&self) -> lumino_ui_core::geom::Color;
 }
 
 impl ThemeExt for Theme {
@@ -47,7 +46,7 @@ impl ThemeExt for Theme {
         self.extended_palette().background.weakest.color.r > 0.5
     }
 
-    fn keyboard_background_color(&self) -> iced_core::Color {
+    fn keyboard_background_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::KEYBOARD_BG;
         }
@@ -59,7 +58,7 @@ impl ThemeExt for Theme {
         }
     }
 
-    fn white_key_color(&self) -> iced_core::Color {
+    fn white_key_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::WHITE_KEY;
         }
@@ -71,7 +70,7 @@ impl ThemeExt for Theme {
         }
     }
 
-    fn black_key_color(&self) -> iced_core::Color {
+    fn black_key_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::BLACK_KEY;
         }
@@ -83,7 +82,7 @@ impl ThemeExt for Theme {
         }
     }
 
-    fn border_color(&self) -> iced_core::Color {
+    fn border_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::BORDER;
         }
@@ -95,7 +94,7 @@ impl ThemeExt for Theme {
         }
     }
 
-    fn ruler_background_color(&self) -> iced_core::Color {
+    fn ruler_background_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::RULER_BG;
         }
@@ -107,87 +106,82 @@ impl ThemeExt for Theme {
         }
     }
 
-    fn text_color(&self) -> iced_core::Color {
+    fn text_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::TEXT;
         }
         if self.is_light() {
-            iced_core::Color::BLACK
+            lumino_ui_core::geom::Color::BLACK
         } else {
-            iced_core::Color::WHITE
+            lumino_ui_core::geom::Color::WHITE
         }
     }
 
-    fn bar_line_color(&self) -> iced_core::Color {
+    fn bar_line_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::BAR_LINE;
         }
         if self.is_light() {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.8,
-                ..iced_core::Color::BLACK
+                ..lumino_ui_core::geom::Color::BLACK
             }
         } else {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.8,
-                ..iced_core::Color::WHITE
+                ..lumino_ui_core::geom::Color::WHITE
             }
         }
     }
 
-    fn beat_line_color(&self) -> iced_core::Color {
+    fn beat_line_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::BEAT_LINE;
         }
         if self.is_light() {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.4,
-                ..iced_core::Color::BLACK
+                ..lumino_ui_core::geom::Color::BLACK
             }
         } else {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.4,
-                ..iced_core::Color::WHITE
+                ..lumino_ui_core::geom::Color::WHITE
             }
         }
     }
 
-    fn half_beat_line_color(&self) -> iced_core::Color {
+    fn half_beat_line_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::HALF_BEAT_LINE;
         }
         if self.is_light() {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.2,
-                ..iced_core::Color::BLACK
+                ..lumino_ui_core::geom::Color::BLACK
             }
         } else {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.2,
-                ..iced_core::Color::WHITE
+                ..lumino_ui_core::geom::Color::WHITE
             }
         }
     }
 
-    fn grid_line_color(&self) -> iced_core::Color {
+    fn grid_line_color(&self) -> lumino_ui_core::geom::Color {
         if lumino_ui_core::theme::is_high_contrast() {
             return lumino_ui_core::theme::hc::GRID_LINE;
         }
         if self.is_light() {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.1,
-                ..iced_core::Color::BLACK
+                ..lumino_ui_core::geom::Color::BLACK
             }
         } else {
-            iced_core::Color {
+            lumino_ui_core::geom::Color {
                 a: 0.1,
-                ..iced_core::Color::WHITE
+                ..lumino_ui_core::geom::Color::WHITE
             }
         }
     }
-}
-
-/// 创建标准边框样式
-pub fn create_border_style(color: iced_core::Color) -> Border {
-    Border::default().width(1.0).color(color)
 }

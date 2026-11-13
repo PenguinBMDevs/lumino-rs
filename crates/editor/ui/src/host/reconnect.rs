@@ -18,9 +18,8 @@ impl Host {
 
     /// 重连：把本窗口重绑到新 device（见 `RenderContext::rebind_gpu`）。
     pub fn rebind_gpu(&mut self, epoch: GpuEpoch, gpu: &SharedGpu) {
-        self.render_ctx
-            .rebind_gpu(epoch, gpu, &self.window_ctx.window);
-        // REND-019：重绑后强制下一帧全量重建 UI（渲染器/树缓存均已换代）
+        self.render_ctx.rebind_gpu(epoch, gpu);
+        // REND-019：重绑后强制下一帧全量重建（GPU 缓存均已换代）
         self.ui_dirty = true;
     }
 

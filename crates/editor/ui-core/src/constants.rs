@@ -51,10 +51,10 @@ pub mod editor {
         /// 故给音高轴一个更高的专用上限，保证键盘可放大到填满并保留缩放手感。
         pub const MAX_PITCH_ZOOM: f32 = 48.0;
 
-        /// 走带视图 X 轴最小缩放
-        pub const MIN_ARRANGEMENT_ZOOM_X: f32 = 0.01;
-        /// 走带视图 X 轴最大缩放
-        pub const MAX_ARRANGEMENT_ZOOM_X: f32 = 10.0;
+        /// 走带视图 X 轴最大缩放（单一来源：`lumino-arrangement-core`）
+        pub use lumino_arrangement_core::viewport::MAX_ARRANGEMENT_ZOOM_X;
+        /// 走带视图 X 轴最小缩放（单一来源：`lumino-arrangement-core`）
+        pub use lumino_arrangement_core::viewport::MIN_ARRANGEMENT_ZOOM_X;
         /// 走带视图 Y 轴最小缩放
         pub const MIN_ARRANGEMENT_ZOOM_Y: f32 = 0.2;
         /// 走带视图 Y 轴最大缩放
@@ -129,12 +129,12 @@ pub mod editor {
     pub const SELECTION_BOX_STROKE_WIDTH: f32 = 3.0;
 
     /// 框选框统一边框颜色（灰色）
-    pub const SELECTION_BOX_STROKE_COLOR: iced_core::Color =
-        iced_core::Color::from_rgb(0.62, 0.62, 0.62);
+    pub const SELECTION_BOX_STROKE_COLOR: lumino_ui_core::geom::Color =
+        lumino_ui_core::geom::Color::from_rgb(0.62, 0.62, 0.62);
 
     /// 框选框统一填充颜色（比边框颜色浅一点的灰色 + 半透明）
-    pub const SELECTION_BOX_FILL_COLOR: iced_core::Color =
-        iced_core::Color::from_rgba(0.78, 0.78, 0.78, 0.35);
+    pub const SELECTION_BOX_FILL_COLOR: lumino_ui_core::geom::Color =
+        lumino_ui_core::geom::Color::from_rgba(0.78, 0.78, 0.78, 0.35);
 
     /// 时间轴标尺高度（小节号显示区域）
     pub const RULER_HEIGHT: f32 = 24.0;

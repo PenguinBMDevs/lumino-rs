@@ -1,4 +1,4 @@
-use iced_core::Size;
+use lumino_ui_core::geom::Size;
 
 /// 渲染数据
 pub struct RenderData {
@@ -27,8 +27,8 @@ pub struct RenderData {
 
 /// 视口信息
 pub struct ViewportInfo {
-    pub canvas_offset: iced_core::Point,
-    pub canvas_size: iced_core::Point,
+    pub canvas_offset: lumino_ui_core::geom::Point,
+    pub canvas_size: lumino_ui_core::geom::Point,
 }
 
 /// 从主题提取的网格渲染颜色

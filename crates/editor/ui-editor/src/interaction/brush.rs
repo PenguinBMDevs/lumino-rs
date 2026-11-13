@@ -17,7 +17,7 @@
 //! Conductor 音轨（track 0）：禁止落笔（与曲线工具同源守卫，`pressed.rs` 亦有拦截）。
 
 use crate::{Editor, HitType};
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 mod cells;
 mod confirm;
@@ -79,10 +79,10 @@ impl Editor {
     /// 取色单源 = `current_track_color_f32(doc_track)`，与卷帘音符实例着色同源，
     /// 因此调色板变更后下一次重绘即变色（无需缓存失效）。
     /// 预览按"解析后的音轨"直接取色（层号已在 `brush_pending_notes`/行段构建时解析）。
-    pub(crate) fn brush_track_color(&self, track: usize) -> iced_core::Color {
+    pub(crate) fn brush_track_color(&self, track: usize) -> lumino_ui_core::geom::Color {
         let c = lumino_extras::palette::current_track_color_f32(track);
         darken(
-            iced_core::Color::from_rgba(c[0], c[1], c[2], c[3]),
+            lumino_ui_core::geom::Color::from_rgba(c[0], c[1], c[2], c[3]),
             LAYER_DARKEN,
         )
     }
@@ -233,8 +233,11 @@ impl Editor {
 }
 
 /// 层颜色加深（"加深 40%" = 各通道 × 0.6，alpha 保持）
-pub(crate) fn darken(color: iced_core::Color, factor: f32) -> iced_core::Color {
-    iced_core::Color {
+pub(crate) fn darken(
+    color: lumino_ui_core::geom::Color,
+    factor: f32,
+) -> lumino_ui_core::geom::Color {
+    lumino_ui_core::geom::Color {
         r: (color.r * factor).clamp(0.0, 1.0),
         g: (color.g * factor).clamp(0.0, 1.0),
         b: (color.b * factor).clamp(0.0, 1.0),

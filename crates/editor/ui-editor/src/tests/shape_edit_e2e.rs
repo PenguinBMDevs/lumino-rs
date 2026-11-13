@@ -6,9 +6,9 @@
 use crate::Editor;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
-use iced_core::Point;
 use lumino_editor_state::{DrawnShapeSource, ShapeKind, ShapeNote};
 use lumino_message::Tool;
+use lumino_ui_core::geom::Point;
 use lumino_ui_core::message::{EditorAction, Point2};
 
 /// 已 Bake 矩形（200..1200 tick × key 60..64）+ 一条对应文档音符

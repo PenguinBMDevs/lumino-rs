@@ -2,8 +2,8 @@
 //!
 //! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
 
-use iced_core::Point;
 use lumino_editor_state::editor_state::{HandleKind, Zoom, box_handles};
+use lumino_ui_core::geom::Point;
 
 use crate::Editor;
 

@@ -73,8 +73,6 @@ pub struct VideoExportDialogState {
     // ── 计数器设置（参考 Zenith-MIDI NoteCountRender 设置面板） ──
     /// 计数器文本模板
     pub counter_text: String,
-    /// 计数器文本模板多行编辑器内容（iced text_editor 状态，绑定 wgpu 渲染器）
-    pub counter_editor: iced_widget::text_editor::Content<iced_wgpu::Renderer>,
     /// 计数器对齐方式（"左上"/"右上"/"左下"/"右下"/"顶部分散"/"底部分散"）
     pub counter_alignment: String,
     /// 计数器字号（像素）
@@ -186,11 +184,6 @@ pub struct VideoExportDialogState {
     pub preview_width: u32,
     /// 预览帧高度
     pub preview_height: u32,
-    /// 缓存的 iced image handle（避免每帧创建唯一 ID 导致 GPU 纹理缓存失效）
-    ///
-    /// `Handle::from_rgba` 每次调用生成唯一 ID，iced_wgpu 对大图（>2MB）走异步上传，
-    /// 每个新 ID 都被视为全新图像重新上传。缓存 handle 后，相同数据复用已上传的纹理。
-    pub cached_image_handle: Option<iced_core::image::Handle>,
 }
 
 impl Default for VideoExportDialogState {
@@ -216,7 +209,6 @@ impl VideoExportDialogState {
             miditrail_z_far: MIDITRAIL_Z_FAR_DEFAULT,
             miditrail_3d_notes: false,
             counter_text: COUNTER_DEFAULT_TEXT.to_string(),
-            counter_editor: iced_widget::text_editor::Content::<iced_wgpu::Renderer>::default(),
             counter_alignment: "左上".to_string(),
             counter_font_size: 40,
             counter_font_mode: "内置点阵".to_string(),
@@ -272,7 +264,6 @@ impl VideoExportDialogState {
             preview_frame: None,
             preview_width: 0,
             preview_height: 0,
-            cached_image_handle: None,
         }
     }
 

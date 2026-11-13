@@ -1,7 +1,7 @@
 //! REND-019 PR-C：重连状态机全迁移路径测试（Mock `ReconnectOps`，无 GPU 依赖）。
 //!
 //! 覆盖（§1.4 S1 的验收口径）：
-//! - 完整成功路径 `Stop → Recreate → Infra → Replay → Iced → Restart → Recovered`；
+//! - 完整成功路径 `Stop → Recreate → Infra → Replay → Legacy → Restart → Recovered`；
 //! - 设备重建连续失败 → 预算耗尽 → `Failed`（且 `on_failed` 恰调用一次）；
 //! - 基础设施步失败 → 整轮降级重试 → 第二轮成功恢复；
 //! - 等待 worker 期间的步进幂等（不重复发起重建）。
@@ -75,8 +75,8 @@ impl ReconnectOps<u32> for MockOps {
         Ok(())
     }
 
-    fn rebuild_iced(&mut self) -> Result<(), String> {
-        self.calls.push("iced");
+    fn rebuild_ui(&mut self) -> Result<(), String> {
+        self.calls.push("Legacy");
         Ok(())
     }
 
@@ -126,7 +126,7 @@ fn test_reconnect_full_success_path() {
             "spawn",
             "install",
             "replay",
-            "iced",
+            "Legacy",
             "restart",
             "recovered"
         ],

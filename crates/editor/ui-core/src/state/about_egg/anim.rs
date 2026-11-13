@@ -130,8 +130,8 @@ impl AboutEggState {
 
     /// 旋转期的尺寸补偿系数（乘在 Svg 的固定边长上）。
     ///
-    /// `iced_widget::svg::Svg` 以「旋转后包围盒」参与 `ContentFit::Contain` 的缩放
-    /// （见 iced 0.14 `svg.rs` 的 `rotation.apply(image_size)`），若不做补偿，logo 在
+    /// 矢量图层 以「旋转后包围盒」参与 `ContentFit::Contain` 的缩放
+    /// （见 旧版 0.14 `svg.rs` 的 `rotation.apply(image_size)`），若不做补偿，logo 在
     /// 旋转过程中会被等比缩小（45° 时约缩到 77%），观感是「转动时周期性一缩一放」。
     /// 这里按 AABB 长边反解，使**绘制尺寸恒定**。
     #[must_use]

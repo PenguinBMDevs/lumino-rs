@@ -27,77 +27,6 @@ fn multi_curve_editor() -> Editor {
     editor
 }
 
-/// 构造两个"近闭合矩形"图形（A：tick 0..4 key 60..61；B：tick 10..14 key 60..61），
-/// 接缝差 1 key → 端点容差补边成环
-fn two_rects_editor(fill: &[(f32, u16)]) -> Editor {
-    let mut editor = Editor::new();
-    editor.editor_state.tool = Tool::Curve;
-    seed_notes(&mut editor, 2, 1, &[]);
-    editor.editor_state.view.snap_precision = 1.0;
-    editor.editor_state.canvas.size_x = 800.0;
-    editor.editor_state.canvas.size_y = 600.0;
-    {
-        let line = &mut editor.editor_state.line_tool;
-        // A
-        line.paths.push(Vec::new());
-        line.push_anchor(0, (0.0, 60.0));
-        line.push_anchor(0, (4.0, 60.0));
-        line.paths.push(Vec::new());
-        line.push_anchor(1, (4.0, 61.0));
-        line.push_anchor(1, (0.0, 61.0));
-        // B
-        line.paths.push(Vec::new());
-        line.push_anchor(2, (10.0, 60.0));
-        line.push_anchor(2, (14.0, 60.0));
-        line.paths.push(Vec::new());
-        line.push_anchor(3, (14.0, 61.0));
-        line.push_anchor(3, (10.0, 61.0));
-        line.add_fill_marks(fill);
-    }
-    editor
-}
-
-/// 带符号环绕数（半开区间，与填充判定一致）
-fn loop_wn(pts: &[(f32, f32)], px: f32, py: f32) -> i32 {
-    let mut wn = 0;
-    for w in pts.windows(2) {
-        let (ax, ay) = w[0];
-        let (bx, by) = w[1];
-        let cross = (bx - ax) * (py - ay) - (px - ax) * (by - ay);
-        if ay <= py {
-            if by > py && cross > 0.0 {
-                wn += 1;
-            }
-        } else if by <= py && cross < 0.0 {
-            wn -= 1;
-        }
-    }
-    wn
-}
-
-/// 模拟 `build_fill_path` 的 NonZero 绕数合计（矩形 +1、反向环 -1、已填环 +1）
-fn render_wn(region: &FillRegion, pt: (f32, f32)) -> i32 {
-    let mut w = 0;
-    if region.has_background {
-        let (min_t, min_k, max_t, max_k) = region.bounds;
-        let rect = [
-            (min_t, min_k),
-            (max_t, min_k),
-            (max_t, max_k),
-            (min_t, max_k),
-            (min_t, min_k),
-        ];
-        w += loop_wn(&rect, pt.0, pt.1);
-        for lp in &region.all_loops {
-            w -= loop_wn(lp, pt.0, pt.1);
-        }
-    }
-    for lp in &region.filled_loops {
-        w += loop_wn(lp, pt.0, pt.1);
-    }
-    w
-}
-
 #[test]
 fn test_button_rects_centered_on_all_paths() {
     // 两条路径：按钮垂直中心 = 两条路径包围盒中心
@@ -169,17 +98,6 @@ fn test_button_rects_vertical_roll_inside_vertical_content() {
     }
 }
 
-/// 蓝军验证：矢量填充的 NonZero 绕数合计 = 填充显示区域
-#[test]
-fn test_fill_render_winding_interior_only() {
-    // 只填 A 内部 → 无背景：A 内绕数 1（显示），B 内 0（不显示）
-    let editor = two_rects_editor(&[(2.0, 60)]);
-    let region = fill_region(&editor).expect("有填充");
-    assert!(!region.has_background);
-    assert_eq!(render_wn(&region, (2.0, 60.0)), 1, "已填图形内部显示");
-    assert_eq!(render_wn(&region, (12.0, 60.0)), 0, "未填图形内部不显示");
-}
-
 #[test]
 fn test_bend_buttons_require_selected_middle_anchor() {
     let mut editor = multi_curve_editor();
@@ -202,33 +120,4 @@ fn test_bend_buttons_require_selected_middle_anchor() {
         line_bend_button_rects(&editor).is_none(),
         "端点不可切换弯折"
     );
-}
-
-#[test]
-fn test_fill_render_winding_background_holes() {
-    // 填 A 内部 + 背景一点 → 背景模式：
-    // 背景区域 = 1（显示）；B 内部 = 0（洞，未点过）；A 内部 = 1（已填）
-    let editor = two_rects_editor(&[(2.0, 60), (100.0, 100)]);
-    let region = fill_region(&editor).expect("有填充");
-    assert!(region.has_background);
-    assert_eq!(render_wn(&region, (50.0, 80.0)), 1, "背景区域显示");
-    assert_eq!(render_wn(&region, (2.0, 60.0)), 1, "已填图形内部显示");
-    assert_eq!(
-        render_wn(&region, (12.0, 60.0)),
-        0,
-        "未填图形内部 = 洞（不显示）"
-    );
-}
-
-/// 冒烟：`build_fill_path` 在两种模式（内部/背景+洞）下均可构建（不 panic）
-#[test]
-fn test_build_fill_path_smoke() {
-    let editor = two_rects_editor(&[(2.0, 60)]);
-    let region = fill_region(&editor).expect("有填充");
-    let _ = build_fill_path(&editor, &region);
-
-    let editor = two_rects_editor(&[(2.0, 60), (100.0, 100)]);
-    let region = fill_region(&editor).expect("有填充");
-    assert!(region.has_background);
-    let _ = build_fill_path(&editor, &region);
 }

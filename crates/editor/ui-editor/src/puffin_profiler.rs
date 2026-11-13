@@ -72,18 +72,6 @@ pub fn try_transition_to_dragging() {
     puffin::profile_scope!("selection_move::try_transition_to_dragging");
 }
 
-// ===== UI 层渲染逻辑 =====
-
-/// 网格部件主绘制函数（`grid/program_impl.rs` → `draw`）
-pub fn grid_widget_draw() {
-    puffin::profile_scope!("selection_move_ui::grid_widget_draw");
-}
-
-/// 选择框绘制（`grid/selection_box.rs` → `draw`）
-pub fn selection_box_draw() {
-    puffin::profile_scope!("selection_move_ui::selection_box_draw");
-}
-
 /// 收集可见音符数据（`rendering.rs` → `collect_visible_note_data`）
 pub fn collect_visible_note_data() {
     puffin::profile_scope!("selection_move_ui::collect_visible_note_data");

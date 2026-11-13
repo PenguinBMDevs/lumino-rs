@@ -59,7 +59,7 @@ fn test_new_dialog_state_is_idle_and_does_not_ask_for_frames() {
     assert!(!root.state.echo_cave.is_animating());
     assert_eq!(root.state.echo_cave.text(), "");
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }
 
@@ -76,7 +76,7 @@ fn test_select_about_starts_typewriter() {
     assert!(root.state.echo_cave.is_animating());
     assert_eq!(root.state.echo_cave.index(), 0);
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }
 
@@ -116,7 +116,7 @@ fn test_animation_tick_advances_and_terminates() {
     assert!(!root.state.echo_cave.is_animating());
     assert_eq!(root.state.echo_cave.text(), ECHO_TEXTS[0]);
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }
 
@@ -141,7 +141,7 @@ fn test_click_enters_blink_and_cycles_to_next_text() {
     );
     // 闪烁期视图可构建（alpha 分支）
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 
     // 推进到闪烁结束：应切到「下一条的打字机」，而不是直接回到 Idle。
@@ -199,7 +199,7 @@ fn test_rapid_clicks_do_not_stall_the_cycle() {
         root.state.echo_cave.index()
     );
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }
 
@@ -208,18 +208,18 @@ fn test_echo_view_builds_in_every_phase() {
     let (mut root, mut router) = fixture();
     // Idle（未装填）
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
     // Typing
     select_about(&mut root, &mut router);
     std::thread::sleep(Duration::from_millis(20));
     assert!(root.try_handle_direct(&Message::AnimationTick));
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
     // Blinking
     click_echo(&mut root, &mut router);
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }

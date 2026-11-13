@@ -93,8 +93,8 @@ impl DialogWindow {
             return SEED_DIALOG_SIZE;
         };
 
-        let work_area_size = work_area.map_or(iced_core::Size::ZERO, |area| {
-            iced_core::Size::new(area.logical_size.width, area.logical_size.height)
+        let work_area_size = work_area.map_or(lumino_ui::geom::Size::ZERO, |area| {
+            lumino_ui::geom::Size::new(area.logical_size.width, area.logical_size.height)
         });
 
         match usable_size(ui.measure_dialog_window_size(work_area_size)) {
@@ -106,7 +106,7 @@ impl DialogWindow {
         }
     }
 
-    /// 把渲染侧（iced viewport + swapchain surface）同步到实际物理尺寸
+    /// 把渲染侧（旧版 viewport + swapchain surface）同步到实际物理尺寸
     ///
     /// 事件回程（`WindowEvent::Resized`）也会做同样的事，这里是**幂等**的提前量：
     /// 首帧必须按新尺寸渲染，否则会先显示一帧旧尺寸再跳变。
@@ -202,7 +202,7 @@ pub(crate) fn minimum_inner_size(
 ///
 /// 拒绝 0 / 负数 / 非有限值：这些值会造出不可见或不可点击的窗口，
 /// 必须由调用方回退种子尺寸。
-pub(crate) fn usable_size(measured: iced_core::Size) -> Option<LogicalSize<f32>> {
+pub(crate) fn usable_size(measured: lumino_ui::geom::Size) -> Option<LogicalSize<f32>> {
     let usable = measured.width.is_finite()
         && measured.height.is_finite()
         && measured.width > 0.0
@@ -214,7 +214,7 @@ pub(crate) fn usable_size(measured: iced_core::Size) -> Option<LogicalSize<f32>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iced_core::Size;
+    use lumino_ui::geom::Size;
 
     #[test]
     fn test_usable_size_accepts_positive_finite() {

@@ -40,8 +40,9 @@ fn test_toast_level_default_duration() {
 fn test_toast_level_icon() {
     assert_eq!(ToastLevel::Info.icon(), "ℹ");
     assert_eq!(ToastLevel::Warning.icon(), "⚠");
-    assert_eq!(ToastLevel::Error.icon(), "✗");
-    assert_eq!(ToastLevel::Success.icon(), "✓");
+    // egui 默认字体缺 `✗`/`✓`，改用同字体可用的 `×`/`√`。
+    assert_eq!(ToastLevel::Error.icon(), "×");
+    assert_eq!(ToastLevel::Success.icon(), "√");
 }
 
 #[test]
@@ -200,7 +201,7 @@ fn test_toast_manager_view_empty_returns_none() {
     let mgr = ToastManager::new();
     // view 在无 Toast 时短路返回 None，不需要 Theme 实例
     // 这里用 unreachable 的 theme 引用（不会被执行）来验证 None 分支
-    // 由于 Theme::default 在 iced 0.14 测试环境有 trait 作用域问题，
+    // 由于 Theme::default 在 旧版 0.14 测试环境有 trait 作用域问题，
     // 此测试仅验证逻辑：空 ToastManager 的 view 必返回 None。
     assert!(mgr.is_empty());
 }

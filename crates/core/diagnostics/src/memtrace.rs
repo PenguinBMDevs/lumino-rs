@@ -38,7 +38,7 @@ pub enum AllocTag {
     /// UI / 状态分配
     Ui = 4,
     /// 唯一兜底桶：未显式归类的分配（含 3rd-party crate 在其自有线程上的分配，
-    /// 如 xsynth 语音缓冲、iced/wgpu 内部线程）默认落入此处。
+    /// 如 xsynth 语音缓冲、旧版/wgpu 内部线程）默认落入此处。
     Other = 5,
 }
 

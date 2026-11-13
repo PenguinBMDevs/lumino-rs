@@ -2,19 +2,13 @@
 //!
 //! X 轴与钢琴卷帘对齐联动。力度/CC 的 Y 轴 0-127，Tempo 的 Y 轴为可视 BPM 范围。
 
-pub mod widget;
-
-pub use widget::TempoPoint;
-pub use widget::VelocityCanvasState;
+pub mod layout;
 
 // 重新导出自 lumino-note-core / lumino-editor-state 的数据类型
 pub use lumino_editor_state::EditorTransform;
 pub use lumino_note_core::{
     BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcDisplay, CcPoint, EditMode, VelocityPoint,
 };
-
-use lumino_extras::i18n::Language;
-use lumino_ui_core::Element;
 
 /// 面板高度（像素）
 pub const VELOCITY_PANEL_HEIGHT: f32 = 150.0;
@@ -79,176 +73,23 @@ impl VelocityPanel {
         self.value_scroll = self.value_scroll.clamp(0.0, max_scroll);
     }
 
-    /// 渲染编辑面板视图
-    pub fn view<'a>(
-        &'a self,
-        editor: &'a crate::Editor,
-        panel_height: f32,
-        language: Language,
-    ) -> Element<'a> {
-        use iced_core::Alignment;
-        use iced_widget::canvas::Canvas;
-        use iced_widget::{column, container, row, space, text};
-
-        let t = lumino_extras::i18n::main_translations(language);
-        let toolbar_height = TOOLBAR_HEIGHT;
-        let canvas_height = (panel_height - toolbar_height).max(10.0);
-
-        let is_tempo = self.edit_mode == EditMode::Tempo;
-        let is_velocity = self.edit_mode == EditMode::Velocity;
-
-        let toolbar = container(
-            row![
-                self.build_mode_button(is_tempo, is_velocity, language, t),
-                space().width(8),
-                self.build_cc_selector(),
-                space().width(iced_core::Length::Fill),
-                text(self.build_info_text(language))
-                    .size(11)
-                    .color(iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.7)),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .height(toolbar_height)
-        .width(iced_core::Length::Fill)
-        .padding([2, 8])
-        .style(|theme: &lumino_ui_core::Theme| {
-            iced_widget::container::Style::default()
-                .background(theme.extended_palette().background.weak.color)
-        });
-
-        let canvas = Canvas::new(widget::VelocityCanvas {
-            editor,
-            edit_mode: self.edit_mode,
-            selected_cc: self.selected_cc,
-        })
-        .width(iced_core::Length::Fill)
-        .height(canvas_height);
-
-        let panel_content = column![toolbar, canvas]
-            .width(iced_core::Length::Fill)
-            .height(panel_height);
-
-        iced_widget::container(panel_content)
-            .width(iced_core::Length::Fill)
-            .height(panel_height)
-            .style(|_theme: &lumino_ui_core::Theme| {
-                iced_widget::container::Style::default().background(iced_core::Color::TRANSPARENT)
-            })
-            .into()
-    }
-
-    /// 构建模式切换按钮（力度/速度/CC/Bend）
-    fn build_mode_button<'a>(
-        &'a self,
-        is_tempo: bool,
-        is_velocity: bool,
-        _language: Language,
-        t: &'static lumino_extras::i18n::MainTranslations,
-    ) -> Element<'a> {
-        use iced_widget::{button, text};
-
-        let mode_label = if is_tempo {
-            t.velocity_panel_tempo
-        } else if is_velocity {
-            t.velocity_panel_velocity
-        } else if self.edit_mode == EditMode::Bend {
-            "Bend"
-        } else {
-            "CC"
-        };
-
-        button(text(mode_label).size(12))
-            .on_press(lumino_ui_core::message::Message::Velocity(
-                lumino_ui_core::message::VelocityAction::ToggleMode,
-            ))
-            .padding([2, 8])
-            .style(move |theme: &lumino_ui_core::Theme, status| {
-                let palette = theme.extended_palette();
-                let bg = if is_tempo || is_velocity {
-                    palette.primary.base.color
-                } else if status == iced_widget::button::Status::Hovered {
-                    palette.background.weak.color
-                } else {
-                    palette.background.weakest.color
-                };
-                iced_widget::button::Style {
-                    border: iced_core::Border {
-                        radius: 3.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .into()
-    }
-
-    /// 构建 CC 控制器选择器（非 CC/Bend 模式返回空白占位）
-    fn build_cc_selector<'a>(&'a self) -> Element<'a> {
-        use iced_widget::{pick_list, space};
-
-        if self.edit_mode.is_cc() {
-            let mut cc_options: Vec<CcOption> = Vec::with_capacity(129);
-            cc_options.push(CcOption::Bend);
-            for n in 0..=127 {
-                cc_options.push(CcOption::Cc(n));
-            }
-            let selected = if self.edit_mode == EditMode::Bend {
-                CcOption::Bend
-            } else {
-                CcOption::Cc(self.selected_cc)
-            };
-            pick_list(cc_options, Some(selected), move |cc| {
-                lumino_ui_core::message::Message::Velocity(
-                    lumino_ui_core::message::VelocityAction::CcOptionSelected(cc),
-                )
-            })
-            .placeholder("Select CC/Bend")
-            .padding([2, 6])
-            .width(iced_core::Length::Fixed(170.0))
-            .into()
-        } else {
-            space().width(0).into()
-        }
-    }
-
-    /// 构建模式信息文字
-    fn build_info_text(&self, language: Language) -> String {
-        let t = lumino_extras::i18n::main_translations(language);
-        if self.edit_mode == EditMode::Tempo {
-            t.velocity_panel_tempo_info.to_string()
-        } else if self.edit_mode == EditMode::Velocity {
-            t.velocity_panel_velocity_info.to_string()
-        } else if self.edit_mode == EditMode::Bend {
-            "Bend: -8192..8191".to_string()
-        } else {
-            format!("{}", CcDisplay(self.selected_cc))
-        }
-    }
-
     /// 构建速度点数据
-    pub fn build_tempo_points(editor: &crate::Editor) -> Vec<TempoPoint> {
+    pub fn build_tempo_points(
+        editor: &crate::Editor,
+    ) -> Vec<lumino_note_core::midi_types::TempoPoint> {
         editor
             .editor_state
             .data
             .tempo_points
             .iter()
-            .map(|tp| TempoPoint {
+            .map(|tp| lumino_note_core::midi_types::TempoPoint {
                 tick: tp.tick,
                 bpm: tp.bpm,
             })
             .collect()
     }
 
-    /// 构建力度点数据
-    ///
-    /// 直接遍历 document 当前轨的 NoteEvent 构建 VelocityPoint，
-    /// 避免创建 EditorData 及 notes.clone()。
-    /// 10M 音符场景下，clone 开销可达百毫秒级。
-    ///
-    /// 2026-08 单一权威源 + 分块：输入为 `&ChunkedList<NoteEvent>`（document 零拷贝分块容器）。
+    /// 构建力度点数据（直接遍历 document 当前轨，避免 clone）。
     pub fn build_velocity_points(
         notes: &lumino_midi_loader::ChunkedList<lumino_midi_loader::NoteEvent>,
     ) -> Vec<VelocityPoint> {
@@ -275,7 +116,7 @@ impl VelocityPanel {
         editor.editor_state.data.build_cc_points(cc_number)
     }
 
-    /// 构建弯音数据（从 automation_lanes 读取当前音轨的 PitchBend 事件）。
+    /// 构建弯音数据（从 automation_lanes 读取当前轨的 PitchBend 事件）。
     pub fn build_bend_points(editor: &crate::Editor) -> Vec<BendPoint> {
         editor.editor_state.data.build_bend_points()
     }
@@ -289,15 +130,3 @@ impl Default for VelocityPanel {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod automation_tests;
-
-#[cfg(test)]
-mod bend_tests;
-
-#[cfg(test)]
-mod tempo_tests;
-
-#[cfg(test)]
-mod velocity_tool_tests;

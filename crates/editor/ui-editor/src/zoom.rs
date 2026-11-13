@@ -6,7 +6,7 @@
 //! - 缩放锚点为鼠标指针在视口内的相对位置（0.0 贴左/上，1.0 贴右/下），
 //!   缩放后指针下的音乐坐标（tick/音轨）保持不动。
 
-use iced_core::mouse::ScrollDelta;
+use lumino_ui_core::geom::mouse::ScrollDelta;
 
 /// 滚轮缩放步进系数：每滚动一个刻度（line），缩放倍率变化 10%
 pub const ZOOM_WHEEL_STEP: f32 = 0.1;
@@ -17,9 +17,20 @@ pub const PIXEL_TO_LINE_SCALE: f32 = 50.0;
 ///
 /// 返回 `None` 表示无需缩放（增量为 0）。
 pub fn zoom_factor_from_delta(delta: &ScrollDelta) -> Option<f32> {
-    let line_delta = match delta {
-        ScrollDelta::Lines { y, .. } => *y,
-        ScrollDelta::Pixels { y, .. } => *y / PIXEL_TO_LINE_SCALE,
+    match delta {
+        ScrollDelta::Lines { y, .. } => zoom_factor_from_wheel(*y, false),
+        ScrollDelta::Pixels { y, .. } => zoom_factor_from_wheel(*y, true),
+    }
+}
+
+/// 计算缩放因子（原始增量 + 是否像素级）。
+///
+/// 像素级增量按 [`PIXEL_TO_LINE_SCALE`] 换算成刻度线，单次最多一个刻度。
+pub fn zoom_factor_from_wheel(delta_y: f32, precise: bool) -> Option<f32> {
+    let line_delta = if precise {
+        delta_y / PIXEL_TO_LINE_SCALE
+    } else {
+        delta_y
     };
     let step = line_delta.clamp(-1.0, 1.0);
     if step.abs() < f32::EPSILON {

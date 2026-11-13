@@ -304,13 +304,20 @@ impl RunnerInner {
                 let project = lumino_export::load_project(&path_for_blocking)?;
                 // S0-5：形状对象随工程持久化，需在文档装载后灌回编辑器
                 let shapes = project.shapes.clone();
+                // 工程范围记忆：洋葱皮显示范围（缺字段 = 老工程 → 空串 = 默认全部）
+                let onion_skin_mode = project
+                    .metadata
+                    .settings
+                    .as_ref()
+                    .and_then(|s| s.onion_skin_mode.clone())
+                    .unwrap_or_default();
                 let parsed = lumino_export::project_to_parsed_midi(&project, path_for_blocking)?;
-                Ok::<_, lumino_export::ExportError>((parsed, shapes))
+                Ok::<_, lumino_export::ExportError>((parsed, shapes, onion_skin_mode))
             })
             .await;
 
             match load_result {
-                Ok(Ok((parsed, shapes))) => {
+                Ok(Ok((parsed, shapes, onion_skin_mode))) => {
                     progress_cb(tr!("工程加载成功"), 1.0);
                     lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
@@ -322,6 +329,11 @@ impl RunnerInner {
                     // 顺序反了会把刚加载的形状再清掉。
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::ProjectShapes(shapes),
+                    ));
+                    // 洋葱皮显示范围同理放在最后：它只改工具栏状态，与文档装载无耦合，
+                    // 但排在后面对调试顺序更直观（文档 → 形状 → 视图偏好）。
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::ProjectOnionSkinMode(onion_skin_mode),
                     ));
                 }
                 Ok(Err(e)) => {

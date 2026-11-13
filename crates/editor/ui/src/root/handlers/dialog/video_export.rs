@@ -79,7 +79,6 @@ impl DialogHandler {
                 root.state.video_export_dialog.current_frame = 0;
                 root.state.video_export_dialog.total_frames = 0;
                 root.state.video_export_dialog.render_fps = 0.0;
-                root.state.video_export_dialog.cached_image_handle = None;
 
                 let st = &root.state.video_export_dialog;
                 let video_config = build_video_config(
@@ -158,10 +157,9 @@ impl DialogHandler {
             V::Miditrail3DNotesChanged(v) => {
                 root.state.video_export_dialog.miditrail_3d_notes = v;
             }
-            V::CounterTextAction(action) => {
+            V::CounterTextChanged(text) => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_editor.perform(action);
-                st.counter_text = st.counter_editor.text();
+                st.counter_text = text;
             }
             V::CounterAlignmentChanged(v) => {
                 root.state.video_export_dialog.counter_alignment = v;
@@ -233,12 +231,10 @@ impl DialogHandler {
                     _ => crate::state::root_state::COUNTER_DEFAULT_TEXT,
                 };
                 st.counter_text = template.to_string();
-                st.counter_editor = iced_widget::text_editor::Content::with_text(template);
             }
             V::CounterResetText => {
                 let st = &mut root.state.video_export_dialog;
                 st.counter_text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
-                st.counter_editor = iced_widget::text_editor::Content::with_text(&st.counter_text);
             }
             V::CounterBrowseCsv => {
                 root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {

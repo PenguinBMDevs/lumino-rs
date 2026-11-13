@@ -1,0 +1,129 @@
+//! 工程走带视图的 egui 模型（标尺 + 轨道列）。
+//!
+//! 只做数据搬运：几何量（scroll / zoom / ppq / 拍号 / 行高）来自生产
+//! `arrangement_view.viewport` 与 `editor_state`，绘制在
+//! `crate::chrome::arrangement`。
+
+/// 走带标尺参数。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrangementRulerModel {
+    /// 水平滚动偏移（像素）。
+    pub scroll_x: f32,
+    /// 每 tick 的像素数。
+    pub zoom_x: f32,
+    /// 每四分音符 tick 数。
+    pub ppq: u16,
+    /// 走带内容区左缘（逻辑点，相对窗口）：左侧栏总宽。
+    pub left_inset: f32,
+    /// 走带内容区顶缘（逻辑点，相对窗口）：标题栏 + 实际工具栏高度。
+    pub top_inset: f32,
+    /// 拍号变化表（原样传入；绘制侧负责同 tick 去重）。
+    pub time_signatures: Vec<(u32, u8, u8)>,
+    /// 乐曲总 tick 数（点击设光标的钳制上界）。
+    pub total_ticks: u32,
+}
+
+impl Default for ArrangementRulerModel {
+    fn default() -> Self {
+        Self {
+            scroll_x: 0.0,
+            zoom_x: 0.1,
+            ppq: 960,
+            left_inset: 48.0,
+            top_inset: 102.0,
+            time_signatures: vec![(0, 4, 4)],
+            total_ticks: 0,
+        }
+    }
+}
+
+/// 走带左侧轨道列的一行。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrangementTrackRow {
+    /// 音轨 ID（显示为三位编号）。
+    pub id: usize,
+    /// 音轨名（第二行）。
+    pub name: String,
+    /// 显示标签（第一行右侧，如 `A01`）。
+    pub label: String,
+    /// 通道号（`label` 为空时按 `{端口}{通道}` 生成）。
+    pub channel: u8,
+    /// 是否主控音轨（显示 `Master`，且不画静音/独奏按钮）。
+    pub conductor: bool,
+    /// 是否选中（选中行底色换成主色弱调）。
+    pub selected: bool,
+    /// 是否静音。
+    pub muted: bool,
+    /// 是否独奏。
+    pub soloed: bool,
+    /// 音轨颜色（`None` = 左侧画默认灰块）。
+    pub color: Option<egui::Color32>,
+}
+
+/// 走带左侧轨道列（160px）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ArrangementTrackListModel {
+    /// 音轨行（按显示顺序）。
+    pub tracks: Vec<ArrangementTrackRow>,
+    /// 每行高度（`track_height * zoom_y`）。
+    pub track_height: f32,
+    /// 垂直滚动偏移（像素）。
+    pub scroll_y: f32,
+    /// 长按拖拽排序是否已激活。
+    pub drag_active: bool,
+    /// 被拖拽的音轨 ID（激活时有效）。
+    pub drag_track: Option<usize>,
+    /// 插入位置指示（`0..=tracks.len()`）。
+    pub drop_index: Option<usize>,
+}
+
+/// 泳道区（wgu 渲染区）命中矩形。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrangementLaneModel {
+    /// 屏幕矩形（逻辑点，来自 `arrangement_geometry` 的 offset/size）。
+    pub rect: lumino_message::types::geometry::Rect2,
+    /// 每轨基础高度（像素，未乘 `zoom_y`）。
+    pub track_height: f32,
+    /// 当前工具（决定交互语义）。
+    pub tool: lumino_core::Tool,
+    /// 已提交的框选矩形（`tick_start, tick_end, track_lo, track_hi`）。
+    pub selection: Option<(f64, f64, usize, usize)>,
+    /// 选中音符快照（移动时的 ghost 预览用）。
+    pub selected_notes: Vec<(f64, f64, usize, u8)>,
+    /// 吸附精度。
+    pub precision: lumino_core::SnapSpec,
+}
+
+/// 走带视图模型。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ArrangementModel {
+    /// 顶部标尺。
+    pub ruler: ArrangementRulerModel,
+    /// 左侧轨道列。
+    pub track_list: ArrangementTrackListModel,
+    /// 泳道区命中矩形；`None` = 尚未拿到布局（跳过输入）。
+    pub lane: Option<ArrangementLaneModel>,
+    /// 两条滚动条的取值；`None` = 尚未拿到布局。
+    pub scrollbars: Option<ArrangementScrollbarsModel>,
+}
+
+/// 走带两条滚动条的取值（与 旧版 `view_arrangement` 同源）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArrangementScrollbarsModel {
+    /// 水平滚动（像素）。
+    pub scroll_x: f32,
+    /// 水平内容总宽（像素）。
+    pub max_scroll_x: f32,
+    /// 每 tick 像素。
+    pub zoom_x: f32,
+    /// 水平视口（泳道区宽）。
+    pub viewport_x: f32,
+    /// 垂直滚动（像素）。
+    pub scroll_y: f32,
+    /// 垂直内容总高（像素）。
+    pub max_scroll_y: f32,
+    /// 每轨高度倍率。
+    pub zoom_y: f32,
+    /// 垂直视口（泳道区高）。
+    pub viewport_y: f32,
+}

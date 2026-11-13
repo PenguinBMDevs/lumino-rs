@@ -57,6 +57,12 @@ pub struct WgpuRenderThread {
     onion_skin_streaming_sender: Option<crossbeam_channel::Sender<crate::OnionSkinStreamMsg>>,
     /// 线程句柄
     thread_handle: Option<JoinHandle<()>>,
+    /// 离屏纹理的缓存视图（供 egui 外部纹理采样）。
+    ///
+    /// 与 `latest_texture` 同源：纹理代次变化（`Arc` 指针变化）时重建视图，
+    /// 避免每帧 `create_view` 造成不必要的分配。
+    latest_view: Mutex<Option<(usize, std::sync::Arc<wgpu::TextureView>)>>,
+
     /// 渲染完成的离屏纹理，供主线程读取
     pub latest_texture: Arc<Mutex<Option<Arc<TrackedTexture>>>>,
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
@@ -170,6 +176,7 @@ impl WgpuRenderThread {
             note_event_sender: Some(note_event_sender),
             onion_skin_streaming_sender: Some(onion_skin_streaming_tx),
             thread_handle: Some(thread_handle),
+            latest_view: Mutex::new(None),
             latest_texture,
             note_instances_buffer,
             waterfall_progress,

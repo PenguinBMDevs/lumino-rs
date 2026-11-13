@@ -67,9 +67,9 @@ impl Root {
             }
             Message::CanvasBoundsChanged { offset, size } => {
                 self.editor
-                    .set_canvas_offset(iced_core::Point::new(offset.x, offset.y));
+                    .set_canvas_offset(lumino_ui_core::geom::Point::new(offset.x, offset.y));
                 self.editor
-                    .set_canvas_size(iced_core::Point::new(size.width, size.height));
+                    .set_canvas_size(lumino_ui_core::geom::Point::new(size.width, size.height));
 
                 // 缩放不应出现空白区域：viewport 变化后，若琴键没填满 viewport，
                 // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。
@@ -149,7 +149,7 @@ impl Root {
             Message::CtrlKeyChanged(pressed) => {
                 self.toolbar.ctrl_pressed = *pressed;
                 // 同步到 Editor：ruler/键盘区 Ctrl+滚轮缩放依赖此可靠通道
-                // （iced canvas 内 ModifiersChanged 事件可能因焦点问题不送达）
+                // （旧版 canvas 内 ModifiersChanged 事件可能因焦点问题不送达）
                 self.editor.set_ctrl_pressed(*pressed);
                 true
             }

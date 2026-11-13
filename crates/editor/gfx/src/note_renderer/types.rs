@@ -235,8 +235,13 @@ pub struct ViewState {
     /// 默认 0（工具栏开关默认关闭）：renderer 首帧 uniform 即隐藏洋葱皮，
     /// 与产品默认一致；打开时由 UI 线程发 `SetViewState` 写回 1。
     pub onion_visible: u32,
-    /// 对齐填充（保持 muted_bits 16 字节对齐）
-    pub _padding: [u32; 2],
+    /// 洋葱皮显示范围的 track_enc 下界（含）；`first > last` = 空区间
+    ///
+    /// 由工具栏「洋葱皮选项」下拉决定（全部 / 上一个 / 下一个 / 指定），
+    /// 在 UI 侧解析成闭区间后写入——shader 只做区间比较，不懂业务模式。
+    pub onion_first_track: u32,
+    /// 洋葱皮显示范围的 track_enc 上界（含）
+    pub onion_last_track: u32,
     /// 静音音轨位图：`muted_bits[t / 32]` 的 bit `t % 32` = 音轨 t 静音
     pub muted_bits: [u32; ViewState::MUTED_WORDS],
 }
@@ -254,7 +259,8 @@ impl ViewState {
         Self {
             current_track: 0,
             onion_visible: 0,
-            _padding: [0; 2],
+            onion_first_track: 0,
+            onion_last_track: 0,
             muted_bits: [0; Self::MUTED_WORDS],
         }
     }
@@ -264,6 +270,12 @@ impl ViewState {
     /// 只改 uniform 一个字，GPU 常驻实例数据不动（关闭不卸载、打开零重传）。
     pub fn set_onion_visible(&mut self, visible: bool) {
         self.onion_visible = u32::from(visible);
+    }
+
+    /// 设置洋葱皮显示范围（track_enc 闭区间；`first > last` = 空区间恒不命中）
+    pub fn set_onion_range(&mut self, first: u32, last: u32) {
+        self.onion_first_track = first;
+        self.onion_last_track = last;
     }
 
     /// 设置音轨静音状态（越界防御：超出位图容量静默忽略）

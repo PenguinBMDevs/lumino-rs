@@ -2,15 +2,15 @@
 //!
 //! 从 `drag.rs` 抽出，控制文件行数并保持单一职责。
 
-use iced_core::Point;
 use lumino_editor_state::DragState;
 use lumino_ui_core::constants::editor::DRAG_START_THRESHOLD_RATIO;
+use lumino_ui_core::geom::Point;
 
 use crate::{EditState, Editor};
 
 impl Editor {
     /// 检查是否应从 PendingDrag 转换到 Dragging 状态
-    pub(crate) fn try_transition_to_dragging(&mut self, pos: iced_core::Point) {
+    pub(crate) fn try_transition_to_dragging(&mut self, pos: lumino_ui_core::geom::Point) {
         crate::puffin_profiler::try_transition_to_dragging();
         let EditState::PendingDrag {
             note_index,
@@ -42,7 +42,11 @@ impl Editor {
         };
     }
 
-    fn should_start_dragging(&self, pos: iced_core::Point, start_pos: iced_core::Point) -> bool {
+    fn should_start_dragging(
+        &self,
+        pos: lumino_ui_core::geom::Point,
+        start_pos: lumino_ui_core::geom::Point,
+    ) -> bool {
         let delta_x = pos.x - start_pos.x;
         let delta_y = pos.y - start_pos.y;
         let key_threshold = self.editor_state.view.zoom_y * DRAG_START_THRESHOLD_RATIO;

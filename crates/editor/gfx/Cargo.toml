@@ -28,12 +28,9 @@ puffin = { workspace = true }
 half = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
-im = { workspace = true }
-rayon = { workspace = true }
 crossbeam-channel = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
-lumino-editor-state = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-midiplayer = { workspace = true }
 lumino-diagnostics = { workspace = true }

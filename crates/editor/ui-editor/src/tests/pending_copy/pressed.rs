@@ -7,11 +7,11 @@ use lumino_editor_state::DragState;
 // ===== handle_pointer_pressed Ctrl + 选择框内部 → 复制拖拽 =====
 
 /// 计算选中音符选择框的屏幕中心点（保证 Inside 命中）
-fn selection_box_center(editor: &Editor) -> iced_core::Point {
+fn selection_box_center(editor: &Editor) -> lumino_ui_core::geom::Point {
     let (x1, x2, y1, y2) = editor
         .get_selection_box_bounds()
         .expect("有选中音符时应能计算选择框");
-    iced_core::Point::new((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+    lumino_ui_core::geom::Point::new((x1 + x2) / 2.0, (y1 + y2) / 2.0)
 }
 
 #[test]
@@ -96,7 +96,12 @@ fn test_flush_pending_drag_commits_copy_on_empty_click() {
 
     // 模拟点击空白处（flush_pending_drag 由 handle_pointer_pressed 空白分支调用）
     // 直接调用私有路径不可达，改用公开入口：点击空白会先 flush 再开始新框选
-    editor.handle_tool_pressed(iced_core::Point::new(9999.0, 9999.0), false, 9999.0, 0);
+    editor.handle_tool_pressed(
+        lumino_ui_core::geom::Point::new(9999.0, 9999.0),
+        false,
+        9999.0,
+        0,
+    );
 
     // 副本已写入内存层（点击空白处退出框选状态 → 写入）
     assert_eq!(editor.editor_state.data.current_track_note_count(), 2);

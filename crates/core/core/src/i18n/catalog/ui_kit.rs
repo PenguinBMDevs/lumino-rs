@@ -74,6 +74,16 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "管理文件" => Some("Manage Files"),
         "洋葱皮设置" => Some("Onion Skin Settings"),
         "洋葱皮渲染方式" => Some("Onion skin renderer"),
+        // 工具栏洋葱皮下拉：显示范围（2026-11-05）
+        "显示全部音轨" => Some("Show all tracks"),
+        "显示上一个音轨" => Some("Show previous track"),
+        "显示下一个音轨" => Some("Show next track"),
+        "显示指定音轨…" => Some("Show specific track…"),
+        "「指定音轨」的洋葱皮暂未接入，请先用全部 / 上一个 / 下一个" => {
+            Some(
+                "Onion skin for a specific track is not wired up yet; use All / Previous / Next for now",
+            )
+        }
         "加载 MIDI 后不可切换，请先关闭 MIDI 工程" => {
             Some("Cannot be changed after loading MIDI; close the MIDI project first")
         }

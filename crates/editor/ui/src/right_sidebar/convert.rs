@@ -232,7 +232,7 @@ mod tests {
     /// 把 `image` crate 的 RGBA 转成 i2m-rs 的 BGRA 缓冲（测试用）
     fn large_image(img: &image::RgbaImage) -> i2m_rs::RgbaImage {
         let mut pixels = Vec::with_capacity(img.len());
-        for chunk in img.as_raw().chunks_exact(4) {
+        for chunk in img.as_raw().as_chunks::<4>().0 {
             pixels.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
         }
         i2m_rs::RgbaImage {

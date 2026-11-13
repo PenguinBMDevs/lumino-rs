@@ -26,27 +26,25 @@
 //! 无需 GFX 管线/跨线程同步。
 
 use crate::Editor;
-use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
+use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::{clip_rect, content_bounds};
-use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry};
 use lumino_editor_state::brush_tool::cov::{self, MAX_KEY};
 use lumino_message::Tool;
-use lumino_ui_core::Renderer;
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 /// 按钮组与笔画包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
 
-/// 由 iced 传入的 `bounds` 计算**画布局部坐标**下的可见窗口（逻辑区间）
+/// 由 旧版 传入的 `bounds` 计算**画布局部坐标**下的可见窗口（逻辑区间）
 ///
 /// # 坐标系契约（★ 画刷裁剪错位 BUG 的根因，见 §16 RCA）
 ///
 /// `Program::draw` 收到的 `bounds` 是**父/窗口坐标系**矩形——`position` 是该画布
 /// 组件在窗口里的偏移（本项目实际值 = 左侧栏宽 + 音轨列表 160、工具栏高 + 标题栏
 /// 30，见 `host/render/viewport.rs`），而**帧内所有绘制坐标都是画布局部坐标**
-/// （原点 = 画布左上角）：iced 在调用 `Program::draw` 前先
+/// （原点 = 画布左上角）：旧版 在调用 `Program::draw` 前先
 /// `renderer.with_translation(Vector::new(bounds.x, bounds.y), ..)`
-/// （`iced_widget/src/canvas.rs`），再把 `bounds`（原样、未归一化）交给 program。
+/// （旧画布层），再把 `bounds`（原样、未归一化）交给 program。
 ///
 /// 因此可见区域只能是 `size()`，**绝不能把 `bounds` 当局部矩形用**：
 /// 旧实现用 `Point::new(bounds.x, bounds.y)` 当可见窗口左上角，等于把窗口整体
@@ -189,35 +187,5 @@ pub fn brush_cell_rect(editor: &Editor, t_start: i64, t_end: i64, key: u16) -> R
 /// 而块数 = 可见格 × 粗细度，缩小时铺满一屏，CPU 细分结构上守不住 60fps。
 /// 现在方块由 [`Editor::brush_preview_note_instances`] 产出、走音符的 wgpu 预览
 /// 通路（与 √ 生成的音符同一个着色器）；本函数只负责按钮（2 次图片绘制，微秒级）。
-pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
-    _theme: &lumino_ui_core::Theme,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    if editor.current_tool() != Tool::Brush {
-        return None;
-    }
-    if !editor.editor_state.brush_tool.has_pending() {
-        return None;
-    }
-
-    let btns = brush_button_rects(editor)?;
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    draw_button(
-        &mut frame,
-        btns.confirm,
-        &CONFIRM_ICON,
-        iced_core::Color::from_rgb8(46, 125, 50),
-    );
-    draw_button(
-        &mut frame,
-        btns.cancel,
-        &CANCEL_ICON,
-        iced_core::Color::from_rgb8(198, 40, 40),
-    );
-    Some(frame.into_geometry())
-}
-
 #[cfg(test)]
 mod tests;

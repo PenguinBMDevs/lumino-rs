@@ -39,7 +39,7 @@ pub fn lock_gpu() -> MutexGuard<'static, ()> {
 }
 
 /// 共享测试设备（首次调用创建，进程内复用）。
-fn shared() -> &'static (wgpu::Instance, wgpu::Device, wgpu::Queue) {
+pub fn shared() -> &'static (wgpu::Instance, wgpu::Device, wgpu::Queue) {
     SHARED.get_or_init(|| {
         use futures::executor::block_on;
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -156,7 +156,7 @@ pub fn render_gpu(
     let (_, device, queue) = shared();
     let mut renderer = NoteRenderer::new_onion_skin(device, queue, FORMAT, GpuEpoch::INITIAL);
     // 洋葱皮显示（CPU/GPU 逐像素对比的前提：两侧都画全部非静音轨）
-    renderer.set_view_state(queue, current_track_enc, muted_tracks, true);
+    renderer.set_view_state(queue, current_track_enc, muted_tracks, true, (1, u32::MAX));
     renderer.upload_instances(instances, device, queue);
 
     let extent = wgpu::Extent3d {
@@ -222,7 +222,7 @@ pub fn render_gpu(
 }
 
 /// 回读整帧 RGBA8。
-fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
+pub fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let bytes_per_row = W * 4;
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("cpu_gpu_parity_staging"),

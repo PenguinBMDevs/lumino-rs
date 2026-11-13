@@ -53,8 +53,8 @@ pub enum VideoExportAction {
     Miditrail3DNotesChanged(bool),
 
     // ── 计数器设置变更（参考 Zenith-MIDI NoteCountRender 设置面板） ──
-    /// 计数器文本模板编辑（iced text_editor 动作，Handler 内 perform 并同步文本）
-    CounterTextAction(iced_widget::text_editor::Action),
+    /// 计数器文本模板整体变更（egui 多行编辑器回传完整文本）
+    CounterTextChanged(String),
     /// 加载预设文本模板（"default"/"full"），整体替换编辑器内容
     CounterLoadTemplate(String),
     /// 计数器对齐方式变更（"左上"/"右上"/"左下"/"右下"/"顶部分散"/"底部分散"）

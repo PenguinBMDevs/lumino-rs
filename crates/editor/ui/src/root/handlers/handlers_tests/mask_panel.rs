@@ -39,7 +39,7 @@ fn test_open_mask_panel_without_selection_warns() {
     root.update(Message::MaskPanel(MaskPanelAction::SetSize(4.0)));
     assert!(!root.mask_panel.open, "未打开时参数动作应被忽略");
 
-    root.open_mask_panel(iced_core::Point::new(10.0, 10.0));
+    root.open_mask_panel(lumino_ui_core::geom::Point::new(10.0, 10.0));
     assert!(!root.mask_panel.open, "无选中目标不应打开面板");
     assert!(!root.toast.is_empty(), "应给出失败提示");
 }
@@ -47,7 +47,7 @@ fn test_open_mask_panel_without_selection_warns() {
 #[test]
 fn test_pending_mask_panel_writes_through_immediately() {
     let (mut root, index) = root_with_pending_rect();
-    root.open_mask_panel(iced_core::Point::new(40.0, 50.0));
+    root.open_mask_panel(lumino_ui_core::geom::Point::new(40.0, 50.0));
     assert!(root.mask_panel.open);
     assert_eq!(
         root.mask_panel.target,
@@ -113,7 +113,7 @@ fn test_baked_mask_panel_needs_apply() {
     root.editor.set_tool(lumino_message::Tool::ShapeSelect);
     root.editor.editor_state.shape_select.select_only(shape_id);
 
-    root.open_mask_panel(iced_core::Point::new(40.0, 50.0));
+    root.open_mask_panel(lumino_ui_core::geom::Point::new(40.0, 50.0));
     assert_eq!(
         root.mask_panel.target,
         Some(MaskEditTarget::Baked { model_id })

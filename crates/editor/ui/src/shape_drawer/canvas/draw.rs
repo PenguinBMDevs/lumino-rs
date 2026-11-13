@@ -1,17 +1,14 @@
 //! 抽屉画布的绘制与单位框映射（从 canvas.rs 拆出，控制文件长度）。
 
-use iced_core::{Color, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Frame, Text, path};
-use lumino_core::shape::{AnchorBend, AreaMap, MAP_CELLS, StrokeKind};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
-use crate::shape_drawer::doc::{DrawerDoc, DrawerTool, DrawerView};
-use crate::{Renderer, Theme};
+use crate::shape_drawer::doc::{DrawerTool, DrawerView};
 
-pub(super) const TOOLBAR_WIDTH: f32 = 104.0;
-pub(super) const TOOLBAR_TOP: f32 = 16.0;
-pub(super) const ROW_HEIGHT: f32 = 30.0;
-pub(super) const ROW_GAP: f32 = 4.0;
-pub(super) const PADDING: f32 = 18.0;
+pub(crate) const TOOLBAR_WIDTH: f32 = 104.0;
+pub(crate) const TOOLBAR_TOP: f32 = 16.0;
+pub(crate) const ROW_HEIGHT: f32 = 30.0;
+pub(crate) const ROW_GAP: f32 = 4.0;
+pub(crate) const PADDING: f32 = 18.0;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum ToolbarAction {
@@ -54,303 +51,7 @@ pub(super) fn toolbar_hit(local: Point) -> Option<ToolbarAction> {
     None
 }
 
-pub(super) fn draw_toolbar(frame: &mut Frame<Renderer>, doc: &DrawerDoc, theme: &Theme) {
-    let palette = theme.extended_palette();
-    let selected = palette.primary.weak.color;
-    let selected_text = palette.primary.weak.text;
-    let button = palette.background.strong.color;
-    let text = palette.background.strong.text;
-    let disabled_text = palette.background.weak.text;
-    let tools = DrawerTool::ALL;
-    for (index, tool) in tools.into_iter().enumerate() {
-        let top = TOOLBAR_TOP + index as f32 * (ROW_HEIGHT + ROW_GAP);
-        let rect = Rectangle::new(
-            Point::new(8.0, top),
-            Size::new(TOOLBAR_WIDTH - 16.0, ROW_HEIGHT),
-        );
-        frame.fill_rectangle(
-            rect.position(),
-            rect.size(),
-            if doc.tool == tool { selected } else { button },
-        );
-        frame.fill_text(Text {
-            content: tool.label().to_string(),
-            position: Point::new(16.0, top + 7.0),
-            color: if doc.tool == tool {
-                selected_text
-            } else {
-                text
-            },
-            size: 12.0.into(),
-            ..Text::default()
-        });
-    }
-    let base = TOOLBAR_TOP + tools.len() as f32 * (ROW_HEIGHT + ROW_GAP) + 12.0;
-    for (index, (label, enabled)) in [
-        ("Undo", !doc.undo_empty()),
-        ("Redo", !doc.redo_empty()),
-        ("Del", !doc.selection.is_empty()),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let top = base + index as f32 * (ROW_HEIGHT + ROW_GAP);
-        let rect = Rectangle::new(
-            Point::new(8.0, top),
-            Size::new(TOOLBAR_WIDTH - 16.0, ROW_HEIGHT),
-        );
-        frame.fill_rectangle(
-            rect.position(),
-            rect.size(),
-            if enabled {
-                button
-            } else {
-                Color::from_rgba(0.0, 0.0, 0.0, 0.12)
-            },
-        );
-        frame.fill_text(Text {
-            content: label.to_string(),
-            position: Point::new(16.0, top + 7.0),
-            color: if enabled { text } else { disabled_text },
-            size: 12.0.into(),
-            ..Text::default()
-        });
-    }
-}
-
-pub(super) fn draw_canvas(
-    frame: &mut Frame<Renderer>,
-    doc: &DrawerDoc,
-    bounds: Rectangle,
-    theme: &Theme,
-    shapes_dir: &str,
-    area: Option<&AreaMap>,
-) {
-    let palette = theme.extended_palette();
-    let text = palette.background.base.text;
-    let unit = unit_rect(bounds, doc.view);
-    let grid = Color::from_rgba(0.5, 0.5, 0.5, 0.25);
-    for step in 0..=4 {
-        let t = step as f32 / 4.0;
-        let x = unit.x + unit.width * t;
-        let y = unit.y + unit.height * t;
-        let mut vertical = path::Builder::new();
-        vertical.move_to(Point::new(x, unit.y));
-        vertical.line_to(Point::new(x, unit.y + unit.height));
-        frame.stroke(
-            &vertical.build(),
-            canvas::Stroke::default().with_color(grid).with_width(1.0),
-        );
-        let mut horizontal = path::Builder::new();
-        horizontal.move_to(Point::new(unit.x, y));
-        horizontal.line_to(Point::new(unit.x + unit.width, y));
-        frame.stroke(
-            &horizontal.build(),
-            canvas::Stroke::default().with_color(grid).with_width(1.0),
-        );
-    }
-    frame.stroke(
-        &path::Path::rectangle(unit.position(), unit.size()),
-        canvas::Stroke::default().with_color(text).with_width(1.0),
-    );
-    draw_areas(frame, area, unit);
-    for (index, stroke) in doc.strokes.iter().enumerate() {
-        draw_stroke(
-            frame,
-            stroke,
-            bounds,
-            doc.view,
-            text,
-            doc.is_selected(index),
-        );
-    }
-    if doc.tool == DrawerTool::Select {
-        draw_anchors(frame, doc, bounds, text);
-    }
-    if doc.strokes.is_empty() {
-        frame.fill_text(Text {
-            content: "Draw a stroke, or pick a tool on the left".to_string(),
-            position: Point::new(unit.x + 16.0, unit.y + 16.0),
-            color: palette.background.strong.text,
-            size: 13.0.into(),
-            ..Text::default()
-        });
-    }
-    frame.fill_text(Text {
-        content: format!("Library: {shapes_dir}"),
-        position: Point::new(TOOLBAR_WIDTH + 12.0, bounds.height - 24.0),
-        color: palette.background.strong.text,
-        size: 11.0.into(),
-        max_width: (bounds.width - TOOLBAR_WIDTH - 24.0).max(1.0),
-        ..Text::default()
-    });
-}
-
-fn draw_areas(frame: &mut Frame<Renderer>, area: Option<&AreaMap>, unit: Rectangle) {
-    let Some(map) = area else {
-        return;
-    };
-    let cells = usize::from(MAP_CELLS);
-    let cell_w = unit.width / cells as f32;
-    let cell_h = unit.height / cells as f32;
-    for row in 0..cells {
-        let mut col = 0;
-        while col < cells {
-            let colour = map.cells[row * cells + col];
-            // 0 = 空（不着色）；色号上限由 use10 决定，最大 16（通道 10）
-            if colour == 0 || colour > 16 {
-                col += 1;
-                continue;
-            }
-            let start = col;
-            col += 1;
-            while col < cells && map.cells[row * cells + col] == colour {
-                col += 1;
-            }
-            let rect = Rectangle::new(
-                Point::new(unit.x + start as f32 * cell_w, unit.y + row as f32 * cell_h),
-                Size::new((col - start) as f32 * cell_w, cell_h),
-            );
-            frame.fill_rectangle(rect.position(), rect.size(), area_colour(colour));
-        }
-    }
-}
-
-fn area_colour(colour: u8) -> Color {
-    const COLOURS: [(f32, f32, f32); 17] = [
-        (0.0, 0.0, 0.0),
-        (0.95, 0.25, 0.25),
-        (0.95, 0.55, 0.20),
-        (0.90, 0.80, 0.20),
-        (0.35, 0.80, 0.35),
-        (0.20, 0.75, 0.65),
-        (0.25, 0.60, 0.95),
-        (0.45, 0.40, 0.95),
-        (0.75, 0.35, 0.95),
-        (0.95, 0.35, 0.75),
-        (0.80, 0.45, 0.30),
-        (0.55, 0.70, 0.25),
-        (0.20, 0.85, 0.80),
-        (0.35, 0.50, 0.95),
-        (0.70, 0.55, 0.90),
-        (0.90, 0.60, 0.45),
-        // 16 = 通道 10（GM 鼓组）：用中性灰区分，避免与 1..15 的音高色混淆
-        (0.62, 0.62, 0.62),
-    ];
-    let (r, g, b) = COLOURS[usize::from(colour.min(16))];
-    Color::from_rgba(r, g, b, 0.32)
-}
-
-/// 选中 stroke 的锚点/控制柄（仅在 Select 工具下绘制）
-fn draw_anchors(frame: &mut Frame<Renderer>, doc: &DrawerDoc, bounds: Rectangle, text: Color) {
-    let selected_color = Color::from_rgb(1.0, 0.72, 0.2);
-    let handle_color = Color::from_rgba(0.8, 0.85, 0.95, 0.85);
-    for &stroke_index in &doc.selection {
-        let Some(stroke) = doc.strokes.get(stroke_index) else {
-            continue;
-        };
-        for (anchor_index, anchor) in stroke.anchors.iter().enumerate() {
-            if stroke.kind == StrokeKind::Curve && anchor.bend != AnchorBend::Corner {
-                for handle in [anchor.in_handle_abs(), anchor.out_handle_abs()] {
-                    if handle == anchor.pos {
-                        continue;
-                    }
-                    let from = unit_to_local(anchor.pos, bounds, doc.view);
-                    let to = unit_to_local(handle, bounds, doc.view);
-                    let mut builder = path::Builder::new();
-                    builder.move_to(from);
-                    builder.line_to(to);
-                    frame.stroke(
-                        &builder.build(),
-                        canvas::Stroke::default()
-                            .with_color(handle_color)
-                            .with_width(1.0),
-                    );
-                    frame.fill_rectangle(
-                        Point::new(to.x - 2.0, to.y - 2.0),
-                        Size::new(4.0, 4.0),
-                        handle_color,
-                    );
-                }
-            }
-            let pos = unit_to_local(anchor.pos, bounds, doc.view);
-            let color = if doc.selected_anchor == Some((stroke_index, anchor_index)) {
-                selected_color
-            } else {
-                text
-            };
-            frame.fill_rectangle(
-                Point::new(pos.x - 3.0, pos.y - 3.0),
-                Size::new(6.0, 6.0),
-                color,
-            );
-        }
-    }
-}
-
-pub(super) fn draw_stroke(
-    frame: &mut Frame<Renderer>,
-    stroke: &lumino_core::shape::Stroke,
-    bounds: Rectangle,
-    view: DrawerView,
-    color: Color,
-    selected: bool,
-) {
-    if stroke.anchors.len() < 2 {
-        return;
-    }
-    let mut builder = path::Builder::new();
-    let first = unit_to_local(stroke.anchors[0].pos, bounds, view);
-    builder.move_to(first);
-    if stroke.kind == lumino_core::shape::StrokeKind::Curve {
-        for window in stroke.anchors.windows(2) {
-            let a = window[0];
-            let b = window[1];
-            if a.bend == AnchorBend::Corner || b.bend == AnchorBend::Corner {
-                builder.line_to(unit_to_local(b.pos, bounds, view));
-            } else {
-                builder.bezier_curve_to(
-                    unit_to_local(a.out_handle_abs(), bounds, view),
-                    unit_to_local(b.in_handle_abs(), bounds, view),
-                    unit_to_local(b.pos, bounds, view),
-                );
-            }
-        }
-    } else if stroke.kind == lumino_core::shape::StrokeKind::Arc && stroke.anchors.len() >= 3 {
-        let a = stroke.anchors[0].pos;
-        let b = stroke.anchors[1].pos;
-        let c = stroke.anchors[2].pos;
-        let points = lumino_editor_state::shape_ops::arc_points_scaled(
-            (a.0 as f64, a.1 as f64),
-            (b.0 as f64, b.1 as f64),
-            (c.0 as f64, c.1 as f64),
-            1.0,
-        );
-        for point in points.iter().skip(1) {
-            builder.line_to(unit_to_local(
-                (point.0 as f32, point.1 as f32),
-                bounds,
-                view,
-            ));
-        }
-    } else {
-        for anchor in &stroke.anchors[1..] {
-            builder.line_to(unit_to_local(anchor.pos, bounds, view));
-        }
-    }
-    frame.stroke(
-        &builder.build(),
-        canvas::Stroke::default()
-            .with_color(if selected {
-                Color::from_rgb(1.0, 0.72, 0.2)
-            } else {
-                color
-            })
-            .with_width(if selected { 3.0 } else { 2.0 }),
-    );
-}
-
-pub(super) fn unit_rect(bounds: Rectangle, view: DrawerView) -> Rectangle {
+pub(crate) fn unit_rect(bounds: Rectangle, view: DrawerView) -> Rectangle {
     let side = unit_side(bounds, view);
     let area = Rectangle::new(
         Point::new(TOOLBAR_WIDTH + PADDING, PADDING),
@@ -368,18 +69,18 @@ pub(super) fn unit_rect(bounds: Rectangle, view: DrawerView) -> Rectangle {
     )
 }
 
-pub(super) fn unit_side(bounds: Rectangle, view: DrawerView) -> f32 {
+pub(crate) fn unit_side(bounds: Rectangle, view: DrawerView) -> f32 {
     let width = (bounds.width - TOOLBAR_WIDTH - PADDING * 2.0).max(1.0);
     let height = (bounds.height - PADDING * 2.0).max(1.0);
     width.min(height) * 0.85 * view.zoom.max(0.25)
 }
 
-pub(super) fn unit_to_local(unit: (f32, f32), bounds: Rectangle, view: DrawerView) -> Point {
+pub(crate) fn unit_to_local(unit: (f32, f32), bounds: Rectangle, view: DrawerView) -> Point {
     let rect = unit_rect(bounds, view);
     Point::new(rect.x + rect.width * unit.0, rect.y + rect.height * unit.1)
 }
 
-pub(super) fn local_to_unit(local: Point, bounds: Rectangle, view: DrawerView) -> (f32, f32) {
+pub(crate) fn local_to_unit(local: Point, bounds: Rectangle, view: DrawerView) -> (f32, f32) {
     let rect = unit_rect(bounds, view);
     let u = ((local.x - rect.x) / rect.width).clamp(0.0, 1.0);
     let v = ((local.y - rect.y) / rect.height).clamp(0.0, 1.0);

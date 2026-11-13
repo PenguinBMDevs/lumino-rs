@@ -1,6 +1,6 @@
 //! 钢琴卷帘用户界面编辑器 crate。
 //!
-//! 本 crate 提供基于 iced 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
+//! 本 crate 提供基于 旧版 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
 //! 滚动、缩放、力度编辑、滚动条控件等 UI 能力，并整合
 //! [`lumino_editor_state`] 与底层文档状态模块。
 
@@ -10,7 +10,7 @@ pub use lumino_ui_core::constants;
 pub use lumino_ui_core::message;
 pub use lumino_ui_core::sidebar_event as sidebar;
 pub use lumino_ui_core::theme;
-pub use lumino_ui_core::{Element, Message, Renderer, Theme};
+pub use lumino_ui_core::{Message, Theme};
 
 /// 遮罩参数面板的编辑目标（DRAW-010）
 pub use interaction::MaskEditTarget;
@@ -24,7 +24,6 @@ pub mod grid;
 pub mod history;
 pub mod note;
 pub mod recording;
-pub mod scrollbar_widget;
 pub mod smooth_scroll;
 pub mod spatial_index;
 pub mod velocity;
@@ -82,8 +81,7 @@ mod tests {
     mod undo_redo_consistency;
 }
 
-use iced_core::Point;
-use iced_widget::canvas;
+use lumino_ui_core::geom::Point;
 use std::cell::{Cell, RefCell};
 
 // 统一从 editor_state 导入（重构拆分前 `crate::` 引用兼容）
@@ -148,14 +146,23 @@ pub struct SpatialIndexState {
     pub max_note_len_key: Cell<Option<(u64, usize)>>,
 }
 
+/// 绘制缓存失效标记（旧版 绘制缓存已删除，clear 为 no-op）。
+#[derive(Default)]
+pub struct GridCacheMarker;
+
+impl GridCacheMarker {
+    /// 失效（no-op）。
+    pub fn clear(&mut self) {}
+}
+
 /// 钢琴卷帘编辑器
 pub struct Editor {
-    /// 网格绘制缓存
-    pub grid_cache: canvas::Cache<lumino_ui_core::Renderer>,
-    /// 键盘缓存（只随垂直滚动变化）
-    pub keyboard_cache: canvas::Cache<lumino_ui_core::Renderer>,
-    /// 标尺缓存（只随水平滚动变化）
-    pub ruler_cache: canvas::Cache<lumino_ui_core::Renderer>,
+    /// 绘制缓存失效标记（旧版 绘制缓存已删除；保留调用点以免改动大量编辑路径）
+    pub grid_cache: GridCacheMarker,
+    /// 键盘缓存失效标记（同 grid_cache，no-op）
+    pub keyboard_cache: GridCacheMarker,
+    /// 标尺缓存失效标记（同 grid_cache，no-op）
+    pub ruler_cache: GridCacheMarker,
 
     /// 空间索引状态（音符索引、查询缓存等）
     pub spatial: SpatialIndexState,
@@ -292,7 +299,7 @@ pub struct Editor {
 
     /// Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动，可靠通道）
     ///
-    /// 与 `GridInteractionState.control_pressed`（iced canvas 内事件，可能因焦点
+    /// 与 `GridInteractionState.control_pressed`（旧版 canvas 内事件，可能因焦点
     /// 问题不送达）互为兜底：ruler/键盘区的 Ctrl+滚轮缩放以此字段为准。
     ctrl_pressed: bool,
 
