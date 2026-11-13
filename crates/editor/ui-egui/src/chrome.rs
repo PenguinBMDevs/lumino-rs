@@ -42,22 +42,23 @@ pub use model::{
     CloudNoticeModel, CloudProtocol, CloudProtocolOptionModel, CloudSavePanelModel,
     CollaborationConnectView, CollaborationConnectingView, CollaborationInRoomView,
     CollaborationModel, CollaborationRoomActionsView, CollaborationViewModel, CompatLine,
-    CompatibilityPageModel, CustomPrecisionModel, DialogModel, DialogPalette, DotOptionModel,
-    DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel,
-    HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel,
-    MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
-    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
-    ProjectNoteCountModel, ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel,
-    RecoverTrackRowModel, RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind,
-    RightSidebarRailItem, RollBar, SaveConfirmModel, SettingsLabels, SettingsPageModel,
-    SettingsPalette, SettingsSnapshot, ShapeActionButton, ShapeDrawerModel, ShapePanelAction,
-    ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel,
-    SidebarRouteIcon, SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel,
-    SpeedChangeModel, StatusbarModel, TextPairCell, TexturePreviewModel, TitlebarModel,
-    ToolbarGroupsModel, ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction,
-    VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction,
-    VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress,
-    VideoOverlayView, VideoPreviewModel, VideoRow, VideoSection,
+    CompatibilityPageModel, CustomPrecisionModel, DeviceWarningModel, DialogModel, DialogPalette,
+    DotOptionModel, DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel,
+    HelpSectionModel, HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel,
+    LoadConfirmModel, MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel,
+    MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel,
+    OverflowMenuModel, ProgressModel, ProjectNoteCountModel, ProjectSettingsModel,
+    RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel, RecoverTrackRowModel, RecoverTrackSelection,
+    RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar, SaveConfirmModel,
+    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton,
+    ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack,
+    SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel, TextPairCell,
+    TexturePreviewModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel, VideoButton,
+    VideoButtonFill, VideoExportAction, VideoExportModel, VideoExportOverlayModel,
+    VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError,
+    VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView, VideoPreviewModel, VideoRow,
+    VideoSection,
 };
 pub use popup_titlebar::PopupTitlebarModel;
 pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
@@ -452,6 +453,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::VideoExportOverlay(model) => {
                 crate::video_export_overlay::show(&mut root, model);
+            }
+            DialogModel::Progress(model) => {
+                crate::overlay_window::show_progress(&mut root, model);
+            }
+            DialogModel::DeviceWarning(model) => {
+                crate::overlay_window::show_device_warning(&mut root, model);
             }
         }
         return;

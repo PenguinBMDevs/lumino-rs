@@ -3713,7 +3713,28 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 776/776、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.25（下一步）**
+**Task 4.25（第一百三十二步）：进度窗 / 设备警告窗补齐 egui 内容（修复空白窗口）**
+
+- **发现的问题**：egui 独占整窗后，这两类辅助窗口（非 `DialogType`）只画了 30px 标题栏，
+  内容区是清屏色——`chrome.rs` 对它们只返回 `dialog_titlebar`，属于真实功能缺失。
+- **新增 `ui-egui::overlay_window`**：
+  - `show_progress`：标题 24px、状态行 16px、进度条（宽度按窗口 60% 钳制 200..640），
+    垂直居中，扣掉自制标题栏 30px；
+  - `show_device_warning`：24px 内边距、⚠ + 18px 标题行、14px 详情、底部勾选框 +
+    「确认并关闭」「放我进去」两个按钮；
+  - 动作通道 `OverlayWindowAction::{SuppressToggled, Quit, Continue{suppress}}`，
+    生产侧映射为 `window::Event::device_warning_*`。
+- **`DialogModel` 新增 `Progress` / `DeviceWarning`**；`egui_chrome_model_for` 在进度窗 /
+  警告窗分支构建对应模型（不再返回空 dialog）。图标由 🤔 改为 ⚠：前者在已装字体里没有
+  字形，egui 会直接 panic（真机上同样会炸）。
+- **测试**：`overlay_windows.rs` 4 条——进度窗渲染、`Continue{suppress:true}`、
+  `Quit`、勾选切换；`progress_and_warning_windows_draw_their_own_content` 锁定
+  「必须交出内容模型、且不画主窗口标题栏/状态栏」。
+- 验收：`lumino-ui` lib 776/776、`ui-egui` 全部集成测试（含新 4 条）、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
+  12/12 零基线改动。
+
+**Task 4.26（下一步）**
 
 1. 对话框输入收口（`DialogModel` 覆盖不到的设置页 + `measure_dialog_window_size`
    改为 egui 侧测量），之后删除 `host/measure.rs` 的 iced `Renderer` 依赖；

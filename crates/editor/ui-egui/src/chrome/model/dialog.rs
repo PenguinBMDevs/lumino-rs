@@ -51,6 +51,42 @@ pub enum DialogModel {
     CloudNotice(Box<CloudNoticeModel>),
     /// 视频导出进度覆盖层（`DialogType::VideoExport` 的导出中/收尾/完成/失败）。
     VideoExportOverlay(Box<VideoExportOverlayModel>),
+    /// 启动/加载进度窗（独立窗口，无取消按钮）。
+    Progress(ProgressModel),
+    /// 设备检查警告窗（独立窗口，勾选框 + 两个按钮）。
+    DeviceWarning(DeviceWarningModel),
+}
+
+/// 启动/加载进度窗模型。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProgressModel {
+    /// 顶部是否有 30px 自制标题栏（`!use_native_titlebar`）。
+    pub titlebar: bool,
+    /// 标题「处理中...」。
+    pub title: String,
+    /// 状态行文本。
+    pub message: String,
+    /// 进度 0.0..=1.0。
+    pub progress: f32,
+}
+
+/// 设备检查警告窗模型。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DeviceWarningModel {
+    /// 顶部是否有 30px 自制标题栏。
+    pub titlebar: bool,
+    /// 标题行右侧文案。
+    pub heading: String,
+    /// 详情文本（GPU / 驱动 / 缺失特性）。
+    pub detail: String,
+    /// 是否已勾选「不要再提示我」。
+    pub suppress: bool,
+    /// 勾选框标签。
+    pub suppress_label: String,
+    /// 「确认并关闭」。
+    pub quit_label: String,
+    /// 「放我进去」。
+    pub continue_label: String,
 }
 
 impl DialogModel {

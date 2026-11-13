@@ -38,6 +38,7 @@ pub mod mask_panel;
 pub mod material_delete;
 pub mod memory_monitor;
 pub mod mixer;
+pub mod overlay_window;
 pub mod piano_roll_context_menu;
 pub mod project_settings;
 pub mod recover_track;

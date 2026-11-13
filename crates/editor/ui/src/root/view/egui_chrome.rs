@@ -38,11 +38,13 @@ mod video_export;
 mod video_preview;
 
 use lumino_core::storage::config::NoteCountDisplay;
+use lumino_core::tr;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
-    ChromeModel, PopupTitlebarModel, RollBar, SidebarGroup, SidebarModel, SidebarPanel,
-    SidebarTrack, StatusbarModel, TitlebarModel, ToolbarModel,
+    ChromeModel, DeviceWarningModel, DialogModel, PopupTitlebarModel, ProgressModel, RollBar,
+    SidebarGroup, SidebarModel, SidebarPanel, SidebarTrack, StatusbarModel, TitlebarModel,
+    ToolbarModel,
 };
 use lumino_ui_egui::chrome::{SidebarRouteIcon, SidebarRouteItem};
 
@@ -463,7 +465,33 @@ impl Root {
                 (!self.settings.synth.use_native_titlebar).then_some(PopupTitlebarModel {
                     focused: self.window.is_focused,
                 });
+            // 这两类窗口没有 `DialogType`，内容由 egui 单独绘制（iced 不再 present）。
+            let titlebar = !self.settings.synth.use_native_titlebar;
+            let dialog = if self.is_progress_window {
+                let (message, progress) = self
+                    .progress
+                    .as_ref()
+                    .map(|(m, p)| (m.clone(), *p))
+                    .unwrap_or((tr!("正在初始化...").to_string(), 0.0));
+                Some(DialogModel::Progress(ProgressModel {
+                    titlebar,
+                    title: tr!("处理中...").to_string(),
+                    message,
+                    progress: progress as f32,
+                }))
+            } else {
+                Some(DialogModel::DeviceWarning(DeviceWarningModel {
+                    titlebar,
+                    heading: tr!("你的电脑不满足运行 Lumino 的最低要求").to_string(),
+                    detail: self.state.device_warning_detail.clone(),
+                    suppress: self.state.device_warning_suppress_checked,
+                    suppress_label: tr!("不要再提示我").to_string(),
+                    quit_label: tr!("确认并关闭").to_string(),
+                    continue_label: tr!("放我进去").to_string(),
+                }))
+            };
             return ChromeModel {
+                dialog,
                 dialog_titlebar,
                 ..ChromeModel::default()
             };

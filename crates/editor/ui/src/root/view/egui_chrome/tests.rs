@@ -419,18 +419,28 @@ fn settings_dialog_takes_over_at_any_window_size() {
 }
 
 #[test]
-fn progress_and_warning_windows_are_not_covered() {
+fn progress_and_warning_windows_draw_their_own_content() {
     let config = lumino_core::storage::config::UiConfig::default();
 
+    // 这两类窗口没有 `DialogType`，但 iced 不再 present，内容必须由 egui 绘制，
+    // 否则窗口只剩标题栏。同时不能画出主窗口的标题栏 / 状态栏 band。
     let progress = Root::new_progress(&config.theme, &config);
     let model = progress.egui_chrome_model();
     assert!(model.titlebar.is_none() && model.statusbar.fps.is_none());
-    assert!(model.dialog.is_none());
+    assert!(
+        matches!(model.dialog, Some(DialogModel::Progress(_))),
+        "进度窗必须交出内容模型，实际：{:?}",
+        model.dialog
+    );
 
     let warning = Root::new_device_warning(&config.theme, &config, "测试".to_owned());
     let model = warning.egui_chrome_model();
     assert!(model.titlebar.is_none() && model.statusbar.fps.is_none());
-    assert!(model.dialog.is_none());
+    assert!(
+        matches!(model.dialog, Some(DialogModel::DeviceWarning(_))),
+        "设备警告窗必须交出内容模型，实际：{:?}",
+        model.dialog
+    );
 }
 
 #[test]

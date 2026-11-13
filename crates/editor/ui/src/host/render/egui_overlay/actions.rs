@@ -76,6 +76,8 @@ pub(super) struct OverlayActions {
     pub text_tool: Option<lumino_ui_egui::text_tool::TextToolAction>,
     pub velocity_panel: Option<lumino_ui_egui::velocity_panel::VelocityPanelAction>,
     pub scrollbar: Option<lumino_ui_egui::scrollbar::DirectedAction>,
+    /// 进度窗 / 设备警告窗动作。
+    pub overlay_window: Option<lumino_ui_egui::overlay_window::OverlayWindowAction>,
 }
 
 impl OverlayActions {
@@ -124,6 +126,7 @@ impl OverlayActions {
             text_tool: lumino_ui_egui::text_tool::take_action(ctx),
             velocity_panel: lumino_ui_egui::velocity_panel::take_action(ctx),
             scrollbar: lumino_ui_egui::scrollbar::take_action(ctx),
+            overlay_window: lumino_ui_egui::overlay_window::take_action(ctx),
         }
     }
 }
@@ -439,6 +442,24 @@ impl Host {
                 tracing::info!("egui 工具栏动作：{action:?}");
                 self.dispatch_overlay_message(message);
             }
+        }
+        if let Some(action) = actions.overlay_window {
+            use lumino_ui_egui::overlay_window::OverlayWindowAction;
+            let message = match action {
+                OverlayWindowAction::SuppressToggled => {
+                    crate::window::Event::device_warning_suppress_toggled(true)
+                }
+                OverlayWindowAction::Quit => crate::window::Event::device_warning_actioned(
+                    crate::window::DeviceWarningAction::Quit,
+                ),
+                OverlayWindowAction::Continue { suppress } => {
+                    crate::window::Event::device_warning_actioned(
+                        crate::window::DeviceWarningAction::Continue { suppress },
+                    )
+                }
+            };
+            tracing::info!("egui 辅助窗口动作：{action:?}");
+            self.dispatch_overlay_message(message);
         }
     }
 
