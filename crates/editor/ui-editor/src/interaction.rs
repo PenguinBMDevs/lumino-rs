@@ -23,6 +23,7 @@ pub(crate) mod round_corner;
 pub(crate) mod shape_bridge;
 pub(crate) mod shape_compose;
 pub(crate) mod shape_edit_ui;
+pub(crate) mod shape_insert;
 pub(crate) mod shape_ops;
 pub(crate) mod shape_tool;
 pub(crate) mod slice_cut;

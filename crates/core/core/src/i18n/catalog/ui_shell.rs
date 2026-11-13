@@ -243,6 +243,14 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         // DRAW-025：切割改为布防拖线；饼干模按「刀→面团」两个待确认形状
         "切割" => Some("Slice"),
         "饼干模" => Some("Mould"),
+        // DEBT-14：抽屉插入 → 待确认 / 退回抽屉
+        "退回抽屉" => Some("Return to drawer"),
+        "已退回抽屉：可调整后重新 Insert" => {
+            Some("Returned to drawer: adjust and insert again")
+        }
+        "退回失败：请选中一个从抽屉插入的待确认形状" => {
+            Some("Return failed: select a pending shape inserted from the drawer")
+        }
         "角度柔化" => Some("Round corners"),
         "角度柔化：拖角点调半径（Esc 退出）" => {
             Some("Round corners: drag a corner to set the radius (Esc to exit)")

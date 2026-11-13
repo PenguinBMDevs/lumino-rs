@@ -44,6 +44,11 @@ impl Root {
     pub fn take_dialog_result(&mut self) -> Option<crate::host::DialogResult> {
         self.state.dialog_result.take()
     }
+
+    /// 取走「退回抽屉」的回填数据（DEBT-14，由 Runner 每帧调用）
+    pub fn take_shape_drawer_return(&mut self) -> Option<lumino_core::shape::DrawerInsert> {
+        self.state.shape_drawer_return.take()
+    }
 }
 
 #[cfg(test)]

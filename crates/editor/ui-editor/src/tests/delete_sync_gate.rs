@@ -8,8 +8,6 @@
 //!
 //! 事件缓冲区是全局单例，本模块用唯一魔数 tick 从并行测试污染中隔离。
 
-use std::sync::Mutex;
-
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;

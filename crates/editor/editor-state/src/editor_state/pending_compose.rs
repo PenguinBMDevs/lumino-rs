@@ -43,6 +43,11 @@ pub enum ComposedKind {
     /// 参数化实例（kind + rect）表达不了旋转，进入「编辑图形」前统一提升成模型；
     /// `sources` 保留原实例，`Ctrl+Z`（撤销组合）可还原回参数化形状。
     Single,
+    /// DEBT-14：从形状抽屉 Insert 进来的待确认形状
+    ///
+    /// 与 `Single` 的区别只在来源：`drawer` 携带原图与插入参数，
+    /// 右键「退回抽屉」时据此回填；✓ 仍是唯一提交点。
+    Insert,
 }
 
 /// 组合结果中的一支（Slice 的两片 / Between 的首末与步）
@@ -76,6 +81,8 @@ pub struct PendingComposed {
     pub results: Vec<ComposedPart>,
     /// 参与组合的 pending 形状/路径（按组合前顺序）
     pub sources: Vec<PendingSource>,
+    /// 抽屉插入的来源（仅 [`ComposedKind::Insert`] 有；「退回抽屉」据此回填）
+    pub drawer: Option<lumino_core::shape::DrawerInsert>,
 }
 
 impl PendingComposed {
@@ -90,6 +97,23 @@ impl PendingComposed {
             kind,
             results: vec![ComposedPart::plain(model, notes)],
             sources,
+            drawer: None,
+        }
+    }
+
+    /// 抽屉插入产生的待确认形状（DEBT-14）
+    ///
+    /// `Insert` 只是提案：不写文档、不推历史；✓ 时由 `confirm_shape_tool` 统一提交。
+    pub fn from_drawer(
+        model: ShapeModel,
+        notes: Vec<ShapeNote>,
+        drawer: lumino_core::shape::DrawerInsert,
+    ) -> Self {
+        Self {
+            kind: ComposedKind::Insert,
+            results: vec![ComposedPart::plain(model, notes)],
+            sources: Vec::new(),
+            drawer: Some(drawer),
         }
     }
 
@@ -130,6 +154,14 @@ impl PendingComposed {
             for note in &mut part.notes {
                 *note = note.translated(dtick, dkey);
             }
+        }
+        // 抽屉来源的落位矩形跟随 pending 一起移动，否则「退回抽屉」记录的位置是旧的。
+        if let Some(drawer) = &mut self.drawer {
+            let rect = &mut drawer.spec.rect;
+            rect.tick_lo = (rect.tick_lo + dtick).max(0.0);
+            rect.tick_hi = (rect.tick_hi + dtick).max(0.0);
+            rect.key_lo = (rect.key_lo + dkey).clamp(0.0, 255.0);
+            rect.key_hi = (rect.key_hi + dkey).clamp(0.0, 255.0);
         }
     }
 }
@@ -203,6 +235,7 @@ mod tests {
             kind: ComposedKind::CopyAlong,
             results: vec![ComposedPart::plain(model, Vec::new())],
             sources: Vec::new(),
+            drawer: None,
         };
 
         composed.translate(5.0, 2.0);

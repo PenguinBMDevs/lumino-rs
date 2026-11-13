@@ -346,6 +346,8 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
         // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
         this.try_fill_recover_track_entries();
         this.sync_history_dialog();
+        // DEBT-14：主窗口「退回抽屉」的数据转发给抽屉窗口
+        this.sync_shape_drawer_return();
 
         // 启动提示（崩溃日志 / 自动保存恢复）排到首帧之后执行，
         // 避免原生模态框在窗口绘制前阻塞事件循环。

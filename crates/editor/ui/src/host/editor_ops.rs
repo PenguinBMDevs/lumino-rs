@@ -115,6 +115,9 @@ impl Host {
     /// 「加载 MIDI」，不得把后端选择永久锁死（见 `host::session_lock`）。
     pub fn set_midi_document(&mut self, doc: MidiDocument) {
         self.midi_load.mark_loaded();
+        // 载入/新建/关闭工程都走这里：右键菜单的锚定对象（待确认图形、音符选中）
+        // 已随旧文档失效，菜单必须一起关掉，否则会残留在屏幕上（越界）。
+        self.root.editor.context_menu.close();
         // tempo / 拍号的编辑态缓存由 `Root::set_midi_document` 统一只读刷新
         // （2026-10-20 审计 §三：此处原先「读 doc → set_tempo_points 写回 doc」
         // 是一次数据未变的往返，已删除）。

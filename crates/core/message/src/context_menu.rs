@@ -98,6 +98,8 @@ pub enum PianoRollContextMenuItem {
     CopyShapeText,
     /// 从剪贴板一行分享文本粘贴形状（DRAW-034）
     PasteShapeText,
+    /// 退回抽屉（DEBT-14）：删除该待确认插入并把原图 + 参数回填抽屉
+    ReturnToDrawer,
 }
 
 impl PianoRollContextMenuItem {
@@ -124,7 +126,8 @@ impl PianoRollContextMenuItem {
             | Self::BetweenCreate
             | Self::CopyAlong
             | Self::VelocityUp
-            | Self::CopyShapeText => ContextMenuTarget::DrawnShape,
+            | Self::CopyShapeText
+            | Self::ReturnToDrawer => ContextMenuTarget::DrawnShape,
             _ => ContextMenuTarget::Notes,
         }
     }

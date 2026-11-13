@@ -35,6 +35,10 @@ impl Host {
         root.editor.keyboard_cache.clear();
         root.editor.ruler_cache.clear();
 
+        // 右键菜单锚定的对象（待确认图形 / 音符选中）已随工程清空失效：
+        // 必须一起关掉，否则「长列表」会残留在屏幕上（越界）。
+        root.editor.context_menu.close();
+
         // 播放管理器
         root.reset_playback_manager();
         root.playback.pending_tempo_changes = None;

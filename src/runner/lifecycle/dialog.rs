@@ -46,6 +46,47 @@ impl RunnerInner {
         }
     }
 
+    /// 把主窗口「退回抽屉」的数据推给抽屉窗口（DEBT-14）。
+    ///
+    /// 主窗口与抽屉是两个独立 Root：主窗口只把 payload 放在自己的
+    /// `RootState.shape_drawer_return`，这里每帧取走并转发。
+    /// 抽屉未打开时先打开并暂存，窗口就绪后的下一帧再推（不重复开窗）。
+    pub(crate) fn sync_shape_drawer_return(&mut self) {
+        if self.pending_drawer_return.is_none() {
+            self.pending_drawer_return = self
+                .window_state
+                .window
+                .ui_mut()
+                .root_mut()
+                .take_shape_drawer_return();
+        }
+        let Some(payload) = self.pending_drawer_return.take() else {
+            return;
+        };
+
+        if let Some(id) = self
+            .window_state
+            .dialog_manager
+            .first_dialog_id_of_type(DialogType::ShapeDrawer)
+            && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
+            && let Some(ui) = dialog.ui_mut()
+        {
+            ui.set_shape_drawer_returned(payload);
+            return;
+        }
+
+        // 抽屉没开：开一个，payload 留到窗口就绪。
+        if !self
+            .window_state
+            .dialog_manager
+            .is_open_or_pending(DialogType::ShapeDrawer)
+        {
+            let dir = crate::storage::config_dir().join("shapes");
+            self.window_state.dialog_manager.open_shape_drawer(dir);
+        }
+        self.pending_drawer_return = Some(payload);
+    }
+
     /// 处理对话框窗口事件
     pub(crate) fn handle_dialog_event(
         &mut self,

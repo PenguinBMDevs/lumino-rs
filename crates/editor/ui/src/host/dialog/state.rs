@@ -23,6 +23,15 @@ fn history_kind(kind: OpKind) -> HistoryKind {
     }
 }
 
+/// 浮点参数回填成输入框文本（4.0 → "4"，12.5 → "12.5"）
+fn format_number(value: f32) -> String {
+    if value.fract().abs() < f32::EPSILON {
+        format!("{}", value as i64)
+    } else {
+        format!("{value}")
+    }
+}
+
 impl Host {
     /// 设置加载确认对话框（用于独立对话框窗口）
     pub fn set_load_confirm_dialog(&mut self, file_path: &str, size_mb: f64) {
@@ -227,6 +236,22 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 把「退回抽屉」的原图与插入参数回填到抽屉（DEBT-14）
+    ///
+    /// 只在抽屉窗口自己的 Host 上调用：Runner 从主窗口取走 payload 后推过来。
+    pub fn set_shape_drawer_returned(&mut self, payload: lumino_core::shape::DrawerInsert) {
+        let state = &mut self.root.state.shape_drawer;
+        state.doc.borrow_mut().load_drawing(&payload.drawing);
+        state.selected = Some(payload.drawing.id.clone());
+        state.name_input = payload.drawing.name.clone();
+        state.insert_beats_text = format_number(payload.spec.beats);
+        state.insert_keys_text = format_number(payload.spec.keys);
+        state.insert_fit_contain = payload.spec.fit_contain;
+        state.status = Some(lumino_core::tr!("已退回抽屉：可调整后重新 Insert").to_string());
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 把抽屉当前图形插入主工程（当前轨道 + 播放头；尺寸/比例来自抽屉插入参数）。
     pub fn insert_shape_drawing(
         &mut self,
@@ -261,11 +286,23 @@ impl Host {
         let model = drawing
             .to_model(track as u16, arc_k_for_rect(rect, ppq), rect)
             .map_err(|error| error.to_string())?;
-        if !self.root.editor.create_shape(model) {
+        // DEBT-14 / DEC-001：Insert 只是提案 —— 生成待确认形状 + 预览音符，
+        // document 在 ✓ 之前一个音符都不变，也不产生文档历史。
+        let drawer = lumino_core::shape::DrawerInsert::new(
+            drawing.clone(),
+            lumino_core::shape::ShapeInsertSpec::new(
+                options.beats,
+                options.keys,
+                options.fit_contain,
+                rect,
+            ),
+        );
+        if !self.root.editor.insert_shape_pending(model, drawer) {
             return Err("形状插入失败（请检查当前音轨）".to_string());
         }
+        // 已切到形状选择（`insert_shape_pending` 内部完成），pending 可右键。
         self.root.state.shape_drawer.status = Some(format!(
-            "已插入当前工程（{} 拍 × {} key{}）",
+            "已插入为待确认（{} 拍 × {} key{}）——✓ 后才写入工程",
             options.beats,
             options.keys,
             if options.fit_contain {

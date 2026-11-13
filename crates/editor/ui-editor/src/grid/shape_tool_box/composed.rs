@@ -50,7 +50,9 @@ fn notes_bounds(notes: &[ShapeNote]) -> Option<(f32, f32, f32, f32)> {
 /// 027/028 的效果不能只靠轮廓表达：直接画组合后的音符块。
 ///
 /// - 027：副本落在路径上，音符块就是 ✓ 会提交的最终位置；
-/// - 028：逐音符按力度调制透明度，渐强在提交前可见。
+/// - 028：逐音符按力度调制透明度，渐强在提交前可见；
+/// - DEBT-14：抽屉 Insert 的预览必须是**音符块**（卡面「所见即所得」），
+///   轮廓只表达几何，用户无法据此判断最终会写入哪些音符。
 pub(super) fn draw_composed_notes(
     frame: &mut canvas::Frame<Renderer>,
     editor: &Editor,
@@ -61,7 +63,7 @@ pub(super) fn draw_composed_notes(
         return false;
     }
     match composed.kind {
-        ComposedKind::CopyAlong | ComposedKind::Single => {
+        ComposedKind::CopyAlong | ComposedKind::Single | ComposedKind::Insert => {
             let blocks: Vec<(f32, f32, u16)> = composed.notes().map(note_block).collect();
             fill_note_blocks(
                 frame,

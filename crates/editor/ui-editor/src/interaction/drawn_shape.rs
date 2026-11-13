@@ -492,6 +492,13 @@ impl Editor {
 
         // 逆序遍历：最后登记的图形画在最上层，命中也应优先
         for shape in self.editor_state.shape_select.visible_on(track).rev() {
+            // DEBT-14：待确认组合（含抽屉 Insert）按「预览音符覆盖区」命中。
+            // 只测轮廓会漏掉填充图形内部——用户看到的是音符块，点在块内就必须选中。
+            if let Some(lumino_editor_state::PendingShapeRef::Composed(index)) = shape.pending
+                && self.composed_notes_hit(probe, index)
+            {
+                return Some(shape.id);
+            }
             let hit = match &shape.source {
                 DrawnShapeSource::Shape {
                     kind,
@@ -535,9 +542,18 @@ impl Editor {
     /// 与 [`Self::drawn_shape_pending_at_screen`] 的区别：这里返回具体来源，
     /// 供右键菜单判断「当前工具是不是该 pending 的 owner」。
     pub(crate) fn pending_ref_at_screen(&self, pos: Point) -> Option<PendingShapeRef> {
-        let id = self.drawn_shape_at_screen(pos)?;
-        if let Some(pending) = self.editor_state.shape_select.pending_of(id) {
+        if let Some(id) = self.drawn_shape_at_screen(pos)
+            && let Some(pending) = self.editor_state.shape_select.pending_of(id)
+        {
             return Some(pending);
+        }
+        // 点没命中形状本体（例如落在选框内的空白处）：
+        // 只要该 pending 已被选中，右键仍应落到它身上——否则用户必须先框选
+        // 或精确点中音符才能拿到长列表（DEBT-14 反馈）。
+        let tick = self.pos_to_tick(pos);
+        let key = self.pos_to_raw_key(pos);
+        if !self.point_in_selection_box(tick, key) {
+            return None;
         }
         self.editor_state
             .shape_select
@@ -1069,6 +1085,28 @@ pub(crate) fn history_entry_group(entry: &HistoryEntry) -> Option<u64> {
         HistoryEntry::Snapshot(s) => s.group_id,
         HistoryEntry::Operation(o) => o.group_id,
         HistoryEntry::Create(c) => c.group_id,
+    }
+}
+
+impl Editor {
+    /// 待确认组合的「预览音符覆盖区」命中（DEBT-14）
+    ///
+    /// 抽屉 Insert 的预览是一块块音符，用户点的是音符而不是细轮廓；
+    /// 只按轮廓做 6px 容差会在填充图形内部完全打不中。
+    fn composed_notes_hit(&self, probe: iced_core::Point, index: usize) -> bool {
+        /// 音符块外扩（逻辑像素），避免边缘一两像素的抖动漏选
+        const PAD: f32 = 2.0;
+        let Some(composed) = self.editor_state.pending_composed.get(index) else {
+            return false;
+        };
+        composed.notes().any(|note| {
+            let a = self.line_pos_screen_pos((note.tick, f32::from(note.key)));
+            let b = self
+                .line_pos_screen_pos((note.tick + note.length.max(1.0), f32::from(note.key) + 1.0));
+            let (x0, x1) = (a.x.min(b.x) - PAD, a.x.max(b.x) + PAD);
+            let (y0, y1) = (a.y.min(b.y) - PAD, a.y.max(b.y) + PAD);
+            probe.x >= x0 && probe.x <= x1 && probe.y >= y0 && probe.y <= y1
+        })
     }
 }
 

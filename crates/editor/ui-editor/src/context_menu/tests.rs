@@ -77,9 +77,10 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
             PianoRollContextMenuItem::CopyAlong,
             PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::CopyShapeText,
+            PianoRollContextMenuItem::ReturnToDrawer,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
-        "待确认镜像可走 010/019/020/021/022/025/026/027/028、分享几何、删除"
+        "待确认镜像可走 010/019/020/021/022/025/026/027/028、分享几何、退回抽屉、删除"
     );
     assert!(
         !items.iter().any(|item| matches!(

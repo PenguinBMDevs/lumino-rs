@@ -173,6 +173,7 @@ fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] 
             PianoRollContextMenuItem::CopyAlong,
             PianoRollContextMenuItem::VelocityUp,
             PianoRollContextMenuItem::CopyShapeText,
+            PianoRollContextMenuItem::ReturnToDrawer,
             PianoRollContextMenuItem::DeleteDrawnShape,
         ],
     }
@@ -277,6 +278,7 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::VelocityUp => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::CopyShapeText => Icon::ContextMenuCopy,
         PianoRollContextMenuItem::PasteShapeText => Icon::ContextMenuPaste,
+        PianoRollContextMenuItem::ReturnToDrawer => Icon::Undo,
     }
 }
 
@@ -312,6 +314,7 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::VelocityUp => tr!("力度渐强"),
         PianoRollContextMenuItem::CopyShapeText => tr!("复制为分享文本"),
         PianoRollContextMenuItem::PasteShapeText => tr!("从分享文本粘贴"),
+        PianoRollContextMenuItem::ReturnToDrawer => tr!("退回抽屉"),
     }
 }
 

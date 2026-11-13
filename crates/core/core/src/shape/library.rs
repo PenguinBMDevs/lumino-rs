@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 pub mod builtin;
 mod drawing;
 mod format;
+mod insert;
 
 pub use builtin::{BuiltinShape, builtin_drawings};
 pub use drawing::ShapeDrawing;
@@ -20,6 +21,7 @@ pub use format::{
     EXTENSION, MAGIC, MAX_BYTES, VERSION, decode_drawing, delete_drawing, drawing_path,
     encode_drawing, save_drawing,
 };
+pub use insert::{DrawerInsert, ShapeInsertSpec};
 
 /// 加载某个图形文件失败时的可读提示
 #[derive(Debug, Clone, PartialEq, Eq)]

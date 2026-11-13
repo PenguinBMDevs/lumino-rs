@@ -219,6 +219,11 @@ pub struct RootState {
     pub shape_drawer: ShapeDrawerState,
     /// 撤销历史面板状态（DRAW-035）
     pub history_dialog: HistoryDialogState,
+    /// 「退回抽屉」待交给抽屉窗口的回填数据（DEBT-14）
+    ///
+    /// 主窗口与抽屉是两个独立 Root：主窗口只把数据放在这里，Runner 每帧取走
+    /// 并推给抽屉窗口（`RunnerInner::sync_shape_drawer_return`）。
+    pub shape_drawer_return: Option<lumino_core::shape::DrawerInsert>,
 }
 
 impl Default for RootState {
@@ -265,6 +270,7 @@ impl RootState {
             help_tips: HelpTipsState::default(),
             shape_drawer: ShapeDrawerState::default(),
             history_dialog: HistoryDialogState::default(),
+            shape_drawer_return: None,
         }
     }
 }

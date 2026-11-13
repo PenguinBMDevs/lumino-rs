@@ -150,6 +150,33 @@ impl Root {
                         // 与 Delete 键同一条路径：鼠标工具下会优先删除选中的绘制图形
                         let _ = self.handle_editor_action(EditorAction::DeletePressed);
                     }
+                    PianoRollContextMenuItem::ReturnToDrawer => {
+                        // DEBT-14：只对「从抽屉 Insert 进来的 pending」有效；
+                        // 退回成功才移动数据，失败保留 pending（见 return_pending_to_drawer）。
+                        let index = self
+                            .editor
+                            .editor_state
+                            .shape_select
+                            .selected_shapes()
+                            .filter_map(|shape| shape.pending)
+                            .find_map(|reference| match reference {
+                                lumino_editor_state::PendingShapeRef::Composed(index) => {
+                                    Some(index)
+                                }
+                                _ => None,
+                            });
+                        match index.and_then(|index| self.editor.return_pending_to_drawer(index)) {
+                            Some(drawer) => {
+                                self.state.shape_drawer_return = Some(drawer);
+                            }
+                            None => {
+                                self.toast.push(
+                                    crate::toast::ToastLevel::Warning,
+                                    tr!("退回失败：请选中一个从抽屉插入的待确认形状"),
+                                );
+                            }
+                        }
+                    }
                     PianoRollContextMenuItem::LiveShape => {
                         if !self.editor.live_selected_shapes() {
                             self.toast.push(

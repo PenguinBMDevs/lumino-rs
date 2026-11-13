@@ -119,6 +119,8 @@ impl Editor {
         }
 
         let mut results: Vec<ComposedPart> = match kind {
+            // DEBT-14：抽屉插入只由 `PendingComposed::from_drawer` 产生，不走组合入口。
+            ComposedKind::Insert => return false,
             ComposedKind::Live => {
                 let Ok((model, _warnings)) = to_live(&models) else {
                     return false;
@@ -328,6 +330,7 @@ impl Editor {
             kind,
             results,
             sources,
+            drawer: None,
         });
         self.pending_composed_redo.clear();
         self.pending_edit_undo.clear();

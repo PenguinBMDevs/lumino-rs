@@ -53,8 +53,9 @@ pub use areas::{
 pub use expr::{Expr, ExprError};
 pub use geometry::{AnchorBend, ShapeAnchor, ShapeGeometry, ShapeKind, ShapeRect};
 pub use library::{
-    BuiltinShape, LibraryWarning, ShapeDrawing, ShapeLibrary, builtin_drawings, decode_drawing,
-    delete_drawing, drawing_path, encode_drawing, load_dir as load_shape_library, save_drawing,
+    BuiltinShape, DrawerInsert, LibraryWarning, ShapeDrawing, ShapeInsertSpec, ShapeLibrary,
+    builtin_drawings, decode_drawing, delete_drawing, drawing_path, encode_drawing,
+    load_dir as load_shape_library, save_drawing,
 };
 pub use model::{OpStage, ShapeModel, ShapeOp};
 pub use params::{

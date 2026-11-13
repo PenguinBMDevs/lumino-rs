@@ -261,6 +261,11 @@ pub(crate) struct RunnerInner {
     /// 只有可信的 main 才允许在下次写入前轮换为 backup；损坏的 main 在改名
     /// `*-lost-*` 时同步置 false，防止覆盖有效备份。
     pub(crate) autosave_main_trusted: Arc<AtomicBool>,
+    /// 「退回抽屉」待回填的数据（DEBT-14）
+    ///
+    /// 主窗口只把 payload 放进自己的 RootState；Runner 每帧取走，抽屉窗口
+    /// 未打开时先暂存在这里并触发打开，窗口就绪后推给它。
+    pub(crate) pending_drawer_return: Option<lumino_core::shape::DrawerInsert>,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -458,6 +463,7 @@ impl Runner {
             autosave_prompt_pending: false,
             autosave_preserve_on_exit: false,
             autosave_main_trusted: Arc::new(AtomicBool::new(false)),
+            pending_drawer_return: None,
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）
