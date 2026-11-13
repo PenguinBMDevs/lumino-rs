@@ -10,6 +10,8 @@ use egui::{Color32, Pos2, Rect, Stroke};
 
 use crate::theme;
 
+mod tri;
+
 /// 锚点半径（与 旧版 一致）。
 const ANCHOR_RADIUS: f32 = 6.0;
 /// 锚点白描边宽度。
@@ -102,12 +104,28 @@ pub fn show(ui: &egui::Ui, model: &CurvePreviewModel) {
         if points.len() < 3 {
             continue;
         }
-        painter.add(egui::Shape::Path(egui::epaint::PathShape {
-            points: points.clone(),
-            closed: true,
-            fill,
-            stroke: Stroke::new(1.0, base).into(),
-        }));
+        // egui 的 PathShape 填充只支持凸多边形；闭环可能是凹的，先切耳再填。
+        let tris = tri::ear_clip(points);
+        if tris.is_empty() {
+            // 自交/退化：只画描边，避免填出多边形外的色块。
+            painter.add(egui::Shape::closed_line(
+                points.clone(),
+                Stroke::new(1.0, base),
+            ));
+            continue;
+        }
+        let mut mesh = egui::Mesh::default();
+        for p in points {
+            mesh.colored_vertex(*p, fill);
+        }
+        for [a, b, c] in tris {
+            mesh.add_triangle(a, b, c);
+        }
+        painter.add(egui::Shape::mesh(mesh));
+        painter.add(egui::Shape::closed_line(
+            points.clone(),
+            Stroke::new(1.0, base),
+        ));
     }
     for block in &model.blocks {
         if block.width() > 0.0 && block.height() > 0.0 {
