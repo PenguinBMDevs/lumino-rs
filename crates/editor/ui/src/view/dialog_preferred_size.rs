@@ -43,11 +43,12 @@ use crate::state::root_state::DialogType;
 
 /// 尺寸兜底：窗口高度的绝对下限（逻辑像素）
 ///
-/// 防御性下限：测量不可用或内容极扁时，窗口仍需可点击（标题栏 + 一行按钮）。
+/// 防御性下限：声明缺失或内容极扁时，窗口仍需可点击（标题栏 + 一行按钮）。
 pub const MIN_DIALOG_HEIGHT: f32 = 120.0;
 
 /// 宽度兜底：窗口宽度的绝对下限（逻辑像素）
-pub const MIN_DIALOG_WIDTH: f32 = 240.0;
+#[cfg(test)]
+const MIN_DIALOG_WIDTH: f32 = 240.0;
 
 /// 工作区不可用时的宽度测量上限（逻辑像素）
 const MAX_MEASURE_WIDTH: f32 = 3840.0;
@@ -110,6 +111,9 @@ impl DialogSizeHint {
     }
 
     /// 是否需要跑宽度搜索（下限 < 上限时才有区间可搜）
+    ///
+    /// 仅测试保留：静态尺寸直接取 [`width_cap`]，不再做二分搜索。
+    #[cfg(test)]
     pub fn needs_width_search(&self, work_area_width: f32) -> bool {
         let cap = self
             .width_cap
@@ -135,6 +139,9 @@ pub fn width_cap(hint: DialogSizeHint, work_area: Size) -> f32 {
 }
 
 /// 宽度下限（逻辑像素）：声明下限与绝对下限取大，且不超过上限
+///
+/// 仅测试保留：静态尺寸从 [`width_cap`] 出发，不再需要下限区间。
+#[cfg(test)]
 pub fn width_floor(hint: DialogSizeHint, work_area: Size) -> f32 {
     let cap = width_cap(hint, work_area);
 
@@ -234,16 +241,41 @@ pub fn measurement_cap(hint: DialogSizeHint, work_area: Size) -> f32 {
     }
 }
 
+/// 由「声明 + 工作区」直接算出窗口尺寸（**不再测量内容**）
+///
+/// iced 视图层删除后没有可靠的文本度量通道，尺寸必须完全由声明决定：
+/// - 宽度 = [`width_cap`]（所有对话框的宽度都是固定声明值）；
+/// - 高度 = `min_height`（`pinned` / `floored` 都声明了下限），再按
+///   [`measurement_cap`] 与工作区夹取，并保证不低于 [`MIN_DIALOG_HEIGHT`]。
+///
+/// 返回 `Size::ZERO` 表示声明非法（宽度非有限/非正）：调用方回退种子尺寸。
+pub fn static_window_size(hint: DialogSizeHint, work_area: Size) -> Size {
+    let width = width_cap(hint, work_area);
+    if !width.is_finite() || width <= 0.0 {
+        return Size::ZERO;
+    }
+
+    let work_area_height = if work_area.height.is_finite() && work_area.height > 0.0 {
+        work_area.height
+    } else {
+        MAX_MEASURE_HEIGHT
+    };
+
+    // `pinned` 与 `floored` 都声明了高度；未声明时用绝对下限。
+    let declared = hint.min_height.unwrap_or(MIN_DIALOG_HEIGHT);
+    let height = declared
+        .min(measurement_cap(hint, work_area))
+        .max(MIN_DIALOG_HEIGHT)
+        .min(work_area_height);
+
+    Size::new(width, height)
+}
+
+#[cfg(test)]
 /// 由「宽度 + 测量高度 + 声明 + 工作区」算出最终窗口尺寸（纯函数）
 ///
-/// 宽度已由调用方算好（`measure_min_fitting_width` 的自动结果 + 声明边界），
-/// 这里只负责高度：
-/// - `min_height == max_height`（[`DialogSizeHint::pinned`]）：**直接用声明值**，
-///   不依赖测量（测量失败也不回退种子尺寸）；
-/// - 否则 `高 = clamp(measured_height, min_height ?? MIN_DIALOG_HEIGHT, measurement_cap)`。
-///
-/// 返回 `Size::ZERO` 表示**测量不可用**（宽度非法，或非钉死对话框的高度测量
-/// 非正/非有限）：调用方必须回退种子尺寸，绝不允许据此开出 0 尺寸窗口。
+/// **仅测试保留**：生产路径已改为 [`static_window_size`]（无内容测量）。
+/// 本函数用于锁定「钉死高度不受测量影响」这一声明语义。
 pub fn recommend_window_size(
     hint: DialogSizeHint,
     work_area: Size,
@@ -526,5 +558,56 @@ mod tests {
                 "{dialog_type:?} 的宽度区间已退化为一点，不应触发搜索"
             );
         }
+    }
+
+    /// 静态尺寸：每一类对话框都给出可用的逻辑尺寸（宽 = 声明值，高在工作区内）。
+    #[test]
+    fn test_static_window_size_is_usable_for_every_dialog() {
+        for dialog_type in ALL_DIALOGS {
+            let hint = dialog_size_hint(dialog_type);
+            let size = static_window_size(hint, WORK_AREA);
+            assert!(
+                size.width.is_finite() && size.width > 0.0,
+                "{dialog_type:?} 宽度无效: {}",
+                size.width
+            );
+            assert!(
+                (size.width - width_cap(hint, WORK_AREA)).abs() < f32::EPSILON,
+                "{dialog_type:?} 宽度应取声明值 {}",
+                width_cap(hint, WORK_AREA)
+            );
+            assert!(
+                size.height >= MIN_DIALOG_HEIGHT && size.height <= WORK_AREA.height,
+                "{dialog_type:?} 高度越界: {}",
+                size.height
+            );
+        }
+    }
+
+    /// 声明高度被原样采用：`pinned` 用 min=max，`floored` 用下限。
+    #[test]
+    fn test_static_window_size_uses_declared_height() {
+        assert_eq!(
+            static_window_size(dialog_size_hint(DialogType::Settings), WORK_AREA).height,
+            540.0
+        );
+        assert_eq!(
+            static_window_size(dialog_size_hint(DialogType::VideoExport), WORK_AREA).height,
+            560.0,
+            "floored 只声明下限 ⇒ 静态尺寸取下限"
+        );
+        assert_eq!(
+            static_window_size(dialog_size_hint(DialogType::None), WORK_AREA),
+            Size::ZERO,
+            "None 不产生对话框窗口"
+        );
+    }
+
+    /// 工作区比声明高度还矮时，高度被夹到工作区（不越屏）。
+    #[test]
+    fn test_static_window_size_clamps_to_work_area() {
+        let small = Size::new(1920.0, 300.0);
+        let size = static_window_size(dialog_size_hint(DialogType::Settings), small);
+        assert_eq!(size.height, 300.0);
     }
 }

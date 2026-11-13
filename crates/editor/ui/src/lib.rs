@@ -46,7 +46,7 @@ pub use root::Root;
 pub mod theme {
     pub use lumino_ui_core::theme::*;
 }
-pub(crate) use lumino_ui_core::{Element, Message, Renderer, Theme};
+pub(crate) use lumino_ui_core::{Element, Message, Theme};
 pub use state::root_state::CollaborationViewState;
 pub use wgpu_render_thread::{
     ControlCommand, RenderParams, RenderStats as WgpuRenderStats, WgpuRenderThread,

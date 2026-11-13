@@ -3734,11 +3734,32 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
   12/12 零基线改动。
 
-**Task 4.26（下一步）**
+**Task 4.26（第一百三十三步）：对话框尺寸改为静态声明（删除 iced 测量）**
 
-1. 对话框输入收口（`DialogModel` 覆盖不到的设置页 + `measure_dialog_window_size`
-   改为 egui 侧测量），之后删除 `host/measure.rs` 的 iced `Renderer` 依赖；
+- **删除 `host/measure.rs` 与 `host/measure/`**（约 2200 行，含 `search` 宽度二分、
+  `contract_tests` 的 iced 布局契约、`dialog_sizes` 的渲染器实测表、`edge` 尺子）：
+  iced 视图层删除后没有可靠的文本度量通道，这套测量入口已无实现基础。
+- **新增 `dialog_preferred_size::static_window_size`**：宽 = 声明值；
+  高 = 声明下限（`pinned` 的 min=max、`floored` 的下限），按
+  `measurement_cap` 与工作区夹取并保证 ≥ `MIN_DIALOG_HEIGHT`。
+  `recommend_window_size` / `width_floor` / `needs_width_search` / `MIN_DIALOG_WIDTH`
+  降级为 `#[cfg(test)]`（锁定声明语义），生产路径不再经过。
+- **`host/dialog_size.rs`**：`measure_dialog_window_size` 保留方法名（`lumino-dialog`
+  仍按「一次性决策」调用），实现改为静态查表。
+- **测试**：新增 3 条——19 类对话框静态尺寸均可用（宽 = 声明、高在工作区内）、
+  声明高度被原样采用（Settings 540 / VideoExport 560 / None = 0）、工作区过矮时夹取。
+  随测量删除的 iced 布局契约测试不再保留（被测实现已不存在）。
+- **真机验证**：打开工程设置对话框，窗口物理尺寸 **563×600 @1.25 = 450×480 逻辑**，
+  与声明完全一致（`target/dlg6-proj.png` 同批抓取，无 ERROR）。
+- 验收：`lumino-ui` lib 764/764（1 ignored）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.27（下一步）**
+
+1. 对话框输入收口：删除 `host/event/window/*` 的 `UserInterface::build`（对话框控件
+   全部已由 egui 绘制与回传动作），随后移除 `RenderContext.renderer/cache/SHARED_ENGINE`
+   与 `ensure_shared_engine`；
 2. `ui-editor` / `ui-core` 的 `iced_core::{Point, Size, Rectangle}` 换成本地几何类型
    （约 108 + 16 个文件），为删除 `Element`/`Theme` 铺路；
-3. 删除 `host/event/window/*` 的 iced 事件转换与 `RenderContext.renderer/cache/Engine`；
-4. 曲线填充凹多边形三角化；摘 `iced_*`，`cargo tree` 归零。
+3. 删除 iced 视图层（`view()` / 各 `render_*`），摘 `iced_widget`/`iced_renderer`；
+4. 曲线填充凹多边形三角化；`cargo tree | grep '^iced'` 归零。
