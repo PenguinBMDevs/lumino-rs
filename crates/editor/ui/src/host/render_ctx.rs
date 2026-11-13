@@ -110,8 +110,6 @@ pub(crate) struct RenderContext {
     pub last_cursor_position: Option<iced_core::Point>,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
-    /// 首次渲染标识
-    pub has_rendered_ui: bool,
     /// 本帧是否携带「必须在 present 前立即可见」的内容变化。
     ///
     /// 生产者（音符编辑增量 / 洋葱皮重传 / 预览变化 / 视口尺寸变化）置位，
@@ -216,7 +214,6 @@ impl RenderContext {
             render_cache: RenderCache::new(),
             last_cursor_position: None,
             wgpu_render_thread: None,
-            has_rendered_ui: false,
             render_content_dirty: false,
             last_sent_viewport: None,
             last_preview_instances: Vec::new(),
@@ -274,8 +271,7 @@ impl RenderContext {
         // REND-019：widget 树缓存与 iced 渲染器必须同代——换新 Renderer 时旧树
         // 缓存（损伤追踪 / 字形与图像上传状态 / 布局缓存）与全新渲染器不匹配，
         // 会导致「交互状态生效但画面不更新、文字间歇消失」等渲染陈旧/部分缺失
-        // （2026-10-17 实测：重连后切轨等状态变更不上屏）。整树重建——与
-        // `has_rendered_ui = false`（首帧全量渲染）配套。
+        // （2026-10-17 实测：重连后切轨等状态变更不上屏）。整树重建。
         self.cache = Cache::new();
 
         if self.note_renderer.is_some() {
@@ -288,7 +284,6 @@ impl RenderContext {
         }
 
         self.keyboard_renderer = None;
-        self.has_rendered_ui = false;
         tracing::info!("Host 渲染基础设施已重绑到 epoch = {}", epoch.0);
     }
 }

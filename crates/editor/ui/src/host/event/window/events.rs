@@ -9,9 +9,21 @@ use super::touch::TouchRouting;
 use crate::host::{Host, types::convert_touch_to_mouse};
 use crate::message;
 
+/// 主窗口是否只由 egui 消费输入（**默认开启**）。
+///
+/// iced 控件已不再绘制，若仍把事件送进 widget 树，同一次点击会被 egui 与
+/// 不可见的 iced 控件各处理一次。`LUMINO_EGUI_INPUT_ONLY=0` 回退用于排查。
+fn egui_input_only() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("LUMINO_EGUI_INPUT_ONLY")
+            .map(|value| value != "0")
+            .unwrap_or(true)
+    })
+}
+
 impl Host {
     // ─── handle_events 子方法 ────────────────────────────────────────
-
     fn handle_resized_event(&mut self) {
         // 最大化/还原时设置保护标志，防止路由被意外切换
         // 后续在 process_frame_preparation 中清除
@@ -206,8 +218,14 @@ impl Host {
             return;
         }
 
-        // 实验开关：整窗只由 egui 消费输入（验证 iced 事件链是否还有必要）。
-        if std::env::var("LUMINO_EGUI_INPUT_ONLY").is_ok_and(|v| v != "0") {
+        // 主窗口输入只由 egui 消费：iced widget 树不再构建（否则同一击处理两次，
+        // 且 iced 控件已不再绘制）。对话框 / 进度窗 / 设备警告窗仍是独立 Host，
+        // 输入暂留 iced（`LUMINO_EGUI_INPUT_ONLY=0` 可整体回退排查）。
+        if egui_input_only()
+            && !self.root.state.is_dialog_window
+            && !self.root.is_progress_window
+            && !self.root.is_device_warning_window
+        {
             self.events.clear();
             return;
         }

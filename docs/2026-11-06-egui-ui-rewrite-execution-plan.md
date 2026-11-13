@@ -3694,19 +3694,30 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
   12/12 零基线改动。
 
-**Task 4.24（下一步）**
+**Task 4.24（第一百三十一步）：删除 iced `present` 分支，主窗口输入默认只走 egui**
 
-1. 用 `LUMINO_EGUI_INPUT_ONLY=1` 已能驱动路由栏与文件菜单（见下），下一步把该开关翻默认：
-   删除 `host/event/window/*` 的 iced 事件转换与 `host/render/ui.rs` 的
-   `UserInterface` 分支（`RenderContext.renderer/cache/Engine` 一并移除）；
-2. 走带泳道 / 瀑布流 / 导出面板的 iced 剩余输入收口；
-3. 曲线填充凹多边形三角化；
-4. 摘 `Theme`/`Renderer`/`Element` 与 `iced_*`，`cargo tree` 归零。
+- **`host/render/ui.rs`**：删除整段 iced 渲染分支（`UserInterface::build` /
+  `interface.update` / `draw` / `renderer.present` / 缓存帧复用），
+  `render_iced_ui` 退化为「算清屏色 → `render_egui_overlay`」；egui 是唯一
+  生产渲染路径。随之移除 `RenderContext.has_rendered_ui`（唯一读者在被删分支）。
+- **主窗口输入**：`egui_input_only()` 默认开启（`LUMINO_EGUI_INPUT_ONLY=0` 回退）。
+  命中时 `process_pending_events` 直接丢弃 iced 事件队列——iced 控件已不再绘制，
+  继续投递只会让同一次点击被不可见控件重复处理。对话框 / 进度窗 / 设备警告窗
+  仍是独立 Host，输入暂留 iced（下一边界）。
+- **真机验证**（默认开启，无环境变量）：
+  - 走带（Project 路由 `(24,198)`）：点击底部「+」→ 新增音轨 `002 A01`，
+    日志 `egui 走带动作：AddTrack`（`target/reg3-add.png`）；
+  - 视频剪辑面板（Renderer 路由）：预览、剪辑时间轴、底部键盘、导出设置全部由
+    egui 绘制且可交互（`target/reg-arrangement.png`）；
+  - 键盘快捷键不经过 iced UI（`P` 切铅笔等）仍生效；无 ERROR / panic。
+- 验收：`lumino-ui` lib 776/776、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.24 前置探针（本轮已埋点）**
+**Task 4.25（下一步）**
 
-- `LUMINO_EGUI_INPUT_ONLY=1` 时主窗口 `process_pending_events` 直接丢弃 iced 事件队列，
-  全部输入只由 egui/winit 消费。真机验证：路由栏切换、文件菜单展开 15 项、
-  `Esc` 关闭、状态栏刷新均正常（`target/only-menu.png`），无 ERROR/panic。
-- 说明：iced 事件链在钢琴卷帘 + 外壳范围内已无必要；剩下的差异集中在走带泳道 /
-  瀑布流 / 导出面板与各对话框的 egui 覆盖度，翻默认前需逐个回归。
+1. 对话框输入收口（`DialogModel` 覆盖不到的设置页 + `measure_dialog_window_size`
+   改为 egui 侧测量），之后删除 `host/measure.rs` 的 iced `Renderer` 依赖；
+2. `ui-editor` / `ui-core` 的 `iced_core::{Point, Size, Rectangle}` 换成本地几何类型
+   （约 108 + 16 个文件），为删除 `Element`/`Theme` 铺路；
+3. 删除 `host/event/window/*` 的 iced 事件转换与 `RenderContext.renderer/cache/Engine`；
+4. 曲线填充凹多边形三角化；摘 `iced_*`，`cargo tree` 归零。
