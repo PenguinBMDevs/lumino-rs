@@ -3922,7 +3922,38 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui-egui` 全部测试通过（新增 4 条）、`clippy -D warnings`、
   `fmt --check`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.34（下一步）**
+**Task 4.34（第一百四十一步）：合并 dev（171 提交）到 egui 分支**
 
-1. 解锁后做一轮真机像素对照（主窗口 / 走带 / 纵向卷帘 / 力度面板）；
+- **冲突**：25 个文件（11 个 modify/delete + 14 个内容冲突），核心是 dev 的
+  DRAW-011/014/020/025/026/028/030/032/035B/041C/044 与 DEBT-12/13/14 落在
+  已被删除的 iced 视图/绘制层上。
+- **共享层**：`ui-editor` 全部保留 dev 的新逻辑（组编辑、Slice/Mould/Round、
+  Arc、i2m 参数），只把 `iced_core::Point` 换成 `lumino_ui_core::geom::Point`；
+  `grid.rs` 只保留纯几何/输入模块，删除 `program_impl` / `vertical_program` /
+  `remote_cursors` / `slice_box` / `mould_knife_box` / `round_corner_box` 的
+  iced 绘制实现（可见部分迁 egui）。
+- **持久化**：`lmpj` 的 `use10` / `i2m` / `onion_skin_mode` 一次性写入
+  `[settings]`，避免旧代码「先写两项再用 `SettingsMetadata::default()` 覆盖」。
+- **菜单**：采用 dev 的 `SliceCut` / `MouldShapes` / `RoundCorners` /
+  `ReturnToDrawer`，删除 `SliceVertical`；待确认菜单 15 项。
+- **egui 补齐**：
+  - 自动保存恢复对话框（DEBT-12）：模型 + 渲染 + 动作通道 + 静态窗口尺寸；
+  - i2m：最长音符 / 亮度 / 对比度 / 饱和度 / 锐化 + 6 个算法下拉（DRAW-030）；
+  - 工程设置「启用通道 10」（DRAW-032）；
+  - 形状抽屉：17 色块、通道 10 提示、填充档位/门长/Union/Apart/Borders
+    （DRAW-011）、Insert 组合音符块预览（DEBT-14）；
+  - 工具栏三点圆弧（DRAW-014）；曲线预览/包围盒按圆弧采样；
+  - 撤销历史去内层圆角边框、当前步骤换 Undo 图标（DEBT-13）；
+  - 协作远程光标恢复绘制；切割线 / 饼干模刀框 / 角度柔化预览迁 egui；
+  - 修复 11 条既有 i18n 英文缺失。
+- **结果**：`iced` 在 `.rs` / `Cargo.toml` / `Cargo.lock` / 依赖树中均为 **0**。
+- **验收**：`cargo check --workspace --all-targets` 通过；`clippy -D warnings`
+  （ui / ui-core / ui-editor / ui-egui / ui-settings / dialog / ui-runtime /
+  message / core / project）通过；`fmt --check` 通过；`lumino-ui` 784、
+  `lumino-ui-editor` 867、`lumino-ui-egui` 全绿；workspace 全量测试交 CI。
+
+**Task 4.35（下一步）**
+
+1. CI 全绿后做一轮真机像素对照（主窗口 / 走带 / 纵向卷帘 / 力度面板）；
 2. 可选：把 `KeyState` / `Touch` 等最后一处命名与注释统一成 egui 语义。
+
