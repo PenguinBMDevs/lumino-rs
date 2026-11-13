@@ -2,6 +2,7 @@
 
 pub mod arrangement;
 pub mod egg;
+mod floating;
 pub mod menu;
 mod model;
 pub mod overflow;
@@ -18,6 +19,7 @@ pub mod toolbar_popup;
 
 pub use arrangement::ArrangementAction;
 pub use egg::EggModel;
+pub(crate) use floating::floating_panel;
 pub use model::{
     ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementScrollbarsModel,
     ArrangementTrackListModel, ArrangementTrackRow, AudioButtonsMode, AudioButtonsModel,
@@ -659,11 +661,15 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
     // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 旧版 面板）。
     if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
-        crate::mixer::show(&root, &layout, &mixer);
+        // 独立图层：混音台覆盖区域内不再命中下层的音轨列表 / 路由栏。
+        floating_panel(ui.ctx(), "lumino.mixer", layout.panel, |ui| {
+            crate::mixer::show(ui, &layout, &mixer);
+            for action in crate::mixer::interact(ui, &layout, &mixer) {
+                push_mixer_action(ui.ctx(), action);
+            }
+            None
+        });
         menu::extend_blocked(ui.ctx(), [layout.panel]);
-        for action in crate::mixer::interact(&root, &layout, &mixer) {
-            push_mixer_action(ui.ctx(), action);
-        }
     }
 
     // 遮罩参数面板：锚在鼠标右下，点面板外关闭；打开期间整窗占用。
@@ -685,7 +691,13 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         let full = window_size(ui.ctx())
             .map(|size| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), size))
             .unwrap_or_else(|| root.max_rect());
-        if let Some(action) = crate::material_delete::show(&root, full, &delete) {
+        // 独立图层：模态遮罩覆盖整窗，下层控件不得再收到 hover / 点击。
+        let mut action = None;
+        floating_panel(ui.ctx(), "lumino.material-delete", full, |ui| {
+            action = crate::material_delete::show(ui, full, &delete);
+            None
+        });
+        if let Some(action) = action {
             push_material_delete_action(ui.ctx(), action);
         }
         menu::extend_blocked(ui.ctx(), [full]);

@@ -319,7 +319,11 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
         };
         if let Some(owner) = owner {
             let rect = place_panel(area, owner, panel_height(panel));
-            panels::show(ui, panel, rect, &mut blocked, icons);
+            // 独立图层：设置面板覆盖区域内不再命中卷帘骨架。
+            super::floating_panel(ui.ctx(), "lumino.tool-panel.settings", rect, |ui| {
+                panels::show(ui, panel, rect, &mut blocked, icons);
+                None
+            });
         }
     }
 

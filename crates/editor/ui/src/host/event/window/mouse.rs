@@ -19,7 +19,15 @@ impl Host {
 
         // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：按下 / 释放直接进编辑器，
         // 不再依赖 旧版 `Grid` program。
-        self.dispatch_canvas_button(state == ElementState::Pressed, button);
+        //
+        // egui 浮层（菜单 / 弹层 / 面板）覆盖画布时不得再落笔：命中区由
+        // `egui_blocked` 给出。已开始的画布拖拽必须继续（松手可能落在浮层上）。
+        if !super::super::overlay_blocks_canvas(
+            self.egui_owns_pointer(),
+            self.editor_has_incomplete_pointer_edit(),
+        ) {
+            self.dispatch_canvas_button(state == ElementState::Pressed, button);
+        }
 
         // 全局监听鼠标释放事件，结束工具栏拖拽状态
         if button == winit::event::MouseButton::Left
@@ -77,7 +85,7 @@ impl Host {
     /// 用于全局左键释放兜底：画布内按下后移到画布外释放时，旧版 画布
     /// 收不到 ButtonReleased，这些状态会卡死。host 层监听到左键释放时，
     /// 若编辑器仍处于按下中状态，补发 `EditorAction::Released` 完成收尾。
-    fn editor_has_incomplete_pointer_edit(&self) -> bool {
+    pub(crate) fn editor_has_incomplete_pointer_edit(&self) -> bool {
         matches!(
             self.root.editor.editor_state.interaction.edit_state,
             crate::editor::EditState::Selecting { .. }

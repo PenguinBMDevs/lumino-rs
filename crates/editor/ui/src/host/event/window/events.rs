@@ -82,7 +82,11 @@ impl Host {
                         (position.x as f32, position.y as f32, true)
                     }
                 };
-                self.dispatch_canvas_wheel(dx, dy, precise);
+                // egui 浮层（菜单 / 弹层 / 模态）内的滚轮只给 egui（ScrollArea / 列表），
+                // 不能再驱动画布缩放。
+                if !self.egui_owns_pointer() {
+                    self.dispatch_canvas_wheel(dx, dy, precise);
+                }
             }
             ModifiersChanged(new_modifiers) => {
                 self.handle_modifiers_changed_event(new_modifiers);

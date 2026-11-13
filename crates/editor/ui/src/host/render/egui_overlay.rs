@@ -582,12 +582,20 @@ impl Host {
                 let Some(button) = pointer_button(*button) else {
                     return false;
                 };
+                // 首击兜底：`pointer` 只由 `CursorMoved` 写入，启动后 / `CursorLeft`
+                // 后 / 自动化注入的第一次按键会因 `pointer == None` 被静默丢弃。
+                // 用宿主已记录的逻辑光标位置补一次，保证 egui 一定收到这次按下。
+                if self.egui_input.pointer.is_none()
+                    && let Some(pos) = self.window_ctx.cursor_position
+                {
+                    self.egui_input.pointer_moved(egui::pos2(pos.x, pos.y));
+                }
                 self.egui_input
                     .button(button, *state == winit::event::ElementState::Pressed);
                 // 设置 / 保存确认窗口由 egui 整窗绘制：按键只给 egui，避免同一击
                 // 同时触发下层 旧版 控件（例如云管理「添加连接」打开两个窗口）。
                 // 其余对话框仍依赖 旧版 let-through，不消费。
-                self.dialog_input_exclusive() || self.egui_pointer_blocked()
+                self.dialog_input_exclusive() || self.egui_owns_pointer()
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
@@ -661,10 +669,42 @@ impl Host {
     }
 
     /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。
-    fn egui_pointer_blocked(&self) -> bool {
+    pub(crate) fn egui_pointer_blocked(&self) -> bool {
         self.egui_input
             .pointer
             .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
+    }
+
+    /// 指定点是否被 egui 的**浮层图层**（菜单 / 弹层 / 面板 / 模态）占用。
+    ///
+    /// 与 [`Self::egui_pointer_blocked`] 的区别：后者是手工登记的 root 层矩形，
+    /// 只能覆盖"记得登记"的 band；这里直接问 egui 的图层栈——凡是 `Area` /
+    /// `Window` / ComboBox 弹层，命中点都会返回非 `Background` 图层。
+    /// 这消除了「弹层没登记 → 点击同时落到画布」的一整类漏点击。
+    pub(crate) fn egui_layer_owns_pos(&self, pos: egui::Pos2) -> bool {
+        let Some(overlay) = self.render_ctx.egui_overlay.as_ref() else {
+            return false;
+        };
+        overlay
+            .ctx
+            .layer_id_at(pos)
+            .is_some_and(|layer| layer.order != egui::Order::Background)
+    }
+
+    /// 画布输入是否应让位给 egui（手工占用区 ∪ 浮层图层）。
+    ///
+    /// 指针优先取 egui 事件缓冲里的位置；触摸路径没有 `CursorMoved`，
+    /// 回退到宿主记录的逻辑光标位置，保证触摸点按也能正确让位。
+    pub(crate) fn egui_owns_pointer(&self) -> bool {
+        let pos = self.egui_input.pointer.or_else(|| {
+            self.window_ctx
+                .cursor_position
+                .map(|p| egui::pos2(p.x, p.y))
+        });
+        let Some(pos) = pos else {
+            return false;
+        };
+        self.egui_blocked.iter().any(|rect| rect.contains(pos)) || self.egui_layer_owns_pos(pos)
     }
 }
 
@@ -707,4 +747,53 @@ pub(crate) fn overlay_enabled() -> bool {
             .map(|value| value != "0")
             .unwrap_or(true)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{Area, Context, Id, Order, Rect, pos2, vec2};
+
+    /// 输入归属依赖的 egui 事实：浮层 `Area` 在 `layer_id_at` 里返回非
+    /// `Background` 图层，而 root Ui / 画布所在层是 `Background`。
+    ///
+    /// 这条假设一旦被 egui 升级打破，宿主就会重新把弹层点击漏给画布——
+    /// 用测试钉死，不靠记忆。
+    #[test]
+    fn layer_id_at_separates_foreground_areas_from_background() {
+        let ctx = Context::default();
+        // `Area` 首帧是 sizing pass（`interactable` 被临时置 false），必须跑两帧
+        // 才能进入命中栈——生产侧 `Area::show` 会主动 `request_repaint`。
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                ui.label("background");
+                Area::new(Id::unique("test-foreground"))
+                    .order(Order::Foreground)
+                    .fixed_pos(pos2(100.0, 100.0))
+                    .show(ui.ctx(), |ui| {
+                        ui.set_min_size(vec2(80.0, 40.0));
+                        ui.label("panel");
+                    });
+            });
+            // `TexturesDelta` 必须消费掉，否则 drop 时 epaint 会 panic。
+            output.textures_delta.clear();
+        }
+
+        let inside = ctx.layer_id_at(pos2(140.0, 120.0)).expect("浮层应存在");
+        assert_ne!(
+            inside.order,
+            Order::Background,
+            "浮层命中必须是非 Background 图层"
+        );
+
+        let outside = ctx.layer_id_at(pos2(10.0, 10.0)).expect("root 层应存在");
+        assert_eq!(
+            outside.order,
+            Order::Background,
+            "画布/root 层命中必须是 Background"
+        );
+    }
 }

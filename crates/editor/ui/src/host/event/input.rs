@@ -65,7 +65,15 @@ impl Host {
         }
 
         // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：跟手移动 / 悬停预览。
-        self.dispatch_canvas_moved();
+        //
+        // 指针落在 egui **浮层图层**（菜单 / 弹层 / 模态）上时不再更新画布悬停：
+        // 否则菜单会"穿透"——下层画布的光标预览跟着菜单里的指针移动。
+        // root 层 band（工具栏 / 侧栏 / 状态栏）仍要派发一次 Move，让编辑器
+        // 清掉画布上的悬停预览；已开始的画布拖拽必须继续。
+        let owns = self.egui_layer_owns_pos(egui::pos2(logical_pos.x, logical_pos.y));
+        if self.editor_has_incomplete_pointer_edit() || !owns {
+            self.dispatch_canvas_moved();
+        }
     }
     /// 释放鼠标左键状态（用于拖拽窗口后的状态重置）。
     ///

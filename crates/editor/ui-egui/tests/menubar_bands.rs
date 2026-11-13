@@ -148,6 +148,67 @@ fn native_menubar_click_opens_panel_and_dispatches() {
     );
 }
 
+/// 菜单面板必须独占命中：悬停在面板内边距（无菜单行处）不得点亮下层控件。
+///
+/// 回归：面板原先画在 root 图层里，内边距 / 分隔线没有控件，命中会落回
+/// 下层的工具栏 band，表现为「菜单悬停穿透」。
+#[test]
+fn open_menu_blocks_hover_on_layers_below() {
+    let tree = MenuBarModel {
+        menus: vec![MenuModel {
+            label: "文件".to_owned(),
+            entries: vec![MenuEntry::Action {
+                label: "新建".to_owned(),
+                enabled: true,
+                action: 3,
+            }],
+        }],
+    };
+    let under_hovered = std::rc::Rc::new(std::cell::Cell::new(true));
+    let under = under_hovered.clone();
+    let model = model(Some(tree));
+    let mut icons = lumino_ui_egui::icons::IconCache::default();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(800.0, 600.0))
+        .with_accessibility_check(false)
+        .build_ui(move |ui| {
+            // 模拟被菜单盖住的下层工具栏按钮。
+            let rect = egui::Rect::from_min_size(egui::pos2(0.0, 30.0), egui::vec2(600.0, 72.0));
+            let response = ui.interact(
+                rect,
+                egui::Id::unique("under-toolbar"),
+                egui::Sense::click(),
+            );
+            under.set(response.hovered());
+            chrome::show_bands(ui, &model, &mut icons);
+        });
+    harness.run();
+
+    let labels = chrome::menu::label_rects(&harness.ctx);
+    click(&mut harness, labels[0].center());
+    let blocked = chrome::menu::take_blocked(&harness.ctx);
+    let panel = blocked
+        .into_iter()
+        .find(|rect| rect.height() > 31.0)
+        .expect("展开后应记录面板矩形");
+
+    // 面板内边距 4px：这里没有菜单行，修复前命中会穿透到下层。
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(
+            panel.left() + 1.0,
+            panel.top() + 1.0,
+        )));
+    // 命中使用上一帧控件矩形：跑两帧让浮层进入命中集合。
+    harness.run();
+    harness.run();
+    assert!(
+        !under_hovered.get(),
+        "菜单面板必须独占命中，下层控件不得 hover"
+    );
+}
+
 /// 悬停切换到另一个标签后点击它：保持展开（不得被当作「再次点击关闭」）。
 #[test]
 fn hover_switch_then_click_keeps_menu_open() {
