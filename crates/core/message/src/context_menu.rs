@@ -72,6 +72,8 @@ pub enum PianoRollContextMenuItem {
     MaskToggle,
     /// 打开遮罩参数面板（DRAW-010）
     MaskSettings,
+    /// 把遮罩可见片段实体化为新形状（DRAW-010；不改原形状）
+    MaskApply,
     /// 打开 ShapeStore 模型列表（DRAW-041B）
     ShapeList,
     /// 竖轴对称（DRAW-023）
@@ -116,6 +118,7 @@ impl PianoRollContextMenuItem {
             | Self::PaintAreas
             | Self::MaskToggle
             | Self::MaskSettings
+            | Self::MaskApply
             | Self::SymmetryVertical
             | Self::SymmetryHorizontal
             | Self::Straighten

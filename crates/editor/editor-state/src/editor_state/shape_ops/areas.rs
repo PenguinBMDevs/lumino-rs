@@ -177,6 +177,7 @@ fn sample_colour(map: &AreaMap, u: f32, v: f32) -> u8 {
     }
     // 跨两格：边界线本身占一格，单格偏移可能仍落在边界行/列。
     let step = 2.0 / f32::from(MAP_CELLS);
+    let mut sees_unassigned = false;
     for (du, dv) in [
         (step, 0.0),
         (-step, 0.0),
@@ -191,8 +192,16 @@ fn sample_colour(map: &AreaMap, u: f32, v: f32) -> u8 {
         if neighbour <= ALL_COLOURS {
             return neighbour;
         }
+        sees_unassigned |= neighbour == lumino_core::shape::AREA_UNASSIGNED;
     }
-    lumino_core::shape::AREA_UNASSIGNED
+    // 没有显式区域色：只有**形状内部**的未着色格（或紧贴内部的边界格）才回退到
+    // 基础填充。外部/孤立边界格不能凭空生成填充音符，否则透明清除后边缘会残留
+    // 被截断的音符。
+    if colour == lumino_core::shape::AREA_UNASSIGNED || sees_unassigned {
+        lumino_core::shape::AREA_UNASSIGNED
+    } else {
+        colour
+    }
 }
 
 /// `borders`：把与 4 邻域区域色不同的格子标成 [`AREA_BORDER`]

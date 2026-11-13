@@ -110,8 +110,7 @@ impl Editor {
             let Some(source) = self.pending_source(PendingShapeRef::Shape(index)) else {
                 continue;
             };
-            let mut model =
-                crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
+            let mut model = self.model_from_source_at_view(&source, track, 1.0);
             model.ops.push(ShapeOp::Mask(params.clone()));
             let notes = self.shape_notes_of(&model, track);
             let Some(member) = member_of(&model, &notes, ppq, nkeys) else {
@@ -176,8 +175,7 @@ impl Editor {
                 let Some(source) = self.pending_source(PendingShapeRef::Shape(index)) else {
                     continue;
                 };
-                let model =
-                    crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
+                let model = self.model_from_source_at_view(&source, track, 1.0);
                 let notes = self.shape_notes_of(&model, track);
                 if let Some(preview) = mask_ops::preview(&notes, &unit) {
                     out.push(preview);
@@ -229,8 +227,7 @@ impl Editor {
                 let Some(source) = self.pending_source(PendingShapeRef::Shape(index)) else {
                     continue;
                 };
-                let model =
-                    crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
+                let model = self.model_from_source_at_view(&source, track, 1.0);
                 out.extend(self.shape_notes_of(&model, track));
             }
             // 020 单支组合的 own=false 同样用虚线段示意

@@ -172,35 +172,45 @@ fn test_overlay_glows_every_selected_shape_and_boxes_union() {
 }
 
 #[test]
-fn test_edit_mode_hides_selection_box_and_shows_eight_anchors() {
+fn test_baked_shape_keeps_selection_box_and_has_no_edit_handles() {
     use lumino_message::Tool;
     let mut editor = editor_with_rect();
     editor.set_tool(Tool::ShapeSelect);
     let id = editor.editor_state.shape_select.shapes()[0].id;
     editor.editor_state.shape_select.select_only(id);
+    let notes_before: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
 
-    let normal = Overlay::collect(&editor);
-    assert!(
-        normal.selection_box.is_some(),
-        "普通态应有 ShapeSelect 选框"
-    );
-    assert!(normal.edit_box.is_none(), "普通态不应有编辑框");
-    assert!(normal.edit_handles.box_points.is_empty());
-
-    assert!(editor.enable_shape_edit(), "应能进入编辑图形");
+    // DEC-001：Bake 后形状对象只读，不提供编辑图形模式。
+    assert!(!editor.enable_shape_edit(), "已 Bake 图形不得进入编辑图形");
     let overlay = Overlay::collect(&editor);
     assert!(
-        overlay.selection_box.is_none(),
-        "编辑态必须隐藏 ShapeSelect 选框（避免两层框重叠）"
+        overlay.selection_box.is_some(),
+        "只读图形仍保留 ShapeSelect 选框"
     );
-    assert!(overlay.edit_box.is_some(), "编辑态应有编辑框");
-    assert_eq!(overlay.edit_handles.box_points.len(), 8, "严格 8 个锚点");
+    assert!(overlay.edit_box.is_none(), "已 Bake 不应出现编辑框");
+    assert!(
+        overlay.edit_handles.box_points.is_empty(),
+        "已 Bake 不应出现锚点"
+    );
     assert!(
         overlay.edit_handles.center.is_none(),
         "已 Bake 不提供中心锚点"
     );
     assert_eq!(overlay.selected_paths.len(), 1, "选中高亮仍保留");
-    assert!(!overlay.is_empty());
+    let notes_after: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(notes_after, notes_before, "拒绝编辑不得改动音符");
 }
 
 #[test]

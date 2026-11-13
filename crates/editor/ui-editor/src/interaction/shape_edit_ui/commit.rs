@@ -6,7 +6,6 @@ use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::ShapeNote;
 
 use crate::Editor;
-use crate::interaction::shape_bridge::source_from_model;
 
 use super::ShapeEditTarget;
 
@@ -21,20 +20,6 @@ impl Editor {
             _ => state.current != state.original,
         };
         match state.target {
-            ShapeEditTarget::Drawn { drawn_id, model_id } => {
-                if !changed {
-                    let source = source_from_model(&state.original);
-                    self.editor_state.shape_select.set_source(drawn_id, source);
-                    return false;
-                }
-                let ok = self.edit_shape(model_id, state.current);
-                if !ok {
-                    let source = source_from_model(&state.original);
-                    self.editor_state.shape_select.set_source(drawn_id, source);
-                }
-                self.grid_cache.clear();
-                ok
-            }
             ShapeEditTarget::PendingComposed { index } => {
                 if !changed {
                     self.restore_pending_part(index, &state.original);
@@ -92,10 +77,6 @@ impl Editor {
             return;
         };
         match state.target {
-            ShapeEditTarget::Drawn { drawn_id, .. } => {
-                let source = source_from_model(&state.original);
-                self.editor_state.shape_select.set_source(drawn_id, source);
-            }
             ShapeEditTarget::PendingComposed { index } => {
                 self.restore_pending_part(index, &state.original);
                 self.refresh_pending_mirror_geometry();

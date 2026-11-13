@@ -30,6 +30,160 @@ fn test_default_copy_along_uses_half_beat_step_and_four_copies() {
 }
 
 #[test]
+fn test_pending_symmetry_stays_pending_and_undoes() {
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((100.0, 70.0)),
+        BezierAnchor::new((200.0, 60.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    // DEC-001：对称只对 pending 开放；普通 pending 曲线先提升为单支组合。
+    assert!(
+        editor.toggle_symmetry(true).is_ok(),
+        "pending 曲线应支持半边对称"
+    );
+    let composed = &editor.editor_state.pending_composed[0];
+    assert!(
+        composed
+            .model()
+            .expect("单支")
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Symmetry(_))),
+        "对称参数应写回 pending 模型"
+    );
+    assert!(composed.note_count() > 0, "预览音符应重算");
+    assert!(
+        editor.editor_state.data.current_track_notes().is_empty(),
+        "pending 对称不得写文档"
+    );
+
+    assert!(editor.undo(), "撤销组合应回到 pending 曲线");
+    assert!(editor.editor_state.pending_composed.is_empty());
+    assert_eq!(editor.editor_state.line_tool.paths.len(), 1);
+    assert!(editor.editor_state.data.current_track_notes().is_empty());
+}
+
+#[test]
+fn test_pending_symmetry_rejects_non_curve() {
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+    assert_eq!(
+        editor.toggle_symmetry(true),
+        Err(lumino_editor_state::shape_ops::SymReject::NotCurve),
+        "参数化矩形不是曲线，必须拒绝"
+    );
+    assert!(
+        editor.editor_state.pending_composed.is_empty()
+            || editor.editor_state.pending_composed[0]
+                .model()
+                .is_none_or(|model| {
+                    !model
+                        .ops
+                        .iter()
+                        .any(|op| matches!(op, ShapeOp::Symmetry(_)))
+                }),
+        "拒绝后不得写入对称参数"
+    );
+}
+
+#[test]
+fn test_pending_symmetry_changes_preview_notes_and_undoes_once() {
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    // 非对称曲线：右半段明显不是左半的镜像
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((100.0, 70.0)),
+        BezierAnchor::new((200.0, 64.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.promote_pending_for_edit(), "先提升为单支组合");
+
+    let before_notes = editor.editor_state.pending_composed[0].results[0]
+        .notes
+        .clone();
+    assert!(editor.toggle_symmetry(true).is_ok(), "对称应成功");
+
+    let after = &editor.editor_state.pending_composed[0].results[0];
+    assert!(
+        after
+            .model
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Symmetry(_))),
+        "对称参数应挂到 pending 模型"
+    );
+    assert_ne!(after.notes, before_notes, "对称必须改变预览音符");
+    assert!(
+        editor.editor_state.data.current_track_notes().is_empty(),
+        "pending 对称不得写文档"
+    );
+
+    assert!(editor.undo(), "一次 undo 只回退这次对称");
+    assert_eq!(
+        editor.editor_state.pending_composed[0].results[0].notes, before_notes,
+        "undo 后预览音符应还原"
+    );
+}
+
+#[test]
+fn test_pending_horizontal_symmetry_changes_preview() {
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((100.0, 68.0)),
+        BezierAnchor::new((200.0, 65.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.promote_pending_for_edit(), "先提升为单支组合");
+    let before = editor.editor_state.pending_composed[0].results[0]
+        .notes
+        .clone();
+
+    assert!(editor.toggle_symmetry(false).is_ok(), "横轴对称应成功");
+    let after = &editor.editor_state.pending_composed[0].results[0];
+    assert!(
+        after
+            .model
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Symmetry(_))),
+        "横轴对称参数应挂到 pending 模型"
+    );
+    assert_ne!(after.notes, before, "横轴对称必须改变预览音符");
+    assert!(editor.editor_state.data.current_track_notes().is_empty());
+}
+
+#[test]
 fn test_pending_copy_along_stays_pending_and_bakes_all_copies() {
     let mut editor = empty_editor();
     setup_single_pending_rect(&mut editor);

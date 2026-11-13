@@ -1,62 +1,50 @@
 //! 020「编辑图形」提交/撤销/旋转/中心平移测试（从 `tests.rs` 拆出）
 
-use super::tests::{
-    editor_with_pending_composed, editor_with_shape, enter_edit, model_bounds, screen_box,
-};
+use super::tests::{editor_with_pending_composed, enter_edit, model_bounds, screen_box};
 use super::*;
 use crate::tests::test_helpers::seed_notes;
 use iced_core::Point;
-use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
+use lumino_editor_state::PendingShapeRef;
 
 #[test]
-fn test_begin_update_finish_changes_geometry() {
-    let mut editor = editor_with_shape();
-    enter_edit(&mut editor);
-    assert!(editor.begin_shape_edit(0.0, 64.0), "Nw 角锚点应命中");
-    assert!(editor.is_shape_editing());
-    assert!(editor.update_shape_edit(0.0, 66.0));
-    assert!(editor.finish_shape_edit());
-    let shape = editor
-        .editor_state
-        .shape_select
-        .selected_shapes()
-        .next()
-        .expect("仍选中");
-    match &shape.source {
-        DrawnShapeSource::Polyline { points } => {
-            assert!(
-                (points[1].1 - 66.0).abs() < 1e-3,
-                "角锚点伸缩应改几何，实际 {points:?}"
-            );
-        }
-        _ => panic!("应仍是折线"),
-    }
-}
+fn test_baked_shape_handle_drag_is_rejected_without_touching_notes() {
+    use crate::Note;
+    use lumino_editor_state::DrawnShapeSource;
 
-#[test]
-fn test_cancel_restores_geometry() {
-    let mut editor = editor_with_shape();
-    enter_edit(&mut editor);
-    let before = editor
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[Note::new(0.0, 60, 10.0)]);
+    let id = editor.editor_state.shape_select.add(
+        1,
+        None,
+        DrawnShapeSource::Polyline {
+            points: vec![(0.0, 60.0), (1000.0, 64.0)],
+        },
+        Vec::new(),
+    );
+    editor.editor_state.shape_select.select_only(id);
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    let notes_before: Vec<_> = editor
         .editor_state
-        .shape_select
-        .selected_shapes()
-        .next()
-        .expect("选中")
-        .source
-        .clone();
-    assert!(editor.begin_shape_edit(0.0, 64.0));
-    assert!(editor.update_shape_edit(0.0, 66.0));
-    editor.cancel_shape_edit();
-    let after = editor
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
+
+    // DEC-001：已 Bake 图形没有可进入的编辑态，锚点/旋转/中心全部关闭。
+    assert!(!editor.enable_shape_edit(), "已 Bake 不得进入编辑图形");
+    assert!(!editor.is_shape_edit_armed());
+    assert!(!editor.begin_shape_edit(0.0, 64.0), "旧锚点位置不得命中");
+    assert!(!editor.begin_shape_edit(0.0, 62.0), "中心也不得命中");
+    assert!(!editor.is_shape_editing());
+    let notes_after: Vec<_> = editor
         .editor_state
-        .shape_select
-        .selected_shapes()
-        .next()
-        .expect("选中")
-        .source
-        .clone();
-    assert_eq!(before, after);
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(notes_after, notes_before, "拒绝编辑不得改动任何音符");
 }
 
 #[test]

@@ -145,7 +145,7 @@ fn test_mask_edit_target_and_pending_params_round_trip() {
 }
 
 #[test]
-fn test_mask_edit_target_reads_baked_params() {
+fn test_baked_shape_has_no_mask_edit_target() {
     let mut editor = test_editor();
     let model_id = editor.editor_state.shape_store.insert(mask_model(), 0);
     let shape_id = editor.editor_state.shape_select.add(
@@ -163,15 +163,22 @@ fn test_mask_edit_target_reads_baked_params() {
     editor.set_tool(lumino_message::Tool::ShapeSelect);
     editor.editor_state.shape_select.select_only(shape_id);
 
-    assert_eq!(
-        editor.mask_edit_target(),
-        Some(MaskEditTarget::Baked { model_id }),
-        "已 Bake 形状应走 Baked 目标"
+    // DEC-001：Bake 后形状对象只读，不提供遮罩参数编辑目标。
+    assert_eq!(editor.mask_edit_target(), None);
+    assert!(!editor.toggle_mask_selected(), "已 Bake 不得切换遮罩");
+    assert!(
+        editor
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型应存在")
+            .ops
+            .iter()
+            .filter(|op| matches!(op, ShapeOp::Mask(_)))
+            .count()
+            == 1,
+        "拒绝写入后模型上的 Mask op 数应保持不变"
     );
-    let params = editor
-        .mask_params_of(MaskEditTarget::Baked { model_id })
-        .expect("应读到 Mask op");
-    assert!(!params.own, "读回的是模型里存的那份参数");
 }
 
 #[test]
@@ -246,6 +253,11 @@ fn test_preview_returns_ghost_and_visible_without_touching_notes() {
 fn test_silent_mask_exposes_outline_notes_only() {
     let mut editor = test_editor();
     assert!(editor.create_shape(mask_model()));
+    assert!(
+        !editor.mask_outline_notes().is_empty(),
+        "own=false 应有灰色边框示意"
+    );
+    // DEC-001：Bake 后 own 参数只读，不允许再改。
     let id = *editor
         .editor_state
         .shape_store
@@ -253,73 +265,15 @@ fn test_silent_mask_exposes_outline_notes_only() {
         .last()
         .expect("应有遮罩 id");
     assert!(
-        !editor.mask_outline_notes().is_empty(),
-        "own=false 应有灰色边框示意"
-    );
-    assert!(editor.set_mask(
-        id,
-        Some(MaskParams {
-            own: true,
-            ..MaskParams::default()
-        })
-    ));
-    assert!(
-        editor.mask_outline_notes().is_empty(),
-        "own=true 的边框走正常音符，不重复叠加"
-    );
-    assert!(
         editor
             .editor_state
             .shape_store
-            .entry(id)
+            .model(id)
             .expect("形状应存在")
-            .source_notes
-            .is_empty(),
-        "切回发声后应清掉旧 source，区域改读 notes"
-    );
-}
-
-#[test]
-fn test_set_mask_toggles_marker() {
-    let mut editor = test_editor();
-    let mut model = mask_model();
-    model.ops.clear();
-    assert!(editor.create_shape(model), "基础形状应登记");
-    let id = *editor
-        .editor_state
-        .shape_store
-        .ids()
-        .last()
-        .expect("应有形状 id");
-
-    assert!(editor.set_mask(
-        id,
-        Some(MaskParams {
-            own: false,
-            ..MaskParams::default()
-        })
-    ));
-    assert!(
-        lumino_editor_state::shape_ops::masks::params_of(
-            editor
-                .editor_state
-                .shape_store
-                .model(id)
-                .expect("形状应存在")
-        )
-        .is_some()
-    );
-
-    assert!(editor.set_mask(id, None));
-    assert!(
-        lumino_editor_state::shape_ops::masks::params_of(
-            editor
-                .editor_state
-                .shape_store
-                .model(id)
-                .expect("形状应存在")
-        )
-        .is_none()
+            .ops
+            .iter()
+            .any(|op| matches!(op, ShapeOp::Mask(_))),
+        "Bake 时的 Mask op 应原样保留"
     );
 }
 

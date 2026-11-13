@@ -14,7 +14,7 @@ pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
 /// 遮罩参数面板的编辑目标（DRAW-010）
 pub use interaction::MaskEditTarget;
-pub use interaction::shape_compose::MouldReject;
+pub use interaction::shape_compose::{MouldReject, sym_reject_message};
 
 pub mod arrangement;
 pub mod context_menu;
@@ -55,6 +55,7 @@ mod tests {
     mod arrangement_move_freeze;
     mod arrangement_snap_ledger;
     mod arrangement_track_mapping;
+    mod baked_readonly;
     mod batch_move_consistency;
     mod delete_sync_gate;
     mod drawing;

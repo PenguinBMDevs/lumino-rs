@@ -1,7 +1,7 @@
 //! DRAW-041C：020 提升为单支组合 + pending 来源恢复/移除。
 //!
 //! 从 `pending_compose.rs` 拆出（文件长度纪律）。
-use lumino_core::shape::ShapeOp;
+use lumino_core::shape::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeOp};
 use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, PendingSource};
 
 use crate::Editor;
@@ -32,7 +32,7 @@ impl Editor {
         let Some(source) = self.pending_source(reference) else {
             return false;
         };
-        let mut model = crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
+        let mut model = self.model_from_source_at_view(&source, track, 1.0);
         // 待确认 Mask 标记要跟着模型走，否则提升后预览会莫名消失
         let pending_source = match reference {
             PendingShapeRef::Shape(index) => {
@@ -48,6 +48,11 @@ impl Editor {
                 let Some(path) = self.editor_state.line_tool.paths.get(index).cloned() else {
                     return false;
                 };
+                // 曲线路径提升后保留 Curve 身份：023 半边对称只接受 Curve。
+                // 几何用原始 Bezier 锚点（含控制柄），不能先展平——展平会把
+                // 3 个锚点变成几十个偶数锚点，半边对称会被 EvenAnchors 静默拒绝。
+                model.kind = ShapeKind::Curve;
+                model.geometry = curve_geometry(&path);
                 PendingSource::CurvePath(path)
             }
             PendingShapeRef::Composed(_) | PendingShapeRef::BrushStroke(_) => return false,
@@ -136,8 +141,7 @@ impl Editor {
         let mut items = Vec::with_capacity(references.len());
         for reference in references {
             let source = self.pending_source(*reference)?;
-            let mut model =
-                crate::interaction::shape_bridge::model_from_source(&source, track, 1.0);
+            let mut model = self.model_from_source_at_view(&source, track, 1.0);
             let pending_source = match reference {
                 PendingShapeRef::Shape(index) => {
                     let shape = self.editor_state.shape_tool.shapes.get(*index)?.clone();
@@ -148,6 +152,9 @@ impl Editor {
                 }
                 PendingShapeRef::CurvePath(index) => {
                     let path = self.editor_state.line_tool.paths.get(*index)?.clone();
+                    // 曲线路径提升后保留 Curve 身份：023 半边对称只接受 Curve。
+                    model.kind = ShapeKind::Curve;
+                    model.geometry = curve_geometry(&path);
                     PendingSource::CurvePath(path)
                 }
                 PendingShapeRef::Composed(_) | PendingShapeRef::BrushStroke(_) => return None,
@@ -191,5 +198,21 @@ impl Editor {
         self.editor_state.shape_select.select_all_of(ids);
         self.grid_cache.clear();
         Some(indexes)
+    }
+}
+
+/// 待确认曲线的模型几何：保留原始 Bezier 锚点与控制柄。
+///
+/// 不能先把路径展平成折线再建模型：展平会把 3 个锚点变成几十个（且通常为偶数），
+/// 023 半边对称的 `EvenAnchors` 守卫会把入口静默拒绝。
+fn curve_geometry(path: &[ShapeAnchor]) -> ShapeGeometry {
+    let closed = path.len() >= 3
+        && path.first().zip(path.last()).is_some_and(|(a, b)| {
+            (a.pos.0 - b.pos.0).abs() < 1e-3 && (a.pos.1 - b.pos.1).abs() < 1e-3
+        });
+    ShapeGeometry {
+        anchors: path.to_vec(),
+        rect: None,
+        closed,
     }
 }

@@ -1,8 +1,27 @@
-//! 025–028：已 Bake 图形的参数操作测试
+//! 025–028：已 Bake 图形的参数操作负向测试（DEC-001）
+//!
+//! 已 Bake 形状只读；025 切割/026 补间/027 复制/028 力度都只对 pending 开放。
 
 use super::*;
-use lumino_core::shape::ShapeOp;
 use lumino_editor_state::ShapeNote;
+
+fn doc_fingerprint(editor: &Editor) -> Vec<(u32, u8, u32, u8, u8)> {
+    editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .map(|note| {
+            (
+                note.start_tick,
+                note.key,
+                note.end_tick,
+                note.velocity,
+                note.channel,
+            )
+        })
+        .collect()
+}
 
 #[test]
 fn test_slice_vertical_rejects_baked_shape() {
@@ -29,7 +48,7 @@ fn test_slice_vertical_rejects_baked_shape() {
 }
 
 #[test]
-fn test_between_creates_steps() {
+fn test_between_rejects_baked_selection() {
     let mut editor = seeded_editor();
     let a = add_polyline(
         &mut editor,
@@ -42,159 +61,16 @@ fn test_between_creates_steps() {
         vec![shape_note(100.0, 64)],
     );
     editor.editor_state.shape_select.select_all_of([a, b]);
-    assert!(editor.create_between_selected());
-    assert_eq!(editor.editor_state.shape_select.selection_len(), 7);
-}
+    let before = doc_fingerprint(&editor);
 
-#[test]
-fn test_copy_along_adds_copies() {
-    let mut editor = seeded_editor();
-    let id = add_polyline(
-        &mut editor,
-        vec![(0.0, 60.0), (40.0, 60.0)],
-        vec![shape_note(0.0, 60)],
-    );
-    editor.editor_state.shape_select.select_only(id);
-    assert!(editor.copy_along_selected());
-    assert_eq!(
-        editor
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .next()
-            .expect("选中")
-            .notes
-            .len(),
-        5,
-        "原音符 + 4 副本"
-    );
-
-    // 027：fx 页必须落盘；按模型重生成（移动形状）后副本仍在
-    let new_id = editor.editor_state.shape_select.selected_ids()[0];
-    let model_id = editor
-        .editor_state
-        .shape_select
-        .model_id_of(new_id)
-        .expect("模型");
-    let mut model = editor
-        .editor_state
-        .shape_store
-        .model(model_id)
-        .expect("模型")
-        .clone();
     assert!(
-        model
-            .ops
-            .iter()
-            .any(|op| matches!(op, ShapeOp::CopyAlong(_))),
-        "CopyAlong op 应写回模型"
+        !editor.create_between_selected(),
+        "已 Bake 图形不得创建补间"
     );
-    for anchor in &mut model.geometry.anchors {
-        anchor.pos.0 += 20.0;
-    }
-    assert!(editor.edit_shape(model_id, model), "按模型重估应成功");
+    assert_eq!(doc_fingerprint(&editor), before, "拒绝后音符必须逐条不变");
     assert_eq!(
-        editor.editor_state.shape_store.notes_of(model_id).len(),
-        5,
-        "移动形状重生成后副本不应消失"
-    );
-}
-
-#[test]
-fn test_velocity_up_writes_env_op() {
-    let mut editor = seeded_editor();
-    let id = add_polyline(
-        &mut editor,
-        vec![(0.0, 60.0), (40.0, 60.0)],
-        vec![shape_note(0.0, 60)],
-    );
-    editor.editor_state.shape_select.select_only(id);
-    assert!(editor.velocity_up_selected());
-    let model_id = editor
-        .editor_state
-        .shape_select
-        .model_id_of(id)
-        .expect("模型");
-    assert!(
-        editor
-            .editor_state
-            .shape_store
-            .model(model_id)
-            .expect("模型")
-            .ops
-            .iter()
-            .any(|op| matches!(op, ShapeOp::VelocityEnv(_)))
-    );
-}
-
-#[test]
-fn test_velocity_up_only_changes_selected_and_undoes_once() {
-    let mut editor = empty_editor();
-    let selected = add_polyline(
-        &mut editor,
-        vec![(0.0, 60.0), (40.0, 60.0)],
-        vec![shape_note(0.0, 60), shape_note(20.0, 61)],
-    );
-    let other = add_polyline(
-        &mut editor,
-        vec![(100.0, 64.0), (140.0, 64.0)],
-        vec![shape_note(100.0, 64), shape_note(120.0, 65)],
-    );
-    editor.editor_state.shape_select.select_only(selected);
-    let model_id = editor
-        .ensure_model_for_drawn(selected)
-        .expect("选中形状应有模型");
-    let selected_before: Vec<u8> = editor
-        .editor_state
-        .shape_store
-        .notes_of(model_id)
-        .iter()
-        .map(|note| note.velocity)
-        .collect();
-    let other_before: Vec<u8> = editor
-        .editor_state
-        .shape_select
-        .shapes()
-        .iter()
-        .find(|shape| shape.id == other)
-        .expect("非选中形状仍在")
-        .notes
-        .iter()
-        .map(|note| note.velocity)
-        .collect();
-
-    assert!(editor.velocity_up_selected());
-    let selected_after: Vec<u8> = editor
-        .editor_state
-        .shape_store
-        .notes_of(model_id)
-        .iter()
-        .map(|note| note.velocity)
-        .collect();
-    assert_ne!(selected_after, selected_before, "选中形状应被写入力度包络");
-    let other_after: Vec<u8> = editor
-        .editor_state
-        .shape_select
-        .shapes()
-        .iter()
-        .find(|shape| shape.id == other)
-        .expect("非选中形状仍在")
-        .notes
-        .iter()
-        .map(|note| note.velocity)
-        .collect();
-    assert_eq!(other_after, other_before, "非选中形状力度必须不变");
-
-    assert!(editor.undo(), "一次应用应只压一条历史");
-    let selected_undone: Vec<u8> = editor
-        .editor_state
-        .shape_store
-        .notes_of(model_id)
-        .iter()
-        .map(|note| note.velocity)
-        .collect();
-    assert_eq!(
-        selected_undone, selected_before,
-        "一次 undo 应逐音符还原力度"
+        editor.editor_state.shape_select.selection_len(),
+        2,
+        "拒绝后选中集不得变化"
     );
 }

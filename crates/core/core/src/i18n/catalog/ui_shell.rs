@@ -209,8 +209,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "已切换遮罩（仅预览；✓ 后固定）" => {
             Some("Mask toggled (preview only; applied after ✓)")
         }
-        "遮罩失败：请选中一个待确认/已 Bake 形状" => {
-            Some("Mask failed: select a pending or baked shape")
+        "遮罩失败：请选中一个待确认形状" => {
+            Some("Mask failed: select a pending shape")
         }
         // 2026-11-05：DRAW-041C 遮罩/编辑图形的调用点用的是「图形」措辞，
         // 与上面「形状」条目不同字面 ⇒ 必须逐字登记，否则 i18n 覆盖率测试红灯。
@@ -219,9 +219,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Failed to apply mask: the target shape is no longer editable")
         }
         "编辑图形" => Some("Edit Shape"),
-        "编辑图形失败：请选中一个已 Bake 图形或单支待确认组合" => {
-            Some("Edit shape failed: select a baked shape or a single pending composition")
-        }
+        "编辑图形失败：请选中一个单支待确认组合（已 Bake 只读）" => Some(
+            "Edit shape failed: select a single pending composition (baked shapes are read-only)",
+        ),
         "已进入编辑图形：角=缩放，边=拉伸，角外=旋转，中心=移动" => Some(
             "Editing shape: corners = scale, edges = stretch, outside corner = rotate, center = move",
         ),
@@ -231,8 +231,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "区域色号上限 16" => Some("Area colour max 16"),
         "区域着色 · 16 需启用通道 10" => Some("Area painting · 16 requires channel 10"),
         "遮罩设置…" => Some("Mask Settings…"),
-        "遮罩设置失败：请选中一个待确认形状或已 Bake 图形" => {
-            Some("Failed to open mask settings: select a pending or baked shape")
+        "遮罩设置失败：请选中一个待确认形状" => {
+            Some("Failed to open mask settings: select a pending shape")
         }
         "已竖切；✓ 后才写入音符" => {
             Some("Sliced vertically; notes are written after ✓")
@@ -298,15 +298,17 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         "已退出手柄编辑" => Some("Handle edit mode off"),
         // DRAW-041C：组合入口拒绝必须给可见提示（混合选区 / 画刷 / 组合结果未 ✓）
-        "转为活形状失败：请选中两个及以上待确认/已 Bake 图形" => {
-            Some("Convert to live shape failed: select two or more pending/baked shapes")
+        "转为活形状失败：请选中两个及以上待确认图形（已 Bake 只读）" => {
+            Some(
+                "Convert to live shape failed: select two or more pending shapes (baked shapes are read-only)",
+            )
         }
-        "连接图形失败：请选中至少两个待确认/已 Bake 图形" => {
-            Some("Join failed: select at least two pending/baked shapes")
+        "连接图形失败：请选中至少两个待确认图形（已 Bake 只读）" => {
+            Some("Join failed: select at least two pending shapes (baked shapes are read-only)")
         }
-        "门控合并失败：请恰好选中两个待确认/已 Bake 图形" => {
-            Some("Gate merge failed: select exactly two pending/baked shapes")
-        }
+        "门控合并失败：请恰好选中两个待确认图形（已 Bake 只读）" => Some(
+            "Gate merge failed: select exactly two pending shapes (baked shapes are read-only)",
+        ),
         "沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
             Some(
                 "Copy along path failed: select one pending shape/curve; composed results must be ✓ first",
@@ -322,6 +324,13 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         // DRAW-010：遮罩实体化入口
         "实体化" => Some("Bake to Shape"),
+        "实体化遮罩" => Some("Bake Mask to Shape"),
+        "已实体化遮罩：可见片段写成新形状" => {
+            Some("Mask baked: visible pieces written as a new shape")
+        }
+        "实体化失败：请选中一个带遮罩的已 Bake 形状" => {
+            Some("Bake mask failed: select a baked shape that carries a mask")
+        }
         "已实体化遮罩" => Some("Mask baked to a new shape"),
         "实体化失败：遮罩没有可见片段或目标已失效" => {
             Some("Bake mask failed: no visible pieces or the target is no longer available")

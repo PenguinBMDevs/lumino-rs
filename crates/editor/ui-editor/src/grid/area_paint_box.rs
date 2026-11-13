@@ -279,7 +279,7 @@ fn slot_color(slot: u8) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interaction::area_paint::AreaPaintState;
+    use crate::interaction::area_paint::{AreaPaintState, AreaPaintTarget};
     use crate::tests::test_helpers::seed_notes;
     use lumino_editor_state::{DrawnShapeSource, shape_tool::ShapeKind};
 
@@ -308,9 +308,11 @@ mod tests {
             .set_model_id(drawn_id, Some(1));
         editor.editor_state.shape_select.select_only(drawn_id);
         editor.area_paint = Some(AreaPaintState {
+            target: AreaPaintTarget::PendingComposed { index: 0 },
             drawn_id: Some(drawn_id),
-            model_id: 1,
             colour: 3,
+            original_fill: lumino_core::shape::ShapeFill::Fill,
+            original_areas: Vec::new(),
         });
         let rects = palette_rects(&editor).expect("应显示调色板");
         let centre = |r: &Rectangle| Point::new(r.x + r.width * 0.5, r.y + r.height * 0.5);
@@ -359,9 +361,11 @@ mod tests {
             .set_model_id(drawn_id, Some(1));
         editor.editor_state.shape_select.select_only(drawn_id);
         editor.area_paint = Some(AreaPaintState {
+            target: AreaPaintTarget::PendingComposed { index: 0 },
             drawn_id: Some(drawn_id),
-            model_id: 1,
             colour: 3,
+            original_fill: lumino_core::shape::ShapeFill::Fill,
+            original_areas: Vec::new(),
         });
         let centre = |r: &Rectangle| Point::new(r.x + r.width * 0.5, r.y + r.height * 0.5);
 

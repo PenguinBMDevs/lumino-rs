@@ -16,6 +16,41 @@ fn row(key: u16, start: f32, end: f32) -> RowSpan {
 }
 
 #[test]
+fn test_clear_reaches_diagonal_boundary_pockets() {
+    // 菱形：四条斜边。旧 8 连通边界线会在内侧留下 4 连通泛洪无法到达的死格，
+    // 透明清除后这些死格仍会生成被截断的填充音符。
+    let diamond = vec![
+        (50.0, 0.0),
+        (100.0, 50.0),
+        (50.0, 100.0),
+        (0.0, 50.0),
+        (50.0, 0.0),
+    ];
+    let ctx = AreaContext::build(
+        &[diamond],
+        box_100(),
+        &[AreaSpot {
+            u: 0.5,
+            v: 0.5,
+            colour: 0,
+        }],
+        false,
+        false,
+    )
+    .expect("透明区域应建立上下文");
+    let unassigned = ctx
+        .map
+        .cells
+        .iter()
+        .filter(|cell| **cell == AREA_UNASSIGNED)
+        .count();
+    assert_eq!(
+        unassigned, 0,
+        "透明色应铺满形状内部，不得留下被边界线隔开的未着色格"
+    );
+}
+
+#[test]
 fn test_build_and_paint_single_region() {
     let ctx = AreaContext::build(
         &[square(0.0, 100.0)],

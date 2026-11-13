@@ -1,7 +1,6 @@
 //! 形状对象的加载/快照/分享入口（从 `shape_ops.rs` 拆出，控制文件长度）
 
 use crate::Editor;
-use crate::interaction::shape_bridge::model_from_drawn;
 use lumino_core::shape::ShapeModel;
 
 impl Editor {
@@ -44,7 +43,7 @@ impl Editor {
             .shapes()
             .iter()
             .find(|shape| selected.contains(&shape.id) && shape.pending.is_some())?;
-        Some(model_from_drawn(drawn, 1.0))
+        Some(self.model_from_drawn_at_view(drawn, 1.0))
     }
 
     /// 从一行分享文本粘贴形状到当前音轨（DRAW-034）。

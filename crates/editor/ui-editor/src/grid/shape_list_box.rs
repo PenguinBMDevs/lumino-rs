@@ -1,8 +1,7 @@
 //! DRAW-041B/032B：Bake 后保留的 ShapeStore 模型列表
 //!
-//! 普通 Bake 仍不登记 DrawnShape（保持 DRAW-041 语义），列表是这些只读模型的
-//! 唯一入口；点击一条会进入 032B 区域着色。载入工程后没有本次会话音符指纹的
-//! 模型暂不可编辑（避免删不掉旧音符造成重复）。
+//! DEC-001：Bake 后形状对象只读，本列表只做**只读展示**（名称 + 关闭），
+//! 不提供区域着色/编辑入口。
 
 use crate::Editor;
 use crate::grid::utils::content_bounds;
@@ -23,8 +22,8 @@ const CLOSE: f32 = 16.0;
 pub struct ShapeListRects {
     /// 面板
     pub panel: Rectangle,
-    /// 行：模型 id + 矩形
-    pub rows: Vec<(u64, Rectangle, String, bool)>,
+    /// 行：模型 id + 矩形 + 名称
+    pub rows: Vec<(u64, Rectangle, String)>,
     /// 关闭按钮
     pub close: Rectangle,
 }
@@ -46,7 +45,7 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
         return None;
     }
     let track = editor.editor_state.data.current_track;
-    let mut entries: Vec<(u64, String, bool)> = editor
+    let mut entries: Vec<(u64, String)> = editor
         .editor_state
         .shape_store
         .iter()
@@ -57,15 +56,10 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
             } else {
                 entry.model.name.clone()
             };
-            // 载入工程后 notes 为空，但再生成结果能精确定位时仍可接管。
-            (
-                entry.model.id,
-                name,
-                editor.can_area_paint_model(entry.model.id),
-            )
+            (entry.model.id, name)
         })
         .collect();
-    entries.sort_by_key(|(id, _, _)| *id);
+    entries.sort_by_key(|(id, _)| *id);
     if entries.is_empty() {
         return None;
     }
@@ -81,7 +75,7 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
     let rows = entries
         .into_iter()
         .enumerate()
-        .map(|(index, (id, name, editable))| {
+        .map(|(index, (id, name))| {
             (
                 id,
                 Rectangle::new(
@@ -92,7 +86,6 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
                     Size::new(PANEL_W - PAD * 2.0, ROW_H),
                 ),
                 name,
-                editable,
             )
         })
         .collect();
@@ -109,7 +102,7 @@ pub fn hit(editor: &Editor, point: Point) -> Option<ShapeListHit> {
     if rects.close.contains(point) {
         return Some(ShapeListHit::Close);
     }
-    for (id, rect, _, _) in &rects.rows {
+    for (id, rect, _) in &rects.rows {
         if rect.contains(point) {
             return Some(ShapeListHit::Row(*id));
         }
@@ -117,14 +110,16 @@ pub fn hit(editor: &Editor, point: Point) -> Option<ShapeListHit> {
     rects.panel.contains(point).then_some(ShapeListHit::Panel)
 }
 
-/// 左键命中列表：`None` = 列表未展开；`Some(None)` = 面板空白消费；
-/// `Some(Some(action))` = 选择/关闭动作。
+/// 左键命中列表：`None` = 列表未展开；`Some(None)` = 面板空白/行点击消费；
+/// `Some(Some(action))` = 关闭动作。
+///
+/// DEC-001：行点击只消费事件，不触发任何写入口（列表只读）。
 pub fn press_action(editor: &Editor, point: Point) -> Option<Option<EditorAction>> {
     if !editor.shape_list_open {
         return None;
     }
     Some(match hit(editor, point) {
-        Some(ShapeListHit::Row(id)) => Some(EditorAction::ShapeListPick(id)),
+        Some(ShapeListHit::Row(_)) => None,
         Some(ShapeListHit::Close) => Some(EditorAction::ShapeListClose),
         Some(ShapeListHit::Panel) => None,
         None => Some(EditorAction::ShapeListClose),
@@ -154,7 +149,7 @@ pub fn draw(
             .with_color(palette.background.strong.color),
     );
     frame.fill_text(canvas::Text {
-        content: tr!("形状列表").to_string(),
+        content: tr!("形状列表（只读）").to_string(),
         position: Point::new(rects.panel.x + PAD, rects.panel.y + PAD - 1.0),
         max_width: rects.panel.width - PAD * 2.0 - CLOSE,
         line_height: iced_core::text::LineHeight::Relative(1.0),
@@ -177,26 +172,18 @@ pub fn draw(
         align_y: iced_core::alignment::Vertical::Top,
         shaping: iced_core::text::Shaping::Advanced,
     });
-    for (index, (_, rect, name, editable)) in rects.rows.iter().enumerate() {
+    for (index, (_, rect, name)) in rects.rows.iter().enumerate() {
         if index % 2 == 0 {
             let bg = Path::rectangle(rect.position(), rect.size());
             frame.fill(&bg, palette.background.weak.color);
         }
         frame.fill_text(canvas::Text {
-            content: if *editable {
-                name.clone()
-            } else {
-                format!("{name}（只读）")
-            },
+            content: name.clone(),
             position: Point::new(rect.x + 6.0, rect.y + 4.0),
             max_width: rect.width - 12.0,
             line_height: iced_core::text::LineHeight::Relative(1.0),
             size: iced_core::Pixels(12.0),
-            color: if *editable {
-                palette.background.neutral.text
-            } else {
-                palette.background.strong.text
-            },
+            color: palette.background.neutral.text,
             font: lumino_ui_core::font::ui_font(),
             align_x: iced_core::alignment::Horizontal::Left.into(),
             align_y: iced_core::alignment::Vertical::Top,
@@ -246,11 +233,12 @@ mod tests {
         editor.shape_list_open = true;
         let rects = shape_list_rects(&editor).expect("应显示列表");
         let row = &rects.rows[0];
-        assert_eq!(
-            hit(&editor, Point::new(row.1.x + 4.0, row.1.y + 4.0)),
-            Some(ShapeListHit::Row(id))
-        );
+        let point = Point::new(row.1.x + 4.0, row.1.y + 4.0);
+        assert_eq!(hit(&editor, point), Some(ShapeListHit::Row(id)));
         assert_eq!(row.2, "test");
-        assert!(row.3, "本次会话模型应可编辑");
+        assert!(
+            matches!(press_action(&editor, point), Some(None)),
+            "DEC-001：行点击只读，不应产生任何写入口动作"
+        );
     }
 }

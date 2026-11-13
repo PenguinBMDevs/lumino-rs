@@ -30,8 +30,6 @@ use lumino_editor_state::{DrawnShapeSource, ShapeNote};
 use lumino_note_core::history::CreateOp;
 use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
-use crate::interaction::shape_bridge::model_from_source;
-
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
 use crate::interaction::line_tool::{paths, stroke_band};
 use crate::{Editor, Note};
@@ -378,7 +376,7 @@ impl Editor {
                     filled: shape.filled,
                     apex_high: shape.apex_high,
                 };
-                let mut model = model_from_source(&source, track, 1.0);
+                let mut model = self.model_from_source_at_view(&source, track, 1.0);
                 if let Some(mask) = &shape.mask {
                     model.ops.push(ShapeOp::Mask(mask.clone()));
                 }

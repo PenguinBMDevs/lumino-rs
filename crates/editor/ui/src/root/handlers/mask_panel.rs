@@ -1,7 +1,7 @@
 //! 遮罩参数面板处理器（DRAW-010）
 //!
-//! 写入策略见 `crate::root::mask_panel`：
-//! pending 即时写（不进文档历史），已 Bake 走草稿 + Apply（一次撤销单元）。
+//! DEC-001：Bake 后形状对象只读，面板只对 **✓ 前的待确认对象** 开放，
+//! 参数即时写 pending（不产生文档历史）。
 
 use lumino_core::tr;
 use lumino_message::MaskPanelAction;
@@ -18,7 +18,7 @@ impl Root {
         let Some(target) = self.editor.mask_edit_target() else {
             self.toast.push(
                 ToastLevel::Warning,
-                tr!("遮罩设置失败：请选中一个待确认形状或已 Bake 图形"),
+                tr!("遮罩设置失败：请选中一个待确认形状"),
             );
             return;
         };
@@ -36,11 +36,9 @@ impl Root {
             return;
         }
         if matches!(action, MaskPanelAction::Apply) {
-            self.apply_mask_panel();
             return;
         }
         if matches!(action, MaskPanelAction::ApplyAsShape) {
-            self.apply_mask_as_shape();
             return;
         }
 
@@ -85,7 +83,7 @@ impl Root {
         }
     }
 
-    /// 参数 → 目标：pending 即时生效；已 Bake 只标脏，等 Apply
+    /// 参数 → 目标：只有待确认对象，参数即时生效
     fn push_mask_params(&mut self) {
         let Some(target) = self.mask_panel.target else {
             return;
@@ -94,48 +92,11 @@ impl Root {
             MaskEditTarget::Pending { index } => {
                 self.editor
                     .set_pending_mask(index, self.mask_panel.params.clone());
-                self.mask_panel.dirty = false;
             }
             MaskEditTarget::PendingComposed { index } => {
                 self.editor
                     .set_pending_composed_mask(index, self.mask_panel.params.clone());
-                self.mask_panel.dirty = false;
             }
-            MaskEditTarget::Baked { .. } => {
-                self.mask_panel.dirty = true;
-            }
-        }
-    }
-
-    /// 已 Bake：把草稿写入文档（一次 `edit_shape` 撤销单元）
-    fn apply_mask_panel(&mut self) {
-        let Some(MaskEditTarget::Baked { model_id }) = self.mask_panel.target else {
-            return;
-        };
-        let params = self.mask_panel.params.clone();
-        let ok = self.editor.set_mask(model_id, params);
-        if ok {
-            self.mask_panel.dirty = false;
-            self.toast.push(ToastLevel::Info, tr!("已应用遮罩"));
-        } else {
-            self.toast
-                .push(ToastLevel::Warning, tr!("应用遮罩失败：目标图形已不可编辑"));
-        }
-    }
-
-    /// 已 Bake：把遮罩可见片段实体化为新形状（原形状/遮罩不变）
-    fn apply_mask_as_shape(&mut self) {
-        let Some(MaskEditTarget::Baked { model_id }) = self.mask_panel.target else {
-            return;
-        };
-        if self.editor.apply_mask(model_id).is_some() {
-            self.mask_panel.hide();
-            self.toast.push(ToastLevel::Info, tr!("已实体化遮罩"));
-        } else {
-            self.toast.push(
-                ToastLevel::Warning,
-                tr!("实体化失败：遮罩没有可见片段或目标已失效"),
-            );
         }
     }
 }

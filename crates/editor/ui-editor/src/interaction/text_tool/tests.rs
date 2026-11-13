@@ -380,7 +380,7 @@ fn test_confirm_text_creates_persistent_text_shape() {
 }
 
 #[test]
-fn test_click_existing_text_shape_reopens_for_edit() {
+fn test_click_existing_text_shape_is_read_only() {
     let mut editor = text_tool_editor(false);
     {
         let tt = &mut editor.editor_state.text_tool;
@@ -391,7 +391,7 @@ fn test_click_existing_text_shape_reopens_for_edit() {
         tt.font_family = "Microsoft YaHei";
     }
     if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
-        eprintln!("跳过 test_click_existing_text_shape_reopens_for_edit：无可用系统字体");
+        eprintln!("跳过 test_click_existing_text_shape_is_read_only：无可用系统字体");
         return;
     }
     assert!(editor.confirm_text_tool());
@@ -401,34 +401,67 @@ fn test_click_existing_text_shape_reopens_for_edit() {
         .shape_store
         .model(shape_id)
         .and_then(|m| m.geometry.rect);
-    let pos = editor.tick_key_to_pos(480.0, 62);
-    editor.handle_text_tool_pressed(pos, 62);
-    assert_eq!(
-        editor.editor_state.text_tool.editing_shape,
-        Some(shape_id),
-        "点击已有文字应进入该形状的编辑态"
-    );
-    assert_eq!(editor.editor_state.text_tool.text, "A");
-    assert!(editor.editor_state.text_tool.active);
-
-    editor.set_text_tool_text("B".to_string());
-    assert!(editor.confirm_text_tool());
-    let shapes = editor.editor_state.shape_store.persisted_models();
-    assert_eq!(shapes.len(), 1, "重新编辑不得新建第二个文字形状");
-    assert_eq!(shapes[0].id, shape_id, "重新编辑必须复用原形状 id");
-    assert_eq!(
-        shapes[0].geometry.rect, before_rect,
-        "只改文字不得让文本框位置漂移"
-    );
-    let text = shapes[0]
-        .ops
-        .iter()
-        .find_map(|op| match op {
-            lumino_core::shape::ShapeOp::Text(op) => Some(&op.text),
-            _ => None,
+    let text_before = editor
+        .editor_state
+        .shape_store
+        .model(shape_id)
+        .and_then(|m| {
+            m.ops.iter().find_map(|op| match op {
+                lumino_core::shape::ShapeOp::Text(op) => Some(op.text.clone()),
+                _ => None,
+            })
         })
         .expect("文字形状应保留 TextOp");
-    assert_eq!(text, "B");
+    let notes_before: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
+
+    let pos = editor.tick_key_to_pos(480.0, 62);
+    editor.handle_text_tool_pressed(pos, 62);
+
+    // DEC-001：已 Bake 的文字形状只读，点击只消费事件，不进入重新编辑。
+    assert!(
+        !editor.editor_state.text_tool.active,
+        "不得在已 Bake 文字上重新打开文本框"
+    );
+    assert_eq!(
+        editor.editor_state.shape_store.ids(),
+        vec![shape_id],
+        "不得新建第二个文字形状"
+    );
+    let text_after = editor
+        .editor_state
+        .shape_store
+        .model(shape_id)
+        .and_then(|m| {
+            m.ops.iter().find_map(|op| match op {
+                lumino_core::shape::ShapeOp::Text(op) => Some(op.text.clone()),
+                _ => None,
+            })
+        })
+        .expect("文字形状应保留 TextOp");
+    assert_eq!(text_after, text_before, "只读点击不得改文字");
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_store
+            .model(shape_id)
+            .and_then(|m| m.geometry.rect),
+        before_rect,
+        "只读点击不得改文本框位置"
+    );
+    let notes_after: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(notes_after, notes_before, "只读点击不得改动音符");
 }
 
 #[test]

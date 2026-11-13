@@ -181,7 +181,7 @@ impl Root {
                         if !self.editor.live_selected_shapes() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("转为活形状失败：请选中两个及以上待确认/已 Bake 图形"),
+                                tr!("转为活形状失败：请选中两个及以上待确认图形（已 Bake 只读）"),
                             );
                         }
                     }
@@ -193,7 +193,7 @@ impl Root {
                         if !self.editor.join_selected_shapes() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("连接图形失败：请选中至少两个待确认/已 Bake 图形"),
+                                tr!("连接图形失败：请选中至少两个待确认图形（已 Bake 只读）"),
                             );
                         }
                     }
@@ -201,7 +201,7 @@ impl Root {
                         if !self.editor.merge_selected_shapes() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("门控合并失败：请恰好选中两个待确认/已 Bake 图形"),
+                                tr!("门控合并失败：请恰好选中两个待确认图形（已 Bake 只读）"),
                             );
                         }
                     }
@@ -216,12 +216,22 @@ impl Root {
                         } else {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("编辑图形失败：请选中一个已 Bake 图形或单支待确认组合"),
+                                tr!("编辑图形失败：请选中一个单支待确认组合（已 Bake 只读）"),
                             );
                         }
                     }
                     PianoRollContextMenuItem::PaintAreas => {
-                        let _ = self.editor.begin_area_paint();
+                        if self.editor.begin_area_paint() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Info,
+                                tr!("区域着色已开启：点击形状内部上色，切工具退出"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("区域着色失败：请选中一个待确认闭合形状"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::MaskToggle => {
                         if self.editor.toggle_mask_selected() {
@@ -232,7 +242,7 @@ impl Root {
                         } else {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("遮罩失败：请选中一个待确认/已 Bake 形状"),
+                                tr!("遮罩失败：请选中一个待确认形状"),
                             );
                         }
                     }
@@ -249,14 +259,44 @@ impl Root {
                             .unwrap_or(iced_core::Point::new(320.0, 200.0));
                         self.open_mask_panel(anchor);
                     }
+                    PianoRollContextMenuItem::MaskApply => {
+                        let model_id = self
+                            .editor
+                            .editor_state
+                            .shape_select
+                            .selected_shapes()
+                            .find_map(|shape| shape.model_id);
+                        let applied = model_id.and_then(|id| self.editor.apply_mask(id));
+                        if applied.is_some() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Success,
+                                tr!("已实体化遮罩：可见片段写成新形状"),
+                            );
+                        } else {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("实体化失败：请选中一个带遮罩的已 Bake 形状"),
+                            );
+                        }
+                    }
                     PianoRollContextMenuItem::ShapeList => {
                         let _ = self.editor.open_shape_list();
                     }
                     PianoRollContextMenuItem::SymmetryVertical => {
-                        self.editor.toggle_symmetry(true).ok();
+                        if let Err(reason) = self.editor.toggle_symmetry(true) {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                lumino_ui_editor::sym_reject_message(reason),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::SymmetryHorizontal => {
-                        self.editor.toggle_symmetry(false).ok();
+                        if let Err(reason) = self.editor.toggle_symmetry(false) {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                lumino_ui_editor::sym_reject_message(reason),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::Straighten => {
                         let _ = self.editor.set_straighten(true);

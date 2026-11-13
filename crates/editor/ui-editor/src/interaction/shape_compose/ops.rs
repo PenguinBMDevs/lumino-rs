@@ -1,21 +1,16 @@
 //! DRAW-023..028：形状参数/组合操作（从 `shape_compose.rs` 拆出）
 //!
-//! 已 Bake 的 DrawnShape 走 `ShapeStore` 模型；041C 起 027/028 也支持
-//! Bake 前 pending 入口（组合结果仍是 pending，✓ 才落文档）。
+//! DEC-001：Bake 后形状对象只读。已 Bake 分支全部关闭；027/028/026 只保留
+//! ✓ 前的 pending 入口（组合结果仍是 pending，✓ 才落文档）。
 
 use lumino_core::shape::{
-    BetweenParams, BetweenRole, BetweenSet, CopyMode, CopyPathParams, ShapeKind, ShapeModel,
-    ShapeOp, StraightenParams, Sym, SymAxis, SymParams, VelocityEnv,
+    CopyMode, CopyPathParams, ShapeModel, ShapeOp, Sym, SymAxis, SymParams, VelocityEnv,
 };
 use lumino_editor_state::ComposedKind;
 use lumino_editor_state::ShapeNote;
-use lumino_editor_state::shape_ops::{
-    SymReject, copy_along_apply, symmetric_shape_with_reason, sync_groups,
-};
+use lumino_editor_state::shape_ops::{SymReject, symmetric_shape_with_reason};
 
 use crate::Editor;
-
-use super::{ShapeItem, source_from_model, sym_reject_message};
 
 /// Mould 失败原因（用于给用户精确提示）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,20 +73,19 @@ impl Editor {
 
     /// 023：切换对称（竖轴/横轴）。再次调用同一轴 = 关闭。
     ///
-    /// 关闭不是失败，只有「拒绝」才返回 `Err`（附可展示原因，DRAW-043）。
+    /// DEC-001：只作用于 ✓ 前的 pending。普通 pending 曲线会先提升为单支组合；
+    /// 已 Bake 形状没有 pending 目标，返回 `NoSelection`。
     pub fn toggle_symmetry(&mut self, vertical: bool) -> Result<(), SymReject> {
-        let result = self.toggle_symmetry_inner(vertical);
-        if let Err(reason) = result {
-            tracing::warn!(
-                reason = sym_reject_message(reason),
-                "半边对称被拒绝（DRAW-023）"
-            );
-        }
-        result
-    }
-
-    fn toggle_symmetry_inner(&mut self, vertical: bool) -> Result<(), SymReject> {
-        let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
+        let Some((index, promoted)) = self.pending_single_composed_for_ops() else {
+            return Err(SymReject::NoSelection);
+        };
+        let Some(mut model) = self
+            .editor_state
+            .pending_composed
+            .get(index)
+            .and_then(|composed| composed.results.first())
+            .map(|part| part.model.clone())
+        else {
             return Err(SymReject::NoSelection);
         };
         let params = SymParams {
@@ -124,35 +118,25 @@ impl Editor {
             symmetric_shape_with_reason(&model, &params)?;
             model.ops.push(ShapeOp::Symmetry(params));
         }
-        let updated = self.edit_shape(model_id, model);
-        self.refresh_drawn_source(drawn_id, model_id);
-        if updated {
-            Ok(())
-        } else {
-            Err(SymReject::EditFailed)
+        // 已组合：快照只回退本次参数；刚提升：撤销组合会连提升一起回到 pending 矢量。
+        if !promoted {
+            let snapshot = self.editor_state.pending_composed.clone();
+            self.pending_edit_undo.push(snapshot);
+            while self.pending_edit_undo.len() > 64 {
+                self.pending_edit_undo.remove(0);
+            }
+            self.pending_edit_redo.clear();
+            self.pending_composed_redo.clear();
         }
+        self.update_pending_composed_model(index, model);
+        Ok(())
     }
 
     /// 024：显式开启/关闭扶正
-    pub fn set_straighten(&mut self, on: bool) -> bool {
-        let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
-            return false;
-        };
-        model.ops.retain(|op| !matches!(op, ShapeOp::Straighten(_)));
-        if on {
-            if !matches!(
-                model.kind,
-                ShapeKind::Freehand | ShapeKind::Polyline | ShapeKind::Line
-            ) {
-                return false;
-            }
-            model
-                .ops
-                .push(ShapeOp::Straighten(StraightenParams { level: 50 }));
-        }
-        let ok = self.edit_shape(model_id, model);
-        self.refresh_drawn_source(drawn_id, model_id);
-        ok
+    ///
+    /// DEC-001：已 Bake 形状只读；pending 扶正入口尚未实现，因此当前一律拒绝。
+    pub fn set_straighten(&mut self, _on: bool) -> bool {
+        false
     }
 
     /// 025：选中一个**待确认**图形，沿 bbox 中心竖切成两半
@@ -223,77 +207,16 @@ impl Editor {
     }
 
     /// 026：两个选中图形生成 5 个 Between 步
+    ///
+    /// DEC-001：只有 pending 选区可创建；已 Bake 图形只读。
     pub fn create_between_selected(&mut self) -> bool {
         if self.pending_selection_only() {
             return self.compose_pending(ComposedKind::Between);
         }
-        let selected = self.selected_drawn_snapshot();
-        if selected.len() != 2 {
-            return false;
-        }
-        let Some(first_id) = self.ensure_model_for_drawn(selected[0].id) else {
-            return false;
-        };
-        let Some(last_id) = self.ensure_model_for_drawn(selected[1].id) else {
-            return false;
-        };
-        let Some(mut first) = self.editor_state.shape_store.model(first_id).cloned() else {
-            return false;
-        };
-        let Some(mut last) = self.editor_state.shape_store.model(last_id).cloned() else {
-            return false;
-        };
-        let set = BetweenSet {
-            steps: 5,
-            ..BetweenSet::default()
-        };
-        let group_id = self.next_between_group_id();
-        first.ops.push(ShapeOp::Between(BetweenParams {
-            id: group_id,
-            role: BetweenRole::First,
-            at: Some(0.0),
-            sig: None,
-            push: None,
-            vel: None,
-            set: Some(set),
-        }));
-        last.ops.push(ShapeOp::Between(BetweenParams {
-            id: group_id,
-            role: BetweenRole::Last,
-            at: Some(1.0),
-            sig: None,
-            push: None,
-            vel: None,
-            set: None,
-        }));
-        let track = selected[0].track;
-        let mut shapes = vec![first, last];
-        for warning in sync_groups(&mut shapes) {
-            tracing::warn!(message = warning.message, "Between 组同步提示");
-        }
-        let last_index = shapes.len().saturating_sub(1);
-        let mut items = Vec::with_capacity(shapes.len());
-        for (index, model) in shapes.into_iter().enumerate() {
-            let notes = if index == 0 {
-                selected[0].notes.clone()
-            } else if index == last_index {
-                selected[1].notes.clone()
-            } else {
-                self.shape_notes_of(&model, track)
-            };
-            items.push(ShapeItem {
-                source: source_from_model(&model),
-                notes,
-                model: Some(model),
-            });
-        }
-        self.replace_selected_with_many(items)
+        false
     }
 
     /// 027：选中一个图形，沿默认路径复制 4 份（半拍步长，原图 + 4 = 5 个）
-    ///
-    /// 副本是 `ShapeOp::CopyAlong` 这个 fx 页的产物：op 必须写回模型，
-    /// 否则后续 `edit_shape` 按模型重生成时会把副本抹掉（DRAW-027 验收）。
     pub fn copy_along_selected(&mut self) -> bool {
         let ppq = self.editor_state.view.ppq;
         self.copy_along_selected_with(f32::from(ppq) * 0.5, 5)
@@ -302,6 +225,7 @@ impl Editor {
     /// 027：按显式 **tick 步长** 与 **总组数** 复制（参数面板/脚本入口）。
     ///
     /// `groups` 是含原图的总组数：`groups = 5` → 4 份副本。
+    /// DEC-001：只有 pending 选区可复制；已 Bake 图形只读。
     pub fn copy_along_selected_with(&mut self, step_ticks: f32, groups: u32) -> bool {
         let spec = CopyAlongSpec {
             step_ticks: step_ticks.max(1.0),
@@ -315,38 +239,13 @@ impl Editor {
         if self.pending_single_selection() {
             return self.compose_pending_copy_along(spec);
         }
-        let Some((drawn_id, _, mut model)) = self.selected_model_for_edit() else {
-            return false;
-        };
-        let ppq = f64::from(self.editor_state.view.ppq);
-        let Some(params) = Self::default_copy_along_params(&model, spec) else {
-            return false;
-        };
-        let Some(selected) = self
-            .editor_state
-            .shape_select
-            .shapes()
-            .iter()
-            .find(|shape| shape.id == drawn_id)
-            .cloned()
-        else {
-            return false;
-        };
-        let notes = copy_along_apply(&selected.notes, &params, ppq);
-        model.ops.push(ShapeOp::CopyAlong(params));
-        // 替换旧模型：清 id 让 ShapeStore 分配新 id，避免与刚标记删除的旧条目同 id
-        model.id = 0;
-        self.replace_selected_with_many(vec![ShapeItem {
-            source: selected.source,
-            notes,
-            model: Some(model),
-        }])
+        false
     }
 
     /// 最近一次 027 复制的可展示摘要（总组数 · 步长 tick），供 Toast 校验。
     ///
-    /// pending 组合优先，其次当前选中的已 Bake 模型；`Every` 模式无法从
-    /// 路径长度反推步长，返回 `None`。
+    /// pending 组合优先，其次当前选中的已 Bake 模型（只读展示）；`Every` 模式
+    /// 无法从路径长度反推步长，返回 `None`。
     pub fn copy_along_summary(&self) -> Option<String> {
         let (groups, step) = self
             .editor_state
@@ -358,7 +257,9 @@ impl Editor {
                 }
                 item.results.iter().find_map(|part| {
                     part.model.ops.iter().rev().find_map(|op| match op {
-                        ShapeOp::CopyAlong(params) => summarize_copy_params(params),
+                        lumino_core::shape::ShapeOp::CopyAlong(params) => {
+                            summarize_copy_params(params)
+                        }
                         _ => None,
                     })
                 })
@@ -371,7 +272,7 @@ impl Editor {
                     .find_map(|shape| shape.model_id)?;
                 let model = self.editor_state.shape_store.model(model_id)?;
                 model.ops.iter().rev().find_map(|op| match op {
-                    ShapeOp::CopyAlong(params) => summarize_copy_params(params),
+                    lumino_core::shape::ShapeOp::CopyAlong(params) => summarize_copy_params(params),
                     _ => None,
                 })
             })?;
@@ -379,22 +280,13 @@ impl Editor {
     }
 
     /// 028：对选中图形应用渐强力度包络
+    ///
+    /// DEC-001：只有 pending 选区可应用；已 Bake 图形只读。
     pub fn velocity_up_selected(&mut self) -> bool {
         if self.pending_single_selection() {
             return self.compose_pending(ComposedKind::Velocity);
         }
-        let Some((drawn_id, model_id, mut model)) = self.selected_model_for_edit() else {
-            return false;
-        };
-        model
-            .ops
-            .retain(|op| !matches!(op, ShapeOp::VelocityEnv(_)));
-        model
-            .ops
-            .push(ShapeOp::VelocityEnv(Self::rising_velocity_env()));
-        let ok = self.edit_shape(model_id, model);
-        self.refresh_drawn_source(drawn_id, model_id);
-        ok
+        false
     }
 }
 

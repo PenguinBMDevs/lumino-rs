@@ -1,18 +1,15 @@
 //! 遮罩参数面板（DRAW-010）
 //!
-//! 入口：选中一个待确认/已 Bake 形状 → 右键 →「遮罩设置…」。
+//! 入口：选中一个待确认形状 → 右键 →「遮罩设置…」。
 //!
-//! 写入时机（避免撤销栈被滑杆刷满）：
-//! - **待确认形状**：即时写 `ShapeInstance.mask`，预览立刻变，不产生文档历史；
-//! - **已 Bake 形状**：面板只改草稿，点 Apply 才 `set_mask`（一次 `edit_shape`）。
+//! DEC-001：Bake 后形状对象只读，面板只对 pending 开放；参数即时写
+//! pending 预览，不产生文档历史。
 
 use iced_core::{Alignment, Background, Border, Color, Length, Padding, Point};
 use iced_widget::{button, column, container, mouse_area, row, slider, text};
 use lumino_core::shape::{MaskParams, MaskShow};
-use lumino_core::tr;
 use lumino_message::MaskPanelAction;
 use lumino_ui_editor::MaskEditTarget;
-use lumino_ui_settings::components::with_setting_tooltip_inline;
 
 use crate::{Element, Message};
 
@@ -32,8 +29,6 @@ pub(crate) struct MaskPanelState {
     pub target: Option<MaskEditTarget>,
     /// 面板当前参数（None = 未启用遮罩）
     pub params: Option<MaskParams>,
-    /// 已 Bake 是否有未应用的草稿
-    pub dirty: bool,
 }
 
 impl MaskPanelState {
@@ -45,7 +40,6 @@ impl MaskPanelState {
         self.open = true;
         self.target = Some(target);
         self.params = params;
-        self.dirty = false;
         self.anchor = anchor;
     }
 
@@ -54,7 +48,6 @@ impl MaskPanelState {
         self.open = false;
         self.target = None;
         self.params = None;
-        self.dirty = false;
     }
 
     /// 当前参数（未启用时返回默认值，供控件渲染）
@@ -76,7 +69,6 @@ pub(crate) fn view_mask_panel(root: &crate::root::Root) -> Option<Element<'stati
     }
     let params = state.current();
     let enabled = state.params.is_some();
-    let baked = matches!(state.target, Some(MaskEditTarget::Baked { .. }));
 
     let theme = &root.window.theme;
     let panel_background = theme.extended_palette().background.weak.color;
@@ -151,45 +143,9 @@ pub(crate) fn view_mask_panel(root: &crate::root::Root) -> Option<Element<'stati
     .spacing(6)
     .align_y(Alignment::Center);
 
-    let mut body = column![header, enable_row, show_row, size_row, invert_row, own_row]
+    let body = column![header, enable_row, show_row, size_row, invert_row, own_row]
         .spacing(6)
         .width(Length::Fixed(PANEL_WIDTH));
-
-    if baked {
-        let apply_label = if state.dirty { "应用 *" } else { "应用" };
-        let apply_hint = "已 Bake 图形：点「应用」才写入文档（一次撤销单元）";
-        body = body.push(
-            row![
-                with_setting_tooltip_inline(
-                    text(if state.dirty {
-                        "未应用"
-                    } else {
-                        "已同步"
-                    })
-                    .size(11)
-                    .color(text_color),
-                    apply_hint,
-                ),
-                iced_widget::Space::new().width(Length::Fill),
-                button(text(apply_label).size(12))
-                    .padding([3, 10])
-                    .on_press(msg(MaskPanelAction::Apply)),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
-        );
-        body = body.push(
-            row![
-                text("可见片段写成新形状").size(11).color(text_color),
-                iced_widget::Space::new().width(Length::Fill),
-                button(text(tr!("实体化")).size(12))
-                    .padding([3, 10])
-                    .on_press(msg(MaskPanelAction::ApplyAsShape)),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
-        );
-    }
 
     let panel = container(body)
         .padding(10)

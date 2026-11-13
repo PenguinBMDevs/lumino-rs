@@ -233,6 +233,9 @@ impl AreaMap {
     ///
     /// 只填充**同一旧值**的连通区域；边界/外部不填。`colour = 0` 表示把该区域
     /// 标为空。返回是否真的改变了网格。
+    ///
+    /// 使用 **4 邻域**：边界线按 4 连通栅格化（见 [`raster_line`]），4 邻域既不会
+    /// 穿过边界，也不会在圆弧内侧留下与主区域断开的死格。
     pub fn paint_area(&mut self, u: f32, v: f32, colour: u8) -> bool {
         if colour > ALL_COLOURS {
             return false;
@@ -270,6 +273,17 @@ impl AreaMap {
                 stack.push(index + n);
             }
         }
+        if colour == 0 {
+            // 透明 = 清空基础填充：栅格化边界可能在圆弧/斜边内侧留下与主区域
+            // 断开的 `AREA_UNASSIGNED` 死格；它们也是「内部未着色」，必须一起清掉，
+            // 否则会继续生成被截断的填充音符。
+            for cell in &mut self.cells {
+                if *cell == AREA_UNASSIGNED {
+                    *cell = 0;
+                    changed = true;
+                }
+            }
+        }
         changed
     }
 
@@ -290,6 +304,11 @@ impl AreaMap {
 }
 
 /// Bresenham 画一条边界线（归一化坐标）
+///
+/// 对角步会额外补一个正交格，使边界在 **4 邻域**下也不可穿越：
+/// - 4 邻域泛洪不会从对角缝里漏出去；
+/// - 也不会在圆弧/斜边内侧留下与主区域断开的 `AREA_UNASSIGNED` 死格
+///   （否则透明清除后边缘会残留被截断的音符）。
 fn raster_line(cells: &mut [u8], n: usize, a: (f32, f32), b: (f32, f32)) {
     let mut x0 = (a.0 * n as f32).round().clamp(0.0, (n - 1) as f32) as i32;
     let mut y0 = (a.1 * n as f32).round().clamp(0.0, (n - 1) as f32) as i32;
@@ -301,15 +320,12 @@ fn raster_line(cells: &mut [u8], n: usize, a: (f32, f32), b: (f32, f32)) {
     let sy = if y0 < y1 { 1 } else { -1 };
     let mut err = dx + dy;
     loop {
-        if x0 >= 0 && y0 >= 0 {
-            let index = y0 as usize * n + x0 as usize;
-            if let Some(cell) = cells.get_mut(index) {
-                *cell = AREA_BOUNDARY;
-            }
-        }
+        set_boundary(cells, n, x0, y0);
         if x0 == x1 && y0 == y1 {
             break;
         }
+        let prev_x = x0;
+        let prev_y = y0;
         let e2 = 2 * err;
         if e2 >= dy {
             err += dy;
@@ -319,6 +335,20 @@ fn raster_line(cells: &mut [u8], n: usize, a: (f32, f32), b: (f32, f32)) {
             err += dx;
             y0 += sy;
         }
+        if x0 != prev_x && y0 != prev_y {
+            // 对角步：补正交格，把 8 连通线变成 4 连通线
+            set_boundary(cells, n, prev_x, y0);
+        }
+    }
+}
+
+fn set_boundary(cells: &mut [u8], n: usize, x: i32, y: i32) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let index = y as usize * n + x as usize;
+    if let Some(cell) = cells.get_mut(index) {
+        *cell = AREA_BOUNDARY;
     }
 }
 
