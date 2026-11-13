@@ -38,7 +38,7 @@ mod view;
 pub mod wgpu_render_thread;
 pub use lumino_ui_core::window;
 
-pub use host::{Host, NoteData, TrackNotes, prewarm_dialog_shared_engine};
+pub use host::{Host, NoteData, TrackNotes};
 pub(crate) use lumino_core::storage::config;
 pub use root::MemoryBreakdown;
 pub use root::Root;

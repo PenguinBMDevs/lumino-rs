@@ -78,10 +78,11 @@ impl Host {
         }
     }
 
-    /// 清除 UI 缓存以强制重绘
+    /// 请求下一帧重绘（原「清除 iced UI 缓存」入口；egui 侧无缓存树）。
     #[inline]
     pub(crate) fn clear_cache(&mut self) {
-        self.render_ctx.cache = std::mem::take(&mut self.render_ctx.cache);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
     }
 
     /// 按需离屏渲染钢琴瀑布流面板键盘（真·裸 wgpu）

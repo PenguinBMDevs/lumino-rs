@@ -383,24 +383,6 @@ impl Host {
     }
 }
 
-/// 在后台线程预热对话框共享的 iced Engine。
-///
-/// 主窗口创建后调用，可在用户打开第一个对话框前完成 pipeline 创建，
-/// 避免对话框初始化阻塞 900ms+。若线程未完成，首个对话框会经
-/// `ensure_shared_engine` 自行创建（epoch 同代，先到者生效）。
-pub fn prewarm_dialog_shared_engine(gfx: &lumino_gfx::Context) {
-    let adapter = gfx.adapter.clone();
-    let device = gfx.device.clone();
-    let queue = gfx.queue.clone();
-    let format = gfx.format;
-    let epoch = gfx.epoch();
-
-    std::thread::spawn(move || {
-        // REND-019 PR-B：经 ensure_shared_engine 写入（epoch 命中即复用）
-        let _ = render_ctx::ensure_shared_engine(&adapter, device, queue, format, epoch);
-    });
-}
-
 /// 洋葱皮音轨调色板（按音轨索引循环取色）
 ///
 /// 从当前调色板的第一个颜色开始取色。

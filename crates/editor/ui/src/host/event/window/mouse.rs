@@ -1,6 +1,5 @@
 //! Host 窗口鼠标事件处理子模块 — 鼠标输入与光标图标更新
 
-use iced_winit::runtime::user_interface;
 use iced_winit::winit;
 
 use crate::host::Host;
@@ -92,16 +91,6 @@ impl Host {
                 | crate::editor::EditState::ResizingSelectionStart { .. }
                 | crate::editor::EditState::ResizingSelectionEnd { .. }
         )
-    }
-
-    /// 根据 iced 状态更新光标图标
-    pub(super) fn update_cursor_icon(&mut self, state: &user_interface::State) {
-        if let user_interface::State::Updated {
-            mouse_interaction, ..
-        } = state
-        {
-            self.apply_cursor_interaction(*mouse_interaction);
-        }
     }
 
     /// 应用 iced 的鼠标交互为窗口光标（幂等：仅在变化时真正设置）。

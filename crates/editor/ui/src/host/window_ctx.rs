@@ -3,7 +3,7 @@
 //! 管理窗口句柄、光标、剪贴板、窗口动作状态。
 
 use iced_core::mouse;
-use iced_winit::{Clipboard, winit};
+use iced_winit::winit;
 use std::sync::Arc;
 
 use crate::window;
@@ -14,8 +14,6 @@ pub(crate) struct WindowContext {
     pub window: Arc<winit::window::Window>,
     /// 光标状态
     pub cursor: mouse::Cursor,
-    /// 剪贴板
-    pub clipboard: Clipboard,
     /// 逻辑光标位置
     pub cursor_position: Option<iced_core::Point>,
     /// 待处理的窗口动作
@@ -37,12 +35,9 @@ pub(crate) struct WindowContext {
 impl WindowContext {
     /// 创建窗口上下文
     pub fn new(window: Arc<winit::window::Window>) -> Self {
-        let clipboard = Clipboard::connect(Arc::clone(&window));
-
         Self {
             window,
             cursor: mouse::Cursor::Unavailable,
-            clipboard,
             cursor_position: None,
             pending_window_action: None,
             pending_drag: false,

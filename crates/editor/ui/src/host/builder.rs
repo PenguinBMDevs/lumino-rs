@@ -23,9 +23,6 @@ impl Host {
     ///
     /// `needs_renderers` 仅主窗口为 `true`；dialog/progress 等轻量窗口不需要
     /// 音符/网格渲染器，跳过创建可显著降低初始化开销。
-    ///
-    /// `use_shared_engine` 为 `true` 时复用对话框共享的 iced Engine；
-    /// 主窗口 / progress 窗口保持独立 Engine 以保留 WindowNotifier。
     fn create_render_and_window_context(
         window: Arc<winit::window::Window>,
         width: u32,
@@ -33,13 +30,12 @@ impl Host {
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
         needs_renderers: bool,
-        use_shared_engine: bool,
     ) -> (RenderContext, WindowContext) {
         let viewport = viewport_for(width, height, window.scale_factor());
 
         // 全局字体入口（UI-001）：启动解析一次（path 优先 → name → 默认），
         // 各窗口/组件统一从 lumino_ui_core::font 取字体（字体切换重启生效）
-        let font = lumino_ui_core::font::init(ui_config);
+        let _font = lumino_ui_core::font::init(ui_config);
 
         let note_renderer = needs_renderers.then(|| {
             lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format, gfx.epoch())
@@ -49,17 +45,9 @@ impl Host {
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
-            adapter: gfx.adapter.clone(),
             epoch: gfx.epoch(),
         };
-        let render_ctx = RenderContext::new(
-            &wgpu_resources,
-            viewport,
-            note_renderer,
-            font,
-            &window,
-            use_shared_engine,
-        );
+        let render_ctx = RenderContext::new(&wgpu_resources, viewport, note_renderer);
 
         (render_ctx, WindowContext::new(window))
     }
@@ -150,7 +138,6 @@ impl Host {
             ui_config,
             gfx,
             !is_progress,
-            false,
         );
         let mut root = if is_progress {
             root::Root::new_progress(&ui_config.theme, ui_config)
@@ -210,9 +197,8 @@ impl Host {
         gfx: &lumino_gfx::Context,
         dialog_type: crate::state::root_state::DialogType,
     ) -> Self {
-        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
-            window, width, height, ui_config, gfx, false, true,
-        );
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = {
             puffin::profile_scope!("dialog_root_new");
             root::Root::new_dialog_with_config(&ui_config.theme, dialog_type, ui_config)
@@ -234,9 +220,8 @@ impl Host {
         gfx: &lumino_gfx::Context,
         detail: &str,
     ) -> Self {
-        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
-            window, width, height, ui_config, gfx, false, false,
-        );
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = root::Root::new_device_warning(&ui_config.theme, ui_config, detail.to_string());
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
@@ -249,9 +234,8 @@ impl Host {
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
     ) -> Self {
-        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
-            window, width, height, ui_config, gfx, false, true,
-        );
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = {
             puffin::profile_scope!("settings_root_new");
             root::Root::new_settings_dialog(&ui_config.theme, ui_config)

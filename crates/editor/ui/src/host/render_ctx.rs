@@ -1,103 +1,25 @@
 //! 渲染上下文 —— 从 Host 拆出的渲染相关字段
 //!
-//! 管理 iced 渲染器、wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
+//! 管理 wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
+//! iced `Renderer` / widget `Cache` / 共享 `Engine` 已随 iced 渲染路径一起删除。
 
-use std::sync::{Arc, RwLock};
-
-use iced_core::{Font, Pixels};
+use iced_wgpu::graphics::Viewport;
 use iced_wgpu::wgpu;
-use iced_wgpu::{Engine, Renderer, graphics::Viewport};
-use iced_winit::runtime::user_interface::Cache;
 use lumino_gfx::{GpuEpoch, NoteRenderer};
 
 use super::RenderCache;
-
-/// 所有对话框共享的 iced Engine（REND-019 PR-B：OnceLock → RwLock + epoch）。
-///
-/// 主窗口单独维护自己的 Engine（带 WindowNotifier），对话框使用 headless shell
-/// 的共享 Engine，避免每个对话框重复创建 pipeline 产生 900ms+ 阻塞。
-/// Engine 内部持有 device/queue/format/pipeline 等，Clone 成本远低于重新创建；
-/// 但这些资源绑定 device 代次——device 重建后必须按 epoch 判新旧重建。
-pub(crate) static SHARED_ENGINE: RwLock<Option<(GpuEpoch, Engine)>> = RwLock::new(None);
-
-/// 确保对话框共享 Engine 存在并返回（REND-019 PR-B：按 epoch 判新旧）。
-///
-/// - epoch 命中：返回缓存克隆（锁内只做取值，不创建——G3 纪律的 UI 侧对应）；
-/// - 未命中/空槽：锁定外创建后写入（并发创建时后写者沿用先到者）。
-pub(crate) fn ensure_shared_engine(
-    adapter: &wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    format: wgpu::TextureFormat,
-    epoch: GpuEpoch,
-) -> Engine {
-    let cached = {
-        let guard = SHARED_ENGINE
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        guard
-            .as_ref()
-            .filter(|(cached_epoch, _)| *cached_epoch == epoch)
-            .map(|(_, engine)| engine.clone())
-    };
-    if let Some(engine) = cached {
-        return engine;
-    }
-
-    let engine = {
-        puffin::profile_scope!("shared_engine_create");
-        Engine::new(
-            adapter,
-            device,
-            queue,
-            format,
-            None,
-            iced_wgpu::graphics::Shell::headless(),
-        )
-    };
-
-    let mut guard = SHARED_ENGINE
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    match guard.as_ref() {
-        Some((cached_epoch, cached_engine)) if *cached_epoch == epoch => cached_engine.clone(),
-        _ => {
-            *guard = Some((epoch, engine.clone()));
-            engine
-        }
-    }
-}
-
-/// 通知器：当后台图像上传完成时，请求窗口重绘
-struct WindowNotifier(Arc<iced_winit::winit::window::Window>);
-
-impl iced_wgpu::graphics::shell::Notifier for WindowNotifier {
-    fn request_redraw(&self) {
-        self.0.request_redraw();
-    }
-
-    fn invalidate_layout(&self) {
-        // 布局失效也触发重绘，确保 image atlas 上传后能刷新
-        self.0.request_redraw();
-    }
-}
 
 /// WGPU 设备资源集合（减少 RenderContext::new 参数数量）
 pub(crate) struct WgpuResources {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
-    pub adapter: wgpu::Adapter,
     /// 创建时所属 GPU 代次（REND-019 PR-B：来自创建它的 `Context`）
     pub epoch: GpuEpoch,
 }
 
 /// 渲染上下文，持有所有渲染所需的 GPU 资源和渲染器实例。
 pub(crate) struct RenderContext {
-    /// iced 渲染器
-    pub renderer: Renderer,
-    /// UI 缓存树
-    pub cache: Cache,
     /// 视口信息
     pub viewport: Viewport,
     /// 音符渲染器（仅主窗口需要）
@@ -144,13 +66,8 @@ pub(crate) struct RenderContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
-    /// 本上下文所属 GPU 代次（REND-019 PR-B：iced Engine / 面板缓存视图 /
-    /// 键盘渲染器等的登记基准）
+    /// 本上下文所属 GPU 代次（REND-019 PR-B：面板缓存视图 / 键盘渲染器等的登记基准）
     pub epoch: GpuEpoch,
-    /// 应用字体（REND-019 PR-C：iced Renderer 重建时复用）
-    pub font: Font,
-    /// 是否复用对话框共享 Engine（REND-019 PR-C：重建时按此分流）
-    pub uses_shared_engine: bool,
     /// 钢琴瀑布流面板键盘离屏渲染器（按需懒创建，跨帧复用管线）
     pub keyboard_renderer:
         Option<crate::right_sidebar::piano_waterfall::keyboard_renderer::KeyboardRenderer>,
@@ -161,53 +78,16 @@ pub(crate) struct RenderContext {
 impl RenderContext {
     /// 创建渲染上下文
     ///
-    /// `note_renderer` 为 `None` 时，表示该窗口仅渲染 iced UI，
-    /// 不进入音符/网格管线（用于 dialog、progress 等轻量窗口）。
-    ///
-    /// `window` 用于创建通知器：当 iced_wgpu 后台完成图像上传后，
-    /// 通知器会调用 `window.request_redraw()` 触发窗口重绘，否则
-    /// 大尺寸预览图像（>2MB）的异步上传完成后窗口不会刷新，导致预览空白。
-    ///
-    /// `use_shared_engine` 为 `true` 时，复用对话框共享的 Engine（headless shell），
-    /// 避免重复创建 pipeline。仅对 dialog 构造函数开启；主窗口需要独立 Notifier，
-    /// 保持 `false`。
+    /// `note_renderer` 为 `None` 时，表示该窗口不进入音符/网格管线
+    /// （用于 dialog、progress 等轻量窗口）。
     pub fn new(
         wgpu: &WgpuResources,
         viewport: Viewport,
         note_renderer: Option<NoteRenderer>,
-        font: Font,
-        window: &Arc<iced_winit::winit::window::Window>,
-        use_shared_engine: bool,
     ) -> Self {
         puffin::profile_function!();
-        let engine = if use_shared_engine {
-            // 对话框：复用全局共享 Engine（REND-019 PR-B：按 epoch 判新旧——
-            // device 重建后旧 Engine 内部资源失效，必须同代次才复用）。
-            ensure_shared_engine(
-                &wgpu.adapter,
-                wgpu.device.clone(),
-                wgpu.queue.clone(),
-                wgpu.format,
-                wgpu.epoch,
-            )
-        } else {
-            // 主窗口 / progress 窗口：使用独立 Engine + 当前窗口 Notifier。
-            let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(Arc::clone(window)));
-            Engine::new(
-                &wgpu.adapter,
-                wgpu.device.clone(),
-                wgpu.queue.clone(),
-                wgpu.format,
-                None,
-                shell,
-            )
-        };
-
-        let renderer = Renderer::new(engine, font, Pixels::from(16));
 
         Self {
-            renderer,
-            cache: Cache::new(),
             viewport,
             note_renderer,
             onion_skin_state: Default::default(),
@@ -223,8 +103,6 @@ impl RenderContext {
             queue: wgpu.queue.clone(),
             format: wgpu.format,
             epoch: wgpu.epoch,
-            font,
-            uses_shared_engine: use_shared_engine,
             keyboard_renderer: None,
             egui_overlay: None,
         }
@@ -233,46 +111,12 @@ impl RenderContext {
     /// REND-019 PR-C：重连——把渲染基础设施重绑到新 device。
     ///
     /// - device/queue/epoch 换新；
-    /// - iced Engine/Renderer 重建（共享 Engine 经 epoch 判据自动换代，
-    ///   独立 Engine 按当前窗口 Notifier 重建）；
     /// - 主窗口音符渲染器重建（epoch 登记）；
     /// - GPU 侧缓存判废（键盘渲染器 / 首帧标记）；洋葱皮重放标记由 Host 层补充。
-    pub(crate) fn rebind_gpu(
-        &mut self,
-        epoch: GpuEpoch,
-        gpu: &lumino_gfx::SharedGpu,
-        window: &Arc<iced_winit::winit::window::Window>,
-    ) {
+    pub(crate) fn rebind_gpu(&mut self, epoch: GpuEpoch, gpu: &lumino_gfx::SharedGpu) {
         self.device = gpu.device.clone();
         self.queue = gpu.queue.clone();
         self.epoch = epoch;
-
-        let engine = if self.uses_shared_engine {
-            ensure_shared_engine(
-                &gpu.adapter,
-                gpu.device.clone(),
-                gpu.queue.clone(),
-                self.format,
-                epoch,
-            )
-        } else {
-            let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(Arc::clone(window)));
-            Engine::new(
-                &gpu.adapter,
-                gpu.device.clone(),
-                gpu.queue.clone(),
-                self.format,
-                None,
-                shell,
-            )
-        };
-        self.renderer = Renderer::new(engine, self.font, Pixels::from(16));
-
-        // REND-019：widget 树缓存与 iced 渲染器必须同代——换新 Renderer 时旧树
-        // 缓存（损伤追踪 / 字形与图像上传状态 / 布局缓存）与全新渲染器不匹配，
-        // 会导致「交互状态生效但画面不更新、文字间歇消失」等渲染陈旧/部分缺失
-        // （2026-10-17 实测：重连后切轨等状态变更不上屏）。整树重建。
-        self.cache = Cache::new();
 
         if self.note_renderer.is_some() {
             self.note_renderer = Some(lumino_gfx::NoteRenderer::new(

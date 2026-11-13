@@ -3754,12 +3754,32 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 764/764（1 ignored）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.27（下一步）**
+**Task 4.27（第一百三十四步）：删除 iced 事件处理与 Renderer/Engine/Cache**
 
-1. 对话框输入收口：删除 `host/event/window/*` 的 `UserInterface::build`（对话框控件
-   全部已由 egui 绘制与回传动作），随后移除 `RenderContext.renderer/cache/SHARED_ENGINE`
-   与 `ensure_shared_engine`；
-2. `ui-editor` / `ui-core` 的 `iced_core::{Point, Size, Rectangle}` 换成本地几何类型
-   （约 108 + 16 个文件），为删除 `Element`/`Theme` 铺路；
-3. 删除 iced 视图层（`view()` / 各 `render_*`），摘 `iced_widget`/`iced_renderer`；
-4. 曲线填充凹多边形三角化；`cargo tree | grep '^iced'` 归零。
+- **`process_pending_events` 退化**：iced widget 树不再构建——窗口事件只经
+  `capture_egui_overlay_input`（egui）与 winit 直连（画布/快捷键/触摸手势）消费，
+  队列逐帧清空；删除 `build_ui_and_process_events` / `handle_event_messages` /
+  `update_ui_state` / `update_cursor_icon` 与 `LUMINO_EGUI_INPUT_ONLY` 开关
+  （egui 已是唯一输入通道，无回退分支）。
+- **`RenderContext` 瘦身**：删除 `renderer` / `cache` / `font` / `uses_shared_engine`，
+  以及 `SHARED_ENGINE` / `ensure_shared_engine` / `WindowNotifier` /
+  `prewarm_dialog_shared_engine`（含 `src/runner/window_manager.rs` 的预热调用）；
+  `RenderContext::new(wgpu, viewport, note_renderer)`、
+  `rebind_gpu(epoch, gpu)`、`builder` 的 `use_shared_engine` 参数一并移除。
+  `clear_cache` 改为「请求下一帧重绘」（egui 无 widget 缓存树）。
+- **真机验证**：文件菜单 → 设置，对话框按静态声明 **900×675 物理 = 720×540 逻辑**
+  打开；点击左侧「界面」页 → 右侧从「常规」切到「界面」（主题卡片 + 语言下拉），
+  证明**对话框输入完全由 egui 承担**、iced 事件链删除后无功能回退
+  （`target/dlg7-settings.png` / `dlg7-page.png`），无 ERROR/panic。
+- 验收：`lumino-ui` lib 764/764（1 ignored）、`lumino-dialog` 全部测试、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
+  12/12 零基线改动。
+
+**Task 4.28（下一步）**
+
+1. `ui-editor` / `ui-core` 的 `iced_core::{Point, Size, Rectangle}` 换成本地几何类型
+   （108 + 16 文件），同时把 `iced_winit::winit` 改为直接依赖 `winit`；
+2. 删除 iced 视图层（`Root::root_view()`、`view()`/各 `render_*`、`Element`/`Theme`），
+   `lumino-ui` 不再依赖 `iced_widget`/`iced_renderer`/`iced_graphics`；
+3. 曲线填充凹多边形三角化；
+4. 摘 `iced_*`，`cargo tree | grep '^iced'` 归零。
