@@ -12,7 +12,7 @@
 
 use crate::Theme;
 use crate::state::root_state::{DialogType, RootState};
-use crate::{editor, right_sidebar, settings, sidebar, statusbar, titlebar, toolbar, window};
+use crate::{editor, right_sidebar, settings, sidebar, statusbar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
 
 pub use lumino_ui_core::visual_state::VisualState;
@@ -60,7 +60,6 @@ pub struct Root {
     pub right_sidebar: right_sidebar::RightSidebar,
     /// 全屏瀑布流播放器状态（仅在 `AppMode::Waterfall` 下渲染，铺满主界面）
     pub(crate) waterfall_player: crate::right_sidebar::piano_waterfall::WaterfallPlayerState,
-    pub(crate) titlebar: titlebar::Titlebar,
     pub(crate) statusbar: statusbar::StatusBar,
     /// 工具栏
     pub toolbar: toolbar::Toolbar,
@@ -74,8 +73,6 @@ pub struct Root {
     pub(crate) is_progress_window: bool,
     /// 是否为设备检查警告窗（首启 GPU 兼容性失败提示）
     pub(crate) is_device_warning_window: bool,
-    /// 当前窗口是否使用系统标题栏；弹窗不应在该模式下再绘制自制标题栏。
-    pub(crate) use_native_titlebar: bool,
     /// UI 状态
     pub(crate) state: RootState,
     /// 播放状态（播放管理器、Tempo 变化、MIDI 输出等）
@@ -158,7 +155,6 @@ impl Root {
                 right_sidebar: right_sidebar::RightSidebar::new(),
                 waterfall_player:
                     crate::right_sidebar::piano_waterfall::WaterfallPlayerState::default(),
-                titlebar: titlebar::Titlebar::new(),
                 statusbar: statusbar::StatusBar::new(),
                 toolbar,
                 editor,
@@ -168,7 +164,6 @@ impl Root {
                 progress: None,
                 is_progress_window: params.is_progress_window,
                 is_device_warning_window: params.device_warning_detail.is_some(),
-                use_native_titlebar: params.ui_config.use_native_titlebar,
                 state,
                 playback: crate::state::playback_state::PlaybackState::new(),
                 visual: lumino_ui_core::visual_state::VisualState::new(

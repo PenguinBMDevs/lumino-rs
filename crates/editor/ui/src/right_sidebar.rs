@@ -7,7 +7,6 @@ pub(crate) mod core;
 pub mod material;
 pub(crate) mod piano_waterfall;
 mod resize;
-pub mod view;
 
 pub use convert::{ConvertResult, run_conversion};
 pub use core::{

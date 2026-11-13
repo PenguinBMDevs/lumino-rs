@@ -9,8 +9,8 @@ mod buttons;
 mod default;
 pub mod event;
 pub(crate) mod overflow;
-mod placeholder;
 mod resize;
+mod snapshot;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

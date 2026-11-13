@@ -1,34 +1,14 @@
-//! 工具栏 iced 占位 + egui 快照。
+//! 工具栏数据的 egui 快照（iced 视图层删除后仅保留数据换算）。
 //!
-//! 录制 / 走带 / 循环 / 撤销重做 / 检测仪表盘 / 工具区 / 精度下拉 / 洋葱皮 /
-//! 自动滚动 / 协作 /「更多」已全部由 egui 绘制并接管输入（`chrome::toolbar`）。
-//! iced 侧只保留**同高、同底色**的占位，保证下方编辑区高度与 iced 布局一致；
-//! 高度仍由生产 `Toolbar::height` 驱动（拖拽手柄已迁到 egui）。
-//!
-//! 仪表盘的文本换算（BPM / 时间 / 位置）仍留在生产侧：egui 模型只携带渲染好的
-//! 字符串，`lumino-ui-egui` 不引 `lumino-note-core`。
+//! 录制 / 走带 / 循环 / 撤销重做 / 检测仪表盘 / 工具组 / 精度下拉 / 洋葱皮 /
+//! 自动滚动 / 协作 /「更多」的绘制与输入全部在 `lumino-ui-egui::chrome::toolbar`；
+//! 本模块只负责把生产状态换算成渲染好的文本（egui crate 不依赖 `lumino-note-core`）。
 
-use iced_core::Length;
-use iced_widget::{Space, container};
 use lumino_note_core::midi_types::TempoPoint;
 
 use super::{Toolbar, ToolbarPerfContext};
-use crate::{Element, Theme};
 
 impl Toolbar {
-    /// 渲染工具栏占位（高度 = `self.height`）。
-    pub fn toolbar_view(&self) -> Element<'_> {
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fixed(self.height))
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                iced_widget::container::Style::default()
-                    .background(palette.background.weakest.color)
-            })
-            .into()
-    }
-
     /// 生成 egui 工具栏快照（与 iced 仪表盘使用同一套换算函数）。
     pub(crate) fn egui_snapshot(&self, perf: &ToolbarPerfContext<'_>) -> ToolbarSnapshot {
         let bpm = bpm_at_tick(perf.tempo_points, perf.playback_tick);
@@ -64,7 +44,7 @@ fn bpm_at_tick(points: &[TempoPoint], tick: f32) -> f64 {
     bpm
 }
 
-/// 把 tick 按 tempo 变化表换算为秒。
+/// 从 tick 到 tempo 变化表换算为秒。
 fn tick_to_seconds(points: &[TempoPoint], ppq: u16, tick: f32) -> f64 {
     let ppq = ppq as f64;
     if points.is_empty() {

@@ -246,7 +246,7 @@ fn test_cancel_load_preserves_dialog_type() {
 fn test_view_dialog_none_does_not_panic() {
     // DialogType::None 匹配专门的空容器分支，不应 panic
     let root = Root::new_dialog("dark", DialogType::None);
-    let _element = root.view();
+    let _element = root.egui_chrome_model();
 }
 
 // ================================================================

@@ -179,7 +179,7 @@ fn test_draw_settings_dialog_root_renders() {
         "对话框类型应为 DrawSettings（否则 overlay 会落到空容器分支）"
     );
 
-    let _element = root.view();
+    let _element = root.egui_chrome_model();
 }
 
 /// 场景 5：对话框内「关闭」→ `DialogResult::Cancel`（Runner 据此收尾关窗）。

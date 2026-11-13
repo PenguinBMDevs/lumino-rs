@@ -3792,13 +3792,36 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 764/764（1 ignored）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.29（下一步）**
+**Task 4.29（第一百三十六步）：删除 `lumino-ui` 的 iced 视图层（17 条）**
 
-1. 删除 iced 视图层：`Root::root_view()` / `view_*`、`Element`/`Theme` 别名、
-   `ui-editor` 的 `view()`/`draw`（`Canvas`/`Program`/widget 绘制）→ 摘
-   `iced_widget`、`iced_renderer`、`iced_graphics`；
-2. `ui-editor` 交互代码的 `iced_core::{Point, Size, Rectangle, mouse}` 换本地几何类型
-   → 摘 `iced_core`；
-3. `ui-core` 的 `Renderer` 别名 / `iced_wgpu::graphics::text` 换 egui 字体通道
-   → 摘 `iced_wgpu`；
-4. 曲线填充凹多边形三角化；`cargo tree | grep '^iced'` 归零。
+- **删除**（约 1.4k 行，全部已无画面贡献）：
+  `root/view/main_view.rs` + `main_view/{arrangement,panels,piano_roll}.rs`、
+  `root/view/overlays.rs`、`root/view/right_content.rs`、`sidebar/view.rs`、
+  `right_sidebar/view.rs`、`toolbar/placeholder.rs`、`statusbar::view`、
+  `titlebar::{view, view_popup, bar}` 与 `Root::root_view`。
+- **保留并迁移非视图逻辑**：`sidebar.width()` → `sidebar/metrics.rs`；
+  `Toolbar::egui_snapshot` + BPM/时间换算 → `toolbar/snapshot.rs`；
+  `Root::right_sidebar_visible` → `root/view/visibility.rs`；
+  `Root::editor_note_count` 留在 `root/view/status.rs`。
+  `Root.titlebar` / `Root.use_native_titlebar` 两个从未被读取的字段一并删除。
+- **测试**：原本「`root.view()` 能构建」的冒烟断言改为 `root.egui_chrome_model()`
+  （现在的唯一渲染入口）。
+- **依赖**：`crates/editor/ui` 去掉 `iced_widget`；`Element` 别名不再需要。
+- **结果**：`cargo tree -p lumino-ui -e normal | grep '^iced'` **18 → 17** 条。
+  剩余 `iced_core`（交互类型）、`iced_wgpu`（`wgpu` 重导出 + `Renderer` 别名 + 字体）、
+  `iced_widget`/`iced_graphics`/`iced_renderer`/`iced_futures`/`iced_debug`
+  （`ui-core` / `ui-editor` 的绘制层）。
+- **真机冒烟**：主窗口完整渲染（工具栏 / 侧栏 / 键盘 / 网格 / 标尺 / 状态栏），
+  无 ERROR / panic（`target/smoke.png`）。
+- 验收：`lumino-ui` lib 760/760（1 ignored）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.30（下一步）**
+
+1. `ui-core`：删除 `resources/icon.rs`（iced SVG 视图）与 `Renderer` 别名；
+   `font.rs` 的 cosmic-text 通道换 egui 字体 → 摘 `iced_wgpu`/`iced_widget`；
+2. `ui-editor`：删除绘制层（`rendering.rs`、`grid/*draw*`、`scrollbar_widget`、
+   `velocity/widget` 的 iced 视图），保留交互；`iced_core::{Point,Size,Rectangle}`
+   换本地几何类型 → 摘 `iced_core`；
+3. 曲线填充凹多边形三角化；
+4. `cargo tree | grep '^iced'` 归零。

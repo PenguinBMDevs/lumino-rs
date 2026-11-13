@@ -4915,7 +4915,6 @@ dependencies = [
  "i2m-rs",
  "iced_core",
  "iced_wgpu",
- "iced_widget",
  "image",
  "log",
  "lumino-collaboration",

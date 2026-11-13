@@ -5,8 +5,8 @@
 /// **状态与事件处理**，以及 iced 侧的同宽占位（`view.rs`）。
 mod core;
 mod handling;
+mod metrics;
 mod track_reorder;
-mod view;
 
 pub mod event;
 

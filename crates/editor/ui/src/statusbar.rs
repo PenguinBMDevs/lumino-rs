@@ -1,14 +1,10 @@
 pub mod performance;
 
-use iced_core::Length;
-use iced_widget::{Space, container};
 use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_midi_io::GpuBufferStats;
 use lumino_ui_core::button_descs::ButtonId;
 
-use super::Element;
-use crate::Theme;
 use performance::PerfData;
 
 /// egui 叠加层用的状态栏快照（与 egui 绘制同源，避免两套规则漂移）。
@@ -252,23 +248,6 @@ impl StatusBar {
             right_text: self.info.right_text.clone(),
             gpu: self.gpu_snapshot(gpu),
         }
-    }
-
-    /// 状态栏占位：内容已**全部**由 egui 绘制在同一个 20px band 内。
-    ///
-    /// 左侧描述（悬停提示 / 就绪 / 音符数）、GPU(LGS) 指标组、CPU / MEM / FPS、
-    /// 右侧补充文本，以及「点 MEM 打开内存监控」的交互，都由
-    /// `chrome::statusbar::show_model` 负责。iced 侧只保留同高同底色的占位，
-    /// 避免两份内容重影，也保证钢琴卷帘区高度不变。
-    pub fn view(&self) -> Element<'_> {
-        container(Space::new().width(Length::Fill))
-            .width(Length::Fill)
-            .height(20)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style::default().background(palette.background.weak.color)
-            })
-            .into()
     }
 }
 

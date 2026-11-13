@@ -61,7 +61,7 @@ fn test_fifteen_clicks_trigger_airborne_sequence() {
     );
     // 原位（晃动）路径视图可构建
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 
     click_logo(&mut root, &mut router);
@@ -76,7 +76,7 @@ fn test_fifteen_clicks_trigger_airborne_sequence() {
     );
     // 飞行路径视图可构建（含最顶层悬浮层 Stack 组装）
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }
 
@@ -116,7 +116,7 @@ fn test_animation_tick_advances_spin_without_landing() {
     );
     // 飞行路径视图可构建（含最顶层悬浮层 Stack 组装）
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 }
 
@@ -159,7 +159,7 @@ fn test_animation_tick_advances_and_sequence_terminates() {
     assert!(logo_has_vanished(), "收尾应写入进程级「已消失」标志");
     // 消失后视图仍可构建（无 logo、无悬浮层）
     {
-        let _ = root.view();
+        let _ = root.egui_chrome_model();
     }
 
     // 模拟「关闭设置面板 → 重新打开」：全新 Root 应直接处于已消失
