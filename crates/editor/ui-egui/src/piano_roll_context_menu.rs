@@ -1,9 +1,9 @@
 //! 钢琴卷帘右键上下文菜单（egui 版）。
 //!
-//! 取代 iced `ui-editor::context_menu::view`：条目集与 tooltip 文案来自
+//! 取代 旧版 `ui-editor::context_menu::view`：条目集与 tooltip 文案来自
 //! `lumino_message::context_menu`（单一来源），这里只负责图标条 / 几何 / 命中。
 //!
-//! 几何与 iced 原实现逐项一致：面板宽 56（40 按钮 + 8 内边距 ×2）、行距 4、
+//! 几何与 旧版 原实现逐项一致：面板宽 56（40 按钮 + 8 内边距 ×2）、行距 4、
 //! 面板圆角 8、按钮圆角 4、弹出偏移 16；下方放不下时翻到上方。
 
 use egui::{Color32, CornerRadius, Pos2, Rect, Stroke, StrokeKind, Vec2};
@@ -14,7 +14,7 @@ use crate::icons::{Icon, IconCache};
 
 /// 图标按钮边长。
 const BUTTON: f32 = 40.0;
-/// 图标绘制边长（与 iced `ICON_SIZE` 一致）。
+/// 图标绘制边长（与 旧版 `ICON_SIZE` 一致）。
 const ICON: f32 = 36.0;
 /// 按钮间距。
 const SPACING: f32 = 4.0;
@@ -42,7 +42,7 @@ pub struct PianoRollMenuModel {
     pub target: ContextMenuTarget,
 }
 
-/// 按模型计算面板矩形（与 iced `view` 的夹取规则一致）。
+/// 按模型计算面板矩形（与 旧版 `view` 的夹取规则一致）。
 pub fn panel_rect(model: &PianoRollMenuModel) -> Rect {
     let count = menu_items(model.target).len();
     let height = count as f32 * BUTTON + count.saturating_sub(1) as f32 * SPACING + PADDING * 2.0;
@@ -60,7 +60,7 @@ pub fn panel_rect(model: &PianoRollMenuModel) -> Rect {
     Rect::from_min_size(egui::pos2(x, y), Vec2::new(PANEL_W, height))
 }
 
-/// 菜单项 → egui 图标（与 iced 原映射一致）。
+/// 菜单项 → egui 图标（与 旧版 原映射一致）。
 fn item_icon(item: lumino_message::PianoRollContextMenuItem) -> Icon {
     use lumino_message::PianoRollContextMenuItem as Item;
     match item {
@@ -106,7 +106,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<PianoRollContextMenuAction> {
 
 /// 绘制菜单并返回本帧动作。
 ///
-/// `available` 内的点击若落在面板外 = 关闭（与 iced `background_close_overlay`
+/// `available` 内的点击若落在面板外 = 关闭（与 旧版 `background_close_overlay`
 /// 同语义）；调用方应把 `available` 加入占用矩形，避免同一次点击又落到画布。
 pub fn show(
     ui: &egui::Ui,
@@ -148,7 +148,7 @@ pub fn show(
         }
         let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(ICON));
         icons.paint_tinted(&painter, item_icon(*item), icon_rect, Some(Color32::WHITE));
-        // 面板固定深色：tooltip 也用深底浅字（与 iced 迁移前一致）。
+        // 面板固定深色：tooltip 也用深底浅字（与 旧版 迁移前一致）。
         let label = item_label(*item);
         let response = response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -171,7 +171,7 @@ pub fn show(
         y += BUTTON + SPACING;
     }
 
-    // 点击画布空白区域关闭（与 iced 背景层一致，仅左键）；面板内点击由按钮处理。
+    // 点击画布空白区域关闭（与 旧版 背景层一致，仅左键）；面板内点击由按钮处理。
     // 注意：**不能**用 `any_click()`——右键开菜单的那一次右键会被重放进本帧，
     // 菜单会「刚打开就被自己关掉」。
     if action.is_none()
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn panel_fits_inside_available_and_flips_up() {
         // 靠右下角：下方放不下 → 翻到上方，且不越界（用 8 行的 Notes 目标；
-        // DrawnShape 的 20 行面板本就高于小窗口，与 iced 一致允许向下溢出）。
+        // DrawnShape 的 20 行面板本就高于小窗口，与 旧版 一致允许向下溢出）。
         let mut m = model(ContextMenuTarget::Notes);
         m.position = Pos2::new(1400.0, 880.0);
         let rect = panel_rect(&m);

@@ -3870,11 +3870,45 @@ callback / 多视口 / 截图能力。
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
   真机冒烟本轮被系统锁屏/息屏阻断（截图全黑），以 `capture_egui` 离屏整窗校验代替。
 
-**Task 4.32（下一步）**
+**Task 4.32（第一百三十九步）：几何/主题本地化，iced 依赖归零**
 
-1. `iced_core::Theme` → 本地主题/色板（`theme` 模块已在 ui-core，抽取
-   `Palette`/`extended_palette` 的最小字段集）→ 摘 `iced_core`；
-2. `iced_core::{Point, Size, Rectangle, Color, mouse::*}` 换 `ui-core::geom` 本地类型
-   （ui 118 / editor 108 / core 21 处引用）；
-3. 曲线填充凹多边形三角化；
-4. `cargo tree | grep '^iced'` 归零。
+- **`ui-core::geom`（新）**：本地 `Point` / `Size` / `Rectangle` / `Color`
+  （`from_rgb`/`from_rgba`/`from_rgb8`/`into_rgba8`/`into_linear`/
+  `from_linear_rgba`/`relative_contrast`/`is_readable_on`）与
+  `mouse::{Cursor, Interaction, ScrollDelta, Button}`，字段与语义逐项对齐
+  旧实现；`color!` 宏保留十六进制字面量（含 3 位缩写）。
+- **`ui-core::theme`（本地主题）**：22 个内置主题 + `Custom` +
+  `palette::{Palette, Extended, EXTENDED_*}`，`Extended::generate` 的派生公式
+  原样移植；高对比度 `hc_theme` / `hc` 色板并入。`Theme` 从 crate 别名改为
+  实定义（`Theme::ALL` / `custom` / `palette` / `extended_palette` / `name` /
+  `Display`）。
+- **引用迁移**：`iced_core::` → `lumino_ui_core::geom::`（120 个文件、
+  306 处）；`ui-core` 加 `extern crate self as lumino_ui_core;` 以复用同一
+  绝对路径；`ui` 重导出 `pub use lumino_ui_core::geom;` 供 `dialog` / 根包使用。
+- **删除的 iced 事件残留**：`host.events` 队列、`convert_touch_to_mouse`
+  及其 5 条单测、`handle_redraw_request`（改 `schedule_redraw_at`）；
+  长按右键/抬手改为直连 `handle_mouse_input_event`（画布不再依赖事件队列）。
+- **`cached_image_handle`**（旧图像句柄，仅用于 `is_some()`）删除，
+  预览尺寸判断改用 `preview_frame`。
+- **工具清理**：删除已退役的 `crates/editor/ui-parity`（旧版截图/对比工具）与
+  `crates/tools/android-probe`；workspace 的 iced patch / 依赖 / `iced_aw` /
+  `cargo-machete` 白名单全部移除；`Cargo.lock` 中 iced 条目清零。
+- **结果**：`cargo tree -p lumino-ui -e normal | grep '^iced'` **0 条**，
+  `cargo tree --workspace` 亦为 **0**；`.rs` / `Cargo.toml` / `Cargo.lock`
+  中 `iced` 命中数为 **0**（注释同步改写为「旧版」）。
+- **验收**：`cargo check --workspace --all-targets` 通过；
+  `lumino-ui` lib 755/755（1 ignored，较上轮 -5 为删除的触摸合成单测）、
+  `lumino-ui-editor` 816/816；`clippy -D warnings`（ui / ui-core / ui-editor /
+  ui-egui / ui-settings / dialog / ui-runtime）通过；`fmt --check` 通过；
+  `check/build --bin lumino-rs` 通过；`capture_egui` **12/12 零基线改动**。
+  workspace 测试仅剩一条**既有**失败（`lumino-core` i18n 英文登记缺失 11 条，
+  `git stash` 验证与本轮无关）与 `theme_palette` 的已知并行偶发失败
+  （`--test-threads=1` 5/5）。
+- 真机像素对照仍被系统锁屏阻断（`PrintWindow` 返回全黑，无 ERROR/panic），
+  以 `capture_egui` 离屏整窗校验代替。
+
+**Task 4.33（下一步）**
+
+1. 解锁后做一轮真机像素对照（主窗口 / 走带 / 纵向卷帘 / 力度面板）；
+2. 曲线填充凹多边形三角化（功能收尾项）；
+3. 可选：把 `KeyState` / `Touch` 等最后一处命名与注释统一成 egui 语义。

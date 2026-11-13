@@ -1,7 +1,7 @@
 //! 工具函数
 
 use crate::Editor;
-use iced_core::{Point, Rectangle, Size};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 /// 卷帘内容区（选框/按钮的可见范围）
 ///
@@ -87,7 +87,7 @@ pub fn note_name(midi_note: u8) -> String {
 }
 
 /// 解析十六进制颜色字符串
-pub fn parse_color(hex: &str) -> Option<iced_core::Color> {
+pub fn parse_color(hex: &str) -> Option<lumino_ui_core::geom::Color> {
     let hex = hex.trim_start_matches('#');
     if hex.len() != 6 {
         return None;
@@ -97,7 +97,7 @@ pub fn parse_color(hex: &str) -> Option<iced_core::Color> {
     let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
     let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
 
-    Some(iced_core::Color::from_rgb8(r, g, b))
+    Some(lumino_ui_core::geom::Color::from_rgb8(r, g, b))
 }
 
 /// 自适应纵向网格线间距

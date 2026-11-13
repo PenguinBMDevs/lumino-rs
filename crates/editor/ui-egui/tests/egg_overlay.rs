@@ -43,7 +43,7 @@ fn flying() -> EggModel {
 #[test]
 fn flying_egg_renders_without_blocking_pointer() {
     let (mut h, _) = harness(Some(flying()));
-    // 飞行层不是占用区：点它所在位置仍应落到 iced / 下层。
+    // 飞行层不是占用区：点它所在位置仍应落到 旧版 / 下层。
     let blocked = menu::take_blocked(&h.ctx);
     assert!(
         blocked.is_empty(),

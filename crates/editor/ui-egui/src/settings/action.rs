@@ -21,7 +21,7 @@ pub enum WindowControl {
     Close,
 }
 
-/// 设置对话框产生的动作（不依赖 iced）。
+/// 设置对话框产生的动作（不依赖 旧版）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
     /// 点击左侧菜单（索引 = 菜单顺序）。

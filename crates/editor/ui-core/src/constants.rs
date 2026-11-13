@@ -129,12 +129,12 @@ pub mod editor {
     pub const SELECTION_BOX_STROKE_WIDTH: f32 = 3.0;
 
     /// 框选框统一边框颜色（灰色）
-    pub const SELECTION_BOX_STROKE_COLOR: iced_core::Color =
-        iced_core::Color::from_rgb(0.62, 0.62, 0.62);
+    pub const SELECTION_BOX_STROKE_COLOR: lumino_ui_core::geom::Color =
+        lumino_ui_core::geom::Color::from_rgb(0.62, 0.62, 0.62);
 
     /// 框选框统一填充颜色（比边框颜色浅一点的灰色 + 半透明）
-    pub const SELECTION_BOX_FILL_COLOR: iced_core::Color =
-        iced_core::Color::from_rgba(0.78, 0.78, 0.78, 0.35);
+    pub const SELECTION_BOX_FILL_COLOR: lumino_ui_core::geom::Color =
+        lumino_ui_core::geom::Color::from_rgba(0.78, 0.78, 0.78, 0.35);
 
     /// 时间轴标尺高度（小节号显示区域）
     pub const RULER_HEIGHT: f32 = 24.0;

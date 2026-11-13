@@ -5,8 +5,8 @@
 
 use crate::Editor;
 use crate::grid::utils::content_bounds;
-use iced_core::{Point, Rectangle, Size};
 use lumino_message::EditorAction;
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 /// 调色板尺寸
 const SWATCH: f32 = 22.0;

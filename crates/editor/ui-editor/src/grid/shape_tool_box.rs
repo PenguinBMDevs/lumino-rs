@@ -15,9 +15,9 @@
 use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::content_bounds;
-use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::ShapeKind;
 use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 mod composed;
 

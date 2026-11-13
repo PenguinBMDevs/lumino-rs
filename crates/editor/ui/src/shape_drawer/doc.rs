@@ -1,7 +1,7 @@
 //! 形状抽屉的纯状态文档（DRAW-033B1）
 //!
 //! 坐标统一使用单位框 `0..=1`；画布只负责屏幕映射，不把 zoom/pan 写进
-//! `ShapeDrawing`。本模块不依赖 iced widget，便于对六工具、选择与撤销做单测。
+//! `ShapeDrawing`。本模块不依赖 旧版 widget，便于对六工具、选择与撤销做单测。
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;

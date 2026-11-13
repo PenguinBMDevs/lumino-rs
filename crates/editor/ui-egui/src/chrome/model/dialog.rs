@@ -102,7 +102,7 @@ impl DialogModel {
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。
 #[derive(Debug, Clone, Default)]
 pub struct ExportProgressModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「音频导出」。
     pub title: String,
@@ -131,7 +131,7 @@ pub enum ExportMessageKind {
 /// 自定义精度对话框：三连音数 / 分音符 / 附点 / 除数 / 错误行 / 按钮。
 #[derive(Debug, Clone, Default)]
 pub struct CustomPrecisionModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 三连音数（默认 3）。
     pub tuplet_count: String,
@@ -169,7 +169,7 @@ pub struct DotOptionModel {
 /// 变速对话框：标题 / 倍率行 / 提示 / 按钮。
 #[derive(Debug, Clone, Default)]
 pub struct SpeedChangeModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「变速」。
     pub title: String,
@@ -190,9 +190,9 @@ pub struct SpeedChangeModel {
 /// 工程设置对话框：全部文案与只读值由生产侧预计算。
 #[derive(Debug, Clone, Default)]
 pub struct ProjectSettingsModel {
-    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时 iced 绘制）。
+    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时 旧版 绘制）。
     ///
-    /// egui 只接管标题栏以下的内容区；标题栏（红绿灯 / 拖动）仍由 iced 绘制，
+    /// egui 只接管标题栏以下的内容区；标题栏（红绿灯 / 拖动）仍由 旧版 绘制，
     /// 避免遮掉窗口控制按钮。
     pub titlebar: bool,
     /// 窗口标题「工程信息设置」。
@@ -238,7 +238,7 @@ pub struct ProjectNoteCountModel {
     pub value: String,
 }
 
-/// 设置对话框调色板：由生产 iced `extended_palette` 映射。
+/// 设置对话框调色板：由生产 旧版 `extended_palette` 映射。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsPalette {
     /// 自制标题栏（`background.neutral`）。
@@ -331,11 +331,11 @@ pub struct SettingsSnapshot {
     pub track_add: String,
     /// 日志文件保留份数。
     pub log_retention: String,
-    /// 当前页内容（未迁移的页面整窗交回 iced，不在此建模）。
+    /// 当前页内容（未迁移的页面整窗交回 旧版，不在此建模）。
     pub page: SettingsPageModel,
 }
 
-/// 对话框调色板：由生产 iced `extended_palette` 映射，深/浅主题都能整窗接管。
+/// 对话框调色板：由生产 旧版 `extended_palette` 映射，深/浅主题都能整窗接管。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DialogPalette {
     /// 自制标题栏底色（`background.neutral`）。

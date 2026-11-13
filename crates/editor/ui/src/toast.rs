@@ -8,7 +8,7 @@
 //!
 //! ## 渲染
 //! `Root::view_main` 在主视图渲染完成后，通过 `ToastManager::view` 获取叠加层，
-//! 使用 `iced_widget::Stack` 叠加在右下角。
+//! 由 egui 叠加层绘制在右下角。
 //!
 //! ## 过期清理
 //! 每帧 `AnimationTick` 触发 `ToastManager::cleanup_expired`，移除过期 Toast。
@@ -54,20 +54,20 @@ impl ToastLevel {
         }
     }
 
-    /// 背景色（基于 iced theme palette）
-    fn background_color(self, theme: &Theme) -> iced_core::Color {
+    /// 背景色（基于 旧版 theme palette）
+    fn background_color(self, theme: &Theme) -> lumino_ui_core::geom::Color {
         let palette = theme.extended_palette();
         match self {
             ToastLevel::Info => palette.primary.strong.color,
-            ToastLevel::Warning => iced_core::Color::from_rgb(0.95, 0.62, 0.17),
+            ToastLevel::Warning => lumino_ui_core::geom::Color::from_rgb(0.95, 0.62, 0.17),
             ToastLevel::Error => palette.danger.base.color,
             ToastLevel::Success => palette.success.base.color,
         }
     }
 
     /// 文字颜色
-    fn text_color(self) -> iced_core::Color {
-        iced_core::Color::WHITE
+    fn text_color(self) -> lumino_ui_core::geom::Color {
+        lumino_ui_core::geom::Color::WHITE
     }
 }
 
@@ -204,7 +204,12 @@ impl ToastManager {
     pub fn egui_cards(
         &self,
         theme: &Theme,
-    ) -> Vec<(String, String, iced_core::Color, iced_core::Color)> {
+    ) -> Vec<(
+        String,
+        String,
+        lumino_ui_core::geom::Color,
+        lumino_ui_core::geom::Color,
+    )> {
         self.toasts
             .iter()
             .map(|toast| {

@@ -1,6 +1,6 @@
 //! 工程走带视图：生产状态 → egui 模型（标尺 + 轨道列）。
 //!
-//! 只在走带路由激活时产出；几何量与 iced `view_arrangement` 同源
+//! 只在走带路由激活时产出；几何量与 旧版 `view_arrangement` 同源
 //! （`arrangement_view.viewport` + `editor_state` + `sidebar.tracks`）。
 
 use lumino_ui_egui::chrome::{
@@ -10,8 +10,8 @@ use lumino_ui_egui::chrome::{
 
 use crate::root::Root;
 
-/// iced `Color` → egui `Color32`（sRGB 直通）。
-fn color32(color: iced_core::Color) -> egui::Color32 {
+/// 旧版 `Color` → egui `Color32`（sRGB 直通）。
+fn color32(color: lumino_ui_core::geom::Color) -> egui::Color32 {
     let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     egui::Color32::from_rgb(channel(color.r), channel(color.g), channel(color.b))
 }
@@ -59,7 +59,7 @@ impl Root {
             .as_ref()
             .filter(|state| state.active);
 
-        // 两条滚动条：与 iced `view_arrangement` 同口径。
+        // 两条滚动条：与 旧版 `view_arrangement` 同口径。
         const TRACK_HEIGHT: f32 = 48.0;
         let max_tick_val = vp
             .cached_max_tick_end
@@ -130,7 +130,7 @@ impl Root {
 impl Root {
     /// egui 轨道列动作 → 生产 `Message`。
     ///
-    /// 与 iced `track_list/handlers.rs` 同语义：单击 = 选择 + 多选集合 + 注册拖拽候选；
+    /// 与 旧版 `track_list/handlers.rs` 同语义：单击 = 选择 + 多选集合 + 注册拖拽候选；
     /// M/S 命中只切换开关；移动/释放交给生产侧的拖拽排序状态机。
     pub(crate) fn arrangement_action_message(
         &self,
@@ -176,7 +176,7 @@ impl Root {
 impl Root {
     /// 泳道动作（`lumino-arrangement-core` 的 `ArrangementAction`）→ 生产 `Message`。
     ///
-    /// 与 iced `click_canvas` 的映射同一份语义：走带交互只有这一套实现，
+    /// 与 旧版 `click_canvas` 的映射同一份语义：走带交互只有这一套实现，
     /// 两侧差异只在「事件怎么来」。
     pub(crate) fn lane_action_message(
         &self,

@@ -12,7 +12,7 @@
 
 use std::collections::HashSet;
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 use super::super::{EditState, Editor, HitType};
 use lumino_ui_core::constants::editor::NOTE_EDGE_THRESHOLD_PX;

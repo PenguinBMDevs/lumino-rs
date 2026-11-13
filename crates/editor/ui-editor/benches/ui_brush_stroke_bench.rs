@@ -24,14 +24,14 @@
 //! 运行：`cargo bench -p lumino-ui-editor --bench ui_brush_stroke_bench`
 //! 环境变量：`LUMINO_BENCH_MIDI` / `LUMINO_BENCH_CYCLES` / `LUMINO_BENCH_VERBOSE`。
 //!
-//! 边界：无 GPU 环境，**不含** iced canvas 曲面细分/光栅化成本（那部分与可见方块数
+//! 边界：无 GPU 环境，**不含** 旧版 canvas 曲面细分/光栅化成本（那部分与可见方块数
 //! 成正比，绘制前已按格 + 屏幕矩形双重剔除）。
 
 use std::time::Instant;
 
-use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::brush_tool::cov;
 use lumino_message::Point2;
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 use lumino_ui_editor::grid::brush_tool_box::{
     brush_button_rects, brush_cell_rect, brush_run_screen_rect, brush_visible_window,
 };
@@ -194,7 +194,7 @@ fn preview_canvas_geometry(editor: &Editor) -> usize {
 /// 旧口径（对照，仅用于 A/B 量化）：全量栅格化 + 全量行段 + 逐段方块矩形
 ///
 /// 这是 §17 修复前的生产路径（对整笔做覆盖计算后再逐段剔除）。**注意**：
-/// 三条路径都**不含** iced canvas 的 lyon 细分与逐块 `Frame::fill` 成本
+/// 三条路径都**不含** 旧版 canvas 的 lyon 细分与逐块 `Frame::fill` 成本
 /// ——真机 puffin 实测 8 万方块 = 单帧 **81.6ms**，那正是 §18 改走 wgpu 的原因。
 fn preview_full_path(editor: &Editor) -> usize {
     let runs = editor.brush_preview_runs();

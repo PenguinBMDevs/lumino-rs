@@ -1,7 +1,7 @@
 //! 文字参数面板的字体下拉（输入框 + 弹层）。
 //!
 //! 从 `text_panel.rs` 拆出（REF-001 行数纪律）。弹层由调用方在面板内容之后
-//! 绘制，保证盖住滑杆行；其矩形同时进入占用列表，点击不会穿透到 iced。
+//! 绘制，保证盖住滑杆行；其矩形同时进入占用列表，点击不会穿透到 旧版。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 

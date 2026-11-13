@@ -7,10 +7,10 @@
 //! - **已 Bake 形状**：面板只改草稿，点 Apply 才 `set_mask`（一次 `edit_shape`）。
 //!
 //! 视图已迁到 egui（`lumino_ui_egui::mask_panel` + `egui_chrome::mask_panel`）：
-//! 本文件只保留 **UI 无关状态**，不再有 iced 视图。
+//! 本文件只保留 **UI 无关状态**，不再有 旧版 视图。
 
-use iced_core::Point;
 use lumino_core::shape::MaskParams;
+use lumino_ui_core::geom::Point;
 use lumino_ui_editor::MaskEditTarget;
 
 /// 面板状态

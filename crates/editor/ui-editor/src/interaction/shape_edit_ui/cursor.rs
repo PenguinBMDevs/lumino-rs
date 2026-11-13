@@ -2,10 +2,10 @@
 //!
 //! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
 
-use iced_core::{Point, Rectangle, Size, mouse};
 use lumino_core::shape::ShapeModel;
 use lumino_editor_state::PendingShapeRef;
 use lumino_editor_state::editor_state::{Corner, HandleKind, Side, Zoom, hit_test_box};
+use lumino_ui_core::geom::{Point, Rectangle, Size, mouse};
 
 use crate::Editor;
 

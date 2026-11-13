@@ -308,7 +308,7 @@ fn materials_actions_map_to_messages() {
 }
 
 #[test]
-fn rail_items_are_filled_in_iced_order() {
+fn rail_items_are_filled_in_legacy_order() {
     let root = root();
     let model = root.egui_chrome_model();
     let right = model.right_sidebar.expect("右侧栏应可见");
@@ -320,7 +320,7 @@ fn rail_items_are_filled_in_iced_order() {
             RightSidebarPanelKind::Materials,
             RightSidebarPanelKind::PianoWaterfall,
         ],
-        "图标列顺序必须与 iced `view.rs` 一致（图片转 MIDI / 素材库 / 瀑布流）"
+        "图标列顺序必须与 旧版 `view.rs` 一致（图片转 MIDI / 素材库 / 瀑布流）"
     );
     assert!(
         right.rail.iter().all(|item| !item.label.is_empty()),

@@ -19,7 +19,7 @@ const TITLE_H: f32 = 22.0;
 /// 状态行顶边 / 行高（14px 文本）。
 const MESSAGE_TOP: f32 = 46.0;
 const MESSAGE_H: f32 = 18.0;
-/// 进度条顶边 / 高度（iced `ProgressBar::DEFAULT_GIRTH` = 30）。
+/// 进度条顶边 / 高度（旧版 `ProgressBar::DEFAULT_GIRTH` = 30）。
 const BAR_TOP: f32 = 84.0;
 const BAR_H: f32 = 30.0;
 /// 百分比顶边 / 行高（12px 文本）。
@@ -66,7 +66,7 @@ pub fn show(ui: &mut egui::Ui, model: &ExportProgressModel) {
         },
     );
 
-    // 进度条：`background.strong` 底 + `primary.base` 进度，圆角 2（iced 同款）。
+    // 进度条：`background.strong` 底 + `primary.base` 进度，圆角 2（旧版 同款）。
     let bar = Rect::from_min_size(
         egui::pos2(inner.left(), inner.top() + BAR_TOP),
         Vec2::new(inner.width(), BAR_H),

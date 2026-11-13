@@ -1,5 +1,5 @@
 use crate::host::viewport_geom::Viewport;
-use iced_core::Size;
+use lumino_ui_core::geom::Size;
 
 use super::data::ViewportInfo;
 use crate::host::Host;
@@ -7,7 +7,7 @@ use crate::host::Host;
 /// 缩放因子兜底
 ///
 /// `Viewport::with_physical_size` 直接做 `logical = physical / scale`
-/// （`iced_graphics-0.14.0/src/viewport.rs`）⇒ 0 会得到 inf、NaN 会传染整条渲染链。
+/// （`旧版-0.14.0/src/viewport.rs`）⇒ 0 会得到 inf、NaN 会传染整条渲染链。
 /// winit 的 `scale_factor()` 正常返回 1.0 以上，这里只是把异常环境挡在入口。
 pub(crate) fn sanitize_scale_factor(scale: f64) -> f32 {
     // 区间用 `contains`：NaN 参与比较恒为 false，因此非有限值自然落到兜底分支
@@ -53,8 +53,11 @@ impl Host {
         } else {
             let es = &self.root.editor.editor_state;
             ViewportInfo {
-                canvas_offset: iced_core::Point::new(es.canvas.offset_x, es.canvas.offset_y),
-                canvas_size: iced_core::Point::new(es.canvas.size_x, es.canvas.size_y),
+                canvas_offset: lumino_ui_core::geom::Point::new(
+                    es.canvas.offset_x,
+                    es.canvas.offset_y,
+                ),
+                canvas_size: lumino_ui_core::geom::Point::new(es.canvas.size_x, es.canvas.size_y),
             }
         }
     }

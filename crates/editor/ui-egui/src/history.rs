@@ -58,7 +58,7 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel) {
     crate::fonts::install(ui.ctx());
 
     let rect = ui.max_rect();
-    // 顶部自制标题栏仍由 iced 绘制（红绿灯 / 拖动）。
+    // 顶部自制标题栏仍由 旧版 绘制（红绿灯 / 拖动）。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {
@@ -174,7 +174,7 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel) {
         });
 }
 
-/// 单行：当前行主色弱底，未来步骤浅色文本；整行可点（文本左对齐，与 iced 一致）。
+/// 单行：当前行主色弱底，未来步骤浅色文本；整行可点（文本左对齐，与 旧版 一致）。
 fn row_button(ui: &mut egui::Ui, row: &crate::chrome::HistoryRowModel, width: f32) -> bool {
     let marker = if row.current { "▶ " } else { "  " };
     let label = format!("{marker}{}", row.label);

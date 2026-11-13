@@ -61,7 +61,7 @@ pub struct PianoRollView {
 
 impl Default for PianoRollView {
     fn default() -> Self {
-        // 数值取自 iced 基线（`main_chrome`，1600×1000 @1x）：
+        // 数值取自 旧版 基线（`main_chrome`，1600×1000 @1x）：
         // 键盘 120、标尺 24、琴键 20、128 键、每小节 768px、
         // 水平滑块 22/1300、垂直滑块 279/854。
         Self {
@@ -201,7 +201,7 @@ fn scrollbar_cells(ui: &egui::Ui, area: Rect, view: &PianoRollView, canvas_w: f3
 /// 键盘列：左上角缝隙（标尺高）+ 琴键区。
 fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) {
     let painter = ui.painter();
-    // iced `keyboard_background_color`（暗色 = `background.base`，亮色 = `weak`）。
+    // 旧版 `keyboard_background_color`（暗色 = `background.base`，亮色 = `weak`）。
     painter.rect_filled(rect, 0, theme::roll_keyboard_bg());
 
     let key_h = view.key_height.max(1.0);
@@ -230,7 +230,7 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
         } else {
             theme::roll_white_key()
         };
-        // 256 键扩展区（128..）：亮色压暗 15%、暗色提亮 15%（iced 同规则）。
+        // 256 键扩展区（128..）：亮色压暗 15%、暗色提亮 15%（旧版 同规则）。
         let fill = if index >= 128 {
             if dark {
                 tint(base, 1.15)
@@ -245,7 +245,7 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
         if !dark && y + key_h > ruler_h {
             key_tops.push(key_rect.top().max(rect.top() + ruler_h));
         }
-        // 音名：键盘宽度中点、主题文字色、11px（iced `KEY_LABEL_FONT_SIZE`）。
+        // 音名：键盘宽度中点、主题文字色、11px（旧版 `KEY_LABEL_FONT_SIZE`）。
         painter.text(
             egui::pos2(rect.center().x, key_rect.center().y),
             Align2::CENTER_CENTER,
@@ -292,7 +292,7 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
         return;
     }
     let painter = ui.painter();
-    // iced 标尺底色：暗色 = `background.base`，亮色 = `background.weakest`。
+    // 旧版 标尺底色：暗色 = `background.base`，亮色 = `background.weakest`。
     painter.rect_filled(rect, 0, theme::roll_ruler_bg());
 
     let bar = view.bar_pixels();
@@ -323,7 +323,7 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
         }
     }
 
-    // 播放指示线：仅当落在网格范围内（iced `playback_indicator` 同判据）。
+    // 播放指示线：仅当落在网格范围内（旧版 `playback_indicator` 同判据）。
     if view.playhead_offset >= 0.0 {
         let center = rect.left() + view.playhead_offset;
         if center <= rect.right() {
@@ -349,14 +349,14 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
     }
 }
 
-/// iced `ScrollbarWidget` 外观：轨道 `background.strong`，滑块 `background.weak`，
+/// 旧版 `ScrollbarWidget` 外观：轨道 `background.strong`，滑块 `background.weak`，
 /// 四周内缩 2px，无圆角。
-/// 是否黑键（iced `is_key_dark`）。
+/// 是否黑键（旧版 `is_key_dark`）。
 fn is_key_dark(key: u16) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
 }
 
-/// 音名（iced `note_name`：MIDI 0 = C-1）。
+/// 音名（旧版 `note_name`：MIDI 0 = C-1）。
 fn note_name(key: u16) -> String {
     const NAMES: [&str; 12] = [
         "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",

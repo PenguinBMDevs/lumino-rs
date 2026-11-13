@@ -68,7 +68,7 @@ pub fn palette_algorithms() -> Vec<(&'static str, i2m_rs::PaletteSource)> {
 
 /// 图片转 MIDI 转换配置（用户可自定义项）
 ///
-/// 数值字段与输入框文本缓冲成对保存：文本缓冲用于 iced `TextInput`
+/// 数值字段与输入框文本缓冲成对保存：文本缓冲用于 旧版 `TextInput`
 /// 的无抖动编辑，数值为转换权威值；二者在有效输入时保持同步。
 #[derive(Debug, Clone)]
 pub struct I2mConfig {
@@ -240,7 +240,7 @@ pub struct RightSidebar {
 /// 钢琴瀑布流预览面板状态
 ///
 /// 持有离屏 wgpu 渲染得到的键盘纹理视图（`Arc<wgpu::TextureView>`），
-/// 由 iced `shader` 图元在自身渲染通道内直接采样合成（GPU→GPU，无 CPU 读回、无 `image::Handle`、无图集重传），
+/// 由 旧版 `shader` 图元在自身渲染通道内直接采样合成（GPU→GPU，无 CPU 读回、无 `image::Handle`、无图集重传），
 /// 因此与钢琴卷帘洋葱皮同样不闪烁。仅用脏签名避免每帧重绘。
 #[derive(Debug, Clone, Default)]
 pub struct PianoWaterfallState {

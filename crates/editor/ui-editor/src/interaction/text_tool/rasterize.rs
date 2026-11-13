@@ -1,6 +1,6 @@
 use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
-use iced_core::Point;
 use lumino_editor_state::text_tool::TextToolState;
+use lumino_ui_core::geom::Point;
 
 use super::font::load_font;
 
@@ -10,7 +10,7 @@ pub(super) const SS: u32 = 4;
 const COVERAGE_THRESHOLD: f32 = 0.08;
 
 /// 点是否落在矩形内
-pub(super) fn point_in_rect(p: Point, r: iced_core::Rectangle) -> bool {
+pub(super) fn point_in_rect(p: Point, r: lumino_ui_core::geom::Rectangle) -> bool {
     p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
 }
 

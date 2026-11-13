@@ -1,13 +1,13 @@
 //! 对话框窗口的逻辑尺寸（REF-001）。
 //!
-//! iced 视图层删除后不再有内容测量通道：尺寸完全由
+//! 旧版 视图层删除后不再有内容测量通道：尺寸完全由
 //! [`dialog_preferred_size::dialog_size_hint`] 的静态声明决定（宽 = 声明值，
 //! 高 = 声明下限，按工作区与声明上限夹取）。
 //!
 //! 方法名保留 `measure_dialog_window_size`：调用方（`lumino-dialog`）按尺寸
 //! 「一次性决策」使用，与实现是否测量无关。
 
-use iced_core::Size;
+use lumino_ui_core::geom::Size;
 
 use crate::view::dialog_preferred_size;
 

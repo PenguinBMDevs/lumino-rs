@@ -2,7 +2,7 @@
 ///
 /// 视图（路由栏 / 音轨列表 / 菜单 / 重命名 / 取色 / 端口·通道 / 拖拽排序）
 /// 已全部迁到 egui（`lumino-ui-egui::chrome::sidebar`）；本模块只保留
-/// **状态与事件处理**，以及 iced 侧的同宽占位（`view.rs`）。
+/// **状态与事件处理**，以及 旧版 侧的同宽占位（`view.rs`）。
 mod core;
 mod handling;
 mod metrics;

@@ -24,11 +24,11 @@ impl RunnerInner {
         if let Some(pos) = cursor_pos {
             // 先转换为 Canvas 视口坐标（不含滚动偏移），用于边界检查
             let viewport_pos =
-                iced_core::Point::new(pos.x - es.canvas.offset_x, pos.y - es.canvas.offset_y);
+                lumino_ui::geom::Point::new(pos.x - es.canvas.offset_x, pos.y - es.canvas.offset_y);
 
             if editor.is_inside_canvas(viewport_pos) {
                 // 通过边界检查后，加上滚动偏移得到内容空间坐标
-                let content_pos = iced_core::Point::new(
+                let content_pos = lumino_ui::geom::Point::new(
                     viewport_pos.x + es.view.scroll_x,
                     viewport_pos.y + es.view.scroll_y,
                 );

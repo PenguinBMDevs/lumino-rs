@@ -1,4 +1,4 @@
-//! 主题色板回归：egui 外壳必须跟随 iced 当前主题，而不是固定深色。
+//! 主题色板回归：egui 外壳必须跟随 旧版 当前主题，而不是固定深色。
 //!
 //! 1. Tokyo Night Storm 种子必须还原历史基线字面量（像素基线零变化）；
 //! 2. `Light` 种子必须派生出浅色外壳（默认配置就是 Light）；
@@ -41,7 +41,7 @@ fn rgb(hex: u32) -> Color32 {
     )
 }
 
-/// iced `Theme::Light.extended_palette()` 的精确值。
+/// 旧版 `Theme::Light.extended_palette()` 的精确值。
 fn light_seed() -> PaletteSeed {
     PaletteSeed {
         is_dark: false,
@@ -63,7 +63,7 @@ fn light_seed() -> PaletteSeed {
     }
 }
 
-/// iced `Theme::TokyoNightStorm.extended_palette()` 的精确值。
+/// 旧版 `Theme::TokyoNightStorm.extended_palette()` 的精确值。
 fn tokyo_night_storm_seed() -> PaletteSeed {
     PaletteSeed {
         is_dark: true,
@@ -116,7 +116,7 @@ fn light_seed_derives_light_chrome() {
     );
     assert_eq!(palette.text, Color32::BLACK);
     assert_eq!(palette.on_accent, Color32::WHITE, "深色强调色上必须用白字");
-    // 卷帘骨架：与 iced `ThemeExt` 的亮色口径一致（生产实测值）。
+    // 卷帘骨架：与 旧版 `ThemeExt` 的亮色口径一致（生产实测值）。
     assert_eq!(palette.roll_keyboard_bg, rgb(0xDEDEDE));
     assert_eq!(palette.roll_white_key, rgb(0xDEDEDE));
     assert_eq!(palette.roll_black_key, rgb(0xCECECE));
@@ -221,7 +221,7 @@ fn rendered_bands_follow_the_palette() {
     );
 }
 
-/// 卷帘骨架在亮色主题下必须用 iced `ThemeExt` 的生产配色：
+/// 卷帘骨架在亮色主题下必须用 旧版 `ThemeExt` 的生产配色：
 /// 键盘底 `weak`、白键 `weak`、黑键 `strong`、键线 `strongest`、标尺 `weakest`、
 /// 文字黑色。任一颜色退回深色常量都会在真实窗口里变成"黑键盘盖在浅色内容上"。
 #[test]

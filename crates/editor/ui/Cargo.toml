@@ -15,8 +15,6 @@ workspace = true
 default = []
 
 [package.metadata.cargo-machete]
-# 特性钉：release 下 iced_renderer 未启用 wgpu/tiny-skia 会 compile_error。
-ignored = ["iced_renderer"]
 
 [dependencies]
 egui = { workspace = true }
@@ -46,7 +44,6 @@ lumino-ui-editor = { workspace = true }
 # crates.io
 midly = { workspace = true }
 # crates.io
-iced_core = { workspace = true }
 wgpu = { workspace = true }
 image = { workspace = true }
 lumino-platform = { workspace = true }

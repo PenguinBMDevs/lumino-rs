@@ -46,7 +46,7 @@ fn test_piano_roll_context_menu_open_close() {
     assert!(root.editor.context_menu.open);
     assert_eq!(
         root.editor.context_menu.position,
-        Some(iced_core::Point::new(120.0, 80.0))
+        Some(lumino_ui_core::geom::Point::new(120.0, 80.0))
     );
 
     // 关闭菜单

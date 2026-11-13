@@ -5,7 +5,7 @@
 //! 全部由 egui 绘制，`MixerAction` 映射回 `Event::TrackGainChanged` 等既有消息。
 //!
 //! 这里只保留 **UI 无关的状态**：开关、展开、拖拽偏移、主音量、横向滚动。
-//! iced 侧的 `view_mixer_panel` / `strips` 视图已删除（不再有 iced 混音台）。
+//! 旧版 侧的 `view_mixer_panel` / `strips` 视图已删除（不再有 旧版 混音台）。
 
 use crate::sidebar::MIXER_DEFAULT_VOLUME;
 

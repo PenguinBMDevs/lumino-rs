@@ -6,7 +6,7 @@
 //! 新增 28px 标尺时任何一处漏改都会让 WGPU 网格与标尺错位。这里收口成
 //! 纯函数并单测，两处只调用、不再各自维护常量。
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 /// 走带左侧音轨列表宽度
 pub(crate) const TRACK_LIST_WIDTH: f32 = 160.0;

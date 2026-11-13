@@ -1,6 +1,6 @@
 //! 图片转 MIDI 区域框（Placing 阶段）——egui 版。
 //!
-//! 与 iced `i2m_box::draw` 的框体一致：灰色 3px 边框 + 比边框浅的灰色半透明填充，
+//! 与 旧版 `i2m_box::draw` 的框体一致：灰色 3px 边框 + 比边框浅的灰色半透明填充，
 //! 按卷帘内容区裁剪（越界部分不显示，数据不动）。
 
 use egui::{CornerRadius, Rect, Stroke, StrokeKind};

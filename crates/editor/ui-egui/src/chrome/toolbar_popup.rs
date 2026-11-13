@@ -3,7 +3,7 @@
 //! 两个弹层都由生产状态驱动（`ToolbarModel::snap_menu` / `onion_menu`），
 //! 点击只回传 [`ToolbarAction`]；由生产侧映射成 `Message` 再走 `process_message`。
 //!
-//! 几何对齐 iced：面板宽 190、内边距 6、圆角 6、`background.weak` 底 +
+//! 几何对齐 旧版：面板宽 190、内边距 6、圆角 6、`background.weak` 底 +
 //! `background.strong` 1px 边框；菜单项 13px 文本、悬停白色 10%。
 
 use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Sense, Stroke, Vec2};
@@ -37,7 +37,7 @@ const ACTION_ID: &str = "lumino.toolbar.action";
 const SNAP_TRIGGER_ID: &str = "lumino.toolbar.snap-trigger";
 const ONION_TRIGGER_ID: &str = "lumino.toolbar.onion-triggers";
 
-/// 工具栏弹层产生的动作（不依赖 iced，生产侧负责翻译成 `Message`）。
+/// 工具栏弹层产生的动作（不依赖 旧版，生产侧负责翻译成 `Message`）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolbarAction {
     /// 开合精度下拉。
@@ -156,8 +156,8 @@ pub enum ToolbarAction {
 
 /// 工具区的命令按钮（非工具选择器）。
 ///
-/// 每个变体对应 iced `ToolItem` 里一个按钮的 `on_press`；水平翻转的三档由
-/// 修饰键决定（默认居中 / Shift 向右 / Ctrl 向左），与 iced 同口径。
+/// 每个变体对应 旧版 `ToolItem` 里一个按钮的 `on_press`；水平翻转的三档由
+/// 修饰键决定（默认居中 / Shift 向右 / Ctrl 向左），与 旧版 同口径。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolbarCommand {
     /// 量化选中音符。
@@ -226,7 +226,7 @@ pub fn set_onion_triggers(ctx: &egui::Context, button: Rect, caret: Rect) {
     ctx.data_mut(|d| d.insert_temp(Id::unique(ONION_TRIGGER_ID), Some((button, caret))));
 }
 
-/// 洋葱皮分组被折叠时清掉触发矩形（避免残留吞掉下层 iced 点击）。
+/// 洋葱皮分组被折叠时清掉触发矩形（避免残留吞掉下层 旧版 点击）。
 pub fn clear_onion_triggers(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove_temp::<Option<(Rect, Rect)>>(Id::unique(ONION_TRIGGER_ID)));
 }
@@ -285,7 +285,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel) {
         draw_onion_panel(ui, panel, menu, &mut blocked);
     }
 
-    // 点击面板与触发区以外关闭；Esc 同样关闭（与 iced `DropDown::on_dismiss` 对齐）。
+    // 点击面板与触发区以外关闭；Esc 同样关闭（与 旧版 `DropDown::on_dismiss` 对齐）。
     let ctx = ui.ctx();
     if !action_pending(ctx)
         && ui.input(|i| i.pointer.any_click())
@@ -356,7 +356,7 @@ fn draw_snap_panel(
         }
     }
 
-    // 自定义项（生产固定英文 `Custom…`，与 iced 一致）。
+    // 自定义项（生产固定英文 `Custom…`，与 旧版 一致）。
     let row = Rect::from_min_size(
         Pos2::new(panel.left() + PANEL_PAD, y),
         Vec2::new(MENU_W - PANEL_PAD * 2.0, ITEM_H),

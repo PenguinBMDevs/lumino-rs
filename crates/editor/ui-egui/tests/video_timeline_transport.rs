@@ -1,6 +1,6 @@
 //! 剪辑带标题行：传输按钮（倒带 / 播放暂停）的点击必须产出对应动作。
 //!
-//! 无头 kittest：不依赖 iced 布局，`title_row` 由模型直接给出（生产里来自探针）。
+//! 无头 kittest：不依赖 旧版 布局，`title_row` 由模型直接给出（生产里来自探针）。
 
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -1,6 +1,6 @@
 //! 共享颜色工具函数
 
-use iced_core::Color;
+use lumino_ui_core::geom::Color;
 
 /// 按背景亮度返回黑色或白色，保证文本对比度
 pub fn contrast_text_color(bg: Color) -> Color {

@@ -26,7 +26,7 @@ fn test_memory_breakdown_empty() {
 #[test]
 fn test_update_cursor_position() {
     let mut editor = Editor::new();
-    editor.update_cursor_position(Some(iced_core::Point::new(100.0, 200.0)));
+    editor.update_cursor_position(Some(lumino_ui_core::geom::Point::new(100.0, 200.0)));
     // 不应 panic
     editor.update_cursor_position(None);
 }
@@ -223,7 +223,7 @@ fn test_scroll_noop_on_zero_delta() {
 /// 回归测试：触控板斜向滚动（对角线滑动）。
 ///
 /// 根因：Windows/winit 把双指斜向手势拆成两条独立事件——
-/// `WM_MOUSEWHEEL` 仅带 y、`WM_MOUSEHWHEEL` 仅带 x，iced 各自转为一条 WheelScrolled。
+/// `WM_MOUSEWHEEL` 仅带 y、`WM_MOUSEHWHEEL` 仅带 x，旧版 各自转为一条 WheelScrolled。
 /// 若 handle_scrolled 以 scroll_x/scroll_y 瞬时值为基准，第二条事件会把第一条设好的轴
 /// 重置回当前位置，导致斜向退化为单轴。修复后以 smooth_scroll 当前目标为基准叠加，
 /// 两条事件正确累积为对角线滚动。

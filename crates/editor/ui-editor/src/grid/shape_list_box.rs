@@ -6,9 +6,9 @@
 
 use crate::Editor;
 use crate::grid::utils::content_bounds;
-use iced_core::{Point, Rectangle, Size};
 use lumino_core::tr;
 use lumino_message::EditorAction;
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 const PANEL_W: f32 = 230.0;
 const ROW_H: f32 = 24.0;

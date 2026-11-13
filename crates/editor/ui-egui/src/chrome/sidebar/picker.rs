@@ -1,6 +1,6 @@
 //! 音轨取色器 / 端口·通道选择器。
 //!
-//! 几何与 iced `sidebar/color_picker.rs` / `numeric_picker.rs` 一致：
+//! 几何与 旧版 `sidebar/color_picker.rs` / `numeric_picker.rs` 一致：
 //! - 取色器：色块直径 20、间距 4、每行 4 个（8 色 + 1 行「恢复默认」）、内边距 8；
 //! - 数值选择器：按钮 30×30、间距 4、每行 4 个（16 项 → 4×4）、内边距 8；
 //! - 面板右对齐到面板内容右缘 −8、纵向贴目标行顶部 +8；
@@ -28,7 +28,7 @@ const OFFSET_Y: f32 = 8.0;
 /// 面板与内容右缘的水平间距。
 const RIGHT_MARGIN: f32 = 8.0;
 
-/// 预设音轨颜色（与 iced `TRACK_COLORS` 逐项一致）。
+/// 预设音轨颜色（与 旧版 `TRACK_COLORS` 逐项一致）。
 pub const TRACK_COLORS: [Color32; 8] = [
     Color32::from_rgb(217, 38, 38),
     Color32::from_rgb(38, 191, 89),
@@ -79,7 +79,7 @@ fn cell(origin: egui::Pos2, index: usize, item: f32) -> Rect {
     )
 }
 
-/// 整块面板计入占用（iced 的同位面板不再处理同一次点击）+ 背景关闭判定。
+/// 整块面板计入占用（旧版 的同位面板不再处理同一次点击）+ 背景关闭判定。
 fn blocked_and_backdrop(
     ui: &egui::Ui,
     content: Rect,
@@ -153,7 +153,7 @@ pub(super) fn color_picker(
             }
         }
 
-        // 「恢复默认」：灰边圆 + 红色斜杠（与 iced `reset_button` 同观感）。
+        // 「恢复默认」：灰边圆 + 红色斜杠（与 旧版 `reset_button` 同观感）。
         let reset = cell(rect.min, TRACK_COLORS.len(), SWATCH);
         let response = ui.interact(reset, ui.scope_id().with("reset"), Sense::click());
         ui.painter().circle_stroke(

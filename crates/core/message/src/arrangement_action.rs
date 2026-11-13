@@ -1,9 +1,9 @@
 //! 工程走带交互的**框架无关动作**（UI 无关）
 //!
-//! 走带交互逻辑（选择 / 移动 / 框选 / 橡皮 / 曲线）原先直接产出 iced
+//! 走带交互逻辑（选择 / 移动 / 框选 / 橡皮 / 曲线）原先直接产出 旧版
 //! `Message`，导致同一套逻辑无法被 egui 侧复用。这里把「交互产生了什么」抽成
 //! 中立枚举：交互层只产出 `ArrangementAction`，由各 UI 侧在边界翻译成自己的
-//! 消息（iced：`Message`；egui：动作通道）。
+//! 消息（旧版：`Message`；egui：动作通道）。
 //!
 //! 与 `Message` 一一对应，迁移时不需要重新推导语义。
 
@@ -76,7 +76,7 @@ pub enum ArrangementAction {
 }
 
 impl ArrangementAction {
-    /// 转成 iced 侧 `Message`（iced 边界专用；egui 侧不使用）。
+    /// 转成 旧版 侧 `Message`（旧版 边界专用；egui 侧不使用）。
     ///
     /// `select_track` 用于把 [`Self::SelectTrack`] 翻译成具体的侧栏消息——
     /// 侧栏消息是 `Message` 的泛型参数 `S`，本 crate 无法直接构造。

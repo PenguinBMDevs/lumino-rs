@@ -6,7 +6,7 @@ use crate::chrome::TexturePreviewModel;
 
 /// 把外部纹理铺到模型给出的每个矩形（1:1，不缩放）。
 ///
-/// `texture = None` 时不画任何东西：保留 iced 侧的占位文本（「等待渲染…」
+/// `texture = None` 时不画任何东西：保留 旧版 侧的占位文本（「等待渲染…」
 /// 「播放指示线不在视频带上」），避免两套文案叠加。
 pub fn show(ui: &egui::Ui, model: &TexturePreviewModel) {
     let Some(texture) = model.texture else {
@@ -26,7 +26,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn model_without_texture_keeps_iced_placeholder() {
+    fn model_without_texture_keeps_legacy_placeholder() {
         let model = TexturePreviewModel {
             rects: vec![Rect::from_min_size(
                 egui::pos2(10.0, 20.0),

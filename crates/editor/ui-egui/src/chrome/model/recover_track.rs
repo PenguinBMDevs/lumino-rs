@@ -3,7 +3,7 @@
 /// 找回删除音轨：标题 / 提示 / 表头 / 条目 / 底部按钮。
 #[derive(Debug, Clone, Default)]
 pub struct RecoverTrackModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「找回删除音轨」。
     pub title: String,

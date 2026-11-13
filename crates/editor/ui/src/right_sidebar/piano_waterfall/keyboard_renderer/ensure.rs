@@ -19,7 +19,7 @@ impl KeyboardRenderer {
         self.key_colors = Some(buf);
     }
 
-    /// 确保离屏纹理尺寸匹配（跨帧复用，仅在尺寸变化时重建）；其视图交给 iced shader 图元采样。
+    /// 确保离屏纹理尺寸匹配（跨帧复用，仅在尺寸变化时重建）；其视图交给 旧版 shader 图元采样。
     pub(super) fn ensure_targets(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         if self.last_w == width && self.last_h == height && self.tex.is_some() {
             return;
@@ -35,7 +35,7 @@ impl KeyboardRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            // RENDER_ATTACHMENT：离屏渲染目标；TEXTURE_BINDING：iced shader 图元采样合成。
+            // RENDER_ATTACHMENT：离屏渲染目标；TEXTURE_BINDING：旧版 shader 图元采样合成。
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });

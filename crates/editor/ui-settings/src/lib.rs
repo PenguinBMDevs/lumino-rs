@@ -1,12 +1,12 @@
 //! 设置面板模块：**只保留状态与事件处理**
 //!
 //! 视图（菜单 + 10 个设置页 + 关于页彩蛋）已全部迁到 egui
-//! （`lumino-ui-egui::settings`）；iced 侧的 `pages` / `components` / `menu`
-//! 与 `view()` 已删除，本 crate 不再依赖 `iced_core` / `iced_widget`。
+//! （`lumino-ui-egui::settings`）；旧版 侧的 `pages` / `components` / `menu`
+//! 与 `view()` 已删除，本 crate 不再依赖任何 UI 框架类型。
 //!
 //! 保留：
 //! - `panel`: 状态模型与事件处理（`SettingsPanel::new` / `update`）；
-//! - `panel/file_pickers`: 系统文件对话框（与 iced 无关）；
+//! - `panel/file_pickers`: 系统文件对话框（与 旧版 无关）；
 //! - `tests`: 状态机单元测试。
 
 mod panel;

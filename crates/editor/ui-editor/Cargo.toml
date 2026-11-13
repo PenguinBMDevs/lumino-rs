@@ -15,8 +15,6 @@ default = []
 workspace = true
 
 [package.metadata.cargo-machete]
-# 特性钉：bench/release 下 iced_renderer 未启用渲染器特性会 compile_error。
-ignored = ["iced_renderer"]
 
 [[bench]]
 name = "id_history_ops_bench"
@@ -50,7 +48,6 @@ harness = false
 [dev-dependencies]
 
 [dependencies]
-iced_core = { workspace = true }
 ab_glyph = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }

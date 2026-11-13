@@ -1,6 +1,6 @@
 //! Host 鼠标/触摸输入处理子模块
 
-use iced_core::mouse;
+use lumino_ui_core::geom::mouse;
 use winit;
 
 use crate::host::Host;
@@ -27,7 +27,7 @@ impl Host {
             return;
         }
         self.window_ctx.cursor = mouse::Cursor::Available(logical_pos);
-        // 存储逻辑坐标（与 iced 保持一致）
+        // 存储逻辑坐标（与 旧版 保持一致）
         self.window_ctx.cursor_position = Some(logical_pos);
 
         // 如果正在调整工具栏高度，更新工具栏高度
@@ -45,7 +45,10 @@ impl Host {
             let current_offset_y = self.root.editor.editor_state.canvas.offset_y;
             self.root
                 .editor
-                .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
+                .set_canvas_offset(lumino_ui_core::geom::Point::new(
+                    sidebar_width,
+                    current_offset_y,
+                ));
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }
@@ -64,21 +67,14 @@ impl Host {
         // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：跟手移动 / 悬停预览。
         self.dispatch_canvas_moved();
     }
-    /// 释放鼠标左键状态（用于拖拽窗口后的状态重置）
+    /// 释放鼠标左键状态（用于拖拽窗口后的状态重置）。
+    ///
+    /// 旧版 事件链删除后没有控件按压态需要复位；这里把释放直连给画布，
+    /// 让拖拽/绘制在窗口被系统夺焦后也能正常收尾。
     pub fn release_left_mouse_button(&mut self) {
-        // 释放鼠标左键
-        self.events.push(iced_core::Event::Mouse(
-            iced_core::mouse::Event::ButtonReleased(iced_core::mouse::Button::Left),
-        ));
-        // 同时释放触控状态（如果有的话）
-        if let Some(pos) = self.window_ctx.cursor_position {
-            self.events.push(iced_core::Event::Touch(
-                iced_core::touch::Event::FingerLifted {
-                    id: iced_core::touch::Finger(0),
-                    position: pos,
-                },
-            ));
-        }
+        self.window_ctx.cursor = lumino_ui_core::geom::mouse::Cursor::Unavailable;
+        self.window_ctx.cursor_position = None;
+        self.dispatch_canvas_button(false, winit::event::MouseButton::Left);
         self.process_pending_events();
     }
 }

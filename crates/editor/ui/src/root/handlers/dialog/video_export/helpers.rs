@@ -14,7 +14,6 @@ use crate::state::root_state::VideoExportOverlayState;
 pub(crate) fn reset_video_export_overlay(root: &mut Root) {
     root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
     root.state.video_export_dialog.preview_frame = None;
-    root.state.video_export_dialog.cached_image_handle = None;
     if root.state.is_dialog_window {
         root.state.dialog_result = Some(DialogResult::Cancel);
     }

@@ -1,6 +1,6 @@
 //! 框选框：生产状态 → egui 模型。
 //!
-//! 与 iced `selection_box::draw` 同语义：
+//! 与 旧版 `selection_box::draw` 同语义：
 //! 1. 拖拽中（`EditState::Selecting`）显示半透明选框；
 //!    弹簧模式取动画位置，Direct 模式取实时位置；
 //! 2. 已选音符显示包围盒（Selecting 状态下不重复画）；

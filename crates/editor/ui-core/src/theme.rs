@@ -1,15 +1,235 @@
-//! 主题系统扩展
+//! 主题与色板（本地实现，替代 `lumino_ui_core::geom::Theme`）。
 //!
-//! 提供高对比度模式 (High Contrast) 支持。
-//! 高对比度模式下，使用 `iced_core::Theme::Custom` 配置全黑底 + 白色字 + 黄色强调色色板，
-//! 使所有 Iced 内置 widget 的 `palette()` / `extended_palette()` 调用自动返回黑色系颜色。
-//! 无需修改任何 style 模板。
+//! 22 个内置主题的色值与 旧版 0.14 逐字节一致（`palette::Extended::generate`
+//! 的派生公式也原样保留），因此 egui 外壳的颜色与迁移前完全相同。
 //!
-//! "白天不懂夜的黑" — 底黑字黄，稳如老狗。
+//! 另外提供高对比度模式（High Contrast）：全黑底 + 白色字 + 黄色强调色。
 
-use crate::Theme;
-use iced_core::Color;
+pub mod palette;
+
+pub use palette::{Extended as ExtendedPalette, Palette};
+
+use std::borrow::Cow;
+use std::fmt;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::geom::Color;
+
+/// 内置主题。
+#[derive(Debug, Clone, PartialEq)]
+pub enum Theme {
+    /// 浅色。
+    Light,
+    /// 深色。
+    Dark,
+    /// Dracula。
+    Dracula,
+    /// Nord。
+    Nord,
+    /// Solarized Light。
+    SolarizedLight,
+    /// Solarized Dark。
+    SolarizedDark,
+    /// Gruvbox Light。
+    GruvboxLight,
+    /// Gruvbox Dark。
+    GruvboxDark,
+    /// Catppuccin Latte。
+    CatppuccinLatte,
+    /// Catppuccin Frappé。
+    CatppuccinFrappe,
+    /// Catppuccin Macchiato。
+    CatppuccinMacchiato,
+    /// Catppuccin Mocha。
+    CatppuccinMocha,
+    /// Tokyo Night。
+    TokyoNight,
+    /// Tokyo Night Storm。
+    TokyoNightStorm,
+    /// Tokyo Night Light。
+    TokyoNightLight,
+    /// Kanagawa Wave。
+    KanagawaWave,
+    /// Kanagawa Dragon。
+    KanagawaDragon,
+    /// Kanagawa Lotus。
+    KanagawaLotus,
+    /// Moonfly。
+    Moonfly,
+    /// Nightfly。
+    Nightfly,
+    /// Oxocarbon。
+    Oxocarbon,
+    /// Ferra。
+    Ferra,
+    /// 自定义色板。
+    Custom(Arc<Custom>),
+}
+
+impl Theme {
+    /// 全部内置主题。
+    pub const ALL: &'static [Self] = &[
+        Self::Light,
+        Self::Dark,
+        Self::Dracula,
+        Self::Nord,
+        Self::SolarizedLight,
+        Self::SolarizedDark,
+        Self::GruvboxLight,
+        Self::GruvboxDark,
+        Self::CatppuccinLatte,
+        Self::CatppuccinFrappe,
+        Self::CatppuccinMacchiato,
+        Self::CatppuccinMocha,
+        Self::TokyoNight,
+        Self::TokyoNightStorm,
+        Self::TokyoNightLight,
+        Self::KanagawaWave,
+        Self::KanagawaDragon,
+        Self::KanagawaLotus,
+        Self::Moonfly,
+        Self::Nightfly,
+        Self::Oxocarbon,
+        Self::Ferra,
+    ];
+
+    /// 由给定色板创建自定义主题。
+    pub fn custom(name: impl Into<Cow<'static, str>>, palette: Palette) -> Self {
+        Self::Custom(Arc::new(Custom::with_fn(
+            name,
+            palette,
+            palette::Extended::generate,
+        )))
+    }
+
+    /// 返回主题色板。
+    pub fn palette(&self) -> Palette {
+        match self {
+            Self::Light => Palette::LIGHT,
+            Self::Dark => Palette::DARK,
+            Self::Dracula => Palette::DRACULA,
+            Self::Nord => Palette::NORD,
+            Self::SolarizedLight => Palette::SOLARIZED_LIGHT,
+            Self::SolarizedDark => Palette::SOLARIZED_DARK,
+            Self::GruvboxLight => Palette::GRUVBOX_LIGHT,
+            Self::GruvboxDark => Palette::GRUVBOX_DARK,
+            Self::CatppuccinLatte => Palette::CATPPUCCIN_LATTE,
+            Self::CatppuccinFrappe => Palette::CATPPUCCIN_FRAPPE,
+            Self::CatppuccinMacchiato => Palette::CATPPUCCIN_MACCHIATO,
+            Self::CatppuccinMocha => Palette::CATPPUCCIN_MOCHA,
+            Self::TokyoNight => Palette::TOKYO_NIGHT,
+            Self::TokyoNightStorm => Palette::TOKYO_NIGHT_STORM,
+            Self::TokyoNightLight => Palette::TOKYO_NIGHT_LIGHT,
+            Self::KanagawaWave => Palette::KANAGAWA_WAVE,
+            Self::KanagawaDragon => Palette::KANAGAWA_DRAGON,
+            Self::KanagawaLotus => Palette::KANAGAWA_LOTUS,
+            Self::Moonfly => Palette::MOONFLY,
+            Self::Nightfly => Palette::NIGHTFLY,
+            Self::Oxocarbon => Palette::OXOCARBON,
+            Self::Ferra => Palette::FERRA,
+            Self::Custom(custom) => custom.palette,
+        }
+    }
+
+    /// 返回派生色板（weak/strong/text 组合）。
+    pub fn extended_palette(&self) -> &palette::Extended {
+        match self {
+            Self::Light => &palette::EXTENDED_LIGHT,
+            Self::Dark => &palette::EXTENDED_DARK,
+            Self::Dracula => &palette::EXTENDED_DRACULA,
+            Self::Nord => &palette::EXTENDED_NORD,
+            Self::SolarizedLight => &palette::EXTENDED_SOLARIZED_LIGHT,
+            Self::SolarizedDark => &palette::EXTENDED_SOLARIZED_DARK,
+            Self::GruvboxLight => &palette::EXTENDED_GRUVBOX_LIGHT,
+            Self::GruvboxDark => &palette::EXTENDED_GRUVBOX_DARK,
+            Self::CatppuccinLatte => &palette::EXTENDED_CATPPUCCIN_LATTE,
+            Self::CatppuccinFrappe => &palette::EXTENDED_CATPPUCCIN_FRAPPE,
+            Self::CatppuccinMacchiato => &palette::EXTENDED_CATPPUCCIN_MACCHIATO,
+            Self::CatppuccinMocha => &palette::EXTENDED_CATPPUCCIN_MOCHA,
+            Self::TokyoNight => &palette::EXTENDED_TOKYO_NIGHT,
+            Self::TokyoNightStorm => &palette::EXTENDED_TOKYO_NIGHT_STORM,
+            Self::TokyoNightLight => &palette::EXTENDED_TOKYO_NIGHT_LIGHT,
+            Self::KanagawaWave => &palette::EXTENDED_KANAGAWA_WAVE,
+            Self::KanagawaDragon => &palette::EXTENDED_KANAGAWA_DRAGON,
+            Self::KanagawaLotus => &palette::EXTENDED_KANAGAWA_LOTUS,
+            Self::Moonfly => &palette::EXTENDED_MOONFLY,
+            Self::Nightfly => &palette::EXTENDED_NIGHTFLY,
+            Self::Oxocarbon => &palette::EXTENDED_OXOCARBON,
+            Self::Ferra => &palette::EXTENDED_FERRA,
+            Self::Custom(custom) => &custom.extended,
+        }
+    }
+
+    /// 主题名（设置列表与持久化共用）。
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+            Self::Dracula => "Dracula",
+            Self::Nord => "Nord",
+            Self::SolarizedLight => "Solarized Light",
+            Self::SolarizedDark => "Solarized Dark",
+            Self::GruvboxLight => "Gruvbox Light",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::CatppuccinLatte => "Catppuccin Latte",
+            Self::CatppuccinFrappe => "Catppuccin Frappé",
+            Self::CatppuccinMacchiato => "Catppuccin Macchiato",
+            Self::CatppuccinMocha => "Catppuccin Mocha",
+            Self::TokyoNight => "Tokyo Night",
+            Self::TokyoNightStorm => "Tokyo Night Storm",
+            Self::TokyoNightLight => "Tokyo Night Light",
+            Self::KanagawaWave => "Kanagawa Wave",
+            Self::KanagawaDragon => "Kanagawa Dragon",
+            Self::KanagawaLotus => "Kanagawa Lotus",
+            Self::Moonfly => "Moonfly",
+            Self::Nightfly => "Nightfly",
+            Self::Oxocarbon => "Oxocarbon",
+            Self::Ferra => "Ferra",
+            Self::Custom(custom) => &custom.name,
+        }
+    }
+}
+
+impl fmt::Display for Theme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// 自定义主题（名称 + 色板 + 派生色板）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Custom {
+    name: Cow<'static, str>,
+    palette: Palette,
+    extended: palette::Extended,
+}
+
+impl Custom {
+    /// 由色板创建（派生色板按标准公式生成）。
+    pub fn new(name: impl Into<Cow<'static, str>>, palette: Palette) -> Self {
+        Self::with_fn(name, palette, palette::Extended::generate)
+    }
+
+    /// 由色板 + 自定义派生函数创建。
+    pub fn with_fn(
+        name: impl Into<Cow<'static, str>>,
+        palette: Palette,
+        generate: impl FnOnce(Palette) -> palette::Extended,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            palette,
+            extended: generate(palette),
+        }
+    }
+}
+
+impl fmt::Display for Custom {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
 
 /// 高对比度模式全局开关，被 ThemeExt 等 palette 路径使用。
 static HIGH_CONTRAST: AtomicBool = AtomicBool::new(false);
@@ -29,13 +249,12 @@ pub fn is_high_contrast() -> bool {
 
 /// 构建高对比度 Custom Theme。
 ///
-/// 使用 `Theme::Custom` 包装全黑 palette，使 `theme.palette()` /
+/// 使用 `Theme::custom` 包装全黑 palette，使 `theme.palette()` /
 /// `theme.extended_palette()` 调用自动返回黑色系颜色。
-/// Iced 内置 widget（container / text / button 等）无需任何修改即可显示黑底白字。
 pub fn hc_theme() -> Theme {
     Theme::custom(
         HIGH_CONTRAST_DISPLAY,
-        iced_core::theme::palette::Palette {
+        Palette {
             background: Color::BLACK,                // 纯黑底
             text: Color::WHITE,                      // 纯白字
             primary: Color::from_rgb(1.0, 0.8, 0.0), // 黄色强调
@@ -48,7 +267,7 @@ pub fn hc_theme() -> Theme {
 
 /// 高对比度色板 — "用心看世界"，纯黑底黄绿图标
 pub mod hc {
-    use iced_core::Color;
+    use crate::geom::Color;
 
     /// 纯黑底
     pub const BG: Color = Color::BLACK;

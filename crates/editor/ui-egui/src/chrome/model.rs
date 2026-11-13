@@ -1,6 +1,6 @@
 //! 生产状态 → egui 外壳的只读视图模型。
 //!
-//! `lumino-ui-egui` 不能依赖 `lumino-ui`（会引入 iced），因此由生产侧
+//! `lumino-ui-egui` 不能依赖 `lumino-ui`（会引入 旧版），因此由生产侧
 //! （`Root::egui_chrome_model`）把状态填进这里的纯数据类型，egui 只负责绘制。
 //! 这样同一份渲染代码既能被离线场景复用，也能被真实窗口叠加层复用。
 

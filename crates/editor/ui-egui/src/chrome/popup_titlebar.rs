@@ -1,6 +1,6 @@
 //! 对话框窗口的自制标题栏（30px）：拖动区 + 右侧红绿灯。
 //!
-//! 取代 iced `titlebar::view_popup`：对话框内容（各 egui 模块）在
+//! 取代 旧版 `titlebar::view_popup`：对话框内容（各 egui 模块）在
 //! `titlebar == true` 时主动让出顶部 30px，本模块正好填满该区域。
 //! 只有绘制与命中，动作经 [`TitlebarAction`] 回传生产侧。
 
@@ -60,7 +60,7 @@ pub fn show(ui: &mut egui::Ui, model: &PopupTitlebarModel, icons: &mut IconCache
         push_titlebar_action(ui.ctx(), TitlebarAction::Minimize);
     }
 
-    // 其余区域：按下拖动窗口（对话框不做双击最大化，与 iced popup 同行为）。
+    // 其余区域：按下拖动窗口（对话框不做双击最大化，与 旧版 popup 同行为）。
     let drag = Rect::from_min_max(rect.min, egui::pos2(traffic.left(), rect.bottom()));
     if drag.width() > 0.0 {
         let response = ui.interact(

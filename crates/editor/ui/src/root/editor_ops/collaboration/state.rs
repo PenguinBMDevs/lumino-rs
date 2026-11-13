@@ -64,7 +64,7 @@ impl Root {
     pub fn update_remote_cursor(
         &mut self,
         user_id: u64,
-        position: iced_core::Point,
+        position: lumino_ui_core::geom::Point,
         color: [f32; 4],
         username: String,
     ) {

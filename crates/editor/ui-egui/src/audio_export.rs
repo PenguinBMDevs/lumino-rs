@@ -96,7 +96,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<AudioExportAction> {
 
 /// 渲染整块面板（`rect` = 生产里被整块替换的右侧内容区）。
 ///
-/// 面板不透明地覆盖同位置的 iced 内容（工具栏 / 画布 / 状态栏），
+/// 面板不透明地覆盖同位置的 旧版 内容（工具栏 / 画布 / 状态栏），
 /// 因此叠加层会在同一矩形上拦截点击，避免双层同时响应。
 pub fn show_panel(ui: &mut egui::Ui, model: &AudioExportPanelModel) {
     theme::apply(ui.ctx());

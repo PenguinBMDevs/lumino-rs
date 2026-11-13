@@ -1,9 +1,9 @@
 //! 独立小窗口（启动/加载进度、设备检查警告）的 egui 整窗绘制。
 //!
-//! 这两类窗口不是 `DialogType` 对话框，但同样只由 egui 绘制（iced 不再 present），
+//! 这两类窗口不是 `DialogType` 对话框，但同样只由 egui 绘制（旧版 不再 present），
 //! 因此内容必须在这里补齐，否则窗口只剩标题栏。
 //!
-//! 几何取自 iced 生产视图（`root/view/overlays.rs`）：进度窗 30px 内边距、
+//! 几何取自 旧版 生产视图（`root/view/overlays.rs`）：进度窗 30px 内边距、
 //! 三行 24/16/进度条、居中；设备警告窗 24px 内边距、左对齐三段。
 
 use egui::{Align, Layout, Rect, RichText, Vec2};

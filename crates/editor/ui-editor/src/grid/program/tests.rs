@@ -6,9 +6,9 @@
 use super::PianoRollGrid;
 use super::wheel_delta;
 use crate::Editor;
-use iced_core::Point;
 use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor::SCROLL_LINES_SCALE;
+use lumino_ui_core::geom::Point;
 
 #[test]
 fn test_wheel_delta_lines_scale() {

@@ -15,7 +15,7 @@
 //!    `MouseInput` 在触屏上永远不来，不同步则这些收尾逻辑整块是死代码。
 //! 2. **双指 → 缩放 + 平移**：两指距离 → 缩放（与触控板 `PinchGesture` 共用
 //!    `Host::handle_pinch_gesture`）；两指中点位移 → 滚轮像素增量
-//!    （`WheelScrolled{Pixels}`，画布与 iced `scrollable` 都吃这条增量）。
+//!    （`WheelScrolled{Pixels}`，画布与 旧版 `scrollable` 都吃这条增量）。
 //! 3. **手势期消费**：双指期与「双指降单指」期一律消费触摸，不产生指针事件。
 //!    否则第二指先抬起时会被合成成一次左键释放（中途误收尾），随后剩余手指
 //!    的移动又变成拖拽（误拖音符）。
@@ -23,10 +23,10 @@
 //! 子模块：
 //! - `self::long_press` — 长按模拟右键（触屏没有右键按键）
 //!
-//! ⚠️ 这里刻意**不**把原生 `Event::Touch` 一并投给 iced：iced 的 button /
+//! ⚠️ 这里刻意**不**把原生 `Event::Touch` 一并投给 旧版：旧版 的 button /
 //! slider / mouse_area / text_input 等控件同时处理 Mouse 与 Touch 两条分支
 //! （`widget/src/button.rs:301-333`），同时投递会让一次点按触发两次。
-//! 代价是 `iced_widget::scrollable` 的原生触摸拖动被屏蔽，故改用「双指平移
+//! 代价是 滚动视图 的原生触摸拖动被屏蔽，故改用「双指平移
 //! → WheelScrolled」覆盖滚动需求。
 
 mod long_press;
@@ -34,7 +34,7 @@ mod long_press;
 #[cfg(test)]
 mod tests;
 
-use iced_core::{Point, mouse};
+use lumino_ui_core::geom::{Point, mouse};
 use winit;
 
 use crate::host::Host;
@@ -105,7 +105,7 @@ impl Host {
     /// 处理一个 winit 触摸事件（Android/触屏共用的唯一入口）
     ///
     /// 返回 `TouchRouting::Consumed` / `TouchRouting::RightRelease` 时，调用方
-    /// **不得**再走 iced 的通用事件转换管线（前者已由手势层吸收，后者需要
+    /// **不得**再走 旧版 的通用事件转换管线（前者已由手势层吸收，后者需要
     /// 单独补右键释放）。
     pub(super) fn handle_touch(&mut self, touch: &winit::event::Touch) -> TouchRouting {
         let scale = self.window_ctx.window.scale_factor() as f32;
@@ -204,7 +204,7 @@ impl Host {
                 self.touch_long_press_fired = false;
                 self.touch_press_origin = None;
                 self.sync_global_pointer(false);
-                // 纯触屏没有 CursorLeft，抬手后 iced 的 cursor 仍停在落点，
+                // 纯触屏没有 CursorLeft，抬手后 旧版 的 cursor 仍停在落点，
                 // 悬停高亮 / tooltip / 音符 hover 预览会一直挂着 —— 置位由
                 // `process_pending_events` 在下一帧以 Unavailable 重建一次。
                 self.suppress_hover_after_touch = true;
@@ -281,11 +281,7 @@ impl Host {
             .prev_pan_center
             .and_then(|previous| pan_increment(previous, center));
         if let Some((dx, dy)) = pan {
-            self.events
-                .push(iced_core::Event::Mouse(mouse::Event::WheelScrolled {
-                    delta: mouse::ScrollDelta::Pixels { x: dx, y: dy },
-                }));
-            // 画布输入直连：双指平移同样直接驱动编辑器（iced 队列在直连模式下被丢弃）。
+            // 画布输入直连：双指平移直接驱动编辑器（egui 无滚轮事件来源）。
             self.dispatch_canvas_wheel(dx, dy, true);
             self.prev_pan_center = Some(center);
             self.ui_dirty = true;

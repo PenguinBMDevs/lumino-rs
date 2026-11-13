@@ -3,7 +3,7 @@
 //! 由 `right_sidebar.materials.pending_delete` 驱动：全屏 45% 黑遮罩 + 居中卡片
 //! （宽 440、内边距 24、圆角 8）。文案全部由生产侧预格式化，这里只排版与命中。
 //!
-//! 与 iced 原实现（`right_sidebar/material_delete_dialog.rs`）同口径：
+//! 与 旧版 原实现（`right_sidebar/material_delete_dialog.rs`）同口径：
 //! 标题 16 / 素材名 14（主色）/ 危险提示 13（危险色）/ 按钮 `padding[8,24]` 14px。
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect};

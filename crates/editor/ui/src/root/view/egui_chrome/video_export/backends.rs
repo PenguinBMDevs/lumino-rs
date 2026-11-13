@@ -1,6 +1,6 @@
-//! 视频导出面板用到的平台相关常量（原在 iced 视图 `helpers` / `counter_settings_font`）。
+//! 视频导出面板用到的平台相关常量（原在 旧版 视图 `helpers` / `counter_settings_font`）。
 //!
-//! iced 设置视图删除后，这里是唯一来源；`ui-egui` 不依赖 iced，只吃纯数据。
+//! 旧版 设置视图删除后，这里是唯一来源；`ui-egui` 不依赖 旧版，只吃纯数据。
 
 /// 计数器 / 数据曲线可选系统字体族（**数据值**，用于按名查字体路径，不翻译）。
 pub(crate) const SYSTEM_FONT_FAMILIES: [&str; 8] = [

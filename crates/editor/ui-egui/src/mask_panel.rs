@@ -3,7 +3,7 @@
 //! 入口：选中待确认 / 已 Bake 形状 → 右键「遮罩设置…」。面板锚在鼠标右下 12px，
 //! 点面板外关闭。文案由生产侧传入（本 crate 不引 i18n）。
 //!
-//! 与 iced 原实现同口径：面板宽 250（外框 +10 内边距）、行间距 6、标签列 52、
+//! 与 旧版 原实现同口径：面板宽 250（外框 +10 内边距）、行间距 6、标签列 52、
 //! 开关 11px、带宽滑杆 110 + 数值 30。
 
 use egui::{Align, Color32, CornerRadius, Layout, Rect, RichText, Stroke, Vec2};
@@ -113,7 +113,7 @@ pub enum MaskPanelAction {
 
 /// 面板外点击关闭 + 面板本体；返回本帧动作。
 ///
-/// `full` = 窗口逻辑矩形。面板打开期间整窗计入占用（与 iced 的全屏 backdrop
+/// `full` = 窗口逻辑矩形。面板打开期间整窗计入占用（与 旧版 的全屏 backdrop
 /// 同义：点面板外关闭，且不再把这一击传给下层）。
 pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPanelAction> {
     let ctx = ui.ctx().clone();
@@ -254,7 +254,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPan
     if action.is_none() && backdrop.clicked() {
         action = Some(MaskPanelAction::Close);
     }
-    // 面板打开期间整窗占用：iced 不再收到点击（与 iced 全屏 backdrop 同义）。
+    // 面板打开期间整窗占用：旧版 不再收到点击（与 旧版 全屏 backdrop 同义）。
     crate::chrome::menu::extend_blocked(ui.ctx(), [full]);
     action
 }

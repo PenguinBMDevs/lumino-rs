@@ -18,7 +18,7 @@ pub enum SidebarGroup {
 }
 
 impl SidebarGroup {
-    /// 父按钮灯条颜色（iced `GroupId::parent_color`）。
+    /// 父按钮灯条颜色（旧版 `GroupId::parent_color`）。
     pub fn parent_color(self) -> Color32 {
         match self {
             Self::PianoRoll => Color32::from_rgb(0xD9, 0x26, 0x26),
@@ -28,7 +28,7 @@ impl SidebarGroup {
         }
     }
 
-    /// 子按钮灯条颜色（iced `GroupId::child_color`）。
+    /// 子按钮灯条颜色（旧版 `GroupId::child_color`）。
     pub fn child_color(self) -> Color32 {
         match self {
             Self::PianoRoll => Color32::from_rgb(0xA6, 0x59, 0x59),
@@ -48,7 +48,7 @@ pub enum RollBar {
     Vertical,
 }
 
-/// 左侧栏面板内容（与 iced `panel::view` 的路由分支一致）。
+/// 左侧栏面板内容（与 旧版 `panel::view` 的路由分支一致）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SidebarPanel {
     /// 音轨列表 + 添加按钮（`Route::File`）。
@@ -293,7 +293,7 @@ impl Default for SidebarModel {
     }
 }
 
-/// 右侧栏面板（与 iced `RightSidebarPanel` 一一对应）。
+/// 右侧栏面板（与 旧版 `RightSidebarPanel` 一一对应）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RightSidebarPanelKind {
     /// 图片转 MIDI。
@@ -328,7 +328,7 @@ pub struct RightSidebarModel {
     pub top_inset: f32,
     /// 是否正在拖拽调整面板宽度（决定手柄底色）。
     pub resizing: bool,
-    /// 已接管的面板内容；`None` = 内容仍由 iced 绘制（素材库 / 瀑布流）。
+    /// 已接管的面板内容；`None` = 内容仍由 旧版 绘制（素材库 / 瀑布流）。
     pub content: Option<RightSidebarPanelModel>,
     /// 图标列按钮（自上而下）。为空时回退到内置的三项顺序（仅为测试便利）。
     pub rail: Vec<RightSidebarRailItem>,

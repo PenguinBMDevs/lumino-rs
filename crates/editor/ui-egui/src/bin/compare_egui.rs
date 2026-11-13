@@ -1,4 +1,4 @@
-//! 对比 iced 基线与 egui 草稿图，输出统计 JSON 与差异热图。
+//! 对比 legacy 基线与 egui 草稿图，输出统计 JSON 与差异热图。
 
 use std::path::PathBuf;
 
@@ -8,11 +8,11 @@ use image::{Rgba, RgbaImage};
 use lumino_ui_egui::scene::{DPI_SCALES, SceneId, baseline_file_name};
 
 #[derive(Debug, Parser)]
-#[command(name = "compare_egui", about = "对比 iced 与 egui 草稿基线")]
+#[command(name = "compare_egui", about = "对比 legacy 与 egui 草稿基线")]
 struct Args {
-    /// iced 基线目录。
-    #[arg(long, default_value = "tests/ui-baseline/iced")]
-    iced_dir: PathBuf,
+    /// legacy 基线目录。
+    #[arg(long, default_value = "tests/ui-baseline/legacy")]
+    legacy: PathBuf,
     /// egui 草稿目录。
     #[arg(long, default_value = "tests/ui-baseline/egui")]
     egui_dir: PathBuf,
@@ -53,30 +53,30 @@ fn main() -> Result<()> {
     for scene in SceneId::ALL {
         for dpi in DPI_SCALES {
             let name = baseline_file_name(scene, dpi);
-            let iced_path = args.iced_dir.join(&name);
+            let legacy = args.legacy.join(&name);
             let egui_path = args.egui_dir.join(&name);
-            if !iced_path.exists() || !egui_path.exists() {
+            if !legacy.exists() || !egui_path.exists() {
                 missing.push(name);
                 continue;
             }
 
-            let iced = image::open(&iced_path)
-                .with_context(|| format!("读取 iced 基线失败: {}", iced_path.display()))?
+            let legacy = image::open(&legacy)
+                .with_context(|| format!("读取 legacy 基线失败: {}", legacy.display()))?
                 .to_rgba8();
             let egui = image::open(&egui_path)
                 .with_context(|| format!("读取 egui 草稿失败: {}", egui_path.display()))?
                 .to_rgba8();
 
-            if iced.dimensions() != egui.dimensions() {
+            if legacy.dimensions() != egui.dimensions() {
                 bail!(
-                    "{} 尺寸不一致: iced {:?}, egui {:?}",
+                    "{} 尺寸不一致: legacy {:?}, egui {:?}",
                     name,
-                    iced.dimensions(),
+                    legacy.dimensions(),
                     egui.dimensions()
                 );
             }
 
-            let (report, diff) = compare(&scene, dpi, &iced, &egui, args.color_tolerance);
+            let (report, diff) = compare(&scene, dpi, &legacy, &egui, args.color_tolerance);
             let diff_path = args.out_dir.join(format!("{name}.diff.png"));
             image::save_buffer(
                 &diff_path,
@@ -123,11 +123,11 @@ fn main() -> Result<()> {
 fn compare(
     scene: &SceneId,
     dpi: f32,
-    iced: &RgbaImage,
+    legacy: &RgbaImage,
     egui: &RgbaImage,
     tolerance: u8,
 ) -> (Report, RgbaImage) {
-    let (width, height) = iced.dimensions();
+    let (width, height) = legacy.dimensions();
     let total = u64::from(width) * u64::from(height);
     let mut different = 0_u64;
     let mut over = 0_u64;
@@ -135,11 +135,11 @@ fn compare(
     let mut sum_delta = 0_u64;
     let mut diff = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
 
-    for (x, y, pixel_iced) in iced.enumerate_pixels() {
+    for (x, y, pixel_legacy) in legacy.enumerate_pixels() {
         let pixel_egui = egui.get_pixel(x, y);
         let mut pixel_delta = 0_u8;
         for channel in 0..3 {
-            let a = pixel_iced[channel];
+            let a = pixel_legacy[channel];
             let b = pixel_egui[channel];
             let delta = a.abs_diff(b);
             pixel_delta = pixel_delta.max(delta);
@@ -155,7 +155,7 @@ fn compare(
 
         let out = if pixel_delta == 0 {
             Rgba([0, 0, 0, 255])
-        } else if pixel_iced[0] as u16 + pixel_iced[1] as u16 + pixel_iced[2] as u16
+        } else if pixel_legacy[0] as u16 + pixel_legacy[1] as u16 + pixel_legacy[2] as u16
             >= pixel_egui[0] as u16 + pixel_egui[1] as u16 + pixel_egui[2] as u16
         {
             let strength = (pixel_delta.saturating_mul(4)).max(32);

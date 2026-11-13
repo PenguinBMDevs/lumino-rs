@@ -1,7 +1,7 @@
 //! 悬浮绘制工具条：模型构建 + 动作解析。
 //!
 //! `lumino-ui-egui` 只认识纯数据（`ToolPanelModel` 与五个面板模型）和
-//! `ToolbarAction`；这里把生产状态镜像进去，并把点击翻译回与 iced 悬浮条
+//! `ToolbarAction`；这里把生产状态镜像进去，并把点击翻译回与 旧版 悬浮条
 //! **同一批** `toolbar::Event` 构造器。
 
 use lumino_core::{BrushConfig, TextLayoutMode, tr};

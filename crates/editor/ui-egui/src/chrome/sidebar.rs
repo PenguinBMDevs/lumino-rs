@@ -22,7 +22,7 @@ pub use panel_action::{
 /// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。
 pub(crate) const ROUTE_BAR_W: f32 = 48.0;
 
-/// 路由栏条目（与生产 `ROUTES` 语义一一对应，不含 iced 类型）。
+/// 路由栏条目（与生产 `ROUTES` 语义一一对应，不含 旧版 类型）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SidebarRoute {
     /// 钢琴卷帘组父按钮。
@@ -71,7 +71,7 @@ pub fn take_route_action(ctx: &egui::Context) -> Option<SidebarRoute> {
 }
 
 /// 调试开关：`LUMINO_EGUI_DEBUG_RECTS=1` 时把每个路由按钮的矩形打进日志，
-/// 用于和 iced 的命中盒逐项对齐（真机验收不必再靠截图猜坐标）。
+/// 用于和 旧版 的命中盒逐项对齐（真机验收不必再靠截图猜坐标）。
 fn debug_rects() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0"))
@@ -93,8 +93,8 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
     ui.painter().rect_filled(route, 0, theme::route_bar_bg());
 
     // 路由栏由 egui **独占**：绘制 + 点击 + 动作通道（含底部卷帘方向与混音台）。
-    // 因此必须计入占用区，否则同一次点击会同时被 egui 和 iced 各处理一次
-    // （表现为「打开又立刻关闭」，或命中到 iced 的旧偏移坐标）。
+    // 因此必须计入占用区，否则同一次点击会同时被 egui 和 旧版 各处理一次
+    // （表现为「打开又立刻关闭」，或命中到 旧版 的旧偏移坐标）。
     super::menu::extend_blocked(ui.ctx(), [route]);
 
     route_bar(ui, rect, model, icons);
@@ -109,7 +109,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
             SidebarPanel::AddTrackOnly => track_list::show_add_track(ui, panel, model, icons),
             SidebarPanel::Blank => {}
         }
-        // 右侧 6px 缩放手柄：iced 版本会被底层画布纹理盖住，这里由 egui 绘制并接管。
+        // 右侧 6px 缩放手柄：旧版 版本会被底层画布纹理盖住，这里由 egui 绘制并接管。
         let handle = Rect::from_min_size(
             egui::pos2(panel.right(), panel.top()),
             Vec2::new(6.0, panel.height()),
@@ -156,7 +156,7 @@ fn route_bar(
     let left = rect.left();
     let mut y = rect.top();
 
-    // 生产已给出条目表时按表绘制：顺序 / 可见性 / 点亮与 iced 同源，
+    // 生产已给出条目表时按表绘制：顺序 / 可见性 / 点亮与 旧版 同源，
     // 避免两边各自推导导致「看到的图标」与「点得中的按钮」错位。
     if !model.route_items.is_empty() {
         for item in &model.route_items {
@@ -397,7 +397,7 @@ fn route_button(
     active: Option<Color32>,
     route: Option<SidebarRoute>,
 ) {
-    // 路由栏由 egui 不透明绘制，必须同时接管点击：否则 iced 的同位置按钮被盖住，
+    // 路由栏由 egui 不透明绘制，必须同时接管点击：否则 旧版 的同位置按钮被盖住，
     // 或者两边各自命中导致「打开又立刻关闭」。
     let hit = Rect::from_min_size(egui::pos2(left, y), Vec2::new(ROUTE_BAR_W, ROUTE_BTN));
     let response = ui.interact(
@@ -457,7 +457,7 @@ fn route_button(
 /// 右侧栏图标列：48px 宽、按钮 48×48 + 2px 间距、灯条贴右边缘。
 ///
 /// 图标列由 egui **独占**：绘制 + 点击 + 动作通道（`RailClicked`）。
-/// 因此整列计入占用区，否则同一次点击会同时被 egui 与 iced 的旧按钮各处理一次。
+/// 因此整列计入占用区，否则同一次点击会同时被 egui 与 旧版 的旧按钮各处理一次。
 pub fn show_right_model(
     ui: &mut egui::Ui,
     model: &super::RightSidebarModel,
@@ -508,7 +508,7 @@ pub fn show_right_model(
         let y = rect.top() + index as f32 * (RIGHT_BTN + RIGHT_BTN_GAP);
         right_button(ui, icons, icon, left, y, model.active, Some((kind, label)));
     }
-    // 整列占用：点击只给 egui（iced 的同位置按钮不再收到事件）。
+    // 整列占用：点击只给 egui（旧版 的同位置按钮不再收到事件）。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 

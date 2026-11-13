@@ -87,7 +87,7 @@ impl Root {
         model
     }
 
-    /// egui 按钮动作 → 生产消息（与 iced 路径同源）。
+    /// egui 按钮动作 → 生产消息（与 旧版 路径同源）。
     pub fn editor_button_message(&self, action: EditorButtonAction) -> Message {
         match action {
             EditorButtonAction::ShapeConfirm => {

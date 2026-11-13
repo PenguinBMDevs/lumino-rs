@@ -3,7 +3,7 @@
 //! 状态机在 `lumino_ui_core::state::about_egg`（纯几何，逻辑像素）；这里只负责
 //! 按 [`EggModel`] 把 logo 以旋转 + 透明度画到窗口坐标系里。
 //!
-//! iced 版本用的是「固定方盒 + 居中」占位法（`column![space(y), row![space(x), slot]]`）；
+//! 旧版 版本用的是「固定方盒 + 居中」占位法（`column![space(y), row![space(x), slot]]`）；
 //! egui 直接用 painter 在任意位置画旋转网格，不再需要占位控件，也不会捕获鼠标。
 
 use egui::Color32;
@@ -34,7 +34,7 @@ pub fn show(ui: &egui::Ui, full: egui::Rect, model: &EggModel, icons: &mut IconC
     }
     let texture = icons.texture(ui.ctx(), Icon::LogoInApp, model.icon_size, None);
     let size = texture.size_vec2();
-    // 方盒左上角 → 方盒中心（logo 在方盒内居中，与 iced 的 slot 对齐一致）。
+    // 方盒左上角 → 方盒中心（logo 在方盒内居中，与 旧版 的 slot 对齐一致）。
     let center = egui::pos2(
         full.left() + model.x + model.box_size * 0.5,
         full.top() + model.y + model.box_size * 0.5,
@@ -73,5 +73,5 @@ pub fn show(ui: &egui::Ui, full: egui::Rect, model: &EggModel, icons: &mut IconC
     ];
     mesh.indices = vec![0, 1, 2, 0, 2, 3];
     ui.painter().add(egui::Shape::mesh(mesh));
-    // 飞行层不捕获鼠标（与 iced 版「无 mouse_area」一致）。
+    // 飞行层不捕获鼠标（与 旧版 版「无 mouse_area」一致）。
 }

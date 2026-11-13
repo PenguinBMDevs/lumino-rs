@@ -5,11 +5,17 @@
 //!
 //! 模块声明顺序：事件模块在前，message 在后（message 引用事件类型）。
 
+// 允许 crate 内部用 `lumino_ui_core::...` 绝对路径引用自身类型
+// （几何/主题从 旧版 迁出后，跨 crate 与 crate 内共用同一套路径）。
+extern crate self as lumino_ui_core;
+
 /// 应用模式（编辑器/瀑布流）
 pub mod app_mode;
 /// 工具栏按钮描述配置（按钮名 + i18n 解释说明占位）
 pub mod button_descs;
 pub mod color;
+/// 本地几何与颜色类型（替代 `lumino_ui_core::geom::{Point, Size, Rectangle, Color, mouse}`）
+pub mod geom;
 /// 全局 UI 字体入口（UI-001：统一字体绑定 + 自定义字体文件加载）
 pub mod help;
 pub mod message;
@@ -26,7 +32,7 @@ pub mod window_event;
 
 /// Root 持有的子状态类型（视觉/渲染状态；播放/MIDI 连接状态已上移至 lumino-ui::state）
 pub mod visual_state;
-/// 纯函数输入校验（无 iced 依赖）
+/// 纯函数输入校验（无 旧版 依赖）
 pub mod widget;
 /// 窗口状态（Window 结构体）
 pub mod window;
@@ -38,5 +44,5 @@ pub mod constants;
 
 pub use message::Message;
 
-/// 使用 Iced 默认主题（`iced_core` 仍是主题色板的单一来源，迁移在后续卡）。
-pub type Theme = iced_core::Theme;
+/// 应用主题（本地实现，见 [`theme`]）。
+pub use theme::Theme;

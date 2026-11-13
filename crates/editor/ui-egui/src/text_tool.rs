@@ -1,6 +1,6 @@
 //! 文字工具覆盖层（文本框 / 字形预览 / 输入框 / √× 模式按钮）——egui 版。
 //!
-//! 取代 iced `text_tool_box::draw` + `text_input` 覆盖层：
+//! 取代 旧版 `text_tool_box::draw` + `text_input` 覆盖层：
 //! - 文本框：灰色 3px 边框 + 0.78 灰 35% 填充；
 //! - 字形预览：生产侧栅格化成 RGBA（与 √ 生成音符同源），这里上传纹理铺满框；
 //! - 输入框：框顶 28px 单行 `TextEdit`，编辑态自动聚焦；
@@ -13,7 +13,7 @@ use egui::{Color32, CornerRadius, Margin, Rect, Stroke, StrokeKind, TextureOptio
 use crate::icons::{Icon, IconCache};
 use crate::marquee::{FILL, STROKE, STROKE_WIDTH};
 
-/// 按钮边长（与 iced 一致）。
+/// 按钮边长（与 旧版 一致）。
 const BUTTON: f32 = 36.0;
 /// 确认 / 取消底色。
 const CONFIRM_BG: Color32 = Color32::from_rgb(46, 125, 50);
@@ -70,7 +70,7 @@ impl TextToolModel {
         self.rect.width() <= 0.0 || self.rect.height() <= 0.0
     }
 
-    /// 本帧需要从 iced 手里接管的矩形（文本框 + 按钮）。
+    /// 本帧需要从 旧版 手里接管的矩形（文本框 + 按钮）。
     pub fn blocking_rects(&self) -> Vec<Rect> {
         let mut rects = vec![self.rect, self.input_rect];
         for rect in [self.confirm, self.cancel, self.mode].into_iter().flatten() {

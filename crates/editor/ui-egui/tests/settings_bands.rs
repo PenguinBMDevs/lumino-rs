@@ -1,5 +1,5 @@
 //! 设置对话框整窗 band 的像素回归：深色 / 浅色 / 英文三种场景共用同一份
-//! 渲染代码，几何与 iced 基线一致。
+//! 渲染代码，几何与 legacy 基线一致。
 
 mod common;
 
@@ -61,9 +61,9 @@ fn settings_labels(language: Language) -> SettingsLabels {
     }
 }
 
-/// 设置对话框「常规」页整窗：`show_bands` 的输出必须与 iced 基线同几何。
+/// 设置对话框「常规」页整窗：`show_bands` 的输出必须与 legacy 基线同几何。
 #[test]
-fn settings_dialog_bands_match_iced_geometry() {
+fn settings_dialog_bands_match_legacy_geometry() {
     let _guard = gpu_lock();
     const W: u32 = 1200;
     const H: u32 = 800;
@@ -97,9 +97,9 @@ fn settings_dialog_bands_match_iced_geometry() {
         .ancestors()
         .nth(3)
         .expect("测试目录必须有工作区根")
-        .join("tests/ui-baseline/iced/settings_general-dpi100.png");
+        .join("tests/ui-baseline/legacy/settings_general-dpi100.png");
     let baseline = image::open(&path)
-        .expect("读取 iced 基线失败（先运行 capture_iced）")
+        .expect("读取 legacy 基线失败（先运行 capture_egui）")
         .to_rgba8();
 
     // 标题栏 / 内容 / 菜单底色（与场景一致）。
@@ -127,7 +127,7 @@ fn settings_dialog_bands_match_iced_geometry() {
     assert!(ratio < 0.05, "设置对话框整窗差异率过高：{:.4}", ratio);
 }
 
-/// 浅色主题：调色板由生产主题注入后，设置对话框的表面颜色必须与 iced 基线一致。
+/// 浅色主题：调色板由生产主题注入后，设置对话框的表面颜色必须与 legacy 基线一致。
 #[test]
 fn settings_dialog_light_theme_uses_injected_palette() {
     let _guard = gpu_lock();
@@ -137,16 +137,16 @@ fn settings_dialog_light_theme_uses_injected_palette() {
         .ancestors()
         .nth(3)
         .expect("测试目录必须有工作区根")
-        .join("tests/ui-baseline/iced/settings_general_light-dpi100.png");
+        .join("tests/ui-baseline/legacy/settings_general_light-dpi100.png");
     let baseline = image::open(&path)
-        .expect("读取浅色 iced 基线失败（先运行 capture_iced）")
+        .expect("读取浅色 legacy 基线失败（先运行 capture_egui）")
         .to_rgba8();
 
     let sample = |x: u32, y: u32| {
         let p = baseline.get_pixel(x, y).0;
         egui::Color32::from_rgb(p[0], p[1], p[2])
     };
-    // 表面颜色直接取自浅色 iced 基线（标题栏/内容/容器/菜单/卡片）。
+    // 表面颜色直接取自浅色 legacy 基线（标题栏/内容/容器/菜单/卡片）。
     let titlebar = sample(10, 15);
     let background = sample(10, 40);
     let panel = sample(20, 300);
@@ -202,7 +202,7 @@ fn settings_dialog_light_theme_uses_injected_palette() {
         assert_eq!(
             &bands.get_pixel(x, y).0[..3],
             &[expected.r(), expected.g(), expected.b()],
-            "{label}底色与 iced 浅色基线不一致"
+            "{label}底色与 legacy 浅色基线不一致"
         );
     }
 
@@ -215,7 +215,7 @@ fn settings_dialog_light_theme_uses_injected_palette() {
         230,
         [toolbar.r(), toolbar.g(), toolbar.b()],
     );
-    let iced_menu = ink_runs(
+    let legacy = ink_runs(
         &baseline,
         84,
         104,
@@ -223,12 +223,12 @@ fn settings_dialog_light_theme_uses_injected_palette() {
         230,
         [toolbar.r(), toolbar.g(), toolbar.b()],
     );
-    assert_runs_close(&bands_menu, &iced_menu, "浅色设置菜单首行");
+    assert_runs_close(&bands_menu, &legacy, "浅色设置菜单首行");
 }
 
-/// 英文界面：文案全部来自生产 `settings_translations(EnUs)`，几何与英文 iced 基线一致。
+/// 英文界面：文案全部来自生产 `settings_translations(EnUs)`，几何与英文 legacy 基线一致。
 #[test]
-fn settings_dialog_english_labels_match_iced_geometry() {
+fn settings_dialog_english_labels_match_legacy_geometry() {
     let _guard = gpu_lock();
     const W: u32 = 1200;
     const H: u32 = 800;
@@ -236,9 +236,9 @@ fn settings_dialog_english_labels_match_iced_geometry() {
         .ancestors()
         .nth(3)
         .expect("测试目录必须有工作区根")
-        .join("tests/ui-baseline/iced/settings_general_en-dpi100.png");
+        .join("tests/ui-baseline/legacy/settings_general_en-dpi100.png");
     let baseline = image::open(&path)
-        .expect("读取英文 iced 基线失败（先运行 capture_iced）")
+        .expect("读取英文 legacy 基线失败（先运行 capture_egui）")
         .to_rgba8();
 
     let labels = settings_labels(Language::EnUs);
@@ -280,22 +280,22 @@ fn settings_dialog_english_labels_match_iced_geometry() {
 
     // 菜单首行（"General"）：只比较图标右侧的文字区，避免图标栅格差异。
     let bands_menu = ink_runs(&bands, 50, 74, 90, 234, [0x39, 0x40, 0x63]);
-    let iced_menu = ink_runs(&baseline, 50, 74, 90, 234, [0x39, 0x40, 0x63]);
-    assert_runs_close_with(&bands_menu, &iced_menu, 6, "英文设置菜单首行");
+    let legacy = ink_runs(&baseline, 50, 74, 90, 234, [0x39, 0x40, 0x63]);
+    assert_runs_close_with(&bands_menu, &legacy, 6, "英文设置菜单首行");
 
     // 橡皮擦行为行（"Eraser Behavior:" + 下拉文本）。
     let bands_row = ink_runs(&bands, 126, 146, 256, 700, [0x24, 0x28, 0x3B]);
-    let iced_row = ink_runs(&baseline, 126, 146, 256, 700, [0x24, 0x28, 0x3B]);
-    assert_runs_close_with(&bands_row, &iced_row, 6, "英文设置橡皮擦行");
+    let legacy = ink_runs(&baseline, 126, 146, 256, 700, [0x24, 0x28, 0x3B]);
+    assert_runs_close_with(&bands_row, &legacy, 6, "英文设置橡皮擦行");
 
     // 日志行标签（"Log file retention count:"）。
     let bands_log = ink_runs(&bands, 282, 300, 256, 700, [0x24, 0x28, 0x3B]);
-    let iced_log = ink_runs(&baseline, 282, 300, 256, 700, [0x24, 0x28, 0x3B]);
-    assert_runs_close_with(&bands_log, &iced_log, 8, "英文设置日志行");
+    let legacy = ink_runs(&baseline, 282, 300, 256, 700, [0x24, 0x28, 0x3B]);
+    assert_runs_close_with(&bands_log, &legacy, 8, "英文设置日志行");
 }
 
 /// 小窗口（720×540 逻辑点）：10 个菜单项放不下，但菜单必须能由 egui 自己滚，
-/// 不能因为「放不下」把整窗交回 iced（那会削减接管范围）。
+/// 不能因为「放不下」把整窗交回 legacy（那会削减接管范围）。
 #[test]
 fn settings_menu_scrolls_to_last_item_on_small_window() {
     let _guard = gpu_lock();

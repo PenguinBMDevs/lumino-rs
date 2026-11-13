@@ -7,14 +7,14 @@ members = [
     "crates/audio/midi-io", "crates/audio/midi-loader", "crates/audio/midi-model", "crates/audio/midiplayer", "crates/audio/note-core",
     "crates/audio/gpu-synth",
     # editor — UI / 渲染 / 编辑
-    "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings", "crates/editor/ui-parity", "crates/editor/ui-egui",
+    "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings", "crates/editor/ui-egui",
     "crates/editor/arrangement-core", "crates/editor/egui-bridge", "crates/editor/cpu-onion",
-    # 原生 egui 运行时（winit + wgpu + egui，无 iced）——专用分支的迁移目标
+    # 原生 egui 运行时（winit + wgpu + egui）——专用分支的迁移目标
     "crates/editor/ui-runtime",
     # network — 协作 / 云
     "crates/network/cloud", "crates/network/collaboration",
     # tools — 工具 / 导出
-    "crates/tools/export", "crates/tools/extras", "crates/tools/android-probe",
+    "crates/tools/export", "crates/tools/extras",
     # examples — 独立示例（纯 CPU 洋葱皮渲染，不依赖 wgpu）
     "examples/cpu-onionskin",
 ]
@@ -37,34 +37,6 @@ resolver = "3"
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
-# iced 0.14 fork（PenguinBMDevs/iced，分支 lumino-android-0.14）：
-# 基线 = iced-rs/iced 0.14 分支 595af03（与 crates.io 已发布源码逐字节一致），
-# 其上仅 1 个提交，含三处 LUMINO 需要的改动：
-#   1. winit/conversion.rs   —— android 键盘事件转换（winit 的 modifier_supplement
-#      模块对 android 不编译，原实现会让 iced_winit 直接 E0432 编不过）；
-#   2. graphics/text.rs      —— android 显式加载 /system/fonts（fontdb 0.23 对
-#      android 跳过系统字体扫描，不补则中文全豆腐块）；
-#   3. wgpu/{lib,text}.rs    —— 原 vendor/iced_wgpu 的段落强引用钉（菜单栏文字
-#      悬停闪烁修复）+ LUMINO_TEXT_TRACE 诊断。
-# vendor/iced_wgpu 已删除：其 src 与 fork 的 wgpu/src 37 个文件逐字节一致，
-# 等价性已核验，迁移后行为不变。（2026-10-24）
-# 11 个 iced_* crate 必须**同 rev 一起 patch**：iced_winit 等包内部是 path 依赖，
-# 只 patch 单个包会产生 crates.io 与 git 双实例类型分裂（E0308，同 xsynth 教训）。
-# 注：`iced` facade 当前不在依赖图内（2026-11-06 依赖审计移除了根包的直接引用）。
-# 若以后重新引入 facade，必须按同一 rev 补回 `iced = { git = ... }`，
-# 否则 cargo 会报 "patch was not used in the crate graph"。
-# 补丁镜像：docs/iced-fork/0001-android-support.patch（已在 595af03 上 apply --check）
-iced_core = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_debug = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_futures = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_graphics = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_program = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_renderer = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_runtime = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_tiny_skia = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_widget = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_wgpu = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
-iced_winit = { git = "https://github.com/PenguinBMDevs/iced.git", rev = "5f5139389a48e751b8ddfde9353c742624abd321" }
 
 [workspace.package]
 version = "0.2.1"
@@ -97,7 +69,6 @@ lumino-ui = { path = "crates/editor/ui", version = "0.2.1-crates-io-preview1" }
 lumino-ui-core = { path = "crates/editor/ui-core", version = "0.2.1-crates-io-preview1" }
 lumino-ui-settings = { path = "crates/editor/ui-settings", version = "0.2.1-crates-io-preview1" }
 lumino-ui-editor = { path = "crates/editor/ui-editor", version = "0.2.1-crates-io-preview1" }
-lumino-ui-parity = { path = "crates/editor/ui-parity", version = "0.2.1-crates-io-preview1" }
 lumino-ui-egui = { path = "crates/editor/ui-egui", version = "0.2.1-crates-io-preview1", default-features = false }
 lumino-egui-bridge = { path = "crates/editor/egui-bridge", version = "0.2.1-crates-io-preview1" }
 lumino-collaboration = { path = "crates/network/collaboration", version = "0.2.1-crates-io-preview1" }
@@ -120,18 +91,6 @@ aes-gcm = "0.11.0"
 rand = "0.8"
 base64 = "0.22"
 async-trait = "0.1"
-# crates.io
-iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
-iced_core = "0.14.0"
-iced = { version = "0.14.0", features = ["wgpu", "canvas"] }
-iced_wgpu = "0.14.0"
-iced_winit = "0.14.0"
-iced_widget = "0.14.0"
-iced_runtime = "0.14.0"
-# iced 无头截图（视觉基线工具）：0.14.0 的 Simulator 固定以 2x 物理尺寸截图，
-# 因此真正的 DPI 档位由 lumino-ui-parity 的 capture 模块直接驱动 iced_runtime 生成；
-# iced_test 用于无头交互单测与 2x 交叉校验。
-iced_test = "0.14.0"
 # ── egui UI 层（草稿 / 重构）──
 # egui 0.37 需要 wgpu 30；当前主程序仍是 wgpu 27。两者只在 Cargo 层共存，
 # 运行期由独立 example 使用 wgpu 30，重构阶段再通过桥接收口。
@@ -199,7 +158,6 @@ ab_glyph = "0.2"
 # 字体枚举与字形覆盖（note-core 使用）；cosmic-text 既有依赖，feature 在此收口
 fontdb = { version = "0.23", features = ["fs", "memmap"] }
 # ── UI 基础设施 ──
-iced_aw = { version = "0.13.0", features = ["menu", "drop_down"] }
 image = "0.25"
 once_cell = "1.20"
 resvg = "0.44"
@@ -296,7 +254,7 @@ lumino-cloud = { workspace = true }
 # crates.io
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-# 诊断桥：把依赖（iced_wgpu/iced 等）的 `log` 记录接入 tracing（受 RUST_LOG 控制）
+# 诊断桥：把依赖的 `log` 记录接入 tracing（受 RUST_LOG 控制）
 tracing-log = "0.2"
 # 直接依赖 log：启动打点与 logcat 转发都用它，且桌面分支也要能编译。
 log = { workspace = true }
@@ -311,7 +269,6 @@ toml = { workspace = true }
 lumino-platform = { workspace = true }
 midly = { workspace = true }
 tokio = { workspace = true }
-iced_core = { workspace = true }
 puffin = { workspace = true }
 puffin_http = { workspace = true }
 png = { workspace = true }
@@ -334,9 +291,8 @@ muda = { workspace = true }
 
 [package.metadata.cargo-machete]
 # 白名单（工具误报，均有明确理由）：
-# - iced_renderer：特性钉，见 [dev-dependencies] 注释（release 下缺渲染器特性会 compile_error）
 # - embed-resource：仅在 build.rs 使用，machete 默认不分析 build 脚本
-ignored = ["iced_renderer", "embed-resource"]
+ignored = ["embed-resource"]
 
 [package.metadata.deb]
 # maintainer = "PenguinBMDevs"
@@ -396,10 +352,6 @@ strip = true
 embed-resource = { workspace = true }
 
 [dev-dependencies]
-# 特性钉：iced_renderer 在 release/bench profile 下未启用 wgpu/tiny-skia 会
-# 直接 compile_error（iced/renderer/src/lib.rs），显式带上 workspace 特性。
-iced_renderer = { workspace = true }
-iced_core = { workspace = true }
 wgpu = { workspace = true }
 chrono = { workspace = true }
 # 剪贴板探测示例 (examples/domino_clipboard_probe.rs) 依赖

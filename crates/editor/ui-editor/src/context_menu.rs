@@ -2,11 +2,11 @@
 //!
 //! 视图已迁到 egui（`lumino-ui-egui::piano_roll_context_menu`）：
 //! 条目集与 tooltip 文案由 `lumino_message::context_menu` 单一来源提供，
-//! iced 侧只保留「是否打开 / 打开位置 / 作用目标」的状态，输入仍由
-//! iced Canvas program 产生（`Message::PianoRollContextMenu(Open)`）。
+//! 旧版 侧只保留「是否打开 / 打开位置 / 作用目标」的状态，输入仍由
+//! 旧版 Canvas program 产生（`Message::PianoRollContextMenu(Open)`）。
 
-use iced_core::Point;
 use lumino_message::ContextMenuTarget;
+use lumino_ui_core::geom::Point;
 
 /// 钢琴卷帘右键菜单状态
 #[derive(Debug, Clone, Default)]

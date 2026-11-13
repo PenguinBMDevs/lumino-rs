@@ -49,13 +49,15 @@ impl Editor {
                 // 与 Ctrl+滚轮缩放语义一致。否则窗口通道漏判时 Ctrl+拖动
                 // 会错误走成「移动」而非「复制」，副本既不入内存也不显示。
                 self.set_ctrl_pressed(ctrl || self.ctrl_pressed());
-                self.handle_pressed(iced_core::Point::new(pos.x, pos.y), shift)
+                self.handle_pressed(lumino_ui_core::geom::Point::new(pos.x, pos.y), shift)
             }
-            EditorAction::Moved(pos) => self.handle_moved(iced_core::Point::new(pos.x, pos.y)),
+            EditorAction::Moved(pos) => {
+                self.handle_moved(lumino_ui_core::geom::Point::new(pos.x, pos.y))
+            }
             EditorAction::Released => self.handle_released(),
             EditorAction::Scrolled { delta_x, delta_y } => self.handle_scrolled(delta_x, delta_y),
             EditorAction::DoubleClicked(pos) => {
-                self.handle_double_clicked(iced_core::Point::new(pos.x, pos.y))
+                self.handle_double_clicked(lumino_ui_core::geom::Point::new(pos.x, pos.y))
             }
             EditorAction::EscapePressed => self.handle_escape_pressed(),
             EditorAction::DeletePressed => self.handle_delete_pressed(),
@@ -110,7 +112,7 @@ impl Editor {
                 self.set_selected_anchor_bend(bend);
             }
             EditorAction::AreaPaintAt { pos, clear } => {
-                let point = iced_core::Point::new(pos.x, pos.y);
+                let point = lumino_ui_core::geom::Point::new(pos.x, pos.y);
                 let colour = if clear {
                     0
                 } else {
@@ -194,7 +196,7 @@ impl Editor {
 
         // 以平滑滚动的「当前目标」为基准叠加 delta，而非以 scroll_x/scroll_y 的瞬时值为基准。
         // 原因：触控板斜向滑动时，Windows/winit 会把双指手势拆成两条独立事件
-        // （WM_MOUSEWHEEL 仅带 y、WM_MOUSEHWHEEL 仅带 x），iced 各自转为一条 WheelScrolled。
+        // （WM_MOUSEWHEEL 仅带 y、WM_MOUSEHWHEEL 仅带 x），旧版 各自转为一条 WheelScrolled。
         // 若以瞬时值 scroll_x/scroll_y 为基准，第二条事件会把第一条设好的轴重置回当前位置，
         // 导致斜向滚动退化为单轴。以目标为基准可让两条事件正确累积为对角线滚动。
         let base_x = if v.smooth_scroll.active {
@@ -213,7 +215,7 @@ impl Editor {
     }
 
     /// 处理双击事件
-    pub(crate) fn handle_double_clicked(&mut self, pos: iced_core::Point) {
+    pub(crate) fn handle_double_clicked(&mut self, pos: lumino_ui_core::geom::Point) {
         // 020 编辑图形：双击任意位置退出编辑态（单击不退出，避免拖动落空时丢状态）。
         if self.is_shape_edit_armed() {
             self.exit_shape_edit();

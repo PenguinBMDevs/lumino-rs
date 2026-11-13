@@ -1,6 +1,6 @@
 //! 设置对话框草稿：左侧菜单 + 右侧表单。
 //!
-//! 布局对齐生产 iced `ui-settings`：
+//! 布局对齐生产 旧版 `ui-settings`：
 //! - 内容区外边距 16，菜单 200 宽、卡片自适应，菜单与卡片间距 16；
 //! - 菜单项行距 52，选中项只改文字颜色（无底色）；
 //! - 卡片内边距 20，标题 18px，表单行距 72；
@@ -213,7 +213,7 @@ fn content(ui: &mut egui::Ui, state: &mut SettingsState, palette: &SettingsPalet
         inner.min,
         egui::pos2(inner.right(), confirm_rect.top() - BUTTON_GAP),
     );
-    // 生产 iced：容器自身 PANEL_BG、内边距 20，菜单与卡片都在内边距之内。
+    // 生产 旧版：容器自身 PANEL_BG、内边距 20，菜单与卡片都在内边距之内。
     const CONTAINER_PAD: f32 = 20.0;
     let inner_container = container.shrink(CONTAINER_PAD);
     let menu_rect = Rect::from_min_size(
@@ -279,7 +279,7 @@ fn menu(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
     }
 
     // 放不下时才是真滚动列表：叠加层已把滚轮同步给 egui，能滚到最后一项，
-    // 因此不必再把整窗交回 iced（不削减任何菜单项）。
+    // 因此不必再把整窗交回 旧版（不削减任何菜单项）。
     style_scroll(&mut child);
     egui::ScrollArea::vertical()
         .id_salt("settings-menu-scroll")
@@ -315,7 +315,7 @@ fn menu_row(
         action::push_action(ui.ctx(), SettingsAction::MenuSelected(index));
     }
 
-    // 生产 iced：菜单容器内边距 8 + 菜单项水平内边距 16 → 内容起点 +24；
+    // 生产 旧版：菜单容器内边距 8 + 菜单项水平内边距 16 → 内容起点 +24；
     // 图标容器 24 宽（图标 18 居中）、间距 8、箭头 12px 右对齐（右内边距 24）。
     let content_left = rect.left() + 26.0;
     let icon_rect = Rect::from_center_size(
@@ -372,9 +372,9 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
     }
 }
 
-/// 统一滚动条口径：8px 宽、贴边、非浮动（对齐 iced `scrollable`）。
+/// 统一滚动条口径：8px 宽、贴边、非浮动（对齐 旧版 `scrollable`）。
 ///
-/// 浅色主题下 egui 默认用正文色画滑块（纯黑），与 iced 的
+/// 浅色主题下 egui 默认用正文色画滑块（纯黑），与 旧版 的
 /// `background.strong` 滑块不一致；这里按色板改成浅灰。深色主题保持
 /// 历史口径（像素基线依赖它）。
 fn style_scroll(ui: &mut egui::Ui) {

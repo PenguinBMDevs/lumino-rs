@@ -1,6 +1,6 @@
-//! 系统原生标题栏模式的菜单栏 band（egui 接管 iced 菜单）无头测试。
+//! 系统原生标题栏模式的菜单栏 band（egui 接管 旧版 菜单）无头测试。
 //!
-//! 几何对齐 iced `menu::view_placeholder`：菜单从 x=0 开始、标签高 30、
+//! 几何对齐 旧版 `menu::view_placeholder`：菜单从 x=0 开始、标签高 30、
 //! 每个标签宽 = 文本宽 + 17（左右内边距 8+8 + 1px 间距），没有 logo /
 //! 窗口控制 / 拖动区。交互与自绘标题栏共用同一套 `menu` 状态机。
 
@@ -169,7 +169,7 @@ fn hover_switch_then_click_keeps_menu_open() {
     click(&mut harness, labels[1].center());
     assert_eq!(chrome::menu::open_index(&harness.ctx), Some(1));
 
-    // 指针移到「文件」：与 iced 一致，展开的菜单跟随悬停切换。
+    // 指针移到「文件」：与 旧版 一致，展开的菜单跟随悬停切换。
     harness
         .input_mut()
         .events

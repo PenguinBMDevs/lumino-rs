@@ -1,6 +1,6 @@
 //! 曲线工具预览（路径 / 锚点 / 控制柄）——egui 版。
 //!
-//! 取代 iced `line_tool_box::draw` 的可见部分：
+//! 取代 旧版 `line_tool_box::draw` 的可见部分：
 //! - 曲线段：固定 1.5px 引导线（贝塞尔；Corner 锚点退化为直线）；
 //! - 描边产物：`path_outline_blocks`（与 √ 写入同源）逐块实心矩形；
 //! - 锚点：半径 6 实心圆 + 白描边 2px，选中锚点外加 1 圈；
@@ -10,7 +10,7 @@ use egui::{Color32, Pos2, Rect, Stroke};
 
 use crate::theme;
 
-/// 锚点半径（与 iced 一致）。
+/// 锚点半径（与 旧版 一致）。
 const ANCHOR_RADIUS: f32 = 6.0;
 /// 锚点白描边宽度。
 const ANCHOR_STROKE: f32 = 2.0;

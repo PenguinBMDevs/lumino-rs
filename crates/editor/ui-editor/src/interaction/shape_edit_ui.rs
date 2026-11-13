@@ -6,13 +6,13 @@
 //! 041C 阶段 3：目标既可以是已 Bake 的 DrawnShape（走 `edit_shape`），
 //! 也可以是单支 `PendingComposed`（只改 pending model + 预览音符）。
 
-#[cfg(test)]
-use iced_core::Point;
 use lumino_core::shape::{ShapeModel, ShapeOp};
 #[cfg(test)]
 use lumino_editor_state::editor_state::box_handles;
 use lumino_editor_state::editor_state::{HandleKind, Mods, Zoom, apply_drag, hit_test_box};
 use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, ShapeNote};
+#[cfg(test)]
+use lumino_ui_core::geom::Point;
 
 use crate::Editor;
 

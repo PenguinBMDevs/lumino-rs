@@ -1,6 +1,6 @@
 //! 视频导出「计数器」设置分区（模板 / 字体 / 外观 / CSV / 补零宽度）。
 //!
-//! 对应 iced `view/video_export_dialog/counter_settings.rs` +
+//! 对应 旧版 `view/video_export_dialog/counter_settings.rs` +
 //! `counter_settings_font.rs`；控件全部由 `VideoRow` 描述，生产侧只提供数据。
 
 use lumino_core::tr;
@@ -70,7 +70,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         gap(6.0),
     ];
 
-    // 字体来源分支（与 iced 同：系统字体 / 自定义字体 / 内置点阵提示）。
+    // 字体来源分支（与 旧版 同：系统字体 / 自定义字体 / 内置点阵提示）。
     match state.counter_font_mode.as_str() {
         "系统字体" => rows.push(pick(
             tr!("字体:"),

@@ -6,7 +6,7 @@
 //! - 缩放锚点为鼠标指针在视口内的相对位置（0.0 贴左/上，1.0 贴右/下），
 //!   缩放后指针下的音乐坐标（tick/音轨）保持不动。
 
-use iced_core::mouse::ScrollDelta;
+use lumino_ui_core::geom::mouse::ScrollDelta;
 
 /// 滚轮缩放步进系数：每滚动一个刻度（line），缩放倍率变化 10%
 pub const ZOOM_WHEEL_STEP: f32 = 0.1;

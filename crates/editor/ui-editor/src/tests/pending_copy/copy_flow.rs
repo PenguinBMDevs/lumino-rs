@@ -29,7 +29,12 @@ fn test_build_ghost_delta_positions_move_without_pending() {
     let origin_x = editor.editor_state.view.tick_to_x(300.0);
     let origin_y = editor.editor_state.view.key_to_y(60) + editor.editor_state.view.zoom_y / 2.0;
     editor.set_ctrl_pressed(false);
-    editor.handle_tool_pressed(iced_core::Point::new(origin_x, origin_y), false, 300.0, 60);
+    editor.handle_tool_pressed(
+        lumino_ui_core::geom::Point::new(origin_x, origin_y),
+        false,
+        300.0,
+        60,
+    );
     assert!(
         matches!(
             editor.editor_state.interaction.edit_state,
@@ -41,7 +46,7 @@ fn test_build_ghost_delta_positions_move_without_pending() {
 
     // 拖动 +50 tick：300 → 350
     let moved_x = editor.editor_state.view.tick_to_x(350.0);
-    editor.handle_moved(iced_core::Point::new(moved_x, origin_y));
+    editor.handle_moved(lumino_ui_core::geom::Point::new(moved_x, origin_y));
 
     // ghost 增量：两个被拖动音符都应返回 ghost 位置（原件 50，附件 650）
     let visible = vec![0usize, 1];
@@ -117,7 +122,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     let moved_x_alt = editor.editor_state.view.tick_to_x(440.0);
     editor.set_ctrl_pressed(true);
     editor.handle_tool_pressed(
-        iced_core::Point::new(copy_center_x, copy_center_y),
+        lumino_ui_core::geom::Point::new(copy_center_x, copy_center_y),
         false,
         340.0,
         60,
@@ -134,7 +139,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
 
     // 拖动 +50 tick：340 → 390，副本2 从副本1 位置继续偏移
-    editor.handle_moved(iced_core::Point::new(moved_x, copy_center_y));
+    editor.handle_moved(lumino_ui_core::geom::Point::new(moved_x, copy_center_y));
 
     // 渲染验证：原件(0) + 旧副本(100) + 新副本(150) 三份并存
     let mut visible: Vec<(f32, u16, f32)> = Vec::new();
@@ -170,7 +175,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     // 原件位置不再命中任何框（原件不保留框选）；
     // 原件独有区域 tick 50（原件 [0,480]，副本 [150,630]，重叠区 150-480）
     assert_eq!(
-        editor.hit_test_selection_box(iced_core::Point::new(
+        editor.hit_test_selection_box(lumino_ui_core::geom::Point::new(
             v.tick_to_x(50.0),
             v.key_to_y(60) + v.zoom_y / 2.0
         )),
@@ -180,7 +185,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
 
     // 连续第三次：Ctrl+拖动副本2 框（tick 150 中心 → 390）→ 从副本2 继续复制
     editor.handle_tool_pressed(
-        iced_core::Point::new(copy2_center_x, copy_center_y),
+        lumino_ui_core::geom::Point::new(copy2_center_x, copy_center_y),
         false,
         390.0,
         60,
@@ -193,7 +198,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
         "Ctrl+拖动副本2 框应继续复制下一份，实际 {:?}",
         editor.editor_state.interaction.edit_state
     );
-    editor.handle_moved(iced_core::Point::new(moved_x_alt, copy_center_y));
+    editor.handle_moved(lumino_ui_core::geom::Point::new(moved_x_alt, copy_center_y));
     editor.handle_released();
     assert!(editor.pending_copy_drag_state.is_none());
     assert_eq!(

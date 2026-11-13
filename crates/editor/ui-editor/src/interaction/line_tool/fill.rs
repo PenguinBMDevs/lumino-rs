@@ -16,8 +16,8 @@
 
 use super::geom;
 use crate::Editor;
-use iced_core::Point;
 use lumino_editor_state::LinePath;
+use lumino_ui_core::geom::Point;
 use std::collections::HashSet;
 
 /// 渲染层闭环组装（assemble_loops、loop_contains_point）

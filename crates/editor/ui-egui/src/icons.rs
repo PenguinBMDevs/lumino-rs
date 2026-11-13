@@ -1,7 +1,7 @@
 //! 真实 SVG 图标加载与纹理缓存。
 //!
 //! 图标字节与生产 `lumino-ui-core::resources::icon` 同源（`resources/icons/**`）。
-//! 暗色主题下，非品牌图标按 iced `Svg::style(color)` 的语义整体染白；
+//! 暗色主题下，非品牌图标按 旧版 `Svg::style(color)` 的语义整体染白；
 //! 品牌图标（Lumino / LogoInApp / MixerActive）保留原色。
 
 use std::collections::HashMap;
@@ -142,7 +142,7 @@ impl Icon {
 
     /// 当前主题下的默认染色。
     ///
-    /// 与 iced 同规则：深色主题整体染白（覆盖 SVG 内硬编码的黑色），浅色主题
+    /// 与 旧版 同规则：深色主题整体染白（覆盖 SVG 内硬编码的黑色），浅色主题
     /// 保持黑色原色。品牌 / 固定色图标不染色。
     pub fn default_tint(self) -> Option<Color32> {
         if self.keep_color() {

@@ -1,25 +1,25 @@
-//! winit ↔ iced 的最小转换（脱离 `iced_winit` 依赖）。
+//! winit 坐标与光标图标的最小转换。
 //!
 //! 只保留仍在使用的两条：
 //! - 物理坐标 → 逻辑坐标（`CursorMoved` / `Touch`）；
-//! - iced 的 `mouse::Interaction` → winit 光标图标（画布光标反馈）。
+//! - 旧版 的 `mouse::Interaction` → winit 光标图标（画布光标反馈）。
 //!
-//! 映射表与 iced 0.14 `winit/src/conversion.rs` 逐项一致，避免图标语义漂移。
+//! 映射表与 旧版 0.14 `winit/src/conversion.rs` 逐项一致，避免图标语义漂移。
 
-use iced_core::mouse::Interaction;
+use lumino_ui_core::geom::mouse::Interaction;
 
-/// 物理坐标 → 逻辑坐标（与 `iced_winit::conversion::cursor_position` 同公式）。
+/// 物理坐标 → 逻辑坐标。
 pub(crate) fn cursor_position(
     position: winit::dpi::PhysicalPosition<f64>,
     scale: f32,
-) -> iced_core::Point {
-    iced_core::Point::new(
+) -> lumino_ui_core::geom::Point {
+    lumino_ui_core::geom::Point::new(
         (position.x / f64::from(scale)) as f32,
         (position.y / f64::from(scale)) as f32,
     )
 }
 
-/// iced 鼠标交互 → winit 光标图标（`None` = 隐藏光标）。
+/// 旧版 鼠标交互 → winit 光标图标（`None` = 隐藏光标）。
 pub(crate) fn mouse_interaction(interaction: Interaction) -> Option<winit::window::CursorIcon> {
     use winit::window::CursorIcon;
 

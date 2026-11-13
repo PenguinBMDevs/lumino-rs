@@ -212,7 +212,7 @@ impl Host {
             self.dispatch_overlay_message(message);
         }
         if !actions.shape_canvas.is_empty() {
-            // 画布动作直接改文档（与 iced Canvas 同一套逻辑），不走消息队列。
+            // 画布动作直接改文档（与 旧版 Canvas 同一套逻辑），不走消息队列。
             let size = self.render_ctx.viewport.logical_size();
             let panel = self.root.state.shape_drawer.panel_width + SPLITTER_W;
             let top = if self.root.settings.synth.use_native_titlebar {

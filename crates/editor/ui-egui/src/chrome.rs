@@ -88,7 +88,7 @@ impl ChromeState {
     pub fn piano_roll_skeleton() -> Self {
         Self {
             piano_roll: piano_roll::PianoRollView {
-                // iced PianoRollSkeleton：zoom_x=0.05、滚动到第 9 小节。
+                // 旧版 PianoRollSkeleton：zoom_x=0.05、滚动到第 9 小节。
                 zoom_x: 0.05,
                 scroll_x: 8.0 * 384.0,
                 ..Default::default()
@@ -125,7 +125,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
         .frame(panel_frame(theme::panel_bg()))
         .show(ui, |ui| sidebar::show(ui, state));
 
-    // 生产 iced 结构：`column![toolbar, row![editor, right_bar]]`——
+    // 生产 旧版 结构：`column![toolbar, row![editor, right_bar]]`——
     // 工具栏横跨「编辑区 + 右侧栏」，右侧栏从工具栏下沿开始。
     Panel::top("lumino-toolbar")
         .exact_size(layout::TOOLBAR_H)
@@ -156,8 +156,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
 
 /// 只渲染标题栏与状态栏（真实窗口叠加层用）。
 ///
-/// 其余区域不绘制任何东西，保持下层 iced 画面可见；两条 band 用不透明底色
-/// 完全覆盖同位置的 iced 版本，避免文字重影。标题栏为 `None`（系统原生
+/// 其余区域不绘制任何东西，保持下层 旧版 画面可见；两条 band 用不透明底色
+/// 完全覆盖同位置的 旧版 版本，避免文字重影。标题栏为 `None`（系统原生
 /// 标题栏）时跳过顶部 band。
 /// 记录本帧真实窗口逻辑尺寸（由宿主提供）。
 ///
@@ -283,7 +283,7 @@ fn video_timeline(
 
 /// 时间轴是否由 egui 接管。
 ///
-/// **默认开启**：iced 侧的 `TimelineCanvas` 已删除（面板里只剩同尺寸占位），
+/// **默认开启**：旧版 侧的 `TimelineCanvas` 已删除（面板里只剩同尺寸占位），
 /// 关闭开关只会得到空白区域；`LUMINO_EGUI_CLIP_TIMELINE=0` 仅用于对照排查。
 fn video_timeline_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -315,7 +315,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     crate::fonts::install(ui.ctx());
 
     // `egui_kittest`（以及部分宿主）给到的 Ui 带 8px 外缩进；Panel 需要铺满视口，
-    // 否则 band 会整体内缩、与 iced 原位置错开。生产接线时根 Ui 本就是全屏，
+    // 否则 band 会整体内缩、与 旧版 原位置错开。生产接线时根 Ui 本就是全屏，
     // 这里重建等价于无操作。
     let full = ui.ctx().viewport_rect();
     let mut root = ui.new_child(
@@ -336,11 +336,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         );
     }
 
-    // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 iced 点击）。
+    // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 旧版 点击）。
     menu::clear_blocked(ui.ctx());
 
-    // 走带标尺：`LUMINO_EGUI_ARRANGEMENT=1` 时由 egui 绘制（默认关闭，先与 iced 并存）。
-    // 几何与 iced `view_arrangement` 同源：内容区左缘 = 左侧栏宽，顶部 = 标题栏 + 工具栏，
+    // 走带标尺：`LUMINO_EGUI_ARRANGEMENT=1` 时由 egui 绘制（默认关闭，先与 旧版 并存）。
+    // 几何与 旧版 `view_arrangement` 同源：内容区左缘 = 左侧栏宽，顶部 = 标题栏 + 工具栏，
     // 标尺再让出 160px 音轨列与 20px 垂直滚动条。
     if arrangement_enabled()
         && let Some(arrangement) = arrangement_model(ui.ctx())
@@ -355,7 +355,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         crate::renderer_panel::show(&root, &panel);
     }
 
-    // 视频剪辑时间轴（渲染器入口面板内）：先默认关闭，仅做与 iced 的像素对照。
+    // 视频剪辑时间轴（渲染器入口面板内）：先默认关闭，仅做与 旧版 的像素对照。
     if video_timeline_enabled()
         && let Some((rect, timeline)) = video_timeline(ui.ctx())
     {
@@ -373,7 +373,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             push_video_timeline_action(ui.ctx(), action);
         }
         crate::video_clip_timeline::show(&root, rect, &timeline);
-        // 时间轴由 egui 接管输入：整块占用，避免 iced 的同位画布再处理一次。
+        // 时间轴由 egui 接管输入：整块占用，避免 旧版 的同位画布再处理一次。
         menu::extend_blocked(ui.ctx(), [rect]);
         for action in crate::video_clip_timeline::interact(&root, rect, &timeline) {
             push_video_timeline_action(ui.ctx(), action);
@@ -480,7 +480,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
 
     // 工具栏 band：从左侧栏右边缘开始，铺满剩余宽度（生产 `row![sidebar,
     // column![toolbar, ...]]`），不覆盖左侧栏。顶部偏移跟随标题栏 band：
-    // macOS 原生标题栏模式没有 30px 菜单栏行（iced 主内容直接从工具栏开始）。
+    // macOS 原生标题栏模式没有 30px 菜单栏行（旧版 主内容直接从工具栏开始）。
     if let Some(toolbar) = &model.toolbar {
         let full = window_rect(&root);
         let inset = toolbar.left_inset.max(0.0).min(full.width());
@@ -501,10 +501,10 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             toolbar::show_model(&mut child, toolbar, icons);
-            // 工具栏由 egui 独占：整块计入占用区，否则同一次点击会先被 iced 的
-            // 按钮处理（例如 iced Play 启动播放），再被 egui 处理（此时
+            // 工具栏由 egui 独占：整块计入占用区，否则同一次点击会先被 旧版 的
+            // 按钮处理（例如 旧版 Play 启动播放），再被 egui 处理（此时
             // `playing` 已变 true → 发 Pause），表现为「点播放先响一下又停」。
-            // 底部 `TOOLBAR_RESIZE_H` 条仍留给 iced（工具栏高度拖拽尚未迁移）。
+            // 底部 `TOOLBAR_RESIZE_H` 条仍留给 旧版（工具栏高度拖拽尚未迁移）。
             let blocked = egui::Rect::from_min_max(
                 band.min,
                 egui::pos2(
@@ -546,7 +546,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
 
     // 右侧栏 band：生产布局是 `column![toolbar, row![editor, right_bar]]`，
     // 因此图标列从标题栏 + 工具栏下沿开始、到状态栏上沿结束。面板可见且内容
-    // 已由 egui 接管时，band 扩到「面板宽 + 48」，覆盖 iced 的同位置内容。
+    // 已由 egui 接管时，band 扩到「面板宽 + 48」，覆盖 旧版 的同位置内容。
     if let Some(right) = &model.right_sidebar {
         let full = window_rect(&root);
         let top = (full.top() + right.top_inset).max(full.top());
@@ -568,7 +568,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         if band.width() > 0.0 && band.height() > 0.0 {
             if let Some(content) = content {
                 // 手柄 6px（生产 `RESIZE_HANDLE_WIDTH`）留在左侧，不进入占用列表：
-                // iced 仍负责缩放拖拽，只有内容区改由 egui 处理。
+                // 旧版 仍负责缩放拖拽，只有内容区改由 egui 处理。
                 let handle = egui::Rect::from_min_max(
                     band.min,
                     egui::pos2((band.left() + 6.0).min(band.right()), band.bottom()),
@@ -637,7 +637,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
 
     // 右下角浮层：Toast 通知 + 首次使用帮助提示。
-    // iced 侧视图（`toast::view` / `view/help_tip.rs`）已删除，这里独占绘制。
+    // 旧版 侧视图（`toast::view` / `view/help_tip.rs`）已删除，这里独占绘制。
     let full_window = window_rect(&root);
     if let Some(toast) = toast_model(ui.ctx()) {
         crate::chrome::toast::show_toasts(&root, full_window, &toast);
@@ -653,7 +653,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
-    // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 iced 面板）。
+    // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 旧版 面板）。
     if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
         crate::mixer::show(&root, &layout, &mixer);
         menu::extend_blocked(ui.ctx(), [layout.panel]);
@@ -671,7 +671,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）：画在所有 band 之后、
-    // 浮层之前——内容区在 band 中央，但必须盖住其下的 iced 占位。
+    // 浮层之前——内容区在 band 中央，但必须盖住其下的 旧版 占位。
     if let Some(preview) = video_preview(ui.ctx()) {
         crate::video_preview::show(&root, &preview);
     }
@@ -718,7 +718,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 框选框（拖拽中 / 选中音符包围盒）：由 egui 绘制，
-    // iced Canvas 的绘制层被底层纹理覆盖后不可见。
+    // 旧版 Canvas 的绘制层被底层纹理覆盖后不可见。
     if let Some(marquee) = marquee_model(ui.ctx()) {
         crate::marquee::show(&root, &marquee);
     }
@@ -759,7 +759,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 钢琴卷帘右键菜单：最顶层（盖住卷帘与工具弹层）。
-    // 打开期间整块画布加入占用矩形：与 iced 旧 `background_close_overlay` 同语义，
+    // 打开期间整块画布加入占用矩形：与 旧版 旧 `background_close_overlay` 同语义，
     // 关闭用的那一次点击不会同时落到画布上。
     if let Some(menu) = piano_roll_menu(ui.ctx()) {
         if let Some(action) = crate::piano_roll_context_menu::show(&root, &menu, icons) {
@@ -778,10 +778,10 @@ pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
 }
 
 /// 走带视图是否已由 egui 接管（`LUMINO_EGUI_ARRANGEMENT=1`；默认关闭）。
-/// 走带视图是否由 egui 接管（**默认开启**；`LUMINO_EGUI_ARRANGEMENT=0` 回退 iced）。
+/// 走带视图是否由 egui 接管（**默认开启**；`LUMINO_EGUI_ARRANGEMENT=0` 回退 旧版）。
 ///
-/// 实测：egui 的泳道点击落点与指针一致，而 iced 的 click canvas 存在
-/// canvas 偏移量级（≈208 逻辑像素）的既有偏差；标尺/轨道列在 iced 侧完全不绘制内容。
+/// 实测：egui 的泳道点击落点与指针一致，而 旧版 的 click canvas 存在
+/// canvas 偏移量级（≈208 逻辑像素）的既有偏差；标尺/轨道列在 旧版 侧完全不绘制内容。
 /// 因此默认走 egui 属于修复，而不是等价切换。
 fn arrangement_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

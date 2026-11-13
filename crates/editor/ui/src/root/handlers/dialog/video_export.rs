@@ -79,7 +79,6 @@ impl DialogHandler {
                 root.state.video_export_dialog.current_frame = 0;
                 root.state.video_export_dialog.total_frames = 0;
                 root.state.video_export_dialog.render_fps = 0.0;
-                root.state.video_export_dialog.cached_image_handle = None;
 
                 let st = &root.state.video_export_dialog;
                 let video_config = build_video_config(

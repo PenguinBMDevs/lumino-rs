@@ -2,7 +2,7 @@
 //!
 //! 页面随合成器后端变化（XSynth / LGS / 系统 MIDI）；所有文案与数值文本在这里
 //! 预计算，egui 只按行模型绘制。动作按 `AudioField` 回传，再映射到生产
-//! `settings::Event`（与 iced 页面同一批事件）。
+//! `settings::Event`（与 旧版 页面同一批事件）。
 
 use lumino_core::storage::config::{GpuLoadDisplay, SynthBackend};
 use lumino_core::tr;

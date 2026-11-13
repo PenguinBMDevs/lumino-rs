@@ -9,6 +9,8 @@ pub mod constants {
     pub use lumino_ui_core::constants::*;
 }
 pub use lumino_ui_core::app_mode;
+/// 本地几何与颜色类型。
+pub use lumino_ui_core::geom;
 /// 洋葱皮显示范围模式（工具栏下拉，随 `.lmpj` 工程持久化）
 pub use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 pub use lumino_ui_editor as editor;

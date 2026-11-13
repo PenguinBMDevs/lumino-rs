@@ -1,7 +1,7 @@
 //! 画布几何同步：egui 布局 → 编辑器 / 走带画布矩形。
 //!
-//! iced `Grid` program 曾在 `update()` 里发 `CanvasBoundsChanged`；egui 独占
-//! 整窗后 iced 不再布局，改由本模块用与 egui 外壳完全同源的 insets 计算。
+//! 旧版 `Grid` program 曾在 `update()` 里发 `CanvasBoundsChanged`；egui 独占
+//! 整窗后 旧版 不再布局，改由本模块用与 egui 外壳完全同源的 insets 计算。
 //! 几何只在变化时写回，避免无谓的状态变更与重绘。
 
 use lumino_ui_egui::chrome::ChromeModel;
@@ -16,7 +16,7 @@ const EPSILON: f32 = 0.01;
 /// 画布几何是否由 egui 驱动。
 ///
 /// 与画布输入直连同开关：输入由宿主接管时，几何也必须由宿主写回
-/// （iced `Grid` 不再运行）。`LUMINO_EGUI_CANVAS_INPUT=1` 时两者同时生效。
+/// （旧版 `Grid` 不再运行）。`LUMINO_EGUI_CANVAS_INPUT=1` 时两者同时生效。
 fn canvas_sync_enabled() -> bool {
     crate::host::canvas_input_enabled()
 }
@@ -25,7 +25,7 @@ impl Host {
     /// 用本帧 egui 布局刷新编辑器画布几何。
     ///
     /// 纵向卷帘（布局不同，尚未迁移）与走带之外的特殊视图保持原样：返回
-    /// `None` 时不写回，几何沿用上一帧 / iced 旧值。
+    /// `None` 时不写回，几何沿用上一帧 / 旧版 旧值。
     pub(crate) fn sync_canvas_bounds(&mut self, _model: &ChromeModel, window_area: egui::Rect) {
         if !canvas_sync_enabled() {
             return;
@@ -94,7 +94,7 @@ impl Host {
                 0.0
             };
 
-        // 卷帘区（横向 / 纵向同布局）在两条滚动条内侧：与 iced
+        // 卷帘区（横向 / 纵向同布局）在两条滚动条内侧：与 旧版
         // `column![row![canvas, vscroll], hscroll]` 一致，两条 20px 都要扣掉。
         let width = (window_area.width() - left - right - layout::SCROLLBAR).max(1.0);
         let height = (window_area.height() - top - bottom - layout::SCROLLBAR).max(1.0);

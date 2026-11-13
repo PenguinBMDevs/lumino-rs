@@ -30,12 +30,12 @@ impl Root {
     }
 
     /// 更新编辑器鼠标位置
-    pub fn update_editor_cursor(&mut self, position: Option<iced_core::Point>) {
+    pub fn update_editor_cursor(&mut self, position: Option<lumino_ui_core::geom::Point>) {
         self.editor.update_cursor_position(position);
     }
 
     /// 更新编辑器 Canvas 偏移量
-    pub fn set_editor_canvas_offset(&mut self, offset: iced_core::Point) {
+    pub fn set_editor_canvas_offset(&mut self, offset: lumino_ui_core::geom::Point) {
         self.editor.set_canvas_offset(offset);
     }
 

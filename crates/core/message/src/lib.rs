@@ -18,7 +18,7 @@ pub mod draw_settings;
 /// 事件系统模块
 pub mod events;
 pub mod fill_division;
-/// GPU 兼容性检测 UI 状态（从 `lumino-ui-core` 迁入，保持无 iced 依赖）
+/// GPU 兼容性检测 UI 状态（从 `lumino-ui-core` 迁入，保持无 旧版 依赖）
 pub mod gpu_compat_state;
 pub mod help;
 pub mod history;
@@ -31,7 +31,7 @@ pub mod recover_track;
 pub mod right_sidebar;
 pub mod save_confirm;
 pub mod settings_dialog;
-/// 设置面板事件（仅枚举，从 `lumino-ui-core` 迁入，保持无 iced 依赖）
+/// 设置面板事件（仅枚举，从 `lumino-ui-core` 迁入，保持无 旧版 依赖）
 pub mod settings_event;
 /// 形状抽屉库/变换/插入动作
 pub mod shape_drawer;

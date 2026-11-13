@@ -2,8 +2,8 @@
 //!
 //! 视图层只调用这些构造器，避免在 UI 代码中散落 `Message::Sidebar(...)` 包装。
 
-use iced_core::{Color, Point};
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
+use lumino_ui_core::geom::{Color, Point};
 
 use super::{Event, GroupId, RollBarButton, Route};
 use crate::Message;

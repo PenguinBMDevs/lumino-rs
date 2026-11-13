@@ -12,7 +12,7 @@ use lumino_ui_core::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOC
 
 impl Editor {
     /// 处理鼠标按下事件
-    pub(crate) fn handle_pressed(&mut self, pos: iced_core::Point, shift: bool) {
+    pub(crate) fn handle_pressed(&mut self, pos: lumino_ui_core::geom::Point, shift: bool) {
         if !self.is_inside_canvas(pos) {
             return;
         }
@@ -27,7 +27,7 @@ impl Editor {
     /// 根据当前工具处理鼠标按下事件
     pub(crate) fn handle_tool_pressed(
         &mut self,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
         shift: bool,
         snapped_tick: f32,
         key: u16,
@@ -115,7 +115,7 @@ impl Editor {
     /// 调整优先级后，框选框内任意位置都走框选逻辑，符合用户"按住框选框内任意位置移动即拖动"的预期。
     pub(crate) fn handle_pointer_pressed(
         &mut self,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
     ) {
@@ -317,7 +317,7 @@ impl Editor {
     /// 铅笔工具：放置新音符或编辑现有音符
     pub(crate) fn handle_pencil_pressed(
         &mut self,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
         key: u16,
@@ -332,7 +332,7 @@ impl Editor {
     /// 橡皮擦工具：删除音符
     pub(crate) fn handle_eraser_pressed(
         &mut self,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
         shift: bool,
         hit_result: Option<(usize, HitType)>,
     ) {
@@ -394,7 +394,7 @@ impl Editor {
     /// 其他工具：默认使用铅笔工具逻辑
     pub(crate) fn handle_default_tool_pressed(
         &mut self,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
         key: u16,
@@ -411,7 +411,7 @@ impl Editor {
         &mut self,
         index: usize,
         hit_type: HitType,
-        pos: iced_core::Point,
+        pos: lumino_ui_core::geom::Point,
     ) {
         interaction_ops::start_note_edit(
             &mut self.editor_state.data,

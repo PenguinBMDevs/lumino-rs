@@ -1,7 +1,7 @@
 //! 生产状态 → egui 外壳视图模型。
 //!
 //! 只做数据搬运，不含任何渲染逻辑；渲染在 `lumino_ui_egui::chrome::show_bands`。
-//! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 iced。
+//! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 旧版。
 
 mod arrangement;
 mod audio_export_panel;
@@ -53,7 +53,7 @@ use crate::sidebar::{RollBarButton, Route, Sidebar};
 use crate::toolbar::ToolbarPerfContext;
 use lumino_ui_egui::layout;
 
-/// iced 分组 → egui 分组。
+/// 旧版 分组 → egui 分组。
 fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
     match group {
         crate::sidebar::GroupId::PianoRoll => SidebarGroup::PianoRoll,
@@ -63,31 +63,31 @@ fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
     }
 }
 
-/// iced 颜色（线性浮点）→ egui 颜色。
-pub(super) fn color32(color: iced_core::Color) -> egui::Color32 {
+/// 旧版 颜色（线性浮点）→ egui 颜色。
+pub(super) fn color32(color: lumino_ui_core::geom::Color) -> egui::Color32 {
     let to_u8 = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     egui::Color32::from_rgb(to_u8(color.r), to_u8(color.g), to_u8(color.b))
 }
 
 impl Sidebar {
-    /// 是否存在必须由 iced 独占绘制的瞬态 UI。
+    /// 是否存在必须由 旧版 独占绘制的瞬态 UI。
     ///
-    /// 重命名输入框、拖拽插入线、颜色/端口/通道选择器、宽度拖拽都依赖 iced 自己的
-    /// 命中与焦点管理；这些状态下叠加层不得接管左侧栏，否则会出现「egui 盖住 iced
-    /// 输入框，输入却进 iced」的错位。
+    /// 重命名输入框、拖拽插入线、颜色/端口/通道选择器、宽度拖拽都依赖 旧版 自己的
+    /// 命中与焦点管理；这些状态下叠加层不得接管左侧栏，否则会出现「egui 盖住 旧版
+    /// 输入框，输入却进 旧版」的错位。
     ///
     /// 注意：音轨/面板右键菜单与**行内重命名**都已由 egui 绘制并接管
     /// （`chrome/sidebar/menu.rs`、`track_list.rs`）；若仍在此返回 `None`，
-    /// 底层画布纹理会盖住 iced 的绘制，真机表现为「左栏整块空白」。
+    /// 底层画布纹理会盖住 旧版 的绘制，真机表现为「左栏整块空白」。
     fn has_transient_ui(&self) -> bool {
         // 只剩拖拽排序与宽度拖拽：取色器 / 端口 / 通道选择器、右键菜单、行内重命名
-        // 均已由 egui 绘制（返回 None 会让底层画布纹理盖住 iced 绘制 → 左栏空白）。
+        // 均已由 egui 绘制（返回 None 会让底层画布纹理盖住 旧版 绘制 → 左栏空白）。
         // 已无瞬态 UI：拖拽排序、菜单、重命名、取色/端口/通道、宽度拖拽
         // 全部由 egui 绘制并接管。
         false
     }
 
-    /// 构造左侧栏只读模型；存在瞬态 UI 时返回 `None`，交给 iced 继续绘制。
+    /// 构造左侧栏只读模型；存在瞬态 UI 时返回 `None`，交给 旧版 继续绘制。
     fn egui_model(
         &self,
         language: lumino_extras::i18n::Language,
@@ -133,7 +133,7 @@ impl Sidebar {
             })
             .collect();
 
-        // 路由栏条目：与 `sidebar/route.rs`（iced）同一套可见性 / 点亮规则，
+        // 路由栏条目：与 `sidebar/route.rs`（旧版）同一套可见性 / 点亮规则，
         // 顺序即 `ROUTES` 顺序。两边同源，绘制与命中不会再错位。
         let active_group = self.active_group.map(sidebar_group);
         let mut route_items = vec![SidebarRouteItem {
@@ -221,9 +221,9 @@ impl Root {
         crate::host::overlay_enabled() && self.egui_piano_roll_model().is_some()
     }
 
-    /// 卷帘骨架模型：只在 iced 用纯 UI 绘制的场合接管。
+    /// 卷帘骨架模型：只在 旧版 用纯 UI 绘制的场合接管。
     ///
-    /// 以下情形必须让位给 iced（否则会盖掉动态内容）：
+    /// 以下情形必须让位给 旧版（否则会盖掉动态内容）：
     /// - 纵向卷帘（布局不同）；
     /// - 循环区间开启（标尺里画循环带与把手）；
     /// - 拍号在工程中途变化（标尺分段）；
@@ -274,7 +274,7 @@ impl Root {
         let ticks_per_measure =
             f32::from(ppq) * 4.0 * f32::from(numerator) / f32::from(denominator.max(1));
 
-        // 滚动条按 iced `ScrollbarWidget::thumb_geometry` 的口径换算成比例：
+        // 滚动条按 旧版 `ScrollbarWidget::thumb_geometry` 的口径换算成比例：
         // 水平 viewport 缺省为轨道长度；垂直 viewport 为画布高 - 标尺高。
         // 纵向卷帘转置：时间轴视口 = 画布高 - 键盘厚，音高轴视口 = 画布宽。
         let (max_x, max_y) = self.editor.editor_state.max_scroll;
@@ -374,7 +374,7 @@ impl Root {
     /// 原生运行时：应用一帧 egui 动作（菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏）。
     ///
     /// 与 `Host::apply_overlay_actions` 共用同一批 `*_action_message` 映射；
-    /// 区别是不经过 iced 窗口上下文，直接 `Root::update`。返回已应用的动作数。
+    /// 区别是不经过 旧版 窗口上下文，直接 `Root::update`。返回已应用的动作数。
     pub fn apply_egui_chrome_actions(&mut self, ctx: &egui::Context) -> usize {
         use lumino_ui_egui::chrome as ui;
 
@@ -443,7 +443,7 @@ impl Root {
     /// 按真实视口宽度构造 egui 外壳快照。
     pub(crate) fn egui_chrome_model_for(&self, viewport_width: f32) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
-        // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 iced），
+        // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 旧版），
         // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
         if self.state.is_dialog_window {
             let dialog = self.egui_dialog_model();
@@ -465,7 +465,7 @@ impl Root {
                 (!self.settings.synth.use_native_titlebar).then_some(PopupTitlebarModel {
                     focused: self.window.is_focused,
                 });
-            // 这两类窗口没有 `DialogType`，内容由 egui 单独绘制（iced 不再 present）。
+            // 这两类窗口没有 `DialogType`，内容由 egui 单独绘制（旧版 不再 present）。
             let titlebar = !self.settings.synth.use_native_titlebar;
             let dialog = if self.is_progress_window {
                 let (message, progress) = self
@@ -501,8 +501,8 @@ impl Root {
         let waterfall = self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall;
 
         // Windows/Linux 的系统原生标题栏模式在客户端顶部仍保留 30px 菜单栏行
-        // （iced `view_native_titlebar`）；叠加层接管后由 egui 画菜单标签与下拉。
-        // macOS 原生模式没有这一行（iced 返回空行，主内容不含标题栏）→ 跳过。
+        // （旧版 `view_native_titlebar`）；叠加层接管后由 egui 画菜单标签与下拉。
+        // macOS 原生模式没有这一行（旧版 返回空行，主内容不含标题栏）→ 跳过。
         let native = self.settings.synth.use_native_titlebar;
         let egui_menubar = native && !cfg!(target_os = "macos");
         let titlebar_present = !native || egui_menubar;
@@ -519,7 +519,7 @@ impl Root {
             menu_only: native,
         });
 
-        // 工具栏：与 iced 仪表盘共用同一套 tick→BPM/时间换算。
+        // 工具栏：与 旧版 仪表盘共用同一套 tick→BPM/时间换算。
         // 仅在实际渲染工具栏的视图里接管（瀑布流 / 导出面板 / 渲染器面板没有工具栏）。
         let perf = ToolbarPerfContext {
             playback_tick: self.editor.playback_position,
@@ -545,7 +545,7 @@ impl Root {
             NoteCountDisplay::StatusBar => Some(self.editor_note_count()),
             NoteCountDisplay::ProjectSettings => None,
         };
-        // 状态栏 GPU 指示器：与 iced `view_status_section` 同源的三开关。
+        // 状态栏 GPU 指示器：与 旧版 `view_status_section` 同源的三开关。
         let gpu_flags = crate::statusbar::GpuStatusFlags {
             enabled: self.settings.synth.gpu_buffer_status_enabled,
             show_governor: self.settings.synth.gpu_governor_metrics_enabled,
@@ -564,7 +564,7 @@ impl Root {
             model.roll_bar_visible = !waterfall && self.sidebar.is_piano_roll_panel();
         }
 
-        // 工具栏模型：只在 iced 实际渲染工具栏的视图里接管。
+        // 工具栏模型：只在 旧版 实际渲染工具栏的视图里接管。
         let toolbar = if shows_toolbar {
             // 与生产 `responsive` 同一可用宽度 / 折叠纯函数：溢出菜单内容必须
             // 和工具栏实际折叠结果一致（同宽度必然同结果）。

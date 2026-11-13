@@ -7,14 +7,14 @@
 //! - 标题栏 30px：底色随窗口聚焦变化、真实菜单标签（按语言）、logo、窗口按钮；
 //! - 状态栏 20px：左侧提示文本（悬停说明 / 音符数 / 就绪）、CPU / MEM / FPS、右侧文本。
 //!
-//! 只绘制这些 band，其余区域保持 iced 画面；band 用不透明底色完全覆盖同位置
-//! 的 iced 版本，因此不会出现文字重影。
+//! 只绘制这些 band，其余区域保持 旧版 画面；band 用不透明底色完全覆盖同位置
+//! 的 旧版 版本，因此不会出现文字重影。
 //!
 //! # 输入
 //!
 //! 指针移动 / 滚轮 / 修饰键 / 焦点同步给 egui（悬停高亮、`ScrollArea` 滚动、
 //! 菜单点击都要用到）。鼠标按键只在**菜单占用区**（标题栏菜单标签、已展开的
-//! 下拉/子面板）内消费；其余区域仍把事件交给 iced，动作由 iced 执行。
+//! 下拉/子面板）内消费；其余区域仍把事件交给 旧版，动作由 旧版 执行。
 
 use egui::{Rect, Vec2};
 use lumino_egui_bridge::{Painter, Screen};
@@ -118,7 +118,7 @@ struct OverlayFrame<'a> {
     /// 窗口是否持有焦点。
     focused: bool,
     /// 清屏色：`Some` 表示 egui 独占整窗（生产渲染路径），
-    /// `None` 表示叠加在 iced `present` 之上（回退路径）。
+    /// `None` 表示叠加在 旧版 `present` 之上（回退路径）。
     clear: Option<wgpu::Color>,
 }
 
@@ -228,7 +228,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_material_delete(&ctx, frame.material_delete.clone());
         lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
         lumino_ui_egui::chrome::set_mask_panel(&ctx, frame.mask_panel.clone());
-        // 右下角浮层：Toast 通知 + 首次使用帮助提示（iced 视图已删除）。
+        // 右下角浮层：Toast 通知 + 首次使用帮助提示（旧版 视图已删除）。
         lumino_ui_egui::chrome::set_toast(&ctx, Some(frame.toast.clone()));
         lumino_ui_egui::chrome::set_help_tip(&ctx, frame.help_tip.clone());
         lumino_ui_egui::chrome::set_egg(&ctx, frame.egg);
@@ -271,7 +271,7 @@ impl EguiOverlay {
         // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
         // 这里只要占用矩形与文本焦点。
         let mut blocked = chrome::menu::take_blocked(&ctx);
-        // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 iced。
+        // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 旧版。
         if let Some(panel) = &frame.audio_export {
             blocked.push(panel.rect);
         }
@@ -334,7 +334,7 @@ impl Host {
     /// 绘制 egui 外壳。
     ///
     /// `clear = Some(color)` 时 egui 独占整窗（先清屏再画，生产渲染路径）；
-    /// `None` 时叠加在 iced `present` 之上（`LUMINO_EGUI_ONLY=0` 回退路径）。
+    /// `None` 时叠加在 旧版 `present` 之上（`LUMINO_EGUI_ONLY=0` 回退路径）。
     pub(super) fn render_egui_overlay(
         &mut self,
         frame: &wgpu::SurfaceTexture,
@@ -358,7 +358,7 @@ impl Host {
             egui::pos2(0.0, 0.0),
             egui::vec2(logical_width, logical_height),
         );
-        // 画布几何：egui 是唯一布局来源（iced 不再参与，取代 `Grid` program
+        // 画布几何：egui 是唯一布局来源（旧版 不再参与，取代 `Grid` program
         // 的 `CanvasBoundsChanged`）。
         self.sync_canvas_bounds(&model, window_area);
         let content_area = {
@@ -380,12 +380,12 @@ impl Host {
                 ),
             )
         };
-        // 形状抽屉：面板 + 画布都由 egui 绘制（iced 只保留标题栏）。
+        // 形状抽屉：面板 + 画布都由 egui 绘制（旧版 只保留标题栏）。
         let shape_panel_rect = (self.root.state.dialog_type
             == crate::state::root_state::DialogType::ShapeDrawer)
             .then(|| {
                 let width = self.root.state.shape_drawer.panel_width;
-                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 iced 仍画 30px 自制标题栏，
+                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 旧版 仍画 30px 自制标题栏，
                 // 因此这里按 `use_native_titlebar` 判断（与画布动作端的 rect 同源）。
                 let top = if self.root.settings.synth.use_native_titlebar {
                     0.0
@@ -445,7 +445,7 @@ impl Host {
             }
         });
         let palette = self.root.egui_palette();
-        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（iced 侧同位置
+        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（旧版 侧同位置
         // 只保留占位，不会二次采样同一张纹理）。
         let waterfall = {
             let sidebar = &self.root.right_sidebar;
@@ -517,7 +517,7 @@ impl Host {
         if overlay.ctx.has_requested_repaint() {
             self.window_ctx.window.request_redraw();
         }
-        // 下一帧点击命中这些矩形时，事件只给 egui，不再进 iced 队列。
+        // 下一帧点击命中这些矩形时，事件只给 egui，不再进 旧版 队列。
         self.egui_blocked = blocked;
         self.egui_input.set_wants_keyboard(wants_keyboard);
         self.apply_egui_cursor(egui_cursor);
@@ -527,8 +527,8 @@ impl Host {
     /// 把 winit 指针 / 滚轮 / 修饰键 / 焦点事件转成 egui 事件。
     ///
     /// 返回 `true` 表示该事件落在 egui 的菜单占用区（标题栏/下拉面板）内，
-    /// 调用方必须**不**再把它交给 iced——否则会同时触发下层工具栏/侧栏的点击。
-    /// 其余区域保持「只观察不消费」，动作仍由 iced 执行。
+    /// 调用方必须**不**再把它交给 旧版——否则会同时触发下层工具栏/侧栏的点击。
+    /// 其余区域保持「只观察不消费」，动作仍由 旧版 执行。
     pub(crate) fn capture_egui_overlay_input(&mut self, event: &winit::event::WindowEvent) -> bool {
         use winit::event::{MouseScrollDelta, WindowEvent};
 
@@ -577,8 +577,8 @@ impl Host {
                 self.egui_input
                     .button(button, *state == winit::event::ElementState::Pressed);
                 // 设置 / 保存确认窗口由 egui 整窗绘制：按键只给 egui，避免同一击
-                // 同时触发下层 iced 控件（例如云管理「添加连接」打开两个窗口）。
-                // 其余对话框仍依赖 iced let-through，不消费。
+                // 同时触发下层 旧版 控件（例如云管理「添加连接」打开两个窗口）。
+                // 其余对话框仍依赖 旧版 let-through，不消费。
                 self.dialog_input_exclusive() || self.egui_pointer_blocked()
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -601,7 +601,7 @@ impl Host {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.egui_input.key(event);
-                // 只有 egui 正在编辑文本时才消费：否则快捷键仍要落到 iced。
+                // 只有 egui 正在编辑文本时才消费：否则快捷键仍要落到 旧版。
                 self.egui_input.wants_keyboard()
             }
             WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
@@ -617,7 +617,7 @@ impl Host {
     }
 
     /// 当前窗口是否为**整窗由 egui 绘制**的对话框（设置 / 保存确认），
-    /// 这类窗口必须消费鼠标按键，不能再落到 iced。
+    /// 这类窗口必须消费鼠标按键，不能再落到 旧版。
     fn dialog_input_exclusive(&self) -> bool {
         if !self.root.state.is_dialog_window {
             return false;
@@ -626,7 +626,7 @@ impl Host {
             crate::state::root_state::DialogType::Settings
             | crate::state::root_state::DialogType::SaveConfirm => true,
             // 工程设置 / 撤销历史 / 批量编辑的顶部 30px 自制标题栏（红绿灯 / 拖动）
-            // 仍由 iced 绘制：该区域内的按键不消费，其余内容区只给 egui。
+            // 仍由 旧版 绘制：该区域内的按键不消费，其余内容区只给 egui。
             crate::state::root_state::DialogType::ProjectSettings
             | crate::state::root_state::DialogType::History
             | crate::state::root_state::DialogType::BatchEdit
@@ -660,7 +660,7 @@ impl Host {
     }
 }
 
-/// 形状抽屉面板与画布之间的分割线宽度（与生产 iced 视图一致）。
+/// 形状抽屉面板与画布之间的分割线宽度（与生产 旧版 视图一致）。
 pub(crate) const SPLITTER_W: f32 = 6.0;
 
 /// 指针事件的坐标除数。
@@ -690,8 +690,8 @@ fn input_scale(ppp: f32) -> f32 {
 /// egui 叠加层是否启用。
 ///
 /// **默认开启**：外壳 band / 对话框 / 面板 / 编辑器画布底层均已迁到 egui，
-/// iced 侧只在下方保留同位置内容（已被不透明覆盖），后续逐步删除。
-/// `LUMINO_EGUI_OVERLAY=0` 可回退到纯 iced 通道，用于对照排查。
+/// 旧版 侧只在下方保留同位置内容（已被不透明覆盖），后续逐步删除。
+/// `LUMINO_EGUI_OVERLAY=0` 可回退到纯 旧版 通道，用于对照排查。
 pub(crate) fn overlay_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {

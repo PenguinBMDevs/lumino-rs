@@ -1,6 +1,6 @@
 //! 走带标尺的小节边界计算。
 //!
-//! 与 iced 侧 `ui-editor/src/grid/ruler.rs` 的 `MeasureIterator` **同口径**：
+//! 与 旧版 侧 `ui-editor/src/grid/ruler.rs` 的 `MeasureIterator` **同口径**：
 //! - 同一 tick 的重复拍号只保留最后一个（多轨 MIDI 常见，否则首个可见小节号会从 2 起跳）；
 //! - 第 0 段起点恒为 tick 0，按 `time_signature_at(0.0)` 取拍号；
 //! - 后续段从各自 `tick` 起，若跨段时该段不足一小节，也按 1 小节计入编号；
@@ -45,7 +45,7 @@ fn ticks_per_measure(ppq: f32, numerator: u8, denominator: u8) -> f32 {
     beat * numerator.max(1) as f32
 }
 
-/// 段 0 的起点恒为 0（与 iced 侧一致）。
+/// 段 0 的起点恒为 0（与 旧版 侧一致）。
 fn segment_start(sigs: &[(u32, u8, u8)], index: usize) -> f32 {
     if index == 0 {
         return 0.0;

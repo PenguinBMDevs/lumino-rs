@@ -1,6 +1,6 @@
 //! 底部状态栏。
 //!
-//! 生产 iced 结构（`statusbar.rs::view`）：
+//! 生产 旧版 结构（`statusbar.rs::view`）：
 //! - 高 20，水平内边距 8，行间距 8；
 //! - 左侧 12px 描述文本（固定 220 宽，不换行）；
 //! - 右侧 `CPU / MEM / FPS` 指标组（label 弱色、value `primary.strong`），
@@ -18,7 +18,7 @@ const LEFT_W: f32 = 220.0;
 const FONT: f32 = 12.0;
 /// 指标组之间的额外间隔。
 const GROUP_GAP: f32 = 14.0;
-/// label 与 value 的间隔（实测 iced 基线：`CPU0.0%` 贴合，仅剩字形侧边距）。
+/// label 与 value 的间隔（实测 旧版 基线：`CPU0.0%` 贴合，仅剩字形侧边距）。
 const METRIC_GAP: f32 = 1.0;
 
 /// 草稿场景入口：固定「就绪」与 CPU / MEM / FPS 指标。
@@ -106,7 +106,7 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
     if let Some(cpu) = model.cpu_percent {
         metric(ui, "CPU", &format!("{cpu:.1}%"), MetricTone::Normal);
     }
-    // GPU 组在 CPU/MEM/FPS 左侧，中间固定 12px（iced `space().width(12)`）。
+    // GPU 组在 CPU/MEM/FPS 左侧，中间固定 12px（旧版 `space().width(12)`）。
     if let Some(gpu) = &model.gpu {
         ui.add_space(12.0);
         gpu_group(ui, gpu);
@@ -117,7 +117,7 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
 fn metric(ui: &mut egui::Ui, label: &str, value: &str, tone: MetricTone) -> Response {
     // 右侧栏是「从右向左」布局：先加数值（靠右），再加标签（靠左）。
     // `Label` 默认不吃指针事件，必须显式 `Sense::click()`：MEM 数值是
-    // 「打开内存监控」的入口（与 iced `metric_clickable_value` 同义）。
+    // 「打开内存监控」的入口（与 旧版 `metric_clickable_value` 同义）。
     let response = ui.add(
         egui::Label::new(
             egui::RichText::new(value)
@@ -131,7 +131,7 @@ fn metric(ui: &mut egui::Ui, label: &str, value: &str, tone: MetricTone) -> Resp
     response
 }
 
-/// 色调 → 颜色（与 iced `metric_value_toned` 同源）。
+/// 色调 → 颜色（与 旧版 `metric_value_toned` 同源）。
 fn tone_color(tone: MetricTone) -> Color32 {
     match tone {
         MetricTone::Normal => accent_value(),
@@ -143,7 +143,7 @@ fn tone_color(tone: MetricTone) -> Color32 {
 /// GPU (LGS) 指标组：`GPU Q …ms<趋势>` / LOAD / V / UR / GMEM / CMEM / GOV / DROP。
 ///
 /// 父布局是 right-to-left（整组排在 CPU/MEM/FPS 左侧），子项在 rtl 容器里
-/// **先加的在右**，因此这里按视觉顺序**倒序**添加，才能得到与 iced 一致的
+/// **先加的在右**，因此这里按视觉顺序**倒序**添加，才能得到与 旧版 一致的
 /// 从左到右排列。
 fn gpu_group(ui: &mut egui::Ui, gpu: &GpuMetricsModel) {
     ui.spacing_mut().item_spacing.x = 6.0;
@@ -225,7 +225,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tone_thresholds_match_iced() {
+    fn tone_thresholds_match_legacy() {
         assert_eq!(load_tone(0.0), MetricTone::Normal);
         assert_eq!(load_tone(0.59), MetricTone::Normal);
         assert_eq!(load_tone(0.6), MetricTone::Warning);
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn queue_trend_arrows_match_iced() {
+    fn queue_trend_arrows_match_legacy() {
         assert_eq!(super::super::GpuQueueTrend::Up.arrow(), "↑");
         assert_eq!(super::super::GpuQueueTrend::Down.arrow(), "↓");
         assert_eq!(super::super::GpuQueueTrend::Flat.arrow(), "→");

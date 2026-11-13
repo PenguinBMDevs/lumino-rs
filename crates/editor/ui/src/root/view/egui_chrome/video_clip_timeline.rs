@@ -1,7 +1,7 @@
 //! 视频剪辑时间轴：生产状态 → egui 模型 + 矩形。
 //!
 //! 矩形由 `root::video_clip_math::renderer_panel_layout` 单源计算（与渲染器面板、
-//! 预览纹理同一份），不再读 iced 布局探针。
+//! 预览纹理同一份），不再读 旧版 布局探针。
 
 use lumino_message::video_clip::{ClipTrack, ClipTrimEdge, VideoClipAction};
 use lumino_ui_egui::video_clip_timeline::{
@@ -11,7 +11,7 @@ use lumino_ui_egui::video_clip_timeline::{
 use crate::root::Root;
 
 impl Root {
-    /// 渲染器入口面板里的时间轴模型（几何由 `video_clip_math` 单源计算，不再读 iced 探针）。
+    /// 渲染器入口面板里的时间轴模型（几何由 `video_clip_math` 单源计算，不再读 旧版 探针）。
     pub(crate) fn video_timeline_model(
         &self,
         area: egui::Rect,
@@ -89,7 +89,7 @@ impl Root {
 }
 
 impl Root {
-    /// 时间轴动作 → `VideoClipAction`（拖动/裁剪均为**绝对值**，与 iced 同语义）。
+    /// 时间轴动作 → `VideoClipAction`（拖动/裁剪均为**绝对值**，与 旧版 同语义）。
     pub(crate) fn video_timeline_action_message(
         &self,
         action: &VideoTimelineAction,

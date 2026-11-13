@@ -1,4 +1,4 @@
-//! 原生 egui 运行时（winit + wgpu 27 + egui，**无 iced**）。
+//! 原生 egui 运行时（winit + wgpu 27 + egui，**无 旧版**）。
 //!
 //! 这是 `feat/egui-native-runtime` 分支的第一块地基：先用最小可运行窗口证明
 //! 「winit 事件循环 + wgpu Surface + `lumino-egui-bridge` 绘制」这条链路在本项目

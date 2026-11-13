@@ -1,21 +1,21 @@
 //! 力度面板编辑输入（力度模式 + 曲线工具）。
 //!
-//! 与 iced `VelocityCanvas` 的力度交互同语义：
+//! 与 旧版 `VelocityCanvas` 的力度交互同语义：
 //! - 命中力度点（10px）→ 拖拽改力度；
 //! - 空白处按下 → 曲线绘制（起点到当前点的线性插值，按下时若有选中集则只影响选中音符）；
 //! - 松开 → 结束。
 //!
-//! Tempo / CC / Bend 的输入仍由 iced Canvas 处理（本模块只在力度模式下占用数据区）。
+//! Tempo / CC / Bend 的输入仍由 旧版 Canvas 处理（本模块只在力度模式下占用数据区）。
 
 use egui::{Rect, Vec2};
 
 use super::{VelocityPanelAction, VelocityPanelModel};
 
-/// 命中半径（与 iced `HIT_RADIUS` 一致）。
+/// 命中半径（与 旧版 `HIT_RADIUS` 一致）。
 const HIT_RADIUS: f32 = 10.0;
 /// 顶部 resize 手柄高度。
 const RESIZE_HANDLE: f32 = 5.0;
-/// 面板上下内边距（与 iced `PANEL_PADDING_Y` 一致）。
+/// 面板上下内边距（与 旧版 `PANEL_PADDING_Y` 一致）。
 const PANEL_PADDING_Y: f32 = 12.0;
 
 /// 力度值 → 面板 Y（与 `VelocityCanvas::velocity_to_y` 同公式）。
@@ -56,7 +56,7 @@ fn snap_tick(tick: f32, precision: f32) -> f32 {
     (tick / precision).floor() * precision
 }
 
-/// 滚轮 → 双轴动作（Pixels ÷50，与 iced 同口径）。
+/// 滚轮 → 双轴动作（Pixels ÷50，与 旧版 同口径）。
 fn wheel_action(ui: &egui::Ui, rect: Rect) -> Option<VelocityPanelAction> {
     let pos = ui.ctx().input(|i| i.pointer.latest_pos())?;
     if !rect.contains(pos) {
@@ -76,9 +76,9 @@ fn wheel_action(ui: &egui::Ui, rect: Rect) -> Option<VelocityPanelAction> {
 const STATE_ID: &str = "lumino.velocity-panel.edit-state";
 const RESIZE_STATE_ID: &str = "lumino.velocity-panel.resize-state";
 
-/// 面板高度下限（与 iced `VELOCITY_PANEL_MIN_HEIGHT` 一致）。
+/// 面板高度下限（与 旧版 `VELOCITY_PANEL_MIN_HEIGHT` 一致）。
 const PANEL_MIN_HEIGHT: f32 = 60.0;
-/// 面板高度上限（与 iced `VELOCITY_PANEL_MAX_HEIGHT` 一致）。
+/// 面板高度上限（与 旧版 `VELOCITY_PANEL_MAX_HEIGHT` 一致）。
 const PANEL_MAX_HEIGHT: f32 = 400.0;
 
 /// 顶部 resize 拖拽状态（`start_height = 0` = 未在拖拽）。
@@ -95,7 +95,7 @@ pub(super) fn resize_zone(canvas: Rect) -> Rect {
 
 /// 面板 resize 拖拽：按下记基线，拖动改高度，松开清除。
 ///
-/// 公式与 iced `handle_cursor_moved` 一致：
+/// 公式与 旧版 `handle_cursor_moved` 一致：
 /// `new_height = start_height + (start_y - y)`，钳制到 60..400，
 /// 与当前高度差 > 1px 才发动作（避免每帧抖动）。
 pub(super) fn handle_resize(
@@ -367,7 +367,7 @@ mod automation;
 
 pub(super) use automation::handle as handle_automation;
 
-/// 数据区在力度编辑时从 iced 手里接管的矩形（保留顶部 resize 手柄给 iced）。
+/// 数据区在力度编辑时从 旧版 手里接管的矩形（保留顶部 resize 手柄给 旧版）。
 pub(super) fn blocking_rect(canvas: Rect) -> Rect {
     Rect::from_min_max(
         egui::pos2(canvas.left(), canvas.top() + RESIZE_HANDLE),

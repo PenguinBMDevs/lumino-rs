@@ -2,8 +2,8 @@
 
 use crate::grid::GridInteractionState;
 use crate::{EditState, Editor, HitType};
-use iced_core::{Rectangle, mouse};
 use lumino_message::Tool;
+use lumino_ui_core::geom::{Rectangle, mouse};
 
 pub fn handle(
     editor: &Editor,
@@ -30,7 +30,8 @@ pub fn handle(
             }
             I2mInteraction::None => {
                 if let Some(pos) = cursor.position() {
-                    let local_pos = iced_core::Point::new(pos.x - bounds.x, pos.y - bounds.y);
+                    let local_pos =
+                        lumino_ui_core::geom::Point::new(pos.x - bounds.x, pos.y - bounds.y);
                     if let Some(hit) = editor.hit_test_i2m_region(local_pos) {
                         return match hit {
                             crate::SelectionHitType::LeftEdge
@@ -112,8 +113,10 @@ pub fn handle(
                     return mouse::Interaction::Grabbing;
                 }
                 if let Some(cursor_pos) = cursor.position() {
-                    let local_pos =
-                        iced_core::Point::new(cursor_pos.x - bounds.x, cursor_pos.y - bounds.y);
+                    let local_pos = lumino_ui_core::geom::Point::new(
+                        cursor_pos.x - bounds.x,
+                        cursor_pos.y - bounds.y,
+                    );
                     if let Some(interaction) = editor.shape_handle_interaction(local_pos) {
                         return interaction;
                     }
@@ -153,8 +156,10 @@ pub fn handle(
             {
                 puffin::profile_scope!("selection_box_hit_test");
                 if let Some(cursor_pos) = cursor.position() {
-                    let local_pos =
-                        iced_core::Point::new(cursor_pos.x - bounds.x, cursor_pos.y - bounds.y);
+                    let local_pos = lumino_ui_core::geom::Point::new(
+                        cursor_pos.x - bounds.x,
+                        cursor_pos.y - bounds.y,
+                    );
                     if let Some(sel_hit) = editor.hit_test_selection_box(local_pos) {
                         return match sel_hit {
                             crate::SelectionHitType::LeftEdge

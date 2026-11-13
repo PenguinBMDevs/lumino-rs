@@ -6,7 +6,7 @@
 //! （`background.strong.text`）；按钮 34 高（主色「确定」+ 次要「取消」、间距 12）。
 //!
 //! 各区块按**固定纵向偏移**摆放（标题 0 / 倍率行 50 / 提示 96 / 按钮 145），
-//! 因为 iced 的 `column.spacing(4)` 会叠加到每个 `space()` 上，等价于
+//! 因为 旧版 的 `column.spacing(4)` 会叠加到每个 `space()` 上，等价于
 //! 「title → 24 → row → 12 → hint → 24 → buttons」；egui 的行高不同，用显式
 //! 偏移才能得到同一套盒子位置。
 //!
@@ -69,7 +69,7 @@ pub fn show(ui: &mut egui::Ui, model: &SpeedChangeModel) {
     crate::fonts::install(ui.ctx());
 
     let rect = ui.max_rect();
-    // 自制标题栏（红绿灯 / 拖动）由 iced 绘制：egui 只画标题栏以下内容区。
+    // 自制标题栏（红绿灯 / 拖动）由 旧版 绘制：egui 只画标题栏以下内容区。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {
@@ -109,7 +109,7 @@ pub fn show(ui: &mut egui::Ui, model: &SpeedChangeModel) {
 fn factor_row(ui: &mut egui::Ui, inner: Rect, model: &SpeedChangeModel) {
     let mut buffer = model.factor.clone();
     let row_y = inner.top() + FACTOR_TOP;
-    // 标签宽度先量出来，输入框才能精确落在「标签 + 12」处（与 iced 同几何）。
+    // 标签宽度先量出来，输入框才能精确落在「标签 + 12」处（与 旧版 同几何）。
     let label_width = ui
         .painter()
         .layout_no_wrap(

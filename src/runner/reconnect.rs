@@ -35,8 +35,8 @@ pub enum ReconnectState {
     RebuildInfra,
     /// 数据回放：洋葱皮 force_full_next + 内容脏
     ReplayData,
-    /// iced Engine/Renderer 重建（现并入窗口重绑；保留结构位）
-    RebuildIced,
+    /// 旧版 Engine/Renderer 重建（现并入窗口重绑；保留结构位）
+    RebuildUi,
     /// 撤销停帧标志 + 重启渲染线程 + 恢复 redraw 调度
     RestartRenderThread,
     /// 终态：恢复常规
@@ -55,8 +55,8 @@ pub trait ReconnectOps<D> {
     fn install_and_rebuild_infra(&mut self, epoch: GpuEpoch, gpu: D) -> Result<(), String>;
     /// 数据回放标记
     fn mark_replay(&mut self) -> Result<(), String>;
-    /// iced 重建（保留步骤位；现并入窗口重绑）
-    fn rebuild_iced(&mut self) -> Result<(), String>;
+    /// 旧版 重建（保留步骤位；现并入窗口重绑）
+    fn rebuild_ui(&mut self) -> Result<(), String>;
     /// 撤销停帧标志 + 重启渲染线程
     fn restart_render_threads(&mut self) -> Result<(), String>;
     /// 终态：恢复成功收尾（状态条撤销等）
@@ -138,7 +138,7 @@ impl<D> ReconnectSession<D> {
         self.retry_not_before = None;
 
         // 取出现状推进（占位立即被各臂覆盖；避免与 `&mut self.state` 借用冲突）
-        let state = std::mem::replace(&mut self.state, ReconnectState::RebuildIced);
+        let state = std::mem::replace(&mut self.state, ReconnectState::RebuildUi);
         match state {
             ReconnectState::StopRenderThread { deadline } => {
                 if Instant::now() > deadline {
@@ -201,12 +201,12 @@ impl<D> ReconnectSession<D> {
             }
             ReconnectState::ReplayData => match ops.mark_replay() {
                 Ok(()) => {
-                    self.state = ReconnectState::RebuildIced;
+                    self.state = ReconnectState::RebuildUi;
                     false
                 }
                 Err(e) => self.pipeline_attempt_failed(ops, e),
             },
-            ReconnectState::RebuildIced => match ops.rebuild_iced() {
+            ReconnectState::RebuildUi => match ops.rebuild_ui() {
                 Ok(()) => {
                     self.state = ReconnectState::RestartRenderThread;
                     false

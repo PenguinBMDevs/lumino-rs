@@ -3,7 +3,7 @@
 /// 画刷设置：标题 / 逐层音轨分配 / 空态提示 / 两个按钮。
 #[derive(Debug, Clone, Default)]
 pub struct BrushSettingsModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「画刷绘制行为设置」。
     pub title: String,

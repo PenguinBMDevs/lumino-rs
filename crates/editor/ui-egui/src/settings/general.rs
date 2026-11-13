@@ -8,7 +8,7 @@ use super::super::{layout, theme, widgets};
 use super::SettingsState;
 use super::action::{self, SettingsAction};
 
-/// 渲染常规页表单（几何与 iced 基线逐像素对齐）。
+/// 渲染常规页表单（几何与 旧版 基线逐像素对齐）。
 pub(super) fn show(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -98,7 +98,7 @@ pub(super) fn show(
         egui::FontId::proportional(theme::font::LABEL),
         palette.text,
     );
-    // 生产 iced 的行布局：`row![label, space(16), input]`，行间距 8 →
+    // 生产 旧版 的行布局：`row![label, space(16), input]`，行间距 8 →
     // 标签与输入框之间实际 32px（8+16+8）。
     let input_rect = Rect::from_min_size(
         egui::pos2(

@@ -3,7 +3,7 @@
 /// 云文件浏览面板：工具栏 / 导航 / 新建 / 保存区 / 列表 / 提示。
 #[derive(Debug, Clone, Default)]
 pub struct CloudBrowserModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 设备下拉（连接列表快照）。
     pub devices: Vec<CloudDeviceModel>,
@@ -142,7 +142,7 @@ pub struct CloudEntryLabels {
 /// 云存储断连 / 失败提醒（`DialogType::CloudNotice`）。
 #[derive(Debug, Clone, Default)]
 pub struct CloudNoticeModel {
-    /// 顶部是否有 30px iced 自制标题栏。
+    /// 顶部是否有 30px 旧版 自制标题栏。
     pub titlebar: bool,
     /// 标题「云存储提示」。
     pub title: String,

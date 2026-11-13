@@ -13,7 +13,7 @@
 //!    `Size::ZERO`（`text_input.rs` 的 `resolve(..., Size::ZERO)`、
 //!    `progress_bar.rs` 的 `layout::atomic`）⇒ `Fill` 宽度量出 0；
 //!    `Text` 又以 `limits.max()` 为折行宽再取 `min_bounds`
-//!    （`iced_core/src/widget/text.rs`）⇒ 长文案"证明"自己需要整个 cap。
+//!    （旧布局引擎）⇒ 长文案"证明"自己需要整个 cap。
 //!    所以宽度必须声明，它同时是文本的折行宽度。
 //! 2. **高度可测量驱动**：压缩限制下 `Fill` 退化为内容内在尺寸，且结果天然被
 //!    `max_height` 夹住。
@@ -37,7 +37,7 @@
 //! 新增 `DialogType` 时本表会**编译失败**——偏好宽度是必填项，不允许退回
 //! 「测量一个会自证的宽度」。
 
-use iced_core::Size;
+use lumino_ui_core::geom::Size;
 
 use crate::state::root_state::DialogType;
 
@@ -166,7 +166,7 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::SpeedChange => DialogSizeHint::pinned(247.0, 256.0),
         // 批量编辑：内容全 Fixed（旧 420×640）
         DialogType::BatchEdit => DialogSizeHint::pinned(319.0, 614.0),
-        // 保存确认：尺寸静态化（原 `auto()` 依赖 iced 视图测量，视图已删除）。
+        // 保存确认：尺寸静态化（原 `auto()` 依赖 旧版 视图测量，视图已删除）。
         // 取旧产品尺寸 380×180（实测内容下限 338×169，留出 egui 卡片内边距余量）。
         DialogType::SaveConfirm => DialogSizeHint::pinned(380.0, 180.0),
 
@@ -179,7 +179,7 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
 
         // ── 宽度钉在原值区间：`Fill` 占多数内容（自动量会退到最小值）──────
         // 加载确认：超长路径是不可断词 token，宽度钉住 420；高度实测 233。
-        // （原来高度交给 iced 视图测量，视图删除后必须静态化）
+        // （原来高度交给 旧版 视图测量，视图删除后必须静态化）
         DialogType::LoadConfirm => DialogSizeHint::pinned(420.0, 233.0),
         // 云提醒：纯文本驱动，需固定折行宽度（旧 440×200）
         DialogType::CloudNotice => DialogSizeHint::pinned(440.0, 182.0),
@@ -243,7 +243,7 @@ pub fn measurement_cap(hint: DialogSizeHint, work_area: Size) -> f32 {
 
 /// 由「声明 + 工作区」直接算出窗口尺寸（**不再测量内容**）
 ///
-/// iced 视图层删除后没有可靠的文本度量通道，尺寸必须完全由声明决定：
+/// 旧版 视图层删除后没有可靠的文本度量通道，尺寸必须完全由声明决定：
 /// - 宽度 = [`width_cap`]（所有对话框的宽度都是固定声明值）；
 /// - 高度 = `min_height`（`pinned` / `floored` 都声明了下限），再按
 ///   [`measurement_cap`] 与工作区夹取，并保证不低于 [`MIN_DIALOG_HEIGHT`]。

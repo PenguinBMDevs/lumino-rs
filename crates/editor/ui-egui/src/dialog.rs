@@ -1,16 +1,16 @@
 //! 对话框：未保存更改确认（整窗）+ 动作通道。
 //!
-//! 几何来自生产 iced `view/save_confirm_dialog.rs`：
+//! 几何来自生产 旧版 `view/save_confirm_dialog.rs`：
 //! - 自制标题栏 30px（系统原生标题栏时跳过）；
 //! - 提示语 16px、垂直居中于内容区顶 + 90px；
 //! - 三个按钮 90×35、间距 10，水平居中于内容区，顶边 = 内容区顶 + 126。
 //!
-//! 颜色全部来自 [`DialogPalette`]（生产 iced `extended_palette` 映射），
+//! 颜色全部来自 [`DialogPalette`]（生产 旧版 `extended_palette` 映射），
 //! 因此深色 / 浅色主题都能整窗接管。
 //!
 //! 三个按钮与标题栏红绿灯都回传 [`SaveConfirmAction`]，生产侧再翻译成
 //! `Message::SaveConfirm(...)` / `window::Event`；标题栏空白区按下即请求拖动
-//! 窗口，保持与 iced 自制标题栏一致的行为。
+//! 窗口，保持与 旧版 自制标题栏一致的行为。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Stroke, Vec2};
 
@@ -24,7 +24,7 @@ use crate::widgets;
 const ACTION_ID: &str = "lumino.save-confirm.action";
 const RECTS_ID: &str = "lumino.save-confirm.rects";
 
-/// 保存确认对话框产生的动作（不依赖 iced）。
+/// 保存确认对话框产生的动作（不依赖 旧版）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveConfirmAction {
     /// 保存后继续。
@@ -112,7 +112,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &SaveConfirmModel, icons: &mut IconC
         .data_mut(|d| d.remove_temp::<Vec<(String, Rect)>>(Id::unique(RECTS_ID)));
 
     // `egui_kittest`（以及部分宿主）给到的 Ui 带 8px 外缩进；Panel 需要铺满视口，
-    // 否则 band 会整体内缩、与 iced 原位置错开。
+    // 否则 band 会整体内缩、与 旧版 原位置错开。
     let full = ui.ctx().viewport_rect();
     let mut root = ui.new_child(
         egui::UiBuilder::new()
@@ -183,7 +183,7 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
     let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 0, palette.background);
 
-    // 生产 iced：提示 + 按钮的主列在内容区垂直居中（`center_y(Fill)`）。
+    // 生产 旧版：提示 + 按钮的主列在内容区垂直居中（`center_y(Fill)`）。
     // 场景视口足够高时保持既有基线偏移（90 / 126）；对话框窗口按内容测量高度
     // （169 逻辑高），固定偏移会把按钮推出窗口底边——仅在会越界时整体上移，
     // 保证底部仍留 24px 内边距。
@@ -199,7 +199,7 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
         egui::pos2(rect.center().x, prompt_center_y),
         Align2::CENTER_CENTER,
         &model.message,
-        // 生产 iced：提示语 16px（`text(...).size(16)`）。
+        // 生产 旧版：提示语 16px（`text(...).size(16)`）。
         FontId::proportional(theme::font::SECTION),
         palette.text,
     );

@@ -15,7 +15,6 @@ default = []
 workspace = true
 
 [dependencies]
-iced_core = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }

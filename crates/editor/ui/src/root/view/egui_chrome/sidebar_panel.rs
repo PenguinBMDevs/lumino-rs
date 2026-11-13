@@ -1,7 +1,7 @@
 //! 左侧栏音轨列表动作 → 生产消息。
 //!
 //! `lumino-ui-egui` 只回传「点了哪条音轨 / 点了添加 / 点了菜单第几项」，
-//! 这里翻译成 `Message::Sidebar(sidebar::Event::*)`，与 iced 面板走同一批构造器。
+//! 这里翻译成 `Message::Sidebar(sidebar::Event::*)`，与 旧版 面板走同一批构造器。
 
 use lumino_core::tr;
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
@@ -29,7 +29,7 @@ impl Root {
             SidebarPanelAction::RenameConfirmed(id) => Event::track_rename_confirmed(id),
             SidebarPanelAction::ColorPicked { track_id, rgb } => Event::track_color_selected(
                 track_id,
-                iced_core::Color::from_rgb8(rgb.0, rgb.1, rgb.2),
+                lumino_ui_core::geom::Color::from_rgb8(rgb.0, rgb.1, rgb.2),
             ),
             SidebarPanelAction::ColorReset(id) => Event::track_color_reset(id),
             SidebarPanelAction::ColorPickerClosed(id) => Event::track_color_picker_closed(id),
@@ -72,7 +72,7 @@ impl Root {
     }
 }
 
-/// 音轨菜单条目顺序（与 iced `context_menu::panel` 完全一致）。
+/// 音轨菜单条目顺序（与 旧版 `context_menu::panel` 完全一致）。
 const TRACK_MENU_ITEMS: [TrackContextMenuItem; 5] = [
     TrackContextMenuItem::Delete,
     TrackContextMenuItem::Rename,
@@ -81,7 +81,7 @@ const TRACK_MENU_ITEMS: [TrackContextMenuItem; 5] = [
     TrackContextMenuItem::SetPort,
 ];
 
-/// 面板空白菜单条目顺序（与 iced `panel_context_menu::panel` 一致）。
+/// 面板空白菜单条目顺序（与 旧版 `panel_context_menu::panel` 一致）。
 const PANEL_MENU_ITEMS: [PanelContextMenuItem; 1] = [PanelContextMenuItem::RecoverDeletedTrack];
 
 /// 音轨取色器模型；未打开时返回 `None`。
@@ -149,7 +149,7 @@ pub(super) fn panel_menu(sidebar: &crate::sidebar::Sidebar) -> Option<SidebarPan
     })
 }
 
-/// 音轨菜单条目（图标 + 本地化文案，与 iced `item_icon` / `item_label` 同源）。
+/// 音轨菜单条目（图标 + 本地化文案，与 旧版 `item_icon` / `item_label` 同源）。
 fn entry(item: TrackContextMenuItem) -> SidebarMenuEntry {
     let icon = match item {
         TrackContextMenuItem::Delete => Icon::ContextMenuDelete,

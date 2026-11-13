@@ -1,6 +1,6 @@
 //! 左侧栏右键菜单：菜单项点击 / 背景关闭 / 占用登记。
 //!
-//! 几何与 iced 一致：面板内容宽 = panel_width − 6，菜单右对齐 −8（音轨）/ −4（面板），
+//! 几何与 旧版 一致：面板内容宽 = panel_width − 6，菜单右对齐 −8（音轨）/ −4（面板），
 //! 按钮 40、间距 4、内边距 8 → 菜单宽 56。
 
 use std::cell::RefCell;
@@ -204,7 +204,7 @@ fn escape_closes_track_menu() {
 }
 
 #[test]
-fn menu_rect_is_blocked_from_iced() {
+fn menu_rect_is_blocked_from_legacy() {
     let (h, _) = harness(SidebarModel {
         context_menu: Some(SidebarTrackMenuModel {
             track_id: 3,
@@ -218,6 +218,6 @@ fn menu_rect_is_blocked_from_iced() {
         blocked
             .iter()
             .any(|r| r.contains(Pos2::new(menu_left() + 28.0, menu_top + 20.0))),
-        "菜单本体必须进入占用区（否则 iced 的同位菜单会再处理一次）"
+        "菜单本体必须进入占用区（否则 旧版 的同位菜单会再处理一次）"
     );
 }

@@ -1,10 +1,10 @@
 //! 视频剪辑时间轴的 egui 实现（标尺 + 双轨条 + 走带线 + 命中测试）。
 //!
-//! 对应 iced `view/video_clip/timeline_canvas{,/draw}`：几何常量、刻度规则、
+//! 对应 旧版 `view/video_clip/timeline_canvas{,/draw}`：几何常量、刻度规则、
 //! 圆角轨道条与首尾裁剪把手、命中区划分全部同口径。交互（scrub / 移动 / 裁剪）
 //! 由调用方按 [`HitZone`] 分派，本模块只负责「画什么」与「点到哪」。
 //!
-//! 与 iced 的差异：不依赖 `iced_widget::canvas`，只用 egui painter。
+//! 与 旧版 的差异：不依赖 画布对象，只用 egui painter。
 
 use egui::{Align2, CornerRadius, FontId, Rect, Vec2};
 
@@ -148,7 +148,7 @@ impl TrackGeom {
         }
     }
 
-    /// 轨道条的固定 y（与 iced 布局一致）。
+    /// 轨道条的固定 y（与 旧版 布局一致）。
     pub fn track_y(track: ClipTrack) -> f32 {
         match track {
             ClipTrack::Video => RULER_HEIGHT + TRACK_SPACING,
@@ -224,15 +224,15 @@ pub fn ticks(model: &VideoTimelineModel, width: f32) -> Vec<(f32, bool)> {
 
 /// 绘制时间轴（`rect` = 控件区域）。
 ///
-/// 颜色/几何逐项对齐 iced `timeline_canvas/draw.rs`：
+/// 颜色/几何逐项对齐 旧版 `timeline_canvas/draw.rs`：
 /// 背景 `weakest`、标尺主刻度 `strong` 12px / 次刻度 `weak` 6px（贴底）、
 /// 主刻度标签 10px `weak.text`、视频条 `rgb(0.2,0.6,0.95)`、音频条
 /// `rgb(0.25,0.75,0.35)`、把手为 45% 白（8×40，y+4）、标签白色 11px（x+10 居中）、
 /// 走带线 `rgb(0.95,0.25,0.25)` 宽 2。
 /// 标题行：标题 + 倒带/播放按钮 + 信息文本（全部 egui 自绘，左侧对齐）。
 ///
-/// 与 iced 原布局同口径：行内左边距 8、间距 4、按钮 28×20（图标 16 + 内边距 6/2）、
-/// 标题 12px、信息 11px。行矩形由 iced 的探测占位提供，跨框架不存在文本度量对齐。
+/// 与 旧版 原布局同口径：行内左边距 8、间距 4、按钮 28×20（图标 16 + 内边距 6/2）、
+/// 标题 12px、信息 11px。行矩形由 旧版 的探测占位提供，跨框架不存在文本度量对齐。
 pub fn show_title_row(
     ui: &egui::Ui,
     model: &VideoTimelineModel,
@@ -305,7 +305,7 @@ pub fn show_title_row(
         theme::text_muted(),
     );
 
-    // 标题行由 egui 独占：iced 的同位占位行不再需要事件。
+    // 标题行由 egui 独占：旧版 的同位占位行不再需要事件。
     crate::chrome::menu::extend_blocked(ui.ctx(), [rect]);
 }
 
@@ -317,7 +317,7 @@ fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
         .x
 }
 
-/// 传输按钮尺寸（图标 16 + 内边距 6/2，与 iced 同口径）。
+/// 传输按钮尺寸（图标 16 + 内边距 6/2，与 旧版 同口径）。
 const BUTTON_W: f32 = 28.0;
 const BUTTON_H: f32 = 20.0;
 
@@ -326,7 +326,7 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
         return;
     }
     let painter = ui.painter().with_clip_rect(rect);
-    // 与 iced `palette.background.weakest` 同源。
+    // 与主题的 `background.weakest` 同源。
     painter.rect_filled(rect, 0, theme::panel_bg());
 
     let pps = PIXELS_PER_SEC * model.zoom;
@@ -445,7 +445,7 @@ pub enum ClipEdge {
 
 /// 时间轴交互动作（egui 输入 → 生产侧映射成 `VideoClipAction`）。
 ///
-/// 拖动/裁剪都产出**绝对值**（不做增量累加），与 iced 的
+/// 拖动/裁剪都产出**绝对值**（不做增量累加），与 旧版 的
 /// `ClipTrackOffsetChanged` / `ClipTrimChanged` 语义一致，避免漂移。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VideoTimelineAction {

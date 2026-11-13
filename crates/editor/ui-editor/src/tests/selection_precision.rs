@@ -29,9 +29,9 @@ use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
-use iced_core::Point;
 use lumino_core::storage::config::SelectionBoxMode;
 use lumino_message::Tool;
+use lumino_ui_core::geom::Point;
 
 /// 默认精度（PPQ 1920 下的 1/4 音符）
 const QUARTER: f32 = 1920.0;

@@ -1,7 +1,7 @@
 //! 遮罩参数面板：生产状态 → egui 模型 + 动作回传。
 //!
 //! 面板锚点为 `MaskPanelState.anchor`（全局鼠标点），原点再右下偏移 12——
-//! 与 iced 原实现同口径。
+//! 与 旧版 原实现同口径。
 
 use lumino_core::shape::MaskShow;
 use lumino_message::MaskPanelAction as MsgAction;
@@ -57,10 +57,10 @@ impl Root {
     }
 }
 
-/// 锚点到面板原点的偏移（与 iced `ANCHOR_OFFSET` 同为 12）。
+/// 锚点到面板原点的偏移（与 旧版 `ANCHOR_OFFSET` 同为 12）。
 const ANCHOR_OFFSET: f32 = 12.0;
 
-/// 面板文案（对应 iced 视图里的字面量）。
+/// 面板文案（对应 旧版 视图里的字面量）。
 fn labels() -> MaskPanelLabels {
     MaskPanelLabels {
         title: "遮罩".to_string(),
@@ -113,7 +113,7 @@ mod tests {
                 own: true,
                 ..MaskParams::default()
             }),
-            iced_core::Point::new(100.0, 200.0),
+            lumino_ui_core::geom::Point::new(100.0, 200.0),
         );
         let model = root.mask_panel_model().expect("打开时应有模型");
         assert_eq!(model.origin, egui::pos2(112.0, 212.0));

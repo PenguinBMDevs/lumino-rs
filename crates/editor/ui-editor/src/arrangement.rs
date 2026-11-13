@@ -2,8 +2,8 @@
 //!
 //! 音符由 WGPU ArrangementRenderer 渲染。
 
-// 视口与交互逻辑在 iced-free 的 `lumino-arrangement-core`；
-// 渲染与输入由 egui 侧接管（`lumino-ui-egui`），iced 侧不再有走带画布。
+// 视口与交互逻辑在 旧版-free 的 `lumino-arrangement-core`；
+// 渲染与输入由 egui 侧接管（`lumino-ui-egui`），旧版 侧不再有走带画布。
 // 说明：三个 `*Canvas`（点击层 / 轨道列 / 标尺）已随 egui 接管删除。
 pub use lumino_arrangement_core::interaction;
 pub use lumino_arrangement_core::viewport::ArrangementViewport;

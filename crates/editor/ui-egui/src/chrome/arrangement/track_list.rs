@@ -1,9 +1,9 @@
 //! 走带左侧轨道列（160px）的绘制与命中。
 //!
-//! 绘制与 iced `ui-editor/src/arrangement/track_list/draw.rs` 同口径；
+//! 绘制与 旧版 `ui-editor/src/arrangement/track_list/draw.rs` 同口径；
 //! 命中盒由 [`row_rects`] **同一份矩形**给出，保证“看到的就是点得到的”。
 //!
-//! 交互语义与 iced `track_list/handlers.rs` 一致：单击选择、Shift 范围选择、
+//! 交互语义与 旧版 `track_list/handlers.rs` 一致：单击选择、Shift 范围选择、
 //! M/S 开关、按下注册拖拽排序候选（长按/移动激活由生产侧统一计时）。
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect};
@@ -103,7 +103,7 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
         let bg = match track.color {
             Some(color) if track.selected => blend(color, theme::selected_bg(), 0.35),
             Some(color) => color,
-            // 选中：主色弱调（对应 iced `palette.primary.weak`），不是灰底，
+            // 选中：主色弱调（对应 旧版 `palette.primary.weak`），不是灰底，
             // 否则配合白字会糊成一片。
             None if track.selected => blend(theme::base_bg(), theme::accent(), 0.16),
             None if index % 2 == 0 => {
@@ -142,7 +142,7 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
         }
 
         let text_color = if track.selected && track.color.is_none() {
-            // 对应 iced `palette.primary.strong`：深主色在浅主色底上可读。
+            // 对应 旧版 `palette.primary.strong`：深主色在浅主色底上可读。
             theme::accent_strong()
         } else if track.color.is_some() {
             contrast_text(bg)
@@ -292,13 +292,13 @@ fn draw_buttons(
     );
 }
 
-/// 线性混合（与 iced `blend_color` 同口径）。
+/// 线性混合（与 旧版 `blend_color` 同口径）。
 fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
     let f = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
     Color32::from_rgb(f(a.r(), b.r()), f(a.g(), b.g()), f(a.b(), b.b()))
 }
 
-/// 按背景亮度选黑/白文字（对应 iced `contrast_text_color`）。
+/// 按背景亮度选黑/白文字（对应 旧版 `contrast_text_color`）。
 fn contrast_text(bg: Color32) -> Color32 {
     let luma = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
     if luma > 140.0 {

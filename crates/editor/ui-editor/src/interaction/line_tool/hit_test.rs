@@ -6,8 +6,8 @@
 use super::LineToolHit;
 use super::geom;
 use crate::Editor;
-use iced_core::Point;
 use lumino_editor_state::{AnchorBend, HandleSide};
+use lumino_ui_core::geom::Point;
 
 /// 锚点命中半径（像素）
 pub(super) const ANCHOR_HIT_RADIUS: f32 = 12.0;

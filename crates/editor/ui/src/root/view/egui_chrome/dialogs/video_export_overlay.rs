@@ -115,7 +115,7 @@ fn progress_block(state: &VideoExportDialogState) -> VideoOverlayProgress {
     }
 }
 
-/// 剩余时间提示（与 iced `elapsed_remaining_text` 同口径）。
+/// 剩余时间提示（与 旧版 `elapsed_remaining_text` 同口径）。
 fn remaining_text(state: &VideoExportDialogState) -> String {
     let fps = state.render_fps.max(0.01);
     let remaining = state.total_frames.saturating_sub(state.current_frame) as f64 / fps;
@@ -125,7 +125,7 @@ fn remaining_text(state: &VideoExportDialogState) -> String {
     trf!("预计剩余: {t}", t = format_duration(remaining))
 }
 
-/// 秒 → 「H:MM:SS」/「M:SS」（与 iced `format_duration` 同口径）。
+/// 秒 → 「H:MM:SS」/「M:SS」（与 旧版 `format_duration` 同口径）。
 fn format_duration(secs: f64) -> String {
     let total = secs.max(0.0).round() as u64;
     let h = total / 3600;

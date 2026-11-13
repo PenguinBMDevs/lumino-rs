@@ -90,7 +90,7 @@ pub(super) fn draw(
         let icon_rect = Rect::from_center_size(button.center(), Vec2::splat(CTX_ICON));
         icons.paint(ui.painter(), icon, icon_rect);
         if !menu.can_edit {
-            // 置灰：图标上覆盖半透明面板底色（与 iced 同策略）。
+            // 置灰：图标上覆盖半透明面板底色（与 旧版 同策略）。
             ui.painter()
                 .rect_filled(icon_rect, CornerRadius::same(4), CTX_MASK);
         }

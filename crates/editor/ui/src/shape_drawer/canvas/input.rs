@@ -1,13 +1,13 @@
 //! 抽屉画布的事件逻辑（与绘制后端无关）。
 //!
-//! iced 的 `Canvas` 与 egui 画布共用这里的函数：两边只负责把各自的输入事件
+//! 旧版 的 `Canvas` 与 egui 画布共用这里的函数：两边只负责把各自的输入事件
 //! 归一化成「局部坐标 + 画布边界」，再调用同一套命中/草稿/拖动逻辑，
 //! 保证移植后行为完全一致。坐标均为「画布局部坐标」（画布左上角为原点）。
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use iced_core::{Point, Rectangle};
+use lumino_ui_core::geom::{Point, Rectangle};
 
 use crate::shape_drawer::canvas::draw::{
     TOOLBAR_WIDTH, ToolbarAction, local_to_unit, toolbar_hit, unit_side, unit_to_local,

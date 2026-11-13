@@ -1,7 +1,7 @@
 //! 工程走带视口（框架无关）。
 //!
-//! 从 `lumino-ui-editor/src/arrangement.rs` 抽出：原实现只用 iced `Point` 表示
-//! canvas 偏移/尺寸，替换成中立的 `Point2` 后即可被 iced 与 egui 共用。
+//! 从 `lumino-ui-editor/src/arrangement.rs` 抽出：原实现只用 旧版 `Point` 表示
+//! canvas 偏移/尺寸，替换成中立的 `Point2` 后即可被 旧版 与 egui 共用。
 
 use lumino_message::types::geometry::Point2;
 

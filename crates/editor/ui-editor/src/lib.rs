@@ -1,6 +1,6 @@
 //! 钢琴卷帘用户界面编辑器 crate。
 //!
-//! 本 crate 提供基于 iced 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
+//! 本 crate 提供基于 旧版 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
 //! 滚动、缩放、力度编辑、滚动条控件等 UI 能力，并整合
 //! [`lumino_editor_state`] 与底层文档状态模块。
 
@@ -79,7 +79,7 @@ mod tests {
     mod undo_redo_consistency;
 }
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 use std::cell::{Cell, RefCell};
 
 // 统一从 editor_state 导入（重构拆分前 `crate::` 引用兼容）
@@ -144,7 +144,7 @@ pub struct SpatialIndexState {
     pub max_note_len_key: Cell<Option<(u64, usize)>>,
 }
 
-/// 绘制缓存失效标记（iced 绘制缓存已删除，clear 为 no-op）。
+/// 绘制缓存失效标记（旧版 绘制缓存已删除，clear 为 no-op）。
 #[derive(Default)]
 pub struct GridCacheMarker;
 
@@ -155,7 +155,7 @@ impl GridCacheMarker {
 
 /// 钢琴卷帘编辑器
 pub struct Editor {
-    /// 绘制缓存失效标记（iced 绘制缓存已删除；保留调用点以免改动大量编辑路径）
+    /// 绘制缓存失效标记（旧版 绘制缓存已删除；保留调用点以免改动大量编辑路径）
     pub grid_cache: GridCacheMarker,
     /// 键盘缓存失效标记（同 grid_cache，no-op）
     pub keyboard_cache: GridCacheMarker,
@@ -281,7 +281,7 @@ pub struct Editor {
 
     /// Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动，可靠通道）
     ///
-    /// 与 `GridInteractionState.control_pressed`（iced canvas 内事件，可能因焦点
+    /// 与 `GridInteractionState.control_pressed`（旧版 canvas 内事件，可能因焦点
     /// 问题不送达）互为兜底：ruler/键盘区的 Ctrl+滚轮缩放以此字段为准。
     ctrl_pressed: bool,
 

@@ -55,7 +55,7 @@ impl Host {
         use crate::titlebar::mode_toggle::AppMode;
 
         // REND-019（PR-A §1.6）：设备已丢失（TDR）——本帧不渲染任何内容
-        // （含 blit 与 iced 覆盖层），等待重连接管；避免对死设备/死渲染
+        // （含 blit 与 旧版 覆盖层），等待重连接管；避免对死设备/死渲染
         // 线程继续投递造成日志刷屏
         if lumino_gfx::device_lost() {
             return;
@@ -63,7 +63,7 @@ impl Host {
 
         // 视频剪辑面板（渲染器首级）：不应渲染钢琴卷帘的任何内容（网格/音符/标尺），
         // 仅保留瀑布流离屏预览（由 ensure_piano_waterfall_keyboard 的 is_renderer_entry 分支处理）
-        // 与 iced UI，避免其他面板内容透出或 GPU 浪费。
+        // 与 旧版 UI，避免其他面板内容透出或 GPU 浪费。
         //
         // 判定统一走 `Root::is_renderer_entry_active()`（唯一权威源），不再内联复制条件。
         if self.root.is_renderer_entry_active() {
@@ -80,7 +80,7 @@ impl Host {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
-                self.render_iced_ui(frame, &view, Some(bg));
+                self.render_ui(frame, &view, Some(bg));
             }
             return;
         }
@@ -102,7 +102,7 @@ impl Host {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
-                self.render_iced_ui(frame, &view, Some(bg));
+                self.render_ui(frame, &view, Some(bg));
             }
             return;
         }
@@ -125,9 +125,9 @@ impl Host {
             }
             // REND-019（PR-A §1.6）：等待返回后必须复查设备丢失——置位则本帧
             // 放弃 blit（禁止向死设备提交拷贝，重连由上层接管），同时跳过
-            // iced 覆盖层渲染（同一死设备）。
+            // 旧版 覆盖层渲染（同一死设备）。
             if lumino_gfx::device_lost() {
-                tracing::warn!("device lost 置位：本帧放弃 blit 与 iced 渲染（等待重连）");
+                tracing::warn!("device lost 置位：本帧放弃 blit 与 旧版 渲染（等待重连）");
                 return;
             }
             // 叠加层接管底层时：把离屏纹理交给 egui 采样，跳过直接 blit，
@@ -149,12 +149,12 @@ impl Host {
             self.window_ctx.window.request_redraw();
         }
 
-        // iced UI 覆盖层渲染到同一 surface
+        // 旧版 UI 覆盖层渲染到同一 surface
         if !self.skip_ui_rendering {
             let view = frame
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            self.render_iced_ui(frame, &view, None);
+            self.render_ui(frame, &view, None);
         }
     }
 
@@ -220,7 +220,7 @@ impl Host {
             self.render_ctx.pending_present_flush = None;
         } else if allow_present_lag && view_changed {
             // 仅在「视口确实变了」时登记收尾：视口未变的重复提交（如 hover 触发的
-            // 重绘）内容与已呈现帧等价，登记收尾只会平白多出一帧 iced 渲染。
+            // 重绘）内容与已呈现帧等价，登记收尾只会平白多出一帧 旧版 渲染。
             self.render_ctx.pending_present_flush = Some(frame_id);
         }
 

@@ -80,7 +80,7 @@ fn confirm_and_cancel_emit_actions() {
 }
 
 #[test]
-fn buttons_are_blocked_for_iced() {
+fn buttons_are_blocked_for_legacy() {
     let (h, _) = harness(model());
     let blocked = chrome::menu::take_blocked(&h.ctx);
     for rect in [

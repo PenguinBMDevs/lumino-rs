@@ -63,7 +63,7 @@ fn harness(model: HistoryModel) -> (Harness<'static>, Rc<RefCell<Vec<HistoryActi
 fn row_click_dispatches_jump() {
     let (mut harness, actions) = harness(model(1));
 
-    // 非当前行没有游标标记，标签前有两个空格（与生产 iced 视图一致）。
+    // 非当前行没有游标标记，标签前有两个空格（与生产 旧版 视图一致）。
     harness.get_by_label("  移动音符").click();
     harness.run();
     assert_eq!(actions.borrow().last(), Some(&HistoryAction::Jump(2)));

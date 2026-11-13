@@ -244,7 +244,7 @@ fn level_row(ui: &mut egui::Ui, level: &crate::chrome::BrushLevelModel) {
     }
 }
 
-/// 圆形「+」/「−」图标按钮（19px 圆环 + 横竖线，与 iced 的 PlusCircle 同形）。
+/// 圆形「+」/「−」图标按钮（19px 圆环 + 横竖线，与 旧版 的 PlusCircle 同形）。
 fn icon_button(
     ui: &mut egui::Ui,
     origin: egui::Pos2,

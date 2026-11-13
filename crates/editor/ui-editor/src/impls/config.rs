@@ -3,10 +3,10 @@
 //! 包含：工具切换、光标/画布状态、总 ticks 和 PPQ、音符变更标志、缓存失效
 
 use crate::{CacheInvalidation, Editor};
-use iced_core::Point;
 use lumino_core::BrushConfig;
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
+use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 设置当前工具（委托到 editor_state）

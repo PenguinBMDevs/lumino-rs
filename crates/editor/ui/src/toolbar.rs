@@ -3,7 +3,7 @@
 //! 该模块已拆分为以下子模块：
 //! - `types`: 类型定义（NotePrecision, TupletType, DotType, Tool 等）
 //! - `event`: 工具栏事件枚举和工厂方法
-//! - `placeholder`: iced 侧同尺寸占位 + egui 快照（视图已全部迁到 egui）
+//! - `placeholder`: 旧版 侧同尺寸占位 + egui 快照（视图已全部迁到 egui）
 
 mod buttons;
 mod default;

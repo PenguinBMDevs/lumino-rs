@@ -347,7 +347,10 @@ impl Root {
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset_y = self.editor.editor_state.canvas.offset_y;
         self.editor
-            .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
+            .set_canvas_offset(lumino_ui_core::geom::Point::new(
+                sidebar_width,
+                current_offset_y,
+            ));
 
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {

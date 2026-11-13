@@ -1,6 +1,6 @@
 use super::*;
 use crate::{EditState, Editor};
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 fn bundled_font() -> ab_glyph::FontArc {
     let bytes = include_bytes!(concat!(

@@ -3,8 +3,8 @@
 //! 保持与原有 `crate::note::*` 路径完全兼容。
 //! UI 特有的方法（screen_bounds, to_instance）通过扩展 trait 定义在此处。
 
-use iced_core::{Color, Point, Rectangle, Size};
 use lumino_gfx::NoteInstance;
+use lumino_ui_core::geom::{Color, Point, Rectangle, Size};
 
 pub use lumino_note_core::Note;
 
@@ -43,7 +43,7 @@ impl NoteExt for Note {
     }
 }
 
-/// 将 iced Color 转换为 [f32; 4] RGBA
+/// 将 旧版 Color 转换为 [f32; 4] RGBA
 pub fn color_to_array(color: Color) -> [f32; 4] {
     [color.r, color.g, color.b, color.a]
 }

@@ -72,7 +72,6 @@ impl Host {
             render_ctx,
             window_ctx,
             root,
-            events: Vec::new(),
             egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
             egui_blocked: Vec::new(),
             canvas_input: lumino_ui_editor::grid::GridInteractionState::default(),
@@ -158,7 +157,7 @@ impl Host {
             root.mask_panel.show(
                 lumino_ui_editor::MaskEditTarget::Pending { index: 0 },
                 None,
-                iced_core::Point::new(600.0, 300.0),
+                lumino_ui_core::geom::Point::new(600.0, 300.0),
             );
         }
         // 调试开关：启动即弹三条 Toast（`LUMINO_TOAST_DEMO=1`）。
@@ -207,7 +206,7 @@ impl Host {
 
     /// 创建设备检查警告窗口 Host
     ///
-    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 iced Engine。
+    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 旧版 Engine。
     pub fn new_device_warning(
         window: Arc<winit::window::Window>,
         width: u32,

@@ -28,7 +28,7 @@ fn full_ctrl_drag_vertical_copy(
 
     // Ctrl+按下选择框内部 → DraggingSelectionCopy
     editor.set_ctrl_pressed(true);
-    editor.handle_pressed(iced_core::Point::new(center_x, center_y), false);
+    editor.handle_pressed(lumino_ui_core::geom::Point::new(center_x, center_y), false);
     assert!(
         matches!(
             editor.editor_state.interaction.edit_state,
@@ -39,7 +39,7 @@ fn full_ctrl_drag_vertical_copy(
     );
 
     // 上下移动：key 60 → 60 + delta_keys
-    editor.handle_moved(iced_core::Point::new(center_x, moved_y));
+    editor.handle_moved(lumino_ui_core::geom::Point::new(center_x, moved_y));
 
     // 拖动中 delta_key 应已更新
     if let EditState::DraggingSelectionCopy { drag_state } =

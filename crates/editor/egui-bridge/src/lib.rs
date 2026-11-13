@@ -1,6 +1,6 @@
 //! egui → wgpu 27 最小绘制桥。
 //!
-//! 主程序的 `iced_wgpu::Engine` 与 `lumino-gfx` 共用同一个 `wgpu::Device/Queue`，
+//! 主程序的 渲染引擎 与 `lumino-gfx` 共用同一个 `wgpu::Device/Queue`，
 //! wgpu 版本被硬绑定在 27。官方 `egui-wgpu 0.37` 依赖 wgpu 30，无法直接接入，
 //! 因此本 crate 只实现渲染所需的最小集合：
 //!

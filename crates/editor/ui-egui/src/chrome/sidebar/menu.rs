@@ -1,6 +1,6 @@
 //! 左侧栏右键菜单：深色竖排图标 + 悬停提示。
 //!
-//! 几何与 iced `sidebar/context_menu.rs` / `panel_context_menu.rs` 一致：
+//! 几何与 旧版 `sidebar/context_menu.rs` / `panel_context_menu.rs` 一致：
 //! 按钮 40×40、图标 36、间距 4、内边距 8（面板宽 56）、圆角 8、
 //! 底色 `rgba(0.06, 0.06, 0.08, 0.96)`，悬停白色 12%。
 //!
@@ -80,7 +80,7 @@ fn show_menu(
                 }
                 let icon_rect = Rect::from_center_size(button.center(), Vec2::splat(ICON));
                 icons.paint(ui.painter(), entry.icon, icon_rect);
-                // 悬停提示在右侧（与 iced `tooltip::Position::Right` 同侧）。
+                // 悬停提示在右侧（与 旧版 `tooltip::Position::Right` 同侧）。
                 let response = response.on_hover_text(&entry.label);
                 if response.clicked() {
                     clicked = Some(index);
@@ -114,13 +114,13 @@ pub(super) fn track_menu(
     );
     let clicked = show_menu(ui, "lumino.sidebar.track-menu", pos, &model.entries, icons);
 
-    // 背景：点面板内空白 / 右键关闭（与 iced 的全面板 backdrop 同义）。
+    // 背景：点面板内空白 / 右键关闭（与 旧版 的全面板 backdrop 同义）。
     let backdrop = ui.interact(
         content,
         egui::Id::unique("lumino.sidebar.track-menu.backdrop"),
         Sense::click(),
     );
-    // 菜单本体与背景都计入占用，避免 iced 的同位菜单再处理一次。
+    // 菜单本体与背景都计入占用，避免 旧版 的同位菜单再处理一次。
     crate::chrome::menu::extend_blocked(ui.ctx(), [menu_rect(pos, model.entries.len())]);
     let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if let Some(index) = clicked {

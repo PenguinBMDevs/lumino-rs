@@ -1,7 +1,7 @@
 //! 状态栏用的工程统计。
 //!
 //! 状态栏内容（左侧描述 / GPU 指标组 / CPU·MEM·FPS / 右侧文本 / 点 MEM 打开
-//! 内存监控）已全部由 egui 绘制（`chrome::statusbar::show_model`），iced 视图已删除。
+//! 内存监控）已全部由 egui 绘制（`chrome::statusbar::show_model`），旧版 视图已删除。
 
 use crate::root::Root;
 

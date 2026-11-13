@@ -116,7 +116,7 @@ fn outside_click_closes_and_canvas_is_blocked() {
         "画布空白处点击应关闭菜单：{:?}",
         actions.borrow()
     );
-    // 打开期间整块画布进入占用区：同一次点击不能再落到画布/iced。
+    // 打开期间整块画布进入占用区：同一次点击不能再落到画布/旧版。
     let blocked = chrome::menu::take_blocked(&h.ctx);
     assert!(
         blocked.iter().any(|rect| rect.contains(outside)),
@@ -128,7 +128,7 @@ fn outside_click_closes_and_canvas_is_blocked() {
 fn drawn_shape_has_twenty_rows() {
     let menu = model(ContextMenuTarget::DrawnShape);
     let panel = piano_roll_context_menu::panel_rect(&menu);
-    // 20 行 × 40 + 19 × 4 + 16 = 892：高于本测试的可用区时与 iced 一致
+    // 20 行 × 40 + 19 × 4 + 16 = 892：高于本测试的可用区时与 旧版 一致
     // 允许向下溢出（生产画布高度足够），但左右不得越界、顶边不得跑到区域外。
     assert!(panel.width() <= menu.available.width());
     assert!(panel.left() >= menu.available.left());

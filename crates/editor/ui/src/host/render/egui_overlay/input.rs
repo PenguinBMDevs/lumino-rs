@@ -7,7 +7,7 @@ use egui;
 
 /// 叠加层输入缓冲：只收「影响显示态」的事件（悬停 / 滚轮 / 修饰键 / 焦点）。
 ///
-/// 与 iced 的事件队列同策略：连续指针移动只保留最后一次，避免一帧内堆积
+/// 与 旧版 的事件队列同策略：连续指针移动只保留最后一次，避免一帧内堆积
 /// 成百上千个中间位置。
 pub(crate) struct OverlayInput {
     /// 待提交给 egui 的事件。
@@ -109,7 +109,7 @@ impl OverlayInput {
         self.wants_keyboard = wants;
     }
 
-    /// egui 是否正在编辑文本（键盘事件必须只给它，否则会触发 iced 快捷键）。
+    /// egui 是否正在编辑文本（键盘事件必须只给它，否则会触发 旧版 快捷键）。
     pub(super) fn wants_keyboard(&self) -> bool {
         self.wants_keyboard
     }

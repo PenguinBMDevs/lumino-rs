@@ -1,5 +1,5 @@
 //! 未保存更改确认对话框整窗 band 的像素回归：`show_bands` 渲染的对话框
-//! 必须与 iced 基线（560×260 @1x）逐段一致。
+//! 必须与 legacy 基线（560×260 @1x）逐段一致。
 
 mod common;
 
@@ -53,14 +53,14 @@ fn baseline() -> RgbaImage {
         .ancestors()
         .nth(3)
         .expect("测试目录必须有工作区根")
-        .join("tests/ui-baseline/iced/save_confirm_dialog-dpi100.png");
+        .join("tests/ui-baseline/legacy/save_confirm_dialog-dpi100.png");
     image::open(&path)
-        .expect("读取 iced 基线失败（先运行 capture_iced）")
+        .expect("读取 legacy 基线失败（先运行 capture_egui）")
         .to_rgba8()
 }
 
 #[test]
-fn save_confirm_bands_match_iced_geometry() {
+fn save_confirm_bands_match_legacy_geometry() {
     let bands = render();
     let baseline = baseline();
     let debug_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -84,10 +84,10 @@ fn save_confirm_bands_match_iced_geometry() {
     assert_eq!(
         bands.get_pixel(10, 250).0[3],
         255,
-        "整窗必须不透明（对话框是独立窗口，下层没有 iced 画面）"
+        "整窗必须不透明（对话框是独立窗口，下层没有 legacy 画面）"
     );
 
-    // 按钮几何（iced 基线 y=162）：135..224 / 235..324 / 335..424。
+    // 按钮几何（legacy 基线 y=162）：135..224 / 235..324 / 335..424。
     assert_eq!(
         &bands.get_pixel(180, 162).0[..3],
         &[0x2A, 0xC3, 0xDE],
@@ -121,13 +121,13 @@ fn save_confirm_bands_match_iced_geometry() {
         merged
     };
     let bands_text = merge(ink_runs(&bands, 110, 135, 100, 460, [0x24, 0x28, 0x3B]));
-    let iced_text = merge(ink_runs(&baseline, 110, 135, 100, 460, [0x24, 0x28, 0x3B]));
-    assert_runs_close_with(&bands_text, &iced_text, 6, "保存确认提示语");
+    let legacy = merge(ink_runs(&baseline, 110, 135, 100, 460, [0x24, 0x28, 0x3B]));
+    assert_runs_close_with(&bands_text, &legacy, 6, "保存确认提示语");
 
     // 按钮文字墨迹行。
     let bands_button_text = ink_row_runs(&bands, 135, 424, 150, 200, [0x2A, 0xC3, 0xDE]);
-    let iced_button_text = ink_row_runs(&baseline, 135, 424, 150, 200, [0x2A, 0xC3, 0xDE]);
-    assert_runs_close(&bands_button_text, &iced_button_text, "主按钮文字");
+    let legacy_button_text = ink_row_runs(&baseline, 135, 424, 150, 200, [0x2A, 0xC3, 0xDE]);
+    assert_runs_close(&bands_button_text, &legacy_button_text, "主按钮文字");
 
     // 整体差异率：字体栅格化差异造成的残差应保持在场景同级（<5%）。
     let mut different = 0_u64;

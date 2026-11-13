@@ -3,7 +3,7 @@
 /// Help 窗口：标题 / 搜索 / 分区话题列表 / 正文 / 底部按钮。
 #[derive(Debug, Clone, Default)]
 pub struct HelpModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 窗口标题「帮助」。
     pub title: String,

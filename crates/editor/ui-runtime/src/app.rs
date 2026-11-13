@@ -389,7 +389,7 @@ impl ApplicationHandler for NativeApp {
 }
 
 impl NativeApp {
-    /// 把编辑器画布尺寸同步为「内容区」逻辑尺寸（iced 布局原本由 widget 写入）。
+    /// 把编辑器画布尺寸同步为「内容区」逻辑尺寸（旧版 布局原本由 widget 写入）。
     fn sync_editor_canvas(&mut self, window: &Window) {
         let Some(root) = self.root.as_mut() else {
             return;
@@ -401,14 +401,15 @@ impl NativeApp {
             (size.height as f32 / ppp - lumino_ui_egui::layout::TITLEBAR_H - root.toolbar.height)
                 .max(1.0);
         root.editor
-            .set_canvas_size(iced_core::Point::new(width, height));
+            .set_canvas_size(lumino_ui_core::geom::Point::new(width, height));
         // 画布在窗口中的真实原点（左栏右缘 / 标题栏 + 工具栏下缘）：
         // 渲染线程的 `canvas_offset` 与 egui 的输入换算必须同源，否则音符
         // 会画在错误位置（或落到 scissor 之外）。
-        root.editor.set_canvas_offset(iced_core::Point::new(
-            lumino_ui_egui::layout::SIDEBAR_W,
-            lumino_ui_egui::layout::TITLEBAR_H + root.toolbar.height,
-        ));
+        root.editor
+            .set_canvas_offset(lumino_ui_core::geom::Point::new(
+                lumino_ui_egui::layout::SIDEBAR_W,
+                lumino_ui_egui::layout::TITLEBAR_H + root.toolbar.height,
+            ));
     }
 
     /// 窗口逻辑坐标 → 编辑器画布局部坐标（画布左上 = 左栏右缘 + 标题栏/工具栏下缘）。

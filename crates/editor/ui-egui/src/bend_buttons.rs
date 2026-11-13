@@ -1,13 +1,13 @@
 //! 曲线锚点弯折切换按钮（曲线 / 折线）——egui 版。
 //!
-//! 取代 iced `line_tool_box` 里的两枚文字按钮：52×20、圆角 4、11px 居中文本；
+//! 取代 旧版 `line_tool_box` 里的两枚文字按钮：52×20、圆角 4、11px 居中文本；
 //! 当前弯折态用主题主色填充 + 白字 + 白边框，另一态用弱底色 + 常规文字。
 
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Stroke, StrokeKind};
 
 use crate::theme;
 
-/// 按钮宽度（与 iced 一致）。
+/// 按钮宽度（与 旧版 一致）。
 pub const WIDTH: f32 = 52.0;
 /// 按钮高度。
 pub const HEIGHT: f32 = 20.0;

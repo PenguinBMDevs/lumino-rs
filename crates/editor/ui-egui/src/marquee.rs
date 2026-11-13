@@ -1,7 +1,7 @@
 //! 框选框（选择矩形）绘制——egui 版。
 //!
-//! 取代 iced `selection_box::draw`：统一「灰色 3px 边框 + 比边框浅的灰色半透明填充」。
-//! iced Canvas 的绘制层被 egui 底层纹理覆盖后不可见，本模块保证框选始终可见。
+//! 取代 旧版 `selection_box::draw`：统一「灰色 3px 边框 + 比边框浅的灰色半透明填充」。
+//! 旧版 Canvas 的绘制层被 egui 底层纹理覆盖后不可见，本模块保证框选始终可见。
 
 use egui::{Color32, CornerRadius, Rect, Stroke, StrokeKind};
 

@@ -3,7 +3,7 @@
 //! 11 行固定高度：Font / Size / Weight / Italic / Unit / Tracking / Leading /
 //! Align / Threshold / Grow / Mode；内容宽 220、面板宽 248、行距 6。
 //! 字体下拉是自绘弹层（而不是 `ComboBox`），这样它的矩形也能进入占用列表，
-//! 点击不会穿透到下层 iced。
+//! 点击不会穿透到下层 旧版。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 use lumino_core::{TextAlign, TextLayoutMode, TextParams, TextUnit};

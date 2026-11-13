@@ -1,6 +1,6 @@
 //! 左侧栏取色器 / 端口·通道选择器：命中、当前值、背景关闭、占用。
 //!
-//! 几何与 iced 一致：右对齐到内容右缘 −8、纵向贴目标行 +8；
+//! 几何与 旧版 一致：右对齐到内容右缘 −8、纵向贴目标行 +8；
 //! 取色器色块 20/间距 4/内边距 8（8 色 + 恢复默认）；
 //! 数值按钮 30/间距 4/内边距 8（16 项）。
 
@@ -211,7 +211,7 @@ fn channel_picker_reports_channel_variant() {
 }
 
 #[test]
-fn picker_rect_is_blocked_from_iced() {
+fn picker_rect_is_blocked_from_legacy() {
     let size = 4.0 * 30.0 + 3.0 * 4.0 + 16.0;
     let left = content_right() - 8.0 - size;
     let top = picker_top();

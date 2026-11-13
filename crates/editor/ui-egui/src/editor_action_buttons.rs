@@ -1,6 +1,6 @@
 //! 编辑器悬浮操作按钮（√ / ×）——egui 版。
 //!
-//! 取代 iced Canvas 里的 `confirm_buttons::draw_button`：形状工具 / 图片转 MIDI
+//! 取代 旧版 Canvas 里的 `confirm_buttons::draw_button`：形状工具 / 图片转 MIDI
 //! 放置 / 曲线工具 / 画刷的待确认操作共用同一套 36×36 圆角按钮。
 //! 几何仍由 `ui-editor` 的 `*_button_rects` 计算（避免两套布局漂移），
 //! 本模块只负责绘制、命中与动作回传。
@@ -9,11 +9,11 @@ use egui::{Color32, CornerRadius, Rect, Stroke, StrokeKind};
 
 use crate::icons::{Icon, IconCache};
 
-/// 按钮边长（与 iced `BUTTON_SIZE` 一致）。
+/// 按钮边长（与 旧版 `BUTTON_SIZE` 一致）。
 pub const BUTTON_SIZE: f32 = 36.0;
 /// 圆角半径。
 const RADIUS: u8 = 8;
-/// 图标占按钮边长的比例（iced `ICON_INSET_RATIO`）。
+/// 图标占按钮边长的比例（旧版 `ICON_INSET_RATIO`）。
 const ICON_INSET_RATIO: f32 = 0.25;
 /// 确认按钮底色（绿色）。
 const CONFIRM_BG: Color32 = Color32::from_rgb(46, 125, 50);

@@ -1,6 +1,6 @@
 //! 剪辑带水平滚动条（滑块拖拽滚动 + 左右边缘拖拽缩放）。
 //!
-//! 几何与交互语义照搬 iced `ScrollbarWidget`（`ui-editor/src/scrollbar_widget`）：
+//! 几何与交互语义照搬 旧版 `ScrollbarWidget`（`ui-editor/src/scrollbar_widget`）：
 //! 轨道内缩 2px、滑块与轨道间隙 2px、滑块最小 20px、边缘命中 6px。
 //! 本模块只负责绘制与命中；滚动/缩放经 [`VideoTimelineAction`] 回传生产侧。
 
@@ -80,7 +80,7 @@ pub fn geometry(rect: Rect, scroll: f32, content_w: f32, viewport_w: f32) -> Scr
     }
 }
 
-/// 滑块拖拽：返回新的滚动量（与 iced 同式）。
+/// 滑块拖拽：返回新的滚动量（与 旧版 同式）。
 pub fn thumb_drag_scroll(start_scroll: f32, dx: f32, geo: &ScrollGeometry) -> f32 {
     let ratio = dx / (geo.track_w - geo.thumb_w).max(1.0);
     (start_scroll + ratio * geo.scrollable).clamp(0.0, geo.scrollable)
@@ -119,7 +119,7 @@ pub fn show(
     }
     let geo = geometry(rect, scroll, content_w, viewport_w);
     let painter = ui.painter().with_clip_rect(rect);
-    // 轨道 + 滑块（与 iced 同色系：轨道用弱底色、滑块用选中底色）。
+    // 轨道 + 滑块（与 旧版 同色系：轨道用弱底色、滑块用选中底色）。
     painter.rect_filled(rect, 0, theme::toolbar_bg());
     painter.rect_filled(geo.thumb, CornerRadius::same(4), theme::selected_bg());
 
@@ -149,7 +149,7 @@ pub fn show(
                 start_scroll: scroll,
             }
         } else {
-            // 点击轨道空白：居中跳转（与 iced 的 page 行为近似：直接定位）。
+            // 点击轨道空白：居中跳转（与 旧版 的 page 行为近似：直接定位）。
             let ratio =
                 ((pos.x - rect.left() - THUMB_EDGE_GAP) / geo.track_w.max(1.0)).clamp(0.0, 1.0);
             let target = ratio * geo.scrollable;
@@ -205,7 +205,7 @@ pub fn show(
             .data_mut(|d| d.insert_temp(session_id, None::<Session>));
     }
 
-    // 悬停时给个手型提示（iced 同款语义：可拖）。
+    // 悬停时给个手型提示（旧版 同款语义：可拖）。
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }

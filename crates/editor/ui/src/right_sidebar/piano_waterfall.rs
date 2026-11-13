@@ -2,14 +2,14 @@
 //!
 //! 画面由 `lumino-gfx` 离屏渲染成 wgpu 纹理，宿主把纹理注册为 egui 外部纹理
 //! （`RENDER_PREVIEW_TEXTURE_ID` / `WATERFALL_TEXTURE_ID`），由 egui 直接采样
-//! 铺放——不再经过 iced `shader` 图元，也不再需要 iced 侧的合成通道。
+//! 铺放——不再经过 旧版 `shader` 图元，也不再需要 旧版 侧的合成通道。
 //!
 //! - 底部标准钢琴键盘（键数跟随全局 `enable_256key`：开启 256 键，否则 128 键）；
 //! - 上方下落式音符瀑布流，复用渲染线程活体 GPU 实例缓冲（禁止第二份拷贝），
 //!   配色与卷帘洋葱皮逐位一致，主音轨音符显示为蓝色，滚动与卷帘 X 缩放/滚动同步。
 //!
 //! 本文件只保留 **UI 无关状态**（离屏纹理视图 + 脏判断签名 + 目标尺寸）与
-//! iced 侧的同宽占位；`waterfall_primitive.rs`（iced shader 图元）已删除。
+//! 旧版 侧的同宽占位；`waterfall_primitive.rs`（旧版 shader 图元）已删除。
 
 pub(crate) mod key_layout;
 pub(crate) mod keyboard_renderer;

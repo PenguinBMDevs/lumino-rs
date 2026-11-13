@@ -24,7 +24,7 @@ fn speed_change_model_mirrors_state() {
     };
     assert!(
         panel.titlebar,
-        "默认配置使用自制标题栏：顶部 30px 仍由 iced 绘制"
+        "默认配置使用自制标题栏：顶部 30px 仍由 旧版 绘制"
     );
     assert_eq!(panel.title, "变速");
     assert_eq!(panel.factor_label, "倍率(S):");

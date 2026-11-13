@@ -1,8 +1,8 @@
-//! 主题映射：把当前 iced 主题的调色板转成 egui 语义色板。
+//! 主题映射：把当前 旧版 主题的调色板转成 egui 语义色板。
 //!
 //! egui 外壳（标题栏 / 工具栏 / 侧栏 / 状态栏 / 对话框）是不透明 band，颜色必须
-//! 与 iced 当前主题一致，否则默认 `Light` 配置下会出现「深色外壳 + 浅色内容」
-//! 的双主题叠层。这里只做数据转换，`lumino-ui-egui` 本身不依赖 iced。
+//! 与 旧版 当前主题一致，否则默认 `Light` 配置下会出现「深色外壳 + 浅色内容」
+//! 的双主题叠层。这里只做数据转换，`lumino-ui-egui` 本身不依赖 旧版。
 
 use lumino_ui_egui::theme::{Palette, PaletteSeed};
 
@@ -13,9 +13,9 @@ use super::color32;
 impl Root {
     /// 当前窗口主题对应的 egui 色板。
     ///
-    /// 色值来源与 iced 样式完全同源（`Theme::extended_palette()`），因此任何
+    /// 色值来源与 旧版 样式完全同源（`Theme::extended_palette()`），因此任何
     /// 内置主题（Light / Dark / Solarized / Catppuccin / Tokyo Night …）下
-    /// egui 外壳与 iced 画面都保持同一套配色。
+    /// egui 外壳与 旧版 画面都保持同一套配色。
     pub(crate) fn egui_palette(&self) -> Palette {
         let theme = self.theme();
         let ext = theme.extended_palette();

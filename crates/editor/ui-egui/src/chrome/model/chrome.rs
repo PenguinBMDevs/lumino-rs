@@ -7,7 +7,7 @@ pub struct TitlebarModel {
     pub focused: bool,
     /// 菜单标签（文件 / 编辑 / 视图 / 帮助，按当前语言）。
     pub menus: Vec<String>,
-    /// 可交互菜单树（`None` = 只画标签，交互仍交给 iced）。
+    /// 可交互菜单树（`None` = 只画标签，交互仍交给 旧版）。
     pub menu: Option<MenuBarModel>,
     /// 系统原生标题栏模式：只画 30px 菜单栏（无 logo、窗口控制、拖动区）。
     pub menu_only: bool,
@@ -84,7 +84,7 @@ pub enum GpuQueueTrend {
 }
 
 impl GpuQueueTrend {
-    /// 箭头显示字符（与 iced `QueueTrend::arrow` 逐字一致）。
+    /// 箭头显示字符（与 旧版 `QueueTrend::arrow` 逐字一致）。
     pub fn arrow(self) -> &'static str {
         match self {
             Self::Up => "↑",

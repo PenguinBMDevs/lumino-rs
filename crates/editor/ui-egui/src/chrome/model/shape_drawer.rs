@@ -3,7 +3,7 @@
 /// 形状抽屉面板：库列表 / 文件与编辑动作 / 面积填充 / 插入与缩放。
 #[derive(Debug, Clone)]
 pub struct ShapeDrawerModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 面板矩形（逻辑坐标；宽 = `panel_width`，高 = 标题栏以下整块）。
     pub rect: egui::Rect,

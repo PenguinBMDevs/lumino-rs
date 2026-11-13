@@ -1,7 +1,7 @@
 //! 形状抽屉左侧面板（`DialogType::ShapeDrawer`）。
 //!
 //! 库列表 + 文件 / 编辑动作 + 面积填充 + 插入与缩放 + 插入按钮。
-//! 右侧画布仍由 iced 的 `Canvas` 绘制（本层只覆盖面板区域，分割线留给 iced 拖动）。
+//! 右侧画布仍由 旧版 的 `Canvas` 绘制（本层只覆盖面板区域，分割线留给 旧版 拖动）。
 //!
 //! 几何对齐生产 `view/shape_drawer.rs`：面板内边距 10、列间距 6、标题 16px、
 //! 库行按 `spacing(2)` 排列、名称输入与动作按钮组各占一行（放不下自动换行）。
@@ -22,9 +22,9 @@ const BTN_GAP: f32 = 4.0;
 const ROW_GAP: f32 = 2.0;
 /// 输入框高度（`text_input` 默认内边距 + 16px）。
 const INPUT_H: f32 = 30.0;
-/// 动作按钮高度（16px 文本 + `padding([2,?])`，实测 iced 26 逻辑）。
+/// 动作按钮高度（16px 文本 + `padding([2,?])`，实测 旧版 26 逻辑）。
 const BTN_H: f32 = 26.0;
-/// 库行高度（16px 文本 + 内边距，实测 iced 30 逻辑）。
+/// 库行高度（16px 文本 + 内边距，实测 旧版 30 逻辑）。
 const ROW_H: f32 = 30.0;
 
 /// 面板产生的动作（统一经此通道回传）。
@@ -62,7 +62,7 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeDrawerModel) {
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
         return;
     }
-    // 顶部 30px iced 自制标题栏（红绿灯 / 拖动）仍由 iced 绘制：egui 只画面板本体。
+    // 顶部 30px 旧版 自制标题栏（红绿灯 / 拖动）仍由 旧版 绘制：egui 只画面板本体。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {
@@ -143,7 +143,7 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeDrawerModel) {
     // 面积开关行：开关（填满）+ Clear。
     let clear_w = button_width(ui, &model.area_clear, 16.0);
     let toggle_w = (inner.width() - clear_w - BTN_GAP).max(60.0);
-    // iced 默认 `button`：所有面板按钮都是主色底（面积开关也是）。
+    // 旧版 默认 `button`：所有面板按钮都是主色底（面积开关也是）。
     let (fill, text) = (theme::accent(), theme::on_accent());
     if button(
         ui,
@@ -364,7 +364,7 @@ fn library(ui: &mut egui::Ui, rect: egui::Rect, model: &ShapeDrawerModel) {
                 response.widget_info(|| {
                     egui::WidgetInfo::selected(egui::Role::Button, true, row.selected, &row.label)
                 });
-                // iced 默认 `button`：库行整行主色底 + 白字（选中态靠「● 」前缀）。
+                // 旧版 默认 `button`：库行整行主色底 + 白字（选中态靠「● 」前缀）。
                 let fill = if response.hovered() {
                     theme::accent_strong()
                 } else {
@@ -391,7 +391,7 @@ fn library(ui: &mut egui::Ui, rect: egui::Rect, model: &ShapeDrawerModel) {
         });
 }
 
-/// 色块单元宽（16px 文本 + 内边距，与 iced 观感一致）。
+/// 色块单元宽（16px 文本 + 内边距，与 旧版 观感一致）。
 const SWATCH_W: f32 = 31.0;
 /// 色块高。
 const SWATCH_H: f32 = 22.0;
@@ -494,7 +494,7 @@ fn swatches(ui: &mut egui::Ui, inner: egui::Rect, y: f32, model: &ShapeDrawerMod
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::Button, true, swatch.selected, &swatch.label)
         });
-        // iced 里 16 个色块都是默认按钮（主色底 + 白字），选中通过面积色体现。
+        // 旧版 里 16 个色块都是默认按钮（主色底 + 白字），选中通过面积色体现。
         let (fill, text) = (theme::accent(), theme::on_accent());
         ui.painter().rect(
             rect,

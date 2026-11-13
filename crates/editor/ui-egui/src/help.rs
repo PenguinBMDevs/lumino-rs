@@ -18,7 +18,7 @@ use crate::theme;
 const ACTION_ID: &str = "lumino.help.action";
 /// 整窗内边距（生产 `container(...).padding(16)`）。
 const PAD: f32 = 16.0;
-/// 标题行高（20px 文本，含 iced 1.5 倍行高）。
+/// 标题行高（20px 文本，含 旧版 1.5 倍行高）。
 const TITLE_H: f32 = 30.0;
 /// 搜索框（生产 `text_input.padding([7,10])`、全宽）。
 const SEARCH_TOP: f32 = 40.0;
@@ -283,8 +283,8 @@ fn topic_body(ui: &mut egui::Ui, rect: Rect, model: &HelpModel) {
             ui.add(egui::Label::new(
                 RichText::new(&topic.title).size(22.0).color(theme::text()),
             ));
-            // 间隙按 iced 的 1.5 倍行高折算：标题→tip 12，tip→正文 20，
-            // 段落之间 16（egui 的行高比 iced 小，需要更大的显式间距才能对齐
+            // 间隙按 旧版 的 1.5 倍行高折算：标题→tip 12，tip→正文 20，
+            // 段落之间 16（egui 的行高比 旧版 小，需要更大的显式间距才能对齐
             // 真实窗口里的墨迹行）。
             ui.add_space(12.0);
             ui.add(egui::Label::new(
@@ -341,7 +341,7 @@ fn button_width(ui: &egui::Ui, label: &str, horizontal_padding: f32) -> f32 {
     text + horizontal_padding * 2.0
 }
 
-/// 底部按钮：iced 默认 `button` 样式 = 主色底 + 主色上的文字（白/深）。
+/// 底部按钮：旧版 默认 `button` 样式 = 主色底 + 主色上的文字（白/深）。
 fn button(ui: &mut egui::Ui, rect: Rect, label: &str, size: f32) -> egui::Response {
     let button = egui::Button::new(RichText::new(label).size(size).color(theme::on_accent()))
         .fill(theme::accent())

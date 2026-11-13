@@ -1,6 +1,6 @@
 //! 曲线预览：生产几何 → egui 模型。
 //!
-//! 几何与 iced `line_tool_box::draw` 同源：路径锚点 / 弯折 / 控制柄 / 产物块
+//! 几何与 旧版 `line_tool_box::draw` 同源：路径锚点 / 弯折 / 控制柄 / 产物块
 //! 全部直接取 `line_tool` 状态与 `path_outline_blocks`，只做坐标换算。
 
 use lumino_editor_state::HandleSide;

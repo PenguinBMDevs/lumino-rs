@@ -3,7 +3,7 @@
 /// 撤销历史对话框（只读时间线 + 跳转）。
 #[derive(Debug, Clone, Default)]
 pub struct HistoryModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「撤销历史」。
     pub title: String,

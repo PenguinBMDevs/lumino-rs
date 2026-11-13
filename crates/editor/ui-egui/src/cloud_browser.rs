@@ -23,7 +23,7 @@ const GAP: f32 = 8.0;
 const BTN_H: f32 = 26.0;
 /// 行尾小按钮（12px + `padding([2,8])`）。
 const TINY_H: f32 = 22.0;
-/// 列表行高（13px 名称 + `padding([3,8])`，实测 iced 行距 27 逻辑）。
+/// 列表行高（13px 名称 + `padding([3,8])`，实测 旧版 行距 27 逻辑）。
 const ROW_H: f32 = 23.0;
 /// 输入框高度（`text_input` 默认内边距 + 13px 文本）。
 const INPUT_H: f32 = 31.5;
@@ -685,7 +685,7 @@ fn button(
     ui.put(rect, button)
 }
 
-/// 工具栏按钮：iced 默认 `button` 是**主色底**；禁用态用 `primary.weak` 底。
+/// 工具栏按钮：旧版 默认 `button` 是**主色底**；禁用态用 `primary.weak` 底。
 fn small_button(
     ui: &mut egui::Ui,
     rect: egui::Rect,
@@ -693,7 +693,7 @@ fn small_button(
     size: f32,
     enabled: bool,
 ) -> egui::Response {
-    // iced 的禁用态 = 主色 `scale_alpha(0.5)` 叠在底色上（实测 ≈ 0.33 不透明）。
+    // 旧版 的禁用态 = 主色 `scale_alpha(0.5)` 叠在底色上（实测 ≈ 0.33 不透明）。
     let (fill, text) = if enabled {
         (theme::accent(), theme::on_accent())
     } else {

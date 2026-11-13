@@ -254,7 +254,7 @@ fn card(display: &str, value: &str, theme: &Theme, current: &str) -> ThemeCardMo
     }
 }
 
-fn color32(color: iced_core::Color) -> Color32 {
+fn color32(color: lumino_ui_core::geom::Color) -> Color32 {
     Color32::from_rgba_unmultiplied(
         (color.r * 255.0).round() as u8,
         (color.g * 255.0).round() as u8,

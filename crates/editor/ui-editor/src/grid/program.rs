@@ -2,10 +2,10 @@
 
 use super::state::GridInteractionState;
 use crate::Editor;
-use iced_core::Point;
 use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+use lumino_ui_core::geom::Point;
 
 /// 钢琴卷帘网格绘制程序，负责处理网格区域的鼠标交互与绘制。
 pub struct PianoRollGrid<'a> {

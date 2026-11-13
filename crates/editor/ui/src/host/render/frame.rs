@@ -101,8 +101,8 @@ impl Host {
         }
 
         // 彩蛋动画期间显式置脏：对话框窗口的 `ui_dirty` 只在「消息产生状态变更」或
-        // iced 返回 `State::Updated` 时被置位（见 `host/event/window/events.rs` 的
-        // `update_ui_state`），事件队列清空后 `render_iced_ui` 会走「仅 present 缓存帧」
+        // 旧版 返回 `State::Updated` 时被置位（见 `host/event/window/events.rs` 的
+        // `update_ui_state`），事件队列清空后 `render_ui` 会走「仅 present 缓存帧」
         // 的早退路径，动画会冻结在上一帧。先例：下方播放分支的同类置脏。
         if about_egg_animating || echo_cave_animating {
             self.ui_dirty = true;
@@ -142,7 +142,7 @@ impl Host {
                 self.root.editor.update_playback_key_colors();
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
                 // 关键：即使自动滚动不触发（如循环回绕后指示线回到起点），
-                // 也必须重建 iced canvas UI 使指示线在新位置绘制。
+                // 也必须重建 旧版 canvas UI 使指示线在新位置绘制。
                 if (tick - old_pos).abs() > f32::EPSILON {
                     self.ui_dirty = true;
                 }

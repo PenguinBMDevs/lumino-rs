@@ -2,7 +2,7 @@
 //!
 //! `lumino-ui-egui` 只认识纯数据（`SnapMenuModel` / `OnionMenuModel`）与
 //! `ToolbarAction`；真正的事件全部在这里翻译成生产 `Message`，
-//! 与 iced 工具栏按钮走同一条 `toolbar::Event` 构造器。
+//! 与 旧版 工具栏按钮走同一条 `toolbar::Event` 构造器。
 
 use lumino_core::SnapSpec;
 use lumino_core::tr;
@@ -30,7 +30,7 @@ pub(super) fn snap_menu(toolbar: &toolbar::Toolbar) -> Option<SnapMenuModel> {
                 selected: spec == toolbar.snap_spec,
             })
             .collect(),
-        // 与 iced 视图逐字一致（该行在 iced 侧也没有本地化）。
+        // 与 旧版 视图逐字一致（该行在 旧版 侧也没有本地化）。
         custom_label: "Custom…".to_owned(),
     })
 }
@@ -48,7 +48,7 @@ pub(super) fn onion_menu(toolbar: &toolbar::Toolbar) -> Option<OnionMenuModel> {
     })
 }
 
-/// 与 iced `render_onion_skin_button` 同口径的本地化标签。
+/// 与 旧版 `render_onion_skin_button` 同口径的本地化标签。
 fn onion_label(mode: OnionSkinMode) -> &'static str {
     match mode {
         OnionSkinMode::AllTracks => tr!("显示全部音轨"),
@@ -81,7 +81,7 @@ impl Root {
             // 溢出项按「同宽度重算折叠结果」解析，需要视口宽度，见
             // [`Root::overflow_action_message`]（Host 单独调用）。
             ToolbarAction::OverflowItem(_) => return None,
-            // 走带 / 撤销 / 仪表盘 / 右侧开关 / 工具区：与 iced 按钮同一批构造器。
+            // 走带 / 撤销 / 仪表盘 / 右侧开关 / 工具区：与 旧版 按钮同一批构造器。
             ToolbarAction::RecordToggled => {
                 if self.toolbar.is_recording {
                     toolbar::Event::record_stop()
@@ -138,7 +138,7 @@ impl Root {
     /// 工具栏溢出菜单项 → 生产 `Message`。
     ///
     /// 下标按**同一视口宽度**重新计算折叠结果，与渲染时的模型同源；
-    /// 禁用项不产生消息（与 iced 的 `button` 无 `on_press` 等价）。
+    /// 禁用项不产生消息（与 旧版 的 `button` 无 `on_press` 等价）。
     pub(crate) fn overflow_action_message(
         &self,
         index: usize,

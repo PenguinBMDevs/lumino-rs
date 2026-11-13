@@ -1,6 +1,6 @@
 //! 纵向卷帘骨架：底部横向键盘 + 小节号 + 两条滚动条。
 //!
-//! 与 iced `grid::vertical_keyboard` / `vertical_labels` 同口径，仅转置：
+//! 与 旧版 `grid::vertical_keyboard` / `vertical_labels` 同口径，仅转置：
 //! - 键沿 X 排列，键宽 = `key_height`（即 `zoom_y`），键盘厚度 = `keyboard_width`；
 //! - 时间轴竖直，tick 0 在键盘顶线，向上递增；小节号画在左侧 4px 处。
 
@@ -10,7 +10,7 @@ use super::{PianoRollView, is_key_dark, note_name, tint};
 use crate::scrollbar::{self, DirectedAction, ScrollbarAction, ScrollbarModel};
 use crate::theme;
 
-/// 小节号相对小节线上移量（字号 10 + 2px 间隙，与 iced 一致）。
+/// 小节号相对小节线上移量（字号 10 + 2px 间隙，与 旧版 一致）。
 const LABEL_LIFT: f32 = 12.0;
 
 /// 绘制纵向骨架（键盘、小节号、边框）。
@@ -31,7 +31,7 @@ pub fn draw(ui: &egui::Ui, area: Rect, view: &PianoRollView) {
     let grid_bottom = canvas.bottom() - keyboard_h;
     let painter = ui.painter();
 
-    // 上下边框（1 物理像素，与 iced 的网格边界一致）。
+    // 上下边框（1 物理像素，与 旧版 的网格边界一致）。
     let ppp = ui.ctx().pixels_per_point().max(f32::EPSILON);
     let line = 1.0 / ppp;
     for y in [canvas.top(), grid_bottom] {

@@ -1,6 +1,6 @@
-//! 滚动条：绘制 + 拖拽（滑块滚动 / 边缘缩放），行为对齐 iced `ScrollbarWidget`。
+//! 滚动条：绘制 + 拖拽（滑块滚动 / 边缘缩放），行为对齐 旧版 `ScrollbarWidget`。
 //!
-//! 常量与 iced 侧同源（`lumino_ui_core::constants::scrollbar`）：
+//! 常量与 旧版 侧同源（`lumino_ui_core::constants::scrollbar`）：
 //! 边缘命中 6px、滑块最小 20px、轨道内边距 2px。
 //! 交互状态存在 egui 临时数据里（按滚动条 id 区分，跨帧保持）。
 
@@ -28,10 +28,10 @@ pub struct ScrollbarModel {
     pub max_scroll: f32,
     /// 当前缩放倍率。
     pub zoom: f32,
-    /// 视口尺寸；`None` 时以轨道长度代替（iced 同口径）。
+    /// 视口尺寸；`None` 时以轨道长度代替（旧版 同口径）。
     pub viewport: Option<f32>,
     /// 滑块长度占轨道比例；`Some` 时优先于 `viewport/max_scroll` 计算
-    /// （草稿场景与生产 iced 基线的显式比例）。
+    /// （草稿场景与生产 旧版 基线的显式比例）。
     pub thumb_ratio: Option<f32>,
     /// 是否垂直方向。
     pub vertical: bool,
@@ -257,7 +257,7 @@ pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrol
                 edge_is_end,
             } => {
                 let delta = current - start_pos;
-                // 与 iced 一致：结束边向右/下拖为放大，起始边反向。
+                // 与 旧版 一致：结束边向右/下拖为放大，起始边反向。
                 let effective = if edge_is_end { delta } else { -delta };
                 let content_fits = model.content_fits(track);
                 if content_fits && effective > 0.0 {

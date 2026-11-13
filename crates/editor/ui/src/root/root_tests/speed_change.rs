@@ -73,7 +73,7 @@ fn test_speed_change_button_always_enabled_in_view() {
     let ui_config = UiConfig::default();
     let root = Root::new(&ui_config);
 
-    // 工具栏视图已全部迁到 egui：这里只验证 iced 占位仍能按任意宽度/选中态构造，
+    // 工具栏视图已全部迁到 egui：这里只验证 旧版 占位仍能按任意宽度/选中态构造，
     // 不会 panic（占位与选中态无关，保留两次调用覆盖旧断言语义）。
     let _element = root.egui_chrome_model();
     let _element = root.egui_chrome_model();

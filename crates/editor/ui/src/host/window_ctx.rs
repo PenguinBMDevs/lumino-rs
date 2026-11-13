@@ -2,7 +2,7 @@
 //!
 //! 管理窗口句柄、光标、剪贴板、窗口动作状态。
 
-use iced_core::mouse;
+use lumino_ui_core::geom::mouse;
 use std::sync::Arc;
 use winit;
 
@@ -15,7 +15,7 @@ pub(crate) struct WindowContext {
     /// 光标状态
     pub cursor: mouse::Cursor,
     /// 逻辑光标位置
-    pub cursor_position: Option<iced_core::Point>,
+    pub cursor_position: Option<lumino_ui_core::geom::Point>,
     /// 待处理的窗口动作
     pub pending_window_action: Option<window::TrafficAction>,
     /// 是否正在拖拽

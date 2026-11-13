@@ -3,7 +3,7 @@
 /// 批量编辑对话框：四行输入 + 格式说明 + 按钮。
 #[derive(Debug, Clone, Default)]
 pub struct BatchEditModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「批量编辑」。
     pub title: String,

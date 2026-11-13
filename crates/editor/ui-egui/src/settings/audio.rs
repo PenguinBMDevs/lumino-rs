@@ -227,7 +227,7 @@ fn draw_label(
     max_width: f32,
     palette: &SettingsPalette,
 ) {
-    // 右侧控件占位固定：长标签必须截断，否则会压到控件上（生产 iced 用 Fill
+    // 右侧控件占位固定：长标签必须截断，否则会压到控件上（生产 旧版 用 Fill
     // 约束宽度；egui painter 不做裁剪，这里手动加省略号）。
     let label = truncate(ui, label, max_width);
     ui.painter().text(

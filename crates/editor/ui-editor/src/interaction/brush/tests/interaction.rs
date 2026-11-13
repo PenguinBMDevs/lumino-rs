@@ -84,7 +84,7 @@ fn test_stroke_history_undo_redo_before_confirm() {
 #[test]
 fn test_darken_is_40_percent() {
     let color = darken(
-        iced_core::Color::from_rgba(1.0, 0.5, 0.25, 1.0),
+        lumino_ui_core::geom::Color::from_rgba(1.0, 0.5, 0.25, 1.0),
         LAYER_DARKEN,
     );
     assert!((color.r - 0.6).abs() < 1e-6, "1.0 × 0.6");
@@ -104,14 +104,14 @@ fn test_layer_color_comes_from_assigned_track_display_color() {
     let expected0 = {
         let c = lumino_extras::palette::current_track_color_f32(1);
         darken(
-            iced_core::Color::from_rgba(c[0], c[1], c[2], c[3]),
+            lumino_ui_core::geom::Color::from_rgba(c[0], c[1], c[2], c[3]),
             LAYER_DARKEN,
         )
     };
     let expected1 = {
         let c = lumino_extras::palette::current_track_color_f32(3);
         darken(
-            iced_core::Color::from_rgba(c[0], c[1], c[2], c[3]),
+            lumino_ui_core::geom::Color::from_rgba(c[0], c[1], c[2], c[3]),
             LAYER_DARKEN,
         )
     };

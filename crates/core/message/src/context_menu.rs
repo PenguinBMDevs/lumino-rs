@@ -124,7 +124,7 @@ impl PianoRollContextMenuItem {
     }
 }
 
-/// 目标对应的菜单条目集（iced / egui 两侧共用，禁止各自复制）。
+/// 目标对应的菜单条目集（旧版 / egui 两侧共用，禁止各自复制）。
 ///
 /// 条目顺序即绘制顺序；视觉实现（图标 / 行高 / 悬浮色）由各 UI 层决定，
 /// 但**集合与顺序**必须唯一。
@@ -181,7 +181,7 @@ pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContext
     }
 }
 
-/// 菜单项显示文本（i18n 跟随进程语言；供 iced / egui tooltip 共用）。
+/// 菜单项显示文本（i18n 跟随进程语言；供 旧版 / egui tooltip 共用）。
 pub fn item_label(item: PianoRollContextMenuItem) -> &'static str {
     use lumino_core::tr;
     match item {

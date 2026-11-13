@@ -18,7 +18,7 @@ const PAD: f32 = 24.0;
 /// 标题行高（18px 文本）。
 const TITLE_H: f32 = 27.0;
 /// 表单行（生产 `text_input.padding([6,10])`、`column.spacing(10)`；
-/// 实测 iced 行盒高 38 物理像素 = 30.4 逻辑，行距 10）。
+/// 实测 旧版 行盒高 38 物理像素 = 30.4 逻辑，行距 10）。
 const ROW_H: f32 = 30.5;
 const ROW_GAP: f32 = 10.0;
 /// 标签列宽度（生产 `text(width(110))`）与标签/控件间距。
@@ -89,7 +89,7 @@ pub fn show(ui: &mut egui::Ui, model: &CloudConnectModel) {
         18.0,
         theme::text(),
     );
-    // 标题与表单间距：实测 iced 为 11 逻辑像素（14 时整块下移 4 物理像素）。
+    // 标题与表单间距：实测 旧版 为 11 逻辑像素（14 时整块下移 4 物理像素）。
     y += TITLE_H + 11.0;
 
     protocol_row(ui, inner, y, model);
@@ -137,7 +137,7 @@ fn protocol_row(ui: &mut egui::Ui, inner: Rect, y: f32, model: &CloudConnectMode
             .max_rect(control)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    // 让下拉按钮填满整行高度（iced `pick_list` 与输入框同高）。
+    // 让下拉按钮填满整行高度（旧版 `pick_list` 与输入框同高）。
     child.spacing_mut().interact_size.y = ROW_H;
     let mut chosen = None;
     egui::ComboBox::from_id_salt("cloud-protocol")

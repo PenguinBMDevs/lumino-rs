@@ -7,8 +7,8 @@
 use super::*;
 use crate::Note;
 use crate::tests::test_helpers::seed_notes;
-use iced_core::{Point, Rectangle, Size, mouse};
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef, ShapeNote};
+use lumino_ui_core::geom::{Point, Rectangle, Size, mouse};
 
 /// 已 Bake 的折线图形（屏幕 100px 宽 × 80px 高，锚点不会互相重叠）
 pub(super) fn editor_with_shape() -> Editor {

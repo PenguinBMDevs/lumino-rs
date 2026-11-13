@@ -3,7 +3,7 @@
 //! 列表分区 / 右键菜单目标 / 重命名缓冲 / 添加下拉全部来自生产
 //! `RightSidebar.materials`；悬停提示行与所有文案在这里按当前语言预计算。
 //! 素材拖出只在按下瞬间回传 `MaterialDragStarted(index)`，跟随预览与松手
-//! 放置继续由 iced 编辑器状态机驱动。
+//! 放置继续由 旧版 编辑器状态机驱动。
 
 use lumino_extras::i18n::main_translations;
 use lumino_message::MaterialContextMenuItem as SidebarContextItem;

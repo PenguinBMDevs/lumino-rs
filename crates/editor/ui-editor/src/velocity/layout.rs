@@ -1,6 +1,6 @@
 //! 力度 / Tempo / Bend 面板的坐标换算与常量。
 //!
-//! 从已删除的 iced 绘制层迁出：egui 面板与 wgpu 曲线渲染共用同一套映射，
+//! 从已删除的 旧版 绘制层迁出：egui 面板与 wgpu 曲线渲染共用同一套映射，
 //! 因此保留为纯函数（无 UI 框架类型）。
 
 use lumino_note_core::midi_types::TempoPoint;
@@ -56,8 +56,8 @@ pub fn tempo_point_screen_pos(
     bounds_height: f32,
     view: &crate::editor_state::ViewState,
     max_bpm: f64,
-) -> iced_core::Point {
+) -> lumino_ui_core::geom::Point {
     let point_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
     let point_y = tempo_bpm_to_y(point.bpm, max_bpm, bounds_height);
-    iced_core::Point::new(point_x, point_y)
+    lumino_ui_core::geom::Point::new(point_x, point_y)
 }

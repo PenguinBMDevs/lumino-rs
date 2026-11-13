@@ -1,6 +1,6 @@
 //! 形状工具预览：生产几何 → egui 模型。
 //!
-//! 几何与 iced `shape_tool_box::draw_one_shape` 同源：
+//! 几何与 旧版 `shape_tool_box::draw_one_shape` 同源：
 //! - `effective_rect` + `shape_vertices`（圆用 64 段多边形逼近）；
 //! - `shape_outline_blocks`（与 √ 写入同源）逐块转矩形。
 

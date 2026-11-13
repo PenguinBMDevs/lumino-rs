@@ -3,7 +3,7 @@
 /// 加载确认：文件信息三行 / 提示 / 两个按钮。
 #[derive(Debug, Clone, Default)]
 pub struct LoadConfirmModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 「文件: {name}」（14px）。
     pub file_line: String,

@@ -42,8 +42,8 @@ mod tests_fill;
 mod tests_vertical;
 
 use crate::Editor;
-use iced_core::Point;
 use lumino_editor_state::{AnchorBend, BezierAnchor, HandleSide, LineToolInteraction};
+use lumino_ui_core::geom::Point;
 
 /// 曲线段按下 → 拖动判定阈值（像素）：未超阈值松开视为点击插入锚点
 const PRESS_DRAG_THRESHOLD_PX: f32 = 4.0;

@@ -2,7 +2,7 @@
 //!
 //! 生产侧把文档算成一组绘制图元（线 / 三次贝塞尔 / 多边形 / 方块 / 文本）+
 //! 工具栏按钮；本模块只负责原样绘制与把输入归一化成动作。
-//! 所有几何以「画布局部坐标」表示（画布左上角为原点），与 iced `Canvas` 同口径。
+//! 所有几何以「画布局部坐标」表示（画布左上角为原点），与 旧版 `Canvas` 同口径。
 
 use egui::{Color32, FontId, Pos2, Stroke};
 
@@ -195,7 +195,7 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
         model.toolbar_bg,
     );
 
-    // 图元（顺序与 iced 一致：网格 → 面积 → 描边 → 锚点 → 文本）。
+    // 图元（顺序与 旧版 一致：网格 → 面积 → 描边 → 锚点 → 文本）。
     for line in &model.lines {
         painter.line_segment(
             [line.from + rect.min.to_vec2(), line.to + rect.min.to_vec2()],
@@ -273,7 +273,7 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
             egui::Id::unique(("shape-canvas-btn", button.index)),
             egui::Sense::click(),
         );
-        // 自绘按钮（与 iced 画布同口径：实心矩形 + 左上文本）。
+        // 自绘按钮（与 旧版 画布同口径：实心矩形 + 左上文本）。
         ui.painter().rect_filled(button_rect, 0, button.fill);
         ui.painter().text(
             button_rect.min + egui::vec2(8.0, 7.0),
@@ -374,7 +374,7 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
     if response.hovered() {
         let dy = ui.ctx().input(|i| i.smooth_scroll_delta.y);
         if dy.abs() > 0.0 {
-            // egui 的行模式滚轮是 50 的倍数；其余按像素处理（与 iced 的两档一致）。
+            // egui 的行模式滚轮是 50 的倍数；其余按像素处理（与 旧版 的两档一致）。
             let lines = dy.abs() >= 20.0 && (dy / 50.0).fract().abs() < 1e-3;
             push_action(
                 ui.ctx(),

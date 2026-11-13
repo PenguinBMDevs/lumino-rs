@@ -14,13 +14,14 @@ use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::content_bounds;
 use crate::interaction::text_tool::{GlyphGrid, rasterize_glyph_alpha_for_tool};
-use iced_core::{Point, Rectangle, Size};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 /// 按钮与文本框的间距
 const TT_BUTTON_SPACING: f32 = 8.0;
 
 /// 文字预览文字颜色（贴近白色，保证在文本框淡填充上可读）
-const TEXT_PREVIEW_COLOR: iced_core::Color = iced_core::Color::from_rgba(0.92, 0.96, 1.0, 0.95);
+const TEXT_PREVIEW_COLOR: lumino_ui_core::geom::Color =
+    lumino_ui_core::geom::Color::from_rgba(0.92, 0.96, 1.0, 0.95);
 
 /// 文字工具悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
@@ -37,7 +38,7 @@ impl Editor {
     /// 文字工具预览图（RGBA，白蓝色文字 + alpha）。
     ///
     /// 与 √ 生成音符共用同一份栅格（`GlyphGrid` + `rasterize_glyph_alpha_for_tool`），
-    /// 供 egui 叠加层上传纹理直接铺放；无 iced 类型。
+    /// 供 egui 叠加层上传纹理直接铺放；无 旧版 类型。
     pub fn text_tool_preview_rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
         let tt = &self.editor_state.text_tool;
         let text = tt.text.trim();

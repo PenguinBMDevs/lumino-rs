@@ -1,9 +1,9 @@
-//! 中立的 2D 几何类型（替代 `iced_core::Point` / `iced_core::Size`）
+//! 中立的 2D 几何类型（替代 `Point` / `Size`）
 //!
 //! 这些类型用于 `Message` / `EditorAction` 等跨模块消息。定义在 `lumino-message`
-//! （domain 层）中，使 domain 层**不依赖 UI 框架**（`iced_core`）。
+//! （domain 层）中，使 domain 层**不依赖 UI 框架**（旧版几何类型）。
 //!
-//! UI 层在消息边界处按需与 `iced_core` 类型互转，保持调用链不变。
+//! UI 层在消息边界处按需与 本地几何类型互转，保持调用链不变。
 
 /// 中立的 2D 点
 #[derive(Debug, Clone, Copy, PartialEq)]

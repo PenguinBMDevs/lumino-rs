@@ -18,7 +18,7 @@ pub(super) struct ToolEntry {
     pub(super) gap_before: f32,
 }
 
-/// 与生产 iced `ToolItem::ALL` 同序。
+/// 与生产 旧版 `ToolItem::ALL` 同序。
 pub(super) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
         icon: Icon::MousePointer,
@@ -92,7 +92,7 @@ pub(super) const TOOLS: &[ToolEntry] = &[
     },
 ];
 
-/// 分组宽度：条目 + 间距 + 「精度:」标签与精度框（对应 iced 的 `Length::Shrink`）。
+/// 分组宽度：条目 + 间距 + 「精度:」标签与精度框（对应 旧版 的 `Length::Shrink`）。
 /// 工具条目高亮：前四个选择器映射 `Tool`，第 5 个（绘制工具箱）映射面板开关。
 fn tool_highlighted(model: &ToolbarModel, index: usize, item: &ToolEntry) -> bool {
     if item.icon == Icon::DrawToolbox {
@@ -128,7 +128,7 @@ pub(super) fn width(ui: &egui::Ui, visible: usize) -> f32 {
 
 /// 条目 → 动作（前四个是工具选择器，第 5 个是悬浮条开关，其余是命令）。
 ///
-/// 修饰键与 iced 同口径：移调默认 ±1 半音、Ctrl ±12；水平翻转默认居中、
+/// 修饰键与 旧版 同口径：移调默认 ±1 半音、Ctrl ±12；水平翻转默认居中、
 /// Shift 向右、Ctrl 向左。
 fn action_for(icon: Icon, modifiers: egui::Modifiers) -> Option<ToolbarAction> {
     let command = |c| Some(ToolbarAction::ToolCommand(c));
@@ -198,7 +198,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     }
     ui.add_space(8.0);
 
-    // 「精度:」标签在框外（与生产 iced 一致：14px、`background.weak.text`）。
+    // 「精度:」标签在框外（与生产 旧版 一致：14px、`background.weak.text`）。
     let label = "精度:";
     let label_width = ui
         .painter()

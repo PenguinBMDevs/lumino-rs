@@ -1,6 +1,6 @@
 //! Canvas 状态管理
 
-use iced_core::Point;
+use lumino_ui_core::geom::Point;
 
 /// 钢琴卷帘网格交互状态
 #[derive(Debug)]

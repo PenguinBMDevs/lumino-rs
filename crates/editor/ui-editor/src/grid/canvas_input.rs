@@ -1,7 +1,7 @@
 //! 与 UI 框架无关的画布输入分派。
 //!
-//! iced `Grid` program 曾在 `update()` 里把鼠标事件翻译成编辑动作；egui 独占
-//! 整窗后由宿主（winit 事件）直接调用本模块。`program_impl` 只负责把 iced
+//! 旧版 `Grid` program 曾在 `update()` 里把鼠标事件翻译成编辑动作；egui 独占
+//! 整窗后由宿主（winit 事件）直接调用本模块。`program_impl` 只负责把 旧版
 //! 事件映射成 [`CanvasEvent`] 再转调这里，两条路径共享同一份语义，避免行为漂移。
 
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, Tool};
@@ -69,7 +69,7 @@ pub fn dispatch(
     event: CanvasEvent,
 ) -> Option<Message> {
     let grid = PianoRollGrid::new(editor);
-    let local = |local: (f32, f32)| iced_core::Point::new(local.0, local.1);
+    let local = |local: (f32, f32)| lumino_ui_core::geom::Point::new(local.0, local.1);
 
     match event {
         CanvasEvent::Modifiers { shift, ctrl } => {
@@ -204,8 +204,8 @@ mod tests {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.view.snap_precision = 1.0;
-        editor.set_canvas_size(iced_core::Point::new(4000.0, 4000.0));
-        editor.set_canvas_offset(iced_core::Point::new(0.0, 0.0));
+        editor.set_canvas_size(lumino_ui_core::geom::Point::new(4000.0, 4000.0));
+        editor.set_canvas_offset(lumino_ui_core::geom::Point::new(0.0, 0.0));
         editor
     }
 
@@ -215,7 +215,7 @@ mod tests {
         }
     }
 
-    /// 铅笔：按下 → 拖动 → 松开必须落下一个音符（与 iced 路径同语义）。
+    /// 铅笔：按下 → 拖动 → 松开必须落下一个音符（与 旧版 路径同语义）。
     #[test]
     fn press_drag_release_places_note_with_pencil() {
         let mut editor = editor();

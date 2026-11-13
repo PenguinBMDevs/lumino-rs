@@ -1,6 +1,6 @@
 //! 视频导出「数据曲线」设置分区（数据源 / 曲线参数 / 外观 / 文字与刻度）。
 //!
-//! 对应 iced `view/video_export_dialog/data_curve_settings.rs` +
+//! 对应 旧版 `view/video_export_dialog/data_curve_settings.rs` +
 //! `data_curve_settings_style.rs`。
 
 use lumino_core::tr;

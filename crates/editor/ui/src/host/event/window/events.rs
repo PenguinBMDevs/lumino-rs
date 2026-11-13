@@ -44,7 +44,7 @@ impl Host {
         use winit::event::WindowEvent::*;
 
         // 先把指针 / 滚轮 / 修饰键 / 焦点同步给 egui 叠加层（悬停高亮、
-        // `ScrollArea` 滚动、菜单点击依赖它们），随后仍走 iced 的事件转换。
+        // `ScrollArea` 滚动、菜单点击依赖它们），随后仍走 旧版 的事件转换。
         // 命中 egui 菜单占用区时，本次事件只给 egui（见下方提前返回）。
         let consumed_by_egui = self.capture_egui_overlay_input(&event);
 
@@ -63,7 +63,7 @@ impl Host {
                 }
             }
             Ime(ime) => {
-                // iced text_input 获得焦点时会 set_ime_allowed(true)，winit 随之发
+                // 旧版 text_input 获得焦点时会 set_ime_allowed(true)，winit 随之发
                 // Ime::Enabled；失焦发 Disabled。裸字母快捷键据此让路。
                 match ime {
                     winit::event::Ime::Enabled => self.ime_active = true,
@@ -102,9 +102,9 @@ impl Host {
                 }
             }
             PinchGesture { delta, phase, .. } => {
-                // 触摸板捏合（C）直接处理，不走 iced conversion（被过滤）
+                // 触摸板捏合（C）直接处理，不走 旧版 conversion（被过滤）
                 self.handle_pinch_gesture(*delta, *phase);
-                // 捏合已消费，不再进入 iced 队列
+                // 捏合已消费，不再进入 旧版 队列
                 return;
             }
             _ => (),
@@ -128,7 +128,7 @@ impl Host {
 
     /// 处理待处理的事件队列
     ///
-    /// iced widget 树**不再构建**（egui 已是唯一的绘制与输入通道）：窗口事件只经
+    /// 旧版 widget 树**不再构建**（egui 已是唯一的绘制与输入通道）：窗口事件只经
     /// `capture_egui_overlay_input`（egui）与 winit 直连（画布 / 快捷键 / 触摸手势）
     /// 消费，本队列只作为历史缓冲，逐帧清空。触摸长按判定仍需每帧轮询。
     pub(crate) fn process_pending_events(&mut self) {
@@ -137,7 +137,5 @@ impl Host {
         // 触摸长按判定必须排在清空之前：长按期间没有任何窗口事件，事件队列是空的，
         // 只有定时唤醒这一帧能把它判出来。
         self.poll_touch_long_press();
-
-        self.events.clear();
     }
 }

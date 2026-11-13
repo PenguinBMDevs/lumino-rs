@@ -1,6 +1,6 @@
 //! 工程设置对话框（`DialogType::ProjectSettings`）。
 //!
-//! 窗口使用**系统原生标题栏**（iced 侧只渲染内容），因此 egui 整窗绘制表单：
+//! 窗口使用**系统原生标题栏**（旧版 侧只渲染内容），因此 egui 整窗绘制表单：
 //! 24px 内边距、标题 18px、标签/正文 14px、输入框 `background.weak` 底 +
 //! 1px `background.strong` 边框、圆角 4；按钮 100×34（取消 / 确定，间距 12）。
 //! 表单在 `ScrollArea` 内（与生产 `scrollable(form)` 一致，按钮随内容滚动）。
@@ -26,7 +26,7 @@ const BUTTON_GAP: f32 = 12.0;
 /// 拍号输入框宽度（生产 `Length::Fixed(60)`）。
 const TS_INPUT_W: f32 = 60.0;
 
-/// 工程设置对话框产生的动作（不依赖 iced）。
+/// 工程设置对话框产生的动作（不依赖 旧版）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectSettingsAction {
     /// 项目名称变化。
@@ -71,7 +71,7 @@ pub fn show(ui: &mut egui::Ui, model: &ProjectSettingsModel) {
     crate::fonts::install(ui.ctx());
 
     let rect = ui.max_rect();
-    // 自制标题栏由 iced 绘制（红绿灯 + 拖动区）：egui 只画标题栏以下的内容区，
+    // 自制标题栏由 旧版 绘制（红绿灯 + 拖动区）：egui 只画标题栏以下的内容区，
     // 否则会把窗口控制按钮盖掉（功能削减）。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H

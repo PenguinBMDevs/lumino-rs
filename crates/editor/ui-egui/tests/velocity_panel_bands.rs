@@ -219,6 +219,6 @@ fn toolbar_is_blocked_but_canvas_is_not() {
         !blocked
             .iter()
             .any(|b| b.contains(egui::pos2(600.0, 1100.0))),
-        "数据区不能占用（iced 仍负责力度编辑）"
+        "数据区不能占用（旧版 仍负责力度编辑）"
     );
 }

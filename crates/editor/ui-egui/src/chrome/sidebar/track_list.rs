@@ -1,6 +1,6 @@
 //! 左侧音轨列表：编号 / 名称分列对齐（只读模型版）。
 //!
-//! 几何来自生产 iced `sidebar/panel.rs` + `sidebar/panel/track_item.rs`：
+//! 几何来自生产 旧版 `sidebar/panel.rs` + `sidebar/panel/track_item.rs`：
 //! - 面板内容宽 = panel_width - 6（拖拽手柄），列内边距 8，右侧 8px 滚动条槽；
 //! - 行按钮水平内边距 10，行内容内边距 4（添加行为 6）；
 //! - 第一列固定 36 宽（含 2px 左内边距），列间距 4 → 名称列起点 = 行左 + 54
@@ -24,7 +24,7 @@ pub(super) fn show_model(
     icons: &mut IconCache,
 ) {
     let list_left = content.left() + 8.0;
-    // iced 的滚动条不占布局宽度（内容溢出时覆盖在右侧 8px 上），
+    // 旧版 的滚动条不占布局宽度（内容溢出时覆盖在右侧 8px 上），
     // 因此行宽 = 面板内容宽 - 左右各 8px 内边距。
     let list_right = content.right() - 8.0;
     let list_top = content.top() + layout::TRACK_LIST_HEADER_H;
@@ -47,8 +47,8 @@ pub(super) fn show_model(
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenPanelMenu);
     }
 
-    // 内容底色只铺「音轨行 + 添加行」的高度（与 iced 的可滚动内容同高），
-    // 面板其余区域仍透出面板底色——否则整块面板会比 iced 多一层底色。
+    // 内容底色只铺「音轨行 + 添加行」的高度（与 旧版 的可滚动内容同高），
+    // 面板其余区域仍透出面板底色——否则整块面板会比 旧版 多一层底色。
     let content_height = layout::TRACK_ROW_H * model.tracks.len() as f32 + layout::TRACK_ADD_ROW_H;
     let background = Rect::from_min_size(
         egui::pos2(list_left, list_top),
@@ -58,7 +58,7 @@ pub(super) fn show_model(
 
     // 手工逐行布局（不再用 `TableBuilder`）：表格的行间距会把「添加音轨」行
     // 推到最后一行的下半部分（实测行距 ≈ 41 vs 行高 36 → 10px 重叠）。
-    // iced 的 `column![...rows, add]` 是 0 间距，这里保持一致。
+    // 旧版 的 `column![...rows, add]` 是 0 间距，这里保持一致。
     let list_area = Rect::from_min_max(
         egui::pos2(list_left, list_top),
         egui::pos2(list_right, content.bottom()),
@@ -188,7 +188,7 @@ pub(super) fn show_add_track(
 
 /// 单个音轨行：编号列（固定 36）+ 名称列（固定起点）+ 右侧独奏。
 ///
-/// 行由 egui **独占**点击：命中即 `SelectTrack(id)` 并计入占用区，避免 iced
+/// 行由 egui **独占**点击：命中即 `SelectTrack(id)` 并计入占用区，避免 旧版
 /// 的同位行按钮再处理一次（两侧选择同一个音轨时不会报错，但会造成两次重绘）。
 fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(
@@ -199,11 +199,11 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::SelectTrack(track.id));
     }
     if response.secondary_clicked() {
-        // 右键由 egui 接管（iced 的同位行按钮已不再收到该事件）。
+        // 右键由 egui 接管（旧版 的同位行按钮已不再收到该事件）。
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenTrackMenu(track.id));
     }
-    // 行命中区由 egui 独占（iced 的同位行按钮不再处理同一次点击）。
-    // 例外：行内重命名时输入框仍由 iced 绘制，必须让指针进去。
+    // 行命中区由 egui 独占（旧版 的同位行按钮不再处理同一次点击）。
+    // 例外：行内重命名时输入框仍由 旧版 绘制，必须让指针进去。
     if !track.renaming {
         super::super::menu::extend_blocked(ui.ctx(), [rect]);
     }
@@ -239,7 +239,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
     }
 
     // 第二列：名称。指挥轨图标列 24 宽（生产 `track_item` 的图标容器），
-    // 普通轨编号列 36 宽，因此指挥轨名称起点比其它轨早 12px（与 iced 一致）。
+    // 普通轨编号列 36 宽，因此指挥轨名称起点比其它轨早 12px（与 旧版 一致）。
     let label_col = if track.conductor {
         layout::TRACK_ADD_ICON_COL_W
     } else {
@@ -256,10 +256,10 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
             .layout(Layout::left_to_right(Align::Center)),
     );
     if track.renaming {
-        // 行内重命名由 egui 绘制输入框（iced 版本会被底层画布纹理盖住）。
+        // 行内重命名由 egui 绘制输入框（旧版 版本会被底层画布纹理盖住）。
         let mut buffer = track.rename_buffer.clone();
         let input_id = egui::Id::unique(("lumino.track-rename", track.id));
-        // 进入重命名的首帧抢一次焦点（否则按键仍落到 iced，输入进不来）。
+        // 进入重命名的首帧抢一次焦点（否则按键仍落到 旧版，输入进不来）。
         let focused = egui::Id::unique(("lumino.track-rename-focus", track.id));
         if !ui
             .ctx()
@@ -330,7 +330,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
 fn add_track_row(ui: &mut egui::Ui, rect: Rect, label: &str, cache: &mut IconCache) {
     ui.painter()
         .rect_filled(rect, CornerRadius::same(6), theme::base_bg());
-    // 命中区与绘制同源；点击只给 egui（否则 iced 的添加按钮会再加一条音轨）。
+    // 命中区与绘制同源；点击只给 egui（否则 旧版 的添加按钮会再加一条音轨）。
     let response = ui.interact(
         rect,
         egui::Id::unique(("lumino.add-track", rect.top() as i32)),
@@ -381,7 +381,7 @@ fn track_text_color(track: &SidebarTrack) -> Color32 {
     }
 }
 
-/// 行底色：与 iced `track_button_background` 同规则。
+/// 行底色：与 旧版 `track_button_background` 同规则。
 fn row_background(track: &SidebarTrack, hovered: bool) -> Color32 {
     match (track.color, track.selected, hovered) {
         (Some(color), true, _) => blend(color, theme::selected_bg(), 0.35),

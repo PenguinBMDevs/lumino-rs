@@ -1,4 +1,4 @@
-//! 外壳 band 的像素级几何回归：与 iced 基线同尺寸（1600×1000 @1x）逐列比较墨迹区间。
+//! 外壳 band 的像素级几何回归：与 legacy 基线同尺寸（1600×1000 @1x）逐列比较墨迹区间。
 //!
 //! 只比较「文字/图标出现的列区间」而不是逐像素颜色：两条渲染栈的字体栅格化必然
 //! 不同（cosmic-text vs egui + YaHei），但**位置**必须一致——即视觉验收里的「几何严格」。
@@ -27,7 +27,7 @@ const TITLEBAR_BG: [u8; 3] = [0x3F, 0x46, 0x6E];
 const STATUSBAR_BG: [u8; 3] = [0x39, 0x40, 0x63];
 
 fn model() -> ChromeModel {
-    // 取值与 iced 基线捕获一致：就绪 + 0.0% / 0.0 MB / 60.0。
+    // 取值与 legacy 基线捕获一致：就绪 + 0.0% / 0.0 MB / 60.0。
     ChromeModel {
         dialog: None,
         dialog_titlebar: None,
@@ -116,14 +116,14 @@ fn render_bands() -> RgbaImage {
         .expect("band 像素测试需要可用的 wgpu 渲染器")
 }
 
-fn iced_baseline() -> RgbaImage {
+fn legacy() -> RgbaImage {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(3)
         .expect("测试目录必须有工作区根")
-        .join("tests/ui-baseline/iced/main_chrome-dpi100.png");
+        .join("tests/ui-baseline/legacy/main_chrome-dpi100.png");
     image::open(&path)
-        .expect("读取 iced 基线失败（先运行 capture_iced）")
+        .expect("读取 legacy 基线失败（先运行 capture_egui）")
         .to_rgba8()
 }
 
@@ -227,9 +227,9 @@ fn assert_runs_close(actual: &[(u32, u32)], expected: &[(u32, u32)], label: &str
 }
 
 #[test]
-fn bands_match_iced_geometry() {
+fn bands_match_legacy_geometry() {
     let bands = render_bands();
-    let baseline = iced_baseline();
+    let baseline = legacy();
     // 失败时便于人工核对的调试图（workspace/target）。
     let debug_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -243,29 +243,29 @@ fn bands_match_iced_geometry() {
     assert_eq!(
         &titlebar_pixel[..3],
         &TITLEBAR_BG,
-        "标题栏底色与 iced `background.neutral` 不一致"
+        "标题栏底色与 legacy `background.neutral` 不一致"
     );
     let statusbar_pixel = bands.get_pixel(800, 990).0;
     assert_eq!(
         &statusbar_pixel[..3],
         &STATUSBAR_BG,
-        "状态栏底色与 iced `background.weak` 不一致"
+        "状态栏底色与 legacy `background.weak` 不一致"
     );
 
     // 标题栏：logo + 四个菜单标签。
     let bands_titlebar = ink_runs(&bands, 2, 28, 0, 340, TITLEBAR_BG);
-    let iced_titlebar = ink_runs(&baseline, 2, 28, 0, 340, TITLEBAR_BG);
-    assert_runs_close(&bands_titlebar, &iced_titlebar, "标题栏");
+    let legacy = ink_runs(&baseline, 2, 28, 0, 340, TITLEBAR_BG);
+    assert_runs_close(&bands_titlebar, &legacy, "标题栏");
 
     // 状态栏左侧描述文本。
     let bands_left = ink_runs(&bands, 982, 997, 0, 120, STATUSBAR_BG);
-    let iced_left = ink_runs(&baseline, 982, 997, 0, 120, STATUSBAR_BG);
-    assert_runs_close(&bands_left, &iced_left, "状态栏左侧");
+    let legacy = ink_runs(&baseline, 982, 997, 0, 120, STATUSBAR_BG);
+    assert_runs_close(&bands_left, &legacy, "状态栏左侧");
 
     // 状态栏右侧 CPU / MEM / FPS 指标组：字形切分不同，按文本块比较。
     let bands_right = merge_runs(&ink_runs(&bands, 982, 997, 1330, 1599, STATUSBAR_BG), 6);
-    let iced_right = merge_runs(&ink_runs(&baseline, 982, 997, 1330, 1599, STATUSBAR_BG), 6);
-    assert_runs_close(&bands_right, &iced_right, "状态栏指标");
+    let legacy = merge_runs(&ink_runs(&baseline, 982, 997, 1330, 1599, STATUSBAR_BG), 6);
+    assert_runs_close(&bands_right, &legacy, "状态栏指标");
 
     // 工具栏 band：必须从左侧栏右缘 248 开始，不覆盖路由栏。
     assert_eq!(
@@ -279,8 +279,8 @@ fn bands_match_iced_geometry() {
         "工具栏 band 左边界应为左侧栏宽度 248"
     );
     let bands_toolbar = ink_runs(&bands, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
-    let iced_toolbar = ink_runs(&baseline, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
-    assert_runs_close(&bands_toolbar, &iced_toolbar, "工具栏");
+    let legacy = ink_runs(&baseline, 38, 88, 248, 1599, [0x2A, 0x2F, 0x47]);
+    assert_runs_close(&bands_toolbar, &legacy, "工具栏");
 
     // 左侧栏 band：标题栏下沿到状态栏上沿，宽 48（路由栏）+ 200（面板）。
     assert_eq!(
@@ -327,14 +327,14 @@ fn bands_match_iced_geometry() {
         "音轨行右侧应为面板底色（8px 内边距）"
     );
 
-    // 路由栏图标列与音轨行文本：墨迹区间与 iced 基线一致。
+    // 路由栏图标列与音轨行文本：墨迹区间与 legacy 基线一致。
     let bands_route = ink_runs(&bands, 38, 960, 2, 47, [0x33, 0x39, 0x57]);
-    let iced_route = ink_runs(&baseline, 38, 960, 2, 47, [0x33, 0x39, 0x57]);
-    assert_runs_close(&bands_route, &iced_route, "路由栏图标");
+    let legacy = ink_runs(&baseline, 38, 960, 2, 47, [0x33, 0x39, 0x57]);
+    assert_runs_close(&bands_route, &legacy, "路由栏图标");
 
     let bands_add = ink_runs(&bands, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
-    let iced_add = ink_runs(&baseline, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
-    assert_runs_close(&bands_add, &iced_add, "添加音轨行");
+    let legacy = ink_runs(&baseline, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
+    assert_runs_close(&bands_add, &legacy, "添加音轨行");
 
     // 右侧栏图标列：x 1552..1599，从工具栏下沿（102）到状态栏上沿（980）。
     assert_ne!(
@@ -365,8 +365,8 @@ fn bands_match_iced_geometry() {
 
     // 三个图标（20×20）在 48×48 按钮内居中，按钮间 2px 间距。
     let bands_icons = ink_row_runs(&bands, 1552, 1599, 100, 260, [0x33, 0x39, 0x57]);
-    let iced_icons = ink_row_runs(&baseline, 1552, 1599, 100, 260, [0x33, 0x39, 0x57]);
-    assert_runs_close(&bands_icons, &iced_icons, "右侧栏图标行");
+    let legacy = ink_row_runs(&baseline, 1552, 1599, 100, 260, [0x33, 0x39, 0x57]);
+    assert_runs_close(&bands_icons, &legacy, "右侧栏图标行");
 
     // 钢琴卷帘骨架：键盘列 / 标尺 / 滚动条，网格区域必须保持透明（下层是 wgpu）。
     assert_eq!(
@@ -395,17 +395,17 @@ fn bands_match_iced_geometry() {
         "标尺底色应为 `background.base`"
     );
     let bands_keys = merge_runs(&ink_runs(&bands, 127, 145, 250, 366, [0x2A, 0x2F, 0x47]), 4);
-    let iced_keys = merge_runs(
+    let legacy = merge_runs(
         &ink_runs(&baseline, 127, 145, 250, 366, [0x2A, 0x2F, 0x47]),
         4,
     );
-    assert_runs_close(&bands_keys, &iced_keys, "键盘首键音名");
+    assert_runs_close(&bands_keys, &legacy, "键盘首键音名");
 
     let bands_ruler = ink_runs(&bands, 104, 124, 372, 700, [0x24, 0x28, 0x3B]);
-    let iced_ruler = ink_runs(&baseline, 104, 124, 372, 700, [0x24, 0x28, 0x3B]);
-    assert_runs_close(&bands_ruler, &iced_ruler, "标尺小节号");
+    let legacy = ink_runs(&baseline, 104, 124, 372, 700, [0x24, 0x28, 0x3B]);
+    assert_runs_close(&bands_ruler, &legacy, "标尺小节号");
 
-    // 滚动条：垂直滑块 104..381、水平滑块 250..271（iced 基线）。
+    // 滚动条：垂直滑块 104..381、水平滑块 250..271（legacy 基线）。
     assert_eq!(
         &bands.get_pixel(1540, 200).0[..3],
         &[0x39, 0x40, 0x63],
@@ -422,6 +422,6 @@ fn bands_match_iced_geometry() {
         "水平滚动条滑块应为 `background.weak`"
     );
     let bands_vthumb = ink_row_runs(&bands, 1532, 1551, 100, 980, [0x44, 0x4D, 0x79]);
-    let iced_vthumb = ink_row_runs(&baseline, 1532, 1551, 100, 980, [0x44, 0x4D, 0x79]);
-    assert_runs_close(&bands_vthumb, &iced_vthumb, "垂直滚动条滑块");
+    let legacy = ink_row_runs(&baseline, 1532, 1551, 100, 980, [0x44, 0x4D, 0x79]);
+    assert_runs_close(&bands_vthumb, &legacy, "垂直滚动条滑块");
 }

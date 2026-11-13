@@ -14,7 +14,7 @@ use crate::theme;
 const ACTION_ID: &str = "lumino.load-confirm.action";
 /// 内边距（生产 `container(...).padding(24)`）。
 const PAD: f32 = 24.0;
-/// 14px 文本行高（含 iced 1.5 倍行高）。
+/// 14px 文本行高（含 旧版 1.5 倍行高）。
 const LINE_H: f32 = 21.0;
 /// 12 / 13px 文本行高。
 const SMALL_H: f32 = 18.0;

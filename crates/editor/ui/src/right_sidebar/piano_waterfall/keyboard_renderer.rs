@@ -1,8 +1,8 @@
 //! 钢琴瀑布流面板离屏渲染器（键盘底条 + 下落式音符）
 //!
 //! 将「下落式音符 + 底部钢琴键盘」绘制到一张离屏 `Rgba8Unorm` 纹理（`self.tex`），
-//! 其纹理视图由 iced 的 `shader` 图元在自身渲染通道内**直接采样合成**（GPU→GPU），
-//! 不经过 CPU 读回、不经 `image::Handle`、不进 iced 图集——因此与钢琴卷帘洋葱皮同样不闪烁。
+//! 其纹理视图由 旧版 的 `shader` 图元在自身渲染通道内**直接采样合成**（GPU→GPU），
+//! 不经过 CPU 读回、不经 `image::Handle`、不进 旧版 图集——因此与钢琴卷帘洋葱皮同样不闪烁。
 //!
 //! 关键约束（来自需求）：
 //! - **音符数据禁止第二份拷贝**——直接 bind 渲染线程已持有的活体 GPU 音符实例缓冲
@@ -107,9 +107,9 @@ pub struct KeyboardRenderer {
     keycolor_bind_group_layout: wgpu::BindGroupLayout,
     /// 键盘着色器 bind group layout（key_colors storage read，仅顶点阶段）
     key_bgl: wgpu::BindGroupLayout,
-    /// 离屏目标纹理（跨帧复用，尺寸变化才重建）；其视图交给 iced shader 图元直接采样合成
+    /// 离屏目标纹理（跨帧复用，尺寸变化才重建）；其视图交给 旧版 shader 图元直接采样合成
     tex: Option<wgpu::Texture>,
-    /// `tex` 的视图（跨帧复用）；iced shader 图元持有其 `Arc` 克隆，在自身渲染通道内采样。
+    /// `tex` 的视图（跨帧复用）；旧版 shader 图元持有其 `Arc` 克隆，在自身渲染通道内采样。
     /// 用 `Arc` 包裹以便跨帧/跨图元共享，且纹理重建时旧视图仍可被在途图元安全引用。
     tex_view: Option<Arc<wgpu::TextureView>>,
     /// 已分配的纹理/缓冲尺寸与音符数（用于判定是否需要重建）

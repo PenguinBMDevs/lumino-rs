@@ -1,6 +1,6 @@
 //! 抽屉画布的绘制与单位框映射（从 canvas.rs 拆出，控制文件长度）。
 
-use iced_core::{Point, Rectangle, Size};
+use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 use crate::shape_drawer::doc::{DrawerTool, DrawerView};
 

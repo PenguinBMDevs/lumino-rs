@@ -1,10 +1,10 @@
-//! 画布输入直连（winit → 编辑器），不再经过 iced `Grid` program。
+//! 画布输入直连（winit → 编辑器），不再经过 旧版 `Grid` program。
 //!
 //! `LUMINO_EGUI_CANVAS_INPUT=1` 时启用：宿主把鼠标按下/移动/释放、滚轮、
-//! 修饰键与失焦直接翻译成 [`CanvasEvent`]，与 iced 路径共用
+//! 修饰键与失焦直接翻译成 [`CanvasEvent`]，与 旧版 路径共用
 //! `ui_editor::grid::canvas_input::dispatch` 的分派语义。
 //!
-//! 启用后 `process_pending_events` 不再构建 iced widget 树（主窗口），
+//! 启用后 `process_pending_events` 不再构建 旧版 widget 树（主窗口），
 //! 避免同一击被处理两次；对话框窗口没有画布，仍走原路径。
 
 use lumino_ui_editor::grid::canvas_input::{CanvasButton, CanvasEvent};
@@ -14,7 +14,7 @@ use crate::host::Host;
 /// 画布输入是否由宿主直接驱动。
 ///
 /// **默认开启**：钢琴卷帘画布（音符编辑 / 框选 / 滚轮 / 右键菜单）与滚动条
-/// 均已由 egui + winit 直连接管。`LUMINO_EGUI_CANVAS_INPUT=0` 回退到 iced
+/// 均已由 egui + winit 直连接管。`LUMINO_EGUI_CANVAS_INPUT=0` 回退到 旧版
 /// `Grid` 通道，用于对照排查。
 pub(crate) fn canvas_input_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -29,7 +29,7 @@ impl Host {
     /// 主编辑器窗口：画布输入由本模块接管（对话框 / 进度窗没有画布）。
     ///
     /// 纵向卷帘与横向共用同一套分派（`canvas_input::vertical`）；走带、瀑布流
-    /// 与导出面板没有钢琴卷帘画布，仍走 iced 通道。
+    /// 与导出面板没有钢琴卷帘画布，仍走 旧版 通道。
     pub(crate) fn canvas_input_active(&self) -> bool {
         canvas_input_enabled()
             && !self.root.state.is_dialog_window
@@ -157,7 +157,7 @@ impl Host {
 
     /// 用编辑器当前状态刷新窗口光标形态。
     ///
-    /// 复用 iced 侧的 `mouse_interaction` 判定（同一份语义），映射到 winit 图标。
+    /// 复用 旧版 侧的 `mouse_interaction` 判定（同一份语义），映射到 winit 图标。
     /// 指针落在 egui 占用区（菜单 / 面板 / 滚动条）时不改：那些区域有自己的光标。
     fn refresh_canvas_cursor(&mut self) {
         let canvas = &self.root.editor.editor_state.canvas;
@@ -171,11 +171,11 @@ impl Host {
         {
             return;
         }
-        let bounds = iced_core::Rectangle::new(
-            iced_core::Point::new(canvas.offset_x, canvas.offset_y),
-            iced_core::Size::new(canvas.size_x, canvas.size_y),
+        let bounds = lumino_ui_core::geom::Rectangle::new(
+            lumino_ui_core::geom::Point::new(canvas.offset_x, canvas.offset_y),
+            lumino_ui_core::geom::Size::new(canvas.size_x, canvas.size_y),
         );
-        let cursor = iced_core::mouse::Cursor::Available(position);
+        let cursor = lumino_ui_core::geom::mouse::Cursor::Available(position);
         let interaction = if self.root.sidebar.is_vertical_roll() {
             lumino_ui_editor::grid::canvas_input::vertical::cursor(
                 &self.root.editor,

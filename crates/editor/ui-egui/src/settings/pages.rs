@@ -178,7 +178,7 @@ pub(super) fn compatibility(
         action::push_action(ui.ctx(), SettingsAction::CopyGpuDiagnostics);
     }
 
-    // 结果区：按卡片宽度换行（生产 iced 的 `text` 会自动换行，不能单行硬画）。
+    // 结果区：按卡片宽度换行（生产 旧版 的 `text` 会自动换行，不能单行硬画）。
     let wrap = (rect.right() - PAD - x).max(80.0);
     let mut y = button_y + 30.0 + 10.0;
     for line in &model.result_lines {

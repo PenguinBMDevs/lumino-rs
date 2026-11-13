@@ -1,6 +1,6 @@
 //! 图标枚举（仅数据；SVG 渲染已迁 \lumino-ui-egui::icons\）。
 //!
-//! iced 视图层删除后本模块只保留 \Icon\ 变体与 HiDPI 兼容开关：
+//! 旧版 视图层删除后本模块只保留 \Icon\ 变体与 HiDPI 兼容开关：
 //! 绘制由 egui 的 \IconCache\ 负责，不再包含 SVG widget / 光栅化代码。
 
 use std::sync::atomic::{AtomicBool, Ordering};

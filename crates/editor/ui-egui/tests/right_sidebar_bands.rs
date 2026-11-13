@@ -155,7 +155,7 @@ fn panel_band_geometry_matches_production() {
     let handle = egui::pos2(rect.left() - 3.0, rect.center().y);
     assert!(
         blocked.iter().any(|block| block.contains(handle)),
-        "6px 拖拽手柄必须由 egui 占用（否则同一次按下会被 iced 再处理一遍）"
+        "6px 拖拽手柄必须由 egui 占用（否则同一次按下会被 旧版 再处理一遍）"
     );
 }
 

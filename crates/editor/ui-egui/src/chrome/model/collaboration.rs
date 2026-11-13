@@ -3,7 +3,7 @@
 /// 协作对话框：标题 / 关闭 / 当前视图。
 #[derive(Debug, Clone, Default)]
 pub struct CollaborationModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「多人协作」（20px）。
     pub title: String,

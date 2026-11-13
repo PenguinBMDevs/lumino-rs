@@ -6,7 +6,7 @@ use crate::chrome::{self, ChromeState};
 use crate::dialog::{self, DialogState};
 use crate::settings::{self, SettingsState};
 
-/// 与 iced 基线一致的 DPI 档位。
+/// 与 旧版 基线一致的 DPI 档位。
 pub const DPI_SCALES: [f32; 3] = [1.0, 1.25, 1.5];
 
 /// 代表性场景。
@@ -41,7 +41,7 @@ impl SceneId {
         }
     }
 
-    /// 逻辑尺寸（与 iced 基线一致）。
+    /// 逻辑尺寸（与 旧版 基线一致）。
     pub fn logical_size(self) -> (u32, u32) {
         match self {
             Self::MainChrome | Self::PianoRollSkeleton => (1600, 1000),
@@ -130,7 +130,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scene_sizes_match_iced_baseline() {
+    fn scene_sizes_match_legacy_baseline() {
         assert_eq!(SceneId::MainChrome.logical_size(), (1600, 1000));
         assert_eq!(SceneId::SettingsGeneral.logical_size(), (1200, 800));
         assert_eq!(SceneId::SaveConfirmDialog.logical_size(), (560, 260));

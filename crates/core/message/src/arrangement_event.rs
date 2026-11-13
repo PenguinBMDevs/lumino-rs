@@ -1,6 +1,6 @@
 //! 工程走带交互的**框架无关事件**（UI 无关）
 //!
-//! 交互层原先直接匹配 iced `canvas::Event` / `mouse::Cursor`，导致逻辑无法被
+//! 交互层原先直接匹配 旧版 `canvas::Event` / `mouse::Cursor`，导致逻辑无法被
 //! egui 复用。这里定义中立事件：各 UI 侧在边界做一次转换，交互层只认中立类型。
 //!
 //! 只覆盖走带交互真正用到的子集（按键按下/释放、指针移动、滚轮），不做通用事件系统。
@@ -18,7 +18,7 @@ pub enum ArrangementPointerButton {
     Middle,
 }
 
-/// 滚轮增量（与 iced `ScrollDelta` 同形）。
+/// 滚轮增量（与 旧版 `ScrollDelta` 同形）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArrangementScroll {
     /// 按刻度（一行 = 1.0）。

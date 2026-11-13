@@ -29,7 +29,7 @@ fn custom_precision_model_mirrors_state() {
     };
     assert!(
         panel.titlebar,
-        "默认配置使用自制标题栏：顶部 30px 仍由 iced 绘制"
+        "默认配置使用自制标题栏：顶部 30px 仍由 旧版 绘制"
     );
     assert_eq!(panel.tuplet_count, "5");
     assert_eq!(panel.note_value, "8");

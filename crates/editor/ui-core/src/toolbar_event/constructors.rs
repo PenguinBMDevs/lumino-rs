@@ -2,8 +2,8 @@
 //!
 //! 视图层只调用这些构造器，避免在 UI 代码中散落 `Message::Toolbar(...)` 包装。
 
-use iced_core::Point;
 use lumino_message::{DotType, NotePrecision, Tool, TupletType};
+use lumino_ui_core::geom::Point;
 
 use super::{Event, FlipHorizontalMode, ShapeType, ToolPanelItem};
 use crate::Message;

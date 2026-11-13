@@ -10,7 +10,7 @@ use crate::Message;
 use crate::root::Root;
 
 /// 颜色 → egui 颜色（保留 alpha）。
-fn color32(color: iced_core::Color) -> egui::Color32 {
+fn color32(color: lumino_ui_core::geom::Color) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(
         (color.r * 255.0).round() as u8,
         (color.g * 255.0).round() as u8,

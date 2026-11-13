@@ -1,6 +1,6 @@
 //! 纵向卷帘的画布输入分派（转置语义：时间轴竖直、音高轴水平、键盘在底部）。
 //!
-//! 由宿主（winit 事件）直接调用；iced `VerticalRollGrid` 的 `update` 只做
+//! 由宿主（winit 事件）直接调用；旧版 `VerticalRollGrid` 的 `update` 只做
 //! 事件映射后转调本函数，两条路径共用同一份语义。
 
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction};
@@ -48,12 +48,15 @@ pub fn dispatch(
     }
 }
 
-fn point(local: (f32, f32)) -> iced_core::Point {
-    iced_core::Point::new(local.0, local.1)
+fn point(local: (f32, f32)) -> lumino_ui_core::geom::Point {
+    lumino_ui_core::geom::Point::new(local.0, local.1)
 }
 
 /// 纵向卷帘的光标形态（复用 `vertical_mouse` 的判定）。
-pub fn cursor(editor: &Editor, state: &GridInteractionState) -> iced_core::mouse::Interaction {
+pub fn cursor(
+    editor: &Editor,
+    state: &GridInteractionState,
+) -> lumino_ui_core::geom::mouse::Interaction {
     crate::grid::vertical_mouse::handle(editor, state.position)
 }
 
@@ -208,8 +211,8 @@ mod tests {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.is_vertical_roll = true;
-        editor.set_canvas_size(iced_core::Point::new(2000.0, 3000.0));
-        editor.set_canvas_offset(iced_core::Point::new(0.0, 0.0));
+        editor.set_canvas_size(lumino_ui_core::geom::Point::new(2000.0, 3000.0));
+        editor.set_canvas_offset(lumino_ui_core::geom::Point::new(0.0, 0.0));
         editor
     }
 

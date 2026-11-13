@@ -18,8 +18,8 @@ pub use route::{RollBarButton, Route};
 #[cfg(test)]
 mod tests;
 
-use iced_core::{Color, Point};
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
+use lumino_ui_core::geom::{Color, Point};
 
 // ─── 事件（从 sidebar/event.rs 迁入） ───
 
@@ -98,7 +98,7 @@ pub enum Event {
     TrackContextMenuItemClicked(usize, TrackContextMenuItem),
     /// 打开音轨列表面板空白区域右键菜单
     ///
-    /// 注意：iced 0.14 的 `mouse_area::on_right_press` 仅传递 Message，
+    /// 注意：旧版 0.14 的 `mouse_area::on_right_press` 仅传递 Message，
     /// 无法获取点击坐标。菜单固定显示在面板右上角（由 `panel_context_menu`
     /// 模块的 `positioned_menu` 决定）。
     PanelContextMenuOpened,

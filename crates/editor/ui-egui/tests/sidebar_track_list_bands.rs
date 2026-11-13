@@ -1,7 +1,7 @@
 //! 左侧栏音轨列表：行点击 / 添加行点击 / 命中区占用。
 //!
 //! 真机回归点：音轨行原先只有 `Sense::hover()`，点行选不中音轨；添加行点击会
-//! 同时被 iced 处理（一次点击加两条音轨）。这里把两件事都钉死。
+//! 同时被 旧版 处理（一次点击加两条音轨）。这里把两件事都钉死。
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -122,7 +122,7 @@ fn clicking_add_row_requests_one_track() {
 }
 
 #[test]
-fn rows_and_add_row_are_blocked_from_iced() {
+fn rows_and_add_row_are_blocked_from_legacy() {
     let (h, _) = harness(model());
     let blocked = menu::take_blocked(&h.ctx);
     assert!(

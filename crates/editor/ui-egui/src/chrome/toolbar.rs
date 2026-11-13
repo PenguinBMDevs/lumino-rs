@@ -1,6 +1,6 @@
 //! 工具栏：走带、工具、仪表盘、右侧显示开关。
 //!
-//! 结构对齐生产 iced `toolbar_view`：
+//! 结构对齐生产 旧版 `toolbar_view`：
 //! - 背景 = `background.weakest`（PANEL_BG）；
 //! - 每个分组是一个 50px 高、圆角 4 的 `background.weak`（TOOLBAR_BG）容器；
 //! - 分组间距：录制 4 / 播放 8 / 循环 8 / 撤销 16 / 仪表盘 16 / 工具 0；
@@ -24,7 +24,7 @@ use crate::icons::Icon;
 use crate::layout;
 use crate::theme;
 
-/// 草稿场景入口：使用默认状态（与 iced 基线一致）。
+/// 草稿场景入口：使用默认状态（与 旧版 基线一致）。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     show_model(ui, &ToolbarModel::default(), &mut state.icons);
 }
@@ -99,7 +99,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         x += layout::DASHBOARD_GROUP_W + 16.0;
     }
 
-    // Tools（宽度由条目尺寸累加，对应 iced 的 `Length::Shrink`）
+    // Tools（宽度由条目尺寸累加，对应 旧版 的 `Length::Shrink`）
     if model.groups.tools {
         let visible = visible_tool_count(model);
         group(
@@ -113,7 +113,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
     resize_handle(ui, full);
 }
 
-/// 底部 6px 高度拖拽手柄（iced `render_resize_handle` 的等价实现）。
+/// 底部 6px 高度拖拽手柄（旧版 `render_resize_handle` 的等价实现）。
 ///
 /// 宽度跟随仍由宿主处理（`input.rs` 在 `is_toolbar_resizing` 时按光标 y 调
 /// `Toolbar::update_resize_position`），这里只发成对的起止信号与拖拽位置。
@@ -149,7 +149,7 @@ fn resize_handle(ui: &egui::Ui, full: Rect) {
         ui.ctx().data_mut(|d| d.insert_temp(dragging_id, false));
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::ResizeEnded);
     }
-    // 手柄由 egui 独占（iced 侧已无同位置控件）。
+    // 手柄由 egui 独占（旧版 侧已无同位置控件）。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 

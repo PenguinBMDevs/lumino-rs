@@ -1,6 +1,6 @@
 //! 视频导出进度覆盖层的 egui 模型。
 //!
-//! 对应 iced `view/video_export_dialog/handlers.rs` 的四态：导出中 / 编码收尾 /
+//! 对应 旧版 `view/video_export_dialog/handlers.rs` 的四态：导出中 / 编码收尾 /
 //! 完成 / 失败。所有文案（含已格式化的时间、帧数、倍率）由生产侧预计算，
 //! 渲染层只负责排版。
 
@@ -84,7 +84,7 @@ pub struct VideoOverlayError {
 /// 整个覆盖层模型。
 #[derive(Debug, Clone, Default)]
 pub struct VideoExportOverlayModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 当前状态。
     pub view: VideoOverlayView,

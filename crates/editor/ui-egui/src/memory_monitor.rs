@@ -85,7 +85,7 @@ pub fn show(ui: &mut egui::Ui, model: &MemoryMonitorModel) {
     child.add(egui::Label::new(
         RichText::new(&model.title).size(18.0).color(theme::text()),
     ));
-    // 间距按真实窗口逐行量出（iced 的 1.5 倍行高比 egui 大）。
+    // 间距按真实窗口逐行量出（旧版 的 1.5 倍行高比 egui 大）。
     child.add_space(23.0);
     for (index, metric) in model.metrics.iter().enumerate() {
         if index > 0 {
@@ -155,7 +155,7 @@ pub fn show(ui: &mut egui::Ui, model: &MemoryMonitorModel) {
 /// 用两个子 `Ui` + `Label` 而不是 `painter.text`：数值与标签都要进入可访问树
 /// （无头测试据此断言内容，读屏也能读）。
 /// `row_h` = 文本区高度（不含 4 的行距），14px 指标行 26、13px 子系统行 16
-/// （对应 iced 的 1.5 倍行高）。
+/// （对应 旧版 的 1.5 倍行高）。
 fn metric_row(
     ui: &mut egui::Ui,
     label: &str,

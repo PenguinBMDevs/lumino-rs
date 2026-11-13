@@ -1,6 +1,6 @@
 //! 视频预览纹理：16:9 卡片 / 全屏瀑布流。
 //!
-//! 矩形不再从 iced `rect_probe` 读取，而是由 `root::video_clip_math` 直接计算：
+//! 矩形不再从 旧版 `rect_probe` 读取，而是由 `root::video_clip_math` 直接计算：
 //! - 渲染器入口：`renderer_panel_layout(content)` 的 16:9 预览黑盒；
 //! - 全屏瀑布流：标题栏 + 左侧路由栏之外的整块区域。
 //!
@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn preview_gate_matrix_matches_iced_semantics() {
+    fn preview_gate_matrix_matches_legacy_semantics() {
         assert_eq!(preview_gate(false, true), PreviewGate::NoMaterial);
         assert_eq!(preview_gate(false, false), PreviewGate::NoMaterial);
         assert_eq!(preview_gate(true, true), PreviewGate::Waterfall);
@@ -126,7 +126,7 @@ mod tests {
     fn waterfall_without_texture_keeps_placeholder() {
         let mut root = root();
         root.state.current_mode = AppMode::Waterfall;
-        // 纹理未就绪 → 不铺纹理（露出 iced / 底色）。
+        // 纹理未就绪 → 不铺纹理（露出 旧版 / 底色）。
         assert!(
             root.video_preview_model(
                 egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(2048.0, 1232.0)),

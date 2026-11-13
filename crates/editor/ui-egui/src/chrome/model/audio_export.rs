@@ -21,7 +21,7 @@ impl Default for AudioExportPanelModel {
 /// 音频导出面板：标题 / 工程信息 / 音频设置 / 事件过滤 / 输出路径 / 按钮。
 #[derive(Debug, Clone, Default)]
 pub struct AudioExportModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 大标题「音频导出」（18px）。
     pub title: String,

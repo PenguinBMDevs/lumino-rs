@@ -1,9 +1,9 @@
-//! 走带泳道交互的 egui 适配（**同一份 handler，零 iced 依赖**）。
+//! 走带泳道交互的 egui 适配（**同一份 handler，零 旧版 依赖**）。
 //!
 //! 交互逻辑在 `lumino-arrangement-core`：这里只做「egui 输入 → `ArrangementEvent`」
 //! 的转换，并调用同一个 `handle_event`，产出的 `ArrangementAction` 交给生产侧映射。
 //!
-//! 与 iced 侧 `ArrangementClickCanvas` 完全等价——两边都只是事件适配器，
+//! 与 旧版 侧 `ArrangementClickCanvas` 完全等价——两边都只是事件适配器，
 //! 选择/移动/框选/橡皮/曲线行为不会出现两套实现。
 
 use lumino_arrangement_core::interaction::{ArrangementInteractionState, handle_event};
@@ -41,7 +41,7 @@ pub struct LaneContext<'a> {
 
 /// 把一次 egui 输入喂给共享 handler，返回本帧动作。
 ///
-/// `state` 由调用方按帧保存在 egui ctx-data 中（对应 iced 侧的 `Program::State`）。
+/// `state` 由调用方按帧保存在 egui ctx-data 中（对应 旧版 侧的 `Program::State`）。
 pub fn feed(
     state: &mut ArrangementInteractionState,
     viewport: &mut ArrangementViewport,
@@ -102,7 +102,7 @@ const PAN_ID: &str = "lumino.arrangement.lane-pan";
 /// egui 侧驱动：把本帧指针事件喂给共享 handler，返回动作。
 ///
 /// `lane_model` 携带真实输入（工具 / 选区 / 选中音符 / 精度），
-/// 滚轮与中键平移在此实现（等价 iced `ArrangementClickCanvas` 的导航逻辑）。
+/// 滚轮与中键平移在此实现（等价 旧版 `ArrangementClickCanvas` 的导航逻辑）。
 pub fn show(
     ui: &egui::Ui,
     lane_model: &crate::chrome::ArrangementLaneModel,
@@ -151,7 +151,7 @@ pub fn show(
     let inside = rect.contains(Point2::new(pos.x, pos.y));
     let mut actions = Vec::new();
 
-    // ── 中键平移（等价 iced 的 middle_drag） ──
+    // ── 中键平移（等价 旧版 的 middle_drag） ──
     if middle_pressed && inside {
         ui.ctx().data_mut(|d| {
             d.insert_temp(egui::Id::unique(PAN_ID), local);
@@ -210,7 +210,7 @@ pub fn show(
         }
     }
 
-    // ── 工具事件：按下 > 移动 > 释放（一次只喂一个，与 iced 逐事件投递等价） ──
+    // ── 工具事件：按下 > 移动 > 释放（一次只喂一个，与 旧版 逐事件投递等价） ──
     let event = if left_pressed && inside {
         Some(pressed_left())
     } else if moving && ui.input(|i| i.pointer.primary_down()) {
@@ -310,8 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn egui_can_drive_the_shared_handler_without_iced() {
-        // 这条测试本身就是证据：`lumino-ui-egui`（0 iced 依赖）能直接跑同一份
+    fn egui_can_drive_the_shared_handler_without_legacy() {
+        // 这条测试本身就是证据：`lumino-ui-egui`（0 旧版 依赖）能直接跑同一份
         // 走带交互逻辑，不必复制选择/框选实现。
         let mut state = ArrangementInteractionState::default();
         let mut viewport = ArrangementViewport {
@@ -326,7 +326,7 @@ mod tests {
             cursor_at(300.0, 150.0),
             &lane(),
         );
-        // 点击路径：按下建立候选，**释放**时才设光标/清选择（与 iced 一致）。
+        // 点击路径：按下建立候选，**释放**时才设光标/清选择（与 旧版 一致）。
         let actions = feed(
             &mut state,
             &mut viewport,

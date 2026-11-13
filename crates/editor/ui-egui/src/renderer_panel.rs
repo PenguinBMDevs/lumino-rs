@@ -1,6 +1,6 @@
 //! 渲染器入口面板（视频剪辑窗口）：轨道占位 + 16:9 预览 + 时间轴卡片 + 导出设置。
 //!
-//! 取代原 iced `view/video_clip/*` 绘制层：几何由
+//! 取代原 旧版 `view/video_clip/*` 绘制层：几何由
 //! `lumino-ui::root::video_clip_math::renderer_panel_layout` 单源计算，本模块只画。
 //! 时间轴内部（传输按钮 / 素材带 / 滚动条）继续由 `video_clip_timeline` 叠加绘制。
 

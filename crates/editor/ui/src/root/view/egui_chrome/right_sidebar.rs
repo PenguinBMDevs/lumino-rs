@@ -62,7 +62,7 @@ impl Root {
     }
 }
 
-/// 图标列三项（文案取 i18n，顺序与 iced `view.rs` 一致）。
+/// 图标列三项（文案取 i18n，顺序与 旧版 `view.rs` 一致）。
 fn rail_items(language: lumino_extras::i18n::Language) -> Vec<RightSidebarRailItem> {
     let t = main_translations(language);
     vec![
@@ -80,7 +80,7 @@ fn rail_items(language: lumino_extras::i18n::Language) -> Vec<RightSidebarRailIt
         },
     ]
 }
-/// 当前页面的右侧栏内容；未接管的面板返回 `None`（继续由 iced 绘制）。
+/// 当前页面的右侧栏内容；未接管的面板返回 `None`（继续由 旧版 绘制）。
 pub(super) fn content(root: &Root) -> Option<RightSidebarPanelModel> {
     if !root.right_sidebar.panel_visible || !root.right_sidebar_visible() {
         return None;

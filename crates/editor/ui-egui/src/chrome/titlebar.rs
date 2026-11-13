@@ -1,6 +1,6 @@
 //! 自定义标题栏：菜单、拖动区、窗口控制按钮。
 //!
-//! 几何取自生产 iced 标题栏实测（`tests/ui-baseline/iced/main_chrome-dpi100.png`）：
+//! 几何取自生产 旧版 标题栏实测（`tests/ui-baseline/legacy/main_chrome-dpi100.png`）：
 //! logo 区 48 宽、菜单项 = 文本宽 + 17（中文 14px 下即 45，与基线 45px 节距一致）、
 //! 右侧三个窗口按钮各 45×29。
 
@@ -95,7 +95,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
         .collect();
 
     if model.menu_only {
-        // 系统原生标题栏：客户端顶部只有 30px 菜单栏（iced `view_native_titlebar`
+        // 系统原生标题栏：客户端顶部只有 30px 菜单栏（旧版 `view_native_titlebar`
         // 的占位行），菜单从 x=0 开始，没有 logo / 窗口控制 / 拖动区。
         ui.horizontal_centered(|ui| {
             let _ = menu_panel::show_labels(ui, model, &widths);

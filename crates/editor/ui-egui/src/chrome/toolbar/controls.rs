@@ -20,7 +20,7 @@ pub(super) fn record(ui: &mut egui::Ui, recording: bool) {
         ui.painter()
             .rect_filled(rect, egui::CornerRadius::same(4), theme::record_red());
     }
-    // iced：红点直径 8（基线实测 8×7），录制中文字反色。
+    // 旧版：红点直径 8（基线实测 8×7），录制中文字反色。
     ui.painter().circle_filled(
         rect.center(),
         4.0,
@@ -69,7 +69,7 @@ pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, p
     }
 }
 
-/// 循环按钮（开启时图标由 `Ban` 换成双向箭头，与 iced 一致）。
+/// 循环按钮（开启时图标由 `Ban` 换成双向箭头，与 旧版 一致）。
 pub(super) fn loop_button(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, looping: bool) {
     ui.add_space((layout::LOOP_GROUP_W - layout::TOOL_BUTTON_W) / 2.0);
     let icon = if looping {
@@ -115,7 +115,7 @@ pub(super) fn undo_redo(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache) 
 
 /// 检测仪表盘：`BPM / PPQ` 与 `位置 / 时间` 两列，中间 1px 分隔线。
 ///
-/// PPQ 处于编辑态时，第一列下半行换成输入框（与 iced `ppq_edit_column` 同义）；
+/// PPQ 处于编辑态时，第一列下半行换成输入框（与 旧版 `ppq_edit_column` 同义）；
 /// 输入变化与回车分别回传 `PpqEditChanged` / `PpqEditConfirmed`。
 pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
     let rect = ui.max_rect();
@@ -134,7 +134,7 @@ pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
         ppq_edit(ui, ppq_cell, model);
     } else {
         metric(ui, ppq_cell, &model.bpm, &model.ppq);
-        // 整列可点：进入 PPQ 编辑（iced 只让 `PPQ 1920` 那行可点，放宽命中不吃亏）。
+        // 整列可点：进入 PPQ 编辑（旧版 只让 `PPQ 1920` 那行可点，放宽命中不吃亏）。
         let response = ui.interact(
             ppq_cell,
             egui::Id::unique("lumino.toolbar.ppq-cell"),

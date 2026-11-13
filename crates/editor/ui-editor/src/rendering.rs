@@ -1,4 +1,4 @@
-//! 编辑器几何与音符收集（iced 视图层删除后只保留纯数据逻辑）。
+//! 编辑器几何与音符收集（旧版 视图层删除后只保留纯数据逻辑）。
 //!
 //! 模块拆分：
 //! - `ghost`：Ghost 拖动偏移计算辅助函数（hot loop 中调用）
@@ -40,7 +40,9 @@ fn pick_overlay(context_menu: bool, text_tool: bool) -> Option<ViewOverlay> {
 
 impl Editor {
     /// 框选框屏幕矩形 `(start, current)`（画布坐标）。
-    pub fn get_selection_box(&self) -> Option<(iced_core::Point, iced_core::Point)> {
+    pub fn get_selection_box(
+        &self,
+    ) -> Option<(lumino_ui_core::geom::Point, lumino_ui_core::geom::Point)> {
         use crate::EditState;
         if let EditState::Selecting {
             start_tick,
@@ -60,15 +62,21 @@ impl Editor {
                 let current_y_v = self.tick_to_y_vertical(current_tick);
                 let _ = (start_y, current_y); // 纵向不用 stored 值
                 Some((
-                    iced_core::Point::new(start_x.min(current_x), start_y_v.min(current_y_v)),
-                    iced_core::Point::new(start_x.max(current_x), start_y_v.max(current_y_v)),
+                    lumino_ui_core::geom::Point::new(
+                        start_x.min(current_x),
+                        start_y_v.min(current_y_v),
+                    ),
+                    lumino_ui_core::geom::Point::new(
+                        start_x.max(current_x),
+                        start_y_v.max(current_y_v),
+                    ),
                 ))
             } else {
                 let start_x = self.tick_to_x(start_tick);
                 let current_x = self.tick_to_x(current_tick);
                 Some((
-                    iced_core::Point::new(start_x, start_y),
-                    iced_core::Point::new(current_x, current_y),
+                    lumino_ui_core::geom::Point::new(start_x, start_y),
+                    lumino_ui_core::geom::Point::new(current_x, current_y),
                 ))
             }
         } else {
@@ -80,7 +88,7 @@ impl Editor {
     ///
     /// 有效区域 = Canvas 除去键盘区域（纵向底部 / 横向左侧）、标尺区域（横向顶部），
     /// 同时避开窗口边框和菜单栏的边界区域。
-    pub fn is_inside_canvas(&self, local_pos: iced_core::Point) -> bool {
+    pub fn is_inside_canvas(&self, local_pos: lumino_ui_core::geom::Point) -> bool {
         let es = &self.editor_state;
 
         if local_pos.x < 0.0 || local_pos.x > es.canvas.size_x {

@@ -267,7 +267,7 @@ fn fallback_diagnostics(policy: device_check_policy::StartupCheckPolicy) -> Fall
     }
 }
 
-/// 原生提示框兜底（iced 警告窗创建失败时使用）；返回是否选择继续启动
+/// 原生提示框兜底（旧版 警告窗创建失败时使用）；返回是否选择继续启动
 fn show_native_warning(detail: &str) -> bool {
     let continue_label = tr!("放我进去");
     let quit_label = tr!("确认并关闭");

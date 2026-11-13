@@ -1,7 +1,7 @@
 //! 渲染上下文 —— 从 Host 拆出的渲染相关字段
 //!
 //! 管理 wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
-//! iced `Renderer` / widget `Cache` / 共享 `Engine` 已随 iced 渲染路径一起删除。
+//! 旧版 `Renderer` / widget `Cache` / 共享 `Engine` 已随 旧版 渲染路径一起删除。
 
 use crate::host::viewport_geom::Viewport;
 use lumino_gfx::{GpuEpoch, NoteRenderer};
@@ -29,7 +29,7 @@ pub(crate) struct RenderContext {
     /// 渲染缓存
     pub render_cache: RenderCache,
     /// 上次光标位置
-    pub last_cursor_position: Option<iced_core::Point>,
+    pub last_cursor_position: Option<lumino_ui_core::geom::Point>,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
     /// 本帧是否携带「必须在 present 前立即可见」的内容变化。

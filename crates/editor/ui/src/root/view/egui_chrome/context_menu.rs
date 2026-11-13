@@ -1,7 +1,7 @@
 //! 钢琴卷帘右键菜单：生产状态 → egui 模型。
 //!
-//! 本步把 iced `context_menu::view` 的绘制迁到 egui：条目集与文案来自
-//! `lumino_message::context_menu`（iced 侧也已改为同一份表），这里只负责把
+//! 本步把 旧版 `context_menu::view` 的绘制迁到 egui：条目集与文案来自
+//! `lumino_message::context_menu`（旧版 侧也已改为同一份表），这里只负责把
 //! canvas 局部坐标换算成窗口坐标、并给出可放置区域。
 
 use lumino_message::PianoRollContextMenuAction;
@@ -34,7 +34,7 @@ impl Root {
         Some(model)
     }
 
-    /// egui 菜单动作 → 生产消息（与 iced 路径同一条消息）。
+    /// egui 菜单动作 → 生产消息（与 旧版 路径同一条消息）。
     pub fn piano_roll_context_menu_message(&self, action: PianoRollContextMenuAction) -> Message {
         Message::PianoRollContextMenu(action)
     }

@@ -107,7 +107,7 @@ pub struct ArrangementModel {
     pub scrollbars: Option<ArrangementScrollbarsModel>,
 }
 
-/// 走带两条滚动条的取值（与 iced `view_arrangement` 同源）。
+/// 走带两条滚动条的取值（与 旧版 `view_arrangement` 同源）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArrangementScrollbarsModel {
     /// 水平滚动（像素）。

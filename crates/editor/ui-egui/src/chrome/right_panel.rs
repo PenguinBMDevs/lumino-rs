@@ -2,12 +2,12 @@
 //!
 //! 面板几何与生产一致：总宽 `panel_width` = 左侧 6px 拖拽手柄 + 内容区
 //! `panel_width - 6`，右侧是固定 48px 图标列。内容区整块进入占用列表
-//! （拖拽手柄除外），点击不会再落到下层 iced 的同名控件；滚动由各面板自己的
+//! （拖拽手柄除外），点击不会再落到下层 旧版 的同名控件；滚动由各面板自己的
 //! `ScrollArea` 处理。
 //!
 //! 动作一帧只保留第一个（先到先得），避免面板重排时新控件被同一帧的点击连带
 //! 触发；素材拖出只在**按下瞬间**回传 `MaterialDragStarted`，跟随预览与松手
-//! 放置继续由 iced 编辑器状态机驱动。
+//! 放置继续由 旧版 编辑器状态机驱动。
 
 use egui::{Id, Rect};
 
@@ -25,7 +25,7 @@ pub(crate) use hits::{clear_rects, record_rect, set_panel_rect};
 
 const ACTION_ID: &str = "lumino.right-sidebar.action";
 
-/// 右侧栏面板产生的动作（不依赖 iced）。
+/// 右侧栏面板产生的动作（不依赖 旧版）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RightSidebarAction {
     /// 点击图标列按钮（切换/展开对应面板）。
@@ -97,7 +97,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<RightSidebarAction> {
 
 /// 绘制 6px 缩放手柄并接管拖拽（按下/松开 → 生产侧 start/end_resize）。
 ///
-/// 宽度跟随仍由宿主处理：iced 每条 `CursorMoved` 都会调用
+/// 宽度跟随仍由宿主处理：旧版 每条 `CursorMoved` 都会调用
 /// `RightSidebar::update_resize_position`，这里只需正确发出起止信号。
 pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
     ui.painter().rect_filled(
@@ -116,7 +116,7 @@ pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
     );
     let response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
 
-    // 起止信号必须**成对**发出：不能依赖生产状态 `resizing` 的时序——iced 在
+    // 起止信号必须**成对**发出：不能依赖生产状态 `resizing` 的时序——旧版 在
     // 鼠标松开时会先走 `handle_release_all` 直接 `end_resize()`，等到下一帧
     // `resizing` 已经是 false，就再也发不出 Ended。这里用 egui 自己的边沿状态。
     let dragging_id = Id::unique("lumino.right-sidebar.handle.dragging");
@@ -133,7 +133,7 @@ pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
         push_action(ui.ctx(), RightSidebarAction::ResizeEnded);
     }
 
-    // 手柄由 egui 独占：iced 的 mouse_area 不再收到按下/松开。
+    // 手柄由 egui 独占：旧版 的 mouse_area 不再收到按下/松开。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 
@@ -147,6 +147,6 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, panel: &RightSidebarPanelModel, icons
         RightSidebarPanelModel::PianoWaterfall(model) => waterfall::show(ui, rect, model),
     }
     // 内容区整块占用：点击 / 滚轮只给 egui。拖拽手柄（内容区左侧 6px）不在
-    // 本矩形内，iced 仍能收到缩放拖拽。
+    // 本矩形内，旧版 仍能收到缩放拖拽。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }

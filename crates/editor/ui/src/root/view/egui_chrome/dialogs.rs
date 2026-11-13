@@ -75,7 +75,7 @@ fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
 }
 
 impl Root {
-    /// 设置对话框调色板：直接跟随当前窗口主题的 egui 色板（与 iced 同源）。
+    /// 设置对话框调色板：直接跟随当前窗口主题的 egui 色板（与 旧版 同源）。
     fn settings_palette(&self) -> SettingsPalette {
         let palette = self.egui_palette();
         SettingsPalette {
@@ -111,7 +111,7 @@ impl Root {
 
     /// 已支持整窗接管的对话框（保存确认 / 设置「常规」页）。
     ///
-    /// 其余对话框（导出 / 历史 …）与其余设置页仍由 iced 绘制：整块返回空模型，
+    /// 其余对话框（导出 / 历史 …）与其余设置页仍由 旧版 绘制：整块返回空模型，
     /// 叠加层不画任何东西，避免把主窗口 band 盖到对话框上。
     pub(super) fn egui_dialog_model(&self) -> Option<DialogModel> {
         match self.state.dialog_type {
@@ -126,7 +126,7 @@ impl Root {
             DialogType::Settings => {
                 let language = self.settings.display.language;
                 let selected = self.settings.selected_menu_index;
-                // 已迁移页面：常规 / 快捷键 / 洋葱皮 / 兼容性；其余页面整块交回 iced。
+                // 已迁移页面：常规 / 快捷键 / 洋葱皮 / 兼容性；其余页面整块交回 旧版。
                 let page = match selected {
                     0 => SettingsPageModel::General,
                     1 => SettingsPageModel::Audio(super::settings_audio::page(self)),
@@ -228,7 +228,7 @@ impl Root {
         }
     }
 
-    /// 兼容性页：按钮门控 / 结果行 / 三个开关（文案与 iced 页同源）。
+    /// 兼容性页：按钮门控 / 结果行 / 三个开关（文案与 旧版 页同源）。
     fn compatibility_page(
         &self,
         language: lumino_extras::i18n::Language,
@@ -421,7 +421,7 @@ mod tests {
 
     use super::settings_labels;
 
-    /// `MENU_INDEX_ABOUT` 必须与 egui 设置菜单表**绑定**（原 iced 菜单表已删除，
+    /// `MENU_INDEX_ABOUT` 必须与 egui 设置菜单表**绑定**（原 旧版 菜单表已删除，
     /// 绑定校验迁到这里——`settings_labels` 是菜单的真实数据源）。
     ///
     /// 漂移后果：索引 9 指向别的页时，关于页的回声洞打字机装填点会落到

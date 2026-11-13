@@ -38,7 +38,7 @@ fn project_settings_model_mirrors_dialog_state() {
     assert_eq!(panel.title, "工程信息设置");
     assert!(
         panel.titlebar,
-        "默认配置使用自制标题栏：顶部 30px 仍由 iced 绘制"
+        "默认配置使用自制标题栏：顶部 30px 仍由 旧版 绘制"
     );
     assert_eq!(panel.name, "我的工程");
     assert_eq!(panel.bpm, "96");

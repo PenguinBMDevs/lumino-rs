@@ -11,13 +11,13 @@ use super::{
 };
 
 impl KeyboardRenderer {
-    /// 渲染「下落式音符 + 底部键盘」到离屏纹理，返回其纹理视图供 iced `shader` 图元直接采样合成。
+    /// 渲染「下落式音符 + 底部键盘」到离屏纹理，返回其纹理视图供 旧版 `shader` 图元直接采样合成。
     ///
     /// 返回 `Some(Arc<TextureView>)` 表示本次渲染完成（调用方据此更新面板持有的视图）；
     /// 返回 `None` 表示离屏资源尚未就绪（尺寸/缓冲尚未分配），下一帧重试即可。
     ///
-    /// 注意：**不做 CPU 读回**。纹理由 iced 在自身渲染通道内直接采样，GPU→GPU 合成，
-    /// 与钢琴卷帘洋葱皮同一路径，因此不进 `image::Handle`、不进 iced 图集、不闪烁。
+    /// 注意：**不做 CPU 读回**。纹理由 旧版 在自身渲染通道内直接采样，GPU→GPU 合成，
+    /// 与钢琴卷帘洋葱皮同一路径，因此不进 `image::Handle`、不进 旧版 图集、不闪烁。
     ///
     /// - `note_data`：渲染线程发布的活体 GPU 实例缓冲与实例数；`None` 时仅渲染键盘。
     /// - `zoom_x` / `scroll_x`：与钢琴卷帘 X 缩放/滚动一致，驱动音符落点与时间流。
@@ -310,7 +310,7 @@ impl KeyboardRenderer {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        // 不做 CPU 读回：直接返回离屏纹理视图，由 iced `shader` 图元在自身渲染通道内采样合成
+        // 不做 CPU 读回：直接返回离屏纹理视图，由 旧版 `shader` 图元在自身渲染通道内采样合成
         // （GPU→GPU）。返回克隆的 `Arc`，即使后续纹理重建，旧视图仍可被在途图元安全引用。
         self.tex_view.clone()
     }

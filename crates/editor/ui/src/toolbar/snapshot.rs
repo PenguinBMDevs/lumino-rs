@@ -1,4 +1,4 @@
-//! 工具栏数据的 egui 快照（iced 视图层删除后仅保留数据换算）。
+//! 工具栏数据的 egui 快照（旧版 视图层删除后仅保留数据换算）。
 //!
 //! 录制 / 走带 / 循环 / 撤销重做 / 检测仪表盘 / 工具组 / 精度下拉 / 洋葱皮 /
 //! 自动滚动 / 协作 /「更多」的绘制与输入全部在 `lumino-ui-egui::chrome::toolbar`；
@@ -9,7 +9,7 @@ use lumino_note_core::midi_types::TempoPoint;
 use super::{Toolbar, ToolbarPerfContext};
 
 impl Toolbar {
-    /// 生成 egui 工具栏快照（与 iced 仪表盘使用同一套换算函数）。
+    /// 生成 egui 工具栏快照（与 旧版 仪表盘使用同一套换算函数）。
     pub(crate) fn egui_snapshot(&self, perf: &ToolbarPerfContext<'_>) -> ToolbarSnapshot {
         let bpm = bpm_at_tick(perf.tempo_points, perf.playback_tick);
         let time_secs = tick_to_seconds(perf.tempo_points, perf.ppq, perf.playback_tick);

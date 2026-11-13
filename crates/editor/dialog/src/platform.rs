@@ -18,7 +18,7 @@ pub struct WorkArea {
     pub physical_position: PhysicalPosition<i32>,
     /// 工作区物理尺寸
     pub physical_size: PhysicalSize<u32>,
-    /// 工作区逻辑尺寸（供 iced 布局/测量使用）
+    /// 工作区逻辑尺寸（供 旧版 布局/测量使用）
     pub logical_size: LogicalSize<f32>,
 }
 

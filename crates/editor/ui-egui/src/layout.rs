@@ -1,4 +1,4 @@
-//! 与生产 iced UI 对齐的逻辑尺寸常量。
+//! 与生产 旧版 UI 对齐的逻辑尺寸常量。
 //!
 //! 来源：
 //! - `crates/editor/ui/src/titlebar.rs`：标题栏 30
@@ -35,7 +35,7 @@ pub const KEYBOARD_W: f32 = 120.0;
 pub const RULER_H: f32 = 24.0;
 /// 每个琴键的高度。
 pub const KEY_H: f32 = 20.0;
-/// 滚动条厚度（iced `V_SCROLLBAR_WIDTH` / `H_SCROLLBAR_HEIGHT`）。
+/// 滚动条厚度（旧版 `V_SCROLLBAR_WIDTH` / `H_SCROLLBAR_HEIGHT`）。
 pub const SCROLLBAR: f32 = 20.0;
 
 /// 工具栏内容区左 / 右内边距。
@@ -86,7 +86,7 @@ pub const TOOL_BUTTON_W: f32 = TOOL_BUTTON_ICON + TOOL_BUTTON_PADDING * 2.0;
 /// 工具选择器按钮宽度。
 pub const TOOL_SELECTOR_W: f32 = TOOL_SELECTOR_ICON + TOOL_BUTTON_PADDING * 2.0;
 
-/// 标题栏窗口按钮宽度（iced 45×29）。
+/// 标题栏窗口按钮宽度（旧版 45×29）。
 pub const TRAFFIC_BTN_W: f32 = 45.0;
 /// 标题栏窗口按钮高度。
 pub const TRAFFIC_BTN_H: f32 = 29.0;
@@ -97,7 +97,7 @@ pub const TRAFFIC_ICON: f32 = 10.0;
 pub const SETTINGS_MENU_W: f32 = 200.0;
 /// 设置页内容内边距。
 pub const SETTINGS_PADDING: f32 = 20.0;
-/// 设置菜单项高度（iced 基线逐行间距 52）。
+/// 设置菜单项高度（旧版 基线逐行间距 52）。
 pub const SETTINGS_MENU_ROW_H: f32 = 52.0;
 /// 设置页内容外边距。
 pub const SETTINGS_MARGIN: f32 = 16.0;
@@ -110,15 +110,15 @@ pub const SETTINGS_CONFIRM_GAP: f32 = 16.0;
 /// 设置表单行高。
 pub const SETTINGS_FORM_ROW_H: f32 = 72.0;
 
-/// 左侧栏拖拽手柄宽度（iced `RESIZE_HANDLE_WIDTH`）。
+/// 左侧栏拖拽手柄宽度（旧版 `RESIZE_HANDLE_WIDTH`）。
 pub const SIDEBAR_RESIZE_W: f32 = 6.0;
-/// 音轨列表滚动条槽宽度（iced `scrollable` 的 8px）。
+/// 音轨列表滚动条槽宽度（旧版 `scrollable` 的 8px）。
 pub const SIDEBAR_SCROLLBAR_W: f32 = 8.0;
 /// 音轨行高（14px 文本行高 17 + 行内边距 8 + 按钮内边距 10）。
 pub const TRACK_ROW_H: f32 = 36.0;
 /// 「添加音轨」行高（图标 18 + 行内边距 12 + 按钮内边距 10）。
 pub const TRACK_ADD_ROW_H: f32 = 40.0;
-/// 音轨行按钮水平内边距（iced `button::DEFAULT_PADDING` 左右各 10）。
+/// 音轨行按钮水平内边距（旧版 `button::DEFAULT_PADDING` 左右各 10）。
 pub const TRACK_BUTTON_PAD_X: f32 = 10.0;
 /// 音轨行内容内边距（`row!().padding(4)`）。
 pub const TRACK_ROW_PAD: f32 = 4.0;

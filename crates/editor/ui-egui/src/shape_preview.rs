@@ -1,19 +1,19 @@
 //! 形状工具预览（待确认图形 + 实时拖拽）——egui 版。
 //!
-//! 取代 iced `shape_tool_box::draw_one_shape` 的可见部分：
+//! 取代 旧版 `shape_tool_box::draw_one_shape` 的可见部分：
 //! - 引导轮廓：固定 1.5px、与粗细无关；
 //! - 填充：主题主色 35% 透明；
 //! - 描边产物预览：`shape_outline_blocks` 与 √ 写入同源，逐块画实心矩形。
 //!
-//! iced Canvas 的绘制层被 egui 底层纹理覆盖后不可见，本模块保证预览始终可见。
+//! 旧版 Canvas 的绘制层被 egui 底层纹理覆盖后不可见，本模块保证预览始终可见。
 
 use egui::{Color32, Pos2, Rect, Stroke};
 
 use crate::theme;
 
-/// 引导轮廓宽度（与 iced `OUTLINE_GUIDE_WIDTH` 一致）。
+/// 引导轮廓宽度（与 旧版 `OUTLINE_GUIDE_WIDTH` 一致）。
 const GUIDE_WIDTH: f32 = 1.5;
-/// 填充透明度（与 iced `FILL_ALPHA` 一致）。
+/// 填充透明度（与 旧版 `FILL_ALPHA` 一致）。
 const FILL_ALPHA: u8 = 89; // 0.35 * 255
 
 /// 单个预览图形。

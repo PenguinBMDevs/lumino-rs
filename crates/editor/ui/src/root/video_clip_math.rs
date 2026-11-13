@@ -1,22 +1,22 @@
-//! 视频剪辑面板的几何与时间换算（**纯计算，无 iced**）。
+//! 视频剪辑面板的几何与时间换算（**纯计算，无 旧版**）。
 //!
 //! 原 `view/video_clip/{layout,timeline}.rs` 的数学部分搬到这里：
 //! - 渲染器入口面板（轨道占位 + 16:9 预览 + 时间轴 + 导出设置）的**精确矩形**；
 //! - tick ↔ 秒换算（时间轴与导出锚点同源，避免两边漂移）。
 //!
 //! 这里取代了原先的 `rect_probe`：面板全部由 egui 绘制，几何必须自己算，
-//! 不能再读 iced 布局。布局常量与 iced 原实现逐项一致（12 内边距、220 轨道列、
+//! 不能再读 旧版 布局。布局常量与 旧版 原实现逐项一致（12 内边距、220 轨道列、
 //! 12 列间距、40 标题 + 16:9 预览 + 200 时间轴 + 80 设置、4 行距、8 时间轴内边距）。
 
 use egui::{Rect, Vec2, pos2};
 
-/// 时间轴固定高度（与 iced 原 `TIMELINE_HEIGHT` 一致）。
+/// 时间轴固定高度（与 旧版 原 `TIMELINE_HEIGHT` 一致）。
 pub const TIMELINE_HEIGHT: f32 = 200.0;
 /// 左侧轨道列表预留宽度。
 pub const LEFT_RESERVED: f32 = 220.0;
 /// 面板四周内边距。
 pub const PANEL_PADDING: f32 = 12.0;
-/// 左右两列间距（iced `row![left, right].spacing(12)`）。
+/// 左右两列间距（旧版 `row![left, right].spacing(12)`）。
 pub const COLUMN_GAP: f32 = 12.0;
 /// 标题行高度。
 pub const HEADER_HEIGHT: f32 = 40.0;
@@ -186,7 +186,7 @@ pub enum PreviewGate {
     WaitingRender,
 }
 
-/// 预览状态判定（与 iced 原 `preview_gate` 逐条一致）。
+/// 预览状态判定（与 旧版 原 `preview_gate` 逐条一致）。
 pub fn preview_gate(playhead_in_band: bool, texture_ready: bool) -> PreviewGate {
     match (playhead_in_band, texture_ready) {
         (false, _) => PreviewGate::NoMaterial,
@@ -293,9 +293,9 @@ mod tests {
         assert!(approx(h, 180.0));
     }
 
-    /// 布局：16:9 预览严格居中，时间轴子块按 iced 原常量落位（无探针）。
+    /// 布局：16:9 预览严格居中，时间轴子块按 旧版 原常量落位（无探针）。
     #[test]
-    fn layout_matches_iced_geometry() {
+    fn layout_matches_legacy_geometry() {
         let area = Rect::from_min_size(pos2(248.0, 30.0), Vec2::new(1800.0, 1182.0));
         let l = renderer_panel_layout(area);
         assert!(approx(l.left.left(), 248.0 + 12.0));

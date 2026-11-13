@@ -1,6 +1,6 @@
 //! 工程走带视图的 egui 绘制（第一步：顶部 28px 标尺）。
 //!
-//! 与 iced `ui-editor/src/arrangement/ruler.rs` 同口径：
+//! 与 旧版 `ui-editor/src/arrangement/ruler.rs` 同口径：
 //! - 底色 `ruler_background_color`、底部 1px 边框；
 //! - 每个小节边界画一条 1px 竖线（贯穿整条标尺）；
 //! - 小节号画在边界右侧 4px、顶部 4px；相邻标签间距小于 38px 时只画线不画字；
@@ -104,7 +104,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<ArrangementAction> {
 /// 绘制并处理输入（顶部标尺 + 左侧轨道列）。
 ///
 /// `full` = 窗口逻辑矩形；内容原点由模型给出（工具栏高度可拖拽，不能硬编码）。
-/// 轨道列整块计入 egui 占用区：点击不再落到下方 iced 的同位置 Canvas。
+/// 轨道列整块计入 egui 占用区：点击不再落到下方 旧版 的同位置 Canvas。
 pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<ArrangementAction> {
     let left = full.left() + model.ruler.left_inset;
     let top = full.top() + model.ruler.top_inset;
@@ -116,7 +116,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
         egui::pos2(right.max(left + TRACK_LIST_W), top + RULER_HEIGHT),
     );
     show_ruler(ui, ruler, &model.ruler);
-    // 标尺由 egui 接管：整条计入占用区，避免 iced 再设一次光标。
+    // 标尺由 egui 接管：整条计入占用区，避免 旧版 再设一次光标。
     super::menu::extend_blocked(ui.ctx(), [ruler]);
 
     let lanes = Rect::from_min_max(
@@ -124,7 +124,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
         egui::pos2(left + TRACK_LIST_W, bottom.max(ruler.bottom())),
     );
     track_list::show(ui, lanes, &model.track_list);
-    // 轨道列由 egui 接管点击：整块占用，避免 iced 同位置 Canvas 二次响应
+    // 轨道列由 egui 接管点击：整块占用，避免 旧版 同位置 Canvas 二次响应
     // （两边选择逻辑不同步时会出现“点了又跳回去”）。
     super::menu::extend_blocked(ui.ctx(), [lanes]);
 
@@ -133,10 +133,10 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
         return Some(action);
     }
     // 泳道区：同一份交互逻辑（`lumino-arrangement-core`）的 egui 适配。
-    // 本阶段**不占用命中区**（iced 仍会处理同一事件），用于 A/B 对照。
+    // 本阶段**不占用命中区**（旧版 仍会处理同一事件），用于 A/B 对照。
     if let Some(lane_model) = &model.lane {
-        // 泳道区由 egui 接管输入：整块计入占用区，iced 的 click canvas 不再收到事件
-        // （否则同一次点击会被两边各处理一次，且 iced 那份有既有坐标偏移）。
+        // 泳道区由 egui 接管输入：整块计入占用区，旧版 的 click canvas 不再收到事件
+        // （否则同一次点击会被两边各处理一次，且 旧版 那份有既有坐标偏移）。
         super::menu::extend_blocked(ui.ctx(), [lane_rect(lane_model)]);
         for action in lane::show(ui, lane_model, &model.ruler, &model.track_list) {
             push_lane_action(ui.ctx(), action);
@@ -261,7 +261,7 @@ fn ruler_input(
     });
     let zoom = model.zoom_x.max(1e-6);
 
-    // 滚轮缩放：只在指针位于标尺内时生效（与 iced 相同的位置校验）。
+    // 滚轮缩放：只在指针位于标尺内时生效（与 旧版 相同的位置校验）。
     if let Some(pos) = pointer
         && rect.contains(pos)
         && let Some(factor) = zoom_factor(ui)
@@ -317,10 +317,10 @@ fn tick_at(rect: Rect, model: &ArrangementRulerModel, x: f32) -> f64 {
         .min(model.total_ticks.max(1) as f64)
 }
 
-/// 滚轮 → 缩放因子（与 iced `zoom_factor_from_delta` 同口径）。
+/// 滚轮 → 缩放因子（与 旧版 `zoom_factor_from_delta` 同口径）。
 ///
 /// 直接用原始 `Event::MouseWheel` 的 `unit`：Line 一个刻度 = 1 行，
-/// Point 除以 50 换算成行（与 iced 的 `PIXEL_TO_LINE_SCALE` 一致），
+/// Point 除以 50 换算成行（与 旧版 的 `PIXEL_TO_LINE_SCALE` 一致），
 /// 再钳到 ±1 行、每行 10%。
 fn zoom_factor(ui: &egui::Ui) -> Option<f32> {
     const WHEEL_STEP: f32 = 0.1;

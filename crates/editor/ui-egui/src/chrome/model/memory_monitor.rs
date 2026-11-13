@@ -3,7 +3,7 @@
 /// 内存监控：标题 / 三行总指标 / 子系统分类 / 说明 / 关闭。
 #[derive(Debug, Clone, Default)]
 pub struct MemoryMonitorModel {
-    /// 顶部是否有 30px iced 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「内存占用详情」。
     pub title: String,

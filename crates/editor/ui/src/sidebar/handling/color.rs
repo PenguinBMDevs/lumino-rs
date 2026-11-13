@@ -1,7 +1,7 @@
 //! 音轨颜色选择处理 — 打开选择器、选择颜色、重置、关闭
 
 use crate::sidebar::core::{Sidebar, TrackContextMenuState};
-use iced_core::Color;
+use lumino_ui_core::geom::Color;
 
 impl Sidebar {
     /// 处理打开颜色选择器

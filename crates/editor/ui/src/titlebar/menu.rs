@@ -20,7 +20,7 @@ impl MenuKind {
     ///
     /// ⚠️ 刻意**没有** `impl Display`：语言相关的显示名必须显式传 `lang`，否则会退化
     /// 成「硬编码某一种语言」（UI-018 缺陷 D-2：英文界面下 macOS 菜单栏永远中文）。
-    /// iced 菜单栏（`menu_bar`）与 macOS 原生菜单都走本方法。
+    /// 旧版 菜单栏（`menu_bar`）与 macOS 原生菜单都走本方法。
     pub fn display_name(&self, lang: Language) -> &'static str {
         let translations = main_translations(lang);
         match self {

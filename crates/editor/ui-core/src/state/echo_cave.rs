@@ -20,8 +20,8 @@ use std::time::Instant;
 
 /// 内置彩蛋文案（写死；索引循环切换）
 ///
-/// ⚠️ 全部条目**以非 ASCII 字符起头**：iced 的 `Shaping::Auto` 对**纯 ASCII 串**会退化为
-/// `Basic` 整形（`iced_graphics-0.14.0/src/text.rs:325-337`），若打字过程中前缀由 ASCII
+/// ⚠️ 全部条目**以非 ASCII 字符起头**：旧版 的 `Shaping::Auto` 对**纯 ASCII 串**会退化为
+/// `Basic` 整形（`旧版-0.14.0/src/text.rs:325-337`），若打字过程中前缀由 ASCII
 /// 切到非 ASCII，同一行字形 advance 可能变化、已绘制前缀出现微抖动。当前文案规避了该情形，
 /// 由 `test_all_echo_texts_start_with_non_ascii` 守住。
 pub const ECHO_TEXTS: [&str; 5] = [
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_all_echo_texts_start_with_non_ascii() {
-        // iced 的 Shaping::Auto 对纯 ASCII 串走 Basic 整形（无逐字形回退）；
+        // 旧版 的 Shaping::Auto 对纯 ASCII 串走 Basic 整形（无逐字形回退）；
         // 若打字前缀由 ASCII 切到非 ASCII，同行 advance 可能变化 ⇒ 前缀微抖动。
         // 保持全部文案以非 ASCII 起头即可规避。
         for (i, text) in ECHO_TEXTS.iter().enumerate() {

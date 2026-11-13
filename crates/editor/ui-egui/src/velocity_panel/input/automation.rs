@@ -1,6 +1,6 @@
 //! CC / Bend 自动化编辑输入。
 //!
-//! 与 iced `handle_automation_*` 同语义（Curve 工具编辑、Eraser 删除、
+//! 与 旧版 `handle_automation_*` 同语义（Curve 工具编辑、Eraser 删除、
 //! 右键删除、空白新增）；拖拽首个移动由生产侧记一次历史，后续走批量。
 //! 拆出本文件以保持 `input.rs` < 400 行。
 
