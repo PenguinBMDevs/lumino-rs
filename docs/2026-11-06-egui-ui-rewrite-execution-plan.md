@@ -3,7 +3,7 @@
 > 状态：执行中
 > 分支：`feat/wgpu-upgrade`
 > 决策人：用户 / 主 Agent
-> 最后更新：2026-11-06
+> 最后更新：2026-11-13
 
 ## 一、已确认决策
 
@@ -3956,4 +3956,25 @@ callback / 多视口 / 截图能力。
 
 1. CI 全绿后做一轮真机像素对照（主窗口 / 走带 / 纵向卷帘 / 力度面板）；
 2. 可选：把 `KeyState` / `Touch` 等最后一处命名与注释统一成 egui 语义。
+
+**Task 4.36（第一百四十二步）：修复无上限重绘自旋导致的点击「丢帧」**
+
+- **现象**：真机鼠标点击偶发无响应，需要连点多次；debug 构建不明显，
+  `fast-release` 下严重（用户判断与运行方式/刷新率有关）。
+- **根因**：`Host::capture_egui_overlay_input` 对所有窗口事件无条件
+  `request_redraw()`，而 `RedrawRequested` 自己也会进入该函数 → 每一帧都再排
+  一帧，形成「渲染 → 请求重绘 → 渲染」自旋。`Mailbox` present mode 没有 vsync
+  上限，事件循环永远进不了 `ControlFlow::Wait`；`WM_PAINT` 把鼠标消息饿死，
+  点击被延迟/合并，表现为「连点很多次才响应」。
+- **修复**：抽出 `input_requests_repaint(&WindowEvent) -> bool`，只让真正改变
+  egui 输入状态的事件（指针 / 按键 / 滚轮 / 修饰键 / IME / 焦点）驱动一帧；
+  `RedrawRequested`、`Resized` 等一律不再自排。
+- **验证**：
+  - `fast-release` 空闲 3 秒进程 CPU 时间 **109ms**（自旋时单核约 3000ms）；
+  - 20 次真实鼠标点击铅笔按钮 → **20/20** `ToolSelected` 动作；
+  - `only_input_events_request_repaint` 单测钉死 `RedrawRequested == false`；
+  - `lumino-ui` host 211 通过；menubar/snap/overflow/tool_panel/piano_menu/
+    click_semantics 全绿；clippy `-D warnings`、fmt 通过。
+- **教训**：帧式 UI 的输入延迟取决于「帧是否被事件驱动」，不是「帧率越高越好」。
+  无上限自旋不是性能问题，是**正确性/可用性**问题。
 

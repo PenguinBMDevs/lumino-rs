@@ -543,10 +543,16 @@ impl Host {
         if !overlay_enabled() {
             return false;
         }
-        // 输入事件必须驱动一次重绘：叠加层只在 `present` 时运行，
-        // 若这帧不再重绘，缓冲里的事件永远得不到处理（真机表现：egui 独占区域
-        // 内的点击「像没反应」——`pointer` 一直是 `None`、帧数停在个位数）。
-        self.window_ctx.window.request_redraw();
+        // 只有**会改变 egui 输入状态**的事件才需要驱动一帧。
+        //
+        // 这里曾经无条件 `request_redraw()`：`RedrawRequested` 自己也会再次请求，
+        // 形成永不停歇的「渲染 → 请求重绘 → 渲染」自旋（Mailbox present mode
+        // 下没有 vsync 上限，实测空闲也能跑满；debug 构建因为每帧慢，反而不明显）。
+        // 后果不是画面错，而是事件循环永远进不了 `ControlFlow::Wait`、鼠标消息
+        // 被 WM_PAINT 饿死——真机表现就是「点击要连点很多次才响应」。
+        if input_requests_repaint(event) {
+            self.window_ctx.window.request_redraw();
+        }
         // 与渲染用的 `pixels_per_point` 同源：两者必须一致，否则命中坐标
         // 与实际绘制的控件位置会按比例错开（真机实测：指针比布局大 1.25 倍时，
         // 点击路由栏会整体下移一格）。
@@ -735,6 +741,29 @@ fn input_scale(ppp: f32) -> f32 {
     ppp
 }
 
+/// 该窗口事件是否必须驱动一帧 egui。
+///
+/// **绝不能**把 `RedrawRequested` 算进来：那会让 `RedrawRequested` 的处理
+/// 再排一帧，形成无上限的「渲染 → 请求重绘 → 渲染」自旋。`Mailbox`
+/// present mode 没有 vsync 上限，事件循环因此永远进不了 `ControlFlow::Wait`，
+/// 鼠标消息被 `WM_PAINT` 饿死——真机表现就是「点击要连点很多次才响应」。
+///
+/// 用纯函数 + 单测钉死：以后再加事件分支时，别把非输入事件放进来。
+fn input_requests_repaint(event: &winit::event::WindowEvent) -> bool {
+    use winit::event::WindowEvent;
+    matches!(
+        event,
+        WindowEvent::CursorMoved { .. }
+            | WindowEvent::CursorLeft { .. }
+            | WindowEvent::MouseWheel { .. }
+            | WindowEvent::MouseInput { .. }
+            | WindowEvent::ModifiersChanged(_)
+            | WindowEvent::KeyboardInput { .. }
+            | WindowEvent::Ime(_)
+            | WindowEvent::Focused(_)
+    )
+}
+
 /// egui 叠加层是否启用。
 ///
 /// **默认开启**：外壳 band / 对话框 / 面板 / 编辑器画布底层均已迁到 egui，
@@ -794,6 +823,38 @@ mod tests {
             outside.order,
             Order::Background,
             "画布/root 层命中必须是 Background"
+        );
+    }
+
+    /// 重绘自旋回归：`RedrawRequested` 不能再驱动下一帧。
+    ///
+    /// 曾经的实现对所有窗口事件无条件 `request_redraw()`，`RedrawRequested`
+    /// 自己也会再次入列 → 无上限自旋（Mailbox 下没有 vsync 上限）。事件循环
+    /// 永远进不了 `ControlFlow::Wait`，鼠标消息被 `WM_PAINT` 饿死，真机表现
+    /// 为「点击要连点很多次才响应」。fast-release 比 debug 明显，因为每帧更快。
+    #[test]
+    fn only_input_events_request_repaint() {
+        use winit::event::WindowEvent;
+
+        assert!(
+            !super::input_requests_repaint(&WindowEvent::RedrawRequested),
+            "RedrawRequested 绝不能再次请求重绘（会形成自旋）"
+        );
+        assert!(
+            !super::input_requests_repaint(&WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+                1280, 720
+            ))),
+            "尺寸变化由系统重绘驱动，不需要再排一帧"
+        );
+        assert!(
+            super::input_requests_repaint(&WindowEvent::Focused(true)),
+            "焦点变化要刷新 egui 的 focused 状态"
+        );
+        assert!(
+            super::input_requests_repaint(&WindowEvent::ModifiersChanged(
+                winit::event::Modifiers::default()
+            )),
+            "修饰键变化要同步给 egui（滚轮/快捷键事件需要随附）"
         );
     }
 }
