@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use iced_wgpu::wgpu;
 use lumino_core::tr;
 use lumino_message::I2mConfigField;
+use wgpu;
 
 use crate::right_sidebar::material::MaterialLibrary;
 

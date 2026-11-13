@@ -17,10 +17,10 @@
 //! 下拉/子面板）内消费；其余区域仍把事件交给 iced，动作由 iced 执行。
 
 use egui::{Rect, Vec2};
-use iced_wgpu::wgpu;
 use lumino_egui_bridge::{Painter, Screen};
 use lumino_ui_egui::chrome::{self, ChromeModel};
 use lumino_ui_egui::icons::IconCache;
+use wgpu;
 use winit;
 
 use crate::host::Host;

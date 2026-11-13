@@ -16,7 +16,7 @@ pub(crate) mod keyboard_renderer;
 
 use std::sync::Arc;
 
-use iced_wgpu::wgpu;
+use wgpu;
 
 /// 全屏瀑布流播放器的渲染状态。
 pub(crate) struct WaterfallPlayerState {

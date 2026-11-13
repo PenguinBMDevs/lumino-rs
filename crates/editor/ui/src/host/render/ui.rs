@@ -1,6 +1,6 @@
 use crate::host::Host;
 use iced_core::Color;
-use iced_wgpu::wgpu;
+use wgpu;
 
 /// 主题色（egui 色板 `base_bg`）→ wgpu 清屏色（sRGB）。
 fn clear_color(palette: lumino_ui_egui::theme::Palette) -> wgpu::Color {

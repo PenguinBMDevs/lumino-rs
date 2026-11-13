@@ -3,9 +3,9 @@
 //! 管理 wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
 //! iced `Renderer` / widget `Cache` / 共享 `Engine` 已随 iced 渲染路径一起删除。
 
-use iced_wgpu::graphics::Viewport;
-use iced_wgpu::wgpu;
+use crate::host::viewport_geom::Viewport;
 use lumino_gfx::{GpuEpoch, NoteRenderer};
+use wgpu;
 
 use super::RenderCache;
 

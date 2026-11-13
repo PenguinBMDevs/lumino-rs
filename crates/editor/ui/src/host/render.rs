@@ -12,7 +12,7 @@
 //! - `separate_thread`: 分离渲染线程模式
 //! - `ui`: iced UI 渲染
 
-use iced_wgpu::wgpu;
+use wgpu;
 
 use crate::host::Host;
 use crate::right_sidebar::core::RESIZE_HANDLE_WIDTH;

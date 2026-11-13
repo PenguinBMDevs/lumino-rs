@@ -14,8 +14,8 @@
 
 use std::sync::Arc;
 
-use iced_wgpu::wgpu;
 use lumino_gfx::GpuEpoch;
+use wgpu;
 
 // 子模块
 mod ensure;

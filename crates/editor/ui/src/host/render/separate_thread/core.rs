@@ -49,7 +49,7 @@ impl Host {
     /// 分离渲染线程模式的主渲染入口
     pub(crate) fn render_with_separate_thread(
         &mut self,
-        frame: &iced_wgpu::wgpu::SurfaceTexture,
+        frame: &wgpu::SurfaceTexture,
         gfx: &lumino_gfx::Context,
     ) {
         use crate::titlebar::mode_toggle::AppMode;
@@ -78,7 +78,7 @@ impl Host {
             if !self.skip_ui_rendering {
                 let view = frame
                     .texture
-                    .create_view(&iced_wgpu::wgpu::TextureViewDescriptor::default());
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
                 self.render_iced_ui(frame, &view, Some(bg));
             }
@@ -100,7 +100,7 @@ impl Host {
             if !self.skip_ui_rendering {
                 let view = frame
                     .texture
-                    .create_view(&iced_wgpu::wgpu::TextureViewDescriptor::default());
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
                 self.render_iced_ui(frame, &view, Some(bg));
             }
@@ -153,7 +153,7 @@ impl Host {
         if !self.skip_ui_rendering {
             let view = frame
                 .texture
-                .create_view(&iced_wgpu::wgpu::TextureViewDescriptor::default());
+                .create_view(&wgpu::TextureViewDescriptor::default());
             self.render_iced_ui(frame, &view, None);
         }
     }

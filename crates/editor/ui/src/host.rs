@@ -32,6 +32,7 @@ mod render_ctx;
 mod render_thread;
 mod session_lock;
 pub mod types;
+mod viewport_geom;
 mod waterfall;
 mod window_ctx;
 
@@ -75,7 +76,7 @@ pub struct Host {
     pub(crate) canvas_input: lumino_ui_editor::grid::GridInteractionState,
     /// 编辑器画布（卷帘 / 走带）离屏纹理视图；`Some` 时 egui 采样它作底层，
     /// 并跳过 gfx → surface 的直接 blit。
-    pub(crate) egui_editor_texture: Option<std::sync::Arc<iced_wgpu::wgpu::TextureView>>,
+    pub(crate) egui_editor_texture: Option<std::sync::Arc<wgpu::TextureView>>,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
     /// 上次 FPS 更新时间

@@ -27,15 +27,11 @@ impl Host {
         window: Arc<winit::window::Window>,
         width: u32,
         height: u32,
-        ui_config: &config::UiConfig,
+        _ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
         needs_renderers: bool,
     ) -> (RenderContext, WindowContext) {
         let viewport = viewport_for(width, height, window.scale_factor());
-
-        // 全局字体入口（UI-001）：启动解析一次（path 优先 → name → 默认），
-        // 各窗口/组件统一从 lumino_ui_core::font 取字体（字体切换重启生效）
-        let _font = lumino_ui_core::font::init(ui_config);
 
         let note_renderer = needs_renderers.then(|| {
             lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format, gfx.epoch())

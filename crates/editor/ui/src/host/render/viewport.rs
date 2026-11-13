@@ -1,5 +1,5 @@
+use crate::host::viewport_geom::Viewport;
 use iced_core::Size;
-use iced_wgpu::graphics::Viewport;
 
 use super::data::ViewportInfo;
 use crate::host::Host;

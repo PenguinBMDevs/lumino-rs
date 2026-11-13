@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use iced_wgpu::wgpu;
+use wgpu;
 use wgpu::util::DeviceExt;
 
 use super::super::key_layout;

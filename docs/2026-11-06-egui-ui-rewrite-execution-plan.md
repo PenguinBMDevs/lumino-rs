@@ -3816,12 +3816,34 @@ callback / 多视口 / 截图能力。
 - 验收：`lumino-ui` lib 760/760（1 ignored）、`clippy -D warnings`、`fmt --check`、
   `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
 
-**Task 4.30（下一步）**
+**Task 4.30（第一百三十七步）：`lumino-ui` 脱离 `iced_wgpu`（17 → 16）**
 
-1. `ui-core`：删除 `resources/icon.rs`（iced SVG 视图）与 `Renderer` 别名；
-   `font.rs` 的 cosmic-text 通道换 egui 字体 → 摘 `iced_wgpu`/`iced_widget`；
-2. `ui-editor`：删除绘制层（`rendering.rs`、`grid/*draw*`、`scrollbar_widget`、
-   `velocity/widget` 的 iced 视图），保留交互；`iced_core::{Point,Size,Rectangle}`
-   换本地几何类型 → 摘 `iced_core`；
-3. 曲线填充凹多边形三角化；
-4. `cargo tree | grep '^iced'` 归零。
+- **`host/viewport_geom.rs`**：自建最小 `Viewport`（物理尺寸 + DPI → 逻辑尺寸，
+  与 iced `graphics::Viewport` 同语义），只保留 `physical_size` / `logical_size` /
+  `scale_factor` 三个访问器。
+- **`iced_wgpu::wgpu` → 直接 `wgpu`**（12 个文件：host 渲染 / 右侧栏键盘渲染器 /
+  瀑布流），`crates/editor/ui` 依赖改为 `wgpu = { workspace = true }`，移除
+  `iced_wgpu`。`Cargo.lock` 同步。
+- **结果**：`cargo tree -p lumino-ui -e normal | grep '^iced'` **17 → 16** 条。
+- **未完成的尝试（已回滚）**：一度删除了 `ui-editor` 的绘制层（约 20 个文件）与
+  `ui-core` 的 icon/font/Renderer，编译级联暴露出**这些模块同时被生产侧消费**
+  （egui 覆盖层取按钮矩形、wgpu 预览取主题色、`velocity::widget::TEMPO_BPM_MIN`
+  等）。正确做法是先把几何/常量抽成独立模块再删绘制，属于下一张卡；本轮已
+  `git checkout` 还原，避免半删除状态。
+- 验收：`lumino-ui` lib 760/760（1 ignored）、`lumino-ui-editor` lib 915/915、
+  `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
+  12/12 零基线改动。
+
+**Task 4.31（下一步）**
+
+1. 抽出 `ui-editor` 的共享几何模块（`confirm_buttons` 常量 / `rect_tuple`、
+   `line_tool_box::{line_button_rects, line_bend_button_rects, fill_preview}`、
+   `shape_tool_box::shape_button_rects`、`i2m_box::i2m_button_rects`、
+   `brush_tool_box::{brush_button_rects, brush_visible_window, brush_run_screen_rect,
+   brush_cell_rect}`、`text_tool_box::{box_rect_screen, button_rects}`、
+   `grid/theme.rs` 的 `ThemeExt`、`velocity::widget::TEMPO_BPM_MIN`），
+   绘制函数单独留在 `*_draw.rs`；
+2. 删除绘制层 + `ui-core` 的 `resources/icon` / `font` / `Renderer` 别名
+   → 摘 `iced_widget`/`iced_wgpu`/`iced_graphics`/`iced_renderer`/`iced_futures`；
+3. `iced_core::{Point, Color, Rectangle, Size, mouse}` 换本地几何类型 → 摘 `iced_core`；
+4. 曲线填充凹多边形三角化；`cargo tree | grep '^iced'` 归零。
