@@ -6,11 +6,12 @@
 //! 041C 阶段 3：目标既可以是已 Bake 的 DrawnShape（走 `edit_shape`），
 //! 也可以是单支 `PendingComposed`（只改 pending model + 预览音符）。
 
+#[cfg(test)]
 use iced_core::Point;
 use lumino_core::shape::{ShapeModel, ShapeOp};
-use lumino_editor_state::editor_state::{
-    HandleKind, Mods, Zoom, apply_drag, box_handles, hit_test_box,
-};
+#[cfg(test)]
+use lumino_editor_state::editor_state::box_handles;
+use lumino_editor_state::editor_state::{HandleKind, Mods, Zoom, apply_drag, hit_test_box};
 use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef, ShapeNote};
 
 use crate::Editor;
@@ -347,6 +348,7 @@ impl Editor {
     }
 
     /// 编辑态锚点（屏幕坐标）：8 个箱体锚点 + 可选中心锚点。
+    #[cfg(test)]
     pub(crate) fn shape_edit_handles(&self) -> ShapeEditHandles {
         let Some((target, model)) = self.armed_edit_target() else {
             return ShapeEditHandles::default();
@@ -382,6 +384,7 @@ impl Editor {
 
 /// 编辑态锚点屏幕位置：8 个箱体锚点 + 可选中心锚点。
 #[derive(Debug, Default, Clone, PartialEq)]
+#[cfg(test)]
 pub(crate) struct ShapeEditHandles {
     /// 4 角 + 4 边中点
     pub box_points: Vec<Point>,

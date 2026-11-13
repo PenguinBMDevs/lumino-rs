@@ -11,22 +11,16 @@
 //! √ 生成的音符逐格重合。
 
 use crate::Editor;
-use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
+use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::content_bounds;
 use crate::interaction::text_tool::{GlyphGrid, rasterize_glyph_alpha_for_tool};
-use iced_core::image::{self, FilterMethod};
-use iced_core::{Color, Image, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_ui_core::Renderer;
-use lumino_ui_core::constants::editor::{
-    SELECTION_BOX_FILL_COLOR, SELECTION_BOX_STROKE_COLOR, SELECTION_BOX_STROKE_WIDTH,
-};
+use iced_core::{Point, Rectangle, Size};
 
 /// 按钮与文本框的间距
 const TT_BUTTON_SPACING: f32 = 8.0;
 
 /// 文字预览文字颜色（贴近白色，保证在文本框淡填充上可读）
-const TEXT_PREVIEW_COLOR: Color = Color::from_rgba(0.92, 0.96, 1.0, 0.95);
+const TEXT_PREVIEW_COLOR: iced_core::Color = iced_core::Color::from_rgba(0.92, 0.96, 1.0, 0.95);
 
 /// 文字工具悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
@@ -141,139 +135,6 @@ pub fn button_rects(editor: &Editor) -> Option<TextToolButtonRects> {
 }
 
 /// 绘制文本框（常驻）+ 悬浮按钮
-pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
-    _theme: &lumino_ui_core::Theme,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    // Conductor 音轨（track 0）：整工具不可用，不绘制文本框与悬浮按钮
-    if !editor.text_tool_allowed() {
-        return None;
-    }
-    // 与曲线/形状/画刷同一条可见性规则：只在**文字工具或鼠标工具**下渲染
-    // （见 `Editor::pending_preview_visible`）——文本框与文字不因切换工具被丢弃，
-    // 但也不该在铅笔/橡皮等音符编辑工具下当浮层干扰编辑。
-    if !editor.pending_preview_visible(lumino_message::Tool::Text) {
-        return None;
-    }
-    let (left, top, right, bottom) = box_rect_screen(editor)?;
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    let content = content_bounds(editor);
-
-    // 文本框边框 + 淡填充
-    let (cx0, cx1) = (left.max(content.x), right.min(content.x + content.width));
-    let (cy0, cy1) = (top.max(content.y), bottom.min(content.y + content.height));
-    if cx1 > cx0 && cy1 > cy0 {
-        let rect = Rectangle::new(
-            Point::new(cx0, cy0),
-            Size::new((cx1 - cx0).max(1.0), (cy1 - cy0).max(1.0)),
-        );
-        let path = Path::rectangle(rect.position(), rect.size());
-        frame.fill(&path, SELECTION_BOX_FILL_COLOR);
-        let stroke = Stroke::default()
-            .with_width(SELECTION_BOX_STROKE_WIDTH)
-            .with_color(SELECTION_BOX_STROKE_COLOR);
-        frame.stroke(&path, stroke);
-    }
-
-    // 文字预览：直接渲染「生成音符用的同一份栅格」，保证预览与最终放置的音符完全一致
-    // （同为底部对齐、同被拉伸铺满框，方向与音符一一对应）——看到的就是生成的。
-    //
-    // 横向 / 纵向都不做任何转置：栅格的两轴角色由 `GlyphGrid` 决定，位图 x 已是屏幕 X、
-    // 位图 y 已是屏幕 Y（纵向 = 列→key→向右、行→tick→向下），故原样铺进框矩形即正立可读。
-    {
-        let tt = &editor.editor_state.text_tool;
-        let text = tt.text.trim();
-        if !text.is_empty() {
-            let grid = GlyphGrid::from_state(
-                tt,
-                editor.editor_state.view.snap_precision,
-                editor.editor_state.is_vertical_roll,
-            );
-            if let Some((iw, ih, buf)) =
-                rasterize_glyph_alpha_for_tool(tt, text, grid.cols, grid.rows)
-            {
-                let (cr, cg, cb) = (
-                    (TEXT_PREVIEW_COLOR.r * 255.0) as u8,
-                    (TEXT_PREVIEW_COLOR.g * 255.0) as u8,
-                    (TEXT_PREVIEW_COLOR.b * 255.0) as u8,
-                );
-                let mut rgba = Vec::with_capacity((iw * ih * 4) as usize);
-                for &a in &buf {
-                    rgba.push(cr);
-                    rgba.push(cg);
-                    rgba.push(cb);
-                    rgba.push(a);
-                }
-                let handle = image::Handle::from_rgba(iw, ih, rgba);
-                let img = Image::new(handle).filter_method(FilterMethod::Linear);
-                // 整框绘制：栅格行 0 对齐框顶，底部对齐的墨水落在框底，与音符放置区重合。
-                frame.draw_image(
-                    Rectangle::new(
-                        Point::new(left, top),
-                        Size::new((right - left).max(1.0), (bottom - top).max(1.0)),
-                    ),
-                    img,
-                );
-            }
-        }
-    }
-
-    // 悬浮按钮：**仅文字工具**下显示与响应。
-    //
-    // 文本框几何在其它工具（含鼠标工具）下照样渲染——产物不因切换工具消失
-    // （见 `Editor::pending_preview_visible` / `EditorState::set_tool`）；但
-    // √×/模式 属于文字工具的输入会话（命中在 `handle_text_tool_pressed` 内），
-    // 在别的工具下画出来只会是「点了没反应」的死按钮。
-    if editor.current_tool() == lumino_message::Tool::Text
-        && let Some(btns) = button_rects(editor)
-    {
-        draw_button(
-            &mut frame,
-            btns.confirm,
-            &CONFIRM_ICON,
-            Color::from_rgb8(46, 125, 50),
-        );
-        draw_button(
-            &mut frame,
-            btns.cancel,
-            &CANCEL_ICON,
-            Color::from_rgb8(198, 40, 40),
-        );
-        // 模式按钮：合并模式用蓝色高亮，正常模式用灰色；标签 M / N
-        let merged = editor.editor_state.text_tool.mode.is_merged();
-        let mode_bg = if merged {
-            Color::from_rgb8(33, 118, 210)
-        } else {
-            Color::from_rgb8(120, 120, 120)
-        };
-        let path = Path::rounded_rectangle(
-            btns.mode.position(),
-            btns.mode.size(),
-            iced_core::border::Radius::from(crate::grid::confirm_buttons::BUTTON_RADIUS),
-        );
-        frame.fill(&path, mode_bg);
-        frame.fill_text(canvas::Text {
-            content: if merged { "M" } else { "N" }.to_string(),
-            position: Point::new(
-                btns.mode.x + btns.mode.width * 0.5,
-                btns.mode.y + btns.mode.height * 0.5 - 7.0,
-            ),
-            max_width: btns.mode.width,
-            line_height: iced_core::text::LineHeight::Relative(1.0),
-            size: iced_core::Pixels(14.0),
-            color: Color::WHITE,
-            font: lumino_ui_core::font::ui_font(),
-            align_x: iced_core::alignment::Horizontal::Center.into(),
-            align_y: iced_core::alignment::Vertical::Top,
-            shaping: iced_core::text::Shaping::Basic,
-        });
-    }
-
-    Some(frame.into_geometry())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

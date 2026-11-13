@@ -3,7 +3,7 @@
 //! 处理 VelocityAction 相关的消息（力度拖拽、曲线绘制、Tempo 编辑、CC 控制器切换等）。
 
 use crate::editor::velocity::EditMode;
-use crate::editor::velocity::widget::TEMPO_BPM_MIN;
+use crate::editor::velocity::layout::TEMPO_BPM_MIN;
 use crate::message::{EditorAction, Message, VelocityAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;

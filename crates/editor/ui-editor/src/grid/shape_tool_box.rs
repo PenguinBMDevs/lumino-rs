@@ -14,20 +14,16 @@
 
 use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
-use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
-use crate::interaction::shape_bridge::polylines_of_model;
-use iced_core::{Color, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke};
+use crate::grid::utils::content_bounds;
+use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::ShapeKind;
 use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
-use lumino_ui_core::Renderer;
 
 mod composed;
 
-use composed::{composed_bounds, draw_composed_notes};
+use composed::composed_bounds;
 
 /// 填充色块透明度（半透明叠加在网格上，√ 确认后成为实心音符）
-const FILL_ALPHA: f32 = 0.35;
 /// 按钮组与图形包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
 
@@ -151,180 +147,4 @@ pub fn shape_button_rects(editor: &Editor) -> Option<ShapeButtonRects> {
         Size::new(BUTTON_SIZE, BUTTON_SIZE),
     );
     Some(ShapeButtonRects { confirm, cancel })
-}
-
-/// 生成椭圆路径（本 iced 版本无 `Path::ellipse`，改用多边形逼近）
-fn ellipse_path(center: Point, rx: f32, ry: f32) -> Path {
-    const SEGMENTS: usize = 64;
-    Path::new(|p| {
-        for i in 0..=SEGMENTS {
-            let a = (i as f32 / SEGMENTS as f32) * 2.0 * std::f32::consts::PI;
-            let x = center.x + rx * a.cos();
-            let y = center.y + ry * a.sin();
-            if i == 0 {
-                p.move_to(Point::new(x, y));
-            } else {
-                p.line_to(Point::new(x, y));
-            }
-        }
-        p.close();
-    })
-}
-
-/// 绘制单个矢量形状（引导轮廓 + 可选填充 + **描边产物预览**），在 `draw` 内联调用
-/// （避免泛型渲染器约束）
-///
-/// - **引导轮廓**：固定 [`OUTLINE_GUIDE_WIDTH`]、与粗细无关——只回答"图形边界在哪"；
-/// - **填充**：半透明色块（`filled` 时），与填充腿生成的格点同区域；
-/// - **描边产物预览**：`filled == false` 时直接画**会生成的音符块**
-///   （[`Editor::shape_outline_blocks`]，与 √ 写入同源）。此前这里是
-///   `Stroke::width = 全局粗细 × 单 key 高` 的**居中**描边：竖直边在粗细 2 时比产物
-///   宽一倍（产物单侧向外只铺 1 层），即用户报的"宽度显示 X2"缺陷。
-#[inline]
-fn draw_one_shape(
-    frame: &mut canvas::Frame<Renderer>,
-    editor: &Editor,
-    spec: ShapeSpec,
-    filled: bool,
-    color: Color,
-) {
-    // 统一应用屏幕空间 Shift 正图形约束，使预览与生成音符一致
-    let px_per_tick = editor.editor_state.view.zoom_x;
-    let px_per_key = editor.editor_state.view.zoom_y;
-    let rect = effective_rect(spec, px_per_tick, px_per_key);
-    match spec.kind {
-        ShapeKind::Circle => {
-            let (cx0, cy0, cx1, cy1) = rect;
-            let mx = (cx0 + cx1) / 2.0;
-            let my = (cy0 + cy1) / 2.0;
-            let center = editor.line_pos_screen_pos((mx, my));
-            let left = editor.line_pos_screen_pos((cx0, my));
-            let right = editor.line_pos_screen_pos((cx1, my));
-            let top = editor.line_pos_screen_pos((mx, cy1));
-            let bottom = editor.line_pos_screen_pos((mx, cy0));
-            let rx = (right.x - left.x).abs() * 0.5;
-            let ry = (bottom.y - top.y).abs() * 0.5;
-            let path = ellipse_path(center, rx, ry);
-            if filled {
-                let fill = Color::from_rgba(color.r, color.g, color.b, FILL_ALPHA);
-                frame.fill(&path, fill);
-            }
-            let stroke = Stroke::default()
-                .with_width(OUTLINE_GUIDE_WIDTH)
-                .with_color(color);
-            frame.stroke(&path, stroke);
-        }
-        _ => {
-            let verts = match shape_vertices(spec, px_per_tick, px_per_key) {
-                Some(v) => v,
-                None => return,
-            };
-            let points: Vec<Point> = verts
-                .iter()
-                .map(|&(t, k)| editor.line_pos_screen_pos((t, k)))
-                .collect();
-            let path = Path::new(|p| {
-                if let Some(first) = points.first() {
-                    p.move_to(*first);
-                    for pt in points.iter().skip(1) {
-                        p.line_to(*pt);
-                    }
-                    p.close();
-                }
-            });
-            if filled {
-                let fill = Color::from_rgba(color.r, color.g, color.b, FILL_ALPHA);
-                frame.fill(&path, fill);
-            }
-            let stroke = Stroke::default()
-                .with_width(OUTLINE_GUIDE_WIDTH)
-                .with_color(color);
-            frame.stroke(&path, stroke);
-        }
-    }
-    // 描边产物预览 = √ 会生成的音符块（填充图形由权威源返回空，不画描边预览）
-    fill_note_blocks(
-        frame,
-        editor,
-        &editor.shape_outline_blocks(spec, filled),
-        color,
-    );
-}
-
-/// 绘制全部待确认图形 + 实时拖拽预览 + 共享 √× 悬浮按钮
-///
-/// 几何在**形状工具或鼠标工具（图形选中）**激活时绘制（后者让「画完切过去」的图案不消失，
-/// 见 `Editor::pending_preview_visible`）；√× 按钮仍只属于形状工具。
-pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
-    theme: &lumino_ui_core::Theme,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    // Conductor 音轨（track 0）：整工具不可用，不绘制
-    if editor.editor_state.data.current_track == 0 {
-        return None;
-    }
-    if !editor.pending_preview_visible(lumino_message::Tool::Shape) {
-        return None;
-    }
-    let shape_tool = &editor.editor_state.shape_tool;
-    if !shape_tool.has_pending()
-        && !shape_tool.is_dragging()
-        && editor.editor_state.pending_composed.is_empty()
-    {
-        return None;
-    }
-
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-    let mut has_content = false;
-    let base_color = theme.extended_palette().primary.strong.color;
-
-    // 待确认图形（虚线感由填充/轮廓区分，这里统一实线轮廓）
-    for shape in &shape_tool.shapes {
-        draw_one_shape(&mut frame, editor, shape.spec(), shape.filled, base_color);
-        has_content = true;
-    }
-
-    // DRAW-041C：Bake 前组合结果的预览（仍是 pending，✓ 才提交）
-    for composed in &editor.editor_state.pending_composed {
-        for part in &composed.results {
-            for points in polylines_of_model(&part.model, f32::from(editor.editor_state.view.ppq)) {
-                let screen: Vec<Point> = points
-                    .iter()
-                    .map(|&(tick, key)| editor.line_pos_screen_pos((tick, key)))
-                    .collect();
-                if screen.len() < 2 {
-                    continue;
-                }
-                let path = Path::new(|p| {
-                    p.move_to(screen[0]);
-                    for point in &screen[1..] {
-                        p.line_to(*point);
-                    }
-                });
-                frame.stroke(
-                    &path,
-                    Stroke::default().with_color(base_color).with_width(2.0),
-                );
-                has_content = true;
-            }
-        }
-        // 027/028 的产物无法只靠轮廓表达：叠加音符块预览。
-        has_content |= draw_composed_notes(&mut frame, editor, composed, base_color);
-    }
-
-    // 实时拖拽预览
-    if let Some((spec, filled)) = shape_tool.preview_rect(editor.shift_pressed()) {
-        draw_one_shape(&mut frame, editor, spec, filled, base_color);
-        has_content = true;
-    }
-
-    // 共享悬浮按钮（存在待确认图形后显示）已迁 egui：`ui-egui::editor_action_buttons`。
-
-    if has_content {
-        Some(frame.into_geometry())
-    } else {
-        None
-    }
 }

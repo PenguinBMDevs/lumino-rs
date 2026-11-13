@@ -48,14 +48,9 @@ name = "ui_fill_confirm_bench"
 harness = false
 
 [dev-dependencies]
-# bench 目标以 release/bench profile 编译：iced_widget 会拉入未开 renderer feature 的
-# iced_renderer（release 下直接 compile_error）。显式开启与 workspace 一致的 feature。
-iced_renderer = { workspace = true }
 
 [dependencies]
 iced_core = { workspace = true }
-iced_wgpu = { workspace = true, features = ["geometry", "image"] }
-iced_widget = { workspace = true, features = ["image", "canvas"] }
 ab_glyph = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }

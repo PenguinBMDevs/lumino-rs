@@ -11,7 +11,6 @@ pub mod app_mode;
 pub mod button_descs;
 pub mod color;
 /// 全局 UI 字体入口（UI-001：统一字体绑定 + 自定义字体文件加载）
-pub mod font;
 pub mod help;
 pub mod message;
 /// 洋葱皮显示范围模式（工具栏下拉；工程文件持久化共用同一字符串口径）
@@ -39,11 +38,5 @@ pub mod constants;
 
 pub use message::Message;
 
-/// 使用 Iced 默认主题（内置于 iced_core）。
+/// 使用 Iced 默认主题（`iced_core` 仍是主题色板的单一来源，迁移在后续卡）。
 pub type Theme = iced_core::Theme;
-
-/// 使用 WGPU 渲染器。
-pub type Renderer = iced_wgpu::Renderer;
-
-/// 类型安全的 UI 元素，绑定到本 crate 的具体 Message/Theme/Renderer。
-pub type Element<'a> = iced_core::Element<'a, Message, Theme, Renderer>;

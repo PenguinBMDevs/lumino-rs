@@ -29,10 +29,8 @@ use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::{clip_rect, content_bounds};
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::Geometry;
 use lumino_editor_state::brush_tool::cov::{self, MAX_KEY};
 use lumino_message::Tool;
-use lumino_ui_core::Renderer;
 
 /// 按钮组与笔画包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
@@ -189,16 +187,5 @@ pub fn brush_cell_rect(editor: &Editor, t_start: i64, t_end: i64, key: u16) -> R
 /// 而块数 = 可见格 × 粗细度，缩小时铺满一屏，CPU 细分结构上守不住 60fps。
 /// 现在方块由 [`Editor::brush_preview_note_instances`] 产出、走音符的 wgpu 预览
 /// 通路（与 √ 生成的音符同一个着色器）；本函数只负责按钮（2 次图片绘制，微秒级）。
-pub fn draw(
-    _editor: &Editor,
-    _renderer: &Renderer,
-    _theme: &lumino_ui_core::Theme,
-    _bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    // √× 悬浮按钮已迁 egui（`ui-egui::editor_action_buttons`）：
-    // 本函数不再产生 iced Geometry；几何仍由 `brush_button_rects` 提供。
-    None
-}
-
 #[cfg(test)]
 mod tests;

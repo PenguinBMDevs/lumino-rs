@@ -11,6 +11,4 @@
 
 mod cc;
 mod edit_mode;
-mod tempo;
 mod velocity;
-mod wheel;

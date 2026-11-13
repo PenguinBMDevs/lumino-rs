@@ -5,8 +5,8 @@ mod automation;
 use lumino_extras::i18n::main_translations;
 use lumino_ui_editor::velocity::EditMode;
 use lumino_ui_editor::velocity::VelocityPanel;
-use lumino_ui_editor::velocity::widget::{
-    VelocityCanvas, bend_value_to_y, generate_tempo_levels, tempo_bpm_to_y,
+use lumino_ui_editor::velocity::layout::{
+    bend_value_to_y, generate_tempo_levels, tempo_bpm_to_y, velocity_to_y,
 };
 use lumino_ui_egui::velocity_panel::{
     LineStrength, TOOLBAR_HEIGHT, VelocityPanelAction, VelocityPanelModel, VelocityPointModel,
@@ -110,7 +110,7 @@ impl Root {
         } else {
             [0u8, 32, 64, 96, 127]
                 .into_iter()
-                .map(|v| (VelocityCanvas::velocity_to_y(v, h), v.to_string()))
+                .map(|v| (velocity_to_y(v, h), v.to_string()))
                 .collect()
         };
 
@@ -245,8 +245,7 @@ impl Root {
                     (
                         model.canvas.left() + p.tick * model.view.zoom_x - model.view.scroll_x
                             + model.view.keyboard_width,
-                        model.canvas.top()
-                            + VelocityCanvas::velocity_to_y(p.velocity, model.canvas.height()),
+                        model.canvas.top() + velocity_to_y(p.velocity, model.canvas.height()),
                     )
                 })
                 .collect();

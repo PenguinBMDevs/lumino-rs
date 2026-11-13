@@ -191,15 +191,8 @@ impl Editor {
     /// 统一缓存失效（替代散落的 grid_cache.clear() 等调用）
     #[inline]
     pub fn invalidate_caches(&mut self, which: CacheInvalidation) {
-        if which.0 & CacheInvalidation::GRID.0 != 0 {
-            self.grid_cache.clear();
-        }
-        if which.0 & CacheInvalidation::KEYBOARD.0 != 0 {
-            self.keyboard_cache.clear();
-        }
-        if which.0 & CacheInvalidation::RULER.0 != 0 {
-            self.ruler_cache.clear();
-        }
+        let _ = which;
+        self.grid_cache.clear();
     }
 
     /// 重置编辑器内部状态到默认值（释放私有字段内存）

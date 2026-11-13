@@ -5,11 +5,8 @@
 
 use crate::Editor;
 use crate::grid::utils::content_bounds;
-use iced_core::{Color, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_core::tr;
+use iced_core::{Point, Rectangle, Size};
 use lumino_message::EditorAction;
-use lumino_ui_core::{Renderer, Theme};
 
 /// 调色板尺寸
 const SWATCH: f32 = 22.0;
@@ -146,108 +143,6 @@ pub fn clear_action(editor: &Editor, point: Point) -> Option<EditorAction> {
 }
 
 /// 绘制调色板
-pub fn draw(
-    editor: &Editor,
-    renderer: &Renderer,
-    theme: &Theme,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    let rects = palette_rects(editor)?;
-    let palette = theme.extended_palette();
-    let mut frame = canvas::Frame::new(renderer, bounds.size());
-
-    let panel_path = Path::rounded_rectangle(
-        rects.panel.position(),
-        rects.panel.size(),
-        iced_core::border::Radius::from(6.0),
-    );
-    frame.fill(&panel_path, palette.background.weakest.color);
-    frame.stroke(
-        &panel_path,
-        Stroke::default()
-            .with_width(1.0)
-            .with_color(palette.background.strong.color),
-    );
-    // canvas 文本必须用 Advanced shaping：Basic 不会走系统 CJK 回退。
-    frame.fill_text(canvas::Text {
-        content: tr!("区域着色").to_string(),
-        position: Point::new(rects.panel.x + PAD, rects.panel.y + PAD - 1.0),
-        max_width: rects.panel.width - PAD * 2.0 - CLOSE_SIZE,
-        line_height: iced_core::text::LineHeight::Relative(1.0),
-        size: iced_core::Pixels(11.0),
-        color: palette.background.neutral.text,
-        font: lumino_ui_core::font::ui_font(),
-        align_x: iced_core::alignment::Horizontal::Left.into(),
-        align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Advanced,
-    });
-    frame.fill_text(canvas::Text {
-        content: "×".to_string(),
-        position: Point::new(rects.close.x + 2.0, rects.close.y - 1.0),
-        max_width: CLOSE_SIZE,
-        line_height: iced_core::text::LineHeight::Relative(1.0),
-        size: iced_core::Pixels(14.0),
-        color: palette.background.neutral.text,
-        font: lumino_ui_core::font::ui_font(),
-        align_x: iced_core::alignment::Horizontal::Center.into(),
-        align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Advanced,
-    });
-
-    for (slot, rect) in rects.swatches.iter().enumerate() {
-        let colour = slot_color(slot as u8);
-        let path = Path::rounded_rectangle(
-            rect.position(),
-            rect.size(),
-            iced_core::border::Radius::from(3.0),
-        );
-        frame.fill(&path, colour);
-        frame.stroke(
-            &path,
-            Stroke::default()
-                .with_width(if slot as u8 == rects.active { 2.0 } else { 1.0 })
-                .with_color(if slot as u8 == rects.active {
-                    Color::WHITE
-                } else {
-                    palette.background.strong.color
-                }),
-        );
-        if slot == 0 {
-            // 0 = 清除：画一道斜杠，避免和“黑色”混淆
-            frame.stroke(
-                &Path::line(
-                    Point::new(rect.x + 4.0, rect.y + rect.height - 4.0),
-                    Point::new(rect.x + rect.width - 4.0, rect.y + 4.0),
-                ),
-                Stroke::default().with_width(2.0).with_color(Color::WHITE),
-            );
-        }
-    }
-    Some(frame.into_geometry())
-}
-
-/// 固定 16 色（0 = 清除/灰）
-fn slot_color(slot: u8) -> Color {
-    match slot {
-        0 => Color::from_rgb8(70, 70, 70),
-        1 => Color::from_rgb8(220, 60, 60),
-        2 => Color::from_rgb8(230, 140, 50),
-        3 => Color::from_rgb8(220, 200, 60),
-        4 => Color::from_rgb8(80, 180, 90),
-        5 => Color::from_rgb8(60, 180, 160),
-        6 => Color::from_rgb8(70, 170, 220),
-        7 => Color::from_rgb8(70, 110, 220),
-        8 => Color::from_rgb8(130, 90, 220),
-        9 => Color::from_rgb8(200, 90, 200),
-        10 => Color::from_rgb8(230, 120, 170),
-        11 => Color::from_rgb8(180, 120, 80),
-        12 => Color::from_rgb8(150, 160, 70),
-        13 => Color::from_rgb8(150, 210, 90),
-        14 => Color::from_rgb8(100, 100, 180),
-        _ => Color::from_rgb8(180, 180, 180),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,15 +199,6 @@ mod tests {
             ),
             Some(AreaPaintHit::Panel)
         );
-    }
-
-    #[test]
-    fn test_slot_colours_are_distinct() {
-        let mut seen = std::collections::BTreeSet::new();
-        for slot in 0..16 {
-            let c = slot_color(slot);
-            assert!(seen.insert((c.r.to_bits(), c.g.to_bits(), c.b.to_bits())));
-        }
     }
 
     #[test]

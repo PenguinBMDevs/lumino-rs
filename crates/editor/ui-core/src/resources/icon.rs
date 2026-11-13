@@ -1,36 +1,14 @@
-use iced_core::Color;
-use iced_widget::svg::{Handle as SvgHandle, Svg};
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::sync::Mutex;
+//! 图标枚举（仅数据；SVG 渲染已迁 \lumino-ui-egui::icons\）。
+//!
+//! iced 视图层删除后本模块只保留 \Icon\ 变体与 HiDPI 兼容开关：
+//! 绘制由 egui 的 \IconCache\ 负责，不再包含 SVG widget / 光栅化代码。
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// 当前 HiDPI 图标渲染状态（兼容旧设置项，SVG 矢量直渲已无需 2x 位图，保留仅为触发缓存刷新）
+/// 当前 HiDPI 图标渲染状态（兼容旧设置项；egui 矢量直渲无需 2x 位图）
 static HIDPI_ENABLED: AtomicBool = AtomicBool::new(true);
 
-/// 缓存的 SVG Handle 对象，key=Icon，避免每帧创建新 Handle
-static SVG_HANDLE_CACHE: Lazy<Mutex<HashMap<Icon, SvgHandle>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
 pub use Icon::*;
-
-/// 图标加载错误类型
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum IconError {
-    /// 图标不在缓存中（至少需先加载一次）
-    #[error("{}: {:?}", lumino_core::i18n::tr("图标不在缓存中"), .0)]
-    IconNotInCache(Icon),
-    /// SVG 解析错误
-    #[error("{}: {}", lumino_core::i18n::tr("SVG 解析错误"), .0)]
-    SvgParseError(String),
-    /// 无法创建 pixmap
-    #[error("{}", lumino_core::i18n::tr("无法创建 pixmap"))]
-    PixmapCreationError,
-    /// 获取缓存锁失败
-    #[error("{}", lumino_core::i18n::tr("获取缓存锁失败"))]
-    LockError,
-}
-
 // ─── 图标定义宏：一处定义 → 三处生成（枚举 + 全部枚举数组 + bytes 匹配） ───
 macro_rules! define_icons {
     ($(($name:ident, $path:expr)),* $(,)?) => {
@@ -44,7 +22,9 @@ macro_rules! define_icons {
         /// 全部图标枚举（与宏定义同源，供测试/遍历使用）
         pub const ALL_ICONS: &[Icon] = &[$($name,)*];
 
-        fn bytes(icon: Icon) -> &'static [u8] {
+        /// 图标 SVG 原始字节（图标→路径的单一来源；egui 图标缓存可复用）
+        #[allow(dead_code)]
+        pub(crate) fn bytes(icon: Icon) -> &'static [u8] {
             match icon {
                 $(Icon::$name => include_bytes!($path),)*
             }
@@ -156,206 +136,7 @@ define_icons! {
     (MixerActive, "../../../../../resources/icons/sidebar/mixer-active.svg"),
 }
 
-#[derive(Clone)]
-struct IconData {
-    rgba: Vec<u8>,
-    width: u32,
-    height: u32,
-}
-
-/// 设置 HiDPI 状态并刷新 SVG 缓存（SVG 矢量无需重光栅，清空缓存仅为兼容旧逻辑触发界面重绘）
+/// 设置 HiDPI 状态（egui 图标缓存会整帧重绘，这里只记录状态）。
 pub fn set_hidpi_enabled(enabled: bool) {
     HIDPI_ENABLED.store(enabled, Ordering::Relaxed);
-    if let Ok(mut cache) = SVG_HANDLE_CACHE.lock() {
-        cache.clear();
-    }
 }
-
-/// 获取或创建缓存的 SVG Handle。
-fn get_or_create_svg_handle(icon: Icon) -> Result<SvgHandle, IconError> {
-    let mut cache = SVG_HANDLE_CACHE.lock().map_err(|_| IconError::LockError)?;
-    if let Some(handle) = cache.get(&icon) {
-        return Ok(handle.clone());
-    }
-    let handle = SvgHandle::from_memory(bytes(icon));
-    cache.insert(icon, handle.clone());
-    Ok(handle)
-}
-
-/// 判断指定图标在当前主题下是否需要反色。
-/// Logo 类图标（Lumino / LogoInApp）在暗色/亮色模式下均保持原色，不反色。
-fn should_invert_icon(icon: Icon, is_dark: bool) -> bool {
-    // MixerActive 为「亮灯」态固定琥珀色，不参与反色，确保打开面板时图标常亮。
-    is_dark && !matches!(icon, Icon::Lumino | Icon::LogoInApp | Icon::MixerActive)
-}
-
-fn is_dark_theme(theme: Option<&crate::Theme>) -> bool {
-    if crate::theme::is_high_contrast() {
-        true
-    } else {
-        theme
-            .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
-            .unwrap_or(true)
-    }
-}
-
-fn svg_element(icon: Icon, width: u32, height: u32, is_dark: bool) -> Svg<'static, crate::Theme> {
-    // 兼容性：先从缓存取 Handle，失败则直接 from_memory（理论上不失败）
-    let handle =
-        get_or_create_svg_handle(icon).unwrap_or_else(|_| SvgHandle::from_memory(bytes(icon)));
-    let mut svg = Svg::new(handle)
-        .width(iced_core::Length::Fixed(width as f32))
-        .height(iced_core::Length::Fixed(height as f32));
-    if should_invert_icon(icon, is_dark) {
-        // 整体染色为白色，覆盖 SVG 内硬编码的 #000000，保持与旧 invert_rgba 行为一致
-        svg = svg.style(|_theme, _status| iced_widget::svg::Style {
-            color: Some(Color::WHITE),
-        });
-    }
-    svg
-}
-
-/// 渲染图标（可能 panic，仅用于向后兼容）
-pub fn view(icon: Icon) -> crate::Element<'static> {
-    match view_safe(icon) {
-        Ok(element) => element,
-        Err(e) => {
-            tracing::error!("渲染图标失败: {}", e);
-            iced_widget::Space::new()
-                .width(iced_core::Length::Fixed(24.0))
-                .height(iced_core::Length::Fixed(24.0))
-                .into()
-        }
-    }
-}
-
-/// 安全地渲染图标，返回 Result
-pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
-    // 旧逻辑硬编码为浅色（is_dark=false → 黑色），保持兼容
-    let element: crate::Element<'static> = svg_element(icon, 24, 24, false).into();
-    Ok(element)
-}
-
-/// 渲染带旋转与不透明度的图标（供关于页 logo 彩蛋等需要原地变换的场景使用）。
-///
-/// `rotation_rad` 为弧度；`opacity` 会被钳到 `[0, 1]`。
-///
-/// ⚠️ 尺寸陷阱：iced 的 `Svg` 以**旋转后包围盒**参与 `ContentFit::Contain` 缩放，
-/// 直接旋转会让非正方形图标在转动中被等比缩小。调用方需自行乘上 AABB 补偿系数
-/// （见 `lumino_ui_core::state::about_egg::AboutEggState::spin_fit_scale`），
-/// 并把控件放进固定尺寸容器居中，避免尺寸呼吸引起布局抖动。
-pub fn view_transformed(
-    icon: Icon,
-    width: u32,
-    height: u32,
-    theme: Option<&crate::Theme>,
-    rotation_rad: f32,
-    opacity: f32,
-) -> crate::Element<'static> {
-    let is_dark = is_dark_theme(theme);
-    let svg = svg_element(icon, width, height, is_dark)
-        .rotation(rotation_rad)
-        .opacity(opacity.clamp(0.0, 1.0));
-    svg.into()
-}
-
-/// 渲染指定尺寸和主题的图标（可能 panic，仅用于向后兼容）
-pub fn view_with_size_and_theme(
-    icon: Icon,
-    width: u32,
-    height: u32,
-    theme: Option<&crate::Theme>,
-) -> crate::Element<'static> {
-    match view_with_size_and_theme_safe(icon, width, height, theme) {
-        Ok(element) => element,
-        Err(e) => {
-            tracing::error!("渲染图标失败: {}", e);
-            iced_widget::Space::new()
-                .width(iced_core::Length::Fixed(width as f32))
-                .height(iced_core::Length::Fixed(height as f32))
-                .into()
-        }
-    }
-}
-
-/// 将任意 SVG 数据光栅化为 iced 图像句柄（供 canvas 等非 widget 场景复用）
-///
-/// 复用 `usvg + resvg` 渲染管线，与内置图标一致；尺寸为正方形画布。
-pub fn svg_handle(svg_data: &[u8], size: u32) -> Result<iced_core::image::Handle, IconError> {
-    let data = render_svg(svg_data, size, size)?;
-    Ok(iced_core::image::Handle::from_rgba(
-        data.width,
-        data.height,
-        data.rgba,
-    ))
-}
-
-/// 安全地渲染指定尺寸和主题的图标，返回 Result
-pub fn view_with_size_and_theme_safe(
-    icon: Icon,
-    width: u32,
-    height: u32,
-    theme: Option<&crate::Theme>,
-) -> Result<crate::Element<'static>, IconError> {
-    let is_dark = is_dark_theme(theme);
-    let element: crate::Element<'static> = svg_element(icon, width, height, is_dark).into();
-    Ok(element)
-}
-
-#[allow(dead_code)]
-fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
-    rgba.chunks(4)
-        .flat_map(|chunk| {
-            if chunk[3] == 0 {
-                chunk.to_vec()
-            } else {
-                vec![255 - chunk[0], 255 - chunk[1], 255 - chunk[2], chunk[3]]
-            }
-        })
-        .collect()
-}
-
-// ─── 仅供 canvas svg_handle 使用的栅格化管线（保留以兼容非 widget 场景） ───
-
-fn render_svg(
-    svg_data: &[u8],
-    target_width: u32,
-    target_height: u32,
-) -> Result<IconData, IconError> {
-    let options = usvg::Options::default();
-    let tree = usvg::Tree::from_data(svg_data, &options)
-        .map_err(|e| IconError::SvgParseError(e.to_string()))?;
-
-    let svg_size = tree.size();
-    let svg_width = svg_size.width();
-    let svg_height = svg_size.height();
-
-    let scale_x = target_width as f32 / svg_width;
-    let scale_y = target_height as f32 / svg_height;
-    // 等比缩放（contain），保持图标原始宽高比，避免拉伸变形
-    let scale = scale_x.min(scale_y);
-
-    // 缩放后的内容尺寸；不足目标画布时水平/垂直居中，避免贴左上角
-    let scaled_w = svg_width * scale;
-    let scaled_h = svg_height * scale;
-    let offset_x = (target_width as f32 - scaled_w) / 2.0;
-    let offset_y = (target_height as f32 - scaled_h) / 2.0;
-
-    let transform = tiny_skia::Transform::from_row(scale, 0.0, 0.0, scale, offset_x, offset_y);
-
-    let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
-        .ok_or(IconError::PixmapCreationError)?;
-    pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
-
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-
-    let rgba = pixmap.data().to_vec();
-    Ok(IconData {
-        rgba,
-        width: target_width,
-        height: target_height,
-    })
-}
-
-#[cfg(test)]
-mod tests;

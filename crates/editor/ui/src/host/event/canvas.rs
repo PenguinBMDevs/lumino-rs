@@ -182,7 +182,7 @@ impl Host {
                 &self.canvas_input,
             )
         } else {
-            lumino_ui_editor::grid::program_impl::mouse_interaction::handle(
+            lumino_ui_editor::grid::cursor::handle(
                 &self.root.editor,
                 &self.canvas_input,
                 bounds,

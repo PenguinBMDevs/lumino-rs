@@ -10,8 +10,6 @@ use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::content_bounds;
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::Geometry;
-use lumino_ui_core::Renderer;
 
 /// 按钮与区域框的间距
 const I2M_BUTTON_SPACING: f32 = 8.0;
@@ -62,17 +60,6 @@ pub fn i2m_button_rects(editor: &Editor) -> Option<I2mButtonRects> {
 ///
 /// 仅在 `Placing` 阶段绘制；`Selecting` 阶段的框选矩形由
 /// `selection_box::draw` 基于 `EditState::Selecting` 绘制。
-pub fn draw(
-    _editor: &Editor,
-    _renderer: &Renderer,
-    _theme: &lumino_ui_core::Theme,
-    _bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    // 区域框与 √× 按钮均已迁 egui（`ui-egui::image_to_midi` /
-    // `editor_action_buttons`）：iced Canvas 不再绘制。
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

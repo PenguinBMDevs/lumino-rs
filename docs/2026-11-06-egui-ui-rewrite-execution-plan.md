@@ -3834,16 +3834,47 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
   12/12 零基线改动。
 
-**Task 4.31（下一步）**
+**Task 4.31（第一百三十八步）：删除 iced 绘制层与 ui-core 图标/字体（16 → 3）**
 
-1. 抽出 `ui-editor` 的共享几何模块（`confirm_buttons` 常量 / `rect_tuple`、
-   `line_tool_box::{line_button_rects, line_bend_button_rects, fill_preview}`、
-   `shape_tool_box::shape_button_rects`、`i2m_box::i2m_button_rects`、
-   `brush_tool_box::{brush_button_rects, brush_visible_window, brush_run_screen_rect,
-   brush_cell_rect}`、`text_tool_box::{box_rect_screen, button_rects}`、
-   `grid/theme.rs` 的 `ThemeExt`、`velocity::widget::TEMPO_BPM_MIN`），
-   绘制函数单独留在 `*_draw.rs`；
-2. 删除绘制层 + `ui-core` 的 `resources/icon` / `font` / `Renderer` 别名
-   → 摘 `iced_widget`/`iced_wgpu`/`iced_graphics`/`iced_renderer`/`iced_futures`；
-3. `iced_core::{Point, Color, Rectangle, Size, mouse}` 换本地几何类型 → 摘 `iced_core`；
-4. 曲线填充凹多边形三角化；`cargo tree | grep '^iced'` 归零。
+按上一张卡的顺序，先把生产侧依赖的几何/常量与绘制分离，再整体删除绘制层：
+
+- **`ui-editor` 删除**：`rendering.rs`（视图）、`grid/program_impl*`、
+  `grid/vertical_program.rs`、`scrollbar_widget/`、`velocity/widget/`，以及纯绘制
+  文件 `grid/{bars,vertical_bars,keyboard,vertical_keyboard,ruler,vertical_labels,
+  keys,playback_indicator,vertical_playback,selection_box,remote_cursors,
+  remote_selection,drawn_shape_outline,drawn_shape_box}.rs`。
+- **保留/迁移**（生产侧仍在消费）：
+  - `GridInteractionState` 输入语义、`PianoRollGrid` 命中逻辑、`cursor`（原
+    `program_impl/mouse_interaction`，移到 `grid/cursor.rs`）；
+  - `is_inside_canvas` / `get_selection_box` / `compute_visible_range` + ghost 系列
+    留在 `rendering.rs`（纯数据）；
+  - 按钮几何与常量：`confirm_buttons`（仅 `BUTTON_SIZE`/`rect_tuple`）、
+    `line_tool_box::{line_button_rects, line_bend_button_rects, fill_preview}`、
+    `shape_tool_box::{shape_button_rects, shape_buttons_active}`、
+    `i2m_box::{i2m_button_rects}`、`brush_tool_box::{brush_button_rects,
+    brush_visible_window, brush_run_screen_rect, brush_cell_rect}`、
+    `text_tool_box::{box_rect_screen, button_rects, text_tool_preview_rgba}`；
+  - 力度/Tempo 坐标换算抽到 `velocity/layout.rs`（`TEMPO_BPM_MIN`、
+    `velocity_to_y`/`y_to_velocity`/`tempo_bpm_to_y`/`generate_tempo_levels`/
+    `bend_value_to_y`），`VelocityPanel` 只保留数据构建；
+  - `grid_cache/keyboard_cache/ruler_cache` 退化为 `GridCacheMarker`（no-op，保留
+    调用点）。
+- **`ui-core`**：`resources/icon.rs` 只保留 `Icon` 枚举（图标→路径单一来源）与
+  `set_hidpi_enabled`；删除 `font.rs`（cosmic-text 通道）与 `Element`/`Renderer`
+  别名。依赖去掉 `iced_wgpu`/`iced_widget`。
+- **`ui-editor`** 依赖去掉 `iced_wgpu`/`iced_widget`/`iced_renderer`。
+- **结果**：`cargo tree -p lumino-ui -e normal | grep '^iced'` **16 → 3** 条，
+  且只剩 `iced_core`（主题与交互类型）。
+- 验收：`lumino-ui` lib 760/760（1 ignored）、`lumino-ui-editor` lib 816/816、
+  `clippy -D warnings`（ui / ui-core / ui-editor / dialog）、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+  真机冒烟本轮被系统锁屏/息屏阻断（截图全黑），以 `capture_egui` 离屏整窗校验代替。
+
+**Task 4.32（下一步）**
+
+1. `iced_core::Theme` → 本地主题/色板（`theme` 模块已在 ui-core，抽取
+   `Palette`/`extended_palette` 的最小字段集）→ 摘 `iced_core`；
+2. `iced_core::{Point, Size, Rectangle, Color, mouse::*}` 换 `ui-core::geom` 本地类型
+   （ui 118 / editor 108 / core 21 处引用）；
+3. 曲线填充凹多边形三角化；
+4. `cargo tree | grep '^iced'` 归零。

@@ -17,7 +17,6 @@ mod tests;
 
 use crate::velocity::VelocityPanel;
 use crate::{EditState, Editor, EditorMemory, SpatialIndexState, grid};
-use iced_widget::canvas;
 use lumino_core::BrushConfig;
 use lumino_ui_core::message::AudioAction;
 use std::cell::Cell;
@@ -29,9 +28,9 @@ impl Editor {
         lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             Self {
                 editor_state: crate::editor_state::EditorState::new(),
-                grid_cache: canvas::Cache::new(),
-                keyboard_cache: canvas::Cache::new(),
-                ruler_cache: canvas::Cache::new(),
+                grid_cache: crate::GridCacheMarker,
+                keyboard_cache: crate::GridCacheMarker,
+                ruler_cache: crate::GridCacheMarker,
                 spatial: SpatialIndexState::default(),
                 remote_cursors: std::collections::HashMap::new(),
                 playback_position: 0.0,
