@@ -3978,3 +3978,18 @@ callback / 多视口 / 截图能力。
 - **教训**：帧式 UI 的输入延迟取决于「帧是否被事件驱动」，不是「帧率越高越好」。
   无上限自旋不是性能问题，是**正确性/可用性**问题。
 
+**Task 4.37（第一百四十三步）：鼠标按键后立即渲染一帧（事件响应置前）**
+
+- **现象**：自旋修复后点击已可用，但真机仍偶发「差一点」；无输入自旋时
+  `request_redraw` 只投递 `RDW_INTERNALPAINT`，`WM_PAINT` 仅在消息队列空闲时
+  生成，鼠标移动 / 定时器 / 协作轮询持续占队列时，点击反馈会被推迟到下一轮空闲。
+- **修复**：`WindowManager::handle_event` 在 `MouseInput` 喂给 egui 之后同步调用
+  `handle_redraw()`，按下 / 抬起各立即出一帧；随后排队的 `RedrawRequested`
+  仍会正常补帧（不改变既有 present 逻辑）。
+- **验证**（`fast-release`，40 次真实点击）：
+  - release → action：p90 **1.98ms → 1.81ms**，max **3.09ms → 2.07ms**；
+  - 空闲 3 秒 CPU **62ms**；20 次点击 → **20/20** `ToolSelected`；
+  - `lumino-rs` clippy `-D warnings`、fmt、`lumino-ui` host 211 通过。
+- **备注**：只对鼠标按键做同步帧（低频）；滚轮 / 键盘仍走 `WM_PAINT`，避免
+  高频事件把 UI 线程拖进逐事件渲染。
+

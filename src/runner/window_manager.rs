@@ -196,6 +196,11 @@ impl WindowManager {
 
     /// 处理窗口事件
     pub fn handle_event(&mut self, event: WindowEvent, storage: &mut crate::storage::Storage) {
+        // 鼠标按键对延迟最敏感：喂完输入立刻渲染一帧，不等低优先级的
+        // `WM_PAINT`（它只在消息队列空闲时生成，鼠标移动 / 定时器 / 协作轮询
+        // 会把点击反馈推迟到下一轮空闲）。随后排队的 `RedrawRequested`
+        // 仍会正常补帧。
+        let flush_after_input = matches!(event, WindowEvent::MouseInput { .. });
         match event {
             WindowEvent::RedrawRequested => {
                 self.handle_redraw();
@@ -240,6 +245,9 @@ impl WindowManager {
         }
 
         self.ui.handle_events(event, self.modifiers);
+        if flush_after_input {
+            self.handle_redraw();
+        }
     }
 
     /// 处理重绘
