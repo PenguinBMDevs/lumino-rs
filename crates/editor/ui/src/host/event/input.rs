@@ -1,7 +1,7 @@
 //! Host 鼠标/触摸输入处理子模块
 
 use iced_core::mouse;
-use iced_winit::{conversion, winit};
+use winit;
 
 use crate::host::Host;
 
@@ -10,8 +10,10 @@ impl Host {
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         puffin::profile_function!();
 
-        let logical_pos =
-            conversion::cursor_position(position, self.render_ctx.viewport.scale_factor());
+        let logical_pos = crate::host::convert::cursor_position(
+            position,
+            self.render_ctx.viewport.scale_factor(),
+        );
         // 触摸抬手后 `cursor` 会被置为 `Unavailable`（抑制 hover，见
         // `event/window/events.rs` 的 `suppress_hover_after_touch`）。此时即便
         // 位置与上次完全相同，也必须重新装回 `Available`——否则「同一位置连点

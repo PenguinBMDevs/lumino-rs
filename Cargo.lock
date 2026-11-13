@@ -4916,7 +4916,6 @@ dependencies = [
  "iced_core",
  "iced_wgpu",
  "iced_widget",
- "iced_winit",
  "image",
  "log",
  "lumino-collaboration",

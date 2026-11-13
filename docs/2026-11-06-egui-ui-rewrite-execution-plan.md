@@ -3775,11 +3775,30 @@ callback / 多视口 / 截图能力。
   `clippy -D warnings`、`fmt --check`、`check --bin lumino-rs`、`capture_egui`
   12/12 零基线改动。
 
-**Task 4.28（下一步）**
+**Task 4.28（第一百三十五步）：脱离 `iced_winit`（25 → 18 条 iced 依赖）**
 
-1. `ui-editor` / `ui-core` 的 `iced_core::{Point, Size, Rectangle}` 换成本地几何类型
-   （108 + 16 文件），同时把 `iced_winit::winit` 改为直接依赖 `winit`；
-2. 删除 iced 视图层（`Root::root_view()`、`view()`/各 `render_*`、`Element`/`Theme`），
-   `lumino-ui` 不再依赖 `iced_widget`/`iced_renderer`/`iced_graphics`；
-3. 曲线填充凹多边形三角化；
-4. 摘 `iced_*`，`cargo tree | grep '^iced'` 归零。
+- **`host/convert.rs`**：自建两条最小转换——`cursor_position`（物理→逻辑，
+  与 iced 同公式）与 `mouse_interaction`（`Interaction` → winit 光标图标，
+  映射表与 iced 0.14 `winit/src/conversion.rs` 逐项一致）。
+- **删除 iced 事件转换管线**：`convert_and_queue_window_event` 与
+  `conversion::window_event` / `convert_touch_to_mouse` 全部移除——事件队列已不再
+  被消费（iced widget 树不再构建），保留转换只会白算。
+- **`use iced_winit::winit` → `use winit`**（11 个文件）；`crates/editor/ui/Cargo.toml`
+  去掉 `iced_winit` 依赖。
+- **结果**：`cargo tree -p lumino-ui -e normal | grep '^iced'` 由 **25 → 18** 条
+  （`iced_winit` / `iced_program` / `iced_runtime` / `iced_futures`(少一条) /
+  `iced_debug` 等随之消失）。剩余：`iced_core` ×6、`iced_wgpu` ×3、`iced_widget` ×3、
+  `iced_graphics` ×2、`iced_futures` ×2、`iced_renderer`、`iced_debug`。
+- 验收：`lumino-ui` lib 764/764（1 ignored）、`clippy -D warnings`、`fmt --check`、
+  `check --bin lumino-rs`、`capture_egui` 12/12 零基线改动。
+
+**Task 4.29（下一步）**
+
+1. 删除 iced 视图层：`Root::root_view()` / `view_*`、`Element`/`Theme` 别名、
+   `ui-editor` 的 `view()`/`draw`（`Canvas`/`Program`/widget 绘制）→ 摘
+   `iced_widget`、`iced_renderer`、`iced_graphics`；
+2. `ui-editor` 交互代码的 `iced_core::{Point, Size, Rectangle, mouse}` 换本地几何类型
+   → 摘 `iced_core`；
+3. `ui-core` 的 `Renderer` 别名 / `iced_wgpu::graphics::text` 换 egui 字体通道
+   → 摘 `iced_wgpu`；
+4. 曲线填充凹多边形三角化；`cargo tree | grep '^iced'` 归零。

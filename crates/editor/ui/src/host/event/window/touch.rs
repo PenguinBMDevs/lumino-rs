@@ -35,7 +35,7 @@ mod long_press;
 mod tests;
 
 use iced_core::{Point, mouse};
-use iced_winit::{conversion, winit};
+use winit;
 
 use crate::host::Host;
 
@@ -109,7 +109,7 @@ impl Host {
     /// 单独补右键释放）。
     pub(super) fn handle_touch(&mut self, touch: &winit::event::Touch) -> TouchRouting {
         let scale = self.window_ctx.window.scale_factor() as f32;
-        let logical = conversion::cursor_position(touch.location, scale);
+        let logical = crate::host::convert::cursor_position(touch.location, scale);
 
         // 按下瞬间把光标**钉到触点**：不依赖上游 `cursor_moved` 的早退条件，
         // 保证本批事件里的按下一定能被 press-only 控件（pick_list / menu

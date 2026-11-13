@@ -12,7 +12,7 @@ mod keyboard;
 mod message;
 mod window;
 
-use iced_winit::winit;
+use winit;
 
 /// 检查是否按下了 Ctrl 或 Command（macOS）
 fn is_ctrl_or_cmd_pressed(modifiers: winit::keyboard::ModifiersState) -> bool {

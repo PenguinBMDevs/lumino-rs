@@ -15,7 +15,7 @@
 use std::time::{Duration, Instant};
 
 use iced_core::mouse;
-use iced_winit::{conversion, winit};
+use winit;
 
 use crate::host::Host;
 
@@ -121,7 +121,7 @@ impl Host {
     /// 点击命中。
     pub(crate) fn release_touch_right_button(&mut self, touch: &winit::event::Touch) {
         let scale = self.window_ctx.window.scale_factor() as f32;
-        let position = conversion::cursor_position(touch.location, scale);
+        let position = crate::host::convert::cursor_position(touch.location, scale);
         self.events
             .push(iced_core::Event::Mouse(mouse::Event::ButtonReleased(
                 mouse::Button::Right,

@@ -1,10 +1,9 @@
 //! Host 窗口事件处理子模块 — 事件转换、队列处理与 UI 状态门控
 
-use iced_core::mouse;
-use iced_winit::{conversion, winit};
+use winit;
 
 use super::touch::TouchRouting;
-use crate::host::{Host, types::convert_touch_to_mouse};
+use crate::host::Host;
 use crate::message;
 
 impl Host {
@@ -32,52 +31,6 @@ impl Host {
             self.dispatch_canvas_focus_lost();
         }
         self.route_message(message::Window::focused(focused));
-    }
-
-    /// 将 winit 窗口事件转换为 iced 事件并加入队列
-    fn convert_and_queue_window_event(
-        &mut self,
-        event: &winit::event::WindowEvent,
-        modifiers: winit::keyboard::ModifiersState,
-    ) {
-        // 提前判断：当前事件是否为 RedrawRequested（避免 conversion 消耗后无法访问）
-        let is_redraw_requested = matches!(event, winit::event::WindowEvent::RedrawRequested);
-
-        // 将窗口事件映射到 iced 事件
-        if let Some(event) = conversion::window_event(
-            event.clone(),
-            self.window_ctx.window.scale_factor() as f32,
-            modifiers,
-        ) {
-            let converted_events = convert_touch_to_mouse(event);
-
-            // 事件合并：如果新事件是 CursorMoved，且队列最后一个也是 CursorMoved，则替换
-            for event in converted_events {
-                if let iced_core::Event::Mouse(mouse::Event::CursorMoved { .. }) = &event {
-                    // 检查队列最后一个事件是否也是 CursorMoved
-                    if let Some(last) = self.events.last()
-                        && matches!(
-                            last,
-                            iced_core::Event::Mouse(mouse::Event::CursorMoved { .. })
-                        )
-                    {
-                        // 替换最后一个事件
-                        self.events.pop();
-                    }
-                }
-                self.events.push(event);
-            }
-        }
-
-        // 注意：事件处理推迟到 redraw_requested 中统一处理
-        // 这样可以合并同一帧内的多个事件，减少 UI 重建次数
-        // 但如果有事件需要处理，必须请求重绘以确保事件被及时处理
-        //
-        // 避免 RedrawRequested 事件造成的自循环：该事件的唯一来源是上层 `request_redraw()`，
-        // 再为此请求重绘会形成 RedrawRequested → handle_events → request_redraw → … 死循环
-        if !self.events.is_empty() && !is_redraw_requested {
-            self.window_ctx.window.request_redraw();
-        }
     }
 
     // ─── handle_events 主入口 ────────────────────────────────────────
@@ -162,20 +115,13 @@ impl Host {
         if matches!(event, winit::event::WindowEvent::Touch(_)) {
             let available = self.window_ctx.cursor.position().is_some();
             let pos = self.window_ctx.cursor.position();
-            log::debug!(
-                "[TOUCH] 排队 iced 事件 cursor_available={available} cursor={pos:?} queue={}",
-                self.events.len()
-            );
+            log::debug!("[TOUCH] 事件已处理 cursor_available={available} cursor={pos:?}");
         }
 
         if consumed_by_egui {
-            // 菜单接管了这次点击/滚轮：只请求重绘（egui 悬停态需要更新），
-            // 不再把事件塞进 iced 队列，避免同时点中下层工具栏/侧栏。
+            // 菜单接管了这次点击/滚轮：只请求重绘（egui 悬停态需要更新）。
             self.window_ctx.window.request_redraw();
-            return;
         }
-
-        self.convert_and_queue_window_event(&event, modifiers);
     }
 
     // ─── 事件队列处理 ────────────────────────────────────────────────

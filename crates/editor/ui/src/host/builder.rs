@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use iced_winit::winit;
+use winit;
 
 use lumino_core::storage::config::OnionSkinBackend;
 

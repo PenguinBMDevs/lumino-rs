@@ -21,6 +21,7 @@ use crate::{message, root, settings};
 
 mod builder;
 mod cache;
+mod convert;
 mod dialog;
 mod dialog_size;
 mod editor_ops;

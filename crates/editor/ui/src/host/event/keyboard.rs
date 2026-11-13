@@ -1,6 +1,6 @@
 //! Host 键盘快捷键处理子模块
 
-use iced_winit::winit;
+use winit;
 
 use crate::host::Host;
 use crate::{message, toolbar};

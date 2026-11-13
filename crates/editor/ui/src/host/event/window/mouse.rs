@@ -1,6 +1,6 @@
 //! Host 窗口鼠标事件处理子模块 — 鼠标输入与光标图标更新
 
-use iced_winit::winit;
+use winit;
 
 use crate::host::Host;
 
@@ -99,7 +99,7 @@ impl Host {
     /// 异步设置竞态重置，导致光标在两种形态间闪烁；这里缓存上次应用值，
     /// 仅在图标或可见性变化时调用一次。
     pub(crate) fn apply_cursor_interaction(&mut self, interaction: iced_core::mouse::Interaction) {
-        let icon = iced_winit::conversion::mouse_interaction(interaction);
+        let icon = crate::host::convert::mouse_interaction(interaction);
         if self.window_ctx.applied_cursor == Some(icon) {
             return;
         }
