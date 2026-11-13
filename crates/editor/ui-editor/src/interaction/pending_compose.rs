@@ -7,7 +7,9 @@ mod edit;
 mod promote;
 mod slice;
 
-use lumino_core::shape::{BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeOp};
+use lumino_core::shape::{
+    BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeModel, ShapeOp,
+};
 use lumino_editor_state::shape_ops::{
     CutKind, CutMark, CutRef, KnifeKind, extend_line, gate_merge, join, mould_pieces, ring_of,
     split_notes_line, sync_groups, to_live,
@@ -19,7 +21,6 @@ use lumino_editor_state::{
 };
 
 use crate::Editor;
-use crate::interaction::shape_bridge::model_from_source;
 use crate::interaction::shape_compose::CopyAlongSpec;
 
 impl Editor {
@@ -50,6 +51,62 @@ impl Editor {
             }
         }
         count == 1
+    }
+
+    /// 取一个可用于 pending 参数操作的单支组合；普通 pending 形状/曲线先提升。
+    ///
+    /// 返回 `(组合下标, 是否本次刚提升)`：
+    /// - 刚提升：撤销走 `undo_pending_compose`（一步回到 pending 矢量）；
+    /// - 已组合：调用方应压 `pending_edit_undo` 快照，撤销只回退本次参数变更。
+    pub(super) fn pending_single_composed_for_ops(&mut self) -> Option<(usize, bool)> {
+        let pending = {
+            let mut selected = self.editor_state.shape_select.selected_shapes();
+            let shape = selected.next()?;
+            if selected.next().is_some() {
+                return None;
+            }
+            shape.pending
+        };
+        match pending {
+            Some(PendingShapeRef::Composed(index)) => {
+                let composed = self.editor_state.pending_composed.get(index)?;
+                (composed.results.len() == 1).then_some((index, false))
+            }
+            Some(PendingShapeRef::Shape(_) | PendingShapeRef::CurvePath(_)) => {
+                if !self.promote_pending_for_edit() {
+                    return None;
+                }
+                let pending = self
+                    .editor_state
+                    .shape_select
+                    .selected_shapes()
+                    .next()?
+                    .pending;
+                match pending {
+                    Some(PendingShapeRef::Composed(index)) => Some((index, true)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// 用新模型替换 pending 组合的第一支并重算预览音符（不写文档历史）
+    pub(super) fn update_pending_composed_model(&mut self, index: usize, model: ShapeModel) {
+        let track = model.track as usize;
+        let notes = self.part_notes_for_edit(&model, track);
+        if let Some(part) = self
+            .editor_state
+            .pending_composed
+            .get_mut(index)
+            .and_then(|composed| composed.results.first_mut())
+        {
+            part.model = model;
+            part.notes = notes;
+        }
+        self.refresh_pending_mirror_geometry();
+        self.mark_notes_changed();
+        self.grid_cache.clear();
     }
 
     /// 把选中的 pending 形状/路径组合成一个 pending composed 结果。
@@ -102,7 +159,7 @@ impl Editor {
             let Some(source) = self.pending_source(*reference) else {
                 return false;
             };
-            let model = model_from_source(&source, track, 1.0);
+            let model = self.model_from_source_at_view(&source, track, 1.0);
             let model_notes = self.shape_notes_of(&model, track);
             let pending_source = match reference {
                 PendingShapeRef::Shape(i) => {

@@ -3,8 +3,8 @@
 //! 纯变换在 `editor_state::shape_edit`；本模块负责：
 //! 命中手柄 → 拖动预览 → 松手提交。
 //!
-//! 041C 阶段 3：目标既可以是已 Bake 的 DrawnShape（走 `edit_shape`），
-//! 也可以是单支 `PendingComposed`（只改 pending model + 预览音符）。
+//! DEC-001：Bake 后形状对象只读，编辑手柄只对 **✓ 前的 pending** 开放；
+//! 已 Bake 图形不再产生 [`ShapeEditTarget::Drawn`]（该分支已删除）。
 
 use lumino_core::shape::ShapeModel;
 use lumino_editor_state::editor_state::{
@@ -13,7 +13,6 @@ use lumino_editor_state::editor_state::{
 use lumino_editor_state::{ComposedKind, PendingComposed, PendingShapeRef};
 
 use crate::Editor;
-use crate::interaction::shape_bridge::source_from_model;
 
 mod commit;
 mod group;
@@ -23,13 +22,6 @@ mod handles;
 /// 手柄编辑目标
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShapeEditTarget {
-    /// 已 Bake 的 DrawnShape + ShapeStore 模型
-    Drawn {
-        /// UI 图形 id
-        drawn_id: u64,
-        /// ShapeStore 模型 id
-        model_id: u64,
-    },
     /// 单支 pending composed 结果
     PendingComposed {
         /// `EditorState::pending_composed` 下标
@@ -144,11 +136,11 @@ impl Editor {
             return false;
         }
         self.shape_group_edit = None;
-        let (drawn_id, pending, model_id) = {
+        let pending = {
             let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
             };
-            (shape.id, shape.pending, shape.model_id)
+            shape.pending
         };
         let target = match pending {
             Some(PendingShapeRef::Composed(index)) => {
@@ -168,16 +160,8 @@ impl Editor {
                 return self.enable_shape_edit();
             }
             Some(_) => return false,
-            None => {
-                let model_id = match model_id {
-                    Some(id) => id,
-                    None => match self.ensure_model_for_drawn(drawn_id) {
-                        Some(id) => id,
-                        None => return false,
-                    },
-                };
-                ShapeEditTarget::Drawn { drawn_id, model_id }
-            }
+            // DEC-001：已 Bake 的图形只读，不再提供 8 点手柄 / 中心点编辑。
+            None => return false,
         };
         self.shape_edit_armed = Some(target);
         self.grid_cache.clear();
@@ -221,7 +205,6 @@ impl Editor {
                 ShapeEditTarget::PendingComposed { .. } | ShapeEditTarget::Group => {
                     self.editor_state.pending_composed.clone()
                 }
-                ShapeEditTarget::Drawn { .. } => Vec::new(),
             };
             let parts = match target {
                 ShapeEditTarget::Group => self.group_parts().unwrap_or_default(),
@@ -331,10 +314,6 @@ impl Editor {
         state.current = next;
         let notes = self.part_notes_for_edit(&state.current, state.current.track as usize);
         match state.target {
-            ShapeEditTarget::Drawn { drawn_id, .. } => {
-                let source = source_from_model(&state.current);
-                self.editor_state.shape_select.set_source(drawn_id, source);
-            }
             ShapeEditTarget::PendingComposed { index } => {
                 if let Some(part) = self
                     .editor_state

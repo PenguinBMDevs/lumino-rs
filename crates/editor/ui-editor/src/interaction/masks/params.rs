@@ -9,6 +9,9 @@ use lumino_editor_state::shape_ops::masks as mask_ops;
 use crate::Editor;
 
 /// 遮罩参数面板的编辑目标
+///
+/// DEC-001：Bake 后形状对象只读，面板只对 **✓ 前的待确认对象** 开放；
+/// 已 Bake 模型不再提供编辑目标。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaskEditTarget {
     /// 待确认形状（`ShapeInstance.mask`）：预览即时生效，不写文档历史
@@ -21,15 +24,10 @@ pub enum MaskEditTarget {
         /// `EditorState::pending_composed` 下标
         index: usize,
     },
-    /// 已 Bake 形状（`ShapeOp::Mask`）：面板改草稿，Apply 时一次 `edit_shape`
-    Baked {
-        /// ShapeStore 模型 id
-        model_id: u64,
-    },
 }
 
 impl Editor {
-    /// 当前选中对象的遮罩编辑目标（须单选中；多支组合/曲线路径不支持）
+    /// 当前选中对象的遮罩编辑目标（须单选中；多支组合/曲线路径/已 Bake 不支持）
     pub fn mask_edit_target(&mut self) -> Option<MaskEditTarget> {
         if let Some(shape) = self.editor_state.shape_select.selected_shapes().next() {
             if self.editor_state.shape_select.selection_len() != 1 {
@@ -47,11 +45,11 @@ impl Editor {
                     return Some(MaskEditTarget::PendingComposed { index });
                 }
                 Some(_) => return None,
-                None => {}
+                // DEC-001：已 Bake 形状只读，不提供遮罩参数编辑。
+                None => return None,
             }
         }
-        let (_, model_id, _) = self.selected_model_for_edit()?;
-        Some(MaskEditTarget::Baked { model_id })
+        None
     }
 
     /// 目标当前的遮罩参数（无遮罩 → `None`）
@@ -69,15 +67,10 @@ impl Editor {
                 .get(index)
                 .and_then(|composed| composed.results.first())
                 .and_then(|part| mask_ops::params_of(&part.model).cloned()),
-            MaskEditTarget::Baked { model_id } => self
-                .editor_state
-                .shape_store
-                .model(model_id)
-                .and_then(|model| mask_ops::params_of(model).cloned()),
         }
     }
 
-    /// 待确认形状即时设置遮罩（`None` = 清除）；已 Bake 请走 [`Self::set_mask`]
+    /// 待确认形状即时设置遮罩（`None` = 清除）
     pub fn set_pending_mask(&mut self, index: usize, params: Option<MaskParams>) -> bool {
         let Some(shape) = self.editor_state.shape_tool.shapes.get_mut(index) else {
             return false;
@@ -122,32 +115,14 @@ impl Editor {
         true
     }
 
-    /// 给形状设置/移除 Mask 标记（供工具栏/面板接线；一次 edit_shape 撤销单元）
-    pub fn set_mask(&mut self, id: u64, params: Option<MaskParams>) -> bool {
-        let Some(mut model) = self.editor_state.shape_store.model(id).cloned() else {
-            return false;
-        };
-        model.ops.retain(|op| !matches!(op, ShapeOp::Mask(_)));
-        if let Some(params) = params {
-            model.ops.push(ShapeOp::Mask(params));
-        }
-        self.edit_shape(id, model)
-    }
-
-    /// 切换当前选中形状的 Mask 标记：pending 形状改 `ShapeInstance.mask`；
-    /// 已 Bake 形状走 `set_mask`（一次 edit_shape 撤销单元）。
+    /// 切换当前选中形状的 Mask 标记：只接受 **✓ 前的待确认形状**。
+    ///
+    /// DEC-001：已 Bake 形状只读，不提供遮罩回写。
     pub fn toggle_mask_selected(&mut self) -> bool {
         if self.pending_single_selection() {
             return self.toggle_pending_mask();
         }
-        let Some((_, model_id, model)) = self.selected_model_for_edit() else {
-            return false;
-        };
-        let params = match mask_ops::params_of(&model) {
-            Some(_) => None,
-            None => Some(MaskParams::default()),
-        };
-        self.set_mask(model_id, params)
+        false
     }
 
     fn toggle_pending_mask(&mut self) -> bool {

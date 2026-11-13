@@ -69,16 +69,8 @@ impl Editor {
                 )
             }
             Some(_) => return None,
-            None => {
-                let model_id = drawn.model_id?;
-                (
-                    ShapeEditTarget::Drawn {
-                        drawn_id: drawn.id,
-                        model_id,
-                    },
-                    self.editor_state.shape_store.model(model_id)?.clone(),
-                )
-            }
+            // DEC-001：已 Bake 的图形只读，不存在可编辑的 `Drawn` 目标。
+            None => return None,
         };
         (target == armed).then_some((target, model))
     }

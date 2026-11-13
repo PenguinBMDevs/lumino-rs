@@ -1,58 +1,90 @@
-//! DRAW-032B：形状区域着色交互（最小）
+//! DRAW-032B：形状区域着色交互（pending 版）
 //!
-//! 交互只做三件事：
-//! 1. 从当前唯一选中的已确认图形绑定 `ShapeModel`，进入着色模式；
-//! 2. 画布左键 → 在形状 box 内追加一个 `AreaSpot`，调用 `edit_shape` 再生成；
-//! 3. 右键 / 0 色 → 写 `colour = 0`，让该区域静音。
+//! DEC-001：Bake 后形状对象只读，区域着色只对 **✓ 前的待确认对象** 开放。
+//! 会话绑定 `pending_composed` 的单支结果：着色只改 pending model + 预览音符，
+//! 不写文档、不 push 文档历史；✓ 才把预览音符落盘。
 //!
 //! 区域求解、切行与音符通道仍由 DRAW-032A 的 `AreaMap` 链路完成，本模块不重写算法。
 
-use lumino_core::shape::{AreaSpot, ShapeFill};
+use lumino_core::shape::{AreaSpot, ShapeFill, ShapeModel};
+use lumino_editor_state::PendingShapeRef;
 use lumino_message::Tool;
-use lumino_midi_model::TickIndexedEvents;
 use lumino_ui_core::geom::Point;
 
 use crate::Editor;
 use crate::interaction::line_tool::fill::spans::row_spans;
 use crate::interaction::line_tool::geom;
 
-/// 当前区域着色会话
+/// 当前区域着色会话的绑定目标
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AreaPaintTarget {
+    /// 待确认单支组合（`EditorState::pending_composed` 下标）
+    PendingComposed { index: usize },
+}
+
+/// 当前区域着色会话
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AreaPaintState {
-    /// 选中的绘制图形 id（用于检测选区是否变化；模型列表入口为 `None`）
+    /// 绑定目标
+    pub target: AreaPaintTarget,
+    /// 选中的绘制图形 id（用于检测选区是否变化）
     pub drawn_id: Option<u64>,
-    /// ShapeStore 模型 id
-    pub model_id: u64,
     /// 当前色号（0..=15；0 = 清除）
     pub colour: u8,
+    /// 进入会话前的填充状态（透明色恢复用）
+    pub original_fill: ShapeFill,
+    /// 进入会话前的区域点（透明色恢复用）
+    pub original_areas: Vec<AreaSpot>,
 }
 
 impl Editor {
-    /// 进入区域着色模式；仅鼠标工具下唯一选中、且能绑定 ShapeModel 的图形可用
+    /// 进入区域着色模式：只接受单个 pending 形状/曲线（必要时先提升为单支组合）
     pub fn begin_area_paint(&mut self) -> bool {
-        if self.current_tool() != Tool::ShapeSelect
-            || self.editor_state.shape_select.selection_len() != 1
-        {
+        if self.current_tool() != Tool::ShapeSelect {
             return false;
         }
-        let Some(drawn) = self
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .next()
-            .cloned()
-        else {
+        // 先按来源判断闭合，避免「开放曲线」失败时留下一次无谓的提升（副作用）。
+        let reference = {
+            let mut selected = self.editor_state.shape_select.selected_shapes();
+            let Some(shape) = selected.next() else {
+                return false;
+            };
+            if selected.next().is_some() {
+                return false;
+            }
+            shape.pending
+        };
+        match reference {
+            Some(PendingShapeRef::Composed(index)) => {
+                let Some(model) = self.area_paint_model(AreaPaintTarget::PendingComposed { index })
+                else {
+                    return false;
+                };
+                if !model.geometry.closed {
+                    return false;
+                }
+            }
+            Some(reference @ (PendingShapeRef::Shape(_) | PendingShapeRef::CurvePath(_))) => {
+                let track = self.editor_state.data.current_track;
+                let Some(source) = self.pending_source(reference) else {
+                    return false;
+                };
+                let model = self.model_from_source_at_view(&source, track, 1.0);
+                if !model.geometry.closed {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+        let Some((index, _promoted)) = self.pending_single_composed_for_ops() else {
             return false;
         };
-        let Some(model_id) = self.ensure_model_for_drawn(drawn.id) else {
+        let target = AreaPaintTarget::PendingComposed { index };
+        let Some(model) = self.area_paint_model(target) else {
             return false;
         };
-        let Some(model) = self.editor_state.shape_store.model(model_id) else {
-            return false;
-        };
-        // 只有闭合区域才有“内部”可着色；开放曲线/画刷不能走 shape 再生成，
-        // 否则会把音符重写成沿路径的一串连续音符。
-        if !model.geometry.closed {
+        // 只有闭合区域才有“内部”可着色；开放曲线不能走形状再生成。
+        if model.track == 0 || !model.geometry.closed {
             return false;
         }
         // 形状自身 colour_slot 默认 0；0 是“空”，作为画笔默认值会一上来就擦除。
@@ -60,104 +92,50 @@ impl Editor {
             .style
             .colour_slot
             .clamp(1, lumino_core::shape::most_colours(self.editor_state.use10));
+        let original_fill = model.style.fill;
+        let original_areas = model.style.areas.clone();
+        let drawn_id = self
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .next()
+            .map(|shape| shape.id);
         self.area_paint = Some(AreaPaintState {
-            drawn_id: Some(drawn.id),
-            model_id,
+            target,
+            drawn_id,
             colour,
+            original_fill,
+            original_areas,
         });
         self.shape_list_open = false;
         self.grid_cache.clear();
         true
     }
 
-    /// 从 ShapeStore 列表进入区域着色（Bake 后没有 DrawnShape 的模型）
-    pub fn begin_area_paint_model(&mut self, model_id: u64) -> bool {
-        let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
-            return false;
-        };
-        if model.track == 0 || !model.geometry.closed {
-            return false;
-        }
-        // 载入工程的模型没有本次会话音符指纹；只有能逐音符精确定位时才接管。
-        if self.editor_state.shape_store.notes_of(model_id).is_empty()
-            && !self.adopt_model_notes(model_id)
-        {
-            return false;
-        }
-        let colour = model
-            .style
-            .colour_slot
-            .clamp(1, lumino_core::shape::most_colours(self.editor_state.use10));
-        self.area_paint = Some(AreaPaintState {
-            drawn_id: None,
-            model_id,
-            colour,
-        });
-        self.shape_list_open = false;
-        self.grid_cache.clear();
-        true
-    }
-
-    /// 模型当前是否可进入区域着色（列表用，不产生副作用）
-    pub(crate) fn can_area_paint_model(&self, model_id: u64) -> bool {
-        if !self.editor_state.shape_store.notes_of(model_id).is_empty() {
-            return true;
-        }
-        let Some(model) = self.editor_state.shape_store.model(model_id) else {
-            return false;
-        };
-        if !model.geometry.closed {
-            return false;
-        }
-        let generated = self.shape_notes_of(model, model.track as usize);
-        !generated.is_empty() && self.model_notes_present(model.track as usize, &generated)
-    }
-
-    /// 尝试用模型再生成结果接管载入工程的旧音符（242D）
+    /// 从 ShapeStore 列表进入区域着色
     ///
-    /// 只有所有生成音符都能在文档中逐个精确定位时才写回 `ShapeStore`；
-    /// 任一缺失即保持只读，避免区域编辑删不掉旧音符导致重复。
-    fn adopt_model_notes(&mut self, model_id: u64) -> bool {
-        let Some(model) = self.editor_state.shape_store.model(model_id).cloned() else {
-            return false;
-        };
-        let track = model.track as usize;
-        let generated = self.shape_notes_of(&model, track);
-        if generated.is_empty() || !self.model_notes_present(track, &generated) {
-            return false;
-        }
-        self.editor_state
-            .shape_store
-            .assign_notes(model_id, generated);
-        true
+    /// DEC-001：列表里的模型都是已 Bake 的只读配方，一律拒绝。
+    pub fn begin_area_paint_model(&mut self, _model_id: u64) -> bool {
+        false
     }
 
-    /// 生成音符是否能在文档中逐条精确定位（同值多份按份数分配）
-    fn model_notes_present(&self, track: usize, notes: &[lumino_editor_state::ShapeNote]) -> bool {
-        let mut used = std::collections::HashSet::new();
-        for note in notes {
-            let event = lumino_editor_state::note_to_event(
-                crate::Note::new(note.tick, note.key, note.length)
-                    .with_velocity(note.velocity)
-                    .with_channel(note.channel),
-            );
-            let Some(index) = self
+    /// 会话绑定目标的模型
+    fn area_paint_model(&self, target: AreaPaintTarget) -> Option<&ShapeModel> {
+        match target {
+            AreaPaintTarget::PendingComposed { index } => self
                 .editor_state
-                .data
-                .track_notes(track)
-                .position_of_unused(&event, &used)
-            else {
-                return false;
-            };
-            used.insert(index);
+                .pending_composed
+                .get(index)?
+                .results
+                .first()
+                .map(|part| &part.model),
         }
-        true
     }
 
-    /// 区域着色会话对应的屏幕包围框（列表入口没有 DrawnShape 选框）
+    /// 区域着色会话对应的屏幕包围框
     pub(crate) fn area_paint_bounds(&self) -> Option<lumino_ui_core::geom::Rectangle> {
-        let state = self.area_paint?;
-        let model = self.editor_state.shape_store.model(state.model_id)?;
+        let target = self.area_paint.as_ref()?.target;
+        let model = self.area_paint_model(target)?;
         let (tick_lo, key_lo, tick_hi, key_hi) = model.geometry.bounds()?;
         let a = self.line_pos_screen_pos((tick_lo, key_lo));
         let b = self.line_pos_screen_pos((tick_hi, key_hi));
@@ -206,7 +184,7 @@ impl Editor {
 
     /// 当前画笔色号（无会话时返回 `None`）
     pub fn area_paint_colour(&self) -> Option<u8> {
-        self.area_paint.map(|state| state.colour)
+        self.area_paint.as_ref().map(|state| state.colour)
     }
 
     /// 选择画笔色号（0..=15，启用通道 10 时 0..=16）
@@ -223,13 +201,21 @@ impl Editor {
         true
     }
 
-    /// 在逻辑坐标处着色；返回是否真的提交了一次形状编辑
+    /// 在逻辑坐标处着色；返回是否真的更新了 pending 预览
+    ///
+    /// `colour = 0` 是**透明色/撤销上色**：移除本次会话加的全部区域点，并恢复
+    /// 进入区域着色前的填充状态（轮廓图形回到轮廓，填充图形回到基础填充），
+    /// 不允许把整个形状直接清空。
     pub(crate) fn paint_area_at(&mut self, tick: f32, key: f32, colour: u8) -> bool {
-        let Some(state) = self.area_paint else {
+        let Some(state) = self.area_paint.as_ref() else {
             return false;
         };
-        // 选区已变化：结束会话，避免把点画到旧形状上（列表入口不依赖选区）。
-        if let Some(drawn_id) = state.drawn_id
+        let target = state.target;
+        let drawn_id = state.drawn_id;
+        let original_fill = state.original_fill;
+        let original_areas = state.original_areas.clone();
+        // 选区已变化：结束会话，避免把点画到旧形状上。
+        if let Some(drawn_id) = drawn_id
             && !self
                 .editor_state
                 .shape_select
@@ -239,7 +225,7 @@ impl Editor {
             self.end_area_paint();
             return false;
         }
-        let Some(mut model) = self.editor_state.shape_store.model(state.model_id).cloned() else {
+        let Some(mut model) = self.area_paint_model(target).cloned() else {
             self.end_area_paint();
             return false;
         };
@@ -262,9 +248,6 @@ impl Editor {
         {
             return false;
         }
-        if model.style.areas.len() >= 256 {
-            return false;
-        }
         // 闭合点列形状再做一次“点在轮廓内”检查，避免在 bbox 角落留下无效 spot。
         if model.geometry.closed && model.geometry.anchors.len() >= 3 {
             let mut poly: Vec<(f32, f32)> = geom::flatten_path(&model.geometry.anchors)
@@ -283,8 +266,22 @@ impl Editor {
                 return false;
             }
         }
-        // 轮廓模型（Empty）第一次区域着色时显式切到 Fill；旧轮廓音符由
-        // `edit_shape` 按 ShapeStore 指纹删除，不会重复。
+
+        let AreaPaintTarget::PendingComposed { index } = target;
+        if colour == 0 {
+            // 透明 = 撤销本次区域上色：恢复进入会话前的填充状态与区域点。
+            if model.style.areas == original_areas && model.style.fill == original_fill {
+                return false;
+            }
+            model.style.areas = original_areas;
+            model.style.fill = original_fill;
+            return self.commit_area_paint(index, model);
+        }
+
+        if model.style.areas.len() >= 256 {
+            return false;
+        }
+        // 轮廓模型（Empty）第一次区域着色时显式切到 Fill。
         if model.style.fill == ShapeFill::Empty {
             model.style.fill = ShapeFill::Fill;
         }
@@ -296,12 +293,20 @@ impl Editor {
             .areas
             .retain(|spot| (spot.u - u).hypot(spot.v - v) > 0.02);
         model.style.areas.push(AreaSpot { u, v, colour });
-        if self.edit_shape(state.model_id, model) {
-            self.grid_cache.clear();
-            true
-        } else {
-            false
+        self.commit_area_paint(index, model)
+    }
+
+    /// 一次区域着色点击 = 一次 pending 撤销（不进入文档历史）
+    fn commit_area_paint(&mut self, index: usize, model: ShapeModel) -> bool {
+        let snapshot = self.editor_state.pending_composed.clone();
+        self.update_pending_composed_model(index, model);
+        self.pending_edit_undo.push(snapshot);
+        while self.pending_edit_undo.len() > 64 {
+            self.pending_edit_undo.remove(0);
         }
+        self.pending_edit_redo.clear();
+        self.pending_composed_redo.clear();
+        true
     }
 
     /// 画布坐标处着色（供上下文菜单/网格事件复用）

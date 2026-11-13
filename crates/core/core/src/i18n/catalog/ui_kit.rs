@@ -34,6 +34,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "横轴对称" => Some("Symmetry: Horizontal Axis"),
         // ── 半边对称拒绝原因（DRAW-043，`ui-editor/src/interaction/shape_compose.rs`）──
         "请先选中一个形状" => Some("Select a shape first"),
+        "请先选中一个待确认形状" => Some("Select a pending shape first"),
         "只有曲线形状支持半边对称" => Some("Only curve shapes support half symmetry"),
         "已连接的曲线不支持半边对称" => {
             Some("Joined curves do not support half symmetry")

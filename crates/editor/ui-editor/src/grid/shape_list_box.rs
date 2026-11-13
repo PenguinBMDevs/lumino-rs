@@ -22,7 +22,7 @@ pub struct ShapeListRects {
     /// 面板
     pub panel: Rectangle,
     /// 行：模型 id + 矩形
-    pub rows: Vec<(u64, Rectangle, String, bool)>,
+    pub rows: Vec<(u64, Rectangle, String)>,
     /// 关闭按钮
     pub close: Rectangle,
 }
@@ -44,7 +44,7 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
         return None;
     }
     let track = editor.editor_state.data.current_track;
-    let mut entries: Vec<(u64, String, bool)> = editor
+    let mut entries: Vec<(u64, String)> = editor
         .editor_state
         .shape_store
         .iter()
@@ -55,15 +55,11 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
             } else {
                 entry.model.name.clone()
             };
-            // 载入工程后 notes 为空，但再生成结果能精确定位时仍可接管。
-            (
-                entry.model.id,
-                name,
-                editor.can_area_paint_model(entry.model.id),
-            )
+            // DEC-001：Bake 后列表只读，不再判断可着色性。
+            (entry.model.id, name)
         })
         .collect();
-    entries.sort_by_key(|(id, _, _)| *id);
+    entries.sort_by_key(|(id, _)| *id);
     if entries.is_empty() {
         return None;
     }
@@ -79,7 +75,7 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
     let rows = entries
         .into_iter()
         .enumerate()
-        .map(|(index, (id, name, editable))| {
+        .map(|(index, (id, name))| {
             (
                 id,
                 Rectangle::new(
@@ -90,7 +86,6 @@ pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
                     Size::new(PANEL_W - PAD * 2.0, ROW_H),
                 ),
                 name,
-                editable,
             )
         })
         .collect();
@@ -107,7 +102,7 @@ pub fn hit(editor: &Editor, point: Point) -> Option<ShapeListHit> {
     if rects.close.contains(point) {
         return Some(ShapeListHit::Close);
     }
-    for (id, rect, _, _) in &rects.rows {
+    for (id, rect, _) in &rects.rows {
         if rect.contains(point) {
             return Some(ShapeListHit::Row(*id));
         }
@@ -122,7 +117,8 @@ pub fn press_action(editor: &Editor, point: Point) -> Option<Option<EditorAction
         return None;
     }
     Some(match hit(editor, point) {
-        Some(ShapeListHit::Row(id)) => Some(EditorAction::ShapeListPick(id)),
+        // DEC-001：Bake 后列表只读，行点击只消费事件。
+        Some(ShapeListHit::Row(_)) => None,
         Some(ShapeListHit::Close) => Some(EditorAction::ShapeListClose),
         Some(ShapeListHit::Panel) => None,
         None => Some(EditorAction::ShapeListClose),
@@ -175,6 +171,12 @@ mod tests {
             Some(ShapeListHit::Row(id))
         );
         assert_eq!(row.2, "test");
-        assert!(row.3, "本次会话模型应可编辑");
+        assert!(
+            matches!(
+                press_action(&editor, Point::new(row.1.x + 4.0, row.1.y + 4.0)),
+                Some(None)
+            ),
+            "DEC-001：行点击只读，不应产生任何写入口动作"
+        );
     }
 }

@@ -146,13 +146,7 @@ pub fn show(ui: &mut egui::Ui, model: &AutosaveRecoverModel) {
 }
 
 /// 水平居中的单行文本（进入可访问树）。
-fn centered_text(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    text: &str,
-    size: f32,
-    color: Color32,
-) {
+fn centered_text(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color: Color32) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(
         egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
     ));

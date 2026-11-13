@@ -31,7 +31,7 @@ fn test_polyline_roundtrip() {
     let shape = drawn(DrawnShapeSource::Polyline {
         points: vec![(0.0, 60.0), (10.0, 64.0)],
     });
-    let model = model_from_drawn(&shape, 1.0);
+    let model = model_from_drawn(&shape, 1.0, 1.0, 1.0);
     assert_eq!(model.kind, ShapeKind::Polyline);
     assert_eq!(model.geometry.anchors.len(), 2);
     match source_from_model(&model) {
@@ -49,7 +49,7 @@ fn test_shape_geometry_becomes_outline() {
         apex_high: true,
         filled: false,
     });
-    let model = model_from_drawn(&shape, 1.0);
+    let model = model_from_drawn(&shape, 1.0, 1.0, 1.0);
     assert!(!model.geometry.anchors.is_empty());
     assert!(matches!(
         source_from_model(&model),

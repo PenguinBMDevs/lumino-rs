@@ -8,13 +8,30 @@ use lumino_editor_state::shape_ops::copy_along_copies_of_points;
 use lumino_editor_state::shape_tool::shape_outline_path;
 use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeKind as UiShapeKind, ShapeSpec};
 
+use crate::Editor;
+
 /// 选中图形 → ShapeModel（仅几何；音符由调用方保留）
-pub(crate) fn model_from_drawn(drawn: &DrawnShape, k: f32) -> ShapeModel {
-    model_from_source(&drawn.source, drawn.track, k)
+pub(crate) fn model_from_drawn(
+    drawn: &DrawnShape,
+    k: f32,
+    px_per_tick: f32,
+    px_per_key: f32,
+) -> ShapeModel {
+    model_from_source(&drawn.source, drawn.track, k, px_per_tick, px_per_key)
 }
 
 /// 几何来源 → ShapeModel（Bake 保留模型 / 选中图形共用）
-pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32) -> ShapeModel {
+///
+/// `px_per_tick` / `px_per_key` 必须传**当前视图**的缩放：Shift 约束的
+/// 正图形（圆/正方形/等边三角形）是在屏幕空间求解的，传 1.0 会把几何
+/// 压扁（圆的下半被截断、正方形变成细长条）。
+pub(crate) fn model_from_source(
+    source: &DrawnShapeSource,
+    track: usize,
+    k: f32,
+    px_per_tick: f32,
+    px_per_key: f32,
+) -> ShapeModel {
     let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, k);
     model.style = ShapeStyle::default();
     match source {
@@ -42,7 +59,7 @@ pub(crate) fn model_from_source(source: &DrawnShapeSource, track: usize, k: f32)
                 shift_constrained: *shift_constrained,
                 apex_high: *apex_high,
             };
-            let points = shape_outline_path(spec, 1.0, 1.0);
+            let points = shape_outline_path(spec, px_per_tick, px_per_key);
             model.kind = ShapeKind::Custom;
             model.geometry = ShapeGeometry::from_points(points);
             // 形状工具产物都是闭合图形；保留模型沿用原始填充语义，
@@ -117,6 +134,9 @@ fn geometry_polylines(model: &ShapeModel) -> Vec<Vec<(f32, f32)>> {
 }
 
 /// ShapeModel → 可渲染的 DrawnShapeSource
+///
+/// DEC-001 后生产路径不再用形状回写预览（已 Bake 只读）；保留给只读展示与测试。
+#[allow(dead_code)]
 pub(crate) fn source_from_model(model: &ShapeModel) -> DrawnShapeSource {
     if !model.geometry.anchors.is_empty() {
         return DrawnShapeSource::Polyline {
@@ -138,6 +158,30 @@ pub(crate) fn source_from_model(model: &ShapeModel) -> DrawnShapeSource {
         };
     }
     DrawnShapeSource::Polyline { points: Vec::new() }
+}
+
+impl Editor {
+    /// 形状几何的屏幕尺度（px per tick / px per key），与预览/√ 同一口径
+    pub(crate) fn shape_px_per_unit(&self) -> (f32, f32) {
+        (self.editor_state.view.zoom_x, self.editor_state.view.zoom_y)
+    }
+
+    /// 用当前视图尺度把几何来源转成模型（Shift 约束图形必须走这里）
+    pub(crate) fn model_from_source_at_view(
+        &self,
+        source: &DrawnShapeSource,
+        track: usize,
+        k: f32,
+    ) -> ShapeModel {
+        let (px_per_tick, px_per_key) = self.shape_px_per_unit();
+        model_from_source(source, track, k, px_per_tick, px_per_key)
+    }
+
+    /// 用当前视图尺度把已绘制图形转成模型
+    pub(crate) fn model_from_drawn_at_view(&self, drawn: &DrawnShape, k: f32) -> ShapeModel {
+        let (px_per_tick, px_per_key) = self.shape_px_per_unit();
+        model_from_drawn(drawn, k, px_per_tick, px_per_key)
+    }
 }
 
 #[cfg(test)]

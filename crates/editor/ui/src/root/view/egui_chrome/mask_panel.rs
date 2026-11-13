@@ -30,10 +30,8 @@ impl Root {
             size_keys: params.size_keys,
             invert: params.invert,
             own: params.own,
-            baked: matches!(
-                state.target,
-                Some(lumino_ui_editor::MaskEditTarget::Baked { .. })
-            ),
+            // DEC-001：Bake 后形状只读，面板只对 pending 开放，不再有「应用」行。
+            baked: false,
             dirty: state.dirty,
             labels: labels(),
         })

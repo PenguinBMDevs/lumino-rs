@@ -112,29 +112,41 @@ fn test_strict_eight_plus_center_for_pending() {
 }
 
 #[test]
-fn test_baked_has_eight_handles_without_center() {
+fn test_baked_shape_cannot_enter_edit_mode() {
     let mut editor = editor_with_shape();
-    enter_edit(&mut editor);
-    let handles = editor.shape_edit_handles();
-    assert_eq!(handles.box_points.len(), 8, "已 Bake 仍是 8 个箱体锚点");
-    assert!(
-        handles.center.is_none(),
-        "已 Bake 的中心移动必须禁用（Bake 后音符权威）"
-    );
+    let notes_before: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
 
-    let rect = editor.shape_edit_box().expect("编辑框");
-    let center = editor.pos_to_tick(Point::new(
-        rect.x + rect.width / 2.0,
-        rect.y + rect.height / 2.0,
-    ));
-    let center_key = editor.pos_to_raw_key(Point::new(
-        rect.x + rect.width / 2.0,
-        rect.y + rect.height / 2.0,
-    ));
+    // DEC-001：Bake 后形状对象只读，已 Bake 图形不再提供 8 点手柄 / 中心点。
+    assert!(!editor.enable_shape_edit(), "已 Bake 图形不得进入编辑图形");
+    assert!(!editor.is_shape_edit_armed());
+    let handles = editor.shape_edit_handles();
+    assert!(handles.box_points.is_empty(), "已 Bake 不应画出锚点");
+    assert!(handles.center.is_none());
+    assert!(editor.shape_edit_box().is_none(), "已 Bake 不应有编辑框");
+
+    let bounds = editor.editor_state.shape_select.shapes()[0]
+        .source
+        .bounds()
+        .expect("几何");
     assert!(
-        !editor.begin_shape_edit(center, center_key),
-        "编辑框中心不应命中任何锚点"
+        !editor.begin_shape_edit(bounds.0, bounds.3),
+        "即使点在旧锚点位置也不得开始编辑"
     );
+    assert!(!editor.is_shape_editing());
+    let notes_after: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(notes_after, notes_before, "拒绝编辑不得改动任何音符");
 }
 
 #[test]
@@ -266,7 +278,7 @@ fn test_enable_shape_edit_toggles_and_recovers_from_stale_target() {
     assert!(editor.enable_shape_edit(), "退出后可再次进入");
     assert!(editor.is_shape_edit_armed());
 
-    // 换选到另一个对象：编辑态自动失效，选框回来
+    // 换选到已 Bake 对象：编辑态自动失效，且不得再进入（DEC-001）
     let second = editor.editor_state.shape_select.add(
         1,
         None,
@@ -277,8 +289,11 @@ fn test_enable_shape_edit_toggles_and_recovers_from_stale_target() {
     );
     editor.editor_state.shape_select.select_only(second);
     assert!(!editor.is_shape_edit_armed(), "换选后不应残留旧编辑目标");
-    assert!(editor.enable_shape_edit(), "对新对象仍能进入编辑图形");
-    assert!(editor.is_shape_edit_armed());
+    assert!(
+        !editor.enable_shape_edit(),
+        "已 Bake 对象不得进入编辑图形（形状对象只读）"
+    );
+    assert!(!editor.is_shape_edit_armed());
 }
 
 #[test]

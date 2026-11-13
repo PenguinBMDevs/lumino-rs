@@ -68,8 +68,10 @@ impl Editor {
         if !self.editor_state.text_tool.active {
             let tick = self.pos_to_tick(pos);
             let key = self.pos_to_key(pos);
-            if let Some((id, model)) = self.text_shape_at(tick, key) {
-                self.begin_text_shape_edit(id, &model);
+            if self.text_shape_at(tick, key).is_some() {
+                // DEC-001：已 Bake 的文字形状只读，不再进入「重新编辑」；
+                // 单击只消费事件，避免在旧文字上叠一个新的空文本框。
+                tracing::debug!("文字形状已 Bake，只读");
                 return;
             }
         }
@@ -207,14 +209,6 @@ impl Editor {
         let track = self.editor_state.data.current_track;
         let model = self.build_text_shape_model(&tt, track, snap);
 
-        // ???????????????????? + ??????????????
-        if let Some(id) = tt.editing_shape {
-            let ok = self.edit_shape(id, model);
-            self.editor_state.text_tool.reset();
-            self.mark_notes_changed();
-            return ok;
-        }
-
         let mut create_ops = Vec::with_capacity(notes.len());
         for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
@@ -262,17 +256,14 @@ impl Editor {
         true
     }
 
-    /// ?????????????????????????? id/??/???
+    /// 由文本框几何与参数构造新的文字形状模型（Bake 时登记）
     fn build_text_shape_model(
         &self,
         tt: &lumino_editor_state::text_tool::TextToolState,
         track: usize,
         snap: f32,
     ) -> ShapeModel {
-        let mut model = tt
-            .editing_shape
-            .and_then(|id| self.editor_state.shape_store.model(id).cloned())
-            .unwrap_or_else(|| ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0));
+        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0);
         model.track = track as u16;
         model.kind = ShapeKind::Custom;
         let (tick_lo, tick_hi) = tt.normalized_ticks();

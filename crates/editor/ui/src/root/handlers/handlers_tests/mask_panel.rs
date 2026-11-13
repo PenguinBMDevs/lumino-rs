@@ -1,7 +1,8 @@
-//! 遮罩参数面板（DRAW-010）：打开、pending 即时写入、已 Bake 草稿 + Apply
+//! 遮罩参数面板（DRAW-010）：打开、pending 即时写入、已 Bake 只读
+//!
+//! DEC-001：Bake 后形状对象只读，面板不再提供已 Bake 目标。
 
 use super::*;
-use lumino_core::shape::MaskParams;
 use lumino_message::MaskPanelAction;
 use lumino_ui_editor::MaskEditTarget;
 
@@ -54,7 +55,6 @@ fn test_pending_mask_panel_writes_through_immediately() {
         Some(MaskEditTarget::Pending { index }),
         "应锁定待确认形状"
     );
-    assert!(!root.mask_panel.dirty, "pending 没有草稿概念");
 
     root.update(Message::MaskPanel(MaskPanelAction::SetSize(6.0)));
     let params = root.editor.editor_state.shape_tool.shapes[index]
@@ -85,7 +85,7 @@ fn test_pending_mask_panel_writes_through_immediately() {
 }
 
 #[test]
-fn test_baked_mask_panel_needs_apply() {
+fn test_baked_shape_has_no_mask_panel_target() {
     let mut root = create_root();
     root.editor.editor_state.data.current_track = 1;
     // 已 Bake：把模型塞进 ShapeStore 并绑定到选中图形
@@ -114,31 +114,20 @@ fn test_baked_mask_panel_needs_apply() {
     root.editor.editor_state.shape_select.select_only(shape_id);
 
     root.open_mask_panel(lumino_ui_core::geom::Point::new(40.0, 50.0));
-    assert_eq!(
-        root.mask_panel.target,
-        Some(MaskEditTarget::Baked { model_id })
+    assert!(
+        !root.mask_panel.open,
+        "已 Bake 形状不得打开遮罩参数面板（DEC-001）"
     );
-
-    root.update(Message::MaskPanel(MaskPanelAction::SetSize(5.0)));
-    assert!(root.mask_panel.dirty, "已 Bake 改参数只标脏");
+    assert!(!root.toast.is_empty(), "应给出拒绝提示");
     assert!(
         root.editor
-            .mask_params_of(MaskEditTarget::Baked { model_id })
-            .is_none(),
-        "未 Apply 前不得写入模型"
+            .editor_state
+            .shape_store
+            .model(model_id)
+            .expect("模型仍应存在")
+            .ops
+            .iter()
+            .all(|op| !matches!(op, lumino_core::shape::ShapeOp::Mask(_))),
+        "拒绝后面板不得写入 Mask op"
     );
-
-    root.update(Message::MaskPanel(MaskPanelAction::Apply));
-    assert!(!root.mask_panel.dirty, "Apply 后草稿已清");
-    let params = root
-        .editor
-        .mask_params_of(MaskEditTarget::Baked { model_id })
-        .expect("Apply 后应写入 Mask op");
-    assert!((params.size_keys - 5.0).abs() < 1e-3);
-    assert_eq!(params.own, MaskParams::default().own);
-
-    // 实体化入口已接线：当前没有可见片段，应失败并保持面板
-    root.update(Message::MaskPanel(MaskPanelAction::ApplyAsShape));
-    assert!(root.mask_panel.open, "无可见片段时实体化应失败");
-    assert!(!root.toast.is_empty(), "应给出失败提示");
 }

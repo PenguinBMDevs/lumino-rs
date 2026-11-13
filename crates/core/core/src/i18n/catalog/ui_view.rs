@@ -13,7 +13,14 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "查看帮助" => Some("View help"),
         "知道了" => Some("Got it"),
         "区域着色" => Some("Paint areas"),
+        "区域着色已开启：点击形状内部上色，切工具退出" => {
+            Some("Area painting on: click inside the shape to paint; switch tools to exit")
+        }
+        "区域着色失败：请选中一个待确认闭合形状" => {
+            Some("Area painting failed: select a pending closed shape")
+        }
         "形状列表" => Some("Shape list"),
+        "形状列表（只读）" => Some("Shape list (read-only)"),
         "形状库目录" => Some("Shape library folder"),
         "尚未注入形状库目录" => Some("Shape library folder not injected"),
         "画板与工具将在 033B1 接入" => Some("Canvas and tools will arrive in 033B1"),

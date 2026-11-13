@@ -72,6 +72,8 @@ pub enum PianoRollContextMenuItem {
     MaskToggle,
     /// 打开遮罩参数面板（DRAW-010）
     MaskSettings,
+    /// 把遮罩可见片段实体化为新形状（DRAW-010；不改原形状）
+    MaskApply,
     /// 打开 ShapeStore 模型列表（DRAW-041B）
     ShapeList,
     /// 竖轴对称（DRAW-023）
@@ -116,6 +118,7 @@ impl PianoRollContextMenuItem {
             | Self::PaintAreas
             | Self::MaskToggle
             | Self::MaskSettings
+            | Self::MaskApply
             | Self::SymmetryVertical
             | Self::SymmetryHorizontal
             | Self::Straighten
@@ -150,23 +153,10 @@ pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContext
             PianoRollContextMenuItem::PasteShapeText,
         ],
         ContextMenuTarget::DrawnShape => &[
-            PianoRollContextMenuItem::LiveShape,
-            PianoRollContextMenuItem::SplitLiveShape,
-            PianoRollContextMenuItem::JoinShapes,
-            PianoRollContextMenuItem::SplitJoinedShape,
-            PianoRollContextMenuItem::MergeShapes,
-            PianoRollContextMenuItem::EditShape,
-            PianoRollContextMenuItem::PaintAreas,
-            PianoRollContextMenuItem::MaskToggle,
-            PianoRollContextMenuItem::MaskSettings,
-            PianoRollContextMenuItem::SymmetryVertical,
-            PianoRollContextMenuItem::SymmetryHorizontal,
-            PianoRollContextMenuItem::Straighten,
-            PianoRollContextMenuItem::StraightenOff,
-            PianoRollContextMenuItem::SliceCut,
-            PianoRollContextMenuItem::BetweenCreate,
-            PianoRollContextMenuItem::CopyAlong,
-            PianoRollContextMenuItem::VelocityUp,
+            // DEC-001：Bake 后形状对象只读。只保留「只读列表 / 实体化遮罩 /
+            // 分享文本 / 删除」；其余会改参数并重生成音符的条目不再提供。
+            PianoRollContextMenuItem::ShapeList,
+            PianoRollContextMenuItem::MaskApply,
             PianoRollContextMenuItem::CopyShapeText,
             PianoRollContextMenuItem::PasteShapeText,
             PianoRollContextMenuItem::DeleteDrawnShape,
@@ -178,8 +168,12 @@ pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContext
             PianoRollContextMenuItem::JoinShapes,
             PianoRollContextMenuItem::MergeShapes,
             PianoRollContextMenuItem::EditShape,
+            // DEC-001：区域着色 / 对称只对 pending 开放。
+            PianoRollContextMenuItem::PaintAreas,
             PianoRollContextMenuItem::MaskToggle,
             PianoRollContextMenuItem::MaskSettings,
+            PianoRollContextMenuItem::SymmetryVertical,
+            PianoRollContextMenuItem::SymmetryHorizontal,
             PianoRollContextMenuItem::SliceCut,
             PianoRollContextMenuItem::MouldShapes,
             PianoRollContextMenuItem::RoundCorners,
@@ -213,6 +207,7 @@ pub fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::PaintAreas => tr!("区域着色"),
         PianoRollContextMenuItem::MaskToggle => tr!("切换遮罩"),
         PianoRollContextMenuItem::MaskSettings => tr!("遮罩设置…"),
+        PianoRollContextMenuItem::MaskApply => tr!("实体化遮罩"),
         PianoRollContextMenuItem::ShapeList => tr!("形状列表"),
         PianoRollContextMenuItem::SymmetryVertical => tr!("竖轴对称"),
         PianoRollContextMenuItem::SymmetryHorizontal => tr!("横轴对称"),

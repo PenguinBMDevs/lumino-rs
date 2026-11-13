@@ -193,7 +193,11 @@ impl Editor {
     }
 
     /// 修改形状参数：按值清理旧音符 → 按新参数再生成 → 记录分组（一次撤销单元）
-    pub fn edit_shape(&mut self, id: u64, new_model: ShapeModel) -> bool {
+    ///
+    /// DEC-001：Bake 后形状对象只读，这是**测试专用**的再生成原语；
+    /// DEBT-15 已关闭全部用户入口，生产代码不得再调用。
+    #[cfg(test)]
+    pub(crate) fn edit_shape(&mut self, id: u64, new_model: ShapeModel) -> bool {
         if self.editor_state.shape_store.model(id).is_none() {
             return false;
         }
