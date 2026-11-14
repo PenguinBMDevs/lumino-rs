@@ -249,6 +249,13 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
 
+        // 点击优先：本批窗口事件已全部处理完，先把点击 / 触摸产生的帧补上，
+        // 再跑重连、进度、对话框等后台工作。渲染绝不插到两次点击之间，
+        // 也不会让 `WM_PAINT` 的低优先级拖住点击反馈。
+        if let Some(this) = self.inner.as_mut() {
+            this.window_state.window.flush_pending_redraw();
+        }
+
         // REND-019 PR-C：重连流水线逐帧推进（每帧最多一步，§1.4 S1），
         // 并自唤醒下一帧保证步进不依赖外部事件
         if self.reconnect.is_some() {

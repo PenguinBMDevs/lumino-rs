@@ -9,14 +9,16 @@ use super::{WindowManager, geometry};
 impl WindowManager {
     /// 处理窗口事件
     pub fn handle_event(&mut self, event: WindowEvent, storage: &mut crate::storage::Storage) {
-        // 鼠标按键对延迟最敏感：喂完输入立刻渲染一帧，不等低优先级的
-        // `WM_PAINT`（它只在消息队列空闲时生成，鼠标移动 / 定时器 / 协作轮询
-        // 会把点击反馈推迟到下一轮空闲）。随后排队的 `RedrawRequested`
-        // 仍会正常补帧。
-        let flush_after_input = matches!(event, WindowEvent::MouseInput { .. });
+        // 点击 / 触摸优先：输入只置脏，不在事件回调里同步抢帧。
+        // 一帧渲染绝不插到两次点击之间——`about_to_wait` 在事件队列排空后
+        // 统一补帧，避免「狂点半天才响应」的帧饥饿回归。
+        let pointer_action = matches!(
+            event,
+            WindowEvent::MouseInput { .. } | WindowEvent::Touch(_)
+        );
         match event {
             WindowEvent::RedrawRequested => {
-                self.handle_redraw();
+                self.redraw_pending = true;
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.ui.cursor_moved(position);
@@ -31,6 +33,7 @@ impl WindowManager {
             }
             WindowEvent::Resized(size) => {
                 self.handle_resize(size, storage);
+                self.redraw_pending = true;
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 // REF-001 G-1：DPI 变化不一定伴随 `Resized`（物理尺寸可能不变）。
@@ -39,7 +42,7 @@ impl WindowManager {
                 // ——出现"光标对、控件错"的半对状态。
                 let size = self.window.inner_size();
                 self.handle_resize(size, storage);
-                self.window.request_redraw();
+                self.redraw_pending = true;
             }
             WindowEvent::Moved(pos) => {
                 // 更新存储的位置信息。
@@ -59,9 +62,29 @@ impl WindowManager {
 
         self.ui
             .handle_events(event, self.modifiers, &mut self.egui_input);
-        if flush_after_input {
-            self.handle_redraw();
+        if pointer_action {
+            self.redraw_pending = true;
         }
+    }
+
+    /// 事件队列排空后统一渲染一帧（点击优先）。
+    ///
+    /// 点击 / 触摸只置脏，不在 `window_event` 里同步抢帧；`about_to_wait`
+    /// 在所有排队事件处理完后调用本函数，保证一帧渲染不会插到两次点击之间。
+    pub fn flush_pending_redraw(&mut self) {
+        if !self.redraw_pending {
+            return;
+        }
+        self.redraw_pending = false;
+        // 点击优先回归诊断：`LUMINO_CLICK_DIAG=1` 时每帧打点，
+        // 用于确认空闲期没有「事件 → 补帧 → 再补帧」的自旋。
+        if std::env::var_os("LUMINO_CLICK_DIAG").is_some() {
+            static FRAMES: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
+            let frame = FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            log::debug!("[FRAME] flush #{frame}");
+        }
+        self.handle_redraw();
     }
 
     /// 处理重绘

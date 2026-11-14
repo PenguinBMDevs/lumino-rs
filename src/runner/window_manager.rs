@@ -22,6 +22,8 @@ pub struct WindowManager {
     modifiers: winit::keyboard::ModifiersState,
     /// 是否需要调整大小
     resized: bool,
+    /// 是否需要渲染一帧（点击优先：事件队列排空后统一补帧）
+    redraw_pending: bool,
     /// 是否请求关闭窗口
     close_requested: bool,
     /// 本地保存进行中标志（与 RunnerInner 共享：保存期间禁止关闭）
@@ -105,6 +107,7 @@ impl WindowManager {
             egui_input: lumino_ui::host::OverlayInput::default(),
             modifiers: winit::keyboard::ModifiersState::default(),
             resized: false,
+            redraw_pending: false,
             close_requested: false,
             saving,
             cloud_saving,
