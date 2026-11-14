@@ -61,16 +61,18 @@ impl DialogWindow {
             self.window.set_title(title);
         }
 
+        // 窗口按 trait 对象注入：`Host` 不再依赖具体 winit 窗口类型。
+        let host_window = lumino_ui::host::host_window(self.window.clone());
         let mut ui = match self.dialog_type {
             DialogType::Settings => lumino_ui::Host::new_settings_dialog(
-                Arc::clone(&self.window),
+                host_window.clone(),
                 physical_size.width,
                 physical_size.height,
                 ui_config,
                 gfx,
             ),
             _ => lumino_ui::Host::new_dialog(
-                Arc::clone(&self.window),
+                host_window,
                 physical_size.width,
                 physical_size.height,
                 ui_config,

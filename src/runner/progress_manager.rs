@@ -284,7 +284,7 @@ impl ProgressManager {
         };
 
         let ui = lumino_ui::Host::new(
-            Arc::clone(&window),
+            lumino_ui::host::host_window(window.clone()),
             physical_size.width,
             physical_size.height,
             ui_config,

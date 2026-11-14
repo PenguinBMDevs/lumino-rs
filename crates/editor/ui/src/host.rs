@@ -37,7 +37,18 @@ mod waterfall;
 mod window_ctx;
 
 use render_ctx::RenderContext;
+pub use window_ctx::HostWindow;
 use window_ctx::WindowContext;
+
+/// 具体窗口 → `Host` 的窗口抽象。
+///
+/// `Arc::clone` 是泛型调用，返回值不会在函数参数处自动 unsize；统一走这个
+/// 辅助函数，调用方无需写显式类型标注。
+pub fn host_window(
+    window: std::sync::Arc<winit::window::Window>,
+) -> std::sync::Arc<dyn HostWindow> {
+    window
+}
 
 pub use cache::RenderCache;
 pub use render::egui_overlay::OverlayInput;

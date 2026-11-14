@@ -75,7 +75,7 @@ impl WindowManager {
         lumino_note_core::font_scanner::prewarm_font_cache();
 
         let mut ui = lumino_ui::Host::new(
-            Arc::clone(&window),
+            lumino_ui::host::host_window(window.clone()),
             physical_size.width,
             physical_size.height,
             ui_config,

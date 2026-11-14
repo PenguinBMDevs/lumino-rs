@@ -85,7 +85,7 @@ impl DeviceWarningWindow {
         .map_err(|e| format!("初始化警告窗图形上下文失败: {e}"))?;
 
         let ui = lumino_ui::Host::new_device_warning(
-            Arc::clone(&window),
+            lumino_ui::host::host_window(window.clone()),
             size.width,
             size.height,
             ui_config,
