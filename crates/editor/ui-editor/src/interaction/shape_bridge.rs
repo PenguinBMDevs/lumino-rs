@@ -3,8 +3,9 @@
 //! UI 层原有 `DrawnShapeSource` 负责渲染/命中；019–022 的算法吃 `ShapeModel`。
 //! 这里只做最小桥接：几何转换 + 保留原音符，不重新生成。
 
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle};
+use lumino_core::shape::{ShapeAnchor, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeStyle};
 use lumino_editor_state::shape_ops::copy_along_copies_of_points;
+use lumino_editor_state::shape_ops::symmetric_shape;
 use lumino_editor_state::shape_tool::shape_outline_path;
 use lumino_editor_state::{DrawnShape, DrawnShapeSource, ShapeKind as UiShapeKind, ShapeSpec};
 
@@ -95,10 +96,12 @@ pub(crate) fn polylines_of_model(model: &ShapeModel, ppq: f32) -> Vec<Vec<(f32, 
         if !strokes.is_empty() {
             strokes
         } else {
-            geometry_polylines(model)
+            geometry_polylines(&model.geometry.anchors)
         }
     } else {
-        geometry_polylines(model)
+        // 023 半边对称在生成阶段展开锚点；预览/命中必须用同一份展开结果，
+        // 否则轮廓只画半边，看起来像「对称被截断」。
+        geometry_polylines(&render_anchors(model))
     };
     let Some(ShapeOp::CopyAlong(params)) = model
         .ops
@@ -118,18 +121,23 @@ pub(crate) fn polylines_of_model(model: &ShapeModel, ppq: f32) -> Vec<Vec<(f32, 
     out
 }
 
-fn geometry_polylines(model: &ShapeModel) -> Vec<Vec<(f32, f32)>> {
-    if model.geometry.anchors.is_empty() {
+/// 渲染/命中用锚点：应用生成阶段的对称展开（023）。
+fn render_anchors(model: &ShapeModel) -> Vec<ShapeAnchor> {
+    if let Some(params) = model.ops.iter().find_map(|op| match op {
+        ShapeOp::Symmetry(params) => Some(params),
+        _ => None,
+    }) && let Some(expanded) = symmetric_shape(model, params)
+    {
+        return expanded;
+    }
+    model.geometry.anchors.clone()
+}
+
+fn geometry_polylines(anchors: &[ShapeAnchor]) -> Vec<Vec<(f32, f32)>> {
+    if anchors.is_empty() {
         Vec::new()
     } else {
-        vec![
-            model
-                .geometry
-                .anchors
-                .iter()
-                .map(|anchor| anchor.pos)
-                .collect(),
-        ]
+        vec![anchors.iter().map(|anchor| anchor.pos).collect()]
     }
 }
 

@@ -88,25 +88,27 @@ impl Editor {
         else {
             return Err(SymReject::NoSelection);
         };
+        // DRAW-023 的输入是**半边曲线**：最后一个锚点就是对称轴上的接缝。
+        // 轴必须过该点；取 bbox 中心会把接缝投影到中心，整条曲线会错位。
+        let seam = model.geometry.anchors.last().map(|anchor| anchor.pos);
+        let axis = if vertical {
+            SymAxis::Vertical {
+                x: seam
+                    .map(|(tick, _)| tick)
+                    .or_else(|| model.geometry.bounds().map(|b| (b.0 + b.2) / 2.0))
+                    .unwrap_or(0.0),
+            }
+        } else {
+            SymAxis::Horizontal {
+                y: seam
+                    .map(|(_, key)| key)
+                    .or_else(|| model.geometry.bounds().map(|b| (b.1 + b.3) / 2.0))
+                    .unwrap_or(0.0),
+            }
+        };
         let params = SymParams {
             mode: Sym::Mirror,
-            axis: if vertical {
-                SymAxis::Vertical {
-                    x: model
-                        .geometry
-                        .bounds()
-                        .map(|b| (b.0 + b.2) / 2.0)
-                        .unwrap_or(0.0),
-                }
-            } else {
-                SymAxis::Horizontal {
-                    y: model
-                        .geometry
-                        .bounds()
-                        .map(|b| (b.1 + b.3) / 2.0)
-                        .unwrap_or(0.0),
-                }
-            },
+            axis,
             source: 0,
         };
         let already = model

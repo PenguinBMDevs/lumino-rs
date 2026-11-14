@@ -99,6 +99,138 @@ fn test_pending_symmetry_rejects_non_curve() {
 }
 
 #[test]
+fn test_pending_symmetry_preview_outline_covers_mirrored_half() {
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((40.0, 68.0)),
+        BezierAnchor::new((65.0, 75.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.toggle_symmetry(false).is_ok(), "横轴对称应成功");
+
+    let composed = &editor.editor_state.pending_composed[0];
+    let model = &composed.results[0].model;
+    let ppq = f32::from(editor.editor_state.view.ppq);
+    let poly_max_key = crate::interaction::shape_bridge::polylines_of_model(model, ppq)
+        .into_iter()
+        .flatten()
+        .map(|(_, key)| key)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let note_max_key = composed.results[0]
+        .notes
+        .iter()
+        .map(|note| f32::from(note.key))
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    assert!(
+        poly_max_key >= 90.0 - 1e-3,
+        "预览轮廓必须覆盖镜像后的上半（max_key 应到 90），实际 {poly_max_key}"
+    );
+    assert!(
+        note_max_key >= 90.0 - 1e-3,
+        "预览音符必须覆盖镜像后的上半（max_key 应到 90），实际 {note_max_key}"
+    );
+}
+
+#[test]
+fn test_pending_symmetry_axis_passes_through_seam_anchor() {
+    use lumino_core::shape::SymAxis;
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    // 半边曲线：最后一个锚点 (100, 70) 就是竖轴对称轴上的接缝。
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((50.0, 64.0)),
+        BezierAnchor::new((100.0, 70.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.toggle_symmetry(true).is_ok(), "半边曲线应能竖轴对称");
+
+    let model = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .clone();
+    let params = model
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            ShapeOp::Symmetry(params) => Some(*params),
+            _ => None,
+        })
+        .expect("应挂上对称参数");
+    assert_eq!(
+        params.axis,
+        SymAxis::Vertical { x: 100.0 },
+        "竖轴对称轴必须过最后一个锚点（接缝），不能取 bbox 中心"
+    );
+    let expanded =
+        lumino_editor_state::shape_ops::symmetric_shape(&model, &params).expect("应能展开");
+    assert_eq!(expanded.len(), 5);
+    assert!((expanded[4].pos.0 - 200.0).abs() < 1e-3, "应镜像到 x=200");
+    assert!((expanded[4].pos.1 - 60.0).abs() < 1e-3, "起点沿轴镜像");
+}
+
+#[test]
+fn test_pending_horizontal_symmetry_axis_passes_through_seam_anchor() {
+    use lumino_core::shape::SymAxis;
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.set_tool(lumino_message::Tool::ShapeSelect);
+    // 半边曲线：最后一个锚点 (65, 75) 就是横轴对称轴上的接缝。
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((40.0, 68.0)),
+        BezierAnchor::new((65.0, 75.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(
+        editor.toggle_symmetry(false).is_ok(),
+        "半边曲线应能横轴对称"
+    );
+
+    let model = editor.editor_state.pending_composed[0].results[0]
+        .model
+        .clone();
+    let params = model
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            ShapeOp::Symmetry(params) => Some(*params),
+            _ => None,
+        })
+        .expect("应挂上对称参数");
+    assert_eq!(
+        params.axis,
+        SymAxis::Horizontal { y: 75.0 },
+        "横轴对称轴必须过最后一个锚点（接缝）"
+    );
+}
+
+#[test]
 fn test_pending_symmetry_changes_preview_notes_and_undoes_once() {
     use lumino_editor_state::BezierAnchor;
 

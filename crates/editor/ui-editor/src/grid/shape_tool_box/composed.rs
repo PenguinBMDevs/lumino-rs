@@ -2,7 +2,7 @@
 //!
 //! 从 `shape_tool_box.rs` 拆出，避免主文件超过 400 行。
 
-use lumino_editor_state::{ComposedKind, PendingComposed, ShapeNote};
+use lumino_editor_state::{PendingComposed, ShapeNote};
 
 /// 组合结果在文档坐标下的包围盒。
 ///
@@ -11,11 +11,9 @@ use lumino_editor_state::{ComposedKind, PendingComposed, ShapeNote};
 pub(super) fn composed_bounds(composed: &PendingComposed) -> Option<(f32, f32, f32, f32)> {
     let mut acc: Option<(f32, f32, f32, f32)> = None;
     for part in &composed.results {
-        let bounds = if composed.kind == ComposedKind::CopyAlong {
-            notes_bounds(&part.notes).or_else(|| part.model.geometry.bounds())
-        } else {
-            part.model.geometry.bounds()
-        };
+        // 023 半边对称 / 027 副本都在生成阶段展开，不在 `model.geometry` 里；
+        // 预览按钮必须框住「最终会生成的音符」，否则只框住半边。
+        let bounds = notes_bounds(&part.notes).or_else(|| part.model.geometry.bounds());
         let Some(b) = bounds else {
             continue;
         };
