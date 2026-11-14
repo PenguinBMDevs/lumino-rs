@@ -203,8 +203,14 @@ fn escape_closes_track_menu() {
     );
 }
 
+/// 菜单本体必须被 egui 的**图层**独占（不再是手工占用矩形）。
+///
+/// Step 7 把左侧栏菜单的全局占用登记删掉了——菜单走独立 `Area`，
+/// `Host::egui_layer_owns_pos` 经 `ctx.layer_id_at` 已能独占命中。
+/// 这条断言比"手工矩形里有一项"更强：它验证的是真实命中栈，
+/// 一旦菜单退回 root 绘制（悬停/点击穿透），这里会先红。
 #[test]
-fn menu_rect_is_blocked_from_legacy() {
+fn menu_rect_is_owned_by_foreground_layer() {
     let (h, _) = harness(SidebarModel {
         context_menu: Some(SidebarTrackMenuModel {
             track_id: 3,
@@ -212,12 +218,20 @@ fn menu_rect_is_blocked_from_legacy() {
         }),
         ..base()
     });
-    let blocked = menu::take_blocked(&h.ctx);
     let menu_top = layout::TRACK_LIST_HEADER_H + layout::TRACK_ROW_H + 8.0;
+    let probe = Pos2::new(menu_left() + 28.0, menu_top + 20.0);
+    let layer = h.ctx.layer_id_at(probe).expect("菜单图层应存在");
+    assert_ne!(
+        layer.order,
+        egui::Order::Background,
+        "菜单本体必须由独立图层独占命中（否则同一次点击会穿透到画布）"
+    );
+    // 注意：探针同时落在下层音轨行内，而音轨行由 root 绘制、仍需登记占用
+    //（那是管用的一份）。这里只断言**菜单本体**（宽 56）不再登记。
     assert!(
-        blocked
+        !menu::take_blocked(&h.ctx)
             .iter()
-            .any(|r| r.contains(Pos2::new(menu_left() + 28.0, menu_top + 20.0))),
-        "菜单本体必须进入占用区（否则 旧版 的同位菜单会再处理一次）"
+            .any(|r| r.contains(probe) && (r.width() - 56.0).abs() < 1.0),
+        "Step 7 后菜单不再登记全局占用表（命中已归图层）"
     );
 }

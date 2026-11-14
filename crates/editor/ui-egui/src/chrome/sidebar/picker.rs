@@ -79,15 +79,11 @@ fn cell(origin: egui::Pos2, index: usize, item: f32) -> Rect {
     )
 }
 
-/// 整块面板计入占用（旧版 的同位面板不再处理同一次点击）+ 背景关闭判定。
-fn blocked_and_backdrop(
-    ui: &egui::Ui,
-    content: Rect,
-    pos: egui::Pos2,
-    size: Vec2,
-    id: &str,
-) -> bool {
-    crate::chrome::menu::extend_blocked(ui.ctx(), [Rect::from_min_size(pos, size)]);
+/// 面板外点击关闭判定。
+///
+/// Step 7：面板本体走独立 `Area`，命中由 `layer_id_at` 独占，不再登记到
+/// 全局占用表（那是会漏的第二份真相源）。
+fn blocked_and_backdrop(ui: &egui::Ui, content: Rect, id: &str) -> bool {
     ui.interact(content, egui::Id::unique((id, "backdrop")), Sense::click())
         .clicked()
 }
@@ -129,7 +125,7 @@ pub(super) fn color_picker(
     let size = panel_size(count, SWATCH);
     let pos = panel_pos(content, anchor, size);
     let id = "lumino.sidebar.color-picker";
-    let closed = blocked_and_backdrop(ui, content, pos, size, id);
+    let closed = blocked_and_backdrop(ui, content, id);
 
     let clicked = in_area(ui, id, pos, size, |ui, rect| {
         let mut clicked = None;
@@ -196,7 +192,7 @@ pub(super) fn numeric_picker(
         SidebarNumericPickerKind::Port => "lumino.sidebar.port-picker",
         SidebarNumericPickerKind::Channel => "lumino.sidebar.channel-picker",
     };
-    let closed = blocked_and_backdrop(ui, content, pos, size, id);
+    let closed = blocked_and_backdrop(ui, content, id);
 
     let clicked = in_area(ui, id, pos, size, |ui, rect| {
         let mut clicked = None;
