@@ -9,7 +9,7 @@ use lumino_ui::state::root_state::DialogType;
 use crate::runner::inner::{InitError, Runner, TestModeState};
 use crate::runner::lifecycle::device_gate::DeviceGate;
 
-impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner {
+impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
     fn user_event(
         &mut self,
         _event_loop: &winit::event_loop::ActiveEventLoop,

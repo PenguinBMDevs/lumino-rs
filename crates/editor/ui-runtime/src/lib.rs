@@ -7,5 +7,7 @@
 //! 目前为探针程序：`cargo run -p lumino-ui-runtime --bin egui-runtime-probe`。
 
 mod app;
+mod runtime;
 
 pub use app::{NativeApp, run};
+pub use runtime::{RuntimeApp, run_with_event_loop};

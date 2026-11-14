@@ -245,6 +245,7 @@ lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-diagnostics = { workspace = true }
 lumino-ui = { workspace = true }
+lumino-ui-runtime = { path = "crates/editor/ui-runtime" }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-project = { workspace = true }

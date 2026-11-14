@@ -4018,3 +4018,26 @@ callback / 多视口 / 截图能力。
   `lumino-ui-runtime`（`RuntimeApp` trait 适配 `Runner`），再把窗口 / surface
   创建移入运行时；Step 3 让 `Host` 无窗口化。
 
+**Task 4.39（第一百四十五步）：Plan B 第二步——事件循环所有权移入运行时**
+
+- `lumino-ui-runtime` 新增 `runtime.rs`：
+  - `RuntimeApp<E>`：应用层回调（`resumed` / `window_event` / `user_event` /
+    `about_to_wait` / `suspended` / `exiting`），与 winit `ApplicationHandler`
+    同构；
+  - `RuntimeHost<A>`：把 `RuntimeApp` 适配成 winit `ApplicationHandler`；
+  - `run_with_event_loop(event_loop, build)`：运行时持有并驱动 `run_app`，
+    `build` 在循环开始前注册 `EventLoopProxy`；`run` 提供桌面默认入口。
+- 生产接线：
+  - 根 crate 新增 `lumino-ui-runtime` 依赖；
+  - `Runner` 的 `ApplicationHandler` 实现改为 `RuntimeApp<UserEvent>`；
+  - `src/lib.rs::run` 不再直接 `event_loop.run_app`，改为
+    `lumino_ui_runtime::run_with_event_loop(event_loop, |event_loop| { ...; runner })`，
+    device-lost / UI waker / LGS proxy 在 build 闭包内注册。
+- 探针 `NativeApp` 同步改为 `RuntimeApp`，走 `runtime::run`。
+- **验证**：
+  - `lumino-ui-runtime` 1/1；`lumino-rs` / `lumino-ui-runtime`
+    `clippy -D warnings`、fmt 通过；
+  - `fast-release` 空闲 3s CPU **16ms**；20/20 `ToolSelected`。
+- **下一步（Plan B Step 3）**：把窗口 / surface 创建移入运行时
+  （`NativeWindow`），`WindowManager` 接受外部窗口；随后 `Host` 无窗口化。
+

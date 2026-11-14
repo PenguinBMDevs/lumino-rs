@@ -4495,6 +4495,7 @@ dependencies = [
  "lumino-platform",
  "lumino-project",
  "lumino-ui",
+ "lumino-ui-runtime",
  "muda",
  "png 0.17.16",
  "puffin",
