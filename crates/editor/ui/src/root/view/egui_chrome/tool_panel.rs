@@ -109,6 +109,7 @@ fn panel_model(
             .clamp(BrushConfig::MIN_THICKNESS, BrushConfig::MAX_THICKNESS);
         return Some(ToolPanelSettingsPanel::Brush(BrushPanelModel {
             thickness,
+            min: BrushConfig::MIN_THICKNESS,
             max: BrushConfig::MAX_THICKNESS,
             title: t.tool_thickness.to_owned(),
             value: format!(

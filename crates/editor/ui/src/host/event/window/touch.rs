@@ -231,7 +231,11 @@ impl Host {
         } else {
             winit::event::ElementState::Released
         };
-        self.handle_mouse_input_event(state, winit::event::MouseButton::Left);
+        self.handle_mouse_input_event(
+            state,
+            winit::event::MouseButton::Left,
+            !self.egui_consumes_pointer(),
+        );
     }
 
     /// 双指手势：缩放（距离比）+ 平移（中点位移）

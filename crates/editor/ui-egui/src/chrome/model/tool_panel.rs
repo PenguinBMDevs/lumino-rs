@@ -103,6 +103,8 @@ pub enum ToolPanelPanelOwner {
 pub struct BrushPanelModel {
     /// 当前全局粗细。
     pub thickness: u8,
+    /// 粗细下限。
+    pub min: u8,
     /// 粗细上限。
     pub max: u8,
     /// 标题（「粗细」）。

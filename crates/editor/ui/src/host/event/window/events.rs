@@ -72,7 +72,7 @@ impl Host {
                 }
             }
             MouseInput { state, button, .. } => {
-                self.handle_mouse_input_event(*state, *button);
+                self.handle_mouse_input_event(*state, *button, !consumed_by_egui);
             }
             MouseWheel { delta, .. } => {
                 use winit::event::MouseScrollDelta;
@@ -82,7 +82,9 @@ impl Host {
                         (position.x as f32, position.y as f32, true)
                     }
                 };
-                self.dispatch_canvas_wheel(dx, dy, precise);
+                if !consumed_by_egui {
+                    self.dispatch_canvas_wheel(dx, dy, precise);
+                }
             }
             ModifiersChanged(new_modifiers) => {
                 self.handle_modifiers_changed_event(new_modifiers);

@@ -332,8 +332,16 @@ pub mod font {
 }
 
 /// 应用主题到 egui Context（使用当前色板）。
+///
+/// 每帧调用是常态，但只有色板真的变化时才写 style / visuals：
+/// `set_global_style` 每次都会替换 `Arc<Style>`，逐帧写会让 egui 认为样式
+/// 一直在变，控件悬停动画与文本布局反复失效（真机表现为按钮文字轻微抽搐）。
 pub fn apply(ctx: &egui::Context) {
     let palette = palette();
+    let marker = egui::Id::unique("lumino.theme.applied");
+    if ctx.data(|data| data.get_temp::<Palette>(marker)) == Some(palette) {
+        return;
+    }
     ctx.set_theme(if palette.is_dark {
         egui::Theme::Dark
     } else {
@@ -341,6 +349,7 @@ pub fn apply(ctx: &egui::Context) {
     });
     ctx.set_global_style(style());
     ctx.set_visuals(visuals());
+    ctx.data_mut(|data| data.insert_temp(marker, palette));
 }
 
 /// 设置色板并应用到 egui Context。

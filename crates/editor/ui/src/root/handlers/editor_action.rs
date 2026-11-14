@@ -280,7 +280,14 @@ impl Root {
                         }
                     }
                     PianoRollContextMenuItem::ShapeList => {
-                        let _ = self.editor.open_shape_list();
+                        // 没有可列出的已 Bake 形状时给出明确反馈：
+                        // 旧行为是静默失败，表现为「形状列表又没了」。
+                        if !self.editor.open_shape_list() {
+                            self.toast.push(
+                                crate::toast::ToastLevel::Warning,
+                                tr!("当前音轨没有可列出的已 Bake 形状"),
+                            );
+                        }
                     }
                     PianoRollContextMenuItem::SymmetryVertical => {
                         if let Err(reason) = self.editor.toggle_symmetry(true) {

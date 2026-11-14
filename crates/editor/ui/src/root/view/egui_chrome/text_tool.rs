@@ -10,6 +10,22 @@ use crate::Message;
 use crate::message::EditorAction;
 use crate::root::Root;
 
+/// 预览纹理缓存签名。
+///
+/// 任何会改变栅格结果的输入都必须计入：文字 / 模式 / 卷帘方向 / 排版路径 /
+/// 全部文字参数 / 字体。漏掉参数会让 egui 复用旧纹理——表现为「调参数预览不变」。
+fn preview_signature(
+    tt: &lumino_editor_state::text_tool::TextToolState,
+    vertical: bool,
+    width: u32,
+    height: u32,
+) -> String {
+    format!(
+        "{width}x{height}:{}:{:?}:{vertical}:{:?}:{:?}:{}",
+        tt.text, tt.mode, tt.layout_mode, tt.params, tt.font_family
+    )
+}
+
 impl Root {
     /// 本帧文字工具覆盖层；未激活 / 不可用时返回 `None`。
     pub fn text_tool_model(&self) -> Option<TextToolModel> {
@@ -66,10 +82,7 @@ impl Root {
                 width: w as usize,
                 height: h as usize,
                 rgba: Arc::new(rgba),
-                sig: format!(
-                    "{w}x{h}:{}:{:?}:{}",
-                    tt.text, tt.mode, editor.editor_state.is_vertical_roll
-                ),
+                sig: preview_signature(tt, editor.editor_state.is_vertical_roll, w, h),
             });
 
         let model = TextToolModel {
@@ -98,5 +111,25 @@ impl Root {
             TextToolAction::Cancel => EditorAction::TextToolCancel,
             TextToolAction::ModeToggle => EditorAction::TextToolModeToggle,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_core::TextLayoutMode;
+
+    #[test]
+    fn test_preview_signature_tracks_params() {
+        let mut state = lumino_editor_state::text_tool::TextToolState::new();
+        let base = preview_signature(&state, false, 10, 20);
+
+        state.params.size += 1.0;
+        let changed = preview_signature(&state, false, 10, 20);
+        assert_ne!(base, changed, "字号变化必须让预览重新栅格化");
+
+        state.layout_mode = TextLayoutMode::Parametric;
+        let changed_mode = preview_signature(&state, false, 10, 20);
+        assert_ne!(changed, changed_mode, "排版路径变化必须重建预览");
     }
 }

@@ -87,6 +87,29 @@ fn test_piano_roll_context_menu_item_click_closes_and_dispatches() {
     assert_eq!(root.editor.editor_state.interaction.selected_notes.len(), 1);
 }
 
+#[test]
+fn test_context_menu_shape_list_opens_readonly_panel() {
+    use lumino_core::shape::{ShapeKind, ShapeModel};
+
+    let mut root = create_root();
+    root.editor.editor_state.data.current_track = 1;
+    root.editor.editor_state.canvas.size_x = 1000.0;
+    root.editor.editor_state.canvas.size_y = 600.0;
+    let model = ShapeModel::new(0, 1, ShapeKind::Polyline, 1.0);
+    root.editor.editor_state.shape_store.insert(model, 0);
+
+    root.update(Message::PianoRollContextMenu(
+        lumino_message::PianoRollContextMenuAction::ItemClicked(
+            lumino_message::PianoRollContextMenuItem::ShapeList,
+        ),
+    ));
+
+    assert!(
+        !root.shape_list_model().is_empty(),
+        "点击「形状列表」后应打开只读列表（有模型行）"
+    );
+}
+
 /// 图形目标右键菜单：Open 记录目标（决定渲染条目集），删除项走 DeletePressed 链路
 #[test]
 fn test_piano_roll_context_menu_drawn_shape_target() {

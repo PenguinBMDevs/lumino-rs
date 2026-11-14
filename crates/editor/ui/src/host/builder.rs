@@ -74,6 +74,8 @@ impl Host {
             root,
             egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
             egui_blocked: Vec::new(),
+            egui_wants_pointer: false,
+            egui_pointer_over: false,
             canvas_input: lumino_ui_editor::grid::GridInteractionState::default(),
             egui_editor_texture: None,
             last_frame_time: Instant::now(),

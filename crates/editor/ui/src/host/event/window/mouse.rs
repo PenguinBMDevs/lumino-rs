@@ -9,6 +9,7 @@ impl Host {
         &mut self,
         state: winit::event::ElementState,
         button: winit::event::MouseButton,
+        dispatch_canvas: bool,
     ) {
         use winit::event::ElementState;
 
@@ -19,7 +20,13 @@ impl Host {
 
         // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：按下 / 释放直接进编辑器，
         // 不再依赖 旧版 `Grid` program。
-        self.dispatch_canvas_button(state == ElementState::Pressed, button);
+        //
+        // `dispatch_canvas == false`：本次点击已被 egui 控件（菜单 / 工具栏 /
+        // 对话框 / 下拉框）接管，不能再落到画布——否则「点工具按钮」会同时在
+        // 按钮位置画出一个锚点/图形，表现为切换工具时有个节点闪一下。
+        if dispatch_canvas {
+            self.dispatch_canvas_button(state == ElementState::Pressed, button);
+        }
 
         // 全局监听鼠标释放事件，结束工具栏拖拽状态
         if button == winit::event::MouseButton::Left

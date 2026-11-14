@@ -34,7 +34,11 @@ impl Root {
         for shape in &tool.shapes {
             shapes.push(preview_shape(editor, shape.spec(), shape.filled, offset));
         }
-        if let Some((spec, filled)) = tool.preview_rect(editor.shift_pressed()) {
+        // 拖拽预览只属于形状工具本身：切到鼠标工具后即使拖拽态晚一帧清空，
+        // 也不能在画布上多画一个「角点」（表现为切换工具时闪一下）。
+        if editor.current_tool() == lumino_message::Tool::Shape
+            && let Some((spec, filled)) = tool.preview_rect(editor.shift_pressed())
+        {
             shapes.push(preview_shape(editor, spec, filled, offset));
         }
 

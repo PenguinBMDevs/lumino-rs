@@ -4,7 +4,7 @@
 //! - 面板宽 248、圆角 8、1px `background.strong` 边框、底色 = 工具栏底色 ×0.9；
 //! - 内边距 12（形状 8、填充 10）、行间距 8（文字 6）。
 
-use egui::{Align, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Vec2};
+use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 
 use super::super::toolbar_popup::{self, ToolbarAction};
 use super::super::{
@@ -31,7 +31,13 @@ const ROW: f32 = 18.0;
 const BTN_H: f32 = 26.0;
 const INPUT_H: f32 = 26.0;
 const HINT_H: f32 = 14.0;
+/// 「粗细」面板说明：长文案需要换行（3 行）。
+const THICKNESS_HINT_H: f32 = 44.0;
 const SLIDER_H: f32 = 20.0;
+/// 粗细滑轨宽度 / 轨道高度 / 数值输入宽度。
+const SLIDER_W: f32 = 150.0;
+const RAIL_H: f32 = 6.0;
+const INPUT_W: f32 = 52.0;
 
 /// 形状面板按钮尺寸（生产 `BUTTON_SIZE` / `ICON_SIZE`）。
 const SHAPE_BTN: f32 = 40.0;
@@ -50,6 +56,8 @@ pub(super) fn panel_height(panel: &ToolPanelSettingsPanel) -> f32 {
         ToolPanelSettingsPanel::Brush(model) => {
             PAD * 2.0
                 + ROW
+                + 8.0
+                + SLIDER_H
                 + if model.show_behavior {
                     8.0 + BTN_H
                 } else {
@@ -67,7 +75,9 @@ pub(super) fn panel_height(panel: &ToolPanelSettingsPanel) -> f32 {
                 + BTN_H
         }
         ToolPanelSettingsPanel::TextParams(_) => text_panel::height(),
-        ToolPanelSettingsPanel::Thickness(_) => PAD * 2.0 + ROW + 8.0 + SLIDER_H + 8.0 + HINT_H,
+        ToolPanelSettingsPanel::Thickness(_) => {
+            PAD * 2.0 + ROW + 8.0 + SLIDER_H + 8.0 + THICKNESS_HINT_H
+        }
     }
 }
 
@@ -115,7 +125,14 @@ fn brush(ui: &mut egui::Ui, rect: Rect, model: &BrushPanelModel, icons: &mut Ico
         FontId::proportional(14.0),
         TEXT,
     );
-    y += ROW;
+    y += ROW + 8.0;
+
+    let (next, changed) =
+        thickness_control(ui, x, y, model.min, model.max, model.thickness, "brush");
+    if changed {
+        toolbar_popup::push_action(ui.ctx(), ToolbarAction::ThicknessChanged(next));
+    }
+    y += SLIDER_H;
 
     if model.show_behavior {
         y += 8.0;
@@ -236,6 +253,76 @@ fn shape_cell(
     response
 }
 
+/// 粗细滑杆 + 数值输入（画刷面板与独立粗细面板共用）。
+///
+/// 返回 `(新值, 是否变化)`。自绘轨道/手柄，避免在纯 painter 面板里
+/// `ui.new_child(...).add(Slider)` 画不出来也拖不动。
+fn thickness_control(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    min: u8,
+    max: u8,
+    current: u8,
+    id_salt: &str,
+) -> (u8, bool) {
+    let minf = f32::from(min);
+    let maxf = f32::from(max).max(minf);
+    let mut value = f32::from(current).clamp(minf, maxf);
+    let track = Rect::from_min_size(
+        Pos2::new(x, y + (SLIDER_H - RAIL_H) * 0.5),
+        Vec2::new(SLIDER_W, RAIL_H),
+    );
+    let response = ui.interact(
+        track.expand2(Vec2::new(0.0, 8.0)),
+        egui::Id::unique(("lumino.tool-panel.thickness-slider", id_salt)),
+        Sense::click_and_drag(),
+    );
+    let mut changed = false;
+    if (response.dragged() || response.is_pointer_button_down_on() || response.clicked())
+        && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+    {
+        let fraction = ((pos.x - track.left()) / track.width().max(1.0)).clamp(0.0, 1.0);
+        value = (minf + fraction * (maxf - minf)).round();
+        changed = true;
+    }
+
+    let input_rect = Rect::from_min_size(
+        Pos2::new(track.right() + 12.0, y),
+        Vec2::new(INPUT_W, SLIDER_H),
+    );
+    let edit = ui.put(
+        input_rect,
+        egui::DragValue::new(&mut value)
+            .range(min..=max)
+            .speed(1.0)
+            .fixed_decimals(0),
+    );
+    if edit.changed() {
+        changed = true;
+    }
+
+    let fraction = ((value - minf) / (maxf - minf).max(1.0)).clamp(0.0, 1.0);
+    let radius = CornerRadius::same(3);
+    ui.painter().rect_filled(track, radius, theme::border());
+    ui.painter().rect_filled(
+        Rect::from_min_size(
+            track.min,
+            Vec2::new(track.width() * fraction, track.height()),
+        ),
+        radius,
+        theme::accent(),
+    );
+    let handle = Pos2::new(track.left() + track.width() * fraction, track.center().y);
+    ui.painter()
+        .circle_filled(handle, 7.0, theme::accent_strong());
+    ui.painter()
+        .circle_stroke(handle, 7.0, Stroke::new(1.5, Color32::WHITE));
+
+    let next = value.round().clamp(minf, maxf) as u8;
+    (next, changed && next != current)
+}
+
 /// 粗细面板：信息行 + 滑杆 + 说明。
 fn thickness(ui: &mut egui::Ui, rect: Rect, model: &ThicknessPanelModel) {
     let x = rect.left() + PAD;
@@ -257,31 +344,27 @@ fn thickness(ui: &mut egui::Ui, rect: Rect, model: &ThicknessPanelModel) {
     );
     y += ROW + 8.0;
 
-    let mut value = f32::from(model.value);
-    let slider = Rect::from_min_size(Pos2::new(x, y), Vec2::new(200.0, SLIDER_H));
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(slider)
-            .layout(egui::Layout::left_to_right(Align::Center)),
-    );
-    let response = child.add(
-        egui::Slider::new(&mut value, f32::from(model.min)..=f32::from(model.max))
-            .show_value(false)
-            .step_by(1.0),
-    );
-    if response.changed() {
-        let value = value
-            .round()
-            .clamp(f32::from(model.min), f32::from(model.max)) as u8;
-        toolbar_popup::push_action(ui.ctx(), ToolbarAction::ThicknessChanged(value));
+    let (next, changed) = thickness_control(ui, x, y, model.min, model.max, model.value, "global");
+    if changed {
+        toolbar_popup::push_action(ui.ctx(), ToolbarAction::ThicknessChanged(next));
     }
     y += SLIDER_H + 8.0;
 
-    ui.painter().text(
-        Pos2::new(x, y + HINT_H / 2.0),
-        Align2::LEFT_CENTER,
-        &model.hint,
+    // 说明文案较长：按面板宽度换行，垂直居中（旧版单行绘制会横向溢出）。
+    let hint_rect = Rect::from_min_size(
+        Pos2::new(x, y),
+        Vec2::new((rect.width() - PAD * 2.0).max(1.0), THICKNESS_HINT_H),
+    );
+    let galley = ui.painter().layout(
+        model.hint.clone(),
         FontId::proportional(11.0),
+        TEXT_DIM,
+        hint_rect.width(),
+    );
+    let offset_y = ((THICKNESS_HINT_H - galley.size().y) * 0.5).max(0.0);
+    ui.painter().galley(
+        Pos2::new(hint_rect.left(), hint_rect.top() + offset_y),
+        galley,
         TEXT_DIM,
     );
 }
@@ -330,4 +413,94 @@ pub(super) fn small_button(
 /// 小按钮宽度（文字 + 左右 6）。
 pub(super) fn small_button_width(ui: &egui::Ui, label: &str) -> f32 {
     text_width(ui, label, 11.0) + 12.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn thickness_panel() -> ToolPanelSettingsPanel {
+        ToolPanelSettingsPanel::Thickness(ThicknessPanelModel {
+            value: 5,
+            min: 1,
+            max: 100,
+            title: "粗细设置".to_owned(),
+            value_text: "5 层 (1 - 100)".to_owned(),
+            hint: "hint".to_owned(),
+        })
+    }
+
+    /// 粗细面板必须画出滑轨手柄 + 数值输入（回归：曾经只有文字、没有可拖控件）。
+    #[test]
+    fn test_thickness_panel_paints_slider_handle_and_value() {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx);
+        let panel = thickness_panel();
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(248.0, panel_height(&panel)));
+        let mut blocked = Vec::new();
+        let mut icons = IconCache::default();
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))),
+                ..Default::default()
+            },
+            |ui| show(ui, &panel, rect, &mut blocked, &mut icons),
+        );
+
+        let track_y = 12.0 + 18.0 + 8.0 + SLIDER_H * 0.5;
+        let handle = output.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Circle(circle) => {
+                (circle.center.y - track_y).abs() < 2.0 && circle.radius >= 6.0
+            }
+            _ => false,
+        });
+        assert!(handle, "粗细面板应绘制可拖动的滑轨手柄");
+
+        let input_rect = Rect::from_min_size(
+            Pos2::new(12.0 + SLIDER_W + 12.0, 12.0 + 18.0 + 8.0),
+            Vec2::new(INPUT_W, SLIDER_H),
+        );
+        let value_text = output.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => input_rect.contains(text.pos),
+            _ => false,
+        });
+        assert!(value_text, "粗细面板应绘制可输入的数值框");
+        output.drop_without_applying_deltas();
+    }
+
+    /// 画刷面板（音符画）同样必须有可拖滑杆 + 数值输入。
+    #[test]
+    fn test_brush_panel_paints_thickness_control() {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx);
+        let panel = ToolPanelSettingsPanel::Brush(BrushPanelModel {
+            thickness: 5,
+            min: 1,
+            max: 100,
+            title: "粗细设置".to_owned(),
+            value: "5 层 / 100".to_owned(),
+            behavior: "绘制行为".to_owned(),
+            show_behavior: true,
+        });
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(248.0, panel_height(&panel)));
+        let mut blocked = Vec::new();
+        let mut icons = IconCache::default();
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))),
+                ..Default::default()
+            },
+            |ui| show(ui, &panel, rect, &mut blocked, &mut icons),
+        );
+
+        let track_y = 12.0 + 18.0 + 8.0 + SLIDER_H * 0.5;
+        let handle = output.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Circle(circle) => {
+                (circle.center.y - track_y).abs() < 2.0 && circle.radius >= 6.0
+            }
+            _ => false,
+        });
+        assert!(handle, "画刷面板应绘制可拖动的滑轨手柄");
+        output.drop_without_applying_deltas();
+    }
 }

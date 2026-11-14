@@ -103,20 +103,14 @@ pub fn traffic_button(
     icon: Icon,
     close: bool,
 ) -> Response {
+    let size = egui::vec2(layout::TRAFFIC_BTN_W, layout::TRAFFIC_BTN_H);
+    // 先占位、先画悬停底色，再画图标：按钮自带绘制顺序是「图标在下、
+    // 悬停底色在上」，会让图标被底色整个盖掉（真机表现为悬停即消失）。
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let image = cache.default_image(ui.ctx(), icon, layout::TRAFFIC_ICON);
-    let button = egui::Button::image(image).frame(false);
-    let response = ui.add_sized([layout::TRAFFIC_BTN_W, layout::TRAFFIC_BTN_H], button);
-    // 纯图标按钮必须提供可访问名，否则无障碍树里是无名按钮。
-    let label = match icon {
-        Icon::WindowClose => "关闭窗口",
-        Icon::WindowMax => "最大化窗口",
-        Icon::WindowMin => "最小化窗口",
-        _ => "窗口按钮",
-    };
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     if response.hovered() {
         ui.painter().rect_filled(
-            response.rect,
+            rect,
             0,
             if close {
                 theme::close_hover()
@@ -125,6 +119,19 @@ pub fn traffic_button(
             },
         );
     }
+    let icon_rect = egui::Rect::from_center_size(
+        rect.center(),
+        egui::vec2(layout::TRAFFIC_ICON, layout::TRAFFIC_ICON),
+    );
+    image.paint_at(ui, icon_rect);
+    // 纯图标按钮必须提供可访问名，否则无障碍树里是无名按钮。
+    let label = match icon {
+        Icon::WindowClose => "关闭窗口",
+        Icon::WindowMax => "最大化窗口",
+        Icon::WindowMin => "最小化窗口",
+        _ => "窗口按钮",
+    };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
 }
 
