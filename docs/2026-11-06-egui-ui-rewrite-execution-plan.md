@@ -4120,18 +4120,34 @@ callback / 多视口 / 截图能力。
 - 背景：此前 `MouseInput` 在事件回调里同步 `handle_redraw()`，一次帧渲染
   可能插到两次点击之间；一旦未来再引入抢帧，点击会再次被饿死。
 - `WindowManager` 新增 `redraw_pending`：`RedrawRequested` / `Resized` /
-  `ScaleFactorChanged` / `MouseInput` / `Touch` 一律只置脏，不在
-  `window_event` 里渲染。
+  `ScaleFactorChanged` / `MouseInput` / `Touch` 只置脏，不在
+  `window_event` 里渲染；完整点击（抬起）例外，见 Task 4.45。
 - `Runner::about_to_wait` 在事件队列排空后**最先**调用
   `flush_pending_redraw()`，再跑重连 / 进度 / 对话框 / 协作等后台工作：
-  点击处理永远先于渲染，一帧不会插到两次点击之间。
+  点击处理永远先于渲染。
 - `LUMINO_CLICK_DIAG=1` 时每帧打点 `[FRAME] flush #n`，用于回归确认空闲
   期没有「事件 → 补帧 → 再补帧」自旋。
 - **验证**：
   - 20 连点 **20/20**；40 连点 **40/40**；
-  - 20 连发（8ms 间隔）`actions=20`、`frames=127`、burst 884ms（点击全中，
-    帧不阻塞输入）；
+  - 20 连发（8ms 间隔）`actions=20`、`frames=127`、burst 884ms；
   - 空闲 18s 仅 **4 帧**（无自旋）；
+  - 菜单开合、画布 A#8 + C#8 截图正常；
+  - `lumino-rs` lib 200 passed；clippy `-D warnings`、fmt。
+
+**Task 4.45（第一百五十一步，插入项修正）：播放/重帧下连点丢失——抬起即结算一帧**
+
+- 真机反馈：开播放让刷新率跑满后点击仍会丢。压测复现：
+  `LUMINO_FORCE_REDRAW=1` + 单帧 50ms，20 连点仅生效 **14** 次。
+- 根因：Task 4.44 把所有点击合并到 `about_to_wait` 的一帧再交给 egui，
+  而 egui 的 `clicked()` 按帧结算——同一位置的多次点击被折叠成一次。
+- 修复：`MouseInput` 抬起 / `Touch` 结束时，输入处理完后立即
+  `flush_pending_redraw()`：**一次完整点击单独结算一帧**；普通
+  `RedrawRequested` / 尺寸变化仍由 `about_to_wait` 合并，不重新引入空闲自旋。
+- 新增诊断开关 `LUMINO_OPEN_MIDI=path`：启动即加载指定 MIDI，用于复现
+  播放期输入问题；正常启动不设置时零影响。
+- **验证**：
+  - 50ms 重帧压测 **20/20**（修复前 14/20）；
+  - 正常 20 连点 20/20；`fast-release` 空闲 3s CPU **62ms**；
   - 菜单开合、画布 A#8 + C#8 截图正常；
   - `lumino-rs` lib 200 passed；clippy `-D warnings`、fmt。
 - **下一步（Plan B Step 7）**：把上述 root 层面板逐个 `Area` 化，删除
