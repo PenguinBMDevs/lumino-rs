@@ -210,8 +210,11 @@ fn channel_picker_reports_channel_variant() {
     );
 }
 
+/// 选择器面板必须被 egui 的**图层**独占（不再是手工占用矩形）。
+///
+/// 与左侧栏菜单同步：Step 7 删除全局登记，命中归 `Area` 图层（`layer_id_at`）。
 #[test]
-fn picker_rect_is_blocked_from_legacy() {
+fn picker_rect_is_owned_by_foreground_layer() {
     let size = 4.0 * 30.0 + 3.0 * 4.0 + 16.0;
     let left = content_right() - 8.0 - size;
     let top = picker_top();
@@ -224,11 +227,19 @@ fn picker_rect_is_blocked_from_legacy() {
         }),
         ..base()
     });
-    let blocked = menu::take_blocked(&h.ctx);
+    let probe = Pos2::new(left + 20.0, top + 20.0);
+    let layer = h.ctx.layer_id_at(probe).expect("选择器图层应存在");
+    assert_ne!(
+        layer.order,
+        egui::Order::Background,
+        "选择器面板必须由独立图层独占命中"
+    );
+    // 探针可能同时落在下层音轨行内（那是由 root 绘制、仍需登记的一份）。
+    // 这里只断言**选择器本体**（宽 = size）不再登记。
     assert!(
-        blocked
+        !menu::take_blocked(&h.ctx)
             .iter()
-            .any(|r| r.contains(Pos2::new(left + 20.0, top + 20.0))),
-        "选择器面板必须进入占用区"
+            .any(|r| r.contains(probe) && (r.width() - size).abs() < 1.0),
+        "Step 7 后选择器不再登记全局占用表（命中已归图层）"
     );
 }

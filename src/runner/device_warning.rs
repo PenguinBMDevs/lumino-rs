@@ -19,6 +19,8 @@ pub(crate) struct DeviceWarningWindow {
     window: Option<Arc<winit::window::Window>>,
     gfx: Option<lumino_gfx::Context>,
     ui: Option<lumino_ui::Host>,
+    /// egui 输入缓冲（窗口持有）
+    egui_input: lumino_ui::host::OverlayInput,
     modifiers: winit::keyboard::ModifiersState,
     /// 用户直接关闭窗口（`[X]` / Alt+F4）→ 视为「确认并关闭」
     close_requested: bool,
@@ -83,7 +85,7 @@ impl DeviceWarningWindow {
         .map_err(|e| format!("初始化警告窗图形上下文失败: {e}"))?;
 
         let ui = lumino_ui::Host::new_device_warning(
-            Arc::clone(&window),
+            lumino_ui::host::host_window(window.clone()),
             size.width,
             size.height,
             ui_config,
@@ -96,6 +98,7 @@ impl DeviceWarningWindow {
             window: Some(window),
             gfx: Some(gfx),
             ui: Some(ui),
+            egui_input: lumino_ui::host::OverlayInput::default(),
             modifiers: winit::keyboard::ModifiersState::default(),
             close_requested: false,
         })
@@ -125,16 +128,22 @@ impl DeviceWarningWindow {
 
         match event {
             WindowEvent::RedrawRequested => {
+                let egui_events = self.egui_input.take();
+                let egui_focused = self.egui_input.focused();
                 if let Some(ref mut ui) = self.ui
                     && let Some(ref gfx) = self.gfx
-                    && let Err(e) =
-                        gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
+                    && let Err(e) = gfx.with_frame(|frame, view| {
+                        ui.redraw_requested(frame, view, gfx, egui_events, egui_focused)
+                    })
                 {
                     // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排
                     // 重绘；Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
                     if gfx.handle_frame_error(&e).should_redraw() {
                         window.request_redraw();
                     }
+                }
+                if let Some(ui) = self.ui.as_ref() {
+                    self.egui_input.set_wants_keyboard(ui.egui_wants_keyboard());
                 }
                 // 应用自制标题栏产生的窗口动作（关闭/最小化/拖动）
                 // 必须在 redraw（事件队列已消费）之后调用
@@ -183,7 +192,7 @@ impl DeviceWarningWindow {
             }
             other => {
                 if let Some(ref mut ui) = self.ui {
-                    ui.handle_events(other, self.modifiers);
+                    ui.handle_events(other, self.modifiers, &mut self.egui_input);
                 }
                 window.request_redraw();
             }

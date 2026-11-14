@@ -13,23 +13,12 @@ use crate::message::{Message, Point2, Size2};
 /// 浮点比较容差（亚像素差异不值得触发一次全量重算）。
 const EPSILON: f32 = 0.01;
 
-/// 画布几何是否由 egui 驱动。
-///
-/// 与画布输入直连同开关：输入由宿主接管时，几何也必须由宿主写回
-/// （旧版 `Grid` 不再运行）。`LUMINO_EGUI_CANVAS_INPUT=1` 时两者同时生效。
-fn canvas_sync_enabled() -> bool {
-    crate::host::canvas_input_enabled()
-}
-
 impl Host {
     /// 用本帧 egui 布局刷新编辑器画布几何。
     ///
     /// 纵向卷帘（布局不同，尚未迁移）与走带之外的特殊视图保持原样：返回
     /// `None` 时不写回，几何沿用上一帧 / 旧版 旧值。
     pub(crate) fn sync_canvas_bounds(&mut self, _model: &ChromeModel, window_area: egui::Rect) {
-        if !canvas_sync_enabled() {
-            return;
-        }
         let Some((offset, size)) = self.canvas_geometry(window_area) else {
             return;
         };

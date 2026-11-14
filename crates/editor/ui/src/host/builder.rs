@@ -5,8 +5,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use winit;
-
 use lumino_core::storage::config::OnionSkinBackend;
 
 use crate::config;
@@ -24,7 +22,7 @@ impl Host {
     /// `needs_renderers` 仅主窗口为 `true`；dialog/progress 等轻量窗口不需要
     /// 音符/网格渲染器，跳过创建可显著降低初始化开销。
     fn create_render_and_window_context(
-        window: Arc<winit::window::Window>,
+        window: Arc<dyn super::HostWindow>,
         width: u32,
         height: u32,
         _ui_config: &config::UiConfig,
@@ -72,8 +70,6 @@ impl Host {
             render_ctx,
             window_ctx,
             root,
-            egui_input: crate::host::render::egui_overlay::OverlayInput::default(),
-            egui_blocked: Vec::new(),
             canvas_input: lumino_ui_editor::grid::GridInteractionState::default(),
             egui_editor_texture: None,
             last_frame_time: Instant::now(),
@@ -120,7 +116,7 @@ impl Host {
 
     /// 创建新的 Host
     pub fn new(
-        window: Arc<winit::window::Window>,
+        window: Arc<dyn super::HostWindow>,
         width: u32,
         height: u32,
         ui_config: &config::UiConfig,
@@ -186,7 +182,7 @@ impl Host {
 
     /// 创建对话框 Host
     pub fn new_dialog(
-        window: Arc<winit::window::Window>,
+        window: Arc<dyn super::HostWindow>,
         width: u32,
         height: u32,
         ui_config: &config::UiConfig,
@@ -209,7 +205,7 @@ impl Host {
     ///
     /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 旧版 Engine。
     pub fn new_device_warning(
-        window: Arc<winit::window::Window>,
+        window: Arc<dyn super::HostWindow>,
         width: u32,
         height: u32,
         ui_config: &config::UiConfig,
@@ -224,7 +220,7 @@ impl Host {
 
     /// 创建设置对话框 Host（使用主窗口的配置）
     pub fn new_settings_dialog(
-        window: Arc<winit::window::Window>,
+        window: Arc<dyn super::HostWindow>,
         width: u32,
         height: u32,
         ui_config: &config::UiConfig,

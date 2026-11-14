@@ -1,35 +1,26 @@
-//! 实验性 egui 外壳叠加层（`LUMINO_EGUI_OVERLAY=1` 时启用）。
+//! egui 整窗外壳（唯一生产 UI 层）。
 //!
-//! 目的：在真实窗口 surface / 真实 `Device` 上验证 `lumino-egui-bridge`，
-//! 并把生产状态（标题栏 / 状态栏）逐步搬到 egui。默认关闭，不改变现有画面。
-//!
-//! 当前接管范围：
-//! - 标题栏 30px：底色随窗口聚焦变化、真实菜单标签（按语言）、logo、窗口按钮；
-//! - 状态栏 20px：左侧提示文本（悬停说明 / 音符数 / 就绪）、CPU / MEM / FPS、右侧文本。
-//!
-//! 只绘制这些 band，其余区域保持 旧版 画面；band 用不透明底色完全覆盖同位置
-//! 的 旧版 版本，因此不会出现文字重影。
+//! 在真实窗口 surface / 真实 `Device` 上运行 `lumino-egui-bridge`；外壳 band、
+//! 对话框、面板与编辑器骨架全部由 egui 绘制，编辑器画布底层采样 gfx 离屏纹理。
 //!
 //! # 输入
 //!
-//! 指针移动 / 滚轮 / 修饰键 / 焦点同步给 egui（悬停高亮、`ScrollArea` 滚动、
-//! 菜单点击都要用到）。鼠标按键只在**菜单占用区**（标题栏菜单标签、已展开的
-//! 下拉/子面板）内消费；其余区域仍把事件交给 旧版，动作由 旧版 执行。
+//! 指针 / 滚轮 / 修饰键 / 焦点同步给 egui；浮层（菜单 / 弹层 / 模态）的命中
+//! 由 `ctx.layer_id_at` 判定，画布输入在浮层覆盖时让位。
 
-use egui::{Rect, Vec2};
+use egui::Rect;
 use lumino_egui_bridge::{Painter, Screen};
 use lumino_ui_egui::chrome::{self, ChromeModel};
 use lumino_ui_egui::icons::IconCache;
 use wgpu;
-use winit;
 
 use crate::host::Host;
 
 mod actions;
 mod canvas;
-mod input;
-pub(crate) use input::OverlayInput;
-use input::pointer_button;
+mod clock;
+pub(crate) mod input;
+pub use input::OverlayInput;
 
 /// 叠加层状态（首次启用时创建，跨帧保留纹理与管线）。
 pub(crate) struct EguiOverlay {
@@ -39,13 +30,33 @@ pub(crate) struct EguiOverlay {
     icons: IconCache,
     /// 上次写入 egui 的 `pixels_per_point`（避免逐帧重设字体栅格）。
     pixels_per_point: f32,
-    /// 叠加层启动时刻：`RawInput::time` 必须给真实时间，否则 egui 按
-    /// 「预测 1/60s」累积时间——帧率不稳时文本光标闪烁速度会明显偏快/偏慢。
-    started: std::time::Instant,
     /// wgpu27 绘制桥。
     painter: Painter,
+    /// 帧时钟：egui 的点击 / 长按 / 双击判定都是**时间**语义，
+    /// 每帧必须把真实秒数填进 `RawInput::time`（见 `clock` 模块注释）。
+    clock: clock::FrameClock,
+    /// 诊断开关：`LUMINO_EGUI_LEGACY_CLOCK=1` 时退回「不填 `time`」的旧行为。
+    ///
+    /// 只用于真机 A/B 复现（同一份二进制对比修复前后），正常启动必须为 `false`。
+    /// 构造时读一次，避免每帧查询环境变量。
+    legacy_clock: bool,
+    /// 诊断开关：`LUMINO_CLOCK_DIAG=1` 时每帧比对 egui 内部时钟与真实时间。
+    clock_diag: bool,
     /// 叠加层已绘制帧数。
     frames: u32,
+    /// 本帧 egui 占用区（菜单 / 弹层 / 面板 / 模态，逻辑点）。
+    ///
+    /// 命中判定归 egui 自己所有：`Host` 不再保存第二份矩形清单，只查询
+    /// [`EguiOverlay::pointer_blocked`]。
+    blocked: Vec<Rect>,
+}
+
+/// 一帧叠加层绘制结果（渲染之外的宿主副作用）。
+pub(crate) struct OverlayOutput {
+    /// egui 请求的系统光标。
+    pub cursor: egui::CursorIcon,
+    /// 文本编辑中的 IME 锚点（`Some` = 应开启系统输入法）。
+    pub ime: Option<egui::output::IMEOutput>,
 }
 
 /// 一帧叠加层绘制输入。
@@ -148,9 +159,12 @@ impl EguiOverlay {
             ctx,
             icons: IconCache::default(),
             pixels_per_point: 0.0,
-            started: std::time::Instant::now(),
             painter: Painter::new(device, format),
+            clock: clock::FrameClock::new(),
+            legacy_clock: std::env::var_os("LUMINO_EGUI_LEGACY_CLOCK").is_some_and(|v| v != "0"),
+            clock_diag: std::env::var_os("LUMINO_CLOCK_DIAG").is_some(),
             frames: 0,
+            blocked: Vec::new(),
         }
     }
 
@@ -158,7 +172,7 @@ impl EguiOverlay {
     ///
     /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
     /// 调用方据此决定下一帧按键事件是否只给 egui。
-    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Vec<Rect>, bool, egui::CursorIcon) {
+    fn draw(&mut self, frame: OverlayFrame<'_>) -> OverlayOutput {
         self.frames = self.frames.wrapping_add(1);
 
         // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
@@ -221,19 +235,17 @@ impl EguiOverlay {
             frame.size_px[0] as f32 / frame.pixels_per_point,
             frame.size_px[1] as f32 / frame.pixels_per_point,
         ];
-        let input = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(
-                egui::Pos2::ZERO,
-                Vec2::new(logical[0], logical[1]),
-            )),
-            events: frame.events,
-            focused: frame.focused,
-            // 真实时间：光标闪烁 / 动画都按它推进；不给的话 egui 按预测帧长累积，
-            // 事件驱动重绘下会明显不准（光标忽快忽慢）。
-            time: Some(self.started.elapsed().as_secs_f64()),
-            predicted_dt: 1.0 / 60.0,
-            ..Default::default()
-        };
+        let mut input = clock::raw_input(
+            frame.events,
+            [logical[0], logical[1]],
+            frame.focused,
+            self.clock.elapsed(),
+        );
+        let input_time = input.time;
+        if self.legacy_clock {
+            // 诊断 A/B：退回「不填 time，egui 按 predicted_dt 推时钟」的旧行为。
+            input.time = None;
+        }
 
         let ctx = self.ctx.clone();
         let icons = &mut self.icons;
@@ -300,6 +312,7 @@ impl EguiOverlay {
 
         // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
         // 这里只要占用矩形与文本焦点。
+        self.diagnose_clock(&ctx, input_time);
         let mut blocked = chrome::menu::take_blocked(&ctx);
         // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 旧版。
         if let Some(panel) = &frame.audio_export {
@@ -321,6 +334,7 @@ impl EguiOverlay {
 
         let mut textures = output.textures_delta;
         let egui_cursor = output.platform_output.cursor_icon;
+        let ime = output.platform_output.ime;
         self.painter
             .update_textures(frame.device, frame.queue, &mut textures);
         let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
@@ -356,25 +370,61 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
-        (blocked, self.ctx.text_edit_focused(), egui_cursor)
+        self.blocked = blocked;
+        OverlayOutput {
+            cursor: egui_cursor,
+            ime,
+        }
+    }
+
+    /// 指定点是否落在 egui 本帧占用区内。
+    ///
+    /// 占用区由各面板在绘制时登记（菜单 / 弹层 / 浮动面板 / 模态），
+    /// 与 `layer_id_at` 的浮层命中互补：前者覆盖 root 层手工绘制的大面板，
+    /// 后者覆盖 `Area` / `Window` 弹层。
+    fn pointer_blocked(&self, pos: egui::Pos2) -> bool {
+        self.blocked.iter().any(|rect| rect.contains(pos))
+    }
+
+    /// 时钟错位诊断（`LUMINO_CLOCK_DIAG=1`）。
+    ///
+    /// egui 的点击 / 长按 / 双击判定都读 `InputState::time`。若 `RawInput::time`
+    /// 漏填，egui 会按 `predicted_dt` 每帧推进，虚拟时钟在高刷新率下比真实
+    /// 时间快数倍，正常点击被判超时——真机表现就是「点不动」。
+    ///
+    /// 这里把 egui 内部时钟与宿主真实秒数对一次，偏差超过 0.25s 就打点，
+    /// 便于在用户机器上直接取证（不设变量时零开销）。
+    fn diagnose_clock(&self, ctx: &egui::Context, input_time: Option<f64>) {
+        if !self.clock_diag {
+            return;
+        }
+        let egui_time = ctx.input(|i| i.time);
+        let Some(real) = input_time else {
+            log::warn!("[CLOCK] RawInput::time 为空：egui 按帧推时钟，高刷新率下点击会失效");
+            return;
+        };
+        let drift = egui_time - real;
+        if drift.abs() > 0.25 {
+            log::warn!(
+                "[CLOCK] egui={egui_time:.3}s real={real:.3}s drift={drift:+.3}s（>0.25s 时点击判定会失真）"
+            );
+        }
     }
 }
 
 impl Host {
     /// 绘制 egui 外壳。
     ///
-    /// `clear = Some(color)` 时 egui 独占整窗（先清屏再画，生产渲染路径）；
-    /// `None` 时叠加在 旧版 `present` 之上（`LUMINO_EGUI_ONLY=0` 回退路径）。
+    /// `clear = Some(color)` 时 egui 独占整窗（生产渲染路径）；`None` 由调用方
+    /// 保证底层已绘制（当前生产路径不使用）。
     pub(super) fn render_egui_overlay(
         &mut self,
         frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         clear: Option<wgpu::Color>,
+        egui_events: Vec<egui::Event>,
+        egui_focused: bool,
     ) {
-        if !overlay_enabled() {
-            return;
-        }
-
         let format = frame.texture.format();
         let size = self.render_ctx.viewport.physical_size();
         let pixels_per_point = self.render_ctx.viewport.scale_factor();
@@ -486,8 +536,8 @@ impl Host {
             .flatten()
         };
         // 取走本帧累积的指针 / 滚轮 / 修饰键 / 焦点事件。
-        let events = self.egui_input.take();
-        let focused = self.egui_input.focused();
+        let events = egui_events;
+        let focused = egui_focused;
         // Device/Queue 是 Arc 句柄，克隆避免与 `egui_overlay` 的可变借用冲突。
         let device = self.render_ctx.device.clone();
         let queue = self.render_ctx.queue.clone();
@@ -496,7 +546,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (blocked, wants_keyboard, egui_cursor) = overlay.draw(OverlayFrame {
+        let overlay_output = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -552,160 +602,31 @@ impl Host {
         if overlay.ctx.has_requested_repaint() {
             self.window_ctx.window.request_redraw();
         }
-        // 下一帧点击命中这些矩形时，事件只给 egui，不再进 旧版 队列。
-        self.egui_blocked = blocked;
-        self.egui_input.set_wants_keyboard(wants_keyboard);
-        self.apply_egui_cursor(egui_cursor);
+        // 占用区已由 `EguiOverlay` 在本帧绘制时保存，`Host` 不再持有副本。
+        self.apply_egui_cursor(overlay_output.cursor);
+        self.apply_egui_ime(overlay_output.ime, pixels_per_point);
         self.apply_overlay_actions(actions, logical_width);
     }
 
-    /// 把 winit 指针 / 滚轮 / 修饰键 / 焦点事件转成 egui 事件。
-    ///
-    /// 返回 `true` 表示该事件落在 egui 的菜单占用区（标题栏/下拉面板）内，
-    /// 调用方必须**不**再把它交给 旧版——否则会同时触发下层工具栏/侧栏的点击。
-    /// 其余区域保持「只观察不消费」，动作仍由 旧版 执行。
-    pub(crate) fn capture_egui_overlay_input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        use winit::event::{MouseScrollDelta, WindowEvent};
-
-        if !overlay_enabled() {
-            return false;
-        }
-        // 只有**会改变 egui 输入状态**的事件才需要驱动一帧。
-        //
-        // 这里曾经无条件 `request_redraw()`：`RedrawRequested` 自己也会再次请求，
-        // 形成永不停歇的「渲染 → 请求重绘 → 渲染」自旋（Mailbox present mode
-        // 下没有 vsync 上限，实测空闲也能跑满；debug 构建因为每帧慢，反而不明显）。
-        // 后果不是画面错，而是事件循环永远进不了 `ControlFlow::Wait`、鼠标消息
-        // 被 WM_PAINT 饿死——真机表现就是「点击要连点很多次才响应」。
-        if input_requests_repaint(event) {
-            self.window_ctx.window.request_redraw();
-        }
-        // 与渲染用的 `pixels_per_point` 同源：两者必须一致，否则命中坐标
-        // 与实际绘制的控件位置会按比例错开（真机实测：指针比布局大 1.25 倍时，
-        // 点击路由栏会整体下移一格）。
-        let scale = input_scale(self.render_ctx.viewport.scale_factor());
-        match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                self.egui_input.pointer_moved(egui::pos2(
-                    position.x as f32 / scale,
-                    position.y as f32 / scale,
-                ));
-                false
-            }
-            WindowEvent::CursorLeft { .. } => {
-                self.egui_input.pointer_left();
-                false
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                match delta {
-                    MouseScrollDelta::LineDelta(x, y) => {
-                        self.egui_input
-                            .wheel(egui::MouseWheelUnit::Line, egui::vec2(*x, *y));
-                    }
-                    MouseScrollDelta::PixelDelta(position) => {
-                        self.egui_input.wheel(
-                            egui::MouseWheelUnit::Point,
-                            egui::vec2(position.x as f32, position.y as f32) / scale,
-                        );
-                    }
-                }
-                self.egui_owns_pointer()
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                let Some(button) = pointer_button(*button) else {
-                    return false;
-                };
-                // 首击兜底：`pointer` 只由 `CursorMoved` 写入，启动后 / `CursorLeft`
-                // 后 / 自动化注入的第一次按键会因 `pointer == None` 被静默丢弃。
-                // 用宿主已记录的逻辑光标位置补一次，保证 egui 一定收到这次按下。
-                if self.egui_input.pointer.is_none()
-                    && let Some(pos) = self.window_ctx.cursor_position
-                {
-                    self.egui_input.pointer_moved(egui::pos2(pos.x, pos.y));
-                }
-                self.egui_input
-                    .button(button, *state == winit::event::ElementState::Pressed);
-                // 设置 / 保存确认窗口由 egui 整窗绘制：按键只给 egui，避免同一击
-                // 同时触发下层 旧版 控件（例如云管理「添加连接」打开两个窗口）。
-                // 其余对话框仍依赖 旧版 let-through，不消费。
-                self.dialog_input_exclusive() || self.egui_owns_pointer()
-            }
-            WindowEvent::ModifiersChanged(modifiers) => {
-                let state = modifiers.state();
-                let super_key = state.contains(winit::keyboard::ModifiersState::SUPER);
-                let control = state.contains(winit::keyboard::ModifiersState::CONTROL);
-                self.egui_input.set_modifiers(egui::Modifiers {
-                    alt: state.contains(winit::keyboard::ModifiersState::ALT),
-                    ctrl: control,
-                    shift: state.contains(winit::keyboard::ModifiersState::SHIFT),
-                    mac_cmd: super_key,
-                    // egui 语义：command = ⌘（macOS）/ Ctrl（其他平台）。
-                    command: if cfg!(target_os = "macos") {
-                        super_key
-                    } else {
-                        control
-                    },
-                });
-                false
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                self.egui_input.key(event);
-                // 只有 egui 正在编辑文本时才消费：否则快捷键仍要落到 旧版。
-                self.egui_input.wants_keyboard()
-            }
-            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
-                self.egui_input.text(text);
-                self.egui_input.wants_keyboard()
-            }
-            WindowEvent::Focused(focused) => {
-                self.egui_input.focus(*focused);
-                false
-            }
-            _ => false,
-        }
-    }
-
-    /// 当前窗口是否为**整窗由 egui 绘制**的对话框（设置 / 保存确认），
-    /// 这类窗口必须消费鼠标按键，不能再落到 旧版。
-    fn dialog_input_exclusive(&self) -> bool {
-        if !self.root.state.is_dialog_window {
-            return false;
-        }
-        match self.root.state.dialog_type {
-            crate::state::root_state::DialogType::Settings
-            | crate::state::root_state::DialogType::SaveConfirm => true,
-            // 工程设置 / 撤销历史 / 批量编辑的顶部 30px 自制标题栏（红绿灯 / 拖动）
-            // 仍由 旧版 绘制：该区域内的按键不消费，其余内容区只给 egui。
-            crate::state::root_state::DialogType::ProjectSettings
-            | crate::state::root_state::DialogType::History
-            | crate::state::root_state::DialogType::BatchEdit
-            | crate::state::root_state::DialogType::SpeedChange
-            | crate::state::root_state::DialogType::CustomPrecision
-            | crate::state::root_state::DialogType::Help
-            | crate::state::root_state::DialogType::CloudConnect
-            | crate::state::root_state::DialogType::MemoryMonitor
-            | crate::state::root_state::DialogType::DrawSettings
-            | crate::state::root_state::DialogType::LoadConfirm
-            | crate::state::root_state::DialogType::BrushSettings
-            | crate::state::root_state::DialogType::RecoverTrack
-            | crate::state::root_state::DialogType::Collaboration
-            | crate::state::root_state::DialogType::CloudBrowser
-            | crate::state::root_state::DialogType::CloudNotice => {
-                self.root.settings.synth.use_native_titlebar
-                    || self
-                        .egui_input
-                        .pointer
-                        .is_none_or(|pos| pos.y >= lumino_ui_egui::layout::TITLEBAR_H)
-            }
-            _ => false,
-        }
-    }
-
-    /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。
+    /// 当前指针是否落在 egui 占用区（菜单 / 弹层 / 面板 / 模态）。
     pub(crate) fn egui_pointer_blocked(&self) -> bool {
-        self.egui_input
-            .pointer
-            .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
+        let Some(pos) = self.cursor_egui() else {
+            return false;
+        };
+        self.render_ctx
+            .egui_overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.pointer_blocked(pos))
+    }
+
+    /// 宿主记录的逻辑光标 → egui 坐标。
+    ///
+    /// 输入缓冲已归运行时；`Host` 只读 `window_ctx.cursor_position`，触摸路径也
+    /// 会写同一个字段，因此主窗口与对话框共用这一份判定。
+    pub(crate) fn cursor_egui(&self) -> Option<egui::Pos2> {
+        self.window_ctx
+            .cursor_position
+            .map(|p| egui::pos2(p.x, p.y))
     }
 
     /// 指定点是否被 egui 的**浮层图层**（菜单 / 弹层 / 面板 / 模态）占用。
@@ -724,85 +645,107 @@ impl Host {
             .is_some_and(|layer| layer.order != egui::Order::Background)
     }
 
-    /// 画布输入是否应让位给 egui（手工占用区 ∪ 浮层图层）。
+    /// egui 本帧是否正在编辑文本（下一帧键盘事件只给它）。
+    pub fn egui_wants_keyboard(&self) -> bool {
+        self.render_ctx
+            .egui_overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.ctx.text_edit_focused())
+    }
+
+    /// 把 egui 的 IME 锚点应用到系统窗口。
     ///
-    /// 指针优先取 egui 事件缓冲里的位置；触摸路径没有 `CursorMoved`，
-    /// 回退到宿主记录的逻辑光标位置，保证触摸点按也能正确让位。
+    /// - `Some`：文本框正在编辑 → 开启输入法，并把候选窗锚到光标矩形；
+    /// - `None`：编辑结束 → 关闭输入法。
+    ///
+    /// `set_ime_allowed` 只在状态变化时调用，避免每帧重复设置。
+    fn apply_egui_ime(&mut self, ime: Option<egui::output::IMEOutput>, pixels_per_point: f32) {
+        let window = std::sync::Arc::clone(&self.window_ctx.window);
+        apply_ime_to_window(
+            &*window,
+            &mut self.window_ctx.ime_allowed,
+            ime,
+            pixels_per_point,
+        );
+    }
+
+    /// 画布输入是否应让位给 egui（面板占用区 ∪ 浮层图层）。
+    ///
+    /// 指针取宿主记录的逻辑光标（触摸路径同样写入），不再依赖 egui 事件缓冲。
     pub(crate) fn egui_owns_pointer(&self) -> bool {
-        let pos = self.egui_input.pointer.or_else(|| {
-            self.window_ctx
-                .cursor_position
-                .map(|p| egui::pos2(p.x, p.y))
-        });
-        let Some(pos) = pos else {
+        let Some(pos) = self.cursor_egui() else {
             return false;
         };
-        self.egui_blocked.iter().any(|rect| rect.contains(pos)) || self.egui_layer_owns_pos(pos)
+        let panel_blocked = self
+            .render_ctx
+            .egui_overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.pointer_blocked(pos));
+        panel_blocked || self.egui_layer_owns_pos(pos)
     }
 }
 
 /// 形状抽屉面板与画布之间的分割线宽度（与生产 旧版 视图一致）。
 pub(crate) const SPLITTER_W: f32 = 6.0;
 
-/// 指针事件的坐标除数。
+/// egui 光标矩形（逻辑点）→ winit IME 锚点（物理像素）。
 ///
-/// 布局与绘制都以 `pixels_per_point` 为准；指针必须用**同一个**值换算到点空间。
-/// `LUMINO_EGUI_INPUT_SCALE` 可强制覆盖，用于真机核对（不改代码即可验证方向）。
-fn input_scale(ppp: f32) -> f32 {
-    static OVERRIDE: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
-    if let Some(value) = *OVERRIDE.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_INPUT_SCALE")
-            .ok()
-            .and_then(|raw| raw.parse::<f32>().ok())
-            .filter(|value| *value > 0.0)
-    }) {
-        return value;
-    }
-    let ppp = if ppp > 0.0 { ppp } else { 1.0 };
-    // winit 的 `CursorMoved.position` 是**物理像素**，egui 用逻辑点：只除一次 ppp。
-    //
-    // 此前这里多除了一次（ppp²），指针坐标比绘制位置小 1.25 倍。真机取证：
-    // 客户端逻辑 (24,240) 在 egui 里变成 (19.2,192)，于是窗口下方约 20% 的区域
-    // 永远命中不到——混音台与路由栏底部按钮「点了没反应」都是这个原因。
-    // `LUMINO_EGUI_INPUT_SCALE` 仍可强制覆盖用于排查。
-    ppp
-}
-
-/// 该窗口事件是否必须驱动一帧 egui。
-///
-/// **绝不能**把 `RedrawRequested` 算进来：那会让 `RedrawRequested` 的处理
-/// 再排一帧，形成无上限的「渲染 → 请求重绘 → 渲染」自旋。`Mailbox`
-/// present mode 没有 vsync 上限，事件循环因此永远进不了 `ControlFlow::Wait`，
-/// 鼠标消息被 `WM_PAINT` 饿死——真机表现就是「点击要连点很多次才响应」。
-///
-/// 用纯函数 + 单测钉死：以后再加事件分支时，别把非输入事件放进来。
-fn input_requests_repaint(event: &winit::event::WindowEvent) -> bool {
-    use winit::event::WindowEvent;
-    matches!(
-        event,
-        WindowEvent::CursorMoved { .. }
-            | WindowEvent::CursorLeft { .. }
-            | WindowEvent::MouseWheel { .. }
-            | WindowEvent::MouseInput { .. }
-            | WindowEvent::ModifiersChanged(_)
-            | WindowEvent::KeyboardInput { .. }
-            | WindowEvent::Ime(_)
-            | WindowEvent::Focused(_)
+/// 候选窗尺寸至少 1px：零尺寸在部分 IME 下会被忽略，导致候选窗跑到屏幕角落。
+fn ime_cursor_area(
+    rect: egui::Rect,
+    pixels_per_point: f32,
+) -> (
+    winit::dpi::PhysicalPosition<i32>,
+    winit::dpi::PhysicalSize<u32>,
+) {
+    let scale = if pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    };
+    let min = rect.min * scale;
+    let size = rect.size() * scale;
+    (
+        winit::dpi::PhysicalPosition::new(min.x.round() as i32, min.y.round() as i32),
+        winit::dpi::PhysicalSize::new(
+            size.x.max(1.0).round() as u32,
+            size.y.max(1.0).round() as u32,
+        ),
     )
 }
 
-/// egui 叠加层是否启用。
+/// 把 egui 的 IME 锚点应用到窗口；`ime_allowed` 是宿主的缓存状态。
 ///
-/// **默认开启**：外壳 band / 对话框 / 面板 / 编辑器画布底层均已迁到 egui，
-/// 旧版 侧只在下方保留同位置内容（已被不透明覆盖），后续逐步删除。
-/// `LUMINO_EGUI_OVERLAY=0` 可回退到纯 旧版 通道，用于对照排查。
-pub(crate) fn overlay_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_OVERLAY")
-            .map(|value| value != "0")
-            .unwrap_or(true)
-    })
+/// 独立成纯函数便于无窗口测试：只依赖 [`crate::host::HostWindow`] 抽象。
+fn apply_ime_to_window(
+    window: &dyn crate::host::HostWindow,
+    ime_allowed: &mut bool,
+    ime: Option<egui::output::IMEOutput>,
+    pixels_per_point: f32,
+) {
+    let allowed = ime.is_some();
+    if *ime_allowed != allowed {
+        window.set_ime_allowed(allowed);
+        *ime_allowed = allowed;
+        log::debug!("[IME] set_ime_allowed({allowed})");
+    }
+    let Some(ime) = ime else {
+        return;
+    };
+    let (position, size) = ime_cursor_area(ime.cursor_rect, pixels_per_point);
+    window.set_ime_cursor_area(position, size);
+}
+
+/// 指针事件的坐标除数。
+///
+/// 布局与绘制都以 `pixels_per_point` 为准；指针必须用**同一个**值换算到点空间。
+/// winit 的 `CursorMoved.position` 是**物理像素**，egui 用逻辑点：只除一次 ppp。
+///
+/// 此前这里多除了一次（ppp²），指针坐标比绘制位置小 1.25 倍。真机取证：
+/// 客户端逻辑 (24,240) 在 egui 里变成 (19.2,192)，于是窗口下方约 20% 的区域
+/// 永远命中不到——混音台与路由栏底部按钮「点了没反应」都是这个原因。
+pub(crate) fn input_scale(ppp: f32) -> f32 {
+    if ppp > 0.0 { ppp } else { 1.0 }
 }
 
 #[cfg(test)]
@@ -853,35 +796,77 @@ mod tests {
         );
     }
 
-    /// 重绘自旋回归：`RedrawRequested` 不能再驱动下一帧。
-    ///
-    /// 曾经的实现对所有窗口事件无条件 `request_redraw()`，`RedrawRequested`
-    /// 自己也会再次入列 → 无上限自旋（Mailbox 下没有 vsync 上限）。事件循环
-    /// 永远进不了 `ControlFlow::Wait`，鼠标消息被 `WM_PAINT` 饿死，真机表现
-    /// 为「点击要连点很多次才响应」。fast-release 比 debug 明显，因为每帧更快。
+    /// IME 候选窗锚点必须按 DPI 换算到物理像素，且尺寸不小于 1px。
     #[test]
-    fn only_input_events_request_repaint() {
-        use winit::event::WindowEvent;
+    fn ime_cursor_area_scales_to_physical_pixels() {
+        let rect = Rect::from_min_size(pos2(10.0, 20.0), vec2(2.0, 18.0));
+        let (position, size) = super::ime_cursor_area(rect, 1.25);
+        assert_eq!((position.x, position.y), (13, 25));
+        assert_eq!((size.width, size.height), (3, 23));
 
-        assert!(
-            !super::input_requests_repaint(&WindowEvent::RedrawRequested),
-            "RedrawRequested 绝不能再次请求重绘（会形成自旋）"
+        let (position, size) = super::ime_cursor_area(rect, 0.0);
+        assert_eq!((position.x, position.y), (10, 20), "非法 ppp 回退 1.0");
+        assert_eq!((size.width, size.height), (2, 18));
+    }
+
+    /// egui 文本编辑开始 / 结束时，宿主必须开关系统输入法并锚定候选窗。
+    #[test]
+    fn ime_output_toggles_window_state() {
+        use crate::host::HostWindow;
+        use std::sync::{
+            Mutex,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        #[derive(Default)]
+        struct Mock {
+            allowed: AtomicBool,
+            area: Mutex<Option<(i32, i32, u32, u32)>>,
+        }
+
+        impl HostWindow for Mock {
+            fn request_redraw(&self) {}
+            fn set_cursor(&self, _icon: winit::window::CursorIcon) {}
+            fn set_cursor_visible(&self, _visible: bool) {}
+            fn scale_factor(&self) -> f64 {
+                1.0
+            }
+            fn is_maximized(&self) -> bool {
+                false
+            }
+            fn set_ime_allowed(&self, allowed: bool) {
+                self.allowed.store(allowed, Ordering::SeqCst);
+            }
+            fn set_ime_cursor_area(
+                &self,
+                position: winit::dpi::PhysicalPosition<i32>,
+                size: winit::dpi::PhysicalSize<u32>,
+            ) {
+                *self.area.lock().expect("IME 区域锁不得中毒") =
+                    Some((position.x, position.y, size.width, size.height));
+            }
+        }
+
+        let mock = Mock::default();
+        let mut allowed = false;
+        let ime = egui::output::IMEOutput {
+            purpose: egui::IMEPurpose::Normal,
+            rect: Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 20.0)),
+            cursor_rect: Rect::from_min_size(pos2(10.0, 20.0), vec2(2.0, 18.0)),
+            should_interrupt_composition: false,
+        };
+
+        super::apply_ime_to_window(&mock, &mut allowed, Some(ime), 1.25);
+        assert!(allowed, "文本编辑开始必须开启输入法");
+        assert!(mock.allowed.load(Ordering::SeqCst));
+        assert_eq!(
+            *mock.area.lock().expect("IME 区域锁不得中毒"),
+            Some((13, 25, 3, 23)),
+            "候选窗必须按 DPI 锚到光标处"
         );
-        assert!(
-            !super::input_requests_repaint(&WindowEvent::Resized(winit::dpi::PhysicalSize::new(
-                1280, 720
-            ))),
-            "尺寸变化由系统重绘驱动，不需要再排一帧"
-        );
-        assert!(
-            super::input_requests_repaint(&WindowEvent::Focused(true)),
-            "焦点变化要刷新 egui 的 focused 状态"
-        );
-        assert!(
-            super::input_requests_repaint(&WindowEvent::ModifiersChanged(
-                winit::event::Modifiers::default()
-            )),
-            "修饰键变化要同步给 egui（滚轮/快捷键事件需要随附）"
-        );
+
+        super::apply_ime_to_window(&mock, &mut allowed, None, 1.25);
+        assert!(!allowed, "文本编辑结束必须关闭输入法");
+        assert!(!mock.allowed.load(Ordering::SeqCst));
     }
 }

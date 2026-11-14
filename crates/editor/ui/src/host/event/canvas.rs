@@ -1,11 +1,10 @@
 //! 画布输入直连（winit → 编辑器），不再经过 旧版 `Grid` program。
 //!
-//! `LUMINO_EGUI_CANVAS_INPUT=1` 时启用：宿主把鼠标按下/移动/释放、滚轮、
-//! 修饰键与失焦直接翻译成 [`CanvasEvent`]，与 旧版 路径共用
-//! `ui_editor::grid::canvas_input::dispatch` 的分派语义。
+//! 宿主把鼠标按下/移动/释放、滚轮、修饰键与失焦直接翻译成 [`CanvasEvent`]，
+//! 与共享分派 `ui_editor::grid::canvas_input::dispatch` 保持同一语义。
 //!
-//! 启用后 `process_pending_events` 不再构建 旧版 widget 树（主窗口），
-//! 避免同一击被处理两次；对话框窗口没有画布，仍走原路径。
+//! 主窗口不再构建 旧版 widget 树，避免同一击被处理两次；对话框窗口没有画布，
+//! 仍走原路径。
 
 use lumino_ui_editor::grid::canvas_input::{CanvasButton, CanvasEvent};
 
@@ -19,28 +18,13 @@ pub(crate) fn canvas_contains_local(local: (f32, f32), size: (f32, f32)) -> bool
     local.0 >= 0.0 && local.1 >= 0.0 && local.0 < size.0 && local.1 < size.1
 }
 
-/// 画布输入是否由宿主直接驱动。
-///
-/// **默认开启**：钢琴卷帘画布（音符编辑 / 框选 / 滚轮 / 右键菜单）与滚动条
-/// 均已由 egui + winit 直连接管。`LUMINO_EGUI_CANVAS_INPUT=0` 回退到 旧版
-/// `Grid` 通道，用于对照排查。
-pub(crate) fn canvas_input_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_CANVAS_INPUT")
-            .map(|value| value != "0")
-            .unwrap_or(true)
-    })
-}
-
 impl Host {
     /// 主编辑器窗口：画布输入由本模块接管（对话框 / 进度窗没有画布）。
     ///
     /// 纵向卷帘与横向共用同一套分派（`canvas_input::vertical`）；走带、瀑布流
-    /// 与导出面板没有钢琴卷帘画布，仍走 旧版 通道。
+    /// 与导出面板没有钢琴卷帘画布。
     pub(crate) fn canvas_input_active(&self) -> bool {
-        canvas_input_enabled()
-            && !self.root.state.is_dialog_window
+        !self.root.state.is_dialog_window
             && !self.root.is_progress_window
             && !self.root.is_device_warning_window
             && !self.root.is_arrangement_mode()

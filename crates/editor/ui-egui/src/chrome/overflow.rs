@@ -6,7 +6,6 @@
 use egui::{CornerRadius, Id, Pos2, Rect, Vec2};
 
 use super::ToolbarModel;
-use super::menu;
 use super::toolbar_popup::{self, ToolbarAction};
 use crate::icons::IconCache;
 use crate::theme;
@@ -73,6 +72,8 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut IconCac
         && !menu.items.is_empty()
     {
         let panel = panel_rect(band, menu.items.len());
+        // 仅本地用途：`blocked` 参与「点击面板外 → 关闭」的判定。
+        // 全局占用表不再登记（面板由独立 `Area` 自占，见函数末尾注释）。
         blocked.push(panel);
 
         // 独立图层：面板覆盖区域内不再命中下层工具栏 / 卷帘。
@@ -135,5 +136,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut IconCac
         });
     }
 
-    menu::extend_blocked(ui.ctx(), blocked);
+    // 面板走独立 `Area`（`layer_id_at` 自占命中），触发按钮在工具栏 band 内
+    // （band 已整块占用）——这里不再重复登记到全局占用表（Step 7）。
+    // 不变量见 `tests/pointer_ownership.rs`。
 }

@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use winit::{dpi, window::WindowAttributes};
 
 use lumino_core::storage::ui_state::UiState;
-use lumino_ui::constants::dimensions::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 
 mod event;
 pub(crate) mod geometry;
@@ -18,10 +16,14 @@ pub struct WindowManager {
     gfx: lumino_gfx::Context,
     /// UI 主机
     ui: lumino_ui::Host,
+    /// egui 输入缓冲（主窗口持有；Host 只负责翻译）
+    egui_input: lumino_ui::host::OverlayInput,
     /// 修饰键状态
     modifiers: winit::keyboard::ModifiersState,
     /// 是否需要调整大小
     resized: bool,
+    /// 是否需要渲染一帧（点击优先：事件队列排空后统一补帧）
+    redraw_pending: bool,
     /// 是否请求关闭窗口
     close_requested: bool,
     /// 本地保存进行中标志（与 RunnerInner 共享：保存期间禁止关闭）
@@ -60,38 +62,14 @@ impl WindowManager {
         saving: Arc<AtomicBool>,
         cloud_saving: Arc<AtomicBool>,
     ) -> Result<Self, String> {
-        let attributes = Self::build_window_attributes(ui_state, ui_config.use_native_titlebar);
-
-        let window = Arc::new(
-            event_loop
-                .create_window(attributes)
-                .map_err(|e| format!("创建窗口失败: {e}"))?,
-        );
-
-        // 先让窗口可见，再执行较重的 GPU/Host 初始化，降低用户感知的启动延迟。
-        window.set_visible(true);
-
-        let physical_size = window.inner_size();
-        // Android 首帧防护（2026-10-19 真机实测）：窗口刚创建时 `inner_size()` 可能
-        // 为 0×0，wgpu-core 会以 `ZeroArea` 拒绝首次 configure（surface 保持未配置），
-        // 随后首帧 `get_current_texture` 直接 fatal panic → Activity 被 finish。
-        // 此时先按临时尺寸建立交换链，随后的 `Resized` 会把尺寸拉正到真实分辨率。
-        let physical_size = if physical_size.width == 0 || physical_size.height == 0 {
-            log::warn!("窗口尺寸为 0，先按 1280x720 建立临时交换链");
-            winit::dpi::PhysicalSize::new(1280, 720)
-        } else {
-            physical_size
-        };
-
-        let gfx = lumino_gfx::Context::new_blocking(
-            {
-                let window = Arc::clone(&window);
-                move |instance| instance.create_surface(Arc::clone(&window))
-            },
-            physical_size.width,
-            physical_size.height,
-        )
-        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
+        let native = lumino_ui_runtime::NativeWindow::create(
+            event_loop,
+            ui_state,
+            ui_config.use_native_titlebar,
+        )?;
+        let window = native.window;
+        let gfx = native.gfx;
+        let physical_size = native.size;
 
         // 在后台预热系统字体缓存，使首次打开设置对话框时字体下拉菜单
         // 的列表已就绪，不阻塞 UI 线程。字体扫描在后台线程调用
@@ -99,7 +77,7 @@ impl WindowManager {
         lumino_note_core::font_scanner::prewarm_font_cache();
 
         let mut ui = lumino_ui::Host::new(
-            Arc::clone(&window),
+            lumino_ui::host::host_window(window.clone()),
             physical_size.width,
             physical_size.height,
             ui_config,
@@ -126,8 +104,10 @@ impl WindowManager {
             window,
             gfx,
             ui,
+            egui_input: lumino_ui::host::OverlayInput::default(),
             modifiers: winit::keyboard::ModifiersState::default(),
             resized: false,
+            redraw_pending: false,
             close_requested: false,
             saving,
             cloud_saving,
@@ -280,60 +260,5 @@ impl WindowManager {
         let pending = self.deferred_save_confirm_close;
         self.deferred_save_confirm_close = false;
         pending
-    }
-
-    /// 构建窗口属性
-    fn build_window_attributes(
-        ui_state: &UiState,
-        #[allow(unused_variables)] use_native_titlebar: bool,
-    ) -> WindowAttributes {
-        let mut attributes = WindowAttributes::default()
-            .with_min_inner_size(dpi::LogicalSize {
-                width: MIN_WINDOW_WIDTH,
-                height: MIN_WINDOW_HEIGHT,
-            })
-            .with_inner_size(dpi::LogicalSize {
-                width: ui_state.w,
-                height: ui_state.h,
-            })
-            .with_maximized(ui_state.is_maximized)
-            .with_title("Lumino")
-            .with_visible(false);
-
-        if let (Some(x), Some(y)) = (ui_state.x, ui_state.y)
-            && !ui_state.is_maximized
-        {
-            attributes = attributes.with_position(dpi::LogicalPosition { x, y });
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            use winit::platform::windows::WindowAttributesExtWindows;
-            if use_native_titlebar {
-                // 使用系统标题栏
-                attributes = attributes.with_decorations(true);
-            } else {
-                // 使用自定义标题栏
-                attributes = attributes
-                    .with_decorations(false)
-                    .with_undecorated_shadow(true);
-            }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            if use_native_titlebar {
-                // 使用系统标题栏
-                attributes = attributes.with_titlebar_transparent(false);
-            } else {
-                // 使用自定义标题栏
-                attributes = attributes
-                    .with_titlebar_transparent(true)
-                    .with_fullsize_content_view(true);
-            }
-        }
-
-        attributes
     }
 }

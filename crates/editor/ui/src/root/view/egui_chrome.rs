@@ -223,7 +223,7 @@ impl Root {
     /// 必须与模型装配同源：模型为空（循环区间 / 中途变拍号 / 洋葱皮 / 协作光标 /
     /// 非卷帘视图 …）时 gfx 仍要绘制键盘与标尺，否则整块骨架会消失。
     pub(crate) fn egui_piano_roll_active(&self) -> bool {
-        crate::host::overlay_enabled() && self.egui_piano_roll_model().is_some()
+        self.egui_piano_roll_model().is_some()
     }
 
     /// 卷帘骨架模型：只在 旧版 用纯 UI 绘制的场合接管。

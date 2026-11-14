@@ -9,14 +9,25 @@ use super::{WindowManager, geometry};
 impl WindowManager {
     /// 处理窗口事件
     pub fn handle_event(&mut self, event: WindowEvent, storage: &mut crate::storage::Storage) {
-        // 鼠标按键对延迟最敏感：喂完输入立刻渲染一帧，不等低优先级的
-        // `WM_PAINT`（它只在消息队列空闲时生成，鼠标移动 / 定时器 / 协作轮询
-        // 会把点击反馈推迟到下一轮空闲）。随后排队的 `RedrawRequested`
-        // 仍会正常补帧。
-        let flush_after_input = matches!(event, WindowEvent::MouseInput { .. });
+        // 点击 / 触摸优先：输入只置脏，不在事件回调里同步抢帧。
+        // 但**一次完整点击（抬起）必须单独补一帧**：egui 的 `clicked()` 是
+        // 按帧结算的，若把多次点击合并进同一帧，同一位置的连续点击会被
+        // 折叠成一次——真机表现就是「播放时连点只响应一两次」。
+        let pointer_action = matches!(
+            event,
+            WindowEvent::MouseInput { .. } | WindowEvent::Touch(_)
+        );
+        let click_completed = match &event {
+            WindowEvent::MouseInput { state, .. } => *state == winit::event::ElementState::Released,
+            WindowEvent::Touch(touch) => matches!(
+                touch.phase,
+                winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled
+            ),
+            _ => false,
+        };
         match event {
             WindowEvent::RedrawRequested => {
-                self.handle_redraw();
+                self.redraw_pending = true;
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.ui.cursor_moved(position);
@@ -31,6 +42,7 @@ impl WindowManager {
             }
             WindowEvent::Resized(size) => {
                 self.handle_resize(size, storage);
+                self.redraw_pending = true;
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 // REF-001 G-1：DPI 变化不一定伴随 `Resized`（物理尺寸可能不变）。
@@ -39,7 +51,7 @@ impl WindowManager {
                 // ——出现"光标对、控件错"的半对状态。
                 let size = self.window.inner_size();
                 self.handle_resize(size, storage);
-                self.window.request_redraw();
+                self.redraw_pending = true;
             }
             WindowEvent::Moved(pos) => {
                 // 更新存储的位置信息。
@@ -57,10 +69,36 @@ impl WindowManager {
             _ => (),
         }
 
-        self.ui.handle_events(event, self.modifiers);
-        if flush_after_input {
-            self.handle_redraw();
+        self.ui
+            .handle_events(event, self.modifiers, &mut self.egui_input);
+        if pointer_action {
+            self.redraw_pending = true;
         }
+        // 抬起即结算：本次点击先被完整处理，再渲染这一帧，然后才回到事件队列。
+        // 这样既保证点击优先，又不会把连续点击折叠进同一帧。
+        if click_completed {
+            self.flush_pending_redraw();
+        }
+    }
+
+    /// 事件队列排空后统一渲染一帧（点击优先）。
+    ///
+    /// 普通重绘（`RedrawRequested` / 尺寸变化）只置脏，由 `about_to_wait`
+    /// 在事件队列排空后统一补帧；**一次完整点击（抬起）会立即结算一帧**，
+    /// 避免把多次点击合并进同一帧、被 egui 折叠成一次。
+    pub fn flush_pending_redraw(&mut self) {
+        if !self.redraw_pending {
+            return;
+        }
+        self.redraw_pending = false;
+        // 点击优先回归诊断：`LUMINO_CLICK_DIAG=1` 时每帧打点，
+        // 用于确认空闲期没有「事件 → 补帧 → 再补帧」的自旋。
+        if std::env::var_os("LUMINO_CLICK_DIAG").is_some() {
+            static FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let frame = FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            log::debug!("[FRAME] flush #{frame}");
+        }
+        self.handle_redraw();
     }
 
     /// 处理重绘
@@ -83,10 +121,12 @@ impl WindowManager {
             self.resized = false;
         }
 
-        if let Err(e) = self
-            .gfx
-            .with_frame(|frame, view| self.ui.redraw_requested(frame, view, &self.gfx))
-        {
+        let egui_events = self.egui_input.take();
+        let egui_focused = self.egui_input.focused();
+        if let Err(e) = self.gfx.with_frame(|frame, view| {
+            self.ui
+                .redraw_requested(frame, view, &self.gfx, egui_events, egui_focused)
+        }) {
             log::warn!("帧错误: {e:?}");
             // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排重绘；
             // Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
@@ -94,6 +134,9 @@ impl WindowManager {
                 self.window.request_redraw();
             }
         }
+        // 本帧 egui 是否进入文本编辑：下一帧键盘事件据此决定是否消费。
+        self.egui_input
+            .set_wants_keyboard(self.ui.egui_wants_keyboard());
     }
 
     /// 处理窗口大小改变

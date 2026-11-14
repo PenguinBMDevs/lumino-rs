@@ -9,7 +9,7 @@ use lumino_ui::state::root_state::DialogType;
 use crate::runner::inner::{InitError, Runner, TestModeState};
 use crate::runner::lifecycle::device_gate::DeviceGate;
 
-impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner {
+impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
     fn user_event(
         &mut self,
         _event_loop: &winit::event_loop::ActiveEventLoop,
@@ -101,6 +101,16 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
                     && let Some(this) = self.inner.as_mut()
                 {
                     this.schedule_startup_prompts();
+                }
+
+                // 诊断开关：启动即加载指定 MIDI（`LUMINO_OPEN_MIDI=path`），
+                // 用于复现播放期输入 / 渲染问题；正常启动不受影响。
+                if self.test_config.is_none()
+                    && let Ok(path) = std::env::var("LUMINO_OPEN_MIDI")
+                    && let Some(this) = self.inner.as_mut()
+                {
+                    tracing::info!("诊断：启动加载 MIDI - {path}");
+                    this.load_midi_file(std::path::PathBuf::from(path));
                 }
 
                 // 如果是测试模式，自动加载 MIDI
@@ -248,6 +258,13 @@ impl winit::application::ApplicationHandler<crate::runner::UserEvent> for Runner
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
+
+        // 点击优先：本批窗口事件已全部处理完，先把点击 / 触摸产生的帧补上，
+        // 再跑重连、进度、对话框等后台工作。渲染绝不插到两次点击之间，
+        // 也不会让 `WM_PAINT` 的低优先级拖住点击反馈。
+        if let Some(this) = self.inner.as_mut() {
+            this.window_state.window.flush_pending_redraw();
+        }
 
         // REND-019 PR-C：重连流水线逐帧推进（每帧最多一步，§1.4 S1），
         // 并自唤醒下一帧保证步进不依赖外部事件

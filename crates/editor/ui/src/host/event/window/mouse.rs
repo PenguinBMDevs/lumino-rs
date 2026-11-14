@@ -17,11 +17,11 @@ impl Host {
             self.window_ctx.is_mouse_pressed = state == ElementState::Pressed;
         }
 
-        // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：按下 / 释放直接进编辑器，
-        // 不再依赖 旧版 `Grid` program。
+        // 画布输入直连：按下 / 释放直接进编辑器，不再依赖 旧版 `Grid` program。
         //
         // egui 浮层（菜单 / 弹层 / 面板）覆盖画布时不得再落笔：命中区由
-        // `egui_blocked` 给出。已开始的画布拖拽必须继续（松手可能落在浮层上）。
+        // egui 本帧占用区 + 图层栈共同给出。已开始的画布拖拽必须继续
+        //（松手可能落在浮层上）。
         if !super::super::overlay_blocks_canvas(
             self.egui_owns_pointer(),
             self.editor_has_incomplete_pointer_edit(),

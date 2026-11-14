@@ -64,7 +64,7 @@ impl Host {
             self.window_ctx.window.request_redraw();
         }
 
-        // 画布输入直连（`LUMINO_EGUI_CANVAS_INPUT`）：跟手移动 / 悬停预览。
+        // 画布输入直连：跟手移动 / 悬停预览。
         //
         // 指针落在 egui **浮层图层**（菜单 / 弹层 / 模态）上时不再更新画布悬停：
         // 否则菜单会"穿透"——下层画布的光标预览跟着菜单里的指针移动。

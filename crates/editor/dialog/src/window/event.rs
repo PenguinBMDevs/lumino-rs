@@ -41,7 +41,11 @@ impl DialogWindow {
         }
 
         if let Some(ui) = self.ui.as_mut() {
-            ui.handle_events(event, winit::keyboard::ModifiersState::default());
+            ui.handle_events(
+                event,
+                winit::keyboard::ModifiersState::default(),
+                &mut self.egui_input,
+            );
         }
     }
 

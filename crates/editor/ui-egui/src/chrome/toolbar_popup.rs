@@ -10,7 +10,6 @@ use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Sense, Stroke, Vec2};
 use lumino_core::{SnapSpec, TextParams, Tool};
 
 use super::ToolbarModel;
-use super::menu;
 use super::{ShapeKind, ToolPanelItemKind};
 use crate::theme;
 
@@ -313,7 +312,11 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel) {
         }
     }
 
-    menu::extend_blocked(ctx, blocked);
+    // 不再登记到全局占用表：两块面板由 `floating_panel` 放在独立 `Area` 上，
+    // `Host::egui_layer_owns_pos` 经 `layer_id_at` 已能独占命中；触发按钮位于
+    // 工具栏 band 内，band 已整块占用。按本地 `blocked` 再登记一份是重复的
+    // 第二份真相源——Step 7 删除它，避免「记得登记」这类遗漏
+    // （不变量见 `tests/pointer_ownership.rs`）。
 }
 
 fn draw_panel(ui: &egui::Ui, rect: Rect) {

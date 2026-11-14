@@ -37,13 +37,21 @@ mod waterfall;
 mod window_ctx;
 
 use render_ctx::RenderContext;
+pub use window_ctx::HostWindow;
 use window_ctx::WindowContext;
 
-pub(crate) use event::canvas::canvas_input_enabled;
-/// 叠加层开关（标题栏菜单是否由 egui 接管）。
-pub(crate) use render::egui_overlay::overlay_enabled;
+/// 具体窗口 → `Host` 的窗口抽象。
+///
+/// `Arc::clone` 是泛型调用，返回值不会在函数参数处自动 unsize；统一走这个
+/// 辅助函数，调用方无需写显式类型标注。
+pub fn host_window(
+    window: std::sync::Arc<winit::window::Window>,
+) -> std::sync::Arc<dyn HostWindow> {
+    window
+}
 
 pub use cache::RenderCache;
+pub use render::egui_overlay::OverlayInput;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
 /// UI 宿主 - 管理 旧版 渲染和 wgpu 音符渲染
@@ -63,13 +71,6 @@ pub struct Host {
     pub(crate) window_ctx: WindowContext,
     /// 应用状态根节点
     pub(crate) root: root::Root,
-    /// egui 叠加层输入缓冲（指针位置 / 滚轮 / 修饰键 / 焦点）。
-    ///
-    /// 事件先喂给 egui；鼠标按键只在菜单占用区内被消费，
-    /// 其余仍由 `events` 里的 旧版 事件执行。
-    pub(crate) egui_input: render::egui_overlay::OverlayInput,
-    /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 旧版 队列。
-    pub(crate) egui_blocked: Vec<egui::Rect>,
     /// 画布输入状态（winit / egui 直接驱动时的双击检测、拖拽标记等）。
     pub(crate) canvas_input: lumino_ui_editor::grid::GridInteractionState,
     /// 编辑器画布（卷帘 / 走带）离屏纹理视图；`Some` 时 egui 采样它作底层，

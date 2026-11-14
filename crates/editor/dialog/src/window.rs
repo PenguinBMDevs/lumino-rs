@@ -40,6 +40,8 @@ pub struct DialogWindow {
     window: Arc<Window>,
     gfx: Option<lumino_gfx::Context>,
     ui: Option<lumino_ui::Host>,
+    /// egui 输入缓冲（窗口持有）
+    egui_input: lumino_ui::host::OverlayInput,
     pub(crate) dialog_type: DialogType,
     should_close: bool,
     result_data: Option<DialogResult>,
@@ -154,6 +156,7 @@ impl DialogWindow {
             window,
             gfx: None,
             ui: None,
+            egui_input: lumino_ui::host::OverlayInput::default(),
             dialog_type,
             should_close: false,
             result_data: None,

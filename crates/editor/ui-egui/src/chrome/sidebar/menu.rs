@@ -87,15 +87,8 @@ fn show_menu(
                 }
             }
         });
-    if clicked.is_some() {
-        crate::chrome::menu::extend_blocked(ui.ctx(), [menu_rect(pos, entries.len())]);
-    }
+    // 命中由 `Area` 图层独占（`layer_id_at`），不再登记全局占用表（Step 7）。
     clicked
-}
-
-/// 菜单矩形（用于占用登记）。
-fn menu_rect(pos: egui::Pos2, count: usize) -> Rect {
-    Rect::from_min_size(pos, Vec2::new(MENU_W, menu_height(count)))
 }
 
 /// 音轨行菜单：右对齐到面板内容右边界 −8，纵向对齐到该行上方 +8。
@@ -120,8 +113,9 @@ pub(super) fn track_menu(
         egui::Id::unique("lumino.sidebar.track-menu.backdrop"),
         Sense::click(),
     );
-    // 菜单本体与背景都计入占用，避免 旧版 的同位菜单再处理一次。
-    crate::chrome::menu::extend_blocked(ui.ctx(), [menu_rect(pos, model.entries.len())]);
+    // 菜单本体由 `show_menu` 放进独立 `Area`（`Order::Foreground`）：
+    // `Host::egui_layer_owns_pos` 经 `layer_id_at` 已独占命中，无需再登记到
+    // 全局占用表（Step 7：消灭第二份真相源）。
     let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if let Some(index) = clicked {
         Some(SidebarMenuAction::TrackItem {
@@ -152,7 +146,7 @@ pub(super) fn panel_menu(
         egui::Id::unique("lumino.sidebar.panel-menu.backdrop"),
         Sense::click(),
     );
-    crate::chrome::menu::extend_blocked(ui.ctx(), [menu_rect(pos, model.entries.len())]);
+    // 面板菜单同样是独立 `Area`，命中由 `layer_id_at` 独占（Step 7）。
     let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if let Some(index) = clicked {
         Some(SidebarMenuAction::PanelItem(index))

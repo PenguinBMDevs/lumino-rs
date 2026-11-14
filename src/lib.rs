@@ -197,48 +197,51 @@ pub fn run(app: Option<PlatformApp>) -> anyhow::Result<()> {
 
     let event_loop = create_event_loop(app)?;
 
-    // REND-019 PR-C §1.3（C1/C2）：device-lost 回调 → EventLoopProxy（无锁唤醒；
-    // 回调线程只做原子置位 + send_event，重连决策由 UI 主循环消费事件后发起）
-    let lost_proxy = event_loop.create_proxy();
-    lumino_gfx::set_device_lost_notifier(move |reason, message| {
-        let _ = lost_proxy.send_event(runner::UserEvent::GpuDeviceLost {
-            reason: format!("{reason:?}"),
-            message,
-        });
-    });
-
-    let proxy = event_loop.create_proxy();
-    lumino_ui::event::set_waker(move || {
-        let _ = proxy.send_event(runner::UserEvent::UiWake);
-    });
-
-    // REND-019 PR-D §1.5 L1：LGS（GPU 合成）**独立 device** 丢失 → UserEvent
-    // （独立链路；LGS 与编辑器零共享 device——红线 8）
-    let lgs_proxy = event_loop.create_proxy();
-    lumino_midi_io::set_lgs_device_lost_hook(move |reason, message| {
-        let _ = lgs_proxy.send_event(runner::UserEvent::LgsDeviceLost { reason, message });
-    });
-
-    let mut runner = runner::Runner::default();
-
-    // 如果是测试模式，设置测试配置
-    if let Some(config) = test_config {
-        runner.set_test_config(config);
-    }
-
-    // 设置日志功能
-    if cli.log_memory_usage() {
-        runner.set_log_memory_usage(true);
-        tracing::info!("已启用 memory-usage 日志（每2000ms输出各组件内存占用）");
-    }
-
     // 主线程即 UI 线程：将整个 GUI 生命周期的分配归因到 Ui。
     // with_tag 是线程局部的，run_app 在调用线程上运行，
-    // 因此该线程的所有分配（编辑器状态、空间索引、旧版 每帧 widget 树等）均归 Ui。
+    // 因此该线程的所有分配（编辑器状态、空间索引、egui 每帧模型等）均归 Ui。
     // 其中 MIDI 解析路径在 document.rs 内层已用 Midi 标签覆盖，音频渲染线程在 synth.rs 内单独标 Audio。
     let loop_result =
         lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
-            event_loop.run_app(&mut runner)
+            // 事件循环所有权在 `lumino-ui-runtime`：应用只实现 `RuntimeApp`。
+            // 代理必须在循环开始前创建，因此在 build 闭包里注册。
+            lumino_ui_runtime::run_with_event_loop(event_loop, |event_loop| {
+                // REND-019 PR-C §1.3（C1/C2）：device-lost 回调 → EventLoopProxy
+                // （无锁唤醒；回调线程只做原子置位 + send_event，重连决策由 UI
+                // 主循环消费事件后发起）。
+                let lost_proxy = event_loop.create_proxy();
+                lumino_gfx::set_device_lost_notifier(move |reason, message| {
+                    let _ = lost_proxy.send_event(runner::UserEvent::GpuDeviceLost {
+                        reason: format!("{reason:?}"),
+                        message,
+                    });
+                });
+
+                let proxy = event_loop.create_proxy();
+                lumino_ui::event::set_waker(move || {
+                    let _ = proxy.send_event(runner::UserEvent::UiWake);
+                });
+
+                // REND-019 PR-D §1.5 L1：LGS（GPU 合成）**独立 device** 丢失 → UserEvent
+                // （独立链路；LGS 与编辑器零共享 device——红线 8）
+                let lgs_proxy = event_loop.create_proxy();
+                lumino_midi_io::set_lgs_device_lost_hook(move |reason, message| {
+                    let _ =
+                        lgs_proxy.send_event(runner::UserEvent::LgsDeviceLost { reason, message });
+                });
+
+                let mut runner = runner::Runner::default();
+                // 如果是测试模式，设置测试配置
+                if let Some(config) = test_config {
+                    runner.set_test_config(config);
+                }
+                // 设置日志功能
+                if cli.log_memory_usage() {
+                    runner.set_log_memory_usage(true);
+                    tracing::info!("已启用 memory-usage 日志（每2000ms输出各组件内存占用）");
+                }
+                runner
+            })
         });
     log::info!("事件循环已退出: {loop_result:?}");
     loop_result?;

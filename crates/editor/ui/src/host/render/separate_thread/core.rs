@@ -50,7 +50,8 @@ impl Host {
     pub(crate) fn render_with_separate_thread(
         &mut self,
         frame: &wgpu::SurfaceTexture,
-        gfx: &lumino_gfx::Context,
+        egui_events: Vec<egui::Event>,
+        egui_focused: bool,
     ) {
         use crate::titlebar::mode_toggle::AppMode;
 
@@ -80,7 +81,7 @@ impl Host {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
-                self.render_ui(frame, &view, Some(bg));
+                self.render_ui(frame, &view, Some(bg), egui_events, egui_focused);
             }
             return;
         }
@@ -102,7 +103,7 @@ impl Host {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
-                self.render_ui(frame, &view, Some(bg));
+                self.render_ui(frame, &view, Some(bg), egui_events, egui_focused);
             }
             return;
         }
@@ -130,14 +131,9 @@ impl Host {
                 tracing::warn!("device lost 置位：本帧放弃 blit 与 旧版 渲染（等待重连）");
                 return;
             }
-            // 叠加层接管底层时：把离屏纹理交给 egui 采样，跳过直接 blit，
-            // 否则同一帧会被写两遍（egui 之后还会整窗画一遍）。
-            if crate::host::overlay_enabled() && egui_canvas_enabled() {
-                self.egui_editor_texture = wgpu_thread.latest_texture_view();
-            } else {
-                self.egui_editor_texture = None;
-                wgpu_thread.copy_offscreen_to_surface(frame, &gfx.device, &gfx.queue);
-            }
+            // egui 整窗绘制：把 gfx 离屏纹理交给 egui 采样，不再直接 blit 到
+            // surface——否则同一帧会被写两遍（egui 随后还会整窗画一遍）。
+            self.egui_editor_texture = wgpu_thread.latest_texture_view();
         }
 
         // 提交了「免等待」帧且登记了收尾时，渲染线程不会主动唤醒 UI：
@@ -154,7 +150,7 @@ impl Host {
             let view = frame
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            self.render_ui(frame, &view, None);
+            self.render_ui(frame, &view, None, egui_events, egui_focused);
         }
     }
 
@@ -239,17 +235,4 @@ impl Host {
 
         true
     }
-}
-
-/// 编辑器画布是否由 egui 采样（跳过 gfx → surface 的 blit）。
-///
-/// **默认开启**：真机实测与 blit 通道逐像素一致（画布区 mean/worst 通道差 0）。
-/// `LUMINO_EGUI_CANVAS=0` 可回退到旧的直接 blit 通道，用于对照排查。
-fn egui_canvas_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_CANVAS")
-            .map(|v| v != "0")
-            .unwrap_or(true)
-    })
 }

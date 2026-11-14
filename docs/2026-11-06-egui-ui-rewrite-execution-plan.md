@@ -3993,3 +3993,276 @@ callback / 多视口 / 截图能力。
 - **备注**：只对鼠标按键做同步帧（低频）；滚轮 / 键盘仍走 `WM_PAINT`，避免
   高频事件把 UI 线程拖进逐事件渲染。
 
+**Task 4.38（第一百四十四步）：Plan B 第一步——输入/渲染回退通道收口**
+
+- 分支 `feat/egui-native-runtime-v2`（从 `dev` 新建；旧 `feat/egui-native-runtime`
+  停留在合并前，不复用）。
+- **删除回退开关**：
+  - `LUMINO_EGUI_OVERLAY`（`overlay_enabled`）；
+  - `LUMINO_EGUI_CANVAS_INPUT`（`canvas_input_enabled`）；
+  - `LUMINO_EGUI_CANVAS`（`egui_canvas_enabled`）；
+  - `LUMINO_EGUI_INPUT_SCALE`（`input_scale` 覆盖）。
+  生产路径只剩「egui 整窗 + gfx 离屏纹理采样」一条。
+- **删除 blit 回退**：`render_with_separate_thread` 不再 `copy_offscreen_to_surface`，
+  始终把离屏纹理交给 egui 采样；`render_with_separate_thread` 去掉 `gfx` 参数。
+- **菜单占用区收口**：标题栏菜单标签不再登记到全局 `blocked`（标签在标题栏内，
+  画布边界门控已排除）；面板 / 子菜单仍登记，`Area` 图层命中继续兜底。
+  `native_menubar_has_no_traffic_buttons` 改为断言「未展开菜单时无全局占用矩形」。
+- **验证**：
+  - `lumino-ui` host 211 通过；menubar 5 / snap 2 / overflow 4 / tool_panel 5 /
+    piano_menu 2 / click_semantics 3 全绿；
+  - clippy `-D warnings`、fmt 通过；
+  - `fast-release` 空闲 3s CPU **78ms**；20/20 `ToolSelected`；
+  - 真机菜单：点「文件」展开完整面板，点菜单项后收起（截图 `02/03`）。
+- **下一步（Plan B Step 2）**：把 winit 事件循环的 `run_app` 所有权移入
+  `lumino-ui-runtime`（`RuntimeApp` trait 适配 `Runner`），再把窗口 / surface
+  创建移入运行时；Step 3 让 `Host` 无窗口化。
+
+**Task 4.39（第一百四十五步）：Plan B 第二步——事件循环所有权移入运行时**
+
+- `lumino-ui-runtime` 新增 `runtime.rs`：
+  - `RuntimeApp<E>`：应用层回调（`resumed` / `window_event` / `user_event` /
+    `about_to_wait` / `suspended` / `exiting`），与 winit `ApplicationHandler`
+    同构；
+  - `RuntimeHost<A>`：把 `RuntimeApp` 适配成 winit `ApplicationHandler`；
+  - `run_with_event_loop(event_loop, build)`：运行时持有并驱动 `run_app`，
+    `build` 在循环开始前注册 `EventLoopProxy`；`run` 提供桌面默认入口。
+- 生产接线：
+  - 根 crate 新增 `lumino-ui-runtime` 依赖；
+  - `Runner` 的 `ApplicationHandler` 实现改为 `RuntimeApp<UserEvent>`；
+  - `src/lib.rs::run` 不再直接 `event_loop.run_app`，改为
+    `lumino_ui_runtime::run_with_event_loop(event_loop, |event_loop| { ...; runner })`，
+    device-lost / UI waker / LGS proxy 在 build 闭包内注册。
+- 探针 `NativeApp` 同步改为 `RuntimeApp`，走 `runtime::run`。
+- **验证**：
+  - `lumino-ui-runtime` 1/1；`lumino-rs` / `lumino-ui-runtime`
+    `clippy -D warnings`、fmt 通过；
+  - `fast-release` 空闲 3s CPU **16ms**；20/20 `ToolSelected`。
+- **下一步（Plan B Step 3）**：把窗口 / surface 创建移入运行时
+  （`NativeWindow`），`WindowManager` 接受外部窗口；随后 `Host` 无窗口化。
+
+**Task 4.40（第一百四十六步）：Plan B 第三步——窗口 / surface 创建移入运行时**
+
+- `lumino-ui-runtime` 新增 `window.rs`：
+  - `NativeWindow { window, gfx, size }`：按保存的 `UiState` 拼
+    `WindowAttributes`、创建窗口、0×0 兜底、`Context::new_blocking` 建 surface；
+  - 平台标题栏（Windows / macOS）与最小/初始尺寸逻辑随窗口创建一起搬入。
+- `WindowManager::new` 不再自己 `create_window` / `new_blocking`，改为调用
+  `lumino_ui_runtime::NativeWindow::create(...)`，只保留 Host 初始化、
+  字体预热、Windows 拉伸区与渲染线程启动。
+- `window_manager.rs` 删除 `build_window_attributes` 与相关导入（339 → 260 行）。
+- **验证**：
+  - `lumino-rs` / `lumino-ui-runtime` clippy `-D warnings`、fmt 通过；
+  - `lumino-ui-runtime` 1/1；
+  - `fast-release` 空闲 3s CPU **31ms**；20/20 `ToolSelected`。
+- **下一步（Plan B Step 4）**：`Host` 无窗口化（`WindowContext` 改为运行时注入），
+  再把 `egui_input` / `egui_blocked` 从 `Host` 移入运行时。
+
+**Task 4.41（第一百四十七步）：Plan B 第四步——egui 输入缓冲移出 Host**
+
+- `OverlayInput` 改为公开类型（`lumino_ui::host::OverlayInput`），新增
+  `feed(event, scale, fallback_pointer)`：翻译指针 / 滚轮 / 按键 / 修饰键 /
+  IME / 焦点，返回是否需要重绘；`input_requests_repaint` 一并迁入。
+- `Host` 删除 `egui_input` 字段与 `capture_egui_overlay_input`：
+  - `handle_events(event, modifiers, egui_input: &mut OverlayInput)` 只翻译，
+    键盘让路由 `egui_input.wants_keyboard()` 决定；
+  - `redraw_requested` / `render_*` 接收本帧 `Vec<egui::Event>` + `focused`；
+  - `egui_pointer_blocked` / `egui_owns_pointer` 只读 `window_ctx.cursor_position`；
+  - 删除已无用的 `dialog_input_exclusive`；新增 `egui_wants_keyboard()` 查询。
+- 主窗口 `WindowManager`、对话框 `DialogWindow`、进度窗 `ProgressManager`、
+  云进度窗 `CloudProgressManager`、设备警告窗 `DeviceWarningWindow` 各自持有
+  `OverlayInput`，帧末写回 `wants_keyboard`。
+- **验证**：
+  - `lumino-ui` host 211、`lumino-dialog` 28、`lumino-ui-runtime` 1；
+  - menubar 5 / click_semantics 3；clippy `-D warnings`、fmt；
+  - `fast-release` 空闲 3s CPU **16ms**；20/20 `ToolSelected`；
+  - 真机画布：铅笔落 A#8 + C#8 两个音符（截图 `05_canvas_notes.png`）。
+- **下一步（Plan B Step 5）**：`Host` 无窗口化——`WindowContext` 的窗口句柄 /
+  cursor / clipboard / redraw 改为运行时注入；随后删除 `egui_blocked`。
+
+**Task 4.42（第一百四十八步）：Plan B 第五步——Host 无窗口化**
+
+- 新增 `lumino_ui::host::HostWindow`：`request_redraw` / `set_cursor` /
+  `set_cursor_visible` / `scale_factor` / `is_maximized`；winit `Window`
+  直接实现，`Host` 只持有 `Arc<dyn HostWindow>`，不再绑定具体窗口类型。
+- `Host` 五个构造函数改收 `Arc<dyn HostWindow>`；新增 `host_window()`
+  辅助函数（`Arc::clone` 是泛型调用，返回值不会在参数处自动 unsize）。
+- `Host` 删除 `egui_blocked`：占用矩形由 `EguiOverlay` 在 `draw` 内保存，
+  `egui_pointer_blocked` / `egui_owns_pointer` 统一查询 overlay。
+- 新增无窗口 `MockWindow` 单测，验证重绘 / 光标 / 缩放 / 最大化可注入。
+- **验证**：
+  - `lumino-ui` host 212、`lumino-dialog` 28、`lumino-ui-runtime` 1；
+  - menubar 5 / click_semantics 3 / velocity_panel 5；clippy/fmt；
+  - `fast-release` 空闲 3s CPU **0ms**（另有 78ms 噪声样本）；20/20；
+  - 真机菜单开合正常，画布落 A#8 + C#8。
+- **仍待办**：手工占用矩形尚未彻底删除。仍由 root 层绘制、会覆盖画布的面板
+  需逐个改为独立 `Area`：velocity 面板、arrangement 标尺 / 轨道、
+  toolbar popup、overflow、piano roll 滚动条、toast。改完才能只靠
+  `layer_id_at` 命中，避免一次性大改引入点击回归。
+
+**Task 4.43（第一百四十九步）：Plan B 第六步——IME 交给 egui**
+
+- 全项目已无人调用 `set_ime_allowed(true)`：egui 文本框在 Windows 上收不到
+  中文 IME 提交。`HostWindow` 补 `set_ime_allowed` / `set_ime_cursor_area`。
+- `EguiOverlay::draw` 返回 `OverlayOutput { cursor, ime }`：
+  `PlatformOutput.ime = Some` 时开启输入法并按 DPI 把候选窗锚到光标矩形，
+  `None` 时关闭；`set_ime_allowed` 只在状态变化时调用。
+- `OverlayInput` 翻译 `Ime::Preedit`（winit 字节下标 → egui 字符下标）与
+  `Ime::Commit` 为 `egui::Event::Ime`，不再当普通 `Event::Text` 插入。
+- `ime_active` 继续跟踪 winit `Enabled/Disabled`，裸字母快捷键让路。
+- **验证**：
+  - `lumino-ui` host **216**（新增字节→字符、DPI 锚点、开关状态 3 个单测）；
+  - `lumino-dialog` 28、`lumino-ui-runtime` 1；menubar 5 / click 3 / velocity 5；
+  - clippy `-D warnings`、fmt；`fast-release` 20/20；画布 A#8 + C#8。
+
+**Task 4.44（第一百五十步，插入项）：点击优先——重绘只置脏，排空后补帧**
+
+- 背景：此前 `MouseInput` 在事件回调里同步 `handle_redraw()`，一次帧渲染
+  可能插到两次点击之间；一旦未来再引入抢帧，点击会再次被饿死。
+- `WindowManager` 新增 `redraw_pending`：`RedrawRequested` / `Resized` /
+  `ScaleFactorChanged` / `MouseInput` / `Touch` 只置脏，不在
+  `window_event` 里渲染；完整点击（抬起）例外，见 Task 4.45。
+- `Runner::about_to_wait` 在事件队列排空后**最先**调用
+  `flush_pending_redraw()`，再跑重连 / 进度 / 对话框 / 协作等后台工作：
+  点击处理永远先于渲染。
+- `LUMINO_CLICK_DIAG=1` 时每帧打点 `[FRAME] flush #n`，用于回归确认空闲
+  期没有「事件 → 补帧 → 再补帧」自旋。
+- **验证**：
+  - 20 连点 **20/20**；40 连点 **40/40**；
+  - 20 连发（8ms 间隔）`actions=20`、`frames=127`、burst 884ms；
+  - 空闲 18s 仅 **4 帧**（无自旋）；
+  - 菜单开合、画布 A#8 + C#8 截图正常；
+  - `lumino-rs` lib 200 passed；clippy `-D warnings`、fmt。
+
+**Task 4.45（第一百五十一步，插入项修正）：播放/重帧下连点丢失——抬起即结算一帧**
+
+- 真机反馈：开播放让刷新率跑满后点击仍会丢。压测复现：
+  `LUMINO_FORCE_REDRAW=1` + 单帧 50ms，20 连点仅生效 **14** 次。
+- 根因：Task 4.44 把所有点击合并到 `about_to_wait` 的一帧再交给 egui，
+  而 egui 的 `clicked()` 按帧结算——同一位置的多次点击被折叠成一次。
+- 修复：`MouseInput` 抬起 / `Touch` 结束时，输入处理完后立即
+  `flush_pending_redraw()`：**一次完整点击单独结算一帧**；普通
+  `RedrawRequested` / 尺寸变化仍由 `about_to_wait` 合并，不重新引入空闲自旋。
+- 新增诊断开关 `LUMINO_OPEN_MIDI=path`：启动即加载指定 MIDI，用于复现
+  播放期输入问题；正常启动不设置时零影响。
+- **验证**：
+  - 50ms 重帧压测 **20/20**（修复前 14/20）；
+  - 正常 20 连点 20/20；`fast-release` 空闲 3s CPU **62ms**；
+  - 菜单开合、画布 A#8 + C#8 截图正常；
+  - `lumino-rs` lib 200 passed；clippy `-D warnings`、fmt。
+- **复盘（重要）**：本条只解决了「同一帧内多次点击被折叠」。真机复测仍丢，
+  真正的根因是 Task 4.46 的**帧时钟**问题——本条压测用的是 45ms 合成短按，
+  恰好掩盖了那个 bug。教训：输入类压测必须用**真人时长**（100~200ms）。
+
+**Task 4.46（第一百五十二步，根因修复）：播放满刷时点不动——egui 帧时钟脱钩**
+
+- 真机反馈（复测）：不加载 MIDI，仅按下播放让 UI 保持刷新，点击下拉菜单按钮后
+  展开的操作无响应；切换类按钮同理。人工验收最终通过。
+- **根因（与 4.44 / 4.45 都不同）**：egui 的点击判定是**时间**语义，不是帧语义：
+  `self.time - press_start_time > max_click_duration`（默认 0.8s）即不算点击
+  （`egui-0.37.0/src/input_state/mod.rs::could_any_button_be_click`）。
+  而 `RawInput::time` 是 `Option<f64>`，**我们从未填写**，于是 egui 走
+  `new.time.unwrap_or(self.time + predicted_dt)`（`begin_pass`，默认 1/60）——
+  虚拟时钟只跟**帧数**走，与真实时间彻底脱钩。
+  - 播放期跑满（真机实测 **475fps**）→ 虚拟时钟快约 **8×**，150ms 真人点击
+    被算成 1.2s，超过 0.8s ⇒ `clicked()` 恒 `false`；
+  - 本地压测机播放期仅 **16fps** → 虚拟时钟比真实时间**慢** ⇒ 点击永远算数，
+    于是「自动化 20/20 全绿，真机全红」。
+  - 症状吻合：菜单能开（悬停切换 + 极轻点击），点条目 / 切换类按钮（纯
+    `clicked()`）无响应。
+- **上游同类问题**：[emilk/egui#2502](https://github.com/emilk/egui/issues/2502)
+  「>300fps 时点击检测失效」，结论正是「没有把时间喂给 `RawInput`」。
+- **修复**：新增 `host/render/egui_overlay/clock.rs`：
+  - `FrameClock`：`Instant` 单调秒数（禁用 `SystemTime`，回退会算出负按压时长）；
+  - `raw_input()`：统一组装 `RawInput`，**必须**填 `time: Some(...)`；
+  - 保留 `predicted_dt` 默认值（与 `egui-winit` / `eframe` 参考接线一致）；
+  - 诊断开关（默认关闭、构造时读一次）：`LUMINO_EGUI_LEGACY_CLOCK=1` 退回旧行为
+    用于 A/B；`LUMINO_CLOCK_DIAG=1` 每帧比对 egui 内部时钟与真实时间。
+- **真机 A/B（同一份二进制）**：
+
+  | 模式 | 帧率 | 按压 | 播放中点击生效 | 时钟偏差 |
+  |------|------|------|----------------|----------|
+  | 旧行为 | 475fps | 150ms（真人） | **0 / 12** | +241s（约 8×） |
+  | 旧行为 | 475fps | 45ms（合成短按） | 13 / 12 | +223s |
+  | 修复后 | 472fps | 150ms（真人） | **12 / 12** | 0 |
+
+- **测试**（`clock.rs`，4 条）：旧行为在 480fps + 150ms 下必丢；填时间后必须成立；
+  帧时钟单调且 `RawInput` 携带它；以及
+  `short_synthetic_press_masks_the_bug_but_human_press_does_not`——
+  把「短按压测会侥幸通过、掩盖真机问题」这条教训钉死。
+- **验证**：`lumino-ui` lib **797 passed**（1 ignored）、`lumino-rs` lib **200 passed**、
+  `clippy -D warnings`、`fmt`、`fast-release` 真机 A/B 上表。
+- **下一步（Plan B Step 7）**：把 root 层面板逐个 `Area` 化，删除最后一份手工占用矩形；
+  随后清理 旧版 命名残留。
+
+## Plan B 收尾（人工验收通过）
+
+- 分支 `feat/egui-native-runtime-v2`，Step 1–6 与 4.44–4.46 全部落地。
+- **生产入口**：`lumino-ui-runtime` 拥有窗口 / 事件循环 / 输入；`Host` 无窗口句柄，
+  通过 `HostWindow` trait 操作窗口（`request_redraw` / `set_cursor` / IME）。
+- **输入**：egui 是唯一输入通道；`OverlayInput` 归运行时各窗口自有；
+  IME 归 egui（`set_ime_allowed` / `set_ime_cursor_area`）。
+- **事件循环**：空闲 `ControlFlow::Wait`（无自旋）；点击优先——输入只置脏、
+  完整点击（抬起）单独结算一帧，普通重绘由 `about_to_wait` 合并。
+- **点击语义**：`RawInput::time` 每帧填真实单调秒数（4.46），高刷新率下判定正确。
+- 剩余工作（非阻塞，属 Step 7 范畴）：root 层面板 `Area` 化、删除手工占用矩形、
+  「旧版」命名清理（`legacy` 字样、注释里的 旧版 指代）。
+
+**Task 4.47（第一百五十三步，Plan B Step 7 首项）：删除工具栏弹层的重复占用登记**
+
+- **动机**：`Host::egui_owns_pointer` 的判定是「手工占用矩形 ∪ 浮层图层」。
+  历史上面板绘制时顺手把矩形塞进 `blocked`，与 egui 自己的图层数据重复——
+  两份真相源，靠「记得登记」维系，漏一处就穿透或被吞。
+- **先取证再动手**（不靠推测）：精度下拉 / 洋葱皮菜单 / 溢出菜单都已通过
+  `floating_panel` 放在独立 `Area`（`Order::Foreground`），`layer_id_at` 已能
+  独占命中；其触发按钮均在工具栏 band 内，band 已整块登记。故面板矩形登记为冗余。
+- **新增不变量测试** `tests/pointer_ownership.rs`（3 条），把「删除安全」变成
+  可执行断言：
+  1. `Area` 弹层自占：面板中心与内边距处 `layer_id_at` 必须非 `Background`；
+  2. band 内触发按钮必须被占用（band 矩形或图层）；
+  3. 合成：弹层打开时面板与触发区都在占用集合内。
+- **改动**：`chrome/toolbar_popup.rs`、`chrome/overflow.rs` 删除全局
+  `menu::extend_blocked`；**保留本地 `blocked`**——它仍是「点面板外关闭」
+  的判定依据。首次改动误删后由 `overflow_bands` 立刻抓出（禁用项多触发一次
+  `CloseOverflowMenu`），已修正——这条回归门禁保住了行为。
+- **真机验证**（fast-release，ppp=1.25，用应用自己打印的矩形定位，不猜坐标）：
+  - 精度框开关 **7/7**（`ToggleSnapPicker x7`）；
+  - 弹层内点首项命中（`SnapSpec(Bar) x1`）——面板自占命中，无画布穿透；
+  - 顺带复验播放：Play/Pause 交替命中 8 次（4.46 时钟修复的真机证据）。
+- **验证**：`lumino-ui-egui` 58 个测试二进制全通过、`clippy -D warnings`、`fmt`。
+  `theme_palette` 在并行全量下偶发失败，单跑与连续两轮全量均通过，
+  属 wgpu 并行竞争抖动，与本次改动无关。
+- **后续（同一类问题，逐项推进）**：`tool_panel`（纯 `Area` 面板，但 `blocked`
+  参与关闭判定）、`sidebar` 菜单（`Area`）、`piano_roll` 右键菜单（`Area` +
+  整块 `available`）、`velocity_panel` 工具栏（混合体：工具栏归 egui / 数据区
+  归 gfx 画布，**不可整块 `Area` 化**，否则会吞掉画布交互）。
+
+**Task 4.48（第一百五十四步，Step 7 次项）：左侧栏弹层的占用登记收口**
+
+- **范围核实**（先查再删，纠正了一个误判）：左侧栏 band **本身没有**登记
+  `blocked`（只有工具栏 band 登记了），因此 `sidebar.rs` / `track_list.rs`
+  里那几处登记仍在起作用，**不能删**——音轨行与路由按钮由 root 绘制，
+  没有独立图层兜底。
+- **真正冗余的只有走 `Area` 的弹层**：
+  - 音轨右键菜单、空白色板菜单（`sidebar/menu.rs`）：删 3 处 `extend_blocked`；
+  - 取色器 / 端口·通道选择器（`sidebar/picker.rs`）：原 `blocked_and_backdrop`
+    同时做「全局登记 + 背景关闭」，拆开后只保留关闭判定；
+  - 顺带清掉因此成为死代码的 `menu_rect`。
+- **测试升级为更强断言**：把「矩形在 `blocked` 里」改成「`layer_id_at` 返回
+  非 `Background` 图层」，即验证真实命中栈；同时断言本体（按宽度识别）不再
+  出现在全局占用表。
+- **过程中被测试纠正一次**：探针会同时落在下层音轨行内，而那一份登记是**必需**
+  的；若按「有点命中就失败」判断，会把正确登记误判成冗余。改为按宽度区分本体
+  后才成立——避免了「为了让测试变绿而放宽标准」。
+- **验证**：目标用例 9/9（`sidebar_menu_bands` 5 + `sidebar_picker_bands` 4）；
+  `cargo fmt`（含 `--check`）与 `clippy -p lumino-ui-egui --all-targets -D warnings`
+  通过；其余测试按约定交由 CI。
+- **明确不做（本轮决策）**：
+  - `tool_panel` 胶囊 / `piano_roll` 整块与滚动条 / `velocity_panel` 工具栏：
+    root 绘制或混合体，删登记会打穿画布输入，风险高；
+  - 「旧版」命名清理：全仓 **724 处**，且 `LegacyBox`（公开枚举变体、进配置
+    序列化）与 `from_legacy`（公开 API）属**合法标识符**，改名会破坏兼容。
+    纯机械大 diff 收益低、风险高，**搁置**，仅在有具体误导风险时按需修正。
+
+
+

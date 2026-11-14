@@ -6,19 +6,15 @@ use std::time::Instant;
 use egui::{Event as EguiEvent, PointerButton as EguiButton, Pos2, RawInput, Rect, Vec2};
 use lumino_egui_bridge::{Painter, Screen};
 use lumino_ui_egui::chrome::{self, ChromeModel, StatusbarModel, TitlebarModel, ToolbarModel};
-use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 /// 启动原生 egui 运行时探针。
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = NativeApp::default();
-    event_loop.run_app(&mut app)?;
+    crate::runtime::run(|_event_loop| NativeApp::default())?;
     Ok(())
 }
 
@@ -218,7 +214,7 @@ impl Gpu {
     }
 }
 
-impl ApplicationHandler for NativeApp {
+impl crate::RuntimeApp for NativeApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
