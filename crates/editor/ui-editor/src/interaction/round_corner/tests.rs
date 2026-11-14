@@ -186,3 +186,89 @@ fn test_round_drag_through_entry_points() {
     assert!(params.is_some(), "拖动后应写入 Round 算子");
     editor.handle_released();
 }
+
+// ── DEBT-18：Ctrl+拖调弧形状 ──────────────────────────────────────
+
+/// 取角点 1 的半径（模型上无 Round 或未登记时返回 None）
+fn radius_of(editor: &Editor, index: usize) -> Option<f32> {
+    let model = &editor.editor_state.pending_composed[0].results[0].model;
+    model.ops.iter().find_map(|op| match op {
+        ShapeOp::Round(params) => params.radius_of(index),
+        _ => None,
+    })
+}
+
+/// 取角点 1 的形状（模型上无 RoundShape 或未登记时返回 None）
+fn shape_of(editor: &Editor, index: usize) -> Option<f32> {
+    let model = &editor.editor_state.pending_composed[0].results[0].model;
+    model.ops.iter().find_map(|op| match op {
+        ShapeOp::RoundShape(params) => params.shape_of(index),
+        _ => None,
+    })
+}
+
+#[test]
+fn test_plain_drag_does_not_add_shape_op() {
+    let mut editor = editor_with_pending_polyline();
+    assert!(editor.begin_round_corners());
+    let corner = editor.line_pos_screen_pos((100.0, 60.0));
+    assert!(editor.round_corner_pressed(corner));
+    let target = editor.line_pos_screen_pos((100.0, 66.0));
+    assert!(editor.round_corner_moved(target));
+    assert!(
+        shape_of(&editor, 1).is_none(),
+        "普通拖拽只调半径，不应追加形状算子"
+    );
+}
+
+#[test]
+fn test_ctrl_drag_changes_shape_without_changing_radius() {
+    let mut editor = editor_with_pending_polyline();
+    assert!(editor.begin_round_corners());
+    let corner = editor.line_pos_screen_pos((100.0, 60.0));
+    assert!(editor.round_corner_pressed(corner));
+    let target = editor.line_pos_screen_pos((100.0, 66.0));
+    assert!(editor.round_corner_moved(target));
+    assert!(editor.round_corner_released());
+    let radius_before = radius_of(&editor, 1).expect("先拖出半径");
+
+    editor.set_ctrl_pressed(true);
+    assert!(editor.round_corner_pressed(corner));
+    // 向上 2 个 key：shape = base + 2 / 半径
+    let target = editor.line_pos_screen_pos((100.0, 62.0));
+    assert!(editor.round_corner_moved(target));
+    editor.set_ctrl_pressed(false);
+    assert!(editor.round_corner_released());
+
+    let shape = shape_of(&editor, 1).expect("Ctrl+拖应登记形状");
+    assert!(shape > 0.2, "向上拖应更鼓（正形状），实际 {shape}");
+    let radius_after = radius_of(&editor, 1).expect("半径仍在");
+    assert!(
+        (radius_after - radius_before).abs() < 1e-6,
+        "Ctrl+拖不得改半径：{radius_before} → {radius_after}"
+    );
+    assert_eq!(editor.pending_edit_undo.len(), 2, "两次拖拽 = 两次撤销");
+}
+
+#[test]
+fn test_ctrl_drag_on_unrounded_corner_creates_default_radius() {
+    let mut editor = editor_with_pending_polyline();
+    assert!(editor.begin_round_corners());
+    editor.set_ctrl_pressed(true);
+    let corner = editor.line_pos_screen_pos((100.0, 60.0));
+    assert!(editor.round_corner_pressed(corner));
+    let target = editor.line_pos_screen_pos((100.0, 61.0));
+    assert!(editor.round_corner_moved(target));
+    editor.set_ctrl_pressed(false);
+
+    let radius = radius_of(&editor, 1).expect("形状拖拽应先给默认半径");
+    assert!(
+        (radius - 2.0).abs() < 1e-6,
+        "默认半径应为 2 key，实际 {radius}"
+    );
+    let shape = shape_of(&editor, 1).expect("应登记形状");
+    assert!(
+        (shape - 0.5).abs() < 0.15,
+        "向上 1 key / 半径 2 ≈ +0.5，实际 {shape}"
+    );
+}
