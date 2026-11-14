@@ -4080,3 +4080,40 @@ callback / 多视口 / 截图能力。
 - **下一步（Plan B Step 5）**：`Host` 无窗口化——`WindowContext` 的窗口句柄 /
   cursor / clipboard / redraw 改为运行时注入；随后删除 `egui_blocked`。
 
+**Task 4.42（第一百四十八步）：Plan B 第五步——Host 无窗口化**
+
+- 新增 `lumino_ui::host::HostWindow`：`request_redraw` / `set_cursor` /
+  `set_cursor_visible` / `scale_factor` / `is_maximized`；winit `Window`
+  直接实现，`Host` 只持有 `Arc<dyn HostWindow>`，不再绑定具体窗口类型。
+- `Host` 五个构造函数改收 `Arc<dyn HostWindow>`；新增 `host_window()`
+  辅助函数（`Arc::clone` 是泛型调用，返回值不会在参数处自动 unsize）。
+- `Host` 删除 `egui_blocked`：占用矩形由 `EguiOverlay` 在 `draw` 内保存，
+  `egui_pointer_blocked` / `egui_owns_pointer` 统一查询 overlay。
+- 新增无窗口 `MockWindow` 单测，验证重绘 / 光标 / 缩放 / 最大化可注入。
+- **验证**：
+  - `lumino-ui` host 212、`lumino-dialog` 28、`lumino-ui-runtime` 1；
+  - menubar 5 / click_semantics 3 / velocity_panel 5；clippy/fmt；
+  - `fast-release` 空闲 3s CPU **0ms**（另有 78ms 噪声样本）；20/20；
+  - 真机菜单开合正常，画布落 A#8 + C#8。
+- **仍待办**：手工占用矩形尚未彻底删除。仍由 root 层绘制、会覆盖画布的面板
+  需逐个改为独立 `Area`：velocity 面板、arrangement 标尺 / 轨道、
+  toolbar popup、overflow、piano roll 滚动条、toast。改完才能只靠
+  `layer_id_at` 命中，避免一次性大改引入点击回归。
+
+**Task 4.43（第一百四十九步）：Plan B 第六步——IME 交给 egui**
+
+- 全项目已无人调用 `set_ime_allowed(true)`：egui 文本框在 Windows 上收不到
+  中文 IME 提交。`HostWindow` 补 `set_ime_allowed` / `set_ime_cursor_area`。
+- `EguiOverlay::draw` 返回 `OverlayOutput { cursor, ime }`：
+  `PlatformOutput.ime = Some` 时开启输入法并按 DPI 把候选窗锚到光标矩形，
+  `None` 时关闭；`set_ime_allowed` 只在状态变化时调用。
+- `OverlayInput` 翻译 `Ime::Preedit`（winit 字节下标 → egui 字符下标）与
+  `Ime::Commit` 为 `egui::Event::Ime`，不再当普通 `Event::Text` 插入。
+- `ime_active` 继续跟踪 winit `Enabled/Disabled`，裸字母快捷键让路。
+- **验证**：
+  - `lumino-ui` host **216**（新增字节→字符、DPI 锚点、开关状态 3 个单测）；
+  - `lumino-dialog` 28、`lumino-ui-runtime` 1；menubar 5 / click 3 / velocity 5；
+  - clippy `-D warnings`、fmt；`fast-release` 20/20；画布 A#8 + C#8。
+- **下一步（Plan B Step 7）**：把上述 root 层面板逐个 `Area` 化，删除
+  最后一份手工占用矩形；随后清理 旧版 命名残留。
+
