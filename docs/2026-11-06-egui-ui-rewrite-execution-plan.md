@@ -4208,3 +4208,33 @@ callback / 多视口 / 截图能力。
 - 剩余工作（非阻塞，属 Step 7 范畴）：root 层面板 `Area` 化、删除手工占用矩形、
   「旧版」命名清理（`legacy` 字样、注释里的 旧版 指代）。
 
+**Task 4.47（第一百五十三步，Plan B Step 7 首项）：删除工具栏弹层的重复占用登记**
+
+- **动机**：`Host::egui_owns_pointer` 的判定是「手工占用矩形 ∪ 浮层图层」。
+  历史上面板绘制时顺手把矩形塞进 `blocked`，与 egui 自己的图层数据重复——
+  两份真相源，靠「记得登记」维系，漏一处就穿透或被吞。
+- **先取证再动手**（不靠推测）：精度下拉 / 洋葱皮菜单 / 溢出菜单都已通过
+  `floating_panel` 放在独立 `Area`（`Order::Foreground`），`layer_id_at` 已能
+  独占命中；其触发按钮均在工具栏 band 内，band 已整块登记。故面板矩形登记为冗余。
+- **新增不变量测试** `tests/pointer_ownership.rs`（3 条），把「删除安全」变成
+  可执行断言：
+  1. `Area` 弹层自占：面板中心与内边距处 `layer_id_at` 必须非 `Background`；
+  2. band 内触发按钮必须被占用（band 矩形或图层）；
+  3. 合成：弹层打开时面板与触发区都在占用集合内。
+- **改动**：`chrome/toolbar_popup.rs`、`chrome/overflow.rs` 删除全局
+  `menu::extend_blocked`；**保留本地 `blocked`**——它仍是「点面板外关闭」
+  的判定依据。首次改动误删后由 `overflow_bands` 立刻抓出（禁用项多触发一次
+  `CloseOverflowMenu`），已修正——这条回归门禁保住了行为。
+- **真机验证**（fast-release，ppp=1.25，用应用自己打印的矩形定位，不猜坐标）：
+  - 精度框开关 **7/7**（`ToggleSnapPicker x7`）；
+  - 弹层内点首项命中（`SnapSpec(Bar) x1`）——面板自占命中，无画布穿透；
+  - 顺带复验播放：Play/Pause 交替命中 8 次（4.46 时钟修复的真机证据）。
+- **验证**：`lumino-ui-egui` 58 个测试二进制全通过、`clippy -D warnings`、`fmt`。
+  `theme_palette` 在并行全量下偶发失败，单跑与连续两轮全量均通过，
+  属 wgpu 并行竞争抖动，与本次改动无关。
+- **后续（同一类问题，逐项推进）**：`tool_panel`（纯 `Area` 面板，但 `blocked`
+  参与关闭判定）、`sidebar` 菜单（`Area`）、`piano_roll` 右键菜单（`Area` +
+  整块 `available`）、`velocity_panel` 工具栏（混合体：工具栏归 egui / 数据区
+  归 gfx 画布，**不可整块 `Area` 化**，否则会吞掉画布交互）。
+
+
