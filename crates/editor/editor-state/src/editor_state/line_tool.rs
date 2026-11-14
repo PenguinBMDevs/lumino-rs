@@ -376,6 +376,17 @@ impl LineToolState {
         self.path_history_index = self.path_history.len() - 1;
     }
 
+    /// 曲线被组合 / 提升消费后重建历史基线。
+    ///
+    /// 历史快照里仍记录着已被移出 `paths` 的曲线；若不重建，下一次 Ctrl+Z 会
+    /// 先回放旧路径（`undo_path` 优先级高于文档 undo），表现为此前报的
+    /// 「切割后 Bake，再 undo 却回到曲线早期状态、Bake 音符残留」。
+    pub fn rebase_path_history(&mut self) {
+        self.path_history.clear();
+        self.path_history.push(self.snapshot());
+        self.path_history_index = 0;
+    }
+
     /// 更新栈顶为当前状态（合并连续操作——创建同一路径的锚点追加）
     pub fn update_top_path_history(&mut self) {
         let snap = self.snapshot();

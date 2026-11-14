@@ -129,6 +129,62 @@ fn test_pending_slice_produces_two_parts() {
 }
 
 #[test]
+fn test_slice_then_bake_undo_restores_sliced_state_not_path_history() {
+    use lumino_editor_state::BezierAnchor;
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 60.0)),
+        BezierAnchor::new((200.0, 72.0)),
+        BezierAnchor::new((400.0, 64.0)),
+    ]);
+    // 模拟真实绘制：锚点追加会写入路径历史；切割消费曲线后该历史必须重建。
+    editor.editor_state.line_tool.push_path_history();
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("pending 曲线镜像");
+    editor.editor_state.shape_select.select_only(id);
+    let anchors_before = editor.editor_state.line_tool.paths[0].len();
+    assert_eq!(anchors_before, 3, "测试曲线应含中间锚点");
+
+    assert!(editor.slice_selected_vertical(), "先切割");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert!(editor.confirm_shape_tool(), "再 Bake");
+
+    assert!(editor.undo(), "Bake undo 应回到切割后的组合");
+    assert_eq!(
+        editor.editor_state.pending_composed.len(),
+        1,
+        "应回到两片组合，而不是回放曲线路径历史"
+    );
+    assert!(
+        editor.editor_state.line_tool.paths.is_empty(),
+        "曲线已被组合消费，不应被路径历史复活"
+    );
+    assert!(
+        !editor.editor_state.line_tool.can_undo_path(),
+        "组合后路径历史应已重建，不能抢在文档 undo 之前"
+    );
+    assert_eq!(editor.editor_state.data.current_track_notes().len(), 0);
+
+    assert!(editor.undo(), "再 undo 才回到切割前的曲线");
+    assert_eq!(
+        editor.editor_state.line_tool.paths.len(),
+        1,
+        "应恢复原始曲线"
+    );
+    assert_eq!(
+        editor.editor_state.line_tool.paths[0].len(),
+        anchors_before,
+        "应恢复全部锚点，不能丢中间节点"
+    );
+}
+
+#[test]
 fn test_pending_slice_open_curve_produces_two_parts() {
     let mut editor = empty_editor();
     setup_single_pending_curve(&mut editor);
@@ -287,5 +343,43 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
     assert!(
         editor.mould_walls.is_none(),
         "刀被消费后应清空（虚线框消失）"
+    );
+}
+
+#[test]
+fn test_mould_knife_preview_only_in_mouse_tool_and_cleared_on_leave() {
+    use lumino_message::Tool;
+
+    let mut editor = Editor::new();
+    seed_notes(&mut editor, 2, 1, &[Note::new(0.0, 60, 100.0)]);
+    editor.editor_state.interaction.selected_notes = [0_usize].into_iter().collect();
+    editor.set_tool(Tool::ShapeSelect);
+    assert!(editor.mould_walls.is_some(), "切到鼠标工具应快照刀");
+    assert!(
+        !editor.overlay_preview().knife_rects.is_empty(),
+        "鼠标工具下应显示青色虚线刀框"
+    );
+
+    editor.set_tool(Tool::Curve);
+    assert!(
+        editor.mould_walls.is_none(),
+        "离开鼠标工具应清空刀快照，避免虚线框残留"
+    );
+    assert!(
+        editor.overlay_preview().knife_rects.is_empty(),
+        "离开鼠标工具后不应再画刀框"
+    );
+
+    // 双保险：即使旧快照因撤销/恢复残留，非鼠标工具也不绘制。
+    editor.mould_walls = Some(vec![shape_note(0.0, 60)]);
+    editor.editor_state.tool = Tool::Curve;
+    assert!(
+        editor.overlay_preview().knife_rects.is_empty(),
+        "非鼠标工具不得绘制刀框"
+    );
+    editor.editor_state.tool = Tool::ShapeSelect;
+    assert!(
+        !editor.overlay_preview().knife_rects.is_empty(),
+        "鼠标工具下快照恢复后应重新显示"
     );
 }

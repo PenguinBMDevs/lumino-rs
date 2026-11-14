@@ -611,7 +611,7 @@ impl Editor {
     /// **预览偏移按件区分**：已确认图形走「幽灵」语义（文档未变，几何在原位，
     /// 选框需叠加拖拽偏移才跟手）；待确认镜像的几何已随拖动**即时落位**
     /// （见 [`Self::sync_pending_drag_geometry`]），再叠偏移就成了双倍位移。
-    pub(crate) fn selection_box(&self) -> Option<Rectangle> {
+    pub fn selection_box(&self) -> Option<Rectangle> {
         let track = self.editor_state.data.current_track;
         let (dtick, dkey) = self.drag_preview_delta();
         // 命中集在**屏幕空间**取并集：逻辑空间与屏幕不是线性同尺度（纵横缩放不同），
@@ -648,7 +648,7 @@ impl Editor {
     ///
     /// 拖拽作用于**整个选中集合**，故这里是「整组共同偏移」——渲染侧对每个选中图形
     /// 统一套用，无需按图形区分。
-    pub(crate) fn drag_preview_delta(&self) -> (f32, f32) {
+    pub fn drag_preview_delta(&self) -> (f32, f32) {
         match self.editor_state.shape_select.drag() {
             Some(d) => (d.delta_tick, d.delta_key),
             None => (0.0, 0.0),
@@ -1269,6 +1269,10 @@ mod tests {
             "undo 应恢复待确认形状"
         );
         assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+        assert!(
+            editor.editor_state.data.main_track_struct_dirty,
+            "undo Bake 必须强制主轨段重建，否则 GPU 会残留 Bake 音符"
+        );
 
         assert!(editor.redo(), "Bake 应可重做");
         assert!(

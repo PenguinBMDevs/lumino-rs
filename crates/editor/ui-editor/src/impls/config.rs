@@ -57,6 +57,9 @@ impl Editor {
             // 020「编辑图形」是鼠标工具的子状态：离开即退出，回来不会突然少掉选框。
             self.shape_edit_armed = None;
             self.shape_group_edit = None;
+            // 025 饼干模的「刀」同样是鼠标工具会话：离开即清空，
+            // 否则青色虚线刀框会在其它工具下持续残留。
+            self.mould_walls = None;
         }
         self.rebuild_pending_mirrors();
     }

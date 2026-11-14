@@ -381,6 +381,13 @@ impl Editor {
         for index in curve_indices {
             self.editor_state.line_tool.paths.remove(index);
         }
+        if refs
+            .iter()
+            .any(|reference| matches!(reference, PendingShapeRef::CurvePath(_)))
+        {
+            // 被消费的曲线已并入组合：历史快照不能再回放出旧路径。
+            self.editor_state.line_tool.rebase_path_history();
+        }
 
         let composed_index = self.editor_state.pending_composed.len();
         self.editor_state.pending_composed.push(PendingComposed {

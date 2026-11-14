@@ -46,6 +46,11 @@ impl Editor {
     }
 
     fn knife_preview_rects(&self) -> Vec<Rectangle> {
+        // 刀框只属于鼠标工具会话：离开后即使快照还在（旧状态/撤销恢复），
+        // 也不应在曲线/形状等工具下画青色虚线框。
+        if self.current_tool() != lumino_message::Tool::ShapeSelect {
+            return Vec::new();
+        }
         let Some(walls) = self.mould_walls.as_ref() else {
             return Vec::new();
         };

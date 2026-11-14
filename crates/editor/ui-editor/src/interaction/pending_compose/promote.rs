@@ -73,6 +73,8 @@ impl Editor {
             }
             PendingShapeRef::CurvePath(i) => {
                 self.editor_state.line_tool.paths.remove(i);
+                // 曲线已提升为单支组合：历史不能再回放出被消费的路径。
+                self.editor_state.line_tool.rebase_path_history();
             }
             _ => {}
         }
@@ -121,6 +123,8 @@ impl Editor {
                     .position(|item| item == path)
                 {
                     self.editor_state.line_tool.paths.remove(index);
+                    // 路径已被组合会话接管：历史基线同步重建。
+                    self.editor_state.line_tool.rebase_path_history();
                 }
             }
         }
