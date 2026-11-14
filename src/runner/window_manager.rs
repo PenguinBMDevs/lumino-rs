@@ -16,6 +16,8 @@ pub struct WindowManager {
     gfx: lumino_gfx::Context,
     /// UI 主机
     ui: lumino_ui::Host,
+    /// egui 输入缓冲（主窗口持有；Host 只负责翻译）
+    egui_input: lumino_ui::host::OverlayInput,
     /// 修饰键状态
     modifiers: winit::keyboard::ModifiersState,
     /// 是否需要调整大小
@@ -100,6 +102,7 @@ impl WindowManager {
             window,
             gfx,
             ui,
+            egui_input: lumino_ui::host::OverlayInput::default(),
             modifiers: winit::keyboard::ModifiersState::default(),
             resized: false,
             close_requested: false,

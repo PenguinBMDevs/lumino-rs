@@ -36,17 +36,24 @@ impl Host {
     // ─── handle_events 主入口 ────────────────────────────────────────
 
     /// 处理窗口事件
+    ///
+    /// `egui_input` 由窗口（主窗口 / 对话框 / 进度窗）持有；本函数只负责翻译，
+    /// 不再保存输入状态。
     pub fn handle_events(
         &mut self,
         event: winit::event::WindowEvent,
         modifiers: winit::keyboard::ModifiersState,
+        egui_input: &mut crate::host::OverlayInput,
     ) {
         use winit::event::WindowEvent::*;
 
-        // 先把指针 / 滚轮 / 修饰键 / 焦点同步给 egui 叠加层（悬停高亮、
-        // `ScrollArea` 滚动、菜单点击依赖它们），随后仍走 旧版 的事件转换。
-        // 命中 egui 菜单占用区时，本次事件只给 egui（见下方提前返回）。
-        let consumed_by_egui = self.capture_egui_overlay_input(&event);
+        // 先把指针 / 滚轮 / 修饰键 / 焦点同步给 egui；输入事件驱动一次重绘。
+        let scale =
+            crate::host::render::egui_overlay::input_scale(self.render_ctx.viewport.scale_factor());
+        if egui_input.feed(&event, scale, self.cursor_egui()) {
+            self.window_ctx.window.request_redraw();
+        }
+        let egui_wants_keyboard = egui_input.wants_keyboard();
 
         match &event {
             Resized(_) => self.handle_resized_event(),
@@ -58,7 +65,7 @@ impl Host {
             KeyboardInput { event, .. } => {
                 // egui 正在编辑文本（输入框 / 文本框）时，按键只给 egui：
                 // 否则裸字母会切工具（B/C/E/S…）、Ctrl+C 会复制音符，输入框直接失控。
-                if !consumed_by_egui {
+                if !egui_wants_keyboard {
                     self.handle_keyboard_input_event(event, modifiers);
                 }
             }
@@ -120,11 +127,6 @@ impl Host {
             let available = self.window_ctx.cursor.position().is_some();
             let pos = self.window_ctx.cursor.position();
             log::debug!("[TOUCH] 事件已处理 cursor_available={available} cursor={pos:?}");
-        }
-
-        if consumed_by_egui {
-            // 菜单接管了这次点击/滚轮：只请求重绘（egui 悬停态需要更新）。
-            self.window_ctx.window.request_redraw();
         }
     }
 

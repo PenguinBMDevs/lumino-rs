@@ -40,6 +40,7 @@ use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
 pub use cache::RenderCache;
+pub use render::egui_overlay::OverlayInput;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
 /// UI 宿主 - 管理 旧版 渲染和 wgpu 音符渲染
@@ -59,11 +60,6 @@ pub struct Host {
     pub(crate) window_ctx: WindowContext,
     /// 应用状态根节点
     pub(crate) root: root::Root,
-    /// egui 叠加层输入缓冲（指针位置 / 滚轮 / 修饰键 / 焦点）。
-    ///
-    /// 事件先喂给 egui；鼠标按键只在菜单占用区内被消费，
-    /// 其余仍由 `events` 里的 旧版 事件执行。
-    pub(crate) egui_input: render::egui_overlay::OverlayInput,
     /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 旧版 队列。
     pub(crate) egui_blocked: Vec<egui::Rect>,
     /// 画布输入状态（winit / egui 直接驱动时的双击检测、拖拽标记等）。

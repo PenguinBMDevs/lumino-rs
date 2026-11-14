@@ -10,13 +10,20 @@ impl DialogWindow {
             return;
         }
 
+        let egui_events = self.egui_input.take();
+        let egui_focused = self.egui_input.focused();
         // REND-019（PR-A §1.6）：统一帧错误处置——Outdated 已重配 /
         // Timeout 下帧重试可重绘；Lost/OOM 置停帧标志（禁止盲重绘）
         if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut())
-            && let Err(e) = gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
+            && let Err(e) = gfx.with_frame(|frame, view| {
+                ui.redraw_requested(frame, view, gfx, egui_events, egui_focused)
+            })
             && gfx.handle_frame_error(&e).should_redraw()
         {
             self.window.request_redraw();
+        }
+        if let Some(ui) = self.ui.as_ref() {
+            self.egui_input.set_wants_keyboard(ui.egui_wants_keyboard());
         }
     }
 

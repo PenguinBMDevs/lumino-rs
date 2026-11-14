@@ -36,6 +36,8 @@ pub struct CloudProgressManager {
     gfx: Option<lumino_gfx::Context>,
     /// 悬浮窗口 UI
     ui: Option<lumino_ui::Host>,
+    /// egui 输入缓冲（窗口持有）
+    egui_input: lumino_ui::host::OverlayInput,
     /// 修饰键状态
     modifiers: winit::keyboard::ModifiersState,
 }
@@ -50,6 +52,7 @@ impl CloudProgressManager {
             window: None,
             gfx: None,
             ui: None,
+            egui_input: lumino_ui::host::OverlayInput::default(),
             modifiers: winit::keyboard::ModifiersState::default(),
         };
         (manager, tx)
@@ -112,7 +115,7 @@ impl CloudProgressManager {
             }
             _ => {
                 if let Some(ref mut ui) = self.ui {
-                    ui.handle_events(event, self.modifiers);
+                    ui.handle_events(event, self.modifiers, &mut self.egui_input);
                 }
             }
         }
@@ -120,15 +123,22 @@ impl CloudProgressManager {
 
     /// 处理重绘
     fn handle_redraw(&mut self, window: &Arc<Window>) {
+        let egui_events = self.egui_input.take();
+        let egui_focused = self.egui_input.focused();
         if let Some(ref mut ui) = self.ui
             && let Some(ref gfx) = self.gfx
-            && let Err(e) = gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
+            && let Err(e) = gfx.with_frame(|frame, view| {
+                ui.redraw_requested(frame, view, gfx, egui_events, egui_focused)
+            })
         {
             // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排重绘；
             // Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
             if gfx.handle_frame_error(&e).should_redraw() {
                 window.request_redraw();
             }
+        }
+        if let Some(ui) = self.ui.as_ref() {
+            self.egui_input.set_wants_keyboard(ui.egui_wants_keyboard());
         }
     }
 

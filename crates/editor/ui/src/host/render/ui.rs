@@ -33,6 +33,8 @@ impl Host {
         frame: &wgpu::SurfaceTexture,
         texture_view: &wgpu::TextureView,
         background: Option<Color>,
+        egui_events: Vec<egui::Event>,
+        egui_focused: bool,
     ) {
         puffin::profile_function!();
 
@@ -45,6 +47,6 @@ impl Host {
             },
             None => clear_color(self.root.egui_palette()),
         };
-        self.render_egui_overlay(frame, texture_view, Some(clear));
+        self.render_egui_overlay(frame, texture_view, Some(clear), egui_events, egui_focused);
     }
 }

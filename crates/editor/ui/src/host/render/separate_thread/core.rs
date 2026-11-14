@@ -47,7 +47,12 @@ pub(super) enum RenderSubmit {
 
 impl Host {
     /// 分离渲染线程模式的主渲染入口
-    pub(crate) fn render_with_separate_thread(&mut self, frame: &wgpu::SurfaceTexture) {
+    pub(crate) fn render_with_separate_thread(
+        &mut self,
+        frame: &wgpu::SurfaceTexture,
+        egui_events: Vec<egui::Event>,
+        egui_focused: bool,
+    ) {
         use crate::titlebar::mode_toggle::AppMode;
 
         // REND-019（PR-A §1.6）：设备已丢失（TDR）——本帧不渲染任何内容
@@ -76,7 +81,7 @@ impl Host {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
-                self.render_ui(frame, &view, Some(bg));
+                self.render_ui(frame, &view, Some(bg), egui_events, egui_focused);
             }
             return;
         }
@@ -98,7 +103,7 @@ impl Host {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 let bg = self.root.theme().palette().background;
-                self.render_ui(frame, &view, Some(bg));
+                self.render_ui(frame, &view, Some(bg), egui_events, egui_focused);
             }
             return;
         }
@@ -145,7 +150,7 @@ impl Host {
             let view = frame
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            self.render_ui(frame, &view, None);
+            self.render_ui(frame, &view, None, egui_events, egui_focused);
         }
     }
 

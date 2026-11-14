@@ -57,7 +57,8 @@ impl WindowManager {
             _ => (),
         }
 
-        self.ui.handle_events(event, self.modifiers);
+        self.ui
+            .handle_events(event, self.modifiers, &mut self.egui_input);
         if flush_after_input {
             self.handle_redraw();
         }
@@ -83,10 +84,12 @@ impl WindowManager {
             self.resized = false;
         }
 
-        if let Err(e) = self
-            .gfx
-            .with_frame(|frame, view| self.ui.redraw_requested(frame, view, &self.gfx))
-        {
+        let egui_events = self.egui_input.take();
+        let egui_focused = self.egui_input.focused();
+        if let Err(e) = self.gfx.with_frame(|frame, view| {
+            self.ui
+                .redraw_requested(frame, view, &self.gfx, egui_events, egui_focused)
+        }) {
             log::warn!("帧错误: {e:?}");
             // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排重绘；
             // Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
@@ -94,6 +97,9 @@ impl WindowManager {
                 self.window.request_redraw();
             }
         }
+        // 本帧 egui 是否进入文本编辑：下一帧键盘事件据此决定是否消费。
+        self.egui_input
+            .set_wants_keyboard(self.ui.egui_wants_keyboard());
     }
 
     /// 处理窗口大小改变

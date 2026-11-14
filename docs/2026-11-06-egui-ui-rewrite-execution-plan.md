@@ -4058,3 +4058,25 @@ callback / 多视口 / 截图能力。
 - **下一步（Plan B Step 4）**：`Host` 无窗口化（`WindowContext` 改为运行时注入），
   再把 `egui_input` / `egui_blocked` 从 `Host` 移入运行时。
 
+**Task 4.41（第一百四十七步）：Plan B 第四步——egui 输入缓冲移出 Host**
+
+- `OverlayInput` 改为公开类型（`lumino_ui::host::OverlayInput`），新增
+  `feed(event, scale, fallback_pointer)`：翻译指针 / 滚轮 / 按键 / 修饰键 /
+  IME / 焦点，返回是否需要重绘；`input_requests_repaint` 一并迁入。
+- `Host` 删除 `egui_input` 字段与 `capture_egui_overlay_input`：
+  - `handle_events(event, modifiers, egui_input: &mut OverlayInput)` 只翻译，
+    键盘让路由 `egui_input.wants_keyboard()` 决定；
+  - `redraw_requested` / `render_*` 接收本帧 `Vec<egui::Event>` + `focused`；
+  - `egui_pointer_blocked` / `egui_owns_pointer` 只读 `window_ctx.cursor_position`；
+  - 删除已无用的 `dialog_input_exclusive`；新增 `egui_wants_keyboard()` 查询。
+- 主窗口 `WindowManager`、对话框 `DialogWindow`、进度窗 `ProgressManager`、
+  云进度窗 `CloudProgressManager`、设备警告窗 `DeviceWarningWindow` 各自持有
+  `OverlayInput`，帧末写回 `wants_keyboard`。
+- **验证**：
+  - `lumino-ui` host 211、`lumino-dialog` 28、`lumino-ui-runtime` 1；
+  - menubar 5 / click_semantics 3；clippy `-D warnings`、fmt；
+  - `fast-release` 空闲 3s CPU **16ms**；20/20 `ToolSelected`；
+  - 真机画布：铅笔落 A#8 + C#8 两个音符（截图 `05_canvas_notes.png`）。
+- **下一步（Plan B Step 5）**：`Host` 无窗口化——`WindowContext` 的窗口句柄 /
+  cursor / clipboard / redraw 改为运行时注入；随后删除 `egui_blocked`。
+
