@@ -242,7 +242,7 @@ fn piano_roll_model_tracks_editor_view_state() {
 }
 
 #[test]
-fn dynamic_overlays_keep_egui_skeleton_and_ruler() {
+fn dynamic_overlays_keep_egui_skeleton() {
     fn root() -> Root {
         let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
         // 首帧布局前画布尺寸为 0；生产里由布局回填后再出模型。
@@ -251,24 +251,20 @@ fn dynamic_overlays_keep_egui_skeleton_and_ruler() {
         root
     }
 
-    // 洋葱皮：键盘列 / 滚动条必须保留（gfx 不补键盘），标尺仍可由 egui 画。
+    // 洋葱皮：键盘列 / 滚动条 / 标尺必须保留（gfx 不补键盘，也不补小节号）。
     let mut onion = root();
     onion.toolbar.onion_skin_enabled = true;
-    let piano = onion
-        .egui_piano_roll_model()
-        .expect("洋葱皮不应让键盘 / 滚动条消失");
-    assert!(piano.draw_ruler, "单段拍号下标尺仍由 egui 绘制");
+    onion.egui_piano_roll_model().expect("洋葱皮不应让骨架消失");
 
-    // 纵向卷帘：布局不同，但骨架同样必须保留；标尺只由 egui 绘制。
+    // 纵向卷帘：布局不同，但骨架同样必须保留。
     let mut vertical = root();
     vertical.sidebar.roll_bar_active = Some(crate::sidebar::RollBarButton::Vertical);
     let piano = vertical
         .egui_piano_roll_model()
         .expect("纵向卷帘也必须由 egui 绘制键盘");
     assert!(piano.vertical);
-    assert!(piano.draw_ruler);
 
-    // 协作远程光标画在骨架之上，不应让键盘消失。
+    // 协作远程光标画在骨架之上，不应让骨架消失。
     let mut remote = root();
     remote.editor.remote_cursors.insert(
         "peer".to_owned(),
@@ -278,10 +274,9 @@ fn dynamic_overlays_keep_egui_skeleton_and_ruler() {
             "peer".to_owned(),
         ),
     );
-    let piano = remote
+    remote
         .egui_piano_roll_model()
-        .expect("远程光标不应让键盘 / 滚动条消失");
-    assert!(piano.draw_ruler);
+        .expect("远程光标不应让骨架消失");
 
     // 循环区间：标尺里的循环带由叠加层绘制，骨架不得整块让位。
     let mut looping = root();
@@ -289,18 +284,21 @@ fn dynamic_overlays_keep_egui_skeleton_and_ruler() {
         range.set_range(0.0, 1920.0);
         range.enable();
     }
-    let piano = looping
+    looping
         .egui_piano_roll_model()
-        .expect("循环区间不应让键盘 / 滚动条消失");
-    assert!(piano.draw_ruler);
+        .expect("循环区间不应让骨架消失");
 
-    // 工程中途改拍号：键盘 / 滚动条保留，仅标尺让位给 gfx 分段绘制。
+    // 工程中途改拍号：骨架保留，拍号列表随模型下发（egui 标尺按段编号）。
     let mut meter = root();
     meter.editor.editor_state.data.time_signatures = vec![(0, 4, 4), (7680, 3, 4)];
     let piano = meter
         .egui_piano_roll_model()
-        .expect("中途变拍不应让键盘 / 滚动条消失");
-    assert!(!piano.draw_ruler, "分段拍号必须让 gfx 绘制标尺");
+        .expect("中途变拍不应让骨架消失");
+    assert_eq!(
+        piano.time_signatures,
+        vec![(0, 4, 4), (7680, 3, 4)],
+        "拍号分段必须下发给 egui 标尺"
+    );
 }
 
 #[test]
@@ -318,7 +316,6 @@ fn duplicate_time_signatures_do_not_disable_egui_skeleton() {
         .egui_piano_roll_model()
         .expect("同 tick 重复拍号不应退出接管");
     assert!((piano.bar_pixels() - 768.0).abs() < 0.01, "4/4 小节宽");
-    assert!(piano.draw_ruler, "单段拍号仍由 egui 绘制标尺");
 
     // 同值拍号在工程中途重复（值不变）同样不构成变拍：小节宽不变，标尺连续。
     root.editor.editor_state.data.time_signatures = vec![(0, 4, 4), (7680, 4, 4)];

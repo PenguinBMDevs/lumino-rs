@@ -18,7 +18,6 @@ mod marquee;
 mod mask_panel;
 mod material_delete;
 mod menu;
-mod meter;
 mod mixer;
 mod palette;
 mod remote_cursors;
@@ -232,8 +231,8 @@ impl Root {
     ///
     /// 只有「当前不是钢琴卷帘视图」与「画布尚未布局」两种情形返回 `None`。
     /// 洋葱皮 / 协作光标 / 循环区间 / 拍号分段都**不再**让键盘列与滚动条消失：
-    /// 它们只影响标尺或叠加层，键盘列始终由 egui 绘制（gfx 不补键盘）。
-    /// 拍号分段时 `PianoRollView::draw_ruler = false`，标尺让位给 gfx 分段绘制。
+    /// 它们只影响叠加层；键盘列 / 滚动条 / 标尺全部由 egui 绘制
+    /// （gfx 不补键盘，横向标尺也由 egui 按拍号分段画小节号）。
     fn egui_piano_roll_model(&self) -> Option<PianoRollView> {
         let left_inset = 48.0
             + if self.sidebar.panel_visible {
@@ -260,25 +259,18 @@ impl Root {
         }
 
         let vertical = self.sidebar.is_vertical_roll();
-        // 拍号收敛为单段时 egui 标尺可直接画小节号；中途变拍让位给 gfx
-        // 分段绘制。注意不能用原始条目数判断——加载器全量保留同 tick 重复
-        // 拍号（多轨 MIDI 常见），去重口径见 `meter::single_meter`。
-        let single_meter =
-            meter::single_meter(self.editor.editor_state.data.time_signatures.as_slice());
-        // 纵向卷帘的标尺只由 egui 绘制（gfx 纵向通道不提交 RulerRenderer），
-        // 即使拍号分段也必须保持可见；横向则只在单段时接管。
-        let draw_ruler = vertical || single_meter.is_some();
-        // 拍号 → 每小节 tick（默认 4/4）。分段时该值只服务纵向标尺的近似，
-        // 横向标尺已让位给 gfx，不使用它。
-        let (numerator, denominator) = single_meter
-            .or_else(|| {
-                self.editor
-                    .editor_state
-                    .data
-                    .time_signatures
-                    .first()
-                    .map(|&(_, numerator, denominator)| (numerator, denominator))
-            })
+        // 拍号 → 每小节 tick（默认 4/4）。横向标尺已改为按段计算
+        // （`PianoRollView::time_signatures` → `ruler::measure_labels`），
+        // 这里只服务纵向卷帘的单段近似；同 tick 重复取最后一条（与 gfx 一致）。
+        let (numerator, denominator) = self
+            .editor
+            .editor_state
+            .data
+            .time_signatures
+            .iter()
+            .take_while(|&&(tick, _, _)| tick == 0)
+            .last()
+            .map(|&(_, numerator, denominator)| (numerator, denominator))
             .unwrap_or((4, 4));
         let ppq = view.ppq;
         let ticks_per_measure =
@@ -360,7 +352,7 @@ impl Root {
                     0.0
                 },
             vertical,
-            draw_ruler,
+            time_signatures: self.editor.editor_state.data.time_signatures.clone(),
         })
     }
 

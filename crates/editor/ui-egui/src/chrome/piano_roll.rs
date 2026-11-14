@@ -8,10 +8,11 @@ use egui::{Align2, Color32, FontId, Rect, Vec2};
 use super::ChromeState;
 use crate::theme;
 
+mod ruler;
 mod vertical;
 
 /// 钢琴卷帘视图参数。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PianoRollView {
     /// 键盘列宽度（生产 `view.keyboard_width`）。
     pub keyboard_width: f32,
@@ -57,13 +58,11 @@ pub struct PianoRollView {
     pub bottom_inset: f32,
     /// 是否纵向卷帘（时间轴竖直、键盘在底部）。
     pub vertical: bool,
-    /// 是否由 egui 绘制标尺。
+    /// 拍号列表 `(tick, 分子, 分母)`，按 tick 升序。
     ///
-    /// 键盘列与滚动条与拍号 / 覆盖层无关，**始终**由 egui 绘制；只有标尺在
-    /// 拍号分段（中途变拍）时让位给 gfx 的 `RulerRenderer`——egui 标尺只按
-    /// 单一「每小节 tick 数」画小节号。`false` 时键盘 / 滚动条照常绘制，
-    /// 仅跳过 `ruler_cell`。
-    pub draw_ruler: bool,
+    /// 标尺小节号必须按段计算：加载器全量保留同 tick 重复拍号（多轨 MIDI
+    /// 常见），egui 标尺自己折叠同 tick 段并连续编号。空列表 = 4/4。
+    pub time_signatures: Vec<(u32, u8, u8)>,
 }
 
 impl Default for PianoRollView {
@@ -94,7 +93,7 @@ impl Default for PianoRollView {
             right_inset: 0.0,
             bottom_inset: 0.0,
             vertical: false,
-            draw_ruler: true,
+            time_signatures: Vec::new(),
         }
     }
 }
@@ -128,7 +127,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     if !super::base_texture_active(ui.ctx()) {
         ui.painter().rect_filled(rect, 0, theme::base_bg());
     }
-    let view = state.piano_roll;
+    let view = state.piano_roll.clone();
     draw_chrome(ui, &view);
 }
 
@@ -161,17 +160,17 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
         view,
         ruler_h,
     );
-    // 标尺在拍号分段时让位给 gfx；键盘列 / 滚动条不受影响，始终由 egui 绘制。
-    if view.draw_ruler {
-        ruler_cell(
-            ui,
-            Rect::from_min_max(
-                egui::pos2(area.left() + keyboard_w, area.top()),
-                egui::pos2(area.left() + canvas_w, area.top() + ruler_h),
-            ),
-            view,
-        );
-    }
+    // 标尺与键盘列 / 滚动条一样，始终由 egui 绘制（gfx `RulerRenderer` 在
+    // 卷帘模式被 `skip_roll_chrome` 跳过）。拍号分段由 `ruler::measure_labels`
+    // 处理，不能再让位给 gfx——gfx 只画刻度线，没有小节号。
+    ruler_cell(
+        ui,
+        Rect::from_min_max(
+            egui::pos2(area.left() + keyboard_w, area.top()),
+            egui::pos2(area.left() + canvas_w, area.top() + ruler_h),
+        ),
+        view,
+    );
     scrollbar_cells(ui, area, view, canvas_w, canvas_h);
 }
 
@@ -306,58 +305,18 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
     // 旧版 标尺底色：暗色 = `background.base`，亮色 = `background.weakest`。
     painter.rect_filled(rect, 0, theme::roll_ruler_bg());
 
-    let bar = view.bar_pixels();
-    let scroll_ticks = view.scroll_x / view.zoom_x.max(f32::EPSILON);
-    let first = (scroll_ticks / view.ticks_per_measure.max(1.0))
-        .floor()
-        .max(0.0) as u64
-        + 1;
-    let mut measure = first;
-    loop {
-        // 用 f64 计算，避免大 tick/大滚动时 f32 精度把小节号位置带偏。
-        let x = (measure as f64 - 1.0) * f64::from(bar) - f64::from(view.scroll_x);
-        if x > f64::from(rect.width()) {
-            break;
-        }
-        if x >= 0.0 {
-            painter.text(
-                egui::pos2(rect.left() + x as f32 + 4.0, rect.top() + 4.0),
-                Align2::LEFT_TOP,
-                measure.to_string(),
-                FontId::proportional(12.5),
-                theme::roll_text(),
-            );
-        }
-        measure += 1;
-        if measure - first > 10_000 {
-            break;
-        }
+    // 小节号按拍号分段计算：中途变拍时编号连续，不会回到 1。
+    for (x, measure) in ruler::measure_labels(view, rect.width()) {
+        painter.text(
+            egui::pos2(rect.left() + x + 4.0, rect.top() + 4.0),
+            Align2::LEFT_TOP,
+            measure.to_string(),
+            FontId::proportional(12.5),
+            theme::roll_text(),
+        );
     }
 
-    // 播放指示线：仅当落在网格范围内（旧版 `playback_indicator` 同判据）。
-    if view.playhead_offset >= 0.0 {
-        let center = rect.left() + view.playhead_offset;
-        if center <= rect.right() {
-            painter.rect_filled(
-                Rect::from_min_size(
-                    egui::pos2(center - PLAYHEAD_WIDTH / 2.0, rect.top()),
-                    Vec2::new(PLAYHEAD_WIDTH, rect.height()),
-                ),
-                0,
-                theme::playhead(),
-            );
-            let half = PLAYHEAD_TRIANGLE / 2.0;
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    egui::pos2(center - half, rect.top()),
-                    egui::pos2(center + half, rect.top()),
-                    egui::pos2(center, rect.top() + PLAYHEAD_TRIANGLE),
-                ],
-                theme::playhead(),
-                egui::Stroke::NONE,
-            ));
-        }
-    }
+    ruler::playhead(ui, rect, view);
 }
 
 /// 旧版 `ScrollbarWidget` 外观：轨道 `background.strong`，滑块 `background.weak`，
@@ -387,11 +346,6 @@ fn tint(color: Color32, factor: f32) -> Color32 {
         color.a(),
     )
 }
-
-/// 播放指示线宽度（`PLAYBACK_INDICATOR_WIDTH`）。
-const PLAYHEAD_WIDTH: f32 = 2.0;
-/// 播放指示线顶部倒三角尺寸（`PLAYBACK_INDICATOR_TRIANGLE_SIZE`）。
-const PLAYHEAD_TRIANGLE: f32 = 8.0;
 
 /// 中央区域底色（供外部检查）。
 pub fn background() -> Color32 {
