@@ -12,8 +12,10 @@ pub mod lane;
 mod measures;
 mod scrollbars;
 mod track_list;
+mod wheel;
 
 use egui::{Align2, FontId, Rect};
+use lumino_message::arrangement_action::ArrangementAction as LaneAction;
 
 use crate::theme;
 
@@ -131,6 +133,25 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
     // 标尺点击/拖拽设光标、滚轮缩放。
     if let Some(action) = ruler_input(ui, ruler, &model.ruler) {
         return Some(action);
+    }
+    // 轨道列滚轮：指针停在左侧 160px 时也要能滚动（泳道命中区只覆盖右侧画布）。
+    // 与泳道 / 钢琴卷帘同一份手势解析：双轴触控板滑动、Shift+滚轮转横向。
+    if let Some(pos) = ui.ctx().input(|i| i.pointer.interact_pos())
+        && lanes.contains(pos)
+        && !ui.ctx().input(|i| i.modifiers.ctrl)
+        && let Some(gesture) = wheel::WheelGesture::collect(ui)
+    {
+        let (scroll_x, scroll_y) = gesture.scroll_targets(
+            ui.ctx().input(|i| i.modifiers.shift),
+            model.ruler.scroll_x,
+            model.track_list.scroll_y,
+        );
+        if let Some(x) = scroll_x {
+            push_lane_action(ui.ctx(), LaneAction::ScrollX(x));
+        }
+        if let Some(y) = scroll_y {
+            push_lane_action(ui.ctx(), LaneAction::ScrollY(y));
+        }
     }
     // 泳道区：同一份交互逻辑（`lumino-arrangement-core`）的 egui 适配。
     // 本阶段**不占用命中区**（旧版 仍会处理同一事件），用于 A/B 对照。
@@ -319,70 +340,16 @@ fn tick_at(rect: Rect, model: &ArrangementRulerModel, x: f32) -> f64 {
 
 /// 滚轮 → 缩放因子（与 旧版 `zoom_factor_from_delta` 同口径）。
 ///
-/// 直接用原始 `Event::MouseWheel` 的 `unit`：Line 一个刻度 = 1 行，
+/// 与泳道共用 [`wheel::WheelGesture`] 的帧内累加：Line 一个刻度 = 1 行，
 /// Point 除以 50 换算成行（与 旧版 的 `PIXEL_TO_LINE_SCALE` 一致），
 /// 再钳到 ±1 行、每行 10%。
 fn zoom_factor(ui: &egui::Ui) -> Option<f32> {
     const WHEEL_STEP: f32 = 0.1;
-    const PIXEL_TO_LINE: f32 = 50.0;
-    let mut lines = 0.0_f32;
-    ui.input(|i| {
-        for event in &i.raw.events {
-            if let egui::Event::MouseWheel { unit, delta, .. } = event {
-                lines += match unit {
-                    egui::MouseWheelUnit::Line => delta.y,
-                    egui::MouseWheelUnit::Point => delta.y / PIXEL_TO_LINE,
-                    egui::MouseWheelUnit::Page => delta.y * 10.0,
-                };
-            }
-        }
-    });
-    let step = lines.clamp(-1.0, 1.0);
-    if step.abs() < f32::EPSILON {
-        None
-    } else {
-        Some(1.0 + step * WHEEL_STEP)
-    }
+    let step = wheel::WheelGesture::collect(ui)?
+        .zoom_lines()
+        .clamp(-1.0, 1.0);
+    (step.abs() > f32::EPSILON).then_some(1.0 + step * WHEEL_STEP)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn model() -> ArrangementRulerModel {
-        ArrangementRulerModel {
-            scroll_x: 200.0,
-            zoom_x: 0.5,
-            ppq: 960,
-            left_inset: 0.0,
-            top_inset: 0.0,
-            time_signatures: vec![(0, 4, 4)],
-            total_ticks: 100_000,
-        }
-    }
-
-    fn rect() -> Rect {
-        Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(800.0, RULER_HEIGHT))
-    }
-
-    #[test]
-    fn tick_at_subtracts_scroll_and_clamps() {
-        let m = model();
-        let r = rect();
-        // 指针在标尺左缘：local 0 → (0 + 200) / 0.5 = 400 tick。
-        assert!((tick_at(r, &m, 100.0) - 400.0).abs() < 1e-6);
-        // 右移 100 像素：local 100 → (100 + 200) / 0.5 = 600 tick。
-        assert!((tick_at(r, &m, 200.0) - 600.0).abs() < 1e-6);
-        // 左越界钳 0，右越界钳 total_ticks。
-        assert_eq!(tick_at(r, &m, -50.0), 400.0);
-        assert_eq!(tick_at(r, &m, 100_000.0), 100_000.0);
-    }
-
-    #[test]
-    fn tick_to_x_inverts_tick_at() {
-        let m = model();
-        let r = rect();
-        let x = tick_to_x(r, &m, 1000.0);
-        assert!((tick_at(r, &m, x) - 1000.0).abs() < 1e-3);
-    }
-}
+mod tests;
