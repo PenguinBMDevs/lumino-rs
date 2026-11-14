@@ -31,6 +31,11 @@ pub(crate) struct EguiOverlay {
     painter: Painter,
     /// 叠加层已绘制帧数。
     frames: u32,
+    /// 本帧 egui 占用区（菜单 / 弹层 / 面板 / 模态，逻辑点）。
+    ///
+    /// 命中判定归 egui 自己所有：`Host` 不再保存第二份矩形清单，只查询
+    /// [`EguiOverlay::pointer_blocked`]。
+    blocked: Vec<Rect>,
 }
 
 /// 一帧叠加层绘制输入。
@@ -128,6 +133,7 @@ impl EguiOverlay {
             icons: IconCache::default(),
             painter: Painter::new(device, format),
             frames: 0,
+            blocked: Vec::new(),
         }
     }
 
@@ -135,7 +141,7 @@ impl EguiOverlay {
     ///
     /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
     /// 调用方据此决定下一帧按键事件是否只给 egui。
-    fn draw(&mut self, frame: OverlayFrame<'_>) -> (Vec<Rect>, bool, egui::CursorIcon) {
+    fn draw(&mut self, frame: OverlayFrame<'_>) -> egui::CursorIcon {
         self.frames = self.frames.wrapping_add(1);
 
         // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
@@ -322,7 +328,17 @@ impl EguiOverlay {
                 primitives.len(),
             );
         }
-        (blocked, self.ctx.text_edit_focused(), egui_cursor)
+        self.blocked = blocked;
+        egui_cursor
+    }
+
+    /// 指定点是否落在 egui 本帧占用区内。
+    ///
+    /// 占用区由各面板在绘制时登记（菜单 / 弹层 / 浮动面板 / 模态），
+    /// 与 `layer_id_at` 的浮层命中互补：前者覆盖 root 层手工绘制的大面板，
+    /// 后者覆盖 `Area` / `Window` 弹层。
+    fn pointer_blocked(&self, pos: egui::Pos2) -> bool {
+        self.blocked.iter().any(|rect| rect.contains(pos))
     }
 }
 
@@ -460,7 +476,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let (blocked, _wants_keyboard, egui_cursor) = overlay.draw(OverlayFrame {
+        let egui_cursor = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -513,16 +529,20 @@ impl Host {
         if overlay.ctx.has_requested_repaint() {
             self.window_ctx.window.request_redraw();
         }
-        // 下一帧点击命中这些矩形时，事件只给 egui，不再进 旧版 队列。
-        self.egui_blocked = blocked;
+        // 占用区已由 `EguiOverlay` 在本帧绘制时保存，`Host` 不再持有副本。
         self.apply_egui_cursor(egui_cursor);
         self.apply_overlay_actions(actions, logical_width);
     }
 
-    /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。
+    /// 当前指针是否落在 egui 占用区（菜单 / 弹层 / 面板 / 模态）。
     pub(crate) fn egui_pointer_blocked(&self) -> bool {
-        self.cursor_egui()
-            .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
+        let Some(pos) = self.cursor_egui() else {
+            return false;
+        };
+        self.render_ctx
+            .egui_overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.pointer_blocked(pos))
     }
 
     /// 宿主记录的逻辑光标 → egui 坐标。
@@ -559,14 +579,19 @@ impl Host {
             .is_some_and(|overlay| overlay.ctx.text_edit_focused())
     }
 
-    /// 画布输入是否应让位给 egui（手工占用区 ∪ 浮层图层）。
+    /// 画布输入是否应让位给 egui（面板占用区 ∪ 浮层图层）。
     ///
     /// 指针取宿主记录的逻辑光标（触摸路径同样写入），不再依赖 egui 事件缓冲。
     pub(crate) fn egui_owns_pointer(&self) -> bool {
         let Some(pos) = self.cursor_egui() else {
             return false;
         };
-        self.egui_blocked.iter().any(|rect| rect.contains(pos)) || self.egui_layer_owns_pos(pos)
+        let panel_blocked = self
+            .render_ctx
+            .egui_overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.pointer_blocked(pos));
+        panel_blocked || self.egui_layer_owns_pos(pos)
     }
 }
 
