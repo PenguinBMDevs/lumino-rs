@@ -38,6 +38,14 @@ pub(crate) struct EguiOverlay {
     blocked: Vec<Rect>,
 }
 
+/// 一帧叠加层绘制结果（渲染之外的宿主副作用）。
+pub(crate) struct OverlayOutput {
+    /// egui 请求的系统光标。
+    pub cursor: egui::CursorIcon,
+    /// 文本编辑中的 IME 锚点（`Some` = 应开启系统输入法）。
+    pub ime: Option<egui::output::IMEOutput>,
+}
+
 /// 一帧叠加层绘制输入。
 struct OverlayFrame<'a> {
     device: &'a wgpu::Device,
@@ -141,7 +149,7 @@ impl EguiOverlay {
     ///
     /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
     /// 调用方据此决定下一帧按键事件是否只给 egui。
-    fn draw(&mut self, frame: OverlayFrame<'_>) -> egui::CursorIcon {
+    fn draw(&mut self, frame: OverlayFrame<'_>) -> OverlayOutput {
         self.frames = self.frames.wrapping_add(1);
 
         // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
@@ -293,6 +301,7 @@ impl EguiOverlay {
 
         let mut textures = output.textures_delta;
         let egui_cursor = output.platform_output.cursor_icon;
+        let ime = output.platform_output.ime;
         self.painter
             .update_textures(frame.device, frame.queue, &mut textures);
         let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
@@ -329,7 +338,10 @@ impl EguiOverlay {
             );
         }
         self.blocked = blocked;
-        egui_cursor
+        OverlayOutput {
+            cursor: egui_cursor,
+            ime,
+        }
     }
 
     /// 指定点是否落在 egui 本帧占用区内。
@@ -476,7 +488,7 @@ impl Host {
             .render_ctx
             .egui_overlay
             .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let egui_cursor = overlay.draw(OverlayFrame {
+        let overlay_output = overlay.draw(OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -530,7 +542,8 @@ impl Host {
             self.window_ctx.window.request_redraw();
         }
         // 占用区已由 `EguiOverlay` 在本帧绘制时保存，`Host` 不再持有副本。
-        self.apply_egui_cursor(egui_cursor);
+        self.apply_egui_cursor(overlay_output.cursor);
+        self.apply_egui_ime(overlay_output.ime, pixels_per_point);
         self.apply_overlay_actions(actions, logical_width);
     }
 
@@ -579,6 +592,22 @@ impl Host {
             .is_some_and(|overlay| overlay.ctx.text_edit_focused())
     }
 
+    /// 把 egui 的 IME 锚点应用到系统窗口。
+    ///
+    /// - `Some`：文本框正在编辑 → 开启输入法，并把候选窗锚到光标矩形；
+    /// - `None`：编辑结束 → 关闭输入法。
+    ///
+    /// `set_ime_allowed` 只在状态变化时调用，避免每帧重复设置。
+    fn apply_egui_ime(&mut self, ime: Option<egui::output::IMEOutput>, pixels_per_point: f32) {
+        let window = std::sync::Arc::clone(&self.window_ctx.window);
+        apply_ime_to_window(
+            &*window,
+            &mut self.window_ctx.ime_allowed,
+            ime,
+            pixels_per_point,
+        );
+    }
+
     /// 画布输入是否应让位给 egui（面板占用区 ∪ 浮层图层）。
     ///
     /// 指针取宿主记录的逻辑光标（触摸路径同样写入），不再依赖 egui 事件缓冲。
@@ -597,6 +626,54 @@ impl Host {
 
 /// 形状抽屉面板与画布之间的分割线宽度（与生产 旧版 视图一致）。
 pub(crate) const SPLITTER_W: f32 = 6.0;
+
+/// egui 光标矩形（逻辑点）→ winit IME 锚点（物理像素）。
+///
+/// 候选窗尺寸至少 1px：零尺寸在部分 IME 下会被忽略，导致候选窗跑到屏幕角落。
+fn ime_cursor_area(
+    rect: egui::Rect,
+    pixels_per_point: f32,
+) -> (
+    winit::dpi::PhysicalPosition<i32>,
+    winit::dpi::PhysicalSize<u32>,
+) {
+    let scale = if pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    };
+    let min = rect.min * scale;
+    let size = rect.size() * scale;
+    (
+        winit::dpi::PhysicalPosition::new(min.x.round() as i32, min.y.round() as i32),
+        winit::dpi::PhysicalSize::new(
+            size.x.max(1.0).round() as u32,
+            size.y.max(1.0).round() as u32,
+        ),
+    )
+}
+
+/// 把 egui 的 IME 锚点应用到窗口；`ime_allowed` 是宿主的缓存状态。
+///
+/// 独立成纯函数便于无窗口测试：只依赖 [`crate::host::HostWindow`] 抽象。
+fn apply_ime_to_window(
+    window: &dyn crate::host::HostWindow,
+    ime_allowed: &mut bool,
+    ime: Option<egui::output::IMEOutput>,
+    pixels_per_point: f32,
+) {
+    let allowed = ime.is_some();
+    if *ime_allowed != allowed {
+        window.set_ime_allowed(allowed);
+        *ime_allowed = allowed;
+        log::debug!("[IME] set_ime_allowed({allowed})");
+    }
+    let Some(ime) = ime else {
+        return;
+    };
+    let (position, size) = ime_cursor_area(ime.cursor_rect, pixels_per_point);
+    window.set_ime_cursor_area(position, size);
+}
 
 /// 指针事件的坐标除数。
 ///
@@ -656,5 +733,79 @@ mod tests {
             Order::Background,
             "画布/root 层命中必须是 Background"
         );
+    }
+
+    /// IME 候选窗锚点必须按 DPI 换算到物理像素，且尺寸不小于 1px。
+    #[test]
+    fn ime_cursor_area_scales_to_physical_pixels() {
+        let rect = Rect::from_min_size(pos2(10.0, 20.0), vec2(2.0, 18.0));
+        let (position, size) = super::ime_cursor_area(rect, 1.25);
+        assert_eq!((position.x, position.y), (13, 25));
+        assert_eq!((size.width, size.height), (3, 23));
+
+        let (position, size) = super::ime_cursor_area(rect, 0.0);
+        assert_eq!((position.x, position.y), (10, 20), "非法 ppp 回退 1.0");
+        assert_eq!((size.width, size.height), (2, 18));
+    }
+
+    /// egui 文本编辑开始 / 结束时，宿主必须开关系统输入法并锚定候选窗。
+    #[test]
+    fn ime_output_toggles_window_state() {
+        use crate::host::HostWindow;
+        use std::sync::{
+            Mutex,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        #[derive(Default)]
+        struct Mock {
+            allowed: AtomicBool,
+            area: Mutex<Option<(i32, i32, u32, u32)>>,
+        }
+
+        impl HostWindow for Mock {
+            fn request_redraw(&self) {}
+            fn set_cursor(&self, _icon: winit::window::CursorIcon) {}
+            fn set_cursor_visible(&self, _visible: bool) {}
+            fn scale_factor(&self) -> f64 {
+                1.0
+            }
+            fn is_maximized(&self) -> bool {
+                false
+            }
+            fn set_ime_allowed(&self, allowed: bool) {
+                self.allowed.store(allowed, Ordering::SeqCst);
+            }
+            fn set_ime_cursor_area(
+                &self,
+                position: winit::dpi::PhysicalPosition<i32>,
+                size: winit::dpi::PhysicalSize<u32>,
+            ) {
+                *self.area.lock().expect("IME 区域锁不得中毒") =
+                    Some((position.x, position.y, size.width, size.height));
+            }
+        }
+
+        let mock = Mock::default();
+        let mut allowed = false;
+        let ime = egui::output::IMEOutput {
+            purpose: egui::IMEPurpose::Normal,
+            rect: Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 20.0)),
+            cursor_rect: Rect::from_min_size(pos2(10.0, 20.0), vec2(2.0, 18.0)),
+            should_interrupt_composition: false,
+        };
+
+        super::apply_ime_to_window(&mock, &mut allowed, Some(ime), 1.25);
+        assert!(allowed, "文本编辑开始必须开启输入法");
+        assert!(mock.allowed.load(Ordering::SeqCst));
+        assert_eq!(
+            *mock.area.lock().expect("IME 区域锁不得中毒"),
+            Some((13, 25, 3, 23)),
+            "候选窗必须按 DPI 锚到光标处"
+        );
+
+        super::apply_ime_to_window(&mock, &mut allowed, None, 1.25);
+        assert!(!allowed, "文本编辑结束必须关闭输入法");
+        assert!(!mock.allowed.load(Ordering::SeqCst));
     }
 }

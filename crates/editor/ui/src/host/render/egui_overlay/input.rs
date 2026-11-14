@@ -107,8 +107,8 @@ impl OverlayInput {
             WindowEvent::KeyboardInput { event, .. } => {
                 self.key(event);
             }
-            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
-                self.text(text);
+            WindowEvent::Ime(ime) => {
+                self.ime(ime);
             }
             WindowEvent::Focused(focused) => {
                 self.focus(*focused);
@@ -185,6 +185,28 @@ impl OverlayInput {
     /// IME 提交文本（中文输入）。
     pub fn text(&mut self, text: &str) {
         self.events.push(egui::Event::Text(text.to_owned()));
+    }
+
+    /// 输入法事件：预编辑串 / 提交 / 启停。
+    ///
+    /// winit 的预编辑光标是**字节**下标，egui 要的是**字符**下标；
+    /// 越界时退化为「无光标区间」，至少保证预编辑文本能显示。
+    pub fn ime(&mut self, ime: &winit::event::Ime) {
+        use winit::event::Ime;
+        match ime {
+            Ime::Preedit(text, cursor) => {
+                self.events.push(egui::Event::Ime(egui::ImeEvent::Preedit {
+                    text: text.clone(),
+                    active_range_chars: preedit_range(text, *cursor),
+                }));
+            }
+            Ime::Commit(text) => {
+                self.events
+                    .push(egui::Event::Ime(egui::ImeEvent::Commit(text.clone())));
+            }
+            // 启停只影响宿主的 `ime_active`（裸字母快捷键让路），不进 egui 队列。
+            Ime::Enabled | Ime::Disabled => {}
+        }
     }
 
     /// 记录 egui 本帧是否需要键盘（下一帧的按键事件据此决定是否消费）。
@@ -342,9 +364,20 @@ fn printable(text: &str) -> Option<String> {
     (!text.is_empty() && !text.chars().any(char::is_control)).then(|| text.to_owned())
 }
 
+/// winit 预编辑光标（字节下标）→ egui 字符下标。
+///
+/// 越界下标返回 `None`：宁可只显示预编辑文本，也不能 panic 或错位。
+fn preedit_range(text: &str, cursor: Option<(usize, usize)>) -> Option<std::ops::Range<usize>> {
+    cursor.and_then(|(start, end)| {
+        let start = text.get(..start)?.chars().count();
+        let end = text.get(..end)?.chars().count();
+        Some(start..end)
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{input_requests_repaint, printable};
+    use super::{OverlayInput, input_requests_repaint, preedit_range, printable};
     use winit::event::WindowEvent;
 
     #[test]
@@ -355,6 +388,32 @@ mod tests {
         assert_eq!(printable("\r"), None, "回车必须在插入前被拦截");
         assert_eq!(printable("\t"), None);
         assert_eq!(printable(""), None);
+    }
+
+    /// winit 的预编辑光标是字节下标，egui 要字符下标。
+    #[test]
+    fn preedit_range_converts_bytes_to_chars() {
+        assert_eq!(preedit_range("中文", Some((3, 6))), Some(1..2));
+        assert_eq!(preedit_range("abc", Some((0, 3))), Some(0..3));
+        assert_eq!(
+            preedit_range("中文", Some((99, 99))),
+            None,
+            "越界下标不得 panic"
+        );
+        assert_eq!(preedit_range("中文", None), None);
+    }
+
+    /// 输入法提交必须走 `Event::Ime(Commit)`，不能当普通文本插入：
+    /// 否则 egui 不知道组合已结束，预编辑串会残留。
+    #[test]
+    fn ime_commit_ends_composition() {
+        let mut input = OverlayInput::default();
+        input.ime(&winit::event::Ime::Commit("中文".to_owned()));
+        let events = input.take();
+        assert!(matches!(
+            events.as_slice(),
+            [egui::Event::Ime(egui::ImeEvent::Commit(text))] if text == "中文"
+        ));
     }
 
     /// 重绘自旋回归：`RedrawRequested` 不能再驱动下一帧。

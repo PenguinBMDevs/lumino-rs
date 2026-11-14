@@ -26,6 +26,14 @@ pub trait HostWindow: Send + Sync {
     fn scale_factor(&self) -> f64;
     /// 窗口是否最大化。
     fn is_maximized(&self) -> bool;
+    /// 允许 / 禁止系统输入法（egui 文本框获得焦点时开启）。
+    fn set_ime_allowed(&self, allowed: bool);
+    /// 把输入法候选窗锚到光标处（物理像素）。
+    fn set_ime_cursor_area(
+        &self,
+        position: winit::dpi::PhysicalPosition<i32>,
+        size: winit::dpi::PhysicalSize<u32>,
+    );
 }
 
 /// winit 窗口的默认实现：直接转发到系统窗口。
@@ -49,6 +57,18 @@ impl HostWindow for winit::window::Window {
     fn is_maximized(&self) -> bool {
         winit::window::Window::is_maximized(self)
     }
+
+    fn set_ime_allowed(&self, allowed: bool) {
+        winit::window::Window::set_ime_allowed(self, allowed);
+    }
+
+    fn set_ime_cursor_area(
+        &self,
+        position: winit::dpi::PhysicalPosition<i32>,
+        size: winit::dpi::PhysicalSize<u32>,
+    ) {
+        winit::window::Window::set_ime_cursor_area(self, position, size);
+    }
 }
 
 /// 窗口上下文，持有窗口和输入状态。
@@ -67,6 +87,8 @@ pub(crate) struct WindowContext {
     pub is_toolbar_resizing: bool,
     /// 鼠标按钮按下标识
     pub is_mouse_pressed: bool,
+    /// 系统输入法是否已开启（只在状态变化时调用 `set_ime_allowed`）。
+    pub ime_allowed: bool,
     /// 已实际应用到窗口的光标状态（`None` = 尚未应用；`Some(None)` = 已隐藏）。
     ///
     /// 只在光标图标/可见性**真正变化**时才调用 `set_cursor` / `set_cursor_visible`：
@@ -86,6 +108,7 @@ impl WindowContext {
             pending_drag: false,
             is_toolbar_resizing: false,
             is_mouse_pressed: false,
+            ime_allowed: false,
             applied_cursor: None,
         }
     }
@@ -104,6 +127,7 @@ mod tests {
     struct MockWindow {
         redraws: AtomicUsize,
         cursor_visible: AtomicBool,
+        ime_allowed: AtomicBool,
     }
 
     impl HostWindow for MockWindow {
@@ -123,6 +147,17 @@ mod tests {
 
         fn is_maximized(&self) -> bool {
             true
+        }
+
+        fn set_ime_allowed(&self, allowed: bool) {
+            self.ime_allowed.store(allowed, Ordering::SeqCst);
+        }
+
+        fn set_ime_cursor_area(
+            &self,
+            _position: winit::dpi::PhysicalPosition<i32>,
+            _size: winit::dpi::PhysicalSize<u32>,
+        ) {
         }
     }
 
