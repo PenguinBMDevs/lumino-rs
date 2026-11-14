@@ -4237,4 +4237,32 @@ callback / 多视口 / 截图能力。
   整块 `available`）、`velocity_panel` 工具栏（混合体：工具栏归 egui / 数据区
   归 gfx 画布，**不可整块 `Area` 化**，否则会吞掉画布交互）。
 
+**Task 4.48（第一百五十四步，Step 7 次项）：左侧栏弹层的占用登记收口**
+
+- **范围核实**（先查再删，纠正了一个误判）：左侧栏 band **本身没有**登记
+  `blocked`（只有工具栏 band 登记了），因此 `sidebar.rs` / `track_list.rs`
+  里那几处登记仍在起作用，**不能删**——音轨行与路由按钮由 root 绘制，
+  没有独立图层兜底。
+- **真正冗余的只有走 `Area` 的弹层**：
+  - 音轨右键菜单、空白色板菜单（`sidebar/menu.rs`）：删 3 处 `extend_blocked`；
+  - 取色器 / 端口·通道选择器（`sidebar/picker.rs`）：原 `blocked_and_backdrop`
+    同时做「全局登记 + 背景关闭」，拆开后只保留关闭判定；
+  - 顺带清掉因此成为死代码的 `menu_rect`。
+- **测试升级为更强断言**：把「矩形在 `blocked` 里」改成「`layer_id_at` 返回
+  非 `Background` 图层」，即验证真实命中栈；同时断言本体（按宽度识别）不再
+  出现在全局占用表。
+- **过程中被测试纠正一次**：探针会同时落在下层音轨行内，而那一份登记是**必需**
+  的；若按「有点命中就失败」判断，会把正确登记误判成冗余。改为按宽度区分本体
+  后才成立——避免了「为了让测试变绿而放宽标准」。
+- **验证**：目标用例 9/9（`sidebar_menu_bands` 5 + `sidebar_picker_bands` 4）；
+  `cargo fmt`（含 `--check`）与 `clippy -p lumino-ui-egui --all-targets -D warnings`
+  通过；其余测试按约定交由 CI。
+- **明确不做（本轮决策）**：
+  - `tool_panel` 胶囊 / `piano_roll` 整块与滚动条 / `velocity_panel` 工具栏：
+    root 绘制或混合体，删登记会打穿画布输入，风险高；
+  - 「旧版」命名清理：全仓 **724 处**，且 `LegacyBox`（公开枚举变体、进配置
+    序列化）与 `from_legacy`（公开 API）属**合法标识符**，改名会破坏兼容。
+    纯机械大 diff 收益低、风险高，**搁置**，仅在有具体误导风险时按需修正。
+
+
 
