@@ -10,6 +10,9 @@ use crate::root::Root;
 impl Root {
     /// 本帧曲线弯折按钮（选中锚点存在时显示）。
     pub fn bend_buttons_model(&self) -> BendButtonsModel {
+        if !self.sidebar.piano_roll_visible {
+            return BendButtonsModel::default();
+        }
         let editor = &self.editor;
         if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
             tracing::info!(

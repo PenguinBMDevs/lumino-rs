@@ -79,8 +79,9 @@ pub use masks::{
 };
 pub use merge::{MergeOutcome, comes_from_left, gate_merge};
 pub use mould::{
-    MouldPiece, SHORT as MOULD_SHORT, mould_pieces, mould_rows, notes_within_rows,
-    subtract_rows_from_notes,
+    MouldPiece, SHORT as MOULD_SHORT, mould_pieces, mould_pieces_from_rows,
+    mould_pieces_from_segments, mould_rows, mould_rows_from_segments, note_spans,
+    notes_within_rows, subtract_rows_from_notes,
 };
 pub use nested::{ColouredSpan, nested_spans};
 pub use pattern::{LOOP_SAMPLES, MAX_POINTS, PatternReport, formed_path, formed_path_with_report};

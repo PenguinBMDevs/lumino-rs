@@ -276,14 +276,14 @@ fn test_shape_select_shows_confirm_for_composed_results() {
 }
 
 #[test]
-fn test_pending_mould_requires_exactly_two_shapes() {
+fn test_pending_mould_requires_selected_knife() {
     let mut editor = empty_editor();
     setup_single_pending_rect(&mut editor);
-    // 没有刀（切到鼠标工具前没选音符）→ 报 NoWalls，而不是笼统的选区错误
+    // 没有刀 → 报 NoKnife，而不是笼统的选区错误
     assert_eq!(
         editor.mould_selected(),
-        Err(crate::MouldReject::NoWalls),
-        "单形状但没有刀时应提示先选音符"
+        Err(crate::MouldReject::NoKnife),
+        "未设刀时应提示先设刀"
     );
     assert!(
         editor.editor_state.pending_composed.is_empty(),
@@ -302,9 +302,11 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
         &[Note::new(0.0, 60, 100.0), Note::new(200.0, 60, 100.0)],
     );
     editor.editor_state.interaction.selected_notes = [0_usize, 1].into_iter().collect();
-    // 切到鼠标工具：`set_tool` 清空选中集之前先把它们快照成刀
+    // 显式设刀（DEBT-17：不再依赖 set_tool 的顺序）
+    let info = editor.mould_set_knife().expect("音符应能设为刀");
+    assert_eq!(info.notes, Some(2));
     editor.set_tool(lumino_message::Tool::ShapeSelect);
-    assert!(editor.mould_walls.is_some(), "音符应被快照成刀");
+    assert!(editor.mould_knife.is_some(), "刀应跨工具保留");
 
     // 面团：覆盖空隙的待确认填充矩形（keys 59..63）
     add_pending_rect(&mut editor, 50.0, 350.0, 59);
@@ -341,45 +343,232 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
         "内片应包含空隙内的音符"
     );
     assert!(
-        editor.mould_walls.is_none(),
+        !composed.mould_cuts.is_empty(),
+        "切口区间必须随组合结果保留（刀清空后仍可画）"
+    );
+    assert!(
+        editor.mould_knife.is_none(),
         "刀被消费后应清空（虚线框消失）"
     );
 }
 
 #[test]
-fn test_mould_knife_preview_only_in_mouse_tool_and_cleared_on_leave() {
+fn test_pending_mould_geometry_knife_keeps_hole_as_cut() {
+    use lumino_editor_state::{ShapeInstance, ShapeKind};
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    let push_rect = |editor: &mut Editor, rect: (f32, f32, f32, f32)| {
+        editor.editor_state.shape_tool.shapes.push(ShapeInstance {
+            kind: ShapeKind::Rectangle,
+            rect,
+            shift_constrained: false,
+            filled: true,
+            apex_high: true,
+            mask: None,
+        });
+    };
+    // 刀：外环 key 59..63 + 内环 key 60..62（嵌套 → 奇偶成孔）
+    push_rect(&mut editor, (50.0, 59.0, 350.0, 63.0));
+    push_rect(&mut editor, (150.0, 60.0, 250.0, 62.0));
+    // 面团：更大的矩形，包住孔
+    push_rect(&mut editor, (40.0, 58.0, 360.0, 64.0));
+    editor.rebuild_pending_mirrors();
+
+    let knife_ids: Vec<u64> = (0..2)
+        .filter_map(|index| {
+            editor
+                .editor_state
+                .shape_select
+                .pending_mirror(PendingShapeRef::Shape(index))
+        })
+        .collect();
+    editor.editor_state.shape_select.select_all_of(knife_ids);
+    let info = editor.mould_set_knife().expect("形状应能设为几何刀");
+    assert_eq!(info.rings, 2, "两环都应进入刀");
+
+    let dough = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(2))
+        .expect("面团应有镜像");
+    editor.editor_state.shape_select.select_only(dough);
+
+    assert_eq!(editor.mould_selected(), Ok(()), "几何刀应能切出内片");
+    let composed = &editor.editor_state.pending_composed[0];
+    assert!(composed.results.len() >= 2, "至少外片 + 一个内片");
+    assert!(
+        composed.mould_cuts.iter().any(|(key, start, end)| {
+            *key == 61 && (*start - 150.0).abs() < 1e-3 && (*end - 250.0).abs() < 1e-3
+        }),
+        "内环应成为切口（孔）：{:?}",
+        composed.mould_cuts
+    );
+    assert!(editor.mould_knife.is_none(), "切完应清刀");
+    assert!(
+        !editor.overlay_preview().mould_cuts.is_empty(),
+        "刀清空后切口仍应可绘制"
+    );
+}
+
+#[test]
+fn test_mould_knife_stale_after_notes_deleted() {
+    use lumino_editor_state::ShapeInstance;
+
+    let mut editor = Editor::new();
+    seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[Note::new(0.0, 60, 100.0), Note::new(200.0, 60, 100.0)],
+    );
+    editor.editor_state.interaction.selected_notes = [0_usize, 1].into_iter().collect();
+    assert!(editor.mould_set_knife().is_ok());
+    editor.delete_selected_notes();
+
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    editor.editor_state.shape_tool.shapes.push(ShapeInstance {
+        kind: lumino_editor_state::ShapeKind::Rectangle,
+        rect: (0.0, 59.0, 300.0, 63.0),
+        shift_constrained: false,
+        filled: true,
+        apex_high: true,
+        mask: None,
+    });
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("面团应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    assert_eq!(
+        editor.mould_selected(),
+        Err(crate::MouldReject::KnifeStale),
+        "刀音符被删后应报失效，而不是静默用旧快照"
+    );
+    assert!(editor.mould_knife.is_none(), "失效后应清刀");
+}
+
+#[test]
+fn test_delete_knife_notes_emits_expired_notice() {
+    let mut editor = Editor::new();
+    seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[Note::new(0.0, 60, 100.0), Note::new(200.0, 60, 100.0)],
+    );
+    editor.editor_state.interaction.selected_notes = [0_usize, 1].into_iter().collect();
+    assert!(editor.mould_set_knife().is_ok());
+
+    editor.handle_delete_pressed();
+
+    assert!(editor.mould_knife.is_none(), "删掉刀音符后应立即清刀");
+    assert_eq!(
+        editor.take_mould_notice(),
+        Some(crate::MouldNotice::Expired),
+        "清刀必须留下一次性通知，由 UI 转 toast"
+    );
+}
+
+#[test]
+fn test_bake_undo_restores_pending_selection_and_tool() {
+    use lumino_message::Tool;
+
+    let mut editor = empty_editor();
+    setup_single_pending_rect(&mut editor);
+    assert!(editor.copy_along_selected(), "先形成一个 pending 组合");
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert!(editor.confirm_shape_tool(), "✓ 写入文档");
+    assert!(editor.editor_state.pending_composed.is_empty());
+
+    // 模拟用户 ✓ 后切到无关工具，再撤销
+    editor.set_tool(Tool::Pointer);
+    assert!(editor.undo(), "撤销应回到 Bake 前的 pending");
+
+    assert_eq!(editor.editor_state.pending_composed.len(), 1);
+    assert!(
+        matches!(editor.current_tool(), Tool::Shape | Tool::ShapeSelect),
+        "撤销回到 pending 时自动回到可确认的工具"
+    );
+    assert!(
+        editor
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .any(|shape| shape.pending == Some(PendingShapeRef::Composed(0))),
+        "撤销后组合结果应直接处于选中态，✓× 立即可用"
+    );
+}
+
+#[test]
+fn test_mould_knife_preview_visible_in_every_tool_and_persists() {
     use lumino_message::Tool;
 
     let mut editor = Editor::new();
     seed_notes(&mut editor, 2, 1, &[Note::new(0.0, 60, 100.0)]);
     editor.editor_state.interaction.selected_notes = [0_usize].into_iter().collect();
-    editor.set_tool(Tool::ShapeSelect);
-    assert!(editor.mould_walls.is_some(), "切到鼠标工具应快照刀");
+    assert!(editor.mould_set_knife().is_ok());
     assert!(
         !editor.overlay_preview().knife_rects.is_empty(),
-        "鼠标工具下应显示青色虚线刀框"
+        "设刀后立刻可见（不必先切到鼠标工具）"
+    );
+
+    editor.set_tool(Tool::ShapeSelect);
+    assert!(editor.mould_knife.is_some(), "刀应跨工具保留");
+    assert!(
+        !editor.overlay_preview().knife_rects.is_empty(),
+        "鼠标工具下显示刀框"
     );
 
     editor.set_tool(Tool::Curve);
-    assert!(
-        editor.mould_walls.is_none(),
-        "离开鼠标工具应清空刀快照，避免虚线框残留"
-    );
-    assert!(
-        editor.overlay_preview().knife_rects.is_empty(),
-        "离开鼠标工具后不应再画刀框"
-    );
-
-    // 双保险：即使旧快照因撤销/恢复残留，非鼠标工具也不绘制。
-    editor.mould_walls = Some(vec![shape_note(0.0, 60)]);
-    editor.editor_state.tool = Tool::Curve;
-    assert!(
-        editor.overlay_preview().knife_rects.is_empty(),
-        "非鼠标工具不得绘制刀框"
-    );
-    editor.editor_state.tool = Tool::ShapeSelect;
+    assert!(editor.mould_knife.is_some(), "显式刀不应因切换工具而丢失");
     assert!(
         !editor.overlay_preview().knife_rects.is_empty(),
-        "鼠标工具下快照恢复后应重新显示"
+        "刀是显式会话，任何工具下都应可见"
     );
+
+    // Esc 显式清除刀
+    editor.handle_action(lumino_message::EditorAction::EscapePressed);
+    assert!(editor.mould_knife.is_none(), "Esc 应清除刀");
+    assert!(editor.overlay_preview().knife_rects.is_empty());
+}
+
+#[test]
+fn test_geometry_knife_preview_disappears_when_source_removed() {
+    use lumino_editor_state::{ShapeInstance, ShapeKind};
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = lumino_message::Tool::ShapeSelect;
+    editor.editor_state.shape_tool.shapes.push(ShapeInstance {
+        kind: ShapeKind::Rectangle,
+        rect: (0.0, 59.0, 100.0, 63.0),
+        shift_constrained: false,
+        filled: true,
+        apex_high: true,
+        mask: None,
+    });
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("刀形状应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+    assert!(editor.mould_set_knife().is_ok());
+    assert!(!editor.overlay_preview().knife_rings.is_empty());
+
+    // X 掉刀所基于的形状：刀框必须立刻消失，不能留在原地
+    editor.editor_state.shape_tool.shapes.clear();
+    editor.rebuild_pending_mirrors();
+    assert!(
+        editor.overlay_preview().knife_rings.is_empty(),
+        "源形状被删后刀框应立即消失"
+    );
+
+    // 换工具时把失效会话一并收敛
+    editor.set_tool(lumino_message::Tool::Pointer);
+    assert!(editor.mould_knife.is_none(), "换工具应收敛失效刀");
 }

@@ -30,6 +30,8 @@ pub struct PreviewShape {
 /// 形状预览模型。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ShapePreviewModel {
+    /// 画布内容区裁剪（扣掉左/右侧栏）；`None` = 不裁剪。
+    pub clip: Option<Rect>,
     /// 待确认图形 + 拖拽预览。
     pub shapes: Vec<PreviewShape>,
 }
@@ -43,7 +45,8 @@ impl ShapePreviewModel {
 
 /// 绘制全部预览。
 pub fn show(ui: &egui::Ui, model: &ShapePreviewModel) {
-    let painter = ui.painter();
+    let clip = model.clip.unwrap_or_else(|| ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
     let base = theme::accent_strong();
     let fill = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), FILL_ALPHA);
     for shape in &model.shapes {

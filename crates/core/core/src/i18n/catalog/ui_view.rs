@@ -119,9 +119,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "Maximum simultaneous voices per key (channel + pitch); 0 = unlimited (not recommended). Keep 32: on the same material a full song took 32 → 165s vs 0 → 59min (voices pile up endlessly, time and memory explode). CPU counts voices; GPU counts note groups.",
             )
         }
-        "⚠ 已设为不限：密集素材下声部会无限堆积，渲染时间与内存会显著恶化——除非明确需要，建议改回 32。" => {
+        "已设为不限：密集素材下声部会无限堆积，渲染时间与内存会显著恶化——除非明确需要，建议改回 32。" => {
             Some(
-                "⚠ Unlimited: voices pile up endlessly with dense material and render time and memory degrade sharply — set it back to 32 unless you really need this.",
+                "Unlimited: voices pile up endlessly with dense material and render time and memory degrade sharply — set it back to 32 unless you really need this.",
             )
         }
         "继续" => Some("Resume"),

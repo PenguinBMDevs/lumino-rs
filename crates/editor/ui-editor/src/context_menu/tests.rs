@@ -44,6 +44,8 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
             PianoRollContextMenuItem::SymmetryVertical,
             PianoRollContextMenuItem::SymmetryHorizontal,
             PianoRollContextMenuItem::SliceCut,
+            PianoRollContextMenuItem::MouldSetKnife,
+            PianoRollContextMenuItem::MouldClearKnife,
             PianoRollContextMenuItem::MouldShapes,
             PianoRollContextMenuItem::RoundCorners,
             PianoRollContextMenuItem::BetweenCreate,

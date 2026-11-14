@@ -83,6 +83,10 @@ pub struct PendingComposed {
     pub sources: Vec<PendingSource>,
     /// 抽屉插入的来源（仅 [`ComposedKind::Insert`] 有；「退回抽屉」据此回填）
     pub drawer: Option<lumino_core::shape::DrawerInsert>,
+    /// 饼干模切口：空隙区间 `(key, start, end)`（文档坐标，DEBT-17）
+    ///
+    /// 刀在切完即被清除，切口靠本字段保留到 ✓ / ×；随组合结果一起平移。
+    pub mould_cuts: Vec<(u16, f32, f32)>,
 }
 
 impl PendingComposed {
@@ -98,6 +102,7 @@ impl PendingComposed {
             results: vec![ComposedPart::plain(model, notes)],
             sources,
             drawer: None,
+            mould_cuts: Vec::new(),
         }
     }
 
@@ -114,6 +119,7 @@ impl PendingComposed {
             results: vec![ComposedPart::plain(model, notes)],
             sources: Vec::new(),
             drawer: Some(drawer),
+            mould_cuts: Vec::new(),
         }
     }
 
@@ -128,6 +134,10 @@ impl PendingComposed {
             {
                 degraded = true;
             }
+        }
+        if degraded {
+            // 轮廓已变：切口不再对应任何几何，连同刀痕一起清除。
+            self.mould_cuts.clear();
         }
         degraded
     }
@@ -154,6 +164,12 @@ impl PendingComposed {
             for note in &mut part.notes {
                 *note = note.translated(dtick, dkey);
             }
+        }
+        // 切口随组合结果一起平移，否则移动图案后刀痕留在原处。
+        for (key, start, end) in &mut self.mould_cuts {
+            *start = (*start + dtick).max(0.0);
+            *end = (*end + dtick).max(0.0);
+            *key = (*key as f32 + dkey).clamp(0.0, 255.0).round() as u16;
         }
         // 抽屉来源的落位矩形跟随 pending 一起移动，否则「退回抽屉」记录的位置是旧的。
         if let Some(drawer) = &mut self.drawer {
@@ -236,6 +252,7 @@ mod tests {
             results: vec![ComposedPart::plain(model, Vec::new())],
             sources: Vec::new(),
             drawer: None,
+            mould_cuts: Vec::new(),
         };
 
         composed.translate(5.0, 2.0);
@@ -247,6 +264,26 @@ mod tests {
             params.grp,
             Some([15.0, 22.0]),
             "组合结果平移时 CopyAlong 的绝对路径起点必须同步"
+        );
+    }
+
+    #[test]
+    fn test_translate_moves_mould_cuts() {
+        let model = ShapeModel::new(0, 1, ShapeKind::Polyline, 1.0);
+        let mut composed = PendingComposed {
+            kind: ComposedKind::Mould,
+            results: vec![ComposedPart::plain(model, Vec::new())],
+            sources: Vec::new(),
+            drawer: None,
+            mould_cuts: vec![(60, 100.0, 200.0)],
+        };
+
+        composed.translate(5.0, 2.0);
+
+        assert_eq!(
+            composed.mould_cuts,
+            vec![(62, 105.0, 205.0)],
+            "切口必须随组合结果一起平移"
         );
     }
 }

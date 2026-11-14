@@ -4,55 +4,28 @@
 //! `EditorState::pending_composed`，✓ 才写文档音符。
 
 mod edit;
+mod mould;
 mod promote;
+mod select;
 mod slice;
 
 use lumino_core::shape::{
     BetweenParams, BetweenRole, BetweenSet, MergeParams, ShapeModel, ShapeOp,
 };
 use lumino_editor_state::shape_ops::{
-    CutKind, CutMark, CutRef, KnifeKind, extend_line, gate_merge, join, mould_pieces, ring_of,
-    split_notes_line, sync_groups, to_live,
+    extend_line, gate_merge, join, split_notes_line, sync_groups, to_live,
 };
 
-use self::slice::{polyline_model, split_slice_parts};
+use self::mould::compose_mould;
+use self::slice::{attach_line_cut, polyline_model, split_slice_parts};
 use lumino_editor_state::{
     ComposedKind, ComposedPart, PendingComposed, PendingShapeRef, PendingSource,
 };
 
 use crate::Editor;
-use crate::interaction::shape_compose::CopyAlongSpec;
+use crate::interaction::shape_compose::{CopyAlongSpec, MouldKnife};
 
 impl Editor {
-    /// 当前选中集是否全部是 pending 镜像（至少一个）；混合选区不走组合会话
-    pub(super) fn pending_selection_only(&self) -> bool {
-        let mut any = false;
-        for shape in self.editor_state.shape_select.selected_shapes() {
-            if shape.pending.is_some() {
-                any = true;
-            } else {
-                return false;
-            }
-        }
-        any
-    }
-
-    /// 当前选中集是否恰好是一个 pending 矢量（形状/曲线），且不含已组合结果。
-    ///
-    /// 027/028 是单对象操作：镜像/组合结果仍走各自入口，不在这里重复组合。
-    pub(super) fn pending_single_selection(&self) -> bool {
-        let mut count = 0usize;
-        for shape in self.editor_state.shape_select.selected_shapes() {
-            match shape.pending {
-                Some(PendingShapeRef::Shape(_)) | Some(PendingShapeRef::CurvePath(_)) => {
-                    count += 1;
-                }
-                _ => return false,
-            }
-        }
-        count == 1
-    }
-
     /// 取一个可用于 pending 参数操作的单支组合；普通 pending 形状/曲线先提升。
     ///
     /// 返回 `(组合下标, 是否本次刚提升)`：
@@ -126,13 +99,10 @@ impl Editor {
         self.compose_pending_with(ComposedKind::Slice, copy_spec, Some((a, b)), None)
     }
 
-    /// 025 pending 入口：单形状 + 手画音符当刀（DRAW-025）
-    pub(super) fn compose_pending_mould(
-        &mut self,
-        walls: Vec<lumino_editor_state::ShapeNote>,
-    ) -> bool {
+    /// 025 pending 入口：单形状 + 显式设置的刀（DRAW-025 / DEBT-17）
+    pub(super) fn compose_pending_mould(&mut self, knife: MouldKnife) -> bool {
         let copy_spec = CopyAlongSpec::half_beat(self.editor_state.view.ppq);
-        self.compose_pending_with(ComposedKind::Mould, copy_spec, None, Some(walls))
+        self.compose_pending_with(ComposedKind::Mould, copy_spec, None, Some(knife))
     }
 
     fn compose_pending_with(
@@ -140,7 +110,7 @@ impl Editor {
         kind: ComposedKind,
         copy_spec: CopyAlongSpec,
         slice_line: Option<((f32, f32), (f32, f32))>,
-        mould_walls: Option<Vec<lumino_editor_state::ShapeNote>>,
+        mould_knife: Option<MouldKnife>,
     ) -> bool {
         let refs: Vec<PendingShapeRef> = self
             .editor_state
@@ -175,8 +145,9 @@ impl Editor {
             notes.push(model_notes);
         }
 
+        // DEBT-17：Mould 分支产出的切口区间；其它组合保持为空。
+        let mut mould_cuts: Vec<(u16, f32, f32)> = Vec::new();
         let mut results: Vec<ComposedPart> = match kind {
-            // DEBT-14：抽屉插入只由 `PendingComposed::from_drawer` 产生，不走组合入口。
             ComposedKind::Insert => return false,
             ComposedKind::Live => {
                 let Ok((model, _warnings)) = to_live(&models) else {
@@ -250,39 +221,20 @@ impl Editor {
                 parts
             }
             ComposedKind::Mould => {
-                let (walls, dough_index) = match (mould_walls, models.len()) {
-                    // 推荐入口：单形状 + 手画音符当刀
-                    (Some(walls), 1) => (walls, 0),
-                    // 兼容旧口径：两个待确认形状，靠前者当刀
-                    (None, 2) => (notes[0].clone(), 1),
-                    _ => return false,
+                let Some(knife) = mould_knife else {
+                    return false;
                 };
-                let dough = &models[dough_index];
-                let loops = vec![ring_of(dough)];
-                let ppq = u32::from(self.editor_state.view.ppq);
-                let pieces = mould_pieces(&walls, &notes[dough_index], &loops, ppq);
-                if pieces.is_empty() {
+                if models.len() != 1 {
                     return false;
                 }
-                pieces
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, piece)| {
-                        let model = polyline_model(vec![piece.ring], track, dough.k, true);
-                        let mut part = ComposedPart::plain(model, piece.notes);
-                        let mut cut = CutRef::for_piece(dough.clone(), &part.model, (0.0, None));
-                        cut.knife = None;
-                        cut.marks.push(CutMark {
-                            id: index as u32,
-                            at: index,
-                            u: index as f32,
-                            kind: CutKind::Split,
-                            dir: (0.0, 1.0),
-                        });
-                        part.cut = Some(cut);
-                        part
-                    })
-                    .collect()
+                let ppq = u32::from(self.editor_state.view.ppq);
+                let Some((parts, cuts)) = compose_mould(&knife, &models[0], &notes[0], track, ppq)
+                else {
+                    return false;
+                };
+                // 切口 = 空隙区间本身；刀在切完即清空，靠这份数据画到 ✓ / ×。
+                mould_cuts = cuts;
+                parts
             }
             ComposedKind::Between => {
                 if models.len() != 2 {
@@ -395,6 +347,7 @@ impl Editor {
             results,
             sources,
             drawer: None,
+            mould_cuts,
         });
         self.pending_composed_redo.clear();
         self.pending_edit_undo.clear();
@@ -444,31 +397,5 @@ impl Editor {
         self.rebuild_pending_mirrors();
         self.grid_cache.clear();
         true
-    }
-}
-
-/// 给沿直线切出的两片挂上片簿记（DRAW-025）
-///
-/// `part` 记「本片在原形状上的比例」：正侧（tick 较小）取 `0..0.5`，
-/// 负侧取 `0.5..` 到末尾；`marks` 记录切线方向，供后续调试/展示。
-fn attach_line_cut(
-    parts: &mut [ComposedPart],
-    whole: &lumino_core::shape::ShapeModel,
-    a: (f32, f32),
-    b: (f32, f32),
-) {
-    let dir = (b.0 - a.0, b.1 - a.1);
-    let spans = [(0.0, Some(0.5)), (0.5, None)];
-    for (index, part) in parts.iter_mut().enumerate() {
-        let mut cut = CutRef::for_piece(whole.clone(), &part.model, spans[index]);
-        cut.knife = Some(KnifeKind::Line);
-        cut.marks.push(CutMark {
-            id: index as u32,
-            at: index,
-            u: index as f32 * 0.5,
-            kind: CutKind::Slice,
-            dir,
-        });
-        part.cut = Some(cut);
     }
 }

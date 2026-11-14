@@ -12,6 +12,9 @@ use crate::root::Root;
 impl Root {
     /// 本帧曲线工具预览。
     pub fn curve_preview_model(&self) -> CurvePreviewModel {
+        if !self.sidebar.piano_roll_visible {
+            return CurvePreviewModel::default();
+        }
         let editor = &self.editor;
         if editor.editor_state.data.current_track == 0
             || !editor.pending_preview_visible(Tool::Curve)
@@ -120,6 +123,7 @@ impl Root {
         }
 
         let model = CurvePreviewModel {
+            clip: self.canvas_overlay_clip(),
             segments,
             blocks,
             connectors,

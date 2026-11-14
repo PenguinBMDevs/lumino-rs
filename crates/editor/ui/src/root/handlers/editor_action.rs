@@ -8,6 +8,8 @@ use crate::root::Root;
 use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
+mod shape_ops_menu;
+
 impl Root {
     /// 处理编辑器动作
     ///
@@ -47,6 +49,8 @@ impl Root {
             puffin::profile_scope!("editor_handle_action");
             self.editor.handle_action(action);
         }
+        // DEBT-17：删除音符/图形后刀可能失效，在这里转 toast
+        self.drain_mould_notice();
         // 画布 Ctrl+单击（填充桶）→ 取走弹窗请求，打开「分音符填充」覆盖层。
         // Editor 不持有主窗口对话框状态，只能置一次性标志，由此处转成 UI 状态。
         if self.editor.take_fill_division_dialog_request() {
@@ -237,7 +241,7 @@ impl Root {
                         if self.editor.toggle_mask_selected() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Info,
-                                tr!("已切换遮罩（仅预览；✓ 后固定）"),
+                                tr!("已切换遮罩（仅预览；确认后固定）"),
                             );
                         } else {
                             self.toast.push(
@@ -311,63 +315,18 @@ impl Root {
                     PianoRollContextMenuItem::StraightenOff => {
                         let _ = self.editor.set_straighten(false);
                     }
-                    PianoRollContextMenuItem::SliceCut => {
-                        if self.editor.begin_slice_cut() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("拖出一条切割线：松手即切（Shift 自由角度）"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("切割失败：请选中一个待确认形状/曲线；已 Bake 形状不可再切"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::MouldShapes => match self.editor.mould_selected() {
-                        Ok(()) => {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("已切出内/外片；✓ 后才写入音符"),
-                            );
-                        }
-                        Err(lumino_ui_editor::MouldReject::Selection) => {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("饼干模失败：请选中 1 个待确认形状（或 2 个：刀 + 面团）"),
-                            );
-                        }
-                        Err(lumino_ui_editor::MouldReject::NoWalls) => {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("饼干模失败：先用鼠标工具选中要当刀的音符，再切到鼠标工具"),
-                            );
-                        }
-                        Err(lumino_ui_editor::MouldReject::NoGap) => {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("饼干模失败：刀的同一 key 行需要至少两条音符（中间才是空隙）"),
-                            );
-                        }
-                    },
-                    PianoRollContextMenuItem::RoundCorners => {
-                        if self.editor.begin_round_corners() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("角度柔化：拖角点调半径（Esc 退出）"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("角度柔化失败：请选中一个待确认折线形状（至少 3 个角点）"),
-                            );
-                        }
+                    PianoRollContextMenuItem::SliceCut
+                    | PianoRollContextMenuItem::MouldSetKnife
+                    | PianoRollContextMenuItem::MouldClearKnife
+                    | PianoRollContextMenuItem::MouldShapes
+                    | PianoRollContextMenuItem::RoundCorners => {
+                        self.handle_shape_ops_menu(item);
                     }
                     PianoRollContextMenuItem::BetweenCreate => {
                         if self.editor.create_between_selected() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Info,
-                                tr!("已生成补间（首 + 步 + 末）；✓ 后才写入音符"),
+                                tr!("已生成补间（首 + 步 + 末）；确认后才写入音符"),
                             );
                         } else {
                             self.toast.push(
@@ -387,7 +346,7 @@ impl Root {
                         } else {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
+                                tr!("沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先确认"),
                             );
                         }
                     }
@@ -395,12 +354,12 @@ impl Root {
                         if self.editor.velocity_up_selected() {
                             self.toast.push(
                                 crate::toast::ToastLevel::Info,
-                                tr!("已应用力度渐强；✓ 后才写入音符"),
+                                tr!("已应用力度渐强；确认后才写入音符"),
                             );
                         } else {
                             self.toast.push(
                                 crate::toast::ToastLevel::Warning,
-                                tr!("力度渐强失败：请选中一个待确认形状/曲线；组合结果需先 ✓"),
+                                tr!("力度渐强失败：请选中一个待确认形状/曲线；组合结果需先确认"),
                             );
                         }
                     }

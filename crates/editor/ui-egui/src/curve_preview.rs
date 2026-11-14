@@ -44,6 +44,8 @@ pub struct AnchorMark {
 /// 曲线预览模型（窗口逻辑坐标）。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CurvePreviewModel {
+    /// 画布内容区裁剪（扣掉左/右侧栏）；`None` = 不裁剪。
+    pub clip: Option<Rect>,
     /// 曲线段。
     pub segments: Vec<CurveSegment>,
     /// 描边产物块。
@@ -74,7 +76,8 @@ impl CurvePreviewModel {
 
 /// 绘制曲线预览。
 pub fn show(ui: &egui::Ui, model: &CurvePreviewModel) {
-    let painter = ui.painter();
+    let clip = model.clip.unwrap_or_else(|| ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
     let base = theme::accent_strong();
     let helper = base.gamma_multiply(0.5);
     let fill = base.gamma_multiply(0.35);

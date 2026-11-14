@@ -11,6 +11,32 @@ use crate::sidebar;
 use lumino_core::storage::config::UiConfig;
 use lumino_message::RightSidebarAction;
 
+/// 覆盖层裁剪必须扣掉左/右侧栏：纵向卷帘下刀框与选框不得画到侧栏上。
+#[test]
+fn test_canvas_overlay_clip_excludes_both_sidebars() {
+    let mut root = Root::new(&UiConfig::default());
+    root.editor
+        .set_canvas_size(lumino_ui_core::geom::Point::new(1200.0, 800.0));
+    root.editor
+        .set_canvas_offset(lumino_ui_core::geom::Point::new(248.0, 60.0));
+    root.sidebar.panel_visible = true;
+    root.sidebar.panel_width = 320.0;
+
+    let clip = root.canvas_overlay_clip().expect("画布应可裁剪");
+    assert!(
+        clip.min.x >= 48.0 + 320.0 - 1e-3,
+        "左边界必须让出左侧栏，实际 {}",
+        clip.min.x
+    );
+    let canvas_right =
+        root.editor.editor_state.canvas.offset_x + root.editor.editor_state.canvas.size_x;
+    assert!(
+        clip.max.x < canvas_right,
+        "右边界必须让出右侧栏（画布右缘 {canvas_right}，裁剪右缘 {}）",
+        clip.max.x
+    );
+}
+
 /// 默认状态（钢琴卷帘编辑区）：右侧栏应可见
 #[test]
 fn test_right_sidebar_visible_in_piano_roll_editor() {

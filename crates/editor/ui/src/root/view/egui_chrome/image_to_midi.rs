@@ -8,6 +8,9 @@ use crate::root::Root;
 impl Root {
     /// 本帧 I2M 区域框（仅 Placing 阶段显示）。
     pub fn i2m_region_model(&self) -> I2mRegionModel {
+        if !self.sidebar.piano_roll_visible {
+            return I2mRegionModel::default();
+        }
         let editor = &self.editor;
         if editor.editor_state.image_to_midi.mode != ImageToMidiMode::Placing {
             return I2mRegionModel::default();

@@ -14,7 +14,9 @@ pub use lumino_ui_core::{Message, Theme};
 
 /// 遮罩参数面板的编辑目标（DRAW-010）
 pub use interaction::MaskEditTarget;
-pub use interaction::shape_compose::{MouldReject, sym_reject_message};
+pub use interaction::shape_compose::{
+    MouldKnifeInfo, MouldNotice, MouldReject, sym_reject_message,
+};
 
 pub mod arrangement;
 pub mod context_menu;
@@ -265,8 +267,10 @@ pub struct Editor {
     pub(crate) area_paint: Option<crate::interaction::area_paint::AreaPaintState>,
     /// DRAW-025：切割布防（待确认形状 + 拖出的切线）
     pub(crate) slice_cut: Option<crate::interaction::slice_cut::SliceCutState>,
-    /// DRAW-025：饼干模的刀——切到鼠标工具前选中的手画音符快照
-    pub(crate) mould_walls: Option<Vec<lumino_editor_state::ShapeNote>>,
+    /// DEBT-17：饼干模的刀（音符 / 几何），显式设置、切完清空
+    pub(crate) mould_knife: Option<crate::interaction::shape_compose::MouldKnife>,
+    /// DEBT-17：刀失效等一次性通知（UI 层取走后转 toast）
+    pub(crate) mould_notice: Option<crate::interaction::shape_compose::MouldNotice>,
     /// DRAW-044：角度柔化模式（逐角点拖半径）
     pub(crate) round_corner: Option<crate::interaction::round_corner::RoundCornerMode>,
     /// DRAW-041B/032B：ShapeStore 模型列表是否展开

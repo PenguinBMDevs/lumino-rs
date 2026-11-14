@@ -6,10 +6,13 @@
 //! 两半的顺序必须与 `split_notes_line` 一致（小 tick 侧在前），否则几何会
 //! 和另一半的音符配错；`cut_loops` 只按环序返回两半，因此这里用质心判侧重排。
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
-use lumino_editor_state::shape_ops::{Pt, cut_loops, cut_open_line, normalize_line, ring_of};
+use lumino_editor_state::ComposedPart;
+use lumino_editor_state::shape_ops::{
+    CutKind, CutMark, CutRef, KnifeKind, Pt, cut_loops, cut_open_line, normalize_line, ring_of,
+};
 
 /// 两/多段闭环拍平成一条折线模型（Slice 的两片）
-pub(super) fn polyline_model(
+pub(crate) fn polyline_model(
     points: Vec<Vec<(f32, f32)>>,
     track: usize,
     k: f32,
@@ -72,4 +75,30 @@ fn split_open_model(model: &ShapeModel, a: Pt, b: Pt) -> Option<SliceHalves> {
             .collect()
     };
     cut_open_line(&points, a, b).map(|(first, second)| (vec![first], vec![second]))
+}
+
+/// 给沿直线切出的两片挂上片簿记（DRAW-025）
+///
+/// `part` 记「本片在原形状上的比例」：正侧（tick 较小）取 `0..0.5`，
+/// 负侧取 `0.5..` 到末尾；`marks` 记录切线方向，供后续调试/展示。
+pub(super) fn attach_line_cut(
+    parts: &mut [ComposedPart],
+    whole: &ShapeModel,
+    a: (f32, f32),
+    b: (f32, f32),
+) {
+    let dir = (b.0 - a.0, b.1 - a.1);
+    let spans = [(0.0, Some(0.5)), (0.5, None)];
+    for (index, part) in parts.iter_mut().enumerate() {
+        let mut cut = CutRef::for_piece(whole.clone(), &part.model, spans[index]);
+        cut.knife = Some(KnifeKind::Line);
+        cut.marks.push(CutMark {
+            id: index as u32,
+            at: index,
+            u: index as f32 * 0.5,
+            kind: CutKind::Slice,
+            dir,
+        });
+        part.cut = Some(cut);
+    }
 }

@@ -60,7 +60,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "设置" => Some("Settings"),
         "不限制" => Some("Unlimited"),
         "0=不限制 1-128" => Some("0=Unlimited 1-128"),
-        "⚠ 云存储提醒：{msg}" => Some("⚠ Cloud storage notice: {msg}"),
+        "警告" => Some("Warning"),
+        "错误" => Some("Error"),
+        "成功" => Some("Success"),
         "添加连接" => Some("Add Connection"),
         "尚未添加云存储连接。支持 FTP / SFTP / WebDAV，连接信息仅存储在本机。" => {
             Some(
@@ -68,6 +70,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "云存储管理" => Some("Cloud Storage"),
+        "云存储提醒：{msg}" => Some("Cloud storage notice: {msg}"),
         "🟢 在线" => Some("🟢 Online"),
         "🔴 离线" => Some("🔴 Offline"),
         "断开" => Some("Disconnect"),

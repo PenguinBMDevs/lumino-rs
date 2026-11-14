@@ -206,8 +206,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "编辑形状失败：请选中一个已 Bake 图形或单支待确认组合" => {
             Some("Edit shape failed: select a baked shape or a single pending composition")
         }
-        "已切换遮罩（仅预览；✓ 后固定）" => {
-            Some("Mask toggled (preview only; applied after ✓)")
+        "已切换遮罩（仅预览；确认后固定）" => {
+            Some("Mask toggled (preview only; applied after confirmation)")
         }
         "遮罩失败：请选中一个待确认形状" => {
             Some("Mask failed: select a pending shape")
@@ -233,12 +233,6 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "遮罩设置…" => Some("Mask Settings…"),
         "遮罩设置失败：请选中一个待确认形状" => {
             Some("Failed to open mask settings: select a pending shape")
-        }
-        "已竖切；✓ 后才写入音符" => {
-            Some("Sliced vertically; notes are written after ✓")
-        }
-        "竖切失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
-            Some("Slice failed: select a pending shape/curve; composed results must be ✓ first")
         }
         // DRAW-025：切割改为布防拖线；饼干模按「刀→面团」两个待确认形状
         "切割" => Some("Slice"),
@@ -270,24 +264,52 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "切割失败：请选中一个待确认形状/曲线；已 Bake 形状不可再切" => {
             Some("Slice failed: select a pending shape/curve; baked shapes cannot be sliced")
         }
-        "已切出内/外片；✓ 后才写入音符" => {
-            Some("Inner/outer pieces cut; notes are written after ✓")
+        "已切出内/外片；确认后才写入音符" => {
+            Some("Inner/outer pieces cut; notes are written after confirmation")
         }
-        "饼干模失败：请选中 1 个待确认形状（或 2 个：刀 + 面团）" => {
-            Some("Mould failed: select 1 pending shape (or 2: knife + dough)")
+        "以选中内容为刀" => Some("Use Selection as Knife"),
+        "取消刀" => Some("Clear Knife"),
+        "已取消刀" => Some("Knife cleared"),
+        "当前没有刀" => Some("No knife is set"),
+        "当前音轨没有可列出的已 Bake 形状" => {
+            Some("No baked shapes to list on the current track")
         }
-        "饼干模失败：先用鼠标工具选中要当刀的音符，再切到鼠标工具" => {
+        "设刀失败：先选中音符或待确认形状" => {
+            Some("Set knife failed: select notes or pending shapes first")
+        }
+        "已设为刀：{notes} 条音符 · {rows} 行（Esc 取消）" => {
+            Some("Knife set: {notes} notes · {rows} rows (Esc to clear)")
+        }
+        "已设为刀：{rings} 环 · {rows} 行（Esc 取消）" => {
+            Some("Knife set: {rings} rings · {rows} rows (Esc to clear)")
+        }
+        "刀：{notes} 条音符 · {rows} 行" => Some("Knife: {notes} notes · {rows} rows"),
+        "刀：{rings} 环 · {rows} 行" => Some("Knife: {rings} rings · {rows} rows"),
+        "刀在每一行都不足两段，切不出内片；请补一条同 key 音符或再加一个环" => {
             Some(
-                "Mould failed: select the knife notes with the pointer tool, then switch to the mouse tool",
+                "The knife has fewer than two segments on every row, so no inner piece can be cut; add a note on the same key or another ring",
             )
         }
-        "饼干模失败：刀的同一 key 行需要至少两条音符（中间才是空隙）" => {
-            Some(
-                "Mould failed: the knife needs at least two notes on a key row (the gap between them is the piece)",
-            )
+        "饼干模失败：请选中 1 个待确认形状作为面团" => {
+            Some("Mould failed: select exactly one pending shape as dough")
         }
-        "已生成补间（首 + 步 + 末）；✓ 后才写入音符" => {
-            Some("Tween generated (first + step + last); notes are written after ✓")
+        "饼干模失败：先右键「以选中内容为刀」设置刀" => {
+            Some("Mould failed: set a knife via “Use Selection as Knife” first")
+        }
+        "饼干模失败：刀已失效（音符或形状已改变），请重新设刀" => {
+            Some("Mould failed: the knife is stale (notes or shapes changed); set it again")
+        }
+        "刀已失效：音符或形状已改变，请重新设刀" => {
+            Some("The knife is stale (notes or shapes changed); set it again")
+        }
+        "饼干模失败：刀与面团不能是同一个形状" => {
+            Some("Mould failed: the knife and the dough cannot be the same shape")
+        }
+        "饼干模失败：刀的同一 key 行需要至少两段墙（中间才是空隙）" => {
+            Some("Mould failed: each key row of the knife needs at least two wall segments")
+        }
+        "已生成补间（首 + 步 + 末）；确认后才写入音符" => {
+            Some("Tween generated (first + step + last); notes are written after confirmation")
         }
         "补间失败：请恰好选中两个待确认形状/曲线" => {
             Some("Tween failed: select exactly two pending shapes/curves")
@@ -309,17 +331,17 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "门控合并失败：请恰好选中两个待确认图形（已 Bake 只读）" => Some(
             "Gate merge failed: select exactly two pending shapes (baked shapes are read-only)",
         ),
-        "沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
+        "沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先确认" => {
             Some(
-                "Copy along path failed: select one pending shape/curve; composed results must be ✓ first",
+                "Copy along path failed: select one pending shape/curve; composed results must be confirmed first",
             )
         }
-        "已应用力度渐强；✓ 后才写入音符" => {
-            Some("Velocity ramp applied; notes are written after ✓")
+        "已应用力度渐强；确认后才写入音符" => {
+            Some("Velocity ramp applied; notes are written after confirmation")
         }
-        "力度渐强失败：请选中一个待确认形状/曲线；组合结果需先 ✓" => {
+        "力度渐强失败：请选中一个待确认形状/曲线；组合结果需先确认" => {
             Some(
-                "Velocity ramp failed: select one pending shape/curve; composed results must be ✓ first",
+                "Velocity ramp failed: select one pending shape/curve; composed results must be confirmed first",
             )
         }
         // DRAW-010：遮罩实体化入口

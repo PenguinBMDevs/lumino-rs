@@ -12,6 +12,8 @@ pub enum KnifeKind {
     Line,
     /// 曲线切（预留）
     Curve,
+    /// 饼干模：按行空隙切开（DEBT-17）
+    Mould,
 }
 
 /// 切口类型

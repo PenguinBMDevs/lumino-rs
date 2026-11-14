@@ -29,6 +29,9 @@ fn preview_signature(
 impl Root {
     /// 本帧文字工具覆盖层；未激活 / 不可用时返回 `None`。
     pub fn text_tool_model(&self) -> Option<TextToolModel> {
+        if !self.sidebar.piano_roll_visible {
+            return None;
+        }
         let editor = &self.editor;
         if !editor.text_tool_allowed() || !editor.pending_preview_visible(Tool::Text) {
             return None;

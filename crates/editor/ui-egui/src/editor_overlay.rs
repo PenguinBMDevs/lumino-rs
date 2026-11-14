@@ -26,10 +26,18 @@ const HANDLE_SIZE: f32 = 10.0;
 /// 本帧叠加层预览。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EditorOverlayModel {
+    /// 画布内容区（窗口坐标）：全部叠加层裁剪到这里，避免压到侧栏/工具条。
+    pub clip: Option<egui::Rect>,
     /// 切割线（起点 / 终点）。
     pub slice_line: Option<(Pos2, Pos2)>,
     /// 饼干模「刀」的音符框。
     pub knife_rects: Vec<egui::Rect>,
+    /// 饼干模「刀」的几何环。
+    pub knife_rings: Vec<Vec<Pos2>>,
+    /// 刀状态文字（锚点 + 文本）。
+    pub knife_status: Option<(Pos2, String)>,
+    /// 饼干模切口（橙红虚线；刀清空后保留到 ✓ / ×）。
+    pub mould_cuts: Vec<(Pos2, Pos2)>,
     /// 角度柔化后的路径折线。
     pub round_path: Vec<Pos2>,
     /// 可柔化角点手柄（锚点下标 + 位置）。
@@ -45,6 +53,9 @@ impl EditorOverlayModel {
     pub fn is_empty(&self) -> bool {
         self.slice_line.is_none()
             && self.knife_rects.is_empty()
+            && self.knife_rings.is_empty()
+            && self.knife_status.is_none()
+            && self.mould_cuts.is_empty()
             && self.round_path.is_empty()
             && self.round_handles.is_empty()
     }
@@ -52,7 +63,8 @@ impl EditorOverlayModel {
 
 /// 绘制全部叠加层预览。
 pub fn show(ui: &egui::Ui, model: &EditorOverlayModel) {
-    let painter = ui.painter();
+    let clip = model.clip.unwrap_or_else(|| ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
 
     if let Some((a, b)) = model.slice_line {
         painter.line_segment([a, b], Stroke::new(2.0, CUT));
@@ -61,7 +73,26 @@ pub fn show(ui: &egui::Ui, model: &EditorOverlayModel) {
     }
 
     for rect in &model.knife_rects {
-        dashed_rect(painter, *rect);
+        dashed_rect(&painter, *rect);
+    }
+
+    for ring in &model.knife_rings {
+        for pair in ring.windows(2) {
+            dashed_line(&painter, pair[0], pair[1], Stroke::new(WIDTH, KNIFE));
+        }
+    }
+    if let Some((anchor, text)) = &model.knife_status {
+        painter.text(
+            *anchor,
+            Align2::LEFT_BOTTOM,
+            text,
+            FontId::proportional(11.0),
+            KNIFE,
+        );
+    }
+
+    for &(a, b) in &model.mould_cuts {
+        dashed_line(&painter, a, b, Stroke::new(WIDTH, CUT));
     }
 
     if model.round_path.len() >= 2 {
@@ -97,12 +128,17 @@ fn dashed_rect(painter: &egui::Painter, rect: egui::Rect) {
         rect.left_bottom(),
     ];
     for index in 0..4 {
-        dashed_line(painter, corners[index], corners[(index + 1) % 4]);
+        dashed_line(
+            painter,
+            corners[index],
+            corners[(index + 1) % 4],
+            Stroke::new(WIDTH, KNIFE),
+        );
     }
 }
 
 /// 单条虚线。
-fn dashed_line(painter: &egui::Painter, from: Pos2, to: Pos2) {
+fn dashed_line(painter: &egui::Painter, from: Pos2, to: Pos2, stroke: Stroke) {
     let delta = to - from;
     let len = delta.length();
     if len <= 0.5 {
@@ -112,10 +148,7 @@ fn dashed_line(painter: &egui::Painter, from: Pos2, to: Pos2) {
     let mut cursor = 0.0;
     while cursor < len {
         let end = (cursor + DASH).min(len);
-        painter.line_segment(
-            [from + unit * cursor, from + unit * end],
-            Stroke::new(WIDTH, KNIFE),
-        );
+        painter.line_segment([from + unit * cursor, from + unit * end], stroke);
         cursor = end + GAP;
     }
 }

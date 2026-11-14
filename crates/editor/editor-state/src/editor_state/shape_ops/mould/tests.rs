@@ -31,6 +31,53 @@ fn test_gap_inside_contour_becomes_row() {
 }
 
 #[test]
+fn test_note_spans_skips_degenerate_notes() {
+    let walls = vec![
+        note(60, 0.0, 100.0),
+        note(60, 50.0, 0.0),
+        note(60, f32::NAN, 10.0),
+    ];
+    assert_eq!(note_spans(&walls), vec![(60, 0.0, 100.0)]);
+}
+
+#[test]
+fn test_segment_rows_match_note_knife() {
+    let walls = vec![note(60, 0.0, 100.0), note(60, 200.0, 100.0)];
+    assert_eq!(
+        mould_rows_from_segments(&note_spans(&walls), &contour(), 480),
+        mould_rows(&walls, &contour(), 480),
+        "音符刀与几何刀必须共用同一套空隙语义"
+    );
+}
+
+#[test]
+fn test_segment_rows_support_multi_band_row() {
+    // 几何刀同一行有两段墙（外环 + 内环）→ 中间仍是空隙
+    let segments = vec![(60, 0.0, 100.0), (60, 200.0, 300.0)];
+    assert_eq!(
+        mould_rows_from_segments(&segments, &contour(), 480),
+        vec![(60, 100.0, 200.0)]
+    );
+}
+
+#[test]
+fn test_mould_pieces_from_segments_cut_inner_piece() {
+    let segments = vec![(60, 0.0, 100.0), (60, 200.0, 300.0)];
+    let dough = vec![note(60, 0.0, 300.0)];
+    let pieces = mould_pieces_from_segments(&segments, &dough, &contour(), 480);
+    assert_eq!(pieces.len(), 2, "外片 + 空隙带内片");
+    assert!(pieces[1].inner);
+    assert_eq!(
+        pieces[1]
+            .notes
+            .iter()
+            .map(|n| (n.tick, n.length))
+            .collect::<Vec<_>>(),
+        vec![(100.0, 100.0)]
+    );
+}
+
+#[test]
 fn test_gap_outside_contour_is_ignored() {
     let walls = vec![note(70, 0.0, 100.0), note(70, 200.0, 100.0)];
     assert!(mould_rows(&walls, &contour(), 480).is_empty());

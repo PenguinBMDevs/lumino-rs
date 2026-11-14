@@ -87,7 +87,8 @@ fn item_icon(item: lumino_message::PianoRollContextMenuItem) -> Icon {
         | Item::MaskSettings
         | Item::MaskApply
         | Item::ShapeList => Icon::Gear,
-        Item::MouldShapes => Icon::ContextMenuColorPalette,
+        Item::MouldSetKnife | Item::MouldShapes => Icon::ContextMenuColorPalette,
+        Item::MouldClearKnife => Icon::ContextMenuDelete,
         Item::RoundCorners => Icon::Gear,
         Item::ReturnToDrawer => Icon::Undo,
     }
@@ -232,8 +233,8 @@ mod tests {
 
     #[test]
     fn item_counts_follow_shared_table() {
-        assert_eq!(menu_items(ContextMenuTarget::Notes).len(), 8);
+        assert_eq!(menu_items(ContextMenuTarget::Notes).len(), 10);
         assert_eq!(menu_items(ContextMenuTarget::DrawnShape).len(), 5);
-        assert_eq!(menu_items(ContextMenuTarget::PendingDrawnShape).len(), 18);
+        assert_eq!(menu_items(ContextMenuTarget::PendingDrawnShape).len(), 20);
     }
 }

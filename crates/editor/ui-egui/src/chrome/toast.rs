@@ -45,7 +45,8 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
     let mut bottom = full.bottom() - TOAST_BOTTOM;
     for card in model.cards.iter().rev() {
         let text_w = measure(ui, &card.message, 14.0);
-        let width = (text_w + 16.0 + 8.0 + TOAST_PAD * 2.0).min(TOAST_MAX_W);
+        let label_w = measure(ui, &card.icon, 12.0);
+        let width = (text_w + label_w + 8.0 + TOAST_PAD * 2.0).min(TOAST_MAX_W);
         let height = 14.0 + TOAST_PAD * 2.0;
         let rect = Rect::from_min_size(
             egui::pos2(full.right() - TOAST_RIGHT - width, bottom - height),
@@ -62,11 +63,11 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
             egui::pos2(rect.left() + TOAST_PAD, rect.center().y),
             Align2::LEFT_CENTER,
             &card.icon,
-            FontId::proportional(16.0),
+            FontId::proportional(12.0),
             card.text,
         );
         ui.painter().text(
-            egui::pos2(rect.left() + TOAST_PAD + 16.0 + 8.0, rect.center().y),
+            egui::pos2(rect.left() + TOAST_PAD + label_w + 8.0, rect.center().y),
             Align2::LEFT_CENTER,
             &card.message,
             FontId::proportional(14.0),

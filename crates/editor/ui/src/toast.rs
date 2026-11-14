@@ -16,6 +16,7 @@
 
 use std::time::{Duration, Instant};
 
+use lumino_core::tr;
 use lumino_ui_core::Theme;
 
 /// Toast 级别
@@ -32,15 +33,13 @@ pub enum ToastLevel {
 }
 
 impl ToastLevel {
-    /// 图标字符（Unicode）
+    /// 级别文字（纯文字，不使用特殊符号 / emoji）
     fn icon(self) -> &'static str {
         match self {
-            ToastLevel::Info => "ℹ",
-            ToastLevel::Warning => "⚠",
-            // egui 默认字体缺 ✗(U+2717) / ✓(U+2713)，会显示成方框；
-            // 换成同字体内可用的 ×(U+00D7) / √(U+221A)。
-            ToastLevel::Error => "×",
-            ToastLevel::Success => "√",
+            ToastLevel::Info => tr!("提示"),
+            ToastLevel::Warning => tr!("警告"),
+            ToastLevel::Error => tr!("错误"),
+            ToastLevel::Success => tr!("成功"),
         }
     }
 

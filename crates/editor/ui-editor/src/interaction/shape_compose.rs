@@ -97,7 +97,10 @@ pub fn sym_reject_message(reason: SymReject) -> &'static str {
     }
 }
 
+mod mould_knife;
 mod ops;
 
+pub(crate) use mould_knife::MouldKnife;
+pub use mould_knife::{MouldKnifeInfo, MouldNotice};
 pub(crate) use ops::CopyAlongSpec;
 pub use ops::MouldReject;

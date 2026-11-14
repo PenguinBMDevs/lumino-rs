@@ -13,6 +13,9 @@ use crate::root::Root;
 impl Root {
     /// 本帧图形叠加层（空模型 = 不显示）。
     pub fn shape_edit_model(&self) -> ShapeEditModel {
+        if !self.sidebar.piano_roll_visible {
+            return ShapeEditModel::default();
+        }
         let editor = &self.editor;
         let canvas = &editor.editor_state.canvas;
         let offset = egui::vec2(canvas.offset_x, canvas.offset_y);
@@ -77,6 +80,7 @@ impl Root {
 
         let handles = editor.shape_edit_handles();
         ShapeEditModel {
+            clip: self.canvas_overlay_clip(),
             idle_outlines,
             selected_outlines,
             marquee,

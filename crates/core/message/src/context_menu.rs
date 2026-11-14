@@ -86,7 +86,11 @@ pub enum PianoRollContextMenuItem {
     StraightenOff,
     /// 切割（DRAW-025；待确认形状拖直线切分）
     SliceCut,
-    /// 饼干模（DRAW-025；先选刀、后选面团，按刀的音符行切面团）
+    /// 以选中内容为刀（DEBT-17；音符或待确认形状，显式设置饼干模的刀）
+    MouldSetKnife,
+    /// 取消刀（DEBT-17；与 Esc 等价）
+    MouldClearKnife,
+    /// 饼干模（DRAW-025；先设刀、后选面团，按刀的墙段切面团）
     MouldShapes,
     /// 角度柔化：逐角点拖半径（DRAW-044；仅待确认形状）
     RoundCorners,
@@ -105,9 +109,16 @@ pub enum PianoRollContextMenuItem {
 }
 
 impl PianoRollContextMenuItem {
-    /// 该条目所属的目标（用于按目标过滤菜单条目）
-    pub fn target(self) -> ContextMenuTarget {
+    /// 该条目适用的目标集合（用于按目标过滤菜单条目）
+    ///
+    /// 多数条目只属于一个目标；「以选中内容为刀」同时适用于音符选区与
+    /// 待确认形状选区（DEBT-17）。
+    pub fn targets(self) -> &'static [ContextMenuTarget] {
         match self {
+            Self::MouldSetKnife | Self::MouldClearKnife => &[
+                ContextMenuTarget::Notes,
+                ContextMenuTarget::PendingDrawnShape,
+            ],
             Self::DeleteDrawnShape
             | Self::LiveShape
             | Self::SplitLiveShape
@@ -130,8 +141,8 @@ impl PianoRollContextMenuItem {
             | Self::CopyAlong
             | Self::VelocityUp
             | Self::CopyShapeText
-            | Self::ReturnToDrawer => ContextMenuTarget::DrawnShape,
-            _ => ContextMenuTarget::Notes,
+            | Self::ReturnToDrawer => &[ContextMenuTarget::DrawnShape],
+            _ => &[ContextMenuTarget::Notes],
         }
     }
 }
@@ -149,6 +160,8 @@ pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContext
             PianoRollContextMenuItem::Delete,
             PianoRollContextMenuItem::SelectAll,
             PianoRollContextMenuItem::BatchEdit,
+            PianoRollContextMenuItem::MouldSetKnife,
+            PianoRollContextMenuItem::MouldClearKnife,
             PianoRollContextMenuItem::ShapeList,
             PianoRollContextMenuItem::PasteShapeText,
         ],
@@ -175,6 +188,8 @@ pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContext
             PianoRollContextMenuItem::SymmetryVertical,
             PianoRollContextMenuItem::SymmetryHorizontal,
             PianoRollContextMenuItem::SliceCut,
+            PianoRollContextMenuItem::MouldSetKnife,
+            PianoRollContextMenuItem::MouldClearKnife,
             PianoRollContextMenuItem::MouldShapes,
             PianoRollContextMenuItem::RoundCorners,
             PianoRollContextMenuItem::BetweenCreate,
@@ -214,6 +229,8 @@ pub fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::Straighten => tr!("扶正 50%"),
         PianoRollContextMenuItem::StraightenOff => tr!("取消扶正"),
         PianoRollContextMenuItem::SliceCut => tr!("切割"),
+        PianoRollContextMenuItem::MouldSetKnife => tr!("以选中内容为刀"),
+        PianoRollContextMenuItem::MouldClearKnife => tr!("取消刀"),
         PianoRollContextMenuItem::MouldShapes => tr!("饼干模"),
         PianoRollContextMenuItem::RoundCorners => tr!("角度柔化"),
         PianoRollContextMenuItem::BetweenCreate => tr!("创建补间"),
@@ -282,16 +299,32 @@ mod tests {
     #[test]
     fn test_menu_item_target_routing() {
         assert_eq!(
-            PianoRollContextMenuItem::DeleteDrawnShape.target(),
-            ContextMenuTarget::DrawnShape
+            PianoRollContextMenuItem::DeleteDrawnShape.targets(),
+            &[ContextMenuTarget::DrawnShape]
         );
         assert_eq!(
-            PianoRollContextMenuItem::Delete.target(),
-            ContextMenuTarget::Notes
+            PianoRollContextMenuItem::Delete.targets(),
+            &[ContextMenuTarget::Notes]
         );
         assert_eq!(
-            PianoRollContextMenuItem::SelectAll.target(),
-            ContextMenuTarget::Notes
+            PianoRollContextMenuItem::SelectAll.targets(),
+            &[ContextMenuTarget::Notes]
+        );
+        assert_eq!(
+            PianoRollContextMenuItem::MouldSetKnife.targets(),
+            &[
+                ContextMenuTarget::Notes,
+                ContextMenuTarget::PendingDrawnShape,
+            ],
+            "设刀同时适用于音符与待确认形状"
+        );
+        assert_eq!(
+            PianoRollContextMenuItem::MouldClearKnife.targets(),
+            &[
+                ContextMenuTarget::Notes,
+                ContextMenuTarget::PendingDrawnShape,
+            ],
+            "取消刀同样适用于音符与待确认形状"
         );
     }
 

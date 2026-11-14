@@ -28,6 +28,8 @@ const CENTER_RADIUS: f32 = 5.0;
 /// 本帧的选中框 / 编辑框 / 锚点 / 图形轮廓。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ShapeEditModel {
+    /// 画布内容区裁剪（扣掉左/右侧栏）；`None` = 不裁剪。
+    pub clip: Option<Rect>,
     /// 常显轮廓（鼠标工具下当前轨未选中的可见图形）。
     pub idle_outlines: Vec<Vec<Pos2>>,
     /// 选中图形轮廓（逐条折线）。
@@ -64,7 +66,8 @@ fn with_alpha(color: Color32, alpha: u8) -> Color32 {
 
 /// 绘制选中框 / 编辑框 / 锚点。
 pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
-    let painter = ui.painter();
+    let clip = model.clip.unwrap_or_else(|| ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
     let accent = theme::accent_strong();
 
     // 常显轮廓：弱化细线，避免盖过音符。

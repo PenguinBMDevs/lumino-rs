@@ -5,6 +5,7 @@
 
 use lumino_core::BrushConfig;
 use lumino_editor_state::{BrushToolState, LineToolState, ShapeToolState};
+use lumino_message::Tool;
 
 use crate::Editor;
 
@@ -50,6 +51,7 @@ impl Editor {
         let Some(pending) = self.baked_pending.get(&group).cloned() else {
             return false;
         };
+        let mut restored_composed = 0usize;
         match pending {
             BakePending::Line(mut state) => {
                 // 当前状态是权威：恢复后不应再走“路径 redo”而跳过 Bake redo。
@@ -57,6 +59,7 @@ impl Editor {
                 self.editor_state.line_tool = state;
             }
             BakePending::Shape { state, composed } => {
+                restored_composed = composed.len();
                 self.editor_state.shape_tool = state;
                 self.editor_state.pending_composed = composed;
                 self.pending_edit_undo.clear();
@@ -68,7 +71,23 @@ impl Editor {
                 self.brush = config;
             }
         }
+        // 组合结果只在形状 / 鼠标工具下可交互；撤销回到 pending 时自动切过去，
+        // 避免用户「撤销后还要手动切工具才看到 pending」。
+        if restored_composed > 0 && !matches!(self.current_tool(), Tool::Shape | Tool::ShapeSelect)
+        {
+            self.set_tool(Tool::ShapeSelect);
+        }
         self.rebuild_pending_mirrors();
+        if restored_composed > 0 {
+            let index = restored_composed - 1;
+            if let Some(id) = self
+                .editor_state
+                .shape_select
+                .pending_mirror(lumino_editor_state::PendingShapeRef::Composed(index))
+            {
+                self.editor_state.shape_select.select_only(id);
+            }
+        }
         self.grid_cache.clear();
         true
     }

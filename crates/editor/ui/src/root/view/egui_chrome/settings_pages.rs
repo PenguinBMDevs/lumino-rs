@@ -175,7 +175,7 @@ pub(super) fn cloud_page(root: &Root) -> CloudPageModel {
         alert: cloud
             .alert
             .as_deref()
-            .map(|message| trf!("⚠ 云存储提醒：{msg}", msg = message)),
+            .map(|message| trf!("云存储提醒：{msg}", msg = message)),
         add_label: tr!("添加连接").to_string(),
         empty_text: tr!("尚未添加云存储连接。支持 FTP / SFTP / WebDAV，连接信息仅存储在本机。")
             .to_string(),

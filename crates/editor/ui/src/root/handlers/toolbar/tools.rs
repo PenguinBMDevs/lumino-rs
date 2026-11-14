@@ -63,6 +63,8 @@ impl ToolbarHandler {
             root.editor.set_shape(kind);
             tracing::debug!("Root: 形状工具类型切换为 {:?}", kind);
         }
+        // DEBT-17：换工具前可能已把过期刀清掉，通知在这里转 toast
+        root.drain_mould_notice();
     }
 
     /// 同步吸附规格到编辑器

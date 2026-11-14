@@ -22,6 +22,8 @@ impl Editor {
     /// 镜像进图形选中域（`rebuild_pending_mirrors`）——否则用户看到图案却框不中、
     /// 拖不动（看得见却抓不住）。离开鼠标工具即撤掉镜像（其余工具由 owning 预览渲染）。
     pub fn set_tool(&mut self, tool: Tool) {
+        // DEBT-17：换工具前先收敛失效的刀（源形状/音符可能已被删）
+        self.sync_mould_knife();
         // DRAW-044：离开柔化模式必须收口，否则组合结果没有镜像、曲线看起来「消失」，
         // 且遗留的拖拽快照会污染撤销栈。未改过半径时还原提升前的曲线。
         if tool != Tool::ShapeSelect
@@ -32,14 +34,8 @@ impl Editor {
                 self.undo_pending_compose();
             }
         }
-        // DRAW-025：切到鼠标工具前，把「选中的手画音符」记成饼干模的刀。
-        // `set_tool` 会清空音符选中集（非 Pointer 工具），不先快照就丢了。
-        if tool == Tool::ShapeSelect {
-            let walls = self.selected_document_notes();
-            if !walls.is_empty() {
-                self.mould_walls = Some(walls);
-            }
-        }
+        // DRAW-025：切到鼠标工具前的音符选区不再快照成刀（DEBT-17）。
+        // 刀由右键「以选中内容为刀」显式设置，跨工具保留到消费 / 失效 / 换轨 / Esc。
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;
@@ -57,9 +53,6 @@ impl Editor {
             // 020「编辑图形」是鼠标工具的子状态：离开即退出，回来不会突然少掉选框。
             self.shape_edit_armed = None;
             self.shape_group_edit = None;
-            // 025 饼干模的「刀」同样是鼠标工具会话：离开即清空，
-            // 否则青色虚线刀框会在其它工具下持续残留。
-            self.mould_walls = None;
         }
         self.rebuild_pending_mirrors();
     }

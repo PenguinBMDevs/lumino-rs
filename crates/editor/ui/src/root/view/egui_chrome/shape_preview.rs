@@ -13,6 +13,9 @@ use crate::root::Root;
 impl Root {
     /// 本帧形状工具预览（待确认图形 + 实时拖拽）。
     pub fn shape_preview_model(&self) -> ShapePreviewModel {
+        if !self.sidebar.piano_roll_visible {
+            return ShapePreviewModel::default();
+        }
         let editor = &self.editor;
         if editor.editor_state.data.current_track == 0
             || !editor.pending_preview_visible(lumino_message::Tool::Shape)
@@ -30,6 +33,7 @@ impl Root {
         let canvas = &editor.editor_state.canvas;
         let offset = egui::vec2(canvas.offset_x, canvas.offset_y);
         let mut shapes = Vec::new();
+        let clip = self.canvas_overlay_clip();
 
         for shape in &tool.shapes {
             shapes.push(preview_shape(editor, shape.spec(), shape.filled, offset));
@@ -71,7 +75,7 @@ impl Root {
                 tracing::info!(?shape.points, ?shape.blocks, "DEBUG shape preview");
             }
         }
-        ShapePreviewModel { shapes }
+        ShapePreviewModel { clip, shapes }
     }
 }
 

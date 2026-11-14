@@ -251,6 +251,8 @@ impl Editor {
             self.exit_shape_edit();
             self.grid_cache.clear();
         }
+        // DEBT-17：最后清除饼干模的刀（设错时可退出，避免会话一直挂着）
+        self.mould_clear_knife();
     }
 
     /// 处理删除键按下事件
@@ -268,6 +270,7 @@ impl Editor {
             && self.editor_state.shape_select.selection_len() > 0
         {
             self.delete_selected_drawn_shape();
+            self.sync_mould_knife();
             return;
         }
         if self.has_selection() {
@@ -275,5 +278,7 @@ impl Editor {
         } else if let Some((index, _)) = self.editor_state.interaction.hover_state {
             self.delete_note_by_index(index);
         }
+        // DEBT-17：刀音符被删后立即失效，避免旧刀框留在原地
+        self.sync_mould_knife();
     }
 }

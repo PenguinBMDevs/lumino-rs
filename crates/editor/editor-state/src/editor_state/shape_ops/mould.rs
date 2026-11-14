@@ -20,17 +20,40 @@ pub const SHORT: f32 = 0.25;
 /// 浮点比较容差（tick）
 const EPS: f32 = 1e-3;
 
-/// 每 key 行：墙音符之间、且空隙中点在轮廓内的区间
-pub fn mould_rows(walls: &[ShapeNote], loops: &[Vec<Pt>], _ppq: u32) -> Vec<(u16, f32, f32)> {
-    let mut by_key: BTreeMap<u16, Vec<(f32, f32)>> = BTreeMap::new();
+/// 音符刀 → 逐行墙段 `(key, start, end)`（退化音符直接跳过）
+///
+/// 几何刀（多环）在 `ui-editor` 侧用同一形态产出墙段，两种来源共用
+/// [`mould_rows_from_segments`]，保证「空隙」语义只有一份实现。
+pub fn note_spans(walls: &[ShapeNote]) -> Vec<(u16, f32, f32)> {
+    let mut out = Vec::with_capacity(walls.len());
     for wall in walls {
         if wall.length <= 0.0 || !wall.tick.is_finite() || !wall.length.is_finite() {
             continue;
         }
-        by_key
-            .entry(wall.key)
-            .or_default()
-            .push((wall.tick, wall.tick + wall.length));
+        out.push((wall.key, wall.tick, wall.tick + wall.length));
+    }
+    out
+}
+
+/// 每 key 行：墙音符之间、且空隙中点在轮廓内的区间
+pub fn mould_rows(walls: &[ShapeNote], loops: &[Vec<Pt>], ppq: u32) -> Vec<(u16, f32, f32)> {
+    mould_rows_from_segments(&note_spans(walls), loops, ppq)
+}
+
+/// 每 key 行：墙段之间、且空隙中点在轮廓内的区间（音符刀 / 几何刀共用）
+///
+/// `segments` 为各行的实心墙段；同一行内按起点排序后取相邻段之间的空隙。
+pub fn mould_rows_from_segments(
+    segments: &[(u16, f32, f32)],
+    loops: &[Vec<Pt>],
+    _ppq: u32,
+) -> Vec<(u16, f32, f32)> {
+    let mut by_key: BTreeMap<u16, Vec<(f32, f32)>> = BTreeMap::new();
+    for &(key, start, end) in segments {
+        if !start.is_finite() || !end.is_finite() || end <= start {
+            continue;
+        }
+        by_key.entry(key).or_default().push((start, end));
     }
     let mut out = Vec::new();
     for (key, mut spans) in by_key {
@@ -76,11 +99,30 @@ pub fn mould_pieces(
     loops: &[Vec<Pt>],
     ppq: u32,
 ) -> Vec<MouldPiece> {
-    let rows = mould_rows(walls, loops, ppq);
+    mould_pieces_from_segments(&note_spans(walls), dough_notes, loops, ppq)
+}
+
+/// 两输入 Mould 的共用内核：墙段（音符刀或几何刀）→ 外片 + 内片
+pub fn mould_pieces_from_segments(
+    segments: &[(u16, f32, f32)],
+    dough_notes: &[ShapeNote],
+    loops: &[Vec<Pt>],
+    ppq: u32,
+) -> Vec<MouldPiece> {
+    let rows = mould_rows_from_segments(segments, loops, ppq);
+    mould_pieces_from_rows(&rows, dough_notes, loops)
+}
+
+/// 已算出的空隙区间 → 片；调用方需要切口时复用同一份 `rows`，避免重复扫描
+pub fn mould_pieces_from_rows(
+    rows: &[(u16, f32, f32)],
+    dough_notes: &[ShapeNote],
+    loops: &[Vec<Pt>],
+) -> Vec<MouldPiece> {
     if rows.is_empty() {
         return Vec::new();
     }
-    let groups = group_rows(&rows);
+    let groups = group_rows(rows);
     let mut blank: Vec<Pt> = loops.first().cloned().unwrap_or_default();
     // 音符第 k 行占几何 [k-1, k]：轮廓底边上移一行会让最下一行露在框外
     extend_to_bottom_row(&mut blank);
@@ -89,7 +131,7 @@ pub fn mould_pieces(
     pieces.push(MouldPiece {
         inner: false,
         ring: blank,
-        notes: subtract_rows_from_notes(dough_notes, &rows),
+        notes: subtract_rows_from_notes(dough_notes, rows),
     });
     for group in groups {
         pieces.push(MouldPiece {

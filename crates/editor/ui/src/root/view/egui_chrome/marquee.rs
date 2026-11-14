@@ -14,14 +14,15 @@ use crate::root::Root;
 impl Root {
     /// 本帧框选框模型（窗口逻辑坐标）。
     pub fn marquee_model(&self) -> MarqueeModel {
+        if !self.sidebar.piano_roll_visible {
+            return MarqueeModel::default();
+        }
         let editor = &self.editor;
         let canvas = &editor.editor_state.canvas;
         let offset = egui::vec2(canvas.offset_x, canvas.offset_y);
-        let local = lumino_ui_editor::grid::utils::content_bounds(editor);
-        let content = egui::Rect::from_min_size(
-            egui::pos2(local.x + offset.x, local.y + offset.y),
-            egui::vec2(local.width, local.height),
-        );
+        let Some(content) = self.canvas_overlay_clip() else {
+            return MarqueeModel::default();
+        };
         if content.width() <= 0.0 || content.height() <= 0.0 {
             return MarqueeModel::default();
         }

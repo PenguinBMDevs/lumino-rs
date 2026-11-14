@@ -8,18 +8,26 @@ use lumino_core::shape::{
 };
 use lumino_editor_state::ComposedKind;
 use lumino_editor_state::ShapeNote;
-use lumino_editor_state::shape_ops::{SymReject, symmetric_shape_with_reason};
+use lumino_editor_state::shape_ops::{SymReject, ring_of, symmetric_shape_with_reason};
+
+use super::mould_knife::{MouldKnife, MouldKnifeInfo, MouldNotice, selected_pending_rings};
 
 use crate::Editor;
 
 /// Mould 失败原因（用于给用户精确提示）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouldReject {
-    /// 不是恰好一个/两个待确认形状（含混合选区 / 已 Bake 参与）
+    /// 面团不是恰好一个待确认形状（含混合选区 / 已 Bake 参与）
     Selection,
-    /// 单形状入口没有「刀」：切到鼠标工具前没有选中手画音符
-    NoWalls,
-    /// 刀的同一 key 行没有空隙可切：需要至少两条墙音符
+    /// 尚未设刀
+    NoKnife,
+    /// 当前选区里没有可以当作刀的内容
+    NoKnifeSource,
+    /// 刀已失效：音符或形状已改变
+    KnifeStale,
+    /// 刀与面团是同一个形状
+    SameShape,
+    /// 刀的同一 key 行没有空隙可切：需要至少两段墙
     NoGap,
 }
 
@@ -151,14 +159,9 @@ impl Editor {
         false
     }
 
-    /// 025：饼干模——刀取「手画音符」，面团取当前待确认形状
+    /// 025：饼干模——刀由「以选中内容为刀」显式设置，面团取当前待确认形状
     ///
-    /// 两种入口：
-    /// - **推荐**：先用鼠标工具选中若干手画音符（它们当刀），再切到鼠标工具、
-    ///   选中**一个**待确认形状 → 空隙里就是内片；
-    /// - 兼容旧口径：选中**两个**待确认形状，靠前者当刀（它的音符需要同一行
-    ///   有 ≥2 段才能切出空隙）。
-    ///
+    /// 刀在切完即清除；切口由 `PendingComposed::mould_cuts` 保留到 ✓ / ×。
     /// 失败原因分开报，见 [`MouldReject`]。
     pub fn mould_selected(&mut self) -> Result<(), MouldReject> {
         let pending = self
@@ -167,27 +170,103 @@ impl Editor {
             .selected_shapes()
             .filter(|shape| shape.pending.is_some())
             .count();
-        if pending == 1 && self.pending_single_selection() {
-            let Some(walls) = self.mould_walls.clone().filter(|w| !w.is_empty()) else {
-                return Err(MouldReject::NoWalls);
-            };
-            return if self.compose_pending_mould(walls) {
-                // 刀已消费：清掉虚线框，避免下一刀沿用旧快照
-                self.mould_walls = None;
-                self.grid_cache.clear();
-                Ok(())
-            } else {
-                Err(MouldReject::NoGap)
-            };
+        if pending != 1 || !self.pending_single_selection() {
+            return Err(MouldReject::Selection);
         }
-        if pending == 2 && self.pending_selection_only() {
-            return if self.compose_pending(ComposedKind::Mould) {
-                Ok(())
-            } else {
-                Err(MouldReject::NoGap)
-            };
+        let Some(knife) = self.mould_knife.clone() else {
+            return Err(MouldReject::NoKnife);
+        };
+        if !knife.is_current(self) {
+            self.mould_knife = None;
+            return Err(MouldReject::KnifeStale);
         }
-        Err(MouldReject::Selection)
+        if self.dough_matches_knife(&knife) {
+            return Err(MouldReject::SameShape);
+        }
+        if self.compose_pending_mould(knife) {
+            // 刀已消费：清掉虚线框，避免下一刀沿用旧快照
+            self.mould_knife = None;
+            self.grid_cache.clear();
+            Ok(())
+        } else {
+            Err(MouldReject::NoGap)
+        }
+    }
+
+    /// 以选中内容为刀（DEBT-17）：优先音符，其次待确认形状的几何
+    ///
+    /// 只设置会话，不写文档；切完 / 失效 / 换轨 / Esc 时结束。
+    pub fn mould_set_knife(&mut self) -> Result<MouldKnifeInfo, MouldReject> {
+        let notes = self.selected_document_notes();
+        let knife = if !notes.is_empty() {
+            MouldKnife::Notes {
+                track: self.editor_state.data.current_track,
+                notes,
+            }
+        } else {
+            let rings = selected_pending_rings(self);
+            if rings.is_empty() {
+                return Err(MouldReject::NoKnifeSource);
+            }
+            MouldKnife::Geometry { rings }
+        };
+        let info = knife.info();
+        self.mould_knife = Some(knife);
+        self.grid_cache.clear();
+        Ok(info)
+    }
+
+    /// 显式清除刀（Esc）；返回是否确实清除了
+    pub fn mould_clear_knife(&mut self) -> bool {
+        let had = self.mould_knife.take().is_some();
+        if had {
+            self.grid_cache.clear();
+        }
+        had
+    }
+
+    /// 刀源被删/改后立即失效（事件路径：换工具、删除）
+    ///
+    /// 返回是否发生了失效；失效时刀被清除并登记一次性通知，由 UI 层转成 toast。
+    pub(crate) fn sync_mould_knife(&mut self) -> bool {
+        let stale = self
+            .mould_knife
+            .as_ref()
+            .is_some_and(|knife| !knife.is_current(self));
+        if stale {
+            self.mould_knife = None;
+            self.mould_notice = Some(MouldNotice::Expired);
+            self.grid_cache.clear();
+        }
+        stale
+    }
+
+    /// 取走刀相关的一次性通知（UI 层转 toast）
+    pub fn take_mould_notice(&mut self) -> Option<MouldNotice> {
+        self.mould_notice.take()
+    }
+
+    /// 当前面团是否就是刀里的某个形状
+    fn dough_matches_knife(&self, knife: &MouldKnife) -> bool {
+        if knife.rings().is_empty() {
+            return false;
+        }
+        let track = self.editor_state.data.current_track;
+        let Some(reference) = self
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .find(|shape| shape.pending.is_some())
+            .and_then(|shape| shape.pending)
+        else {
+            return false;
+        };
+        let Some(source) = self.pending_source(reference) else {
+            return false;
+        };
+        let model = self.model_from_source_at_view(&source, track, 1.0);
+        let ring = ring_of(&model);
+        knife.contains_ring(&ring)
     }
 
     /// 当前选中的手画音符（当前轨）→ 饼干模的刀

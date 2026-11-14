@@ -302,7 +302,7 @@ impl Host {
         }
         // 已切到形状选择（`insert_shape_pending` 内部完成），pending 可右键。
         self.root.state.shape_drawer.status = Some(format!(
-            "已插入为待确认（{} 拍 × {} key{}）——✓ 后才写入工程",
+            "已插入为待确认（{} 拍 x {} key{}）——确认后才写入工程",
             options.beats,
             options.keys,
             if options.fit_contain {
