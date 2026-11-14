@@ -246,8 +246,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Return failed: select a pending shape inserted from the drawer")
         }
         "角度柔化" => Some("Round corners"),
-        "角度柔化：拖角点调半径（Esc 退出）" => {
-            Some("Round corners: drag a corner to set the radius (Esc to exit)")
+        "角度柔化：拖角点调半径（Ctrl+拖调鼓度，Esc 退出）" => {
+            Some("Round corners: drag a corner to set radius (Ctrl+drag sets bulge, Esc to exit)")
         }
         "角度柔化失败：请选中一个待确认折线形状（至少 3 个角点）" => {
             Some("Round corners failed: select a pending polyline shape with at least 3 corners")

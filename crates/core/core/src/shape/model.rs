@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use super::params::{
     BetweenParams, ChopParams, ClawParams, CopyPathParams, CycleParams, DrawingParams,
     FunnelParams, GateRangeParams, GlueParams, JoinedParams, LiveShapeParams, MaskParams,
-    MergeParams, NestedParams, PatternParams, PolygonParams, RoundParams, StraightenParams,
-    StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
+    MergeParams, NestedParams, PatternParams, PolygonParams, RoundParams, RoundShapeParams,
+    StraightenParams, StrumParams, SustainParams, SymParams, TilesParams, TumourParams,
 };
 use super::text::TextOp;
 use super::{SHAPE_KEY_MAX, ShapeGeometry, ShapeKind, ShapeStyle, VelocityEnv};
@@ -81,6 +81,11 @@ pub enum ShapeOp {
     Drawing(DrawingParams),
     /// 角度柔化：逐角点圆角（Geometry；DRAW-044）
     Round(RoundParams),
+    /// 角度柔化阶段 2：逐角点弧形状（Geometry；DEBT-18）
+    ///
+    /// 追加在末尾：v3 `.lmshapes` 是 bincode 位置编码，追加变体不影响旧数据解码；
+    /// 旧工程没有该变体 → 全部角点按正圆弧处理（与阶段 1 逐音符一致）。
+    RoundShape(RoundShapeParams),
 }
 
 /// 算子在链上的执行阶段
@@ -110,7 +115,8 @@ impl ShapeOp {
             | Self::Straighten(_)
             | Self::Text(_)
             | Self::Drawing(_)
-            | Self::Round(_) => OpStage::Geometry,
+            | Self::Round(_)
+            | Self::RoundShape(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)
@@ -206,6 +212,9 @@ impl ShapeOp {
             Self::Round(params) => params
                 .validate()
                 .map_err(|e| CoreError::InvalidArgument(format!("Round 参数非法：{e}"))),
+            Self::RoundShape(params) => params
+                .validate()
+                .map_err(|e| CoreError::InvalidArgument(format!("RoundShape 参数非法：{e}"))),
         }
     }
 }

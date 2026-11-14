@@ -4,9 +4,9 @@
 
 use super::*;
 use lumino_core::shape::{
-    AnchorBend, AreaSpot, DrawingParams, ShapeAnchor, ShapeFill, ShapeGeometry, ShapeKind,
-    ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds, Stroke, StrokeKind,
-    StrokeRole, TextLayoutMode, TextOp, TextParams,
+    AnchorBend, AreaSpot, DrawingParams, RoundParams, RoundShapeParams, ShapeAnchor, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds,
+    Stroke, StrokeKind, StrokeRole, TextLayoutMode, TextOp, TextParams,
 };
 
 /// 由**改动前**代码生成的 v1 字节夹具（DRAW-040 / D7）。
@@ -236,6 +236,35 @@ fn test_lmshapes_drawing_shape_roundtrip_without_version_bump() {
     );
     let decoded = LmshapesData::decode(&encoded).expect("Drawing 形状解码失败");
     assert_eq!(decoded.shapes, data.shapes, "Drawing 形状应逐字段往返一致");
+}
+
+/// DEBT-18：RoundShape 是追加 ShapeOp 变体，v3 往返且不升版本。
+#[test]
+fn test_lmshapes_round_shape_roundtrip_without_version_bump() {
+    let mut shape = ShapeModel::new(13, 1, ShapeKind::Polyline, 1.0);
+    shape.geometry = ShapeGeometry::from_points([(0.0, 60.0), (480.0, 60.0), (480.0, 64.0)]);
+    let mut round = RoundParams::default();
+    round.set_radius(1, 2.0);
+    let mut shapes = RoundShapeParams::default();
+    shapes.set_shape(1, 0.6);
+    shape.ops.push(ShapeOp::Round(round));
+    shape.ops.push(ShapeOp::RoundShape(shapes));
+    shape.validate().expect("RoundShape 形状应合法");
+
+    let data = LmshapesData {
+        shapes: vec![shape],
+    };
+    let encoded = data.encode().expect("RoundShape 形状编码失败");
+    assert_eq!(
+        u16::from_le_bytes([encoded[4], encoded[5]]),
+        3,
+        "追加 RoundShape 变体不应改变 lmshapes 版本"
+    );
+    let decoded = LmshapesData::decode(&encoded).expect("RoundShape 形状解码失败");
+    assert_eq!(
+        decoded.shapes, data.shapes,
+        "RoundShape 形状应逐字段往返一致（旧工程无此变体 → 正圆弧）"
+    );
 }
 
 /// D5：encode 恒写 v3，v3 往返逐字段一致（含 bend / areas）

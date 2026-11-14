@@ -127,7 +127,7 @@ impl Root {
                 if self.editor.begin_round_corners() {
                     self.toast.push(
                         crate::toast::ToastLevel::Info,
-                        tr!("角度柔化：拖角点调半径（Esc 退出）"),
+                        tr!("角度柔化：拖角点调半径（Ctrl+拖调鼓度，Esc 退出）"),
                     );
                 } else {
                     self.toast.push(

@@ -12,7 +12,9 @@
 
 use std::f64::consts::PI;
 
-use lumino_core::shape::{RoundParams, ShapeAnchor, ShapeKind, ShapeModel};
+use lumino_core::shape::{
+    RoundParams, RoundShapeParams, ShapeAnchor, ShapeKind, ShapeModel, ShapeOp,
+};
 
 /// 路径点（逻辑坐标 tick/key）
 pub type Pt = (f64, f64);
@@ -26,6 +28,9 @@ const MIN_ANGLE: f64 = 1e-3;
 const MAX_ANGLE: f64 = 1e-3;
 /// 切点距离上限占相邻段长的比例（留出缝，避免相邻圆角相接）
 const MAX_TANGENT_RATIO: f64 = 0.49;
+
+/// 形状参数小于此值视为正圆弧（几何走阶段 1 的原路径，保证逐音符一致）
+const SHAPE_EPS: f64 = 1e-4;
 
 /// 形状级入口：按 `RoundParams` 替换锚点
 ///
@@ -50,10 +55,18 @@ pub fn rounded_anchors(model: &ShapeModel, params: &RoundParams, ppq: f64) -> Ve
     // 用冻结的 beats-per-key（创建时的视图比例），保证圆弧在屏幕上仍是正圆
     let k = f64::from(params.effective_k(model.k));
     let ppq = f64::from(params.effective_ppq(ppq.max(1.0) as u16));
-    rounded_points(&points, params, ppq, k)
+    rounded_points(&points, params, round_shape_params(model), ppq, k)
         .into_iter()
         .map(|(x, y)| ShapeAnchor::new((x as f32, y as f32)))
         .collect()
+}
+
+/// 模型上的逐角点弧形状参数（`ShapeOp::RoundShape`；旧工程没有 → `None`）
+pub fn round_shape_params(model: &ShapeModel) -> Option<&RoundShapeParams> {
+    model.ops.iter().find_map(|op| match op {
+        ShapeOp::RoundShape(params) => Some(params),
+        _ => None,
+    })
 }
 
 /// 折线点列 → 柔化后的点列（闭合路径自动识别首尾同点）
@@ -61,7 +74,16 @@ pub fn rounded_anchors(model: &ShapeModel, params: &RoundParams, ppq: f64) -> Ve
 /// `points` 是 `(tick, key)`；`ppq` + `k` 把 tick 折到与 key 同尺度：
 /// `x = tick / (ppq · k)`。**漏掉 ppq 会让短 tick 段的角度算成接近 180°**，
 /// 圆角退化到看不见（DRAW-044 实测）。
-pub fn rounded_points(points: &[Pt], params: &RoundParams, ppq: f64, k: f64) -> Vec<Pt> {
+///
+/// `shapes` 为逐角点弧形状（DEBT-18）：`None` 或该角点为 0 时走阶段 1 的正圆弧
+/// 原路径；非零时在同样两个切点之间用三次 Bezier 采样（两端切向不变）。
+pub fn rounded_points(
+    points: &[Pt],
+    params: &RoundParams,
+    shapes: Option<&RoundShapeParams>,
+    ppq: f64,
+    k: f64,
+) -> Vec<Pt> {
     if points.len() < 3 || params.is_empty() {
         return points.to_vec();
     }
@@ -85,7 +107,16 @@ pub fn rounded_points(points: &[Pt], params: &RoundParams, ppq: f64, k: f64) -> 
         };
         let prev = screen[(index + count - 1) % count];
         let next = screen[(index + 1) % count];
-        match fillet(prev, corner, next, radius) {
+        let shape = if is_corner {
+            shapes
+                .and_then(|shapes| shapes.shape_of(index))
+                .map(f64::from)
+                .filter(|shape| shape.is_finite())
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        match fillet(prev, corner, next, radius, shape) {
             Some(piece) => out.extend(piece),
             None => out.push(corner),
         }
@@ -116,8 +147,11 @@ pub fn is_roundable(prev: Pt, corner: Pt, next: Pt) -> bool {
 
 /// 单个角点的圆角替换：返回「切点 + 弧采样 + 切点」
 ///
+/// `shape` 为弧形状（DEBT-18）：0 = 正圆弧（阶段 1 原路径，逐字节不变）；
+/// 非零时在同样两个切点之间改用三次 Bezier 采样，两端切向与相邻段严格一致。
+///
 /// 退化（共线 / 折返 / 半径 0 / 段长不足）返回 `None`，调用方保留原角点。
-fn fillet(prev: Pt, corner: Pt, next: Pt, radius: f32) -> Option<Vec<Pt>> {
+fn fillet(prev: Pt, corner: Pt, next: Pt, radius: f32, shape: f64) -> Option<Vec<Pt>> {
     let radius = f64::from(radius);
     if !radius.is_finite() || radius <= 0.0 || !is_roundable(prev, corner, next) {
         return None;
@@ -149,6 +183,10 @@ fn fillet(prev: Pt, corner: Pt, next: Pt, radius: f32) -> Option<Vec<Pt>> {
     let r_eff = d * tan_half;
     let t1 = (corner.0 + v1.0 * d, corner.1 + v1.1 * d);
     let t2 = (corner.0 + v2.0 * d, corner.1 + v2.1 * d);
+    // DEBT-18：非零形状走 Bezier 分支；0 继续走阶段 1 的正圆弧原路径。
+    if shape.is_finite() && shape.abs() > SHAPE_EPS {
+        return Some(bezier_fillet(corner, t1, t2, d, r_eff, theta, shape));
+    }
     // 圆心：沿角平分线，距角点 r / sin(θ/2)
     let bisector = (v1.0 + v2.0, v1.1 + v2.1);
     let bisector_len = (bisector.0 * bisector.0 + bisector.1 * bisector.1).sqrt();
@@ -184,6 +222,53 @@ fn fillet(prev: Pt, corner: Pt, next: Pt, radius: f32) -> Option<Vec<Pt>> {
 
 fn distance(a: Pt, b: Pt) -> f64 {
     ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+}
+
+/// 两切点之间的三次 Bezier 采样（DEBT-18）
+///
+/// 控制点沿各自切线方向回退 `handle`：
+/// - 正圆弧的精确近似控制柄长 = `(4/3)·tan(φ/4)·r`（φ = 弧圆心角 = π − θ）；
+/// - `shape` 线性缩放该长度：`> 0` 更鼓（靠近角点）、`< 0` 更平（靠近弦线）；
+/// - 再夹到切点距离 `d`：控制多边形留在「切点—角点—切点」三角形内，曲线不会
+///   越过角点，也保证两端切向严格沿相邻段方向。
+fn bezier_fillet(
+    corner: Pt,
+    t1: Pt,
+    t2: Pt,
+    d: f64,
+    r_eff: f64,
+    theta: f64,
+    shape: f64,
+) -> Vec<Pt> {
+    let sweep = PI - theta;
+    let a_circle = (4.0 / 3.0) * (sweep / 4.0).tan() * r_eff;
+    let handle = (a_circle * (1.0 + shape)).clamp(0.0, d.max(0.0));
+    let ratio = if d > 1e-9 { handle / d } else { 0.0 };
+    let c1 = (
+        t1.0 + (corner.0 - t1.0) * ratio,
+        t1.1 + (corner.1 - t1.1) * ratio,
+    );
+    let c2 = (
+        t2.0 + (corner.0 - t2.0) * ratio,
+        t2.1 + (corner.1 - t2.1) * ratio,
+    );
+    // 采样密度与圆弧同口径：按控制多边形长度 /（r · ARC_STEP）估算
+    let polygon = 2.0 * handle + distance(t1, t2);
+    let steps = ((polygon / (r_eff.max(1e-6) * ARC_STEP)).ceil() as usize).clamp(4, 64);
+    let mut piece = Vec::with_capacity(steps + 1);
+    for step in 0..=steps {
+        let t = step as f64 / steps as f64;
+        let u = 1.0 - t;
+        let b0 = u * u * u;
+        let b1 = 3.0 * u * u * t;
+        let b2 = 3.0 * u * t * t;
+        let b3 = t * t * t;
+        piece.push((
+            b0 * t1.0 + b1 * c1.0 + b2 * c2.0 + b3 * t2.0,
+            b0 * t1.1 + b1 * c1.1 + b2 * c2.1 + b3 * t2.1,
+        ));
+    }
+    piece
 }
 
 #[cfg(test)]

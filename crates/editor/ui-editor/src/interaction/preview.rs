@@ -149,6 +149,7 @@ impl Editor {
             Some(params) => lumino_editor_state::shape_ops::rounded_points(
                 &anchors,
                 params,
+                lumino_editor_state::shape_ops::round_shape_params(&model),
                 f64::from(params.effective_ppq(self.editor_state.view.ppq)),
                 f64::from(params.effective_k(model.k)),
             ),

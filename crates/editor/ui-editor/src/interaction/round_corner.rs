@@ -5,11 +5,28 @@
 //!
 //! 半径以 **key** 为单位：`radius = hypot(dtick / (ppq·k), dkey)`，
 //! 与 `shape_ops::round` 的圆弧求解同口径。
+//!
+//! DEBT-18：**Ctrl+拖**改的是弧形状（`ShapeOp::RoundShape`，纵向鼓度），
+//! 普通拖仍是半径；两者共用同一份切点，几何由 `rounded_points` 统一消费。
 
-use lumino_core::shape::{RoundParams, ShapeModel, ShapeOp};
+use lumino_core::shape::{RoundParams, RoundShapeParams, ShapeModel, ShapeOp};
 use lumino_ui_core::geom::Point;
 
 use crate::Editor;
+
+/// 形状拖拽的默认半径（key）：Ctrl+拖一个还没有圆角的角点时先给一个可见半径，
+/// 否则形状参数没有几何载体（切点距离为 0）。
+const DEFAULT_SHAPE_RADIUS_KEYS: f32 = 2.0;
+
+/// 本次拖拽调整的维度
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum RoundDrag {
+    /// 普通拖拽：调半径
+    #[default]
+    Radius,
+    /// Ctrl+拖拽：调弧形状（鼓度）
+    Shape,
+}
 
 /// 柔化模式状态
 #[derive(Debug, Clone, PartialEq)]
@@ -26,6 +43,10 @@ pub(crate) struct RoundCornerMode {
     pub cursor: Option<(f32, f32)>,
     /// 是否已经改过半径（离开模式时决定要不要还原提升前的曲线）
     pub changed: bool,
+    /// 本次拖拽在调什么（半径 / 形状）
+    pub drag: RoundDrag,
+    /// 形状拖拽的基准值（按下时该角点的形状）
+    pub shape_base: f32,
 }
 
 impl Editor {
@@ -75,6 +96,8 @@ impl Editor {
             origin: None,
             cursor: None,
             changed: false,
+            drag: RoundDrag::Radius,
+            shape_base: 0.0,
         });
         self.grid_cache.clear();
         true
@@ -137,15 +160,15 @@ impl Editor {
             .collect()
     }
 
-    /// 按下：命中角点即开始拖半径（容差 14px）
+    /// 按下：命中角点即开始拖半径（容差 14px）；按住 Ctrl 则调弧形状
     pub(crate) fn round_corner_pressed(&mut self, pos: Point) -> bool {
-        let Some(mode) = &self.round_corner else {
+        let Some(composed) = self.round_corner.as_ref().map(|mode| mode.composed) else {
             return false;
         };
-        let Some(part) = self.pending_part(mode.composed) else {
+        let Some(part) = self.pending_part(composed) else {
             return false;
         };
-        let Some((index, _)) = self
+        let Some(index) = self
             .round_corner_points()
             .into_iter()
             .map(|(index, point)| {
@@ -155,22 +178,46 @@ impl Editor {
             .filter(|(d, _)| *d <= 14.0)
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(d, index)| (index, d))
+            .map(|(index, _)| index)
         else {
             return false;
         };
         let anchor = part.model.geometry.anchors[index].pos;
+        let shape_drag = self.ctrl_pressed();
+        let shape_base = round_shape_of(&part.model, index).unwrap_or(0.0);
+        let radius_missing = round_radius_of(&part.model, index).unwrap_or(0.0) <= 0.0;
+        // 拖拽前的整份 pending 组合快照（一次撤销）——必须早于下面的默认半径写入
         let snapshot = self.editor_state.pending_composed.clone();
+        // Ctrl+拖一个还没有圆角的角点：先给一个默认半径，形状才有可见载体
+        if shape_drag && radius_missing {
+            let k = view_beats_per_key(self);
+            let mut model = part.model.clone();
+            set_radius(
+                &mut model,
+                index,
+                DEFAULT_SHAPE_RADIUS_KEYS,
+                k,
+                self.editor_state.view.ppq,
+            );
+            self.update_pending_part(composed, model);
+        }
         let Some(mode) = &mut self.round_corner else {
             return false;
         };
         mode.corner = Some(index);
         mode.before = Some(snapshot);
         mode.origin = Some(anchor);
+        mode.drag = if shape_drag {
+            RoundDrag::Shape
+        } else {
+            RoundDrag::Radius
+        };
+        mode.shape_base = shape_base;
         self.grid_cache.clear();
         true
     }
 
-    /// 拖动：半径 = 光标到角点的距离（key 单位）
+    /// 拖动：普通拖拽 = 半径（光标到角点的距离）；Ctrl+拖拽 = 弧形状（纵向鼓度）
     pub(crate) fn round_corner_moved(&mut self, pos: Point) -> bool {
         let Some(mode) = &self.round_corner else {
             return false;
@@ -179,15 +226,10 @@ impl Editor {
             return false;
         };
         let composed = mode.composed;
+        let drag = mode.drag;
+        let shape_base = mode.shape_base;
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_raw_key(pos);
-        let ppq = f32::from(self.editor_state.view.ppq).max(1.0);
-        // 与几何求解同一个 beats-per-key：1 个 key 与 k 拍在屏幕上等长，
-        // 拖动的屏幕距离才能和半径（key）一一对应
-        let k = view_beats_per_key(self);
-        let dx = (tick - origin.0) / (ppq * k);
-        let dy = key - origin.1;
-        let radius = (dx * dx + dy * dy).sqrt().clamp(0.0, 64.0);
         if let Some(mode) = &mut self.round_corner {
             mode.cursor = Some((tick, key));
             mode.changed = true;
@@ -196,7 +238,26 @@ impl Editor {
             return false;
         };
         let mut model = part.model.clone();
-        set_radius(&mut model, index, radius, k, self.editor_state.view.ppq);
+        // 与几何求解同一个 beats-per-key：半径（key）与屏幕距离一一对应
+        let k = view_beats_per_key(self);
+        let ppq = self.editor_state.view.ppq;
+        match drag {
+            RoundDrag::Radius => {
+                let ppq_f = f32::from(ppq).max(1.0);
+                let dx = (tick - origin.0) / (ppq_f * k);
+                let dy = key - origin.1;
+                let radius = (dx * dx + dy * dy).sqrt().clamp(0.0, 64.0);
+                set_radius(&mut model, index, radius, k, ppq);
+            }
+            RoundDrag::Shape => {
+                // 纵向 1 个 key = 1 个单位；按半径归一化，半径越大越不敏感
+                let radius = round_radius_of(&model, index)
+                    .unwrap_or(DEFAULT_SHAPE_RADIUS_KEYS)
+                    .max(0.5);
+                let shape = RoundShapeParams::clamp_shape(shape_base + (key - origin.1) / radius);
+                set_shape(&mut model, index, shape, k, ppq);
+            }
+        }
         self.update_pending_part(composed, model);
         self.grid_cache.clear();
         true
@@ -272,6 +333,59 @@ fn set_radius(model: &mut ShapeModel, index: usize, radius: f32, view_k: f32, vi
             params.set_radius(index, radius);
         }
     }
+}
+
+/// 在模型上设置某角点的弧形状（无 RoundShape 算子时追加）
+///
+/// 与 `set_radius` 同口径：确保 `Round` 存在并冻结 beats-per-key / PPQ；
+/// 形状回到 0 时移除条目，全部为零则连算子一并移除（算子链保持干净）。
+fn set_shape(model: &mut ShapeModel, index: usize, shape: f32, view_k: f32, view_ppq: u16) {
+    if !model.ops.iter().any(|op| matches!(op, ShapeOp::Round(_))) {
+        model.ops.push(ShapeOp::Round(RoundParams {
+            corners: Vec::new(),
+            k: view_k,
+            ppq: view_ppq,
+        }));
+    }
+    for op in &mut model.ops {
+        if let ShapeOp::Round(params) = op {
+            if !(params.k.is_finite() && params.k > 0.0) {
+                params.k = view_k;
+            }
+            if params.ppq == 0 {
+                params.ppq = view_ppq;
+            }
+        }
+    }
+    let mut params = model
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            ShapeOp::RoundShape(params) => Some(params.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    params.set_shape(index, shape);
+    model.ops.retain(|op| !matches!(op, ShapeOp::RoundShape(_)));
+    if !params.is_empty() {
+        model.ops.push(ShapeOp::RoundShape(params));
+    }
+}
+
+/// 某角点当前登记的圆角半径（未登记 = `None`）
+fn round_radius_of(model: &ShapeModel, index: usize) -> Option<f32> {
+    model.ops.iter().find_map(|op| match op {
+        ShapeOp::Round(params) => params.radius_of(index),
+        _ => None,
+    })
+}
+
+/// 某角点当前登记的弧形状（未登记 = `None`，即正圆弧）
+fn round_shape_of(model: &ShapeModel, index: usize) -> Option<f32> {
+    model.ops.iter().find_map(|op| match op {
+        ShapeOp::RoundShape(params) => params.shape_of(index),
+        _ => None,
+    })
 }
 
 /// 当前视图的 beats-per-key：1 个 key 与多少拍在屏幕上等长
