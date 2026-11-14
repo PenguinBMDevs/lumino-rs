@@ -91,7 +91,7 @@ impl ShapeToolState {
         if (current.0 - start.0).abs() < snap * 0.5 && (current.1 - start.1).abs() < 0.5 {
             return None;
         }
-        let rect = normalize_rect(start, current);
+        let rect = normalize_rect(clamp_draw_point(start), clamp_draw_point(current));
         let instance = ShapeInstance {
             kind: self.shape_kind,
             rect,
@@ -114,7 +114,7 @@ impl ShapeToolState {
             Some((
                 ShapeSpec {
                     kind: self.shape_kind,
-                    rect: normalize_rect(start, current),
+                    rect: normalize_rect(clamp_draw_point(start), clamp_draw_point(current)),
                     shift_constrained,
                     apex_high: apex_high_of(start, current),
                 },
@@ -124,4 +124,9 @@ impl ShapeToolState {
             None
         }
     }
+}
+
+/// 绘制点夹取：tick 不低于 0、key 保持 0..=255（DEBT-20：pending 几何不越界）
+fn clamp_draw_point(p: (f32, f32)) -> (f32, f32) {
+    (p.0.max(0.0), p.1.clamp(0.0, 255.0))
 }

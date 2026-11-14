@@ -353,6 +353,323 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
 }
 
 #[test]
+fn test_zero_width_shape_at_tick_zero_selectable_with_slop() {
+    use lumino_editor_state::{DrawnShapeSource, ShapeKind};
+    use lumino_message::Tool;
+    use lumino_ui_core::geom::Point;
+    use lumino_ui_core::message::{EditorAction, Point2};
+
+    let mut editor = empty_editor();
+    editor.set_canvas_size(Point::new(1200.0, 800.0));
+    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.view.zoom_x = 1.0;
+    editor.editor_state.tool = Tool::ShapeSelect;
+    let id = editor.editor_state.shape_select.add(
+        1,
+        None,
+        DrawnShapeSource::Shape {
+            kind: ShapeKind::Rectangle,
+            // 零宽竖线：精确判定只有 tick == 0 能命中
+            rect: (0.0, 100.0, 0.0, 104.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: true,
+        },
+        vec![],
+    );
+
+    let (x, y) = {
+        let view = &editor.editor_state.view;
+        (view.keyboard_width + 2.0, view.key_to_y(102) + 1.0)
+    };
+    editor.handle_action(EditorAction::Pressed {
+        pos: Point2::new(x, y),
+        shift: false,
+        ctrl: false,
+    });
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "贴 tick 0 的零宽图形应在 3px 容差内可选中"
+    );
+}
+
+#[test]
+fn test_composed_at_tick_zero_selectable() {
+    use lumino_message::Tool;
+    use lumino_ui_core::geom::Point;
+    use lumino_ui_core::message::{EditorAction, Point2};
+
+    let mut editor = empty_editor();
+    editor.set_canvas_size(Point::new(1200.0, 3000.0));
+    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.tool = Tool::ShapeSelect;
+    setup_single_pending_rect(&mut editor);
+    assert!(editor.copy_along_selected(), "先生成一个 pending 组合");
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Composed(0))
+        .expect("组合结果应有镜像");
+
+    let (x, y) = {
+        let view = &editor.editor_state.view;
+        (view.keyboard_width + 1.0, view.key_to_y(62) + 1.0)
+    };
+    editor.handle_action(EditorAction::Pressed {
+        pos: Point2::new(x, y),
+        shift: false,
+        ctrl: false,
+    });
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "tick 0 起的组合结果应能选中"
+    );
+}
+
+#[test]
+fn test_baked_shape_at_tick_zero_selectable() {
+    use lumino_editor_state::{DrawnShapeSource, ShapeKind};
+    use lumino_message::Tool;
+    use lumino_ui_core::geom::Point;
+    use lumino_ui_core::message::{EditorAction, Point2};
+
+    let mut editor = empty_editor();
+    editor.set_canvas_size(Point::new(1200.0, 800.0));
+    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.tool = Tool::ShapeSelect;
+    let id = editor.editor_state.shape_select.add(
+        1,
+        None,
+        DrawnShapeSource::Shape {
+            kind: ShapeKind::Rectangle,
+            rect: (0.0, 100.0, 1920.0, 104.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: true,
+        },
+        vec![],
+    );
+
+    let (x, y) = {
+        let view = &editor.editor_state.view;
+        (view.keyboard_width + 1.0, view.key_to_y(102) + 1.0)
+    };
+    editor.handle_action(EditorAction::Pressed {
+        pos: Point2::new(x, y),
+        shift: false,
+        ctrl: false,
+    });
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "tick 0 的已 Bake 图形应能选中"
+    );
+}
+
+#[test]
+fn test_pending_curve_at_tick_zero_selectable() {
+    use lumino_editor_state::BezierAnchor;
+    use lumino_message::Tool;
+    use lumino_ui_core::geom::Point;
+    use lumino_ui_core::message::{EditorAction, Point2};
+
+    let mut editor = empty_editor();
+    editor.set_canvas_size(Point::new(1200.0, 800.0));
+    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.tool = Tool::ShapeSelect;
+    editor.editor_state.line_tool.paths.push(vec![
+        BezierAnchor::new((0.0, 100.0)),
+        BezierAnchor::new((480.0, 100.0)),
+    ]);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::CurvePath(0))
+        .expect("待确认曲线应有镜像");
+
+    let (x, y) = {
+        let view = &editor.editor_state.view;
+        (view.keyboard_width + 1.0, view.key_to_y(100) + 1.0)
+    };
+    editor.handle_action(EditorAction::Pressed {
+        pos: Point2::new(x, y),
+        shift: false,
+        ctrl: false,
+    });
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "tick 0 起点的曲线应能选中"
+    );
+}
+
+#[test]
+fn test_shape_at_tick_zero_selectable_via_press() {
+    use lumino_message::Tool;
+    use lumino_ui_core::geom::Point;
+    use lumino_ui_core::message::{EditorAction, Point2};
+
+    let mut editor = empty_editor();
+    editor.set_canvas_size(Point::new(1200.0, 800.0));
+    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.tool = Tool::ShapeSelect;
+    add_pending_rect(&mut editor, 0.0, 1920.0, 100);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("待确认矩形应有镜像");
+
+    let (x, y) = {
+        let view = &editor.editor_state.view;
+        (view.keyboard_width, view.key_to_y(102) + 1.0)
+    };
+    editor.handle_action(EditorAction::Pressed {
+        pos: Point2::new(x, y),
+        shift: false,
+        ctrl: false,
+    });
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "tick 0 的图形应能通过真实按下入口选中"
+    );
+}
+
+#[test]
+fn test_set_tool_same_tool_keeps_pending_mirror_ids() {
+    use lumino_message::Tool;
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = Tool::ShapeSelect;
+    add_pending_rect(&mut editor, 0.0, 100.0, 60);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("待确认矩形应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    // DEBT-19：同工具重复选中不应重建镜像——重建会 `remove_pending_all` 再 add，
+    // 换掉镜像 ID 并逐项重算几何，而视觉与选中态没有任何变化。
+    editor.set_tool(Tool::ShapeSelect);
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_mirror(PendingShapeRef::Shape(0)),
+        Some(id),
+        "同工具 set_tool 不得重建镜像（ID 必须保持）"
+    );
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "同工具 set_tool 不得清掉选中态"
+    );
+
+    // 真换工具仍撤掉镜像；切回鼠标工具仍重建（既有语义不变）
+    editor.set_tool(Tool::Pencil);
+    assert!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_shapes()
+            .next()
+            .is_none(),
+        "离开鼠标工具应撤掉待确认镜像"
+    );
+    editor.set_tool(Tool::ShapeSelect);
+    assert!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_mirror(PendingShapeRef::Shape(0))
+            .is_some(),
+        "切回鼠标工具应重建待确认镜像"
+    );
+}
+
+#[test]
+fn test_pending_shape_at_tick_zero_is_selectable() {
+    use lumino_message::Tool;
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = Tool::ShapeSelect;
+    add_pending_rect(&mut editor, 0.0, 1920.0, 60);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("待确认矩形应有镜像");
+
+    editor.handle_shape_select_pressed(10.0, 62.0, false);
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "点内部应选中 tick 0 的图形"
+    );
+    editor.editor_state.shape_select.clear_selection();
+
+    editor.handle_shape_select_pressed(0.0, 62.0, false);
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "左边界 tick 0 也应可选中"
+    );
+}
+
+#[test]
+fn test_pending_drag_across_tick_zero_keeps_selection_width() {
+    use lumino_message::Tool;
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = Tool::ShapeSelect;
+    // 4 小节宽（ppq 480 → 4 × 1920 = 7680）
+    add_pending_rect(&mut editor, 1920.0, 9600.0, 60);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("待确认矩形应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    editor.handle_shape_select_pressed(5000.0, 62.0, false);
+    assert!(editor.editor_state.shape_select.is_dragging());
+    // 向左拖 1 小节：越过 tick 0，应停在边界，宽度保持 4 小节
+    editor.handle_shape_select_moved(3080.0, 62.0);
+    let during = editor
+        .editor_state
+        .shape_select
+        .selection_bounds_on(1)
+        .expect("拖动中应有选框");
+    assert!(
+        (during.0 - 0.0).abs() < 1e-3,
+        "拖到边界应停在 tick 0：{during:?}"
+    );
+    assert!(
+        (during.1 - during.0 - 7680.0).abs() < 1e-3,
+        "选框宽度必须保持 4 小节：{during:?}"
+    );
+
+    // 拖回原位：形状与选框一起恢复，不能被压扁
+    editor.handle_shape_select_moved(5000.0, 62.0);
+    let after = editor
+        .editor_state
+        .shape_select
+        .selection_bounds_on(1)
+        .expect("拖回后应有选框");
+    assert!(
+        (after.0 - 1920.0).abs() < 1e-3,
+        "拖回后应回到起点：{after:?}"
+    );
+    assert!(
+        (after.1 - after.0 - 7680.0).abs() < 1e-3,
+        "拖回后宽度仍须是 4 小节：{after:?}"
+    );
+    editor.handle_shape_select_released();
+}
+
+#[test]
 fn test_pending_mould_geometry_knife_keeps_hole_as_cut() {
     use lumino_editor_state::{ShapeInstance, ShapeKind};
 

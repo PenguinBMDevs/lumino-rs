@@ -24,6 +24,15 @@ impl Editor {
     pub fn set_tool(&mut self, tool: Tool) {
         // DEBT-17：换工具前先收敛失效的刀（源形状/音符可能已被删）
         self.sync_mould_knife();
+        // DEBT-19：工具未变 → 镜像无需重建。
+        //
+        // `rebuild_pending_mirrors` 会 `remove_pending_all` 再逐项重算几何、重发 ID，
+        // 而 owning 预览 / 选中域在几何变化时已有显式 rebuild 调用点。同工具重复
+        // 选中（面板条目重复点击、工具栏按钮再点一次）不改变任何产物几何，重建纯属
+        // 白付 O(待确认) 与一次选中态扰动。
+        //
+        // 其余收口照旧执行：重复选中同一工具仍应退出填充 / 圆弧 / 下拉等附属态。
+        let tool_changed = self.current_tool() != tool;
         // DRAW-044：离开柔化模式必须收口，否则组合结果没有镜像、曲线看起来「消失」，
         // 且遗留的拖拽快照会污染撤销栈。未改过半径时还原提升前的曲线。
         if tool != Tool::ShapeSelect
@@ -54,7 +63,9 @@ impl Editor {
             self.shape_edit_armed = None;
             self.shape_group_edit = None;
         }
-        self.rebuild_pending_mirrors();
+        if tool_changed {
+            self.rebuild_pending_mirrors();
+        }
     }
 
     /// 某绘制工具的**待确认预览**此刻是否应渲染/可交互

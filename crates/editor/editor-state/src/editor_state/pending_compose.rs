@@ -158,7 +158,16 @@ impl PendingComposed {
     }
 
     /// 整体平移组合结果（预览 + 模型一起动；sources 已从工具容器摘除，无需回写）
+    ///
+    /// 按**整体边界**夹取偏移：tick 不低于 0、key 保持 0..=255；越过边界时停住，
+    /// 不逐坐标裁剪（否则矩形/折线会被压扁，DEBT-20）。
     pub fn translate(&mut self, dtick: f32, dkey: f32) {
+        let (dtick, dkey) = match self.translate_bounds() {
+            Some((min_tick, min_key, max_key)) => {
+                super::drawn_shape::clamp_translate_delta(dtick, dkey, min_tick, min_key, max_key)
+            }
+            None => (dtick, dkey),
+        };
         for part in &mut self.results {
             translate_model(&mut part.model, dtick, dkey, 0);
             for note in &mut part.notes {
@@ -174,40 +183,57 @@ impl PendingComposed {
         // 抽屉来源的落位矩形跟随 pending 一起移动，否则「退回抽屉」记录的位置是旧的。
         if let Some(drawer) = &mut self.drawer {
             let rect = &mut drawer.spec.rect;
-            rect.tick_lo = (rect.tick_lo + dtick).max(0.0);
-            rect.tick_hi = (rect.tick_hi + dtick).max(0.0);
-            rect.key_lo = (rect.key_lo + dkey).clamp(0.0, 255.0);
-            rect.key_hi = (rect.key_hi + dkey).clamp(0.0, 255.0);
+            rect.tick_lo += dtick;
+            rect.tick_hi += dtick;
+            rect.key_lo += dkey;
+            rect.key_hi += dkey;
         }
+    }
+
+    /// 组合结果的几何边界 `(min_tick, min_key, max_key)`；无几何时 `None`
+    fn translate_bounds(&self) -> Option<(f32, f32, f32)> {
+        let mut min_tick = f32::INFINITY;
+        let mut min_key = f32::INFINITY;
+        let mut max_key = f32::NEG_INFINITY;
+        for part in &self.results {
+            for note in &part.notes {
+                min_tick = min_tick.min(note.tick);
+                min_key = min_key.min(f32::from(note.key));
+                max_key = max_key.max(f32::from(note.key));
+            }
+            if let Some((t0, _, k0, k1)) = part.model.geometry.bounds() {
+                min_tick = min_tick.min(t0);
+                min_key = min_key.min(k0);
+                max_key = max_key.max(k1);
+            }
+        }
+        (min_tick.is_finite() && min_key.is_finite() && max_key.is_finite())
+            .then_some((min_tick, min_key, max_key))
     }
 }
 
 /// 平移模型几何（含 Live 的内嵌 strokes / from，深度上限防递归）
+///
+/// 偏移已由调用方按整体边界夹取；这里只做平移，不再逐坐标裁剪（否则会压扁几何）。
 fn translate_model(model: &mut ShapeModel, dtick: f32, dkey: f32, depth: usize) {
     if depth > 8 {
         return;
     }
     for anchor in &mut model.geometry.anchors {
-        anchor.pos = (
-            (anchor.pos.0 + dtick).max(0.0),
-            (anchor.pos.1 + dkey).clamp(0.0, 255.0),
-        );
+        anchor.pos = (anchor.pos.0 + dtick, anchor.pos.1 + dkey);
     }
     if let Some(rect) = &mut model.geometry.rect {
-        rect.tick_lo = (rect.tick_lo + dtick).max(0.0);
-        rect.tick_hi = (rect.tick_hi + dtick).max(0.0);
-        rect.key_lo = (rect.key_lo + dkey).clamp(0.0, 255.0);
-        rect.key_hi = (rect.key_hi + dkey).clamp(0.0, 255.0);
+        rect.tick_lo += dtick;
+        rect.tick_hi += dtick;
+        rect.key_lo += dkey;
+        rect.key_hi += dkey;
     }
     for op in &mut model.ops {
         match op {
             ShapeOp::Live(params) => {
                 for stroke in &mut params.strokes {
                     for anchor in &mut stroke.anchors {
-                        anchor.pos = (
-                            (anchor.pos.0 + dtick).max(0.0),
-                            (anchor.pos.1 + dkey).clamp(0.0, 255.0),
-                        );
+                        anchor.pos = (anchor.pos.0 + dtick, anchor.pos.1 + dkey);
                     }
                 }
                 for from in &mut params.from {
@@ -218,8 +244,8 @@ fn translate_model(model: &mut ShapeModel, dtick: f32, dkey: f32, depth: usize) 
             // 否则后续按模型再生成会把副本放回旧位置。
             ShapeOp::CopyAlong(params) => {
                 if let Some(grp) = &mut params.grp {
-                    grp[0] = (grp[0] + dtick).max(0.0);
-                    grp[1] = (grp[1] + dkey).clamp(0.0, 255.0);
+                    grp[0] += dtick;
+                    grp[1] += dkey;
                 }
             }
             _ => {}
