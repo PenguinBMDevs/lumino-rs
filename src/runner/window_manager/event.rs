@@ -10,12 +10,21 @@ impl WindowManager {
     /// 处理窗口事件
     pub fn handle_event(&mut self, event: WindowEvent, storage: &mut crate::storage::Storage) {
         // 点击 / 触摸优先：输入只置脏，不在事件回调里同步抢帧。
-        // 一帧渲染绝不插到两次点击之间——`about_to_wait` 在事件队列排空后
-        // 统一补帧，避免「狂点半天才响应」的帧饥饿回归。
+        // 但**一次完整点击（抬起）必须单独补一帧**：egui 的 `clicked()` 是
+        // 按帧结算的，若把多次点击合并进同一帧，同一位置的连续点击会被
+        // 折叠成一次——真机表现就是「播放时连点只响应一两次」。
         let pointer_action = matches!(
             event,
             WindowEvent::MouseInput { .. } | WindowEvent::Touch(_)
         );
+        let click_completed = match &event {
+            WindowEvent::MouseInput { state, .. } => *state == winit::event::ElementState::Released,
+            WindowEvent::Touch(touch) => matches!(
+                touch.phase,
+                winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled
+            ),
+            _ => false,
+        };
         match event {
             WindowEvent::RedrawRequested => {
                 self.redraw_pending = true;
@@ -65,12 +74,18 @@ impl WindowManager {
         if pointer_action {
             self.redraw_pending = true;
         }
+        // 抬起即结算：本次点击先被完整处理，再渲染这一帧，然后才回到事件队列。
+        // 这样既保证点击优先，又不会把连续点击折叠进同一帧。
+        if click_completed {
+            self.flush_pending_redraw();
+        }
     }
 
     /// 事件队列排空后统一渲染一帧（点击优先）。
     ///
-    /// 点击 / 触摸只置脏，不在 `window_event` 里同步抢帧；`about_to_wait`
-    /// 在所有排队事件处理完后调用本函数，保证一帧渲染不会插到两次点击之间。
+    /// 普通重绘（`RedrawRequested` / 尺寸变化）只置脏，由 `about_to_wait`
+    /// 在事件队列排空后统一补帧；**一次完整点击（抬起）会立即结算一帧**，
+    /// 避免把多次点击合并进同一帧、被 egui 折叠成一次。
     pub fn flush_pending_redraw(&mut self) {
         if !self.redraw_pending {
             return;
@@ -79,8 +94,7 @@ impl WindowManager {
         // 点击优先回归诊断：`LUMINO_CLICK_DIAG=1` 时每帧打点，
         // 用于确认空闲期没有「事件 → 补帧 → 再补帧」的自旋。
         if std::env::var_os("LUMINO_CLICK_DIAG").is_some() {
-            static FRAMES: std::sync::atomic::AtomicU64 =
-                std::sync::atomic::AtomicU64::new(0);
+            static FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let frame = FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             log::debug!("[FRAME] flush #{frame}");
         }

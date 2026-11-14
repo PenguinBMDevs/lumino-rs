@@ -103,6 +103,16 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
                     this.schedule_startup_prompts();
                 }
 
+                // 诊断开关：启动即加载指定 MIDI（`LUMINO_OPEN_MIDI=path`），
+                // 用于复现播放期输入 / 渲染问题；正常启动不受影响。
+                if self.test_config.is_none()
+                    && let Ok(path) = std::env::var("LUMINO_OPEN_MIDI")
+                    && let Some(this) = self.inner.as_mut()
+                {
+                    tracing::info!("诊断：启动加载 MIDI - {path}");
+                    this.load_midi_file(std::path::PathBuf::from(path));
+                }
+
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
                     && let Some(this) = self.inner.as_mut()
