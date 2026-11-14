@@ -57,6 +57,13 @@ pub struct PianoRollView {
     pub bottom_inset: f32,
     /// 是否纵向卷帘（时间轴竖直、键盘在底部）。
     pub vertical: bool,
+    /// 是否由 egui 绘制标尺。
+    ///
+    /// 键盘列与滚动条与拍号 / 覆盖层无关，**始终**由 egui 绘制；只有标尺在
+    /// 拍号分段（中途变拍）时让位给 gfx 的 `RulerRenderer`——egui 标尺只按
+    /// 单一「每小节 tick 数」画小节号。`false` 时键盘 / 滚动条照常绘制，
+    /// 仅跳过 `ruler_cell`。
+    pub draw_ruler: bool,
 }
 
 impl Default for PianoRollView {
@@ -87,6 +94,7 @@ impl Default for PianoRollView {
             right_inset: 0.0,
             bottom_inset: 0.0,
             vertical: false,
+            draw_ruler: true,
         }
     }
 }
@@ -153,14 +161,17 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
         view,
         ruler_h,
     );
-    ruler_cell(
-        ui,
-        Rect::from_min_max(
-            egui::pos2(area.left() + keyboard_w, area.top()),
-            egui::pos2(area.left() + canvas_w, area.top() + ruler_h),
-        ),
-        view,
-    );
+    // 标尺在拍号分段时让位给 gfx；键盘列 / 滚动条不受影响，始终由 egui 绘制。
+    if view.draw_ruler {
+        ruler_cell(
+            ui,
+            Rect::from_min_max(
+                egui::pos2(area.left() + keyboard_w, area.top()),
+                egui::pos2(area.left() + canvas_w, area.top() + ruler_h),
+            ),
+            view,
+        );
+    }
     scrollbar_cells(ui, area, view, canvas_w, canvas_h);
 }
 

@@ -302,9 +302,10 @@ pub fn execute_render_pass(
 
         // 绘制标尺（纵向已由 wgpu 网格 + Canvas 小节号文本接管，跳过横向 RulerRenderer）
         //
-        // 叠加层接管骨架时标尺由 egui 绘制（`skip_roll_chrome`），本通道不再提交
-        // 标尺实例，避免同一行像素被两套渲染叠加。
-        if !params.is_vertical_roll && !params.skip_roll_chrome {
+        // 叠加层接管标尺时（`skip_ruler`）本通道不再提交标尺实例，避免同一行像素
+        // 被两套渲染叠加。与 `skip_roll_chrome` 分离：键盘列始终由 egui 绘制，
+        // 拍号分段时标尺仍由本通道绘制，不能跟着键盘一起让位。
+        if !params.is_vertical_roll && !params.skip_ruler {
             let ruler_count = frame.renderers.ruler.instance_count();
             if ruler_count > 0 {
                 render_pass.set_scissor_rect(0, 0, width, height);

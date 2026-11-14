@@ -222,6 +222,11 @@ impl Host {
         let vs_cull_mode =
             !es.is_vertical_roll && visible_fraction > VS_CULL_VISIBLE_FRACTION_THRESHOLD;
 
+        // 卷帘骨架：键盘列 / 滚动条始终由 egui 绘制；标尺只在 egui 能画单段
+        // 拍号时让位（`draw_ruler`）。两者必须分开，否则拍号分段 / 洋葱皮 /
+        // 循环区间 / 协作光标任意一项开启都会让整条标尺或键盘消失。
+        let piano_roll = self.root.egui_piano_roll_view();
+
         RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))
             .logical_size((data.viewport_size.width, data.viewport_size.height))
@@ -259,7 +264,8 @@ impl Host {
             .velocity_panel_rect(velocity_panel_rect)
             .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
             .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
-            .skip_roll_chrome(self.root.egui_piano_roll_active())
+            .skip_roll_chrome(piano_roll.is_some())
+            .skip_ruler(piano_roll.as_ref().is_some_and(|view| view.draw_ruler))
             .content_dirty(content_dirty)
             .subpixel_note_mode(subpixel_note_mode)
             .vs_cull_mode(vs_cull_mode)

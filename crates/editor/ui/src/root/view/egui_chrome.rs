@@ -18,6 +18,7 @@ mod marquee;
 mod mask_panel;
 mod material_delete;
 mod menu;
+mod meter;
 mod mixer;
 mod palette;
 mod remote_cursors;
@@ -218,23 +219,21 @@ impl Sidebar {
 }
 
 impl Root {
-    /// 卷帘骨架是否由 egui 接管（gfx 只保留网格线与音符）。
+    /// 本帧的卷帘骨架模型（生产渲染线程据此决定是否让出标尺）。
     ///
-    /// 必须与模型装配同源：模型为空（循环区间 / 中途变拍号 / 洋葱皮 / 协作光标 /
-    /// 非卷帘视图 …）时 gfx 仍要绘制键盘与标尺，否则整块骨架会消失。
-    pub(crate) fn egui_piano_roll_active(&self) -> bool {
-        self.egui_piano_roll_model().is_some()
+    /// 键盘列与滚动条**只由 egui 绘制**（gfx 网格着色器 discard 键盘列），
+    /// 因此只要处于卷帘视图，模型就必须存在；模型为空只允许发生在
+    /// 非卷帘视图（走带 / 导出面板 / 卷帘关闭）或画布尚未布局的首帧。
+    pub(crate) fn egui_piano_roll_view(&self) -> Option<PianoRollView> {
+        self.egui_piano_roll_model()
     }
 
-    /// 卷帘骨架模型：只在 旧版 用纯 UI 绘制的场合接管。
+    /// 卷帘骨架模型。
     ///
-    /// 以下情形必须让位给 旧版（否则会盖掉动态内容）：
-    /// - 纵向卷帘（布局不同）；
-    /// - 循环区间开启（标尺里画循环带与把手）；
-    /// - 拍号在工程中途变化（标尺分段）；
-    /// - 洋葱皮开启（琴键带彩色覆盖层）；
-    /// - 协作远程光标（光标可落在键盘/标尺上）；
-    /// - 当前不是钢琴卷帘视图（走带 / 导出面板 / 卷帘关闭）。
+    /// 只有「当前不是钢琴卷帘视图」与「画布尚未布局」两种情形返回 `None`。
+    /// 洋葱皮 / 协作光标 / 循环区间 / 拍号分段都**不再**让键盘列与滚动条消失：
+    /// 它们只影响标尺或叠加层，键盘列始终由 egui 绘制（gfx 不补键盘）。
+    /// 拍号分段时 `PianoRollView::draw_ruler = false`，标尺让位给 gfx 分段绘制。
     fn egui_piano_roll_model(&self) -> Option<PianoRollView> {
         let left_inset = 48.0
             + if self.sidebar.panel_visible {
@@ -251,30 +250,36 @@ impl Root {
         } else {
             0.0
         };
-        if !self.right_sidebar_visible()
-            || self.toolbar.onion_skin_enabled
-            || !self.editor.remote_cursors.is_empty()
-            || self
-                .editor
-                .loop_range
-                .as_ref()
-                .is_some_and(|range| range.enabled())
-        {
+        if !self.right_sidebar_visible() {
             return None;
         }
-        let signatures = self.editor.editor_state.data.time_signatures.as_slice();
-        if signatures.len() > 1 {
-            return None;
-        }
-
         let view = &self.editor.editor_state.view;
         let canvas = self.editor.editor_state.canvas;
         if canvas.size_x <= 0.0 || canvas.size_y <= 0.0 {
             return None;
         }
 
-        // 拍号 → 每小节 tick（默认 4/4）。
-        let (numerator, denominator) = signatures.first().map_or((4u8, 4u8), |&(_, n, d)| (n, d));
+        let vertical = self.sidebar.is_vertical_roll();
+        // 拍号收敛为单段时 egui 标尺可直接画小节号；中途变拍让位给 gfx
+        // 分段绘制。注意不能用原始条目数判断——加载器全量保留同 tick 重复
+        // 拍号（多轨 MIDI 常见），去重口径见 `meter::single_meter`。
+        let single_meter =
+            meter::single_meter(self.editor.editor_state.data.time_signatures.as_slice());
+        // 纵向卷帘的标尺只由 egui 绘制（gfx 纵向通道不提交 RulerRenderer），
+        // 即使拍号分段也必须保持可见；横向则只在单段时接管。
+        let draw_ruler = vertical || single_meter.is_some();
+        // 拍号 → 每小节 tick（默认 4/4）。分段时该值只服务纵向标尺的近似，
+        // 横向标尺已让位给 gfx，不使用它。
+        let (numerator, denominator) = single_meter
+            .or_else(|| {
+                self.editor
+                    .editor_state
+                    .data
+                    .time_signatures
+                    .first()
+                    .map(|&(_, numerator, denominator)| (numerator, denominator))
+            })
+            .unwrap_or((4, 4));
         let ppq = view.ppq;
         let ticks_per_measure =
             f32::from(ppq) * 4.0 * f32::from(numerator) / f32::from(denominator.max(1));
@@ -283,7 +288,6 @@ impl Root {
         // 水平 viewport 缺省为轨道长度；垂直 viewport 为画布高 - 标尺高。
         // 纵向卷帘转置：时间轴视口 = 画布高 - 键盘厚，音高轴视口 = 画布宽。
         let (max_x, max_y) = self.editor.editor_state.max_scroll;
-        let vertical = self.sidebar.is_vertical_roll();
         let grid_h = (canvas.size_y - view.keyboard_width).max(1.0);
         let (track_x, track_y, viewport_x, viewport_y) = if vertical {
             (
@@ -356,6 +360,7 @@ impl Root {
                     0.0
                 },
             vertical,
+            draw_ruler,
         })
     }
 

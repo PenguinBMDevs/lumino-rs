@@ -242,19 +242,34 @@ fn piano_roll_model_tracks_editor_view_state() {
 }
 
 #[test]
-fn piano_roll_model_defers_to_legacy_for_dynamic_overlays() {
-    // 洋葱皮：琴键带彩色覆盖层。
-    let mut onion = Root::new(&lumino_core::storage::config::UiConfig::default());
+fn dynamic_overlays_keep_egui_skeleton_and_ruler() {
+    fn root() -> Root {
+        let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
+        // 首帧布局前画布尺寸为 0；生产里由布局回填后再出模型。
+        root.editor.editor_state.canvas.size_x = 1280.0;
+        root.editor.editor_state.canvas.size_y = 858.0;
+        root
+    }
+
+    // 洋葱皮：键盘列 / 滚动条必须保留（gfx 不补键盘），标尺仍可由 egui 画。
+    let mut onion = root();
     onion.toolbar.onion_skin_enabled = true;
-    assert!(onion.egui_piano_roll_model().is_none());
+    let piano = onion
+        .egui_piano_roll_model()
+        .expect("洋葱皮不应让键盘 / 滚动条消失");
+    assert!(piano.draw_ruler, "单段拍号下标尺仍由 egui 绘制");
 
-    // 纵向卷帘：键盘在底部，布局不同。
-    let mut vertical = Root::new(&lumino_core::storage::config::UiConfig::default());
+    // 纵向卷帘：布局不同，但骨架同样必须保留；标尺只由 egui 绘制。
+    let mut vertical = root();
     vertical.sidebar.roll_bar_active = Some(crate::sidebar::RollBarButton::Vertical);
-    assert!(vertical.egui_piano_roll_model().is_none());
+    let piano = vertical
+        .egui_piano_roll_model()
+        .expect("纵向卷帘也必须由 egui 绘制键盘");
+    assert!(piano.vertical);
+    assert!(piano.draw_ruler);
 
-    // 协作远程光标可落在键盘/标尺上。
-    let mut remote = Root::new(&lumino_core::storage::config::UiConfig::default());
+    // 协作远程光标画在骨架之上，不应让键盘消失。
+    let mut remote = root();
     remote.editor.remote_cursors.insert(
         "peer".to_owned(),
         (
@@ -263,18 +278,61 @@ fn piano_roll_model_defers_to_legacy_for_dynamic_overlays() {
             "peer".to_owned(),
         ),
     );
-    assert!(remote.egui_piano_roll_model().is_none());
+    let piano = remote
+        .egui_piano_roll_model()
+        .expect("远程光标不应让键盘 / 滚动条消失");
+    assert!(piano.draw_ruler);
 
-    // 工程中途改拍号：标尺按拍号分段。
-    let mut meter = Root::new(&lumino_core::storage::config::UiConfig::default());
+    // 循环区间：标尺里的循环带由叠加层绘制，骨架不得整块让位。
+    let mut looping = root();
+    if let Some(range) = looping.editor.loop_range.as_mut() {
+        range.set_range(0.0, 1920.0);
+        range.enable();
+    }
+    let piano = looping
+        .egui_piano_roll_model()
+        .expect("循环区间不应让键盘 / 滚动条消失");
+    assert!(piano.draw_ruler);
+
+    // 工程中途改拍号：键盘 / 滚动条保留，仅标尺让位给 gfx 分段绘制。
+    let mut meter = root();
     meter.editor.editor_state.data.time_signatures = vec![(0, 4, 4), (7680, 3, 4)];
-    assert!(meter.egui_piano_roll_model().is_none());
+    let piano = meter
+        .egui_piano_roll_model()
+        .expect("中途变拍不应让键盘 / 滚动条消失");
+    assert!(!piano.draw_ruler, "分段拍号必须让 gfx 绘制标尺");
+}
+
+#[test]
+fn duplicate_time_signatures_do_not_disable_egui_skeleton() {
+    // 多轨 MIDI 常见：每条轨各写一个 tick 0 的 4/4。加载器按 EXP-005 口径
+    // 全量保留同 tick 拍号（`midi-loader/tests/duplicate_time_signatures.rs`），
+    // 去重是显示层的责任。这类重复不构成「中途变拍」，骨架必须继续由 egui
+    // 接管——否则键盘列 / 滚动条消失（gfx 网格着色器本就 discard 键盘列，
+    // 见 `shaders/infinite_grid.wgsl`），加载 MIDI 后只剩网格与标尺。
+    let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
+    root.editor.editor_state.canvas.size_x = 1280.0;
+    root.editor.editor_state.canvas.size_y = 858.0;
+    root.editor.editor_state.data.time_signatures = vec![(0, 4, 4), (0, 4, 4)];
+    let piano = root
+        .egui_piano_roll_model()
+        .expect("同 tick 重复拍号不应退出接管");
+    assert!((piano.bar_pixels() - 768.0).abs() < 0.01, "4/4 小节宽");
+    assert!(piano.draw_ruler, "单段拍号仍由 egui 绘制标尺");
+
+    // 同值拍号在工程中途重复（值不变）同样不构成变拍：小节宽不变，标尺连续。
+    root.editor.editor_state.data.time_signatures = vec![(0, 4, 4), (7680, 4, 4)];
+    assert!(
+        root.egui_piano_roll_model().is_some(),
+        "同值拍号重复不应退出接管"
+    );
 }
 
 #[test]
 fn piano_roll_overlay_is_off_by_default() {
-    // 生产里卷帘骨架由 `lumino-gfx` 绘制；egui 骨架默认不接管，避免把
-    // 用户当前的网格配色盖成 旧版 深色键盘。
+    // 首帧布局前画布尺寸为 0：模型为空，egui 骨架不接管。
+    // 布局回填后键盘列只由 egui 绘制（gfx 网格着色器 discard 键盘列），
+    // 模型必须尽快转为 Some——否则加载 MIDI 后骨架会整块消失。
     let root = Root::new(&lumino_core::storage::config::UiConfig::default());
     assert!(root.egui_chrome_model().piano_roll.is_none());
 }

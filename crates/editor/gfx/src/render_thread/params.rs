@@ -119,6 +119,12 @@ pub struct RenderParams {
     /// egui 叠加层接管卷帘骨架（键盘 / 标尺）时，gfx 只画网格线与音符：
     /// 网格绘制的裁剪区去掉键盘列与标尺行，标尺实例也不再提交。
     pub skip_roll_chrome: bool,
+    /// egui 叠加层接管标尺时，gfx 不再提交标尺实例。
+    ///
+    /// 与 [`Self::skip_roll_chrome`] 分离：键盘列 / 滚动条始终由 egui 绘制，
+    /// 但拍号分段时标尺仍需 gfx 的 `RulerRenderer` 分段绘制
+    /// （`skip_ruler = false`），否则整条标尺会消失。
+    pub skip_ruler: bool,
     /// 本帧是否携带「必须在 present 前立即可见」的内容变化。
     ///
     /// 语义（2026-10-01 滚动拖拽全程卡顿修复）：
@@ -250,6 +256,7 @@ impl Default for RenderParams {
             skip_scene_render: false,
             is_vertical_roll: false,
             skip_roll_chrome: false,
+            skip_ruler: false,
             content_dirty: true,
             subpixel_note_mode: false,
             vs_cull_mode: false,

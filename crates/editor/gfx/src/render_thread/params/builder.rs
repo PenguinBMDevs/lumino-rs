@@ -62,6 +62,7 @@ pub struct RenderParamsBuilder {
     skip_scene_render: bool,
     is_vertical_roll: bool,
     skip_roll_chrome: bool,
+    skip_ruler: bool,
     content_dirty: bool,
     subpixel_note_mode: bool,
     vs_cull_mode: bool,
@@ -269,6 +270,15 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 叠加层接管标尺时置位：gfx 不再提交标尺实例。
+    ///
+    /// 与 [`Self::skip_roll_chrome`] 分离——拍号分段时 egui 标尺无法画分段，
+    /// 键盘列仍由 egui 绘制，但标尺必须留给 gfx。
+    pub fn skip_ruler(mut self, skip: bool) -> Self {
+        self.skip_ruler = skip;
+        self
+    }
+
     /// 设置本帧是否携带必须在 present 前立即可见的内容变化。
     ///
     /// `false`（纯视口变化帧）时 UI 线程跳过 `wait_for_frame`；默认 `true`（保守等待）。
@@ -371,6 +381,7 @@ impl RenderParamsBuilder {
             skip_scene_render: self.skip_scene_render,
             is_vertical_roll: self.is_vertical_roll,
             skip_roll_chrome: self.skip_roll_chrome,
+            skip_ruler: self.skip_ruler,
             content_dirty: self.content_dirty,
             subpixel_note_mode: self.subpixel_note_mode,
             vs_cull_mode: self.vs_cull_mode,

@@ -59,6 +59,7 @@ impl Default for RenderParamsBuilder {
             skip_scene_render: base.skip_scene_render,
             is_vertical_roll: base.is_vertical_roll,
             skip_roll_chrome: base.skip_roll_chrome,
+            skip_ruler: base.skip_ruler,
             content_dirty: base.content_dirty,
             subpixel_note_mode: base.subpixel_note_mode,
             vs_cull_mode: base.vs_cull_mode,
