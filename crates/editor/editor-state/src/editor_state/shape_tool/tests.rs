@@ -21,6 +21,19 @@ fn spec(
 }
 
 #[test]
+fn test_end_drag_clamps_negative_tick_and_key() {
+    let mut state = ShapeToolState::default();
+    state.begin_drag((-120.0, -10.0));
+    state.update_drag((480.0, 70.0));
+    let instance = state.end_drag(1.0, false).expect("拖拽应生成实例");
+    assert_eq!(
+        instance.rect,
+        (0.0, 0.0, 480.0, 70.0),
+        "pending 几何必须钳在 tick >= 0、key 0..=255"
+    );
+}
+
+#[test]
 fn test_rectangle_filled_cells() {
     // 4×4 矩形（key 60..64, tick 0..4 snap=1）：内部 16 格
     let s = spec(ShapeKind::Rectangle, (0.0, 60.0, 4.0, 64.0), false, true);

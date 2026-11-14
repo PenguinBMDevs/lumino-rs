@@ -34,8 +34,8 @@
 use std::collections::{HashMap, HashSet};
 
 use lumino_editor_state::{
-    DrawnShapeSource, PendingShapeRef, ShapeMarquee, ShapeNote, shape_tool::ShapeSpec,
-    shape_tool::point_in_shape,
+    DrawnShapeSource, PendingShapeRef, ShapeKind, ShapeMarquee, ShapeNote,
+    shape_tool::{ShapeSpec, effective_rect, point_in_shape},
 };
 use lumino_message::Tool;
 use lumino_midi_loader::NoteEvent;
@@ -49,6 +49,9 @@ use crate::{Editor, Note};
 
 /// 折线命中容差（屏幕像素）：点击位置到笔画折线的最短距离阈值
 const HIT_TOLERANCE_PX: f32 = 6.0;
+
+/// 形状命中外扩（屏幕像素）：贴边 / 零宽高的细图形也能选中
+const SHAPE_HIT_SLOP_PX: f32 = 3.0;
 
 /// 空白拉框的最小屏幕边长（像素）：低于此值视为「一次点击」而非框选
 const MARQUEE_MIN_PX: f32 = 4.0;
@@ -404,27 +407,40 @@ impl Editor {
     /// tick 下限钳 0、key 钳 0..=255。历史快照由调用方在**一次拖动结束时**记一次
     /// （见 [`Self::record_pending_movement`]），避免逐帧刷屏。
     fn translate_pending(&mut self, r: PendingShapeRef, dtick: f32, dkey: f32) -> bool {
+        use lumino_editor_state::editor_state::drawn_shape::clamp_translate_delta;
         match r {
             PendingShapeRef::Shape(i) => {
                 let Some(s) = self.editor_state.shape_tool.shapes.get_mut(i) else {
                     return false;
                 };
-                s.rect.0 = (s.rect.0 + dtick).max(0.0);
-                s.rect.2 = (s.rect.2 + dtick).max(0.0);
-                s.rect.1 = (s.rect.1 + dkey).clamp(0.0, 255.0);
-                s.rect.3 = (s.rect.3 + dkey).clamp(0.0, 255.0);
+                let (min_tick, min_key, max_key) = (
+                    s.rect.0.min(s.rect.2),
+                    s.rect.1.min(s.rect.3),
+                    s.rect.1.max(s.rect.3),
+                );
+                let (dtick, dkey) = clamp_translate_delta(dtick, dkey, min_tick, min_key, max_key);
+                s.rect.0 += dtick;
+                s.rect.2 += dtick;
+                s.rect.1 += dkey;
+                s.rect.3 += dkey;
             }
             PendingShapeRef::CurvePath(i) => {
                 let Some(path) = self.editor_state.line_tool.paths.get_mut(i) else {
                     return false;
                 };
+                let mut min_tick = f32::INFINITY;
+                let mut min_key = f32::INFINITY;
+                let mut max_key = f32::NEG_INFINITY;
+                for a in path.iter() {
+                    min_tick = min_tick.min(a.pos.0);
+                    min_key = min_key.min(a.pos.1);
+                    max_key = max_key.max(a.pos.1);
+                }
+                let (dtick, dkey) = clamp_translate_delta(dtick, dkey, min_tick, min_key, max_key);
                 // 控制柄是**相对**偏移（见 `BezierAnchor::out_handle_abs`），
                 // 平移锚点即可整体平移曲线（与曲线工具拖动整条路径同口径）
                 for a in path.iter_mut() {
-                    a.pos = (
-                        (a.pos.0 + dtick).max(0.0),
-                        (a.pos.1 + dkey).clamp(0.0, 255.0),
-                    );
+                    a.pos = (a.pos.0 + dtick, a.pos.1 + dkey);
                 }
             }
             PendingShapeRef::BrushStroke(i) => {
@@ -506,7 +522,7 @@ impl Editor {
                     shift_constrained,
                     apex_high,
                     ..
-                } => point_in_shape(
+                } => shape_hit_with_slop(
                     ShapeSpec {
                         kind: *kind,
                         rect: *rect,
@@ -1108,6 +1124,50 @@ impl Editor {
             probe.x >= x0 && probe.x <= x1 && probe.y >= y0 && probe.y <= y1
         })
     }
+}
+
+/// 形状命中：精确判定 + 细图形外扩
+///
+/// 只为**贴边 / 零宽高的矩形**（例如贴在 tick 0 的竖线）提供 3px 容差；
+/// 圆形 / 三角形与正常矩形保持精确判定，避免「外接框角落也能点中」。
+fn shape_hit_with_slop(
+    spec: ShapeSpec,
+    px_per_tick: f32,
+    px_per_key: f32,
+    tick: f32,
+    key: f32,
+) -> bool {
+    if point_in_shape(spec, px_per_tick, px_per_key, tick, key) {
+        return true;
+    }
+    if !matches!(spec.kind, ShapeKind::Rectangle) {
+        return false;
+    }
+    let (x0, y0, x1, y1) = effective_rect(spec, px_per_tick, px_per_key);
+    let width_px = (x1 - x0).abs() * px_per_tick;
+    let height_px = (y1 - y0).abs() * px_per_key;
+    let thin_x = width_px < SHAPE_HIT_SLOP_PX * 2.0;
+    let thin_y = height_px < SHAPE_HIT_SLOP_PX * 2.0;
+    if !thin_x && !thin_y {
+        return false;
+    }
+    let eps_tick = if thin_x {
+        SHAPE_HIT_SLOP_PX / px_per_tick.max(1e-6)
+    } else {
+        0.0
+    };
+    let eps_key = if thin_y {
+        SHAPE_HIT_SLOP_PX / px_per_key.max(1e-6)
+    } else {
+        0.0
+    };
+    let expanded = ShapeSpec {
+        kind: spec.kind,
+        rect: (x0 - eps_tick, y0 - eps_key, x1 + eps_tick, y1 + eps_key),
+        shift_constrained: false,
+        apex_high: spec.apex_high,
+    };
+    point_in_shape(expanded, px_per_tick, px_per_key, tick, key)
 }
 
 /// 折线命中：探测点到折线各段的屏幕距离是否 ≤ 容差

@@ -73,9 +73,15 @@ impl BrushStroke {
     ///
     /// tick 下限钳制到 0（避免负 tick），key 钳制到 0..=255（音符 key 上限）。
     pub fn translate(&mut self, delta_tick: f32, delta_key: f32) {
+        let (delta_tick, delta_key) = match self.bounds() {
+            Some((min_tick, _, min_key, max_key)) => super::drawn_shape::clamp_translate_delta(
+                delta_tick, delta_key, min_tick, min_key, max_key,
+            ),
+            None => (delta_tick, delta_key),
+        };
         for p in &mut self.points {
-            p.0 = (p.0 + delta_tick).max(0.0);
-            p.1 = (p.1 + delta_key).clamp(0.0, 255.0);
+            p.0 += delta_tick;
+            p.1 += delta_key;
         }
     }
 

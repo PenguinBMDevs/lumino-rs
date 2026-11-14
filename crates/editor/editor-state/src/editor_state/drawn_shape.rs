@@ -87,31 +87,66 @@ pub enum DrawnShapeSource {
     },
 }
 
+/// 按几何边界夹取整体平移量：tick 不低于 0，key 保持在 0..=255。
+///
+/// 返回**实际可应用**的 `(dtick, dkey)`。必须按「整体」夹取——逐坐标 `max(0)`
+/// 会在越过 tick 0 时把矩形/折线压扁（DEBT-20：拖左再拖回，选框比图案短）。
+pub fn clamp_translate_delta(
+    dtick: f32,
+    dkey: f32,
+    min_tick: f32,
+    min_key: f32,
+    max_key: f32,
+) -> (f32, f32) {
+    (
+        if min_tick.is_finite() {
+            dtick.max(-min_tick)
+        } else {
+            dtick
+        },
+        if min_key.is_finite() && max_key.is_finite() {
+            dkey.clamp(-min_key, 255.0 - max_key)
+        } else {
+            dkey
+        },
+    )
+}
+
 impl DrawnShapeSource {
     /// 整体平移几何（tick 自由、key 取整后钳到 0..=255）
-    pub fn translate(&mut self, dtick: f32, dkey: f32) {
+    ///
+    /// 返回**实际应用**的 `(dtick, dkey)`：按整体边界夹取，避免越过 tick 0 时
+    /// 逐坐标 `max(0)` 把矩形/折线压扁（DEBT-20）。
+    pub fn translate(&mut self, dtick: f32, dkey: f32) -> (f32, f32) {
+        let (dtick, dkey) = match self.bounds() {
+            Some((min_tick, _, min_key, max_key)) => {
+                clamp_translate_delta(dtick, dkey, min_tick, min_key, max_key)
+            }
+            None => (dtick, dkey),
+        };
         match self {
             Self::Shape { rect, .. } => {
-                rect.0 = (rect.0 + dtick).max(0.0);
-                rect.2 = (rect.2 + dtick).max(0.0);
-                rect.1 = (rect.1 + dkey).clamp(0.0, 255.0);
-                rect.3 = (rect.3 + dkey).clamp(0.0, 255.0);
+                rect.0 += dtick;
+                rect.2 += dtick;
+                rect.1 += dkey;
+                rect.3 += dkey;
             }
             Self::Polyline { points } => {
                 for p in points.iter_mut() {
-                    p.0 = (p.0 + dtick).max(0.0);
-                    p.1 = (p.1 + dkey).clamp(0.0, 255.0);
+                    p.0 += dtick;
+                    p.1 += dkey;
                 }
             }
             Self::PolylineSet { polylines } => {
                 for points in polylines {
                     for p in points.iter_mut() {
-                        p.0 = (p.0 + dtick).max(0.0);
-                        p.1 = (p.1 + dkey).clamp(0.0, 255.0);
+                        p.0 += dtick;
+                        p.1 += dkey;
                     }
                 }
             }
         }
+        (dtick, dkey)
     }
 
     /// 外接框（逻辑坐标 (min_tick, max_tick, min_key, max_key)）；空折线返回 `None`
@@ -241,6 +276,8 @@ pub struct ShapeDrag {
     pub delta_tick: f32,
     /// 当前 key 偏移
     pub delta_key: f32,
+    /// 拖拽起点的几何边界 `(min_tick, min_key, max_key)`；用于整体夹取偏移
+    pub bounds: Option<(f32, f32, f32)>,
 }
 
 /// 空白处拉框（框选）中的矩形，逻辑坐标 (tick, key)
@@ -604,7 +641,7 @@ impl ShapeSelectState {
             }
             // 撤销一次移动 → 几何反向平移回去
             if let Some(mv) = s.moves.iter().find(|m| m.group == group).copied() {
-                s.source.translate(-mv.dtick, -mv.dkey);
+                let _ = s.source.translate(-mv.dtick, -mv.dkey);
                 for n in &mut s.notes {
                     *n = n.translated(-mv.dtick, -mv.dkey);
                 }
@@ -620,7 +657,7 @@ impl ShapeSelectState {
                 s.hidden_by_creation = false;
             }
             if let Some(mv) = s.moves.iter().find(|m| m.group == group).copied() {
-                s.source.translate(mv.dtick, mv.dkey);
+                let _ = s.source.translate(mv.dtick, mv.dkey);
                 for n in &mut s.notes {
                     *n = n.translated(mv.dtick, mv.dkey);
                 }
@@ -663,7 +700,7 @@ impl ShapeSelectState {
         let Some(s) = self.shapes.iter_mut().find(|s| s.id == id) else {
             return false;
         };
-        s.source.translate(dtick, dkey);
+        let (dtick, dkey) = s.source.translate(dtick, dkey);
         for n in &mut s.notes {
             *n = n.translated(dtick, dkey);
         }
@@ -688,11 +725,23 @@ impl ShapeSelectState {
             return;
         }
         self.marquee = None;
+        let bounds = self
+            .selected_shapes()
+            .filter_map(|s| s.source.bounds())
+            .fold(None::<(f32, f32, f32)>, |acc, b| {
+                Some(match acc {
+                    None => (b.0, b.2, b.3),
+                    Some((min_tick, min_key, max_key)) => {
+                        (min_tick.min(b.0), min_key.min(b.2), max_key.max(b.3))
+                    }
+                })
+            });
         self.drag = Some(ShapeDrag {
             start_tick,
             start_key,
             delta_tick: 0.0,
             delta_key: 0.0,
+            bounds,
         });
     }
 
@@ -704,8 +753,17 @@ impl ShapeSelectState {
         let snap = snap.max(1.0);
         let raw_dtick = tick - d.start_tick;
         // tick 对齐到吸附网格（与音符移动一致，保证落点干净）；key 取整
-        d.delta_tick = (raw_dtick / snap).round() * snap;
-        d.delta_key = (key - d.start_key).round();
+        let raw_dtick = (raw_dtick / snap).round() * snap;
+        let raw_dkey = (key - d.start_key).round();
+        // 按拖拽起点的几何边界整体夹取：越过 tick 0 时停住，不压扁图案（DEBT-20）
+        let (delta_tick, delta_key) = match d.bounds {
+            Some((min_tick, min_key, max_key)) => {
+                clamp_translate_delta(raw_dtick, raw_dkey, min_tick, min_key, max_key)
+            }
+            None => (raw_dtick, raw_dkey),
+        };
+        d.delta_tick = delta_tick;
+        d.delta_key = delta_key;
     }
 
     /// 当前拖拽状态
@@ -1030,6 +1088,66 @@ mod tests {
         st.on_redo_group(9);
         assert_eq!(st.shapes()[0].notes[0].tick, 15.0);
         assert_eq!(st.shapes()[1].notes[0].tick, 25.0);
+    }
+
+    #[test]
+    fn test_translate_clamps_delta_without_shrinking() {
+        let mut src = DrawnShapeSource::Shape {
+            kind: ShapeKind::Rectangle,
+            rect: (100.0, 60.0, 500.0, 64.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: true,
+        };
+        let applied = src.translate(-200.0, 0.0);
+        assert_eq!(applied, (-100.0, 0.0), "只能移动到 tick 0");
+        assert_eq!(
+            src.bounds(),
+            Some((0.0, 400.0, 60.0, 64.0)),
+            "宽度必须保持 400，不能被逐坐标压扁"
+        );
+    }
+
+    #[test]
+    fn test_drag_clamps_total_delta_at_tick_zero() {
+        let mut st = ShapeSelectState::default();
+        let src = DrawnShapeSource::Shape {
+            kind: ShapeKind::Rectangle,
+            rect: (100.0, 60.0, 500.0, 64.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: true,
+        };
+        let id = st.add(1, None, src, vec![]);
+        st.select_only(id);
+        st.begin_drag(0.0, 60.0);
+        st.update_drag(-200.0, 60.0, 1.0);
+        assert_eq!(
+            st.drag().expect("拖拽态应存在").delta_tick,
+            -100.0,
+            "偏移必须按起点边界夹取"
+        );
+        assert_eq!(st.end_drag(), Some((-100.0, 0.0)));
+    }
+
+    #[test]
+    fn test_translate_shape_keeps_notes_in_sync_at_boundary() {
+        let mut st = ShapeSelectState::default();
+        let src = DrawnShapeSource::Shape {
+            kind: ShapeKind::Rectangle,
+            rect: (100.0, 60.0, 500.0, 64.0),
+            shift_constrained: false,
+            filled: false,
+            apex_high: true,
+        };
+        let id = st.add(1, None, src, vec![note(100.0, 60)]);
+        assert!(st.translate_shape(id, None, -200.0, 0.0));
+        let shape = &st.shapes()[0];
+        assert_eq!(shape.source.bounds(), Some((0.0, 400.0, 60.0, 64.0)));
+        assert_eq!(
+            shape.notes[0].tick, 0.0,
+            "音符必须按实际应用的偏移平移，不能与几何脱节"
+        );
     }
 
     #[test]
