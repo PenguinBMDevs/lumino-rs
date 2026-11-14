@@ -427,10 +427,12 @@ impl NativeApp {
     }
 
     fn send_editor(&mut self, action: lumino_message::EditorAction) {
-        tracing::debug!("native editor action: {action:?}");
+        // 指针移动期间每次 `Moved` 都会走这里：只能打 trace，避免 `RUST_LOG=debug`
+        // 时把正常日志冲掉。
+        tracing::trace!(?action, "native editor action");
         if let Some(root) = self.root.as_mut() {
             root.update(lumino_ui_core::Message::EditorAction(action));
-            tracing::debug!(
+            tracing::trace!(
                 "native editor state: tool={:?} track={} count={} doc={}",
                 root.editor.editor_state.tool,
                 root.editor.editor_state.data.current_track,

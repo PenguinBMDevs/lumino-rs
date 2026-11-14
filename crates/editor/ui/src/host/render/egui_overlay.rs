@@ -357,9 +357,6 @@ impl EguiOverlay {
             &primitives,
         );
         frame.queue.submit(Some(encoder.finish()));
-        if drawn == 0 {
-            tracing::debug!("egui 外壳本帧没有可绘制图元");
-        }
         if self.frames == 1 {
             tracing::info!(
                 "egui 外壳首帧：size={:?} ppp={} format={:?} app_frame={} primitives={} drawn={drawn}",

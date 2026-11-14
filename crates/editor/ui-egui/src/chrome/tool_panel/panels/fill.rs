@@ -118,12 +118,6 @@ fn text_input(ui: &mut egui::Ui, rect: Rect, value: &str) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     let response = child.add(egui::TextEdit::singleline(&mut text).frame(egui::Frame::NONE));
-    if response.hovered() {
-        tracing::debug!("填充输入框悬停：rect={:?}", response.rect);
-    }
-    if response.clicked() {
-        tracing::debug!("填充输入框被点击：has_focus={}", response.has_focus());
-    }
     if response.changed() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::FillDivisionChanged(text));
     }

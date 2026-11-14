@@ -138,32 +138,26 @@ impl Host {
     /// 应用本帧动作：每个动作最多产生一条 `Message`，按固定顺序处理。
     pub(super) fn apply_overlay_actions(&mut self, actions: OverlayActions, logical_width: f32) {
         if let Some(action) = actions.titlebar {
-            tracing::info!("egui 标题栏动作：{action:?}");
             let message = self.root.titlebar_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.piano_roll_menu {
-            tracing::info!("egui 卷帘右键菜单：{action:?}");
             let message = self.root.piano_roll_context_menu_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.editor_buttons {
-            tracing::info!("egui 编辑器按钮：{action:?}");
             let message = self.root.editor_button_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(bend) = actions.bend_buttons {
-            tracing::info!("egui 弯折按钮：{bend:?}");
             let message = self.root.bend_button_message(bend);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.text_tool {
-            tracing::info!("egui 文字工具：{action:?}");
             let message = self.root.text_tool_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.velocity_panel {
-            tracing::info!("egui 力度面板：{action:?}");
             let message = self.root.velocity_panel_message(action);
             self.dispatch_overlay_message(message);
         }
@@ -182,7 +176,6 @@ impl Host {
                     crate::message::Message::ZoomXChanged { zoom, fixed_ratio }
                 }
             };
-            tracing::info!("egui 滚动条：{directed:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(index) = actions.menu
@@ -193,31 +186,26 @@ impl Host {
         if let Some(action) = actions.dialog
             && let Some(message) = self.root.save_confirm_action_message(&action)
         {
-            tracing::info!("egui 保存确认动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.project
             && let Some(message) = self.root.project_settings_action_message(&action)
         {
-            tracing::info!("egui 工程设置动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.autosave
             && let Some(message) = self.root.autosave_recover_action_message(&action)
         {
-            tracing::info!("egui 自动保存恢复动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.history
             && let Some(message) = self.root.history_action_message(&action)
         {
-            tracing::info!("egui 撤销历史动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.batch_edit
             && let Some(message) = self.root.batch_edit_action_message(&action)
         {
-            tracing::info!("egui 批量编辑动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if !actions.shape_canvas.is_empty() {
@@ -240,64 +228,53 @@ impl Host {
             self.window_ctx.window.request_redraw();
         }
         if let Some(action) = actions.help_tip {
-            tracing::info!("egui 帮助提示动作：{action:?}");
             let message = self.root.help_tip_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.sidebar_menu
             && let Some(message) = self.root.sidebar_menu_action_message(action)
         {
-            tracing::info!("egui 音轨菜单动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.sidebar_panel {
-            tracing::info!("egui 音轨列表动作：{action:?}");
             let message = self.root.sidebar_panel_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.statusbar {
-            tracing::info!("egui 状态栏动作：{action:?}");
             let message = self.root.statusbar_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.mask_panel {
-            tracing::info!("egui 遮罩面板动作：{action:?}");
             let message = self.root.mask_panel_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.material_delete {
-            tracing::info!("egui 素材删除动作：{action:?}");
             let message = self.root.material_delete_action_message(action);
             self.dispatch_overlay_message(message);
         }
         for action in &actions.mixer {
             if let Some(message) = self.root.mixer_action_message(action) {
-                tracing::info!("egui 混音台动作：{action:?}");
                 self.dispatch_overlay_message(message);
             }
         }
         for action in &actions.video_timeline {
-            tracing::info!("egui 时间轴动作：{action:?}");
             let message = self
                 .root
                 .video_timeline_action_message(action, self.root.state.video_clip.preview_width);
             self.dispatch_overlay_message(message);
         }
         for action in &actions.lane {
-            tracing::info!("egui 泳道动作：{action:?}");
             let message = self.root.lane_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = &actions.arrangement
             && let Some(message) = self.root.arrangement_action_message(action)
         {
-            tracing::info!("egui 走带动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.video_overlay
             && let Some(message) = self.root.video_overlay_action_message(&action)
         {
-            tracing::info!("egui 视频导出覆盖层动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(route) = actions.sidebar_route {
@@ -331,12 +308,10 @@ impl Host {
                         }
                         _ => lumino_ui_core::sidebar_event::RollBarButton::Vertical,
                     };
-                    tracing::info!("egui 路由栏动作：{route:?}");
                     self.dispatch_overlay_message(SidebarEvent::roll_bar_toggled(button));
                     return;
                 }
                 SidebarRoute::MixerToggle => {
-                    tracing::info!("egui 路由栏动作：{route:?}");
                     self.dispatch_overlay_message(SidebarEvent::mixer_panel_toggled());
                     return;
                 }
@@ -346,97 +321,81 @@ impl Host {
         if let Some(action) = actions.video_export
             && let Some(message) = self.root.video_export_action_message(&action)
         {
-            tracing::info!("egui 视频导出动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.shape_drawer
             && let Some(message) = self.root.shape_drawer_action_message(&action)
         {
-            tracing::info!("egui 形状抽屉动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.cloud_browser
             && let Some(message) = self.root.cloud_browser_action_message(&action)
         {
-            tracing::info!("egui 云浏览动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.collaboration
             && let Some(message) = self.root.collaboration_action_message(&action)
         {
-            tracing::info!("egui 协作动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.recover_track
             && let Some(message) = self.root.recover_track_action_message(&action)
         {
-            tracing::info!("egui 找回音轨动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.brush_settings
             && let Some(message) = self.root.brush_settings_action_message(&action)
         {
-            tracing::info!("egui 画刷设置动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.load_confirm
             && let Some(message) = self.root.load_confirm_action_message(&action)
         {
-            tracing::info!("egui 载入确认动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.audio_export
             && let Some(message) = self.root.audio_export_action_message(&action)
         {
-            tracing::info!("egui 音频导出动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.draw_settings
             && let Some(message) = self.root.draw_settings_action_message(&action)
         {
-            tracing::info!("egui 音符画设置动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.memory_monitor
             && let Some(message) = self.root.memory_monitor_action_message(&action)
         {
-            tracing::info!("egui 内存监控动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.cloud_connect
             && let Some(message) = self.root.cloud_connect_action_message(&action)
         {
-            tracing::info!("egui 云连接动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.help
             && let Some(message) = self.root.help_action_message(&action)
         {
-            tracing::info!("egui 帮助动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.custom_precision
             && let Some(message) = self.root.custom_precision_action_message(&action)
         {
-            tracing::info!("egui 自定义精度动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.speed_change
             && let Some(message) = self.root.speed_change_action_message(&action)
         {
-            tracing::info!("egui 变速动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.settings
             && let Some(message) = self.root.settings_action_message(&action)
         {
-            tracing::info!("egui 设置动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.panel
             && let Some(message) = self.root.right_sidebar_action_message(&action)
         {
-            tracing::info!("egui 右侧栏动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.toolbar {
@@ -448,7 +407,6 @@ impl Host {
                 other => self.root.toolbar_action_message(other),
             };
             if let Some(message) = message {
-                tracing::info!("egui 工具栏动作：{action:?}");
                 self.dispatch_overlay_message(message);
             }
         }
@@ -467,13 +425,17 @@ impl Host {
                     )
                 }
             };
-            tracing::info!("egui 辅助窗口动作：{action:?}");
             self.dispatch_overlay_message(message);
         }
     }
 
     /// 标记重绘并投递消息（所有叠加层动作共用）。
+    ///
+    /// 这里是全部 egui 动作的唯一出口：需要排查动作分发时开
+    /// `RUST_LOG=lumino_ui=trace` 即可，**不要在每条通道里各打一行 info**——
+    /// 滚动/拖拽每帧都会产生动作，会把正常日志冲掉。
     fn dispatch_overlay_message(&mut self, message: crate::Message) {
+        tracing::trace!(?message, "egui 动作 → 消息");
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
         let _ = self.process_message(message);
