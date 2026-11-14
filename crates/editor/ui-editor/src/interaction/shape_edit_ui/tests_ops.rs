@@ -1,62 +1,44 @@
 //! 020「编辑图形」提交/撤销/旋转/中心平移测试（从 `tests.rs` 拆出）
 
-use super::tests::{
-    editor_with_pending_composed, editor_with_shape, enter_edit, model_bounds, screen_box,
-};
+use super::tests::{editor_with_pending_composed, enter_edit, model_bounds, screen_box};
 use super::*;
 use crate::tests::test_helpers::seed_notes;
-use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
+use lumino_editor_state::PendingShapeRef;
 use lumino_ui_core::geom::Point;
 
+/// DEC-001：Bake 后只读，提交/取消的几何变化只对 pending 组合有定义。
 #[test]
-fn test_begin_update_finish_changes_geometry() {
-    let mut editor = editor_with_shape();
+fn test_pending_commit_changes_geometry() {
+    let mut editor = editor_with_pending_composed();
     enter_edit(&mut editor);
-    assert!(editor.begin_shape_edit(0.0, 64.0), "Nw 角锚点应命中");
+    let before = model_bounds(&editor);
+    assert!(
+        editor.begin_shape_edit(before.0, before.3),
+        "Nw 角锚点应命中"
+    );
     assert!(editor.is_shape_editing());
-    assert!(editor.update_shape_edit(0.0, 66.0));
+    assert!(editor.update_shape_edit(before.0, before.3 + 2.0));
     assert!(editor.finish_shape_edit());
-    let shape = editor
-        .editor_state
-        .shape_select
-        .selected_shapes()
-        .next()
-        .expect("仍选中");
-    match &shape.source {
-        DrawnShapeSource::Polyline { points } => {
-            assert!(
-                (points[1].1 - 66.0).abs() < 1e-3,
-                "角锚点伸缩应改几何，实际 {points:?}"
-            );
-        }
-        _ => panic!("应仍是折线"),
-    }
+    let after = model_bounds(&editor);
+    assert!(
+        (after.3 - (before.3 + 2.0)).abs() < 1e-3,
+        "角锚点伸缩应改几何，实际 {after:?}"
+    );
 }
 
 #[test]
-fn test_cancel_restores_geometry() {
-    let mut editor = editor_with_shape();
+fn test_pending_cancel_restores_geometry() {
+    let mut editor = editor_with_pending_composed();
     enter_edit(&mut editor);
-    let before = editor
-        .editor_state
-        .shape_select
-        .selected_shapes()
-        .next()
-        .expect("选中")
-        .source
-        .clone();
-    assert!(editor.begin_shape_edit(0.0, 64.0));
-    assert!(editor.update_shape_edit(0.0, 66.0));
+    let before = editor.editor_state.pending_composed.clone();
+    let bounds = model_bounds(&editor);
+    assert!(editor.begin_shape_edit(bounds.0, bounds.3));
+    assert!(editor.update_shape_edit(bounds.0, bounds.3 + 2.0));
     editor.cancel_shape_edit();
-    let after = editor
-        .editor_state
-        .shape_select
-        .selected_shapes()
-        .next()
-        .expect("选中")
-        .source
-        .clone();
-    assert_eq!(before, after);
+    assert_eq!(
+        editor.editor_state.pending_composed, before,
+        "取消应恢复几何"
+    );
 }
 
 #[test]
