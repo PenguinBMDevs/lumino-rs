@@ -8,6 +8,8 @@
 
 mod app;
 mod runtime;
+mod window;
 
 pub use app::{NativeApp, run};
 pub use runtime::{RuntimeApp, run_with_event_loop};
+pub use window::NativeWindow;

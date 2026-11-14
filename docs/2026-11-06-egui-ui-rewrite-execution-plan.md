@@ -4041,3 +4041,20 @@ callback / 多视口 / 截图能力。
 - **下一步（Plan B Step 3）**：把窗口 / surface 创建移入运行时
   （`NativeWindow`），`WindowManager` 接受外部窗口；随后 `Host` 无窗口化。
 
+**Task 4.40（第一百四十六步）：Plan B 第三步——窗口 / surface 创建移入运行时**
+
+- `lumino-ui-runtime` 新增 `window.rs`：
+  - `NativeWindow { window, gfx, size }`：按保存的 `UiState` 拼
+    `WindowAttributes`、创建窗口、0×0 兜底、`Context::new_blocking` 建 surface；
+  - 平台标题栏（Windows / macOS）与最小/初始尺寸逻辑随窗口创建一起搬入。
+- `WindowManager::new` 不再自己 `create_window` / `new_blocking`，改为调用
+  `lumino_ui_runtime::NativeWindow::create(...)`，只保留 Host 初始化、
+  字体预热、Windows 拉伸区与渲染线程启动。
+- `window_manager.rs` 删除 `build_window_attributes` 与相关导入（339 → 260 行）。
+- **验证**：
+  - `lumino-rs` / `lumino-ui-runtime` clippy `-D warnings`、fmt 通过；
+  - `lumino-ui-runtime` 1/1；
+  - `fast-release` 空闲 3s CPU **31ms**；20/20 `ToolSelected`。
+- **下一步（Plan B Step 4）**：`Host` 无窗口化（`WindowContext` 改为运行时注入），
+  再把 `egui_input` / `egui_blocked` 从 `Host` 移入运行时。
+
