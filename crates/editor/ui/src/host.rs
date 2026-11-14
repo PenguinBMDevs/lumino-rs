@@ -70,13 +70,6 @@ pub struct Host {
     pub(crate) egui_input: render::egui_overlay::OverlayInput,
     /// egui 菜单占用区（逻辑点）。命中时点击只给 egui，不再进 旧版 队列。
     pub(crate) egui_blocked: Vec<egui::Rect>,
-    /// 上一帧 egui 是否想要指针输入（悬停在任意可交互控件上）。
-    ///
-    /// 比「占用矩形」更及时：下拉框 / 悬浮工具条 / 对话框的控件不一定登记到
-    /// `egui_blocked`，但 `wants_pointer_input` 会覆盖它们，避免同一击又落到画布。
-    pub(crate) egui_wants_pointer: bool,
-    /// 上一帧指针是否落在任意 egui 图层上（含 ComboBox 弹层 / 工具面板）。
-    pub(crate) egui_pointer_over: bool,
     /// 画布输入状态（winit / egui 直接驱动时的双击检测、拖拽标记等）。
     pub(crate) canvas_input: lumino_ui_editor::grid::GridInteractionState,
     /// 编辑器画布（卷帘 / 走带）离屏纹理视图；`Some` 时 egui 采样它作底层，

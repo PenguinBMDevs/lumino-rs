@@ -75,59 +75,64 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut IconCac
         let panel = panel_rect(band, menu.items.len());
         blocked.push(panel);
 
-        ui.painter().rect(
-            panel,
-            RADIUS,
-            panel_bg(),
-            egui::Stroke::NONE,
-            egui::StrokeKind::Inside,
-        );
-
-        let count = menu.items.len();
-        let cols = (count as f32).sqrt().ceil() as usize;
-        let rows = count.div_ceil(cols);
-        let pointer = ui.input(|i| i.pointer.interact_pos());
-        for (index, item) in menu.items.iter().enumerate() {
-            let col = index / rows;
-            let row = index % rows;
-            let cell = Rect::from_min_size(
-                Pos2::new(
-                    panel.left() + PAD + col as f32 * (BTN + SPACING),
-                    panel.top() + PAD + row as f32 * (BTN + SPACING),
-                ),
-                Vec2::splat(BTN),
+        // 独立图层：面板覆盖区域内不再命中下层工具栏 / 卷帘。
+        super::floating_panel(ui.ctx(), "lumino.overflow-panel", panel, |ui| {
+            ui.painter().rect(
+                panel,
+                RADIUS,
+                panel_bg(),
+                egui::Stroke::NONE,
+                egui::StrokeKind::Inside,
             );
-            if item.enabled && pointer.is_some_and(|pos| cell.contains(pos)) {
-                // 生产悬停色：白色 12%。
-                ui.painter().rect_filled(
-                    cell,
-                    CornerRadius::same(6),
-                    egui::Color32::from_white_alpha(31),
-                );
-            }
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cell).layout(
-                egui::Layout::centered_and_justified(egui::Direction::TopDown),
-            ));
-            let image = icons.default_image(ui.ctx(), item.icon, ICON);
-            let response = child.add(egui::Button::image(image).frame(false));
-            let response = response.on_hover_text(&item.tooltip);
-            if response.clicked() && item.enabled {
-                toolbar_popup::push_action(ui.ctx(), ToolbarAction::OverflowItem(index));
-            }
-        }
 
-        // 点击面板/触发按钮以外关闭；Esc 同样关闭（与 旧版 的默认关闭层一致）。
-        let ctx = ui.ctx();
-        if !toolbar_popup::action_pending(ctx)
-            && ui.input(|i| i.pointer.any_click())
-            && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
-            && !blocked.iter().any(|rect| rect.contains(pos))
-        {
-            toolbar_popup::push_action(ctx, ToolbarAction::CloseOverflowMenu);
-        }
-        if !toolbar_popup::action_pending(ctx) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            toolbar_popup::push_action(ctx, ToolbarAction::CloseOverflowMenu);
-        }
+            let count = menu.items.len();
+            let cols = (count as f32).sqrt().ceil() as usize;
+            let rows = count.div_ceil(cols);
+            let pointer = ui.input(|i| i.pointer.interact_pos());
+            for (index, item) in menu.items.iter().enumerate() {
+                let col = index / rows;
+                let row = index % rows;
+                let cell = Rect::from_min_size(
+                    Pos2::new(
+                        panel.left() + PAD + col as f32 * (BTN + SPACING),
+                        panel.top() + PAD + row as f32 * (BTN + SPACING),
+                    ),
+                    Vec2::splat(BTN),
+                );
+                if item.enabled && pointer.is_some_and(|pos| cell.contains(pos)) {
+                    // 生产悬停色：白色 12%。
+                    ui.painter().rect_filled(
+                        cell,
+                        CornerRadius::same(6),
+                        egui::Color32::from_white_alpha(31),
+                    );
+                }
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cell).layout(
+                    egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                ));
+                let image = icons.default_image(ui.ctx(), item.icon, ICON);
+                let response = child.add(egui::Button::image(image).frame(false));
+                let response = response.on_hover_text(&item.tooltip);
+                if response.clicked() && item.enabled {
+                    toolbar_popup::push_action(ui.ctx(), ToolbarAction::OverflowItem(index));
+                }
+            }
+
+            // 点击面板/触发按钮以外关闭；Esc 同样关闭（与 旧版 的默认关闭层一致）。
+            let ctx = ui.ctx();
+            if !toolbar_popup::action_pending(ctx)
+                && ui.input(|i| i.pointer.any_click())
+                && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+                && !blocked.iter().any(|rect| rect.contains(pos))
+            {
+                toolbar_popup::push_action(ctx, ToolbarAction::CloseOverflowMenu);
+            }
+            if !toolbar_popup::action_pending(ctx) && ui.input(|i| i.key_pressed(egui::Key::Escape))
+            {
+                toolbar_popup::push_action(ctx, ToolbarAction::CloseOverflowMenu);
+            }
+            None
+        });
     }
 
     menu::extend_blocked(ui.ctx(), blocked);

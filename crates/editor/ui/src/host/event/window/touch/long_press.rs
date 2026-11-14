@@ -76,7 +76,6 @@ impl Host {
         self.handle_mouse_input_event(
             winit::event::ElementState::Released,
             winit::event::MouseButton::Left,
-            !self.egui_consumes_pointer(),
         );
 
         // 光标钉回按下点：右键菜单的落点由画布按 `cursor` 命中算出，
@@ -87,7 +86,6 @@ impl Host {
         self.handle_mouse_input_event(
             winit::event::ElementState::Pressed,
             winit::event::MouseButton::Right,
-            !self.egui_consumes_pointer(),
         );
 
         self.touch_long_press_fired = true;
@@ -108,7 +106,6 @@ impl Host {
         self.handle_mouse_input_event(
             winit::event::ElementState::Released,
             winit::event::MouseButton::Right,
-            !self.egui_consumes_pointer(),
         );
         self.window_ctx.window.request_redraw();
     }

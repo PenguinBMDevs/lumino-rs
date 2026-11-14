@@ -546,17 +546,10 @@ impl Host {
         });
         // 各通道动作统一取走并分发（`actions.rs`）。
         let actions = actions::OverlayActions::take(&overlay.ctx);
-        // 本帧 egui 是否接管指针（悬停在按钮 / 下拉框 / 面板上）。
-        // 下一帧的鼠标按键据此决定是否还要落到画布。
-        self.egui_wants_pointer = overlay.ctx.egui_wants_pointer_input();
-        self.egui_pointer_over = overlay.ctx.is_pointer_over_egui();
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
         // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
         // 鼠标事件才出现。
-        //
-        // 指针停在可交互控件上时也续帧：悬停动画 / 按下态需要连续帧，
-        // 否则「点一下要再动一下鼠标才有反应」。
-        if overlay.ctx.has_requested_repaint() || overlay.ctx.egui_is_using_pointer() {
+        if overlay.ctx.has_requested_repaint() {
             self.window_ctx.window.request_redraw();
         }
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 旧版 队列。
@@ -577,10 +570,16 @@ impl Host {
         if !overlay_enabled() {
             return false;
         }
-        // 输入事件必须驱动一次重绘：叠加层只在 `present` 时运行，
-        // 若这帧不再重绘，缓冲里的事件永远得不到处理（真机表现：egui 独占区域
-        // 内的点击「像没反应」——`pointer` 一直是 `None`、帧数停在个位数）。
-        self.window_ctx.window.request_redraw();
+        // 只有**会改变 egui 输入状态**的事件才需要驱动一帧。
+        //
+        // 这里曾经无条件 `request_redraw()`：`RedrawRequested` 自己也会再次请求，
+        // 形成永不停歇的「渲染 → 请求重绘 → 渲染」自旋（Mailbox present mode
+        // 下没有 vsync 上限，实测空闲也能跑满；debug 构建因为每帧慢，反而不明显）。
+        // 后果不是画面错，而是事件循环永远进不了 `ControlFlow::Wait`、鼠标消息
+        // 被 WM_PAINT 饿死——真机表现就是「点击要连点很多次才响应」。
+        if input_requests_repaint(event) {
+            self.window_ctx.window.request_redraw();
+        }
         // 与渲染用的 `pixels_per_point` 同源：两者必须一致，否则命中坐标
         // 与实际绘制的控件位置会按比例错开（真机实测：指针比布局大 1.25 倍时，
         // 点击路由栏会整体下移一格）。
@@ -610,18 +609,26 @@ impl Host {
                         );
                     }
                 }
-                self.egui_consumes_pointer()
+                self.egui_owns_pointer()
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let Some(button) = pointer_button(*button) else {
                     return false;
                 };
+                // 首击兜底：`pointer` 只由 `CursorMoved` 写入，启动后 / `CursorLeft`
+                // 后 / 自动化注入的第一次按键会因 `pointer == None` 被静默丢弃。
+                // 用宿主已记录的逻辑光标位置补一次，保证 egui 一定收到这次按下。
+                if self.egui_input.pointer.is_none()
+                    && let Some(pos) = self.window_ctx.cursor_position
+                {
+                    self.egui_input.pointer_moved(egui::pos2(pos.x, pos.y));
+                }
                 self.egui_input
                     .button(button, *state == winit::event::ElementState::Pressed);
                 // 设置 / 保存确认窗口由 egui 整窗绘制：按键只给 egui，避免同一击
                 // 同时触发下层 旧版 控件（例如云管理「添加连接」打开两个窗口）。
                 // 其余对话框仍依赖 旧版 let-through，不消费。
-                self.dialog_input_exclusive() || self.egui_consumes_pointer()
+                self.dialog_input_exclusive() || self.egui_owns_pointer()
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
@@ -695,41 +702,42 @@ impl Host {
     }
 
     /// 当前指针是否落在 egui 菜单占用区（标题栏标签 / 下拉面板）。
-    fn egui_pointer_blocked(&self) -> bool {
+    pub(crate) fn egui_pointer_blocked(&self) -> bool {
         self.egui_input
             .pointer
             .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
     }
 
-    /// 本次指针事件是否必须只给 egui（不再落到画布）。
+    /// 指定点是否被 egui 的**浮层图层**（菜单 / 弹层 / 面板 / 模态）占用。
     ///
-    /// 判定顺序：
-    /// 1. 命中上一帧登记的面板/菜单占用区 → 只给 egui；
-    /// 2. 指针在编辑画布内 → 交给画布（叠加层没有任何交互控件在画布中央）；
-    /// 3. 其余区域（工具栏 / 侧栏 / 标题栏 / 对话框）→ 只给 egui。
-    ///
-    /// 不能直接用 `egui_wants_pointer_input()`：CentralPanel 覆盖整窗时它可能
-    /// 恒为真，会把画布点击也吞掉（表现为「点画布没反应」）。
-    pub(crate) fn egui_consumes_pointer(&self) -> bool {
-        let Some(pos) = self.egui_input.pointer else {
+    /// 与 [`Self::egui_pointer_blocked`] 的区别：后者是手工登记的 root 层矩形，
+    /// 只能覆盖"记得登记"的 band；这里直接问 egui 的图层栈——凡是 `Area` /
+    /// `Window` / ComboBox 弹层，命中点都会返回非 `Background` 图层。
+    /// 这消除了「弹层没登记 → 点击同时落到画布」的一整类漏点击。
+    pub(crate) fn egui_layer_owns_pos(&self, pos: egui::Pos2) -> bool {
+        let Some(overlay) = self.render_ctx.egui_overlay.as_ref() else {
             return false;
         };
-        if self.egui_pointer_blocked() || self.egui_pointer_over {
-            return true;
-        }
-        !self.pointer_inside_canvas(pos)
+        overlay
+            .ctx
+            .layer_id_at(pos)
+            .is_some_and(|layer| layer.order != egui::Order::Background)
     }
 
-    /// 指针是否落在编辑画布内（逻辑坐标）。
-    fn pointer_inside_canvas(&self, pos: egui::Pos2) -> bool {
-        let canvas = &self.root.editor.editor_state.canvas;
-        if canvas.size_x <= 0.0 || canvas.size_y <= 0.0 {
+    /// 画布输入是否应让位给 egui（手工占用区 ∪ 浮层图层）。
+    ///
+    /// 指针优先取 egui 事件缓冲里的位置；触摸路径没有 `CursorMoved`，
+    /// 回退到宿主记录的逻辑光标位置，保证触摸点按也能正确让位。
+    pub(crate) fn egui_owns_pointer(&self) -> bool {
+        let pos = self.egui_input.pointer.or_else(|| {
+            self.window_ctx
+                .cursor_position
+                .map(|p| egui::pos2(p.x, p.y))
+        });
+        let Some(pos) = pos else {
             return false;
-        }
-        pos.x >= canvas.offset_x
-            && pos.x <= canvas.offset_x + canvas.size_x
-            && pos.y >= canvas.offset_y
-            && pos.y <= canvas.offset_y + canvas.size_y
+        };
+        self.egui_blocked.iter().any(|rect| rect.contains(pos)) || self.egui_layer_owns_pos(pos)
     }
 }
 
@@ -760,6 +768,29 @@ fn input_scale(ppp: f32) -> f32 {
     ppp
 }
 
+/// 该窗口事件是否必须驱动一帧 egui。
+///
+/// **绝不能**把 `RedrawRequested` 算进来：那会让 `RedrawRequested` 的处理
+/// 再排一帧，形成无上限的「渲染 → 请求重绘 → 渲染」自旋。`Mailbox`
+/// present mode 没有 vsync 上限，事件循环因此永远进不了 `ControlFlow::Wait`，
+/// 鼠标消息被 `WM_PAINT` 饿死——真机表现就是「点击要连点很多次才响应」。
+///
+/// 用纯函数 + 单测钉死：以后再加事件分支时，别把非输入事件放进来。
+fn input_requests_repaint(event: &winit::event::WindowEvent) -> bool {
+    use winit::event::WindowEvent;
+    matches!(
+        event,
+        WindowEvent::CursorMoved { .. }
+            | WindowEvent::CursorLeft { .. }
+            | WindowEvent::MouseWheel { .. }
+            | WindowEvent::MouseInput { .. }
+            | WindowEvent::ModifiersChanged(_)
+            | WindowEvent::KeyboardInput { .. }
+            | WindowEvent::Ime(_)
+            | WindowEvent::Focused(_)
+    )
+}
+
 /// egui 叠加层是否启用。
 ///
 /// **默认开启**：外壳 band / 对话框 / 面板 / 编辑器画布底层均已迁到 egui，
@@ -772,4 +803,85 @@ pub(crate) fn overlay_enabled() -> bool {
             .map(|value| value != "0")
             .unwrap_or(true)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{Area, Context, Id, Order, Rect, pos2, vec2};
+
+    /// 输入归属依赖的 egui 事实：浮层 `Area` 在 `layer_id_at` 里返回非
+    /// `Background` 图层，而 root Ui / 画布所在层是 `Background`。
+    ///
+    /// 这条假设一旦被 egui 升级打破，宿主就会重新把弹层点击漏给画布——
+    /// 用测试钉死，不靠记忆。
+    #[test]
+    fn layer_id_at_separates_foreground_areas_from_background() {
+        let ctx = Context::default();
+        // `Area` 首帧是 sizing pass（`interactable` 被临时置 false），必须跑两帧
+        // 才能进入命中栈——生产侧 `Area::show` 会主动 `request_repaint`。
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                ui.label("background");
+                Area::new(Id::unique("test-foreground"))
+                    .order(Order::Foreground)
+                    .fixed_pos(pos2(100.0, 100.0))
+                    .show(ui.ctx(), |ui| {
+                        ui.set_min_size(vec2(80.0, 40.0));
+                        ui.label("panel");
+                    });
+            });
+            // `TexturesDelta` 必须消费掉，否则 drop 时 epaint 会 panic。
+            output.textures_delta.clear();
+        }
+
+        let inside = ctx.layer_id_at(pos2(140.0, 120.0)).expect("浮层应存在");
+        assert_ne!(
+            inside.order,
+            Order::Background,
+            "浮层命中必须是非 Background 图层"
+        );
+
+        let outside = ctx.layer_id_at(pos2(10.0, 10.0)).expect("root 层应存在");
+        assert_eq!(
+            outside.order,
+            Order::Background,
+            "画布/root 层命中必须是 Background"
+        );
+    }
+
+    /// 重绘自旋回归：`RedrawRequested` 不能再驱动下一帧。
+    ///
+    /// 曾经的实现对所有窗口事件无条件 `request_redraw()`，`RedrawRequested`
+    /// 自己也会再次入列 → 无上限自旋（Mailbox 下没有 vsync 上限）。事件循环
+    /// 永远进不了 `ControlFlow::Wait`，鼠标消息被 `WM_PAINT` 饿死，真机表现
+    /// 为「点击要连点很多次才响应」。fast-release 比 debug 明显，因为每帧更快。
+    #[test]
+    fn only_input_events_request_repaint() {
+        use winit::event::WindowEvent;
+
+        assert!(
+            !super::input_requests_repaint(&WindowEvent::RedrawRequested),
+            "RedrawRequested 绝不能再次请求重绘（会形成自旋）"
+        );
+        assert!(
+            !super::input_requests_repaint(&WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+                1280, 720
+            ))),
+            "尺寸变化由系统重绘驱动，不需要再排一帧"
+        );
+        assert!(
+            super::input_requests_repaint(&WindowEvent::Focused(true)),
+            "焦点变化要刷新 egui 的 focused 状态"
+        );
+        assert!(
+            super::input_requests_repaint(&WindowEvent::ModifiersChanged(
+                winit::event::Modifiers::default()
+            )),
+            "修饰键变化要同步给 egui（滚轮/快捷键事件需要随附）"
+        );
+    }
 }

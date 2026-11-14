@@ -175,7 +175,11 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &TitlebarModel) {
         );
         let height = panel_height(&menu.entries);
         let panel = Rect::from_min_size(origin, Vec2::new(PANEL_W, height));
-        draw_panel(ui, panel, &menu.entries, &mut state, &mut blocked, true);
+        // 独立图层：面板（含子菜单）覆盖区域内不再命中下层 band，
+        // 否则悬停/点击会穿透到工具栏、左栏与卷帘骨架。
+        super::floating_panel(ui.ctx(), "lumino.menu.panel", panel, |ui| {
+            draw_panel(ui, panel, &menu.entries, &mut state, &mut blocked, true)
+        });
     }
 
     // 点击面板/标签以外的地方关闭菜单。
@@ -220,7 +224,7 @@ fn draw_panel(
     state: &mut MenuState,
     blocked: &mut Vec<Rect>,
     top_level: bool,
-) {
+) -> Option<Rect> {
     blocked.push(panel);
     ui.painter().rect_filled(panel, 6.0, theme::card_bg());
     ui.painter().rect_stroke(
@@ -324,13 +328,13 @@ fn draw_panel(
     }
 
     if !top_level {
-        return;
+        return None;
     }
     // 点击动作项后菜单已关闭：不要再把子菜单写回状态。
     if state.open.is_none() {
         state.submenu = None;
         state.submenu_rect = None;
-        return;
+        return None;
     }
 
     // 子菜单展开条件：悬停父行、或指针仍停在上一次的子面板里（跨越间隙不闪断）。
@@ -360,10 +364,11 @@ fn draw_panel(
         let origin = Pos2::new(panel.right() - 2.0, row.top());
         let height = panel_height(entries);
         let sub = Rect::from_min_size(origin, Vec2::new(PANEL_W, height));
-        draw_panel(ui, sub, entries, state, blocked, false);
+        let _ = draw_panel(ui, sub, entries, state, blocked, false);
         Some(sub)
     });
     state.submenu_rect = drawn;
+    drawn
 }
 
 /// 便于单测：当前展开的主菜单索引。

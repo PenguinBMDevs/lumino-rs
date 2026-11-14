@@ -121,77 +121,82 @@ pub fn show(
     if panel.width() <= 0.0 || panel.height() <= 0.0 {
         return None;
     }
-    let painter = ui.painter().with_clip_rect(model.available);
-    painter.rect(
-        panel,
-        CornerRadius::same(8),
-        PANEL_BG,
-        Stroke::new(0.0, Color32::TRANSPARENT),
-        StrokeKind::Inside,
-    );
-
-    let items = menu_items(model.target);
     let mut action = None;
-    let mut y = panel.top() + PADDING;
-    for (index, item) in items.iter().enumerate() {
-        let rect = Rect::from_min_size(egui::pos2(panel.left() + PADDING, y), Vec2::splat(BUTTON));
-        let response = ui.interact(
-            rect,
-            egui::Id::unique(("lumino.piano-roll-menu", index)),
-            egui::Sense::click(),
+    // 独立图层：菜单覆盖区域内不再命中画布骨架（滚动条 / 框选层），
+    // 否则悬停与点击会"穿透"到下层。
+    crate::chrome::floating_panel(ui.ctx(), "lumino.piano-roll-menu", panel, |ui| {
+        let painter = ui.painter().with_clip_rect(model.available);
+        painter.rect(
+            panel,
+            CornerRadius::same(8),
+            PANEL_BG,
+            Stroke::new(0.0, Color32::TRANSPARENT),
+            StrokeKind::Inside,
         );
-        let background = if response.is_pointer_button_down_on() {
-            PRESSED_BG
-        } else if response.hovered() {
-            HOVER_BG
-        } else {
-            Color32::TRANSPARENT
-        };
-        if background != Color32::TRANSPARENT {
-            painter.rect_filled(rect, CornerRadius::same(4), background);
-        }
-        let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(ICON));
-        icons.paint_tinted(&painter, item_icon(*item), icon_rect, Some(Color32::WHITE));
-        // 面板固定深色：tooltip 也用深底浅字（与 旧版 迁移前一致）。
-        let label = item_label(*item);
-        let response = response
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_ui(|ui| {
-                egui::Frame::new()
-                    .fill(Color32::from_rgba_premultiplied(20, 20, 26, 245))
-                    .inner_margin(egui::Margin::symmetric(6, 3))
-                    .corner_radius(CornerRadius::same(4))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(label)
-                                .size(12.0)
-                                .color(Color32::from_rgb(242, 242, 242)),
-                        );
-                    });
-            });
-        if response.clicked() {
-            action = Some(PianoRollContextMenuAction::ItemClicked(*item));
-        }
-        y += BUTTON + SPACING;
-    }
 
-    // 点击画布空白区域关闭（与 旧版 背景层一致，仅左键）；面板内点击由按钮处理。
-    // 注意：**不能**用 `any_click()`——右键开菜单的那一次右键会被重放进本帧，
-    // 菜单会「刚打开就被自己关掉」。
-    if action.is_none()
-        && let Some(pos) = ui.ctx().input(|input| {
-            input
-                .pointer
-                .primary_clicked()
-                .then(|| input.pointer.interact_pos())
-                .flatten()
-        })
-        && model.available.contains(pos)
-        && !panel.contains(pos)
-    {
-        action = Some(PianoRollContextMenuAction::Close);
-    }
+        let items = menu_items(model.target);
+        let mut y = panel.top() + PADDING;
+        for (index, item) in items.iter().enumerate() {
+            let rect =
+                Rect::from_min_size(egui::pos2(panel.left() + PADDING, y), Vec2::splat(BUTTON));
+            let response = ui.interact(
+                rect,
+                egui::Id::unique(("lumino.piano-roll-menu", index)),
+                egui::Sense::click(),
+            );
+            let background = if response.is_pointer_button_down_on() {
+                PRESSED_BG
+            } else if response.hovered() {
+                HOVER_BG
+            } else {
+                Color32::TRANSPARENT
+            };
+            if background != Color32::TRANSPARENT {
+                painter.rect_filled(rect, CornerRadius::same(4), background);
+            }
+            let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(ICON));
+            icons.paint_tinted(&painter, item_icon(*item), icon_rect, Some(Color32::WHITE));
+            // 面板固定深色：tooltip 也用深底浅字（与 旧版 迁移前一致）。
+            let label = item_label(*item);
+            let response = response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_ui(|ui| {
+                    egui::Frame::new()
+                        .fill(Color32::from_rgba_premultiplied(20, 20, 26, 245))
+                        .inner_margin(egui::Margin::symmetric(6, 3))
+                        .corner_radius(CornerRadius::same(4))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(label)
+                                    .size(12.0)
+                                    .color(Color32::from_rgb(242, 242, 242)),
+                            );
+                        });
+                });
+            if response.clicked() {
+                action = Some(PianoRollContextMenuAction::ItemClicked(*item));
+            }
+            y += BUTTON + SPACING;
+        }
 
+        // 点击画布空白区域关闭（与 旧版 背景层一致，仅左键）；面板内点击由按钮处理。
+        // 注意：**不能**用 `any_click()`——右键开菜单的那一次右键会被重放进本帧，
+        // 菜单会「刚打开就被自己关掉」。
+        if action.is_none()
+            && let Some(pos) = ui.ctx().input(|input| {
+                input
+                    .pointer
+                    .primary_clicked()
+                    .then(|| input.pointer.interact_pos())
+                    .flatten()
+            })
+            && model.available.contains(pos)
+            && !panel.contains(pos)
+        {
+            action = Some(PianoRollContextMenuAction::Close);
+        }
+        None
+    });
     action
 }
 

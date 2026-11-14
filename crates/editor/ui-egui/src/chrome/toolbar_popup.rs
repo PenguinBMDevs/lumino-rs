@@ -278,11 +278,18 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel) {
 
     if let (Some(menu), Some(trigger)) = (&model.snap_menu, snap_trigger) {
         let panel = snap_panel_rect(trigger, menu.items.len(), true);
-        draw_snap_panel(ui, panel, menu, &mut blocked);
+        // 独立图层：面板覆盖区域内不再命中下层工具栏 / 卷帘。
+        super::floating_panel(ui.ctx(), "lumino.snap-panel", panel, |ui| {
+            draw_snap_panel(ui, panel, menu, &mut blocked);
+            None
+        });
     }
     if let (Some(menu), Some((_, caret))) = (&model.onion_menu, onion_triggers) {
         let panel = onion_panel_rect(caret, menu.items.len());
-        draw_onion_panel(ui, panel, menu, &mut blocked);
+        super::floating_panel(ui.ctx(), "lumino.onion-panel", panel, |ui| {
+            draw_onion_panel(ui, panel, menu, &mut blocked);
+            None
+        });
     }
 
     // 点击面板与触发区以外关闭；Esc 同样关闭（与 旧版 `DropDown::on_dismiss` 对齐）。

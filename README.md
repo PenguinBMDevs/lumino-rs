@@ -54,9 +54,22 @@ cargo run --release
 首次运行会自动创建配置文件：
 - **Windows**: `%APPDATA%\PenguinBMDevs\lumino\config\config.json`
 - **macOS**: `~/Library/Application Support/com.PenguinBMDevs.lumino/config.json`
-- **Linux**: `~/.config/com.PenguinBMDevs.lumino/config.json`
+- **Linux**: `${XDG_CONFIG_HOME:-~/.config}/lumino/config.json`（`directories` 在 Linux 上只取应用名，不含组织名）
 
-### 日志控制
+### 日志
+
+#### 文件位置
+
+文件日志写在配置目录下的 `logs/`，每次启动生成一份 `lumino_YYYYMMDD_HHMMSS.log`：
+
+- **Windows**: `%APPDATA%\PenguinBMDevs\lumino\config\logs\`
+- **macOS**: `~/Library/Application Support/com.PenguinBMDevs.lumino/logs/`
+- **Linux**: `${XDG_CONFIG_HOME:-~/.config}/lumino/logs/`
+
+- 保留份数由「设置 → 日志文件保留份数」控制（默认 10，`0` 表示不限制），启动时清理最旧的日志。
+- 崩溃时 panic hook 额外写一份 `crash_YYYYMMDD_HHMMSS.log`，下次启动自动归档到 `logs/crash-archive/`。
+
+#### 日志级别
 
 通过 `RUST_LOG` 环境变量控制日志级别：
 

@@ -72,7 +72,7 @@ impl Host {
                 }
             }
             MouseInput { state, button, .. } => {
-                self.handle_mouse_input_event(*state, *button, !consumed_by_egui);
+                self.handle_mouse_input_event(*state, *button);
             }
             MouseWheel { delta, .. } => {
                 use winit::event::MouseScrollDelta;
@@ -82,7 +82,9 @@ impl Host {
                         (position.x as f32, position.y as f32, true)
                     }
                 };
-                if !consumed_by_egui {
+                // egui 浮层（菜单 / 弹层 / 模态）内的滚轮只给 egui（ScrollArea / 列表），
+                // 不能再驱动画布缩放。
+                if !self.egui_owns_pointer() {
                     self.dispatch_canvas_wheel(dx, dy, precise);
                 }
             }
