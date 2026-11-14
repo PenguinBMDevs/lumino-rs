@@ -557,6 +557,27 @@ impl NativeApp {
                 .map(|root| root.marquee_model())
                 .unwrap_or_default(),
         );
+        lumino_ui_egui::chrome::set_shape_edit(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .map(|root| root.shape_edit_model())
+                .unwrap_or_default(),
+        );
+        lumino_ui_egui::chrome::set_shape_list(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .map(|root| root.shape_list_model())
+                .unwrap_or_default(),
+        );
+        lumino_ui_egui::chrome::set_area_palette(
+            &self.ctx,
+            self.root
+                .as_ref()
+                .map(|root| root.area_palette_model())
+                .unwrap_or_default(),
+        );
         lumino_ui_egui::chrome::set_shape_preview(
             &self.ctx,
             self.root

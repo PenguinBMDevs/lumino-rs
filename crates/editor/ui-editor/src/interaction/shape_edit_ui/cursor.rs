@@ -84,8 +84,7 @@ impl Editor {
     }
 
     /// 编辑框（屏幕矩形）；未进入「编辑图形」→ `None`。
-    #[cfg(test)]
-    pub(crate) fn shape_edit_box(&self) -> Option<Rectangle> {
+    pub fn shape_edit_box(&self) -> Option<Rectangle> {
         let (_, model) = self.armed_edit_target()?;
         self.shape_bounds_screen(&model)
     }

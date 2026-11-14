@@ -9,7 +9,7 @@ use crate::Editor;
 
 /// 编辑态锚点屏幕位置：8 个箱体锚点 + 可选中心锚点。
 #[derive(Debug, Default, Clone, PartialEq)]
-pub(crate) struct ShapeEditHandles {
+pub struct ShapeEditHandles {
     /// 4 角 + 4 边中点
     pub box_points: Vec<Point>,
     /// 中心锚点（仅未 Bake 组合）
@@ -18,7 +18,7 @@ pub(crate) struct ShapeEditHandles {
 
 impl Editor {
     /// 编辑态锚点（屏幕坐标）：8 个箱体锚点 + 可选中心锚点。
-    pub(crate) fn shape_edit_handles(&self) -> ShapeEditHandles {
+    pub fn shape_edit_handles(&self) -> ShapeEditHandles {
         let Some((target, model)) = self.armed_edit_target() else {
             return ShapeEditHandles::default();
         };

@@ -10,6 +10,7 @@
 //! - 复杂排版优先使用 `egui_extras` 的 `TableBuilder` / `StripBuilder`，
 //!   表单优先使用 `egui::Grid`，避免手写绝对坐标堆叠。
 
+pub mod area_palette;
 pub mod audio_export;
 pub mod autosave_recover;
 pub mod batch_edit;
@@ -51,6 +52,8 @@ pub mod scrollbar;
 pub mod settings;
 pub mod shape_canvas;
 pub mod shape_drawer;
+pub mod shape_edit;
+pub mod shape_list;
 pub mod shape_preview;
 pub mod speed_change;
 pub mod text_tool;

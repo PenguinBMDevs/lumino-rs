@@ -3,6 +3,7 @@
 //! 只做数据搬运，不含任何渲染逻辑；渲染在 `lumino_ui_egui::chrome::show_bands`。
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 旧版。
 
+mod area_palette;
 mod arrangement;
 mod audio_export_panel;
 mod bend_buttons;
@@ -27,6 +28,8 @@ mod settings_pages;
 mod settings_ui;
 mod shape_canvas;
 mod shape_drawer;
+mod shape_edit;
+mod shape_list;
 mod shape_preview;
 mod sidebar_panel;
 mod text_tool;

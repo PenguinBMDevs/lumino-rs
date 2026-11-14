@@ -16,7 +16,6 @@ use crate::Editor;
 
 mod commit;
 mod group;
-#[cfg(test)]
 mod handles;
 
 /// 手柄编辑目标

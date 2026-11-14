@@ -711,6 +711,11 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         crate::image_to_midi::show(&root, &region);
     }
 
+    // 选中框 / 编辑框 / 8+1 锚点（020 · 041C）：画在预览之下。
+    if let Some(edit) = shape_edit(ui.ctx()) {
+        crate::shape_edit::show(&root, &edit);
+    }
+
     // 曲线工具预览（路径 / 锚点 / 控制柄 / 产物块）。
     if let Some(preview) = curve_preview_model(ui.ctx()) {
         crate::curve_preview::show(&root, &preview);
@@ -770,6 +775,14 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         if !rects.is_empty() {
             menu::extend_blocked(ui.ctx(), rects);
         }
+    }
+
+    // 形状列表（只读）与区域着色调色板：只绘制，点击仍由画布命中分派。
+    if let Some(list) = shape_list(ui.ctx()) {
+        crate::shape_list::show(&root, &list);
+    }
+    if let Some(palette) = area_palette(ui.ctx()) {
+        crate::area_palette::show(&root, &palette);
     }
 
     // 钢琴卷帘右键菜单：最顶层（盖住卷帘与工具弹层）。
@@ -1011,6 +1024,42 @@ fn shape_preview_model(ctx: &egui::Context) -> Option<crate::shape_preview::Shap
         d.get_temp::<crate::shape_preview::ShapePreviewModel>(egui::Id::unique(
             "lumino.shape-preview",
         ))
+    })
+    .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧选中框 / 编辑框 / 锚点（空模型 = 不显示）。
+pub fn set_shape_edit(ctx: &egui::Context, model: crate::shape_edit::ShapeEditModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.shape-edit"), model));
+}
+
+fn shape_edit(ctx: &egui::Context) -> Option<crate::shape_edit::ShapeEditModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::shape_edit::ShapeEditModel>(egui::Id::unique("lumino.shape-edit"))
+    })
+    .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧形状列表（空模型 = 不显示）。
+pub fn set_shape_list(ctx: &egui::Context, model: crate::shape_list::ShapeListModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.shape-list"), model));
+}
+
+fn shape_list(ctx: &egui::Context) -> Option<crate::shape_list::ShapeListModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::shape_list::ShapeListModel>(egui::Id::unique("lumino.shape-list"))
+    })
+    .filter(|model| !model.is_empty())
+}
+
+/// 记录本帧区域着色调色板（空模型 = 不显示）。
+pub fn set_area_palette(ctx: &egui::Context, model: crate::area_palette::AreaPaletteModel) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.area-palette"), model));
+}
+
+fn area_palette(ctx: &egui::Context) -> Option<crate::area_palette::AreaPaletteModel> {
+    ctx.data(|d| {
+        d.get_temp::<crate::area_palette::AreaPaletteModel>(egui::Id::unique("lumino.area-palette"))
     })
     .filter(|model| !model.is_empty())
 }

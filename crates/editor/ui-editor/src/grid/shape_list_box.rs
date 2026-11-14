@@ -140,6 +140,34 @@ mod tests {
     }
 
     #[test]
+    fn test_baked_shape_tool_registers_list_entry() {
+        let mut editor = Editor::new();
+        seed_notes(&mut editor, 2, 1, &[]);
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
+        editor
+            .editor_state
+            .shape_tool
+            .shapes
+            .push(lumino_editor_state::ShapeInstance {
+                kind: lumino_editor_state::ShapeKind::Rectangle,
+                rect: (0.0, 60.0, 1000.0, 64.0),
+                shift_constrained: false,
+                filled: false,
+                apex_high: true,
+                mask: None,
+            });
+        assert!(editor.confirm_shape_tool(), "形状工具应能 Bake");
+        assert!(
+            !editor.editor_state.shape_store.is_empty(),
+            "Bake 后应登记只读模型"
+        );
+        assert!(editor.open_shape_list(), "应能打开形状列表");
+        let rects = shape_list_rects(&editor).expect("应显示列表");
+        assert!(!rects.rows.is_empty(), "列表应有模型行");
+    }
+
+    #[test]
     fn test_list_row_hit() {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);

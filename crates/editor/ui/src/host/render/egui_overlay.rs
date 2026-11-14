@@ -37,6 +37,11 @@ pub(crate) struct EguiOverlay {
     ctx: egui::Context,
     /// 图标纹理缓存（真实 SVG，按物理像素缓存）。
     icons: IconCache,
+    /// 上次写入 egui 的 `pixels_per_point`（避免逐帧重设字体栅格）。
+    pixels_per_point: f32,
+    /// 叠加层启动时刻：`RawInput::time` 必须给真实时间，否则 egui 按
+    /// 「预测 1/60s」累积时间——帧率不稳时文本光标闪烁速度会明显偏快/偏慢。
+    started: std::time::Instant,
     /// wgpu27 绘制桥。
     painter: Painter,
     /// 叠加层已绘制帧数。
@@ -86,6 +91,12 @@ struct OverlayFrame<'a> {
     editor_buttons: lumino_ui_egui::editor_action_buttons::EditorButtonsModel,
     /// 框选框（空 = 不显示）。
     marquee: lumino_ui_egui::marquee::MarqueeModel,
+    /// 选中框 / 编辑框 / 8+1 锚点（空 = 不显示）。
+    shape_edit: lumino_ui_egui::shape_edit::ShapeEditModel,
+    /// 形状列表（只读；空 = 不显示）。
+    shape_list: lumino_ui_egui::shape_list::ShapeListModel,
+    /// 区域着色调色板（空 = 不显示）。
+    area_palette: lumino_ui_egui::area_palette::AreaPaletteModel,
     /// 形状工具预览（空 = 不显示）。
     shape_preview: lumino_ui_egui::shape_preview::ShapePreviewModel,
     /// 曲线工具预览（空 = 不显示）。
@@ -136,6 +147,8 @@ impl EguiOverlay {
         Self {
             ctx,
             icons: IconCache::default(),
+            pixels_per_point: 0.0,
+            started: std::time::Instant::now(),
             painter: Painter::new(device, format),
             frames: 0,
         }
@@ -198,7 +211,11 @@ impl EguiOverlay {
 
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
         // 再由着色器放大会发虚（几何位置不变，但字形明显更糊）。
-        self.ctx.set_pixels_per_point(frame.pixels_per_point);
+        // 只在 DPI 真正变化时重设：逐帧写入会反复重建字体栅格。
+        if (self.pixels_per_point - frame.pixels_per_point).abs() > f32::EPSILON {
+            self.ctx.set_pixels_per_point(frame.pixels_per_point);
+            self.pixels_per_point = frame.pixels_per_point;
+        }
 
         let logical = [
             frame.size_px[0] as f32 / frame.pixels_per_point,
@@ -211,6 +228,10 @@ impl EguiOverlay {
             )),
             events: frame.events,
             focused: frame.focused,
+            // 真实时间：光标闪烁 / 动画都按它推进；不给的话 egui 按预测帧长累积，
+            // 事件驱动重绘下会明显不准（光标忽快忽慢）。
+            time: Some(self.started.elapsed().as_secs_f64()),
+            predicted_dt: 1.0 / 60.0,
             ..Default::default()
         };
 
@@ -239,6 +260,9 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_piano_roll_menu(&ctx, frame.piano_roll_menu);
         lumino_ui_egui::chrome::set_editor_buttons(&ctx, frame.editor_buttons.clone());
         lumino_ui_egui::chrome::set_marquee(&ctx, frame.marquee.clone());
+        lumino_ui_egui::chrome::set_shape_edit(&ctx, frame.shape_edit.clone());
+        lumino_ui_egui::chrome::set_shape_list(&ctx, frame.shape_list.clone());
+        lumino_ui_egui::chrome::set_area_palette(&ctx, frame.area_palette.clone());
         lumino_ui_egui::chrome::set_shape_preview(&ctx, frame.shape_preview.clone());
         lumino_ui_egui::chrome::set_curve_preview(&ctx, frame.curve_preview.clone());
         lumino_ui_egui::chrome::set_remote_cursors(&ctx, frame.remote_cursors.clone());
@@ -499,6 +523,9 @@ impl Host {
             piano_roll_menu: self.root.piano_roll_context_menu_model(),
             editor_buttons: self.root.editor_buttons_model(),
             marquee: self.root.marquee_model(),
+            shape_edit: self.root.shape_edit_model(),
+            shape_list: self.root.shape_list_model(),
+            area_palette: self.root.area_palette_model(),
             shape_preview: self.root.shape_preview_model(),
             curve_preview: self.root.curve_preview_model(),
             remote_cursors: self.root.remote_cursors_model(),
@@ -519,10 +546,17 @@ impl Host {
         });
         // 各通道动作统一取走并分发（`actions.rs`）。
         let actions = actions::OverlayActions::take(&overlay.ctx);
+        // 本帧 egui 是否接管指针（悬停在按钮 / 下拉框 / 面板上）。
+        // 下一帧的鼠标按键据此决定是否还要落到画布。
+        self.egui_wants_pointer = overlay.ctx.egui_wants_pointer_input();
+        self.egui_pointer_over = overlay.ctx.is_pointer_over_egui();
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
         // 它会在本帧请求一次重绘，必须立刻再排一帧，否则下拉菜单要等到下一次
         // 鼠标事件才出现。
-        if overlay.ctx.has_requested_repaint() {
+        //
+        // 指针停在可交互控件上时也续帧：悬停动画 / 按下态需要连续帧，
+        // 否则「点一下要再动一下鼠标才有反应」。
+        if overlay.ctx.has_requested_repaint() || overlay.ctx.egui_is_using_pointer() {
             self.window_ctx.window.request_redraw();
         }
         // 下一帧点击命中这些矩形时，事件只给 egui，不再进 旧版 队列。
@@ -576,7 +610,7 @@ impl Host {
                         );
                     }
                 }
-                self.egui_pointer_blocked()
+                self.egui_consumes_pointer()
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let Some(button) = pointer_button(*button) else {
@@ -587,7 +621,7 @@ impl Host {
                 // 设置 / 保存确认窗口由 egui 整窗绘制：按键只给 egui，避免同一击
                 // 同时触发下层 旧版 控件（例如云管理「添加连接」打开两个窗口）。
                 // 其余对话框仍依赖 旧版 let-through，不消费。
-                self.dialog_input_exclusive() || self.egui_pointer_blocked()
+                self.dialog_input_exclusive() || self.egui_consumes_pointer()
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
@@ -665,6 +699,37 @@ impl Host {
         self.egui_input
             .pointer
             .is_some_and(|pos| self.egui_blocked.iter().any(|rect| rect.contains(pos)))
+    }
+
+    /// 本次指针事件是否必须只给 egui（不再落到画布）。
+    ///
+    /// 判定顺序：
+    /// 1. 命中上一帧登记的面板/菜单占用区 → 只给 egui；
+    /// 2. 指针在编辑画布内 → 交给画布（叠加层没有任何交互控件在画布中央）；
+    /// 3. 其余区域（工具栏 / 侧栏 / 标题栏 / 对话框）→ 只给 egui。
+    ///
+    /// 不能直接用 `egui_wants_pointer_input()`：CentralPanel 覆盖整窗时它可能
+    /// 恒为真，会把画布点击也吞掉（表现为「点画布没反应」）。
+    pub(crate) fn egui_consumes_pointer(&self) -> bool {
+        let Some(pos) = self.egui_input.pointer else {
+            return false;
+        };
+        if self.egui_pointer_blocked() || self.egui_pointer_over {
+            return true;
+        }
+        !self.pointer_inside_canvas(pos)
+    }
+
+    /// 指针是否落在编辑画布内（逻辑坐标）。
+    fn pointer_inside_canvas(&self, pos: egui::Pos2) -> bool {
+        let canvas = &self.root.editor.editor_state.canvas;
+        if canvas.size_x <= 0.0 || canvas.size_y <= 0.0 {
+            return false;
+        }
+        pos.x >= canvas.offset_x
+            && pos.x <= canvas.offset_x + canvas.size_x
+            && pos.y >= canvas.offset_y
+            && pos.y <= canvas.offset_y + canvas.size_y
     }
 }
 
