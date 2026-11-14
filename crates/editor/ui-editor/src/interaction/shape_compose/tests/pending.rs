@@ -537,6 +537,59 @@ fn test_shape_at_tick_zero_selectable_via_press() {
 }
 
 #[test]
+fn test_set_tool_same_tool_keeps_pending_mirror_ids() {
+    use lumino_message::Tool;
+
+    let mut editor = empty_editor();
+    editor.editor_state.tool = Tool::ShapeSelect;
+    add_pending_rect(&mut editor, 0.0, 100.0, 60);
+    editor.rebuild_pending_mirrors();
+    let id = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(PendingShapeRef::Shape(0))
+        .expect("待确认矩形应有镜像");
+    editor.editor_state.shape_select.select_only(id);
+
+    // DEBT-19：同工具重复选中不应重建镜像——重建会 `remove_pending_all` 再 add，
+    // 换掉镜像 ID 并逐项重算几何，而视觉与选中态没有任何变化。
+    editor.set_tool(Tool::ShapeSelect);
+    assert_eq!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_mirror(PendingShapeRef::Shape(0)),
+        Some(id),
+        "同工具 set_tool 不得重建镜像（ID 必须保持）"
+    );
+    assert!(
+        editor.editor_state.shape_select.is_selected(id),
+        "同工具 set_tool 不得清掉选中态"
+    );
+
+    // 真换工具仍撤掉镜像；切回鼠标工具仍重建（既有语义不变）
+    editor.set_tool(Tool::Pencil);
+    assert!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_shapes()
+            .next()
+            .is_none(),
+        "离开鼠标工具应撤掉待确认镜像"
+    );
+    editor.set_tool(Tool::ShapeSelect);
+    assert!(
+        editor
+            .editor_state
+            .shape_select
+            .pending_mirror(PendingShapeRef::Shape(0))
+            .is_some(),
+        "切回鼠标工具应重建待确认镜像"
+    );
+}
+
+#[test]
 fn test_pending_shape_at_tick_zero_is_selectable() {
     use lumino_message::Tool;
 

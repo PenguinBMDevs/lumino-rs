@@ -200,6 +200,58 @@ impl Host {
             .find_map(|(candidate, tool)| (*candidate == key).then_some(*tool))
     }
 
+    /// 裸字母工具键是否**无需派发**（纯函数，便于测试）。
+    ///
+    /// 三条同时成立才算冗余：
+    /// 1. 工具栏与编辑器都已是目标工具（任一未同步就要靠消息把状态拉齐）；
+    /// 2. 没有需要收口的瞬时状态（见 [`Self::toolbar_transient_open`]）。
+    ///
+    /// DEBT-19：同工具重复按键曾经仍走
+    /// `toolbar.update → editor.set_tool → rebuild_pending_mirrors → 整窗重绘`，
+    /// 画面零变化却付出一次 O(待确认) + 一帧整窗重建。
+    fn tool_shortcut_redundant(
+        target: toolbar::Tool,
+        toolbar_tool: toolbar::Tool,
+        editor_tool: toolbar::Tool,
+        transient_open: bool,
+    ) -> bool {
+        target == toolbar_tool && target == editor_tool && !transient_open
+    }
+
+    /// 是否存在必须由 `ToolSelected` 收口的瞬时 UI 状态。
+    ///
+    /// 这些状态全部由 `ToolSelected` 的既有处理器收口（下拉 / 填充 / 圆弧 /
+    /// PPQ 编辑 / 分音符填充面板）。存在时必须照常派发——否则按键「按了没反应」。
+    fn toolbar_transient_open(&self, target: toolbar::Tool) -> bool {
+        let toolbar = &self.root.toolbar;
+        if toolbar.brush_dropdown_open
+            || toolbar.shape_dropdown_open
+            || toolbar.snap_picker_open
+            || toolbar.fill_enabled
+            || toolbar.arc_mode
+            || toolbar.ppq_editing
+        {
+            return true;
+        }
+        let editor = &self.root.editor;
+        editor.fill_enabled()
+            || editor.line_arc_mode()
+            || editor.editor_state.shape_tool.fill_enabled
+            || self.root.state.fill_division_dialog.is_open
+            // 首次使用提示尚未弹出：`maybe_show_help_tip` 只在 `ToolSelected` 里调用，
+            // 这一下按键就是它唯一的触发点，吞掉就再也等不到。
+            || self.tool_help_tip_pending(target)
+    }
+
+    /// 目标的首次使用提示是否尚未弹出。
+    fn tool_help_tip_pending(&self, target: toolbar::Tool) -> bool {
+        if self.root.state.is_dialog_window {
+            return false;
+        }
+        lumino_ui_core::help::topic_for_tool(target)
+            .is_some_and(|topic| self.root.state.help_tips.should_show(topic.id))
+    }
+
     /// 当前是否允许响应裸字母切工具。
     ///
     /// - 文本输入法激活：让路给输入框；
@@ -270,6 +322,16 @@ impl Host {
         if Self::tool_shortcut_allowed(false, self.root.state.is_dialog_window, repeat, modifiers)
             && let Some(tool) = Self::match_tool_shortcut(key)
         {
+            // DEBT-19：切到**当前已激活**的工具且无附属态可收口 → 零派发、零重绘。
+            // 避免「按一下什么都没变，却重建一次待确认镜像 + 整窗一帧」。
+            if Self::tool_shortcut_redundant(
+                tool,
+                self.root.toolbar.current_tool,
+                self.root.editor.current_tool(),
+                self.toolbar_transient_open(tool),
+            ) {
+                return;
+            }
             self.route_message(message::Message::Toolbar(toolbar::Event::ToolSelected(
                 tool,
             )));
@@ -326,6 +388,37 @@ mod tests {
     use crate::message::VideoClipAction;
     use crate::{message, toolbar};
     use winit::keyboard::KeyCode;
+
+    /// 同工具冗余判定：只有「工具未变且没有可收口的附属态」才允许不派发。
+    ///
+    /// DEBT-19：同工具重复按键曾经仍走
+    /// `toolbar.update → editor.set_tool → rebuild_pending_mirrors → 整窗重绘`，
+    /// 画面没有任何变化，却付出一次 O(待确认) + 一帧整窗重建。
+    #[test]
+    fn test_tool_shortcut_redundant_requires_no_visible_state() {
+        use lumino_message::Tool;
+
+        assert!(
+            Host::tool_shortcut_redundant(Tool::Pencil, Tool::Pencil, Tool::Pencil, false),
+            "同工具且无附属态 → 冗余（不派发、不重绘）"
+        );
+        assert!(
+            !Host::tool_shortcut_redundant(Tool::Pencil, Tool::Pointer, Tool::Pointer, false),
+            "工具栏与编辑器都不是目标工具 → 必须派发"
+        );
+        assert!(
+            !Host::tool_shortcut_redundant(Tool::Pencil, Tool::Pencil, Tool::Pointer, false),
+            "编辑器工具未同步 → 必须派发（顺带把状态拉齐）"
+        );
+        assert!(
+            !Host::tool_shortcut_redundant(Tool::Pencil, Tool::Pointer, Tool::Pencil, false),
+            "工具栏工具未同步 → 必须派发"
+        );
+        assert!(
+            !Host::tool_shortcut_redundant(Tool::Pencil, Tool::Pencil, Tool::Pencil, true),
+            "有填充 / 圆弧 / 下拉等可收口状态 → 仍须派发"
+        );
+    }
 
     /// Ctrl+S 命中，无 Ctrl 不命中，其他键不命中
     #[test]

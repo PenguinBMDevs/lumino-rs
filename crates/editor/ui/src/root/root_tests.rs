@@ -431,6 +431,7 @@ fn test_settings_dialog_same_theme_not_requeued() {
 mod about_egg;
 mod channel;
 mod cloud_snapshot;
+mod debt19_cost;
 mod document_mount;
 mod draw_settings_panel;
 mod draw_thickness_entry;
