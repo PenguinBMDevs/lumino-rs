@@ -8,7 +8,7 @@
 //! 指针 / 滚轮 / 修饰键 / 焦点同步给 egui；浮层（菜单 / 弹层 / 模态）的命中
 //! 由 `ctx.layer_id_at` 判定，画布输入在浮层覆盖时让位。
 
-use egui::{Rect, Vec2};
+use egui::Rect;
 use lumino_egui_bridge::{Painter, Screen};
 use lumino_ui_egui::chrome::{self, ChromeModel};
 use lumino_ui_egui::icons::IconCache;
@@ -18,6 +18,7 @@ use crate::host::Host;
 
 mod actions;
 mod canvas;
+mod clock;
 pub(crate) mod input;
 pub use input::OverlayInput;
 
@@ -29,6 +30,16 @@ pub(crate) struct EguiOverlay {
     icons: IconCache,
     /// wgpu27 绘制桥。
     painter: Painter,
+    /// 帧时钟：egui 的点击 / 长按 / 双击判定都是**时间**语义，
+    /// 每帧必须把真实秒数填进 `RawInput::time`（见 `clock` 模块注释）。
+    clock: clock::FrameClock,
+    /// 诊断开关：`LUMINO_EGUI_LEGACY_CLOCK=1` 时退回「不填 `time`」的旧行为。
+    ///
+    /// 只用于真机 A/B 复现（同一份二进制对比修复前后），正常启动必须为 `false`。
+    /// 构造时读一次，避免每帧查询环境变量。
+    legacy_clock: bool,
+    /// 诊断开关：`LUMINO_CLOCK_DIAG=1` 时每帧比对 egui 内部时钟与真实时间。
+    clock_diag: bool,
     /// 叠加层已绘制帧数。
     frames: u32,
     /// 本帧 egui 占用区（菜单 / 弹层 / 面板 / 模态，逻辑点）。
@@ -140,6 +151,9 @@ impl EguiOverlay {
             ctx,
             icons: IconCache::default(),
             painter: Painter::new(device, format),
+            clock: clock::FrameClock::new(),
+            legacy_clock: std::env::var_os("LUMINO_EGUI_LEGACY_CLOCK").is_some_and(|v| v != "0"),
+            clock_diag: std::env::var_os("LUMINO_CLOCK_DIAG").is_some(),
             frames: 0,
             blocked: Vec::new(),
         }
@@ -208,15 +222,17 @@ impl EguiOverlay {
             frame.size_px[0] as f32 / frame.pixels_per_point,
             frame.size_px[1] as f32 / frame.pixels_per_point,
         ];
-        let input = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(
-                egui::Pos2::ZERO,
-                Vec2::new(logical[0], logical[1]),
-            )),
-            events: frame.events,
-            focused: frame.focused,
-            ..Default::default()
-        };
+        let mut input = clock::raw_input(
+            frame.events,
+            [logical[0], logical[1]],
+            frame.focused,
+            self.clock.elapsed(),
+        );
+        let input_time = input.time;
+        if self.legacy_clock {
+            // 诊断 A/B：退回「不填 time，egui 按 predicted_dt 推时钟」的旧行为。
+            input.time = None;
+        }
 
         let ctx = self.ctx.clone();
         let icons = &mut self.icons;
@@ -280,6 +296,7 @@ impl EguiOverlay {
 
         // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
         // 这里只要占用矩形与文本焦点。
+        self.diagnose_clock(&ctx, input_time);
         let mut blocked = chrome::menu::take_blocked(&ctx);
         // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 旧版。
         if let Some(panel) = &frame.audio_export {
@@ -351,6 +368,31 @@ impl EguiOverlay {
     /// 后者覆盖 `Area` / `Window` 弹层。
     fn pointer_blocked(&self, pos: egui::Pos2) -> bool {
         self.blocked.iter().any(|rect| rect.contains(pos))
+    }
+
+    /// 时钟错位诊断（`LUMINO_CLOCK_DIAG=1`）。
+    ///
+    /// egui 的点击 / 长按 / 双击判定都读 `InputState::time`。若 `RawInput::time`
+    /// 漏填，egui 会按 `predicted_dt` 每帧推进，虚拟时钟在高刷新率下比真实
+    /// 时间快数倍，正常点击被判超时——真机表现就是「点不动」。
+    ///
+    /// 这里把 egui 内部时钟与宿主真实秒数对一次，偏差超过 0.25s 就打点，
+    /// 便于在用户机器上直接取证（不设变量时零开销）。
+    fn diagnose_clock(&self, ctx: &egui::Context, input_time: Option<f64>) {
+        if !self.clock_diag {
+            return;
+        }
+        let egui_time = ctx.input(|i| i.time);
+        let Some(real) = input_time else {
+            log::warn!("[CLOCK] RawInput::time 为空：egui 按帧推时钟，高刷新率下点击会失效");
+            return;
+        };
+        let drift = egui_time - real;
+        if drift.abs() > 0.25 {
+            log::warn!(
+                "[CLOCK] egui={egui_time:.3}s real={real:.3}s drift={drift:+.3}s（>0.25s 时点击判定会失真）"
+            );
+        }
     }
 }
 

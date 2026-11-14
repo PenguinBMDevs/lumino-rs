@@ -4150,6 +4150,61 @@ callback / 多视口 / 截图能力。
   - 正常 20 连点 20/20；`fast-release` 空闲 3s CPU **62ms**；
   - 菜单开合、画布 A#8 + C#8 截图正常；
   - `lumino-rs` lib 200 passed；clippy `-D warnings`、fmt。
-- **下一步（Plan B Step 7）**：把上述 root 层面板逐个 `Area` 化，删除
-  最后一份手工占用矩形；随后清理 旧版 命名残留。
+- **复盘（重要）**：本条只解决了「同一帧内多次点击被折叠」。真机复测仍丢，
+  真正的根因是 Task 4.46 的**帧时钟**问题——本条压测用的是 45ms 合成短按，
+  恰好掩盖了那个 bug。教训：输入类压测必须用**真人时长**（100~200ms）。
+
+**Task 4.46（第一百五十二步，根因修复）：播放满刷时点不动——egui 帧时钟脱钩**
+
+- 真机反馈（复测）：不加载 MIDI，仅按下播放让 UI 保持刷新，点击下拉菜单按钮后
+  展开的操作无响应；切换类按钮同理。人工验收最终通过。
+- **根因（与 4.44 / 4.45 都不同）**：egui 的点击判定是**时间**语义，不是帧语义：
+  `self.time - press_start_time > max_click_duration`（默认 0.8s）即不算点击
+  （`egui-0.37.0/src/input_state/mod.rs::could_any_button_be_click`）。
+  而 `RawInput::time` 是 `Option<f64>`，**我们从未填写**，于是 egui 走
+  `new.time.unwrap_or(self.time + predicted_dt)`（`begin_pass`，默认 1/60）——
+  虚拟时钟只跟**帧数**走，与真实时间彻底脱钩。
+  - 播放期跑满（真机实测 **475fps**）→ 虚拟时钟快约 **8×**，150ms 真人点击
+    被算成 1.2s，超过 0.8s ⇒ `clicked()` 恒 `false`；
+  - 本地压测机播放期仅 **16fps** → 虚拟时钟比真实时间**慢** ⇒ 点击永远算数，
+    于是「自动化 20/20 全绿，真机全红」。
+  - 症状吻合：菜单能开（悬停切换 + 极轻点击），点条目 / 切换类按钮（纯
+    `clicked()`）无响应。
+- **上游同类问题**：[emilk/egui#2502](https://github.com/emilk/egui/issues/2502)
+  「>300fps 时点击检测失效」，结论正是「没有把时间喂给 `RawInput`」。
+- **修复**：新增 `host/render/egui_overlay/clock.rs`：
+  - `FrameClock`：`Instant` 单调秒数（禁用 `SystemTime`，回退会算出负按压时长）；
+  - `raw_input()`：统一组装 `RawInput`，**必须**填 `time: Some(...)`；
+  - 保留 `predicted_dt` 默认值（与 `egui-winit` / `eframe` 参考接线一致）；
+  - 诊断开关（默认关闭、构造时读一次）：`LUMINO_EGUI_LEGACY_CLOCK=1` 退回旧行为
+    用于 A/B；`LUMINO_CLOCK_DIAG=1` 每帧比对 egui 内部时钟与真实时间。
+- **真机 A/B（同一份二进制）**：
+
+  | 模式 | 帧率 | 按压 | 播放中点击生效 | 时钟偏差 |
+  |------|------|------|----------------|----------|
+  | 旧行为 | 475fps | 150ms（真人） | **0 / 12** | +241s（约 8×） |
+  | 旧行为 | 475fps | 45ms（合成短按） | 13 / 12 | +223s |
+  | 修复后 | 472fps | 150ms（真人） | **12 / 12** | 0 |
+
+- **测试**（`clock.rs`，4 条）：旧行为在 480fps + 150ms 下必丢；填时间后必须成立；
+  帧时钟单调且 `RawInput` 携带它；以及
+  `short_synthetic_press_masks_the_bug_but_human_press_does_not`——
+  把「短按压测会侥幸通过、掩盖真机问题」这条教训钉死。
+- **验证**：`lumino-ui` lib **797 passed**（1 ignored）、`lumino-rs` lib **200 passed**、
+  `clippy -D warnings`、`fmt`、`fast-release` 真机 A/B 上表。
+- **下一步（Plan B Step 7）**：把 root 层面板逐个 `Area` 化，删除最后一份手工占用矩形；
+  随后清理 旧版 命名残留。
+
+## Plan B 收尾（人工验收通过）
+
+- 分支 `feat/egui-native-runtime-v2`，Step 1–6 与 4.44–4.46 全部落地。
+- **生产入口**：`lumino-ui-runtime` 拥有窗口 / 事件循环 / 输入；`Host` 无窗口句柄，
+  通过 `HostWindow` trait 操作窗口（`request_redraw` / `set_cursor` / IME）。
+- **输入**：egui 是唯一输入通道；`OverlayInput` 归运行时各窗口自有；
+  IME 归 egui（`set_ime_allowed` / `set_ime_cursor_area`）。
+- **事件循环**：空闲 `ControlFlow::Wait`（无自旋）；点击优先——输入只置脏、
+  完整点击（抬起）单独结算一帧，普通重绘由 `about_to_wait` 合并。
+- **点击语义**：`RawInput::time` 每帧填真实单调秒数（4.46），高刷新率下判定正确。
+- 剩余工作（非阻塞，属 Step 7 范畴）：root 层面板 `Area` 化、删除手工占用矩形、
+  「旧版」命名清理（`legacy` 字样、注释里的 旧版 指代）。
 
