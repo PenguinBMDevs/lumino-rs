@@ -3993,3 +3993,28 @@ callback / 多视口 / 截图能力。
 - **备注**：只对鼠标按键做同步帧（低频）；滚轮 / 键盘仍走 `WM_PAINT`，避免
   高频事件把 UI 线程拖进逐事件渲染。
 
+**Task 4.38（第一百四十四步）：Plan B 第一步——输入/渲染回退通道收口**
+
+- 分支 `feat/egui-native-runtime-v2`（从 `dev` 新建；旧 `feat/egui-native-runtime`
+  停留在合并前，不复用）。
+- **删除回退开关**：
+  - `LUMINO_EGUI_OVERLAY`（`overlay_enabled`）；
+  - `LUMINO_EGUI_CANVAS_INPUT`（`canvas_input_enabled`）；
+  - `LUMINO_EGUI_CANVAS`（`egui_canvas_enabled`）；
+  - `LUMINO_EGUI_INPUT_SCALE`（`input_scale` 覆盖）。
+  生产路径只剩「egui 整窗 + gfx 离屏纹理采样」一条。
+- **删除 blit 回退**：`render_with_separate_thread` 不再 `copy_offscreen_to_surface`，
+  始终把离屏纹理交给 egui 采样；`render_with_separate_thread` 去掉 `gfx` 参数。
+- **菜单占用区收口**：标题栏菜单标签不再登记到全局 `blocked`（标签在标题栏内，
+  画布边界门控已排除）；面板 / 子菜单仍登记，`Area` 图层命中继续兜底。
+  `native_menubar_has_no_traffic_buttons` 改为断言「未展开菜单时无全局占用矩形」。
+- **验证**：
+  - `lumino-ui` host 211 通过；menubar 5 / snap 2 / overflow 4 / tool_panel 5 /
+    piano_menu 2 / click_semantics 3 全绿；
+  - clippy `-D warnings`、fmt 通过；
+  - `fast-release` 空闲 3s CPU **78ms**；20/20 `ToolSelected`；
+  - 真机菜单：点「文件」展开完整面板，点菜单项后收起（截图 `02/03`）。
+- **下一步（Plan B Step 2）**：把 winit 事件循环的 `run_app` 所有权移入
+  `lumino-ui-runtime`（`RuntimeApp` trait 适配 `Runner`），再把窗口 / surface
+  创建移入运行时；Step 3 让 `Host` 无窗口化。
+

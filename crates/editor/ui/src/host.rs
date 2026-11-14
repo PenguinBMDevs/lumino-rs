@@ -39,10 +39,6 @@ mod window_ctx;
 use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
-pub(crate) use event::canvas::canvas_input_enabled;
-/// 叠加层开关（标题栏菜单是否由 egui 接管）。
-pub(crate) use render::egui_overlay::overlay_enabled;
-
 pub use cache::RenderCache;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 

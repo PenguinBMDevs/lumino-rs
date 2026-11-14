@@ -43,7 +43,7 @@ impl Host {
         &mut self,
         frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
-        gfx: &lumino_gfx::Context,
+        _gfx: &lumino_gfx::Context,
     ) {
         // 通知 puffin 新的一帧开始 - 必须在 profile_function 之前调用
         puffin::GlobalProfiler::lock().new_frame();
@@ -69,7 +69,7 @@ impl Host {
 
         if self.render_ctx.wgpu_render_thread.is_some() {
             // 主窗口：分离渲染线程模式
-            self.render_with_separate_thread(frame, gfx);
+            self.render_with_separate_thread(frame);
         } else {
             // 轻量窗口（dialog/progress）：直接渲染 旧版 UI
             if !self.skip_ui_rendering {

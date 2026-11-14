@@ -264,11 +264,10 @@ fn native_menubar_has_no_traffic_buttons() {
             .collect(),
     };
     let (harness, _) = harness(model(Some(tree)));
-    // 菜单栏整宽 1600，但只在左侧标签上产生占用矩形。
+    // 标签不再登记到全局占用区：命中由 root 图层 + 画布边界门控负责。
     let blocked = chrome::menu::take_blocked(&harness.ctx);
-    assert_eq!(blocked.len(), 4, "四个标签各一个占用矩形");
     assert!(
-        blocked.iter().all(|rect| rect.right() < 250.0),
-        "菜单栏占用区只应覆盖标签，实际 {blocked:?}"
+        blocked.is_empty(),
+        "未展开菜单时不应有全局占用矩形，实际 {blocked:?}"
     );
 }

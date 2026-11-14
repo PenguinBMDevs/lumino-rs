@@ -199,8 +199,15 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &TitlebarModel) {
         state.submenu_rect = None;
     }
 
-    // 标签也算菜单占用区：点在标签上时由 `show_labels` 切换，不应触发 旧版。
-    extend_blocked(ui.ctx(), blocked);
+    // 局部 `blocked` 还包含标签（「点击面板外关闭菜单」的判定要用）；
+    // 全局占用区只登记面板/子菜单：标签在标题栏内，画布边界门控已排除，
+    // 不再让陈旧标签矩形参与指针归属。
+    let panel_rects: Vec<Rect> = blocked
+        .iter()
+        .copied()
+        .filter(|rect| !labels.contains(rect))
+        .collect();
+    extend_blocked(ui.ctx(), panel_rects);
     ui.ctx()
         .data_mut(|d| d.insert_temp(Id::unique(STATE_ID), state));
 }

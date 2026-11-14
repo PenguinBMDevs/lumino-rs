@@ -115,8 +115,8 @@ impl PianoRollView {
 /// 场景入口：铺满底色后绘制骨架（生产由 wgpu 绘制的网格区域在这里只是底色）。
 pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     let rect = ui.max_rect();
-    // 底层由 egui 采样 gfx 离屏纹理时（`LUMINO_EGUI_CANVAS=1`），这里不能再铺
-    // 不透明底色——否则会把下面那层画布盖掉（真机实测：播放指示线消失）。
+    // 底层由 egui 采样 gfx 离屏纹理时，这里不能再铺不透明底色——否则会把
+    // 下面那层画布盖掉（真机实测：播放指示线消失）。
     if !super::base_texture_active(ui.ctx()) {
         ui.painter().rect_filled(rect, 0, theme::base_bg());
     }

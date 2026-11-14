@@ -1,20 +1,12 @@
-//! 实验性 egui 外壳叠加层（`LUMINO_EGUI_OVERLAY=1` 时启用）。
+//! egui 整窗外壳（唯一生产 UI 层）。
 //!
-//! 目的：在真实窗口 surface / 真实 `Device` 上验证 `lumino-egui-bridge`，
-//! 并把生产状态（标题栏 / 状态栏）逐步搬到 egui。默认关闭，不改变现有画面。
-//!
-//! 当前接管范围：
-//! - 标题栏 30px：底色随窗口聚焦变化、真实菜单标签（按语言）、logo、窗口按钮；
-//! - 状态栏 20px：左侧提示文本（悬停说明 / 音符数 / 就绪）、CPU / MEM / FPS、右侧文本。
-//!
-//! 只绘制这些 band，其余区域保持 旧版 画面；band 用不透明底色完全覆盖同位置
-//! 的 旧版 版本，因此不会出现文字重影。
+//! 在真实窗口 surface / 真实 `Device` 上运行 `lumino-egui-bridge`；外壳 band、
+//! 对话框、面板与编辑器骨架全部由 egui 绘制，编辑器画布底层采样 gfx 离屏纹理。
 //!
 //! # 输入
 //!
-//! 指针移动 / 滚轮 / 修饰键 / 焦点同步给 egui（悬停高亮、`ScrollArea` 滚动、
-//! 菜单点击都要用到）。鼠标按键只在**菜单占用区**（标题栏菜单标签、已展开的
-//! 下拉/子面板）内消费；其余区域仍把事件交给 旧版，动作由 旧版 执行。
+//! 指针 / 滚轮 / 修饰键 / 焦点同步给 egui；浮层（菜单 / 弹层 / 模态）的命中
+//! 由 `ctx.layer_id_at` 判定，画布输入在浮层覆盖时让位。
 
 use egui::{Rect, Vec2};
 use lumino_egui_bridge::{Painter, Screen};
@@ -339,18 +331,14 @@ impl EguiOverlay {
 impl Host {
     /// 绘制 egui 外壳。
     ///
-    /// `clear = Some(color)` 时 egui 独占整窗（先清屏再画，生产渲染路径）；
-    /// `None` 时叠加在 旧版 `present` 之上（`LUMINO_EGUI_ONLY=0` 回退路径）。
+    /// `clear = Some(color)` 时 egui 独占整窗（生产渲染路径）；`None` 由调用方
+    /// 保证底层已绘制（当前生产路径不使用）。
     pub(super) fn render_egui_overlay(
         &mut self,
         frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         clear: Option<wgpu::Color>,
     ) {
-        if !overlay_enabled() {
-            return;
-        }
-
         let format = frame.texture.format();
         let size = self.render_ctx.viewport.physical_size();
         let pixels_per_point = self.render_ctx.viewport.scale_factor();
@@ -540,9 +528,6 @@ impl Host {
     pub(crate) fn capture_egui_overlay_input(&mut self, event: &winit::event::WindowEvent) -> bool {
         use winit::event::{MouseScrollDelta, WindowEvent};
 
-        if !overlay_enabled() {
-            return false;
-        }
         // 只有**会改变 egui 输入状态**的事件才需要驱动一帧。
         //
         // 这里曾经无条件 `request_redraw()`：`RedrawRequested` 自己也会再次请求，
@@ -720,25 +705,13 @@ pub(crate) const SPLITTER_W: f32 = 6.0;
 /// 指针事件的坐标除数。
 ///
 /// 布局与绘制都以 `pixels_per_point` 为准；指针必须用**同一个**值换算到点空间。
-/// `LUMINO_EGUI_INPUT_SCALE` 可强制覆盖，用于真机核对（不改代码即可验证方向）。
+/// winit 的 `CursorMoved.position` 是**物理像素**，egui 用逻辑点：只除一次 ppp。
+///
+/// 此前这里多除了一次（ppp²），指针坐标比绘制位置小 1.25 倍。真机取证：
+/// 客户端逻辑 (24,240) 在 egui 里变成 (19.2,192)，于是窗口下方约 20% 的区域
+/// 永远命中不到——混音台与路由栏底部按钮「点了没反应」都是这个原因。
 fn input_scale(ppp: f32) -> f32 {
-    static OVERRIDE: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
-    if let Some(value) = *OVERRIDE.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_INPUT_SCALE")
-            .ok()
-            .and_then(|raw| raw.parse::<f32>().ok())
-            .filter(|value| *value > 0.0)
-    }) {
-        return value;
-    }
-    let ppp = if ppp > 0.0 { ppp } else { 1.0 };
-    // winit 的 `CursorMoved.position` 是**物理像素**，egui 用逻辑点：只除一次 ppp。
-    //
-    // 此前这里多除了一次（ppp²），指针坐标比绘制位置小 1.25 倍。真机取证：
-    // 客户端逻辑 (24,240) 在 egui 里变成 (19.2,192)，于是窗口下方约 20% 的区域
-    // 永远命中不到——混音台与路由栏底部按钮「点了没反应」都是这个原因。
-    // `LUMINO_EGUI_INPUT_SCALE` 仍可强制覆盖用于排查。
-    ppp
+    if ppp > 0.0 { ppp } else { 1.0 }
 }
 
 /// 该窗口事件是否必须驱动一帧 egui。
@@ -762,20 +735,6 @@ fn input_requests_repaint(event: &winit::event::WindowEvent) -> bool {
             | WindowEvent::Ime(_)
             | WindowEvent::Focused(_)
     )
-}
-
-/// egui 叠加层是否启用。
-///
-/// **默认开启**：外壳 band / 对话框 / 面板 / 编辑器画布底层均已迁到 egui，
-/// 旧版 侧只在下方保留同位置内容（已被不透明覆盖），后续逐步删除。
-/// `LUMINO_EGUI_OVERLAY=0` 可回退到纯 旧版 通道，用于对照排查。
-pub(crate) fn overlay_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("LUMINO_EGUI_OVERLAY")
-            .map(|value| value != "0")
-            .unwrap_or(true)
-    })
 }
 
 #[cfg(test)]
