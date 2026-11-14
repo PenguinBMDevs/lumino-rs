@@ -4114,6 +4114,26 @@ callback / 多视口 / 截图能力。
   - `lumino-ui` host **216**（新增字节→字符、DPI 锚点、开关状态 3 个单测）；
   - `lumino-dialog` 28、`lumino-ui-runtime` 1；menubar 5 / click 3 / velocity 5；
   - clippy `-D warnings`、fmt；`fast-release` 20/20；画布 A#8 + C#8。
+
+**Task 4.44（第一百五十步，插入项）：点击优先——重绘只置脏，排空后补帧**
+
+- 背景：此前 `MouseInput` 在事件回调里同步 `handle_redraw()`，一次帧渲染
+  可能插到两次点击之间；一旦未来再引入抢帧，点击会再次被饿死。
+- `WindowManager` 新增 `redraw_pending`：`RedrawRequested` / `Resized` /
+  `ScaleFactorChanged` / `MouseInput` / `Touch` 一律只置脏，不在
+  `window_event` 里渲染。
+- `Runner::about_to_wait` 在事件队列排空后**最先**调用
+  `flush_pending_redraw()`，再跑重连 / 进度 / 对话框 / 协作等后台工作：
+  点击处理永远先于渲染，一帧不会插到两次点击之间。
+- `LUMINO_CLICK_DIAG=1` 时每帧打点 `[FRAME] flush #n`，用于回归确认空闲
+  期没有「事件 → 补帧 → 再补帧」自旋。
+- **验证**：
+  - 20 连点 **20/20**；40 连点 **40/40**；
+  - 20 连发（8ms 间隔）`actions=20`、`frames=127`、burst 884ms（点击全中，
+    帧不阻塞输入）；
+  - 空闲 18s 仅 **4 帧**（无自旋）；
+  - 菜单开合、画布 A#8 + C#8 截图正常；
+  - `lumino-rs` lib 200 passed；clippy `-D warnings`、fmt。
 - **下一步（Plan B Step 7）**：把上述 root 层面板逐个 `Area` 化，删除
   最后一份手工占用矩形；随后清理 旧版 命名残留。
 
