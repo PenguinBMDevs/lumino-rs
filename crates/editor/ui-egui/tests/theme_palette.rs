@@ -279,3 +279,29 @@ fn rendered_piano_roll_skeleton_follows_light_palette() {
     }
     assert!(darkest < 100, "音名文字应为深色，实际最暗 {darkest}");
 }
+
+#[test]
+fn selection_colour_follows_theme_and_stays_warm() {
+    // DRAW-048：ShapeSelect 的选框 / 锚点色取主题警告色（暖色），
+    // 不复用强调色——深色主题的强调色是青色，与音符蓝撞色。
+    for palette in [
+        Palette::TOKYO_NIGHT_STORM,
+        Palette::from_seed(&light_seed()),
+    ] {
+        assert_eq!(
+            palette.selection(),
+            palette.warning,
+            "选中色应跟随主题警告色"
+        );
+        assert_ne!(
+            palette.selection(),
+            palette.accent_strong,
+            "选中色不得与强调色相同"
+        );
+        let selection = palette.selection();
+        assert!(
+            selection.r() > selection.b(),
+            "选中色必须是暖色，才能与冷色音符拉开：{selection:?}"
+        );
+    }
+}

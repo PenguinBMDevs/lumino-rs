@@ -155,3 +155,90 @@ fn test_render_draw_toolbar_does_not_panic() {
     let model = root.egui_chrome_model();
     assert!(model.tool_panel.is_some(), "打开态应产出悬浮条模型");
 }
+
+// ── DRAW-048：工具切换后的待确认几何（口径 B）──────────────────────
+
+/// 带一条待确认组合结果的 Root（模拟柔化 / 组合 / 抽屉插入之后的状态）。
+fn root_with_composed_pending() -> Root {
+    use lumino_core::shape::{ShapeKind, ShapeModel};
+    use lumino_editor_state::{ComposedKind, PendingComposed, ShapeNote};
+
+    let mut root = Root::new_dialog("dark", DialogType::None);
+    root.editor.editor_state.data.current_track = 1;
+    let model = ShapeModel::new(1, 1, ShapeKind::Polyline, 1.0);
+    let notes = vec![ShapeNote {
+        track: 1,
+        tick: 0.0,
+        key: 60,
+        length: 4.0,
+        velocity: 100,
+        channel: 0,
+    }];
+    root.editor
+        .editor_state
+        .pending_composed
+        .push(PendingComposed::single(
+            ComposedKind::Single,
+            model,
+            notes,
+            Vec::new(),
+        ));
+    root
+}
+
+#[test]
+fn test_composed_pending_stays_visible_in_drawing_tools() {
+    let mut root = root_with_composed_pending();
+    for tool in [
+        Tool::Shape,
+        Tool::Curve,
+        Tool::Brush,
+        Tool::Text,
+        Tool::ShapeSelect,
+    ] {
+        root.editor.set_tool(tool);
+        assert!(
+            !root.shape_preview_model().shapes.is_empty(),
+            "切到 {tool:?} 后待确认组合仍应只读可见（切走就消失会让用户以为内容丢了）"
+        );
+    }
+}
+
+#[test]
+fn test_composed_pending_hidden_in_non_drawing_tools() {
+    let mut root = root_with_composed_pending();
+    for tool in [Tool::Pointer, Tool::Pencil, Tool::Eraser, Tool::Razor] {
+        root.editor.set_tool(tool);
+        assert!(
+            root.shape_preview_model().shapes.is_empty(),
+            "{tool:?} 下不得渲染待确认几何（避免浮层干扰音符编辑）"
+        );
+    }
+}
+
+#[test]
+fn test_plain_shape_pending_not_drawn_in_other_drawing_tools() {
+    // 只读放宽只针对「组合结果」（柔化 / 组合产物）；工具自己的待确认图形
+    // 仍只在拥有者工具与鼠标工具下绘制，否则会与当前工具的绘制手势抢视觉。
+    use lumino_editor_state::{ShapeInstance, ShapeKind};
+
+    let mut root = Root::new_dialog("dark", DialogType::None);
+    root.editor.editor_state.data.current_track = 1;
+    root.editor
+        .editor_state
+        .shape_tool
+        .shapes
+        .push(ShapeInstance {
+            kind: ShapeKind::Rectangle,
+            rect: (0.0, 60.0, 100.0, 64.0),
+            shift_constrained: false,
+            filled: true,
+            apex_high: true,
+            mask: None,
+        });
+    root.editor.set_tool(Tool::Curve);
+    assert!(
+        root.shape_preview_model().shapes.is_empty(),
+        "形状工具的待确认图形不得在曲线工具下绘制"
+    );
+}

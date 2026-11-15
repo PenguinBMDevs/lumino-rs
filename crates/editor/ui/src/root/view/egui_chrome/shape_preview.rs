@@ -6,6 +6,7 @@
 
 use lumino_editor_state::ShapeKind;
 use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
+use lumino_message::Tool;
 use lumino_ui_egui::shape_preview::{PreviewShape, ShapePreviewModel};
 
 use crate::root::Root;
@@ -17,16 +18,20 @@ impl Root {
             return ShapePreviewModel::default();
         }
         let editor = &self.editor;
-        if editor.editor_state.data.current_track == 0
-            || !editor.pending_preview_visible(lumino_message::Tool::Shape)
-        {
+        if editor.editor_state.data.current_track == 0 {
+            return ShapePreviewModel::default();
+        }
+        // DRAW-048（口径 B）：待确认组合（柔化 / 组合 / 抽屉插入的结果）归鼠标工具所有，
+        // 但**离开鼠标工具后仍要在其他绘制工具下只读显示**——切走就整体消失会让用户
+        // 以为内容丢了。非绘制工具（指针 / 铅笔 / 橡皮等）不显示，避免浮层干扰音符编辑。
+        let owner = editor.pending_preview_visible(Tool::Shape);
+        let has_composed = !editor.editor_state.pending_composed.is_empty();
+        let composed_read_only = has_composed && draws_pending_read_only(editor.current_tool());
+        if !owner && !composed_read_only {
             return ShapePreviewModel::default();
         }
         let tool = &editor.editor_state.shape_tool;
-        if !tool.has_pending()
-            && !tool.is_dragging()
-            && editor.editor_state.pending_composed.is_empty()
-        {
+        if !has_composed && !tool.has_pending() && !tool.is_dragging() {
             return ShapePreviewModel::default();
         }
 
@@ -35,15 +40,18 @@ impl Root {
         let mut shapes = Vec::new();
         let clip = self.canvas_overlay_clip();
 
-        for shape in &tool.shapes {
-            shapes.push(preview_shape(editor, shape.spec(), shape.filled, offset));
-        }
-        // 拖拽预览只属于形状工具本身：切到鼠标工具后即使拖拽态晚一帧清空，
-        // 也不能在画布上多画一个「角点」（表现为切换工具时闪一下）。
-        if editor.current_tool() == lumino_message::Tool::Shape
-            && let Some((spec, filled)) = tool.preview_rect(editor.shift_pressed())
-        {
-            shapes.push(preview_shape(editor, spec, filled, offset));
+        // 形状工具自己的待确认图形只在拥有者 / 鼠标工具下绘制（可编辑态）。
+        if owner {
+            for shape in &tool.shapes {
+                shapes.push(preview_shape(editor, shape.spec(), shape.filled, offset));
+            }
+            // 拖拽预览只属于形状工具本身：切到鼠标工具后即使拖拽态晚一帧清空，
+            // 也不能在画布上多画一个「角点」（表现为切换工具时闪一下）。
+            if editor.current_tool() == Tool::Shape
+                && let Some((spec, filled)) = tool.preview_rect(editor.shift_pressed())
+            {
+                shapes.push(preview_shape(editor, spec, filled, offset));
+            }
         }
 
         // 待确认组合（DRAW-020/027/028/DEBT-14）：直接画 ✓ 会写入的音符块，
@@ -77,6 +85,17 @@ impl Root {
         }
         ShapePreviewModel { clip, shapes }
     }
+}
+
+/// 绘制类工具：待确认组合在这些工具下**只读显示**（只画几何，不注册命中）。
+///
+/// 编辑（选中 / 拖拽 / 会话）只属于拥有者工具与鼠标工具，见
+/// `Editor::pending_preview_visible`；这里只放宽「看得见」，不放宽「改得动」。
+const fn draws_pending_read_only(tool: Tool) -> bool {
+    matches!(
+        tool,
+        Tool::Shape | Tool::Curve | Tool::Brush | Tool::Text | Tool::ShapeSelect
+    )
 }
 
 fn preview_shape(

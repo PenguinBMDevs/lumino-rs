@@ -126,6 +126,15 @@ pub struct PaletteSeed {
 }
 
 impl Palette {
+    /// 图形选中框 / 锚点色：跟随主题的警告色（琥珀系），与音符常用的蓝 / 青拉开色相。
+    ///
+    /// 不复用 `accent` / `accent_strong`：深色主题下强调色是青色，与音符蓝在低对比的
+    /// 卷帘背景上几乎无法区分（DRAW-048 用户反馈）。内置色板里 warning 均为暖色，
+    /// 与冷色音符稳定可分；强调色仍保留给工具栏 / 焦点等界面元素。
+    pub fn selection(&self) -> Color32 {
+        self.warning
+    }
+
     /// 历史基线色板（Tokyo Night Storm，旧版 精确值）。
     pub const TOKYO_NIGHT_STORM: Self = Self {
         is_dark: true,
@@ -316,6 +325,11 @@ color_getters!(
     roll_ruler_bg,
     roll_text,
 );
+
+/// 图形选中框 / 锚点色（跟随主题，与冷色音符拉开色相）。
+pub fn selection() -> Color32 {
+    palette().selection()
+}
 
 /// 字体尺寸（逻辑点）。
 pub mod font {
