@@ -445,3 +445,25 @@ pub fn text_style(size: f32, color: Color32) -> TextStyle {
 pub fn proportional() -> FontFamily {
     FontFamily::Proportional
 }
+
+/// 开关控件的文案与配色（跟随当前主题）。
+///
+/// 关闭态轨道取 `selected_bg`（旧版 `background.strong`，即输入槽底色），
+/// 保证深浅主题下都与卡片底有可辨层次；开启态直接用强调色。
+pub fn switch_style() -> crate::widgets::SwitchStyle {
+    let palette = palette();
+    crate::widgets::SwitchStyle {
+        label: palette.text,
+        label_dim: palette.text_dim,
+        label_size: font::LABEL,
+        colors: crate::widgets::SwitchColors {
+            on: palette.accent,
+            off: palette.selected_bg,
+            border: palette.border,
+            knob_on: palette.on_accent,
+            knob_off: palette.text,
+            knob_disabled: palette.text_dim,
+            disabled: palette.panel_bg,
+        },
+    }
+}

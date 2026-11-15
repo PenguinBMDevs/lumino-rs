@@ -8,12 +8,13 @@ use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Pos2, Rect, Sen
 use super::super::chrome::{SettingsPalette, UiField, UiPageModel, UiRow};
 use super::super::widgets as egui_widgets;
 use super::action::{self, SettingsAction};
-use super::pages::{action_button, text_width, title};
+use super::pages::{action_button, title};
 use super::set_hits;
 use crate::icons::{Icon, IconCache};
+use crate::widgets::text_width;
 
 mod widgets;
-use widgets::{checkbox_row, draw_label, draw_theme_card};
+use widgets::{draw_label, draw_theme_card, grid_columns, row_height};
 
 const PAD: f32 = 20.0;
 const GAP: f32 = 10.0;
@@ -25,40 +26,6 @@ pub(super) const CARD_GAP: f32 = 12.0;
 /// 卡片内的迷你面板参数。
 pub(super) const MOCK_PAD: f32 = 6.0;
 pub(super) const BAR_H: f32 = 4.0;
-
-fn row_height(row: &UiRow, width: f32) -> f32 {
-    match row {
-        UiRow::Section { .. } => 26.0,
-        UiRow::Combo { .. } => 32.0,
-        UiRow::Text { .. } => 31.0,
-        UiRow::Checkbox { .. } => 22.0,
-        UiRow::Slider { .. } => 22.0,
-        UiRow::Button { .. } => 30.0,
-        UiRow::Static { .. } => 18.0,
-        UiRow::ThemeCards { cards, .. } => {
-            let cols = grid_columns(width);
-            let rows = cards.len().div_ceil(cols).max(1) as f32;
-            22.0 + rows * CARD_H + (rows - 1.0) * CARD_GAP
-        }
-        UiRow::Swatches { colors } => {
-            let rows = colors.len().div_ceil(12).max(1) as f32;
-            20.0 + rows * 28.0 + (rows - 1.0) * 2.0
-        }
-        UiRow::AboutLogo { size, visible, .. } => {
-            if *visible {
-                size + 10.0
-            } else {
-                0.0
-            }
-        }
-        UiRow::EchoCave { .. } => 18.0,
-    }
-}
-
-fn grid_columns(width: f32) -> usize {
-    let usable = (width - PAD * 2.0).max(CARD_W);
-    (((usable + CARD_GAP) / (CARD_W + CARD_GAP)).floor() as usize).max(1)
-}
 
 /// 页面内容总高度。
 pub(super) fn content_height(model: &UiPageModel, width: f32) -> f32 {
@@ -155,10 +122,22 @@ pub(super) fn show(
                 hint,
                 checked,
             } => {
-                hit = Some((
-                    *field,
-                    checkbox_row(ui, x, y, *checked, label, hint, *field, palette),
-                ));
+                let row_rect = Rect::from_min_size(
+                    Pos2::new(x, y),
+                    Vec2::new((rect.right() - PAD - x).max(crate::widgets::TRACK_W), h),
+                );
+                let switch =
+                    widgets::switch_row(ui, row_rect, *field, label, hint, *checked, palette);
+                if switch.toggled {
+                    action::push_action(
+                        ui.ctx(),
+                        SettingsAction::UiToggle {
+                            field: *field,
+                            checked: !*checked,
+                        },
+                    );
+                }
+                hit = Some((*field, switch.track));
             }
             UiRow::Slider {
                 field,

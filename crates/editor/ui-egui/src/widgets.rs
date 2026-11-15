@@ -1,5 +1,11 @@
 //! 小型控件工厂：把生产 旧版 的按钮 / 图标 / 文本尺寸契约搬到 egui。
 
+mod switch;
+
+pub use switch::{
+    SwitchColors, SwitchHit, SwitchRow, SwitchStyle, TRACK_H, TRACK_W, switch_row, track_rect,
+};
+
 use egui::{
     Align, Color32, CornerRadius, FontId, Layout, Rect, Response, RichText, Sense, Stroke, Vec2,
 };
@@ -12,6 +18,30 @@ use crate::theme;
 /// 指定尺寸的纯文本。
 pub fn label(ui: &mut egui::Ui, text: impl Into<String>, size: f32, color: Color32) {
     ui.add(egui::Label::new(RichText::new(text.into()).size(size).color(color)).selectable(false));
+}
+
+/// 单行文本的绘制宽度（不换行）。
+pub fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
+    ui.painter()
+        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
+        .size()
+        .x
+}
+
+/// 按最大宽度截断文本（尾部加省略号）；`max_width <= 0` 视为不限宽。
+pub fn truncate_to_width(ui: &egui::Ui, text: &str, size: f32, max_width: f32) -> String {
+    if max_width <= 0.0 || text_width(ui, text, size) <= max_width {
+        return text.to_owned();
+    }
+    let mut chars: Vec<char> = text.chars().collect();
+    while !chars.is_empty() {
+        chars.pop();
+        let candidate = format!("{}…", chars.iter().collect::<String>());
+        if text_width(ui, &candidate, size) <= max_width {
+            return candidate;
+        }
+    }
+    "…".to_owned()
 }
 
 /// 可点击的菜单文本（标题栏菜单 / 设置菜单）。

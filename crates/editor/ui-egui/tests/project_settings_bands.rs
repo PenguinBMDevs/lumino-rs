@@ -111,6 +111,19 @@ fn name_input_dispatches_new_text() {
     );
 }
 
+/// 「启用通道 10」是开关（`Role::CheckBox`），点击回传新状态。
+#[test]
+fn use10_switch_dispatches_new_state() {
+    let (mut harness, actions) = make_harness(model());
+    harness.get_by_label("启用通道 10").click();
+    harness.run();
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ProjectSettingsAction::Use10Changed(true)),
+        "开关点击应回传 Use10Changed(true)"
+    );
+}
+
 /// 只读行与按钮文案都进入可访问树（不依赖像素）。
 #[test]
 fn readonly_rows_and_labels_are_visible() {

@@ -1,6 +1,6 @@
 //! 音频导出：区块内复用的控件（标签 / 输入框 / 下拉 / 复选框 / 说明）。
 
-use egui::{Align, Color32, CornerRadius, FontId, Layout, Rect, RichText, Stroke, Vec2};
+use egui::{Align, Color32, CornerRadius, FontId, Layout, RichText, Stroke, Vec2};
 
 use crate::chrome::{AudioChoice, AudioToggle};
 use crate::theme;
@@ -155,66 +155,23 @@ pub(super) fn combo(
     }
 }
 
-/// 复选框：自绘方框 + 文本，保留可交互与可访问状态。
+/// 开关行：标签在左、开关贴行右缘（替代旧勾选框）。
 pub(super) fn toggle(ui: &mut egui::Ui, toggle: &AudioToggle) -> bool {
     let width = ui.available_width().max(160.0);
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(width, 22.0),
-        if toggle.enabled {
-            egui::Sense::click()
-        } else {
-            egui::Sense::hover()
+    let (row, _) = ui.allocate_exact_size(Vec2::new(width, 22.0), egui::Sense::hover());
+    let hit = crate::widgets::switch_row(
+        ui,
+        row,
+        &crate::widgets::SwitchRow {
+            id: egui::Id::unique(("audio-export-toggle", toggle.id as u8)),
+            checked: toggle.checked,
+            enabled: toggle.enabled,
+            label: &toggle.label,
+            hint: "",
         },
+        &theme::switch_style(),
     );
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(
-            egui::Role::CheckBox,
-            toggle.enabled,
-            toggle.checked,
-            &toggle.label,
-        )
-    });
-    let box_rect = Rect::from_min_size(
-        egui::pos2(rect.left(), rect.center().y - 8.0),
-        Vec2::splat(16.0),
-    );
-    let fill = if !toggle.enabled {
-        theme::toolbar_bg()
-    } else if toggle.checked {
-        theme::accent()
-    } else {
-        theme::base_bg()
-    };
-    ui.painter().rect(
-        box_rect,
-        CornerRadius::same(3),
-        fill,
-        Stroke::new(1.0, theme::selected_bg()),
-        egui::StrokeKind::Inside,
-    );
-    if toggle.checked {
-        // 勾选标记用线段绘制：字体里没有 U+2713 时会 panic（无头截图直接崩）。
-        let stroke = Stroke::new(2.0, theme::on_accent());
-        let check = [
-            egui::pos2(box_rect.left() + 4.0, box_rect.center().y),
-            egui::pos2(box_rect.center().x - 1.0, box_rect.bottom() - 4.0),
-            egui::pos2(box_rect.right() - 3.0, box_rect.top() + 5.0),
-        ];
-        ui.painter().add(egui::Shape::line(check.to_vec(), stroke));
-    }
-    let color = if toggle.enabled {
-        theme::text()
-    } else {
-        theme::text_muted()
-    };
-    ui.painter().text(
-        egui::pos2(box_rect.right() + 8.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        &toggle.label,
-        FontId::proportional(theme::font::LABEL),
-        color,
-    );
-    response.clicked() && toggle.enabled
+    hit.toggled
 }
 
 /// 次要按钮（浏览 / 关闭 / 重置等）：`padding([6,16])`。

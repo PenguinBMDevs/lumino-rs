@@ -3,13 +3,14 @@
 //! 行由生产预计算成 `AudioRowModel`，这里只按控件种类绘制并回传字段级动作；
 //! 页面内容高于卡片时由调用方套 `ScrollArea`。
 
-use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Pos2, Rect, Sense, Stroke, Vec2};
+use egui::{Align, Align2, FontId, Layout, Pos2, Rect, Sense, Vec2};
 
-use super::super::chrome::{AudioControlModel, AudioField, AudioPageModel, SettingsPalette};
+use super::super::chrome::{AudioControlModel, AudioPageModel, SettingsPalette};
 use super::super::widgets;
 use super::action::{self, SettingsAction};
-use super::pages::{action_button, text_width, title};
+use super::pages::{action_button, switch_style, title};
 use super::set_hits;
+use crate::widgets::text_width;
 
 /// 内容内边距 / 行间距 / 标题区高度（与生产页面一致）。
 const PAD: f32 = 20.0;
@@ -54,9 +55,32 @@ pub(super) fn show(
         let mut hit: Option<Rect> = None;
         match &row.control {
             AudioControlModel::Checkbox { checked } => {
-                hit = Some(checkbox_row(
-                    ui, x, y, *checked, &row.label, &row.hint, row.field, palette,
-                ));
+                let row_rect = Rect::from_min_size(
+                    Pos2::new(x, y),
+                    Vec2::new((rect.right() - PAD - x).max(crate::widgets::TRACK_W), h),
+                );
+                let switch = crate::widgets::switch_row(
+                    ui,
+                    row_rect,
+                    &crate::widgets::SwitchRow {
+                        id: egui::Id::unique(("audio-switch", row.field as u8)),
+                        checked: *checked,
+                        enabled: true,
+                        label: &row.label,
+                        hint: &row.hint,
+                    },
+                    &switch_style(palette),
+                );
+                if switch.toggled {
+                    action::push_action(
+                        ui.ctx(),
+                        SettingsAction::AudioToggle {
+                            field: row.field,
+                            checked: !*checked,
+                        },
+                    );
+                }
+                hit = Some(switch.track);
             }
             AudioControlModel::Button => {
                 let width = text_width(ui, &row.label, 14.0) + 24.0;
@@ -229,7 +253,7 @@ fn draw_label(
 ) {
     // 右侧控件占位固定：长标签必须截断，否则会压到控件上（生产 旧版 用 Fill
     // 约束宽度；egui painter 不做裁剪，这里手动加省略号）。
-    let label = truncate(ui, label, max_width);
+    let label = widgets::truncate_to_width(ui, label, 14.0, max_width);
     ui.painter().text(
         Pos2::new(x, center_y),
         Align2::LEFT_CENTER,
@@ -251,95 +275,4 @@ fn draw_label(
         Sense::hover(),
     );
     response.on_hover_text(hint);
-}
-
-/// 按最大宽度截断标签（尾部加省略号）。
-fn truncate(ui: &egui::Ui, text: &str, max_width: f32) -> String {
-    if max_width <= 0.0 || text_width(ui, text, 14.0) <= max_width {
-        return text.to_owned();
-    }
-    let mut chars: Vec<char> = text.chars().collect();
-    while !chars.is_empty() {
-        chars.pop();
-        let candidate = format!("{}…", chars.iter().collect::<String>());
-        if text_width(ui, &candidate, 14.0) <= max_width {
-            return candidate;
-        }
-    }
-    "…".to_owned()
-}
-
-/// 对钩框 + 标签（点击文字等同切换）。
-#[allow(clippy::too_many_arguments)]
-fn checkbox_row(
-    ui: &mut egui::Ui,
-    x: f32,
-    y: f32,
-    checked: bool,
-    label: &str,
-    hint: &str,
-    field: AudioField,
-    palette: &SettingsPalette,
-) -> Rect {
-    let box_rect = Rect::from_min_size(Pos2::new(x, y + 2.0), Vec2::splat(18.0));
-    let label_w = text_width(ui, label, 14.0);
-    let label_rect = Rect::from_min_size(
-        Pos2::new(box_rect.right() + 8.0, y - 1.0),
-        Vec2::new(label_w, 24.0),
-    );
-    let mut toggled = false;
-    let box_response = ui.interact(
-        box_rect,
-        egui::Id::unique(("audio-check", field as u8)),
-        Sense::click(),
-    );
-    if box_response.clicked() {
-        toggled = true;
-    }
-    let label_response = ui.interact(
-        label_rect,
-        egui::Id::unique(("audio-check-label", field as u8)),
-        Sense::click(),
-    );
-    if label_response.clicked() {
-        toggled = true;
-    }
-    label_response.on_hover_text(hint);
-
-    ui.painter().rect(
-        box_rect,
-        CornerRadius::same(4),
-        if checked {
-            palette.accent
-        } else {
-            Color32::TRANSPARENT
-        },
-        Stroke::new(1.0, palette.input_border),
-        egui::StrokeKind::Inside,
-    );
-    if checked {
-        let stroke = Stroke::new(1.8, Color32::from_rgb(0x12, 0x1A, 0x2A));
-        let p1 = Pos2::new(box_rect.left() + 4.0, box_rect.center().y);
-        let p2 = Pos2::new(box_rect.left() + 7.5, box_rect.bottom() - 4.5);
-        let p3 = Pos2::new(box_rect.right() - 4.0, box_rect.top() + 4.5);
-        ui.painter().line_segment([p1, p2], stroke);
-        ui.painter().line_segment([p2, p3], stroke);
-    }
-    ui.painter().text(
-        Pos2::new(label_rect.left(), label_rect.center().y),
-        Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(14.0),
-        palette.text,
-    );
-    if toggled {
-        action::push_action(
-            ui.ctx(),
-            SettingsAction::AudioToggle {
-                field,
-                checked: !checked,
-            },
-        );
-    }
-    box_rect
 }

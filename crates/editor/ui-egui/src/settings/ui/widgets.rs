@@ -1,11 +1,11 @@
-//! 界面页通用控件：主题卡片、截断标签、对钩框。
+//! 界面页通用控件：主题卡片、截断标签、开关行、行高计算。
 
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 
-use super::super::super::chrome::{SettingsPalette, ThemeCardModel, UiField};
-use super::super::action::{self, SettingsAction};
-use super::super::pages::text_width;
-use super::{BAR_H, MOCK_PAD};
+use super::super::super::chrome::{SettingsPalette, ThemeCardModel, UiField, UiRow};
+use super::super::pages::switch_style;
+use super::{BAR_H, CARD_GAP, CARD_H, CARD_W, MOCK_PAD};
+use crate::widgets::text_width;
 
 /// 主题卡片：底色 / 标题 / 迷你面板 / 选中描边。
 pub(super) fn draw_theme_card(ui: &mut egui::Ui, rect: Rect, card: &ThemeCardModel) {
@@ -82,7 +82,7 @@ pub(super) fn draw_label(
     max_width: f32,
     palette: &SettingsPalette,
 ) {
-    let label = truncate(ui, label, max_width);
+    let label = crate::widgets::truncate_to_width(ui, label, 14.0, max_width);
     ui.painter().text(
         Pos2::new(x, center_y),
         Align2::LEFT_CENTER,
@@ -106,93 +106,62 @@ pub(super) fn draw_label(
     .on_hover_text(hint);
 }
 
-fn truncate(ui: &egui::Ui, text: &str, max_width: f32) -> String {
-    if max_width <= 0.0 || text_width(ui, text, 14.0) <= max_width {
-        return text.to_owned();
-    }
-    let mut chars: Vec<char> = text.chars().collect();
-    while !chars.is_empty() {
-        chars.pop();
-        let candidate = format!("{}…", chars.iter().collect::<String>());
-        if text_width(ui, &candidate, 14.0) <= max_width {
-            return candidate;
-        }
-    }
-    "…".to_owned()
+/// 主题卡片网格列数（按卡片宽度自适应）。
+pub(super) fn grid_columns(width: f32) -> usize {
+    let usable = (width - super::PAD * 2.0).max(CARD_W);
+    (((usable + CARD_GAP) / (CARD_W + CARD_GAP)).floor() as usize).max(1)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn checkbox_row(
+/// 一行的高度（开关 / 下拉 / 滑杆 / 文本 / 卡片网格…）。
+pub(super) fn row_height(row: &UiRow, width: f32) -> f32 {
+    match row {
+        UiRow::Section { .. } => 26.0,
+        UiRow::Combo { .. } => 32.0,
+        UiRow::Text { .. } => 31.0,
+        UiRow::Checkbox { .. } => 22.0,
+        UiRow::Slider { .. } => 22.0,
+        UiRow::Button { .. } => 30.0,
+        UiRow::Static { .. } => 18.0,
+        UiRow::ThemeCards { cards, .. } => {
+            let cols = grid_columns(width);
+            let rows = cards.len().div_ceil(cols).max(1) as f32;
+            22.0 + rows * CARD_H + (rows - 1.0) * CARD_GAP
+        }
+        UiRow::Swatches { colors } => {
+            let rows = colors.len().div_ceil(12).max(1) as f32;
+            20.0 + rows * 28.0 + (rows - 1.0) * 2.0
+        }
+        UiRow::AboutLogo { size, visible, .. } => {
+            if *visible {
+                size + 10.0
+            } else {
+                0.0
+            }
+        }
+        UiRow::EchoCave { .. } => 18.0,
+    }
+}
+
+/// 一行开关：绘制 + 返回命中结果（标签在左、开关贴行右缘）。
+pub(super) fn switch_row(
     ui: &mut egui::Ui,
-    x: f32,
-    y: f32,
-    checked: bool,
+    row: Rect,
+    field: UiField,
     label: &str,
     hint: &str,
-    field: UiField,
+    checked: bool,
     palette: &SettingsPalette,
-) -> Rect {
-    let box_rect = Rect::from_min_size(Pos2::new(x, y + 2.0), Vec2::splat(18.0));
-    let label_w = text_width(ui, label, 14.0);
-    let label_rect = Rect::from_min_size(
-        Pos2::new(box_rect.right() + 8.0, y - 1.0),
-        Vec2::new(label_w, 24.0),
-    );
-    let mut toggled = false;
-    if ui
-        .interact(
-            box_rect,
-            egui::Id::unique(("ui-check", field as u8)),
-            Sense::click(),
-        )
-        .clicked()
-    {
-        toggled = true;
-    }
-    let label_response = ui.interact(
-        label_rect,
-        egui::Id::unique(("ui-check-label", field as u8)),
-        Sense::click(),
-    );
-    if label_response.clicked() {
-        toggled = true;
-    }
-    label_response.on_hover_text(hint);
-
-    ui.painter().rect(
-        box_rect,
-        CornerRadius::same(4),
-        if checked {
-            palette.accent
-        } else {
-            Color32::TRANSPARENT
+) -> crate::widgets::SwitchHit {
+    crate::widgets::switch_row(
+        ui,
+        row,
+        &crate::widgets::SwitchRow {
+            id: egui::Id::unique(("ui-switch", field as u8)),
+            checked,
+            enabled: true,
+            label,
+            hint,
         },
-        Stroke::new(1.0, palette.input_border),
-        egui::StrokeKind::Inside,
-    );
-    if checked {
-        let stroke = Stroke::new(1.8, Color32::from_rgb(0x12, 0x1A, 0x2A));
-        let p1 = Pos2::new(box_rect.left() + 4.0, box_rect.center().y);
-        let p2 = Pos2::new(box_rect.left() + 7.5, box_rect.bottom() - 4.5);
-        let p3 = Pos2::new(box_rect.right() - 4.0, box_rect.top() + 4.5);
-        ui.painter().line_segment([p1, p2], stroke);
-        ui.painter().line_segment([p2, p3], stroke);
-    }
-    ui.painter().text(
-        Pos2::new(label_rect.left(), label_rect.center().y),
-        Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(14.0),
-        palette.text,
-    );
-    if toggled {
-        action::push_action(
-            ui.ctx(),
-            SettingsAction::UiToggle {
-                field,
-                checked: !checked,
-            },
-        );
-    }
-    box_rect
+        &switch_style(palette),
+    )
 }

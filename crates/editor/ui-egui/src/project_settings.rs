@@ -11,6 +11,7 @@ use egui::{CornerRadius, FontId, Frame, Id, Margin, RichText, ScrollArea, Stroke
 
 use crate::chrome::ProjectSettingsModel;
 use crate::theme;
+use crate::widgets;
 
 const ACTION_ID: &str = "lumino.project-settings.action";
 /// 整窗内边距（生产 `container(...).padding(24)`）。
@@ -153,25 +154,31 @@ fn form(ui: &mut egui::Ui, model: &ProjectSettingsModel, width: f32) {
         ProjectSettingsAction::AuthorChanged,
     );
 
-    // DRAW-032：启用通道 10（复选 + 两段说明，与 旧版 同位同序）。
+    // DRAW-032：启用通道 10（右对齐开关 + 说明；开关与标签同序，说明走次行）。
     ui.add_space(SECTION_GAP);
-    ui.horizontal(|ui| {
-        let mut checked = model.use10;
-        if ui.checkbox(&mut checked, "").changed() {
-            push_action(ui.ctx(), ProjectSettingsAction::Use10Changed(checked));
-        }
-        ui.add(egui::Label::new(
-            RichText::new(&model.use10_label)
-                .size(14.0)
-                .color(theme::text()),
-        ));
-        ui.add_space(8.0);
+    let (use10_row, _) = ui.allocate_exact_size(Vec2::new(width, 22.0), egui::Sense::hover());
+    let use10 = widgets::switch_row(
+        ui,
+        use10_row,
+        &widgets::SwitchRow {
+            id: Id::unique("lumino.project-settings.use10"),
+            checked: model.use10,
+            enabled: true,
+            label: &model.use10_label,
+            hint: "",
+        },
+        &theme::switch_style(),
+    );
+    if use10.toggled {
+        push_action(ui.ctx(), ProjectSettingsAction::Use10Changed(!model.use10));
+    }
+    if !model.use10_hint.is_empty() {
         ui.add(egui::Label::new(
             RichText::new(&model.use10_hint)
                 .size(12.0)
                 .color(theme::text_dim()),
         ));
-    });
+    }
 
     ui.add_space(SECTION_GAP);
     label(ui, &model.time_signature_label);

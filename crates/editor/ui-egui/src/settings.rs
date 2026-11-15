@@ -31,7 +31,7 @@ pub struct SettingsHits {
     pub compat_check: Option<Rect>,
     /// 兼容性「复制诊断」按钮。
     pub compat_copy: Option<Rect>,
-    /// 兼容性开关（标签 → 对钩框矩形）。
+    /// 兼容性开关（标签 → 开关轨道矩形）。
     pub compat_checks: Vec<(String, Rect)>,
     /// 左侧菜单行矩形（按菜单顺序）。
     pub menu_rows: Vec<Rect>,

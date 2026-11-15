@@ -208,17 +208,26 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
         }
         VideoRow::Toggle { label, checked, id } => {
             let rect = row_rect(ui, ROW_H);
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(egui::Layout::left_to_right(Align::Center)),
+            let hit = crate::widgets::switch_row(
+                ui,
+                rect,
+                &crate::widgets::SwitchRow {
+                    id: egui::Id::unique(("video-export-toggle", *id)),
+                    checked: *checked,
+                    enabled: true,
+                    label,
+                    hint: "",
+                },
+                &theme::switch_style(),
             );
-            let mut value = *checked;
-            if child
-                .checkbox(&mut value, RichText::new(label).size(14.0))
-                .changed()
-            {
-                push_action(&ctx, VideoExportAction::Toggle { id: *id, value });
+            if hit.toggled {
+                push_action(
+                    &ctx,
+                    VideoExportAction::Toggle {
+                        id: *id,
+                        value: !*checked,
+                    },
+                );
             }
         }
         VideoRow::Text {

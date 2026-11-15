@@ -375,3 +375,45 @@ fn compatibility_buttons_and_toggles_dispatch() {
         Some(&SettingsAction::DominoClipboard(true))
     );
 }
+
+/// 开关几何：贴卡片右缘（页内右边距 20）、轨道 36×18；点标签也切换。
+///
+/// 几何链：窗口 1200 → 外边距 16 → 容器内边距 20 → 菜单 200 + 间距 16
+/// → 卡片右缘 1164；页内再减 20 → 轨道右缘 1144。
+#[test]
+fn switch_sits_at_card_right_edge_and_label_click_toggles() {
+    let page = UiPageModel {
+        title: "编辑".to_owned(),
+        rows: vec![UiRow::Checkbox {
+            field: UiField::AutosaveEnabled,
+            label: "自动保存".to_owned(),
+            hint: String::new(),
+            checked: false,
+        }],
+    };
+    let (mut harness, actions) = harness(snapshot(SettingsPageModel::Ui(Box::new(page))));
+
+    let track = lumino_ui_egui::settings::hits(&harness.ctx)
+        .ui_rows
+        .iter()
+        .find(|(field, _)| *field == UiField::AutosaveEnabled)
+        .map(|(_, rect)| *rect)
+        .expect("自动保存开关");
+    assert_eq!(track.width(), lumino_ui_egui::widgets::TRACK_W);
+    assert_eq!(track.height(), lumino_ui_egui::widgets::TRACK_H);
+    assert!(
+        (track.right() - 1144.0).abs() < 0.5,
+        "轨道必须贴卡片右缘（1144），实际 {}",
+        track.right()
+    );
+
+    // 标签起点 = 卡片左缘 252 + 内边距 20；点标签同样切换（旧勾选框手感）。
+    click(&mut harness, egui::pos2(280.0, track.center().y));
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&SettingsAction::UiToggle {
+            field: UiField::AutosaveEnabled,
+            checked: true,
+        })
+    );
+}

@@ -8,8 +8,8 @@ use crate::theme;
 
 use super::super::chrome::{CloudPageModel, SettingsPalette};
 use super::action::{self, SettingsAction};
-use super::pages::text_width;
 use super::set_hits;
+use crate::widgets::text_width;
 
 const PAD: f32 = 20.0;
 const TITLE_H: f32 = 30.0;

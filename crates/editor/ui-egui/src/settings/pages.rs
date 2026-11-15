@@ -11,6 +11,7 @@ use super::super::chrome::{
 use super::super::{theme, widgets};
 use super::action::{self, SettingsAction};
 use super::{SettingsState, set_hits};
+use crate::widgets::text_width;
 
 /// 正文 / 标题 / 提示字号（与生产常量一致）。
 const CONTENT: f32 = 14.0;
@@ -196,49 +197,69 @@ pub(super) fn compatibility(
         y += height + 2.0;
     }
 
-    // 三个开关（间距 20 起、行间 8）。
+    // 三个开关（间距 20 起、行间步进沿用旧勾选框 32）。
     y += 20.0;
-    y = checkbox_row(
+    let style = switch_style(palette);
+    let row_width = (rect.right() - PAD - x).max(crate::widgets::TRACK_W);
+    let row_at = |y: f32| Rect::from_min_size(Pos2::new(x, y), Vec2::new(row_width, 22.0));
+    y = compat_switch(
         ui,
-        x,
-        y,
-        model.check_on_startup,
-        true,
-        &model.check_on_startup_label,
-        &model.check_on_startup_hint,
-        palette,
+        row_at(y),
+        &crate::widgets::SwitchRow {
+            id: egui::Id::unique("lumino.settings.switch.check-on-startup"),
+            checked: model.check_on_startup,
+            enabled: true,
+            label: model.check_on_startup_label.as_str(),
+            hint: model.check_on_startup_hint.as_str(),
+        },
+        &style,
         SettingsAction::GpuCheckOnStartup,
     );
-    y = checkbox_row(
+    y = compat_switch(
         ui,
-        x,
-        y,
-        model.show_warning,
-        true,
-        &model.warning_label,
-        &model.warning_hint,
-        palette,
+        row_at(y),
+        &crate::widgets::SwitchRow {
+            id: egui::Id::unique("lumino.settings.switch.warning"),
+            checked: model.show_warning,
+            enabled: true,
+            label: model.warning_label.as_str(),
+            hint: model.warning_hint.as_str(),
+        },
+        &style,
         |visible| SettingsAction::GpuWarningSuppressed(!visible),
     );
-    checkbox_row(
+    compat_switch(
         ui,
-        x,
-        y,
-        model.domino,
-        model.domino_enabled,
-        &model.domino_label,
-        &model.domino_hint,
-        palette,
+        row_at(y),
+        &crate::widgets::SwitchRow {
+            id: egui::Id::unique("lumino.settings.switch.domino"),
+            checked: model.domino,
+            enabled: model.domino_enabled,
+            label: model.domino_label.as_str(),
+            hint: model.domino_hint.as_str(),
+        },
+        &style,
         SettingsAction::DominoClipboard,
     );
 }
 
-/// 页内文本宽度。
-pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
-        .size()
-        .x
+/// 设置对话框的开关样式（文案 + 轨道配色）。
+pub(super) fn switch_style(palette: &SettingsPalette) -> crate::widgets::SwitchStyle {
+    crate::widgets::SwitchStyle {
+        label: palette.text,
+        label_dim: palette.text_dim,
+        label_size: CONTENT,
+        colors: crate::widgets::SwitchColors {
+            on: palette.accent,
+            off: palette.toolbar,
+            border: palette.input_border,
+            // 开启态圆点沿用旧勾选框的勾线墨色：深浅主题下都压在强调色上可读。
+            knob_on: Color32::from_rgb(0x12, 0x1A, 0x2A),
+            knob_off: palette.text,
+            knob_disabled: palette.text_dim,
+            disabled: palette.border,
+        },
+    }
 }
 
 /// 页内按钮：`background.weak` 底 + 1px 边框；禁用态文字变暗。
@@ -284,98 +305,22 @@ pub(super) fn action_button(
     response
 }
 
-/// 一行「对钩框 + 标签（可点切换、悬浮说明）」；返回下一行的 y。
-#[allow(clippy::too_many_arguments)]
-fn checkbox_row(
+/// 兼容性页的一行开关：绘制 + 注册命中区，返回下一行 y。
+fn compat_switch(
     ui: &mut egui::Ui,
-    x: f32,
-    y: f32,
-    checked: bool,
-    enabled: bool,
-    label: &str,
-    hint: &str,
-    palette: &SettingsPalette,
+    row: Rect,
+    spec: &crate::widgets::SwitchRow<'_>,
+    style: &crate::widgets::SwitchStyle,
     action: impl Fn(bool) -> SettingsAction,
 ) -> f32 {
-    let box_rect = Rect::from_min_size(Pos2::new(x, y + 2.0), Vec2::splat(18.0));
+    let hit = crate::widgets::switch_row(ui, row, spec, style);
     let mut hits = super::hits(ui.ctx());
-    hits.compat_checks.push((label.to_owned(), box_rect));
+    hits.compat_checks.push((spec.label.to_owned(), hit.track));
     set_hits(ui.ctx(), hits);
-    let label_w = text_width(ui, label, CONTENT);
-    let label_rect = Rect::from_min_size(
-        Pos2::new(box_rect.right() + 8.0, y - 2.0),
-        Vec2::new(label_w, 24.0),
-    );
-    let mut toggled = false;
-
-    let box_response = ui.interact(
-        box_rect,
-        egui::Id::unique(("lumino.settings.checkbox", label)),
-        if enabled {
-            Sense::click()
-        } else {
-            Sense::hover()
-        },
-    );
-    if box_response.clicked() {
-        toggled = true;
+    if hit.toggled {
+        action::push_action(ui.ctx(), action(!spec.checked));
     }
-    let label_response = ui.interact(
-        label_rect,
-        egui::Id::unique(("lumino.settings.checkbox-label", label)),
-        if enabled {
-            Sense::click()
-        } else {
-            Sense::hover()
-        },
-    );
-    if label_response.clicked() {
-        toggled = true;
-    }
-    label_response.on_hover_text(hint);
-
-    ui.painter().rect(
-        box_rect,
-        CornerRadius::same(4),
-        if checked {
-            palette.accent
-        } else {
-            Color32::TRANSPARENT
-        },
-        Stroke::new(
-            1.0,
-            if enabled {
-                palette.input_border
-            } else {
-                palette.border
-            },
-        ),
-        egui::StrokeKind::Inside,
-    );
-    if checked {
-        let stroke = Stroke::new(1.8, Color32::from_rgb(0x12, 0x1A, 0x2A));
-        let p1 = Pos2::new(box_rect.left() + 4.0, box_rect.center().y);
-        let p2 = Pos2::new(box_rect.left() + 7.5, box_rect.bottom() - 4.5);
-        let p3 = Pos2::new(box_rect.right() - 4.0, box_rect.top() + 4.5);
-        ui.painter().line_segment([p1, p2], stroke);
-        ui.painter().line_segment([p2, p3], stroke);
-    }
-    ui.painter().text(
-        Pos2::new(label_rect.left(), label_rect.center().y),
-        Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(CONTENT),
-        if enabled {
-            palette.text
-        } else {
-            palette.text_dim
-        },
-    );
-
-    if toggled {
-        action::push_action(ui.ctx(), action(!checked));
-    }
-    y + 24.0 + 8.0
+    row.top() + 32.0
 }
 
 /// 少数页面共用：当前页没有任何表单（保留给后续页面）。
