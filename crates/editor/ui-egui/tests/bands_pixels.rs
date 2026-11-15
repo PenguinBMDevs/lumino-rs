@@ -253,13 +253,16 @@ fn bands_match_legacy_geometry() {
     );
 
     // 标题栏：logo + 四个菜单标签。
-    let bands_titlebar = ink_runs(&bands, 2, 28, 0, 340, TITLEBAR_BG);
-    let legacy = ink_runs(&baseline, 2, 28, 0, 340, TITLEBAR_BG);
+    // CJK 文本块按「文本块」比较（merge_runs 6）：macOS 走系统字体（CoreText），
+    // 字间 1px 列的 AA 亮度可能低于墨点阈值，标签会裂成单字两段——2026-11-15
+    // CI 实测。菜单组间 ≥14px，merge 不会跨标签桥接。
+    let bands_titlebar = merge_runs(&ink_runs(&bands, 2, 28, 0, 340, TITLEBAR_BG), 6);
+    let legacy = merge_runs(&ink_runs(&baseline, 2, 28, 0, 340, TITLEBAR_BG), 6);
     assert_runs_close(&bands_titlebar, &legacy, "标题栏");
 
-    // 状态栏左侧描述文本。
-    let bands_left = ink_runs(&bands, 982, 997, 0, 120, STATUSBAR_BG);
-    let legacy = ink_runs(&baseline, 982, 997, 0, 120, STATUSBAR_BG);
+    // 状态栏左侧描述文本（同为 CJK，同 merge 规则）。
+    let bands_left = merge_runs(&ink_runs(&bands, 982, 997, 0, 120, STATUSBAR_BG), 6);
+    let legacy = merge_runs(&ink_runs(&baseline, 982, 997, 0, 120, STATUSBAR_BG), 6);
     assert_runs_close(&bands_left, &legacy, "状态栏左侧");
 
     // 状态栏右侧 CPU / MEM / FPS 指标组：字形切分不同，按文本块比较。
@@ -332,8 +335,13 @@ fn bands_match_legacy_geometry() {
     let legacy = ink_runs(&baseline, 38, 960, 2, 47, [0x33, 0x39, 0x57]);
     assert_runs_close(&bands_route, &legacy, "路由栏图标");
 
-    let bands_add = ink_runs(&bands, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
-    let legacy = ink_runs(&baseline, 139, 152, 60, 240, [0x24, 0x28, 0x3B]);
+    // 添加音轨行：行内容当前为拉丁文，但 merge 对布局确定的元素是恒等操作，
+    // 一并套 CJK 同款规则，防后续行内容改中文后在 macOS 复发单字分裂。
+    let bands_add = merge_runs(&ink_runs(&bands, 139, 152, 60, 240, [0x24, 0x28, 0x3B]), 6);
+    let legacy = merge_runs(
+        &ink_runs(&baseline, 139, 152, 60, 240, [0x24, 0x28, 0x3B]),
+        6,
+    );
     assert_runs_close(&bands_add, &legacy, "添加音轨行");
 
     // 右侧栏图标列：x 1552..1599，从工具栏下沿（102）到状态栏上沿（980）。

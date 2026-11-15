@@ -253,8 +253,8 @@ impl<T: EventTick> ChunkedList<T> {
 
         let mut ev_iter = events.into_iter();
         let mut cur_ev: Option<T> = ev_iter.next();
-        for ci in start_ci..=end_ci {
-            for e in old.chunks[ci].iter() {
+        for chunk in old.chunks[start_ci..=end_ci].iter() {
+            for e in chunk.iter() {
                 // 先吐出新事件中所有 tick 严格小于当前旧元素的（同 tick 旧元素在前）
                 while let Some(ev) = cur_ev.take() {
                     if ev.tick() < e.tick() {

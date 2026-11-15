@@ -21,6 +21,48 @@ fn lock_flag_tests() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// 申请**独立**实例 + 适配器 + 设备（禁共享设备，同 R1 约束）。
+///
+/// Windows DX12/WARP 在「并发建/销 Device」的风暴期（本 crate 的共享设备、
+/// `device_check` 探测、`destroy()` 注入用例同进程并行）可能让 `request_device`
+/// 瞬时返回 `Device(Lost)`——2026-11-15 CI 实测单发（`test_gpu.rs` 记载过同类
+/// DX12 停摆表现）。此处重试吸收**瞬时**失败：重试仍败说明 DX12 栈已常驻停摆，
+/// 属环境级故障，让 panic 消息带出末次错误便于定位。
+fn request_independent_device(label: &'static str) -> (wgpu::Device, wgpu::Queue) {
+    use futures::executor::block_on;
+
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: false,
+        ..Default::default()
+    }))
+    .expect("独立适配器应可用（硬件或 CI 软渲染）");
+
+    let descriptor = || wgpu::DeviceDescriptor {
+        label: Some(label),
+        required_features: adapter.features() & wgpu::Features::default(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: wgpu::MemoryHints::default(),
+        trace: wgpu::Trace::Off,
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+    };
+    let mut last_err: Option<wgpu::RequestDeviceError> = None;
+    for attempt in 1..=3 {
+        match block_on(adapter.request_device(&descriptor())) {
+            Ok(pair) => return pair,
+            Err(err) => {
+                eprintln!("[device_status 测试] request_device 第 {attempt}/3 次失败: {err}");
+                last_err = Some(err);
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+    panic!(
+        "独立设备请求失败（3 次重试，DX12 栈可能已常驻停摆）: {}",
+        last_err.expect("至少失败过一次")
+    );
+}
+
 /// 纯逻辑：标志置位 / 读取 / 幂等。
 #[test]
 fn test_device_lost_flag_set_and_read() {
@@ -41,27 +83,11 @@ fn test_device_lost_flag_set_and_read() {
 /// R1：独立设备 `destroy()` → 回调触发、标志置位、reason 为 `Destroyed`。
 #[test]
 fn test_reconnect_r1_destroy_triggers_callback_and_flag() {
-    use futures::executor::block_on;
-
     let _guard = lock_flag_tests();
     reset_for_test();
 
-    // ── 独立 instance / adapter / device（不带 surface；CI 软渲染同样可用）──
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: false,
-        ..Default::default()
-    }))
-    .expect("独立适配器应可用（硬件或 CI 软渲染）");
-    let (device, _queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("reconnect_r1_injection_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("独立设备请求失败");
+    // ── 独立设备（不带 surface；CI 软渲染同样可用；重试抗 DX12 瞬时风暴）──
+    let (device, _queue) = request_independent_device("reconnect_r1_injection_device");
 
     // 销毁路径可能伴随各类错误回调——安装非 panic 处理器，保证测试只断言目标链路
     device.on_uncaptured_error(Arc::new(|err| {
@@ -119,27 +145,11 @@ fn test_reconnect_r1_destroy_triggers_callback_and_flag() {
 /// 若此不变量不成立，present 硬化需更换探测通道。
 #[test]
 fn test_reconnect_r1_poll_delivers_lost_callback_sync() {
-    use futures::executor::block_on;
-
     let _guard = lock_flag_tests();
     reset_for_test();
 
-    // 独立设备（禁共享，同 R1 约束）
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: false,
-        ..Default::default()
-    }))
-    .expect("独立适配器应可用（硬件或 CI 软渲染）");
-    let (device, _queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("r1_poll_probe_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("独立设备请求失败");
+    // 独立设备（禁共享，同 R1 约束；重试抗 DX12 瞬时风暴）
+    let (device, _queue) = request_independent_device("r1_poll_probe_device");
 
     device.on_uncaptured_error(Arc::new(|err| {
         eprintln!("[R1 poll 探测测试] 捕获错误: {err}");
