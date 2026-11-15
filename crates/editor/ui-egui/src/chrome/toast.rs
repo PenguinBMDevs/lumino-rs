@@ -20,6 +20,19 @@ const TOAST_MAX_W: f32 = 420.0;
 const TOAST_BOTTOM: f32 = 36.0;
 /// Toast 右边距。
 const TOAST_RIGHT: f32 = 16.0;
+/// Toast 文案字号。
+const TOAST_FONT: f32 = 14.0;
+/// Toast 级别图标字号。
+const TOAST_ICON_FONT: f32 = 12.0;
+/// 图标与文案的间距。
+const TOAST_ICON_GAP: f32 = 8.0;
+/// 单行文案的行高（多行按 galley 实测高度撑开）。
+const TOAST_TEXT_H: f32 = 14.0;
+/// 最小卡片宽度（极窄窗口也不把文案挤成一列字）。
+const TOAST_MIN_W: f32 = 120.0;
+
+/// 本帧 Toast 卡片矩形（供测试与诊断取用）。
+const TOAST_RECTS_ID: &str = "lumino.toast.rects";
 
 /// 帮助提示宽度。
 const TIP_W: f32 = 360.0;
@@ -38,16 +51,38 @@ pub enum HelpTipAction {
 }
 
 /// 绘制 Toast 叠加层（右下角，自下而上堆叠）。
+///
+/// 文案超宽时自动折行（中英文同一套规则）：卡片先按单行实测宽度布局，
+/// 触到 [`TOAST_MAX_W`] 后固定卡片宽度，文案按剩余宽度用 galley 折行，
+/// 卡片高度随行数增长——英文长句不会再溢出卡片。
 pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
     if model.cards.is_empty() {
         return;
     }
+    let max_w = TOAST_MAX_W
+        .min(full.width() - TOAST_RIGHT * 2.0)
+        .max(TOAST_MIN_W);
     let mut bottom = full.bottom() - TOAST_BOTTOM;
+    let mut rects = Vec::with_capacity(model.cards.len());
     for card in model.cards.iter().rev() {
-        let text_w = measure(ui, &card.message, 14.0);
-        let label_w = measure(ui, &card.icon, 12.0);
-        let width = (text_w + label_w + 8.0 + TOAST_PAD * 2.0).min(TOAST_MAX_W);
-        let height = 14.0 + TOAST_PAD * 2.0;
+        let label_w = measure(ui, &card.icon, TOAST_ICON_FONT);
+        let text_w = measure(ui, &card.message, TOAST_FONT);
+        let width = (text_w + label_w + TOAST_ICON_GAP + TOAST_PAD * 2.0).min(max_w);
+        // 文案区可用宽度：单行放得下时正好等于文本宽度，触顶后即为折行宽度。
+        let text_area = (width - TOAST_PAD * 2.0 - label_w - TOAST_ICON_GAP).max(1.0);
+        let wrapped = text_w > text_area + 0.5;
+        let galley = ui.painter().layout(
+            card.message.clone(),
+            FontId::proportional(TOAST_FONT),
+            card.text,
+            text_area,
+        );
+        let text_h = if wrapped {
+            galley.size().y
+        } else {
+            TOAST_TEXT_H
+        };
+        let height = text_h + TOAST_PAD * 2.0;
         let rect = Rect::from_min_size(
             egui::pos2(full.right() - TOAST_RIGHT - width, bottom - height),
             Vec2::new(width, height),
@@ -63,18 +98,28 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
             egui::pos2(rect.left() + TOAST_PAD, rect.center().y),
             Align2::LEFT_CENTER,
             &card.icon,
-            FontId::proportional(12.0),
+            FontId::proportional(TOAST_ICON_FONT),
             card.text,
         );
-        ui.painter().text(
-            egui::pos2(rect.left() + TOAST_PAD + label_w + 8.0, rect.center().y),
-            Align2::LEFT_CENTER,
-            &card.message,
-            FontId::proportional(14.0),
+        ui.painter().galley(
+            egui::pos2(
+                rect.left() + TOAST_PAD + label_w + TOAST_ICON_GAP,
+                rect.center().y - galley.size().y * 0.5,
+            ),
+            galley,
             card.text,
         );
+        rects.push(rect);
         bottom = rect.top() - TOAST_GAP;
     }
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(egui::Id::unique(TOAST_RECTS_ID), rects));
+}
+
+/// 本帧 Toast 卡片矩形（自下而上）。无 Toast 时返回空。
+pub fn cached_toast_rects(ctx: &egui::Context) -> Vec<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::unique(TOAST_RECTS_ID)))
+        .unwrap_or_default()
 }
 
 /// 绘制首次使用帮助提示；返回本帧动作。
