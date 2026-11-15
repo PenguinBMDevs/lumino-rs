@@ -26,7 +26,10 @@ impl Root {
                 username: username.clone(),
             })
             .collect();
-        RemoteCursorModel { cursors }
+        RemoteCursorModel {
+            clip: self.canvas_overlay_clip(),
+            cursors,
+        }
     }
 }
 
