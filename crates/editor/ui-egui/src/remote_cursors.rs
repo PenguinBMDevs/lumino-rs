@@ -22,6 +22,8 @@ pub struct RemoteCursorMark {
 /// 本帧全部远程光标。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RemoteCursorModel {
+    /// 画布内容区裁剪（扣左右侧栏）；`None` = 不裁剪。
+    pub clip: Option<egui::Rect>,
     /// 光标列表。
     pub cursors: Vec<RemoteCursorMark>,
 }
@@ -40,7 +42,8 @@ const LABEL_SIZE: f32 = 11.0;
 
 /// 绘制全部远程光标。
 pub fn show(ui: &egui::Ui, model: &RemoteCursorModel) {
-    let painter = ui.painter();
+    let clip = model.clip.unwrap_or_else(|| ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
     for cursor in &model.cursors {
         let color = cursor.color;
         painter.circle_filled(cursor.pos, RADIUS, color.gamma_multiply(0.30));

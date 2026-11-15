@@ -1,10 +1,13 @@
 //! 图形选中框 / 编辑框 / 8+1 锚点（DRAW-020 · DRAW-041C）——egui 版。
 //!
 //! 取代旧版 `drawn_shape_box::draw` 中与选中 / 编辑相关的可见部分：
-//! - 选中选框：主题色 1.5px 描边 + 四角实心手柄；
+//! - 选中选框：主题选中色（琥珀，跟随主题）1.5px 描边 + 四角实心手柄；
 //! - 编辑框：进入「编辑图形」后替代选中选框的 1px 细框；
-//! - 箱体锚点：8 个 8px 白底方块 + 主题色描边；
+//! - 箱体锚点：8 个 8px 白底方块 + 选中色描边；
 //! - 中心锚点：白底圆 + 十字（示意「整体平移」）。
+//!
+//! 选中色与强调色（青）分开：深色卷帘背景下强调色与音符蓝几乎同色，
+//! 选不选中看不出来（DRAW-048）。未选中的常显轮廓仍用弱化强调色。
 //!
 //! 全部坐标为窗口逻辑坐标（生产侧已加画布偏移）。
 
@@ -69,6 +72,7 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
     let clip = model.clip.unwrap_or_else(|| ui.clip_rect());
     let painter = ui.painter().with_clip_rect(clip);
     let accent = theme::accent_strong();
+    let selection = theme::selection();
 
     // 常显轮廓：弱化细线，避免盖过音符。
     for outline in &model.idle_outlines {
@@ -86,18 +90,21 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
         }
         painter.add(egui::Shape::line(
             outline.clone(),
-            Stroke::new(7.0, with_alpha(accent, 76)),
+            Stroke::new(7.0, with_alpha(selection, 76)),
         ));
-        painter.add(egui::Shape::line(outline.clone(), Stroke::new(2.5, accent)));
+        painter.add(egui::Shape::line(
+            outline.clone(),
+            Stroke::new(2.5, selection),
+        ));
     }
 
     // 框选矩形：主题色 12% 填充 + 75% 描边（与旧版同口径）。
     if let Some(rect) = model.marquee {
-        painter.rect_filled(rect, CornerRadius::ZERO, with_alpha(accent, 31));
+        painter.rect_filled(rect, CornerRadius::ZERO, with_alpha(selection, 31));
         painter.rect_stroke(
             rect,
             CornerRadius::ZERO,
-            Stroke::new(1.0, with_alpha(accent, 191)),
+            Stroke::new(1.0, with_alpha(selection, 191)),
             StrokeKind::Middle,
         );
     }
@@ -106,7 +113,7 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
         painter.rect_stroke(
             rect,
             CornerRadius::ZERO,
-            Stroke::new(BOX_STROKE_WIDTH, with_alpha(accent, BOX_STROKE_ALPHA)),
+            Stroke::new(BOX_STROKE_WIDTH, with_alpha(selection, BOX_STROKE_ALPHA)),
             StrokeKind::Middle,
         );
         let half = BOX_HANDLE_SIZE / 2.0;
@@ -120,7 +127,7 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
                 egui::pos2(corner.x - half, corner.y - half),
                 egui::vec2(BOX_HANDLE_SIZE, BOX_HANDLE_SIZE),
             );
-            painter.rect_filled(handle, CornerRadius::ZERO, accent);
+            painter.rect_filled(handle, CornerRadius::ZERO, selection);
         }
     }
 
@@ -128,7 +135,7 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
         painter.rect_stroke(
             rect,
             CornerRadius::ZERO,
-            Stroke::new(1.0, with_alpha(accent, EDIT_BOX_ALPHA)),
+            Stroke::new(1.0, with_alpha(selection, EDIT_BOX_ALPHA)),
             StrokeKind::Middle,
         );
     }
@@ -143,28 +150,28 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
         painter.rect_stroke(
             handle,
             CornerRadius::ZERO,
-            Stroke::new(1.5, accent),
+            Stroke::new(1.5, selection),
             StrokeKind::Inside,
         );
     }
 
     if let Some(center) = model.center {
         painter.circle_filled(center, CENTER_RADIUS, Color32::WHITE);
-        painter.circle_stroke(center, CENTER_RADIUS, Stroke::new(1.5, accent));
+        painter.circle_stroke(center, CENTER_RADIUS, Stroke::new(1.5, selection));
         let arm = CENTER_RADIUS - 2.0;
         painter.line_segment(
             [
                 egui::pos2(center.x - arm, center.y),
                 egui::pos2(center.x + arm, center.y),
             ],
-            Stroke::new(1.2, accent),
+            Stroke::new(1.2, selection),
         );
         painter.line_segment(
             [
                 egui::pos2(center.x, center.y - arm),
                 egui::pos2(center.x, center.y + arm),
             ],
-            Stroke::new(1.2, accent),
+            Stroke::new(1.2, selection),
         );
     }
 }

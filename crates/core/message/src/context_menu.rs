@@ -147,8 +147,16 @@ impl PianoRollContextMenuItem {
     }
 }
 
-/// 目标对应的菜单条目集（旧版 / egui 两侧共用，禁止各自复制）。
+mod columns;
+
+pub use columns::{
+    MAX_ROWS_PER_COLUMN, REGULAR_ITEMS, item_disabled_hint, item_enabled, menu_columns,
+};
+
+/// 目标对应的**扁平**菜单条目序列（旧调用与兼容测试用）。
 ///
+/// 菜单布局只读 [`menu_columns`]（DRAW-046）：本表把常规操作与目标专属动作
+/// 混在一条序列里，直接拿它渲染会得到 20 行的单列面板。
 /// 条目顺序即绘制顺序；视觉实现（图标 / 行高 / 悬浮色）由各 UI 层决定，
 /// 但**集合与顺序**必须唯一。
 pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] {

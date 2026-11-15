@@ -711,12 +711,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         toolbar_popup::show_overlay(&mut root, toolbar);
         overflow::show_overlay(&mut root, toolbar, icons);
     }
-    // 悬浮绘制工具条最后画：它的锚定面板要盖在卷帘与工具栏弹层之上。
-    if let Some(tool_panel) = &model.tool_panel {
-        tool_panel::show_overlay(&mut root, tool_panel, icons);
-    } else {
-        tool_panel::clear_triggers(ui.ctx());
-    }
+    // ── 画布层：全部画布覆盖层先于 UI 层绘制（DRAW-047）──
+    // 形状 / 曲线 / 刀框 / 框选等预览只能用 `content_bounds` 裁剪，不得压住
+    // 悬浮工具条、工具栏弹层与标题栏菜单；UI 层排在下面统一后画。
 
     // 图片转 MIDI 区域框（Placing）：在预览之下。
     if let Some(region) = i2m_region_model(ui.ctx()) {
@@ -752,6 +749,16 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 旧版 Canvas 的绘制层被底层纹理覆盖后不可见。
     if let Some(marquee) = marquee_model(ui.ctx()) {
         crate::marquee::show(&root, &marquee);
+    }
+
+    // ── UI 层：永远画在全部画布覆盖层之上（DRAW-047）──
+
+    // 悬浮绘制工具条：锚定面板要盖在卷帘与工具栏弹层之上；它自身用不透明底
+    // 接管该区域，不依赖画布预览的裁剪。
+    if let Some(tool_panel) = &model.tool_panel {
+        tool_panel::show_overlay(&mut root, tool_panel, icons);
+    } else {
+        tool_panel::clear_triggers(ui.ctx());
     }
 
     // 文字工具覆盖层（文本框 / 字形预览 / 输入框 / √× 模式按钮）。

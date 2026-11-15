@@ -125,3 +125,48 @@ fn test_closed_half_geometry_matches_its_notes() {
         "第二片音符应是大 tick 侧"
     );
 }
+
+// ── DRAW-048：切割布防的工具切换收口（口径 B）──────────────────────
+//
+// 布防的按下 / 拖动分派排在工具分派之前（见 `interaction/pressed.rs`），
+// 只隐藏预览而不结束会话，会让「看不到的布防」吞掉其他工具里的点击。
+
+#[test]
+fn test_switch_tool_ends_slice_cut() {
+    let mut editor = editor_with_pending_rect();
+    assert!(editor.begin_slice_cut());
+    assert!(editor.slice_cut_active());
+
+    editor.set_tool(Tool::Curve);
+    assert!(
+        !editor.slice_cut_active(),
+        "离开鼠标工具必须结束切割布防，否则布防会吞掉曲线工具的点击"
+    );
+}
+
+#[test]
+fn test_every_non_mouse_tool_ends_slice_cut() {
+    for tool in [
+        Tool::Curve,
+        Tool::Shape,
+        Tool::Brush,
+        Tool::Text,
+        Tool::Pointer,
+    ] {
+        let mut editor = editor_with_pending_rect();
+        assert!(editor.begin_slice_cut());
+        editor.set_tool(tool);
+        assert!(
+            !editor.slice_cut_active(),
+            "切到 {tool:?} 后不得残留切割布防"
+        );
+    }
+}
+
+#[test]
+fn test_staying_in_mouse_tool_keeps_slice_cut() {
+    let mut editor = editor_with_pending_rect();
+    assert!(editor.begin_slice_cut());
+    editor.set_tool(Tool::ShapeSelect);
+    assert!(editor.slice_cut_active(), "同工具重复选中不得误清切割布防");
+}
