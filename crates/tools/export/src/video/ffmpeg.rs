@@ -3,8 +3,8 @@
 //! 移植自 nezha-encoder/ffmpeg.rs，剔除音频 WAV 逻辑，仅保留纯视频流编码。
 //!
 //! 核心流程：以子进程方式启动 ffmpeg，通过 stdin pipe 喂入 BGRA rawvideo 帧，
-//! ffmpeg 内部完成 BGRA→YUV420p 转换与封装。使用有界 channel 做背压控制，
-//! stderr 独立线程捕获用于错误诊断，Drop 时自动 kill 进程。
+//! ffmpeg 内部完成 BGRA→YUV420p 转换与封装。stderr 由独立线程实时排空，
+//! 保留有界尾部日志用于诊断，Drop 时自动 kill 进程。
 //!
 //! 参数构建见 `args` 子模块。
 
@@ -12,16 +12,56 @@ mod args;
 
 use args::*;
 
+use std::collections::VecDeque;
 use std::io::{BufRead, BufWriter, Write};
 use std::path::PathBuf;
-use std::process::{ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use lumino_core::{tr, trf};
 
 use crate::video::config::VideoExportConfig;
 use crate::video::error::{VideoExportError, VideoExportResult};
+
+const MAX_STDERR_LINES: usize = 200;
+const FFMPEG_FINISH_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn push_stderr_tail(tail: &mut VecDeque<String>, line: String) {
+    if tail.len() >= MAX_STDERR_LINES {
+        tail.pop_front();
+    }
+    tail.push_back(line);
+}
+
+fn wait_for_process(process: &mut Child, timeout: Duration) -> std::io::Result<ExitStatus> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = process.try_wait()? {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            return match process.kill() {
+                Ok(()) => {
+                    let _ = process.wait()?;
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "ffmpeg 完成等待超时，进程已终止",
+                    ))
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => process.wait(),
+                Err(e) => Err(e),
+            };
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn terminate_child(process: &mut Child) {
+    let _ = process.kill();
+    let _ = process.wait();
+}
 
 /// FFmpeg 编码器
 ///
@@ -37,8 +77,10 @@ pub struct FfmpegEncoder {
     /// 帧尺寸（BGRA/RGBA，width*height*4 字节）
     width: u32,
     height: u32,
-    /// ffmpeg stderr 捕获缓冲（用于错误诊断）
-    stderr_buf: Arc<Mutex<Vec<String>>>,
+    /// ffmpeg stderr 尾部缓冲（最多 200 行，用于错误诊断）
+    stderr_buf: Arc<Mutex<VecDeque<String>>>,
+    /// stderr 实时排空线程，进程退出后回收。
+    stderr_thread: Option<thread::JoinHandle<()>>,
     /// 写入时的 IO 错误（若有）
     writer_error: Arc<Mutex<Option<String>>>,
 }
@@ -47,8 +89,7 @@ impl FfmpegEncoder {
     /// 创建并启动 ffmpeg 编码器（直连写入模式）
     ///
     /// 内部完成：ffmpeg 路径解析、参数组装、子进程启动、stderr 捕获线程、
-    /// `stdin` 写入缓冲初始化。当前版本不在编码器内部启动额外线程，
-    /// 调用方直接调用 `write_frame` 写入 pipe，消除 crossbeam channel 跳转。
+    /// `stdin` 写入缓冲初始化。帧数据由调用方线程直接写入，另设线程持续排空 stderr。
     ///
     /// `input_pix_fmt` 为原始帧数据的像素格式（如 `"bgra"` 或 `"rgba"`），
     /// 需与 GPU 离屏纹理的实际通道顺序一致。
@@ -66,45 +107,64 @@ impl FfmpegEncoder {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        // 共享错误诊断缓冲
-        let stderr_buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let writer_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let stdin = match process.stdin.take() {
+            Some(stdin) => stdin,
+            None => {
+                terminate_child(&mut process);
+                return Err(VideoExportError::PipeSetupFailed(
+                    tr!("ffmpeg stdin 未 piped").into(),
+                ));
+            }
+        };
+        let stderr = match process.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                terminate_child(&mut process);
+                return Err(VideoExportError::PipeSetupFailed(
+                    tr!("ffmpeg stderr 未 piped").into(),
+                ));
+            }
+        };
 
-        // stderr 捕获线程：实时读取 ffmpeg stderr
-        let stderr = process.stderr.take().ok_or_else(|| {
-            VideoExportError::PipeSetupFailed(tr!("ffmpeg stderr 未 piped").into())
-        })?;
+        let stderr_buf: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let writer_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let stderr_buf_clone = Arc::clone(&stderr_buf);
-        thread::spawn(move || {
-            let mut reader = std::io::BufReader::new(stderr);
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        let trimmed = line.trim_end().to_string();
-                        if !trimmed.is_empty() {
-                            tracing::warn!("[ffmpeg] {}", trimmed);
-                            if let Ok(mut buf) = stderr_buf_clone.lock() {
-                                buf.push(trimmed);
+        let stderr_thread = match thread::Builder::new()
+            .name("ffmpeg-stderr-video".into())
+            .spawn(move || {
+                let mut reader = std::io::BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let trimmed = line.trim_end().to_string();
+                            if !trimmed.is_empty() {
+                                tracing::warn!("[ffmpeg] {}", trimmed);
+                                if let Ok(mut buf) = stderr_buf_clone.lock() {
+                                    push_stderr_tail(&mut buf, trimmed);
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn!("[ffmpeg] stderr 读取错误: {}", e);
-                        break;
+                        Err(e) => {
+                            tracing::warn!("[ffmpeg] stderr 读取错误: {}", e);
+                            break;
+                        }
                     }
                 }
+            }) {
+            Ok(handle) => handle,
+            Err(e) => {
+                terminate_child(&mut process);
+                return Err(VideoExportError::PipeSetupFailed(trf!(
+                    "无法启动 ffmpeg stderr 线程: {e}",
+                    e = e
+                )));
             }
-        });
+        };
 
-        let stdin_writer = Some(BufWriter::with_capacity(
-            1024 * 1024, // 1MB 缓冲，批量写入
-            process.stdin.take().ok_or_else(|| {
-                VideoExportError::PipeSetupFailed(tr!("ffmpeg stdin 未 piped").into())
-            })?,
-        ));
+        let stdin_writer = Some(BufWriter::with_capacity(1024 * 1024, stdin));
 
         Ok(Self {
             stdin_writer,
@@ -112,6 +172,7 @@ impl FfmpegEncoder {
             width: config.width,
             height: config.height,
             stderr_buf,
+            stderr_thread: Some(stderr_thread),
             writer_error,
         })
     }
@@ -152,8 +213,14 @@ impl FfmpegEncoder {
             std::mem::drop(writer);
         }
 
-        // 等待 ffmpeg 进程
-        let status = self.process.wait()?;
+        // 有界等待；超时路径会终止并回收子进程，随后 Drop 回收 stderr 线程。
+        let status = wait_for_process(&mut self.process, FFMPEG_FINISH_TIMEOUT).map_err(|e| {
+            VideoExportError::FfmpegWriteFailed(format!(
+                "等待 ffmpeg 完成失败: {e}\nffmpeg stderr:\n{}",
+                self.stderr_content()
+            ))
+        })?;
+        self.join_stderr_thread();
         if !status.success() {
             let stderr_lines = self.stderr_content();
             tracing::error!(
@@ -174,11 +241,22 @@ impl FfmpegEncoder {
         Ok(())
     }
 
-    /// 拼接捕获的 stderr 行
+    fn join_stderr_thread(&mut self) {
+        if let Some(handle) = self.stderr_thread.take() {
+            let _ = handle.join();
+        }
+    }
+
+    /// 拼接捕获的 stderr 尾部行
     fn stderr_content(&self) -> String {
         self.stderr_buf
             .lock()
-            .map(|buf| buf.join("\n"))
+            .map(|buf| {
+                buf.iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
             .unwrap_or_default()
     }
 
@@ -204,9 +282,9 @@ impl Drop for FfmpegEncoder {
         if let Some(writer) = self.stdin_writer.take() {
             std::mem::drop(writer);
         }
-        // 用户取消时 kill ffmpeg 进程
-        let _ = self.process.kill();
-        let _ = self.process.wait();
+        // 用户取消时 kill ffmpeg 进程；EOF 后 stderr 线程退出并被回收。
+        terminate_child(&mut self.process);
+        self.join_stderr_thread();
     }
 }
 
@@ -255,4 +333,72 @@ pub fn ffmpeg_path() -> VideoExportResult<PathBuf> {
 /// 检查 ffmpeg 是否可用（用于 UI 提前检测）
 pub fn is_ffmpeg_available() -> bool {
     ffmpeg_path().is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::process::Child;
+    use std::time::Duration;
+
+    #[test]
+    fn test_stderr_tail_keeps_only_latest_lines() {
+        let mut tail = VecDeque::new();
+        for index in 0..201 {
+            push_stderr_tail(&mut tail, format!("line-{index}"));
+        }
+
+        assert_eq!(tail.len(), 200);
+        assert_eq!(tail.front().map(String::as_str), Some("line-1"));
+        assert_eq!(tail.back().map(String::as_str), Some("line-200"));
+    }
+
+    #[test]
+    fn test_wait_for_process_timeout_helper() {
+        if std::env::var_os("LUMINO_FFMPEG_WAIT_TEST_SLEEP").is_some() {
+            thread::sleep(Duration::from_secs(5));
+        }
+    }
+
+    fn spawn_test_child(sleep: bool) -> Child {
+        let mut command = Command::new(std::env::current_exe().expect("应取得测试可执行文件"));
+        command.args([
+            "--exact",
+            "video::ffmpeg::tests::test_wait_for_process_timeout_helper",
+            "--nocapture",
+        ]);
+        if sleep {
+            command.env("LUMINO_FFMPEG_WAIT_TEST_SLEEP", "1");
+        }
+        command
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("启动测试子进程应成功")
+    }
+
+    #[test]
+    fn test_wait_for_process_returns_after_normal_exit() {
+        let mut child = spawn_test_child(false);
+        let status = wait_for_process(&mut child, Duration::from_secs(5))
+            .expect("正常退出的子进程应完成等待");
+        assert!(status.success());
+    }
+
+    #[test]
+    fn test_wait_for_process_kills_timed_out_child() {
+        let mut child = spawn_test_child(true);
+        let result = wait_for_process(&mut child, Duration::from_millis(50));
+
+        assert!(result.is_err(), "挂起子进程必须报告超时");
+        assert_eq!(
+            result.expect_err("等待必须超时").kind(),
+            std::io::ErrorKind::TimedOut
+        );
+        assert!(
+            child.try_wait().expect("查询子进程状态应成功").is_some(),
+            "超时后必须终止并回收子进程"
+        );
+    }
 }

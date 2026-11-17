@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use wgpu;
 
-use crate::swappable_buffer::SwappableBuffer;
-use crate::{ArrangementNoteInstance, NoteInstance};
+use crate::ArrangementNoteInstance;
 
 /// 音符渲染视口缓存（带 overscan）
 ///
@@ -32,17 +29,9 @@ impl NoteRenderViewport {
     }
 }
 
-/// 渲染缓存 - 避免每帧重复上传相同数据
-///
-/// 使用双缓冲机制实现 UI 线程和渲染线程的零拷贝数据共享：
-/// - Back Buffer: UI 线程写入音符实例数据
-/// - Front Buffer: 渲染线程读取并上传到 GPU
-/// - 交换操作: 原子指针交换，无数据拷贝
+/// 渲染缓存 - 避免每帧重复上传相同数据。
+/// 音符实例由常驻 `GpuNoteBuffer` 管理，这里只保留视口与渲染资源缓存。
 pub struct RenderCache {
-    /// 双缓冲主音符实例数据（UI线程写入，渲染线程读取）
-    pub note_instances_buffer: Arc<SwappableBuffer<NoteInstance>>,
-    /// 主音符版本号（用于检测数据变化）
-    pub note_instances_version: u64,
     /// 网格线视口哈希（用于检测变化）
     pub grid_viewport_hash: u64,
     /// 音符视口哈希（用于检测变化）
@@ -58,13 +47,9 @@ pub struct RenderCache {
 }
 
 impl RenderCache {
-    /// 创建空缓存，初始化双缓冲与各代际计数。
-    ///
-    /// 默认实例缓冲区容量为 1024*1024，音符版本号与各视口哈希初始为 0。
+    /// 创建空缓存，各视口哈希与代际计数初始为 0。
     pub fn new() -> Self {
         Self {
-            note_instances_buffer: Arc::new(SwappableBuffer::new(1024 * 1024)),
-            note_instances_version: 0,
             grid_viewport_hash: 0,
             note_viewport_hash: 0,
             note_render_viewport: None,
@@ -72,18 +57,6 @@ impl RenderCache {
             arrangement_instances: Vec::new(),
             last_i2m_preview_generation: 0,
         }
-    }
-
-    /// 获取音符实例数量（从 reading_len 原子量读取，不碰状态机）
-    pub fn note_instances_len(&self) -> usize {
-        self.note_instances_buffer
-            .reading_len
-            .load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    /// 检查音符实例是否为空
-    pub fn note_instances_is_empty(&self) -> bool {
-        self.note_instances_len() == 0
     }
 
     /// 计算视口哈希（滚动+缩放+画布大小+可见键数）

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use lumino_core::{tr, trf};
 use lumino_midi_loader::loader::archive_loading::{
-    ArchiveLoadResult, extract_entry_with_tempdir, scan_file_for_midi,
+    ArchiveLoadResult, ExtractedArchiveEntry, extract_entry_with_tempdir, scan_file_for_midi,
 };
 
 use crate::runner::{RunnerInner, async_helper::run_async_task};
@@ -26,11 +26,12 @@ fn is_lmpj_path(path: &Path) -> bool {
 impl RunnerInner {
     /// 打开文件（支持 MIDI 文件和压缩包自动解压）
     pub(super) fn handle_open_file(&mut self) {
-        // 使用 FileHandler 打开文件对话框
-        let Some(path) = self.file_state.file_handler.handle_open_file() else {
-            return;
-        };
+        self.file_state
+            .file_handler
+            .pick_file_async(lumino_ui::event::menu::file::Event::OpenFileSelected);
+    }
 
+    pub(super) fn handle_selected_file(&mut self, path: PathBuf) {
         // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
         lumino_extras::palette::unlock_palette();
 
@@ -53,14 +54,15 @@ impl RunnerInner {
                     "本文件不支持加载，请检查文件格式！\n\n支持的格式：\n- MIDI 文件 (.mid / .midi)\n- Lumino 项目文件 (.lmpj)\n- 包含上述文件的压缩包 (.zip / .rar / .7z 等)"
                 ));
             }
-            ArchiveLoadResult::SingleMidiFile(extracted_path) => {
+            ArchiveLoadResult::SingleMidiFile(extracted) => {
                 // 压缩包中只有一个 MIDI 文件，自动解压并加载
+                let extracted_path = extracted.path().to_path_buf();
                 tracing::info!(
                     "压缩包自动解压成功，加载 MIDI：{:?}（来自：{:?}）",
                     extracted_path,
                     path
                 );
-                self.load_midi_file(extracted_path);
+                self.load_midi_file_guarded(extracted_path, Some(extracted));
             }
             ArchiveLoadResult::MultipleMidiFiles(midi_list) => {
                 // 多个 MIDI 文件，显示列表供用户选择
@@ -89,11 +91,8 @@ impl RunnerInner {
         // 自动选择第一个 MIDI 文件加载
         if let Some(first_midi) = midi_list.first() {
             match extract_entry_with_tempdir(archive_path, first_midi) {
-                Ok((temp_dir, extracted_path)) => {
-                    // 使用 keep() 阻止 TempDir 自动删除，确保 load_midi_file
-                    // 的异步任务能读到文件。临时文件会留在 OS 临时目录中。
-                    // TODO: 更好的做法是将 TempDir 存入窗口状态管理其生命周期
-                    let _ = temp_dir.keep();
+                Ok(extracted) => {
+                    let extracted_path = extracted.path().to_path_buf();
                     tracing::info!(
                         "自动选择并加载第一个 MIDI 文件：{}（来自：{:?}）",
                         first_midi,
@@ -104,7 +103,7 @@ impl RunnerInner {
                         file_list = file_list,
                         first_midi = first_midi
                     ));
-                    self.load_midi_file(extracted_path);
+                    self.load_midi_file_guarded(extracted_path, Some(extracted));
                 }
                 Err(e) => {
                     tracing::error!("提取 MIDI 文件失败：{e}");
@@ -119,41 +118,9 @@ impl RunnerInner {
 
     /// 导入文件（支持 MIDI 文件和压缩包自动解压）
     pub(super) fn handle_import_files(&mut self) {
-        let Some(path) = lumino_platform::dialog::FileDialog::new()
-            .add_filter(
-                crate::constants::filters::music_and_archive_filter(),
-                crate::constants::filters::MUSIC_AND_ARCHIVE_EXTS,
-            )
-            .add_filter(
-                crate::constants::filters::music_files_filter(),
-                crate::constants::filters::MUSIC_FILES_EXTS,
-            )
-            .add_filter(
-                crate::constants::filters::midi_files_filter(),
-                crate::constants::filters::MIDI_FILES_EXTS,
-            )
-            .add_filter(
-                crate::constants::filters::lumino_project_filter(),
-                crate::constants::filters::LUMINO_PROJECT_EXTS,
-            )
-            .add_filter(
-                crate::constants::filters::archive_files_filter(),
-                crate::constants::filters::ARCHIVE_FILES_EXTS,
-            )
-            .add_filter(
-                crate::constants::filters::all_files_filter(),
-                crate::constants::filters::ALL_FILES_EXTS,
-            )
-            .pick_file()
-        else {
-            return;
-        };
-
-        // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
-        lumino_extras::palette::unlock_palette();
-
-        tracing::info!("开始导入文件：{:?}", path);
-        self.handle_midi_or_archive(path);
+        self.file_state
+            .file_handler
+            .pick_file_async(lumino_ui::event::menu::file::Event::ImportFilesSelected);
     }
 
     /// 显示错误对话框
@@ -192,12 +159,16 @@ impl RunnerInner {
 
     /// 加载 MIDI 文件（后台异步加载）
     pub(crate) fn load_midi_file(&self, path: PathBuf) {
+        self.load_midi_file_guarded(path, None);
+    }
+
+    fn load_midi_file_guarded(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
         if is_lmpj_path(&path) {
-            self.load_lmpj_project(path);
+            self.load_lmpj_project(path, archive_guard);
             return;
         }
         if lumino_export::is_material_path(&path) {
-            self.load_material_project(path);
+            self.load_material_project(path, archive_guard);
             return;
         }
 
@@ -209,6 +180,7 @@ impl RunnerInner {
 
         let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
+            let _archive_guard = archive_guard;
             run_async_task(
                 lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
                 |parsed| {
@@ -236,13 +208,14 @@ impl RunnerInner {
     ///
     /// 素材内部使用 lmpj 归档形式存储，加载后通过 metadata 的
     /// `[material]` 段分辨素材文件与标准工程文件（非素材则拒绝加载）。
-    fn load_material_project(&self, path: PathBuf) {
+    fn load_material_project(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
         tracing::info!("开始后台加载素材文件：{:?}", path);
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
         lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
+            let _archive_guard = archive_guard;
             progress_cb(tr!("正在加载素材"), 0.3);
             let path_for_blocking = path.clone();
             let load_result = tokio::task::spawn_blocking(move || {
@@ -291,13 +264,14 @@ impl RunnerInner {
     }
 
     /// 加载 LMPJ 工程文件（新格式或旧版兼容）
-    fn load_lmpj_project(&self, path: PathBuf) {
+    fn load_lmpj_project(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
         tracing::info!("开始后台加载 LMPJ 工程：{:?}", path);
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
         lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
+            let _archive_guard = archive_guard;
             progress_cb(tr!("正在加载 LMPJ 工程"), 0.3);
             let path_for_blocking = path.clone();
             let load_result = tokio::task::spawn_blocking(move || {

@@ -10,7 +10,6 @@ use super::params::RenderParams;
 use super::render_loop::run_render_thread;
 use super::render_loop::runner::context::{RenderContext, RenderThreadChannels};
 use super::stats::RenderStats;
-use crate::SwappableBuffer;
 use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedTexture;
 
@@ -65,8 +64,6 @@ pub struct WgpuRenderThread {
 
     /// 渲染完成的离屏纹理，供主线程读取
     pub latest_texture: Arc<Mutex<Option<Arc<TrackedTexture>>>>,
-    /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
-    pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 洋葱皮生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
     waterfall_progress: Arc<Mutex<Vec<(String, f32)>>>,
     /// 活体音符实例缓冲发布通道（渲染线程每帧写入 → UI 线程侧边瀑布流面板读取）
@@ -119,7 +116,6 @@ impl WgpuRenderThread {
         epoch: GpuEpoch,
         note_event_sender: std::sync::mpsc::Sender<crate::NoteEvent>,
         note_events_rx: std::sync::mpsc::Receiver<crate::NoteEvent>,
-        note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 
@@ -142,7 +138,6 @@ impl WgpuRenderThread {
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
-        let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
         let waterfall_progress_clone = Arc::clone(&waterfall_progress);
         let note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>> = Arc::new(Mutex::new(None));
         let note_data_pub_clone = Arc::clone(&note_data_pub);
@@ -160,7 +155,6 @@ impl WgpuRenderThread {
                 latest_texture_clone,
                 stats_clone,
                 note_events_rx,
-                note_instances_buffer: note_instances_buffer_clone,
                 waterfall_progress: waterfall_progress_clone,
                 note_data_pub: note_data_pub_clone,
                 onion_skin_streaming_rx,
@@ -178,7 +172,6 @@ impl WgpuRenderThread {
             thread_handle: Some(thread_handle),
             latest_view: Mutex::new(None),
             latest_texture,
-            note_instances_buffer,
             waterfall_progress,
             note_data_pub,
             outgoing_frame: AtomicU64::new(0),

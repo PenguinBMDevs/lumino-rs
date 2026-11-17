@@ -6,16 +6,29 @@
 
 use std::path::{Path, PathBuf};
 
+/// 已提取的压缩包条目；临时目录随此值销毁而自动清理。
+#[derive(Debug)]
+pub struct ExtractedArchiveEntry {
+    _temp_dir: tempfile::TempDir,
+    path: PathBuf,
+}
+
+impl ExtractedArchiveEntry {
+    /// 提取后的文件路径；调用方必须同时保留此 guard。
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// 压缩包扫描结果
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ArchiveLoadResult {
     /// 不是压缩包，直接按常规文件处理
     NotArchive,
     /// 压缩包中没有 MIDI 文件
     NoMidiFiles,
-    /// 压缩包中只有一个 MIDI 文件（自动解压到临时目录）
-    /// 返回提取后的文件路径
-    SingleMidiFile(PathBuf),
+    /// 压缩包中只有一个 MIDI 文件，返回路径及其临时目录 guard。
+    SingleMidiFile(ExtractedArchiveEntry),
     /// 压缩包中有多个 MIDI 文件，需要用户选择
     /// 返回文件名列表
     MultipleMidiFiles(Vec<String>),
@@ -54,8 +67,8 @@ pub fn scan_file_for_midi(path: &Path) -> ArchiveLoadResult {
     if midi_entries.len() == 1 {
         // 只有一个 MIDI 文件，自动提取到临时目录并加载
         let entry_name = &midi_entries[0].name;
-        match extract_and_get_path(path, entry_name) {
-            Ok(extracted_path) => ArchiveLoadResult::SingleMidiFile(extracted_path),
+        match extract_entry_with_tempdir(path, entry_name) {
+            Ok(extracted) => ArchiveLoadResult::SingleMidiFile(extracted),
             Err(e) => {
                 tracing::warn!("自动提取 MIDI 失败: {e}");
                 ArchiveLoadResult::NoMidiFiles
@@ -65,24 +78,6 @@ pub fn scan_file_for_midi(path: &Path) -> ArchiveLoadResult {
         // 多个 MIDI 文件，返回文件名列表让用户选择
         ArchiveLoadResult::MultipleMidiFiles(midi_entries.into_iter().map(|e| e.name).collect())
     }
-}
-
-/// 从压缩包中提取指定条目到临时目录，返回提取后的文件路径
-///
-/// 返回的路径在程序关闭后可能仍存在于系统临时目录中。
-/// `TempDir::into_path()` 阻止了自动删除，由 OS 临时目录清理策略负责回收。
-pub fn extract_and_get_path(
-    archive_path: &Path,
-    entry_name: &str,
-) -> Result<PathBuf, crate::archive::ArchiveError> {
-    use crate::archive::extract_entry_to_dir;
-
-    let temp_dir = tempfile::tempdir()?;
-    let output_path = extract_entry_to_dir(archive_path, entry_name, temp_dir.path())?;
-
-    // 阻止 TempDir drop 时删除临时目录，确保路径在函数返回后仍然有效
-    let _ = temp_dir.keep();
-    Ok(output_path)
 }
 
 /// 将压缩包中的所有内容提取到临时目录，并返回 TempDir 和 MIDI 文件路径
@@ -97,20 +92,20 @@ pub fn extract_archive_to_temp_dir(
     Ok((temp_dir, files))
 }
 
-/// 从压缩包中提取指定条目，并保持 TempDir 存活
-///
-/// 返回 (TempDir, 提取的文件路径)。
-/// TempDir 在 drop 时自动清理临时文件。
+/// 从压缩包中提取指定条目，返回持有临时目录生命周期的 guard。
 pub fn extract_entry_with_tempdir(
     archive_path: &Path,
     entry_name: &str,
-) -> Result<(tempfile::TempDir, PathBuf), crate::archive::ArchiveError> {
+) -> Result<ExtractedArchiveEntry, crate::archive::ArchiveError> {
     use crate::archive::extract_entry_to_dir;
     use tempfile::tempdir;
 
     let temp_dir = tempdir()?;
     let output_path = extract_entry_to_dir(archive_path, entry_name, temp_dir.path())?;
-    Ok((temp_dir, output_path))
+    Ok(ExtractedArchiveEntry {
+        _temp_dir: temp_dir,
+        path: output_path,
+    })
 }
 
 #[cfg(test)]
@@ -139,5 +134,31 @@ mod tests {
         assert!(crate::archive::is_midi_file(Path::new("test.midi")));
         assert!(crate::archive::is_midi_file(Path::new("test.lmpj")));
         assert!(!crate::archive::is_midi_file(Path::new("test.zip")));
+    }
+
+    #[test]
+    fn test_extracted_entry_guard_cleans_temp_dir() {
+        use std::io::Write as _;
+
+        let fixture = tempfile::tempdir().expect("创建测试目录应成功");
+        let archive_path = fixture.path().join("one.zip");
+        let file = std::fs::File::create(&archive_path).expect("创建 ZIP 应成功");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file("note.mid", zip::write::SimpleFileOptions::default())
+            .expect("创建 ZIP 条目应成功");
+        writer.write_all(b"MThd").expect("写入 ZIP 条目应成功");
+        writer.finish().expect("完成 ZIP 应成功");
+
+        let result = scan_file_for_midi(&archive_path);
+        let ArchiveLoadResult::SingleMidiFile(extracted) = result else {
+            panic!("单 MIDI 压缩包应返回提取 guard");
+        };
+        let temp_root = extracted._temp_dir.path().to_path_buf();
+        assert!(extracted.path().exists(), "guard 存活时文件必须可读");
+
+        drop(extracted);
+
+        assert!(!temp_root.exists(), "guard 销毁后必须清理临时目录");
     }
 }

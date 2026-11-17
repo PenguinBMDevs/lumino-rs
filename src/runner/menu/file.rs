@@ -47,7 +47,9 @@ impl RunnerInner {
                 // 打开另一个工程前检查未保存更改；有则弹保存确认对话框
                 self.request_close_action(PendingCloseAction::OpenProject, event_loop);
             }
+            OpenFileSelected(path) => self.handle_selected_file(path),
             ImportFiles => self.handle_import_files(),
+            ImportFilesSelected(path) => self.handle_selected_file(path),
             ImportFromCloud => {
                 self.ensure_cloud_ready(crate::runner::cloud::CloudIntent::Import);
             }

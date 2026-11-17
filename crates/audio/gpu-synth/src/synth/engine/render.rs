@@ -75,12 +75,14 @@ impl GpuSynth {
         // state did not move.
         if self.voices.is_empty() {
             self.update_mix_params(base)?;
-            if let Some(data) = self.last_out.take() {
+            if let Some(mut data) = self.last_out.take() {
                 let count = (data.len() / 4).min(block * chs);
                 out[..count].copy_from_slice(bytemuck::cast_slice(&data[..count * 4]));
                 if count < block * chs {
                     out[count..block * chs].fill(0.0);
                 }
+                data.clear();
+                self.readback_out_scratch = data;
             } else {
                 out[..block * chs].fill(0.0);
             }

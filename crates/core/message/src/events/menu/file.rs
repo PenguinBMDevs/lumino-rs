@@ -8,6 +8,8 @@ pub enum Event {
     New,
     /// 打开工程
     Open,
+    /// 后台文件对话框已选择待打开的工程
+    OpenFileSelected(PathBuf),
     /// 保存工程
     Save,
     /// 关闭当前工程
@@ -21,6 +23,8 @@ pub enum Event {
     /* */
     /// 导入文件
     ImportFiles,
+    /// 后台文件对话框已选择待导入的文件
+    ImportFilesSelected(PathBuf),
     /// 从云存储导入
     ImportFromCloud,
     /// 保存当前工程到云存储
@@ -90,6 +94,10 @@ impl Event {
     pub const fn open() -> Self {
         Self::Open
     }
+    /// 构造已选择待打开工程事件
+    pub fn open_file_selected(path: PathBuf) -> Self {
+        Self::OpenFileSelected(path)
+    }
     /// 构造保存事件
     pub const fn save() -> Self {
         Self::Save
@@ -113,6 +121,10 @@ impl Event {
     /// 构造导入文件事件
     pub const fn import_files() -> Self {
         Self::ImportFiles
+    }
+    /// 构造已选择待导入文件事件
+    pub fn import_files_selected(path: PathBuf) -> Self {
+        Self::ImportFilesSelected(path)
     }
     /// 构造从云存储导入事件
     pub const fn import_from_cloud() -> Self {

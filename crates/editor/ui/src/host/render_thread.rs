@@ -27,7 +27,6 @@ impl Host {
             self.render_ctx.epoch,
             note_event_tx,
             note_event_rx,
-            std::sync::Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);

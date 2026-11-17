@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use russh::client::{AuthResult, Config as SshConfig, Handle, Handler, connect};
-use russh::keys::ssh_key::PublicKey;
+use russh::keys::ssh_key::{HashAlg, PublicKey};
+use russh::keys::{check_known_hosts, check_known_hosts_path};
 use russh_sftp::client::SftpSession;
 
 use lumino_core::{tr, trf};
@@ -18,20 +19,71 @@ use crate::crypto::decrypt;
 use crate::error::{CloudError, Result};
 use crate::model::{CloudConnection, CloudEntry};
 
-/// 服务器主机密钥校验处理器
+/// 服务器主机密钥校验处理器。
 ///
-/// 首次连接的服务器密钥直接接受（与常见 FTP/SFTP 客户端一致；
-/// 不做指纹持久化校验，简化使用）。
-struct SshHandler;
+/// 使用 OpenSSH 的 `~/.ssh/known_hosts`；未知主机与密钥变更都会在密码认证前拒绝。
+struct SshHandler {
+    host: String,
+    port: u16,
+    known_hosts: Option<std::path::PathBuf>,
+}
+
+impl SshHandler {
+    fn new(host: String, port: u16) -> Self {
+        Self {
+            host,
+            port,
+            known_hosts: None,
+        }
+    }
+}
+
+fn verify_host_key(
+    host: &str,
+    port: u16,
+    server_public_key: &PublicKey,
+    known_hosts: Option<&Path>,
+) -> std::result::Result<bool, russh::keys::Error> {
+    match known_hosts {
+        Some(path) => check_known_hosts_path(host, port, server_public_key, path),
+        None => check_known_hosts(host, port, server_public_key),
+    }
+}
 
 impl Handler for SshHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> std::result::Result<bool, Self::Error> {
-        Ok(true)
+        let fingerprint = server_public_key.fingerprint(HashAlg::Sha256);
+        match verify_host_key(
+            &self.host,
+            self.port,
+            server_public_key,
+            self.known_hosts.as_deref(),
+        ) {
+            Ok(true) => Ok(true),
+            Ok(false) => {
+                tracing::warn!(
+                    "拒绝未知 SFTP 主机 {}:{}（SHA-256 指纹 {}）；请先将主机密钥加入 ~/.ssh/known_hosts",
+                    self.host,
+                    self.port,
+                    fingerprint
+                );
+                Ok(false)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "拒绝 SFTP 主机 {}:{}（SHA-256 指纹 {}）：主机密钥校验失败: {e}",
+                    self.host,
+                    self.port,
+                    fingerprint
+                );
+                Err(e.into())
+            }
+        }
     }
 }
 
@@ -78,7 +130,8 @@ impl CloudClient for SftpClient {
             ..SshConfig::default()
         };
         let config = Arc::new(ssh_config);
-        let mut session = connect(config, (address.as_str(), port), SshHandler)
+        let handler = SshHandler::new(address.clone(), port);
+        let mut session = connect(config, (address.as_str(), port), handler)
             .await
             .map_err(|e| {
                 CloudError::Connect(trf!(
@@ -283,5 +336,61 @@ impl CloudClient for SftpClient {
 impl Default for SftpClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use russh::keys::parse_public_key_base64;
+
+    const KEY_A: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
+    const KEY_B: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+jpNSOEWD9OJ3X";
+
+    fn public_key(value: &str) -> PublicKey {
+        parse_public_key_base64(value).expect("测试公钥应可解析")
+    }
+
+    fn known_hosts_fixture(name: &str, contents: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("lumino-cloud-sftp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("创建测试目录应成功");
+        let path = dir.join(name);
+        std::fs::write(&path, contents).expect("写入 known_hosts 夹具应成功");
+        path
+    }
+
+    #[test]
+    fn test_known_host_key_is_accepted() {
+        let path = known_hosts_fixture(
+            "known-hosts-accepted",
+            &format!("[localhost]:2222 ssh-ed25519 {KEY_A}\n"),
+        );
+        let accepted = verify_host_key("localhost", 2222, &public_key(KEY_A), Some(&path))
+            .expect("已登记密钥应通过校验");
+        assert!(accepted);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_unknown_host_key_is_rejected() {
+        let path = known_hosts_fixture(
+            "known-hosts-unknown",
+            &format!("[localhost]:2222 ssh-ed25519 {KEY_A}\n"),
+        );
+        let accepted = verify_host_key("example.com", 22, &public_key(KEY_A), Some(&path))
+            .expect("未知主机应返回未登记状态");
+        assert!(!accepted);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_changed_host_key_is_rejected() {
+        let path = known_hosts_fixture(
+            "known-hosts-changed",
+            &format!("example.com ssh-ed25519 {KEY_A}\n"),
+        );
+        let result = verify_host_key("example.com", 22, &public_key(KEY_B), Some(&path));
+        assert!(matches!(result, Err(russh::keys::Error::KeyChanged { .. })));
+        let _ = std::fs::remove_file(path);
     }
 }

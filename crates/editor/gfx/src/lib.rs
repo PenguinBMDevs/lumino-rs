@@ -40,7 +40,6 @@ pub mod miditrail_renderer;
 pub mod waterfall_renderer;
 
 mod shader;
-mod swappable_buffer;
 
 /// 测试共享 GPU 设备（并行测试单设备复用，避免多设备并发导致驱动停顿/挂死）
 #[cfg(test)]
@@ -100,7 +99,6 @@ pub use note_renderer::{
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
-pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
 pub use vertical_grid_renderer::VerticalGridRenderer;
 
 pub use miditrail_renderer::{

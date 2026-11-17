@@ -59,7 +59,7 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       # 优化后的缓存配置：支持降级匹配
       - name: Cache cargo & target
@@ -72,6 +72,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
 
       - name: Cargo check
         run: cargo check --workspace
@@ -147,6 +150,13 @@ jobs:
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
+
+      # 无外部服务器的协议、状态机与序列化回归；真实服务器 E2E 仍保留 ignored 人工门禁。
+      - name: Collaboration offline regression
+        run: cargo test -p lumino-collaboration
+        env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1
+          LUMINO_MEMORY_SOFT_LIMIT_MB: 65536
 
   # ── 金丝雀构建：Windows x64 release → 推 Hugging Face ─────────────
   # 与门禁并行，不等 lint/test。push 即构建，炸了下次 push 自然覆盖。

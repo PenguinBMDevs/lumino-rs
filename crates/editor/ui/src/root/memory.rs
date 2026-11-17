@@ -7,7 +7,6 @@ impl Root {
     pub fn memory_breakdown(&self) -> MemoryBreakdown {
         MemoryBreakdown {
             editor: self.editor.memory_breakdown(),
-            ..Default::default()
         }
     }
 }

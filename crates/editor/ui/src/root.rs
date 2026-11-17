@@ -22,20 +22,6 @@ pub use lumino_ui_core::visual_state::VisualState;
 pub struct MemoryBreakdown {
     /// 编辑器内各组件的细分
     pub editor: editor::EditorMemory,
-    /// note_instances_buffer 三缓冲信息（由 Host::memory_breakdown 填充）
-    pub note_instances_writer_cap: usize,
-    /// 写入缓冲当前占用长度
-    pub note_instances_writer_len: usize,
-    /// 就绪缓冲容量
-    pub note_instances_ready_cap: usize,
-    /// 就绪缓冲当前占用长度
-    pub note_instances_ready_len: usize,
-    /// 读取缓冲容量
-    pub note_instances_reading_cap: usize,
-    /// 读取缓冲当前占用长度
-    pub note_instances_reading_len: usize,
-    /// 单个音符实例的大小（字节）
-    pub note_instance_size: usize,
 }
 
 mod arrangement;

@@ -225,6 +225,7 @@ impl GpuSynth {
         // REND-015 #115: 每块 `apply_events` 开头会重置；这里只是给字段一个
         // 合法初值（首块应用事件前不会有裁剪）。
         let trim_fade_budget = trim_fade_budget_for(&config);
+        let (readback_tx, readback_rx) = std::sync::mpsc::channel();
 
         let mut engine = Self {
             config,
@@ -270,7 +271,11 @@ impl GpuSynth {
             limiter_gain: 1.0,
             limiter_tail: Vec::new(),
             last_out: None,
+            readback_out_scratch: Vec::new(),
             last_states: None,
+            readback_tx,
+            readback_rx,
+            readback_generation: 0,
             prev_voice_ids: Vec::new(),
             scratch_voice_ids: Vec::new(),
             mix_in_block: Vec::new(),

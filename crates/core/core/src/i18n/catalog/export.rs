@@ -56,6 +56,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "ffmpeg 退出码 {code}" => Some("ffmpeg exited with code {code}"),
         "ffmpeg 未知错误退出" => Some("ffmpeg exited with an unknown error"),
         "ffmpeg stderr 未 piped" => Some("ffmpeg stderr is not piped"),
+        "无法启动 ffmpeg stderr 线程: {e}" => {
+            Some("Failed to start the ffmpeg stderr thread: {e}")
+        }
         "ffmpeg stdin 未 piped" => Some("ffmpeg stdin is not piped"),
         "FLAC 不支持超过 384kHz 的采样率" => {
             Some("FLAC does not support sample rates above 384 kHz")

@@ -1,15 +1,43 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use lumino_core::trf;
+
 use crate::constants::filters;
 
 /// 文件处理器
-pub struct FileHandler {}
+pub struct FileHandler {
+    dialog_open: Arc<AtomicBool>,
+}
+
+pub(crate) struct FileDialogGuard {
+    dialog_open: Arc<AtomicBool>,
+}
+
+impl Drop for FileDialogGuard {
+    fn drop(&mut self) {
+        self.dialog_open.store(false, Ordering::Release);
+    }
+}
 
 impl FileHandler {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            dialog_open: Arc::new(AtomicBool::new(false)),
+        }
     }
 
-    /// 打开文件对话框并返回选择的路径
-    pub fn handle_open_file(&self) -> Option<std::path::PathBuf> {
+    pub(crate) fn try_acquire_dialog(&self) -> Option<FileDialogGuard> {
+        self.dialog_open
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| FileDialogGuard {
+                dialog_open: Arc::clone(&self.dialog_open),
+            })
+    }
+
+    fn dialog(&self) -> lumino_platform::dialog::FileDialog {
         lumino_platform::dialog::FileDialog::new()
             .add_filter(
                 filters::music_and_archive_filter(),
@@ -23,6 +51,56 @@ impl FileHandler {
             )
             .add_filter(filters::archive_files_filter(), filters::ARCHIVE_FILES_EXTS)
             .add_filter(filters::all_files_filter(), filters::ALL_FILES_EXTS)
-            .pick_file()
+    }
+
+    /// 在后台线程打开文件对话框，选择结果通过 UI 事件队列返回。
+    pub fn pick_file_async(
+        &self,
+        selected_event: fn(PathBuf) -> lumino_ui::event::menu::file::Event,
+    ) {
+        let Some(guard) = self.try_acquire_dialog() else {
+            return;
+        };
+        let dialog = self.dialog();
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || dialog.pick_file()).await;
+            match result {
+                Ok(Some(path)) => {
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(selected_event(path)))
+                }
+                Ok(None) => {}
+                Err(e) => lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                    lumino_ui::event::menu::file::Event::MidiParseError(trf!(
+                        "文件对话框任务失败: {e}",
+                        e = e
+                    )),
+                )),
+            }
+            drop(guard);
+        });
+    }
+}
+
+impl Default for FileHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_dialog_allows_only_one_in_flight() {
+        let handler = FileHandler::new();
+        let guard = handler
+            .try_acquire_dialog()
+            .expect("首个文件对话框应可打开");
+        assert!(handler.try_acquire_dialog().is_none());
+
+        drop(guard);
+
+        assert!(handler.try_acquire_dialog().is_some());
     }
 }

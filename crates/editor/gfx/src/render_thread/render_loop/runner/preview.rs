@@ -11,8 +11,8 @@ use super::context::{PreviewPassContext, PreviewUploadContext, RenderFrameState}
 
 /// 确保离屏纹理已创建。
 ///
-/// 统一全量渲染（2026-08-06）：主音轨不再走「可见列表 + SwappableBuffer 版本
-/// 驱动上传」——GPU buffer 常驻所有轨全部音符（洋葱皮全量会话），主音轨由
+/// 统一全量渲染：主音轨不再走「可见列表 + 旧交换缓冲版本驱动上传」——
+/// GPU buffer 常驻所有轨全部音符（洋葱皮全量会话），主音轨由
 /// ViewState uniform 着色、滚动/切轨零重传。故本函数仅保留纹理确保。
 pub(super) fn ensure_offscreen_textures_and_upload_notes(context: &mut PreviewUploadContext<'_>) {
     let width = context.params.viewport_size.0.max(1);

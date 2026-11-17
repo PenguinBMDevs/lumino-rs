@@ -17,19 +17,21 @@ impl GpuSynth {
         };
         let device = &self.res.ctx.device;
 
-        // Map requests (callbacks fire inside the poll below).
-        let (otx, orx) = std::sync::mpsc::channel();
+        // 通道在引擎初始化时创建一次；代际编号隔离超时后迟到的旧回调。
+        self.readback_generation = self.readback_generation.wrapping_add(1);
+        let generation = self.readback_generation;
+        let otx = self.readback_tx.clone();
         self.out_readback[p.out_slot]
             .slice(..)
             .map_async(wgpu::MapMode::Read, move |r| {
-                let _ = otx.send(r.is_ok());
+                let _ = otx.send((generation, ReadbackTarget::Output, r.is_ok()));
             });
-        let (stx, srx) = std::sync::mpsc::channel();
+        let stx = self.readback_tx.clone();
         let states_rb = self.states_readback[p.states_slot].buffer().clone();
         states_rb
             .slice(..)
             .map_async(wgpu::MapMode::Read, move |r| {
-                let _ = stx.send(r.is_ok());
+                let _ = stx.send((generation, ReadbackTarget::States, r.is_ok()));
             });
 
         // REND-019 #152：**有界等待**——分片 poll（100ms）+ 本地丢失标志检查 +
@@ -52,15 +54,14 @@ impl GpuSynth {
                     timeout: Some(WAIT_SLICE),
                 })
                 .map_err(|e| SynthError::Gpu(format!("poll failed: {e:?}")))?;
-            if out_res.is_none()
-                && let Ok(r) = orx.try_recv()
-            {
-                out_res = Some(r);
-            }
-            if states_res.is_none()
-                && let Ok(r) = srx.try_recv()
-            {
-                states_res = Some(r);
+            while let Ok((message_generation, target, result)) = self.readback_rx.try_recv() {
+                if message_generation != generation {
+                    continue;
+                }
+                match target {
+                    ReadbackTarget::Output => out_res = Some(result),
+                    ReadbackTarget::States => states_res = Some(result),
+                }
             }
             if out_res.is_some() && states_res.is_some() {
                 break;
@@ -73,8 +74,13 @@ impl GpuSynth {
         let out_ok = out_res.unwrap_or(false);
         if out_ok {
             let slice = self.out_readback[p.out_slot].slice(..);
-            self.last_out = Some(slice.get_mapped_range().to_vec());
+            let mapped = slice.get_mapped_range();
+            let mut bytes = std::mem::take(&mut self.readback_out_scratch);
+            bytes.clear();
+            bytes.extend_from_slice(&mapped);
+            drop(mapped);
             self.out_readback[p.out_slot].unmap();
+            self.last_out = Some(bytes);
         } else {
             return Err(SynthError::Gpu("output readback map failed".into()));
         }
@@ -82,10 +88,12 @@ impl GpuSynth {
         if states_ok {
             let rb = self.states_readback[p.states_slot].buffer();
             let mapped = rb.slice(..).get_mapped_range();
-            let bytes = mapped.to_vec();
+            let mut bytes = self.last_states.take().unwrap_or_default();
+            bytes.clear();
+            bytes.extend_from_slice(&mapped);
             drop(mapped);
-            self.last_states = Some(bytes);
             rb.unmap();
+            self.last_states = Some(bytes);
         } else {
             return Err(SynthError::Gpu("states readback map failed".into()));
         }
@@ -103,7 +111,7 @@ impl GpuSynth {
     }
 
     pub(crate) fn readback(&mut self, out: &mut [f32]) -> Result<(), SynthError> {
-        let Some(data) = self.last_out.take() else {
+        let Some(mut data) = self.last_out.take() else {
             // First block of a stream has no previous dispatch to collect
             // from: the pipeline owes the listener silence for that block
             // (block 0's audio arrives with block 1).
@@ -112,9 +120,12 @@ impl GpuSynth {
         };
         let count = (data.len() / 4).min(out.len());
         out[..count].copy_from_slice(bytemuck::cast_slice(&data[..count * 4]));
-        // Lookahead output limiter (skip with LUMINO_NO_LIMITER for GPU
-        // output diagnostics).
-        if std::env::var("LUMINO_NO_LIMITER").is_err() {
+        data.clear();
+        self.readback_out_scratch = data;
+        // 环境开关只读取一次，避免逐块进入进程环境锁。
+        static NO_LIMITER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let no_limiter = *NO_LIMITER.get_or_init(|| std::env::var("LUMINO_NO_LIMITER").is_ok());
+        if !no_limiter {
             self.apply_limiter(out);
         }
         Ok(())

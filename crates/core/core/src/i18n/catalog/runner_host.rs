@@ -171,6 +171,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "写入文件失败: {e}" => Some("Failed to write file: {e}"),
         // ── 协作（services/collaboration_service） ──
         "协作通知" => Some("Collaboration Notice"),
+        // ── 文件对话框（runner/file_handler） ──
+        "文件对话框任务失败: {e}" => Some("File dialog task failed: {e}"),
         // ── 文件对话框过滤器标签（constants::filters；其余 5 个标签复用
         //    ui_shell 分域的同名登记） ──
         "压缩包文件" => Some("Archive Files"),

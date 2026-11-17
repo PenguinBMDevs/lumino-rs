@@ -22,6 +22,12 @@ use crate::synth::voices::{NO_ENV_TEMPLATE, SampleRef, Voice, build_voice, refre
 /// 与 `mix.wgsl` 的 `BUCKET_OFFSETS` 必须一致（REF-LGS-001）。
 pub(crate) const MIX_BUCKET_OFFSETS: usize = 2 * (MAX_MIDI_CHANNELS + 1);
 
+#[derive(Clone, Copy)]
+enum ReadbackTarget {
+    Output,
+    States,
+}
+
 mod bind;
 mod cc;
 mod channel;
@@ -238,7 +244,11 @@ pub struct GpuSynth {
     limiter_tail: Vec<f32>,
     // Readback staging (filled by dispatch, consumed by readback/sync).
     last_out: Option<Vec<u8>>,
+    readback_out_scratch: Vec<u8>,
     last_states: Option<Vec<u8>>,
+    readback_tx: std::sync::mpsc::Sender<(u64, ReadbackTarget, bool)>,
+    readback_rx: std::sync::mpsc::Receiver<(u64, ReadbackTarget, bool)>,
+    readback_generation: u64,
     /// Voice ids of the last uploaded voice list, in upload order; used to
     /// map the read-back states onto the current (possibly shrunk) list.
     prev_voice_ids: Vec<u32>,

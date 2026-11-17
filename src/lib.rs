@@ -32,8 +32,8 @@ pub type PlatformApp = std::convert::Infallible;
 
 /// Puffin 服务器包装器，确保在程序结束时才释放。
 ///
-/// Android 上**不启动**：它监听 `0.0.0.0:8585`，在移动端属于「无谓开端口 + 要
-/// INTERNET 权限 + 常驻耗电」，且没有 puffin_viewer 可连。
+/// 桌面端仅监听 `127.0.0.1:8585`；Android 上**不启动**，避免无谓开端口、
+/// INTERNET 权限与常驻耗电。
 struct PuffinServerHolder {
     #[cfg(not(target_os = "android"))]
     #[allow(dead_code)]
@@ -44,7 +44,7 @@ impl PuffinServerHolder {
     #[cfg(not(target_os = "android"))]
     fn new() -> Self {
         puffin::set_scopes_on(true);
-        let server = puffin_http::Server::new("0.0.0.0:8585").ok();
+        let server = puffin_http::Server::new("127.0.0.1:8585").ok();
         if server.is_some() {
             tracing::info!("Puffin profiler server started on http://127.0.0.1:8585");
             tracing::info!("Run `cargo install puffin_viewer && puffin_viewer` to view flamegraph");

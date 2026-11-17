@@ -17,7 +17,7 @@ mod types;
 
 // 公开导出
 pub use archive_loading::{
-    ArchiveLoadResult, extract_and_get_path, extract_archive_to_temp_dir,
+    ArchiveLoadResult, ExtractedArchiveEntry, extract_archive_to_temp_dir,
     extract_entry_with_tempdir, scan_file_for_midi,
 };
 pub use parsed_midi::{load_parsed_midi, load_parsed_midi_from_bytes};

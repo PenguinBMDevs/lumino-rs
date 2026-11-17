@@ -9,8 +9,8 @@ use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::Renderers;
 use crate::render_thread::stats::RenderStats;
 use crate::{
-    MiditrailRenderer, SwappableBuffer, TextureWaterfallConfig, TextureWaterfallRenderer,
-    WaterfallMeta, WaterfallRenderer, WaterfallStreamMsg,
+    MiditrailRenderer, TextureWaterfallConfig, TextureWaterfallRenderer, WaterfallMeta,
+    WaterfallRenderer, WaterfallStreamMsg,
 };
 
 /// 不可变 GPU 基础设施。
@@ -63,8 +63,6 @@ pub struct RenderThreadChannels {
     pub stats_clone: Arc<Mutex<RenderStats>>,
     /// 音符事件接收端（UI 线程 → 渲染线程增量更新）
     pub note_events_rx: std::sync::mpsc::Receiver<crate::NoteEvent>,
-    /// 双缓冲音符实例数据（UI 线程写入，渲染线程读取）
-    pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 贴图瀑布流生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
     pub waterfall_progress: Arc<Mutex<Vec<(String, f32)>>>,
     /// 活体音符实例缓冲发布通道（渲染线程每帧写入 → UI 线程侧边瀑布流面板读取）

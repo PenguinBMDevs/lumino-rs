@@ -9,8 +9,8 @@
 //! bounded queue; when the render thread is ahead of the consumer by more
 //! than 10% it sleeps, otherwise it keeps rendering — it **never drops a
 //! block**. The audio callback runs on the OS audio thread and must never
-//! block: it only copies from the queue and writes silence on underrun
-//! (counting them in the stats).
+//! block: it copies queued samples, recycles old buffers through the render
+//! thread, and counts underruns. The stream-owner thread throttles their logs.
 //!
 //! # Sample-rate negotiation
 //!
@@ -27,9 +27,6 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-
-/// DIAG: throttle for the `[UNDERRUN]` stderr marker below.
-static LAST_UD_LOG: AtomicI64 = AtomicI64::new(0);
 
 /// 带墙钟时间戳的实时 MIDI 事件（发送端记录入队时刻）。
 ///

@@ -57,8 +57,6 @@ fn note_border_width(track_id: usize) -> u32 {
 /// 编辑器画布：`lumino-gfx` 分离渲染线程 + 离屏纹理（供 egui 作为底层采样）。
 struct GfxCanvas {
     thread: lumino_gfx::WgpuRenderThread,
-    /// 音符实例双缓冲；空画布也保留句柄，后续接入编辑器数据即可复用。
-    _buffer: Arc<lumino_gfx::SwappableBuffer<lumino_gfx::NoteInstance>>,
 }
 
 impl GfxCanvas {
@@ -68,7 +66,6 @@ impl GfxCanvas {
         format: wgpu::TextureFormat,
     ) -> Result<Self, String> {
         let (note_tx, note_rx) = std::sync::mpsc::channel();
-        let buffer = Arc::new(lumino_gfx::SwappableBuffer::new(0));
         let thread = lumino_gfx::WgpuRenderThread::spawn(
             device.clone(),
             queue.clone(),
@@ -76,13 +73,9 @@ impl GfxCanvas {
             lumino_gfx::GpuEpoch::INITIAL,
             note_tx,
             note_rx,
-            buffer.clone(),
         )
         .map_err(|error| format!("启动 gfx 渲染线程失败: {error}"))?;
-        Ok(Self {
-            thread,
-            _buffer: buffer,
-        })
+        Ok(Self { thread })
     }
 
     /// 全量上传所有轨道的音符实例（`OnionSkinStreamMsg` 会话）。
