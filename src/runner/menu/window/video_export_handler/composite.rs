@@ -22,6 +22,8 @@ pub(super) struct CompositeFrameInput<'a> {
     pub keyboard_pixels: &'a [u8],
     pub kb_w: u32,
     pub kb_h: u32,
+    /// 128 键 RGBA 键色（渲染线程 GPU 活跃键内核推导，随帧同序送达）。
+    pub key_colors: &'a [u8; 1024],
 }
 
 /// 单帧合成：键盘贴图 + 标尺数字 + 预览帧生成。
@@ -42,6 +44,7 @@ pub(super) fn composite_frame(
         keyboard_pixels,
         kb_w,
         kb_h,
+        key_colors,
     } = input;
     let mut stats = FrameStageStats::default();
     let FrameParams {
@@ -49,8 +52,6 @@ pub(super) fn composite_frame(
         zoom_x: zx,
         keyboard_width: kw,
         ppq: ppq_val,
-        key_colors,
-        ..
     } = params;
 
     if data.is_empty() {
@@ -67,7 +68,7 @@ pub(super) fn composite_frame(
             keyboard_pixels,
             kb_w,
             kb_h,
-            &key_colors,
+            key_colors,
         );
         video_export::composite_ruler_numbers(&mut data, width, height, sx, zx, kw, ppq_val);
     }

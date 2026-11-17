@@ -7,13 +7,13 @@ use std::sync::mpsc::{Sender, channel};
 use std::time::Instant;
 
 use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
-use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
+use lumino_gfx::render_thread::{ControlCommand, RenderCommand, VideoFrameMessage};
 use lumino_message::events::window::video::{MidiConsoleBackend, MiditrailViewMode, RenderMode};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::{
     self, CounterFontRenderer, CounterRenderConfig, CounterStats, DataCurveRenderConfig,
-    DataCurveRenderer, MidiConsoleRenderConfig, MidiConsoleRenderer, SortableNote, keyboard,
+    DataCurveRenderer, MidiConsoleRenderConfig, MidiConsoleRenderer, SortableNote,
 };
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
 use super::composite::{CompositeFrameInput, composite_frame};
@@ -64,7 +64,6 @@ struct MemoryEnqueueCtx<'a> {
     height: u32,
     key_count: u16,
     is_cpu_renderer: bool,
-    is_gpu_compute_style: bool,
     render_mode: RenderMode,
     counter_config: &'a Option<CounterRenderConfig>,
     counter_stats: &'a mut Option<CounterStats>,
@@ -80,10 +79,8 @@ struct MemoryEnqueueCtx<'a> {
     miditrail_normal_speed: f32,
     miditrail_top_speed: f32,
     miditrail_3d_notes: bool,
-    frame_tx_waterfall: &'a Sender<Vec<u8>>,
+    frame_tx_waterfall: &'a Sender<VideoFrameMessage>,
     progress_tx: &'a UnboundedSender<ProgressMsg>,
-    key_colors: &'a mut [u8; keyboard::KEY_COLOR_BYTES],
-    key_color_state: &'a mut keyboard::PlaybackKeyColorState,
     csv_writer: &'a mut Option<BufWriter<std::fs::File>>,
     visible_note_buf: &'a mut Vec<SortableNote>,
     note_instances_buf: &'a mut Vec<lumino_gfx::NoteInstance>,

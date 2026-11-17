@@ -59,6 +59,9 @@ pub(super) struct EncodeTelemetry {
 }
 
 /// 单帧合成参数（与帧数据 FIFO 一一对应），替代裸 6 元组避免位置解构出错。
+///
+/// 键色不在此结构中：由渲染线程 GPU 活跃键内核推导后随 `VideoFrameMessage`
+/// 同通道发送（保证键色 ↔ 帧严格同序）。
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FrameParams {
     /// 标尺滚动偏移（像素）
@@ -69,8 +72,6 @@ pub(super) struct FrameParams {
     pub(super) keyboard_width: f32,
     /// 分辨率（Pulses Per Quarter note）
     pub(super) ppq: u32,
-    /// 按键高亮颜色（RGBA × 256 键）
-    pub(super) key_colors: [u8; 1024],
 }
 
 impl Default for FrameParams {
@@ -80,7 +81,6 @@ impl Default for FrameParams {
             zoom_x: 1.0,
             keyboard_width: 60.0,
             ppq: 0,
-            key_colors: [0u8; 1024],
         }
     }
 }

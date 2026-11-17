@@ -77,10 +77,17 @@ impl ExportPipeline {
         mut encoder: wgpu::CommandEncoder,
         source: &wgpu::Texture,
         queue: &wgpu::Queue,
+        key_colors: Option<[u8; 1024]>,
     ) {
-        let slot_idx = self.ring.acquire_write_slot();
+        // 先校验槽位再推进游标：缓冲缺失（TDR/异常）时跳过本帧且不吞槽位，
+        // 避免「未提交槽被跳过、游标与 inflight 脱钩」导致后续帧序错乱。
+        let Some(slot_idx) = self.ring.try_acquire_write_slot() else {
+            return;
+        };
+        // 键色与帧同槽排队（紧随槽位获取，保证与帧一一对应）
+        self.ring.set_slot_key_colors(slot_idx, key_colors);
         let Some(staging) = self.ring.write_slot_buffer(slot_idx) else {
-            // 极端异常：staging buffer 缺失，跳过本次拷贝，不令渲染线程崩溃
+            // 极端异常：try_acquire 已保证 buffer 存在，此处防御性跳过
             return;
         };
 
@@ -111,16 +118,16 @@ impl ExportPipeline {
         self.ring.map_after_submit(slot_idx);
     }
 
-    /// 非阻塞尝试读回最早提交的帧
-    pub fn try_read(&mut self) -> Option<Vec<u8>> {
+    /// 非阻塞尝试读回最早提交的帧（附同槽键色）
+    pub fn try_read(&mut self) -> Option<(Vec<u8>, Option<[u8; 1024]>)> {
         if let Some(ref rx) = self.recycle_rx {
             self.ring.try_recycle(rx);
         }
         self.ring.try_read()
     }
 
-    /// 阻塞等待最早提交的帧就绪（超时 5s 返回空 Vec）
-    pub fn wait_read(&mut self) -> Vec<u8> {
+    /// 阻塞等待最早提交的帧就绪（超时 5s 返回空 Vec + 无键色）
+    pub fn wait_read(&mut self) -> (Vec<u8>, Option<[u8; 1024]>) {
         if let Some(ref rx) = self.recycle_rx {
             self.ring.try_recycle(rx);
         }

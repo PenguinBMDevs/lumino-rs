@@ -43,12 +43,8 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
     } = input;
     let start = Instant::now();
 
-    // 按键颜色增量扫描状态（与编辑器 PlaybackScanState 等价）
-    let mut key_color_state = keyboard::PlaybackKeyColorState::default();
-    let mut key_colors = [0u8; keyboard::KEY_COLOR_BYTES];
-
-    // 创建帧数据通道与回收通道
-    let (frame_tx, frame_rx) = channel::<Vec<u8>>();
+    // 创建帧数据通道与回收通道（钢琴卷帘键色随帧消息同序传递）
+    let (frame_tx, frame_rx) = channel::<VideoFrameMessage>();
     let (recycle_tx, recycle_rx) = channel::<Vec<u8>>();
 
     // 创建 FFmpeg 编码器；write_frame 将移至独立写线程执行
@@ -230,7 +226,6 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         height,
         key_count,
         is_cpu_renderer,
-        is_gpu_compute_style,
         render_mode,
         counter_config: &counter_config,
         counter_stats: &mut counter_stats,
@@ -248,8 +243,6 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         miditrail_3d_notes,
         frame_tx_waterfall: &frame_tx_waterfall,
         progress_tx: &progress_tx,
-        key_colors: &mut key_colors,
-        key_color_state: &mut key_color_state,
         csv_writer: &mut csv_writer,
         visible_note_buf: &mut visible_note_buf,
         note_instances_buf: &mut note_instances_buf,
@@ -274,7 +267,8 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         telemetry: &telemetry,
     };
     let mut process_frame =
-        |frame_data: Vec<u8>, frame_params: FrameParams| -> (bool, FrameStageStats) {
+        |message: VideoFrameMessage, frame_params: FrameParams| -> (bool, FrameStageStats) {
+            let VideoFrameMessage { data, key_colors } = message;
             // GPU compute（瀑布流/MIDITrail）/ CPU 渲染（计数器）帧不含键盘/标尺，跳过合成
             let skip_chrome = is_gpu_compute_style || is_cpu_renderer;
             let params = if skip_chrome {
@@ -287,8 +281,11 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
             } else {
                 (&keyboard_pixels[..], kb_w, kb_h)
             };
+            // 钢琴卷帘键色由渲染线程 GPU 推导；None（空文档/聚合失败）按全 0
+            const NO_KEY_COLORS: [u8; 1024] = [0u8; 1024];
+            let key_colors = key_colors.as_ref().unwrap_or(&NO_KEY_COLORS);
             let (composed, stats) = composite_frame(CompositeFrameInput {
-                data: frame_data,
+                data,
                 params,
                 preview_tx: &preview_tx,
                 last_preview_time: &mut last_preview_time,
@@ -298,6 +295,7 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
                 keyboard_pixels: kb_pixels,
                 kb_w: kb_w_use,
                 kb_h: kb_h_use,
+                key_colors,
             });
             let Some(data) = composed else {
                 // 读回为空：跳过入队，继续后续帧（与旧路径丢弃该帧等价）

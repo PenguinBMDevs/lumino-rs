@@ -29,6 +29,11 @@ pub(crate) struct StagingRing {
     device: wgpu::Device,
     /// 帧数据对象池：已写入 ffmpeg 的缓冲区归还后复用，避免每帧大对象堆分配
     frame_pool: Vec<Vec<u8>>,
+    /// 每槽位钢琴卷帘键色（128 键 × RGBA）。与帧数据同槽排队，
+    /// 保证 4 槽流水线乱序读回时键色与帧严格对应（否则高亮错帧）。
+    key_colors: [Option<[u8; 1024]>; 4],
+    /// 最近一次创建/重建槽位的尺寸（缺失槽恢复用；buffer 为 None 时尺寸已丢）。
+    size: (u32, u32),
 }
 
 impl StagingRing {
@@ -44,6 +49,8 @@ impl StagingRing {
             inflight: 0,
             device: device.clone(),
             frame_pool: Vec::new(),
+            key_colors: [None; 4],
+            size: (width, height),
         }
     }
 
@@ -74,12 +81,14 @@ impl StagingRing {
     }
 
     pub(crate) fn ensure_size(&mut self, width: u32, height: u32) {
+        self.size = (width, height);
         let mut changed = false;
         for slot in &mut self.slots {
-            let needs_resize = if let Some(ref buf) = slot.buffer {
-                buf.width != width || buf.height != height
-            } else {
-                false
+            // 缺失槽（TDR 后留空）同样视为需重建：否则设备恢复后该槽永久是死的，
+            // 后续写入会在「未提交槽」上反复跳过，破坏帧序与 inflight 不变式。
+            let needs_resize = match &slot.buffer {
+                Some(buf) => buf.width != width || buf.height != height,
+                None => true,
             };
             if needs_resize {
                 // 必须先丢弃 rx 再销毁 buffer：wgpu 在 buffer drop 时会同步触发
@@ -107,23 +116,48 @@ impl StagingRing {
             self.next_write = 0;
             self.next_read = 0;
             self.inflight = 0;
+            self.key_colors = [None; 4];
         }
+    }
+
+    /// 记录某写槽的钢琴卷帘键色（随 `copy_and_submit` 的帧同槽排队）。
+    pub(crate) fn set_slot_key_colors(&mut self, slot_idx: usize, key_colors: Option<[u8; 1024]>) {
+        self.key_colors[slot_idx] = key_colors;
     }
 
     pub(crate) fn can_write(&self) -> bool {
         self.inflight < 4
     }
 
-    #[allow(dead_code)]
-    fn has_pending(&self) -> bool {
-        self.inflight > 0
+    /// 尝试获取写槽：队列满或该槽缓冲缺失（且无法重建）时返回 `None`，**不推进游标**。
+    ///
+    /// 缓冲缺失时先尝试重建，失败（TDR/零尺寸）则返回 `None` 让调用方跳过本帧，
+    /// 避免「吞槽位但未提交」导致帧序错乱与 inflight 计数脱钩。
+    pub(crate) fn try_acquire_write_slot(&mut self) -> Option<usize> {
+        if !self.can_write() {
+            return None;
+        }
+        let idx = self.next_write;
+        if self.slots[idx].buffer.is_none() {
+            self.rebuild_missing_slot(idx);
+        }
+        // 重建失败（TDR/零尺寸）：返回 None 且不推进游标
+        self.slots[idx].buffer.as_ref()?;
+        self.next_write = (self.next_write + 1) % 4;
+        Some(idx)
     }
 
-    pub(crate) fn acquire_write_slot(&mut self) -> usize {
-        debug_assert!(self.can_write());
-        let idx = self.next_write;
-        self.next_write = (self.next_write + 1) % 4;
-        idx
+    /// 重建缺失槽位（TDR 后 `ensure_size` 留空的槽；device 已丢失时保持为空）。
+    fn rebuild_missing_slot(&mut self, slot_idx: usize) {
+        if crate::device_status::device_lost() {
+            return;
+        }
+        let (width, height) = self.size;
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.slots[slot_idx].buffer =
+            Some(Self::create_staging_buffer(&self.device, width, height));
     }
 
     pub(crate) fn write_slot_buffer(&self, slot_idx: usize) -> Option<&StagingBuffer> {
@@ -149,7 +183,7 @@ impl StagingRing {
         self.inflight += 1;
     }
 
-    pub(crate) fn try_read(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn try_read(&mut self) -> Option<(Vec<u8>, Option<[u8; 1024]>)> {
         if self.inflight == 0 {
             return None;
         }
@@ -210,9 +244,9 @@ impl StagingRing {
         }
     }
 
-    pub(crate) fn wait_read(&mut self) -> Vec<u8> {
+    pub(crate) fn wait_read(&mut self) -> (Vec<u8>, Option<[u8; 1024]>) {
         if self.inflight == 0 {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -223,7 +257,7 @@ impl StagingRing {
                 self.recover_slot_after_map_failure(self.next_read);
                 self.next_read = (self.next_read + 1) % 4;
                 self.inflight = self.inflight.saturating_sub(1);
-                return Vec::new();
+                return (Vec::new(), None);
             }
             {
                 let slot = &self.slots[self.next_read];
@@ -241,7 +275,7 @@ impl StagingRing {
                     self.recover_slot_after_map_failure(self.next_read);
                     self.next_read = (self.next_read + 1) % 4;
                     self.inflight -= 1;
-                    return Vec::new();
+                    return (Vec::new(), None);
                 }
             }
             if std::time::Instant::now() >= deadline {
@@ -251,7 +285,7 @@ impl StagingRing {
                 self.recover_slot_after_map_failure(self.next_read);
                 self.next_read = (self.next_read + 1) % 4;
                 self.inflight = self.inflight.saturating_sub(1);
-                return Vec::new();
+                return (Vec::new(), None);
             }
             // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
             // 使上方 5s deadline 形同虚设（GPU 忙时导出线程挂死）。
@@ -267,7 +301,7 @@ impl StagingRing {
         self.inflight = self.inflight.saturating_sub(1);
     }
 
-    fn finish_read(&mut self) -> Option<Vec<u8>> {
+    fn finish_read(&mut self) -> Option<(Vec<u8>, Option<[u8; 1024]>)> {
         let slot = &mut self.slots[self.next_read];
         slot.rx = None;
         // 不变式：同 write_slot_buffer，slot.buffer 恒为 Some
@@ -331,9 +365,11 @@ impl StagingRing {
         drop(data);
         crate::device_status::safe_unmap(buf.buffer.inner());
 
+        // 键色与帧同槽排队：在推进读游标前取出，保证乱序读回时不串帧
+        let key_colors = self.key_colors[self.next_read].take();
         self.next_read = (self.next_read + 1) % 4;
         self.inflight -= 1;
-        Some(result)
+        Some((result, key_colors))
     }
 
     /// 将已写入 ffmpeg 的帧缓冲区归还对象池，供下次读回复用

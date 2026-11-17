@@ -28,7 +28,8 @@ impl ResidentCull {
         let source = BucketSource {
             buffer: resident,
             count,
-            epoch: self.seq,
+            // 直绑外部缓冲（钢琴卷帘 onion）用注入的内容世代；上传路径回落到内部 seq。
+            epoch: self.external_epoch.unwrap_or(self.seq),
         };
         let key_count = window.key_count.min(KEY_BUCKETS);
         let mut out = CullExtract {
@@ -175,7 +176,8 @@ impl ResidentCull {
         let source = BucketSource {
             buffer: resident,
             count,
-            epoch: self.seq,
+            // 直绑外部缓冲（钢琴卷帘 onion）用注入的内容世代；上传路径回落到内部 seq。
+            epoch: self.external_epoch.unwrap_or(self.seq),
         };
         let key_count = window.key_count.min(KEY_BUCKETS);
         if total == 0 || key_count == 0 {

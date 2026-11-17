@@ -5,6 +5,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use lumino_core::tr;
+use lumino_gfx::render_thread::VideoFrameMessage;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::cli_progress::CliProgressBar;
@@ -17,7 +18,7 @@ use super::frame::{
 pub(super) struct FramePipeline<'a> {
     pub(super) total_frames: u64,
     pub(super) cancel_flag: &'a AtomicBool,
-    pub(super) frame_rx: &'a Receiver<Vec<u8>>,
+    pub(super) frame_rx: &'a Receiver<VideoFrameMessage>,
     pub(super) param_queue: &'a mut EncodeFrameQueue,
     pub(super) progress_tx: &'a UnboundedSender<ProgressMsg>,
     pub(super) render_bar: &'a mut CliProgressBar,
@@ -45,11 +46,11 @@ enum FrameWaitError {
 ///
 /// 旧实现直接 `recv()` 阻塞：Runner 自持发送端（`frame_tx_waterfall`）时发送端
 /// 永不 drop，渲染线程异常退出后 `recv()` 永久阻塞、取消标志形同虚设。
-fn recv_frame_or_cancel(
-    rx: &Receiver<Vec<u8>>,
+fn recv_frame_or_cancel<T>(
+    rx: &Receiver<T>,
     cancel: &AtomicBool,
     timeout: Duration,
-) -> Result<Vec<u8>, FrameWaitError> {
+) -> Result<T, FrameWaitError> {
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(FrameWaitError::Cancelled);
@@ -75,7 +76,7 @@ impl<'a> FramePipeline<'a> {
     pub(super) fn run<FE, FP>(&mut self, mut enqueue: FE, mut process: FP) -> (u64, bool, f64)
     where
         FE: FnMut(&mut EncodeFrameQueue, u64) -> bool,
-        FP: FnMut(Vec<u8>, FrameParams) -> (bool, FrameStageStats),
+        FP: FnMut(VideoFrameMessage, FrameParams) -> (bool, FrameStageStats),
     {
         let total_frames = self.total_frames;
         let mut processed_frames = 0u64;
@@ -122,9 +123,9 @@ impl<'a> FramePipeline<'a> {
 
             let recv_start = Instant::now();
             // DEBT-07 #124：带超时轮询取消，不再对 recv() 永久阻塞
-            let frame_data =
+            let message =
                 match recv_frame_or_cancel(self.frame_rx, self.cancel_flag, FRAME_WAIT_TIMEOUT) {
-                    Ok(buf) => buf,
+                    Ok(message) => message,
                     Err(FrameWaitError::Cancelled) => {
                         tracing::info!("视频导出：用户取消（等待帧数据时），正在收尾...");
                         cancelled = true;
@@ -141,7 +142,7 @@ impl<'a> FramePipeline<'a> {
 
             // 默认值仅在 queue 与帧数据 FIFO 失步时出现（理论不发生），ppq 用 0 无实际影响
             let frame_params = self.param_queue.pop_front().unwrap_or_default();
-            let (should_stop, stats) = process(frame_data, frame_params);
+            let (should_stop, stats) = process(message, frame_params);
 
             acc_recv_us += recv_us;
             acc_composite_us += stats.composite_us;

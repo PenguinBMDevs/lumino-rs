@@ -27,7 +27,7 @@ pub mod stats;
 /// `WgpuRenderThread` 渲染线程结构与实现
 pub mod thread;
 
-pub use commands::{ControlCommand, FrameSender, RenderCommand};
+pub use commands::{ControlCommand, FrameSender, RenderCommand, VideoFrameMessage};
 pub use export_pipeline::ExportPipeline;
 pub use params::RenderParams;
 pub use stats::RenderStats;

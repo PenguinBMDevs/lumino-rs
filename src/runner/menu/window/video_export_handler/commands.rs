@@ -3,7 +3,7 @@
 use std::sync::mpsc::{Receiver, Sender};
 
 use lumino_core::{tr, trf};
-use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
+use lumino_gfx::render_thread::{ControlCommand, RenderCommand, VideoFrameMessage};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::encoder_thread::EncoderThread;
@@ -26,7 +26,7 @@ pub(super) fn send_initial_render_commands(
     cmd_sender: &Sender<RenderCommand>,
     width: u32,
     height: u32,
-    frame_tx: Sender<Vec<u8>>,
+    frame_tx: Sender<VideoFrameMessage>,
     recycle_rx: Receiver<Vec<u8>>,
     progress_tx: &UnboundedSender<ProgressMsg>,
 ) -> bool {

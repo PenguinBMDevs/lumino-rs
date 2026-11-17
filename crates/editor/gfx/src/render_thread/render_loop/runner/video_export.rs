@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use super::super::super::commands::FrameSender;
+use super::super::super::commands::{FrameSender, VideoFrameMessage};
 use super::super::super::export_pipeline::ExportPipeline;
 use super::super::super::params::RenderParams;
 use super::super::prepare::prepare_renderers;
 use super::super::render_pass::execute_render_pass;
 use super::super::textures::{OffscreenTextureResources, ensure_textures};
 use super::context::{RenderContext, RenderFrameState, RenderThreadChannels};
+use crate::{CullActiveParams, CullWindow};
 
 pub(crate) mod common;
 mod miditrail;
@@ -22,8 +23,8 @@ pub(super) fn advance_export_inflight(
     export_frame_tx: &Option<FrameSender>,
 ) {
     if let (Some(pipeline), Some(tx)) = (export_pipeline, export_frame_tx) {
-        while let Some(data) = pipeline.try_read() {
-            if tx.0.send(data).is_err() {
+        while let Some((data, key_colors)) = pipeline.try_read() {
+            if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
                 tracing::warn!("视频帧发送失败：Runner 通道已关闭");
                 break;
             }
@@ -127,6 +128,10 @@ pub(super) fn handle_video_frame(
                 onion_buf,
                 onion_count as usize,
             );
+            // 常驻内容已变：活跃键聚合器下次重建桶（一次性 GPU 基数排序）
+            if onion_count > 0 {
+                frame.renderers.piano_key_cull.mark_resident_updated();
+            }
         } else {
             let export_note_pristine = frame.renderers.note.gpu_instance_count() == 0
                 && frame.renderers.note.last_upload_count() == 0;
@@ -136,6 +141,7 @@ pub(super) fn handle_video_frame(
                     &ctx.device,
                     &ctx.queue,
                 );
+                frame.renderers.piano_key_cull.mark_resident_updated();
             }
         }
     }
@@ -183,6 +189,10 @@ pub(super) fn handle_video_frame(
         frame,
     );
 
+    // 4b. 钢琴卷帘键色 GPU 聚合：COUNT 顺带推导 128 键色（1KB 回读），
+    // 随帧同槽排队发送，导出线程零 CPU 扫描。
+    let current_key_colors = collect_piano_key_colors(ctx, &params, frame);
+
     // 5. 流水线模式：inflight 达到上限时阻塞读最早的一帧（背压）
     // 此时从 frame 获取 pipeline / tx 引用，execute_render_pass 已经完成，
     // 不会再与 frame 的借用冲突。
@@ -209,21 +219,125 @@ pub(super) fn handle_video_frame(
     };
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {
-        let data = pipeline.wait_read();
-        if tx.0.send(data).is_err() {
+        let (data, key_colors) = pipeline.wait_read();
+        if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
             tracing::warn!("视频帧发送失败：Runner 通道已关闭");
             return;
         }
     }
 
     // 6. copy 离屏纹理到 staging buffer + submit + map_async（非阻塞，立即返回）
-    pipeline.copy_and_submit(encoder, texture_arc.inner(), &ctx.queue);
+    // 键色随当前帧写入 staging 槽，读回时同槽取出，保证乱序流水线不串帧。
+    pipeline.copy_and_submit(encoder, texture_arc.inner(), &ctx.queue, current_key_colors);
 
     // 6. 尝试非阻塞读回已就绪的帧（流水线推进，不阻塞下一帧渲染）
-    while let Some(data) = pipeline.try_read() {
-        if tx.0.send(data).is_err() {
+    while let Some((data, key_colors)) = pipeline.try_read() {
+        if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
             tracing::warn!("视频帧发送失败：Runner 通道已关闭");
             return;
         }
+    }
+}
+
+/// 钢琴卷帘当前帧活跃键色：GPU COUNT 顺带聚合 128 键色（1KB 回读）。
+///
+/// 返回 `None` 表示无键色可传（空常驻/聚合失败），导出侧按全 0 处理。
+fn collect_piano_key_colors(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    frame: &mut RenderFrameState<'_>,
+) -> Option<[u8; 1024]> {
+    let zoom_x = params.zoom.0.max(f32::EPSILON);
+    let tick = (params.scroll.0 / zoom_x).max(0.0) as u32;
+    let tick_span = (params.viewport_size.0 as f32 / zoom_x).max(1.0) as u32;
+    let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
+    // 直绑 onion 缓冲：注入其内容世代（识别等长原地改写，见 BucketSource::epoch 契约）；
+    // 上传回退路径：清除外部世代，回落到内部 seq（上传时 mark_resident_updated）。
+    let onion = frame.onion_source.clone();
+    let (resident_buf, resident_count) = match onion {
+        Some((buf, count)) => {
+            frame
+                .renderers
+                .piano_key_cull
+                .set_external_epoch(frame.onion_epoch);
+            (buf, count)
+        }
+        None => {
+            frame.renderers.piano_key_cull.clear_external_epoch();
+            frame.renderers.note.gpu_note_buffer_for_sharing()
+        }
+    };
+    if resident_count == 0 || key_count == 0 {
+        return None;
+    }
+    let window = CullWindow {
+        tick_start: tick,
+        tick_end: tick.saturating_add(tick_span),
+        key_count,
+    };
+    // 钢琴卷帘不使用光晕（`[128,256)` 段），仅传合理值避免除零/NaN
+    let active_params = CullActiveParams {
+        ticks_per_second: params.ppq.max(1.0) * 2.0,
+        fps: params.fps.max(1.0),
+    };
+    match frame.renderers.piano_key_cull.extract_count(
+        &ctx.device,
+        &ctx.queue,
+        &resident_buf,
+        resident_count as usize,
+        window,
+        Some(active_params),
+    ) {
+        Ok(extract) => extract.active.map(|active| active_to_key_colors(&active)),
+        Err(e) => {
+            tracing::warn!("钢琴卷帘活跃键 GPU 聚合失败，本帧键色回退为空: {e}");
+            None
+        }
+    }
+}
+
+/// 活跃键内核输出（`[0,128)` = `0xRRGGBBAA`）→ 128 键 RGBA 字节。
+///
+/// 与主 crate `composite_keyboard` 期望布局一致：每键 4 字节 RGBA，
+/// alpha=0xFF 表示激活（`composite_keyboard` 再乘全局 overlay 透明度）。
+fn active_to_key_colors(active: &[u32; crate::KEY_BUCKETS]) -> [u8; 1024] {
+    let mut out = [0u8; 1024];
+    for (index, &packed) in active.iter().take(128).enumerate() {
+        let offset = index * 4;
+        out[offset] = ((packed >> 24) & 0xFF) as u8;
+        out[offset + 1] = ((packed >> 16) & 0xFF) as u8;
+        out[offset + 2] = ((packed >> 8) & 0xFF) as u8;
+        out[offset + 3] = (packed & 0xFF) as u8;
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_active_to_key_colors_unpacks_rgba() {
+        let mut active = [0u32; crate::KEY_BUCKETS];
+        // key 60 激活：0xRRGGBBAA = 0x112233FF
+        active[60] = 0x1122_33FF;
+        let colors = active_to_key_colors(&active);
+        assert_eq!(&colors[60 * 4..60 * 4 + 4], &[0x11, 0x22, 0x33, 0xFF]);
+    }
+
+    #[test]
+    fn test_active_to_key_colors_ignores_aura_half() {
+        let mut active = [0u32; crate::KEY_BUCKETS];
+        // 光晕段 [128,256) 不应影响键色输出
+        active[200] = 0xFFFF_FFFF;
+        let colors = active_to_key_colors(&active);
+        assert!(colors.iter().all(|&byte| byte == 0));
+    }
+
+    #[test]
+    fn test_active_to_key_colors_zero_is_transparent() {
+        let active = [0u32; crate::KEY_BUCKETS];
+        let colors = active_to_key_colors(&active);
+        assert_eq!(colors, [0u8; 1024]);
     }
 }

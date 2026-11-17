@@ -1,11 +1,24 @@
 use super::params::RenderParams;
 use crate::{WaterfallCommand, WaterfallTrackParams};
 
+/// 单个视频帧消息（帧数据 + 可选钢琴卷帘键色）。
+///
+/// `key_colors` 由渲染线程的 GPU 活跃键内核推导（128 键 × RGBA = 1024B），
+/// 仅钢琴卷帘导出填充；瀑布流/MIDITrail/CPU 渲染模式为 `None`。
+/// 与帧数据同通道发送，保证「键色 ↔ 帧」严格同序，避免错帧高亮。
+#[derive(Debug)]
+pub struct VideoFrameMessage {
+    /// BGRA/RGBA 帧数据。
+    pub data: Vec<u8>,
+    /// 128 键 × RGBA 键色（与主 crate `keyboard::KEY_COLOR_BYTES` 同布局）。
+    pub key_colors: Option<[u8; 1024]>,
+}
+
 /// 视频帧数据发送器（包装 mpsc::Sender 以实现 Debug）
 ///
 /// 渲染线程读回 BGRA 帧后通过此 sender 发送给 Runner 线程写入 FFmpeg。
 #[derive(Clone)]
-pub struct FrameSender(pub std::sync::mpsc::Sender<Vec<u8>>);
+pub struct FrameSender(pub std::sync::mpsc::Sender<VideoFrameMessage>);
 
 impl std::fmt::Debug for FrameSender {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

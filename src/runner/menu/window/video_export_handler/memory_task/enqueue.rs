@@ -1,4 +1,5 @@
 use lumino_core::tr;
+use lumino_gfx::render_thread::VideoFrameMessage;
 
 use super::*;
 
@@ -16,18 +17,8 @@ pub(super) fn enqueue_memory_frame(
     let tempo_changes = &ctx.document.tempo_changes;
     let tick = video_export::seconds_to_tick(time_sec, tempo_changes, ctx.ppq);
 
-    // 根据当前播放 tick 增量计算按键高亮颜色（仅钢琴卷帘合成路径消费）。
-    // GPU compute（瀑布流/MIDITrail）与 CPU 渲染（计数器等）走 FrameParams::default()
-    // + 空键盘贴图，key_colors 无人读取——跳过整次增量扫描（含每轨 O(前缀) skip），
-    // 高数据量下这是每帧数十毫秒的死工作（见 recv=20~63ms 根因）。
-    if !ctx.is_cpu_renderer && !ctx.is_gpu_compute_style {
-        video_export::keyboard::update_playback_key_colors(
-            ctx.document,
-            tick,
-            ctx.key_color_state,
-            ctx.key_colors,
-        );
-    }
+    // 键色由渲染线程 GPU 活跃键内核按 tick 推导（1KB 回读）并随帧同序送达，
+    // 导出线程零 CPU 扫描（原 `update_playback_key_colors` 的 O(活跃音符) 已移除）。
 
     // 计算 scroll_x / zoom_x，用于标尺小节号合成
     let video_kb_width = 60.0f32;
@@ -41,7 +32,6 @@ pub(super) fn enqueue_memory_frame(
         zoom_x: video_zoom_x,
         keyboard_width: video_kb_width,
         ppq: ctx.ppq,
-        key_colors: *ctx.key_colors,
     });
 
     // 计数器/数据曲线/MidiConsole 模式（CPU 端渲染）：绕过 GPU 开销，BGRA 直出。
@@ -237,8 +227,15 @@ pub(super) fn enqueue_memory_frame(
             }
         }
 
-        // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
-        if ctx.frame_tx_waterfall.send(frame_data).is_err() {
+        // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径（CPU 渲染无键色）
+        if ctx
+            .frame_tx_waterfall
+            .send(VideoFrameMessage {
+                data: frame_data,
+                key_colors: None,
+            })
+            .is_err()
+        {
             tracing::error!("CPU 渲染帧发送失败：通道已关闭");
             send_export_error(ctx.progress_tx, tr!("导出失败：帧通道通信错误"));
             return true;
