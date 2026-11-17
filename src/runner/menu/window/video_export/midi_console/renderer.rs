@@ -116,8 +116,8 @@ impl MidiConsoleRenderer {
                 let tgt = if self.pressed[ch][k] { 1.0 } else { 0.0 };
                 self.key_level[ch + 1][k] = ramp(self.key_level[ch + 1][k], tgt, krate);
             }
-            for f in 0..CONTROL_FIELDS {
-                self.ctrl_level[ch][f] = ramp(self.ctrl_level[ch][f], 0.0, crate_rate);
+            for level in self.ctrl_level[ch].iter_mut().take(CONTROL_FIELDS) {
+                *level = ramp(*level, 0.0, crate_rate);
             }
         }
         // ALL 行亮度 = 各通道最大值

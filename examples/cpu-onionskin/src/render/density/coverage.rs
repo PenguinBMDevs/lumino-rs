@@ -179,8 +179,8 @@ impl DensityPyramid {
         }
         const MAX_CELL_PX: f32 = 2.0;
         let mut level = 0usize;
-        for next in 1..self.coverage.len() {
-            if self.coverage[next].bin_ticks as f32 * zoom_x <= MAX_CELL_PX {
+        for (next, cov) in self.coverage.iter().enumerate().skip(1) {
+            if cov.bin_ticks as f32 * zoom_x <= MAX_CELL_PX {
                 level = next;
             } else {
                 break;
