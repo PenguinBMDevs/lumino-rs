@@ -89,23 +89,15 @@ impl RunnerInner {
             .map(|p| get_file_stem(Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
-        // 2026-08 单一权威源：借用 UI 的 document（零拷贝）构建工程
-        let project = {
-            let ui = self.window_state.window.ui();
-            let data = &ui.root().editor.editor_state.data;
-            let Some(document) = data.document.as_ref() else {
-                tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
-                return;
-            };
-            let mut project = lumino_export::LuminoProject::from_midi_document(document);
-            // S0-5：形状对象随工程持久化（音符已由 document 承载，这里只存参数化形状）
-            project.shapes = ui.root().editor.shapes_snapshot();
-            // tempo 无需补救（2026-10-20 审计 §三）：`EditorData` 的 tempo 写入入口
-            // 都会 `sync_tempo_to_document`，doc.tempo_changes 已是编辑后的值；
-            // 原 `project.apply_tempo_points(...)` 补丁已删除。
-            // 累计创作时间随导出持久化（与本地保存一致）
-            project.set_working_time_seconds(self.session_tracker.current_editing_secs());
-            project
+        // DEBT-23：主线程只做轻量快照（clone document，块级 COW），组包下沉到
+        // spawn_blocking。复用与本地保存/自动保存/云保存同一口径 LmpjSnapshot，
+        // 元数据装配归一到一处。file_stem 作 project_name（原导出未设 name=默认
+        // Untitled，快照补成文件名，与本地保存对齐、正向补全，不回退）。
+        // 快照必须在弹对话框前完成（对话框 borrowing &mut self，且快照时点=导出触发点）。
+        let Some(snapshot) = self.snapshot_lmpj_project(Path::new(&format!("{file_stem}.lmpj")))
+        else {
+            tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
+            return;
         };
 
         let Some(entry_path) = lumino_platform::dialog::FileDialog::new()
@@ -129,6 +121,10 @@ impl RunnerInner {
 
             let path_clone = entry_path.clone();
             match tokio::task::spawn_blocking(move || {
+                // DEBT-23：组包在后台线程完成（主线程只做了 COW 快照）。
+                // spawn_blocking 的 panic 由下方 Err(e) 分支收口（JoinError），
+                // 本路径无 saving 标志，不会像云保存裸 spawn 那样留下未清标志。
+                let project = snapshot.into_project();
                 lumino_export::save_project_to_folder_with_entry(&project, path_clone, key_count)
             })
             .await
