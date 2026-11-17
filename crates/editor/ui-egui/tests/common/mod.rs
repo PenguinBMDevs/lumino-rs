@@ -46,6 +46,22 @@ pub fn ink_runs(
     runs
 }
 
+/// 把相邻墨迹段合并成「文本块」：组内字距 ≤ max_gap，组间更大。
+///
+/// CJK 字体（内置 Noto / 各平台系统字体）的字间 1px AA 亮度可能低于墨点阈值，
+/// 单个中文标签会裂成多段；合并后按「文本块」比较，组间距离远大于 max_gap，
+/// 不会跨标签桥接。与 `bands_pixels` 的同名工具一致。
+pub fn merge_runs(runs: &[(u32, u32)], max_gap: u32) -> Vec<(u32, u32)> {
+    let mut merged: Vec<(u32, u32)> = Vec::new();
+    for &(start, end) in runs {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 + max_gap => last.1 = end,
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
+}
+
 /// 某一列带内与背景差异超过阈值的行区间。
 pub fn ink_row_runs(
     image: &RgbaImage,

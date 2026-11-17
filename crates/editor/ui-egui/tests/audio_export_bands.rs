@@ -131,8 +131,8 @@ fn make_harness(mode: AudioButtonsMode) -> (Harness<'static>, Rc<RefCell<Vec<Aud
     let mut harness = Harness::builder()
         .with_size(egui::vec2(760.0, 2400.0))
         .with_accessibility_check(false)
-        // 与其余 bands 测试一致：注入 CJK 字体。Ubuntu CI 无微软雅黑，
-        // 依赖 fontdb 回退到 Noto Sans CJK；缺这步 epaint 会因缺字形 panic。
+        // 与其余 bands 测试一致：注入内置 CJK 字体（Noto Sans SC）。
+        // 字体编译期内嵌，三平台一致；缺这步 epaint 会因缺字形 panic。
         .with_context_setup(|ctx| {
             lumino_ui_egui::fonts::install(ctx);
         })

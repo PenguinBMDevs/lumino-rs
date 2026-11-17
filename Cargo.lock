@@ -4604,7 +4604,6 @@ dependencies = [
  "egui",
  "egui_extras",
  "egui_kittest",
- "fontdb 0.23.0",
  "image",
  "lumino-arrangement-core",
  "lumino-core",

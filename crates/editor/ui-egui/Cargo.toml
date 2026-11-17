@@ -25,7 +25,6 @@ lumino-editor-state = { workspace = true }
 egui = { workspace = true }
 egui_extras = { workspace = true }
 egui_kittest = { workspace = true, optional = true }
-fontdb = { workspace = true }
 resvg = { workspace = true }
 usvg = { workspace = true }
 tiny-skia = { workspace = true }

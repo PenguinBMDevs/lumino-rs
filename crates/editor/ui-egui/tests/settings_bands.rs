@@ -16,7 +16,7 @@ use lumino_ui_egui::chrome::{
 };
 use lumino_ui_egui::icons::IconCache;
 
-use common::{assert_runs_close, assert_runs_close_with, ink_row_runs, ink_runs};
+use common::{assert_runs_close, assert_runs_close_with, ink_row_runs, ink_runs, merge_runs};
 
 /// `egui_kittest` 的 wgpu 渲染器不是线程安全的：同一测试二进制内的像素测试
 /// 必须串行执行（并行时偶发 `STATUS_ACCESS_VIOLATION`）。
@@ -207,21 +207,29 @@ fn settings_dialog_light_theme_uses_injected_palette() {
     }
 
     // 菜单文字几何与浅色基线一致（颜色差异不影响墨迹列区间）。
-    let bands_menu = ink_runs(
-        &bands,
-        84,
-        104,
-        60,
-        230,
-        [toolbar.r(), toolbar.g(), toolbar.b()],
+    // CJK 标签按「文本块」比较：Noto 字间 AA 间隙会把单字切成多段，
+    // merge_runs 合并后再比，组间距离远大于 6px 不会跨标签桥接。
+    let bands_menu = merge_runs(
+        &ink_runs(
+            &bands,
+            84,
+            104,
+            60,
+            230,
+            [toolbar.r(), toolbar.g(), toolbar.b()],
+        ),
+        6,
     );
-    let legacy = ink_runs(
-        &baseline,
-        84,
-        104,
-        60,
-        230,
-        [toolbar.r(), toolbar.g(), toolbar.b()],
+    let legacy = merge_runs(
+        &ink_runs(
+            &baseline,
+            84,
+            104,
+            60,
+            230,
+            [toolbar.r(), toolbar.g(), toolbar.b()],
+        ),
+        6,
     );
     assert_runs_close(&bands_menu, &legacy, "浅色设置菜单首行");
 }

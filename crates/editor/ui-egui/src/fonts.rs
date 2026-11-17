@@ -1,44 +1,40 @@
-//! 系统 CJK 字体注入。
+//! 确定性 CJK 字体注入。
 //!
-//! egui 0.37 不再默认携带完整 CJK 字体；这里用 `fontdb` 定位系统字体，
-//! 以 `FontData` 注入到 proportional / monospace 的 fallback 链末尾。
-//! 默认优先 Microsoft YaHei（与生产 `UiConfig::default()` 的
-//! `program_font_name` 一致）。
+//! egui 0.37 不再默认携带完整 CJK 字体，而系统字体因平台而异：
+//! Windows 有微软雅黑、macOS 有苹方、CI 的精简 Ubuntu 可能一个 CJK 字体都没有。
+//! 这会让中文渲染逐像素不同，进而使跨平台视觉基线测试（bridge_parity /
+//! bands_pixels）无法复现。
+//!
+//! 因此这里统一使用仓库内置的 Noto Sans SC（GB2312 子集），通过 `include_bytes!`
+//! 编译期内嵌。所有平台、所有环境（开发机与 CI）使用同一份字体字节，
+//! 中文渲染确定性一致——基线可在任意平台重新捕获并复现。
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use egui::{FontData, FontDefinitions, FontFamily};
 
-/// 已解析的字体字节 + TTC face index。
-struct FontFace {
-    name: String,
-    bytes: Vec<u8>,
-    index: u32,
-}
+/// 仓库内置 CJK 字体（GB2312 子集，约 2.2 MB），随二进制分发、无外部文件依赖。
+///
+/// 路径相对 `CARGO_MANIFEST_DIR`（`crates/editor/ui-egui`），上溯 3 级到工作区根。
+const BUNDLED_CJK: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../resources/fonts/NotoSansSC-Regular.ttf"
+));
 
-static FONT_FACE: OnceLock<Option<FontFace>> = OnceLock::new();
+/// 注入字体的家族键（proportional / monospace fallback 链末尾）。
+const FONT_KEY: &str = "lumino-cjk";
 
-/// 候选字体族（按优先级）。
-const CANDIDATES: &[&str] = &[
-    "Microsoft YaHei",
-    "Microsoft YaHei UI",
-    "Noto Sans CJK SC",
-    "Source Han Sans SC",
-    "SimHei",
-    "Arial Unicode MS",
-];
+/// 字体族名（诊断 / 文档用）。
+const FONT_NAME: &str = "Noto Sans SC (bundled)";
 
 /// 在给定 Context 上安装 CJK 字体，并确保缺字形时不会 panic。
 ///
 /// `egui_kittest` 默认把 `MissingGlyphPolicy` 设为 `Panic`（用于捕捉测试里意外
-/// 缺失的字形）。但本项目 UI 大量使用中文，而 CI / 精简 Linux 环境往往没有
-/// 任何 CJK 字体——此时 `definitions()` 返回 `None`，中文字符无字形可画，
-/// kittest 的 Panic 策略会直接让无头交互测试崩溃（尽管这些测试只关心控件
-/// 回传与标签可见，并不校验字形）。
+/// 缺失的字形）。内置字体虽覆盖常用中文，但遇到生僻字仍可能缺字形；显式设为
+/// `Tofu` 可让无头测试在任意环境都不因字形缺失而崩溃。
 ///
-/// 因此在唯一字体入口显式把策略设为 `Tofu`：缺字形时画豆腐块而非 panic。
-/// 生产环境 epaint 默认本就是 `Tofu`，故此改动不改变生产渲染行为，
-/// 只让测试在无 CJK 字体的机器上保持健壮。该调用幂等，每帧重复调用无副作用。
+/// 生产环境 epaint 默认本就是 `Tofu`，故此改动不改变生产渲染行为。该调用幂等，
+/// 每帧重复调用无副作用。
 pub fn install(ctx: &egui::Context) {
     ctx.set_missing_glyph_policy(egui::MissingGlyphPolicy::Tofu);
 
@@ -53,16 +49,17 @@ pub fn install(ctx: &egui::Context) {
     ctx.data_mut(|data| data.insert_temp(marker, true));
 }
 
-/// 构造带 CJK fallback 的 `FontDefinitions`。
+/// 构造带内置 CJK fallback 的 `FontDefinitions`。
+///
+/// 内置字体编译期内嵌，恒可用，因此始终返回 `Some`（保留 `Option` 签名是为
+/// 兼容既有调用方）。
 pub fn definitions() -> Option<FontDefinitions> {
-    let face = resolve_face()?;
     let mut definitions = FontDefinitions::default();
-    let key = "lumino-cjk".to_owned();
     definitions.font_data.insert(
-        key.clone(),
+        FONT_KEY.to_owned(),
         FontData {
-            font: Arc::new(face.bytes.clone()),
-            index: face.index,
+            font: Arc::new(BUNDLED_CJK.to_vec()),
+            index: 0,
             tweak: Default::default(),
         }
         .into(),
@@ -74,56 +71,20 @@ pub fn definitions() -> Option<FontDefinitions> {
             .families
             .entry(family)
             .or_default()
-            .push(key.clone());
+            .push(FONT_KEY.to_owned());
     }
 
     tracing::info!(
-        "egui: 注入 CJK 字体 '{}'（{} bytes，face {}）",
-        face.name,
-        face.bytes.len(),
-        face.index
+        "egui: 注入内置 CJK 字体 '{}'（{} bytes）",
+        FONT_NAME,
+        BUNDLED_CJK.len()
     );
     Some(definitions)
 }
 
 /// 已解析字体族名（用于诊断 / 文档）。
 pub fn resolved_name() -> Option<&'static str> {
-    resolve_face().map(|face| face.name.as_str())
-}
-
-fn resolve_face() -> Option<&'static FontFace> {
-    FONT_FACE
-        .get_or_init(|| {
-            let mut database = fontdb::Database::new();
-            database.load_system_fonts();
-
-            for name in CANDIDATES {
-                let query = fontdb::Query {
-                    families: &[fontdb::Family::Name(name)],
-                    weight: fontdb::Weight::NORMAL,
-                    stretch: fontdb::Stretch::Normal,
-                    style: fontdb::Style::Normal,
-                };
-                let Some(id) = database.query(&query) else {
-                    continue;
-                };
-                let Some(face) = database.with_face_data(id, |bytes, index| FontFace {
-                    name: (*name).to_owned(),
-                    bytes: bytes.to_vec(),
-                    index,
-                }) else {
-                    continue;
-                };
-                return Some(face);
-            }
-
-            tracing::warn!(
-                "egui: 未找到候选 CJK 字体 {:?}，中文可能显示为豆腐块",
-                CANDIDATES
-            );
-            None
-        })
-        .as_ref()
+    Some(FONT_NAME)
 }
 
 #[cfg(test)]
@@ -143,11 +104,31 @@ mod tests {
 
         install(&ctx);
 
-        // install 之后必须回落到 tofu，保证无 CJK 字体的 CI 不会 panic。
         assert_eq!(
             ctx.missing_glyph_policy(),
             egui::MissingGlyphPolicy::Tofu,
             "install 后缺字形策略必须为 Tofu"
         );
+    }
+
+    #[test]
+    fn test_bundled_font_always_available() {
+        // 内置字体编译期内嵌，任何平台都不依赖系统字体。
+        assert!(!BUNDLED_CJK.is_empty(), "内置 CJK 字体字节不能为空");
+        let definitions = definitions().expect("内置字体恒可用，definitions 必为 Some");
+        assert!(
+            definitions.font_data.contains_key(FONT_KEY),
+            "字体定义必须包含内置 CJK 键"
+        );
+        for family in [FontFamily::Proportional, FontFamily::Monospace] {
+            assert!(
+                definitions
+                    .families
+                    .get(&family)
+                    .is_some_and(|keys| keys.iter().any(|k| k == FONT_KEY)),
+                "{family:?} fallback 链必须包含内置 CJK 字体"
+            );
+        }
+        assert_eq!(resolved_name(), Some(FONT_NAME));
     }
 }
