@@ -12,6 +12,7 @@ use crate::message::{Message, VideoExportAction};
 use crate::root::Root;
 use crate::root::file_dialog::PathDialogTask;
 use crate::state::root_state::VideoExportOverlayState;
+use crate::toast::ToastLevel;
 use crate::util::parse_uint;
 
 use super::DialogHandler;
@@ -46,6 +47,14 @@ impl DialogHandler {
                 // 的 Root 取 UiConfig（可能滞后），最终兜底在 Runner 的
                 // `handle_start_video_export` 入口。
                 if root.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持视频导出")) {
+                    return None;
+                }
+                // 输出路径是硬性前提：空串会让 ffmpeg 以 `Error opening output file .`
+                // （code -22）退出，而帧生成线程已经白跑一轮。入口拦截并明确提示；
+                // 不置 Exporting 状态（否则面板会显示一个注定失败的进度覆盖层）。
+                if root.state.video_export_dialog.output_path.trim().is_empty() {
+                    root.toast
+                        .push(ToastLevel::Warning, tr!("请先选择视频输出路径"));
                     return None;
                 }
                 // 内存模式优先：从 EditorData.document 克隆快照（ChunkedList Arc 共享）；

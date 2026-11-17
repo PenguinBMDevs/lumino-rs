@@ -82,6 +82,12 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         "导出失败：无 MIDI 数据" => Some("Export failed: no MIDI data"),
         "导出线程启动失败: {e}" => Some("Failed to start the export thread: {e}"),
+        "导出失败：写线程启动失败: {e}" => {
+            Some("Export failed: failed to start the writer thread: {e}")
+        }
+        "导出失败：编码线程已退出" => {
+            Some("Export failed: the encoder thread has exited")
+        }
         "导出失败：渲染线程通信错误" => {
             Some("Export failed: render thread communication error")
         }

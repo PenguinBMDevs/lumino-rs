@@ -18,6 +18,12 @@ struct StagingSlot {
     buffer: Option<StagingBuffer>,
     /// map_async 完成通知
     rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
+    /// 是否存在未收回的映射请求（`map_after_submit` 置位，`finish_read` / 映射失败清除）。
+    ///
+    /// 未映射缓冲调用 `unmap` 会产生 wgpu 校验错误（`Buffer is not mapped`，默认
+    /// uncaptured handler 只打日志）：导出收尾 Drop 对 4 个槽位逐一 unmap 时，
+    /// 只有 1 个在途映射，其余 3 个会各报一条——2026-11-17 用户日志即 3 连发。
+    map_pending: bool,
 }
 
 /// 四重缓冲环，实现 GPU 渲染与 CPU 读回的流水线并行
@@ -41,6 +47,7 @@ impl StagingRing {
         let make_slot = || StagingSlot {
             buffer: Some(Self::create_staging_buffer(device, width, height)),
             rx: None,
+            map_pending: false,
         };
         Self {
             slots: [make_slot(), make_slot(), make_slot(), make_slot()],
@@ -83,29 +90,22 @@ impl StagingRing {
     pub(crate) fn ensure_size(&mut self, width: u32, height: u32) {
         self.size = (width, height);
         let mut changed = false;
-        for slot in &mut self.slots {
+        for idx in 0..self.slots.len() {
             // 缺失槽（TDR 后留空）同样视为需重建：否则设备恢复后该槽永久是死的，
             // 后续写入会在「未提交槽」上反复跳过，破坏帧序与 inflight 不变式。
-            let needs_resize = match &slot.buffer {
+            let needs_resize = match &self.slots[idx].buffer {
                 Some(buf) => buf.width != width || buf.height != height,
                 None => true,
             };
             if needs_resize {
-                // 必须先丢弃 rx 再销毁 buffer：wgpu 在 buffer drop 时会同步触发
-                // 挂起的 map_async 回调（Err(MapAborted)），若 rx 仍存活，该错误会
-                // 滞留在 channel 中，后续 try_read 的 is_ok() 误判导致
-                // get_mapped_range 在已销毁 buffer 上 panic（wgpu_core.rs:2169）。
-                slot.rx = None;
-                // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数；
-                // REND-019 PR-D：drop 前复位映射状态（防挂起映射在 Drop 中访问违例）
-                if let Some(buf) = slot.buffer.take() {
-                    crate::device_status::safe_unmap(buf.buffer.inner());
-                }
+                // 先丢弃 rx、仅在映射在途时 unmap（见 `release_slot_buffer`）。
+                self.release_slot_buffer(idx);
                 // REND-019 PR-D（计划 F10）：device 丢失（TDR）时禁止在死 device 上
                 // 新建 staging 资源（validation 失败/挂起）——留空槽，交由
                 // `write_slot_buffer` 的 None 容错跳过本帧，导出由 cancel 标志收场。
                 if !crate::device_status::device_lost() {
-                    slot.buffer = Some(Self::create_staging_buffer(&self.device, width, height));
+                    self.slots[idx].buffer =
+                        Some(Self::create_staging_buffer(&self.device, width, height));
                 } else {
                     tracing::warn!("staging ring ensure_size 短路：device 已丢失（TDR），槽位留空");
                 }
@@ -180,6 +180,9 @@ impl StagingRing {
             let _ = tx.send(result);
         });
         slot.rx = Some(rx);
+        // map_async 已提交：此刻到 unmap 之间缓冲处于「待映射/已映射」态，
+        // 只有这段窗口内调用 unmap 才是合法复位（见 `release_slot_buffer`）。
+        slot.map_pending = true;
         self.inflight += 1;
     }
 
@@ -198,8 +201,10 @@ impl StagingRing {
             if map_result.is_ok() {
                 return self.finish_read();
             }
-            // map 失败（buffer 已销毁等）：重建该槽位并跳过，避免 panic
+            // map 失败（buffer 已销毁等）：重建该槽位并跳过，避免 panic。
+            // wgpu 已在失败时清除映射态 → 先清标志，重建路径不得再 unmap。
             tracing::warn!("staging ring map 失败：{:?}，重建槽位", map_result.err());
+            self.slots[self.next_read].map_pending = false;
             self.recover_slot_after_map_failure(self.next_read);
             self.next_read = (self.next_read + 1) % 4;
             self.inflight -= 1;
@@ -208,18 +213,34 @@ impl StagingRing {
         None
     }
 
+    /// 释放槽位缓冲：先丢 `rx`，仅在映射在途时 `unmap`。
+    ///
+    /// 必须先丢弃 rx 再销毁 buffer：wgpu 在 buffer drop 时会同步触发挂起的
+    /// `map_async` 回调（`Err(MapAborted)`），若 rx 仍存活，该错误会滞留在
+    /// channel 中，后续 `try_read` 的 `is_ok()` 误判导致 `get_mapped_range`
+    /// 在已销毁 buffer 上 panic（wgpu_core.rs:2169）。
+    ///
+    /// REND-019 PR-D：drop 前复位映射状态（防挂起映射在 Drop 中访问违例）；
+    /// 但**未映射缓冲调 `unmap` 是 wgpu 校验错误**（`Buffer is not mapped`），
+    /// 以 `map_pending` 严格门控，避免收尾时逐槽刷错误日志。
+    fn release_slot_buffer(&mut self, slot_idx: usize) {
+        let slot = &mut self.slots[slot_idx];
+        slot.rx = None;
+        let had_map = std::mem::take(&mut slot.map_pending);
+        if let Some(buf) = slot.buffer.take()
+            && had_map
+        {
+            crate::device_status::safe_unmap(buf.buffer.inner());
+        }
+    }
+
     /// map 失败/超时后的槽位恢复：**TDR 短路**（REND-019 PR-D，计划 F10）——
     /// device 已丢失时不在死 device 上重建资源（必然失败/挂起），仅丢弃失效
     /// 缓冲，交由导出 cancel 标志收场；正常路径重建该槽位。
     fn recover_slot_after_map_failure(&mut self, slot_idx: usize) {
         if crate::device_status::device_lost() {
             tracing::warn!("staging ring 槽位恢复短路：device 已丢失（TDR），交由 cancel 收场");
-            let slot = &mut self.slots[slot_idx];
-            slot.rx = None;
-            if let Some(buf) = slot.buffer.take() {
-                // REND-019 PR-D：drop 前复位映射状态（死 device 上 drop 挂起映射会访问违例）
-                crate::device_status::safe_unmap(buf.buffer.inner());
-            }
+            self.release_slot_buffer(slot_idx);
             return;
         }
         self.rebuild_slot(slot_idx);
@@ -227,20 +248,15 @@ impl StagingRing {
 
     /// 重建槽位的 staging buffer（map 失败/超时后调用，丢弃失效资源）
     fn rebuild_slot(&mut self, slot_idx: usize) {
-        let slot = &mut self.slots[slot_idx];
-        slot.rx = None;
-        let size = slot
+        let size = self.slots[slot_idx]
             .buffer
             .as_ref()
             .map(|b| (b.width, b.height))
             .unwrap_or((0, 0));
-        // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数；
-        // REND-019 PR-D：drop 前复位映射状态（防挂起映射在 Drop 中访问违例）
-        if let Some(buf) = slot.buffer.take() {
-            crate::device_status::safe_unmap(buf.buffer.inner());
-        }
+        self.release_slot_buffer(slot_idx);
         if size.0 > 0 && size.1 > 0 {
-            slot.buffer = Some(Self::create_staging_buffer(&self.device, size.0, size.1));
+            self.slots[slot_idx].buffer =
+                Some(Self::create_staging_buffer(&self.device, size.0, size.1));
         }
     }
 
@@ -254,9 +270,7 @@ impl StagingRing {
             // 挂起映射永不会完成，槽位立即短路回收，导出由 cancel 收场。
             if crate::device_status::device_lost() {
                 tracing::warn!("staging ring wait_read：device 已丢失（TDR），立即放弃等待");
-                self.recover_slot_after_map_failure(self.next_read);
-                self.next_read = (self.next_read + 1) % 4;
-                self.inflight = self.inflight.saturating_sub(1);
+                self.skip_current_slot();
                 return (Vec::new(), None);
             }
             {
@@ -267,14 +281,14 @@ impl StagingRing {
                     if map_result.is_ok() {
                         return self.finish_read().unwrap_or_default();
                     }
-                    // map 失败：重建槽位并跳过（不进入 finish_read，避免 panic）
+                    // map 失败：重建槽位并跳过（不进入 finish_read，避免 panic）。
+                    // wgpu 已清除映射态 → 先清标志，重建路径不得再 unmap。
                     tracing::warn!(
                         "staging ring wait_read map 失败：{:?}，重建槽位",
                         map_result.err()
                     );
-                    self.recover_slot_after_map_failure(self.next_read);
-                    self.next_read = (self.next_read + 1) % 4;
-                    self.inflight -= 1;
+                    self.slots[self.next_read].map_pending = false;
+                    self.skip_current_slot();
                     return (Vec::new(), None);
                 }
             }
@@ -282,9 +296,7 @@ impl StagingRing {
                 tracing::warn!("staging ring wait_read 超时 5s");
                 // 超时说明该槽位的 map 可能永远不完成（如 GPU 忙/已销毁），
                 // 重建槽位并跳过，避免 inflight 计数泄漏导致死锁
-                self.recover_slot_after_map_failure(self.next_read);
-                self.next_read = (self.next_read + 1) % 4;
-                self.inflight = self.inflight.saturating_sub(1);
+                self.skip_current_slot();
                 return (Vec::new(), None);
             }
             // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
@@ -364,6 +376,8 @@ impl StagingRing {
         }
         drop(data);
         crate::device_status::safe_unmap(buf.buffer.inner());
+        // 映射已被本次 unmap 收回：清标志，后续重建/Drop 不再重复 unmap
+        self.slots[self.next_read].map_pending = false;
 
         // 键色与帧同槽排队：在推进读游标前取出，保证乱序读回时不串帧
         let key_colors = self.key_colors[self.next_read].take();
@@ -392,15 +406,12 @@ impl StagingRing {
 
 impl Drop for StagingRing {
     fn drop(&mut self) {
-        for slot in &mut self.slots {
-            // 先丢弃 rx，避免 wgpu 在 buffer drop 时同步回调 Err 消息滞留
-            slot.rx = None;
+        for idx in 0..self.slots.len() {
             // REND-019 PR-D（R5-b 实测崩溃根因二）：drop 前复位映射状态——
             // 挂起/残留映射在死 device 上 Drop 会触发 vkUnmapMemory 访问违例。
-            if let Some(buf) = slot.buffer.take() {
-                crate::device_status::safe_unmap(buf.buffer.inner());
-            }
+            // 只对映射在途的槽位 unmap：未映射槽位调 unmap 会刷 wgpu 校验错误。
             // TrackedBuffer Drop 自动注销内存计数
+            self.release_slot_buffer(idx);
         }
     }
 }

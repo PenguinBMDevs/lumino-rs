@@ -78,6 +78,19 @@ impl RunnerInner {
             midi_console,
         } = *config;
 
+        // 输出路径是硬性前提：空串会让 ffmpeg 以 `Error opening output file .`
+        // （code -22）退出，而导出线程已经白跑一轮、stderr 刷屏。UI 面板入口已
+        // 拦截（Toast + 不置导出态）；这里兜底所有事件来源（菜单/快捷键/旧配置
+        // 回放），与 CPU 守卫同源——在开窗、置运行标志、起线程之前拒绝。
+        if output_path.trim().is_empty() {
+            tracing::warn!("视频导出失败：输出路径为空（用户未选择导出位置）");
+            self.window_state.window.ui_mut().root_mut().toast.push(
+                lumino_ui::toast::ToastLevel::Warning,
+                tr!("请先选择视频输出路径"),
+            );
+            return;
+        }
+
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
         let container = match container {
             lumino_message::events::window::video::Container::Mp4 => Container::Mp4,
