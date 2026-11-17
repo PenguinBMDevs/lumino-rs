@@ -1,33 +1,20 @@
-//! 单帧合成 + 编码（键盘/标尺合成、预览、编码、缓冲归还）。
+//! 单帧合成 + 预览（键盘/标尺合成、预览、缓冲返回给入队方）。
+//!
+//! `write_frame` 已移至独立 ffmpeg 写线程（见 `encoder_thread.rs`），本模块
+//! 只负责把 GPU 读回帧合成成最终帧数据并生成预览，随后返回给导出线程入队。
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
-use lumino_core::trf;
-use lumino_export::video::FfmpegEncoder;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export;
-use super::commands::send_export_error;
 use super::frame::{FrameParams, FrameStageStats};
 
-/// 进度消息载荷：(文本, 进度 0..1, 总帧数, 平滑 FPS, 已用秒)
-type ProgressMsg = (String, f64, u64, f64, f64);
-
-/// 单帧处理：键盘贴图合成 + 标尺数字合成 + 取消检测 + 预览帧发送 + 编码 + 缓冲区归还。
-///
-/// 瀑布流/MIDITrail/计数器模式帧已由 GPU/CPU 完整渲染，调用时传
-/// `FrameParams::default()` + 空键盘贴图即可跳过合成（与旧 `composite_waterfall_and_encode_frame` 等价）。
-///
-/// 返回 `(should_stop, stats)`：`should_stop` 为 true 表示应终止渲染循环（取消或出错）。
-pub(super) struct CompositeEncodeFrameInput<'a> {
+/// 单帧合成输入（不含编码器：编码在独立写线程完成）。
+pub(super) struct CompositeFrameInput<'a> {
     pub data: Vec<u8>,
     pub params: FrameParams,
-    pub encoder: &'a mut FfmpegEncoder,
-    pub progress_tx: &'a UnboundedSender<ProgressMsg>,
     pub preview_tx: &'a UnboundedSender<(Vec<u8>, u32, u32)>,
-    pub cancel_flag: &'a AtomicBool,
     pub last_preview_time: &'a mut Instant,
     pub preview_sent: &'a mut bool,
     pub width: u32,
@@ -35,19 +22,19 @@ pub(super) struct CompositeEncodeFrameInput<'a> {
     pub keyboard_pixels: &'a [u8],
     pub kb_w: u32,
     pub kb_h: u32,
-    pub recycle_tx: &'a Sender<Vec<u8>>,
 }
 
-pub(super) fn composite_and_encode_frame(
-    input: CompositeEncodeFrameInput<'_>,
-) -> (bool, FrameStageStats) {
-    let CompositeEncodeFrameInput {
+/// 单帧合成：键盘贴图 + 标尺数字 + 预览帧生成。
+///
+/// 返回 `(合成帧, stats)`；`None` 表示读回为空应跳过入队（与旧路径丢弃该帧等价）。
+/// 瀑布流/MIDITrain/计数器模式传 `FrameParams::default()` + 空键盘贴图即可跳过合成。
+pub(super) fn composite_frame(
+    input: CompositeFrameInput<'_>,
+) -> (Option<Vec<u8>>, FrameStageStats) {
+    let CompositeFrameInput {
         mut data,
         params,
-        encoder,
-        progress_tx,
         preview_tx,
-        cancel_flag,
         last_preview_time,
         preview_sent,
         width,
@@ -55,7 +42,6 @@ pub(super) fn composite_and_encode_frame(
         keyboard_pixels,
         kb_w,
         kb_h,
-        recycle_tx,
     } = input;
     let mut stats = FrameStageStats::default();
     let FrameParams {
@@ -68,8 +54,8 @@ pub(super) fn composite_and_encode_frame(
     } = params;
 
     if data.is_empty() {
-        tracing::warn!("帧读回为空，跳过");
-        return (false, stats);
+        tracing::warn!("帧读回为空，跳过合成与入队");
+        return (None, stats);
     }
 
     let t0 = Instant::now();
@@ -87,23 +73,7 @@ pub(super) fn composite_and_encode_frame(
     }
     stats.composite_us = t0.elapsed().as_micros() as u64;
 
-    if cancel_flag.load(Ordering::Relaxed) {
-        tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
-        match encoder.write_frame(data) {
-            Ok(frame) => {
-                if recycle_tx.send(frame).is_err() {
-                    tracing::warn!("取消收尾时帧缓冲区归还失败");
-                }
-            }
-            Err(e) => {
-                tracing::error!("取消收尾写入失败: {e}");
-                send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
-            }
-        }
-        return (true, stats);
-    }
-
-    // 预览帧：在 write_frame（move data）之前生成。
+    // 预览帧：在 data 移交给入队方之前生成。
     // 第一帧立即发送，让预览界面尽快有内容；后续按 200ms 节流。
     // 使用 downscale_bgra_to_rgba 合并 BGRA→RGBA 交换与缩小为单次遍历，
     // 避免全帧 clone（~8MB@1080p）以节省内存带宽。
@@ -134,21 +104,5 @@ pub(super) fn composite_and_encode_frame(
         stats.preview_us = t0.elapsed().as_micros() as u64;
     }
 
-    let t0 = Instant::now();
-    let encoded_frame = match encoder.write_frame(data) {
-        Ok(buf) => buf,
-        Err(e) => {
-            tracing::error!("写入视频帧失败: {e}");
-            send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
-            return (true, stats);
-        }
-    };
-    stats.encode_us = t0.elapsed().as_micros() as u64;
-
-    // 将已写入的帧缓冲区归还给渲染线程对象池复用
-    if recycle_tx.send(encoded_frame).is_err() {
-        tracing::warn!("帧缓冲区归还失败：回收通道已关闭");
-    }
-
-    (false, stats)
+    (Some(data), stats)
 }

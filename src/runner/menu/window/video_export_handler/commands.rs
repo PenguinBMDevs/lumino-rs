@@ -3,12 +3,11 @@
 use std::sync::mpsc::{Receiver, Sender};
 
 use lumino_core::{tr, trf};
-use lumino_export::video::FfmpegEncoder;
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
 use tokio::sync::mpsc::UnboundedSender;
 
-/// 进度消息载荷：(文本, 进度 0..1, 总帧数, 平滑 FPS, 已用秒)
-pub(super) type ProgressMsg = (String, f64, u64, f64, f64);
+use super::encoder_thread::EncoderThread;
+use super::frame::ProgressMsg;
 
 /// 发送导出失败进度消息（progress=-1 表示失败，UI 据此弹出错误）。
 ///
@@ -70,9 +69,10 @@ pub(super) fn send_finish_render_command(cmd_sender: &Sender<RenderCommand>) {
 #[allow(clippy::too_many_arguments)] // 内存/流式两条导出路径共用的收尾接口，保持显式传递
 pub(super) fn finalize_video_export(
     cmd_sender: &Sender<RenderCommand>,
-    encoder: FfmpegEncoder,
+    encoder_thread: EncoderThread,
     cancelled: bool,
     tdr_cancelled: bool,
+    encode_failed: bool,
     elapsed: f64,
     total_frames: u64,
     smoothed_fps: f64,
@@ -80,7 +80,22 @@ pub(super) fn finalize_video_export(
 ) {
     // 先放显存：渲染线程收到后即释常驻，与 ffmpeg 收尾并发，不 blocking 编码。
     send_finish_render_command(cmd_sender);
-    if !cancelled {
+
+    // 先 join 写线程拿到最终写入结果，再单点决策最终进度消息：
+    // 避免「先发完成、后发失败」自相矛盾，也避免通用文案覆盖 write 的详细错误。
+    let finish_err = encoder_thread.finish().err();
+
+    if encode_failed {
+        // 写线程已上报含 {e} 详细原因的写入错误，此处只记日志，不再重复发送。
+        tracing::error!("视频导出因编码写入失败中断（详细错误已由写线程上报）");
+        if let Some(e) = &finish_err {
+            tracing::error!("ffmpeg 收尾次生失败: {e}");
+        }
+    } else if let Some(e) = &finish_err {
+        // 写入阶段全部成功，但 ffmpeg finish 非零退出/超时——必须明确报错而非「完成」。
+        tracing::error!("FFmpeg 收尾失败: {e}");
+        send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
+    } else if !cancelled {
         let _ = progress_tx.send((
             tr!("导出完成").to_string(),
             1.0,
@@ -104,9 +119,5 @@ pub(super) fn finalize_video_export(
             smoothed_fps,
             elapsed,
         ));
-    }
-    if let Err(e) = encoder.finish() {
-        tracing::error!("FFmpeg 收尾失败: {e}");
-        send_export_error(progress_tx, trf!("导出失败: {e}", e = e));
     }
 }

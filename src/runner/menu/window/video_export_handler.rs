@@ -15,6 +15,7 @@ use memory_task::{RunVideoExportTaskInput, run_video_export_task};
 
 mod commands;
 mod composite;
+mod encoder_thread;
 mod frame;
 mod memory_task;
 mod pipeline;
