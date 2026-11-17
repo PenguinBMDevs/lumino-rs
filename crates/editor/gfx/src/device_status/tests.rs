@@ -24,19 +24,46 @@ fn lock_flag_tests() -> MutexGuard<'static, ()> {
 /// 申请**独立**实例 + 适配器 + 设备（禁共享设备，同 R1 约束）。
 ///
 /// Windows DX12/WARP 在「并发建/销 Device」的风暴期（本 crate 的共享设备、
-/// `device_check` 探测、`destroy()` 注入用例同进程并行）可能让 `request_device`
-/// 瞬时返回 `Device(Lost)`——2026-11-15 CI 实测单发（`test_gpu.rs` 记载过同类
-/// DX12 停摆表现）。此处重试吸收**瞬时**失败：重试仍败说明 DX12 栈已常驻停摆，
-/// 属环境级故障，让 panic 消息带出末次错误便于定位。
+/// `device_check` 探测、`destroy()` 注入用例同进程并行）可能让 `request_adapter`
+/// 瞬时返回 `NotFound`、或让 `request_device` 瞬时返回 `Device(Lost)`——
+/// 2026-11 CI 两轮实测分别命中这两处（`test_gpu.rs` 记载过同类 DX12 停摆表现）。
+/// 此处对 adapter 与 device 均重试 3 次吸收**瞬时**失败，并支持
+/// `LUMINO_GFX_TEST_FALLBACK` 软渲染兜底（与 test_gpu / transient_device 一致）。
+/// 重试仍败说明 DX12 栈已常驻停摆，属环境级故障，panic 消息带出末次错误便于定位。
 fn request_independent_device(label: &'static str) -> (wgpu::Device, wgpu::Queue) {
     use futures::executor::block_on;
 
+    // 与 test_gpu / cpu_onion_renderer::tests_support 一致：支持显式软渲染兜底，
+    // 并对 adapter 申请重试（DX12 栈在并发建/销 Device 风暴期会瞬时返回 NotFound，
+    // 2026-11 CI 实测：失败点恰在 request_adapter 而 device 侧已有重试）。
+    let force_fallback = std::env::var_os("LUMINO_GFX_TEST_FALLBACK").is_some();
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: false,
-        ..Default::default()
-    }))
-    .expect("独立适配器应可用（硬件或 CI 软渲染）");
+    let adapter = {
+        let mut found = None;
+        let mut last_err = None;
+        for attempt in 1..=3 {
+            match block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                force_fallback_adapter: force_fallback,
+                ..Default::default()
+            })) {
+                Ok(adapter) => {
+                    found = Some(adapter);
+                    break;
+                }
+                Err(err) => {
+                    eprintln!("[device_status 测试] request_adapter 第 {attempt}/3 次失败: {err}");
+                    last_err = Some(err);
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
+        found.unwrap_or_else(|| {
+            panic!(
+                "独立适配器应可用（硬件、CI 软渲染或重试后）: {:?}",
+                last_err
+            )
+        })
+    };
 
     let descriptor = || wgpu::DeviceDescriptor {
         label: Some(label),
