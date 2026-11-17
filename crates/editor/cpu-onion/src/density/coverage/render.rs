@@ -13,8 +13,8 @@ impl DensityPyramid {
         // 超过 2px 的块会明显吃掉音符宽度，退回 Exact。
         const MAX_CELL_PX: f32 = 2.0;
         let mut level = 0usize;
-        for next in 1..self.coverage.len() {
-            if self.coverage[next].bin_ticks as f32 * zoom_x <= MAX_CELL_PX {
+        for (next, item) in self.coverage.iter().enumerate().skip(1) {
+            if item.bin_ticks as f32 * zoom_x <= MAX_CELL_PX {
                 level = next;
             } else {
                 break;
