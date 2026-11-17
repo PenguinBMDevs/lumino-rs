@@ -21,7 +21,7 @@ use crate::runner::RunnerInner;
 ///
 /// `MidiDocument::clone` 为手写实现，音符块/控制事件块共享底层 `Arc`，
 /// 不复制逐音符数据；快照之后的编辑不会进入本次保存。
-struct LmpjSnapshot {
+pub(in crate::runner) struct LmpjSnapshot {
     document: MidiDocument,
     shapes: Vec<lumino_core::shape::ShapeModel>,
     author: String,
@@ -41,7 +41,7 @@ struct LmpjSnapshot {
 
 impl LmpjSnapshot {
     /// 在后台线程完成工程组包。
-    fn into_project(self) -> lumino_export::LuminoProject {
+    pub(in crate::runner) fn into_project(self) -> lumino_export::LuminoProject {
         let mut project = lumino_export::LuminoProject::from_midi_document(&self.document);
         project.shapes = self.shapes;
         project.metadata.project.name = self.project_name;
@@ -76,7 +76,13 @@ impl RunnerInner {
     }
 
     /// 主线程轻量快照：不组包、不排序、不分配逐音符 compact 事件。
-    fn snapshot_lmpj_project(&self, save_path: &Path) -> Option<LmpjSnapshot> {
+    ///
+    /// 本地保存、周期自动保存、云保存共用此口径（DEBT-23）：主线程只 clone
+    /// document（块级 COW）并读取元数据，组包成本全部留给后台线程。
+    pub(in crate::runner) fn snapshot_lmpj_project(
+        &self,
+        save_path: &Path,
+    ) -> Option<LmpjSnapshot> {
         let (document, shapes, author, copyright, use10, i2m, onion_skin_mode) = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
@@ -257,97 +263,5 @@ impl RunnerInner {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use lumino_midi_loader::{ChunkedList, TrackManager};
-
-    fn empty_document() -> MidiDocument {
-        MidiDocument {
-            notes: Vec::new(),
-            tempo_changes: Vec::new(),
-            time_signatures: Vec::new(),
-            key_signatures: Vec::new(),
-            control_events: ChunkedList::new(),
-            lyrics: Vec::new(),
-            markers: Vec::new(),
-            text_events: Vec::new(),
-            sys_ex: Vec::new(),
-            track_names: Vec::new(),
-            total_ticks: 0,
-            track_count: 0,
-            tracks: TrackManager::new(0),
-            division: 480,
-            track_ports: Vec::new(),
-            track_max_end_ticks: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn test_snapshot_into_project_keeps_metadata() {
-        let snapshot = LmpjSnapshot {
-            document: empty_document(),
-            shapes: Vec::new(),
-            author: "Author".into(),
-            copyright: "Copyright".into(),
-            working_time_seconds: 42.0,
-            project_name: "Project".into(),
-            use10: true,
-            i2m: lumino_core::I2mSettings {
-                start_key: 36,
-                color_count: 8,
-                ..Default::default()
-            },
-            onion_skin_mode: "previous_track".into(),
-        };
-
-        let project = snapshot.into_project();
-
-        assert_eq!(project.metadata.project.name, "Project");
-        assert_eq!(project.metadata.project.author, "Author");
-        assert_eq!(project.metadata.project.copyright, "Copyright");
-        assert_eq!(
-            project
-                .metadata
-                .settings
-                .as_ref()
-                .and_then(|settings| settings.use10),
-            Some(true),
-            "启用通道 10 应随工程落盘"
-        );
-        let i2m = project
-            .metadata
-            .settings
-            .as_ref()
-            .and_then(|settings| settings.i2m.clone())
-            .expect("图片转 MIDI 参数应随工程落盘");
-        assert_eq!((i2m.start_key, i2m.color_count), (36, 8));
-        assert_eq!(
-            project
-                .metadata
-                .stats
-                .as_ref()
-                .and_then(|stats| stats.working_time_seconds),
-            Some(42),
-            "累计创作时长应取快照时刻"
-        );
-        // 工程范围记忆：洋葱皮显示范围必须落进 metadata.toml 的 [settings] 段
-        assert_eq!(
-            project
-                .metadata
-                .settings
-                .as_ref()
-                .and_then(|s| s.onion_skin_mode.as_deref()),
-            Some("previous_track"),
-            "洋葱皮显示范围必须随工程保存（工程范围记忆）"
-        );
-        // 本任务只接管这一项：其余 [settings] 字段必须保持 None（不越权写别人字段）
-        let settings = project
-            .metadata
-            .settings
-            .as_ref()
-            .expect("settings 段应存在");
-        assert!(settings.auto_scroll_mode.is_none());
-        assert!(settings.theme.is_none());
-        assert!(settings.enable_256key.is_none());
-    }
-}
+#[path = "lmpj_tests.rs"]
+mod tests;

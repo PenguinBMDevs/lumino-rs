@@ -33,50 +33,7 @@ impl RunnerInner {
         // 上传进行中：禁止关闭软件（完成后在 apply_cloud_save_result 清除）
         self.cloud_saving
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        // 构建工程（借 UI document，与导出工程一致）
-        let project = {
-            let ui = self.window_state.window.ui();
-            let data = &ui.root().editor.editor_state.data;
-            // 抓取工程设置对话框中的作者/版权（关闭工程后由 Runner 从已加载
-            // .lmpj 回填），随云保存一并持久化，避免重新下载后丢失
-            let author = ui.get_project_author();
-            let copyright = ui.get_project_copyright();
-            match data.document.as_ref() {
-                Some(doc) => {
-                    // tempo 无需补救（2026-10-20 审计 §三）：`EditorData` 的 tempo
-                    // 写入入口都会 `sync_tempo_to_document`，doc 已是编辑后的值；
-                    // 原 `apply_tempo_points(...)` 补丁已删除。
-                    let mut project = lumino_export::LuminoProject::from_midi_document(doc);
-                    // 形状随云保存持久化（与本地保存一致）
-                    project.shapes = ui.root().editor.shapes_snapshot();
-                    // 累计创作时间随云保存持久化（与本地保存一致）
-                    project.set_working_time_seconds(self.session_tracker.current_editing_secs());
-                    // 作者/版权随云保存持久化（与本地保存一致）
-                    project.metadata.project.author = author;
-                    project.metadata.project.copyright = copyright;
-                    // 工程级「启用通道 10」（DRAW-032）随云保存持久化
-                    project
-                        .metadata
-                        .settings
-                        .get_or_insert_with(Default::default)
-                        .use10 = Some(ui.get_project_use10());
-                    // DRAW-030：图片转 MIDI 参数随云保存持久化
-                    project
-                        .metadata
-                        .settings
-                        .get_or_insert_with(Default::default)
-                        .i2m = Some(ui.get_project_i2m_config());
-                    project
-                }
-                None => {
-                    self.apply_cloud_save_result(
-                        false,
-                        Some(tr!("当前没有可保存的工程内容").to_string()),
-                    );
-                    return;
-                }
-            }
-        };
+
         let file_stem = self
             .midi_state
             .current_midi_source
@@ -88,6 +45,15 @@ impl RunnerInner {
         let tmp_dir = storage::config_dir().join("cloud_tmp");
         let local_path = tmp_dir.join(format!("{file_stem}.lmpj"));
 
+        // DEBT-23：主线程只做轻量快照（clone document + 读元数据，块级 COW），
+        // 组包（from_midi_document）与归档写盘整体下沉到后台线程。复用与本地
+        // 保存/自动保存同一口径 LmpjSnapshot，避免三套元数据装配逻辑漂移。
+        // local_path 的 stem 即 file_stem，快照里的 project_name 与本地保存口径对齐。
+        let Some(snapshot) = self.snapshot_lmpj_project(&local_path) else {
+            self.apply_cloud_save_result(false, Some(tr!("当前没有可保存的工程内容").to_string()));
+            return;
+        };
+
         // 云进度悬浮窗：开始保存到云（导出阶段）
         let progress_tx = self.window_state.cloud_progress_tx.clone();
         let _ = progress_tx.send((
@@ -96,56 +62,76 @@ impl RunnerInner {
         ));
 
         let mgr = Arc::clone(&self.cloud);
+        // 克隆事件回传所需的闭包参数：panic 分支也要能补发 SaveToCloudResult，
+        // 否则 cloud_saving 永久置位 → 软件无法关闭（DEBT-23 下沉引入的风险面）。
+        let progress_tx_panic = progress_tx.clone();
         std::thread::spawn(move || {
-            // 导出工程为**单文件归档**（LMPJ 魔数开头，完整包含全部音轨数据）。
-            // 注意：不得使用 save_project_to_folder_with_entry——它生成 67 字节
-            // 入口文件 + 同目录数据文件夹，云上传只有单文件通道，
-            // 数据文件夹不会上传，下载后工程无法加载（曾引发 67 字节 bug）。
-            if let Err(e) = lumino_export::save_to_archive(&project, local_path.clone()) {
-                let _ = progress_tx.send((trf!("导出工程失败：{e}", e = e), 1.0));
+            // DEBT-23：组包在后台线程完成（主线程只做了 COW 快照）。
+            // catch_unwind 保证任何 panic 都补发失败事件 → apply_cloud_save_result
+            // 清 cloud_saving 标志，避免"上传中"软死锁。捕获项均为 owned/Arc，
+            // panic 后无需维持数据一致性，AssertUnwindSafe 成立。
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let project = snapshot.into_project();
+                // 导出工程为**单文件归档**（LMPJ 魔数开头，完整包含全部音轨数据）。
+                // 注意：不得使用 save_project_to_folder_with_entry——它生成 67 字节
+                // 入口文件 + 同目录数据文件夹，云上传只有单文件通道，
+                // 数据文件夹不会上传，下载后工程无法加载（曾引发 67 字节 bug）。
+                if let Err(e) = lumino_export::save_to_archive(&project, local_path.clone()) {
+                    let _ = progress_tx.send((trf!("导出工程失败：{e}", e = e), 1.0));
+                    event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
+                        ok: false,
+                        error: Some(trf!("导出工程失败：{e}", e = e)),
+                    }));
+                    return;
+                }
+                // 上传到云目标目录
+                let remote = if dir_path.is_empty() {
+                    format!("{file_stem}.lmpj")
+                } else {
+                    format!(
+                        "{}/{}",
+                        dir_path.trim_end_matches('/'),
+                        local_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| format!("{file_stem}.lmpj"))
+                    )
+                };
+                let _ = progress_tx.send((
+                    trf!("正在上传 {file_stem}.lmpj 到云存储", file_stem = file_stem),
+                    0.5,
+                ));
+                let mut mgr = lock_cloud(&mgr);
+                let result = mgr.upload(&id, &local_path, &remote);
+                let _ = std::fs::remove_file(&local_path);
+                let done_msg = if result.is_ok() {
+                    tr!("已保存到云存储").to_string()
+                } else {
+                    trf!(
+                        "保存到云失败：{err}",
+                        err = result
+                            .as_ref()
+                            .err()
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| tr!("未知错误").to_string())
+                    )
+                };
+                let _ = progress_tx.send((done_msg, 1.0));
+                event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
+                    ok: result.is_ok(),
+                    error: result.err().map(|e| e.to_string()),
+                }));
+            }));
+            if outcome.is_err() {
+                // 组包/写盘/上传任一环节 panic：补发失败事件让主线程清标志。
+                // 日志用字面量，避免 panic 上下文里 i18n 宏二次 panic。
+                tracing::error!("保存到云后台任务 panic（已补发失败事件以清除保存标志）");
+                let _ = progress_tx_panic.send(("保存到云失败：内部错误".to_string(), 1.0));
                 event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
                     ok: false,
-                    error: Some(trf!("导出工程失败：{e}", e = e)),
+                    error: Some("保存到云失败：内部错误".to_string()),
                 }));
-                return;
             }
-            // 上传到云目标目录
-            let remote = if dir_path.is_empty() {
-                format!("{file_stem}.lmpj")
-            } else {
-                format!(
-                    "{}/{}",
-                    dir_path.trim_end_matches('/'),
-                    local_path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| format!("{file_stem}.lmpj"))
-                )
-            };
-            let _ = progress_tx.send((
-                trf!("正在上传 {file_stem}.lmpj 到云存储", file_stem = file_stem),
-                0.5,
-            ));
-            let mut mgr = lock_cloud(&mgr);
-            let result = mgr.upload(&id, &local_path, &remote);
-            let _ = std::fs::remove_file(&local_path);
-            let done_msg = if result.is_ok() {
-                tr!("已保存到云存储").to_string()
-            } else {
-                trf!(
-                    "保存到云失败：{err}",
-                    err = result
-                        .as_ref()
-                        .err()
-                        .map(|e| e.to_string())
-                        .unwrap_or_else(|| tr!("未知错误").to_string())
-                )
-            };
-            let _ = progress_tx.send((done_msg, 1.0));
-            event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
-                ok: result.is_ok(),
-                error: result.err().map(|e| e.to_string()),
-            }));
         });
     }
 
