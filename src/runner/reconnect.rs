@@ -43,6 +43,12 @@ pub enum ReconnectState {
     Recovered,
     /// 终态：重试预算耗尽。进入前必须完成自动保存并弹兜底提示（红线 9）
     Failed { reason: String },
+    /// 内部占位态：仅供 `step` 中 `mem::replace` 临时占位，正常路径绝不停留。
+    ///
+    /// 不属对外状态机语义。若被外部误读，或某迁移臂遗漏对 `self.state` 赋值，
+    /// `step` 的兜底会强制收敛到 `Failed` 安全终态并报错（有声失败）。
+    #[doc(hidden)]
+    Transitioning,
 }
 
 /// 重连操作面（S3）：由根 crate 的 Runner 实现；测试注入 Mock（泛型 `D`）。
@@ -137,9 +143,10 @@ impl<D> ReconnectSession<D> {
         }
         self.retry_not_before = None;
 
-        // 取出现状推进（占位立即被各臂覆盖；避免与 `&mut self.state` 借用冲突）
-        let state = std::mem::replace(&mut self.state, ReconnectState::RebuildUi);
-        match state {
+        // 取出现状推进（专用哨兵态占位——绝不用真实状态，避免迁移臂遗漏赋值时
+        // 占位值泄漏成"合法"状态；见 match 后的不变量断言）
+        let state = std::mem::replace(&mut self.state, ReconnectState::Transitioning);
+        let finished = match state {
             ReconnectState::StopRenderThread { deadline } => {
                 if Instant::now() > deadline {
                     tracing::warn!(
@@ -221,8 +228,30 @@ impl<D> ReconnectSession<D> {
                 }
                 Err(e) => self.pipeline_attempt_failed(ops, e),
             },
-            ReconnectState::Recovered | ReconnectState::Failed { .. } => true,
-        }
+            terminal @ (ReconnectState::Recovered | ReconnectState::Failed { .. }) => {
+                // 终态重入：恢复原终态，禁止被 mem::replace 的占位值覆写（RCA 根因）
+                self.state = terminal;
+                true
+            }
+            ReconnectState::Transitioning => {
+                // 占位态被当作现状读入 = 非法重入：有声失败，强制收敛到 Failed 安全终态
+                const REASON: &str = "重连状态机非法重入（占位态泄漏）";
+                tracing::error!("{REASON}");
+                ops.on_failed(REASON);
+                self.state = ReconnectState::Failed {
+                    reason: REASON.to_string(),
+                };
+                true
+            }
+        };
+
+        // 蓝军不变量：任何正常迁移臂都必须重新赋值 self.state，不得停留在占位态。
+        // debug_assert 在 debug 构建加速发现；release 下由上面的 Transitioning 兜底兜住。
+        debug_assert!(
+            !matches!(self.state, ReconnectState::Transitioning),
+            "重连状态机迁移臂遗漏 self.state 赋值（占位态泄漏）"
+        );
+        finished
     }
 
     /// 整轮流水线失败：预算内退避重试，耗尽进 Failed（`on_failed` 保证先自动保存）。
