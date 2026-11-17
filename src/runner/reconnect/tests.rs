@@ -195,3 +195,95 @@ fn test_reconnect_step_idempotent_while_waiting() {
     ));
     assert!(!session.is_finished());
 }
+
+/// RCA 回归：终态重入不得被 `mem::replace` 占位值覆写（Recovered）。
+#[test]
+fn test_reconnect_recovered_state_survives_step_reentry() {
+    let mut ops = MockOps::new(Scripted::new());
+    let mut session = ReconnectSession::new();
+    session.state = ReconnectState::Recovered;
+    let calls_before = ops.calls.len();
+
+    assert!(session.step(&mut ops), "终态重入仍应报告已终结");
+    assert!(
+        matches!(session.state(), ReconnectState::Recovered),
+        "Recovered 终态不得被占位值覆写（实际：{:?}）",
+        session.state()
+    );
+    assert_eq!(
+        ops.calls.len(),
+        calls_before,
+        "终态重入不得产生任何操作副作用"
+    );
+}
+
+/// RCA 回归：Failed 终态重入不得被覆写，且失败原因保留。
+#[test]
+fn test_reconnect_failed_state_survives_step_reentry() {
+    let mut ops = MockOps::new(Scripted::new());
+    let mut session = ReconnectSession::new();
+    session.state = ReconnectState::Failed {
+        reason: "测试终态".to_string(),
+    };
+    let calls_before = ops.calls.len();
+
+    assert!(session.step(&mut ops), "终态重入仍应报告已终结");
+    assert!(
+        matches!(session.state(), ReconnectState::Failed { reason } if reason == "测试终态"),
+        "Failed 终态及其 reason 不得被占位值覆写（实际：{:?}）",
+        session.state()
+    );
+    assert_eq!(
+        ops.calls.len(),
+        calls_before,
+        "终态重入不得产生任何操作副作用"
+    );
+}
+
+/// 蓝军兜底：占位态若被误当作现状读入，必须强制进入 Failed 安全终态，禁止静默推进。
+#[test]
+fn test_reconnect_transitioning_placeholder_forces_failed_terminal() {
+    let mut ops = MockOps::new(Scripted::new());
+    let mut session = ReconnectSession::new();
+    session.state = ReconnectState::Transitioning;
+
+    assert!(session.step(&mut ops), "占位态必须收敛到终态");
+    assert!(
+        matches!(session.state(), ReconnectState::Failed { .. }),
+        "非法占位态必须强制进入 Failed 安全终态（实际：{:?}）",
+        session.state()
+    );
+    assert!(
+        ops.failed_with.is_some(),
+        "强制 Failed 必须调用 on_failed（有声失败）"
+    );
+    assert_eq!(ops.calls.len(), 1, "只应有 on_failed 一次副作用");
+}
+
+/// 蓝军兜底：RebuildInfra 阶段若重建产物丢失（会话中途被打断），必须降级重试而非崩溃。
+///
+/// 对应卡上 P3「恢复中途二次 TDR」在状态机层的保障：Runner 层对重复 TDR 是
+/// 「忽略并保持单会话」，状态机层则保证被打断后仍沿合法路径推进。
+#[test]
+fn test_reconnect_rebuild_infra_missing_pending_degrades_to_retry() {
+    let mut ops = MockOps::new(Scripted::new());
+    let mut session = ReconnectSession::new();
+    session.state = ReconnectState::RebuildInfra;
+    session.pending = None; // 模拟状态被打断导致产物丢失
+    session.attempt = 1;
+
+    assert!(
+        !session.step(&mut ops),
+        "单次整轮失败应进入退避重试，而非直接终态"
+    );
+    assert!(
+        matches!(
+            session.state(),
+            ReconnectState::RecreateDevice { attempt: 2 }
+        ),
+        "必须降级到下一轮重建（实际：{:?}）",
+        session.state()
+    );
+    assert_eq!(ops.count("install"), 0, "无产物时不得调用安装");
+    assert!(session.retry_not_before.is_some(), "失败后应设置退避窗口");
+}
