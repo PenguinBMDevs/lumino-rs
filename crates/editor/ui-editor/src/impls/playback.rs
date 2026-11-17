@@ -166,13 +166,19 @@ impl Editor {
                         .push((end_tick, key * 4, color));
                 }
                 // 维持 scan_idx 不变量，使后续增量路径保持 O(活跃) 而非退回 O(end)
-                for track_idx in 0..track_count {
+                for (track_idx, scan_idx) in self
+                    .playback_scan_state
+                    .scan_idx
+                    .iter_mut()
+                    .enumerate()
+                    .take(track_count)
+                {
                     let notes = doc.track_notes(track_idx);
                     if notes.is_empty() {
                         continue;
                     }
                     let end = notes.partition_point(tick_u32.wrapping_add(1));
-                    self.playback_scan_state.scan_idx[track_idx] = end;
+                    *scan_idx = end;
                 }
             } else {
                 // 回退：超大工程（超阈值未建索引）走原 O(end) 线性扫描

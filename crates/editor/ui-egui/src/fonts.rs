@@ -28,8 +28,20 @@ const CANDIDATES: &[&str] = &[
     "Arial Unicode MS",
 ];
 
-/// 在给定 Context 上安装一次 CJK 字体。
+/// 在给定 Context 上安装 CJK 字体，并确保缺字形时不会 panic。
+///
+/// `egui_kittest` 默认把 `MissingGlyphPolicy` 设为 `Panic`（用于捕捉测试里意外
+/// 缺失的字形）。但本项目 UI 大量使用中文，而 CI / 精简 Linux 环境往往没有
+/// 任何 CJK 字体——此时 `definitions()` 返回 `None`，中文字符无字形可画，
+/// kittest 的 Panic 策略会直接让无头交互测试崩溃（尽管这些测试只关心控件
+/// 回传与标签可见，并不校验字形）。
+///
+/// 因此在唯一字体入口显式把策略设为 `Tofu`：缺字形时画豆腐块而非 panic。
+/// 生产环境 epaint 默认本就是 `Tofu`，故此改动不改变生产渲染行为，
+/// 只让测试在无 CJK 字体的机器上保持健壮。该调用幂等，每帧重复调用无副作用。
 pub fn install(ctx: &egui::Context) {
+    ctx.set_missing_glyph_policy(egui::MissingGlyphPolicy::Tofu);
+
     let marker = egui::Id::unique("lumino-ui-egui-fonts-installed");
     if ctx.data(|data| data.get_temp::<bool>(marker).unwrap_or(false)) {
         return;
@@ -112,4 +124,30 @@ fn resolve_face() -> Option<&'static FontFace> {
             None
         })
         .as_ref()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_install_allows_missing_glyphs_without_panic() {
+        let ctx = egui::Context::default();
+        // 模拟 egui_kittest 的默认行为：缺字形直接 panic。
+        ctx.set_missing_glyph_policy(egui::MissingGlyphPolicy::Panic);
+        assert_eq!(
+            ctx.missing_glyph_policy(),
+            egui::MissingGlyphPolicy::Panic,
+            "前置条件：默认应为 Panic"
+        );
+
+        install(&ctx);
+
+        // install 之后必须回落到 tofu，保证无 CJK 字体的 CI 不会 panic。
+        assert_eq!(
+            ctx.missing_glyph_policy(),
+            egui::MissingGlyphPolicy::Tofu,
+            "install 后缺字形策略必须为 Tofu"
+        );
+    }
 }

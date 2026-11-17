@@ -76,7 +76,7 @@ fn build_editor(tracks: usize, notes_per_track: usize) -> Editor {
     };
 
     // 每轨 M 个音符，tick 升序、key 循环 0..127
-    for t in 0..tracks {
+    for slot in doc.notes.iter_mut().take(tracks) {
         let events: Vec<lumino_midi_loader::NoteEvent> = (0..notes_per_track)
             .map(|i| {
                 lumino_midi_loader::NoteEvent::new(
@@ -88,7 +88,7 @@ fn build_editor(tracks: usize, notes_per_track: usize) -> Editor {
                 )
             })
             .collect();
-        doc.notes[t] = lumino_midi_loader::ChunkedList::from_sorted(events);
+        *slot = lumino_midi_loader::ChunkedList::from_sorted(events);
     }
     doc.total_ticks = (notes_per_track * 10) as u32;
 

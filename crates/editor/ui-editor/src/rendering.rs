@@ -102,10 +102,7 @@ impl Editor {
             // 纵向：键盘在底部（高度 = keyboard_width），无顶部标尺
             let kb_h = es.view.keyboard_width;
             let grid_bottom = es.canvas.size_y - kb_h;
-            if local_pos.y > grid_bottom {
-                return false;
-            }
-            true
+            local_pos.y <= grid_bottom
         } else {
             if local_pos.x < es.view.keyboard_width {
                 return false;
