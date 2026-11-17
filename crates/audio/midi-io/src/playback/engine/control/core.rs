@@ -151,9 +151,8 @@ impl PlaybackEngine {
             // 编辑后更新快照：保留播放游标，仅钳制越界 cursor
             // process_other_tracks 使用 get() 安全访问，不会 panic；
             // 下次 seek/play 会通过 reset_cursors_to 精确重定位。
-            for track_idx in 0..track_count {
+            for (track_idx, state) in self.track_states.iter_mut().enumerate().take(track_count) {
                 let notes_len = doc.track_notes(track_idx).len();
-                let state = &mut self.track_states[track_idx];
                 if state.note_cursor > notes_len {
                     state.note_cursor = notes_len;
                 }
