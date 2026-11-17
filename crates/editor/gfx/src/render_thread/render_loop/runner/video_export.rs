@@ -249,7 +249,10 @@ fn collect_piano_key_colors(
 ) -> Option<[u8; 1024]> {
     let zoom_x = params.zoom.0.max(f32::EPSILON);
     let tick = (params.scroll.0 / zoom_x).max(0.0) as u32;
-    let tick_span = (params.viewport_size.0 as f32 / zoom_x).max(1.0) as u32;
+    // 可见内容区宽度扣除键盘条带（与渲染视口同源；active 谓词只看 tick_start，
+    // 此处让 counts/total 也同源，便于将来 FILL 复用同一 CullWindow）。
+    let content_width = (params.viewport_size.0 as f32 - params.keyboard_width).max(1.0);
+    let tick_span = (content_width / zoom_x).max(1.0) as u32;
     let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
     // 直绑 onion 缓冲：注入其内容世代（识别等长原地改写，见 BucketSource::epoch 契约）；
     // 上传回退路径：清除外部世代，回落到内部 seq（上传时 mark_resident_updated）。
