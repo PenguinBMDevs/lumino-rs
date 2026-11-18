@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use lumino_core::tr;
 
+use super::panic_guard::{Guarded, run_guarded};
 use super::*;
 
 /// 重建失败后的退避间隔。
@@ -107,34 +108,16 @@ pub(super) enum LgsRebuildFailure {
     Panicked(String),
 }
 
-/// 提取 panic payload 的可读消息（与 `logging.rs` 的 panic hook 同口径）。
-fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "未知 panic payload".to_string()
-    }
-}
-
-/// 执行一次重建并**无条件**归还 API：panic 由 `catch_unwind` 截断后同样返回。
+/// 执行一次重建并**无条件**归还 API：panic 由 [`run_guarded`] 截断后同样返回。
 ///
-/// `AssertUnwindSafe` 的成立依据：panic 后不再信任 `MidiApi` 内部状态，只把它
-/// 原样交还主线程；主线程按失败处理（退避重建或耗尽降级），不假设其内部状态
-/// 仍可正常发声。
-fn run_lgs_rebuild_worker(mut api: MidiApi) -> (MidiApi, Result<(), LgsRebuildFailure>) {
-    let caught =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| api.rebuild_gpu_pipeline()));
-    let result = match caught {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => Err(LgsRebuildFailure::Error(e)),
-        Err(payload) => {
-            let message = panic_payload_message(&*payload);
-            // payload 的 Drop 不参与二次展开（Drop 内再 panic 会 abort 进程）。
-            std::mem::forget(payload);
-            Err(LgsRebuildFailure::Panicked(message))
-        }
+/// `AssertUnwindSafe` 的成立依据见 [`run_guarded`]：panic 后只把 API 交还主线程
+/// 按失败处理，不假设其内部状态仍可正常发声。
+fn run_lgs_rebuild_worker(api: MidiApi) -> (MidiApi, Result<(), LgsRebuildFailure>) {
+    let (api, outcome) = run_guarded(api, |api| api.rebuild_gpu_pipeline());
+    let result = match outcome {
+        Guarded::Done(Ok(())) => Ok(()),
+        Guarded::Done(Err(e)) => Err(LgsRebuildFailure::Error(e)),
+        Guarded::Panicked(message) => Err(LgsRebuildFailure::Panicked(message)),
     };
     (api, result)
 }
@@ -206,24 +189,40 @@ impl MidiManager {
         }
     }
 
-    /// 同步路径进入前等待在途重建归还 API（并取消暂存/退避请求）。
-    pub(super) fn drain_lgs_rebuild(&mut self) {
-        self.lgs_rebuild.requested = false;
-        self.lgs_rebuild.not_before = None;
+    /// 同步路径进入前等待在途重建归还 API。
+    ///
+    /// `cancel_retry = true`（整后端重初始化）：取消暂存/退避请求，只归还 API——
+    /// 随后的 `reinit_if_needed` 会重建整个后端。
+    /// `cancel_retry = false`（播放输出重连 / 同步布局应用）：**保留**待重试；
+    /// 在途结果按 `finish_lgs_rebuild` 正常收尾（失败则继续退避重试），避免一次
+    /// 用户操作把 panic/Err 后的恢复机会静默取消。
+    pub(super) fn drain_lgs_rebuild(&mut self, cancel_retry: bool) {
+        if cancel_retry {
+            self.lgs_rebuild.requested = false;
+            self.lgs_rebuild.not_before = None;
+        }
         if let Some(inflight) = self.lgs_rebuild.inflight.take() {
             match inflight.rx.recv_timeout(LGS_REBUILD_DRAIN_TIMEOUT) {
                 Ok(done) => {
-                    self.api = Some(done.api);
-                    match &done.result {
-                        Ok(()) => {}
-                        Err(LgsRebuildFailure::Error(e)) => {
-                            tracing::error!("LGS（PR-D）: 同步等待期间重建失败（API 已归还）: {e}");
+                    if cancel_retry {
+                        self.api = Some(done.api);
+                        match &done.result {
+                            Ok(()) => {}
+                            Err(LgsRebuildFailure::Error(e)) => {
+                                tracing::error!(
+                                    "LGS（PR-D）: 同步等待期间重建失败（API 已归还）: {e}"
+                                );
+                            }
+                            Err(LgsRebuildFailure::Panicked(msg)) => {
+                                tracing::error!(
+                                    "LGS（PR-D）: 同步等待期间重建 panic（API 已兜底归还）: {msg}"
+                                );
+                            }
                         }
-                        Err(LgsRebuildFailure::Panicked(msg)) => {
-                            tracing::error!(
-                                "LGS（PR-D）: 同步等待期间重建 panic（API 已兜底归还）: {msg}"
-                            );
-                        }
+                    } else {
+                        // 非重初始化路径：按正常收尾推进 attempts/退避/提示，
+                        // 不把失败重试静默吞掉。
+                        self.finish_lgs_rebuild(done, inflight.started);
                     }
                 }
                 Err(e) => tracing::error!(

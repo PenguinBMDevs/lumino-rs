@@ -1,17 +1,15 @@
 //! `lgs_rebuild` 单元测试：决策/重试边界 + AUD-008 panic 所有权归还。
 //!
-//! 拆到独立文件以守住 400 行守卫；mock 不触碰任何真实驱动（零 WinMM / wgpu）。
+//! 拆到独立文件以守住 400 行守卫；`MockApi` 来自 `test_support`，不触碰任何真实驱动。
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use lumino_core::storage::config::SynthBackend;
 use lumino_core::tr;
-use lumino_midi_io::{
-    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputInfo, PlaybackOutput,
-    SynthControl,
-};
 
+use super::super::MidiApi;
+use super::super::test_support::MockApi;
 use super::*;
 use crate::runner::midi_manager::MidiManager;
 
@@ -56,61 +54,7 @@ fn next_retry_step_boundary() {
     assert_eq!(next_retry_step(u8::MAX), LgsRetryStep::Exhausted);
 }
 
-/// 最小 LGS API 替身：`rebuild_gpu_pipeline` 可控 panic / 成功。
-struct MockApi {
-    panic_on_rebuild: bool,
-}
-
-impl MockApi {
-    fn ok() -> Box<dyn SynthControl> {
-        Box::new(Self {
-            panic_on_rebuild: false,
-        })
-    }
-
-    fn panicking() -> Box<dyn SynthControl> {
-        Box::new(Self {
-            panic_on_rebuild: true,
-        })
-    }
-}
-
-impl Api for MockApi {
-    fn version(&self) -> Option<String> {
-        Some("mock".to_string())
-    }
-
-    fn inputs(&self) -> Result<Vec<InputInfo>, Error> {
-        Ok(Vec::new())
-    }
-
-    fn outputs(&self) -> Result<Vec<OutputInfo>, Error> {
-        Ok(Vec::new())
-    }
-
-    fn open_output(&self, _id: u32) -> Result<Box<dyn PlaybackOutput>, Error> {
-        Err(Error::OpenOutputFailed("mock 不支持输出".to_string()))
-    }
-
-    fn open_input(
-        &self,
-        _id: u32,
-        _callback: MidiInputCallback,
-    ) -> Result<Box<dyn InputConnection>, Error> {
-        Err(Error::OpenInputFailed("mock 不支持输入".to_string()))
-    }
-}
-
-impl SynthControl for MockApi {
-    fn rebuild_gpu_pipeline(&mut self) -> Result<(), String> {
-        if self.panic_on_rebuild {
-            panic!("注入的重建 panic");
-        }
-        Ok(())
-    }
-}
-
-fn manager_with(api: Box<dyn SynthControl>) -> MidiManager {
+fn manager_with(api: MidiApi) -> MidiManager {
     MidiManager {
         api: Some(api),
         active_backend: SynthBackend::Lgs,
@@ -134,7 +78,8 @@ fn poll_until_done(manager: &mut MidiManager) {
 /// AUD-008：worker 内 panic 后，同一个 API 必须原样返回，并携带 panic 语义。
 #[test]
 fn worker_panic_returns_api_and_panic_failure() {
-    let (api, result) = run_lgs_rebuild_worker(MockApi::panicking());
+    let (api, result) =
+        run_lgs_rebuild_worker(MockApi::panic_on_rebuild("注入的重建 panic").boxed());
     assert!(api.version().is_some(), "panic 后 API 不得蒸发");
 
     match result {
@@ -148,7 +93,7 @@ fn worker_panic_returns_api_and_panic_failure() {
 /// AUD-008：request → poll 的 panic 路径：API 归还、计一次失败、排程退避重试。
 #[test]
 fn request_poll_panic_keeps_api_and_schedules_retry() {
-    let mut manager = manager_with(MockApi::panicking());
+    let mut manager = manager_with(MockApi::panic_on_rebuild("注入的重建 panic").boxed());
     assert!(manager.request_lgs_rebuild(), "LGS 活跃且 API 就绪应受理");
 
     poll_until_done(&mut manager);
@@ -159,27 +104,41 @@ fn request_poll_panic_keeps_api_and_schedules_retry() {
     assert!(manager.lgs_rebuild.not_before.is_some(), "应设置退避时刻");
 }
 
-/// AUD-008：drain 路径收到 panic 结果时同样归还 API，不得等满 5s 超时丢弃。
+/// 非重初始化路径的 drain（播放重连/同步布局）：panic 后 API 归还且**保留重试**。
 #[test]
-fn drain_panic_keeps_api() {
-    let mut manager = manager_with(MockApi::panicking());
+fn drain_panic_keeps_api_and_schedules_retry() {
+    let mut manager = manager_with(MockApi::panic_on_rebuild("注入的重建 panic").boxed());
     assert!(manager.request_lgs_rebuild());
 
-    manager.drain_lgs_rebuild();
+    manager.drain_lgs_rebuild(false);
 
     assert!(manager.api.is_some(), "drain 路径 panic 后 API 必须归还");
-    assert!(!manager.lgs_rebuild.requested, "drain 取消暂存/退避");
+    assert_eq!(manager.lgs_rebuild.attempts, 1, "drain 应按失败收尾");
+    assert!(manager.lgs_rebuild.requested, "非重初始化路径不得取消重试");
+}
+
+/// 整后端重初始化的 drain：只归还 API、取消待重试（随后 reinit 会重建后端）。
+#[test]
+fn reinit_drain_cancels_retry() {
+    let mut manager = manager_with(MockApi::panic_on_rebuild("注入的重建 panic").boxed());
+    assert!(manager.request_lgs_rebuild());
+
+    manager.drain_lgs_rebuild(true);
+
+    assert!(manager.api.is_some(), "drain 路径 panic 后 API 必须归还");
+    assert_eq!(manager.lgs_rebuild.attempts, 0, "重初始化路径不计数");
+    assert!(!manager.lgs_rebuild.requested, "重初始化路径取消待重试");
 }
 
 /// panic 计满尝试次数 → 沿用 #152 的一次性提示，且不再自动重试。
 #[test]
 fn panic_exhaustion_emits_notice() {
-    let mut manager = manager_with(MockApi::panicking());
+    let mut manager = manager_with(MockApi::ok().boxed());
     manager.lgs_rebuild.attempts = MAX_LGS_REBUILD_ATTEMPTS - 1;
 
     manager.finish_lgs_rebuild(
         LgsRebuildDone {
-            api: MockApi::panicking(),
+            api: MockApi::ok().boxed(),
             result: Err(LgsRebuildFailure::Panicked("最后一次".to_string())),
         },
         Instant::now(),
@@ -197,7 +156,7 @@ fn panic_exhaustion_emits_notice() {
 /// 正常重建路径零回归：成功清计数、清重试、提示恢复。
 #[test]
 fn success_path_unchanged() {
-    let mut manager = manager_with(MockApi::ok());
+    let mut manager = manager_with(MockApi::ok().boxed());
     assert!(manager.request_lgs_rebuild());
 
     poll_until_done(&mut manager);
@@ -211,7 +170,7 @@ fn success_path_unchanged() {
     );
 }
 
-/// 通道在回传前断开（catch 未覆盖的进程级异常）：置 needs_reinit，让重初始化兜底。
+/// 通道在回传前断开（守卫未覆盖的进程级异常）：置 needs_reinit，让重初始化兜底。
 #[test]
 fn disconnected_requests_reinit() {
     let mut manager = MidiManager::default();
