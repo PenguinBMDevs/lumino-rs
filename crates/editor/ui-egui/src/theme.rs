@@ -1,12 +1,11 @@
-//! egui 主题：Lumino 语义色板（跟随 旧版 主题）。
+//! egui 主题：Lumino 语义色板（跟随应用当前主题）。
 //!
-//! 默认色板 = Tokyo Night Storm，色值不是采样近似值，而是直接取
-//! 旧版 `Theme::TokyoNightStorm.extended_palette()` 的精确值
-//! （见 `crates/editor/ui-parity/src/bin/dump_palette.rs`），
+//! 默认色板 = Tokyo Night Storm，色值是历史基线的精确值
+//! （见 [`Palette::TOKYO_NIGHT_STORM`]），不是采样近似，
 //! 因此场景像素基线与无头测试保持历史数值不变。
 //!
-//! 生产侧按当前 旧版 主题构造 [`PaletteSeed`]，再由 [`Palette::from_seed`]
-//! 派生 egui 需要但 旧版 没有直接给出的颜色（边框 / 次级文字 / 悬停填充等）。
+//! 生产侧按当前主题构造 [`PaletteSeed`]，再由 [`Palette::from_seed`]
+//! 派生 egui 需要但主题本身没有直接给出的颜色（边框 / 次级文字 / 悬停填充等）。
 //! 这样用户切到 `Light` 等主题时，egui 外壳不再是固定的深色。
 //!
 //! 当前色板保存在线程局部：egui 一帧的绘制是单线程的，入口（
@@ -20,37 +19,37 @@ use std::cell::Cell;
 pub struct Palette {
     /// 是否深色主题（决定控件基准 Visuals）。
     pub is_dark: bool,
-    /// 窗口 / 标题栏底色（旧版 `background.neutral`）。
+    /// 窗口 / 标题栏底色（`PaletteSeed::neutral`）。
     pub titlebar_bg: Color32,
-    /// 失焦标题栏底色（旧版 `background.weaker`）。
+    /// 失焦标题栏底色（`PaletteSeed::weaker`）。
     pub titlebar_bg_unfocused: Color32,
-    /// 工具栏分隔 / 状态栏底色（旧版 `background.weak`）。
+    /// 工具栏分隔 / 状态栏底色（`PaletteSeed::weak`）。
     pub toolbar_bg: Color32,
-    /// 工具栏底 / 左侧面板底色（旧版 `background.weakest`）。
+    /// 工具栏底 / 左侧面板底色（`PaletteSeed::weakest`）。
     pub panel_bg: Color32,
-    /// 左右路由栏底色（旧版 `background.weaker`）。
+    /// 左右路由栏底色（`PaletteSeed::weaker`）。
     pub route_bar_bg: Color32,
-    /// 编辑器 / 对话框内容底色（旧版 `background.base`）。
+    /// 编辑器 / 对话框内容底色（`PaletteSeed::base`）。
     pub base_bg: Color32,
     /// 卡片底色（深色与内容底同色，浅色用 `weakest` 以区分层次）。
     pub card_bg: Color32,
-    /// 选中行 / 悬停按钮底色（旧版 `background.strong`）。
+    /// 选中行 / 悬停按钮底色（`PaletteSeed::strong`）。
     pub selected_bg: Color32,
     /// 通用边框。
     pub border: Color32,
-    /// 正文（旧版 `background.base.text`）。
+    /// 正文（`PaletteSeed::text`）。
     pub text: Color32,
     /// 次级文字。
     pub text_muted: Color32,
-    /// `background.weak` 上的正文（旧版 `background.weak.text`）。
+    /// `weak` 底色上的正文（`PaletteSeed::text_on_weak`）。
     pub text_on_weak: Color32,
     /// 更弱的文字 / 分隔符。
     pub text_dim: Color32,
-    /// 强调色（旧版 `primary.base`）。
+    /// 强调色（`PaletteSeed::primary`）。
     pub accent: Color32,
-    /// 强调色强态（旧版 `primary.strong`）。
+    /// 强调色强态（`PaletteSeed::primary_strong`）。
     pub accent_strong: Color32,
-    /// 强调色弱态 / 按下态（旧版 `primary.weak`）。
+    /// 强调色弱态 / 按下态（`PaletteSeed::primary_weak`）。
     pub accent_dark: Color32,
     /// 强调色上的文字（按强调色亮度取深色或白色）。
     pub on_accent: Color32,
@@ -74,24 +73,24 @@ pub struct Palette {
     pub route_indicator: Color32,
     /// Windows 关闭按钮 hover 红。
     pub close_hover: Color32,
-    /// 钢琴卷帘：键盘列底色（旧版 `keyboard_background_color`）。
+    /// 钢琴卷帘：键盘列底色（深色取 `base`，浅色取 `weak`）。
     pub roll_keyboard_bg: Color32,
-    /// 钢琴卷帘：白键（旧版 `white_key_color`）。
+    /// 钢琴卷帘：白键（深色取 `weakest`，浅色取 `weak`）。
     pub roll_white_key: Color32,
-    /// 钢琴卷帘：黑键（旧版 `black_key_color`）。
+    /// 钢琴卷帘：黑键（深色取 `base`，浅色取 `strong`）。
     pub roll_black_key: Color32,
-    /// 钢琴卷帘：琴键分隔线（旧版 `key_line_color`）。
+    /// 钢琴卷帘：琴键分隔线（深色取 `weak`，浅色取 `strongest`）。
     pub roll_key_line: Color32,
-    /// 钢琴卷帘：标尺底色（旧版 `ruler_background_color`）。
+    /// 钢琴卷帘：标尺底色（深色取 `base`，浅色取 `weakest`）。
     pub roll_ruler_bg: Color32,
-    /// 钢琴卷帘：音名 / 小节号文字（旧版 `text_color`）。
+    /// 钢琴卷帘：音名 / 小节号文字（深色白、浅色黑）。
     pub roll_text: Color32,
 }
 
-/// 从 旧版 `Extended` 调色板摘出的语义种子（生产侧构造，ui-egui 无需依赖 旧版）。
+/// 语义色板种子（生产侧按当前应用主题构造，ui-egui 不依赖 UI 层实现）。
 #[derive(Debug, Clone, Copy)]
 pub struct PaletteSeed {
-    /// 是否深色主题（旧版 `Extended::is_dark`）。
+    /// 是否深色主题。
     pub is_dark: bool,
     /// `background.base`。
     pub base: Color32,
@@ -165,7 +164,7 @@ impl Palette {
         playhead: Color32::from_rgb(0xFF, 0x33, 0x33),
         route_indicator: Color32::from_rgb(0xA6, 0x59, 0x59),
         close_hover: Color32::from_rgb(0xC4, 0x2B, 0x1C),
-        // 卷帘骨架（旧版 `ThemeExt` 的 Tokyo Night Storm 口径）。
+        // 卷帘骨架（Tokyo Night Storm 基线值；其他主题由 `from_seed` 派生）。
         roll_keyboard_bg: Color32::from_rgb(0x24, 0x28, 0x3B),
         roll_white_key: Color32::from_rgb(0x2A, 0x2F, 0x47),
         roll_black_key: Color32::from_rgb(0x24, 0x28, 0x3B),
@@ -174,11 +173,11 @@ impl Palette {
         roll_text: Color32::WHITE,
     };
 
-    /// 由 旧版 调色板种子派生完整语义色板。
+    /// 由语义种子派生完整色板。
     ///
-    /// 旧版 没有直接给出的颜色按统一规则派生，保证任意主题（Light / Dark /
+    /// 种子没有直接给出的颜色按统一规则派生，保证任意主题（Light / Dark /
     /// Solarized / Catppuccin …）都有可读的层次：
-    /// - 边框 / 悬停填充取 `background.strong`（旧版 内置边框口径）；
+    /// - 边框 / 悬停填充取 `PaletteSeed::strong`；
     /// - 次级文字按正文与底色的比例混合；
     /// - 浅色主题的卡片用 `weakest`，否则白底卡片会与内容底不可分；
     /// - 强调色上的文字按强调色亮度取深色或白色。
@@ -235,7 +234,7 @@ impl Palette {
             playhead: Self::TOKYO_NIGHT_STORM.playhead,
             route_indicator: Self::TOKYO_NIGHT_STORM.route_indicator,
             close_hover: Self::TOKYO_NIGHT_STORM.close_hover,
-            // 卷帘骨架：与 旧版 `ThemeExt` 逐条同规则。
+            // 卷帘骨架：与其他颜色一样按 `is_dark` 从种子派生（具体取值见各行）。
             roll_keyboard_bg: if seed.is_dark { base } else { seed.weak },
             roll_white_key: if seed.is_dark {
                 seed.weakest
@@ -462,7 +461,7 @@ pub fn proportional() -> FontFamily {
 
 /// 开关控件的文案与配色（跟随当前主题）。
 ///
-/// 关闭态轨道取 `selected_bg`（旧版 `background.strong`，即输入槽底色），
+/// 关闭态轨道取 `selected_bg`（即 `PaletteSeed::strong`，输入槽底色），
 /// 保证深浅主题下都与卡片底有可辨层次；开启态直接用强调色。
 pub fn switch_style() -> crate::widgets::SwitchStyle {
     let palette = palette();
