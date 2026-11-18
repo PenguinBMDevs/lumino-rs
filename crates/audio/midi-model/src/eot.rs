@@ -1,0 +1,318 @@
+//! EOT / 悬挂音符的加载期诊断与裁剪（midly `TrackTiming` 的下游消费）。
+//!
+//! 解析器（midly）在兼容模式下保留 EOT 之后的事件，并给出逐轨 timing：
+//! `eot_tick` / `physical_end_tick` / `content_end_tick` / `has_events_after_eot` /
+//! `has_unclosed_notes`。本模块把这些信息整理成加载期报告，并提供**显式**裁剪能力。
+//!
+//! 产品策略：加载**不静默丢数据**；是否提示/裁剪由 UI 决定。裁剪只动有异常的轨。
+
+use midly::loader::TrackTiming;
+
+use crate::document::MidiDocument;
+
+/// 加载期逐轨 timing 报告（索引 = track index）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoadTimingReport {
+    tracks: Vec<TrackTiming>,
+}
+
+impl LoadTimingReport {
+    pub(crate) fn from_tracks(tracks: Vec<TrackTiming>) -> Self {
+        Self { tracks }
+    }
+
+    /// 逐轨 timing 切片（索引 = track index）。
+    pub fn tracks(&self) -> &[TrackTiming] {
+        &self.tracks
+    }
+
+    pub fn len(&self) -> usize {
+        self.tracks.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tracks.is_empty()
+    }
+
+    pub fn track(&self, index: usize) -> Option<TrackTiming> {
+        self.tracks.get(index).copied()
+    }
+
+    /// 在首个 EOT 之后仍有事件的轨数（畸形尾部）。
+    pub fn tracks_with_events_after_eot(&self) -> usize {
+        self.tracks
+            .iter()
+            .filter(|t| t.has_events_after_eot)
+            .count()
+    }
+
+    /// 结束时仍有未 NoteOff 音符的轨数（悬挂音符）。
+    pub fn tracks_with_unclosed_notes(&self) -> usize {
+        self.tracks.iter().filter(|t| t.has_unclosed_notes).count()
+    }
+
+    /// 任一诊断（EOT 后事件 / 悬挂音符）命中的轨数。
+    pub fn tracks_with_diagnostics(&self) -> usize {
+        self.tracks
+            .iter()
+            .filter(|t| t.has_events_after_eot || t.has_unclosed_notes)
+            .count()
+    }
+
+    /// 所有轨都不含「EOT 之后的事件」（悬挂音符不计入 Strict）。
+    pub fn is_strict_clean(&self) -> bool {
+        self.tracks.iter().all(TrackTiming::is_strict_clean)
+    }
+
+    /// 全文件声明结尾的最大值（缺失 EOT 的轨退化为物理末尾）。
+    pub fn declared_end_tick(&self) -> u32 {
+        self.tracks
+            .iter()
+            .map(TrackTiming::declared_end_tick)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+/// 裁剪结果。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TrimReport {
+    pub tracks_touched: usize,
+    pub notes_removed: u64,
+    pub controls_removed: u64,
+    pub text_removed: u64,
+    pub sysex_removed: u64,
+    pub total_ticks_before: u32,
+    pub total_ticks_after: u32,
+}
+
+impl TrimReport {
+    /// 是否真的删掉了东西。
+    pub fn is_noop(&self) -> bool {
+        self.notes_removed == 0
+            && self.controls_removed == 0
+            && self.text_removed == 0
+            && self.sysex_removed == 0
+    }
+}
+
+impl MidiDocument {
+    /// 按加载报告裁剪「首个 EOT 之后的事件」，返回删除计数。
+    ///
+    /// 语义：
+    /// - 只处理 `has_events_after_eot` 的轨，阈值取 [`TrackTiming::declared_end_tick`]
+    ///   （EOT 位置；无 EOT 的轨不在处理范围）；
+    /// - 音符：`start_tick > 阈值` 的整条删除（悬挂音符不截断——那属于另一个策略）；
+    /// - 控制 / 歌词 / 标记 / 文本 / SysEx：`tick > 阈值` 的删除；
+    /// - tempo / 拍号 / 调号是文件级语义，不动；
+    /// - 裁剪后重算 `total_ticks` 并弃用 `max_end` 缓存。
+    ///
+    /// 这是**显式**操作（清理畸形文件），加载路径不会自动调用。
+    pub fn trim_after_eot(&mut self, report: &LoadTimingReport) -> TrimReport {
+        let ends: Vec<Option<u32>> = (0..self.track_count as usize)
+            .map(|i| {
+                report
+                    .track(i)
+                    .filter(|t| t.has_events_after_eot)
+                    .map(|t| t.declared_end_tick())
+            })
+            .collect();
+
+        let mut out = TrimReport {
+            total_ticks_before: self.total_ticks,
+            ..TrimReport::default()
+        };
+
+        // 音符：只重建有异常的轨（过滤保持 start_tick 升序）。
+        for (idx, end) in ends.iter().enumerate() {
+            let Some(end) = *end else { continue };
+            let Some(list) = self.notes.get(idx) else {
+                continue;
+            };
+            let before = list.len();
+            if before == 0 {
+                continue;
+            }
+            let filtered = crate::chunked_list::ChunkedList::from_sorted_iter(
+                list.iter().filter(|n| n.start_tick <= end).copied(),
+            );
+            let after = filtered.len();
+            if after != before {
+                self.notes[idx] = filtered;
+                out.notes_removed += (before - after) as u64;
+                out.tracks_touched += 1;
+            }
+        }
+
+        // 控制事件（全局列表，按事件所属轨的阈值过滤）。
+        let ctrl_before = self.control_events.len();
+        let ctrl = crate::chunked_list::ChunkedList::from_sorted(
+            self.control_events
+                .iter()
+                .filter(|e| {
+                    ends.get(e.track as usize)
+                        .copied()
+                        .flatten()
+                        .is_none_or(|end| e.tick <= end)
+                })
+                .copied()
+                .collect::<Vec<_>>(),
+        );
+        out.controls_removed = (ctrl_before - ctrl.len()) as u64;
+        if out.controls_removed > 0 {
+            self.control_events = ctrl;
+        }
+
+        // 文本类事件：Vec<(tick, track, ..)>。
+        let keep_text = |tick: u32, track: u16, ends: &[Option<u32>]| -> bool {
+            ends.get(track as usize)
+                .copied()
+                .flatten()
+                .is_none_or(|end| tick <= end)
+        };
+        let before = self.lyrics.len();
+        self.lyrics.retain(|e| keep_text(e.0, e.1, &ends));
+        out.text_removed += (before - self.lyrics.len()) as u64;
+        let before = self.markers.len();
+        self.markers.retain(|e| keep_text(e.0, e.1, &ends));
+        out.text_removed += (before - self.markers.len()) as u64;
+        let before = self.text_events.len();
+        self.text_events.retain(|e| keep_text(e.0, e.1, &ends));
+        out.text_removed += (before - self.text_events.len()) as u64;
+        let before = self.sys_ex.len();
+        self.sys_ex.retain(|e| keep_text(e.0, e.1, &ends));
+        out.sysex_removed += (before - self.sys_ex.len()) as u64;
+
+        // 重算总长（原实现取「每轨最大音符结束 tick」的全局最大）。
+        let max_note_end = self
+            .notes
+            .iter()
+            .flat_map(|list| list.iter())
+            .map(|n| n.end_tick)
+            .max()
+            .unwrap_or(0);
+        let max_ctrl = self.control_events.last().map(|e| e.tick).unwrap_or(0);
+        self.total_ticks = max_note_end.max(max_ctrl);
+        out.total_ticks_after = self.total_ticks;
+
+        // max_end 缓存全部置脏（裁剪只发生在异常轨，但缓存粒度是全局列表）。
+        for cell in &self.track_max_end_ticks {
+            if let Ok(mut slot) = cell.lock() {
+                *slot = None;
+            }
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_vlq(out: &mut Vec<u8>, mut value: u32) {
+        let mut buf = [0u8; 5];
+        let mut n = 0;
+        loop {
+            buf[n] = (value & 0x7F) as u8;
+            value >>= 7;
+            n += 1;
+            if value == 0 {
+                break;
+            }
+        }
+        for i in (0..n).rev() {
+            let mut byte = buf[i];
+            if i != 0 {
+                byte |= 0x80;
+            }
+            out.push(byte);
+        }
+    }
+
+    fn smf_one_track(body: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"MThd");
+        out.extend_from_slice(&6u32.to_be_bytes());
+        out.extend_from_slice(&0u16.to_be_bytes()); // format 0
+        out.extend_from_slice(&1u16.to_be_bytes());
+        out.extend_from_slice(&480u16.to_be_bytes());
+        out.extend_from_slice(b"MTrk");
+        out.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn ev(body: &mut Vec<u8>, delta: u32, bytes: &[u8]) {
+        push_vlq(body, delta);
+        body.extend_from_slice(bytes);
+    }
+
+    /// EOT(100) 之后仍有音符事件（无尾部 EOT）：报告标记，裁剪只删 EOT 后音符。
+    #[test]
+    fn trim_removes_events_after_eot_and_reports() {
+        let mut body = Vec::new();
+        ev(&mut body, 0, &[0x90, 60, 100]);
+        ev(&mut body, 100, &[0x80, 60, 0]);
+        ev(&mut body, 0, &[0xFF, 0x2F, 0x00]); // EOT @100
+        ev(&mut body, 100, &[0x90, 62, 90]); // 畸形：EOT 之后
+        ev(&mut body, 100, &[0x80, 62, 0]); // @300（物理末尾）
+        let bytes = smf_one_track(&body);
+
+        let (mut doc, _, _notes, report) =
+            MidiDocument::from_notes_bytes_with_timing(&bytes, None).expect("加载失败");
+
+        assert_eq!(report.len(), 1);
+        assert_eq!(report.tracks_with_events_after_eot(), 1);
+        assert!(!report.is_strict_clean());
+        let timing = report.track(0).expect("track 0");
+        assert_eq!(timing.eot_tick, Some(100));
+        assert_eq!(timing.declared_end_tick(), 100);
+        assert_eq!(timing.physical_end_tick, 300);
+        assert_eq!(doc.notes[0].len(), 2, "兼容模式保留 EOT 后事件");
+        assert_eq!(doc.total_ticks, 300);
+
+        let trimmed = doc.trim_after_eot(&report);
+        assert_eq!(trimmed.notes_removed, 1);
+        assert_eq!(trimmed.total_ticks_before, 300);
+        assert_eq!(trimmed.total_ticks_after, 100);
+        assert_eq!(doc.notes[0].len(), 1);
+        assert_eq!(doc.total_ticks, 100);
+    }
+
+    /// 干净文件：报告无诊断，裁剪是 no-op。
+    #[test]
+    fn clean_file_is_noop() {
+        let mut body = Vec::new();
+        ev(&mut body, 0, &[0x90, 60, 100]);
+        ev(&mut body, 100, &[0x80, 60, 0]);
+        ev(&mut body, 0, &[0xFF, 0x2F, 0x00]);
+        let bytes = smf_one_track(&body);
+
+        let (mut doc, _, _, report) =
+            MidiDocument::from_notes_bytes_with_timing(&bytes, None).expect("加载失败");
+        assert_eq!(report.tracks_with_diagnostics(), 0);
+        assert!(report.is_strict_clean());
+
+        let trimmed = doc.trim_after_eot(&report);
+        assert!(trimmed.is_noop());
+        assert_eq!(trimmed.total_ticks_before, doc.total_ticks);
+    }
+
+    /// 悬挂音符：被标记，但不属于 EOT 后事件（裁不裁由产品决定，本函数不动）。
+    #[test]
+    fn unclosed_note_is_reported_but_not_trimmed() {
+        let mut body = Vec::new();
+        ev(&mut body, 0, &[0x90, 60, 100]); // 不 NoteOff
+        ev(&mut body, 480, &[0xFF, 0x2F, 0x00]);
+        let bytes = smf_one_track(&body);
+
+        let (mut doc, _, _, report) =
+            MidiDocument::from_notes_bytes_with_timing(&bytes, None).expect("加载失败");
+        assert_eq!(report.tracks_with_unclosed_notes(), 1);
+        assert_eq!(report.tracks_with_events_after_eot(), 0);
+        let before = doc.notes[0].len();
+        let trimmed = doc.trim_after_eot(&report);
+        assert!(trimmed.is_noop());
+        assert_eq!(doc.notes[0].len(), before);
+    }
+}

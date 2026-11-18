@@ -122,8 +122,17 @@ fn parse_bytes(
     bytes: &[u8],
     progress: Option<&dyn Fn(f64)>,
 ) -> LoaderResult<(MidiDocument, u16, u64)> {
-    MidiDocument::from_notes_bytes(bytes, progress)
-        .map_err(|e| LoaderError::MidiParse(trf!("解析 MIDI 数据失败: {e}", e = e)))
+    let (doc, division, notes, report) =
+        MidiDocument::from_notes_bytes_with_timing(bytes, progress)
+            .map_err(|e| LoaderError::MidiParse(trf!("解析 MIDI 数据失败: {e}", e = e)))?;
+    if report.tracks_with_diagnostics() > 0 {
+        tracing::warn!(
+            "MIDI 结构诊断: {} 条轨在 EOT 之后仍有事件，{} 条轨有悬挂音符（兼容模式保留数据，未静默丢弃）",
+            report.tracks_with_events_after_eot(),
+            report.tracks_with_unclosed_notes(),
+        );
+    }
+    Ok((doc, division, notes))
 }
 
 /// 建立只读映射。

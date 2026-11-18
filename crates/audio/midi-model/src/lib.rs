@@ -12,6 +12,7 @@ pub mod chunked_list;
 pub mod clipboard;
 pub mod compact;
 pub mod document;
+pub mod eot;
 pub mod error;
 pub mod multi_port;
 pub mod note_event;

@@ -52,6 +52,8 @@ struct TrackBuild {
     markers: Vec<(u32, u16, Vec<u8>)>,
     text_events: Vec<(u32, u16, u8, Vec<u8>)>,
     sys_ex: Vec<(u32, u16, Vec<u8>)>,
+    /// EOT / 悬挂音符的逐轨 timing（midly `TrackTiming`，直接透传）。
+    timing: midly::loader::TrackTiming,
 }
 
 impl MidiDocument {
@@ -112,6 +114,18 @@ impl MidiDocument {
         file_bytes: &[u8],
         progress: Option<&dyn Fn(f64)>,
     ) -> LoaderResult<(Self, u16, u64)> {
+        let (doc, division, notes, _report) =
+            Self::from_notes_bytes_with_timing(file_bytes, progress)?;
+        Ok((doc, division, notes))
+    }
+
+    /// 与 [`Self::from_notes_bytes`] 相同，但额外返回逐轨 EOT / 悬挂音符诊断。
+    ///
+    /// 报告只含诊断信息（不参与文档语义）；是否提示/裁剪由调用方决定。
+    pub fn from_notes_bytes_with_timing(
+        file_bytes: &[u8],
+        progress: Option<&dyn Fn(f64)>,
+    ) -> LoaderResult<(Self, u16, u64, crate::eot::LoadTimingReport)> {
         MemoryMonitor::global().check();
 
         if let Some(cb) = progress {
@@ -201,6 +215,7 @@ impl MidiDocument {
                                 .into_iter()
                                 .map(|ev| (ev.tick, ev.track, ev.data.to_vec()))
                                 .collect(),
+                            timing: events.timing,
                         }
                     },
                 )
@@ -233,6 +248,8 @@ impl MidiDocument {
                 Vec::with_capacity(capacity(|t| t.sys_ex.len()));
             let mut total_notes: u64 = 0;
             let mut total_ticks: u32 = 0;
+            let mut track_timings: Vec<midly::loader::TrackTiming> =
+                Vec::with_capacity(track_builds.len());
 
             for track in track_builds {
                 total_notes += track.note_count;
@@ -248,6 +265,7 @@ impl MidiDocument {
                 markers.extend(track.markers);
                 text_events.extend(track.text_events);
                 sys_ex.extend(track.sys_ex);
+                track_timings.push(track.timing);
             }
 
             finalize_sorted_events(&mut all_tempo_changes, |&(t, _)| t, (0u32, 120.0f32));
@@ -312,6 +330,7 @@ impl MidiDocument {
                 },
                 division,
                 total_notes,
+                crate::eot::LoadTimingReport::from_tracks(track_timings),
             ))
         })
     }
