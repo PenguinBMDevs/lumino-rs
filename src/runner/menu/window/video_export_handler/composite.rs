@@ -33,6 +33,7 @@ pub(super) struct CompositeFrameInput<'a> {
 pub(super) fn composite_frame(
     input: CompositeFrameInput<'_>,
 ) -> (Option<Vec<u8>>, FrameStageStats) {
+    crate::profiling::tracy_span!("app.composite_frame");
     let CompositeFrameInput {
         mut data,
         params,

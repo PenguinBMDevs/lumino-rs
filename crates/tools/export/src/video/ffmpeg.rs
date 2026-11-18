@@ -190,6 +190,13 @@ impl FfmpegEncoder {
     /// 原始 BGRA 数据直接写入 ffmpeg stdin pipe。成功后将 `frame_data` 原样返回，
     /// 方便调用方将其归还到对象池复用；失败时数据被丢弃。
     pub fn write_frame(&mut self, frame_data: Vec<u8>) -> VideoExportResult<Vec<u8>> {
+        // 管道写入阻塞时间 = ffmpeg 编码背压（Tracy 中与 gfx.export.* 对照看瓶颈）
+        crate::video::profiling::tracy_zone!("ffmpeg.write_frame", {
+            self.write_frame_inner(frame_data)
+        })
+    }
+
+    fn write_frame_inner(&mut self, frame_data: Vec<u8>) -> VideoExportResult<Vec<u8>> {
         let expected = (self.width * self.height * 4) as usize;
         if frame_data.len() != expected {
             return Err(VideoExportError::FrameSizeMismatch {
@@ -216,6 +223,7 @@ impl FfmpegEncoder {
     ///
     /// 消费 self，成功返回 Ok(())，失败返回含 stderr 上下文的错误。
     pub fn finish(mut self) -> VideoExportResult<()> {
+        crate::video::profiling::tracy_span!("ffmpeg.finish");
         // 显式 take 并 drop stdin_writer，触发 flush 并关闭 pipe，让 ffmpeg 收到 EOF
         if let Some(writer) = self.stdin_writer.take() {
             std::mem::drop(writer);

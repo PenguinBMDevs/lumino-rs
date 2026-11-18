@@ -7,6 +7,7 @@
 //! - control_flow: 事件循环控制流
 //! - test_mode: 测试模式 FPS 监测
 
+mod bench_export;
 mod control_flow;
 mod device_gate;
 mod dialog;

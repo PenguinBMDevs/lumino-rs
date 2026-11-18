@@ -314,6 +314,8 @@ impl StagingRing {
     }
 
     fn finish_read(&mut self) -> Option<(Vec<u8>, Option<[u8; 1024]>)> {
+        // 映射读回收尾（去 padding memcpy + unmap）：导出 CPU 侧的主要拷贝成本
+        crate::profiling::tracy_span!("gfx.export.readback_copy");
         let slot = &mut self.slots[self.next_read];
         slot.rx = None;
         // 不变式：同 write_slot_buffer，slot.buffer 恒为 Some

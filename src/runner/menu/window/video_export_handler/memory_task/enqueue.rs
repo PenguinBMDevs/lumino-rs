@@ -13,6 +13,7 @@ pub(super) fn enqueue_memory_frame(
     queue: &mut EncodeFrameQueue,
     frame_idx: u64,
 ) -> bool {
+    crate::profiling::tracy_span!("app.enqueue_frame");
     let time_sec = frame_idx as f64 / ctx.fps_f64;
     let tempo_changes = &ctx.document.tempo_changes;
     let tick = video_export::seconds_to_tick(time_sec, tempo_changes, ctx.ppq);
@@ -38,194 +39,205 @@ pub(super) fn enqueue_memory_frame(
     // 注：瀑布流走 GPU compute 管线（见 RenderMode::Waterfall 的 GPU 分支），此处无 CPU 分支。
     if ctx.is_cpu_renderer {
         let mut frame_data = vec![0u8; (ctx.width as usize) * (ctx.height as usize) * 4];
-        match ctx.render_mode {
-            RenderMode::Waterfall => {
-                send_export_error(
-                    ctx.progress_tx,
-                    tr!("导出失败：Waterfall 模式不应进入 CPU 渲染分支（内部错误）"),
-                );
-                return true;
-            }
-            RenderMode::NoteCounter => {
-                // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
-                // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
-                let Some(cfg) = ctx.counter_config.as_ref() else {
+        crate::profiling::tracy_zone!("app.cpu_render", {
+            match ctx.render_mode {
+                RenderMode::Waterfall => {
                     send_export_error(
                         ctx.progress_tx,
-                        tr!("导出失败：计数器模式缺少渲染配置（内部错误）"),
+                        tr!("导出失败：Waterfall 模式不应进入 CPU 渲染分支（内部错误）"),
                     );
                     return true;
-                };
-                let Some(stats) = ctx.counter_stats.as_mut() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：计数器模式缺少统计状态（内部错误）"),
-                    );
-                    return true;
-                };
-                let Some(renderer) = ctx.counter_renderer.as_mut() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：计数器模式缺少字体渲染器（内部错误）"),
-                    );
-                    return true;
-                };
-                let out = video_export::render_counter_frame(video_export::CounterFrameInput {
-                    frame: &mut frame_data,
-                    frame_width: ctx.width,
-                    frame_height: ctx.height,
-                    document: ctx.document,
-                    tick,
-                    ppq: ctx.ppq,
-                    fps: ctx.fps_f64 as u32,
-                    duration_secs: ctx.duration_secs,
-                    config: cfg,
-                    stats,
-                    renderer,
-                });
-                // CSV 行写入（失败仅告警，不中断渲染）
-                if let (Some(line), Some(writer)) = (out.csv_line, ctx.csv_writer.as_mut()) {
-                    use std::io::Write;
-                    if let Err(e) = writeln!(writer, "{line}") {
-                        tracing::warn!("计数器 CSV 写入失败: {e}");
-                    }
                 }
-                // 首帧诊断：确认模板渲染内容（与流式模式诊断风格一致）
-                static COUNTER_DIAG: std::sync::atomic::AtomicU32 =
-                    std::sync::atomic::AtomicU32::new(0);
-                let diag_idx = COUNTER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if diag_idx < 3 {
-                    tracing::info!(
-                        "计数器模式诊断[{diag_idx}]: tick={tick} stats=({},poly {},nps {}) text=\"{}\"",
-                        stats.note_count,
-                        stats.polyphony,
-                        stats.nps,
-                        out.text.replace('\n', "\\n"),
-                    );
-                }
-            }
-            RenderMode::NoteRectangle => {
-                send_export_error(
-                    ctx.progress_tx,
-                    tr!("导出失败：NoteRectangle 模式不应进入 CPU 渲染分支（内部错误）"),
-                );
-                return true;
-            }
-            RenderMode::MIDITrail => {
-                send_export_error(
-                    ctx.progress_tx,
-                    tr!("导出失败：MIDITrail 模式不应进入 CPU 渲染分支（内部错误）"),
-                );
-                return true;
-            }
-            RenderMode::DataCurve => {
-                // 数据曲线模式：统计推进 → 取指标值 → 环形窗口 → 帧渲染
-                // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
-                let Some(cfg) = ctx.data_curve_config.as_ref() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：数据曲线模式缺少渲染配置（内部错误）"),
-                    );
-                    return true;
-                };
-                let Some(stats) = ctx.counter_stats.as_mut() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：数据曲线模式缺少统计状态（内部错误）"),
-                    );
-                    return true;
-                };
-                let Some(renderer) = ctx.data_curve_renderer.as_mut() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：数据曲线模式缺少渲染器（内部错误）"),
-                    );
-                    return true;
-                };
-                // 关键：推进统计到当前 tick（与计数器分支一致）。
-                // 缺失此调用会导致 NPS/复音数/音符数永远停留在 0 → 曲线为 0 值直线。
-                stats.advance(ctx.document, tick, ctx.fps_f64 as u32);
-                let value = match cfg.metric {
-                    lumino_message::events::window::video::DataCurveMetric::Nps => stats.nps as f64,
-                    lumino_message::events::window::video::DataCurveMetric::Polyphony => {
-                        stats.polyphony as f64
-                    }
-                    lumino_message::events::window::video::DataCurveMetric::NoteCount => {
-                        stats.note_count as f64
-                    }
-                    lumino_message::events::window::video::DataCurveMetric::Bpm => {
-                        video_export::current_bpm(&ctx.document.tempo_changes, tick)
-                    }
-                };
-                renderer.push_value(value);
-                let out = video_export::render_data_curve_frame(
-                    &mut frame_data,
-                    ctx.width,
-                    ctx.height,
-                    renderer,
-                    cfg,
-                );
-                // 首帧诊断：确认指标值与缩放状态
-                static DATA_CURVE_DIAG: std::sync::atomic::AtomicU32 =
-                    std::sync::atomic::AtomicU32::new(0);
-                let diag_idx = DATA_CURVE_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if diag_idx < 3 {
-                    tracing::info!(
-                        "数据曲线模式诊断[{diag_idx}]: tick={tick} value={} zoom=({}, {})",
-                        out.value,
-                        out.min,
-                        out.max,
-                    );
-                }
-            }
-            RenderMode::MidiConsole => {
-                // MidiConsole 风格：状态化渲染器直出 BGRA；后端由配置决定（GPU/CPU）
-                let Some(renderer) = ctx.midi_console_renderer.as_mut() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：MidiConsole 模式缺少渲染器（内部错误）"),
-                    );
-                    return true;
-                };
-                let Some(cfg) = ctx.midi_console_config.as_ref() else {
-                    send_export_error(
-                        ctx.progress_tx,
-                        tr!("导出失败：MidiConsole 模式缺少渲染配置（内部错误）"),
-                    );
-                    return true;
-                };
-                match cfg.render_backend {
-                    MidiConsoleBackend::Gpu => {
-                        video_export::render_midicomsole_frame_gpu(
-                            video_export::MidiConsoleFrameArgs {
-                                renderer,
-                                frame: &mut frame_data,
-                                frame_width: ctx.width,
-                                frame_height: ctx.height,
-                                document: ctx.document,
-                                tick,
-                                ppq: ctx.ppq,
-                                fps: ctx.fps_f64 as u32,
-                            },
+                RenderMode::NoteCounter => {
+                    // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
+                    // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
+                    let Some(cfg) = ctx.counter_config.as_ref() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：计数器模式缺少渲染配置（内部错误）"),
                         );
+                        return true;
+                    };
+                    let Some(stats) = ctx.counter_stats.as_mut() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：计数器模式缺少统计状态（内部错误）"),
+                        );
+                        return true;
+                    };
+                    let Some(renderer) = ctx.counter_renderer.as_mut() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：计数器模式缺少字体渲染器（内部错误）"),
+                        );
+                        return true;
+                    };
+                    let out = crate::profiling::tracy_zone!("app.counter_frame", {
+                        video_export::render_counter_frame(video_export::CounterFrameInput {
+                            frame: &mut frame_data,
+                            frame_width: ctx.width,
+                            frame_height: ctx.height,
+                            document: ctx.document,
+                            tick,
+                            ppq: ctx.ppq,
+                            fps: ctx.fps_f64 as u32,
+                            duration_secs: ctx.duration_secs,
+                            config: cfg,
+                            stats,
+                            renderer,
+                        })
+                    });
+                    // CSV 行写入（失败仅告警，不中断渲染）
+                    if let (Some(line), Some(writer)) = (out.csv_line, ctx.csv_writer.as_mut()) {
+                        use std::io::Write;
+                        if let Err(e) = writeln!(writer, "{line}") {
+                            tracing::warn!("计数器 CSV 写入失败: {e}");
+                        }
                     }
-                    MidiConsoleBackend::Cpu => {
-                        video_export::render_midicomsole_frame(
-                            video_export::MidiConsoleFrameArgs {
-                                renderer,
-                                frame: &mut frame_data,
-                                frame_width: ctx.width,
-                                frame_height: ctx.height,
-                                document: ctx.document,
-                                tick,
-                                ppq: ctx.ppq,
-                                fps: ctx.fps_f64 as u32,
-                            },
+                    // 首帧诊断：确认模板渲染内容（与流式模式诊断风格一致）
+                    static COUNTER_DIAG: std::sync::atomic::AtomicU32 =
+                        std::sync::atomic::AtomicU32::new(0);
+                    let diag_idx = COUNTER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if diag_idx < 3 {
+                        tracing::info!(
+                            "计数器模式诊断[{diag_idx}]: tick={tick} stats=({},poly {},nps {}) text=\"{}\"",
+                            stats.note_count,
+                            stats.polyphony,
+                            stats.nps,
+                            out.text.replace('\n', "\\n"),
                         );
                     }
                 }
+                RenderMode::NoteRectangle => {
+                    send_export_error(
+                        ctx.progress_tx,
+                        tr!("导出失败：NoteRectangle 模式不应进入 CPU 渲染分支（内部错误）"),
+                    );
+                    return true;
+                }
+                RenderMode::MIDITrail => {
+                    send_export_error(
+                        ctx.progress_tx,
+                        tr!("导出失败：MIDITrail 模式不应进入 CPU 渲染分支（内部错误）"),
+                    );
+                    return true;
+                }
+                RenderMode::DataCurve => {
+                    // 数据曲线模式：统计推进 → 取指标值 → 环形窗口 → 帧渲染
+                    // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
+                    let Some(cfg) = ctx.data_curve_config.as_ref() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：数据曲线模式缺少渲染配置（内部错误）"),
+                        );
+                        return true;
+                    };
+                    let Some(stats) = ctx.counter_stats.as_mut() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：数据曲线模式缺少统计状态（内部错误）"),
+                        );
+                        return true;
+                    };
+                    let Some(renderer) = ctx.data_curve_renderer.as_mut() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：数据曲线模式缺少渲染器（内部错误）"),
+                        );
+                        return true;
+                    };
+                    // 关键：推进统计到当前 tick（与计数器分支一致）。
+                    // 缺失此调用会导致 NPS/复音数/音符数永远停留在 0 → 曲线为 0 值直线。
+                    stats.advance(ctx.document, tick, ctx.fps_f64 as u32);
+                    let value = match cfg.metric {
+                        lumino_message::events::window::video::DataCurveMetric::Nps => {
+                            stats.nps as f64
+                        }
+                        lumino_message::events::window::video::DataCurveMetric::Polyphony => {
+                            stats.polyphony as f64
+                        }
+                        lumino_message::events::window::video::DataCurveMetric::NoteCount => {
+                            stats.note_count as f64
+                        }
+                        lumino_message::events::window::video::DataCurveMetric::Bpm => {
+                            video_export::current_bpm(&ctx.document.tempo_changes, tick)
+                        }
+                    };
+                    renderer.push_value(value);
+                    let out = crate::profiling::tracy_zone!("app.data_curve_frame", {
+                        video_export::render_data_curve_frame(
+                            &mut frame_data,
+                            ctx.width,
+                            ctx.height,
+                            renderer,
+                            cfg,
+                        )
+                    });
+                    // 首帧诊断：确认指标值与缩放状态
+                    static DATA_CURVE_DIAG: std::sync::atomic::AtomicU32 =
+                        std::sync::atomic::AtomicU32::new(0);
+                    let diag_idx =
+                        DATA_CURVE_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if diag_idx < 3 {
+                        tracing::info!(
+                            "数据曲线模式诊断[{diag_idx}]: tick={tick} value={} zoom=({}, {})",
+                            out.value,
+                            out.min,
+                            out.max,
+                        );
+                    }
+                }
+                RenderMode::MidiConsole => {
+                    // MidiConsole 风格：状态化渲染器直出 BGRA；后端由配置决定（GPU/CPU）
+                    let Some(renderer) = ctx.midi_console_renderer.as_mut() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：MidiConsole 模式缺少渲染器（内部错误）"),
+                        );
+                        return true;
+                    };
+                    let Some(cfg) = ctx.midi_console_config.as_ref() else {
+                        send_export_error(
+                            ctx.progress_tx,
+                            tr!("导出失败：MidiConsole 模式缺少渲染配置（内部错误）"),
+                        );
+                        return true;
+                    };
+                    crate::profiling::tracy_zone!("app.midi_console_frame", {
+                        match cfg.render_backend {
+                            MidiConsoleBackend::Gpu => {
+                                video_export::render_midicomsole_frame_gpu(
+                                    video_export::MidiConsoleFrameArgs {
+                                        renderer,
+                                        frame: &mut frame_data,
+                                        frame_width: ctx.width,
+                                        frame_height: ctx.height,
+                                        document: ctx.document,
+                                        tick,
+                                        ppq: ctx.ppq,
+                                        fps: ctx.fps_f64 as u32,
+                                    },
+                                );
+                            }
+                            MidiConsoleBackend::Cpu => {
+                                video_export::render_midicomsole_frame(
+                                    video_export::MidiConsoleFrameArgs {
+                                        renderer,
+                                        frame: &mut frame_data,
+                                        frame_width: ctx.width,
+                                        frame_height: ctx.height,
+                                        document: ctx.document,
+                                        tick,
+                                        ppq: ctx.ppq,
+                                        fps: ctx.fps_f64 as u32,
+                                    },
+                                );
+                            }
+                        }
+                    });
+                }
             }
-        }
+        });
 
         // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径（CPU 渲染无键色）
         if ctx
@@ -242,7 +254,8 @@ pub(super) fn enqueue_memory_frame(
         }
     } else {
         let collect_all = !*ctx.notes_uploaded;
-        let Some(params) =
+        // 窗口收集 + 排序 + 打包（GPU 渲染模式的最大 CPU 段，按渲染模式区分）
+        let Some(params) = crate::profiling::tracy_zone!("app.build_params", {
             video_export::build_video_export_render_params(video_export::RenderParamsInput {
                 width: ctx.width,
                 height: ctx.height,
@@ -263,7 +276,7 @@ pub(super) fn enqueue_memory_frame(
                 collect_all,
                 window_state: ctx.window_state,
             })
-        else {
+        }) else {
             send_export_error(
                 ctx.progress_tx,
                 tr!("导出失败：当前渲染模式不应进入此分支（内部错误）"),

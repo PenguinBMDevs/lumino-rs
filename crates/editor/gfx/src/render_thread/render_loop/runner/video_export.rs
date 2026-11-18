@@ -45,6 +45,20 @@ pub(super) fn handle_video_frame(
     ctx: &RenderContext,
     params: RenderParams,
     frame: &mut RenderFrameState,
+    channels: &RenderThreadChannels,
+) {
+    crate::profiling::tracy_zone!("gfx.export.frame", {
+        handle_video_frame_inner(ctx, params, frame, channels);
+    });
+    // Tracy 帧视图：导出帧率 = 渲染线程每帧耗时（含等待/读回），编码速度不计入。
+    crate::profiling::frame_mark();
+}
+
+/// `handle_video_frame` 本体（剖面包裹层只负责 zone + frame mark）。
+fn handle_video_frame_inner(
+    ctx: &RenderContext,
+    params: RenderParams,
+    frame: &mut RenderFrameState,
     _channels: &RenderThreadChannels,
 ) {
     // 首帧诊断 tracing：定位音符缺失问题在哪一层
@@ -178,20 +192,32 @@ pub(super) fn handle_video_frame(
             label: Some("video_export_render_encoder"),
         });
 
-    prepare_renderers(frame.renderers, &params, &ctx.device, &ctx.queue);
+    crate::profiling::tracy_zone!("gfx.export.prepare", {
+        prepare_renderers(frame.renderers, &params, &ctx.device, &ctx.queue);
+    });
 
-    execute_render_pass(
-        &mut encoder,
-        ctx,
-        &params,
-        &waterfall_visible_coords,
-        true,
-        frame,
-    );
+    crate::profiling::tracy_zone!("gfx.export.render_pass", {
+        execute_render_pass(
+            &mut encoder,
+            ctx,
+            &params,
+            &waterfall_visible_coords,
+            true,
+            frame,
+        );
+    });
 
     // 4b. 钢琴卷帘键色 GPU 聚合：COUNT 顺带推导 128 键色（1KB 回读），
     // 随帧同槽排队发送，导出线程零 CPU 扫描。
-    let current_key_colors = collect_piano_key_colors(ctx, &params, frame);
+    let current_key_colors = crate::profiling::tracy_zone!("gfx.export.key_colors", {
+        collect_piano_key_colors(ctx, &params, frame)
+    });
+    // 可见实例数（钢琴卷帘直绑时 params.note_instances 为 0，取常驻缓冲计数）
+    let visible_notes = params
+        .note_instances
+        .len()
+        .max(frame.renderers.note.gpu_instance_count());
+    crate::profiling::tracy_plot!("gfx.visible_notes", visible_notes);
 
     // 5. 流水线模式：inflight 达到上限时阻塞读最早的一帧（背压）
     // 此时从 frame 获取 pipeline / tx 引用，execute_render_pass 已经完成，
@@ -218,25 +244,32 @@ pub(super) fn handle_video_frame(
         }
     };
     pipeline.ensure_size(width, height);
-    while !pipeline.can_write() {
-        let (data, key_colors) = pipeline.wait_read();
-        if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
-            tracing::warn!("视频帧发送失败：Runner 通道已关闭");
-            return;
+    // GPU 背压：staging ring 满时阻塞等最早一帧读完（该耗时是纯粹的 GPU/读回等待）
+    crate::profiling::tracy_zone!("gfx.export.wait_slot", {
+        while !pipeline.can_write() {
+            let (data, key_colors) = pipeline.wait_read();
+            if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
+                tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+                return;
+            }
         }
-    }
+    });
 
     // 6. copy 离屏纹理到 staging buffer + submit + map_async（非阻塞，立即返回）
     // 键色随当前帧写入 staging 槽，读回时同槽取出，保证乱序流水线不串帧。
-    pipeline.copy_and_submit(encoder, texture_arc.inner(), &ctx.queue, current_key_colors);
+    crate::profiling::tracy_zone!("gfx.export.copy_submit", {
+        pipeline.copy_and_submit(encoder, texture_arc.inner(), &ctx.queue, current_key_colors);
+    });
 
     // 6. 尝试非阻塞读回已就绪的帧（流水线推进，不阻塞下一帧渲染）
-    while let Some((data, key_colors)) = pipeline.try_read() {
-        if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
-            tracing::warn!("视频帧发送失败：Runner 通道已关闭");
-            return;
+    crate::profiling::tracy_zone!("gfx.export.try_read", {
+        while let Some((data, key_colors)) = pipeline.try_read() {
+            if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
+                tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+                return;
+            }
         }
-    }
+    });
 }
 
 /// 钢琴卷帘当前帧活跃键色：GPU COUNT 顺带聚合 128 键色（1KB 回读）。

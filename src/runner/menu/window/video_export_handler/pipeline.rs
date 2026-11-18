@@ -17,6 +17,9 @@ use super::frame::{
 /// 帧流水线循环参数（预填充 → 主循环 → drain），内存/流式两条导出路径共用。
 pub(super) struct FramePipeline<'a> {
     pub(super) total_frames: u64,
+    /// 诊断用帧数上限（`LUMINO_BENCH_FRAMES`，Tracy 基线抓固定窗口）；
+    /// `None` = 导出完整视频。上限同时收敛进度分母，收尾按「完成」处理。
+    pub(super) frame_limit: Option<u64>,
     pub(super) cancel_flag: &'a AtomicBool,
     pub(super) frame_rx: &'a Receiver<VideoFrameMessage>,
     pub(super) param_queue: &'a mut EncodeFrameQueue,
@@ -78,7 +81,8 @@ impl<'a> FramePipeline<'a> {
         FE: FnMut(&mut EncodeFrameQueue, u64) -> bool,
         FP: FnMut(VideoFrameMessage, FrameParams) -> (bool, FrameStageStats),
     {
-        let total_frames = self.total_frames;
+        // 诊断帧上限与总帧数取小：预填充/补发/进度分母全部按有效总数收敛
+        let total_frames = self.total_frames.min(self.frame_limit.unwrap_or(u64::MAX));
         let mut processed_frames = 0u64;
         let mut cancelled = false;
         let mut next_frame_to_send = 0u64;
@@ -100,7 +104,9 @@ impl<'a> FramePipeline<'a> {
                 cancelled = true;
                 break;
             }
-            if enqueue(self.param_queue, next_frame_to_send) {
+            if crate::profiling::tracy_zone!("app.pipeline.prefill", {
+                enqueue(self.param_queue, next_frame_to_send)
+            }) {
                 cancelled = true;
                 break;
             }
@@ -142,7 +148,9 @@ impl<'a> FramePipeline<'a> {
 
             // 默认值仅在 queue 与帧数据 FIFO 失步时出现（理论不发生），ppq 用 0 无实际影响
             let frame_params = self.param_queue.pop_front().unwrap_or_default();
-            let (should_stop, stats) = process(message, frame_params);
+            let (should_stop, stats) = crate::profiling::tracy_zone!("app.pipeline.process", {
+                process(message, frame_params)
+            });
 
             acc_recv_us += recv_us;
             acc_composite_us += stats.composite_us;
@@ -159,7 +167,9 @@ impl<'a> FramePipeline<'a> {
 
             // 维持流水线深度：每处理完一帧立即补发下一帧命令
             if next_frame_to_send < total_frames {
-                if enqueue(self.param_queue, next_frame_to_send) {
+                if crate::profiling::tracy_zone!("app.pipeline.enqueue", {
+                    enqueue(self.param_queue, next_frame_to_send)
+                }) {
                     cancelled = true;
                     break;
                 }
@@ -182,6 +192,11 @@ impl<'a> FramePipeline<'a> {
                 let encode_fps = encoded_now.saturating_sub(last_encoded_frames) as f64 / elapsed;
                 last_encoded_frames = encoded_now;
                 let queue_depth = self.telemetry.queue_depth.load(Ordering::Relaxed);
+
+                // Tracy 曲线：三段解耦后的实时速率/积压（与日志打点同一口径）
+                crate::profiling::tracy_plot!("app.gen_fps", gen_fps);
+                crate::profiling::tracy_plot!("app.encode_fps", encode_fps);
+                crate::profiling::tracy_plot!("app.queue_depth", queue_depth);
 
                 let raw_progress = processed_frames as f64 / total_frames as f64;
                 let progress = (self.progress_map)(raw_progress);

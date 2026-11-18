@@ -4261,6 +4261,7 @@ dependencies = [
  "thiserror 2.0.20",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
+ "tracy-client",
  "xsynth-core",
  "xxhash-rust",
  "zstd",
@@ -4300,6 +4301,7 @@ dependencies = [
  "puffin",
  "thiserror 2.0.20",
  "tracing",
+ "tracy-client",
  "wgpu 27.0.1",
 ]
 
@@ -4509,6 +4511,7 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
+ "tracy-client",
  "wgpu 27.0.1",
  "winapi",
  "winit",

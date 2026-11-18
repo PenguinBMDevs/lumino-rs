@@ -253,9 +253,19 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         enqueue_memory_frame(&mut ctx, queue, frame_idx)
     };
 
+    // 诊断帧上限（Tracy 基线抓固定窗口；正常导出不设该环境变量）
+    let frame_limit = std::env::var("LUMINO_BENCH_FRAMES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|n| *n > 0);
+    if let Some(limit) = frame_limit {
+        tracing::info!("诊断帧上限生效：{limit} 帧（LUMINO_BENCH_FRAMES）");
+    }
+
     // 预填充 + 主循环 + drain 由公共 FramePipeline 驱动（与流式路径共用同一循环骨架）
     let mut pipeline = FramePipeline {
         total_frames,
+        frame_limit,
         cancel_flag: &cancel_flag,
         frame_rx: &frame_rx,
         param_queue: &mut param_queue,
