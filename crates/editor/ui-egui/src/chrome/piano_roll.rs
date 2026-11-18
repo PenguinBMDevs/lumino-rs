@@ -1,13 +1,15 @@
-//! 钢琴卷帘骨架：键盘、标尺、滚动条。
+//! 钢琴卷帘骨架：键盘、标尺、滚动条、演奏指示线。
 //!
 //! 真实网格线与音符由 `lumino-gfx` 的 wgpu 通道绘制，因此生产叠加层只接管
-//! **纯 UI 骨架**（键盘列 / 标尺行 / 两条滚动条），中央网格区域完全不绘制。
+//! **纯 UI 骨架**（键盘列 / 标尺行 / 两条滚动条），中央网格区域除演奏指示线
+//! 外完全不绘制——指示线必须盖在音符之上（上一代 同为最后一个绘制层）。
 
 use egui::{Align2, Color32, FontId, Rect, Vec2};
 
 use super::ChromeState;
 use crate::theme;
 
+mod playhead;
 mod ruler;
 mod vertical;
 
@@ -131,9 +133,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut ChromeState) {
     draw_chrome(ui, &view);
 }
 
-/// 钢琴卷帘骨架的可见部分：键盘列 + 标尺 + 滚动条。
+/// 钢琴卷帘骨架的可见部分：键盘列 + 标尺 + 滚动条 + 演奏指示线。
 ///
-/// 中央网格区域**不绘制**——生产里那里是 `lumino-gfx` 的 wgpu 输出。
+/// 中央网格区域**不绘制**——生产里那里是 `lumino-gfx` 的 wgpu 输出；
+/// 唯一的例外是最后绘制的演奏指示线（必须位于音符之上）。
 pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
     let area = ui.max_rect();
     if area.width() <= 0.0 || area.height() <= 0.0 {
@@ -143,6 +146,8 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
     let canvas_w = (area.width() - bar).max(0.0);
     let canvas_h = (area.height() - bar).max(0.0);
     // 纵向卷帘：时间轴竖直、键盘在底部，骨架另有一套绘制。
+    // 纵向**不画**演奏指示线（底部键盘线即落点线，历史需求明确移除过纵向指示线），
+    // 因此这里提前返回，不会走到横向的 `playhead::show`。
     if view.vertical {
         vertical::draw(ui, area, view);
         if let Some(directed) = vertical::scrollbars(ui, area, view, canvas_w, canvas_h) {
@@ -172,6 +177,9 @@ pub fn draw_chrome(ui: &egui::Ui, view: &PianoRollView) {
         view,
     );
     scrollbar_cells(ui, area, view, canvas_w, canvas_h);
+    // 演奏指示线：骨架的最后一层（键盘 / 标尺 / 滚动条之后），
+    // 必须纵贯网格整高并盖在 gfx 音符之上（上一代 同契约）。
+    playhead::show(ui, area, view);
 }
 
 /// 两条滚动条：绘制 + 拖拽（滚动 / 边缘缩放）。
@@ -296,7 +304,10 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
     }
 }
 
-/// 标尺行：底盘 + 小节号 + 播放指示线（倒三角 + 线头）。
+/// 标尺行：底盘 + 小节号。
+///
+/// 演奏指示线**不在**这里画：它由 `playhead` 模块在骨架最后一层纵贯网格绘制，
+/// 只把倒三角留在标尺顶部（曾经在这里只画标尺行内一段，网格整条线丢失）。
 fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
         return;
@@ -315,8 +326,6 @@ fn ruler_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
             theme::roll_text(),
         );
     }
-
-    ruler::playhead(ui, rect, view);
 }
 
 /// 上一代 `ScrollbarWidget` 外观：轨道 `background.strong`，滑块 `background.weak`，

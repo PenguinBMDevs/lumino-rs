@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 钢琴卷帘 · 演奏指示线回到顶层并纵贯网格（2026-11-18）
+
+- **问题**：演奏指示线只剩标尺行内 24px 一段，网格区域整条线消失——观感即
+  「被卷帘内容盖住」。
+- **根因（RCA）**：egui 迁移把指示线写进 `ruler_cell`（`ruler::playhead`），
+  绘制矩形 = 标尺行；上一代 iced 实现的契约是 `playback_indicator::draw` 作为
+  最后一个 `geometries.push`，线从 `y = 0`（标尺顶）贯穿到画布底。层级与
+  绘制范围在迁移中被阉割，不是配色/透明度问题。
+- **修复**：
+  - 新增 `chrome/piano_roll/playhead.rs`：几何纯函数（竖线 / 倒三角 / 裁剪区）
+    + 绘制入口，线从标尺顶贯穿到水平滚动条上沿，裁剪到网格列（不压键盘列与
+    两条滚动条）；
+  - `draw_chrome` 在键盘 / 标尺 / 滚动条**之后**调用 `playhead::show`，
+    恢复「骨架最后一层、盖在 gfx 音符之上」的层级契约；`ruler_cell` 不再画线；
+  - 负 `playhead_offset`（无指示线哨兵）与越过网格右缘保持不绘制。
+- **验证**：`playhead` 4 条几何单测；`tests/piano_roll_skeleton.rs` 像素断言
+  （标尺行 / 网格中部 / 网格底部同列连续可见、顶部倒三角、不压键盘列与
+  滚动条、网格其余区域仍透明）；`cargo test -p lumino-ui-egui -- --test-threads=1`
+  全绿；`cargo clippy -p lumino-ui-egui --all-targets` 仅剩既有的
+  `lumino-extras` 未使用依赖告警（`tests/settings_bands.rs` 实际在用，误报）；
+  `cargo check --bin lumino-rs` 通过；egui 基线
+  `tests/ui-baseline/egui/{main_chrome,piano_roll_skeleton}-dpi*.png` 已按新
+  画面重出（`bridge_parity` 依赖）。
+
 ### 钢琴卷帘 · 画布渲染闸门按「可见性」收口（2026-11-18）
 
 - **问题**：切到音频/视频导出面板、渲染器入口，或关闭分组选项卡后，卷帘 gfx 离屏场景

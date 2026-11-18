@@ -5,13 +5,6 @@
 //! 中途变拍的 MIDI 后小节号会消失。
 
 use super::PianoRollView;
-use crate::theme;
-use egui::Rect;
-
-/// 播放指示线宽度（`PLAYBACK_INDICATOR_WIDTH`）。
-const PLAYHEAD_WIDTH: f32 = 2.0;
-/// 播放指示线顶部倒三角尺寸（`PLAYBACK_INDICATOR_TRIANGLE_SIZE`）。
-const PLAYHEAD_TRIANGLE: f32 = 8.0;
 
 /// 可见小节号：`(相对标尺左缘的 x, 小节号)`。
 ///
@@ -87,36 +80,6 @@ pub(super) fn measure_labels(view: &PianoRollView, width: f32) -> Vec<(f32, u64)
         measures_before += segment_measures;
     }
     labels
-}
-
-/// 播放指示线（标尺行内的线 + 顶部倒三角）。
-pub(super) fn playhead(ui: &egui::Ui, rect: Rect, view: &PianoRollView) {
-    if view.playhead_offset < 0.0 {
-        return;
-    }
-    let center = rect.left() + view.playhead_offset;
-    if center > rect.right() {
-        return;
-    }
-    let painter = ui.painter();
-    painter.rect_filled(
-        Rect::from_min_size(
-            egui::pos2(center - PLAYHEAD_WIDTH / 2.0, rect.top()),
-            egui::Vec2::new(PLAYHEAD_WIDTH, rect.height()),
-        ),
-        0,
-        theme::playhead(),
-    );
-    let half = PLAYHEAD_TRIANGLE / 2.0;
-    painter.add(egui::Shape::convex_polygon(
-        vec![
-            egui::pos2(center - half, rect.top()),
-            egui::pos2(center + half, rect.top()),
-            egui::pos2(center, rect.top() + PLAYHEAD_TRIANGLE),
-        ],
-        theme::playhead(),
-        egui::Stroke::NONE,
-    ));
 }
 
 #[cfg(test)]
