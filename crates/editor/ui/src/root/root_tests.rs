@@ -421,6 +421,7 @@ fn test_settings_dialog_same_theme_not_requeued() {
 // - `root_tests/speed_change.rs`：变速按钮 Ctrl+Click 测试
 // - `root_tests/sidebar.rs`：右侧栏跟随钢琴卷帘 UI 显隐测试
 // - `root_tests/cloud_snapshot.rs`：云存储快照同步边界测试
+// - `root_tests/canvas_visibility.rs`：编辑器画布可见性判定（渲染闸门）测试
 // - `root_tests/about_egg.rs`：关于页 logo 彩蛋（UI-007）接线测试
 // - `root_tests/echo_cave.rs`：关于页回声洞彩蛋（UI-006）接线测试
 // - `root_tests/fill_division_panel.rs`：颜料桶「分音符填充」面板触发/关闭链路测试
@@ -429,6 +430,7 @@ fn test_settings_dialog_same_theme_not_requeued() {
 // ================================================================
 
 mod about_egg;
+mod canvas_visibility;
 mod channel;
 mod cloud_snapshot;
 mod debt19_cost;

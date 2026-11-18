@@ -3,6 +3,20 @@
 use crate::root::Root;
 
 impl Root {
+    /// 主区域当前是否真的在显示 gfx 编辑器画布（钢琴卷帘 / 工程走带）。
+    ///
+    /// **白名单语义**：只有这两个视图由 gfx 离屏画布承载。音频/视频导出面板、
+    /// 渲染器入口、全屏瀑布流、分组关闭后的空白态一律为 `false`——新增主区域
+    /// 面板时必须显式加进来，避免「新面板忘了关画布」的同类问题复发。
+    ///
+    /// 与 [`Self::right_sidebar_visible`] 的区别：后者只描述右侧栏归属，
+    /// 工程走带下为 `false`，不能拿来当画布可见性。渲染线程的
+    /// `skip_scene_render` 与 UI 侧的底层纹理合成都只认本函数。
+    pub(crate) fn editor_canvas_visible(&self) -> bool {
+        self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
+            && (self.sidebar.is_arrangement_route() || self.sidebar.is_piano_roll_panel())
+    }
+
     /// 右侧栏是否应随钢琴卷帘编辑区一起渲染。
     ///
     /// 右侧栏只属于钢琴卷帘编辑区：进入工程走带 / 瀑布流 / 音频视频导出面板
