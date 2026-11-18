@@ -3,8 +3,8 @@
 //! [`MidiFile`] converts a standard MIDI file into a [`MidiSequence`] of
 //! sample-accurate events, honoring tempo changes and merging all tracks.
 
-use lumino_midly::num::u24;
-use lumino_midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
+use midly::num::u24;
+use midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 
 use crate::SynthError;
 use crate::midi::kind;
