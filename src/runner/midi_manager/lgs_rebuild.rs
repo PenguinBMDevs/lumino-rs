@@ -130,6 +130,15 @@ impl MidiManager {
     /// 返回 `true` = 已排程或已暂存（后续由 `poll_lgs_rebuild` 推进）；
     /// `false` = 非 LGS 活跃后端 / API 不可用（事件被忽略）。
     pub fn request_lgs_rebuild(&mut self) -> bool {
+        // AUD-011：CPU 降级期间收到 GPU 设备事件——冷却期已过则清除覆盖并
+        // 安排整后端重初始化（此时 API 是 CPU 后端，不能做原地 GPU 热替换）。
+        if self.backend_fallback.is_degraded() {
+            if self.retry_lgs_after_degrade() {
+                return true;
+            }
+            tracing::warn!("LGS（PR-D）: CPU 降级冷却期内，忽略 GPU 设备事件");
+            return false;
+        }
         if self.lgs_rebuild.requested || self.lgs_rebuild.inflight.is_some() {
             tracing::info!("LGS（PR-D）: 重建已在进行/已暂存，忽略重复请求");
             return true;
@@ -306,10 +315,17 @@ impl MidiManager {
                     LgsRetryStep::Exhausted => {
                         self.lgs_rebuild.requested = false;
                         self.lgs_rebuild.not_before = None;
-                        self.pending_backend_notice = Some(
-                            tr!("GPU 合成不可用（重建多次失败）：音频将保持静音，请重启 Lumino")
+                        // AUD-011：耗尽后把音频接回来——切 CPU 后端并安排同帧
+                        // 重初始化；只有「本轮已降级 / 已有待处理重初始化」时才
+                        // 保留原「保持静音」提示。
+                        if !self.degrade_from_lgs_exhaustion() && !self.needs_reinit {
+                            self.pending_backend_notice = Some(
+                                tr!(
+                                    "GPU 合成不可用（重建多次失败）：音频将保持静音，请重启 Lumino"
+                                )
                                 .to_string(),
-                        );
+                            );
+                        }
                     }
                 }
             }

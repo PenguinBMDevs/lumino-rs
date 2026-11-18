@@ -71,6 +71,14 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "GPU synthesis is unavailable (rebuild failed repeatedly): audio will stay silent. Please restart Lumino",
             )
         }
+        "GPU 合成不可用（重建多次失败），已临时切换到 {backend} 合成；可在设置中重选 LGS 或重启后恢复" => {
+            Some(
+                "GPU synthesis is unavailable (rebuild failed repeatedly); temporarily switched to {backend} synthesis. Re-select LGS in Settings or restart to recover.",
+            )
+        }
+        "GPU 设备已恢复，正在重新启用 LGS (GPU) 合成…" => {
+            Some("GPU device recovered; re-enabling LGS (GPU) synthesis…")
+        }
         "音频设备丢失，正在恢复 GPU 合成…" => {
             Some("Audio device lost; recovering GPU synthesis…")
         }
@@ -133,6 +141,17 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "XSynth 未生效：音色库文件不存在（{path}），当前使用 System 后端" => {
             Some(
                 "XSynth is inactive: the soundfont file does not exist ({path}); the System backend is in use",
+            )
+        }
+        "XSynth 初始化失败，已回退 System 后端：{e}" => {
+            Some("XSynth initialization failed; fell back to the System backend: {e}")
+        }
+        "XSynth 初始化线程异常断开，已回退 System 后端" => {
+            Some("XSynth initialization thread disconnected; fell back to the System backend")
+        }
+        "CPU 合成也不可用：未找到可用的 MIDI 输出，请检查系统 MIDI 设备" => {
+            Some(
+                "CPU synthesis is also unavailable: no usable MIDI output was found. Check the system MIDI device",
             )
         }
         "LGS 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）" => {

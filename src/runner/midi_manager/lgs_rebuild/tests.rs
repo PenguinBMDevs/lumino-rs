@@ -147,10 +147,17 @@ fn panic_exhaustion_emits_notice() {
     assert_eq!(manager.lgs_rebuild.attempts, MAX_LGS_REBUILD_ATTEMPTS);
     assert!(!manager.lgs_rebuild.requested, "耗尽后不再自动重试");
     assert!(manager.api.is_some(), "耗尽时 API 仍应归还");
+    assert!(manager.needs_reinit(), "耗尽应安排 CPU 后端重初始化");
     assert_eq!(
-        manager.take_pending_backend_notice(),
-        Some(tr!("GPU 合成不可用（重建多次失败）：音频将保持静音，请重启 Lumino").to_string())
+        manager.backend_override(),
+        Some(SynthBackend::System),
+        "无音色库时应降级到 System"
     );
+    let notice = manager
+        .take_pending_backend_notice()
+        .expect("耗尽应产生可见提示");
+    assert!(notice.contains("系统 MIDI"), "提示应说明降级目标: {notice}");
+    assert!(notice.contains("LGS"), "提示应保留用户偏好说明: {notice}");
 }
 
 /// 正常重建路径零回归：成功清计数、清重试、提示恢复。
@@ -168,6 +175,7 @@ fn success_path_unchanged() {
         manager.take_pending_backend_notice(),
         Some(tr!("GPU 合成已恢复").to_string())
     );
+    assert_eq!(manager.backend_override(), None, "成功路径不得留下降级覆盖");
 }
 
 /// 非重初始化 drain 超时：保留在途，下一帧仍可回收 API。
@@ -232,4 +240,27 @@ fn disconnected_requests_reinit() {
     manager.poll_lgs_rebuild();
 
     assert!(manager.needs_reinit(), "线程断开应触发后端重初始化兜底");
+}
+
+/// AUD-011：CPU 降级期间设备事件受冷却期约束；冷却期后清除覆盖并安排整后端重初始化。
+#[test]
+fn degraded_request_respects_cooldown() {
+    let mut manager = manager_with(MockApi::ok().boxed());
+    manager.mark_degraded_for_test(SynthBackend::System, Duration::ZERO);
+
+    assert!(
+        !manager.request_lgs_rebuild(),
+        "冷却期内应忽略 GPU 设备事件"
+    );
+    assert!(!manager.needs_reinit(), "冷却期内不得触发重初始化");
+    assert!(manager.lgs_rebuild.inflight.is_none());
+
+    manager.mark_degraded_for_test(SynthBackend::System, Duration::from_secs(61));
+    assert!(manager.request_lgs_rebuild(), "冷却期后应受理设备事件");
+    assert!(manager.needs_reinit(), "应安排重初始化回到 LGS");
+    assert_eq!(manager.backend_override(), None, "受理后应清除 CPU 覆盖");
+    let notice = manager
+        .take_pending_backend_notice()
+        .expect("应提示重新启用 LGS");
+    assert!(notice.contains("LGS"), "{notice}");
 }
