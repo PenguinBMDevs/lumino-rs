@@ -202,8 +202,8 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
         // 右键由 egui 接管（旧版 的同位行按钮已不再收到该事件）。
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenTrackMenu(track.id));
     }
-    // 行命中区由 egui 独占（旧版 的同位行按钮不再处理同一次点击）。
-    // 例外：行内重命名时输入框仍由 旧版 绘制，必须让指针进去。
+    // 行命中区由 egui 独占。
+    // 例外：行内重命名时整行不占用，保证重命名输入框的指针操作不被拦掉。
     if !track.renaming {
         super::super::menu::extend_blocked(ui.ctx(), [rect]);
     }

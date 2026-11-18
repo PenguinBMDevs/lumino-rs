@@ -51,8 +51,8 @@ impl Host {
         }
 
         // 全局监听鼠标释放事件，结束右侧栏拖拽状态
-        // （拖拽过程中面板变宽、手柄左移，鼠标可能落在面板内容区上，
-        //   旧版 的 on_release 不再投递给手柄，必须由全局释放兜底收尾）
+        // （拖拽过程中面板变宽、手柄左移，鼠标松手时可能已不在手柄上，
+        //   egui 的 response 收不到 Released，必须由全局释放兜底收尾）
         if button == winit::event::MouseButton::Left
             && state == ElementState::Released
             && self.root.right_sidebar.is_resizing
@@ -63,14 +63,14 @@ impl Host {
         }
 
         // 全局兜底：画布内按下、画布外释放（力度面板/滚动条/窗口外）时，
-        // 旧版 画布收不到 ButtonReleased，编辑状态（拖动/批量移动/批量复制/
+        // 画布收不到 ButtonReleased，编辑状态（拖动/批量移动/批量复制/
         // 框选/绘制/调整大小）卡死无法收尾——pending 复制/拖动不保存、
         // ghost 卡在屏幕上、后续点击会吞掉未完成的操作。
         // 典型场景：Ctrl+拖动批量复制时把选区向下拖出键盘底部（力度面板区）
         // 松手，副本"表面上放置成功"，但复制从未写入 pending/内存，
         // 滚动后副本消失、内存无数据。
         // handle_released 幂等（Idle 时 noop）：正常画布内释放时兜底先于
-        // 旧版 画布转发执行，画布稍后的 Released 变为 noop，重复执行无害。
+        // 画布转发执行，画布稍后的 Released 变为 noop，重复执行无害。
         if button == winit::event::MouseButton::Left
             && state == ElementState::Released
             && self.editor_has_incomplete_pointer_edit()

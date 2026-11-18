@@ -204,7 +204,7 @@ impl Host {
                 self.touch_long_press_fired = false;
                 self.touch_press_origin = None;
                 self.sync_global_pointer(false);
-                // 纯触屏没有 CursorLeft，抬手后 旧版 的 cursor 仍停在落点，
+                // 纯触屏没有 CursorLeft，抬手后指针仍停在落点，
                 // 悬停高亮 / tooltip / 音符 hover 预览会一直挂着 —— 置位由
                 // `process_pending_events` 在下一帧以 Unavailable 重建一次。
                 self.suppress_hover_after_touch = true;
