@@ -1,4 +1,5 @@
 use lumino_core::storage::config::{AudioEngineKind, SynthBackend, UiConfig};
+use lumino_midi_io::api::maestro::{MaestroStats, MaestroStatsReader};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -34,6 +35,16 @@ enum XSynthInitResult {
 /// LGS (GPU) 异步初始化结果
 enum LgsInitResult {
     Success { api: MidiApi, output: MidiOutput },
+    Failed(String),
+}
+
+/// Maestro 异步初始化结果（AUD-009）。
+enum MaestroInitResult {
+    Success {
+        api: MidiApi,
+        output: MidiOutput,
+        stats: MaestroStatsReader,
+    },
     Failed(String),
 }
 
@@ -100,6 +111,12 @@ pub struct MidiManager {
     lgs_max_voices_per_key: usize,
     /// LGS (GPU) 是否使用 64 点 sinc 高质量插值
     lgs_use_sinc: bool,
+    /// Maestro 异步初始化接收器（AUD-009）
+    maestro_init_rx: Option<Receiver<MaestroInitResult>>,
+    /// 是否正在异步初始化 Maestro
+    is_maestro_initializing: bool,
+    /// Maestro 统计读取器（布局重建后仍指向共享引擎）
+    maestro_stats: Option<MaestroStatsReader>,
     /// 系统 MIDI (WinMM) 输出设备 ID（None = 第一个/默认）
     winmm_output_device_id: Option<u32>,
     /// REND-002：当前文档期望的最大 MIDI 端口（0 = 单端口/Midi）。
@@ -148,6 +165,9 @@ impl Default for MidiManager {
             lgs_block_size: 0,
             lgs_max_voices_per_key: 0,
             lgs_use_sinc: false,
+            maestro_init_rx: None,
+            is_maestro_initializing: false,
+            maestro_stats: None,
             winmm_output_device_id: None,
             desired_midi_max_port: 0,
             spawned_midi_max_port: 0,
@@ -174,6 +194,18 @@ impl MidiManager {
     pub fn gpu_buffer_stats(&self) -> Option<lumino_midi_io::GpuBufferStats> {
         self.api.as_ref()?.gpu_buffer_stats()
     }
+
+    /// 取 Maestro 实时统计（voice_count / nps / eps / nps_limit / latency）。
+    ///
+    /// 非 Maestro 后端或引擎重建窗口返回 `None`；供状态栏/性能指示器低频轮询。
+    pub fn maestro_stats(&self) -> Option<MaestroStats> {
+        self.maestro_stats.as_ref()?.stats()
+    }
+
+    /// 取走 Maestro 引擎通知（禁用/停止），供状态栏提示。
+    pub fn take_maestro_notice(&self) -> Option<String> {
+        self.maestro_stats.as_ref()?.take_notice()
+    }
 }
 
 // ── 子模块 ──────────────────────────────────────────────────────────────
@@ -182,6 +214,7 @@ mod audio_action;
 mod layout;
 mod lgs;
 mod lgs_rebuild;
+mod maestro;
 mod outputs;
 mod recovery;
 mod xsynth;

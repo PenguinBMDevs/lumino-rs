@@ -1,4 +1,4 @@
-//! 音频页：三后端行镜像与字段动作翻译（从 `settings_page_tests.rs` 拆出）。
+//! 音频页：后端行镜像与字段动作翻译（从 `settings_page_tests.rs` 拆出）。
 
 use super::*;
 use lumino_core::storage::config::SynthBackend;
@@ -70,6 +70,22 @@ fn audio_page_reflects_backend_and_maps_actions() {
         assert!(fields.contains(&field), "LGS 页缺少 {field:?}");
     }
 
+    // Maestro：只显示说明行，不显示音色库/音频设备行（由 Maestro profile 管理）。
+    root.settings.synth.backend = SynthBackend::Maestro;
+    let values = settings_model(&mut root);
+    let SettingsPageModel::Audio(page) = values.page else {
+        panic!("音频页");
+    };
+    let fields: Vec<AudioField> = page.rows.iter().map(|row| row.field).collect();
+    assert!(
+        fields.contains(&AudioField::MaestroHint),
+        "Maestro 页缺少说明行"
+    );
+    assert!(
+        !fields.contains(&AudioField::SoundfontPath),
+        "Maestro 页不应显示 Lumino 音色库路径"
+    );
+
     // System：WinMM 输出。
     root.settings.synth.backend = SynthBackend::System;
     let values = settings_model(&mut root);
@@ -83,11 +99,20 @@ fn audio_page_reflects_backend_and_maps_actions() {
         "系统 MIDI 页应有 WinMM 输出选择"
     );
 
-    // 动作 → 生产 Message。
+    // 动作 → 生产 Message（AUD-009：2 = Maestro，3 = System）。
     assert!(matches!(
         root.settings_action_message(&SettingsAction::AudioCombo {
             field: AudioField::OutputType,
             index: 2,
+        }),
+        Some(Message::Settings(
+            crate::settings::Event::OutputTypeChanged(OutputType::Maestro)
+        ))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::AudioCombo {
+            field: AudioField::OutputType,
+            index: 3,
         }),
         Some(Message::Settings(
             crate::settings::Event::OutputTypeChanged(OutputType::System)

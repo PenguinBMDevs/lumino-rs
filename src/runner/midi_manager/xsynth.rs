@@ -154,7 +154,7 @@ impl MidiManager {
         self.desired_midi_max_port = max_port;
         self.layout_desired.store(max_port, Ordering::SeqCst);
         match self.active_backend {
-            SynthBackend::XSynth | SynthBackend::Lgs => {
+            SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro => {
                 let Some(api) = self.api.as_mut() else {
                     return;
                 };

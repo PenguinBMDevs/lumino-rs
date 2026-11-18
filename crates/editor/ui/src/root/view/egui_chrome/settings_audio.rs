@@ -30,16 +30,29 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
     let output_type = match synth.backend {
         SynthBackend::Lgs | SynthBackend::XSynth => 0,
         SynthBackend::Kdmapi => 1,
-        SynthBackend::System => 2,
+        SynthBackend::Maestro => 2,
+        SynthBackend::System => 3,
+    };
+    let output_hint = if synth.backend == SynthBackend::Maestro {
+        match language {
+            Language::ZhCn => "Maestro 模式使用独立合成器宿主，音色库/参数在 Maestro 设置中配置",
+            Language::EnUs => {
+                "Maestro mode uses the external synthesizer host; SoundFonts and synth settings live in Maestro"
+            }
+        }
+        .to_owned()
+    } else {
+        t.kdmapi_hint.to_owned()
     };
     rows.push(row(
         AudioField::OutputType,
         t.synthesizer.to_owned(),
-        t.kdmapi_hint.to_owned(),
+        output_hint,
         combo(
             vec![
                 output_type_name(OutputType::Builtin, language),
                 output_type_name(OutputType::Kdmapi, language),
+                output_type_name(OutputType::Maestro, language),
                 output_type_name(OutputType::System, language),
             ],
             output_type,
@@ -136,6 +149,7 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
     match synth.backend {
         SynthBackend::XSynth => xsynth_rows(root, t, &mut rows),
         SynthBackend::Lgs => pages::lgs_rows(root, t, &mut rows),
+        SynthBackend::Maestro => pages::maestro_rows(root, t, &mut rows),
         SynthBackend::System => pages::system_rows(root, t, &mut rows),
         _ => {}
     }
@@ -304,6 +318,7 @@ fn output_type_name(output: OutputType, language: Language) -> String {
             Language::EnUs => "Built-in Synth",
         },
         OutputType::Kdmapi => "KDMAPI",
+        OutputType::Maestro => "Maestro",
         OutputType::System => match language {
             Language::ZhCn => "系统 MIDI",
             Language::EnUs => "System MIDI",

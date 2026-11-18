@@ -45,6 +45,10 @@ cpal = { workspace = true }
 # symphonia 构建，仅多出同族的 `symphonia-bundle-mp3`（MPL-2.0，与现有 symphonia 同源）。
 symphonia = { workspace = true, features = ["mp3"] }
 tracy-client = { workspace = true, optional = true }
+# AUD-009：Maestro 合成器宿主（运行时加载独立库，无构建期依赖）。
+# 该 crate 仅用 libloading + 标准库，Android 也能编译；运行期由 Maestro::new
+# 返回“平台不支持”，不会尝试加载 libmaestro.so。
+maestro-api-rs = { workspace = true }
 
 # 系统 MIDI 后端（midir）无 Android 实现：midir 的 backend 模块在 android 上为空，
 # 连 crate 自身都编不过（common.rs 无条件 use backend::{MidiInput, ...}）。

@@ -47,7 +47,7 @@ impl SettingsPanel {
                     OutputType::Builtin => {
                         if matches!(
                             self.synth.backend,
-                            SynthBackend::Kdmapi | SynthBackend::System
+                            SynthBackend::Kdmapi | SynthBackend::Maestro | SynthBackend::System
                         ) {
                             SynthBackend::XSynth
                         } else {
@@ -55,6 +55,7 @@ impl SettingsPanel {
                         }
                     }
                     OutputType::Kdmapi => SynthBackend::Kdmapi,
+                    OutputType::Maestro => SynthBackend::Maestro,
                     OutputType::System => SynthBackend::System,
                 };
             }

@@ -4346,6 +4346,7 @@ dependencies = [
  "lumino-midi-loader",
  "lumino-midi-model",
  "lumino-midly",
+ "maestro-api-rs",
  "midir",
  "parking_lot",
  "symphonia",
@@ -4690,6 +4691,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "maestro-api-rs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c64432efc2042740a5e4f355184175de05fea4d3033d79e78fbd7820b214911a"
+dependencies = [
+ "libloading 0.8.9",
 ]
 
 [[package]]

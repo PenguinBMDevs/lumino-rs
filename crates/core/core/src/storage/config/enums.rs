@@ -36,6 +36,8 @@ pub enum SynthBackend {
     System,
     /// LGS (GPU) 合成器（基于 lumino-gpu-synth 的 GPU 加速渲染）
     Lgs,
+    /// Maestro 合成器宿主（AUD-009；经 maestro-api-rs 运行时加载）
+    Maestro,
 }
 
 /// 框选框显示模式
@@ -103,6 +105,7 @@ impl std::fmt::Display for SynthBackend {
             SynthBackend::Kdmapi => write!(f, "KDMAPI"),
             SynthBackend::System => write!(f, "{}", tr!("系统 MIDI")),
             SynthBackend::Lgs => write!(f, "LGS (GPU)"),
+            SynthBackend::Maestro => write!(f, "Maestro"),
         }
     }
 }

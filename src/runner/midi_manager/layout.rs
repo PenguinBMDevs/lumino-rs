@@ -41,7 +41,10 @@ pub(super) fn decide_layout_request(
     has_api: bool,
     worker_busy: bool,
 ) -> LayoutDecision {
-    let software_ready = matches!(backend, SynthBackend::XSynth | SynthBackend::Lgs);
+    let software_ready = matches!(
+        backend,
+        SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro
+    );
     if !software_ready {
         return LayoutDecision::Stash;
     }
@@ -231,6 +234,11 @@ mod tests {
         // 5) LGS 就绪且空闲：同样启动后台重建
         assert_eq!(
             decide_layout_request(Lgs, true, false),
+            LayoutDecision::Start
+        );
+        // 6) Maestro 就绪且空闲：同样启动后台重建（AUD-009）
+        assert_eq!(
+            decide_layout_request(SynthBackend::Maestro, true, false),
             LayoutDecision::Start
         );
     }

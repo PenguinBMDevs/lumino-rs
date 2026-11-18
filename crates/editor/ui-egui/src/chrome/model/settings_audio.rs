@@ -31,7 +31,7 @@ pub struct AudioRowModel {
 /// 音频页可交互字段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioField {
-    /// 顶层输出类型（内置合成器 / KDMAPI / 系统 MIDI）。
+    /// 顶层输出类型（内置合成器 / KDMAPI / Maestro / 系统 MIDI）。
     OutputType,
     /// 内置合成器引擎（XSynth / LGS）。
     Engine,
@@ -81,6 +81,8 @@ pub enum AudioField {
     LgsGpuGovernorMetrics,
     /// LOAD 显示口径。
     LgsGpuLoadDisplay,
+    /// Maestro 说明（音色库/参数在 Maestro profile 中配置）。
+    MaestroHint,
 }
 
 /// 控件种类。
