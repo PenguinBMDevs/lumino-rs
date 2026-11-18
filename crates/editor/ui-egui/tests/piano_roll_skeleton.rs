@@ -130,4 +130,31 @@ fn skeleton_keeps_keyboard_ruler_and_scrollbars() {
 
     // 网格其余区域仍保持透明：底下的 gfx 音符纹理必须透出来。
     assert_eq!(alpha(&image, 400, 300), 0, "中央网格区域必须保持透明");
+
+    // ── 演奏键色：`PianoRollView::key_colors` 必须真的叠到对应键上 ──
+    //
+    // 回归点：键色数据曾只停留在 Editor 内部（`update_playback_key_colors`
+    // 照常计算），但 egui 键盘列完全不读它 —— 打开「播放时键盘颜色指示」
+    // 后键盘毫无变化。这里锁死「数据 → 像素」的接线。
+    let plain = image;
+    let mut tinted = view();
+    // 默认视图 key_height=20 / scroll_y=0 / ruler=24 → key 120 占 y=164..184。
+    let offset = 120 * 4;
+    tinted.key_colors[offset..offset + 4].copy_from_slice(&[255, 0, 0, 255]);
+    let colored = render(tinted);
+    let baseline = plain.get_pixel(10, 174).0;
+    let highlighted = colored.get_pixel(10, 174).0;
+    assert_ne!(
+        highlighted, baseline,
+        "打开键色后对应键必须被音轨色覆盖：base={baseline:?} key={highlighted:?}"
+    );
+    assert!(
+        highlighted[1] < baseline[1] && highlighted[2] < baseline[2],
+        "红色洋葱皮必须压低键底色的 G/B 通道：base={baseline:?} key={highlighted:?}"
+    );
+    assert_eq!(
+        colored.get_pixel(10, 194).0,
+        plain.get_pixel(10, 194).0,
+        "未发声的相邻键不得变色"
+    );
 }

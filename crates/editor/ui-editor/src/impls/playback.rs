@@ -75,6 +75,16 @@ const PLAYBACK_KEY_INDEX_MAX_NOTES: usize = 2_000_000;
 const SEEK_THRESHOLD_TICKS: f32 = 5000.0;
 
 impl Editor {
+    /// 当前播放键色（`key * 4` 起的 RGBA，alpha = 0 表示该键无高亮）。
+    ///
+    /// 卷帘键盘列的演奏洋葱皮由 UI 层每帧读取本数组绘制；开关关闭时
+    /// `update_playback_key_colors` 提前返回、`set_playback_key_colors_enabled`
+    /// 清空数组，因此调用方无需另行判断开关。
+    #[inline]
+    pub fn playback_key_colors(&self) -> &[u8; 1024] {
+        &self.playback_key_colors
+    }
+
     /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
     ///
     /// 直接从 `MidiDocument.track_notes()` 读取，数据已在 MIDI 导入时按 track 分组

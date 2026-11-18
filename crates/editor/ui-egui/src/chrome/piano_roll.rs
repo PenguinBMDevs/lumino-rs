@@ -9,6 +9,7 @@ use egui::{Align2, Color32, FontId, Rect, Vec2};
 use super::ChromeState;
 use crate::theme;
 
+mod onion;
 mod playhead;
 mod ruler;
 mod vertical;
@@ -65,6 +66,12 @@ pub struct PianoRollView {
     /// 标尺小节号必须按段计算：加载器全量保留同 tick 重复拍号（多轨 MIDI
     /// 常见），egui 标尺自己折叠同 tick 段并连续编号。空列表 = 4/4。
     pub time_signatures: Vec<(u32, u8, u8)>,
+    /// 演奏键色：`key * 4` 起的 RGBA（最多 256 键），alpha = 0 表示无高亮。
+    ///
+    /// 每帧由 UI 层从 `Editor::playback_key_colors()` 拷贝；键盘列据此叠加
+    /// 60% 不透明度的洋葱皮高亮（与上一代 / 视频导出键盘同口径）。
+    /// 开关关闭时保持全零，绘制端无需再判断配置。
+    pub key_colors: [u8; 1024],
 }
 
 impl Default for PianoRollView {
@@ -96,6 +103,7 @@ impl Default for PianoRollView {
             bottom_inset: 0.0,
             vertical: false,
             time_signatures: Vec::new(),
+            key_colors: [0u8; 1024],
         }
     }
 }
@@ -259,6 +267,10 @@ fn keyboard_cell(ui: &egui::Ui, rect: Rect, view: &PianoRollView, ruler_h: f32) 
             base
         };
         painter.rect_filled(key_rect, 0, fill);
+        // 演奏洋葱皮：正在发声的键叠加音轨色（60% 不透明度，音名仍画在最上层）。
+        if let Some(onion) = onion::key_overlay(view, index) {
+            painter.rect_filled(key_rect, 0, onion);
+        }
         // 暗色生产键盘没有可见键线（gfx 只靠键色区分），亮色才有 1px 键线。
         if !dark && y + key_h > ruler_h {
             key_tops.push(key_rect.top().max(rect.top() + ruler_h));

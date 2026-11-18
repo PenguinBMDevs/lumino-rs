@@ -6,7 +6,7 @@
 
 use egui::{Align2, FontId, Rect, Vec2};
 
-use super::{PianoRollView, is_key_dark, note_name, tint};
+use super::{PianoRollView, is_key_dark, note_name, onion, tint};
 use crate::scrollbar::{self, DirectedAction, ScrollbarAction, ScrollbarModel};
 use crate::theme;
 
@@ -111,6 +111,10 @@ pub fn draw(ui: &egui::Ui, area: Rect, view: &PianoRollView) {
             base
         };
         painter.rect_filled(key_rect, 0, fill);
+        // 演奏洋葱皮：正在发声的键叠加音轨色（条带在上、边框仍可见）。
+        if let Some(onion) = onion::key_overlay(view, index) {
+            painter.rect_filled(key_rect, 0, onion);
+        }
         painter.rect_stroke(
             key_rect,
             0,

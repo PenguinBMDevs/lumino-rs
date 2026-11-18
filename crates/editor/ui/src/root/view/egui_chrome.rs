@@ -350,6 +350,8 @@ impl Root {
                 },
             vertical,
             time_signatures: self.editor.editor_state.data.time_signatures.clone(),
+            // 演奏跟随：键盘列每帧读取播放键色（全零 = 无高亮 / 开关关闭）。
+            key_colors: *self.editor.playback_key_colors(),
         })
     }
 
@@ -702,6 +704,8 @@ mod export_progress_tests;
 mod help_tests;
 #[cfg(test)]
 mod history_tests;
+#[cfg(test)]
+mod key_colors_tests;
 #[cfg(test)]
 mod load_confirm_tests;
 #[cfg(test)]
