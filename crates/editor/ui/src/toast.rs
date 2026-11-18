@@ -204,6 +204,7 @@ impl ToastManager {
         &self,
         theme: &Theme,
     ) -> Vec<(
+        u64,
         String,
         String,
         lumino_ui_core::geom::Color,
@@ -213,6 +214,7 @@ impl ToastManager {
             .iter()
             .map(|toast| {
                 (
+                    toast.id,
                     toast.level.icon().to_owned(),
                     toast.message.clone(),
                     toast.level.background_color(theme),

@@ -15,8 +15,9 @@ pub mod streaming;
 
 // 重新导出 lumino-midi-model 中的类型（调用链保持 lumino_midi_loader::Xxx 不变）
 pub use lumino_midi_model::{
-    ChunkedList, CompactEvent, EventKind, LoaderError, LoaderResult, MidiDocument, NoteEvent,
-    NoteInfo, TICK_SEARCH_BUFFER, TrackManager, TrackNoteView, TrackView, TrackVisibility,
+    ChunkedList, CompactEvent, EventKind, LoadTimingReport, LoaderError, LoaderResult,
+    MidiDocument, NoteEvent, NoteInfo, TICK_SEARCH_BUFFER, TrackManager, TrackNoteView, TrackView,
+    TrackVisibility,
 };
 
 pub use event::MidiEvent;
@@ -70,6 +71,8 @@ impl LmpjData {
             use10: false,
             // 旧 LMPJ 格式无 i2m 参数，按默认处理
             i2m: None,
+            // LMPJ 不含解析期 EOT 诊断（非工程数据）
+            timing_report: LoadTimingReport::default(),
         }
     }
 }
@@ -112,6 +115,11 @@ pub struct ParsedMidi {
     /// 由 `project_to_parsed_midi` 从 `metadata.settings.i2m` 回填；
     /// 常规 MIDI 文件与旧工程为 `None`（面板保持默认值）。不参与序列化。
     pub i2m: Option<lumino_core::I2mSettings>,
+    /// 逐轨 EOT / 悬挂音符诊断（加载期报告）。
+    ///
+    /// 工程文件（`.lmpj`）与纯字节路径通常为空报告；导入 MIDI 文件时填充。
+    /// 不参与序列化——它是解析副产物，不是工程数据。
+    pub timing_report: LoadTimingReport,
 }
 
 impl serde::Serialize for ParsedMidi {
@@ -143,6 +151,8 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
             use10: false,
             // 旧数据没有 i2m 参数，反序列化后按 None 处理
             i2m: None,
+            // 反序列化不携带解析期 EOT 诊断
+            timing_report: LoadTimingReport::default(),
         })
     }
 }
