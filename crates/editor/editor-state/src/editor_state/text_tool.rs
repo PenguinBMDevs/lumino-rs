@@ -47,7 +47,8 @@ pub struct TextToolState {
     pub text: String,
     /// 采样模式
     pub mode: TextToolMode,
-    /// 字体家族名（默认跟随系统，需支持中文等多语言）
+    /// 字体家族默认值（UI-023 起**不再参与渲染**：渲染源是 `params.font`，
+    /// 本字段仅保留默认值与旧调用兼容）
     pub font_family: &'static str,
     /// 拖拽移动文本框时记录的抓取点（鼠标 tick / key 浮点），None 表示非移动中
     pub drag_grab: Option<(f32, f32)>,

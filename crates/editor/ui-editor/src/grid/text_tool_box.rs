@@ -13,7 +13,7 @@
 use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::content_bounds;
-use crate::interaction::text_tool::{GlyphGrid, rasterize_glyph_alpha_for_tool};
+use crate::interaction::text_tool::rasterize_glyph_alpha_for_tool;
 use lumino_ui_core::geom::{Point, Rectangle, Size};
 
 /// 按钮与文本框的间距
@@ -37,20 +37,17 @@ pub struct TextToolButtonRects {
 impl Editor {
     /// 文字工具预览图（RGBA，白蓝色文字 + alpha）。
     ///
-    /// 与 √ 生成音符共用同一份栅格（`GlyphGrid` + `rasterize_glyph_alpha_for_tool`），
-    /// 供 egui 叠加层上传纹理直接铺放；无 旧版 类型。
+    /// 与 √ 生成音符共用同一份栅格（`GlyphGrid` + `RasterScale` +
+    /// `rasterize_glyph_alpha_for_tool`），供 egui 叠加层上传纹理直接铺放。
+    /// 文本只按 `trim()` 判空、**不改写**：确认路径同样使用原文本，前后空格不会让
+    /// 预览与生成产生差异。
     pub fn text_tool_preview_rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
         let tt = &self.editor_state.text_tool;
-        let text = tt.text.trim();
-        if text.is_empty() {
+        if tt.text.trim().is_empty() {
             return None;
         }
-        let grid = GlyphGrid::from_state(
-            tt,
-            self.editor_state.view.snap_precision,
-            self.editor_state.is_vertical_roll,
-        );
-        let (w, h, alpha) = rasterize_glyph_alpha_for_tool(tt, text, grid.cols, grid.rows)?;
+        let (grid, scale) = self.text_tool_grid_scale()?;
+        let (w, h, alpha) = rasterize_glyph_alpha_for_tool(tt, &tt.text, &grid, &scale)?;
         let (cr, cg, cb) = (
             (TEXT_PREVIEW_COLOR.r * 255.0) as u16,
             (TEXT_PREVIEW_COLOR.g * 255.0) as u16,

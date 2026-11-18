@@ -63,8 +63,8 @@ pub fn apply_geometry_ops(
             ShapeOp::Symmetry(_) | ShapeOp::Straighten(_) | ShapeOp::Round(_) => {}
             // RoundShape 是 Round 的形状修饰，随 rounded_anchors 一起消费，链上不单独处理。
             ShapeOp::RoundShape(_) => {}
-            // Text ? shape_notes_of ?????????????????
-            ShapeOp::Text(_) => {}
+            // Text 由 shape_notes_of 独立再生成，链上不重复处理。
+            ShapeOp::Text(_) | ShapeOp::TextV2(_) => {}
             // Glue / Claw / Strum / Chop / GateFlip / Sustain 是 Notes 阶段，已被 stage filter 排除。
             ShapeOp::Glue(_)
             | ShapeOp::Claw(_)

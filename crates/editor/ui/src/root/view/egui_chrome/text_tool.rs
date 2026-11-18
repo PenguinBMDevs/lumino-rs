@@ -12,17 +12,20 @@ use crate::root::Root;
 
 /// 预览纹理缓存签名。
 ///
-/// 任何会改变栅格结果的输入都必须计入：文字 / 模式 / 卷帘方向 / 排版路径 /
-/// 全部文字参数 / 字体。漏掉参数会让 egui 复用旧纹理——表现为「调参数预览不变」。
+/// 任何会改变栅格结果的输入都必须计入：文字 / 模式 / 排版路径 / 全部文字参数 /
+/// 字体（都在 `params` 与 `tt` 里），以及**采样几何与比例**——后者由
+/// [`lumino_ui_editor::Editor::text_raster_key`] 给出（snap / ppq / k / 格数 /
+/// `ss_x`,`ss_y`,`px_per_key`）。漏掉比例会让缩放后复用旧纹理。
 fn preview_signature(
+    editor: &lumino_ui_editor::Editor,
     tt: &lumino_editor_state::text_tool::TextToolState,
-    vertical: bool,
     width: u32,
     height: u32,
 ) -> String {
+    let raster = editor.text_raster_key().unwrap_or_default();
     format!(
-        "{width}x{height}:{}:{:?}:{vertical}:{:?}:{:?}:{}",
-        tt.text, tt.mode, tt.layout_mode, tt.params, tt.font_family
+        "{width}x{height}:{}:{:?}:{:?}:{:?}:{raster}",
+        tt.text, tt.mode, tt.layout_mode, tt.params
     )
 }
 
@@ -85,7 +88,7 @@ impl Root {
                 width: w as usize,
                 height: h as usize,
                 rgba: Arc::new(rgba),
-                sig: preview_signature(tt, editor.editor_state.is_vertical_roll, w, h),
+                sig: preview_signature(editor, tt, w, h),
             });
 
         let model = TextToolModel {
@@ -124,15 +127,40 @@ mod tests {
 
     #[test]
     fn test_preview_signature_tracks_params() {
+        let mut editor = lumino_ui_editor::Editor::new();
         let mut state = lumino_editor_state::text_tool::TextToolState::new();
-        let base = preview_signature(&state, false, 10, 20);
+        state.set_drag(0.0, 3840.0, 60, 64);
+        state.active = true;
+        state.text = "A".to_string();
+        editor.editor_state.text_tool = state.clone();
+        let base = preview_signature(&editor, &state, 10, 20);
 
         state.params.size += 1.0;
-        let changed = preview_signature(&state, false, 10, 20);
+        let changed = preview_signature(&editor, &state, 10, 20);
         assert_ne!(base, changed, "字号变化必须让预览重新栅格化");
 
         state.layout_mode = TextLayoutMode::Parametric;
-        let changed_mode = preview_signature(&state, false, 10, 20);
+        let changed_mode = preview_signature(&editor, &state, 10, 20);
         assert_ne!(changed, changed_mode, "排版路径变化必须重建预览");
+    }
+
+    /// UI-023：缩放改变 `k` ⇒ 采样比例变 ⇒ 预览签名必须变（否则复用旧纹理）。
+    #[test]
+    fn test_preview_signature_tracks_zoom() {
+        let mut editor = lumino_ui_editor::Editor::new();
+        let mut state = lumino_editor_state::text_tool::TextToolState::new();
+        state.set_drag(0.0, 3840.0, 60, 64);
+        state.active = true;
+        state.text = "A".to_string();
+        editor.editor_state.text_tool = state.clone();
+        let base = preview_signature(&editor, &state, 10, 20);
+
+        editor.editor_state.view.zoom_x *= 2.0;
+        let zoomed = preview_signature(&editor, &state, 10, 20);
+        assert_ne!(base, zoomed, "缩放变化必须让预览重新栅格化");
+
+        editor.editor_state.view.snap_precision *= 2.0;
+        let snapped = preview_signature(&editor, &state, 10, 20);
+        assert_ne!(zoomed, snapped, "音符精度变化必须让预览重新栅格化");
     }
 }

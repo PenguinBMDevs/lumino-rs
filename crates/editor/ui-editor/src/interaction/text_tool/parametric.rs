@@ -1,35 +1,62 @@
-//! 参数化文字光栅化（DRAW-029 · Parametric）
+//! 参数化文字光栅化（DRAW-029 · Parametric，UI-023 接入屏幕比例）
 //!
-//! 与 `LegacyBox` 路径并行：本模块只读 [`TextParams`]，不改变旧路径。坐标单位是
-//! 文本框采样格（1 key = `SS` 个像素），因此预览与音符仍共用同一份栅格。
+//! 与 `LegacyBox` 路径并行：本模块只读 [`TextParams`]，不改变旧路径的兼容行为。
+//! 坐标单位是**采样格**，每格像素宽高由 [`RasterScale`] 给出；字号 / 字距 / 加粗
+//! 一律按 `px_per_key`（buffer 像素 / 1 个 key）换算，不再假设方格。
 
 use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
 use lumino_core::{TextAlign, TextParams, TextUnit};
 
 use super::font::load_font_variant;
-use super::rasterize::SS;
+use super::rasterize::{InkRule, alpha_to_occupancy};
+use super::scale::RasterScale;
 
-/// 参数化文字灰度图（宽 = cols×SS，高 = rows×SS，行 0 = 顶部）
+/// 大写字母高度 / em 尺寸（同字体恒定；`Rows` 字号单位与 UI 单位换算共用）
+///
+/// 用 1000px 参考尺寸测 `H` 的墨迹高度，避免 1px 下的取整误差。
+pub(super) fn cap_ratio(font: &ab_glyph::FontArc) -> f32 {
+    const REFERENCE: f32 = 1000.0;
+    font.outline_glyph(
+        font.glyph_id('H')
+            .with_scale_and_position(PxScale::from(REFERENCE), AbPoint::default()),
+    )
+    .map(|outline| {
+        let b = outline.px_bounds();
+        ((b.max.y - b.min.y).max(1e-3)) / REFERENCE
+    })
+    .unwrap_or(0.7)
+}
+
+/// 按字体族 + 字重 + 斜体取 cap height 比例（取不到字体时返回 `None`）
+pub(super) fn cap_ratio_for(params: &TextParams) -> Option<f32> {
+    load_font_variant(&params.font, params.weight, params.italic).map(|font| cap_ratio(&font))
+}
+
+/// 参数化文字灰度图（宽 = `cols × ss_x`，高 = `rows × ss_y`，行 0 = 顶部）
 pub(crate) fn rasterize_glyph_alpha_params(
     text: &str,
     cols: usize,
     rows: usize,
     params: &TextParams,
+    scale: &RasterScale,
 ) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 || params.validate().is_err() {
         return None;
     }
     let font = load_font_variant(&params.font, params.weight, params.italic)?;
-    let w = (cols as u32) * SS;
-    let h = (rows as u32) * SS;
+    let w = scale.width(cols);
+    let h = scale.height(rows);
+    if w == 0 || h == 0 {
+        return None;
+    }
 
     // 1) 字号 → 像素：Font 单位直接按 keys；Rows 单位按大写 H 的高度换算。
-    let px_per_key = SS as f32;
+    let px_per_key = scale.px_per_key;
     let px_size = match params.unit {
         TextUnit::Font => params.size * px_per_key,
         TextUnit::Rows => {
-            // 用 1000px 参考尺寸测 cap height，避免 1px 下的取整误差。
-            let reference = 1000.0;
+            // 与旧实现同一算式（参考尺寸 1000px 测 cap height），保证旧形状逐字节兼容
+            let reference = 1000.0_f32;
             let cap = font
                 .outline_glyph(
                     font.glyph_id('H')
@@ -47,8 +74,8 @@ pub(crate) fn rasterize_glyph_alpha_params(
         return None;
     }
 
-    let scale = PxScale::from(px_size);
-    let scaled = font.as_scaled(scale);
+    let scale_px = PxScale::from(px_size);
+    let scaled = font.as_scaled(scale_px);
     let line_height =
         ((scaled.ascent() - scaled.descent()) * (params.leading / 100.0).max(0.01)).max(1.0);
     let tracking_px = params.tracking * px_per_key;
@@ -80,7 +107,7 @@ pub(crate) fn rasterize_glyph_alpha_params(
         for ch in line.chars() {
             let gid = font.glyph_id(ch);
             if let Some(outline) =
-                font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default()))
+                font.outline_glyph(gid.with_scale_and_position(scale_px, AbPoint::default()))
             {
                 let b = outline.px_bounds();
                 outline.draw(|px, py, alpha| {
@@ -108,47 +135,26 @@ pub(crate) fn rasterize_glyph_alpha_params(
     Some((w, h, buf))
 }
 
-/// 参数化占用网格：每个采样格按 threshold% 的子像素墨水判定
+/// 参数化占用网格：每个采样格按 threshold% 的 **key 轴覆盖率**判定
 pub(crate) fn rasterize_text_params(
     text: &str,
     cols: usize,
     rows: usize,
     params: &TextParams,
+    scale: &RasterScale,
 ) -> Option<Vec<Vec<bool>>> {
-    let (w, _h, buf) = rasterize_glyph_alpha_params(text, cols, rows, params)?;
-    Some(alpha_to_occupancy(&buf, w, cols, rows, params.threshold))
-}
-
-/// 灰度图 → 占用网格（纯函数，供阈值回归测试直接调用）
-pub(super) fn alpha_to_occupancy(
-    buf: &[u8],
-    width: u32,
-    cols: usize,
-    rows: usize,
-    threshold: f32,
-) -> Vec<Vec<bool>> {
-    let threshold = threshold.clamp(0.0, 100.0) / 100.0;
-    let mut occ = vec![vec![false; cols]; rows];
-    if cols == 0 || rows == 0 {
-        return occ;
-    }
-    for (r, row) in occ.iter_mut().enumerate() {
-        for (c, cell) in row.iter_mut().enumerate() {
-            let mut ink = 0u32;
-            for sy in 0..SS {
-                for sx in 0..SS {
-                    let x = c as u32 * SS + sx;
-                    let y = r as u32 * SS + sy;
-                    let idx = y as usize * width as usize + x as usize;
-                    if buf.get(idx).copied().unwrap_or(0) > 0 {
-                        ink += 1;
-                    }
-                }
-            }
-            *cell = ink > 0 && (ink as f32 / (SS * SS) as f32) >= threshold;
+    let (_w, _h, buf) = rasterize_glyph_alpha_params(text, cols, rows, params, scale)?;
+    let threshold = params.threshold.clamp(0.0, 100.0) / 100.0;
+    let rule = if scale.legacy {
+        // 旧 `TextOp` 的 Parametric 分支：面积占比、含等号（历史口径）
+        InkRule::Area {
+            threshold,
+            inclusive: true,
         }
-    }
-    occ
+    } else {
+        InkRule::KeyAxis { threshold }
+    };
+    Some(alpha_to_occupancy(&buf, cols, rows, scale, rule))
 }
 
 /// 对灰度图做方形核膨胀/腐蚀（`grow > 0` 变粗，`< 0` 变细）
@@ -181,21 +187,96 @@ fn grow_alpha(buf: &mut [u8], w: u32, h: u32, radius: i32, dilate: bool) {
 mod tests {
     use super::*;
 
+    /// 默认横向比例（snap=1920、ppq=480、k=0.4167 ⇒ 时间格 : key = 9.6 : 1）
+    fn default_scale(cols: usize, rows: usize) -> RasterScale {
+        RasterScale::from_k(false, 1920.0, 480.0, 20.0 / (480.0 * 0.1), cols, rows)
+    }
+
+    /// 墨迹 bbox（`(x0, y0, x1, y1)`，含端点）；无墨迹时返回 `None`
+    fn ink_bbox(buf: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+        let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+        for y in 0..h {
+            for x in 0..w {
+                if buf[y * w + x] > 0 {
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                }
+            }
+        }
+        (x0 != usize::MAX).then_some((x0, y0, x1, y1))
+    }
+
     #[test]
     fn test_threshold_moves_occupancy_boundary() {
+        // 4×4 采样格、每格 4×4 子像素：首格填一半子像素行，第二格只填 1 个子像素
         let mut buf = vec![0u8; 16 * 16];
-        // 第一个 4x4 格填一半，第二个只填 1/16
         for y in 0..2 {
             for x in 0..4 {
                 buf[y * 16 + x] = 255;
             }
         }
         buf[4] = 255;
-        let low = alpha_to_occupancy(&buf, 16, 4, 4, 25.0);
-        let high = alpha_to_occupancy(&buf, 16, 4, 4, 60.0);
+        let scale = RasterScale::legacy(false);
+        let area = |threshold: f32| {
+            alpha_to_occupancy(
+                &buf,
+                4,
+                4,
+                &scale,
+                InkRule::Area {
+                    threshold,
+                    inclusive: true,
+                },
+            )
+        };
+        let low = area(0.25);
+        let high = area(0.6);
         assert!(low[0][0], "25% 阈值应保留半个格");
         assert!(!high[0][0], "60% 阈值应剔除半个格");
         assert!(!low[1][0], "1/16 墨水不应通过 25% 阈值");
+
+        // key 轴覆盖率：横向看 y，首格 2/4 行有墨 → 50%
+        let key_low = alpha_to_occupancy(&buf, 4, 4, &scale, InkRule::KeyAxis { threshold: 0.5 });
+        let key_high = alpha_to_occupancy(&buf, 4, 4, &scale, InkRule::KeyAxis { threshold: 0.6 });
+        assert!(key_low[0][0], "50% key 轴覆盖率应保留两行墨");
+        assert!(!key_high[0][0], "60% key 轴覆盖率应剔除两行墨");
+    }
+
+    /// key 轴覆盖率必须比面积覆盖率更「抗稀释」：
+    /// 非正方形采样（38:4）下，一条细竖笔的面积占比约 1/38，但 key 轴覆盖率是 100%。
+    #[test]
+    fn test_key_axis_coverage_beats_area_on_thin_stroke() {
+        let scale = default_scale(1, 4); // 横向：1 时间格 × 4 key，ss = 38.4 × 4
+        let w = scale.width(1) as usize;
+        let h = scale.height(4) as usize;
+        assert_eq!((w, h), (38, 16), "默认比例下 1 时间格 = 38px、4 key = 16px");
+        // 1px 竖笔：横向上只占 1/38，纵向上贯穿全部 4 个 key
+        let mut buf = vec![0u8; w * h];
+        for y in 0..h {
+            buf[y * w + 18] = 255;
+        }
+        let area = alpha_to_occupancy(
+            &buf,
+            1,
+            4,
+            &scale,
+            InkRule::Area {
+                threshold: 0.5,
+                inclusive: true,
+            },
+        );
+        assert!(
+            area.iter().flatten().all(|on| !on),
+            "面积覆盖率下 1px 竖笔必然全丢（这正是 #273 的病灶）"
+        );
+        let key_axis = alpha_to_occupancy(&buf, 1, 4, &scale, InkRule::KeyAxis { threshold: 0.5 });
+        let on = key_axis.iter().flatten().filter(|on| **on).count();
+        assert_eq!(
+            on, 4,
+            "key 轴覆盖率下 4 个 key 都必须保留（第 {on} 个丢失）"
+        );
     }
 
     #[test]
@@ -224,14 +305,22 @@ mod tests {
             threshold: 10.0,
             ..TextParams::default()
         };
-        let Some((_w, _h, buf)) = rasterize_glyph_alpha_params("O", 24, 24, &params) else {
+        let scale = default_scale(24, 24);
+        let Some((w, h, buf)) = rasterize_glyph_alpha_params("O", 24, 24, &params, &scale) else {
             return;
         };
-        let w = 24 * SS;
-        let center = (12 * SS) as usize * w as usize + (12 * SS) as usize;
+        let (w, h) = (w as usize, h as usize);
+        let Some((x0, y0, x1, y1)) = ink_bbox(&buf, w, h) else {
+            return;
+        };
+        assert!(x1 > x0 && y1 > y0, "O 必须有墨迹");
+        let center = ((y0 + y1) / 2) * w + (x0 + x1) / 2;
         assert_eq!(buf[center], 0, "O 的中心洞必须保持为空（nonzero）");
     }
 
+    /// `TextUnit::Rows` 的语义是「大写高度占多少 key」：`H` 的墨迹高度应 ≈ 8 个 key。
+    ///
+    /// 横向卷帘下 key 轴是 Y，故量墨迹的 y 跨度；容差 10% 对应验收标准。
     #[test]
     fn test_rows_unit_scales_to_requested_cap_height() {
         let params = TextParams {
@@ -240,13 +329,32 @@ mod tests {
             threshold: 0.0,
             ..TextParams::default()
         };
-        let Some(occ) = rasterize_text_params("H", 24, 24, &params) else {
+        let scale = default_scale(24, 24);
+        let Some((w, h, buf)) = rasterize_glyph_alpha_params("H", 24, 24, &params, &scale) else {
             return;
         };
-        let rows_on = occ.iter().filter(|row| row.iter().any(|&on| on)).count();
+        let (w, h) = (w as usize, h as usize);
+        let Some((_, y0, _, y1)) = ink_bbox(&buf, w, h) else {
+            return;
+        };
+        let ink_h = (y1 - y0 + 1) as f32;
+        let expected = params.size * scale.px_per_key;
         assert!(
-            (7..=9).contains(&rows_on),
-            "unit=Rows should make H about 8 keys tall, got {rows_on}"
+            (ink_h - expected).abs() / expected <= 0.1,
+            "unit=Rows 时 H 的墨迹高度应约 {expected}px（8 key），实际 {ink_h}px"
+        );
+    }
+
+    /// `cap_ratio` 是单位换算与 Rows 排版的共同基准，必须落在字体的合理区间
+    #[test]
+    fn test_cap_ratio_is_plausible() {
+        let Some(font) = super::super::font::load_font("Microsoft YaHei") else {
+            return;
+        };
+        let ratio = cap_ratio(&font);
+        assert!(
+            (0.5..1.2).contains(&ratio),
+            "cap height / em 比例应在合理范围，实际 {ratio}"
         );
     }
 }

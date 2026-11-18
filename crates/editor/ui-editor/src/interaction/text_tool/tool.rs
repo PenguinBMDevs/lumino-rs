@@ -1,7 +1,9 @@
-use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid};
+use super::{
+    GlyphGrid, RasterScale, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid,
+};
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOp};
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOpV2};
 use lumino_editor_state::text_tool::TextToolMode;
 use lumino_editor_state::{ShapeNote, note_to_event};
 use lumino_note_core::history::CreateOp;
@@ -15,18 +17,28 @@ impl Editor {
         }
     }
 
-    /// ??????????????????????
+    /// 文字工具：写入面板参数并**自动切到 Parametric**
     ///
-    /// ????????? Parametric?LegacyBox ?????????????
+    /// 自动切换是有意保留的：面板 Mode 行即时显示当前路径，用户看得见，不算「静默」。
+    /// 单位在 Font ⇄ Rows 之间切换时按同字体 cap height 比例换算字号，保持观感。
     pub(crate) fn set_text_params(&mut self, params: lumino_core::TextParams) {
         if params.validate().is_err() {
             return;
+        }
+        let prev = self.editor_state.text_tool.params.clone();
+        let mut params = params;
+        if params.unit != prev.unit {
+            // 单位换算：`rows = font × cap_ratio`，反向除；clamp 4..96
+            if let Some(ratio) = super::parametric::cap_ratio_for(&params) {
+                params.size =
+                    lumino_core::shape::convert_size_unit(prev.size, prev.unit, params.unit, ratio);
+            }
         }
         self.editor_state.text_tool.params = params;
         self.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
     }
 
-    /// ??????? LegacyBox / Parametric
+    /// 文字工具：显式切换排版路径 LegacyBox / Parametric
     pub(crate) fn set_text_layout_mode(&mut self, mode: lumino_core::TextLayoutMode) {
         self.editor_state.text_tool.layout_mode = mode;
     }
@@ -64,7 +76,7 @@ impl Editor {
         if !self.text_tool_allowed() {
             return;
         }
-        // ????????????????????????????????
+        // 尚未拉框：落点若命中已 Bake 的文字形状，直接消费事件（只读，见下）
         if !self.editor_state.text_tool.active {
             let tick = self.pos_to_tick(pos);
             let key = self.pos_to_key(pos);
@@ -170,17 +182,20 @@ impl Editor {
         self.editor_state.text_tool.move_to(cur_tick, cur_key, snap);
     }
 
-    /// 文字工具：确认生成音符（√ 按钮）
+    /// 确认时按字形占位采样生成音符（√ 按钮）
     ///
     /// 按字形占位采样（轴角色见 [`GlyphGrid`]，横向/纵向各按视图轴向挂载，保证文字正着读）：
     /// 正常模式：每个有墨水的采样格生成一个音符，长度 = 音符精度；
     /// key 范围合并模式：**沿时间轴**把连续墨水合并为一个音符，任意空隙断开
     /// （不合并本应分开的笔画）。
     ///
+    /// 预览与确认共用 [`Self::text_tool_grid_scale`]：同一文本（只按 `trim()` 判空，
+    /// 不改写内容）、同一字体、同一采样比例——「看到的就是生成的」。
+    ///
     /// 成功后清空文本框与编辑历史，写入当前轨并进入撤销栈。返回是否生成了音符。
     pub(crate) fn confirm_text_tool(&mut self) -> bool {
         let tt = self.editor_state.text_tool.clone();
-        if !tt.has_content() {
+        if !tt.active || tt.text.trim().is_empty() {
             return false;
         }
         // Conductor 音轨（track 0）禁止放置音符：与铅笔等工具（finish_drawing）一致，
@@ -190,12 +205,11 @@ impl Editor {
             return false;
         }
         let snap = self.editor_state.view.snap_precision;
-        // 轴角色的唯一决定点：预览（`grid/text_tool_box`）与生成必须用同一个 grid
-        let grid = GlyphGrid::from_state(&tt, snap, self.editor_state.is_vertical_roll);
-        if grid.cols == 0 || grid.rows == 0 {
+        // 轴角色 + 采样比例的唯一决定点：预览（`grid/text_tool_box`）与生成必须同一份
+        let Some((grid, scale)) = self.text_tool_grid_scale() else {
             return false;
-        }
-        let occupancy = match rasterize_text_for_tool(&tt, grid.cols, grid.rows) {
+        };
+        let occupancy = match rasterize_text_for_tool(&tt, &tt.text, &grid, &scale) {
             Some(o) => o,
             None => return false,
         };
@@ -212,7 +226,7 @@ impl Editor {
         let mut create_ops = Vec::with_capacity(notes.len());
         for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
-            // ?????redo ?????undo ??????????? ID??
+            // 带稳定 ID 逐条插入：redo 复用同一批 ID，撤销/重做保持幂等
             if self
                 .editor_state
                 .data
@@ -256,6 +270,50 @@ impl Editor {
         true
     }
 
+    /// 文字工具的采样网格 + 栅格比例（预览 / 确认 / 重烘焙的统一入口）
+    ///
+    /// 比例权威是**实时视图**的 `k = zoom_y / (ppq × zoom_x)`；制字时把它冻结进
+    /// `TextOpV2.k`，重烘焙就不再随当前缩放漂移。
+    pub(crate) fn text_tool_grid_scale(&self) -> Option<(GlyphGrid, RasterScale)> {
+        let tt = &self.editor_state.text_tool;
+        let grid = GlyphGrid::from_state(
+            tt,
+            self.editor_state.view.snap_precision,
+            self.editor_state.is_vertical_roll,
+        );
+        if grid.cols == 0 || grid.rows == 0 {
+            return None;
+        }
+        let scale = RasterScale::from_k(
+            grid.vertical,
+            grid.tick_step,
+            f32::from(self.editor_state.view.ppq),
+            self.live_arc_k() as f32,
+            grid.cols,
+            grid.rows,
+        );
+        Some((grid, scale))
+    }
+
+    /// 栅格签名：任何会改变采样结果的几何 / 比例输入
+    ///
+    /// 预览纹理缓存按它失效——漏掉 snap / zoom / k 会让缩放后复用旧纹理。
+    pub fn text_raster_key(&self) -> Option<String> {
+        let (grid, scale) = self.text_tool_grid_scale()?;
+        Some(format!(
+            "{}x{}:snap{:.3}:v{}:k{:.6}:ppq{:.1}:ss{:.4}x{:.4}:ppk{:.4}",
+            grid.cols,
+            grid.rows,
+            grid.tick_step,
+            grid.vertical,
+            self.live_arc_k(),
+            self.editor_state.view.ppq,
+            scale.ss_x,
+            scale.ss_y,
+            scale.px_per_key,
+        ))
+    }
+
     /// 由文本框几何与参数构造新的文字形状模型（Bake 时登记）
     fn build_text_shape_model(
         &self,
@@ -263,7 +321,9 @@ impl Editor {
         track: usize,
         snap: f32,
     ) -> ShapeModel {
-        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0);
+        // 视图比例随形状冻结：重烘焙必须复现制字时的屏幕格比例
+        let k = self.live_arc_k() as f32;
+        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, k);
         model.track = track as u16;
         model.kind = ShapeKind::Custom;
         let (tick_lo, tick_hi) = tt.normalized_ticks();
@@ -274,14 +334,17 @@ impl Editor {
             tick_hi,
             key_hi as f32,
         ));
-        model.ops.retain(|op| !matches!(op, ShapeOp::Text(_)));
-        model.ops.push(ShapeOp::Text(TextOp {
+        model
+            .ops
+            .retain(|op| !matches!(op, ShapeOp::Text(_) | ShapeOp::TextV2(_)));
+        model.ops.push(ShapeOp::TextV2(TextOpV2 {
             text: tt.text.clone(),
             params: tt.params.clone(),
             layout: tt.layout_mode,
             snap,
             merged: tt.mode.is_merged(),
             vertical: self.editor_state.is_vertical_roll,
+            k,
         }));
         model.name = tt.text.chars().take(32).collect();
         model

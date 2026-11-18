@@ -61,6 +61,9 @@ fn scale_op(op: &mut ShapeOp, factor: f64, depth: usize) -> Result<(), ShareErro
             }
         }
         ShapeOp::Text(op) => scale_tick(&mut op.snap, factor),
+        // UI-023：文字精度同样按 tick 存储，跨 PPQ 分享必须同步换算；
+        // `k` 是无量纲比例（beats per key），不随 PPQ 变。
+        ShapeOp::TextV2(op) => scale_tick(&mut op.snap, factor),
         ShapeOp::Funnel(params) => {
             for line in &mut params.lines {
                 for point in line {

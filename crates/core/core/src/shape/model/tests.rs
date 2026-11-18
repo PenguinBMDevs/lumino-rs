@@ -5,10 +5,10 @@ use crate::shape::{
     BetweenParams, BetweenRole, BetweenSet, ChopParams, ClawParams, CopyMode, CopyPathParams,
     CycleBy, CycleParams, DrawingParams, FunnelParams, GateRangeParams, GlueParams, JoinedParams,
     LiveShapeParams, MaskMode, MaskParams, MaskShow, MergeParams, NestedParams, OpStage,
-    PatternParams, PolyStyle, PolygonParams, RangeDir, RowRestart, ShapeFill, ShapeGeometry,
-    ShapeKind, ShapeRect, ShapeStyle, StopsParams, StraightenParams, Stroke, StrokeKind,
-    StrokeRole, StrumParams, SustainParams, Sym, SymAxis, SymParams, TilesParams, TumourParams,
-    VelocityEnv,
+    PatternParams, PolyStyle, PolygonParams, RangeDir, RoundShapeParams, RowRestart, ShapeFill,
+    ShapeGeometry, ShapeKind, ShapeRect, ShapeStyle, StopsParams, StraightenParams, Stroke,
+    StrokeKind, StrokeRole, StrumParams, SustainParams, Sym, SymAxis, SymParams, TextLayoutMode,
+    TextOp, TextOpV2, TextParams, TilesParams, TumourParams, VelocityEnv,
 };
 
 fn sample_shape() -> ShapeModel {
@@ -877,4 +877,46 @@ fn test_decode_garbage_returns_error_not_panic() {
         bincode::deserialize::<ShapeModel>(&bytes).is_err(),
         "垃圾字节应解码失败而不是 panic"
     );
+}
+
+/// UI-023：`TextV2` 追加在 `ShapeOp` 末尾，旧变体的 bincode 判别序号不得漂移。
+///
+/// bincode 1.3 的 `serialize` 用 fixint 小端把枚举判别写成 `u32`：这里直接断言旧变体
+/// 的首 4 字节，任何「插到中间」的重排都会让旧工程解出错误语义。
+#[test]
+fn test_shape_op_text_v2_tail_append_is_backward_compatible() {
+    fn tag(op: &ShapeOp) -> u32 {
+        let bytes = bincode::serialize(op).expect("ShapeOp 应可序列化");
+        u32::from_le_bytes(bytes[..4].try_into().expect("枚举判别应占 4 字节"))
+    }
+
+    // 追加前的判别序号：Noop = 0、Text = 24、RoundShape = 27（旧的末尾变体）。
+    assert_eq!(tag(&ShapeOp::Noop), 0, "Noop 判别序号不得漂移");
+    let text = ShapeOp::Text(TextOp {
+        text: "LUMINO".to_string(),
+        params: TextParams::default(),
+        layout: TextLayoutMode::LegacyBox,
+        snap: 480.0,
+        merged: false,
+        vertical: false,
+    });
+    assert_eq!(tag(&text), 24, "Text 判别序号不得漂移");
+    let round_shape = ShapeOp::RoundShape(RoundShapeParams::default());
+    assert_eq!(tag(&round_shape), 27, "RoundShape 判别序号不得漂移");
+
+    // 新变体必须落在末尾（28）；旧变体的字节仍应原样解码。
+    let text_v2 = ShapeOp::TextV2(TextOpV2 {
+        text: "LUMINO".to_string(),
+        params: TextParams::default(),
+        layout: TextLayoutMode::Parametric,
+        snap: 480.0,
+        merged: false,
+        vertical: false,
+        k: 0.4167,
+    });
+    assert_eq!(tag(&text_v2), 28, "TextV2 应追加在末尾（第 28 个变体）");
+
+    let bytes = bincode::serialize(&round_shape).expect("RoundShape 应可序列化");
+    let back: ShapeOp = bincode::deserialize(&bytes).expect("旧变体字节应可解码");
+    assert_eq!(back, round_shape, "尾插后旧变体字节应原样解码");
 }
