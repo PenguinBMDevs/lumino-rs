@@ -1,81 +1,12 @@
-//! MIDI 音轨名称扫描与文本解码
+//! MIDI 文件头扫描与文本解码
 //!
-//! 从 `document.rs` 中提取的独立模块，负责轻量扫描原始 MIDI 字节并提取音轨名称。
+//! 从 `document.rs` 中提取的独立模块：轻量读取文件头（track_count / division）
+//! 与解码 meta 文本（TrackName 等）。
+//!
+//! TrackName 的提取已改由 midly 快路径直接带出
+//! （`TrackAllEvents.track_name`），本模块不再做第二次全量扫描。
 
 use encoding_rs::*;
-
-/// 读取 VLQ（Variable Length Quantity）编码的值
-fn read_vlq(data: &[u8], pos: &mut usize, end: usize) -> u32 {
-    let mut value: u32 = 0;
-    while *pos < end {
-        let byte = data[*pos];
-        *pos += 1;
-        value = (value << 7) | (byte & 0x7F) as u32;
-        if byte & 0x80 == 0 {
-            break;
-        }
-    }
-    value
-}
-
-/// 在单个 MTrk chunk 中扫描 TrackName 事件
-fn scan_track_name_in_chunk(data: &[u8], chunk_start: usize, chunk_end: usize) -> Option<String> {
-    let mut pos = chunk_start;
-    let mut last_status: u8 = 0;
-
-    while pos < chunk_end {
-        let _delta = read_vlq(data, &mut pos, chunk_end);
-        if pos >= chunk_end {
-            break;
-        }
-
-        let mut status = data[pos];
-        if status >= 0x80 {
-            pos += 1;
-            if status < 0xF0 {
-                last_status = status;
-            }
-        } else {
-            status = last_status;
-        }
-
-        match status {
-            0xFF => {
-                if pos >= chunk_end {
-                    break;
-                }
-                let meta_type = data[pos];
-                pos += 1;
-                let meta_len = read_vlq(data, &mut pos, chunk_end);
-                let end = (pos + meta_len as usize).min(chunk_end);
-
-                if meta_type == 0x03 {
-                    let name_bytes = &data[pos..end];
-                    let name = decode_midi_text(name_bytes);
-                    if !name.is_empty() {
-                        return Some(name);
-                    }
-                }
-                pos = end;
-            }
-            0xF0 | 0xF7 => {
-                let sysex_len = read_vlq(data, &mut pos, chunk_end);
-                pos = (pos + sysex_len as usize).min(chunk_end);
-            }
-            0xF8..=0xFE => {}
-            _ if status < 0xF0 => {
-                let skip = match status & 0xF0 {
-                    0xC0 | 0xD0 => 1,
-                    0x80 | 0x90 | 0xA0 | 0xB0 | 0xE0 => 2,
-                    _ => 0,
-                };
-                pos = (pos + skip).min(chunk_end);
-            }
-            _ => break,
-        }
-    }
-    None
-}
 
 /// 如果数据有 RIFF wrapper，返回 MThd 起始位置之后的切片；否则返回原切片。
 fn midi_data_after_riff(data: &[u8]) -> Option<&[u8]> {
@@ -113,69 +44,6 @@ pub fn scan_header_info(data: &[u8]) -> Option<(u16, u16)> {
     let track_count = u16::from_be_bytes([midi_data[10], midi_data[11]]);
     let division = u16::from_be_bytes([midi_data[12], midi_data[13]]);
     Some((track_count, division))
-}
-
-/// 轻量扫描原始 MIDI 字节，提取所有音轨的 TrackName 事件。
-/// 使用 encoding_rs 自动检测编码（UTF-8 → Shift-JIS → GBK → Latin-1）。
-pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
-    if data.len() < 14 {
-        return Vec::new();
-    }
-
-    let stripped_data = match midi_data_after_riff(data) {
-        Some(d) => d,
-        None => return Vec::new(),
-    };
-
-    if stripped_data.len() < 14 {
-        return Vec::new();
-    }
-
-    let header_len = u32::from_be_bytes([
-        stripped_data[4],
-        stripped_data[5],
-        stripped_data[6],
-        stripped_data[7],
-    ]) as usize;
-    let track_count = u16::from_be_bytes([stripped_data[10], stripped_data[11]]) as usize;
-    let header_total = 8 + header_len;
-    if header_total > stripped_data.len() {
-        return Vec::new();
-    }
-
-    let mut track_names = vec![None; track_count];
-    let mut track_idx = 0;
-    let mut offset = header_total;
-
-    while track_idx < track_count && offset + 8 <= stripped_data.len() {
-        if &stripped_data[offset..offset + 4] != b"MTrk" {
-            let chunk_len = u32::from_be_bytes(
-                stripped_data[offset + 4..offset + 8]
-                    .try_into()
-                    .unwrap_or([0; 4]),
-            ) as usize;
-            offset += 8 + chunk_len;
-            continue;
-        }
-
-        let chunk_len = u32::from_be_bytes(
-            stripped_data[offset + 4..offset + 8]
-                .try_into()
-                .unwrap_or([0; 4]),
-        ) as usize;
-        offset += 8;
-        let track_end = (offset + chunk_len).min(stripped_data.len());
-
-        let name = scan_track_name_in_chunk(stripped_data, offset, track_end);
-        if let Some(n) = name {
-            track_names[track_idx] = Some(n);
-        }
-
-        track_idx += 1;
-        offset = track_end;
-    }
-
-    track_names
 }
 
 /// 解码 MIDI 文本（尝试 UTF-8 → Shift-JIS → GBK → EUC-JP → Latin-1）
@@ -233,71 +101,24 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_track_names_empty() {
-        let names = scan_track_names(&[]);
-        assert!(names.is_empty());
-    }
-
-    #[test]
-    fn test_scan_track_names_invalid() {
-        let names = scan_track_names(b"NOTMIDI");
-        assert!(names.is_empty());
-    }
-
-    #[test]
-    fn test_scan_track_names_single_track() {
+    fn test_scan_header_info_smf_and_riff() {
+        // 裸 SMF：MThd + len=6 + format 0 + 1 轨 + division 480。
         let header = [
             0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
-        let track = [
-            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0F, 0x00, 0xFF, 0x03, 0x05, 0x50, 0x69,
-            0x61, 0x6E, 0x6F, 0x00, 0xFF, 0x2F, 0x00,
-        ];
-        let mut midi = Vec::new();
-        midi.extend_from_slice(&header);
-        midi.extend_from_slice(&track);
+        assert_eq!(scan_header_info(&header), Some((1, 480)));
 
-        let names = scan_track_names(&midi);
-        assert_eq!(names.len(), 1);
-        assert_eq!(names[0], Some("Piano".to_string()));
-    }
-
-    #[test]
-    fn test_scan_track_names_no_track_name() {
-        let header = [
-            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
-        ];
-        let track = [
-            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x04, 0x00, 0xFF, 0x2F, 0x00,
-        ];
-        let mut midi = Vec::new();
-        midi.extend_from_slice(&header);
-        midi.extend_from_slice(&track);
-
-        let names = scan_track_names(&midi);
-        assert_eq!(names.len(), 1);
-        assert_eq!(names[0], None);
-    }
-
-    #[test]
-    fn test_scan_track_names_riff_wrapper() {
+        // RIFF wrapper：MThd 位于 +12，必须被正确剥离。
         let riff_header = [
             0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x52, 0x4D, 0x49, 0x44,
         ];
-        let mthd = [
-            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
-        ];
-        let track = [
-            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0F, 0x00, 0xFF, 0x03, 0x05, 0x50, 0x69,
-            0x61, 0x6E, 0x6F, 0x00, 0xFF, 0x2F, 0x00,
-        ];
         let mut midi = Vec::new();
         midi.extend_from_slice(&riff_header);
-        midi.extend_from_slice(&mthd);
-        midi.extend_from_slice(&track);
+        midi.extend_from_slice(&header);
+        assert_eq!(scan_header_info(&midi), Some((1, 480)));
 
-        let names = scan_track_names(&midi);
-        assert_eq!(names.len(), 1);
-        assert_eq!(names[0], Some("Piano".to_string()));
+        // 非法 / 过短输入。
+        assert_eq!(scan_header_info(&[]), None);
+        assert_eq!(scan_header_info(b"NOTMIDI"), None);
     }
 }
