@@ -197,10 +197,10 @@ pub struct SpeedChangeModel {
 /// 工程设置对话框：全部文案与只读值由生产侧预计算。
 #[derive(Debug, Clone, Default)]
 pub struct ProjectSettingsModel {
-    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时 旧版 绘制）。
+    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时由 egui 绘制）。
     ///
-    /// egui 只接管标题栏以下的内容区；标题栏（红绿灯 / 拖动）仍由 旧版 绘制，
-    /// 避免遮掉窗口控制按钮。
+    /// egui 的 `chrome::popup_titlebar` 负责标题栏（红绿灯 / 拖动）；本模块只画
+    /// 标题栏以下的内容区，避免遮掉窗口控制按钮。
     pub titlebar: bool,
     /// 窗口标题「工程信息设置」。
     pub title: String,

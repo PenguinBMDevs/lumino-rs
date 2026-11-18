@@ -74,8 +74,8 @@ pub fn show(ui: &mut egui::Ui, model: &ProjectSettingsModel) {
     crate::fonts::install(ui.ctx());
 
     let rect = ui.max_rect();
-    // 自制标题栏由 旧版 绘制（红绿灯 + 拖动区）：egui 只画标题栏以下的内容区，
-    // 否则会把窗口控制按钮盖掉（功能削减）。
+    // 自制标题栏（红绿灯 + 拖动区）由 egui 绘制（`chrome::popup_titlebar`）：
+    // 本模块只画标题栏以下的内容区，避免盖掉窗口控制按钮。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {

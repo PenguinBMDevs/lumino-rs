@@ -459,8 +459,9 @@ impl Host {
             == crate::state::root_state::DialogType::ShapeDrawer)
             .then(|| {
                 let width = self.root.state.shape_drawer.panel_width;
-                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 旧版 仍画 30px 自制标题栏，
-                // 因此这里按 `use_native_titlebar` 判断（与画布动作端的 rect 同源）。
+                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 egui 仍画 30px
+                // 自制标题栏（`chrome::popup_titlebar`），因此这里按 `use_native_titlebar`
+                // 判断（与画布动作端的 rect 同源）。
                 let top = if self.root.settings.synth.use_native_titlebar {
                     0.0
                 } else {

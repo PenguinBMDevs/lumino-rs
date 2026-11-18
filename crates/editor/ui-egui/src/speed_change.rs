@@ -69,7 +69,7 @@ pub fn show(ui: &mut egui::Ui, model: &SpeedChangeModel) {
     crate::fonts::install(ui.ctx());
 
     let rect = ui.max_rect();
-    // 自制标题栏（红绿灯 / 拖动）由 旧版 绘制：egui 只画标题栏以下内容区。
+    // 顶部 30px 自制标题栏由 egui 绘制（`chrome::popup_titlebar`），本模块让出该区域。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {
