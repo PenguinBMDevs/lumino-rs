@@ -3,6 +3,9 @@
 //! 与 `lumino-gfx::profiling` / `lumino-export::video::profiling` 同一套宏语义
 //! （macro_rules 无法跨 crate 复用，保持小份重复优于引入公共 crate）。
 //! 统一命名：`app.*`（Runner/导出线程）、`gfx.*`（渲染线程）、`ffmpeg.*`（管道）。
+//!
+//! 使用约定：块级宏不要直接放进 `if` / `while` 条件——未启用 `tracy` feature
+//! 时展开为块表达式，会触发 `clippy::blocks_in_conditions`；先绑定到变量再判断。
 
 /// 块级 zone：`$body` 的执行耗时计入同名 Tracy zone，并原样返回其值。
 #[cfg(feature = "tracy")]

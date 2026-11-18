@@ -9,7 +9,9 @@
 //!
 //! 使用约定（与 `crates/audio/midi-io/src/profiling.rs` 一致）：
 //! - 固定名字用字面量（`span_location!` / `plot_name!` 内联静态存储，无运行时分配）；
-//! - zone 名字统一带模块前缀（`gfx.` / `app.` / `ffmpeg.`），Tracy 时间轴里可读。
+//! - zone 名字统一带模块前缀（`gfx.` / `app.` / `ffmpeg.`），Tracy 时间轴里可读；
+//! - 块级宏不要直接放进 `if` / `while` 条件——未启用 `tracy` feature 时展开为块，
+//!   会触发 `clippy::blocks_in_conditions`；先绑定到变量再判断。
 
 /// 块级 zone：`$body` 的执行耗时计入同名 Tracy zone，并原样返回其值。
 #[cfg(feature = "tracy")]

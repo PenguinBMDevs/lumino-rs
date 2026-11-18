@@ -104,9 +104,12 @@ impl<'a> FramePipeline<'a> {
                 cancelled = true;
                 break;
             }
-            if crate::profiling::tracy_zone!("app.pipeline.prefill", {
+            // 先绑变量再判断：zone 宏在默认构建（无 tracy）展开为块表达式，
+            // 直接放进 if 条件会触发 clippy::blocks_in_conditions。
+            let enqueue_cancelled = crate::profiling::tracy_zone!("app.pipeline.prefill", {
                 enqueue(self.param_queue, next_frame_to_send)
-            }) {
+            });
+            if enqueue_cancelled {
                 cancelled = true;
                 break;
             }
@@ -167,9 +170,10 @@ impl<'a> FramePipeline<'a> {
 
             // 维持流水线深度：每处理完一帧立即补发下一帧命令
             if next_frame_to_send < total_frames {
-                if crate::profiling::tracy_zone!("app.pipeline.enqueue", {
+                let enqueue_cancelled = crate::profiling::tracy_zone!("app.pipeline.enqueue", {
                     enqueue(self.param_queue, next_frame_to_send)
-                }) {
+                });
+                if enqueue_cancelled {
                     cancelled = true;
                     break;
                 }
