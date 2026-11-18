@@ -340,6 +340,11 @@ impl RunnerInner {
         // 先取端口布局（handler 会 move 走 document）
         let midi_max_port = parsed.document.as_ref().map_or(0, |doc| doc.max_port());
 
+        // 加载后诊断：EOT 之后仍有事件的轨 → 导入 toast（不阻断，可关闭/自动消失）
+        let after_eot = parsed.timing_report.tracks_with_events_after_eot();
+        let timing_report = parsed.timing_report.clone();
+        self.midi_state.timing_report = timing_report;
+
         // 导入文档（`MidiHandler::import_midi_to_editor` 开头先
         // `reset_playback_manager` 停播，再设置文档）
         {
@@ -347,6 +352,16 @@ impl RunnerInner {
             self.midi_state
                 .midi_handler
                 .import_midi_to_editor(ui, parsed);
+
+            if after_eot > 0 {
+                ui.root_mut().toast.push(
+                    lumino_ui::toast::ToastLevel::Warning,
+                    trf!(
+                        "导入完成：{n} 条轨在 End-of-Track 之后仍有事件（兼容模式已保留数据，导出前可裁剪）",
+                        n = after_eot
+                    ),
+                );
+            }
         }
 
         // REND-002：停播后再按文档端口布局强制重建合成管线（清上一文档通道模态），

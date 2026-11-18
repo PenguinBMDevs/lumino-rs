@@ -119,6 +119,25 @@ impl MidiDocument {
         Ok((doc, division, notes))
     }
 
+    /// 严格模式加载：任一轨在 EOT 之后仍有事件时返回 [`LoaderError::EotViolation`]。
+    ///
+    /// 默认加载（[`Self::from_notes_bytes`]）**不受影响**：兼容模式保留 EOT 后事件。
+    /// 语义与 [`LoadTimingReport::is_strict_clean`] 一致（悬挂音符不算违规）。
+    ///
+    /// 成本说明：严格模式先完整构建文档再判定；对畸形大文件会白做一次构建。
+    /// 目前真实素材零触发，暂不做「浅扫描预检」。
+    pub fn from_notes_bytes_strict(
+        file_bytes: &[u8],
+        progress: Option<&dyn Fn(f64)>,
+    ) -> LoaderResult<(Self, u16, u64, crate::eot::LoadTimingReport)> {
+        let out = Self::from_notes_bytes_with_timing(file_bytes, progress)?;
+        let violations = out.3.tracks_with_events_after_eot();
+        if violations > 0 {
+            return Err(LoaderError::EotViolation { tracks: violations });
+        }
+        Ok(out)
+    }
+
     /// 与 [`Self::from_notes_bytes`] 相同，但额外返回逐轨 EOT / 悬挂音符诊断。
     ///
     /// 报告只含诊断信息（不参与文档语义）；是否提示/裁剪由调用方决定。

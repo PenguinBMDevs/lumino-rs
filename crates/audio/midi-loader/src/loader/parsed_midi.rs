@@ -103,12 +103,13 @@ pub async fn load_parsed_midi(
             let mut parsed = lmpj_data.to_parsed_midi();
             if let Some(midi_bytes) = midi_bytes {
                 match build_document_from_midi_bytes(&midi_bytes, track_count) {
-                    Ok(doc) => {
+                    Ok((doc, report)) => {
                         let total_notes: u64 = (0..doc.track_count())
                             .map(|t| doc.track_note_count(t as u16))
                             .sum();
                         parsed.info.total_notes = total_notes;
                         parsed.info.duration_ticks = doc.total_ticks();
+                        parsed.timing_report = report;
                         parsed.document = Some(std::sync::Arc::new(doc));
                     }
                     Err(e) => {
@@ -176,7 +177,7 @@ pub async fn load_parsed_midi(
     });
 
     let parse_path = path.clone();
-    let (document, division, total_notes) = tokio::task::spawn_blocking(move || {
+    let (document, division, total_notes, timing_report) = tokio::task::spawn_blocking(move || {
         let p_ref = cache_progress.as_ref().map(|a| a.as_ref() as &dyn Fn(f64));
         super::mmap_file::load_document_from_path(&parse_path, p_ref)
     })
@@ -232,6 +233,7 @@ pub async fn load_parsed_midi(
         use10: false,
         // 常规 MIDI 文件无图片转 MIDI 参数
         i2m: None,
+        timing_report,
     })
 }
 
@@ -264,7 +266,7 @@ pub async fn load_parsed_midi_from_bytes(
         );
     }
 
-    let document = tokio::task::spawn_blocking(move || {
+    let (document, timing_report) = tokio::task::spawn_blocking(move || {
         build_document_from_midi_bytes(&midi_bytes, track_count)
     })
     .await
@@ -310,6 +312,7 @@ pub async fn load_parsed_midi_from_bytes(
         use10: false,
         // 字节加载路径无图片转 MIDI 参数
         i2m: None,
+        timing_report,
     })
 }
 
@@ -319,7 +322,7 @@ pub async fn load_parsed_midi_from_bytes(
 pub(super) fn build_document_from_midi_bytes(
     midi_bytes: &[u8],
     _track_count: u16,
-) -> LoaderResult<MidiDocument> {
-    let (doc, _, _) = MidiDocument::from_notes_bytes(midi_bytes, None)?;
-    Ok(doc)
+) -> LoaderResult<(MidiDocument, lumino_midi_model::eot::LoadTimingReport)> {
+    let (doc, _, _, report) = MidiDocument::from_notes_bytes_with_timing(midi_bytes, None)?;
+    Ok((doc, report))
 }

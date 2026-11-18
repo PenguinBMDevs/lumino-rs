@@ -10,8 +10,39 @@ use crate::runner::RunnerInner;
 use super::helpers::get_file_stem;
 
 impl RunnerInner {
+    /// 导出前检查：缺 EOT 的轨需要用户确认（Ok=继续导出，Cancel=中止）。
+    ///
+    /// 语义与导入 toast 区分：只有「缺 EOT」会打断导出；「EOT 之后仍有事件」
+    /// 已在导入时提示过，导出不重复打扰。
+    pub(super) fn confirm_missing_eot_before_export(&self) -> bool {
+        let missing = self.midi_state.timing_report.tracks_missing_eot();
+        if missing == 0 {
+            return true;
+        }
+        #[cfg(not(test))]
+        {
+            let result = lumino_platform::dialog::MessageDialog::new()
+                .set_title(tr!("导出前检查"))
+                .set_description(trf!(
+                    "{n} 条轨缺少 End-of-Track 标记，部分播放器可能无法正确识别结尾。仍要导出吗？",
+                    n = missing
+                ))
+                .set_level(lumino_platform::dialog::MessageLevel::Warning)
+                .set_buttons(lumino_platform::dialog::MessageButtons::OkCancel)
+                .show();
+            matches!(result, lumino_platform::dialog::MessageDialogResult::Ok)
+        }
+        #[cfg(test)]
+        {
+            let _ = missing;
+            true
+        }
+    }
+
     /// 导出为单文件（统一入口：与"保存"共享相同格式选择对话框）
     pub(super) fn handle_export_project_archive(&mut self) {
+        // 注意：该入口与「保存」共用，可能写 .lmpj 工程；缺 EOT 的提示只放在
+        // 明确的「导出 MIDI / 导出工程文件夹」入口，避免保存工程时弹窗打扰。
         self.handle_save_single_file();
     }
 
@@ -20,6 +51,9 @@ impl RunnerInner {
     /// **自动提交编辑**：进入导出流程前调用 `commit_current_edit()`，
     /// 保证导出的数据包含用户当前正在编辑的音符。
     pub(super) fn handle_export_project_folder(&mut self) {
+        if !self.confirm_missing_eot_before_export() {
+            return;
+        }
         // 自动提交当前编辑（ghost 方案：松手即提交）
         let committed = self
             .window_state

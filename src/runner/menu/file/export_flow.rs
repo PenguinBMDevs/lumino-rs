@@ -11,6 +11,9 @@ impl RunnerInner {
     /// 与"保存"的区别：只生成独立的 MIDI 文件，不修改 `current_midi_source`，
     /// 因此不会影响后续的 Ctrl+S 覆盖保存路径。
     pub(super) fn handle_export_midi(&mut self) {
+        if !self.confirm_missing_eot_before_export() {
+            return;
+        }
         // 自动提交当前编辑（ghost 方案：松手即提交），
         // 保证导出的数据包含用户正在编辑（拖动/绘制/调整大小）的音符。
         let committed = self

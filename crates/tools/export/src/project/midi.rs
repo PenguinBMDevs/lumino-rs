@@ -48,5 +48,7 @@ pub fn project_to_parsed_midi(
             .settings
             .as_ref()
             .and_then(|settings| settings.i2m.clone()),
+        // 工程文件不含解析期 EOT 诊断（非工程数据）
+        timing_report: Default::default(),
     })
 }

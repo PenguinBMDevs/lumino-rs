@@ -21,7 +21,7 @@ use std::path::Path;
 
 use lumino_core::{tr, trf};
 
-use crate::{LoaderError, LoaderResult, MidiDocument};
+use crate::{LoadTimingReport, LoaderError, LoaderResult, MidiDocument};
 
 /// 文件输入方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +55,7 @@ fn input_mode_from_env() -> InputMode {
 pub(super) fn load_document_from_path(
     path: &Path,
     progress: Option<&dyn Fn(f64)>,
-) -> LoaderResult<(MidiDocument, u16, u64)> {
+) -> LoaderResult<(MidiDocument, u16, u64, LoadTimingReport)> {
     load_with_mode(path, progress, input_mode_from_env())
 }
 
@@ -64,7 +64,7 @@ fn load_with_mode(
     path: &Path,
     progress: Option<&dyn Fn(f64)>,
     mode: InputMode,
-) -> LoaderResult<(MidiDocument, u16, u64)> {
+) -> LoaderResult<(MidiDocument, u16, u64, LoadTimingReport)> {
     load_with_mapper(path, progress, mode, map_read_only)
 }
 
@@ -77,7 +77,7 @@ fn load_with_mapper(
     progress: Option<&dyn Fn(f64)>,
     mode: InputMode,
     mapper: impl Fn(&Path) -> std::io::Result<memmap2::Mmap>,
-) -> LoaderResult<(MidiDocument, u16, u64)> {
+) -> LoaderResult<(MidiDocument, u16, u64, LoadTimingReport)> {
     let meta = std::fs::metadata(path).map_err(LoaderError::Io)?;
     // 目录/设备等非普通文件必须先拦掉：Windows 上目录的 metadata().len() 为 0，
     // 若直接走空文件分支会给出误导性的「文件为空」。
@@ -121,7 +121,7 @@ fn load_with_mapper(
 fn parse_bytes(
     bytes: &[u8],
     progress: Option<&dyn Fn(f64)>,
-) -> LoaderResult<(MidiDocument, u16, u64)> {
+) -> LoaderResult<(MidiDocument, u16, u64, LoadTimingReport)> {
     let (doc, division, notes, report) =
         MidiDocument::from_notes_bytes_with_timing(bytes, progress)
             .map_err(|e| LoaderError::MidiParse(trf!("解析 MIDI 数据失败: {e}", e = e)))?;
@@ -132,7 +132,7 @@ fn parse_bytes(
             report.tracks_with_unclosed_notes(),
         );
     }
-    Ok((doc, division, notes))
+    Ok((doc, division, notes, report))
 }
 
 /// 建立只读映射。
@@ -251,9 +251,9 @@ mod tests {
     fn test_mmap_and_read_produce_identical_document() {
         let path = write_temp("equiv", &fixture());
 
-        let (mmap_doc, mmap_div, mmap_notes) =
+        let (mmap_doc, mmap_div, mmap_notes, _mmap_report) =
             load_with_mode(&path, None, InputMode::MmapFirst).expect("测试：mmap 路径加载失败");
-        let (read_doc, read_div, read_notes) =
+        let (read_doc, read_div, read_notes, _read_report) =
             load_with_mode(&path, None, InputMode::ReadOnly).expect("测试：整读路径加载失败");
 
         let _ = std::fs::remove_file(&path);
@@ -296,11 +296,12 @@ mod tests {
         let path = write_temp("fallback", &fixture());
 
         // 注入必然失败的映射器：回退分支应成功，且文档与整读路径一致。
-        let (doc, division, notes) = load_with_mapper(&path, None, InputMode::MmapFirst, |_| {
-            Err(std::io::Error::other("模拟映射失败"))
-        })
-        .expect("测试：映射失败后应回退整份读取成功");
-        let (read_doc, read_div, read_notes) =
+        let (doc, division, notes, _report) =
+            load_with_mapper(&path, None, InputMode::MmapFirst, |_| {
+                Err(std::io::Error::other("模拟映射失败"))
+            })
+            .expect("测试：映射失败后应回退整份读取成功");
+        let (read_doc, read_div, read_notes, _read_report) =
             load_with_mode(&path, None, InputMode::ReadOnly).expect("测试：整读路径加载失败");
 
         let _ = std::fs::remove_file(&path);

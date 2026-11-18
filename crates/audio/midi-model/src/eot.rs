@@ -51,6 +51,11 @@ impl LoadTimingReport {
         self.tracks.iter().filter(|t| t.has_unclosed_notes).count()
     }
 
+    /// 缺少 EOT 的轨数（导出前提示用）。
+    pub fn tracks_missing_eot(&self) -> usize {
+        self.tracks.iter().filter(|t| t.eot_tick.is_none()).count()
+    }
+
     /// 任一诊断（EOT 后事件 / 悬挂音符）命中的轨数。
     pub fn tracks_with_diagnostics(&self) -> usize {
         self.tracks
@@ -314,5 +319,47 @@ mod tests {
         let trimmed = doc.trim_after_eot(&report);
         assert!(trimmed.is_noop());
         assert_eq!(doc.notes[0].len(), before);
+    }
+
+    /// 严格模式：EOT 后仍有事件 → `EotViolation`；干净文件正常返回。
+    #[test]
+    fn strict_rejects_events_after_eot_only() {
+        // 畸形：EOT 后仍有音符。
+        let mut body = Vec::new();
+        ev(&mut body, 0, &[0x90, 60, 100]);
+        ev(&mut body, 100, &[0x80, 60, 0]);
+        ev(&mut body, 0, &[0xFF, 0x2F, 0x00]);
+        ev(&mut body, 100, &[0x90, 62, 90]);
+        ev(&mut body, 100, &[0x80, 62, 0]);
+        let bytes = smf_one_track(&body);
+        match MidiDocument::from_notes_bytes_strict(&bytes, None) {
+            Err(crate::error::LoaderError::EotViolation { tracks }) => assert_eq!(tracks, 1),
+            other => panic!(
+                "期望 EotViolation，实得 {other:?}",
+                other = other.map(|_| ())
+            ),
+        }
+
+        // 干净文件：严格模式应成功。
+        let mut ok = Vec::new();
+        ev(&mut ok, 0, &[0x90, 60, 100]);
+        ev(&mut ok, 100, &[0x80, 60, 0]);
+        ev(&mut ok, 0, &[0xFF, 0x2F, 0x00]);
+        assert!(MidiDocument::from_notes_bytes_strict(&smf_one_track(&ok), None).is_ok());
+    }
+
+    /// 缺 EOT 的轨会被计数（导出前提示的输入）。
+    #[test]
+    fn missing_eot_is_counted() {
+        let mut body = Vec::new();
+        ev(&mut body, 0, &[0x90, 60, 100]);
+        ev(&mut body, 100, &[0x80, 60, 0]); // 没有 EOT
+        let bytes = smf_one_track(&body);
+        let (_, _, _, report) =
+            MidiDocument::from_notes_bytes_with_timing(&bytes, None).expect("加载失败");
+        assert_eq!(report.tracks_missing_eot(), 1);
+        // 缺 EOT 不属于 Strict 违规（Strict 只看 EOT 后事件）。
+        assert!(report.is_strict_clean());
+        assert!(!report.is_empty());
     }
 }

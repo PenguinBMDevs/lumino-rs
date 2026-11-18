@@ -37,6 +37,17 @@ pub enum LoaderError {
     #[error("{}: {}", lumino_core::i18n::tr("无效参数"), .0)]
     InvalidArgument(String),
 
+    /// 严格模式：EOT 之后仍有事件（畸形文件，默认加载不会返回此错误）。
+    #[error(
+        "{}: {} 条轨在 End-of-Track 之后仍有事件",
+        lumino_core::i18n::tr("MIDI 结构错误"),
+        .tracks
+    )]
+    EotViolation {
+        /// 命中该问题的轨数。
+        tracks: usize,
+    },
+
     /// 其他错误
     #[error("{0}")]
     Other(String),
