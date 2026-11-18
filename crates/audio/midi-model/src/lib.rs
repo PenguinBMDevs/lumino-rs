@@ -16,6 +16,7 @@ pub mod error;
 pub mod multi_port;
 pub mod note_event;
 pub mod note_info;
+mod note_sort;
 pub mod track;
 
 pub use chunked_list::{
