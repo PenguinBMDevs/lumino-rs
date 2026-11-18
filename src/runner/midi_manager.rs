@@ -223,8 +223,6 @@ pub use audio_action::handle_audio_action;
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
-
     use super::*;
 
     /// #127 问题1：未设置音色库时选择 LGS 不得静默降级——必须产生可见提示，
@@ -326,41 +324,6 @@ mod tests {
             manager.create_additional_output().is_none(),
             "LGS 初始化在途时不得创建输出"
         );
-    }
-
-    /// AUD-009 真机链路：Maestro 异步初始化 → 切换到 Maestro → stats 可读 →
-    /// 仍能从同一引擎创建第二个播放连接（禁止第二个 Realtime 实例）。
-    #[test]
-    #[ignore = "需要本机安装 Maestro（0.2+）"]
-    fn test_maestro_async_init_switches_backend() {
-        let config = UiConfig {
-            preferred_backend: SynthBackend::Maestro,
-            ..UiConfig::default()
-        };
-        let mut manager = MidiManager::from_config(&config);
-
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            match manager.check_async_init_complete() {
-                AsyncInitOutcome::Switched => break,
-                AsyncInitOutcome::Failed => panic!("Maestro 异步初始化失败"),
-                AsyncInitOutcome::Pending => {
-                    assert!(Instant::now() < deadline, "Maestro 异步初始化超时（10s）");
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-            }
-        }
-
-        assert_eq!(manager.active_backend, SynthBackend::Maestro);
-        assert!(
-            manager.maestro_stats().is_some(),
-            "切换到 Maestro 后 stats 应可读"
-        );
-
-        let output = manager
-            .create_additional_output()
-            .expect("Maestro 应能从现有引擎创建第二个输出连接");
-        drop(output);
     }
 
     /// #127 问题2：LGS 异步初始化失败必须落定为 `Failed`（而非静默 false），

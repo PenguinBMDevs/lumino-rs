@@ -163,6 +163,12 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "LGS 初始化线程异常断开，已回退 System 后端" => Some(
             "The LGS initialization thread disconnected unexpectedly; fell back to the System backend",
         ),
+        "Maestro 未生效，已回退 System 后端：{error}" => {
+            Some("Maestro is inactive; fell back to the System backend: {error}")
+        }
+        "Maestro 初始化线程异常断开，已回退 System 后端" => Some(
+            "The Maestro initialization thread disconnected unexpectedly; fell back to the System backend",
+        ),
         // ── 文件导出进度（services/file_service） ──
         "准备导出 MIDI 文件" => Some("Preparing to export MIDI file"),
         "正在导出 MIDI 文件" => Some("Exporting MIDI file"),
