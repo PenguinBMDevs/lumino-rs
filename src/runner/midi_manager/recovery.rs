@@ -278,7 +278,7 @@ impl MidiManager {
         self.needs_reinit = false;
 
         // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
-        self.drain_layout_apply();
+        self.drain_layout_apply(true);
         // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（整后端即将重建，
         // 取消暂存/退避请求）
         self.drain_lgs_rebuild(true);

@@ -152,7 +152,7 @@ impl MidiManager {
     pub fn apply_midi_port_layout(&mut self, max_port: u8) {
         // 装载路径是 apply → create_additional_output：必须先收尾在途 worker，
         // 否则 API 被取走会导致播放输出创建失败（无声音）。
-        self.drain_layout_apply();
+        self.drain_layout_apply(false);
         // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（保留失败重试，
         // 避免一次布局应用把 panic/Err 后的恢复机会静默取消）
         self.drain_lgs_rebuild(false);

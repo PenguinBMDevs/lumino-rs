@@ -170,6 +170,43 @@ fn success_path_unchanged() {
     );
 }
 
+/// 非重初始化 drain 超时：保留在途，下一帧仍可回收 API。
+#[test]
+fn drain_timeout_keeps_inflight_for_recovery() {
+    let mut manager = MidiManager::default();
+    // 发送端保持存活但不发送：制造 recv_timeout 而非 Disconnected。
+    let (_tx, rx) = mpsc::channel();
+    manager.lgs_rebuild.inflight = Some(LgsRebuildInFlight {
+        rx,
+        started: Instant::now(),
+    });
+
+    manager.drain_lgs_rebuild_with_timeout(false, Duration::from_millis(5));
+
+    assert!(
+        manager.lgs_rebuild.inflight.is_some(),
+        "非重初始化超时应保留在途"
+    );
+}
+
+/// 重初始化 drain 超时：放弃在途，避免迟到的旧 API 覆盖新后端。
+#[test]
+fn reinit_drain_timeout_abandons_inflight() {
+    let mut manager = MidiManager::default();
+    let (_tx, rx) = mpsc::channel();
+    manager.lgs_rebuild.inflight = Some(LgsRebuildInFlight {
+        rx,
+        started: Instant::now(),
+    });
+
+    manager.drain_lgs_rebuild_with_timeout(true, Duration::from_millis(5));
+
+    assert!(
+        manager.lgs_rebuild.inflight.is_none(),
+        "重初始化超时应放弃在途"
+    );
+}
+
 /// 通道在回传前断开（守卫未覆盖的进程级异常）：置 needs_reinit，让重初始化兜底。
 #[test]
 fn disconnected_requests_reinit() {

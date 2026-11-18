@@ -197,12 +197,16 @@ impl MidiManager {
     /// 在途结果按 `finish_lgs_rebuild` 正常收尾（失败则继续退避重试），避免一次
     /// 用户操作把 panic/Err 后的恢复机会静默取消。
     pub(super) fn drain_lgs_rebuild(&mut self, cancel_retry: bool) {
+        self.drain_lgs_rebuild_with_timeout(cancel_retry, LGS_REBUILD_DRAIN_TIMEOUT);
+    }
+
+    fn drain_lgs_rebuild_with_timeout(&mut self, cancel_retry: bool, timeout: Duration) {
         if cancel_retry {
             self.lgs_rebuild.requested = false;
             self.lgs_rebuild.not_before = None;
         }
         if let Some(inflight) = self.lgs_rebuild.inflight.take() {
-            match inflight.rx.recv_timeout(LGS_REBUILD_DRAIN_TIMEOUT) {
+            match inflight.rx.recv_timeout(timeout) {
                 Ok(done) => {
                     if cancel_retry {
                         self.api = Some(done.api);
@@ -225,9 +229,17 @@ impl MidiManager {
                         self.finish_lgs_rebuild(done, inflight.started);
                     }
                 }
-                Err(e) => tracing::error!(
-                    "LGS（PR-D）: 等待重建收尾失败（{e}），API 暂缺，需重初始化/重启恢复"
-                ),
+                Err(e) => {
+                    tracing::error!(
+                        "LGS（PR-D）: 等待重建收尾失败（{e}），API 暂缺，需重初始化/重启恢复"
+                    );
+                    if !cancel_retry {
+                        // 非重初始化超时：保留在途，worker 若最终归还，下一帧
+                        // `poll_lgs_rebuild` 仍可回收 API。重初始化路径必须放弃，
+                        // 否则迟到的旧 API 会覆盖新后端。
+                        self.lgs_rebuild.inflight = Some(inflight);
+                    }
+                }
             }
         }
     }

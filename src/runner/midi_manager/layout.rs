@@ -8,7 +8,7 @@
 //! - **一次性后台 worker**：150ms 防抖后读取"最新期望值"执行重建，完成后把
 //!   API 归还并经通道回传；UI 每帧 `poll_layout_apply` 收尾，全程不阻塞事件循环。
 //!
-//! 同步路径（装载/关闭/导出/重初始化）在进入前调用 `drain_layout_apply()`
+//! 同步路径（装载/关闭/导出/重初始化）在进入前调用 `drain_layout_apply(...)`
 //! 等待在途任务归还 API，保证"apply → create_additional_output"的顺序不变。
 
 use std::sync::Arc;
@@ -179,20 +179,36 @@ impl MidiManager {
     }
 
     /// 同步路径进入前等待在途后台重建收尾（归还 API，至多几轮追赶）。
-    pub(super) fn drain_layout_apply(&mut self) {
+    ///
+    /// `abandon_on_timeout = true`（整后端重初始化）：超时或追赶超限时放弃在途，
+    /// 避免迟到的旧 API 覆盖新后端。
+    /// `abandon_on_timeout = false`（播放重连 / 同步布局应用）：保留在途，worker
+    /// 若最终归还，下一帧 `poll_layout_apply` 仍可回收 API。
+    pub(super) fn drain_layout_apply(&mut self, abandon_on_timeout: bool) {
+        self.drain_layout_apply_with_timeout(abandon_on_timeout, LAYOUT_DRAIN_TIMEOUT);
+    }
+
+    fn drain_layout_apply_with_timeout(&mut self, abandon_on_timeout: bool, timeout: Duration) {
         let mut rounds = 0usize;
         while let Some(inflight) = self.layout_apply.take() {
             rounds += 1;
             if rounds > 4 {
                 tracing::error!("MIDI(后台): 布局重建追赶超过 4 轮，放弃同步等待");
+                if !abandon_on_timeout {
+                    self.layout_apply = Some(inflight);
+                }
                 break;
             }
-            match inflight.rx.recv_timeout(LAYOUT_DRAIN_TIMEOUT) {
+            match inflight.rx.recv_timeout(timeout) {
                 Ok(done) => self.finish_layout_apply(done, inflight.started),
                 Err(e) => {
                     tracing::error!(
                         "MIDI(后台): 等待布局重建收尾失败（{e}），API 暂缺，需重初始化/重启恢复"
                     );
+                    if !abandon_on_timeout {
+                        // 非重初始化超时：保留在途，后续 poll 仍可回收 API。
+                        self.layout_apply = Some(inflight);
+                    }
                     break;
                 }
             }
