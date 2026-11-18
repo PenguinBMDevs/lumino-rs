@@ -3,7 +3,7 @@
 //! COUNT 与 FILL 同构（同一 shader，同谓词），中间经调用方前缀和衔接；
 //! 两阶段划分保证输出 key 连续（legacy 桶内二分前提），无原子竞争。
 
-use super::super::support::{readback_bytes_sync, readback_u256};
+use super::super::support::readback_bytes_sync;
 use super::super::{BucketSource, GlobalBucketError, KEY_BUCKETS, ResidentCull};
 use super::{CullActiveParams, CullExtract, CullParamsGpu, CullWindow, missing};
 
@@ -25,10 +25,12 @@ impl ResidentCull {
         window: CullWindow,
         active: Option<CullActiveParams>,
     ) -> Result<CullExtract, GlobalBucketError> {
+        crate::profiling::tracy_span!("gfx.cull.extract_count");
         let source = BucketSource {
             buffer: resident,
             count,
-            epoch: self.seq,
+            // 直绑外部缓冲（钢琴卷帘 onion）用注入的内容世代；上传路径回落到内部 seq。
+            epoch: self.external_epoch.unwrap_or(self.seq),
         };
         let key_count = window.key_count.min(KEY_BUCKETS);
         let mut out = CullExtract {
@@ -42,7 +44,9 @@ impl ResidentCull {
         }
         let total_u32 = u32::try_from(source.count)
             .map_err(|_| GlobalBucketError::CountOverflow(source.count))?;
-        self.ensure_bucket(device, queue, &source)?;
+        crate::profiling::tracy_zone!("gfx.cull.ensure_bucket", {
+            self.ensure_bucket(device, queue, &source)?;
+        });
         out.bucket_rebuilt = self.bucket_rebuilt_flag;
         self.bucket_rebuilt_flag = false;
         self.ensure_cull_resources(device, queue);
@@ -75,7 +79,7 @@ impl ResidentCull {
             .ok_or(missing("cull 参数缓冲"))?;
         queue.write_buffer(params_buf.inner(), 0, bytemuck::cast_slice(&[params]));
         self.rebuild_bind_group(device, source.buffer)?;
-        {
+        crate::profiling::tracy_zone!("gfx.cull.dispatch", {
             let mut count_enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("bucket_cull_count"),
             });
@@ -107,22 +111,34 @@ impl ResidentCull {
                     .as_ref()
                     .ok_or(missing("cull 活跃键缓冲"))?
                     .inner();
-                let active_staging = self
-                    .active_staging
-                    .as_ref()
-                    .ok_or(missing("cull 活跃键暂存"))?
-                    .inner();
-                count_enc.copy_buffer_to_buffer(active_inner, 0, active_staging, 0, 1024);
+                // 同一 staging 的后半段：一次 map 同时取回计数与活跃键
+                count_enc.copy_buffer_to_buffer(active_inner, 0, staging_inner, 1024, 1024);
             }
             queue.submit(Some(count_enc.finish()));
+        });
+        // 单次同步回读：`[0,1KB)` 计数 +（可选）`[1KB,2KB)` 活跃键。
+        // 旧实现每帧两次 map/poll（piano roll 实测 ~5.8ms），合并后减半。
+        let read_len = if compute_active == 1 {
+            KEY_BUCKETS * 8
+        } else {
+            KEY_BUCKETS * 4
+        };
+        let bytes = crate::profiling::tracy_zone!("gfx.cull.readback", {
+            readback_bytes_sync(
+                device,
+                self.counts_staging
+                    .as_ref()
+                    .ok_or(missing("cull 回读暂存"))?
+                    .inner(),
+                read_len,
+            )?
+        });
+        let mut counts = [0u32; KEY_BUCKETS];
+        for (i, slot) in counts.iter_mut().enumerate() {
+            if let Some(c) = bytes.get(i * 4..i * 4 + 4) {
+                *slot = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            }
         }
-        let mut counts = readback_u256(
-            device,
-            self.counts_staging
-                .as_ref()
-                .ok_or(missing("cull 回读暂存"))?
-                .inner(),
-        )?;
         // 尾部清零：COUNT 内核只写 `[0, key_count)`，旧帧残留不得泄漏。
         for c in counts.iter_mut().skip(key_count) {
             *c = 0;
@@ -134,17 +150,10 @@ impl ResidentCull {
         out.counts = counts;
         out.total = total;
         if compute_active == 1 {
-            let bytes = readback_bytes_sync(
-                device,
-                self.active_staging
-                    .as_ref()
-                    .ok_or(missing("cull 活跃键暂存"))?
-                    .inner(),
-                KEY_BUCKETS * 4,
-            )?;
             let mut arr = [0u32; KEY_BUCKETS];
             for (i, slot) in arr.iter_mut().enumerate() {
-                if let Some(c) = bytes.get(i * 4..i * 4 + 4) {
+                let base = KEY_BUCKETS * 4 + i * 4;
+                if let Some(c) = bytes.get(base..base + 4) {
                     *slot = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
                 }
             }
@@ -175,7 +184,8 @@ impl ResidentCull {
         let source = BucketSource {
             buffer: resident,
             count,
-            epoch: self.seq,
+            // 直绑外部缓冲（钢琴卷帘 onion）用注入的内容世代；上传路径回落到内部 seq。
+            epoch: self.external_epoch.unwrap_or(self.seq),
         };
         let key_count = window.key_count.min(KEY_BUCKETS);
         if total == 0 || key_count == 0 {

@@ -301,6 +301,74 @@ fn test_cursor_advance_matches_cpu_per_window() {
     }
 }
 
+/// `compute_active` 对拍：GPU COUNT 顺带聚合的 128 键色 ≡ CPU 参考（alpha=0xFF）。
+///
+/// 语义：桶内 `(key, start)` 升序，start 最大者覆盖（shader last-writer），
+/// 输出 `(key_color & 0xFFFFFF00) | 0xFF`。注意 alpha 与 `waterfall_active.wgsl`
+/// 的 0x99 不同——视频钢琴卷帘路径需要不透明色，60% 由合成侧统一乘。
+#[test]
+fn test_cull_active_keys_match_cpu_reference() {
+    const TICK: u32 = 5000;
+    const KEY_COUNT: usize = 128;
+    let notes = vec![
+        // key 60 活跃，稍后被同 key 更晚 start 的覆盖（last-writer）
+        NoteInstance::new(4000.0, 60, 2000.0, [1.0, 0.0, 0.0, 1.0], 0),
+        NoteInstance::new(4500.0, 60, 500.0, [0.0, 0.0, 1.0, 1.0], 0),
+        // key 62 已结束
+        NoteInstance::new(1000.0, 62, 500.0, [0.0, 1.0, 0.0, 1.0], 0),
+        // key 64 未开始
+        NoteInstance::new(6000.0, 64, 100.0, [0.0, 0.0, 1.0, 1.0], 0),
+        // key 67 零长（打包语义 end = start + max(len,1) → 亮 1 tick）
+        NoteInstance::new(5000.0, 67, 0.0, [0.5, 0.5, 0.5, 1.0], 0),
+    ];
+    let (device, queue) = test_device();
+    let resident = upload_storage(&device, "cull_active_resident", &notes);
+    let mut cull = ResidentCull::new();
+    cull.mark_resident_updated();
+    let window = CullWindow {
+        tick_start: TICK,
+        tick_end: TICK + 1000,
+        key_count: KEY_COUNT,
+    };
+    let extract = cull
+        .extract_count(
+            &device,
+            &queue,
+            &resident,
+            notes.len(),
+            window,
+            Some(crate::CullActiveParams {
+                ticks_per_second: 960.0,
+                fps: 60.0,
+            }),
+        )
+        .expect("COUNT 应成功");
+    let active = extract.active.expect("compute_active 应返回键色");
+
+    // CPU 参考：同 (key, start) 升序下的 last-writer，位运算与 shader 逐位一致
+    let mut sorted = notes.clone();
+    sorted.sort_by(|a, b| {
+        (a.key_color & 0xFF)
+            .cmp(&(b.key_color & 0xFF))
+            .then_with(|| a.start_length[0].total_cmp(&b.start_length[0]))
+    });
+    let mut expected = [0u32; 256];
+    for n in &sorted {
+        let key = (n.key_color & 0xFF) as usize;
+        let start = n.start_length[0].max(0.0) as u32;
+        let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
+        if start <= TICK && TICK < end && key < 128 {
+            expected[key] = (n.key_color & 0xFFFF_FF00) | 0xFF;
+        }
+    }
+    for key in 0..KEY_COUNT {
+        assert_eq!(
+            active[key], expected[key],
+            "key {key} 活跃键色不一致（GPU COUNT vs CPU last-writer）"
+        );
+    }
+}
+
 /// tick 倒退必须重置游标重扫（非单调调用的护栏）。
 ///
 /// 无护栏时：游标停在 6000 处的死亡分界，倒回 1000 的窗口会漏掉游标前的

@@ -24,6 +24,8 @@
 pub mod config;
 pub mod error;
 pub mod ffmpeg;
+/// Tracy 剖析插桩（`tracy` feature，默认零开销）
+pub(crate) mod profiling;
 
 // ── 配置模型 ──
 pub use config::{Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig};

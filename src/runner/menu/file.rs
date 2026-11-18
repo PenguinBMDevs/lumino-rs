@@ -166,6 +166,9 @@ impl RunnerInner {
                     state.active = true;
                 }
 
+                // 诊断：LUMINO_BENCH_EXPORT 存在时延迟自动发起视频导出（Tracy 基线）
+                self.maybe_start_bench_export();
+
                 // 加载完成后工程处于干净状态（无相对磁盘文件的未保存更改），
                 // 标记清零避免误弹保存确认对话框。
                 self.window_state.window.ui_mut().mark_project_clean();

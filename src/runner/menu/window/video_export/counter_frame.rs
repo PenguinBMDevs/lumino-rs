@@ -87,22 +87,26 @@ pub fn render_counter_frame(input: CounterFrameInput<'_>) -> CounterFrameOutput 
     };
 
     // 黑色背景（fmr：FillRectangle(Black)）
-    fill_bgra_black(frame);
+    crate::profiling::tracy_zone!("app.cf.fill", {
+        fill_bgra_black(frame);
+    });
     if frame_width == 0 || frame_height == 0 || text.is_empty() {
         return CounterFrameOutput { text, csv_line };
     }
 
     // 白色前景（fmr：DrawString(text, White)），BGRA 白 = [255, 255, 255, 255]
     const WHITE: [u8; 4] = [255, 255, 255, 255];
-    draw_aligned_text(
-        frame,
-        frame_width,
-        frame_height,
-        &text,
-        config,
-        renderer,
-        WHITE,
-    );
+    crate::profiling::tracy_zone!("app.cf.text", {
+        draw_aligned_text(
+            frame,
+            frame_width,
+            frame_height,
+            &text,
+            config,
+            renderer,
+            WHITE,
+        );
+    });
 
     CounterFrameOutput { text, csv_line }
 }

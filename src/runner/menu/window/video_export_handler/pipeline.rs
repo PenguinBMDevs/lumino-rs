@@ -5,20 +5,23 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use lumino_core::tr;
+use lumino_gfx::render_thread::VideoFrameMessage;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::cli_progress::CliProgressBar;
 use super::commands::send_export_error;
-use super::frame::{EncodeFrameQueue, FrameParams, FrameStageStats};
-
-/// 进度消息载荷：(文本, 进度 0..1, 总帧数, 平滑 FPS, 已用秒)
-type ProgressMsg = (String, f64, u64, f64, f64);
+use super::frame::{
+    EncodeFrameQueue, EncodeTelemetry, FrameParams, FrameStageStats, PIPELINE_DEPTH, ProgressMsg,
+};
 
 /// 帧流水线循环参数（预填充 → 主循环 → drain），内存/流式两条导出路径共用。
 pub(super) struct FramePipeline<'a> {
     pub(super) total_frames: u64,
+    /// 诊断用帧数上限（`LUMINO_BENCH_FRAMES`，Tracy 基线抓固定窗口）；
+    /// `None` = 导出完整视频。上限同时收敛进度分母，收尾按「完成」处理。
+    pub(super) frame_limit: Option<u64>,
     pub(super) cancel_flag: &'a AtomicBool,
-    pub(super) frame_rx: &'a Receiver<Vec<u8>>,
+    pub(super) frame_rx: &'a Receiver<VideoFrameMessage>,
     pub(super) param_queue: &'a mut EncodeFrameQueue,
     pub(super) progress_tx: &'a UnboundedSender<ProgressMsg>,
     pub(super) render_bar: &'a mut CliProgressBar,
@@ -26,6 +29,8 @@ pub(super) struct FramePipeline<'a> {
     pub(super) start: Instant,
     /// 渲染进度映射：内存路径恒等，流式路径 `0.3 + raw * 0.7`（解析阶段占 0-0.3）
     pub(super) progress_map: fn(f64) -> f64,
+    /// 跨线程编码遥测：读队列深度/编码 FPS，检测写线程失败。
+    pub(super) telemetry: &'a EncodeTelemetry,
 }
 
 /// 单次等待帧数据的上限（DEBT-07 #124）：到点轮询取消标志，取消 200ms 内生效。
@@ -44,11 +49,11 @@ enum FrameWaitError {
 ///
 /// 旧实现直接 `recv()` 阻塞：Runner 自持发送端（`frame_tx_waterfall`）时发送端
 /// 永不 drop，渲染线程异常退出后 `recv()` 永久阻塞、取消标志形同虚设。
-fn recv_frame_or_cancel(
-    rx: &Receiver<Vec<u8>>,
+fn recv_frame_or_cancel<T>(
+    rx: &Receiver<T>,
     cancel: &AtomicBool,
     timeout: Duration,
-) -> Result<Vec<u8>, FrameWaitError> {
+) -> Result<T, FrameWaitError> {
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(FrameWaitError::Cancelled);
@@ -74,10 +79,10 @@ impl<'a> FramePipeline<'a> {
     pub(super) fn run<FE, FP>(&mut self, mut enqueue: FE, mut process: FP) -> (u64, bool, f64)
     where
         FE: FnMut(&mut EncodeFrameQueue, u64) -> bool,
-        FP: FnMut(Vec<u8>, FrameParams) -> (bool, FrameStageStats),
+        FP: FnMut(VideoFrameMessage, FrameParams) -> (bool, FrameStageStats),
     {
-        const PIPELINE_DEPTH: usize = 4;
-        let total_frames = self.total_frames;
+        // 诊断帧上限与总帧数取小：预填充/补发/进度分母全部按有效总数收敛
+        let total_frames = self.total_frames.min(self.frame_limit.unwrap_or(u64::MAX));
         let mut processed_frames = 0u64;
         let mut cancelled = false;
         let mut next_frame_to_send = 0u64;
@@ -88,8 +93,9 @@ impl<'a> FramePipeline<'a> {
         let mut acc_recv_us = 0u64;
         let mut acc_composite_us = 0u64;
         let mut acc_preview_us = 0u64;
-        let mut acc_encode_us = 0u64;
         let mut stat_frame_count = 0u64;
+        // 编码消费 FPS 基准（写线程跨线程累加，按窗口增量计算）
+        let mut last_encoded_frames = self.telemetry.encoded_frames.load(Ordering::Relaxed);
 
         // 预填充 inflight，让 GPU 从第一帧就进入流水线满载状态
         for _ in 0..PIPELINE_DEPTH.min(total_frames as usize) {
@@ -98,7 +104,12 @@ impl<'a> FramePipeline<'a> {
                 cancelled = true;
                 break;
             }
-            if enqueue(self.param_queue, next_frame_to_send) {
+            // 先绑变量再判断：zone 宏在默认构建（无 tracy）展开为块表达式，
+            // 直接放进 if 条件会触发 clippy::blocks_in_conditions。
+            let enqueue_cancelled = crate::profiling::tracy_zone!("app.pipeline.prefill", {
+                enqueue(self.param_queue, next_frame_to_send)
+            });
+            if enqueue_cancelled {
                 cancelled = true;
                 break;
             }
@@ -112,12 +123,18 @@ impl<'a> FramePipeline<'a> {
                 cancelled = true;
                 break;
             }
+            // 写线程 write_frame 失败：经 telemetry 传播到导出线程，立即终止帧生成
+            if self.telemetry.failed.load(Ordering::Relaxed) {
+                tracing::error!("视频导出：ffmpeg 写线程失败，终止帧生成");
+                cancelled = true;
+                break;
+            }
 
             let recv_start = Instant::now();
             // DEBT-07 #124：带超时轮询取消，不再对 recv() 永久阻塞
-            let frame_data =
+            let message =
                 match recv_frame_or_cancel(self.frame_rx, self.cancel_flag, FRAME_WAIT_TIMEOUT) {
-                    Ok(buf) => buf,
+                    Ok(message) => message,
                     Err(FrameWaitError::Cancelled) => {
                         tracing::info!("视频导出：用户取消（等待帧数据时），正在收尾...");
                         cancelled = true;
@@ -134,12 +151,13 @@ impl<'a> FramePipeline<'a> {
 
             // 默认值仅在 queue 与帧数据 FIFO 失步时出现（理论不发生），ppq 用 0 无实际影响
             let frame_params = self.param_queue.pop_front().unwrap_or_default();
-            let (should_stop, stats) = process(frame_data, frame_params);
+            let (should_stop, stats) = crate::profiling::tracy_zone!("app.pipeline.process", {
+                process(message, frame_params)
+            });
 
             acc_recv_us += recv_us;
             acc_composite_us += stats.composite_us;
             acc_preview_us += stats.preview_us;
-            acc_encode_us += stats.encode_us;
             stat_frame_count += 1;
 
             if should_stop {
@@ -152,46 +170,55 @@ impl<'a> FramePipeline<'a> {
 
             // 维持流水线深度：每处理完一帧立即补发下一帧命令
             if next_frame_to_send < total_frames {
-                if enqueue(self.param_queue, next_frame_to_send) {
+                let enqueue_cancelled = crate::profiling::tracy_zone!("app.pipeline.enqueue", {
+                    enqueue(self.param_queue, next_frame_to_send)
+                });
+                if enqueue_cancelled {
                     cancelled = true;
                     break;
                 }
                 next_frame_to_send += 1;
             }
 
-            // 阶段耗时打点：每 100ms 聚合输出一次
+            // 三段打点：每 100ms 聚合输出一次
+            // ① 帧生成 FPS = 导出线程成功入队帧速率（队列不满时 = 纯帧生成速度）
+            // ② 编码消费 FPS = 写线程 write_frame 完成速率（按窗口增量）
+            // ③ 队列深度 = 当前有界队列积压帧数
             if last_stat_time.elapsed() >= Duration::from_millis(100) && stat_frame_count > 0 {
                 let elapsed = last_stat_time.elapsed().as_secs_f64();
-                let fps = frames_since_stat as f64 / elapsed;
+                let gen_fps = frames_since_stat as f64 / elapsed;
                 smoothed_fps = if smoothed_fps == 0.0 {
-                    fps
+                    gen_fps
                 } else {
-                    smoothed_fps * 0.7 + fps * 0.3
+                    smoothed_fps * 0.7 + gen_fps * 0.3
                 };
+                let encoded_now = self.telemetry.encoded_frames.load(Ordering::Relaxed);
+                let encode_fps = encoded_now.saturating_sub(last_encoded_frames) as f64 / elapsed;
+                last_encoded_frames = encoded_now;
+                let queue_depth = self.telemetry.queue_depth.load(Ordering::Relaxed);
+
+                // Tracy 曲线：三段解耦后的实时速率/积压（与日志打点同一口径）
+                crate::profiling::tracy_plot!("app.gen_fps", gen_fps);
+                crate::profiling::tracy_plot!("app.encode_fps", encode_fps);
+                crate::profiling::tracy_plot!("app.queue_depth", queue_depth);
+
                 let raw_progress = processed_frames as f64 / total_frames as f64;
                 let progress = (self.progress_map)(raw_progress);
                 let eta_secs = (total_frames - processed_frames) as f64 / smoothed_fps;
                 let avg_recv = acc_recv_us / stat_frame_count;
                 let avg_composite = acc_composite_us / stat_frame_count;
                 let avg_preview = acc_preview_us / stat_frame_count;
-                let avg_encode = acc_encode_us / stat_frame_count;
                 self.render_bar.update(
                     raw_progress,
                     &format!(
-                        "帧 {}/{} | FPS {:.0} | ETA {:.0}s | recv={} composite={} preview={} encode={}",
-                        processed_frames,
-                        total_frames,
-                        smoothed_fps,
-                        eta_secs,
-                        avg_recv,
-                        avg_composite,
-                        avg_preview,
-                        avg_encode,
+                        "帧 {}/{} | 生成FPS {:.0} | 编码FPS {:.0} | 队列 {} | ETA {:.0}s | recv={} 合成={} 预览={}",
+                        processed_frames, total_frames, smoothed_fps, encode_fps,
+                        queue_depth, eta_secs, avg_recv, avg_composite, avg_preview,
                     ),
                 );
                 let _ = self.progress_tx.send((
                     format!(
-                        "{:.0}% | FPS {:.0} | ETA {:.0}s",
+                        "{:.0}% | 生成FPS {:.0} | ETA {:.0}s",
                         progress * 100.0,
                         smoothed_fps,
                         eta_secs
@@ -207,13 +234,17 @@ impl<'a> FramePipeline<'a> {
                 acc_recv_us = 0;
                 acc_composite_us = 0;
                 acc_preview_us = 0;
-                acc_encode_us = 0;
                 stat_frame_count = 0;
             }
         }
 
         // drain 剩余 inflight 帧（DEBT-07 #124：同样带取消轮询，取消不挂起）
         while !self.param_queue.is_empty() && !cancelled {
+            if self.telemetry.failed.load(Ordering::Relaxed) {
+                tracing::error!("视频导出：写线程失败，drain 阶段终止");
+                cancelled = true;
+                break;
+            }
             let drain_frame =
                 match recv_frame_or_cancel(self.frame_rx, self.cancel_flag, FRAME_WAIT_TIMEOUT) {
                     Ok(buf) => buf,

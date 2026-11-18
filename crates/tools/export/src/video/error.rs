@@ -21,6 +21,10 @@ pub enum VideoExportError {
     #[error("{}", lumino_core::i18n::tr("未找到 ffmpeg 可执行文件"))]
     FfmpegNotFound,
 
+    /// 配置非法（在启动外部进程前拦截；消息即用户可读原因）
+    #[error("{}", .0)]
+    InvalidConfig(String),
+
     /// 子进程管道建立失败（stdin/stdout/stderr 未被正确重定向）
     #[error("{}: {}", lumino_core::i18n::tr("ffmpeg 管道建立失败"), .0)]
     PipeSetupFailed(String),

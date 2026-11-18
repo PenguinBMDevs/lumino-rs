@@ -163,6 +163,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         "输出路径" => Some("Output Path"),
         "选择输出路径..." => Some("Choose output path..."),
+        "请先选择视频输出路径" => Some("Choose a video output path first"),
         "浏览..." => Some("Browse..."),
         "工程名称" => Some("Project Name"),
         "MIDI 路径" => Some("MIDI Path"),

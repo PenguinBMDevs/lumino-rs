@@ -158,7 +158,8 @@ impl MidiconsoleRenderer {
             &shader_module,
         )
         .bind_group(&bind_group_layout)
-        .opaque_target(wgpu::TextureFormat::Rgba8Unorm)
+        // 导出编码器按 "bgra" 消费：让 GPU 直接产出 BGRA，CPU 侧零 swizzle。
+        .opaque_target(wgpu::TextureFormat::Bgra8Unorm)
         .build();
 
         let output_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -171,7 +172,7 @@ impl MidiconsoleRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Bgra8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -189,10 +190,14 @@ impl MidiconsoleRenderer {
             cell_h,
             frame_w: width,
             frame_h: height,
+            staging: None,
         }
     }
 
-    /// 渲染一帧并以 RGBA 字节返回（未做行对齐 padding）。
+    /// 渲染一帧并以 **RGBA** 字节返回（未做行对齐 padding）。
+    ///
+    /// **仅测试/预览用**：GPU 输出为 BGRA（编码器消费格式），本方法额外做一次
+    /// 通道交换。生产导出走 [`Self::render_to_bgra_into`]：零中间 Vec、零 swizzle。
     ///
     /// 网格数量不符或 GPU 读回失败时返回 `None`（调用方回退 CPU 路径），不 panic。
     pub fn render_to_rgba(
@@ -202,6 +207,49 @@ impl MidiconsoleRenderer {
         cells: &[CellGpu],
         tick: u32,
     ) -> Option<Vec<u8>> {
+        self.render_frame(device, queue, cells, tick)?;
+        let mut out = vec![0u8; (self.frame_w * self.frame_h * 4) as usize];
+        if !self.readback_into(device, &mut out) {
+            return None;
+        }
+        // BGRA → RGBA（兼容 API）
+        for px in out.as_chunks_mut::<4>().0 {
+            px.swap(0, 2);
+        }
+        Some(out)
+    }
+
+    /// 渲染一帧并**直接写入调用方 BGRA 缓冲**（生产路径）。
+    ///
+    /// `dst.len()` 必须 ≥ `frame_w * frame_h * 4`；返回 `false` 表示网格数量
+    /// 不符或 GPU 读回失败（调用方回退 CPU 路径）。1080p 等 256 对齐宽度走
+    /// 整块 memcpy，其余分辨率逐行 memcpy——不再有逐像素循环。
+    pub fn render_to_bgra_into(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        cells: &[CellGpu],
+        tick: u32,
+        dst: &mut [u8],
+    ) -> bool {
+        let need = (self.frame_w * self.frame_h * 4) as usize;
+        if dst.len() < need {
+            return false;
+        }
+        if self.render_frame(device, queue, cells, tick).is_none() {
+            return false;
+        }
+        self.readback_into(device, &mut dst[..need])
+    }
+
+    /// 提交渲染并把结果拷入 staging（不读回）。
+    fn render_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        cells: &[CellGpu],
+        tick: u32,
+    ) -> Option<()> {
         let cell_count = GRID_COLS * GRID_ROWS;
         if cells.len() != cell_count {
             tracing::warn!(
@@ -259,15 +307,22 @@ impl MidiconsoleRenderer {
             pass.draw(0..3, 0..1);
         }
 
-        // GPU → CPU 读回（参考 miditrail 预览测试样板）
+        // GPU → CPU 读回：staging 跨帧复用（旧实现每帧 create_buffer_init 8MB
+        // 零值并上传，随后立刻被 copy 覆盖——纯浪费带宽/分配）。
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let bpp = 4u32;
         let padded = (self.frame_w * bpp).next_multiple_of(align);
-        let staging = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("midiconsole_staging"),
-            contents: &vec![0u8; (padded * self.frame_h) as usize],
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        });
+        let need = (padded * self.frame_h) as u64;
+        let reusable = self.staging.as_ref().is_some_and(|b| b.size() >= need);
+        if !reusable {
+            self.staging = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("midiconsole_staging"),
+                size: need,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            }));
+        }
+        let staging = self.staging.as_ref()?;
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.output_texture,
@@ -276,7 +331,7 @@ impl MidiconsoleRenderer {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &staging,
+                buffer: staging,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded),
@@ -290,6 +345,17 @@ impl MidiconsoleRenderer {
             },
         );
         queue.submit(std::iter::once(encoder.finish()));
+        Some(())
+    }
+
+    /// 把 staging 内容读入 `dst`（去掉行对齐 padding），含 TDR 防护。
+    fn readback_into(&self, device: &wgpu::Device, dst: &mut [u8]) -> bool {
+        let Some(staging) = self.staging.as_ref() else {
+            return false;
+        };
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
+        let unpadded = (self.frame_w * 4) as usize;
+        let padded = unpadded.next_multiple_of(align);
 
         let slice = staging.slice(..);
         // REND-019 PR-D（R5-b 实测崩溃根因一）：device 丢失（TDR）时禁止发起
@@ -297,7 +363,7 @@ impl MidiconsoleRenderer {
         // `map_async`（wgpu 断言「Buffer is already mapped」）。
         if crate::device_status::device_lost() {
             tracing::warn!("midiconsole 读回跳过：device 已丢失（TDR）");
-            return None;
+            return false;
         }
         let (tx, rx) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |r| {
@@ -311,14 +377,14 @@ impl MidiconsoleRenderer {
         });
         let Ok(callback) = rx.recv_timeout(std::time::Duration::from_secs(30)) else {
             // 超时必须 unmap 复位映射状态（否则下次 map_async 断言崩溃）
-            crate::device_status::safe_unmap(&staging);
+            crate::device_status::safe_unmap(staging);
             tracing::warn!("midiconsole 读回超时（map_async 回调未收到）");
-            return None;
+            return false;
         };
         if callback.is_err() {
-            crate::device_status::safe_unmap(&staging);
+            crate::device_status::safe_unmap(staging);
             tracing::warn!("midiconsole 读回失败（map_async 返回错误）");
-            return None;
+            return false;
         }
 
         // REND-019（R5-b 实测崩溃根因三）：回调 Ok 与 destroy 的竞态窗口内
@@ -326,21 +392,25 @@ impl MidiconsoleRenderer {
         let mapped =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| slice.get_mapped_range()));
         let Ok(data) = mapped else {
-            crate::device_status::safe_unmap(&staging);
+            crate::device_status::safe_unmap(staging);
             tracing::warn!("midiconsole 读回竞态（缓冲已随 TDR 销毁），放弃本帧");
-            return None;
+            return false;
         };
-        let mut out = vec![0u8; (self.frame_w * self.frame_h * bpp) as usize];
-        for y in 0..self.frame_h {
-            let rs = (y * padded) as usize;
-            for x in 0..self.frame_w {
-                let si = rs + (x * bpp) as usize;
-                let di = (y * self.frame_w * bpp + x * bpp) as usize;
-                out[di..di + 4].copy_from_slice(&data[si..si + 4]);
+
+        // 行对齐裁剪：1080p 等 256 对齐宽度（1920×4=7680）走整块 memcpy，
+        // 其余分辨率逐行 memcpy（1920 次，而非旧实现的 200 万次逐像素拷贝）。
+        if padded == unpadded {
+            let need = unpadded * self.frame_h as usize;
+            dst.copy_from_slice(&data[..need]);
+        } else {
+            for y in 0..self.frame_h as usize {
+                let src = y * padded;
+                let di = y * unpadded;
+                dst[di..di + unpadded].copy_from_slice(&data[src..src + unpadded]);
             }
         }
         drop(data);
-        crate::device_status::safe_unmap(&staging);
-        Some(out)
+        crate::device_status::safe_unmap(staging);
+        true
     }
 }

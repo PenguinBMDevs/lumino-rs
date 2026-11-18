@@ -264,6 +264,13 @@ fn run_render_thread_inner(ctx: RenderContext, channels: RenderThreadChannels) {
                 }
             }
 
+            // Tracy 帧视图（交互渲染；导出帧由 `handle_video_frame` 单独标记）
+            crate::profiling::frame_mark();
+            crate::profiling::tracy_plot!(
+                "gfx.interactive_frame_ms",
+                frame_start.elapsed().as_secs_f64() * 1000.0
+            );
+
             // 更新统计
             let frame_time = frame_start.elapsed();
             update_stats(

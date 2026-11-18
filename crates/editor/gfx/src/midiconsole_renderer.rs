@@ -80,6 +80,11 @@ pub struct MidiconsoleRenderer {
     cell_h: f32,
     frame_w: u32,
     frame_h: u32,
+    /// GPU→CPU 读回 staging（按需创建、跨帧复用，未映射时可直接再次 COPY_DST）。
+    ///
+    /// 旧实现每帧 `create_buffer_init(&vec![0; 8MB])`：既分配 8MB 又把 8MB 零值
+    /// 上传到 GPU，随后立刻被 `copy_texture_to_buffer` 覆盖——纯浪费。
+    staging: Option<wgpu::Buffer>,
 }
 
 /// GPU 渲染上下文（封装 wgpu 设备/队列与渲染器），供导出路径在多次帧之间复用。

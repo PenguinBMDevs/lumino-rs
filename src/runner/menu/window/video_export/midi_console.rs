@@ -118,6 +118,7 @@ pub struct MidiConsoleRenderer {
 
 mod cpu;
 mod font;
+mod glyph_cache;
 mod gpu;
 mod renderer;
 

@@ -29,6 +29,8 @@ pub mod grid;
 mod grid_renderer;
 mod note_renderer;
 mod pipeline;
+/// Tracy 剖析插桩（`tracy` feature，默认零开销）
+mod profiling;
 pub mod render_thread;
 mod ruler_renderer;
 mod vertical_grid_renderer;

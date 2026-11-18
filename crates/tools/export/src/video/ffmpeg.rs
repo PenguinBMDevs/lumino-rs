@@ -94,6 +94,14 @@ impl FfmpegEncoder {
     /// `input_pix_fmt` 为原始帧数据的像素格式（如 `"bgra"` 或 `"rgba"`），
     /// 需与 GPU 离屏纹理的实际通道顺序一致。
     pub fn new(config: &VideoExportConfig, input_pix_fmt: &'static str) -> VideoExportResult<Self> {
+        // 输出路径是启动外部进程的硬性前提：空串会让 ffmpeg 以
+        // `Error opening output file .`（code -22）立即退出，而调用方已经
+        // 白跑一轮帧生成。必须在 `ffmpeg_path()` 之前拦截，且不依赖环境。
+        if config.output_path.to_string_lossy().trim().is_empty() {
+            return Err(VideoExportError::InvalidConfig(
+                tr!("请先选择视频输出路径").to_string(),
+            ));
+        }
         let ffmpeg = ffmpeg_path()?;
 
         tracing::info!(path = %ffmpeg.display(), "启动 ffmpeg 编码器（直连写入模式）");
@@ -182,6 +190,13 @@ impl FfmpegEncoder {
     /// 原始 BGRA 数据直接写入 ffmpeg stdin pipe。成功后将 `frame_data` 原样返回，
     /// 方便调用方将其归还到对象池复用；失败时数据被丢弃。
     pub fn write_frame(&mut self, frame_data: Vec<u8>) -> VideoExportResult<Vec<u8>> {
+        // 管道写入阻塞时间 = ffmpeg 编码背压（Tracy 中与 gfx.export.* 对照看瓶颈）
+        crate::video::profiling::tracy_zone!("ffmpeg.write_frame", {
+            self.write_frame_inner(frame_data)
+        })
+    }
+
+    fn write_frame_inner(&mut self, frame_data: Vec<u8>) -> VideoExportResult<Vec<u8>> {
         let expected = (self.width * self.height * 4) as usize;
         if frame_data.len() != expected {
             return Err(VideoExportError::FrameSizeMismatch {
@@ -208,6 +223,7 @@ impl FfmpegEncoder {
     ///
     /// 消费 self，成功返回 Ok(())，失败返回含 stderr 上下文的错误。
     pub fn finish(mut self) -> VideoExportResult<()> {
+        crate::video::profiling::tracy_span!("ffmpeg.finish");
         // 显式 take 并 drop stdin_writer，触发 flush 并关闭 pipe，让 ffmpeg 收到 EOF
         if let Some(writer) = self.stdin_writer.take() {
             std::mem::drop(writer);
@@ -341,6 +357,35 @@ mod tests {
     use std::collections::VecDeque;
     use std::process::Child;
     use std::time::Duration;
+
+    /// 空输出路径必须在**启动 ffmpeg 之前**被拒绝（用户实测 `code=-22` 根因）。
+    ///
+    /// 校验先于 `ffmpeg_path()`：本测试不依赖本机是否安装 ffmpeg。
+    #[test]
+    fn test_new_rejects_blank_output_path_before_spawning() {
+        use crate::video::config::{Container, EncoderBackend, QualityPreset, VideoCodec};
+
+        let config = VideoExportConfig {
+            width: 1920,
+            height: 1080,
+            fps: 60.0,
+            container: Container::Mp4,
+            codec: VideoCodec::H264,
+            backend: EncoderBackend::Software,
+            output_path: std::path::PathBuf::new(),
+            quality: QualityPreset::Medium,
+        };
+        let err =
+            FfmpegEncoder::new(&config, "bgra").expect_err("空输出路径必须在启动 ffmpeg 前被拒绝");
+        assert!(
+            matches!(err, VideoExportError::InvalidConfig(_)),
+            "错误类型必须是 InvalidConfig，实际 {err:?}"
+        );
+        assert!(
+            err.to_string().contains("请先选择视频输出路径"),
+            "错误必须可直接展示给用户，实际 {err}"
+        );
+    }
 
     #[test]
     fn test_stderr_tail_keeps_only_latest_lines() {

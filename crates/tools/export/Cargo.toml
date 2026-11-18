@@ -10,7 +10,14 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# Tracy 剖析：ffmpeg 管道写入 zone（默认零开销）。
+tracy = ["dep:tracy-client"]
+
 [dependencies]
+# 性能剖析（optional，由 `tracy` feature 开启）
+tracy-client = { workspace = true, optional = true }
 lumino-core = { workspace = true }
 lumino-project = { workspace = true }
 lumino-extras = { workspace = true }

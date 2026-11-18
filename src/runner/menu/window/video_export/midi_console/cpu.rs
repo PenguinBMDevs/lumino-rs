@@ -1,4 +1,4 @@
-use ab_glyph::{Font, Point, PxScale, ScaleFont};
+use ab_glyph::{Font, PxScale, ScaleFont};
 use lumino_midi_loader::MidiDocument;
 
 use super::font::load_monospace_font;
@@ -171,112 +171,170 @@ pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
 
     // 1) 渲染字符网格
     let mut grid = vec![Cell::blank(); gw * gh];
-    renderer.render(&mut grid, document, tick, ppq, fps);
+    crate::profiling::tracy_zone!("app.mc.grid", {
+        renderer.render(&mut grid, document, tick, ppq, fps);
+    });
 
     let cell_w = frame_width as f32 / COLS as f32;
     let cell_h = frame_height as f32 / ROWS as f32;
 
     // 2) 栅格化（参照本仓 ui-editor 的 ab_glyph 用法：glyph_id + outline_glyph）
-    if let Some(font) = load_monospace_font() {
-        let scale = PxScale {
-            x: cell_h,
-            y: cell_h,
-        };
-        let scaled = font.as_scaled(scale);
-        let ascent = scaled.ascent();
-        let descent = scaled.descent();
-        let glyph_h = ascent - descent;
-        for r in 0..gh {
-            for c in 0..gw {
-                let cell = grid[r * gw + c];
-                // 先填充背景
-                fill_rect(
-                    frame,
-                    (fw, fh),
-                    (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
-                    cell.bg,
-                );
-                if cell.ch != ' ' {
-                    let gid = font.glyph_id(cell.ch);
-                    let ha = scaled.h_advance(gid);
-                    let off_x = (cell_w - ha) / 2.0;
-                    let off_y = (cell_h - glyph_h) / 2.0;
-                    let baseline_x = c as f32 * cell_w + off_x;
-                    let baseline_y = r as f32 * cell_h + off_y + ascent;
-                    let glyph = gid.with_scale_and_position(
-                        scale,
-                        Point {
-                            x: baseline_x,
-                            y: baseline_y,
-                        },
+    crate::profiling::tracy_zone!("app.mc.raster", {
+        if let Some(font) = load_monospace_font() {
+            let scale = PxScale {
+                x: cell_h,
+                y: cell_h,
+            };
+            let scaled = font.as_scaled(scale);
+            let ascent = scaled.ascent();
+            let descent = scaled.descent();
+            let glyph_h = ascent - descent;
+            for r in 0..gh {
+                for c in 0..gw {
+                    let cell = grid[r * gw + c];
+                    // 先填充背景
+                    fill_rect(
+                        frame,
+                        (fw, fh),
+                        (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
+                        cell.bg,
                     );
-                    if let Some(outline) = font.outline_glyph(glyph) {
-                        // 关键：ab_glyph 的 draw 回调坐标是「相对字形包围盒左上角」，
-                        // 必须叠加 px_bounds().min 才是帧内绝对像素（与本仓 text_tool 完全一致）
-                        let b = outline.px_bounds();
-                        outline.draw(|px, py, cov| {
-                            let x = (px as f32 + b.min.x).round() as i32;
-                            let y = (py as f32 + b.min.y).round() as i32;
+                    if cell.ch != ' ' {
+                        let ha = scaled.h_advance(font.glyph_id(cell.ch));
+                        let off_x = (cell_w - ha) / 2.0;
+                        let off_y = (cell_h - glyph_h) / 2.0;
+                        let baseline_x = c as f32 * cell_w + off_x;
+                        let baseline_y = r as f32 * cell_h + off_y + ascent;
+                        // 覆盖率按（字符, 基线亚像素相位）缓存：每帧只做颜色混合，
+                        // 不再重复展平曲线 + 扫描线栅格化（像素逐位等价，见 glyph_cache）
+                        let cached = super::glyph_cache::cached_glyph(
+                            &font, scale, cell.ch, baseline_x, baseline_y,
+                        );
+                        // 关键：ab_glyph 的覆盖率坐标相对「字形包围盒左上角」，
+                        // 必须叠加包围盒 min 才是帧内绝对像素（与本仓 text_tool 一致）。
+                        // 样本坐标已预取整，这里只做整数加法；颜色 u8→f32 提到循环外。
+                        let b_min_x = cached.base_min.0 + baseline_x.trunc();
+                        let b_min_y = cached.base_min.1 + baseline_y.trunc();
+                        let (bx, by) = (b_min_x as i32, b_min_y as i32);
+                        let fg_f = [cell.fg[0] as f32, cell.fg[1] as f32, cell.fg[2] as f32];
+                        let bg_f = [cell.bg[0] as f32, cell.bg[1] as f32, cell.bg[2] as f32];
+                        let fg_word = pack_bgra(cell.fg);
+                        let bg_word = pack_bgra(cell.bg);
+                        for &(ox, oy, cov) in &cached.samples {
+                            let x = bx + ox;
+                            let y = by + oy;
                             if x < 0 || y < 0 {
-                                return;
+                                continue;
                             }
                             let di = (y as usize * fw + x as usize) * 4;
                             if di + 3 >= frame.len() {
-                                return;
+                                continue;
                             }
-                            let a = cov.clamp(0.0, 1.0);
-                            frame[di] = blend(cell.bg[0], cell.fg[0], a);
-                            frame[di + 1] = blend(cell.bg[1], cell.fg[1], a);
-                            frame[di + 2] = blend(cell.bg[2], cell.fg[2], a);
-                            frame[di + 3] = 255;
-                        });
+                            let word = coverage_word(fg_f, bg_f, fg_word, bg_word, cov);
+                            frame[di..di + 4].copy_from_slice(&word.to_le_bytes());
+                        }
                     }
                 }
             }
-        }
-    } else {
-        // 降级：无字体时把非空格当作前景色块填充（保证仍有可见输出）
-        for r in 0..gh {
-            for c in 0..gw {
-                let cell = grid[r * gw + c];
-                let col = if cell.ch == ' ' { cell.bg } else { cell.fg };
-                fill_rect(
-                    frame,
-                    (fw, fh),
-                    (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
-                    col,
-                );
+        } else {
+            // 降级：无字体时把非空格当作前景色块填充（保证仍有可见输出）
+            for r in 0..gh {
+                for c in 0..gw {
+                    let cell = grid[r * gw + c];
+                    let col = if cell.ch == ' ' { cell.bg } else { cell.fg };
+                    fill_rect(
+                        frame,
+                        (fw, fh),
+                        (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
+                        col,
+                    );
+                }
             }
         }
-    }
+    });
 
     // 3) 复古终端 CRT 后处理：静态扫描线 + 随 tick 移动的高亮扫描带（动态发光）
-    apply_crt_effect(frame, fw, fh, tick);
+    crate::profiling::tracy_zone!("app.mc.crt", {
+        apply_crt_effect(frame, fw, fh, tick);
+    });
 }
 
-/// 背景色与前景色按覆盖率混合（BGRA 顺序）
+/// 打包 BGRA 像素（alpha 恒 255，与导出编码器消费顺序一致）。
 #[inline]
-fn blend(bg: u8, fg: u8, a: f32) -> u8 {
-    (fg as f32 * a + bg as f32 * (1.0 - a)).clamp(0.0, 255.0) as u8
+pub(super) fn pack_bgra(color: [u8; 3]) -> u32 {
+    (color[0] as u32) | ((color[1] as u32) << 8) | ((color[2] as u32) << 16) | 0xFF00_0000
+}
+
+/// 覆盖率 → BGRA 像素。
+///
+/// 两端（0 / ≥1）直接返回常量：原式 `f*a + b*(1-a)` 在 a=0/1 时精确等于
+/// b / f（`f*1+b*0`、`f*0+b*1`），省去浮点混合；中间仍用原式逐通道计算，
+/// 与逐帧栅格化实现逐位一致。
+#[inline]
+pub(super) fn coverage_word(
+    fg_f: [f32; 3],
+    bg_f: [f32; 3],
+    fg_word: u32,
+    bg_word: u32,
+    cov: f32,
+) -> u32 {
+    let a = cov.clamp(0.0, 1.0);
+    if a >= 1.0 {
+        return fg_word;
+    }
+    if a <= 0.0 {
+        return bg_word;
+    }
+    let inv = 1.0 - a;
+    let b = (fg_f[0] * a + bg_f[0] * inv).clamp(0.0, 255.0) as u32;
+    let g = (fg_f[1] * a + bg_f[1] * inv).clamp(0.0, 255.0) as u32;
+    let r = (fg_f[2] * a + bg_f[2] * inv).clamp(0.0, 255.0) as u32;
+    b | (g << 8) | (r << 16) | 0xFF00_0000
 }
 
 /// 填充矩形（BGRA），`size=(宽, 高)`，`rect=(x0, y0, 宽, 高)`（8 参结构体化，满足 `too_many_arguments`）。
-fn fill_rect(frame: &mut [u8], size: (usize, usize), rect: (f32, f32, f32, f32), color: [u8; 3]) {
+pub(super) fn fill_rect(
+    frame: &mut [u8],
+    size: (usize, usize),
+    rect: (f32, f32, f32, f32),
+    color: [u8; 3],
+) {
     let (fw, fh) = size;
     let (x0, y0, w, h) = rect;
     let x0 = x0.max(0.0) as i64;
     let y0 = y0.max(0.0) as i64;
     let x1 = ((x0 as f32 + w) as i64).min(fw as i64);
     let y1 = ((y0 as f32 + h) as i64).min(fh as i64);
-    for y in y0..y1 {
-        let row = y as usize * fw;
-        for x in x0..x1 {
-            let di = (row + x as usize) * 4;
-            if di + 3 < frame.len() {
-                frame[di] = color[2];
-                frame[di + 1] = color[1];
-                frame[di + 2] = color[0];
-                frame[di + 3] = 255;
+    if x1 <= x0 {
+        return;
+    }
+    // 行内整段像素填充：输出与逐像素写完全一致（同一 BGRA 像素、同一裁剪边界）。
+    // cell 宽度通常 10-20px（40-80B）：整行一次 memcpy 比逐像素 4 字节 store 快。
+    let pixel = [color[2], color[1], color[0], 255];
+    let width = (x1 - x0) as usize;
+    let bytes = width * 4;
+    if bytes <= 64 {
+        let mut pattern = [0u8; 64];
+        for px in pattern.as_chunks_mut::<4>().0 {
+            *px = pixel;
+        }
+        for y in y0..y1 {
+            let start = (y as usize * fw + x0 as usize) * 4;
+            let end = start + bytes;
+            if end > frame.len() {
+                continue;
+            }
+            frame[start..end].copy_from_slice(&pattern[..bytes]);
+        }
+    } else {
+        for y in y0..y1 {
+            let start = (y as usize * fw + x0 as usize) * 4;
+            let end = start + bytes;
+            if end > frame.len() {
+                continue;
+            }
+            for px in frame[start..end].as_chunks_mut::<4>().0 {
+                *px = pixel;
             }
         }
     }
@@ -291,6 +349,9 @@ pub(super) fn apply_crt_effect(frame: &mut [u8], fw: usize, fh: usize, tick: u32
     let band_center = (tick as f32 * band_speed) % fh as f32;
     let band_width: f32 = 26.0; // 高亮扫描带半宽（高斯）
     let band_strength: f32 = 0.28; // 高亮扫描带增益
+    // 每行亮度系数相同，先建 256 项查表再整行映射：逐像素 3 次 f32 乘加 + 截断
+    // 降到 3 次字节查表，输出与原地计算逐位一致（同式同截断）。
+    let mut lut = [0u8; 256];
     for y in 0..fh {
         // 扫描线：每隔 scan_period 行整体压暗
         let scan = if y % scan_period == 0 { scan_dark } else { 1.0 };
@@ -298,12 +359,20 @@ pub(super) fn apply_crt_effect(frame: &mut [u8], fw: usize, fh: usize, tick: u32
         let dy = (y as f32 - band_center).abs();
         let glow = (-(dy * dy) / (2.0 * band_width * band_width)).exp() * band_strength;
         let factor = scan * (1.0 + glow);
-        let row = y * fw;
-        for x in 0..fw {
-            let di = (row + x) * 4;
-            frame[di] = (frame[di] as f32 * factor).clamp(0.0, 255.0) as u8;
-            frame[di + 1] = (frame[di + 1] as f32 * factor).clamp(0.0, 255.0) as u8;
-            frame[di + 2] = (frame[di + 2] as f32 * factor).clamp(0.0, 255.0) as u8;
+        for (v, slot) in lut.iter_mut().enumerate() {
+            *slot = (v as f32 * factor).clamp(0.0, 255.0) as u8;
+        }
+        // 整行按 u32 处理：1 次 4 字节读 + 3 次查表 + 1 次 4 字节写，
+        // 替代逐像素 4 次字节读/写；alpha 原样保留（与旧实现一致）。
+        let start = y * fw * 4;
+        let end = start + fw * 4;
+        for px in frame[start..end].as_chunks_mut::<4>().0 {
+            let word = u32::from_le_bytes(*px);
+            let b = lut[(word & 0xFF) as usize] as u32;
+            let g = lut[((word >> 8) & 0xFF) as usize] as u32;
+            let r = lut[((word >> 16) & 0xFF) as usize] as u32;
+            let out = b | (g << 8) | (r << 16) | (word & 0xFF00_0000);
+            *px = out.to_le_bytes();
         }
     }
 }

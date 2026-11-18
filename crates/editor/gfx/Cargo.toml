@@ -15,6 +15,8 @@ default = []
 # R2 真实重连冒烟注入（REND-019 §三 R2）：env LUMINO_TEST_DEVICE_LOST 触发
 # device.destroy() 注入，走与真实 TDR 相同的 device-lost 回调路径。
 gpu-reconnect-test = []
+# Tracy 性能剖析：渲染线程/导出管线发射 zone + frame mark + plot（默认零开销）。
+tracy = ["dep:tracy-client"]
 
 [dependencies]
 wgpu = { workspace = true }
@@ -33,6 +35,8 @@ lumino-note-core = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-midiplayer = { workspace = true }
 lumino-diagnostics = { workspace = true }
+# 性能剖析（optional，由 `tracy` feature 开启）
+tracy-client = { workspace = true, optional = true }
 
 [dev-dependencies]
 naga = { workspace = true }

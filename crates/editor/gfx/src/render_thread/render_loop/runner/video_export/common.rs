@@ -1,4 +1,4 @@
-use crate::render_thread::commands::FrameSender;
+use crate::render_thread::commands::{FrameSender, VideoFrameMessage};
 use crate::render_thread::export_pipeline::ExportPipeline;
 use crate::render_thread::render_loop::Renderers;
 use crate::render_thread::render_loop::runner::context::{
@@ -119,15 +119,16 @@ pub(crate) fn copy_texture_and_drain(input: CopyDrainInput<'_>) {
     } = input;
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {
-        let data = pipeline.wait_read();
-        if tx.0.send(data).is_err() {
+        let (data, key_colors) = pipeline.wait_read();
+        if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
             tracing::warn!("{label}帧发送失败：Runner 通道已关闭");
             return;
         }
     }
-    pipeline.copy_and_submit(encoder, texture, queue);
-    while let Some(data) = pipeline.try_read() {
-        if tx.0.send(data).is_err() {
+    // 瀑布流 / Miditrail 帧不含钢琴卷帘键色（None）
+    pipeline.copy_and_submit(encoder, texture, queue, None);
+    while let Some((data, key_colors)) = pipeline.try_read() {
+        if tx.0.send(VideoFrameMessage { data, key_colors }).is_err() {
             tracing::warn!("{label}帧发送失败：Runner 通道已关闭");
             return;
         }

@@ -16,6 +16,8 @@ mod constants;
 mod device_probe;
 mod logging;
 mod platform;
+/// Tracy 剖析插桩（`tracy` feature，默认零开销）
+mod profiling;
 mod runner;
 mod services;
 mod storage;

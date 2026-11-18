@@ -100,10 +100,14 @@ pub struct ResidentCull {
     pub(super) cursor_buffer: Option<TrackedBuffer>,
     /// 活跃键聚合输出（256×u32 = 1KB，初值 0；`compute_active` 时读回）。
     pub(super) active_buffer: Option<TrackedBuffer>,
-    /// 活跃键回读暂存（1KB）。
-    pub(super) active_staging: Option<TrackedBuffer>,
     /// 上次 COUNT 的 `tick_start`（倒退检测用；初值 0，到达过即单调记忆）。
     pub(super) last_tick_start: u32,
+    /// 外部内容世代覆盖：钢琴卷帘直绑 onion 缓冲时注入 `Renderers::onion_epoch`；
+    /// `None` 时用内部 `seq`（waterfall/miditrail 上传路径）。
+    ///
+    /// 契约见 `BucketSource::epoch`：绑定的缓冲被「等长原地改写」时只有外部世代
+    /// 会变，内部 `seq` 不变——不注入就会用陈旧 `sort_index` 静默错色。
+    pub(super) external_epoch: Option<u64>,
 }
 
 impl ResidentCull {
@@ -115,6 +119,19 @@ impl ResidentCull {
     /// 常驻上传后调用：世代递增，下次提取重建桶（一次性成本）。
     pub fn mark_resident_updated(&mut self) {
         self.seq = self.seq.wrapping_add(1);
+    }
+
+    /// 注入外部内容世代（钢琴卷帘直绑 onion 缓冲时用 `Renderers::onion_epoch`）。
+    ///
+    /// 与 `mark_resident_updated` 互斥使用：设置后 `extract_count` 优先用此外部
+    /// 世代判定重建，能识别「等长原地改写」；上传路径应 `clear_external_epoch`。
+    pub fn set_external_epoch(&mut self, epoch: u64) {
+        self.external_epoch = Some(epoch);
+    }
+
+    /// 清除外部世代，回落到内部 `seq`（上传路径语义）。
+    pub fn clear_external_epoch(&mut self) {
+        self.external_epoch = None;
     }
 
     /// 释放导出常驻全套 GPU 资源（桶 + cull 管线暂存 + compact + 游标）。
@@ -139,8 +156,8 @@ impl ResidentCull {
         self.compact_capacity = 0;
         self.cursor_buffer = None;
         self.active_buffer = None;
-        self.active_staging = None;
         self.last_tick_start = 0;
+        self.external_epoch = None;
     }
 
     /// 只读访问 compact 缓冲（调用方绑定只读或回读；提取成功且总数 > 0 时有效）。

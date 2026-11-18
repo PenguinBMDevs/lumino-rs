@@ -27,6 +27,7 @@ mod rendering_panel_exit;
 mod selection_drift;
 mod track_order;
 mod velocity;
+mod video_export_entry;
 
 fn create_root() -> Root {
     Root::new(&UiConfig::default())

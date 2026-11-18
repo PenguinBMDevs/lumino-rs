@@ -1,41 +1,17 @@
-use lumino_core::trf;
+use lumino_core::{tr, trf};
 
 use super::enqueue::enqueue_memory_frame;
 use super::*;
+
+/// 帧队列缓存的视频时长（秒）：短期编码滞后由此吸收，帧生成速度可独立测量。
+const QUEUE_BUFFER_SECONDS: f64 = 2.0;
+/// 帧队列内存硬预算（512MiB）：防 300FPS 场景无界堆积 OOM（1080p 单帧 8.29MB）。
+const QUEUE_MAX_BYTES: usize = 512 * 1024 * 1024;
 
 /// 后台线程主流程：创建编码器、发送初始渲染命令、逐帧渲染 + 编码、收尾。
 ///
 /// 该函数整体等价于原 `handle_start_video_export` 中 `move` 闭包体内的逻辑，
 /// 仅将各阶段进一步拆分成下方私有步骤函数，行为保持一致。
-pub(crate) struct RunVideoExportTaskInput {
-    pub config: VideoExportConfig,
-    pub cmd_sender: Sender<RenderCommand>,
-    pub progress_tx: UnboundedSender<ProgressMsg>,
-    pub preview_tx: UnboundedSender<(Vec<u8>, u32, u32)>,
-    pub document: Arc<lumino_midi_loader::MidiDocument>,
-    pub ppq: u32,
-    pub fps_f64: f64,
-    pub key_count: u16,
-    pub width: u32,
-    pub height: u32,
-    pub cancel_flag: Arc<AtomicBool>,
-    /// TDR 归因标志（R5-b）：重连取消时置位——收尾按失败上报而非「已取消」
-    pub tdr_cancel_flag: Arc<AtomicBool>,
-    pub input_pix_fmt: &'static str,
-    pub is_cpu_renderer: bool,
-    pub is_gpu_compute_style: bool,
-    pub waterfall_scroll_speed: f32,
-    pub miditrail_z_far: f32,
-    pub miditrail_view_mode: MiditrailViewMode,
-    pub miditrail_normal_speed: f32,
-    pub miditrail_top_speed: f32,
-    pub miditrail_3d_notes: bool,
-    pub render_mode: RenderMode,
-    pub counter_config: Option<CounterRenderConfig>,
-    pub data_curve_config: Option<DataCurveRenderConfig>,
-    pub midi_console_config: Option<MidiConsoleRenderConfig>,
-}
-
 pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
     let RunVideoExportTaskInput {
         config,
@@ -67,16 +43,12 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
     } = input;
     let start = Instant::now();
 
-    // 按键颜色增量扫描状态（与编辑器 PlaybackScanState 等价）
-    let mut key_color_state = keyboard::PlaybackKeyColorState::default();
-    let mut key_colors = [0u8; keyboard::KEY_COLOR_BYTES];
-
-    // 创建帧数据通道与回收通道
-    let (frame_tx, frame_rx) = channel::<Vec<u8>>();
+    // 创建帧数据通道与回收通道（钢琴卷帘键色随帧消息同序传递）
+    let (frame_tx, frame_rx) = channel::<VideoFrameMessage>();
     let (recycle_tx, recycle_rx) = channel::<Vec<u8>>();
 
-    // 创建 FFmpeg 编码器（直连写入模式，缓冲区由调用方在 write_frame 后归还对象池）
-    let mut encoder = match FfmpegEncoder::new(&config, input_pix_fmt) {
+    // 创建 FFmpeg 编码器；write_frame 将移至独立写线程执行
+    let encoder = match FfmpegEncoder::new(&config, input_pix_fmt) {
         Ok(e) => e,
         Err(e) => {
             tracing::error!("FFmpeg 创建失败: {e}");
@@ -84,6 +56,40 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
             return;
         }
     };
+
+    // 有界帧队列容量：时间预算 ∩ 内存预算封顶，吸收短期背压而不 OOM。
+    let queue_cfg = FrameQueueConfig {
+        width,
+        height,
+        fps: fps_f64,
+        buffer_seconds: QUEUE_BUFFER_SECONDS,
+        max_bytes: QUEUE_MAX_BYTES,
+        min_frames: PIPELINE_DEPTH,
+    };
+    let telemetry = Arc::new(EncodeTelemetry::default());
+    let encoder_thread = match EncoderThread::spawn(
+        queue_cfg.capacity(),
+        encoder,
+        recycle_tx,
+        progress_tx.clone(),
+        Arc::clone(&telemetry),
+        Arc::clone(&cancel_flag),
+    ) {
+        Ok(thread) => thread,
+        Err(e) => {
+            tracing::error!("启动 ffmpeg 写线程失败: {e}");
+            send_export_error(&progress_tx, trf!("导出失败：写线程启动失败: {e}", e = e));
+            return;
+        }
+    };
+    tracing::info!(
+        "帧队列解耦就绪: 容量={} 帧 ({}x{}, {}fps, 缓存 {:.1}s)",
+        queue_cfg.capacity(),
+        width,
+        height,
+        fps_f64,
+        QUEUE_BUFFER_SECONDS
+    );
 
     // 发送初始渲染命令（StartVideoExport），携带帧缓冲回收通道
     // clone frame_tx：send_initial_render_commands 会消费原始 frame_tx（移至渲染线程），
@@ -220,7 +226,6 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         height,
         key_count,
         is_cpu_renderer,
-        is_gpu_compute_style,
         render_mode,
         counter_config: &counter_config,
         counter_stats: &mut counter_stats,
@@ -238,8 +243,6 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         miditrail_3d_notes,
         frame_tx_waterfall: &frame_tx_waterfall,
         progress_tx: &progress_tx,
-        key_colors: &mut key_colors,
-        key_color_state: &mut key_color_state,
         csv_writer: &mut csv_writer,
         visible_note_buf: &mut visible_note_buf,
         note_instances_buf: &mut note_instances_buf,
@@ -250,9 +253,19 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         enqueue_memory_frame(&mut ctx, queue, frame_idx)
     };
 
+    // 诊断帧上限（Tracy 基线抓固定窗口；正常导出不设该环境变量）
+    let frame_limit = std::env::var("LUMINO_BENCH_FRAMES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|n| *n > 0);
+    if let Some(limit) = frame_limit {
+        tracing::info!("诊断帧上限生效：{limit} 帧（LUMINO_BENCH_FRAMES）");
+    }
+
     // 预填充 + 主循环 + drain 由公共 FramePipeline 驱动（与流式路径共用同一循环骨架）
     let mut pipeline = FramePipeline {
         total_frames,
+        frame_limit,
         cancel_flag: &cancel_flag,
         frame_rx: &frame_rx,
         param_queue: &mut param_queue,
@@ -261,63 +274,84 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
         start,
         // 内存路径：进度直接映射（无解析阶段）
         progress_map: |p| p,
+        telemetry: &telemetry,
     };
-    let mut process_frame = |frame_data: Vec<u8>, frame_params: FrameParams| {
-        if is_gpu_compute_style || is_cpu_renderer {
-            // GPU compute（瀑布流/MIDITrail）帧已完整渲染；
-            // CPU 渲染（计数器）帧也不含键盘/标尺，均直接编码。
-            composite_and_encode_frame(CompositeEncodeFrameInput {
-                data: frame_data,
-                params: FrameParams::default(),
-                encoder: &mut encoder,
-                progress_tx: &progress_tx,
+    let mut process_frame =
+        |message: VideoFrameMessage, frame_params: FrameParams| -> (bool, FrameStageStats) {
+            let VideoFrameMessage { data, key_colors } = message;
+            // GPU compute（瀑布流/MIDITrail）/ CPU 渲染（计数器）帧不含键盘/标尺，跳过合成
+            let skip_chrome = is_gpu_compute_style || is_cpu_renderer;
+            let params = if skip_chrome {
+                FrameParams::default()
+            } else {
+                frame_params
+            };
+            let (kb_pixels, kb_w_use, kb_h_use): (&[u8], u32, u32) = if skip_chrome {
+                (&[], 0, 0)
+            } else {
+                (&keyboard_pixels[..], kb_w, kb_h)
+            };
+            // 钢琴卷帘键色由渲染线程 GPU 推导；None（空文档/聚合失败）按全 0
+            const NO_KEY_COLORS: [u8; 1024] = [0u8; 1024];
+            let key_colors = key_colors.as_ref().unwrap_or(&NO_KEY_COLORS);
+            let (composed, stats) = composite_frame(CompositeFrameInput {
+                data,
+                params,
                 preview_tx: &preview_tx,
-                cancel_flag: &cancel_flag,
                 last_preview_time: &mut last_preview_time,
                 preview_sent: &mut preview_sent,
                 width,
                 height,
-                keyboard_pixels: &[],
-                kb_w: 0,
-                kb_h: 0,
-                recycle_tx: &recycle_tx,
-            })
-        } else {
-            composite_and_encode_frame(CompositeEncodeFrameInput {
-                data: frame_data,
-                params: frame_params,
-                encoder: &mut encoder,
-                progress_tx: &progress_tx,
-                preview_tx: &preview_tx,
-                cancel_flag: &cancel_flag,
-                last_preview_time: &mut last_preview_time,
-                preview_sent: &mut preview_sent,
-                width,
-                height,
-                keyboard_pixels: &keyboard_pixels,
-                kb_w,
-                kb_h,
-                recycle_tx: &recycle_tx,
-            })
-        }
-    };
+                keyboard_pixels: kb_pixels,
+                kb_w: kb_w_use,
+                kb_h: kb_h_use,
+                key_colors,
+            });
+            let Some(data) = composed else {
+                // 读回为空：跳过入队，继续后续帧（与旧路径丢弃该帧等价）
+                return (false, stats);
+            };
+            match encoder_thread.enqueue(data, &cancel_flag) {
+                EnqueueOutcome::Enqueued => (false, stats),
+                EnqueueOutcome::Cancelled => (true, stats),
+                EnqueueOutcome::Closed => {
+                    // 取消置位恰在 pipeline 检查与 try_send 之间时，写线程可能已退出；
+                    // 此时按取消收尾，不误报「编码线程已退出」错误。
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        tracing::info!("取消期间帧队列关闭，按取消收尾");
+                    } else {
+                        tracing::error!("帧队列消费端已关闭，终止帧生成");
+                        send_export_error(&progress_tx, tr!("导出失败：编码线程已退出"));
+                    }
+                    (true, stats)
+                }
+            }
+        };
     let (processed_frames, cancelled, smoothed_fps) =
         pipeline.run(&mut enqueue_frame, &mut process_frame);
-    // enqueue_frame 在此处释放（持有 csv_writer 可变借用），随后可 flush 计数器 CSV。
+    // 释放闭包对 encoder_thread / csv_writer 的借用，收尾需 move encoder_thread
+    drop(process_frame);
+    drop(enqueue_frame);
 
     // 完成编码：无论是否取消都必须调用 finish()，
     // 否则 FFmpeg 收不到 EOF，视频文件头未写入导致损坏。
     // 用户取消时已写入的帧仍可生成可播放的部分视频。
     let elapsed = start.elapsed().as_secs_f64();
+    let encode_failed = telemetry.failed.load(Ordering::Relaxed);
     if let Some(writer) = ctx.csv_writer.as_mut() {
         use std::io::Write;
         if let Err(e) = writer.flush() {
             tracing::warn!("计数器 CSV 收尾失败: {e}");
         }
     }
-    if cancelled {
+    if encode_failed {
         render_bar.finish(&format!(
-            "已取消 | 已处理 {}/{} 帧 | 耗时 {:.1}s",
+            "编码失败 | 已入队 {}/{} 帧 | 耗时 {:.1}s",
+            processed_frames, total_frames, elapsed
+        ));
+    } else if cancelled {
+        render_bar.finish(&format!(
+            "已取消 | 已入队 {}/{} 帧 | 耗时 {:.1}s",
             processed_frames, total_frames, elapsed
         ));
     } else {
@@ -328,9 +362,10 @@ pub(crate) fn run_video_export_task(input: RunVideoExportTaskInput) {
     }
     finalize_video_export(
         &cmd_sender,
-        encoder,
+        encoder_thread,
         cancelled,
-        tdr_cancel_flag.load(std::sync::atomic::Ordering::SeqCst),
+        tdr_cancel_flag.load(Ordering::SeqCst),
+        encode_failed,
         elapsed,
         total_frames,
         smoothed_fps,

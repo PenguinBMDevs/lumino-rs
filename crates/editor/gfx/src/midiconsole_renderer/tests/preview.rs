@@ -195,3 +195,48 @@ fn test_gpu_renders_preview_png() {
         height
     );
 }
+
+/// 生产路径 `render_to_bgra_into` 与兼容路径 `render_to_rgba` 必须逐像素通道对应。
+///
+/// 背景色特意选 (10,20,30)：通道错位（R/B 互换）会被立即抓出；这是 MidiConsole
+/// GPU 输出格式从 Rgba8Unorm 改为 Bgra8Unorm（编码器直消费）后的等价性护栏。
+#[test]
+fn test_bgra_into_matches_rgba_channels() {
+    let (device, queue) = crate::test_gpu::shared_device();
+    let width = (GRID_COLS as u32) * 10;
+    let height = (GRID_ROWS as u32) * 20;
+    let mut renderer = MidiconsoleRenderer::new(&device, &queue, width, height);
+
+    let bg = pack_rgb(10, 20, 30);
+    let fg = pack_rgb(200, 100, 50);
+    let mut grid = vec![
+        CellGpu {
+            ch: ' ' as u32,
+            fg,
+            bg,
+            _pad: 0,
+        };
+        GRID_COLS * GRID_ROWS
+    ];
+    set(&mut grid, 0, 0, 'X', fg, bg);
+
+    let rgba = renderer
+        .render_to_rgba(&device, &queue, &grid, 0)
+        .expect("RGBA 读回应成功");
+    let mut bgra = vec![0u8; (width * height * 4) as usize];
+    assert!(
+        renderer.render_to_bgra_into(&device, &queue, &grid, 0, &mut bgra),
+        "BGRA 读回应成功"
+    );
+
+    for i in (0..rgba.len()).step_by(4) {
+        assert_eq!(bgra[i], rgba[i + 2], "B 通道不匹配 @{i}");
+        assert_eq!(bgra[i + 1], rgba[i + 1], "G 通道不匹配 @{i}");
+        assert_eq!(bgra[i + 2], rgba[i], "R 通道不匹配 @{i}");
+        assert_eq!(bgra[i + 3], 255, "alpha 必须不透明 @{i}");
+    }
+
+    // 背景语义抽查：底部像素远离高亮带，应保持 (10,20,30)
+    let last = rgba.as_chunks::<4>().0.last().expect("帧非空");
+    assert_eq!(&last[..3], &[10, 20, 30], "背景 RGB 语义被改变");
+}

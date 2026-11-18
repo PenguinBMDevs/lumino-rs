@@ -54,6 +54,11 @@ pub struct Renderers {
     /// ⚠️ 与 `onion_epoch` 是**不同代次体系**：前者是内容代次（数据版本），
     /// 本字段是 device 代次（设备重建）——禁止混用（类型已隔离）。
     pub gpu_epoch: GpuEpoch,
+    /// 钢琴卷帘导出的活跃键聚合器（GPU COUNT 顺带推导 128 键色，零 CPU 扫描）。
+    ///
+    /// 首次 `extract_count` 在 GPU 上对常驻缓冲做一次基数排序建桶（O(N) 一次性），
+    /// 此后每帧只扫新进入窗口的音符 + 回读 1KB 键色。
+    pub piano_key_cull: crate::ResidentCull,
 }
 
 impl Renderers {
@@ -75,6 +80,7 @@ impl Renderers {
             cpu_onion: crate::CpuOnionRenderer::new(device, queue, format),
             onion_epoch: 0,
             gpu_epoch: epoch,
+            piano_key_cull: crate::ResidentCull::new(),
         }
     }
 
@@ -105,6 +111,7 @@ impl Renderers {
             cpu_onion: crate::CpuOnionRenderer::new(device, queue, format),
             onion_epoch: 0,
             gpu_epoch: epoch,
+            piano_key_cull: crate::ResidentCull::new(),
         }
     }
 }

@@ -9,11 +9,28 @@
 use super::data_curve_math::rgba_to_bgra;
 
 /// 用颜色填满整帧（alpha=255 时直接覆盖，否则混合）。
+///
+/// 1080p 整帧 8.29MB；逐像素 4 字节 store 实测仅 ~650MB/s（2M 次循环，无法
+/// 向量化），是数据曲线 13.7ms 里的 12.6ms。改为「1KB 重复模式 + 块 memcpy」，
+/// 走 SSE/AVX 后同帧约 1ms，输出像素与逐像素写法完全等价。
 pub(super) fn fill_bgra(frame: &mut [u8], color_rgba: [u8; 4]) {
     let c = rgba_to_bgra(color_rgba);
     if c[3] == 255 {
-        for px in frame.as_chunks_mut::<4>().0 {
-            px.copy_from_slice(&c);
+        // 16KB 模式（4 字节颜色 × 4096）：块越大 memcpy 调用开销占比越低
+        //（1KB 块实测 2.4ms/帧，逐像素 12.6ms）
+        const PATTERN: usize = 16 * 1024;
+        let mut pattern = [0u8; PATTERN];
+        for px in pattern.as_chunks_mut::<4>().0 {
+            *px = c;
+        }
+        let mut rest = frame;
+        while rest.len() >= PATTERN {
+            let (head, tail) = rest.split_at_mut(PATTERN);
+            head.copy_from_slice(&pattern);
+            rest = tail;
+        }
+        for px in rest.as_chunks_mut::<4>().0 {
+            *px = c;
         }
     } else {
         for px in frame.as_chunks_mut::<4>().0 {
@@ -175,6 +192,19 @@ mod tests {
             &[0, 0, 0, 0],
             "y=6 无线"
         );
+    }
+
+    /// 整帧填充：块 memcpy 路径必须逐像素等价（含非块整除的尾部）
+    #[test]
+    fn test_fill_bgra_pattern_equivalence() {
+        for len_px in [1usize, 3, 257, 4097, 8193] {
+            let mut frame = vec![0u8; len_px * 4];
+            fill_bgra(&mut frame, [10, 20, 30, 255]);
+            for (i, px) in frame.as_chunks::<4>().0.iter().enumerate() {
+                // RGBA (10,20,30,255) → BGRA (30,20,10,255)
+                assert_eq!(px, &[30, 20, 10, 255], "len_px={len_px} 像素 {i} 不一致");
+            }
+        }
     }
 
     /// 半透明颜色混合：不透明背景上按 alpha 加权

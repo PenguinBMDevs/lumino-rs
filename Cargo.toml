@@ -216,9 +216,14 @@ crate-type = ["cdylib", "rlib"]
 # REND-019 §三 R2：GPU 重连进程内冒烟注入（env LUMINO_TEST_DEVICE_LOST，
 # 用法见 .ai-context/tdr-kit/checklist-R2R3.md）。
 gpu-reconnect-test = ["lumino-gfx/gpu-reconnect-test", "lumino-midi-io/gpu-reconnect-test"]
-# Tracy 性能剖析：启用后音频/播放热路径发射 zone（默认构建零开销）。
+# Tracy 性能剖析：音频/播放/渲染线程/导出管线热路径发射 zone（默认构建零开销）。
 # 用法：cargo build --profile fast-release --features tracy
-tracy = ["lumino-midi-io/tracy"]
+tracy = [
+    "dep:tracy-client",
+    "lumino-midi-io/tracy",
+    "lumino-gfx/tracy",
+    "lumino-export/tracy",
+]
 # voice 阶段级性能探针（配合 tracy 使用；运行期 XSYNTH_VOICE_PROBE=1 开启采样）。
 voice_probe = ["lumino-midi-io/voice_probe"]
 
@@ -261,6 +266,8 @@ midly = { workspace = true }
 tokio = { workspace = true }
 puffin = { workspace = true }
 puffin_http = { workspace = true }
+# Tracy 客户端（optional，由 `tracy` feature 开启；与成员 crate 同一版本）
+tracy-client = { workspace = true, optional = true }
 png = { workspace = true }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
