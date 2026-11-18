@@ -346,8 +346,10 @@ impl OutputConnection for LgsOutputConn {
 /// REND-002 实时多端口：按文档端口布局重建 GPU 合成管线（对齐 XSynth）。
 impl SynthControl for Lgs {
     /// - 同布局：轻量复位（`AudioPlayback::reset_synth_state`，不重开音频流）；
-    /// - 异布局：先构建新 `GpuSynth`（含音色库加载，失败即返回、旧管线不动），
-    ///   再停旧流、起新流并热替换事件/控制发送器（已创建的输出连接自动跟随）；
+    /// - 异布局：两阶段——先构建新 `GpuSynth`（含音色库加载；此阶段失败即返回、
+    ///   旧管线完全不动），成功后才停旧流、起新流并热替换事件/控制发送器
+    ///   （已创建的输出连接自动跟随）；若启动新流失败，旧流已停，返回 Err
+    ///   由调用方退避重试；
     /// - 仅成功才提交布局。
     fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
         match layout_action(self.midi_max_port, max_port) {
@@ -389,9 +391,10 @@ impl SynthControl for Lgs {
 
 impl Lgs {
     /// 管线重建公共机制（REND-002 端口布局重建 / REND-019 PR-D TDR 重建共用）：
-    /// 先 `build_synth` 建新引擎（含音色库加载；**失败即返回、旧管线不动**），
-    /// 再停旧流、起新流并热替换事件/控制发送器（既有输出连接自动跟随）；
-    /// 仅成功才提交 `options`。
+    /// 两阶段——先 `build_synth` 建新引擎（含音色库加载；此阶段失败即返回、
+    /// 旧管线完全不动），成功后才停旧流、起新流并热替换事件/控制发送器
+    /// （既有输出连接自动跟随）；若启动新流失败，旧流已停，返回 Err 由调用方
+    /// 退避重试。仅成功才提交 `options`。
     fn rebuild_with_options(&mut self, options: LgsOptions) -> Result<(), String> {
         let synth = Self::build_synth(&self.soundfont_path, &options)
             .map_err(|e| trf!("重建 GPU 合成引擎失败: {e}", e = e))?;

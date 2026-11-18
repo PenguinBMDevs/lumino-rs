@@ -2,6 +2,7 @@
 //!
 //! 从 `midi_manager.rs` 零逻辑变更拆分而来。
 
+use super::panic_guard::{Guarded, guard_mut};
 use super::*;
 use lumino_core::{tr, trf};
 
@@ -144,13 +145,17 @@ impl MidiManager {
     /// 同步路径（装载/关闭/导出/初始化对齐调用方）：先等待在途后台重建归还 API，
     /// 再按当前线程同步应用；失败保持旧布局并保留 desired。
     ///
+    /// AUD-008 同域：同步调用同样经 panic 守卫——后端 panic 不得直接展开到 UI
+    /// 线程；截断后保留 API 并触发后端重初始化兜底。
+    ///
     /// 端口编辑热路径请使用 [`Self::apply_midi_port_layout_deferred`]（后台防抖）。
     pub fn apply_midi_port_layout(&mut self, max_port: u8) {
         // 装载路径是 apply → create_additional_output：必须先收尾在途 worker，
         // 否则 API 被取走会导致播放输出创建失败（无声音）。
-        self.drain_layout_apply();
-        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（并取消暂存/退避请求）
-        self.drain_lgs_rebuild();
+        self.drain_layout_apply(false);
+        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（保留失败重试，
+        // 避免一次布局应用把 panic/Err 后的恢复机会静默取消）
+        self.drain_lgs_rebuild(false);
         self.desired_midi_max_port = max_port;
         self.layout_desired.store(max_port, Ordering::SeqCst);
         match self.active_backend {
@@ -159,15 +164,23 @@ impl MidiManager {
                     return;
                 };
                 let started = std::time::Instant::now();
-                match api.set_midi_port_layout(max_port) {
-                    Ok(()) => {
+                match guard_mut(api, |api| api.set_midi_port_layout(max_port)) {
+                    Guarded::Done(Ok(())) => {
                         self.spawned_midi_max_port = max_port;
                         tracing::info!(
                             "MIDI: 已应用端口布局 max_port={max_port}（耗时 {:?}）",
                             started.elapsed()
                         );
                     }
-                    Err(e) => tracing::error!("MIDI: 应用端口布局失败（保持旧布局）: {e}"),
+                    Guarded::Done(Err(e)) => {
+                        tracing::error!("MIDI: 应用端口布局失败（保持旧布局）: {e}");
+                    }
+                    Guarded::Panicked(msg) => {
+                        tracing::error!(
+                            "MIDI: 应用端口布局 panic（API 已保留，触发后端重初始化）: {msg}"
+                        );
+                        self.needs_reinit = true;
+                    }
                 }
             }
             _ => {

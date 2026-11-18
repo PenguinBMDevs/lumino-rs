@@ -216,10 +216,14 @@ mod lgs;
 mod lgs_rebuild;
 mod maestro;
 mod outputs;
+mod panic_guard;
 mod recovery;
 mod xsynth;
 
 pub use audio_action::handle_audio_action;
+
+#[cfg(test)]
+mod test_support;
 
 #[cfg(test)]
 mod tests {
