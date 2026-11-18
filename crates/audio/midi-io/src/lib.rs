@@ -151,8 +151,9 @@ pub trait SynthControl: Api {
     /// 重建 GPU 合成管线（REND-019 PR-D §1.5 L2：TDR 后热替换）。
     ///
     /// 默认 no-op：非 GPU 后端（System/XSynth）不因 GPU device 丢失而失效。
-    /// LGS 覆写为"先建新引擎、**成功才**停旧流并热替换事件/控制发送器
-    /// （既有输出连接自动跟随）；失败返回 Err、旧句柄不动等下一轮"。
+    /// LGS 覆写为两阶段：先建新引擎（此阶段失败即返回、旧管线完全不动），
+    /// **成功才**停旧流并热替换事件/控制发送器（既有输出连接自动跟随）；
+    /// 若停旧流后新流启动失败，返回 Err 且旧流已停，由调用方退避重试恢复。
     fn rebuild_gpu_pipeline(&mut self) -> Result<(), String> {
         Ok(())
     }
