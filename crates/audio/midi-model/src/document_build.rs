@@ -147,7 +147,8 @@ impl MidiDocument {
                         // ChunkedList 依赖 start_tick 升序做区间查询（range / 走带视图），
                         // 必须在转换前显式排序。仅对 midly 已物化的本轨 Vec<PackedNote>
                         // 做原地排序，不引入额外峰值内存（无第二个 Vec<NoteEvent> 常驻）。
-                        events.notes.sort_by_key(|n| n.start_tick);
+                        // 巨轨用稳定基数排序（8.8M 音符 330→80ms）；小轨/已排序轨走标准库。
+                        crate::note_sort::sort_by_start_tick(&mut events.notes);
                         TrackBuild {
                             notes: crate::chunked_list::ChunkedList::from_sorted_iter(
                                 events.notes.into_iter().map(NoteEvent::from),
