@@ -69,31 +69,27 @@ fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
     }
 }
 
-/// 旧版 颜色（线性浮点）→ egui 颜色。
+/// 线性浮点颜色 → egui 颜色（sRGB 直通）。
 pub(super) fn color32(color: lumino_ui_core::geom::Color) -> egui::Color32 {
     let to_u8 = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     egui::Color32::from_rgb(to_u8(color.r), to_u8(color.g), to_u8(color.b))
 }
 
 impl Sidebar {
-    /// 是否存在必须由 旧版 独占绘制的瞬态 UI。
+    /// 左侧栏本帧是否需要让位给别处绘制（当前恒为 `false`）。
     ///
-    /// 重命名输入框、拖拽插入线、颜色/端口/通道选择器、宽度拖拽都依赖 旧版 自己的
-    /// 命中与焦点管理；这些状态下叠加层不得接管左侧栏，否则会出现「egui 盖住 旧版
-    /// 输入框，输入却进 旧版」的错位。
-    ///
-    /// 注意：音轨/面板右键菜单与**行内重命名**都已由 egui 绘制并接管
-    /// （`chrome/sidebar/menu.rs`、`track_list.rs`）；若仍在此返回 `None`，
-    /// 底层画布纹理会盖住 旧版 的绘制，真机表现为「左栏整块空白」。
+    /// 历史上这里用于「重命名输入框 / 拖拽插入线 / 颜色·端口·通道选择器 / 宽度拖拽
+    /// 仍由上一代 UI 层绘制，叠加层必须让位」的情形；这些交互后来全部迁到 egui
+    ///（`chrome/sidebar/menu.rs`、`track_list.rs`），判定位保留，避免将来再引入
+    /// 同类状态时把判断散落回各处。
     fn has_transient_ui(&self) -> bool {
-        // 只剩拖拽排序与宽度拖拽：取色器 / 端口 / 通道选择器、右键菜单、行内重命名
-        // 均已由 egui 绘制（返回 None 会让底层画布纹理盖住 旧版 绘制 → 左栏空白）。
-        // 已无瞬态 UI：拖拽排序、菜单、重命名、取色/端口/通道、宽度拖拽
-        // 全部由 egui 绘制并接管。
+        // 已无需要让位的情形：拖拽排序、右键菜单、行内重命名、取色 / 端口 / 通道
+        // 选择器、宽度拖拽全部由 egui 绘制并接管。常量 `false` 让上方分支可被优化掉。
         false
     }
 
-    /// 构造左侧栏只读模型；存在瞬态 UI 时返回 `None`，交给 旧版 继续绘制。
+    /// 构造左侧栏只读模型；[`Self::has_transient_ui`] 为真时返回 `None`
+    ///（叠加层不绘制左栏，避免盖住其他通道的绘制）。
     fn egui_model(
         &self,
         language: lumino_extras::i18n::Language,
@@ -139,8 +135,8 @@ impl Sidebar {
             })
             .collect();
 
-        // 路由栏条目：与 `sidebar/route.rs`（旧版）同一套可见性 / 点亮规则，
-        // 顺序即 `ROUTES` 顺序。两边同源，绘制与命中不会再错位。
+        // 路由栏条目的可见性 / 点亮规则只有这一处实现，顺序即 `ROUTES` 顺序，
+        // 绘制与命中不会再错位。
         let active_group = self.active_group.map(sidebar_group);
         let mut route_items = vec![SidebarRouteItem {
             icon: SidebarRouteIcon::PianoRoll,
@@ -567,7 +563,7 @@ impl Root {
             model.roll_bar_visible = !waterfall && self.sidebar.is_piano_roll_panel();
         }
 
-        // 工具栏模型：只在 旧版 实际渲染工具栏的视图里接管。
+        // 工具栏模型：`shows_toolbar` 为真时构造（对应需要工具栏的视图）。
         let toolbar = if shows_toolbar {
             // 与生产 `responsive` 同一可用宽度 / 折叠纯函数：溢出菜单内容必须
             // 和工具栏实际折叠结果一致（同宽度必然同结果）。
