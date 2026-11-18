@@ -18,14 +18,15 @@ impl Runner {
             tracing::warn!("初始化未完成，忽略 LGS device-lost");
             return;
         };
-        // 一次性中断提示（状态条）：恢复/降级结果随后由 manager 的 notice 覆盖
-        this.window_state.window.ui_mut().set_status_message(Some(
-            lumino_core::i18n::tr("音频设备丢失，正在恢复 GPU 合成…").to_string(),
-        ));
         if this.midi_state.midi.request_lgs_rebuild() {
+            // 一次性中断提示（状态条）：恢复/降级结果随后由 manager 的 notice 覆盖。
+            // 放到受理之后再提示——CPU 降级冷却期内事件被忽略时不再假报「正在恢复」。
+            this.window_state.window.ui_mut().set_status_message(Some(
+                lumino_core::i18n::tr("音频设备丢失，正在恢复 GPU 合成…").to_string(),
+            ));
             tracing::info!("LGS（PR-D）: 重建请求已受理（独立流程；后台热替换）");
         } else {
-            tracing::warn!("LGS（PR-D）: 事件被忽略（非 LGS 活跃后端或 API 不可用）");
+            tracing::warn!("LGS（PR-D）: 事件被忽略（CPU 降级冷却期或后端不可用）");
         }
     }
 }

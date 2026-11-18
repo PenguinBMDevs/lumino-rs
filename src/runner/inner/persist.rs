@@ -175,6 +175,9 @@ impl RunnerInner {
                 display_or_empty(&old.soundfont_path),
                 display_or_empty(&new.synth.soundfont_path),
             );
+            // AUD-011：用户显式改合成器设置即视为「重新选择」——清除 LGS 耗尽后
+            // 的会话级 CPU 覆盖，让新偏好真正生效（覆盖本身不写盘）。
+            self.midi_state.midi.clear_backend_override();
             self.midi_state.midi.mark_for_reinit();
         }
         if diff.xsynth_changed {

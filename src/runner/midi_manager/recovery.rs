@@ -81,6 +81,10 @@ impl MidiManager {
                 tracing::warn!("XSynth: 异步初始化失败: {}", e);
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
+                // AUD-011：CPU 降级目标也可能是 XSynth——失败必须可见，
+                // 否则状态栏会停留在「已切换到 XSynth」的旧提示上。
+                self.pending_backend_notice =
+                    Some(trf!("XSynth 初始化失败，已回退 System 后端：{e}", e = e));
                 // 返工 #149：启动时未建 System 占位——失败时才初始化 System 回退
                 self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
@@ -93,6 +97,8 @@ impl MidiManager {
                 tracing::warn!("XSynth: 初始化线程异常断开");
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
+                self.pending_backend_notice =
+                    Some(tr!("XSynth 初始化线程异常断开，已回退 System 后端").to_string());
                 self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
@@ -283,8 +289,12 @@ impl MidiManager {
         // 取消暂存/退避请求）
         self.drain_lgs_rebuild(true);
 
+        // AUD-011：优先使用会话级覆盖（LGS 耗尽后临时降级到 CPU），
+        // 否则跟随用户偏好；覆盖不写盘，`preferred_backend` 仍是用户选择。
+        let target = self.effective_backend(ui_config.preferred_backend);
         tracing::info!(
-            "重新初始化 MIDI 输出，使用偏好后端: {:?}",
+            "重新初始化 MIDI 输出，使用后端: {:?}（用户偏好: {:?}）",
+            target,
             ui_config.preferred_backend
         );
 
@@ -327,7 +337,7 @@ impl MidiManager {
         self.maestro_stats = None;
 
         // 重新初始化
-        match ui_config.preferred_backend {
+        match target {
             SynthBackend::XSynth => {
                 // 返工 #149：软件后端初始化期间不触碰 System(WinMM)——不再做 System
                 // 快速启动占位；仅当异步未启动（提前 bail：无音色库/文件缺失）时立即回退。
@@ -370,6 +380,14 @@ impl MidiManager {
                 self.output = backend_result.output;
                 self.active_backend = backend_result.backend;
             }
+        }
+
+        // AUD-011：CPU 降级目标为 System 且连 API 都建不起来时，不能只报
+        // 「已切换到 CPU」——给出可操作的最终失败提示。
+        if target == SynthBackend::System && self.api.is_none() {
+            self.pending_backend_notice = Some(
+                tr!("CPU 合成也不可用：未找到可用的 MIDI 输出，请检查系统 MIDI 设备").to_string(),
+            );
         }
 
         tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);

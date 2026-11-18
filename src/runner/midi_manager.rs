@@ -138,6 +138,10 @@ pub struct MidiManager {
     /// REND-019 PR-D（§1.5 L2）：LGS 独立 device TDR 重建状态
     /// （请求暂存 / 在途 worker / 退避 / 尝试计数；见 `lgs_rebuild` 子模块）。
     lgs_rebuild: lgs_rebuild::LgsRebuildState,
+    /// AUD-011（#307）：LGS 重建耗尽后的会话级 CPU 降级状态。
+    ///
+    /// 只覆盖本进程的有效后端，不写盘；用户显式改设置或设备恢复后清除。
+    backend_fallback: fallback::BackendFallbackState,
 }
 
 impl Default for MidiManager {
@@ -175,6 +179,7 @@ impl Default for MidiManager {
             layout_desired: Arc::new(AtomicU8::new(0)),
             pending_backend_notice: None,
             lgs_rebuild: lgs_rebuild::LgsRebuildState::default(),
+            backend_fallback: fallback::BackendFallbackState::default(),
         }
     }
 }
@@ -211,6 +216,7 @@ impl MidiManager {
 // ── 子模块 ──────────────────────────────────────────────────────────────
 
 mod audio_action;
+mod fallback;
 mod layout;
 mod lgs;
 mod lgs_rebuild;
