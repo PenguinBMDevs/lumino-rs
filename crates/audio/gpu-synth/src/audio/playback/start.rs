@@ -170,6 +170,7 @@ impl AudioPlayback {
             samples_per_second: u64::from(queue_rate) * channels as u64,
             voice_count: Arc::new(AtomicU64::new(0)),
             underruns: Arc::new(AtomicU64::new(0)),
+            playing: Arc::new(AtomicBool::new(false)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),
             governor_level: Arc::new(AtomicU64::new(0)),
             sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
@@ -310,6 +311,7 @@ impl AudioPlayback {
                         clean_since_frame = Some(synth.global_frame());
                     }
                     if thread_stop.load(Ordering::Relaxed) || stop_rx.try_recv().is_ok() {
+                        thread_stats.set_playing(false);
                         break;
                     }
 
@@ -319,6 +321,8 @@ impl AudioPlayback {
                     if has_stream {
                         let done = synth.stream_exhausted();
                         if done {
+                            // 播放自然结束：队列随后排空，不能再算欠载。
+                            thread_stats.set_playing(false);
                             break;
                         }
                     }
@@ -550,7 +554,11 @@ impl AudioPlayback {
                                     }
                                     Err(_) => {
                                         data[i..].fill(0.0);
-                                        cb_stats.underruns.fetch_add(1, Ordering::Relaxed);
+                                        // AUD-012：只有播放中取不到块才算欠载；
+                                        // 空闲（未播放 / 播放已结束）填静音不是欠载。
+                                        if cb_stats.playing() {
+                                            cb_stats.underruns.fetch_add(1, Ordering::Relaxed);
+                                        }
                                         break;
                                     }
                                 }
@@ -588,8 +596,11 @@ impl AudioPlayback {
                 let mut last_underrun_log = Instant::now();
                 while !owner_stop.load(Ordering::Relaxed) {
                     let underruns = owner_stats.underruns.load(Ordering::Relaxed);
-                    if underruns > 0
-                        && underruns != last_logged_underruns
+                    // AUD-012：只有播放中才把空回调当欠载。空闲时把基线跟到当前值，
+                    // 保证恢复播放后的第一条真欠载仍会打印（而不是被"已记录过"吞掉）。
+                    if !owner_stats.playing() {
+                        last_logged_underruns = underruns;
+                    } else if underruns > last_logged_underruns
                         && last_underrun_log.elapsed() >= Duration::from_millis(500)
                     {
                         tracing::warn!("[UNDERRUN] queue empty (total: {underruns})");

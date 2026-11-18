@@ -80,6 +80,19 @@ impl PlaybackStatsReader {
         self.underruns.load(Ordering::Relaxed)
     }
 
+    /// 标记播放开始 / 结束（AUD-012：欠载只在播放中统计）。
+    ///
+    /// 音频回调与 stream-owner 线程共享同一个原子标志：回调只在置位时累加
+    /// `underruns`，owner 线程只在置位时告警。
+    pub(crate) fn set_playing(&self, playing: bool) {
+        self.playing.store(playing, Ordering::Relaxed);
+    }
+
+    /// 当前是否处于播放中。
+    pub(crate) fn playing(&self) -> bool {
+        self.playing.load(Ordering::Relaxed)
+    }
+
     /// REND-016 #139：被丢弃的过期 NoteOn 累计数。正常 / 中度密集素材应恒为 0；
     /// 仅在积压已深（事件时间追不回）时增长。
     pub fn dropped_note_ons(&self) -> u64 {
@@ -168,6 +181,7 @@ mod tests {
             samples_per_second,
             voice_count: Arc::new(AtomicU64::new(0)),
             underruns: Arc::new(AtomicU64::new(0)),
+            playing: Arc::new(AtomicBool::new(false)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),
             governor_level: Arc::new(AtomicU64::new(0)),
             sample_gpu_bytes: Arc::new(AtomicU64::new(0)),
@@ -201,6 +215,18 @@ mod tests {
         );
         // 窗口为 0 时夹紧到 1（取最近一块）
         assert!((reader.average_renderer_load_window(0) - 0.7).abs() < 1e-9);
+    }
+
+    /// AUD-012：`playing` 标志默认关闭，可往返切换——回调与 owner 线程据此
+    /// 区分"播放中缺块"（真欠载）与"空闲静音"（不算欠载）。
+    #[test]
+    fn test_playing_flag_roundtrip() {
+        let reader = test_reader(48_000);
+        assert!(!reader.playing(), "新开的流默认不在播放中");
+        reader.set_playing(true);
+        assert!(reader.playing(), "play_events 后应处于播放中");
+        reader.set_playing(false);
+        assert!(!reader.playing(), "stop 后应退出播放中");
     }
 
     /// 清零累计计数：欠载/丢弃归零，瞬时量（声部数等）不受影响。

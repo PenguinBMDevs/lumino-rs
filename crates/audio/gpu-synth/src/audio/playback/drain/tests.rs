@@ -15,6 +15,7 @@ fn test_stats() -> PlaybackStatsReader {
         samples_per_second: 96_000,
         voice_count: Arc::new(AtomicU64::new(0)),
         underruns: Arc::new(AtomicU64::new(0)),
+        playing: Arc::new(AtomicBool::new(false)),
         dropped_note_ons: Arc::new(AtomicU64::new(0)),
         governor_level: Arc::new(AtomicU64::new(0)),
         sample_gpu_bytes: Arc::new(AtomicU64::new(0)),

@@ -76,6 +76,11 @@ pub struct PlaybackStatsReader {
     samples_per_second: u64,
     voice_count: Arc<AtomicU64>,
     underruns: Arc<AtomicU64>,
+    /// 是否处于「播放中」：只有播放中的空回调才算欠载，空闲静音不计。
+    ///
+    /// DEBT/AUD-012：启动即开音频流（无需工程或播放），若把每次空回调都记成
+    /// 欠载，日志会被每 500ms 一条假告警刷满，`underruns` 计数器也失去诊断价值。
+    playing: Arc<AtomicBool>,
     /// REND-016 #139：因积压过期被丢弃的 NoteOn 数（正常素材应恒为 0）。
     dropped_note_ons: Arc<AtomicU64>,
     /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。

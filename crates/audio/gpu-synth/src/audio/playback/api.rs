@@ -9,6 +9,8 @@ impl AudioPlayback {
     /// events) without per-event channel traffic. The render thread ends by
     /// itself once the stream is exhausted and the voices decay.
     pub fn play_events(&mut self, events: Vec<crate::midi::TimedEvent>) {
+        // 从这一刻起空回调才算欠载（见 `PlaybackStatsReader::playing`）。
+        self.stats.set_playing(true);
         if let Some(tx) = &self.stream_tx {
             let _ = tx.send(events);
         }
@@ -156,6 +158,8 @@ impl AudioPlayback {
 
     /// Stops the render thread (and closes the audio stream).
     pub fn stop(&mut self) {
+        // 先退出"播放中"：停止后排空的回调不应再算欠载。
+        self.stats.set_playing(false);
         self.stop_flag.store(true, Ordering::Relaxed);
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
