@@ -47,6 +47,20 @@ impl Root {
         }
     }
 
+    /// 注入素材删除确认对话框的数据并打开（独立 OS 窗口；DRAW-045）
+    ///
+    /// 素材名是打开时的快照：列表在对话框展示期间刷新也不影响文案。
+    pub fn set_material_delete_dialog(&mut self, index: usize, name: String) {
+        self.state.material_delete_dialog.open(index, name);
+        self.state.dialog_type = DialogType::MaterialDelete;
+    }
+
+    /// 注入自定义 BPM 上限对话框的当前值并打开（独立 OS 窗口；DRAW-045）
+    pub fn set_tempo_max_bpm_dialog(&mut self, current_bpm: f64) {
+        self.state.tempo_max_bpm_dialog.open(current_bpm);
+        self.state.dialog_type = DialogType::TempoMaxBpm;
+    }
+
     /// 设置批量编辑对话框是否打开
     pub fn set_batch_edit_dialog_open(&mut self, open: bool) {
         self.state.batch_edit_dialog.is_open = open;

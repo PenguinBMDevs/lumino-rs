@@ -129,6 +129,15 @@ impl DialogWindow {
             DialogType::SpeedChange => {
                 ui.set_speed_change_dialog_open(true);
             }
+            DialogType::MaterialDelete => {
+                // DRAW-045：下标与素材名快照由 Runner 注入（Dialog 层不读右侧栏）。
+                let (index, name) = pending.pending_material_delete.clone().unwrap_or_default();
+                ui.set_material_delete_dialog(index, name);
+            }
+            DialogType::TempoMaxBpm => {
+                // 当前上限只用于预填；生效值由对话框结果回传。
+                ui.set_tempo_max_bpm_dialog(pending.pending_tempo_max_bpm.unwrap_or(512.0));
+            }
             DialogType::BatchEdit => {
                 ui.set_batch_edit_dialog_open(true);
             }

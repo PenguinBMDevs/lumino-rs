@@ -64,6 +64,7 @@ fn model() -> ChromeModel {
             position: "1.1".to_owned(),
             time: "00:00.00".to_owned(),
             snap: "1/4".to_owned(),
+            precision_label: "精度:".to_owned(),
             tool: Tool::Pointer,
             draw_panel_open: false,
             playing: false,

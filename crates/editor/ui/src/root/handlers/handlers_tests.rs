@@ -16,6 +16,7 @@ use lumino_core::storage::config::{OnionSkinBackend, UiConfig};
 // - `mode_animation_guard`：瀑布流切换**过渡态**竞态（动画进行中切 CPU）
 mod cpu_guards;
 mod deferred_remote_ops;
+mod dialog_draw045;
 mod document_sync;
 mod handler_behavior;
 mod help;

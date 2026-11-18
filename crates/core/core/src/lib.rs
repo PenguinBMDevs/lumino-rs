@@ -40,7 +40,8 @@ pub use shape::{
     Speed, StopsParams, StraightenParams, StrokeRole, StrumParams, SustainParams, Sym, SymAxis,
     SymParams, TextAlign, TextLayoutMode, TextOp, TextOpV2, TextParams, TextUnit, TileBy, TileFlip,
     TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
-    VelocityEnv, env_at, paint_env, pattern_from_preset, pattern_preset, tidy_env,
+    VelocityEnv, convert_size_unit, env_at, paint_env, pattern_from_preset, pattern_preset,
+    tidy_env,
 };
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use snap::{SnapError, SnapSpec, snap_text, snap_ticks, snap_ticks_in_measure};

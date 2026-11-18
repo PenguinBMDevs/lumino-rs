@@ -104,7 +104,10 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         let visible = visible_tool_count(model);
         group(
             ui,
-            Rect::from_min_size(egui::pos2(x, y), Vec2::new(tools::width(ui, visible), h)),
+            Rect::from_min_size(
+                egui::pos2(x, y),
+                Vec2::new(tools::width(ui, visible, &model.precision_label), h),
+            ),
             |ui| tools::show(ui, icons, model),
         );
     }

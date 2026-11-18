@@ -62,7 +62,8 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeDrawerModel) {
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
         return;
     }
-    // 顶部 30px 旧版 自制标题栏（红绿灯 / 拖动）仍由 旧版 绘制：egui 只画面板本体。
+    // 顶部 30px 自制标题栏（红绿灯 / 拖动）由 egui 绘制（`chrome::popup_titlebar`），
+    // 本模块只画面板本体。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {

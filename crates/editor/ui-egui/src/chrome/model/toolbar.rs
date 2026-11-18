@@ -21,6 +21,8 @@ pub struct ToolbarModel {
     pub time: String,
     /// 吸附规格文本（形如 `1/4`）。
     pub snap: String,
+    /// 吸附标签（「精度:」/ `Precision:`；生产侧按当前语言给出）。
+    pub precision_label: String,
     /// 当前工具。
     pub tool: Tool,
     /// 绘制工具面板是否打开（第 5 个选择器的选中态）。
@@ -64,7 +66,7 @@ pub struct ToolbarModel {
 pub struct SnapMenuModel {
     /// 预设项（与 `SnapSpec::presets()` 同序）。
     pub items: Vec<SnapMenuItem>,
-    /// 自定义项标签（生产固定为 `Custom…`）。
+    /// 自定义项标签（生产按当前语言本地化）。
     pub custom_label: String,
 }
 
@@ -160,6 +162,7 @@ impl Default for ToolbarModel {
             position: "1.1".to_owned(),
             time: "00:00.00".to_owned(),
             snap: "1/4".to_owned(),
+            precision_label: "精度:".to_owned(),
             tool: Tool::Pointer,
             draw_panel_open: false,
             playing: false,

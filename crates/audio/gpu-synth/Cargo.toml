@@ -22,7 +22,10 @@ gpu-reconnect-test = []
 [dependencies]
 lumino-core = { workspace = true }
 wgpu = { workspace = true }
-lumino-midly = "0.6.2"
+# midly 以别名依赖（包名 `lumino-midly`，extern 名 `midly`）：与全仓其余 crate 同构。
+# 注：fork（`F:\midly-fork`）的 `[lib] name = "midly"`，crates.io 版的 lib 名是 `lumino_midly`；
+# 用依赖键 `midly` 时 extern 名恒为 `midly`，两种来源下都能编译。
+midly = { workspace = true }
 xsynth-soundfonts = "0.4.0"
 cpal = { workspace = true }
 pollster = { workspace = true }

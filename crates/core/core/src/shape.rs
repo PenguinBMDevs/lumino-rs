@@ -76,5 +76,6 @@ pub use share::{ShareError, decode_shapes, encode_shapes};
 pub use style::{ShapeFill, ShapeStyle, SpamAlign, SpamEnds};
 pub use text::{
     DEFAULT_FONT, SUB_ROWS, TextAlign, TextLayoutMode, TextOp, TextOpV2, TextParams, TextUnit,
+    convert_size_unit,
 };
 pub use velocity_env::{ENV_EPS, VelocityEnv, env_at, paint_env, tidy_env};

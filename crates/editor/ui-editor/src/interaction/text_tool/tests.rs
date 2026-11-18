@@ -2,6 +2,10 @@ use super::*;
 use crate::{EditState, Editor};
 use lumino_ui_core::geom::Point;
 
+mod aspect;
+mod cjk_letterbox;
+mod preview_cache;
+
 fn bundled_font() -> ab_glyph::FontArc {
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -19,30 +23,26 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// 旧路径探测：系统默认字体 + legacy 4×4 方格（只为判断字体环境 / 旧行为）
-fn probe_text(text: &str, cols: usize, rows: usize) -> Option<Vec<Vec<bool>>> {
+/// 旧兼容路径的占用网格（`4×4` 方格 + 面积阈值）
+///
+/// 本文件的历史用例都建立在旧口径上：探测系统字体是否可用、断言旧「填满框」行为。
+/// UI-023 之后新路径按屏幕比例采样，这些用例必须显式声明走 legacy。
+fn legacy_occ(text: &str, cols: usize, rows: usize, family: &str) -> Option<Vec<Vec<bool>>> {
     rasterize_text(
         text,
         cols,
         rows,
-        &lumino_core::TextParams::default(),
-        RasterScale::legacy(false),
+        family,
+        &RasterScale::legacy(false),
+        lumino_core::TextAlign::Left,
     )
 }
 
 #[test]
 fn test_legacy_default_golden_pixels() {
     let font = bundled_font();
-    let params = lumino_core::TextParams::default();
-    let (w, h, buf) = rasterize_glyph_alpha_with_font(
-        "LUMINO",
-        32,
-        16,
-        &params,
-        &font,
-        RasterScale::legacy(false),
-    )
-    .expect("内置字体应能栅格化 ASCII");
+    let (w, h, buf) =
+        rasterize_glyph_alpha_with_font("LUMINO", 32, 16, &font).expect("内置字体应能栅格化 ASCII");
     assert_eq!((w, h), (128, 64), "SS=4 时 32×16 格应为 128×64 像素");
     let hash = fnv1a(&buf);
     assert_eq!(
@@ -54,8 +54,25 @@ fn test_legacy_default_golden_pixels() {
 #[test]
 fn test_legacy_dispatch_matches_old_rasterizer() {
     let tt = lumino_editor_state::text_tool::TextToolState::new();
-    let old = rasterize_glyph_alpha("LUMINO", 32, 16, &tt.params, RasterScale::legacy(false));
-    let new = rasterize_glyph_alpha_for_tool(&tt, "LUMINO", 32, 16, RasterScale::legacy(false));
+    let grid = GlyphGrid {
+        cols: 32,
+        rows: 16,
+        vertical: false,
+        tick_origin: 0.0,
+        key_origin: 64,
+        tick_step: 1920.0,
+    };
+    let scale = RasterScale::legacy(false);
+    // 旧「填满框 + 横向拉伸」的冻结实现
+    let old = rasterize_glyph_alpha(
+        "LUMINO",
+        grid.cols,
+        grid.rows,
+        &tt.params.font,
+        &scale,
+        tt.params.align,
+    );
+    let new = rasterize_glyph_alpha_for_tool(&tt, "LUMINO", &grid, &scale);
     assert_eq!(old, new, "LegacyBox 分派必须逐字节等同旧入口");
 }
 
@@ -161,14 +178,14 @@ fn test_sample_to_notes_empty() {
 #[test]
 fn test_rasterize_text_produces_ink() {
     // 仅在能加载到默认字体时验证（Windows 一般有 Microsoft YaHei；CI 缺失则跳过）
-    if let Some(occ) = probe_text("A", 8, 8) {
+    if let Some(occ) = legacy_occ("A", 8, 8, "Microsoft YaHei") {
         assert!(occ.iter().flatten().any(|&b| b), "可识别字符应产生墨水");
     }
 }
 
 #[test]
 fn test_rasterize_text_empty() {
-    assert!(probe_text("", 8, 8).is_none());
+    assert!(legacy_occ("", 8, 8, "Microsoft YaHei").is_none());
 }
 
 #[test]
@@ -191,7 +208,7 @@ fn test_rasterize_text_bottom_aligned() {
         );
         return;
     }
-    if let Some(occ) = probe_text("c", 16, 16) {
+    if let Some(occ) = legacy_occ("c", 16, 16, "Microsoft YaHei") {
         let rows = occ.len();
         let half = rows / 2;
         let mut top_ink = 0u32;
@@ -329,7 +346,16 @@ fn test_text_tool_confirm_uses_incremental_path() {
     // 也可能不可读（font-kit 句柄/沙箱限制），此时光栅化必然失败。
     // 本测试验证的是「增量路径」而非字体渲染，按本文件既有约定
     //（“CI 缺失则跳过”）显式跳过，避免环境型误报。
-    if probe_text("A", 8, 8).is_none() {
+    if rasterize_text(
+        "A",
+        8,
+        8,
+        "Microsoft YaHei",
+        &RasterScale::legacy(false),
+        lumino_core::TextAlign::Left,
+    )
+    .is_none()
+    {
         eprintln!(
             "跳过 test_text_tool_confirm_uses_incremental_path：无可用系统字体（光栅化探测失败）"
         );
@@ -374,7 +400,16 @@ fn test_confirm_text_creates_persistent_text_shape() {
         tt.font_family = "Microsoft YaHei";
         tt.params.threshold = 40.0;
     }
-    if probe_text("A", 8, 8).is_none() {
+    if rasterize_text(
+        "A",
+        8,
+        8,
+        "Microsoft YaHei",
+        &RasterScale::legacy(false),
+        lumino_core::TextAlign::Left,
+    )
+    .is_none()
+    {
         eprintln!("跳过 test_confirm_text_creates_persistent_text_shape：无可用系统字体");
         return;
     }
@@ -395,12 +430,13 @@ fn test_confirm_text_creates_persistent_text_shape() {
     assert_eq!(text_op.text, "A");
     assert_eq!(text_op.params.threshold, 40.0);
     assert_eq!(text_op.snap, editor.editor_state.view.snap_precision);
+    assert!(!text_op.merged);
     assert!(
         text_op.k.is_finite() && text_op.k > 0.0,
-        "TextV2 必须冻结绘制时的 beats-per-key，实际 {}",
+        "必须冻结制字时的 beats per key，实际 {}",
         text_op.k
     );
-    assert!(!text_op.merged);
+    assert_eq!(model.k, text_op.k, "形状 k 与算子 k 必须一致");
 }
 
 #[test]
@@ -414,7 +450,16 @@ fn test_click_existing_text_shape_is_read_only() {
         tt.text = "A".to_string();
         tt.font_family = "Microsoft YaHei";
     }
-    if probe_text("A", 8, 8).is_none() {
+    if rasterize_text(
+        "A",
+        8,
+        8,
+        "Microsoft YaHei",
+        &RasterScale::legacy(false),
+        lumino_core::TextAlign::Left,
+    )
+    .is_none()
+    {
         eprintln!("跳过 test_click_existing_text_shape_is_read_only：无可用系统字体");
         return;
     }
@@ -499,7 +544,16 @@ fn test_text_shape_participates_in_undo_redo() {
         tt.text = "A".to_string();
         tt.font_family = "Microsoft YaHei";
     }
-    if probe_text("A", 8, 8).is_none() {
+    if rasterize_text(
+        "A",
+        8,
+        8,
+        "Microsoft YaHei",
+        &RasterScale::legacy(false),
+        lumino_core::TextAlign::Left,
+    )
+    .is_none()
+    {
         eprintln!("跳过 test_text_shape_participates_in_undo_redo：无可用系统字体");
         return;
     }
@@ -706,9 +760,8 @@ fn test_vertical_roll_text_tool_reaches_editing_and_confirms() {
     let snap = editor.editor_state.view.snap_precision;
     let cols = editor.editor_state.text_tool.cols(snap);
     let rows = editor.editor_state.text_tool.rows();
-    let params = editor.editor_state.text_tool.params.clone();
-    let scale = editor.text_raster_scale();
-    if rasterize_text("A", cols, rows, &params, scale).is_none() {
+    let family = editor.editor_state.text_tool.font_family;
+    if legacy_occ("A", cols, rows, family).is_none() {
         eprintln!(
             "跳过 test_vertical_roll_text_tool_reaches_editing_and_confirms 的生成断言：无可用系统字体"
         );

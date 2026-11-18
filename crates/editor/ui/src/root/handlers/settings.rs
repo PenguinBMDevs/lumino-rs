@@ -100,6 +100,14 @@ impl MessageHandler for SettingsHandler {
                 root.editor.velocity_panel.tempo_max_bpm = v;
                 tracing::debug!("Root: Tempo BPM 上限设置为 {}", v);
             }
+            crate::settings::Event::TempoMaxBpmCustomOpen => {
+                // DRAW-045：自定义输入是独立窗口，面板不保存临时态；
+                // 当前值由设置窗口发出，Runner 用它预填对话框输入框。
+                let current = root.settings.editing.tempo_max_bpm;
+                crate::event::emit(crate::event::Event::Window(
+                    crate::event::window::Event::open_tempo_max_bpm_dialog(current),
+                ));
+            }
             crate::settings::Event::MonitorRefreshIntervalChanged(v) => {
                 tracing::debug!("Root: 监控数据刷新间隔设置为 {}ms", v);
             }

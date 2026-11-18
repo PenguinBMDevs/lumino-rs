@@ -15,10 +15,11 @@ pub use lumino_message::{
     AudioAction, AudioChannels, AudioExportAction, AudioFormat, AutosaveRecoverAction,
     BatchEditAction, BatchEditField, BrushSettingsAction, CcOption, CustomPrecisionAction, DotType,
     DrawSettingsAction, EditorAction, HistoryAction, Interpolation, LoadConfirmAction,
-    LoopRangeAction, Message as GenericMessage, NotePrecision, PerfData, Point2,
-    ProjectSettingsAction, RecoverTrackAction, RightSidebarAction, SaveConfirmAction,
-    SettingsDialogAction, ShapeDrawerAction, Size2, SpeedChangeAction, SpeedFactor,
-    ThreadingOption, Tool, TupletType, VelocityAction, VideoClipAction, VideoExportAction,
+    LoopRangeAction, MaterialDeleteDialogAction, Message as GenericMessage, NotePrecision,
+    PerfData, Point2, ProjectSettingsAction, RecoverTrackAction, RightSidebarAction,
+    SaveConfirmAction, SettingsDialogAction, ShapeDrawerAction, Size2, SpeedChangeAction,
+    SpeedFactor, TempoMaxBpmDialogAction, ThreadingOption, Tool, TupletType, VelocityAction,
+    VideoClipAction, VideoExportAction,
 };
 
 /// 具体化的消息类型

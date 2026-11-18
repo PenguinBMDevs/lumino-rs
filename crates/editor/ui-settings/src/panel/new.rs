@@ -71,8 +71,6 @@ impl SettingsPanel {
                 autosave_interval_mins: ui_config.autosave_interval_mins.to_string(),
                 automation_line_thickness: ui_config.automation_line_thickness,
                 tempo_max_bpm: ui_config.tempo_max_bpm,
-                tempo_custom_open: false,
-                tempo_custom_input: String::new(),
                 track_add_behavior: ui_config.track_add_behavior,
             },
             display: DisplaySettings {

@@ -3,7 +3,6 @@ use super::{
 };
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
-use lumino_core::TextUnit;
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOpV2};
 use lumino_editor_state::text_tool::TextToolMode;
 use lumino_editor_state::{ShapeNote, note_to_event};
@@ -18,58 +17,43 @@ impl Editor {
         }
     }
 
-    /// 设置文字参数；参数面板改动会显式切到 Parametric（面板 Mode 行即时可见）。
+    /// 文字工具：写入面板参数并**自动切到 Parametric**
     ///
-    /// 这不算「静默切换」：当前模式在参数面板里始终可见；UI-023 决定保留该行为，
-    /// 避免 LegacyBox 下出现一组完全不起作用的惰性滑杆。
-    pub(crate) fn set_text_params(&mut self, mut params: lumino_core::TextParams) {
+    /// 自动切换是有意保留的：面板 Mode 行即时显示当前路径，用户看得见，不算「静默」。
+    /// 单位在 Font ⇄ Rows 之间切换时按同字体 cap height 比例换算字号，保持观感。
+    pub(crate) fn set_text_params(&mut self, params: lumino_core::TextParams) {
         if params.validate().is_err() {
             return;
         }
-        let old_unit = self.editor_state.text_tool.params.unit;
-        if old_unit != params.unit
-            && let Some(font) =
-                super::font::load_font_variant(&params.font, params.weight, params.italic)
-            && let Some(ratio) = super::font::cap_height_ratio(&font)
-        {
-            params.size = converted_size(params.size, old_unit, params.unit, ratio);
+        let prev = self.editor_state.text_tool.params.clone();
+        let mut params = params;
+        if params.unit != prev.unit {
+            // 单位换算：`rows = font × cap_ratio`，反向除；clamp 4..96
+            if let Some(ratio) = super::parametric::cap_ratio_for(&params) {
+                params.size =
+                    lumino_core::shape::convert_size_unit(prev.size, prev.unit, params.unit, ratio);
+            }
         }
         self.editor_state.text_tool.params = params;
         self.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
     }
 
-    /// 切换排版模式：LegacyBox / Parametric
+    /// 文字工具：显式切换排版路径 LegacyBox / Parametric
     pub(crate) fn set_text_layout_mode(&mut self, mode: lumino_core::TextLayoutMode) {
         self.editor_state.text_tool.layout_mode = mode;
     }
 
     /// 参数面板 Reset：恢复默认排版参数，保留当前字体与排版模式。
     ///
-    /// 字体是面板 Font 行的显式选择，重置参数不该顺带换字体；排版模式是
-    /// 独立控件，重置后仍保持 LegacyBox / Parametric 不变。
+    /// 字体是面板 Font 行的显式选择，重置参数不该顺带换字体；排版模式是独立控件，
+    /// 重置后仍保持 LegacyBox / Parametric 不变。不走 `set_text_params`，
+    /// 因此也不会触发「自动切 Parametric」。
     pub(crate) fn reset_text_params(&mut self) {
         let font = self.editor_state.text_tool.params.font.clone();
         self.editor_state.text_tool.params = lumino_core::TextParams {
             font,
             ..lumino_core::TextParams::default()
         };
-    }
-
-    /// 当前文本框的栅格采样比例（预览与确认共用）
-    pub(crate) fn text_raster_scale(&self) -> RasterScale {
-        let tt = &self.editor_state.text_tool;
-        let snap = self.editor_state.view.snap_precision.max(1.0);
-        let ppq = f32::from(self.editor_state.view.ppq).max(1.0);
-        let k = self.live_arc_k() as f32;
-        let grid = GlyphGrid::from_state(tt, snap, self.editor_state.is_vertical_roll);
-        RasterScale::from_k(
-            self.editor_state.is_vertical_roll,
-            snap,
-            ppq,
-            k,
-            grid.cols,
-            grid.rows,
-        )
     }
 
     /// 文字工具：切换采样模式（正常 / key 范围合并）
@@ -106,7 +90,7 @@ impl Editor {
         if !self.text_tool_allowed() {
             return;
         }
-        // 已激活文本框：先判按钮命中，再处理框内拖动 / 框外新框。
+        // 尚未拉框：落点若命中已 Bake 的文字形状，直接消费事件（只读，见下）
         if !self.editor_state.text_tool.active {
             let tick = self.pos_to_tick(pos);
             let key = self.pos_to_key(pos);
@@ -212,17 +196,20 @@ impl Editor {
         self.editor_state.text_tool.move_to(cur_tick, cur_key, snap);
     }
 
-    /// 文字工具：确认生成音符（√ 按钮）
+    /// 确认时按字形占位采样生成音符（√ 按钮）
     ///
     /// 按字形占位采样（轴角色见 [`GlyphGrid`]，横向/纵向各按视图轴向挂载，保证文字正着读）：
     /// 正常模式：每个有墨水的采样格生成一个音符，长度 = 音符精度；
     /// key 范围合并模式：**沿时间轴**把连续墨水合并为一个音符，任意空隙断开
     /// （不合并本应分开的笔画）。
     ///
+    /// 预览与确认共用 [`Self::text_tool_grid_scale`]：同一文本（只按 `trim()` 判空，
+    /// 不改写内容）、同一字体、同一采样比例——「看到的就是生成的」。
+    ///
     /// 成功后清空文本框与编辑历史，写入当前轨并进入撤销栈。返回是否生成了音符。
     pub(crate) fn confirm_text_tool(&mut self) -> bool {
         let tt = self.editor_state.text_tool.clone();
-        if !tt.has_content() {
+        if !tt.active || tt.text.trim().is_empty() {
             return false;
         }
         // Conductor 音轨（track 0）禁止放置音符：与铅笔等工具（finish_drawing）一致，
@@ -232,13 +219,11 @@ impl Editor {
             return false;
         }
         let snap = self.editor_state.view.snap_precision;
-        // 轴角色的唯一决定点：预览（`grid/text_tool_box`）与生成必须用同一个 grid
-        let grid = GlyphGrid::from_state(&tt, snap, self.editor_state.is_vertical_roll);
-        if grid.cols == 0 || grid.rows == 0 {
+        // 轴角色 + 采样比例的唯一决定点：预览（`grid/text_tool_box`）与生成必须同一份
+        let Some((grid, scale)) = self.text_tool_grid_scale() else {
             return false;
-        }
-        let scale = self.text_raster_scale();
-        let occupancy = match rasterize_text_for_tool(&tt, grid.cols, grid.rows, scale) {
+        };
+        let occupancy = match rasterize_text_for_tool(&tt, &tt.text, &grid, &scale) {
             Some(o) => o,
             None => return false,
         };
@@ -255,7 +240,7 @@ impl Editor {
         let mut create_ops = Vec::with_capacity(notes.len());
         for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
-            // 与 redo 共用撤销分组：先插入并拿到稳定 ID，再记录 CreateOp。
+            // 带稳定 ID 逐条插入：redo 复用同一批 ID，撤销/重做保持幂等
             if self
                 .editor_state
                 .data
@@ -300,6 +285,50 @@ impl Editor {
         true
     }
 
+    /// 文字工具的采样网格 + 栅格比例（预览 / 确认 / 重烘焙的统一入口）
+    ///
+    /// 比例权威是**实时视图**的 `k = zoom_y / (ppq × zoom_x)`；制字时把它冻结进
+    /// `TextOpV2.k`，重烘焙就不再随当前缩放漂移。
+    pub(crate) fn text_tool_grid_scale(&self) -> Option<(GlyphGrid, RasterScale)> {
+        let tt = &self.editor_state.text_tool;
+        let grid = GlyphGrid::from_state(
+            tt,
+            self.editor_state.view.snap_precision,
+            self.editor_state.is_vertical_roll,
+        );
+        if grid.cols == 0 || grid.rows == 0 {
+            return None;
+        }
+        let scale = RasterScale::from_k(
+            grid.vertical,
+            grid.tick_step,
+            f32::from(self.editor_state.view.ppq),
+            self.live_arc_k() as f32,
+            grid.cols,
+            grid.rows,
+        );
+        Some((grid, scale))
+    }
+
+    /// 栅格签名：任何会改变采样结果的几何 / 比例输入
+    ///
+    /// 预览纹理缓存按它失效——漏掉 snap / zoom / k 会让缩放后复用旧纹理。
+    pub fn text_raster_key(&self) -> Option<String> {
+        let (grid, scale) = self.text_tool_grid_scale()?;
+        Some(format!(
+            "{}x{}:snap{:.3}:v{}:k{:.6}:ppq{:.1}:ss{:.4}x{:.4}:ppk{:.4}",
+            grid.cols,
+            grid.rows,
+            grid.tick_step,
+            grid.vertical,
+            self.live_arc_k(),
+            self.editor_state.view.ppq,
+            scale.ss_x,
+            scale.ss_y,
+            scale.px_per_key,
+        ))
+    }
+
     /// 由文本框几何与参数构造新的文字形状模型（Bake 时登记）
     fn build_text_shape_model(
         &self,
@@ -307,10 +336,8 @@ impl Editor {
         track: usize,
         snap: f32,
     ) -> ShapeModel {
-        let k = {
-            let k = self.live_arc_k() as f32;
-            if k.is_finite() && k > 0.0 { k } else { 1.0 }
-        };
+        // 视图比例随形状冻结：重烘焙必须复现制字时的屏幕格比例
+        let k = self.live_arc_k() as f32;
         let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, k);
         model.track = track as u16;
         model.kind = ShapeKind::Custom;
@@ -337,21 +364,4 @@ impl Editor {
         model.name = tt.text.chars().take(32).collect();
         model
     }
-}
-
-/// `Font ↔ Rows` 字号换算：`Rows` 单位是大写 H 的高度（keys）。
-///
-/// `cap_ratio` 为同字体的大写 H 高度 / em；非法值退化为 1.0（保持原字号）。
-pub(super) fn converted_size(size: f32, from: TextUnit, to: TextUnit, cap_ratio: f32) -> f32 {
-    let ratio = if cap_ratio.is_finite() && cap_ratio > 0.0 {
-        cap_ratio
-    } else {
-        1.0
-    };
-    let next = match (from, to) {
-        (TextUnit::Font, TextUnit::Rows) => size * ratio,
-        (TextUnit::Rows, TextUnit::Font) => size / ratio,
-        _ => size,
-    };
-    next.clamp(4.0, 96.0)
 }

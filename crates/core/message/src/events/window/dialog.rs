@@ -106,6 +106,18 @@ pub enum Event {
     OpenSpeedChangeDialog,
     /// 关闭音符变速对话框
     CloseSpeedChangeDialog,
+    /// 打开「素材删除确认」独立窗口（DRAW-045；携带待删除素材下标与显示名）
+    OpenMaterialDeleteDialog {
+        /// 待删除素材在右侧栏素材列表中的下标
+        index: usize,
+        /// 素材显示名（打开时快照）
+        name: String,
+    },
+    /// 打开「自定义 Tempo BPM 上限」独立窗口（DRAW-045；携带当前上限用于预填）
+    OpenTempoMaxBpmDialog {
+        /// 当前生效的 BPM 上限
+        current_bpm: f64,
+    },
     /// 确认音符变速
     ConfirmSpeedChange(f32),
     /// 打开批量编辑对话框

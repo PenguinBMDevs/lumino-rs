@@ -1,18 +1,18 @@
 //! 文字形状再生成（DRAW-029 / UI-023）
 //!
-//! 文字形状持久化为 `ShapeOp::Text`（旧，无 k）或 `ShapeOp::TextV2`（新，冻结
-//! 绘制时的 `k`）+ `ShapeGeometry::rect`；本模块按保存时的文本框、参数、采样
-//! 模式、卷帘方向与 `k` 重新生成音符。
+//! 文字形状持久化为 `ShapeOp::TextV2`（新：带冻结的 `k`）或 `ShapeOp::Text`（旧：4×4 兼容）
+//! 加 `ShapeGeometry::rect`；本模块按保存时的文本框、参数、采样模式、卷帘方向
+//! 与屏幕比例重新生成音符，供形状编辑 / 重生成使用。
 //!
-//! **旧 `Text` 必须逐字节保持旧行为**：用 `RasterScale::legacy` 的 4×4 方格 +
-//! 旧填满 / 面积阈值路径；新 `TextV2` 用 `from_k` 的非正方形采样 + key 轴阈值。
+//! **重烘焙稳定性**：新路径只读 `op.k` + `op.snap`（+ 当前工程 PPQ），与当前缩放无关；
+//! 旧路径固定走 [`RasterScale::legacy`]，逐字节保持历史结果。
 
-use lumino_core::shape::{ShapeModel, ShapeOp, TextLayoutMode, TextOp, TextOpV2, TextParams};
+use lumino_core::shape::{ShapeModel, ShapeOp, ShapeRect, TextLayoutMode, TextOp, TextOpV2};
 use lumino_editor_state::ShapeNote;
 use lumino_editor_state::text_tool::TextToolState;
 
 use crate::interaction::text_tool::{
-    GlyphGrid, RasterScale, rasterize_text, rasterize_text_params, sample_to_notes_grid,
+    GlyphGrid, RasterScale, rasterize_text_for_tool, sample_to_notes_grid,
 };
 
 impl crate::Editor {
@@ -42,102 +42,98 @@ impl crate::Editor {
             .last()
     }
 
-    /// 旧 `Text`（v1）：legacy 4×4 方格，保持修复前逐字节行为
+    /// 由**旧**文字形状模型重新生成音符（`ShapeOp::Text`：4×4 兼容方块采样）
     pub(crate) fn text_shape_notes(
         &self,
         model: &ShapeModel,
         op: &TextOp,
         track: usize,
     ) -> Vec<ShapeNote> {
-        self.text_shape_notes_with(
-            model,
-            &op.text,
-            &op.params,
-            op.layout,
-            op.snap,
-            op.merged,
-            op.vertical,
-            None,
+        let Some(rect) = model.geometry.rect else {
+            return Vec::new();
+        };
+        let tt = restore_text_state(&op.text, &op.params, op.layout, rect);
+        let snap = op.snap.max(1.0);
+        let grid = GlyphGrid::from_state(&tt, snap, op.vertical);
+        if grid.cols == 0 || grid.rows == 0 {
+            return Vec::new();
+        }
+        // 旧形状没有 k：固定 4×4 方格 + 填满框拉伸，与落盘时的行为一致
+        let scale = RasterScale::legacy(op.vertical);
+        let Some(occupancy) = rasterize_text_for_tool(&tt, &op.text, &grid, &scale) else {
+            return Vec::new();
+        };
+        to_shape_notes(
+            sample_to_notes_grid(&occupancy, &grid, snap, op.merged),
             track,
         )
     }
 
-    /// 新 `TextV2`：用冻结的 `op.k` 推非正方形采样，跨 zoom 重烘焙稳定
+    /// 由**新**文字形状模型重新生成音符（`ShapeOp::TextV2`：按冻结的 `op.k` 复现比例）
+    ///
+    /// 同一 `TextV2` 在两个不同缩放视图下重烘焙，结果必须逐字段一致——这正是
+    /// 把 `k` 冻进形状的原因。
     pub(crate) fn text_shape_notes_v2(
         &self,
         model: &ShapeModel,
         op: &TextOpV2,
         track: usize,
     ) -> Vec<ShapeNote> {
-        self.text_shape_notes_with(
-            model,
-            &op.text,
-            &op.params,
-            op.layout,
-            op.snap,
-            op.merged,
-            op.vertical,
-            Some(op.k),
-            track,
-        )
-    }
-
-    /// 文字再生成公共路径：`frozen_k = None` 表示旧 v1 legacy 方格。
-    #[allow(clippy::too_many_arguments)]
-    fn text_shape_notes_with(
-        &self,
-        model: &ShapeModel,
-        text: &str,
-        params: &TextParams,
-        layout: TextLayoutMode,
-        snap: f32,
-        merged: bool,
-        vertical: bool,
-        frozen_k: Option<f32>,
-        track: usize,
-    ) -> Vec<ShapeNote> {
         let Some(rect) = model.geometry.rect else {
             return Vec::new();
         };
-        let mut tt = TextToolState::new();
-        tt.text = text.to_string();
-        tt.params = params.clone();
-        tt.layout_mode = layout;
-        let key_lo = rect.key_lo.round().clamp(0.0, 255.0) as u16;
-        let key_hi = rect.key_hi.round().clamp(0.0, 255.0) as u16;
-        tt.set_drag(rect.tick_lo, rect.tick_hi, key_lo, key_hi);
-
-        let snap = snap.max(1.0);
-        let grid = GlyphGrid::from_state(&tt, snap, vertical);
+        let tt = restore_text_state(&op.text, &op.params, op.layout, rect);
+        let snap = op.snap.max(1.0);
+        let grid = GlyphGrid::from_state(&tt, snap, op.vertical);
         if grid.cols == 0 || grid.rows == 0 {
             return Vec::new();
         }
-        let scale = match frozen_k {
-            Some(k) => {
-                let ppq = f32::from(self.editor_state.view.ppq).max(1.0);
-                RasterScale::from_k(vertical, snap, ppq, k, grid.cols, grid.rows)
-            }
-            None => RasterScale::legacy(vertical),
-        };
-        let occupancy = match layout {
-            TextLayoutMode::LegacyBox => rasterize_text(text, grid.cols, grid.rows, params, scale),
-            TextLayoutMode::Parametric => {
-                rasterize_text_params(text, grid.cols, grid.rows, params, scale)
-            }
-        };
-        let Some(occupancy) = occupancy else {
+        let scale = RasterScale::from_k(
+            op.vertical,
+            grid.tick_step,
+            f32::from(self.editor_state.view.ppq),
+            op.k,
+            grid.cols,
+            grid.rows,
+        );
+        let Some(occupancy) = rasterize_text_for_tool(&tt, &op.text, &grid, &scale) else {
             return Vec::new();
         };
-        sample_to_notes_grid(&occupancy, &grid, snap, merged)
-            .into_iter()
-            .map(|(tick, key, length)| ShapeNote {
-                track,
-                tick,
-                key,
-                length,
-                velocity: 100,
-                channel: 0,
-            })
-            .collect()
+        to_shape_notes(
+            sample_to_notes_grid(&occupancy, &grid, snap, op.merged),
+            track,
+        )
     }
+}
+
+/// 由形状快照还原文字工具状态（文本框几何走 `set_drag`，确认时才吸附）
+fn restore_text_state(
+    text: &str,
+    params: &lumino_core::TextParams,
+    layout: TextLayoutMode,
+    rect: ShapeRect,
+) -> TextToolState {
+    let mut tt = TextToolState::new();
+    tt.text = text.to_string();
+    tt.params = params.clone();
+    tt.layout_mode = layout;
+    let key_lo = rect.key_lo.round().clamp(0.0, 255.0) as u16;
+    let key_hi = rect.key_hi.round().clamp(0.0, 255.0) as u16;
+    tt.set_drag(rect.tick_lo, rect.tick_hi, key_lo, key_hi);
+    tt
+}
+
+/// `(tick, key, length)` → 形状音符（力度 100 / 通道 0，与工具确认同口径）
+fn to_shape_notes(notes: Vec<(f32, u16, f32)>, track: usize) -> Vec<ShapeNote> {
+    notes
+        .into_iter()
+        .map(|(tick, key, length)| ShapeNote {
+            track,
+            tick,
+            key,
+            length,
+            velocity: 100,
+            channel: 0,
+        })
+        .collect()
 }

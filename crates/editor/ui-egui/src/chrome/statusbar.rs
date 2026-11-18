@@ -179,12 +179,15 @@ fn gpu_group(ui: &mut egui::Ui, gpu: &GpuMetricsModel) {
         load_tone(gpu.load),
     );
     ui.add_space(8.0);
-    metric(
-        ui,
-        "GPU",
-        &format!("Q {:.0}ms{}", gpu.queue_ms, gpu.trend.arrow()),
-        MetricTone::Normal,
-    );
+    metric(ui, "GPU", &queue_text(gpu.queue_ms), MetricTone::Normal);
+}
+
+/// GPU 队列文本：`Q <ms>ms`。
+///
+/// 历史上这里是「`Q 12ms↑`」，但状态栏字体不含箭头字形（渲染为方框）。
+/// 趋势信息仍由生产侧计算，只是不再放进文本——不要在这里加非 ASCII 符号。
+fn queue_text(queue_ms: f64) -> String {
+    format!("Q {queue_ms:.0}ms")
 }
 
 /// 状态栏动作。
@@ -243,9 +246,12 @@ mod tests {
     }
 
     #[test]
-    fn queue_trend_arrows_match_legacy() {
-        assert_eq!(super::super::GpuQueueTrend::Up.arrow(), "↑");
-        assert_eq!(super::super::GpuQueueTrend::Down.arrow(), "↓");
-        assert_eq!(super::super::GpuQueueTrend::Flat.arrow(), "→");
+    fn queue_text_has_no_arrow_glyphs() {
+        let text = queue_text(12.4);
+        assert_eq!(text, "Q 12ms");
+        assert!(
+            text.is_ascii(),
+            "状态栏字体不含箭头字形，GPU 队列文本必须是纯 ASCII：{text:?}"
+        );
     }
 }

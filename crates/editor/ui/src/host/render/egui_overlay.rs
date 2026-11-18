@@ -127,8 +127,6 @@ struct OverlayFrame<'a> {
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
-    /// 素材删除确认（模态）；`Some` 时由 egui 绘制并接管输入。
-    material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteModel>,
     /// 混音台（布局 + 模型）；`Some` 时由 egui 绘制并接管输入。
     mixer: Option<(
         lumino_ui_egui::mixer::MixerLayout,
@@ -262,7 +260,6 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
         lumino_ui_egui::chrome::set_renderer_panel(&ctx, frame.renderer_panel.clone());
         lumino_ui_egui::chrome::set_mixer(&ctx, frame.mixer.clone());
-        lumino_ui_egui::chrome::set_material_delete(&ctx, frame.material_delete.clone());
         lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
         lumino_ui_egui::chrome::set_mask_panel(&ctx, frame.mask_panel.clone());
         // 右下角浮层：Toast 通知 + 首次使用帮助提示（旧版 视图已删除）。
@@ -462,8 +459,9 @@ impl Host {
             == crate::state::root_state::DialogType::ShapeDrawer)
             .then(|| {
                 let width = self.root.state.shape_drawer.panel_width;
-                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 旧版 仍画 30px 自制标题栏，
-                // 因此这里按 `use_native_titlebar` 判断（与画布动作端的 rect 同源）。
+                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 egui 仍画 30px
+                // 自制标题栏（`chrome::popup_titlebar`），因此这里按 `use_native_titlebar`
+                // 判断（与画布动作端的 rect 同源）。
                 let top = if self.root.settings.synth.use_native_titlebar {
                     0.0
                 } else {
@@ -561,7 +559,6 @@ impl Host {
             renderer_panel: self.root.renderer_panel_model(content_area),
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(content_area),
-            material_delete: self.root.material_delete_model(),
             video_preview: self.root.video_preview_model(window_area, content_area),
             mask_panel: self.root.mask_panel_model(),
             toast: self.root.egui_toast_model(),

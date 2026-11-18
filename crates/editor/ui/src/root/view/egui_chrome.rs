@@ -32,6 +32,7 @@ mod shape_edit;
 mod shape_list;
 mod shape_preview;
 mod sidebar_panel;
+mod tempo_max_bpm;
 mod text_tool;
 mod titlebar;
 mod toast;
@@ -583,6 +584,9 @@ impl Root {
                 position: toolbar.position,
                 time: toolbar.time,
                 snap: toolbar.snap,
+                precision_label: lumino_extras::i18n::main_translations(language)
+                    .precision_label
+                    .to_owned(),
                 tool: toolbar.tool,
                 draw_panel_open: toolbar.draw_panel_open,
                 playing: toolbar.playing,
@@ -650,17 +654,6 @@ impl Root {
                     .gpu
                     .map(|gpu| lumino_ui_egui::chrome::GpuMetricsModel {
                         queue_ms: gpu.queue_ms,
-                        trend: match gpu.trend {
-                            crate::statusbar::QueueTrend::Up => {
-                                lumino_ui_egui::chrome::GpuQueueTrend::Up
-                            }
-                            crate::statusbar::QueueTrend::Down => {
-                                lumino_ui_egui::chrome::GpuQueueTrend::Down
-                            }
-                            crate::statusbar::QueueTrend::Flat => {
-                                lumino_ui_egui::chrome::GpuQueueTrend::Flat
-                            }
-                        },
                         load: gpu.load,
                         voice_count: gpu.voice_count,
                         underruns: gpu.underruns,
@@ -703,6 +696,8 @@ mod cloud_connect_tests;
 mod collaboration_tests;
 #[cfg(test)]
 mod custom_precision_tests;
+#[cfg(test)]
+mod dialog_draw045_tests;
 #[cfg(test)]
 mod draw_settings_tests;
 #[cfg(test)]

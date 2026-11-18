@@ -54,6 +54,8 @@ impl DialogManager {
             pending_brush_config: None,
             shapes_dir: None,
             pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
     }
 
@@ -67,6 +69,8 @@ impl DialogManager {
             pending_brush_config: None,
             shapes_dir: None,
             pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
     }
 
@@ -80,6 +84,8 @@ impl DialogManager {
             pending_brush_config: None,
             shapes_dir: None,
             pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
     }
 
@@ -93,6 +99,8 @@ impl DialogManager {
             pending_brush_config: Some(config),
             shapes_dir: None,
             pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
     }
 
@@ -109,6 +117,8 @@ impl DialogManager {
             pending_brush_config: None,
             shapes_dir: None,
             pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
     }
 
@@ -124,7 +134,71 @@ impl DialogManager {
             pending_brush_config: None,
             shapes_dir: Some(shapes_dir),
             pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
+    }
+
+    /// 请求打开「素材删除确认」独立窗口（DRAW-045）。
+    ///
+    /// `index` / `name` 是打开时的快照：对话框展示期间素材列表刷新不影响文案，
+    /// 回执仍按 index 与主窗口的待确认态配对。
+    pub fn open_material_delete(&mut self, index: usize, name: String) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::MaterialDelete,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+            pending_brush_config: None,
+            shapes_dir: None,
+            pending_modified_at: None,
+            pending_material_delete: Some((index, name)),
+            pending_tempo_max_bpm: None,
+        });
+    }
+
+    /// 请求打开「自定义 Tempo BPM 上限」独立窗口（DRAW-045）。
+    ///
+    /// `current_bpm` 只用于预填输入框，生效值仍由对话框结果回传。
+    pub fn open_tempo_max_bpm(&mut self, current_bpm: f64) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::TempoMaxBpm,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+            pending_brush_config: None,
+            shapes_dir: None,
+            pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: Some(current_bpm),
+        });
+    }
+
+    /// 重复请求删除另一项素材时，把已打开 / 排队中的确认窗口改指向新目标。
+    ///
+    /// 主窗口在确认框打开期间仍可交互：若用户对另一项素材再次点「删除」，
+    /// 主窗口的待确认下标已更新。此时必须同步对话框，否则确认回执会与
+    /// 主窗口的配对校验不一致（表现为「点了删除却什么都没发生」）。
+    pub fn rebind_material_delete(&mut self, index: usize, name: String) {
+        for pending in &mut self.pending_dialogs {
+            if pending.dialog_type == DialogType::MaterialDelete {
+                pending.pending_material_delete = Some((index, name.clone()));
+            }
+        }
+        for (_, pending) in &mut self.initializing {
+            if pending.dialog_type == DialogType::MaterialDelete {
+                pending.pending_material_delete = Some((index, name.clone()));
+            }
+        }
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type() != DialogType::MaterialDelete {
+                continue;
+            }
+            if let Some(ui) = dialog.ui_mut() {
+                ui.set_material_delete_dialog(index, name.clone());
+            }
+            dialog.request_redraw();
+        }
     }
 
     /// 请求打开自动保存恢复对话框（DEBT-12）。
@@ -140,6 +214,8 @@ impl DialogManager {
             pending_brush_config: None,
             shapes_dir: None,
             pending_modified_at: Some(modified_at),
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
         });
     }
 

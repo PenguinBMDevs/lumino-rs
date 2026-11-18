@@ -1,163 +1,198 @@
-//! 素材删除确认（主窗口内嵌覆盖层）。
+//! 素材删除确认（独立 OS 窗口；DRAW-045）。
 //!
-//! 由 `right_sidebar.materials.pending_delete` 驱动：全屏 45% 黑遮罩 + 居中卡片
-//! （宽 440、内边距 24、圆角 8）。文案全部由生产侧预格式化，这里只排版与命中。
+//! 取代主窗口内的「全屏 45% 黑遮罩 + 居中卡片」：确认属于独立决策，改为独立
+//! 窗口后遮罩、吞点击与「点外部取消」全部消失，窗口 X 关闭等价于取消。
 //!
-//! 与 旧版 原实现（`right_sidebar/material_delete_dialog.rs`）同口径：
-//! 标题 16 / 素材名 14（主色）/ 危险提示 13（危险色）/ 按钮 `padding[8,24]` 14px。
+//! 版式：整窗 base 底、内边距 24，内容块整体垂直居中——
+//! 标题 16px / 素材名 14px（主色）/ 危险提示 13px（危险色），
+//! 按钮行 34 高（危险色「删除」+ 次要「取消」、间距 12）。
 
-use egui::{Align2, Color32, CornerRadius, FontId, Rect};
+use egui::{Color32, CornerRadius, FontId, Id, Rect, RichText, Stroke, Vec2};
 
+use crate::chrome::MaterialDeleteModel;
 use crate::theme;
 
-/// 遮罩不透明度（生产 `rgba(0, 0, 0, 0.45)`）。
-const MASK_ALPHA: u8 = 115;
-/// 卡片宽度。
-pub const CARD_WIDTH: f32 = 440.0;
-/// 卡片内边距。
+const ACTION_ID: &str = "lumino.material-delete.action";
+/// 整窗内边距。
 const PAD: f32 = 24.0;
-/// 卡片圆角。
-const RADIUS: u8 = 8;
-/// 按钮竖向内边距。
-const BTN_PAD_Y: f32 = 8.0;
-/// 按钮横向内边距。
-const BTN_PAD_X: f32 = 24.0;
-/// 按钮文字字号。
-const BTN_TEXT: f32 = 14.0;
+/// 标题行高（16px 文本）。
+const TITLE_H: f32 = 22.0;
+/// 素材名行高（14px 文本）。
+const NAME_H: f32 = 19.0;
+/// 危险提示行高（13px 文本）。
+const WARN_H: f32 = 18.0;
+/// 按钮高度。
+const BUTTON_H: f32 = 34.0;
+/// 按钮横向内边距（单侧）。
+const BUTTON_PAD_X: f32 = 24.0;
+/// 两个按钮之间的间距。
+const BUTTON_GAP: f32 = 12.0;
 
-/// 删除确认模型（文案由生产侧格式化）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MaterialDeleteModel {
-    /// 标题（「删除素材」）。
-    pub title: String,
-    /// 素材显示名。
-    pub name: String,
-    /// 危险提示（「此操作不可撤销…」）。
-    pub warning: String,
-    /// 取消按钮文案。
-    pub cancel: String,
-    /// 删除按钮文案。
-    pub delete: String,
-    /// 待删除素材下标（动作回传用）。
-    pub index: usize,
-}
-
-/// 用户动作。
+/// 素材删除确认对话框产生的动作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialDeleteAction {
-    /// 取消（按钮或点击遮罩）。
+    /// 取消（按钮或窗口 X）。
     Cancel,
     /// 确认删除。
     Confirm(usize),
 }
 
-/// 单行文本宽度（与绘制同源：同一个字号与字体族）。
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
+/// 记录本帧动作（一帧只保留第一个）。
+pub fn push_action(ctx: &egui::Context, action: MaterialDeleteAction) {
+    if ctx
+        .data(|d| d.get_temp::<Option<MaterialDeleteAction>>(Id::unique(ACTION_ID)))
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
 }
 
-/// 绘制并处理输入；返回本帧动作。
-///
-/// `full` = 窗口逻辑矩形（由宿主注入的真实尺寸，不能用 `viewport_rect`）。
-pub fn show(
-    ui: &egui::Ui,
-    full: Rect,
-    model: &MaterialDeleteModel,
-) -> Option<MaterialDeleteAction> {
-    if full.width() <= 0.0 || full.height() <= 0.0 {
-        return None;
+/// 取走本帧动作。
+pub fn take_action(ctx: &egui::Context) -> Option<MaterialDeleteAction> {
+    ctx.data_mut(|d| d.remove_temp::<Option<MaterialDeleteAction>>(Id::unique(ACTION_ID)))
+        .flatten()
+}
+
+/// 渲染整个对话框窗口（`ui` = 客户端区域）。
+pub fn show(ui: &mut egui::Ui, model: &MaterialDeleteModel) {
+    theme::apply(ui.ctx());
+    crate::fonts::install(ui.ctx());
+
+    let rect = ui.max_rect();
+    let top = if model.titlebar {
+        crate::layout::TITLEBAR_H
+    } else {
+        0.0
+    };
+    let body = Rect::from_min_max(egui::pos2(rect.left(), rect.top() + top), rect.max);
+    ui.painter().rect_filled(body, 0, theme::base_bg());
+    let inner = body.shrink(PAD);
+    if inner.width() <= 0.0 || inner.height() <= 0.0 {
+        return;
     }
-    let painter = ui.painter().with_clip_rect(full);
-    painter.rect_filled(full, 0, Color32::from_black_alpha(MASK_ALPHA));
 
-    // 先排计划，再算总高（避免「边排边测」导致的双层测量）。
-    let title_h = 12.0_f32.max(text_width(ui, &model.title, 16.0) * 0.0 + 19.0);
-    let name_h = 17.0_f32;
-    let warning_h = 16.0_f32;
-    let btn_h = (BTN_PAD_Y * 2.0 + BTN_TEXT * 1.2).max(33.0);
-    let cancel_w = text_width(ui, &model.cancel, BTN_TEXT) + BTN_PAD_X * 2.0;
-    let delete_w = text_width(ui, &model.delete, BTN_TEXT) + BTN_PAD_X * 2.0;
-    let row_w = cancel_w + 12.0 + delete_w;
+    // 生产覆盖层卡片：标题 → 12 → 素材名 → 8 → 危险提示 → 24 → 按钮。
+    let content_h = TITLE_H + 12.0 + NAME_H + 8.0 + WARN_H + 24.0 + BUTTON_H;
+    let mut y = inner.top() + ((inner.height() - content_h) * 0.5).max(0.0);
+    let cx = inner.center().x;
 
-    let total_h = PAD * 2.0 + title_h + 12.0 + name_h + 8.0 + warning_h + 20.0 + btn_h;
-    let card = Rect::from_center_size(
-        full.center(),
-        egui::vec2(CARD_WIDTH, total_h.min(full.height() - 8.0)),
-    );
-
-    painter.rect_filled(card, CornerRadius::same(RADIUS), theme::base_bg());
-
-    // 文案逐行居中。
-    let cx = card.center().x;
-    let mut y = card.top() + PAD;
-    painter.text(
-        egui::pos2(cx, y),
-        Align2::CENTER_TOP,
-        &model.title,
-        FontId::proportional(16.0),
-        theme::text(),
-    );
-    y += title_h + 12.0;
-    painter.text(
-        egui::pos2(cx, y),
-        Align2::CENTER_TOP,
+    painter_text(ui, inner, y, TITLE_H, &model.title, 16.0, theme::text());
+    y += TITLE_H + 12.0;
+    painter_text(
+        ui,
+        inner,
+        y,
+        NAME_H,
         &model.name,
-        FontId::proportional(14.0),
-        theme::accent(),
+        14.0,
+        theme::accent_strong(),
     );
-    y += name_h + 8.0;
-    painter.text(
-        egui::pos2(cx, y),
-        Align2::CENTER_TOP,
-        &model.warning,
-        FontId::proportional(13.0),
-        theme::danger(),
-    );
-    y += warning_h + 20.0;
+    y += NAME_H + 8.0;
+    painter_text(ui, inner, y, WARN_H, &model.warning, 13.0, theme::danger());
+    y += WARN_H + 24.0;
 
-    // 按钮行整体居中。
-    let row_left = cx - row_w / 2.0;
-    let cancel = Rect::from_min_size(egui::pos2(row_left, y), egui::vec2(cancel_w, btn_h));
-    let delete = Rect::from_min_size(
-        egui::pos2(row_left + cancel_w + 12.0, y),
-        egui::vec2(delete_w, btn_h),
-    );
-    painter.rect_filled(cancel, CornerRadius::same(4), theme::toolbar_bg());
-    painter.text(
-        cancel.center(),
-        Align2::CENTER_CENTER,
+    // 按钮行整体居中：取消在左、删除在右（危险色）。
+    let cancel_w = button_width(ui, &model.cancel) + BUTTON_PAD_X * 2.0;
+    let delete_w = button_width(ui, &model.delete) + BUTTON_PAD_X * 2.0;
+    let row_w = cancel_w + BUTTON_GAP + delete_w;
+    let left = cx - row_w * 0.5;
+
+    let cancel = Rect::from_min_size(egui::pos2(left, y), Vec2::new(cancel_w, BUTTON_H));
+    if button(
+        ui,
+        cancel,
         &model.cancel,
-        FontId::proportional(BTN_TEXT),
+        theme::toolbar_bg(),
+        theme::selected_bg(),
         theme::text(),
-    );
-    painter.rect_filled(delete, CornerRadius::same(4), theme::danger());
-    painter.text(
-        delete.center(),
-        Align2::CENTER_CENTER,
-        &model.delete,
-        FontId::proportional(BTN_TEXT),
-        Color32::WHITE,
-    );
-
-    // 输入：按钮优先；卡片外点击 = 取消；卡片内空白 = 忽略。
-    let (pointer, pressed) = ui.input(|i| {
-        (
-            i.pointer.interact_pos(),
-            i.pointer.any_pressed() && i.pointer.primary_pressed(),
-        )
-    });
-    if pressed && let Some(pos) = pointer {
-        if delete.contains(pos) {
-            return Some(MaterialDeleteAction::Confirm(model.index));
-        }
-        if cancel.contains(pos) || !card.contains(pos) {
-            return Some(MaterialDeleteAction::Cancel);
-        }
+        "material-delete:cancel",
+    )
+    .clicked()
+    {
+        push_action(ui.ctx(), MaterialDeleteAction::Cancel);
     }
-    None
+
+    let delete = Rect::from_min_size(
+        egui::pos2(left + cancel_w + BUTTON_GAP, y),
+        Vec2::new(delete_w, BUTTON_H),
+    );
+    if button(
+        ui,
+        delete,
+        &model.delete,
+        theme::danger(),
+        theme::danger(),
+        Color32::WHITE,
+        "material-delete:confirm",
+    )
+    .clicked()
+    {
+        push_action(ui.ctx(), MaterialDeleteAction::Confirm(model.index));
+    }
+}
+
+/// 水平居中的单行文本（进入可访问树）。
+fn painter_text(
+    ui: &mut egui::Ui,
+    inner: Rect,
+    y: f32,
+    h: f32,
+    text: &str,
+    size: f32,
+    color: Color32,
+) {
+    let rect = Rect::from_min_size(egui::pos2(inner.left(), y), Vec2::new(inner.width(), h));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(
+        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+    ));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
+}
+
+/// 按钮文字宽度（与绘制同源：同一字号与字体族）。
+fn button_width(ui: &egui::Ui, label: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            label.to_owned(),
+            FontId::proportional(theme::font::LABEL),
+            theme::text(),
+        )
+        .size()
+        .x
+        .ceil()
+}
+
+/// 固定矩形按钮：1px 边框、圆角 4、悬停换底色。
+fn button(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    label: &str,
+    fill: Color32,
+    hover: Color32,
+    text_color: Color32,
+    id: &str,
+) -> egui::Response {
+    let response = ui.interact(rect, Id::unique(id), egui::Sense::click());
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(4),
+        if response.hovered() { hover } else { fill },
+        Stroke::new(1.0, theme::border()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(theme::font::LABEL),
+        text_color,
+    );
+    response
 }
 
 #[cfg(test)]
@@ -166,9 +201,10 @@ mod tests {
 
     fn model() -> MaterialDeleteModel {
         MaterialDeleteModel {
+            titlebar: false,
             title: "删除素材".into(),
             name: "钢琴音色.json".into(),
-            warning: "此操作不可撤销".into(),
+            warning: "删除后无法恢复，确定要删除吗？".into(),
             cancel: "取消".into(),
             delete: "删除".into(),
             index: 3,
@@ -176,22 +212,24 @@ mod tests {
     }
 
     #[test]
-    fn model_carries_index_and_texts() {
+    fn test_model_carries_index_and_texts() {
         let m = model();
         assert_eq!(m.index, 3);
         assert_eq!(m.delete, "删除");
         assert_eq!(m.cancel, "取消");
-        assert!(m.warning.contains("不可撤销"));
+        assert!(m.warning.contains("无法恢复"));
     }
 
     #[test]
-    fn card_is_centered_and_full_width_padding() {
-        let full = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
-        // 卡片宽固定 440、水平垂直居中（用常量与被测公式对齐）。
-        let total_h = 24.0 * 2.0 + 19.0 + 12.0 + 17.0 + 8.0 + 16.0 + 20.0 + 33.0;
-        let card = Rect::from_center_size(full.center(), egui::vec2(CARD_WIDTH, total_h));
-        assert!((card.center().x - 600.0).abs() < 0.01);
-        assert!((card.center().y - 400.0).abs() < 0.01);
-        assert!((card.width() - CARD_WIDTH).abs() < 0.01);
+    fn test_action_channel_keeps_first_action_per_frame() {
+        let ctx = egui::Context::default();
+        push_action(&ctx, MaterialDeleteAction::Confirm(3));
+        push_action(&ctx, MaterialDeleteAction::Cancel);
+        assert_eq!(
+            take_action(&ctx),
+            Some(MaterialDeleteAction::Confirm(3)),
+            "同一帧只保留第一个动作"
+        );
+        assert_eq!(take_action(&ctx), None, "取走后不得残留");
     }
 }

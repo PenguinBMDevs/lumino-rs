@@ -86,10 +86,9 @@ pub enum ShapeOp {
     /// 追加在末尾：v3 `.lmshapes` 是 bincode 位置编码，追加变体不影响旧数据解码；
     /// 旧工程没有该变体 → 全部角点按正圆弧处理（与阶段 1 逐音符一致）。
     RoundShape(RoundShapeParams),
-    /// 文字形状 v2：冻结绘制时的 `k`（Geometry；UI-023）
+    /// 冻结视图比例的文字形状（Geometry；UI-023）
     ///
-    /// 追加在末尾：旧 `Text` 仍按 legacy 方格路径解码，不改变任何既有变体的
-    /// bincode 位置。
+    /// 追加在末尾：旧 [`Self::Text`] 继续走 4×4 兼容路径，新文字写本变体并携带 `k`。
     TextV2(TextOpV2),
 }
 
@@ -119,10 +118,10 @@ impl ShapeOp {
             | Self::Symmetry(_)
             | Self::Straighten(_)
             | Self::Text(_)
+            | Self::TextV2(_)
             | Self::Drawing(_)
             | Self::Round(_)
-            | Self::RoundShape(_)
-            | Self::TextV2(_) => OpStage::Geometry,
+            | Self::RoundShape(_) => OpStage::Geometry,
             Self::Glue(_)
             | Self::Claw(_)
             | Self::Strum(_)

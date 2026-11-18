@@ -5,7 +5,8 @@ use egui::Color32;
 use super::{
     BatchEditModel, BrushSettingsModel, CloudBrowserModel, CloudConnectModel, CloudNoticeModel,
     CollaborationModel, DrawSettingsModel, HelpModel, HistoryModel, LoadConfirmModel,
-    MemoryMonitorModel, RecoverTrackModel, SettingsPageModel, VideoExportOverlayModel,
+    MaterialDeleteModel, MemoryMonitorModel, RecoverTrackModel, SettingsPageModel,
+    TempoMaxBpmModel, VideoExportOverlayModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -25,6 +26,10 @@ pub enum DialogModel {
     BatchEdit(Box<BatchEditModel>),
     /// 变速（`DialogType::SpeedChange`）。
     SpeedChange(Box<SpeedChangeModel>),
+    /// 素材删除确认（`DialogType::MaterialDelete`，DRAW-045）。
+    MaterialDelete(Box<MaterialDeleteModel>),
+    /// 自定义 Tempo BPM 上限（`DialogType::TempoMaxBpm`，DRAW-045）。
+    TempoMaxBpm(Box<TempoMaxBpmModel>),
     /// 自定义精度（`DialogType::CustomPrecision`）。
     CustomPrecision(Box<CustomPrecisionModel>),
     /// 音频导出进度（`DialogType::ExportProgress`，只读）。
@@ -192,10 +197,10 @@ pub struct SpeedChangeModel {
 /// 工程设置对话框：全部文案与只读值由生产侧预计算。
 #[derive(Debug, Clone, Default)]
 pub struct ProjectSettingsModel {
-    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时 旧版 绘制）。
+    /// 顶部是否有一条 30px 自制标题栏（`!use_native_titlebar` 时由 egui 绘制）。
     ///
-    /// egui 只接管标题栏以下的内容区；标题栏（红绿灯 / 拖动）仍由 旧版 绘制，
-    /// 避免遮掉窗口控制按钮。
+    /// egui 的 `chrome::popup_titlebar` 负责标题栏（红绿灯 / 拖动）；本模块只画
+    /// 标题栏以下的内容区，避免遮掉窗口控制按钮。
     pub titlebar: bool,
     /// 窗口标题「工程信息设置」。
     pub title: String,

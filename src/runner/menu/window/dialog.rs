@@ -182,6 +182,53 @@ impl RunnerInner {
                 self.sync_shape_drawer_use10(use10);
             }
             OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
+            OpenMaterialDeleteDialog { index, name } => {
+                // DRAW-045：确认框是独立窗口。主窗口保持可交互，重复请求
+                // （连点 / 另一个素材）只聚焦已开的窗口，不叠开第二个。
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::MaterialDelete)
+                {
+                    tracing::info!("素材删除确认窗口已打开或在初始化中，改指向最新目标");
+                    // 主窗口的待确认下标已更新为最新素材：对话框必须同步，
+                    // 否则确认回执与配对校验不一致，删除会被静默拒绝。
+                    self.window_state
+                        .dialog_manager
+                        .rebind_material_delete(index, name);
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::MaterialDelete)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    self.window_state
+                        .dialog_manager
+                        .open_material_delete(index, name);
+                }
+            }
+            OpenTempoMaxBpmDialog { current_bpm } => {
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::TempoMaxBpm)
+                {
+                    tracing::info!("自定义 BPM 上限窗口已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::TempoMaxBpm)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    self.window_state
+                        .dialog_manager
+                        .open_tempo_max_bpm(current_bpm);
+                }
+            }
             OpenBatchEditDialog => self.open_dialog_traced(DialogType::BatchEdit, "批量编辑"),
             OpenVideoExportDialog => {
                 // CPU 洋葱皮后端：视频导出是 GPU 专属逐帧渲染链路，菜单入口直接拒绝——

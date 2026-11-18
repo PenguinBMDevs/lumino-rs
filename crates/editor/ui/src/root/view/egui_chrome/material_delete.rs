@@ -1,50 +1,38 @@
-//! 素材删除确认：生产状态 → egui 模型 + 动作回传。
+//! 素材删除确认：对话框状态 → egui 模型 + 动作回传（DRAW-045）。
 //!
-//! 由 `right_sidebar.materials.pending_delete` 驱动（素材名为快照，列表刷新后仍可正确展示）。
+//! 数据源是对话框自己的 `state.material_delete_dialog`（由 Runner 在 UI
+//! 就绪时注入下标与素材名快照）；主窗口的 `pending_delete` 只用于回执配对。
 
-use lumino_message::RightSidebarAction;
-use lumino_ui_egui::material_delete::{MaterialDeleteAction, MaterialDeleteModel};
+use lumino_message::MaterialDeleteDialogAction;
+use lumino_ui_egui::chrome::MaterialDeleteModel;
+use lumino_ui_egui::material_delete::MaterialDeleteAction;
 
 use crate::root::Root;
 
 impl Root {
-    /// 删除确认模型；无待确认项时返回 `None`。
-    pub(crate) fn material_delete_model(&self) -> Option<MaterialDeleteModel> {
-        let index = self.right_sidebar.materials.pending_delete?;
-        let name = self
-            .right_sidebar
-            .materials
-            .pending_delete_name
-            .clone()
-            .or_else(|| {
-                self.right_sidebar
-                    .materials
-                    .entries
-                    .get(index)
-                    .map(|e| e.name.clone())
-            })
-            .unwrap_or_default();
+    /// 素材删除确认对话框模型。
+    pub(crate) fn material_delete_model(&self) -> MaterialDeleteModel {
+        let state = &self.state.material_delete_dialog;
         let t = lumino_extras::i18n::main_translations(self.settings.display.language);
-        Some(MaterialDeleteModel {
+        MaterialDeleteModel {
+            titlebar: !self.settings.synth.use_native_titlebar,
             title: t.material_delete_title.to_string(),
-            name,
+            name: state.name.clone(),
             warning: t.material_delete_warning.to_string(),
             cancel: t.material_delete_cancel.to_string(),
             delete: t.material_delete.to_string(),
-            index,
-        })
+            index: state.index,
+        }
     }
 
-    /// 动作 → 生产消息。
+    /// 对话框动作 → 生产消息。
     pub(crate) fn material_delete_action_message(
         &self,
         action: MaterialDeleteAction,
     ) -> crate::Message {
-        crate::Message::RightSidebar(match action {
-            MaterialDeleteAction::Cancel => RightSidebarAction::MaterialDeleteCancelled,
-            MaterialDeleteAction::Confirm(index) => {
-                RightSidebarAction::MaterialDeleteConfirmed(index)
-            }
+        crate::Message::MaterialDelete(match action {
+            MaterialDeleteAction::Cancel => MaterialDeleteDialogAction::Cancel,
+            MaterialDeleteAction::Confirm(index) => MaterialDeleteDialogAction::Confirm(index),
         })
     }
 }
@@ -57,19 +45,16 @@ mod tests {
     fn root() -> Root {
         Root::new_dialog(
             &lumino_ui_core::Theme::TokyoNightStorm.to_string(),
-            DialogType::VideoExport,
+            DialogType::MaterialDelete,
         )
     }
 
     #[test]
-    fn model_mirrors_pending_delete() {
+    fn test_model_mirrors_dialog_state() {
         let mut root = root();
-        root.right_sidebar.materials.pending_delete = Some(2);
-        root.right_sidebar.materials.pending_delete_name = Some("钢琴音色.json".into());
+        root.set_material_delete_dialog(2, "钢琴音色.json".to_string());
 
-        let model = root
-            .material_delete_model()
-            .expect("有待确认项时应产出模型");
+        let model = root.material_delete_model();
         assert_eq!(model.index, 2);
         assert_eq!(model.name, "钢琴音色.json");
         assert!(!model.title.is_empty());
@@ -78,22 +63,23 @@ mod tests {
     }
 
     #[test]
-    fn no_pending_delete_means_no_model() {
-        let mut root = root();
-        root.right_sidebar.materials.pending_delete = None;
-        assert!(root.material_delete_model().is_none());
+    fn test_model_index_defaults_without_injection() {
+        // 对话框 UI 就绪前可能先渲染一帧：模型必须是可绘制的空数据，而不是 panic。
+        let model = root().material_delete_model();
+        assert_eq!(model.index, 0);
+        assert!(model.name.is_empty());
     }
 
     #[test]
-    fn actions_map_to_right_sidebar_messages() {
+    fn test_actions_map_to_dialog_action_messages() {
         let root = root();
         assert!(matches!(
             root.material_delete_action_message(MaterialDeleteAction::Cancel),
-            crate::Message::RightSidebar(RightSidebarAction::MaterialDeleteCancelled)
+            crate::Message::MaterialDelete(MaterialDeleteDialogAction::Cancel)
         ));
         assert!(matches!(
             root.material_delete_action_message(MaterialDeleteAction::Confirm(7)),
-            crate::Message::RightSidebar(RightSidebarAction::MaterialDeleteConfirmed(7))
+            crate::Message::MaterialDelete(MaterialDeleteDialogAction::Confirm(7))
         ));
     }
 }

@@ -58,7 +58,7 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel, icons: &mut crate::icons::I
     crate::fonts::install(ui.ctx());
 
     let rect = ui.max_rect();
-    // 顶部自制标题栏仍由 旧版 绘制（红绿灯 / 拖动）。
+    // 顶部 30px 自制标题栏由 egui 绘制（`chrome::popup_titlebar`），本模块让出该区域。
     let top = if model.titlebar {
         crate::layout::TITLEBAR_H
     } else {

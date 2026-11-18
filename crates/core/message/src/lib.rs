@@ -28,6 +28,8 @@ pub mod load_confirm;
 pub mod loop_range;
 /// 遮罩参数面板动作（DRAW-010）
 pub mod mask_panel;
+/// 素材删除确认对话框动作（DRAW-045，独立窗口）
+pub mod material_delete;
 pub mod project_settings;
 pub mod recover_track;
 pub mod right_sidebar;
@@ -38,6 +40,8 @@ pub mod settings_event;
 /// 形状抽屉库/变换/插入动作
 pub mod shape_drawer;
 pub mod speed_change;
+/// 自定义 Tempo BPM 上限对话框动作（DRAW-045，独立窗口）
+pub mod tempo_max_bpm;
 pub mod types;
 pub mod velocity;
 pub mod video_clip;
@@ -61,6 +65,7 @@ pub use history::HistoryAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use mask_panel::MaskPanelAction;
+pub use material_delete::MaterialDeleteDialogAction;
 pub use project_settings::ProjectSettingsAction;
 pub use recover_track::RecoverTrackAction;
 pub use right_sidebar::{I2mConfigField, I2mSelectField, RightSidebarAction};
@@ -68,6 +73,7 @@ pub use save_confirm::SaveConfirmAction;
 pub use settings_dialog::SettingsDialogAction;
 pub use shape_drawer::ShapeDrawerAction;
 pub use speed_change::SpeedChangeAction;
+pub use tempo_max_bpm::TempoMaxBpmDialogAction;
 pub use types::*;
 pub use velocity::VelocityAction;
 pub use video_clip::VideoClipAction;

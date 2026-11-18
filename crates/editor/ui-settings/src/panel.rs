@@ -276,30 +276,9 @@ impl SettingsPanel {
             }
             Event::TempoMaxBpmChanged(v) => {
                 self.editing.tempo_max_bpm = v;
-                self.editing.tempo_custom_open = false;
             }
-            Event::TempoMaxBpmCustomOpen => {
-                // 打开面板时预填当前值，方便微调
-                if self.editing.tempo_custom_input.is_empty() {
-                    self.editing.tempo_custom_input = format!("{:.0}", self.editing.tempo_max_bpm);
-                }
-                self.editing.tempo_custom_open = true;
-            }
-            Event::TempoMaxBpmCustomClose => {
-                self.editing.tempo_custom_open = false;
-            }
-            Event::TempoMaxBpmCustomInput(value) => {
-                self.editing.tempo_custom_input = value;
-            }
-            Event::TempoMaxBpmCustomConfirm => {
-                if let Ok(v) = self.editing.tempo_custom_input.trim().parse::<f64>() {
-                    self.editing.tempo_max_bpm = v;
-                    self.editing.tempo_custom_open = false;
-                    tracing::info!("设置: 自定义 Tempo BPM 上限为 {:.0}", v);
-                } else {
-                    tracing::warn!("设置: 自定义 Tempo BPM 上限输入无效");
-                }
-            }
+            // DRAW-045：自定义输入已迁到独立对话框，面板只保留生效值。
+            Event::TempoMaxBpmCustomOpen => {}
             Event::LogRetentionCountChanged(s) => {
                 parse_setting(&s, |v: usize| self.logging.log_retention_count = v);
             }

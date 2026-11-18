@@ -98,3 +98,45 @@ impl Root {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    fn editor_with_text(text: &str) -> lumino_ui_editor::Editor {
+        let mut editor = lumino_ui_editor::Editor::new();
+        let mut state = lumino_editor_state::text_tool::TextToolState::new();
+        state.set_drag(0.0, 3840.0, 60, 64);
+        state.active = true;
+        state.text = text.to_string();
+        editor.editor_state.text_tool = state;
+        editor
+    }
+
+    #[test]
+    fn test_preview_signature_tracks_params() {
+        let mut editor = editor_with_text("A");
+        let base = editor.text_preview_signature();
+
+        editor.editor_state.text_tool.params.size += 1.0;
+        let changed = editor.text_preview_signature();
+        assert_ne!(base, changed, "字号变化必须让预览重新栅格化");
+
+        editor.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
+        let changed_mode = editor.text_preview_signature();
+        assert_ne!(changed, changed_mode, "排版路径变化必须重建预览");
+    }
+
+    /// UI-023：缩放改变 `k` ⇒ 采样比例变 ⇒ 预览签名必须变（否则复用旧纹理）。
+    #[test]
+    fn test_preview_signature_tracks_zoom() {
+        let mut editor = editor_with_text("A");
+        let base = editor.text_preview_signature();
+
+        editor.editor_state.view.zoom_x *= 2.0;
+        let zoomed = editor.text_preview_signature();
+        assert_ne!(base, zoomed, "缩放变化必须让预览重新栅格化");
+
+        editor.editor_state.view.snap_precision *= 2.0;
+        let snapped = editor.text_preview_signature();
+        assert_ne!(zoomed, snapped, "音符精度变化必须让预览重新栅格化");
+    }
+}

@@ -40,6 +40,13 @@ impl Editor {
     /// 长度下限补齐。`anchors.len() < 2` 视为无音符形状（仍可登记与持久化）。
     pub(crate) fn shape_notes_of(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
         // 文字形状是独立再生成路径：几何锚点不参与，参数/文本框/采样模式全在 TextOp。
+        // UI-023：新形状带冻结的 `k`（`TextV2`），旧形状走 4×4 兼容（`Text`）。
+        if let Some(op) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::TextV2(op) => Some(op),
+            _ => None,
+        }) {
+            return self.text_shape_notes_v2(model, op, track);
+        }
         if let Some(op) = model.ops.iter().find_map(|op| match op {
             ShapeOp::TextV2(op) => Some(op),
             _ => None,

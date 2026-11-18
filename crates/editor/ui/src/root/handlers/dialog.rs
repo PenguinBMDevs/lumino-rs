@@ -9,11 +9,13 @@ mod draw_settings;
 mod fill_division;
 mod history;
 mod load_confirm;
+mod material_delete;
 mod project_settings;
 mod recover_track;
 mod save_confirm;
 mod settings;
 mod speed_change;
+mod tempo_max_bpm;
 mod video_export;
 
 use crate::message::Message;
@@ -46,6 +48,8 @@ impl MessageHandler for DialogHandler {
             Message::AudioExport(action) => self.handle_audio_export(root, action),
             Message::VideoExport(action) => self.handle_video_export(root, action),
             Message::SpeedChange(action) => self.handle_speed_change(root, action),
+            Message::MaterialDelete(action) => self.handle_material_delete(root, action),
+            Message::TempoMaxBpm(action) => self.handle_tempo_max_bpm(root, action),
             Message::BatchEdit(action) => self.handle_batch_edit(root, action),
             Message::RecoverTrack(action) => self.handle_recover_track(root, action),
             Message::SaveConfirm(action) => self.handle_save_confirm(root, action),

@@ -1,14 +1,35 @@
 use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
-use lumino_core::{TextAlign, TextParams};
+use lumino_core::TextAlign;
 use lumino_editor_state::text_tool::TextToolState;
 use lumino_ui_core::geom::Point;
 
 use super::font::load_font;
-use super::occupancy::alpha_to_occupancy;
-use super::scale::{HARD_MAX_PIXELS, RasterScale};
+use super::scale::{LEGACY_SS, RasterScale};
 
-/// 单元格占用判定阈值：LegacyBox 新路径按 key 轴覆盖率；legacy 按面积
+/// 旧兼容路径的单元格占用阈值（墨水子像素占比高于此值视为「有墨水」）
 const COVERAGE_THRESHOLD: f32 = 0.08;
+
+/// 单元格占用判定口径
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum InkRule {
+    /// 旧口径：格内墨水子像素的**面积**占比
+    ///
+    /// `inclusive` 保留两条旧路径的历史差异：LegacyBox 用 `>`、Parametric 用 `>=`。
+    Area {
+        /// 阈值（0..=1）
+        threshold: f32,
+        /// 是否含等号
+        inclusive: bool,
+    },
+    /// 新口径：**key 轴覆盖率**——音高轴上多少比例的子像素行（纵向为列）落在字形内
+    ///
+    /// 这才是 `TextParams::threshold` 的语义：非正方形采样下面积覆盖率会被稀释
+    /// 约 `ss_x/ss_y` 倍，默认 50% 会把细笔画整格判空。
+    KeyAxis {
+        /// 阈值（0..=1）
+        threshold: f32,
+    },
+}
 
 /// 点是否落在矩形内
 pub(super) fn point_in_rect(p: Point, r: lumino_ui_core::geom::Rectangle) -> bool {
@@ -33,6 +54,8 @@ pub(super) fn point_in_rect(p: Point, r: lumino_ui_core::geom::Rectangle) -> boo
 ///
 /// 采样分辨率同样随方向互换：横向「列 = 时间格（框内 tick 跨度 / snap）、行 = 音高格
 /// （框内 key 跨度）」；纵向「列 = 音高格、行 = 时间格」——即把横向的两个格数对调。
+///
+/// **每个格的像素宽高不在这里**：那是 [`RasterScale`] 的职责（屏幕比例权威）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct GlyphGrid {
     /// 采样列数（advance 方向）
@@ -122,55 +145,47 @@ impl GlyphGrid {
 
 /// 将文字光栅化为灰度位图（行优先，**行 0 = 文字顶部**）。
 ///
-/// 返回 `(width, height, buf)`：`width = cols * ss_x`、`height = rows * ss_y`。
-/// 新路径按统一比例 letterbox 到框内；`scale.legacy` 时逐字节复现旧「填满框」行为。
+/// 返回 `(width, height, buf)`：尺寸由 [`RasterScale`] 决定，`buf` 按行主序存储，
+/// 每像素为 0..255 的墨水墨度。预览渲染与音符采样共用同一份栅格，保证「看到的就是生成的」。
+///
+/// `scale.legacy` 为真时走旧路径（`LEGACY_SS` 方格 + 填满框 + 横向拉伸）；
+/// 否则按屏幕比例采样，并在宽度放不下时**等比缩小**（不再拉伸字形）。
 pub(crate) fn rasterize_glyph_alpha(
     text: &str,
     cols: usize,
     rows: usize,
-    params: &TextParams,
-    scale: RasterScale,
+    family: &str,
+    scale: &RasterScale,
+    align: TextAlign,
 ) -> Option<(u32, u32, Vec<u8>)> {
-    let font = load_font(&params.font)?;
-    rasterize_glyph_alpha_with_font(text, cols, rows, params, &font, scale)
+    let font = load_font(family)?;
+    if scale.legacy {
+        return rasterize_glyph_alpha_with_font(text, cols, rows, &font);
+    }
+    rasterize_glyph_alpha_letterbox(text, cols, rows, &font, scale, align)
 }
 
+/// 旧兼容路径：按框高填满、再横向拉伸到框宽（`LEGACY_SS` 方格）。
+///
 /// 与 [`rasterize_glyph_alpha`] 同一实现，但字体由调用方注入。
 ///
-/// 生产路径仍按 `params.font` 加载；测试用固定字体做像素 golden，避免系统字体差异。
+/// 生产路径仍按字体族加载；测试用固定字体做像素 golden，避免系统字体差异。
 pub(crate) fn rasterize_glyph_alpha_with_font(
     text: &str,
     cols: usize,
     rows: usize,
-    params: &TextParams,
     font: &ab_glyph::FontArc,
-    scale: RasterScale,
 ) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 {
         return None;
     }
-    let (w, h) = scale.buffer_dims(cols, rows);
-    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > HARD_MAX_PIXELS {
-        return None;
-    }
-    if scale.legacy {
-        rasterize_glyph_legacy(text, w, h, font)
-    } else {
-        rasterize_glyph_letterbox(text, w, h, params.align, font)
-    }
-}
+    let h = (rows as u32) * LEGACY_SS;
+    let w = (cols as u32) * LEGACY_SS;
 
-/// 旧路径：用 ascent+descent 充满框高，再把自然宽度拉伸到框宽（逐字节兼容）
-fn rasterize_glyph_legacy(
-    text: &str,
-    w: u32,
-    h: u32,
-    font: &ab_glyph::FontArc,
-) -> Option<(u32, u32, Vec<u8>)> {
     // 垂直缩放：用字体 ascent+descent（不含行距）充满框高，使文字填满框且不留顶部空白。
     let unit = font.as_scaled(PxScale::from(1.0));
     let h1 = (unit.ascent() + unit.descent()).max(1e-3);
-    let scale = PxScale::from((h as f32 / h1).max(1e-6));
+    let scale = PxScale::from(h as f32 / h1);
     let scaled = font.as_scaled(scale);
 
     // 第一遍：计算自然布局总推进宽度，并记录所有字形中最低墨水的 y（渲染像素，y 向下）。
@@ -230,82 +245,103 @@ fn rasterize_glyph_legacy(
     Some((w, h, buf))
 }
 
-/// 新路径：按自然比例 letterbox 到框内，按 align + 底部基线定位（不再 X/Y 独立拉伸）
-fn rasterize_glyph_letterbox(
+/// 新路径：按屏幕比例采样 + **等比 letterbox**（宽度放不下时整体缩小，不拉伸字形）。
+///
+/// 字号先按框高（buffer 高）换算，再乘 `fit = min(1, 框宽 / 自然推进宽)`；
+/// 缩小时底部基线仍贴框底，水平位置按 [`TextAlign`] 决定。
+///
+/// **单行**：与旧 LegacyBox 同口径（输入框是单行 `TextEdit`）；多行请走 Parametric。
+pub(crate) fn rasterize_glyph_alpha_letterbox(
     text: &str,
-    w: u32,
-    h: u32,
-    align: TextAlign,
+    cols: usize,
+    rows: usize,
     font: &ab_glyph::FontArc,
+    scale: &RasterScale,
+    align: TextAlign,
 ) -> Option<(u32, u32, Vec<u8>)> {
-    // 1px 参考下的自然布局尺寸：advance × 墨迹高度。
-    // 注意不能用 ascent+descent 当高度：Noto 的 ascent+descent ≈ 0.667 em，
-    // 而 CJK 墨迹高度 ≈ 0.9 em；按 line height 缩放会把 CJK 上下裁掉。
+    if text.is_empty() || cols == 0 || rows == 0 {
+        return None;
+    }
+    let w = scale.width(cols);
+    let h = scale.height(rows);
+    if w == 0 || h == 0 {
+        return None;
+    }
+
+    // 1) 先按框高定字号：拟合高度必须取**墨迹高度**（所有字形 ink bbox 的并集），
+    //    不能用 ascent+descent——Noto 的 ascent+descent 小于 CJK 墨迹高度，
+    //    按行高缩放会把中文上下裁掉（英文没有下伸部分时不易察觉）。
     let unit = font.as_scaled(PxScale::from(1.0));
-    let natural_w: f32 = text
-        .chars()
-        .map(|ch| unit.h_advance(font.glyph_id(ch)))
-        .sum::<f32>()
-        .max(1e-3);
+    let reference = 1000.0;
     let mut ink_min_y = f32::MAX;
     let mut ink_max_y = f32::MIN;
     for ch in text.chars() {
-        let gid = font.glyph_id(ch);
-        if let Some(outline) =
-            font.outline_glyph(gid.with_scale_and_position(PxScale::from(1.0), AbPoint::default()))
-        {
+        if let Some(outline) = font.outline_glyph(
+            font.glyph_id(ch)
+                .with_scale_and_position(PxScale::from(reference), AbPoint::default()),
+        ) {
             let b = outline.px_bounds();
             ink_min_y = ink_min_y.min(b.min.y);
             ink_max_y = ink_max_y.max(b.max.y);
         }
     }
-    let natural_h = if ink_max_y > ink_min_y {
-        (ink_max_y - ink_min_y).max(1e-3)
+    let ink_h = if ink_max_y > ink_min_y {
+        (ink_max_y - ink_min_y) / reference
     } else {
         (unit.ascent() + unit.descent()).max(1e-3)
     };
-    let fit = (w as f32 / natural_w).min(h as f32 / natural_h);
-    if !fit.is_finite() || fit <= 0.0 {
-        return None;
-    }
-    let scale = PxScale::from(fit);
-    let scaled = font.as_scaled(scale);
-
-    let total_advance: f32 = text
+    let fill = PxScale::from(h as f32 / ink_h.max(1e-3));
+    let fill_scaled = font.as_scaled(fill);
+    let natural_w: f32 = text
         .chars()
-        .map(|ch| scaled.h_advance(font.glyph_id(ch)))
-        .sum();
-    let mut max_bottom = 0f32;
-    for ch in text.chars() {
-        let gid = font.glyph_id(ch);
-        if let Some(outline) =
-            font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default()))
-        {
-            max_bottom = max_bottom.max(outline.px_bounds().max.y);
-        }
-    }
+        .map(|ch| fill_scaled.h_advance(font.glyph_id(ch)))
+        .sum::<f32>()
+        .max(1.0);
 
-    // 水平按 align；底部把最低墨水对齐到框底（保留既有基线语义）
+    // 2) 等比 letterbox：只有放不下才缩，缩的是**整个字形**而不是横向拉伸
+    let fit = if natural_w > w as f32 {
+        w as f32 / natural_w
+    } else {
+        1.0
+    };
+    let px = PxScale::from(fill.y * fit);
+    let scaled = font.as_scaled(px);
+    let text_w = natural_w * fit;
     let x0 = match align {
         TextAlign::Left => 0.0,
-        TextAlign::Center => (w as f32 - total_advance) * 0.5,
-        TextAlign::Right => w as f32 - total_advance,
-    }
-    .max(0.0);
-    let y0 = h as f32 - max_bottom;
+        TextAlign::Center => (w as f32 - text_w) * 0.5,
+        TextAlign::Right => w as f32 - text_w,
+    };
 
-    let mut buf = vec![0u8; (h as usize) * (w as usize)];
+    // 3) 底部对齐：把最低墨水对齐到缓冲底
+    let mut max_bottom = 0f32;
+    for ch in text.chars() {
+        if let Some(outline) = font.outline_glyph(
+            font.glyph_id(ch)
+                .with_scale_and_position(px, AbPoint::default()),
+        ) {
+            let b = outline.px_bounds();
+            if b.max.y > max_bottom {
+                max_bottom = b.max.y;
+            }
+        }
+    }
+    let baseline_y = h as f32 - max_bottom;
+
+    let mut buf = vec![0u8; (w as usize) * (h as usize)];
     let mut x_cursor = x0;
     for ch in text.chars() {
         let gid = font.glyph_id(ch);
-        let glyph = gid.with_scale_and_position(scale, AbPoint::default());
-        if let Some(outline) = font.outline_glyph(glyph) {
+        if let Some(outline) =
+            font.outline_glyph(gid.with_scale_and_position(px, AbPoint::default()))
+        {
             let b = outline.px_bounds();
-            outline.draw(|px, py, alpha| {
-                let x = (x_cursor + px as f32 + b.min.x).round() as i32;
-                let y = (py as f32 + b.min.y + y0).round() as i32;
+            outline.draw(|gx, gy, alpha| {
+                let x = (x_cursor + gx as f32 + b.min.x).round() as i32;
+                let y = (gy as f32 + b.min.y + baseline_y).round() as i32;
                 if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 && alpha > 0.0 {
-                    buf[y as usize * w as usize + x as usize] = (alpha * 255.0) as u8;
+                    let idx = y as usize * w as usize + x as usize;
+                    buf[idx] = buf[idx].max((alpha * 255.0) as u8);
                 }
             });
         }
@@ -314,110 +350,115 @@ fn rasterize_glyph_letterbox(
     Some((w, h, buf))
 }
 
-/// 将文字光栅化为占用网格（rows × cols，[row][col] = 是否有墨水）
+/// 将文字光栅化为占用网格（rows × cols，`[row][col] = 是否有墨水`）
 ///
-/// 新路径按 **key 轴覆盖率** 判定（阈值语义见 #213：一个 key 的高度中有多少
-/// 比例落在字形内部）；legacy 路径保持旧的面积覆盖率，逐字节复现旧形状。
+/// 行 0 = 文字顶部。返回 `None` 表示无字体或文字为空。
 pub(crate) fn rasterize_text(
     text: &str,
     cols: usize,
     rows: usize,
-    params: &TextParams,
-    scale: RasterScale,
+    family: &str,
+    scale: &RasterScale,
+    align: TextAlign,
 ) -> Option<Vec<Vec<bool>>> {
-    let (w, _h, buf) = rasterize_glyph_alpha(text, cols, rows, params, scale)?;
-    Some(alpha_to_occupancy(
-        &buf,
+    let (w, _h, buf) = rasterize_glyph_alpha(text, cols, rows, family, scale, align)?;
+    debug_assert_eq!(
         w,
-        cols,
-        rows,
-        scale,
-        COVERAGE_THRESHOLD,
-    ))
+        scale.width(cols),
+        "灰度图宽度必须与 RasterScale 一致（占用判定的像素坐标依赖它）"
+    );
+    let rule = if scale.legacy {
+        // 旧路径：面积占比、严格大于（逐字节兼容历史行为）
+        InkRule::Area {
+            threshold: COVERAGE_THRESHOLD,
+            inclusive: false,
+        }
+    } else {
+        // 新路径：key 轴覆盖率；LegacyBox 新路径阈值仍固定 8%
+        InkRule::KeyAxis {
+            threshold: COVERAGE_THRESHOLD,
+        }
+    };
+    Some(alpha_to_occupancy(&buf, cols, rows, scale, rule))
 }
 
-/// 纯函数：将占用网格按 [`GlyphGrid`] 的轴角色转换为音符列表（不依赖字体 / 画布）。
+/// 灰度图 → 占用网格（纯函数，供阈值回归测试直接调用）
 ///
-/// `merged = false`（正常采样）：每个有墨水的采样格生成一个音符，长度 = snap；
-/// `merged = true`（key 范围合并）：**沿时间轴**把连续墨水合并为一个音符，
-/// 长度 = 该段的时间跨度（横向 = 同一 key 行内的连续列；纵向 = 同一 key 列内的连续行），
-/// 任意空隙断开，不合并本应分开的笔画。
-///
-/// 合并方向恒为**时间轴**：若照搬"按行合并"到纵向，合并方向会变成音高轴，于是
-/// "音高跨度"会被当成"音符长度"写进文档（长度单位错乱），故合并方向必须由 `grid` 决定。
-pub(crate) fn sample_to_notes_grid(
-    occ: &[Vec<bool>],
-    grid: &GlyphGrid,
-    snap: f32,
-    merged: bool,
-) -> Vec<(f32, u16, f32)> {
-    let mut notes = Vec::new();
-    let rows = occ.len();
-    let cols = occ.first().map_or(0, Vec::len);
-    if rows == 0 || cols == 0 {
-        return notes;
+/// 采样格 `(row, col)` 的像素区间由 [`RasterScale`] 唯一给出；判定口径见 [`InkRule`]。
+pub(super) fn alpha_to_occupancy(
+    buf: &[u8],
+    cols: usize,
+    rows: usize,
+    scale: &RasterScale,
+    rule: InkRule,
+) -> Vec<Vec<bool>> {
+    let width = scale.width(cols) as usize;
+    let mut occ = vec![vec![false; cols]; rows];
+    if cols == 0 || rows == 0 || width == 0 {
+        return occ;
     }
+    let threshold = match rule {
+        InkRule::Area { threshold, .. } | InkRule::KeyAxis { threshold } => {
+            threshold.clamp(0.0, 1.0)
+        }
+    };
+    // 纵向 key 轴覆盖率要按列统计；其余口径不需要这份 scratch
+    let track_cols = matches!(rule, InkRule::KeyAxis { .. }) && scale.vertical;
+    let mut col_ink: Vec<bool> = Vec::new();
 
-    // 正常采样：逐格生成，长度 = snap（与方向无关）
-    if !merged {
-        for (r, row) in occ.iter().enumerate() {
-            for (c, &on) in row.iter().enumerate() {
-                if on {
-                    let (tick, key) = grid.cell(r, c);
-                    notes.push((tick, key, snap));
+    for (r, row) in occ.iter_mut().enumerate() {
+        let (y0, y1) = scale.y_range(r, rows);
+        for (c, cell) in row.iter_mut().enumerate() {
+            let (x0, x1) = scale.x_range(c, cols);
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            if track_cols {
+                col_ink.clear();
+                col_ink.resize((x1 - x0) as usize, false);
+            }
+            let mut ink = 0u32;
+            let mut covered_rows = 0u32;
+            for y in y0..y1 {
+                let mut row_ink = false;
+                for x in x0..x1 {
+                    let idx = y as usize * width + x as usize;
+                    if buf.get(idx).copied().unwrap_or(0) > 0 {
+                        ink += 1;
+                        row_ink = true;
+                        if track_cols {
+                            col_ink[(x - x0) as usize] = true;
+                        }
+                    }
+                }
+                if row_ink {
+                    covered_rows += 1;
                 }
             }
-        }
-        return notes;
-    }
-
-    // 合并采样：外层遍历**音高格**（横向 = 行、纵向 = 列），内层按**时间递增**遍历时间格。
-    // 纵向的时间格是行号且 tick 随行号递减，故时间递增 = 行号倒序。
-    let pitch_cells = if grid.vertical { cols } else { rows };
-    let time_cells = if grid.vertical { rows } else { cols };
-    for p in 0..pitch_cells {
-        let mut run_start: Option<usize> = None; // 扫描顺序中首个时间格
-        let mut run_last = 0usize;
-        for k in 0..time_cells {
-            let t = if grid.vertical { time_cells - 1 - k } else { k };
-            let on = if grid.vertical {
-                occ.get(t)
-                    .and_then(|row| row.get(p))
-                    .copied()
-                    .unwrap_or(false)
-            } else {
-                occ.get(p)
-                    .and_then(|row| row.get(t))
-                    .copied()
-                    .unwrap_or(false)
+            if ink == 0 {
+                continue;
+            }
+            *cell = match rule {
+                InkRule::Area { inclusive, .. } => {
+                    let total = f64::from((x1 - x0) * (y1 - y0));
+                    let coverage = f64::from(ink) / total;
+                    if inclusive {
+                        coverage >= f64::from(threshold)
+                    } else {
+                        coverage > f64::from(threshold)
+                    }
+                }
+                InkRule::KeyAxis { .. } => {
+                    let (covered, axis_len) = if scale.vertical {
+                        (col_ink.iter().filter(|on| **on).count() as u32, x1 - x0)
+                    } else {
+                        (covered_rows, y1 - y0)
+                    };
+                    let coverage = f64::from(covered) / f64::from(axis_len.max(1));
+                    coverage >= f64::from(threshold)
+                }
             };
-            if on {
-                if run_start.is_none() {
-                    run_start = Some(t);
-                }
-                run_last = t;
-            } else if let Some(start) = run_start.take() {
-                push_time_run(&mut notes, grid, p, start, run_last, snap);
-            }
-        }
-        if let Some(start) = run_start {
-            push_time_run(&mut notes, grid, p, start, run_last, snap);
         }
     }
-    notes
-}
-
-/// 时间轴合并段 `[start, last]`（扫描顺序，`start` 为段内**最早**时间格）→ 一条音符
-fn push_time_run(
-    notes: &mut Vec<(f32, u16, f32)>,
-    grid: &GlyphGrid,
-    pitch_cell: usize,
-    start: usize,
-    last: usize,
-    snap: f32,
-) {
-    let len = (last.abs_diff(start) + 1) as f32 * snap;
-    let key = grid.key_of_pitch_cell(pitch_cell);
-    let tick = grid.tick_of_time_cell(start);
-    notes.push((tick, key, len));
+    occ
 }
