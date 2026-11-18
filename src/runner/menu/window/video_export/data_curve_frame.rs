@@ -153,7 +153,9 @@ pub fn render_data_curve_frame(
     renderer: &mut DataCurveRenderer,
     config: &DataCurveRenderConfig,
 ) -> DataCurveFrameOutput {
-    fill_bgra(frame, config.bg_color);
+    crate::profiling::tracy_zone!("app.dc.fill", {
+        fill_bgra(frame, config.bg_color);
+    });
     if frame_width == 0 || frame_height == 0 || renderer.window.is_empty() {
         return DataCurveFrameOutput {
             value: 0.0,
@@ -190,14 +192,41 @@ pub fn render_data_curve_frame(
     // ── 水平网格线（10 的幂间距；细分线透明度随缩放比例渐变） ──
     let line_pow = 10.0f64.powf(graph_sub.log10().floor());
     let bar_bgra = rgba_to_bgra(config.bar_color);
-    if config.show_bars {
-        let frac = 1.0 - ((graph_sub / (line_pow * 10.0)) % 1.0);
-        let sub_alpha = ((bar_bgra[3] as f32) * (frac as f32 / 3.0)) as u8;
-        // 细分线：0.1×line_pow 间距，101 条
+    crate::profiling::tracy_zone!("app.dc.grid", {
+        if config.show_bars {
+            let frac = 1.0 - ((graph_sub / (line_pow * 10.0)) % 1.0);
+            let sub_alpha = ((bar_bgra[3] as f32) * (frac as f32 / 3.0)) as u8;
+            // 细分线：0.1×line_pow 间距，101 条
+            let base = (graph_min / line_pow).floor() * line_pow;
+            let y_scale = fh as f64 / graph_sub;
+            for i in 0..=100 {
+                let value = base + (i as f64 / 10.0) * line_pow;
+                if value < 0.0 {
+                    continue;
+                }
+                let y = fh as f64 - (value - graph_min) * y_scale;
+                if !(0.0..=fh as f64 * 1.5).contains(&y) {
+                    continue;
+                }
+                let mut c = bar_bgra;
+                c[3] = sub_alpha;
+                blend_hline(frame, fw, fh, y as i32, c, config.bar_thickness);
+            }
+        }
+    });
+
+    // 纵轴像素比例（主刻度与折线共用；子网格块内另有同名局部变量）
+    let y_scale = fh as f64 / graph_sub;
+
+    // ── 主刻度线 + 刻度文字 ──
+    crate::profiling::tracy_zone!("app.dc.ticks_text", {
+        let font_height = renderer.font.line_height();
         let base = (graph_min / line_pow).floor() * line_pow;
-        let y_scale = fh as f64 / graph_sub;
-        for i in 0..=100 {
-            let value = base + (i as f64 / 10.0) * line_pow;
+        let digit_scale = 10.0f64
+            .powi(config.abbreviate_digits.min(10) as i32)
+            .floor();
+        for i in 0..=10 {
+            let value = base + i as f64 * line_pow;
             if value < 0.0 {
                 continue;
             }
@@ -205,93 +234,74 @@ pub fn render_data_curve_frame(
             if !(0.0..=fh as f64 * 1.5).contains(&y) {
                 continue;
             }
-            let mut c = bar_bgra;
-            c[3] = sub_alpha;
-            blend_hline(frame, fw, fh, y as i32, c, config.bar_thickness);
-        }
-    }
-
-    // ── 主刻度线 + 刻度文字 ──
-    let font_height = renderer.font.line_height();
-    let base = (graph_min / line_pow).floor() * line_pow;
-    let y_scale = fh as f64 / graph_sub;
-    let digit_scale = 10.0f64
-        .powi(config.abbreviate_digits.min(10) as i32)
-        .floor();
-    for i in 0..=10 {
-        let value = base + i as f64 * line_pow;
-        if value < 0.0 {
-            continue;
-        }
-        let y = fh as f64 - (value - graph_min) * y_scale;
-        if !(0.0..=fh as f64 * 1.5).contains(&y) {
-            continue;
-        }
-        let is_milestone = is_milestone(value, 1000.0);
-        let text_scale = if is_milestone {
-            config.milestone_scale_mul.max(1.0) as u32
-        } else {
-            1
-        };
-
-        if config.show_bars {
-            blend_hline(frame, fw, fh, y as i32, bar_bgra, config.bar_thickness);
-        }
-        if config.show_text {
-            let text = if config.abbreviate {
-                abbreviate(value, digit_scale)
+            let is_milestone = is_milestone(value, 1000.0);
+            let text_scale = if is_milestone {
+                config.milestone_scale_mul.max(1.0) as u32
             } else {
-                add_commas(value)
+                1
             };
-            if !text.is_empty() {
-                let ts = text_scale as f64;
-                let tx = (config.text_x_offset as f64 * ts) as u32;
-                let ty = ((y - font_height as f64 * ts - config.text_y_offset as f64 * ts)
-                    .floor()
-                    .max(0.0)) as u32;
-                renderer.font.draw_line_scaled(DrawLineScaledInput {
-                    frame: &mut *frame,
-                    frame_width,
-                    line: &text,
-                    x: tx,
-                    y: ty,
-                    color: config.text_color,
-                    extra_scale: text_scale,
-                });
+
+            if config.show_bars {
+                blend_hline(frame, fw, fh, y as i32, bar_bgra, config.bar_thickness);
+            }
+            if config.show_text {
+                let text = if config.abbreviate {
+                    abbreviate(value, digit_scale)
+                } else {
+                    add_commas(value)
+                };
+                if !text.is_empty() {
+                    let ts = text_scale as f64;
+                    let tx = (config.text_x_offset as f64 * ts) as u32;
+                    let ty = ((y - font_height as f64 * ts - config.text_y_offset as f64 * ts)
+                        .floor()
+                        .max(0.0)) as u32;
+                    renderer.font.draw_line_scaled(DrawLineScaledInput {
+                        frame: &mut *frame,
+                        frame_width,
+                        line: &text,
+                        x: tx,
+                        y: ty,
+                        color: config.text_color,
+                        extra_scale: text_scale,
+                    });
+                }
             }
         }
-    }
+    });
 
     // ── 折线 ──
-    let points: Vec<f64> = if config.graph_smoothness > 0 {
-        let contig = renderer.window.make_contiguous();
-        smooth_forward(contig, config.graph_smoothness as usize)
-    } else {
-        renderer.window.iter().copied().collect()
-    };
-    let step_x = (fw.saturating_sub(1)) as f64 / (len.saturating_sub(1)).max(1) as f64;
-    let mut prev: Option<(i64, i64)> = None;
-    let line_bgra = rgba_to_bgra(config.line_color);
-    for (i, &v) in points.iter().enumerate() {
-        let y = fh as f64 - (v - graph_min) * y_scale;
-        let x = i as f64 * step_x;
-        let px = (x.round() as i64).clamp(0, fw as i64 - 1);
-        let py = (y.round() as i64).clamp(0, fh as i64 - 1);
-        if let Some((px0, py0)) = prev {
-            draw_thick_line(DrawThickLineInput {
-                frame: &mut *frame,
-                fw,
-                fh,
-                x0: px0,
-                y0: py0,
-                x1: px,
-                y1: py,
-                color_bgra: line_bgra,
-                thickness: config.line_thickness,
-            });
+    crate::profiling::tracy_zone!("app.dc.line", {
+        let points: Vec<f64> = if config.graph_smoothness > 0 {
+            let contig = renderer.window.make_contiguous();
+            smooth_forward(contig, config.graph_smoothness as usize)
+        } else {
+            renderer.window.iter().copied().collect()
+        };
+        let step_x = (fw.saturating_sub(1)) as f64 / (len.saturating_sub(1)).max(1) as f64;
+        let mut prev: Option<(i64, i64)> = None;
+        let line_bgra = rgba_to_bgra(config.line_color);
+        for (i, &v) in points.iter().enumerate() {
+            let y = fh as f64 - (v - graph_min) * y_scale;
+            let x = i as f64 * step_x;
+            let px = (x.round() as i64).clamp(0, fw as i64 - 1);
+            let py = (y.round() as i64).clamp(0, fh as i64 - 1);
+            if let Some((px0, py0)) = prev {
+                draw_thick_line(DrawThickLineInput {
+                    frame: &mut *frame,
+                    fw,
+                    fh,
+                    x0: px0,
+                    y0: py0,
+                    x1: px,
+                    y1: py,
+                    color_bgra: line_bgra,
+                    thickness: config.line_thickness,
+                });
+            }
+            prev = Some((px, py));
         }
-        prev = Some((px, py));
-    }
+    });
 
     DataCurveFrameOutput {
         value: renderer.current_value(),
