@@ -91,6 +91,8 @@ pub(super) struct LgsRebuildState {
 pub(super) struct LgsRebuildInFlight {
     rx: mpsc::Receiver<LgsRebuildDone>,
     started: Instant,
+    /// 同步 drain 已超时一次：后续 drain 不再阻塞，交给 `poll_lgs_rebuild` 回收。
+    timed_out: bool,
 }
 
 /// worker 回传：归还 API + 重建结果。
@@ -205,7 +207,14 @@ impl MidiManager {
             self.lgs_rebuild.requested = false;
             self.lgs_rebuild.not_before = None;
         }
-        if let Some(inflight) = self.lgs_rebuild.inflight.take() {
+        if let Some(mut inflight) = self.lgs_rebuild.inflight.take() {
+            if inflight.timed_out {
+                // 已超时一次：重初始化路径放弃，其它路径留给 poll 回收，避免重复 5s 阻塞。
+                if !cancel_retry {
+                    self.lgs_rebuild.inflight = Some(inflight);
+                }
+                return;
+            }
             match inflight.rx.recv_timeout(timeout) {
                 Ok(done) => {
                     if cancel_retry {
@@ -234,9 +243,10 @@ impl MidiManager {
                         "LGS（PR-D）: 等待重建收尾失败（{e}），API 暂缺，需重初始化/重启恢复"
                     );
                     if !cancel_retry {
-                        // 非重初始化超时：保留在途，worker 若最终归还，下一帧
-                        // `poll_lgs_rebuild` 仍可回收 API。重初始化路径必须放弃，
-                        // 否则迟到的旧 API 会覆盖新后端。
+                        // 非重初始化超时：标记后保留在途；后续 drain 不再阻塞，
+                        // worker 若最终归还，下一帧 `poll_lgs_rebuild` 仍可回收 API。
+                        // 重初始化路径必须放弃，否则迟到的旧 API 会覆盖新后端。
+                        inflight.timed_out = true;
                         self.lgs_rebuild.inflight = Some(inflight);
                     }
                 }
@@ -258,6 +268,7 @@ impl MidiManager {
         self.lgs_rebuild.inflight = Some(LgsRebuildInFlight {
             rx,
             started: Instant::now(),
+            timed_out: false,
         });
         tracing::info!("LGS（PR-D）: 重建已排程（后台热替换）");
     }

@@ -75,6 +75,8 @@ pub(super) struct LayoutApplyInFlight {
     rx: mpsc::Receiver<LayoutApplyDone>,
     /// 排程时刻（用于总耗时日志）
     started: Instant,
+    /// 同步 drain 已超时一次：后续 drain 不再阻塞，交给 `poll_layout_apply` 回收。
+    timed_out: bool,
 }
 
 /// worker 回传：归还 API + 应用结果（成功时带实际生效的 max_port）。
@@ -150,6 +152,7 @@ impl MidiManager {
         self.layout_apply = Some(LayoutApplyInFlight {
             rx,
             started: Instant::now(),
+            timed_out: false,
         });
         tracing::info!(
             "MIDI(后台): 端口布局重建已排程（{:?} 防抖后执行）",
@@ -190,7 +193,14 @@ impl MidiManager {
 
     fn drain_layout_apply_with_timeout(&mut self, abandon_on_timeout: bool, timeout: Duration) {
         let mut rounds = 0usize;
-        while let Some(inflight) = self.layout_apply.take() {
+        while let Some(mut inflight) = self.layout_apply.take() {
+            if inflight.timed_out {
+                // 已超时一次：重初始化路径放弃，其它路径留给 poll，避免重复 5s 阻塞。
+                if !abandon_on_timeout {
+                    self.layout_apply = Some(inflight);
+                }
+                break;
+            }
             rounds += 1;
             if rounds > 4 {
                 tracing::error!("MIDI(后台): 布局重建追赶超过 4 轮，放弃同步等待");
@@ -206,7 +216,9 @@ impl MidiManager {
                         "MIDI(后台): 等待布局重建收尾失败（{e}），API 暂缺，需重初始化/重启恢复"
                     );
                     if !abandon_on_timeout {
-                        // 非重初始化超时：保留在途，后续 poll 仍可回收 API。
+                        // 非重初始化超时：标记后保留在途；后续 drain 不再阻塞，
+                        // worker 若最终归还，后续 poll 仍可回收 API。
+                        inflight.timed_out = true;
                         self.layout_apply = Some(inflight);
                     }
                     break;

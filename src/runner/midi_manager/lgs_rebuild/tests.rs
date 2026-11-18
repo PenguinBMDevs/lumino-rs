@@ -179,6 +179,7 @@ fn drain_timeout_keeps_inflight_for_recovery() {
     manager.lgs_rebuild.inflight = Some(LgsRebuildInFlight {
         rx,
         started: Instant::now(),
+        timed_out: false,
     });
 
     manager.drain_lgs_rebuild_with_timeout(false, Duration::from_millis(5));
@@ -186,6 +187,14 @@ fn drain_timeout_keeps_inflight_for_recovery() {
     assert!(
         manager.lgs_rebuild.inflight.is_some(),
         "非重初始化超时应保留在途"
+    );
+    assert!(
+        manager
+            .lgs_rebuild
+            .inflight
+            .as_ref()
+            .is_some_and(|i| i.timed_out),
+        "应标记 timed_out，避免后续 drain 重复阻塞"
     );
 }
 
@@ -197,6 +206,7 @@ fn reinit_drain_timeout_abandons_inflight() {
     manager.lgs_rebuild.inflight = Some(LgsRebuildInFlight {
         rx,
         started: Instant::now(),
+        timed_out: false,
     });
 
     manager.drain_lgs_rebuild_with_timeout(true, Duration::from_millis(5));
@@ -216,6 +226,7 @@ fn disconnected_requests_reinit() {
     manager.lgs_rebuild.inflight = Some(LgsRebuildInFlight {
         rx,
         started: Instant::now(),
+        timed_out: false,
     });
 
     manager.poll_lgs_rebuild();

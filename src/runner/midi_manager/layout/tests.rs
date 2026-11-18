@@ -133,11 +133,16 @@ fn drain_timeout_keeps_inflight_for_recovery() {
     manager.layout_apply = Some(LayoutApplyInFlight {
         rx,
         started: Instant::now(),
+        timed_out: false,
     });
 
     manager.drain_layout_apply_with_timeout(false, Duration::from_millis(5));
 
     assert!(manager.layout_apply.is_some(), "非重初始化超时应保留在途");
+    assert!(
+        manager.layout_apply.as_ref().is_some_and(|i| i.timed_out),
+        "应标记 timed_out，避免后续 drain 重复阻塞"
+    );
 }
 
 /// 重初始化 drain 超时：放弃在途，避免迟到的旧 API 覆盖新后端。
@@ -148,6 +153,7 @@ fn reinit_drain_timeout_abandons_inflight() {
     manager.layout_apply = Some(LayoutApplyInFlight {
         rx,
         started: Instant::now(),
+        timed_out: false,
     });
 
     manager.drain_layout_apply_with_timeout(true, Duration::from_millis(5));
@@ -164,6 +170,7 @@ fn disconnected_requests_reinit() {
     manager.layout_apply = Some(LayoutApplyInFlight {
         rx,
         started: Instant::now(),
+        timed_out: false,
     });
 
     manager.poll_layout_apply();
