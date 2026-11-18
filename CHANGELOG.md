@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 钢琴卷帘 · 画布渲染闸门按「可见性」收口（2026-11-18）
+
+- **问题**：切到音频/视频导出面板、渲染器入口，或关闭分组选项卡后，卷帘 gfx 离屏场景
+  仍每帧全量绘制，底层纹理也继续合成在面板下层——面板遮住了画面，GPU 却一直在空跑。
+- **根因**：`skip_scene_render` 只认 `AppMode::Waterfall`；UI 侧也仅特判了渲染器入口/瀑布流。
+- **修复**：
+  - 新增 `Root::editor_canvas_visible()`（卷帘 / 工程走带白名单），作为 GPU 闸门与 UI 合成的
+    唯一权威源；
+  - `RenderParams::skip_scene_render = !editor_canvas_visible()`：隐藏态仍逐帧发参数保证
+    `note_data_pub` 发布（瀑布流/剪辑预览依赖），只跳过网格/音符/洋葱皮这块最贵的离屏绘制；
+  - 隐藏态清空 `egui_editor_texture` 与 `pending_present_flush`，不再向 egui 提供整窗底层纹理；
+  - 显隐切换首帧置 `render_content_dirty`，回切时走 `wait_for_frame`，避免采样隐藏期间
+    停留的旧纹理。
+- **验证**：新增 `root_tests/canvas_visibility.rs` 9 条状态用例；`cargo test -p lumino-ui --lib`
+  838 passed；`cargo clippy -p lumino-ui --all-targets` 0 警告；`cargo check --bin lumino-rs` 通过。
+
 ### 洋葱皮 · 按钮下拉「显示范围」+ 工程范围记忆（2026-11-05）
 
 - **分裂式按钮**：工具栏洋葱皮按钮右侧三角拆成独立命中区（首版只做开关时它是死区，

@@ -108,11 +108,13 @@ pub struct RenderParams {
     pub miditrail_ticks_per_second: f32,
     /// Miditrail / 视频导出目标帧率（用于按键动画时间步长）。
     pub fps: f32,
-    /// 全屏瀑布流播放器模式：跳过钢琴卷帘 3D 场景绘制（仅发布活体音符缓冲），解放 GPU。
+    /// 跳过钢琴卷帘 3D 场景绘制（仅发布活体音符缓冲），解放 GPU。
     ///
-    /// `true` 时渲染线程仍上传/发布音符缓冲（`note_data_pub`）供播放器复用，
-    /// 但不再执行 `render_offscreen_pass`（网格/音符/洋葱皮的离屏绘制），
-    /// 与钢琴卷帘完全隔离，避免每帧空转绘制整张卷帘。
+    /// 调用方按「编辑器画布是否可见」置位（`Root::editor_canvas_visible`）：
+    /// 全屏瀑布流、渲染器入口、音视频导出面板、卷帘关闭等一切画布不参与合成的
+    /// 状态都为 `true`。置位时渲染线程仍上传/发布音符缓冲（`note_data_pub`）供
+    /// 瀑布流 / 剪辑预览复用，但不再执行 `render_offscreen_pass`
+    /// （网格/音符/洋葱皮的离屏绘制），避免每帧空转绘制整张卷帘。
     pub skip_scene_render: bool,
     /// 纵向卷帘模式：网格与音符使用转置着色器（复用同 MIDI GPU 数据，瀑布流风格纵向流动）
     pub is_vertical_roll: bool,

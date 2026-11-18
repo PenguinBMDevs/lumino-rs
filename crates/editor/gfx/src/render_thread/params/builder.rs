@@ -248,9 +248,11 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置是否跳过钢琴卷帘 3D 场景绘制（全屏瀑布流播放器模式用）。
+    /// 设置是否跳过钢琴卷帘 3D 场景绘制。
     ///
-    /// `true` 时渲染线程仍上传/发布音符缓冲，但不再执行 `render_offscreen_pass`。
+    /// 语义是「编辑器画布不参与合成」（瀑布流 / 渲染器入口 / 导出面板 / 卷帘关闭），
+    /// 不限于全屏瀑布流。`true` 时渲染线程仍上传/发布音符缓冲，但不再执行
+    /// `render_offscreen_pass`。
     pub fn skip_scene_render(mut self, skip: bool) -> Self {
         self.skip_scene_render = skip;
         self

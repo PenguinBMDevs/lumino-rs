@@ -3,7 +3,6 @@
 use crate::RenderParams;
 use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
-use crate::titlebar::mode_toggle::AppMode;
 use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::ArrangementUniform;
 
@@ -261,7 +260,10 @@ impl Host {
             .arrangement_uniform(arrangement_uniform)
             .cc_bar_instances(data.cc_bar_instances)
             .velocity_panel_rect(velocity_panel_rect)
-            .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
+            // 离屏场景闸门：按「画布是否真的可见」而不是只认瀑布流。
+            // 导出面板 / 渲染器入口 / 卷帘关闭时，渲染线程只处理命令与音符缓冲
+            // 发布（瀑布流预览依赖），跳过网格/音符/洋葱皮这块最贵的 GPU 工作。
+            .skip_scene_render(!self.root.editor_canvas_visible())
             .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
             .skip_roll_chrome(piano_roll.is_some())
             .content_dirty(content_dirty)

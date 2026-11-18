@@ -62,6 +62,12 @@ pub(crate) struct RenderContext {
     /// 没有这个收尾，「单次 Ctrl+滚轮缩放 / 拖拽最后一帧」这类只产生一帧的
     /// 视口变化将永远不会被呈现（最后一次变化停在离屏纹理里）。
     pub pending_present_flush: Option<u64>,
+    /// 上一帧编辑器画布是否可见（`Root::editor_canvas_visible`）。
+    ///
+    /// 用于在显隐切换的首帧置 `render_content_dirty`：隐藏期间画布不渲染，
+    /// 回切第一帧必须走 `wait_for_frame`，否则可能采样到停留的旧纹理。
+    /// 默认 `true`：正常启动即卷帘可见，避免首帧无谓等待。
+    pub last_editor_canvas_visible: bool,
     // WGPU 资源
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -99,6 +105,7 @@ impl RenderContext {
             last_preview_instances: Vec::new(),
             last_view_key: None,
             pending_present_flush: None,
+            last_editor_canvas_visible: true,
             device: wgpu.device.clone(),
             queue: wgpu.queue.clone(),
             format: wgpu.format,

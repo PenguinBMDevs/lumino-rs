@@ -23,6 +23,14 @@
 //! present」的尾帧——单次 Ctrl+滚轮缩放、拖拽最后一帧都属于这种只产生一帧的
 //! 视口变化，没有收尾就会永远停在离屏纹理里、表现为「滚轮没反应」。
 //!
+//! # 画布可见性闸门（2026-11 卷帘纹理残留修复）
+//!
+//! 只有钢琴卷帘 / 工程走带由 gfx 离屏画布承载（`Root::editor_canvas_visible`）。
+//! 其余视图（音频/视频导出面板、渲染器入口、全屏瀑布流、分组关闭后的空白态）
+//! 仍逐帧发送参数——`note_data_pub` 是瀑布流 / 剪辑预览的唯一数据源，不能断流；
+//! 但 `RenderParams::skip_scene_render` 会跳过最贵的离屏场景绘制，且
+//! `egui_editor_texture` 置空，不再把整窗纹理合成到面板下层。
+//!
 //! # 为什么不做「在途帧闸门」
 //!
 //! 曾计划按 GPU 在途帧数跳过提交，但 `wait_for_frame` 的完成信号是**提交**而非
@@ -53,8 +61,6 @@ impl Host {
         egui_events: Vec<egui::Event>,
         egui_focused: bool,
     ) {
-        use crate::titlebar::mode_toggle::AppMode;
-
         // REND-019（PR-A §1.6）：设备已丢失（TDR）——本帧不渲染任何内容
         // （含 blit 与 旧版 覆盖层），等待重连接管；避免对死设备/死渲染
         // 线程继续投递造成日志刷屏
@@ -62,42 +68,30 @@ impl Host {
             return;
         }
 
-        // 视频剪辑面板（渲染器首级）：不应渲染钢琴卷帘的任何内容（网格/音符/标尺），
-        // 仅保留瀑布流离屏预览（由 ensure_piano_waterfall_keyboard 的 is_renderer_entry 分支处理）
-        // 与 旧版 UI，避免其他面板内容透出或 GPU 浪费。
-        //
-        // 判定统一走 `Root::is_renderer_entry_active()`（唯一权威源），不再内联复制条件。
-        if self.root.is_renderer_entry_active() {
-            // 必须先驱动渲染线程参数发送：note_data_pub 活体缓冲的发布发生在渲染线程
-            // 处理 Render 命令时，瀑布流预览经 take_note_data 读取。跳过会导致
-            // 「加载 MIDI 后剪辑预览无音符，切卷帘才恢复」。
-            // 该路径不做离屏拷贝，因此禁用 present 滞后策略（保持逐帧提交节奏）。
-            let _ = self.redraw_separate_thread(false);
-            // 该分支不产出画布纹理：清掉上一帧的底层，避免残留旧画面。
-            self.egui_editor_texture = None;
-
-            if !self.skip_ui_rendering {
-                let view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let bg = self.root.theme().palette().background;
-                self.render_ui(frame, &view, Some(bg), egui_events, egui_focused);
-            }
-            return;
+        // 编辑器画布可见性：唯一权威源（卷帘 / 工程走带）。
+        // 导出面板 / 渲染器入口 / 全屏瀑布流 / 分组关闭后的空白态都不参与合成，
+        // 渲染线程侧同一枚闸门会跳过最贵的离屏场景绘制（见 build_render_params）。
+        let canvas_visible = self.root.editor_canvas_visible();
+        if self.render_ctx.last_editor_canvas_visible != canvas_visible {
+            self.render_ctx.last_editor_canvas_visible = canvas_visible;
+            // 回切首帧必须等新帧上屏：隐藏期间画布不渲染，纹理停在旧内容；
+            // 置内容脏让 present 走 wait_for_frame，避免采样到旧帧。
+            self.render_ctx.mark_render_content_dirty();
         }
 
-        // 全屏瀑布流播放器：与卷帘 3D 场景隔离（skip_scene_render），不发离屏拷贝；
-        // 同样依赖逐帧 params 维持活体音符缓冲发布，禁用 present 滞后策略。
-        let is_waterfall = self.root.state.current_mode == AppMode::Waterfall;
+        // 始终驱动渲染线程：note_data_pub 活体缓冲的发布发生在渲染线程处理
+        // Render 命令时，瀑布流 / 剪辑预览经 take_note_data 读取。跳过调用会导致
+        // 「加载 MIDI 后剪辑预览无音符，切卷帘才恢复」。
+        // 画布不可见时禁用 present 滞后策略（逐帧提交，编辑事件不积压）。
+        let submit = self.redraw_separate_thread(canvas_visible);
 
-        // 始终驱动渲染线程：保证音符实例缓冲持续发布，供瀑布流播放器读取实时落键。
-        let submit = self.redraw_separate_thread(!is_waterfall);
-        if is_waterfall {
-            // 瀑布流走独立外部纹理（右侧栏面板），编辑器底层不参与合成。
+        if !canvas_visible {
+            // 该分支不产出可合成的画布纹理：清掉上一帧的底层，避免整窗纹理
+            // 残留在导出面板 / 渲染器面板下层继续被采样。
             self.egui_editor_texture = None;
-        }
+            // 隐藏期间不存在「已提交但未呈现」的卷帘帧，收尾状态一并清空。
+            self.render_ctx.pending_present_flush = None;
 
-        if is_waterfall {
             if !self.skip_ui_rendering {
                 let view = frame
                     .texture
