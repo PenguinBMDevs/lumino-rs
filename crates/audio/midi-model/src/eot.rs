@@ -69,7 +69,11 @@ impl LoadTimingReport {
         self.tracks.iter().all(TrackTiming::is_strict_clean)
     }
 
-    /// 全文件声明结尾的最大值（缺失 EOT 的轨退化为物理末尾）。
+    /// 全文件有效结尾 = 各轨**声明结尾的最大值**。
+    ///
+    /// 产品原则：**EOT 本身不得导致事件解析被硬截断**。
+    /// 取 max 而不是「较早/最后一个不越界轨的 EOT」：若 A 的 EOT(1000) 晚于
+    /// B 的 EOT(500)，A 在 500..1000 之间可能有合法事件；取 500 会误裁，因此必须取 1000。
     pub fn declared_end_tick(&self) -> u32 {
         self.tracks
             .iter()
@@ -105,14 +109,16 @@ impl MidiDocument {
     /// 按加载报告裁剪「首个 EOT 之后的事件」，返回删除计数。
     ///
     /// 语义：
-    /// - 只处理 `has_events_after_eot` 的轨，阈值取 [`TrackTiming::declared_end_tick`]
-    ///   （EOT 位置；无 EOT 的轨不在处理范围）；
+    /// - 只处理 `has_events_after_eot` 的轨，阈值取**该轨自己的**
+    ///   [`TrackTiming::declared_end_tick`]；
+    /// - **绝不**用「较早轨的 EOT」做全局截断（会把晚 EOT 轨的合法内容一起删掉）；
     /// - 音符：`start_tick > 阈值` 的整条删除（悬挂音符不截断——那属于另一个策略）；
     /// - 控制 / 歌词 / 标记 / 文本 / SysEx：`tick > 阈值` 的删除；
     /// - tempo / 拍号 / 调号是文件级语义，不动；
     /// - 裁剪后重算 `total_ticks` 并弃用 `max_end` 缓存。
     ///
-    /// 这是**显式**操作（清理畸形文件），加载路径不会自动调用。
+    /// 这是**显式**操作（清理畸形文件），加载路径不会自动调用——
+    /// 解析阶段永远不因 EOT 丢弃任何事件。
     pub fn trim_after_eot(&mut self, report: &LoadTimingReport) -> TrimReport {
         let ends: Vec<Option<u32>> = (0..self.track_count as usize)
             .map(|i| {
@@ -234,17 +240,24 @@ mod tests {
         }
     }
 
-    fn smf_one_track(body: &[u8]) -> Vec<u8> {
+    fn smf_tracks(bodies: &[&[u8]]) -> Vec<u8> {
+        let format: u16 = if bodies.len() == 1 { 0 } else { 1 };
         let mut out = Vec::new();
         out.extend_from_slice(b"MThd");
         out.extend_from_slice(&6u32.to_be_bytes());
-        out.extend_from_slice(&0u16.to_be_bytes()); // format 0
-        out.extend_from_slice(&1u16.to_be_bytes());
+        out.extend_from_slice(&format.to_be_bytes());
+        out.extend_from_slice(&(bodies.len() as u16).to_be_bytes());
         out.extend_from_slice(&480u16.to_be_bytes());
-        out.extend_from_slice(b"MTrk");
-        out.extend_from_slice(&(body.len() as u32).to_be_bytes());
-        out.extend_from_slice(body);
+        for body in bodies {
+            out.extend_from_slice(b"MTrk");
+            out.extend_from_slice(&(body.len() as u32).to_be_bytes());
+            out.extend_from_slice(body);
+        }
         out
+    }
+
+    fn smf_one_track(body: &[u8]) -> Vec<u8> {
+        smf_tracks(&[body])
     }
 
     fn ev(body: &mut Vec<u8>, delta: u32, bytes: &[u8]) {
@@ -361,5 +374,49 @@ mod tests {
         // 缺 EOT 不属于 Strict 违规（Strict 只看 EOT 后事件）。
         assert!(report.is_strict_clean());
         assert!(!report.is_empty());
+    }
+
+    /// **产品原则**：EOT 本身不得导致事件被硬截断。
+    ///
+    /// A 的 EOT(1000) 晚于 B(500)：全文件有效结尾必须取 **1000**（max），
+    /// 而不是 B 的 500——否则 A 在 500..1000 的合法内容会被误裁。
+    /// 裁剪只允许删「各自轨 EOT 之后」的事件。
+    #[test]
+    fn latest_eot_wins_and_never_cuts_earlier_content() {
+        // 轨 A：500–900 合法音符 → EOT@1000 → 1200/1300 垃圾
+        let mut a = Vec::new();
+        ev(&mut a, 500, &[0x90, 60, 100]);
+        ev(&mut a, 400, &[0x80, 60, 0]); // tick 900
+        ev(&mut a, 100, &[0xFF, 0x2F, 0x00]); // EOT @1000
+        ev(&mut a, 200, &[0x90, 62, 90]); // tick 1200（EOT 后）
+        ev(&mut a, 100, &[0x80, 62, 0]); // tick 1300
+        // 轨 B：0–400 → EOT@500
+        let mut b = Vec::new();
+        ev(&mut b, 0, &[0x90, 64, 100]);
+        ev(&mut b, 400, &[0x80, 64, 0]); // tick 400
+        ev(&mut b, 100, &[0xFF, 0x2F, 0x00]); // EOT @500
+        let bytes = smf_tracks(&[&a, &b]);
+
+        let (mut doc, _, _, report) =
+            MidiDocument::from_notes_bytes_with_timing(&bytes, None).expect("加载失败");
+        assert_eq!(
+            report.declared_end_tick(),
+            1000,
+            "必须取最晚 EOT（1000），而不是较早的 B=500"
+        );
+        assert_eq!(report.tracks_with_events_after_eot(), 1);
+
+        let trimmed = doc.trim_after_eot(&report);
+        assert_eq!(trimmed.notes_removed, 1, "只删 A 的 EOT 后事件");
+        let starts: Vec<u32> = doc.notes[0].iter().map(|n| n.start_tick).collect();
+        assert!(
+            starts.contains(&500),
+            "A 的合法内容（500 起）不得被截断：{starts:?}"
+        );
+        assert!(
+            !starts.contains(&1200),
+            "EOT 之后的事件应被裁掉：{starts:?}"
+        );
+        assert_eq!(doc.notes[1].len(), 1, "B 不受影响");
     }
 }
