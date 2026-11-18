@@ -36,6 +36,32 @@ const TOAST_MIN_W: f32 = 120.0;
 
 /// 本帧 Toast 卡片矩形（供测试与诊断取用）。
 const TOAST_RECTS_ID: &str = "lumino.toast.rects";
+/// 本帧 Toast 交互动作（点击关闭）的 egui 临时存储键。
+const TOAST_ACTION_ID: &str = "lumino.toast.action";
+/// 关闭按钮占位宽度。
+const TOAST_CLOSE_W: f32 = 16.0;
+/// 关闭按钮与文案间距。
+const TOAST_CLOSE_GAP: f32 = 6.0;
+
+/// Toast 上的交互动作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToastAction {
+    /// 点击卡片（或关闭按钮）关闭指定 Toast。
+    Dismiss(u64),
+}
+
+fn push_toast_action(ctx: &egui::Context, action: ToastAction) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(TOAST_ACTION_ID), action));
+}
+
+/// 取走本帧 Toast 动作（只返回一次）。
+pub fn take_toast_action(ctx: &egui::Context) -> Option<ToastAction> {
+    let action = ctx.data(|d| d.get_temp::<ToastAction>(egui::Id::unique(TOAST_ACTION_ID)));
+    if action.is_some() {
+        ctx.data_mut(|d| d.remove::<ToastAction>(egui::Id::unique(TOAST_ACTION_ID)));
+    }
+    action
+}
 
 /// 帮助提示宽度。
 const TIP_W: f32 = 360.0;
@@ -66,13 +92,17 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
         .min(full.width() - TOAST_RIGHT * 2.0)
         .max(TOAST_MIN_W);
     let mut bottom = full.bottom() - TOAST_BOTTOM;
-    let mut rects = Vec::with_capacity(model.cards.len());
+    let mut rects: Vec<(u64, Rect)> = Vec::with_capacity(model.cards.len());
     for card in model.cards.iter().rev() {
         let label_w = measure(ui, &card.icon, TOAST_ICON_FONT);
         let text_w = measure(ui, &card.message, TOAST_FONT);
-        let width = (text_w + label_w + TOAST_ICON_GAP + TOAST_PAD * 2.0).min(max_w);
+        let width =
+            (text_w + label_w + TOAST_ICON_GAP + TOAST_PAD * 2.0 + TOAST_CLOSE_GAP + TOAST_CLOSE_W)
+                .min(max_w);
         // 文案区可用宽度：单行放得下时正好等于文本宽度，触顶后即为折行宽度。
-        let text_area = (width - TOAST_PAD * 2.0 - label_w - TOAST_ICON_GAP).max(1.0);
+        let text_area =
+            (width - TOAST_PAD * 2.0 - label_w - TOAST_ICON_GAP - TOAST_CLOSE_GAP - TOAST_CLOSE_W)
+                .max(1.0);
         let wrapped = text_w > text_area + 0.5;
         let galley = ui.painter().layout(
             card.message.clone(),
@@ -112,11 +142,48 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
             galley,
             card.text,
         );
-        rects.push(rect);
+        // 关闭按钮（×）：仅作视觉提示；点击卡片任意位置都能关闭。
+        ui.painter().text(
+            egui::pos2(rect.right() - TOAST_PAD, rect.center().y),
+            Align2::RIGHT_CENTER,
+            "×",
+            FontId::proportional(14.0),
+            card.text,
+        );
+        rects.push((card.id, rect));
         bottom = rect.top() - TOAST_GAP;
     }
-    ui.ctx()
-        .data_mut(|d| d.insert_temp(egui::Id::unique(TOAST_RECTS_ID), rects));
+
+    // 交互：点击卡片关闭（用户可手动关）；悬停显示手型。
+    let pointer = ui.input(|i| {
+        (
+            i.pointer.primary_clicked(),
+            i.pointer.interact_pos(),
+            i.pointer.hover_pos(),
+        )
+    });
+    if let Some(pos) = pointer.2
+        && rects.iter().any(|(_, rect)| rect.contains(pos))
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if pointer.0
+        && let Some(pos) = pointer.1
+    {
+        for (id, rect) in &rects {
+            if rect.contains(pos) {
+                push_toast_action(ui.ctx(), ToastAction::Dismiss(*id));
+                break;
+            }
+        }
+    }
+
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(
+            egui::Id::unique(TOAST_RECTS_ID),
+            rects.iter().map(|(_, rect)| *rect).collect::<Vec<_>>(),
+        )
+    });
 }
 
 /// 本帧 Toast 卡片矩形（自下而上）。无 Toast 时返回空。

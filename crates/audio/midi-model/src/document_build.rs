@@ -42,7 +42,6 @@ struct TrackBuild {
     port: u8,
     /// TrackName meta（首个，已解码；空名称归一为 None，与旧 `scan_track_names` 一致）。
     name: Option<String>,
-    max_end_tick: u32,
     note_count: u64,
     tempo_changes: Vec<(u32, f32)>,
     control_events: Vec<midly::loader::PackedControlEvent>,
@@ -52,6 +51,8 @@ struct TrackBuild {
     markers: Vec<(u32, u16, Vec<u8>)>,
     text_events: Vec<(u32, u16, u8, Vec<u8>)>,
     sys_ex: Vec<(u32, u16, Vec<u8>)>,
+    /// EOT / 悬挂音符的逐轨 timing（midly `TrackTiming`，直接透传）。
+    timing: midly::loader::TrackTiming,
 }
 
 impl MidiDocument {
@@ -112,6 +113,37 @@ impl MidiDocument {
         file_bytes: &[u8],
         progress: Option<&dyn Fn(f64)>,
     ) -> LoaderResult<(Self, u16, u64)> {
+        let (doc, division, notes, _report) =
+            Self::from_notes_bytes_with_timing(file_bytes, progress)?;
+        Ok((doc, division, notes))
+    }
+
+    /// 严格模式加载：任一轨在 EOT 之后仍有事件时返回 [`LoaderError::EotViolation`]。
+    ///
+    /// 默认加载（[`Self::from_notes_bytes`]）**不受影响**：兼容模式保留 EOT 后事件。
+    /// 语义与 [`LoadTimingReport::is_strict_clean`] 一致（悬挂音符不算违规）。
+    ///
+    /// 成本说明：严格模式先完整构建文档再判定；对畸形大文件会白做一次构建。
+    /// 目前真实素材零触发，暂不做「浅扫描预检」。
+    pub fn from_notes_bytes_strict(
+        file_bytes: &[u8],
+        progress: Option<&dyn Fn(f64)>,
+    ) -> LoaderResult<(Self, u16, u64, crate::eot::LoadTimingReport)> {
+        let out = Self::from_notes_bytes_with_timing(file_bytes, progress)?;
+        let violations = out.3.tracks_with_events_after_eot();
+        if violations > 0 {
+            return Err(LoaderError::EotViolation { tracks: violations });
+        }
+        Ok(out)
+    }
+
+    /// 与 [`Self::from_notes_bytes`] 相同，但额外返回逐轨 EOT / 悬挂音符诊断。
+    ///
+    /// 报告只含诊断信息（不参与文档语义）；是否提示/裁剪由调用方决定。
+    pub fn from_notes_bytes_with_timing(
+        file_bytes: &[u8],
+        progress: Option<&dyn Fn(f64)>,
+    ) -> LoaderResult<(Self, u16, u64, crate::eot::LoadTimingReport)> {
         MemoryMonitor::global().check();
 
         if let Some(cb) = progress {
@@ -138,8 +170,6 @@ impl MidiDocument {
                 midly::loader::extract_all_events_per_track_collect_from_bytes(
                     file_bytes,
                     |_track_idx, mut events| {
-                        let max_end_tick =
-                            events.notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
                         let note_count = events.notes.len() as u64;
                         // midly 的 TrackAllEvents 按「NoteOff 到达顺序」产出音符（重叠音符中
                         // 先结束后开始的会排在先开始音符之前），并不保证按 start_tick 升序——
@@ -161,7 +191,6 @@ impl MidiDocument {
                                 .track_name
                                 .map(scan::decode_midi_text)
                                 .filter(|n| !n.is_empty()),
-                            max_end_tick,
                             note_count,
                             tempo_changes: events.tempo_changes,
                             control_events: events.control_events,
@@ -201,6 +230,7 @@ impl MidiDocument {
                                 .into_iter()
                                 .map(|ev| (ev.tick, ev.track, ev.data.to_vec()))
                                 .collect(),
+                            timing: events.timing,
                         }
                     },
                 )
@@ -233,10 +263,15 @@ impl MidiDocument {
                 Vec::with_capacity(capacity(|t| t.sys_ex.len()));
             let mut total_notes: u64 = 0;
             let mut total_ticks: u32 = 0;
+            let mut track_timings: Vec<midly::loader::TrackTiming> =
+                Vec::with_capacity(track_builds.len());
 
             for track in track_builds {
                 total_notes += track.note_count;
-                total_ticks = total_ticks.max(track.max_end_tick);
+                // 时间线语义（产品决策）：取各轨**声明结尾（EOT）的最大值**，
+                // 而不是音符结束 tick 的最大值——畸形尾部（EOT 之后的事件）
+                // 不得把文件时长拉长。缺 EOT 的轨退化为物理末尾（TrackTiming 内处理）。
+                total_ticks = total_ticks.max(track.timing.declared_end_tick());
                 track_ports.push(track.port);
                 track_names.push(track.name);
                 notes.push(track.notes);
@@ -248,6 +283,7 @@ impl MidiDocument {
                 markers.extend(track.markers);
                 text_events.extend(track.text_events);
                 sys_ex.extend(track.sys_ex);
+                track_timings.push(track.timing);
             }
 
             finalize_sorted_events(&mut all_tempo_changes, |&(t, _)| t, (0u32, 120.0f32));
@@ -312,6 +348,7 @@ impl MidiDocument {
                 },
                 division,
                 total_notes,
+                crate::eot::LoadTimingReport::from_tracks(track_timings),
             ))
         })
     }

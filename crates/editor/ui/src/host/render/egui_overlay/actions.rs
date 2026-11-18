@@ -72,6 +72,7 @@ pub(super) struct OverlayActions {
     pub sidebar_panel: Option<lumino_ui_egui::chrome::SidebarPanelAction>,
     pub sidebar_menu: Option<lumino_ui_egui::chrome::SidebarMenuAction>,
     pub help_tip: Option<lumino_ui_egui::chrome::toast::HelpTipAction>,
+    pub toast: Option<lumino_ui_egui::chrome::toast::ToastAction>,
     pub titlebar: Option<lumino_ui_egui::chrome::TitlebarAction>,
     pub piano_roll_menu: Option<lumino_message::PianoRollContextMenuAction>,
     pub editor_buttons: Option<lumino_ui_egui::editor_action_buttons::EditorButtonAction>,
@@ -124,6 +125,7 @@ impl OverlayActions {
             sidebar_panel: lumino_ui_egui::chrome::take_panel_action(ctx),
             sidebar_menu: lumino_ui_egui::chrome::take_menu_action(ctx),
             help_tip: lumino_ui_egui::chrome::take_help_tip_action(ctx),
+            toast: lumino_ui_egui::chrome::toast::take_toast_action(ctx),
             titlebar: lumino_ui_egui::chrome::take_titlebar_action(ctx),
             piano_roll_menu: lumino_ui_egui::piano_roll_context_menu::take_action(ctx),
             editor_buttons: lumino_ui_egui::editor_action_buttons::take_action(ctx),
@@ -139,6 +141,14 @@ impl OverlayActions {
 impl Host {
     /// 应用本帧动作：每个动作最多产生一条 `Message`，按固定顺序处理。
     pub(super) fn apply_overlay_actions(&mut self, actions: OverlayActions, logical_width: f32) {
+        if let Some(action) = actions.toast {
+            match action {
+                lumino_ui_egui::chrome::toast::ToastAction::Dismiss(id) => {
+                    self.root.toast.dismiss(id);
+                    self.ui_dirty = true;
+                }
+            }
+        }
         if let Some(action) = actions.titlebar {
             let message = self.root.titlebar_action_message(action);
             self.dispatch_overlay_message(message);

@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use super::{device_lost, ensure_device_available, mark_device_lost, reset_for_test};
+use super::{device_lost, ensure_device_available, mark_device_lost, reset_for_test, safe_unmap};
 
 /// 全局标志相关测试的串行锁（测试进程内并行线程互斥）。
 static FLAG_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -226,6 +226,52 @@ fn test_rend_020_guard_rejects_when_device_lost() {
     );
     reset_for_test();
     assert!(ensure_device_available().is_ok(), "复位后应恢复");
+}
+
+/// REND-022：`readback_has_content` 的 map→unmap 窗口真实存在——存在未释放的
+/// mapped view 时，裸 `unmap` 会命中 wgpu facade 的断言 panic；`safe_unmap`
+/// 必须吞掉它、安静返回。
+#[test]
+fn test_rend_022_safe_unmap_swallows_mapped_view_panic() {
+    let _guard = lock_flag_tests();
+    reset_for_test();
+
+    // 独立设备（禁共享，同 R1 约束；重试抗 DX12 瞬时风暴）
+    let (device, _queue) = request_independent_device("r5b_safe_unmap_device");
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("r5b_safe_unmap_readback"),
+        size: 256,
+        usage: wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    // 完成映射（内容不参与断言，只验证 unmap 语义）
+    let (tx, rx) = std::sync::mpsc::channel();
+    buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    let _ = device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: Some(Duration::from_secs(5)),
+    });
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("map_async 回调应在超时前送达")
+        .expect("缓冲区映射应成功");
+
+    // 持有 mapped view 不释放：这正是 R5-b 的 panic 条件
+    //（`MapContext::reset` 断言 "cannot unmap a buffer that still has accessible mapped views"）
+    let view = buffer.slice(..).get_mapped_range();
+
+    let raw = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.unmap()));
+    assert!(
+        raw.is_err(),
+        "存在未释放的 mapped view 时裸 unmap 应 panic（R5-b 竞态窗口的前提不成立，需重查 wgpu 版本行为）"
+    );
+
+    // 目标断言：safe_unmap 必须吞掉 panic、安静返回
+    safe_unmap(&buffer);
+
+    drop(view);
 }
 
 /// REND-020：`Context::new` 必须在创建 surface 之前早退（用 panic factory 证明）。

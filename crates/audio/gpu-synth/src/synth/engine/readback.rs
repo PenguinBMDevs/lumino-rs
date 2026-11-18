@@ -1,5 +1,15 @@
 use super::*;
 
+/// REND-022：`unmap` 的安全封装（与 `lumino-gfx::device_status::safe_unmap`
+/// 同口径；本 crate 是 LGS 独立 device，不能跨 crate 复用）。
+///
+/// TDR 落在 map→unmap 窗口时，wgpu 的 `buffer_unmap` 出错会走默认错误 sink
+/// 并 **panic**；回读清理路径必须绝不把 panic 抛给上层（unwind 清理路径上的
+/// 二次 panic 会 panic-in-panic → 进程 abort）。
+fn safe_unmap(buffer: &wgpu::Buffer) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.unmap()));
+}
+
 impl GpuSynth {
     /// Polls the pending submission (dispatched by the previous
     /// `render_block`) and reads its audio + voice states back into
@@ -79,7 +89,7 @@ impl GpuSynth {
             bytes.clear();
             bytes.extend_from_slice(&mapped);
             drop(mapped);
-            self.out_readback[p.out_slot].unmap();
+            safe_unmap(&self.out_readback[p.out_slot]);
             self.last_out = Some(bytes);
         } else {
             return Err(SynthError::Gpu("output readback map failed".into()));
@@ -92,7 +102,7 @@ impl GpuSynth {
             bytes.clear();
             bytes.extend_from_slice(&mapped);
             drop(mapped);
-            rb.unmap();
+            safe_unmap(rb);
             self.last_states = Some(bytes);
         } else {
             return Err(SynthError::Gpu("states readback map failed".into()));

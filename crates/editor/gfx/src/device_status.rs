@@ -89,6 +89,13 @@ pub(crate) fn ensure_device_available() -> Result<(), crate::ContextError> {
 ///
 /// 本助手吞掉 `unmap` 的 panic：缓冲随设备销毁一并释放，此处失败无事务性
 /// 影响——清理路径（Drop / 槽位重建）必须绝不把 panic 抛给上层。
+///
+/// # 豁免口径（REND-022）
+///
+/// 测试代码里的裸 `unmap` 是**有意豁免**的：测试自建设备、映射与断言同线程，
+/// 失败即测试红、不存在「unwind 清理路径二次 panic → 进程 abort」的风险，
+/// 套 catch_unwind 只会把真实错误藏起来。生产代码（含 `gpu-synth` 回读路径）
+/// 必须走本封装。
 pub(crate) fn safe_unmap(buffer: &wgpu::Buffer) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.unmap()));
 }

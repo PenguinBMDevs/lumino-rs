@@ -37,7 +37,7 @@ resolver = "3"
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
-lumino-midly = { git = "https://github.com/PenguinBMDevs/midly-fork", rev = "e8edb9a52f309e6d28c2b33dc70bf5cd5b4443fe" }
+lumino-midly = { git = "https://github.com/PenguinBMDevs/midly-fork", rev = "da2a68f551bcf502916f800315b1f5d2243cbbd8" }
 
 [workspace.package]
 version = "0.2.1"

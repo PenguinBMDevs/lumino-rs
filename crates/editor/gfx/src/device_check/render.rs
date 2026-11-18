@@ -155,7 +155,7 @@ fn readback_has_content(
                 .iter()
                 .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0 || px[3] != 255);
             drop(data);
-            staging.unmap();
+            crate::device_status::safe_unmap(staging);
             return if drawn {
                 Ok(())
             } else {

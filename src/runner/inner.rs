@@ -116,6 +116,8 @@ pub(crate) struct MidiState {
     /// 云端来源（从云面板下载的 .lmpj 工程：连接 id + 远程路径）。
     /// 覆盖保存后自动上传回原远程路径；打开新文件/关闭工程时清空。
     pub(crate) cloud_source: Option<CloudSource>,
+    /// 当前文档的 EOT / 悬挂音符诊断（导入时填充；导出前用于「缺 EOT」提示）。
+    pub(crate) timing_report: lumino_midi_loader::LoadTimingReport,
 }
 
 /// 云端来源记录：定位"文件从哪里下载的"，供保存后自动回传
@@ -410,6 +412,7 @@ impl Runner {
                 current_midi_source: None,
                 midi_handler,
                 cloud_source: None,
+                timing_report: lumino_midi_loader::LoadTimingReport::default(),
             },
             file_state: FileState {
                 file_handler,

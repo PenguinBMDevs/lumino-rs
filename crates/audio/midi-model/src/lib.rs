@@ -12,6 +12,7 @@ pub mod chunked_list;
 pub mod clipboard;
 pub mod compact;
 pub mod document;
+pub mod eot;
 pub mod error;
 pub mod multi_port;
 pub mod note_event;
@@ -25,6 +26,7 @@ pub use chunked_list::{
 };
 pub use compact::{CompactEvent, EventKind};
 pub use document::{MidiDocument, TICK_SEARCH_BUFFER, TrackNoteView};
+pub use eot::{LoadTimingReport, TrimReport};
 pub use error::{LoaderError, LoaderResult};
 /// 控制事件元素类型（`MidiDocument::control_events` 的元素）——
 /// 公开字段的类型应可被消费方命名（REND-003 测试需要构造控制事件）。
