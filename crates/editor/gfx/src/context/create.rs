@@ -123,6 +123,8 @@ async fn init_shared_gpu(
     let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, Some(surface))
         .await
         .map_err(|e| ContextError::AdapterCreation(e.to_string()))?;
+    // REND-021：与重连路径共用同一日志口径——现场对比两条日志即可判断是否换卡。
+    super::log_adapter_selection("初建（surface 兼容约束）", &adapter);
 
     let (device, queue) = super::build_device_queue(&adapter).await?;
 

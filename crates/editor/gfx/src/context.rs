@@ -159,11 +159,11 @@ pub fn recreate_shared_gpu_worker() -> std::result::Result<(GpuEpoch, SharedGpu)
     let (old_epoch, old) = gpu_snapshot().map_err(|e| e.to_string())?;
     let instance = old.instance.clone();
 
-    // 适配器选择沿用初建口径（env 覆盖 + 默认偏好）；无 surface 做兼容性检查
-    let adapter = futures::executor::block_on(wgpu::util::initialize_adapter_from_env_or_default(
-        &instance, None,
-    ))
-    .map_err(|e| format!("重连初始化适配器失败: {e}"))?;
+    // REND-021：重连 worker 拿不到任何窗口 surface（`SHARED_GPU` 只存
+    // instance/adapter/device/queue），无法像初建那样用 `compatible_surface`
+    // 施加兼容约束——改用**同一张卡**的身份匹配，从根上排除静默换绑。
+    let previous = old.adapter.get_info();
+    let adapter = select_reconnect_adapter(&instance, &previous)?;
 
     let (device, queue) = futures::executor::block_on(build_device_queue(&adapter))
         .map_err(|e| format!("重连请求设备失败: {e}"))?;
@@ -183,6 +183,98 @@ pub fn recreate_shared_gpu_worker() -> std::result::Result<(GpuEpoch, SharedGpu)
             queue,
         },
     ))
+}
+
+/// REND-021：统一的适配器日志口径（初建与重连共用，保证两处字段一致、可对比）。
+fn log_adapter_selection(stage: &str, adapter: &wgpu::Adapter) {
+    let info = adapter.get_info();
+    tracing::info!(
+        stage,
+        adapter = %info.name,
+        backend = ?info.backend,
+        device_type = ?info.device_type,
+        vendor = info.vendor,
+        device = info.device,
+        "选卡完成"
+    );
+}
+
+/// REND-021：重连选卡——用户指定 > 原适配器身份匹配 > 默认偏好（带告警）。
+///
+/// 初建路径用 `compatible_surface` 把「能呈现到主窗口」作为硬约束；重连 worker
+/// 没有 surface 可传，因此把约束升级为「与旧适配器同一张卡」：同会话内
+/// [`wgpu::AdapterInfo`] 不会漂移，全等匹配即等价于原设备。
+fn select_reconnect_adapter(
+    instance: &wgpu::Instance,
+    previous: &wgpu::AdapterInfo,
+) -> std::result::Result<wgpu::Adapter, String> {
+    // ① 用户显式指定优先（与初建同源：`WGPU_ADAPTER_NAME`，重连不得覆盖）。
+    if std::env::var_os("WGPU_ADAPTER_NAME").is_some() {
+        match wgpu::util::initialize_adapter_from_env(instance, None) {
+            Ok(adapter) => {
+                log_adapter_selection("重连（WGPU_ADAPTER_NAME 指定）", &adapter);
+                return Ok(adapter);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "重连选卡：WGPU_ADAPTER_NAME 指定的适配器不可用，回退默认偏好"
+                );
+                return default_reconnect_adapter(instance);
+            }
+        }
+    }
+
+    // ② 原适配器身份匹配：同一张卡。
+    let candidates = instance.enumerate_adapters(wgpu::Backends::all());
+    let infos: Vec<wgpu::AdapterInfo> = candidates.iter().map(wgpu::Adapter::get_info).collect();
+    if let Some(index) = matching_adapter_index(&infos, previous)
+        && let Some(adapter) = candidates.into_iter().nth(index)
+    {
+        log_adapter_selection("重连（沿用原适配器）", &adapter);
+        return Ok(adapter);
+    }
+
+    // ③ 兜底：找不到原卡时**必须留下痕迹**（消灭静默换绑）。
+    tracing::warn!(
+        previous = %previous.name,
+        previous_backend = ?previous.backend,
+        "重连选卡：未找到原适配器（重连无 surface 兼容约束），可能换绑到其它适配器"
+    );
+    default_reconnect_adapter(instance)
+}
+
+/// 无约束兜底：与初建完全同源（env 覆盖 + 默认偏好），并打日志说明实际选中的卡。
+fn default_reconnect_adapter(
+    instance: &wgpu::Instance,
+) -> std::result::Result<wgpu::Adapter, String> {
+    let adapter = futures::executor::block_on(wgpu::util::initialize_adapter_from_env_or_default(
+        instance, None,
+    ))
+    .map_err(|e| format!("重连初始化适配器失败: {e}"))?;
+    log_adapter_selection("重连（默认偏好）", &adapter);
+    Ok(adapter)
+}
+
+/// 在候选里找与 `previous` 相同适配器的下标（纯函数，供单测）。
+///
+/// 先要求 [`wgpu::AdapterInfo`] 全等（同会话内不会漂移）；再退化为
+/// `(backend, vendor, device)` 三元组——名称可能带驱动后缀，但同一后端下
+/// vendor/device 相同即同一型号硬件（同型号多张卡彼此等价，取首张）。
+fn matching_adapter_index(
+    candidates: &[wgpu::AdapterInfo],
+    previous: &wgpu::AdapterInfo,
+) -> Option<usize> {
+    candidates
+        .iter()
+        .position(|info| info == previous)
+        .or_else(|| {
+            candidates.iter().position(|info| {
+                info.backend == previous.backend
+                    && info.vendor == previous.vendor
+                    && info.device == previous.device
+            })
+        })
 }
 
 /// REND-019 PR-C：安装重连产物为新的共享 GPU 状态（epoch 单调递增）。
