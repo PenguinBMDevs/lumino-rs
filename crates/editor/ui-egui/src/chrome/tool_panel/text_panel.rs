@@ -1,7 +1,7 @@
 //! 文字参数面板（生产 `root/text_params_panel.rs` 的 egui 版）。
 //!
-//! 11 行固定高度：Font / Size / Weight / Italic / Unit / Tracking / Leading /
-//! Align / Threshold / Grow / Mode；内容宽 220、面板宽 248、行距 6。
+//! 12 行固定高度：Font / Size / Weight / Italic / Unit / Tracking / Leading /
+//! Align / Threshold / Grow / Mode / Reset；内容宽 220、面板宽 248、行距 6。
 //! 字体下拉是自绘弹层（而不是 `ComboBox`），这样它的矩形也能进入占用列表，
 //! 点击不会穿透到下层 旧版。
 
@@ -32,9 +32,9 @@ const GAP: f32 = 6.0;
 /// 面板内边距。
 const PAD: f32 = 12.0;
 
-/// 面板高度（11 行 + 间距 + 内边距）。
+/// 面板高度（12 行 + 间距 + 内边距）。
 pub(super) fn height() -> f32 {
-    PAD * 2.0 + FONT_ROW_H + ROW_H * 9.0 + 22.0 + GAP * 10.0
+    PAD * 2.0 + FONT_ROW_H + ROW_H * 10.0 + 22.0 + GAP * 11.0
 }
 
 /// 绘制文字参数面板。
@@ -239,6 +239,17 @@ pub(super) fn show(
     );
     if response.clicked() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::TextLayoutModeToggle);
+    }
+
+    // Reset：恢复默认排版参数（保留字体 / 模式）。单独一行，避免和 Mode 挤在一起误触。
+    y += 22.0 + GAP;
+    label(ui, x, y, ROW_H, "Reset");
+    let reset = Rect::from_min_size(
+        Pos2::new(x + LABEL_W + 4.0, y),
+        Vec2::new(panels::small_button_width(ui, "Defaults"), ROW_H),
+    );
+    if panels::small_button(ui, reset, "Defaults", false, "lumino.text.reset").clicked() {
+        toolbar_popup::push_action(ui.ctx(), ToolbarAction::TextParamsReset);
     }
 
     // 字体弹层最后画：盖住面板内容而不是被后续行覆盖。

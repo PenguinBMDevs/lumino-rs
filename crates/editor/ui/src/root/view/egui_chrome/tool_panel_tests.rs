@@ -227,4 +227,8 @@ fn tool_panel_actions_map_to_production_messages() {
         root.toolbar_action_message(&ToolbarAction::TextLayoutModeToggle),
         Some(Message::EditorAction(EditorAction::TextLayoutModeChanged(mode))) if mode == expected
     ));
+    assert!(matches!(
+        root.toolbar_action_message(&ToolbarAction::TextParamsReset),
+        Some(Message::EditorAction(EditorAction::TextParamsReset))
+    ));
 }

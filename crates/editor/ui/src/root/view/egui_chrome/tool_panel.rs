@@ -230,6 +230,7 @@ pub(super) fn action_message(root: &Root, action: &ToolbarAction) -> Option<Mess
         ToolbarAction::TextParamsChanged(params) => {
             Message::EditorAction(EditorAction::TextParamsChanged(params.clone()))
         }
+        ToolbarAction::TextParamsReset => Message::EditorAction(EditorAction::TextParamsReset),
         ToolbarAction::TextLayoutModeToggle => {
             let target = match root.editor.editor_state.text_tool.layout_mode {
                 TextLayoutMode::LegacyBox => TextLayoutMode::Parametric,

@@ -290,6 +290,37 @@ fn test_set_text_params_converts_unit_size() {
     );
 }
 
+#[test]
+fn test_reset_text_params_keeps_font_and_mode() {
+    let mut editor = Editor::new();
+    editor.editor_state.text_tool.params = TextParams {
+        font: "Custom Font".to_string(),
+        size: 48.0,
+        weight: 700,
+        italic: true,
+        threshold: 80.0,
+        tracking: 3.0,
+        ..TextParams::default()
+    };
+    editor.editor_state.text_tool.layout_mode = TextLayoutMode::LegacyBox;
+
+    editor.reset_text_params();
+
+    let params = &editor.editor_state.text_tool.params;
+    let defaults = TextParams::default();
+    assert_eq!(params.font, "Custom Font", "Reset 不应换掉用户选的字体");
+    assert_eq!(params.size, defaults.size, "Reset 应恢复默认字号");
+    assert_eq!(params.weight, defaults.weight, "Reset 应恢复默认字重");
+    assert!(!params.italic, "Reset 应关闭斜体");
+    assert_eq!(params.threshold, defaults.threshold);
+    assert_eq!(params.tracking, defaults.tracking);
+    assert_eq!(
+        editor.editor_state.text_tool.layout_mode,
+        TextLayoutMode::LegacyBox,
+        "Reset 不应改排版模式"
+    );
+}
+
 /// 重烘焙稳定性：k 冻结在 TextV2，换 zoom 不影响音符。
 #[test]
 fn test_text_shape_notes_are_zoom_independent_with_frozen_k() {

@@ -10,6 +10,8 @@
 //! advance 挂到 key 轴上——因此预览位图无需任何转置，铺进框矩形即为正立可读，且与
 //! √ 生成的音符逐格重合。
 
+use std::sync::Arc;
+
 use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;
 use crate::grid::utils::content_bounds;
@@ -34,16 +36,38 @@ pub struct TextToolButtonRects {
     pub mode: Rectangle,
 }
 
+/// 文字预览 RGBA 缓存条目。
+///
+/// egui 覆盖层每帧都会取一次预览；命中时不重新栅格化，也不复制像素缓冲
+/// （`rgba` 是 `Arc`，调用方直接共享同一份）。
+#[derive(Debug, Clone)]
+pub(crate) struct CachedTextPreview {
+    key: String,
+    width: u32,
+    height: u32,
+    rgba: Arc<Vec<u8>>,
+}
+
 impl Editor {
     /// 文字工具预览图（RGBA，白蓝色文字 + alpha）。
     ///
     /// 与 √ 生成音符共用同一份栅格（`GlyphGrid` + `rasterize_glyph_alpha_for_tool`），
     /// 供 egui 叠加层上传纹理直接铺放；无 旧版 类型。
-    pub fn text_tool_preview_rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
+    ///
+    /// 结果按 [`Self::text_preview_signature`] 缓存：签名不变时直接复用上一份 RGBA，
+    /// 避免每帧重栅格化 + 重分配（1M 像素上限下每帧最多 4MB）。
+    pub fn text_tool_preview_rgba(&self) -> Option<(u32, u32, Arc<Vec<u8>>)> {
         let tt = &self.editor_state.text_tool;
         if tt.text.trim().is_empty() {
             return None;
         }
+        let key = self.text_preview_signature();
+        if let Some(hit) = self.text_preview_cache.borrow().as_ref()
+            && hit.key == key
+        {
+            return Some((hit.width, hit.height, Arc::clone(&hit.rgba)));
+        }
+
         let grid = GlyphGrid::from_state(
             tt,
             self.editor_state.view.snap_precision,
@@ -66,7 +90,33 @@ impl Editor {
             rgba.push(cb as u8);
             rgba.push((a as u16 * ca / 255) as u8);
         }
+        let rgba = Arc::new(rgba);
+        *self.text_preview_cache.borrow_mut() = Some(CachedTextPreview {
+            key,
+            width: w,
+            height: h,
+            rgba: Arc::clone(&rgba),
+        });
         Some((w, h, rgba))
+    }
+
+    /// 文字预览的完整签名：**任何会改变栅格像素的输入**都必须计入。
+    ///
+    /// 同一签名同时用作 RGBA 缓存键与 egui 纹理键，避免两处口径漂移：
+    /// 文本 / 采样模式 / 排版路径 / 卷帘方向 / 全部文字参数 / 字体，
+    /// 再加上 [`Self::text_raster_key`] 覆盖的 grid、采样比例、snap / ppq / k。
+    pub fn text_preview_signature(&self) -> String {
+        let tt = &self.editor_state.text_tool;
+        format!(
+            "{}:{:?}:{:?}:{}:{:?}:{}:{}",
+            tt.text,
+            tt.mode,
+            tt.layout_mode,
+            self.editor_state.is_vertical_roll,
+            tt.params,
+            tt.font_family,
+            self.text_raster_key()
+        )
     }
 
     /// 预览纹理缓存 key：任何会改变栅格像素比例的输入都必须计入。
@@ -302,5 +352,52 @@ mod tests {
         editor.editor_state.view.snap_precision = 480.0;
         let snapped = editor.text_raster_key();
         assert_ne!(base, snapped, "snap 变化必须改变预览 key");
+    }
+
+    /// 预览签名必须覆盖字体参数 / 排版路径 / 文本：漏掉任一项，egui 就会
+    /// 复用旧纹理，表现为「调参数预览不变」。
+    #[test]
+    fn test_text_preview_signature_tracks_inputs() {
+        let mut editor = editor_with_box();
+        editor.editor_state.text_tool.text = "A".to_string();
+        let base = editor.text_preview_signature();
+
+        editor.editor_state.text_tool.params.size += 1.0;
+        let changed = editor.text_preview_signature();
+        assert_ne!(base, changed, "字号变化必须改变预览签名");
+
+        editor.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
+        let changed_mode = editor.text_preview_signature();
+        assert_ne!(changed, changed_mode, "排版路径变化必须改变预览签名");
+
+        editor.editor_state.text_tool.text = "B".to_string();
+        let changed_text = editor.text_preview_signature();
+        assert_ne!(changed_mode, changed_text, "文本变化必须改变预览签名");
+    }
+
+    /// 预览 RGBA 按签名缓存：同输入复用同一个 `Arc`，文本变化才重建。
+    #[test]
+    fn test_text_preview_rgba_cache_hits_and_invalidates() {
+        let mut editor = editor_with_box();
+        editor.editor_state.text_tool.text = "A".to_string();
+        let Some((w1, _h1, first)) = editor.text_tool_preview_rgba() else {
+            eprintln!("跳过 test_text_preview_rgba_cache_hits_and_invalidates：无可用系统字体");
+            return;
+        };
+        let (w2, _h2, second) = editor.text_tool_preview_rgba().expect("二次调用应仍有预览");
+        assert_eq!(w1, w2, "同签名应给出同一尺寸");
+        assert!(
+            std::sync::Arc::ptr_eq(&first, &second),
+            "同签名必须复用缓存，不得重新栅格化"
+        );
+
+        editor.editor_state.text_tool.text = "B".to_string();
+        let Some((_, _, third)) = editor.text_tool_preview_rgba() else {
+            return;
+        };
+        assert!(
+            !std::sync::Arc::ptr_eq(&first, &third),
+            "文本变化必须重建 RGBA"
+        );
     }
 }

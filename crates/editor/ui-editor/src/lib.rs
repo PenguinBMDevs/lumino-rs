@@ -235,6 +235,12 @@ pub struct Editor {
     /// None = 不在 Selecting 状态 / 未初始化。
     pub(crate) cached_selection_bounds: Cell<Option<(f32, f32, u16, u16)>>,
 
+    /// 文字工具预览 RGBA 缓存（UI-023）。
+    ///
+    /// 键 = `Editor::text_preview_signature()`；egui 覆盖层每帧取预览时命中即
+    /// 直接共享 `Arc`，不再重栅格化。确认 / 取消 / 换框时清空释放内存。
+    pub(crate) text_preview_cache: RefCell<Option<crate::grid::text_tool_box::CachedTextPreview>>,
+
     /// 框选 X 向量化锚点（按下时 `floor` 到音符精度网格的单元低边）。
     ///
     /// 拖动期间选框两端都由 `ViewState::snap_marquee_edges(锚点, 鼠标 tick)` 推算。

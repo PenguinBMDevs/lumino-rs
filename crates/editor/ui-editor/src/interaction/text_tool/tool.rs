@@ -43,6 +43,18 @@ impl Editor {
         self.editor_state.text_tool.layout_mode = mode;
     }
 
+    /// 参数面板 Reset：恢复默认排版参数，保留当前字体与排版模式。
+    ///
+    /// 字体是面板 Font 行的显式选择，重置参数不该顺带换字体；排版模式是
+    /// 独立控件，重置后仍保持 LegacyBox / Parametric 不变。
+    pub(crate) fn reset_text_params(&mut self) {
+        let font = self.editor_state.text_tool.params.font.clone();
+        self.editor_state.text_tool.params = lumino_core::TextParams {
+            font,
+            ..lumino_core::TextParams::default()
+        };
+    }
+
     /// 当前文本框的栅格采样比例（预览与确认共用）
     pub(crate) fn text_raster_scale(&self) -> RasterScale {
         let tt = &self.editor_state.text_tool;
@@ -73,6 +85,7 @@ impl Editor {
     /// 文字工具：取消并清空文本框
     pub(crate) fn cancel_text_tool(&mut self) {
         self.editor_state.text_tool.reset();
+        self.text_preview_cache.borrow_mut().take();
     }
 
     /// 当前音轨是否允许使用文字工具
@@ -282,6 +295,7 @@ impl Editor {
         );
 
         self.editor_state.text_tool.reset();
+        self.text_preview_cache.borrow_mut().take();
         self.mark_notes_changed();
         true
     }

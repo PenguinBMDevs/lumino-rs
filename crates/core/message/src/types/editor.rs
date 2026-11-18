@@ -100,10 +100,12 @@ pub enum EditorAction {
     TextToolCancel,
     /// 文字工具：切换正常 / key 范围合并（模式按钮）
     TextToolModeToggle,
-    /// ?????????????????? Parametric ???
+    /// 文字工具：参数面板改动；会自动切到 Parametric（面板 Mode 行可见）
     TextParamsChanged(TextParams),
-    /// ??????? LegacyBox / Parametric ????
+    /// 文字工具：切换排版模式 LegacyBox / Parametric
     TextLayoutModeChanged(TextLayoutMode),
+    /// 文字工具：参数面板 Reset（恢复默认排版参数，保留字体与模式）
+    TextParamsReset,
 }
 
 #[cfg(test)]

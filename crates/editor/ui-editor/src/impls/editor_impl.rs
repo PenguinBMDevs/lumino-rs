@@ -19,7 +19,7 @@ use crate::velocity::VelocityPanel;
 use crate::{EditState, Editor, EditorMemory, SpatialIndexState, grid};
 use lumino_core::BrushConfig;
 use lumino_ui_core::message::AudioAction;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 impl Editor {
     /// 创建新的编辑器实例
@@ -44,6 +44,7 @@ impl Editor {
                 velocity_panel: VelocityPanel::new(),
                 selection_box_anim: Cell::new(None),
                 cached_selection_bounds: Cell::new(None),
+                text_preview_cache: RefCell::new(None),
                 marquee_anchor_tick: None,
                 pending_drag_applied: (0.0, 0.0),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),

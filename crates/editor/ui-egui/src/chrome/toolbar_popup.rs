@@ -109,6 +109,8 @@ pub enum ToolbarAction {
     FillDisable,
     /// 文字参数整体变化。
     TextParamsChanged(TextParams),
+    /// 文字参数恢复默认（保留字体与排版模式）。
+    TextParamsReset,
     /// 文字布局模式切换（目标由生产按当前模式推导）。
     TextLayoutModeToggle,
     /// 点击录制按钮（开始 / 停止由模型 `recording` 决定）。

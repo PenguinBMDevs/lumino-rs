@@ -163,6 +163,9 @@ impl Editor {
             EditorAction::TextLayoutModeChanged(mode) => {
                 self.set_text_layout_mode(mode);
             }
+            EditorAction::TextParamsReset => {
+                self.reset_text_params();
+            }
         }
     }
 

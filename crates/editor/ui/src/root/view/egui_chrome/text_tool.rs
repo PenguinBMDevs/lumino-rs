@@ -1,7 +1,5 @@
 //! 文字工具覆盖层：生产状态 → egui 模型 + 动作映射。
 
-use std::sync::Arc;
-
 use lumino_core::tr;
 use lumino_message::Tool;
 use lumino_ui_egui::text_tool::{TextPreview, TextToolAction, TextToolModel};
@@ -9,23 +7,6 @@ use lumino_ui_egui::text_tool::{TextPreview, TextToolAction, TextToolModel};
 use crate::Message;
 use crate::message::EditorAction;
 use crate::root::Root;
-
-/// 预览纹理缓存签名。
-///
-/// 任何会改变栅格结果的输入都必须计入：文字 / 模式 / 卷帘方向 / 排版路径 /
-/// 全部文字参数 / 字体。漏掉参数会让 egui 复用旧纹理——表现为「调参数预览不变」。
-fn preview_signature(
-    tt: &lumino_editor_state::text_tool::TextToolState,
-    vertical: bool,
-    width: u32,
-    height: u32,
-    raster_key: &str,
-) -> String {
-    format!(
-        "{width}x{height}:{}:{:?}:{vertical}:{:?}:{:?}:{}:{raster_key}",
-        tt.text, tt.mode, tt.layout_mode, tt.params, tt.font_family
-    )
-}
 
 impl Root {
     /// 本帧文字工具覆盖层；未激活 / 不可用时返回 `None`。
@@ -79,15 +60,14 @@ impl Root {
         }
 
         let tt = &editor.editor_state.text_tool;
-        let raster_key = editor.text_raster_key();
         let preview = editor
             .text_tool_preview_rgba()
             .map(|(w, h, rgba)| TextPreview {
                 rect: to_rect(left, top, right, bottom),
                 width: w as usize,
                 height: h as usize,
-                rgba: Arc::new(rgba),
-                sig: preview_signature(tt, editor.editor_state.is_vertical_roll, w, h, &raster_key),
+                rgba,
+                sig: editor.text_preview_signature(),
             });
 
         let model = TextToolModel {
@@ -116,31 +96,5 @@ impl Root {
             TextToolAction::Cancel => EditorAction::TextToolCancel,
             TextToolAction::ModeToggle => EditorAction::TextToolModeToggle,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lumino_core::TextLayoutMode;
-
-    #[test]
-    fn test_preview_signature_tracks_params() {
-        let mut state = lumino_editor_state::text_tool::TextToolState::new();
-        let base = preview_signature(&state, false, 10, 20, "scale-a");
-
-        state.params.size += 1.0;
-        let changed = preview_signature(&state, false, 10, 20, "scale-a");
-        assert_ne!(base, changed, "字号变化必须让预览重新栅格化");
-
-        state.layout_mode = TextLayoutMode::Parametric;
-        let changed_mode = preview_signature(&state, false, 10, 20, "scale-a");
-        assert_ne!(changed, changed_mode, "排版路径变化必须重建预览");
-
-        let changed_scale = preview_signature(&state, false, 10, 20, "scale-b");
-        assert_ne!(
-            changed_mode, changed_scale,
-            "缩放 / snap 比例变化必须重建预览纹理"
-        );
     }
 }
