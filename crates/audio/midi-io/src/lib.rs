@@ -1,6 +1,6 @@
 //! MIDI 输入 / 输出 `Api` 抽象层。
 //!
-//! 提供统一的 MIDI 设备访问接口，支持多种后端（XSynth、KDMAPI、系统 MIDI），
+//! 提供统一的 MIDI 设备访问接口，支持多种后端（XSynth、LGS、Maestro、KDMAPI、系统 MIDI），
 //! 以及基于 xsynth 的音频合成与播放管线，另含内置 UI 音效播放（[`ui_sfx`]）。
 
 pub mod api;
@@ -29,6 +29,7 @@ use std::path::PathBuf;
 use lumino_core::tr;
 
 use api::Kdmapi;
+use api::Maestro;
 #[cfg(not(target_os = "android"))]
 use api::System;
 use api::XSynth;
@@ -365,6 +366,13 @@ pub enum ApiKind {
     },
     /// 系统 MIDI 后端
     System,
+    /// Maestro 合成器宿主后端（AUD-009；桌面平台）
+    Maestro {
+        /// Maestro 用户配置中的稳定 app_id（reverse-DNS）
+        app_id: String,
+        /// 待播放文档使用到的最大 MIDI 端口（FF 21；0 = 单端口；REND-002）
+        midi_max_port: u8,
+    },
     /// LGS (GPU) 后端
     Lgs {
         /// SoundFont 文件路径
@@ -404,6 +412,10 @@ pub fn new_api_with_options(
     let engine: Box<dyn SynthControl> = match kind {
         ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path, options)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
+        ApiKind::Maestro {
+            app_id,
+            midi_max_port,
+        } => Box::new(Maestro::new(app_id, *midi_max_port)?),
         #[cfg(not(target_os = "android"))]
         ApiKind::System => Box::new(System::new()?),
         #[cfg(target_os = "android")]

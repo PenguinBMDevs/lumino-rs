@@ -18,6 +18,7 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
                 let output = match index {
                     0 => OutputType::Builtin,
                     1 => OutputType::Kdmapi,
+                    2 => OutputType::Maestro,
                     _ => OutputType::System,
                 };
                 Message::Settings(Event::OutputTypeChanged(output))

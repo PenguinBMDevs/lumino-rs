@@ -2,6 +2,7 @@
 
 use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_core::tr;
+use lumino_extras::i18n::Language;
 use lumino_ui_egui::chrome::{AudioControlModel, AudioField, AudioRowModel};
 
 use super::{combo, load_display_name, row, slider};
@@ -201,6 +202,34 @@ pub(super) fn system_rows(
         t.refresh.to_owned(),
         String::new(),
         AudioControlModel::Button,
+        0.0,
+    ));
+}
+
+/// Maestro 行：音色库、合成参数与音频设备都在 Maestro 的应用 profile 中配置。
+pub(super) fn maestro_rows(
+    root: &Root,
+    _t: &lumino_extras::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let (label, text) = match root.settings.display.language {
+        Language::ZhCn => (
+            "Maestro",
+            "音色库 / 合成参数 / 音频设备由 Maestro 管理（首次打开会自动创建 dev.penguin.lumino 配置）",
+        ),
+        Language::EnUs => (
+            "Maestro",
+            "SoundFonts, synth settings and audio device are managed by Maestro (a dev.penguin.lumino profile is created on first use)",
+        ),
+    };
+    rows.push(row(
+        AudioField::MaestroHint,
+        label.to_owned(),
+        text.to_owned(),
+        AudioControlModel::Static {
+            text: String::new(),
+            dim: true,
+        },
         0.0,
     ));
 }

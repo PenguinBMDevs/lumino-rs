@@ -118,12 +118,14 @@ pub fn synth_backend_name(
             XSynth => "内置",
             Lgs => "LGS (GPU)",
             Kdmapi => "KDMAPI",
+            Maestro => "Maestro",
             System => "系统 MIDI",
         },
         Language::EnUs => match backend {
             XSynth => "Built-in",
             Lgs => "LGS (GPU)",
             Kdmapi => "KDMAPI",
+            Maestro => "Maestro",
             System => "System MIDI",
         },
     }

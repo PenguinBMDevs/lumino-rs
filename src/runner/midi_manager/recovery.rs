@@ -34,6 +34,8 @@ impl MidiManager {
             self.finish_xsynth_init()
         } else if self.is_lgs_initializing {
             self.finish_lgs_init()
+        } else if self.is_maestro_initializing {
+            self.finish_maestro_init()
         } else {
             AsyncInitOutcome::Pending
         }
@@ -158,6 +160,61 @@ impl MidiManager {
         }
     }
 
+    /// 处理 Maestro 异步初始化结果（非阻塞）。
+    fn finish_maestro_init(&mut self) -> AsyncInitOutcome {
+        let rx = match &self.maestro_init_rx {
+            Some(rx) => rx,
+            None => return AsyncInitOutcome::Pending,
+        };
+
+        match rx.try_recv() {
+            Ok(MaestroInitResult::Success { api, output, stats }) => {
+                tracing::info!("Maestro: 异步初始化完成，切换到 Maestro 后端");
+
+                if let Some(old_output) = self.output.take() {
+                    drop(old_output);
+                }
+
+                self.api = Some(api);
+                self.output = Some(output);
+                self.active_backend = SynthBackend::Maestro;
+                self.maestro_stats = Some(stats);
+                self.is_maestro_initializing = false;
+                self.maestro_init_rx = None;
+
+                if layout::should_align_after_init(
+                    self.desired_midi_max_port,
+                    self.spawned_midi_max_port,
+                ) {
+                    let desired = self.desired_midi_max_port;
+                    tracing::info!("Maestro: 初始化后端口布局对齐 max_port={desired}（后台重建）");
+                    self.apply_midi_port_layout_deferred(desired);
+                }
+
+                AsyncInitOutcome::Switched
+            }
+            Ok(MaestroInitResult::Failed(error)) => {
+                tracing::warn!("Maestro: 异步初始化失败: {error}");
+                self.is_maestro_initializing = false;
+                self.maestro_init_rx = None;
+                self.pending_backend_notice =
+                    Some(trf!("Maestro 未生效，已回退 System 后端：{error}"));
+                self.ensure_system_fallback_initialized();
+                AsyncInitOutcome::Failed
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => AsyncInitOutcome::Pending,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                tracing::warn!("Maestro: 初始化线程异常断开");
+                self.is_maestro_initializing = false;
+                self.maestro_init_rx = None;
+                self.pending_backend_notice =
+                    Some(tr!("Maestro 初始化线程异常断开，已回退 System 后端").to_string());
+                self.ensure_system_fallback_initialized();
+                AsyncInitOutcome::Failed
+            }
+        }
+    }
+
     /// 标记需要重新初始化
     pub fn mark_for_reinit(&mut self) {
         self.needs_reinit = true;
@@ -186,13 +243,13 @@ impl MidiManager {
         self.is_lgs_initializing
     }
 
-    /// 返工 #149：软件合成后端（XSynth/LGS）是否正在异步初始化。
+    /// 返工 #149：软件合成后端（XSynth/LGS/Maestro）是否正在异步初始化。
     ///
     /// 在途期间**禁止任何 System(WinMM) 输出创建**（占位连接与播放输出均
     /// 延迟到就绪/失败后由既有重连路径接线）：omv2 等环境下 WinMM 接口
     /// 可能在原生层崩溃（AV），启动路径必须零触碰。
     pub fn software_backend_pending(&self) -> bool {
-        self.is_xsynth_initializing || self.is_lgs_initializing
+        self.is_xsynth_initializing || self.is_lgs_initializing || self.is_maestro_initializing
     }
 
     /// 返工 #149：软件后端失败/断开时，若当前无任何后端则初始化 System 回退。
@@ -264,6 +321,9 @@ impl MidiManager {
         self.is_xsynth_initializing = false;
         self.lgs_init_rx = None;
         self.is_lgs_initializing = false;
+        self.maestro_init_rx = None;
+        self.is_maestro_initializing = false;
+        self.maestro_stats = None;
 
         // 重新初始化
         match ui_config.preferred_backend {
@@ -283,6 +343,15 @@ impl MidiManager {
                 self.output = None;
                 self.active_backend = SynthBackend::System;
                 if !self.start_lgs_async_init(ui_config) {
+                    self.ensure_system_fallback_initialized();
+                }
+            }
+            SynthBackend::Maestro => {
+                // 软件后端异步初始化期间不触碰 System(WinMM)；失败时再回退。
+                self.api = None;
+                self.output = None;
+                self.active_backend = SynthBackend::System;
+                if !self.start_maestro_async_init(ui_config) {
                     self.ensure_system_fallback_initialized();
                 }
             }

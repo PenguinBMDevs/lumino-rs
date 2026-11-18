@@ -173,6 +173,13 @@ impl RunnerInner {
                 .ui_mut()
                 .set_status_message(Some(notice));
         }
+        if let Some(notice) = self.midi_state.midi.take_maestro_notice() {
+            tracing::warn!("Maestro 提示: {notice}");
+            self.window_state
+                .window
+                .ui_mut()
+                .set_status_message(Some(notice));
+        }
 
         // 低频推送 GPU (LGS) 缓冲状态到状态栏（非 LGS 推 None 隐藏）。
         self.tick_gpu_buffer_status();
@@ -192,6 +199,19 @@ impl RunnerInner {
             .window
             .ui_mut()
             .set_gpu_buffer_status(stats);
+
+        // AUD-009：Maestro 统计低频打点（UI 指示器接线前的可观测出口）。
+        if let Some(stats) = self.midi_state.midi.maestro_stats() {
+            tracing::debug!(
+                "Maestro stats: voices={} nps={} eps={} nps_limit={} render={:.2}% latency={}us",
+                stats.voice_count,
+                stats.nps,
+                stats.eps,
+                stats.nps_limit,
+                stats.render_time,
+                stats.latency_us
+            );
+        }
     }
 
     /// 把当前已就绪的 MIDI 输出连接注入播放引擎，使播放输出现实音频。

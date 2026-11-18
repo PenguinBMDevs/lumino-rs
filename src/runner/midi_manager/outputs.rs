@@ -7,15 +7,17 @@ use super::*;
 impl MidiManager {
     /// 从配置初始化 MIDI 管理器
     ///
-    /// 如果配置使用 XSynth / LGS (GPU)，会在后台异步初始化软件合成后端；
+    /// 如果配置使用 XSynth / LGS (GPU) / Maestro，会在后台异步初始化软件合成后端；
     /// **返工 #149：软件后端启动阶段不触碰 System(WinMM)**——不做 System 占位
     /// 输出（omv2 等环境下原生层崩溃无法兜底）；仅当异步未启动（提前 bail）时才立即回退。
     pub fn from_config(ui_config: &UiConfig) -> Self {
         let preferred = ui_config.preferred_backend;
 
         // 是否走"软件后端异步初始化"（不碰 System）路径
-        let software_pending = matches!(preferred, SynthBackend::XSynth | SynthBackend::Lgs)
-            && ui_config.audio_engine == AudioEngineKind::Realtime;
+        let software_pending = matches!(
+            preferred,
+            SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro
+        ) && ui_config.audio_engine == AudioEngineKind::Realtime;
 
         // 初始后端：软件后端在途时留空（零 WinMM 触碰）；否则按偏好初始化。
         let init_result = if software_pending {
@@ -28,7 +30,10 @@ impl MidiManager {
         } else {
             match preferred {
                 SynthBackend::Kdmapi => Self::init_kdmapi_output(ui_config.system_output_device_id),
-                SynthBackend::System | SynthBackend::XSynth | SynthBackend::Lgs => {
+                SynthBackend::System
+                | SynthBackend::XSynth
+                | SynthBackend::Lgs
+                | SynthBackend::Maestro => {
                     Self::init_system_output(ui_config.system_output_device_id)
                 }
             }
@@ -58,6 +63,9 @@ impl MidiManager {
             lgs_block_size: ui_config.lgs_block_size,
             lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
             lgs_use_sinc: ui_config.lgs_use_sinc,
+            maestro_init_rx: None,
+            is_maestro_initializing: false,
+            maestro_stats: None,
             winmm_output_device_id: ui_config.system_output_device_id,
             desired_midi_max_port: 0,
             spawned_midi_max_port: 0,
@@ -73,6 +81,7 @@ impl MidiManager {
             let started = match preferred {
                 SynthBackend::XSynth => manager.start_xsynth_async_init(ui_config),
                 SynthBackend::Lgs => manager.start_lgs_async_init(ui_config),
+                SynthBackend::Maestro => manager.start_maestro_async_init(ui_config),
                 // `software_pending` 已限定，理论不可达
                 SynthBackend::System | SynthBackend::Kdmapi => true,
             };
@@ -236,22 +245,21 @@ impl MidiManager {
         // OutputConnection 是自包含的，不需要父 Api 保持存活
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
-            SynthBackend::XSynth | SynthBackend::Lgs if self.api.is_some() => {
-                // XSynth：禁止创建第二个实例！
-                // 策略1（共享 sender）总是成功；如果策略1失败说明 API 已损坏。
-                // 创建第二个 RealtimeSynth 会导致：
-                // 1. 双份 cpal 音频流（双倍的 CPU/内存开销）
-                // 2. 声音叠加（同一音符被两个合成器同时播放）
-                // 3. 音色库重复加载（30-300MB 内存浪费）
+            SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro
+                if self.api.is_some() =>
+            {
+                // 软件合成后端：禁止创建第二个实例！
+                // 策略1（共享引擎/发送端）总是成功；失败说明 API 已损坏。
+                // 创建第二个实例会导致双份音频流、声音叠加与重复加载音色库。
                 tracing::error!(
-                    "MIDI 播放输出: XSynth 策略1意外失败，拒绝创建第二个实例。\
-                     当前后端状态异常，建议检查 XSynth 初始化或重新启动应用"
+                    "MIDI 播放输出: 软件后端策略1意外失败，拒绝创建第二个实例。\
+                     当前后端状态异常，建议检查后端初始化或重新启动应用"
                 );
                 None
             }
             // Core 引擎：active_backend 同为 XSynth，但不持有独立 API 实例，
             // 不能按「第二个实例」处理，直接回退到策略3（复用主输出）。
-            SynthBackend::XSynth | SynthBackend::Lgs => None,
+            SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro => None,
             SynthBackend::System | SynthBackend::Kdmapi => {
                 let api_kind = match self.active_backend {
                     SynthBackend::Kdmapi => {
@@ -325,7 +333,7 @@ impl MidiManager {
     /// 对于不支持输入的 XSynth 后端，返回 System 后端的输入 API。
     pub fn create_input_api(&self) -> Option<Box<dyn lumino_midi_io::Api>> {
         let api_kind = match self.active_backend {
-            SynthBackend::XSynth | SynthBackend::Lgs => {
+            SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro => {
                 tracing::info!(
                     "MIDI 输入 API: {:?} 不支持输入，使用 System 后端",
                     self.active_backend

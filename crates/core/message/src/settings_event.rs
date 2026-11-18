@@ -18,6 +18,8 @@ pub enum OutputType {
     Builtin,
     /// KDMAPI 系统驱动
     Kdmapi,
+    /// Maestro 合成器宿主（AUD-009）
+    Maestro,
     /// 系统 MIDI (WinMM)
     System,
 }
