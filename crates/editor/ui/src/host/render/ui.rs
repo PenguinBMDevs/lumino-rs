@@ -39,12 +39,17 @@ impl Host {
         puffin::profile_function!();
 
         let clear = match background {
-            Some(color) => wgpu::Color {
-                r: f64::from(color.r),
-                g: f64::from(color.g),
-                b: f64::from(color.b),
-                a: 1.0,
-            },
+            Some(color) => {
+                // surface 是 sRGB 目标：清屏值必须是**线性**分量（与 `clear_color`
+                // 同一口径）。直接传主题 sRGB 分量会被硬件再编码一次，整窗底色发灰。
+                let [r, g, b, a] = color.into_linear();
+                wgpu::Color {
+                    r: f64::from(r),
+                    g: f64::from(g),
+                    b: f64::from(b),
+                    a: f64::from(a),
+                }
+            }
             None => clear_color(self.root.egui_palette()),
         };
         self.render_egui_overlay(frame, texture_view, Some(clear), egui_events, egui_focused);

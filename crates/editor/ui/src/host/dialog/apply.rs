@@ -107,16 +107,10 @@ impl Host {
 
     /// 应用设置面板配置到主窗口
     pub fn apply_settings(&mut self, mut settings: crate::settings::SettingsPanel, theme: String) {
-        // 同步主题
+        // 同步主题：与设置面板预览、View 菜单共用同一条主题事务，避免
+        // "清缓存/置脏/请求重绘"三处各写一半导致网格与 UI 不同步。
         if self.root.window.theme.to_string() != theme {
-            tracing::info!("同步主题: {} -> {}", self.root.window.theme, theme);
-            self.route_message(crate::window::Event::theme(theme));
-            self.root.editor.grid_cache.clear();
-            self.root.editor.keyboard_cache.clear();
-            self.root.editor.ruler_cache.clear();
-            self.render_ctx.render_cache.grid_viewport_hash = 0;
-            self.render_ctx.render_cache.note_viewport_hash = 0;
-            self.render_ctx.render_cache.note_render_viewport = None;
+            self.apply_theme_change(window::Event::theme(theme));
         }
 
         // 洋葱皮渲染后端：锁定/模式不兼容时拒绝并把值回写成运行时真值，
@@ -128,14 +122,46 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 更新主题
+    /// 更新主题（对外入口，供 Runner / 对话框广播调用）
     pub fn update_theme(&mut self, theme: String) {
-        self.route_message(window::Event::theme(theme));
+        self.apply_theme_change(window::Event::theme(theme));
+    }
+
+    /// 主题变更的**唯一事务入口**（主窗口 / 对话框 / 设置面板预览 / View 菜单共用）。
+    ///
+    /// 一次完成四件事，少任何一步都会出现"UI 已换主题、网格还是上一主题"：
+    /// 1. 路由 `Theme` 事件 → `Root::window.theme` 换新（egui 外壳立即生效）；
+    /// 2. 失效绘制标记与视口哈希（`GridCacheMarker` / `RenderCache` 视口字段；
+    ///    二者当前均无真正的读者——旧帧的真实来源是离屏纹理，见第 3 步）；
+    /// 3. **标记离屏内容脏**：主题色是离屏帧的 uniform 输入，属于内容变化。
+    ///    不置脏 ⇒ `redraw_separate_thread` 走「允许 present 落后一帧」分支，且
+    ///    视口未变不会登记 `pending_present_flush` ⇒ 屏幕长期停在上一主题的
+    ///    离屏帧，直到下一次无关重绘才被替换（2026-10-28 网格背景慢一步的根因）；
+    /// 4. 置 `ui_dirty` 并请求重绘，确保新帧一定会被生产出来。
+    ///
+    /// 四件事必须原子完成：拆到各入口各写一半，就是"抽屉换了、网格没换"的来源。
+    pub(crate) fn apply_theme_change(&mut self, message: crate::message::Message) {
+        let old = self.root.window.theme.to_string();
+        self.route_message(message);
+        self.invalidate_theme_caches();
+        tracing::info!(
+            old_theme = %old,
+            new_theme = %self.root.window.theme,
+            "主题已切换：离屏内容标记为脏（有渲染线程的窗口本帧同步呈现新主题）"
+        );
+    }
+
+    /// 主题相关的缓存失效 + 内容脏标记（供 [`Self::apply_theme_change`] 使用）。
+    fn invalidate_theme_caches(&mut self) {
         self.root.editor.grid_cache.clear();
         self.root.editor.keyboard_cache.clear();
         self.root.editor.ruler_cache.clear();
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.render_ctx.render_cache.note_viewport_hash = 0;
+        self.render_ctx.render_cache.note_render_viewport = None;
+        // 关键：主题 = 离屏内容，不是"视口变化"。纯视口变化可以落后一帧，
+        // 主题变化落后一帧就表现为「网格慢一步、移动鼠标才恢复」。
+        self.render_ctx.mark_render_content_dirty();
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

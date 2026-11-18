@@ -154,6 +154,10 @@ pub(crate) fn same_preview_instances(
 /// 覆盖所有参与 GPU 绘制输入的标量与矩形参数；派生实例向量（网格线 / 标尺刻度 /
 /// 走带覆盖层 / CC 柱）本身不参与比较——它们是上述参数的纯函数，文档变化则由
 /// `RenderParams::content_dirty` 走等待路径覆盖。
+///
+/// **主题色必须入键**：它们不是视口标量的纯函数（视口不变也能换主题），漏掉就会
+/// 把"换主题帧"误判成视口稳定帧——既不登记收尾帧（`pending_present_flush`），
+/// 也不等待渲染线程，屏幕长期停在上一主题的离屏帧。
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct RenderViewKey {
     scroll: (f32, f32),
@@ -171,6 +175,13 @@ pub(crate) struct RenderViewKey {
     is_arrangement_mode: bool,
     skip_scene_render: bool,
     velocity_panel_rect: Option<(f32, f32, f32, f32)>,
+    /// 主题色指纹（背景 / 黑键底 / 小节线 / 拍线 / 半拍线 / 网格线 / 键线），逐位比较。
+    theme_colors: [[u32; 4]; 7],
+}
+
+/// 颜色四通道按位压缩成指纹（`f32::to_bits`：等价于逐位比较，避免浮点相等判定）。
+fn color_bits(color: [f32; 4]) -> [u32; 4] {
+    color.map(f32::to_bits)
 }
 
 impl RenderViewKey {
@@ -192,6 +203,15 @@ impl RenderViewKey {
             is_arrangement_mode: params.is_arrangement_mode,
             skip_scene_render: params.skip_scene_render,
             velocity_panel_rect: params.velocity_panel_rect,
+            theme_colors: [
+                color_bits(params.color_bg),
+                color_bits(params.color_bg_black_key),
+                color_bits(params.color_bar),
+                color_bits(params.color_beat),
+                color_bits(params.color_half_beat),
+                color_bits(params.color_grid),
+                color_bits(params.color_key_line),
+            ],
         }
     }
 }
@@ -270,6 +290,45 @@ mod tests {
             RenderViewKey::from_params(&base),
             RenderViewKey::from_params(&resized),
             "视口尺寸变化必须改变视口指纹"
+        );
+    }
+
+    /// 主题色变化必须被指纹捕获（2026-10-28 网格背景慢一步的回归守卫）。
+    ///
+    /// 视口完全不变、只换主题时，若无主题键：视口判定"稳定"→ 不登记收尾帧、
+    /// 不等待渲染线程 → 屏幕停在上一主题的离屏帧，且不会自行恢复。
+    #[test]
+    fn test_view_key_tracks_theme_colors() {
+        let base = RenderParams::default();
+
+        let mut new_bg = base.clone();
+        new_bg.color_bg = [
+            base.color_bg[0] + 0.01,
+            base.color_bg[1],
+            base.color_bg[2],
+            1.0,
+        ];
+        assert_ne!(
+            RenderViewKey::from_params(&base),
+            RenderViewKey::from_params(&new_bg),
+            "网格背景色变化必须改变视口指纹（否则换主题后网格停在旧帧）"
+        );
+
+        let mut new_grid = base.clone();
+        new_grid.color_grid = [0.2, 0.2, 0.2, 0.2];
+        assert_ne!(
+            RenderViewKey::from_params(&base),
+            RenderViewKey::from_params(&new_grid),
+            "网格线颜色变化同样必须改变视口指纹"
+        );
+
+        // alpha 参与比较：只有透明度不同也是不同的绘制输入。
+        let mut new_alpha = base.clone();
+        new_alpha.color_bar = [base.color_bar[0], base.color_bar[1], base.color_bar[2], 0.5];
+        assert_ne!(
+            RenderViewKey::from_params(&base),
+            RenderViewKey::from_params(&new_alpha),
+            "同色不同透明度也必须被视为主题变化"
         );
     }
 

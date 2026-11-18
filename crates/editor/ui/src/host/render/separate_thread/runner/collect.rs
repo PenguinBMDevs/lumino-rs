@@ -10,6 +10,15 @@ use crate::host::render::data::RenderData;
 use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::{ArrangementNoteInstance, ArrangementSceneParams, ArrangementViewColors};
 
+/// sRGB 主题色 → 线性 RGB 三通道。
+///
+/// gfx 离屏目标是 sRGB 纹理，着色器输出由硬件编码一次；uniform/实例颜色必须传
+/// **线性**值，屏幕像素才等于主题色板。深色主题漏转换会整体提亮（背景发灰）。
+fn linear_rgb(color: lumino_ui_core::geom::Color) -> [f32; 3] {
+    let [r, g, b, _] = color.into_linear();
+    [r, g, b]
+}
+
 impl Host {
     /// 收集走带视图渲染数据。
     ///
@@ -78,15 +87,12 @@ impl Host {
             }
         };
         let colors = ArrangementViewColors {
-            bg: [arr_bg.r, arr_bg.g, arr_bg.b],
-            lane_even: [arr_lane_even.r, arr_lane_even.g, arr_lane_even.b],
-            lane_odd: [arr_lane_odd.r, arr_lane_odd.g, arr_lane_odd.b],
-            measure_line: [
-                arr_measure_line.r,
-                arr_measure_line.g,
-                arr_measure_line.b,
-                arr_measure_line.a,
-            ],
+            // gfx 离屏目标是 sRGB 纹理：uniform/实例颜色必须是线性值，否则会被
+            // 硬件再编码一次（深色主题整体提亮，与 GridColors::from_theme 同口径）。
+            bg: linear_rgb(arr_bg),
+            lane_even: linear_rgb(arr_lane_even),
+            lane_odd: linear_rgb(arr_lane_odd),
+            measure_line: arr_measure_line.into_linear(),
             playhead: [
                 lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
                 lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,

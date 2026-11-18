@@ -68,15 +68,12 @@ impl Host {
     }
 
     /// 处理主题变更消息
+    ///
+    /// 与设置面板预览 / View 菜单共用 [`Host::apply_theme_change`]：路由 + 缓存失效 +
+    /// 内容脏 + 请求重绘必须原子完成，否则网格背景会停在旧主题的离屏帧上。
     fn handle_theme_message(&mut self, message: message::Message) -> bool {
         puffin::profile_scope!("process_message::theme");
-        self.route_message(message);
-        self.root.editor.keyboard_cache.clear();
-        self.root.editor.ruler_cache.clear();
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
-        self.render_ctx.render_cache.note_viewport_hash = 0;
-        self.render_ctx.render_cache.note_render_viewport = None;
-        self.root.editor.grid_cache.clear();
+        self.apply_theme_change(message);
         true
     }
 

@@ -82,19 +82,25 @@ impl Host {
         let theme = self.root.theme();
         let panel_height = self.root.visual.velocity_panel_height;
 
-        // 颜色
-        let note_color = theme.extended_palette().primary.weak.color;
-        let bar_color = [note_color.r, note_color.g, note_color.b, 0.30];
+        // 颜色（gfx 离屏目标是 sRGB：交给 uniform 的分量必须是线性值，
+        // 否则力度/CC 面板底色会比卷帘网格亮一截——与 GridColors::from_theme 同口径）
+        let note_color = theme.extended_palette().primary.weak.color.into_linear();
+        let bar_color = [note_color[0], note_color[1], note_color[2], 0.30];
 
-        let bg = theme.extended_palette().background.base.color;
-        let bg_color = [bg.r, bg.g, bg.b, 1.0];
+        let bg = theme.extended_palette().background.base.color.into_linear();
+        let bg_color = [bg[0], bg[1], bg[2], 1.0];
 
-        let handle = theme.extended_palette().background.strong.color;
-        let handle_color = [handle.r, handle.g, handle.b, 0.25];
+        let handle = theme
+            .extended_palette()
+            .background
+            .strong
+            .color
+            .into_linear();
+        let handle_color = [handle[0], handle[1], handle[2], 0.25];
 
-        let text_c = theme.text_color();
+        let text_c = theme.text_color().into_linear();
         let grab_alpha = if theme.is_light() { 0.40 } else { 0.35 };
-        let grab_color = [text_c.r, text_c.g, text_c.b, grab_alpha];
+        let grab_color = [text_c[0], text_c[1], text_c[2], grab_alpha];
 
         let cc_view_params = CcBarViewParams {
             panel_height,
