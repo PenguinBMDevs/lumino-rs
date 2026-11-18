@@ -132,3 +132,23 @@ use lumino_core::{Event, Result};
 - `dev` branch: active development
 - All PRs must pass clippy and tests
 - All commits must be GPG signed
+
+## 术语约定（DEBT-21）
+
+**上一代 UI 层已整体移除**：`Host` 不再持有任何上一代 widget 树，整窗绘制、命中判定、
+输入分发全部由 egui 独占，画布与 wgpu 渲染器只提供纹理与坐标换算。
+
+因此代码注释与文档里：
+
+- **不要再写「某一层仍在接管/绘制/消费输入」**——没有第二条通道；若某块 UI 由 egui 画，
+  就写 egui 的模块名（`chrome::*`、`chrome/sidebar/*`），由画布层画就写「画布层」。
+- 指代已移除的那一层时统一用 **「上一代」**（首次出现可补一句「已移除」），
+  不要造「旧版本 / 老版本 / v1」等新别名。
+- 需要标定几何/配色基线时，**指向现存符号**（`layout` 常量、`PaletteSeed` 字段、
+  `Palette::TOKYO_NIGHT_STORM`），或写明具体数值；不要引用已删除的常量名。
+- 测试失败消息表达**当前契约**（"点击应落到画布"），不要写「否则上一代会…」。
+- 统计口径用 `git grep -c` 求和；`git grep -n` 的输出在中日文混排的 Windows 控制台下
+  喂 `Measure-Object` 会少算一个数量级。
+
+**不可改名**：`TextLayoutMode::LegacyBox`（公开枚举变体，进配置序列化）、
+`SnapSpec::from_legacy`（公开 API）、`test_legacy_*` 系列测试名——历史命名，保持逐字不变。
