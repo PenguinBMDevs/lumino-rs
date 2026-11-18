@@ -13,7 +13,7 @@ pub const BUTTON_RADIUS: f32 = 8.0;
 
 /// `lumino_ui_core::geom::Rectangle` → `(x, y, width, height)`。
 ///
-/// 供不依赖 旧版 的 UI 层（egui 悬浮按钮）复用同一份几何。
+/// 供不依赖 上一代 的 UI 层（egui 悬浮按钮）复用同一份几何。
 pub fn rect_tuple(rect: Rectangle) -> (f32, f32, f32, f32) {
     (rect.x, rect.y, rect.width, rect.height)
 }

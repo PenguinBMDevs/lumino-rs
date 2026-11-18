@@ -120,9 +120,9 @@ impl Host {
             }
             // REND-019（PR-A §1.6）：等待返回后必须复查设备丢失——置位则本帧
             // 放弃 blit（禁止向死设备提交拷贝，重连由上层接管），同时跳过
-            // 旧版 覆盖层渲染（同一死设备）。
+            // 上一代 覆盖层渲染（同一死设备）。
             if lumino_gfx::device_lost() {
-                tracing::warn!("device lost 置位：本帧放弃 blit 与 旧版 渲染（等待重连）");
+                tracing::warn!("device lost 置位：本帧放弃 blit 与覆盖层渲染（等待重连）");
                 return;
             }
             // egui 整窗绘制：把 gfx 离屏纹理交给 egui 采样，不再直接 blit 到
@@ -139,7 +139,7 @@ impl Host {
             self.window_ctx.window.request_redraw();
         }
 
-        // 旧版 UI 覆盖层渲染到同一 surface
+        // 上一代 UI 覆盖层渲染到同一 surface
         if !self.skip_ui_rendering {
             let view = frame
                 .texture
@@ -210,7 +210,7 @@ impl Host {
             self.render_ctx.pending_present_flush = None;
         } else if allow_present_lag && view_changed {
             // 仅在「视口确实变了」时登记收尾：视口未变的重复提交（如 hover 触发的
-            // 重绘）内容与已呈现帧等价，登记收尾只会平白多出一帧 旧版 渲染。
+            // 重绘）内容与已呈现帧等价，登记收尾只会平白多出一帧 上一代 渲染。
             self.render_ctx.pending_present_flush = Some(frame_id);
         }
 

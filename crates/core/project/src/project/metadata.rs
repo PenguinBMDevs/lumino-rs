@@ -107,7 +107,7 @@ pub struct ProjectInfo {
     pub name: String,
     /// 作者
     pub author: String,
-    /// 版权信息（可选；旧版工程文件无此字段，按默认空字符串解析）
+    /// 版权信息（可选；上一代工程文件无此字段，按默认空字符串解析）
     #[serde(default)]
     pub copyright: String,
     /// 创建时间（RFC3339）
@@ -181,7 +181,7 @@ pub struct SettingsMetadata {
     /// 洋葱皮显示范围模式（`all_tracks` / `previous_track` / `next_track` /
     /// `specific_track`；**工程范围记忆**，2026-11-05）
     ///
-    /// 存字符串而不是枚举：工程文件是用户可读的 TOML，且旧版客户端要能忽略
+    /// 存字符串而不是枚举：工程文件是用户可读的 TOML，且上一代客户端要能忽略
     /// 本版本的新取值（解析侧宽松落回默认，见 `OnionSkinMode::from_str_lossy`）。
     pub onion_skin_mode: Option<String>,
 }
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_legacy_metadata_without_material_parses() {
-        // 旧版工程文件没有 material 段，必须能正常解析（向后兼容）
+        // 上一代工程文件没有 material 段，必须能正常解析（向后兼容）
         let legacy = r#"
 format_version = 1
 

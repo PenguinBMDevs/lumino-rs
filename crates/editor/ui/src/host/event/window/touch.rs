@@ -15,7 +15,7 @@
 //!    `MouseInput` 在触屏上永远不来，不同步则这些收尾逻辑整块是死代码。
 //! 2. **双指 → 缩放 + 平移**：两指距离 → 缩放（与触控板 `PinchGesture` 共用
 //!    `Host::handle_pinch_gesture`）；两指中点位移 → 滚轮像素增量
-//!    （`WheelScrolled{Pixels}`，画布与 旧版 `scrollable` 都吃这条增量）。
+//!    （`WheelScrolled{Pixels}`，画布与 上一代 `scrollable` 都吃这条增量）。
 //! 3. **手势期消费**：双指期与「双指降单指」期一律消费触摸，不产生指针事件。
 //!    否则第二指先抬起时会被合成成一次左键释放（中途误收尾），随后剩余手指
 //!    的移动又变成拖拽（误拖音符）。
@@ -23,7 +23,7 @@
 //! 子模块：
 //! - `self::long_press` — 长按模拟右键（触屏没有右键按键）
 //!
-//! ⚠️ 这里刻意**不**把原生 `Event::Touch` 一并投给 旧版：旧版 的 button /
+//! ⚠️ 这里刻意**不**把原生 `Event::Touch` 一并投给 上一代：上一代 的 button /
 //! slider / mouse_area / text_input 等控件同时处理 Mouse 与 Touch 两条分支
 //! （`widget/src/button.rs:301-333`），同时投递会让一次点按触发两次。
 //! 代价是 滚动视图 的原生触摸拖动被屏蔽，故改用「双指平移
@@ -105,7 +105,7 @@ impl Host {
     /// 处理一个 winit 触摸事件（Android/触屏共用的唯一入口）
     ///
     /// 返回 `TouchRouting::Consumed` / `TouchRouting::RightRelease` 时，调用方
-    /// **不得**再走 旧版 的通用事件转换管线（前者已由手势层吸收，后者需要
+    /// **不得**再走 上一代 的通用事件转换管线（前者已由手势层吸收，后者需要
     /// 单独补右键释放）。
     pub(super) fn handle_touch(&mut self, touch: &winit::event::Touch) -> TouchRouting {
         let scale = self.window_ctx.window.scale_factor() as f32;

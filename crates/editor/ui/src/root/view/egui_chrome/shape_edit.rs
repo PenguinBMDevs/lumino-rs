@@ -31,7 +31,7 @@ impl Root {
         let track = editor.editor_state.data.current_track;
         let (dtick, dkey) = editor.drag_preview_delta();
         // 鼠标工具下把当前轨未选中的可见图形以弱色常显：否则切换工具后
-        // 图案只剩音符、看不见可选中范围（旧版 `drawn_shape_box` 同语义）。
+        // 图案只剩音符、看不见可选中范围（上一代 `drawn_shape_box` 同语义）。
         let select_mode = editor.current_tool() == lumino_message::Tool::ShapeSelect;
         let idle_outlines = if select_mode {
             editor
@@ -60,7 +60,7 @@ impl Root {
             })
             .collect();
 
-        // 编辑态隐藏选中选框，避免两层框叠在一起抢点击（与旧版一致）。
+        // 编辑态隐藏选中选框，避免两层框叠在一起抢点击（与上一代一致）。
         let editing = editor.is_shape_edit_armed();
         let selection_box = if editing {
             None

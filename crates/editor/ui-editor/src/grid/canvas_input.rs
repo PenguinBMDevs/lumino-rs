@@ -1,7 +1,7 @@
 //! 与 UI 框架无关的画布输入分派。
 //!
-//! 旧版 `Grid` program 曾在 `update()` 里把鼠标事件翻译成编辑动作；egui 独占
-//! 整窗后由宿主（winit 事件）直接调用本模块。`program_impl` 只负责把 旧版
+//! 上一代 `Grid` program 曾在 `update()` 里把鼠标事件翻译成编辑动作；egui 独占
+//! 整窗后由宿主（winit 事件）直接调用本模块。`program_impl` 只负责把 上一代
 //! 事件映射成 [`CanvasEvent`] 再转调这里，两条路径共享同一份语义，避免行为漂移。
 
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, Tool};
@@ -215,7 +215,7 @@ mod tests {
         }
     }
 
-    /// 铅笔：按下 → 拖动 → 松开必须落下一个音符（与 旧版 路径同语义）。
+    /// 铅笔：按下 → 拖动 → 松开必须落下一个音符（与 上一代 路径同语义）。
     #[test]
     fn press_drag_release_places_note_with_pencil() {
         let mut editor = editor();

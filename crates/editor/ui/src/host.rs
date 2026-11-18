@@ -2,7 +2,7 @@
 //!
 //! 该模块已拆分为以下子模块：
 //! - `types`: 类型定义和工具函数
-//! - `render`: 渲染逻辑（旧版 UI 和 wgpu 音符）
+//! - `render`: 渲染逻辑（上一代 UI 和 wgpu 音符）
 //! - `event`: 事件处理（窗口事件、输入）
 //! - `editor_ops`: 编辑器操作（音符、洋葱皮）
 //! - `dialog`: 对话框和协作功能
@@ -54,7 +54,7 @@ pub use cache::RenderCache;
 pub use render::egui_overlay::OverlayInput;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
-/// UI 宿主 - 管理 旧版 渲染和 wgpu 音符渲染
+/// UI 宿主 - 管理 上一代 渲染和 wgpu 音符渲染
 ///
 /// 线程模型：
 /// - UI线程（主线程）：处理事件、更新状态、生成渲染命令
@@ -82,14 +82,14 @@ pub struct Host {
     pub(crate) last_fps_update: Instant,
     /// 帧计数器
     pub(crate) frame_count: u32,
-    /// 跳过 旧版 UI 渲染（性能测试用）
+    /// 跳过 上一代 UI 渲染（性能测试用）
     pub skip_ui_rendering: bool,
     /// UI 脏标记
     pub(crate) ui_dirty: bool,
     /// 上一批事件里有控件「捕获」了输入：下一帧必须无条件重建一次。
     ///
     /// 为什么需要单独一位（而不是直接 `ui_dirty = true`）：
-    /// 旧版 在基础控件捕获事件后会丢弃当前 overlay 树，新展开的下拉层要**下一次
+    /// 上一代 在基础控件捕获事件后会丢弃当前 overlay 树，新展开的下拉层要**下一次
     /// build** 才画得出来；而 `render_ui` 画完就把 `ui_dirty` 清零，同一帧里
     /// 置的脏标记会被立刻消费掉。于是「控件只改自身状态、不发消息」的交互
     /// （下拉框展开 / 滚动条抓取）可能停在「状态已变、画面没变」——
@@ -144,11 +144,11 @@ pub struct Host {
     pub(crate) touch_long_press_deadline: Option<Instant>,
     /// 本次触摸是否已经触发过长按右键（抬手时只需释放右键）
     pub(crate) touch_long_press_fired: bool,
-    /// 文本输入法是否处于激活态（焦点在 text_input 时由 旧版 打开）。
+    /// 文本输入法是否处于激活态（焦点在 text_input 时由 上一代 打开）。
     ///
     /// 裸字母快捷键必须在此状态下让路，否则用户在输入框里打字会切工具。
     pub(crate) ime_active: bool,
-    /// 旧版 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
+    /// 上一代 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
     pub(crate) redraw_at: std::sync::Arc<std::sync::Mutex<Option<Instant>>>,
     /// 定时重绘后台线程是否在运行（避免重复起线程）
     pub(crate) redraw_timer_active: std::sync::Arc<std::sync::atomic::AtomicBool>,

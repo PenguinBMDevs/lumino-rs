@@ -27,7 +27,7 @@ impl Host {
             return;
         }
         self.window_ctx.cursor = mouse::Cursor::Available(logical_pos);
-        // 存储逻辑坐标（与 旧版 保持一致）
+        // 存储逻辑坐标（与 上一代 保持一致）
         self.window_ctx.cursor_position = Some(logical_pos);
 
         // 如果正在调整工具栏高度，更新工具栏高度
@@ -77,7 +77,7 @@ impl Host {
     }
     /// 释放鼠标左键状态（用于拖拽窗口后的状态重置）。
     ///
-    /// 旧版 事件链删除后没有控件按压态需要复位；这里把释放直连给画布，
+    /// 上一代 事件链删除后没有控件按压态需要复位；这里把释放直连给画布，
     /// 让拖拽/绘制在窗口被系统夺焦后也能正常收尾。
     pub fn release_left_mouse_button(&mut self) {
         self.window_ctx.cursor = lumino_ui_core::geom::mouse::Cursor::Unavailable;

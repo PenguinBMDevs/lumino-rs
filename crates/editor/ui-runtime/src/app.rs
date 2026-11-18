@@ -378,7 +378,7 @@ impl crate::RuntimeApp for NativeApp {
 }
 
 impl NativeApp {
-    /// 把编辑器画布尺寸同步为「内容区」逻辑尺寸（旧版 布局原本由 widget 写入）。
+    /// 把编辑器画布尺寸同步为「内容区」逻辑尺寸（上一代 布局原本由 widget 写入）。
     fn sync_editor_canvas(&mut self, window: &Window) {
         let Some(root) = self.root.as_mut() else {
             return;

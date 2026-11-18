@@ -259,7 +259,7 @@ fn outside_click_closes_and_canvas_is_blocked() {
         "画布空白处点击应关闭菜单：{:?}",
         actions.borrow()
     );
-    // 打开期间整块画布进入占用区：同一次点击不能再落到画布/旧版。
+    // 打开期间整块画布进入占用区：同一次点击不能再落到画布/上一代。
     let blocked = chrome::menu::take_blocked(&h.ctx);
     assert!(
         blocked.iter().any(|rect| rect.contains(outside)),

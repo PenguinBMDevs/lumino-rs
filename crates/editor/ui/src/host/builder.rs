@@ -210,7 +210,7 @@ impl Host {
 
     /// 创建设备检查警告窗口 Host
     ///
-    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 旧版 Engine。
+    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 上一代 Engine。
     pub fn new_device_warning(
         window: Arc<dyn super::HostWindow>,
         width: u32,

@@ -57,7 +57,7 @@ fn entries(items: &[MenuItem], language: Language, next: &mut usize) -> Vec<Menu
 }
 
 impl Root {
-    /// 「导出为素材」是否可用（与标题栏 旧版 菜单使用同一判据）。
+    /// 「导出为素材」是否可用（与标题栏 上一代 菜单使用同一判据）。
     pub(super) fn export_material_enabled(&self) -> bool {
         self.editor.has_active_selection(self.edit_view())
     }
@@ -80,7 +80,7 @@ impl Root {
     /// 原生运行时（winit + wgpu + egui）应用一次菜单点击。
     ///
     /// 与 `Host` 的 `apply_overlay_actions` 走同一份 `menu_action_message`，
-    /// 区别只是没有 旧版 窗口上下文；返回 `false` 表示序号越界（禁用项也占号）。
+    /// 区别只是没有 上一代 窗口上下文；返回 `false` 表示序号越界（禁用项也占号）。
     pub fn apply_egui_menu_action(&mut self, index: usize) -> bool {
         let Some(message) = self.menu_action_message(index) else {
             return false;

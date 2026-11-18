@@ -70,7 +70,7 @@ impl Host {
                 }
             }
             Ime(ime) => {
-                // 旧版 text_input 获得焦点时会 set_ime_allowed(true)，winit 随之发
+                // 上一代 text_input 获得焦点时会 set_ime_allowed(true)，winit 随之发
                 // Ime::Enabled；失焦发 Disabled。裸字母快捷键据此让路。
                 match ime {
                     winit::event::Ime::Enabled => self.ime_active = true,
@@ -113,9 +113,9 @@ impl Host {
                 }
             }
             PinchGesture { delta, phase, .. } => {
-                // 触摸板捏合（C）直接处理，不走 旧版 conversion（被过滤）
+                // 触摸板捏合（C）直接处理，不走 上一代 conversion（被过滤）
                 self.handle_pinch_gesture(*delta, *phase);
-                // 捏合已消费，不再进入 旧版 队列
+                // 捏合已消费，不再进入 上一代 队列
                 return;
             }
             _ => (),

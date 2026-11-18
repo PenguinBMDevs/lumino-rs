@@ -43,7 +43,7 @@ impl NoteExt for Note {
     }
 }
 
-/// 将 旧版 Color 转换为 [f32; 4] RGBA
+/// 将 上一代 Color 转换为 [f32; 4] RGBA
 pub fn color_to_array(color: Color) -> [f32; 4] {
     [color.r, color.g, color.b, color.a]
 }

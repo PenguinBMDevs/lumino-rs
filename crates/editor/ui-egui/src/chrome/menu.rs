@@ -3,7 +3,7 @@
 //! 菜单树由生产 `titlebar::menu::menus()` 镜像而来，动作只携带**遍历序号**；
 //! 点击后把序号写进 egui 数据，由生产侧解析成真正的 `Message`。
 //!
-//! 布局对齐 旧版：面板宽 200、菜单项 28 高、分隔线 9 高、面板底色
+//! 布局对齐 上一代：面板宽 200、菜单项 28 高、分隔线 9 高、面板底色
 //! `background.base`、悬停 `background.weaker`。
 
 use egui::{Align2, Color32, FontId, Id, Layout, Pos2, Rect, Sense, Stroke, Vec2};
@@ -68,7 +68,7 @@ pub fn take_blocked(ctx: &egui::Context) -> Vec<Rect> {
         .unwrap_or_default()
 }
 
-/// 清空本帧的占用矩形（未绘制菜单时必须清空，避免陈旧矩形吞掉 旧版 点击）。
+/// 清空本帧的占用矩形（未绘制菜单时必须清空，避免陈旧矩形吞掉 上一代 点击）。
 pub fn clear_blocked(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove_temp::<Vec<Rect>>(Id::unique(BLOCKED_ID)));
 }
@@ -131,7 +131,7 @@ pub fn show_labels(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32]) -> 
                 state.submenu = None;
                 state.submenu_rect = None;
             } else if response.hovered() && state.open.is_some() && state.open != Some(index) {
-                // 已经展开时，悬停到别的标签直接切换（与 旧版 菜单一致）。
+                // 已经展开时，悬停到别的标签直接切换（与 上一代 菜单一致）。
                 state.open = Some(index);
                 state.hover_opened = true;
                 state.submenu = None;
@@ -356,7 +356,7 @@ fn draw_panel(
     });
     let mut target = hovered_sub.or(keep);
     if hovered_action {
-        // 指针落在别的菜单项上：收起子菜单（与 旧版 行为一致）。
+        // 指针落在别的菜单项上：收起子菜单（与 上一代 行为一致）。
         target = None;
     }
     state.submenu = target;

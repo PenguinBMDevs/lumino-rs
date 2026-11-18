@@ -106,7 +106,7 @@ impl DialogWindow {
         }
     }
 
-    /// 把渲染侧（旧版 viewport + swapchain surface）同步到实际物理尺寸
+    /// 把渲染侧（上一代 viewport + swapchain surface）同步到实际物理尺寸
     ///
     /// 事件回程（`WindowEvent::Resized`）也会做同样的事，这里是**幂等**的提前量：
     /// 首帧必须按新尺寸渲染，否则会先显示一帧旧尺寸再跳变。

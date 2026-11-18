@@ -27,7 +27,7 @@ const BUTTON_GAP: f32 = 12.0;
 /// 拍号输入框宽度（生产 `Length::Fixed(60)`）。
 const TS_INPUT_W: f32 = 60.0;
 
-/// 工程设置对话框产生的动作（不依赖 旧版）。
+/// 工程设置对话框产生的动作（不依赖 上一代）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectSettingsAction {
     /// 项目名称变化。

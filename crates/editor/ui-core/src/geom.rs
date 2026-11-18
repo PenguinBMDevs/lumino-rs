@@ -2,7 +2,7 @@
 //!
 //! 只保留本项目实际使用的子集：`Point` / `Size` / `Rectangle` / `Color` 与
 //! 光标交互类型 `mouse::{Cursor, Interaction, ScrollDelta}`。字段名与语义与
-//! 旧版 0.14 完全一致，保证此前按 旧版 口径写的坐标换算无需改动。
+//! 旧版 0.14 完全一致，保证此前按 上一代 口径写的坐标换算无需改动。
 
 use std::ops::{Add, Sub};
 
@@ -137,7 +137,7 @@ impl Rectangle<f32> {
         self.width * self.height
     }
 
-    /// 是否包含某点（左闭右开，与 旧版 一致）。
+    /// 是否包含某点（左闭右开，与 上一代 一致）。
     pub fn contains(&self, point: Point) -> bool {
         point.x >= self.x
             && point.x < self.x + self.width

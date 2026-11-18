@@ -134,7 +134,7 @@ impl Palette {
         self.warning
     }
 
-    /// 历史基线色板（Tokyo Night Storm，旧版 精确值）。
+    /// 历史基线色板（Tokyo Night Storm，上一代 精确值）。
     pub const TOKYO_NIGHT_STORM: Self = Self {
         is_dark: true,
         titlebar_bg: Color32::from_rgb(0x3F, 0x46, 0x6E),

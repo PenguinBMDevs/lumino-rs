@@ -1,4 +1,4 @@
-//! 小型控件工厂：把生产 旧版 的按钮 / 图标 / 文本尺寸契约搬到 egui。
+//! 小型控件工厂：把生产 上一代 的按钮 / 图标 / 文本尺寸契约搬到 egui。
 
 mod switch;
 
@@ -109,7 +109,7 @@ pub fn icon_button(
     // 自绘而不是 `egui::Button`：`Button` 会把 `spacing.interact_size`（40×18）
     // 和 frame 内边距算进最小尺寸，导致「请求 25px 实际占 42px」——相邻工具按钮
     // 命中区互相重叠（真机表现：点第 2 个选择器却选中第 1 个）。
-    // 这里按请求尺寸精确分配并手绘，几何与生产（旧版）逐像素一致。
+    // 这里按请求尺寸精确分配并手绘，几何与生产（上一代）逐像素一致。
     let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
     if selected {
         ui.painter()
@@ -206,9 +206,9 @@ pub fn small_text_button(ui: &mut egui::Ui, text: &str, selected: bool) -> Respo
     ui.add_sized([44.0, 26.0], button)
 }
 
-/// 设置页下拉框字号（旧版 `pick_list` 默认 16）。
+/// 设置页下拉框字号（上一代 `pick_list` 默认 16）。
 const SETTINGS_COMBO_TEXT: f32 = 16.0;
-/// 设置页输入框字号（旧版 `text_input` 默认 16）。
+/// 设置页输入框字号（上一代 `text_input` 默认 16）。
 const SETTINGS_INPUT_TEXT: f32 = 16.0;
 
 /// 下拉框（设置页 / 工具栏）。

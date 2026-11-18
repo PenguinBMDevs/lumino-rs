@@ -199,7 +199,7 @@ fn right_sidebar_model_follows_visibility_and_active_panel() {
     assert_eq!(right.active, Some(RightSidebarPanelKind::Materials));
     assert!((right.total_width() - 248.0).abs() < f32::EPSILON);
 
-    // 卷帘关闭后 旧版 不渲染右侧栏，叠加层同步退出。
+    // 卷帘关闭后 上一代 不渲染右侧栏，叠加层同步退出。
     root.sidebar.piano_roll_visible = false;
     assert!(root.egui_chrome_model().right_sidebar.is_none());
 }
@@ -207,7 +207,7 @@ fn right_sidebar_model_follows_visibility_and_active_panel() {
 #[test]
 fn piano_roll_model_tracks_editor_view_state() {
     let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());
-    // 首帧布局前画布尺寸为 0（生产里由 旧版 布局回填）。
+    // 首帧布局前画布尺寸为 0（生产里由 上一代 布局回填）。
     root.editor.editor_state.canvas.size_x = 1280.0;
     root.editor.editor_state.canvas.size_y = 858.0;
     let piano = root.egui_piano_roll_model().expect("默认工程应可接管");
@@ -379,7 +379,7 @@ fn light_theme_dialogs_use_injected_palette() {
     let root = Root::new_dialog(&light, crate::state::root_state::DialogType::SaveConfirm);
     let model = root.egui_chrome_model();
     let Some(DialogModel::SaveConfirm(save)) = model.dialog else {
-        panic!("浅色主题的保存确认对话框也应整窗接管（调色板来自 旧版）");
+        panic!("浅色主题的保存确认对话框也应整窗接管（调色板跟随当前主题）");
     };
     assert_ne!(
         save.palette.background,
@@ -463,7 +463,7 @@ fn settings_dialog_takes_over_at_any_window_size() {
     let root = Root::new_settings_dialog(&theme, &config);
 
     // 默认对话框 720×540 逻辑点：菜单放不下，但菜单现在能滚（滚轮事件已同步
-    // 给 egui），因此仍整窗接管，不再把「云管理/兼容性/关于」交回 旧版。
+    // 给 egui），因此仍整窗接管，不再把「云管理/兼容性/关于」交回 上一代。
     assert!(
         matches!(
             root.egui_chrome_model().dialog,
@@ -510,15 +510,12 @@ fn legacy_popups_no_longer_disable_the_overlay() {
     );
 
     // 系统原生标题栏模式：Windows/Linux 的 30px 菜单栏行也由 egui 接管，
-    // 旧版 只保留同宽占位，不再整块让位。
+    // 上一代 只保留同宽占位，不再整块让位。
     let mut native = Root::new(&lumino_core::storage::config::UiConfig::default());
     native.settings.synth.use_native_titlebar = true;
     native.state.is_menu_open = true;
     let model = native.egui_chrome_model();
-    assert!(
-        model.toolbar.is_some(),
-        "原生标题栏模式不再需要 旧版 菜单让位"
-    );
+    assert!(model.toolbar.is_some(), "原生标题栏模式不再需要菜单让位");
     if !cfg!(target_os = "macos") {
         let titlebar = model.titlebar.expect("原生标题栏的菜单栏应由 egui 绘制");
         assert!(titlebar.menu_only, "原生模式只画菜单栏，无 logo/窗口控制");
@@ -664,7 +661,7 @@ fn toolbar_popup_model_and_actions_follow_production_state() {
     assert!(onion.items[0].selected, "默认选中「显示全部音轨」");
     assert!(!onion.items[1].selected);
 
-    // 动作 → 生产 Message（与 旧版 按钮同一批构造器）。
+    // 动作 → 生产 Message（与 上一代 按钮同一批构造器）。
     assert!(matches!(
         root.toolbar_action_message(&ToolbarAction::ToggleSnapPicker),
         Some(Message::Toolbar(ToolbarEvent::ToggleSnapPicker))

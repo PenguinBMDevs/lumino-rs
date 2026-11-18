@@ -117,7 +117,7 @@ impl Editor {
                     return;
                 }
             }
-            // 框内点击（顶部输入条由 旧版 TextInput 覆盖，不会落到这里）：
+            // 框内点击（顶部输入条由 上一代 TextInput 覆盖，不会落到这里）：
             // 拖拽中间实心区域可整体移动文本框。
             if let Some((l, t, r, b)) = crate::grid::text_tool_box::box_rect_screen(self)
                 && pos.x >= l

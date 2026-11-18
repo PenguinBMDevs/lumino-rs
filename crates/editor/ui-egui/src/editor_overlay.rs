@@ -1,6 +1,6 @@
 //! 编辑器叠加层预览（切割线 / 饼干模刀框 / 角度柔化）——egui 版。
 //!
-//! 取代旧版 `grid::{slice_box, mould_knife_box, round_corner_box}::draw`：
+//! 取代上一代 `grid::{slice_box, mould_knife_box, round_corner_box}::draw`：
 //! - 切割线：2px 橙红直线 + 两端 3px 实心圆；
 //! - 饼干模：青色虚线框（每条刀音符一个）；
 //! - 角度柔化：1.5px 青色路径 + 10px 橙色角点手柄（选中加白环）+

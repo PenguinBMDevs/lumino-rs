@@ -24,7 +24,7 @@ fn clear_color(palette: lumino_ui_egui::theme::Palette) -> wgpu::Color {
 impl Host {
     /// 渲染窗口画面：egui 独占整窗（唯一生产路径）。
     ///
-    /// 旧版 widget 树**不再构建、不再 present**——外壳 / 对话框 / 面板 / 编辑器
+    /// 上一代 widget 树**不再构建、不再 present**——外壳 / 对话框 / 面板 / 编辑器
     /// 骨架全部由 egui 绘制，画布底层由 egui 采样 gfx 离屏纹理。
     /// `background` 为 `Some(color)` 时以该色清屏（无编辑器画布的窗口模式），
     /// 为 `None` 时用当前主题的 `base_bg` 清屏。

@@ -9,7 +9,7 @@
 //! 8 逻辑像素。触发后补一条 `Touch(FingerLost)` 先复位控件按压态（避免
 //! 「长按按钮 = 点了它 + 弹右键」），再补左键释放（让画布收尾），最后按下右键。
 //!
-//! 长按期间没有任何窗口事件，必须靠 旧版 已有的 `RedrawRequest::At` 定时线程
+//! 长按期间没有任何窗口事件，必须靠 上一代 已有的 `RedrawRequest::At` 定时线程
 //! 唤醒一帧来判定，见 `Host::handle_redraw_request`。
 
 use std::time::{Duration, Instant};
@@ -65,7 +65,7 @@ impl Host {
 
     /// 长按到点：结束左键按下并模拟一次右键按下
     ///
-    /// 右键按下直连画布（旧版 控件层已删除，不再合成事件队列）。
+    /// 右键按下直连画布（上一代 控件层已删除，不再合成事件队列）。
     fn fire_long_press(&mut self) {
         let Some(origin) = self.touch_press_origin else {
             self.touch_long_press_deadline = None;

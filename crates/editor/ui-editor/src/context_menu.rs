@@ -3,7 +3,7 @@
 //! 视图已迁到 egui（`lumino-ui-egui::piano_roll_context_menu`）：
 //! 条目集与 tooltip 文案由 `lumino_message::context_menu` 单一来源提供，
 //! 这一层只保留「是否打开 / 打开位置 / 作用目标」的状态，输入仍由
-//! 旧版 Canvas program 产生（`Message::PianoRollContextMenu(Open)`）。
+//! 上一代 Canvas program 产生（`Message::PianoRollContextMenu(Open)`）。
 
 use lumino_message::ContextMenuTarget;
 use lumino_ui_core::geom::Point;

@@ -1,9 +1,9 @@
-//! 走带泳道交互的 egui 适配（**同一份 handler，零 旧版 依赖**）。
+//! 走带泳道交互的 egui 适配（**同一份 handler，零 上一代 依赖**）。
 //!
 //! 交互逻辑在 `lumino-arrangement-core`：这里只做「egui 输入 → `ArrangementEvent`」
 //! 的转换，并调用同一个 `handle_event`，产出的 `ArrangementAction` 交给生产侧映射。
 //!
-//! 与 旧版 侧 `ArrangementClickCanvas` 完全等价——两边都只是事件适配器，
+//! 与 上一代 侧 `ArrangementClickCanvas` 完全等价——两边都只是事件适配器，
 //! 选择/移动/框选/橡皮/曲线行为不会出现两套实现。
 
 use lumino_arrangement_core::interaction::{ArrangementInteractionState, handle_event};
@@ -41,7 +41,7 @@ pub struct LaneContext<'a> {
 
 /// 把一次 egui 输入喂给共享 handler，返回本帧动作。
 ///
-/// `state` 由调用方按帧保存在 egui ctx-data 中（对应 旧版 侧的 `Program::State`）。
+/// `state` 由调用方按帧保存在 egui ctx-data 中（对应 上一代 侧的 `Program::State`）。
 pub fn feed(
     state: &mut ArrangementInteractionState,
     viewport: &mut ArrangementViewport,
@@ -102,7 +102,7 @@ const PAN_ID: &str = "lumino.arrangement.lane-pan";
 /// egui 侧驱动：把本帧指针事件喂给共享 handler，返回动作。
 ///
 /// `lane_model` 携带真实输入（工具 / 选区 / 选中音符 / 精度），
-/// 滚轮与中键平移在此实现（等价 旧版 `ArrangementClickCanvas` 的导航逻辑）。
+/// 滚轮与中键平移在此实现（等价 上一代 `ArrangementClickCanvas` 的导航逻辑）。
 pub fn show(
     ui: &egui::Ui,
     lane_model: &crate::chrome::ArrangementLaneModel,
@@ -151,7 +151,7 @@ pub fn show(
     let inside = rect.contains(Point2::new(pos.x, pos.y));
     let mut actions = Vec::new();
 
-    // ── 中键平移（等价 旧版 的 middle_drag） ──
+    // ── 中键平移（等价 上一代 的 middle_drag） ──
     if middle_pressed && inside {
         ui.ctx().data_mut(|d| {
             d.insert_temp(egui::Id::unique(PAN_ID), local);

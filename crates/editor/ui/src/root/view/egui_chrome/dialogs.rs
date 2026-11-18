@@ -168,7 +168,7 @@ impl Root {
         }
     }
 
-    /// 兼容性页：按钮门控 / 结果行 / 三个开关（文案与 旧版 页同源）。
+    /// 兼容性页：按钮门控 / 结果行 / 三个开关（文案与 上一代 页同源）。
     fn compatibility_page(
         &self,
         language: lumino_extras::i18n::Language,
@@ -351,7 +351,7 @@ mod tests {
     use lumino_extras::i18n::{Language, settings_translations};
 
     use super::settings_labels;
-    /// `MENU_INDEX_ABOUT` 必须与 egui 设置菜单表**绑定**（原 旧版 菜单表已删除，
+    /// `MENU_INDEX_ABOUT` 必须与 egui 设置菜单表**绑定**（原 上一代 菜单表已删除，
     /// 绑定校验迁到这里——`settings_labels` 是菜单的真实数据源）。
     ///
     /// 漂移后果：索引 9 指向别的页时，关于页的回声洞打字机装填点会落到

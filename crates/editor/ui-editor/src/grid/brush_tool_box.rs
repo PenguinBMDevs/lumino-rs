@@ -35,14 +35,14 @@ use lumino_ui_core::geom::{Point, Rectangle, Size};
 /// 按钮组与笔画包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
 
-/// 由 旧版 传入的 `bounds` 计算**画布局部坐标**下的可见窗口（逻辑区间）
+/// 由 上一代 传入的 `bounds` 计算**画布局部坐标**下的可见窗口（逻辑区间）
 ///
 /// # 坐标系契约（★ 画刷裁剪错位 BUG 的根因，见 §16 RCA）
 ///
 /// `Program::draw` 收到的 `bounds` 是**父/窗口坐标系**矩形——`position` 是该画布
 /// 组件在窗口里的偏移（本项目实际值 = 左侧栏宽 + 音轨列表 160、工具栏高 + 标题栏
 /// 30，见 `host/render/viewport.rs`），而**帧内所有绘制坐标都是画布局部坐标**
-/// （原点 = 画布左上角）：旧版 在调用 `Program::draw` 前先
+/// （原点 = 画布左上角）：上一代 在调用 `Program::draw` 前先
 /// `renderer.with_translation(Vector::new(bounds.x, bounds.y), ..)`
 /// （旧画布层），再把 `bounds`（原样、未归一化）交给 program。
 ///

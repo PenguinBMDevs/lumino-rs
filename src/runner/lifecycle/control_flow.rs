@@ -10,7 +10,7 @@ use lumino_ui::state::root_state::DialogType;
 impl RunnerInner {
     /// 内存监控对话框的实时刷新间隔（毫秒）。
     ///
-    /// 利用 旧版 的自动重绘检测（状态变更/动画/播放头都会主动 `request_redraw`），
+    /// 利用 上一代 的自动重绘检测（状态变更/动画/播放头都会主动 `request_redraw`），
     /// 事件循环在空闲时休眠（[`ControlFlow::Wait`]）。仅当内存监控对话框打开时，
     /// 用 [`ControlFlow::WaitUntil`] 给它一个低频率心跳，既保持数字实时刷新，
     /// 又避免 `Poll` 模式下的 100% GPU 空转。

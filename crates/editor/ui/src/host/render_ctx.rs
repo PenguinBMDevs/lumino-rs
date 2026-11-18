@@ -1,7 +1,7 @@
 //! 渲染上下文 —— 从 Host 拆出的渲染相关字段
 //!
 //! 管理 wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
-//! 旧版 `Renderer` / widget `Cache` / 共享 `Engine` 已随 旧版 渲染路径一起删除。
+//! 上一代 `Renderer` / widget `Cache` / 共享 `Engine` 已随 上一代 渲染路径一起删除。
 
 use crate::host::viewport_geom::Viewport;
 use lumino_gfx::{GpuEpoch, NoteRenderer};

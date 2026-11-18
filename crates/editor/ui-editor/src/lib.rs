@@ -1,6 +1,6 @@
 //! 钢琴卷帘用户界面编辑器 crate。
 //!
-//! 本 crate 提供基于 旧版 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
+//! 本 crate 提供基于 上一代 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
 //! 滚动、缩放、力度编辑、滚动条控件等 UI 能力，并整合
 //! [`lumino_editor_state`] 与底层文档状态模块。
 
@@ -310,7 +310,7 @@ pub struct Editor {
 
     /// Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动，可靠通道）
     ///
-    /// 与 `GridInteractionState.control_pressed`（旧版 canvas 内事件，可能因焦点
+    /// 与 `GridInteractionState.control_pressed`（上一代 canvas 内事件，可能因焦点
     /// 问题不送达）互为兜底：ruler/键盘区的 Ctrl+滚轮缩放以此字段为准。
     ctrl_pressed: bool,
 

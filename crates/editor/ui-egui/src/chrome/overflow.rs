@@ -28,7 +28,7 @@ pub fn set_trigger(ctx: &egui::Context, more: Rect, band: Rect) {
     ctx.data_mut(|d| d.insert_temp(Id::unique(TRIGGER_ID), Some((more, band))));
 }
 
-/// 「更多」按钮不可见时清掉矩形（否则残留会吞掉 旧版 点击）。
+/// 「更多」按钮不可见时清掉矩形（否则残留会吞掉 上一代 点击）。
 pub fn clear_trigger(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove_temp::<Option<(Rect, Rect)>>(Id::unique(TRIGGER_ID)));
 }
@@ -61,7 +61,7 @@ fn panel_bg() -> egui::Color32 {
 
 /// 在整窗 root 末尾画溢出网格，并发布占用矩形。
 pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut IconCache) {
-    // 触发区必须**始终**占用：否则「更多」的点击会同时落到下层 旧版，
+    // 触发区必须**始终**占用：否则「更多」的点击会同时落到下层 上一代，
     // `ToggleOverflowMenu` 触发两次（开→关），面板只闪一帧。
     let Some((more, band)) = trigger(ui.ctx()) else {
         return;
@@ -119,7 +119,7 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut IconCac
                 }
             }
 
-            // 点击面板/触发按钮以外关闭；Esc 同样关闭（与 旧版 的默认关闭层一致）。
+            // 点击面板/触发按钮以外关闭；Esc 同样关闭（与 上一代 的默认关闭层一致）。
             let ctx = ui.ctx();
             if !toolbar_popup::action_pending(ctx)
                 && ui.input(|i| i.pointer.any_click())

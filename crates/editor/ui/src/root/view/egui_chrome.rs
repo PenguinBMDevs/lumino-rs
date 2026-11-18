@@ -1,7 +1,7 @@
 //! 生产状态 → egui 外壳视图模型。
 //!
 //! 只做数据搬运，不含任何渲染逻辑；渲染在 `lumino_ui_egui::chrome::show_bands`。
-//! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 旧版。
+//! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 上一代。
 
 mod area_palette;
 mod arrangement;
@@ -59,7 +59,7 @@ use crate::sidebar::{RollBarButton, Route, Sidebar};
 use crate::toolbar::ToolbarPerfContext;
 use lumino_ui_egui::layout;
 
-/// 旧版 分组 → egui 分组。
+/// 上一代 分组 → egui 分组。
 fn sidebar_group(group: crate::sidebar::GroupId) -> SidebarGroup {
     match group {
         crate::sidebar::GroupId::PianoRoll => SidebarGroup::PianoRoll,
@@ -273,7 +273,7 @@ impl Root {
         let ticks_per_measure =
             f32::from(ppq) * 4.0 * f32::from(numerator) / f32::from(denominator.max(1));
 
-        // 滚动条按 旧版 `ScrollbarWidget::thumb_geometry` 的口径换算成比例：
+        // 滚动条按 上一代 `ScrollbarWidget::thumb_geometry` 的口径换算成比例：
         // 水平 viewport 缺省为轨道长度；垂直 viewport 为画布高 - 标尺高。
         // 纵向卷帘转置：时间轴视口 = 画布高 - 键盘厚，音高轴视口 = 画布宽。
         let (max_x, max_y) = self.editor.editor_state.max_scroll;
@@ -373,7 +373,7 @@ impl Root {
     /// 原生运行时：应用一帧 egui 动作（菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏）。
     ///
     /// 与 `Host::apply_overlay_actions` 共用同一批 `*_action_message` 映射；
-    /// 区别是不经过 旧版 窗口上下文，直接 `Root::update`。返回已应用的动作数。
+    /// 区别是不经过 上一代 窗口上下文，直接 `Root::update`。返回已应用的动作数。
     pub fn apply_egui_chrome_actions(&mut self, ctx: &egui::Context) -> usize {
         use lumino_ui_egui::chrome as ui;
 
@@ -442,7 +442,7 @@ impl Root {
     /// 按真实视口宽度构造 egui 外壳快照。
     pub(crate) fn egui_chrome_model_for(&self, viewport_width: f32) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
-        // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 旧版），
+        // 对话框若已支持整窗渲染则返回 `dialog`，否则返回空模型（整块交回 上一代），
         // 绝不能把标题栏/工具栏/侧栏 band 画到对话框上。
         if self.state.is_dialog_window {
             let dialog = self.egui_dialog_model();
@@ -464,7 +464,7 @@ impl Root {
                 (!self.settings.synth.use_native_titlebar).then_some(PopupTitlebarModel {
                     focused: self.window.is_focused,
                 });
-            // 这两类窗口没有 `DialogType`，内容由 egui 单独绘制（旧版 不再 present）。
+            // 这两类窗口没有 `DialogType`，内容由 egui 单独绘制（上一代 不再 present）。
             let titlebar = !self.settings.synth.use_native_titlebar;
             let dialog = if self.is_progress_window {
                 let (message, progress) = self
@@ -501,7 +501,7 @@ impl Root {
 
         // Windows/Linux 的系统原生标题栏模式在客户端顶部仍保留 30px 菜单栏行
         // （原 `view_native_titlebar`）；叠加层接管后由 egui 画菜单标签与下拉。
-        // macOS 原生模式没有这一行（旧版 返回空行，主内容不含标题栏）→ 跳过。
+        // macOS 原生模式没有这一行（上一代 返回空行，主内容不含标题栏）→ 跳过。
         let native = self.settings.synth.use_native_titlebar;
         let egui_menubar = native && !cfg!(target_os = "macos");
         let titlebar_present = !native || egui_menubar;
@@ -518,7 +518,7 @@ impl Root {
             menu_only: native,
         });
 
-        // 工具栏：与 旧版 仪表盘共用同一套 tick→BPM/时间换算。
+        // 工具栏：与 上一代 仪表盘共用同一套 tick→BPM/时间换算。
         // 仅在实际渲染工具栏的视图里接管（瀑布流 / 导出面板 / 渲染器面板没有工具栏）。
         let perf = ToolbarPerfContext {
             playback_tick: self.editor.playback_position,
@@ -544,7 +544,7 @@ impl Root {
             NoteCountDisplay::StatusBar => Some(self.editor_note_count()),
             NoteCountDisplay::ProjectSettings => None,
         };
-        // 状态栏 GPU 指示器：与 旧版 `view_status_section` 同源的三开关。
+        // 状态栏 GPU 指示器：与 上一代 `view_status_section` 同源的三开关。
         let gpu_flags = crate::statusbar::GpuStatusFlags {
             enabled: self.settings.synth.gpu_buffer_status_enabled,
             show_governor: self.settings.synth.gpu_governor_metrics_enabled,

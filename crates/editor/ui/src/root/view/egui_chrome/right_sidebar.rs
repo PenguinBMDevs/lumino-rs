@@ -67,7 +67,7 @@ impl Root {
     }
 }
 
-/// 图标列三项（文案取 i18n，顺序与 旧版 `view.rs` 一致）。
+/// 图标列三项（文案取 i18n，顺序与 上一代 `view.rs` 一致）。
 fn rail_items(language: lumino_extras::i18n::Language) -> Vec<RightSidebarRailItem> {
     let t = main_translations(language);
     vec![

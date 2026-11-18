@@ -7,7 +7,7 @@ pub struct TitlebarModel {
     pub focused: bool,
     /// 菜单标签（文件 / 编辑 / 视图 / 帮助，按当前语言）。
     pub menus: Vec<String>,
-    /// 可交互菜单树（`None` = 只画标签，交互仍交给 旧版）。
+    /// 可交互菜单树（`None` = 只画标签，交互仍交给 上一代）。
     pub menu: Option<MenuBarModel>,
     /// 系统原生标题栏模式：只画 30px 菜单栏（无 logo、窗口控制、拖动区）。
     pub menu_only: bool,

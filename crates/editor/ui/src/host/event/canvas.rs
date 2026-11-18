@@ -1,4 +1,4 @@
-//! 画布输入直连（winit → 编辑器），不再经过 旧版 `Grid` program。
+//! 画布输入直连（winit → 编辑器），不再经过 上一代 `Grid` program。
 //!
 //! 宿主把鼠标按下/移动/释放、滚轮、修饰键与失焦直接翻译成 [`CanvasEvent`]，
 //! 与共享分派 `ui_editor::grid::canvas_input::dispatch` 保持同一语义。
@@ -165,7 +165,7 @@ impl Host {
 
     /// 用编辑器当前状态刷新窗口光标形态。
     ///
-    /// 复用 旧版 侧的 `mouse_interaction` 判定（同一份语义），映射到 winit 图标。
+    /// 复用 上一代 侧的 `mouse_interaction` 判定（同一份语义），映射到 winit 图标。
     /// 指针落在 egui 占用区（菜单 / 面板 / 滚动条）时不改：那些区域有自己的光标。
     fn refresh_canvas_cursor(&mut self) {
         let canvas = &self.root.editor.editor_state.canvas;

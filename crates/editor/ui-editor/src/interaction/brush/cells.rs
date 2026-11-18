@@ -183,7 +183,7 @@ impl Editor {
 
     /// 待确认笔画的 **wgpu 预览音符实例数据**：`(tick, key, length, color)`
     ///
-    /// §18 长笔画掉帧修复：预览方块不再走 旧版 canvas（每次 `Frame::fill` 都要跑一遍
+    /// §18 长笔画掉帧修复：预览方块不再走 上一代 canvas（每次 `Frame::fill` 都要跑一遍
     /// lyon 细分 + 按色查 buffer，实测 8 万方块 = 单帧 81.6ms），改为**复用音符的
     /// wgpu 预览通路**（`NoteInstance::new_preview` + `PREVIEW_BORDER_SENTINEL`）：
     /// 每块 = 1 个实例，CPU 只做 16 字节打包，实例数由视口窗口界定 → 每帧成本与

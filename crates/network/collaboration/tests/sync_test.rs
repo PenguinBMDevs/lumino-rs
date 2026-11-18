@@ -30,7 +30,7 @@ async fn setup_client(
 
     // 注意：连接操作已在 create_room_and_connect / join_room_and_connect 中完成，
     // 此处仅创建客户端并配置回调，无需单独调用 connect()。
-    // 旧版 connect() 已随重构移除（见 #dead-code-cleanup）。
+    // 上一代 connect() 已随重构移除（见 #dead-code-cleanup）。
 
     (client, rx)
 }

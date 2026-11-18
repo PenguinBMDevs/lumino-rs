@@ -18,7 +18,7 @@ pub enum SidebarGroup {
 }
 
 impl SidebarGroup {
-    /// 父按钮灯条颜色（旧版 `GroupId::parent_color`）。
+    /// 父按钮灯条颜色（上一代 `GroupId::parent_color`）。
     pub fn parent_color(self) -> Color32 {
         match self {
             Self::PianoRoll => Color32::from_rgb(0xD9, 0x26, 0x26),
@@ -28,7 +28,7 @@ impl SidebarGroup {
         }
     }
 
-    /// 子按钮灯条颜色（旧版 `GroupId::child_color`）。
+    /// 子按钮灯条颜色（上一代 `GroupId::child_color`）。
     pub fn child_color(self) -> Color32 {
         match self {
             Self::PianoRoll => Color32::from_rgb(0xA6, 0x59, 0x59),
@@ -48,7 +48,7 @@ pub enum RollBar {
     Vertical,
 }
 
-/// 左侧栏面板内容（与 旧版 `panel::view` 的路由分支一致）。
+/// 左侧栏面板内容（与 上一代 `panel::view` 的路由分支一致）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SidebarPanel {
     /// 音轨列表 + 添加按钮（`Route::File`）。
@@ -293,7 +293,7 @@ impl Default for SidebarModel {
     }
 }
 
-/// 右侧栏面板（与 旧版 `RightSidebarPanel` 一一对应）。
+/// 右侧栏面板（与 上一代 `RightSidebarPanel` 一一对应）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RightSidebarPanelKind {
     /// 图片转 MIDI。

@@ -2,12 +2,12 @@
 //!
 //! 面板几何与生产一致：总宽 `panel_width` = 左侧 6px 拖拽手柄 + 内容区
 //! `panel_width - 6`，右侧是固定 48px 图标列。内容区整块进入占用列表
-//! （拖拽手柄除外），点击不会再落到下层 旧版 的同名控件；滚动由各面板自己的
+//! （拖拽手柄除外），点击不会再落到下层 上一代 的同名控件；滚动由各面板自己的
 //! `ScrollArea` 处理。
 //!
 //! 动作一帧只保留第一个（先到先得），避免面板重排时新控件被同一帧的点击连带
 //! 触发；素材拖出只在**按下瞬间**回传 `MaterialDragStarted`，跟随预览与松手
-//! 放置继续由 旧版 编辑器状态机驱动。
+//! 放置继续由 上一代 编辑器状态机驱动。
 
 use egui::{Id, Rect};
 
@@ -25,7 +25,7 @@ pub(crate) use hits::{clear_rects, record_rect, set_panel_rect};
 
 const ACTION_ID: &str = "lumino.right-sidebar.action";
 
-/// 右侧栏面板产生的动作（不依赖 旧版）。
+/// 右侧栏面板产生的动作（不依赖 上一代）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RightSidebarAction {
     /// 点击图标列按钮（切换/展开对应面板）。

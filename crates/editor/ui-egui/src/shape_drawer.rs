@@ -22,9 +22,9 @@ const BTN_GAP: f32 = 4.0;
 const ROW_GAP: f32 = 2.0;
 /// 输入框高度（`text_input` 默认内边距 + 16px）。
 const INPUT_H: f32 = 30.0;
-/// 动作按钮高度（16px 文本 + `padding([2,?])`，实测 旧版 26 逻辑）。
+/// 动作按钮高度（16px 文本 + `padding([2,?])`，实测 上一代 26 逻辑）。
 const BTN_H: f32 = 26.0;
-/// 库行高度（16px 文本 + 内边距，实测 旧版 30 逻辑）。
+/// 库行高度（16px 文本 + 内边距，实测 上一代 30 逻辑）。
 const ROW_H: f32 = 30.0;
 
 /// 面板产生的动作（统一经此通道回传）。
@@ -150,7 +150,7 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeDrawerModel) {
     // 面积开关行：开关（填满）+ Clear。
     let clear_w = button_width(ui, &model.area_clear, 16.0);
     let toggle_w = (inner.width() - clear_w - BTN_GAP).max(60.0);
-    // 旧版 默认 `button`：所有面板按钮都是主色底（面积开关也是）。
+    // 上一代 默认 `button`：所有面板按钮都是主色底（面积开关也是）。
     let (fill, text) = (theme::accent(), theme::on_accent());
     if button(
         ui,
@@ -442,7 +442,7 @@ fn library(ui: &mut egui::Ui, rect: egui::Rect, model: &ShapeDrawerModel) {
                 response.widget_info(|| {
                     egui::WidgetInfo::selected(egui::Role::Button, true, row.selected, &row.label)
                 });
-                // 旧版 默认 `button`：库行整行主色底 + 白字（选中态靠「● 」前缀）。
+                // 上一代 默认 `button`：库行整行主色底 + 白字（选中态靠「● 」前缀）。
                 let fill = if response.hovered() {
                     theme::accent_strong()
                 } else {
@@ -469,7 +469,7 @@ fn library(ui: &mut egui::Ui, rect: egui::Rect, model: &ShapeDrawerModel) {
         });
 }
 
-/// 色块单元宽（16px 文本 + 内边距，与 旧版 观感一致）。
+/// 色块单元宽（16px 文本 + 内边距，与 上一代 观感一致）。
 const SWATCH_W: f32 = 31.0;
 /// 色块高。
 const SWATCH_H: f32 = 22.0;
@@ -572,7 +572,7 @@ fn swatches(ui: &mut egui::Ui, inner: egui::Rect, y: f32, model: &ShapeDrawerMod
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::Button, true, swatch.selected, &swatch.label)
         });
-        // 旧版 里 16 个色块都是默认按钮（主色底 + 白字），选中通过面积色体现。
+        // 上一代 里 16 个色块都是默认按钮（主色底 + 白字），选中通过面积色体现。
         let (fill, text) = (theme::accent(), theme::on_accent());
         ui.painter().rect(
             rect,

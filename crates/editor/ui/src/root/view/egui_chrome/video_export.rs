@@ -149,7 +149,7 @@ impl crate::root::Root {
     }
 }
 
-/// 数据曲线数值型字段（解析失败按 0 处理，与 旧版 视图同口径）。
+/// 数据曲线数值型字段（解析失败按 0 处理，与 上一代 视图同口径）。
 fn curve_number(field: &str, value: &str) -> Option<Prod> {
     Some(Prod::DataCurveNumberChanged {
         field: field.to_string(),
@@ -337,7 +337,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         rows: settings,
     });
 
-    // 计数器 / 数据曲线附加设置（各自独立分区，与 旧版 顺序一致）。
+    // 计数器 / 数据曲线附加设置（各自独立分区，与 上一代 顺序一致）。
     if state.render_mode == "计数器" {
         sections.push(counter::section(state));
     }

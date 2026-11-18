@@ -4,7 +4,7 @@
 //! 本模块只补 egui 侧被底层纹理覆盖的部分：
 //! - 工具栏（模式按钮 / CC 下拉 / 信息文字）；
 //! - 网格线（小节 / 拍 / 半拍）与刻度标签；
-//! - 顶部 resize 手柄的视觉（拖拽命中仍在 旧版 Canvas，保持原行为）。
+//! - 顶部 resize 手柄的视觉（拖拽命中仍在 上一代 Canvas，保持原行为）。
 //!
 //! 面板背景不铺色：gfx 的清屏色已是 `background.base`，铺色会盖掉 gfx 数据曲线。
 
@@ -26,7 +26,7 @@ pub use types::{
 /// CC 下拉弹层展开状态（egui 临时数据键）。
 const CC_OPEN_ID: &str = "lumino.velocity-panel.cc-open";
 
-/// 面板工具栏高度（与 旧版 `TOOLBAR_HEIGHT` 一致）。
+/// 面板工具栏高度（与 上一代 `TOOLBAR_HEIGHT` 一致）。
 pub const TOOLBAR_HEIGHT: f32 = 28.0;
 /// 顶部 resize 手柄高度。
 const RESIZE_HANDLE: f32 = 5.0;
@@ -164,7 +164,7 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         .data(|d| d.get_temp::<bool>(egui::Id::unique(CC_OPEN_ID)))
         .unwrap_or(false);
 
-    // CC 选择器（自绘下拉：弹层矩形可精确占用，不会漏给 旧版）。
+    // CC 选择器（自绘下拉：弹层矩形可精确占用，不会漏给 上一代）。
     if model.cc_mode {
         let cc_rect = Rect::from_min_size(
             Pos2::new(mode_rect.right() + 8.0, model.toolbar.top() + 4.0),
@@ -216,7 +216,7 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         theme::text_muted().gamma_multiply(0.8),
     );
 
-    // 顶部 resize 手柄视觉（命中仍在 旧版 Canvas）。
+    // 顶部 resize 手柄视觉（命中仍在 上一代 Canvas）。
     let grab = Rect::from_center_size(
         Pos2::new(
             model.canvas.center().x,
@@ -320,7 +320,7 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         action = input::handle_resize(ui, model);
     }
 
-    // 力度模式 + 曲线工具：egui 接管数据区编辑（旧版 Canvas 不再收这一段）。
+    // 力度模式 + 曲线工具：egui 接管数据区编辑（上一代 Canvas 不再收这一段）。
     if model.velocity_editing && action.is_none() {
         blocked.push(input::blocking_rect(model.canvas));
         action = input::handle(ui, model);

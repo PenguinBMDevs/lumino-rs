@@ -1,6 +1,6 @@
 //! 形状抽屉画布：文档 → egui 绘制图元，以及画布输入 → 文档变更。
 //!
-//! 与 旧版 `Canvas` 共用 `shape_drawer::canvas::input` 的事件逻辑与
+//! 与 上一代 `Canvas` 共用 `shape_drawer::canvas::input` 的事件逻辑与
 //! `canvas::draw` 的坐标变换，保证两边行为与几何完全一致。
 
 use egui::{Color32, Pos2};
@@ -19,7 +19,7 @@ use crate::shape_drawer::canvas::input;
 use crate::shape_drawer::doc::DrawerTool;
 use crate::state::root_state::ShapeDrawerState;
 
-/// 面积色（与 旧版 画布同一张表，alpha 0.32）。
+/// 面积色（与 上一代 画布同一张表，alpha 0.32）。
 fn area_colour(colour: u8) -> Color32 {
     const COLOURS: [(f32, f32, f32); 16] = [
         (0.0, 0.0, 0.0),
@@ -376,7 +376,7 @@ impl crate::root::Root {
         canvas_model(&self.state.shape_drawer, palette, rect)
     }
 
-    /// 把 egui 画布动作应用到文档（与 旧版 `Canvas::update` 同一套逻辑）。
+    /// 把 egui 画布动作应用到文档（与 上一代 `Canvas::update` 同一套逻辑）。
     pub(crate) fn apply_shape_canvas_action(
         &mut self,
         action: &ShapeCanvasAction,

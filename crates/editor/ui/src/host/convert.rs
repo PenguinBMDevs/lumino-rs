@@ -2,7 +2,7 @@
 //!
 //! 只保留仍在使用的两条：
 //! - 物理坐标 → 逻辑坐标（`CursorMoved` / `Touch`）；
-//! - 旧版 的 `mouse::Interaction` → winit 光标图标（画布光标反馈）。
+//! - 上一代 的 `mouse::Interaction` → winit 光标图标（画布光标反馈）。
 //!
 //! 映射表与 旧版 0.14 `winit/src/conversion.rs` 逐项一致，避免图标语义漂移。
 
@@ -19,7 +19,7 @@ pub(crate) fn cursor_position(
     )
 }
 
-/// 旧版 鼠标交互 → winit 光标图标（`None` = 隐藏光标）。
+/// 上一代 鼠标交互 → winit 光标图标（`None` = 隐藏光标）。
 pub(crate) fn mouse_interaction(interaction: Interaction) -> Option<winit::window::CursorIcon> {
     use winit::window::CursorIcon;
 

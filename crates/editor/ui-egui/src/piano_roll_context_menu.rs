@@ -1,6 +1,6 @@
 //! 钢琴卷帘右键上下文菜单（egui 版，图标 + 文字的行列布局）。
 //!
-//! 取代 旧版 `ui-editor::context_menu::view`：条目集与文案来自
+//! 取代 上一代 `ui-editor::context_menu::view`：条目集与文案来自
 //! `lumino_message::context_menu`（单一来源），这里只负责布局 / 命中 / 绘制。
 //!
 //! # 为什么不是图标格子（DRAW-046）
@@ -265,7 +265,7 @@ fn apply_keyboard(
 
 /// 绘制菜单并返回本帧动作。
 ///
-/// `available` 内的点击若落在面板外 = 关闭（与 旧版 `background_close_overlay`
+/// `available` 内的点击若落在面板外 = 关闭（与 上一代 `background_close_overlay`
 /// 同语义）；调用方应把 `available` 加入占用矩形，避免同一次点击又落到画布。
 pub fn show(
     ui: &egui::Ui,

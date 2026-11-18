@@ -1,6 +1,6 @@
 //! 协作远程光标（egui 叠加层）。
 //!
-//! 取代旧版 `grid::remote_cursors::draw` 的可见部分：每个协作者一个 8px 圆环 +
+//! 取代上一代 `grid::remote_cursors::draw` 的可见部分：每个协作者一个 8px 圆环 +
 //! 半透明填充 + 用户名标签。坐标由生产侧换算成窗口逻辑坐标，本模块只绘制。
 //!
 //! **绘制路径禁止每帧日志**：协作会话下每秒数百帧，任何 `tracing::debug!`
@@ -35,7 +35,7 @@ impl RemoteCursorModel {
     }
 }
 
-/// 圆环半径（与旧版一致）。
+/// 圆环半径（与上一代一致）。
 const RADIUS: f32 = 8.0;
 /// 标签字号。
 const LABEL_SIZE: f32 = 11.0;

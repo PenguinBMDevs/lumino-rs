@@ -210,7 +210,7 @@ pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContext
     }
 }
 
-/// 菜单项显示文本（i18n 跟随进程语言；供 旧版 / egui tooltip 共用）。
+/// 菜单项显示文本（i18n 跟随进程语言；供 上一代 / egui tooltip 共用）。
 pub fn item_label(item: PianoRollContextMenuItem) -> &'static str {
     use lumino_core::tr;
     match item {

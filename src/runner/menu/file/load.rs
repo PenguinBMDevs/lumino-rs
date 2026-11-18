@@ -263,7 +263,7 @@ impl RunnerInner {
         });
     }
 
-    /// 加载 LMPJ 工程文件（新格式或旧版兼容）
+    /// 加载 LMPJ 工程文件（新格式或上一代兼容）
     fn load_lmpj_project(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
         tracing::info!("开始后台加载 LMPJ 工程：{:?}", path);
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）

@@ -1,6 +1,6 @@
 //! 纵向卷帘的画布输入分派（转置语义：时间轴竖直、音高轴水平、键盘在底部）。
 //!
-//! 由宿主（winit 事件）直接调用；旧版 `VerticalRollGrid` 的 `update` 只做
+//! 由宿主（winit 事件）直接调用；上一代 `VerticalRollGrid` 的 `update` 只做
 //! 事件映射后转调本函数，两条路径共用同一份语义。
 
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction};

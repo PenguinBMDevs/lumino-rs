@@ -22,7 +22,7 @@ fn lane() -> LaneContext<'static> {
 
 #[test]
 fn egui_can_drive_the_shared_handler_without_legacy() {
-    // 这条测试本身就是证据：`lumino-ui-egui`（0 旧版 依赖）能直接跑同一份
+    // 这条测试本身就是证据：`lumino-ui-egui`（0 上一代 依赖）能直接跑同一份
     // 走带交互逻辑，不必复制选择/框选实现。
     let mut state = ArrangementInteractionState::default();
     let mut viewport = ArrangementViewport {
@@ -37,7 +37,7 @@ fn egui_can_drive_the_shared_handler_without_legacy() {
         cursor_at(300.0, 150.0),
         &lane(),
     );
-    // 点击路径：按下建立候选，**释放**时才设光标/清选择（与 旧版 一致）。
+    // 点击路径：按下建立候选，**释放**时才设光标/清选择（与 上一代 一致）。
     let actions = feed(
         &mut state,
         &mut viewport,

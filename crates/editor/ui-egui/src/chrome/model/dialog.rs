@@ -109,7 +109,7 @@ impl DialogModel {
 /// 导出进度对话框：标题 / 状态行 / 进度 / 百分比。
 #[derive(Debug, Clone, Default)]
 pub struct ExportProgressModel {
-    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 上一代 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「音频导出」。
     pub title: String,
@@ -138,7 +138,7 @@ pub enum ExportMessageKind {
 /// 自定义精度对话框：三连音数 / 分音符 / 附点 / 除数 / 错误行 / 按钮。
 #[derive(Debug, Clone, Default)]
 pub struct CustomPrecisionModel {
-    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 上一代 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 三连音数（默认 3）。
     pub tuplet_count: String,
@@ -176,7 +176,7 @@ pub struct DotOptionModel {
 /// 变速对话框：标题 / 倍率行 / 提示 / 按钮。
 #[derive(Debug, Clone, Default)]
 pub struct SpeedChangeModel {
-    /// 顶部是否有 30px 旧版 自制标题栏（`!use_native_titlebar`）。
+    /// 顶部是否有 30px 上一代 自制标题栏（`!use_native_titlebar`）。
     pub titlebar: bool,
     /// 标题「变速」。
     pub title: String,
@@ -342,7 +342,7 @@ pub struct SettingsSnapshot {
     pub track_add: String,
     /// 日志文件保留份数。
     pub log_retention: String,
-    /// 当前页内容（未迁移的页面整窗交回 旧版，不在此建模）。
+    /// 当前页内容（未迁移的页面整窗交回 上一代，不在此建模）。
     pub page: SettingsPageModel,
 }
 

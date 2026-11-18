@@ -53,7 +53,7 @@ impl ToastLevel {
         }
     }
 
-    /// 背景色（基于 旧版 theme palette）
+    /// 背景色（基于 上一代 theme palette）
     fn background_color(self, theme: &Theme) -> lumino_ui_core::geom::Color {
         let palette = theme.extended_palette();
         match self {

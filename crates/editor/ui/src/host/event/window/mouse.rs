@@ -17,7 +17,7 @@ impl Host {
             self.window_ctx.is_mouse_pressed = state == ElementState::Pressed;
         }
 
-        // 画布输入直连：按下 / 释放直接进编辑器，不再依赖 旧版 `Grid` program。
+        // 画布输入直连：按下 / 释放直接进编辑器，不再依赖 上一代 `Grid` program。
         //
         // egui 浮层（菜单 / 弹层 / 面板）覆盖画布时不得再落笔：命中区由
         // egui 本帧占用区 + 图层栈共同给出。已开始的画布拖拽必须继续
@@ -82,7 +82,7 @@ impl Host {
 
     /// 编辑器是否处于「鼠标按下中」的编辑状态（等待释放收尾）
     ///
-    /// 用于全局左键释放兜底：画布内按下后移到画布外释放时，旧版 画布
+    /// 用于全局左键释放兜底：画布内按下后移到画布外释放时，上一代 画布
     /// 收不到 ButtonReleased，这些状态会卡死。host 层监听到左键释放时，
     /// 若编辑器仍处于按下中状态，补发 `EditorAction::Released` 完成收尾。
     pub(crate) fn editor_has_incomplete_pointer_edit(&self) -> bool {
@@ -101,7 +101,7 @@ impl Host {
         )
     }
 
-    /// 应用 旧版 的鼠标交互为窗口光标（幂等：仅在变化时真正设置）。
+    /// 应用 上一代 的鼠标交互为窗口光标（幂等：仅在变化时真正设置）。
     ///
     /// 每帧无条件调用 `set_cursor` / `set_cursor_visible` 会被系统与 winit 的
     /// 异步设置竞态重置，导致光标在两种形态间闪烁；这里缓存上次应用值，

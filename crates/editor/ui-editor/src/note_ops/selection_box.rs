@@ -276,7 +276,7 @@ impl Editor {
 
     /// 兼容入口：返回所有选择框的并集（覆盖所有选中与副本）
     ///
-    /// 语义与旧版 `get_selection_box_bounds` 一致；复制模式的副本框（最新件
+    /// 语义与上一代 `get_selection_box_bounds` 一致；复制模式的副本框（最新件
     /// 框选）请使用 `get_selection_box_rects`。
     /// `get_selection_box_rects`。
     pub fn get_selection_box_bounds(&self) -> Option<ScreenRect> {

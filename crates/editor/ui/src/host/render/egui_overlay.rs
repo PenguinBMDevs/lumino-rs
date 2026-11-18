@@ -142,7 +142,7 @@ struct OverlayFrame<'a> {
     /// 窗口是否持有焦点。
     focused: bool,
     /// 清屏色：`Some` 表示 egui 独占整窗（生产渲染路径），
-    /// `None` 表示叠加在 旧版 `present` 之上（回退路径）。
+    /// `None` 表示叠加在 上一代 `present` 之上（回退路径）。
     clear: Option<wgpu::Color>,
 }
 
@@ -262,7 +262,7 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_mixer(&ctx, frame.mixer.clone());
         lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
         lumino_ui_egui::chrome::set_mask_panel(&ctx, frame.mask_panel.clone());
-        // 右下角浮层：Toast 通知 + 首次使用帮助提示（旧版 视图已删除）。
+        // 右下角浮层：Toast 通知 + 首次使用帮助提示（上一代 视图已删除）。
         lumino_ui_egui::chrome::set_toast(&ctx, Some(frame.toast.clone()));
         lumino_ui_egui::chrome::set_help_tip(&ctx, frame.help_tip.clone());
         lumino_ui_egui::chrome::set_egg(&ctx, frame.egg);
@@ -311,7 +311,7 @@ impl EguiOverlay {
         // 这里只要占用矩形与文本焦点。
         self.diagnose_clock(&ctx, input_time);
         let mut blocked = chrome::menu::take_blocked(&ctx);
-        // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 旧版。
+        // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 上一代。
         if let Some(panel) = &frame.audio_export {
             blocked.push(panel.rect);
         }
@@ -432,7 +432,7 @@ impl Host {
             egui::pos2(0.0, 0.0),
             egui::vec2(logical_width, logical_height),
         );
-        // 画布几何：egui 是唯一布局来源（旧版 不再参与，取代 `Grid` program
+        // 画布几何：egui 是唯一布局来源（上一代 不再参与，取代 `Grid` program
         // 的 `CanvasBoundsChanged`）。
         self.sync_canvas_bounds(&model, window_area);
         let content_area = {
@@ -454,7 +454,7 @@ impl Host {
                 ),
             )
         };
-        // 形状抽屉：面板 + 画布都由 egui 绘制（旧版 只保留标题栏）。
+        // 形状抽屉：面板 + 画布都由 egui 绘制（上一代 只保留标题栏）。
         let shape_panel_rect = (self.root.state.dialog_type
             == crate::state::root_state::DialogType::ShapeDrawer)
             .then(|| {
@@ -520,7 +520,7 @@ impl Host {
             }
         });
         let palette = self.root.egui_palette();
-        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（旧版 侧同位置
+        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（上一代 侧同位置
         // 只保留占位，不会二次采样同一张纹理）。
         let waterfall = {
             let sidebar = &self.root.right_sidebar;
@@ -679,7 +679,7 @@ impl Host {
     }
 }
 
-/// 形状抽屉面板与画布之间的分割线宽度（与生产 旧版 视图一致）。
+/// 形状抽屉面板与画布之间的分割线宽度（与生产 上一代 视图一致）。
 pub(crate) const SPLITTER_W: f32 = 6.0;
 
 /// egui 光标矩形（逻辑点）→ winit IME 锚点（物理像素）。

@@ -35,7 +35,7 @@ pub enum ReconnectState {
     RebuildInfra,
     /// 数据回放：洋葱皮 force_full_next + 内容脏
     ReplayData,
-    /// 旧版 Engine/Renderer 重建（现并入窗口重绑；保留结构位）
+    /// 上一代 Engine/Renderer 重建（现并入窗口重绑；保留结构位）
     RebuildUi,
     /// 撤销停帧标志 + 重启渲染线程 + 恢复 redraw 调度
     RestartRenderThread,
@@ -61,7 +61,7 @@ pub trait ReconnectOps<D> {
     fn install_and_rebuild_infra(&mut self, epoch: GpuEpoch, gpu: D) -> Result<(), String>;
     /// 数据回放标记
     fn mark_replay(&mut self) -> Result<(), String>;
-    /// 旧版 重建（保留步骤位；现并入窗口重绑）
+    /// 上一代 重建（保留步骤位；现并入窗口重绑）
     fn rebuild_ui(&mut self) -> Result<(), String>;
     /// 撤销停帧标志 + 重启渲染线程
     fn restart_render_threads(&mut self) -> Result<(), String>;

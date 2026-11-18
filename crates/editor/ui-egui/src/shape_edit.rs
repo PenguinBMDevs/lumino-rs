@@ -1,6 +1,6 @@
 //! 图形选中框 / 编辑框 / 8+1 锚点（DRAW-020 · DRAW-041C）——egui 版。
 //!
-//! 取代旧版 `drawn_shape_box::draw` 中与选中 / 编辑相关的可见部分：
+//! 取代上一代 `drawn_shape_box::draw` 中与选中 / 编辑相关的可见部分：
 //! - 选中选框：主题选中色（琥珀，跟随主题）1.5px 描边 + 四角实心手柄；
 //! - 编辑框：进入「编辑图形」后替代选中选框的 1px 细框；
 //! - 箱体锚点：8 个 8px 白底方块 + 选中色描边；
@@ -83,7 +83,7 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
             ));
         }
     }
-    // 选中高亮：外发光 + 实线双描边（与旧版同口径）。
+    // 选中高亮：外发光 + 实线双描边（与上一代同口径）。
     for outline in &model.selected_outlines {
         if outline.len() < 2 {
             continue;
@@ -98,7 +98,7 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
         ));
     }
 
-    // 框选矩形：主题色 12% 填充 + 75% 描边（与旧版同口径）。
+    // 框选矩形：主题色 12% 填充 + 75% 描边（与上一代同口径）。
     if let Some(rect) = model.marquee {
         painter.rect_filled(rect, CornerRadius::ZERO, with_alpha(selection, 31));
         painter.rect_stroke(

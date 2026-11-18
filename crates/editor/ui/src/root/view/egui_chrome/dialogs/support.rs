@@ -56,7 +56,7 @@ pub(super) fn shortcuts_page(language: lumino_extras::i18n::Language) -> Shortcu
 }
 
 impl Root {
-    /// 设置对话框调色板：直接跟随当前窗口主题的 egui 色板（与 旧版 同源）。
+    /// 设置对话框调色板：直接跟随当前窗口主题的 egui 色板（与 上一代 同源）。
     pub(super) fn settings_palette(&self) -> SettingsPalette {
         let palette = self.egui_palette();
         SettingsPalette {

@@ -6,7 +6,7 @@
 //! 模块声明顺序：事件模块在前，message 在后（message 引用事件类型）。
 
 // 允许 crate 内部用 `lumino_ui_core::...` 绝对路径引用自身类型
-// （几何/主题从 旧版 迁出后，跨 crate 与 crate 内共用同一套路径）。
+// （几何/主题从 上一代 迁出后，跨 crate 与 crate 内共用同一套路径）。
 extern crate self as lumino_ui_core;
 
 /// 应用模式（编辑器/瀑布流）
@@ -32,7 +32,7 @@ pub mod window_event;
 
 /// Root 持有的子状态类型（视觉/渲染状态；播放/MIDI 连接状态已上移至 lumino-ui::state）
 pub mod visual_state;
-/// 纯函数输入校验（无 旧版 依赖）
+/// 纯函数输入校验（无 上一代 依赖）
 pub mod widget;
 /// 窗口状态（Window 结构体）
 pub mod window;

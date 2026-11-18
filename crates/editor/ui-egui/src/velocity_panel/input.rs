@@ -12,11 +12,11 @@ use egui::{Rect, Vec2};
 
 use super::{VelocityPanelAction, VelocityPanelModel};
 
-/// 命中半径（与 旧版 `HIT_RADIUS` 一致）。
+/// 命中半径（与 上一代 `HIT_RADIUS` 一致）。
 const HIT_RADIUS: f32 = 10.0;
 /// 顶部 resize 手柄高度。
 const RESIZE_HANDLE: f32 = 5.0;
-/// 面板上下内边距（与 旧版 `PANEL_PADDING_Y` 一致）。
+/// 面板上下内边距（与 上一代 `PANEL_PADDING_Y` 一致）。
 const PANEL_PADDING_Y: f32 = 12.0;
 
 /// 力度值 → 面板 Y（与 `VelocityCanvas::velocity_to_y` 同公式）。
@@ -57,7 +57,7 @@ fn snap_tick(tick: f32, precision: f32) -> f32 {
     (tick / precision).floor() * precision
 }
 
-/// 滚轮 → 双轴动作（Pixels ÷50，与 旧版 同口径）。
+/// 滚轮 → 双轴动作（Pixels ÷50，与 上一代 同口径）。
 fn wheel_action(ui: &egui::Ui, rect: Rect) -> Option<VelocityPanelAction> {
     let pos = ui.ctx().input(|i| i.pointer.latest_pos())?;
     if !rect.contains(pos) {
@@ -77,9 +77,9 @@ fn wheel_action(ui: &egui::Ui, rect: Rect) -> Option<VelocityPanelAction> {
 const STATE_ID: &str = "lumino.velocity-panel.edit-state";
 const RESIZE_STATE_ID: &str = "lumino.velocity-panel.resize-state";
 
-/// 面板高度下限（与 旧版 `VELOCITY_PANEL_MIN_HEIGHT` 一致）。
+/// 面板高度下限（与 上一代 `VELOCITY_PANEL_MIN_HEIGHT` 一致）。
 const PANEL_MIN_HEIGHT: f32 = 60.0;
-/// 面板高度上限（与 旧版 `VELOCITY_PANEL_MAX_HEIGHT` 一致）。
+/// 面板高度上限（与 上一代 `VELOCITY_PANEL_MAX_HEIGHT` 一致）。
 const PANEL_MAX_HEIGHT: f32 = 400.0;
 
 /// 顶部 resize 拖拽状态（`start_height = 0` = 未在拖拽）。
@@ -96,7 +96,7 @@ pub(super) fn resize_zone(canvas: Rect) -> Rect {
 
 /// 面板 resize 拖拽：按下记基线，拖动改高度，松开清除。
 ///
-/// 公式与 旧版 `handle_cursor_moved` 一致：
+/// 公式与 上一代 `handle_cursor_moved` 一致：
 /// `new_height = start_height + (start_y - y)`，钳制到 60..400，
 /// 与当前高度差 > 1px 才发动作（避免每帧抖动）。
 pub(super) fn handle_resize(

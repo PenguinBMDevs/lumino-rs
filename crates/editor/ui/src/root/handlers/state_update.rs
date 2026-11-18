@@ -149,7 +149,7 @@ impl Root {
             Message::CtrlKeyChanged(pressed) => {
                 self.toolbar.ctrl_pressed = *pressed;
                 // 同步到 Editor：ruler/键盘区 Ctrl+滚轮缩放依赖此可靠通道
-                // （旧版 canvas 内 ModifiersChanged 事件可能因焦点问题不送达）
+                // （上一代 canvas 内 ModifiersChanged 事件可能因焦点问题不送达）
                 self.editor.set_ctrl_pressed(*pressed);
                 true
             }
