@@ -61,6 +61,7 @@ fn scale_op(op: &mut ShapeOp, factor: f64, depth: usize) -> Result<(), ShareErro
             }
         }
         ShapeOp::Text(op) => scale_tick(&mut op.snap, factor),
+        ShapeOp::TextV2(op) => scale_tick(&mut op.snap, factor),
         ShapeOp::Funnel(params) => {
             for line in &mut params.lines {
                 for point in line {

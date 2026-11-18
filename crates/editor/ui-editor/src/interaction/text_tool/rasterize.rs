@@ -1,12 +1,13 @@
 use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
+use lumino_core::{TextAlign, TextParams};
 use lumino_editor_state::text_tool::TextToolState;
 use lumino_ui_core::geom::Point;
 
 use super::font::load_font;
+use super::occupancy::alpha_to_occupancy;
+use super::scale::{HARD_MAX_PIXELS, RasterScale};
 
-/// 字形光栅化超采样倍数（每个 key 列 / key 行细分为 SS×SS 子像素，提升细笔画捕获）
-pub(super) const SS: u32 = 4;
-/// 单元格占用判定阈值：墨水子像素占比高于此值视为「有墨水」
+/// 单元格占用判定阈值：LegacyBox 新路径按 key 轴覆盖率；legacy 按面积
 const COVERAGE_THRESHOLD: f32 = 0.08;
 
 /// 点是否落在矩形内
@@ -119,39 +120,57 @@ impl GlyphGrid {
     }
 }
 
-/// 将文字光栅化为灰度位图（行优先，**行 0 = 文字顶部**，底部对齐到框底）。
+/// 将文字光栅化为灰度位图（行优先，**行 0 = 文字顶部**）。
 ///
-/// 返回 `(width, height, buf)`：`width = cols * SS`、`height = rows * SS`，`buf` 按行主序存储，
-/// 每像素为 0..255 的墨水墨度。预览渲染与音符采样共用同一份栅格，保证「看到的就是生成的」。
+/// 返回 `(width, height, buf)`：`width = cols * ss_x`、`height = rows * ss_y`。
+/// 新路径按统一比例 letterbox 到框内；`scale.legacy` 时逐字节复现旧「填满框」行为。
 pub(crate) fn rasterize_glyph_alpha(
     text: &str,
     cols: usize,
     rows: usize,
-    family: &str,
+    params: &TextParams,
+    scale: RasterScale,
 ) -> Option<(u32, u32, Vec<u8>)> {
-    let font = load_font(family)?;
-    rasterize_glyph_alpha_with_font(text, cols, rows, &font)
+    let font = load_font(&params.font)?;
+    rasterize_glyph_alpha_with_font(text, cols, rows, params, &font, scale)
 }
 
 /// 与 [`rasterize_glyph_alpha`] 同一实现，但字体由调用方注入。
 ///
-/// 生产路径仍按字体族加载；测试用固定字体做像素 golden，避免系统字体差异。
+/// 生产路径仍按 `params.font` 加载；测试用固定字体做像素 golden，避免系统字体差异。
 pub(crate) fn rasterize_glyph_alpha_with_font(
     text: &str,
     cols: usize,
     rows: usize,
+    params: &TextParams,
     font: &ab_glyph::FontArc,
+    scale: RasterScale,
 ) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 {
         return None;
     }
-    let h = (rows as u32) * SS;
-    let w = (cols as u32) * SS;
+    let (w, h) = scale.buffer_dims(cols, rows);
+    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > HARD_MAX_PIXELS {
+        return None;
+    }
+    if scale.legacy {
+        rasterize_glyph_legacy(text, w, h, font)
+    } else {
+        rasterize_glyph_letterbox(text, w, h, params.align, font)
+    }
+}
 
+/// 旧路径：用 ascent+descent 充满框高，再把自然宽度拉伸到框宽（逐字节兼容）
+fn rasterize_glyph_legacy(
+    text: &str,
+    w: u32,
+    h: u32,
+    font: &ab_glyph::FontArc,
+) -> Option<(u32, u32, Vec<u8>)> {
     // 垂直缩放：用字体 ascent+descent（不含行距）充满框高，使文字填满框且不留顶部空白。
     let unit = font.as_scaled(PxScale::from(1.0));
     let h1 = (unit.ascent() + unit.descent()).max(1e-3);
-    let scale = PxScale::from(h as f32 / h1);
+    let scale = PxScale::from((h as f32 / h1).max(1e-6));
     let scaled = font.as_scaled(scale);
 
     // 第一遍：计算自然布局总推进宽度，并记录所有字形中最低墨水的 y（渲染像素，y 向下）。
@@ -211,36 +230,110 @@ pub(crate) fn rasterize_glyph_alpha_with_font(
     Some((w, h, buf))
 }
 
+/// 新路径：按自然比例 letterbox 到框内，按 align + 底部基线定位（不再 X/Y 独立拉伸）
+fn rasterize_glyph_letterbox(
+    text: &str,
+    w: u32,
+    h: u32,
+    align: TextAlign,
+    font: &ab_glyph::FontArc,
+) -> Option<(u32, u32, Vec<u8>)> {
+    // 1px 参考下的自然布局尺寸：advance × 墨迹高度。
+    // 注意不能用 ascent+descent 当高度：Noto 的 ascent+descent ≈ 0.667 em，
+    // 而 CJK 墨迹高度 ≈ 0.9 em；按 line height 缩放会把 CJK 上下裁掉。
+    let unit = font.as_scaled(PxScale::from(1.0));
+    let natural_w: f32 = text
+        .chars()
+        .map(|ch| unit.h_advance(font.glyph_id(ch)))
+        .sum::<f32>()
+        .max(1e-3);
+    let mut ink_min_y = f32::MAX;
+    let mut ink_max_y = f32::MIN;
+    for ch in text.chars() {
+        let gid = font.glyph_id(ch);
+        if let Some(outline) =
+            font.outline_glyph(gid.with_scale_and_position(PxScale::from(1.0), AbPoint::default()))
+        {
+            let b = outline.px_bounds();
+            ink_min_y = ink_min_y.min(b.min.y);
+            ink_max_y = ink_max_y.max(b.max.y);
+        }
+    }
+    let natural_h = if ink_max_y > ink_min_y {
+        (ink_max_y - ink_min_y).max(1e-3)
+    } else {
+        (unit.ascent() + unit.descent()).max(1e-3)
+    };
+    let fit = (w as f32 / natural_w).min(h as f32 / natural_h);
+    if !fit.is_finite() || fit <= 0.0 {
+        return None;
+    }
+    let scale = PxScale::from(fit);
+    let scaled = font.as_scaled(scale);
+
+    let total_advance: f32 = text
+        .chars()
+        .map(|ch| scaled.h_advance(font.glyph_id(ch)))
+        .sum();
+    let mut max_bottom = 0f32;
+    for ch in text.chars() {
+        let gid = font.glyph_id(ch);
+        if let Some(outline) =
+            font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default()))
+        {
+            max_bottom = max_bottom.max(outline.px_bounds().max.y);
+        }
+    }
+
+    // 水平按 align；底部把最低墨水对齐到框底（保留既有基线语义）
+    let x0 = match align {
+        TextAlign::Left => 0.0,
+        TextAlign::Center => (w as f32 - total_advance) * 0.5,
+        TextAlign::Right => w as f32 - total_advance,
+    }
+    .max(0.0);
+    let y0 = h as f32 - max_bottom;
+
+    let mut buf = vec![0u8; (h as usize) * (w as usize)];
+    let mut x_cursor = x0;
+    for ch in text.chars() {
+        let gid = font.glyph_id(ch);
+        let glyph = gid.with_scale_and_position(scale, AbPoint::default());
+        if let Some(outline) = font.outline_glyph(glyph) {
+            let b = outline.px_bounds();
+            outline.draw(|px, py, alpha| {
+                let x = (x_cursor + px as f32 + b.min.x).round() as i32;
+                let y = (py as f32 + b.min.y + y0).round() as i32;
+                if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 && alpha > 0.0 {
+                    buf[y as usize * w as usize + x as usize] = (alpha * 255.0) as u8;
+                }
+            });
+        }
+        x_cursor += scaled.h_advance(gid);
+    }
+    Some((w, h, buf))
+}
+
 /// 将文字光栅化为占用网格（rows × cols，[row][col] = 是否有墨水）
 ///
-/// 行 0 = 文字顶部。文字**底部对齐**到框底（共用基线），并按框高度填满、按框宽度拉伸。
-/// 返回 `None` 表示无字体或文字为空。
+/// 新路径按 **key 轴覆盖率** 判定（阈值语义见 #213：一个 key 的高度中有多少
+/// 比例落在字形内部）；legacy 路径保持旧的面积覆盖率，逐字节复现旧形状。
 pub(crate) fn rasterize_text(
     text: &str,
     cols: usize,
     rows: usize,
-    family: &str,
+    params: &TextParams,
+    scale: RasterScale,
 ) -> Option<Vec<Vec<bool>>> {
-    let (w, _h, buf) = rasterize_glyph_alpha(text, cols, rows, family)?;
-
-    // 由 SS×SS 子像素区域判定每个 (col,row) 是否占用
-    let mut occ = vec![vec![false; cols]; rows];
-    for (r, row) in occ.iter_mut().enumerate() {
-        for (c, cell) in row.iter_mut().enumerate() {
-            let mut ink = 0u32;
-            let mut total = 0u32;
-            for sr in (r as u32 * SS)..((r as u32 + 1) * SS) {
-                for sc in (c as u32 * SS)..((c as u32 + 1) * SS) {
-                    total += 1;
-                    if buf[sr as usize * w as usize + sc as usize] > 0 {
-                        ink += 1;
-                    }
-                }
-            }
-            *cell = (ink as f32 / total as f32) > COVERAGE_THRESHOLD;
-        }
-    }
-    Some(occ)
+    let (w, _h, buf) = rasterize_glyph_alpha(text, cols, rows, params, scale)?;
+    Some(alpha_to_occupancy(
+        &buf,
+        w,
+        cols,
+        rows,
+        scale,
+        COVERAGE_THRESHOLD,
+    ))
 }
 
 /// 纯函数：将占用网格按 [`GlyphGrid`] 的轴角色转换为音符列表（不依赖字体 / 画布）。

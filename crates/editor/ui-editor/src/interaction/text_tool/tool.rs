@@ -1,7 +1,10 @@
-use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid};
+use super::{
+    GlyphGrid, RasterScale, rasterize::point_in_rect, rasterize_text_for_tool, sample_to_notes_grid,
+};
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
-use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOp};
+use lumino_core::TextUnit;
+use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, TextOpV2};
 use lumino_editor_state::text_tool::TextToolMode;
 use lumino_editor_state::{ShapeNote, note_to_event};
 use lumino_note_core::history::CreateOp;
@@ -15,20 +18,46 @@ impl Editor {
         }
     }
 
-    /// ??????????????????????
+    /// 设置文字参数；参数面板改动会显式切到 Parametric（面板 Mode 行即时可见）。
     ///
-    /// ????????? Parametric?LegacyBox ?????????????
-    pub(crate) fn set_text_params(&mut self, params: lumino_core::TextParams) {
+    /// 这不算「静默切换」：当前模式在参数面板里始终可见；UI-023 决定保留该行为，
+    /// 避免 LegacyBox 下出现一组完全不起作用的惰性滑杆。
+    pub(crate) fn set_text_params(&mut self, mut params: lumino_core::TextParams) {
         if params.validate().is_err() {
             return;
+        }
+        let old_unit = self.editor_state.text_tool.params.unit;
+        if old_unit != params.unit
+            && let Some(font) =
+                super::font::load_font_variant(&params.font, params.weight, params.italic)
+            && let Some(ratio) = super::font::cap_height_ratio(&font)
+        {
+            params.size = converted_size(params.size, old_unit, params.unit, ratio);
         }
         self.editor_state.text_tool.params = params;
         self.editor_state.text_tool.layout_mode = lumino_core::TextLayoutMode::Parametric;
     }
 
-    /// ??????? LegacyBox / Parametric
+    /// 切换排版模式：LegacyBox / Parametric
     pub(crate) fn set_text_layout_mode(&mut self, mode: lumino_core::TextLayoutMode) {
         self.editor_state.text_tool.layout_mode = mode;
+    }
+
+    /// 当前文本框的栅格采样比例（预览与确认共用）
+    pub(crate) fn text_raster_scale(&self) -> RasterScale {
+        let tt = &self.editor_state.text_tool;
+        let snap = self.editor_state.view.snap_precision.max(1.0);
+        let ppq = f32::from(self.editor_state.view.ppq).max(1.0);
+        let k = self.live_arc_k() as f32;
+        let grid = GlyphGrid::from_state(tt, snap, self.editor_state.is_vertical_roll);
+        RasterScale::from_k(
+            self.editor_state.is_vertical_roll,
+            snap,
+            ppq,
+            k,
+            grid.cols,
+            grid.rows,
+        )
     }
 
     /// 文字工具：切换采样模式（正常 / key 范围合并）
@@ -64,7 +93,7 @@ impl Editor {
         if !self.text_tool_allowed() {
             return;
         }
-        // ????????????????????????????????
+        // 已激活文本框：先判按钮命中，再处理框内拖动 / 框外新框。
         if !self.editor_state.text_tool.active {
             let tick = self.pos_to_tick(pos);
             let key = self.pos_to_key(pos);
@@ -195,7 +224,8 @@ impl Editor {
         if grid.cols == 0 || grid.rows == 0 {
             return false;
         }
-        let occupancy = match rasterize_text_for_tool(&tt, grid.cols, grid.rows) {
+        let scale = self.text_raster_scale();
+        let occupancy = match rasterize_text_for_tool(&tt, grid.cols, grid.rows, scale) {
             Some(o) => o,
             None => return false,
         };
@@ -212,7 +242,7 @@ impl Editor {
         let mut create_ops = Vec::with_capacity(notes.len());
         for &(tick, key, len) in &notes {
             let note = Note::new(tick, key, len);
-            // ?????redo ?????undo ??????????? ID??
+            // 与 redo 共用撤销分组：先插入并拿到稳定 ID，再记录 CreateOp。
             if self
                 .editor_state
                 .data
@@ -263,7 +293,11 @@ impl Editor {
         track: usize,
         snap: f32,
     ) -> ShapeModel {
-        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, 1.0);
+        let k = {
+            let k = self.live_arc_k() as f32;
+            if k.is_finite() && k > 0.0 { k } else { 1.0 }
+        };
+        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, k);
         model.track = track as u16;
         model.kind = ShapeKind::Custom;
         let (tick_lo, tick_hi) = tt.normalized_ticks();
@@ -274,16 +308,36 @@ impl Editor {
             tick_hi,
             key_hi as f32,
         ));
-        model.ops.retain(|op| !matches!(op, ShapeOp::Text(_)));
-        model.ops.push(ShapeOp::Text(TextOp {
+        model
+            .ops
+            .retain(|op| !matches!(op, ShapeOp::Text(_) | ShapeOp::TextV2(_)));
+        model.ops.push(ShapeOp::TextV2(TextOpV2 {
             text: tt.text.clone(),
             params: tt.params.clone(),
             layout: tt.layout_mode,
             snap,
             merged: tt.mode.is_merged(),
             vertical: self.editor_state.is_vertical_roll,
+            k,
         }));
         model.name = tt.text.chars().take(32).collect();
         model
     }
+}
+
+/// `Font ↔ Rows` 字号换算：`Rows` 单位是大写 H 的高度（keys）。
+///
+/// `cap_ratio` 为同字体的大写 H 高度 / em；非法值退化为 1.0（保持原字号）。
+pub(super) fn converted_size(size: f32, from: TextUnit, to: TextUnit, cap_ratio: f32) -> f32 {
+    let ratio = if cap_ratio.is_finite() && cap_ratio > 0.0 {
+        cap_ratio
+    } else {
+        1.0
+    };
+    let next = match (from, to) {
+        (TextUnit::Font, TextUnit::Rows) => size * ratio,
+        (TextUnit::Rows, TextUnit::Font) => size / ratio,
+        _ => size,
+    };
+    next.clamp(4.0, 96.0)
 }

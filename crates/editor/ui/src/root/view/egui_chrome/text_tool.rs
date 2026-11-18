@@ -19,9 +19,10 @@ fn preview_signature(
     vertical: bool,
     width: u32,
     height: u32,
+    raster_key: &str,
 ) -> String {
     format!(
-        "{width}x{height}:{}:{:?}:{vertical}:{:?}:{:?}:{}",
+        "{width}x{height}:{}:{:?}:{vertical}:{:?}:{:?}:{}:{raster_key}",
         tt.text, tt.mode, tt.layout_mode, tt.params, tt.font_family
     )
 }
@@ -78,6 +79,7 @@ impl Root {
         }
 
         let tt = &editor.editor_state.text_tool;
+        let raster_key = editor.text_raster_key();
         let preview = editor
             .text_tool_preview_rgba()
             .map(|(w, h, rgba)| TextPreview {
@@ -85,7 +87,7 @@ impl Root {
                 width: w as usize,
                 height: h as usize,
                 rgba: Arc::new(rgba),
-                sig: preview_signature(tt, editor.editor_state.is_vertical_roll, w, h),
+                sig: preview_signature(tt, editor.editor_state.is_vertical_roll, w, h, &raster_key),
             });
 
         let model = TextToolModel {
@@ -125,14 +127,20 @@ mod tests {
     #[test]
     fn test_preview_signature_tracks_params() {
         let mut state = lumino_editor_state::text_tool::TextToolState::new();
-        let base = preview_signature(&state, false, 10, 20);
+        let base = preview_signature(&state, false, 10, 20, "scale-a");
 
         state.params.size += 1.0;
-        let changed = preview_signature(&state, false, 10, 20);
+        let changed = preview_signature(&state, false, 10, 20, "scale-a");
         assert_ne!(base, changed, "字号变化必须让预览重新栅格化");
 
         state.layout_mode = TextLayoutMode::Parametric;
-        let changed_mode = preview_signature(&state, false, 10, 20);
+        let changed_mode = preview_signature(&state, false, 10, 20, "scale-a");
         assert_ne!(changed, changed_mode, "排版路径变化必须重建预览");
+
+        let changed_scale = preview_signature(&state, false, 10, 20, "scale-b");
+        assert_ne!(
+            changed_mode, changed_scale,
+            "缩放 / snap 比例变化必须重建预览纹理"
+        );
     }
 }

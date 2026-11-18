@@ -76,20 +76,74 @@ pub struct TextOp {
 impl TextOp {
     /// 校验文字形状参数
     pub fn validate(&self) -> Result<()> {
-        if self.text.is_empty() {
-            return Err(CoreError::InvalidArgument(
-                "文字形状文本不得为空".to_string(),
-            ));
+        validate_text_fields(&self.text, &self.params, self.snap)
+    }
+}
+
+/// 文字形状算子 v2：额外冻结绘制时的 `k`（beats per key）。
+///
+/// `Text`（v1）没有 `k`，只能按 legacy 方格采样重烘焙；v2 追加在
+/// [`ShapeOp`](super::ShapeOp) 末尾，bincode 旧数据仍按 v1 解码。
+/// 结构体本身只作为新变体的载荷，不改变 `TextOp` 字段。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextOpV2 {
+    /// 原始文本（可多行）
+    pub text: String,
+    /// 文字参数
+    pub params: TextParams,
+    /// 制字时的排版模式
+    pub layout: TextLayoutMode,
+    /// 制字时的音符精度（tick）
+    pub snap: f32,
+    /// 制字时是否使用 key 范围合并采样
+    pub merged: bool,
+    /// 制字时是否纵向卷帘
+    pub vertical: bool,
+    /// 制字时的视图比例：beats per key（`zoom_y / (zoom_x × ppq)`）
+    pub k: f32,
+}
+
+impl TextOpV2 {
+    /// 由 v1 算子 + 冻结比例构造
+    pub fn from_v1(op: &TextOp, k: f32) -> Self {
+        Self {
+            text: op.text.clone(),
+            params: op.params.clone(),
+            layout: op.layout,
+            snap: op.snap,
+            merged: op.merged,
+            vertical: op.vertical,
+            k,
         }
-        self.params.validate()?;
-        if !self.snap.is_finite() || self.snap <= 0.0 {
+    }
+
+    /// 校验文字形状参数
+    pub fn validate(&self) -> Result<()> {
+        validate_text_fields(&self.text, &self.params, self.snap)?;
+        if !self.k.is_finite() || self.k <= 0.0 {
             return Err(CoreError::InvalidArgument(format!(
-                "文字形状精度非法（需有限且为正，实际 {}）",
-                self.snap
+                "文字形状 k 非法（需有限且为正，实际 {}）",
+                self.k
             )));
         }
         Ok(())
     }
+}
+
+/// `TextOp` / `TextOpV2` 共用的字段校验（避免两套规则漂移）
+fn validate_text_fields(text: &str, params: &TextParams, snap: f32) -> Result<()> {
+    if text.is_empty() {
+        return Err(CoreError::InvalidArgument(
+            "文字形状文本不得为空".to_string(),
+        ));
+    }
+    params.validate()?;
+    if !snap.is_finite() || snap <= 0.0 {
+        return Err(CoreError::InvalidArgument(format!(
+            "文字形状精度非法（需有限且为正，实际 {snap}）"
+        )));
+    }
+    Ok(())
 }
 
 /// 文字参数
@@ -252,5 +306,44 @@ mod tests {
         let encoded = bincode::serialize(&params).expect("TextParams 应可序列化");
         let decoded: TextParams = bincode::deserialize(&encoded).expect("TextParams 应可反序列化");
         assert_eq!(decoded, params);
+    }
+
+    #[test]
+    fn test_text_op_v2_requires_positive_k_and_roundtrips() {
+        let op = TextOp {
+            text: "A".to_string(),
+            params: TextParams::default(),
+            layout: TextLayoutMode::LegacyBox,
+            snap: 480.0,
+            merged: false,
+            vertical: false,
+        };
+        let v2 = TextOpV2::from_v1(&op, 0.5);
+        assert!(v2.validate().is_ok(), "有限正 k 应通过校验");
+
+        let encoded = bincode::serialize(&v2).expect("TextOpV2 应可序列化");
+        let decoded: TextOpV2 = bincode::deserialize(&encoded).expect("TextOpV2 应可反序列化");
+        assert_eq!(decoded, v2);
+
+        let bad = TextOpV2 { k: 0.0, ..v2 };
+        assert!(bad.validate().is_err(), "k <= 0 必须拒绝");
+    }
+
+    #[test]
+    fn test_shape_op_text_v2_bincode_roundtrip() {
+        let op = TextOpV2 {
+            text: "A".to_string(),
+            params: TextParams::default(),
+            layout: TextLayoutMode::Parametric,
+            snap: 480.0,
+            merged: true,
+            vertical: false,
+            k: 0.5,
+        };
+        let shape_op = crate::shape::ShapeOp::TextV2(op);
+        let encoded = bincode::serialize(&shape_op).expect("ShapeOp::TextV2 应可序列化");
+        let decoded: crate::shape::ShapeOp =
+            bincode::deserialize(&encoded).expect("ShapeOp::TextV2 应可反序列化");
+        assert_eq!(decoded, shape_op);
     }
 }

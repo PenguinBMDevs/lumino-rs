@@ -41,8 +41,7 @@ impl Editor {
     /// 供 egui 叠加层上传纹理直接铺放；无 旧版 类型。
     pub fn text_tool_preview_rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
         let tt = &self.editor_state.text_tool;
-        let text = tt.text.trim();
-        if text.is_empty() {
+        if tt.text.trim().is_empty() {
             return None;
         }
         let grid = GlyphGrid::from_state(
@@ -50,7 +49,10 @@ impl Editor {
             self.editor_state.view.snap_precision,
             self.editor_state.is_vertical_roll,
         );
-        let (w, h, alpha) = rasterize_glyph_alpha_for_tool(tt, text, grid.cols, grid.rows)?;
+        let scale = self.text_raster_scale();
+        // 预览与确认必须用**同一份原始文本**（不 trim）：trim 只用于判空。
+        let (w, h, alpha) =
+            rasterize_glyph_alpha_for_tool(tt, &tt.text, grid.cols, grid.rows, scale)?;
         let (cr, cg, cb) = (
             (TEXT_PREVIEW_COLOR.r * 255.0) as u16,
             (TEXT_PREVIEW_COLOR.g * 255.0) as u16,
@@ -65,6 +67,23 @@ impl Editor {
             rgba.push((a as u16 * ca / 255) as u8);
         }
         Some((w, h, rgba))
+    }
+
+    /// 预览纹理缓存 key：任何会改变栅格像素比例的输入都必须计入。
+    ///
+    /// `width/height` 无法覆盖 zoom / snap 变化：同样 `cols×rows` 下，cell 宽高比
+    /// 变了，栅格内容也必须重建，否则 egui 会复用旧纹理再拉伸一次。
+    pub fn text_raster_key(&self) -> String {
+        let tt = &self.editor_state.text_tool;
+        let snap = self.editor_state.view.snap_precision.max(1.0);
+        let ppq = f32::from(self.editor_state.view.ppq).max(1.0);
+        let k = self.live_arc_k() as f32;
+        let grid = GlyphGrid::from_state(tt, snap, self.editor_state.is_vertical_roll);
+        let scale = self.text_raster_scale();
+        format!(
+            "{}x{}@{}x{}:ppk{:.4}:snap{snap:.4}:ppq{ppq:.4}:k{k:.6}",
+            grid.cols, grid.rows, scale.ss_x, scale.ss_y, scale.px_per_key
+        )
     }
 }
 
@@ -266,5 +285,22 @@ mod tests {
         let r1 = screen(grid.cell(1, 0));
         assert!(r1.y > c0.y, "字形'向下'必须沿屏幕向下：{c0:?} → {r1:?}");
         assert!((r1.x - c0.x).abs() < 0.01, "同一音高格内 X 不应变化");
+    }
+
+    /// 预览纹理缓存 key 必须跟踪 zoom / snap：w×h 不变的场景下，cell 宽高比
+    /// 变了也必须重建栅格，否则 egui 会把旧纹理再拉伸一次。
+    #[test]
+    fn test_text_raster_key_tracks_scale_inputs() {
+        let mut editor = editor_with_box();
+        let base = editor.text_raster_key();
+
+        editor.editor_state.view.zoom_x *= 2.0;
+        let zoomed = editor.text_raster_key();
+        assert_ne!(base, zoomed, "zoom_x 变化必须改变预览 key");
+
+        editor.editor_state.view.zoom_x /= 2.0;
+        editor.editor_state.view.snap_precision = 480.0;
+        let snapped = editor.text_raster_key();
+        assert_ne!(base, snapped, "snap 变化必须改变预览 key");
     }
 }

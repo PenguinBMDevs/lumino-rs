@@ -38,7 +38,7 @@ pub use shape::{
     PatternRef, PolyStyle, PolygonParams, RangeDir, RowRestart, SUB_ROWS, ShapeAnchor, ShapeFill,
     ShapeGeometry, ShapeKind, ShapeModel, ShapeOp, ShapeRect, ShapeStyle, SpamAlign, SpamEnds,
     Speed, StopsParams, StraightenParams, StrokeRole, StrumParams, SustainParams, Sym, SymAxis,
-    SymParams, TextAlign, TextLayoutMode, TextOp, TextParams, TextUnit, TileBy, TileFlip,
+    SymParams, TextAlign, TextLayoutMode, TextOp, TextOpV2, TextParams, TextUnit, TileBy, TileFlip,
     TileLayout, TilesParams, TumourGraphs, TumourParams, TumourShape, TumourSide, TumourWrap,
     VelocityEnv, env_at, paint_env, pattern_from_preset, pattern_preset, tidy_env,
 };

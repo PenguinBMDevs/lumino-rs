@@ -11,8 +11,10 @@
 //! 只有把字形 advance 挂到 key 轴上，文字在屏幕上才是正立的。
 
 mod font;
+mod occupancy;
 mod parametric;
 mod rasterize;
+mod scale;
 mod tool;
 
 use lumino_core::TextLayoutMode;
@@ -24,6 +26,7 @@ pub(crate) use rasterize::rasterize_glyph_alpha_with_font;
 pub(crate) use rasterize::{
     GlyphGrid, rasterize_glyph_alpha, rasterize_text, sample_to_notes_grid,
 };
+pub(crate) use scale::RasterScale;
 
 /// 按工具当前模式分派灰度图：LegacyBox 保持原路径，Parametric 走参数化路径。
 pub(crate) fn rasterize_glyph_alpha_for_tool(
@@ -31,11 +34,12 @@ pub(crate) fn rasterize_glyph_alpha_for_tool(
     text: &str,
     cols: usize,
     rows: usize,
+    scale: RasterScale,
 ) -> Option<(u32, u32, Vec<u8>)> {
     match tt.layout_mode {
-        TextLayoutMode::LegacyBox => rasterize_glyph_alpha(text, cols, rows, tt.font_family),
+        TextLayoutMode::LegacyBox => rasterize_glyph_alpha(text, cols, rows, &tt.params, scale),
         TextLayoutMode::Parametric => {
-            parametric::rasterize_glyph_alpha_params(text, cols, rows, &tt.params)
+            parametric::rasterize_glyph_alpha_params(text, cols, rows, &tt.params, scale)
         }
     }
 }
@@ -45,14 +49,17 @@ pub(crate) fn rasterize_text_for_tool(
     tt: &TextToolState,
     cols: usize,
     rows: usize,
+    scale: RasterScale,
 ) -> Option<Vec<Vec<bool>>> {
     match tt.layout_mode {
-        TextLayoutMode::LegacyBox => rasterize_text(&tt.text, cols, rows, tt.font_family),
+        TextLayoutMode::LegacyBox => rasterize_text(&tt.text, cols, rows, &tt.params, scale),
         TextLayoutMode::Parametric => {
-            parametric::rasterize_text_params(&tt.text, cols, rows, &tt.params)
+            parametric::rasterize_text_params(&tt.text, cols, rows, &tt.params, scale)
         }
     }
 }
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_aspect;

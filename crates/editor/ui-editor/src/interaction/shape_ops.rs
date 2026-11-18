@@ -41,6 +41,12 @@ impl Editor {
     pub(crate) fn shape_notes_of(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
         // 文字形状是独立再生成路径：几何锚点不参与，参数/文本框/采样模式全在 TextOp。
         if let Some(op) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::TextV2(op) => Some(op),
+            _ => None,
+        }) {
+            return self.text_shape_notes_v2(model, op, track);
+        }
+        if let Some(op) = model.ops.iter().find_map(|op| match op {
             ShapeOp::Text(op) => Some(op),
             _ => None,
         }) {

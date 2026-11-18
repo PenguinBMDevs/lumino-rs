@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use ab_glyph::{FontArc, FontVec};
+use ab_glyph::{Font, FontArc, FontVec, Point as AbPoint, PxScale};
 
 /// 字体缓存：字形解析较重，按家族名缓存 `FontArc`（内部为 `Arc`，克隆廉价），
 /// 避免实时预览每帧重复读盘与解析。
@@ -33,6 +33,20 @@ pub(super) fn load_font_variant(family: &str, weight: u16, italic: bool) -> Opti
         m.insert(cache_key, font.clone());
     }
     Some(font)
+}
+
+/// 大写 `H` 的 cap height / em（用 1000px 参考尺寸测量，避免 1px 取整误差）。
+///
+/// `Font ↔ Rows` 单位换算与 Parametric 的 `Rows` 字号共用同一口径。
+pub(super) fn cap_height_ratio(font: &FontArc) -> Option<f32> {
+    let reference = 1000.0f32;
+    let outline = font.outline_glyph(
+        font.glyph_id('H')
+            .with_scale_and_position(PxScale::from(reference), AbPoint::default()),
+    )?;
+    let bounds = outline.px_bounds();
+    let ratio = (bounds.max.y - bounds.min.y).max(1e-3) / reference;
+    (ratio.is_finite() && ratio > 0.0).then_some(ratio)
 }
 
 /// 从字体表中选择最接近的 face：先按 family，再按斜体匹配，最后按字重距离。

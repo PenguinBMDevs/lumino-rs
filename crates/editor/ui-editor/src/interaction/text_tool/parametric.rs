@@ -1,30 +1,47 @@
 //! 参数化文字光栅化（DRAW-029 · Parametric）
 //!
-//! 与 `LegacyBox` 路径并行：本模块只读 [`TextParams`]，不改变旧路径。坐标单位是
-//! 文本框采样格（1 key = `SS` 个像素），因此预览与音符仍共用同一份栅格。
+//! 与 `LegacyBox` 路径并行：本模块只读 [`TextParams`]。坐标单位是文本框采样格，
+//! 但 buffer 像素在屏幕上是各向同性的（见 [`RasterScale`]），字号 / 字距 / grow
+//! 统一按 `px_per_key` 换算。
 
-use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
+use ab_glyph::{Font, FontArc, Point as AbPoint, PxScale, ScaleFont};
 use lumino_core::{TextAlign, TextParams, TextUnit};
 
 use super::font::load_font_variant;
-use super::rasterize::SS;
+use super::occupancy::alpha_to_occupancy;
+use super::scale::{HARD_MAX_PIXELS, RasterScale};
 
-/// 参数化文字灰度图（宽 = cols×SS，高 = rows×SS，行 0 = 顶部）
+/// 参数化文字灰度图（宽 = cols×ss_x，高 = rows×ss_y，行 0 = 顶部）
 pub(crate) fn rasterize_glyph_alpha_params(
     text: &str,
     cols: usize,
     rows: usize,
     params: &TextParams,
+    scale: RasterScale,
+) -> Option<(u32, u32, Vec<u8>)> {
+    let font = load_font_variant(&params.font, params.weight, params.italic)?;
+    rasterize_glyph_alpha_params_with_font(text, cols, rows, params, &font, scale)
+}
+
+/// 与 [`rasterize_glyph_alpha_params`] 同一实现，但字体由调用方注入（测试用）。
+pub(super) fn rasterize_glyph_alpha_params_with_font(
+    text: &str,
+    cols: usize,
+    rows: usize,
+    params: &TextParams,
+    font: &FontArc,
+    scale: RasterScale,
 ) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 || params.validate().is_err() {
         return None;
     }
-    let font = load_font_variant(&params.font, params.weight, params.italic)?;
-    let w = (cols as u32) * SS;
-    let h = (rows as u32) * SS;
+    let (w, h) = scale.buffer_dims(cols, rows);
+    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > HARD_MAX_PIXELS {
+        return None;
+    }
+    let px_per_key = scale.px_per_key.max(1e-3);
 
     // 1) 字号 → 像素：Font 单位直接按 keys；Rows 单位按大写 H 的高度换算。
-    let px_per_key = SS as f32;
     let px_size = match params.unit {
         TextUnit::Font => params.size * px_per_key,
         TextUnit::Rows => {
@@ -47,8 +64,8 @@ pub(crate) fn rasterize_glyph_alpha_params(
         return None;
     }
 
-    let scale = PxScale::from(px_size);
-    let scaled = font.as_scaled(scale);
+    let scale_px = PxScale::from(px_size);
+    let scaled = font.as_scaled(scale_px);
     let line_height =
         ((scaled.ascent() - scaled.descent()) * (params.leading / 100.0).max(0.01)).max(1.0);
     let tracking_px = params.tracking * px_per_key;
@@ -80,7 +97,7 @@ pub(crate) fn rasterize_glyph_alpha_params(
         for ch in line.chars() {
             let gid = font.glyph_id(ch);
             if let Some(outline) =
-                font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default()))
+                font.outline_glyph(gid.with_scale_and_position(scale_px, AbPoint::default()))
             {
                 let b = outline.px_bounds();
                 outline.draw(|px, py, alpha| {
@@ -108,47 +125,23 @@ pub(crate) fn rasterize_glyph_alpha_params(
     Some((w, h, buf))
 }
 
-/// 参数化占用网格：每个采样格按 threshold% 的子像素墨水判定
+/// 参数化占用网格：每格按 pitch 轴覆盖率 / threshold 判定
 pub(crate) fn rasterize_text_params(
     text: &str,
     cols: usize,
     rows: usize,
     params: &TextParams,
+    scale: RasterScale,
 ) -> Option<Vec<Vec<bool>>> {
-    let (w, _h, buf) = rasterize_glyph_alpha_params(text, cols, rows, params)?;
-    Some(alpha_to_occupancy(&buf, w, cols, rows, params.threshold))
-}
-
-/// 灰度图 → 占用网格（纯函数，供阈值回归测试直接调用）
-pub(super) fn alpha_to_occupancy(
-    buf: &[u8],
-    width: u32,
-    cols: usize,
-    rows: usize,
-    threshold: f32,
-) -> Vec<Vec<bool>> {
-    let threshold = threshold.clamp(0.0, 100.0) / 100.0;
-    let mut occ = vec![vec![false; cols]; rows];
-    if cols == 0 || rows == 0 {
-        return occ;
-    }
-    for (r, row) in occ.iter_mut().enumerate() {
-        for (c, cell) in row.iter_mut().enumerate() {
-            let mut ink = 0u32;
-            for sy in 0..SS {
-                for sx in 0..SS {
-                    let x = c as u32 * SS + sx;
-                    let y = r as u32 * SS + sy;
-                    let idx = y as usize * width as usize + x as usize;
-                    if buf.get(idx).copied().unwrap_or(0) > 0 {
-                        ink += 1;
-                    }
-                }
-            }
-            *cell = ink > 0 && (ink as f32 / (SS * SS) as f32) >= threshold;
-        }
-    }
-    occ
+    let (w, _h, buf) = rasterize_glyph_alpha_params(text, cols, rows, params, scale)?;
+    Some(alpha_to_occupancy(
+        &buf,
+        w,
+        cols,
+        rows,
+        scale,
+        params.threshold,
+    ))
 }
 
 /// 对灰度图做方形核膨胀/腐蚀（`grow > 0` 变粗，`< 0` 变细）
@@ -191,8 +184,9 @@ mod tests {
             }
         }
         buf[4] = 255;
-        let low = alpha_to_occupancy(&buf, 16, 4, 4, 25.0);
-        let high = alpha_to_occupancy(&buf, 16, 4, 4, 60.0);
+        let scale = RasterScale::legacy(false);
+        let low = alpha_to_occupancy(&buf, 16, 4, 4, scale, 25.0);
+        let high = alpha_to_occupancy(&buf, 16, 4, 4, scale, 60.0);
         assert!(low[0][0], "25% 阈值应保留半个格");
         assert!(!high[0][0], "60% 阈值应剔除半个格");
         assert!(!low[1][0], "1/16 墨水不应通过 25% 阈值");
@@ -224,11 +218,14 @@ mod tests {
             threshold: 10.0,
             ..TextParams::default()
         };
-        let Some((_w, _h, buf)) = rasterize_glyph_alpha_params("O", 24, 24, &params) else {
+        let Some((_w, _h, buf)) =
+            rasterize_glyph_alpha_params("O", 24, 24, &params, RasterScale::legacy(false))
+        else {
             return;
         };
-        let w = 24 * SS;
-        let center = (12 * SS) as usize * w as usize + (12 * SS) as usize;
+        let scale = RasterScale::legacy(false);
+        let w = 24 * scale.ss_x as usize;
+        let center = (12 * scale.ss_y) as usize * w + (12 * scale.ss_x) as usize;
         assert_eq!(buf[center], 0, "O 的中心洞必须保持为空（nonzero）");
     }
 
@@ -240,7 +237,8 @@ mod tests {
             threshold: 0.0,
             ..TextParams::default()
         };
-        let Some(occ) = rasterize_text_params("H", 24, 24, &params) else {
+        let Some(occ) = rasterize_text_params("H", 24, 24, &params, RasterScale::legacy(false))
+        else {
             return;
         };
         let rows_on = occ.iter().filter(|row| row.iter().any(|&on| on)).count();
