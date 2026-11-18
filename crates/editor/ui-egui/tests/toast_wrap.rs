@@ -11,6 +11,7 @@ const HEIGHT: f32 = 600.0;
 
 fn card(message: &str) -> ToastCardModel {
     ToastCardModel {
+        id: 1,
         icon: "i".to_owned(),
         message: message.to_owned(),
         background: egui::Color32::from_rgb(30, 30, 36),

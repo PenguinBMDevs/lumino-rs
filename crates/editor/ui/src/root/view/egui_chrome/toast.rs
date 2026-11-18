@@ -26,7 +26,8 @@ pub(crate) fn toast_model(root: &Root) -> ToastModel {
             .toast
             .egui_cards(&root.window.theme)
             .into_iter()
-            .map(|(icon, message, bg, fg)| ToastCardModel {
+            .map(|(id, icon, message, bg, fg)| ToastCardModel {
+                id,
                 icon,
                 message,
                 background: color32(bg),

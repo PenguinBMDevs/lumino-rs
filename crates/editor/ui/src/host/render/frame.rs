@@ -102,7 +102,10 @@ impl Host {
             || has_selection_anim
             || clip_transport_playing
             || about_egg_animating
-            || echo_cave_animating;
+            || echo_cave_animating
+            // Toast 存活期间持续出帧：`cleanup_expired` 在 AnimationTick 里执行，
+            // 且右下角卡片的悬停/点击需要重绘。Toast 清空后自动停。
+            || !self.root.toast.is_empty();
         if needs_animation {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();

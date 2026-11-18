@@ -5,6 +5,8 @@ use egui::Color32;
 /// 单条 Toast（颜色由生产侧按主题算好）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToastCardModel {
+    /// Toast 稳定 id（点击关闭时回传）。
+    pub id: u64,
     /// 级别图标（`ℹ ⚠ ✗ ✓`）。
     pub icon: String,
     /// 文案。
