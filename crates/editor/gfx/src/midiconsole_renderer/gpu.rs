@@ -29,8 +29,16 @@ impl MidiconsoleGpuContext {
     }
 
     /// 渲染一帧并以 RGBA 字节返回（失败时 `None`，调用方回退 CPU）。
+    ///
+    /// 仅测试/预览用；生产导出走 [`Self::render_frame_bgra_into`]（零 swizzle）。
     pub fn render_frame(&mut self, cells: &[CellGpu], tick: u32) -> Option<Vec<u8>> {
         self.renderer
             .render_to_rgba(&self.device, &self.queue, cells, tick)
+    }
+
+    /// 渲染一帧并直接写入调用方 BGRA 缓冲（失败返回 `false`，调用方回退 CPU）。
+    pub fn render_frame_bgra_into(&mut self, cells: &[CellGpu], tick: u32, dst: &mut [u8]) -> bool {
+        self.renderer
+            .render_to_bgra_into(&self.device, &self.queue, cells, tick, dst)
     }
 }

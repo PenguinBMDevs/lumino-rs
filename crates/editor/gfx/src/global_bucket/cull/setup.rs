@@ -123,23 +123,17 @@ impl ResidentCull {
             "bucket_cull_active",
             (KEY_BUCKETS * 4) as u64,
         ));
-        self.active_staging = Some(TrackedBuffer::new(
-            device,
-            &wgpu::BufferDescriptor {
-                label: Some("bucket_cull_active_staging"),
-                size: (KEY_BUCKETS * 4) as u64,
-                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            },
-        ));
         if let Some(ref active) = self.active_buffer {
             queue.write_buffer(active.inner(), 0, &[0u8; KEY_BUCKETS * 4]);
         }
+        // 回读暂存 2KB：`[0,1KB)` = 逐键计数，`[1KB,2KB)` = 活跃键聚合。
+        // 两条结果同一 buffer/同一次 map，回读同步点从每帧 2 次降为 1 次
+        //（piano roll 每帧两次 1KB 回读曾是 ~5.8ms 的主体）。
         self.counts_staging = Some(TrackedBuffer::new(
             device,
             &wgpu::BufferDescriptor {
                 label: Some("bucket_cull_counts_staging"),
-                size: 1024,
+                size: (KEY_BUCKETS * 8) as u64,
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             },

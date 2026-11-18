@@ -21,9 +21,7 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
     } = args;
     let gw = COLS as usize;
     let gh = ROWS as usize;
-    let fw = frame_width as usize;
-    let fh = frame_height as usize;
-    let out_len = fw * fh * 4;
+    let out_len = frame_width as usize * frame_height as usize * 4;
     if frame.len() < out_len {
         return;
     }
@@ -43,10 +41,12 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
         });
     }
 
-    // 3) GPU 渲染（线程内缓存设备/渲染器，失败回退 CPU）
-    let rgba = GPU_CTX.with(|g| {
+    // 3) GPU 渲染（线程内缓存设备/渲染器，失败回退 CPU）。
+    //    直接写入调用方 BGRA 缓冲：GPU 侧已按 Bgra8Unorm 输出，CPU 零 swizzle、
+    //    零中间 Vec（旧实现每帧 200 万次逐像素通道交换）。
+    let rendered = GPU_CTX.with(|g| {
         if GPU_DISABLED.with(|d| *d.borrow()) {
-            return None;
+            return false;
         }
         let mut guard = g.borrow_mut();
         // REND-019 PR-D（§1.5 L3）：代次登记判废——重连（device 重建）后
@@ -60,32 +60,19 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
                 Some(ctx) => *guard = Some(ctx),
                 None => {
                     GPU_DISABLED.with(|d| *d.borrow_mut() = true);
-                    return None;
+                    return false;
                 }
             }
         }
         let Some(ctx) = guard.as_mut() else {
             // 上方刚建立；理论不可达，防御性回退 CPU 路径
-            return None;
+            return false;
         };
-        ctx.ctx.render_frame(&cells, tick)
+        ctx.ctx.render_frame_bgra_into(&cells, tick, frame)
     });
 
-    match rgba {
-        Some(rgba) => {
-            // RGBA → BGRA（导出编码器按 "bgra" 消费 MidiConsole 帧）
-            for y in 0..fh {
-                for x in 0..fw {
-                    let si = (y * fw + x) * 4;
-                    let di = si;
-                    frame[di] = rgba[si + 2];
-                    frame[di + 1] = rgba[si + 1];
-                    frame[di + 2] = rgba[si];
-                    frame[di + 3] = 255;
-                }
-            }
-        }
-        None => render_midicomsole_frame(MidiConsoleFrameArgs {
+    if !rendered {
+        render_midicomsole_frame(MidiConsoleFrameArgs {
             renderer,
             frame,
             frame_width,
@@ -94,7 +81,7 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
             tick,
             ppq,
             fps,
-        }),
+        });
     }
 }
 

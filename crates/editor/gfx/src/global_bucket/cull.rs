@@ -100,8 +100,6 @@ pub struct ResidentCull {
     pub(super) cursor_buffer: Option<TrackedBuffer>,
     /// 活跃键聚合输出（256×u32 = 1KB，初值 0；`compute_active` 时读回）。
     pub(super) active_buffer: Option<TrackedBuffer>,
-    /// 活跃键回读暂存（1KB）。
-    pub(super) active_staging: Option<TrackedBuffer>,
     /// 上次 COUNT 的 `tick_start`（倒退检测用；初值 0，到达过即单调记忆）。
     pub(super) last_tick_start: u32,
     /// 外部内容世代覆盖：钢琴卷帘直绑 onion 缓冲时注入 `Renderers::onion_epoch`；
@@ -158,7 +156,6 @@ impl ResidentCull {
         self.compact_capacity = 0;
         self.cursor_buffer = None;
         self.active_buffer = None;
-        self.active_staging = None;
         self.last_tick_start = 0;
         self.external_epoch = None;
     }

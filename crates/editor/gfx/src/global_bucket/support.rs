@@ -146,10 +146,14 @@ pub(crate) fn readback_bytes_sync(
             crate::device_status::safe_unmap(staging);
             return Err(GlobalBucketError::MapTimeout);
         }
-        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
-        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
-        let _ = device.poll(wgpu::PollType::Poll);
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        // 精确等待：`Poll` + `sleep(1ms)` 的固定步进会让 1KB 回读至少付 1ms
+        // 墙钟（piano roll 每帧两次 ⇒ 2ms+ 纯等待）。`Wait{None}` 等待当前最近
+        // 一次提交并在回调送达后立即返回；50ms 上限保证 TDR 检查仍及时。
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(remaining.min(Duration::from_millis(50))),
+        });
     }
 }
 ///
@@ -214,9 +218,13 @@ pub(crate) fn readback_u256(
             crate::device_status::safe_unmap(staging);
             return Err(GlobalBucketError::MapTimeout);
         }
-        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
-        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
-        let _ = device.poll(wgpu::PollType::Poll);
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        // 精确等待：`Poll` + `sleep(1ms)` 的固定步进会让 1KB 回读至少付 1ms
+        // 墙钟（piano roll 每帧两次 ⇒ 2ms+ 纯等待）。`Wait{None}` 等待当前最近
+        // 一次提交并在回调送达后立即返回；50ms 上限保证 TDR 检查仍及时。
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(remaining.min(Duration::from_millis(50))),
+        });
     }
 }
