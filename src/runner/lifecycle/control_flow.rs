@@ -28,7 +28,7 @@ impl RunnerInner {
     /// 处理事件循环控制流策略
     pub(crate) fn handle_control_flow(&mut self, event_loop: &ActiveEventLoop) {
         // 默认进入 Wait 模式：事件循环休眠，仅在收到事件或 `request_redraw` 时唤醒重绘。
-        // 这是 旧版 的推荐用法——UI 在状态变更时通过 Notifier / 事件处理器主动
+        // 这是推荐用法——UI 在状态变更时通过 Notifier / 事件处理器主动
         // `request_redraw`，无需 Poll 持续空刷（那是 GPU 占用爆表的真正根因）。
         let now = std::time::Instant::now();
         let mut next_wake: Option<std::time::Instant> = None;

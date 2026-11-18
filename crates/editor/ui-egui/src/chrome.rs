@@ -494,7 +494,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             );
             toolbar::show_model(&mut child, toolbar, icons);
             // 工具栏由 egui 独占：整块计入占用区，否则同一次点击会先被 旧版 的
-            // 按钮处理（例如 旧版 Play 启动播放），再被 egui 处理（此时
+            // 按钮处理（例如 Play 启动播放），再被 egui 处理（此时
             // `playing` 已变 true → 发 Pause），表现为「点播放先响一下又停」。
             // 底部 `TOOLBAR_RESIZE_H` 条仍留给 旧版（工具栏高度拖拽尚未迁移）。
             let blocked = egui::Rect::from_min_max(
@@ -637,7 +637,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 新增覆盖层时必须先对照这条规则，而不是默认「先画在主窗口里」。
 
     // 右下角浮层：Toast 通知 + 首次使用帮助提示。
-    // 旧版 侧视图（`toast::view` / `view/help_tip.rs`）已删除，这里独占绘制。
+    // 上一代视图（`toast::view` / `view/help_tip.rs`）已删除，这里独占绘制。
     let full_window = window_rect(&root);
     if let Some(toast) = toast_model(ui.ctx()) {
         crate::chrome::toast::show_toasts(&root, full_window, &toast);
@@ -726,7 +726,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 框选框（拖拽中 / 选中音符包围盒）：由 egui 绘制，
-    // 旧版 Canvas 的绘制层被底层纹理覆盖后不可见。
+    // 画布的绘制层被底层纹理覆盖后不可见。
     if let Some(marquee) = marquee_model(ui.ctx()) {
         crate::marquee::show(&root, &marquee);
     }
@@ -807,7 +807,7 @@ pub(crate) fn panel_frame(fill: egui::Color32) -> Frame {
 /// 走带视图是否由 egui 接管（**默认开启**；`LUMINO_EGUI_ARRANGEMENT=0` 回退 旧版）。
 ///
 /// 实测：egui 的泳道点击落点与指针一致，而 旧版 的 click canvas 存在
-/// canvas 偏移量级（≈208 逻辑像素）的既有偏差；标尺/轨道列在 旧版 侧完全不绘制内容。
+/// canvas 偏移量级（≈208 逻辑像素）的既有偏差；标尺/轨道列在画布侧不绘制内容。
 /// 因此默认走 egui 属于修复，而不是等价切换。
 fn arrangement_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

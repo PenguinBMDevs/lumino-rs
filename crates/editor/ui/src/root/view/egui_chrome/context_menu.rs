@@ -1,6 +1,6 @@
 //! 钢琴卷帘右键菜单：生产状态 → egui 模型。
 //!
-//! 本步把 旧版 `context_menu::view` 的绘制迁到 egui：条目集与文案来自
+//! 本步把 `context_menu::view` 的绘制迁到 egui：条目集与文案来自
 //! `lumino_message::context_menu`（旧版 侧也已改为同一份表），这里只负责把
 //! canvas 局部坐标换算成窗口坐标、并给出可放置区域。
 

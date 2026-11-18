@@ -199,7 +199,7 @@ fn track_row(ui: &mut egui::Ui, track: &SidebarTrack, cache: &mut IconCache) -> 
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::SelectTrack(track.id));
     }
     if response.secondary_clicked() {
-        // 右键由 egui 接管（旧版 的同位行按钮已不再收到该事件）。
+        // 右键由 egui 接管（原同位行按钮已不存在）。
         panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenTrackMenu(track.id));
     }
     // 行命中区由 egui 独占。

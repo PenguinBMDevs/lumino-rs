@@ -477,7 +477,7 @@ fn settings_dialog_takes_over_at_any_window_size() {
 fn progress_and_warning_windows_draw_their_own_content() {
     let config = lumino_core::storage::config::UiConfig::default();
 
-    // 这两类窗口没有 `DialogType`，但 旧版 不再 present，内容必须由 egui 绘制，
+    // 这两类窗口没有 `DialogType`，但该窗口不再 present，内容必须由 egui 绘制，
     // 否则窗口只剩标题栏。同时不能画出主窗口的标题栏 / 状态栏 band。
     let progress = Root::new_progress(&config.theme, &config);
     let model = progress.egui_chrome_model();

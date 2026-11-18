@@ -62,13 +62,13 @@ impl LmpjData {
         ParsedMidi {
             info: self.info,
             document: None,
-            // 旧版 LMPJ 格式无 stats 段，历史累计时间按 0 处理
+            // 旧 LMPJ 格式无 stats 段，历史累计时间按 0 处理
             accumulated_editing_secs: 0.0,
-            // 旧版 LMPJ 格式无作者/版权字段，按空处理
+            // 旧 LMPJ 格式无作者/版权字段，按空处理
             author: String::new(),
             copyright: String::new(),
             use10: false,
-            // 旧版 LMPJ 格式无 i2m 参数，按默认处理
+            // 旧 LMPJ 格式无 i2m 参数，按默认处理
             i2m: None,
         }
     }

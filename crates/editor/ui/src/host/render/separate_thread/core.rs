@@ -62,7 +62,7 @@ impl Host {
         egui_focused: bool,
     ) {
         // REND-019（PR-A §1.6）：设备已丢失（TDR）——本帧不渲染任何内容
-        // （含 blit 与 旧版 覆盖层），等待重连接管；避免对死设备/死渲染
+        // （含 blit 与 egui 覆盖层），等待重连接管；避免对死设备/死渲染
         // 线程继续投递造成日志刷屏
         if lumino_gfx::device_lost() {
             return;

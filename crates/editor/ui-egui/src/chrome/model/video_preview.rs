@@ -15,6 +15,6 @@ pub const RENDER_PREVIEW_TEXTURE_ID: egui::TextureId = egui::TextureId::User(0x4
 pub struct TexturePreviewModel {
     /// 需要铺图的矩形（逻辑坐标；来自 旧版 布局探针）。
     pub rects: Vec<Rect>,
-    /// 外部纹理；`None` = 门控判定不显示瀑布流，旧版 的占位文本继续生效。
+    /// 外部纹理；`None` = 门控判定不显示瀑布流，占位文本继续生效。
     pub texture: Option<egui::TextureId>,
 }

@@ -350,7 +350,7 @@ fn thickness(ui: &mut egui::Ui, rect: Rect, model: &ThicknessPanelModel) {
     }
     y += SLIDER_H + 8.0;
 
-    // 说明文案较长：按面板宽度换行，垂直居中（旧版单行绘制会横向溢出）。
+    // 说明文案较长：按面板宽度换行，垂直居中（单行绘制会横向溢出）。
     let hint_rect = Rect::from_min_size(
         Pos2::new(x, y),
         Vec2::new((rect.width() - PAD * 2.0).max(1.0), THICKNESS_HINT_H),

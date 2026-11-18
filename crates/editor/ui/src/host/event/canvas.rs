@@ -3,7 +3,7 @@
 //! 宿主把鼠标按下/移动/释放、滚轮、修饰键与失焦直接翻译成 [`CanvasEvent`]，
 //! 与共享分派 `ui_editor::grid::canvas_input::dispatch` 保持同一语义。
 //!
-//! 主窗口不再构建 旧版 widget 树，避免同一击被处理两次；对话框窗口没有画布，
+//! 主窗口不再构建 widget 树，避免同一击被处理两次；对话框窗口没有画布，
 //! 仍走原路径。
 
 use lumino_ui_editor::grid::canvas_input::{CanvasButton, CanvasEvent};

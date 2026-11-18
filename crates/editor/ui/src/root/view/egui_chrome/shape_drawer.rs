@@ -1,6 +1,6 @@
 //! 形状抽屉左侧面板：生产状态 → egui 模型，以及动作 → `Message` 映射。
 //!
-//! 画布仍由 旧版 的 `Canvas` 绘制；本层只接管面板区域（含库列表、文件/编辑动作、
+//! 画布由画布层绘制；本层只接管面板区域（含库列表、文件/编辑动作、
 //! 面积填充、插入与缩放）。分割线留给 旧版，保证拖动与生产同源。
 
 use lumino_core::shape::{AnchorBend, ShapeFill, SpamAlign, SpamEnds, StrokeKind};

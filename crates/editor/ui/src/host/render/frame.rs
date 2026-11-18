@@ -150,7 +150,7 @@ impl Host {
                 self.root.editor.update_playback_key_colors();
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
                 // 关键：即使自动滚动不触发（如循环回绕后指示线回到起点），
-                // 也必须重建 旧版 canvas UI 使指示线在新位置绘制。
+                // 也必须置脏并请求重绘，使指示线在新位置绘制。
                 if (tick - old_pos).abs() > f32::EPSILON {
                     self.ui_dirty = true;
                 }

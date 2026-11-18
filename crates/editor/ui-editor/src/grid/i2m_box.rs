@@ -4,7 +4,7 @@
 //! - 区域框常驻绘制（边框 + 淡填充），表示生成区域；
 //! - 区域框右侧空白处绘制 √（确认）/ ×（取消）两个悬浮按钮，
 //!   按钮视觉与曲线工具直线共用 `confirm_buttons` 模块
-//!   （旧版 canvas 绘制，wgpu 不参与这两个按钮的绘制）。
+//!   （按钮绘制不在 wgpu 路径内）。
 
 use crate::Editor;
 use crate::grid::confirm_buttons::BUTTON_SIZE;

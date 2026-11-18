@@ -134,7 +134,7 @@ impl Host {
 
     /// 处理待处理的事件队列
     ///
-    /// 旧版 widget 树**不再构建**（egui 已是唯一的绘制与输入通道）：窗口事件只经
+    /// widget 树**不再构建**（egui 已是唯一的绘制与输入通道）：窗口事件只经
     /// `OverlayInput::feed`（egui）与 winit 直连（画布 / 快捷键 / 触摸手势）
     /// 消费，本队列只作为历史缓冲，逐帧清空。触摸长按判定仍需每帧轮询。
     pub(crate) fn process_pending_events(&mut self) {

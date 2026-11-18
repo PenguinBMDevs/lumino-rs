@@ -1,6 +1,6 @@
 //! 工程设置对话框（`DialogType::ProjectSettings`）。
 //!
-//! 窗口使用**系统原生标题栏**（旧版 侧只渲染内容），因此 egui 整窗绘制表单：
+//! 窗口使用**系统原生标题栏**（原生标题栏下只渲染内容），因此 egui 整窗绘制表单：
 //! 24px 内边距、标题 18px、标签/正文 14px、输入框 `background.weak` 底 +
 //! 1px `background.strong` 边框、圆角 4；按钮 100×34（取消 / 确定，间距 12）。
 //! 表单在 `ScrollArea` 内（与生产 `scrollable(form)` 一致，按钮随内容滚动）。

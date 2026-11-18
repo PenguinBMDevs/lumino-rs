@@ -212,7 +212,7 @@ pub fn show(
         }
     }
 
-    // ── 工具事件：按下 > 移动 > 释放（一次只喂一个，与 旧版 逐事件投递等价） ──
+    // ── 工具事件：按下 > 移动 > 释放（一次只喂一个，与画布逐事件投递等价） ──
     let event = if left_pressed && inside {
         Some(pressed_left())
     } else if moving && ui.input(|i| i.pointer.primary_down()) {

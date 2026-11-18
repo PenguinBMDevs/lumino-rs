@@ -156,7 +156,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
     // 泳道区：同一份交互逻辑（`lumino-arrangement-core`）的 egui 适配。
     // 本阶段**不占用命中区**，用于 A/B 对照。
     if let Some(lane_model) = &model.lane {
-        // 泳道区由 egui 接管输入：整块计入占用区，旧版 的 click canvas 不再收到事件
+        // 泳道区由 egui 接管输入：整块计入占用区，画布的 click 通道不再收到事件
         // （否则同一次点击会被两边各处理一次，且 旧版 那份有既有坐标偏移）。
         super::menu::extend_blocked(ui.ctx(), [lane_rect(lane_model)]);
         for action in lane::show(ui, lane_model, &model.ruler, &model.track_list) {

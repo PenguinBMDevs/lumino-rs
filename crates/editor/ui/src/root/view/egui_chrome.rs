@@ -500,7 +500,7 @@ impl Root {
         let waterfall = self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall;
 
         // Windows/Linux 的系统原生标题栏模式在客户端顶部仍保留 30px 菜单栏行
-        // （旧版 `view_native_titlebar`）；叠加层接管后由 egui 画菜单标签与下拉。
+        // （原 `view_native_titlebar`）；叠加层接管后由 egui 画菜单标签与下拉。
         // macOS 原生模式没有这一行（旧版 返回空行，主内容不含标题栏）→ 跳过。
         let native = self.settings.synth.use_native_titlebar;
         let egui_menubar = native && !cfg!(target_os = "macos");

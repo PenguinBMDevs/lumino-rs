@@ -249,7 +249,7 @@ pub struct ProjectNoteCountModel {
     pub value: String,
 }
 
-/// 设置对话框调色板：由生产 旧版 `extended_palette` 映射。
+/// 设置对话框调色板：由生产侧主题调色板映射。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsPalette {
     /// 自制标题栏（`background.neutral`）。
@@ -346,7 +346,7 @@ pub struct SettingsSnapshot {
     pub page: SettingsPageModel,
 }
 
-/// 对话框调色板：由生产 旧版 `extended_palette` 映射，深/浅主题都能整窗接管。
+/// 对话框调色板：由生产侧主题调色板映射，深/浅主题都能整窗接管。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DialogPalette {
     /// 自制标题栏底色（`background.neutral`）。

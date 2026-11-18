@@ -8,7 +8,7 @@ use crate::root::Root;
 impl Root {
     /// 本帧远程光标（窗口逻辑坐标）。
     ///
-    /// 旧版绘制口径：文档像素坐标 − 视图滚动 + 画布左上角偏移；颜色是协作者
+    /// 绘制口径：文档像素坐标 − 视图滚动 + 画布左上角偏移；颜色是协作者
     /// 下发的 `#RRGGBB` / `#RRGGBBAA` 字符串。
     pub(crate) fn remote_cursors_model(&self) -> RemoteCursorModel {
         let view = &self.editor.editor_state.view;

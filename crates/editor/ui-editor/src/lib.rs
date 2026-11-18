@@ -149,7 +149,7 @@ pub struct SpatialIndexState {
     pub max_note_len_key: Cell<Option<(u64, usize)>>,
 }
 
-/// 绘制缓存失效标记（旧版 绘制缓存已删除，clear 为 no-op）。
+/// 绘制缓存失效标记（绘制缓存已删除，clear 为 no-op）。
 #[derive(Default)]
 pub struct GridCacheMarker;
 
@@ -160,7 +160,7 @@ impl GridCacheMarker {
 
 /// 钢琴卷帘编辑器
 pub struct Editor {
-    /// 绘制缓存失效标记（旧版 绘制缓存已删除；保留调用点以免改动大量编辑路径）
+    /// 绘制缓存失效标记（绘制缓存已删除；保留调用点以免改动大量编辑路径）
     pub grid_cache: GridCacheMarker,
     /// 键盘缓存失效标记（同 grid_cache，no-op）
     pub keyboard_cache: GridCacheMarker,

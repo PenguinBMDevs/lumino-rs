@@ -1,6 +1,6 @@
 //! 力度 / Tempo / Bend 面板的坐标换算与常量。
 //!
-//! 从已删除的 旧版 绘制层迁出：egui 面板与 wgpu 曲线渲染共用同一套映射，
+//! 从已删除的上一代绘制层迁出：egui 面板与 wgpu 曲线渲染共用同一套映射，
 //! 因此保留为纯函数（无 UI 框架类型）。
 
 use lumino_note_core::midi_types::TempoPoint;

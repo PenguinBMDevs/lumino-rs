@@ -1,7 +1,7 @@
 //! 生产菜单树 → egui 菜单模型，以及「动作序号 → `Message`」的解析。
 //!
 //! 两侧都按同一遍历顺序编号：主菜单 → 菜单项 → 子菜单项。
-//! 序号只用于跨 crate 传递（`lumino-ui-egui` 不依赖 旧版），真正的事件仍由
+//! 序号只用于跨 crate 传递（`lumino-ui-egui` 不依赖 UI 层），真正的事件仍由
 //! 生产 `titlebar::menu::menus()` 提供。
 
 use lumino_extras::i18n::Language;
