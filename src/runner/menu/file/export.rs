@@ -21,6 +21,7 @@ impl RunnerInner {
         }
         #[cfg(not(test))]
         {
+            let t0 = std::time::Instant::now();
             let result = lumino_platform::dialog::MessageDialog::new()
                 .set_title(tr!("导出前检查"))
                 .set_description(trf!(
@@ -30,6 +31,10 @@ impl RunnerInner {
                 .set_level(lumino_platform::dialog::MessageLevel::Warning)
                 .set_buttons(lumino_platform::dialog::MessageButtons::OkCancel)
                 .show();
+            tracing::info!(
+                "导出前 EOT 检查弹窗耗时 {:.1}ms",
+                t0.elapsed().as_secs_f64() * 1000.0
+            );
             matches!(result, lumino_platform::dialog::MessageDialogResult::Ok)
         }
         #[cfg(test)]
@@ -123,22 +128,23 @@ impl RunnerInner {
             .map(|p| get_file_stem(Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
-        // DEBT-23：主线程只做轻量快照（clone document，块级 COW），组包下沉到
-        // spawn_blocking。复用与本地保存/自动保存/云保存同一口径 LmpjSnapshot，
-        // 元数据装配归一到一处。file_stem 作 project_name（原导出未设 name=默认
-        // Untitled，快照补成文件名，与本地保存对齐、正向补全，不回退）。
-        // 快照必须在弹对话框前完成（对话框 borrowing &mut self，且快照时点=导出触发点）。
-        let Some(snapshot) = self.snapshot_lmpj_project(Path::new(&format!("{file_stem}.lmpj")))
-        else {
-            tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
-            return;
-        };
-
+        // 先让用户选目标：快照/组包放到路径确认之后，避免「点导出先卡住、再弹框」。
         let Some(entry_path) = lumino_platform::dialog::FileDialog::new()
             .set_file_name(format!("{file_stem}.lmpj"))
             .add_filter(tr!("Lumino 工程入口"), &["lmpj"])
             .save_file()
         else {
+            return;
+        };
+
+        // DEBT-23：主线程只做轻量快照（clone document，块级 COW），组包下沉到
+        // spawn_blocking。复用与本地保存/自动保存/云保存同一口径 LmpjSnapshot，
+        // 元数据装配归一到一处。file_stem 作 project_name（原导出未设 name=默认
+        // Untitled，快照补成文件名，与本地保存对齐、正向补全，不回退）。
+        // 保存对话框为模态、期间不可编辑，因此快照放在路径确认前后语义等价。
+        let Some(snapshot) = self.snapshot_lmpj_project(Path::new(&format!("{file_stem}.lmpj")))
+        else {
+            tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
             return;
         };
 

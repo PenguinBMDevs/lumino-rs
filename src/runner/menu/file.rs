@@ -286,7 +286,11 @@ impl RunnerInner {
                     .set_current_track(track_idx, true);
             }
             ExportProjectArchive => {
-                self.handle_export_project_archive();
+                // 「导出为单文件」也是导出：先弹风险警告，确认后再进入（与保存共用的
+                // `handle_save_single_file` 本身不弹，避免 Ctrl+S 被打扰）。
+                if self.confirm_missing_eot_before_export() {
+                    self.handle_export_project_archive();
+                }
             }
             ExportProjectFolder => {
                 self.handle_export_project_folder();
