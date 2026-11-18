@@ -211,12 +211,18 @@ pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
                             &font, scale, cell.ch, baseline_x, baseline_y,
                         );
                         // 关键：ab_glyph 的覆盖率坐标相对「字形包围盒左上角」，
-                        // 必须叠加包围盒 min 才是帧内绝对像素（与本仓 text_tool 一致）
+                        // 必须叠加包围盒 min 才是帧内绝对像素（与本仓 text_tool 一致）。
+                        // 样本坐标已预取整，这里只做整数加法；颜色 u8→f32 提到循环外。
                         let b_min_x = cached.base_min.0 + baseline_x.trunc();
                         let b_min_y = cached.base_min.1 + baseline_y.trunc();
-                        for &(px, py, cov) in &cached.samples {
-                            let x = (px as f32 + b_min_x).round() as i32;
-                            let y = (py as f32 + b_min_y).round() as i32;
+                        let (bx, by) = (b_min_x as i32, b_min_y as i32);
+                        let fg_f = [cell.fg[0] as f32, cell.fg[1] as f32, cell.fg[2] as f32];
+                        let bg_f = [cell.bg[0] as f32, cell.bg[1] as f32, cell.bg[2] as f32];
+                        let fg_word = pack_bgra(cell.fg);
+                        let bg_word = pack_bgra(cell.bg);
+                        for &(ox, oy, cov) in &cached.samples {
+                            let x = bx + ox;
+                            let y = by + oy;
                             if x < 0 || y < 0 {
                                 continue;
                             }
@@ -224,11 +230,8 @@ pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
                             if di + 3 >= frame.len() {
                                 continue;
                             }
-                            let a = cov.clamp(0.0, 1.0);
-                            frame[di] = blend(cell.bg[0], cell.fg[0], a);
-                            frame[di + 1] = blend(cell.bg[1], cell.fg[1], a);
-                            frame[di + 2] = blend(cell.bg[2], cell.fg[2], a);
-                            frame[di + 3] = 255;
+                            let word = coverage_word(fg_f, bg_f, fg_word, bg_word, cov);
+                            frame[di..di + 4].copy_from_slice(&word.to_le_bytes());
                         }
                     }
                 }
@@ -256,10 +259,37 @@ pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
     });
 }
 
-/// 背景色与前景色按覆盖率混合（BGRA 顺序）
+/// 打包 BGRA 像素（alpha 恒 255，与导出编码器消费顺序一致）。
 #[inline]
-fn blend(bg: u8, fg: u8, a: f32) -> u8 {
-    (fg as f32 * a + bg as f32 * (1.0 - a)).clamp(0.0, 255.0) as u8
+pub(super) fn pack_bgra(color: [u8; 3]) -> u32 {
+    (color[0] as u32) | ((color[1] as u32) << 8) | ((color[2] as u32) << 16) | 0xFF00_0000
+}
+
+/// 覆盖率 → BGRA 像素。
+///
+/// 两端（0 / ≥1）直接返回常量：原式 `f*a + b*(1-a)` 在 a=0/1 时精确等于
+/// b / f（`f*1+b*0`、`f*0+b*1`），省去浮点混合；中间仍用原式逐通道计算，
+/// 与逐帧栅格化实现逐位一致。
+#[inline]
+pub(super) fn coverage_word(
+    fg_f: [f32; 3],
+    bg_f: [f32; 3],
+    fg_word: u32,
+    bg_word: u32,
+    cov: f32,
+) -> u32 {
+    let a = cov.clamp(0.0, 1.0);
+    if a >= 1.0 {
+        return fg_word;
+    }
+    if a <= 0.0 {
+        return bg_word;
+    }
+    let inv = 1.0 - a;
+    let b = (fg_f[0] * a + bg_f[0] * inv).clamp(0.0, 255.0) as u32;
+    let g = (fg_f[1] * a + bg_f[1] * inv).clamp(0.0, 255.0) as u32;
+    let r = (fg_f[2] * a + bg_f[2] * inv).clamp(0.0, 255.0) as u32;
+    b | (g << 8) | (r << 16) | 0xFF00_0000
 }
 
 /// 填充矩形（BGRA），`size=(宽, 高)`，`rect=(x0, y0, 宽, 高)`（8 参结构体化，满足 `too_many_arguments`）。
@@ -278,18 +308,34 @@ pub(super) fn fill_rect(
     if x1 <= x0 {
         return;
     }
-    // 行内整段像素填充：单次 4 字节 store，去掉逐像素边界检查与四次字节写。
-    // 输出与逐像素写完全一致（同一 BGRA 像素、同一裁剪边界）。
+    // 行内整段像素填充：输出与逐像素写完全一致（同一 BGRA 像素、同一裁剪边界）。
+    // cell 宽度通常 10-20px（40-80B）：整行一次 memcpy 比逐像素 4 字节 store 快。
     let pixel = [color[2], color[1], color[0], 255];
     let width = (x1 - x0) as usize;
-    for y in y0..y1 {
-        let start = (y as usize * fw + x0 as usize) * 4;
-        let end = start + width * 4;
-        if end > frame.len() {
-            continue;
-        }
-        for px in frame[start..end].as_chunks_mut::<4>().0 {
+    let bytes = width * 4;
+    if bytes <= 64 {
+        let mut pattern = [0u8; 64];
+        for px in pattern.as_chunks_mut::<4>().0 {
             *px = pixel;
+        }
+        for y in y0..y1 {
+            let start = (y as usize * fw + x0 as usize) * 4;
+            let end = start + bytes;
+            if end > frame.len() {
+                continue;
+            }
+            frame[start..end].copy_from_slice(&pattern[..bytes]);
+        }
+    } else {
+        for y in y0..y1 {
+            let start = (y as usize * fw + x0 as usize) * 4;
+            let end = start + bytes;
+            if end > frame.len() {
+                continue;
+            }
+            for px in frame[start..end].as_chunks_mut::<4>().0 {
+                *px = pixel;
+            }
         }
     }
 }
@@ -316,12 +362,17 @@ pub(super) fn apply_crt_effect(frame: &mut [u8], fw: usize, fh: usize, tick: u32
         for (v, slot) in lut.iter_mut().enumerate() {
             *slot = (v as f32 * factor).clamp(0.0, 255.0) as u8;
         }
-        let row = y * fw;
-        for x in 0..fw {
-            let di = (row + x) * 4;
-            frame[di] = lut[frame[di] as usize];
-            frame[di + 1] = lut[frame[di + 1] as usize];
-            frame[di + 2] = lut[frame[di + 2] as usize];
+        // 整行按 u32 处理：1 次 4 字节读 + 3 次查表 + 1 次 4 字节写，
+        // 替代逐像素 4 次字节读/写；alpha 原样保留（与旧实现一致）。
+        let start = y * fw * 4;
+        let end = start + fw * 4;
+        for px in frame[start..end].as_chunks_mut::<4>().0 {
+            let word = u32::from_le_bytes(*px);
+            let b = lut[(word & 0xFF) as usize] as u32;
+            let g = lut[((word >> 8) & 0xFF) as usize] as u32;
+            let r = lut[((word >> 16) & 0xFF) as usize] as u32;
+            let out = b | (g << 8) | (r << 16) | (word & 0xFF00_0000);
+            *px = out.to_le_bytes();
         }
     }
 }

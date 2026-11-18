@@ -260,19 +260,11 @@ fn test_cached_glyph_matches_direct_raster() {
             // 缓存路径（生产实现）
             let cached = super::glyph_cache::cached_glyph(&font, scale, ch, bx, by);
             let b_min = (
-                cached.base_min.0 + bx.trunc(),
-                cached.base_min.1 + by.trunc(),
+                (cached.base_min.0 + bx.trunc()) as i32,
+                (cached.base_min.1 + by.trunc()) as i32,
             );
-            for &(px, py, cov) in &cached.samples {
-                draw_blend(
-                    &mut got,
-                    fw,
-                    (px as f32 + b_min.0).round() as i32,
-                    (py as f32 + b_min.1).round() as i32,
-                    bg,
-                    fg,
-                    cov,
-                );
+            for &(ox, oy, cov) in &cached.samples {
+                draw_blend(&mut got, fw, b_min.0 + ox, b_min.1 + oy, bg, fg, cov);
             }
 
             // 直栅格路径（改造前实现）
@@ -315,6 +307,30 @@ fn draw_blend(frame: &mut [u8], fw: usize, x: i32, y: i32, bg: [u8; 3], fg: [u8;
     frame[di + 3] = 255;
 }
 
+/// 覆盖率混合（含 0 / ≥1 两端短路）必须与逐通道原式逐位一致
+#[test]
+fn test_coverage_word_matches_direct_blend() {
+    let fg = [200u8, 180, 60];
+    let bg = [20u8, 20, 20];
+    let fg_f = fg.map(|v| v as f32);
+    let bg_f = bg.map(|v| v as f32);
+    let fg_word = super::cpu::pack_bgra(fg);
+    let bg_word = super::cpu::pack_bgra(bg);
+
+    let mut covers = vec![-0.5f32, 0.0, 1.0, 1.5];
+    covers.extend((0..=1000).map(|k| k as f32 / 1000.0));
+    for cov in covers {
+        let bytes = super::cpu::coverage_word(fg_f, bg_f, fg_word, bg_word, cov).to_le_bytes();
+        let a = cov.clamp(0.0, 1.0);
+        for ch in 0..3 {
+            // 原式（与改造前逐像素 blend 相同）
+            let want = (fg_f[ch] * a + bg_f[ch] * (1.0 - a)).clamp(0.0, 255.0) as u8;
+            assert_eq!(bytes[ch], want, "cov={cov} 通道 {ch} 不一致");
+        }
+        assert_eq!(bytes[3], 255, "alpha 必须不透明");
+    }
+}
+
 /// CRT 查表实现必须与逐像素原式逐位一致（像素等价护栏）
 #[test]
 fn test_crt_lut_matches_direct_formula() {
@@ -352,32 +368,38 @@ fn test_crt_lut_matches_direct_formula() {
     }
 }
 
-/// 行内整段填充必须与逐像素写等价（含裁剪与小数边界）
+/// 行内整段填充必须与逐像素写等价（含裁剪、小数边界、窄/宽两条实现分支）
 #[test]
 fn test_fill_rect_row_chunks_match_per_pixel() {
     let (fw, fh) = (41usize, 29usize);
-    let rect = (3.4f32, 2.7f32, 9.6f32, 7.2f32);
     let color = [10u8, 20, 30];
-    let mut got = vec![0u8; fw * fh * 4];
-    fill_rect(&mut got, (fw, fh), rect, color);
+    // 9.6px 宽 → memcpy 分支；31.4px 宽 → 逐像素分支；2.2px 起点为小数
+    for rect in [
+        (3.4f32, 2.7f32, 9.6f32, 7.2f32),
+        (5.6f32, 1.1f32, 31.4f32, 4.9f32),
+        (-3.0f32, -2.0f32, 6.5f32, 5.5f32),
+    ] {
+        let mut got = vec![0u8; fw * fh * 4];
+        fill_rect(&mut got, (fw, fh), rect, color);
 
-    let mut want = vec![0u8; fw * fh * 4];
-    let (x0, y0, rw, rh) = rect;
-    let x0 = x0.max(0.0) as i64;
-    let y0 = y0.max(0.0) as i64;
-    let x1 = ((x0 as f32 + rw) as i64).min(fw as i64);
-    let y1 = ((y0 as f32 + rh) as i64).min(fh as i64);
-    for y in y0..y1 {
-        let row = y as usize * fw;
-        for x in x0..x1 {
-            let di = (row + x as usize) * 4;
-            want[di] = color[2];
-            want[di + 1] = color[1];
-            want[di + 2] = color[0];
-            want[di + 3] = 255;
+        let mut want = vec![0u8; fw * fh * 4];
+        let (x0, y0, rw, rh) = rect;
+        let x0 = x0.max(0.0) as i64;
+        let y0 = y0.max(0.0) as i64;
+        let x1 = ((x0 as f32 + rw) as i64).min(fw as i64);
+        let y1 = ((y0 as f32 + rh) as i64).min(fh as i64);
+        for y in y0..y1 {
+            let row = y as usize * fw;
+            for x in x0..x1 {
+                let di = (row + x as usize) * 4;
+                want[di] = color[2];
+                want[di + 1] = color[1];
+                want[di + 2] = color[0];
+                want[di + 3] = 255;
+            }
         }
+        assert_eq!(got, want, "rect={rect:?} 行整段填充与逐像素写结果不一致");
     }
-    assert_eq!(got, want, "行整段填充与逐像素写结果不一致");
 }
 
 /// 仅含一个短音符（CH1 C4，tick 0..240）的文档，用于过渡动画测试

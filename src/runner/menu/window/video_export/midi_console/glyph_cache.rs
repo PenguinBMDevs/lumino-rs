@@ -19,8 +19,12 @@ use ab_glyph::{Font, FontArc, PxScale, point};
 pub(super) struct CachedGlyph {
     /// 像素包围盒左上角相对 `position.trunc()` 的偏移（整数精度 f32）
     pub(super) base_min: (f32, f32),
-    /// `(包围盒局部 x, y, 覆盖率)`，顺序与 `OutlinedGlyph::draw` 一致
-    pub(super) samples: Vec<(u32, u32, f32)>,
+    /// `(包围盒局部 x, y, 覆盖率)`，顺序与 `OutlinedGlyph::draw` 一致。
+    ///
+    /// 坐标预转 `i32`：`px_bounds.min` 恒为整数值，原实现的
+    /// `(px as f32 + b.min).round() as i32` 等价于 `b.min as i32 + px`，
+    /// 逐样本省去浮点加/取整/转换。
+    pub(super) samples: Vec<(i32, i32, f32)>,
 }
 
 #[derive(Default)]
@@ -75,7 +79,7 @@ fn rasterize(font: &FontArc, scale: PxScale, ch: char, bx: f32, by: f32) -> Cach
     if let Some(outline) = font.outline_glyph(gid.with_scale_and_position(scale, point(bx, by))) {
         let b = outline.px_bounds();
         base_min = (b.min.x - bx.trunc(), b.min.y - by.trunc());
-        outline.draw(|px, py, cov| samples.push((px, py, cov)));
+        outline.draw(|px, py, cov| samples.push((px as i32, py as i32, cov)));
     }
     CachedGlyph { base_min, samples }
 }
