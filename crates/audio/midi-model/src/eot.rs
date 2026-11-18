@@ -194,7 +194,8 @@ impl MidiDocument {
         self.sys_ex.retain(|e| keep_text(e.0, e.1, &ends));
         out.sysex_removed += (before - self.sys_ex.len()) as u64;
 
-        // 重算总长（原实现取「每轨最大音符结束 tick」的全局最大）。
+        // 重算总长：与加载语义一致——取「声明结尾（EOT）」与残留内容末尾的较大者。
+        // （残留音符可能跨过 EOT 开始、结束在其后；不能让它们落到时间线之外。）
         let max_note_end = self
             .notes
             .iter()
@@ -203,7 +204,7 @@ impl MidiDocument {
             .max()
             .unwrap_or(0);
         let max_ctrl = self.control_events.last().map(|e| e.tick).unwrap_or(0);
-        self.total_ticks = max_note_end.max(max_ctrl);
+        self.total_ticks = max_note_end.max(max_ctrl).max(report.declared_end_tick());
         out.total_ticks_after = self.total_ticks;
 
         // max_end 缓存全部置脏（裁剪只发生在异常轨，但缓存粒度是全局列表）。
@@ -287,11 +288,14 @@ mod tests {
         assert_eq!(timing.declared_end_tick(), 100);
         assert_eq!(timing.physical_end_tick, 300);
         assert_eq!(doc.notes[0].len(), 2, "兼容模式保留 EOT 后事件");
-        assert_eq!(doc.total_ticks, 300);
+        assert_eq!(
+            doc.total_ticks, 100,
+            "时间线取声明结尾（EOT=100），畸形尾部不拉长时长"
+        );
 
         let trimmed = doc.trim_after_eot(&report);
         assert_eq!(trimmed.notes_removed, 1);
-        assert_eq!(trimmed.total_ticks_before, 300);
+        assert_eq!(trimmed.total_ticks_before, 100);
         assert_eq!(trimmed.total_ticks_after, 100);
         assert_eq!(doc.notes[0].len(), 1);
         assert_eq!(doc.total_ticks, 100);
@@ -403,6 +407,10 @@ mod tests {
             report.declared_end_tick(),
             1000,
             "必须取最晚 EOT（1000），而不是较早的 B=500"
+        );
+        assert_eq!(
+            doc.total_ticks, 1000,
+            "时间线取最晚 EOT，不被 1200/1300 的畸形尾部拉长"
         );
         assert_eq!(report.tracks_with_events_after_eot(), 1);
 

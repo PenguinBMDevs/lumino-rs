@@ -42,7 +42,6 @@ struct TrackBuild {
     port: u8,
     /// TrackName meta（首个，已解码；空名称归一为 None，与旧 `scan_track_names` 一致）。
     name: Option<String>,
-    max_end_tick: u32,
     note_count: u64,
     tempo_changes: Vec<(u32, f32)>,
     control_events: Vec<midly::loader::PackedControlEvent>,
@@ -171,8 +170,6 @@ impl MidiDocument {
                 midly::loader::extract_all_events_per_track_collect_from_bytes(
                     file_bytes,
                     |_track_idx, mut events| {
-                        let max_end_tick =
-                            events.notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
                         let note_count = events.notes.len() as u64;
                         // midly 的 TrackAllEvents 按「NoteOff 到达顺序」产出音符（重叠音符中
                         // 先结束后开始的会排在先开始音符之前），并不保证按 start_tick 升序——
@@ -194,7 +191,6 @@ impl MidiDocument {
                                 .track_name
                                 .map(scan::decode_midi_text)
                                 .filter(|n| !n.is_empty()),
-                            max_end_tick,
                             note_count,
                             tempo_changes: events.tempo_changes,
                             control_events: events.control_events,
@@ -272,7 +268,10 @@ impl MidiDocument {
 
             for track in track_builds {
                 total_notes += track.note_count;
-                total_ticks = total_ticks.max(track.max_end_tick);
+                // 时间线语义（产品决策）：取各轨**声明结尾（EOT）的最大值**，
+                // 而不是音符结束 tick 的最大值——畸形尾部（EOT 之后的事件）
+                // 不得把文件时长拉长。缺 EOT 的轨退化为物理末尾（TrackTiming 内处理）。
+                total_ticks = total_ticks.max(track.timing.declared_end_tick());
                 track_ports.push(track.port);
                 track_names.push(track.name);
                 notes.push(track.notes);
