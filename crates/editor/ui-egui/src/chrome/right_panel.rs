@@ -104,7 +104,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<RightSidebarAction> {
 
 /// 绘制 6px 缩放手柄并接管拖拽（按下/松开 → 生产侧 start/end_resize）。
 ///
-/// 宽度跟随仍由宿主处理：旧版 每条 `CursorMoved` 都会调用
+/// 宽度跟随由宿主处理：宿主在 `CursorMoved` 里调
 /// `RightSidebar::update_resize_position`，这里只需正确发出起止信号。
 pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
     ui.painter().rect_filled(
@@ -123,9 +123,9 @@ pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
     );
     let response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
 
-    // 起止信号必须**成对**发出：不能依赖生产状态 `resizing` 的时序——旧版 在
-    // 鼠标松开时会先走 `handle_release_all` 直接 `end_resize()`，等到下一帧
-    // `resizing` 已经是 false，就再也发不出 Ended。这里用 egui 自己的边沿状态。
+    // 起止信号必须**成对**发出：不能依赖生产状态 `resizing` 的时序——宿主在鼠标
+    // 松开时会先走释放兜底直接 `end_resize()`，等到下一帧 `resizing` 已经是 false，
+    // 就再也发不出 Ended。这里用 egui 自己的边沿状态。
     let dragging_id = Id::unique("lumino.right-sidebar.handle.dragging");
     let started = ui
         .ctx()
@@ -140,7 +140,7 @@ pub fn show_handle(ui: &egui::Ui, rect: Rect, resizing: bool) {
         push_action(ui.ctx(), RightSidebarAction::ResizeEnded);
     }
 
-    // 手柄由 egui 独占：旧版 的 mouse_area 不再收到按下/松开。
+    // 手柄由 egui 独占（本函数末尾把它计入占用列表），按下/松开只发一次起止信号。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 
@@ -153,7 +153,7 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, panel: &RightSidebarPanelModel, icons
         RightSidebarPanelModel::Materials(model) => materials::show(ui, rect, model, icons),
         RightSidebarPanelModel::PianoWaterfall(model) => waterfall::show(ui, rect, model),
     }
-    // 内容区整块占用：点击 / 滚轮只给 egui。拖拽手柄（内容区左侧 6px）不在
-    // 本矩形内，旧版 仍能收到缩放拖拽。
+    // 内容区整块占用：点击 / 滚轮只给 egui。拖拽手柄（内容区左侧 6px）由
+    // `show_handle` 单独占用并发信号，不在本矩形内。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }

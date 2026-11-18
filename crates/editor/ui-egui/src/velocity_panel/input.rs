@@ -1,11 +1,12 @@
-//! 力度面板编辑输入（力度模式 + 曲线工具）。
+//! 力度面板编辑输入（力度 / Tempo / CC / Bend 四模式）。
 //!
-//! 与 旧版 `VelocityCanvas` 的力度交互同语义：
+//! 力度交互语义：
 //! - 命中力度点（10px）→ 拖拽改力度；
 //! - 空白处按下 → 曲线绘制（起点到当前点的线性插值，按下时若有选中集则只影响选中音符）；
 //! - 松开 → 结束。
 //!
-//! Tempo / CC / Bend 的输入仍由 旧版 Canvas 处理（本模块只在力度模式下占用数据区）。
+//! 四种模式的数据区编辑**全部由本模块接管**（`velocity_panel::show` 只在编辑态把
+//! `blocking_rect` 计入占用列表），不再有画布侧并行处理。
 
 use egui::{Rect, Vec2};
 
@@ -367,7 +368,8 @@ mod automation;
 
 pub(super) use automation::handle as handle_automation;
 
-/// 数据区在力度编辑时从 旧版 手里接管的矩形（保留顶部 resize 手柄给 旧版）。
+/// 数据区在编辑态占用的矩形：顶部 `RESIZE_HANDLE` 那一条留给 [`resize_zone`] 独占，
+/// 因此从 `canvas.top() + RESIZE_HANDLE` 起算。
 pub(super) fn blocking_rect(canvas: Rect) -> Rect {
     Rect::from_min_max(
         egui::pos2(canvas.left(), canvas.top() + RESIZE_HANDLE),

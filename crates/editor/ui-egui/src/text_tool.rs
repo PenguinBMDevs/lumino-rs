@@ -70,7 +70,7 @@ impl TextToolModel {
         self.rect.width() <= 0.0 || self.rect.height() <= 0.0
     }
 
-    /// 本帧需要从 旧版 手里接管的矩形（文本框 + 按钮）。
+    /// 本帧需要计入占用列表的矩形（文本框 + 按钮）。
     pub fn blocking_rects(&self) -> Vec<Rect> {
         let mut rects = vec![self.rect, self.input_rect];
         for rect in [self.confirm, self.cancel, self.mode].into_iter().flatten() {

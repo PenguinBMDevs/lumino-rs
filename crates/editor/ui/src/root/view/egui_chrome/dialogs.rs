@@ -39,10 +39,10 @@ mod support;
 mod video_export_overlay;
 
 impl Root {
-    /// 已支持整窗接管的对话框（保存确认 / 设置「常规」页）。
+    /// 已支持整窗接管的对话框（保存确认 / 设置各页 …）。
     ///
-    /// 其余对话框（导出 / 历史 …）与其余设置页仍由 旧版 绘制：整块返回空模型，
-    /// 叠加层不画任何东西，避免把主窗口 band 盖到对话框上。
+    /// 返回 `None` = 本帧不接管：叠加层整窗不画任何东西，避免把主窗口 band
+    /// 盖到对话框上。未映射的页面索引走这个兜底。
     pub(super) fn egui_dialog_model(&self) -> Option<DialogModel> {
         match self.state.dialog_type {
             DialogType::SaveConfirm => Some(DialogModel::SaveConfirm(SaveConfirmModel {
@@ -56,7 +56,8 @@ impl Root {
             DialogType::Settings => {
                 let language = self.settings.display.language;
                 let selected = self.settings.selected_menu_index;
-                // 已迁移页面：常规 / 快捷键 / 洋葱皮 / 兼容性；其余页面整块交回 旧版。
+                // 已迁移页面：常规 / 音视频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 /
+                // 云 / 兼容性 / 关于；未知索引返回 None，由叠加层兜底。
                 let page = match selected {
                     0 => SettingsPageModel::General,
                     1 => SettingsPageModel::Audio(super::settings_audio::page(self)),

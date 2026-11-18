@@ -328,7 +328,7 @@ pub struct RightSidebarModel {
     pub top_inset: f32,
     /// 是否正在拖拽调整面板宽度（决定手柄底色）。
     pub resizing: bool,
-    /// 已接管的面板内容；`None` = 内容仍由 旧版 绘制（素材库 / 瀑布流）。
+    /// 已接管的右侧栏内容；`None` = 面板隐藏 / 侧栏不可见（叠加层不绘制内容区）。
     pub content: Option<RightSidebarPanelModel>,
     /// 图标列按钮（自上而下）。为空时回退到内置的三项顺序（仅为测试便利）。
     pub rail: Vec<RightSidebarRailItem>,

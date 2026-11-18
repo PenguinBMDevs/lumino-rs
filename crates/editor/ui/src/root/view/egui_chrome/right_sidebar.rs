@@ -85,7 +85,7 @@ fn rail_items(language: lumino_extras::i18n::Language) -> Vec<RightSidebarRailIt
         },
     ]
 }
-/// 当前页面的右侧栏内容；未接管的面板返回 `None`（继续由 旧版 绘制）。
+/// 当前页面的右侧栏内容；面板隐藏 / 侧栏不可见时返回 `None`（叠加层不绘制内容区）。
 pub(super) fn content(root: &Root) -> Option<RightSidebarPanelModel> {
     if !root.right_sidebar.panel_visible || !root.right_sidebar_visible() {
         return None;

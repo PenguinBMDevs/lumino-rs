@@ -99,9 +99,9 @@ pub struct VelocityPanelModel {
 
 /// 绘制面板骨架与工具栏。
 ///
-/// 返回 `(动作, 需要从 旧版 手里接管的矩形)`：工具栏 / CC 弹层 / 各模式的编辑区
+/// 返回 `(动作, 需要计入占用列表的矩形)`：工具栏 / CC 弹层 / 各模式的编辑区
 /// 与顶部 resize 手柄都必须占用；`Tempo` / `Velocity` / `CC` / `Bend` 的数据区
-/// 编辑均已迁 egui（resize 手柄的点击也不再落到 旧版 Canvas）。
+/// 编辑全部归 egui（resize 手柄由 `input::resize_zone` 独占）。
 pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelAction>, Vec<Rect>) {
     let painter = ui.painter();
     let mut blocked = vec![model.toolbar, input::resize_zone(model.canvas)];

@@ -93,7 +93,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
     ui.painter().rect_filled(route, 0, theme::route_bar_bg());
 
     // 路由栏由 egui **独占**：绘制 + 点击 + 动作通道（含底部卷帘方向与混音台）。
-    // 因此必须计入占用区，否则同一次点击会同时被 egui 和 旧版 各处理一次
+    // 因此必须计入占用区，否则同一次点击会同时被 egui 和画布各处理一次
     // （表现为「打开又立刻关闭」，或命中到 旧版 的旧偏移坐标）。
     super::menu::extend_blocked(ui.ctx(), [route]);
 
@@ -109,7 +109,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &SidebarModel, icons: &mut crate::ic
             SidebarPanel::AddTrackOnly => track_list::show_add_track(ui, panel, model, icons),
             SidebarPanel::Blank => {}
         }
-        // 右侧 6px 缩放手柄：旧版 版本会被底层画布纹理盖住，这里由 egui 绘制并接管。
+        // 右侧 6px 缩放手柄：该区域会被底层画布纹理盖住，这里由 egui 绘制并接管。
         let handle = Rect::from_min_size(
             egui::pos2(panel.right(), panel.top()),
             Vec2::new(6.0, panel.height()),
@@ -457,7 +457,7 @@ fn route_button(
 /// 右侧栏图标列：48px 宽、按钮 48×48 + 2px 间距、灯条贴右边缘。
 ///
 /// 图标列由 egui **独占**：绘制 + 点击 + 动作通道（`RailClicked`）。
-/// 因此整列计入占用区，否则同一次点击会同时被 egui 与 旧版 的旧按钮各处理一次。
+/// 因此整列计入占用区，否则同一次点击会同时被 egui 与画布各处理一次。
 pub fn show_right_model(
     ui: &mut egui::Ui,
     model: &super::RightSidebarModel,
@@ -508,7 +508,7 @@ pub fn show_right_model(
         let y = rect.top() + index as f32 * (RIGHT_BTN + RIGHT_BTN_GAP);
         right_button(ui, icons, icon, left, y, model.active, Some((kind, label)));
     }
-    // 整列占用：点击只给 egui（旧版 的同位置按钮不再收到事件）。
+    // 整列占用：点击只给 egui（画布不再收到同位置事件）。
     super::menu::extend_blocked(ui.ctx(), [rect]);
 }
 

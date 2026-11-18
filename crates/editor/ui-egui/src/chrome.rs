@@ -356,7 +356,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             push_video_timeline_action(ui.ctx(), action);
         }
         crate::video_clip_timeline::show(&root, rect, &timeline);
-        // 时间轴由 egui 接管输入：整块占用，避免 旧版 的同位画布再处理一次。
+        // 时间轴由 egui 接管输入：整块占用，避免画布再处理一次。
         menu::extend_blocked(ui.ctx(), [rect]);
         for action in crate::video_clip_timeline::interact(&root, rect, &timeline) {
             push_video_timeline_action(ui.ctx(), action);
@@ -559,8 +559,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         );
         if band.width() > 0.0 && band.height() > 0.0 {
             if let Some(content) = content {
-                // 手柄 6px（生产 `RESIZE_HANDLE_WIDTH`）留在左侧，不进入占用列表：
-                // 旧版 仍负责缩放拖拽，只有内容区改由 egui 处理。
+                // 手柄 6px（生产 `RESIZE_HANDLE_WIDTH`）由 egui 绘制并独占命中
+                // （`right_panel::show_handle` 自己计入占用列表）；宽度跟随由宿主在
+                // `CursorMoved` 里调 `update_resize_position`，egui 只发成对起止信号。
                 let handle = egui::Rect::from_min_max(
                     band.min,
                     egui::pos2((band.left() + 6.0).min(band.right()), band.bottom()),

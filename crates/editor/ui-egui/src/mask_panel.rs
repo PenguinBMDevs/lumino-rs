@@ -257,7 +257,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPan
     if action.is_none() && backdrop.clicked() {
         action = Some(MaskPanelAction::Close);
     }
-    // 面板打开期间整窗占用：旧版 不再收到点击（与 旧版 全屏 backdrop 同义）。
+    // 面板打开期间整窗占用：画布与其余面板都收不到点击（与全屏 backdrop 同义）。
     crate::chrome::menu::extend_blocked(ui.ctx(), [full]);
     action
 }

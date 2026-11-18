@@ -62,7 +62,7 @@ pub fn take_action(ctx: &egui::Context) -> Option<usize> {
     ctx.data_mut(|d| d.remove_temp::<usize>(Id::unique(ACTION_ID)))
 }
 
-/// 取走本帧菜单占用的屏幕矩形（逻辑点），用于从 旧版 事件队列里消费点击。
+/// 取走本帧菜单占用的屏幕矩形（逻辑点），用于把 egui 已占用的点击从画布输入里剔除。
 pub fn take_blocked(ctx: &egui::Context) -> Vec<Rect> {
     ctx.data_mut(|d| d.remove_temp::<Vec<Rect>>(Id::unique(BLOCKED_ID)))
         .unwrap_or_default()
