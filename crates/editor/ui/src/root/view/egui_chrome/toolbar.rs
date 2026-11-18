@@ -30,8 +30,9 @@ pub(super) fn snap_menu(toolbar: &toolbar::Toolbar) -> Option<SnapMenuModel> {
                 selected: spec == toolbar.snap_spec,
             })
             .collect(),
-        // 与 旧版 视图逐字一致（该行在 旧版 侧也没有本地化）。
-        custom_label: "Custom…".to_owned(),
+        // 与 旧版 视图同结构，但跟随界面语言（旧版侧写死英文 `Custom…`，
+        // 中文界面下会突兀；`自定义` 已在运行时目录登记）。
+        custom_label: format!("{}…", tr!("自定义")),
     })
 }
 

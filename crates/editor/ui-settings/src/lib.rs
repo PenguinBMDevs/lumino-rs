@@ -102,11 +102,9 @@ pub struct EditingSettings {
     /// 自动化曲线连线粗细（像素，1-10）
     pub automation_line_thickness: f32,
     /// Tempo 面板 BPM 绘制上限（默认 512）
+    ///
+    /// DRAW-045：自定义输入在独立对话框中完成，面板不再保存编辑中的临时态。
     pub tempo_max_bpm: f64,
-    /// 自定义 BPM 上限输入面板是否打开
-    pub tempo_custom_open: bool,
-    /// 自定义 BPM 上限输入框内容
-    pub tempo_custom_input: String,
     /// 添加音轨行为
     pub track_add_behavior: TrackAddBehavior,
 }

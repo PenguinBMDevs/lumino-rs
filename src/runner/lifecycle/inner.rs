@@ -37,10 +37,14 @@ impl crate::runner::inner::RunnerInner {
     ) {
         puffin::profile_scope!("runner_about_to_wait_dialog_init");
         let main_ui = self.window_state.window.ui();
-        // 从主窗口获取当前主题，覆盖 storage 中的主题缓存
-        // 防止 save_storage 尚未持久化时对话框读取到过期主题
+        // 从运行时取当前主题与语言，覆盖 storage 中的缓存：设置改完到
+        // `save_storage` 落盘之间可能有几帧延迟，对话框若读 storage 会拿到
+        // 旧值——表现为「切了语言，新开的对话框仍是旧语言」（标题走进程级
+        // `tr!` 已更新，内容却按旧语言排版）。语言取进程级当前值：设置窗口
+        // 还开着时主窗口的设置副本尚未合并，同样会过期。
         let mut dialog_config = self.window_state.storage.config.get().ui.clone();
         dialog_config.theme = main_ui.root().theme().to_string();
+        dialog_config.language = lumino_core::i18n::current_language();
         self.window_state
             .dialog_manager
             .process_initialization_step(

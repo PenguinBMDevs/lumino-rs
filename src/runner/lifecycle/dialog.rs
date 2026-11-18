@@ -181,18 +181,57 @@ impl RunnerInner {
             self.dismiss_autosave_prompt();
         }
 
+        // DRAW-045：素材删除确认被 X 关闭 → 与「取消」同义，清除主窗口待确认态
+        // （否则待确认下标会残留，下一次删除会被配对校验拒绝）。
+        if dialog_result.is_none()
+            && should_close
+            && dialog_type == Some(DialogType::MaterialDelete)
+        {
+            tracing::debug!("素材删除确认被窗口 X 关闭，视为取消");
+            self.window_state.window.ui_mut().cancel_material_delete();
+        }
+
         // 处理对话框返回的结果
         if let Some(result) = dialog_result {
             tracing::debug!("处理对话框结果: {:?}", std::mem::discriminant(&result));
-            self.process_dialog_result(result);
+            self.process_dialog_result(dialog_type, result);
         }
 
         true
     }
 
     /// 处理对话框结果
-    fn process_dialog_result(&mut self, result: DialogResult) {
+    fn process_dialog_result(&mut self, dialog_type: Option<DialogType>, result: DialogResult) {
         match &result {
+            DialogResult::MaterialDeleteConfirm { index } => {
+                // DRAW-045：对话框只回传下标；删除文件与列表刷新在主窗口完成。
+                tracing::info!("素材删除确认：删除下标 {index}");
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .apply_material_delete(*index);
+            }
+            DialogResult::TempoMaxBpm { bpm } => {
+                tracing::info!("应用自定义 Tempo BPM 上限: {bpm}");
+                // 设置窗口是编辑中的权威副本：打开时先写回它，避免关闭设置时
+                // 用旧面板覆盖刚确认的值；主窗口同步一份以即时刷新 Tempo 面板。
+                if let Some(id) = self
+                    .window_state
+                    .dialog_manager
+                    .first_dialog_id_of_type(DialogType::Settings)
+                    && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
+                    && let Some(ui) = dialog.ui_mut()
+                {
+                    ui.apply_tempo_max_bpm(*bpm);
+                }
+                self.window_state.window.ui_mut().apply_tempo_max_bpm(*bpm);
+            }
+            DialogResult::Cancel => {
+                tracing::info!("对话框: 取消");
+                if dialog_type == Some(DialogType::MaterialDelete) {
+                    self.window_state.window.ui_mut().cancel_material_delete();
+                }
+            }
             DialogResult::SaveConfirm(choice) => {
                 // 保存确认对话框：保存 / 关闭（放弃）/ 取消 三选一
                 // 交由 RunnerInner 继续挂起的关闭动作或清空挂起状态。
@@ -208,9 +247,6 @@ impl RunnerInner {
                 } else {
                     tracing::warn!("LoadConfirm: 没有 pending 的加载路径");
                 }
-            }
-            DialogResult::Cancel => {
-                tracing::info!("对话框: 取消");
             }
             DialogResult::ProjectSettings {
                 title,

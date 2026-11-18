@@ -56,9 +56,16 @@ impl Root {
                 if let Some(entry) = self.right_sidebar.materials.entries.get(index)
                     && entry.path.is_some()
                 {
-                    // 进入删除确认态：主窗口叠加覆盖层弹窗展示确认卡片
+                    // DRAW-045：确认框是独立 OS 窗口。主窗口保留待确认下标，
+                    // 作为回执配对依据（列表在对话框展示期间可能刷新）。
                     self.right_sidebar.materials.pending_delete = Some(index);
                     self.right_sidebar.materials.pending_delete_name = Some(entry.name.clone());
+                    crate::event::emit(crate::event::Event::Window(
+                        crate::event::window::Event::open_material_delete_dialog(
+                            index,
+                            entry.name.clone(),
+                        ),
+                    ));
                 }
             }
             MaterialContextMenuItem::UploadToCloud => {
@@ -147,7 +154,7 @@ impl Root {
 
     /// 处理取消素材删除确认
     ///
-    /// 覆盖层确认卡片的[取消]按钮/点击遮罩调用，清除确认态。
+    /// 独立删除确认窗口的「取消」/ 窗口 X 关闭都会走到这里，清除主窗口的待确认态。
     pub(crate) fn cancel_material_delete(&mut self) {
         self.right_sidebar.materials.pending_delete = None;
         self.right_sidebar.materials.pending_delete_name = None;
@@ -155,8 +162,8 @@ impl Root {
 
     /// 处理确认素材删除（删除本地文件并重新扫描）
     ///
-    /// `index` 必须与当前待确认索引一致（防御：只允许确认当前卡片对应的素材项）。
-    /// 覆盖层确认卡片的[删除]按钮调用。
+    /// `index` 必须与当前待确认索引一致（防御：只允许确认与请求配对的素材项）。
+    /// 独立删除确认窗口的「删除」按钮经 Runner 分派后调用。
     pub(crate) fn confirm_material_delete(&mut self, index: usize) {
         if self.right_sidebar.materials.pending_delete != Some(index) {
             return;

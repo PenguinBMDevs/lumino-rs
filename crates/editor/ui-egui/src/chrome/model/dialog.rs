@@ -5,7 +5,8 @@ use egui::Color32;
 use super::{
     BatchEditModel, BrushSettingsModel, CloudBrowserModel, CloudConnectModel, CloudNoticeModel,
     CollaborationModel, DrawSettingsModel, HelpModel, HistoryModel, LoadConfirmModel,
-    MemoryMonitorModel, RecoverTrackModel, SettingsPageModel, VideoExportOverlayModel,
+    MaterialDeleteModel, MemoryMonitorModel, RecoverTrackModel, SettingsPageModel,
+    TempoMaxBpmModel, VideoExportOverlayModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -25,6 +26,10 @@ pub enum DialogModel {
     BatchEdit(Box<BatchEditModel>),
     /// 变速（`DialogType::SpeedChange`）。
     SpeedChange(Box<SpeedChangeModel>),
+    /// 素材删除确认（`DialogType::MaterialDelete`，DRAW-045）。
+    MaterialDelete(Box<MaterialDeleteModel>),
+    /// 自定义 Tempo BPM 上限（`DialogType::TempoMaxBpm`，DRAW-045）。
+    TempoMaxBpm(Box<TempoMaxBpmModel>),
     /// 自定义精度（`DialogType::CustomPrecision`）。
     CustomPrecision(Box<CustomPrecisionModel>),
     /// 音频导出进度（`DialogType::ExportProgress`，只读）。

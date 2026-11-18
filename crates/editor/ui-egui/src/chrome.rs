@@ -27,16 +27,16 @@ pub use model::{
     AudioFilterModel, AudioOutputModel, AudioPageModel, AudioProjectModel, AudioRowModel,
     AudioSettingsModel, AudioToggle, AudioToggleId, AutosaveRecoverModel, BrushPanelModel,
     CloudConnModel, CloudPageModel, EDITOR_TEXTURE_ID, FillDivisionPanelModel, GpuMetricsModel,
-    GpuQueueTrend, HelpTipModel, I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel,
-    I2mRowModel, I2mSelectField, MaterialContextLabels, MaterialContextMenuItem,
-    MaterialContextMenuModel, MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind,
-    MaterialSectionModel, MaterialsPanelModel, MetricTone, RightSidebarPanelModel, ShapeKind,
-    ShapePanelModel, SidebarColorPickerModel, SidebarMenuEntry, SidebarNumericPickerKind,
-    SidebarNumericPickerModel, SidebarPanelMenuModel, SidebarReorderModel, SidebarTrackMenuModel,
-    TextParamsPanelModel, ThemeCardModel, ThicknessPanelModel, ToastCardModel, ToastModel,
-    ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner,
-    ToolPanelSettingsPanel, UiField, UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel,
-    governor_tone, load_tone, underrun_tone,
+    HelpTipModel, I2mControlModel, I2mConvertModel, I2mField, I2mPanelModel, I2mRowModel,
+    I2mSelectField, MaterialContextLabels, MaterialContextMenuItem, MaterialContextMenuModel,
+    MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind, MaterialSectionModel,
+    MaterialsPanelModel, MetricTone, RightSidebarPanelModel, ShapeKind, ShapePanelModel,
+    SidebarColorPickerModel, SidebarMenuEntry, SidebarNumericPickerKind, SidebarNumericPickerModel,
+    SidebarPanelMenuModel, SidebarReorderModel, SidebarTrackMenuModel, TextParamsPanelModel,
+    ThemeCardModel, ThicknessPanelModel, ToastCardModel, ToastModel, ToolPanelItemKind,
+    ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
+    UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone,
+    underrun_tone,
 };
 pub use model::{
     BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
@@ -48,20 +48,20 @@ pub use model::{
     CompatibilityPageModel, CustomPrecisionModel, DeviceWarningModel, DialogModel, DialogPalette,
     DotOptionModel, DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel,
     HelpSectionModel, HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel,
-    LoadConfirmModel, MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel,
-    MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel,
-    OverflowMenuModel, ProgressModel, ProjectNoteCountModel, ProjectSettingsModel,
-    RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel, RecoverTrackRowModel, RecoverTrackSelection,
-    RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar, SaveConfirmModel,
-    SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton,
-    ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel,
-    SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack,
-    SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel, TextPairCell,
-    TexturePreviewModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel, VideoButton,
-    VideoButtonFill, VideoExportAction, VideoExportModel, VideoExportOverlayModel,
-    VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError,
-    VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView, VideoPreviewModel, VideoRow,
-    VideoSection,
+    LoadConfirmModel, MaterialDeleteModel, MemoryMetricModel, MemoryMonitorModel, MemoryRowModel,
+    MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel,
+    OverflowItemModel, OverflowMenuModel, ProgressModel, ProjectNoteCountModel,
+    ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel, RecoverTrackRowModel,
+    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar,
+    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
+    ShapeActionButton, ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel,
+    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
+    SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
+    TempoMaxBpmModel, TextPairCell, TexturePreviewModel, TitlebarModel, ToolbarGroupsModel,
+    ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
+    VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted,
+    VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView,
+    VideoPreviewModel, VideoRow, VideoSection,
 };
 pub use popup_titlebar::PopupTitlebarModel;
 pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
@@ -223,26 +223,6 @@ pub fn set_arrangement(ctx: &egui::Context, model: Option<ArrangementModel>) {
 fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementModel> {
     ctx.data(|d| d.get_temp::<Option<ArrangementModel>>(egui::Id::unique("lumino.arrangement")))
         .flatten()
-}
-
-/// 记录本帧的素材删除确认模型（`None` = 无待确认项）。
-pub fn set_material_delete(
-    ctx: &egui::Context,
-    model: Option<crate::material_delete::MaterialDeleteModel>,
-) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.material-delete"), model));
-}
-
-/// 取走本帧的素材删除确认模型。
-fn material_delete_model(
-    ctx: &egui::Context,
-) -> Option<crate::material_delete::MaterialDeleteModel> {
-    ctx.data(|d| {
-        d.get_temp::<Option<crate::material_delete::MaterialDeleteModel>>(egui::Id::unique(
-            "lumino.material-delete",
-        ))
-    })
-    .flatten()
 }
 
 /// 记录本帧的混音台模型（`None` = 面板未打开）。
@@ -417,6 +397,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::SpeedChange(model) => {
                 crate::speed_change::show(&mut root, model);
+            }
+            DialogModel::MaterialDelete(model) => {
+                crate::material_delete::show(&mut root, model);
+            }
+            DialogModel::TempoMaxBpm(model) => {
+                crate::tempo_max_bpm::show(&mut root, model);
             }
             DialogModel::CustomPrecision(model) => {
                 crate::custom_precision::show(&mut root, model);
@@ -642,6 +628,13 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         .frame(panel_frame(theme::toolbar_bg()))
         .show(&mut root, |ui| statusbar::show_model(ui, &model.statusbar));
 
+    // ── 覆盖层判定（DRAW-045）──────────────────────────────────
+    // 需要用户**独立决策**的确认 / 输入 / 设置类一律走独立 OS 窗口
+    // （`DialogType` + `DialogManager`，见本函数开头的 `model.dialog` 分支）。
+    // 以下覆盖层按规则保留：锚定参数面板（遮罩）、悬浮工具条、上下文/下拉
+    // 菜单、非模态提示（Toast / 帮助提示 / 彩蛋）、画布预览与混音台浮动面板。
+    // 新增覆盖层时必须先对照这条规则，而不是默认「先画在主窗口里」。
+
     // 右下角浮层：Toast 通知 + 首次使用帮助提示。
     // 旧版 侧视图（`toast::view` / `view/help_tip.rs`）已删除，这里独占绘制。
     let full_window = window_rect(&root);
@@ -686,22 +679,8 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         crate::video_preview::show(&root, &preview);
     }
 
-    // 素材删除确认：全屏遮罩 + 居中卡片（模态，整窗占用）。
-    if let Some(delete) = material_delete_model(ui.ctx()) {
-        let full = window_size(ui.ctx())
-            .map(|size| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), size))
-            .unwrap_or_else(|| root.max_rect());
-        // 独立图层：模态遮罩覆盖整窗，下层控件不得再收到 hover / 点击。
-        let mut action = None;
-        floating_panel(ui.ctx(), "lumino.material-delete", full, |ui| {
-            action = crate::material_delete::show(ui, full, &delete);
-            None
-        });
-        if let Some(action) = action {
-            push_material_delete_action(ui.ctx(), action);
-        }
-        menu::extend_blocked(ui.ctx(), [full]);
-    }
+    // 素材删除确认已迁为独立 OS 窗口（DRAW-045）：主窗口不再绘制全屏遮罩，
+    // 也不再需要「打开期间整窗吞点击」的占用逻辑。
 
     if let Some(titlebar) = &model.titlebar {
         menu::show_overlay(&mut root, titlebar);
@@ -886,35 +865,6 @@ pub fn take_mixer_actions(ctx: &egui::Context) -> Vec<crate::mixer::MixerAction>
         d.remove_temp::<Vec<crate::mixer::MixerAction>>(egui::Id::unique(MIXER_ACTION_ID))
     })
     .unwrap_or_default()
-}
-
-/// 素材删除确认动作通道。
-const MATERIAL_DELETE_ACTION_ID: &str = "lumino.material-delete.action";
-
-fn push_material_delete_action(
-    ctx: &egui::Context,
-    action: crate::material_delete::MaterialDeleteAction,
-) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(MATERIAL_DELETE_ACTION_ID), action));
-}
-
-/// 取走本帧素材删除确认动作。
-pub fn take_material_delete_action(
-    ctx: &egui::Context,
-) -> Option<crate::material_delete::MaterialDeleteAction> {
-    let action = ctx.data(|d| {
-        d.get_temp::<crate::material_delete::MaterialDeleteAction>(egui::Id::unique(
-            MATERIAL_DELETE_ACTION_ID,
-        ))
-    });
-    if action.is_some() {
-        ctx.data_mut(|d| {
-            d.remove::<crate::material_delete::MaterialDeleteAction>(egui::Id::unique(
-                MATERIAL_DELETE_ACTION_ID,
-            ))
-        });
-    }
-    action
 }
 
 /// 遮罩面板动作通道。

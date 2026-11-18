@@ -107,6 +107,46 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 注入素材删除确认对话框数据并打开（独立窗口；DRAW-045）
+    pub fn set_material_delete_dialog(&mut self, index: usize, name: String) {
+        self.root.set_material_delete_dialog(index, name);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 注入自定义 BPM 上限对话框的当前值并打开（独立窗口；DRAW-045）
+    pub fn set_tempo_max_bpm_dialog(&mut self, current_bpm: f64) {
+        self.root.set_tempo_max_bpm_dialog(current_bpm);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 应用素材删除确认结果（主窗口调用；删除文件并重新扫描）
+    ///
+    /// 对话框只回传下标；`pending_delete` 的配对校验仍在
+    /// `Root::confirm_material_delete` 内完成（防止列表在此期间变化后误删）。
+    pub fn apply_material_delete(&mut self, index: usize) {
+        self.root.confirm_material_delete(index);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 应用「取消素材删除」（清除主窗口的待确认态）
+    pub fn cancel_material_delete(&mut self) {
+        self.root.cancel_material_delete();
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 应用自定义 BPM 上限（路由到设置处理器：更新面板生效值与 Tempo 面板上限）
+    pub fn apply_tempo_max_bpm(&mut self, bpm: f64) {
+        self.route_message(message::Message::Settings(
+            crate::settings::Event::TempoMaxBpmChanged(bpm),
+        ));
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置批量编辑对话框是否打开（用于独立对话框窗口）
     pub fn set_batch_edit_dialog_open(&mut self, open: bool) {
         self.root.set_batch_edit_dialog_open(open);

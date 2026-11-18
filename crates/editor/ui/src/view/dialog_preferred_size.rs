@@ -164,6 +164,10 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::CustomPrecision => DialogSizeHint::pinned(489.0, 190.0),
         // 变速：内容全 Fixed（旧 400×250）
         DialogType::SpeedChange => DialogSizeHint::pinned(247.0, 256.0),
+        // 素材删除确认：标题 / 素材名 / 危险提示 / 两个按钮（DRAW-045 独立窗口）
+        DialogType::MaterialDelete => DialogSizeHint::pinned(440.0, 232.0),
+        // 自定义 BPM 上限：标签 + 输入框 + 提示 + 错误行 + 两个按钮（DRAW-045）
+        DialogType::TempoMaxBpm => DialogSizeHint::pinned(300.0, 268.0),
         // 批量编辑：内容全 Fixed（旧 420×640）
         DialogType::BatchEdit => DialogSizeHint::pinned(319.0, 614.0),
         // 保存确认：尺寸静态化（原 `auto()` 依赖 旧版 视图测量，视图已删除）。
@@ -328,13 +332,15 @@ mod tests {
     use super::*;
 
     /// 全部「真实」对话框类型（`None` 除外）
-    const ALL_DIALOGS: [DialogType; 20] = [
+    const ALL_DIALOGS: [DialogType; 22] = [
         DialogType::CustomPrecision,
         DialogType::Collaboration,
         DialogType::LoadConfirm,
         DialogType::ProjectSettings,
         DialogType::Settings,
         DialogType::SpeedChange,
+        DialogType::MaterialDelete,
+        DialogType::TempoMaxBpm,
         DialogType::BatchEdit,
         DialogType::ExportProgress,
         DialogType::VideoExport,

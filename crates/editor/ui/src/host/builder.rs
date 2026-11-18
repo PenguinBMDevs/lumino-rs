@@ -176,6 +176,13 @@ impl Host {
         if std::env::var("LUMINO_MATERIAL_DELETE").is_ok_and(|v| v != "0") {
             root.right_sidebar.materials.pending_delete = Some(0);
             root.right_sidebar.materials.pending_delete_name = Some("钢琴音色.json".to_string());
+            // DRAW-045：确认框已是独立窗口，走与右键菜单相同的打开事件。
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::open_material_delete_dialog(
+                    0,
+                    "钢琴音色.json".to_string(),
+                ),
+            ));
         }
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }

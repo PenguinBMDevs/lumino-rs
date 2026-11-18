@@ -89,6 +89,14 @@ impl Event {
     pub fn close_speed_change_dialog() -> Self {
         Self::dialog(dialog::Event::CloseSpeedChangeDialog)
     }
+    /// 构造打开「素材删除确认」独立窗口事件（DRAW-045）
+    pub fn open_material_delete_dialog(index: usize, name: String) -> Self {
+        Self::dialog(dialog::Event::OpenMaterialDeleteDialog { index, name })
+    }
+    /// 构造打开「自定义 Tempo BPM 上限」独立窗口事件（DRAW-045）
+    pub fn open_tempo_max_bpm_dialog(current_bpm: f64) -> Self {
+        Self::dialog(dialog::Event::OpenTempoMaxBpmDialog { current_bpm })
+    }
     /// 构造确认变速事件
     pub fn confirm_speed_change(factor: f32) -> Self {
         Self::dialog(dialog::Event::ConfirmSpeedChange(factor))

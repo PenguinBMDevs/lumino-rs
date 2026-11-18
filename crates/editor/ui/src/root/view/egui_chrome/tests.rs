@@ -643,7 +643,13 @@ fn toolbar_popup_model_and_actions_follow_production_state() {
         1,
         "恰有一个当前规格"
     );
-    assert_eq!(snap.custom_label, "Custom…");
+    // 自定义项文案跟随运行时语言（中文「自定义…」/ 英文「Custom…」）；
+    // 只锁两种合法取值，避免并行测试切换全局语言时偶发失败。
+    assert!(
+        matches!(snap.custom_label.as_str(), "自定义…" | "Custom…"),
+        "自定义项应为本地化文案：{:?}",
+        snap.custom_label
+    );
 
     root.toolbar.snap_picker_open = false;
     root.toolbar.onion_skin_menu_open = true;

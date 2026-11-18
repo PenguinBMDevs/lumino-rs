@@ -15,54 +15,25 @@ fn panel_with_tempo(max_bpm: f64) -> SettingsPanel {
 fn test_tempo_max_bpm_default_from_config() {
     let panel = panel_with_tempo(512.0);
     assert_eq!(panel.editing.tempo_max_bpm, 512.0);
-    assert!(!panel.editing.tempo_custom_open);
 }
 
 #[test]
-fn test_tempo_preset_selected_closes_custom_panel() {
+fn test_tempo_preset_updates_value() {
+    // DRAW-045：自定义输入迁到独立对话框，面板只保留生效值。
     let mut panel = panel_with_tempo(512.0);
-    panel.update(Event::TempoMaxBpmCustomOpen);
-    assert!(panel.editing.tempo_custom_open);
     panel.update(Event::TempoMaxBpmChanged(2048.0));
     assert_eq!(panel.editing.tempo_max_bpm, 2048.0);
-    assert!(!panel.editing.tempo_custom_open);
 }
 
 #[test]
-fn test_tempo_custom_open_prefills_current_value() {
+fn test_tempo_custom_open_does_not_change_panel_state() {
+    // 打开请求由 SettingsHandler 转成窗口事件；设置面板自身不再保存临时态。
     let mut panel = panel_with_tempo(700.0);
     panel.update(Event::TempoMaxBpmCustomOpen);
-    assert!(panel.editing.tempo_custom_open);
-    assert_eq!(panel.editing.tempo_custom_input, "700");
-}
-
-#[test]
-fn test_tempo_custom_input_and_confirm() {
-    let mut panel = panel_with_tempo(512.0);
-    panel.update(Event::TempoMaxBpmCustomOpen);
-    panel.update(Event::TempoMaxBpmCustomInput("1234".to_string()));
-    panel.update(Event::TempoMaxBpmCustomConfirm);
-    assert_eq!(panel.editing.tempo_max_bpm, 1234.0);
-    assert!(!panel.editing.tempo_custom_open);
-}
-
-#[test]
-fn test_tempo_custom_confirm_invalid_keeps_value() {
-    let mut panel = panel_with_tempo(512.0);
-    panel.update(Event::TempoMaxBpmCustomOpen);
-    panel.update(Event::TempoMaxBpmCustomInput("abc".to_string()));
-    panel.update(Event::TempoMaxBpmCustomConfirm);
-    // 无效输入不生效，面板保持打开以便修正
-    assert_eq!(panel.editing.tempo_max_bpm, 512.0);
-    assert!(panel.editing.tempo_custom_open);
-}
-
-#[test]
-fn test_tempo_custom_close() {
-    let mut panel = panel_with_tempo(512.0);
-    panel.update(Event::TempoMaxBpmCustomOpen);
-    panel.update(Event::TempoMaxBpmCustomClose);
-    assert!(!panel.editing.tempo_custom_open);
+    assert_eq!(
+        panel.editing.tempo_max_bpm, 700.0,
+        "打开对话框不得改动当前生效值"
+    );
 }
 
 // ── 兼容性设置 ──

@@ -136,14 +136,11 @@ pub enum Event {
     AutomationLineThicknessChanged(f32),
     /// Tempo 面板 BPM 绘制上限（预设值下拉选择，如 256/512/.../65536）
     TempoMaxBpmChanged(f64),
-    /// 请求打开"自定义 BPM 上限"输入面板
+    /// 请求打开「自定义 BPM 上限」独立窗口（DRAW-045）
+    ///
+    /// 输入串与校验结果归对话框自己；本事件只是打开请求，
+    /// 生效值仍走 [`Self::TempoMaxBpmChanged`]。
     TempoMaxBpmCustomOpen,
-    /// 请求关闭"自定义 BPM 上限"输入面板
-    TempoMaxBpmCustomClose,
-    /// 自定义 BPM 上限输入框内容变化
-    TempoMaxBpmCustomInput(String),
-    /// 确认自定义 BPM 上限
-    TempoMaxBpmCustomConfirm,
     /// 日志文件保留份数
     LogRetentionCountChanged(String),
     /// 底边栏监控数据刷新间隔（毫秒，50-2000）

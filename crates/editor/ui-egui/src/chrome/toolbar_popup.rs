@@ -366,7 +366,7 @@ fn draw_snap_panel(
         }
     }
 
-    // 自定义项（生产固定英文 `Custom…`，与 旧版 一致）。
+    // 自定义项（文案由生产侧按当前语言给出）。
     let row = Rect::from_min_size(
         Pos2::new(panel.left() + PANEL_PAD, y),
         Vec2::new(MENU_W - PANEL_PAD * 2.0, ITEM_H),

@@ -84,6 +84,8 @@ impl DialogWindow {
             DialogType::ProjectSettings => (tr!("工程设置"), true),
             DialogType::Settings => (tr!("设置"), true),
             DialogType::SpeedChange => (tr!("变速"), false),
+            DialogType::MaterialDelete => (tr!("删除素材"), false),
+            DialogType::TempoMaxBpm => (tr!("自定义 BPM 上限"), false),
             DialogType::BatchEdit => (tr!("批量编辑"), true),
             DialogType::ExportProgress => (tr!("音频导出"), false),
             DialogType::VideoExport => (tr!("视频导出"), false),

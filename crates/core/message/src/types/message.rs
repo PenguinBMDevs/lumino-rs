@@ -18,6 +18,7 @@ use crate::help::HelpAction;
 use crate::history::HistoryAction;
 use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
+use crate::material_delete::MaterialDeleteDialogAction;
 use crate::project_settings::ProjectSettingsAction;
 use crate::recover_track::RecoverTrackAction;
 use crate::right_sidebar::RightSidebarAction;
@@ -25,6 +26,7 @@ use crate::save_confirm::SaveConfirmAction;
 use crate::settings_dialog::SettingsDialogAction;
 use crate::shape_drawer::ShapeDrawerAction;
 use crate::speed_change::SpeedChangeAction;
+use crate::tempo_max_bpm::TempoMaxBpmDialogAction;
 use crate::types::editor::EditorAction;
 use crate::types::geometry::{Point2, Size2};
 use crate::types::ui::PerfData;
@@ -161,6 +163,10 @@ pub enum Message<W, S, Se, T> {
     AudioExport(AudioExportAction),
     /// 音符变速动作
     SpeedChange(SpeedChangeAction),
+    /// 素材删除确认对话框动作（DRAW-045）
+    MaterialDelete(MaterialDeleteDialogAction),
+    /// 自定义 Tempo BPM 上限对话框动作（DRAW-045）
+    TempoMaxBpm(TempoMaxBpmDialogAction),
     /// 批量编辑动作
     BatchEdit(BatchEditAction),
     /// 找回删除音轨对话框动作

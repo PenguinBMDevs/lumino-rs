@@ -8,9 +8,10 @@ pub use lumino_ui_core::state::{
     FillDivisionDialogState, GpuCheckOutcome, GpuCheckRetryGate, GpuCheckUiResult, GpuCheckUiState,
     HistoryDialogState, HistoryKind, HistoryStepView, LoadConfirmDialogState,
     MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
-    MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
-    RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState,
-    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
+    MIDITRAIL_Z_FAR_MAX, MaterialDeleteDialogState, MemoryMonitorDialogState,
+    ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState,
+    SpeedChangeDialogState, TempoMaxBpmDialogState, ToggleAnimationState, VideoClipState,
+    VideoExportDialogState, VideoExportOverlayState,
 };
 
 use std::cell::RefCell;
@@ -104,6 +105,10 @@ pub enum DialogType {
     ProjectSettings,
     /// 设置面板
     Settings,
+    /// 素材删除确认（DRAW-045；独立 OS 窗口）
+    MaterialDelete,
+    /// 自定义 Tempo BPM 上限（DRAW-045；独立 OS 窗口）
+    TempoMaxBpm,
     /// 音符变速对话框
     SpeedChange,
     /// 批量编辑对话框
@@ -166,6 +171,10 @@ pub struct RootState {
     pub export_progress_dialog: ExportProgressDialogState,
     /// 音符变速对话框状态
     pub speed_change_dialog: SpeedChangeDialogState,
+    /// 素材删除确认对话框状态（DRAW-045，独立窗口）
+    pub material_delete_dialog: MaterialDeleteDialogState,
+    /// 自定义 Tempo BPM 上限对话框状态（DRAW-045，独立窗口）
+    pub tempo_max_bpm_dialog: TempoMaxBpmDialogState,
     /// 批量编辑对话框状态
     pub batch_edit_dialog: BatchEditDialogState,
     /// 内存监控对话框状态
@@ -250,6 +259,8 @@ impl RootState {
             video_export_dialog: VideoExportDialogState::new(),
             export_progress_dialog: ExportProgressDialogState::new(),
             speed_change_dialog: SpeedChangeDialogState::new(),
+            material_delete_dialog: MaterialDeleteDialogState::new(),
+            tempo_max_bpm_dialog: TempoMaxBpmDialogState::new(),
             batch_edit_dialog: BatchEditDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             recover_track_dialog: RecoverTrackDialogState::default(),

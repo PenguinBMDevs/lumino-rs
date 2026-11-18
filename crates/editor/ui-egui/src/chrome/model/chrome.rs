@@ -71,29 +71,6 @@ pub struct StatusbarModel {
     pub gpu: Option<GpuMetricsModel>,
 }
 
-/// GPU 队列趋势（`statusbar::QueueTrend` 的数据镜像）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum GpuQueueTrend {
-    /// 上升（缓冲变深）。
-    Up,
-    /// 下降（缓冲变浅，趋向欠载）。
-    Down,
-    /// 持平。
-    #[default]
-    Flat,
-}
-
-impl GpuQueueTrend {
-    /// 箭头显示字符（与 旧版 `QueueTrend::arrow` 逐字一致）。
-    pub fn arrow(self) -> &'static str {
-        match self {
-            Self::Up => "↑",
-            Self::Down => "↓",
-            Self::Flat => "→",
-        }
-    }
-}
-
 /// 指标颜色档位（负载 / 欠载 / 治理级别共用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetricTone {
@@ -139,8 +116,6 @@ pub fn governor_tone(level: u32) -> MetricTone {
 pub struct GpuMetricsModel {
     /// 队列深度（毫秒）。
     pub queue_ms: f64,
-    /// 队列趋势。
-    pub trend: GpuQueueTrend,
     /// 渲染负载（0..≈1+；`GpuLoadDisplay` 决定取瞬时还是短窗均值）。
     pub load: f64,
     /// 活跃声部数。

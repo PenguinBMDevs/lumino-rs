@@ -101,7 +101,7 @@ fn tool_highlighted(model: &ToolbarModel, index: usize, item: &ToolEntry) -> boo
     tool_selected(model, index)
 }
 
-pub(super) fn width(ui: &egui::Ui, visible: usize) -> f32 {
+pub(super) fn width(ui: &egui::Ui, visible: usize, precision_label: &str) -> f32 {
     let items: f32 = TOOLS
         .iter()
         .take(visible)
@@ -117,7 +117,7 @@ pub(super) fn width(ui: &egui::Ui, visible: usize) -> f32 {
     let label = ui
         .painter()
         .layout_no_wrap(
-            "精度:".to_owned(),
+            precision_label.to_owned(),
             FontId::proportional(theme::font::LABEL),
             theme::text_on_weak(),
         )
@@ -198,8 +198,9 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     }
     ui.add_space(8.0);
 
-    // 「精度:」标签在框外（与生产 旧版 一致：14px、`background.weak.text`）。
-    let label = "精度:";
+    // 精度标签在框外（与生产 旧版 一致：14px、`background.weak.text`），
+    // 文案由生产侧按当前语言给出（中文「精度:」/ 英文「Precision:」）。
+    let label = model.precision_label.as_str();
     let label_width = ui
         .painter()
         .layout_no_wrap(

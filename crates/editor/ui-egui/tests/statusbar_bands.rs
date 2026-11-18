@@ -8,7 +8,7 @@ use std::rc::Rc;
 use egui::{Event, PointerButton, Pos2, RawInput};
 use egui_kittest::Harness;
 use lumino_ui_egui::chrome::statusbar::{self, StatusbarAction};
-use lumino_ui_egui::chrome::{GpuMetricsModel, GpuQueueTrend, StatusbarModel};
+use lumino_ui_egui::chrome::{GpuMetricsModel, StatusbarModel};
 
 fn model(gpu: Option<GpuMetricsModel>) -> StatusbarModel {
     StatusbarModel {
@@ -25,7 +25,6 @@ fn model(gpu: Option<GpuMetricsModel>) -> StatusbarModel {
 fn gpu() -> GpuMetricsModel {
     GpuMetricsModel {
         queue_ms: 12.0,
-        trend: GpuQueueTrend::Up,
         load: 0.42,
         voice_count: 24,
         underruns: 0,

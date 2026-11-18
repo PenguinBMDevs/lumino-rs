@@ -70,6 +70,16 @@ pub enum DialogResult {
         /// 变化倍率
         factor: f32,
     },
+    /// 素材删除确认（DRAW-045，独立窗口）：确认删除该下标对应的素材
+    MaterialDeleteConfirm {
+        /// 待删除素材在右侧栏素材列表中的下标
+        index: usize,
+    },
+    /// 自定义 Tempo BPM 上限（DRAW-045，独立窗口）
+    TempoMaxBpm {
+        /// 用户确认的 BPM 上限
+        bpm: f64,
+    },
     /// 批量编辑结果
     BatchEdit {
         /// 力度

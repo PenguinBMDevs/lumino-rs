@@ -102,8 +102,6 @@ pub struct StatusBar {
 pub struct GpuSnapshot {
     /// 队列深度（毫秒）。
     pub queue_ms: f64,
-    /// 队列趋势。
-    pub trend: QueueTrend,
     /// 渲染负载（0..≈1+）。
     pub load: f64,
     /// 活跃声部数。
@@ -204,7 +202,6 @@ impl StatusBar {
         let has_samples = stats.sample_gpu_bytes > 0 || stats.sample_cpu_bytes > 0;
         Some(GpuSnapshot {
             queue_ms: stats.queue_ms,
-            trend: self.queue_trend,
             load,
             voice_count: stats.voice_count,
             underruns: stats.underruns,

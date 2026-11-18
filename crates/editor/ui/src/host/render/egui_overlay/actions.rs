@@ -66,6 +66,7 @@ pub(super) struct OverlayActions {
     pub video_timeline: Vec<lumino_ui_egui::video_clip_timeline::VideoTimelineAction>,
     pub mixer: Vec<lumino_ui_egui::mixer::MixerAction>,
     pub material_delete: Option<lumino_ui_egui::material_delete::MaterialDeleteAction>,
+    pub tempo_max_bpm: Option<lumino_ui_egui::tempo_max_bpm::TempoMaxBpmAction>,
     pub mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelAction>,
     pub statusbar: Option<lumino_ui_egui::chrome::statusbar::StatusbarAction>,
     pub sidebar_panel: Option<lumino_ui_egui::chrome::SidebarPanelAction>,
@@ -116,7 +117,8 @@ impl OverlayActions {
             lane: lumino_ui_egui::chrome::arrangement::take_lane_actions(ctx),
             video_timeline: lumino_ui_egui::chrome::take_video_timeline_actions(ctx),
             mixer: lumino_ui_egui::chrome::take_mixer_actions(ctx),
-            material_delete: lumino_ui_egui::chrome::take_material_delete_action(ctx),
+            material_delete: lumino_ui_egui::material_delete::take_action(ctx),
+            tempo_max_bpm: lumino_ui_egui::tempo_max_bpm::take_action(ctx),
             mask_panel: lumino_ui_egui::chrome::take_mask_panel_action(ctx),
             statusbar: lumino_ui_egui::chrome::statusbar::take_action(ctx),
             sidebar_panel: lumino_ui_egui::chrome::take_panel_action(ctx),
@@ -248,8 +250,14 @@ impl Host {
             let message = self.root.mask_panel_action_message(action);
             self.dispatch_overlay_message(message);
         }
+        // DRAW-045：素材删除确认 / 自定义 BPM 上限都是独立窗口，动作只在
+        // 各自的对话框 Root 上产生；主窗口不渲染对应视图，不会走到这里。
         if let Some(action) = actions.material_delete {
             let message = self.root.material_delete_action_message(action);
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.tempo_max_bpm {
+            let message = self.root.tempo_max_bpm_action_message(action);
             self.dispatch_overlay_message(message);
         }
         for action in &actions.mixer {

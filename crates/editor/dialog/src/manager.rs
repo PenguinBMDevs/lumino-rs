@@ -37,6 +37,10 @@ pub struct PendingDialog {
     pub shapes_dir: Option<PathBuf>,
     /// AutosaveRecover 的候选文件修改时间（本地化文本）
     pub pending_modified_at: Option<String>,
+    /// MaterialDelete 的待删除素材下标与显示名（DRAW-045）
+    pub pending_material_delete: Option<(usize, String)>,
+    /// TempoMaxBpm 的当前上限（输入框预填；DRAW-045）
+    pub pending_tempo_max_bpm: Option<f64>,
 }
 
 /// 对话框管理器
