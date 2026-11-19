@@ -206,6 +206,15 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "关闭窗口" => Some("Close window"),
         "未知时间" => Some("Unknown time"),
         "自动保存失败，请检查日志" => Some("Autosave failed; please check the log"),
+
+        // ── EOT 下游：导入诊断 / 导出前检查 ──
+        "导出前检查" => Some("Pre-export check"),
+        "{n} 条轨缺少 End-of-Track 标记，部分播放器可能无法正确识别结尾。仍要导出吗？" => Some(
+            "{n} track(s) are missing the End-of-Track marker; some players may not detect the ending correctly. Export anyway?",
+        ),
+        "导入完成：{n} 条轨在 End-of-Track 之后仍有事件（兼容模式已保留数据，导出前可裁剪）" => Some(
+            "Import complete: {n} track(s) have events after End-of-Track (data kept in compatibility mode; you can trim before exporting).",
+        ),
         _ => None,
     }
 }

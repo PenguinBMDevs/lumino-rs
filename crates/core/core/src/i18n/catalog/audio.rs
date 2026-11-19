@@ -190,6 +190,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "Extend each note after NoteOff before release; >0 avoids swallowed staccato notes; 0=disabled.",
             )
         }
+        // ── midi-model：EOT / 结构诊断 ──
+        "MIDI 结构错误" => Some("MIDI structure error"),
         _ => None,
     }
 }
