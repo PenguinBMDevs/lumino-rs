@@ -124,6 +124,23 @@ pub fn set_clipboard_binary(data: &[u8]) -> bool {
     }
 }
 
+/// 清空系统剪贴板（不写入任何格式）。
+///
+/// 仅供测试建立干净的观测基线：此前会话/其它用例可能留下 `LuminoMidiNotes` +
+/// `MidiPortalSequence` 双格式，若本次"关闭态复制"恰好抢不到剪贴板，残留的
+/// Lumino 会让"正向前置"假通过，进而把残留 Domino 误判成本次写入。
+#[cfg(test)]
+pub fn clear_clipboard() -> bool {
+    unsafe {
+        if OpenClipboard(ptr::null_mut()) == 0 {
+            return false;
+        }
+        let ok = EmptyClipboard() != 0;
+        CloseClipboard();
+        ok
+    }
+}
+
 /// 从系统剪贴板读取 Lumino 私有二进制音符载荷（无则 None）。
 pub fn get_clipboard_binary() -> Option<Vec<u8>> {
     unsafe {

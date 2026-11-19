@@ -58,6 +58,20 @@ mod clipboard_io {
         std::thread::sleep(std::time::Duration::from_millis(20 * (attempt as u64 + 1)));
     }
 
+    /// 反复清空系统剪贴板直到成功（`OpenClipboard` 可能被其它进程短暂占用）
+    ///
+    /// 清空后"正向前置"只可能由本次复制建立，避免把上一次会话的残留
+    /// Lumino 载荷当成本次写入（残留 Domino 会被负向断言误伤）。
+    fn clear_clipboard_until_ok() -> bool {
+        for attempt in 0..RETRY_ATTEMPTS {
+            if sys::clear_clipboard() {
+                return true;
+            }
+            retry_sleep(attempt);
+        }
+        false
+    }
+
     /// 当前轨 8 个音符并全部选中（`seed_notes` 按 start_tick 升序写入 document）
     fn seeded_editor() -> Editor {
         let mut editor = Editor::new();
@@ -143,8 +157,15 @@ mod clipboard_io {
         let _guard = clipboard_guard();
         let mut editor = seeded_editor();
 
-        // 关闭（默认）：先重试到 Lumino 二进制确实写入，再断言 Domino 格式不存在
+        // 关闭（默认）：先清空剪贴板建立干净基线，再重试到 Lumino 二进制确实
+        // 写入，最后断言 Domino 格式不存在。清空这一步不可省：剪贴板是进程外
+        // 共享资源，残留的 Lumino 载荷会让"正向前置"假通过（见 nextest 的
+        // clipboard-serial 组——即使并发已串行化，也可能留下上一次的残局）。
         assert!(!editor.domino_clipboard_enabled());
+        assert!(
+            clear_clipboard_until_ok(),
+            "前置条件：应能清空系统剪贴板（被其它进程长期占用？）"
+        );
         let lumino = copy_until(&mut editor, sys::get_clipboard_binary)
             .expect("关闭时复制应写入 Lumino 二进制格式（系统剪贴板不可用？）");
         assert!(!lumino.is_empty(), "Lumino 二进制载荷不应为空");

@@ -1,0 +1,12 @@
+# nextest 全局配置（CI 与本地共用；见 AGENTS.md「Test Commands」）。
+#
+# 系统剪贴板是**进程外共享资源**：nextest 默认每个用例独立进程，`tests.rs` 里的
+# `static CLIPBOARD_LOCK` 只能串行同一进程内的用例，挡不住并发用例互相写入。
+# 真实读写剪贴板的用例必须串行：否则"关闭态不写 Domino"的负向断言会被并发的
+# 开启态复制污染（windows-latest 已实际失败：left/right 无关，断言直接命中）。
+[test-groups]
+clipboard-serial = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(/clipboard::tests::clipboard_io/)'
+test-group = 'clipboard-serial'

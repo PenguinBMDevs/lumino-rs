@@ -80,9 +80,12 @@ cargo nextest list --workspace
 | Combined filtering | multiple name args | `-E 'test(/pattern/) & binary(collaboration_ui_test)'` |
 | Retry failures | none | `--retries <N>` (defaults come from the profile) |
 
-- Default config path: `workspace-root/.config/nextest.toml`. The repository does not have one yet;
-  add it when shared timeout/retry/concurrency policy is needed instead of scattering flags across
-  the command line.
+- Default config path: `workspace-root/.config/nextest.toml` (exists). It holds shared
+  concurrency policy: `clipboard-serial` (`max-threads = 1`) for the tests that read/write the
+  system clipboard. nextest runs every test in its own process, so an in-process `Mutex` cannot
+  serialize them; concurrent clipboard tests overwrite each other (windows-latest CI failed on
+  exactly this). Add new process-external resources (clipboard, global files, ports) to a serial
+  test group there instead of scattering flags across the command line.
 - **Doctest exception**: nextest cannot run doctests. Only when `///` code blocks in a modified
   crate need verification, `cargo test --doc -p <crate>` is allowed, and the delivery notes must
   state that this is the doctest exception.
