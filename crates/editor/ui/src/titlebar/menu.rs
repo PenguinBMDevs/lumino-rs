@@ -80,7 +80,12 @@ pub fn file_menu(
     ];
 
     // 「最近打开」用子菜单承载：历史条数增长不会撑高文件菜单本体。
-    if !recent.is_empty() {
+    // 空历史也保留入口（禁用占位），否则新用户完全看不到这个分区。
+    let recent_entries: Vec<MenuItem> = if recent.is_empty() {
+        vec![ActionDisabled(crate::event::Event::menu_file(
+            file::Event::no_recent_files(),
+        ))]
+    } else {
         let mut entries: Vec<MenuItem> = recent
             .iter()
             .map(|entry| {
@@ -93,9 +98,13 @@ pub fn file_menu(
         entries.push(Action(crate::event::Event::menu_file(
             file::Event::clear_recent(),
         )));
-        items.push(Separator);
-        items.push(Submenu(entries, translations.file_recent.to_string()));
-    }
+        entries
+    };
+    items.push(Separator);
+    items.push(Submenu(
+        recent_entries,
+        translations.file_recent.to_string(),
+    ));
 
     items.push(Separator);
     items.push(Action(crate::event::Event::menu_file(
@@ -229,6 +238,7 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.to_string_lossy().into_owned()),
                 FileEvent::ClearRecent => translations.file_recent_clear.to_string(),
+                FileEvent::NoRecentFiles => translations.file_recent_empty.to_string(),
                 FileEvent::ImportFiles => translations.file_import.to_string(),
                 FileEvent::ImportFromCloud => translations.file_import_from_cloud.to_string(),
                 FileEvent::SaveToCloud => translations.file_save_to_cloud.to_string(),

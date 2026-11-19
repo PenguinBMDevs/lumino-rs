@@ -609,7 +609,10 @@ fn titlebar_menu_model_resolves_every_action() {
     for menu in &bar.menus {
         actions += check_entries(&root, &menu.entries);
     }
-    assert_eq!(actions, 25, "14 文件 + 7 编辑 + 3 视图 + 1 帮助");
+    assert_eq!(
+        actions, 26,
+        "15 文件（含最近打开空态占位）+ 7 编辑 + 3 视图 + 1 帮助"
+    );
     assert!(root.menu_action_message(usize::MAX).is_none());
 
     // 空工程没有框选：导出为素材置灰。
@@ -642,7 +645,7 @@ fn check_entries(root: &Root, entries: &[MenuEntry]) -> usize {
 }
 
 /// 有历史时文件菜单出现「最近打开」子菜单：条目按顺序、可解析回 `OpenRecent`，
-/// 末尾是「清除最近记录」；没有历史时整段隐藏（动作数量与旧版一致）。
+/// 末尾是「清除最近记录」；没有历史时仍保留入口，展示一个禁用的空态占位项。
 #[test]
 fn file_menu_recent_submenu_tracks_recent_files() {
     let config = lumino_core::storage::config::UiConfig {
@@ -708,7 +711,7 @@ fn file_menu_recent_submenu_tracks_recent_files() {
         "清除项必须解析为 ClearRecent"
     );
 
-    // 空历史：子菜单整段隐藏，动作数量回到旧版口径（25）。
+    // 空历史：入口仍可见，子菜单里只有一个禁用的占位项。
     let empty = Root::new(&lumino_core::storage::config::UiConfig::default());
     let empty_model = empty.egui_chrome_model();
     let empty_bar = empty_model
@@ -716,19 +719,45 @@ fn file_menu_recent_submenu_tracks_recent_files() {
         .expect("自绘标题栏应有模型")
         .menu
         .expect("应带可交互菜单树");
+    let empty_recent = empty_bar.menus[0]
+        .entries
+        .iter()
+        .find_map(|entry| match entry {
+            MenuEntry::Submenu { label, entries } if *label == translations.file_recent => {
+                Some(entries)
+            }
+            _ => None,
+        })
+        .expect("无历史时也应保留「最近打开」入口");
+    assert_eq!(empty_recent.len(), 1, "空态只有占位项");
+    let MenuEntry::Action {
+        label,
+        enabled,
+        action,
+    } = &empty_recent[0]
+    else {
+        panic!("空态占位项应为禁用动作");
+    };
+    assert_eq!(*label, translations.file_recent_empty);
+    assert!(!*enabled, "空态占位项必须禁用");
     assert!(
-        !empty_bar.menus[0].entries.iter().any(|entry| matches!(
-            entry,
-            MenuEntry::Submenu { label, .. } if *label == translations.file_recent
-        )),
-        "无历史时不应出现「最近打开」子菜单"
+        matches!(
+            empty.menu_action_message(*action),
+            Some(Message::Core(crate::event::Event::Menu(
+                crate::event::menu::Event::File(crate::event::menu::file::Event::NoRecentFiles)
+            )))
+        ),
+        "空态占位项必须解析为 NoRecentFiles"
     );
     let empty_actions: usize = empty_bar
         .menus
         .iter()
         .map(|menu| check_entries(&empty, &menu.entries))
         .sum();
-    assert_eq!(empty_actions, 25, "空历史不改变文件菜单动作数量");
+    assert_eq!(
+        empty_actions, 26,
+        "空态占位不改变「每个动作都可解析」的契约"
+    );
 }
 
 #[test]

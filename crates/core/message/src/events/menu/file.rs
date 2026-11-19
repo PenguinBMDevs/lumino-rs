@@ -20,6 +20,8 @@ pub enum Event {
     OpenRecent(PathBuf),
     /// 清除「最近打开」记录
     ClearRecent,
+    /// 「最近打开」空态占位项（禁用展示，防止菜单项在无历史时整段消失）
+    NoRecentFiles,
     /// 保存工程
     Save,
     /// 关闭当前工程
@@ -119,6 +121,10 @@ impl Event {
     /// 构造「清除最近记录」事件
     pub const fn clear_recent() -> Self {
         Self::ClearRecent
+    }
+    /// 构造「最近打开」空态占位事件
+    pub const fn no_recent_files() -> Self {
+        Self::NoRecentFiles
     }
     /// 构造保存事件
     pub const fn save() -> Self {

@@ -153,6 +153,8 @@ pub struct MainTranslations {
     pub file_recent: &'static str,
     /// 清除最近打开记录
     pub file_recent_clear: &'static str,
+    /// 最近打开：空态占位
+    pub file_recent_empty: &'static str,
     /// 导入文件
     pub file_import: &'static str,
     /// 从云导入
