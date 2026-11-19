@@ -7,13 +7,12 @@ use crate::sidebar::core::{GroupId, GroupSubState, Route, Sidebar};
 impl Sidebar {
     /// 分组切换：保存旧组状态 → 恢复新组状态，互斥
     pub(crate) fn handle_group_toggle(&mut self, group: GroupId) {
-        // 如果点击的是已激活的分组
+        // 如果点击的是已激活的分组：再次点击 = 关闭该分组。
+        //
+        // 钢琴卷帘组同样允许关闭（关闭后主区域进入空白态，由默认第一屏接管）；
+        // 关闭前保存子按钮状态，重新点开时恢复。这样卷帘也能像渲染组 / 播放器组
+        // 一样通过父按钮直接收起，而不是只能切换到其他分组。
         if self.active_group == Some(group) {
-            // 钢琴卷帘组：不允许通过再次点击关闭，始终保持钢琴卷帘可见
-            if group == GroupId::PianoRoll {
-                return;
-            }
-            // 其他分组：先保存当前状态，确保再次激活时能正确恢复
             self.save_group_state(group);
             self.deactivate_group(group);
             return;

@@ -125,6 +125,27 @@ fn test_arrangement_button_restores_file_and_automation_state() {
     assert!(sidebar.piano_roll_visible, "应恢复钢琴卷帘显示");
 }
 
+/// 再次点击钢琴卷帘组父按钮：直接关闭钢琴卷帘并进入空白主区域；
+/// 再点一次恢复之前的子按钮状态（默认音轨列表打开）。
+#[test]
+fn test_piano_roll_group_button_toggles_panel_closed() {
+    let mut sidebar = Sidebar::new();
+    assert!(sidebar.piano_roll_visible, "默认应处于钢琴卷帘");
+    assert_eq!(sidebar.active_group, Some(GroupId::PianoRoll));
+
+    sidebar.update(Event::GroupToggled(GroupId::PianoRoll));
+
+    assert!(!sidebar.piano_roll_visible, "再次点击父按钮应关闭钢琴卷帘");
+    assert!(!sidebar.panel_visible, "关闭分组后不应残留音轨面板");
+    assert_eq!(sidebar.active_group, None, "关闭后不应残留激活分组");
+
+    sidebar.update(Event::GroupToggled(GroupId::PianoRoll));
+
+    assert!(sidebar.piano_roll_visible, "再次点击应重新打开钢琴卷帘");
+    assert!(sidebar.panel_visible, "应恢复关闭前的音轨列表面板");
+    assert_eq!(sidebar.active_group, Some(GroupId::PianoRoll));
+}
+
 /// 在工程走带界面点击音轨列表按钮：退出走带并恢复钢琴卷帘状态，同时打开音轨列表
 #[test]
 fn test_file_button_exits_arrangement_and_restores_state() {

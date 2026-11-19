@@ -13,7 +13,7 @@ use crate::Message;
 use crate::toolbar::Event as ToolbarEvent;
 
 fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
-    sidebar.egui_model(Language::ZhCn, false)
+    sidebar.egui_model(Language::ZhCn, false, false)
 }
 
 #[test]
@@ -64,6 +64,32 @@ fn sidebar_model_carries_route_items() {
             .iter()
             .any(|item| item.icon == SidebarRouteIcon::AudioExport && item.active),
         "音频导出不可见时不应点亮"
+    );
+}
+
+#[test]
+fn sidebar_model_lights_waterfall_button_in_player_mode() {
+    // 播放器模式：黄色组父按钮必须点亮（回归：生产装配曾把 active 写死为 false）。
+    let model = Sidebar::new()
+        .egui_model(Language::ZhCn, false, true)
+        .expect("播放器模式应可接管");
+    assert!(model.waterfall, "模型应标记播放器模式");
+    assert!(
+        model
+            .route_items
+            .iter()
+            .any(|item| item.icon == SidebarRouteIcon::Waterfall && item.active),
+        "播放器组按钮应点亮"
+    );
+
+    // 非播放器模式：同一按钮不得点亮。
+    let model = sidebar_model(&Sidebar::new()).expect("默认状态应可接管");
+    assert!(
+        model
+            .route_items
+            .iter()
+            .any(|item| item.icon == SidebarRouteIcon::Waterfall && !item.active),
+        "编辑模式下播放器组按钮不应点亮"
     );
 }
 

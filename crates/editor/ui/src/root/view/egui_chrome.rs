@@ -94,6 +94,7 @@ impl Sidebar {
         &self,
         language: lumino_extras::i18n::Language,
         mixer_open: bool,
+        waterfall: bool,
     ) -> Option<SidebarModel> {
         if self.has_transient_ui() {
             return None;
@@ -158,7 +159,7 @@ impl Sidebar {
         });
         route_items.push(SidebarRouteItem {
             icon: SidebarRouteIcon::Waterfall,
-            active: false,
+            active: waterfall,
         });
         route_items.push(SidebarRouteItem {
             icon: SidebarRouteIcon::Renderer,
@@ -179,7 +180,7 @@ impl Sidebar {
             panel_visible: self.panel_visible,
             panel_width: self.panel_width,
             piano_roll_visible: self.piano_roll_visible,
-            waterfall: false,
+            waterfall,
             active_group,
             route_items,
             automation_panel_visible: self.automation_panel_visible,
@@ -559,9 +560,11 @@ impl Root {
         let metrics_visible = status.fps.is_some();
 
         // 左侧栏：瀑布流模式同样存在（`view_waterfall_fullscreen` 也渲染左栏）。
-        let mut sidebar = self.sidebar.egui_model(language, self.mixer_panel.open);
+        // 播放器组按钮的点亮态由 `waterfall` 直接传入（与 `current_mode` 同源）。
+        let mut sidebar = self
+            .sidebar
+            .egui_model(language, self.mixer_panel.open, waterfall);
         if let Some(model) = sidebar.as_mut() {
-            model.waterfall = waterfall;
             model.roll_bar_visible = !waterfall && self.sidebar.is_piano_roll_panel();
         }
 
