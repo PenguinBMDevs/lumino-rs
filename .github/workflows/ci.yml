@@ -61,10 +61,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      # HF 缓存（替代 actions/cache）：每类机器一个 zstd 包，见
-      # .github/actions/hf-cache。工具链装好后拉包解压；token 为空
-      # （fork PR）时静默跳过。lint 与 test 是并行 job，各用各的包名，
-      # 避免并发回写同一个文件互相覆盖。缓存范围仅项目 target（不缓存 ~/.cargo）。
+      # HF 缓存只读：每类机器一个 zstd 包，见 .github/actions/hf-cache。
+      # 写入统一收敛到 hf-cache-refresh.yml（每 3 天全量重建），
+      # 日常 CI 不再回写，避免不同 run 互相覆盖/污染。缓存范围仅项目 target。
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
@@ -85,19 +84,6 @@ jobs:
       # 禁止无差别 #[allow]。当前临时 allow 的枚举已在源码中标注 TODO(P3)。
       - name: Cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-      # 回写缓存：只在成功时刷新。失败 / 取消都不写，避免半成品 target
-      # 覆盖掉上一份可用的缓存；PR 不回写，避免外部代码污染主缓存。
-      # action 内部 continue-on-error：缓存写失败不拖累门禁。
-      - name: HF cache (save)
-        if: ${{ success() && github.event_name != 'pull_request' }}
-        uses: ./.github/actions/hf-cache
-        with:
-          archive: ci-lint-${{ matrix.os }}.tar.zst
-          paths: |
-            target
-          save: "true"
-          hf-token: ${{ secrets.HF_TOKEN }}
 
   # ── 测试：cargo test（×3 OS 并行）────────────────────────────────
   test:
@@ -141,6 +127,7 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # 只读缓存：定时刷新见 hf-cache-refresh.yml。
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
@@ -168,16 +155,6 @@ jobs:
           MIMALLOC_SYS_USE_STATIC_CRT: 1
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536
 
-      - name: HF cache (save)
-        if: ${{ success() && github.event_name != 'pull_request' }}
-        uses: ./.github/actions/hf-cache
-        with:
-          archive: ci-test-${{ matrix.os }}.tar.zst
-          paths: |
-            target
-          save: "true"
-          hf-token: ${{ secrets.HF_TOKEN }}
-
   # ── 金丝雀构建：Windows x64 release → 推 Hugging Face ─────────────
   # 与门禁并行，不等 lint/test。push 即构建，炸了下次 push 自然覆盖。
   # 文件名：Lumino-rs_Canary_Dev-prewiew_<short-sha>_<yyyymmdd>.exe
@@ -200,6 +177,7 @@ jobs:
       # 而 lint/test 只有 target/debug。所以 canary 必须自带一套缓存，
       # 单开命名空间，路径只列自己会产出的目录（顶层 target/release 是
       # 宿主单元，少了它每轮都要重编全部 proc-macro/build script）。
+      # canary 缓存也由 hf-cache-refresh.yml 每 3 天刷新；本 job 只读。
       - name: HF cache (restore, canary)
         uses: ./.github/actions/hf-cache
         with:
@@ -214,18 +192,6 @@ jobs:
         run: cargo build --release --target x86_64-pc-windows-msvc
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 与 test job 保持一致的 mimalloc 静态 CRT 配置
-
-      # canary 只在 push 上跑，必然有 token；只在构建成功时刷新缓存。
-      - name: HF cache (save, canary)
-        if: ${{ success() }}
-        uses: ./.github/actions/hf-cache
-        with:
-          archive: ci-canary-windows-latest.tar.zst
-          paths: |
-            target/x86_64-pc-windows-msvc
-            target/release
-          save: "true"
-          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Upload canary to Hugging Face
         shell: bash

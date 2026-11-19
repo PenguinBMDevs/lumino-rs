@@ -1,0 +1,152 @@
+name: HF Cache Refresh
+
+# 缓存写入收敛：日常 CI 只 restore，不再 save；本 workflow 每 3 天全量冷构建
+# ci.yml 使用的三套缓存（lint / test / canary）后推送到 HF，成为新的固定基线。
+# 这样构建与缓存更新不同时发生，避免多个 run 互相覆盖/把半成品推成缓存。
+#
+# 目前只覆盖 ci.yml 的三套；build-all / fast-check / fast-release 仍各自刷新，
+# 它们触发频率低，暂不迁移。
+on:
+  schedule:
+    # 03:00 UTC，每 3 天。*/3 在月末会与月初相邻，属于近似 3 天。
+    - cron: "0 3 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 不和自身重叠；刷新被取消时 save 步不会执行（if: success()）。
+  group: hf-cache-refresh
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── lint 缓存：cargo check + clippy 后的 target ───────────────────
+  lint:
+    name: Refresh lint cache (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          # 与 ci.yml lint job 保持一致：Vulkan 软件实现 + wgpu/音频/字体依赖。
+          sudo apt-get install -y \
+            mesa-vulkan-drivers \
+            libssl-dev \
+            libasound2-dev \
+            libvulkan-dev \
+            libx11-dev \
+            libwayland-dev \
+            libfontconfig-dev \
+            libfreetype6-dev \
+            libxkbcommon-dev \
+            libegl1-mesa-dev
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # 全量刷新：故意不 restore，从零构建，避免把日常 CI 的中间态带进新缓存。
+      - name: Build lint artifacts
+        run: |
+          cargo check --workspace
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Push lint cache
+        if: ${{ success() }}
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: ci-lint-${{ matrix.os }}.tar.zst
+          paths: |
+            target
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
+
+  # ── test 缓存：cargo test --no-run 后的 target ────────────────────
+  test:
+    name: Refresh test cache (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            mesa-vulkan-drivers \
+            libssl-dev \
+            libasound2-dev \
+            libvulkan-dev \
+            libx11-dev \
+            libwayland-dev \
+            libfontconfig-dev \
+            libfreetype6-dev \
+            libxkbcommon-dev \
+            libegl1-mesa-dev
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 全量刷新：不 restore。--no-run 只构建测试二进制，不执行测试，
+      # 产物与 ci.yml 的 cargo test 指纹一致，足够暖缓存。
+      - name: Build test artifacts
+        run: cargo test --workspace --no-run
+        env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1
+          LUMINO_MEMORY_SOFT_LIMIT_MB: 65536
+
+      - name: Push test cache
+        if: ${{ success() }}
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: ci-test-${{ matrix.os }}.tar.zst
+          paths: |
+            target
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
+
+  # ── canary 缓存：Windows x64 release ─────────────────────────────
+  canary:
+    name: Refresh canary cache (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 全量刷新：不 restore，从零构建 release + 宿主侧 proc-macro/build script。
+      - name: Build release
+        run: cargo build --release --target x86_64-pc-windows-msvc
+        env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1
+
+      - name: Push canary cache
+        if: ${{ success() }}
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: ci-canary-windows-latest.tar.zst
+          paths: |
+            target/x86_64-pc-windows-msvc
+            target/release
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}

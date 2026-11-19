@@ -18,7 +18,7 @@ inputs:
     default: "3"
   save:
     description: >-
-      'true' 时打包回传 HF 并替换旧包（CI 结束后第二次调用时设）。
+      'true' 时打包回传 HF 并替换旧包（日常 CI 的第二次调用，或独立刷新 workflow 的唯一调用）。
       调用方必须用 success()（而不是 always()）：失败或取消的任务不得回写缓存。
     default: "false"
   hf-token:
