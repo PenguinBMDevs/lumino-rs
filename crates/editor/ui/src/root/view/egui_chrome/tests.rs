@@ -648,14 +648,19 @@ fn check_entries(root: &Root, entries: &[MenuEntry]) -> usize {
 /// 末尾是「清除最近记录」；没有历史时仍保留入口，展示一个禁用的空态占位项。
 #[test]
 fn file_menu_recent_submenu_tracks_recent_files() {
+    // 路径用平台无关的相对形式：`Path::file_name` 只在 Windows 把 `\` 当分隔符，
+    // 写死 Windows 路径会让 Linux/macOS 把整串路径当成文件名。
+    let music = std::path::Path::new("Music");
+    let first = music.join("a.mid");
+    let second = music.join("b.lmpj");
     let config = lumino_core::storage::config::UiConfig {
         recent_files: vec![
             lumino_core::storage::config::RecentFile {
-                path: r"C:\Music\a.mid".to_owned(),
+                path: first.to_string_lossy().into_owned(),
                 opened_at: 2,
             },
             lumino_core::storage::config::RecentFile {
-                path: r"C:\Music\b.lmpj".to_owned(),
+                path: second.to_string_lossy().into_owned(),
                 opened_at: 1,
             },
         ],
@@ -693,7 +698,7 @@ fn file_menu_recent_submenu_tracks_recent_files() {
     match root.menu_action_message(*action) {
         Some(Message::Core(crate::event::Event::Menu(crate::event::menu::Event::File(
             crate::event::menu::file::Event::OpenRecent(path),
-        )))) => assert_eq!(path, std::path::PathBuf::from(r"C:\Music\a.mid")),
+        )))) => assert_eq!(path, first),
         _ => panic!("最近文件动作必须解析为 OpenRecent"),
     }
 
