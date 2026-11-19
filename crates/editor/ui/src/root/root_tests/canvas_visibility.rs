@@ -100,6 +100,41 @@ fn test_visible_in_arrangement() {
     );
 }
 
+/// 关闭工程走带组：主区域回到空白第一屏，不得替用户跳转到钢琴卷帘。
+///
+/// 父按钮语义是「开 / 关本组」；走带关闭后 `piano_roll_visible` 必须保持
+/// false（这正是「关闭变成跳转」缺陷的判据），卷帘状态只留待用户主动点开。
+#[test]
+fn test_first_screen_after_closing_arrangement_group() {
+    let mut root = root();
+    root.handle_sidebar_event(sidebar::Event::GroupToggled(sidebar::GroupId::Project));
+    assert!(
+        root.editor_canvas_visible(),
+        "断言前提：工程走带已占用主区域"
+    );
+
+    root.handle_sidebar_event(sidebar::Event::GroupToggled(sidebar::GroupId::Project));
+
+    assert!(
+        root.sidebar.active_group.is_none(),
+        "关闭走带后不应残留激活分组"
+    );
+    assert_eq!(
+        root.sidebar.route,
+        sidebar::Route::File,
+        "关闭走带后路由不得仍停在 Arrangement"
+    );
+    assert!(
+        !root.sidebar.piano_roll_visible,
+        "关闭走带不得跳转到钢琴卷帘"
+    );
+    assert!(!root.editor_canvas_visible(), "关闭走带后画布应停绘");
+    assert!(
+        root.shows_first_screen(),
+        "关闭走带后主区域应回到空白第一屏"
+    );
+}
+
 /// 全屏瀑布流：独立外部纹理承载播放器，编辑器画布不参与合成。
 #[test]
 fn test_hidden_in_waterfall() {

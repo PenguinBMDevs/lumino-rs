@@ -9,9 +9,9 @@ impl Sidebar {
     pub(crate) fn handle_group_toggle(&mut self, group: GroupId) {
         // 如果点击的是已激活的分组：再次点击 = 关闭该分组。
         //
-        // 钢琴卷帘组同样允许关闭（关闭后主区域进入空白态，由默认第一屏接管）；
-        // 关闭前保存子按钮状态，重新点开时恢复。这样卷帘也能像渲染组 / 播放器组
-        // 一样通过父按钮直接收起，而不是只能切换到其他分组。
+        // 所有组（含钢琴卷帘 / 工程走带）统一走「关闭 → 空白主区域」这一条
+        // 语义，关闭前保存子按钮状态，重新点开时恢复。父按钮不得把「关闭」
+        // 实现成「切到另一个组」——否则用户点关闭会被强制跳转到别的面板。
         if self.active_group == Some(group) {
             self.save_group_state(group);
             self.deactivate_group(group);
@@ -136,7 +136,10 @@ impl Sidebar {
         self.active_group = Some(group);
     }
 
-    /// 取消激活分组
+    /// 取消激活分组（关闭父按钮）
+    ///
+    /// 关闭后主区域保持空白（由默认第一屏接管）；**不得**在这里切换到其他
+    /// 分组——「关闭」被实现成「跳转」是用户明确报告过的缺陷。
     pub(crate) fn deactivate_group(&mut self, group: GroupId) {
         match group {
             GroupId::PianoRoll => {
@@ -145,19 +148,17 @@ impl Sidebar {
                 self.automation_panel_visible = false;
             }
             GroupId::Project => {
-                // 退出工程走带时恢复钢琴卷帘状态并切回钢琴卷帘组
-                self.piano_roll_visible = true;
-                let state = &self.piano_roll_sub_state;
-                self.panel_route = state.panel_route;
-                self.panel_visible = state.panel_visible;
-                self.automation_panel_visible = state.automation_panel_visible;
-                self.route = if state.panel_visible {
-                    state.panel_route
-                } else {
-                    Route::File
-                };
-                self.active_group = Some(GroupId::PianoRoll);
-                return;
+                // 关闭工程走带 = 主区域回到空白态（由默认第一屏接管），
+                // **不**替用户跳到钢琴卷帘：父按钮的语义是「开 / 关本组」，
+                // 关闭时切到另一个组会让「关闭」变成「跳转」。
+                //
+                // 钢琴卷帘子按钮状态在进入走带前已存入 `piano_roll_sub_state`
+                // （见 `handle_group_toggle` / `enter_arrangement`），用户主动
+                // 点开卷帘组时由 `activate_group` 恢复，这里不能覆盖它。
+                self.piano_roll_visible = false;
+                self.panel_visible = false;
+                self.automation_panel_visible = false;
+                self.route = Route::File;
             }
             GroupId::Waterfall => {
                 // 退出瀑布流时切回钢琴卷帘组（如果有保存状态）

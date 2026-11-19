@@ -105,24 +105,36 @@ fn test_arrangement_button_closes_file_and_automation_panels() {
     assert!(!sidebar.piano_roll_visible, "进入工程走带后钢琴卷帘应隐藏");
 }
 
-/// 再次点击工程组按钮可恢复之前的钢琴卷帘子按钮状态
+/// 再次点击工程组按钮：关闭工程走带并回到空白主区域，**不**跳到钢琴卷帘。
+/// 卷帘子按钮状态在进入走带前已保存，重新点开卷帘组时才恢复。
 #[test]
-fn test_arrangement_button_restores_file_and_automation_state() {
+fn test_arrangement_button_closes_to_blank_and_preserves_piano_roll_state() {
     let mut sidebar = Sidebar::new();
     sidebar.panel_visible = true;
     sidebar.panel_route = Route::File;
     sidebar.automation_panel_visible = true;
     sidebar.piano_roll_visible = true;
 
-    // 先后两次点击工程组按钮 = 进入再退出工程走带
+    // 进入工程走带
     sidebar.update(Event::GroupToggled(GroupId::Project));
+    // 再次点击 = 关闭走带（不是切到钢琴卷帘）
     sidebar.update(Event::GroupToggled(GroupId::Project));
 
-    assert_eq!(sidebar.route, Route::File);
+    assert_eq!(sidebar.route, Route::File, "关闭走带后不应残留走带路由");
+    assert_eq!(sidebar.active_group, None, "关闭走带后不应残留激活分组");
+    assert!(
+        !sidebar.piano_roll_visible,
+        "关闭走带应回到空白主区域，不得跳转到钢琴卷帘"
+    );
+    assert!(!sidebar.panel_visible, "关闭走带后不应残留音轨列表面板");
+    assert!(!sidebar.automation_panel_visible);
+
+    // 主动点开卷帘组时，才恢复进入走带前保存的子按钮状态
+    sidebar.update(Event::GroupToggled(GroupId::PianoRoll));
+    assert!(sidebar.piano_roll_visible, "点开卷帘组后应显示钢琴卷帘");
     assert!(sidebar.panel_visible, "应恢复音轨列表面板打开状态");
     assert_eq!(sidebar.panel_route, Route::File);
     assert!(sidebar.automation_panel_visible, "应恢复自动化面板打开状态");
-    assert!(sidebar.piano_roll_visible, "应恢复钢琴卷帘显示");
 }
 
 /// 再次点击钢琴卷帘组父按钮：直接关闭钢琴卷帘并进入空白主区域；
