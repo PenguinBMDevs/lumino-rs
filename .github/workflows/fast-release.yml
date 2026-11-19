@@ -32,7 +32,7 @@ jobs:
         run: cargo build --profile fast-release --workspace
 
       - name: HF cache (save)
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         uses: ./.github/actions/hf-cache
         with:
           archive: fast-release-windows-latest.tar.zst
