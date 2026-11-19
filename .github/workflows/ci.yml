@@ -86,11 +86,12 @@ jobs:
       - name: Cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      # 回写缓存：构建成败都刷新（半路失败也保留已编译产物，下轮续编）；
+      # 回写缓存：构建失败也刷新（半路失败保留已编译产物，下轮续编）；
+      # 但任务被取消时绝不回写（!cancelled），避免把取消时的半成品推成新缓存。
       # PR 不回写，避免外部代码污染主缓存。action 内部 continue-on-error：
       # 缓存写失败不拖累门禁。
       - name: HF cache (save)
-        if: always() && github.event_name != 'pull_request'
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         uses: ./.github/actions/hf-cache
         with:
           archive: ci-lint-${{ matrix.os }}.tar.zst
@@ -169,7 +170,7 @@ jobs:
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536
 
       - name: HF cache (save)
-        if: always() && github.event_name != 'pull_request'
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         uses: ./.github/actions/hf-cache
         with:
           archive: ci-test-${{ matrix.os }}.tar.zst
@@ -215,9 +216,9 @@ jobs:
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 与 test job 保持一致的 mimalloc 静态 CRT 配置
 
-      # canary 只在 push 上跑，必然有 token，成败都刷新缓存。
+      # canary 只在 push 上跑，必然有 token；失败也刷新，但取消不刷新（!cancelled）。
       - name: HF cache (save, canary)
-        if: always()
+        if: ${{ !cancelled() }}
         uses: ./.github/actions/hf-cache
         with:
           archive: ci-canary-windows-latest.tar.zst

@@ -17,7 +17,9 @@ inputs:
     description: zstd 压缩级别（-T0 多线程）；默认 3（zstd 自带档，压缩最快），CI 场景 3-5 足够
     default: "3"
   save:
-    description: "'true' 时打包回传 HF 并替换旧包（CI 结束后第二次调用时设）"
+    description: >-
+      'true' 时打包回传 HF 并替换旧包（CI 结束后第二次调用时设）。
+      调用方必须用 !cancelled() 而不是 always()：任务取消后不得回写缓存。
     default: "false"
   hf-token:
     description: Hugging Face token（需对缓存仓库有写权限）
@@ -147,6 +149,7 @@ runs:
         echo "cache extracted: $ARCHIVE (${extract[*]})"
 
     - name: Pack & push cache archive
+      # 调用方用 !cancelled() 控制：任务取消后本步骤不会被调度，避免半成品污染。
       # 拉取模式下不执行。打包完以单个 commit 删旧+传新：commit 失败
       # （如首次运行旧包不存在导致 delete 操作报错）时退化为纯上传，
       # 保证 HF 上旧包不会被提前删掉。continue-on-error：缓存刷新失败
