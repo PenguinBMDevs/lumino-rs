@@ -6,8 +6,8 @@
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, Stroke};
 
 use super::{
-    BODY_PAD, DragTarget, HEADER_H, METER_WIDTH, MixerAction, MixerDialogModel, MixerHit,
-    MixerLayout, MixerModel, MixerStrip, drag_target, hit_test, push_action, set_drag_target,
+    DragTarget, METER_WIDTH, MixerAction, MixerDialogModel, MixerHit, MixerLayout, MixerModel,
+    MixerStrip, drag_target, hit_test, push_action, set_drag_target,
 };
 use crate::{layout, theme};
 
@@ -38,9 +38,6 @@ pub fn show_dialog(ui: &mut egui::Ui, model: &MixerDialogModel) {
         layout.panel.max,
     );
     ui.painter().rect_filled(content, 0, theme::base_bg());
-    if model.titlebar {
-        draw_header(ui, &layout);
-    }
 
     let painter = ui.painter();
     let strip_painter = painter.with_clip_rect(layout.strips_viewport);
@@ -72,29 +69,6 @@ pub fn show_dialog(ui: &mut egui::Ui, model: &MixerDialogModel) {
     for action in interact(ui, &layout, &model.mixer) {
         push_action(ui.ctx(), action);
     }
-}
-
-/// 自制标题栏下的内容标题行：名称 + 操作提示。
-fn draw_header(ui: &egui::Ui, layout: &MixerLayout) {
-    let rect = Rect::from_min_size(
-        egui::pos2(layout.panel.left(), layout.panel.top() + layout::TITLEBAR_H),
-        egui::vec2(layout.panel.width(), HEADER_H),
-    );
-    let painter = ui.painter();
-    painter.text(
-        egui::pos2(rect.left() + BODY_PAD, rect.center().y),
-        Align2::LEFT_CENTER,
-        "混音台",
-        FontId::proportional(12.0),
-        theme::text(),
-    );
-    painter.text(
-        egui::pos2(rect.right() - BODY_PAD, rect.center().y),
-        Align2::RIGHT_CENTER,
-        "滚轮横向滚动 · 拖动推子调节音量",
-        FontId::proportional(10.0),
-        theme::text_muted(),
-    );
 }
 
 /// 绘制一条通道条。

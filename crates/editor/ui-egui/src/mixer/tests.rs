@@ -36,13 +36,13 @@ fn rect() -> Rect {
 }
 
 #[test]
-fn dialog_body_starts_below_title_and_header() {
+fn dialog_body_starts_below_titlebar() {
     let m = model(2);
     let layout = MixerLayout::dialog(rect(), true, &m);
     assert!((layout.panel.top() - 0.0).abs() < 0.01);
     assert!(
-        (layout.body.top() - (layout::TITLEBAR_H + HEADER_H)).abs() < 0.01,
-        "主体必须让出 30px 标题栏 + 内容标题行"
+        (layout.body.top() - layout::TITLEBAR_H).abs() < 0.01,
+        "内容区只让出 30px 标题栏，不再画内容标题行"
     );
     let strip = layout.strip_rect(0, 0.0);
     assert!((strip.top() - (layout.body.top() + BODY_PAD)).abs() < 0.01);

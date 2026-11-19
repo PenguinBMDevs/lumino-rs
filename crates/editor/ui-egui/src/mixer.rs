@@ -34,8 +34,6 @@ pub const METER_WIDTH: f32 = 6.0;
 pub const CULL_MARGIN: f32 = STRIP_STEP * 2.0;
 /// 主体内边距。
 pub const BODY_PAD: f32 = 8.0;
-/// 自制标题栏下方的内容标题行高度（系统原生标题栏时省略）。
-pub const HEADER_H: f32 = 22.0;
 /// 主控条与普通通道条之间的额外间距。
 pub const MASTER_GAP: f32 = 8.0;
 
@@ -83,7 +81,7 @@ pub struct MixerDialogModel {
 pub struct MixerLayout {
     /// 整个客户端区域。
     pub panel: Rect,
-    /// 通道条主体（标题栏 / 内容标题行之下）。
+    /// 通道条主体（自制标题栏之下）。
     pub body: Rect,
     /// 普通通道条视口（已扣除右侧主控条）。
     pub strips_viewport: Rect,
@@ -94,11 +92,8 @@ pub struct MixerLayout {
 impl MixerLayout {
     /// 由对话框客户端矩形算布局。
     pub fn dialog(rect: Rect, titlebar: bool, model: &MixerModel) -> Self {
-        let chrome_top = if titlebar {
-            layout::TITLEBAR_H + HEADER_H
-        } else {
-            0.0
-        };
+        // 30px 自制标题栏由 `chrome::popup_titlebar` 独占，内容区不再画标题行。
+        let chrome_top = if titlebar { layout::TITLEBAR_H } else { 0.0 };
         let body = Rect::from_min_max(egui::pos2(rect.left(), rect.top() + chrome_top), rect.max);
         let master_width = if model.master.is_some() {
             STRIP_WIDTH + MASTER_GAP
