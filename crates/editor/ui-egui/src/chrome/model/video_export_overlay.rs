@@ -81,6 +81,28 @@ pub struct VideoOverlayError {
     pub confirm: String,
 }
 
+/// 导出预览帧（RGBA，Arc 共享：模型每帧构建不复制像素）。
+#[derive(Clone)]
+pub struct VideoPreviewFrame {
+    /// 宽（像素）。
+    pub width: u32,
+    /// 高（像素）。
+    pub height: u32,
+    /// RGBA 像素（长度必须为 `width * height * 4`）。
+    pub rgba: std::sync::Arc<Vec<u8>>,
+}
+
+impl std::fmt::Debug for VideoPreviewFrame {
+    /// 只打印尺寸与字节数：避免 `?model` 把整帧像素刷进日志。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VideoPreviewFrame")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("rgba_len", &self.rgba.len())
+            .finish()
+    }
+}
+
 /// 整个覆盖层模型。
 #[derive(Debug, Clone, Default)]
 pub struct VideoExportOverlayModel {
@@ -88,6 +110,8 @@ pub struct VideoExportOverlayModel {
     pub titlebar: bool,
     /// 当前状态。
     pub view: VideoOverlayView,
+    /// 实时预览帧；`None` = 尚未收到首帧 / 尺寸非法。
+    pub preview: Option<VideoPreviewFrame>,
 }
 
 /// 覆盖层动作。

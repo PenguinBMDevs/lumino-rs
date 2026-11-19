@@ -82,6 +82,8 @@ impl DialogHandler {
 
                 // 设置导出中状态
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
+                // 清掉上一次导出的尾帧，避免新导出首帧到达前显示陈旧画面。
+                root.state.video_export_dialog.preview_frame = None;
                 root.state.video_export_dialog.progress = 0.0;
                 root.state.video_export_dialog.status_message =
                     trf!("正在初始化... [{source}]", source = midi_source);

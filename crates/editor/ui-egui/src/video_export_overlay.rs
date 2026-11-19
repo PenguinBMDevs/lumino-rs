@@ -11,9 +11,11 @@ use egui::{Align, Color32, CornerRadius, RichText, Stroke, Vec2};
 
 use crate::chrome::{
     VideoExportOverlayModel, VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing,
-    VideoOverlayProgress, VideoOverlayView,
+    VideoOverlayProgress, VideoOverlayView, VideoPreviewFrame,
 };
 use crate::theme;
+
+mod preview;
 
 const ACTION_ID: &str = "lumino.video-export-overlay.action";
 /// 整窗外边距（生产 `padding(20)`）。
@@ -30,8 +32,6 @@ const BUTTON_H: f32 = 34.0;
 const BUTTON_GAP: f32 = 8.0;
 /// 错误详情滚动区高度（生产 `height(200)`）。
 const ERROR_BOX_H: f32 = 200.0;
-/// 预览占位高度。
-const PREVIEW_H: f32 = 160.0;
 
 /// 覆盖层产生的动作。
 pub use crate::chrome::VideoOverlayAction;
@@ -74,8 +74,8 @@ enum Row {
     Gap(f32),
     /// 进度条。
     Bar(f32),
-    /// 预览占位。
-    Preview,
+    /// 预览区（高度由帧比例决定；无帧时为固定占位高）。
+    Preview(f32),
     /// 按钮。
     Button(String, ButtonKind, Action),
     /// 错误详情滚动框。
@@ -95,7 +95,7 @@ impl Row {
             },
             Row::Gap(h) => *h,
             Row::Bar(_) => ROW_14,
-            Row::Preview => PREVIEW_H,
+            Row::Preview(h) => *h,
             Row::Button(..) | Row::ButtonWithHint(..) => BUTTON_H,
             Row::ErrorBox(_) => ERROR_BOX_H,
         }
@@ -120,9 +120,9 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
         return;
     }
 
-    let rows = plan(&model.view);
-    let total: f32 = rows.iter().map(Row::height).sum();
     let width = area.width().min(MAX_W);
+    let mut rows = plan(&model.view, model.preview.as_ref(), width);
+    let total = preview::shrink_to_fit(&mut rows, area.height());
     let left = area.center().x - width / 2.0;
     let mut y = area.top() + ((area.height() - total) / 2.0).max(0.0);
     let ctx = ui.ctx().clone();
@@ -168,14 +168,8 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
                     );
                 }
             }
-            Row::Preview => {
-                ui.painter().rect(
-                    row_rect,
-                    CornerRadius::same(4),
-                    theme::toolbar_bg(),
-                    Stroke::new(1.0, theme::selected_bg()),
-                    egui::StrokeKind::Inside,
-                );
+            Row::Preview(_) => {
+                preview::show_row(ui, row_rect, model.preview.as_ref());
             }
             Row::Button(label, kind, action) => {
                 if button(ui, row_rect, &label, kind) {
@@ -234,11 +228,12 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
 }
 
 /// 按状态产出排版计划。
-fn plan(view: &VideoOverlayView) -> Vec<Row> {
+fn plan(view: &VideoOverlayView, preview: Option<&VideoPreviewFrame>, max_w: f32) -> Vec<Row> {
+    let preview_h = preview::preview_height(preview, max_w);
     match view {
-        VideoOverlayView::Exporting(p) => exporting(p),
-        VideoOverlayView::Finalizing(f) => finalizing(f),
-        VideoOverlayView::Completed(c) => completed(c),
+        VideoOverlayView::Exporting(p) => exporting(p, preview_h),
+        VideoOverlayView::Finalizing(f) => finalizing(f, preview_h),
+        VideoOverlayView::Completed(c) => completed(c, preview_h),
         VideoOverlayView::Error(e) => error(e),
     }
 }
@@ -258,11 +253,11 @@ fn progress_rows(p: &VideoOverlayProgress) -> Vec<Row> {
     ]
 }
 
-fn exporting(p: &VideoOverlayProgress) -> Vec<Row> {
+fn exporting(p: &VideoOverlayProgress, preview_h: f32) -> Vec<Row> {
     let mut rows = vec![
         Row::Text(p.heading.clone(), 16.0, theme::text(), true),
         Row::Gap(8.0),
-        Row::Preview,
+        Row::Preview(preview_h),
         Row::Gap(8.0),
     ];
     rows.extend(progress_rows(p));
@@ -275,11 +270,11 @@ fn exporting(p: &VideoOverlayProgress) -> Vec<Row> {
     rows
 }
 
-fn finalizing(f: &VideoOverlayFinalizing) -> Vec<Row> {
+fn finalizing(f: &VideoOverlayFinalizing, preview_h: f32) -> Vec<Row> {
     let mut rows = vec![
         Row::Text(f.progress.heading.clone(), 16.0, theme::text(), true),
         Row::Gap(8.0),
-        Row::Preview,
+        Row::Preview(preview_h),
         Row::Gap(8.0),
         Row::Text(f.finalizing_line.clone(), 14.0, theme::text(), true),
         Row::Gap(4.0),
@@ -295,11 +290,11 @@ fn finalizing(f: &VideoOverlayFinalizing) -> Vec<Row> {
     rows
 }
 
-fn completed(c: &VideoOverlayCompleted) -> Vec<Row> {
+fn completed(c: &VideoOverlayCompleted, preview_h: f32) -> Vec<Row> {
     let mut rows = vec![
         Row::Text(c.heading.clone(), 16.0, theme::success(), true),
         Row::Gap(12.0),
-        Row::Preview,
+        Row::Preview(preview_h),
         Row::Gap(8.0),
     ];
     for line in &c.stats {

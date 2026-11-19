@@ -46,7 +46,7 @@ impl Host {
         }
 
         // 预览帧直接交给 egui 纹理上传（相同尺寸/数据时由调用方按需跳过）。
-        dialog_state.preview_frame = Some(data);
+        dialog_state.preview_frame = Some(std::sync::Arc::new(data));
         dialog_state.preview_width = width;
         dialog_state.preview_height = height;
         self.ui_dirty = true;

@@ -98,6 +98,42 @@ fn no_overlay_means_no_dialog_model() {
 }
 
 #[test]
+fn preview_frame_flows_into_overlay_model() {
+    let mut root = dialog_root();
+    let state = &mut root.state.video_export_dialog;
+    state.overlay = VideoExportOverlayState::Exporting;
+    state.preview_width = 4;
+    state.preview_height = 2;
+    state.preview_frame = Some(std::sync::Arc::new(vec![7u8; 4 * 2 * 4]));
+
+    let model = root.egui_chrome_model();
+    let Some(DialogModel::VideoExportOverlay(panel)) = model.dialog else {
+        panic!("导出中应映射为覆盖层模型");
+    };
+    let preview = panel.preview.as_ref().expect("预览帧应进入覆盖层模型");
+    assert_eq!((preview.width, preview.height), (4, 2));
+    assert_eq!(preview.rgba.len(), 4 * 2 * 4);
+    assert_eq!(preview.rgba[0], 7);
+}
+
+#[test]
+fn invalid_preview_frame_is_dropped() {
+    let mut root = dialog_root();
+    let state = &mut root.state.video_export_dialog;
+    state.overlay = VideoExportOverlayState::Exporting;
+    state.preview_width = 4;
+    state.preview_height = 4;
+    // 字节数不足：上传纹理会越界，模型必须丢弃而不是透传。
+    state.preview_frame = Some(std::sync::Arc::new(vec![0u8; 3]));
+
+    let model = root.egui_chrome_model();
+    let Some(DialogModel::VideoExportOverlay(panel)) = model.dialog else {
+        panic!("导出中应映射为覆盖层模型");
+    };
+    assert!(panel.preview.is_none(), "尺寸不匹配的预览帧不得进入模型");
+}
+
+#[test]
 fn overlay_actions_map_to_messages() {
     let root = dialog_root();
     let map = |action: VideoOverlayAction| root.video_overlay_action_message(&action);

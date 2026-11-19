@@ -3,7 +3,7 @@
 use lumino_core::{tr, trf};
 use lumino_ui_egui::chrome::{
     VideoExportOverlayModel, VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing,
-    VideoOverlayProgress, VideoOverlayView,
+    VideoOverlayProgress, VideoOverlayView, VideoPreviewFrame,
 };
 
 use crate::Message;
@@ -63,6 +63,7 @@ impl Root {
         Some(VideoExportOverlayModel {
             titlebar: !self.settings.synth.use_native_titlebar,
             view,
+            preview: preview_frame(state),
         })
     }
 
@@ -79,6 +80,20 @@ impl Root {
             Action::Dismiss => Prod::DismissOverlay,
         }))
     }
+}
+
+/// 从状态提取合法预览帧；尺寸/字节数不匹配时丢弃（避免上传纹理时越界）。
+fn preview_frame(state: &VideoExportDialogState) -> Option<VideoPreviewFrame> {
+    let rgba = state.preview_frame.as_ref()?;
+    let (width, height) = (state.preview_width, state.preview_height);
+    if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
+        return None;
+    }
+    Some(VideoPreviewFrame {
+        width,
+        height,
+        rgba: std::sync::Arc::clone(rgba),
+    })
 }
 
 /// 导出中 / 收尾共用的进度块。

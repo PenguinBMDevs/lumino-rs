@@ -179,7 +179,7 @@ pub struct VideoExportDialogState {
     /// 已用时间（秒，墙钟真实时间，由导出线程测量并通过进度通道传入）
     pub elapsed_secs: f64,
     /// 预览帧数据（RGBA 格式，压缩后用于 dialog 内显示预览图像）
-    pub preview_frame: Option<Vec<u8>>,
+    pub preview_frame: Option<std::sync::Arc<Vec<u8>>>,
     /// 预览帧宽度
     pub preview_width: u32,
     /// 预览帧高度
