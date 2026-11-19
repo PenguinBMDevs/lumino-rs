@@ -1,7 +1,7 @@
 //! 视频导出面板：生产状态 → egui 模型，以及通用控件动作 → `VideoExportAction`。
 //!
 //! 覆盖全部渲染模式的设置：MIDI 数据源 / 渲染设置（含 MidiConsole）/
-//! 计数器（`counter` 子模块）/ 数据曲线（`data_curve` 子模块）/ 预览 / 导出位置 / 按钮。
+//! 计数器（`counter` 子模块）/ 数据曲线（`data_curve` 子模块）/ 导出位置 / 按钮。
 
 mod backends;
 mod counter;
@@ -11,8 +11,7 @@ mod rows;
 use lumino_core::tr;
 use lumino_message::events::window::video::RenderMode;
 use lumino_ui_egui::chrome::{
-    TextPairCell, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoPreviewModel,
-    VideoRow, VideoSection,
+    TextPairCell, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoRow, VideoSection,
 };
 use lumino_ui_egui::video_export::VideoExportAction as EguiAction;
 
@@ -378,13 +377,6 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     VideoExportModel {
         title: tr!("视频导出").to_string(),
         sections,
-        preview: Some(VideoPreviewModel {
-            label: tr!("等待渲染...").to_string(),
-            image_size: state
-                .preview_frame
-                .as_ref()
-                .map(|_| (state.preview_width as f32, state.preview_height as f32)),
-        }),
         buttons: vec![
             button(tr!("关闭"), 17, VideoButtonFill::Neutral, 100.0),
             button(tr!("开始导出"), 18, VideoButtonFill::Primary, 120.0),

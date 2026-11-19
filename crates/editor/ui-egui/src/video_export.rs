@@ -12,8 +12,7 @@ mod widgets;
 use crate::chrome::{VideoExportModel, VideoExportPanelModel, VideoRow, VideoSection};
 use crate::theme;
 use widgets::{
-    button, buttons, label_cell, preview_ui, row_rect, text_area, text_input, text_pair_cell,
-    text_width,
+    button, buttons, label_cell, row_rect, text_area, text_input, text_pair_cell, text_width,
 };
 
 const ACTION_ID: &str = "lumino.video-export.action";
@@ -93,10 +92,6 @@ fn content(ui: &mut egui::Ui, model: &VideoExportModel) {
             ui.add_space(16.0);
             for section in &model.sections {
                 section_ui(ui, section);
-                ui.add_space(SECTION_GAP);
-            }
-            if let Some(preview) = &model.preview {
-                preview_ui(ui, preview);
                 ui.add_space(SECTION_GAP);
             }
             buttons(ui, &model.buttons);

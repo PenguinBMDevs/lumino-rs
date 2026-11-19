@@ -61,8 +61,8 @@ pub use model::{
     TempoMaxBpmModel, TextPairCell, TexturePreviewModel, TitlebarModel, ToolbarGroupsModel,
     ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
     VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted,
-    VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView,
-    VideoPreviewModel, VideoRow, VideoSection,
+    VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView, VideoRow,
+    VideoSection,
 };
 pub use popup_titlebar::PopupTitlebarModel;
 pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};

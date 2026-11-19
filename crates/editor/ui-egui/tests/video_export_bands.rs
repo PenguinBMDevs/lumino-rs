@@ -6,8 +6,8 @@ use std::rc::Rc;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use lumino_ui_egui::chrome::{
-    TextPairCell, VideoButton, VideoButtonFill, VideoExportModel, VideoExportPanelModel,
-    VideoPreviewModel, VideoRow, VideoSection,
+    TextPairCell, VideoButton, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoRow,
+    VideoSection,
 };
 use lumino_ui_egui::video_export::{self, VideoExportAction};
 
@@ -79,10 +79,6 @@ fn model() -> VideoExportModel {
                 ],
             },
         ],
-        preview: Some(VideoPreviewModel {
-            label: "等待渲染...".to_owned(),
-            image_size: None,
-        }),
         buttons: vec![
             VideoButton {
                 label: "关闭".to_owned(),
@@ -133,7 +129,6 @@ fn sections_and_controls_are_visible() {
         "1.0x",
         "3D 音符",
         "提示文字",
-        "等待渲染...",
         "关闭",
         "开始导出",
     ] {
@@ -319,7 +314,6 @@ fn rich_model() -> VideoExportModel {
                 ],
             },
         ],
-        preview: None,
         buttons: vec![VideoButton {
             label: "开始导出".to_owned(),
             id: 18,

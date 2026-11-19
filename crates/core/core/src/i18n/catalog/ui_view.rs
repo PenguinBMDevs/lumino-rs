@@ -390,7 +390,6 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "MIDI 数据源" => Some("MIDI Data Source"),
         "导出位置" => Some("Export Location"),
         "开始导出" => Some("Start Export"),
-        "等待渲染..." => Some("Waiting for render..."),
         // ── 视频导出 · 渲染设置（`view/video_export_dialog/render_settings.rs`）──
         "渲染设置" => Some("Render Settings"),
         "帧率:" => Some("Frame rate:"),

@@ -7,43 +7,6 @@ use crate::theme;
 
 use super::{BUTTON_H, VideoExportAction, push_action};
 
-/// 预览区（空态：weak 底 + 1px 边框，120 高居中）。
-pub(super) fn preview_ui(ui: &mut egui::Ui, preview: &crate::chrome::VideoPreviewModel) {
-    let rect = row_rect(ui, 120.0);
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(4),
-        theme::toolbar_bg(),
-        Stroke::new(1.0, theme::selected_bg()),
-        egui::StrokeKind::Inside,
-    );
-    match preview.image_size {
-        Some((w, h)) => {
-            let (dw, dh) = fit_preview(w, h);
-            let img = egui::Rect::from_center_size(rect.center(), Vec2::new(dw, dh));
-            ui.painter()
-                .rect_filled(img, CornerRadius::same(4), theme::base_bg());
-        }
-        None => {
-            // 空态文案用 Label（进入可访问树）。
-            let mut empty = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(
-                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-            ));
-            empty.add(egui::Label::new(
-                RichText::new(&preview.label)
-                    .size(14.0)
-                    .color(theme::text_muted()),
-            ));
-        }
-    }
-}
-
-/// 预览图等比缩放到 480×240 以内（与原实现同）。
-pub(super) fn fit_preview(w: f32, h: f32) -> (f32, f32) {
-    let scale = (480.0 / w).min(240.0 / h).min(1.0);
-    ((w * scale).max(100.0), (h * scale).max(56.0))
-}
-
 /// 底部按钮行。
 pub(super) fn buttons(ui: &mut egui::Ui, buttons: &[VideoButton]) {
     let rect = row_rect(ui, BUTTON_H);

@@ -58,7 +58,6 @@ fn panel_model_has_all_main_sections() {
     assert_eq!(content.buttons.len(), 2);
     assert_eq!(content.buttons[0].fill, VideoButtonFill::Neutral);
     assert_eq!(content.buttons[1].fill, VideoButtonFill::Primary);
-    assert!(content.preview.is_some());
 }
 
 #[test]

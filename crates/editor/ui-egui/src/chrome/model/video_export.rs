@@ -28,8 +28,6 @@ pub struct VideoExportModel {
     pub title: String,
     /// 分区（自上而下）。
     pub sections: Vec<VideoSection>,
-    /// 预览区（空态文案；`None` = 不显示）。
-    pub preview: Option<VideoPreviewModel>,
     /// 底部按钮。
     pub buttons: Vec<VideoButton>,
 }
@@ -41,15 +39,6 @@ pub struct VideoSection {
     pub title: String,
     /// 分区内的行。
     pub rows: Vec<VideoRow>,
-}
-
-/// 预览区（空态）。
-#[derive(Debug, Clone, Default)]
-pub struct VideoPreviewModel {
-    /// 空态文案（「等待渲染...」）。
-    pub label: String,
-    /// 有缓存图时的显示尺寸（逻辑像素）；`None` = 暂无图。
-    pub image_size: Option<(f32, f32)>,
 }
 
 /// 一行控件。
