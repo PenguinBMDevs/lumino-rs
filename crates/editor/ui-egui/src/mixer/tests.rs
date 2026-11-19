@@ -98,7 +98,7 @@ fn max_scroll_keeps_last_strip_inside_viewport() {
 }
 
 #[test]
-fn hit_test_maps_fader_buttons_and_master() {
+fn hit_test_maps_buttons_and_skips_faders() {
     let m = model(1);
     let layout = MixerLayout::dialog(rect(), false, &m);
     let strip = layout.strip_rect(0, 0.0);
@@ -108,7 +108,8 @@ fn hit_test_maps_fader_buttons_and_master() {
             &layout,
             &m
         ),
-        Some(MixerHit::Fader(0))
+        None,
+        "推子区域必须留给标准 egui 滑杆，自定义命中不得抢输入"
     );
     let third = strip.width() / 3.0;
     assert_eq!(
@@ -130,7 +131,30 @@ fn hit_test_maps_fader_buttons_and_master() {
     let master = layout.master.expect("主控条");
     assert_eq!(
         hit_test(master.center(), &layout, &m),
-        Some(MixerHit::MasterVolume)
+        None,
+        "主控推子同样由标准滑杆处理"
+    );
+}
+
+#[test]
+fn fader_rect_sits_between_name_and_buttons() {
+    let m = model(1);
+    let layout = MixerLayout::dialog(rect(), false, &m);
+    let strip = layout.strip_rect(0, 0.0);
+    let track = fader_rect(strip, true);
+    assert!(
+        track.top() >= strip.top() + 24.0 - 0.01,
+        "推子不得压住顶部名称"
+    );
+    assert!(
+        track.bottom() <= strip.bottom() - 48.0 + 0.01,
+        "推子不得压住底部 P/M/S 三格"
+    );
+    let master = layout.master.expect("主控条");
+    let master_fader = fader_rect(master, false);
+    assert!(
+        master_fader.bottom() <= master.bottom() - 24.0 + 0.01,
+        "主控推子不得压住 MASTER 标签"
     );
 }
 

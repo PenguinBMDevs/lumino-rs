@@ -1,7 +1,7 @@
 //! 混音台独立窗口的无头交互测试：推子 / 静音 / 主控。
 //!
-//! 混音台是纯 painter 绘制（没有可访问性文本节点），因此按几何坐标点击，
-//! 断言 `mixer::take_actions` 产出的动作。
+//! 推子是标准 egui 垂直滑杆（可按几何坐标点击），按钮仍是 painter 绘制；
+//! 统一按坐标操作，断言 `mixer::take_actions` 产出的动作。
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -79,7 +79,7 @@ fn press(harness: &mut Harness<'static>, pos: egui::Pos2) {
     harness.run();
 }
 
-/// 点推子中部 → `Gain{index:0}`。
+/// 点推子靠上位置 → `Gain{index:0}`，且竖直映射为“上大下小”。
 #[test]
 fn fader_click_dispatches_gain() {
     let (mut harness, actions) = harness();
@@ -93,14 +93,16 @@ fn fader_click_dispatches_gain() {
         &mut harness,
         egui::pos2(strip.center().x, strip.top() + 60.0),
     );
-    assert!(
-        actions
-            .borrow()
-            .iter()
-            .any(|action| matches!(action, MixerAction::Gain { index: 0, .. })),
-        "推子点击必须产出 Gain(0)：{:?}",
-        actions.borrow()
-    );
+    let gain = actions
+        .borrow()
+        .iter()
+        .rev()
+        .find_map(|action| match action {
+            MixerAction::Gain { index: 0, value } => Some(*value),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("推子点击必须产出 Gain(0)：{:?}", actions.borrow()));
+    assert!(gain > 0.6, "标准滑杆的竖直映射应上大下小，实际 {gain}");
 }
 
 /// 点静音格 → `Mute(0)`。
@@ -125,7 +127,7 @@ fn mute_button_dispatches_toggle() {
     );
 }
 
-/// 点主控推子 → `MasterVolume`。
+/// 点主控推子靠上位置 → `MasterVolume`（避开 0.5 原位，确保值真的变化）。
 #[test]
 fn master_fader_dispatches_volume() {
     let (mut harness, actions) = harness();
@@ -135,13 +137,18 @@ fn master_fader_dispatches_volume() {
         &model(),
     );
     let master = layout.master.expect("主控条");
-    press(&mut harness, master.center());
-    assert!(
-        actions
-            .borrow()
-            .iter()
-            .any(|action| matches!(action, MixerAction::MasterVolume(_))),
-        "主控推子必须产出 MasterVolume：{:?}",
-        actions.borrow()
+    press(
+        &mut harness,
+        egui::pos2(master.center().x, master.top() + 40.0),
     );
+    let volume = actions
+        .borrow()
+        .iter()
+        .rev()
+        .find_map(|action| match action {
+            MixerAction::MasterVolume(value) => Some(*value),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("主控推子必须产出 MasterVolume：{:?}", actions.borrow()));
+    assert!(volume > 0.6, "主控滑杆的竖直映射应上大下小，实际 {volume}");
 }

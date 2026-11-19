@@ -1,13 +1,14 @@
 //! 混音台绘制与交互（对话框内容区）。
 //!
-//! 所有控件都是 painter 几何绘制；交互结果写入 [`super::MixerAction`] 通道，
-//! 由 Runner 在对话框重绘后统一取走并回放到主窗口。
+//! 通道条卡片 / 电平表 / 底部按钮仍是 painter 几何绘制；音量推子改为标准
+//! egui 垂直 [`egui::Slider`]，由 egui 负责绘制与输入。交互结果统一写入
+//! [`super::MixerAction`] 通道，由 Runner 在对话框重绘后取走并回放到主窗口。
 
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, Stroke};
+use egui::{Align2, Color32, CornerRadius, FontId, NumExt, Rect, Stroke};
 
 use super::{
-    DragTarget, METER_WIDTH, MixerAction, MixerDialogModel, MixerHit, MixerLayout, MixerModel,
-    MixerStrip, drag_target, hit_test, push_action, set_drag_target,
+    METER_WIDTH, MixerAction, MixerDialogModel, MixerHit, MixerLayout, MixerModel, MixerStrip,
+    hit_test, push_action,
 };
 use crate::{layout, theme};
 
@@ -39,25 +40,40 @@ pub fn show_dialog(ui: &mut egui::Ui, model: &MixerDialogModel) {
     );
     ui.painter().rect_filled(content, 0, theme::base_bg());
 
-    let painter = ui.painter();
-    let strip_painter = painter.with_clip_rect(layout.strips_viewport);
-    for index in layout.visible(model.mixer.strips.len(), model.mixer.scroll_x) {
-        let Some(strip) = model.mixer.strips.get(index) else {
-            continue;
-        };
-        draw_strip(
-            &strip_painter,
-            layout.strip_rect(index, model.mixer.scroll_x),
-            strip,
-            true,
-        );
+    let mut actions = Vec::new();
+
+    // 普通通道条：卡片 / 电平 / 按钮用 painter 画，推子用标准滑杆。
+    // 整组裁剪到视口，滚动到边缘的通道条不会压到右侧主控条。
+    {
+        let mut strips_ui = ui.new_child(egui::UiBuilder::new().max_rect(layout.strips_viewport));
+        strips_ui.shrink_clip_rect(layout.strips_viewport);
+        for index in layout.visible(model.mixer.strips.len(), model.mixer.scroll_x) {
+            let Some(strip) = model.mixer.strips.get(index) else {
+                continue;
+            };
+            let rect = layout.strip_rect(index, model.mixer.scroll_x);
+            draw_strip(strips_ui.painter(), rect, strip, true);
+            if let Some(value) = show_fader(
+                &mut strips_ui,
+                rect,
+                strip.volume,
+                true,
+                ("mixer-fader", index),
+            ) {
+                actions.push(MixerAction::Gain { index, value });
+            }
+        }
     }
+
     if let (Some(rect), Some(master)) = (layout.master, model.mixer.master.as_ref()) {
-        draw_strip(painter, rect, master, false);
+        draw_strip(ui.painter(), rect, master, false);
+        if let Some(value) = show_fader(ui, rect, master.volume, false, ("mixer-fader", "master")) {
+            actions.push(MixerAction::MasterVolume(value));
+        }
     }
 
     if model.mixer.strips.is_empty() && model.mixer.master.is_none() {
-        painter.text(
+        ui.painter().text(
             layout.body.center(),
             Align2::CENTER_CENTER,
             "暂无音轨",
@@ -66,12 +82,45 @@ pub fn show_dialog(ui: &mut egui::Ui, model: &MixerDialogModel) {
         );
     }
 
-    for action in interact(ui, &layout, &model.mixer) {
+    actions.extend(interact(ui, &layout, &model.mixer));
+    for action in actions {
         push_action(ui.ctx(), action);
     }
 }
 
-/// 绘制一条通道条。
+/// 标准 egui 垂直滑杆（推子）；返回本帧变更后的音量。
+fn show_fader(
+    ui: &mut egui::Ui,
+    strip: Rect,
+    volume: f32,
+    with_buttons: bool,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+) -> Option<f32> {
+    let rect = super::fader_rect(strip, with_buttons);
+    // 竖向滑杆的自身矩形 = (thickness, slider_width)。把矩形收窄到 thickness
+    // 并居中，轨道才落在通道条中线上；`put` 的居中两端对齐负责撑满高度。
+    let thickness = ui
+        .text_style_height(&egui::TextStyle::Body)
+        .at_least(ui.spacing().interact_size.y);
+    let slider_rect = Rect::from_center_size(rect.center(), egui::vec2(thickness, rect.height()));
+    let mut value = volume.clamp(0.0, 1.0);
+    let response = ui
+        .push_id(id_salt, |ui| {
+            // 竖向长度取 `spacing.slider_width`（默认 100），这里按推子高度覆盖，
+            // 让轨道撑满通道条而不是缩在中间。
+            ui.spacing_mut().slider_width = rect.height();
+            ui.put(
+                slider_rect,
+                egui::Slider::new(&mut value, 0.0..=1.0)
+                    .vertical()
+                    .show_value(false),
+            )
+        })
+        .inner;
+    response.changed().then_some(value)
+}
+
+/// 绘制一条通道条（音量推子除外，由 [`show_fader`] 绘制）。
 fn draw_strip(painter: &egui::Painter, rect: Rect, strip: &MixerStrip, with_buttons: bool) {
     painter.rect(
         rect,
@@ -89,40 +138,11 @@ fn draw_strip(painter: &egui::Painter, rect: Rect, strip: &MixerStrip, with_butt
         theme::text(),
     );
 
-    // 推子：轨道 + 位置块。
-    let track = Rect::from_min_max(
-        egui::pos2(rect.center().x - 3.0, rect.top() + 24.0),
-        egui::pos2(
-            rect.center().x + 3.0,
-            rect.bottom() - if with_buttons { 48.0 } else { 24.0 },
-        ),
-    );
-    painter.rect(
-        track,
-        CornerRadius::same(2),
-        theme::base_bg(),
-        Stroke::NONE,
-        egui::StrokeKind::Inside,
-    );
-    let h = track.height() - 6.0;
-    let knob_y = track.bottom() - 3.0 - h * strip.volume.clamp(0.0, 1.0);
-    painter.rect_filled(
-        Rect::from_min_size(
-            egui::pos2(track.left() - 5.0, knob_y - 4.0),
-            egui::vec2(track.width() + 10.0, 8.0),
-        ),
-        CornerRadius::same(2),
-        if strip.master {
-            theme::accent_strong()
-        } else {
-            theme::accent()
-        },
-    );
-
-    // 电平条（右侧）。
+    // 电平条（右侧），与推子上下对齐。
+    let fader = super::fader_rect(rect, with_buttons);
     let meter = Rect::from_min_max(
-        egui::pos2(rect.right() - 12.0, track.top()),
-        egui::pos2(rect.right() - 12.0 + METER_WIDTH, track.bottom()),
+        egui::pos2(rect.right() - 12.0, fader.top()),
+        egui::pos2(rect.right() - 12.0 + METER_WIDTH, fader.bottom()),
     );
     painter.rect_filled(meter, CornerRadius::same(1), theme::base_bg());
     let filled = meter.height() * strip.meter.clamp(0.0, 1.0);
@@ -187,14 +207,14 @@ fn draw_strip(painter: &egui::Painter, rect: Rect, strip: &MixerStrip, with_butt
     }
 }
 
-/// 处理本帧输入，返回动作（矩形与绘制同源）。
+/// 处理本帧按钮 / 滚轮输入，返回动作（矩形与绘制同源）。
+///
+/// 推子由标准滑杆处理，`hit_test` 不再覆盖推子区域，避免两套输入重复触发。
 fn interact(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) -> Vec<MixerAction> {
-    let (pointer, pressed, released, down) = ui.input(|i| {
+    let (pointer, pressed) = ui.input(|i| {
         (
             i.pointer.interact_pos(),
             i.pointer.button_pressed(egui::PointerButton::Primary),
-            i.pointer.button_released(egui::PointerButton::Primary),
-            i.pointer.primary_down(),
         )
     });
     let mut actions = Vec::new();
@@ -211,87 +231,23 @@ fn interact(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) -> Vec<Mixe
         }
     }
 
-    if pressed {
-        // 任何一次新按下都先清掉旧拖拽目标：丢帧 / 失焦导致 release 丢失时，
-        // 这里可以自愈，避免下一次移动意外改到上一条推子。
-        set_drag_target(ui.ctx(), None);
-        if let Some(pos) = pointer
-            && let Some(hit) = hit_test(pos, layout, model)
-        {
-            match hit {
-                MixerHit::Fader(index) => {
-                    set_drag_target(ui.ctx(), Some(DragTarget::Track(index)));
-                    if let Some(value) = track_value(pos, layout, model, index) {
-                        actions.push(MixerAction::Gain { index, value });
-                    }
-                }
-                MixerHit::MasterVolume => {
-                    set_drag_target(ui.ctx(), Some(DragTarget::Master));
-                    if let Some(value) = master_value(pos, layout) {
-                        actions.push(MixerAction::MasterVolume(value));
-                    }
-                }
-                MixerHit::Pan(index) => {
-                    let strip = layout.strip_rect(index, model.scroll_x);
-                    let third = strip.width() / 3.0;
-                    let rel = ((pos.x - strip.left()) / third).clamp(0.0, 1.0);
-                    actions.push(MixerAction::Pan {
-                        index,
-                        value: rel * 2.0 - 1.0,
-                    });
-                }
-                MixerHit::Mute(index) => actions.push(MixerAction::Mute(index)),
-                MixerHit::Solo(index) => actions.push(MixerAction::Solo(index)),
-            }
-            return actions;
-        }
-    }
-
-    if down
+    if pressed
         && let Some(pos) = pointer
-        && let Some(target) = drag_target(ui.ctx())
+        && let Some(hit) = hit_test(pos, layout, model)
     {
-        match target {
-            DragTarget::Track(index) => {
-                if let Some(value) = track_value(pos, layout, model, index) {
-                    actions.push(MixerAction::Gain { index, value });
-                }
+        match hit {
+            MixerHit::Pan(index) => {
+                let strip = layout.strip_rect(index, model.scroll_x);
+                let third = strip.width() / 3.0;
+                let rel = ((pos.x - strip.left()) / third).clamp(0.0, 1.0);
+                actions.push(MixerAction::Pan {
+                    index,
+                    value: rel * 2.0 - 1.0,
+                });
             }
-            DragTarget::Master => {
-                if let Some(value) = master_value(pos, layout) {
-                    actions.push(MixerAction::MasterVolume(value));
-                }
-            }
+            MixerHit::Mute(index) => actions.push(MixerAction::Mute(index)),
+            MixerHit::Solo(index) => actions.push(MixerAction::Solo(index)),
         }
-        return actions;
-    }
-
-    if released {
-        set_drag_target(ui.ctx(), None);
     }
     actions
-}
-
-/// 指针纵坐标 → 普通通道推子值。
-fn track_value(
-    pos: egui::Pos2,
-    layout: &MixerLayout,
-    model: &MixerModel,
-    index: usize,
-) -> Option<f32> {
-    if index >= model.strips.len() {
-        return None;
-    }
-    let strip = layout.strip_rect(index, model.scroll_x);
-    let top = strip.top() + 24.0;
-    let bottom = strip.bottom() - 48.0;
-    Some(((bottom - pos.y) / (bottom - top).max(1.0)).clamp(0.0, 1.0))
-}
-
-/// 指针纵坐标 → 主控推子值。
-fn master_value(pos: egui::Pos2, layout: &MixerLayout) -> Option<f32> {
-    let rect = layout.master?;
-    let top = rect.top() + 24.0;
-    let bottom = rect.bottom() - 24.0;
-    Some(((bottom - pos.y) / (bottom - top).max(1.0)).clamp(0.0, 1.0))
 }

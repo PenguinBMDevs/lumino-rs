@@ -4,8 +4,11 @@
 //! 主窗口每帧把轨道 / 电平快照推入对话框 Root（`RunnerInner::sync_mixer_dialog`），
 //! 对话框产生的 [`MixerAction`] 再由 Runner 映射回主窗口的 `SidebarEvent`。
 //!
-//! 几何口径沿用原浮动面板：通道条宽 88、间距 8、步进 96；推子 / 标尺 / 电平表
-//! 统一高 180；电平条宽 6；视口裁剪外扩 2 个步进。主控条固定在右侧，不随轨道滚动。
+//! 几何口径沿用原浮动面板：通道条宽 88、间距 8、步进 96；通道条高 180；
+//! 电平条宽 6；视口裁剪外扩 2 个步进。主控条固定在右侧，不随轨道滚动。
+//!
+//! 音量推子使用标准 egui 垂直 `Slider`（输入与绘制都由 egui 接管），
+//! 其余控件仍由 painter 绘制。
 //!
 //! 绘制与输入在 [`show::show_dialog`]；本文件只保留纯数据与几何。
 
@@ -154,53 +157,36 @@ impl MixerLayout {
     }
 }
 
-/// 命中区域。
+/// 自定义命中区域（不含音量推子：推子由标准 egui 滑杆自行处理输入）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixerHit {
-    /// 第 `index` 条的推子。
-    Fader(usize),
     /// 第 `index` 条的声像。
     Pan(usize),
     /// 第 `index` 条的静音。
     Mute(usize),
     /// 第 `index` 条的独奏。
     Solo(usize),
-    /// 主控推子。
-    MasterVolume,
 }
 
-/// 推子轨道区域（通道条中部竖条；与绘制端的轨道矩形一致）。
-fn fader_rect(strip: Rect) -> Rect {
+/// 音量推子矩形（标准 egui 垂直滑杆的落点；与电平表上下对齐）。
+///
+/// `with_buttons` = 通道条底部是否有 P/M/S 三格；主控条没有，推子可以更长。
+fn fader_rect(strip: Rect, with_buttons: bool) -> Rect {
     Rect::from_min_max(
         egui::pos2(strip.left() + 16.0, strip.top() + 24.0),
-        egui::pos2(strip.right() - 16.0, strip.bottom() - 48.0),
-    )
-}
-
-/// 主控推子区域（主控条没有底部 P/M/S 行）。
-fn master_fader_rect(strip: Rect) -> Rect {
-    Rect::from_min_max(
-        egui::pos2(strip.left() + 16.0, strip.top() + 24.0),
-        egui::pos2(strip.right() - 16.0, strip.bottom() - 24.0),
+        egui::pos2(
+            strip.right() - 16.0,
+            strip.bottom() - if with_buttons { 48.0 } else { 24.0 },
+        ),
     )
 }
 
 /// 命中测试（`pos` 为窗口逻辑坐标）。
 pub fn hit_test(pos: egui::Pos2, layout: &MixerLayout, model: &MixerModel) -> Option<MixerHit> {
-    if let Some(master) = layout.master
-        && master.contains(pos)
-    {
-        return master_fader_rect(master)
-            .contains(pos)
-            .then_some(MixerHit::MasterVolume);
-    }
     for index in layout.visible(model.strips.len(), model.scroll_x) {
         let strip = layout.strip_rect(index, model.scroll_x);
         if !strip.contains(pos) {
             continue;
-        }
-        if fader_rect(strip).contains(pos) {
-            return Some(MixerHit::Fader(index));
         }
         // 与绘制端三格顶边一致（`rect.bottom() - 34.0`），避免文字上方 6px 误命中。
         let row_y = strip.bottom() - 34.0;
@@ -260,31 +246,4 @@ pub fn push_action(ctx: &egui::Context, action: MixerAction) {
 pub fn take_actions(ctx: &egui::Context) -> Vec<MixerAction> {
     ctx.data_mut(|d| d.remove_temp::<Vec<MixerAction>>(Id::unique(ACTION_ID)))
         .unwrap_or_default()
-}
-
-/// 推子拖拽目标（ctx-data 跨帧保存）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DragTarget {
-    /// 第 `index` 条普通通道。
-    Track(usize),
-    /// 主控条。
-    Master,
-}
-
-const DRAG_ID: &str = "lumino.mixer.dialog.drag";
-
-fn drag_target(ctx: &egui::Context) -> Option<DragTarget> {
-    ctx.data(|d| d.get_temp::<DragTarget>(Id::unique(DRAG_ID)))
-}
-
-fn set_drag_target(ctx: &egui::Context, target: Option<DragTarget>) {
-    let id = Id::unique(DRAG_ID);
-    match target {
-        Some(target) => {
-            ctx.data_mut(|d| d.insert_temp(id, target));
-        }
-        None => {
-            ctx.data_mut(|d| d.remove::<DragTarget>(id));
-        }
-    }
 }

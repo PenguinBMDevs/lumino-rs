@@ -134,7 +134,7 @@ fn mixer_dialog_action_routes_scroll_locally() {
 }
 
 #[test]
-fn mixer_hit_test_reaches_fader_buttons_and_master() {
+fn mixer_hit_test_covers_buttons_only() {
     let mut root = root();
     open_mixer(&mut root);
     let model = root.mixer_snapshot().expect("快照");
@@ -143,14 +143,23 @@ fn mixer_hit_test_reaches_fader_buttons_and_master() {
 
     let strip = layout.strip_rect(0, model.scroll_x);
     let fader = egui::pos2(strip.center().x, strip.top() + 60.0);
-    assert!(matches!(
+    assert_eq!(
         lumino_ui_egui::mixer::hit_test(fader, &layout, &model),
-        Some(MixerHit::Fader(0))
+        None,
+        "推子由标准 egui 滑杆处理，自定义命中必须让路"
+    );
+
+    let third = strip.width() / 3.0;
+    let mute = egui::pos2(strip.left() + third * 1.5, strip.bottom() - 24.0);
+    assert!(matches!(
+        lumino_ui_egui::mixer::hit_test(mute, &layout, &model),
+        Some(MixerHit::Mute(0))
     ));
 
     let master = layout.master.expect("主控条");
-    assert!(matches!(
+    assert_eq!(
         lumino_ui_egui::mixer::hit_test(master.center(), &layout, &model),
-        Some(MixerHit::MasterVolume)
-    ));
+        None,
+        "主控推子同样由标准滑杆处理"
+    );
 }
