@@ -24,7 +24,14 @@ fn test_visible_in_piano_roll() {
 #[test]
 fn test_first_screen_for_startup_empty_state() {
     let mut root = root();
-    root.sidebar.enter_first_screen();
+    // 即使此前处于瀑布流模式，进入第一屏也要把模式收回到编辑器。
+    root.state.current_mode = AppMode::Waterfall;
+    root.enter_first_screen();
+    assert_eq!(
+        root.state.current_mode,
+        AppMode::Editor,
+        "第一屏必须回到编辑器模式"
+    );
     assert!(
         root.shows_first_screen(),
         "启动态（无面板）应显示默认第一屏"
@@ -34,6 +41,52 @@ fn test_first_screen_for_startup_empty_state() {
     root.handle_sidebar_event(sidebar::Event::GroupToggled(sidebar::GroupId::PianoRoll));
     assert!(!root.shows_first_screen(), "打开卷帘后第一屏应让位");
     assert!(root.editor_canvas_visible(), "打开卷帘后画布应恢复渲染");
+}
+
+/// 第一屏两态：无工程 → 右栏 5 个操作按钮；有工程 → 只有品牌块。
+#[test]
+fn test_first_screen_welcome_only_without_project() {
+    use lumino_ui_egui::chrome::first_screen::FirstScreenAction;
+
+    let mut root = root();
+    root.sidebar.enter_first_screen();
+
+    let welcome = root
+        .first_screen_model(false)
+        .expect("无面板时必须显示第一屏");
+    let actions: Vec<FirstScreenAction> =
+        welcome.actions.iter().map(|button| button.action).collect();
+    assert_eq!(
+        actions,
+        vec![
+            FirstScreenAction::NewProject,
+            FirstScreenAction::OpenProjectFile,
+            FirstScreenAction::OpenProjectFolder,
+            FirstScreenAction::OpenSettings,
+            FirstScreenAction::OpenCollaboration,
+        ],
+        "无工程时右栏按钮顺序必须与需求一致"
+    );
+    assert!(
+        welcome
+            .actions
+            .iter()
+            .all(|button| !button.label.is_empty()),
+        "按钮文案必须由生产侧填充（空文案 = 白块）"
+    );
+
+    let opened = root.first_screen_model(true).expect("有工程时第一屏仍在");
+    assert!(
+        opened.actions.is_empty(),
+        "有工程时只能显示品牌块，不得残留操作按钮"
+    );
+
+    // 打开卷帘后第一屏整体让位（模型为 None）。
+    root.handle_sidebar_event(sidebar::Event::GroupToggled(sidebar::GroupId::PianoRoll));
+    assert!(
+        root.first_screen_model(false).is_none(),
+        "卷帘打开后不再有第一屏"
+    );
 }
 
 /// 工程走带同样由 gfx 画布承载（布局与数据源不同，但仍是同一张离屏纹理）。

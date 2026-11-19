@@ -192,8 +192,20 @@ impl Sidebar {
         self.piano_roll_visible = false;
         self.panel_visible = false;
         self.automation_panel_visible = false;
+        self.audio_export_visible = false;
+        self.video_export_visible = false;
         self.panel_route = Route::File;
         self.route = Route::File;
+        // 关闭工程 / 启动时不能残留浮动菜单、重命名、取色/端口/通道选择器或拖拽态，
+        // 否则第一屏会带着上一工程的 UI 残影。
+        self.track_context_menu = TrackContextMenuState::default();
+        self.panel_context_menu = PanelContextMenuState::default();
+        self.renaming_track = None;
+        self.color_picking_track = None;
+        self.port_picking_track = None;
+        self.channel_picking_track = None;
+        self.track_reorder = None;
+        self.is_resizing = false;
         self.piano_roll_sub_state = GroupSubState {
             panel_visible: true,
             panel_route: Route::File,

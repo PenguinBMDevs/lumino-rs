@@ -74,6 +74,8 @@ pub(super) struct OverlayActions {
     pub help_tip: Option<lumino_ui_egui::chrome::toast::HelpTipAction>,
     pub toast: Option<lumino_ui_egui::chrome::toast::ToastAction>,
     pub titlebar: Option<lumino_ui_egui::chrome::TitlebarAction>,
+    /// 「无面板」第一屏右栏操作按钮。
+    pub first_screen: Option<lumino_ui_egui::chrome::first_screen::FirstScreenAction>,
     pub piano_roll_menu: Option<lumino_message::PianoRollContextMenuAction>,
     pub editor_buttons: Option<lumino_ui_egui::editor_action_buttons::EditorButtonAction>,
     pub bend_buttons: Option<lumino_editor_state::AnchorBend>,
@@ -127,6 +129,7 @@ impl OverlayActions {
             help_tip: lumino_ui_egui::chrome::take_help_tip_action(ctx),
             toast: lumino_ui_egui::chrome::toast::take_toast_action(ctx),
             titlebar: lumino_ui_egui::chrome::take_titlebar_action(ctx),
+            first_screen: lumino_ui_egui::chrome::first_screen::take_action(ctx),
             piano_roll_menu: lumino_ui_egui::piano_roll_context_menu::take_action(ctx),
             editor_buttons: lumino_ui_egui::editor_action_buttons::take_action(ctx),
             bend_buttons: lumino_ui_egui::bend_buttons::take_action(ctx),
@@ -151,6 +154,10 @@ impl Host {
         }
         if let Some(action) = actions.titlebar {
             let message = self.root.titlebar_action_message(action);
+            self.dispatch_overlay_message(message);
+        }
+        if let Some(action) = actions.first_screen {
+            let message = self.root.first_screen_action_message(action);
             self.dispatch_overlay_message(message);
         }
         if let Some(action) = actions.piano_roll_menu {

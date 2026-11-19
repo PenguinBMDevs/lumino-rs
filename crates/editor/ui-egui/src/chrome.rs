@@ -2,7 +2,7 @@
 
 pub mod arrangement;
 pub mod egg;
-mod first_screen;
+pub mod first_screen;
 mod floating;
 pub mod menu;
 mod model;
@@ -176,18 +176,19 @@ pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
 }
 
-/// 记录本帧「无面板」默认第一屏的不透明度（`None` = 不显示）。
-pub fn set_first_screen(ctx: &egui::Context, opacity: Option<f32>) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.first-screen"), opacity));
+/// 记录本帧「无面板」默认第一屏模型（`None` = 不显示）。
+pub fn set_first_screen(ctx: &egui::Context, model: Option<first_screen::FirstScreenModel>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.first-screen"), model));
 }
 
-/// 本帧「无面板」默认第一屏的不透明度（`None` = 不显示）。
-fn first_screen_opacity(ctx: &egui::Context) -> Option<f32> {
+/// 本帧「无面板」默认第一屏模型（`None` = 不显示）。
+fn first_screen_model(ctx: &egui::Context) -> Option<first_screen::FirstScreenModel> {
     ctx.data(|d| {
-        d.get_temp::<Option<f32>>(egui::Id::unique("lumino.first-screen"))
-            .flatten()
-            .map(|opacity| opacity.clamp(0.0, 1.0))
+        d.get_temp::<Option<first_screen::FirstScreenModel>>(egui::Id::unique(
+            "lumino.first-screen",
+        ))
     })
+    .flatten()
 }
 
 /// 记录本帧的遮罩参数面板模型（`None` = 面板未打开）。
@@ -334,9 +335,10 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         );
     }
 
-    // 「无面板」默认第一屏：主区域没有任何视图时的品牌占位。
-    // 画在底层纹理之上、各 band 之下；不登记占用区（纯展示，不拦输入）。
-    if let Some(opacity) = first_screen_opacity(ui.ctx()) {
+    // 「无面板」默认第一屏：主区域没有任何视图时的品牌占位 / 无工程操作区。
+    // 画在底层纹理之上、各 band 之下；按钮矩形稍后登记为占用区（见下方
+    // `menu::clear_blocked` 之后），避免同一击又落到下层画布。
+    let first_screen_blocked = if let Some(first) = first_screen_model(ui.ctx()) {
         let full = window_rect(&root);
         let left = model
             .sidebar
@@ -364,11 +366,16 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 (full.bottom() - layout::STATUSBAR_H).max(full.top() + top),
             ),
         );
-        first_screen::show(&root, area, icons, opacity);
-    }
+        first_screen::show(&root, area, icons, &first)
+    } else {
+        Vec::new()
+    };
 
     // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 上一代 点击）。
     menu::clear_blocked(ui.ctx());
+    if !first_screen_blocked.is_empty() {
+        menu::extend_blocked(ui.ctx(), first_screen_blocked);
+    }
 
     // 走带标尺：`LUMINO_EGUI_ARRANGEMENT=1` 时由 egui 绘制（默认关闭，先与 上一代 并存）。
     // 几何与 上一代 `view_arrangement` 同源：内容区左缘 = 左侧栏宽，顶部 = 标题栏 + 工具栏，

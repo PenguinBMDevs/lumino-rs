@@ -66,6 +66,30 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 主窗口离开「无面板」第一屏：打开钢琴卷帘组（落到编辑器）。
+    ///
+    /// 与点击路由栏走**同一个**分组切换入口（`handle_sidebar_event`），不另写一套
+    /// 面板状态；用于「新建工程」后立刻给用户一个可编辑视图，否则点按钮只是清空
+    /// 数据、画面还停在同一个第一屏，等于按钮没反应。
+    pub fn open_piano_roll_group(&mut self) {
+        self.root
+            .handle_sidebar_event(crate::sidebar::Event::GroupToggled(
+                crate::sidebar::GroupId::PianoRoll,
+            ));
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 若主区域仍停在「无面板」第一屏，则在载入工程后打开钢琴卷帘。
+    ///
+    /// 与 [`Self::open_piano_roll_group`] 的区别：只在真正处于欢迎屏 / 空白第一屏时
+    /// 生效，不抢占用户已经打开的走带、播放器或渲染器视图。用于「打开工程文件 /
+    /// 文件夹」按钮——否则载入成功但画面还停在品牌欢迎屏，等同于按钮没反应。
+    pub fn open_piano_roll_if_first_screen(&mut self) {
+        if self.root.shows_first_screen() {
+            self.open_piano_roll_group();
+        }
+    }
+
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
     /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
     pub fn load_track_notes(

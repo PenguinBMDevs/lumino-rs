@@ -214,6 +214,16 @@ impl Root {
         root
     }
 
+    /// 进入「无面板」默认第一屏（主窗口启动 / 关闭工程）。
+    ///
+    /// 关闭所有主区域分组与导出面板，并把模式切回编辑器，保证
+    /// [`Self::shows_first_screen`] 立即成立。首次点开卷帘组时恢复音轨列表。
+    pub(crate) fn enter_first_screen(&mut self) {
+        self.sidebar.enter_first_screen();
+        self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
+        self.state.toggle_animation.animate_to(0.0);
+    }
+
     /// 创建进度窗口 Root
     pub fn new_progress(theme: &str, ui_config: &UiConfig) -> Self {
         Self::from_params(RootInitParams {

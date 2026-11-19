@@ -24,6 +24,11 @@ impl RunnerInner {
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();
 
+        // 离开「无面板」第一屏：新建工程后直接落到钢琴卷帘。
+        // 第一屏的「新建工程」按钮若只清空数据，用户看到的还是同一个第一屏
+        // （按钮 = 没反应）；这里与点路由栏走同一入口。
+        self.window_state.window.ui_mut().open_piano_roll_group();
+
         // REND-002：空白工程回到单端口布局（0 → Midi/16 通道），释放多端口通道空间
         self.midi_state.midi.apply_midi_port_layout(0);
 
@@ -50,6 +55,8 @@ impl RunnerInner {
         // （clear_editor 内部已重置工程设置对话框状态）
         self.session_tracker.reset();
         self.window_state.window.ui_mut().clear_editor();
+        // 关闭工程 = 没有工程打开：回到「无面板」第一屏，而不是停在空卷帘/空走带。
+        self.window_state.window.ui_mut().enter_first_screen();
         // REND-002：关闭工程回到单端口布局
         self.midi_state.midi.apply_midi_port_layout(0);
         // 恢复主窗口默认标题（工程设置确认时设置的 "{标题} - Lumino"）
@@ -99,6 +106,7 @@ impl RunnerInner {
             PendingCloseAction::CloseProject => self.handle_close_project(),
             PendingCloseAction::NewProject => self.handle_new_file(),
             PendingCloseAction::OpenProject => self.handle_open_file(),
+            PendingCloseAction::OpenProjectFolder => self.handle_open_project_folder(),
             PendingCloseAction::Exit | PendingCloseAction::WindowClose => {
                 // 保存期间禁止关闭：转为待关闭，保存完成后自动退出
                 if self.is_saving() || self.is_cloud_saving() {
@@ -163,6 +171,7 @@ impl RunnerInner {
             PendingCloseAction::CloseProject => self.handle_close_project(),
             PendingCloseAction::NewProject => self.handle_new_file(),
             PendingCloseAction::OpenProject => self.handle_open_file(),
+            PendingCloseAction::OpenProjectFolder => self.handle_open_project_folder(),
             PendingCloseAction::Exit | PendingCloseAction::WindowClose => {
                 self.window_state.window.close_pending = true;
             }

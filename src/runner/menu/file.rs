@@ -47,6 +47,10 @@ impl RunnerInner {
                 // 打开另一个工程前检查未保存更改；有则弹保存确认对话框
                 self.request_close_action(PendingCloseAction::OpenProject, event_loop);
             }
+            OpenProjectFolder => {
+                // 打开工程文件夹同样先走未保存确认（与「打开」一致）。
+                self.request_close_action(PendingCloseAction::OpenProjectFolder, event_loop);
+            }
             OpenFileSelected(path) => self.handle_selected_file(path),
             ImportFiles => self.handle_import_files(),
             ImportFilesSelected(path) => self.handle_selected_file(path),

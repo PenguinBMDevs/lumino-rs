@@ -13,6 +13,7 @@ mod dialogs;
 mod editor_buttons;
 mod editor_overlay;
 mod egg;
+mod first_screen;
 mod image_to_midi;
 mod marquee;
 mod mask_panel;
@@ -216,6 +217,51 @@ impl Sidebar {
 }
 
 impl Root {
+    /// 本帧「无面板」第一屏模型（`None` = 不显示）。
+    ///
+    /// `project_open` 由宿主传入（`Host::onion_backend_locked()` 背后的
+    /// `MidiLoadLock`：真实 MIDI/工程载入为真，启动 / 新建 / 关闭工程为假）：
+    /// - 无工程 → 左右分栏，右栏 5 个操作按钮（新建 / 打开文件 / 打开文件夹 /
+    ///   设置 / 连接协作房间）；
+    /// - 有工程 → 只有品牌块（居中），与旧行为一致。
+    pub(crate) fn first_screen_model(
+        &self,
+        project_open: bool,
+    ) -> Option<lumino_ui_egui::chrome::first_screen::FirstScreenModel> {
+        use lumino_ui_egui::chrome::first_screen::{
+            FirstScreenAction, FirstScreenButton, FirstScreenModel,
+        };
+
+        if !self.shows_first_screen() {
+            return None;
+        }
+        let opacity = self.settings.display.first_screen_opacity.clamp(0.0, 1.0);
+        if project_open {
+            return Some(FirstScreenModel::brand_only(opacity));
+        }
+        let t = main_translations(self.settings.display.language);
+        let button = |action: FirstScreenAction, label: &str| FirstScreenButton {
+            action,
+            label: label.to_owned(),
+        };
+        Some(FirstScreenModel {
+            opacity,
+            actions: vec![
+                button(FirstScreenAction::NewProject, t.first_screen_new_project),
+                button(FirstScreenAction::OpenProjectFile, t.first_screen_open_file),
+                button(
+                    FirstScreenAction::OpenProjectFolder,
+                    t.first_screen_open_folder,
+                ),
+                button(FirstScreenAction::OpenSettings, t.first_screen_settings),
+                button(
+                    FirstScreenAction::OpenCollaboration,
+                    t.first_screen_collaboration,
+                ),
+            ],
+        })
+    }
+
     /// 本帧的卷帘骨架模型（生产渲染线程据此决定是否让出标尺）。
     ///
     /// 键盘列与滚动条**只由 egui 绘制**（gfx 网格着色器 discard 键盘列），

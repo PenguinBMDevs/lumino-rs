@@ -137,8 +137,11 @@ struct OverlayFrame<'a> {
         egui::Rect,
         lumino_ui_egui::video_clip_timeline::VideoTimelineModel,
     )>,
-    /// 主区域无任何视图：显示「无面板」默认第一屏（`Some` = 不透明度）。
-    first_screen: Option<f32>,
+    /// 主区域无任何视图：显示「无面板」默认第一屏（`None` = 不显示）。
+    ///
+    /// 模型携带「是否有工程」两态：无工程时右栏带操作按钮，有工程时只显示
+    /// 品牌块（见 `first_screen::FirstScreenModel`）。
+    first_screen: Option<lumino_ui_egui::chrome::first_screen::FirstScreenModel>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -257,8 +260,9 @@ impl EguiOverlay {
                 frame.size_px[1] as f32 / frame.pixels_per_point.max(1e-3),
             ),
         );
-        // 「无面板」默认第一屏：主区域完全没有视图时显示品牌图标 + 字标。
-        lumino_ui_egui::chrome::set_first_screen(&ctx, frame.first_screen);
+        // 「无面板」默认第一屏：主区域完全没有视图时显示品牌图标 + 字标；
+        // 尚未载入真实工程时右栏追加操作按钮（新建 / 打开 / 设置 / 协作）。
+        lumino_ui_egui::chrome::set_first_screen(&ctx, frame.first_screen.clone());
         // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
@@ -563,13 +567,10 @@ impl Host {
             renderer_panel: self.root.renderer_panel_model(content_area),
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(content_area),
-            first_screen: self.root.shows_first_screen().then(|| {
-                self.root
-                    .settings
-                    .display
-                    .first_screen_opacity
-                    .clamp(0.0, 1.0)
-            }),
+            // `MidiLoadLock::is_loaded` 是「真实 MIDI/工程已载入」的唯一权威源：
+            // 启动 / 新建 / 关闭工程后的空白工程为 false（显示欢迎屏分栏），
+            // 真实载入文件为 true（只显示品牌占位）。禁止在这里取反。
+            first_screen: self.root.first_screen_model(self.midi_load.is_loaded()),
             video_preview: self.root.video_preview_model(window_area, content_area),
             mask_panel: self.root.mask_panel_model(),
             toast: self.root.egui_toast_model(),

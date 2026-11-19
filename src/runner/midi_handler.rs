@@ -94,6 +94,10 @@ impl MidiHandler {
         }
         let t_first = t_first.elapsed();
 
+        // 从欢迎屏（无面板）打开工程/文件：载入成功后立刻落到钢琴卷帘，
+        // 否则数据已加载、画面却还停在品牌欢迎屏，用户会以为按钮没反应。
+        ui.open_piano_roll_if_first_screen();
+
         tracing::info!(
             "加载完成: {} 音轨, {} ticks, 音符已加载（收集轨信息 {:?} / update_tracks {:?} / \
              tempo {:?} / set_midi_document {:?} / 切首轨 {:?} / 合计 {:?}）",

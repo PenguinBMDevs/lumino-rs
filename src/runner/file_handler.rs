@@ -79,6 +79,36 @@ impl FileHandler {
             drop(guard);
         });
     }
+
+    /// 在后台线程打开**文件夹**对话框，选择结果通过 UI 事件队列返回。
+    ///
+    /// 与 [`Self::pick_file_async`] 共用同一个「同时只允许一个对话框」的闸门：
+    /// 文件 / 文件夹两个入口不能各自弹一个系统对话框。
+    pub fn pick_folder_async(
+        &self,
+        selected_event: fn(PathBuf) -> lumino_ui::event::menu::file::Event,
+    ) {
+        let Some(guard) = self.try_acquire_dialog() else {
+            return;
+        };
+        let dialog = self.dialog();
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || dialog.pick_folder()).await;
+            match result {
+                Ok(Some(path)) => {
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(selected_event(path)))
+                }
+                Ok(None) => {}
+                Err(e) => lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                    lumino_ui::event::menu::file::Event::MidiParseError(trf!(
+                        "文件夹对话框任务失败: {e}",
+                        e = e
+                    )),
+                )),
+            }
+            drop(guard);
+        });
+    }
 }
 
 impl Default for FileHandler {

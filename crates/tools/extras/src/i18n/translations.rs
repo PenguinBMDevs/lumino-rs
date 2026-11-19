@@ -195,6 +195,16 @@ pub struct MainTranslations {
     pub view_zoom_reset: &'static str,
     /// 帮助：关于
     pub help_about: &'static str,
+    /// 第一屏：新建工程按钮
+    pub first_screen_new_project: &'static str,
+    /// 第一屏：打开工程文件按钮
+    pub first_screen_open_file: &'static str,
+    /// 第一屏：打开工程文件夹按钮
+    pub first_screen_open_folder: &'static str,
+    /// 第一屏：打开设置按钮
+    pub first_screen_settings: &'static str,
+    /// 第一屏：连接到多人协作房间按钮
+    pub first_screen_collaboration: &'static str,
     /// 模式：编辑器
     pub mode_editor: &'static str,
     /// 模式：瀑布流

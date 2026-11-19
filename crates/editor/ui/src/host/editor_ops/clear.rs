@@ -76,6 +76,16 @@ impl Host {
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
     }
 
+    /// 回到「无面板」第一屏（关闭工程时调用）。
+    ///
+    /// 与主窗口启动默认态同源：清空所有主区域分组与导出面板标志，
+    /// 并把模式切回编辑器；是否绘制第一屏由 `Root::shows_first_screen` 统一判定。
+    pub fn enter_first_screen(&mut self) {
+        self.root.enter_first_screen();
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 初始化空白工程（新建文件 / 关闭文件 / 应用启动后调用）。
     ///
     /// 2026-08 修复：此前 `clear_editor` 清空 `sidebar.tracks` 且 `reset()`

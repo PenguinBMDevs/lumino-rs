@@ -282,6 +282,8 @@ pub(crate) enum PendingCloseAction {
     NewProject,
     /// 打开另一个工程（菜单「打开」）
     OpenProject,
+    /// 打开工程文件夹（第一屏「打开工程文件夹」）
+    OpenProjectFolder,
     /// 退出软件（菜单「退出」）
     Exit,
     /// 点击窗口关闭按钮（X / 自制标题栏关闭）

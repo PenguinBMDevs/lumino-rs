@@ -31,11 +31,26 @@ impl RunnerInner {
             .pick_file_async(lumino_ui::event::menu::file::Event::OpenFileSelected);
     }
 
+    /// 打开工程文件夹（第一屏按钮：文件夹对话框 → 按工程目录加载）。
+    pub(super) fn handle_open_project_folder(&mut self) {
+        self.file_state
+            .file_handler
+            .pick_folder_async(lumino_ui::event::menu::file::Event::OpenFileSelected);
+    }
+
     pub(super) fn handle_selected_file(&mut self, path: PathBuf) {
         // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
         lumino_extras::palette::unlock_palette();
 
         tracing::info!("用户选择了文件：{:?}", path);
+        // 文件夹 = 文件夹形式的 Lumino 工程（`load_project` 自己识别入口文件）。
+        // 必须在这里分流：`scan_file_for_midi` 只认文件，目录会被当成常规 MIDI
+        // 交给 `load_parsed_midi`，最终以「不是 MIDI」失败。
+        if path.is_dir() {
+            tracing::info!("按工程文件夹加载：{:?}", path);
+            self.load_lmpj_project(path, None);
+            return;
+        }
         self.handle_midi_or_archive(path);
     }
 

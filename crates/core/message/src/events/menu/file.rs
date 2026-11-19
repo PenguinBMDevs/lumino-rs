@@ -8,6 +8,8 @@ pub enum Event {
     New,
     /// 打开工程
     Open,
+    /// 打开工程文件夹（第一屏按钮专用：文件夹对话框而非文件对话框）
+    OpenProjectFolder,
     /// 后台文件对话框已选择待打开的工程
     OpenFileSelected(PathBuf),
     /// 保存工程
@@ -93,6 +95,10 @@ impl Event {
     /// 构造打开事件
     pub const fn open() -> Self {
         Self::Open
+    }
+    /// 构造「打开工程文件夹」事件
+    pub const fn open_project_folder() -> Self {
+        Self::OpenProjectFolder
     }
     /// 构造已选择待打开工程事件
     pub fn open_file_selected(path: PathBuf) -> Self {
