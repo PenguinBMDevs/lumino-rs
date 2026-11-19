@@ -2,6 +2,7 @@
 
 pub mod arrangement;
 pub mod egg;
+mod first_screen;
 mod floating;
 pub mod menu;
 mod model;
@@ -175,6 +176,19 @@ pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
 }
 
+/// 记录本帧是否显示「无面板」默认第一屏。
+pub fn set_first_screen(ctx: &egui::Context, visible: bool) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.first-screen"), visible));
+}
+
+/// 本帧是否显示「无面板」默认第一屏。
+fn first_screen_visible(ctx: &egui::Context) -> bool {
+    ctx.data(|d| {
+        d.get_temp::<bool>(egui::Id::unique("lumino.first-screen"))
+            .unwrap_or(false)
+    })
+}
+
 /// 记录本帧的遮罩参数面板模型（`None` = 面板未打开）。
 pub fn set_mask_panel(ctx: &egui::Context, model: Option<crate::mask_panel::MaskPanelModel>) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.mask-panel"), model));
@@ -317,6 +331,39 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+    }
+
+    // 「无面板」默认第一屏：主区域没有任何视图时的品牌占位。
+    // 画在底层纹理之上、各 band 之下；不登记占用区（纯展示，不拦输入）。
+    if first_screen_visible(ui.ctx()) {
+        let full = window_rect(&root);
+        let left = model
+            .sidebar
+            .as_ref()
+            .map(|sidebar| sidebar.total_width())
+            .unwrap_or(0.0);
+        let right = model
+            .right_sidebar
+            .as_ref()
+            .map(|sidebar| sidebar.bar_width())
+            .unwrap_or(0.0);
+        let top = if model.titlebar.is_some() {
+            layout::TITLEBAR_H
+        } else {
+            0.0
+        } + model
+            .toolbar
+            .as_ref()
+            .map(|toolbar| toolbar.height.max(1.0))
+            .unwrap_or(0.0);
+        let area = egui::Rect::from_min_max(
+            egui::pos2(full.left() + left, full.top() + top),
+            egui::pos2(
+                (full.right() - right).max(full.left() + left),
+                (full.bottom() - layout::STATUSBAR_H).max(full.top() + top),
+            ),
+        );
+        first_screen::show(&root, area, icons);
     }
 
     // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 上一代 点击）。

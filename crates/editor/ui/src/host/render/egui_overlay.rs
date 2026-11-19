@@ -137,6 +137,8 @@ struct OverlayFrame<'a> {
         egui::Rect,
         lumino_ui_egui::video_clip_timeline::VideoTimelineModel,
     )>,
+    /// 主区域无任何视图：显示「无面板」默认第一屏（品牌图标 + 字标）。
+    first_screen: bool,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -255,6 +257,8 @@ impl EguiOverlay {
                 frame.size_px[1] as f32 / frame.pixels_per_point.max(1e-3),
             ),
         );
+        // 「无面板」默认第一屏：主区域完全没有视图时显示品牌图标 + 字标。
+        lumino_ui_egui::chrome::set_first_screen(&ctx, frame.first_screen);
         // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
@@ -559,6 +563,7 @@ impl Host {
             renderer_panel: self.root.renderer_panel_model(content_area),
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(content_area),
+            first_screen: self.root.shows_first_screen(),
             video_preview: self.root.video_preview_model(window_area, content_area),
             mask_panel: self.root.mask_panel_model(),
             toast: self.root.egui_toast_model(),

@@ -29,4 +29,20 @@ impl Root {
             && !self.sidebar.audio_export_visible
             && !self.sidebar.video_export_visible
     }
+
+    /// 主区域是否没有任何主视图（「无面板」默认第一屏的显示条件）。
+    ///
+    /// 与 [`Self::editor_canvas_visible`] 互补的白名单语义：只有画布 / 走带 /
+    /// 渲染器入口 / 音视频导出面板都未占用主区域时，才允许显示品牌第一屏。
+    /// 新增主区域面板时必须同步扩展这里的排除列表，否则第一屏会和面板叠在一起。
+    pub(crate) fn shows_first_screen(&self) -> bool {
+        self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Editor
+            && !self.state.is_dialog_window
+            && !self.is_progress_window
+            && !self.is_device_warning_window
+            && !self.editor_canvas_visible()
+            && !self.is_renderer_entry_active()
+            && !self.sidebar.audio_export_visible
+            && !self.sidebar.video_export_visible
+    }
 }
