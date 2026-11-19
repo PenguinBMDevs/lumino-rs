@@ -28,6 +28,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         ),
         "加载失败" => Some("Load Failed"),
         "提示" => Some("Notice"),
+        "文件不存在或已被移动：{path}" => {
+            Some("The file does not exist or has been moved: {path}")
+        }
         "正在加载素材" => Some("Loading material"),
         "素材加载成功" => Some("Material loaded successfully"),
         "加载素材失败: {e}" => Some("Failed to load material: {e}"),
