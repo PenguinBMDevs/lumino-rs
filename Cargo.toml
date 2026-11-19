@@ -37,7 +37,6 @@ resolver = "3"
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "3fd31db15c7dc7c996fb242a78fa77fd00300e26" }
-lumino-midly = { git = "https://github.com/PenguinBMDevs/midly-fork", rev = "da2a68f551bcf502916f800315b1f5d2243cbbd8" }
 
 [workspace.package]
 version = "0.2.1"
@@ -61,7 +60,7 @@ lumino-diagnostics = { path = "crates/core/diagnostics", version = "0.2.1-crates
 lumino-platform = { path = "crates/core/platform", version = "0.2.1-crates-io-preview1" }
 lumino-midi-model = { path = "crates/audio/midi-model", version = "0.2.1-crates-io-preview1" }
 lumino-message = { path = "crates/core/message", version = "0.2.1-crates-io-preview1" }
-midly = { version = "0.6.4", package = "lumino-midly", features = ["std", "alloc", "parallel", "memmap"] }
+midly = { version = "0.7.0", package = "lumino-midly", features = ["std", "alloc", "parallel", "memmap"] }
 lumino-dialog = { path = "crates/editor/dialog", version = "0.2.1-crates-io-preview1" }
 lumino-ui = { path = "crates/editor/ui", version = "0.2.1-crates-io-preview1" }
 # lumino-ui-constants: merged into lumino-ui-core::constants

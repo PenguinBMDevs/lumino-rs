@@ -4420,8 +4420,9 @@ dependencies = [
 
 [[package]]
 name = "lumino-midly"
-version = "0.6.5"
-source = "git+https://github.com/PenguinBMDevs/midly-fork?rev=da2a68f551bcf502916f800315b1f5d2243cbbd8#da2a68f551bcf502916f800315b1f5d2243cbbd8"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5a6e2a7f74858541214750397a3ce3a49615e9c61eece4c5d050d8c7f897e2e"
 dependencies = [
  "memmap2",
  "rayon",
