@@ -26,18 +26,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install zstd & huggingface_hub
+    - name: Install zstd
       if: ${{ inputs.hf-token != '' }}
       # 缓存只是加速手段：安装失败只影响命中率，不能把 CI 门禁判红。
       continue-on-error: true
       shell: bash
       run: |
         set -euo pipefail
-        ACTION_DIR="$GITHUB_ACTION_PATH"
-        if command -v cygpath >/dev/null 2>&1; then
-          ACTION_DIR="$(cygpath -u "$ACTION_DIR")"
-        fi
-        source "$ACTION_DIR/paths.sh"
         if ! command -v zstd >/dev/null 2>&1; then
           case "$RUNNER_OS" in
             Linux)   sudo apt-get update && sudo apt-get install -y zstd ;;
@@ -45,12 +40,6 @@ runs:
             Windows) choco install zstd --no-progress -y ;;
           esac
         fi
-        PY="$(hf_cache_python)"
-        if [ -z "$PY" ]; then
-          echo "::warning::未找到 python，缓存功能不可用"
-          exit 0
-        fi
-        "$PY" -m pip install --quiet --upgrade huggingface_hub hf_transfer
 
     - name: Pull cache archive from Hugging Face
       # 只在「拉取模式」（save != 'true'）执行；首次运行仓库里没有包时
@@ -61,7 +50,6 @@ runs:
       shell: bash
       env:
         HF_TOKEN: ${{ inputs.hf-token }}
-        HF_HUB_ENABLE_HF_TRANSFER: "1"
         ARCHIVE: ${{ inputs.archive }}
       run: |
         set -euo pipefail
@@ -76,6 +64,12 @@ runs:
         PY="$(hf_cache_python)"
         if [ -z "$PY" ]; then
           echo "::warning::未找到 python，跳过缓存拉取: $ARCHIVE"
+          exit 0
+        fi
+
+        # 和 canary 一样：同一个 shell 里装、同一个解释器用，避免跨步骤环境漂移。
+        if ! hf_cache_ensure_hf_hub "$PY"; then
+          echo "::warning::huggingface_hub 安装失败，跳过缓存拉取: $ARCHIVE"
           exit 0
         fi
 
@@ -162,7 +156,6 @@ runs:
       shell: bash
       env:
         HF_TOKEN: ${{ inputs.hf-token }}
-        HF_HUB_ENABLE_HF_TRANSFER: "1"
         ARCHIVE: ${{ inputs.archive }}
         PATHS: ${{ inputs.paths }}
         LEVEL: ${{ inputs.zstd-level }}
@@ -223,6 +216,13 @@ runs:
         if [ -z "$PY" ]; then
           echo "::warning::未找到 python，跳过缓存上传: $ARCHIVE"
           exit 0
+        fi
+
+        # 安装与使用放在同一个 shell（canary 同款），并把失败显式判红本步骤；
+        # 外层 continue-on-error 保证只影响缓存、不拖累门禁。
+        if ! hf_cache_ensure_hf_hub "$PY"; then
+          echo "::error::huggingface_hub 安装失败，跳过缓存上传: $ARCHIVE"
+          exit 1
         fi
 
         "$PY" - <<'PYEOF'

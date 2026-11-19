@@ -74,6 +74,31 @@ hf_cache_python() {
   printf '%s' "$py"
 }
 
+# 确保 huggingface_hub 可用。安装和使用必须在同一个 shell、同一个解释器里，
+# 避免跨步骤 PATH/解释器漂移（canary 上传步骤就是这么做的）。
+# PEP 668（externally-managed-environment）环境下退到 --break-system-packages；
+# runner 是一次性环境，允许这个兜底。
+hf_cache_ensure_hf_hub() {
+  local py="$1"
+  if "$py" -c 'import huggingface_hub' >/dev/null 2>&1; then
+    return 0
+  fi
+  # 装完必须用「同一个解释器」再 import 一次，防止 pip 装到别的 site 却假装成功。
+  if "$py" -m pip install --quiet --upgrade huggingface_hub >/dev/null 2>&1 \
+    && "$py" -c 'import huggingface_hub' >/dev/null 2>&1; then
+    return 0
+  fi
+  # 少数 runner 的 python 没带 pip：先 ensurepip 再试一次。
+  "$py" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  if "$py" -m pip install --quiet --upgrade huggingface_hub >/dev/null 2>&1 \
+    && "$py" -c 'import huggingface_hub' >/dev/null 2>&1; then
+    return 0
+  fi
+  # PEP 668（externally-managed-environment）兜底；runner 是一次性环境。
+  "$py" -m pip install --quiet --upgrade --break-system-packages huggingface_hub \
+    && "$py" -c 'import huggingface_hub' >/dev/null 2>&1
+}
+
 # RUNNER_TEMP 在 Windows 上是盘符路径（D:\a\_temp），Git Bash 下统一成 POSIX。
 hf_cache_temp_dir() {
   if command -v cygpath >/dev/null 2>&1; then
