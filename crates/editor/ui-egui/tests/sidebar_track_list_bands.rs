@@ -1,7 +1,8 @@
-//! 左侧栏音轨列表：行点击 / 添加行点击 / 命中区占用。
+//! 左侧栏音轨列表：行点击 / 独奏点击 / 添加行点击 / 命中区占用。
 //!
 //! 真机回归点：音轨行原先只有 `Sense::hover()`，点行选不中音轨；添加行点击会
-//! 同时被画布处理（一次点击加两条音轨）。这里把两件事都钉死。
+//! 同时被画布处理（一次点击加两条音轨）；独奏 `S` 一度只画文字没接命中
+//! （点击退化为选择音轨）。三件事都在这里钉死。
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -90,6 +91,14 @@ fn row_center(index: usize) -> Pos2 {
     )
 }
 
+/// 第 `index` 行右侧 `S` 的点击点（与绘制同源：行内容右边界再左移 5px）。
+fn solo_center(index: usize) -> Pos2 {
+    let top = layout::TRACK_LIST_HEADER_H + layout::TRACK_ROW_H * index as f32;
+    let content_right = layout::ROUTE_BAR_W + (layout::SIDEBAR_PANEL_W - 6.0);
+    let inner_right = content_right - 8.0 - (layout::TRACK_BUTTON_PAD_X + layout::TRACK_ROW_PAD);
+    Pos2::new(inner_right - 5.0, top + layout::TRACK_ROW_H / 2.0)
+}
+
 #[test]
 fn clicking_a_row_reports_its_track_id() {
     for (index, id) in [(0usize, 7usize), (1, 3), (2, 11)] {
@@ -99,6 +108,19 @@ fn clicking_a_row_reports_its_track_id() {
             actions.borrow().last(),
             Some(&SidebarPanelAction::SelectTrack(id)),
             "第 {index} 行应回传音轨 ID {id}（不是下标）"
+        );
+    }
+}
+
+#[test]
+fn clicking_solo_reports_solo_toggle_for_its_track() {
+    for (index, id) in [(0usize, 7usize), (1, 3), (2, 11)] {
+        let (mut h, actions) = harness(model());
+        click(&mut h, solo_center(index));
+        assert_eq!(
+            actions.borrow().as_slice(),
+            &[SidebarPanelAction::TrackSoloToggled(id)],
+            "点第 {index} 行的 S 应只回传独奏切换（音轨 {id}），不能变成选择"
         );
     }
 }

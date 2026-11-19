@@ -1,13 +1,15 @@
 //! 左侧栏面板（音轨列表）的动作通道。
 //!
-//! 面板绘制在 `track_list.rs`；这里只承载「点到了什么」，由生产侧映射成
-//! `Message::Sidebar(sidebar::Event::*)`。一帧只保留一个动作（与其它通道一致）。
+//! 面板绘制在 `track_list.rs`；这里只承载「点到了什么」（含行选择与独奏切换），
+//! 由生产侧映射成 `Message::Sidebar(sidebar::Event::*)`。一帧只保留一个动作（与其它通道一致）。
 
 /// 音轨列表上的动作。
 #[derive(Debug, Clone, PartialEq)]
 pub enum SidebarPanelAction {
     /// 选中音轨（携带生产音轨 ID，不是列表下标）。
     SelectTrack(usize),
+    /// 切换独奏（携带生产音轨 ID，不是列表下标）。
+    TrackSoloToggled(usize),
     /// 添加音轨。
     AddTrack,
     /// 右键音轨行：请求打开该行的上下文菜单。

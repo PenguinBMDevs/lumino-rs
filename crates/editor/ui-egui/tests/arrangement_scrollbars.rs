@@ -1,4 +1,4 @@
-//! 走带：滚动条拖拽与「添加音轨」按钮（egui 接管）。
+//! 走带：滚动条拖拽、轨道列 M/S 命中与「添加音轨」按钮（egui 接管）。
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -7,6 +7,7 @@ use egui_kittest::Harness;
 use lumino_ui_egui::chrome::arrangement::{self, ArrangementAction};
 use lumino_ui_egui::chrome::{
     ArrangementModel, ArrangementRulerModel, ArrangementScrollbarsModel, ArrangementTrackListModel,
+    ArrangementTrackRow,
 };
 
 fn model() -> ArrangementModel {
@@ -116,6 +117,45 @@ fn add_track_button_click_emits_action() {
     assert!(
         actions.borrow().contains(&ArrangementAction::AddTrack),
         "点击底部 + 应发 AddTrack，实际：{:?}",
+        actions.borrow()
+    );
+}
+
+/// 轨道列 M/S 命中：与绘制同一份矩形（右对齐，18×18，间距 2）。
+#[test]
+fn track_list_mute_and_solo_buttons_emit_toggles() {
+    let track = |id: usize, conductor: bool| ArrangementTrackRow {
+        id,
+        name: format!("Track {id}"),
+        label: format!("A{:02}", id),
+        channel: id as u8,
+        conductor,
+        selected: false,
+        muted: false,
+        soloed: false,
+        color: None,
+    };
+    let mut m = model();
+    m.track_list = ArrangementTrackListModel {
+        tracks: vec![track(0, true), track(1, false), track(2, false)],
+        track_height: 48.0,
+        ..Default::default()
+    };
+
+    // 第 1 行（index=1）y∈[76,124]；M x∈[116,134]，S x∈[136,154]。
+    let (mut h, actions) = harness(m.clone());
+    click(&mut h, egui::pos2(145.0, 100.0));
+    assert!(
+        actions.borrow().contains(&ArrangementAction::ToggleSolo(1)),
+        "点第 2 轨的 S 应发 ToggleSolo(1)，实际：{:?}",
+        actions.borrow()
+    );
+
+    let (mut h, actions) = harness(m);
+    click(&mut h, egui::pos2(125.0, 100.0));
+    assert!(
+        actions.borrow().contains(&ArrangementAction::ToggleMute(1)),
+        "点第 2 轨的 M 应发 ToggleMute(1)，实际：{:?}",
         actions.borrow()
     );
 }
