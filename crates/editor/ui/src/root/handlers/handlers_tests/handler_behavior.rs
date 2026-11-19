@@ -61,6 +61,48 @@ fn test_toolbar_handler_play_creates_manager() {
 }
 
 #[test]
+fn test_transport_skip_steps_measure_and_ctrl_jumps_to_edges() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut handler = ToolbarHandler::new();
+    let mut root = create_root();
+
+    let mut doc = crate::test_helpers::make_test_document();
+    doc.total_ticks = 7680;
+    root.set_midi_document(doc);
+    root.editor.editor_state.view.ppq = 1920;
+    root.editor.playback_position = 0.0;
+
+    use crate::toolbar::Event;
+
+    // 单点：严格跳到下一条小节线（4/4 @ PPQ 1920 = 7680 tick）。
+    handler.handle(&mut root, Message::Toolbar(Event::SkipForward));
+    assert_eq!(root.editor.playback_position, 7680.0);
+    handler.handle(&mut root, Message::Toolbar(Event::SkipForward));
+    assert_eq!(root.editor.playback_position, 15360.0);
+
+    // 单点后退：严格回到上一条小节线。
+    handler.handle(&mut root, Message::Toolbar(Event::SkipBackward));
+    assert_eq!(root.editor.playback_position, 7680.0);
+    handler.handle(&mut root, Message::Toolbar(Event::SkipBackward));
+    assert_eq!(root.editor.playback_position, 0.0);
+
+    // Ctrl：跳到全局 EOT / 全曲开头。
+    handler.handle(&mut root, Message::Toolbar(Event::SkipForwardToEnd));
+    assert_eq!(root.editor.playback_position, 7680.0);
+    handler.handle(&mut root, Message::Toolbar(Event::SkipBackwardToStart));
+    assert_eq!(root.editor.playback_position, 0.0);
+
+    // 快退阈值：本小节前 1/2 退上一小节，后 1/2（含正中）回本小节开头。
+    // 4/4 @ PPQ 1920 一小节 7680，半小节 3840。
+    root.editor.playback_position = 7680.0 + 100.0;
+    handler.handle(&mut root, Message::Toolbar(Event::SkipBackward));
+    assert_eq!(root.editor.playback_position, 0.0, "前 1/2 应退到 0");
+    root.editor.playback_position = 7680.0 + 3840.0;
+    handler.handle(&mut root, Message::Toolbar(Event::SkipBackward));
+    assert_eq!(root.editor.playback_position, 7680.0, "正中回本小节开头");
+}
+
+#[test]
 fn test_handle_core_event_re_emits_event() {
     let _guard = crate::test_helpers::event_queue_lock();
     let mut root = create_root();

@@ -38,19 +38,24 @@ fn harness(model: ToolbarModel) -> (Harness<'static>, Rc<RefCell<Vec<ToolbarActi
 }
 
 fn click(harness: &mut Harness<'static>, pos: Pos2) {
+    click_with_modifiers(harness, pos, egui::Modifiers::default());
+}
+
+fn click_with_modifiers(harness: &mut Harness<'static>, pos: Pos2, modifiers: egui::Modifiers) {
     let mut input = RawInput::default();
+    input.events.push(Event::ModifiersChanged(modifiers));
     input.events.push(Event::PointerMoved(pos));
     input.events.push(Event::PointerButton {
         pos,
         button: PointerButton::Primary,
         pressed: true,
-        modifiers: Default::default(),
+        modifiers,
     });
     input.events.push(Event::PointerButton {
         pos,
         button: PointerButton::Primary,
         pressed: false,
-        modifiers: Default::default(),
+        modifiers,
     });
     *harness.input_mut() = input;
     harness.run();
@@ -122,6 +127,24 @@ fn transport_buttons_emit_rewind_play_pause_forward() {
         actions.borrow().last(),
         Some(ToolbarAction::Pause)
     ));
+}
+
+#[test]
+fn ctrl_click_on_transport_jumps_to_song_edges() {
+    let [back, _, fwd] = playback_centers();
+    let y = mid_y();
+    let ctrl = egui::Modifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    for (pos, expected) in [
+        (Pos2::new(back, y), ToolbarAction::SkipBackwardToStart),
+        (Pos2::new(fwd, y), ToolbarAction::SkipForwardToEnd),
+    ] {
+        let (mut h, actions) = harness(model());
+        click_with_modifiers(&mut h, pos, ctrl);
+        assert_eq!(actions.borrow().last(), Some(&expected));
+    }
 }
 
 #[test]

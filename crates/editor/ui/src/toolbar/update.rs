@@ -153,6 +153,8 @@ impl Toolbar {
             Event::Stop => self.is_playing = false,
             Event::SkipBackward => {}
             Event::SkipForward => {}
+            Event::SkipBackwardToStart => {}
+            Event::SkipForwardToEnd => {}
             Event::Undo => {
                 tracing::debug!("工具栏: 撤销操作");
             }

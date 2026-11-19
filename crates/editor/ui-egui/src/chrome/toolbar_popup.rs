@@ -115,14 +115,18 @@ pub enum ToolbarAction {
     TextLayoutModeToggle,
     /// 点击录制按钮（开始 / 停止由模型 `recording` 决定）。
     RecordToggled,
-    /// 倒带（上一个小节 / 开头）。
+    /// 倒带（前 1/2 退上一小节，后 1/2 回本小节开头）。
     SkipBackward,
+    /// 倒带到全曲开头（Ctrl+点击）。
+    SkipBackwardToStart,
     /// 播放。
     Play,
     /// 暂停。
     Pause,
-    /// 快进（下一个小节 / 末尾）。
+    /// 快进（下一个小节）。
     SkipForward,
+    /// 快进到全曲末尾（Ctrl+点击，位置取全局 EOT）。
+    SkipForwardToEnd,
     /// 开 / 关循环播放。
     ToggleLoop,
     /// 撤销。

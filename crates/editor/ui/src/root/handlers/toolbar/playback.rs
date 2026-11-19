@@ -1,8 +1,9 @@
 //! 播放控制相关方法
 //!
-//! 包括 play/pause/stop/loop 以及录制功能。
+//! 包括 play/pause/stop/loop、走带小节步进 / 全曲边界定位以及录制功能。
 
 use super::ToolbarHandler;
+use super::seek::{global_eot_tick, next_measure_tick, previous_measure_tick};
 use crate::root::Root;
 
 impl ToolbarHandler {
@@ -16,6 +17,18 @@ impl ToolbarHandler {
             }
             crate::toolbar::Event::Stop => {
                 Self::do_stop(root);
+            }
+            crate::toolbar::Event::SkipBackward => {
+                Self::do_skip_measure(root, false);
+            }
+            crate::toolbar::Event::SkipForward => {
+                Self::do_skip_measure(root, true);
+            }
+            crate::toolbar::Event::SkipBackwardToStart => {
+                Self::do_skip_to_start(root);
+            }
+            crate::toolbar::Event::SkipForwardToEnd => {
+                Self::do_skip_to_end(root);
             }
             crate::toolbar::Event::ToggleLoop => {
                 Self::do_toggle_loop(root);
@@ -64,6 +77,58 @@ impl ToolbarHandler {
             root.editor.clear_playback_key_colors();
             tracing::info!("Root: 停止播放");
         }
+    }
+
+    /// 走带倒带 / 快进：单点步进一个小节。
+    ///
+    /// - 快进：严格跳到下一条小节线；
+    /// - 快退：本小节前 1/2 退到上一个小节，后 1/2（含正中）回本小节开头。
+    fn do_skip_measure(root: &mut Root, forward: bool) {
+        let tick = root.editor.playback_position;
+        let ppq = root.editor.editor_state.view.ppq;
+        let target = {
+            let signatures = &root.editor.editor_state.data.time_signatures;
+            if forward {
+                next_measure_tick(tick, ppq, signatures)
+            } else {
+                previous_measure_tick(tick, ppq, signatures)
+            }
+        };
+        Self::do_seek(root, target);
+    }
+
+    /// 走带倒带 + Ctrl：回到全曲开头（播放中继续从开头播放）。
+    fn do_skip_to_start(root: &mut Root) {
+        Self::do_seek(root, 0.0);
+    }
+
+    /// 走带快进 + Ctrl：定位到全局 EOT（全曲末尾）。
+    ///
+    /// 播放中必须先停再 seek：播放引擎越过轨尾会自动 `stop()` 并把进度复位为 0，
+    /// 若保持播放态 seek 到末尾，下一帧指示线会被自动停止拉回开头。
+    fn do_skip_to_end(root: &mut Root) {
+        let target = global_eot_tick(root.editor.editor_state.data.document.as_ref());
+        if root.toolbar.is_playing {
+            if let Some(manager) = &mut root.playback.manager {
+                manager.stop();
+            }
+            root.toolbar.is_playing = false;
+            root.editor.clear_playback_key_colors();
+        }
+        Self::do_seek(root, target);
+    }
+
+    /// 统一的走带定位入口：先写编辑态位置，再同步播放引擎。
+    ///
+    /// 管理器尚未创建时只写 `playback_position`——首次播放会经
+    /// `init_playback_manager` 的 REND-018 路径 seek 到该位置。
+    fn do_seek(root: &mut Root, tick: f32) {
+        let tick = tick.max(0.0);
+        root.editor.playback_position = tick;
+        if let Some(manager) = &mut root.playback.manager {
+            manager.seek(tick);
+        }
+        tracing::debug!("Root: 走带定位到 {tick:.2} tick");
     }
 
     /// 执行循环切换逻辑

@@ -20,10 +20,14 @@ pub enum Event {
     Pause,
     /// 停止
     Stop,
-    /// 跳到上个位置/开头
+    /// 跳到上一个小节线（已在开头时不动）
     SkipBackward,
-    /// 跳到下个位置/末尾
+    /// 跳到下一个小节线
     SkipForward,
+    /// 跳到全曲开头（走带「快退」按钮 + Ctrl）
+    SkipBackwardToStart,
+    /// 跳到全曲末尾（走带「快进」按钮 + Ctrl；位置取全局 EOT）
+    SkipForwardToEnd,
     /// 撤销
     Undo,
     /// 重做

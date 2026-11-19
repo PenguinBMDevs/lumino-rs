@@ -36,6 +36,10 @@ pub(super) fn record(ui: &mut egui::Ui, recording: bool) {
 }
 
 /// 走带组：倒带 / 播放暂停 / 快进（图标 16，按钮 34×38，间距 4）。
+///
+/// 倒带 / 快进单点为「一个小节」：快进严格跳到下一条小节线；快退在本小节
+/// 前 1/2 退到上一个小节，后 1/2 回本小节开头。按住 Ctrl 点击分别跳到
+/// 全曲开头 / 末尾（全局 EOT）。修饰键在点击时读取，与工具区 Ctrl 命令同口径。
 pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, playing: bool) {
     let total = layout::TOOL_BUTTON_W * 3.0 + 8.0;
     ui.add_space((layout::PLAYBACK_GROUP_W - total) / 2.0);
@@ -44,10 +48,21 @@ pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, p
     } else {
         (Icon::Play, ToolbarAction::Play)
     };
+    let ctrl = ui.input(|i| i.modifiers.ctrl);
+    let rewind = if ctrl {
+        ToolbarAction::SkipBackwardToStart
+    } else {
+        ToolbarAction::SkipBackward
+    };
+    let forward = if ctrl {
+        ToolbarAction::SkipForwardToEnd
+    } else {
+        ToolbarAction::SkipForward
+    };
     for (index, (icon, action)) in [
-        (Icon::SkipBackward, ToolbarAction::SkipBackward),
+        (Icon::SkipBackward, rewind),
         center,
-        (Icon::SkipForward, ToolbarAction::SkipForward),
+        (Icon::SkipForward, forward),
     ]
     .into_iter()
     .enumerate()

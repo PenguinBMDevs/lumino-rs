@@ -18,13 +18,13 @@ use lumino_extras::i18n::{Language, MainTranslations, main_translations, tr};
 /// 使用中性角色名（见 `button_name`），以保证 i18n 下名称稳定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ButtonId {
-    /// 跳到上一个位置/开头
+    /// 跳到上一个小节 / 全曲开头（Ctrl）
     SkipBackward,
     /// 播放
     Play,
     /// 暂停
     Pause,
-    /// 跳到下一个位置/末尾
+    /// 跳到下一个小节 / 全曲末尾（Ctrl）
     SkipForward,
     /// 开始录音
     Record,
@@ -121,10 +121,13 @@ fn button_name(id: ButtonId, t: &MainTranslations) -> &'static str {
 ///
 /// 格式约定：`{一句话解释该按钮的作用}`。当前为占位，请替换为实际说明。
 const DESC_ZH: &[(&str, &str)] = &[
-    ("SkipBackward", "快退到起点"),
+    (
+        "SkipBackward",
+        "退到上一个小节（本小节前 1/2 退上一小节，后 1/2 回本小节开头；Ctrl 回全曲开头）",
+    ),
     ("Play", "开始播放"),
     ("Pause", "暂停播放"),
-    ("SkipForward", "快进到末尾"),
+    ("SkipForward", "跳到下一个小节（按住 Ctrl 跳到全曲末尾）"),
     ("Record", "开始录制 MIDI 输入"),
     ("RecordStop", "停止录制"),
     ("Pointer", "选择/移动音符"),
@@ -172,10 +175,13 @@ const DESC_ZH: &[(&str, &str)] = &[
 ///
 /// 解释说明当前为 `{...}` 占位，待人工填写。
 const DESC_EN: &[(&str, &str)] = &[
-    ("SkipBackward", "Seek to start"),
+    (
+        "SkipBackward",
+        "Rewind one measure (first half: previous measure, second half: current start; Ctrl: start)",
+    ),
     ("Play", "Start playback"),
     ("Pause", "Pause playback"),
-    ("SkipForward", "Seek to end"),
+    ("SkipForward", "Seek to next measure (Ctrl: seek to end)"),
     ("Record", "Start MIDI recording"),
     ("RecordStop", "Stop recording"),
     ("Pointer", "Select/move notes"),

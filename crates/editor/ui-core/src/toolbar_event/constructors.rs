@@ -26,14 +26,24 @@ impl Event {
         Message::Toolbar(Self::Stop)
     }
 
-    /// 构造"跳到上个位置"的工具栏消息
+    /// 构造"跳到上一个小节"的工具栏消息
     pub const fn skip_backward() -> Message {
         Message::Toolbar(Self::SkipBackward)
     }
 
-    /// 构造"跳到下个位置"的工具栏消息
+    /// 构造"跳到下一个小节"的工具栏消息
     pub const fn skip_forward() -> Message {
         Message::Toolbar(Self::SkipForward)
+    }
+
+    /// 构造"跳到全曲开头"的工具栏消息（走带「快退」+ Ctrl）
+    pub const fn skip_backward_to_start() -> Message {
+        Message::Toolbar(Self::SkipBackwardToStart)
+    }
+
+    /// 构造"跳到全曲末尾"的工具栏消息（走带「快进」+ Ctrl）
+    pub const fn skip_forward_to_end() -> Message {
+        Message::Toolbar(Self::SkipForwardToEnd)
     }
 
     /// 构造"撤销"的工具栏消息

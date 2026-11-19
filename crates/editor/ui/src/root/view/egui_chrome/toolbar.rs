@@ -91,9 +91,11 @@ impl Root {
                 }
             }
             ToolbarAction::SkipBackward => toolbar::Event::skip_backward(),
+            ToolbarAction::SkipBackwardToStart => toolbar::Event::skip_backward_to_start(),
             ToolbarAction::Play => toolbar::Event::play(),
             ToolbarAction::Pause => toolbar::Event::pause(),
             ToolbarAction::SkipForward => toolbar::Event::skip_forward(),
+            ToolbarAction::SkipForwardToEnd => toolbar::Event::skip_forward_to_end(),
             ToolbarAction::ToggleLoop => toolbar::Event::toggle_loop(),
             ToolbarAction::Undo => toolbar::Event::undo(),
             ToolbarAction::Redo => toolbar::Event::redo(),
