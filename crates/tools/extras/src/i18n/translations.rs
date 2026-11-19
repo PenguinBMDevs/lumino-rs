@@ -149,6 +149,10 @@ pub struct MainTranslations {
     pub file_save: &'static str,
     /// 关闭
     pub file_close: &'static str,
+    /// 最近打开（文件菜单子菜单标题）
+    pub file_recent: &'static str,
+    /// 清除最近打开记录
+    pub file_recent_clear: &'static str,
     /// 导入文件
     pub file_import: &'static str,
     /// 从云导入

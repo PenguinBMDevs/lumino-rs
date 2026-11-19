@@ -138,40 +138,6 @@ impl RunnerInner {
             .pick_file_async(lumino_ui::event::menu::file::Event::ImportFilesSelected);
     }
 
-    /// 显示错误对话框
-    fn show_error_dialog(&self, message: &str) {
-        #[cfg(not(test))]
-        {
-            let _ = lumino_platform::dialog::MessageDialog::new()
-                .set_title(tr!("加载失败"))
-                .set_description(message)
-                .set_level(lumino_platform::dialog::MessageLevel::Error)
-                .show();
-        }
-        #[cfg(test)]
-        {
-            let _ = message;
-        }
-        tracing::error!("{message}");
-    }
-
-    /// 显示信息对话框
-    fn show_info_dialog(&self, message: &str) {
-        #[cfg(not(test))]
-        {
-            let _ = lumino_platform::dialog::MessageDialog::new()
-                .set_title(tr!("提示"))
-                .set_description(message)
-                .set_level(lumino_platform::dialog::MessageLevel::Info)
-                .show();
-        }
-        #[cfg(test)]
-        {
-            let _ = message;
-        }
-        tracing::info!("{message}");
-    }
-
     /// 加载 MIDI 文件（后台异步加载）
     pub(crate) fn load_midi_file(&self, path: PathBuf) {
         self.load_midi_file_guarded(path, None);

@@ -24,6 +24,7 @@ mod crash_log;
 mod file;
 mod lgs_reconnect;
 mod midi;
+mod pending_close;
 mod persist;
 mod reconnect;
 mod session;
@@ -31,6 +32,7 @@ mod test;
 mod window;
 
 pub(crate) use collab::CollaborationStatus;
+pub(crate) use pending_close::PendingCloseAction;
 pub(crate) use session::SessionTracker;
 pub(crate) use test::TestModeState;
 
@@ -134,6 +136,11 @@ pub(crate) struct FileState {
     pub(crate) file_handler: FileHandler,
     pub(crate) file_service: FileService,
     pub(crate) pending_load_path: Option<std::path::PathBuf>,
+    /// 用户从「打开」对话框选中的原始路径（压缩包 = 压缩包本身，不是解压临时文件）。
+    ///
+    /// 只在加载成功后消费并写入「最近打开」；导入 / 自动保存恢复 / 云下载 / 命令行
+    /// 加载都不设置它，避免污染历史。
+    pub(crate) pending_open_path: Option<std::path::PathBuf>,
 }
 
 /// 协作功能状态
@@ -270,26 +277,6 @@ pub(crate) struct RunnerInner {
     pub(crate) pending_drawer_return: Option<lumino_core::shape::DrawerInsert>,
 }
 
-/// 被保存确认对话框挂起的关闭类动作
-///
-/// 工程存在未保存更改时，这些动作不会立即执行，而是先弹确认对话框，
-/// 待用户决策后再继续。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PendingCloseAction {
-    /// 关闭当前工程（菜单「关闭」）
-    CloseProject,
-    /// 新建工程（菜单「新建」）
-    NewProject,
-    /// 打开另一个工程（菜单「打开」）
-    OpenProject,
-    /// 打开工程文件夹（第一屏「打开工程文件夹」）
-    OpenProjectFolder,
-    /// 退出软件（菜单「退出」）
-    Exit,
-    /// 点击窗口关闭按钮（X / 自制标题栏关闭）
-    WindowClose,
-}
-
 // ── impl Runner ─────────────────────────────────────────────────────────
 
 impl Runner {
@@ -387,7 +374,7 @@ impl Runner {
         event_loop.set_control_flow(ControlFlow::Wait);
 
         #[cfg(target_os = "macos")]
-        if let Err(e) = crate::platform::macos::init(config.ui.language) {
+        if let Err(e) = crate::platform::macos::init(config.ui.language, &config.ui.recent_files) {
             tracing::error!("Failed to init macOS menu: {:?}", e);
         }
 
@@ -420,6 +407,7 @@ impl Runner {
                 file_handler,
                 file_service,
                 pending_load_path: None,
+                pending_open_path: None,
             },
             collab_state: CollabState {
                 collaboration_status,

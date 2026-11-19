@@ -12,6 +12,14 @@ pub enum Event {
     OpenProjectFolder,
     /// 后台文件对话框已选择待打开的工程
     OpenFileSelected(PathBuf),
+    /// 打开「最近打开」子菜单中的文件
+    ///
+    /// 与 [`Self::OpenFileSelected`] 的区别：后者是对话框结果（未保存确认已在前置
+    /// `Open` 流程完成），本事件来自菜单点击，Runner 必须先走未保存确认。
+    /// 路径是用户最初选择的原始路径（压缩包记录压缩包本身，不是解压临时文件）。
+    OpenRecent(PathBuf),
+    /// 清除「最近打开」记录
+    ClearRecent,
     /// 保存工程
     Save,
     /// 关闭当前工程
@@ -103,6 +111,14 @@ impl Event {
     /// 构造已选择待打开工程事件
     pub fn open_file_selected(path: PathBuf) -> Self {
         Self::OpenFileSelected(path)
+    }
+    /// 构造「打开最近文件」事件
+    pub fn open_recent(path: PathBuf) -> Self {
+        Self::OpenRecent(path)
+    }
+    /// 构造「清除最近记录」事件
+    pub const fn clear_recent() -> Self {
+        Self::ClearRecent
     }
     /// 构造保存事件
     pub const fn save() -> Self {

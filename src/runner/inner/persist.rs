@@ -271,8 +271,18 @@ impl RunnerInner {
             // macOS 原生菜单是 NSMenu（由系统 NSMenu 绘制，不经 egui），启动时静态构建、语言变更后
             // 必须显式重建，否则菜单栏会停在旧语言（UI-018 缺陷 D-1）。
             #[cfg(target_os = "macos")]
-            if let Err(e) = crate::platform::macos::init(new.display.language) {
-                tracing::error!("重建 macOS 原生菜单失败: {:?}", e);
+            {
+                let recent = self
+                    .window_state
+                    .storage
+                    .config
+                    .get()
+                    .ui
+                    .recent_files
+                    .clone();
+                if let Err(e) = crate::platform::macos::init(new.display.language, &recent) {
+                    tracing::error!("重建 macOS 原生菜单失败: {:?}", e);
+                }
             }
         }
         if current_theme != old.theme {

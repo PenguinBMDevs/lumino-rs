@@ -554,7 +554,11 @@ impl Root {
         let native = self.settings.synth.use_native_titlebar;
         let egui_menubar = native && !cfg!(target_os = "macos");
         let titlebar_present = !native || egui_menubar;
-        let menu_configs = crate::titlebar::menu::menus(language, self.export_material_enabled());
+        let menu_configs = crate::titlebar::menu::menus(
+            language,
+            self.export_material_enabled(),
+            self.recent_files(),
+        );
         let menu_bar = menu::menu_bar_model(&menu_configs, language);
         let titlebar = titlebar_present.then(|| TitlebarModel {
             focused: self.window.is_focused,

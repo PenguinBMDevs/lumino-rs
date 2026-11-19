@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use lumino_core::storage::config::RecentFile;
 use lumino_extras::i18n::{Language, main_translations};
 
 use crate::event::Event;
@@ -57,56 +60,93 @@ pub struct MenuConfig {
 }
 
 /// 构建文件菜单配置
-pub fn file_menu(lang: Language, export_material_enabled: bool) -> MenuConfig {
+///
+/// `recent` 为空时不显示「最近打开」子菜单（连分隔线一起省略），文件菜单的
+/// 动作数量与历史版本保持一致。
+pub fn file_menu(
+    lang: Language,
+    export_material_enabled: bool,
+    recent: &[RecentFile],
+) -> MenuConfig {
     let translations = main_translations(lang);
     use crate::event::menu::file;
     use MenuItem::*;
+
+    let mut items = vec![
+        Action(crate::event::Event::menu_file(file::Event::new_file())),
+        Action(crate::event::Event::menu_file(file::Event::open())),
+        Action(crate::event::Event::menu_file(file::Event::save())),
+        Action(crate::event::Event::menu_file(file::Event::close())),
+    ];
+
+    // 「最近打开」用子菜单承载：历史条数增长不会撑高文件菜单本体。
+    if !recent.is_empty() {
+        let mut entries: Vec<MenuItem> = recent
+            .iter()
+            .map(|entry| {
+                Action(crate::event::Event::menu_file(file::Event::open_recent(
+                    PathBuf::from(&entry.path),
+                )))
+            })
+            .collect();
+        entries.push(Separator);
+        entries.push(Action(crate::event::Event::menu_file(
+            file::Event::clear_recent(),
+        )));
+        items.push(Separator);
+        items.push(Submenu(entries, translations.file_recent.to_string()));
+    }
+
+    items.push(Separator);
+    items.push(Action(crate::event::Event::menu_file(
+        file::Event::import_files(),
+    )));
+    // 云存储导入/保存（无连接时由 runner 弹出连接面板引导）
+    items.push(Action(crate::event::Event::menu_file(
+        file::Event::import_from_cloud(),
+    )));
+    items.push(Action(crate::event::Event::menu_file(
+        file::Event::save_to_cloud(),
+    )));
+    items.push(Separator);
+    items.push(Action(crate::event::Event::menu_file(
+        file::Event::export_midi(),
+    )));
+    items.push(Submenu(
+        vec![
+            Action(crate::event::Event::menu_file(
+                file::Event::export_project_archive(),
+            )),
+            Action(crate::event::Event::menu_file(
+                file::Event::export_project_folder(),
+            )),
+        ],
+        translations.file_export_project.to_string(),
+    ));
+    // 导出为素材：仅在存在音符框选时可用（走带视图跨音轨框选 / 卷帘选中音符）
+    if export_material_enabled {
+        items.push(Action(crate::event::Event::menu_file(
+            file::Event::export_material(),
+        )));
+    } else {
+        items.push(ActionDisabled(crate::event::Event::menu_file(
+            file::Event::export_material(),
+        )));
+    }
+    items.push(Separator);
+    items.push(Action(crate::event::Event::menu_file(
+        file::Event::project_settings(),
+    )));
+    items.push(Separator);
+    items.push(Action(crate::event::Event::menu_file(
+        file::Event::settings(),
+    )));
+    items.push(Separator);
+    items.push(Action(crate::event::Event::menu_file(file::Event::exit())));
+
     MenuConfig {
         kind: MenuKind::File,
-        items: vec![
-            Action(crate::event::Event::menu_file(file::Event::new_file())),
-            Action(crate::event::Event::menu_file(file::Event::open())),
-            Action(crate::event::Event::menu_file(file::Event::save())),
-            Action(crate::event::Event::menu_file(file::Event::close())),
-            Separator,
-            Action(crate::event::Event::menu_file(file::Event::import_files())),
-            // 云存储导入/保存（无连接时由 runner 弹出连接面板引导）
-            Action(crate::event::Event::menu_file(
-                file::Event::import_from_cloud(),
-            )),
-            Action(crate::event::Event::menu_file(file::Event::save_to_cloud())),
-            Separator,
-            Action(crate::event::Event::menu_file(file::Event::export_midi())),
-            Submenu(
-                vec![
-                    Action(crate::event::Event::menu_file(
-                        file::Event::export_project_archive(),
-                    )),
-                    Action(crate::event::Event::menu_file(
-                        file::Event::export_project_folder(),
-                    )),
-                ],
-                translations.file_export_project.to_string(),
-            ),
-            // 导出为素材：仅在存在音符框选时可用（走带视图跨音轨框选 / 卷帘选中音符）
-            if export_material_enabled {
-                Action(crate::event::Event::menu_file(
-                    file::Event::export_material(),
-                ))
-            } else {
-                ActionDisabled(crate::event::Event::menu_file(
-                    file::Event::export_material(),
-                ))
-            },
-            Separator,
-            Action(crate::event::Event::menu_file(
-                file::Event::project_settings(),
-            )),
-            Separator,
-            Action(crate::event::Event::menu_file(file::Event::settings())),
-            Separator,
-            Action(crate::event::Event::menu_file(file::Event::exit())),
-        ],
+        items,
     }
 }
 
@@ -155,9 +195,13 @@ pub fn help_menu(_lang: Language) -> MenuConfig {
 }
 
 /// 构建全部四个菜单（文件/编辑/视图/帮助）的配置数组
-pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
+pub fn menus(
+    lang: Language,
+    export_material_enabled: bool,
+    recent: &[RecentFile],
+) -> [MenuConfig; 4] {
     [
-        file_menu(lang, export_material_enabled),
+        file_menu(lang, export_material_enabled, recent),
         edit_menu(lang),
         view_menu(lang),
         help_menu(lang),
@@ -179,6 +223,12 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
                 FileEvent::Open => translations.file_open.to_string(),
                 FileEvent::Save => translations.file_save.to_string(),
                 FileEvent::Close => translations.file_close.to_string(),
+                // 最近文件显示文件名（路径对菜单过宽；重名由用户自行区分）
+                FileEvent::OpenRecent(path) => path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+                FileEvent::ClearRecent => translations.file_recent_clear.to_string(),
                 FileEvent::ImportFiles => translations.file_import.to_string(),
                 FileEvent::ImportFromCloud => translations.file_import_from_cloud.to_string(),
                 FileEvent::SaveToCloud => translations.file_save_to_cloud.to_string(),

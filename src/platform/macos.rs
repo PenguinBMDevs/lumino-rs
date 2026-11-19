@@ -2,6 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
+use lumino_core::storage::config::RecentFile;
 use lumino_extras::i18n::Language;
 use lumino_ui::event::{self as event, Event as CoreEvent};
 use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, event_display_name, menus as ui_menus};
@@ -97,29 +98,29 @@ fn build_submenu(
     Submenu::with_items(label, true, &refs)
 }
 
-pub fn init(lang: Language) -> muda::Result<()> {
+pub fn init(lang: Language, recent: &[RecentFile]) -> muda::Result<()> {
     let first_time = MENU.with(|cell| cell.borrow().is_none());
-    install_menu(lang)?;
+    install_menu(lang, recent)?;
     if first_time {
         register_event_handler();
     }
     Ok(())
 }
 
-/// 构建并安装原生菜单；**可重复调用**（语言变更后整表重建）。
+/// 构建并安装原生菜单；**可重复调用**（语言变更 / 最近列表变化后整表重建）。
 ///
 /// 安全性依据（muda 0.17 源码）：`init_for_nsapp` 等价于
 /// `NSApplication::setMainMenu(Some(new_menu))`，而 `Menu` 的 `Drop` 只清理 GTK
 /// 结构、**不会**调用 `setMainMenu(None)`——因此「先装新菜单、旧菜单随后在赋值时
 /// 释放」不会把新菜单一起带走。
-fn install_menu(lang: Language) -> muda::Result<()> {
+fn install_menu(lang: Language, recent: &[RecentFile]) -> muda::Result<()> {
     let mut map = HashMap::new();
 
     let app = app_menu()?;
 
     // 原生菜单在启动时静态构建，无法感知 UI 的选中状态，
     // 因此导出素材等条件菜单项保持禁用（false）
-    let ui_configs = ui_menus(lang, false);
+    let ui_configs = ui_menus(lang, false, recent);
     // 子菜单标题必须按 `lang` 取显示名：`MenuKind` 的 `Display` 曾硬编码简体中文，
     // 导致英文界面下 macOS 菜单栏永远显示中文（UI-018 缺陷 D-2，已删除该 Display）。
     let file = build_submenu(

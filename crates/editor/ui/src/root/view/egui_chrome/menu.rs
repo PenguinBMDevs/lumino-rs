@@ -67,7 +67,11 @@ impl Root {
     /// 与 [`menu_bar_model`] 同一遍历顺序；禁用项也占一个序号（但不会被点击）。
     pub(crate) fn menu_action_message(&self, index: usize) -> Option<Message> {
         let language = self.settings.display.language;
-        let configs = menu::menus(language, self.export_material_enabled());
+        let configs = menu::menus(
+            language,
+            self.export_material_enabled(),
+            self.recent_files(),
+        );
         let mut next = 0;
         for config in &configs {
             if let Some(message) = find_action(&config.items, index, &mut next) {

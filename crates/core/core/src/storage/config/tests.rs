@@ -198,3 +198,27 @@ fn test_first_screen_opacity_default_and_legacy() {
         "旧配置缺字段应回填 20%"
     );
 }
+
+/// 文件菜单「最近打开」：新字段可往返；旧配置缺 `recent_files` 时落为空列表。
+#[test]
+fn test_recent_files_roundtrip_and_legacy_default() {
+    let config = UiConfig {
+        recent_files: vec![RecentFile {
+            path: r"C:\Music\song.mid".to_string(),
+            opened_at: 1_700_000_000,
+        }],
+        ..UiConfig::default()
+    };
+    let json = serde_json::to_string(&config).expect("序列化");
+    let restored: UiConfig = serde_json::from_str(&json).expect("反序列化");
+    assert_eq!(restored.recent_files, config.recent_files);
+
+    let mut value = serde_json::to_value(UiConfig::default()).expect("序列化");
+    let removed = value
+        .as_object_mut()
+        .expect("序列化结果应为对象")
+        .remove("recent_files");
+    assert!(removed.is_some(), "默认配置应写出 recent_files 字段");
+    let restored: UiConfig = serde_json::from_value(value).expect("缺字段的旧配置应能反序列化");
+    assert!(restored.recent_files.is_empty(), "旧配置应落为空列表");
+}

@@ -5,12 +5,14 @@ use serde::{Deserialize, Serialize};
 mod autoscroll;
 mod defaults;
 mod enums;
+mod recent;
 
 pub use autoscroll::{AutoScrollConfig, AutoScrollMode};
 pub use enums::{
     AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, OnionSkinBackend,
     SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
+pub use recent::{RECENT_FILES_LIMIT, RecentFile, forget, remember};
 
 use defaults::*;
 
@@ -254,6 +256,11 @@ pub struct UiConfig {
     /// 收敛到 1..=120，防止手输越界值）。
     #[serde(default = "default_autosave_interval_mins")]
     pub autosave_interval_mins: u32,
+    /// 最近打开/保存的文件（文件菜单「最近打开」子菜单；最新在前）。
+    ///
+    /// 旧配置缺字段时由 `serde(default)` 落为空列表，无需迁移。
+    #[serde(default)]
+    pub recent_files: Vec<RecentFile>,
 }
 
 /// 界面语言偏好的实际语义（UI-018）。
@@ -339,6 +346,7 @@ impl Default for UiConfig {
             domino_clipboard_enabled: false,
             autosave_enabled: false,
             autosave_interval_mins: default_autosave_interval_mins(),
+            recent_files: Vec::new(),
         }
     }
 }

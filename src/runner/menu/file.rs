@@ -8,17 +8,19 @@
 
 pub(crate) mod auto_save;
 mod close;
+mod dialogs;
 mod editor_midi;
 mod export;
 mod export_flow;
 mod helpers;
 mod load;
 mod material;
+mod recent;
 mod save;
 mod save_flow;
 mod util;
 
-use lumino_core::tr;
+use lumino_core::{tr, trf};
 
 use crate::runner::RunnerInner;
 use crate::runner::inner::PendingCloseAction;
@@ -51,7 +53,31 @@ impl RunnerInner {
                 // 打开工程文件夹同样先走未保存确认（与「打开」一致）。
                 self.request_close_action(PendingCloseAction::OpenProjectFolder, event_loop);
             }
-            OpenFileSelected(path) => self.handle_selected_file(path),
+            OpenFileSelected(path) => {
+                // 记住用户最初选择的路径（压缩包不是解压临时文件）；加载成功后
+                // 由 `MidiParsed` 消费并写入「最近打开」。
+                //
+                // 同一时刻只保留一个候选：若用户在上一个加载未完成时又打开新文件，
+                // 保留先选中的那个（宁可漏记，也不把成功事件错配到后一个文件）。
+                if self.file_state.pending_open_path.is_none() {
+                    self.file_state.pending_open_path = Some(path.clone());
+                }
+                self.handle_selected_file(path);
+            }
+            OpenRecent(path) => {
+                // 历史文件可能已被移动/删除：先校验，避免静默失败。
+                if !path.exists() {
+                    self.show_error_dialog(&trf!(
+                        "文件不存在或已被移动：{path}",
+                        path = path.display()
+                    ));
+                    self.forget_recent_file(&path);
+                    return;
+                }
+                // 与「打开」一致：先走未保存确认，再加载。
+                self.request_close_action(PendingCloseAction::OpenRecent(path), event_loop);
+            }
+            ClearRecent => self.clear_recent_files(),
             ImportFiles => self.handle_import_files(),
             ImportFilesSelected(path) => self.handle_selected_file(path),
             ImportFromCloud => {
@@ -73,6 +99,7 @@ impl RunnerInner {
                 tracing::info!("MIDI 文件加载完成：{}", info);
             }
             MidiLoadError(err) => {
+                self.file_state.pending_open_path = None;
                 tracing::error!("MIDI 文件加载失败：{}", err);
             }
             ProjectShapes(shapes) => {
@@ -95,6 +122,14 @@ impl RunnerInner {
                 tracing::info!("工程洋葱皮显示范围已恢复：{mode:?}");
             }
             MidiParsed(parsed) => {
+                // 只有「用户从打开对话框选择」的加载才进历史：候选路径由
+                // `OpenFileSelected` 设置，自动保存恢复/云下载/命令行加载均不设置。
+                // 自动保存恢复的 `MidiParsed` 不消费候选（它属于用户的在飞打开）。
+                if self.autosave_recovery.is_none()
+                    && let Some(path) = self.file_state.pending_open_path.take()
+                {
+                    self.remember_recent_file(path);
+                }
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
                 // MIDI 加载后强制使用 Random 调色板并锁定（禁止用户修改）
@@ -184,6 +219,8 @@ impl RunnerInner {
                 }
             }
             MidiParseError(err) => {
+                // 加载失败：丢弃候选路径，避免把打不开的文件写进历史。
+                self.file_state.pending_open_path = None;
                 tracing::error!("MIDI 文件解析失败：{}", err);
                 if self.autosave_recovery.is_some() {
                     self.handle_autosave_load_failed();

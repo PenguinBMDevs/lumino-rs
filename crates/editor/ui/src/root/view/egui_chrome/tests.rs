@@ -641,6 +641,96 @@ fn check_entries(root: &Root, entries: &[MenuEntry]) -> usize {
     count
 }
 
+/// 有历史时文件菜单出现「最近打开」子菜单：条目按顺序、可解析回 `OpenRecent`，
+/// 末尾是「清除最近记录」；没有历史时整段隐藏（动作数量与旧版一致）。
+#[test]
+fn file_menu_recent_submenu_tracks_recent_files() {
+    let config = lumino_core::storage::config::UiConfig {
+        recent_files: vec![
+            lumino_core::storage::config::RecentFile {
+                path: r"C:\Music\a.mid".to_owned(),
+                opened_at: 2,
+            },
+            lumino_core::storage::config::RecentFile {
+                path: r"C:\Music\b.lmpj".to_owned(),
+                opened_at: 1,
+            },
+        ],
+        ..Default::default()
+    };
+    let root = Root::new(&config);
+    let model = root.egui_chrome_model();
+    let bar = model
+        .titlebar
+        .expect("自绘标题栏应有模型")
+        .menu
+        .expect("应带可交互菜单树");
+    let translations = lumino_extras::i18n::main_translations(Language::ZhCn);
+
+    let recent = bar.menus[0]
+        .entries
+        .iter()
+        .find_map(|entry| match entry {
+            MenuEntry::Submenu { label, entries } if *label == translations.file_recent => {
+                Some(entries)
+            }
+            _ => None,
+        })
+        .expect("有历史时应出现「最近打开」子菜单");
+    assert_eq!(recent.len(), 4, "2 个历史条目 + 分隔线 + 1 个清除项");
+    assert!(
+        matches!(recent[2], MenuEntry::Separator),
+        "历史条目与清除项之间应有分隔线"
+    );
+
+    let MenuEntry::Action { label, action, .. } = &recent[0] else {
+        panic!("最近文件条目应为可点击动作");
+    };
+    assert_eq!(*label, "a.mid", "菜单只显示文件名");
+    match root.menu_action_message(*action) {
+        Some(Message::Core(crate::event::Event::Menu(crate::event::menu::Event::File(
+            crate::event::menu::file::Event::OpenRecent(path),
+        )))) => assert_eq!(path, std::path::PathBuf::from(r"C:\Music\a.mid")),
+        _ => panic!("最近文件动作必须解析为 OpenRecent"),
+    }
+
+    let MenuEntry::Action { label, action, .. } = &recent[3] else {
+        panic!("清除项应为可点击动作");
+    };
+    assert_eq!(*label, translations.file_recent_clear);
+    assert!(
+        matches!(
+            root.menu_action_message(*action),
+            Some(Message::Core(crate::event::Event::Menu(
+                crate::event::menu::Event::File(crate::event::menu::file::Event::ClearRecent)
+            )))
+        ),
+        "清除项必须解析为 ClearRecent"
+    );
+
+    // 空历史：子菜单整段隐藏，动作数量回到旧版口径（25）。
+    let empty = Root::new(&lumino_core::storage::config::UiConfig::default());
+    let empty_model = empty.egui_chrome_model();
+    let empty_bar = empty_model
+        .titlebar
+        .expect("自绘标题栏应有模型")
+        .menu
+        .expect("应带可交互菜单树");
+    assert!(
+        !empty_bar.menus[0].entries.iter().any(|entry| matches!(
+            entry,
+            MenuEntry::Submenu { label, .. } if *label == translations.file_recent
+        )),
+        "无历史时不应出现「最近打开」子菜单"
+    );
+    let empty_actions: usize = empty_bar
+        .menus
+        .iter()
+        .map(|menu| check_entries(&empty, &menu.entries))
+        .sum();
+    assert_eq!(empty_actions, 25, "空历史不改变文件菜单动作数量");
+}
+
 #[test]
 fn toolbar_popup_model_and_actions_follow_production_state() {
     let mut root = Root::new(&lumino_core::storage::config::UiConfig::default());

@@ -68,6 +68,8 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     file_open: "Open",
     file_save: "Save",
     file_close: "Close",
+    file_recent: "Recent Files",
+    file_recent_clear: "Clear Recent",
     file_import: "Import Files",
     file_import_from_cloud: "Import from Cloud",
     file_save_to_cloud: "Save to Cloud",

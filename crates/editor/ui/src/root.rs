@@ -103,6 +103,11 @@ pub struct Root {
     /// 导致拖动/提交引用错误音符。`apply_remote_note_operation` 将这些操作入队，
     /// `drain_deferred_remote_ops` 在临界区结束后按到达顺序补放。
     pub(crate) deferred_remote_ops: Vec<lumino_collaboration::types::NoteBatchOperation>,
+    /// 最近打开/保存的文件（文件菜单「最近打开」子菜单数据源；最新在前）。
+    ///
+    /// 真源在 Runner 的 `UiConfig.recent_files`，这里只是给菜单装配用的运行时快照；
+    /// 打开/保存成功、清除历史时由 Runner 推送最新列表。
+    pub(crate) recent_files: Vec<lumino_core::storage::config::RecentFile>,
 }
 
 /// Root 构造参数
@@ -174,6 +179,7 @@ impl Root {
                 i2m_restore_tool: None,
                 cloud: crate::state::cloud_state::CloudUiState::default(),
                 deferred_remote_ops: Vec::new(),
+                recent_files: params.ui_config.recent_files.clone(),
             }
         })
     }
@@ -328,6 +334,16 @@ impl Root {
     /// 获取设置面板引用
     pub fn settings(&self) -> &settings::SettingsPanel {
         &self.settings
+    }
+
+    /// 最近打开/保存的文件（文件菜单「最近打开」子菜单数据源）。
+    pub fn recent_files(&self) -> &[lumino_core::storage::config::RecentFile] {
+        &self.recent_files
+    }
+
+    /// 更新最近打开/保存的文件列表（Runner 在打开/保存成功、清除历史后推送）。
+    pub fn set_recent_files(&mut self, files: Vec<lumino_core::storage::config::RecentFile>) {
+        self.recent_files = files;
     }
 }
 

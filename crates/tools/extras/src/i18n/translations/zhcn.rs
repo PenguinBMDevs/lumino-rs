@@ -68,6 +68,8 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     file_open: "打开",
     file_save: "保存",
     file_close: "关闭",
+    file_recent: "最近打开",
+    file_recent_clear: "清除最近记录",
     file_import: "导入文件",
     file_import_from_cloud: "从云导入",
     file_save_to_cloud: "保存到云",

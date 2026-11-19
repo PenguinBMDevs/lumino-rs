@@ -5,6 +5,8 @@ use crate::runner::RunnerInner;
 impl RunnerInner {
     /// 保存完成：记录路径 + 底边栏提示（3 秒）+ 云端自动回传
     pub(super) fn handle_save_completed(&mut self, path: std::path::PathBuf) {
+        // 保存成功也是「最近使用」：写入文件菜单「最近打开」子菜单。
+        self.remember_recent_file(path.clone());
         // 记录保存路径（后续 Ctrl+S 直接覆盖保存原文件）
         self.midi_state.current_midi_source = Some(path.clone());
         tracing::info!("工程保存完成，路径已记录：{:?}", path);

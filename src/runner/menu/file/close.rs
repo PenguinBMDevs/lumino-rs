@@ -107,6 +107,7 @@ impl RunnerInner {
             PendingCloseAction::NewProject => self.handle_new_file(),
             PendingCloseAction::OpenProject => self.handle_open_file(),
             PendingCloseAction::OpenProjectFolder => self.handle_open_project_folder(),
+            PendingCloseAction::OpenRecent(path) => self.handle_selected_file(path),
             PendingCloseAction::Exit | PendingCloseAction::WindowClose => {
                 // 保存期间禁止关闭：转为待关闭，保存完成后自动退出
                 if self.is_saving() || self.is_cloud_saving() {
@@ -172,6 +173,7 @@ impl RunnerInner {
             PendingCloseAction::NewProject => self.handle_new_file(),
             PendingCloseAction::OpenProject => self.handle_open_file(),
             PendingCloseAction::OpenProjectFolder => self.handle_open_project_folder(),
+            PendingCloseAction::OpenRecent(path) => self.handle_selected_file(path),
             PendingCloseAction::Exit | PendingCloseAction::WindowClose => {
                 self.window_state.window.close_pending = true;
             }

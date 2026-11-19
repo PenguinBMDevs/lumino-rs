@@ -149,6 +149,8 @@ impl RunnerInner {
             return None;
         }
 
+        // 新文件保存成功：写入「最近打开」。
+        self.remember_recent_file(save_path.clone());
         // 设置源路径并触发后台加载（异步填充 current_midi）
         self.midi_state.current_midi_source = Some(save_path.clone());
         self.load_midi_file(save_path.clone());
@@ -269,6 +271,9 @@ impl RunnerInner {
 
     /// 保存为 MIDI（包含编辑器编辑 + 源文件的 PC/CC 事件）
     fn save_as_midi_with_edits(&mut self, save_path: PathBuf) {
+        // MIDI 另存为没有 `SaveCompleted` 事件（写入是 fire-and-forget），
+        // 在用户确认路径后即记录：与 LMPJ 保存走同一份「最近打开」口径。
+        self.remember_recent_file(save_path.clone());
         let editor_has_notes = {
             let ui = self.window_state.window.ui();
             ui.get_editor_note_count() > 0
