@@ -44,44 +44,14 @@ impl Event {
         Message::Sidebar(Self::TrackPanChanged(id, pan))
     }
 
-    /// 构造"混音台浮动面板开关"的侧边栏消息
+    /// 构造"混音台独立窗口开关"的侧边栏消息
     pub const fn mixer_panel_toggled() -> Message {
         Message::Sidebar(Self::MixerPanelToggled)
-    }
-
-    /// 构造"混音台浮动面板最大化/最小化"的侧边栏消息
-    pub const fn mixer_panel_maximize_toggled() -> Message {
-        Message::Sidebar(Self::MixerPanelMaximizeToggled)
-    }
-
-    /// 构造"混音台浮动面板拖拽"的侧边栏消息
-    pub const fn mixer_panel_dragged(dx: f32, dy: f32) -> Message {
-        Message::Sidebar(Self::MixerPanelDragged(dx, dy))
-    }
-
-    /// 构造"混音台面板拖拽增量"的侧边栏消息（egui 侧逐帧位移）
-    pub const fn mixer_panel_drag_delta(dx: f32, dy: f32) -> Message {
-        Message::Sidebar(Self::MixerPanelDragDelta { dx, dy })
-    }
-
-    /// 构造"混音台浮动面板拖拽开始"的侧边栏消息
-    pub const fn mixer_panel_drag_started() -> Message {
-        Message::Sidebar(Self::MixerPanelDragStarted)
-    }
-
-    /// 构造"混音台浮动面板拖拽结束"的侧边栏消息
-    pub const fn mixer_panel_drag_ended() -> Message {
-        Message::Sidebar(Self::MixerPanelDragEnded)
     }
 
     /// 构造"混音台主音量变化"的侧边栏消息
     pub const fn mixer_panel_master_volume_changed(volume: u8) -> Message {
         Message::Sidebar(Self::MixerPanelMasterVolumeChanged(volume))
-    }
-
-    /// 构造"混音台横向滚动"的侧边栏消息
-    pub const fn mixer_panel_scrolled(x: f32) -> Message {
-        Message::Sidebar(Self::MixerPanelScrolled(x))
     }
 
     /// 构造"多轨同时选择"的侧边栏消息

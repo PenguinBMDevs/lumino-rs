@@ -1,26 +1,21 @@
-//! 混音台：生产状态 → egui 模型。
+//! 混音台：生产状态 → egui 模型 / 动作映射。
 //!
-//! 面板矩形按**窗口真实尺寸**锚定（左下角、状态栏之上），不再依赖 上一代 面板的
-//! 探针矩形——探针测的是 上一代 的「全屏外层容器」，不是可见面板本体。
+//! 混音台是**独立 OS 窗口**（`DialogType::Mixer`）：主窗口只负责生成轨道 /
+//! 电平快照（[`Root::mixer_snapshot`]），由 Runner 每帧推给对话框 Root；
+//! 对话框产生的 [`lumino_ui_egui::mixer::MixerAction`] 再由 Runner 取回并
+//! 映射成本文件的 [`Root::mixer_action_message`]。
 
-use lumino_ui_egui::mixer::{MixerLayout, MixerModel, MixerStrip};
+use lumino_ui_egui::mixer::{MixerDialogModel, MixerModel, MixerStrip};
 
 use crate::root::Root;
 
 impl Root {
-    /// 窗口逻辑宽度/高度由宿主每帧传入（`size_px / ppp`）。
-    pub(crate) fn mixer_model(
-        &self,
-        window_w: f32,
-        window_h: f32,
-    ) -> Option<(MixerLayout, MixerModel)> {
+    /// 主窗口本帧的混音台快照（`None` = 混音台未打开）。
+    ///
+    /// 不含几何：对话框自己按客户端尺寸布局。`scroll_x` 恒为 0——横向滚动
+    /// 是对话框本地状态（`MixerDialogState::scroll_x`），不跟随主窗口。
+    pub(crate) fn mixer_snapshot(&self) -> Option<MixerModel> {
         if !self.mixer_panel.open {
-            return None;
-        }
-        // 底缘 = 窗口高 − 状态栏；左缘 = 面板偏移。
-        let bottom = window_h - STATUSBAR_H;
-        let left = self.mixer_panel.offset.0;
-        if bottom <= 0.0 || window_w <= 0.0 {
             return None;
         }
 
@@ -66,22 +61,26 @@ impl Root {
             master: true,
         });
 
-        let model = MixerModel {
-            maximized: self.mixer_panel.maximized,
-            scroll_x: self.mixer_panel.scroll_x,
+        Some(MixerModel {
+            scroll_x: 0.0,
             strips,
             master,
-        };
-        let layout = MixerLayout::new(left, bottom, window_w, &model);
-        Some((layout, model))
+        })
     }
-}
 
-/// 状态栏高度（与 `layout::STATUSBAR_H` 一致；此处避免跨 crate 依赖）。
-const STATUSBAR_H: f32 = 20.0;
+    /// 对话框窗口本帧的整窗模型（标题栏 + 数据 + 本地滚动）。
+    pub(super) fn mixer_dialog_model(&self) -> MixerDialogModel {
+        let mut mixer = self.mixer_dialog.model.clone();
+        mixer.scroll_x = self.mixer_dialog.scroll_x;
+        MixerDialogModel {
+            titlebar: !self.settings.synth.use_native_titlebar,
+            mixer,
+        }
+    }
 
-impl Root {
     /// 混音台动作 → 生产消息（构造函数已直接返回 `Message`）。
+    ///
+    /// `Scrolled` 是对话框本地滚动，不产生主窗口消息。
     pub(crate) fn mixer_action_message(
         &self,
         action: &lumino_ui_egui::mixer::MixerAction,
@@ -91,9 +90,6 @@ impl Root {
 
         let track_id = |index: usize| self.sidebar.tracks.get(index).map(|t| t.id);
         Some(match action {
-            A::DragStarted => SidebarEvent::mixer_panel_drag_started(),
-            A::DragBy { dx, dy } => SidebarEvent::mixer_panel_drag_delta(*dx, *dy),
-            A::DragEnded => SidebarEvent::mixer_panel_drag_ended(),
             A::Gain { index, value } => {
                 let gain =
                     crate::sidebar::volume_to_gain((value.clamp(0.0, 1.0) * 127.0).round() as u8);
@@ -105,6 +101,7 @@ impl Root {
             A::MasterVolume(value) => SidebarEvent::mixer_panel_master_volume_changed(
                 (value.clamp(0.0, 1.0) * 127.0).round() as u8,
             ),
+            A::Scrolled(_) => return None,
         })
     }
 }

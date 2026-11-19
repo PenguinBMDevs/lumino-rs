@@ -13,8 +13,10 @@ use crate::window::DialogWindow;
 
 // 子模块（按职责拆分，零逻辑变更）：
 // - `lifecycle`：创建、分帧初始化、关闭与每帧更新
+// - `cancel`：取消「排队 / 初始化中 / 已就绪」的指定类型对话框
 // - `queries`：存在性/引用查询与状态同步
 // - `forwarding`：协作与视频导出事件转发
+mod cancel;
 mod forwarding;
 mod lifecycle;
 mod queries;

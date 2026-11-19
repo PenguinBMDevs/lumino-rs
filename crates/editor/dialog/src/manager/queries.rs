@@ -221,6 +221,20 @@ mod tests {
         assert_eq!(pending.shapes_dir.as_deref(), Some(dir.as_path()));
     }
 
+    /// 取消必须同时撤掉「排队中」的请求：只清已就绪窗口会让请求在下一帧建窗。
+    #[test]
+    fn test_cancel_dialog_clears_pending_request() {
+        let mut manager = DialogManager::new();
+        manager.open_dialog(DialogType::Mixer);
+        assert!(manager.is_open_or_pending(DialogType::Mixer));
+
+        manager.cancel_dialog(DialogType::Mixer);
+        assert!(
+            !manager.is_open_or_pending(DialogType::Mixer),
+            "取消后排队请求必须消失（否则会在下一帧凭空弹出窗口）"
+        );
+    }
+
     /// 关闭必须释放归属，且对「尚未就绪」的窗口同样生效。
     ///
     /// 只 `dialogs.remove` 会让 `claimed_windows` 只增不减（泄漏 + 该窗口 id

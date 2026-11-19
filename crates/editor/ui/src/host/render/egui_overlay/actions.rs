@@ -119,7 +119,7 @@ impl OverlayActions {
             arrangement: lumino_ui_egui::chrome::arrangement::take_action(ctx),
             lane: lumino_ui_egui::chrome::arrangement::take_lane_actions(ctx),
             video_timeline: lumino_ui_egui::chrome::take_video_timeline_actions(ctx),
-            mixer: lumino_ui_egui::chrome::take_mixer_actions(ctx),
+            mixer: lumino_ui_egui::mixer::take_actions(ctx),
             material_delete: lumino_ui_egui::material_delete::take_action(ctx),
             tempo_max_bpm: lumino_ui_egui::tempo_max_bpm::take_action(ctx),
             mask_panel: lumino_ui_egui::chrome::take_mask_panel_action(ctx),
@@ -277,8 +277,14 @@ impl Host {
             let message = self.root.tempo_max_bpm_action_message(action);
             self.dispatch_overlay_message(message);
         }
+        // 混音台：独立窗口内产生的动作先落到对话框 Root，由 Runner 每帧取走并
+        // 映射到主窗口；主窗口自身不再绘制混音台，因此不会走消息分发分支。
         for action in &actions.mixer {
-            if let Some(message) = self.root.mixer_action_message(action) {
+            if self.root.state.dialog_type == crate::state::root_state::DialogType::Mixer {
+                self.root.apply_mixer_dialog_action(*action);
+                self.ui_dirty = true;
+                self.window_ctx.window.request_redraw();
+            } else if let Some(message) = self.root.mixer_action_message(action) {
                 self.dispatch_overlay_message(message);
             }
         }

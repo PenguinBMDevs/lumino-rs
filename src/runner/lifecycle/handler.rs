@@ -363,6 +363,8 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
         // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
         this.try_fill_recover_track_entries();
         this.sync_history_dialog();
+        // 混音台：开关对账 + 通道条 / 电平快照推送（窗口初始化完成后才推）
+        this.sync_mixer_dialog();
         // DEBT-14：主窗口「退回抽屉」的数据转发给抽屉窗口
         this.sync_shape_drawer_return();
 
@@ -384,6 +386,8 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
         // 更新对话框
         puffin::profile_scope!("runner_about_to_wait_dialog_update");
         this.window_state.dialog_manager.update();
+        // 混音台：对话框重绘产生的推子 / 静音 / 主音量动作，回放到主窗口。
+        this.drain_mixer_dialog_actions();
 
         // UI-015：工程设置对话框打开期间同步音符总量（值变化才推送/重绘）
         if this

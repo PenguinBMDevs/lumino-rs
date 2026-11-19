@@ -146,6 +146,7 @@ impl Root {
             DialogType::AutosaveRecover => Some(DialogModel::AutosaveRecover(Box::new(
                 self.autosave_recover_model(),
             ))),
+            DialogType::Mixer => Some(DialogModel::Mixer(Box::new(self.mixer_dialog_model()))),
             _ => None,
         }
     }

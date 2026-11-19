@@ -241,25 +241,6 @@ fn arrangement_model(ctx: &egui::Context) -> Option<ArrangementModel> {
         .flatten()
 }
 
-/// 记录本帧的混音台模型（`None` = 面板未打开）。
-pub fn set_mixer(
-    ctx: &egui::Context,
-    model: Option<(crate::mixer::MixerLayout, crate::mixer::MixerModel)>,
-) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.mixer"), model));
-}
-
-fn mixer_model(
-    ctx: &egui::Context,
-) -> Option<(crate::mixer::MixerLayout, crate::mixer::MixerModel)> {
-    ctx.data(|d| {
-        d.get_temp::<Option<(crate::mixer::MixerLayout, crate::mixer::MixerModel)>>(
-            egui::Id::unique("lumino.mixer"),
-        )
-    })
-    .flatten()
-}
-
 /// 记录本帧的视频剪辑时间轴模型（`None` = 不接管或不在渲染器入口）。
 pub fn set_video_timeline(
     ctx: &egui::Context,
@@ -501,6 +482,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             DialogModel::AutosaveRecover(model) => {
                 crate::autosave_recover::show(&mut root, model);
             }
+            DialogModel::Mixer(model) => {
+                crate::mixer::show_dialog(&mut root, model);
+            }
             DialogModel::Progress(model) => {
                 crate::overlay_window::show_progress(&mut root, model);
             }
@@ -688,7 +672,8 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     // 需要用户**独立决策**的确认 / 输入 / 设置类一律走独立 OS 窗口
     // （`DialogType` + `DialogManager`，见本函数开头的 `model.dialog` 分支）。
     // 以下覆盖层按规则保留：锚定参数面板（遮罩）、悬浮工具条、上下文/下拉
-    // 菜单、非模态提示（Toast / 帮助提示 / 彩蛋）、画布预览与混音台浮动面板。
+    // 菜单、非模态提示（Toast / 帮助提示 / 彩蛋）与画布预览。
+    // 混音台已迁为 `DialogType::Mixer` 独立窗口，不在主窗口内绘制。
     // 新增覆盖层时必须先对照这条规则，而不是默认「先画在主窗口里」。
 
     // 右下角浮层：Toast 通知 + 首次使用帮助提示。
@@ -708,18 +693,6 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
     }
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
-    // 混音台（浮动面板）：整块由 egui 绘制并接管输入（覆盖 上一代 面板）。
-    if let Some((layout, mixer)) = mixer_model(ui.ctx()) {
-        // 独立图层：混音台覆盖区域内不再命中下层的音轨列表 / 路由栏。
-        floating_panel(ui.ctx(), "lumino.mixer", layout.panel, |ui| {
-            crate::mixer::show(ui, &layout, &mixer);
-            for action in crate::mixer::interact(ui, &layout, &mixer) {
-                push_mixer_action(ui.ctx(), action);
-            }
-            None
-        });
-        menu::extend_blocked(ui.ctx(), [layout.panel]);
-    }
 
     // 遮罩参数面板：锚在鼠标右下，点面板外关闭；打开期间整窗占用。
     if let Some(mask) = mask_panel(ui.ctx()) {
@@ -900,25 +873,6 @@ pub fn take_video_timeline_actions(
         d.remove_temp::<Vec<crate::video_clip_timeline::VideoTimelineAction>>(egui::Id::unique(
             VIDEO_TIMELINE_ACTION_ID,
         ))
-    })
-    .unwrap_or_default()
-}
-
-/// 混音台动作通道。
-const MIXER_ACTION_ID: &str = "lumino.mixer.action";
-
-fn push_mixer_action(ctx: &egui::Context, action: crate::mixer::MixerAction) {
-    let mut actions = ctx
-        .data(|d| d.get_temp::<Vec<crate::mixer::MixerAction>>(egui::Id::unique(MIXER_ACTION_ID)))
-        .unwrap_or_default();
-    actions.push(action);
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(MIXER_ACTION_ID), actions));
-}
-
-/// 取走本帧混音台动作。
-pub fn take_mixer_actions(ctx: &egui::Context) -> Vec<crate::mixer::MixerAction> {
-    ctx.data_mut(|d| {
-        d.remove_temp::<Vec<crate::mixer::MixerAction>>(egui::Id::unique(MIXER_ACTION_ID))
     })
     .unwrap_or_default()
 }

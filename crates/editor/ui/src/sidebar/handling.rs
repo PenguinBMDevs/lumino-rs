@@ -48,16 +48,10 @@ impl Sidebar {
             TrackSoloToggled(id) => self.handle_track_solo_toggled(id),
             TrackGainChanged(id, gain) => self.handle_track_gain_changed(id, gain),
             TrackPanChanged(id, pan) => self.handle_track_pan_changed(id, pan),
-            // 混音台面板控制由 Root 层处理（状态在 Root.mixer_panel），
+            // 混音台窗口控制由 Root 层处理（状态在 Root.mixer_panel），
             // 此处不持有相关状态，原样返回"无需重绘"。
             MixerPanelToggled => {}
-            MixerPanelMaximizeToggled => {}
-            MixerPanelDragStarted => {}
-            MixerPanelDragEnded => {}
-            MixerPanelDragged(_, _) => {}
-            MixerPanelDragDelta { .. } => {}
             MixerPanelMasterVolumeChanged(_) => {}
-            MixerPanelScrolled(_) => {}
             TracksSelected(ids) => self.handle_tracks_selected(ids),
             AddTrack => self.handle_add_track(),
             TrackAddAbove(id) => self.handle_track_add_above(id),

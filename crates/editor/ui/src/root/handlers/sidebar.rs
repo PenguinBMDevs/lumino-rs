@@ -121,69 +121,20 @@ impl Root {
             return true;
         }
 
-        // 混音台浮动面板控制（开关/最大化/拖拽）：状态在 `Root.mixer_panel`，
-        // 始终触发重绘。拖拽以左下为锚点：向右增大左内缩、向下减小下内缩；
-        // 并夹紧在左侧栏（48px）之外、屏幕范围内。拖拽采用 `on_move` 相对坐标
-        // 递推：`offset += (p - grab)`，使面板跟随光标（单次事件延迟）。
+        // 混音台独立窗口：主窗口只维护「是否请求打开」的镜像开关与主音量。
+        // 真正的窗口开关 / 通道条快照 / 本地滚动都在 Runner 与对话框 Host 里。
         if matches!(
             &event,
-            sidebar::Event::MixerPanelToggled
-                | sidebar::Event::MixerPanelMaximizeToggled
-                | sidebar::Event::MixerPanelDragStarted
-                | sidebar::Event::MixerPanelDragEnded
-                | sidebar::Event::MixerPanelDragged(_, _)
-                | sidebar::Event::MixerPanelMasterVolumeChanged(_)
-                | sidebar::Event::MixerPanelScrolled(_)
+            sidebar::Event::MixerPanelToggled | sidebar::Event::MixerPanelMasterVolumeChanged(_)
         ) {
             match event {
                 sidebar::Event::MixerPanelToggled => {
                     self.mixer_panel.open = !self.mixer_panel.open;
-                    // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截
-                    // 后续再次打开 / 交互（拖拽未正常结束时 open 被切回也可能导致覆盖层卡死）。
-                    if !self.mixer_panel.open {
-                        self.mixer_panel.dragging = false;
-                        self.mixer_panel.last_cursor = None;
-                    }
-                }
-                sidebar::Event::MixerPanelMaximizeToggled => {
-                    self.mixer_panel.maximized = !self.mixer_panel.maximized;
-                }
-                sidebar::Event::MixerPanelDragStarted => {
-                    self.mixer_panel.dragging = true;
-                    self.mixer_panel.last_cursor = None;
-                }
-                sidebar::Event::MixerPanelDragEnded => {
-                    self.mixer_panel.dragging = false;
-                    self.mixer_panel.last_cursor = None;
-                }
-                sidebar::Event::MixerPanelDragged(px, py) if self.mixer_panel.dragging => {
-                    // px/py 为全窗口覆盖层给出的绝对光标位置；以增量方式跟随，
-                    // 使面板在光标离开标题栏/窗口范围时仍持续移动。
-                    match self.mixer_panel.last_cursor {
-                        None => self.mixer_panel.last_cursor = Some((px, py)),
-                        Some((lx, ly)) => {
-                            let (ox, oy) = self.mixer_panel.offset;
-                            let nx = (ox + (px - lx)).clamp(48.0, 4000.0);
-                            let ny = (oy - (py - ly)).clamp(0.0, 2000.0);
-                            self.mixer_panel.offset = (nx, ny);
-                            self.mixer_panel.last_cursor = Some((px, py));
-                        }
-                    }
-                }
-                // egui 侧直接给位移：累加到 offset（无需 last_cursor 求差）。
-                sidebar::Event::MixerPanelDragDelta { dx, dy } => {
-                    let (ox, oy) = self.mixer_panel.offset;
-                    self.mixer_panel.offset =
-                        ((ox + dx).clamp(48.0, 4000.0), (oy - dy).clamp(0.0, 2000.0));
                 }
                 // 主音量变化：更新状态并即时同步到播放引擎（全局缩放所有通道增益）。
                 sidebar::Event::MixerPanelMasterVolumeChanged(v) => {
                     self.mixer_panel.master_volume = v.clamp(0, sidebar::MIXER_MAX_VOLUME);
                     self.update_playback_track_mix();
-                }
-                // 横向滚动：仅更新裁剪偏移，触发重绘（视口节流在 build_body 生效）。
-                sidebar::Event::MixerPanelScrolled(x) => {
-                    self.mixer_panel.scroll_x = x;
                 }
                 _ => {}
             }

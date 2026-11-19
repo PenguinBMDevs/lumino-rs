@@ -58,6 +58,8 @@ pub enum DialogModel {
     VideoExportOverlay(Box<VideoExportOverlayModel>),
     /// 自动保存恢复（`DialogType::AutosaveRecover`，DEBT-12）。
     AutosaveRecover(Box<AutosaveRecoverModel>),
+    /// 混音台（`DialogType::Mixer`，独立 OS 窗口）。
+    Mixer(Box<crate::mixer::MixerDialogModel>),
     /// 启动/加载进度窗（独立窗口，无取消按钮）。
     Progress(ProgressModel),
     /// 设备检查警告窗（独立窗口，勾选框 + 两个按钮）。

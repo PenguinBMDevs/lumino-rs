@@ -275,6 +275,11 @@ pub(crate) struct RunnerInner {
     /// 主窗口只把 payload 放进自己的 RootState；Runner 每帧取走，抽屉窗口
     /// 未打开时先暂存在这里并触发打开，窗口就绪后推给它。
     pub(crate) pending_drawer_return: Option<lumino_core::shape::DrawerInsert>,
+    /// 混音台窗口本轮「打开请求」是否已发出。
+    ///
+    /// 防止窗口创建 / 初始化失败时 `sync_mixer_dialog` 每帧重发请求形成建窗循环；
+    /// 用户把开关关掉再打开（`desired == false`）后复位，可重试。
+    pub(crate) mixer_open_requested: bool,
 }
 
 // ── impl Runner ─────────────────────────────────────────────────────────
@@ -457,6 +462,7 @@ impl Runner {
             autosave_preserve_on_exit: false,
             autosave_main_trusted: Arc::new(AtomicBool::new(false)),
             pending_drawer_return: None,
+            mixer_open_requested: false,
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）

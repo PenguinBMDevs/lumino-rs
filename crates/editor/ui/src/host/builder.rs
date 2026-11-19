@@ -140,11 +140,11 @@ impl Host {
             root.enter_first_screen();
             root
         };
-        // 调试开关：启动即打开混音台（`LUMINO_MIXER_OPEN=1`）。
-        // 用途：路由栏底部入口在部分环境下收不到点击，无法稳定进入面板做真机对照。
+        // 调试开关：启动即请求打开混音台（`LUMINO_MIXER_OPEN=1`）。
+        // 用途：路由栏底部入口在部分环境下收不到点击，无法稳定进入窗口做真机对照。
+        // 实际窗口由 Runner 的 `sync_mixer_dialog` 按镜像开关创建。
         if std::env::var("LUMINO_MIXER_OPEN").is_ok_and(|v| v != "0") {
             root.mixer_panel.open = true;
-            root.mixer_panel.maximized = true;
         }
         // 调试开关：启动即进入渲染器入口面板（`LUMINO_RENDERER_PANEL=1`）。
         // 用途：验证 egui 自算几何的轨道占位 / 16:9 预览 / 时间轴 / 导出设置。

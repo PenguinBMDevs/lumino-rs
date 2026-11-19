@@ -1,16 +1,24 @@
-//! 浮动混音台：通道条布局、视口裁剪与绘制（egui 版）。
+//! 混音台（独立对话框窗口）：通道条布局与数据模型。
 //!
-//! 与 上一代 `root/mixer_panel{,/strips}.rs` 同口径：
-//! - 通道条宽 88、间距 8、步进 96；推子/标尺/电平表统一高 180；电平条宽 6；
-//! - 主体横向滚动、按索引算 x 并做视口裁剪（外扩 2 个步进，宁多勿漏）；
-//! - 面板最大宽 900，标题栏 + 主体两态（最大化/仅标题）。
+//! 混音台由 `DialogType::Mixer` 创建**独立 OS 窗口**，不再内嵌在主窗口里。
+//! 主窗口每帧把轨道 / 电平快照推入对话框 Root（`RunnerInner::sync_mixer_dialog`），
+//! 对话框产生的 [`MixerAction`] 再由 Runner 映射回主窗口的 `SidebarEvent`。
 //!
-//! 本模块只负责「条带画在哪、点到哪」；拖拽/推子交互由调用方按
-//! [`MixerHit`] 分派，消息仍走生产侧的 `TrackGainChanged` 等。
+//! 几何口径沿用原浮动面板：通道条宽 88、间距 8、步进 96；推子 / 标尺 / 电平表
+//! 统一高 180；电平条宽 6；视口裁剪外扩 2 个步进。主控条固定在右侧，不随轨道滚动。
+//!
+//! 绘制与输入在 [`show::show_dialog`]；本文件只保留纯数据与几何。
 
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, Stroke};
+mod show;
 
-use crate::theme;
+#[cfg(test)]
+mod tests;
+
+pub use show::show_dialog;
+
+use egui::{Id, Rect};
+
+use crate::layout;
 
 /// 通道条宽（逻辑像素）。
 pub const STRIP_WIDTH: f32 = 88.0;
@@ -24,10 +32,12 @@ pub const FADER_HEIGHT: f32 = 180.0;
 pub const METER_WIDTH: f32 = 6.0;
 /// 视口裁剪外扩。
 pub const CULL_MARGIN: f32 = STRIP_STEP * 2.0;
-/// 面板最大宽度。
-pub const PANEL_VISIBLE_WIDTH: f32 = 900.0;
-/// 标题栏高度。
-pub const TITLE_H: f32 = 28.0;
+/// 主体内边距。
+pub const BODY_PAD: f32 = 8.0;
+/// 自制标题栏下方的内容标题行高度（系统原生标题栏时省略）。
+pub const HEADER_H: f32 = 22.0;
+/// 主控条与普通通道条之间的额外间距。
+pub const MASTER_GAP: f32 = 8.0;
 
 /// 单条通道条数据。
 #[derive(Debug, Clone, PartialEq)]
@@ -51,9 +61,7 @@ pub struct MixerStrip {
 /// 混音台模型。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MixerModel {
-    /// 是否展开主体（false = 仅标题栏）。
-    pub maximized: bool,
-    /// 主体横向滚动（像素）。
+    /// 普通通道条横向滚动（像素）；主控条不参与滚动。
     pub scroll_x: f32,
     /// 通道条（不含主控）。
     pub strips: Vec<MixerStrip>,
@@ -61,39 +69,70 @@ pub struct MixerModel {
     pub master: Option<MixerStrip>,
 }
 
-/// 面板几何（屏幕逻辑坐标）。
+/// 混音台对话框的整窗模型。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MixerDialogModel {
+    /// 顶部是否有 30px 自制标题栏（`!use_native_titlebar`）。
+    pub titlebar: bool,
+    /// 通道条数据。
+    pub mixer: MixerModel,
+}
+
+/// 面板几何（窗口逻辑坐标）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MixerLayout {
-    /// 面板整体矩形。
+    /// 整个客户端区域。
     pub panel: Rect,
-    /// 标题栏矩形。
-    pub title: Rect,
-    /// 主体矩形（最大化时有效）。
+    /// 通道条主体（标题栏 / 内容标题行之下）。
     pub body: Rect,
+    /// 普通通道条视口（已扣除右侧主控条）。
+    pub strips_viewport: Rect,
+    /// 主控条矩形（固定在右侧；`None` = 无主控）。
+    pub master: Option<Rect>,
 }
 
 impl MixerLayout {
-    /// 由锚点（面板左缘 x、底缘 y）与宽度算布局。
-    pub fn new(left: f32, bottom: f32, width: f32, model: &MixerModel) -> Self {
-        let w = width.clamp(200.0, PANEL_VISIBLE_WIDTH);
-        let body_h = if model.maximized {
-            FADER_HEIGHT + 72.0
+    /// 由对话框客户端矩形算布局。
+    pub fn dialog(rect: Rect, titlebar: bool, model: &MixerModel) -> Self {
+        let chrome_top = if titlebar {
+            layout::TITLEBAR_H + HEADER_H
         } else {
             0.0
         };
-        let h = TITLE_H + body_h;
-        let panel = Rect::from_min_size(egui::pos2(left, bottom - h), egui::vec2(w, h));
-        let title = Rect::from_min_size(panel.min, egui::vec2(w, TITLE_H));
-        let body = Rect::from_min_max(egui::pos2(panel.left(), title.bottom()), panel.max);
-        Self { panel, title, body }
+        let body = Rect::from_min_max(egui::pos2(rect.left(), rect.top() + chrome_top), rect.max);
+        let master_width = if model.master.is_some() {
+            STRIP_WIDTH + MASTER_GAP
+        } else {
+            0.0
+        };
+        let strips_viewport = Rect::from_min_max(
+            body.min,
+            egui::pos2(
+                (body.right() - master_width).max(body.left()),
+                body.bottom(),
+            ),
+        );
+        let master = model.master.as_ref().map(|_| {
+            let left = (body.right() - STRIP_WIDTH - BODY_PAD).max(strips_viewport.left());
+            Rect::from_min_size(
+                egui::pos2(left, body.top() + BODY_PAD),
+                egui::vec2(STRIP_WIDTH, FADER_HEIGHT),
+            )
+        });
+        Self {
+            panel: rect,
+            body,
+            strips_viewport,
+            master,
+        }
     }
 
-    /// 第 `index` 个通道条矩形（含滚动偏移）。
+    /// 第 `index` 个普通通道条矩形（含滚动偏移）。
     pub fn strip_rect(&self, index: usize, scroll_x: f32) -> Rect {
         Rect::from_min_size(
             egui::pos2(
-                self.body.left() + 8.0 + index as f32 * STRIP_STEP - scroll_x,
-                self.body.top() + 8.0,
+                self.strips_viewport.left() + BODY_PAD + index as f32 * STRIP_STEP - scroll_x,
+                self.body.top() + BODY_PAD,
             ),
             egui::vec2(STRIP_WIDTH, FADER_HEIGHT),
         )
@@ -104,18 +143,25 @@ impl MixerLayout {
         (0..count)
             .filter(|i| {
                 let r = self.strip_rect(*i, scroll_x);
-                r.right() >= self.body.left() - CULL_MARGIN
-                    && r.left() <= self.body.right() + CULL_MARGIN
+                r.right() >= self.strips_viewport.left() - CULL_MARGIN
+                    && r.left() <= self.strips_viewport.right() + CULL_MARGIN
             })
             .collect()
+    }
+
+    /// 横向滚动的最大值（内容恰好贴住视口右缘）。
+    pub fn max_scroll(&self, count: usize) -> f32 {
+        if count == 0 {
+            return 0.0;
+        }
+        let content = BODY_PAD * 2.0 + count as f32 * STRIP_STEP - STRIP_SPACING;
+        (content - self.strips_viewport.width()).max(0.0)
     }
 }
 
 /// 命中区域。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixerHit {
-    /// 标题栏（拖拽面板）。
-    Title,
     /// 第 `index` 条的推子。
     Fader(usize),
     /// 第 `index` 条的声像。
@@ -124,33 +170,48 @@ pub enum MixerHit {
     Mute(usize),
     /// 第 `index` 条的独奏。
     Solo(usize),
+    /// 主控推子。
+    MasterVolume,
 }
 
-/// 命中测试（`pos` 为屏幕坐标）。
+/// 推子轨道区域（通道条中部竖条；与绘制端的轨道矩形一致）。
+fn fader_rect(strip: Rect) -> Rect {
+    Rect::from_min_max(
+        egui::pos2(strip.left() + 16.0, strip.top() + 24.0),
+        egui::pos2(strip.right() - 16.0, strip.bottom() - 48.0),
+    )
+}
+
+/// 主控推子区域（主控条没有底部 P/M/S 行）。
+fn master_fader_rect(strip: Rect) -> Rect {
+    Rect::from_min_max(
+        egui::pos2(strip.left() + 16.0, strip.top() + 24.0),
+        egui::pos2(strip.right() - 16.0, strip.bottom() - 24.0),
+    )
+}
+
+/// 命中测试（`pos` 为窗口逻辑坐标）。
 pub fn hit_test(pos: egui::Pos2, layout: &MixerLayout, model: &MixerModel) -> Option<MixerHit> {
-    if !layout.panel.contains(pos) {
-        return None;
-    }
-    if layout.title.contains(pos) {
-        return Some(MixerHit::Title);
+    if let Some(master) = layout.master
+        && master.contains(pos)
+    {
+        return master_fader_rect(master)
+            .contains(pos)
+            .then_some(MixerHit::MasterVolume);
     }
     for index in layout.visible(model.strips.len(), model.scroll_x) {
         let strip = layout.strip_rect(index, model.scroll_x);
         if !strip.contains(pos) {
             continue;
         }
-        // 推子占中间竖条，声像/静音/独奏在底部三格。
-        let fader = Rect::from_min_max(
-            egui::pos2(strip.left() + 16.0, strip.top() + 16.0),
-            egui::pos2(strip.right() - 16.0, strip.bottom() - 48.0),
-        );
-        if fader.contains(pos) {
+        if fader_rect(strip).contains(pos) {
             return Some(MixerHit::Fader(index));
         }
-        let row_y = strip.bottom() - 40.0;
+        // 与绘制端三格顶边一致（`rect.bottom() - 34.0`），避免文字上方 6px 误命中。
+        let row_y = strip.bottom() - 34.0;
         if pos.y >= row_y {
             let third = strip.width() / 3.0;
-            let rel = (pos.x - strip.left()) / third;
+            let rel = ((pos.x - strip.left()) / third).clamp(0.0, 2.99);
             return Some(match rel as u32 {
                 0 => MixerHit::Pan(index),
                 1 => MixerHit::Mute(index),
@@ -161,149 +222,9 @@ pub fn hit_test(pos: egui::Pos2, layout: &MixerLayout, model: &MixerModel) -> Op
     None
 }
 
-/// 绘制面板。
-pub fn show(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) {
-    let painter = ui.painter();
-    painter.rect(
-        layout.panel,
-        CornerRadius::same(6),
-        theme::panel_bg(),
-        Stroke::new(1.0, theme::border()),
-        egui::StrokeKind::Inside,
-    );
-    painter.rect_filled(layout.title, CornerRadius::same(6), theme::toolbar_bg());
-    painter.text(
-        egui::pos2(layout.title.left() + 8.0, layout.title.center().y),
-        Align2::LEFT_CENTER,
-        "混音台",
-        FontId::proportional(12.0),
-        theme::text(),
-    );
-    if !model.maximized {
-        return;
-    }
-
-    for index in layout.visible(model.strips.len(), model.scroll_x) {
-        let Some(strip) = model.strips.get(index) else {
-            continue;
-        };
-        let rect = layout.strip_rect(index, model.scroll_x);
-        if !rect.intersects(layout.body) {
-            continue;
-        }
-        painter.rect(
-            rect,
-            CornerRadius::same(4),
-            theme::card_bg(),
-            Stroke::new(1.0, theme::border()),
-            egui::StrokeKind::Inside,
-        );
-        // 名称。
-        painter.text(
-            egui::pos2(rect.center().x, rect.top() + 8.0),
-            Align2::CENTER_TOP,
-            &strip.name,
-            FontId::proportional(11.0),
-            theme::text(),
-        );
-        // 推子：轨道 + 位置块。
-        let track = Rect::from_min_max(
-            egui::pos2(rect.center().x - 3.0, rect.top() + 24.0),
-            egui::pos2(rect.center().x + 3.0, rect.bottom() - 48.0),
-        );
-        painter.rect(
-            track,
-            CornerRadius::same(2),
-            theme::base_bg(),
-            Stroke::NONE,
-            egui::StrokeKind::Inside,
-        );
-        let h = track.height() - 6.0;
-        let knob_y = track.bottom() - 3.0 - h * strip.volume.clamp(0.0, 1.0);
-        painter.rect_filled(
-            Rect::from_min_size(
-                egui::pos2(track.left() - 5.0, knob_y - 4.0),
-                egui::vec2(track.width() + 10.0, 8.0),
-            ),
-            CornerRadius::same(2),
-            if strip.master {
-                theme::accent_strong()
-            } else {
-                theme::accent()
-            },
-        );
-        // 电平条（右侧）。
-        let meter = Rect::from_min_max(
-            egui::pos2(rect.right() - 12.0, rect.top() + 24.0),
-            egui::pos2(rect.right() - 12.0 + METER_WIDTH, rect.bottom() - 48.0),
-        );
-        painter.rect_filled(meter, CornerRadius::same(1), theme::base_bg());
-        let filled = meter.height() * strip.meter.clamp(0.0, 1.0);
-        painter.rect_filled(
-            Rect::from_min_size(
-                egui::pos2(meter.left(), meter.bottom() - filled),
-                egui::vec2(METER_WIDTH, filled),
-            ),
-            CornerRadius::same(1),
-            theme::success(),
-        );
-        // 底部三格：声像 / M / S。
-        let row_y = rect.bottom() - 34.0;
-        let third = rect.width() / 3.0;
-        for (i, (label, active)) in [
-            ("P", strip.pan.abs() > 0.01),
-            ("M", strip.muted),
-            ("S", strip.soloed),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let cell = Rect::from_min_size(
-                egui::pos2(rect.left() + i as f32 * third + 2.0, row_y),
-                egui::vec2(third - 4.0, 18.0),
-            );
-            painter.rect_filled(
-                cell,
-                CornerRadius::same(3),
-                if active {
-                    if label == "M" {
-                        theme::danger()
-                    } else {
-                        theme::warning()
-                    }
-                } else {
-                    theme::toolbar_bg()
-                },
-            );
-            painter.text(
-                cell.center(),
-                Align2::CENTER_CENTER,
-                label,
-                FontId::proportional(10.0),
-                if active {
-                    Color32::WHITE
-                } else {
-                    theme::text_muted()
-                },
-            );
-        }
-    }
-}
-
-/// 混音台动作（egui 输入 → 生产侧映射成 `Event`）。
+/// 混音台动作（egui 输入 → 主窗口的 `SidebarEvent`）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MixerAction {
-    /// 标题栏按下（开始拖拽面板）。
-    DragStarted,
-    /// 拖拽增量（逻辑像素）。
-    DragBy {
-        /// 横向增量。
-        dx: f32,
-        /// 纵向增量。
-        dy: f32,
-    },
-    /// 拖拽结束。
-    DragEnded,
     /// 第 `index` 条音量（0..=1）。
     Gain {
         /// 通道条下标。
@@ -324,184 +245,51 @@ pub enum MixerAction {
     Solo(usize),
     /// 主音量（0..=1）。
     MasterVolume(f32),
+    /// 普通通道条横向滚动到绝对偏移（像素）。
+    Scrolled(f32),
 }
 
-/// 拖拽状态（ctx-data）。
-const DRAG_ID: &str = "lumino.mixer.drag";
+/// 动作通道：一帧可产生多条（拖拽推子会连续产生）。
+const ACTION_ID: &str = "lumino.mixer.dialog.action";
 
-/// 处理本帧输入，返回动作（矩形与绘制同源）。
-pub fn interact(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) -> Vec<MixerAction> {
-    let (pointer, pressed, released, down, delta) = ui.input(|i| {
-        (
-            i.pointer.interact_pos(),
-            i.pointer.any_pressed() && i.pointer.primary_pressed(),
-            i.pointer.primary_released(),
-            i.pointer.primary_down(),
-            i.pointer.delta(),
-        )
-    });
-    let mut actions = Vec::new();
-
-    if pressed
-        && let Some(pos) = pointer
-        && layout.title.contains(pos)
-    {
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(egui::Id::unique(DRAG_ID), true));
-        actions.push(MixerAction::DragStarted);
-        return actions;
-    }
-
-    if down
-        && ui
-            .ctx()
-            .data(|d| d.get_temp::<bool>(egui::Id::unique(DRAG_ID)))
-            .unwrap_or(false)
-    {
-        if delta.x != 0.0 || delta.y != 0.0 {
-            actions.push(MixerAction::DragBy {
-                dx: delta.x,
-                dy: delta.y,
-            });
-        }
-        return actions;
-    }
-
-    if released {
-        let was = ui
-            .ctx()
-            .data(|d| d.get_temp::<bool>(egui::Id::unique(DRAG_ID)))
-            .unwrap_or(false);
-        if was {
-            ui.ctx()
-                .data_mut(|d| d.remove::<bool>(egui::Id::unique(DRAG_ID)));
-        }
-        let dragging = was;
-        if dragging {
-            actions.push(MixerAction::DragEnded);
-        }
-        return actions;
-    }
-
-    // 点击：推子/声像/静音/独奏。
-    if pressed
-        && let Some(pos) = pointer
-        && let Some(hit) = hit_test(pos, layout, model)
-    {
-        match hit {
-            MixerHit::Title => {}
-            MixerHit::Fader(index) => {
-                let strip = layout.strip_rect(index, model.scroll_x);
-                let top = strip.top() + 16.0;
-                let bottom = strip.bottom() - 48.0;
-                let value = ((bottom - pos.y) / (bottom - top).max(1.0)).clamp(0.0, 1.0);
-                actions.push(MixerAction::Gain { index, value });
-            }
-            MixerHit::Pan(index) => {
-                let strip = layout.strip_rect(index, model.scroll_x);
-                let third = strip.width() / 3.0;
-                let rel = ((pos.x - strip.left()) / third).clamp(0.0, 1.0);
-                actions.push(MixerAction::Pan {
-                    index,
-                    value: rel * 2.0 - 1.0,
-                });
-            }
-            MixerHit::Mute(index) => actions.push(MixerAction::Mute(index)),
-            MixerHit::Solo(index) => actions.push(MixerAction::Solo(index)),
-        }
-    }
-    actions
+/// 记录本帧动作。
+pub fn push_action(ctx: &egui::Context, action: MixerAction) {
+    let mut actions = ctx
+        .data(|d| d.get_temp::<Vec<MixerAction>>(Id::unique(ACTION_ID)))
+        .unwrap_or_default();
+    actions.push(action);
+    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), actions));
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// 取走本帧动作。
+pub fn take_actions(ctx: &egui::Context) -> Vec<MixerAction> {
+    ctx.data_mut(|d| d.remove_temp::<Vec<MixerAction>>(Id::unique(ACTION_ID)))
+        .unwrap_or_default()
+}
 
-    fn model(n: usize) -> MixerModel {
-        MixerModel {
-            maximized: true,
-            scroll_x: 0.0,
-            strips: (0..n)
-                .map(|i| MixerStrip {
-                    name: format!("T{i}"),
-                    volume: 0.5,
-                    pan: 0.0,
-                    muted: false,
-                    soloed: false,
-                    meter: 0.0,
-                    master: false,
-                })
-                .collect(),
-            master: None,
+/// 推子拖拽目标（ctx-data 跨帧保存）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DragTarget {
+    /// 第 `index` 条普通通道。
+    Track(usize),
+    /// 主控条。
+    Master,
+}
+
+const DRAG_ID: &str = "lumino.mixer.dialog.drag";
+
+fn drag_target(ctx: &egui::Context) -> Option<DragTarget> {
+    ctx.data(|d| d.get_temp::<DragTarget>(Id::unique(DRAG_ID)))
+}
+
+fn set_drag_target(ctx: &egui::Context, target: Option<DragTarget>) {
+    let id = Id::unique(DRAG_ID);
+    match target {
+        Some(target) => {
+            ctx.data_mut(|d| d.insert_temp(id, target));
         }
-    }
-
-    #[test]
-    fn layout_anchors_to_bottom() {
-        let m = model(2);
-        let layout = MixerLayout::new(60.0, 1000.0, 400.0, &m);
-        assert!(
-            (layout.panel.bottom() - 1000.0).abs() < 0.01,
-            "面板贴底锚点"
-        );
-        assert!((layout.title.top() - layout.panel.top()).abs() < 0.01);
-        assert!((layout.body.top() - (layout.panel.top() + TITLE_H)).abs() < 0.01);
-    }
-
-    #[test]
-    fn strip_geometry_uses_step_and_scroll() {
-        let m = model(3);
-        let layout = MixerLayout::new(0.0, 500.0, 400.0, &m);
-        let r0 = layout.strip_rect(0, 0.0);
-        let r1 = layout.strip_rect(1, 0.0);
-        assert!((r1.left() - r0.left() - STRIP_STEP).abs() < 0.01);
-        let r1s = layout.strip_rect(1, 20.0);
-        assert!((r1s.left() - (r1.left() - 20.0)).abs() < 0.01);
-    }
-
-    #[test]
-    fn visible_culls_by_viewport_with_margin() {
-        // 面板宽 200 → 主体约 200，只容 2 条；外扩 2 个步进仍能看到 0..=3。
-        let m = model(10);
-        let layout = MixerLayout::new(0.0, 500.0, 200.0, &m);
-        let vis = layout.visible(10, 0.0);
-        assert!(vis.contains(&0) && vis.contains(&1), "前两条必须可见");
-        assert!(!vis.contains(&9), "远端条应被裁剪");
-    }
-
-    #[test]
-    fn hit_test_maps_title_fader_and_buttons() {
-        let m = model(1);
-        let layout = MixerLayout::new(0.0, 500.0, 300.0, &m);
-        assert_eq!(
-            hit_test(layout.title.center(), &layout, &m),
-            Some(MixerHit::Title)
-        );
-        let strip = layout.strip_rect(0, 0.0);
-        assert_eq!(
-            hit_test(
-                egui::pos2(strip.center().x, strip.top() + 60.0),
-                &layout,
-                &m
-            ),
-            Some(MixerHit::Fader(0))
-        );
-        let third = strip.width() / 3.0;
-        assert_eq!(
-            hit_test(
-                egui::pos2(strip.left() + third * 1.5, strip.bottom() - 24.0),
-                &layout,
-                &m
-            ),
-            Some(MixerHit::Mute(0))
-        );
-        assert_eq!(
-            hit_test(
-                egui::pos2(strip.left() + third * 2.5, strip.bottom() - 24.0),
-                &layout,
-                &m
-            ),
-            Some(MixerHit::Solo(0))
-        );
+        None => {
+            ctx.data_mut(|d| d.remove::<DragTarget>(id));
+        }
     }
 }

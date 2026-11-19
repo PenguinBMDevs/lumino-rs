@@ -153,6 +153,15 @@ impl Root {
         }
     }
 
+    /// 设置混音台窗口是否打开（独立 OS 窗口）
+    pub fn set_mixer_dialog_open(&mut self, open: bool) {
+        if open {
+            self.state.dialog_type = DialogType::Mixer;
+        } else if self.state.dialog_type == DialogType::Mixer {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 设置撤销历史窗口是否打开（独立 OS 窗口；DRAW-035）
     pub fn set_history_dialog_open(&mut self, open: bool) {
         if open {

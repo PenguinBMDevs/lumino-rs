@@ -40,30 +40,10 @@ pub enum Event {
     TrackGainChanged(usize, f32),
     /// 音轨声像变化（-1..1，0 = 居中）
     TrackPanChanged(usize, f32),
-    /// 混音台浮动面板开关切换
+    /// 混音台独立窗口开关切换
     MixerPanelToggled,
-    /// 混音台浮动面板最大化/最小化（展开/收起主体）切换
-    MixerPanelMaximizeToggled,
-    /// 混音台浮动面板拖拽（鼠标移动时的相对坐标，单位为逻辑像素）
-    MixerPanelDragged(f32, f32),
-    /// 混音台面板拖拽**增量**（egui 侧逐帧给出位移，单位为逻辑像素）
-    ///
-    /// 与 [`Self::MixerPanelDragged`] 的区别：那个携带的是绝对光标位置、由状态机
-    /// 自己求差；这里直接是位移，处理端只做累加，避免把增量当坐标导致漂移。
-    MixerPanelDragDelta {
-        /// 横向位移。
-        dx: f32,
-        /// 纵向位移（屏幕坐标向下为正）。
-        dy: f32,
-    },
-    /// 混音台浮动面板拖拽开始（标题栏按下）
-    MixerPanelDragStarted,
-    /// 混音台浮动面板拖拽结束（松开）
-    MixerPanelDragEnded,
     /// 混音台主音量（全局音量控制器）变化，0..=127
     MixerPanelMasterVolumeChanged(u8),
-    /// 混音台主体横向滚动偏移变化（用于视口裁剪节流），单位为逻辑像素
-    MixerPanelScrolled(f32),
     /// 多轨同时选择
     TracksSelected(Vec<usize>),
     /// 添加音轨

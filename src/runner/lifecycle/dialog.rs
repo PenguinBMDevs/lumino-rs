@@ -1,5 +1,7 @@
 //! 对话框事件处理模块
 
+mod mixer;
+
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
@@ -164,6 +166,14 @@ impl RunnerInner {
         // 如果应该关闭，关闭对话框
         if should_close {
             self.window_state.dialog_manager.close_dialog(window_id);
+            // 混音台窗口被 X 关闭 / 被 Runner 请求关闭：主窗口镜像同步落回 false，
+            // 否则路由栏灯条会一直亮着，下一帧 `sync_mixer_dialog` 还会把它再开回来。
+            if dialog_type == Some(DialogType::Mixer) {
+                self.window_state.window.ui_mut().set_mixer_open(false);
+                // 允许用户关掉后立刻再点开：不复位会让 `sync_mixer_dialog` 误以为
+                // 本轮请求已发出而拒绝重建窗口。
+                self.mixer_open_requested = false;
+            }
         }
 
         // 保存确认对话框被窗口 X 关闭（未点击任何按钮）→ 视为「取消」关闭操作，

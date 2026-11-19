@@ -200,6 +200,11 @@ impl DialogWindow {
                 let (steps, current) = main_ui.history_view();
                 ui.set_history_view(steps, current);
             }
+            DialogType::Mixer => {
+                // 通道条快照由 Runner 在 `sync_mixer_dialog` 中逐帧注入；
+                // 这里只切换对话框类型，让 overlay 渲染混音台视图。
+                ui.set_mixer_dialog_open(true);
+            }
         }
 
         // REF-001：**不在此处显示窗口**。窗口要等「入册后的首帧」测量完内容尺寸

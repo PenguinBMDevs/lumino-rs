@@ -32,6 +32,7 @@ mod file_dialog;
 pub mod handlers;
 mod mask_panel;
 mod memory;
+mod mixer_dialog;
 mod mixer_panel;
 mod state;
 pub(crate) mod video_clip_math;
@@ -71,8 +72,10 @@ pub struct Root {
     pub recording: editor::recording::RecordingState,
     /// Toast 通知管理器（用于编辑拦截/操作反馈等临时通知）
     pub toast: crate::toast::ToastManager,
-    /// 浮动混音台面板状态（打开/关闭、拖拽偏移、最大化）
+    /// 混音台主窗口镜像状态（是否请求打开独立窗口 + 主音量）
     pub(crate) mixer_panel: crate::root::mixer_panel::MixerPanelState,
+    /// 混音台**对话框**本地状态（快照 / 滚动 / 待回放动作）
+    pub(crate) mixer_dialog: crate::root::mixer_dialog::MixerDialogState,
     /// 遮罩参数面板（DRAW-010）：右键「遮罩设置…」打开
     pub(crate) mask_panel: crate::root::mask_panel::MaskPanelState,
     /// 窗口最大化/还原保护标志，阻止路由意外切换
@@ -167,6 +170,7 @@ impl Root {
                 recording: editor::recording::RecordingState::new(),
                 toast: crate::toast::ToastManager::new(),
                 mixer_panel: crate::root::mixer_panel::MixerPanelState::default(),
+                mixer_dialog: crate::root::mixer_dialog::MixerDialogState::default(),
                 mask_panel: crate::root::mask_panel::MaskPanelState::default(),
                 window_resize_guard: false,
                 pending_i2m: None,

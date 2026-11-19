@@ -127,11 +127,6 @@ struct OverlayFrame<'a> {
     mask_panel: Option<lumino_ui_egui::mask_panel::MaskPanelModel>,
     /// 纹理预览（渲染器 16:9 卡片 / 全屏瀑布流）；`Some` 时由 egui 铺图。
     video_preview: Option<lumino_ui_egui::chrome::TexturePreviewModel>,
-    /// 混音台（布局 + 模型）；`Some` 时由 egui 绘制并接管输入。
-    mixer: Option<(
-        lumino_ui_egui::mixer::MixerLayout,
-        lumino_ui_egui::mixer::MixerModel,
-    )>,
     /// 视频剪辑时间轴（真实矩形 + 模型）；`Some` 且开关打开时由 egui 绘制。
     video_timeline: Option<(
         egui::Rect,
@@ -267,7 +262,6 @@ impl EguiOverlay {
         lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
         lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
         lumino_ui_egui::chrome::set_renderer_panel(&ctx, frame.renderer_panel.clone());
-        lumino_ui_egui::chrome::set_mixer(&ctx, frame.mixer.clone());
         lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
         lumino_ui_egui::chrome::set_mask_panel(&ctx, frame.mask_panel.clone());
         // 右下角浮层：Toast 通知 + 首次使用帮助提示（上一代 视图已删除）。
@@ -591,10 +585,6 @@ impl Host {
             text_tool: self.root.text_tool_model(),
             velocity_panel: self.root.velocity_panel_model(),
             render_preview: self.root.waterfall_player.view.clone(),
-            mixer: self.root.mixer_model(
-                size.width as f32 / pixels_per_point.max(1e-3),
-                size.height as f32 / pixels_per_point.max(1e-3),
-            ),
             editor_texture: self.egui_editor_texture.clone(),
             events,
             focused,

@@ -9,5 +9,6 @@
 
 mod apply;
 mod collaboration;
+mod mixer;
 mod state;
 mod video;
