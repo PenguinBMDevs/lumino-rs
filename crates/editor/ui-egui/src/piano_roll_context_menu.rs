@@ -1,29 +1,35 @@
-//! 钢琴卷帘右键上下文菜单（egui 版，图标 + 文字的行列布局）。
+//! 钢琴卷帘右键上下文菜单（egui 版，图标 + 文字的单竖列）。
 //!
 //! 取代 上一代 `ui-editor::context_menu::view`：条目集与文案来自
 //! `lumino_message::context_menu`（单一来源），这里只负责布局 / 命中 / 绘制。
 //!
-//! # 为什么不是图标格子（DRAW-046）
+//! # 布局
+//!
+//! 固定一列：常规动作在前，目标专属动作在后，组间画一条分隔线。
+//! - 列宽按最长文字的 galley 实测（CJK / 拉丁同一套度量，不靠字符数估算）；
+//! - 行高 24；待确认图形 27 行可能高于 720p 可用区 → 面板高度钳到可用区，
+//!   面板内滚轮滚动并显示细滚动条，**不拆列、不隐藏条目**；
+//! - 键盘：上用下移、回车触发；置灰项不可点（方向键左右不再切列）。
+//!
+//! # 为什么不是图标格子
 //!
 //! 图标库只有 10 个右键菜单字形，而待确认图形有 27 个动作；实测 27 个槽位
 //! 只用到 8 个字形，其中「齿轮」被 8 个动作复用。图标无法承担区分职责，
-//! 因此改为 REAPER 式行式菜单：每行 = 图标 + 文字，列内自上而下、列间自左向右。
-//!
-//! # 布局
-//!
-//! - 列宽按该列最长文字的 galley 实测（CJK / 拉丁同一套度量，不靠字符数估算）；
-//! - 行高 24，待确认图形 19 行 = 472px，仍在 720p 可用区内；
-//! - 键盘：左右切列、上下列内移动、回车触发；置灰项不可点。
+//! 因此保留 REAPER 式行式菜单（每行 = 图标 + 文字），但收成单竖列。
 
-use egui::{Color32, CornerRadius, FontId, Pos2, Rect, Stroke, StrokeKind, Vec2};
-use lumino_message::context_menu::{item_disabled_hint, item_enabled, item_label, menu_columns};
-use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction};
+use egui::{Color32, Pos2, Rect, Vec2};
+use lumino_message::context_menu::{item_enabled, menu_groups};
+use lumino_message::{
+    ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem as Item,
+};
 
 use crate::icons::IconCache;
 
+mod geometry;
 mod icons;
+mod render;
 
-use icons::item_icon;
+pub use geometry::{MenuLayout, item_rect, layout, place};
 
 /// 行高。
 const ROW_H: f32 = 24.0;
@@ -35,8 +41,8 @@ const ICON_GAP: f32 = 8.0;
 const ROW_PAD: f32 = 6.0;
 /// 面板内边距。
 const PADDING: f32 = 8.0;
-/// 列间距。
-const COLUMN_GAP: f32 = 16.0;
+/// 组间分隔线占位（1px 线 + 上下各 4px）。
+const SEPARATOR_H: f32 = 9.0;
 /// 菜单文字字号。
 const TEXT_SIZE: f32 = 12.0;
 /// 弹出位置相对鼠标的偏移。
@@ -47,6 +53,8 @@ const PANEL_BG: Color32 = Color32::from_rgba_premultiplied(15, 15, 20, 245);
 const ROW_HOVER: Color32 = Color32::from_rgba_premultiplied(31, 31, 31, 31);
 /// 按下底色（白色 22%，预乘）。
 const ROW_PRESSED: Color32 = Color32::from_rgba_premultiplied(56, 56, 56, 56);
+/// 组间分隔线。
+const SEPARATOR: Color32 = Color32::from_rgb(52, 52, 60);
 /// 正文色（面板固定深色，不跟随主题）。
 const TEXT: Color32 = Color32::from_rgb(242, 242, 242);
 /// 置灰文字色。
@@ -55,6 +63,14 @@ const TEXT_DISABLED: Color32 = Color32::from_rgb(120, 120, 126);
 const ICON_DISABLED: Color32 = Color32::from_rgb(96, 96, 102);
 /// 键盘聚焦框色。
 const FOCUS_RING: Color32 = Color32::from_rgb(120, 170, 255);
+/// 滚动条宽度。
+const SCROLL_BAR_W: f32 = 3.0;
+/// 滚动条与内容右缘的间距。
+const SCROLL_BAR_GAP: f32 = 3.0;
+/// 滚动条轨道色（白色 8%，预乘）。
+const SCROLL_TRACK: Color32 = Color32::from_rgba_premultiplied(20, 20, 20, 20);
+/// 滚动条滑块色（白色 26%，预乘）。
+const SCROLL_THUMB: Color32 = Color32::from_rgba_premultiplied(66, 66, 66, 66);
 
 /// 右键菜单模型（全部为窗口逻辑坐标）。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,128 +83,36 @@ pub struct PianoRollMenuModel {
     pub target: ContextMenuTarget,
 }
 
-/// 一列的几何（`left` 为窗口坐标，`width` 为该列行宽）。
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct ColumnLayout {
-    left: f32,
-    width: f32,
-    rows: usize,
-}
-
-/// 本帧菜单几何（窗口坐标）。
-#[derive(Debug, Clone, PartialEq)]
-pub struct MenuLayout {
-    /// 面板矩形。
-    pub panel: Rect,
-    /// 各列的左边界与行宽。
-    columns: Vec<ColumnLayout>,
-}
-
-impl MenuLayout {
-    /// 列数。
-    pub fn column_count(&self) -> usize {
-        self.columns.len()
-    }
-}
-
-/// 按列宽与行数放置面板（纯几何，可在无 `egui::Context` 的测试里直接调用）。
-///
-/// `widths` 是每列的行宽，`rows` 是每列的行数。
-pub fn place(model: &PianoRollMenuModel, widths: &[f32], rows: &[usize]) -> MenuLayout {
-    let count = widths.len().max(1) as f32;
-    let content_w: f32 = widths.iter().sum::<f32>() + COLUMN_GAP * (count - 1.0);
-    let max_rows = rows.iter().copied().max().unwrap_or(0) as f32;
-    let size = Vec2::new(content_w + PADDING * 2.0, max_rows * ROW_H + PADDING * 2.0);
-
-    let x = (model.position.x + OFFSET).clamp(
-        model.available.left(),
-        (model.available.right() - size.x - OFFSET).max(model.available.left()),
-    );
-    let below = model.position.y + OFFSET;
-    let y = if below + size.y > model.available.bottom() {
-        (model.position.y - size.y - OFFSET).max(model.available.top())
-    } else {
-        below
-    };
-    let y = y.min((model.available.bottom() - size.y).max(model.available.top()));
-    let panel = Rect::from_min_size(egui::pos2(x, y), size);
-
-    let mut columns = Vec::with_capacity(widths.len());
-    let mut left = panel.left() + PADDING;
-    for (index, width) in widths.iter().enumerate() {
-        columns.push(ColumnLayout {
-            left,
-            width: *width,
-            rows: rows.get(index).copied().unwrap_or(0),
-        });
-        left += width + COLUMN_GAP;
-    }
-    MenuLayout { panel, columns }
-}
-
-/// 第 `column` 列第 `row` 行的矩形（窗口坐标）；越界返回 [`Rect::NOTHING`]。
-pub fn item_rect(layout: &MenuLayout, column: usize, row: usize) -> Rect {
-    let Some(column) = layout.columns.get(column) else {
-        return Rect::NOTHING;
-    };
-    if row >= column.rows {
-        return Rect::NOTHING;
-    }
-    Rect::from_min_size(
-        egui::pos2(
-            column.left,
-            layout.panel.top() + PADDING + row as f32 * ROW_H,
-        ),
-        Vec2::new(column.width, ROW_H),
-    )
-}
-
-/// 按当前字体实测每列行宽（文字按 galley 度量，CJK / 拉丁都不截断）。
-fn column_widths(ui: &egui::Ui, target: ContextMenuTarget) -> Vec<f32> {
-    menu_columns(target)
+/// 单列的全部条目（按分组顺序摊平）。
+fn flat_items(target: ContextMenuTarget) -> Vec<Item> {
+    menu_groups(target)
         .iter()
-        .map(|items| {
-            let mut text = 0.0_f32;
-            for item in *items {
-                let galley = ui.painter().layout_no_wrap(
-                    item_label(*item).to_owned(),
-                    FontId::proportional(TEXT_SIZE),
-                    TEXT,
-                );
-                text = text.max(galley.size().x);
-            }
-            ROW_PAD * 2.0 + ICON + ICON_GAP + text
-        })
+        .flat_map(|group| group.iter().copied())
         .collect()
-}
-
-/// 计算本帧布局（需要 `ui` 来实测文字宽度）。
-pub fn layout(ui: &egui::Ui, model: &PianoRollMenuModel) -> MenuLayout {
-    let columns = menu_columns(model.target);
-    let widths = column_widths(ui, model.target);
-    let rows: Vec<usize> = columns.iter().map(|items| items.len()).collect();
-    place(model, &widths, &rows)
 }
 
 const ACTION_ID: &str = "lumino.piano-roll-menu.action";
 const FOCUS_ID: &str = "lumino.piano-roll-menu.focus";
 const LAYOUT_ID: &str = "lumino.piano-roll-menu.layout";
 
-/// 键盘焦点：位置变了就归零（同一位置重开保持）。
+/// 键盘焦点与滚动位置（位置 / 目标变了就归零；同一位置重开保持）。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct MenuFocus {
     position: Pos2,
-    column: usize,
+    target: ContextMenuTarget,
     row: usize,
     /// 是否用过键盘（鼠标浏览时不画聚焦框）
     keyboard: bool,
+    /// 内容滚动偏移（像素）
+    scroll: f32,
 }
 
 fn load_focus(ctx: &egui::Context, model: &PianoRollMenuModel) -> MenuFocus {
     ctx.data(|d| d.get_temp::<MenuFocus>(egui::Id::unique(FOCUS_ID)))
-        .filter(|focus| focus.position == model.position)
+        .filter(|focus| focus.position == model.position && focus.target == model.target)
         .unwrap_or(MenuFocus {
             position: model.position,
+            target: model.target,
             ..MenuFocus::default()
         })
 }
@@ -215,52 +139,99 @@ pub fn take_action(ctx: &egui::Context) -> Option<PianoRollContextMenuAction> {
     .flatten()
 }
 
-/// 键盘导航：左右切列、上下列内移动、回车触发。
+/// 指针在面板上时用滚轮滚动菜单（面板放得下时不拦截）。
+fn apply_wheel(ctx: &egui::Context, layout: &MenuLayout, focus: &mut MenuFocus) {
+    if layout.max_scroll() <= 0.0 {
+        return;
+    }
+    let Some(pointer) = ctx.input(|i| i.pointer.hover_pos()) else {
+        return;
+    };
+    if !layout.panel.contains(pointer) {
+        return;
+    }
+    // 读取后清零（与 `ScrollArea` 同口径）：不消费的话，滚动量会在后续帧
+    // 反复生效，滚一格就连滚 150ms。
+    let delta = ctx.input_mut(|i| {
+        let delta = i.smooth_scroll_delta.y;
+        i.smooth_scroll_delta = Vec2::ZERO;
+        delta
+    });
+    if delta != 0.0 {
+        focus.scroll = (focus.scroll - delta).clamp(0.0, layout.max_scroll());
+        // 焦点跟着视口走：滚轮之后按上下键应从看见的第一行继续，而不是跳回顶部。
+        focus.row = layout.row_at(focus.scroll);
+    }
+}
+
+/// 键盘导航：上下移动、回车触发；左右不再切列。
+///
+/// 返回焦点行是否被方向键移动（只有移动时才需要把焦点行滚进视口；
+/// 否则滚轮滚动会被"焦点行在视口外"误判成需要回滚）。
 fn apply_keyboard(
     ctx: &egui::Context,
     target: ContextMenuTarget,
+    items: &[Item],
     focus: &mut MenuFocus,
     action: &mut Option<PianoRollContextMenuAction>,
-) {
-    let columns = menu_columns(target);
-    if columns.is_empty() {
-        return;
+) -> bool {
+    if items.is_empty() {
+        return false;
     }
-    let (down, up, right, left, confirm) = ctx.input(|i| {
+    let (down, up, confirm) = ctx.input(|i| {
         (
             i.key_pressed(egui::Key::ArrowDown),
             i.key_pressed(egui::Key::ArrowUp),
-            i.key_pressed(egui::Key::ArrowRight),
-            i.key_pressed(egui::Key::ArrowLeft),
             // 只认回车：空格在编辑器里另有语义（播放 / 停止），不能拿来确认菜单。
             i.key_pressed(egui::Key::Enter),
         )
     });
-    if !(down || up || right || left || confirm) {
-        return;
+    if !(down || up || confirm) {
+        return false;
     }
     focus.keyboard = true;
-    focus.column = focus.column.min(columns.len() - 1);
-    if right && focus.column + 1 < columns.len() {
-        focus.column += 1;
-    }
-    if left && focus.column > 0 {
-        focus.column -= 1;
-    }
-    let len = columns[focus.column].len();
-    focus.row = focus.row.min(len.saturating_sub(1));
+    focus.row = focus.row.min(items.len() - 1);
     if down {
-        focus.row = (focus.row + 1).min(len.saturating_sub(1));
+        focus.row = (focus.row + 1).min(items.len() - 1);
     }
     if up {
         focus.row = focus.row.saturating_sub(1);
     }
     if confirm
-        && let Some(item) = columns[focus.column].get(focus.row).copied()
+        && let Some(item) = items.get(focus.row).copied()
         && item_enabled(target, item)
     {
         *action = Some(PianoRollContextMenuAction::ItemClicked(item));
     }
+    down || up
+}
+
+/// 键盘移动后把焦点行滚进视口。
+fn ensure_visible(layout: &MenuLayout, row: usize, scroll: &mut f32) {
+    let Some(top) = layout.row_top(row) else {
+        return;
+    };
+    let viewport = layout.content.height();
+    if top < *scroll {
+        *scroll = top;
+    } else if top + ROW_H > *scroll + viewport {
+        *scroll = top + ROW_H - viewport;
+    }
+    *scroll = scroll.clamp(0.0, layout.max_scroll());
+}
+
+/// 点击画布空白区域关闭（与画布背景层一致，仅左键）；面板内点击由行处理。
+fn clicked_outside(ctx: &egui::Context, model: &PianoRollMenuModel, layout: &MenuLayout) -> bool {
+    // 注意：**不能**用 `any_click()`——右键开菜单的那一次右键会被重放进本帧，
+    // 菜单会「刚打开就被自己关掉」。
+    ctx.input(|input| {
+        input
+            .pointer
+            .primary_clicked()
+            .then(|| input.pointer.interact_pos())
+            .flatten()
+            .is_some_and(|pos| model.available.contains(pos) && !layout.panel.contains(pos))
+    })
 }
 
 /// 绘制菜单并返回本帧动作。
@@ -272,133 +243,38 @@ pub fn show(
     model: &PianoRollMenuModel,
     icons: &mut IconCache,
 ) -> Option<PianoRollContextMenuAction> {
-    let columns = menu_columns(model.target);
-    let layout = layout(ui, model);
+    let items = flat_items(model.target);
+    let mut focus = load_focus(ui.ctx(), model);
+    let mut layout = layout(ui, model, focus.scroll);
     if layout.panel.width() <= 0.0 || layout.panel.height() <= 0.0 {
         return None;
     }
-    ui.ctx()
-        .data_mut(|d| d.insert_temp(egui::Id::unique(LAYOUT_ID), layout.clone()));
-    let mut focus = load_focus(ui.ctx(), model);
+
+    apply_wheel(ui.ctx(), &layout, &mut focus);
     let mut action = None;
+    let moved = apply_keyboard(ui.ctx(), model.target, &items, &mut focus, &mut action);
+    if moved {
+        ensure_visible(&layout, focus.row, &mut focus.scroll);
+    }
+    layout.set_scroll(focus.scroll);
+
     // 独立图层：菜单覆盖区域内不再命中画布骨架（滚动条 / 框选层），
     // 否则悬停与点击会"穿透"到下层。
+    let mut clicked = None;
     crate::chrome::floating_panel(ui.ctx(), "lumino.piano-roll-menu", layout.panel, |ui| {
-        let painter = ui.painter().with_clip_rect(model.available);
-        painter.rect(
-            layout.panel,
-            CornerRadius::same(8),
-            PANEL_BG,
-            Stroke::new(0.0, Color32::TRANSPARENT),
-            StrokeKind::Inside,
-        );
-
-        apply_keyboard(ui.ctx(), model.target, &mut focus, &mut action);
-
-        for (column, items) in columns.iter().enumerate() {
-            for (row, item) in items.iter().copied().enumerate() {
-                let rect = item_rect(&layout, column, row);
-                let enabled = item_enabled(model.target, item);
-                let response = ui.interact(
-                    rect,
-                    egui::Id::unique(("lumino.piano-roll-menu", column, row)),
-                    egui::Sense::click(),
-                );
-                let pressed = enabled && response.is_pointer_button_down_on();
-                let hovered = enabled && response.hovered();
-                if pressed {
-                    painter.rect_filled(rect, CornerRadius::same(4), ROW_PRESSED);
-                } else if hovered {
-                    painter.rect_filled(rect, CornerRadius::same(4), ROW_HOVER);
-                }
-
-                let icon_rect = Rect::from_center_size(
-                    egui::pos2(rect.left() + ROW_PAD + ICON * 0.5, rect.center().y),
-                    Vec2::splat(ICON),
-                );
-                icons.paint_tinted(
-                    &painter,
-                    item_icon(item),
-                    icon_rect,
-                    Some(if enabled { TEXT } else { ICON_DISABLED }),
-                );
-                let galley = painter.layout_no_wrap(
-                    item_label(item).to_owned(),
-                    FontId::proportional(TEXT_SIZE),
-                    if enabled { TEXT } else { TEXT_DISABLED },
-                );
-                painter.galley(
-                    egui::pos2(
-                        icon_rect.right() + ICON_GAP,
-                        rect.center().y - galley.size().y * 0.5,
-                    ),
-                    galley,
-                    Color32::WHITE,
-                );
-
-                // 文字已经可见，只有置灰项需要额外解释为什么点不了。
-                let response = response.on_hover_cursor(if enabled {
-                    egui::CursorIcon::PointingHand
-                } else {
-                    egui::CursorIcon::NotAllowed
-                });
-                let response = if enabled {
-                    response
-                } else {
-                    response.on_hover_ui(|ui| {
-                        egui::Frame::new()
-                            .fill(Color32::from_rgba_premultiplied(20, 20, 26, 245))
-                            .inner_margin(egui::Margin::symmetric(6, 3))
-                            .corner_radius(CornerRadius::same(4))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(item_disabled_hint())
-                                        .size(11.0)
-                                        .color(Color32::from_rgb(150, 150, 158)),
-                                );
-                            });
-                    })
-                };
-                if enabled && response.clicked() {
-                    action = Some(PianoRollContextMenuAction::ItemClicked(item));
-                }
-            }
-        }
-
-        // 键盘聚焦框（只在用过方向键之后出现）。
-        if focus.keyboard
-            && columns
-                .get(focus.column)
-                .is_some_and(|items| focus.row < items.len())
-        {
-            let rect = item_rect(&layout, focus.column, focus.row).shrink(1.0);
-            painter.rect_stroke(
-                rect,
-                CornerRadius::same(4),
-                Stroke::new(1.5, FOCUS_RING),
-                StrokeKind::Inside,
-            );
-        }
-
-        // 点击画布空白区域关闭（与画布背景层一致，仅左键）；面板内点击由行处理。
-        // 注意：**不能**用 `any_click()`——右键开菜单的那一次右键会被重放进本帧，
-        // 菜单会「刚打开就被自己关掉」。
-        if action.is_none()
-            && let Some(pos) = ui.ctx().input(|input| {
-                input
-                    .pointer
-                    .primary_clicked()
-                    .then(|| input.pointer.interact_pos())
-                    .flatten()
-            })
-            && model.available.contains(pos)
-            && !layout.panel.contains(pos)
-        {
-            action = Some(PianoRollContextMenuAction::Close);
-        }
+        clicked = render::panel(ui, model, &items, &layout, &focus, icons);
         None
     });
+
+    if action.is_none() {
+        action = clicked;
+    }
+    if action.is_none() && clicked_outside(ui.ctx(), model, &layout) {
+        action = Some(PianoRollContextMenuAction::Close);
+    }
     store_focus(ui.ctx(), focus);
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(egui::Id::unique(LAYOUT_ID), layout));
     action
 }
 

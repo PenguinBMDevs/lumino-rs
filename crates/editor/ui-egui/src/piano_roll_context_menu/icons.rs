@@ -43,7 +43,7 @@ pub(super) fn item_icon(item: Item) -> Icon {
         Item::VelocityUp => Icon::TransposeUp,
         Item::CopyShapeText => Icon::ContextMenuCopy,
         Item::ReturnToDrawer => Icon::Undo,
-        // 上一代遗留变体：这些条目不再进入 `menu_columns`，保留兜底映射只为穷尽 match。
+        // 上一代遗留变体：这些条目不再进入 `menu_groups`，保留兜底映射只为穷尽 match。
         Item::SplitLiveShape | Item::SplitJoinedShape => Icon::Undo,
         Item::Straighten => Icon::Quantize,
         Item::StraightenOff => Icon::Ban,

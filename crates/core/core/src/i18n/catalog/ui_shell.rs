@@ -269,7 +269,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         }
         "以选中内容为刀" => Some("Use Selection as Knife"),
         "取消刀" => Some("Clear Knife"),
-        // DRAW-046：右键菜单两列布局里的置灰项提示
+        // 右键菜单单竖列里的置灰项提示
         "该操作不适用于当前目标" => Some("Not available for this target"),
         "已取消刀" => Some("Knife cleared"),
         "当前没有刀" => Some("No knife is set"),
