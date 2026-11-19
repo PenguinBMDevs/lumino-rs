@@ -1,8 +1,19 @@
-//! REND-016 #139 事件积压治理与负载治理器单元测试。
+//! REND-016 #139 事件积压治理（有界 drain / 过期丢弃 / 准入预算）单元测试。
 //!
-//! 自 `drain.rs` 拆出（文件行数守卫 <400）。
+//! 自 `drain.rs` 拆出（文件行数守卫 <400）；负载治理器用例见 `tests/governor.rs`。
 
+use super::governor::EMERGENCY_NOTE_ON_BUDGET;
 use super::*;
+
+mod governor;
+
+/// 计数闸 / 紧急冲洗 / 准入预算测试用的时间预算：大到墙钟永不成为约束。
+///
+/// 这些用例断言的是**事件条数**语义，与墙钟无关；若沿用真实预算（1024@64k
+/// 只有 4.8ms），CI 慢机一次调度抢占就能让时间闸在 256 条处先触发，断言随
+/// 负载抖动（macOS runner 实测 `left: 256, right: 4096`）。预算本身随块周期
+/// 的映射由 [`test_drain_time_budget_scales_with_block_period`] 单独覆盖。
+const TEST_DRAIN_BUDGET: Duration = Duration::from_secs(60);
 
 fn test_stats() -> PlaybackStatsReader {
     PlaybackStatsReader {
@@ -37,103 +48,31 @@ fn test_event_deadline_scale_and_floor() {
     assert_eq!(event_deadline(16, 64_000), Duration::from_millis(50));
 }
 
-/// 正常负载下治理器保持 Normal，且无预算限制。
+/// 时间预算 = 块周期 × [`DRAIN_DUTY`]，夹在 [4ms, 32ms]（块大时随周期放大）。
 #[test]
-fn test_governor_stays_normal_under_normal_load() {
-    let mut g = Governor::new();
-    for _ in 0..300 {
-        assert_eq!(g.observe(0.5, false, false), None);
-    }
-    assert_eq!(g.level(), GovernorLevel::Normal);
-    assert_eq!(g.note_on_budget(), None);
-}
-
-/// 高负载持续累计后逐级升级：High → Overload → Emergency，各级预算正确。
-#[test]
-fn test_governor_escalates_on_sustained_load() {
-    let mut g = Governor::new();
-    // 0.95 > HIGH_ENTER
-    for _ in 0..10 {
-        g.observe(0.95, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::Normal, "未满持续块数不得升级");
-    for _ in 0..50 {
-        g.observe(0.95, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::High);
-    assert_eq!(g.note_on_budget(), None, "High 级不限制预算");
-
-    // 1.3 > OVERLOAD_ENTER（阈值 1.2），持续累计后进入 Overload
-    for _ in 0..60 {
-        g.observe(1.3, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::Overload);
-    assert_eq!(g.note_on_budget(), Some(OVERLOAD_NOTE_ON_BUDGET));
-
-    // 1.6 > EMERGENCY_ENTER（阈值 1.5），持续累计后进入 Emergency
-    for _ in 0..60 {
-        g.observe(1.6, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::Emergency);
-    assert_eq!(g.note_on_budget(), Some(EMERGENCY_NOTE_ON_BUDGET));
-}
-
-/// 「时间已落后」证据可越过持续块数要求，直接进入 Emergency。
-#[test]
-fn test_governor_evidence_enters_emergency_immediately() {
-    let mut g = Governor::new();
-    let change = g.observe(0.5, true, false);
-    assert_eq!(change, Some(GovernorLevel::Emergency));
-    assert_eq!(g.note_on_budget(), Some(EMERGENCY_NOTE_ON_BUDGET));
-}
-
-/// 释放看「压力」：压力消失持续 `RELEASE_SUSTAIN_BLOCKS` 块即逐级回落；
-/// Emergency 退出后有冷却期（期间证据也不能直入）。
-#[test]
-fn test_governor_release_on_no_pressure_and_cooldown() {
-    let mut g = Governor::new();
-    g.observe(0.5, true, false); // 证据直入 Emergency
-    assert_eq!(g.level(), GovernorLevel::Emergency);
-
-    // 无压力但未满释放块数：不得降级
-    for _ in 0..(RELEASE_SUSTAIN_BLOCKS - 1) {
-        g.observe(0.5, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::Emergency, "未满释放块数不得降级");
-    g.observe(0.5, false, false);
-    assert_eq!(g.level(), GovernorLevel::Overload, "无压力满额后逐级回落");
-
-    // 冷却期内：证据也不能直接重入 Emergency
-    assert_eq!(g.observe(0.5, true, false), None, "冷却期内禁止证据直入");
-    assert_eq!(g.level(), GovernorLevel::Overload);
-
-    // 冷却剩余 234；带压力喂高负载至冷却剩 9 块 → 保持 Overload（冷却门控升级）
-    for _ in 0..(EMERGENCY_COOLDOWN_BLOCKS - 10) {
-        g.observe(1.6, false, true);
-    }
-    assert_eq!(g.level(), GovernorLevel::Overload, "冷却未结束不得升级");
-
-    // 再喂 10 块 → 冷却归零 + 高负载持续 → 升级 Emergency
-    for _ in 0..10 {
-        g.observe(1.6, false, true);
-    }
-    assert_eq!(g.level(), GovernorLevel::Emergency, "冷却结束应可再次升级");
-}
-
-/// 丢弃压力持续存在时，即使负载 EMA 已回落也**不释放**（防止风暴未过就放行）。
-#[test]
-fn test_governor_pressure_blocks_release() {
-    let mut g = Governor::new();
-    g.observe(0.5, true, false);
-    assert_eq!(g.level(), GovernorLevel::Emergency);
-    for _ in 0..(RELEASE_SUSTAIN_BLOCKS * 5) {
-        g.observe(0.5, false, true);
-    }
-    assert_eq!(g.level(), GovernorLevel::Emergency, "有压力时不得释放");
-    for _ in 0..RELEASE_SUSTAIN_BLOCKS {
-        g.observe(0.5, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::Overload, "压力消失后应释放");
+fn test_drain_time_budget_scales_with_block_period() {
+    // 8ms 块（512@64k）：2.4ms → 下限 4ms（块极小时保住最低吞吐）。
+    assert_eq!(
+        drain_time_budget(Duration::from_millis(8)),
+        DRAIN_TIME_BUDGET_MIN
+    );
+    // 16ms 块（1024@64k）：4.8ms。
+    let mid = drain_time_budget(Duration::from_millis(16));
+    assert!(
+        mid >= Duration::from_micros(4_700) && mid <= Duration::from_micros(4_900),
+        "16ms 块预算应约 4.8ms，实际 {mid:?}"
+    );
+    // 100ms 块：30ms，仍在封顶内。
+    let wide = drain_time_budget(Duration::from_millis(100));
+    assert!(
+        wide >= Duration::from_micros(29_500) && wide <= Duration::from_micros(30_500),
+        "100ms 块预算应约 30ms，实际 {wide:?}"
+    );
+    // 128ms 块（8192@64k）：38.4ms → 上限 32ms。
+    assert_eq!(
+        drain_time_budget(Duration::from_millis(128)),
+        DRAIN_TIME_BUDGET_MAX
+    );
 }
 
 /// 只有过期 NoteOn 被丢；NoteOff / CC / PC 无论多老都保留；新鲜事件全保留。
@@ -208,11 +147,11 @@ fn test_drain_cap_defers_excess() {
     let stats = test_stats();
     let governor = Governor::new();
     let mut n = 0usize;
-    let first = drain_events(
+    let first = drain_events_with_budget(
         &rx,
         now,
         Duration::from_millis(50),
-        Duration::from_millis(16),
+        TEST_DRAIN_BUDGET,
         &governor,
         &stats,
         |_, _| n += 1,
@@ -223,11 +162,11 @@ fn test_drain_cap_defers_excess() {
     );
     assert_eq!(n, MAX_EVENTS_PER_BLOCK);
 
-    let second = drain_events(
+    let second = drain_events_with_budget(
         &rx,
         now,
         Duration::from_millis(50),
-        Duration::from_millis(16),
+        TEST_DRAIN_BUDGET,
         &governor,
         &stats,
         |_, _| n += 1,
@@ -259,11 +198,11 @@ fn test_drain_emergency_escalates_cap() {
     }
 
     let stats = test_stats();
-    let outcome = drain_events(
+    let outcome = drain_events_with_budget(
         &rx,
         now,
         Duration::from_millis(50),
-        Duration::from_millis(16),
+        TEST_DRAIN_BUDGET,
         &Governor::new(),
         &stats,
         |_, _| {},
@@ -274,20 +213,6 @@ fn test_drain_emergency_escalates_cap() {
         stats.dropped_note_ons() as usize,
         count,
         "全部过期 NoteOn 被丢弃"
-    );
-}
-
-/// 声部数即时升级：`force_emergency` 跳过证据/EMA 等待直入 Emergency。
-#[test]
-fn test_governor_force_emergency_escalates_immediately() {
-    let mut governor = Governor::new();
-    assert_eq!(governor.level(), GovernorLevel::Normal);
-    assert_eq!(governor.force_emergency(), GovernorLevel::Emergency);
-    assert_eq!(governor.level(), GovernorLevel::Emergency);
-    assert_eq!(
-        governor.note_on_budget(),
-        Some(EMERGENCY_NOTE_ON_BUDGET),
-        "即时升级后应施加 Emergency 准入预算"
     );
 }
 
@@ -317,11 +242,11 @@ fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
 
     let stats = test_stats();
     let mut delivered = 0usize;
-    let outcome = drain_events(
+    let outcome = drain_events_with_budget(
         &rx,
         now,
         Duration::from_millis(50),
-        Duration::from_millis(16),
+        TEST_DRAIN_BUDGET,
         &governor,
         &stats,
         |_, _| delivered += 1,
@@ -330,57 +255,6 @@ fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
     assert_eq!(outcome.dropped_expired, 0);
     assert_eq!(delivered, EMERGENCY_NOTE_ON_BUDGET + 1, "NoteOff 必须保留");
     assert_eq!(stats.dropped_note_ons(), 10);
-}
-
-/// REND-016 #139：Governor 等级 → 运行时声部上限映射（L4 软目标收缩，
-/// 值随块周期缩放，见 [`voice_limits_for`]）。
-#[test]
-fn test_governor_level_maps_to_voice_limit() {
-    let mut governor = Governor::new();
-    assert_eq!(governor.voice_limit(), None, "Normal 不限制");
-
-    // 按块周期缩放后的上限（512/1024 两档）。
-    governor.set_voice_limits(4_800, 3_200);
-    governor.force_emergency();
-    assert_eq!(
-        governor.voice_limit(),
-        Some(3_200),
-        "Emergency 用缩放后的上限（512 块 8ms 预算）"
-    );
-
-    // Overload：负载持续超阈值后使用 Overload 缩放上限。
-    let mut g = Governor::new();
-    g.set_voice_limits(4_800, 3_200);
-    for _ in 0..(ENTER_SUSTAIN_BLOCKS * 2) {
-        g.observe(OVERLOAD_ENTER_LOAD + 0.1, false, false);
-    }
-    assert_eq!(g.level(), GovernorLevel::Overload);
-    assert_eq!(g.voice_limit(), Some(4_800));
-}
-
-/// 声部上限随块周期缩放（每声部每块 ≈1µs）：512/1024/8192 三档 + 下限保底。
-#[test]
-fn test_voice_limits_scale_with_block_period() {
-    assert_eq!(
-        voice_limits_for(Duration::from_millis(8)),
-        (4_800, 3_200),
-        "512@64k：8ms 预算下 Emergency 只负担 3200 声部"
-    );
-    assert_eq!(
-        voice_limits_for(Duration::from_millis(16)),
-        (9_600, 6_400),
-        "1024@64k"
-    );
-    assert_eq!(
-        voice_limits_for(Duration::from_millis(128)),
-        (OVERLOAD_VOICE_LIMIT, EMERGENCY_VOICE_LIMIT),
-        "8192 块：封顶"
-    );
-    let (o, e) = voice_limits_for(Duration::from_millis(2));
-    assert!(
-        o >= OVERLOAD_VOICE_LIMIT_FLOOR && e >= EMERGENCY_VOICE_LIMIT_FLOOR,
-        "块极小时有下限保底"
-    );
 }
 
 /// 紧急冲洗：积压深时**一次调用**横扫整个过期区（时间预算内，远超旧 65536
@@ -412,13 +286,13 @@ fn test_drain_flushes_deep_backlog_in_one_pass() {
 
     let stats = test_stats();
     let mut delivered = 0usize;
-    let outcome = drain_events(
+    let outcome = drain_events_with_budget(
         &rx,
         now,
         Duration::from_millis(50),
-        // 大块周期 → 宽时间预算（60ms 冲洗），确保 6.5 万条在预算内扫完
-        // （小块预算下语义是"分块横扫"，见 `voice_limits_for` 同类设计）。
-        Duration::from_millis(100),
+        // 断言的是"一次调用横扫整个过期区"（条数语义），时间预算取大值以
+        // 排除墙钟抖动；真实预算下的分块横扫由计数闸单独保证。
+        TEST_DRAIN_BUDGET,
         &Governor::new(),
         &stats,
         |_, _| delivered += 1,
