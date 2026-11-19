@@ -173,3 +173,28 @@ fn test_gpu_load_display_serde_roundtrip() {
     assert_eq!(restored.gpu_load_display, GpuLoadDisplay::Instant);
     assert!(!restored.gpu_buffer_status_enabled);
 }
+
+/// 「无面板」第一屏不透明度：默认 20%，旧配置缺字段时回填 20%。
+#[test]
+fn test_first_screen_opacity_default_and_legacy() {
+    assert!(
+        (UiConfig::default().first_screen_opacity - 0.2).abs() < f32::EPSILON,
+        "第一屏不透明度默认应为 20%"
+    );
+
+    let mut value = serde_json::to_value(UiConfig::default()).expect("UiConfig 应能序列化为 JSON");
+    let removed = value
+        .as_object_mut()
+        .expect("序列化结果应为对象")
+        .remove("first_screen_opacity");
+    assert!(
+        removed.is_some(),
+        "默认配置应写出 first_screen_opacity 字段"
+    );
+
+    let restored: UiConfig = serde_json::from_value(value).expect("缺少新字段的旧配置应能反序列化");
+    assert!(
+        (restored.first_screen_opacity - 0.2).abs() < f32::EPSILON,
+        "旧配置缺字段应回填 20%"
+    );
+}

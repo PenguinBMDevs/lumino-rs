@@ -146,6 +146,26 @@ fn test_piano_roll_group_button_toggles_panel_closed() {
     assert_eq!(sidebar.active_group, Some(GroupId::PianoRoll));
 }
 
+/// 主窗口启动默认态：所有分组关闭，主区域留给「无面板」第一屏；
+/// 第一次点开钢琴卷帘组时，主视图 + 音轨列表一起回来。
+#[test]
+fn test_startup_first_screen_state_and_restore() {
+    let mut sidebar = Sidebar::new();
+    sidebar.enter_first_screen();
+
+    assert_eq!(sidebar.active_group, None, "启动态不应激活任何分组");
+    assert!(!sidebar.piano_roll_visible, "启动态不应打开钢琴卷帘");
+    assert!(!sidebar.panel_visible, "启动态不应打开左侧面板");
+    assert!(!sidebar.automation_panel_visible);
+    assert_eq!(sidebar.route, Route::File);
+
+    sidebar.update(Event::GroupToggled(GroupId::PianoRoll));
+
+    assert!(sidebar.piano_roll_visible, "点开卷帘组后主视图应出现");
+    assert!(sidebar.panel_visible, "首次点开应直接带回音轨列表");
+    assert_eq!(sidebar.active_group, Some(GroupId::PianoRoll));
+}
+
 /// 在工程走带界面点击音轨列表按钮：退出走带并恢复钢琴卷帘状态，同时打开音轨列表
 #[test]
 fn test_file_button_exits_arrangement_and_restores_state() {

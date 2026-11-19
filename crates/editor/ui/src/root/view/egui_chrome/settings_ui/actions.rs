@@ -107,6 +107,9 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
             UiField::MonitorRefreshInterval => {
                 Message::Settings(Event::MonitorRefreshIntervalChanged(*value))
             }
+            UiField::FirstScreenOpacity => {
+                Message::Settings(Event::FirstScreenOpacityChanged(*value))
+            }
             _ => return None,
         },
         SettingsAction::UiButton { field } if *field == UiField::BrowseProgramFont => {

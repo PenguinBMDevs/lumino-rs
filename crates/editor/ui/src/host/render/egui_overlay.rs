@@ -137,8 +137,8 @@ struct OverlayFrame<'a> {
         egui::Rect,
         lumino_ui_egui::video_clip_timeline::VideoTimelineModel,
     )>,
-    /// 主区域无任何视图：显示「无面板」默认第一屏（品牌图标 + 字标）。
-    first_screen: bool,
+    /// 主区域无任何视图：显示「无面板」默认第一屏（`Some` = 不透明度）。
+    first_screen: Option<f32>,
     /// 本帧要提交给 egui 的指针 / 滚轮 / 修饰键 / 焦点事件。
     events: Vec<egui::Event>,
     /// 窗口是否持有焦点。
@@ -563,7 +563,13 @@ impl Host {
             renderer_panel: self.root.renderer_panel_model(content_area),
             arrangement: self.root.arrangement_model(),
             video_timeline: self.root.video_timeline_model(content_area),
-            first_screen: self.root.shows_first_screen(),
+            first_screen: self.root.shows_first_screen().then(|| {
+                self.root
+                    .settings
+                    .display
+                    .first_screen_opacity
+                    .clamp(0.0, 1.0)
+            }),
             video_preview: self.root.video_preview_model(window_area, content_area),
             mask_panel: self.root.mask_panel_model(),
             toast: self.root.egui_toast_model(),

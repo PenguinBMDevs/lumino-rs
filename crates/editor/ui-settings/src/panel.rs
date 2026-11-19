@@ -286,6 +286,9 @@ impl SettingsPanel {
             Event::MonitorRefreshIntervalChanged(v) => {
                 self.logging.monitor_refresh_interval_ms = v.clamp(50.0, 2000.0);
             }
+            Event::FirstScreenOpacityChanged(v) => {
+                self.display.first_screen_opacity = v.clamp(0.0, 1.0);
+            }
             // 兼容性设置
             Event::GpuCheckOnStartupChanged(enabled) => {
                 self.compat.check_on_startup = enabled;

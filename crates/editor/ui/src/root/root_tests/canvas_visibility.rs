@@ -20,6 +20,22 @@ fn test_visible_in_piano_roll() {
     assert!(root().editor_canvas_visible(), "默认应处于卷帘画布");
 }
 
+/// 主窗口启动默认态：无面板时显示第一屏；点开卷帘组后第一屏让位。
+#[test]
+fn test_first_screen_for_startup_empty_state() {
+    let mut root = root();
+    root.sidebar.enter_first_screen();
+    assert!(
+        root.shows_first_screen(),
+        "启动态（无面板）应显示默认第一屏"
+    );
+    assert!(!root.editor_canvas_visible(), "第一屏下不应渲染卷帘画布");
+
+    root.handle_sidebar_event(sidebar::Event::GroupToggled(sidebar::GroupId::PianoRoll));
+    assert!(!root.shows_first_screen(), "打开卷帘后第一屏应让位");
+    assert!(root.editor_canvas_visible(), "打开卷帘后画布应恢复渲染");
+}
+
 /// 工程走带同样由 gfx 画布承载（布局与数据源不同，但仍是同一张离屏纹理）。
 #[test]
 fn test_visible_in_arrangement() {

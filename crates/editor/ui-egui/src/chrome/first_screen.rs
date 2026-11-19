@@ -30,19 +30,20 @@ const LOGO_MAX: f32 = 480.0;
 const WORDMARK: &str = "Lumino";
 
 /// 在 `area` 内水平 / 垂直居中绘制「图标 + 字标」。
-pub fn show(ui: &egui::Ui, area: Rect, icons: &mut IconCache) {
-    if area.width() <= 0.0 || area.height() <= 0.0 {
+///
+/// `opacity` 为整体不透明度（0..=1）；≤ 0.001 时直接跳过绘制。
+pub fn show(ui: &egui::Ui, area: Rect, icons: &mut IconCache, opacity: f32) {
+    let opacity = opacity.clamp(0.0, 1.0);
+    if opacity <= 0.001 || area.width() <= 0.0 || area.height() <= 0.0 {
         return;
     }
     let painter = ui.painter();
+    let color = theme::text().gamma_multiply(opacity);
 
     // 先量一次「每 1pt 字号」的字标宽度，再用闭式解同时满足高度与宽度约束，
     // 避免先排一次版再回缩导致尺寸在不同帧之间抖动。
-    let probe = painter.layout_no_wrap(
-        WORDMARK.to_owned(),
-        FontId::proportional(PROBE_SIZE),
-        theme::text(),
-    );
+    let probe =
+        painter.layout_no_wrap(WORDMARK.to_owned(), FontId::proportional(PROBE_SIZE), color);
     let width_per_pt = (probe.size().x / PROBE_SIZE).max(f32::EPSILON);
     // 字标宽度 = 字号 × (基础宽度 + 字距)；字距按字号比例加回测量值。
     let tracking = (WORDMARK.chars().count().saturating_sub(1)) as f32 * TRACKING_RATIO;
@@ -59,7 +60,7 @@ pub fn show(ui: &egui::Ui, area: Rect, icons: &mut IconCache) {
     let mut job = egui::text::LayoutJob::simple_singleline(
         WORDMARK.to_owned(),
         FontId::proportional(font_size),
-        theme::text(),
+        color,
     );
     // 字距随字号放大，避免大字号下字标显得挤。
     if let Some(section) = job.sections.first_mut() {
@@ -77,10 +78,10 @@ pub fn show(ui: &egui::Ui, area: Rect, icons: &mut IconCache) {
         Vec2::splat(logo_size),
     );
     // 方形品牌图标自带深色底，浅色主题下也不会与白色内容底融在一起。
-    icons.paint(painter, Icon::Lumino, logo);
+    icons.paint_alpha(painter, Icon::Lumino, logo, opacity);
     painter.galley(
         egui::pos2(logo.right() + gap, area.center().y - text_size.y * 0.5),
         galley,
-        theme::text(),
+        color,
     );
 }

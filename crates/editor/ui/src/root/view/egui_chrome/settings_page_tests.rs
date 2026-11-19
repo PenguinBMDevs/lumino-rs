@@ -90,6 +90,7 @@ fn ui_page_reflects_settings_and_maps_actions() {
     root.settings.display.enable_256key = true;
     root.settings.editing.program_font_path = "C:/fonts/demo.ttf".to_owned();
     root.settings.editing.automation_line_thickness = 3.5;
+    root.settings.display.first_screen_opacity = 0.35;
 
     let values = settings_model(&mut root);
     let SettingsPageModel::Ui(page) = values.page else {
@@ -122,9 +123,27 @@ fn ui_page_reflects_settings_and_maps_actions() {
         UiField::PlaybackKeyColors,
         UiField::AutomationLineThickness,
         UiField::MonitorRefreshInterval,
+        UiField::FirstScreenOpacity,
     ] {
         assert!(has_field(field), "界面页缺少 {field:?}");
     }
+
+    // 第一屏不透明度滑杆：值 / 百分比文案跟随设置。
+    let first_screen = page
+        .rows
+        .iter()
+        .find_map(|row| match row {
+            UiRow::Slider {
+                field: UiField::FirstScreenOpacity,
+                value,
+                value_text,
+                ..
+            } => Some((*value, value_text.clone())),
+            _ => None,
+        })
+        .expect("界面页缺少第一屏不透明度滑杆");
+    assert!((first_screen.0 - 0.35).abs() < f32::EPSILON);
+    assert_eq!(first_screen.1, "35%");
     let cards = page
         .rows
         .iter()
@@ -185,6 +204,14 @@ fn ui_page_reflects_settings_and_maps_actions() {
         }),
         Some(Message::Settings(Event::MonitorRefreshIntervalChanged(value)))
             if (value - 250.0).abs() < f32::EPSILON
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::UiSlider {
+            field: UiField::FirstScreenOpacity,
+            value: 0.5,
+        }),
+        Some(Message::Settings(Event::FirstScreenOpacityChanged(value)))
+            if (value - 0.5).abs() < f32::EPSILON
     ));
     assert!(matches!(
         root.settings_action_message(&SettingsAction::UiButton {

@@ -180,6 +180,27 @@ impl Sidebar {
         }
     }
 
+    /// 主窗口启动默认态：不激活任何分组，主区域留给「无面板」第一屏。
+    ///
+    /// 仅在 `Host::new` 创建主窗口时调用；单元测试 / 对话框仍用 [`Self::new`]
+    /// 的钢琴卷帘默认态，避免既有用例全部要手动开一次面板。
+    ///
+    /// 钢琴卷帘组的子状态预置为「音轨列表打开」：用户第一次点开卷帘组时，
+    /// 左栏直接带回音轨列表，而不是只显示一条空面板。
+    pub(crate) fn enter_first_screen(&mut self) {
+        self.active_group = None;
+        self.piano_roll_visible = false;
+        self.panel_visible = false;
+        self.automation_panel_visible = false;
+        self.panel_route = Route::File;
+        self.route = Route::File;
+        self.piano_roll_sub_state = GroupSubState {
+            panel_visible: true,
+            panel_route: Route::File,
+            automation_panel_visible: false,
+        };
+    }
+
     /// 读取某音轨的混音台参数（增益/声像），缺失时返回默认。
     pub fn mixer_strip(&self, id: usize) -> StripParams {
         self.mixer.get(id)

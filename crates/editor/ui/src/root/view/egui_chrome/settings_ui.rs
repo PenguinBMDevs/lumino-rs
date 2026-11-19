@@ -203,6 +203,20 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         hint: tr!("开启后播放时在钢琴键盘上高亮当前音符位置，占用额外内存").to_string(),
         checked: settings.display.playback_key_colors_enabled,
     });
+    rows.push(UiRow::Section {
+        title: tr!("默认第一屏").to_string(),
+        hint: tr!("主区域没有打开任何面板时显示品牌占位").to_string(),
+    });
+    rows.push(UiRow::Slider {
+        field: UiField::FirstScreenOpacity,
+        label: tr!("不透明度").to_string(),
+        hint: tr!("品牌占位图标与字标的显示透明度（默认 20%）").to_string(),
+        value: settings.display.first_screen_opacity,
+        min: 0.0,
+        max: 1.0,
+        step: 0.01,
+        value_text: format!("{:.0}%", settings.display.first_screen_opacity * 100.0),
+    });
 
     // 自动化曲线粗细 / 监控刷新间隔。
     rows.push(UiRow::Slider {

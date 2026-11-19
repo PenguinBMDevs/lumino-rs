@@ -108,6 +108,14 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
                 "When enabled, the current note position is highlighted on the piano keyboard during playback, using extra memory",
             )
         }
+        "默认第一屏" => Some("Empty state"),
+        "主区域没有打开任何面板时显示品牌占位" => {
+            Some("Brand placeholder shown when no panel is open")
+        }
+        "不透明度" => Some("Opacity"),
+        "品牌占位图标与字标的显示透明度（默认 20%）" => {
+            Some("Opacity of the brand mark and wordmark (default 20%)")
+        }
         "音色库文件" => Some("Soundfont Files"),
         "SF2 文件" => Some("SF2 Files"),
         "SFZ 文件" => Some("SFZ Files"),

@@ -166,6 +166,8 @@ pub enum UiField {
     AutomationLineThickness,
     /// 底边栏监控刷新间隔。
     MonitorRefreshInterval,
+    /// 「无面板」默认第一屏不透明度。
+    FirstScreenOpacity,
     /// 编辑：操作日志总条数上限。
     HistoryTotalLimit,
     /// 编辑：单条日志条目上限。

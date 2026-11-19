@@ -147,6 +147,8 @@ pub enum Event {
     LogRetentionCountChanged(String),
     /// 底边栏监控数据刷新间隔（毫秒，50-2000）
     MonitorRefreshIntervalChanged(f32),
+    /// 「无面板」默认第一屏不透明度（0..=1）
+    FirstScreenOpacityChanged(f32),
     // 兼容性设置
     /// 每次启动检查 GPU 兼容性开关变更
     GpuCheckOnStartupChanged(bool),

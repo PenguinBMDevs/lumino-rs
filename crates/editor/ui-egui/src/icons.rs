@@ -238,6 +238,27 @@ impl IconCache {
         self.paint_tinted(painter, icon, rect, icon.default_tint());
     }
 
+    /// 以指定整体不透明度绘制图标（保留默认染色）。
+    ///
+    /// 与 [`Self::paint`] 的区别只在最终合成色：纹理本身不重建，
+    /// 透明度通过绘制时的白色乘子压到 alpha 通道上。
+    pub fn paint_alpha(
+        &mut self,
+        painter: &egui::Painter,
+        icon: Icon,
+        rect: egui::Rect,
+        opacity: f32,
+    ) {
+        let size = rect.width().min(rect.height());
+        let texture = self.texture(painter.ctx(), icon, size, icon.default_tint());
+        painter.image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE.gamma_multiply(opacity.clamp(0.0, 1.0)),
+        );
+    }
+
     /// 以固定染色的方式绘制图标（`None` = 保留原色）。
     ///
     /// 深色面板（如钢琴卷帘右键菜单）与应用主题无关，必须强制浅色，

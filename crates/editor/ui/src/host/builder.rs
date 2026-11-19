@@ -134,7 +134,11 @@ impl Host {
         let mut root = if is_progress {
             root::Root::new_progress(&ui_config.theme, ui_config)
         } else {
-            root::Root::new(ui_config)
+            let mut root = root::Root::new(ui_config);
+            // 主窗口默认态：不打开任何面板，启动直接停在「无面板」第一屏。
+            // 进度窗口 / 对话框不参与这条默认态（它们有自己的初始视图）。
+            root.sidebar.enter_first_screen();
+            root
         };
         // 调试开关：启动即打开混音台（`LUMINO_MIXER_OPEN=1`）。
         // 用途：路由栏底部入口在部分环境下收不到点击，无法稳定进入面板做真机对照。

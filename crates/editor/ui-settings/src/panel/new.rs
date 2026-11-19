@@ -83,6 +83,7 @@ impl SettingsPanel {
                 playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
                 selected_palette,
                 available_palettes,
+                first_screen_opacity: ui_config.first_screen_opacity,
             },
             auto_scroll: AutoScrollSettings {
                 fixed_position: ui_config.auto_scroll.fixed_indicator_position,

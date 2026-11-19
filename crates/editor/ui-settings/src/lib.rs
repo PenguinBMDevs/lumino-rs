@@ -130,6 +130,8 @@ pub struct DisplaySettings {
     pub selected_palette: String,
     /// 可用调色板名称列表
     pub available_palettes: Vec<&'static str>,
+    /// 「无面板」默认第一屏不透明度（0..=1，默认 20%）
+    pub first_screen_opacity: f32,
 }
 
 /// 自动滚动设置

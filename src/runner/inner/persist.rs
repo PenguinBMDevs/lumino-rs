@@ -93,6 +93,7 @@ impl RunnerInner {
             || new.editing.automation_line_thickness != old.automation_line_thickness
             || new.editing.tempo_max_bpm != old.tempo_max_bpm
             || new.logging.monitor_refresh_interval_ms != old.monitor_refresh_interval_ms
+            || new.display.first_screen_opacity != old.first_screen_opacity
             || new.synth.gpu_buffer_status_enabled != old.gpu_buffer_status_enabled
             || new.synth.gpu_governor_metrics_enabled != old.gpu_governor_metrics_enabled
             || new.synth.gpu_load_display != old.gpu_load_display
@@ -348,6 +349,7 @@ impl RunnerInner {
             config.ui.automation_line_thickness = new.editing.automation_line_thickness;
             config.ui.tempo_max_bpm = new.editing.tempo_max_bpm;
             config.ui.monitor_refresh_interval_ms = new.logging.monitor_refresh_interval_ms;
+            config.ui.first_screen_opacity = new.display.first_screen_opacity;
             config.ui.log_retention_count = new.logging.log_retention_count;
             config.ui.system_output_device_id = new.midi.selected_winmm_output;
             config.ui.audio_output_device = new.synth.selected_audio_output_device.clone();

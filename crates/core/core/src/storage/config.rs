@@ -198,6 +198,9 @@ pub struct UiConfig {
     /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
     #[serde(default = "default_monitor_refresh_interval_ms")]
     pub monitor_refresh_interval_ms: f32,
+    /// 「无面板」默认第一屏（品牌图标 + 字标）的不透明度（0..=1，默认 20%）
+    #[serde(default = "default_first_screen_opacity")]
+    pub first_screen_opacity: f32,
     /// 音频引擎后端（当前仅 Realtime）
     #[serde(default)]
     pub audio_engine: AudioEngineKind,
@@ -324,6 +327,7 @@ impl Default for UiConfig {
             tempo_max_bpm: default_tempo_max_bpm(),
             log_retention_count: default_log_retention_count(),
             monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
+            first_screen_opacity: default_first_screen_opacity(),
             audio_engine: AudioEngineKind::default(),
             system_output_device_id: None,
             audio_output_device: None,

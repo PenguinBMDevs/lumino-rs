@@ -57,6 +57,11 @@ pub(super) fn default_monitor_refresh_interval_ms() -> f32 {
     100.0
 }
 
+/// 「无面板」默认第一屏品牌占位的不透明度默认值（20%）。
+pub(super) fn default_first_screen_opacity() -> f32 {
+    0.2
+}
+
 pub(super) fn default_log_retention_count() -> usize {
     10
 }

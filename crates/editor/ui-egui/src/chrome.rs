@@ -176,16 +176,17 @@ pub(crate) fn window_size(ctx: &egui::Context) -> Option<egui::Vec2> {
     ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique("lumino.window-size")))
 }
 
-/// 记录本帧是否显示「无面板」默认第一屏。
-pub fn set_first_screen(ctx: &egui::Context, visible: bool) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.first-screen"), visible));
+/// 记录本帧「无面板」默认第一屏的不透明度（`None` = 不显示）。
+pub fn set_first_screen(ctx: &egui::Context, opacity: Option<f32>) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.first-screen"), opacity));
 }
 
-/// 本帧是否显示「无面板」默认第一屏。
-fn first_screen_visible(ctx: &egui::Context) -> bool {
+/// 本帧「无面板」默认第一屏的不透明度（`None` = 不显示）。
+fn first_screen_opacity(ctx: &egui::Context) -> Option<f32> {
     ctx.data(|d| {
-        d.get_temp::<bool>(egui::Id::unique("lumino.first-screen"))
-            .unwrap_or(false)
+        d.get_temp::<Option<f32>>(egui::Id::unique("lumino.first-screen"))
+            .flatten()
+            .map(|opacity| opacity.clamp(0.0, 1.0))
     })
 }
 
@@ -335,7 +336,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
 
     // 「无面板」默认第一屏：主区域没有任何视图时的品牌占位。
     // 画在底层纹理之上、各 band 之下；不登记占用区（纯展示，不拦输入）。
-    if first_screen_visible(ui.ctx()) {
+    if let Some(opacity) = first_screen_opacity(ui.ctx()) {
         let full = window_rect(&root);
         let left = model
             .sidebar
@@ -363,7 +364,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 (full.bottom() - layout::STATUSBAR_H).max(full.top() + top),
             ),
         );
-        first_screen::show(&root, area, icons);
+        first_screen::show(&root, area, icons, opacity);
     }
 
     // 本帧菜单占用区先清空：未画菜单时不能残留上一帧的矩形（会吞掉 上一代 点击）。
