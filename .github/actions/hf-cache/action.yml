@@ -1,0 +1,146 @@
+name: HF CI Cache
+description: >-
+  每类机器一个 zstd 压缩包，存到 Hugging Face 仓库 PenguinBMDevs/lumino-ci-cache-repo
+  作为 CI 编译缓存（替代 actions/cache 的 10GB 配额）。工具链装好后调用本 action
+  拉取并解压；CI 结束后再次调用（save: 'true'）重新打包并以单个 commit「删旧+传新」
+  原子替换 HF 上的旧包。hf-token 为空（如 fork PR）时全程静默跳过。
+inputs:
+  archive:
+    description: HF 仓库内的压缩包文件名，如 ci-lint-ubuntu-latest.tar.zst
+    required: true
+  paths:
+    description: 缓存目录，每行一个；~/ 开头相对 $HOME，否则相对仓库根目录
+    required: true
+  zstd-level:
+    description: zstd 压缩级别（-T0 多线程）
+    default: "6"
+  save:
+    description: "'true' 时打包回传 HF 并替换旧包（CI 结束后第二次调用时设）"
+    default: "false"
+  hf-token:
+    description: Hugging Face token（需对缓存仓库有写权限）
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install zstd & huggingface_hub
+      if: ${{ inputs.hf-token != '' }}
+      shell: bash
+      run: |
+        if ! command -v zstd >/dev/null 2>&1; then
+          case "$RUNNER_OS" in
+            Linux)   sudo apt-get update && sudo apt-get install -y zstd ;;
+            macOS)   brew install zstd ;;
+            Windows) choco install zstd --no-progress -y ;;
+          esac
+        fi
+        python -m pip install --quiet --upgrade huggingface_hub hf_transfer
+
+    - name: Pull cache archive from Hugging Face
+      # 只在「拉取模式」（save != 'true'）执行；首次运行仓库里没有包时
+      # hf_hub_download 抛错 → 本步失败 → 后续解压自然跳过（全冷编译）。
+      if: ${{ inputs.hf-token != '' && inputs.save != 'true' }}
+      id: pull
+      shell: bash
+      continue-on-error: true
+      env:
+        HF_TOKEN: ${{ inputs.hf-token }}
+        HF_HUB_ENABLE_HF_TRANSFER: "1"
+        ARCHIVE: ${{ inputs.archive }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/hf-cache"
+        python - <<'PYEOF'
+        import os
+        from huggingface_hub import hf_hub_download
+        p = hf_hub_download(
+            repo_id="PenguinBMDevs/lumino-ci-cache-repo",
+            repo_type="model",
+            filename=os.environ["ARCHIVE"],
+            token=os.environ.get("HF_TOKEN") or None,
+            local_dir=os.path.join(os.environ["RUNNER_TEMP"], "hf-cache"),
+        )
+        print("pulled:", p)
+        PYEOF
+        echo "hit=true" >> "$GITHUB_OUTPUT"
+
+    - name: Extract cache archive
+      if: ${{ steps.pull.outputs.hit == 'true' }}
+      shell: bash
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        ARCHIVE_PATH="$RUNNER_TEMP/hf-cache/$ARCHIVE"
+        # 按行展开路径：~/ 开头的成员用 -C "$HOME" 解，其余解到仓库根。
+        # tar 的 -C 与成员名交错书写，GNU tar / bsdtar 均按序处理。
+        args=()
+        while IFS= read -r p; do
+          [ -z "$p" ] && continue
+          case "$p" in
+            ~/*) args+=(-C "$HOME" ".${p#~}") ;;
+            *)   args+=(-C "$PWD" "$p") ;;
+          esac
+        done <<< "$PATHS"
+        zstd -dc "$ARCHIVE_PATH" | tar -xf - "${args[@]}"
+        rm -f "$ARCHIVE_PATH"
+        echo "cache extracted: $ARCHIVE"
+
+    - name: Pack & push cache archive
+      # 拉取模式下不执行。打包完以单个 commit 删旧+传新：commit 失败
+      # （如首次运行旧包不存在导致 delete 操作报错）时退化为纯上传，
+      # 保证 HF 上旧包不会被提前删掉。continue-on-error：缓存刷新失败
+      # 不拖累 CI 结论，下轮运行自动全冷编译自愈。
+      if: ${{ inputs.hf-token != '' && inputs.save == 'true' }}
+      shell: bash
+      continue-on-error: true
+      env:
+        HF_TOKEN: ${{ inputs.hf-token }}
+        HF_HUB_ENABLE_HF_TRANSFER: "1"
+        ARCHIVE: ${{ inputs.archive }}
+        PATHS: ${{ inputs.paths }}
+        LEVEL: ${{ inputs.zstd-level }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/hf-cache"
+        ARCHIVE_PATH="$RUNNER_TEMP/hf-cache/$ARCHIVE"
+        args=()
+        while IFS= read -r p; do
+          [ -z "$p" ] && continue
+          mkdir -p "${p/#\~/$HOME}"
+          case "$p" in
+            ~/*) args+=(-C "$HOME" ".${p#~}") ;;
+            *)   args+=(-C "$PWD" "$p") ;;
+          esac
+        done <<< "$PATHS"
+        tar -cf - "${args[@]}" | zstd -T0 "-$LEVEL" -o "$ARCHIVE_PATH"
+        ls -lh "$ARCHIVE_PATH"
+        python - <<'PYEOF'
+        import os
+        from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete
+        api = HfApi(token=os.environ["HF_TOKEN"])
+        repo_id = "PenguinBMDevs/lumino-ci-cache-repo"
+        arc = os.environ["ARCHIVE"]
+        path = os.path.join(os.environ["RUNNER_TEMP"], "hf-cache", arc)
+        try:
+            api.create_commit(
+                repo_id=repo_id,
+                repo_type="model",
+                operations=[
+                    CommitOperationDelete(path_in_repo=arc),
+                    CommitOperationAdd(path_in_repo=arc, path_or_fileobj=path),
+                ],
+                commit_message=f"ci-cache: refresh {arc}",
+            )
+            print("refreshed:", arc)
+        except Exception as e:
+            print(f"delete+add failed ({e}); fallback to add-only")
+            api.upload_file(
+                path_or_fileobj=path,
+                path_in_repo=arc,
+                repo_id=repo_id,
+                repo_type="model",
+                commit_message=f"ci-cache: init {arc}",
+            )
+            print("uploaded:", arc)
+        PYEOF
+        rm -f "$ARCHIVE_PATH"

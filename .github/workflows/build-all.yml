@@ -33,15 +33,18 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
 
-      - name: Cache cargo registry & git
-        uses: actions/cache@v5.0.0
+      # HF 缓存：除 ~/.cargo 外，把 release 产物目录也纳入缓存
+      #（target/<triple>/release + 宿主侧 target/release），发版构建可续编。
+      - name: HF cache (restore)
+        uses: ./.github/actions/hf-cache
         with:
-          path: |
+          archive: release-linux-x86_64.tar.zst
+          paths: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-x86_64-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-x86_64-cargo-
+            target/x86_64-unknown-linux-gnu
+            target/release
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Install system dependencies
         run: |
@@ -59,6 +62,19 @@ jobs:
 
       - name: Build (release)
         run: cargo build --target x86_64-unknown-linux-gnu --release
+
+      - name: HF cache (save)
+        if: always()
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: release-linux-x86_64.tar.zst
+          paths: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/x86_64-unknown-linux-gnu
+            target/release
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Generate filename
         id: filename
@@ -92,15 +108,16 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
 
-      - name: Cache cargo registry & git
-        uses: actions/cache@v5.0.0
+      - name: HF cache (restore)
+        uses: ./.github/actions/hf-cache
         with:
-          path: |
+          archive: release-linux-arm64.tar.zst
+          paths: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-arm64-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-arm64-cargo-
+            target/aarch64-unknown-linux-gnu
+            target/release
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Install system dependencies
         run: |
@@ -118,6 +135,19 @@ jobs:
 
       - name: Build (release)
         run: cargo build --target aarch64-unknown-linux-gnu --release
+
+      - name: HF cache (save)
+        if: always()
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: release-linux-arm64.tar.zst
+          paths: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/aarch64-unknown-linux-gnu
+            target/release
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Generate filename
         id: filename
@@ -161,15 +191,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo registry & git
-        uses: actions/cache@v5.0.0
+      # x86_64 与 arm64 是两个并行 job，各用各的包名，避免并发回写同一文件。
+      - name: HF cache (restore)
+        uses: ./.github/actions/hf-cache
         with:
-          path: |
+          archive: release-windows-${{ matrix.arch }}.tar.zst
+          paths: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            target/${{ matrix.target }}
+            target/release
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Install LLVM (for bindgen)
         uses: KyleMayes/install-llvm-action@v2
@@ -179,6 +211,19 @@ jobs:
       - name: Build (release)
         shell: pwsh
         run: cargo build --target ${{ matrix.target }} --release
+
+      - name: HF cache (save)
+        if: always()
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: release-windows-${{ matrix.arch }}.tar.zst
+          paths: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/${{ matrix.target }}
+            target/release
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Generate filename
         id: filename
@@ -224,15 +269,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo registry & git
-        uses: actions/cache@v5.0.0
+      - name: HF cache (restore)
+        uses: ./.github/actions/hf-cache
         with:
-          path: |
+          archive: release-macos-${{ matrix.arch }}.tar.zst
+          paths: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            target/${{ matrix.target }}
+            target/release
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Install dependencies
         run: brew install cmake pkg-config nasm llvm
@@ -242,6 +288,19 @@ jobs:
 
       - name: Build (release)
         run: cargo build --target ${{ matrix.target }} --release
+
+      - name: HF cache (save)
+        if: always()
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: release-macos-${{ matrix.arch }}.tar.zst
+          paths: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/${{ matrix.target }}
+            target/release
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Generate filename
         id: filename

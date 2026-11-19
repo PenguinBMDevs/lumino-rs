@@ -1,4 +1,3 @@
-# .github/workflows/fast-check.yml
 name: Fast Check
 
 on:
@@ -25,18 +24,30 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch }}
 
-      - name: Cache
-        uses: actions/cache@v6.1.0
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: HF cache (restore)
+        uses: ./.github/actions/hf-cache
         with:
-          path: |
+          archive: fast-check-${{ matrix.os }}.tar.zst
+          paths: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+          hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Cargo check
         run: cargo check --workspace
 
+      - name: HF cache (save)
+        if: always()
+        uses: ./.github/actions/hf-cache
+        with:
+          archive: fast-check-${{ matrix.os }}.tar.zst
+          paths: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          save: "true"
+          hf-token: ${{ secrets.HF_TOKEN }}
