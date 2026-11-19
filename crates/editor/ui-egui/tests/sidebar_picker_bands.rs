@@ -210,9 +210,10 @@ fn channel_picker_reports_channel_variant() {
     );
 }
 
-/// 选择器面板必须被 egui 的**图层**独占（不再是手工占用矩形）。
+/// 选择器面板必须被 egui 的**图层**独占，并且**同步登记占用表**。
 ///
-/// 与左侧栏菜单同步：Step 7 删除全局登记，命中归 `Area` 图层（`layer_id_at`）。
+/// `layer_id_at` 是稳定态的主判定；`Area` 首帧是 sizing pass，图层命中不到，
+/// 占用表负责兜住「打开首帧点击穿透」的窗口。
 #[test]
 fn picker_rect_is_owned_by_foreground_layer() {
     let size = 4.0 * 30.0 + 3.0 * 4.0 + 16.0;
@@ -234,12 +235,11 @@ fn picker_rect_is_owned_by_foreground_layer() {
         egui::Order::Background,
         "选择器面板必须由独立图层独占命中"
     );
-    // 探针可能同时落在下层音轨行内（那是由 root 绘制、仍需登记的一份）。
-    // 这里只断言**选择器本体**（宽 = size）不再登记。
+    // 首帧兜底：图层 sizing pass 期间占用表必须顶上。
     assert!(
-        !menu::take_blocked(&h.ctx)
+        menu::take_blocked(&h.ctx)
             .iter()
             .any(|r| r.contains(probe) && (r.width() - size).abs() < 1.0),
-        "Step 7 后选择器不再登记全局占用表（命中已归图层）"
+        "选择器必须登记占用表，否则 Area 首帧会漏点击"
     );
 }

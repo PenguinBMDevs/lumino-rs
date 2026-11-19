@@ -87,6 +87,26 @@ impl OverlayInput {
                 }
                 self.button(button, *state == winit::event::ElementState::Pressed);
             }
+            WindowEvent::Touch(touch) => {
+                // 纯触屏平台（Android）只投递 `Touch`，`CursorMoved` / `MouseInput`
+                // 永远不来。不在这里合成指针，egui 的所有按钮 / 菜单 / 下拉在
+                // 触屏上都是死的，且画布输入与 egui 命中会各走一套坐标。
+                // 与 `egui-winit` 同口径：移动 → `PointerMoved`，起止 → 主键。
+                let pos = egui::pos2(
+                    touch.location.x as f32 / scale,
+                    touch.location.y as f32 / scale,
+                );
+                self.pointer_moved(pos);
+                match touch.phase {
+                    winit::event::TouchPhase::Started => {
+                        self.button(egui::PointerButton::Primary, true);
+                    }
+                    winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+                        self.button(egui::PointerButton::Primary, false);
+                    }
+                    winit::event::TouchPhase::Moved => {}
+                }
+            }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
                 let super_key = state.contains(winit::keyboard::ModifiersState::SUPER);
@@ -261,6 +281,7 @@ pub fn input_requests_repaint(event: &WindowEvent) -> bool {
             | WindowEvent::CursorLeft { .. }
             | WindowEvent::MouseWheel { .. }
             | WindowEvent::MouseInput { .. }
+            | WindowEvent::Touch(_)
             | WindowEvent::ModifiersChanged(_)
             | WindowEvent::KeyboardInput { .. }
             | WindowEvent::Ime(_)
@@ -405,6 +426,56 @@ mod tests {
 
     /// 输入法提交必须走 `Event::Ime(Commit)`，不能当普通文本插入：
     /// 否则 egui 不知道组合已结束，预编辑串会残留。
+    /// 纯触屏平台只投递 `Touch`：必须合成 egui 指针事件，否则整窗 UI 点不动。
+    #[test]
+    fn touch_becomes_pointer_events() {
+        use winit::dpi::PhysicalPosition;
+        use winit::event::{DeviceId, Touch, TouchPhase};
+
+        let touch = |phase| {
+            winit::event::WindowEvent::Touch(Touch {
+                device_id: DeviceId::dummy(),
+                phase,
+                location: PhysicalPosition::new(200.0, 100.0),
+                force: None,
+                id: 0,
+            })
+        };
+
+        let mut input = OverlayInput::default();
+        assert!(input.feed(&touch(TouchPhase::Started), 2.0, None));
+        let events = input.take();
+        assert!(
+            matches!(events.first(), Some(egui::Event::PointerMoved(pos)) if *pos == egui::pos2(100.0, 50.0)),
+            "触摸起点必须先进入 egui 指针位置：{events:?}"
+        );
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                }
+            )),
+            "触摸起手必须合成主键按下：{events:?}"
+        );
+
+        assert!(input.feed(&touch(TouchPhase::Ended), 2.0, None));
+        let events = input.take();
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    ..
+                }
+            )),
+            "触摸抬手必须合成主键抬起：{events:?}"
+        );
+    }
+
     #[test]
     fn ime_commit_ends_composition() {
         let mut input = OverlayInput::default();

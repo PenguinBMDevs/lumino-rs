@@ -96,7 +96,7 @@ fn in_area<R>(
     size: Vec2,
     add: impl FnOnce(&mut egui::Ui, Rect) -> R,
 ) -> R {
-    egui::Area::new(egui::Id::unique(id))
+    let response = egui::Area::new(egui::Id::unique(id))
         .order(egui::Order::Foreground)
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
@@ -109,8 +109,11 @@ fn in_area<R>(
                 StrokeKind::Inside,
             );
             add(ui, rect)
-        })
-        .inner
+        });
+    // 首帧兜底：`Area` 刚出现的那一帧是 sizing pass，`layer_id_at` 命中不到；
+    // 同步登记实际矩形，避免「看得见但拦不住」的点击穿透窗口。
+    crate::chrome::menu::extend_blocked(ui.ctx(), [response.response.rect]);
+    response.inner
 }
 
 /// 音轨取色器；返回本帧动作。

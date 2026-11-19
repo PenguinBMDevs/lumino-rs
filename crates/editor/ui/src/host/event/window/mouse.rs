@@ -25,6 +25,7 @@ impl Host {
         if !super::super::overlay_blocks_canvas(
             self.egui_owns_pointer(),
             self.editor_has_incomplete_pointer_edit(),
+            state == ElementState::Pressed,
         ) {
             self.dispatch_canvas_button(state == ElementState::Pressed, button);
         }

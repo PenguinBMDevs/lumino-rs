@@ -1,16 +1,19 @@
-//! 指针归属不变量：egui 面板必须**自己**占住命中，不依赖手工矩形表。
+//! 指针归属不变量：egui 面板必须**自己**占住命中，不依赖单一数据源。
 //!
-//! 背景（Plan B Step 7）：`Host::egui_owns_pointer` 的判定是
-//! `手工占用矩形 ∪ 浮层图层`。历史上为了让画布不吃掉弹层点击，
-//! 各面板在绘制时把矩形塞进 `blocked`，而这些矩形与 egui 自己的图层数据重复。
+//! 生产口径（`Host::egui_owns_pointer`）是**两条独立判定取并集**：
 //!
-//! 这里把「覆盖」拆成两条独立断言，任何一条失效都会先在这个测试里失败：
+//! 1. `blocked` 占用表：手工登记的矩形（band / 根层手绘浮层 / 浮层首帧兜底）；
+//! 2. `layer_id_at` 非 `Background` 图层：`Area` / `Window` / ComboBox 弹层。
+//!
+//! 两条都不能省：`Area` **第一次出现的帧**是 sizing pass（`interactable == false`），
+//! `layer_id_at` 命中不到；只依赖图层会留下「打开下拉首帧点击穿透」的窗口。
+//! 反之只靠占用表则会漏掉未登记的新弹层。
+//!
+//! 这里把「覆盖」拆成独立断言，任何一条失效都会先在这个测试里失败：
 //!
 //! 1. `Area` 弹层：`layer_id_at` 必须返回非 `Background` 图层（自占）；
-//! 2. band 内的触发按钮：必须被 band 级占用矩形覆盖（不依赖面板登记）。
-//!
-//! 满足这两条，`toolbar_popup` / `overflow` 的整块登记就是纯冗余，可以安全删除。
-
+//! 2. `Area` 弹层：`blocked` 必须包含面板矩形（首帧兜底）；
+//! 3. band 内的触发按钮：必须被 band 级占用矩形覆盖。
 use egui::{Pos2, Rect};
 use egui_kittest::Harness;
 use lumino_ui_egui::chrome::{
@@ -75,9 +78,9 @@ fn snap_items() -> Vec<SnapMenuItem> {
         .collect()
 }
 
-/// `Area` 弹层必须自占：`layer_id_at` 覆盖面板中心。
+/// `Area` 弹层必须自占：`layer_id_at` 覆盖面板中心，且占用表同步登记。
 ///
-/// 这是删除面板级 `blocked` 登记的前提——否则点击会穿透到画布。
+/// 前者是稳定态主判定，后者兜住 `Area` 首帧 sizing pass——缺一就会穿透。
 #[test]
 fn floating_panel_owns_its_layer_without_manual_rects() {
     let harness = harness(ChromeModel {
@@ -96,6 +99,7 @@ fn floating_panel_owns_its_layer_without_manual_rects() {
     let panel = chrome::toolbar_popup::snap_panel_rect(trigger, snap_items().len(), true);
 
     // 面板中心与靠近边缘的内边距处都必须被图层覆盖（内边距没有控件）。
+    let blocked = chrome::menu::take_blocked(&harness.ctx);
     for pos in [
         panel.center(),
         Pos2::new(panel.left() + 2.0, panel.top() + 2.0),
@@ -106,6 +110,10 @@ fn floating_panel_owns_its_layer_without_manual_rects() {
                 .layer_id_at(pos)
                 .is_some_and(|layer| layer.order != egui::Order::Background),
             "弹层必须自占命中（layer_id_at），{pos:?} 落回了 Background"
+        );
+        assert!(
+            blocked.iter().any(|rect| rect.contains(pos)),
+            "弹层必须同步登记占用表（首帧兜底），{pos:?} 不在 {blocked:?}"
         );
     }
 }

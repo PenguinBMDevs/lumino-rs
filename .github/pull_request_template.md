@@ -14,7 +14,7 @@
 
 - [ ] `cargo fmt`（或改动文件已 rustfmt）
 - [ ] `cargo clippy` 零新增警告
-- [ ] 相关 crate 单测通过（`cargo test -p <crate>`）
+- [ ] 相关 crate 单测通过（`cargo nextest run -p <crate>`，禁止 `cargo test`）
 - [ ] 涉及音频输出：同块长/同配置逐位一致（贴 FNV/golden 哈希）
 
 ## 性能对照表（性能类 PR 必填）

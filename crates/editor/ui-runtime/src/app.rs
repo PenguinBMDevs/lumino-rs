@@ -35,6 +35,12 @@ pub struct NativeApp {
     editor_dragging: bool,
     /// 最近一次同步到 gfx 渲染线程的音符世代（`track_notes_gen`）。
     note_gen: Option<u64>,
+    /// 上一帧 egui 占用区（菜单 / 弹层 / 面板）。
+    ///
+    /// 探针与生产同口径：事件到达时 egui 还没跑本帧，只能用上一帧的占用数据
+    /// 判断这次点击是否该让位。`layer_id_at` 覆盖稳定态，占用表兜住 `Area`
+    /// 首帧 sizing pass 的空窗——两者缺一就会「上层点击正常、下层也收到」。
+    blocked: Vec<Rect>,
     start: Option<Instant>,
 }
 
@@ -288,6 +294,8 @@ impl crate::RuntimeApp for NativeApp {
                 let pos = Pos2::new(logical.x, logical.y);
                 self.pointer = Some(pos);
                 self.events.push(EguiEvent::PointerMoved(pos));
+                // 指针在 egui 浮层上时不再拖动画布；已开始的拖拽必须继续
+                //（松手可能落在浮层上）。
                 if self.editor_dragging
                     && let Some(local) = self.editor_local(pos)
                 {
@@ -306,9 +314,16 @@ impl crate::RuntimeApp for NativeApp {
                         pressed: state == ElementState::Pressed,
                         modifiers: modifiers(self.modifiers),
                     });
+                    // 输入归属：egui 浮层占住的位置不得再落到编辑器。
+                    // `layer_id_at` 覆盖稳定态，`blocked` 兜住 `Area` 首帧
+                    // sizing pass（图层命中不到）的空窗。
+                    let owns = self.egui_owns_pointer(pos);
                     if button == MouseButton::Left {
                         if state == ElementState::Pressed {
-                            if let Some(local) = self.editor_local(pos) {
+                            if !owns
+                                && !self.editor_dragging
+                                && let Some(local) = self.editor_local(pos)
+                            {
                                 self.send_editor(lumino_message::EditorAction::Pressed {
                                     pos: local,
                                     shift: self.modifiers.shift_key(),
@@ -317,6 +332,7 @@ impl crate::RuntimeApp for NativeApp {
                                 self.editor_dragging = true;
                             }
                         } else if self.editor_dragging {
+                            // 抬起一律收尾：拖拽可能结束在浮层上。
                             self.send_editor(lumino_message::EditorAction::Released);
                             self.editor_dragging = false;
                         }
@@ -651,7 +667,20 @@ impl NativeApp {
         self.root = root;
         self.icons = icons;
 
+        // 取走本帧占用区（菜单 / 弹层 / 面板）：下一次鼠标事件据此让位。
+        // 与生产 `EguiOverlay` 同口径；`Area` 首帧 sizing pass 靠它兜底。
+        self.blocked = chrome::menu::take_blocked(&self.ctx);
+
         gpu.present(&self.ctx, output);
+    }
+
+    /// 指针是否被 egui 占住（浮层图层 ∪ 上一帧占用表）。
+    fn egui_owns_pointer(&self, pos: Pos2) -> bool {
+        let layer = self
+            .ctx
+            .layer_id_at(pos)
+            .is_some_and(|id| id.order != egui::Order::Background);
+        layer || self.blocked.iter().any(|rect| rect.contains(pos))
     }
 }
 

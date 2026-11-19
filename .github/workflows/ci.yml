@@ -85,7 +85,7 @@ jobs:
       - name: Cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  # ── 测试：cargo test（×3 OS 并行）────────────────────────────────
+  # ── 测试：cargo nextest（×3 OS 并行）─────────────────────────────
   test:
     strategy:
       fail-fast: false
@@ -127,6 +127,13 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # 统一 runner：所有测试走 nextest（见 AGENTS.md Test Commands）。
+      # 用预编译二进制安装，避免每个 OS 都 cargo install 一遍。
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
       # 只读缓存：定时刷新见 hf-cache-refresh.yml。
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
@@ -136,21 +143,67 @@ jobs:
             target
           hf-token: ${{ secrets.HF_TOKEN }}
 
+      # Python 仅用于把 nextest 的 JSON 流转成 JUnit XML（三平台统一用 `python`）。
+      - name: Setup Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
       # ── Windows 测试（并行，与另外两个 OS 一致）──────────────────────
       # 2026-10-31 曾在此临时改成 `--test-threads=1` 规避 gfx 单测连锁失败，
       # 但串行化并未解决问题（真因是「驻留共享 Device + `device_check` 反复
       # 建/销探测 Device」的 DX12 组合），反而让 `lumino-midi-io` 的音频设备
       # 用例抛 STATUS_ACCESS_VIOLATION（并行模式下从未复现）。真因已由
       # `cpu_onion_renderer::tests_support::transient_device` 修复，故恢复并行。
-      - name: Cargo test
-        run: cargo test --workspace
+      #
+      # JUnit 生成：nextest 0.9 已移除 `--junit-xml`，改为输出 libtest JSON 流，
+      # 由 scripts/nextest_junit.py 转成标准 JUnit XML 供 Pages 报告使用。
+      # 测试失败时仍要继续产出报告，故 continue-on-error + 末尾统一判失败。
+      - name: Cargo test (nextest)
+        id: nextest
+        continue-on-error: true
+        shell: bash
+        run: |
+          cargo nextest run --workspace --no-fail-fast \
+            --message-format libtest-json-plus \
+            > nextest-${{ matrix.os }}.ndjson
         env:
+          NEXTEST_EXPERIMENTAL_LIBTEST_JSON: 1
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
 
+      - name: Convert to JUnit XML
+        if: always()
+        run: >-
+          python scripts/nextest_junit.py nextest-${{ matrix.os }}.ndjson
+          -o junit-${{ matrix.os }}.xml
+          --name "nextest (${{ matrix.os }})"
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: junit-${{ matrix.os }}
+          path: junit-${{ matrix.os }}.xml
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail job on test failures
+        if: steps.nextest.outcome == 'failure'
+        run: |
+          echo "::error::nextest reported failing tests; see the junit-${{ matrix.os }} artifact / Pages test report."
+          exit 1
+
+      # nextest 不执行 doctest：单独补一层门禁（这是唯一保留 cargo test 的场景）。
+      - name: Cargo doctests
+        run: cargo test --doc --workspace
+        env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1
+          LUMINO_MEMORY_SOFT_LIMIT_MB: 65536
+
       # 无外部服务器的协议、状态机与序列化回归；真实服务器 E2E 仍保留 ignored 人工门禁。
       - name: Collaboration offline regression
-        run: cargo test -p lumino-collaboration
+        run: cargo nextest run -p lumino-collaboration
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536

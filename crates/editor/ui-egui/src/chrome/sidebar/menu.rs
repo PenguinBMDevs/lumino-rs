@@ -52,7 +52,7 @@ fn show_menu(
     }
     let height = menu_height(entries.len());
     let mut clicked = None;
-    egui::Area::new(egui::Id::unique(id))
+    let response = egui::Area::new(egui::Id::unique(id))
         .order(egui::Order::Foreground)
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
@@ -87,7 +87,10 @@ fn show_menu(
                 }
             }
         });
-    // 命中由 `Area` 图层独占（`layer_id_at`），不再登记全局占用表（Step 7）。
+    // 首帧兜底：`Area` 第一次出现的帧是 sizing pass（`interactable == false`），
+    // `layer_id_at` 命中不到，只依赖图层会让这一帧的点击穿透到画布。
+    // 实际 Area 矩形同步进占用表，与图层判定互为兜底。
+    crate::chrome::menu::extend_blocked(ui.ctx(), [response.response.rect]);
     clicked
 }
 

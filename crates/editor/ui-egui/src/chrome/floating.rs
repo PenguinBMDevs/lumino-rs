@@ -9,6 +9,11 @@
 //! 这里用 [`egui::Area`] + [`egui::Order::Foreground`] 把整块浮层放进独立图层，
 //! 并在面板矩形上注册一个可交互背景：只要存在覆盖指针的命中矩形，egui 就会把
 //! 下层图层从命中集合中排除（`hit_test` 的 `included_layers`），穿透随之消失。
+//!
+//! 注意：`Area` **第一次出现的帧**是 sizing pass（`interactable == false`），
+//! 此时 `layer_id_at` 命中不到本层。只依赖图层判定会留下一个「看得见但拦不住」
+//! 的窗口——打开下拉的首帧点击会穿透到画布。因此绘制结束时把 Area 的实际
+//! 矩形同步登记进 `menu::blocked`，与图层判定互为兜底。
 
 use egui::{Context, Id, Order, Rect, Sense, Ui};
 
@@ -24,7 +29,7 @@ pub(crate) fn floating_panel(
     rect: Rect,
     add: impl FnOnce(&mut Ui) -> Option<Rect>,
 ) {
-    egui::Area::new(Id::unique(id))
+    let response = egui::Area::new(Id::unique(id))
         .order(Order::Foreground)
         .fixed_pos(rect.min)
         .show(ctx, |ui| {
@@ -41,6 +46,12 @@ pub(crate) fn floating_panel(
                 ui.set_min_size(union.size());
             }
         });
+
+    // 首帧兜底：`Area` 第一次出现在这一帧时是 egui 的 sizing pass
+    //（`state.interactable == false`），`layer_id_at` 还命中不到本层。
+    // 只依赖图层判定的浮层会在这段时间「看得见但拦不住」——点击穿透到画布。
+    // 把 `Area` 的实际矩形同步进占用表：首帧就生效，之后与图层判定互为兜底。
+    super::menu::extend_blocked(ctx, [response.response.rect]);
 }
 
 #[cfg(test)]
@@ -48,8 +59,36 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use egui::{Id, Rect, Sense, pos2, vec2};
+    use egui::{Context, Id, Rect, Sense, pos2, vec2};
     use egui_kittest::Harness;
+
+    /// 首帧兜底：`Area` 第一次出现在 sizing pass 时 `layer_id_at` 命中不到，
+    /// 但面板矩形必须已经进入占用表——否则「打开下拉的首帧点击会穿透画布」。
+    #[test]
+    fn first_frame_is_registered_in_blocked() {
+        let ctx = Context::default();
+        let panel = Rect::from_min_size(pos2(100.0, 100.0), vec2(120.0, 80.0));
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            super::floating_panel(ui.ctx(), "first-frame-blocked", panel, |_| None);
+        });
+        output.textures_delta.clear();
+
+        let layer_hit = ctx.layer_id_at(panel.center());
+        assert!(
+            layer_hit.is_none_or(|id| id.order == egui::Order::Background),
+            "首帧应当是 sizing pass（图层命中不到），实际 {layer_hit:?}"
+        );
+
+        let blocked = super::super::menu::take_blocked(&ctx);
+        assert!(
+            blocked.iter().any(|rect| rect.contains(panel.center())),
+            "首帧必须由占用表兜底，实际 {blocked:?}"
+        );
+    }
 
     /// 下层控件在浮层背景上不得 hover（这正是「菜单穿透」的回归门禁）。
     #[test]

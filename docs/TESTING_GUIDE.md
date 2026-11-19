@@ -19,23 +19,26 @@ Lumino 项目包含以下类型的测试：
 
 
 
+> 统一使用 `cargo nextest`（禁止 `cargo test`）；未安装先执行
+> `cargo install cargo-nextest --locked`。详见 `AGENTS.md` 的 Test Commands。
+
 ### 运行所有测试
 
 ```bash
-cargo test
+cargo nextest run --workspace
 ```
 
 ### 运行特定测试
 
 ```bash
-# 协作 UI 测试套件（默认 #[ignore]，必须加 --ignored；需外部协作服务器）
-cargo test --test collaboration_ui_test test_collaboration_ui_all -- --ignored --nocapture
+# 协作 UI 测试套件（默认 #[ignore]，必须加 --run-ignored only；需外部协作服务器）
+cargo nextest run --test collaboration_ui_test test_collaboration_ui_all --run-ignored only --no-capture
 
-# 协作基础测试（默认 #[ignore] 的主测试；其中的本地序列化单测无需 --ignored）
-cargo test --test collaboration_full_test -- --ignored --nocapture
+# 协作基础测试（默认 #[ignore] 的主测试；其中的本地序列化单测无需 --run-ignored）
+cargo nextest run --test collaboration_full_test --run-ignored only --no-capture
 
 # 本地协作 ID 同步测试（默认 #[ignore]；需本地 lumino-server-rs，端口 3000）
-cargo test --test collab_id_sync_local -- --ignored --nocapture
+cargo nextest run --test collab_id_sync_local --run-ignored only --no-capture
 ```
 
 ---
@@ -272,6 +275,26 @@ sleep(Duration::from_millis(2000)).await;
 
 ---
 
+## CI 测试报告（JUnit / Pages）
+
+CI 统一把 nextest 的结果落成 JUnit XML，并发布为网页报告：
+
+- `.github/workflows/ci.yml` 每个平台（ubuntu/windows/macos）上传 `junit-<os>.xml` artifact；
+- `.github/workflows/test-report.yml` 汇总这些 artifact，发布到 GitHub Pages：
+  `https://<org>.github.io/<repo>/`（需在仓库 Settings → Pages 把 Source 设为 "GitHub Actions"）；
+- nextest 0.9 已移除 `--junit-xml`，改为输出 libtest JSON 流后再转换。
+
+本地复现同一套报告：
+
+```bash
+NEXTEST_EXPERIMENTAL_LIBTEST_JSON=1 cargo nextest run --workspace --no-fail-fast \
+  --message-format libtest-json-plus > nextest.ndjson
+python scripts/nextest_junit.py nextest.ndjson -o junit.xml --name "nextest (local)"
+python scripts/junit_report.py <junit.xml 所在目录> -o site
+```
+
+---
+
 ## 相关文档
 
 - [协作功能测试详细文档](./COLLABORATION_TEST.md) - 完整的协作测试说明
@@ -284,20 +307,20 @@ sleep(Duration::from_millis(2000)).await;
 
 ```bash
 # 编译测试（不运行）
-cargo test --test collaboration_ui_test --no-run
+cargo nextest run --test collaboration_ui_test --no-run
 
-# 运行 UI 测试（详细输出；默认 #[ignore]，需 --ignored）
-cargo test --test collaboration_ui_test test_collaboration_ui_all -- --ignored --nocapture
+# 运行 UI 测试（详细输出；默认 #[ignore]，需 --run-ignored only）
+cargo nextest run --test collaboration_ui_test test_collaboration_ui_all --run-ignored only --no-capture
 
 # 运行基础测试（默认 #[ignore] 的主测试）
-cargo test --test collaboration_full_test -- --ignored --nocapture
+cargo nextest run --test collaboration_full_test --run-ignored only --no-capture
 
-# 运行特定测试函数（本地序列化单测，无需 --ignored）
-cargo test --test collaboration_full_test test_serialize_mouse_move -- --nocapture
+# 运行特定测试函数（本地序列化单测，无需 --run-ignored）
+cargo nextest run --test collaboration_full_test test_serialize_mouse_move --no-capture
 
 # 不因某个测试失败而中止其余测试
-cargo test --test collaboration_ui_test --no-fail-fast
+cargo nextest run --test collaboration_ui_test --no-fail-fast
 
-# 单线程运行（输出顺序稳定）
-cargo test --test collaboration_ui_test -- --nocapture --test-threads=1
+# 单线程运行（输出顺序稳定；--no-capture 本身即串行，-j 1 显式兜底）
+cargo nextest run --test collaboration_ui_test --no-capture -j 1
 ```

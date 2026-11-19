@@ -282,7 +282,10 @@ impl Host {
             .and_then(|previous| pan_increment(previous, center));
         if let Some((dx, dy)) = pan {
             // 画布输入直连：双指平移直接驱动编辑器（egui 无滚轮事件来源）。
-            self.dispatch_canvas_wheel(dx, dy, true);
+            // 但指针落在浮层上时让位——否则在菜单 / 弹层上双指平移会缩放画布。
+            if !self.egui_owns_pointer() {
+                self.dispatch_canvas_wheel(dx, dy, true);
+            }
             self.prev_pan_center = Some(center);
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();

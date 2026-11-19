@@ -1,0 +1,75 @@
+name: Test Report (Pages)
+
+# 由 "CI Check" 完成后触发：下载三平台 JUnit XML → 生成静态页面 → 发布到 GitHub Pages。
+#
+# 前置条件（一次性，需人工在仓库设置里完成）：
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions"
+# 站点地址：https://<org>.github.io/<repo>/
+#
+# 注意：workflow_run 只会使用默认分支上的本文件；修改后需先合入默认分支才会生效。
+
+on:
+  workflow_run:
+    workflows: ["CI Check"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  report:
+    # 只在 push 触发的 CI 上发布，避免 PR 结果覆盖主干报告；
+    # PR 的 JUnit 仍可在该次 CI run 的 artifact 中下载。
+    if: github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      # CI 可能在测试前就失败（BOM/lint/编译），此时没有 artifact；
+      # 仍然部署一个空报告页，避免报告站点长期停留在上一次成功的结果上。
+      - name: Download JUnit artifacts from CI run
+        continue-on-error: true
+        uses: actions/download-artifact@v6.0.0
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: junit-*
+          path: reports
+
+      - name: Build report site
+        env:
+          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_GENERATED: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          mkdir -p reports
+          python scripts/junit_report.py reports -o site --title "Lumino Test Report"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6.0.0
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5.0.1

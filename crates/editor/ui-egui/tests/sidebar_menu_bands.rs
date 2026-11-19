@@ -203,12 +203,11 @@ fn escape_closes_track_menu() {
     );
 }
 
-/// 菜单本体必须被 egui 的**图层**独占（不再是手工占用矩形）。
+/// 菜单本体必须被 egui 的**图层**独占，并且**同步登记占用表**。
 ///
-/// Step 7 把左侧栏菜单的全局占用登记删掉了——菜单走独立 `Area`，
-/// `Host::egui_layer_owns_pos` 经 `ctx.layer_id_at` 已能独占命中。
-/// 这条断言比"手工矩形里有一项"更强：它验证的是真实命中栈，
-/// 一旦菜单退回 root 绘制（悬停/点击穿透），这里会先红。
+/// `layer_id_at` 是稳定态的主判定；但 `Area` 第一次出现的帧是 sizing pass
+/// （`interactable == false`），图层命中不到——只依赖图层会留下「打开首帧
+/// 点击穿透」的窗口。因此登记表是首帧兜底，两份数据必须同时存在。
 #[test]
 fn menu_rect_is_owned_by_foreground_layer() {
     let (h, _) = harness(SidebarModel {
@@ -226,12 +225,11 @@ fn menu_rect_is_owned_by_foreground_layer() {
         egui::Order::Background,
         "菜单本体必须由独立图层独占命中（否则同一次点击会穿透到画布）"
     );
-    // 注意：探针同时落在下层音轨行内，而音轨行由 root 绘制、仍需登记占用
-    //（那是管用的一份）。这里只断言**菜单本体**（宽 56）不再登记。
+    // 首帧兜底：图层的 sizing pass 期间 `layer_id_at` 不可用，占用表必须顶上。
     assert!(
-        !menu::take_blocked(&h.ctx)
+        menu::take_blocked(&h.ctx)
             .iter()
             .any(|r| r.contains(probe) && (r.width() - 56.0).abs() < 1.0),
-        "Step 7 后菜单不再登记全局占用表（命中已归图层）"
+        "菜单必须登记占用表，否则 Area 首帧会漏点击"
     );
 }

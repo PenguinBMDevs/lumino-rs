@@ -672,17 +672,45 @@ impl Host {
         let Some(pos) = self.cursor_egui() else {
             return false;
         };
-        let panel_blocked = self
+        let (panel_blocked, layer_id) = self
             .render_ctx
             .egui_overlay
             .as_ref()
-            .is_some_and(|overlay| overlay.pointer_blocked(pos));
-        panel_blocked || self.egui_layer_owns_pos(pos)
+            .map_or((false, None), |overlay| {
+                (overlay.pointer_blocked(pos), overlay.ctx.layer_id_at(pos))
+            });
+        let layer = layer_id.is_some_and(|id| id.order != egui::Order::Background);
+        if pointer_diag() {
+            let blocked_rects = self
+                .render_ctx
+                .egui_overlay
+                .as_ref()
+                .map_or(0, |overlay| overlay.blocked.len());
+            tracing::info!(
+                target: "lumino::pointer_diag",
+                pos = ?pos,
+                panel_blocked,
+                layer,
+                layer_id = ?layer_id,
+                blocked_rects,
+                "指针归属判定"
+            );
+        }
+        panel_blocked || layer
     }
 }
 
 /// 形状抽屉面板与画布之间的分割线宽度（与生产 上一代 视图一致）。
 pub(crate) const SPLITTER_W: f32 = 6.0;
+
+/// 指针归属诊断开关（`LUMINO_POINTER_DIAG=1`）。
+///
+/// 只用于真机取证：打开后每次鼠标按键打一条「指针归属判定」日志，
+/// 用来区分「命中矩形漏登记」与「图层判定失效」两种穿透。
+fn pointer_diag() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("LUMINO_POINTER_DIAG").is_some())
+}
 
 /// egui 光标矩形（逻辑点）→ winit IME 锚点（物理像素）。
 ///

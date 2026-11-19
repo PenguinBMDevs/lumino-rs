@@ -2,6 +2,10 @@
 
 Agent configuration for the lumino-rs Rust project.
 
+> This file is written in English for tooling and review convenience. The project requirement that
+> internal text (code comments, documentation, commit messages) be written in Chinese is defined
+> under [Documentation](#documentation) and remains fully in force.
+
 ## Build Commands
 
 ```bash
@@ -14,36 +18,94 @@ cargo build --release
 # Run the application
 cargo run
 
-# Build script wrappers (已收进 scripts/)
-./scripts/build.sh [release|debug]    # Linux/macOS
-scripts/build.bat [release|debug]     # Windows
-python scripts/build.py [release|debug]  # 跨平台
+# Build script wrappers (now under scripts/)
+./scripts/build.sh [release|debug]      # Linux/macOS
+scripts/build.bat [release|debug]       # Windows
+python scripts/build.py [release|debug] # cross-platform
 ```
 
 ## Test Commands
 
+> **Hard rule: every test must run through `cargo nextest`. `cargo test` is forbidden.**
+> A bare `cargo test` bypasses nextest's per-test process isolation, timeout/retry policy and
+> output conventions; the same suite can disagree between runners, and reconciling that costs far
+> more than standardizing on one runner.
+> If nextest is missing, install it first: `cargo install cargo-nextest --locked`
+> (or `cargo binstall cargo-nextest`), then continue. **Do not fall back to `cargo test`.**
+> Sole exception: **doctests** (nextest does not support them) — see the end of this section.
+
 ```bash
-# Run all tests
-cargo test
+# Run all tests (workspace)
+cargo nextest run --workspace
 
-# Run a single test by name
-cargo test test_name
+# Run a single test by name (substring match, equivalent to cargo test test_name)
+cargo nextest run test_name
 
-# Run tests in a specific file
-cargo test --test collab_id_sync_local
-cargo test --test collaboration_full_test
-cargo test --test collaboration_ui_test
+# Run tests in a specific file (test target)
+cargo nextest run --test collab_id_sync_local
+cargo nextest run --test collaboration_full_test
+cargo nextest run --test collaboration_ui_test
 
 # Run tests for a specific crate
-cargo test -p lumino-core
-cargo test -p lumino-gfx
+cargo nextest run -p lumino-core
+cargo nextest run -p lumino-gfx
 
-# Run tests with output
-cargo test -- --nocapture
+# Show test output (equivalent to cargo test -- --nocapture)
+cargo nextest run --no-capture
 
-# Run specific integration test（协作套件默认 #[ignore]，需加 --ignored 才会执行）
-cargo test test_collaboration_ui_all --test collaboration_ui_test -- --ignored
+# Run specific integration tests (collaboration suites are #[ignore] by default)
+cargo nextest run --test collaboration_ui_test test_collaboration_ui_all --run-ignored only
+cargo nextest run --test collaboration_full_test --run-ignored only
+# collab_id_sync_local requires a local lumino-server-rs listening on port 3000
+cargo nextest run --test collab_id_sync_local --run-ignored only
+
+# Run everything without stopping at the first failure
+cargo nextest run --no-fail-fast
+
+# Serialized execution (equivalent to cargo test -- --test-threads=1)
+cargo nextest run -j 1
+
+# List tests without running them (verify filter matches / that the target builds)
+cargo nextest list --workspace
 ```
+
+### nextest conventions (old-command cross-reference)
+
+| Need | Forbidden | nextest equivalent |
+|------|-----------|--------------------|
+| Show test output | `cargo test -- --nocapture` | `cargo nextest run --no-capture` |
+| Only `#[ignore]` tests | `cargo test -- --ignored` | `cargo nextest run --run-ignored only` |
+| Both normal and ignored | — | `cargo nextest run --run-ignored all` |
+| Serialized | `cargo test -- --test-threads=1` | `cargo nextest run -j 1` |
+| Combined filtering | multiple name args | `-E 'test(/pattern/) & binary(collaboration_ui_test)'` |
+| Retry failures | none | `--retries <N>` (defaults come from the profile) |
+
+- Default config path: `workspace-root/.config/nextest.toml`. The repository does not have one yet;
+  add it when shared timeout/retry/concurrency policy is needed instead of scattering flags across
+  the command line.
+- **Doctest exception**: nextest cannot run doctests. Only when `///` code blocks in a modified
+  crate need verification, `cargo test --doc -p <crate>` is allowed, and the delivery notes must
+  state that this is the doctest exception.
+
+### CI test reports (JUnit + Pages)
+
+nextest 0.9.x no longer ships `--junit-xml`; CI consumes its libtest JSON stream and converts it:
+
+```bash
+NEXTEST_EXPERIMENTAL_LIBTEST_JSON=1 \
+  cargo nextest run --workspace --message-format libtest-json-plus > nextest.ndjson
+python scripts/nextest_junit.py nextest.ndjson -o junit.xml --name "nextest (local)"
+
+# Same static dashboard that the Pages workflow publishes
+python scripts/junit_report.py <dir-with-junit-xml> -o site
+```
+
+- `.github/workflows/ci.yml` uploads `junit-<os>.xml` for every platform in the test matrix.
+- `.github/workflows/test-report.yml` downloads those artifacts and deploys the HTML dashboard to
+  GitHub Pages at `https://<org>.github.io/<repo>/`. Pages must be switched to "GitHub Actions"
+  once under repository settings.
+- Test failures must still produce a report: run nextest with `--no-fail-fast`, convert/upload with
+  `if: always()`, then fail the job in a final gate step.
 
 ## Lint/Format Commands
 
@@ -89,8 +151,9 @@ use lumino_core::{Event, Result};
 ### Error Handling
 - **NEVER use `unwrap()` in production code** - all errors must be properly handled
 - **NEVER use `expect()` in production code** - propagate errors with `?` instead
-- **测试代码允许使用 `expect()`**：测试断言应使用带上下文的 `expect("...")`（而非裸 `unwrap()`），
-  失败时能快速定位；此豁免仅限测试代码（`#[cfg(test)]` 模块、`tests/` 目录集成测试）
+- **`expect()` is allowed in test code**: assertions should use `expect("...")` with context
+  (never a bare `unwrap()`) so failures localize quickly. This exemption covers test code only
+  (`#[cfg(test)]` modules and integration tests under `tests/`)
 - **NEVER use mod.rs** - use `{module}.rs` + `{module}/`
 - Use `thiserror` for custom error types
 - Use `Result<T>` type alias for consistency
@@ -104,14 +167,18 @@ use lumino_core::{Event, Result};
 - Use `async/await` for async operations
 
 ### Testing
+- **Single runner: `cargo nextest run`** — `cargo test` is forbidden (doctest exception, see
+  [Test Commands](#test-commands))
 - Unit tests: place in `#[cfg(test)]` module within source files
 - Integration tests: place in `tests/` directory
 - Use descriptive test names with `test_` prefix
 - Use `tokio::test` for async tests
-- 测试断言优先使用 `expect("上下文说明")` 而非 `unwrap()`（见 Error Handling）
+- Prefer `expect("context")` over `unwrap()` in assertions (see Error Handling)
+- Before delivery, include the actual nextest run output; "it ran" is not evidence, the summary is
 
 ### Documentation
-- Use Chinese for comments, documentation, code identifiers and commit messages
+- **Internal text uses Chinese**: comments, documentation, code identifiers and commit messages are
+  written in Chinese. This requirement is mandatory and is not relaxed by this file being English
 - Follow Conventional Commits: `feat(module): description`
 - Sign all commits with GPG
 
@@ -130,25 +197,30 @@ use lumino_core::{Event, Result};
 
 - `master` branch: stable, release-ready
 - `dev` branch: active development
-- All PRs must pass clippy and tests
+- All PRs must pass clippy and tests (tests run via `cargo nextest run --workspace`)
 - All commits must be GPG signed
 
-## 术语约定（DEBT-21）
+## Terminology Convention (DEBT-21)
 
-**上一代 UI 层已整体移除**：`Host` 不再持有任何上一代 widget 树，整窗绘制、命中判定、
-输入分发全部由 egui 独占，画布与 wgpu 渲染器只提供纹理与坐标换算。
+**The previous-generation UI layer has been removed entirely**: `Host` no longer holds any
+previous-generation widget tree. Whole-window painting, hit testing and input dispatch are owned by
+egui alone; the canvas and the wgpu renderer only supply textures and coordinate conversion.
 
-因此代码注释与文档里：
+Therefore, in code comments and documentation:
 
-- **不要再写「某一层仍在接管/绘制/消费输入」**——没有第二条通道；若某块 UI 由 egui 画，
-  就写 egui 的模块名（`chrome::*`、`chrome/sidebar/*`），由画布层画就写「画布层」。
-- 指代已移除的那一层时统一用 **「上一代」**（首次出现可补一句「已移除」），
-  不要造「旧版本 / 老版本 / v1」等新别名。
-- 需要标定几何/配色基线时，**指向现存符号**（`layout` 常量、`PaletteSeed` 字段、
-  `Palette::TOKYO_NIGHT_STORM`），或写明具体数值；不要引用已删除的常量名。
-- 测试失败消息表达**当前契约**（"点击应落到画布"），不要写「否则上一代会…」。
-- 统计口径用 `git grep -c` 求和；`git grep -n` 的输出在中日文混排的 Windows 控制台下
-  喂 `Measure-Object` 会少算一个数量级。
+- **Never write 「某一层仍在接管/绘制/消费输入」** (or any equivalent): there is no second channel.
+  If a piece of UI is painted by egui, name the egui module (`chrome::*`, `chrome/sidebar/*`); if it
+  is painted by the canvas layer, write 「画布层」.
+- When referring to the removed layer, always use **「上一代」** (on first mention you may add
+  「已移除」). Do not invent aliases such as 「旧版本 / 老版本 / v1」.
+- When grounding geometry or color baselines, **point to a surviving symbol** (`layout` constants,
+  `PaletteSeed` fields, `Palette::TOKYO_NIGHT_STORM`) or state explicit numbers; never cite deleted
+  constant names.
+- Test failure messages must express the **current contract** ("the click should land on the
+  canvas"), never 「否则上一代会…」.
+- Compute counts with `git grep -c` and sum them; feeding `git grep -n` output to `Measure-Object`
+  on a Windows console with mixed CJK text undercounts by an order of magnitude.
 
-**不可改名**：`TextLayoutMode::LegacyBox`（公开枚举变体，进配置序列化）、
-`SnapSpec::from_legacy`（公开 API）、`test_legacy_*` 系列测试名——历史命名，保持逐字不变。
+**Must never be renamed**: `TextLayoutMode::LegacyBox` (public enum variant, serialized into
+config), `SnapSpec::from_legacy` (public API), and the `test_legacy_*` test names — historical
+names, keep them byte-for-byte identical.
