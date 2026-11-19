@@ -14,8 +14,8 @@ inputs:
       不接受 ~ / 绝对路径；不存在的目录在打包时自动跳过。
     required: true
   zstd-level:
-    description: zstd 压缩级别（-T0 多线程）
-    default: "6"
+    description: zstd 压缩级别（-T0 多线程）；默认 3（zstd 自带档，压缩最快），CI 场景 3-5 足够
+    default: "3"
   save:
     description: "'true' 时打包回传 HF 并替换旧包（CI 结束后第二次调用时设）"
     default: "false"
@@ -195,6 +195,8 @@ runs:
         fi
 
         # 成员名就是仓库相对路径；解压端按同一份 paths 还原，不会错位。
+        # level 默认 3：zstd 默认档，压缩最快；level 6 在 GB 级 target 上会明显拖长
+        # 打包时间，CI 有被 runner 超时掐断的风险，包体积略增可由上传吸收。
         tar -cf - -C "$ROOT" -- "${packed[@]}" \
           | zstd -T0 "-$LEVEL" -o "$ARCHIVE_PATH"
 
