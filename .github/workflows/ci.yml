@@ -64,14 +64,12 @@ jobs:
       # HF 缓存（替代 actions/cache）：每类机器一个 zstd 包，见
       # .github/actions/hf-cache。工具链装好后拉包解压；token 为空
       # （fork PR）时静默跳过。lint 与 test 是并行 job，各用各的包名，
-      # 避免并发回写同一个文件互相覆盖。
+      # 避免并发回写同一个文件互相覆盖。缓存范围仅项目 target（不缓存 ~/.cargo）。
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
           archive: ci-lint-${{ matrix.os }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target
           hf-token: ${{ secrets.HF_TOKEN }}
 
@@ -97,8 +95,6 @@ jobs:
         with:
           archive: ci-lint-${{ matrix.os }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target
           save: "true"
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -150,8 +146,6 @@ jobs:
         with:
           archive: ci-test-${{ matrix.os }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target
           hf-token: ${{ secrets.HF_TOKEN }}
 
@@ -180,8 +174,6 @@ jobs:
         with:
           archive: ci-test-${{ matrix.os }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target
           save: "true"
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -213,8 +205,6 @@ jobs:
         with:
           archive: ci-canary-windows-latest.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/x86_64-pc-windows-msvc
             target/release
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -232,8 +222,6 @@ jobs:
         with:
           archive: ci-canary-windows-latest.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/x86_64-pc-windows-msvc
             target/release
           save: "true"

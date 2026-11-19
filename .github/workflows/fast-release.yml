@@ -19,13 +19,12 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # 只缓存项目 target；~/.cargo 不入包（见 .github/actions/hf-cache）。
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
           archive: fast-release-windows-latest.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target
           hf-token: ${{ secrets.HF_TOKEN }}
 
@@ -38,8 +37,6 @@ jobs:
         with:
           archive: fast-release-windows-latest.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target
           save: "true"
           hf-token: ${{ secrets.HF_TOKEN }}

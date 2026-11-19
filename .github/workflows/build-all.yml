@@ -33,15 +33,14 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
 
-      # HF 缓存：除 ~/.cargo 外，把 release 产物目录也纳入缓存
+      # HF 缓存：只缓存项目 target 下的目录
       #（target/<triple>/release + 宿主侧 target/release），发版构建可续编。
+      # 不缓存 ~/.cargo：缓存包只包含仓库内路径，避免跨目录成员错位。
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
           archive: release-linux-x86_64.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/x86_64-unknown-linux-gnu
             target/release
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -69,8 +68,6 @@ jobs:
         with:
           archive: release-linux-x86_64.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/x86_64-unknown-linux-gnu
             target/release
           save: "true"
@@ -113,8 +110,6 @@ jobs:
         with:
           archive: release-linux-arm64.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/aarch64-unknown-linux-gnu
             target/release
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -142,8 +137,6 @@ jobs:
         with:
           archive: release-linux-arm64.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/aarch64-unknown-linux-gnu
             target/release
           save: "true"
@@ -197,8 +190,6 @@ jobs:
         with:
           archive: release-windows-${{ matrix.arch }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/${{ matrix.target }}
             target/release
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -218,8 +209,6 @@ jobs:
         with:
           archive: release-windows-${{ matrix.arch }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/${{ matrix.target }}
             target/release
           save: "true"
@@ -274,8 +263,6 @@ jobs:
         with:
           archive: release-macos-${{ matrix.arch }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/${{ matrix.target }}
             target/release
           hf-token: ${{ secrets.HF_TOKEN }}
@@ -295,8 +282,6 @@ jobs:
         with:
           archive: release-macos-${{ matrix.arch }}.tar.zst
           paths: |
-            ~/.cargo/registry
-            ~/.cargo/git
             target/${{ matrix.target }}
             target/release
           save: "true"

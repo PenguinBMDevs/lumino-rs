@@ -9,7 +9,9 @@ inputs:
     description: HF 仓库内的压缩包文件名，如 ci-lint-ubuntu-latest.tar.zst
     required: true
   paths:
-    description: 缓存目录，每行一个；~/ 开头相对 $HOME，否则相对仓库根目录
+    description: >-
+      需要缓存的目录，每行一个，必须是相对仓库根目录的路径（如 target、target/release）。
+      不接受 ~ / 绝对路径；不存在的目录在打包时自动跳过。
     required: true
   zstd-level:
     description: zstd 压缩级别（-T0 多线程）
@@ -26,8 +28,16 @@ runs:
   steps:
     - name: Install zstd & huggingface_hub
       if: ${{ inputs.hf-token != '' }}
+      # 缓存只是加速手段：安装失败只影响命中率，不能把 CI 门禁判红。
+      continue-on-error: true
       shell: bash
       run: |
+        set -euo pipefail
+        ACTION_DIR="$GITHUB_ACTION_PATH"
+        if command -v cygpath >/dev/null 2>&1; then
+          ACTION_DIR="$(cygpath -u "$ACTION_DIR")"
+        fi
+        source "$ACTION_DIR/paths.sh"
         if ! command -v zstd >/dev/null 2>&1; then
           case "$RUNNER_OS" in
             Linux)   sudo apt-get update && sudo apt-get install -y zstd ;;
@@ -35,22 +45,41 @@ runs:
             Windows) choco install zstd --no-progress -y ;;
           esac
         fi
-        python -m pip install --quiet --upgrade huggingface_hub hf_transfer
+        PY="$(hf_cache_python)"
+        if [ -z "$PY" ]; then
+          echo "::warning::未找到 python，缓存功能不可用"
+          exit 0
+        fi
+        "$PY" -m pip install --quiet --upgrade huggingface_hub hf_transfer
 
     - name: Pull cache archive from Hugging Face
       # 只在「拉取模式」（save != 'true'）执行；首次运行仓库里没有包时
-      # hf_hub_download 抛错 → 本步失败 → 后续解压自然跳过（全冷编译）。
+      # 本步以警告收尾，后续解压自然跳过（全冷编译）。
       if: ${{ inputs.hf-token != '' && inputs.save != 'true' }}
       id: pull
-      shell: bash
       continue-on-error: true
+      shell: bash
       env:
         HF_TOKEN: ${{ inputs.hf-token }}
         HF_HUB_ENABLE_HF_TRANSFER: "1"
         ARCHIVE: ${{ inputs.archive }}
       run: |
-        mkdir -p "$RUNNER_TEMP/hf-cache"
-        python - <<'PYEOF'
+        set -euo pipefail
+        ACTION_DIR="$GITHUB_ACTION_PATH"
+        if command -v cygpath >/dev/null 2>&1; then
+          ACTION_DIR="$(cygpath -u "$ACTION_DIR")"
+        fi
+        source "$ACTION_DIR/paths.sh"
+        CACHE_DIR="$(hf_cache_temp_dir)/hf-cache"
+        mkdir -p "$CACHE_DIR"
+
+        PY="$(hf_cache_python)"
+        if [ -z "$PY" ]; then
+          echo "::warning::未找到 python，跳过缓存拉取: $ARCHIVE"
+          exit 0
+        fi
+
+        if "$PY" - <<'PYEOF'
         import os
         from huggingface_hub import hf_hub_download
         p = hf_hub_download(
@@ -62,29 +91,66 @@ runs:
         )
         print("pulled:", p)
         PYEOF
-        echo "hit=true" >> "$GITHUB_OUTPUT"
+        then
+          echo "hit=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::HF 缓存未命中（冷启动或下载失败）: $ARCHIVE"
+        fi
 
     - name: Extract cache archive
       if: ${{ steps.pull.outputs.hit == 'true' }}
+      # 缓存损坏 / 格式过期只应退化为冷编译，不能把门禁判红。
+      continue-on-error: true
       shell: bash
       env:
         ARCHIVE: ${{ inputs.archive }}
         PATHS: ${{ inputs.paths }}
       run: |
-        ARCHIVE_PATH="$RUNNER_TEMP/hf-cache/$ARCHIVE"
-        # 按行展开路径：~/ 开头的成员用 -C "$HOME" 解，其余解到仓库根。
-        # tar 的 -C 与成员名交错书写，GNU tar / bsdtar 均按序处理。
-        args=()
+        set -euo pipefail
+        ACTION_DIR="$GITHUB_ACTION_PATH"
+        if command -v cygpath >/dev/null 2>&1; then
+          ACTION_DIR="$(cygpath -u "$ACTION_DIR")"
+        fi
+        source "$ACTION_DIR/paths.sh"
+
+        cd "${GITHUB_WORKSPACE:-$PWD}"
+        ROOT="$PWD"
+        ARCHIVE_PATH="$(hf_cache_temp_dir)/hf-cache/$ARCHIVE"
+        if [ ! -f "$ARCHIVE_PATH" ]; then
+          echo "::warning::缓存包不存在，跳过解压: $ARCHIVE"
+          exit 0
+        fi
+
+        parsed="$(hf_cache_roots)" || exit 0
+        roots=()
         while IFS= read -r p; do
-          [ -z "$p" ] && continue
-          case "$p" in
-            ~/*) args+=(-C "$HOME" ".${p#~}") ;;
-            *)   args+=(-C "$PWD" "$p") ;;
-          esac
-        done <<< "$PATHS"
-        zstd -dc "$ARCHIVE_PATH" | tar -xf - "${args[@]}"
-        rm -f "$ARCHIVE_PATH"
-        echo "cache extracted: $ARCHIVE"
+          if [ -n "$p" ]; then roots+=("$p"); fi
+        done <<< "$parsed"
+        if [ ${#roots[@]} -eq 0 ]; then
+          echo "::warning::未配置缓存路径，跳过解压: $ARCHIVE"
+          exit 0
+        fi
+
+        members="$(mktemp)"
+        trap 'rm -f "$members" "$ARCHIVE_PATH"' EXIT
+        zstd -dc "$ARCHIVE_PATH" | tar -tf - > "$members"
+
+        # 只还原「配置里声明且包里确实存在」的根，避免旧包/残缺包解压报错。
+        extract=()
+        for p in "${roots[@]}"; do
+          if hf_cache_member_exists "$p" "$members"; then
+            extract+=("$p")
+          else
+            echo "缓存包内缺少路径，跳过: $p"
+          fi
+        done
+        if [ ${#extract[@]} -eq 0 ]; then
+          echo "::warning::缓存包不含任何配置路径，按冷启动处理: $ARCHIVE"
+          exit 0
+        fi
+
+        zstd -dc "$ARCHIVE_PATH" | tar -xf - -C "$ROOT" -- "${extract[@]}"
+        echo "cache extracted: $ARCHIVE (${extract[*]})"
 
     - name: Pack & push cache archive
       # 拉取模式下不执行。打包完以单个 commit 删旧+传新：commit 失败
@@ -92,8 +158,8 @@ runs:
       # 保证 HF 上旧包不会被提前删掉。continue-on-error：缓存刷新失败
       # 不拖累 CI 结论，下轮运行自动全冷编译自愈。
       if: ${{ inputs.hf-token != '' && inputs.save == 'true' }}
-      shell: bash
       continue-on-error: true
+      shell: bash
       env:
         HF_TOKEN: ${{ inputs.hf-token }}
         HF_HUB_ENABLE_HF_TRANSFER: "1"
@@ -101,20 +167,65 @@ runs:
         PATHS: ${{ inputs.paths }}
         LEVEL: ${{ inputs.zstd-level }}
       run: |
-        mkdir -p "$RUNNER_TEMP/hf-cache"
-        ARCHIVE_PATH="$RUNNER_TEMP/hf-cache/$ARCHIVE"
-        args=()
+        set -euo pipefail
+        ACTION_DIR="$GITHUB_ACTION_PATH"
+        if command -v cygpath >/dev/null 2>&1; then
+          ACTION_DIR="$(cygpath -u "$ACTION_DIR")"
+        fi
+        source "$ACTION_DIR/paths.sh"
+
+        cd "${GITHUB_WORKSPACE:-$PWD}"
+        ROOT="$PWD"
+        CACHE_DIR="$(hf_cache_temp_dir)/hf-cache"
+        mkdir -p "$CACHE_DIR"
+        ARCHIVE_PATH="$CACHE_DIR/$ARCHIVE"
+        rm -f "$ARCHIVE_PATH"
+
+        parsed="$(hf_cache_roots)" || exit 1
+        roots=()
         while IFS= read -r p; do
-          [ -z "$p" ] && continue
-          mkdir -p "${p/#\~/$HOME}"
-          case "$p" in
-            ~/*) args+=(-C "$HOME" ".${p#~}") ;;
-            *)   args+=(-C "$PWD" "$p") ;;
-          esac
-        done <<< "$PATHS"
-        tar -cf - "${args[@]}" | zstd -T0 "-$LEVEL" -o "$ARCHIVE_PATH"
+          if [ -n "$p" ]; then roots+=("$p"); fi
+        done <<< "$parsed"
+
+        # 只打包真实存在的目录（build 早退时 target/release 可能尚未产生）。
+        packed=()
+        for p in "${roots[@]}"; do
+          if [ -e "$p" ]; then
+            packed+=("$p")
+          else
+            echo "::warning::缓存路径不存在，跳过: $p"
+          fi
+        done
+        if [ ${#packed[@]} -eq 0 ]; then
+          echo "::warning::没有可打包的路径，跳过上传: $ARCHIVE"
+          exit 0
+        fi
+
+        # 成员名就是仓库相对路径；解压端按同一份 paths 还原，不会错位。
+        tar -cf - -C "$ROOT" -- "${packed[@]}" \
+          | zstd -T0 "-$LEVEL" -o "$ARCHIVE_PATH"
+
+        # 上传前自检：tar 在部分成员缺失时会「产包但非零退出」，
+        # 管道即便有 pipefail 也要再核对成员，避免把残缺包推成新缓存。
+        members="$(mktemp)"
+        trap 'rm -f "$members" "$ARCHIVE_PATH"' EXIT
+        zstd -dc "$ARCHIVE_PATH" | tar -tf - > "$members"
+        for p in "${packed[@]}"; do
+          if ! hf_cache_member_exists "$p" "$members"; then
+            echo "::error::打包结果缺少成员: $p"
+            exit 1
+          fi
+        done
+        echo "archive roots: ${packed[*]}"
         ls -lh "$ARCHIVE_PATH"
-        python - <<'PYEOF'
+
+        PY="$(hf_cache_python)"
+        if [ -z "$PY" ]; then
+          echo "::warning::未找到 python，跳过缓存上传: $ARCHIVE"
+          exit 0
+        fi
+
+        "$PY" - <<'PYEOF'
         import os
         from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete
         api = HfApi(token=os.environ["HF_TOKEN"])
@@ -143,4 +254,3 @@ runs:
             )
             print("uploaded:", arc)
         PYEOF
-        rm -f "$ARCHIVE_PATH"
