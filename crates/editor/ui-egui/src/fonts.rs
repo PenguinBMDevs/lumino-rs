@@ -74,6 +74,16 @@ pub fn definitions() -> Option<FontDefinitions> {
             .push(FONT_KEY.to_owned());
     }
 
+    // 几何符号兜底：`Ubuntu-Light` 与内置 CJK 子集都不含 ← / → / ● / ▾
+    // 这类符号，缺字形时会渲染成豆腐块。Hack 随 egui 编译期内嵌（跨平台
+    // 一致），把它追加在比例字体链**末尾**：只接管前面所有字体都没有的
+    // 字形，不改变任何现有拉丁 / 中文字符的渲染结果。
+    definitions
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .push("Hack".to_owned());
+
     tracing::info!(
         "egui: 注入内置 CJK 字体 '{}'（{} bytes）",
         FONT_NAME,
@@ -109,6 +119,27 @@ mod tests {
             egui::MissingGlyphPolicy::Tofu,
             "install 后缺字形策略必须为 Tofu"
         );
+    }
+
+    #[test]
+    fn test_symbol_fallback_covers_ui_icons() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+
+        // 这些符号会直接出现在 UI 文案里（返回箭头 / 菜单箭头 / 选中标记）；
+        // 比例字体链必须能解析它们，否则渲染成豆腐块。
+        let font = egui::FontId::proportional(12.0);
+        // `set_fonts` 在首帧 `run_ui` 时才真正建字体表，检查必须放在帧内。
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for ch in ['←', '→', '●', '▾', '📁', '📄'] {
+                assert!(
+                    ui.ctx().fonts_mut(|fonts| fonts.has_glyph(&font, ch)),
+                    "比例字体链缺少符号字形：{ch:?}"
+                );
+            }
+        });
+        // 测试不接管渲染后端，纹理增量主动丢弃，避免 `Drop` 断言。
+        output.textures_delta.clear();
     }
 
     #[test]

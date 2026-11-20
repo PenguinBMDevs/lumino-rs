@@ -296,6 +296,7 @@ fn device_combo(ui: &mut egui::Ui, rect: egui::Rect, model: &CloudBrowserModel) 
     egui::ComboBox::from_id_salt("cloud-device")
         .selected_text(RichText::new(selected).size(theme::font::LABEL))
         .width(rect.width() - 6.0)
+        .truncate()
         .show_ui(&mut child, |ui| {
             for device in &model.devices {
                 if ui
@@ -385,9 +386,11 @@ fn list(ui: &mut egui::Ui, rect: egui::Rect, model: &CloudBrowserModel) {
                 ))
                 .layout(egui::Layout::left_to_right(Align::Center)),
         );
-        empty.add(egui::Label::new(
-            RichText::new(placeholder).size(12.0).color(theme::text()),
-        ));
+        empty.add(
+            egui::Label::new(RichText::new(placeholder).size(12.0).color(theme::text()))
+                .selectable(false)
+                .truncate(),
+        );
         return;
     }
 
@@ -778,19 +781,31 @@ fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
 }
 
 /// 固定矩形内的左对齐文本（保留可访问树节点）。
+///
+/// 超出矩形宽度时由 egui 以「…」省略，绝不换行——文件名 / 路径过长时
+/// 只能压缩自己，不能压到下一行或行尾按钮上。`Label` 默认在省略态悬停
+/// 显示全文，无需额外 tooltip。
 fn label_left(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color: Color32) {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }
 
-/// 居中文本（进入可访问树）。
+/// 居中文本（进入可访问树；超宽同样省略并悬停显示全文）。
 fn label_center(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color: Color32) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(
         egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
     ));
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

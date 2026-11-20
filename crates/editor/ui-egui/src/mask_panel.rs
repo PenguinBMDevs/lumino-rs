@@ -38,7 +38,7 @@ pub enum MaskShowKind {
 pub struct MaskPanelLabels {
     /// 标题「遮罩」。
     pub title: String,
-    /// 关闭按钮「✕」。
+    /// 关闭按钮「×」。
     pub close: String,
     /// 「启用」。
     pub enable: String,
@@ -293,7 +293,7 @@ mod tests {
     fn labels() -> MaskPanelLabels {
         MaskPanelLabels {
             title: "遮罩".into(),
-            close: "✕".into(),
+            close: "×".into(),
             enable: "启用".into(),
             enable_on: "On".into(),
             region: "区域".into(),
