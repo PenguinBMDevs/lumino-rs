@@ -141,7 +141,9 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
                 let mut child =
                     ui.new_child(egui::UiBuilder::new().max_rect(row_rect).layout(layout));
                 child.add(
-                    egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false),
+                    egui::Label::new(RichText::new(text).size(size).color(color))
+                        .selectable(false)
+                        .truncate(),
                 );
             }
             Row::Bar(progress) => {
@@ -193,9 +195,10 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
                         ))
                         .layout(egui::Layout::left_to_right(Align::Center)),
                 );
-                child.add(egui::Label::new(
-                    RichText::new(hint).size(12.0).color(theme::text_muted()),
-                ));
+                child.add(
+                    egui::Label::new(RichText::new(hint).size(12.0).color(theme::text_muted()))
+                        .truncate(),
+                );
             }
             Row::ErrorBox(detail) => {
                 ui.painter().rect(
@@ -333,7 +336,7 @@ fn button(ui: &mut egui::Ui, rect: egui::Rect, label: &str, kind: ButtonKind) ->
         ButtonKind::Danger => (theme::danger(), Color32::WHITE),
         ButtonKind::Neutral => (theme::toolbar_bg(), theme::text()),
     };
-    let widget = egui::Button::new(RichText::new(label).size(14.0).color(text))
+    let widget = crate::widgets::text_button(RichText::new(label).size(14.0).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.put(

@@ -360,10 +360,16 @@ fn draw_snap_panel(
             Vec2::splat(GLYPH),
         );
         snap_glyph(ui, glyph, item.spec, theme::text_on_weak());
+        let text_x = glyph.right() + 6.0;
         ui.painter().text(
-            Pos2::new(glyph.right() + 6.0, row.center().y),
+            Pos2::new(text_x, row.center().y),
             Align2::LEFT_CENTER,
-            &item.label,
+            crate::text::truncate_to_width(
+                ui,
+                &item.label,
+                TEXT_SIZE,
+                (row.right() - text_x - 4.0).max(1.0),
+            ),
             FontId::proportional(TEXT_SIZE),
             theme::text_on_weak(),
         );
@@ -394,7 +400,12 @@ fn draw_snap_panel(
     ui.painter().text(
         Pos2::new(glyph.right() + 6.0, row.center().y),
         Align2::LEFT_CENTER,
-        &menu.custom_label,
+        crate::text::truncate_to_width(
+            ui,
+            &menu.custom_label,
+            TEXT_SIZE,
+            (row.right() - glyph.right() - 10.0).max(1.0),
+        ),
         FontId::proportional(TEXT_SIZE),
         theme::text_on_weak(),
     );
@@ -447,7 +458,12 @@ fn draw_onion_panel(
         ui.painter().text(
             Pos2::new(check.right() + 6.0, row.center().y),
             Align2::LEFT_CENTER,
-            &item.label,
+            crate::text::truncate_to_width(
+                ui,
+                &item.label,
+                TEXT_SIZE,
+                (row.right() - check.right() - 10.0).max(1.0),
+            ),
             FontId::proportional(TEXT_SIZE),
             theme::text_on_weak(),
         );

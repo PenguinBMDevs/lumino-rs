@@ -332,7 +332,11 @@ fn cell_text_color(
         _ => egui::Layout::left_to_right(Align::Center),
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(layout));
-    child.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(13.0).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }
 
 /// 按钮种类（决定底色与置灰）。
@@ -355,9 +359,10 @@ fn button(ui: &mut egui::Ui, x: f32, y: f32, label: &str, kind: ButtonKind) -> e
             (theme::toolbar_bg(), theme::text_muted())
         }
     };
-    let button = egui::Button::new(RichText::new(label).size(theme::font::LABEL).color(text))
-        .fill(fill)
-        .corner_radius(CornerRadius::same(4));
+    let button =
+        crate::widgets::text_button(RichText::new(label).size(theme::font::LABEL).color(text))
+            .fill(fill)
+            .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
 }
 
@@ -368,5 +373,9 @@ fn label_left(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color:
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

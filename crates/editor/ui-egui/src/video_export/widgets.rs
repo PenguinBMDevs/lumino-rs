@@ -44,9 +44,7 @@ pub(super) fn label_cell(ui: &mut egui::Ui, row: egui::Rect, width: f32, text: &
             ))
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(
-        RichText::new(text).size(14.0).color(theme::text()),
-    ));
+    child.add(egui::Label::new(RichText::new(text).size(14.0).color(theme::text())).truncate());
 }
 
 /// 固定盒子输入框。
@@ -95,9 +93,10 @@ pub(super) fn button(
         VideoButtonFill::Neutral => (theme::toolbar_bg(), theme::text()),
         VideoButtonFill::Danger => (theme::danger(), Color32::WHITE),
     };
-    let widget = egui::Button::new(RichText::new(&button_def.label).size(14.0).color(text))
-        .fill(fill)
-        .corner_radius(CornerRadius::same(4));
+    let widget =
+        crate::widgets::text_button(RichText::new(&button_def.label).size(14.0).color(text))
+            .fill(fill)
+            .corner_radius(CornerRadius::same(4));
     ui.put(
         egui::Rect::from_min_size(pos, Vec2::new(width, height)),
         widget,
@@ -129,9 +128,9 @@ pub(super) fn text_pair_cell(
                 ))
                 .layout(egui::Layout::left_to_right(Align::Center)),
         );
-        label.add(egui::Label::new(
-            RichText::new(&cell.label).size(13.0).color(theme::text()),
-        ));
+        label.add(
+            egui::Label::new(RichText::new(&cell.label).size(13.0).color(theme::text())).truncate(),
+        );
         x += cell.label_width + 6.0;
     }
     let w = cell.width.max(40.0);

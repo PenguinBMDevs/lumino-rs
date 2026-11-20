@@ -94,7 +94,7 @@ pub fn show(ui: &mut egui::Ui, model: &DrawSettingsModel) {
         egui::pos2(inner.right() - close_w, inner.bottom() - BUTTON_H),
         Vec2::new(close_w, BUTTON_H),
     );
-    let close = egui::Button::new(
+    let close = crate::widgets::text_button(
         RichText::new(&model.close)
             .size(theme::font::LABEL)
             .color(theme::text()),

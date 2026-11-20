@@ -254,9 +254,12 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     );
     child.spacing_mut().item_spacing.x = 6.0;
     child.add(cache.default_image(child.ctx(), Icon::MusicNote, 16.0));
-    child.add(egui::Label::new(
-        egui::RichText::new(&model.snap)
-            .size(theme::font::BODY)
-            .color(theme::text_on_weak()),
-    ));
+    child.add(
+        egui::Label::new(
+            egui::RichText::new(&model.snap)
+                .size(theme::font::BODY)
+                .color(theme::text_on_weak()),
+        )
+        .truncate(),
+    );
 }

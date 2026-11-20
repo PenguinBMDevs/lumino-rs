@@ -24,7 +24,12 @@ pub(super) fn field(ui: &mut egui::Ui, rect: Rect, model: &TextParamsPanelModel)
     ui.painter().text(
         Pos2::new(rect.left() + 6.0, rect.center().y),
         Align2::LEFT_CENTER,
-        &model.params.font,
+        crate::text::truncate_to_width(
+            ui,
+            &model.params.font,
+            12.0,
+            (rect.width() - 24.0).max(1.0),
+        ),
         FontId::proportional(12.0),
         TEXT,
     );
@@ -92,14 +97,15 @@ pub(super) fn popup(
         .show(&mut child, |ui| {
             for font in &model.fonts {
                 let selected = font.eq_ignore_ascii_case(&model.params.font);
-                let button = egui::Button::new(egui::RichText::new(font).size(12.0).color(TEXT))
-                    .frame(false)
-                    .fill(if selected {
-                        panels::selection_fill()
-                    } else {
-                        Color32::TRANSPARENT
-                    })
-                    .min_size(Vec2::new(ui.available_width(), 18.0));
+                let button =
+                    crate::widgets::text_button(egui::RichText::new(font).size(12.0).color(TEXT))
+                        .frame(false)
+                        .fill(if selected {
+                            panels::selection_fill()
+                        } else {
+                            Color32::TRANSPARENT
+                        })
+                        .min_size(Vec2::new(ui.available_width(), 18.0));
                 if ui.add(button).clicked() {
                     let mut next = model.params.clone();
                     next.font = font.clone();

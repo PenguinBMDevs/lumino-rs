@@ -82,7 +82,23 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
     // 生产布局里 `right_text` 恒占一个行位：即使为空串，perf 组右边仍留 8px。
     ui.add_space(8.0);
     if !model.right.is_empty() {
-        widgets::label(ui, &model.right, FONT, theme::text());
+        // 右侧文本是单行槽位：最长 320，超出用省略号，避免把指标组挤出行外。
+        let width = widgets::text_width(ui, &model.right, FONT).clamp(1.0, 320.0);
+        ui.allocate_ui_with_layout(
+            Vec2::new(width, FONT * 1.4),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(&model.right)
+                            .size(FONT)
+                            .color(theme::text()),
+                    )
+                    .selectable(false)
+                    .truncate(),
+                );
+            },
+        );
         ui.add_space(8.0);
     }
     if !model.has_metrics() {

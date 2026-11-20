@@ -34,7 +34,7 @@ pub(super) fn draw_theme_card(ui: &mut egui::Ui, rect: Rect, card: &ThemeCardMod
     ui.painter().text(
         Pos2::new(rect.left() + 8.0, rect.top() + 8.0),
         Align2::LEFT_TOP,
-        &card.display,
+        crate::text::truncate_to_width(ui, &card.display, 11.0, rect.width() - 16.0),
         FontId::proportional(11.0),
         card.title,
     );
@@ -82,7 +82,7 @@ pub(super) fn draw_label(
     max_width: f32,
     palette: &SettingsPalette,
 ) {
-    let label = crate::widgets::truncate_to_width(ui, label, 14.0, max_width);
+    let label = crate::widgets::truncate_to_width(ui, label, 14.0, max_width.max(1.0));
     ui.painter().text(
         Pos2::new(x, center_y),
         Align2::LEFT_CENTER,
@@ -113,7 +113,9 @@ pub(super) fn grid_columns(width: f32) -> usize {
 }
 
 /// 一行的高度（开关 / 下拉 / 滑杆 / 文本 / 卡片网格…）。
-pub(super) fn row_height(row: &UiRow, width: f32) -> f32 {
+///
+/// `Static` 是说明性文本：宽度不够时折行，高度必须随行数增长（不能硬画单行）。
+pub(super) fn row_height(ui: &egui::Ui, row: &UiRow, width: f32) -> f32 {
     match row {
         UiRow::Section { .. } => 26.0,
         UiRow::Combo { .. } => 32.0,
@@ -121,7 +123,11 @@ pub(super) fn row_height(row: &UiRow, width: f32) -> f32 {
         UiRow::Checkbox { .. } => 22.0,
         UiRow::Slider { .. } => 22.0,
         UiRow::Button { .. } => 30.0,
-        UiRow::Static { .. } => 18.0,
+        UiRow::Static { text } => {
+            // 页面左右各 20 内边距；12px 字号按整行宽度折行。
+            let wrap = (width - 40.0).max(1.0);
+            crate::text::wrapped_height(ui, text, 12.0, wrap).max(18.0)
+        }
         UiRow::ThemeCards { cards, .. } => {
             let cols = grid_columns(width);
             let rows = cards.len().div_ceil(cols).max(1) as f32;

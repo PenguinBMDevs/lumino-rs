@@ -286,11 +286,12 @@ fn draw_panel(
                 } else {
                     theme::text_dim()
                 };
-                // 裁剪到行矩形：最近文件名可能远超 200px 面板宽度。
+                // 单行菜单项：超宽用省略号收敛（最近文件名可能远超面板宽度）。
+                let text_max = (row.width() - TEXT_PAD_X * 2.0).max(1.0);
                 ui.painter().with_clip_rect(row).text(
                     Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
                     Align2::LEFT_CENTER,
-                    label,
+                    crate::text::truncate_to_width(ui, label, FONT, text_max),
                     FontId::proportional(FONT),
                     color,
                 );
@@ -316,10 +317,11 @@ fn draw_panel(
                 // 标签裁到箭头左侧：长文本不压住「›」。
                 let label_clip =
                     Rect::from_min_max(row.min, Pos2::new(row.right() - 16.0, row.bottom()));
+                let text_max = (label_clip.width() - TEXT_PAD_X).max(1.0);
                 ui.painter().with_clip_rect(label_clip).text(
                     Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
                     Align2::LEFT_CENTER,
-                    label,
+                    crate::text::truncate_to_width(ui, label, FONT, text_max),
                     FontId::proportional(FONT),
                     theme::text(),
                 );

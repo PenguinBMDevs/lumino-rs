@@ -607,7 +607,7 @@ fn button(
     fill: Color32,
     text: Color32,
 ) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(16.0).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(16.0).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(3));
     ui.put(rect, button)
@@ -689,5 +689,9 @@ fn label_left_in(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, col
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

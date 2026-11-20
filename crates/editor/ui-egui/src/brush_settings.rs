@@ -208,6 +208,7 @@ fn level_row(ui: &mut egui::Ui, level: &crate::chrome::BrushLevelModel) {
     egui::ComboBox::from_id_salt(("brush-level", level.index))
         .selected_text(RichText::new(selected).size(theme::font::LABEL))
         .width(COMBO_W - 6.0)
+        .truncate()
         .show_ui(&mut combo, |ui| {
             for choice in &level.tracks {
                 if ui
@@ -304,7 +305,7 @@ fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
 }
 
 fn button(ui: &mut egui::Ui, rect: egui::Rect, label: &str) -> egui::Response {
-    let button = egui::Button::new(
+    let button = crate::widgets::text_button(
         RichText::new(label)
             .size(theme::font::LABEL)
             .color(theme::on_accent()),
@@ -321,5 +322,9 @@ fn label_block(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

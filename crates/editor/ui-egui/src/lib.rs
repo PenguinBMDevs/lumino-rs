@@ -58,6 +58,7 @@ pub mod shape_list;
 pub mod shape_preview;
 pub mod speed_change;
 pub mod tempo_max_bpm;
+pub mod text;
 pub mod text_tool;
 pub mod theme;
 pub mod velocity_panel;

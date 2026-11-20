@@ -22,12 +22,15 @@ const PAD: f32 = 20.0;
 const GAP: f32 = 10.0;
 
 pub(super) fn title(ui: &egui::Ui, x: f32, base: f32, text: &str, palette: &SettingsPalette) {
-    ui.painter().text(
+    let max = (ui.max_rect().right() - PAD - x).max(1.0);
+    crate::text::paint_truncated(
+        ui,
         Pos2::new(x, base + PAD + 10.0),
         Align2::LEFT_CENTER,
         text,
-        FontId::proportional(theme::font::TITLE),
+        theme::font::TITLE,
         palette.text,
+        max,
     );
 }
 
@@ -41,12 +44,15 @@ pub(super) fn shortcuts(
     let x = rect.left() + PAD;
     let base = rect.top();
     title(ui, x, base, &model.title, palette);
-    ui.painter().text(
-        Pos2::new(x, base + 75.0),
-        Align2::LEFT_CENTER,
+    // 占位说明属于解释性长文本：按卡片可用宽度折行，不硬画单行。
+    let wrap = (rect.right() - PAD - x).max(1.0);
+    crate::text::paint_wrapped(
+        ui,
+        Pos2::new(x, base + 75.0 - crate::text::line_height(ui, CONTENT) * 0.5),
         &model.placeholder,
-        FontId::proportional(CONTENT),
+        CONTENT,
         palette.text_dim,
+        wrap,
     );
 }
 
@@ -62,46 +68,54 @@ pub(super) fn onion_skin(
     title(ui, x, base, &model.title, palette);
 
     let row_center = base + 77.0;
+    let wrap = (rect.right() - PAD - x).max(1.0);
     let label_font = FontId::proportional(CONTENT);
+    // 右侧控件占位固定：标签必须截断，不能压到下拉框 / 锁定值上。
+    let reserve = if model.locked {
+        crate::text::text_width(ui, &model.locked_value, CONTENT) + 8.0
+    } else {
+        120.0 + 8.0
+    };
+    let label =
+        crate::text::truncate_to_width(ui, &model.label, CONTENT, (wrap - 32.0 - reserve).max(1.0));
     ui.painter().text(
         Pos2::new(x, row_center),
         Align2::LEFT_CENTER,
-        &model.label,
+        &label,
         label_font.clone(),
         palette.text,
     );
     let label_w = ui
         .painter()
-        .layout_no_wrap(model.label.clone(), label_font, palette.text)
+        .layout_no_wrap(label, label_font, palette.text)
         .size()
         .x;
     // 生产 `row![label, space(16), pick_list].spacing(8)` → 标签与控件间 32。
     let field_x = x + label_w + 32.0;
+    let mut below = base + 77.0 + 32.0 + GAP + 6.0;
 
     if model.locked {
-        ui.painter().text(
+        crate::text::paint_truncated(
+            ui,
             Pos2::new(field_x, row_center),
             Align2::LEFT_CENTER,
             &model.locked_value,
-            FontId::proportional(CONTENT),
+            CONTENT,
             palette.text,
+            (rect.right() - PAD - field_x).max(1.0),
         );
-        let value_w = ui
-            .painter()
-            .layout_no_wrap(
-                model.locked_value.clone(),
-                FontId::proportional(CONTENT),
-                palette.text,
-            )
-            .size()
-            .x;
-        ui.painter().text(
-            Pos2::new(field_x + value_w + 32.0, row_center),
-            Align2::LEFT_CENTER,
-            &model.locked_hint,
-            FontId::proportional(HINT),
-            palette.text_dim,
-        );
+        // 锁定原因属于解释性文本：另起一行折行，而不是挤在行尾。
+        if !model.locked_hint.is_empty() {
+            let h = crate::text::paint_wrapped(
+                ui,
+                Pos2::new(x, row_center + 16.0 + GAP),
+                &model.locked_hint,
+                HINT,
+                palette.text_dim,
+                wrap,
+            );
+            below = row_center + 16.0 + GAP + h + GAP;
+        }
     } else {
         let combo = Rect::from_min_size(
             Pos2::new(field_x, row_center - 16.0),
@@ -139,12 +153,13 @@ pub(super) fn onion_skin(
         }
     }
 
-    ui.painter().text(
-        Pos2::new(x, base + 77.0 + 32.0 + GAP + 6.0),
-        Align2::LEFT_CENTER,
+    crate::text::paint_wrapped(
+        ui,
+        Pos2::new(x, below - crate::text::line_height(ui, HINT) * 0.5),
         &model.hint,
-        FontId::proportional(HINT),
+        HINT,
         palette.text_dim,
+        wrap,
     );
 }
 
@@ -161,7 +176,8 @@ pub(super) fn compatibility(
 
     // 按钮行。
     let button_y = base + PAD + 21.0 + 20.0;
-    let check_w = text_width(ui, &model.check_label, CONTENT) + 24.0;
+    let content_w = (rect.width() - PAD * 2.0).max(1.0);
+    let check_w = (text_width(ui, &model.check_label, CONTENT) + 24.0).min(content_w * 0.48);
     let check = Rect::from_min_size(Pos2::new(x, button_y), Vec2::new(check_w, 30.0));
     let mut hits = super::hits(ui.ctx());
     hits.compat_check = Some(check);
@@ -170,7 +186,8 @@ pub(super) fn compatibility(
         action::push_action(ui.ctx(), SettingsAction::RunGpuCheck);
     }
     let copy_x = check.right() + 12.0;
-    let copy_w = text_width(ui, &model.copy_label, CONTENT) + 24.0;
+    let copy_w = (text_width(ui, &model.copy_label, CONTENT) + 24.0)
+        .min((rect.right() - PAD - copy_x).max(1.0));
     let copy = Rect::from_min_size(Pos2::new(copy_x, button_y), Vec2::new(copy_w, 30.0));
     let mut hits = super::hits(ui.ctx());
     hits.compat_copy = Some(copy);
@@ -290,7 +307,7 @@ pub(super) fn action_button(
     ui.painter().text(
         rect.center(),
         Align2::CENTER_CENTER,
-        label,
+        crate::text::truncate_to_width(ui, label, CONTENT, (rect.width() - 12.0).max(1.0)),
         FontId::proportional(CONTENT),
         if enabled {
             palette.text

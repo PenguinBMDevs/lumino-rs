@@ -16,14 +16,17 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &FillDivisionPanelModel
     let mut y = content.top();
 
     // 输入行：前缀 + 输入框 + 后缀（整体居中）。
-    let prefix_w = text_width(ui, &model.prefix, 14.0);
-    let suffix_w = text_width(ui, &model.suffix, 14.0);
+    // 面板宽度固定：前缀 / 后缀各让出输入框与彼此的最小空间，超出用省略号。
+    let prefix = crate::text::truncate_to_width(ui, &model.prefix, 14.0, content.width() * 0.35);
+    let suffix = crate::text::truncate_to_width(ui, &model.suffix, 14.0, content.width() * 0.35);
+    let prefix_w = text_width(ui, &prefix, 14.0);
+    let suffix_w = text_width(ui, &suffix, 14.0);
     let row_w = prefix_w + 6.0 + 72.0 + 6.0 + suffix_w;
     let mut x = content.center().x - row_w / 2.0;
     ui.painter().text(
         Pos2::new(x, y + INPUT_H / 2.0),
         Align2::LEFT_CENTER,
-        &model.prefix,
+        prefix,
         FontId::proportional(14.0),
         TEXT,
     );
@@ -34,27 +37,31 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &FillDivisionPanelModel
     ui.painter().text(
         Pos2::new(x, y + INPUT_H / 2.0),
         Align2::LEFT_CENTER,
-        &model.suffix,
+        suffix,
         FontId::proportional(14.0),
         TEXT,
     );
     y += INPUT_H + 4.0;
 
-    ui.painter().text(
+    crate::text::paint_truncated(
+        ui,
         Pos2::new(content.center().x, y + HINT_H / 2.0),
         Align2::CENTER_CENTER,
         &model.hint,
-        FontId::proportional(11.0),
+        11.0,
         TEXT_DIM,
+        content.width(),
     );
     y += HINT_H;
     if let Some(error) = &model.error {
-        ui.painter().text(
+        crate::text::paint_truncated(
+            ui,
             Pos2::new(content.center().x, y + 6.0),
             Align2::CENTER_CENTER,
             error,
-            FontId::proportional(10.0),
+            10.0,
             ERROR,
+            content.width(),
         );
         y += 12.0;
     }
@@ -62,9 +69,10 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &FillDivisionPanelModel
 
     // 按钮行：关闭填充 / 取消 / 确定。
     let labels = [&model.disable, &model.cancel, &model.ok];
+    let max_button = ((content.width() - 16.0) / 3.0).max(1.0);
     let widths: Vec<f32> = labels
         .iter()
-        .map(|label| text_width(ui, label, 13.0) + 28.0)
+        .map(|label| (text_width(ui, label, 13.0) + 28.0).min(max_button))
         .collect();
     let total: f32 = widths.iter().sum::<f32>() + 8.0 * (labels.len() as f32 - 1.0);
     let mut x = content.center().x - total / 2.0;
@@ -85,7 +93,7 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &FillDivisionPanelModel
         ui.painter().text(
             button.center(),
             Align2::CENTER_CENTER,
-            label,
+            crate::text::truncate_to_width(ui, label, 13.0, (button.width() - 10.0).max(1.0)),
             FontId::proportional(13.0),
             TEXT,
         );

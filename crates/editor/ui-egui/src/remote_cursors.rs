@@ -52,11 +52,9 @@ pub fn show(ui: &egui::Ui, model: &RemoteCursorModel) {
         if cursor.username.is_empty() {
             continue;
         }
-        let galley = painter.layout_no_wrap(
-            cursor.username.clone(),
-            FontId::proportional(LABEL_SIZE),
-            Color32::WHITE,
-        );
+        // 协作者昵称来自网络：单行标签最多 160px，超出用省略号（避免吞掉画布）。
+        let name = crate::text::truncate_to_width(ui, &cursor.username, LABEL_SIZE, 160.0);
+        let galley = painter.layout_no_wrap(name, FontId::proportional(LABEL_SIZE), Color32::WHITE);
         let label = egui::Rect::from_min_size(
             Pos2::new(cursor.pos.x + RADIUS + 2.0, cursor.pos.y - RADIUS - 2.0),
             galley.size() + egui::vec2(8.0, 2.0),

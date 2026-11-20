@@ -329,14 +329,16 @@ fn in_room(ui: &mut egui::Ui, area: egui::Rect, view: &crate::chrome::Collaborat
     );
     y += 22.0 + GAP_8;
 
-    // 「邀请码: {code}」：整行居中，码用主色。
-    let label_w = text_width(ui, &view.invite_label, 14.0);
+    // 「邀请码: {code}」：整行居中，码用主色；先按行宽截断标签，码保持完整。
     let code_w = text_width(ui, &view.invite_code, 14.0);
+    let label_max = (area.width() - code_w - 12.0).max(1.0);
+    let invite_label = crate::text::truncate_to_width(ui, &view.invite_label, 14.0, label_max);
+    let label_w = text_width(ui, &invite_label, 14.0);
     let start = area.center().x - (label_w + code_w) / 2.0;
     ui.painter().text(
         egui::pos2(start, y + 10.0),
         Align2::LEFT_CENTER,
-        &view.invite_label,
+        &invite_label,
         FontId::proportional(14.0),
         theme::text(),
     );
@@ -431,9 +433,10 @@ fn input(
 
 /// 主色按钮。
 fn primary_button(ui: &mut egui::Ui, rect: egui::Rect, label: &str, size: f32) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(size).color(theme::on_accent()))
-        .fill(theme::accent())
-        .corner_radius(CornerRadius::same(4));
+    let button =
+        crate::widgets::text_button(RichText::new(label).size(size).color(theme::on_accent()))
+            .fill(theme::accent())
+            .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
 }
 
@@ -446,7 +449,7 @@ fn small_button(
     fill: Color32,
     text: Color32,
 ) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(size).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(size).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
@@ -467,5 +470,9 @@ fn label(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color: Colo
         _ => egui::Layout::left_to_right(Align::Center),
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(layout));
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

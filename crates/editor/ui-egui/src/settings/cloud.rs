@@ -18,17 +18,22 @@ const BTN_H: f32 = 24.0;
 const BTN_GAP: f32 = 8.0;
 
 /// 内容高度估算（供 ScrollArea 预留）。
-pub(super) fn content_height(model: &CloudPageModel, width: f32) -> f32 {
+pub(super) fn content_height(ui: &egui::Ui, model: &CloudPageModel, width: f32) -> f32 {
+    let inner = (width - PAD * 2.0).max(1.0);
     let alert = model
         .alert
         .as_ref()
         .map(|text| {
-            let per_line = ((width - PAD * 2.0 - 16.0) / 7.0).max(10.0);
-            (text.chars().count() as f32 / per_line).ceil().max(1.0) * 16.0 + 16.0 + 12.0
+            crate::text::wrapped_height(ui, text, 12.0, (inner - 16.0).max(1.0)) + 16.0 + 12.0
         })
         .unwrap_or(0.0);
-    let rows = model.rows.len().max(1) as f32 * ROW_H;
-    PAD * 2.0 + TITLE_H + alert + 42.0 + rows
+    let empty = if model.rows.is_empty() {
+        crate::text::wrapped_height(ui, &model.empty_text, 12.0, inner) + 12.0
+    } else {
+        0.0
+    };
+    let rows = model.rows.len() as f32 * ROW_H;
+    PAD * 2.0 + TITLE_H + alert + empty + 42.0 + rows
 }
 
 /// 绘制页面。
@@ -39,11 +44,12 @@ pub(super) fn show(
     palette: &SettingsPalette,
 ) {
     let x = rect.left() + PAD;
+    let inner_width = (rect.width() - PAD * 2.0).max(1.0);
     let mut y = rect.top() + PAD;
     ui.painter().text(
         Pos2::new(x, y + 10.0),
         Align2::LEFT_CENTER,
-        &model.title,
+        crate::text::truncate_to_width(ui, &model.title, 16.0, inner_width),
         FontId::proportional(16.0),
         palette.text,
     );
@@ -81,7 +87,7 @@ pub(super) fn show(
     }
 
     // 添加连接按钮。
-    let add_w = text_width(ui, &model.add_label, 13.0) + 36.0;
+    let add_w = (text_width(ui, &model.add_label, 13.0) + 36.0).min(inner_width);
     let add = Rect::from_min_size(Pos2::new(x, y), Vec2::new(add_w, 30.0));
     let response = ui.interact(add, egui::Id::unique("cloud-add"), Sense::click());
     ui.painter().rect_filled(
@@ -93,12 +99,14 @@ pub(super) fn show(
             palette.accent
         },
     );
-    ui.painter().text(
+    crate::text::paint_truncated(
+        ui,
         add.center(),
         Align2::CENTER_CENTER,
         &model.add_label,
-        FontId::proportional(13.0),
+        13.0,
         theme::on_accent(),
+        (add.width() - 12.0).max(1.0),
     );
     if response.clicked() {
         action::push_action(ui.ctx(), SettingsAction::CloudAdd);
@@ -109,12 +117,14 @@ pub(super) fn show(
     y += 42.0;
 
     if model.rows.is_empty() {
-        ui.painter().text(
-            Pos2::new(x, y + 6.0),
-            Align2::LEFT_CENTER,
+        // 空态说明是解释性长文本：折行，不硬画单行。
+        crate::text::paint_wrapped(
+            ui,
+            Pos2::new(x, y),
             &model.empty_text,
-            FontId::proportional(12.0),
+            12.0,
             palette.text_dim,
+            inner_width,
         );
         return;
     }
@@ -122,19 +132,33 @@ pub(super) fn show(
     for row in &model.rows {
         let row_rect =
             Rect::from_min_size(Pos2::new(x, y), Vec2::new(rect.width() - PAD * 2.0, ROW_H));
-        ui.painter().text(
+
+        // 先算出右侧操作区总宽，左侧名称 / 地址才能按「剩余槽位」截断。
+        let delete_w = text_width(ui, &row.delete_label, 12.0) + 20.0;
+        let manage_w = text_width(ui, &row.manage_label, 12.0) + 20.0;
+        let connect_w = text_width(ui, &row.connect_label, 12.0) + 20.0;
+        let status_w = text_width(ui, &row.status, 12.0);
+        // 三个按钮 + 两个按钮间距 + 状态圆点区（30）+ 状态文字 + 8 呼吸位。
+        let right_block = delete_w + manage_w + connect_w + BTN_GAP * 2.0 + 30.0 + status_w + 8.0;
+        let text_max = (row_rect.width() - right_block - 8.0).max(1.0);
+
+        crate::text::paint_truncated(
+            ui,
             Pos2::new(row_rect.left(), row_rect.top() + 12.0),
             Align2::LEFT_CENTER,
             &row.title,
-            FontId::proportional(13.0),
+            13.0,
             palette.text,
+            text_max,
         );
-        ui.painter().text(
+        crate::text::paint_truncated(
+            ui,
             Pos2::new(row_rect.left(), row_rect.top() + 30.0),
             Align2::LEFT_CENTER,
             &row.address,
-            FontId::proportional(11.0),
+            11.0,
             palette.text_dim,
+            text_max,
         );
 
         // 右侧操作区：从右往左排「删除 / 管理文件 / 连接(断开)」。
@@ -168,16 +192,18 @@ pub(super) fn show(
                     Color32::from_white_alpha(20),
                 );
             }
-            ui.painter().text(
+            crate::text::paint_truncated(
+                ui,
                 rect.center(),
                 Align2::CENTER_CENTER,
                 label,
-                FontId::proportional(12.0),
+                12.0,
                 if enabled {
                     palette.text
                 } else {
                     palette.text_dim
                 },
+                (rect.width() - 8.0).max(1.0),
             );
             if enabled && response.clicked() {
                 action::push_action(ui.ctx(), action);
@@ -232,7 +258,7 @@ pub(super) fn show(
         ui.painter().text(
             Pos2::new(right, row_rect.center().y),
             Align2::RIGHT_CENTER,
-            &row.status,
+            crate::text::truncate_to_width(ui, &row.status, 12.0, 60.0),
             FontId::proportional(12.0),
             palette.text_dim,
         );

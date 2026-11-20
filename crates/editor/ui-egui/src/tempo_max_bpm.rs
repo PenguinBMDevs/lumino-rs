@@ -201,11 +201,15 @@ fn label_block(ui: &mut egui::Ui, rect: Rect, text: &str, size: f32, color: Colo
             .max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }
 
 fn button(ui: &mut egui::Ui, label: &str, fill: Color32, text: Color32) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(14.0).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(14.0).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     // 生产按钮 `padding([8,24])`：宽度随文本，高度固定 34。

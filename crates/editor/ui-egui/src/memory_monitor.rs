@@ -138,7 +138,7 @@ pub fn show(ui: &mut egui::Ui, model: &MemoryMonitorModel) {
         egui::pos2(inner.right() - BUTTON_W, inner.bottom() - BUTTON_H),
         Vec2::new(BUTTON_W, BUTTON_H),
     );
-    let close = egui::Button::new(
+    let close = crate::widgets::text_button(
         RichText::new(&model.close)
             .size(14.0)
             .color(theme::on_accent()),
@@ -175,9 +175,7 @@ fn metric_row(
             ))
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    left.add(egui::Label::new(
-        RichText::new(label).size(size).color(theme::text()),
-    ));
+    left.add(egui::Label::new(RichText::new(label).size(size).color(theme::text())).truncate());
     let mut right = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(egui::Rect::from_min_max(
@@ -186,7 +184,5 @@ fn metric_row(
             ))
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
-    right.add(egui::Label::new(
-        RichText::new(value).size(size).color(value_color),
-    ));
+    right.add(egui::Label::new(RichText::new(value).size(size).color(value_color)).truncate());
 }

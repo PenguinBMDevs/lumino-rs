@@ -144,6 +144,7 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
             egui::ComboBox::from_id_salt(("video-pick", *id))
                 .selected_text(RichText::new(current).size(14.0))
                 .width(combo_rect.width() - 6.0)
+                .truncate()
                 .show_ui(&mut child, |ui| {
                     for (index, option) in options.iter().enumerate() {
                         if ui.selectable_label(index == *selected, option).clicked() {
@@ -197,9 +198,10 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
                     .max_rect(value_rect)
                     .layout(egui::Layout::left_to_right(Align::Center)),
             );
-            value_ui.add(egui::Label::new(
-                RichText::new(value_text).size(14.0).color(theme::text()),
-            ));
+            value_ui.add(
+                egui::Label::new(RichText::new(value_text).size(14.0).color(theme::text()))
+                    .truncate(),
+            );
         }
         VideoRow::Toggle { label, checked, id } => {
             let rect = row_rect(ui, ROW_H);

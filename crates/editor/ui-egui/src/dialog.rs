@@ -12,7 +12,7 @@
 //! `Message::SaveConfirm(...)` / `window::Event`；标题栏空白区按下即请求拖动
 //! 窗口，保持与 上一代 自制标题栏一致的行为。
 
-use egui::{Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Stroke, Vec2};
+use egui::{Align, Align2, Color32, CornerRadius, Id, Layout, Rect, Stroke, Vec2};
 
 use crate::chrome::{DialogPalette, SaveConfirmModel};
 use crate::icons::{Icon, IconCache};
@@ -195,18 +195,34 @@ fn content(ui: &mut egui::Ui, model: &SaveConfirmModel) {
     let max_buttons_top = rect.bottom() - 24.0 - button_h;
     let shift = (ideal_buttons_top - max_buttons_top).max(0.0);
     let prompt_center_y = prompt_center_y - shift;
-    ui.painter().text(
-        egui::pos2(rect.center().x, prompt_center_y),
-        Align2::CENTER_CENTER,
+    let button_top = ideal_buttons_top - shift;
+
+    // 提示语是动态内容（可能带工程名 / 文件名）：按窗口宽度折行，且不得压到按钮行。
+    let text_max = (rect.width() - 32.0).max(1.0);
+    let galley = crate::text::layout_wrapped(
+        ui,
         &model.message,
-        // 生产 上一代：提示语 16px（`text(...).size(16)`）。
-        FontId::proportional(theme::font::SECTION),
+        theme::font::SECTION,
+        palette.text,
+        text_max,
+    );
+    let message_h = galley.size().y;
+    let top_limit = rect.top() + 8.0;
+    let center_min = top_limit + message_h * 0.5;
+    let center_max = (button_top - 8.0 - message_h * 0.5).max(center_min);
+    let center_y = prompt_center_y.clamp(center_min, center_max);
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - galley.size().x * 0.5,
+            center_y - message_h * 0.5,
+        ),
+        galley,
         palette.text,
     );
 
     let total = button_w * 3.0 + gap * 2.0;
     let start_x = rect.center().x - total / 2.0;
-    let y = ideal_buttons_top - shift;
+    let y = button_top;
 
     let save = button(
         ui,
@@ -276,12 +292,14 @@ fn button(
         Stroke::new(1.0, border),
         egui::StrokeKind::Inside,
     );
-    ui.painter().text(
+    crate::text::paint_truncated(
+        ui,
         rect.center(),
         Align2::CENTER_CENTER,
         text,
-        FontId::proportional(theme::font::LABEL),
+        theme::font::LABEL,
         text_color,
+        (rect.width() - 10.0).max(1.0),
     );
     response
 }

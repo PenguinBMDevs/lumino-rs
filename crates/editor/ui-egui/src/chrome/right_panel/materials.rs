@@ -80,7 +80,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
     ui.painter().text(
         Pos2::new(left, y + HEADER_H / 2.0),
         Align2::LEFT_CENTER,
-        &model.title,
+        crate::text::truncate_to_width(ui, &model.title, theme::font::LABEL, width),
         FontId::proportional(theme::font::LABEL),
         theme::text_on_weak(),
     );
@@ -102,7 +102,12 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
     ui.painter().text(
         add.center(),
         Align2::CENTER_CENTER,
-        &model.add_label,
+        crate::text::truncate_to_width(
+            ui,
+            &model.add_label,
+            theme::font::BODY,
+            (add.width() - 12.0).max(1.0),
+        ),
         FontId::proportional(theme::font::BODY),
         theme::text(),
     );
@@ -139,7 +144,12 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
             ui.painter().text(
                 Pos2::new(inner.left() + 6.0, inner.center().y),
                 Align2::LEFT_CENTER,
-                &entry.label,
+                crate::text::truncate_to_width(
+                    ui,
+                    &entry.label,
+                    12.0,
+                    (inner.width() - 12.0).max(1.0),
+                ),
                 FontId::proportional(12.0),
                 theme::text(),
             );
@@ -157,7 +167,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
         ui.painter().text(
             Pos2::new(left, y + 9.0),
             Align2::LEFT_CENTER,
-            placeholder,
+            crate::text::truncate_to_width(ui, placeholder, 12.0, width),
             FontId::proportional(12.0),
             theme::text_muted(),
         );
@@ -167,7 +177,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
         ui.painter().text(
             Pos2::new(left, y + SECTION_H / 2.0),
             Align2::LEFT_CENTER,
-            &section.label,
+            crate::text::truncate_to_width(ui, &section.label, 12.0, width),
             FontId::proportional(12.0),
             theme::text_muted(),
         );
@@ -264,7 +274,7 @@ fn draw_item(
     ui.painter().text(
         Pos2::new(left + ITEM_PAD_X, rect.center().y),
         Align2::LEFT_CENTER,
-        &item.name,
+        crate::text::truncate_to_width(ui, &item.name, 12.0, (width - ITEM_PAD_X * 2.0).max(1.0)),
         FontId::proportional(12.0),
         color,
     );

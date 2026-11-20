@@ -246,7 +246,7 @@ fn dot_row(ui: &mut egui::Ui, origin: egui::Pos2, model: &CustomPrecisionModel) 
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            &option.label,
+            crate::text::truncate_to_width(ui, &option.label, 11.0, (rect.width() - 6.0).max(1.0)),
             FontId::proportional(11.0),
             text_color,
         );
@@ -333,7 +333,11 @@ fn label_block(ui: &mut egui::Ui, rect: Rect, text: &str, size: f32, color: Colo
             .max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }
 
 fn button(
@@ -343,7 +347,7 @@ fn button(
     fill: Color32,
     text: Color32,
 ) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(14.0).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(14.0).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)

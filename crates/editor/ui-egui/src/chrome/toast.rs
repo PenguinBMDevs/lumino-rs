@@ -94,8 +94,8 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
     let mut bottom = full.bottom() - TOAST_BOTTOM;
     let mut rects: Vec<(u64, Rect)> = Vec::with_capacity(model.cards.len());
     for card in model.cards.iter().rev() {
-        let label_w = measure(ui, &card.icon, TOAST_ICON_FONT);
-        let text_w = measure(ui, &card.message, TOAST_FONT);
+        let label_w = crate::text::text_width(ui, &card.icon, TOAST_ICON_FONT);
+        let text_w = crate::text::text_width(ui, &card.message, TOAST_FONT);
         let width =
             (text_w + label_w + TOAST_ICON_GAP + TOAST_PAD * 2.0 + TOAST_CLOSE_GAP + TOAST_CLOSE_W)
                 .min(max_w);
@@ -195,7 +195,7 @@ pub fn cached_toast_rects(ctx: &egui::Context) -> Vec<Rect> {
 /// 绘制首次使用帮助提示；返回本帧动作。
 pub fn show_help_tip(ui: &egui::Ui, full: Rect, model: &HelpTipModel) -> Option<HelpTipAction> {
     let body_w = TIP_W - TIP_PAD * 2.0;
-    let body_h = wrapped_height(ui, &model.body, 12.0, body_w);
+    let body_h = crate::text::wrapped_height(ui, &model.body, 12.0, body_w);
     let height = TIP_PAD * 2.0 + 15.0 + 6.0 + body_h + 10.0 + 26.0;
     let rect = Rect::from_min_size(
         egui::pos2(
@@ -236,8 +236,8 @@ pub fn show_help_tip(ui: &egui::Ui, full: Rect, model: &HelpTipModel) -> Option<
 
     // 两个按钮（左「查看帮助」/ 右「知道了」）。
     let button_y = rect.bottom() - TIP_PAD - 13.0;
-    let help_w = measure(ui, &model.help_label, 12.0) + 24.0;
-    let dismiss_w = measure(ui, &model.dismiss_label, 12.0) + 24.0;
+    let help_w = crate::text::text_width(ui, &model.help_label, 12.0) + 24.0;
+    let dismiss_w = crate::text::text_width(ui, &model.dismiss_label, 12.0) + 24.0;
     let help = Rect::from_min_size(
         egui::pos2(rect.left() + TIP_PAD, button_y - 13.0),
         Vec2::new(help_w, 26.0),
@@ -283,29 +283,4 @@ pub fn show_help_tip(ui: &egui::Ui, full: Rect, model: &HelpTipModel) -> Option<
         crate::chrome::menu::extend_blocked(ui.ctx(), [rect]);
     }
     action
-}
-
-/// 单行文本宽度。
-fn measure(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(
-            text.to_owned(),
-            FontId::proportional(size),
-            crate::theme::text(),
-        )
-        .size()
-        .x
-}
-
-/// 折行后的高度。
-fn wrapped_height(ui: &egui::Ui, text: &str, size: f32, width: f32) -> f32 {
-    ui.painter()
-        .layout(
-            text.to_owned(),
-            FontId::proportional(size),
-            crate::theme::text(),
-            width,
-        )
-        .size()
-        .y
 }

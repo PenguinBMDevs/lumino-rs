@@ -682,7 +682,7 @@ fn button(
     } else {
         (theme::toolbar_bg(), theme::text())
     };
-    let button = egui::Button::new(RichText::new(label).size(size).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(size).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
@@ -703,7 +703,7 @@ fn small_button(
         let fill = mix(theme::base_bg(), theme::accent(), 0.285);
         (fill, mix(fill, Color32::WHITE, 0.55))
     };
-    let button = egui::Button::new(RichText::new(label).size(size).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(size).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
@@ -716,7 +716,7 @@ fn tiny_button(ui: &mut egui::Ui, rect: egui::Rect, label: &str, enabled: bool) 
     } else {
         theme::text_muted()
     };
-    let button = egui::Button::new(RichText::new(label).size(12.0).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(12.0).color(text))
         .frame(false)
         .corner_radius(CornerRadius::same(3));
     ui.put(rect, button)

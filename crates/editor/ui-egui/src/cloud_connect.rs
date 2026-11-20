@@ -144,6 +144,7 @@ fn protocol_row(ui: &mut egui::Ui, inner: Rect, y: f32, model: &CloudConnectMode
         .selected_text(RichText::new(selected).size(theme::font::LABEL))
         // 生产 `pick_list` 未设宽度 → 按选项收缩；实测 114 逻辑宽。
         .width(113.0)
+        .truncate()
         .show_ui(&mut child, |ui| {
             for option in &model.protocols {
                 if ui
@@ -274,9 +275,10 @@ fn button(
     fill: Color32,
     text: Color32,
 ) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(theme::font::LABEL).color(text))
-        .fill(fill)
-        .corner_radius(CornerRadius::same(6));
+    let button =
+        crate::widgets::text_button(RichText::new(label).size(theme::font::LABEL).color(text))
+            .fill(fill)
+            .corner_radius(CornerRadius::same(6));
     ui.put(rect, button)
 }
 
@@ -287,7 +289,11 @@ fn centered_text(ui: &mut egui::Ui, rect: Rect, text: &str, size: f32, color: Co
             .max_rect(rect)
             .layout(Layout::centered_and_justified(egui::Direction::LeftToRight)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }
 
 /// 左对齐的行文本（错误提示）。
@@ -298,5 +304,9 @@ fn label_row_text(ui: &mut egui::Ui, inner: Rect, y: f32, text: &str, size: f32,
             .max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

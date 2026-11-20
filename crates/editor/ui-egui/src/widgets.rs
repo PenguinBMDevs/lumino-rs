@@ -15,6 +15,16 @@ use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 
+pub use crate::text::{text_width, truncate_to_width};
+
+/// 单行按钮：文字超宽时省略，绝不折行。
+///
+/// 按钮的高度由所在行固定（工具栏 / 对话框 / 表单），一旦折行会顶高整行并压住
+/// 相邻控件；统一用省略号收敛，完整语义仍可通过 tooltip / 无障碍文本获得。
+pub fn text_button<'a>(text: impl egui::IntoAtoms<'a>) -> egui::Button<'a> {
+    egui::Button::new(text).truncate()
+}
+
 /// 按钮的悬停说明（名称 + 一句话解释）。
 ///
 /// 文案保持 `&'static str`：翻译表与按钮描述表本身就是静态字符串，
@@ -91,30 +101,6 @@ pub fn hover_text(response: Response, text: &str) -> Response {
 /// 指定尺寸的纯文本。
 pub fn label(ui: &mut egui::Ui, text: impl Into<String>, size: f32, color: Color32) {
     ui.add(egui::Label::new(RichText::new(text.into()).size(size).color(color)).selectable(false));
-}
-
-/// 单行文本的绘制宽度（不换行）。
-pub fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
-        .size()
-        .x
-}
-
-/// 按最大宽度截断文本（尾部加省略号）；`max_width <= 0` 视为不限宽。
-pub fn truncate_to_width(ui: &egui::Ui, text: &str, size: f32, max_width: f32) -> String {
-    if max_width <= 0.0 || text_width(ui, text, size) <= max_width {
-        return text.to_owned();
-    }
-    let mut chars: Vec<char> = text.chars().collect();
-    while !chars.is_empty() {
-        chars.pop();
-        let candidate = format!("{}…", chars.iter().collect::<String>());
-        if text_width(ui, &candidate, size) <= max_width {
-            return candidate;
-        }
-    }
-    "…".to_owned()
 }
 
 /// 可点击的菜单文本（标题栏菜单 / 设置菜单）。
@@ -241,7 +227,7 @@ pub fn traffic_button(
 
 /// 强调色主按钮（确认 / 保存）。
 pub fn accent_button(ui: &mut egui::Ui, text: &str, size: Vec2) -> Response {
-    let button = egui::Button::new(
+    let button = text_button(
         RichText::new(text)
             .size(theme::font::LABEL)
             .color(theme::on_accent()),
@@ -259,7 +245,8 @@ pub fn secondary_button(ui: &mut egui::Ui, text: &str, size: Vec2) -> Response {
             .color(theme::text()),
     )
     .fill(theme::toolbar_bg())
-    .corner_radius(CornerRadius::same(4));
+    .corner_radius(CornerRadius::same(4))
+    .truncate();
     ui.add_sized(size, button)
 }
 
@@ -276,7 +263,8 @@ pub fn small_text_button(ui: &mut egui::Ui, text: &str, selected: bool) -> Respo
             .color(theme::text()),
     )
     .fill(fill)
-    .corner_radius(CornerRadius::same(3));
+    .corner_radius(CornerRadius::same(3))
+    .truncate();
     ui.add_sized([44.0, 26.0], button)
 }
 
@@ -309,9 +297,14 @@ pub fn combo_box(
     ui.visuals_mut().widgets.inactive.fg_stroke.color = palette.text;
     let response = egui::ComboBox::from_id_salt(id)
         .selected_text(
-            RichText::new(selected)
-                .size(SETTINGS_COMBO_TEXT)
-                .color(palette.text),
+            RichText::new(crate::text::truncate_to_width(
+                ui,
+                selected,
+                SETTINGS_COMBO_TEXT,
+                (width - 24.0).max(1.0),
+            ))
+            .size(SETTINGS_COMBO_TEXT)
+            .color(palette.text),
         )
         .width(width)
         .show_ui(ui, |ui| {

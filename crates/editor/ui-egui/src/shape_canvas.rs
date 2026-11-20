@@ -278,7 +278,12 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
         ui.painter().text(
             button_rect.min + egui::vec2(8.0, 7.0),
             egui::Align2::LEFT_TOP,
-            &button.label,
+            crate::text::truncate_to_width(
+                ui,
+                &button.label,
+                12.0,
+                (button_rect.width() - 12.0).max(1.0),
+            ),
             FontId::proportional(12.0),
             button.text,
         );

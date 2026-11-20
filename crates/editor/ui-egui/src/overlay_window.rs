@@ -124,11 +124,15 @@ pub fn show_device_warning(ui: &mut egui::Ui, model: &DeviceWarningModel) {
     );
     actions_ui.spacing_mut().item_spacing.x = 12.0;
     let mut suppress = model.suppress;
+    // 勾选框文案与右侧按钮共享一行：按「行宽 − 按钮占位 320」截断。
+    let suppress_label = crate::text::truncate_to_width(
+        ui,
+        &model.suppress_label,
+        14.0,
+        (row.width() - 320.0 - 12.0).max(1.0),
+    );
     if actions_ui
-        .checkbox(
-            &mut suppress,
-            RichText::new(&model.suppress_label).size(14.0),
-        )
+        .checkbox(&mut suppress, RichText::new(suppress_label).size(14.0))
         .changed()
     {
         push_action(ui.ctx(), OverlayWindowAction::SuppressToggled);

@@ -110,18 +110,32 @@ pub(super) fn show(
 fn brush(ui: &mut egui::Ui, rect: Rect, model: &BrushPanelModel, icons: &mut IconCache) {
     let x = rect.left() + PAD;
     let mut y = rect.top() + PAD;
-    let title_w = text_width(ui, &model.title, 14.0);
+    let available = (rect.width() - PAD * 2.0).max(1.0);
+    // 标题与数值共处一行：标题按「行宽 − 数值宽 − 间距」截断。
+    let value_w = text_width(ui, &model.value, 14.0);
+    let title = crate::text::truncate_to_width(
+        ui,
+        &model.title,
+        14.0,
+        (available - value_w - 8.0).max(1.0),
+    );
+    let title_w = text_width(ui, &title, 14.0);
     ui.painter().text(
         Pos2::new(x, y + ROW / 2.0),
         Align2::LEFT_CENTER,
-        &model.title,
+        title,
         FontId::proportional(14.0),
         TEXT,
     );
     ui.painter().text(
         Pos2::new(x + title_w + 8.0, y + ROW / 2.0),
         Align2::LEFT_CENTER,
-        &model.value,
+        crate::text::truncate_to_width(
+            ui,
+            &model.value,
+            14.0,
+            (available - title_w - 8.0).max(1.0),
+        ),
         FontId::proportional(14.0),
         TEXT,
     );
@@ -136,10 +150,12 @@ fn brush(ui: &mut egui::Ui, rect: Rect, model: &BrushPanelModel, icons: &mut Ico
 
     if model.show_behavior {
         y += 8.0;
-        let label_w = text_width(ui, &model.behavior, 14.0);
+        let label =
+            crate::text::truncate_to_width(ui, &model.behavior, 14.0, (available - 34.0).max(1.0));
+        let label_w = text_width(ui, &label, 14.0);
         let button = Rect::from_min_size(
             Pos2::new(x, y),
-            Vec2::new(8.0 + 18.0 + 4.0 + label_w + 4.0, BTN_H),
+            Vec2::new((34.0 + label_w + 4.0).min(available), BTN_H),
         );
         let response = ui.interact(
             button,
@@ -163,7 +179,7 @@ fn brush(ui: &mut egui::Ui, rect: Rect, model: &BrushPanelModel, icons: &mut Ico
         ui.painter().text(
             Pos2::new(gear.right() + 4.0, button.center().y),
             Align2::LEFT_CENTER,
-            &model.behavior,
+            label,
             FontId::proportional(14.0),
             TEXT,
         );
@@ -327,18 +343,31 @@ fn thickness_control(
 fn thickness(ui: &mut egui::Ui, rect: Rect, model: &ThicknessPanelModel) {
     let x = rect.left() + PAD;
     let mut y = rect.top() + PAD;
-    let title_w = text_width(ui, &model.title, 14.0);
+    let available = (rect.width() - PAD * 2.0).max(1.0);
+    let value_w = text_width(ui, &model.value_text, 14.0);
+    let title = crate::text::truncate_to_width(
+        ui,
+        &model.title,
+        14.0,
+        (available - value_w - 8.0).max(1.0),
+    );
+    let title_w = text_width(ui, &title, 14.0);
     ui.painter().text(
         Pos2::new(x, y + ROW / 2.0),
         Align2::LEFT_CENTER,
-        &model.title,
+        title,
         FontId::proportional(14.0),
         TEXT,
     );
     ui.painter().text(
         Pos2::new(x + title_w + 8.0, y + ROW / 2.0),
         Align2::LEFT_CENTER,
-        &model.value_text,
+        crate::text::truncate_to_width(
+            ui,
+            &model.value_text,
+            14.0,
+            (available - title_w - 8.0).max(1.0),
+        ),
         FontId::proportional(14.0),
         TEXT,
     );
@@ -403,7 +432,7 @@ pub(super) fn small_button(
     ui.painter().text(
         rect.center(),
         Align2::CENTER_CENTER,
-        label,
+        crate::text::truncate_to_width(ui, label, 11.0, (rect.width() - 6.0).max(1.0)),
         FontId::proportional(11.0),
         TEXT,
     );
