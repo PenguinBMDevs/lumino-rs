@@ -198,6 +198,15 @@ pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrol
     ui.painter().rect_filled(thumb, 0, theme::toolbar_bg());
 
     let ctx = ui.ctx();
+    // 图层归属判定：本控件用原始指针状态驱动（跨帧拖拽），不走 `ui.interact` 的
+    // 命中集合；若不做这一步，更高图层（`Foreground` 下拉菜单 / 弹层）盖住滚动条时，
+    // 同一次按压会既操作弹层又拖动下层滚动条，表现为「菜单点击穿透」。
+    // `contains_pointer` 由 egui 命中测试得出：被更高图层覆盖时为 `false`。
+    let hit = ui.interact(
+        model.rect,
+        egui::Id::unique(("lumino.scrollbar.hit", id)),
+        egui::Sense::hover(),
+    );
     let pos = ctx.input(|i| i.pointer.interact_pos());
     let pressed = ctx.input(|i| i.pointer.primary_pressed());
     let released = ctx.input(|i| i.pointer.primary_released());
@@ -209,8 +218,14 @@ pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrol
 
     let pos = pos?;
     let inside = model.rect.contains(pos);
+    // `Area` 边缘的命中半径内，两层可能同时进入命中集合；再按图层顺序兜一层，
+    // 保证弹层边缘这一圈也由弹层独占（否则边缘几像素仍能拖动滚动条）。
+    let overlay_above = ctx
+        .layer_id_at(pos)
+        .is_some_and(|layer| layer.order > ui.layer_id().order);
+    let pointer_owned = hit.contains_pointer() && !overlay_above;
 
-    if pressed && inside {
+    if pressed && inside && pointer_owned {
         let start_pos = if model.vertical { pos.y } else { pos.x };
         if thumb.contains(pos) {
             if let Some(edge) = model.edge_at(pos, thumb) {
@@ -289,8 +304,8 @@ pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrol
         ctx.data_mut(|d| d.insert_temp(state_id, state));
     }
 
-    // 光标反馈（仅悬停时）。
-    if inside {
+    // 光标反馈（仅悬停且本层拥有指针时：被弹层盖住不得显示滚动光标）。
+    if inside && pointer_owned {
         let icon = if !matches!(state, DragState::Idle) {
             if model.vertical {
                 CursorIcon::ResizeVertical
