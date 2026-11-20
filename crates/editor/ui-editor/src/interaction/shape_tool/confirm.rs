@@ -393,11 +393,13 @@ impl Editor {
         self.pending_edit_redo.clear();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
+        self.bake_placement = None;
         true
     }
 
     /// 形状工具：取消（×）—— 清空所有待确认图形（保留图形类型）
     pub(crate) fn cancel_shape_tool(&mut self) {
+        self.bake_placement = None;
         self.editor_state.shape_tool.clear_pending();
         self.editor_state.pending_composed.clear();
         self.pending_composed_redo.clear();

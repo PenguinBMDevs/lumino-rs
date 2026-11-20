@@ -220,6 +220,26 @@ fn transform(shape: &mut ShapeModel, f: impl Fn(f32, f32) -> Pt) -> bool {
     true
 }
 
+/// 按箱体映射整体变换模型（DRAW-049 放置态复用既有 `transform_model`）。
+///
+/// `from` / `to` 均为 `(tick_lo, key_lo, tick_hi, key_hi)`；把 `from` 框内的
+/// 几何线性映射到 `to` 框，锚点、外接框与带绝对坐标的算子一起变换。
+pub fn transform_model_box(
+    shape: &mut ShapeModel,
+    from: (f32, f32, f32, f32),
+    to: (f32, f32, f32, f32),
+) {
+    let (fx0, fy0, fx1, fy1) = from;
+    let (tx0, ty0, tx1, ty1) = to;
+    let w = (fx1 - fx0).abs().max(1e-6);
+    let h = (fy1 - fy0).abs().max(1e-6);
+    transform_model(shape, &|x, y| {
+        let u = (x - fx0) / w;
+        let v = (y - fy0) / h;
+        (tx0 + u * (tx1 - tx0), ty0 + v * (ty1 - ty0))
+    });
+}
+
 fn transform_model(shape: &mut ShapeModel, f: &impl Fn(f32, f32) -> Pt) {
     let old_origin = shape.geometry.bounds().map(|bounds| (bounds.0, bounds.1));
     for anchor in &mut shape.geometry.anchors {

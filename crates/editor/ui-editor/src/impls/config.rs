@@ -82,6 +82,8 @@ impl Editor {
             self.shape_group_edit = None;
         }
         if tool_changed {
+            // DRAW-049：Bake 放置态只属于形状工具；换工具即收口会话（pending 保留）。
+            self.bake_placement = None;
             self.rebuild_pending_mirrors();
         }
     }

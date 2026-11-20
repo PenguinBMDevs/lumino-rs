@@ -65,7 +65,8 @@ pub use line_tool::{
 pub use selection_set::SelectionSet;
 pub use shape_edit::{
     Corner, EditHandles, HandleKind, Mods, Side, Zoom, apply_drag, apply_group_drag, box_handles,
-    handles as edit_handles, hit_test, hit_test_box, union_bounds, union_model,
+    handles as edit_handles, hit_test, hit_test_box, transform_model_box, union_bounds,
+    union_model,
 };
 pub use shape_tool::{
     ShapeInstance, ShapeKind, ShapePreview, ShapeSpec, ShapeToolInteraction, ShapeToolState,

@@ -56,25 +56,30 @@ impl Root {
 
         // 待确认组合（DRAW-020/027/028/DEBT-14）：直接画 ✓ 会写入的音符块，
         // 否则「插入」只看到几何轮廓，无法判断最终产物。
-        for composed in &editor.editor_state.pending_composed {
-            let mut blocks = Vec::new();
-            for note in composed.notes() {
-                let t0 = note.tick;
-                let t1 = (note.tick + note.length).max(note.tick + 1.0);
-                let k = f32::from(note.key);
-                let a = editor.line_pos_screen_pos((t0, k - 0.5));
-                let b = editor.line_pos_screen_pos((t1, k + 0.5));
-                blocks.push(egui::Rect::from_min_max(
-                    egui::pos2(a.x.min(b.x) + offset.x, a.y.min(b.y) + offset.y),
-                    egui::pos2(a.x.max(b.x) + offset.x, a.y.max(b.y) + offset.y),
-                ));
-            }
-            if !blocks.is_empty() {
-                shapes.push(PreviewShape {
-                    points: Vec::new(),
-                    filled: false,
-                    blocks,
-                });
+        //
+        // DRAW-049：Bake 放置确认态先显示**矢量**（mirror 轮廓 + 8 手柄由
+        // `shape_edit_model` 绘制），这里跳过音符块，避免一上来就看成已烘焙产物。
+        if !editor.bake_placement_active() {
+            for composed in &editor.editor_state.pending_composed {
+                let mut blocks = Vec::new();
+                for note in composed.notes() {
+                    let t0 = note.tick;
+                    let t1 = (note.tick + note.length).max(note.tick + 1.0);
+                    let k = f32::from(note.key);
+                    let a = editor.line_pos_screen_pos((t0, k - 0.5));
+                    let b = editor.line_pos_screen_pos((t1, k + 0.5));
+                    blocks.push(egui::Rect::from_min_max(
+                        egui::pos2(a.x.min(b.x) + offset.x, a.y.min(b.y) + offset.y),
+                        egui::pos2(a.x.max(b.x) + offset.x, a.y.max(b.y) + offset.y),
+                    ));
+                }
+                if !blocks.is_empty() {
+                    shapes.push(PreviewShape {
+                        points: Vec::new(),
+                        filled: false,
+                        blocks,
+                    });
+                }
             }
         }
 

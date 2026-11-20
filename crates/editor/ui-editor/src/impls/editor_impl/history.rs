@@ -30,6 +30,16 @@ impl Editor {
             tracing::info!("Editor: 撤销 pending composed 手柄编辑");
             return true;
         }
+        // DRAW-049：放置态下的撤销 = 退出 8 手柄，保留 pending 预览；
+        // 必须在 `undo_pending_compose` 之前，否则会把待确认组合当成
+        // 一次组合会话撤销掉，而 8 手柄会话仍残留。
+        if self.bake_placement_active() {
+            self.exit_bake_placement_to_pending();
+            self.grid_cache.clear();
+            self.mark_notes_changed();
+            tracing::info!("Editor: 撤销 Bake 放置态，回到 pending 预览");
+            return true;
+        }
         // DRAW-041C：Bake 前组合会话优先（未提交文档，先回到 pending 矢量）
         if self.undo_pending_compose() {
             tracing::info!("Editor: 撤销 Bake 前组合");
