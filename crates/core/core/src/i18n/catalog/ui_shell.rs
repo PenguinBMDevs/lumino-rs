@@ -162,6 +162,8 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "GMM 混合模型" => Some("Gaussian Mixture (GMM)"),
         "JPEG 图片" => Some("JPEG Images"),
         "Key 范围" => Some("Key Range"),
+        "Lumino - 新一代MIDI编辑器" => Some("Lumino - Next-Generation MIDI Editor"),
+        "版本 {version}" => Some("Version {version}"),
         "Lumino 素材" => Some("Lumino Materials"),
         "Lumino 项目" => Some("Lumino Projects"),
         "MIDI 文件" => Some("MIDI Files"),

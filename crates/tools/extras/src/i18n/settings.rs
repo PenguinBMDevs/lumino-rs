@@ -227,7 +227,7 @@ pub struct SettingsTranslations {
     pub palette_no_preview: &'static str,
     /// 调色板已锁定
     pub palette_locked: &'static str,
-    /// 版本
+    /// 版本前缀（版本号由编译期 `CARGO_PKG_VERSION` 拼接，避免手写漂移）
     pub version: &'static str,
     /// 应用描述
     pub app_description: &'static str,

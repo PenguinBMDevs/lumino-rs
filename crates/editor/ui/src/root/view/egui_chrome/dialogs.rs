@@ -19,6 +19,7 @@ use crate::state::root_state::DialogType;
 
 use support::{settings_labels, shortcuts_page};
 
+mod about;
 mod autosave_recover;
 mod batch_edit;
 mod brush_settings;
@@ -113,6 +114,7 @@ impl Root {
                 self.export_progress_model(),
             ))),
             DialogType::Help => Some(DialogModel::Help(Box::new(self.help_model()))),
+            DialogType::About => Some(DialogModel::About(Box::new(self.about_dialog_model()))),
             DialogType::CloudConnect => Some(DialogModel::CloudConnect(Box::new(
                 self.cloud_connect_model(),
             ))),

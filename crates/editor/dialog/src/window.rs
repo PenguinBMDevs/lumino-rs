@@ -99,6 +99,7 @@ impl DialogWindow {
             DialogType::BrushSettings => (tr!("画刷绘制行为"), false),
             DialogType::DrawSettings => (tr!("音符画设置"), false),
             DialogType::Help => (tr!("帮助"), true),
+            DialogType::About => (tr!("关于"), false),
             DialogType::ShapeDrawer => (tr!("形状抽屉"), true),
             DialogType::History => (tr!("撤销历史"), true),
             DialogType::Mixer => (tr!("混音台"), true),

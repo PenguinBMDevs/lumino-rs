@@ -52,6 +52,8 @@ pub enum DialogType {
     DrawSettings,
     /// 帮助窗口（F1；独立 OS 窗口）
     Help,
+    /// 关于窗口（帮助菜单「关于」；独立 OS 窗口）
+    About,
     /// 形状抽屉（独立 OS 窗口；DRAW-033）
     ShapeDrawer,
     /// 撤销历史（独立 OS 窗口；DRAW-035）

@@ -758,6 +758,8 @@ impl Root {
 }
 
 #[cfg(test)]
+mod about_tests;
+#[cfg(test)]
 mod audio_export_tests;
 #[cfg(test)]
 mod batch_edit_tests;

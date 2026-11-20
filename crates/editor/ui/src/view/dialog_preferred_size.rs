@@ -199,6 +199,8 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::DrawSettings => DialogSizeHint::pinned(460.0, 172.0),
         // 帮助：左侧列表 + 右侧滚动正文，尺寸固定，避免测量被滚动区压成 0
         DialogType::Help => DialogSizeHint::pinned(900.0, 620.0),
+        // 关于：左侧 logo + 右侧品牌行 / 版本号，内容固定
+        DialogType::About => DialogSizeHint::pinned(520.0, 220.0),
         // 形状抽屉：B0 空窗先钉死 1000×700；B1 画板接入后再评估测量
         DialogType::ShapeDrawer => DialogSizeHint::pinned(1000.0, 700.0),
         // 撤销历史：固定列表面板，避免历史为空时测量把窗口压成最小高度
@@ -334,7 +336,7 @@ mod tests {
     use super::*;
 
     /// 全部「真实」对话框类型（`None` 除外）
-    const ALL_DIALOGS: [DialogType; 23] = [
+    const ALL_DIALOGS: [DialogType; 25] = [
         DialogType::CustomPrecision,
         DialogType::Collaboration,
         DialogType::LoadConfirm,
@@ -355,6 +357,8 @@ mod tests {
         DialogType::CloudNotice,
         DialogType::BrushSettings,
         DialogType::DrawSettings,
+        DialogType::Help,
+        DialogType::About,
         DialogType::ShapeDrawer,
         DialogType::History,
         DialogType::Mixer,

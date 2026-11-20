@@ -98,7 +98,7 @@ pub(super) static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts_placeholder: "快捷键设置内容",
     about_title: "关于",
     app_name: "Lumino",
-    version: "版本 0.2.1",
+    version: "版本",
     app_description: "一个高效的MIDI编辑工具",
     high_contrast: "高对比度",
     palette_title: "调色板",

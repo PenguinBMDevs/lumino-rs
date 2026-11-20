@@ -6,7 +6,7 @@
 //! - `collaboration`: 协作功能处理（连接、创建房间、加入房间等）
 //! - `window`: 窗口事件处理（对话框、协作事件等）
 
-use crate::runner::RunnerInner;
+use crate::runner::{RunnerInner, dialog_manager::DialogType};
 
 pub mod collaboration;
 pub mod edit;
@@ -89,8 +89,37 @@ impl RunnerInner {
             View(view_event) => {
                 self.handle_view_menu_event(view_event);
             }
-            Help(_) => {
-                // 处理帮助事件（占位）
+            Help(help_event) => {
+                self.handle_help_menu_event(help_event);
+            }
+        }
+    }
+
+    /// 处理帮助菜单事件。
+    fn handle_help_menu_event(&mut self, help_event: lumino_ui::event::menu::help::Event) {
+        use lumino_ui::event::menu::help::Event::*;
+
+        match help_event {
+            About => {
+                // 独立窗口：已打开或正在初始化时只聚焦，不叠开第二个。
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::About)
+                {
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::About)
+                    {
+                        window.focus_window();
+                    }
+                    return;
+                }
+                tracing::info!("请求打开关于对话框");
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::About);
             }
         }
     }

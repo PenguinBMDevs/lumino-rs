@@ -12,6 +12,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "加载大文件" => Some("Load Large File"),
         "工程设置" => Some("Project Settings"),
         "设置" => Some("Settings"),
+        "关于" => Some("About"),
         "变速" => Some("Speed Change"),
         "批量编辑" => Some("Batch Edit"),
         "音频导出" => Some("Audio Export"),

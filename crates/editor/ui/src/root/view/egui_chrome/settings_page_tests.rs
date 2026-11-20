@@ -274,6 +274,12 @@ fn editing_palette_about_pages_reflect_state_and_map_actions() {
             .iter()
             .any(|row| matches!(row, UiRow::AboutLogo { .. } | UiRow::EchoCave { .. }))
     );
+    assert!(
+        page.rows
+            .iter()
+            .any(|row| matches!(row, UiRow::Static { text } if text.contains(crate::APP_VERSION))),
+        "关于页版本号必须取编译期 APP_VERSION"
+    );
 
     // 动作翻译。
     assert!(matches!(

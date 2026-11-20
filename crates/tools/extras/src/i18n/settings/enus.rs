@@ -98,7 +98,7 @@ pub(super) static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts_placeholder: "Shortcut settings content",
     about_title: "About",
     app_name: "Lumino",
-    version: "Version 0.2.1",
+    version: "Version",
     app_description: "An efficient MIDI editor",
     high_contrast: "High Contrast",
     palette_title: "Palette",

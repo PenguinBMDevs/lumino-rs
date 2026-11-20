@@ -22,6 +22,32 @@ pub use arrangement::ArrangementAction;
 pub use egg::EggModel;
 pub(crate) use floating::floating_panel;
 pub use model::{
+    AboutModel, BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel,
+    BrushSettingsModel, BrushTrackChoice, ChromeModel, CloudBrowserModel, CloudConnectModel,
+    CloudDeviceModel, CloudEntryActionKind, CloudEntryLabels, CloudEntryModel, CloudField,
+    CloudFieldModel, CloudNoticeModel, CloudProtocol, CloudProtocolOptionModel,
+    CloudSavePanelModel, CollaborationConnectView, CollaborationConnectingView,
+    CollaborationInRoomView, CollaborationModel, CollaborationRoomActionsView,
+    CollaborationViewModel, CompatLine, CompatibilityPageModel, CustomPrecisionModel,
+    DeviceWarningModel, DialogModel, DialogPalette, DotOptionModel, DrawSettingsModel,
+    ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel, HelpTopicBodyModel,
+    HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel, MaterialDeleteModel,
+    MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
+    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
+    ProgressModel, ProjectNoteCountModel, ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID,
+    RecoverTrackModel, RecoverTrackRowModel, RecoverTrackSelection, RightSidebarModel,
+    RightSidebarPanelKind, RightSidebarRailItem, RollBar, SaveConfirmModel, SettingsLabels,
+    SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton, ShapeDrawerModel,
+    ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel, SidebarGroup,
+    SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack, SnapMenuItem,
+    SnapMenuModel, SpeedChangeModel, StatusbarModel, TempoMaxBpmModel, TextPairCell,
+    TexturePreviewModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel, ToolbarTips, VideoButton,
+    VideoButtonFill, VideoExportAction, VideoExportModel, VideoExportOverlayModel,
+    VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError,
+    VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView, VideoPreviewFrame, VideoRow,
+    VideoSection,
+};
+pub use model::{
     ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementScrollbarsModel,
     ArrangementTrackListModel, ArrangementTrackRow, AudioButtonsMode, AudioButtonsModel,
     AudioChoice, AudioControlModel, AudioExportModel, AudioExportPanelModel, AudioField,
@@ -38,31 +64,6 @@ pub use model::{
     ToolPanelItemModel, ToolPanelModel, ToolPanelPanelOwner, ToolPanelSettingsPanel, UiField,
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone,
     underrun_tone,
-};
-pub use model::{
-    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
-    BrushTrackChoice, ChromeModel, CloudBrowserModel, CloudConnectModel, CloudDeviceModel,
-    CloudEntryActionKind, CloudEntryLabels, CloudEntryModel, CloudField, CloudFieldModel,
-    CloudNoticeModel, CloudProtocol, CloudProtocolOptionModel, CloudSavePanelModel,
-    CollaborationConnectView, CollaborationConnectingView, CollaborationInRoomView,
-    CollaborationModel, CollaborationRoomActionsView, CollaborationViewModel, CompatLine,
-    CompatibilityPageModel, CustomPrecisionModel, DeviceWarningModel, DialogModel, DialogPalette,
-    DotOptionModel, DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel,
-    HelpSectionModel, HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel,
-    LoadConfirmModel, MaterialDeleteModel, MemoryMetricModel, MemoryMonitorModel, MemoryRowModel,
-    MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel,
-    OverflowItemModel, OverflowMenuModel, ProgressModel, ProjectNoteCountModel,
-    ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel, RecoverTrackRowModel,
-    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar,
-    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
-    ShapeActionButton, ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel,
-    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
-    SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
-    TempoMaxBpmModel, TextPairCell, TexturePreviewModel, TitlebarModel, ToolbarGroupsModel,
-    ToolbarModel, ToolbarTips, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
-    VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted,
-    VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView,
-    VideoPreviewFrame, VideoRow, VideoSection,
 };
 pub use popup_titlebar::PopupTitlebarModel;
 pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
@@ -448,6 +449,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::Help(model) => {
                 crate::help::show(&mut root, model);
+            }
+            DialogModel::About(model) => {
+                crate::about::show(&mut root, model, icons);
             }
             DialogModel::CloudConnect(model) => {
                 crate::cloud_connect::show(&mut root, model);

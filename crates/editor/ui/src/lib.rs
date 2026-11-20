@@ -4,6 +4,11 @@
 //! 并对外重导出 core / editor / settings 等 crate 的核心类型。
 
 #![allow(deprecated)]
+/// 应用版本号（编译期常量）。
+///
+/// 关于窗口与设置「关于」页共用同一来源，避免多处 `env!` 或手写版本号漂移。
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// 常量集合，对外重导出 core crate 的常量。
 pub mod constants {
     pub use lumino_ui_core::constants::*;
