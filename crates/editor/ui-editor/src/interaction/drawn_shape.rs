@@ -529,12 +529,7 @@ impl Editor {
     pub fn drawn_shape_pending_at_screen(&self, pos: lumino_ui_core::geom::Point) -> Option<bool> {
         let id = self.drawn_shape_at_screen(pos)?;
         let hit_pending = self.editor_state.shape_select.pending_of(id).is_some();
-        let selection_has_pending = self
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .any(|shape| shape.pending.is_some());
-        Some(hit_pending || selection_has_pending)
+        Some(hit_pending || self.has_pending_shape_selection())
     }
 
     // ── 选框（选中集外接框） ───────────────────────────────

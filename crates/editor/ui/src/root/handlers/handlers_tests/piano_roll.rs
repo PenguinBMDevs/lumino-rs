@@ -136,3 +136,42 @@ fn test_piano_roll_context_menu_drawn_shape_target() {
     ));
     assert!(!root.editor.context_menu.open, "点菜单项应关闭菜单");
 }
+
+/// 右键菜单可用性：随音符选区与刀的会话状态变化（置灰判据的唯一来源）。
+#[test]
+fn test_context_menu_availability_follows_selection_and_knife() {
+    let mut root = create_root();
+    attach_test_document(&mut root);
+
+    // 先打开菜单（空文档 → 无选区、无刀源、无刀）。
+    root.update(Message::PianoRollContextMenu(
+        lumino_message::PianoRollContextMenuAction::Open {
+            position: lumino_message::Point2::new(100.0, 100.0),
+            target: lumino_message::ContextMenuTarget::Notes,
+        },
+    ));
+    let model = root.piano_roll_context_menu_model().expect("菜单应已打开");
+    assert!(!model.availability.has_note_selection);
+    assert!(!model.availability.has_knife_source);
+    assert!(!model.availability.has_knife);
+
+    // 加入并选中一个音符 → 剪切/复制/删除/批量编辑与设刀都具备前置状态。
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        crate::editor::note::Note::new(0.0, 60, 480.0),
+    );
+    root.editor.select_all_notes();
+    let model = root.piano_roll_context_menu_model().expect("菜单应已打开");
+    assert!(model.availability.has_note_selection);
+    assert!(model.availability.has_knife_source);
+
+    // 设刀 → 取消刀可用。
+    root.editor.mould_set_knife().expect("有选中音符时应能设刀");
+    let model = root.piano_roll_context_menu_model().expect("菜单应已打开");
+    assert!(model.availability.has_knife);
+
+    // 取消刀 → 回到不可用。
+    assert!(root.editor.mould_clear_knife(), "设过刀后应能取消");
+    let model = root.piano_roll_context_menu_model().expect("菜单应已打开");
+    assert!(!model.availability.has_knife);
+}

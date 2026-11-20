@@ -54,8 +54,8 @@ pub use brush_settings::BrushSettingsAction;
 pub use cloud_action::{CloudAction, CloudProtocolUi};
 pub use collaboration::CollaborationAction;
 pub use context_menu::{
-    ContextMenuTarget, MaterialContextMenuItem, PanelContextMenuItem, PianoRollContextMenuAction,
-    PianoRollContextMenuItem, TrackContextMenuItem,
+    ContextMenuAvailability, ContextMenuTarget, MaterialContextMenuItem, PanelContextMenuItem,
+    PianoRollContextMenuAction, PianoRollContextMenuItem, TrackContextMenuItem,
 };
 pub use custom_precision::CustomPrecisionAction;
 pub use draw_settings::DrawSettingsAction;

@@ -55,6 +55,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "力度渐强" => Some("Velocity Ramp Up"),
         "复制为分享文本" => Some("Copy as Share Text"),
         "从分享文本粘贴" => Some("Paste Share Text"),
+        // ── 右键菜单状态置灰提示（`crates/core/message/src/context_menu`）──
+        "请先选中音符" => Some("Select notes first"),
+        "请先选中音符或待确认形状" => Some("Select notes or pending shapes first"),
         "输入文字…" => Some("Enter text…"),
         "设置内容区域" => Some("Settings content area"),
         "设置" => Some("Settings"),

@@ -225,6 +225,22 @@ impl Editor {
         had
     }
 
+    /// 当前是否已设刀（右键菜单「取消刀」的可用性判据）
+    pub fn has_mould_knife(&self) -> bool {
+        self.mould_knife.is_some()
+    }
+
+    /// 当前选中集里是否有待确认形状
+    ///
+    /// 右键菜单「以选中内容为刀」的可用性判据：待确认形状的几何也可以作刀，
+    /// 因此“可设刀”不能只看音符选区。
+    pub fn has_pending_shape_selection(&self) -> bool {
+        self.editor_state
+            .shape_select
+            .selected_shapes()
+            .any(|shape| shape.pending.is_some())
+    }
+
     /// 刀源被删/改后立即失效（事件路径：换工具、删除）
     ///
     /// 返回是否发生了失效；失效时刀被清除并登记一次性通知，由 UI 层转成 toast。

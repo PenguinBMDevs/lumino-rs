@@ -70,7 +70,7 @@ fn draw_rows(
         if visible.width() <= 0.0 || visible.height() <= 0.0 {
             continue;
         }
-        let enabled = item_enabled(model.target, item);
+        let enabled = item_enabled(model.target, item, model.availability);
         let response = ui.interact(
             visible,
             egui::Id::unique(("lumino.piano-roll-menu.row", row)),
@@ -128,9 +128,13 @@ fn draw_rows(
                     .corner_radius(CornerRadius::same(4))
                     .show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new(item_disabled_hint())
-                                .size(11.0)
-                                .color(Color32::from_rgb(150, 150, 158)),
+                            egui::RichText::new(item_disabled_hint(
+                                model.target,
+                                item,
+                                model.availability,
+                            ))
+                            .size(11.0)
+                            .color(Color32::from_rgb(150, 150, 158)),
                         );
                     });
             })

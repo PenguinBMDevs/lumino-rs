@@ -7,6 +7,7 @@ fn model(target: ContextMenuTarget) -> PianoRollMenuModel {
         position: Pos2::new(400.0, 300.0),
         available: Rect::from_min_size(Pos2::new(248.0, 102.0), Vec2::new(1200.0, 800.0)),
         target,
+        availability: ContextMenuAvailability::default(),
     }
 }
 

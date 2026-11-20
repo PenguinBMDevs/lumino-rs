@@ -20,7 +20,8 @@
 use egui::{Color32, Pos2, Rect, Vec2};
 use lumino_message::context_menu::{item_enabled, menu_groups};
 use lumino_message::{
-    ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem as Item,
+    ContextMenuAvailability, ContextMenuTarget, PianoRollContextMenuAction,
+    PianoRollContextMenuItem as Item,
 };
 
 use crate::icons::IconCache;
@@ -81,6 +82,8 @@ pub struct PianoRollMenuModel {
     pub available: Rect,
     /// 作用目标（决定条目集）。
     pub target: ContextMenuTarget,
+    /// 编辑状态（决定无选中 / 无刀时是否置灰）。
+    pub availability: ContextMenuAvailability,
 }
 
 /// 单列的全部条目（按分组顺序摊平）。
@@ -171,6 +174,7 @@ fn apply_wheel(ctx: &egui::Context, layout: &MenuLayout, focus: &mut MenuFocus) 
 fn apply_keyboard(
     ctx: &egui::Context,
     target: ContextMenuTarget,
+    availability: ContextMenuAvailability,
     items: &[Item],
     focus: &mut MenuFocus,
     action: &mut Option<PianoRollContextMenuAction>,
@@ -199,7 +203,7 @@ fn apply_keyboard(
     }
     if confirm
         && let Some(item) = items.get(focus.row).copied()
-        && item_enabled(target, item)
+        && item_enabled(target, item, availability)
     {
         *action = Some(PianoRollContextMenuAction::ItemClicked(item));
     }
@@ -252,7 +256,14 @@ pub fn show(
 
     apply_wheel(ui.ctx(), &layout, &mut focus);
     let mut action = None;
-    let moved = apply_keyboard(ui.ctx(), model.target, &items, &mut focus, &mut action);
+    let moved = apply_keyboard(
+        ui.ctx(),
+        model.target,
+        model.availability,
+        &items,
+        &mut focus,
+        &mut action,
+    );
     if moved {
         ensure_visible(&layout, focus.row, &mut focus.scroll);
     }

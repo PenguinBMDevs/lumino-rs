@@ -147,8 +147,10 @@ impl PianoRollContextMenuItem {
     }
 }
 
+mod availability;
 mod groups;
 
+pub use availability::ContextMenuAvailability;
 pub use groups::{REGULAR_ITEMS, item_disabled_hint, item_enabled, menu_groups};
 
 /// 目标对应的**扁平**菜单条目序列（旧调用与兼容测试用）。

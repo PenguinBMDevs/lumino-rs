@@ -11,14 +11,17 @@
 //!
 //! 隐藏会让行数与条目位置随目标跳动，用户无法形成肌肉记忆。因此常规组对每个目标
 //! 都渲染同样 8 项，不可用的由 [`item_enabled`] 判定并置灰（带 tooltip、不可点击）。
-//! 已 Bake 的图形（DEC-001 只读）是唯一例外：卡面要求保持 5 项单列不变。
+//! 判定分两层：目标是否适用（本模块）与当前编辑状态是否为空操作
+//! （[`ContextMenuAvailability`]：无选中音符时的剪切 / 复制 / 删除 / 批量编辑，
+//! 无刀源 / 无刀时的两个刀条目）。已 Bake 的图形（DEC-001 只读）是唯一例外：
+//! 卡面要求保持 5 项单列不变。
 //!
 //! # 超高菜单
 //!
 //! 待确认图形共 27 行（8 常规 + 19 专属），在 720p 可用区内放不下。
 //! UI 层把面板高度钳到可用区并在面板内滚动：不拆列、不隐藏、不改变条目顺序。
 
-use super::{ContextMenuTarget, PianoRollContextMenuItem as Item};
+use super::{ContextMenuAvailability, ContextMenuTarget, PianoRollContextMenuItem as Item};
 
 /// 常规操作组：每个目标都渲染（是否可用见 [`item_enabled`]）
 pub const REGULAR_ITEMS: &[Item] = &[
@@ -84,13 +87,24 @@ pub const fn menu_groups(target: ContextMenuTarget) -> &'static [&'static [Item]
     }
 }
 
-/// 该条目在给定目标下是否可用（不可用 = 置灰 + tooltip + 不响应点击）
+/// 该条目在给定目标与编辑状态下是否可用（不可用 = 置灰 + tooltip + 不响应点击）
 ///
-/// 判据是**生产侧真实行为**，不是条目出现在哪一组：
-/// - 剪切 / 复制 / 粘贴 / 全选 / 批量编辑只作用于音符（`EditorAction` 的 Notes 路径）；
-/// - 形状列表读 ShapeStore 模型，待确认镜像没有模型（DRAW-041C）；
-/// - 删除与从分享文本粘贴对待确认图形同样有效（前者走 `DeletePressed`）。
-pub const fn item_enabled(target: ContextMenuTarget, item: Item) -> bool {
+/// 判据分两层：
+/// 1. **目标适用性**（`target_supports`）：条目是否服务于该目标；
+/// 2. **状态可用性**（[`ContextMenuAvailability::allows`]）：当前编辑状态是否会
+///    让该条目成为空操作（例如无选中音符时的剪切 / 复制 / 删除 / 批量编辑）。
+///
+/// 目标层优先：目标本就不适用的条目，无论状态如何都保持置灰。
+pub const fn item_enabled(
+    target: ContextMenuTarget,
+    item: Item,
+    availability: ContextMenuAvailability,
+) -> bool {
+    target_supports(target, item) && availability.allows(target, item)
+}
+
+/// 条目是否服务于给定目标（不看编辑状态）
+const fn target_supports(target: ContextMenuTarget, item: Item) -> bool {
     match target {
         ContextMenuTarget::Notes => matches!(
             item,
@@ -143,167 +157,20 @@ pub const fn item_enabled(target: ContextMenuTarget, item: Item) -> bool {
 }
 
 /// 置灰项的 tooltip 补充说明（与条目名一起显示）
-pub fn item_disabled_hint() -> &'static str {
-    lumino_core::tr!("该操作不适用于当前目标")
+///
+/// 目标不适用时保持通用文案；目标适用但状态不满足时，说明缺什么状态
+/// （例如「请先选中音符」「当前没有刀」），避免用户以为功能坏了。
+pub fn item_disabled_hint(
+    target: ContextMenuTarget,
+    item: Item,
+    availability: ContextMenuAvailability,
+) -> &'static str {
+    if target_supports(target, item) {
+        availability.disabled_hint(item)
+    } else {
+        lumino_core::tr!("该操作不适用于当前目标")
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const TARGETS: [ContextMenuTarget; 3] = [
-        ContextMenuTarget::Notes,
-        ContextMenuTarget::DrawnShape,
-        ContextMenuTarget::PendingDrawnShape,
-    ];
-
-    fn flat_rows(target: ContextMenuTarget) -> Vec<Item> {
-        menu_groups(target)
-            .iter()
-            .flat_map(|group| group.iter().copied())
-            .collect()
-    }
-
-    #[test]
-    fn test_groups_have_no_duplicate_items() {
-        for target in TARGETS {
-            let mut seen = Vec::new();
-            for group in menu_groups(target) {
-                assert!(!group.is_empty(), "{target:?} 不得有空气组");
-                for item in *group {
-                    assert!(
-                        !seen.contains(item),
-                        "{target:?} 的菜单分组重复条目：{item:?}"
-                    );
-                    seen.push(*item);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_row_counts_are_stable() {
-        // 行数即单列高度：音符 10 行、已 Bake 5 行、待确认 27 行。
-        assert_eq!(flat_rows(ContextMenuTarget::Notes).len(), 10);
-        assert_eq!(flat_rows(ContextMenuTarget::DrawnShape).len(), 5);
-        assert_eq!(flat_rows(ContextMenuTarget::PendingDrawnShape).len(), 27);
-    }
-
-    #[test]
-    fn test_every_group_item_exists_in_flat_table() {
-        // `menu_items` 是改造前的扁平表：待确认目标本来就只有专属动作，
-        // 常规组（剪切 / 复制 / …）对它来说是新增的结构，因此允许取自 `REGULAR_ITEMS`。
-        for target in TARGETS {
-            let flat = super::super::menu_items(target);
-            for group in menu_groups(target) {
-                for item in *group {
-                    assert!(
-                        flat.contains(item) || REGULAR_ITEMS.contains(item),
-                        "{target:?} 的分组里有扁平表与常规表都未登记的条目：{item:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_regular_group_is_the_same_for_notes_and_pending() {
-        assert_eq!(menu_groups(ContextMenuTarget::Notes)[0], REGULAR_ITEMS);
-        assert_eq!(
-            menu_groups(ContextMenuTarget::PendingDrawnShape)[0],
-            REGULAR_ITEMS,
-            "常规组必须结构稳定（不适用项置灰而非隐藏）"
-        );
-    }
-
-    #[test]
-    fn test_notes_second_group_is_knife_only() {
-        let groups = menu_groups(ContextMenuTarget::Notes);
-        assert_eq!(groups.len(), 2, "音符目标：常规组 + 设刀组");
-        assert_eq!(groups[1], NOTES_ACTIONS);
-    }
-
-    #[test]
-    fn test_drawn_shape_stays_single_group() {
-        let groups = menu_groups(ContextMenuTarget::DrawnShape);
-        assert_eq!(groups.len(), 1, "已 Bake 图形保持单组");
-        assert_eq!(groups[0], DRAWN_SHAPE_READ_ONLY);
-    }
-
-    #[test]
-    fn test_pending_groups_cover_all_actions_except_duplicate_delete() {
-        let rows = flat_rows(ContextMenuTarget::PendingDrawnShape);
-        for item in super::super::menu_items(ContextMenuTarget::PendingDrawnShape) {
-            if *item == Item::DeleteDrawnShape {
-                assert!(
-                    !rows.contains(item),
-                    "删除只保留常规组一处（两条同义路径不重复渲染）"
-                );
-                continue;
-            }
-            assert!(rows.contains(item), "待确认图形缺少条目：{item:?}");
-        }
-    }
-
-    #[test]
-    fn test_notes_regular_group_is_fully_enabled() {
-        for item in REGULAR_ITEMS {
-            assert!(
-                item_enabled(ContextMenuTarget::Notes, *item),
-                "音符目标的常规项必须全可用：{item:?}"
-            );
-        }
-        assert!(item_enabled(ContextMenuTarget::Notes, Item::MouldSetKnife));
-        assert!(!item_enabled(ContextMenuTarget::Notes, Item::RoundCorners));
-    }
-
-    #[test]
-    fn test_pending_regular_group_greys_notes_only_items() {
-        let greys: Vec<Item> = REGULAR_ITEMS
-            .iter()
-            .copied()
-            .filter(|item| !item_enabled(ContextMenuTarget::PendingDrawnShape, *item))
-            .collect();
-        assert_eq!(
-            greys,
-            vec![
-                Item::Cut,
-                Item::Copy,
-                Item::Paste,
-                Item::SelectAll,
-                Item::BatchEdit,
-                Item::ShapeList,
-            ],
-            "只置灰真正的音符专属动作"
-        );
-        assert!(item_enabled(
-            ContextMenuTarget::PendingDrawnShape,
-            Item::Delete
-        ));
-        assert!(item_enabled(
-            ContextMenuTarget::PendingDrawnShape,
-            Item::PasteShapeText
-        ));
-    }
-
-    #[test]
-    fn test_drawn_shape_enables_read_only_set_only() {
-        for item in DRAWN_SHAPE_READ_ONLY {
-            assert!(item_enabled(ContextMenuTarget::DrawnShape, *item));
-        }
-        assert!(!item_enabled(
-            ContextMenuTarget::DrawnShape,
-            Item::EditShape
-        ));
-        assert!(!item_enabled(ContextMenuTarget::DrawnShape, Item::Delete));
-        assert!(!item_enabled(
-            ContextMenuTarget::DrawnShape,
-            Item::RoundCorners
-        ));
-    }
-
-    #[test]
-    fn test_disabled_hint_is_translated() {
-        assert!(!item_disabled_hint().is_empty());
-    }
-}
+mod tests;

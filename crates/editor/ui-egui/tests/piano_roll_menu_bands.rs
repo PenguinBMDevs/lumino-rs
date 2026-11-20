@@ -4,15 +4,28 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use egui_kittest::Harness;
-use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
+use lumino_message::{
+    ContextMenuAvailability, ContextMenuTarget, PianoRollContextMenuAction,
+    PianoRollContextMenuItem,
+};
 use lumino_ui_egui::chrome::{self, ChromeModel};
 use lumino_ui_egui::piano_roll_context_menu::{self, MenuLayout, PianoRollMenuModel};
+
+fn full_availability() -> ContextMenuAvailability {
+    ContextMenuAvailability {
+        has_note_selection: true,
+        has_knife_source: true,
+        has_knife: true,
+    }
+}
 
 fn model(target: ContextMenuTarget) -> PianoRollMenuModel {
     PianoRollMenuModel {
         position: egui::pos2(400.0, 300.0),
         available: egui::Rect::from_min_max(egui::pos2(248.0, 102.0), egui::pos2(1448.0, 902.0)),
         target,
+        // 既有用例验证布局 / 点击 / 键盘：默认所有状态条件满足，避免被置灰干扰。
+        availability: full_availability(),
     }
 }
 
