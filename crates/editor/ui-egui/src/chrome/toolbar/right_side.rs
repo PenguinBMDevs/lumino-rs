@@ -11,6 +11,7 @@ use super::icon_at;
 use crate::icons::Icon;
 use crate::layout;
 use crate::theme;
+use crate::widgets;
 
 /// 绘制右侧四个控件并接管点击。
 pub(super) fn show(
@@ -45,6 +46,7 @@ pub(super) fn show(
 
     if model.more_visible {
         let more_button = icon_at(ui, icons, Icon::EllipsisVertical, more, 18.0, false);
+        let more_button = widgets::hover_tip(more_button, model.tips.more);
         super::super::overflow::set_trigger(ui.ctx(), more, content);
         if more_button.clicked() {
             toolbar_popup::push_action(ui.ctx(), ToolbarAction::ToggleOverflowMenu);
@@ -60,6 +62,7 @@ pub(super) fn show(
                 Vec2::splat(layout::RIGHT_TOOL_W),
             );
             let response = icon_at(ui, icons, Icon::Users, collab, 18.0, false);
+            let response = widgets::hover_tip(response, model.tips.collaboration);
             if response.clicked() {
                 toolbar_popup::push_action(ui.ctx(), ToolbarAction::OpenCollaborationDialog);
             }
@@ -76,7 +79,9 @@ pub(super) fn show(
             );
         }
         let onion = icon_at(ui, icons, Icon::OnionSkin, onion_rect, 20.0, model.onion);
+        let onion = widgets::hover_tip(onion, model.tips.onion);
         let caret = icon_at(ui, icons, Icon::CaretDown, caret_rect, 12.0, false);
+        let caret = widgets::hover_tip(caret, model.tips.onion_range);
         super::super::toolbar_popup::set_onion_triggers(ui.ctx(), onion_rect, caret_rect);
         if onion.clicked() {
             toolbar_popup::push_action(ui.ctx(), ToolbarAction::ToggleOnionSkin);
@@ -97,6 +102,7 @@ pub(super) fn show(
             lumino_core::storage::config::AutoScrollMode::Off => Icon::Ban,
         };
         let response = icon_at(ui, icons, scroll_icon, scroll_rect, 20.0, false);
+        let response = widgets::hover_tip(response, model.tips.auto_scroll);
         if response.clicked() {
             toolbar_popup::push_action(ui.ctx(), ToolbarAction::AutoScrollModeChanged);
         }

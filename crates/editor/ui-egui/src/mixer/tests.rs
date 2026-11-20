@@ -28,6 +28,7 @@ fn model(n: usize) -> MixerModel {
             meter: 0.0,
             master: true,
         }),
+        tips: MixerTips::default(),
     }
 }
 

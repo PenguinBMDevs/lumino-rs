@@ -96,6 +96,12 @@ pub struct VideoTimelineModel {
     pub info: String,
     /// 是否正在播放（决定播放/暂停图标）。
     pub playing: bool,
+    /// 倒带按钮的悬停说明。
+    pub rewind_tooltip: String,
+    /// 播放按钮的悬停说明。
+    pub play_tooltip: String,
+    /// 暂停按钮的悬停说明。
+    pub pause_tooltip: String,
 }
 
 impl VideoTimelineModel {
@@ -123,6 +129,9 @@ impl Default for VideoTimelineModel {
             title: String::new(),
             info: String::new(),
             playing: false,
+            rewind_tooltip: String::new(),
+            play_tooltip: String::new(),
+            pause_tooltip: String::new(),
         }
     }
 }
@@ -273,6 +282,15 @@ pub fn show_title_row(
         play,
         egui::Id::unique("lumino.timeline.play"),
         egui::Sense::click(),
+    );
+    let rewind_resp = crate::widgets::hover_text(rewind_resp, &model.rewind_tooltip);
+    let play_resp = crate::widgets::hover_text(
+        play_resp,
+        if model.playing {
+            &model.pause_tooltip
+        } else {
+            &model.play_tooltip
+        },
     );
     for (resp, rect) in [(&rewind_resp, rewind), (&play_resp, play)] {
         if resp.hovered() {
@@ -717,6 +735,9 @@ mod tests {
             title: "剪辑带".to_string(),
             info: String::new(),
             playing: false,
+            rewind_tooltip: String::new(),
+            play_tooltip: String::new(),
+            pause_tooltip: String::new(),
         }
     }
 

@@ -9,7 +9,7 @@ use lumino_core::{TextLayoutMode, TextParams};
 use crate::icons::Icon;
 
 /// 悬浮绘制工具条（胶囊）+ 至多一个锚定面板。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ToolPanelModel {
     /// 相对卷帘区中心的水平偏移与距底部的内缩（逻辑点）。
     pub offset: (f32, f32),
@@ -17,6 +17,10 @@ pub struct ToolPanelModel {
     pub left_inset: f32,
     /// 卷帘区上边界（标题栏 + 工具栏，逻辑点）。
     pub top_inset: f32,
+    /// 拖拽柄的悬浮提示。
+    pub grip_tooltip: String,
+    /// 齿轮（绘制设置）按钮的悬浮提示。
+    pub gear_tooltip: String,
     /// 「粗细」按钮的悬浮提示。
     pub thickness_tooltip: String,
     /// 工具条目（鼠标 / 曲线 / 颜料桶 / 画刷 / 形状 / 文字）。

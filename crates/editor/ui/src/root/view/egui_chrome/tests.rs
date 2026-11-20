@@ -17,6 +17,33 @@ fn sidebar_model(sidebar: &Sidebar) -> Option<SidebarModel> {
 }
 
 #[test]
+fn sidebar_buttons_carry_explanatory_tips() {
+    let model = sidebar_model(&Sidebar::new()).expect("默认状态应可接管");
+    assert!(!model.route_items.is_empty(), "默认应有路由条目");
+    for item in &model.route_items {
+        assert!(
+            !item.tip.name.is_empty(),
+            "路由按钮 {:?} 缺少悬停名称",
+            item.icon
+        );
+        assert!(
+            !item.tip.description.is_empty(),
+            "路由按钮 {:?} 缺少解释说明",
+            item.icon
+        );
+    }
+    for (label, tip) in [
+        ("横向卷帘", model.roll_bar_horizontal_tip),
+        ("纵向卷帘", model.roll_bar_vertical_tip),
+        ("混音台", model.mixer_tip),
+        ("独奏", model.solo_tip),
+    ] {
+        assert!(!tip.name.is_empty(), "{label} 缺少悬停名称");
+        assert!(!tip.description.is_empty(), "{label} 缺少解释说明");
+    }
+}
+
+#[test]
 fn sidebar_model_carries_route_items() {
     // 默认：PianoRoll 组激活 → Keys + File + Automation，再 Project / Waterfall /
     // Renderer（渲染组未激活，不含两个导出子按钮）。
@@ -161,6 +188,7 @@ fn sidebar_model_defers_to_legacy_while_transient() {
         Some(lumino_ui_egui::chrome::SidebarNumericPickerModel {
             track_id: 1,
             kind: lumino_ui_egui::chrome::SidebarNumericPickerKind::Port,
+            kind_label: "端口",
             current: 0,
             choices: Sidebar::PORT_CHOICES,
         })

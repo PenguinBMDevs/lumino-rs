@@ -404,6 +404,87 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "此文件较大，加载可能需要一些时间…" => {
             Some("This file is large; loading may take a while…")
         }
+        // ── 2026-11-20：按钮悬停说明补全（工具栏 / 侧栏 / 悬浮条 / 编辑器按钮）──
+        "端口" => Some("Port"),
+        "通道" => Some("Channel"),
+        "精度" => Some("Precision"),
+        "设置音符吸附到网格的精度" => Some("Set the grid precision notes snap to"),
+        "查看并跳转到任意撤销步骤" => Some("View and jump to any undo step"),
+        "点击编辑 PPQ（每四分音符的脉冲数）" => {
+            Some("Click to edit PPQ (pulses per quarter note)")
+        }
+        "选择洋葱皮显示的轨范围" => Some("Choose which tracks the onion skin shows"),
+        "洋葱皮范围" => Some("Onion Skin Range"),
+        "打开绘制工具设置" => Some("Open drawing tool settings"),
+        "拖动工具条" => Some("Drag the toolbar"),
+        "确认当前绘制并生成音符" => Some("Confirm the current drawing and create notes"),
+        "取消当前绘制" => Some("Cancel the current drawing"),
+        "确认当前图形并生成音符" => Some("Confirm the current shape and create notes"),
+        "取消当前图形" => Some("Cancel the current shape"),
+        "确认放置并转换为 MIDI" => Some("Confirm placement and convert to MIDI"),
+        "取消放置" => Some("Cancel placement"),
+        "确认曲线并生成音符" => Some("Confirm the curve and create notes"),
+        "取消当前曲线" => Some("Cancel the current curve"),
+        "确认笔画并生成音符" => Some("Confirm the stroke and create notes"),
+        "取消当前笔画" => Some("Cancel the current stroke"),
+        "平滑曲线：锚点之间使用贝塞尔曲线连接" => {
+            Some("Smooth curve: connect anchors with Bezier curves")
+        }
+        "折线：锚点之间用直线连接" => {
+            Some("Polyline: connect anchors with straight lines")
+        }
+        "正常 / 合并模式：合并模式下连续文字会合并为一个音符组" => {
+            Some("Normal / merge mode: in merge mode consecutive text becomes one note group")
+        }
+        "倒带到开头" => Some("Rewind to start"),
+        "播放 / 暂停视频预览" => Some("Play / pause the video preview"),
+        "只播放此音轨；再次点击取消" => Some("Solo this track; click again to cancel"),
+        "点击查看内存使用明细" => Some("Click to view memory usage details"),
+        "内存监控" => Some("Memory Monitor"),
+        "恢复默认颜色" => Some("Restore default color"),
+        "选择此颜色" => Some("Select this color"),
+        "钢琴卷帘" => Some("Piano Roll"),
+        "打开钢琴卷帘编辑视图" => Some("Open the piano roll editor"),
+        "音轨总览" => Some("Track Overview"),
+        "显示工程的全部音轨" => Some("Show all tracks in the project"),
+        "自动化面板" => Some("Automation"),
+        "显示当前音轨的自动化曲线" => {
+            Some("Show the current track's automation curves")
+        }
+        "切换到工程走带 / 音轨总览视图" => {
+            Some("Switch to the arrangement (track overview) view")
+        }
+        "瀑布流播放器" => Some("Waterfall Player"),
+        "切换到瀑布流播放视图" => Some("Switch to the waterfall playback view"),
+        "渲染" => Some("Render"),
+        "打开渲染入口（视频 / 音频导出）" => {
+            Some("Open the export entry (video / audio)")
+        }
+        "把工程渲染为视频文件" => Some("Render the project to a video file"),
+        "把工程渲染为音频文件" => Some("Render the project to an audio file"),
+        "横向卷帘" => Some("Horizontal Roll"),
+        "钢琴卷帘横向显示（时间轴水平）" => {
+            Some("Show the piano roll horizontally (time axis horizontal)")
+        }
+        "纵向卷帘" => Some("Vertical Roll"),
+        "钢琴卷帘纵向显示（时间轴垂直）" => {
+            Some("Show the piano roll vertically (time axis vertical)")
+        }
+        "打开 / 关闭混音台窗口" => Some("Open / close the mixer window"),
+        "独奏" => Some("Solo"),
+        "声像" => Some("Pan"),
+        "声像：点击位置决定左右平衡" => {
+            Some("Pan: click a position to set the left/right balance")
+        }
+        "拖动推子调整通道音量" => Some("Drag the fader to adjust the channel volume"),
+        "静音此通道" => Some("Mute this channel"),
+        "静音" => Some("Mute"),
+        "音量" => Some("Volume"),
+        "点击选择要转换的图片文件" => {
+            Some("Click to choose the image to convert to MIDI")
+        }
+        "开始把图片转换为 MIDI" => Some("Start converting the image to MIDI"),
+        "打开画刷行为设置" => Some("Open brush behavior settings"),
         _ => None,
     }
 }

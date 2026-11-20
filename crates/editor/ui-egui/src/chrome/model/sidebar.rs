@@ -3,6 +3,7 @@
 use egui::Color32;
 
 use super::RightSidebarPanelModel;
+use crate::widgets::HoverTip;
 
 /// 路由栏分组（灯条颜色来源）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +112,8 @@ pub struct SidebarRouteItem {
     pub icon: SidebarRouteIcon,
     /// 是否点亮灯条。
     pub active: bool,
+    /// 悬停说明（名称 + 解释）。
+    pub tip: HoverTip,
 }
 
 /// 拖拽排序状态（绘制插入指示线用）。
@@ -149,6 +152,14 @@ pub struct SidebarModel {
     pub roll_bar_visible: bool,
     /// 卷帘方向激活项。
     pub roll_bar_active: Option<RollBar>,
+    /// 横向卷帘按钮说明。
+    pub roll_bar_horizontal_tip: HoverTip,
+    /// 纵向卷帘按钮说明。
+    pub roll_bar_vertical_tip: HoverTip,
+    /// 混音台按钮说明。
+    pub mixer_tip: HoverTip,
+    /// 音轨行「独奏」按钮说明。
+    pub solo_tip: HoverTip,
     /// 混音台是否打开。
     pub mixer_open: bool,
     /// 面板内容。
@@ -205,6 +216,8 @@ pub struct SidebarPanelMenuModel {
 pub struct SidebarColorPickerModel {
     /// 目标音轨 ID。
     pub track_id: usize,
+    /// 「恢复默认颜色」按钮的悬停说明。
+    pub reset_tooltip: &'static str,
 }
 
 /// 数值选择器种类（端口 / 通道）。
@@ -223,6 +236,8 @@ pub struct SidebarNumericPickerModel {
     pub track_id: usize,
     /// 种类。
     pub kind: SidebarNumericPickerKind,
+    /// 种类显示名（「端口」/「通道」，用于悬停说明）。
+    pub kind_label: &'static str,
     /// 当前值（内部 0 基）。
     pub current: u8,
     /// 可选数量（4 的倍数）。
@@ -255,6 +270,10 @@ impl Default for SidebarModel {
             file_active: true,
             roll_bar_visible: true,
             roll_bar_active: Some(RollBar::Horizontal),
+            roll_bar_horizontal_tip: HoverTip::name_only("横向卷帘"),
+            roll_bar_vertical_tip: HoverTip::name_only("纵向卷帘"),
+            mixer_tip: HoverTip::name_only("混音台"),
+            solo_tip: HoverTip::name_only("独奏"),
             mixer_open: false,
             panel: SidebarPanel::Tracks,
             tracks: vec![

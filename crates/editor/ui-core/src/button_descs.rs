@@ -64,6 +64,10 @@ pub enum ButtonId {
     Undo,
     /// 重做
     Redo,
+    /// 撤销历史面板
+    History,
+    /// 精度（吸附）选择
+    Precision,
     /// 循环开关
     Loop,
     /// 自动滚动开关
@@ -106,6 +110,8 @@ fn button_name(id: ButtonId, t: &MainTranslations) -> &'static str {
         ButtonId::TransposeUp => t.tool_transpose_up,
         ButtonId::Undo => t.undo,
         ButtonId::Redo => t.redo,
+        ButtonId::History => tr!("撤销历史"),
+        ButtonId::Precision => tr!("精度"),
         // 动态按钮使用中性角色名，保证 i18n 下稳定
         ButtonId::Loop => t.toggle_loop_tooltip,
         ButtonId::AutoScroll => t.auto_scroll_tooltip,
@@ -145,7 +151,10 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("Quantize", "将选中音符量化到网格"),
     ("Speed", "变速（按ctrl点击打开面板）"),
     ("FlipVertical", "垂直翻转选中音符"),
-    ("FlipHorizontal", "水平翻转选中音符"),
+    (
+        "FlipHorizontal",
+        "水平翻转选中音符（Shift 向右对齐，Ctrl 向左对齐）",
+    ),
     ("Split", "分割音符（对齐演奏指示线分割）"),
     ("Glue", "合并选中的相邻音符"),
     ("Tie", "连奏选中音符"),
@@ -153,7 +162,9 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("TransposeUp", "上移选中音符音高（按住ctrl进行八度移动）"),
     ("Undo", "撤销上一步操作"),
     ("Redo", "重做已撤销操作"),
-    ("Loop", "打开循环播放区域"),
+    ("History", "查看并跳转到任意撤销步骤"),
+    ("Precision", "设置音符吸附到网格的精度"),
+    ("Loop", "开关循环播放（在循环区间内反复播放）"),
     ("AutoScroll", "切换自动滚动模式"),
     (
         "OnionSkin",
@@ -199,7 +210,10 @@ const DESC_EN: &[(&str, &str)] = &[
     ("Quantize", "Quantize selected notes to grid"),
     ("Speed", "Change speed (Ctrl+click to open panel)"),
     ("FlipVertical", "Flip selected notes vertically"),
-    ("FlipHorizontal", "Flip selected notes horizontally"),
+    (
+        "FlipHorizontal",
+        "Flip selected notes horizontally (Shift aligns right, Ctrl aligns left)",
+    ),
     ("Split", "Split notes at playhead"),
     ("Glue", "Glue selected adjacent notes"),
     ("Tie", "Tie selected notes"),
@@ -213,7 +227,12 @@ const DESC_EN: &[(&str, &str)] = &[
     ),
     ("Undo", "Undo last action"),
     ("Redo", "Redo undone action"),
-    ("Loop", "Toggle loop region"),
+    ("History", "View and jump to any undo step"),
+    ("Precision", "Set the note snap grid precision"),
+    (
+        "Loop",
+        "Toggle loop playback (repeat inside the loop region)",
+    ),
     ("AutoScroll", "Toggle auto-scroll"),
     (
         "OnionSkin",
@@ -272,6 +291,8 @@ impl ButtonId {
             ButtonId::TransposeUp => "TransposeUp",
             ButtonId::Undo => "Undo",
             ButtonId::Redo => "Redo",
+            ButtonId::History => "History",
+            ButtonId::Precision => "Precision",
             ButtonId::Loop => "Loop",
             ButtonId::AutoScroll => "AutoScroll",
             ButtonId::OnionSkin => "OnionSkin",

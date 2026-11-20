@@ -22,6 +22,7 @@ pub use show::show_dialog;
 use egui::{Id, Rect};
 
 use crate::layout;
+use crate::widgets::HoverTip;
 
 /// 通道条宽（逻辑像素）。
 pub const STRIP_WIDTH: f32 = 88.0;
@@ -59,6 +60,19 @@ pub struct MixerStrip {
     pub master: bool,
 }
 
+/// 混音台控件的悬停说明。
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MixerTips {
+    /// 音量推子。
+    pub volume: HoverTip,
+    /// 声像。
+    pub pan: HoverTip,
+    /// 静音。
+    pub mute: HoverTip,
+    /// 独奏。
+    pub solo: HoverTip,
+}
+
 /// 混音台模型。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MixerModel {
@@ -68,6 +82,8 @@ pub struct MixerModel {
     pub strips: Vec<MixerStrip>,
     /// 主控条（`None` = 不显示）。
     pub master: Option<MixerStrip>,
+    /// 各控件的悬停说明。
+    pub tips: MixerTips,
 }
 
 /// 混音台对话框的整窗模型。

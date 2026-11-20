@@ -6,6 +6,48 @@ use lumino_core::SnapSpec;
 use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollMode;
 
+use crate::widgets::HoverTip;
+
+/// 工具栏各按钮的悬停说明。
+///
+/// 文案由生产侧按当前语言装配（`ButtonId` 描述表 + i18n），
+/// `ui-egui` 只负责在悬停时展示；默认全空 = 不显示浮窗。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolbarTips {
+    /// 工具区条目（顺序与 `toolbar::tools::TOOLS` 一致）。
+    pub tools: Vec<HoverTip>,
+    /// 录制 / 停止录制。
+    pub record: HoverTip,
+    /// 退到上一个小节 / 全曲开头。
+    pub skip_backward: HoverTip,
+    /// 播放 / 暂停（按当前状态切换文案）。
+    pub play_pause: HoverTip,
+    /// 跳到下一个小节 / 全曲末尾。
+    pub skip_forward: HoverTip,
+    /// 循环开关。
+    pub loop_toggle: HoverTip,
+    /// 撤销。
+    pub undo: HoverTip,
+    /// 重做。
+    pub redo: HoverTip,
+    /// 撤销历史。
+    pub history: HoverTip,
+    /// 精度（吸附）下拉。
+    pub precision: HoverTip,
+    /// 仪表盘 PPQ 单元格（点击进入编辑）。
+    pub ppq_cell: HoverTip,
+    /// 洋葱皮开关。
+    pub onion: HoverTip,
+    /// 洋葱皮显示范围下拉。
+    pub onion_range: HoverTip,
+    /// 自动滚动模式。
+    pub auto_scroll: HoverTip,
+    /// 协作面板。
+    pub collaboration: HoverTip,
+    /// 「更多」溢出菜单。
+    pub more: HoverTip,
+}
+
 /// 工具栏（72px band）的只读状态。
 #[derive(Debug, Clone)]
 pub struct ToolbarModel {
@@ -59,6 +101,8 @@ pub struct ToolbarModel {
     pub ppq_error: Option<String>,
     /// 工具栏高度（用户可拖拽调整，默认 72）。
     pub height: f32,
+    /// 各按钮的悬停说明。
+    pub tips: ToolbarTips,
 }
 
 /// 精度（吸附）下拉的内容。
@@ -181,6 +225,7 @@ impl Default for ToolbarModel {
             ppq_buffer: String::new(),
             ppq_error: None,
             height: 72.0,
+            tips: ToolbarTips::default(),
         }
     }
 }

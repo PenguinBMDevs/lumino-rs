@@ -16,6 +16,7 @@ fn statusbar(fps: Option<f32>) -> StatusbarModel {
         fps,
         right: String::new(),
         gpu: None,
+        memory_tip: Default::default(),
     }
 }
 

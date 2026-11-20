@@ -15,6 +15,79 @@ use crate::icons::{Icon, IconCache};
 use crate::layout;
 use crate::theme;
 
+/// 按钮的悬停说明（名称 + 一句话解释）。
+///
+/// 文案保持 `&'static str`：翻译表与按钮描述表本身就是静态字符串，
+/// 模型每帧重建时不需要为此分配；浮窗内容只在真正悬停时由
+/// [`hover_tip`] 组装。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HoverTip {
+    /// 按钮名称（浮窗第一行）。
+    pub name: &'static str,
+    /// 解释说明（浮窗第二行；空串 = 只显示名称）。
+    pub description: &'static str,
+}
+
+impl HoverTip {
+    /// 名称 + 解释。
+    pub const fn new(name: &'static str, description: &'static str) -> Self {
+        Self { name, description }
+    }
+
+    /// 只有名称的简短说明（窗口按钮等自明控件）。
+    pub const fn name_only(name: &'static str) -> Self {
+        Self {
+            name,
+            description: "",
+        }
+    }
+
+    /// 是否没有任何文案（默认值 = 不显示浮窗）。
+    pub const fn is_empty(self) -> bool {
+        self.name.is_empty() && self.description.is_empty()
+    }
+}
+
+/// 给响应挂统一悬停说明；空文案直接原样返回。
+///
+/// 用 `on_hover_ui` 而不是 `on_hover_text`：名称与解释分两行排版，
+/// 且闭包只在浮窗真正显示时执行，不会为未悬停的按钮逐帧拼字符串。
+pub fn hover_tip(response: Response, tip: HoverTip) -> Response {
+    if tip.is_empty() || pointer_down(&response) {
+        return response;
+    }
+    response.on_hover_ui(|ui| {
+        ui.set_max_width(360.0);
+        ui.label(
+            RichText::new(tip.name)
+                .size(theme::font::LABEL)
+                .color(theme::text()),
+        );
+        if !tip.description.is_empty() {
+            ui.label(
+                RichText::new(tip.description)
+                    .size(theme::font::SMALL)
+                    .color(theme::text_muted()),
+            );
+        }
+    })
+}
+
+/// 指针按住期间不弹说明：悬停浮窗只在「只是看看」时出现，
+/// 既不遮挡用户正在按下的按钮，也避免 tooltip 层参与本次点击的命中竞争。
+fn pointer_down(response: &Response) -> bool {
+    response.ctx.input(|input| input.pointer.any_down())
+}
+
+/// 只有一句说明的悬停浮窗（动态 `String` / 单行文案场景）。
+pub fn hover_text(response: Response, text: &str) -> Response {
+    if text.is_empty() || pointer_down(&response) {
+        response
+    } else {
+        response.on_hover_text(text)
+    }
+}
+
 /// 指定尺寸的纯文本。
 pub fn label(ui: &mut egui::Ui, text: impl Into<String>, size: f32, color: Color32) {
     ui.add(egui::Label::new(RichText::new(text.into()).size(size).color(color)).selectable(false));
@@ -161,6 +234,7 @@ pub fn traffic_button(
         Icon::WindowMin => "最小化窗口",
         _ => "窗口按钮",
     };
+    let response = hover_tip(response, HoverTip::name_only(label));
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
 }

@@ -181,7 +181,15 @@ fn route_bar(
                 SidebarRouteIcon::VideoExport => SidebarRoute::VideoExport,
                 SidebarRouteIcon::AudioExport => SidebarRoute::AudioExport,
             };
-            route_button(ui, icons, icon, left, y, active, Some(route));
+            route_button(
+                ui,
+                icons,
+                icon,
+                egui::pos2(left, y),
+                active,
+                Some(route),
+                Some(item.tip),
+            );
             y += ROUTE_BTN;
         }
         route_bar_bottom(ui, rect, model, icons);
@@ -196,10 +204,10 @@ fn route_bar(
         ui,
         icons,
         Icon::Keys,
-        left,
-        y,
+        egui::pos2(left, y),
         active,
         Some(SidebarRoute::PianoRollGroup),
+        None,
     );
     y += ROUTE_BTN;
 
@@ -211,10 +219,10 @@ fn route_bar(
             ui,
             icons,
             Icon::FolderTree,
-            left,
-            y,
+            egui::pos2(left, y),
             active,
             Some(SidebarRoute::FilePanel),
+            None,
         );
         y += ROUTE_BTN;
 
@@ -225,10 +233,10 @@ fn route_bar(
             ui,
             icons,
             Icon::WaveForm,
-            left,
-            y,
+            egui::pos2(left, y),
             active,
             Some(SidebarRoute::AutomationPanel),
+            None,
         );
         y += ROUTE_BTN;
     }
@@ -239,10 +247,10 @@ fn route_bar(
         ui,
         icons,
         Icon::Arrangement,
-        left,
-        y,
+        egui::pos2(left, y),
         active,
         Some(SidebarRoute::ProjectGroup),
+        None,
     );
     y += ROUTE_BTN;
 
@@ -253,10 +261,10 @@ fn route_bar(
         ui,
         icons,
         Icon::PlayCircle,
-        left,
-        y,
+        egui::pos2(left, y),
         active,
         Some(SidebarRoute::WaterfallGroup),
+        None,
     );
     y += ROUTE_BTN;
 
@@ -266,10 +274,10 @@ fn route_bar(
         ui,
         icons,
         Icon::Download,
-        left,
-        y,
+        egui::pos2(left, y),
         active,
         Some(SidebarRoute::RendererGroup),
+        None,
     );
     y += ROUTE_BTN;
 
@@ -282,10 +290,10 @@ fn route_bar(
             ui,
             icons,
             Icon::VideoCamera,
-            left,
-            y,
+            egui::pos2(left, y),
             active,
             Some(SidebarRoute::VideoExport),
+            None,
         );
         y += ROUTE_BTN;
 
@@ -296,10 +304,10 @@ fn route_bar(
             ui,
             icons,
             Icon::MusicNote,
-            left,
-            y,
+            egui::pos2(left, y),
             active,
             Some(SidebarRoute::AudioExport),
+            None,
         );
     }
 
@@ -329,17 +337,19 @@ fn route_bar_bottom(
     icons: &mut crate::icons::IconCache,
 ) {
     let left = rect.left();
-    let mut bottom: Vec<(Icon, Option<Color32>)> = Vec::new();
+    let mut bottom: Vec<(Icon, Option<Color32>, crate::widgets::HoverTip)> = Vec::new();
     if model.roll_bar_visible {
         bottom.push((
             Icon::RollBarHorizontal,
             (model.roll_bar_active == Some(RollBar::Horizontal))
                 .then(|| SidebarGroup::PianoRoll.child_color()),
+            model.roll_bar_horizontal_tip,
         ));
         bottom.push((
             Icon::RollBarVertical,
             (model.roll_bar_active == Some(RollBar::Vertical))
                 .then(|| SidebarGroup::PianoRoll.child_color()),
+            model.roll_bar_vertical_tip,
         ));
     }
     bottom.push((
@@ -351,6 +361,7 @@ fn route_bar_bottom(
         model
             .mixer_open
             .then(|| SidebarGroup::PianoRoll.child_color()),
+        model.mixer_tip,
     ));
 
     // Ui 的高度可能是无界的（父级 `max_rect` 未定高），直接用 `rect.bottom()`
@@ -373,8 +384,16 @@ fn route_bar_bottom(
     }
     routes.push(SidebarRoute::MixerToggle);
 
-    for ((icon, active), route) in bottom.into_iter().zip(routes) {
-        route_button(ui, icons, icon, left, by, active, Some(route));
+    for ((icon, active, tip), route) in bottom.into_iter().zip(routes) {
+        route_button(
+            ui,
+            icons,
+            icon,
+            egui::pos2(left, by),
+            active,
+            Some(route),
+            Some(tip),
+        );
         by += ROUTE_BTN;
     }
 }
@@ -392,11 +411,12 @@ fn route_button(
     ui: &egui::Ui,
     icons: &mut crate::icons::IconCache,
     icon: Icon,
-    left: f32,
-    y: f32,
+    pos: egui::Pos2,
     active: Option<Color32>,
     route: Option<SidebarRoute>,
+    tip: Option<crate::widgets::HoverTip>,
 ) {
+    let (left, y) = (pos.x, pos.y);
     // 路由栏由 egui 不透明绘制，必须同时接管点击：否则 上一代 的同位置按钮被盖住，
     // 或者两边各自命中导致「打开又立刻关闭」。
     let hit = Rect::from_min_size(egui::pos2(left, y), Vec2::new(ROUTE_BAR_W, ROUTE_BTN));
@@ -432,6 +452,9 @@ fn route_button(
     if response.hovered() {
         ui.painter()
             .rect_filled(hit, 0, Color32::from_white_alpha(10));
+    }
+    if let Some(tip) = tip {
+        let _ = crate::widgets::hover_tip(response, tip);
     }
     if let Some(color) = active {
         ui.painter().rect_filled(

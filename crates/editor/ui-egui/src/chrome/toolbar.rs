@@ -54,7 +54,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::RECORD_GROUP_W, h)),
-            |ui| controls::record(ui, model.recording),
+            |ui| controls::record(ui, model.recording, model.tips.record),
         );
         x += layout::RECORD_GROUP_W + 4.0;
     }
@@ -64,7 +64,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::PLAYBACK_GROUP_W, h)),
-            |ui| controls::playback(ui, icons, model.playing),
+            |ui| controls::playback(ui, icons, model.playing, &model.tips),
         );
         x += layout::PLAYBACK_GROUP_W + 8.0;
     }
@@ -74,7 +74,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::LOOP_GROUP_W, h)),
-            |ui| controls::loop_button(ui, icons, model.looping),
+            |ui| controls::loop_button(ui, icons, model.looping, model.tips.loop_toggle),
         );
         x += layout::LOOP_GROUP_W + 8.0;
     }
@@ -84,7 +84,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::UNDO_REDO_GROUP_W, h)),
-            |ui| controls::undo_redo(ui, icons),
+            |ui| controls::undo_redo(ui, icons, &model.tips),
         );
         x += layout::UNDO_REDO_GROUP_W + 16.0;
     }

@@ -26,6 +26,9 @@ fn model(title_row: Option<Rect>, playing: bool) -> VideoTimelineModel {
         title: "剪辑带".to_string(),
         info: "时长 10.0s".to_string(),
         playing,
+        rewind_tooltip: "倒带".to_owned(),
+        play_tooltip: "播放".to_owned(),
+        pause_tooltip: "暂停".to_owned(),
     }
 }
 

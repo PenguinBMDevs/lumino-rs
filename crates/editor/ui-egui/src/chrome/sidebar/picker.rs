@@ -135,6 +135,15 @@ pub(super) fn color_picker(
         for (index, color) in TRACK_COLORS.iter().enumerate() {
             let cell = cell(rect.min, index, SWATCH);
             let response = ui.interact(cell, ui.scope_id().with(("swatch", index)), Sense::click());
+            // 色块含义不能只靠颜色本身传达：悬停时给出可读的 RGB 值。
+            let response = response.on_hover_ui(|ui| {
+                ui.label(format!(
+                    "RGB #{:02X}{:02X}{:02X}",
+                    color.r(),
+                    color.g(),
+                    color.b()
+                ));
+            });
             ui.painter()
                 .circle_filled(cell.center(), SWATCH / 2.0, *color);
             if response.hovered() {
@@ -155,6 +164,7 @@ pub(super) fn color_picker(
         // 「恢复默认」：灰边圆 + 红色斜杠（与 上一代 `reset_button` 同观感）。
         let reset = cell(rect.min, TRACK_COLORS.len(), SWATCH);
         let response = ui.interact(reset, ui.scope_id().with("reset"), Sense::click());
+        let response = crate::widgets::hover_text(response, model.reset_tooltip);
         ui.painter().circle_stroke(
             reset.center(),
             SWATCH / 2.0,
@@ -202,6 +212,9 @@ pub(super) fn numeric_picker(
         for value in 0..count {
             let cell = cell(rect.min, value, ITEM);
             let response = ui.interact(cell, ui.scope_id().with(("option", value)), Sense::click());
+            let response = response.on_hover_ui(|ui| {
+                ui.label(format!("{} {}", model.kind_label, value + 1));
+            });
             let selected = value == model.current as usize;
             if selected {
                 ui.painter().rect_filled(

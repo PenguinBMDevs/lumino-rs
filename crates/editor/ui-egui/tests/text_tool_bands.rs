@@ -29,6 +29,9 @@ fn model(editing: bool) -> TextToolModel {
             egui::vec2(36.0, 36.0),
         )),
         mode_merged: false,
+        confirm_tooltip: "确认".to_owned(),
+        cancel_tooltip: "取消".to_owned(),
+        mode_tooltip: "模式".to_owned(),
         preview: Some(TextPreview {
             rect,
             width: 2,

@@ -83,6 +83,7 @@ fn model() -> ChromeModel {
             ppq_buffer: "1920".to_owned(),
             ppq_error: None,
             height: lumino_ui_egui::layout::TOOLBAR_H,
+            tips: Default::default(),
         }),
         tool_panel: None,
         statusbar: StatusbarModel {
@@ -93,6 +94,7 @@ fn model() -> ChromeModel {
             fps: Some(60.0),
             right: String::new(),
             gpu: None,
+            memory_tip: Default::default(),
         },
     }
 }

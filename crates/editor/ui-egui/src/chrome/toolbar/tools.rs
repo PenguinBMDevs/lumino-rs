@@ -189,6 +189,10 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
             Vec2::new(width, layout::TOOL_BUTTON_W),
             tool_highlighted(model, index, item),
         );
+        // 工具区条目顺序与生产 `ToolbarTips::tools` 一一对应；模型缺项时
+        // `HoverTip::default()` 为空，不显示浮窗（测试 / 草稿场景）。
+        let tip = model.tips.tools.get(index).copied().unwrap_or_default();
+        let response = widgets::hover_tip(response, tip);
         if response.clicked() {
             let modifiers = ui.input(|i| i.modifiers);
             if let Some(action) = action_for(item.icon, modifiers) {
@@ -228,6 +232,7 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     let box_w = layout::PRECISION_W;
     let box_h = layout::PRECISION_H;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(box_w, box_h), Sense::click());
+    let response = widgets::hover_tip(response, model.tips.precision);
     super::super::toolbar_popup::set_snap_trigger(ui.ctx(), rect);
     if response.clicked() {
         super::super::toolbar_popup::push_action(

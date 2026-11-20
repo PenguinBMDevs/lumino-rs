@@ -91,7 +91,10 @@ pub(super) fn color_picker(
 ) -> Option<lumino_ui_egui::chrome::SidebarColorPickerModel> {
     sidebar
         .color_picking_track
-        .map(|track_id| lumino_ui_egui::chrome::SidebarColorPickerModel { track_id })
+        .map(|track_id| lumino_ui_egui::chrome::SidebarColorPickerModel {
+            track_id,
+            reset_tooltip: tr!("恢复默认颜色"),
+        })
 }
 
 /// 端口 / 通道选择器模型；未打开时返回 `None`。
@@ -121,6 +124,10 @@ pub(super) fn numeric_picker(
     Some(SidebarNumericPickerModel {
         track_id,
         kind,
+        kind_label: match kind {
+            SidebarNumericPickerKind::Port => tr!("端口"),
+            SidebarNumericPickerKind::Channel => tr!("通道"),
+        },
         current,
         choices,
     })

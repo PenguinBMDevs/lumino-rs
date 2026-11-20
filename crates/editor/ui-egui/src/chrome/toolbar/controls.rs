@@ -10,10 +10,10 @@ use super::super::toolbar_popup::{self, ToolbarAction};
 use crate::icons::Icon;
 use crate::layout;
 use crate::theme;
-use crate::widgets;
+use crate::widgets::{self, HoverTip};
 
 /// 录制组：红点按钮（录制中填实心背景）。
-pub(super) fn record(ui: &mut egui::Ui, recording: bool) {
+pub(super) fn record(ui: &mut egui::Ui, recording: bool, tip: HoverTip) {
     let rect = ui.max_rect();
     let (_, response) = ui.allocate_exact_size(rect.size(), Sense::click());
     if recording {
@@ -30,6 +30,7 @@ pub(super) fn record(ui: &mut egui::Ui, recording: bool) {
             theme::record_red()
         },
     );
+    let response = widgets::hover_tip(response, tip);
     if response.clicked() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::RecordToggled);
     }
@@ -40,13 +41,18 @@ pub(super) fn record(ui: &mut egui::Ui, recording: bool) {
 /// 倒带 / 快进单点为「一个小节」：快进严格跳到下一条小节线；快退在本小节
 /// 前 1/2 退到上一个小节，后 1/2 回本小节开头。按住 Ctrl 点击分别跳到
 /// 全曲开头 / 末尾（全局 EOT）。修饰键在点击时读取，与工具区 Ctrl 命令同口径。
-pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, playing: bool) {
+pub(super) fn playback(
+    ui: &mut egui::Ui,
+    cache: &mut crate::icons::IconCache,
+    playing: bool,
+    tips: &super::super::ToolbarTips,
+) {
     let total = layout::TOOL_BUTTON_W * 3.0 + 8.0;
     ui.add_space((layout::PLAYBACK_GROUP_W - total) / 2.0);
     let center = if playing {
-        (Icon::Pause, ToolbarAction::Pause)
+        (Icon::Pause, ToolbarAction::Pause, tips.play_pause)
     } else {
-        (Icon::Play, ToolbarAction::Play)
+        (Icon::Play, ToolbarAction::Play, tips.play_pause)
     };
     let ctrl = ui.input(|i| i.modifiers.ctrl);
     let rewind = if ctrl {
@@ -59,10 +65,10 @@ pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, p
     } else {
         ToolbarAction::SkipForward
     };
-    for (index, (icon, action)) in [
-        (Icon::SkipBackward, rewind),
+    for (index, (icon, action, tip)) in [
+        (Icon::SkipBackward, rewind, tips.skip_backward),
         center,
-        (Icon::SkipForward, forward),
+        (Icon::SkipForward, forward, tips.skip_forward),
     ]
     .into_iter()
     .enumerate()
@@ -78,6 +84,7 @@ pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, p
             Vec2::splat(layout::TOOL_BUTTON_W),
             false,
         );
+        let response = widgets::hover_tip(response, tip);
         if response.clicked() {
             toolbar_popup::push_action(ui.ctx(), action);
         }
@@ -85,7 +92,12 @@ pub(super) fn playback(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, p
 }
 
 /// 循环按钮（开启时图标由 `Ban` 换成双向箭头，与 上一代 一致）。
-pub(super) fn loop_button(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache, looping: bool) {
+pub(super) fn loop_button(
+    ui: &mut egui::Ui,
+    cache: &mut crate::icons::IconCache,
+    looping: bool,
+    tip: HoverTip,
+) {
     ui.add_space((layout::LOOP_GROUP_W - layout::TOOL_BUTTON_W) / 2.0);
     let icon = if looping {
         Icon::ArrowsLeftRight
@@ -100,19 +112,24 @@ pub(super) fn loop_button(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache
         Vec2::splat(layout::TOOL_BUTTON_W),
         false,
     );
+    let response = widgets::hover_tip(response, tip);
     if response.clicked() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::ToggleLoop);
     }
 }
 
 /// 撤销 / 重做 / 历史（96 宽组，三个 34 宽按钮）。
-pub(super) fn undo_redo(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache) {
+pub(super) fn undo_redo(
+    ui: &mut egui::Ui,
+    cache: &mut crate::icons::IconCache,
+    tips: &super::super::ToolbarTips,
+) {
     let total = layout::TOOL_BUTTON_W * 3.0;
     ui.add_space((layout::UNDO_REDO_GROUP_W - total) / 2.0);
-    for (icon, action) in [
-        (Icon::Undo, ToolbarAction::Undo),
-        (Icon::Redo, ToolbarAction::Redo),
-        (Icon::Clock, ToolbarAction::OpenHistory),
+    for (icon, action, tip) in [
+        (Icon::Undo, ToolbarAction::Undo, tips.undo),
+        (Icon::Redo, ToolbarAction::Redo, tips.redo),
+        (Icon::Clock, ToolbarAction::OpenHistory, tips.history),
     ] {
         let response = widgets::icon_button(
             ui,
@@ -122,6 +139,7 @@ pub(super) fn undo_redo(ui: &mut egui::Ui, cache: &mut crate::icons::IconCache) 
             Vec2::splat(layout::TOOL_BUTTON_W),
             false,
         );
+        let response = widgets::hover_tip(response, tip);
         if response.clicked() {
             toolbar_popup::push_action(ui.ctx(), action);
         }
@@ -155,6 +173,7 @@ pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
             egui::Id::unique("lumino.toolbar.ppq-cell"),
             Sense::click(),
         );
+        let response = widgets::hover_tip(response, model.tips.ppq_cell);
         if response.clicked() {
             toolbar_popup::push_action(ui.ctx(), ToolbarAction::PpqEditToggled);
         }

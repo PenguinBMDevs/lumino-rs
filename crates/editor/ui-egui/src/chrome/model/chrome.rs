@@ -1,5 +1,7 @@
 //! 标题栏 / 菜单 / 状态栏的只读模型。
 
+use crate::widgets::HoverTip;
+
 /// 自定义标题栏状态。
 #[derive(Debug, Clone, Default)]
 pub struct TitlebarModel {
@@ -69,6 +71,8 @@ pub struct StatusbarModel {
     pub right: String,
     /// GPU (LGS) 指标组；`None` = 设置关闭或后端未就绪。
     pub gpu: Option<GpuMetricsModel>,
+    /// MEM 数值（可点击打开内存监控）的悬停说明。
+    pub memory_tip: HoverTip,
 }
 
 /// 指标颜色档位（负载 / 欠载 / 治理级别共用）。

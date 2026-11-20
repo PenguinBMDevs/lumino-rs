@@ -104,7 +104,10 @@ fn color_picker_swatches_and_reset_emit_actions() {
     };
 
     let model = SidebarModel {
-        color_picker: Some(SidebarColorPickerModel { track_id: 3 }),
+        color_picker: Some(SidebarColorPickerModel {
+            track_id: 3,
+            reset_tooltip: "",
+        }),
         ..base()
     };
     // 第 1 个色块 = 红 (217, 38, 38)。
@@ -162,6 +165,7 @@ fn numeric_picker_emits_zero_based_value() {
         numeric_picker: Some(SidebarNumericPickerModel {
             track_id: 3,
             kind: SidebarNumericPickerKind::Port,
+            kind_label: "",
             current: 4,
             choices: 16,
         }),
@@ -195,6 +199,7 @@ fn channel_picker_reports_channel_variant() {
         numeric_picker: Some(SidebarNumericPickerModel {
             track_id: 3,
             kind: SidebarNumericPickerKind::Channel,
+            kind_label: "",
             current: 0,
             choices: 16,
         }),
@@ -223,6 +228,7 @@ fn picker_rect_is_owned_by_foreground_layer() {
         numeric_picker: Some(SidebarNumericPickerModel {
             track_id: 3,
             kind: SidebarNumericPickerKind::Port,
+            kind_label: "",
             current: 0,
             choices: 16,
         }),

@@ -17,10 +17,12 @@ fn model() -> EditorButtonsModel {
             EditorButton {
                 rect: confirm,
                 action: EditorButtonAction::ShapeConfirm,
+                tooltip: "确认".to_owned(),
             },
             EditorButton {
                 rect: cancel,
                 action: EditorButtonAction::ShapeCancel,
+                tooltip: "取消".to_owned(),
             },
         ],
     }

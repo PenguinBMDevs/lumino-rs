@@ -13,12 +13,14 @@ fn model() -> BendButtonsModel {
             BendButton {
                 rect: egui::Rect::from_min_size(egui::pos2(400.0, 300.0), egui::vec2(52.0, 20.0)),
                 label: "曲线".to_owned(),
+                tooltip: "平滑曲线".to_owned(),
                 kind: BendKind::Smooth,
                 selected: false,
             },
             BendButton {
                 rect: egui::Rect::from_min_size(egui::pos2(456.0, 300.0), egui::vec2(52.0, 20.0)),
                 label: "折线".to_owned(),
+                tooltip: "折线".to_owned(),
                 kind: BendKind::Corner,
                 selected: true,
             },

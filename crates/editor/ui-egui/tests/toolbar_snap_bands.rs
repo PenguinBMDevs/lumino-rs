@@ -27,6 +27,7 @@ fn model() -> ChromeModel {
             fps: None,
             right: String::new(),
             gpu: None,
+            memory_tip: Default::default(),
         },
         ..ChromeModel::default()
     }

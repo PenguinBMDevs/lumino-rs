@@ -38,6 +38,8 @@ pub struct BendButton {
     pub rect: Rect,
     /// 文案（生产 i18n）。
     pub label: String,
+    /// 悬停解释（两种弯折态各自的几何含义）。
+    pub tooltip: String,
     /// 该按钮代表的弯折态。
     pub kind: BendKind,
     /// 是否为当前态。
@@ -103,6 +105,7 @@ pub fn show(ui: &egui::Ui, model: &BendButtonsModel) -> Option<lumino_editor_sta
             text,
         );
         let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let response = crate::widgets::hover_text(response, &button.tooltip);
         if response.clicked() {
             action = Some(button.kind.to_anchor_bend());
         }

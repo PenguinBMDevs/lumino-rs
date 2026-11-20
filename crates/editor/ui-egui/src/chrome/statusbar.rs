@@ -33,6 +33,7 @@ pub fn show(ui: &mut egui::Ui) {
             fps: Some(50.0),
             right: String::new(),
             gpu: None,
+            memory_tip: crate::widgets::HoverTip::default(),
         },
     );
 }
@@ -92,14 +93,14 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
         metric(ui, "FPS", &format!("{fps:.1}"), MetricTone::Normal);
         ui.add_space(GROUP_GAP);
     }
-    if metric(
+    let mem = metric(
         ui,
         "MEM",
         &format!("{:.1} MB", model.memory_mb),
         MetricTone::Normal,
-    )
-    .clicked()
-    {
+    );
+    let mem = widgets::hover_tip(mem, model.memory_tip);
+    if mem.clicked() {
         push_action(ui.ctx(), StatusbarAction::OpenMemoryMonitor);
     }
     ui.add_space(GROUP_GAP);

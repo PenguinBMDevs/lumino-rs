@@ -79,6 +79,9 @@ impl Root {
             confirm,
             cancel,
             mode,
+            confirm_tooltip: tr!("确认当前绘制并生成音符").to_owned(),
+            cancel_tooltip: tr!("取消当前绘制").to_owned(),
+            mode_tooltip: tr!("正常 / 合并模式：合并模式下连续文字会合并为一个音符组").to_owned(),
             mode_merged: tt.mode.is_merged(),
             preview,
         };

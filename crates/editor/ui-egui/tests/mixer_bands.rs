@@ -32,6 +32,7 @@ fn model() -> MixerModel {
         scroll_x: 0.0,
         strips: vec![strip("T0", false), strip("T1", false)],
         master: Some(strip("Master", true)),
+        tips: Default::default(),
     }
 }
 

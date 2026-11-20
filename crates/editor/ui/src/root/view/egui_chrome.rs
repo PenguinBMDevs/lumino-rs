@@ -54,6 +54,7 @@ use lumino_ui_egui::chrome::{
     ToolbarModel,
 };
 use lumino_ui_egui::chrome::{SidebarRouteIcon, SidebarRouteItem};
+use lumino_ui_egui::widgets::HoverTip;
 
 use crate::root::Root;
 use crate::sidebar::{RollBarButton, Route, Sidebar};
@@ -143,37 +144,48 @@ impl Sidebar {
         let mut route_items = vec![SidebarRouteItem {
             icon: SidebarRouteIcon::PianoRoll,
             active: self.piano_roll_visible,
+            tip: HoverTip::new(tr!("钢琴卷帘"), tr!("打开钢琴卷帘编辑视图")),
         }];
         if active_group == Some(SidebarGroup::PianoRoll) {
             route_items.push(SidebarRouteItem {
                 icon: SidebarRouteIcon::File,
                 active: file_active,
+                tip: HoverTip::new(translations.sidebar_file, tr!("显示工程的全部音轨")),
             });
             route_items.push(SidebarRouteItem {
                 icon: SidebarRouteIcon::Automation,
                 active: self.automation_panel_visible,
+                tip: HoverTip::new(
+                    translations.sidebar_automation,
+                    tr!("显示当前音轨的自动化曲线"),
+                ),
             });
         }
         route_items.push(SidebarRouteItem {
             icon: SidebarRouteIcon::Project,
             active: active_group == Some(SidebarGroup::Project),
+            tip: HoverTip::new(tr!("音轨总览"), tr!("切换到工程走带 / 音轨总览视图")),
         });
         route_items.push(SidebarRouteItem {
             icon: SidebarRouteIcon::Waterfall,
             active: waterfall,
+            tip: HoverTip::new(tr!("瀑布流播放器"), tr!("切换到瀑布流播放视图")),
         });
         route_items.push(SidebarRouteItem {
             icon: SidebarRouteIcon::Renderer,
             active: active_group == Some(SidebarGroup::Renderer),
+            tip: HoverTip::new(tr!("渲染"), tr!("打开渲染入口（视频 / 音频导出）")),
         });
         if active_group == Some(SidebarGroup::Renderer) {
             route_items.push(SidebarRouteItem {
                 icon: SidebarRouteIcon::VideoExport,
                 active: self.video_export_visible,
+                tip: HoverTip::new(tr!("视频导出"), tr!("把工程渲染为视频文件")),
             });
             route_items.push(SidebarRouteItem {
                 icon: SidebarRouteIcon::AudioExport,
                 active: self.audio_export_visible,
+                tip: HoverTip::new(tr!("音频导出"), tr!("把工程渲染为音频文件")),
             });
         }
 
@@ -194,6 +206,16 @@ impl Sidebar {
                 Some(RollBarButton::Vertical) => Some(RollBar::Vertical),
                 None => None,
             },
+            roll_bar_horizontal_tip: HoverTip::new(
+                tr!("横向卷帘"),
+                tr!("钢琴卷帘横向显示（时间轴水平）"),
+            ),
+            roll_bar_vertical_tip: HoverTip::new(
+                tr!("纵向卷帘"),
+                tr!("钢琴卷帘纵向显示（时间轴垂直）"),
+            ),
+            mixer_tip: HoverTip::new(tr!("混音台"), tr!("打开 / 关闭混音台窗口")),
+            solo_tip: HoverTip::new(tr!("独奏"), tr!("只播放此音轨；再次点击取消")),
             mixer_open,
             panel,
             tracks,
@@ -664,6 +686,7 @@ impl Root {
                 ppq_buffer: self.toolbar.ppq_edit_buffer.clone(),
                 ppq_error: self.toolbar.ppq_edit_error.clone(),
                 height: toolbar.height,
+                tips: toolbar::tips(&self.toolbar, language),
             })
         } else {
             None
@@ -713,6 +736,7 @@ impl Root {
                         governor_level: gpu.governor_level,
                         dropped: gpu.dropped,
                     }),
+                memory_tip: HoverTip::new(tr!("内存监控"), tr!("点击查看内存使用明细")),
             },
         }
     }

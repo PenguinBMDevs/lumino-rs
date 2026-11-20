@@ -22,6 +22,7 @@ pub(super) fn track_row(
     ui: &mut egui::Ui,
     track: &SidebarTrack,
     cache: &mut IconCache,
+    solo_tip: crate::widgets::HoverTip,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), layout::TRACK_ROW_H),
@@ -178,6 +179,7 @@ pub(super) fn track_row(
         egui::Id::unique(("lumino.track-solo", track.id)),
         Sense::click(),
     );
+    let solo = crate::widgets::hover_tip(solo, solo_tip);
     if solo.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }

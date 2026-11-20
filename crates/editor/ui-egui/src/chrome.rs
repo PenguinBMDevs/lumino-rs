@@ -59,7 +59,7 @@ pub use model::{
     ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
     SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
     TempoMaxBpmModel, TextPairCell, TexturePreviewModel, TitlebarModel, ToolbarGroupsModel,
-    ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
+    ToolbarModel, ToolbarTips, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
     VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted,
     VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView,
     VideoPreviewFrame, VideoRow, VideoSection,

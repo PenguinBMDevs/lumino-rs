@@ -85,7 +85,7 @@ pub(super) fn show_model(
         .show(&mut list_ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for track in &model.tracks {
-                let response = track_row(ui, track, icons);
+                let response = track_row(ui, track, icons, model.solo_tip);
                 rows.push((track.id, response.rect));
                 if response.drag_started() {
                     reorder_started = Some(track.id);
