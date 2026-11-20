@@ -15,6 +15,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+mod face;
+
+pub use face::{FontFaceData, FontFileRef, load_font_face, resolve_font_file};
+
 /// 字体信息
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontInfo {
@@ -55,8 +59,11 @@ fn system_database() -> fontdb::Database {
 ///
 /// 每个家族取第一个字面（face）；同一路径只会出现一次（字体集合内多字面共用路径）。
 pub fn scan_system_fonts() -> Vec<FontInfo> {
-    let db = system_database();
+    collect_fonts(&system_database())
+}
 
+/// 从已扫描的字体库收集家族列表（与 [`face::build_index`] 共用同一次扫描）。
+fn collect_fonts(db: &fontdb::Database) -> Vec<FontInfo> {
     let mut fonts: Vec<FontInfo> = db
         .faces()
         .filter_map(|face| {
@@ -102,7 +109,10 @@ static CACHED_FONTS: OnceLock<Vec<FontInfo>> = OnceLock::new();
 pub fn get_cached_fonts() -> &'static [FontInfo] {
     CACHED_FONTS.get_or_init(|| {
         puffin::profile_scope!("scan_system_fonts_cached");
-        let fonts = scan_system_fonts();
+        let db = system_database();
+        // 名称→文件别名索引与列表同源，避免二次扫描系统字体（Windows 上约 1.3s）。
+        face::build_index(&db);
+        let fonts = collect_fonts(&db);
         tracing::info!("系统字体扫描完成，共 {} 个字体", fonts.len());
         fonts
     })
@@ -207,14 +217,7 @@ pub fn pick_cjk_font() -> Option<&'static FontInfo> {
 
 /// 解析「名称或路径」到实际字体文件路径
 fn resolve_font_path(name_or_path: &str) -> Option<PathBuf> {
-    let path = Path::new(name_or_path);
-    if path.is_file() {
-        return Some(path.to_path_buf());
-    }
-    get_cached_fonts()
-        .iter()
-        .find(|f| f.name.eq_ignore_ascii_case(name_or_path))
-        .map(|f| f.path.clone())
+    resolve_font_file(name_or_path).map(|file| file.path)
 }
 
 #[cfg(test)]

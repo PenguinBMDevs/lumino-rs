@@ -61,14 +61,19 @@ pub(super) fn page(root: &Root) -> UiPageModel {
     });
 
     // 字体：系统字体名 / 自定义路径 / 浏览。
-    let font_names: Vec<String> = lumino_note_core::font_scanner::get_cached_fonts()
-        .iter()
-        .map(|font| font.name.clone())
-        .collect();
+    let font_list = lumino_note_core::font_scanner::get_cached_fonts();
+    let font_names: Vec<String> = font_list.iter().map(|font| font.name.clone()).collect();
     let current_font = &settings.editing.program_font_name;
-    let font_selected = font_names
+    // 先按显示名精确匹配；失败再用解析后的文件路径反查，保证
+    // `Microsoft YaHei` 这类别名 / 本地化名称也能选中正确条目，而不是
+    // 静默显示列表第一项（旧行为会让用户以为字体已经切过去了）。
+    let font_selected = font_list
         .iter()
-        .position(|name| name.eq_ignore_ascii_case(current_font))
+        .position(|font| font.name.eq_ignore_ascii_case(current_font))
+        .or_else(|| {
+            let resolved = lumino_note_core::font_scanner::resolve_font_file(current_font)?;
+            font_list.iter().position(|font| font.path == resolved.path)
+        })
         .unwrap_or(0);
     rows.push(UiRow::Combo {
         field: UiField::ProgramFontName,
@@ -92,7 +97,7 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         label: t.browse.to_owned(),
     });
     rows.push(UiRow::Static {
-        text: t.font_restart_hint.to_owned(),
+        text: t.font_apply_hint.to_owned(),
     });
 
     // 原生标题栏（macOS 不需要）。

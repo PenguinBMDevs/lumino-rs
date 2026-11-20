@@ -118,6 +118,12 @@ impl Host {
         self.apply_onion_backend_switch(&mut settings);
 
         self.root.apply_settings(settings);
+        // UI-001（egui 版）：字体改动立即生效——登记新字体后代数变化，
+        // 各 egui Context 在下一帧 `fonts::install` 时重建字体表，无需重启。
+        crate::font::apply(
+            &self.root.settings.editing.program_font_name,
+            &self.root.settings.editing.program_font_path,
+        );
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

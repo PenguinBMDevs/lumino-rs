@@ -20,6 +20,8 @@ pub use lumino_ui_core::geom;
 pub use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 pub use lumino_ui_editor as editor;
 pub mod event;
+/// 程序 UI 字体绑定（UI-001 egui 版：设置 → 字体字节 → egui 字体表）。
+pub mod font;
 pub mod host;
 pub use lumino_ui_core::message;
 pub mod playback;

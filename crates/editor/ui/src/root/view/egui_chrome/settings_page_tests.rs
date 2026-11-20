@@ -219,6 +219,18 @@ fn ui_page_reflects_settings_and_maps_actions() {
         }),
         Some(Message::Settings(Event::BrowseProgramFont))
     ));
+
+    // UI-001（egui 版）回归护栏：系统字体下拉框必须产出字体名事件。
+    // 旧实现漏接 UiCombo（只接了 UiText），选字体是纯空操作。
+    if let Some(first) = lumino_note_core::font_scanner::get_cached_fonts().first() {
+        assert!(matches!(
+            root.settings_action_message(&SettingsAction::UiCombo {
+                field: UiField::ProgramFontName,
+                index: 0,
+            }),
+            Some(Message::Settings(Event::ProgramFontNameChanged(name))) if name == first.name
+        ));
+    }
 }
 
 #[test]
