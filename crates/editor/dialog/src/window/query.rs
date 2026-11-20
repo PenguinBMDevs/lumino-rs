@@ -37,6 +37,11 @@ impl DialogWindow {
         self.should_close = true;
     }
 
+    /// 获取对话框 UI 的只读引用（UI 尚未就绪时返回 `None`）。
+    pub fn ui(&self) -> Option<&lumino_ui::Host> {
+        self.ui.as_ref()
+    }
+
     /// 获取对话框 UI 的可变引用
     pub fn ui_mut(&mut self) -> Option<&mut lumino_ui::Host> {
         self.ui.as_mut()

@@ -63,7 +63,7 @@ fn migrated_settings_pages_are_taken_over_only() {
     assert_eq!(onion.locked_value, "CPU");
 
     // 兼容性页。
-    root.settings.selected_menu_index = 8;
+    root.settings.selected_menu_index = crate::settings::MENU_INDEX_COMPATIBILITY;
     root.settings.compat.check_on_startup = true;
     root.settings.compat.warning_suppressed = false;
     let values = settings_model(&mut root);

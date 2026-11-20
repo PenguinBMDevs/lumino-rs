@@ -20,6 +20,13 @@ use lumino_message::gpu_compat_state::{GpuCheckRetryGate, GpuCheckUiState};
 
 pub use lumino_message::settings_event::Event;
 
+/// 「兼容性」页在设置菜单中的索引。
+///
+/// Runner 用该索引判定 GPU 检测结果是否仍属于当前页面：离开兼容性页即作废
+/// 上一次结果（检测在后台完成也不回灌），避免切页后残留旧信息。索引与
+/// `dialogs::support::settings_labels` 的菜单表绑定，漂移会让结果留在错误页面。
+pub const MENU_INDEX_COMPATIBILITY: usize = 8;
+
 /// 「关于」页在设置菜单中的索引（UI-006）
 ///
 /// 该索引同时是**回声洞彩蛋的装填信号**：关于页永远不是设置面板的初始页

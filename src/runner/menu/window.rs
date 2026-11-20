@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use lumino_ui::event::window::{Event as WindowEvent, GpuCheckOutcome};
+use lumino_ui::settings::MENU_INDEX_COMPATIBILITY;
 
 mod audio_export;
 mod collaboration;
@@ -125,6 +126,10 @@ impl RunnerInner {
 
     /// 逐帧维护 GPU 检测 UI：冷却到点推进 + 设置对话框（重）建时灌注一次。
     ///
+    /// 同时结算检测结果的生命周期：设置对话框已切到非兼容性页时作废上一次结果。
+    /// 冻结旧结果没有意义——设置面板每次关闭都会重建，旧结果一旦残留就会被
+    /// 下一次切页「重新发现」，用户无法区分它是否刚刚产生。
+    ///
     /// 必须在 `handle_control_flow` 之前调用：`tick` 清掉到点的冷却，
     /// 控制流计算才不会继续用过期 deadline 唤醒事件循环。
     pub(crate) fn about_to_wait_gpu_check(&mut self) {
@@ -141,6 +146,10 @@ impl RunnerInner {
     ///
     /// `force=false` 仅在「设置对话框窗口刚创建 / 重开」时灌注一次（按窗口 id 去重），
     /// 避免每帧无意义地置脏；`force=true` 用于状态刚变化后的立即刷新。
+    ///
+    /// 结果生命周期：只有兼容性页是当前页时才保留上一次检测信息。判定必须发生在
+    /// 窗口 id 去重**之前**——面板可能因为「已经灌注过」而早退，但结果仍必须消失，
+    /// 否则切回兼容性页会再次看到旧结果。
     fn sync_gpu_check_ui(&mut self, force: bool) {
         let current = self
             .window_state
@@ -151,6 +160,16 @@ impl RunnerInner {
             self.gpu_check_ui_window = None;
             return;
         };
+
+        let keeps_result =
+            keeps_gpu_check_result(self.window_state.dialog_manager.settings_selected_page());
+        let force = if !keeps_result && self.gpu_check.clear_result() {
+            tracing::debug!("设置页已离开兼容性页，作废上一次 GPU 检测结果");
+            true
+        } else {
+            force
+        };
+
         if !force && self.gpu_check_ui_window == Some(window_id) {
             return;
         }
@@ -218,4 +237,37 @@ pub(super) fn downscale_bgra_to_rgba(
         }
     }
     (dst, tw, th)
+}
+
+/// GPU 检测结果的生命周期判定。
+///
+/// 只有兼容性页是当前页时才允许保留上一次检测信息；页面未知（对话框 UI 尚未就绪）
+/// 时保守保留，避免把「还没读出页面」误判成「已经离开」。
+fn keeps_gpu_check_result(page: Option<usize>) -> bool {
+    page.is_none_or(|page| page == MENU_INDEX_COMPATIBILITY)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MENU_INDEX_COMPATIBILITY, keeps_gpu_check_result};
+
+    /// 切到任意非兼容性设置页都必须作废旧结果
+    #[test]
+    fn test_gpu_check_result_only_kept_on_compatibility_page() {
+        assert!(keeps_gpu_check_result(None), "页面未知时不得误清结果");
+        assert!(
+            keeps_gpu_check_result(Some(MENU_INDEX_COMPATIBILITY)),
+            "兼容性页必须保留结果"
+        );
+        for page in 0..MENU_INDEX_COMPATIBILITY {
+            assert!(
+                !keeps_gpu_check_result(Some(page)),
+                "第 {page} 页不是兼容性页，旧结果必须作废"
+            );
+        }
+        assert!(
+            !keeps_gpu_check_result(Some(MENU_INDEX_COMPATIBILITY + 1)),
+            "兼容性页之后的其他页也必须作废旧结果"
+        );
+    }
 }
