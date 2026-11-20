@@ -27,6 +27,7 @@ fn items() -> Vec<SidebarRouteItem> {
     .map(|icon| SidebarRouteItem {
         icon,
         active: false,
+        tip: Default::default(),
     })
     .collect()
 }

@@ -76,6 +76,28 @@ impl WindowManager {
         // get_cached_fonts() 完成，OnceLock 保证只扫一次。
         lumino_note_core::font_scanner::prewarm_font_cache();
 
+        // UI-001（egui 版）：把配置中的程序字体登记为进程级字体策略。
+        // 必须早于 `Host::new`——主窗 / 对话框 / 悬浮窗的 egui Context 首次
+        // `fonts::install` 时统一安装它（内置 CJK 仍作链尾回退）。
+        //
+        // 自定义文件路径只读单个文件，可同步完成；系统字体名必须先枚举系统字体
+        // （Windows 约 1.3s），放到后台线程解析，完成后请求重绘，避免拖慢首帧。
+        let font_path = ui_config.program_font_path.trim();
+        if !font_path.is_empty() {
+            lumino_ui::font::apply("", font_path);
+        }
+        if lumino_ui::font::configured_source().is_none() {
+            let font_name = ui_config.program_font_name.trim().to_owned();
+            if !font_name.is_empty() {
+                let redraw_window = window.clone();
+                std::thread::spawn(move || {
+                    // 与 prewarm 共用同一次系统字体扫描（OnceLock 阻塞等待）。
+                    lumino_ui::font::apply_startup_name(&font_name);
+                    redraw_window.request_redraw();
+                });
+            }
+        }
+
         let mut ui = lumino_ui::Host::new(
             lumino_ui::host::host_window(window.clone()),
             physical_size.width,

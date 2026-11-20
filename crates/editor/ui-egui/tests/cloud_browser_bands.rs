@@ -141,6 +141,30 @@ fn browser_shows_tools_and_entries() {
 }
 
 #[test]
+fn long_entry_name_is_truncated_to_one_line() {
+    let mut model = browser_model();
+    let long_name = format!("📄 {}.lmpj", "超长文件名".repeat(40));
+    model.entries[1].name = long_name.clone();
+    let (harness, _) = make_browser(model);
+
+    // 可访问标签保留全文，方便读屏 / 检索；视觉上必须单行省略。
+    let name = harness.get_by_label(&long_name).rect();
+    assert!(
+        name.height() <= 24.0,
+        "长文件名必须省略为单行，实际高度 {}",
+        name.height()
+    );
+    // 直接验证「不压到相邻组件」：名称右缘不得越过 80px 大小列。
+    let size = harness.get_by_label("1.2 MB").rect();
+    assert!(
+        name.right() <= size.left(),
+        "长文件名不得覆盖大小列：名称右缘 {}，大小列左缘 {}",
+        name.right(),
+        size.left()
+    );
+}
+
+#[test]
 fn tool_buttons_dispatch() {
     let (mut harness, actions) = make_browser(browser_model());
     harness.get_by_label("刷新").click();

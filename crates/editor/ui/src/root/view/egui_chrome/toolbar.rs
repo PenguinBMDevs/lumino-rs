@@ -6,18 +6,78 @@
 
 use lumino_core::SnapSpec;
 use lumino_core::tr;
+use lumino_ui_core::button_descs::{ButtonId, button_desc};
 use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 use lumino_ui_egui::chrome::{
     OnionMenuItem, OnionMenuModel, OverflowItemModel, OverflowMenuModel, SnapMenuItem,
-    SnapMenuModel, ToolbarAction, ToolbarCommand, ToolbarGroupsModel,
+    SnapMenuModel, ToolbarAction, ToolbarCommand, ToolbarGroupsModel, ToolbarTips,
 };
 use lumino_ui_egui::icons::Icon;
+use lumino_ui_egui::widgets::HoverTip;
 
 use crate::Message;
 use crate::message::CustomPrecisionAction;
 use crate::root::Root;
 use crate::toolbar;
 use crate::toolbar::overflow::{ToolbarGroup, ToolbarOverflow};
+
+/// 按钮说明 → 悬停浮窗文案（名称 + 解释）。
+fn tip(id: ButtonId, language: lumino_extras::i18n::Language) -> HoverTip {
+    let (name, description) = button_desc(id, language);
+    HoverTip::new(name, description)
+}
+
+/// 工具栏各按钮的悬停说明（含按当前状态切换的播放 / 录制 / 循环）。
+pub(super) fn tips(
+    toolbar: &toolbar::Toolbar,
+    language: lumino_extras::i18n::Language,
+) -> ToolbarTips {
+    let play_pause = if toolbar.is_playing {
+        tip(ButtonId::Pause, language)
+    } else {
+        tip(ButtonId::Play, language)
+    };
+    let record = if toolbar.is_recording {
+        tip(ButtonId::RecordStop, language)
+    } else {
+        tip(ButtonId::Record, language)
+    };
+    // 顺序必须与 `lumino_ui_egui::chrome::toolbar::tools::TOOLS` 完全一致。
+    let tools = vec![
+        tip(ButtonId::Pointer, language),
+        tip(ButtonId::PointerYSelect, language),
+        tip(ButtonId::Pencil, language),
+        tip(ButtonId::Eraser, language),
+        tip(ButtonId::ToolPanel, language),
+        tip(ButtonId::Quantize, language),
+        tip(ButtonId::Speed, language),
+        tip(ButtonId::FlipVertical, language),
+        tip(ButtonId::FlipHorizontal, language),
+        tip(ButtonId::Split, language),
+        tip(ButtonId::Glue, language),
+        tip(ButtonId::TransposeDown, language),
+        tip(ButtonId::TransposeUp, language),
+        tip(ButtonId::Tie, language),
+    ];
+    ToolbarTips {
+        tools,
+        record,
+        skip_backward: tip(ButtonId::SkipBackward, language),
+        play_pause,
+        skip_forward: tip(ButtonId::SkipForward, language),
+        loop_toggle: tip(ButtonId::Loop, language),
+        undo: tip(ButtonId::Undo, language),
+        redo: tip(ButtonId::Redo, language),
+        history: tip(ButtonId::History, language),
+        precision: tip(ButtonId::Precision, language),
+        ppq_cell: HoverTip::new("PPQ", tr!("点击编辑 PPQ（每四分音符的脉冲数）")),
+        onion: tip(ButtonId::OnionSkin, language),
+        onion_range: HoverTip::new(tr!("洋葱皮范围"), tr!("选择洋葱皮显示的轨范围")),
+        auto_scroll: tip(ButtonId::AutoScroll, language),
+        collaboration: tip(ButtonId::Collaboration, language),
+        more: tip(ButtonId::More, language),
+    }
+}
 
 /// 精度下拉是否打开 → egui 模型（关闭时为 `None`）。
 pub(super) fn snap_menu(toolbar: &toolbar::Toolbar) -> Option<SnapMenuModel> {
@@ -266,5 +326,57 @@ fn overflow_icon(icon: crate::resources::icon::Icon) -> Icon {
             debug_assert!(false, "溢出菜单图标未映射：{other:?}");
             Icon::EllipsisVertical
         }
+    }
+}
+
+#[cfg(test)]
+mod tooltip_tests {
+    use super::*;
+    use lumino_extras::i18n::Language;
+
+    /// 所有工具栏按钮都必须有名称 + 解释说明，且工具区条目与 `TOOLS` 同长。
+    #[test]
+    fn toolbar_tips_cover_every_button() {
+        let tips = tips(&toolbar::Toolbar::new(), Language::ZhCn);
+        assert_eq!(tips.tools.len(), 14, "工具区提示数量必须与 TOOLS 一致");
+        for (index, tip) in tips.tools.iter().enumerate() {
+            assert!(!tip.name.is_empty(), "工具 {index} 缺少名称");
+            assert!(!tip.description.is_empty(), "工具 {index} 缺少解释");
+        }
+        for (label, tip) in [
+            ("record", tips.record),
+            ("skip_backward", tips.skip_backward),
+            ("play_pause", tips.play_pause),
+            ("skip_forward", tips.skip_forward),
+            ("loop_toggle", tips.loop_toggle),
+            ("undo", tips.undo),
+            ("redo", tips.redo),
+            ("history", tips.history),
+            ("precision", tips.precision),
+            ("ppq_cell", tips.ppq_cell),
+            ("onion", tips.onion),
+            ("onion_range", tips.onion_range),
+            ("auto_scroll", tips.auto_scroll),
+            ("collaboration", tips.collaboration),
+            ("more", tips.more),
+        ] {
+            assert!(!tip.name.is_empty(), "{label} 缺少名称");
+            assert!(!tip.description.is_empty(), "{label} 缺少解释");
+        }
+    }
+
+    /// 播放 / 暂停、录制 / 停止录制的文案必须跟随当前状态切换。
+    #[test]
+    fn transport_tips_follow_state() {
+        let mut toolbar = toolbar::Toolbar::new();
+        let idle = tips(&toolbar, Language::ZhCn);
+        assert_eq!(idle.play_pause.name, "播放");
+        assert_eq!(idle.record.name, "开始录制");
+
+        toolbar.is_playing = true;
+        toolbar.is_recording = true;
+        let active = tips(&toolbar, Language::ZhCn);
+        assert_eq!(active.play_pause.name, "暂停");
+        assert_eq!(active.record.name, "停止录制");
     }
 }

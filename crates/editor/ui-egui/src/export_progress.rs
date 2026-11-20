@@ -101,7 +101,11 @@ fn label_block(ui: &mut egui::Ui, rect: Rect, text: &str, size: f32, color: egui
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }
 
 /// 百分比文本（生产 `format!("{:.1}%", progress * 100.0)`）。

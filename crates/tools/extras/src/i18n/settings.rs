@@ -155,8 +155,8 @@ pub struct SettingsTranslations {
     pub font_path_placeholder: &'static str,
     /// 字体提示
     pub font_hint: &'static str,
-    /// 字体修改重启生效提示
-    pub font_restart_hint: &'static str,
+    /// 字体修改立即生效提示
+    pub font_apply_hint: &'static str,
     /// 使用原生标题栏
     pub native_titlebar: &'static str,
     /// 原生标题栏提示
@@ -227,7 +227,7 @@ pub struct SettingsTranslations {
     pub palette_no_preview: &'static str,
     /// 调色板已锁定
     pub palette_locked: &'static str,
-    /// 版本
+    /// 版本前缀（版本号由编译期 `CARGO_PKG_VERSION` 拼接，避免手写漂移）
     pub version: &'static str,
     /// 应用描述
     pub app_description: &'static str,

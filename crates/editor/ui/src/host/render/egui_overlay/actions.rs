@@ -8,6 +8,7 @@ use lumino_ui_egui::audio_export::AudioExportAction;
 use lumino_ui_egui::autosave_recover::AutosaveRecoverAction;
 use lumino_ui_egui::batch_edit::BatchEditAction;
 use lumino_ui_egui::brush_settings::BrushSettingsAction;
+use lumino_ui_egui::chrome::PpqBlur;
 use lumino_ui_egui::chrome::ToolbarAction;
 use lumino_ui_egui::chrome::arrangement::ArrangementAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction;
@@ -37,6 +38,8 @@ use crate::host::Host;
 pub(super) struct OverlayActions {
     pub menu: Option<usize>,
     pub toolbar: Option<ToolbarAction>,
+    /// PPQ 输入框失焦信号（独立于单槽工具栏动作，见 `PpqBlur`）。
+    pub ppq_blur: Option<PpqBlur>,
     pub panel: Option<RightSidebarAction>,
     pub settings: Option<SettingsAction>,
     pub dialog: Option<SaveConfirmAction>,
@@ -92,6 +95,7 @@ impl OverlayActions {
         Self {
             menu: lumino_ui_egui::chrome::menu::take_action(ctx),
             toolbar: lumino_ui_egui::chrome::toolbar_popup::take_action(ctx),
+            ppq_blur: lumino_ui_egui::chrome::toolbar::take_ppq_blur(ctx),
             panel: lumino_ui_egui::chrome::right_panel::take_action(ctx),
             settings: lumino_ui_egui::settings::take_action(ctx),
             dialog: lumino_ui_egui::dialog::take_action(ctx),
@@ -144,6 +148,18 @@ impl OverlayActions {
 impl Host {
     /// 应用本帧动作：每个动作最多产生一条 `Message`，按固定顺序处理。
     pub(super) fn apply_overlay_actions(&mut self, actions: OverlayActions, logical_width: f32) {
+        // PPQ 输入框失焦最先收口：同一帧往往还带着一次按钮点击，必须先提交
+        // 编辑值，再让点击按新 PPQ 生效。失焦信号走独立通道（`PpqBlur`），
+        // 不会被单槽工具栏动作覆盖。
+        if let Some(blur) = actions.ppq_blur {
+            let message = match blur {
+                PpqBlur::Commit => crate::toolbar::Event::ppq_edit_confirmed(),
+                PpqBlur::Cancel => {
+                    crate::toolbar::Event::ppq_edit_toggled(self.root.editor.editor_state.view.ppq)
+                }
+            };
+            self.dispatch_overlay_message(message);
+        }
         if let Some(action) = actions.toast {
             match action {
                 lumino_ui_egui::chrome::toast::ToastAction::Dismiss(id) => {

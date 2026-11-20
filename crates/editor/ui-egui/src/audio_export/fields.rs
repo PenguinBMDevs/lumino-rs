@@ -22,11 +22,14 @@ pub(super) fn row(ui: &mut egui::Ui, label: &str, label_w: f32, add: impl FnOnce
                 .max_rect(rect)
                 .layout(Layout::left_to_right(Align::Center)),
         );
-        left.add(egui::Label::new(
-            RichText::new(label)
-                .size(theme::font::LABEL)
-                .color(theme::text()),
-        ));
+        left.add(
+            egui::Label::new(
+                RichText::new(label)
+                    .size(theme::font::LABEL)
+                    .color(theme::text()),
+            )
+            .truncate(),
+        );
         ui.add_space(8.0);
         add(ui);
     });
@@ -140,6 +143,7 @@ pub(super) fn combo(
     egui::ComboBox::from_id_salt(("audio-combo", id))
         .selected_text(RichText::new(selected).size(theme::font::LABEL))
         .width(width - 6.0)
+        .truncate()
         .show_ui(ui, |ui| {
             for choice in choices {
                 if ui
@@ -189,7 +193,7 @@ pub(super) fn button(ui: &mut egui::Ui, label: &str, width: Option<f32>) -> egui
     let w = width.unwrap_or(text_w + 32.0);
     ui.add_sized(
         Vec2::new(w, 30.0),
-        egui::Button::new(
+        crate::widgets::text_button(
             RichText::new(label)
                 .size(theme::font::LABEL)
                 .color(theme::text()),
@@ -203,7 +207,7 @@ pub(super) fn button(ui: &mut egui::Ui, label: &str, width: Option<f32>) -> egui
 pub(super) fn primary_button(ui: &mut egui::Ui, label: &str, width: f32) -> egui::Response {
     ui.add_sized(
         Vec2::new(width, 34.0),
-        egui::Button::new(
+        crate::widgets::text_button(
             RichText::new(label)
                 .size(theme::font::LABEL)
                 .color(theme::on_accent()),
@@ -217,7 +221,7 @@ pub(super) fn primary_button(ui: &mut egui::Ui, label: &str, width: f32) -> egui
 pub(super) fn danger_button(ui: &mut egui::Ui, label: &str, width: f32) -> egui::Response {
     ui.add_sized(
         Vec2::new(width, 34.0),
-        egui::Button::new(
+        crate::widgets::text_button(
             RichText::new(label)
                 .size(theme::font::LABEL)
                 .color(Color32::WHITE),

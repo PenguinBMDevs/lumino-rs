@@ -4,6 +4,11 @@
 //! 并对外重导出 core / editor / settings 等 crate 的核心类型。
 
 #![allow(deprecated)]
+/// 应用版本号（编译期常量）。
+///
+/// 关于窗口与设置「关于」页共用同一来源，避免多处 `env!` 或手写版本号漂移。
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// 常量集合，对外重导出 core crate 的常量。
 pub mod constants {
     pub use lumino_ui_core::constants::*;
@@ -15,6 +20,8 @@ pub use lumino_ui_core::geom;
 pub use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 pub use lumino_ui_editor as editor;
 pub mod event;
+/// 程序 UI 字体绑定（UI-001 egui 版：设置 → 字体字节 → egui 字体表）。
+pub mod font;
 pub mod host;
 pub use lumino_ui_core::message;
 pub mod playback;

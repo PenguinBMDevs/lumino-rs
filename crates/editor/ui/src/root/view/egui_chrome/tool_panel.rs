@@ -88,6 +88,8 @@ pub(super) fn model(root: &Root, left_inset: f32, top_inset: f32) -> Option<Tool
         offset: root.toolbar.tool_panel_offset,
         left_inset,
         top_inset,
+        grip_tooltip: tr!("拖动工具条").to_owned(),
+        gear_tooltip: tr!("打开绘制工具设置").to_owned(),
         thickness_tooltip: t.tool_thickness.to_owned(),
         items,
         thickness_selected: root.toolbar.thickness_panel_open,

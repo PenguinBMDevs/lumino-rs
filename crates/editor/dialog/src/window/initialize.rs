@@ -187,6 +187,10 @@ impl DialogWindow {
                 // 帮助窗口是独立 Root；切类型后 overlay 才会渲染帮助视图。
                 ui.set_help_dialog_open(true);
             }
+            DialogType::About => {
+                // 关于窗口是独立 Root：`new_dialog` 已按 dialog_type 切到 About，
+                // overlay 会直接渲染品牌行 + 版本号，无需额外注入状态。
+            }
             DialogType::ShapeDrawer => {
                 if let Some(dir) = pending.shapes_dir.as_deref() {
                     ui.set_shape_drawer_dir(dir.to_path_buf());

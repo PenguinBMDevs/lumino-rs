@@ -316,7 +316,7 @@ fn button(
     fill: egui::Color32,
     text: egui::Color32,
 ) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(14.0).color(text))
+    let button = crate::widgets::text_button(RichText::new(label).size(14.0).color(text))
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.add_sized(Vec2::new(BUTTON_W, BUTTON_H), button)

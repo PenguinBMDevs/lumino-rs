@@ -111,7 +111,7 @@ pub fn switch_row(
     }
 
     // 标签：按轨道左侧可用宽度截断（绘制截断、无障碍文本完整）。
-    let label_max = (track.left() - LABEL_GAP - row.left()).max(0.0);
+    let label_max = (track.left() - LABEL_GAP - row.left()).max(1.0);
     let label = crate::widgets::truncate_to_width(ui, spec.label, style.label_size, label_max);
     let label_w = crate::widgets::text_width(ui, &label, style.label_size);
     let label_rect = Rect::from_min_size(

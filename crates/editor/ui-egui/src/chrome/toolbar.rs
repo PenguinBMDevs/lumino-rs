@@ -54,7 +54,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::RECORD_GROUP_W, h)),
-            |ui| controls::record(ui, model.recording),
+            |ui| controls::record(ui, model.recording, model.tips.record),
         );
         x += layout::RECORD_GROUP_W + 4.0;
     }
@@ -64,7 +64,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::PLAYBACK_GROUP_W, h)),
-            |ui| controls::playback(ui, icons, model.playing),
+            |ui| controls::playback(ui, icons, model.playing, &model.tips),
         );
         x += layout::PLAYBACK_GROUP_W + 8.0;
     }
@@ -74,7 +74,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::LOOP_GROUP_W, h)),
-            |ui| controls::loop_button(ui, icons, model.looping),
+            |ui| controls::loop_button(ui, icons, model.looping, model.tips.loop_toggle),
         );
         x += layout::LOOP_GROUP_W + 8.0;
     }
@@ -84,7 +84,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         group(
             ui,
             Rect::from_min_size(egui::pos2(x, y), Vec2::new(layout::UNDO_REDO_GROUP_W, h)),
-            |ui| controls::undo_redo(ui, icons),
+            |ui| controls::undo_redo(ui, icons, &model.tips),
         );
         x += layout::UNDO_REDO_GROUP_W + 16.0;
     }
@@ -97,6 +97,10 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
             |ui| controls::dashboard(ui, model),
         );
         x += layout::DASHBOARD_GROUP_W + 16.0;
+    } else {
+        // 分组被折叠时不画输入框：同样清掉编辑会话标记，否则窗口变宽后
+        // 重新展开时输入框会拿不到键盘（见 `ppq_focus_once_id`）。
+        reset_ppq_edit_session(ui.ctx());
     }
 
     // Tools（宽度由条目尺寸累加，对应 上一代 的 `Length::Shrink`）
@@ -209,4 +213,61 @@ pub(super) fn tool_selected(model: &ToolbarModel, index: usize) -> bool {
         (index, model.tool),
         (0, Tool::Pointer) | (1, Tool::PointerYSelect) | (2, Tool::Pencil) | (3, Tool::Eraser)
     )
+}
+
+// ── PPQ 编辑的失焦信号 ─────────────────────────────────────────────
+
+/// PPQ 输入框失焦的结局。
+///
+/// 不复用 [`toolbar_popup::ToolbarAction`]：那条通道只有单槽，而「输入框失焦」
+/// 通常恰好伴随一次按钮点击（点播放、点工具…），两者挤进同一槽必然吞掉一个。
+/// 单独记一条信号，由宿主在分发任何控件动作**之前**先收口编辑。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PpqBlur {
+    /// 回车 / Tab / 点击其它位置：提交当前输入。
+    Commit,
+    /// Esc：放弃本次编辑，不写入 PPQ。
+    Cancel,
+}
+
+/// PPQ 失焦信号的临时数据键（每帧至多一条）。
+const PPQ_BLUR_ID: &str = "lumino.toolbar.ppq-blur";
+
+/// 记录本帧 PPQ 输入框失焦。
+pub(super) fn push_ppq_blur(ctx: &egui::Context, blur: PpqBlur) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(PPQ_BLUR_ID), Some(blur)));
+}
+
+/// 取走本帧 PPQ 失焦信号（宿主每帧调用一次，取走即清）。
+pub fn take_ppq_blur(ctx: &egui::Context) -> Option<PpqBlur> {
+    ctx.data_mut(|d| d.remove_temp::<Option<PpqBlur>>(egui::Id::unique(PPQ_BLUR_ID)))
+        .flatten()
+}
+
+/// PPQ 编辑会话「已抢过焦点」标记的 id。
+///
+/// 编辑结束时必须清除（见 `controls::dashboard` 的非编辑分支）：egui 的临时
+/// 数据跨帧留存，不清的话第二个编辑会话不会 `request_focus`，输入框拿不到
+/// 键盘——打字无反应，失焦提交也无从触发。
+pub(super) fn ppq_focus_once_id() -> egui::Id {
+    egui::Id::unique("lumino.toolbar.ppq-focused")
+}
+
+/// 本次编辑会话「失焦已上报」标记的 id。
+///
+/// egui 0.37 的 `Response::lost_focus` 会连续两帧为真（为同帧焦点转移留出
+/// 补偿窗口），不去重会把同一次失焦提交两遍。
+fn ppq_blur_reported_id() -> egui::Id {
+    egui::Id::unique("lumino.toolbar.ppq-blur-reported")
+}
+
+/// 清除 PPQ 编辑会话的临时标记（抢焦点 / 失焦已上报）。
+///
+/// 编辑结束后调用（含仪表盘分组被折叠、输入框未绘制的情况），保证下一个
+/// 编辑会话从干净状态开始。
+pub(super) fn reset_ppq_edit_session(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        d.remove_temp::<bool>(ppq_focus_once_id());
+        d.remove_temp::<bool>(ppq_blur_reported_id());
+    });
 }

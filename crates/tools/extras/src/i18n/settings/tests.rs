@@ -8,6 +8,7 @@ fn test_settings_translations_zhcn() {
     assert_eq!(t.confirm, "确认");
     assert_eq!(t.cancel, "取消");
     assert_eq!(t.app_name, "Lumino");
+    assert_eq!(t.version, "版本");
 }
 
 #[test]
@@ -17,6 +18,7 @@ fn test_settings_translations_enus() {
     assert_eq!(t.confirm, "Confirm");
     assert_eq!(t.cancel, "Cancel");
     assert_eq!(t.app_name, "Lumino");
+    assert_eq!(t.version, "Version");
 }
 
 #[test]

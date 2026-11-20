@@ -83,6 +83,9 @@ impl Root {
                 title,
                 info,
                 playing: clip.clip_playing,
+                rewind_tooltip: lumino_core::tr!("倒带到开头").to_owned(),
+                play_tooltip: lumino_core::tr!("播放 / 暂停视频预览").to_owned(),
+                pause_tooltip: lumino_core::tr!("播放 / 暂停视频预览").to_owned(),
             },
         ))
     }

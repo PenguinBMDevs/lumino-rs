@@ -23,6 +23,7 @@ fn statusbar() -> StatusbarModel {
         fps: Some(60.0),
         right: String::new(),
         gpu: None,
+        memory_tip: Default::default(),
     }
 }
 
@@ -31,6 +32,8 @@ fn tool_panel() -> ToolPanelModel {
         offset: (0.0, 44.0),
         left_inset: 0.0,
         top_inset: 100.0,
+        grip_tooltip: String::new(),
+        gear_tooltip: String::new(),
         thickness_tooltip: "粗细".to_owned(),
         items: vec![ToolPanelItemModel {
             kind: ToolPanelItemKind::Mouse,

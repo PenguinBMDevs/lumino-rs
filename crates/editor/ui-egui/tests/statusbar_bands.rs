@@ -19,6 +19,7 @@ fn model(gpu: Option<GpuMetricsModel>) -> StatusbarModel {
         fps: Some(60.0),
         right: String::new(),
         gpu,
+        memory_tip: Default::default(),
     }
 }
 

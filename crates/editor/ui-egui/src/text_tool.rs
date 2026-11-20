@@ -58,6 +58,12 @@ pub struct TextToolModel {
     pub confirm: Option<Rect>,
     pub cancel: Option<Rect>,
     pub mode: Option<Rect>,
+    /// √ 按钮的悬停说明。
+    pub confirm_tooltip: String,
+    /// × 按钮的悬停说明。
+    pub cancel_tooltip: String,
+    /// 模式按钮的悬停说明。
+    pub mode_tooltip: String,
     /// 模式按钮当前是否为「合并」。
     pub mode_merged: bool,
     /// 字形预览。
@@ -206,6 +212,12 @@ pub fn show(
             egui::Id::unique(("lumino.text-tool-button", index)),
             egui::Sense::click(),
         );
+        let tip = match kind {
+            ButtonKind::Confirm => &model.confirm_tooltip,
+            ButtonKind::Cancel => &model.cancel_tooltip,
+            ButtonKind::Mode => &model.mode_tooltip,
+        };
+        let response = crate::widgets::hover_text(response, tip);
         let lighten = response.is_pointer_button_down_on() || response.hovered();
         let bg = match kind {
             ButtonKind::Confirm => CONFIRM_BG,

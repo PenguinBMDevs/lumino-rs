@@ -35,12 +35,14 @@ pub(super) fn button(
         style.fill
     };
     ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
-    ui.painter().text(
+    crate::text::paint_truncated(
+        ui,
         Pos2::new(rect.center().x, rect.center().y),
         Align2::CENTER_CENTER,
         label,
-        FontId::proportional(theme::font::BODY),
+        theme::font::BODY,
         style.text,
+        (rect.width() - 12.0).max(1.0),
     );
     response
 }

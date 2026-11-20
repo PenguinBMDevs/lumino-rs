@@ -183,11 +183,14 @@ fn topic_list(ui: &mut egui::Ui, rect: Rect, model: &HelpModel) {
                 .max_rect(rect)
                 .layout(Layout::left_to_right(Align::Center)),
         );
-        empty.add(egui::Label::new(
-            RichText::new(&model.empty)
-                .size(12.0)
-                .color(theme::text_muted()),
-        ));
+        empty.add(
+            egui::Label::new(
+                RichText::new(&model.empty)
+                    .size(12.0)
+                    .color(theme::text_muted()),
+            )
+            .truncate(),
+        );
         return;
     }
 
@@ -231,7 +234,12 @@ fn topic_list(ui: &mut egui::Ui, rect: Rect, model: &HelpModel) {
                         ui.painter().text(
                             egui::pos2(r.left() + 10.0, r.center().y),
                             egui::Align2::LEFT_CENTER,
-                            &topic.label,
+                            crate::text::truncate_to_width(
+                                ui,
+                                &topic.label,
+                                theme::font::BODY,
+                                (r.width() - 20.0).max(1.0),
+                            ),
                             FontId::proportional(theme::font::BODY),
                             color,
                         );
@@ -343,9 +351,10 @@ fn button_width(ui: &egui::Ui, label: &str, horizontal_padding: f32) -> f32 {
 
 /// 底部按钮：上一代 默认 `button` 样式 = 主色底 + 主色上的文字（白/深）。
 fn button(ui: &mut egui::Ui, rect: Rect, label: &str, size: f32) -> egui::Response {
-    let button = egui::Button::new(RichText::new(label).size(size).color(theme::on_accent()))
-        .fill(theme::accent())
-        .corner_radius(CornerRadius::same(4));
+    let button =
+        crate::widgets::text_button(RichText::new(label).size(size).color(theme::on_accent()))
+            .fill(theme::accent())
+            .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
 }
 
@@ -356,5 +365,9 @@ fn label_block(ui: &mut egui::Ui, rect: Rect, text: &str, size: f32, color: Colo
             .max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

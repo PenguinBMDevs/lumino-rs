@@ -227,11 +227,13 @@ pub(crate) struct RunnerInner {
     /// 手动 GPU 检测会话状态（唯一真源：在飞 / 冷却 / 会话锁定 + 最近一次结果）。
     ///
     /// 设置面板只是它的投影——面板每次打开都会重建，故瞬态不能放面板内。
+    /// 检测结果只在兼容性页可见时保留，离开该页由 `clear_result` 作废。
     pub(crate) gpu_check: crate::runner::gpu_check::GpuCheckState,
     /// 已灌注 GPU 检测状态的设置对话框窗口。
     ///
     /// 用来识别「设置对话框被重开」：窗口 id 变化即重新灌注一次（含 `Running` 与
-    /// 冷却 / 锁定），关窗后置 `None`，下次打开自然重放。
+    /// 冷却 / 锁定）。关窗后置 `None`；重开时面板落在常规页，上一次结果按
+    /// 「只在兼容性页驻留」的规则被作废，冷却 / 锁定与在飞状态照常重放。
     pub(crate) gpu_check_ui_window: Option<WindowId>,
     /// #127：播放输出创建失败后的自愈重试状态（启动即失败时立即武装）。
     pub(crate) midi_output_retry: MidiOutputRetry,

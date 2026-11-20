@@ -3,6 +3,7 @@
 //! 几何仍由 `lumino-ui-editor` 的 `*_button_rects` 计算（形状 / 图片转 MIDI /
 //! 曲线 / 画刷共用 36×36 按钮），这里只做 canvas 局部坐标 → 窗口坐标的换算。
 
+use lumino_core::tr;
 use lumino_message::RightSidebarAction;
 use lumino_ui_editor::grid::confirm_buttons::rect_tuple;
 use lumino_ui_egui::editor_action_buttons::{EditorButton, EditorButtonAction, EditorButtonsModel};
@@ -10,6 +11,21 @@ use lumino_ui_egui::editor_action_buttons::{EditorButton, EditorButtonAction, Ed
 use crate::Message;
 use crate::message::EditorAction;
 use crate::root::Root;
+
+/// 悬浮 √/× 按钮的悬停说明（与动作一一对应）。
+fn action_tooltip(action: EditorButtonAction) -> String {
+    match action {
+        EditorButtonAction::ShapeConfirm => tr!("确认当前图形并生成音符"),
+        EditorButtonAction::ShapeCancel => tr!("取消当前图形"),
+        EditorButtonAction::I2mConfirm => tr!("确认放置并转换为 MIDI"),
+        EditorButtonAction::I2mCancel => tr!("取消放置"),
+        EditorButtonAction::LineConfirm => tr!("确认曲线并生成音符"),
+        EditorButtonAction::LineCancel => tr!("取消当前曲线"),
+        EditorButtonAction::BrushConfirm => tr!("确认笔画并生成音符"),
+        EditorButtonAction::BrushCancel => tr!("取消当前笔画"),
+    }
+    .to_owned()
+}
 
 impl Root {
     /// 本帧可见的悬浮 √× 按钮；没有时返回空模型。
@@ -36,10 +52,12 @@ impl Root {
                     confirm_rect.3,
                 ),
                 action: confirm,
+                tooltip: action_tooltip(confirm),
             });
             buttons.push(EditorButton {
                 rect: to_window(cancel_rect.0, cancel_rect.1, cancel_rect.2, cancel_rect.3),
                 action: cancel,
+                tooltip: action_tooltip(cancel),
             });
         };
 

@@ -28,11 +28,11 @@ pub(super) const MOCK_PAD: f32 = 6.0;
 pub(super) const BAR_H: f32 = 4.0;
 
 /// 页面内容总高度。
-pub(super) fn content_height(model: &UiPageModel, width: f32) -> f32 {
+pub(super) fn content_height(ui: &egui::Ui, model: &UiPageModel, width: f32) -> f32 {
     let rows: f32 = model
         .rows
         .iter()
-        .map(|row| row_height(row, width) + GAP)
+        .map(|row| row_height(ui, row, width) + GAP)
         .sum();
     PAD * 2.0 + TITLE_BLOCK + rows
 }
@@ -50,15 +50,17 @@ pub(super) fn show(
     let mut y = rect.top() + PAD + TITLE_BLOCK;
 
     for row in &model.rows {
-        let h = row_height(row, rect.width());
+        let h = row_height(ui, row, rect.width());
         let center = y + h / 2.0;
         let mut hit: Option<(UiField, Rect)> = None;
+        let text_max = (rect.width() - PAD * 2.0).max(1.0);
         match row {
             UiRow::Section { title, hint } => {
+                let label = crate::text::truncate_to_width(ui, title, 16.0, text_max);
                 let response = ui.painter().text(
                     Pos2::new(x, y + 13.0),
                     Align2::LEFT_CENTER,
-                    title,
+                    label,
                     FontId::proportional(16.0),
                     palette.text,
                 );
@@ -73,12 +75,17 @@ pub(super) fn show(
                 }
             }
             UiRow::Static { text } => {
-                ui.painter().text(
-                    Pos2::new(x, center),
-                    Align2::LEFT_CENTER,
+                // 说明性文本：按卡片宽度折行（行高已在 `row_height` 里算入）。
+                // 单行时在 18px 行槽里垂直居中，多行时从行顶开始。
+                let text_h = crate::text::wrapped_height(ui, text, 12.0, text_max);
+                let top = y + ((h - text_h) * 0.5).max(0.0);
+                crate::text::paint_wrapped(
+                    ui,
+                    Pos2::new(x, top),
                     text,
-                    FontId::proportional(12.0),
+                    12.0,
                     palette.text_dim,
+                    text_max,
                 );
             }
             UiRow::Combo {
@@ -191,7 +198,7 @@ pub(super) fn show(
                 );
             }
             UiRow::Button { field, label } => {
-                let width = text_width(ui, label, 14.0) + 24.0;
+                let width = (text_width(ui, label, 14.0) + 24.0).min(text_max);
                 let button = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, h));
                 hit = Some((*field, button));
                 if action_button(ui, button, label, true, palette).clicked() {
@@ -237,12 +244,14 @@ pub(super) fn show(
                     );
                 }
                 if !placeholder.is_empty() && text.is_empty() {
-                    ui.painter().text(
+                    crate::text::paint_truncated(
+                        ui,
                         Pos2::new(field_rect.left() + 8.0, field_rect.center().y),
                         Align2::LEFT_CENTER,
                         placeholder,
-                        FontId::proportional(14.0),
+                        14.0,
                         palette.text_dim,
+                        (field_rect.width() - 16.0).max(1.0),
                     );
                 }
                 if !suffix.is_empty() {
@@ -256,6 +265,7 @@ pub(super) fn show(
                 }
             }
             UiRow::ThemeCards { label, cards } => {
+                let label = crate::text::truncate_to_width(ui, label, 14.0, text_max);
                 ui.painter().text(
                     Pos2::new(x, y + 11.0),
                     Align2::LEFT_CENTER,
@@ -348,7 +358,7 @@ pub(super) fn show(
                 ui.painter().text(
                     Pos2::new(row.left(), row.center().y),
                     Align2::LEFT_CENTER,
-                    text,
+                    crate::text::truncate_to_width(ui, text, 12.0, row.width()),
                     FontId::proportional(12.0),
                     color,
                 );

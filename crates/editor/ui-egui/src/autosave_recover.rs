@@ -109,7 +109,7 @@ pub fn show(ui: &mut egui::Ui, model: &AutosaveRecoverModel) {
 
     let total = RESTORE_W + BUTTON_GAP + DISCARD_W;
     let mut x = inner.center().x - total * 0.5;
-    let restore = egui::Button::new(
+    let restore = crate::widgets::text_button(
         RichText::new(&model.restore)
             .size(theme::font::LABEL)
             .color(Color32::WHITE),
@@ -127,7 +127,7 @@ pub fn show(ui: &mut egui::Ui, model: &AutosaveRecoverModel) {
     }
     x += RESTORE_W + BUTTON_GAP;
 
-    let discard = egui::Button::new(
+    let discard = crate::widgets::text_button(
         RichText::new(&model.discard)
             .size(theme::font::LABEL)
             .color(theme::text_muted()),

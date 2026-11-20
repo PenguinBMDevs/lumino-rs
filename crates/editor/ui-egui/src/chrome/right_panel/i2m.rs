@@ -73,7 +73,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
     ui.painter().text(
         Pos2::new(left, y + HEADER_H / 2.0),
         Align2::LEFT_CENTER,
-        &model.title,
+        crate::text::truncate_to_width(ui, &model.title, theme::font::LABEL, width),
         FontId::proportional(theme::font::LABEL),
         theme::text_on_weak(),
     );
@@ -98,12 +98,14 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
         push_action(ui.ctx(), RightSidebarAction::SelectImageFile);
     }
     if let Some(hint) = &model.selected_hint {
-        ui.painter().text(
+        crate::text::paint_truncated(
+            ui,
             Pos2::new(select.right() + 6.0, select.center().y),
             Align2::LEFT_CENTER,
             hint,
-            FontId::proportional(12.0),
+            12.0,
             theme::selected_bg(),
+            (right - select.right() - 8.0).max(1.0),
         );
     }
     y += BUTTON_H + GAP;
@@ -112,7 +114,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &I2mPanelModel) {
     ui.painter().text(
         Pos2::new(left, y + SECTION_H / 2.0),
         Align2::LEFT_CENTER,
-        &model.config_title,
+        crate::text::truncate_to_width(ui, &model.config_title, 12.0, width),
         FontId::proportional(12.0),
         theme::text_on_weak(),
     );
@@ -157,17 +159,31 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
         ui.painter().text(
             Pos2::new(left, center),
             Align2::LEFT_CENTER,
-            title,
+            crate::text::truncate_to_width(ui, title, 12.0, right - left),
             FontId::proportional(12.0),
             theme::text_on_weak(),
         );
         return;
     }
 
+    // 行标签与右侧控件共享一行：按控件占位截断，避免压到输入框 / 下拉框。
+    let reserve = match &row.control {
+        I2mControlModel::Input { .. } => INPUT_W,
+        I2mControlModel::KeyRange { .. } => {
+            INPUT_W * 2.0 + widgets::text_width(ui, "~", 12.0) + 8.0
+        }
+        I2mControlModel::Palette { .. } | I2mControlModel::Select { .. } => COMBO_W,
+        I2mControlModel::Section { .. } => 0.0,
+    };
     ui.painter().text(
         Pos2::new(left, center),
         Align2::LEFT_CENTER,
-        &row.label,
+        crate::text::truncate_to_width(
+            ui,
+            &row.label,
+            12.0,
+            (right - left - reserve - 8.0).max(1.0),
+        ),
         FontId::proportional(12.0),
         theme::text_muted(),
     );
@@ -317,6 +333,7 @@ fn combo(ui: &mut egui::Ui, options: &[String], selected: &str, salt: &str) -> O
     let response = egui::ComboBox::from_id_salt(format!("lumino.right-sidebar.i2m.{salt}"))
         .selected_text(RichText::new(selected).size(12.0).color(theme::text()))
         .width(COMBO_W)
+        .truncate()
         .show_ui(ui, |ui| {
             for (index, option) in options.iter().enumerate() {
                 if ui

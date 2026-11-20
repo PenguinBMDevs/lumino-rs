@@ -63,7 +63,7 @@ fn migrated_settings_pages_are_taken_over_only() {
     assert_eq!(onion.locked_value, "CPU");
 
     // 兼容性页。
-    root.settings.selected_menu_index = 8;
+    root.settings.selected_menu_index = crate::settings::MENU_INDEX_COMPATIBILITY;
     root.settings.compat.check_on_startup = true;
     root.settings.compat.warning_suppressed = false;
     let values = settings_model(&mut root);
@@ -219,6 +219,18 @@ fn ui_page_reflects_settings_and_maps_actions() {
         }),
         Some(Message::Settings(Event::BrowseProgramFont))
     ));
+
+    // UI-001（egui 版）回归护栏：系统字体下拉框必须产出字体名事件。
+    // 旧实现漏接 UiCombo（只接了 UiText），选字体是纯空操作。
+    if let Some(first) = lumino_note_core::font_scanner::get_cached_fonts().first() {
+        assert!(matches!(
+            root.settings_action_message(&SettingsAction::UiCombo {
+                field: UiField::ProgramFontName,
+                index: 0,
+            }),
+            Some(Message::Settings(Event::ProgramFontNameChanged(name))) if name == first.name
+        ));
+    }
 }
 
 #[test]
@@ -273,6 +285,12 @@ fn editing_palette_about_pages_reflect_state_and_map_actions() {
         page.rows
             .iter()
             .any(|row| matches!(row, UiRow::AboutLogo { .. } | UiRow::EchoCave { .. }))
+    );
+    assert!(
+        page.rows
+            .iter()
+            .any(|row| matches!(row, UiRow::Static { text } if text.contains(crate::APP_VERSION))),
+        "关于页版本号必须取编译期 APP_VERSION"
     );
 
     // 动作翻译。

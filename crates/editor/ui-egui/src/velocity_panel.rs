@@ -163,36 +163,39 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
         .ctx()
         .data(|d| d.get_temp::<bool>(egui::Id::unique(CC_OPEN_ID)))
         .unwrap_or(false);
+    let mut cc_rect: Option<Rect> = None;
+    let mut popup_rect: Option<Rect> = None;
 
     // CC 选择器（自绘下拉：弹层矩形可精确占用，不会漏给 上一代）。
     if model.cc_mode {
-        let cc_rect = Rect::from_min_size(
+        let rect = Rect::from_min_size(
             Pos2::new(mode_rect.right() + 8.0, model.toolbar.top() + 4.0),
             Vec2::new(170.0, 20.0),
         );
+        cc_rect = Some(rect);
         painter.rect(
-            cc_rect,
+            rect,
             CornerRadius::same(3),
             theme::base_bg(),
             Stroke::new(1.0, theme::border()),
             StrokeKind::Inside,
         );
         painter.text(
-            Pos2::new(cc_rect.left() + 6.0, cc_rect.center().y),
+            Pos2::new(rect.left() + 6.0, rect.center().y),
             Align2::LEFT_CENTER,
             &model.cc_selected,
             FontId::proportional(12.0),
             theme::text(),
         );
         painter.text(
-            Pos2::new(cc_rect.right() - 6.0, cc_rect.center().y),
+            Pos2::new(rect.right() - 6.0, rect.center().y),
             Align2::RIGHT_CENTER,
             "▾",
             FontId::proportional(10.0),
             theme::text_muted(),
         );
         let cc_resp = ui.interact(
-            cc_rect,
+            rect,
             egui::Id::unique("lumino.velocity-panel.cc"),
             egui::Sense::click(),
         );
@@ -201,10 +204,8 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
             .clicked()
         {
             cc_open = !cc_open;
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(egui::Id::unique(CC_OPEN_ID), cc_open));
         }
-        blocked.push(cc_rect);
+        blocked.push(rect);
     }
 
     // 右侧信息。
@@ -271,11 +272,7 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
     }
 
     // CC 弹层（滚动列表，129 项）。
-    if model.cc_mode && cc_open {
-        let cc_rect = Rect::from_min_size(
-            Pos2::new(mode_rect.right() + 8.0, model.toolbar.top() + 4.0),
-            Vec2::new(170.0, 20.0),
-        );
+    if cc_open && let Some(cc_rect) = cc_rect {
         let popup_pos = Pos2::new(cc_rect.left(), cc_rect.bottom() + 2.0);
         let popup = egui::Area::new(egui::Id::unique("lumino.velocity-panel.cc-popup"))
             .order(egui::Order::Foreground)
@@ -307,34 +304,65 @@ pub fn show(ui: &egui::Ui, model: &VelocityPanelModel) -> (Option<VelocityPanelA
                             });
                     });
             });
+        popup_rect = Some(popup.response.rect);
         blocked.push(popup.response.rect);
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(egui::Id::unique(CC_OPEN_ID), cc_open));
-    } else if !model.cc_mode {
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(egui::Id::unique(CC_OPEN_ID), false));
     }
 
-    // 顶部 resize 手柄：优先于所有数据区交互（命中区已加入 blocked）。
-    if action.is_none() {
-        action = input::handle_resize(ui, model);
+    // 点击弹层与选择器以外的空白处 / Esc 关闭（与标题栏菜单、工具栏弹层同语义）。
+    if model.cc_mode && cc_open {
+        let clicked_outside = ui.input(|i| i.pointer.primary_clicked())
+            && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|pos| {
+                cc_rect.is_some_and(|rect| rect.contains(pos))
+                    || popup_rect.is_some_and(|rect| rect.contains(pos))
+            });
+        if clicked_outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            cc_open = false;
+        }
+    }
+    if !model.cc_mode {
+        cc_open = false;
+    }
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(egui::Id::unique(CC_OPEN_ID), cc_open));
+
+    // 弹层在本帧出现过 = 本帧的按压 / 滚轮属于菜单：数据区整体惰性，
+    // 既避免点击穿透到曲线编辑 / resize，也避免「关菜单的同一次点击顺手加锚点」。
+    // 弹层被 `Area` 约束上移后会同时压住画布与卷帘滚动条，滚动条侧由
+    // `scrollbar::show_raw` 的图层判定兜底。
+    let menu_drawn = popup_rect.is_some();
+    if menu_drawn {
+        // 菜单展开期间数据区仍算 egui 占用：宿主不得把空白按压转给下方编辑器。
+        blocked.push(input::blocking_rect(model.canvas));
     }
 
-    // 力度模式 + 曲线工具：egui 接管数据区编辑（上一代 Canvas 不再收这一段）。
-    if model.velocity_editing && action.is_none() {
-        blocked.push(input::blocking_rect(model.canvas));
-        action = input::handle(ui, model);
-    } else if model.tempo_editing && action.is_none() {
-        // Tempo 模式：egui 接管拖拽 / 新增 / 删除。
-        blocked.push(input::blocking_rect(model.canvas));
-        action = input::handle_tempo(ui, model);
-    } else if model.automation_editing {
-        // CC / Bend 模式：egui 接管锚点拖拽 / 新增 / 右键删除。
-        blocked.push(input::blocking_rect(model.canvas));
+    if !menu_drawn {
+        // 顶部 resize 手柄：优先于所有数据区交互（命中区已加入 blocked）。
         if action.is_none() {
-            action = input::handle_automation(ui, model);
+            action = input::handle_resize(ui, model);
+        }
+
+        // 力度模式 + 曲线工具：egui 接管数据区编辑（上一代 Canvas 不再收这一段）。
+        if model.velocity_editing && action.is_none() {
+            blocked.push(input::blocking_rect(model.canvas));
+            action = input::handle(ui, model);
+        } else if model.tempo_editing && action.is_none() {
+            // Tempo 模式：egui 接管拖拽 / 新增 / 删除。
+            blocked.push(input::blocking_rect(model.canvas));
+            action = input::handle_tempo(ui, model);
+        } else if model.automation_editing {
+            // CC / Bend 模式：egui 接管锚点拖拽 / 新增 / 右键删除。
+            blocked.push(input::blocking_rect(model.canvas));
+            if action.is_none() {
+                action = input::handle_automation(ui, model);
+            }
         }
     }
 
     (action, blocked)
+}
+
+/// 便于单测 / 探针：CC 下拉弹层是否展开。
+pub fn cc_menu_open(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique(CC_OPEN_ID)))
+        .unwrap_or(false)
 }

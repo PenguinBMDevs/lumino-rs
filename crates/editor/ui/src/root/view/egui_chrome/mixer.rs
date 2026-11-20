@@ -5,7 +5,9 @@
 //! 对话框产生的 [`lumino_ui_egui::mixer::MixerAction`] 再由 Runner 取回并
 //! 映射成本文件的 [`Root::mixer_action_message`]。
 
-use lumino_ui_egui::mixer::{MixerDialogModel, MixerModel, MixerStrip};
+use lumino_core::tr;
+use lumino_ui_egui::mixer::{MixerDialogModel, MixerModel, MixerStrip, MixerTips};
+use lumino_ui_egui::widgets::HoverTip;
 
 use crate::root::Root;
 
@@ -65,6 +67,12 @@ impl Root {
             scroll_x: 0.0,
             strips,
             master,
+            tips: MixerTips {
+                volume: HoverTip::new(tr!("音量"), tr!("拖动推子调整通道音量")),
+                pan: HoverTip::new(tr!("声像"), tr!("声像：点击位置决定左右平衡")),
+                mute: HoverTip::new(tr!("静音"), tr!("静音此通道")),
+                solo: HoverTip::new(tr!("独奏"), tr!("只播放此音轨；再次点击取消")),
+            },
         })
     }
 

@@ -33,6 +33,7 @@ pub fn show(ui: &mut egui::Ui) {
             fps: Some(50.0),
             right: String::new(),
             gpu: None,
+            memory_tip: crate::widgets::HoverTip::default(),
         },
     );
 }
@@ -81,7 +82,23 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
     // 生产布局里 `right_text` 恒占一个行位：即使为空串，perf 组右边仍留 8px。
     ui.add_space(8.0);
     if !model.right.is_empty() {
-        widgets::label(ui, &model.right, FONT, theme::text());
+        // 右侧文本是单行槽位：最长 320，超出用省略号，避免把指标组挤出行外。
+        let width = widgets::text_width(ui, &model.right, FONT).clamp(1.0, 320.0);
+        ui.allocate_ui_with_layout(
+            Vec2::new(width, FONT * 1.4),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(&model.right)
+                            .size(FONT)
+                            .color(theme::text()),
+                    )
+                    .selectable(false)
+                    .truncate(),
+                );
+            },
+        );
         ui.add_space(8.0);
     }
     if !model.has_metrics() {
@@ -92,14 +109,14 @@ fn metrics(ui: &mut egui::Ui, model: &StatusbarModel) {
         metric(ui, "FPS", &format!("{fps:.1}"), MetricTone::Normal);
         ui.add_space(GROUP_GAP);
     }
-    if metric(
+    let mem = metric(
         ui,
         "MEM",
         &format!("{:.1} MB", model.memory_mb),
         MetricTone::Normal,
-    )
-    .clicked()
-    {
+    );
+    let mem = widgets::hover_tip(mem, model.memory_tip);
+    if mem.clicked() {
         push_action(ui.ctx(), StatusbarAction::OpenMemoryMonitor);
     }
     ui.add_space(GROUP_GAP);

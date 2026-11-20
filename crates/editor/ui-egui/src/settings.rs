@@ -323,10 +323,12 @@ fn menu_row(
         Vec2::splat(18.0),
     );
     widgets::centered_icon(ui, &mut state.icons, icon, 18.0, icon_rect);
+    // 菜单项是单行槽位：右侧要留出箭头（26）与 8px 呼吸位。
+    let label_max = (rect.right() - 26.0 - 8.0 - (content_left + 32.0)).max(1.0);
     ui.painter().text(
         egui::pos2(content_left + 32.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
-        label,
+        crate::text::truncate_to_width(ui, label, theme::font::LABEL, label_max),
         egui::FontId::proportional(theme::font::LABEL),
         if selected {
             palette.accent_strong
@@ -358,13 +360,13 @@ fn form(ui: &mut egui::Ui, rect: Rect, state: &mut SettingsState, palette: &Sett
             });
         }
         SettingsPageModel::Ui(model) => {
-            let height = ui::content_height(&model, rect.width());
+            let height = ui::content_height(ui, &model, rect.width());
             scroll_page(ui, rect, "settings-ui-scroll", height, |ui, content| {
                 ui::show(ui, content, &model, palette, &mut state.icons);
             });
         }
         SettingsPageModel::Cloud(model) => {
-            let height = cloud::content_height(&model, rect.width());
+            let height = cloud::content_height(ui, &model, rect.width());
             scroll_page(ui, rect, "settings-cloud-scroll", height, |ui, content| {
                 cloud::show(ui, content, &model, palette);
             });
@@ -420,7 +422,7 @@ fn scroll_page(
 }
 
 fn confirm(ui: &mut egui::Ui, rect: Rect, palette: &SettingsPalette, label: &str) {
-    let button = egui::Button::new(
+    let button = crate::widgets::text_button(
         RichText::new(label)
             .size(theme::font::LABEL)
             .color(theme::on_accent()),

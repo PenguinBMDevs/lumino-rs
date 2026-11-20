@@ -81,6 +81,19 @@ impl DialogManager {
         }
     }
 
+    /// 当前设置对话框选中的菜单索引。
+    ///
+    /// 无设置对话框 / 对话框 UI 尚未就绪时返回 `None`。Runner 用该索引结算
+    /// GPU 检测结果的生命周期：只有兼容性页可见时才保留上一次结果，
+    /// 切到其他页即作废（含检测在后台完成的情况）。
+    pub fn settings_selected_page(&self) -> Option<usize> {
+        self.dialogs
+            .values()
+            .find(|dialog| dialog.dialog_type == DialogType::Settings)
+            .and_then(DialogWindow::ui)
+            .map(|ui| ui.settings().selected_menu_index)
+    }
+
     /// 将 GPU 检测的完整 UI 快照（状态 + 重试门控）注入所有已打开的设置对话框。
     ///
     /// 相比「只注入结果」，快照还能表达 `Running` 与冷却 / 锁定——设置对话框关窗

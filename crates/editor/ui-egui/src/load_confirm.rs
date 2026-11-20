@@ -104,7 +104,7 @@ pub fn show(ui: &mut egui::Ui, model: &LoadConfirmModel) {
     y += SMALL_H + 24.0;
 
     // 按钮行：左对齐。
-    let cancel = egui::Button::new(
+    let cancel = crate::widgets::text_button(
         RichText::new(&model.cancel)
             .size(theme::font::LABEL)
             .color(theme::text()),
@@ -121,7 +121,7 @@ pub fn show(ui: &mut egui::Ui, model: &LoadConfirmModel) {
         push_action(ui.ctx(), LoadConfirmAction::Cancel);
     }
 
-    let confirm = egui::Button::new(
+    let confirm = crate::widgets::text_button(
         RichText::new(&model.confirm)
             .size(theme::font::LABEL)
             .color(theme::on_accent()),
@@ -149,5 +149,9 @@ fn label_block(ui: &mut egui::Ui, rect: egui::Rect, text: &str, size: f32, color
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

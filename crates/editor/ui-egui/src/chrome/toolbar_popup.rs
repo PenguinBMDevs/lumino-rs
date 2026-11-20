@@ -139,7 +139,11 @@ pub enum ToolbarAction {
     PpqEditToggled,
     /// PPQ 编辑输入变化。
     PpqEditChanged(String),
-    /// PPQ 编辑确认（回车）。
+    /// PPQ 编辑确认。
+    ///
+    /// 工具栏输入框不再经单槽动作回传确认（失焦那一帧常常还伴随一次按钮点击，
+    /// 同槽会互相覆盖）；宿主改为读 [`super::toolbar::PpqBlur`]。此变体保留给
+    /// 生产侧映射与测试。
     PpqEditConfirmed,
     /// 切换自动滚动模式。
     AutoScrollModeChanged,
@@ -360,10 +364,16 @@ fn draw_snap_panel(
             Vec2::splat(GLYPH),
         );
         snap_glyph(ui, glyph, item.spec, theme::text_on_weak());
+        let text_x = glyph.right() + 6.0;
         ui.painter().text(
-            Pos2::new(glyph.right() + 6.0, row.center().y),
+            Pos2::new(text_x, row.center().y),
             Align2::LEFT_CENTER,
-            &item.label,
+            crate::text::truncate_to_width(
+                ui,
+                &item.label,
+                TEXT_SIZE,
+                (row.right() - text_x - 4.0).max(1.0),
+            ),
             FontId::proportional(TEXT_SIZE),
             theme::text_on_weak(),
         );
@@ -394,7 +404,12 @@ fn draw_snap_panel(
     ui.painter().text(
         Pos2::new(glyph.right() + 6.0, row.center().y),
         Align2::LEFT_CENTER,
-        &menu.custom_label,
+        crate::text::truncate_to_width(
+            ui,
+            &menu.custom_label,
+            TEXT_SIZE,
+            (row.right() - glyph.right() - 10.0).max(1.0),
+        ),
         FontId::proportional(TEXT_SIZE),
         theme::text_on_weak(),
     );
@@ -447,7 +462,12 @@ fn draw_onion_panel(
         ui.painter().text(
             Pos2::new(check.right() + 6.0, row.center().y),
             Align2::LEFT_CENTER,
-            &item.label,
+            crate::text::truncate_to_width(
+                ui,
+                &item.label,
+                TEXT_SIZE,
+                (row.right() - check.right() - 10.0).max(1.0),
+            ),
             FontId::proportional(TEXT_SIZE),
             theme::text_on_weak(),
         );

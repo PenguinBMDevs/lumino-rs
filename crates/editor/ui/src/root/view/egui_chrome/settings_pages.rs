@@ -227,7 +227,8 @@ pub(super) fn about_page(root: &Root) -> UiPageModel {
             hint: String::new(),
         },
         UiRow::Static {
-            text: t.version.to_owned(),
+            // 版本号取编译期值，i18n 表只保留「版本 / Version」前缀。
+            text: format!("{} {}", t.version, crate::APP_VERSION),
         },
         UiRow::Static {
             text: t.app_description.to_owned(),

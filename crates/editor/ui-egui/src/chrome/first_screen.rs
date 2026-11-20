@@ -273,7 +273,7 @@ fn paint_button(ui: &egui::Ui, rect: Rect, label: &str, hovered: bool) {
     painter.text(
         rect.center(),
         Align2::CENTER_CENTER,
-        label,
+        crate::text::truncate_to_width(ui, label, BUTTON_FONT, (rect.width() - 12.0).max(1.0)),
         FontId::proportional(BUTTON_FONT),
         theme::text(),
     );

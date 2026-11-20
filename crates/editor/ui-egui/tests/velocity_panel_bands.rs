@@ -170,6 +170,169 @@ fn click_button(harness: &mut Harness<'static>, pos: egui::Pos2, button: egui::P
     harness.run();
 }
 
+/// 只按下不松开（复现「弹层内按压穿透到画布编辑」）。
+fn press(harness: &mut Harness<'static>, pos: egui::Pos2) {
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::PointerMoved(pos));
+    input.events.push(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    *harness.input_mut() = input;
+    harness.run();
+}
+
+/// CC 模式的模型：下拉可选，自动化编辑态开启。
+fn cc_model() -> VelocityPanelModel {
+    let mut m = model();
+    m.mode_label = "CC".to_owned();
+    m.mode_primary = false;
+    m.cc_mode = true;
+    m.cc_selected = "1: Modulation Wheel".to_owned();
+    m.info = "1: Modulation Wheel".to_owned();
+    m
+}
+
+/// CC 选择器的点击位置：工具栏左侧模式按钮之后（与文本宽度无关的稳定点）。
+const CC_TRIGGER: egui::Pos2 = egui::pos2(400.0, 1014.0);
+
+/// 点击弹层以外的空白处必须关闭 CC 下拉。
+#[test]
+fn cc_dropdown_closes_on_blank_click() {
+    let (mut h, _actions) = harness(cc_model());
+    click(&mut h, CC_TRIGGER);
+    assert!(
+        velocity_panel::cc_menu_open(&h.ctx),
+        "点击选择器应展开 CC 下拉"
+    );
+    // 跑两帧让 `Area` 度过 sizing pass（弹层矩形稳定）。
+    h.run();
+    h.run();
+    assert!(
+        velocity_panel::cc_menu_open(&h.ctx),
+        "弹层展开后不应自行关闭"
+    );
+
+    // 弹层之外、面板数据区以内的空白。
+    click(&mut h, egui::pos2(700.0, 1100.0));
+    assert!(
+        !velocity_panel::cc_menu_open(&h.ctx),
+        "点击空白处必须关闭 CC 下拉"
+    );
+}
+
+/// 弹层（约束上移后盖住画布）内的按压不得穿透到自动化编辑。
+#[test]
+fn cc_dropdown_press_does_not_reach_automation_canvas() {
+    let mut m = cc_model();
+    m.automation_editing = true;
+    m.automation = Some(velocity_panel::AutomationLaneModel {
+        track_idx: 1,
+        lane_idx: None,
+        controller: Some(1),
+        max_value: 127.0,
+        anchors: Vec::new(),
+    });
+    let (mut h, actions) = harness(m);
+    click(&mut h, CC_TRIGGER);
+    h.run();
+    h.run();
+
+    // 弹层内的按压：未松开前不得新增/拖动自动化锚点。
+    press(&mut h, egui::pos2(400.0, 1100.0));
+    assert!(
+        !actions
+            .borrow()
+            .iter()
+            .any(|a| matches!(a, velocity_panel::VelocityPanelAction::AutomationAdd { .. })),
+        "弹层内的按压不得穿透到自动化画布：{:?}",
+        actions.borrow()
+    );
+}
+
+/// 菜单展开期间数据区整体惰性：空白处的按压只用于关闭，不顺手改曲线。
+#[test]
+fn cc_dropdown_blank_press_does_not_edit_canvas() {
+    let mut m = cc_model();
+    m.automation_editing = true;
+    m.automation = Some(velocity_panel::AutomationLaneModel {
+        track_idx: 1,
+        lane_idx: None,
+        controller: Some(1),
+        max_value: 127.0,
+        anchors: Vec::new(),
+    });
+    let (mut h, actions) = harness(m);
+    click(&mut h, CC_TRIGGER);
+    h.run();
+    h.run();
+
+    // 弹层之外、面板数据区以内。
+    press(&mut h, egui::pos2(700.0, 1100.0));
+    assert!(
+        !actions.borrow().iter().any(|a| matches!(
+            a,
+            velocity_panel::VelocityPanelAction::AutomationAdd { .. }
+                | velocity_panel::VelocityPanelAction::AutomationMove { .. }
+        )),
+        "菜单展开期间空白按压不得编辑曲线：{:?}",
+        actions.borrow()
+    );
+}
+
+/// 菜单展开期间数据区进入占用表：宿主不得把空白按压转给下方编辑器。
+#[test]
+fn cc_dropdown_occupies_canvas_while_open() {
+    let (mut h, _actions) = harness(cc_model());
+    click(&mut h, CC_TRIGGER);
+    h.run();
+    let blocked = chrome::menu::take_blocked(&h.ctx);
+    assert!(
+        blocked
+            .iter()
+            .any(|rect| rect.contains(egui::pos2(700.0, 1100.0))),
+        "菜单展开期间数据区必须进入占用表：{blocked:?}"
+    );
+
+    click(&mut h, egui::pos2(700.0, 1100.0));
+    h.run();
+    let blocked = chrome::menu::take_blocked(&h.ctx);
+    assert!(
+        !blocked
+            .iter()
+            .any(|rect| rect.contains(egui::pos2(700.0, 1100.0))),
+        "菜单关闭后不得继续占用数据区：{blocked:?}"
+    );
+}
+
+/// Esc 关闭 CC 下拉（指针停在弹层内也生效）。
+#[test]
+fn cc_dropdown_closes_on_escape() {
+    let (mut h, _actions) = harness(cc_model());
+    click(&mut h, CC_TRIGGER);
+    h.run();
+    h.run();
+    assert!(velocity_panel::cc_menu_open(&h.ctx));
+
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    *h.input_mut() = input;
+    h.run();
+
+    assert!(
+        !velocity_panel::cc_menu_open(&h.ctx),
+        "Esc 必须关闭 CC 下拉"
+    );
+}
+
 #[test]
 fn resize_handle_drag_changes_panel_height() {
     let m = model();

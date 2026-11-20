@@ -59,6 +59,7 @@ pub fn show_dialog(ui: &mut egui::Ui, model: &MixerDialogModel) {
                 strip.volume,
                 true,
                 ("mixer-fader", index),
+                model.mixer.tips.volume,
             ) {
                 actions.push(MixerAction::Gain { index, value });
             }
@@ -67,7 +68,14 @@ pub fn show_dialog(ui: &mut egui::Ui, model: &MixerDialogModel) {
 
     if let (Some(rect), Some(master)) = (layout.master, model.mixer.master.as_ref()) {
         draw_strip(ui.painter(), rect, master, false);
-        if let Some(value) = show_fader(ui, rect, master.volume, false, ("mixer-fader", "master")) {
+        if let Some(value) = show_fader(
+            ui,
+            rect,
+            master.volume,
+            false,
+            ("mixer-fader", "master"),
+            model.mixer.tips.volume,
+        ) {
             actions.push(MixerAction::MasterVolume(value));
         }
     }
@@ -95,6 +103,7 @@ fn show_fader(
     volume: f32,
     with_buttons: bool,
     id_salt: impl std::hash::Hash + std::fmt::Debug,
+    tip: crate::widgets::HoverTip,
 ) -> Option<f32> {
     let rect = super::fader_rect(strip, with_buttons);
     // 竖向滑杆的自身矩形 = (thickness, slider_width)。把矩形收窄到 thickness
@@ -117,6 +126,7 @@ fn show_fader(
             )
         })
         .inner;
+    let response = crate::widgets::hover_tip(response, tip);
     response.changed().then_some(value)
 }
 
@@ -228,6 +238,32 @@ fn interact(ui: &egui::Ui, layout: &MixerLayout, model: &MixerModel) -> Vec<Mixe
             if (next - model.scroll_x).abs() > f32::EPSILON {
                 actions.push(MixerAction::Scrolled(next));
             }
+        }
+    }
+
+    // 通道条底部的 P / M / S 是 painter 自绘按钮：点击仍由下方的手工命中处理，
+    // 这里只注册「只悬停」的命中区来显示解释浮窗（不会吞掉点击）。
+    for index in layout.visible(model.strips.len(), model.scroll_x) {
+        if model.strips.get(index).is_none() {
+            continue;
+        }
+        let rect = layout.strip_rect(index, model.scroll_x);
+        let row_y = rect.bottom() - 34.0;
+        let third = rect.width() / 3.0;
+        for (slot, tip) in [model.tips.pan, model.tips.mute, model.tips.solo]
+            .into_iter()
+            .enumerate()
+        {
+            let cell = Rect::from_min_size(
+                egui::pos2(rect.left() + slot as f32 * third + 2.0, row_y),
+                egui::vec2(third - 4.0, 18.0),
+            );
+            let hover = ui.interact(
+                cell,
+                egui::Id::unique(("lumino.mixer-tip", index, slot)),
+                egui::Sense::hover(),
+            );
+            let _ = crate::widgets::hover_tip(hover, tip);
         }
     }
 

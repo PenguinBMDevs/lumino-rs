@@ -40,6 +40,15 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
                 };
                 Message::Settings(Event::SelectionBoxModeChanged(mode))
             }
+            UiField::ProgramFontName => {
+                // UI-001（egui 版）：下拉框此前漏接 → 选系统字体不产生事件。
+                // 选项列表与 `settings_ui::page` 同源（`get_cached_fonts` 顺序）。
+                let name = lumino_note_core::font_scanner::get_cached_fonts()
+                    .get(*index)?
+                    .name
+                    .clone();
+                Message::Settings(Event::ProgramFontNameChanged(name))
+            }
             UiField::TempoMaxBpm => {
                 const PRESETS: [f64; 9] = [
                     256.0, 512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32767.0, 65536.0,

@@ -251,15 +251,15 @@ impl RunnerInner {
         }
         if diff.font_changed {
             tracing::info!(
-                "字体设置已改变（重启程序后生效）: font_name {} -> {}, font_path {} -> {}",
+                "字体设置已改变（立即生效）: font_name {} -> {}, font_path {} -> {}",
                 display_or_empty(&old.program_font_name),
                 display_or_empty(&new.editing.program_font_name),
                 display_or_empty(&old.program_font_path),
                 display_or_empty(&new.editing.program_font_path),
             );
-            // UI-001：字体在启动时经 lumino_ui_core::font::init 解析一次，重启程序后生效；
-            // 不再重建窗口（重建成本高且主窗口会闪烁，旧版 0.14 的 Renderer 默认字体不可热更），
-            // 设置面板内有「字体修改将在重启程序后生效」的显式提示。
+            // UI-001（egui 版）：字体由 `lumino_ui::font` 解析后交给
+            // `lumino_ui_egui::fonts::configure`，设置应用时立即重建字体表；
+            // 上一代 iced 渲染器时代「必须重启」的约束已随该层整体移除。
         }
         if diff.language_changed {
             tracing::info!(

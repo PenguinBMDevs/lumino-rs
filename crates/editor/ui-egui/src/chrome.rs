@@ -22,6 +22,32 @@ pub use arrangement::ArrangementAction;
 pub use egg::EggModel;
 pub(crate) use floating::floating_panel;
 pub use model::{
+    AboutModel, BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel,
+    BrushSettingsModel, BrushTrackChoice, ChromeModel, CloudBrowserModel, CloudConnectModel,
+    CloudDeviceModel, CloudEntryActionKind, CloudEntryLabels, CloudEntryModel, CloudField,
+    CloudFieldModel, CloudNoticeModel, CloudProtocol, CloudProtocolOptionModel,
+    CloudSavePanelModel, CollaborationConnectView, CollaborationConnectingView,
+    CollaborationInRoomView, CollaborationModel, CollaborationRoomActionsView,
+    CollaborationViewModel, CompatLine, CompatibilityPageModel, CustomPrecisionModel,
+    DeviceWarningModel, DialogModel, DialogPalette, DotOptionModel, DrawSettingsModel,
+    ExportMessageKind, ExportProgressModel, HelpModel, HelpSectionModel, HelpTopicBodyModel,
+    HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel, MaterialDeleteModel,
+    MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
+    OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
+    ProgressModel, ProjectNoteCountModel, ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID,
+    RecoverTrackModel, RecoverTrackRowModel, RecoverTrackSelection, RightSidebarModel,
+    RightSidebarPanelKind, RightSidebarRailItem, RollBar, SaveConfirmModel, SettingsLabels,
+    SettingsPageModel, SettingsPalette, SettingsSnapshot, ShapeActionButton, ShapeDrawerModel,
+    ShapePanelAction, ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel, SidebarGroup,
+    SidebarModel, SidebarPanel, SidebarRouteIcon, SidebarRouteItem, SidebarTrack, SnapMenuItem,
+    SnapMenuModel, SpeedChangeModel, StatusbarModel, TempoMaxBpmModel, TextPairCell,
+    TexturePreviewModel, TitlebarModel, ToolbarGroupsModel, ToolbarModel, ToolbarTips, VideoButton,
+    VideoButtonFill, VideoExportAction, VideoExportModel, VideoExportOverlayModel,
+    VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError,
+    VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView, VideoPreviewFrame, VideoRow,
+    VideoSection,
+};
+pub use model::{
     ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementScrollbarsModel,
     ArrangementTrackListModel, ArrangementTrackRow, AudioButtonsMode, AudioButtonsModel,
     AudioChoice, AudioControlModel, AudioExportModel, AudioExportPanelModel, AudioField,
@@ -39,34 +65,10 @@ pub use model::{
     UiPageModel, UiRow, WATERFALL_TEXTURE_ID, WaterfallPanelModel, governor_tone, load_tone,
     underrun_tone,
 };
-pub use model::{
-    BatchEditFieldModel, BatchEditModel, BatchEditRowModel, BrushLevelModel, BrushSettingsModel,
-    BrushTrackChoice, ChromeModel, CloudBrowserModel, CloudConnectModel, CloudDeviceModel,
-    CloudEntryActionKind, CloudEntryLabels, CloudEntryModel, CloudField, CloudFieldModel,
-    CloudNoticeModel, CloudProtocol, CloudProtocolOptionModel, CloudSavePanelModel,
-    CollaborationConnectView, CollaborationConnectingView, CollaborationInRoomView,
-    CollaborationModel, CollaborationRoomActionsView, CollaborationViewModel, CompatLine,
-    CompatibilityPageModel, CustomPrecisionModel, DeviceWarningModel, DialogModel, DialogPalette,
-    DotOptionModel, DrawSettingsModel, ExportMessageKind, ExportProgressModel, HelpModel,
-    HelpSectionModel, HelpTopicBodyModel, HelpTopicRowModel, HistoryModel, HistoryRowModel,
-    LoadConfirmModel, MaterialDeleteModel, MemoryMetricModel, MemoryMonitorModel, MemoryRowModel,
-    MenuBarModel, MenuEntry, MenuModel, OnionMenuItem, OnionMenuModel, OnionSkinPageModel,
-    OverflowItemModel, OverflowMenuModel, ProgressModel, ProjectNoteCountModel,
-    ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel, RecoverTrackRowModel,
-    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar,
-    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
-    ShapeActionButton, ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel,
-    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
-    SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
-    TempoMaxBpmModel, TextPairCell, TexturePreviewModel, TitlebarModel, ToolbarGroupsModel,
-    ToolbarModel, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
-    VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted,
-    VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView,
-    VideoPreviewFrame, VideoRow, VideoSection,
-};
 pub use popup_titlebar::PopupTitlebarModel;
 pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
 pub use titlebar::{TitlebarAction, take_titlebar_action};
+pub use toolbar::PpqBlur;
 pub use toolbar_popup::{ToolbarAction, ToolbarCommand};
 
 use egui::{Frame, Margin, Panel, Stroke};
@@ -449,6 +451,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             DialogModel::Help(model) => {
                 crate::help::show(&mut root, model);
             }
+            DialogModel::About(model) => {
+                crate::about::show(&mut root, model, icons);
+            }
             DialogModel::CloudConnect(model) => {
                 crate::cloud_connect::show(&mut root, model);
             }
@@ -492,6 +497,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 crate::overlay_window::show_device_warning(&mut root, model);
             }
         }
+        // 「关于」页 logo 彩蛋飞行层（UI-007）：设置窗口本身是独立对话框
+        // （`DialogModel::Settings`），dialog 分支在下方提前 `return`。若只在函数
+        // 末尾的通用覆盖层区绘制，彩蛋进入 `Spin`（原位 logo 已从关于页移除）后
+        // 整段飞行都不会被绘制，表现为「点满连点后 logo 直接消失」。
+        // 必须在 `return` 之前、对话框内容之后绘制（同层后画 = 盖在内容之上）。
+        show_egg_layer(&root, icons);
         return;
     }
 
@@ -688,9 +699,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         push_help_tip_action(ui.ctx(), action);
     }
     // 「关于」页 logo 彩蛋飞行层：最顶层、不捕获鼠标。
-    if let Some(egg) = egg_model(ui.ctx()) {
-        egg::show(&root, full_window, &egg, icons);
-    }
+    show_egg_layer(&root, icons);
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
 
@@ -945,6 +954,16 @@ pub fn set_egg(ctx: &egui::Context, model: Option<EggModel>) {
 fn egg_model(ctx: &egui::Context) -> Option<EggModel> {
     ctx.data(|d| d.get_temp::<Option<EggModel>>(egui::Id::unique("lumino.about-egg")))
         .flatten()
+}
+
+/// 绘制「关于」页 logo 彩蛋飞行层（主窗口与独立对话框窗口共用）。
+///
+/// 对话框分支会在 [`show_bands`] 末尾提前 `return`，因此设置窗口的「关于」页
+/// 必须在其 `return` 之前调用本函数；主窗口则在通用覆盖层区调用。
+fn show_egg_layer(ui: &egui::Ui, icons: &mut IconCache) {
+    if let Some(egg) = egg_model(ui.ctx()) {
+        egg::show(ui, window_rect(ui), &egg, icons);
+    }
 }
 
 /// 记录本帧钢琴卷帘右键菜单（`None` = 关闭）。

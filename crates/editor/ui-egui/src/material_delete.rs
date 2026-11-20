@@ -185,12 +185,14 @@ fn button(
         Stroke::new(1.0, theme::border()),
         egui::StrokeKind::Inside,
     );
-    ui.painter().text(
+    crate::text::paint_truncated(
+        ui,
         rect.center(),
         egui::Align2::CENTER_CENTER,
         label,
-        FontId::proportional(theme::font::LABEL),
+        theme::font::LABEL,
         text_color,
+        (rect.width() - 10.0).max(1.0),
     );
     response
 }

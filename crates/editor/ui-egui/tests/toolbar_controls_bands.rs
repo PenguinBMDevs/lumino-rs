@@ -1,98 +1,19 @@
-//! 工具栏交互：走带 / 循环 / 撤销重做 / 仪表盘 PPQ / 右侧开关 / 工具区。
+//! 工具栏交互：走带 / 循环 / 撤销重做 / 右侧开关 / 工具区。
 //!
 //! 几何全部由 `layout` 常量正推（与绘制同源），点击坐标不靠扫描。
-
-use std::cell::RefCell;
-use std::rc::Rc;
+//! 仪表盘 PPQ 编辑的用例在 `toolbar_ppq_edit_bands.rs`（文件行数纪律）。
 
 use egui::{Event, PointerButton, Pos2, RawInput};
-use egui_kittest::Harness;
 use lumino_core::Tool;
-use lumino_ui_egui::chrome::toolbar_popup::{self, ToolbarAction, ToolbarCommand};
-use lumino_ui_egui::chrome::{ToolbarModel, toolbar as toolbar_view};
+use lumino_ui_egui::chrome::ToolbarModel;
+use lumino_ui_egui::chrome::toolbar_popup::{ToolbarAction, ToolbarCommand};
 use lumino_ui_egui::layout;
 
-fn model() -> ToolbarModel {
-    ToolbarModel {
-        ppq_buffer: "1920".to_owned(),
-        ..ToolbarModel::default()
-    }
-}
+mod common;
 
-fn harness(model: ToolbarModel) -> (Harness<'static>, Rc<RefCell<Vec<ToolbarAction>>>) {
-    let actions = Rc::new(RefCell::new(Vec::new()));
-    let actions_w = actions.clone();
-    let mut icons = lumino_ui_egui::icons::IconCache::default();
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1400.0, layout::TOOLBAR_H))
-        .with_accessibility_check(false)
-        .build_ui(move |ui| {
-            lumino_ui_egui::fonts::install(ui.ctx());
-            toolbar_view::show_model(ui, &model, &mut icons);
-            if let Some(action) = toolbar_popup::take_action(ui.ctx()) {
-                actions_w.borrow_mut().push(action);
-            }
-        });
-    harness.run();
-    (harness, actions)
-}
-
-fn click(harness: &mut Harness<'static>, pos: Pos2) {
-    click_with_modifiers(harness, pos, egui::Modifiers::default());
-}
-
-fn click_with_modifiers(harness: &mut Harness<'static>, pos: Pos2, modifiers: egui::Modifiers) {
-    let mut input = RawInput::default();
-    input.events.push(Event::ModifiersChanged(modifiers));
-    input.events.push(Event::PointerMoved(pos));
-    input.events.push(Event::PointerButton {
-        pos,
-        button: PointerButton::Primary,
-        pressed: true,
-        modifiers,
-    });
-    input.events.push(Event::PointerButton {
-        pos,
-        button: PointerButton::Primary,
-        pressed: false,
-        modifiers,
-    });
-    *harness.input_mut() = input;
-    harness.run();
-}
-
-/// 组内纵向中线（`group` 用 `Align::Center`）。
-fn mid_y() -> f32 {
-    layout::TOOLBAR_PAD_Y + layout::TOOLBAR_GROUP_H / 2.0
-}
-
-/// 各分组左边界（与 `show_model` 的累加完全一致）。
-fn group_x() -> Vec<f32> {
-    let mut x = layout::TOOLBAR_PAD_X;
-    let record = x;
-    x += layout::RECORD_GROUP_W + 4.0;
-    let playback = x;
-    x += layout::PLAYBACK_GROUP_W + 8.0;
-    let looping = x;
-    x += layout::LOOP_GROUP_W + 8.0;
-    let undo = x;
-    x += layout::UNDO_REDO_GROUP_W + 16.0;
-    let dashboard = x;
-    x += layout::DASHBOARD_GROUP_W + 16.0;
-    vec![record, playback, looping, undo, dashboard, x]
-}
-
-fn playback_centers() -> [f32; 3] {
-    let left = group_x()[1];
-    let total = layout::TOOL_BUTTON_W * 3.0 + 8.0;
-    let start = left + (layout::PLAYBACK_GROUP_W - total) / 2.0;
-    let w = layout::TOOL_BUTTON_W;
-    [
-        start + w / 2.0,
-        start + w + 4.0 + w / 2.0,
-        start + (w + 4.0) * 2.0 + w / 2.0,
-    ]
-}
+use common::toolbar_harness::{
+    click, click_with_modifiers, group_x, harness, mid_y, model, playback_centers,
+};
 
 fn undo_centers() -> [f32; 3] {
     let left = group_x()[3];
@@ -178,65 +99,6 @@ fn loop_undo_redo_history_and_record_emit_actions() {
         actions.borrow().last(),
         Some(ToolbarAction::RecordToggled)
     ));
-}
-
-#[test]
-fn ppq_cell_enters_edit_and_edit_emits_changes() {
-    let y = mid_y();
-    let cell = Pos2::new(group_x()[4] + layout::DASHBOARD_CELL_W / 2.0, y);
-
-    let (mut h, actions) = harness(model());
-    click(&mut h, cell);
-    assert!(matches!(
-        actions.borrow().last(),
-        Some(ToolbarAction::PpqEditToggled)
-    ));
-
-    // 编辑态：输入一个字符 → PpqEditChanged；回车 → PpqEditConfirmed。
-    let (mut h, actions) = harness(ToolbarModel {
-        ppq_editing: true,
-        ..model()
-    });
-    *h.input_mut() = RawInput {
-        events: vec![Event::Text("4".to_owned())],
-        ..Default::default()
-    };
-    h.run();
-    assert!(
-        actions
-            .borrow()
-            .iter()
-            .any(|a| matches!(a, ToolbarAction::PpqEditChanged(_))),
-        "输入应回传 PpqEditChanged，实际 {:?}",
-        actions.borrow()
-    );
-
-    let (mut h, actions) = harness(ToolbarModel {
-        ppq_editing: true,
-        ppq_buffer: "960".to_owned(),
-        ..model()
-    });
-    // 先聚焦输入框，再按回车。
-    h.run();
-    *h.input_mut() = RawInput {
-        events: vec![Event::Key {
-            key: egui::Key::Enter,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: Default::default(),
-        }],
-        ..Default::default()
-    };
-    h.run();
-    assert!(
-        actions
-            .borrow()
-            .iter()
-            .any(|a| matches!(a, ToolbarAction::PpqEditConfirmed)),
-        "回车应回传 PpqEditConfirmed，实际 {:?}",
-        actions.borrow()
-    );
 }
 
 #[test]

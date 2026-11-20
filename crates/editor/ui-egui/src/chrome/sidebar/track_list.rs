@@ -38,7 +38,12 @@ pub(super) fn show_model(
     ui.painter().text(
         egui::pos2(list_left, content.top() + 15.0),
         Align2::LEFT_CENTER,
-        &model.track_list_title,
+        crate::text::truncate_to_width(
+            ui,
+            &model.track_list_title,
+            12.0,
+            (list_right - list_left).max(1.0),
+        ),
         FontId::proportional(12.0),
         theme::text(),
     );
@@ -85,7 +90,7 @@ pub(super) fn show_model(
         .show(&mut list_ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for track in &model.tracks {
-                let response = track_row(ui, track, icons);
+                let response = track_row(ui, track, icons, model.solo_tip);
                 rows.push((track.id, response.rect));
                 if response.drag_started() {
                     reorder_started = Some(track.id);
@@ -218,13 +223,16 @@ fn add_track_row(ui: &mut egui::Ui, rect: Rect, label: &str, cache: &mut IconCac
     );
     cache.paint(ui.painter(), Icon::Plus, icon_rect);
 
+    let label_x = inner_left + layout::TRACK_ADD_ICON_COL_W + layout::TRACK_COL_GAP;
     ui.painter().text(
-        egui::pos2(
-            inner_left + layout::TRACK_ADD_ICON_COL_W + layout::TRACK_COL_GAP,
-            rect.center().y,
-        ),
+        egui::pos2(label_x, rect.center().y),
         Align2::LEFT_CENTER,
-        label,
+        crate::text::truncate_to_width(
+            ui,
+            label,
+            theme::font::LABEL,
+            (rect.right() - label_x - 8.0).max(1.0),
+        ),
         FontId::proportional(theme::font::LABEL),
         theme::text(),
     );

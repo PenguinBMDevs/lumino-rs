@@ -56,12 +56,14 @@ impl EditorButtonAction {
 }
 
 /// 单个按钮（矩形为窗口逻辑坐标）。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EditorButton {
     /// 按钮矩形。
     pub rect: Rect,
     /// 语义动作。
     pub action: EditorButtonAction,
+    /// 悬停说明（由生产侧按语言给出；空串 = 不显示）。
+    pub tooltip: String,
 }
 
 /// 一帧的按钮集合。
@@ -131,6 +133,7 @@ pub fn show(
         };
         icons.paint_tinted(painter, icon, icon_rect, Some(Color32::WHITE));
         let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let response = crate::widgets::hover_text(response, &button.tooltip);
         if response.clicked() {
             action = Some(button.action);
         }

@@ -83,7 +83,8 @@ pub(super) fn show(
                 hit = Some(switch.track);
             }
             AudioControlModel::Button => {
-                let width = text_width(ui, &row.label, 14.0) + 24.0;
+                let width = (text_width(ui, &row.label, 14.0) + 24.0)
+                    .min((rect.right() - PAD - x).max(1.0));
                 let button = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, h));
                 hit = Some(button);
                 if action_button(ui, button, &row.label, true, palette).clicked() {
@@ -91,14 +92,24 @@ pub(super) fn show(
                 }
             }
             AudioControlModel::Static { text, dim } => {
-                draw_label(ui, x, center, &row.label, &row.hint, 0.0, palette);
-                let label_w = text_width(ui, &row.label, 14.0);
-                ui.painter().text(
+                let available = (rect.right() - PAD - x).max(1.0);
+                let label_w = draw_label(
+                    ui,
+                    x,
+                    center,
+                    &row.label,
+                    &row.hint,
+                    (available - 112.0).max(1.0),
+                    palette,
+                );
+                crate::text::paint_truncated(
+                    ui,
                     Pos2::new(x + label_w + 32.0, center),
                     Align2::LEFT_CENTER,
                     text,
-                    FontId::proportional(if *dim { 12.0 } else { 14.0 }),
+                    if *dim { 12.0 } else { 14.0 },
                     if *dim { palette.text_dim } else { palette.text },
+                    (available - label_w - 32.0).max(1.0),
                 );
             }
             AudioControlModel::Combo { options, selected } => {
@@ -222,12 +233,14 @@ pub(super) fn show(
                     );
                 }
                 if !placeholder.is_empty() && text.is_empty() {
-                    ui.painter().text(
+                    crate::text::paint_truncated(
+                        ui,
                         Pos2::new(field.left() + 8.0, field.center().y),
                         Align2::LEFT_CENTER,
                         placeholder,
-                        FontId::proportional(14.0),
+                        14.0,
                         palette.text_dim,
+                        (field.width() - 16.0).max(1.0),
                     );
                 }
             }
@@ -241,7 +254,7 @@ pub(super) fn show(
     }
 }
 
-/// 标签 + 悬浮说明。
+/// 标签 + 悬浮说明；返回实际绘制的标签宽度。
 fn draw_label(
     ui: &mut egui::Ui,
     x: f32,
@@ -250,10 +263,10 @@ fn draw_label(
     hint: &str,
     max_width: f32,
     palette: &SettingsPalette,
-) {
+) -> f32 {
     // 右侧控件占位固定：长标签必须截断，否则会压到控件上（生产 上一代 用 Fill
     // 约束宽度；egui painter 不做裁剪，这里手动加省略号）。
-    let label = widgets::truncate_to_width(ui, label, 14.0, max_width);
+    let label = widgets::truncate_to_width(ui, label, 14.0, max_width.max(1.0));
     ui.painter().text(
         Pos2::new(x, center_y),
         Align2::LEFT_CENTER,
@@ -261,10 +274,10 @@ fn draw_label(
         FontId::proportional(14.0),
         palette.text,
     );
-    if hint.is_empty() {
-        return;
-    }
     let width = text_width(ui, &label, 14.0);
+    if hint.is_empty() {
+        return width;
+    }
     let rect = Rect::from_min_size(
         Pos2::new(x, center_y - 10.0),
         Vec2::new(width.max(8.0), 20.0),
@@ -275,4 +288,5 @@ fn draw_label(
         Sense::hover(),
     );
     response.on_hover_text(hint);
+    width
 }

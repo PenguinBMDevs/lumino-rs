@@ -134,6 +134,53 @@ fn edge_drag_zooms() {
     release(&mut h, egui::pos2(34.0, 390.0));
 }
 
+/// 浮层（下拉菜单 / 弹层）盖住滚动条时，按压必须属于浮层，不得穿透去拖轨道。
+///
+/// 滚动条用原始指针状态驱动（跨帧拖拽），不走 `ui.interact` 的命中集合；
+/// 若不做图层归属判定，`Foreground` 弹层上的点击会同时驱动下层的滚动条——
+/// 力度面板的 CC 下拉弹层被约束上移后正好压在卷帘水平滚动条上，即此回归。
+#[test]
+fn overlay_above_scrollbar_blocks_track_press() {
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let actions_w = actions.clone();
+    let model = model(false);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(500.0, 500.0))
+        .with_accessibility_check(false)
+        .build_ui(move |ui| {
+            let _ = scrollbar::show(ui, "test", &model);
+            // 覆盖滚动条右半段的 Foreground 弹层（与 CC 下拉同图层）。
+            let panel =
+                egui::Rect::from_min_max(egui::pos2(250.0, 360.0), egui::pos2(450.0, 420.0));
+            egui::Area::new(egui::Id::unique("test-overlay"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(panel.min)
+                .show(ui.ctx(), |ui| {
+                    ui.set_min_size(panel.size());
+                    // 弹层背景必须可交互：整块矩形独占命中。
+                    let _ = ui.interact(
+                        panel,
+                        egui::Id::unique("test-overlay-bg"),
+                        egui::Sense::click(),
+                    );
+                });
+            if let Some(action) = scrollbar::take_action(ui.ctx()) {
+                actions_w.borrow_mut().push(action);
+            }
+        });
+    // 首帧是 Area 的 sizing pass（图层命中不到），再跑一帧让弹层进入命中集合。
+    harness.run();
+    harness.run();
+
+    press(&mut harness, egui::pos2(300.0, 390.0));
+
+    assert!(
+        actions.borrow().is_empty(),
+        "弹层上的按压不得穿透到滚动条，实际动作：{:?}",
+        actions.borrow()
+    );
+}
+
 /// 垂直滚动条：拖拽产生带 `vertical = true` 的 Scroll。
 #[test]
 fn vertical_drag_is_marked_vertical() {

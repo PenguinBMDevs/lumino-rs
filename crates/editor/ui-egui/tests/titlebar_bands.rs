@@ -127,6 +127,23 @@ fn main_titlebar_traffic_buttons_emit_actions() {
 }
 
 #[test]
+fn hover_tooltip_does_not_break_traffic_click() {
+    let (mut h, actions) = harness(main_model());
+    // 先把指针停在关闭按钮上，让悬停说明真正弹出，再点击。
+    h.input_mut()
+        .events
+        .push(egui::Event::PointerMoved(close_center()));
+    h.run();
+    h.run();
+    click(&mut h, close_center());
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&TitlebarAction::Close),
+        "悬停说明弹出后，关闭按钮仍必须可点击"
+    );
+}
+
+#[test]
 fn popup_titlebar_drag_and_close() {
     // 拖动区（红绿灯左侧）
     let (mut h, actions) = harness(popup_model());

@@ -47,12 +47,14 @@ impl Root {
                 BendButton {
                     rect: to_window(sx, sy, sw, sh),
                     label: tr!("曲线").to_owned(),
+                    tooltip: tr!("平滑曲线：锚点之间使用贝塞尔曲线连接").to_owned(),
                     kind: BendKind::Smooth,
                     selected: current == lumino_editor_state::AnchorBend::Smooth,
                 },
                 BendButton {
                     rect: to_window(cx, cy, cw, ch),
                     label: tr!("折线").to_owned(),
+                    tooltip: tr!("折线：锚点之间用直线连接").to_owned(),
                     kind: BendKind::Corner,
                     selected: current == lumino_editor_state::AnchorBend::Corner,
                 },

@@ -118,7 +118,7 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel, icons: &mut crate::icons::I
         egui::pos2(inner.right() - CLOSE_W, footer_y),
         Vec2::new(CLOSE_W, CLOSE_H),
     );
-    let close = egui::Button::new(
+    let close = crate::widgets::text_button(
         RichText::new(&model.close)
             .size(13.0)
             .color(theme::on_accent()),
@@ -203,10 +203,16 @@ fn row_button(
         );
         icons.paint(ui.painter(), crate::icons::Icon::Undo, icon_rect);
     }
+    let label_x = rect.left() + 8.0 + MARKER + 6.0;
     ui.painter().text(
-        egui::pos2(rect.left() + 8.0 + MARKER + 6.0, rect.center().y),
+        egui::pos2(label_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
-        &row.label,
+        crate::text::truncate_to_width(
+            ui,
+            &row.label,
+            13.0,
+            (rect.right() - label_x - 8.0).max(1.0),
+        ),
         egui::FontId::proportional(13.0),
         color,
     );
@@ -227,5 +233,9 @@ fn put_label(
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(align)),
     );
-    child.add(egui::Label::new(RichText::new(text).size(size).color(color)).selectable(false));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
 }

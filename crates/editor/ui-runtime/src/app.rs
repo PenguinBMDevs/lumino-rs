@@ -707,6 +707,8 @@ fn demo_model(clicks: u32) -> ChromeModel {
             fps: None,
             right: String::new(),
             gpu: None,
+            // 探针外壳不显示指标组（`fps: None`），MEM 说明保持为空即可。
+            memory_tip: Default::default(),
         },
         ..ChromeModel::default()
     }

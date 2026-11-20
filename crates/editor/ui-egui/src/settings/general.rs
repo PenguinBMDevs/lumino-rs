@@ -18,6 +18,7 @@ pub(super) fn show(
     let pad = layout::SETTINGS_PADDING;
     let left = rect.left() + pad;
     let base = rect.top();
+    let text_max = (rect.width() - pad * 2.0).max(1.0);
 
     // 文案副本：下方控件需要可变借用 `state`（输入框）。
     let title = state.labels.title.clone();
@@ -31,14 +32,16 @@ pub(super) fn show(
     ui.painter().text(
         egui::pos2(left, base + 30.0),
         egui::Align2::LEFT_CENTER,
-        &title,
+        crate::text::truncate_to_width(ui, &title, theme::font::TITLE, text_max),
         egui::FontId::proportional(theme::font::TITLE),
         palette.text,
     );
 
-    // 表单：标签 + 间距 32（8+16+8，与生产 `row![label, space(16), pick_list]` 一致），
+    // 标签 + 间距 32（8+16+8，与生产 `row![label, space(16), pick_list]` 一致），
     // 控件起点随标签实际宽度变化——英文标签更长，固定列宽会压住下拉框。
+    // 下拉框固定 200 宽：标签按「卡片右缘 − 控件 − 间距」截断。
     let label_x = left;
+    let row_label_max = (rect.right() - pad - 200.0 - 32.0 - label_x).max(1.0);
     if let Some(index) = form_row(
         ui,
         RowGeometry {
@@ -48,6 +51,7 @@ pub(super) fn show(
         &eraser_label,
         &state.eraser,
         &eraser_options,
+        row_label_max,
         palette,
     ) {
         let behavior = match index {
@@ -65,6 +69,7 @@ pub(super) fn show(
         &track_add_label,
         &state.track_add,
         &track_add_options,
+        row_label_max,
         palette,
     ) {
         let behavior = match index {
@@ -77,11 +82,18 @@ pub(super) fn show(
     ui.painter().text(
         egui::pos2(left, base + 236.0),
         egui::Align2::LEFT_CENTER,
-        &log_section,
+        crate::text::truncate_to_width(ui, &log_section, theme::font::SECTION, text_max),
         egui::FontId::proportional(theme::font::SECTION),
         palette.text,
     );
 
+    // 输入框 80 宽：标签必须收在「卡片右缘 − 80 − 间距」之内。
+    let log_label = crate::text::truncate_to_width(
+        ui,
+        &log_label,
+        theme::font::LABEL,
+        (rect.right() - pad - 80.0 - 32.0 - label_x).max(1.0),
+    );
     let log_label_width = ui
         .painter()
         .layout_no_wrap(
@@ -130,24 +142,27 @@ struct RowGeometry {
 }
 
 /// 标签 + 下拉框；返回用户选中的选项下标。
+#[allow(clippy::too_many_arguments)]
 fn form_row(
     ui: &mut egui::Ui,
     geometry: RowGeometry,
     label: &str,
     value: &str,
     options: &[String],
+    max_label_width: f32,
     palette: &SettingsPalette,
 ) -> Option<usize> {
     let label_font = egui::FontId::proportional(theme::font::LABEL);
+    let label = crate::text::truncate_to_width(ui, label, theme::font::LABEL, max_label_width);
     let label_width = ui
         .painter()
-        .layout_no_wrap(label.to_owned(), label_font.clone(), palette.text)
+        .layout_no_wrap(label.clone(), label_font.clone(), palette.text)
         .size()
         .x;
     ui.painter().text(
         egui::pos2(geometry.label_x, geometry.center_y),
         egui::Align2::LEFT_CENTER,
-        label,
+        &label,
         label_font,
         palette.text,
     );
@@ -163,5 +178,5 @@ fn form_row(
             .max_rect(combo_rect)
             .layout(Layout::top_down(egui::Align::Min)),
     );
-    widgets::combo_box(&mut combo_ui, label, value, options, 200.0, palette)
+    widgets::combo_box(&mut combo_ui, &label, value, options, 200.0, palette)
 }

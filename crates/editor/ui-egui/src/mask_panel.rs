@@ -38,7 +38,7 @@ pub enum MaskShowKind {
 pub struct MaskPanelLabels {
     /// 标题「遮罩」。
     pub title: String,
-    /// 关闭按钮「✕」。
+    /// 关闭按钮「×」。
     pub close: String,
     /// 「启用」。
     pub enable: String,
@@ -137,14 +137,19 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPan
                 ui.set_width(PANEL_W);
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(&model.labels.title)
-                            .size(13.0)
-                            .color(theme::text()),
+                        RichText::new(crate::text::truncate_to_width(
+                            ui,
+                            &model.labels.title,
+                            13.0,
+                            (PANEL_W - 64.0).max(1.0),
+                        ))
+                        .size(13.0)
+                        .color(theme::text()),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
                             .add(
-                                egui::Button::new(
+                                crate::widgets::text_button(
                                     RichText::new(&model.labels.close)
                                         .size(12.0)
                                         .color(theme::text()),
@@ -232,7 +237,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPan
                             };
                             if ui
                                 .add(
-                                    egui::Button::new(
+                                    crate::widgets::text_button(
                                         RichText::new(text).size(12.0).color(theme::text()),
                                     )
                                     .fill(theme::selected_bg())
@@ -266,7 +271,7 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPan
 fn label(ui: &mut egui::Ui, text: &str) {
     ui.add_sized(
         Vec2::new(LABEL_W, 16.0),
-        egui::Label::new(RichText::new(text).size(12.0).color(theme::text())),
+        egui::Label::new(RichText::new(text).size(12.0).color(theme::text())).truncate(),
     );
 }
 
@@ -278,7 +283,7 @@ fn toggle(ui: &mut egui::Ui, text: &str, selected: bool) -> bool {
         (Color32::TRANSPARENT, theme::text())
     };
     ui.add(
-        egui::Button::new(RichText::new(text).size(11.0).color(color))
+        crate::widgets::text_button(RichText::new(text).size(11.0).color(color))
             .fill(fill)
             .corner_radius(4)
             .min_size(Vec2::new(0.0, 18.0)),
@@ -293,7 +298,7 @@ mod tests {
     fn labels() -> MaskPanelLabels {
         MaskPanelLabels {
             title: "遮罩".into(),
-            close: "✕".into(),
+            close: "×".into(),
             enable: "启用".into(),
             enable_on: "On".into(),
             region: "区域".into(),

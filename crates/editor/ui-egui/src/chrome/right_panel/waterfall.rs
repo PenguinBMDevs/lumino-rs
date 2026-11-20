@@ -27,7 +27,12 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &WaterfallPanelModel) {
     ui.painter().text(
         egui::pos2(left, rect.top() + PAD + HEADER_H / 2.0),
         Align2::LEFT_CENTER,
-        &model.title,
+        crate::text::truncate_to_width(
+            ui,
+            &model.title,
+            theme::font::LABEL,
+            (rect.width() - PAD * 2.0).max(1.0),
+        ),
         FontId::proportional(theme::font::LABEL),
         theme::text(),
     );
@@ -49,12 +54,14 @@ pub(super) fn show(ui: &mut egui::Ui, rect: Rect, model: &WaterfallPanelModel) {
             ui.put(content, image);
         }
         None => {
-            ui.painter().text(
+            // 空态提示属于解释性文本：按内容区宽度折行并整体居中。
+            crate::text::paint_wrapped_centered_at(
+                ui,
                 content.center(),
-                Align2::CENTER_CENTER,
                 &model.empty_hint,
-                FontId::proportional(theme::font::SMALL),
+                theme::font::SMALL,
                 theme::text_dim(),
+                (content.width() - 16.0).max(1.0),
             );
         }
     }
