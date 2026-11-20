@@ -19,6 +19,11 @@ impl ToolbarHandler {
     fn handle_toolbar_event(&self, root: &mut Root, event: crate::toolbar::Event) {
         // PPQ 编辑确认：成功才收起编辑态；失败保留输入与错误，供用户继续改。
         if matches!(event, crate::toolbar::Event::PpqEditConfirmed) {
+            // 已不在编辑态：重复的确认信号必须丢弃。失焦信号可能与其它消息
+            // 同帧到达，二次提交会把清理后的空缓冲当成非法输入留下错误。
+            if !root.toolbar.ppq_editing {
+                return;
+            }
             if Self::confirm_ppq_edit(root) {
                 root.toolbar.update(event);
             }

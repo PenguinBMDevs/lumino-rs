@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod toolbar_harness;
+
 use image::RgbaImage;
 
 /// 墨迹区间的允许偏差（像素）。

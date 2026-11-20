@@ -7,6 +7,9 @@ use egui::{Align2, FontId, Rect, Sense, Vec2};
 
 use super::super::ToolbarModel;
 use super::super::toolbar_popup::{self, ToolbarAction};
+use super::{
+    PpqBlur, ppq_blur_reported_id, ppq_focus_once_id, push_ppq_blur, reset_ppq_edit_session,
+};
 use crate::icons::Icon;
 use crate::layout;
 use crate::theme;
@@ -149,7 +152,7 @@ pub(super) fn undo_redo(
 /// 检测仪表盘：`BPM / PPQ` 与 `位置 / 时间` 两列，中间 1px 分隔线。
 ///
 /// PPQ 处于编辑态时，第一列下半行换成输入框（与 上一代 `ppq_edit_column` 同义）；
-/// 输入变化与回车分别回传 `PpqEditChanged` / `PpqEditConfirmed`。
+/// 输入变化与失焦分别回传 `PpqEditChanged` / [`PpqBlur`]。
 pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
     let rect = ui.max_rect();
     let split = rect.left() + layout::DASHBOARD_CELL_W;
@@ -166,10 +169,19 @@ pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
     if model.ppq_editing {
         ppq_edit(ui, ppq_cell, model);
     } else {
+        // 编辑会话已结束：清掉会话标记（抢焦点 / 失焦已上报），下一次进入
+        // 编辑重新抢焦点。egui 临时数据跨帧留存，不清理会让第二个编辑会话的
+        // 输入框拿不到键盘。
+        reset_ppq_edit_session(ui.ctx());
         metric(ui, ppq_cell, &model.bpm, &model.ppq);
-        // 整列可点：进入 PPQ 编辑（上一代 只让 `PPQ 1920` 那行可点，放宽命中不吃亏）。
+        // 只有 PPQ 那一行可点：BPM 是只读显示，命中它不得进入 PPQ 编辑
+        // （上一代 也只让 `PPQ 1920` 行可点）。
+        let ppq_row = Rect::from_min_max(
+            egui::pos2(ppq_cell.left(), ppq_cell.center().y),
+            ppq_cell.max,
+        );
         let response = ui.interact(
-            ppq_cell,
+            ppq_row,
             egui::Id::unique("lumino.toolbar.ppq-cell"),
             Sense::click(),
         );
@@ -202,7 +214,8 @@ fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
     );
     let id = egui::Id::unique("lumino.toolbar.ppq-input");
     // 每次进入编辑只抢一次焦点（否则用户点到别处会被立刻抢回来）。
-    let focused_once = egui::Id::unique("lumino.toolbar.ppq-focused");
+    // 标记在非编辑态清除（`dashboard`），保证每个编辑会话都能重新聚焦。
+    let focused_once = ppq_focus_once_id();
     if !ui
         .ctx()
         .data(|d| d.get_temp::<bool>(focused_once).unwrap_or(false))
@@ -223,9 +236,29 @@ fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
     if response.changed() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::PpqEditChanged(buffer));
     }
-    let submitted = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if submitted {
-        toolbar_popup::push_action(ui.ctx(), ToolbarAction::PpqEditConfirmed);
+    // 重新获得焦点（用户点回输入框）→ 允许下一次失焦再上报。
+    if response.gained_focus() {
+        ui.ctx()
+            .data_mut(|d| d.remove_temp::<bool>(ppq_blur_reported_id()));
+    }
+    // 失焦即收口：回车 / Tab / 点击任意其它位置（含工具栏空白处）都会让
+    // TextEdit 交出焦点。只认「回车」会静默丢弃点击别处前输入的内容。
+    // Esc 是唯一例外：放弃本次编辑，不写入。
+    //
+    // `lost_focus` 会连续两帧为真（egui 为同帧焦点转移留的补偿窗口），
+    // 用会话标记去重，保证一次失焦只提交一次。
+    let blur_reported = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(ppq_blur_reported_id()).unwrap_or(false));
+    if response.lost_focus() && !blur_reported {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(ppq_blur_reported_id(), true));
+        let blur = if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            PpqBlur::Cancel
+        } else {
+            PpqBlur::Commit
+        };
+        push_ppq_blur(ui.ctx(), blur);
     }
 
     if let Some(error) = &model.ppq_error {

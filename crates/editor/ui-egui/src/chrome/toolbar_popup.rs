@@ -139,7 +139,11 @@ pub enum ToolbarAction {
     PpqEditToggled,
     /// PPQ 编辑输入变化。
     PpqEditChanged(String),
-    /// PPQ 编辑确认（回车）。
+    /// PPQ 编辑确认。
+    ///
+    /// 工具栏输入框不再经单槽动作回传确认（失焦那一帧常常还伴随一次按钮点击，
+    /// 同槽会互相覆盖）；宿主改为读 [`super::toolbar::PpqBlur`]。此变体保留给
+    /// 生产侧映射与测试。
     PpqEditConfirmed,
     /// 切换自动滚动模式。
     AutoScrollModeChanged,
