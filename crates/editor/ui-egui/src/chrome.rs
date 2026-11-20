@@ -496,6 +496,12 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
                 crate::overlay_window::show_device_warning(&mut root, model);
             }
         }
+        // 「关于」页 logo 彩蛋飞行层（UI-007）：设置窗口本身是独立对话框
+        // （`DialogModel::Settings`），dialog 分支在下方提前 `return`。若只在函数
+        // 末尾的通用覆盖层区绘制，彩蛋进入 `Spin`（原位 logo 已从关于页移除）后
+        // 整段飞行都不会被绘制，表现为「点满连点后 logo 直接消失」。
+        // 必须在 `return` 之前、对话框内容之后绘制（同层后画 = 盖在内容之上）。
+        show_egg_layer(&root, icons);
         return;
     }
 
@@ -692,9 +698,7 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
         push_help_tip_action(ui.ctx(), action);
     }
     // 「关于」页 logo 彩蛋飞行层：最顶层、不捕获鼠标。
-    if let Some(egg) = egg_model(ui.ctx()) {
-        egg::show(&root, full_window, &egg, icons);
-    }
+    show_egg_layer(&root, icons);
 
     // 菜单下拉最后画：不受标题栏 30px 裁剪，且盖在所有 band 之上。
 
@@ -949,6 +953,16 @@ pub fn set_egg(ctx: &egui::Context, model: Option<EggModel>) {
 fn egg_model(ctx: &egui::Context) -> Option<EggModel> {
     ctx.data(|d| d.get_temp::<Option<EggModel>>(egui::Id::unique("lumino.about-egg")))
         .flatten()
+}
+
+/// 绘制「关于」页 logo 彩蛋飞行层（主窗口与独立对话框窗口共用）。
+///
+/// 对话框分支会在 [`show_bands`] 末尾提前 `return`，因此设置窗口的「关于」页
+/// 必须在其 `return` 之前调用本函数；主窗口则在通用覆盖层区调用。
+fn show_egg_layer(ui: &egui::Ui, icons: &mut IconCache) {
+    if let Some(egg) = egg_model(ui.ctx()) {
+        egg::show(ui, window_rect(ui), &egg, icons);
+    }
 }
 
 /// 记录本帧钢琴卷帘右键菜单（`None` = 关闭）。
