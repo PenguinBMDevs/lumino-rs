@@ -124,6 +124,7 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
         SettingsAction::AudioButton { field } => match field {
             AudioField::ScanAudioOutputs => Message::Settings(Event::ScanAudioOutputs),
             AudioField::ScanWinmmOutputs => Message::Settings(Event::ScanWinmmOutputs),
+            AudioField::ScanMidiDevices => Message::Settings(Event::ScanMidiDevices),
             AudioField::BrowseSoundfont => Message::Settings(Event::BrowseSoundfont),
             _ => return None,
         },

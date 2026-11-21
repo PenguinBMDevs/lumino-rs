@@ -336,26 +336,22 @@ impl MidiManager {
     /// 创建独立的 MIDI 输入 API（用于录制功能）
     ///
     /// 返回一个新的 API 实例，供 UI 层独立管理输入设备的生命周期。
-    /// 对于不支持输入的 XSynth 后端，返回 System 后端的输入 API。
+    ///
+    /// **输入与播放后端解耦**：录制输入固定使用 System(midir)。
+    /// KDMAPI 是纯输出驱动（`open_input` 明确返回「不支持 MIDI 输入」），
+    /// 若跟随播放后端创建 KDMAPI API，录制必然失败且设备列表永远为空。
     pub fn create_input_api(&self) -> Option<Box<dyn lumino_midi_io::Api>> {
-        let api_kind = match self.active_backend {
-            SynthBackend::XSynth | SynthBackend::Lgs | SynthBackend::Maestro => {
-                tracing::info!(
-                    "MIDI 输入 API: {:?} 不支持输入，使用 System 后端",
-                    self.active_backend
-                );
-                lumino_midi_io::ApiKind::System
-            }
-            SynthBackend::Kdmapi => {
-                let path = std::path::PathBuf::from("OmniMIDI.dll");
-                lumino_midi_io::ApiKind::Kdmapi { path }
-            }
-            SynthBackend::System => lumino_midi_io::ApiKind::System,
-        };
+        if self.active_backend != SynthBackend::System {
+            tracing::info!(
+                "MIDI 输入 API: {:?} 不提供录制输入，固定使用 System 后端",
+                self.active_backend
+            );
+        }
+        let api_kind = lumino_midi_io::ApiKind::System;
 
         match lumino_midi_io::new_api(&api_kind) {
             Ok(api) => {
-                tracing::info!("MIDI 输入 API: 已创建 (backend={:?})", self.active_backend);
+                tracing::info!("MIDI 输入 API: 已创建 (播放后端={:?})", self.active_backend);
                 // 输入侧只用基础 Api 接口：由 SynthControl 上转为 dyn Api
                 let api: Box<dyn lumino_midi_io::Api> = api;
                 Some(api)

@@ -2,9 +2,12 @@
 
 use std::sync::Arc;
 
+use lumino_core::{tr, trf};
+
 use crate::editor::note::Note;
 use crate::editor::recording::RecordingState;
 use crate::root::Root;
+use crate::toast::ToastLevel;
 
 /// MIDI 通道掩码（提取状态字节的通道号）
 const MIDI_CHANNEL_MASK: u8 = 0x0F;
@@ -28,6 +31,7 @@ impl Root {
             Some(api) => api,
             None => {
                 tracing::warn!("录制: MIDI API 未初始化，无法录制");
+                self.report_recording_error(tr!("MIDI 输入 API 未初始化，无法录制"));
                 self.toolbar.is_recording = false;
                 return;
             }
@@ -37,6 +41,7 @@ impl Root {
             Ok(inputs) => inputs,
             Err(e) => {
                 tracing::error!("录制: 获取输入设备失败: {}", e);
+                self.report_recording_error(trf!("获取 MIDI 输入设备失败：{e}", e = e));
                 self.toolbar.is_recording = false;
                 return;
             }
@@ -44,6 +49,7 @@ impl Root {
 
         if inputs.is_empty() {
             tracing::warn!("录制: 没有可用的 MIDI 输入设备");
+            self.report_recording_error(tr!("未找到可用的 MIDI 输入设备"));
             self.toolbar.is_recording = false;
             return;
         }
@@ -78,6 +84,8 @@ impl Root {
                 self.recording.start(Some(device_name.clone()), track);
                 self.midi.input_connection = Some(conn);
                 self.toolbar.is_recording = true;
+                // 之前失败留下的「无设备 / 打开失败」状态已不再成立。
+                self.statusbar.set_status_message(None);
                 tracing::info!(
                     "录制: 已开始在设备 \"{}\" (#{}) 上录制",
                     device_name,
@@ -86,9 +94,17 @@ impl Root {
             }
             Err(e) => {
                 tracing::error!("录制: 打开输入设备 #{} 失败: {}", device_id, e);
+                self.report_recording_error(trf!("无法打开 MIDI 输入设备：{e}", e = e));
                 self.toolbar.is_recording = false;
             }
         }
+    }
+
+    /// 录制失败必须用户可见（工具栏按钮已复位，不能只留一行日志）。
+    fn report_recording_error(&mut self, message: impl Into<String>) {
+        let message = message.into();
+        self.statusbar.set_status_message(Some(message.clone()));
+        self.toast.push(ToastLevel::Error, message);
     }
 
     /// 停止录制
@@ -144,6 +160,7 @@ impl Root {
 
         self.recording.stop();
         self.toolbar.is_recording = false;
+        self.statusbar.set_status_message(None);
         tracing::info!("录制: 已停止");
     }
 
@@ -300,9 +317,9 @@ impl Root {
     ///
     /// **不枚举设备**（返工 #149）：输入设备枚举会创建 midir/WinMM 客户端，
     /// 而 omv2 等环境下 WinMM 接口可能在原生层崩溃（AV——后台线程同样杀进程），
-    /// 启动路径必须零触碰。设备枚举改由用户主动路径触发：录制开始时自愈
-    /// （`start_recording` 内部自带枚举）；设置页列表回填留给后续接线
-    /// （`scan_midi_input_devices` / `poll_midi_devices_scan` 保留备用）。
+    /// 启动路径必须零触碰。设备枚举只走用户主动路径：设置窗打开 / 获得焦点 /
+    /// 点击「刷新」（`scan_midi_input_devices` 后台枚举 + 轮询回写），以及录制
+    /// 开始时自愈（`start_recording` 内部自带枚举）。
     pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi_io::Api>) {
         self.midi.api = Some(Arc::from(api));
     }

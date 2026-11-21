@@ -20,6 +20,12 @@ use lumino_message::gpu_compat_state::{GpuCheckRetryGate, GpuCheckUiState};
 
 pub use lumino_message::settings_event::Event;
 
+/// 「音频」页在设置菜单中的索引。
+///
+/// 热插拔自动刷新只在音频页可见时运行（见 `Host` 后台轮询），
+/// 与页面模型共用本常量，避免菜单顺序调整后扫描偷偷停止。
+pub const MENU_INDEX_AUDIO: usize = 1;
+
 /// 「兼容性」页在设置菜单中的索引。
 ///
 /// Runner 用该索引判定 GPU 检测结果是否仍属于当前页面：离开兼容性页即作废

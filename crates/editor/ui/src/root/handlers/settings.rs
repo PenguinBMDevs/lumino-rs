@@ -115,6 +115,10 @@ impl MessageHandler for SettingsHandler {
                 // 系统播表自动扫描（WinMM 输出设备列表）
                 root.scan_winmm_outputs();
             }
+            crate::settings::Event::ScanMidiDevices => {
+                // MIDI 输入设备扫描（录制输入列表；后台线程枚举 + 轮询回写）
+                root.scan_midi_input_devices();
+            }
             crate::settings::Event::WinmmOutputSelected(_id) => {
                 tracing::debug!("Root: 已选择 WinMM 输出设备(播表)");
             }

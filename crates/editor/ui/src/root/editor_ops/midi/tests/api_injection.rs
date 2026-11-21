@@ -65,6 +65,33 @@ fn test_set_midi_api_does_not_trigger_device_scan() {
     );
 }
 
+/// 设置窗打开是生产触发点：注入 API 后打开设置面板必须发起输入设备扫描。
+#[test]
+fn test_open_settings_dialog_triggers_input_device_scan() {
+    let mut root = create_root();
+    root.set_midi_api(Box::new(FakeApi));
+
+    root.set_settings_dialog_open(true);
+
+    assert!(
+        root.pending_midi_devices_scan.is_some(),
+        "打开设置窗应发起 MIDI 输入设备后台扫描"
+    );
+
+    for _ in 0..200 {
+        root.poll_midi_devices_scan();
+        if root.pending_midi_devices_scan.is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        root.settings.midi.devices.len(),
+        2,
+        "设置窗打开后的扫描应回写设备列表"
+    );
+}
+
 /// 返工 #149：显式扫描路径（测试/后续接线备用）仍可用——后台线程
 /// 枚举 + 轮询回写设备列表并自动选中首个。
 #[test]

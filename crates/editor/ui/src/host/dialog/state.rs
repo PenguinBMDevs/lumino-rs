@@ -96,6 +96,10 @@ impl Host {
     /// 设置设置对话框是否打开（用于独立对话框窗口）
     pub fn set_settings_dialog_open(&mut self, open: bool) {
         self.root.set_settings_dialog_open(open);
+        if open {
+            // 打开时已主动扫描一次；从这一刻起算热插拔自动刷新的节流窗口。
+            self.last_midi_devices_scan = Some(std::time::Instant::now());
+        }
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

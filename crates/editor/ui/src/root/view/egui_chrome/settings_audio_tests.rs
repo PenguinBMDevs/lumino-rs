@@ -38,6 +38,7 @@ fn audio_page_reflects_backend_and_maps_actions() {
         AudioField::OutputType,
         AudioField::Engine,
         AudioField::MidiDevice,
+        AudioField::ScanMidiDevices,
         AudioField::SoundfontPath,
         AudioField::XSynthBuffer,
         AudioField::XSynthMaxVoices,
@@ -159,6 +160,12 @@ fn audio_page_reflects_backend_and_maps_actions() {
             field: AudioField::BrowseSoundfont,
         }),
         Some(Message::Settings(crate::settings::Event::BrowseSoundfont))
+    ));
+    assert!(matches!(
+        root.settings_action_message(&SettingsAction::AudioButton {
+            field: AudioField::ScanMidiDevices,
+        }),
+        Some(Message::Settings(crate::settings::Event::ScanMidiDevices))
     ));
     assert!(matches!(
         root.settings_action_message(&SettingsAction::AudioText {

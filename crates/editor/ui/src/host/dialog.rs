@@ -5,10 +5,12 @@
 //! 拆分说明：
 //! - `self::state` — 对话框开关与状态 getter/setter
 //! - `self::apply` — apply_* 数据回写与应用
+//! - `self::midi` — 设置对话框的 MIDI 输入设备刷新入口
 //! - `self::collaboration` — 远端光标/选择/音符与协作状态同步
 
 mod apply;
 mod collaboration;
+mod midi;
 mod mixer;
 mod state;
 mod video;

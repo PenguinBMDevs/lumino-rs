@@ -146,6 +146,16 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
         ));
     }
 
+    // 输入设备扫描是用户主动路径：设备列表为空时也必须保留刷新入口，
+    // 否则首次进入设置页只能看到「无可用设备」且无法自救。
+    rows.push(row(
+        AudioField::ScanMidiDevices,
+        t.refresh.to_owned(),
+        String::new(),
+        AudioControlModel::Button,
+        0.0,
+    ));
+
     match synth.backend {
         SynthBackend::XSynth => xsynth_rows(root, t, &mut rows),
         SynthBackend::Lgs => pages::lgs_rows(root, t, &mut rows),
