@@ -39,6 +39,10 @@ impl Host {
     }
 
     /// 本帧画布 `(offset, size)`；无法确定时返回 `None`。
+    ///
+    /// `size` 已扣掉左/右侧栏（含图标列与展开面板）和滚动条，是画布可见
+    /// 宽度的唯一权威：`Root::canvas_overlay_clip` 等覆盖层裁剪必须以此为准，
+    /// 不得再按侧栏宽度二次扣减（否则右侧覆盖层会被裁窄一个侧栏宽度）。
     fn canvas_geometry(&self, window_area: egui::Rect) -> Option<((f32, f32), (f32, f32))> {
         if self.root.is_arrangement_mode() {
             let geometry = crate::host::render::arrangement_geometry::arrangement_canvas_geometry(

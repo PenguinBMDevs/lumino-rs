@@ -7,10 +7,14 @@ use lumino_ui_egui::editor_overlay::EditorOverlayModel;
 use crate::root::Root;
 
 impl Root {
-    /// 画布覆盖层的可见裁剪：内容区 + 画布偏移，并扣掉右侧栏。
+    /// 画布覆盖层的可见裁剪：内容区 + 画布偏移。
     ///
-    /// 画布宽度只扣了左栏；右侧栏是覆盖在画布之上的独立面板。刀框 / 切口 /
-    /// 选框等覆盖层必须裁到这里，否则纵向卷帘下会画到右侧栏上。
+    /// `canvas.size_x` 由 `Host::canvas_geometry` 写入时已扣掉左栏、右侧栏（含
+    /// 图标列与展开面板）和滚动条，是画布可见宽度的唯一权威。本函数只把本地
+    /// 内容区平移到屏幕坐标，**不得再扣一次右侧栏**——否则右侧栏展开时选框 /
+    /// 刀线会在右侧被裁窄一个侧栏宽度（DEBT-17 引入的重复扣减）。
+    /// 左边界保留幂等钳制：侧栏宽度变化而画布几何尚未回写的那一帧，覆盖层
+    /// 不能画进路由栏 / 左侧栏。
     pub(crate) fn canvas_overlay_clip(&self) -> Option<egui::Rect> {
         let canvas = &self.editor.editor_state.canvas;
         let local = lumino_ui_editor::grid::utils::content_bounds(&self.editor);
@@ -21,7 +25,6 @@ impl Root {
             egui::pos2(local.x + canvas.offset_x, local.y + canvas.offset_y),
             egui::vec2(local.width, local.height),
         );
-        // 左侧栏宽度可调；画布偏移用的是常量宽度，覆盖层再按实际栏宽兜一层。
         let left_inset = lumino_ui_egui::layout::ROUTE_BAR_W
             + if self.sidebar.panel_visible {
                 self.sidebar.panel_width
@@ -29,15 +32,6 @@ impl Root {
                 0.0
             };
         rect.min.x = rect.min.x.max(left_inset);
-        if self.right_sidebar_visible() {
-            let inset = lumino_ui_egui::layout::ROUTE_BAR_W
-                + if self.right_sidebar.panel_visible {
-                    self.right_sidebar.panel_width
-                } else {
-                    0.0
-                };
-            rect.max.x = (rect.max.x - inset).max(rect.min.x);
-        }
         Some(rect)
     }
 
