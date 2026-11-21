@@ -2,7 +2,7 @@
 """
 Lumino Release Build Script (Cross-Platform)
 
-Builds release binaries for all supported platforms.
+Builds release binaries and platform installers for all supported platforms.
 Automatically detects the host OS and builds appropriate targets.
 
 Usage:
@@ -16,12 +16,13 @@ On Windows:
     - Builds x86_64 and aarch64 Windows binaries
 
 On macOS:
-    - Builds native macOS binary
+    - Builds native macOS binary, assembles Lumino.app and packages a .dmg
 """
 
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -97,7 +98,10 @@ class LinuxBuilder:
             "rpm",
             "fakeroot",
             "wget",
+            # appimagetool 运行期依赖：mksquashfs / desktop-file-validate / file
             "squashfs-tools",
+            "desktop-file-utils",
+            "file",
         ]
 
         self.ctx.run(["sudo", "apt-get", "update"])
@@ -275,18 +279,22 @@ rustflags = [
 
         (appdir / "usr/bin").mkdir(parents=True)
         (appdir / "usr/share/applications").mkdir(parents=True)
-        (appdir / "usr/share/icons/hicolor/scalable/apps").mkdir(parents=True)
+        (appdir / "usr/share/icons/hicolor/256x256/apps").mkdir(parents=True)
 
         shutil.copy(
             self.ctx.project_dir / "target/release/lumino-rs",
             appdir / "usr/bin/lumino-rs",
         )
 
-        # Use Lumino icon as app icon
-        icon_src = self.ctx.project_dir / "resources/icons/brands/Lumino.svg"
-        icon_dst = appdir / "usr/share/icons/hicolor/scalable/apps/lumino-rs.svg"
+        # .DirIcon 必须是 PNG（appimagetool 不接受 SVG），因此统一使用图标目录里的 PNG。
+        icon_src = self.ctx.project_dir / "resources/icons/logo/app-icon.png"
+        icon_dst = appdir / "usr/share/icons/hicolor/256x256/apps/lumino-rs.png"
         shutil.copy(icon_src, icon_dst)
-        shutil.copy(icon_dst, appdir / "lumino-rs.svg")
+        shutil.copy(icon_dst, appdir / "lumino-rs.png")
+        shutil.copy(icon_dst, appdir / ".DirIcon")
+
+        # AppRun 是 AppImage 的入口；相对符号链接在挂载后依然有效。
+        (appdir / "AppRun").symlink_to("usr/bin/lumino-rs")
 
         desktop = """[Desktop Entry]
 Name=Lumino
@@ -300,10 +308,17 @@ Terminal=false
         (appdir / "usr/share/applications/lumino-rs.desktop").write_text(desktop)
         (appdir / "lumino-rs.desktop").write_text(desktop)
 
-        self.ctx.run([
-            str(appimagetool), str(appdir),
-            str(self.ctx.publish_dir / "linux-amd64/lumino-rs-x86_64.AppImage"),
-        ])
+        # GitHub runner / 无 FUSE2 的环境用 --appimage-extract-and-run 解包运行。
+        self.ctx.run(
+            [
+                str(appimagetool),
+                "--appimage-extract-and-run",
+                "--no-appstream",
+                str(appdir),
+                str(self.ctx.publish_dir / "linux-amd64/lumino-rs-x86_64.AppImage"),
+            ],
+            env={"ARCH": "x86_64"},
+        )
         log_ok("x86_64 AppImage built")
 
     def build_linux_arm64(self) -> None:
@@ -344,7 +359,7 @@ Terminal=false
         rpm_dir = self.ctx.project_dir / "target/aarch64-unknown-linux-gnu/generate-rpm"
         rpm_files = list(rpm_dir.glob("lumino-rs-*.rpm"))
         for rpm in rpm_files:
-            shutil.copy(rpm, out_dir / "lumino-rs-0.1.0-1.aarch64.rpm")
+            shutil.copy(rpm, out_dir)
 
         log_ok("linux-arm64 built")
 
@@ -420,10 +435,112 @@ class WindowsBuilder:
 
 
 class MacOSBuilder:
-    """Builds macOS target."""
+    """Builds macOS target: .app bundle + .dmg."""
 
     def __init__(self, ctx: BuildContext) -> None:
         self.ctx = ctx
+
+    def project_version(self) -> str:
+        """从 Cargo.toml 读取 workspace 版本（仅用于产物命名）。"""
+        manifest = (self.ctx.project_dir / "Cargo.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"([^"]+)"', manifest, re.MULTILINE)
+        return match.group(1) if match else "0.0.0"
+
+    def make_icns(self, out_dir: Path) -> Path:
+        """用仓库内 PNG 生成 .icns；iconutil 要求 iconset 使用固定文件名。"""
+        iconset = out_dir / "Lumino.iconset"
+        if iconset.exists():
+            shutil.rmtree(iconset)
+        iconset.mkdir()
+
+        icon_src = self.ctx.project_dir / "resources/icons/logo/app-icon.png"
+        sizes = [
+            (16, "icon_16x16"),
+            (32, "icon_16x16@2x"),
+            (32, "icon_32x32"),
+            (64, "icon_32x32@2x"),
+            (128, "icon_128x128"),
+            (256, "icon_128x128@2x"),
+            (256, "icon_256x256"),
+            (512, "icon_256x256@2x"),
+            (512, "icon_512x512"),
+            (1024, "icon_512x512@2x"),
+        ]
+        for size, name in sizes:
+            self.ctx.run([
+                "sips", "-z", str(size), str(size), str(icon_src),
+                "--out", str(iconset / f"{name}.png"),
+            ])
+
+        icns = out_dir / "Lumino.icns"
+        if icns.exists():
+            icns.unlink()
+        self.ctx.run(["iconutil", "-c", "icns", str(iconset), "-o", str(icns)])
+        shutil.rmtree(iconset)
+        return icns
+
+    def make_app(self, out_dir: Path, binary: Path, version: str) -> Path:
+        """组装并 ad-hoc 签名 Lumino.app。"""
+        app = out_dir / "Lumino.app"
+        if app.exists():
+            shutil.rmtree(app)
+
+        macos_dir = app / "Contents/MacOS"
+        resources = app / "Contents/Resources"
+        macos_dir.mkdir(parents=True)
+        resources.mkdir(parents=True)
+
+        app_binary = macos_dir / "lumino-rs"
+        shutil.copy(binary, app_binary)
+        app_binary.chmod(0o755)
+
+        shutil.move(self.make_icns(out_dir), resources / "Lumino.icns")
+
+        # Info.plist 的版本字段只能是数字点号；tag 里的后缀不写进去。
+        match = re.match(r"^\d+(?:\.\d+){0,2}", version)
+        plist_version = match.group(0) if match else "0.0.0"
+        info_plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>Lumino</string>
+    <key>CFBundleExecutable</key>
+    <string>lumino-rs</string>
+    <key>CFBundleIconFile</key>
+    <string>Lumino</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.penguinbmdevs.lumino</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Lumino</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{plist_version}</string>
+    <key>CFBundleVersion</key>
+    <string>{plist_version}</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+"""
+        (app / "Contents/Info.plist").write_text(info_plist, encoding="utf-8")
+        self.ctx.run(["plutil", "-lint", str(app / "Contents/Info.plist")])
+
+        # ad-hoc 签名：未配置开发者证书，但 Apple Silicon 至少需要 ad-hoc 签名才能启动。
+        self.ctx.run(["xattr", "-cr", str(app)])
+        self.ctx.run(["codesign", "--force", "--sign", "-", str(app_binary)])
+        self.ctx.run(["codesign", "--force", "--sign", "-", str(app)])
+        self.ctx.run(["codesign", "--verify", "--deep", "--strict", str(app)])
+        return app
 
     def build(self) -> None:
         log_info("Building macOS target...")
@@ -431,11 +548,33 @@ class MacOSBuilder:
 
         out_dir = self.ctx.publish_dir / "macos"
         self.ctx.mkdir(out_dir)
-        shutil.copy(
-            self.ctx.project_dir / "target/release/lumino-rs",
-            out_dir / "lumino-rs",
-        )
-        log_ok("macOS binary built")
+
+        binary = self.ctx.project_dir / "target/release/lumino-rs"
+        shutil.copy(binary, out_dir / "lumino-rs")
+
+        version = self.project_version()
+        arch = platform.machine() or "arm64"
+        app = self.make_app(out_dir, binary, version)
+
+        # 可拖拽安装的 dmg：.app + Applications 快捷方式。
+        stage = out_dir / "dmg-stage"
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.mkdir()
+        shutil.copytree(app, stage / "Lumino.app", symlinks=True)
+        (stage / "Applications").symlink_to("/Applications")
+
+        dmg = out_dir / f"Lumino-v{version}-macOS-{arch}.dmg"
+        if dmg.exists():
+            dmg.unlink()
+        self.ctx.run([
+            "hdiutil", "create", "-volname", "Lumino",
+            "-srcfolder", str(stage), "-ov", "-format", "UDZO", str(dmg),
+        ])
+        self.ctx.run(["hdiutil", "verify", str(dmg)])
+        shutil.rmtree(stage)
+
+        log_ok(f"macOS bundle + dmg built: {dmg.name}")
 
 
 def print_summary(ctx: BuildContext) -> None:
@@ -474,7 +613,7 @@ Commands:
   linux-arm64   Build aarch64 Linux + deb/rpm
   windows-amd64 Build x86_64 Windows
   windows-arm64 Build aarch64 Windows
-  macos         Build macOS binary
+  macos         Build macOS binary + Lumino.app + dmg
 """,
     )
     parser.add_argument(

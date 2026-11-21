@@ -18,10 +18,25 @@ env:
   RUSTFLAGS: "--cap-lints warn"
 
 jobs:
-  # ==================== Linux x86_64 ====================
-  build-linux-x86_64:
-    name: Build Linux x86_64
-    runs-on: ubuntu-latest
+  # ==================== Linux（x86_64 / arm64 原生运行器）====================
+  # 产物与 scripts/publish.py 的 Linux 列表保持一致：
+  #   裸二进制 + .deb + .rpm + .AppImage。
+  # 两种架构都有原生 runner，因此 AppImage 也在 arm64 上同时产出。
+  build-linux:
+    name: Build Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            appimage_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            appimage_arch: aarch64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5.0.0
@@ -31,7 +46,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu
+          targets: ${{ matrix.target }}
 
       # HF 缓存：只缓存项目 target 下的目录
       #（target/<triple>/release + 宿主侧 target/release），发版构建可续编。
@@ -39,9 +54,9 @@ jobs:
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
-          archive: release-linux-x86_64.tar.zst
+          archive: release-linux-${{ matrix.arch }}.tar.zst
           paths: |
-            target/x86_64-unknown-linux-gnu
+            target/${{ matrix.target }}
             target/release
           hf-token: ${{ secrets.HF_TOKEN }}
 
@@ -57,106 +72,90 @@ jobs:
             libtiff-dev libpng-dev libjpeg-dev libwebp-dev libgif-dev \
             libpulse-dev libdbus-1-dev libxi-dev libxtst-dev \
             libxrandr-dev libxinerama-dev libxcursor-dev \
-            libxcomposite-dev libxdamage-dev libpq-dev libsqlite3-dev
+            libxcomposite-dev libxdamage-dev libpq-dev libsqlite3-dev \
+            squashfs-tools desktop-file-utils file
 
       - name: Build (release)
-        run: cargo build --target x86_64-unknown-linux-gnu --release
+        run: cargo build --target ${{ matrix.target }} --release
 
       - name: HF cache (save)
         if: ${{ success() }}
         uses: ./.github/actions/hf-cache
         with:
-          archive: release-linux-x86_64.tar.zst
+          archive: release-linux-${{ matrix.arch }}.tar.zst
           paths: |
-            target/x86_64-unknown-linux-gnu
+            target/${{ matrix.target }}
             target/release
           save: "true"
           hf-token: ${{ secrets.HF_TOKEN }}
 
-      - name: Generate filename
-        id: filename
-        run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-Linux-x86_64"
-          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+      # cargo-deb / cargo-generate-rpm 只在发版时安装；两者都是纯 Rust 实现，
+      # 不依赖 rpmbuild，deb 侧复用 runner 自带的 dpkg。
+      - name: Install packaging tools
+        run: cargo install --locked cargo-deb cargo-generate-rpm
 
-      - name: Rename binary
+      - name: Build Linux packages (deb / rpm / AppImage)
+        shell: bash
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          TARGET: ${{ matrix.target }}
+          ARCH_LABEL: ${{ matrix.arch }}
+          APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
         run: |
-          mv "target/x86_64-unknown-linux-gnu/release/lumino-rs" \
-             "${{ steps.filename.outputs.filename }}"
+          set -euo pipefail
+
+          mkdir -p dist
+          cp "target/${TARGET}/release/lumino-rs" "dist/Lumino-v${VERSION}-Linux-${ARCH_LABEL}"
+
+          # 1) deb / rpm：Cargo.toml 的 assets 继续写 target/release 前缀，
+          #    打包工具会按 --target 自动替换为实际 target 目录。
+          cargo deb --no-build --target "$TARGET" \
+            --output "dist/Lumino-v${VERSION}-Linux-${ARCH_LABEL}.deb"
+          cargo generate-rpm --target "$TARGET" \
+            -o "dist/Lumino-v${VERSION}-Linux-${ARCH_LABEL}.rpm"
+
+          # 2) AppImage：AppDir 布局与 scripts/publish.py 保持一致。
+          APPDIR="${RUNNER_TEMP}/AppDir"
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin" \
+                   "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp "target/${TARGET}/release/lumino-rs" "$APPDIR/usr/bin/lumino-rs"
+          cp resources/icons/logo/app-icon.png \
+            "$APPDIR/usr/share/icons/hicolor/256x256/apps/lumino-rs.png"
+          cp resources/icons/logo/app-icon.png "$APPDIR/lumino-rs.png"
+          cp resources/icons/logo/app-icon.png "$APPDIR/.DirIcon"
+
+          # AppRun 是 AppImage 入口；相对符号链接在挂载后依然有效。
+          ln -s usr/bin/lumino-rs "$APPDIR/AppRun"
+
+          cat > "$APPDIR/usr/share/applications/lumino-rs.desktop" <<EOF
+          [Desktop Entry]
+          Name=Lumino
+          Comment=Lumino - A Fast Black MIDI Editor
+          Exec=lumino-rs
+          Icon=lumino-rs
+          Type=Application
+          Categories=AudioVideo;Audio;Midi;
+          Terminal=false
+          X-AppImage-Version=${VERSION}
+          EOF
+          cp "$APPDIR/usr/share/applications/lumino-rs.desktop" "$APPDIR/lumino-rs.desktop"
+
+          TOOL="${RUNNER_TEMP}/appimagetool.AppImage"
+          curl -fsSL -o "$TOOL" \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
+          chmod +x "$TOOL"
+          # GitHub runner 没有 FUSE2，用 --appimage-extract-and-run 解包运行。
+          ARCH="$APPIMAGE_ARCH" "$TOOL" --appimage-extract-and-run --no-appstream \
+            "$APPDIR" "dist/Lumino-v${VERSION}-Linux-${ARCH_LABEL}.AppImage"
+
+          ls -lh dist
 
       - uses: actions/upload-artifact@v6.0.0
         with:
-          name: ${{ steps.filename.outputs.filename }}
-          path: ${{ steps.filename.outputs.filename }}
-          if-no-files-found: error
-
-  # ==================== Linux ARM64（GitHub 原生 ARM 运行器）====================
-  build-linux-arm64:
-    name: Build Linux arm64
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5.0.0
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-
-      - name: HF cache (restore)
-        uses: ./.github/actions/hf-cache
-        with:
-          archive: release-linux-arm64.tar.zst
-          paths: |
-            target/aarch64-unknown-linux-gnu
-            target/release
-          hf-token: ${{ secrets.HF_TOKEN }}
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake pkg-config nasm libclang-dev clang \
-            libasound2-dev libfreetype6-dev libfontconfig1-dev \
-            libgtk-3-dev libx11-dev libxcb1-dev libxcb-render0-dev \
-            libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev \
-            libxkbcommon-dev libvulkan-dev libssl-dev libzstd-dev \
-            libtiff-dev libpng-dev libjpeg-dev libwebp-dev libgif-dev \
-            libpulse-dev libdbus-1-dev libxi-dev libxtst-dev \
-            libxrandr-dev libxinerama-dev libxcursor-dev \
-            libxcomposite-dev libxdamage-dev libpq-dev libsqlite3-dev
-
-      - name: Build (release)
-        run: cargo build --target aarch64-unknown-linux-gnu --release
-
-      - name: HF cache (save)
-        if: ${{ success() }}
-        uses: ./.github/actions/hf-cache
-        with:
-          archive: release-linux-arm64.tar.zst
-          paths: |
-            target/aarch64-unknown-linux-gnu
-            target/release
-          save: "true"
-          hf-token: ${{ secrets.HF_TOKEN }}
-
-      - name: Generate filename
-        id: filename
-        run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-Linux-arm64"
-          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
-
-      - name: Rename binary
-        run: |
-          mv "target/aarch64-unknown-linux-gnu/release/lumino-rs" \
-             "${{ steps.filename.outputs.filename }}"
-
-      - uses: actions/upload-artifact@v6.0.0
-        with:
-          name: ${{ steps.filename.outputs.filename }}
-          path: ${{ steps.filename.outputs.filename }}
+          name: Lumino-v${{ github.event.inputs.version }}-Linux-${{ matrix.arch }}
+          path: dist/*
           if-no-files-found: error
 
   # ==================== Windows ====================
@@ -234,6 +233,7 @@ jobs:
           if-no-files-found: error
 
   # ==================== macOS ====================
+  # publish.py 的 macOS 产物是 .app + .dmg；这里按同一布局组装，并保留裸二进制。
   build-macos:
     name: Build macOS ${{ matrix.arch }}
     runs-on: macos-latest
@@ -243,10 +243,8 @@ jobs:
         include:
           - target: x86_64-apple-darwin
             arch: x86_64
-            extension: ""
           - target: aarch64-apple-darwin
             arch: arm64
-            extension: ""
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5.0.0
@@ -287,29 +285,113 @@ jobs:
           save: "true"
           hf-token: ${{ secrets.HF_TOKEN }}
 
-      - name: Generate filename
-        id: filename
+      - name: Package (.app + dmg)
+        shell: bash
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          TARGET: ${{ matrix.target }}
+          ARCH_LABEL: ${{ matrix.arch }}
         run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-macOS-${{ matrix.arch }}"
-          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          mkdir -p dist
 
-      - name: Rename binary
-        run: |
-          mv "target/${{ matrix.target }}/release/lumino-rs" \
-             "${{ steps.filename.outputs.filename }}"
+          # 1) 组装 .app。未配置开发者证书，采用 ad-hoc 签名；
+          #    用户首次打开需右键 → 打开（或 xattr -dr com.apple.quarantine）。
+          APP="Lumino.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp "target/${TARGET}/release/lumino-rs" "$APP/Contents/MacOS/lumino-rs"
+          chmod +x "$APP/Contents/MacOS/lumino-rs"
+
+          # 2) 由仓库内图标生成 .icns（iconutil 要求 iconset 使用固定文件名）。
+          ICONSET="Lumino.iconset"
+          rm -rf "$ICONSET"
+          mkdir -p "$ICONSET"
+          for spec in \
+            16:icon_16x16 32:icon_16x16@2x \
+            32:icon_32x32 64:icon_32x32@2x \
+            128:icon_128x128 256:icon_128x128@2x \
+            256:icon_256x256 512:icon_256x256@2x \
+            512:icon_512x512 1024:icon_512x512@2x; do
+            size="${spec%%:*}"
+            name="${spec#*:}"
+            sips -z "$size" "$size" resources/icons/logo/app-icon.png \
+              --out "$ICONSET/${name}.png" >/dev/null
+          done
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Lumino.icns"
+          rm -rf "$ICONSET"
+          # Info.plist 的版本字段只能是数字点号；tag 里的后缀不写进去。
+          PLIST_VERSION="$(printf '%s' "$VERSION" | grep -Eo '^[0-9]+(\.[0-9]+){0,2}' || true)"
+          PLIST_VERSION="${PLIST_VERSION:-0.0.0}"
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>zh_CN</string>
+              <key>CFBundleDisplayName</key>
+              <string>Lumino</string>
+              <key>CFBundleExecutable</key>
+              <string>lumino-rs</string>
+              <key>CFBundleIconFile</key>
+              <string>Lumino</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.penguinbmdevs.lumino</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>Lumino</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${PLIST_VERSION}</string>
+              <key>CFBundleVersion</key>
+              <string>${PLIST_VERSION}</string>
+              <key>LSApplicationCategoryType</key>
+              <string>public.app-category.music</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>11.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          plutil -lint "$APP/Contents/Info.plist"
+
+          # 3) ad-hoc 签名（Apple Silicon 要求至少 ad-hoc 签名才能启动）。
+          xattr -cr "$APP"
+          codesign --force --sign - "$APP/Contents/MacOS/lumino-rs"
+          codesign --force --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+          # 4) 生成可拖拽安装的 dmg（.app + Applications 快捷方式）。
+          STAGE="dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/Lumino.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Lumino" -srcfolder "$STAGE" -ov -format UDZO \
+            "dist/Lumino-v${VERSION}-macOS-${ARCH_LABEL}.dmg"
+          hdiutil verify "dist/Lumino-v${VERSION}-macOS-${ARCH_LABEL}.dmg"
+          rm -rf "$STAGE" "$APP"
+
+          # 5) 保留裸二进制，兼容既有使用方式。
+          cp "target/${TARGET}/release/lumino-rs" "dist/Lumino-v${VERSION}-macOS-${ARCH_LABEL}"
+
+          ls -lh dist
 
       - uses: actions/upload-artifact@v6.0.0
         with:
-          name: ${{ steps.filename.outputs.filename }}
-          path: ${{ steps.filename.outputs.filename }}
+          name: Lumino-v${{ github.event.inputs.version }}-macOS-${{ matrix.arch }}
+          path: dist/*
           if-no-files-found: error
 
   # ==================== Release（需手动审批）====================
   release:
     name: Create Release
     needs:
-      - build-linux-x86_64
-      - build-linux-arm64
+      - build-linux
       - build-windows
       - build-macos
     runs-on: ubuntu-latest
