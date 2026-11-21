@@ -10,7 +10,9 @@
 
 use super::*;
 use crate::toolbar::buttons::TOOL_BUTTON_WIDTH;
-use crate::toolbar::overflow::interaction::{TOOLBAR_HORIZONTAL_PADDING, tools_section_width};
+use crate::toolbar::overflow::interaction::{
+    PRECISION_GAP, PRECISION_SELECTOR_WIDTH, TOOLBAR_HORIZONTAL_PADDING, tools_section_width,
+};
 use crate::toolbar::overflow::{MORE_BUTTON_WIDTH, MORE_GAP, ToolItem, ToolbarGroup};
 use lumino_extras::i18n::Language;
 
@@ -191,7 +193,7 @@ fn test_more_button_is_never_clipped() {
 
         for arrangement_mode in [false, true] {
             let overflow = toolbar.compute_overflow(available, arrangement_mode);
-            let layout = overflow.layout_width(arrangement_mode);
+            let layout = overflow.layout_width(arrangement_mode, PRECISION_SELECTOR_WIDTH);
             assert!(
                 layout <= content + 0.01,
                 "width={width}（走带={arrangement_mode}）: 内容+更多按钮 {layout} 超出内容区 {content}，更多按钮会被裁"
@@ -231,11 +233,78 @@ fn test_more_menu_covers_every_hidden_item() {
 }
 
 /// 工具区"全展开宽度"保持历史标定 568（不因本轮改造漂移折叠触发点）
+///
+/// 历史触发点按**固定**精度预留（[`PRECISION_SELECTOR_WIDTH`]）标定；生产路径
+/// 用 `compute_overflow_localized` 按当前文本给宽度，触发点会随档位移动（见
+/// `test_precision_width_moves_fold_point`）。
 #[test]
 fn test_tools_section_full_width_matches_baseline() {
-    let full = tools_section_width(ToolItem::ALL, false);
+    let full = tools_section_width(ToolItem::ALL, false, PRECISION_SELECTOR_WIDTH);
     assert!(
         (full - 568.0).abs() < 0.5,
         "工具区全展开宽度应为 568（实际 {full}）"
     );
+}
+
+/// 精度选择器变宽时，同一视口宽度下必须更早折叠（预算真的用上了新宽度）。
+#[test]
+fn test_precision_width_moves_fold_point() {
+    let toolbar = Toolbar::new();
+    // 选一个"逐项折叠中间态"的宽度，然后给精度选择器加 60px。
+    let width = WIDTHS
+        .clone()
+        .rev()
+        .find(|width| {
+            let overflow = toolbar.compute_overflow(*width as f32, false);
+            !overflow.hidden_tools.is_empty() && !overflow.tools_group_hidden()
+        })
+        .expect("必须存在逐项折叠的中间态");
+
+    let narrow = toolbar.compute_overflow_with_precision(width as f32, false, 100.0);
+    let wide = toolbar.compute_overflow_with_precision(width as f32, false, 160.0);
+    assert!(
+        wide.visible_tools.len() <= narrow.visible_tools.len(),
+        "width={width}: 精度选择器变宽后可见工具不应反而变多（窄 {} / 宽 {}）",
+        narrow.visible_tools.len(),
+        wide.visible_tools.len()
+    );
+    assert!(
+        wide.visible_tools.len() < ToolItem::ALL.len(),
+        "width={width}: 加宽 60px 后应至少折掉一个工具"
+    );
+}
+
+/// 预算与渲染的间距必须同值：两边各写一份常量，漂移就会压出 1~2px 重叠。
+#[test]
+fn test_precision_gap_matches_egui_layout() {
+    assert_eq!(
+        PRECISION_GAP,
+        lumino_ui_egui::layout::PRECISION_LEADING_GAP,
+        "精度选择器前间距：预算与渲染必须同值"
+    );
+}
+
+/// 生产入口（按吸附文本取宽度）同样不得让内容越过内容区：
+/// 换成长自定义 tick 后，「更多」按钮仍要在可视区内。
+#[test]
+fn test_localized_overflow_keeps_layout_inside_content() {
+    let mut toolbar = Toolbar::new();
+    let long_custom = lumino_core::SnapSpec::custom(4_294_967_295).expect("合法 tick");
+    for snap in [lumino_core::SnapSpec::default(), long_custom] {
+        toolbar.snap_spec = snap;
+        for width in WIDTHS {
+            let available = width as f32;
+            let content = (available - TOOLBAR_HORIZONTAL_PADDING).max(0.0);
+            let precision = toolbar.precision_selector_width(Language::ZhCn);
+            for arrangement_mode in [false, true] {
+                let overflow =
+                    toolbar.compute_overflow_localized(available, arrangement_mode, Language::ZhCn);
+                let layout = overflow.layout_width(arrangement_mode, precision);
+                assert!(
+                    layout <= content + 0.01,
+                    "{snap:?} width={width}（走带={arrangement_mode}）: 宽度 {layout} 超出内容区 {content}"
+                );
+            }
+        }
+    }
 }

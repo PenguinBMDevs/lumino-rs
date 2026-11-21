@@ -645,9 +645,12 @@ impl Root {
             // 与生产 `responsive` 同一可用宽度 / 折叠纯函数：溢出菜单内容必须
             // 和工具栏实际折叠结果一致（同宽度必然同结果）。
             let arrangement_mode = self.sidebar.is_arrangement_route();
-            let overflow = self.toolbar.compute_overflow(
+            // 精度选择器宽度随吸附文本变化：折叠预算与绘制共用同一函数，
+            // 否则按钮变宽后总宽不跟着变，会压住右侧分组。
+            let overflow = self.toolbar.compute_overflow_localized(
                 toolbar::right_content_width(self, viewport_width),
                 arrangement_mode,
+                language,
             );
             let has_selection = self.editor.selected_notes_count() > 0;
             Some(ToolbarModel {

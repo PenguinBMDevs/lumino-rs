@@ -10,8 +10,12 @@
 //! - [`controls`]：录制 / 走带 / 循环 / 撤销重做 / 检测仪表盘；
 //! - [`tools`]：工具选择区 + 精度下拉；
 //! - [`right_side`]：洋葱皮 / 自动滚动 / 协作 / 「更多」。
+//!
+//! [`precision`] 单独成模块：它在**帧外**也被调用（生产折叠预算），不能依赖 `Ui`。
 
 mod controls;
+/// 精度选择器宽度度量：绘制与折叠预算共用的唯一来源（生产折叠在帧外决策）。
+pub mod precision;
 mod right_side;
 mod tools;
 
@@ -108,11 +112,13 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
     // Tools（宽度由条目尺寸累加，对应 上一代 的 `Length::Shrink`）
     if model.groups.tools {
         let visible = visible_tool_count(model);
+        // 精度选择器宽度随吸附文本变化：与生产折叠预算同一函数，总宽同步让位。
+        let precision_width = precision::selector_width(&model.precision_label, &model.snap);
         group(
             ui,
             Rect::from_min_size(
                 egui::pos2(x, y),
-                Vec2::new(tools::width(ui, visible, &model.precision_label), h),
+                Vec2::new(tools::width(visible, precision_width), h),
             ),
             |ui| tools::show(ui, icons, model),
         );

@@ -212,9 +212,12 @@ impl Root {
         viewport_width: f32,
     ) -> Option<Message> {
         let arrangement_mode = self.sidebar.is_arrangement_route();
-        let overflow = self
-            .toolbar
-            .compute_overflow(right_content_width(self, viewport_width), arrangement_mode);
+        // 与模型构建同一入口：语言 + 吸附文本 → 同一精度选择器宽度 → 同一折叠结果。
+        let overflow = self.toolbar.compute_overflow_localized(
+            right_content_width(self, viewport_width),
+            arrangement_mode,
+            self.settings.display.language,
+        );
         if !overflow.has_overflow() {
             return None;
         }
