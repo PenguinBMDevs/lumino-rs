@@ -53,21 +53,14 @@ pub(super) fn add_commas(num: f64) -> String {
 pub(super) fn abbreviate(num: f64, digit_scale: f64) -> String {
     let mut v = num;
     let mut suffix = "";
-    if v.abs() >= 1000.0 {
-        v /= 1000.0;
-        suffix = "K";
-    }
-    if v.abs() >= 1000.0 {
-        v /= 1000.0;
-        suffix = "M";
-    }
-    if v.abs() >= 1000.0 {
-        v /= 1000.0;
-        suffix = "B";
-    }
-    if v.abs() >= 1000.0 {
-        v /= 1000.0;
-        suffix = "T";
+    // 四轮独立判断改为循环：判断/除法/后缀赋值顺序与后缀上限完全一致。
+    // 注意不能用 `if v.abs() < 1000.0 { break }` 反转条件：NaN 下 >= 与 < 同为 false，
+    // 早退会让 NaN 错误地连除四次并带上 T；无穷值也须保持四轮除法后保留 T。
+    for unit in ["K", "M", "B", "T"] {
+        if v.abs() >= 1000.0 {
+            v /= 1000.0;
+            suffix = unit;
+        }
     }
     let m = digit_scale.max(1.0);
     let trimmed = (v * m).floor() / m;
@@ -131,6 +124,77 @@ mod tests {
         assert_eq!(abbreviate(2_000_000.0, scale), "2M");
         assert_eq!(abbreviate(3_500_000_000.0, scale), "3.5B");
         assert_eq!(abbreviate(4_200_000_000_000.0, scale), "4.2T");
+    }
+
+    #[test]
+    fn test_abbreviate_negative_and_t_cap() {
+        let scale = 10.0f64.powi(3).floor();
+        assert_eq!(abbreviate(-1500.0, scale), "-1.5K");
+        assert_eq!(abbreviate(-2_000_000.0, scale), "-2M");
+        // 超过 T 仍最多四级：1e15 → 1000T，1e18 → 1000000T
+        assert_eq!(abbreviate(1e15, scale), "1000T");
+        assert_eq!(abbreviate(1e18, scale), "1000000T");
+    }
+
+    #[test]
+    fn test_abbreviate_special_float_values() {
+        let scale = 10.0f64.powi(3).floor();
+        // NaN 的 >= 判定为 false：不除、不带后缀；不能改成 < + 早退
+        assert_eq!(abbreviate(f64::NAN, scale), "NaN");
+        assert_eq!(abbreviate(f64::INFINITY, scale), "infT");
+        assert_eq!(abbreviate(f64::NEG_INFINITY, scale), "-infT");
+    }
+
+    #[test]
+    fn test_abbreviate_matches_original_four_if_reference() {
+        // 参照实现保留原四级 if，差分比较钉住循环改造的等价性
+        fn original(num: f64, digit_scale: f64) -> String {
+            let mut v = num;
+            let mut suffix = "";
+            if v.abs() >= 1000.0 {
+                v /= 1000.0;
+                suffix = "K";
+            }
+            if v.abs() >= 1000.0 {
+                v /= 1000.0;
+                suffix = "M";
+            }
+            if v.abs() >= 1000.0 {
+                v /= 1000.0;
+                suffix = "B";
+            }
+            if v.abs() >= 1000.0 {
+                v /= 1000.0;
+                suffix = "T";
+            }
+            let m = digit_scale.max(1.0);
+            let trimmed = (v * m).floor() / m;
+            format!("{trimmed}{suffix}")
+        }
+
+        let scale = 1e3;
+        for &num in &[
+            0.0,
+            -0.0,
+            999.0,
+            1000.0,
+            -1500.0,
+            999_999.0,
+            1e6,
+            1e9,
+            1e12,
+            1e15,
+            1e18,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert_eq!(
+                abbreviate(num, scale),
+                original(num, scale),
+                "num={num} 的缩写结果必须与原四级 if 一致"
+            );
+        }
     }
 
     #[test]

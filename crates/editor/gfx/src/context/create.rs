@@ -13,6 +13,21 @@ use crate::context::{Context, Result, SHARED_GPU, SharedGpu, SharedGpuState, gpu
 use crate::device_status;
 use crate::epoch::GpuEpoch;
 
+/// 按优先级表取首个受支持的呈现模式；全不支持时返回 `fallback`。
+///
+/// `find` 按数组顺序短路，与原 if/else if 链的优先级语义完全一致。
+fn preferred(
+    modes: &[wgpu::PresentMode],
+    priority: &[wgpu::PresentMode],
+    fallback: wgpu::PresentMode,
+) -> wgpu::PresentMode {
+    priority
+        .iter()
+        .copied()
+        .find(|mode| modes.contains(mode))
+        .unwrap_or(fallback)
+}
+
 /// 根据可用的 present modes 选择最优的 present mode
 ///
 /// macOS 上使用 Mailbox 优先策略（2026-04-24）：
@@ -24,20 +39,20 @@ fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     // macOS：Mailbox 优先，消除画面撕裂
     #[cfg(target_os = "macos")]
     {
-        if modes.contains(&wgpu::PresentMode::Mailbox) {
-            return wgpu::PresentMode::Mailbox;
-        }
-        if modes.contains(&wgpu::PresentMode::Fifo) {
-            return wgpu::PresentMode::Fifo;
-        }
-        if modes.contains(&wgpu::PresentMode::AutoVsync) {
-            return wgpu::PresentMode::AutoVsync;
-        }
-        if modes.contains(&wgpu::PresentMode::Immediate) {
+        let mode = preferred(
+            modes,
+            &[
+                wgpu::PresentMode::Mailbox,
+                wgpu::PresentMode::Fifo,
+                wgpu::PresentMode::AutoVsync,
+                wgpu::PresentMode::Immediate,
+            ],
+            wgpu::PresentMode::AutoVsync,
+        );
+        if mode == wgpu::PresentMode::Immediate {
             tracing::warn!("仅 Immediate 模式可用——将禁用垂直同步，macOS 上可能出现画面撕裂");
-            return wgpu::PresentMode::Immediate;
         }
-        wgpu::PresentMode::AutoVsync
+        mode
     }
 
     // 非 macOS 平台：Immediate 优先，降低输入延迟
@@ -48,33 +63,32 @@ fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
         // （`device/global.rs:2022`），失败后永久留空 → 此后每帧 `get_current_texture`
         // 恒报 `NotConfigured` → 黑屏。已验证可渲染的最小配置是 `AutoVsync`
         // （见 `crates/tools/android-probe`，同机同栈跑通）。
+        // 因此 Android 的顺序与兜底值是刻意固定的，不得与其他平台统一。
         #[cfg(target_os = "android")]
         {
-            if modes.contains(&wgpu::PresentMode::AutoVsync) {
-                return wgpu::PresentMode::AutoVsync;
-            }
-            if modes.contains(&wgpu::PresentMode::Fifo) {
-                return wgpu::PresentMode::Fifo;
-            }
-            if modes.contains(&wgpu::PresentMode::Mailbox) {
-                return wgpu::PresentMode::Mailbox;
-            }
-            return wgpu::PresentMode::Immediate;
+            preferred(
+                modes,
+                &[
+                    wgpu::PresentMode::AutoVsync,
+                    wgpu::PresentMode::Fifo,
+                    wgpu::PresentMode::Mailbox,
+                ],
+                wgpu::PresentMode::Immediate,
+            )
         }
 
         #[cfg(not(target_os = "android"))]
         {
-            if modes.contains(&wgpu::PresentMode::Immediate) {
-                wgpu::PresentMode::Immediate
-            } else if modes.contains(&wgpu::PresentMode::Mailbox) {
-                wgpu::PresentMode::Mailbox
-            } else if modes.contains(&wgpu::PresentMode::Fifo) {
-                wgpu::PresentMode::Fifo
-            } else if modes.contains(&wgpu::PresentMode::AutoVsync) {
-                wgpu::PresentMode::AutoVsync
-            } else {
-                wgpu::PresentMode::Fifo
-            }
+            preferred(
+                modes,
+                &[
+                    wgpu::PresentMode::Immediate,
+                    wgpu::PresentMode::Mailbox,
+                    wgpu::PresentMode::Fifo,
+                    wgpu::PresentMode::AutoVsync,
+                ],
+                wgpu::PresentMode::Fifo,
+            )
         }
     }
 }
@@ -304,5 +318,74 @@ impl Context {
             epoch,
             surface_factory: Box::new(surface_factory),
         })
+    }
+}
+
+/// 呈现模式查表：通用优先级语义 + 各平台策略固化（顺序与兜底值不得被"统一"）。
+#[cfg(test)]
+mod tests {
+    use super::{preferred, select_present_mode};
+    use wgpu::PresentMode as P;
+
+    #[test]
+    fn preferred_picks_first_supported_in_priority_order() {
+        let priority = [P::Mailbox, P::Fifo, P::AutoVsync, P::Immediate];
+        assert_eq!(
+            preferred(&[P::Fifo, P::Mailbox], &priority, P::AutoVsync),
+            P::Mailbox,
+            "优先表顺序优先于 modes 的枚举顺序"
+        );
+        assert_eq!(
+            preferred(&[P::Mailbox], &priority, P::AutoVsync),
+            P::Mailbox
+        );
+    }
+
+    #[test]
+    fn preferred_falls_back_when_empty_or_all_unsupported() {
+        let priority = [P::Mailbox, P::Fifo];
+        assert_eq!(preferred(&[], &priority, P::Fifo), P::Fifo);
+        assert_eq!(preferred(&[P::AutoVsync], &priority, P::Fifo), P::Fifo);
+    }
+
+    #[test]
+    fn preferred_tolerates_duplicate_modes() {
+        let priority = [P::Mailbox, P::Fifo, P::Mailbox];
+        assert_eq!(
+            preferred(&[P::Fifo, P::Mailbox], &priority, P::AutoVsync),
+            P::Mailbox
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_policy_prefers_mailbox_and_immediate_is_last_resort() {
+        assert_eq!(select_present_mode(&[P::Immediate, P::Mailbox]), P::Mailbox);
+        assert_eq!(select_present_mode(&[P::Immediate]), P::Immediate);
+        // 全不支持 → AutoVsync 兜底（即便它不在 modes 中）
+        assert_eq!(select_present_mode(&[]), P::AutoVsync);
+    }
+
+    #[cfg(target_os = "android")]
+    #[test]
+    fn android_policy_pins_autovsync_order_and_immediate_fallback() {
+        // Mailbox 在列表里，但 AutoVsync 优先级更高：必须先选 AutoVsync
+        assert_eq!(
+            select_present_mode(&[P::Mailbox, P::Fifo, P::AutoVsync]),
+            P::AutoVsync
+        );
+        assert_eq!(select_present_mode(&[P::Mailbox, P::Fifo]), P::Fifo);
+        assert_eq!(select_present_mode(&[P::Mailbox]), P::Mailbox);
+        // 兜底值即使不在 modes 里也必须是 Immediate（真机黑屏教训）
+        assert_eq!(select_present_mode(&[]), P::Immediate);
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "android")))]
+    #[test]
+    fn desktop_policy_prefers_immediate_with_fifo_fallback() {
+        assert_eq!(select_present_mode(&[P::Fifo, P::Immediate]), P::Immediate);
+        assert_eq!(select_present_mode(&[P::Mailbox, P::Fifo]), P::Mailbox);
+        assert_eq!(select_present_mode(&[P::AutoVsync]), P::AutoVsync);
+        assert_eq!(select_present_mode(&[]), P::Fifo);
     }
 }

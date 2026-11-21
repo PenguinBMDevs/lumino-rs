@@ -243,3 +243,52 @@ fn main_track_noop_batch_does_not_bump_onion_epoch() {
         "丢弃的事件不得换代（内容以 document 为准，稍后全量同步）"
     );
 }
+
+/// 流式 Chunk 段表 upsert：空表 / 同轨续写 / 异轨新段 / 回到旧轨 / 空 chunk。
+/// 真值表固化在纯函数上，GPU 状态机本身不在测试范围。
+#[test]
+fn stream_upsert_empty_table_creates_first_segment() {
+    let mut segments = Vec::new();
+    upsert_stream_segment(&mut segments, 3, 0, 7);
+    assert_eq!(segments, vec![seg(3, 0, 7)]);
+}
+
+#[test]
+fn stream_upsert_same_track_extends_last_segment() {
+    let mut segments = vec![seg(0, 0, 10)];
+    // 追加前已有 10 个实例：同轨续写只加 len，不改 offset
+    upsert_stream_segment(&mut segments, 0, 10, 5);
+    assert_eq!(segments, vec![seg(0, 0, 15)]);
+}
+
+#[test]
+fn stream_upsert_different_track_appends_new_segment() {
+    let mut segments = vec![seg(0, 0, 10)];
+    upsert_stream_segment(&mut segments, 1, 10, 4);
+    assert_eq!(segments, vec![seg(0, 0, 10), seg(1, 10, 4)]);
+}
+
+#[test]
+fn stream_upsert_returning_to_old_track_starts_new_segment() {
+    // 离开轨 0 又回来：末段是轨 1，必须另起新段而非改动旧的轨 0 段
+    let mut segments = vec![seg(0, 0, 10), seg(1, 10, 4)];
+    upsert_stream_segment(&mut segments, 0, 14, 6);
+    assert_eq!(segments, vec![seg(0, 0, 10), seg(1, 10, 4), seg(0, 14, 6)]);
+}
+
+#[test]
+fn stream_upsert_empty_chunk_keeps_current_branch_behavior() {
+    // 同轨空块：len += 0
+    let mut same = vec![seg(0, 0, 10)];
+    upsert_stream_segment(&mut same, 0, 10, 0);
+    assert_eq!(same, vec![seg(0, 0, 10)]);
+
+    // 异轨/空表空块：仍创建 len = 0 的段（offset = 追加前实例数）
+    let mut other = vec![seg(0, 0, 10)];
+    upsert_stream_segment(&mut other, 1, 10, 0);
+    assert_eq!(other, vec![seg(0, 0, 10), seg(1, 10, 0)]);
+
+    let mut empty = Vec::new();
+    upsert_stream_segment(&mut empty, 1, 0, 0);
+    assert_eq!(empty, vec![seg(1, 0, 0)]);
+}
