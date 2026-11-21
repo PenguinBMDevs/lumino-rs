@@ -803,6 +803,8 @@ mod load_confirm_tests;
 #[cfg(test)]
 mod memory_monitor_tests;
 #[cfg(test)]
+mod menu_tests;
+#[cfg(test)]
 mod mixer_tests;
 #[cfg(test)]
 mod project_settings_tests;

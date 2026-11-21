@@ -138,6 +138,8 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &ArrangementModel) -> Option<Arran
     // 与泳道 / 钢琴卷帘同一份手势解析：双轴触控板滑动、Shift+滚轮转横向。
     if let Some(pos) = ui.ctx().input(|i| i.pointer.interact_pos())
         && lanes.contains(pos)
+        // 下拉菜单 / 弹层盖住轨道列时不得滚轮穿透（与泳道同一门控）
+        && !super::floating::pointer_over_higher_layer(ui, pos)
         && !ui.ctx().input(|i| i.modifiers.ctrl)
         && let Some(gesture) = wheel::WheelGesture::collect(ui)
     {
@@ -283,8 +285,10 @@ fn ruler_input(
     let zoom = model.zoom_x.max(1e-6);
 
     // 滚轮缩放：只在指针位于标尺内时生效（与 上一代 相同的位置校验）。
+    // 下拉菜单 / 弹层盖住标尺时不得缩放（裸输入没有命中集合，必须显式让位）。
     if let Some(pos) = pointer
         && rect.contains(pos)
+        && !super::floating::pointer_over_higher_layer(ui, pos)
         && let Some(factor) = zoom_factor(ui)
     {
         let local = (pos.x - rect.left()).clamp(0.0, rect.width());
@@ -307,7 +311,10 @@ fn ruler_input(
         .data(|d| d.get_temp::<bool>(drag_id))
         .unwrap_or(false);
 
-    let started = pressed && pointer.is_some_and(|pos| rect.contains(pos));
+    let started = pressed
+        && pointer.is_some_and(|pos| {
+            rect.contains(pos) && !super::floating::pointer_over_higher_layer(ui, pos)
+        });
     if started {
         ui.ctx().data_mut(|d| d.insert_temp(drag_id, true));
     } else if !down {

@@ -87,7 +87,12 @@ fn add_track(ui: &egui::Ui, left: f32, bottom: f32, row_bottom: f32) -> Option<A
     let released = ui.ctx().input(|i| i.pointer.primary_released());
     let press_id = egui::Id::unique("lumino.arrangement.add-track.press");
     let mut armed: bool = ui.ctx().data(|d| d.get_temp(press_id)).unwrap_or(false);
-    if pressed && pointer.is_some_and(|p| add.contains(p)) {
+    // 下拉菜单 / 弹层盖住底部按钮时不得触发（裸输入需显式图层门控）
+    if pressed
+        && pointer.is_some_and(|p| {
+            add.contains(p) && !super::super::floating::pointer_over_higher_layer(ui, p)
+        })
+    {
         armed = true;
         ui.ctx().data_mut(|d| d.insert_temp(press_id, armed));
     }

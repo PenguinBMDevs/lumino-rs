@@ -17,6 +17,20 @@
 
 use egui::{Context, Id, Order, Rect, Sense, Ui};
 
+/// 指针是否落在**更高图层**的浮层上（标题栏下拉 / 工具栏弹层 / 溢出菜单…）。
+///
+/// 走带泳道、标尺、轨道列这类 band 直接读 `i.pointer` 的裸状态（跨帧拖拽需要），
+/// 不经过 `ui.interact` 的命中集合，因此必须显式做图层门控；否则点击菜单项会
+/// 同时作用于下层 band——真机表现就是「下拉菜单点一下，走带选区被清空」。
+///
+/// 与 `scrollbar::show` 的 `overlay_above` 同口径；与 `Host::egui_layer_owns_pos`
+/// 同源（都问 egui 的图层栈），保证画布输入与 egui 内 band 的让位规则一致。
+pub(crate) fn pointer_over_higher_layer(ui: &Ui, pos: egui::Pos2) -> bool {
+    ui.ctx()
+        .layer_id_at(pos)
+        .is_some_and(|layer| layer.order > ui.layer_id().order)
+}
+
 /// 在独立图层上绘制浮层面板。
 ///
 /// - `id`：浮层稳定标识（同一浮层跨帧必须一致，否则 Area 状态丢失）；
