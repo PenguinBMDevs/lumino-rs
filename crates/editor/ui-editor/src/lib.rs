@@ -263,6 +263,9 @@ pub struct Editor {
     pub(crate) shape_edit_armed: Option<crate::interaction::shape_edit_ui::ShapeEditTarget>,
     /// 020 多选组编辑的成员（`pending_composed` 下标；单目标时为空）
     pub(crate) shape_group_edit: Option<Vec<usize>>,
+    /// DRAW-049：Bake 放置确认态（A+B；复用 pending composed + shape_edit_ui）
+    pub(crate) bake_placement:
+        Option<crate::interaction::shape_bake_placement::BakePlacementSession>,
     /// DRAW-041C：Bake 前组合会话的 redo 栈（与 `editor_state.pending_composed` 成对）
     pub(crate) pending_composed_redo: Vec<lumino_editor_state::PendingComposed>,
     /// DRAW-041C 阶段 3：pending composed 手柄编辑的 undo 快照

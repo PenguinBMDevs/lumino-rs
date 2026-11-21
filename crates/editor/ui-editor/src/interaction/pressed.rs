@@ -51,6 +51,11 @@ impl Editor {
             return;
         }
 
+        // DRAW-049：Bake 放置确认态（8 手柄 / 空白拉框）
+        if self.bake_placement_active() && self.bake_placement_press(pos, snapped_tick, key) {
+            return;
+        }
+
         let hit_result = self.hit_test_note(pos);
 
         match self.editor_state.tool {

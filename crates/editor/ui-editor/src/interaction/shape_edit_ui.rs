@@ -180,11 +180,20 @@ impl Editor {
     /// 入口：双击空白处、右键「编辑图形」再点一次、切换工具。
     pub fn exit_shape_edit(&mut self) -> bool {
         let was = self.shape_edit_armed.is_some() || self.shape_edit.is_some();
+        let was_bake = self.bake_placement.is_some();
         if self.shape_edit.is_some() {
             self.cancel_shape_edit();
         }
+        // DRAW-049：退出 8 手柄 = 结束 Bake 放置态；pending 保留，预览音符
+        // 恢复显示。否则残留的 `bake_placement_active` 会继续隐藏音符块，
+        // 用户只看到蓝色矢量轮廓，且下一次 ✓ 会直接 Bake。
+        self.bake_placement = None;
         self.shape_edit_armed = None;
         self.shape_group_edit = None;
+        // 放置态退出后不保留不可操作的黄色选择框；pending 仍在但不再选中。
+        if was_bake {
+            self.editor_state.shape_select.clear_selection();
+        }
         self.grid_cache.clear();
         was
     }

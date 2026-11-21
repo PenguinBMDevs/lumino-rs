@@ -11,6 +11,11 @@ impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: lumino_ui_core::geom::Point) {
         crate::puffin_profiler::moved_handle();
+        // DRAW-049：Bake 放置态 B 阶段拉框
+        if self.bake_marquee_active() {
+            self.handle_bake_marquee_moved(pos);
+            return;
+        }
         // DRAW-044：柔化模式下拖动 = 调半径
         if self.round_corners_active() && self.round_corner_moved(pos) {
             return;

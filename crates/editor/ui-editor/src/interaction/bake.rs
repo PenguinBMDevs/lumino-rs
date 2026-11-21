@@ -4,7 +4,7 @@
 //! 这里按历史 group 保存各工具的 pending 状态；undo 恢复，redo 再次丢弃。
 
 use lumino_core::BrushConfig;
-use lumino_editor_state::{BrushToolState, LineToolState, ShapeToolState};
+use lumino_editor_state::{BrushToolState, ComposedKind, LineToolState, ShapeToolState};
 use lumino_message::Tool;
 
 use crate::Editor;
@@ -51,6 +51,13 @@ impl Editor {
         let Some(pending) = self.baked_pending.get(&group).cloned() else {
             return false;
         };
+        // DRAW-049：撤销回到 pending 时，Bake 放置会话/手柄必须收口，
+        // 否则残留的 `bake_placement_active` 会让预览音符块继续被隐藏，
+        // 用户只看到黄色选框、看不到 pending 音符预览。
+        self.bake_placement = None;
+        self.shape_edit = None;
+        self.shape_edit_armed = None;
+        self.shape_group_edit = None;
         let mut restored_composed = 0usize;
         match pending {
             BakePending::Line(mut state) => {
@@ -87,6 +94,43 @@ impl Editor {
             {
                 self.editor_state.shape_select.select_only(id);
             }
+            // DRAW-049：第一次撤销 Bake 后回到「黄色 8 手柄」放置态，
+            // 而不是只留一个选择框；第二次撤销再由 `Editor::undo` 退出到
+            // pending 音符合集预览。
+            //
+            // 只对**本次放置流程**产生的单支 Single 组合接管：Slice/Mould 等
+            // 多支组合、抽屉 Insert 有各自的撤销语义，不能被 8 手柄会话截胡。
+            let is_placement =
+                self.editor_state
+                    .pending_composed
+                    .get(index)
+                    .is_some_and(|composed| {
+                        composed.kind == ComposedKind::Single && composed.results.len() == 1
+                    });
+            if is_placement {
+                if self.current_tool() != Tool::ShapeSelect {
+                    self.set_tool(Tool::ShapeSelect);
+                }
+                let part = self
+                    .editor_state
+                    .pending_composed
+                    .get(index)
+                    .and_then(|composed| composed.results.first());
+                if let Some(part) = part {
+                    self.bake_placement = Some(
+                        crate::interaction::shape_bake_placement::BakePlacementSession {
+                            pending_index: index,
+                            original_model: part.model.clone(),
+                            original_notes: part.notes.clone(),
+                            marquee_active: false,
+                        },
+                    );
+                    self.shape_edit = None;
+                    self.shape_edit_armed = None;
+                    self.shape_group_edit = None;
+                    let _ = self.enable_shape_edit();
+                }
+            }
         }
         self.grid_cache.clear();
         true
@@ -97,6 +141,11 @@ impl Editor {
         let Some(pending) = self.baked_pending.get(&group).cloned() else {
             return false;
         };
+        // DRAW-049：redo 再次丢弃矢量；放置会话/手柄一并收口。
+        self.bake_placement = None;
+        self.shape_edit = None;
+        self.shape_edit_armed = None;
+        self.shape_group_edit = None;
         match pending {
             BakePending::Line(_) => self.editor_state.line_tool.reset(),
             BakePending::Shape { .. } => {

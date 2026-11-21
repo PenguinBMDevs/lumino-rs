@@ -21,6 +21,7 @@ mod pressed;
 mod preview;
 mod released;
 pub(crate) mod round_corner;
+pub(crate) mod shape_bake_placement;
 pub(crate) mod shape_bridge;
 pub(crate) mod shape_compose;
 pub(crate) mod shape_edit_ui;
@@ -140,10 +141,20 @@ impl Editor {
                 self.cancel_brush();
             }
             EditorAction::ShapeToolConfirm => {
-                self.confirm_shape_tool();
+                if self.bake_placement_active() {
+                    self.confirm_bake_placement();
+                } else if !self.enter_bake_placement_from_pending()
+                    && !self.begin_shape_bake_placement()
+                {
+                    self.confirm_shape_tool();
+                }
             }
             EditorAction::ShapeToolCancel => {
-                self.cancel_shape_tool();
+                if self.bake_placement_active() {
+                    self.cancel_bake_placement();
+                } else {
+                    self.cancel_shape_tool();
+                }
             }
             EditorAction::TextToolTextChanged(s) => {
                 self.set_text_tool_text(s);

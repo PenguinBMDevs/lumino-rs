@@ -28,6 +28,12 @@ impl Editor {
         self.marquee_anchor_tick = None;
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
+        // DRAW-049：Bake 放置态 B 阶段拉框收口
+        if self.bake_marquee_active() {
+            self.handle_bake_marquee_released(edit_state);
+            return;
+        }
+
         // 图形选中工具：结束拖动（提交移动）或结束空白拉框（按框命中选中）
         // 020：编辑图形的锚点拖拽同样在这里收口（`finish_shape_edit`），否则松手
         // 不提交、下一次按下会覆盖掉未完成的手柄状态。
