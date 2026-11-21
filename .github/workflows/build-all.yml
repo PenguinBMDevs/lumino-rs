@@ -220,16 +220,21 @@ jobs:
           FILENAME="Lumino-v${{ github.event.inputs.version }}-Windows-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
 
-      - name: Rename binary
+      # PowerShell 不支持 `\` 续行：上一版把目标写成了单独的 `\`，
+      # Move-Item 实际会把 exe 移到盘符根目录，artifact 路径自然找不到。
+      # 这里改为单行 Copy-Item，并统一落到 dist/，与 Linux/macOS 上传方式一致。
+      - name: Stage binary
         shell: pwsh
         run: |
-          Move-Item "target/${{ matrix.target }}/release/lumino-rs${{ matrix.extension }}" \
-                    "${{ steps.filename.outputs.filename }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $source = "target/${{ matrix.target }}/release/lumino-rs${{ matrix.extension }}"
+          $dest = "dist/${{ steps.filename.outputs.filename }}"
+          Copy-Item -LiteralPath $source -Destination $dest
 
       - uses: actions/upload-artifact@v6.0.0
         with:
           name: ${{ steps.filename.outputs.filename }}
-          path: ${{ steps.filename.outputs.filename }}
+          path: dist/*
           if-no-files-found: error
 
   # ==================== macOS ====================
