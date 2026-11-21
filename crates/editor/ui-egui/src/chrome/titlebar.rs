@@ -30,6 +30,8 @@ pub enum TitlebarAction {
 }
 
 const ACTION_ID: &str = "lumino.titlebar.action";
+/// logo 交互区 id：双击命中用，band 测试也据此取矩形。
+const LOGO_ID: &str = "lumino.titlebar.logo";
 
 /// 记录本帧标题栏动作（一帧一条）。
 pub fn push_titlebar_action(ctx: &egui::Context, action: TitlebarAction) {
@@ -145,7 +147,13 @@ fn text_width(ui: &egui::Ui, label: &str) -> f32 {
 fn menu(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32], icons: &mut IconCache) {
     ui.horizontal_centered(|ui| {
         ui.add_space(15.0);
-        ui.add(icons.default_image(ui.ctx(), Icon::LogoInApp, 18.0));
+        let logo = ui.add(icons.default_image(ui.ctx(), Icon::LogoInApp, 18.0));
+        // 双击 logo = 关闭主窗口：只回传 `TitlebarAction::Close`，未保存确认 /
+        // 保存中挂起由生产侧关闭链路负责。单击无动作，不干扰菜单与拖动区。
+        let logo = ui.interact(logo.rect, egui::Id::unique(LOGO_ID), egui::Sense::click());
+        if logo.double_clicked() {
+            push_titlebar_action(ui.ctx(), TitlebarAction::Close);
+        }
         ui.add_space(15.0);
         // 标签支持点击/悬停；矩形写回 egui 内存，供下拉面板定位。
         let _ = menu_panel::show_labels(ui, model, widths);

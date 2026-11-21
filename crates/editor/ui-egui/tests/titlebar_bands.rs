@@ -36,11 +36,23 @@ fn popup_model() -> ChromeModel {
 }
 
 fn harness(model: ChromeModel) -> (Harness<'static>, Rc<RefCell<Vec<TitlebarAction>>>) {
+    harness_with_step_dt(model, 0.25)
+}
+
+/// 与 [`harness`] 相同，但可指定模拟步长。
+///
+/// egui 的双击判定窗口是 300ms（`max_double_click_delay`），kittest 默认步长
+/// 250ms 会把两次点击推到窗口之外；双击手势测试需要更细的步长。
+fn harness_with_step_dt(
+    model: ChromeModel,
+    step_dt: f32,
+) -> (Harness<'static>, Rc<RefCell<Vec<TitlebarAction>>>) {
     let actions = Rc::new(RefCell::new(Vec::new()));
     let actions_w = actions.clone();
     let mut icons = lumino_ui_egui::icons::IconCache::default();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1600.0, 900.0))
+        .with_step_dt(step_dt)
         .with_accessibility_check(false)
         .build_ui(move |ui| {
             chrome::show_bands(ui, &model, &mut icons);
@@ -50,6 +62,14 @@ fn harness(model: ChromeModel) -> (Harness<'static>, Rc<RefCell<Vec<TitlebarActi
         });
     harness.run();
     (harness, actions)
+}
+
+/// 标题栏 logo 的交互矩形（`titlebar::menu` 用固定 id 注册）。
+fn logo_rect(h: &Harness<'static>) -> egui::Rect {
+    h.ctx
+        .read_response(egui::Id::unique("lumino.titlebar.logo"))
+        .expect("标题栏 logo 应注册可交互矩形")
+        .rect
 }
 
 fn press(harness: &mut Harness<'static>, pos: egui::Pos2) {
@@ -124,6 +144,33 @@ fn main_titlebar_traffic_buttons_emit_actions() {
             "点 {pos:?} 应回传 {expected:?}"
         );
     }
+}
+
+#[test]
+fn logo_double_click_emits_close() {
+    // 5ms 步长保证两次点击都落在 egui 的 300ms 双击窗口内。
+    let (mut h, actions) = harness_with_step_dt(main_model(), 0.005);
+    let center = logo_rect(&h).center();
+    click(&mut h, center);
+    click(&mut h, center);
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&TitlebarAction::Close),
+        "双击标题栏 logo 应回传 Close（与红叉同一关闭链路）：{:?}",
+        actions.borrow()
+    );
+}
+
+#[test]
+fn logo_single_click_does_nothing() {
+    let (mut h, actions) = harness_with_step_dt(main_model(), 0.005);
+    let center = logo_rect(&h).center();
+    click(&mut h, center);
+    assert!(
+        actions.borrow().is_empty(),
+        "单击 logo 不应产生任何标题栏动作（不拖动 / 不最大化 / 不关闭）：{:?}",
+        actions.borrow()
+    );
 }
 
 #[test]
