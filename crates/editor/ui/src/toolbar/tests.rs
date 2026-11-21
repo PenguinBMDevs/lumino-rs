@@ -267,6 +267,54 @@ fn test_drag_release_snaps_to_default_when_near() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 仪表盘字段编辑（BPM / PPQ）
+// ---------------------------------------------------------------------------
+
+/// BPM 进入编辑：整数不带 `.0`；只接受数字与小数点；确认后清空。
+#[test]
+fn test_bpm_edit_buffer_initializes_and_filters() {
+    let mut toolbar = Toolbar::new();
+
+    toolbar.update(Event::BpmEditToggled(120.0));
+    assert!(toolbar.bpm_editing, "点击 BPM 应进入编辑态");
+    assert_eq!(toolbar.bpm_edit_buffer, "120", "整数 BPM 不应带 .0");
+
+    toolbar.update(Event::BpmEditChanged("140.".to_owned()));
+    assert_eq!(toolbar.bpm_edit_buffer, "140.");
+
+    toolbar.update(Event::BpmEditChanged("14a0".to_owned()));
+    assert_eq!(
+        toolbar.bpm_edit_buffer, "140.",
+        "非法字符整条丢弃，保留上一次合法输入"
+    );
+
+    toolbar.update(Event::BpmEditConfirmed);
+    assert!(!toolbar.bpm_editing, "确认后退出编辑态");
+    assert!(toolbar.bpm_edit_buffer.is_empty(), "确认后清空缓冲");
+}
+
+/// 再次点击 BPM（`BpmEditToggled`）语义为取消，且 BPM / PPQ 编辑互斥。
+#[test]
+fn test_bpm_and_ppq_editing_are_mutually_exclusive() {
+    let mut toolbar = Toolbar::new();
+
+    toolbar.update(Event::BpmEditToggled(120.0));
+    toolbar.update(Event::PpqEditToggled(960));
+    assert!(toolbar.ppq_editing, "应切换到 PPQ 编辑");
+    assert!(!toolbar.bpm_editing, "同一时间只允许编辑一个字段");
+    assert!(toolbar.bpm_edit_buffer.is_empty());
+
+    toolbar.update(Event::BpmEditToggled(120.0));
+    assert!(toolbar.bpm_editing, "应切换回 BPM 编辑");
+    assert!(!toolbar.ppq_editing);
+    assert!(toolbar.ppq_edit_buffer.is_empty());
+
+    toolbar.update(Event::BpmEditToggled(120.0));
+    assert!(!toolbar.bpm_editing, "再次点击同一字段 = 取消编辑");
+    assert!(toolbar.bpm_edit_error.is_none());
+}
+
 /// 拖拽结束吸附：释放点远离默认位时保留原位（允许停靠到任意位置）。
 #[test]
 fn test_drag_release_keeps_position_when_far() {

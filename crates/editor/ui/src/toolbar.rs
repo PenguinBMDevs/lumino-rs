@@ -11,6 +11,7 @@ pub mod event;
 pub(crate) mod overflow;
 mod resize;
 mod snapshot;
+pub(crate) use snapshot::{bpm_at_tick, tempo_index_at_tick};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -114,6 +115,17 @@ pub struct Toolbar {
     pub ppq_edit_buffer: String,
     /// PPQ 编辑提交错误（None = 无错误；失败时保留编辑态与原输入）
     pub ppq_edit_error: Option<String>,
+    /// BPM 编辑模式（true = 正在编辑）
+    pub bpm_editing: bool,
+    /// BPM 编辑缓冲区（十进制数字，如 `140` / `140.5`）
+    pub bpm_edit_buffer: String,
+    /// BPM 编辑提交错误（None = 无错误；失败时保留编辑态与原输入）
+    pub bpm_edit_error: Option<String>,
+    /// 进入 BPM 编辑时的播放位置（提交时按此锚点定位 tempo 点）
+    ///
+    /// 播放中编辑 BPM 时播放头会继续前进；不锚定就会在提交时改到"当前"另一个
+    /// 速度点，与用户开始编辑时看到的 BPM 不是同一个。
+    pub bpm_edit_anchor_tick: f32,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
     /// 音符绘制悬浮工具条是否打开（工具栏绘制入口按钮触发）

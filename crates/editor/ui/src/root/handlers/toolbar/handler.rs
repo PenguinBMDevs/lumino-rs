@@ -30,6 +30,23 @@ impl ToolbarHandler {
             return;
         }
 
+        // BPM 编辑确认：与 PPQ 同一契约（失败保留输入与错误，供用户继续改）。
+        if matches!(event, crate::toolbar::Event::BpmEditConfirmed) {
+            if !root.toolbar.bpm_editing {
+                return;
+            }
+            if Self::confirm_bpm_edit(root) {
+                root.toolbar.update(event);
+            }
+            return;
+        }
+
+        // 进入 BPM 编辑时锁定播放位置：播放中编辑时播放头继续前进，提交必须
+        // 修改用户一开始看到的那条 tempo 点，而不是「提交时刻」生效的另一条。
+        if matches!(event, crate::toolbar::Event::BpmEditToggled(_)) {
+            root.toolbar.bpm_edit_anchor_tick = root.editor.playback_position;
+        }
+
         // 颜料桶「分音符填充」面板打开时，除再次点击颜料桶与悬停外，其余工具栏操作
         // 先关闭它——与画刷 / 形状下拉同一「外部关闭」语义（面板内值变更 / 确认 / 取消
         // 走 `FillDivision` 消息，不经此处，故面板内交互不受影响）。
@@ -148,6 +165,81 @@ impl ToolbarHandler {
                 root.toolbar.ppq_edit_error = Some(error);
                 false
             }
+        }
+    }
+
+    /// 确认 BPM 编辑：十进制数校验 → 写入进入编辑时锚定的 tempo 点 → 清除编辑状态
+    ///
+    /// 返回 `false` 表示提交失败：调用方不得收起编辑态，输入框内容与错误提示保留。
+    fn confirm_bpm_edit(root: &mut Root) -> bool {
+        let max_bpm = root.editor.velocity_panel.tempo_max_bpm;
+        match Self::parse_bpm(&root.toolbar.bpm_edit_buffer, max_bpm) {
+            Ok(bpm) => {
+                root.toolbar.bpm_edit_error = None;
+                root.toolbar.bpm_editing = false;
+                root.toolbar.bpm_edit_buffer.clear();
+                Self::apply_bpm(root, bpm);
+                tracing::info!("BPM 已更新为 {}", bpm);
+                true
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "BPM 输入非法 {:?}（{error}），保留编辑态",
+                    root.toolbar.bpm_edit_buffer
+                );
+                root.toolbar.bpm_edit_error = Some(error);
+                false
+            }
+        }
+    }
+
+    /// 解析并校验 BPM 输入（十进制数，范围与 Tempo 面板一致）。
+    fn parse_bpm(src: &str, max_bpm: f64) -> Result<f64, String> {
+        use lumino_core::shape::expr::fmt_number;
+
+        let bpm: f64 = src
+            .trim()
+            .parse()
+            .map_err(|_| "请输入数字（如 120 或 120.5）".to_string())?;
+        if !bpm.is_finite() {
+            return Err("BPM 必须是有限数字".to_string());
+        }
+        if !(crate::editor::velocity::layout::TEMPO_BPM_MIN..=max_bpm).contains(&bpm) {
+            return Err(format!(
+                "数值 {} 超出范围 {}..={}",
+                fmt_number(bpm),
+                fmt_number(crate::editor::velocity::layout::TEMPO_BPM_MIN),
+                fmt_number(max_bpm),
+            ));
+        }
+        Ok(bpm)
+    }
+
+    /// 把 BPM 写入仪表盘当前显示的那个 tempo 点。
+    ///
+    /// - 显示值 = `bpm_edit_anchor_tick`（进入编辑时的播放位置）之前最近的速度点；
+    ///   没有点 → 新建 tick 0 的显式速度点（空速度表时仪表盘显示默认 120，
+    ///   编辑它就是把默认速度落到工程里）；
+    /// - 值未变化不产生历史记录，避免「点一下又点回来」污染撤销栈。
+    fn apply_bpm(root: &mut Root, bpm: f64) {
+        let tick = root.toolbar.bpm_edit_anchor_tick;
+        let active = {
+            let points = &root.editor.editor_state.data.tempo_points;
+            crate::toolbar::tempo_index_at_tick(points, tick)
+                .map(|index| (index, points[index].bpm))
+        };
+        match active {
+            None => {
+                root.editor.push_history();
+                root.editor.editor_state.data.add_tempo_point(0.0, bpm);
+                root.update_playback_bpm();
+            }
+            Some((index, old_bpm)) if (old_bpm - bpm).abs() > 1e-9 => {
+                root.editor.push_history();
+                root.editor.editor_state.data.set_tempo_point(index, bpm);
+                root.update_playback_bpm();
+            }
+            Some(_) => {}
         }
     }
 }

@@ -685,6 +685,9 @@ impl Root {
                 ppq_editing: self.toolbar.ppq_editing,
                 ppq_buffer: self.toolbar.ppq_edit_buffer.clone(),
                 ppq_error: self.toolbar.ppq_edit_error.clone(),
+                bpm_editing: self.toolbar.bpm_editing,
+                bpm_buffer: self.toolbar.bpm_edit_buffer.clone(),
+                bpm_error: self.toolbar.bpm_edit_error.clone(),
                 height: toolbar.height,
                 tips: toolbar::tips(&self.toolbar, language),
             })

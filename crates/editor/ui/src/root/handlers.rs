@@ -170,10 +170,11 @@ impl Root {
     /// 未处理的消息再交给 `MessageRouter` 路由到各专用处理器（Toolbar/Dialog/...）。
     /// 与运行时使用同一套分发逻辑，保证测试与产品行为一致。
     ///
-    /// PPQ 编辑只由工具栏输入框的失焦信号（`PpqBlur` → `PpqEditConfirmed`）收口。
-    /// 这里不再保留「任意非 PPQ 消息即自动确认」的兜底：生产分发走
-    /// `Host::route_message`（不经过本函数），兜底只会让测试断言一个生产不存在的
-    /// 行为；而且旧兜底用 `parse::<u16>()`，与输入框允许的整数表达式不同口径。
+    /// PPQ / BPM 编辑只由工具栏输入框的失焦信号（`DashboardBlur` →
+    /// `PpqEditConfirmed` / `BpmEditConfirmed`）收口。这里不再保留「任意非 PPQ
+    /// 消息即自动确认」的兜底：生产分发走 `Host::route_message`（不经过本函数），
+    /// 兜底只会让测试断言一个生产不存在的行为；而且旧兜底用 `parse::<u16>()`，
+    /// 与输入框允许的整数表达式不同口径。
     pub fn update(&mut self, message: Message) {
         // 批量消息先展开，使每个子消息都能走完整的分发逻辑
         if let Message::Batch(messages) = message {

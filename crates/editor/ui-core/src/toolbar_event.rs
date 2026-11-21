@@ -126,6 +126,12 @@ pub enum Event {
     ToggleOverflowMenu,
     /// 关闭溢出菜单
     CloseOverflowMenu,
+    /// 切换 BPM 编辑模式（开始/取消）。f64 = 当前 BPM 值
+    BpmEditToggled(f64),
+    /// BPM 编辑输入变更
+    BpmEditChanged(String),
+    /// BPM 编辑确认（按 Enter 或外部点击）
+    BpmEditConfirmed,
     /// Toggle PPQ 编辑模式（开始/取消）。u16 = 当前 PPQ 值
     PpqEditToggled(u16),
     /// PPQ 编辑输入变更

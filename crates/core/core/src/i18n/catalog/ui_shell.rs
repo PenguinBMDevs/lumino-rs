@@ -412,6 +412,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "精度" => Some("Precision"),
         "设置音符吸附到网格的精度" => Some("Set the grid precision notes snap to"),
         "查看并跳转到任意撤销步骤" => Some("View and jump to any undo step"),
+        "点击编辑 BPM（当前拍速）" => Some("Click to edit BPM (current tempo)"),
         "点击编辑 PPQ（每四分音符的脉冲数）" => {
             Some("Click to edit PPQ (pulses per quarter note)")
         }

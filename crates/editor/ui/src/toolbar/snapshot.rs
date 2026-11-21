@@ -32,16 +32,29 @@ impl Toolbar {
 }
 
 /// 取播放位置处的当前 BPM（取 tick 之前最近的速度点）。
-fn bpm_at_tick(points: &[TempoPoint], tick: f32) -> f64 {
-    let mut bpm = points.first().map(|p| p.bpm).unwrap_or(120.0);
-    for p in points {
-        if p.tick <= tick {
-            bpm = p.bpm;
+pub(crate) fn bpm_at_tick(points: &[TempoPoint], tick: f32) -> f64 {
+    tempo_index_at_tick(points, tick)
+        .and_then(|index| points.get(index))
+        .map_or(120.0, |point| point.bpm)
+}
+
+/// 取播放位置处生效的 tempo 点下标（与 [`bpm_at_tick`] 同口径）。
+///
+/// 空表返回 `None`；若所有点都在播放位置之后，返回首点（仪表盘显示的也是首点
+/// BPM），保证「显示哪个值就编辑哪个点」。
+pub(crate) fn tempo_index_at_tick(points: &[TempoPoint], tick: f32) -> Option<usize> {
+    if points.is_empty() {
+        return None;
+    }
+    let mut active = 0;
+    for (index, point) in points.iter().enumerate() {
+        if point.tick <= tick {
+            active = index;
         } else {
             break;
         }
     }
-    bpm
+    Some(active)
 }
 
 /// 从 tick 到 tempo 变化表换算为秒。

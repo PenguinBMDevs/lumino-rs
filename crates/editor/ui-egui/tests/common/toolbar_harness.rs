@@ -9,14 +9,15 @@ use std::rc::Rc;
 
 use egui::{Event, PointerButton, Pos2, RawInput};
 use egui_kittest::Harness;
-use lumino_ui_egui::chrome::PpqBlur;
+use lumino_ui_egui::chrome::DashboardBlur;
 use lumino_ui_egui::chrome::toolbar_popup::{self, ToolbarAction};
 use lumino_ui_egui::chrome::{ToolbarModel, toolbar as toolbar_view};
 use lumino_ui_egui::layout;
 
-/// 默认工具栏模型（PPQ 编辑缓冲初始化为 `1920`）。
+/// 默认工具栏模型（BPM / PPQ 编辑缓冲均已初始化）。
 pub fn model() -> ToolbarModel {
     ToolbarModel {
+        bpm_buffer: "120".to_owned(),
         ppq_buffer: "1920".to_owned(),
         ..ToolbarModel::default()
     }
@@ -45,8 +46,8 @@ pub fn harness(model: ToolbarModel) -> (Harness<'static>, Rc<RefCell<Vec<Toolbar
 pub struct BlurHarness {
     /// egui 测试宿主。
     pub harness: Harness<'static>,
-    /// 本帧失焦信号（`PpqBlur`）。
-    pub blurs: Rc<RefCell<Vec<PpqBlur>>>,
+    /// 本帧失焦信号（`DashboardBlur`）。
+    pub blurs: Rc<RefCell<Vec<DashboardBlur>>>,
     /// 单槽工具栏动作。
     pub actions: Rc<RefCell<Vec<ToolbarAction>>>,
 }
@@ -64,7 +65,7 @@ pub fn harness_blur(model: ToolbarModel) -> BlurHarness {
         .build_ui(move |ui| {
             lumino_ui_egui::fonts::install(ui.ctx());
             toolbar_view::show_model(ui, &model, &mut icons);
-            if let Some(blur) = lumino_ui_egui::chrome::toolbar::take_ppq_blur(ui.ctx()) {
+            if let Some(blur) = lumino_ui_egui::chrome::toolbar::take_dashboard_blur(ui.ctx()) {
                 blurs_w.borrow_mut().push(blur);
             }
             if let Some(action) = toolbar_popup::take_action(ui.ctx()) {

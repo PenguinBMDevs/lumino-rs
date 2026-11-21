@@ -256,6 +256,17 @@ impl Root {
         }
     }
 
+    /// 当前播放位置处的 BPM（与工具栏仪表盘显示同源）。
+    ///
+    /// 仪表盘点击 BPM 进入编辑时用它初始化缓冲区；确认时按同一口径定位要修改的
+    /// tempo 点（见 `toolbar::tempo_index_at_tick`），保证「显示哪个值就编辑哪个点」。
+    pub(crate) fn dashboard_bpm(&self) -> f64 {
+        crate::toolbar::bpm_at_tick(
+            &self.editor.editor_state.data.tempo_points,
+            self.editor.playback_position,
+        )
+    }
+
     /// 重置播放管理器（加载新文件时调用）
     pub fn reset_playback_manager(&mut self) {
         if self.playback.manager.is_some() {
