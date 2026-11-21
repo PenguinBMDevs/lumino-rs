@@ -101,11 +101,18 @@ fn test_pause_button_state_not_overridden_by_playing_frame() {
         "暂停后工具栏应立即标记为未播放（同步意图）"
     );
 
-    // 等待引擎处理 Pause 命令。关键：这 20ms 内不调用 update_playback，
-    // 因此 `frame_rx` 有界通道（容量 8）在播放期已被每秒上千帧 Playing 灌满、
-    // 此刻依旧饱和——Pause 推送的 Paused 帧在 `try_send` 满时**被丢弃**，
-    // 只写入 `last_frame` 缓存。这正是生产环境 bug 的复现条件。
-    thread::sleep(Duration::from_millis(20));
+    // 等待引擎真正处理完 Pause 命令（命令队列屏障代替原来的 `sleep(20ms)`）。
+    // 在此之前不调用 update_playback：`frame_rx` 有界通道（容量 8）在播放期已被
+    // 每秒上千帧 Playing 灌满、此刻依旧饱和——Pause 推送的 Paused 帧在 `try_send`
+    // 满时**被丢弃**，只写入 `last_frame` 缓存。这正是生产环境 bug 的复现条件。
+    // 屏障回执即证明 Pause 已执行（帧已推送或按上述规则被丢弃），不依赖墙钟调度。
+    assert!(
+        root.playback
+            .manager
+            .as_mut()
+            .is_some_and(|manager| manager.flush_commands()),
+        "播放线程应在超时内处理完暂停命令"
+    );
 
     // 持续驱动 update_playback。
     // - 旧实现读有界通道，先排干的 8 个陈旧 Playing 帧会把 `is_playing` 翻回 true，
@@ -121,14 +128,8 @@ fn test_pause_button_state_not_overridden_by_playing_frame() {
         thread::sleep(Duration::from_millis(1));
     }
 
-    // 引擎状态也应确为非 Playing（Paused 或自动停止后的 Stopped）
+    // 屏障已确认 Pause 命令执行完毕，引擎状态不再是 Playing。
     if let Some(ref manager) = root.playback.manager {
-        for _ in 0..50 {
-            if manager.state() != PlaybackState::Playing {
-                break;
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
         assert_ne!(
             manager.state(),
             PlaybackState::Playing,

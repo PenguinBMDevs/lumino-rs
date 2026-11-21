@@ -3,6 +3,7 @@
 //! 负责协调播放引擎和MIDI输出
 
 mod commands;
+mod sync;
 
 use crate::playback::engine::{MidiTrackEvent, PlaybackEngine};
 use crate::playback::{Playback, PlaybackAccessor, PlaybackState, TempoChange};

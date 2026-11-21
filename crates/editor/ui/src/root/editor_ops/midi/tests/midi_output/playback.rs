@@ -43,14 +43,12 @@ fn test_full_playback_lifecycle() {
     // 停止
     root.update(Message::Toolbar(toolbar::Event::Stop));
 
-    // 验证停止后状态（manager.state() 是异步的）
-    if let Some(ref manager) = root.playback.manager {
-        for _ in 0..50 {
-            if manager.state() == PlaybackState::Stopped {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+    // 验证停止后状态：`manager.state()` 由播放线程写入，属异步状态。
+    // 必须用命令队列屏障等 Stop 真正执行完，不能轮询固定次数——固定次数
+    // 等价于给播放线程一个墙钟预算，整包并行测试把 CPU 打满时预算会被
+    // 击穿，导致「停止后仍为 Playing」的偶发失败。
+    if let Some(manager) = &mut root.playback.manager {
+        assert!(manager.flush_commands(), "播放线程应在超时内处理完停止命令");
         assert_eq!(
             manager.state(),
             PlaybackState::Stopped,
