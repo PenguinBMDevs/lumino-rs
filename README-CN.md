@@ -54,10 +54,10 @@ cargo run --release    # 发布模式（优化）
 ### 贡献者
 |名称|主页地址|
 |-|-|
-|[btjawa]|https://github.com/btjawa|
-|[Enderman-bm]|https://github.com/Enderman-bm|
-|[IMT11D]|https://github.com/IMT11D|
-|[Buickmeow]|https://github.com/Buickmeow|
+|btjawa|https://github.com/btjawa|
+|Enderman-bm|https://github.com/Enderman-bm|
+|IMT11D|https://github.com/IMT11D|
+|Buickmeow|https://github.com/Buickmeow|
 
 ### 组件
 |名称|简介|
