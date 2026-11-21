@@ -375,7 +375,11 @@ inherits = "release"                # 基于 release 默认设置
 opt-level = 1                       # 基本优化，编译速度远快于 3
 lto = false                         # 禁用链接时优化（大幅减少链接时间）
 codegen-units = 16                  # 增加并行代码生成单元（最大 16，加速编译）
-debug = true                           # 行号表（函数+行号），支持 backtrace 与 profiler
+# 行号表（函数+行号），支持 backtrace 与 profiler。
+# 注意：ui / ui-core / ui-egui 的 build.rs 用 `DEBUG` 区分正式 release 与
+# fast-release（Cargo 会把 fast-release 的 PROFILE 归一化成 release）；改成
+# false 会让「形状面板 → 形状抽屉」入口在 fast-release 里也不再编译。
+debug = true
 strip = false                      # 保留符号用于调试分析（体积换调试能力）
 panic = "unwind"                    # 与 release 一致：catch_unwind 防护（REND-019）依赖 unwind
 incremental = true                 # 启用增量编译（对多次构建友好）

@@ -57,6 +57,9 @@ fn test_gear_emits_open_dialog_window_event() {
 }
 
 /// DRAW-033B0：形状下拉里的抽屉入口必须发独立窗口事件，而不是主窗口浮层。
+///
+/// 正式发布构建不编译该入口（`release` profile）。
+#[cfg(lumino_shape_drawer_entry)]
 #[test]
 fn test_shape_drawer_entry_emits_open_window_event() {
     let _guard = crate::test_helpers::event_queue_lock();

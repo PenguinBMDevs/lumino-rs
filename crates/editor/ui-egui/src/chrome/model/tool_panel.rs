@@ -133,6 +133,9 @@ pub struct ShapePanelModel {
     /// 三角形。
     pub triangle: String,
     /// 形状抽屉入口的悬浮名称。
+    ///
+    /// 正式发布构建不编译该入口（`release` profile）。
+    #[cfg(lumino_shape_drawer_entry)]
     pub drawer: String,
 }
 

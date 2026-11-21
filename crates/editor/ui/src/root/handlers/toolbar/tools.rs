@@ -189,6 +189,8 @@ impl ToolbarHandler {
     /// 处理「形状抽屉」独立窗口请求（DRAW-033B0）。
     ///
     /// 与音符画设置同一条信道：Root 只发窗口事件，开窗/去重由 Runner 负责。
+    /// 正式发布构建不编译该入口（`release` profile）。
+    #[cfg(lumino_shape_drawer_entry)]
     pub(crate) fn handle_toolbar_shape_drawer(
         &self,
         _root: &mut Root,

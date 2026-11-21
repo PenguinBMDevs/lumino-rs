@@ -382,6 +382,9 @@ impl Event {
     }
 
     /// 构造“打开形状抽屉”的工具栏消息（形状下拉中的抽屉入口）
+    ///
+    /// 正式发布构建不编译该入口（`release` profile）。
+    #[cfg(lumino_shape_drawer_entry)]
     pub const fn open_shape_drawer_dialog() -> Message {
         Message::Toolbar(Self::OpenShapeDrawerDialog)
     }

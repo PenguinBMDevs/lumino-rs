@@ -578,6 +578,7 @@ impl Toolbar {
                 self.text_params_open = false;
                 tracing::debug!("???: ????????");
             }
+            #[cfg(lumino_shape_drawer_entry)]
             Event::OpenShapeDrawerDialog => {
                 tracing::debug!("工具栏: 请求打开形状抽屉");
             }

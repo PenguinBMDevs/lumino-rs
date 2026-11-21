@@ -96,6 +96,9 @@ pub enum ToolbarAction {
     /// 选择基本图形。
     ShapeSelected(ShapeKind),
     /// 打开「形状抽屉」窗口。
+    ///
+    /// 正式发布构建不编译该入口（`release` profile）。
+    #[cfg(lumino_shape_drawer_entry)]
     OpenShapeDrawer,
     /// 打开「绘制行为」对话框。
     BrushSettingsOpen,

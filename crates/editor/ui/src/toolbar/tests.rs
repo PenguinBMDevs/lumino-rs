@@ -6,6 +6,9 @@ use super::*;
 // ---------------------------------------------------------------------------
 
 /// 悬浮条普通点击条目：仅选择工具，不打开任何设置下拉。
+///
+/// 正式发布构建不编译形状抽屉入口事件（`release` profile）。
+#[cfg(lumino_shape_drawer_entry)]
 #[test]
 fn test_open_shape_drawer_closes_shape_dropdown() {
     let mut toolbar = Toolbar::new();

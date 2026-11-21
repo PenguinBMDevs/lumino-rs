@@ -141,7 +141,7 @@ fn tool_panel_dispatches_items_and_settings() {
     );
 }
 
-/// 形状面板：选择图形 + 形状抽屉入口。
+/// 形状面板：选择图形 + 形状抽屉入口（正式发布构建不编译抽屉入口）。
 #[test]
 fn shape_panel_selects_kind_and_opens_drawer() {
     let mut model = panel();
@@ -150,6 +150,7 @@ fn shape_panel_selects_kind_and_opens_drawer() {
         rectangle: "矩形".to_owned(),
         circle: "圆形".to_owned(),
         triangle: "三角形".to_owned(),
+        #[cfg(lumino_shape_drawer_entry)]
         drawer: "形状抽屉".to_owned(),
     }));
     let model = std::rc::Rc::new(std::cell::RefCell::new(ChromeModel {
@@ -192,15 +193,19 @@ fn shape_panel_selects_kind_and_opens_drawer() {
         "第二个按钮 → 圆形"
     );
 
-    click(
-        &mut harness,
-        egui::pos2(panel.left() + 8.0 + 3.0 * 44.0 + 20.0, y),
-    );
-    assert_eq!(
-        actions.borrow().last(),
-        Some(&ToolbarAction::OpenShapeDrawer),
-        "第四个按钮 → 形状抽屉"
-    );
+    // 第四个按钮（形状抽屉）：正式发布构建不编译该入口。
+    #[cfg(lumino_shape_drawer_entry)]
+    {
+        click(
+            &mut harness,
+            egui::pos2(panel.left() + 8.0 + 3.0 * 44.0 + 20.0, y),
+        );
+        assert_eq!(
+            actions.borrow().last(),
+            Some(&ToolbarAction::OpenShapeDrawer),
+            "第四个按钮 → 形状抽屉"
+        );
+    }
 
     // 面板外点击：关闭当前面板（动作不落到胶囊 / 面板）。
     click(&mut harness, egui::pos2(160.0, 700.0));
