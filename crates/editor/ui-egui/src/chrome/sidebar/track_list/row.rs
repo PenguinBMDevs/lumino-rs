@@ -118,12 +118,32 @@ pub(super) fn track_row(
             ui.ctx().data_mut(|d| d.insert_temp(focus_once, true));
             name_ui.memory_mut(|m| m.request_focus(input_id));
         }
-        let response = name_ui.add(
+        // 显式几何，不依赖 `Layout::left_to_right(Align::Center)` 的隐式跨轴对齐：
+        //
+        // egui 0.37 的 `TextEditStyle` 把内容钉死在 `Align2::LEFT_TOP`（主题默认），
+        // 而主题的 `interact_size.y = 24` 又让输入框至少 24 高；文字行高仅 16，
+        // 多出来的 8px 全落在文字下方 → 盒子居中、文字偏上（真机「输入框偏上」）。
+        //
+        // 因此：矩形按行中线显式居中；高度取「行高 / 主题最小控件高」的较大者；
+        // 再用 `.align(LEFT_CENTER)` 把文字在框内垂直居中。
+        let font_id = FontId::proportional(theme::font::LABEL);
+        let line_h = name_ui.fonts_mut(|fonts| fonts.row_height(&font_id));
+        let input_h = name_ui.spacing().interact_size.y.max(line_h);
+        let input_rect = Rect::from_center_size(
+            egui::pos2(name_rect.center().x, rect.center().y),
+            Vec2::new(name_rect.width().max(24.0), input_h),
+        );
+        let response = name_ui.put(
+            input_rect,
             egui::TextEdit::singleline(&mut buffer)
                 .id(input_id)
-                .font(FontId::proportional(theme::font::LABEL))
+                .font(font_id)
+                // 垂直内边距 0：框内垂直居中交给 `align`，不再靠 margin 碰运气；
+                // 水平 2px 保证光标与描边不贴在一起。
                 .margin(Vec2::new(2.0, 0.0))
-                .desired_width(name_rect.width().max(40.0)),
+                .align(Align2::LEFT_CENTER)
+                .min_size(Vec2::new(0.0, input_h))
+                .desired_width(input_rect.width()),
         );
         if response.changed() {
             panel_action::push_panel_action(

@@ -52,10 +52,15 @@ fn model() -> SidebarModel {
     }
 }
 
-/// 第 `RENAMING_ROW` 行进入重命名态，草稿 = 当前名字。
+/// 第 `index` 行进入重命名态，草稿 = 当前名字。
 fn renaming_model() -> SidebarModel {
+    renaming_model_at(RENAMING_ROW)
+}
+
+/// 指定下标进入重命名态（用于普通轨 / 指挥轨两组几何）。
+fn renaming_model_at(index: usize) -> SidebarModel {
     let mut model = model();
-    let track = &mut model.tracks[RENAMING_ROW];
+    let track = &mut model.tracks[index];
     track.renaming = true;
     track.rename_buffer = track.name.clone();
     model
@@ -82,6 +87,9 @@ fn harness(initial: SidebarModel) -> RenameHarness {
         .with_accessibility_check(false)
         .build_ui(move |ui| {
             lumino_ui_egui::fonts::install(ui.ctx());
+            // 生产主题决定 `interact_size.y = 24` 与 TextEdit 的框高；不装主题
+            // 量到的几何和真机不是一回事（本卡就是被这个 8px 差坑过）。
+            lumino_ui_egui::theme::apply(ui.ctx());
             let current = model_ui.borrow().clone();
             sidebar::show_model(ui, &current, &mut icons);
             if let Some(action) = sidebar::take_panel_action(ui.ctx()) {
@@ -166,6 +174,113 @@ fn draft(text: &str, outcome: RenameBlur) -> SidebarRenameBlur {
         track_id: RENAMING,
         value: text.to_owned(),
         outcome,
+    }
+}
+
+/// 某条音轨 `S` 命中区的矩形：它按行中心构造，可作为「行中线」的可靠参照。
+fn solo_rect(h: &RenameHarness, track_id: usize) -> egui::Rect {
+    h.harness
+        .ctx
+        .read_response(egui::Id::unique(("lumino.track-solo", track_id)))
+        .expect("独奏命中区应已注册")
+        .rect
+}
+
+/// 本帧绘制的某段文本矩形（按内容精确匹配）。
+fn painted_text(h: &RenameHarness, text: &str) -> egui::Rect {
+    h.harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(shape) if shape.galley.text() == text => {
+                Some(egui::Rect::from_min_size(shape.pos, shape.galley.size()))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("本帧应绘制文本 {text:?}"))
+}
+
+/// 本卡核心：输入框与其中的文字都对齐行中线（普通轨 + 指挥轨）。
+///
+/// 回归前：盒子居中但文字比行中线高 4px（`TextEditStyle` 把内容钉在 LEFT_TOP，
+/// 主题 24px 框高减去 16px 行高，多出的 8px 全在文字下方）。
+#[test]
+fn rename_input_and_text_are_vertically_centered_on_the_row() {
+    // 普通轨（名称列起点 36）与指挥轨（起点 24）都要对齐。
+    for (index, conductor) in [(0usize, true), (1usize, false)] {
+        let mut model = renaming_model_at(index);
+        model.tracks[index].conductor = conductor;
+        let name = model.tracks[index].name.clone();
+        let label = model.tracks[index].label.clone();
+        let id = model.tracks[index].id;
+        let h = harness(model);
+
+        let solo = solo_rect(&h, id);
+        let row = egui::Rect::from_center_size(solo.center(), egui::vec2(0.0, layout::TRACK_ROW_H));
+        let input = h
+            .harness
+            .ctx
+            .read_response(egui::Id::unique(("lumino.track-rename", id)))
+            .expect("重命名输入框应已注册")
+            .rect;
+        let text = painted_text(&h, &name);
+
+        assert!(
+            (input.center().y - row.center().y).abs() <= 1.0,
+            "第 {index} 行输入框中心应贴行中线：input={:?} row={:?}",
+            input,
+            row
+        );
+        assert!(
+            (text.center().y - row.center().y).abs() <= 1.0,
+            "第 {index} 行输入文字中心应贴行中线（不能只有盒子居中）：text={:?} row={:?}",
+            text,
+            row
+        );
+        assert!(
+            input.top() >= row.top() - 0.5 && input.bottom() <= row.bottom() + 0.5,
+            "第 {index} 行输入框不得越出行矩形：input={:?} row={:?}",
+            input,
+            row
+        );
+        assert!(
+            input.right() <= solo.right() - 10.0,
+            "第 {index} 行输入框不应压到 S 的文字区：input={:?} solo={:?}",
+            input,
+            solo
+        );
+        if !conductor {
+            // 名称列起点在编号列之后（`TRACK_LABEL_COL_W + TRACK_COL_GAP`），
+            // 输入框不得回退去压编号列。
+            let painted_label = painted_text(&h, &label);
+            assert!(
+                input.left() >= painted_label.right() - 0.5,
+                "第 {index} 行输入框不应压到编号列：input={:?} label={:?}",
+                input,
+                painted_label
+            );
+        }
+    }
+}
+
+/// 非重命名态的名称标签仍贴行中线（本卡不改标签，钉住无回归）。
+#[test]
+fn idle_names_stay_on_the_row_center() {
+    let h = harness(model());
+    for (index, id, name) in [
+        (0usize, 7usize, "Setup"),
+        (1, 3, "Piano"),
+        (2, 11, "Strings"),
+    ] {
+        let solo = solo_rect(&h, id);
+        let text = painted_text(&h, name);
+        assert!(
+            (text.center().y - solo.center().y).abs() <= 1.0,
+            "第 {index} 行名称标签应保持行中线：text={:?} solo={:?}",
+            text,
+            solo
+        );
     }
 }
 
