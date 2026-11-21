@@ -40,6 +40,8 @@ pub(super) struct OverlayActions {
     pub toolbar: Option<ToolbarAction>,
     /// 仪表盘输入框失焦信号（独立于单槽工具栏动作，见 `DashboardBlur`）。
     pub dashboard_blur: Option<DashboardBlur>,
+    /// 行内重命名输入框失焦信号（独立于单槽面板动作，见 `SidebarRenameBlur`）。
+    pub sidebar_rename_blur: Option<lumino_ui_egui::chrome::SidebarRenameBlur>,
     pub panel: Option<RightSidebarAction>,
     pub settings: Option<SettingsAction>,
     pub dialog: Option<SaveConfirmAction>,
@@ -129,6 +131,7 @@ impl OverlayActions {
             mask_panel: lumino_ui_egui::chrome::take_mask_panel_action(ctx),
             statusbar: lumino_ui_egui::chrome::statusbar::take_action(ctx),
             sidebar_panel: lumino_ui_egui::chrome::take_panel_action(ctx),
+            sidebar_rename_blur: lumino_ui_egui::chrome::take_rename_blur(ctx),
             sidebar_menu: lumino_ui_egui::chrome::take_menu_action(ctx),
             help_tip: lumino_ui_egui::chrome::take_help_tip_action(ctx),
             toast: lumino_ui_egui::chrome::toast::take_toast_action(ctx),
@@ -167,6 +170,13 @@ impl Host {
                 }
             };
             self.dispatch_overlay_message(message);
+        }
+        // 重命名失焦同样要抢在任何面板动作之前收口：点另一条音轨时先保存草稿、
+        // 再切换选中（失焦信号走独立通道，不会被 `SelectTrack` 的单槽吞掉）。
+        if let Some(blur) = actions.sidebar_rename_blur {
+            for message in self.root.sidebar_rename_blur_messages(blur) {
+                self.dispatch_overlay_message(message);
+            }
         }
         if let Some(action) = actions.toast {
             match action {

@@ -461,6 +461,13 @@ impl Root {
             self.update(message);
             applied += 1;
         }
+        if let Some(blur) = ui::take_rename_blur(ctx) {
+            // 先落草稿再收口：点另一条音轨时同一帧还有 `SelectTrack`，两者都要送达。
+            for message in self.sidebar_rename_blur_messages(blur) {
+                self.update(message);
+            }
+            applied += 1;
+        }
         if let Some(action) = ui::take_panel_action(ctx) {
             let message = self.sidebar_panel_action_message(action);
             self.update(message);
@@ -815,6 +822,8 @@ mod settings_page_tests;
 mod shape_canvas_tests;
 #[cfg(test)]
 mod shape_drawer_tests;
+#[cfg(test)]
+mod sidebar_rename_blur_tests;
 #[cfg(test)]
 mod speed_change_tests;
 #[cfg(test)]

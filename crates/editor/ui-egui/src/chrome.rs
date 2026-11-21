@@ -66,7 +66,10 @@ pub use model::{
     underrun_tone,
 };
 pub use popup_titlebar::PopupTitlebarModel;
-pub use sidebar::{SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action};
+pub use sidebar::{
+    RenameBlur, SidebarMenuAction, SidebarPanelAction, SidebarRenameBlur, take_menu_action,
+    take_panel_action, take_rename_blur,
+};
 pub use titlebar::{TitlebarAction, take_titlebar_action};
 pub use toolbar::{DashboardBlur, DashboardField, MetricBlur};
 pub use toolbar_popup::{ToolbarAction, ToolbarCommand};

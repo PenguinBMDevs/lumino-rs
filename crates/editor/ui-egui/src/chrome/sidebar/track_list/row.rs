@@ -109,12 +109,13 @@ pub(super) fn track_row(
         let mut buffer = track.rename_buffer.clone();
         let input_id = egui::Id::unique(("lumino.track-rename", track.id));
         // 进入重命名的首帧抢一次焦点（否则按键仍落到 上一代，输入进不来）。
-        let focused = egui::Id::unique(("lumino.track-rename-focus", track.id));
+        // 只抢一次：用户点走之后不再往回拽。
+        let focus_once = panel_action::rename_focus_once_id(track.id);
         if !ui
             .ctx()
-            .data(|d| d.get_temp::<bool>(focused).unwrap_or(false))
+            .data(|d| d.get_temp::<bool>(focus_once).unwrap_or(false))
         {
-            ui.ctx().data_mut(|d| d.insert_temp(focused, true));
+            ui.ctx().data_mut(|d| d.insert_temp(focus_once, true));
             name_ui.memory_mut(|m| m.request_focus(input_id));
         }
         let response = name_ui.add(
@@ -129,24 +130,45 @@ pub(super) fn track_row(
                 ui.ctx(),
                 SidebarPanelAction::RenameChanged {
                     track_id: track.id,
-                    value: buffer,
+                    value: buffer.clone(),
                 },
             );
         }
-        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            panel_action::push_panel_action(
+        // 重新获得焦点（用户点回输入框）→ 允许下一次失焦再上报。
+        if response.gained_focus() {
+            ui.ctx().data_mut(|d| {
+                d.remove_temp::<bool>(panel_action::rename_blur_reported_id(track.id))
+            });
+        }
+        // 失焦即收口：回车 / Tab / 点击输入框外的任意位置（画布、面板空白、
+        // 工具栏、别的音轨行）都会让 TextEdit 交出焦点；Esc 由 egui 在帧首收回
+        // 焦点，同样落在这里。只认「回车」会静默丢弃点击别处之前的输入。
+        //
+        // `lost_focus` 会连续两帧为真，用会话标记去重，保证一次失焦只上报一次。
+        let blur_reported = ui.ctx().data(|d| {
+            d.get_temp::<bool>(panel_action::rename_blur_reported_id(track.id))
+                .unwrap_or(false)
+        });
+        if response.lost_focus() && !blur_reported {
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(panel_action::rename_blur_reported_id(track.id), true));
+            let outcome = if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                panel_action::RenameBlur::Cancel
+            } else {
+                panel_action::RenameBlur::Commit
+            };
+            panel_action::push_rename_blur(
                 ui.ctx(),
-                SidebarPanelAction::RenameConfirmed(track.id),
+                panel_action::SidebarRenameBlur {
+                    track_id: track.id,
+                    value: buffer,
+                    outcome,
+                },
             );
         }
     } else {
-        // 退出重命名：清掉「已抢焦点」标记，下次进入可再次聚焦。
-        ui.ctx().data_mut(|d| {
-            d.insert_temp(
-                egui::Id::unique(("lumino.track-rename-focus", track.id)),
-                false,
-            )
-        });
+        // 退出重命名：清掉会话标记（已抢焦点 / 失焦已上报），下次进入可再次聚焦。
+        panel_action::reset_rename_edit_session(ui.ctx(), track.id);
         name_ui.add(
             egui::Label::new(
                 egui::RichText::new(&track.name)
