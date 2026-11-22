@@ -38,7 +38,6 @@ pub(crate) fn build_note_rectangle_params_from_visible(
     let scroll_x = tick as f32 * zoom_x;
     let scroll_y = 0.0f32;
 
-    let grid_instances = Vec::new();
     // 注：标尺刻度渲染线程按 scroll/zoom 内部重算并缓存（见 RulerRenderer::prepare），
     // 此处不再逐帧生成跨线程 Vec（渲染侧零读取，旧逻辑纯浪费）。
 
@@ -65,7 +64,6 @@ pub(crate) fn build_note_rectangle_params_from_visible(
         keyboard_width,
         ruler_height,
         note_instances: std::mem::take(note_instances_out),
-        grid_instances,
         ruler_instances: Vec::new(),
         ppq: ppq as f32,
         max_key_index,

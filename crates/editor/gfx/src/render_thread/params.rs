@@ -1,6 +1,6 @@
 use crate::{
     ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
-    GridLineInstance, NoteInstance, RulerTickInstance, miditrail_renderer::MiditrailViewMode,
+    NoteInstance, RulerTickInstance, miditrail_renderer::MiditrailViewMode,
 };
 
 mod builder;
@@ -40,8 +40,6 @@ pub struct RenderParams {
     pub color_grid: [f32; 4],
     /// 琴键分隔线颜色 (RGBA)
     pub color_key_line: [f32; 4],
-    /// 网格线实例
-    pub grid_instances: Vec<GridLineInstance>,
     /// 音符实例
     pub note_instances: Vec<NoteInstance>,
     /// 标尺刻度实例
@@ -218,7 +216,6 @@ impl Default for RenderParams {
             color_half_beat: [0.15, 0.15, 0.15, 1.0],
             color_grid: [0.15, 0.15, 0.15, 1.0],
             color_key_line: [0.4, 0.4, 0.4, 1.0],
-            grid_instances: Vec::new(),
             note_instances: Vec::new(),
             ruler_instances: Vec::new(),
             ticks_per_measure: 7680,

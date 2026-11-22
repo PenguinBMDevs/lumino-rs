@@ -4,7 +4,6 @@
 //! 与 Miditrail 3D 等视图的 GPU 渲染，包含独立的 WGPU 渲染线程、
 //! 视频导出管线以及 GPU 音符缓冲区（支持增量更新）。
 
-#![allow(deprecated)]
 mod arrangement_instances;
 mod arrangement_renderer;
 mod cc_bar_renderer;
@@ -78,7 +77,7 @@ pub use global_bucket::{
 };
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};
-pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
+pub use grid_renderer::{GridPrepareParams, GridRenderer};
 /// 贴图瀑布流音符类型（从 lumino-midiplayer 重导出）
 pub use lumino_midiplayer::texture_waterfall::WaterfallNote;
 /// 贴图瀑布流渲染器（从 lumino-midiplayer 重导出）

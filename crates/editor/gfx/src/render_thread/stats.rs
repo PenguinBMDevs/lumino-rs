@@ -11,8 +11,6 @@ pub struct RenderStats {
     pub dropped_frames: u64,
     /// 渲染的音符数量
     pub note_count: usize,
-    /// 渲染的网格线数量
-    pub grid_line_count: usize,
     /// 渲染的琴键数量
     pub key_count: usize,
     /// 渲染的标尺刻度数量

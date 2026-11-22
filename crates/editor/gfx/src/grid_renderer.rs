@@ -76,44 +76,6 @@ pub struct GridCameraUniformBuilder {
 /// 网格线实例（已废弃，改用 GPU infinite grid 方案）。
 ///
 /// 兼容旧代码的占位类型，保留以避免大面积联级修改。
-#[deprecated(
-    since = "0.2.0",
-    note = "不再使用 CPU 实例生成网格线，GridRenderer 改用 GPU infinite grid 方案"
-)]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GridLineInstance {
-    /// 线段起点（屏幕坐标）
-    pub start: [f32; 2],
-    /// 线段终点（屏幕坐标）
-    pub end: [f32; 2],
-    /// 线段颜色 (RGBA)
-    pub color: [f32; 4],
-    /// 线段宽度（像素）
-    pub width: f32,
-    /// 对齐填充（保持 16 字节对齐）
-    pub _padding: [f32; 3],
-}
-
-impl GridLineInstance {
-    /// 创建一条网格线实例。
-    ///
-    /// # 参数
-    /// * `start` — 线段起点（屏幕坐标）
-    /// * `end` — 线段终点（屏幕坐标）
-    /// * `color` — RGBA 颜色
-    /// * `width` — 线宽（像素）
-    pub fn new(start: [f32; 2], end: [f32; 2], color: [f32; 4], width: f32) -> Self {
-        Self {
-            start,
-            end,
-            color,
-            width,
-            _padding: [0.0; 3],
-        }
-    }
-}
-
 /// 网格渲染器准备参数（聚合 GridRenderer::prepare 的 18 个参数）
 #[derive(Debug, Clone)]
 pub struct GridPrepareParams {

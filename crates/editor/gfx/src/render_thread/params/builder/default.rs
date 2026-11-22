@@ -28,7 +28,6 @@ impl Default for RenderParamsBuilder {
             color_half_beat: base.color_half_beat,
             color_grid: base.color_grid,
             color_key_line: base.color_key_line,
-            grid_instances: base.grid_instances,
             ruler_instances: base.ruler_instances,
             ppq: base.ppq,
             max_key_index: base.max_key_index,

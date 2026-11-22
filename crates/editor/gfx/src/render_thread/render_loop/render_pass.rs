@@ -343,7 +343,6 @@ pub fn update_stats(
     frame_count: &mut u64,
     fps_update_time: &mut Instant,
     frame_time: Duration,
-    params: &RenderParams,
     stats_clone: &Arc<Mutex<RenderStats>>,
     ruler_tick_count: usize,
 ) {
@@ -352,7 +351,6 @@ pub fn update_stats(
     if let Ok(mut stats) = stats_clone.lock() {
         stats.frame_count = *frame_count;
         stats.last_frame_time_ms = frame_time.as_secs_f64() * 1000.0;
-        stats.grid_line_count = params.grid_instances.len();
         stats.ruler_tick_count = ruler_tick_count;
     }
 

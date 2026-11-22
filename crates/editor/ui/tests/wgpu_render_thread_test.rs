@@ -13,7 +13,6 @@ fn test_render_params_default() {
     assert_eq!(params.keyboard_width, 60.0);
     assert_eq!(params.ruler_height, 30.0);
     assert_eq!(params.background_color, [0.1, 0.1, 0.1, 1.0]);
-    assert!(params.grid_instances.is_empty());
     assert!(params.ruler_instances.is_empty());
     assert_eq!(params.ticks_per_measure, 7680);
     assert_eq!(params.ticks_per_beat, 1920);
@@ -42,7 +41,6 @@ fn test_render_params_clone() {
         color_half_beat: [0.15, 0.15, 0.15, 1.0],
         color_grid: [0.15, 0.15, 0.15, 1.0],
         color_key_line: [0.15, 0.15, 0.15, 1.0],
-        grid_instances: Vec::new(),
         note_instances: Vec::new(),
         ruler_instances: Vec::new(),
         ticks_per_measure: 960,
@@ -81,7 +79,6 @@ fn test_render_stats_default() {
     assert_eq!(stats.average_fps, 0.0);
     assert_eq!(stats.dropped_frames, 0);
     assert_eq!(stats.note_count, 0);
-    assert_eq!(stats.grid_line_count, 0);
     assert_eq!(stats.key_count, 0);
     assert_eq!(stats.ruler_tick_count, 0);
 }
@@ -95,7 +92,6 @@ fn test_render_stats_clone() {
         average_fps: 60.0,
         dropped_frames: 5,
         note_count: 10000,
-        grid_line_count: 500,
         key_count: 128,
         ruler_tick_count: 50,
     };
@@ -107,7 +103,6 @@ fn test_render_stats_clone() {
     assert_eq!(cloned.average_fps, stats.average_fps);
     assert_eq!(cloned.dropped_frames, stats.dropped_frames);
     assert_eq!(cloned.note_count, stats.note_count);
-    assert_eq!(cloned.grid_line_count, stats.grid_line_count);
     assert_eq!(cloned.key_count, stats.key_count);
     assert_eq!(cloned.ruler_tick_count, stats.ruler_tick_count);
 }
