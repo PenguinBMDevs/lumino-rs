@@ -21,7 +21,7 @@ use crate::{message, root, settings};
 
 mod background;
 mod builder;
-mod cache;
+
 mod convert;
 mod dialog;
 mod dialog_size;
@@ -51,7 +51,6 @@ pub fn host_window(
     window
 }
 
-pub use cache::RenderCache;
 pub use render::egui_overlay::OverlayInput;
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 

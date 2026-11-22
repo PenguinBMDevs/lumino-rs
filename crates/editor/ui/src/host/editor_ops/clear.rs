@@ -49,11 +49,6 @@ impl Host {
         root.sidebar.tracks.clear();
         root.sidebar.selected_track = 0;
 
-        // RenderCache 视口哈希失效（强制重建 GPU 实例）
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
-        self.render_ctx.render_cache.note_viewport_hash = 0;
-        self.render_ctx.render_cache.note_render_viewport = None;
-
         // 初始化空白工程：空 document（默认 2 轨 Conductor + Setup）+ 重建 sidebar.tracks。
         // 2026-08 修复：此前 reset() 置 document=None 且 sidebar.tracks 清空，
         // 导致空白工程创建音符被三重拦截（track_count=0 / document=None / current_track=0）。

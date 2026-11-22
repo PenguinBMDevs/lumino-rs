@@ -27,7 +27,6 @@ impl Host {
         self.root.set_total_ticks(total_ticks);
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
         // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -37,9 +36,6 @@ impl Host {
         self.root.set_ppq(ppq);
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
-        self.render_ctx.render_cache.note_viewport_hash = 0;
-        self.render_ctx.render_cache.note_render_viewport = None;
         self.window_ctx.window.request_redraw();
     }
 
@@ -48,7 +44,6 @@ impl Host {
         self.root.set_custom_snap(spec);
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.window_ctx.window.request_redraw();
     }
 
@@ -159,7 +154,6 @@ impl Host {
         // 拍号/tempo 变化影响网格与标尺，清空缓存强制重建
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
         // 空间索引/最长音符长度**无需**在此手工失效：上方
         // `mark_track_notes_changed()` 已 bump `track_notes_gen`，而世代是它们的
         // 失效键（见 `SpatialIndexState` 文档）。这里也不能改用

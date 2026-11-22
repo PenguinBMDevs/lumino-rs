@@ -7,8 +7,6 @@
 #![allow(deprecated)]
 mod arrangement_instances;
 mod arrangement_renderer;
-/// 渲染缓存（双缓冲音符实例 + 视口哈希 + 深度纹理缓存）
-pub mod cache;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;

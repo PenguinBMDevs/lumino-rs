@@ -53,11 +53,6 @@ impl Host {
     /// 应用批量编辑到主窗口
     pub fn apply_batch_edit(&mut self, velocity: &str, gate: &str, key: &str, tick: &str) {
         self.root.apply_batch_edit(velocity, gate, key, tick);
-        // 强制使 note 渲染缓存失效：空间索引的失效键可能已被
-        // `ensure_spatial_index()` 消费（消费后即视为最新），
-        // 导致下一帧 `prepare_notes_if_needed` 跳过实例重建、音符视觉位置不更新。
-        self.render_ctx.render_cache.note_viewport_hash = 0;
-        self.render_ctx.render_cache.note_render_viewport = None;
         self.root.editor.grid_cache.clear();
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
@@ -137,8 +132,7 @@ impl Host {
     ///
     /// 一次完成四件事，少任何一步都会出现"UI 已换主题、网格还是上一主题"：
     /// 1. 路由 `Theme` 事件 → `Root::window.theme` 换新（egui 外壳立即生效）；
-    /// 2. 失效绘制标记与视口哈希（`GridCacheMarker` / `RenderCache` 视口字段；
-    ///    二者当前均无真正的读者——旧帧的真实来源是离屏纹理，见第 3 步）；
+    /// 2. 失效 UI 侧绘制缓存（`grid_cache` / `keyboard_cache` / `ruler_cache`）；
     /// 3. **标记离屏内容脏**：主题色是离屏帧的 uniform 输入，属于内容变化。
     ///    不置脏 ⇒ `redraw_separate_thread` 走「允许 present 落后一帧」分支，且
     ///    视口未变不会登记 `pending_present_flush` ⇒ 屏幕长期停在上一主题的
@@ -162,9 +156,6 @@ impl Host {
         self.root.editor.grid_cache.clear();
         self.root.editor.keyboard_cache.clear();
         self.root.editor.ruler_cache.clear();
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
-        self.render_ctx.render_cache.note_viewport_hash = 0;
-        self.render_ctx.render_cache.note_render_viewport = None;
         // 关键：主题 = 离屏内容，不是"视口变化"。纯视口变化可以落后一帧，
         // 主题变化落后一帧就表现为「网格慢一步、移动鼠标才恢复」。
         self.render_ctx.mark_render_content_dirty();
