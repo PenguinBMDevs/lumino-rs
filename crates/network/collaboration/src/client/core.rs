@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -13,16 +12,12 @@ use lumino_core::trf;
 use crate::Result;
 use crate::http::HttpClient;
 
-use super::{
-    ClientMessage, ClientState, ClientStateCell, CollaborationEvent, CollaborationSession,
-    EventCallback,
-};
+use super::{ClientMessage, ClientState, ClientStateCell, CollaborationEvent, EventCallback};
 
 /// 协作客户端
 pub struct CollaborationClient {
     pub(super) config: crate::types::ClientConfig,
     pub(super) state: Arc<ClientStateCell>,
-    pub(super) session: Arc<RwLock<CollaborationSession>>,
     pub(super) message_tx: mpsc::UnboundedSender<ClientMessage>,
     pub(super) message_rx: Option<mpsc::UnboundedReceiver<ClientMessage>>,
     pub(super) event_callback: Option<EventCallback>,
@@ -40,7 +35,6 @@ impl CollaborationClient {
         Self {
             config,
             state: Arc::new(ClientStateCell::new()),
-            session: Arc::new(RwLock::new(CollaborationSession::default())),
             message_tx,
             message_rx: Some(message_rx),
             event_callback: None,
@@ -78,11 +72,6 @@ impl CollaborationClient {
     /// 获取当前状态（无锁）
     pub fn state(&self) -> ClientState {
         self.state.get()
-    }
-
-    /// 获取当前会话
-    pub async fn session(&self) -> CollaborationSession {
-        self.session.read().await.clone()
     }
 
     /// 是否已连接（无锁）

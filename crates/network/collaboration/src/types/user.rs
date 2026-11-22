@@ -52,13 +52,3 @@ pub struct UserData {
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
-/// 远程用户（在线协作用户）
-#[derive(Debug, Clone)]
-pub struct RemoteUser {
-    /// 用户基本信息
-    pub info: UserInfo,
-    /// 最近一次鼠标位置
-    pub mouse_position: Option<super::view::MousePosition>,
-    /// 最近活跃时间
-    pub last_active: std::time::Instant,
-}

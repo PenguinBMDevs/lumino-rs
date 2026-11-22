@@ -140,7 +140,6 @@ impl CollaborationClient {
         mut shutdown_rx: mpsc::Receiver<()>,
     ) {
         let state = Arc::clone(&self.state);
-        let session = Arc::clone(&self.session);
         let event_callback = self.event_callback.clone();
 
         tokio::spawn(async move {
@@ -163,7 +162,6 @@ impl CollaborationClient {
                                 if let Err(e) = handle_server_message(
                                     &text,
                                     &state,
-                                    &session,
                                     event_callback.clone()
                                 ).await {
                                     error!("处理消息失败: {} - {}", e, text);
@@ -278,13 +276,6 @@ impl CollaborationClient {
                             user_count: room.user_count as usize,
                             max_users: room.max_users as usize,
                         };
-
-                        {
-                            let mut session = self.session.write().await;
-                            session.current_user_id = Some(user_id.clone());
-                            session.invite_code = Some(invite_code.clone());
-                            session.current_room = Some(room_info.clone());
-                        }
 
                         self.emit_event(CollaborationEvent::Authenticated {
                             user_id: user_id.clone(),

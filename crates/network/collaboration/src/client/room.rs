@@ -6,7 +6,6 @@ use lumino_core::tr;
 
 use crate::Result;
 use crate::http::CreateRoomResponse;
-use crate::types::RoomInfo;
 
 use super::CollaborationClient;
 
@@ -57,27 +56,10 @@ impl CollaborationClient {
         create_response: &CreateRoomResponse,
     ) -> Result<()> {
         self.room_id = Some(create_response.room.invite_code.clone());
-        self.update_session_with_room_info(create_response).await;
 
         info!("使用 roomId 连接 WebSocket");
         self.connect_with_room_id(&create_response.room.invite_code)
             .await
-    }
-
-    /// 更新会话信息
-    async fn update_session_with_room_info(&self, response: &CreateRoomResponse) {
-        let mut session = self.session.write().await;
-        session.invite_code = Some(response.room.invite_code.clone());
-        session.current_room = Some(RoomInfo {
-            id: response.room.id.clone(),
-            invite_code: response.room.invite_code.clone(),
-            name: response.room.name.clone(),
-            project_name: String::new(),
-            project_hash: String::new(),
-            host_id: response.room.host_id.clone(),
-            user_count: 1,
-            max_users: 10,
-        });
     }
 
     /// 加入房间并连接
@@ -87,11 +69,9 @@ impl CollaborationClient {
         self.connect_to_room(&invite_code).await
     }
 
-    /// 保存邀请码到会话
+    /// 保存邀请码
     async fn save_invite_code(&mut self, invite_code: &str) {
         self.room_id = Some(invite_code.to_string());
-        let mut session = self.session.write().await;
-        session.invite_code = Some(invite_code.to_string());
     }
 
     /// 连接到房间

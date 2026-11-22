@@ -1,7 +1,5 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::types::{InviteCode, RemoteUser, RoomInfo, UserId};
-
 /// 客户端状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientState {
@@ -118,19 +116,6 @@ impl ClientStateCell {
     pub fn is_active(&self) -> bool {
         ClientState::from_u8(self.value.load(Ordering::Relaxed)).is_active()
     }
-}
-
-/// 协作会话信息
-#[derive(Debug, Clone, Default)]
-pub struct CollaborationSession {
-    /// 当前用户 ID
-    pub current_user_id: Option<UserId>,
-    /// 当前房间邀请码
-    pub invite_code: Option<InviteCode>,
-    /// 当前所在房间信息
-    pub current_room: Option<RoomInfo>,
-    /// 远程在线用户映射
-    pub remote_users: std::collections::HashMap<UserId, RemoteUser>,
 }
 
 #[cfg(test)]
