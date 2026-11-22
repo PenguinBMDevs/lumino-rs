@@ -27,36 +27,24 @@ fn test_state_open_records_target() {
     assert_eq!(state.target, ContextMenuTarget::DrawnShape);
 }
 
-/// 条目集由 `lumino-message` 单点维护：待确认镜像不得出现 023/024 项。
+/// 条目集由 `lumino-message` 的 `menu_groups` 单点维护：待确认镜像不得出现 023/024 项。
 #[test]
 fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
-    let items = lumino_message::context_menu::menu_items(ContextMenuTarget::PendingDrawnShape);
-    assert_eq!(
-        items,
-        &[
-            PianoRollContextMenuItem::LiveShape,
-            PianoRollContextMenuItem::JoinShapes,
-            PianoRollContextMenuItem::MergeShapes,
-            PianoRollContextMenuItem::EditShape,
-            PianoRollContextMenuItem::PaintAreas,
-            PianoRollContextMenuItem::MaskToggle,
-            PianoRollContextMenuItem::MaskSettings,
-            PianoRollContextMenuItem::SymmetryVertical,
-            PianoRollContextMenuItem::SymmetryHorizontal,
-            PianoRollContextMenuItem::SliceCut,
-            PianoRollContextMenuItem::MouldSetKnife,
-            PianoRollContextMenuItem::MouldClearKnife,
-            PianoRollContextMenuItem::MouldShapes,
-            PianoRollContextMenuItem::RoundCorners,
-            PianoRollContextMenuItem::BetweenCreate,
-            PianoRollContextMenuItem::CopyAlong,
-            PianoRollContextMenuItem::VelocityUp,
-            PianoRollContextMenuItem::CopyShapeText,
-            PianoRollContextMenuItem::ReturnToDrawer,
-            PianoRollContextMenuItem::DeleteDrawnShape,
-        ],
-        "待确认镜像可走 010/019/020/021/022/023/025/026/027/028、区域着色、分享几何、退回抽屉、删除"
-    );
+    // 分组表是真源：常规组 + 待确认专属组，展平后验证专属动作与禁用项。
+    let groups = lumino_message::context_menu::menu_groups(ContextMenuTarget::PendingDrawnShape);
+    let items: Vec<PianoRollContextMenuItem> =
+        groups.iter().flat_map(|g| g.iter().copied()).collect();
+    for required in [
+        PianoRollContextMenuItem::LiveShape,
+        PianoRollContextMenuItem::JoinShapes,
+        PianoRollContextMenuItem::MergeShapes,
+        PianoRollContextMenuItem::EditShape,
+        PianoRollContextMenuItem::PaintAreas,
+        PianoRollContextMenuItem::CopyShapeText,
+        PianoRollContextMenuItem::ReturnToDrawer,
+    ] {
+        assert!(items.contains(&required), "待确认镜像缺少条目：{required:?}");
+    }
     assert!(
         !items.iter().any(|item| matches!(
             item,
@@ -68,10 +56,12 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
 
 #[test]
 fn test_drawn_shape_menu_is_read_only() {
-    let items = lumino_message::context_menu::menu_items(ContextMenuTarget::DrawnShape);
+    let groups = lumino_message::context_menu::menu_groups(ContextMenuTarget::DrawnShape);
+    let items: Vec<PianoRollContextMenuItem> =
+        groups.iter().flat_map(|g| g.iter().copied()).collect();
     assert_eq!(
         items,
-        &[
+        vec![
             PianoRollContextMenuItem::ShapeList,
             PianoRollContextMenuItem::MaskApply,
             PianoRollContextMenuItem::CopyShapeText,

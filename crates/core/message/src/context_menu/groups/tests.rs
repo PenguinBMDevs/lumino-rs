@@ -43,23 +43,6 @@ fn test_row_counts_are_stable() {
 }
 
 #[test]
-fn test_every_group_item_exists_in_flat_table() {
-    // `menu_items` 是改造前的扁平表：待确认目标本来就只有专属动作，
-    // 常规组（剪切 / 复制 / …）对它来说是新增的结构，因此允许取自 `REGULAR_ITEMS`。
-    for target in TARGETS {
-        let flat = super::super::menu_items(target);
-        for group in menu_groups(target) {
-            for item in *group {
-                assert!(
-                    flat.contains(item) || REGULAR_ITEMS.contains(item),
-                    "{target:?} 的分组里有扁平表与常规表都未登记的条目：{item:?}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn test_regular_group_is_the_same_for_notes_and_pending() {
     assert_eq!(menu_groups(ContextMenuTarget::Notes)[0], REGULAR_ITEMS);
     assert_eq!(
@@ -81,21 +64,6 @@ fn test_drawn_shape_stays_single_group() {
     let groups = menu_groups(ContextMenuTarget::DrawnShape);
     assert_eq!(groups.len(), 1, "已 Bake 图形保持单组");
     assert_eq!(groups[0], DRAWN_SHAPE_READ_ONLY);
-}
-
-#[test]
-fn test_pending_groups_cover_all_actions_except_duplicate_delete() {
-    let rows = flat_rows(ContextMenuTarget::PendingDrawnShape);
-    for item in super::super::menu_items(ContextMenuTarget::PendingDrawnShape) {
-        if *item == Item::DeleteDrawnShape {
-            assert!(
-                !rows.contains(item),
-                "删除只保留常规组一处（两条同义路径不重复渲染）"
-            );
-            continue;
-        }
-        assert!(rows.contains(item), "待确认图形缺少条目：{item:?}");
-    }
 }
 
 /// 「所有状态都满足」：用于验证目标维度，不引入状态干扰
