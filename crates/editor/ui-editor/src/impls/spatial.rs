@@ -125,7 +125,6 @@ impl Editor {
     /// 都会重建空间索引（~47ms/次 × 60fps ≈ 2.8s 卡顿）。
     pub fn mark_ghost_dirty(&mut self) {
         self.notes_changed = true;
-        self.grid_cache.clear();
     }
 
     /// 若空间索引已脏且音符数量达到阈值，立即重建

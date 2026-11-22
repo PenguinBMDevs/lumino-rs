@@ -138,8 +138,6 @@ impl Root {
                     state.view.scroll_x = state.view.scroll_x.min(ms_x);
                 }
 
-                self.editor
-                    .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
                 true
             }
             Message::MenuStateChanged(is_open) => {
@@ -332,10 +330,7 @@ impl Root {
         self.tick_mode_animation();
 
         // 平滑滚动推进 + 越界钳制（REND-019 重绘风暴的收敛判定在该方法内）
-        if self.tick_smooth_scroll() {
-            self.editor
-                .invalidate_caches(crate::editor::CacheInvalidation::ALL);
-        }
+        self.tick_smooth_scroll();
 
         self.editor.update_selection_box_animation(None);
 
@@ -344,8 +339,6 @@ impl Root {
 
         // 轮询异步 MoveOp 提交结果（每帧一次，将后台线程结果应用到 data 并 push history）
         if self.editor.poll_async_commit().is_some() {
-            self.editor
-                .invalidate_caches(crate::editor::CacheInvalidation::ALL);
             self.update_playback_notes();
             self.editor.clear_notes_changed();
         }

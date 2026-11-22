@@ -21,7 +21,6 @@ impl LoopRangeHandler {
             LoopRangeAction::Toggle => {
                 let enabled = if let Some(loop_range) = &mut root.editor.loop_range {
                     loop_range.toggle();
-                    root.editor.ruler_cache.clear();
                     loop_range.enabled()
                 } else {
                     false
@@ -36,7 +35,6 @@ impl LoopRangeHandler {
                         if !loop_range.enabled() {
                             loop_range.enable();
                         }
-                        root.editor.ruler_cache.clear();
                         (
                             loop_range.enabled(),
                             loop_range.start_tick(),
@@ -52,7 +50,6 @@ impl LoopRangeHandler {
                 if let Some(loop_range) = &mut root.editor.loop_range {
                     loop_range.disable();
                     Self::sync_loop_to_playback_state(root, false);
-                    root.editor.ruler_cache.clear();
                     tracing::info!("Root: 循环区域已清除");
                 }
             }
@@ -68,7 +65,6 @@ impl LoopRangeHandler {
                         view.snap_precision,
                     );
                     if hit != crate::editor::grid::LoopHitTest::None {
-                        root.editor.ruler_cache.clear();
                         tracing::debug!("Root: 标尺循环区域点击检测: {:?}", hit);
                     }
                 }
@@ -94,7 +90,6 @@ impl LoopRangeHandler {
                 if should_sync {
                     let (enabled, start, end) = Self::get_loop_range_state(root);
                     Self::sync_loop_to_playback_with_range(root, enabled, start, end);
-                    root.editor.ruler_cache.clear();
                 }
             }
             LoopRangeAction::RulerReleased => {
@@ -104,14 +99,12 @@ impl LoopRangeHandler {
                     let start = loop_range.start_tick();
                     let end = loop_range.end_tick();
                     loop_range.handle_mouse_release();
-                    root.editor.ruler_cache.clear();
                     tracing::debug!("Root: 循环拖拽释放，范围 [{:.2}, {:.2}]", start, end);
                 }
             }
             LoopRangeAction::RulerDoubleClicked { x: _, y: _ } => {
                 let enabled = if let Some(loop_range) = &mut root.editor.loop_range {
                     loop_range.toggle();
-                    root.editor.ruler_cache.clear();
                     loop_range.enabled()
                 } else {
                     false

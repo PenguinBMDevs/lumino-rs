@@ -53,7 +53,6 @@ impl Host {
     /// 应用批量编辑到主窗口
     pub fn apply_batch_edit(&mut self, velocity: &str, gate: &str, key: &str, tick: &str) {
         self.root.apply_batch_edit(velocity, gate, key, tick);
-        self.root.editor.grid_cache.clear();
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -153,9 +152,6 @@ impl Host {
 
     /// 主题相关的缓存失效 + 内容脏标记（供 [`Self::apply_theme_change`] 使用）。
     fn invalidate_theme_caches(&mut self) {
-        self.root.editor.grid_cache.clear();
-        self.root.editor.keyboard_cache.clear();
-        self.root.editor.ruler_cache.clear();
         // 关键：主题 = 离屏内容，不是"视口变化"。纯视口变化可以落后一帧，
         // 主题变化落后一帧就表现为「网格慢一步、移动鼠标才恢复」。
         self.render_ctx.mark_render_content_dirty();

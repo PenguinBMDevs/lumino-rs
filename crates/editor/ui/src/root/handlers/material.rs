@@ -42,8 +42,6 @@ impl Root {
             .editor_state
             .image_to_midi
             .begin_material_follow(preview, 0.0);
-        self.editor
-            .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
         tracing::info!("素材 {} 已进入拖出跟随模式", entry.name);
     }
 
@@ -59,8 +57,6 @@ impl Root {
                 .editor_state
                 .image_to_midi
                 .cancel_material_follow();
-            self.editor
-                .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
             tracing::debug!("素材拖出已取消（未在卷帘内放置）");
         }
     }

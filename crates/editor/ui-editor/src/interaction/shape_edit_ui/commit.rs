@@ -24,7 +24,6 @@ impl Editor {
                 if !changed {
                     self.restore_pending_part(index, &state.original);
                     self.refresh_pending_mirror_geometry();
-                    self.grid_cache.clear();
                     return false;
                 }
                 let notes = self.part_notes_for_edit(&state.current, state.current.track as usize);
@@ -48,13 +47,11 @@ impl Editor {
                 self.pending_edit_redo.clear();
                 self.pending_composed_redo.clear();
                 self.refresh_pending_mirror_geometry();
-                self.grid_cache.clear();
                 true
             }
             ShapeEditTarget::Group => {
                 if !changed {
                     self.restore_group_snapshot(state.original_composed);
-                    self.grid_cache.clear();
                     return false;
                 }
                 // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
@@ -65,7 +62,6 @@ impl Editor {
                 self.pending_edit_redo.clear();
                 self.pending_composed_redo.clear();
                 self.refresh_pending_mirror_geometry();
-                self.grid_cache.clear();
                 true
             }
         }
@@ -85,7 +81,6 @@ impl Editor {
                 self.restore_group_snapshot(state.original_composed);
             }
         }
-        self.grid_cache.clear();
     }
 
     fn restore_pending_part(&mut self, index: usize, model: &ShapeModel) {

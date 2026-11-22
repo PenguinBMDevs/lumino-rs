@@ -607,7 +607,6 @@ impl Editor {
         if !self.editor_state.shape_select.is_selected(id) {
             self.editor_state.shape_select.select_only(id);
         }
-        self.grid_cache.clear();
     }
 
     // ── 点选 / 拖动 ───────────────────────────────────────
@@ -636,7 +635,6 @@ impl Editor {
         // （任何未预料到的待确认几何改动都不会再退化成「框不中」）。
         self.refresh_pending_mirror_geometry();
         if self.begin_shape_edit(tick, key) {
-            self.grid_cache.clear();
             return;
         }
         // 020 编辑图形：锚点/旋转热区之外只处理「框内拖动」。
@@ -646,7 +644,6 @@ impl Editor {
             if self.point_in_selection_box(tick, key) {
                 self.editor_state.shape_select.begin_drag(tick, key);
             }
-            self.grid_cache.clear();
             return;
         }
         match self.hit_test_drawn_shape(tick, key) {
@@ -686,7 +683,6 @@ impl Editor {
         }
         // 仅叠加层视觉变化（文档未变）：清网格缓存驱动重绘。
         // **不能**用 `mark_notes_changed()`——那会置 notes_changed 并重建空间索引（O(N)）。
-        self.grid_cache.clear();
     }
 
     /// 鼠标工具：拖动中 —— 更新预览偏移（拖动整组）或拉框矩形（框选），均不改文档
@@ -703,10 +699,7 @@ impl Editor {
         } else if self.editor_state.shape_select.is_marqueeing() {
             // 与按下同口径：不吸附，避免把拉框压成竖线
             self.editor_state.shape_select.update_marquee(tick, key);
-        } else {
-            return;
         }
-        self.grid_cache.clear();
     }
 
     /// 鼠标工具：左键释放 —— 有实际位移则提交**整组移动**，否则落在框选上
@@ -714,7 +707,6 @@ impl Editor {
         if self.is_shape_editing() {
             self.finish_shape_edit();
             self.pending_drag_applied = (0.0, 0.0);
-            self.grid_cache.clear();
             return;
         }
         if let Some((dtick, dkey)) = self.editor_state.shape_select.end_drag() {
@@ -723,7 +715,6 @@ impl Editor {
             self.finish_shape_marquee(area);
         }
         self.pending_drag_applied = (0.0, 0.0);
-        self.grid_cache.clear();
     }
 
     /// 结束框选：拉框足够大时把框内**全部**可见图形并入选中集，返回本次**新**选中的 ID
@@ -934,7 +925,6 @@ impl Editor {
             .filter_map(|(id, notes, pending)| pending.is_none().then_some((id, notes)))
             .collect();
         if selected.is_empty() {
-            self.grid_cache.clear();
             return pending_deleted;
         }
 
@@ -975,7 +965,6 @@ impl Editor {
             for id in ids {
                 self.editor_state.shape_select.mark_deleted(id);
             }
-            self.grid_cache.clear();
             return true;
         }
         for id in ids {

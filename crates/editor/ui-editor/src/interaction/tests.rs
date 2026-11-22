@@ -42,19 +42,6 @@ fn test_spatial_index_default() {
     assert!(state.query_cache.borrow().is_empty());
 }
 
-#[test]
-fn test_cache_invalidation() {
-    use crate::CacheInvalidation;
-    assert_eq!(
-        CacheInvalidation::GRID.0 & CacheInvalidation::ALL.0,
-        CacheInvalidation::GRID.0
-    );
-    assert_eq!(
-        CacheInvalidation::NONE.0 | CacheInvalidation::KEYBOARD.0,
-        CacheInvalidation::KEYBOARD.0
-    );
-}
-
 // ── 平滑滚动方向与边界 ──
 
 /// 默认 view: zoom_x=0.1, zoom_y=20, total_ticks=768000,

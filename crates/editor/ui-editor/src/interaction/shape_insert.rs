@@ -67,7 +67,6 @@ impl Editor {
         {
             self.editor_state.shape_select.select_only(id);
         }
-        self.grid_cache.clear();
         self.mark_notes_changed();
     }
 
@@ -86,7 +85,6 @@ impl Editor {
         self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         self.mark_notes_changed();
         Some(drawer)
     }

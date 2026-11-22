@@ -1,8 +1,8 @@
 //! Editor 配置相关方法 — 简单的 getter/setter/delegate
 //!
-//! 包含：工具切换、光标/画布状态、总 ticks 和 PPQ、音符变更标志、缓存失效
+//! 包含：工具切换、光标/画布状态、总 ticks 和 PPQ、音符变更标志
 
-use crate::{CacheInvalidation, Editor};
+use crate::Editor;
 use lumino_core::BrushConfig;
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
@@ -248,13 +248,6 @@ impl Editor {
     /// 清除音符变化标志
     pub fn clear_notes_changed(&mut self) {
         self.notes_changed = false;
-    }
-
-    /// 统一缓存失效（替代散落的 grid_cache.clear() 等调用）
-    #[inline]
-    pub fn invalidate_caches(&mut self, which: CacheInvalidation) {
-        let _ = which;
-        self.grid_cache.clear();
     }
 
     /// 重置编辑器内部状态到默认值（释放私有字段内存）

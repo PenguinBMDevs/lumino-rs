@@ -99,7 +99,6 @@ impl Editor {
             drag: RoundDrag::Radius,
             shape_base: 0.0,
         });
-        self.grid_cache.clear();
         true
     }
 
@@ -111,7 +110,6 @@ impl Editor {
     /// 退出柔化模式
     pub fn end_round_corners(&mut self) {
         if self.round_corner.take().is_some() {
-            self.grid_cache.clear();
         }
     }
 
@@ -213,7 +211,6 @@ impl Editor {
             RoundDrag::Radius
         };
         mode.shape_base = shape_base;
-        self.grid_cache.clear();
         true
     }
 
@@ -259,7 +256,6 @@ impl Editor {
             }
         }
         self.update_pending_part(composed, model);
-        self.grid_cache.clear();
         true
     }
 
@@ -279,7 +275,6 @@ impl Editor {
         }
         self.pending_edit_redo.clear();
         self.pending_composed_redo.clear();
-        self.grid_cache.clear();
         true
     }
 

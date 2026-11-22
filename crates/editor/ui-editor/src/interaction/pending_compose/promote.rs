@@ -90,7 +90,6 @@ impl Editor {
         {
             self.editor_state.shape_select.select_only(id);
         }
-        self.grid_cache.clear();
         true
     }
 
@@ -200,7 +199,6 @@ impl Editor {
             return None;
         }
         self.editor_state.shape_select.select_all_of(ids);
-        self.grid_cache.clear();
         Some(indexes)
     }
 }

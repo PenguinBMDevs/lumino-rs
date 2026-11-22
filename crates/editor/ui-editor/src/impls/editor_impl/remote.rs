@@ -27,7 +27,6 @@ impl Editor {
     /// 移除远端鼠标
     pub fn remove_remote_cursor(&mut self, user_id: &str) {
         self.remote_cursors.remove(user_id);
-        self.grid_cache.clear();
     }
 
     /// 记录 Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动）

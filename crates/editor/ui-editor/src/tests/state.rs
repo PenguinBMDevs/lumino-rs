@@ -5,7 +5,6 @@
 
 mod speed_change;
 
-use crate::CacheInvalidation;
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
@@ -108,17 +107,6 @@ fn test_notes_changed_flag() {
 
     editor.clear_notes_changed();
     assert!(!editor.notes_changed());
-}
-
-/// 测试缓存失效
-#[test]
-fn test_invalidate_caches_clears_specified_cache() {
-    let mut editor = Editor::new();
-    // canvas::Cache 没有 is_empty，只能验证方法不 panic
-    editor.invalidate_caches(CacheInvalidation::GRID);
-    editor.invalidate_caches(CacheInvalidation::KEYBOARD);
-    editor.invalidate_caches(CacheInvalidation::RULER);
-    editor.invalidate_caches(CacheInvalidation::ALL);
 }
 
 /// 测试内部状态重置

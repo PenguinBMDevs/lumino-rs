@@ -132,15 +132,13 @@ impl Root {
                     self.toolbar.current_tool = tool;
                     self.editor.set_tool(tool);
                 }
-                // 清理交互残留并强制刷新渲染：预览实例需由渲染线程全量
-                // 重建清除（invalidate_caches 仅清网格缓存，不驱动音符实例）
+                // 清理交互残留并强制刷新渲染：预览实例需由渲染线程全量重建，
+                // 故下方以 mark_notes_changed 驱动实例更新
                 self.editor.editor_state.interaction.selected_notes.clear();
                 self.editor.clear_pending_drag();
                 self.editor.mark_notes_changed();
                 self.update_playback_notes();
                 self.editor.clear_notes_changed();
-                self.editor
-                    .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
                 tracing::info!("图片转 MIDI 放置已取消");
                 true
             }

@@ -25,8 +25,6 @@ impl Host {
     /// 设置编辑器总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
         self.root.set_total_ticks(total_ticks);
-        self.root.editor.grid_cache.clear();
-        self.root.editor.ruler_cache.clear();
         // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -34,16 +32,12 @@ impl Host {
     /// 设置编辑器的 PPQ (division)
     pub fn set_ppq(&mut self, ppq: u16) {
         self.root.set_ppq(ppq);
-        self.root.editor.grid_cache.clear();
-        self.root.editor.ruler_cache.clear();
         self.window_ctx.window.request_redraw();
     }
 
     /// 应用自定义吸附规格（DRAW-037 对话框结果）
     pub fn set_custom_snap(&mut self, spec: lumino_core::SnapSpec) {
         self.root.set_custom_snap(spec);
-        self.root.editor.grid_cache.clear();
-        self.root.editor.ruler_cache.clear();
         self.window_ctx.window.request_redraw();
     }
 
@@ -152,8 +146,6 @@ impl Host {
             .mark_track_notes_changed();
 
         // 拍号/tempo 变化影响网格与标尺，清空缓存强制重建
-        self.root.editor.grid_cache.clear();
-        self.root.editor.ruler_cache.clear();
         // 空间索引/最长音符长度**无需**在此手工失效：上方
         // `mark_track_notes_changed()` 已 bump `track_notes_gen`，而世代是它们的
         // 失效键（见 `SpatialIndexState` 文档）。这里也不能改用

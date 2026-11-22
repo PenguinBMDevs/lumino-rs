@@ -31,9 +31,6 @@ impl Host {
         root.editor.remote_cursors.clear();
 
         // 失效所有 Canvas 缓存
-        root.editor.grid_cache.clear();
-        root.editor.keyboard_cache.clear();
-        root.editor.ruler_cache.clear();
 
         // 右键菜单锚定的对象（待确认图形 / 音符选中）已随工程清空失效：
         // 必须一起关掉，否则「长列表」会残留在屏幕上（越界）。

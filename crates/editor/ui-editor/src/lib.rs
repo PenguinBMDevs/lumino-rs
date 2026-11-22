@@ -103,23 +103,6 @@ pub fn onion_track_color(track_idx: usize) -> [u8; 4] {
     lumino_extras::palette::onion_track_color(track_idx)
 }
 
-/// 缓存失效标志位
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CacheInvalidation(u8);
-
-impl CacheInvalidation {
-    /// 无缓存失效
-    pub const NONE: Self = Self(0);
-    /// 网格缓存失效
-    pub const GRID: Self = Self(1 << 0);
-    /// 键盘缓存失效
-    pub const KEYBOARD: Self = Self(1 << 1);
-    /// 标尺缓存失效
-    pub const RULER: Self = Self(1 << 2);
-    /// 全部缓存失效
-    pub const ALL: Self = Self(0b111);
-}
-
 /// 空间索引状态（从 Editor 提取，减少字段数）
 ///
 /// ## 派生缓存的失效键（2026-10-17 审计 §五 同类项整改）
@@ -149,24 +132,8 @@ pub struct SpatialIndexState {
     pub max_note_len_key: Cell<Option<(u64, usize)>>,
 }
 
-/// 绘制缓存失效标记（绘制缓存已删除，clear 为 no-op）。
-#[derive(Default)]
-pub struct GridCacheMarker;
-
-impl GridCacheMarker {
-    /// 失效（no-op）。
-    pub fn clear(&mut self) {}
-}
-
 /// 钢琴卷帘编辑器
 pub struct Editor {
-    /// 绘制缓存失效标记（绘制缓存已删除；保留调用点以免改动大量编辑路径）
-    pub grid_cache: GridCacheMarker,
-    /// 键盘缓存失效标记（同 grid_cache，no-op）
-    pub keyboard_cache: GridCacheMarker,
-    /// 标尺缓存失效标记（同 grid_cache，no-op）
-    pub ruler_cache: GridCacheMarker,
-
     /// 空间索引状态（音符索引、查询缓存等）
     pub spatial: SpatialIndexState,
 

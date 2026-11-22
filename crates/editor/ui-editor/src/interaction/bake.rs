@@ -132,7 +132,6 @@ impl Editor {
                 }
             }
         }
-        self.grid_cache.clear();
         true
     }
 
@@ -157,7 +156,6 @@ impl Editor {
             BakePending::Brush { .. } => self.editor_state.brush_tool.reset(),
         }
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         true
     }
 }

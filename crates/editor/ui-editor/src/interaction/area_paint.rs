@@ -108,7 +108,6 @@ impl Editor {
             original_areas,
         });
         self.shape_list_open = false;
-        self.grid_cache.clear();
         true
     }
 
@@ -158,7 +157,6 @@ impl Editor {
         }
         self.area_paint = None;
         self.shape_list_open = true;
-        self.grid_cache.clear();
         true
     }
 
@@ -166,14 +164,12 @@ impl Editor {
     pub fn close_shape_list(&mut self) {
         if self.shape_list_open {
             self.shape_list_open = false;
-            self.grid_cache.clear();
         }
     }
 
     /// 退出区域着色模式
     pub fn end_area_paint(&mut self) {
         if self.area_paint.take().is_some() {
-            self.grid_cache.clear();
         }
     }
 
@@ -197,7 +193,6 @@ impl Editor {
             return false;
         }
         state.colour = colour;
-        self.grid_cache.clear();
         true
     }
 

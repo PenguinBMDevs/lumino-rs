@@ -1,4 +1,3 @@
-use super::CacheInvalidation;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_ui_core::constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
@@ -44,7 +43,6 @@ impl super::Editor {
         }
 
         // 键盘和网格缓存都需要刷新：key_count 变了，键盘绘制和网格线都要重绘
-        self.invalidate_caches(super::CacheInvalidation::ALL);
     }
 
     /// 获取当前可见键数。
@@ -61,7 +59,6 @@ impl super::Editor {
     /// * `width` — 键盘栏宽度
     pub fn set_keyboard_width(&mut self, width: f32) {
         self.editor_state.view.set_keyboard_width(width);
-        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 获取当前键盘栏宽度。
@@ -80,13 +77,11 @@ impl super::Editor {
     /// * `precision` — 吸附精度值
     pub fn set_snap_precision(&mut self, precision: f32) {
         self.editor_state.view.set_snap_precision(precision);
-        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 设置吸附规格（同时派生 `snap_precision`；DRAW-037）。
     pub fn set_snap_spec(&mut self, spec: lumino_core::SnapSpec) {
         self.editor_state.view.set_snap_spec(spec);
-        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 当前吸附规格。
@@ -108,7 +103,6 @@ impl super::Editor {
     /// * `length` — 默认音符长度（tick）
     pub fn set_default_note_length(&mut self, length: f32) {
         self.editor_state.view.set_default_note_length(length);
-        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 获取新建音符的默认时值。

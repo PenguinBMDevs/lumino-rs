@@ -1,4 +1,3 @@
-use super::CacheInvalidation;
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_ui_core::constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
 
@@ -88,7 +87,6 @@ impl super::Editor {
             &mut self.editor_state.max_scroll,
         )
         .set_scroll_x(scroll_x, keyboard_width, canvas_width, time_zoom);
-        self.invalidate_caches(CacheInvalidation::RULER);
     }
 
     /// 设置垂直滚动位置（钳位到有效范围并刷新键盘缓存）。
@@ -102,7 +100,6 @@ impl super::Editor {
             &mut self.editor_state.max_scroll,
         )
         .set_scroll_y(scroll_y, canvas_height);
-        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
     /// 设置水平缩放倍率（以固定比例锚定缩放并刷新标尺缓存）。
@@ -125,7 +122,6 @@ impl super::Editor {
             MIN_ZOOM_X,
             MAX_ZOOM_X,
         );
-        self.invalidate_caches(CacheInvalidation::RULER);
     }
 
     /// 设置垂直缩放倍率（以固定比例锚定缩放并刷新键盘缓存）。
@@ -172,7 +168,6 @@ impl super::Editor {
             dynamic_min_zoom,
             dynamic_max_zoom,
         );
-        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
     /// 设置纵向卷帘「音高轴」滚动位置（键盘 X 向平移）。
@@ -194,7 +189,6 @@ impl super::Editor {
         self.editor_state.view.scroll_y = scroll_y.clamp(0.0, max_scroll);
         self.editor_state.view.smooth_scroll.target_y = self.editor_state.view.scroll_y;
         self.editor_state.view.smooth_scroll.active = false;
-        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
     /// 设置纵向键盘缩放（仅纵向卷帘，视口为画布宽度，锚点为水平比例）
@@ -232,7 +226,6 @@ impl super::Editor {
         self.editor_state.view.scroll_y = self.editor_state.view.scroll_y.clamp(0.0, max_scroll);
         self.editor_state.view.smooth_scroll.target_y = self.editor_state.view.scroll_y;
         self.editor_state.view.smooth_scroll.active = false;
-        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
     /// 使纵向键盘完整显示 128/256 键（重置缩放与滚动以铺满视口宽度）
@@ -251,7 +244,6 @@ impl super::Editor {
         self.editor_state.view.scroll_y = 0.0;
         self.editor_state.view.smooth_scroll.target_y = 0.0;
         self.editor_state.view.smooth_scroll.active = false;
-        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
     /// 设置纵向时间轴滚动（Y 向，头部对齐键盘顶部，向远离键盘方向递增，纵向隐藏横向标尺故无 ruler）
@@ -264,7 +256,6 @@ impl super::Editor {
         self.editor_state.view.scroll_x = scroll_x.clamp(0.0, max_scroll);
         self.editor_state.view.smooth_scroll.target_x = self.editor_state.view.scroll_x;
         self.editor_state.view.smooth_scroll.active = false;
-        self.invalidate_caches(CacheInvalidation::RULER);
     }
 
     /// 设置纵向时间轴缩放（Y 向，锚点为距键盘顶部比例，0=键盘顶部，1=顶部）
@@ -291,6 +282,5 @@ impl super::Editor {
         self.editor_state.view.scroll_x = self.editor_state.view.scroll_x.clamp(0.0, max_scroll);
         self.editor_state.view.smooth_scroll.target_x = self.editor_state.view.scroll_x;
         self.editor_state.view.smooth_scroll.active = false;
-        self.invalidate_caches(CacheInvalidation::RULER);
     }
 }
