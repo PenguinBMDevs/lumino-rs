@@ -93,8 +93,13 @@ fn test_ruler_tick_position_calculation() {
     assert_eq!(screen_x, 20.0); // 60 + 9600 * 0.1 - 1000 = 60 + 960 - 1000 = 20
 }
 
-/// 测试大量标尺刻度生成性能
+/// 测试大量标尺刻度生成性能。
+///
+/// 墙钟 1ms 硬断言对 CI 机器负载极度敏感（macOS runner 抖动到 5ms+ 即误报失败），
+/// 不适合放在主 CI 门禁。作为手动性能基准保留：
+/// `cargo nextest run test_ruler_tick_generation_performance --run-ignored only`
 #[test]
+#[ignore = "墙钟性能基准，CI 负载敏感；手动跑 --run-ignored only"]
 fn test_ruler_tick_generation_performance() {
     use std::time::Instant;
 
