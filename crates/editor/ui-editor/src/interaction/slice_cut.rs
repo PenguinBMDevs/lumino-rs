@@ -41,8 +41,7 @@ impl Editor {
 
     /// 退出布防
     pub fn end_slice_cut(&mut self) {
-        if self.slice_cut.take().is_some() {
-        }
+        self.slice_cut.take();
     }
 
     /// 按下：记录起点（`shift` = 不吸附）

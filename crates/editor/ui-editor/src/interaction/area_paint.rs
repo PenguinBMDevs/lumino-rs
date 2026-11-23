@@ -169,8 +169,7 @@ impl Editor {
 
     /// 退出区域着色模式
     pub fn end_area_paint(&mut self) {
-        if self.area_paint.take().is_some() {
-        }
+        self.area_paint.take();
     }
 
     /// 是否处于区域着色模式

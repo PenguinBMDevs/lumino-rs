@@ -19,7 +19,6 @@ impl Root {
     /// 处理窗口事件
     pub(crate) fn handle_window_event(&mut self, event: window::Event) {
         let is_fps_update = matches!(&event, window::Event::FpsUpdate(_));
-        let is_theme_change = matches!(&event, window::Event::Theme(_));
 
         if is_fps_update && let window::Event::FpsUpdate(fps) = &event {
             self.statusbar.set_fps(*fps);
@@ -53,9 +52,6 @@ impl Root {
         }
 
         self.window.update(event);
-
-        if is_theme_change {
-        }
     }
 
     /// 取出设置对话框待全局应用的主题（无待应用时返回 `None`）

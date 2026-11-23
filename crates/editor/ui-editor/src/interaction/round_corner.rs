@@ -109,8 +109,7 @@ impl Editor {
 
     /// 退出柔化模式
     pub fn end_round_corners(&mut self) {
-        if self.round_corner.take().is_some() {
-        }
+        self.round_corner.take();
     }
 
     /// 当前模式下的**可柔化角点**（锚点下标 + 屏幕位置）

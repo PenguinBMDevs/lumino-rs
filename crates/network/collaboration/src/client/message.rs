@@ -279,7 +279,8 @@ mod tests {
     #[test]
     fn test_authenticated_room_null_is_parsable() {
         let json = r#"{"type":"authenticated","userId":"u1","room":null,"user":{"id":"u1","username":"tester"},"users":[]}"#;
-        let msg: ServerMessage = serde_json::from_str(json).expect("room:null 的认证响应必须可解析");
+        let msg: ServerMessage =
+            serde_json::from_str(json).expect("room:null 的认证响应必须可解析");
         match msg {
             ServerMessage::Authenticated { room, .. } => {
                 assert!(room.is_none(), "room:null 应解析为 None");

@@ -51,4 +51,3 @@ pub struct UserData {
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
-

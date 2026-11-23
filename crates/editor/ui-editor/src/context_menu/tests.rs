@@ -43,7 +43,10 @@ fn test_pending_shape_menu_offers_pending_compose_share_and_delete() {
         PianoRollContextMenuItem::CopyShapeText,
         PianoRollContextMenuItem::ReturnToDrawer,
     ] {
-        assert!(items.contains(&required), "待确认镜像缺少条目：{required:?}");
+        assert!(
+            items.contains(&required),
+            "待确认镜像缺少条目：{required:?}"
+        );
     }
     assert!(
         !items.iter().any(|item| matches!(
