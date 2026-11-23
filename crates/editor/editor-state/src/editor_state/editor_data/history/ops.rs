@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 
 use lumino_midi_model::NoteEvent;
 use lumino_midi_model::TickIndexedEvents;
-use lumino_note_core::Note;
 use lumino_note_core::history::{CreateOp, MoveOp};
 
 use super::EditorData;
@@ -176,78 +175,6 @@ impl EditorData {
             self.note_delta_events.clear();
         }
         modified
-    }
-
-    /// 将 `(track_id, index)` 修改集合按轨合并连续区间并推送 `UpdateRange` 事件。
-    #[allow(dead_code)]
-    fn push_move_update_ranges(&mut self, modified_indices: &[(usize, usize)]) {
-        if modified_indices.is_empty() {
-            return;
-        }
-        // 快路径（常见）：单轨且索引严格升序（解析顺序即索引顺序）→
-        // 直接扫描生成连续区间，免 HashMap 分组 + Vec 拷贝 + 排序（百万级省 ~30MB）。
-        let single_track = modified_indices
-            .iter()
-            .all(|&(t, _)| t == modified_indices[0].0);
-        let sorted_unique = modified_indices.windows(2).all(|w| w[0].1 < w[1].1);
-        if single_track && sorted_unique {
-            let track_id = modified_indices[0].0;
-            let mut start = modified_indices[0].1;
-            let mut prev = start;
-            for &(_, i) in &modified_indices[1..] {
-                if i == prev + 1 {
-                    prev = i;
-                    continue;
-                }
-                self.push_update_range_event(track_id, start, prev);
-                start = i;
-                prev = i;
-            }
-            self.push_update_range_event(track_id, start, prev);
-            return;
-        }
-        let mut by_track: HashMap<usize, Vec<usize>> = HashMap::new();
-        for &(track_id, idx) in modified_indices {
-            by_track.entry(track_id).or_default().push(idx);
-        }
-        for (track_id, mut idxs) in by_track {
-            idxs.sort_unstable();
-            idxs.dedup();
-            let mut start = idxs[0];
-            let mut prev = idxs[0];
-            for &i in &idxs[1..] {
-                if i == prev + 1 {
-                    prev = i;
-                    continue;
-                }
-                self.push_update_range_event(track_id, start, prev);
-                start = i;
-                prev = i;
-            }
-            self.push_update_range_event(track_id, start, prev);
-        }
-    }
-
-    /// 推送单段 `[start, end]`（闭区间）的音符增量更新事件。
-    ///
-    /// 直接经 `iter_window` 顺序取音符转换（免 `get_range` 的 `Vec<&T>` 中间层）。
-    fn push_update_range_event(&mut self, track_id: usize, start: usize, end: usize) {
-        let mapped: Vec<Note> = match self.document.as_ref() {
-            Some(doc) => doc
-                .track_notes(track_id)
-                .iter_window(start, end + 1)
-                .map(|(_, n)| super::super::accessors::event_to_note(n))
-                .collect(),
-            None => return,
-        };
-        if !mapped.is_empty() {
-            self.note_delta_events.push(
-                crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
-                    start_index: start,
-                    notes: mapped,
-                },
-            );
-        }
     }
 
     /// 当前 view 下可用于 clamp key 的最大 key 索引
