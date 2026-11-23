@@ -109,18 +109,6 @@ impl NoteEvent {
             ),
         ]
     }
-
-    /// 转换为 `NoteInfo`（UI 缓存格式）。
-    #[inline]
-    pub fn to_note_info(&self) -> NoteInfo {
-        NoteInfo::new(
-            self.start_tick,
-            self.length(),
-            self.key,
-            self.velocity,
-            self.channel,
-        )
-    }
 }
 
 impl From<NoteInfo> for NoteEvent {
