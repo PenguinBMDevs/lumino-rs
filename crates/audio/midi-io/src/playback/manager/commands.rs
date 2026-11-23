@@ -25,6 +25,11 @@ pub(crate) enum Command {
     /// 回执在 `midi_output` 被 drop 之后发送，发送失败（调用方已放弃等待）
     /// 不视为错误。
     ClearMidiOutputAck(std::sync::mpsc::Sender<()>),
+    /// 命令队列屏障：不做任何状态变更，仅在所有先前命令执行后回执。
+    ///
+    /// 供 [`super::PlaybackManager::flush_commands`] 使用：FIFO 通道保序，回执即证明
+    /// 此前投递的 Play/Pause/Stop/Seek 已生效，调用方可以安全读取状态。
+    Barrier(std::sync::mpsc::Sender<()>),
     RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
     /// REND-002 修复：清零打击乐模态跟踪（仅「文档真正切换」发；编辑快照不发）
@@ -67,6 +72,10 @@ pub(crate) fn handle_command(
         Command::ClearMidiOutputAck(ack) => {
             // 先 drop 旧连接，再回执——调用方（重初始化前释放）据此确认端口已可重开。
             *midi_output = None;
+            let _ = ack.send(());
+        }
+        Command::Barrier(ack) => {
+            // 屏障只回执，不触碰任何状态：FIFO 通道保证此前命令已全部执行完毕。
             let _ = ack.send(());
         }
         Command::RebuildCurrentTrackQueue => engine.rebuild_current_track_queue(),

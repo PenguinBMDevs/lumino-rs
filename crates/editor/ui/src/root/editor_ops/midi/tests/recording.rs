@@ -1,5 +1,98 @@
 use super::common::{attach_test_document, create_root};
 
+use lumino_midi_io::{
+    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputInfo, PlaybackOutput,
+};
+
+/// 录制失败反馈测试用输入 API：可配置设备列表与打开输入是否失败。
+struct TestInputApi {
+    inputs: Vec<InputInfo>,
+    open_fails: bool,
+}
+
+impl Api for TestInputApi {
+    fn version(&self) -> Option<String> {
+        Some("test".to_string())
+    }
+
+    fn inputs(&self) -> Result<Vec<InputInfo>, Error> {
+        Ok(self.inputs.clone())
+    }
+
+    fn outputs(&self) -> Result<Vec<OutputInfo>, Error> {
+        Ok(Vec::new())
+    }
+
+    fn open_output(&self, _id: u32) -> Result<Box<dyn PlaybackOutput>, Error> {
+        Err(Error::OpenOutputFailed("测试 API 不支持输出".to_string()))
+    }
+
+    fn open_input(
+        &self,
+        _id: u32,
+        _callback: MidiInputCallback,
+    ) -> Result<Box<dyn InputConnection>, Error> {
+        if self.open_fails {
+            Err(Error::OpenInputFailed("测试打开失败".to_string()))
+        } else {
+            Ok(Box::new(TestInputConnection))
+        }
+    }
+}
+
+struct TestInputConnection;
+
+impl InputConnection for TestInputConnection {
+    fn close(self: Box<Self>) {}
+}
+
+/// 无输入 API：录制失败必须复位按钮并给出用户可见反馈（不能只写日志）。
+#[test]
+fn test_start_recording_without_api_reports_visible_error() {
+    let mut root = create_root();
+    root.toolbar.is_recording = true;
+
+    root.start_recording();
+
+    assert!(!root.toolbar.is_recording, "失败后录制按钮必须复位");
+    assert_eq!(root.toast.len(), 1, "失败必须产生 Toast 反馈");
+}
+
+/// 有 API 但无设备：同样必须有可见反馈，而不是静默回到未录制态。
+#[test]
+fn test_start_recording_without_devices_reports_visible_error() {
+    let mut root = create_root();
+    root.set_midi_api(Box::new(TestInputApi {
+        inputs: Vec::new(),
+        open_fails: false,
+    }));
+    root.toolbar.is_recording = true;
+
+    root.start_recording();
+
+    assert!(!root.toolbar.is_recording, "失败后录制按钮必须复位");
+    assert_eq!(root.toast.len(), 1, "无设备必须产生 Toast 反馈");
+}
+
+/// 打开输入设备失败：必须给出可见反馈（设备被占用等场景）。
+#[test]
+fn test_start_recording_open_failure_reports_visible_error() {
+    let mut root = create_root();
+    root.set_midi_api(Box::new(TestInputApi {
+        inputs: vec![InputInfo {
+            id: 7,
+            name: "Fake Keyboard".to_string(),
+        }],
+        open_fails: true,
+    }));
+    root.toolbar.is_recording = true;
+
+    root.start_recording();
+
+    assert!(!root.toolbar.is_recording, "失败后录制按钮必须复位");
+    assert_eq!(root.toast.len(), 1, "打开失败必须产生 Toast 反馈");
+}
+
 /// 测试 RecordingState 的状态切换
 #[test]
 fn test_recording_state_toggle() {

@@ -1,98 +1,72 @@
-# Lumino RS
+# Lumino-rs — **A High-Performance MIDI Editor for the Complete Black MIDI Workflow**
 
-一个使用 Rust 开发的新一代 MIDI 编辑器，基于现代化技术栈构建，提供低延迟、跨平台的 MIDI 编辑体验。
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PenguinBMDevs/lumino-rs)
+[Chinese](https://github.com/PenguinBMDevs/lumino-rs/blob/dev/README-CN.md)  [English](https://github.com/PenguinBMDevs/lumino-rs/blob/dev/README.md)
 
-## 特性
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/919985f6-3856-4da7-9349-f6647d7cc014" width="720" alt="Home" />
+</p>
 
-- 🎹 **专业 MIDI 编辑**：支持多轨编辑、音符绘制、力度编辑
-- ⚡ **高性能渲染**：使用 wgpu 进行 GPU 加速渲染
-- 🖥️ **简约外观**：基于 winit + iced，提供现代化UI体验
-- 🔌 **多后端 MIDI I/O**：同时支持KDMAPI，winmm和跨平台xsynth后端，提供强劲性能
-- ⚙️ **配置持久化**：窗口状态、主题设置自动保存
+Lumino-rs is a new-generation MIDI editor developed in Rust. Built on a modern technology stack, it provides a low-latency, cross-platform MIDI editing experience. The project prioritizes rendering performance and interaction responsiveness in its architecture, aiming to provide a consistent modern editing experience on mainstream desktop platforms. [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PenguinBMDevs/lumino-rs)
 
-## 构建
+## Features
 
-### 前置要求
+- **Complete Black MIDI workflow** — piano roll editor, project transport (indev), video export, audio rendering, basic editing (indev)
+- **High-performance rendering** — GPU-accelerated rendering based on wgpu, with CPU rendering support
+- **Modern interface** — a UI system built on eugi, providing a convenient and fast user experience
+- **Multi-backend MIDI I/O** — supports KDMAPI, Maestro, WinMM, and the cross-platform xsynth backend, delivering strong performance
+- **Rich theme system** — more than ten themes enrich your UI appearance
+- **Cross-platform** — supports Windows, macOS, Linux, and Android (in development)
 
-- 建议版本：Rust 1.94.0 或更新
-- 各平台构建工具：
-  - **Windows**: Visual Studio Build Tools（推荐） 或 MSVC
-  - **macOS**: Xcode Command Line Tools
-  - **Linux**: GCC/Clang, pkg-config （建议直接运行构建脚本）
+## Screenshots
 
-### 编译
+| Module Name | Screenshot |
+| --- | --- |
+| **Home** | <img src="https://github.com/user-attachments/assets/240463b4-9f03-4c89-a11a-e571b6744dcc" width="720" alt="Home" /> |
+| **Piano Roll** | <img src="https://github.com/user-attachments/assets/a04a3f08-c85e-4c50-8ac6-dc87436c5bfe" width="720" alt="Piano Roll 1" /><br><br><img src="https://github.com/user-attachments/assets/badfbc5b-e05c-4487-8693-aad9727bd5e7" width="720" alt="Piano Roll 2" /> |
+| **Project Transport** | <img src="https://github.com/user-attachments/assets/d2e6b3e1-dc38-47d4-9751-4c7d8b5d138d" width="720" alt="Project Transport" /> |
+| **Player** | <img src="https://github.com/user-attachments/assets/f503471c-a713-4f64-9c43-bbad5a937bf7" width="720" alt="Player" /> |
+| **Video Export Panel** | <img src="https://github.com/user-attachments/assets/eb8791fe-3c2c-4595-9bb9-238198c6159b" width="720" alt="Video Export Panel" /> |
+| **Audio Export Panel** | <img src="https://github.com/user-attachments/assets/70193d5b-9902-4b4f-929b-8ad241d2dd8e" width="720" alt="Audio Export Panel" /> |
+
+## Quick Start
+
+Requires Rust 1.95.0 or later (Windows requires Visual Studio Build Tools, macOS requires Xcode Command Line Tools, Linux requires GCC/Clang and pkg-config).
 
 ```bash
-# 克隆仓库
 git clone https://github.com/PenguinBMDevs/lumino-rs.git
 cd lumino-rs
-
-# 开发构建
-cargo build
-
-# 高性能开发构建
-cargo build --profile fast-release
-
-# 发布构建（优化）
-cargo build --release
+cargo run              # Development mode
+cargo run --release    # Release mode (optimized)
 ```
 
-## 运行
+> On first run, configuration files and log directories are automatically created (Windows: `%APPDATA%\PenguinBMDevs\lumino\config\`; macOS: `~/Library/Application Support/com.PenguinBMDevs.lumino/`; Linux: `~/.config/lumino/`). The log level can be adjusted via the `RUST_LOG` environment variable.
 
-```bash
-# 开发模式
-cargo run
-
-# 高性能开发测试运行
-cargo run --profile fast-release
-
-# 发布模式
-cargo run --release
-```
-
-首次运行会自动创建配置文件：
-- **Windows**: `%APPDATA%\PenguinBMDevs\lumino\config\config.json`
-- **macOS**: `~/Library/Application Support/com.PenguinBMDevs.lumino/config.json`
-- **Linux**: `${XDG_CONFIG_HOME:-~/.config}/lumino/config.json`（`directories` 在 Linux 上只取应用名，不含组织名）
-
-### 日志
-
-#### 文件位置
-
-文件日志写在配置目录下的 `logs/`，每次启动生成一份 `lumino_YYYYMMDD_HHMMSS.log`：
-
-- **Windows**: `%APPDATA%\PenguinBMDevs\lumino\config\logs\`
-- **macOS**: `~/Library/Application Support/com.PenguinBMDevs.lumino/logs/`
-- **Linux**: `${XDG_CONFIG_HOME:-~/.config}/lumino/logs/`
-
-- 保留份数由「设置 → 日志文件保留份数」控制（默认 10，`0` 表示不限制），启动时清理最旧的日志。
-- 崩溃时 panic hook 额外写一份 `crash_YYYYMMDD_HHMMSS.log`，下次启动自动归档到 `logs/crash-archive/`。
-
-#### 日志级别
-
-通过 `RUST_LOG` 环境变量控制日志级别：
-
-```bash
-# 查看所有 lumino 日志（DEBUG 级别，但是我觉得你不需要看这么多）
-RUST_LOG=debug cargo run
-
-# 仅显示 WARN 及以上
-RUST_LOG=warn cargo run
-```
-
-## 许可证
+## License
 
 [AGPL-3.0](LICENSE)
 
-## 贡献
+## Contributing
 
-欢迎提交 Issue 和 Pull Request。请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发规范。
+Issues and Pull Requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
-## 致谢
+## Acknowledgements
 
-- [btjawa](https://github.com/btjawa) - 项目代码地基贡献者
-- [winit](https://github.com/rust-windowing/winit) - 窗口事件抽象
-- [wgpu](https://github.com/gfx-rs/wgpu) - 跨平台 GPU 抽象
-- [iced](https://github.com/iced-rs/iced) - 数据驱动的 UI 框架
-- [midir](https://github.com/Boddlnagg/midir) - Rust MIDI I/O 库
+### Contributors
+| Name | Homepage URL |
+|-|-|
+|btjawa|https://github.com/btjawa|
+|Enderman-bm|https://github.com/Enderman-bm|
+|IMT11D|https://github.com/IMT11D|
+|Buickmeow|https://github.com/Buickmeow|
+
+### Components
+| Name | Description |
+|-|-|
+|[winit](https://github.com/rust-windowing/winit)|Window event abstraction|
+|[wgpu](https://github.com/gfx-rs/wgpu)|Cross-platform GPU abstraction|
+|[egui](https://github.com/emilk/egui)|Data-driven UI framework|
+|[midir](https://github.com/Boddlnagg/midir)|Rust MIDI I/O library|
+|[Spiderweb](https://github.com/UnPrioritized/Spiderweb)|Vector-drawing-style MIDI note painting tool|
+|[Comet](https://github.com/MrCHB1/Comet)|High-performance MIDI renderer|
+|[xsynth](https://github.com/BlackMIDIDevs/xsynth)|Cross-platform MIDI synthesizer|
+|[midly](https://github.com/kovaxis/midly)|Pure Rust MIDI file parsing library|

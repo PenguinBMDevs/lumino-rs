@@ -5,6 +5,7 @@ use lumino_core::Tool;
 
 use super::super::ToolbarModel;
 use super::super::toolbar_popup::{self, ToolbarAction, ToolbarCommand};
+use super::precision;
 use super::tool_selected;
 use crate::icons::{Icon, IconCache};
 use crate::layout;
@@ -92,16 +93,11 @@ pub(super) const TOOLS: &[ToolEntry] = &[
     },
 ];
 
-/// 分组宽度：条目 + 间距 + 「精度:」标签与精度框（对应 上一代 的 `Length::Shrink`）。
-/// 工具条目高亮：前四个选择器映射 `Tool`，第 5 个（绘制工具箱）映射面板开关。
-fn tool_highlighted(model: &ToolbarModel, index: usize, item: &ToolEntry) -> bool {
-    if item.icon == Icon::DrawToolbox {
-        return model.draw_panel_open;
-    }
-    tool_selected(model, index)
-}
-
-pub(super) fn width(ui: &egui::Ui, visible: usize, precision_label: &str) -> f32 {
+/// 分组宽度：条目 + 间距 + 精度选择器（标签 + 间距 + 下拉框）。
+///
+/// `precision_width` 取 [`precision::selector_width`]：与绘制共用同一函数，
+/// 按钮随文本变宽时工具栏总宽同步变化（否则会压住右侧分组）。
+pub(super) fn width(visible: usize, precision_width: f32) -> f32 {
     let items: f32 = TOOLS
         .iter()
         .take(visible)
@@ -114,16 +110,15 @@ pub(super) fn width(ui: &egui::Ui, visible: usize, precision_label: &str) -> f32
         })
         .sum();
     let gaps: f32 = TOOLS.iter().take(visible).map(|item| item.gap_before).sum();
-    let label = ui
-        .painter()
-        .layout_no_wrap(
-            precision_label.to_owned(),
-            FontId::proportional(theme::font::LABEL),
-            theme::text_on_weak(),
-        )
-        .size()
-        .x;
-    items + gaps + 8.0 + label + 8.0 + layout::PRECISION_W
+    items + gaps + layout::PRECISION_LEADING_GAP + precision_width
+}
+
+/// 工具条目高亮：前四个选择器映射 `Tool`，第 5 个（绘制工具箱）映射面板开关。
+fn tool_highlighted(model: &ToolbarModel, index: usize, item: &ToolEntry) -> bool {
+    if item.icon == Icon::DrawToolbox {
+        return model.draw_panel_open;
+    }
+    tool_selected(model, index)
 }
 
 /// 条目 → 动作（前四个是工具选择器，第 5 个是悬浮条开关，其余是命令）。
@@ -200,10 +195,12 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
             }
         }
     }
-    ui.add_space(8.0);
+    ui.add_space(layout::PRECISION_LEADING_GAP);
 
     // 精度标签在框外（与生产 上一代 一致：14px、`background.weak.text`），
     // 文案由生产侧按当前语言给出（中文「精度:」/ 英文「Precision:」）。
+    // 绘制用真实度量；折叠预算用 `precision::label_width` 的上界（只会更宽，
+    // 因此组内不会被压到）。
     let label = model.precision_label.as_str();
     let label_width = ui
         .painter()
@@ -225,21 +222,18 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
         FontId::proportional(theme::font::LABEL),
         theme::text_on_weak(),
     );
-    ui.add_space(8.0);
+    ui.add_space(layout::PRECISION_LABEL_GAP);
 
     // 精度下拉 underlay：`background.weak` 底 + `background.strong` 1px 边框，
-    // 内容 = 16px 吸附图标 + 6 + 13px 文本，内边距 8 → 57×26。
-    let box_w = layout::PRECISION_W;
+    // 内容 = 16px 吸附图标 + 6 + 13px 文本，内边距 8。宽度随文本自动放大
+    // （`precision::button_width` 与折叠预算同源），不再靠省略号收敛。
+    //
+    // 命中注册顺序：先占位（`Sense::empty`，不参与命中）→ 画内容 → 最后整块
+    // `interact`。内部 `Label` 默认 `Sense::hover`，若先注册按钮，点在文字上会
+    // 被 Label 抢走悬停/点击（真机表现就是「点精度框里的数字没反应」）。
+    let box_w = precision::button_width(&model.snap);
     let box_h = layout::PRECISION_H;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(box_w, box_h), Sense::click());
-    let response = widgets::hover_tip(response, model.tips.precision);
-    super::super::toolbar_popup::set_snap_trigger(ui.ctx(), rect);
-    if response.clicked() {
-        super::super::toolbar_popup::push_action(
-            ui.ctx(),
-            super::super::toolbar_popup::ToolbarAction::ToggleSnapPicker,
-        );
-    }
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(box_w, box_h), Sense::empty());
     ui.painter().rect(
         rect,
         CornerRadius::same(4),
@@ -249,12 +243,15 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(rect.shrink2(Vec2::new(8.0, 0.0)))
+            .max_rect(rect.shrink2(Vec2::new(layout::PRECISION_PAD_X, 0.0)))
             .layout(Layout::left_to_right(Align::Center)),
     );
-    child.spacing_mut().item_spacing.x = 6.0;
-    child.add(cache.default_image(child.ctx(), Icon::MusicNote, 16.0));
+    child.spacing_mut().item_spacing.x = layout::PRECISION_ICON_GAP;
+    child.add(cache.default_image(child.ctx(), Icon::MusicNote, layout::PRECISION_ICON));
     child.add(
+        // 所有预设档位（含三连音与 `Custom 3840`）的按钮宽度都由
+        // `precision::button_width` 保证足够，正常不会出现省略号；仅当用户换成
+        // 异常宽的程序字体、估算被击穿时，才由截断兜住，不画到按钮外。
         egui::Label::new(
             egui::RichText::new(&model.snap)
                 .size(theme::font::BODY)
@@ -262,4 +259,17 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
         )
         .truncate(),
     );
+    let response = ui.interact(
+        rect,
+        egui::Id::unique("lumino.toolbar.precision"),
+        Sense::click(),
+    );
+    let response = widgets::hover_tip(response, model.tips.precision);
+    super::super::toolbar_popup::set_snap_trigger(ui.ctx(), rect);
+    if response.clicked() {
+        super::super::toolbar_popup::push_action(
+            ui.ctx(),
+            super::super::toolbar_popup::ToolbarAction::ToggleSnapPicker,
+        );
+    }
 }

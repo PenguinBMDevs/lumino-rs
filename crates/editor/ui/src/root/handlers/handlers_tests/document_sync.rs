@@ -191,53 +191,6 @@ fn test_set_ppq_without_document_no_panic() {
     assert!(root.editor.editor_state.data.document.is_none());
 }
 
-// ── PPQ 编辑提交契约（点击空白处保存 / BPM 只读） ─────────────────────
-
-/// PPQ 编辑只由输入框失焦（`PpqEditConfirmed`）收口。
-///
-/// 回归：`Root::update` 曾按「任意非 PPQ 消息」自动确认，但生产分发走
-/// `Host::route_message`，该兜底只在测试里生效——测试会断言一个生产不存在
-/// 的行为。编辑态与缓冲区必须原样保留，等真正的失焦信号到达。
-#[test]
-fn test_ppq_edit_ignores_unrelated_messages() {
-    let mut root = create_root();
-    root.toolbar.ppq_editing = true;
-    root.toolbar.ppq_edit_buffer = "480*2".to_owned();
-    let before = root.editor.editor_state.view.ppq;
-
-    root.update(crate::toolbar::Event::button_hovered(None));
-
-    assert!(root.toolbar.ppq_editing, "无关消息不得结束 PPQ 编辑态");
-    assert_eq!(
-        root.toolbar.ppq_edit_buffer, "480*2",
-        "用户输入必须原样保留"
-    );
-    assert_eq!(
-        root.editor.editor_state.view.ppq, before,
-        "未失焦前不得提前写入 PPQ"
-    );
-}
-
-/// 失焦提交与回车同口径：整数表达式经 `eval_int_field` 求值后写入。
-#[test]
-fn test_ppq_edit_confirmed_applies_expression() {
-    let mut root = create_root();
-    root.toolbar.ppq_editing = true;
-    root.toolbar.ppq_edit_buffer = "480*2".to_owned();
-
-    root.update(crate::toolbar::Event::ppq_edit_confirmed());
-
-    assert!(!root.toolbar.ppq_editing, "确认后必须退出编辑态");
-    assert!(
-        root.toolbar.ppq_edit_buffer.is_empty(),
-        "确认后必须清空编辑缓冲"
-    );
-    assert_eq!(
-        root.editor.editor_state.view.ppq, 960,
-        "表达式 480*2 应求值为 960"
-    );
-}
-
 // ── PPQ 变更后框选精度跟随工具栏「音符精度」 ──────────────────────────
 
 /// PPQ 变更后 `snap_precision` 必须按工具栏当前「音符精度」重算，

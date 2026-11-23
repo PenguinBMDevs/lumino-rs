@@ -220,19 +220,22 @@ fn shape(ui: &mut egui::Ui, rect: Rect, model: &ShapePanelModel, icons: &mut Ico
         }
         x += SHAPE_BTN + 4.0;
     }
-    let cell = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(SHAPE_BTN));
-    let response = shape_cell(
-        ui,
-        icons,
-        cell,
-        crate::icons::Icon::Gear,
-        false,
-        9,
-        SHAPE_ICON,
-    );
-    let response = response.on_hover_text(&model.drawer);
-    if response.clicked() {
-        toolbar_popup::push_action(ui.ctx(), ToolbarAction::OpenShapeDrawer);
+    #[cfg(lumino_shape_drawer_entry)]
+    {
+        let cell = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(SHAPE_BTN));
+        let response = shape_cell(
+            ui,
+            icons,
+            cell,
+            crate::icons::Icon::Gear,
+            false,
+            9,
+            SHAPE_ICON,
+        );
+        let response = response.on_hover_text(&model.drawer);
+        if response.clicked() {
+            toolbar_popup::push_action(ui.ctx(), ToolbarAction::OpenShapeDrawer);
+        }
     }
 }
 

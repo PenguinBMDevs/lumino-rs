@@ -74,6 +74,7 @@ impl Host {
             egui_editor_texture: None,
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
+            last_midi_devices_scan: None,
             frame_count: 0,
             skip_ui_rendering: false,
             ui_dirty: false,

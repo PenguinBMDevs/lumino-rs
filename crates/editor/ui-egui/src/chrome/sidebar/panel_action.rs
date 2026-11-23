@@ -2,6 +2,10 @@
 //!
 //! 面板绘制在 `track_list.rs`；这里只承载「点到了什么」（含行选择与独奏切换），
 //! 由生产侧映射成 `Message::Sidebar(sidebar::Event::*)`。一帧只保留一个动作（与其它通道一致）。
+//!
+//! 行内重命名的失焦信号**不走这条单槽通道**：点击输入框外通常同时点中别的控件
+//! （另一条音轨、添加行、工具栏…），挤进同一槽必然吞掉一个。它走独立的
+//! [`SidebarRenameBlur`]，由宿主在分发任何面板动作之前先收口。
 
 /// 音轨列表上的动作。
 #[derive(Debug, Clone, PartialEq)]
@@ -23,8 +27,6 @@ pub enum SidebarPanelAction {
         /// 新草稿。
         value: String,
     },
-    /// 确认重命名（回车）。
-    RenameConfirmed(usize),
     /// 选中预设颜色（`rgb` 为 sRGB 分量）。
     ColorPicked {
         /// 音轨 ID。
@@ -93,6 +95,74 @@ pub fn push_panel_action(ctx: &egui::Context, action: SidebarPanelAction) {
 pub fn take_panel_action(ctx: &egui::Context) -> Option<SidebarPanelAction> {
     ctx.data_mut(|d| d.remove_temp::<Option<SidebarPanelAction>>(egui::Id::unique(ACTION_ID)))
         .flatten()
+}
+
+/// 重命名输入框失焦的结局。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenameBlur {
+    /// 回车 / Tab / 点击输入框外的任意位置：提交当前草稿。
+    Commit,
+    /// Esc：放弃草稿，恢复原名。
+    Cancel,
+}
+
+/// 一次重命名失焦信号：哪条音轨 + 最新草稿 + 结局。
+///
+/// 不复用 [`SidebarPanelAction`]：那条通道只有单槽，而「点击输入框外」通常恰好
+/// 同时点中别的控件（点另一条音轨、点添加、点工具栏…），两者挤进同一槽必然
+/// 吞掉一个。单独记一条信号，由宿主在分发任何面板动作**之前**先收口重命名。
+///
+/// 携带 `value` 而不是让宿主去读 [`SidebarPanelAction::RenameChanged`]：同帧的
+/// 「最后一次击键 + 点击别处」会让 Changed 与失焦争抢单槽，草稿可能少一个字。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidebarRenameBlur {
+    /// 正在重命名的音轨 ID。
+    pub track_id: usize,
+    /// 失焦时的最新草稿。
+    pub value: String,
+    /// 结局。
+    pub outcome: RenameBlur,
+}
+
+/// 失焦信号的临时数据键（每帧至多一条）。
+const RENAME_BLUR_ID: &str = "lumino.sidebar-rename.blur";
+
+/// 记录本帧重命名输入框失焦。
+pub fn push_rename_blur(ctx: &egui::Context, blur: SidebarRenameBlur) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(RENAME_BLUR_ID), Some(blur)));
+}
+
+/// 取走本帧重命名失焦信号（宿主每帧调用一次，取走即清）。
+pub fn take_rename_blur(ctx: &egui::Context) -> Option<SidebarRenameBlur> {
+    ctx.data_mut(|d| d.remove_temp::<Option<SidebarRenameBlur>>(egui::Id::unique(RENAME_BLUR_ID)))
+        .flatten()
+}
+
+/// 重命名会话「已抢过焦点」标记的 id。
+///
+/// 退出重命名时必须清除（见 `track_list::row` 的非重命名分支）：egui 的临时
+/// 数据跨帧留存，不清的话下一次进入重命名不会 `request_focus`，输入框拿不到
+/// 键盘——打字无反应，失焦提交也无从触发。
+pub(super) fn rename_focus_once_id(track_id: usize) -> egui::Id {
+    egui::Id::unique(("lumino.track-rename-focus", track_id))
+}
+
+/// 本次重命名会话「失焦已上报」标记的 id。
+///
+/// egui 0.37 的 `Response::lost_focus` 会连续两帧为真（为同帧焦点转移留出
+/// 补偿窗口），不去重会把同一次失焦提交两遍。
+pub(super) fn rename_blur_reported_id(track_id: usize) -> egui::Id {
+    egui::Id::unique(("lumino.track-rename-blur-reported", track_id))
+}
+
+/// 清除重命名会话的临时标记（抢焦点 / 失焦已上报）。
+///
+/// 退出重命名后调用，保证下一个编辑会话从干净状态开始。
+pub(super) fn reset_rename_edit_session(ctx: &egui::Context, track_id: usize) {
+    ctx.data_mut(|d| {
+        d.remove_temp::<bool>(rename_focus_once_id(track_id));
+        d.remove_temp::<bool>(rename_blur_reported_id(track_id));
+    });
 }
 
 /// 右键菜单动作。

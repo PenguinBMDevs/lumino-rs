@@ -16,7 +16,8 @@ use super::{ChromeState, RollBar, SidebarGroup, SidebarModel, SidebarPanel, Side
 use crate::icons::Icon;
 use crate::theme;
 pub use panel_action::{
-    SidebarMenuAction, SidebarPanelAction, take_menu_action, take_panel_action,
+    RenameBlur, SidebarMenuAction, SidebarPanelAction, SidebarRenameBlur, take_menu_action,
+    take_panel_action, take_rename_blur,
 };
 
 /// 路由栏宽度（生产 `ROUTE_BAR_WIDTH`）。

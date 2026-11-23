@@ -148,7 +148,12 @@ pub fn show(
         return Vec::new();
     };
     let local = Point2::new(pos.x - rect.x, pos.y - rect.y);
-    let inside = rect.contains(Point2::new(pos.x, pos.y));
+    // 高一层 egui 浮层（标题栏下拉 / 工具栏弹层 / 溢出菜单）盖住指针时，
+    // 泳道不得消费本次输入：`lane::show` 读的是裸指针状态，不经过
+    // `ui.interact` 的命中集合，不做这层门控就会出现「点菜单项同时清空
+    // 走带选区」——菜单项的点击穿透到泳道，触发 SelectionCleared。
+    let overlay_owns_pointer = crate::chrome::floating::pointer_over_higher_layer(ui, pos);
+    let inside = rect.contains(Point2::new(pos.x, pos.y)) && !overlay_owns_pointer;
     let mut actions = Vec::new();
 
     // ── 中键平移（等价 上一代 的 middle_drag） ──

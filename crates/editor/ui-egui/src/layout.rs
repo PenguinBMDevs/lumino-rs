@@ -64,16 +64,28 @@ pub const RIGHT_TOOL_W: f32 = 32.0;
 pub const RIGHT_TOOL_GAP: f32 = 16.0;
 /// 「更多」按钮宽度。
 pub const MORE_BUTTON_W: f32 = 28.0;
-/// 精度选择器宽度。
 /// 设置页输入框高度（生产 `text_input` 31）。
 pub const SETTINGS_INPUT_H: f32 = 31.0;
 /// 设置页下拉框高度（生产 `pick_list` 32）。
 pub const SETTINGS_COMBO_H: f32 = 32.0;
 
-/// 精度下拉宽度（生产：16px 图标 + 6 + 13px 文本 + 左右内边距 8 + 1px 边框）。
+/// 精度下拉宽度下限：左右内边距 8×2 + 图标 16 + 间距 6 + 文本 19。
+///
+/// 实际宽度按当前吸附文本放大（见 `chrome::toolbar::precision::button_width`），
+/// 只有文本窄于历史外观时才回落到本值。
 pub const PRECISION_W: f32 = 57.0;
 /// 精度下拉高度（生产按钮内容高 24 + 上下边框）。
 pub const PRECISION_H: f32 = 26.0;
+/// 精度下拉左 / 右内边距（各一份）。
+pub const PRECISION_PAD_X: f32 = 8.0;
+/// 精度下拉图标（音符）边长。
+pub const PRECISION_ICON: f32 = 16.0;
+/// 精度下拉图标与文本之间的间距。
+pub const PRECISION_ICON_GAP: f32 = 6.0;
+/// 最后一个工具条目与「精度:」标签之间的间距。
+pub const PRECISION_LEADING_GAP: f32 = 8.0;
+/// 「精度:」标签与下拉框之间的间距。
+pub const PRECISION_LABEL_GAP: f32 = 8.0;
 
 /// 工具栏工具按钮图标尺寸。
 pub const TOOL_BUTTON_ICON: f32 = 20.0;

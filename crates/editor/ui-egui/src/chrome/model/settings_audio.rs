@@ -41,6 +41,8 @@ pub enum AudioField {
     ScanAudioOutputs,
     /// MIDI 输入设备。
     MidiDevice,
+    /// 刷新 MIDI 输入设备（按钮）。
+    ScanMidiDevices,
     /// WinMM 输出设备（播表）。
     WinmmOutput,
     /// 刷新 WinMM 输出（按钮）。

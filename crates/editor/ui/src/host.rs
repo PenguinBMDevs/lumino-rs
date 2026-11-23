@@ -19,6 +19,7 @@ use std::time::Instant;
 use crate::statusbar::performance::CpuMonitor;
 use crate::{message, root, settings};
 
+mod background;
 mod builder;
 mod cache;
 mod convert;
@@ -80,6 +81,8 @@ pub struct Host {
     pub(crate) last_frame_time: Instant,
     /// 上次 FPS 更新时间
     pub(crate) last_fps_update: Instant,
+    /// 设置窗音频页最近一次 MIDI 输入设备扫描时刻（热插拔自动刷新节流）。
+    pub(crate) last_midi_devices_scan: Option<Instant>,
     /// 帧计数器
     pub(crate) frame_count: u32,
     /// 跳过 上一代 UI 渲染（性能测试用）
@@ -330,8 +333,7 @@ impl Host {
         self.root.poll_pending_i2m();
         self.root.poll_material_scan();
         self.root.poll_material_import();
-        self.root.poll_winmm_scan();
-        self.root.poll_midi_devices_scan();
+        self.poll_background_scans();
         self.root.poll_path_dialogs();
         // 素材拖出跟随：鼠标已释放且未在卷帘内确认放置 → 兜底取消（避免预览残留）
         if !self.window_ctx.is_mouse_pressed {

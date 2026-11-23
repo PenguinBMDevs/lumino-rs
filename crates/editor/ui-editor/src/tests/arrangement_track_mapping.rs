@@ -142,3 +142,39 @@ fn test_mapping_falls_back_to_identity_when_unset() {
     assert!(added);
     assert_eq!(doc_track_note_count(&editor, 1), 1);
 }
+
+/// 跨轨选区（≥2 轨）必须**完整**解析为多轨分组：
+/// `Host::get_selected_notes` 的上游只返回一轨时，「导出为素材」会出现
+/// 「菜单能点、产物缺轨」，故此处锁定解析层不做单轨折叠。
+#[test]
+fn test_resolve_selection_returns_all_cross_track_groups() {
+    use crate::edit_view::EditView;
+
+    let mut editor = Editor::default();
+    seed_notes(
+        &mut editor,
+        2,
+        0,
+        &[Note::from_raw(100.0, 60, 100.0, 100, 0)],
+    );
+    editor
+        .editor_state
+        .data
+        .insert_note(1, Note::from_raw(200.0, 64, 100.0, 90, 1));
+    editor
+        .editor_state
+        .data
+        .arrange_selection
+        .add_rect_track(50, 400, 0, 127, 0, 1);
+
+    let tracks = editor
+        .resolve_selection(EditView::Arrangement)
+        .into_tracks();
+    assert_eq!(tracks.len(), 2, "跨轨选区必须返回 2 个非空音轨分组");
+    assert_eq!((tracks[0].0, tracks[0].1.len()), (0, 1));
+    assert_eq!((tracks[1].0, tracks[1].1.len()), (1, 1));
+    assert!(
+        editor.has_active_selection(EditView::Arrangement),
+        "跨轨有命中音符时菜单闸门必须放行"
+    );
+}

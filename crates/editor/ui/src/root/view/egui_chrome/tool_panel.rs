@@ -129,6 +129,7 @@ fn panel_model(
             rectangle: tr!("矩形").to_owned(),
             circle: tr!("圆形").to_owned(),
             triangle: tr!("三角形").to_owned(),
+            #[cfg(lumino_shape_drawer_entry)]
             drawer: tr!("形状抽屉").to_owned(),
         }));
     }
@@ -217,6 +218,7 @@ pub(super) fn action_message(root: &Root, action: &ToolbarAction) -> Option<Mess
         ToolbarAction::ShapeSelected(kind) => {
             crate::toolbar::Event::shape_type_selected(shape_type(*kind))
         }
+        #[cfg(lumino_shape_drawer_entry)]
         ToolbarAction::OpenShapeDrawer => crate::toolbar::Event::open_shape_drawer_dialog(),
         ToolbarAction::BrushSettingsOpen => {
             Message::BrushSettings(BrushSettingsAction::OpenDialog(root.toolbar.brush.clone()))

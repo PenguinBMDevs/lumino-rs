@@ -10,8 +10,12 @@
 //! - [`controls`]：录制 / 走带 / 循环 / 撤销重做 / 检测仪表盘；
 //! - [`tools`]：工具选择区 + 精度下拉；
 //! - [`right_side`]：洋葱皮 / 自动滚动 / 协作 / 「更多」。
+//!
+//! [`precision`] 单独成模块：它在**帧外**也被调用（生产折叠预算），不能依赖 `Ui`。
 
 mod controls;
+/// 精度选择器宽度度量：绘制与折叠预算共用的唯一来源（生产折叠在帧外决策）。
+pub mod precision;
 mod right_side;
 mod tools;
 
@@ -98,19 +102,23 @@ pub fn show_model(ui: &mut egui::Ui, model: &ToolbarModel, icons: &mut crate::ic
         );
         x += layout::DASHBOARD_GROUP_W + 16.0;
     } else {
-        // 分组被折叠时不画输入框：同样清掉编辑会话标记，否则窗口变宽后
-        // 重新展开时输入框会拿不到键盘（见 `ppq_focus_once_id`）。
-        reset_ppq_edit_session(ui.ctx());
+        // 分组被折叠时不画输入框：清掉两个字段的编辑会话标记，否则窗口变宽后
+        // 重新展开时输入框会拿不到键盘（见 `metric_focus_once_id`）。
+        for field in [DashboardField::Bpm, DashboardField::Ppq] {
+            reset_metric_edit_session(ui.ctx(), field);
+        }
     }
 
     // Tools（宽度由条目尺寸累加，对应 上一代 的 `Length::Shrink`）
     if model.groups.tools {
         let visible = visible_tool_count(model);
+        // 精度选择器宽度随吸附文本变化：与生产折叠预算同一函数，总宽同步让位。
+        let precision_width = precision::selector_width(&model.precision_label, &model.snap);
         group(
             ui,
             Rect::from_min_size(
                 egui::pos2(x, y),
-                Vec2::new(tools::width(ui, visible, &model.precision_label), h),
+                Vec2::new(tools::width(visible, precision_width), h),
             ),
             |ui| tools::show(ui, icons, model),
         );
@@ -215,59 +223,111 @@ pub(super) fn tool_selected(model: &ToolbarModel, index: usize) -> bool {
     )
 }
 
-// ── PPQ 编辑的失焦信号 ─────────────────────────────────────────────
+// ── 仪表盘字段编辑的失焦信号 ──────────────────────────────────────
 
-/// PPQ 输入框失焦的结局。
+/// 仪表盘可编辑字段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardField {
+    /// 速度（BPM，上行）。
+    Bpm,
+    /// 每四分音符脉冲数（PPQ，下行）。
+    Ppq,
+}
+
+impl DashboardField {
+    /// 稳定的 egui id 片段。
+    fn key(self) -> &'static str {
+        match self {
+            Self::Bpm => "bpm",
+            Self::Ppq => "ppq",
+        }
+    }
+
+    /// 该字段当前是否处于编辑态。
+    pub(super) fn editing(self, model: &ToolbarModel) -> bool {
+        match self {
+            Self::Bpm => model.bpm_editing,
+            Self::Ppq => model.ppq_editing,
+        }
+    }
+
+    /// 编辑缓冲文本。
+    pub(super) fn buffer(self, model: &ToolbarModel) -> &str {
+        match self {
+            Self::Bpm => &model.bpm_buffer,
+            Self::Ppq => &model.ppq_buffer,
+        }
+    }
+
+    /// 校验错误文本。
+    pub(super) fn error(self, model: &ToolbarModel) -> Option<&str> {
+        match self {
+            Self::Bpm => model.bpm_error.as_deref(),
+            Self::Ppq => model.ppq_error.as_deref(),
+        }
+    }
+}
+
+/// 字段编辑框失焦的结局。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetricBlur {
+    /// 回车 / Tab / 点击其它位置：提交当前输入。
+    Commit,
+    /// Esc：放弃本次编辑，不写入。
+    Cancel,
+}
+
+/// 一次失焦信号：哪个字段 + 提交/取消。
 ///
 /// 不复用 [`toolbar_popup::ToolbarAction`]：那条通道只有单槽，而「输入框失焦」
 /// 通常恰好伴随一次按钮点击（点播放、点工具…），两者挤进同一槽必然吞掉一个。
 /// 单独记一条信号，由宿主在分发任何控件动作**之前**先收口编辑。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PpqBlur {
-    /// 回车 / Tab / 点击其它位置：提交当前输入。
-    Commit,
-    /// Esc：放弃本次编辑，不写入 PPQ。
-    Cancel,
+pub struct DashboardBlur {
+    /// 失焦字段。
+    pub field: DashboardField,
+    /// 结局。
+    pub outcome: MetricBlur,
 }
 
-/// PPQ 失焦信号的临时数据键（每帧至多一条）。
-const PPQ_BLUR_ID: &str = "lumino.toolbar.ppq-blur";
+/// 失焦信号的临时数据键（每帧至多一条）。
+const DASHBOARD_BLUR_ID: &str = "lumino.toolbar.dashboard-blur";
 
-/// 记录本帧 PPQ 输入框失焦。
-pub(super) fn push_ppq_blur(ctx: &egui::Context, blur: PpqBlur) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(PPQ_BLUR_ID), Some(blur)));
+/// 记录本帧仪表盘输入框失焦。
+pub(super) fn push_dashboard_blur(ctx: &egui::Context, blur: DashboardBlur) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(DASHBOARD_BLUR_ID), Some(blur)));
 }
 
-/// 取走本帧 PPQ 失焦信号（宿主每帧调用一次，取走即清）。
-pub fn take_ppq_blur(ctx: &egui::Context) -> Option<PpqBlur> {
-    ctx.data_mut(|d| d.remove_temp::<Option<PpqBlur>>(egui::Id::unique(PPQ_BLUR_ID)))
+/// 取走本帧仪表盘失焦信号（宿主每帧调用一次，取走即清）。
+pub fn take_dashboard_blur(ctx: &egui::Context) -> Option<DashboardBlur> {
+    ctx.data_mut(|d| d.remove_temp::<Option<DashboardBlur>>(egui::Id::unique(DASHBOARD_BLUR_ID)))
         .flatten()
 }
 
-/// PPQ 编辑会话「已抢过焦点」标记的 id。
+/// 字段编辑会话「已抢过焦点」标记的 id。
 ///
-/// 编辑结束时必须清除（见 `controls::dashboard` 的非编辑分支）：egui 的临时
+/// 编辑结束时必须清除（见 `controls::dashboard` 的非编辑字段分支）：egui 的临时
 /// 数据跨帧留存，不清的话第二个编辑会话不会 `request_focus`，输入框拿不到
 /// 键盘——打字无反应，失焦提交也无从触发。
-pub(super) fn ppq_focus_once_id() -> egui::Id {
-    egui::Id::unique("lumino.toolbar.ppq-focused")
+pub(super) fn metric_focus_once_id(field: DashboardField) -> egui::Id {
+    egui::Id::unique(("lumino.toolbar.metric-focused", field.key()))
 }
 
 /// 本次编辑会话「失焦已上报」标记的 id。
 ///
 /// egui 0.37 的 `Response::lost_focus` 会连续两帧为真（为同帧焦点转移留出
 /// 补偿窗口），不去重会把同一次失焦提交两遍。
-fn ppq_blur_reported_id() -> egui::Id {
-    egui::Id::unique("lumino.toolbar.ppq-blur-reported")
+fn metric_blur_reported_id(field: DashboardField) -> egui::Id {
+    egui::Id::unique(("lumino.toolbar.metric-blur-reported", field.key()))
 }
 
-/// 清除 PPQ 编辑会话的临时标记（抢焦点 / 失焦已上报）。
+/// 清除字段编辑会话的临时标记（抢焦点 / 失焦已上报）。
 ///
-/// 编辑结束后调用（含仪表盘分组被折叠、输入框未绘制的情况），保证下一个
+/// 字段退出编辑后调用（含仪表盘分组被折叠、输入框未绘制的情况），保证下一个
 /// 编辑会话从干净状态开始。
-pub(super) fn reset_ppq_edit_session(ctx: &egui::Context) {
+pub(super) fn reset_metric_edit_session(ctx: &egui::Context, field: DashboardField) {
     ctx.data_mut(|d| {
-        d.remove_temp::<bool>(ppq_focus_once_id());
-        d.remove_temp::<bool>(ppq_blur_reported_id());
+        d.remove_temp::<bool>(metric_focus_once_id(field));
+        d.remove_temp::<bool>(metric_blur_reported_id(field));
     });
 }

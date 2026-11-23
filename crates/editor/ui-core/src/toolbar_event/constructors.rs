@@ -251,6 +251,21 @@ impl Event {
         Message::Toolbar(Self::CloseOverflowMenu)
     }
 
+    /// 切换 BPM 编辑模式。点击 BPM 文字时携带当前值以初始化缓冲区。
+    pub fn bpm_edit_toggled(bpm: f64) -> Message {
+        Message::Toolbar(Self::BpmEditToggled(bpm))
+    }
+
+    /// BPM 编辑输入变更。
+    pub fn bpm_edit_changed(value: String) -> Message {
+        Message::Toolbar(Self::BpmEditChanged(value))
+    }
+
+    /// BPM 编辑确认（Enter 键或点击外部区域）。
+    pub const fn bpm_edit_confirmed() -> Message {
+        Message::Toolbar(Self::BpmEditConfirmed)
+    }
+
     /// 切换 PPQ 编辑模式。点击 PPQ 文字时携带当前值以初始化缓冲区。
     pub fn ppq_edit_toggled(ppq: u16) -> Message {
         Message::Toolbar(Self::PpqEditToggled(ppq))
@@ -367,6 +382,9 @@ impl Event {
     }
 
     /// 构造“打开形状抽屉”的工具栏消息（形状下拉中的抽屉入口）
+    ///
+    /// 正式发布构建不编译该入口（`release` profile）。
+    #[cfg(lumino_shape_drawer_entry)]
     pub const fn open_shape_drawer_dialog() -> Message {
         Message::Toolbar(Self::OpenShapeDrawerDialog)
     }

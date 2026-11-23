@@ -1,33 +1,28 @@
 # CONTRIBUTING
 
-## 项目结构
+## Project Structure
 
-项目使用私有 crates 进行模块化开发，位于 `crates/{domain}/{module}`，按功能域分 5 组：
+The project uses private crates for modular development, located at `crates/{domain}/{module}`, divided into 5 groups by functional domain:
 
-- `core/` — 基础数据与基础设施（core、diagnostics、message、project）
-- `audio/` — MIDI / 音频 / 播放（gpu-synth、midi-io、midi-loader、midi-model、midiplayer、note-core）
-- `editor/` — UI / 渲染 / 编辑（dialog、editor-state、gfx、ui、ui-core、ui-editor、ui-settings）
-- `network/` — 协作 / 云（cloud、collaboration）
-- `tools/` — 工具 / 导出（export、extras）
+- `core/` — Foundational data and infrastructure (core, diagnostics, message, project)
+- `audio/` — MIDI / audio / playback (gpu-synth, midi-io, midi-loader, midi-model, midiplayer, note-core)
+- `editor/` — UI / rendering / editing (dialog, editor-state, gfx, ui, ui-core, ui-editor, ui-settings)
+- `network/` — Collaboration / cloud (cloud, collaboration)
+- `tools/` — Tools / export (export, extras)
 
-- 对于该模块的目录，应当命名为其在项目中的地位，例：`core`
-- 对于该模块的 crate 名称，应当附加上项目名称，例：`lumino-core`
-- 命名需遵循 `kebab-case`，全部小写
+- For the module's directory, it should be named after its role in the project, e.g.: `core`
+- For the module's crate name, the project name should be appended, e.g.: `lumino-core`
+- Naming must follow `kebab-case`, all lowercase
 
-## 代码规则
+## Code Rules
 
-- 禁止使用 `unwrap()`，一切错误均需要被有效处理
-- 不应使用 `{module}/mod.rs`，应使用 `{module}.rs` + `{module}/`
+- The use of `unwrap()` is prohibited; all errors must be properly handled
+- `{module}/mod.rs` should not be used; use `{module}.rs` + `{module}/` instead
 
-## 提交规范
+## Commit Convention
 
-- Commit Message 需遵循 [约定式提交 1.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 标准
-  - 需标注更改范围，例如 `feat(midi):`
-  - 破坏性更新需使用 `[type]!`
-- 所有提交均需使用 GPG 签名
-- 提交前请运行 `cargo clippy` 检查代码质量，运行 `cargo fmt` 格式化代码
-
-## 版本控制策略
-
-- `master` 需始终保持已稳定、可发布的代码状态
-- `dev` 日常开发分支
+- Commit messages must follow the [Conventional Commits 1.0](https://www.conventionalcommits.org/en/v1.0.0/) standard
+  - The scope of changes must be specified, e.g. `feat(midi):`
+  - Breaking changes must use `[type]!`
+- All commits must be GPG-signed
+- Before committing, please run `cargo clippy` to check code quality and `cargo fmt` to format the code

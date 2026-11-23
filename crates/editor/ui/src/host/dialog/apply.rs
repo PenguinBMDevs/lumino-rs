@@ -191,4 +191,20 @@ impl Host {
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
+
+    /// 从主窗口同步 MIDI 设备状态（设置对话框独立 Root 的输入 API 注入）。
+    ///
+    /// 设置窗没有自己的 `MidiManager`：不注入输入 API 就无法枚举设备，页面
+    /// 永远显示「无可用设备」；不复制已扫描列表则主窗刚录过音的设备选择也会丢。
+    /// 只同步设备相关字段，不覆盖对话框内其它正在编辑的设置。
+    pub fn sync_midi_state_from(&mut self, other: &Host) {
+        self.root.midi.api = other.root.midi.api.clone();
+        self.root.settings.midi.devices = other.root.settings.midi.devices.clone();
+        self.root.settings.midi.selected_device = other.root.settings.midi.selected_device;
+        self.root.settings.midi.winmm_outputs = other.root.settings.midi.winmm_outputs.clone();
+        self.root.settings.midi.selected_winmm_output =
+            other.root.settings.midi.selected_winmm_output;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
 }

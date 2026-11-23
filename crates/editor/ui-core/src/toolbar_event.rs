@@ -126,6 +126,12 @@ pub enum Event {
     ToggleOverflowMenu,
     /// 关闭溢出菜单
     CloseOverflowMenu,
+    /// 切换 BPM 编辑模式（开始/取消）。f64 = 当前 BPM 值
+    BpmEditToggled(f64),
+    /// BPM 编辑输入变更
+    BpmEditChanged(String),
+    /// BPM 编辑确认（按 Enter 或外部点击）
+    BpmEditConfirmed,
     /// Toggle PPQ 编辑模式（开始/取消）。u16 = 当前 PPQ 值
     PpqEditToggled(u16),
     /// PPQ 编辑输入变更
@@ -197,6 +203,10 @@ pub enum Event {
     /// 独立窗口有自己的标题栏与关闭按钮，主窗按钮再维护一份"开/关"只会与真实窗口状态漂移。
     OpenDrawSettingsDialog,
     /// 打开独立「形状抽屉」窗口（DRAW-033；B0 仅空窗）
+    ///
+    /// 正式发布构建不编译该入口（见 crate 根 `build.rs` 的
+    /// `lumino_shape_drawer_entry` cfg），`fast-release` / `dev` / `test` 保留。
+    #[cfg(lumino_shape_drawer_entry)]
     OpenShapeDrawerDialog,
     /// 打开独立「撤销历史」窗口（DRAW-035）
     OpenHistoryDialog,

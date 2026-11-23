@@ -304,3 +304,72 @@ fn test_manager_resets_stats_on_fresh_play_only() {
     assert_eq!(resets.load(Ordering::SeqCst), 2, "停止后再次起播应再清零");
     manager.stop();
 }
+
+/// 回归：命令处理被输出阻塞时，`flush_commands` 必须等到 Stop 真正生效才回执。
+///
+/// 背景：`Stop` 只是投递到命令队列，真正写入播放状态的是播放线程。旧测试用
+/// 「轮询 50 次 × 1ms」等它生效，等于给播放线程一个 50ms 的墙钟预算——播放线程
+/// 只要被输出调用拖住（阻塞式设备写入），预算就被击穿，误报「停止后仍为 Playing」。
+///
+/// 本用例用一次性阻塞输出稳定复现该延迟（确定性排序：先确认进入阻塞调用，
+/// 再投递 Stop），要求屏障给出确定结果，而不是猜时长。
+#[test]
+fn test_manager_flush_commands_waits_out_blocked_output() {
+    use std::sync::mpsc;
+    use std::time::Instant;
+
+    /// 首次 `send_raw` 通知测试并阻塞 200ms（仅一次），模拟设备写入卡顿。
+    struct BlockingOutput {
+        /// 进入阻塞调用时通知测试线程，保证「阻塞发生在 Stop 之前」的确定性排序。
+        entered: Option<mpsc::Sender<()>>,
+        blocked_once: bool,
+    }
+    impl OutputConnection for BlockingOutput {
+        fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), crate::Error> {
+            if !self.blocked_once {
+                self.blocked_once = true;
+                if let Some(tx) = self.entered.take() {
+                    let _ = tx.send(());
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Ok(())
+        }
+        fn close(self: Box<Self>) {}
+    }
+    impl crate::PlaybackOutput for BlockingOutput {}
+
+    // 长文档：避免播到轨尾自动停止干扰断言。
+    let mut doc = (*two_track_doc()).clone();
+    doc.total_ticks = 480 * 600;
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let mut manager = PlaybackManager::new(480);
+    manager.set_document(Arc::new(doc), 0);
+    manager.set_midi_output(Box::new(BlockingOutput {
+        entered: Some(entered_tx),
+        blocked_once: false,
+    }));
+    // 输出安装是异步命令：先冲刷，确保后续阻塞确实来自本连接。
+    assert!(manager.flush_commands(), "安装输出应收到回执");
+
+    manager.play();
+    // 关键排序：确认播放线程已进入阻塞的 `send_raw`，此时再投递 Stop。
+    entered_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("播放线程应进入输出的阻塞调用");
+
+    let started = Instant::now();
+    manager.stop();
+    assert!(manager.flush_commands(), "屏障应在超时内收到回执");
+    let waited = started.elapsed();
+    assert_eq!(
+        manager.state(),
+        PlaybackState::Stopped,
+        "屏障回执后引擎必须已停止"
+    );
+    assert!(
+        waited >= Duration::from_millis(100),
+        "屏障应等完剩余的阻塞时间（实际 {waited:?}）；过短说明阻塞场景未复现"
+    );
+}

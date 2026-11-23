@@ -103,6 +103,7 @@ fn test_poll_midi_devices_scan_writes_back_and_auto_selects() {
 fn test_midi_devices_scan_without_api_clears_list() {
     let mut root = create_root();
     root.settings.midi.devices = vec![(1, "Stale".to_string())];
+    root.settings.midi.selected_device = Some(1);
 
     root.scan_midi_input_devices();
 
@@ -113,5 +114,48 @@ fn test_midi_devices_scan_without_api_clears_list() {
     assert!(
         root.settings.midi.devices.is_empty(),
         "无 API 时应置空设备列表"
+    );
+    assert!(
+        root.settings.midi.selected_device.is_none(),
+        "无 API 时应清除失效的设备选中项"
+    );
+}
+
+/// 已选设备消失（拔掉 / 换端口）时回落到首个可用设备。
+#[test]
+fn test_poll_midi_devices_scan_falls_back_stale_selection() {
+    let mut root = create_root();
+    root.settings.midi.selected_device = Some(99);
+
+    let (tx, rx) = mpsc::channel();
+    root.pending_midi_devices_scan = Some(rx);
+    tx.send(vec![(7, "loopMIDI Port".to_string())])
+        .expect("发送扫描结果");
+
+    let changed = root.poll_midi_devices_scan();
+
+    assert!(changed, "设备列表与选中项变化应上报需要重绘");
+    assert_eq!(
+        root.settings.midi.selected_device,
+        Some(7),
+        "失效选中应回落到首个设备"
+    );
+}
+
+/// 无变化时轮询返回 false，避免设置页每 3 秒自动扫描都触发无意义重绘。
+#[test]
+fn test_poll_midi_devices_scan_unchanged_reports_false() {
+    let mut root = create_root();
+    root.settings.midi.devices = vec![(7, "loopMIDI Port".to_string())];
+    root.settings.midi.selected_device = Some(7);
+
+    let (tx, rx) = mpsc::channel();
+    root.pending_midi_devices_scan = Some(rx);
+    tx.send(vec![(7, "loopMIDI Port".to_string())])
+        .expect("发送扫描结果");
+
+    assert!(
+        !root.poll_midi_devices_scan(),
+        "列表与选中项均未变化时不应标记重绘"
     );
 }

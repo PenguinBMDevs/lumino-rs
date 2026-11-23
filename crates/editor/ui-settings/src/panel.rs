@@ -196,6 +196,10 @@ impl SettingsPanel {
                 self.midi.selected_device = Some(id);
                 tracing::debug!("设置: MIDI 输入设备选择为 #{}", id);
             }
+            Event::ScanMidiDevices => {
+                // 实际扫描由 editor/ui 的 Root::scan_midi_input_devices 执行并写回设置面板
+                tracing::debug!("设置: 收到 MIDI 输入设备扫描请求");
+            }
             Event::WinmmOutputSelected(id) => {
                 self.midi.selected_winmm_output = Some(id);
                 tracing::debug!("设置: WinMM 输出设备(播表)选择为 #{}", id);

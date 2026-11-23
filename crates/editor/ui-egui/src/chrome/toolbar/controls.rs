@@ -8,7 +8,8 @@ use egui::{Align2, FontId, Rect, Sense, Vec2};
 use super::super::ToolbarModel;
 use super::super::toolbar_popup::{self, ToolbarAction};
 use super::{
-    PpqBlur, ppq_blur_reported_id, ppq_focus_once_id, push_ppq_blur, reset_ppq_edit_session,
+    DashboardBlur, DashboardField, MetricBlur, metric_blur_reported_id, metric_focus_once_id,
+    push_dashboard_blur, reset_metric_edit_session,
 };
 use crate::icons::Icon;
 use crate::layout;
@@ -151,8 +152,8 @@ pub(super) fn undo_redo(
 
 /// 检测仪表盘：`BPM / PPQ` 与 `位置 / 时间` 两列，中间 1px 分隔线。
 ///
-/// PPQ 处于编辑态时，第一列下半行换成输入框（与 上一代 `ppq_edit_column` 同义）；
-/// 输入变化与失焦分别回传 `PpqEditChanged` / [`PpqBlur`]。
+/// 上行 BPM、下行 PPQ 都可点击编辑（同一时间只有一个字段处于编辑态）；
+/// 输入变化与失焦分别回传 `*EditChanged` / [`DashboardBlur`]。
 pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
     let rect = ui.max_rect();
     let split = rect.left() + layout::DASHBOARD_CELL_W;
@@ -165,28 +166,28 @@ pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
         theme::border(),
     );
 
-    let ppq_cell = Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom()));
-    if model.ppq_editing {
-        ppq_edit(ui, ppq_cell, model);
+    // 非编辑字段清理会话标记：含分组被折叠、输入框未绘制的帧。
+    for field in [DashboardField::Bpm, DashboardField::Ppq] {
+        if !field.editing(model) {
+            reset_metric_edit_session(ui.ctx(), field);
+        }
+    }
+
+    let cell = Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom()));
+    if model.bpm_editing {
+        bpm_edit(ui, cell, model);
+    } else if model.ppq_editing {
+        ppq_edit(ui, cell, model);
     } else {
-        // 编辑会话已结束：清掉会话标记（抢焦点 / 失焦已上报），下一次进入
-        // 编辑重新抢焦点。egui 临时数据跨帧留存，不清理会让第二个编辑会话的
-        // 输入框拿不到键盘。
-        reset_ppq_edit_session(ui.ctx());
-        metric(ui, ppq_cell, &model.bpm, &model.ppq);
-        // 只有 PPQ 那一行可点：BPM 是只读显示，命中它不得进入 PPQ 编辑
-        // （上一代 也只让 `PPQ 1920` 行可点）。
-        let ppq_row = Rect::from_min_max(
-            egui::pos2(ppq_cell.left(), ppq_cell.center().y),
-            ppq_cell.max,
-        );
-        let response = ui.interact(
-            ppq_row,
-            egui::Id::unique("lumino.toolbar.ppq-cell"),
-            Sense::click(),
-        );
-        let response = widgets::hover_tip(response, model.tips.ppq_cell);
-        if response.clicked() {
+        metric(ui, cell, &model.bpm, &model.ppq);
+        // 上下两行各占半格：BPM（上行）与 PPQ（下行）分别进入自己的编辑态。
+        let split_y = cell.center().y;
+        let bpm_row = Rect::from_min_max(cell.min, egui::pos2(cell.right(), split_y));
+        let ppq_row = Rect::from_min_max(egui::pos2(cell.left(), split_y), cell.max);
+        if metric_row(ui, DashboardField::Bpm, bpm_row, model.tips.bpm_cell) {
+            toolbar_popup::push_action(ui.ctx(), ToolbarAction::BpmEditToggled);
+        }
+        if metric_row(ui, DashboardField::Ppq, ppq_row, model.tips.ppq_cell) {
             toolbar_popup::push_action(ui.ctx(), ToolbarAction::PpqEditToggled);
         }
     }
@@ -198,24 +199,65 @@ pub(super) fn dashboard(ui: &mut egui::Ui, model: &ToolbarModel) {
     );
 }
 
-/// PPQ 编辑态：上行仍显示 BPM，下行是输入框（宽 80−8），错误文本在最底部。
-fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
-    ui.painter().text(
-        egui::pos2(rect.center().x, rect.top() + 15.0),
-        Align2::CENTER_CENTER,
+/// 单行点击区：点击返回 `true`。
+fn metric_row(ui: &mut egui::Ui, field: DashboardField, rect: Rect, tip: HoverTip) -> bool {
+    let response = ui.interact(
+        rect,
+        egui::Id::unique(("lumino.toolbar.metric-cell", field.key())),
+        Sense::click(),
+    );
+    widgets::hover_tip(response, tip).clicked()
+}
+
+/// BPM 编辑态：上行输入框，下行仍显示 PPQ。
+fn bpm_edit(ui: &mut egui::Ui, cell: Rect, model: &ToolbarModel) {
+    // 下行保持 PPQ 文本可见（与 PPQ 编辑时上行保留 BPM 对称）。
+    metric_line(
+        ui,
+        cell,
+        cell.top() + 31.0,
+        &model.ppq,
+        FontId::proportional(theme::font::SMALL),
+        theme::text_muted(),
+    );
+    let field = metric_field_rect(cell, cell.top() + 15.0);
+    metric_edit(ui, DashboardField::Bpm, cell, field, model);
+}
+
+/// PPQ 编辑态：上行仍显示 BPM，下行是输入框。
+fn ppq_edit(ui: &mut egui::Ui, cell: Rect, model: &ToolbarModel) {
+    metric_line(
+        ui,
+        cell,
+        cell.top() + 15.0,
         &model.bpm,
         FontId::proportional(theme::font::BODY),
         theme::accent(),
     );
+    let field = metric_field_rect(cell, cell.top() + 31.0);
+    metric_edit(ui, DashboardField::Ppq, cell, field, model);
+}
 
-    let field = Rect::from_center_size(
-        egui::pos2(rect.center().x, rect.top() + 31.0),
+/// 输入框矩形（单元格宽 − 16，高 16，纵向中心在 `center_y`）。
+fn metric_field_rect(cell: Rect, center_y: f32) -> Rect {
+    Rect::from_center_size(
+        egui::pos2(cell.center().x, center_y),
         Vec2::new((layout::DASHBOARD_CELL_W - 16.0).max(20.0), 16.0),
-    );
-    let id = egui::Id::unique("lumino.toolbar.ppq-input");
+    )
+}
+
+/// 字段编辑框：抢焦点 / 文本变化 / 失焦上报 / 错误文本（BPM 与 PPQ 共用）。
+fn metric_edit(
+    ui: &mut egui::Ui,
+    field: DashboardField,
+    cell: Rect,
+    rect: Rect,
+    model: &ToolbarModel,
+) {
+    let id = egui::Id::unique(("lumino.toolbar.metric-input", field.key()));
     // 每次进入编辑只抢一次焦点（否则用户点到别处会被立刻抢回来）。
-    // 标记在非编辑态清除（`dashboard`），保证每个编辑会话都能重新聚焦。
-    let focused_once = ppq_focus_once_id();
+    // 标记在字段退出编辑时清除（`dashboard`），保证每个编辑会话都能重新聚焦。
+    let focused_once = metric_focus_once_id(field);
     if !ui
         .ctx()
         .data(|d| d.get_temp::<bool>(focused_once).unwrap_or(false))
@@ -224,9 +266,9 @@ fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
         ui.memory_mut(|m| m.request_focus(id));
     }
 
-    let mut buffer = model.ppq_buffer.clone();
+    let mut buffer = field.buffer(model).to_owned();
     let response = ui.put(
-        field,
+        rect,
         egui::TextEdit::singleline(&mut buffer)
             .id(id)
             .font(FontId::proportional(theme::font::SMALL))
@@ -234,12 +276,16 @@ fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
             .align(egui::Align2::CENTER_CENTER),
     );
     if response.changed() {
-        toolbar_popup::push_action(ui.ctx(), ToolbarAction::PpqEditChanged(buffer));
+        let action = match field {
+            DashboardField::Bpm => ToolbarAction::BpmEditChanged(buffer),
+            DashboardField::Ppq => ToolbarAction::PpqEditChanged(buffer),
+        };
+        toolbar_popup::push_action(ui.ctx(), action);
     }
     // 重新获得焦点（用户点回输入框）→ 允许下一次失焦再上报。
     if response.gained_focus() {
         ui.ctx()
-            .data_mut(|d| d.remove_temp::<bool>(ppq_blur_reported_id()));
+            .data_mut(|d| d.remove_temp::<bool>(metric_blur_reported_id(field)));
     }
     // 失焦即收口：回车 / Tab / 点击任意其它位置（含工具栏空白处）都会让
     // TextEdit 交出焦点。只认「回车」会静默丢弃点击别处前输入的内容。
@@ -247,25 +293,26 @@ fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
     //
     // `lost_focus` 会连续两帧为真（egui 为同帧焦点转移留的补偿窗口），
     // 用会话标记去重，保证一次失焦只提交一次。
-    let blur_reported = ui
-        .ctx()
-        .data(|d| d.get_temp::<bool>(ppq_blur_reported_id()).unwrap_or(false));
+    let blur_reported = ui.ctx().data(|d| {
+        d.get_temp::<bool>(metric_blur_reported_id(field))
+            .unwrap_or(false)
+    });
     if response.lost_focus() && !blur_reported {
         ui.ctx()
-            .data_mut(|d| d.insert_temp(ppq_blur_reported_id(), true));
-        let blur = if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            PpqBlur::Cancel
+            .data_mut(|d| d.insert_temp(metric_blur_reported_id(field), true));
+        let outcome = if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            MetricBlur::Cancel
         } else {
-            PpqBlur::Commit
+            MetricBlur::Commit
         };
-        push_ppq_blur(ui.ctx(), blur);
+        push_dashboard_blur(ui.ctx(), DashboardBlur { field, outcome });
     }
 
-    if let Some(error) = &model.ppq_error {
+    if let Some(error) = field.error(model) {
         // 错误文本可能比单元格宽（如「数值 1920960 超出允许范围 24..32767」）：
         // 必须裁剪在本列内，否则会压到右侧「位置 / 时间」列上。
-        ui.painter().with_clip_rect(rect).text(
-            egui::pos2(rect.center().x, rect.bottom() - 6.0),
+        ui.painter().with_clip_rect(cell).text(
+            egui::pos2(cell.center().x, cell.bottom() - 6.0),
             Align2::CENTER_CENTER,
             error,
             FontId::proportional(9.0),
@@ -276,18 +323,31 @@ fn ppq_edit(ui: &mut egui::Ui, rect: Rect, model: &ToolbarModel) {
 
 /// 单列：上行强调色数值 + 下行弱色说明。
 fn metric(ui: &egui::Ui, rect: Rect, value: &str, sub: &str) {
-    ui.painter().text(
-        egui::pos2(rect.center().x, rect.top() + 15.0),
-        Align2::CENTER_CENTER,
+    metric_line(
+        ui,
+        rect,
+        rect.top() + 15.0,
         value,
         FontId::proportional(theme::font::BODY),
         theme::accent(),
     );
-    ui.painter().text(
-        egui::pos2(rect.center().x, rect.top() + 31.0),
-        Align2::CENTER_CENTER,
+    metric_line(
+        ui,
+        rect,
+        rect.top() + 31.0,
         sub,
         FontId::proportional(theme::font::SMALL),
         theme::text_muted(),
+    );
+}
+
+/// 单元格内单行居中文本。
+fn metric_line(ui: &egui::Ui, cell: Rect, y: f32, text: &str, font: FontId, color: egui::Color32) {
+    ui.painter().text(
+        egui::pos2(cell.center().x, y),
+        Align2::CENTER_CENTER,
+        text,
+        font,
+        color,
     );
 }

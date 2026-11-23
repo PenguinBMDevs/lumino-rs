@@ -27,6 +27,17 @@ use super::editor_midi::EditorNotes;
 /// - 控制事件（CC/PC/弯音）：仅选中轨道；
 /// - 全局数据（tempo/拍号/调号/歌词/SysEx）：全量保留（含时间轴平移）。
 ///
+/// 音轨编号压缩（修复跨轨素材"导出后没有产物"）：
+/// - 归档按**槽位号**落盘（`data/project/tracks/{:03}.lmtrack`），加载端按
+///   `metadata.audio.track_count` 从 0 连续读取；`build_metadata` 又把
+///   `track_count` 覆写为 `project.tracks.len()`。
+/// - 若沿用源工程文档轨索引（如选中轨 2、3），归档写入 `002/003` 且
+///   `track_count = 4`，加载后前面多出两条空轨、音符被推迟到第 3/4 轨；
+///   卷帘当前轨仍是轨 0（空）→ 用户看到"没有产物"。选中轨 0/1 时恰好
+///   对齐，所以旧的双轨测试（轨 0/1）覆盖不到该缺陷。
+/// - 素材是自包含片段：内部分配 `0..n-1` 连续编号，音符事件、`TrackMeta`、
+///   控制事件与轨道名一并换算，归档无空洞，重新加载即为 n 轨。
+///
 /// tempo 直接读 `doc.tempo_changes`（单一权威源）：`EditorData` 的 tempo 写入入口
 /// 都会写回 document，故它已是用户编辑后的值（2026-10-20 审计 §三：此前由调用方
 /// 额外传入 `tempo_points` 补丁，现已删除）。
@@ -95,38 +106,55 @@ pub(super) fn build_material_project_from_selection(
         .filter(|e| e.0 >= offset)
         .map(|e| (e.0 - offset, e.1, e.2.clone()))
         .collect();
-    project.track_names = doc.track_names.clone();
 
-    // 选中轨道集合（控制事件过滤基准）
-    let selected_tracks: std::collections::HashSet<u16> =
-        selected.iter().map(|(t, _)| *t as u16).collect();
+    // 素材内部音轨编号：源文档轨索引 → 0..n-1 连续槽位（见函数文档「音轨编号压缩」）。
+    // 迭代顺序沿用选区解析结果（走带按文档轨升序、卷帘单轨），保证落盘顺序稳定。
+    let track_slots: std::collections::HashMap<usize, u16> = selected
+        .iter()
+        .enumerate()
+        .map(|(slot, (doc_track, _))| (*doc_track, slot as u16))
+        .collect();
 
-    // 控制事件：仅保留选中轨道、且位于素材时间范围内的自动化数据
+    // 轨道名与素材槽位同序（归档里的 track_names 部件同样按槽位排列）
+    project.track_names = selected
+        .iter()
+        .map(|(doc_track, _)| doc.track_name(*doc_track).map(str::to_owned))
+        .collect();
+
+    // 控制事件：仅保留选中轨道、且位于素材时间范围内的自动化数据；
+    // 音轨号同步换算到素材槽位（否则 CC/PC/弯音会挂到空轨或越界）。
     for ev in &doc.control_events {
         let ev_track = ev.track; // packed 字段先拷贝，避免未对齐引用
-        if !selected_tracks.contains(&ev_track) || ev.tick < offset {
+        let Some(&material_track) = track_slots.get(&(ev_track as usize)) else {
+            continue;
+        };
+        if ev.tick < offset {
             continue;
         }
         let new_tick = ev.tick - offset;
         match ev.kind {
             0 => {
                 let (controller, value) = ev.as_control_change();
-                project
-                    .control_changes
-                    .push((new_tick, ev.track, ev.channel, controller, value));
+                project.control_changes.push((
+                    new_tick,
+                    material_track,
+                    ev.channel,
+                    controller,
+                    value,
+                ));
             }
             1 => {
                 let program = ev.as_program_change();
                 project
                     .program_changes
-                    .push((new_tick, ev.track, ev.channel, program));
+                    .push((new_tick, material_track, ev.channel, program));
             }
             2 => {
                 let normalized = ev.as_pitch_bend();
                 let bend_offset = (normalized * 8192.0).round() as i16;
                 project
                     .pitch_bends
-                    .push((new_tick, ev.track, ev.channel, bend_offset));
+                    .push((new_tick, material_track, ev.channel, bend_offset));
             }
             _ => {}
         }
@@ -135,6 +163,9 @@ pub(super) fn build_material_project_from_selection(
     // 每轨构建 CompactEvent（精确 round，无 f32→u32 截断）
     let mut total_notes: u64 = 0;
     for (track_id, notes) in selected {
+        let Some(&material_track) = track_slots.get(track_id) else {
+            continue;
+        };
         let mut track_events: Vec<CompactEvent> = Vec::with_capacity(notes.len() * 2);
         for &(tick, key, length, velocity, channel) in notes {
             // 时间轴归一化：相对第一个音符平移，开头对齐 tick 0
@@ -142,7 +173,7 @@ pub(super) fn build_material_project_from_selection(
             let end = ((tick + length).round() as i64 - offset as i64).max(start as i64 + 1) as u32;
             track_events.push(CompactEvent::new(
                 start,
-                *track_id as u16,
+                material_track,
                 EventKind::NoteOn,
                 channel,
                 key as u16,
@@ -150,7 +181,7 @@ pub(super) fn build_material_project_from_selection(
             ));
             track_events.push(CompactEvent::new(
                 end,
-                *track_id as u16,
+                material_track,
                 EventKind::NoteOff,
                 channel,
                 key as u16,
@@ -184,7 +215,7 @@ pub(super) fn build_material_project_from_selection(
         let name = doc.track_name(*track_id).unwrap_or("").to_string();
 
         let meta = TrackMeta {
-            track_id: *track_id as u16,
+            track_id: material_track,
             name,
             channel,
             port: 0,
@@ -204,112 +235,4 @@ pub(super) fn build_material_project_from_selection(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::runner::menu::file::editor_midi::EditorNotes;
-
-    /// 构造带"引子空白"的文档：第一个音符在 tick 1000（素材不应包含引子空白）
-    fn make_doc_with_leading_gap() -> MidiDocument {
-        use lumino_midi_loader::{ChunkedList, NoteEvent, TrackManager};
-
-        MidiDocument {
-            notes: vec![ChunkedList::from_sorted(vec![
-                NoteEvent::new(1000, 1480, 60, 100, 0),
-                NoteEvent::new(2000, 2240, 62, 90, 0),
-            ])],
-            tempo_changes: vec![(0, 90.0)],
-            time_signatures: vec![(0, 2, 4), (1000, 4, 4)],
-            key_signatures: vec![],
-            control_events: ChunkedList::from_sorted(vec![
-                midly::loader::PackedControlEvent::control_change(500, 0, 0, 10, 64),
-                midly::loader::PackedControlEvent::control_change(1200, 0, 0, 10, 80),
-            ]),
-            lyrics: vec![],
-            markers: vec![],
-            text_events: vec![],
-            sys_ex: vec![],
-            track_names: vec![Some("Piano".to_string())],
-            total_ticks: 3000,
-            track_count: 1,
-            tracks: TrackManager::new(1),
-            division: 480,
-            track_ports: vec![0],
-            track_max_end_ticks: MidiDocument::new_track_max_ticks(1),
-        }
-    }
-
-    /// 素材时间轴归一化：开头对齐第一个音符，长度由最后一个音符决定
-    #[test]
-    fn test_build_material_normalizes_to_first_note() {
-        use lumino_midi_loader::{CompactEvent, EventKind};
-
-        let doc = make_doc_with_leading_gap();
-        // 框选仅覆盖音符本身（与走带框选相同语义：只取选中音符）
-        let selected: EditorNotes = vec![(
-            0,
-            vec![(1000.0, 60, 480.0, 100, 0), (2000.0, 62, 240.0, 90, 0)],
-        )];
-        // 速度点来自实测文档（make_doc_with_leading_gap 里 tempo_changes = [(0, 90.0)]）
-        let project = build_material_project_from_selection(&doc, &selected);
-
-        // 素材长度 = 最后一个音符结束(2240) - 第一个音符开始(1000)，不跟随框选/引子空白
-        assert_eq!(project.metadata.audio.total_ticks, 1240);
-        assert_eq!(project.metadata.audio.total_notes, 2);
-        // 片段前的拍号（2/4 引子）丢弃，片段内拍号平移到 0
-        assert_eq!(project.time_signatures, vec![(0, 4, 4)]);
-        // 片段前的 tempo 收敛到 0 保留（速度信息不可丢）
-        assert_eq!(project.tempo_changes, vec![(0, 90.0)]);
-        // 片段前的 CC 丢弃，片段内的平移到素材时间轴
-        assert_eq!(project.control_changes, vec![(200, 0, 0, 10, 80)]);
-
-        // 音符事件：第一个音符从 0 开始，第二个音符结束于 total_ticks
-        let track = project.get_track(0).expect("应包含音轨 0");
-        let events: Vec<CompactEvent> = track.compact_events().expect("解码音轨失败").collect();
-        let mut tick = 0_u32;
-        let mut note_starts = Vec::new();
-        let mut note_ends = Vec::new();
-        for ev in events {
-            tick = tick.saturating_add(ev.delta_tick());
-            if ev.kind() == EventKind::NoteOn {
-                note_starts.push(tick);
-            } else if ev.kind() == EventKind::NoteOff {
-                note_ends.push(tick);
-            }
-        }
-        assert_eq!(note_starts, vec![0, 1000]);
-        assert_eq!(note_ends, vec![480, 1240]);
-    }
-
-    /// 素材开头无空白（第一个音符在 tick 0）时保持原样
-    #[test]
-    fn test_build_material_keeps_original_when_start_at_zero() {
-        use lumino_midi_loader::{ChunkedList, NoteEvent, TrackManager};
-
-        let doc = MidiDocument {
-            notes: vec![ChunkedList::from_sorted(vec![NoteEvent::new(
-                0, 480, 60, 100, 0,
-            )])],
-            tempo_changes: vec![(0, 120.0)],
-            time_signatures: vec![(0, 4, 4)],
-            key_signatures: vec![],
-            control_events: lumino_midi_loader::ChunkedList::new(),
-            lyrics: vec![],
-            markers: vec![],
-            text_events: vec![],
-            sys_ex: vec![],
-            track_names: vec![None],
-            total_ticks: 480,
-            track_count: 1,
-            tracks: TrackManager::new(1),
-            division: 480,
-            track_ports: vec![0],
-            track_max_end_ticks: MidiDocument::new_track_max_ticks(1),
-        };
-        let selected: EditorNotes = vec![(0, vec![(0.0, 60, 480.0, 100, 0)])];
-
-        let project = build_material_project_from_selection(&doc, &selected);
-        assert_eq!(project.metadata.audio.total_ticks, 480);
-        assert_eq!(project.time_signatures, vec![(0, 4, 4)]);
-        assert_eq!(project.tempo_changes, vec![(0, 120.0)]);
-    }
-}
+mod tests;

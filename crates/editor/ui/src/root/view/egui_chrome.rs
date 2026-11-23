@@ -461,6 +461,13 @@ impl Root {
             self.update(message);
             applied += 1;
         }
+        if let Some(blur) = ui::take_rename_blur(ctx) {
+            // 先落草稿再收口：点另一条音轨时同一帧还有 `SelectTrack`，两者都要送达。
+            for message in self.sidebar_rename_blur_messages(blur) {
+                self.update(message);
+            }
+            applied += 1;
+        }
         if let Some(action) = ui::take_panel_action(ctx) {
             let message = self.sidebar_panel_action_message(action);
             self.update(message);
@@ -645,9 +652,12 @@ impl Root {
             // 与生产 `responsive` 同一可用宽度 / 折叠纯函数：溢出菜单内容必须
             // 和工具栏实际折叠结果一致（同宽度必然同结果）。
             let arrangement_mode = self.sidebar.is_arrangement_route();
-            let overflow = self.toolbar.compute_overflow(
+            // 精度选择器宽度随吸附文本变化：折叠预算与绘制共用同一函数，
+            // 否则按钮变宽后总宽不跟着变，会压住右侧分组。
+            let overflow = self.toolbar.compute_overflow_localized(
                 toolbar::right_content_width(self, viewport_width),
                 arrangement_mode,
+                language,
             );
             let has_selection = self.editor.selected_notes_count() > 0;
             Some(ToolbarModel {
@@ -685,6 +695,9 @@ impl Root {
                 ppq_editing: self.toolbar.ppq_editing,
                 ppq_buffer: self.toolbar.ppq_edit_buffer.clone(),
                 ppq_error: self.toolbar.ppq_edit_error.clone(),
+                bpm_editing: self.toolbar.bpm_editing,
+                bpm_buffer: self.toolbar.bpm_edit_buffer.clone(),
+                bpm_error: self.toolbar.bpm_edit_error.clone(),
                 height: toolbar.height,
                 tips: toolbar::tips(&self.toolbar, language),
             })
@@ -790,6 +803,8 @@ mod load_confirm_tests;
 #[cfg(test)]
 mod memory_monitor_tests;
 #[cfg(test)]
+mod menu_tests;
+#[cfg(test)]
 mod mixer_tests;
 #[cfg(test)]
 mod project_settings_tests;
@@ -809,6 +824,8 @@ mod settings_page_tests;
 mod shape_canvas_tests;
 #[cfg(test)]
 mod shape_drawer_tests;
+#[cfg(test)]
+mod sidebar_rename_blur_tests;
 #[cfg(test)]
 mod speed_change_tests;
 #[cfg(test)]

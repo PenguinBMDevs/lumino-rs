@@ -230,6 +230,7 @@ impl Host {
             || toolbar.fill_enabled
             || toolbar.arc_mode
             || toolbar.ppq_editing
+            || toolbar.bpm_editing
         {
             return true;
         }

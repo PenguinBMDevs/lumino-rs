@@ -1,6 +1,7 @@
 //! 对话框窗口 - 事件处理与窗口动作
 
 use lumino_ui::host::DialogResult;
+use lumino_ui::state::root_state::DialogType;
 use lumino_ui::window::TrafficAction;
 use winit::event::WindowEvent;
 
@@ -22,6 +23,15 @@ impl DialogWindow {
             }
             WindowEvent::CloseRequested => {
                 self.should_close = true;
+            }
+            // 用户插拔 MIDI 设备后切回设置窗：焦点事件是无需额外定时器的
+            // 天然刷新点（音频页另有 3 秒节流自动扫描兜底）。
+            WindowEvent::Focused(true) => {
+                if self.dialog_type == DialogType::Settings
+                    && let Some(ui) = self.ui.as_mut()
+                {
+                    ui.refresh_midi_input_devices();
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(ui) = self.ui.as_mut() {

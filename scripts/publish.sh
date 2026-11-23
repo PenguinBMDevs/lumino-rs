@@ -40,6 +40,7 @@ install_deps() {
 
     log_info "Installing build tools..."
     sudo apt-get update
+    # appimagetool 运行期依赖：mksquashfs / desktop-file-validate / file
     sudo apt-get install -y \
         build-essential \
         gcc-mingw-w64-x86-64 \
@@ -52,7 +53,9 @@ install_deps() {
         rpm \
         fakeroot \
         wget \
-        squashfs-tools
+        squashfs-tools \
+        desktop-file-utils \
+        file
 
     # Add arm64 architecture for cross-compilation libraries
     if ! dpkg --print-foreign-architectures | grep -q arm64; then
@@ -188,15 +191,18 @@ build_appimage_amd64() {
     APPDIR="/tmp/AppDir-x86_64"
     rm -rf "$APPDIR"
     mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" \
-             "$APPDIR/usr/share/icons/hicolor/scalable/apps" \
-             "$APPDIR/usr/share/metainfo"
+             "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
     cp target/release/lumino-rs "$APPDIR/usr/bin/"
 
-    # Use Lumino icon as app icon
-    cp "$PROJECT_DIR/resources/icons/brands/Lumino.svg" \
-       "$APPDIR/usr/share/icons/hicolor/scalable/apps/lumino-rs.svg"
-    cp "$APPDIR/usr/share/icons/hicolor/scalable/apps/lumino-rs.svg" "$APPDIR/"
+    # .DirIcon 必须是 PNG（appimagetool 不接受 SVG），统一使用图标目录里的 PNG。
+    cp "$PROJECT_DIR/resources/icons/logo/app-icon.png" \
+       "$APPDIR/usr/share/icons/hicolor/256x256/apps/lumino-rs.png"
+    cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/lumino-rs.png" "$APPDIR/lumino-rs.png"
+    cp "$APPDIR/lumino-rs.png" "$APPDIR/.DirIcon"
+
+    # AppRun 是 AppImage 的入口；相对符号链接在挂载后依然有效。
+    ln -s usr/bin/lumino-rs "$APPDIR/AppRun"
 
     cat > "$APPDIR/usr/share/applications/lumino-rs.desktop" <<'EOF'
 [Desktop Entry]
@@ -210,9 +216,10 @@ Terminal=false
 EOF
     cp "$APPDIR/usr/share/applications/lumino-rs.desktop" "$APPDIR/"
 
-    # Build AppImage
+    # Build AppImage（无 FUSE2 的环境用 --appimage-extract-and-run 解包运行）
     cd /tmp
-    "$APPIMAGETOOL" "$APPDIR" "$PUBLISH_DIR/linux-amd64/lumino-rs-x86_64.AppImage"
+    ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run --no-appstream \
+        "$APPDIR" "$PUBLISH_DIR/linux-amd64/lumino-rs-x86_64.AppImage"
 
     log_ok "x86_64 AppImage built"
 }

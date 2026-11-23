@@ -26,13 +26,15 @@ impl Root {
 
     /// 设置设置对话框是否打开
     ///
-    /// 打开时顺手触发一次播表扫描（#149）：真正的 midir 调用在后台线程执行、
-    /// 结果经轮询回写本 Root 的设置面板（对话框为独立 Root，显示的就是这里）；
-    /// 非 System 后端由 `scan_winmm_outputs` 内部守卫拦截。
+    /// 打开时顺手触发两类设备扫描（#149）：真正的 midir 调用在后台线程执行、
+    /// 结果经轮询回写本 Root 的设置面板（设置窗为独立 Root，显示的就是这里）；
+    /// 非 System 后端由 `scan_winmm_outputs` 内部守卫拦截。输入设备扫描依赖
+    /// `sync_midi_state_from` 先注入主窗口的输入 API。
     pub fn set_settings_dialog_open(&mut self, open: bool) {
         if open {
             self.state.dialog_type = DialogType::Settings;
             self.scan_winmm_outputs();
+            self.scan_midi_input_devices();
         } else if self.state.dialog_type == DialogType::Settings {
             self.state.dialog_type = DialogType::None;
         }

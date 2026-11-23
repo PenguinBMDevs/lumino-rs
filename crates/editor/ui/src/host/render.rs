@@ -52,6 +52,12 @@ impl Host {
 
         puffin::profile_function!();
 
+        // 后台设备扫描结果 / 录制输入轮询必须在帧准备之前落盘：
+        // 设备列表决定设置页模型，录制 NoteOn 决定本帧音符与播放头位置。
+        self.poll_background_scans();
+        self.poll_recording_input();
+        self.maintain_settings_device_scan();
+
         // 帧准备：更新 FPS 和播放状态
         self.process_frame_preparation();
 

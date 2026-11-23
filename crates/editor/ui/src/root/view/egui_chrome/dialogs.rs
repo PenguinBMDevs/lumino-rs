@@ -64,7 +64,9 @@ impl Root {
                 // 云 / 兼容性 / 关于；未知索引返回 None，由叠加层兜底。
                 let page = match selected {
                     0 => SettingsPageModel::General,
-                    1 => SettingsPageModel::Audio(super::settings_audio::page(self)),
+                    crate::settings::MENU_INDEX_AUDIO => {
+                        SettingsPageModel::Audio(super::settings_audio::page(self))
+                    }
                     2 => SettingsPageModel::Ui(Box::new(super::settings_ui::page(self))),
                     3 => SettingsPageModel::Shortcuts(shortcuts_page(language)),
                     4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),

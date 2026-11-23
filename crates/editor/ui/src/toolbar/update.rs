@@ -28,6 +28,10 @@ impl Toolbar {
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             ppq_edit_error: None,
+            bpm_editing: false,
+            bpm_edit_buffer: String::new(),
+            bpm_edit_error: None,
+            bpm_edit_anchor_tick: 0.0,
             overflow_menu_open: false,
             tool_panel_open: false,
             // 默认位置：水平居中（dx=0）、距窗口底部内缩 44px（悬浮于卷帘区域下缘）
@@ -336,6 +340,10 @@ impl Toolbar {
                     self.ppq_editing = true;
                     self.ppq_edit_buffer = current_ppq.to_string();
                     self.ppq_edit_error = None;
+                    // 仪表盘同一时间只编辑一个字段
+                    self.bpm_editing = false;
+                    self.bpm_edit_buffer.clear();
+                    self.bpm_edit_error = None;
                 }
             }
             Event::PpqEditChanged(value) => {
@@ -350,6 +358,36 @@ impl Toolbar {
             Event::PpqEditConfirmed => {
                 self.ppq_editing = false;
                 self.ppq_edit_buffer.clear();
+            }
+            Event::BpmEditToggled(current_bpm) => {
+                if self.bpm_editing {
+                    // 已在编辑状态 → 取消编辑
+                    self.bpm_editing = false;
+                    self.bpm_edit_buffer.clear();
+                    self.bpm_edit_error = None;
+                } else {
+                    // 进入编辑状态，用当前 BPM 初始化缓冲区（整数不带 `.0`）
+                    self.bpm_editing = true;
+                    self.bpm_edit_buffer = lumino_core::shape::expr::fmt_number(current_bpm);
+                    self.bpm_edit_error = None;
+                    // 仪表盘同一时间只编辑一个字段
+                    self.ppq_editing = false;
+                    self.ppq_edit_buffer.clear();
+                    self.ppq_edit_error = None;
+                }
+            }
+            Event::BpmEditChanged(value) => {
+                if self.bpm_editing {
+                    // 只接受数字与小数点；负号 / 科学计数法直接丢弃。
+                    if value.is_empty() || is_bpm_input(&value) {
+                        self.bpm_edit_buffer = value;
+                        self.bpm_edit_error = None;
+                    }
+                }
+            }
+            Event::BpmEditConfirmed => {
+                self.bpm_editing = false;
+                self.bpm_edit_buffer.clear();
             }
             // 悬停描述事件：工具栏自身不处理，交由 Root 写入底部状态栏
             Event::ButtonHovered(_) => {}
@@ -540,6 +578,7 @@ impl Toolbar {
                 self.text_params_open = false;
                 tracing::debug!("???: ????????");
             }
+            #[cfg(lumino_shape_drawer_entry)]
             Event::OpenShapeDrawerDialog => {
                 tracing::debug!("工具栏: 请求打开形状抽屉");
             }
@@ -623,4 +662,12 @@ impl Toolbar {
             );
         }
     }
+}
+
+/// BPM 输入过滤：只允许 ASCII 数字与小数点。
+///
+/// 负号 / 指数 / 表达式字符直接丢弃，保留上一次合法输入；范围与语法在提交时
+/// 由 `ToolbarHandler` 统一校验（与 PPQ 的「输入宽松、提交严格」同策略）。
+fn is_bpm_input(value: &str) -> bool {
+    value.chars().all(|c| c.is_ascii_digit() || c == '.')
 }

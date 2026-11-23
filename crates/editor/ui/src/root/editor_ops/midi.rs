@@ -113,13 +113,15 @@ impl Root {
     }
 
     /// 轮询 WinMM 播表扫描结果（后台完成 → 写回设置面板 + 校验回落）。
-    pub(crate) fn poll_winmm_scan(&mut self) {
+    ///
+    /// 返回是否写回了新列表（供 Host 判断是否需要置脏重绘）。
+    pub(crate) fn poll_winmm_scan(&mut self) -> bool {
         let Some(rx) = self.pending_winmm_scan.as_ref() else {
-            return;
+            return false;
         };
         let list = match rx.try_recv() {
             Ok(list) => list,
-            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Empty) => return false,
             Err(mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("WinMM 播表扫描线程异常断开");
                 Vec::new()
@@ -127,14 +129,18 @@ impl Root {
         };
         self.pending_winmm_scan = None;
         tracing::info!("扫描到 {} 个 WinMM 输出设备(播表)", list.len());
+        let changed = self.settings.midi.winmm_outputs != list;
         self.settings.midi.winmm_outputs = list.clone();
 
         // 校验已选设备是否仍然有效；失效则回落到第一个（None = 使用系统默认）
+        let mut selection_changed = false;
         if let Some(sel) = self.settings.midi.selected_winmm_output
             && !list.iter().any(|(id, _)| *id == sel)
         {
             self.settings.midi.selected_winmm_output = list.first().map(|(id, _)| *id);
+            selection_changed = true;
         }
+        changed || selection_changed
     }
 
     /// MIDI 输入设备扫描（后台线程）。
@@ -143,6 +149,9 @@ impl Root {
     /// 会触发 midir 惰性创建，故必须在后台线程执行）。结果经
     /// [`Root::poll_midi_devices_scan`] 回写设备列表并自动选中首个设备。
     /// 扫描在途时忽略重复请求；未注入 API 时置空列表。
+    ///
+    /// 生产触发点只有用户主动路径：设置窗打开、设置窗重新获得焦点、
+    /// 设置页「刷新」按钮；录制开始时由 `start_recording` 另行枚举自愈。
     pub fn scan_midi_input_devices(&mut self) {
         if self.pending_midi_devices_scan.is_some() {
             tracing::debug!("MIDI 输入设备扫描已在进行中，忽略重复请求");
@@ -151,30 +160,34 @@ impl Root {
         let Some(api) = self.midi.api.as_ref().map(Arc::clone) else {
             tracing::debug!("MIDI 输入设备扫描：API 未注入，置空设备列表");
             self.settings.midi.devices = Vec::new();
+            self.settings.midi.selected_device = None;
             return;
         };
 
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let list: Vec<(u32, String)> = api
-                .inputs()
-                .unwrap_or_default()
-                .iter()
-                .map(|d| (d.id, d.name.clone()))
-                .collect();
+            let list: Vec<(u32, String)> = match api.inputs() {
+                Ok(inputs) => inputs.iter().map(|d| (d.id, d.name.clone())).collect(),
+                Err(e) => {
+                    tracing::warn!("扫描 MIDI 输入设备失败: {}", e);
+                    Vec::new()
+                }
+            };
             let _ = tx.send(list);
         });
         self.pending_midi_devices_scan = Some(rx);
     }
 
     /// 轮询 MIDI 输入设备扫描结果（写回设备列表 + 自动选中首个）。
-    pub(crate) fn poll_midi_devices_scan(&mut self) {
+    ///
+    /// 返回是否写回了新列表或选中项（供 Host 判断是否需要置脏重绘）。
+    pub(crate) fn poll_midi_devices_scan(&mut self) -> bool {
         let Some(rx) = self.pending_midi_devices_scan.as_ref() else {
-            return;
+            return false;
         };
         let devices = match rx.try_recv() {
             Ok(devices) => devices,
-            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Empty) => return false,
             Err(mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("MIDI 输入设备扫描线程异常断开");
                 Vec::new()
@@ -182,14 +195,24 @@ impl Root {
         };
         self.pending_midi_devices_scan = None;
         tracing::info!("扫描到 {} 个 MIDI 输入设备", devices.len());
+        let changed = self.settings.midi.devices != devices;
         self.settings.midi.devices = devices.clone();
 
-        // 自动选中第一个设备（如果还没有选中）
-        if self.settings.midi.selected_device.is_none()
-            && let Some(first) = devices.first()
-        {
-            self.settings.midi.selected_device = Some(first.0);
-        }
+        // 已选设备失效（拔掉 / 换端口）时回落到首个；None 表示无可用设备。
+        let valid_selection = self
+            .settings
+            .midi
+            .selected_device
+            .is_some_and(|sel| devices.iter().any(|(id, _)| *id == sel));
+        let selection_changed = if valid_selection {
+            false
+        } else {
+            let next = devices.first().map(|(id, _)| *id);
+            let changed = self.settings.midi.selected_device != next;
+            self.settings.midi.selected_device = next;
+            changed
+        };
+        changed || selection_changed
     }
 
     /// 音频播放输出设备（CPAL 音频设备）自动扫描。

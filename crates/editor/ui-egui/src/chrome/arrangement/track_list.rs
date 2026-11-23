@@ -329,9 +329,11 @@ pub(super) fn interact(
     let scrolling = ui.input(|i| i.pointer.primary_down());
 
     // 按下：先判 M/S，再判选择 + 注册拖拽候选。
+    // 下拉菜单 / 弹层盖住轨道列时不得选中音轨（裸输入不经过命中集合，必须显式让位）。
     if pressed
         && let Some(pos) = pointer
         && rect.contains(pos)
+        && !crate::chrome::floating::pointer_over_higher_layer(ui, pos)
     {
         for row in &rows {
             if let Some(btn) = row.mute

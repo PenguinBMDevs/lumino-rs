@@ -74,6 +74,7 @@ fn tool_panel_model_reflects_production_state() {
         panic!("应为形状面板");
     };
     assert_eq!(shape.selected, ShapeKind::Triangle);
+    #[cfg(lumino_shape_drawer_entry)]
     assert_eq!(shape.drawer, "形状抽屉");
 
     // 分音符填充面板。
@@ -198,11 +199,12 @@ fn tool_panel_actions_map_to_production_messages() {
         Some(Message::Toolbar(ToolbarEvent::CloseThicknessPanel))
     ));
 
-    // 齿轮 / 形状抽屉 / 绘制行为。
+    // 齿轮 / 形状抽屉（正式发布构建不编译）/ 绘制行为。
     assert!(matches!(
         root.toolbar_action_message(&ToolbarAction::OpenDrawSettings),
         Some(Message::Toolbar(ToolbarEvent::OpenDrawSettingsDialog))
     ));
+    #[cfg(lumino_shape_drawer_entry)]
     assert!(matches!(
         root.toolbar_action_message(&ToolbarAction::OpenShapeDrawer),
         Some(Message::Toolbar(ToolbarEvent::OpenShapeDrawerDialog))

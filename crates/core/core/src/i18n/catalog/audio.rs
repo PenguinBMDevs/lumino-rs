@@ -27,6 +27,14 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("The current backend does not support audio stream recovery")
         }
         "MIDI 输入未初始化" => Some("MIDI input not initialized"),
+        "MIDI 输入 API 未初始化，无法录制" => {
+            Some("MIDI input API not initialized; recording is unavailable")
+        }
+        "未找到可用的 MIDI 输入设备" => Some("No MIDI input device available"),
+        "获取 MIDI 输入设备失败：{e}" => {
+            Some("Failed to enumerate MIDI input devices: {e}")
+        }
+        "无法打开 MIDI 输入设备：{e}" => Some("Failed to open MIDI input device: {e}"),
         "MIDI 输出未初始化" => Some("MIDI output not initialized"),
         "MIDI 文件为空" => Some("The MIDI file is empty"),
         "不是普通文件，无法按 MIDI 加载" => {

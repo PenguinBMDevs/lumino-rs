@@ -34,6 +34,8 @@ pub struct ToolbarTips {
     pub history: HoverTip,
     /// 精度（吸附）下拉。
     pub precision: HoverTip,
+    /// 仪表盘 BPM 单元格（点击进入编辑）。
+    pub bpm_cell: HoverTip,
     /// 仪表盘 PPQ 单元格（点击进入编辑）。
     pub ppq_cell: HoverTip,
     /// 洋葱皮开关。
@@ -99,6 +101,12 @@ pub struct ToolbarModel {
     pub ppq_buffer: String,
     /// PPQ 编辑校验错误（非空时在输入框下方显示）。
     pub ppq_error: Option<String>,
+    /// BPM 是否处于编辑态（`true` 时仪表盘上行画输入框）。
+    pub bpm_editing: bool,
+    /// BPM 编辑缓冲文本。
+    pub bpm_buffer: String,
+    /// BPM 编辑校验错误（非空时显示在单元格底部）。
+    pub bpm_error: Option<String>,
     /// 工具栏高度（用户可拖拽调整，默认 72）。
     pub height: f32,
     /// 各按钮的悬停说明。
@@ -224,6 +232,9 @@ impl Default for ToolbarModel {
             ppq_editing: false,
             ppq_buffer: String::new(),
             ppq_error: None,
+            bpm_editing: false,
+            bpm_buffer: String::new(),
+            bpm_error: None,
             height: 72.0,
             tips: ToolbarTips::default(),
         }

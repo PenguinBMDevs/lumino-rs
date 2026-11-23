@@ -10,11 +10,13 @@ use lumino_core::storage::config::{OnionSkinBackend, UiConfig};
 // - `velocity`：力度面板双向滚轮与 Tempo BPM 上限
 // - `recover_track`：恢复已删除音轨对话框
 // - `document_sync`：新建/恢复音轨后 document 同步与 PPQ 保存链路
+// - `dashboard_edit`：工具栏仪表盘 BPM / PPQ 编辑的失焦收口与提交契约
 // - `deferred_remote_ops`：远端音符操作与本地编辑临界区串行化（防索引漂移）
 // - `cpu_guards`：CPU 洋葱皮后端下各不兼容**入口**的拦截（含 GPU 侧回归）
 // - `rendering_panel_exit`：**出口**守卫（关闭音频/视频导出面板后的路由落点）
 // - `mode_animation_guard`：瀑布流切换**过渡态**竞态（动画进行中切 CPU）
 mod cpu_guards;
+mod dashboard_edit;
 mod deferred_remote_ops;
 mod dialog_draw045;
 mod document_sync;

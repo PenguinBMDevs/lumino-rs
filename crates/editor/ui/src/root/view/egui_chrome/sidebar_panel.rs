@@ -6,8 +6,8 @@
 use lumino_core::tr;
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
 use lumino_ui_egui::chrome::{
-    SidebarMenuAction, SidebarMenuEntry, SidebarPanelAction, SidebarPanelMenuModel,
-    SidebarTrackMenuModel,
+    RenameBlur, SidebarMenuAction, SidebarMenuEntry, SidebarPanelAction, SidebarPanelMenuModel,
+    SidebarRenameBlur, SidebarTrackMenuModel,
 };
 use lumino_ui_egui::icons::Icon;
 
@@ -27,7 +27,6 @@ impl Root {
             SidebarPanelAction::RenameChanged { track_id, value } => {
                 Event::track_rename_changed(track_id, value.clone())
             }
-            SidebarPanelAction::RenameConfirmed(id) => Event::track_rename_confirmed(id),
             SidebarPanelAction::ColorPicked { track_id, rgb } => Event::track_color_selected(
                 track_id,
                 lumino_ui_core::geom::Color::from_rgb8(rgb.0, rgb.1, rgb.2),
@@ -52,6 +51,28 @@ impl Root {
             ),
             SidebarPanelAction::ReorderEnded { index } => Event::track_reorder_ended(Some(index)),
             SidebarPanelAction::ReorderCancelled => Event::track_reorder_cancelled(),
+        }
+    }
+
+    /// 重命名输入框失焦 → 生产 `Message`（先落草稿再收口）。
+    ///
+    /// 失焦信号独立于单槽 [`SidebarPanelAction`]，因此「点击另一条音轨」时
+    /// 这一组消息与同一帧的 `SelectTrack` 都能送达：先保存草稿，再切换选中。
+    pub(crate) fn sidebar_rename_blur_messages(&self, blur: SidebarRenameBlur) -> Vec<Message> {
+        use crate::sidebar::Event;
+        let SidebarRenameBlur {
+            track_id,
+            value,
+            outcome,
+        } = blur;
+        match outcome {
+            // 同一帧里最后一次击键可能因单槽被别的动作挤掉，这里用失焦时携带的
+            // 最新草稿兜底，保证「点走之前输入的字」一个都不丢。
+            RenameBlur::Commit => vec![
+                Event::track_rename_changed(track_id, value),
+                Event::track_rename_confirmed(track_id),
+            ],
+            RenameBlur::Cancel => vec![Event::track_rename_cancelled(track_id)],
         }
     }
 

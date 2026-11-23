@@ -96,6 +96,9 @@ pub enum ToolbarAction {
     /// 选择基本图形。
     ShapeSelected(ShapeKind),
     /// 打开「形状抽屉」窗口。
+    ///
+    /// 正式发布构建不编译该入口（`release` profile）。
+    #[cfg(lumino_shape_drawer_entry)]
     OpenShapeDrawer,
     /// 打开「绘制行为」对话框。
     BrushSettingsOpen,
@@ -135,6 +138,15 @@ pub enum ToolbarAction {
     Redo,
     /// 打开撤销历史对话框。
     OpenHistory,
+    /// 开 / 关 BPM 编辑。
+    BpmEditToggled,
+    /// BPM 编辑输入变化。
+    BpmEditChanged(String),
+    /// BPM 编辑确认。
+    ///
+    /// 与 [`Self::PpqEditConfirmed`] 同样保留给生产侧映射与测试；失焦确认由
+    /// 独立通道 [`super::toolbar::DashboardBlur`] 上报。
+    BpmEditConfirmed,
     /// 开 / 关 PPQ 编辑。
     PpqEditToggled,
     /// PPQ 编辑输入变化。
@@ -142,8 +154,8 @@ pub enum ToolbarAction {
     /// PPQ 编辑确认。
     ///
     /// 工具栏输入框不再经单槽动作回传确认（失焦那一帧常常还伴随一次按钮点击，
-    /// 同槽会互相覆盖）；宿主改为读 [`super::toolbar::PpqBlur`]。此变体保留给
-    /// 生产侧映射与测试。
+    /// 同槽会互相覆盖）；宿主改为读 [`super::toolbar::DashboardBlur`]。此变体
+    /// 保留给生产侧映射与测试。
     PpqEditConfirmed,
     /// 切换自动滚动模式。
     AutoScrollModeChanged,

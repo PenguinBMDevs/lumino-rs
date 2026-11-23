@@ -11,28 +11,83 @@ use crate::sidebar;
 use lumino_core::storage::config::UiConfig;
 use lumino_message::RightSidebarAction;
 
-/// 覆盖层裁剪必须扣掉左/右侧栏：纵向卷帘下刀框与选框不得画到侧栏上。
+/// 右侧栏展开时，覆盖层裁剪右缘必须停在画布右缘。
+///
+/// `canvas.size_x` 由 `Host::canvas_geometry` 写入时已扣过右侧栏（48 图标列 +
+/// 面板宽）与滚动条；`canvas_overlay_clip` 若再扣一次，选框 / 刀线右侧就会
+/// 缺少一整个侧栏宽度。同时回归左侧键盘列 / 顶部标尺的裁剪。
 #[test]
-fn test_canvas_overlay_clip_excludes_both_sidebars() {
+fn test_canvas_overlay_clip_ends_at_canvas_right_when_right_panel_expanded() {
     let mut root = Root::new(&UiConfig::default());
+    // 1600 宽窗口、左栏 248、右栏 48+300、滚动条 20 对应的画布几何。
     root.editor
-        .set_canvas_size(lumino_ui_core::geom::Point::new(1200.0, 800.0));
+        .set_canvas_size(lumino_ui_core::geom::Point::new(984.0, 800.0));
     root.editor
-        .set_canvas_offset(lumino_ui_core::geom::Point::new(248.0, 60.0));
-    root.sidebar.panel_visible = true;
-    root.sidebar.panel_width = 320.0;
+        .set_canvas_offset(lumino_ui_core::geom::Point::new(248.0, 102.0));
+    root.right_sidebar.panel_visible = true;
+    let canvas_right =
+        root.editor.editor_state.canvas.offset_x + root.editor.editor_state.canvas.size_x;
+    // 面板宽度不参与裁剪：最窄 / 默认 300 / 最宽都应停在画布右缘。
+    for width in [
+        crate::right_sidebar::core::MIN_PANEL_WIDTH,
+        300.0,
+        crate::right_sidebar::core::MAX_PANEL_WIDTH,
+    ] {
+        root.right_sidebar.panel_width = width;
+        let clip = root.canvas_overlay_clip().expect("画布应可裁剪");
+        assert!(
+            (clip.max.x - canvas_right).abs() < 1e-3,
+            "右侧栏展开（面板宽 {width}）时裁剪右缘必须等于画布右缘 {canvas_right}，实际 {}",
+            clip.max.x
+        );
+    }
 
+    root.right_sidebar.panel_width = 300.0;
     let clip = root.canvas_overlay_clip().expect("画布应可裁剪");
+    let view = &root.editor.editor_state.view;
     assert!(
-        clip.min.x >= 48.0 + 320.0 - 1e-3,
-        "左边界必须让出左侧栏，实际 {}",
+        (clip.min.x - (root.editor.editor_state.canvas.offset_x + view.keyboard_width)).abs()
+            < 1e-3,
+        "左边界必须止于键盘列右侧，实际 {}",
         clip.min.x
     );
+    assert!(
+        (clip.min.y - (root.editor.editor_state.canvas.offset_y + view.ruler_height)).abs() < 1e-3,
+        "上边界必须止于标尺下方，实际 {}",
+        clip.min.y
+    );
+
+    // 仅收起面板（图标列仍在）同样停在画布右缘：旧实现此处还会再少 48px。
+    root.right_sidebar.panel_visible = false;
+    let clip = root.canvas_overlay_clip().expect("画布应可裁剪");
+    assert!(
+        (clip.max.x - canvas_right).abs() < 1e-3,
+        "面板收起后裁剪右缘仍须等于画布右缘 {canvas_right}，实际 {}",
+        clip.max.x
+    );
+}
+
+/// 右侧栏隐藏（离开钢琴卷帘）时裁剪行为不变：右缘仍等于画布右缘。
+#[test]
+fn test_canvas_overlay_clip_ends_at_canvas_right_when_right_sidebar_hidden() {
+    let mut root = Root::new(&UiConfig::default());
+    root.handle_sidebar_event(sidebar::Event::PianoRollToggled);
+    assert!(
+        !root.right_sidebar_visible(),
+        "关闭钢琴卷帘后右侧栏应跟随隐藏"
+    );
+    // 无右侧栏时的画布几何：1600 宽窗口 - 左栏 248 - 滚动条 20。
+    root.editor
+        .set_canvas_size(lumino_ui_core::geom::Point::new(1332.0, 800.0));
+    root.editor
+        .set_canvas_offset(lumino_ui_core::geom::Point::new(248.0, 102.0));
+
+    let clip = root.canvas_overlay_clip().expect("画布应可裁剪");
     let canvas_right =
         root.editor.editor_state.canvas.offset_x + root.editor.editor_state.canvas.size_x;
     assert!(
-        clip.max.x < canvas_right,
-        "右边界必须让出右侧栏（画布右缘 {canvas_right}，裁剪右缘 {}）",
+        (clip.max.x - canvas_right).abs() < 1e-3,
+        "右侧栏隐藏时裁剪右缘必须等于画布右缘 {canvas_right}，实际 {}",
         clip.max.x
     );
 }
