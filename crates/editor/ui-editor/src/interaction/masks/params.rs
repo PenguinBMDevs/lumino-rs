@@ -81,7 +81,6 @@ impl Editor {
         shape.mask = params;
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
-        self.grid_cache.clear();
         true
     }
 
@@ -111,7 +110,6 @@ impl Editor {
         part.notes = notes;
         self.refresh_pending_mirror_geometry();
         self.mark_notes_changed();
-        self.grid_cache.clear();
         true
     }
 
@@ -150,7 +148,6 @@ impl Editor {
             };
         }
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         self.mark_notes_changed();
         true
     }

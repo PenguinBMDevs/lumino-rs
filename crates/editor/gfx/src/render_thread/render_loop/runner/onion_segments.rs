@@ -326,6 +326,30 @@ pub fn apply_onion_track_layout(
     *segments = new_segments;
 }
 
+/// 流式 `Chunk` 的段表 upsert（纯函数，可单测）：
+/// 末段同轨 → 仅累加 len；末段异轨或空表 → 追加新段（offset = 追加前实例数）。
+///
+/// 调用方须在 GPU `streaming_append` **之前**读取 `gpu_instance_count()` 并传入，
+/// 保证新段 offset 指向追加前的末端；本函数不读取 GPU 状态，故可独立验证分叉。
+pub(crate) fn upsert_stream_segment(
+    segments: &mut Vec<OnionSegment>,
+    track_id: usize,
+    count_before_append: usize,
+    chunk_len: usize,
+) {
+    if let Some(last) = segments.last_mut()
+        && last.track_id == track_id
+    {
+        last.len += chunk_len;
+    } else {
+        segments.push(OnionSegment {
+            track_id,
+            offset: count_before_append,
+            len: chunk_len,
+        });
+    }
+}
+
 /// 计算轨布局变更后的段表（纯函数，可单测）。
 ///
 /// 返回 `(new_segments, removed_range)`：

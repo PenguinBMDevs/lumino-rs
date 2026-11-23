@@ -19,8 +19,6 @@ impl Root {
         let tool = crate::toolbar::Tool::PointerYSelect;
         self.toolbar.current_tool = tool;
         self.editor.set_tool(tool);
-        self.editor
-            .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
         tracing::info!("图片转 MIDI 转换完成，已强制切换到 Y 向选择工具");
     }
 

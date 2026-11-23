@@ -28,9 +28,6 @@ impl Editor {
         lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             Self {
                 editor_state: crate::editor_state::EditorState::new(),
-                grid_cache: crate::GridCacheMarker,
-                keyboard_cache: crate::GridCacheMarker,
-                ruler_cache: crate::GridCacheMarker,
                 spatial: SpatialIndexState::default(),
                 remote_cursors: std::collections::HashMap::new(),
                 playback_position: 0.0,

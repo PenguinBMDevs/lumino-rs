@@ -131,7 +131,6 @@ impl Root {
         // DRAW-032：工程级「启用通道 10」由对话框确认后写入生成侧
         self.state.project_settings_dialog.use10 = use10;
         self.editor.editor_state.use10 = use10;
-        self.editor.grid_cache.clear();
 
         // 同步到编辑器 tempo 数据（用户编辑的源，同时同步 document.tempo_changes）
         self.editor.editor_state.data.set_tempo_points(vec![
@@ -149,8 +148,6 @@ impl Root {
         }
         self.editor.editor_state.data.set_time_signatures(sorted_ts);
         // 拍号变化可能影响网格，清空相关缓存
-        self.editor.grid_cache.clear();
-        self.editor.ruler_cache.clear();
 
         // 同步到播放管理器
         let tempo_micros = lumino_midi_loader::bpm_to_tempo(tempo) as u32;

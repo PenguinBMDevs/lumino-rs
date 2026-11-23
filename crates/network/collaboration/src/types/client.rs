@@ -1,6 +1,5 @@
-// ClientState 和 CollaborationSession 在 client/state.rs 定义，
-// 这里统一 re-export 避免重复定义。
-pub use crate::client::state::{ClientState, CollaborationSession};
+// ClientState 在 client/state.rs 定义，这里统一 re-export 避免重复定义。
+pub use crate::client::state::ClientState;
 
 /// 客户端配置
 ///

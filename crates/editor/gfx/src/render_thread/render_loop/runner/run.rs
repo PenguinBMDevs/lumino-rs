@@ -277,7 +277,6 @@ fn run_render_thread_inner(ctx: RenderContext, channels: RenderThreadChannels) {
                 &mut frame_count,
                 &mut fps_update_time,
                 frame_time,
-                params,
                 &channels.stats_clone,
                 renderers.ruler.instance_count(),
             );

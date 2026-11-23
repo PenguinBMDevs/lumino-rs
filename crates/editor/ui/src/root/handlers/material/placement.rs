@@ -172,8 +172,6 @@ impl Root {
         self.editor.mark_notes_changed();
         self.update_playback_notes();
         self.editor.clear_notes_changed();
-        self.editor
-            .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
 
         tracing::info!("放置写入完成：{} 个音符", total_notes);
     }

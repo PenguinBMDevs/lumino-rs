@@ -79,7 +79,6 @@ impl Editor {
         }
         self.refresh_pending_mirror_geometry();
         self.mark_notes_changed();
-        self.grid_cache.clear();
     }
 
     /// 把选中的 pending 形状/路径组合成一个 pending composed 结果。
@@ -361,7 +360,6 @@ impl Editor {
         {
             self.editor_state.shape_select.select_only(id);
         }
-        self.grid_cache.clear();
         true
     }
 
@@ -378,7 +376,6 @@ impl Editor {
         self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         true
     }
 
@@ -395,7 +392,6 @@ impl Editor {
         self.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         true
     }
 }

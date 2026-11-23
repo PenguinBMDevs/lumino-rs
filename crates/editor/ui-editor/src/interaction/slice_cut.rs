@@ -31,7 +31,6 @@ impl Editor {
             to: (0.0, 0.0),
             dragging: false,
         });
-        self.grid_cache.clear();
         true
     }
 
@@ -42,9 +41,7 @@ impl Editor {
 
     /// 退出布防
     pub fn end_slice_cut(&mut self) {
-        if self.slice_cut.take().is_some() {
-            self.grid_cache.clear();
-        }
+        self.slice_cut.take();
     }
 
     /// 按下：记录起点（`shift` = 不吸附）
@@ -59,7 +56,6 @@ impl Editor {
         state.from = point;
         state.to = point;
         state.dragging = true;
-        self.grid_cache.clear();
         true
     }
 
@@ -77,7 +73,6 @@ impl Editor {
             return false;
         };
         state.to = point;
-        self.grid_cache.clear();
         true
     }
 
@@ -94,7 +89,6 @@ impl Editor {
         if let Some(armed) = &mut self.slice_cut {
             armed.dragging = false;
         }
-        self.grid_cache.clear();
         if self.compose_pending_slice(state.from, state.to) {
             self.slice_cut = None;
             true

@@ -3,7 +3,6 @@
 //! **路径历史优先**：曲线工具的路径编辑（创建/弯曲/锚点增删）有独立历史栈，
 //! 优先撤销最近的路径编辑；无路径历史时才回退 document 音符历史。
 
-use crate::CacheInvalidation;
 use crate::Editor;
 use lumino_midi_model::TickIndexedEvents;
 
@@ -35,7 +34,6 @@ impl Editor {
         // 一次组合会话撤销掉，而 8 手柄会话仍残留。
         if self.bake_placement_active() {
             self.exit_bake_placement_to_pending();
-            self.grid_cache.clear();
             self.mark_notes_changed();
             tracing::info!("Editor: 撤销 Bake 放置态，回到 pending 预览");
             return true;
@@ -47,7 +45,6 @@ impl Editor {
         }
         // 画刷待确认笔画的编辑历史优先（document 未变，只需重绘覆盖层）
         if self.editor_state.brush_tool.undo_path() {
-            self.invalidate_caches(CacheInvalidation::GRID);
             // 鼠标工具下待确认几何有镜像条目：撤销回退了几何，镜像必须同帧回灌
             self.refresh_pending_mirror_geometry();
             tracing::info!("Editor: 撤销画刷笔画编辑");
@@ -55,7 +52,6 @@ impl Editor {
         }
         // 曲线工具路径编辑历史优先（最近的曲线操作）
         if self.editor_state.line_tool.undo_path() {
-            self.grid_cache.clear();
             self.refresh_pending_mirror_geometry();
             self.mark_notes_changed();
             tracing::info!("Editor: 撤销曲线路径编辑");
@@ -124,7 +120,6 @@ impl Editor {
                 self.remap_selection_by_identity(&selection_identity);
             }
             self.invalidate_arrange_selection_after_history("撤销");
-            self.grid_cache.clear();
             self.mark_notes_changed();
             self.flush_collab_sync();
             tracing::info!("Editor: Undo 成功");
@@ -181,7 +176,6 @@ impl Editor {
         }
         // 画刷待确认笔画编辑历史优先
         if self.editor_state.brush_tool.redo_path() {
-            self.invalidate_caches(CacheInvalidation::GRID);
             // 同 undo：鼠标工具下的镜像条目必须随待确认几何同步回灌
             self.refresh_pending_mirror_geometry();
             tracing::info!("Editor: 重做画刷笔画编辑");
@@ -189,7 +183,6 @@ impl Editor {
         }
         // 曲线工具路径编辑历史优先
         if self.editor_state.line_tool.redo_path() {
-            self.grid_cache.clear();
             self.refresh_pending_mirror_geometry();
             self.mark_notes_changed();
             tracing::info!("Editor: 重做曲线路径编辑");
@@ -259,7 +252,6 @@ impl Editor {
                 self.remap_selection_by_identity(&selection_identity);
             }
             self.invalidate_arrange_selection_after_history("重做");
-            self.grid_cache.clear();
             self.mark_notes_changed();
             self.flush_collab_sync();
             tracing::info!("Editor: Redo 成功");

@@ -102,7 +102,6 @@ impl Editor {
                 };
                 self.shape_edit_armed = Some(ShapeEditTarget::Group);
                 self.shape_group_edit = Some(indexes);
-                self.grid_cache.clear();
                 return true;
             }
             if !all_composed {
@@ -128,7 +127,6 @@ impl Editor {
             }
             self.shape_edit_armed = Some(ShapeEditTarget::Group);
             self.shape_group_edit = Some(indexes);
-            self.grid_cache.clear();
             return true;
         }
         if selected != 1 {
@@ -163,7 +161,6 @@ impl Editor {
             None => return false,
         };
         self.shape_edit_armed = Some(target);
-        self.grid_cache.clear();
         true
     }
 
@@ -194,7 +191,6 @@ impl Editor {
         if was_bake {
             self.editor_state.shape_select.clear_selection();
         }
-        self.grid_cache.clear();
         was
     }
 
@@ -299,7 +295,6 @@ impl Editor {
             }
             self.write_group_parts(&state.group_parts, &models);
             state.current = union_model(&models).unwrap_or_else(|| state.current.clone());
-            self.grid_cache.clear();
             self.shape_edit = Some(state);
             return true;
         }
@@ -337,7 +332,6 @@ impl Editor {
             // 组分支已在上方提前返回
             ShapeEditTarget::Group => {}
         }
-        self.grid_cache.clear();
         self.shape_edit = Some(state);
         true
     }

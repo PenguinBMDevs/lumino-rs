@@ -74,8 +74,9 @@ pub enum ServerMessage {
         /// 当前用户 ID
         #[serde(rename = "userId")]
         user_id: crate::types::UserId,
-        /// 房间信息
-        room: AuthRoomInfo,
+        /// 房间信息（认证成功但未进房时为 null，例如仅登录或加房失败）
+        #[serde(default)]
+        room: Option<AuthRoomInfo>,
         /// 当前用户数据
         user: crate::types::UserData,
         /// 房间内用户列表
@@ -270,6 +271,21 @@ mod tests {
         for (json, expected) in cases {
             let msg: ServerMessage = serde_json::from_str(json).expect("测试 JSON 应可反序列化");
             assert_eq!(msg.type_name(), expected, "JSON: {json}");
+        }
+    }
+
+    /// M1 回归守卫：服务端在「仅登录 / 加房失败」时发 `room: null`，
+    /// 客户端必须能解析为 None，而不是把整个认证响应判为格式错误。
+    #[test]
+    fn test_authenticated_room_null_is_parsable() {
+        let json = r#"{"type":"authenticated","userId":"u1","room":null,"user":{"id":"u1","username":"tester"},"users":[]}"#;
+        let msg: ServerMessage =
+            serde_json::from_str(json).expect("room:null 的认证响应必须可解析");
+        match msg {
+            ServerMessage::Authenticated { room, .. } => {
+                assert!(room.is_none(), "room:null 应解析为 None");
+            }
+            other => panic!("应为 Authenticated，实际: {other:?}"),
         }
     }
 }

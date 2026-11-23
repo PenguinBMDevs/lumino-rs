@@ -270,7 +270,6 @@ impl Editor {
         }
         if self.is_shape_edit_armed() || self.is_shape_editing() {
             self.exit_shape_edit();
-            self.grid_cache.clear();
         }
         // DEBT-17：最后清除饼干模的刀（设错时可退出，避免会话一直挂着）
         self.mould_clear_knife();

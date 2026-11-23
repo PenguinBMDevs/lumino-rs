@@ -31,9 +31,6 @@ impl Host {
         root.editor.remote_cursors.clear();
 
         // 失效所有 Canvas 缓存
-        root.editor.grid_cache.clear();
-        root.editor.keyboard_cache.clear();
-        root.editor.ruler_cache.clear();
 
         // 右键菜单锚定的对象（待确认图形 / 音符选中）已随工程清空失效：
         // 必须一起关掉，否则「长列表」会残留在屏幕上（越界）。
@@ -48,11 +45,6 @@ impl Host {
         // 侧边栏音轨列表
         root.sidebar.tracks.clear();
         root.sidebar.selected_track = 0;
-
-        // RenderCache 视口哈希失效（强制重建 GPU 实例）
-        self.render_ctx.render_cache.grid_viewport_hash = 0;
-        self.render_ctx.render_cache.note_viewport_hash = 0;
-        self.render_ctx.render_cache.note_render_viewport = None;
 
         // 初始化空白工程：空 document（默认 2 轨 Conductor + Setup）+ 重建 sidebar.tracks。
         // 2026-08 修复：此前 reset() 置 document=None 且 sidebar.tracks 清空，

@@ -7,8 +7,6 @@ use crate::host::viewport_geom::Viewport;
 use lumino_gfx::{GpuEpoch, NoteRenderer};
 use wgpu;
 
-use super::RenderCache;
-
 /// WGPU 设备资源集合（减少 RenderContext::new 参数数量）
 pub(crate) struct WgpuResources {
     pub device: wgpu::Device,
@@ -26,8 +24,6 @@ pub(crate) struct RenderContext {
     pub note_renderer: Option<NoteRenderer>,
     /// 洋葱皮状态缓存（跟踪 track_notes_gen + 音轨开关变化）
     pub onion_skin_state: crate::host::render::onion_skin::OnionSkinState,
-    /// 渲染缓存
-    pub render_cache: RenderCache,
     /// 上次光标位置
     pub last_cursor_position: Option<lumino_ui_core::geom::Point>,
     /// 渲染线程
@@ -97,7 +93,6 @@ impl RenderContext {
             viewport,
             note_renderer,
             onion_skin_state: Default::default(),
-            render_cache: RenderCache::new(),
             last_cursor_position: None,
             wgpu_render_thread: None,
             render_content_dirty: false,

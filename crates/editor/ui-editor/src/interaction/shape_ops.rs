@@ -48,12 +48,6 @@ impl Editor {
             return self.text_shape_notes_v2(model, op, track);
         }
         if let Some(op) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::TextV2(op) => Some(op),
-            _ => None,
-        }) {
-            return self.text_shape_notes_v2(model, op, track);
-        }
-        if let Some(op) = model.ops.iter().find_map(|op| match op {
             ShapeOp::Text(op) => Some(op),
             _ => None,
         }) {

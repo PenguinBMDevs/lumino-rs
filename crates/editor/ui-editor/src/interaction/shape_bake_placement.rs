@@ -133,7 +133,6 @@ impl Editor {
         self.shape_edit_armed = None;
         self.shape_group_edit = None;
         let _ = self.enable_shape_edit();
-        self.grid_cache.clear();
         self.mark_notes_changed();
         true
     }
@@ -183,7 +182,6 @@ impl Editor {
             *current_key = key;
             *current_y = key_y;
         }
-        self.grid_cache.clear();
     }
 
     /// B 阶段拉框松手：有效框 → 映射模型；点击（无效框）→ 复位到原始模型。
@@ -215,7 +213,6 @@ impl Editor {
         } else {
             self.restore_bake_original(index);
         }
-        self.grid_cache.clear();
         self.mark_notes_changed();
         if !self.is_shape_edit_armed() {
             let _ = self.enable_shape_edit();
@@ -285,7 +282,6 @@ impl Editor {
             marquee_active: false,
         });
         let _ = self.enable_shape_edit();
-        self.grid_cache.clear();
         self.mark_notes_changed();
         true
     }
@@ -344,7 +340,6 @@ impl Editor {
         if let Some(session) = &mut self.bake_placement {
             session.marquee_active = true;
         }
-        self.grid_cache.clear();
     }
 
     /// 把当前 pending 模型按框映射，并重生成预览音符。

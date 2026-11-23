@@ -8,7 +8,7 @@ mod default;
 use super::RenderParams;
 use crate::{
     ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
-    GridLineInstance, RulerTickInstance, miditrail_renderer::MiditrailViewMode,
+    RulerTickInstance, miditrail_renderer::MiditrailViewMode,
 };
 
 /// [`RenderParams`] 的 Builder。
@@ -31,7 +31,6 @@ pub struct RenderParamsBuilder {
     color_half_beat: [f32; 4],
     color_grid: [f32; 4],
     color_key_line: [f32; 4],
-    grid_instances: Vec<GridLineInstance>,
     ruler_instances: Vec<RulerTickInstance>,
     ppq: f32,
     max_key_index: f32,
@@ -339,7 +338,6 @@ impl RenderParamsBuilder {
             color_half_beat: self.color_half_beat,
             color_grid: self.color_grid,
             color_key_line: self.color_key_line,
-            grid_instances: self.grid_instances,
             note_instances: Vec::new(),
             ruler_instances: self.ruler_instances,
             ticks_per_measure,

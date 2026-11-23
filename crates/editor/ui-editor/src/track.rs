@@ -63,7 +63,6 @@ impl super::Editor {
         // （见 `SpatialIndexState` 文档），故此处无需手工置脏；也不能设置
         // notes_changed，否则会被 handle_action 误判为脏音轨，导致高精度
         // 洋葱皮覆盖层/重生被误触发。
-        self.grid_cache.clear();
 
         // 统一全量渲染（2026-08-06）：GPU buffer 常驻所有轨全部音符，
         // 切轨只更新 ViewState uniform（当前音轨着色，由 onion_skin 决策层

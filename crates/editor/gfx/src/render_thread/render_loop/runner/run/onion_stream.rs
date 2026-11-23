@@ -3,6 +3,7 @@ use super::*;
 use super::super::super::Renderers;
 use super::super::onion_segments::{
     apply_onion_track_delta, apply_onion_track_layout, apply_onion_track_remove_ranges,
+    upsert_stream_segment,
 };
 
 /// drain 贴图瀑布流流式上传通道：逐块 streaming_append 到 GPU。
@@ -81,23 +82,12 @@ pub(super) fn drain_onion_skin_stream(
                 }
                 // 段表：同轨续写 len，异轨新开段（offset = 追加前实例数）
                 let count_before_append = renderers.onion_skin.gpu_instance_count();
-                if let Some(last) = onion_segments.last_mut() {
-                    if last.track_id == track_id {
-                        last.len += instances.len();
-                    } else {
-                        onion_segments.push(OnionSegment {
-                            track_id,
-                            offset: count_before_append,
-                            len: instances.len(),
-                        });
-                    }
-                } else {
-                    onion_segments.push(OnionSegment {
-                        track_id,
-                        offset: count_before_append,
-                        len: instances.len(),
-                    });
-                }
+                upsert_stream_segment(
+                    onion_segments,
+                    track_id,
+                    count_before_append,
+                    instances.len(),
+                );
                 renderers.onion_skin.streaming_append(&instances);
             }
             Ok(crate::OnionSkinStreamMsg::TrackLayout { track_count }) => {

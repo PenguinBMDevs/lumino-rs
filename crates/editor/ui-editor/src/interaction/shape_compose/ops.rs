@@ -186,7 +186,6 @@ impl Editor {
         if self.compose_pending_mould(knife) {
             // 刀已消费：清掉虚线框，避免下一刀沿用旧快照
             self.mould_knife = None;
-            self.grid_cache.clear();
             Ok(())
         } else {
             Err(MouldReject::NoGap)
@@ -212,17 +211,12 @@ impl Editor {
         };
         let info = knife.info();
         self.mould_knife = Some(knife);
-        self.grid_cache.clear();
         Ok(info)
     }
 
     /// 显式清除刀（Esc）；返回是否确实清除了
     pub fn mould_clear_knife(&mut self) -> bool {
-        let had = self.mould_knife.take().is_some();
-        if had {
-            self.grid_cache.clear();
-        }
-        had
+        self.mould_knife.take().is_some()
     }
 
     /// 当前是否已设刀（右键菜单「取消刀」的可用性判据）
@@ -252,7 +246,6 @@ impl Editor {
         if stale {
             self.mould_knife = None;
             self.mould_notice = Some(MouldNotice::Expired);
-            self.grid_cache.clear();
         }
         stale
     }

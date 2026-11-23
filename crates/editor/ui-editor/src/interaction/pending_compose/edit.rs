@@ -33,7 +33,6 @@ impl Editor {
         self.pending_edit_redo.push(current);
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         true
     }
 
@@ -46,7 +45,6 @@ impl Editor {
         self.pending_edit_undo.push(current);
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
-        self.grid_cache.clear();
         true
     }
 }

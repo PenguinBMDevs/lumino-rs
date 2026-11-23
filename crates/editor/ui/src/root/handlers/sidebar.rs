@@ -72,10 +72,6 @@ impl Root {
         self.editor.editor_state.is_vertical_roll = false;
         // 退出纵向：恢复横向视图备份，避免“音符消失”（缩放/滚动错位）
         self.editor.editor_state.restore_horizontal_backup();
-        self.editor
-            .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
-        self.editor
-            .invalidate_caches(crate::editor::CacheInvalidation::RULER);
         tracing::info!("Root: 强制退出纵向卷帘（CPU 洋葱皮后端不支持纵向卷帘）");
         true
     }
@@ -281,16 +277,10 @@ impl Root {
                 self.editor.editor_state.view.scroll_y = 0.0;
                 self.editor.editor_state.view.smooth_scroll.target_y = 0.0;
                 self.editor.editor_state.view.smooth_scroll.active = false;
-                self.editor
-                    .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
             }
         } else if !is_vertical && was_vertical {
             // 退出纵向：恢复横向视图备份，避免“音符消失”（缩放/滚动错位）
             self.editor.editor_state.restore_horizontal_backup();
-            self.editor
-                .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
-            self.editor
-                .invalidate_caches(crate::editor::CacheInvalidation::RULER);
         }
 
         // 更新画布偏移

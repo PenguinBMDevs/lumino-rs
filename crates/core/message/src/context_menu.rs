@@ -108,107 +108,11 @@ pub enum PianoRollContextMenuItem {
     ReturnToDrawer,
 }
 
-impl PianoRollContextMenuItem {
-    /// 该条目适用的目标集合（用于按目标过滤菜单条目）
-    ///
-    /// 多数条目只属于一个目标；「以选中内容为刀」同时适用于音符选区与
-    /// 待确认形状选区（DEBT-17）。
-    pub fn targets(self) -> &'static [ContextMenuTarget] {
-        match self {
-            Self::MouldSetKnife | Self::MouldClearKnife => &[
-                ContextMenuTarget::Notes,
-                ContextMenuTarget::PendingDrawnShape,
-            ],
-            Self::DeleteDrawnShape
-            | Self::LiveShape
-            | Self::SplitLiveShape
-            | Self::JoinShapes
-            | Self::SplitJoinedShape
-            | Self::MergeShapes
-            | Self::EditShape
-            | Self::PaintAreas
-            | Self::MaskToggle
-            | Self::MaskSettings
-            | Self::MaskApply
-            | Self::SymmetryVertical
-            | Self::SymmetryHorizontal
-            | Self::Straighten
-            | Self::StraightenOff
-            | Self::SliceCut
-            | Self::MouldShapes
-            | Self::RoundCorners
-            | Self::BetweenCreate
-            | Self::CopyAlong
-            | Self::VelocityUp
-            | Self::CopyShapeText
-            | Self::ReturnToDrawer => &[ContextMenuTarget::DrawnShape],
-            _ => &[ContextMenuTarget::Notes],
-        }
-    }
-}
-
 mod availability;
 mod groups;
 
 pub use availability::ContextMenuAvailability;
 pub use groups::{REGULAR_ITEMS, item_disabled_hint, item_enabled, menu_groups};
-
-/// 目标对应的**扁平**菜单条目序列（旧调用与兼容测试用）。
-///
-/// 菜单布局只读 [`menu_groups`]：单竖列内按「常规组 → 目标专属组」渲染，
-/// 组间画分隔线；本表不承担布局，只保留旧调用需要的条目集合。
-/// 视觉实现（图标 / 行高 / 分隔线 / 滚动）由各 UI 层决定。
-/// 注意：待确认目标的扁平表只列专属动作，常规动作由 [`REGULAR_ITEMS`] 提供。
-pub const fn menu_items(target: ContextMenuTarget) -> &'static [PianoRollContextMenuItem] {
-    match target {
-        ContextMenuTarget::Notes => &[
-            PianoRollContextMenuItem::Cut,
-            PianoRollContextMenuItem::Copy,
-            PianoRollContextMenuItem::Paste,
-            PianoRollContextMenuItem::Delete,
-            PianoRollContextMenuItem::SelectAll,
-            PianoRollContextMenuItem::BatchEdit,
-            PianoRollContextMenuItem::MouldSetKnife,
-            PianoRollContextMenuItem::MouldClearKnife,
-            PianoRollContextMenuItem::ShapeList,
-            PianoRollContextMenuItem::PasteShapeText,
-        ],
-        ContextMenuTarget::DrawnShape => &[
-            // DEC-001：Bake 后形状对象只读。只保留「只读列表 / 实体化遮罩 /
-            // 分享文本 / 删除」；其余会改参数并重生成音符的条目不再提供。
-            PianoRollContextMenuItem::ShapeList,
-            PianoRollContextMenuItem::MaskApply,
-            PianoRollContextMenuItem::CopyShapeText,
-            PianoRollContextMenuItem::PasteShapeText,
-            PianoRollContextMenuItem::DeleteDrawnShape,
-        ],
-        // 待确认镜像没有 ShapeStore 模型；DRAW-041C 起走 Bake 前组合会话。
-        // 019/021/022 需 2+ 个 pending；025/027/028 单对象；026 需恰好 2 个。
-        ContextMenuTarget::PendingDrawnShape => &[
-            PianoRollContextMenuItem::LiveShape,
-            PianoRollContextMenuItem::JoinShapes,
-            PianoRollContextMenuItem::MergeShapes,
-            PianoRollContextMenuItem::EditShape,
-            // DEC-001：区域着色 / 对称只对 pending 开放。
-            PianoRollContextMenuItem::PaintAreas,
-            PianoRollContextMenuItem::MaskToggle,
-            PianoRollContextMenuItem::MaskSettings,
-            PianoRollContextMenuItem::SymmetryVertical,
-            PianoRollContextMenuItem::SymmetryHorizontal,
-            PianoRollContextMenuItem::SliceCut,
-            PianoRollContextMenuItem::MouldSetKnife,
-            PianoRollContextMenuItem::MouldClearKnife,
-            PianoRollContextMenuItem::MouldShapes,
-            PianoRollContextMenuItem::RoundCorners,
-            PianoRollContextMenuItem::BetweenCreate,
-            PianoRollContextMenuItem::CopyAlong,
-            PianoRollContextMenuItem::VelocityUp,
-            PianoRollContextMenuItem::CopyShapeText,
-            PianoRollContextMenuItem::ReturnToDrawer,
-            PianoRollContextMenuItem::DeleteDrawnShape,
-        ],
-    }
-}
 
 /// 菜单项显示文本（i18n 跟随进程语言；供 上一代 / egui tooltip 共用）。
 pub fn item_label(item: PianoRollContextMenuItem) -> &'static str {
@@ -302,38 +206,6 @@ mod tests {
             PianoRollContextMenuItem::Delete,
             PianoRollContextMenuItem::SelectAll,
         ];
-    }
-
-    #[test]
-    fn test_menu_item_target_routing() {
-        assert_eq!(
-            PianoRollContextMenuItem::DeleteDrawnShape.targets(),
-            &[ContextMenuTarget::DrawnShape]
-        );
-        assert_eq!(
-            PianoRollContextMenuItem::Delete.targets(),
-            &[ContextMenuTarget::Notes]
-        );
-        assert_eq!(
-            PianoRollContextMenuItem::SelectAll.targets(),
-            &[ContextMenuTarget::Notes]
-        );
-        assert_eq!(
-            PianoRollContextMenuItem::MouldSetKnife.targets(),
-            &[
-                ContextMenuTarget::Notes,
-                ContextMenuTarget::PendingDrawnShape,
-            ],
-            "设刀同时适用于音符与待确认形状"
-        );
-        assert_eq!(
-            PianoRollContextMenuItem::MouldClearKnife.targets(),
-            &[
-                ContextMenuTarget::Notes,
-                ContextMenuTarget::PendingDrawnShape,
-            ],
-            "取消刀同样适用于音符与待确认形状"
-        );
     }
 
     #[test]

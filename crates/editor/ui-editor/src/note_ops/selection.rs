@@ -196,7 +196,6 @@ impl Editor {
             .unwrap_or(false);
         if !active {
             self.remote_selections.remove(user_id);
-            self.grid_cache.clear();
             return;
         }
         let timestamp = parsed
@@ -224,13 +223,11 @@ impl Editor {
                 color: color.to_string(),
             },
         );
-        self.grid_cache.clear();
     }
 
     /// 移除远端用户的选择（用户离开等）
     pub fn remove_remote_selection(&mut self, user_id: &str) {
         self.remote_selections.remove(user_id);
-        self.grid_cache.clear();
     }
 
     /// first-writer-wins 冲突判定

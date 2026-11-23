@@ -5,7 +5,8 @@ use crate::tests::test_helpers::seed_notes;
 use lumino_core::shape::{
     AreaSpot, CycleBy, CycleParams, FunnelParams, GateRangeParams, NestedParams, PatternParams,
     PolyStyle, PolygonParams, RangeDir, ShapeFill, ShapeGeometry, ShapeKind, ShapeModel, ShapeOp,
-    ShapeRect, ShapeStyle, TextLayoutMode, TextOp, TextParams, TileBy, TilesParams, TumourParams,
+    ShapeRect, ShapeStyle, TextLayoutMode, TextOp, TextOpV2, TextParams, TileBy, TilesParams,
+    TumourParams,
 };
 use lumino_editor_state::{DrawnShapeSource, PendingShapeRef};
 
@@ -23,6 +24,40 @@ fn straight_shape(track: u16, tick_hi: f32) -> ShapeModel {
     model.geometry = ShapeGeometry::from_points([(0.0, 60.0), (tick_hi, 72.0)]);
     model.validate().expect("测试形状应合法");
     model
+}
+
+/// 多个 `TextV2` 时只用首个：钉住删除重复分派后选择顺序不变。
+#[test]
+fn test_text_v2_dispatch_uses_first_op() {
+    let editor = Editor::new();
+    let k = 20.0 / (480.0 * 0.1);
+    let mut model = ShapeModel::new(0, 1, ShapeKind::Custom, k);
+    model.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(0.0, 60.0, 3840.0, 84.0));
+    let first = TextOpV2 {
+        text: "A".to_string(),
+        params: TextParams::default(),
+        layout: TextLayoutMode::Parametric,
+        snap: 1920.0,
+        merged: false,
+        vertical: false,
+        k,
+    };
+    let second = TextOpV2 {
+        text: "B".to_string(),
+        ..first.clone()
+    };
+    model.ops.push(ShapeOp::TextV2(first.clone()));
+    model.ops.push(ShapeOp::TextV2(second.clone()));
+
+    let via_dispatch = editor.shape_notes_of(&model, 1);
+    if via_dispatch.is_empty() {
+        eprintln!("跳过 test_text_v2_dispatch_uses_first_op：无可用系统字体");
+        return;
+    }
+    let expected = editor.text_shape_notes_v2(&model, &first, 1);
+    let other = editor.text_shape_notes_v2(&model, &second, 1);
+    assert_eq!(via_dispatch, expected, "多个 TextV2 必须分派到首个");
+    assert_ne!(expected, other, "不同文本应产生不同音符，保证测试有区分度");
 }
 
 #[test]

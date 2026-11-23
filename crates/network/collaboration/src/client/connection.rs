@@ -140,7 +140,6 @@ impl CollaborationClient {
         mut shutdown_rx: mpsc::Receiver<()>,
     ) {
         let state = Arc::clone(&self.state);
-        let session = Arc::clone(&self.session);
         let event_callback = self.event_callback.clone();
 
         tokio::spawn(async move {
@@ -163,7 +162,6 @@ impl CollaborationClient {
                                 if let Err(e) = handle_server_message(
                                     &text,
                                     &state,
-                                    &session,
                                     event_callback.clone()
                                 ).await {
                                     error!("处理消息失败: {} - {}", e, text);
@@ -264,42 +262,50 @@ impl CollaborationClient {
                         users,
                         ..
                     } => {
-                        let invite_code = room.invite_code.clone();
-                        info!("认证成功: user_id={}, invite_code={}", user_id, invite_code);
-                        self.state.set(ClientState::InRoom);
+                        match room {
+                            Some(room) => {
+                                let invite_code = room.invite_code.clone();
+                                info!("认证成功: user_id={}, invite_code={}", user_id, invite_code);
+                                self.state.set(ClientState::InRoom);
 
-                        let room_info = RoomInfo {
-                            id: room.id,
-                            invite_code: room.invite_code.clone(),
-                            name: room.name,
-                            project_name: room.project_name.clone(),
-                            project_hash: room.project_hash.clone(),
-                            host_id: room.host_id.clone(),
-                            user_count: room.user_count as usize,
-                            max_users: room.max_users as usize,
-                        };
+                                let room_info = RoomInfo {
+                                    id: room.id,
+                                    invite_code: room.invite_code.clone(),
+                                    name: room.name,
+                                    project_name: room.project_name.clone(),
+                                    project_hash: room.project_hash.clone(),
+                                    host_id: room.host_id.clone(),
+                                    user_count: room.user_count as usize,
+                                    max_users: room.max_users as usize,
+                                };
 
-                        {
-                            let mut session = self.session.write().await;
-                            session.current_user_id = Some(user_id.clone());
-                            session.invite_code = Some(invite_code.clone());
-                            session.current_room = Some(room_info.clone());
-                        }
+                                self.emit_event(CollaborationEvent::Authenticated {
+                                    user_id: user_id.clone(),
+                                    invite_code: invite_code.clone(),
+                                });
 
-                        self.emit_event(CollaborationEvent::Authenticated {
-                            user_id: user_id.clone(),
-                            invite_code: invite_code.clone(),
-                        });
-
-                        if user_id == room.host_id {
-                            info!("用户是房间 host，发送 RoomCreated 事件");
-                            self.emit_event(CollaborationEvent::RoomCreated { room: room_info });
-                        } else {
-                            info!("用户加入现有房间，发送 RoomJoined 事件");
-                            self.emit_event(CollaborationEvent::RoomJoined {
-                                room: room_info,
-                                users,
-                            });
+                                if user_id == room.host_id {
+                                    info!("用户是房间 host，发送 RoomCreated 事件");
+                                    self.emit_event(CollaborationEvent::RoomCreated {
+                                        room: room_info,
+                                    });
+                                } else {
+                                    info!("用户加入现有房间，发送 RoomJoined 事件");
+                                    self.emit_event(CollaborationEvent::RoomJoined {
+                                        room: room_info,
+                                        users,
+                                    });
+                                }
+                            }
+                            None => {
+                                // 认证成功但未进房（仅登录 / 加房失败）：不设 InRoom，
+                                // 只上报认证事件（invite_code 为空），避免把 room:null 误当进房成功。
+                                info!("认证成功但未进房: user_id={}", user_id);
+                                self.emit_event(CollaborationEvent::Authenticated {
+                                    user_id: user_id.clone(),
+                                    invite_code: String::new(),
+                                });
+                            }
                         }
 
                         Ok(read)
