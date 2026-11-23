@@ -143,6 +143,13 @@ impl Editor {
             EditorAction::ShapeToolConfirm => {
                 if self.bake_placement_active() {
                     self.confirm_bake_placement();
+                } else if self.bake_owned_elsewhere() {
+                    // DRAW-049 A：pending 归属在别的轨——不提交、不自动跳轨，
+                    // 用户需切回归属轨再按 ✓。
+                    //
+                    // 这个分支必须挡住下面的回退链：`enter_bake_placement_from_pending`
+                    // 失败后会落到 `confirm_shape_tool()`，那正是「按当前轨写入」
+                    // 的错轨提交路径。
                 } else if !self.enter_bake_placement_from_pending()
                     && !self.begin_shape_bake_placement()
                 {

@@ -24,6 +24,15 @@ impl super::Editor {
             track_idx
         );
 
+        // DRAW-049 A：切轨即收口 Bake 放置会话（pending 保留）。
+        //
+        // 必须放在两个 early return 之后：被拒绝的切轨（同轨 / 异步提交中）
+        // 不能误清会话。会话清掉后 `bake_placement_active` 为 false，8 手柄与
+        // 黄色选择框随之消失，✓ 也不会再把旧轨模型写进新轨。
+        if self.bake_placement.is_some() {
+            self.exit_bake_placement_to_pending();
+        }
+
         // 2026-08 单一权威源：音符唯一权威是 document，切轨只需更新 current_track，
         // `current_track_notes()` 访问器会零拷贝读取新轨数据，无需缓存/回写。
         self.editor_state.data.current_track = track_idx;

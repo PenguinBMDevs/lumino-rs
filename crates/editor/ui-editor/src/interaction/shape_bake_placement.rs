@@ -7,6 +7,10 @@
 //!
 //! ✓ 仍走唯一提交点 `confirm_shape_tool`；× 直接 `cancel_shape_tool` 丢弃。
 //! 本模块不新建手柄数学、不新建预览/按钮，只做状态与箱体变换接线。
+//!
+//! 归属轨（DRAW-049 阶段 2）见 [`owner`]：放置态只对模型自带 `track` 生效。
+
+mod owner;
 
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::editor_state::transform_model_box;
@@ -39,8 +43,11 @@ impl Editor {
     ///
     /// 除会话存在外还要求 8 手柄仍布防：用户在放置态切选/取消选中后，
     /// 视觉上已经退出编辑；此时必须恢复 pending 音符预览，不能继续隐藏。
+    ///
+    /// 另外要求当前轨就是会话归属轨：切轨会先收口会话，这里是第二道防线，
+    /// 避免任何路径残留「旧轨会话 + 新轨当前」的组合继续接管 ✓ 与手柄。
     pub fn bake_placement_active(&self) -> bool {
-        self.bake_placement.is_some() && self.is_shape_edit_armed()
+        self.bake_session_owner_track() == Some(self.current_track()) && self.is_shape_edit_armed()
     }
 
     /// 是否正在 B 阶段的拉框。
@@ -216,7 +223,13 @@ impl Editor {
     }
 
     /// 放置态 ✓：走唯一提交点；成功后结束会话。
+    ///
+    /// 归属轨守卫是防御性的：正常路由已被 `bake_placement_active()` 拦在门外，
+    /// 但任何新调用方都不该能绕过「只在归属轨提交」这条契约。
     pub(crate) fn confirm_bake_placement(&mut self) -> bool {
+        if self.bake_session_owner_track() != Some(self.current_track()) {
+            return false;
+        }
         let ok = self.confirm_shape_tool();
         if ok {
             self.bake_placement = None;
@@ -227,6 +240,11 @@ impl Editor {
     /// 从已存在的 pending 重新进入放置态（第二次撤销回到 pending 后，再点 ✓
     /// 应回到选择/8 手柄，而不是直接 Bake）。
     pub(crate) fn enter_bake_placement_from_pending(&mut self) -> bool {
+        // DRAW-049 A：只有当前轨就是 pending 归属轨才允许进入放置态；
+        // 否则切轨后按 ✓ 会把旧轨模型带进新轨。必须在重建镜像/选中之前返回。
+        if self.pending_single_owner_track() != Some(self.current_track()) {
+            return false;
+        }
         if self.bake_placement.is_some() {
             return false;
         }
