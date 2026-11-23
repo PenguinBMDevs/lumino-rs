@@ -11,7 +11,6 @@ pub mod history;
 pub mod midi_types;
 pub mod note;
 pub mod note_store;
-pub mod pattern;
 pub mod spatial_index;
 
 pub use arrange_selection::ArrangeSelection;
@@ -29,5 +28,4 @@ pub use midi_types::{
 };
 pub use note::Note;
 pub use note_store::{BitSet, NoteView};
-pub use pattern::Pattern;
 pub use spatial_index::{NoteRef, NoteSpatialIndex};
