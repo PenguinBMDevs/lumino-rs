@@ -156,75 +156,26 @@ pub(crate) fn readback_bytes_sync(
         });
     }
 }
-///
 /// 1KB 直方图同步回读（staging 由调用方复用；一次性构建成本）。
 ///
-/// 读回模式沿用 `export_pipeline/staging.rs`：`MAP_READ | COPY_DST` staging +
-/// `map_async` + `device.poll(Wait)` + 5s 兜底。
+/// 委托 [`readback_bytes_sync`] 统一 TDR / catch_unwind / 5s 超时骨架，
+/// 本函数只负责缓冲大小校验与 `u32` 转换。
 pub(crate) fn readback_u256(
     device: &wgpu::Device,
     staging: &wgpu::Buffer,
 ) -> Result<[u32; HIST_LEN], GlobalBucketError> {
-    // REND-019 PR-D（R5-b 实测崩溃根因一）：TDR 时禁止发起新映射（同上）
-    if crate::device_status::device_lost() {
-        return Err(GlobalBucketError::MapFailed("device lost".to_string()));
-    }
-    let (tx, rx) = mpsc::channel();
-    staging
-        .slice(..)
-        .map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Ok(map_result) = rx.try_recv() {
-            if let Err(e) = map_result {
-                // 失败路径必须 unmap 复位（同 readback_bytes_sync）
-                crate::device_status::safe_unmap(staging);
-                return Err(GlobalBucketError::MapFailed(format!("{e:?}")));
-            }
-            // REND-019（R5-b 实测崩溃根因三）：竞态窗口同 readback_bytes_sync
-            let mapped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                staging.slice(..).get_mapped_range()
-            }));
-            let Ok(data) = mapped else {
-                crate::device_status::safe_unmap(staging);
-                return Err(GlobalBucketError::MapFailed(
-                    "TDR 竞态：缓冲已销毁".to_string(),
-                ));
-            };
-            let got = data.len();
-            if got != HIST_BYTES as usize {
-                drop(data);
-                crate::device_status::safe_unmap(staging);
-                return Err(GlobalBucketError::BadLength {
-                    expected: HIST_BYTES as usize,
-                    got,
-                });
-            }
-            let mut out = [0u32; HIST_LEN];
-            out.copy_from_slice(bytemuck::cast_slice(&data));
-            drop(data);
-            crate::device_status::safe_unmap(staging);
-            return Ok(out);
-        }
-        if crate::device_status::device_lost() {
-            // TDR：立即放弃等待并复位映射状态
-            crate::device_status::safe_unmap(staging);
-            return Err(GlobalBucketError::MapFailed("device lost".to_string()));
-        }
-        if Instant::now() >= deadline {
-            // 超时必须复位映射状态
-            crate::device_status::safe_unmap(staging);
-            return Err(GlobalBucketError::MapTimeout);
-        }
-        // 精确等待：`Poll` + `sleep(1ms)` 的固定步进会让 1KB 回读至少付 1ms
-        // 墙钟（piano roll 每帧两次 ⇒ 2ms+ 纯等待）。`Wait{None}` 等待当前最近
-        // 一次提交并在回调送达后立即返回；50ms 上限保证 TDR 检查仍及时。
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some(remaining.min(Duration::from_millis(50))),
+    let expected = HIST_BYTES as usize;
+    let bytes = readback_bytes_sync(device, staging, expected)?;
+    let actual = staging.size() as usize;
+    // 原实现映射整个 buffer 后按长度判错：staging 大于 1KB 也必须报错，
+    // 不能静默只取前 1KB。
+    if bytes.len() != expected || actual != expected {
+        return Err(GlobalBucketError::BadLength {
+            expected,
+            got: actual,
         });
     }
+    let mut out = [0u32; HIST_LEN];
+    out.copy_from_slice(bytemuck::cast_slice(&bytes));
+    Ok(out)
 }
