@@ -36,44 +36,6 @@ pub struct GridCameraUniform {
     pub time_signatures: [[u32; 4]; 16],
 }
 
-impl GridCameraUniform {
-    /// 使用 Builder 模式构造，推荐方式。
-    ///
-    /// ```ignore
-    /// GridCameraUniform::builder()
-    ///     .viewport_size(1920.0, 1080.0)
-    ///     .camera_pos(100.0, 50.0)
-    ///     .zoom(1.0, 0.5)
-    ///     .build()
-    /// ```
-    pub fn builder() -> GridCameraUniformBuilder {
-        GridCameraUniformBuilder::default()
-    }
-}
-
-/// [`GridCameraUniform`] 的 Builder。
-///
-/// 20 个字段均有默认值，只需设置需要变更的字段即可。
-#[derive(Debug, Clone)]
-pub struct GridCameraUniformBuilder {
-    viewport_size: [f32; 2],
-    camera_pos: [f32; 2],
-    zoom: [f32; 2],
-    margins: [f32; 2],
-    color_bg: [f32; 4],
-    color_bg_black_key: [f32; 4],
-    color_bar: [f32; 4],
-    color_beat: [f32; 4],
-    color_half_beat: [f32; 4],
-    color_grid: [f32; 4],
-    color_key_line: [f32; 4],
-    ppq: f32,
-    max_key_index: f32,
-    canvas_offset: [f32; 2],
-    canvas_size: [f32; 2],
-    time_signatures: Vec<(u32, u8, u8)>,
-}
-
 /// 网格线实例（已废弃，改用 GPU infinite grid 方案）。
 ///
 /// 兼容旧代码的占位类型，保留以避免大面积联级修改。

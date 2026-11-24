@@ -42,7 +42,7 @@ impl GridCameraBinding {
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some(buffer_label),
-                contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
+                contents: bytemuck::cast_slice(&[GridCameraUniform::default()]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
         );
@@ -66,24 +66,7 @@ impl GridCameraBinding {
     /// 按 prepare 参数构造 uniform，仅在内容变化时上传。
     pub(crate) fn prepare(&mut self, queue: &wgpu::Queue, params: &GridPrepareParams) {
         puffin::profile_function!();
-        let viewport = GridCameraUniform::builder()
-            .viewport_size(params.viewport_size.0, params.viewport_size.1)
-            .camera_pos(params.scroll_x, params.scroll_y)
-            .zoom(params.zoom_x, params.zoom_y)
-            .margins(params.keyboard_width, params.ruler_height)
-            .color_bg(params.color_bg)
-            .color_bg_black_key(params.color_bg_black_key)
-            .color_bar(params.color_bar)
-            .color_beat(params.color_beat)
-            .color_half_beat(params.color_half_beat)
-            .color_grid(params.color_grid)
-            .color_key_line(params.color_key_line)
-            .ppq(params.ppq)
-            .max_key_index(params.max_key_index)
-            .canvas_offset(params.canvas_offset_x, params.canvas_offset_y)
-            .canvas_size(params.canvas_size.0, params.canvas_size.1)
-            .time_signatures(params.time_signatures.clone())
-            .build();
+        let viewport = GridCameraUniform::from_prepare_params(params);
 
         if self.cached_uniform.as_ref() != Some(&viewport) {
             queue.write_buffer(
