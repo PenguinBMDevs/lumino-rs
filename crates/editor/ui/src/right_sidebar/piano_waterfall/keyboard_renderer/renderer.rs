@@ -1,10 +1,122 @@
 use lumino_gfx::GpuEpoch;
 use wgpu;
+use wgpu::BufferBindingType;
 use wgpu::util::DeviceExt;
 
 use super::instances::f32_slice_to_bytes;
 use super::shaders::{CULL_SHADER, KEYBOARD_SHADER, KEYCOLOR_SHADER, NOTE_SHADER};
 use super::{Instance, KeyboardRenderer, NoteUniforms};
+
+/// bind group layout 的缓冲条目种类（纯数据）。
+#[derive(Clone, Copy)]
+enum BindingKind {
+    /// 只读 storage
+    ReadOnlyStorage,
+    /// 读写 storage
+    Storage,
+    /// uniform
+    Uniform,
+}
+
+/// 由 `(binding, visibility, kind)` 表构造 bind group layout。
+///
+/// 13 个条目的字面量差异只有这三项；`has_dynamic_offset: false`、
+/// `min_binding_size: None`、`count: None` 在全部条目上恒等。
+fn buffer_layout(
+    device: &wgpu::Device,
+    label: &str,
+    bindings: &[(u32, wgpu::ShaderStages, BindingKind)],
+) -> wgpu::BindGroupLayout {
+    let entries: Vec<wgpu::BindGroupLayoutEntry> = bindings
+        .iter()
+        .map(|&(binding, visibility, kind)| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: match kind {
+                    BindingKind::ReadOnlyStorage => BufferBindingType::Storage { read_only: true },
+                    BindingKind::Storage => BufferBindingType::Storage { read_only: false },
+                    BindingKind::Uniform => BufferBindingType::Uniform,
+                },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        })
+        .collect();
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some(label),
+        entries: &entries,
+    })
+}
+
+/// 管线布局：单个 bind group、无 push constant。
+fn pipeline_layout(
+    device: &wgpu::Device,
+    label: &str,
+    bgl: &wgpu::BindGroupLayout,
+) -> wgpu::PipelineLayout {
+    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &[bgl],
+        push_constant_ranges: &[],
+    })
+}
+
+/// 纯 2D 渲染管线：Rgba8Unorm / 无混合 / 无深度 / 无多重采样，入口 `vs` / `fs`。
+fn render_pipeline(
+    device: &wgpu::Device,
+    label: &str,
+    layout: &wgpu::PipelineLayout,
+    module: &wgpu::ShaderModule,
+    buffers: &[wgpu::VertexBufferLayout<'_>],
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some("vs"),
+            buffers,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        multiview: None,
+        cache: None,
+    })
+}
+
+/// compute 管线：入口固定 `main`。
+fn compute_pipeline(
+    device: &wgpu::Device,
+    label: &str,
+    layout: &wgpu::PipelineLayout,
+    module: &wgpu::ShaderModule,
+) -> wgpu::ComputePipeline {
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        module,
+        entry_point: Some("main"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    })
+}
 
 impl KeyboardRenderer {
     /// 创建渲染器（键盘 + 音符 + 剔除 三套管线，及复用缓冲）
@@ -25,294 +137,122 @@ impl KeyboardRenderer {
         });
 
         // 键盘着色器 bind group layout：活跃键颜色（只读 storage，仅顶点阶段）
-        let key_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("piano_waterfall_key_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
+        let key_bgl = buffer_layout(
+            device,
+            "piano_waterfall_key_bgl",
+            &[(0, wgpu::ShaderStages::VERTEX, BindingKind::ReadOnlyStorage)],
+        );
         let keyboard_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("piano_waterfall_keyboard"),
-                bind_group_layouts: &[&key_bgl],
-                push_constant_ranges: &[],
-            });
+            pipeline_layout(device, "piano_waterfall_keyboard", &key_bgl);
 
-        let note_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("piano_waterfall_note_bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-        let note_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("piano_waterfall_note"),
-            bind_group_layouts: &[&note_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        // 音符：实例 storage + uniform + 可见索引（均仅顶点阶段）
+        let note_bind_group_layout = buffer_layout(
+            device,
+            "piano_waterfall_note_bgl",
+            &[
+                (0, wgpu::ShaderStages::VERTEX, BindingKind::ReadOnlyStorage),
+                (1, wgpu::ShaderStages::VERTEX, BindingKind::Uniform),
+                (2, wgpu::ShaderStages::VERTEX, BindingKind::ReadOnlyStorage),
+            ],
+        );
+        let note_pipeline_layout =
+            pipeline_layout(device, "piano_waterfall_note", &note_bind_group_layout);
 
-        let cull_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("piano_waterfall_cull_bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-        let cull_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("piano_waterfall_cull"),
-            bind_group_layouts: &[&cull_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        // 剔除 compute：实例只读 + uniform + 可见索引写入 + 间接绘制参数写入 + uniform
+        let cull_bind_group_layout = buffer_layout(
+            device,
+            "piano_waterfall_cull_bgl",
+            &[
+                (0, wgpu::ShaderStages::COMPUTE, BindingKind::ReadOnlyStorage),
+                (1, wgpu::ShaderStages::COMPUTE, BindingKind::Uniform),
+                (2, wgpu::ShaderStages::COMPUTE, BindingKind::Storage),
+                (3, wgpu::ShaderStages::COMPUTE, BindingKind::Storage),
+                (4, wgpu::ShaderStages::COMPUTE, BindingKind::Uniform),
+            ],
+        );
+        let cull_pipeline_layout =
+            pipeline_layout(device, "piano_waterfall_cull", &cull_bind_group_layout);
 
-        let keyboard_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("piano_waterfall_keyboard"),
-            layout: Some(&keyboard_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &keyboard_shader,
-                entry_point: Some("vs"),
-                buffers: &[
-                    wgpu::VertexBufferLayout {
-                        array_stride: 8,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
+        let keyboard_pipeline = render_pipeline(
+            device,
+            "piano_waterfall_keyboard",
+            &keyboard_pipeline_layout,
+            &keyboard_shader,
+            &[
+                wgpu::VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Instance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
                             offset: 0,
-                            shader_location: 0,
-                        }],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Instance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x4,
-                                offset: 0,
-                                shader_location: 1,
-                            },
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x4,
-                                offset: 16,
-                                shader_location: 2,
-                            },
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Uint32,
-                                offset: 32,
-                                shader_location: 3,
-                            },
-                        ],
-                    },
-                ],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &keyboard_shader,
-                entry_point: Some("fs"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            multiview: None,
-            cache: None,
-        });
+                            shader_location: 1,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 16,
+                            shader_location: 2,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Uint32,
+                            offset: 32,
+                            shader_location: 3,
+                        },
+                    ],
+                },
+            ],
+        );
 
-        let note_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("piano_waterfall_note"),
-            layout: Some(&note_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &note_shader,
-                entry_point: Some("vs"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &note_shader,
-                entry_point: Some("fs"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            multiview: None,
-            cache: None,
-        });
+        let note_pipeline = render_pipeline(
+            device,
+            "piano_waterfall_note",
+            &note_pipeline_layout,
+            &note_shader,
+            &[],
+        );
 
-        let cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("piano_waterfall_cull"),
-            layout: Some(&cull_pipeline_layout),
-            module: &cull_shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        let cull_pipeline = compute_pipeline(
+            device,
+            "piano_waterfall_cull",
+            &cull_pipeline_layout,
+            &cull_shader,
+        );
 
         // 活跃键颜色 compute bind group layout（notes + uniforms + key_colors + cull_offset）
-        let keycolor_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("piano_waterfall_keycolor_bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-        let keycolor_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("piano_waterfall_keycolor"),
-                bind_group_layouts: &[&keycolor_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let keycolor_bind_group_layout = buffer_layout(
+            device,
+            "piano_waterfall_keycolor_bgl",
+            &[
+                (0, wgpu::ShaderStages::COMPUTE, BindingKind::ReadOnlyStorage),
+                (1, wgpu::ShaderStages::COMPUTE, BindingKind::Uniform),
+                (2, wgpu::ShaderStages::COMPUTE, BindingKind::Storage),
+                (3, wgpu::ShaderStages::COMPUTE, BindingKind::Uniform),
+            ],
+        );
+        let keycolor_pipeline_layout = pipeline_layout(
+            device,
+            "piano_waterfall_keycolor",
+            &keycolor_bind_group_layout,
+        );
         let keycolor_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("piano_waterfall_keycolor"),
             source: wgpu::ShaderSource::Wgsl(KEYCOLOR_SHADER.into()),
         });
-        let keycolor_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("piano_waterfall_keycolor"),
-            layout: Some(&keycolor_pipeline_layout),
-            module: &keycolor_shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        let keycolor_pipeline = compute_pipeline(
+            device,
+            "piano_waterfall_keycolor",
+            &keycolor_pipeline_layout,
+            &keycolor_shader,
+        );
 
         // 单位正方形 [0,1]^2 → 两个三角形（6 顶点）
         let quad: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
