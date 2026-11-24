@@ -96,6 +96,8 @@ impl ProgressManager {
                 resizable: false,
                 buttons: Some(WindowButtons::CLOSE | WindowButtons::MINIMIZE),
                 close_policy: ClosePolicy::Immediate,
+                redraw_on_input: false,
+                initial_redraw: false,
             };
             match OverlayWindow::create(event_loop, ui_config, &spec, None) {
                 Ok(overlay) => self.overlay = Some(overlay),

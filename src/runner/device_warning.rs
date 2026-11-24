@@ -1,13 +1,18 @@
-//! 设备检查警告窗：独立 winit 窗口 + gfx Context + 上一代 Host 管理器。
+//! 设备检查警告窗：通用浮窗 + 用户操作回传。
 //!
-//! 生命周期仿 `ProgressManager`：窗口创建 → 事件转发 → 用户操作回传 → 关闭。
-//! 警告窗只在"首启/未抑制 + 检测失败"时短暂存在；用户选择由
+//! 生命周期由 [`super::overlay_window::OverlayWindow`] 统一实现；本模块只保留
+//! 专用 Host 构造、关闭语义（置标志而非立即销毁）与用户选择回传。
+//! 警告窗只在「首启/未抑制 + 检测失败」时短暂存在；用户选择由
 //! [`lumino_ui::Host::take_device_warning_choice`] 取出，交由 Runner 决策。
 
 use std::sync::Arc;
 
+use winit::{dpi, event::WindowEvent, event_loop::ActiveEventLoop, window::WindowId};
+
+use lumino_core::storage::config::UiConfig;
 use lumino_core::tr;
-use winit::{dpi, event::WindowEvent, window::WindowAttributes};
+
+use super::overlay_window::{ClosePolicy, OverlaySpec, OverlayWindow};
 
 /// 警告窗宽度（逻辑像素）
 pub(crate) const DEVICE_WARNING_WINDOW_WIDTH: u32 = 560;
@@ -16,235 +21,76 @@ pub(crate) const DEVICE_WARNING_WINDOW_HEIGHT: u32 = 200;
 
 /// 设备检查警告窗管理器
 pub(crate) struct DeviceWarningWindow {
-    window: Option<Arc<winit::window::Window>>,
-    gfx: Option<lumino_gfx::Context>,
-    ui: Option<lumino_ui::Host>,
-    /// egui 输入缓冲（窗口持有）
-    egui_input: lumino_ui::host::OverlayInput,
-    modifiers: winit::keyboard::ModifiersState,
-    /// 用户直接关闭窗口（`[X]` / Alt+F4）→ 视为「确认并关闭」
-    close_requested: bool,
+    overlay: OverlayWindow,
 }
 
 impl DeviceWarningWindow {
     /// 创建警告窗。任何一步失败都返回 `Err`，由调用方走原生提示框兜底。
     pub(crate) fn create(
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        ui_config: &lumino_core::storage::config::UiConfig,
+        event_loop: &ActiveEventLoop,
+        ui_config: &UiConfig,
         detail: &str,
     ) -> Result<Self, String> {
-        let mut attributes = WindowAttributes::default()
-            .with_inner_size(dpi::LogicalSize {
+        let spec = OverlaySpec {
+            size: dpi::LogicalSize {
                 width: DEVICE_WARNING_WINDOW_WIDTH,
                 height: DEVICE_WARNING_WINDOW_HEIGHT,
-            })
-            .with_title(tr!("GPU 兼容性检查"))
-            .with_resizable(false)
-            .with_visible(true);
-
-        // 窗口装饰跟随主窗口配置（与进度窗口一致）
-        #[cfg(target_os = "windows")]
-        {
-            use winit::platform::windows::WindowAttributesExtWindows;
-            attributes = if ui_config.use_native_titlebar {
-                attributes.with_decorations(true)
-            } else {
-                attributes
-                    .with_decorations(false)
-                    .with_undecorated_shadow(true)
-            };
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            if !ui_config.use_native_titlebar {
-                attributes = attributes
-                    .with_titlebar_transparent(true)
-                    .with_fullsize_content_view(true);
-            }
-        }
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            attributes = attributes.with_decorations(ui_config.use_native_titlebar);
-        }
-
-        let window = event_loop
-            .create_window(attributes)
-            .map_err(|e| format!("创建警告窗口失败: {e}"))?;
-        let window = Arc::new(window);
-        let size = window.inner_size();
-
-        let gfx = lumino_gfx::Context::new_blocking(
-            {
-                let window = Arc::clone(&window);
-                move |instance| instance.create_surface(Arc::clone(&window))
             },
-            size.width,
-            size.height,
-        )
-        .map_err(|e| format!("初始化警告窗图形上下文失败: {e}"))?;
-
-        let ui = lumino_ui::Host::new_device_warning(
-            lumino_ui::host::host_window(window.clone()),
-            size.width,
-            size.height,
+            title: tr!("GPU 兼容性检查").to_string(),
+            resizable: false,
+            buttons: None,
+            // 关闭视为「确认并关闭」：置标志交 `take_action`，不立即销毁窗口
+            close_policy: ClosePolicy::Flag,
+            // 警告窗内容含悬停/按下态，输入后需立即重绘
+            redraw_on_input: true,
+            initial_redraw: true,
+        };
+        let overlay = OverlayWindow::create_with_host(
+            event_loop,
             ui_config,
-            &gfx,
-            detail,
-        );
-        window.request_redraw();
-
-        Ok(Self {
-            window: Some(window),
-            gfx: Some(gfx),
-            ui: Some(ui),
-            egui_input: lumino_ui::host::OverlayInput::default(),
-            modifiers: winit::keyboard::ModifiersState::default(),
-            close_requested: false,
-        })
+            &spec,
+            None,
+            |window, gfx, size| {
+                lumino_ui::Host::new_device_warning(
+                    lumino_ui::host::host_window(Arc::clone(window)),
+                    size.width,
+                    size.height,
+                    ui_config,
+                    gfx,
+                    detail,
+                )
+            },
+        )
+        .map_err(|e| format!("创建警告窗口失败: {e}"))?;
+        Ok(Self { overlay })
     }
 
     /// 是否为该警告窗的窗口 ID
-    pub(crate) fn is_window(&self, window_id: winit::window::WindowId) -> bool {
-        self.window.as_ref().is_some_and(|w| w.id() == window_id)
+    pub(crate) fn is_window(&self, window_id: WindowId) -> bool {
+        self.overlay.is_window(window_id)
     }
 
     /// REND-019 PR-C：重连——警告窗存活时重绑到新 device（不存在则 no-op）。
     #[allow(dead_code)]
     pub(crate) fn rebind_gpu(&mut self, epoch: lumino_gfx::GpuEpoch, gpu: &lumino_gfx::SharedGpu) {
-        if let Some(gfx) = self.gfx.as_mut() {
-            gfx.rebind_device(epoch, gpu);
-        }
-        if let Some(ui) = self.ui.as_mut() {
-            ui.rebind_gpu(epoch, gpu);
-        }
+        self.overlay.rebind_gpu(epoch, gpu);
     }
 
     /// 处理窗口事件（重绘 / 光标 / 尺寸 / 关闭）
     pub(crate) fn handle_event(&mut self, event: WindowEvent) {
-        let Some(window) = self.window.clone() else {
-            return;
-        };
-
-        match event {
-            WindowEvent::RedrawRequested => {
-                let egui_events = self.egui_input.take();
-                let egui_focused = self.egui_input.focused();
-                if let Some(ref mut ui) = self.ui
-                    && let Some(ref gfx) = self.gfx
-                    && let Err(e) = gfx.with_frame(|frame, view| {
-                        ui.redraw_requested(frame, view, gfx, egui_events, egui_focused)
-                    })
-                {
-                    // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排
-                    // 重绘；Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
-                    if gfx.handle_frame_error(&e).should_redraw() {
-                        window.request_redraw();
-                    }
-                }
-                if let Some(ui) = self.ui.as_ref() {
-                    self.egui_input.set_wants_keyboard(ui.egui_wants_keyboard());
-                }
-                // 应用自制标题栏产生的窗口动作（关闭/最小化/拖动）
-                // 必须在 redraw（事件队列已消费）之后调用
-                self.apply_window_actions();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.cursor_moved(position);
-                }
-                window.request_redraw();
-            }
-            // 纯触屏平台（Android）没有 `CursorMoved`：指针位置必须由 `Touch` 驱动，
-            // 否则 Host 的 cursor 恒为 `Unavailable`，警告窗的按钮点不动。
-            WindowEvent::Touch(touch) => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.cursor_moved(touch.location);
-                }
-                window.request_redraw();
-            }
-            WindowEvent::ModifiersChanged(new_modifiers) => {
-                self.modifiers = new_modifiers.state();
-            }
-            WindowEvent::Resized(size) => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.resize(size.width, size.height);
-                }
-                if let Some(ref mut gfx) = self.gfx {
-                    gfx.resize(size.width, size.height);
-                }
-                window.request_redraw();
-            }
-            WindowEvent::ScaleFactorChanged { .. } => {
-                // REF-001 G-1：DPI 变化可能不伴随 `Resized`（物理尺寸不变），
-                // 视口里缓存的缩放因子必须按当前窗口状态重建。
-                let size = window.inner_size();
-                if let Some(ref mut ui) = self.ui {
-                    ui.resize(size.width, size.height);
-                }
-                if let Some(ref mut gfx) = self.gfx {
-                    gfx.resize(size.width, size.height);
-                }
-                window.request_redraw();
-            }
-            WindowEvent::CloseRequested => {
-                self.close_requested = true;
-            }
-            other => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.handle_events(other, self.modifiers, &mut self.egui_input);
-                }
-                window.request_redraw();
-            }
-        }
-    }
-
-    /// 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
-    ///
-    /// 无边框模式下窗口控制由 上一代 渲染的自制标题栏承担，动作需在
-    /// `redraw_requested`（事件队列已消费）之后取出并应用到真实窗口；
-    /// 「关闭」视为「确认并关闭」（`close_requested` 由 `take_action` 转为 Quit）。
-    fn apply_window_actions(&mut self) {
-        let (action, drag) = match self.ui.as_mut() {
-            Some(ui) => (ui.take_window_action(), ui.take_drag()),
-            None => (None, false),
-        };
-
-        if let Some(action) = action {
-            match action {
-                lumino_ui::window::TrafficAction::Close => {
-                    self.close_requested = true;
-                }
-                lumino_ui::window::TrafficAction::Minimize => {
-                    if let Some(window) = self.window.as_ref() {
-                        window.set_minimized(true);
-                    }
-                }
-                lumino_ui::window::TrafficAction::ToggleMaximize => {
-                    // 警告窗不可缩放，无需响应最大化
-                }
-            }
-        }
-
-        if drag
-            && let Some(window) = self.window.clone()
-            && let Err(e) = window.drag_window()
-        {
-            tracing::warn!("拖动警告窗失败: {e}");
-            if let Some(ui) = self.ui.as_mut() {
-                ui.release_left_mouse_button();
-            }
-        }
+        self.overlay.handle_event(event);
     }
 
     /// 取走用户操作（UI 按钮优先；其次窗口关闭视为「确认并关闭」）
     pub(crate) fn take_action(&mut self) -> Option<lumino_ui::window::DeviceWarningAction> {
-        if let Some(ref mut ui) = self.ui
-            && let Some(action) = ui.take_device_warning_choice()
+        if let Some(action) = self
+            .overlay
+            .ui_mut()
+            .and_then(|ui| ui.take_device_warning_choice())
         {
             return Some(action);
         }
-        if self.close_requested {
+        if self.overlay.take_close_requested() {
             return Some(lumino_ui::window::DeviceWarningAction::Quit);
         }
         None
@@ -252,8 +98,6 @@ impl DeviceWarningWindow {
 
     /// 关闭并释放窗口资源
     pub(crate) fn close(&mut self) {
-        self.window = None;
-        self.gfx = None;
-        self.ui = None;
+        self.overlay.close();
     }
 }

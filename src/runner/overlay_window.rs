@@ -2,7 +2,7 @@
 //!
 //! 将进度窗 / 云进度窗 / 设备警告窗三套重复的窗口创建、事件泵、重绘、resize、
 //! 重绑与关闭收敛为单份实现。规格差异全部走 [`OverlaySpec`]，关闭语义走
-//! [`ClosePolicy`]。阶段一仅接入进度窗与云进度窗，警告窗在阶段二并入。
+//! [`ClosePolicy`]。
 
 use std::sync::Arc;
 
@@ -16,13 +16,12 @@ use winit::{
 use lumino_core::storage::config::UiConfig;
 use lumino_ui::window::TrafficAction;
 
-/// 关闭语义：立即释放，或置标志交调用方决策（阶段二警告窗）。
+/// 关闭语义：立即释放，或置标志交调用方决策（设备警告窗）。
 #[derive(Clone, Copy)]
 pub(crate) enum ClosePolicy {
-    /// 立即关闭窗口并释放资源
+    /// 立即关闭窗口并释放资源（进度窗 / 云进度窗）
     Immediate,
-    /// 置 `close_requested`，由调用方 `take_close_requested` 决策
-    #[allow(dead_code)]
+    /// 置 `close_requested`，由调用方 `take_close_requested` 决策（设备警告窗）
     Flag,
 }
 
@@ -33,6 +32,10 @@ pub(crate) struct OverlaySpec {
     pub(crate) resizable: bool,
     pub(crate) buttons: Option<WindowButtons>,
     pub(crate) close_policy: ClosePolicy,
+    /// 光标 / 触屏 / 其它输入事件后是否追加重绘（设备警告窗策略）
+    pub(crate) redraw_on_input: bool,
+    /// 创建完成后是否立即请求重绘（设备警告窗策略）
+    pub(crate) initial_redraw: bool,
 }
 
 /// 通用浮窗：窗口 + 图形上下文 + Host + egui 输入缓冲。
@@ -43,18 +46,42 @@ pub(crate) struct OverlayWindow {
     egui_input: lumino_ui::host::OverlayInput,
     modifiers: winit::keyboard::ModifiersState,
     close_policy: ClosePolicy,
-    /// 阶段二警告窗用；阶段一无读取方
-    #[allow(dead_code)]
+    redraw_on_input: bool,
+    /// `ClosePolicy::Flag` 下由关闭动作置位，交调用方取走
     close_requested: bool,
 }
 
 impl OverlayWindow {
-    /// 按规格创建浮窗；锚点存在时居中覆盖。
+    /// 按规格创建浮窗（标准 Host）；锚点存在时居中覆盖。
     pub(crate) fn create(
         event_loop: &ActiveEventLoop,
         ui_config: &UiConfig,
         spec: &OverlaySpec,
         anchor: Option<&Window>,
+    ) -> Result<Self, String> {
+        Self::create_with_host(event_loop, ui_config, spec, anchor, |window, gfx, size| {
+            lumino_ui::Host::new(
+                lumino_ui::host::host_window(Arc::clone(window)),
+                size.width,
+                size.height,
+                ui_config,
+                gfx,
+                true,
+            )
+        })
+    }
+
+    /// 按规格创建浮窗；Host 构造由调用方提供（设备警告窗用专用构造器）。
+    pub(crate) fn create_with_host(
+        event_loop: &ActiveEventLoop,
+        ui_config: &UiConfig,
+        spec: &OverlaySpec,
+        anchor: Option<&Window>,
+        build_host: impl FnOnce(
+            &Arc<Window>,
+            &lumino_gfx::Context,
+            PhysicalSize<u32>,
+        ) -> lumino_ui::Host,
     ) -> Result<Self, String> {
         let size = spec.size;
         let mut attributes = WindowAttributes::default()
@@ -119,14 +146,10 @@ impl OverlayWindow {
         )
         .map_err(|e| format!("初始化浮窗图形上下文失败: {e}"))?;
 
-        let ui = lumino_ui::Host::new(
-            lumino_ui::host::host_window(Arc::clone(&window)),
-            physical_size.width,
-            physical_size.height,
-            ui_config,
-            &gfx,
-            true,
-        );
+        let ui = build_host(&window, &gfx, physical_size);
+        if spec.initial_redraw {
+            window.request_redraw();
+        }
 
         Ok(Self {
             window: Some(window),
@@ -135,6 +158,7 @@ impl OverlayWindow {
             egui_input: lumino_ui::host::OverlayInput::default(),
             modifiers: winit::keyboard::ModifiersState::default(),
             close_policy: spec.close_policy,
+            redraw_on_input: spec.redraw_on_input,
             close_requested: false,
         })
     }
@@ -170,11 +194,17 @@ impl OverlayWindow {
                 if let Some(ref mut ui) = self.ui {
                     ui.cursor_moved(position);
                 }
+                if self.redraw_on_input {
+                    window.request_redraw();
+                }
             }
             // 纯触屏平台（Android）没有 `CursorMoved`：指针位置必须由 `Touch` 驱动
             WindowEvent::Touch(touch) => {
                 if let Some(ref mut ui) = self.ui {
                     ui.cursor_moved(touch.location);
+                }
+                if self.redraw_on_input {
+                    window.request_redraw();
                 }
             }
             WindowEvent::ModifiersChanged(new_modifiers) => {
@@ -195,6 +225,9 @@ impl OverlayWindow {
             _ => {
                 if let Some(ref mut ui) = self.ui {
                     ui.handle_events(event, self.modifiers, &mut self.egui_input);
+                }
+                if self.redraw_on_input {
+                    window.request_redraw();
                 }
             }
         }
@@ -299,8 +332,12 @@ impl OverlayWindow {
         }
     }
 
-    /// 取走关闭标志（阶段二警告窗用）
-    #[allow(dead_code)]
+    /// 可变 Host 访问（设备警告窗取用户选择用）
+    pub(crate) fn ui_mut(&mut self) -> Option<&mut lumino_ui::Host> {
+        self.ui.as_mut()
+    }
+
+    /// 取走关闭标志（设备警告窗用）
     pub(crate) fn take_close_requested(&mut self) -> bool {
         std::mem::take(&mut self.close_requested)
     }
