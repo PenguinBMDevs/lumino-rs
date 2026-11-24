@@ -265,30 +265,6 @@ impl EditorState {
     pub fn current_tool(&self) -> Tool {
         self.tool
     }
-
-    /// 获取选择框内的音符索引列表（委托到 EditorData）
-    pub fn get_notes_in_selection_box(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> Vec<usize> {
-        self.data
-            .get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
-    }
-
-    /// 计算选择框内的音符索引（委托到 EditorData）
-    pub fn compute_selection(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> SelectionSet {
-        self.data
-            .compute_selection(start_tick, start_key, current_tick, current_key)
-    }
 }
 
 #[cfg(test)]

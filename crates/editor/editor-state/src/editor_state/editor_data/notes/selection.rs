@@ -181,19 +181,6 @@ impl EditorData {
         (0..self.current_track_note_count()).collect()
     }
 
-    /// 计算选择框内的音符索引（委托到 get_notes_in_selection_box，消除重复逻辑）
-    pub fn compute_selection(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> SelectionSet {
-        self.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
-            .into_iter()
-            .collect()
-    }
-
     /// 获取选择框内的音符索引列表
     pub fn get_notes_in_selection_box(
         &self,

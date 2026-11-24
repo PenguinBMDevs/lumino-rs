@@ -142,11 +142,3 @@ fn test_get_notes_in_selection_box() {
     assert_eq!(indices.len(), 1);
     assert_eq!(indices[0], 0);
 }
-
-#[test]
-fn test_compute_selection() {
-    let data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0)]);
-    let selected = data.compute_selection(-1.0, 59, 3.0, 61);
-    assert_eq!(selected.len(), 1);
-    assert!(selected.contains(&0));
-}
