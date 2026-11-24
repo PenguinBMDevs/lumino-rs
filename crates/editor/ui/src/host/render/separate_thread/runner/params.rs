@@ -225,59 +225,65 @@ impl Host {
         // discard 键盘列，egui 标尺已支持拍号分段）。模型存在时 gfx 让出骨架。
         let piano_roll = self.root.egui_piano_roll_view();
 
-        RenderParams::builder()
-            .viewport_size((physical_size.width, physical_size.height))
-            .logical_size((data.viewport_size.width, data.viewport_size.height))
-            .scale_factor(self.render_ctx.viewport.scale_factor())
-            .scroll(data.scroll)
-            .zoom(data.zoom)
-            .keyboard_width(keyboard_width)
-            .ruler_height(ruler_height)
-            .canvas_offset((canvas_offset.0, canvas_offset.1))
-            .canvas_size((canvas_size.0, canvas_size.1))
-            .background_color(bg_color)
-            .color_bg(colors.bg)
-            .color_bg_black_key(colors.black_key)
-            .color_bar(colors.bar_line)
-            .color_beat(colors.beat_line)
-            .color_half_beat(colors.half_beat_line)
-            .color_grid(colors.grid_line)
-            .color_key_line(colors.key_line)
-            .ppq(ppq as f32)
-            .max_key_index(max_key_index)
-            .is_arrangement_mode(is_arrangement_mode)
-            .ruler_instances(data.ruler_instances)
-            .time_signatures(es.data.time_signatures.clone())
-            .arrangement_overlay_instances(data.arrangement_overlay_instances)
-            .arrangement_overlay_back_len(data.arrangement_overlay_back_len)
-            .arrangement_track_order(
-                data.arrangement_track_order
-                    .iter()
-                    .map(|&t| t as u32)
-                    .collect(),
-            )
-            .arrangement_track_visible(data.arrangement_track_visible)
-            .arrangement_uniform(arrangement_uniform)
-            .cc_bar_instances(data.cc_bar_instances)
-            .velocity_panel_rect(velocity_panel_rect)
+        let ppq_f32 = ppq as f32;
+        let (ticks_per_measure, ticks_per_beat) =
+            RenderParams::ticks_from_first_time_signature(ppq_f32, &es.data.time_signatures);
+
+        RenderParams {
+            viewport_size: (physical_size.width, physical_size.height),
+            logical_size: (data.viewport_size.width, data.viewport_size.height),
+            scale_factor: self.render_ctx.viewport.scale_factor(),
+            scroll: data.scroll,
+            zoom: data.zoom,
+            keyboard_width,
+            ruler_height,
+            canvas_offset: (canvas_offset.0, canvas_offset.1),
+            canvas_size: (canvas_size.0, canvas_size.1),
+            background_color: bg_color,
+            color_bg: colors.bg,
+            color_bg_black_key: colors.black_key,
+            color_bar: colors.bar_line,
+            color_beat: colors.beat_line,
+            color_half_beat: colors.half_beat_line,
+            color_grid: colors.grid_line,
+            color_key_line: colors.key_line,
+            ppq: ppq_f32,
+            max_key_index,
+            is_arrangement_mode,
+            ruler_instances: data.ruler_instances,
+            time_signatures: es.data.time_signatures.clone(),
+            arrangement_overlay_instances: data.arrangement_overlay_instances,
+            arrangement_overlay_back_len: data.arrangement_overlay_back_len,
+            arrangement_track_order: data
+                .arrangement_track_order
+                .iter()
+                .map(|&t| t as u32)
+                .collect(),
+            arrangement_track_visible: data.arrangement_track_visible,
+            arrangement_uniform,
+            cc_bar_instances: data.cc_bar_instances,
+            velocity_panel_rect,
             // 离屏场景闸门：按「画布是否真的可见」而不是只认瀑布流。
             // 导出面板 / 渲染器入口 / 卷帘关闭时，渲染线程只处理命令与音符缓冲
             // 发布（瀑布流预览依赖），跳过网格/音符/洋葱皮这块最贵的 GPU 工作。
-            .skip_scene_render(!self.root.editor_canvas_visible())
-            .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
-            .skip_roll_chrome(piano_roll.is_some())
-            .content_dirty(content_dirty)
-            .subpixel_note_mode(subpixel_note_mode)
-            .vs_cull_mode(vs_cull_mode)
+            skip_scene_render: !self.root.editor_canvas_visible(),
+            is_vertical_roll: self.root.editor.editor_state.is_vertical_roll,
+            skip_roll_chrome: piano_roll.is_some(),
+            content_dirty,
+            subpixel_note_mode,
+            vs_cull_mode,
             // CPU 洋葱皮（Q3 B）：只在 CPU 后端置位——渲染线程据此跳过 hires 贴图
             // 叠加层（半废稿本步不改造），并绘制 `cpu_onion_frame` 透明帧。
-            .cpu_onion_frame(data.cpu_onion_frame)
-            .cpu_onion_active(self.onion_skin_backend == OnionSkinBackend::Cpu)
+            cpu_onion_frame: data.cpu_onion_frame,
+            cpu_onion_active: self.onion_skin_backend == OnionSkinBackend::Cpu,
             // 洋葱皮全局开关（工具栏，默认关闭）：只闸渲染通道里的 hires 贴图
             // 洋葱皮叠加层——GPU 实例层由 `SetViewState.onion_visible` 走 uniform，
             // 两条路径都从同一真源取值，关闭即「彻底关闭」。
-            .onion_visible(self.onion_skin_visible())
-            .build()
+            onion_visible: self.onion_skin_visible(),
+            ticks_per_measure,
+            ticks_per_beat,
+            ..RenderParams::default()
+        }
     }
 }
 

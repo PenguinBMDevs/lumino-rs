@@ -23,21 +23,22 @@ fn cpu_onion_frame_defaults_to_none() {
 }
 
 #[test]
-fn cpu_onion_frame_builder_does_not_drift_from_default() {
-    let built = RenderParams::builder().build();
+fn cpu_onion_frame_defaults_to_none_and_literal_overrides() {
+    let built = RenderParams::default();
     assert!(
         built.cpu_onion_frame.is_none(),
-        "builder 默认值必须从主类型拷贝（不得漂移成 Some）"
+        "默认值必须为 None（不得漂移成 Some）"
     );
 
     let frame = CpuOnionFrame::new(1, 2, 3, 4, vec![0u8; 3 * 4 * 4], 11);
-    let params = RenderParams::builder()
-        .cpu_onion_frame(Some(frame.clone()))
-        .build();
+    let params = RenderParams {
+        cpu_onion_frame: Some(frame.clone()),
+        ..RenderParams::default()
+    };
     let got = params
         .cpu_onion_frame
         .as_ref()
-        .expect("builder 应把传入的 CPU 洋葱皮帧带进 RenderParams");
+        .expect("结构体字面量应把 CPU 洋葱皮帧带进 RenderParams");
     assert_eq!(got.version, 11);
     assert_eq!(got.size(), (3, 4));
 

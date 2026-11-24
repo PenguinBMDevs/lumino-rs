@@ -3,10 +3,6 @@ use crate::{
     NoteInstance, RulerTickInstance, miditrail_renderer::MiditrailViewMode,
 };
 
-mod builder;
-
-pub use builder::RenderParamsBuilder;
-
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
 #[derive(Debug, Clone)]
 pub struct RenderParams {
@@ -260,16 +256,16 @@ impl Default for RenderParams {
 }
 
 impl RenderParams {
-    /// 创建 Builder，推荐的构造方式。
+    /// 从首个拍号推导 `(每小节 tick 数, 每拍 tick 数)`（背景 shader 用）。
     ///
-    /// ```ignore
-    /// RenderParams::builder()
-    ///     .viewport_size((1920, 1080))
-    ///     .scroll((100.0, 50.0))
-    ///     .zoom((0.5, 10.0))
-    ///     .build()
-    /// ```
-    pub fn builder() -> RenderParamsBuilder {
-        RenderParamsBuilder::default()
+    /// 变化拍号由 CPU 标尺实例处理，这里只给背景网格一个恒定刻度。
+    pub fn ticks_from_first_time_signature(
+        ppq: f32,
+        time_signatures: &[(u32, u8, u8)],
+    ) -> (u32, u32) {
+        let (_, numerator, denominator) = time_signatures.first().copied().unwrap_or((0, 4, 4));
+        let beat_ticks = ppq * 4.0 / denominator.max(1) as f32;
+        let measure_ticks = beat_ticks * numerator.max(1) as f32;
+        (measure_ticks as u32, beat_ticks as u32)
     }
 }
