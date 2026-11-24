@@ -4,6 +4,13 @@
 
 use super::*;
 
+/// 历史回放方向。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HistoryDir {
+    Undo,
+    Redo,
+}
+
 impl EditorData {
     /// 取走自上一笔入栈以来积累的按值变更。
     fn take_history_pending(&mut self) -> (Vec<SnapshotNoteChange>, Vec<(u32, u32)>, bool) {
@@ -33,13 +40,19 @@ impl EditorData {
         }
     }
 
-    // ── 单步 undo / redo ────────────────────────────────────
+    // ── 单步 / 逻辑 undo / redo ─────────────────────────────
 
-    /// 撤销上一步操作（单步，不跨 chain）
-    pub fn undo(&mut self) -> bool {
+    /// 撤销/重做四个入口的统一骨架。
+    ///
+    /// `logical` 为 true 时不置 `modified`——逻辑撤销不把文档标记为脏是现状语义
+    /// （单步 undo/redo 才置位），合并时必须保留。
+    fn history_step(&mut self, dir: HistoryDir, logical: bool) -> bool {
         self.commit_history_pending();
         let pending = self.take_history_pending();
-        let target = self.history.undo_back();
+        let target = match dir {
+            HistoryDir::Undo => self.history.undo_back(),
+            HistoryDir::Redo => self.history.redo_back(),
+        };
         let track = target
             .and_then(Self::affected_track_of_history_entry)
             .unwrap_or(self.current_track);
@@ -48,82 +61,44 @@ impl EditorData {
         current.note_changes = changes.clone();
         current.dirty_ranges = ranges.clone();
         current.note_changes_full = full;
-        if let Some(entry) = self.history.undo(current) {
-            self.apply_history_entry(entry, true, changes, ranges, full);
-            self.modified = true;
+        let entry = match (dir, logical) {
+            (HistoryDir::Undo, false) => self.history.undo(current),
+            (HistoryDir::Redo, false) => self.history.redo(current),
+            (HistoryDir::Undo, true) => self.history.undo_logical(current),
+            (HistoryDir::Redo, true) => self.history.redo_logical(current),
+        };
+        if let Some(entry) = entry {
+            self.apply_history_entry(entry, dir == HistoryDir::Undo, changes, ranges, full);
+            if !logical {
+                self.modified = true;
+            }
             true
         } else {
             false
         }
+    }
+
+    /// 撤销上一步操作（单步，不跨 chain）
+    pub fn undo(&mut self) -> bool {
+        self.history_step(HistoryDir::Undo, false)
     }
 
     /// 重做上一步撤销的操作（单步，不跨 chain）
     pub fn redo(&mut self) -> bool {
-        self.commit_history_pending();
-        let pending = self.take_history_pending();
-        let target = self.history.redo_back();
-        let track = target
-            .and_then(Self::affected_track_of_history_entry)
-            .unwrap_or(self.current_track);
-        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
-        let mut current = self.make_snapshot_for_track(track);
-        current.note_changes = changes.clone();
-        current.dirty_ranges = ranges.clone();
-        current.note_changes_full = full;
-        if let Some(entry) = self.history.redo(current) {
-            self.apply_history_entry(entry, false, changes, ranges, full);
-            self.modified = true;
-            true
-        } else {
-            false
-        }
+        self.history_step(HistoryDir::Redo, false)
     }
-
-    // ── 逻辑 undo / redo（跨 chain）────────────────────────
 
     /// 逻辑撤销：跨同 group_id / parent_group_id 链一次性撤销
     ///
     /// 适用：用户感知的"撤销刚才那一波放置"——即使分割为多个 group，
     /// 也应一次性回退整个逻辑操作。
     pub fn undo_logical(&mut self) -> bool {
-        self.commit_history_pending();
-        let pending = self.take_history_pending();
-        let target = self.history.undo_back();
-        let track = target
-            .and_then(Self::affected_track_of_history_entry)
-            .unwrap_or(self.current_track);
-        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
-        let mut current = self.make_snapshot_for_track(track);
-        current.note_changes = changes.clone();
-        current.dirty_ranges = ranges.clone();
-        current.note_changes_full = full;
-        if let Some(entry) = self.history.undo_logical(current) {
-            self.apply_history_entry(entry, true, changes, ranges, full);
-            true
-        } else {
-            false
-        }
+        self.history_step(HistoryDir::Undo, true)
     }
 
     /// 逻辑重做：跨同 group_id / parent_group_id 链一次性重做
     pub fn redo_logical(&mut self) -> bool {
-        self.commit_history_pending();
-        let pending = self.take_history_pending();
-        let target = self.history.redo_back();
-        let track = target
-            .and_then(Self::affected_track_of_history_entry)
-            .unwrap_or(self.current_track);
-        let (changes, ranges, full) = self.resolve_history_changes(&pending, target);
-        let mut current = self.make_snapshot_for_track(track);
-        current.note_changes = changes.clone();
-        current.dirty_ranges = ranges.clone();
-        current.note_changes_full = full;
-        if let Some(entry) = self.history.redo_logical(current) {
-            self.apply_history_entry(entry, false, changes, ranges, full);
-            true
-        } else {
-            false
-        }
+        self.history_step(HistoryDir::Redo, true)
     }
 
     /// 是否可以撤销
