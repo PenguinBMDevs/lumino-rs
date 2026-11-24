@@ -189,6 +189,67 @@ mod tests {
         let _ = std::fs::remove_file(&events_archive_path);
     }
 
+    /// 对拍：文件夹保存 → 加载 → 归档保存 → 加载，全部部件必须一致。
+    ///
+    /// 覆盖 `build_parts`（保存唯一清单）与 `apply_event_parts`（加载唯一解码）：
+    /// 新增部件若只改一侧，本用例会在一次形态转换后丢字段并失败。
+    #[test]
+    fn test_folder_archive_parity_roundtrip() {
+        use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
+
+        let mut project = create_event_rich_project();
+        project.channel_aftertouch = vec![(120, 0, 0, 64)];
+        project.poly_aftertouch = vec![(240, 0, 0, 60, 80)];
+        project.text_events = vec![(0, 0, 0x01, b"Title".to_vec())];
+        let mut shape = ShapeModel::new(7, 0, ShapeKind::Curve, 0.25);
+        shape.geometry = ShapeGeometry::from_points([(0.0, 60.0), (480.0, 72.0)]);
+        shape.validate().expect("测试形状应通过校验");
+        project.shapes = vec![shape];
+
+        // 文件夹形态往返
+        let dir = std::env::temp_dir().join("lumino_parity_folder_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::project::save::save_to_folder(&project, &dir).expect("保存到文件夹失败");
+        let from_folder = load_from_folder(&dir).expect("从文件夹加载失败");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // 文件夹 → 归档形态往返
+        let archive_path = std::env::temp_dir().join("lumino_parity_archive_test.lmpj");
+        let _ = std::fs::remove_file(&archive_path);
+        crate::project::save::save_to_archive(&from_folder, &archive_path).expect("保存到归档失败");
+        let bytes = std::fs::read(&archive_path).expect("读取归档失败");
+        let from_archive = load_from_archive(&bytes).expect("从归档加载失败");
+        let _ = std::fs::remove_file(&archive_path);
+
+        // 事件富集字段（folder 与 archive 各自完整还原）
+        assert_event_rich_project_eq(&from_folder);
+        assert_event_rich_project_eq(&from_archive);
+
+        // 对拍：两种形态逐字段一致
+        assert_eq!(
+            from_archive.channel_aftertouch,
+            from_folder.channel_aftertouch
+        );
+        assert_eq!(from_archive.poly_aftertouch, from_folder.poly_aftertouch);
+        assert_eq!(from_archive.text_events, from_folder.text_events);
+        assert_eq!(from_archive.shapes, from_folder.shapes);
+        assert_eq!(from_archive.tempo_changes, from_folder.tempo_changes);
+        assert_eq!(from_archive.time_signatures, from_folder.time_signatures);
+        assert_eq!(from_archive.key_signatures, from_folder.key_signatures);
+        assert_eq!(from_archive.control_changes, from_folder.control_changes);
+        assert_eq!(from_archive.program_changes, from_folder.program_changes);
+        assert_eq!(from_archive.pitch_bends, from_folder.pitch_bends);
+        assert_eq!(from_archive.lyrics, from_folder.lyrics);
+        assert_eq!(from_archive.markers, from_folder.markers);
+        assert_eq!(from_archive.sys_ex, from_folder.sys_ex);
+
+        // 显式确认覆盖到了四个「老工程缺失即空」的部件
+        assert!(!from_archive.channel_aftertouch.is_empty());
+        assert!(!from_archive.poly_aftertouch.is_empty());
+        assert!(!from_archive.text_events.is_empty());
+        assert!(!from_archive.shapes.is_empty());
+    }
+
     /// 回归：作者与版权信息必须随工程文件保存并重新加载后保留
     /// （修复：工程设置面板的作者/版权保存后重新打开显示空白）。
     #[test]
