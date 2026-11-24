@@ -4,7 +4,6 @@
 
 use super::super::ToolbarHandler;
 use crate::root::Root;
-use lumino_editor_state::CollabTransformSyncEntry;
 
 impl ToolbarHandler {
     /// 钢琴卷帘变速：作用于 `selected_notes`（单轨索引位图）
@@ -158,19 +157,18 @@ impl ToolbarHandler {
 
             // 2026-09 去 ID 协作修复：仅对真正变化的音符发「删旧 + 加新」（按值，key/vel/ch 不变）。
             let track = root.editor.editor_state.data.current_track;
-            let mut entries: Vec<CollabTransformSyncEntry> = Vec::new();
             for (pos, old) in old_notes.iter().enumerate() {
                 let new_tick = quantizable_notes[pos].tick;
                 let new_length = quantizable_notes[pos].length;
                 if (new_tick, new_length) != (old.0, old.2) {
-                    entries.push((false, old.0, old.1, old.2, old.3, old.4, track));
-                    entries.push((true, new_tick, old.1, new_length, old.3, old.4, track));
+                    root.editor.editor_state.data.push_collab_transform_sync(
+                        false, old.0, old.1, old.2, old.3, old.4, track,
+                    );
+                    root.editor.editor_state.data.push_collab_transform_sync(
+                        true, new_tick, old.1, new_length, old.3, old.4, track,
+                    );
                 }
             }
-            root.editor
-                .editor_state
-                .data
-                .push_collab_transform_entries(entries);
             root.editor.broadcast_pending_collab_transform_sync();
 
             root.editor.mark_notes_changed();

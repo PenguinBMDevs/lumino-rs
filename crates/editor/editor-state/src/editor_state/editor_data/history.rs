@@ -20,5 +20,7 @@ mod ranges;
 mod sync;
 mod undo;
 
+pub(crate) use sync::collab_transform_entry;
+
 #[cfg(test)]
 mod tests;

@@ -4,7 +4,6 @@
 
 use super::Editor;
 use crate::note::Note;
-use lumino_editor_state::CollabTransformSyncEntry;
 
 impl Editor {
     /// 在指定 tick/音轨处分割音符（Razor 工具）。
@@ -86,9 +85,7 @@ impl Editor {
     ) -> usize {
         let mut split_count = 0usize;
         // 2026-09 协作修复：切割改变音符数量，累积「删原 + 加左右」同步条目。
-        // pending_collab_transform_sync 为 pub(crate)，ui-editor 不可直访，
-        // 故经 pub 入口 push_collab_transform_entries 注入。
-        let mut sync_entries: Vec<CollabTransformSyncEntry> = Vec::new();
+        // 直接走 `push_collab_transform_sync`（内部判开关，字段顺序单一来源）。
         // 从后往前分割，避免索引漂移
         for idx in indices_to_split.into_iter().rev() {
             // 2026-08 单一权威源：从 document 删除原音符，再按序插入 left + right
@@ -162,7 +159,7 @@ impl Editor {
                 );
                 continue;
             }
-            sync_entries.push((
+            self.editor_state.data.push_collab_transform_sync(
                 false,
                 note_tick,
                 note_key,
@@ -170,8 +167,8 @@ impl Editor {
                 note.velocity,
                 note.channel,
                 track,
-            ));
-            sync_entries.push((
+            );
+            self.editor_state.data.push_collab_transform_sync(
                 true,
                 note_tick,
                 note_key,
@@ -179,8 +176,8 @@ impl Editor {
                 note.velocity,
                 note.channel,
                 track,
-            ));
-            sync_entries.push((
+            );
+            self.editor_state.data.push_collab_transform_sync(
                 true,
                 tick_f,
                 note_key,
@@ -188,12 +185,9 @@ impl Editor {
                 note.velocity,
                 note.channel,
                 track,
-            ));
+            );
             split_count += 1;
         }
-        self.editor_state
-            .data
-            .push_collab_transform_entries(sync_entries);
         split_count
     }
 }

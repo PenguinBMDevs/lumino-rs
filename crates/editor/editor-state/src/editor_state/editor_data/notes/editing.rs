@@ -3,6 +3,7 @@
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};
 use super::super::super::selection_set::SelectionSet;
+use super::super::history::collab_transform_entry;
 use super::super::{CollabTransformSyncEntry, EditorData};
 use lumino_note_core::note::Note;
 
@@ -42,36 +43,34 @@ impl EditorData {
         let _ = self.insert_note_with_id(track_idx, right);
         self.mark_current_track_changed();
         // 2026-09 去 ID 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步（按值）。
-        // 协作同步关闭时跳过对账（消费端 `is_connected` 会短路丢弃）。
-        if self.collab_sync_enabled {
-            self.pending_collab_transform_sync.push((
-                false,
-                note_tick,
-                key as u16,
-                note_length,
-                velocity,
-                channel,
-                track_idx,
-            ));
-            self.pending_collab_transform_sync.push((
-                true,
-                note_tick,
-                key as u16,
-                split_tick - note_tick,
-                velocity,
-                channel,
-                track_idx,
-            ));
-            self.pending_collab_transform_sync.push((
-                true,
-                split_tick,
-                key as u16,
-                note_tick + note_length - split_tick,
-                velocity,
-                channel,
-                track_idx,
-            ));
-        }
+        // 协作同步关闭时由 `push_collab_transform_sync` 内部短路。
+        self.push_collab_transform_sync(
+            false,
+            note_tick,
+            key as u16,
+            note_length,
+            velocity,
+            channel,
+            track_idx,
+        );
+        self.push_collab_transform_sync(
+            true,
+            note_tick,
+            key as u16,
+            split_tick - note_tick,
+            velocity,
+            channel,
+            track_idx,
+        );
+        self.push_collab_transform_sync(
+            true,
+            split_tick,
+            key as u16,
+            note_tick + note_length - split_tick,
+            velocity,
+            channel,
+            track_idx,
+        );
         true
     }
 
@@ -106,6 +105,7 @@ impl EditorData {
 
         self.push_history();
         let mut merged = 0usize;
+        let track_idx = self.current_track;
         for group in &groups {
             let first = &group[0];
             let last = &group[group.len() - 1];
@@ -115,36 +115,24 @@ impl EditorData {
             let mut rm_sorted = rm.clone();
             rm_sorted.sort_by(|a, b| b.cmp(a));
             // 2026-09 去 ID 协作修复：合并改变音符数量，先记录每个被合并音符的删除（按值）。
-            if self.collab_sync_enabled {
-                for nt in group {
-                    self.pending_collab_transform_sync.push((
-                        false,
-                        nt.1,
-                        nt.2,
-                        nt.3,
-                        nt.4,
-                        nt.5,
-                        self.current_track,
-                    ));
-                }
+            for nt in group {
+                self.push_collab_transform_sync(false, nt.1, nt.2, nt.3, nt.4, nt.5, track_idx);
             }
             for &idx in &rm_sorted {
-                self.remove_note(self.current_track, idx);
+                self.remove_note(track_idx, idx);
             }
             let merged_note = Note::from_raw(merged_tick, first.2, merged_length, first.4, first.5);
-            let _ = self.insert_note_with_id(self.current_track, merged_note);
+            let _ = self.insert_note_with_id(track_idx, merged_note);
             // 2026-09 去 ID 协作修复：添加一个合并后的音符（按值）。
-            if self.collab_sync_enabled {
-                self.pending_collab_transform_sync.push((
-                    true,
-                    merged_tick,
-                    first.2,
-                    merged_length,
-                    first.4,
-                    first.5,
-                    self.current_track,
-                ));
-            }
+            self.push_collab_transform_sync(
+                true,
+                merged_tick,
+                first.2,
+                merged_length,
+                first.4,
+                first.5,
+                track_idx,
+            );
             merged += 1;
         }
         self.mark_current_track_changed();
@@ -219,7 +207,7 @@ impl EditorData {
                         if new_length > current_length {
                             note.end_tick = note.start_tick + new_length as u32;
                             if collab_sync {
-                                sync_entries.push((
+                                sync_entries.push(collab_transform_entry(
                                     false,
                                     note.start_tick as f32,
                                     note.key as u16,
@@ -228,7 +216,7 @@ impl EditorData {
                                     note.channel,
                                     track_idx,
                                 ));
-                                sync_entries.push((
+                                sync_entries.push(collab_transform_entry(
                                     true,
                                     note.start_tick as f32,
                                     note.key as u16,

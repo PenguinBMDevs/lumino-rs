@@ -5,6 +5,23 @@
 
 use super::*;
 
+/// 构造一条「按值」协作变换同步项。
+///
+/// 字段顺序的单一来源：受借用限制无法调用 `&mut self` 方法（例如仍在
+/// `self.document` 可变借用内）的调用点用它拼装；其余调用点直接走
+/// [`EditorData::push_collab_transform_sync`]。
+pub(crate) fn collab_transform_entry(
+    is_add: bool,
+    tick: f32,
+    key: u16,
+    length: f32,
+    velocity: u8,
+    channel: u8,
+    track: usize,
+) -> CollabTransformSyncEntry {
+    (is_add, tick, key, length, velocity, channel, track)
+}
+
 impl EditorData {
     /// 设置协作同步开关（上层在协作连接建立/断开时调用）。
     ///
@@ -43,7 +60,9 @@ impl EditorData {
             return;
         }
         self.pending_collab_transform_sync
-            .push((is_add, tick, key, length, velocity, channel, track));
+            .push(collab_transform_entry(
+                is_add, tick, key, length, velocity, channel, track,
+            ));
     }
 
     /// 取出并清空「撤销/重做后待广播给协作对端的音符移动」。

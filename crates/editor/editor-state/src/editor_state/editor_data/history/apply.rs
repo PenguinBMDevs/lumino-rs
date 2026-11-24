@@ -195,13 +195,15 @@ impl EditorData {
                     for (k, (c_after, t)) in &after_counts {
                         let c_before = before_counts.get(k).map(|e| e.0).unwrap_or(0);
                         for _ in c_before..*c_after {
-                            sync.push((true, t.0, t.1, t.2, t.3, t.4, track));
+                            sync.push(collab_transform_entry(true, t.0, t.1, t.2, t.3, t.4, track));
                         }
                     }
                     for (k, (c_before, t)) in &before_counts {
                         let c_after = after_counts.get(k).map(|e| e.0).unwrap_or(0);
                         for _ in c_after..*c_before {
-                            sync.push((false, t.0, t.1, t.2, t.3, t.4, track));
+                            sync.push(collab_transform_entry(
+                                false, t.0, t.1, t.2, t.3, t.4, track,
+                            ));
                         }
                     }
                     // 累积而非覆盖：多步跳转时批处理会连续回放多步，

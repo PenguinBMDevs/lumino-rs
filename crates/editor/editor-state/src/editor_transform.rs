@@ -6,7 +6,6 @@
 //! 2026-08 单一权威源改造：直接操作 document 当前轨（NoteEvent）。
 
 use crate::EditorData;
-use crate::editor_state::editor_data::CollabTransformSyncEntry;
 use crate::editor_state::selection_set::SelectionSet;
 use lumino_note_core::midi_types::VelocityPoint;
 
@@ -279,10 +278,7 @@ impl EditorData {
         new: lumino_midi_model::NoteEvent,
         track: usize,
     ) {
-        if !self.collab_sync_enabled() {
-            return;
-        }
-        self.pending_collab_transform_sync.push((
+        self.push_collab_transform_sync(
             false,
             old.start_tick as f32,
             old.key as u16,
@@ -290,8 +286,8 @@ impl EditorData {
             old.velocity,
             old.channel,
             track,
-        ));
-        self.pending_collab_transform_sync.push((
+        );
+        self.push_collab_transform_sync(
             true,
             new.start_tick as f32,
             new.key as u16,
@@ -299,19 +295,7 @@ impl EditorData {
             new.velocity,
             new.channel,
             track,
-        ));
-    }
-
-    /// 批量推送「删除旧 / 添加新」协作同步条目（ui-editor 层如 Razor 切割使用）。
-    ///
-    /// `pub`：`pending_collab_transform_sync` 为 `pub(crate)`，ui-editor 仓无法直接访问，
-    /// 故开放此批量入口。元组语义与 `pending_collab_transform_sync` 完全一致：
-    /// `(is_add, tick, key, length, velocity, channel, track_index)`（按值）。
-    pub fn push_collab_transform_entries(&mut self, entries: Vec<CollabTransformSyncEntry>) {
-        if !self.collab_sync_enabled() {
-            return;
-        }
-        self.pending_collab_transform_sync.extend(entries);
+        );
     }
 
     /// 把前向变换产生的「旧→新」音符状态对批量推入协作同步队列（使用当前音轨）。
