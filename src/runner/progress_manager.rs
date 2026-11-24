@@ -1,346 +1,148 @@
-use lumino_core::tr;
-use lumino_ui::window::TrafficAction;
-use std::sync::Arc;
+//! MIDI 加载进度窗口管理器（薄壳）
+//!
+//! 窗口生命周期由 [`super::overlay_window::OverlayWindow`] 统一实现；
+//! 本模块只保留进度数据源、主窗进度镜像与对外 API。
+
 use tokio::sync::mpsc;
-use winit::{dpi, event::WindowEvent, window::WindowAttributes, window::WindowButtons};
+use winit::{
+    dpi, event::WindowEvent, event_loop::ActiveEventLoop, window::Window, window::WindowButtons,
+    window::WindowId,
+};
+
+use lumino_core::storage::config::UiConfig;
+use lumino_core::tr;
+
+use super::overlay_window::{ClosePolicy, OverlaySpec, OverlayWindow};
 
 pub const PROGRESS_WINDOW_WIDTH: u32 = 500;
 pub const PROGRESS_WINDOW_HEIGHT: u32 = 200;
 
 /// 进度窗口管理器
-///
-/// 负责管理进度窗口的创建、更新和销毁
 pub struct ProgressManager {
     /// 进度接收器
     rx: mpsc::UnboundedReceiver<(String, f64)>,
     /// 当前进度
     progress: Option<(String, f64)>,
-    /// 进度窗口
-    window: Option<Arc<winit::window::Window>>,
-    /// 进度窗口图形上下文
-    gfx: Option<lumino_gfx::Context>,
-    /// 进度窗口 UI
-    ui: Option<lumino_ui::Host>,
-    /// egui 输入缓冲（窗口持有）
-    egui_input: lumino_ui::host::OverlayInput,
-    /// 修饰键状态
-    modifiers: winit::keyboard::ModifiersState,
+    /// 通用浮窗（进度窗生命周期）
+    overlay: Option<OverlayWindow>,
 }
 
 impl ProgressManager {
     /// 创建新的进度管理器
     pub fn new() -> (Self, mpsc::UnboundedSender<(String, f64)>) {
         let (tx, rx) = mpsc::unbounded_channel();
-
-        let manager = Self {
-            rx,
-            progress: None,
-            window: None,
-            gfx: None,
-            ui: None,
-            egui_input: lumino_ui::host::OverlayInput::default(),
-            modifiers: winit::keyboard::ModifiersState::default(),
-        };
-
-        (manager, tx)
+        (
+            Self {
+                rx,
+                progress: None,
+                overlay: None,
+            },
+            tx,
+        )
     }
 
     /// 检查是否是进度窗口的 ID
-    pub fn is_progress_window(&self, window_id: winit::window::WindowId) -> bool {
-        self.window.as_ref().is_some_and(|w| w.id() == window_id)
+    pub fn is_progress_window(&self, window_id: WindowId) -> bool {
+        self.overlay
+            .as_ref()
+            .is_some_and(|o| o.is_window(window_id))
     }
 
     /// REND-019 PR-C：重连——进度窗存活时重绑到新 device（不存在则 no-op）。
     #[allow(dead_code)]
     pub(crate) fn rebind_gpu(&mut self, epoch: lumino_gfx::GpuEpoch, gpu: &lumino_gfx::SharedGpu) {
-        if let Some(gfx) = self.gfx.as_mut() {
-            gfx.rebind_device(epoch, gpu);
-        }
-        if let Some(ui) = self.ui.as_mut() {
-            ui.rebind_gpu(epoch, gpu);
+        if let Some(overlay) = self.overlay.as_mut() {
+            overlay.rebind_gpu(epoch, gpu);
         }
     }
 
     /// 处理进度窗口事件
     pub fn handle_event(&mut self, event: WindowEvent) {
-        let Some(window) = self.window.clone() else {
+        let Some(overlay) = self.overlay.as_mut() else {
             return;
         };
-
-        match event {
-            WindowEvent::RedrawRequested => {
-                self.handle_redraw(&window);
-                // 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
-                // 必须在 redraw（事件队列已消费）之后调用
-                self.apply_window_actions();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.cursor_moved(position);
-                }
-            }
-            // 纯触屏平台（Android）没有 `CursorMoved`：指针位置必须由 `Touch` 驱动，
-            // 否则 Host 的 cursor 恒为 `Unavailable`，进度窗内的按钮/滚动区点不动。
-            WindowEvent::Touch(touch) => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.cursor_moved(touch.location);
-                }
-            }
-            WindowEvent::ModifiersChanged(new_modifiers) => {
-                self.modifiers = new_modifiers.state();
-            }
-            WindowEvent::Resized(size) => {
-                self.handle_resize(size, &window);
-            }
-            WindowEvent::ScaleFactorChanged { .. } => {
-                // REF-001 G-1：DPI 变化可能不伴随 `Resized`（物理尺寸不变），
-                // 视口里缓存的缩放因子必须按当前窗口状态重建。
-                let size = window.inner_size();
-                self.handle_resize(size, &window);
-            }
-            WindowEvent::CloseRequested => {
-                self.close();
-            }
-            _ => {
-                if let Some(ref mut ui) = self.ui {
-                    ui.handle_events(event, self.modifiers, &mut self.egui_input);
-                }
-            }
+        overlay.handle_event(event);
+        // 浮窗内部因关闭请求释放资源后，薄壳必须同步清进度：
+        // 否则下一帧 update() 会误判为「有进度无窗口」而重建窗口。
+        if overlay.is_closed() {
+            self.progress = None;
+            self.overlay = None;
         }
-    }
-
-    /// 处理重绘
-    fn handle_redraw(&mut self, window: &Arc<winit::window::Window>) {
-        let egui_events = self.egui_input.take();
-        let egui_focused = self.egui_input.focused();
-        if let Some(ref mut ui) = self.ui
-            && let Some(ref gfx) = self.gfx
-            && let Err(e) = gfx.with_frame(|frame, view| {
-                ui.redraw_requested(frame, view, gfx, egui_events, egui_focused)
-            })
-        {
-            // REND-019（PR-A §1.6）：统一帧错误处置——仅可恢复错误安排重绘；
-            // Lost/OOM 已置停帧标志（等重连），禁止盲重绘忙循环
-            if gfx.handle_frame_error(&e).should_redraw() {
-                window.request_redraw();
-            }
-        }
-        if let Some(ui) = self.ui.as_ref() {
-            self.egui_input.set_wants_keyboard(ui.egui_wants_keyboard());
-        }
-    }
-
-    /// 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
-    ///
-    /// 进度窗口为无边框模式，系统标题栏已移除，窗口控制由 上一代 渲染的
-    /// 自制标题栏（`Titlebar`）承担。动作需在 `redraw_requested`（事件队列已消费）
-    /// 之后取出并应用到真实窗口。`Close` 直接关闭进度窗口（与 `CloseRequested` 一致）。
-    fn apply_window_actions(&mut self) {
-        let (action, drag) = match self.ui.as_mut() {
-            Some(ui) => (ui.take_window_action(), ui.take_drag()),
-            None => (None, false),
-        };
-
-        if let Some(action) = action {
-            match action {
-                TrafficAction::Close => {
-                    self.close();
-                }
-                TrafficAction::Minimize => {
-                    if let Some(window) = self.window.as_ref() {
-                        window.set_minimized(true);
-                    }
-                }
-                TrafficAction::ToggleMaximize => {
-                    // 进度窗口不可缩放，无需响应最大化
-                    if let Some(window) = self.window.as_ref()
-                        && window.is_resizable()
-                    {
-                        let is_max = window.is_maximized();
-                        window.set_maximized(!is_max);
-                    }
-                }
-            }
-        }
-
-        if drag
-            && let Some(window) = self.window.clone()
-            && let Err(e) = window.drag_window()
-        {
-            tracing::warn!("拖动进度窗口失败: {}", e);
-            if let Some(ui) = self.ui.as_mut() {
-                ui.release_left_mouse_button();
-            }
-        }
-    }
-
-    /// 处理大小改变
-    fn handle_resize(
-        &mut self,
-        size: winit::dpi::PhysicalSize<u32>,
-        window: &Arc<winit::window::Window>,
-    ) {
-        if let Some(ref mut ui) = self.ui {
-            ui.resize(size.width, size.height);
-        }
-        if let Some(ref mut gfx) = self.gfx {
-            gfx.resize(size.width, size.height);
-        }
-        window.request_redraw();
     }
 
     /// 关闭进度窗口
     pub fn close(&mut self) {
         self.progress = None;
-        self.window = None;
-        self.gfx = None;
-        self.ui = None;
+        if let Some(overlay) = self.overlay.as_mut() {
+            overlay.close();
+        }
+        self.overlay = None;
     }
 
     /// 更新进度窗口状态
-    pub fn update(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        ui_config: &lumino_core::storage::config::UiConfig,
-    ) {
-        if self.progress.is_some() && self.window.is_none() {
+    pub fn update(&mut self, event_loop: &ActiveEventLoop, ui_config: &UiConfig) {
+        if self.progress.is_some() && self.overlay.is_none() {
             // REND-020（#166）：停帧窗口内不建进度窗——`Context::new` 会拒绝在死设备
             // 上建 Context；逐帧「建窗→丢弃」还会放大窗口/交换链开销。
             if lumino_gfx::device_lost() {
                 return;
             }
-            self.create_window(event_loop, ui_config);
-        } else if self.progress.is_none() && self.window.is_some() {
+            let spec = OverlaySpec {
+                size: dpi::LogicalSize {
+                    width: PROGRESS_WINDOW_WIDTH,
+                    height: PROGRESS_WINDOW_HEIGHT,
+                },
+                title: tr!("MIDI 处理进度").to_string(),
+                resizable: false,
+                buttons: Some(WindowButtons::CLOSE | WindowButtons::MINIMIZE),
+                close_policy: ClosePolicy::Immediate,
+            };
+            match OverlayWindow::create(event_loop, ui_config, &spec, None) {
+                Ok(overlay) => self.overlay = Some(overlay),
+                Err(e) => tracing::error!("创建进度窗口失败: {}", e),
+            }
+        } else if self.progress.is_none() && self.overlay.is_some() {
             self.close();
         }
     }
 
-    /// 创建进度窗口
-    fn create_window(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        ui_config: &lumino_core::storage::config::UiConfig,
-    ) {
-        let mut attributes = WindowAttributes::default()
-            .with_inner_size(dpi::LogicalSize {
-                width: PROGRESS_WINDOW_WIDTH,
-                height: PROGRESS_WINDOW_HEIGHT,
-            })
-            .with_title(tr!("MIDI 处理进度"))
-            .with_visible(true)
-            // UI-004：进度指示对话框内容为固定布局，禁止拉伸与最大化（保留关闭/最小化）。
-            .with_resizable(false)
-            .with_enabled_buttons(WindowButtons::CLOSE | WindowButtons::MINIMIZE);
-
-        // 进度窗口跟随主窗口的标题栏配置。
-        #[cfg(target_os = "windows")]
-        {
-            use winit::platform::windows::WindowAttributesExtWindows;
-            attributes = if ui_config.use_native_titlebar {
-                attributes.with_decorations(true)
-            } else {
-                attributes
-                    .with_decorations(false)
-                    .with_undecorated_shadow(true)
-            };
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            if !ui_config.use_native_titlebar {
-                attributes = attributes
-                    .with_titlebar_transparent(true)
-                    .with_fullsize_content_view(true);
-            }
-        }
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            attributes = attributes.with_decorations(ui_config.use_native_titlebar);
-        }
-
-        let window = match event_loop.create_window(attributes) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                tracing::error!("创建进度窗口失败: {}", e);
-                return;
-            }
-        };
-
-        let physical_size = window.inner_size();
-
-        let gfx = match lumino_gfx::Context::new_blocking(
-            {
-                let window = Arc::clone(&window);
-                move |instance| instance.create_surface(Arc::clone(&window))
-            },
-            physical_size.width,
-            physical_size.height,
-        ) {
-            Ok(g) => g,
-            Err(e) => {
-                tracing::error!("初始化进度窗口图形上下文失败: {}", e);
-                return;
-            }
-        };
-
-        let ui = lumino_ui::Host::new(
-            lumino_ui::host::host_window(window.clone()),
-            physical_size.width,
-            physical_size.height,
-            ui_config,
-            &gfx,
-            true,
-        );
-
-        self.window = Some(window);
-        self.gfx = Some(gfx);
-        self.ui = Some(ui);
-    }
-
-    /// 处理进度消息
-    pub fn process_messages(
-        &mut self,
-        main_ui: &mut lumino_ui::Host,
-        main_window: &winit::window::Window,
-    ) {
+    /// 处理进度消息（about_to_wait 中调用）
+    pub fn process_messages(&mut self, main_ui: &mut lumino_ui::Host, main_window: &Window) {
         while let Ok((msg, progress)) = self.rx.try_recv() {
             self.handle_message(msg, progress, main_ui, main_window);
         }
     }
 
-    /// 处理单个进度消息
+    /// 处理单个进度消息：镜像到主窗状态栏 + 进度窗
     fn handle_message(
         &mut self,
         msg: String,
         progress: f64,
         main_ui: &mut lumino_ui::Host,
-        main_window: &winit::window::Window,
+        main_window: &Window,
     ) {
-        // 进度完成（>= 1.0）时，关闭进度窗口
+        // 进度完成（>= 1.0）时，先显示完成消息再关闭窗口（下帧 update 关闭）。
         if progress >= 1.0 {
-            // 先显示完成消息，然后关闭窗口
             main_ui.update_progress(Some((msg.clone(), progress)));
-            if let Some(ref mut ui) = self.ui {
-                ui.update_progress(Some((msg, progress)));
+            if let Some(ref mut overlay) = self.overlay {
+                overlay.update_progress(Some((msg, progress)));
             }
-            // 请求重绘以显示最终状态
             main_window.request_redraw();
-            if let Some(ref window) = self.window {
-                window.request_redraw();
+            if let Some(ref overlay) = self.overlay {
+                overlay.request_redraw();
             }
-            // 关闭进度窗口
             self.progress = None;
             return;
         }
 
         self.progress = Some((msg.clone(), progress));
         main_ui.update_progress(Some((msg.clone(), progress)));
-        if let Some(ref mut ui) = self.ui {
-            ui.update_progress(Some((msg, progress)));
+        if let Some(ref mut overlay) = self.overlay {
+            overlay.update_progress(Some((msg, progress)));
         }
         main_window.request_redraw();
-        if let Some(ref window) = self.window {
-            window.request_redraw();
+        if let Some(ref overlay) = self.overlay {
+            overlay.request_redraw();
         }
     }
 }

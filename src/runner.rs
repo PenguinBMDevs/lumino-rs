@@ -15,6 +15,7 @@ mod lifecycle;
 mod menu;
 mod midi_handler;
 mod midi_manager;
+mod overlay_window;
 mod progress_manager;
 mod reconnect;
 mod user_event;
