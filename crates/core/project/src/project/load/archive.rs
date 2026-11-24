@@ -2,14 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::project::{
-    archive,
-    data_formats::{
-        LmcatData, LmctlData, LmnamesData, LmshapesData, LmsigData, LmsyxData, LmtempData,
-        LmtextmetaData, LmtxtData,
-    },
-    metadata::ProjectMetadata,
-};
+use crate::project::{archive, metadata::ProjectMetadata};
 use crate::{LmtrackData, LuminoProject, TrackSlot};
 use lumino_core::error::{CoreError, Result};
 use lumino_core::{tr, trf};
@@ -62,99 +55,12 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
         }
     }
 
-    // 读取 tempo（专用格式 LMTM）
-    if let Some(tempo_bytes) = reader
-        .read("data/project/tempo.lmtemp")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 tempo 失败: {e}", e = e)))?
-    {
-        let data = LmtempData::decode(&tempo_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("tempo 解码失败: {e}", e = e)))?;
-        project.tempo_changes = data.tempo_changes;
-    }
-
-    // 读取 signature（专用格式 LMSG）
-    if let Some(sig_bytes) = reader
-        .read("data/project/signature.lmsig")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 signature 失败: {e}", e = e)))?
-    {
-        let data = LmsigData::decode(&sig_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("signature 解码失败: {e}", e = e)))?;
-        project.time_signatures = data.time_signatures;
-        project.key_signatures = data.key_signatures;
-    }
-
-    // 读取 controls（专用格式 LMCT）
-    if let Some(ctl_bytes) = reader
-        .read("data/project/controls.lmctl")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 controls 失败: {e}", e = e)))?
-    {
-        let data = LmctlData::decode(&ctl_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("controls 解码失败: {e}", e = e)))?;
-        project.control_changes = data.control_changes;
-        project.program_changes = data.program_changes;
-        project.pitch_bends = data.pitch_bends;
-    }
-
-    // 读取触后（专用格式 LMAT；老工程无此文件即空，不报错）
-    if let Some(cat_bytes) = reader
-        .read("data/project/aftertouch.lmcat")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 aftertouch 失败: {e}", e = e)))?
-    {
-        let data = LmcatData::decode(&cat_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("aftertouch 解码失败: {e}", e = e)))?;
-        project.channel_aftertouch = data.channel_aftertouch;
-        project.poly_aftertouch = data.poly_aftertouch;
-    }
-
-    // 读取 text events（专用格式 LMTX）
-    if let Some(txt_bytes) = reader
-        .read("data/project/text_events.lmtxt")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 text events 失败: {e}", e = e)))?
-    {
-        let data = LmtxtData::decode(&txt_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("text events 解码失败: {e}", e = e)))?;
-        project.lyrics = data.lyrics;
-        project.markers = data.markers;
-    }
-
-    // 读取 text metas（专用格式 LMMT；老工程无此文件即空，不报错）
-    if let Some(txtmeta_bytes) = reader
-        .read("data/project/text_metas.lmmtx")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 text metas 失败: {e}", e = e)))?
-    {
-        let data = LmtextmetaData::decode(&txtmeta_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("text metas 解码失败: {e}", e = e)))?;
-        project.text_events = data.text_events;
-    }
-
-    // 读取 SysEx（专用格式 LMSY）
-    if let Some(syx_bytes) = reader
-        .read("data/project/sysex.lmsyx")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 SysEx 失败: {e}", e = e)))?
-    {
-        let data = LmsyxData::decode(&syx_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("SysEx 解码失败: {e}", e = e)))?;
-        project.sys_ex = data.sys_ex;
-    }
-
-    // 读取 track_names（专用格式 LMNM）
-    if let Some(names_bytes) = reader
-        .read("data/project/track_names.lmnames")
-        .map_err(|e| CoreError::FileFormat(trf!("读取 names 失败: {e}", e = e)))?
-    {
-        let _data = LmnamesData::decode(&names_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("names 解码失败: {e}", e = e)))?;
-    }
-
-    // 读取形状（专用格式 LMSH；老工程无此文件即空，不报错）
-    if let Some(shapes_bytes) = reader
-        .read("data/project/shapes.lmshapes")
-        .map_err(|e| CoreError::FileFormat(trf!("读取形状失败: {e}", e = e)))?
-    {
-        let data = LmshapesData::decode(&shapes_bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("形状解码失败: {e}", e = e)))?;
-        project.shapes = data.shapes;
-    }
+    // 事件/元数据部件（9 段解码与 folder / archive 共用）
+    super::events::apply_event_parts(&mut project, |part: &str| {
+        reader
+            .read(part)
+            .map_err(|e| CoreError::FileFormat(trf!("读取 {part} 失败: {e}", part = part, e = e)))
+    })?;
 
     Ok(project)
 }

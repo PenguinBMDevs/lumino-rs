@@ -2,14 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::project::{
-    data_formats::{
-        LmcatData, LmctlData, LmnamesData, LmshapesData, LmsigData, LmsyxData, LmtempData,
-        LmtextmetaData, LmtxtData,
-    },
-    folder,
-    metadata::ProjectMetadata,
-};
+use crate::project::{folder, metadata::ProjectMetadata};
 use crate::{LuminoProject, TrackSlot};
 use lumino_core::error::{CoreError, Result};
 use lumino_core::trf;
@@ -38,91 +31,15 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
         project.tracks[idx] = TrackSlot::Loaded(track);
     }
 
-    // 读取 tempo（专用格式 LMTM）
-    let tempo_path = path.join(folder::FolderPaths::TEMPO_FILE);
-    if tempo_path.exists() {
-        let bytes = std::fs::read(&tempo_path)?;
-        let data = LmtempData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("tempo 解码失败: {e}", e = e)))?;
-        project.tempo_changes = data.tempo_changes;
-    }
-
-    // 读取 signature（专用格式 LMSG）
-    let sig_path = path.join(folder::FolderPaths::SIGNATURE_FILE);
-    if sig_path.exists() {
-        let bytes = std::fs::read(&sig_path)?;
-        let data = LmsigData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("signature 解码失败: {e}", e = e)))?;
-        project.time_signatures = data.time_signatures;
-        project.key_signatures = data.key_signatures;
-    }
-
-    // 读取 controls（专用格式 LMCT）
-    let ctl_path = path.join(folder::FolderPaths::CONTROLS_FILE);
-    if ctl_path.exists() {
-        let bytes = std::fs::read(&ctl_path)?;
-        let data = LmctlData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("controls 解码失败: {e}", e = e)))?;
-        project.control_changes = data.control_changes;
-        project.program_changes = data.program_changes;
-        project.pitch_bends = data.pitch_bends;
-    }
-
-    // 读取触后（专用格式 LMAT；老工程无此文件即空，不报错）
-    let aftertouch_path = path.join(folder::FolderPaths::AFTERTOUCH_FILE);
-    if aftertouch_path.exists() {
-        let bytes = std::fs::read(&aftertouch_path)?;
-        let data = LmcatData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("aftertouch 解码失败: {e}", e = e)))?;
-        project.channel_aftertouch = data.channel_aftertouch;
-        project.poly_aftertouch = data.poly_aftertouch;
-    }
-
-    // 读取 text events（专用格式 LMTX）
-    let txt_path = path.join(folder::FolderPaths::TEXT_EVENTS_FILE);
-    if txt_path.exists() {
-        let bytes = std::fs::read(&txt_path)?;
-        let data = LmtxtData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("text events 解码失败: {e}", e = e)))?;
-        project.lyrics = data.lyrics;
-        project.markers = data.markers;
-    }
-
-    // 读取 text metas（专用格式 LMMT；老工程无此文件即空，不报错）
-    let txtmeta_path = path.join(folder::FolderPaths::TEXT_METAS_FILE);
-    if txtmeta_path.exists() {
-        let bytes = std::fs::read(&txtmeta_path)?;
-        let data = LmtextmetaData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("text metas 解码失败: {e}", e = e)))?;
-        project.text_events = data.text_events;
-    }
-
-    // 读取 SysEx（专用格式 LMSY）
-    let syx_path = path.join(folder::FolderPaths::SYSEX_FILE);
-    if syx_path.exists() {
-        let bytes = std::fs::read(&syx_path)?;
-        let data = LmsyxData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("SysEx 解码失败: {e}", e = e)))?;
-        project.sys_ex = data.sys_ex;
-    }
-
-    // 读取 track_names（专用格式 LMNM）
-    let names_path = path.join(folder::FolderPaths::TRACK_NAMES_FILE);
-    if names_path.exists() {
-        let bytes = std::fs::read(&names_path)?;
-        let _data = LmnamesData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("names 解码失败: {e}", e = e)))?;
-        // 名称冗余存储，实际名称从各 .lmtrack 中已读取
-    }
-
-    // 读取形状（专用格式 LMSH；老工程无此文件即空，不报错）
-    let shapes_path = path.join(folder::FolderPaths::SHAPES_FILE);
-    if shapes_path.exists() {
-        let bytes = std::fs::read(&shapes_path)?;
-        let data = LmshapesData::decode(&bytes)
-            .map_err(|e| CoreError::FileFormat(trf!("形状解码失败: {e}", e = e)))?;
-        project.shapes = data.shapes;
-    }
+    // 事件/元数据部件（9 段解码与 folder / archive 共用）
+    super::events::apply_event_parts(&mut project, |part: &str| -> Result<Option<Vec<u8>>> {
+        let full = path.join(part);
+        if full.exists() {
+            Ok(Some(std::fs::read(full)?))
+        } else {
+            Ok(None)
+        }
+    })?;
 
     Ok(project)
 }

@@ -5,6 +5,7 @@
 //! 旧版 LMPJ 兼容加载保留在 `lumino-export` 中，避免核心 crate 依赖加载器。
 
 mod archive;
+mod events;
 mod folder;
 
 use std::path::Path;
