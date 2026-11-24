@@ -103,14 +103,11 @@ fn encode(meta: &DeletedTrackMetadata, data: &DeletedTrackData) -> Result<Vec<u8
 
     // trackdata.toml 部分
     let toml_str = toml::to_string_pretty(meta).map_err(CoreError::from)?;
-    let toml_bytes = toml_str.as_bytes();
-    raw.extend_from_slice(&(toml_bytes.len() as u32).to_le_bytes());
-    raw.extend_from_slice(toml_bytes);
+    push_len_prefixed(&mut raw, toml_str.as_bytes());
 
     // track.lmdeltdata 部分（bincode）
     let data_bytes = bincode::serialize(data).map_err(CoreError::from)?;
-    raw.extend_from_slice(&(data_bytes.len() as u32).to_le_bytes());
-    raw.extend_from_slice(&data_bytes);
+    push_len_prefixed(&mut raw, &data_bytes);
 
     // 整体 zstd 压缩
     let compressed = zstd::stream::encode_all(std::io::Cursor::new(raw), ZSTD_LEVEL)
@@ -140,40 +137,41 @@ fn decode(bytes: &[u8]) -> Result<(DeletedTrackMetadata, DeletedTrackData)> {
 
     let mut cursor = 6usize;
     // 读取 toml 部分
-    if cursor + 4 > decompressed.len() {
-        return Err(CoreError::FileFormat(
-            "deleted_track: truncated toml length".into(),
-        ));
-    }
-    let toml_len = read_u32_le(&decompressed[cursor..cursor + 4])? as usize;
-    cursor += 4;
-    if cursor + toml_len > decompressed.len() {
-        return Err(CoreError::FileFormat(
-            "deleted_track: truncated toml content".into(),
-        ));
-    }
-    let toml_str = std::str::from_utf8(&decompressed[cursor..cursor + toml_len])
+    let toml_bytes = take_len_prefixed(&decompressed, &mut cursor, "toml")?;
+    let toml_str = std::str::from_utf8(toml_bytes)
         .map_err(|e| CoreError::Serialization(format!("deleted_track toml utf8: {e}")))?;
     let meta: DeletedTrackMetadata = toml::from_str(toml_str).map_err(CoreError::from)?;
-    cursor += toml_len;
 
     // 读取 data 部分
-    if cursor + 4 > decompressed.len() {
-        return Err(CoreError::FileFormat(
-            "deleted_track: truncated data length".into(),
-        ));
-    }
-    let data_len = read_u32_le(&decompressed[cursor..cursor + 4])? as usize;
-    cursor += 4;
-    if cursor + data_len > decompressed.len() {
-        return Err(CoreError::FileFormat(
-            "deleted_track: truncated data content".into(),
-        ));
-    }
-    let data: DeletedTrackData =
-        bincode::deserialize(&decompressed[cursor..cursor + data_len]).map_err(CoreError::from)?;
+    let data_bytes = take_len_prefixed(&decompressed, &mut cursor, "data")?;
+    let data: DeletedTrackData = bincode::deserialize(data_bytes).map_err(CoreError::from)?;
 
     Ok((meta, data))
+}
+
+/// 追加「u32 小端长度 + 内容」段。
+fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(bytes);
+}
+
+/// 读取「u32 小端长度 + 内容」段，返回内容切片并把游标前移。
+fn take_len_prefixed<'a>(bytes: &'a [u8], cursor: &mut usize, what: &str) -> Result<&'a [u8]> {
+    let start = *cursor;
+    if start + 4 > bytes.len() {
+        return Err(CoreError::FileFormat(format!(
+            "deleted_track: truncated {what} length"
+        )));
+    }
+    let len = read_u32_le(&bytes[start..start + 4])? as usize;
+    let content_start = start + 4;
+    if content_start + len > bytes.len() {
+        return Err(CoreError::FileFormat(format!(
+            "deleted_track: truncated {what} content"
+        )));
+    }
+    *cursor = content_start + len;
+    Ok(&bytes[content_start..content_start + len])
 }
 
 /// 从 4 字节小端序切片读取 u32（切片长度必须为 4）
