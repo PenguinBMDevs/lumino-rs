@@ -2,11 +2,12 @@
 //!
 //! 使用 GPU Fragment Shader 高效渲染无限网格，实现 O(1) 渲染时间。
 
+mod binding;
 mod camera;
 mod pipeline;
 mod render;
 
-use crate::gpu_resource_tracker::TrackedBuffer;
+pub(crate) use binding::GridCameraBinding;
 
 /// Camera Uniform
 #[repr(C)]
@@ -125,10 +126,6 @@ pub struct GridPrepareParams {
 pub struct GridRenderer {
     /// 渲染管线
     pipeline: wgpu::RenderPipeline,
-    /// 视口 uniform 缓冲区
-    camera_buffer: TrackedBuffer,
-    /// Bind group
-    bind_group: wgpu::BindGroup,
-    /// 缓存的 uniform 数据（避免每帧重复构建）
-    cached_uniform: Option<GridCameraUniform>,
+    /// 相机 uniform 绑定（buffer + bind group + 缓存）
+    binding: GridCameraBinding,
 }

@@ -25,19 +25,8 @@ impl GridRenderer {
             crate::shader::create_shader_module(device, "infinite_grid_shader", Self::SHADER_SRC);
 
         // 创建 bind group layout
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("infinite_grid_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let bind_group_layout =
+            GridCameraBinding::create_layout(device, "infinite_grid_bind_group_layout");
 
         // 创建渲染管线，按 needs_depth 决定是否携带 depth-stencil 状态
         let pipeline =
@@ -51,30 +40,13 @@ impl GridRenderer {
                 )
                 .build();
 
-        let camera_buffer = TrackedBuffer::new_init(
+        let binding = GridCameraBinding::new(
             device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("infinite_grid_camera_uniform"),
-                contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
+            &bind_group_layout,
+            "infinite_grid_camera_uniform",
+            "infinite_grid_bind_group",
         );
 
-        // 创建 bind group
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("infinite_grid_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.inner().as_entire_binding(),
-            }],
-        });
-
-        Self {
-            pipeline,
-            camera_buffer,
-            bind_group,
-            cached_uniform: None,
-        }
+        Self { pipeline, binding }
     }
 }
