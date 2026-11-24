@@ -1,6 +1,7 @@
 //! 右侧栏面板共用控件：按钮、文本度量、滚动容器与按压判定。
 
-use egui::{Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Pos2, Rect, Sense, Vec2};
+pub(super) use crate::text::text_width;
+use egui::{Align, Align2, Color32, CornerRadius, Id, Layout, Pos2, Rect, Sense, Vec2};
 
 use crate::theme;
 
@@ -45,14 +46,6 @@ pub(super) fn button(
         (rect.width() - 12.0).max(1.0),
     );
     response
-}
-
-/// 文本宽度（比例字体度量）。
-pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
 }
 
 /// 纵向滚动容器：内容高度由模型计算，宽度铺满。

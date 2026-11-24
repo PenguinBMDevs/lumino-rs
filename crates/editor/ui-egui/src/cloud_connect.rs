@@ -257,15 +257,7 @@ fn buttons_row(ui: &mut egui::Ui, inner: Rect, y: f32, model: &CloudConnectModel
 }
 
 fn text_width(ui: &egui::Ui, label: &str) -> f32 {
-    ui.painter()
-        .layout_no_wrap(
-            label.to_owned(),
-            FontId::proportional(theme::font::LABEL),
-            theme::text(),
-        )
-        .size()
-        .x
-        .ceil()
+    crate::text::text_width_ceil(ui, label, theme::font::LABEL)
 }
 
 fn button(

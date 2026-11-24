@@ -6,6 +6,7 @@
 //! 几何对齐生产 `view/shape_drawer.rs`：面板内边距 10、列间距 6、标题 16px、
 //! 库行按 `spacing(2)` 排列、名称输入与动作按钮组各占一行（放不下自动换行）。
 
+use crate::text::text_width_ceil as text_width;
 use egui::{Align, Color32, CornerRadius, FontId, RichText, Stroke, Vec2};
 
 use crate::chrome::{ShapeActionButton, ShapeDrawerModel};
@@ -668,14 +669,6 @@ fn act(ctx: &egui::Context, action: crate::chrome::ShapePanelAction) {
 fn button_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
     let pad = ui.spacing().button_padding.x * 2.0 + 2.0;
     text_width(ui, text, size) + pad
-}
-
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
-        .ceil()
 }
 
 /// 固定矩形内的左对齐文本（保留可访问树节点）。

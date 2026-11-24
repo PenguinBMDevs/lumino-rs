@@ -4,6 +4,7 @@
 //! - 面板宽 248、圆角 8、1px `background.strong` 边框、底色 = 工具栏底色 ×0.9；
 //! - 内边距 12（形状 8、填充 10）、行间距 8（文字 6）。
 
+pub(super) use crate::text::text_width;
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 
 use super::super::toolbar_popup::{self, ToolbarAction};
@@ -399,14 +400,6 @@ fn thickness(ui: &mut egui::Ui, rect: Rect, model: &ThicknessPanelModel) {
         galley,
         TEXT_DIM,
     );
-}
-
-/// 文本宽度（与生产度量同口径：egui 比例字体）。
-pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), TEXT)
-        .size()
-        .x
 }
 
 /// 小按钮选中底色（供文字参数面板复用）。

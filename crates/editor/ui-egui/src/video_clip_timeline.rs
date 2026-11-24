@@ -6,6 +6,7 @@
 //!
 //! 与 上一代 的差异：不依赖 画布对象，只用 egui painter。
 
+use crate::text::text_width;
 use egui::{Align2, CornerRadius, FontId, Rect, Vec2};
 
 use crate::theme;
@@ -325,14 +326,6 @@ pub fn show_title_row(
 
     // 标题行由 egui 独占：上一代 的同位占位行不再需要事件。
     crate::chrome::menu::extend_blocked(ui.ctx(), [rect]);
-}
-
-/// 单行文本宽度（与绘制同源：同一字号与字体族）。
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
 }
 
 /// 传输按钮尺寸（图标 16 + 内边距 6/2，与 上一代 同口径）。

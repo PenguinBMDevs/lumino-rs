@@ -7,6 +7,7 @@
 //!
 //! 动作只回传意图（下标 / 路径 / 字段文本），磁盘操作仍由 Runner 完成。
 
+use crate::text::text_width_ceil as text_width;
 use egui::{Align, Color32, CornerRadius, FontId, RichText, Sense, Stroke, Vec2};
 
 use crate::chrome::{
@@ -770,14 +771,6 @@ fn input(
 fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let f = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
     Color32::from_rgb(f(a.r(), b.r()), f(a.g(), b.g()), f(a.b(), b.b()))
-}
-
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
-        .ceil()
 }
 
 /// 固定矩形内的左对齐文本（保留可访问树节点）。

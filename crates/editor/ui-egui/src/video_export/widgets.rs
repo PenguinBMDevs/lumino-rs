@@ -1,5 +1,6 @@
 //! 视频导出面板的通用控件绘制（预览 / 按钮 / 输入框 / 文本域 / 行度量）。
 
+pub(super) use crate::text::text_width_ceil as text_width;
 use egui::{Align, Color32, CornerRadius, FontId, RichText, Stroke, Vec2};
 
 use crate::chrome::{TextPairCell, VideoButton, VideoButtonFill};
@@ -101,14 +102,6 @@ pub(super) fn button(
         egui::Rect::from_min_size(pos, Vec2::new(width, height)),
         widget,
     )
-}
-
-pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
-        .ceil()
 }
 
 /// 一行两列中的一列（标签 + 输入）。

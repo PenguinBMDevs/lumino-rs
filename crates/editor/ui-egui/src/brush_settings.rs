@@ -8,7 +8,8 @@
 //! 无可用音轨时列表整体替换为一行禁用提示（与生产一致）。
 //! 本对话框只编辑「每层分配到的音轨」，层数 = 全局粗细，由粗细面板负责。
 
-use egui::{Align, Color32, CornerRadius, FontId, RichText, Sense, Stroke, Vec2};
+use crate::text::text_width_ceil as text_width;
+use egui::{Align, Color32, CornerRadius, RichText, Sense, Stroke, Vec2};
 
 use crate::chrome::BrushSettingsModel;
 use crate::theme;
@@ -294,14 +295,6 @@ fn icon_button(
         );
     }
     response
-}
-
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
-        .ceil()
 }
 
 fn button(ui: &mut egui::Ui, rect: egui::Rect, label: &str) -> egui::Response {

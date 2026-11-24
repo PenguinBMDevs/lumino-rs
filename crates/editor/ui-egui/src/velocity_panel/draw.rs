@@ -1,5 +1,6 @@
 //! 力度面板绘制辅助：Tempo 折线与文本宽度测量。
 
+pub(super) use crate::text::text_width;
 use egui::{Align2, Color32, FontId, Pos2, Stroke};
 
 use super::{VelocityPanelModel, input};
@@ -55,12 +56,4 @@ pub(super) fn tempo_graph(painter: &egui::Painter, model: &VelocityPanelModel) {
             color.gamma_multiply(0.7),
         );
     }
-}
-
-/// 文本宽度（模式按钮自适应）。
-pub(super) fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
-        .size()
-        .x
 }

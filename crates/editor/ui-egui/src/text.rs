@@ -20,6 +20,13 @@ pub fn text_width(ui: &Ui, text: &str, size: f32) -> f32 {
     layout_no_wrap(ui, text, size).size().x
 }
 
+/// 单行文本的绘制宽度，向上取整（像素对齐布局用）。
+///
+/// 取整与否只影响布局像素对齐，不改变测量口径；调用点保留原语义。
+pub fn text_width_ceil(ui: &Ui, text: &str, size: f32) -> f32 {
+    text_width(ui, text, size).ceil()
+}
+
 /// 单行文本的行高（用于给折行结果预留高度）。
 pub fn line_height(ui: &Ui, size: f32) -> f32 {
     layout_no_wrap(ui, "国", size).size().y

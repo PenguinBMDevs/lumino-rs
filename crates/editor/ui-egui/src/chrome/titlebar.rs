@@ -4,7 +4,7 @@
 //! logo 区 48 宽、菜单项 = 文本宽 + 17（中文 14px 下即 45，与基线 45px 节距一致）、
 //! 右侧三个窗口按钮各 45×29。
 
-use egui::{Align, FontId, Layout};
+use egui::{Align, Layout};
 
 use egui_extras::{Size, StripBuilder};
 
@@ -134,14 +134,7 @@ pub fn show_model(ui: &mut egui::Ui, model: &TitlebarModel, icons: &mut IconCach
 }
 
 fn text_width(ui: &egui::Ui, label: &str) -> f32 {
-    ui.painter()
-        .layout_no_wrap(
-            label.to_owned(),
-            FontId::proportional(MENU_FONT),
-            theme::text(),
-        )
-        .size()
-        .x
+    crate::text::text_width(ui, label, MENU_FONT)
 }
 
 fn menu(ui: &mut egui::Ui, model: &TitlebarModel, widths: &[f32], icons: &mut IconCache) {

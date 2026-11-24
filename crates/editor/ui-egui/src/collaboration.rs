@@ -7,6 +7,7 @@
 //! 输入框 34 高（`base` 底 + 1px `strong` 边框、圆角 4、内边距 8 或 [8,9]），
 //! 密码框掩码；按钮高度按 `padding` + 14/12px 文本推导。
 
+use crate::text::text_width_ceil as text_width;
 use egui::{Align, Align2, Color32, CornerRadius, FontId, RichText, Stroke, Vec2};
 
 use crate::chrome::{CollaborationModel, CollaborationViewModel};
@@ -453,14 +454,6 @@ fn small_button(
         .fill(fill)
         .corner_radius(CornerRadius::same(4));
     ui.put(rect, button)
-}
-
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), theme::text())
-        .size()
-        .x
-        .ceil()
 }
 
 /// 固定矩形内的文本标签（左 / 居中），保留可访问树节点。

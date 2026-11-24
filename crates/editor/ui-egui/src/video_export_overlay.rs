@@ -7,6 +7,7 @@
 //! 排版采用「先排计划、再落笔」两步：`plan()` 产出 `Vec<Row>` 并据此算出总高，
 //! 渲染时按 `(可用高 − 总高) / 2` 的偏移整体居中。
 
+use crate::text::text_width_ceil as text_width;
 use egui::{Align, Color32, CornerRadius, RichText, Stroke, Vec2};
 
 use crate::chrome::{
@@ -344,16 +345,4 @@ fn button(ui: &mut egui::Ui, rect: egui::Rect, label: &str, kind: ButtonKind) ->
         widget,
     )
     .clicked()
-}
-
-fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(
-            text.to_owned(),
-            egui::FontId::proportional(size),
-            theme::text(),
-        )
-        .size()
-        .x
-        .ceil()
 }
