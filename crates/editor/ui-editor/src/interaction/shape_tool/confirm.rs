@@ -27,7 +27,6 @@ use crate::interaction::bake::BakePending;
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
 use lumino_editor_state::{DrawnShapeSource, ShapeNote};
-use lumino_note_core::history::CreateOp;
 use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
@@ -307,43 +306,9 @@ impl Editor {
             self.editor_state.pending_composed = composed;
             return false;
         }
-        let mut create_ops: Vec<CreateOp> = Vec::with_capacity(payload.len());
-        if payload.len() <= crate::interaction::BATCH_INSERT_THRESHOLD {
-            // 小规模：逐音符插入（当前轨自动记录 GPU 段内增量事件）
-            for note in payload {
-                // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
-                if self
-                    .editor_state
-                    .data
-                    .insert_note_with_id(track, note.clone())
-                    .is_some()
-                {
-                    create_ops.push(CreateOp {
-                        track_id: track as u32,
-                        note: lumino_editor_state::note_to_event(note),
-                    });
-                }
-            }
-        } else {
-            // 大规模：批量归并写入（单次 O(N+M)）。
-            //
-            // 逐音符插入会为每个音符记一条 `InsertAt`，渲染侧逐条发
-            // `NoteEvent::Insert` 并在 GPU 内搬移其后全部实例（Σtail 超线性）——
-            // 大面积形状 + 切分同样会一次生成上万音符，与曲线填充同源悬崖。
-            let before = self.editor_state.data.current_track_note_count();
-            self.editor_state.data.batch_insert_notes_with_ids(&payload);
-            if self.editor_state.data.current_track_note_count() == before {
-                // 音轨不存在等异常：未写入任何音符
-                return false;
-            }
-            create_ops.extend(payload.iter().map(|note| CreateOp {
-                track_id: track as u32,
-                note: lumino_editor_state::note_to_event(note.clone()),
-            }));
-        }
-        if create_ops.is_empty() {
+        let Some(create_ops) = self.write_new_notes(track, payload) else {
             return false;
-        }
+        };
 
         let group = self
             .editor_state

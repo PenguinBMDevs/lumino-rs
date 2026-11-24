@@ -26,7 +26,6 @@ use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
 use lumino_editor_state::{BezierAnchor, ShapeNote};
-use lumino_note_core::history::CreateOp;
 use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
 impl Editor {
@@ -204,54 +203,13 @@ impl Editor {
                 }
             }
         }
-        let total = notes.len();
-        let mut create_ops = Vec::with_capacity(total);
-        if total <= super::super::BATCH_INSERT_THRESHOLD {
-            // 小规模：逐音符插入（当前轨自动记录 GPU 段内增量事件）
-            for (start, key, length) in notes {
-                let note = Note::new(start, key, length);
-                // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
-                if self
-                    .editor_state
-                    .data
-                    .insert_note_with_id(track, note.clone())
-                    .is_some()
-                {
-                    create_ops.push(CreateOp {
-                        track_id: track as u32,
-                        note: lumino_editor_state::note_to_event(note),
-                    });
-                }
-            }
-        } else {
-            // 大规模：批量归并写入（单次 O(N+M)）。
-            //
-            // 逐音符插入会为每个音符记一条 `InsertAt` 事件，渲染侧逐条发
-            // `NoteEvent::Insert` 并在 GPU 内搬移其后的全部实例——填充生成顺序
-            // （按音高行、行内按 tick，跨行 tick 回绕）使每条插入都落在列表中
-            // 部，Σtail 超线性增长：实测 13288 音符 = 13288 条消息 +
-            // 6805 万实例搬移（≈1038 MB GPU 拷贝）+ 13288 次 submit，
-            // 直接压垮渲染线程（见 `ui_fill_confirm_bench`）。批量只发一次
-            // 主轨结构重建（TrackDelta）。
-            let payload: Vec<Note> = notes
-                .into_iter()
-                .map(|(start, key, length)| Note::new(start, key, length))
-                .collect();
-            let before = self.editor_state.data.current_track_note_count();
-            self.editor_state.data.batch_insert_notes_with_ids(&payload);
-            if self.editor_state.data.current_track_note_count() == before {
-                // 音轨不存在等异常：未写入任何音符（与逐音符路径「全部失败」同义）
-                return false;
-            }
-            // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
-            create_ops.extend(payload.iter().map(|note| CreateOp {
-                track_id: track as u32,
-                note: lumino_editor_state::note_to_event(note.clone()),
-            }));
-        }
-        if create_ops.is_empty() {
+        let payload: Vec<Note> = notes
+            .into_iter()
+            .map(|(start, key, length)| Note::new(start, key, length))
+            .collect();
+        let Some(create_ops) = self.write_new_notes(track, payload) else {
             return false;
-        }
+        };
 
         // 一次 ✓ = 一个独立历史分组（不能被 NoteCreate 合并窗口并到上一次 Bake）
         let group = self
