@@ -8,7 +8,8 @@
 
 use tokio::sync::mpsc;
 use winit::{
-    dpi, event::WindowEvent, event_loop::ActiveEventLoop, window::Window, window::WindowId,
+    dpi, event::WindowEvent, event_loop::ActiveEventLoop, window::Window, window::WindowButtons,
+    window::WindowId,
 };
 
 use lumino_core::storage::config::UiConfig;
@@ -84,12 +85,9 @@ impl CloudProgressManager {
     /// 更新悬浮窗口状态（about_to_wait 中调用）
     ///
     /// `anchor` 为覆盖定位的锚点窗口：云浏览对话框（有则用）或主窗口。
-    pub fn update(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        ui_config: &UiConfig,
-        anchor: Option<&Window>,
-    ) {
+    /// 调用方恒能取到窗口（无对话框时回退主窗），故用非 `Option` 引用在类型
+    /// 层面消除「永远走不到 `None`」的死路径。
+    pub fn update(&mut self, event_loop: &ActiveEventLoop, ui_config: &UiConfig, anchor: &Window) {
         if self.progress.is_some() && self.overlay.is_none() {
             // REND-020（#166）：停帧窗口内不建云进度浮窗
             if lumino_gfx::device_lost() {
@@ -101,13 +99,14 @@ impl CloudProgressManager {
                     height: CLOUD_PROGRESS_HEIGHT,
                 },
                 title: tr!("云存储传输").to_string(),
-                // 阶段一保持原行为：原 create_window 未调用 with_resizable(false)，
-                // 默认可缩放；注释与实现的语义修正留待步骤5单独 PR 拍板。
-                resizable: true,
-                buttons: None,
+                // 与 MIDI 进度窗一致：固定布局进度浮窗不可缩放，仅保留关闭/最小化。
+                // 原实现注释称「不可缩放」却从未调用 with_resizable(false)，
+                // 本卡按注释语义拍板（步骤5）。
+                resizable: false,
+                buttons: Some(WindowButtons::CLOSE | WindowButtons::MINIMIZE),
                 close_policy: ClosePolicy::Immediate,
             };
-            match OverlayWindow::create(event_loop, ui_config, &spec, anchor) {
+            match OverlayWindow::create(event_loop, ui_config, &spec, Some(anchor)) {
                 Ok(overlay) => self.overlay = Some(overlay),
                 Err(e) => tracing::error!("创建云进度悬浮窗失败: {}", e),
             }

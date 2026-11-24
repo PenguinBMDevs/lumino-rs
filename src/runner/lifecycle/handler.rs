@@ -322,13 +322,15 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
         // 云传输进度悬浮窗：覆盖定位在云浏览对话框（无则主窗口）上
         puffin::profile_scope!("runner_about_to_wait_cloud_progress_update");
         this.window_state.cloud_progress.process_messages();
-        let cloud_anchor: Option<&winit::window::Window> = match this
+        // 云浏览对话框存在则以其为锚点，否则回退主窗口——恒有锚点，
+        // 故用非 Option 引用，消除「永远走不到 None」的死路径（步骤5）。
+        let cloud_anchor: &winit::window::Window = match this
             .window_state
             .dialog_manager
             .dialog_window_of_type(DialogType::CloudBrowser)
         {
-            Some(w) => Some(w.as_ref()),
-            None => Some(this.window_state.window.window().as_ref()),
+            Some(w) => w.as_ref(),
+            None => this.window_state.window.window().as_ref(),
         };
         this.window_state
             .cloud_progress
