@@ -34,99 +34,15 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result
 /// 由 [`save_to_folder`] 的原子替换流程调用（参数为临时目录）；
 /// 也供需要"直接写入指定目录"的内部场景复用。
 fn write_folder_contents(project: &LuminoProject, base: &Path) -> Result<()> {
-    // 创建目录结构
+    // 创建目录结构（含空目录 data/image、data/loaded/*）
     folder::create_folder_structure(base)?;
-
-    // 写入版本文件
-    folder::write_version_file(base, 1)?;
-
-    // 更新并写入 metadata.toml
-    let metadata = build_metadata(project);
-    metadata.to_file(base.join(folder::FolderPaths::METADATA_FILE))?;
-
-    // 写入音轨
-    for (idx, slot) in project.tracks.iter().enumerate() {
-        let data = match slot {
-            TrackSlot::Loaded(d) | TrackSlot::Modified(d) => d,
-            TrackSlot::Unloaded { .. } => continue,
-        };
-        folder::write_track(base, idx as u16, data)?;
+    for part in build_parts(project)? {
+        let path = base.join(&part.path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, &part.bytes)?;
     }
-
-    // 写入 tempo 数据（专用格式 LMTM）
-    let tempo_data = LmtempData {
-        tempo_changes: project.tempo_changes.clone(),
-        default_bpm: project.metadata.audio.default_bpm as f32,
-    };
-    let encoded = tempo_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::TEMPO_FILE), encoded)?;
-
-    // 写入 signature 数据（专用格式 LMSG）
-    let sig_data = LmsigData {
-        time_signatures: project.time_signatures.clone(),
-        key_signatures: project.key_signatures.clone(),
-    };
-    let encoded = sig_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::SIGNATURE_FILE), encoded)?;
-
-    // 写入 control 数据（专用格式 LMCT）
-    let ctl_data = LmctlData {
-        control_changes: project.control_changes.clone(),
-        program_changes: project.program_changes.clone(),
-        pitch_bends: project.pitch_bends.clone(),
-    };
-    let encoded = ctl_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::CONTROLS_FILE), encoded)?;
-
-    // 写入触后数据（专用格式 LMAT，与 LMCT 独立文件，老工程兼容）
-    let aftertouch_data = LmcatData {
-        channel_aftertouch: project.channel_aftertouch.clone(),
-        poly_aftertouch: project.poly_aftertouch.clone(),
-    };
-    let encoded = aftertouch_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::AFTERTOUCH_FILE), encoded)?;
-
-    // 写入文本 meta 数据（专用格式 LMTX）
-    let txt_data = LmtxtData {
-        lyrics: project.lyrics.clone(),
-        markers: project.markers.clone(),
-    };
-    let encoded = txt_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::TEXT_EVENTS_FILE), encoded)?;
-
-    // 写入文本类 meta 数据（专用格式 LMMT，与 LMTX 独立文件，老工程兼容）
-    let txtmeta_data = LmtextmetaData {
-        text_events: project.text_events.clone(),
-    };
-    let encoded = txtmeta_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::TEXT_METAS_FILE), encoded)?;
-
-    // 写入 SysEx 数据（专用格式 LMSY）
-    let syx_data = LmsyxData {
-        sys_ex: project.sys_ex.clone(),
-    };
-    let encoded = syx_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::SYSEX_FILE), encoded)?;
-
-    // 写入音轨名称映射表（专用格式 LMNM）
-    let names_data = LmnamesData {
-        track_names: project
-            .tracks
-            .iter()
-            .map(|slot| match slot {
-                TrackSlot::Loaded(d) | TrackSlot::Modified(d) => Some(d.meta.name.clone()),
-                TrackSlot::Unloaded { .. } => None,
-            })
-            .collect(),
-    };
-    let encoded = names_data.encode()?;
-    std::fs::write(base.join(folder::FolderPaths::TRACK_NAMES_FILE), encoded)?;
-
-    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程保存后字节不变）
-    if let Some(encoded) = encode_shapes(project)? {
-        std::fs::write(base.join(folder::FolderPaths::SHAPES_FILE), encoded)?;
-    }
-
     Ok(())
 }
 
@@ -165,17 +81,48 @@ pub fn encode_archive_with_time(project: &LuminoProject, created_at: u64) -> Res
     archive::build_archive_with_time(&files, created_at)
 }
 
-/// 构建归档文件列表
-fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, bool)>> {
-    let mut files: Vec<(String, Vec<u8>, bool)> = Vec::new();
+/// 一个工程部件：相对路径 + 已编码字节 + 归档是否再压缩。
+struct Part {
+    path: String,
+    bytes: Vec<u8>,
+    /// 归档容器是否对字节再做一层 zstd；文件夹形态忽略此标志。
+    compress: bool,
+}
+
+impl Part {
+    fn new(path: impl Into<String>, bytes: Vec<u8>, compress: bool) -> Self {
+        Self {
+            path: path.into(),
+            bytes,
+            compress,
+        }
+    }
+}
+
+/// 构建工程的全部部件（**单一清单**：新增部件只改这里）。
+///
+/// 文件夹形态与归档形态共用本清单，差异只在容器：
+/// - 文件夹：按 `path` 落盘，忽略 `compress`；
+/// - 归档：交给 `archive::build_archive`，按 `compress` 决定是否再压一层。
+///
+/// 顺序即归档文件表顺序（保持历史顺序，避免归档字节无谓变化）。
+fn build_parts(project: &LuminoProject) -> Result<Vec<Part>> {
+    let mut parts = Vec::new();
 
     // metadata.toml
     let metadata = build_metadata(project);
-    let meta_str = metadata.to_toml_str()?;
-    files.push(("metadata.toml".into(), meta_str.into_bytes(), true));
+    parts.push(Part::new(
+        folder::FolderPaths::METADATA_FILE,
+        metadata.to_toml_str()?.into_bytes(),
+        true,
+    ));
 
     // version
-    files.push((".lumino/version".into(), b"1".to_vec(), false));
+    parts.push(Part::new(
+        folder::FolderPaths::VERSION_FILE,
+        b"1".to_vec(),
+        false,
+    ));
 
     // 音轨
     for (idx, slot) in project.tracks.iter().enumerate() {
@@ -183,9 +130,8 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
             TrackSlot::Loaded(d) | TrackSlot::Modified(d) => d,
             TrackSlot::Unloaded { .. } => continue,
         };
-        let encoded = data.encode()?;
-        let path = format!("data/project/tracks/{:03}.lmtrack", idx);
-        files.push((path, encoded, true));
+        let path = format!("{}/{:03}.lmtrack", folder::FolderPaths::TRACKS_DIR, idx);
+        parts.push(Part::new(path, data.encode()?, true));
     }
 
     // tempo（专用格式 LMTM）
@@ -193,16 +139,22 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
         tempo_changes: project.tempo_changes.clone(),
         default_bpm: project.metadata.audio.default_bpm as f32,
     };
-    let encoded = tempo_data.encode()?;
-    files.push(("data/project/tempo.lmtemp".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::TEMPO_FILE,
+        tempo_data.encode()?,
+        true,
+    ));
 
     // signature（专用格式 LMSG）
     let sig_data = LmsigData {
         time_signatures: project.time_signatures.clone(),
         key_signatures: project.key_signatures.clone(),
     };
-    let encoded = sig_data.encode()?;
-    files.push(("data/project/signature.lmsig".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::SIGNATURE_FILE,
+        sig_data.encode()?,
+        true,
+    ));
 
     // controls（专用格式 LMCT）
     let ctl_data = LmctlData {
@@ -210,38 +162,53 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
         program_changes: project.program_changes.clone(),
         pitch_bends: project.pitch_bends.clone(),
     };
-    let encoded = ctl_data.encode()?;
-    files.push(("data/project/controls.lmctl".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::CONTROLS_FILE,
+        ctl_data.encode()?,
+        true,
+    ));
 
     // aftertouch（专用格式 LMAT，与 LMCT 独立文件，老工程兼容）
     let aftertouch_data = LmcatData {
         channel_aftertouch: project.channel_aftertouch.clone(),
         poly_aftertouch: project.poly_aftertouch.clone(),
     };
-    let encoded = aftertouch_data.encode()?;
-    files.push(("data/project/aftertouch.lmcat".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::AFTERTOUCH_FILE,
+        aftertouch_data.encode()?,
+        true,
+    ));
 
     // text events（专用格式 LMTX）
     let txt_data = LmtxtData {
         lyrics: project.lyrics.clone(),
         markers: project.markers.clone(),
     };
-    let encoded = txt_data.encode()?;
-    files.push(("data/project/text_events.lmtxt".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::TEXT_EVENTS_FILE,
+        txt_data.encode()?,
+        true,
+    ));
 
     // text metas（专用格式 LMMT，与 LMTX 独立文件，老工程兼容）
     let txtmeta_data = LmtextmetaData {
         text_events: project.text_events.clone(),
     };
-    let encoded = txtmeta_data.encode()?;
-    files.push(("data/project/text_metas.lmmtx".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::TEXT_METAS_FILE,
+        txtmeta_data.encode()?,
+        true,
+    ));
 
     // sysex（专用格式 LMSY）
     let syx_data = LmsyxData {
         sys_ex: project.sys_ex.clone(),
     };
-    let encoded = syx_data.encode()?;
-    files.push(("data/project/sysex.lmsyx".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::SYSEX_FILE,
+        syx_data.encode()?,
+        true,
+    ));
 
     // track_names（专用格式 LMNM）
     let names_data = LmnamesData {
@@ -254,15 +221,26 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
             })
             .collect(),
     };
-    let encoded = names_data.encode()?;
-    files.push(("data/project/track_names.lmnames".into(), encoded, true));
+    parts.push(Part::new(
+        folder::FolderPaths::TRACK_NAMES_FILE,
+        names_data.encode()?,
+        true,
+    ));
 
-    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程归档字节不变）
+    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程保存后字节不变）
     if let Some(encoded) = encode_shapes(project)? {
-        files.push((folder::FolderPaths::SHAPES_FILE.into(), encoded, true));
+        parts.push(Part::new(folder::FolderPaths::SHAPES_FILE, encoded, true));
     }
 
-    Ok(files)
+    Ok(parts)
+}
+
+/// 归档文件列表（`build_parts` 的容器投影）。
+fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, bool)>> {
+    Ok(build_parts(project)?
+        .into_iter()
+        .map(|part| (part.path, part.bytes, part.compress))
+        .collect())
 }
 
 /// 形状部件编码；形状为空时返回 `None`（**缺失即空**，老工程不受影响）
