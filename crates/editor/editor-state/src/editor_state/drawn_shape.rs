@@ -635,31 +635,31 @@ impl ShapeSelectState {
     /// 不携带分组 ID，无法对称回放），改由 [`Self::reconcile_alive`] 按
     /// 「该图形的音符是否还在文档里」对账，方向无关、天然对称。
     pub fn on_undo_group(&mut self, group: u64) {
-        for s in &mut self.shapes {
-            if s.group == Some(group) {
-                s.hidden_by_creation = true;
-            }
-            // 撤销一次移动 → 几何反向平移回去
-            if let Some(mv) = s.moves.iter().find(|m| m.group == group).copied() {
-                let _ = s.source.translate(-mv.dtick, -mv.dkey);
-                for n in &mut s.notes {
-                    *n = n.translated(-mv.dtick, -mv.dkey);
-                }
-            }
-        }
-        self.collapse_selection();
+        self.replay_group(group, true);
     }
 
     /// 历史分组被重做：重做创建 → 恢复该图形；重做移动 → 几何正向平移
     pub fn on_redo_group(&mut self, group: u64) {
+        self.replay_group(group, false);
+    }
+
+    /// 按方向回放分组（`undo = true` 反向，`false` 正向）。
+    ///
+    /// **删除状态不在此处理**：删除走的是 Snapshot 历史（撤销时 redo 侧的快照
+    /// 不携带分组 ID，无法对称回放），改由 [`Self::reconcile_alive`] 按
+    /// 「该图形的音符是否还在文档里」对账，方向无关、天然对称。
+    fn replay_group(&mut self, group: u64, undo: bool) {
+        let sign = if undo { -1.0 } else { 1.0 };
         for s in &mut self.shapes {
             if s.group == Some(group) {
-                s.hidden_by_creation = false;
+                s.hidden_by_creation = undo;
             }
+            // 撤销一次移动 → 几何反向平移回去；重做 → 正向平移
             if let Some(mv) = s.moves.iter().find(|m| m.group == group).copied() {
-                let _ = s.source.translate(mv.dtick, mv.dkey);
+                let (dtick, dkey) = (mv.dtick * sign, mv.dkey * sign);
+                let _ = s.source.translate(dtick, dkey);
                 for n in &mut s.notes {
-                    *n = n.translated(mv.dtick, mv.dkey);
+                    *n = n.translated(dtick, dkey);
                 }
             }
         }

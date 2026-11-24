@@ -341,45 +341,39 @@ impl ShapeStore {
     }
 
     fn apply_undo(&mut self, record: &ShapeGroupRecord) {
+        self.apply_group(record, true);
+    }
+
+    fn apply_redo(&mut self, record: &ShapeGroupRecord) {
+        self.apply_group(record, false);
+    }
+
+    /// 按方向回放一条形状分组记录（`undo = true` 回退，`false` 重做）。
+    fn apply_group(&mut self, record: &ShapeGroupRecord, undo: bool) {
         match record {
             ShapeGroupRecord::Created { id, .. } => {
-                self.set_flag(*id, |e| e.hidden_by_creation = true);
+                self.set_flag(*id, |e| e.hidden_by_creation = undo);
             }
             ShapeGroupRecord::Edited {
                 id,
                 before,
-                before_notes,
-                ..
-            } => {
-                if let Some(index) = self.index_of(*id) {
-                    self.entries[index].model = (**before).clone();
-                    self.entries[index].notes = before_notes.clone();
-                }
-            }
-            ShapeGroupRecord::Deleted { id, .. } => {
-                self.set_flag(*id, |e| e.deleted = false);
-            }
-        }
-    }
-
-    fn apply_redo(&mut self, record: &ShapeGroupRecord) {
-        match record {
-            ShapeGroupRecord::Created { id, .. } => {
-                self.set_flag(*id, |e| e.hidden_by_creation = false);
-            }
-            ShapeGroupRecord::Edited {
-                id,
                 after,
+                before_notes,
                 after_notes,
                 ..
             } => {
                 if let Some(index) = self.index_of(*id) {
-                    self.entries[index].model = (**after).clone();
-                    self.entries[index].notes = after_notes.clone();
+                    let (model, notes) = if undo {
+                        (before, before_notes)
+                    } else {
+                        (after, after_notes)
+                    };
+                    self.entries[index].model = (**model).clone();
+                    self.entries[index].notes = notes.clone();
                 }
             }
             ShapeGroupRecord::Deleted { id, .. } => {
-                self.set_flag(*id, |e| e.deleted = true);
+                self.set_flag(*id, |e| e.deleted = !undo);
             }
         }
     }
