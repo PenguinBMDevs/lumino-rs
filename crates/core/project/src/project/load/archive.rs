@@ -59,7 +59,7 @@ pub(super) fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     super::events::apply_event_parts(&mut project, |part: &str| {
         reader
             .read(part)
-            .map_err(|e| CoreError::FileFormat(trf!("读取 {part} 失败: {e}", part = part, e = e)))
+            .map_err(|e| CoreError::FileFormat(trf!("归档读取失败: {e}", e = e)))
     })?;
 
     Ok(project)
