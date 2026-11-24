@@ -7,7 +7,7 @@
 //!
 //! 输入只回传原样文本，连接流程与校验由 runner 负责。
 
-use egui::{Align, Color32, CornerRadius, FontId, Id, Layout, Rect, RichText, Stroke, Vec2};
+use egui::{Align, Color32, CornerRadius, FontId, Layout, Rect, RichText, Stroke, Vec2};
 
 use crate::chrome::{CloudConnectModel, CloudField, CloudProtocol};
 use crate::theme;
@@ -43,20 +43,12 @@ pub enum CloudConnectAction {
 
 /// 记录本帧动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: CloudConnectAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<CloudConnectAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<CloudConnectAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<CloudConnectAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染面板（`ui` = 客户端区域）。

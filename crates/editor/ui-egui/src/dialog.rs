@@ -45,20 +45,12 @@ pub enum SaveConfirmAction {
 
 /// 记录本帧要回传给生产的动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: SaveConfirmAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<SaveConfirmAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<SaveConfirmAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<SaveConfirmAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 便于测试：本帧记录的控件矩形（`dialog:save` / `dialog:discard` /

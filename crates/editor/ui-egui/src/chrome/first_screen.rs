@@ -114,19 +114,12 @@ impl FirstScreenModel {
 
 /// 记录一次第一屏动作（同一帧只保留最后一条，与工具栏弹层同口径）。
 pub fn push_action(ctx: &egui::Context, action: FirstScreenAction) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("lumino.first-screen.action"), action));
+    crate::action_slot::Slot::new(egui::Id::unique("lumino.first-screen.action")).push(ctx, action);
 }
 
 /// 取走本帧第一屏动作。
 pub fn take_action(ctx: &egui::Context) -> Option<FirstScreenAction> {
-    let action = ctx
-        .data(|d| d.get_temp::<FirstScreenAction>(egui::Id::unique("lumino.first-screen.action")));
-    if action.is_some() {
-        ctx.data_mut(|d| {
-            d.remove::<FirstScreenAction>(egui::Id::unique("lumino.first-screen.action"))
-        });
-    }
-    action
+    crate::action_slot::Slot::new(egui::Id::unique("lumino.first-screen.action")).take(ctx)
 }
 
 /// 左右分栏：`(左栏, 右栏)`，中间留 1px 竖线。

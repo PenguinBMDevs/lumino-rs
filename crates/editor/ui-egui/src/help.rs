@@ -9,7 +9,7 @@
 //! 一致；搜索框只回传原样文本，过滤仍由生产 `help::search` 负责。
 
 use egui::{
-    Align, Color32, CornerRadius, FontId, Id, Layout, Rect, RichText, ScrollArea, Stroke, Vec2,
+    Align, Color32, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Stroke, Vec2,
 };
 
 use crate::chrome::HelpModel;
@@ -52,20 +52,12 @@ pub enum HelpAction {
 
 /// 记录本帧动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: HelpAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<HelpAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<HelpAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<HelpAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染整个窗口（`ui` = 客户端区域）。

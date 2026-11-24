@@ -86,20 +86,12 @@ pub enum RightSidebarAction {
 
 /// 记录本帧要回传给生产的动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: RightSidebarAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<RightSidebarAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<RightSidebarAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<RightSidebarAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 绘制 6px 缩放手柄并接管拖拽（按下/松开 → 生产侧 start/end_resize）。

@@ -211,14 +211,12 @@ pub enum ToolbarCommand {
 
 /// 记录本帧要回传给生产的动作。
 pub fn push_action(ctx: &egui::Context, action: ToolbarAction) {
-    // `remove_temp` 要求 `Default`：用 `Option` 承载，取用时展平。
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<ToolbarAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<ToolbarAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 清空动作（每帧开始调用，避免陈旧动作被重复消费）。

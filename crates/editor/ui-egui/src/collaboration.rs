@@ -56,20 +56,12 @@ pub enum CollaborationAction {
 
 /// 记录本帧动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: CollaborationAction) {
-    if ctx
-        .data(|d| d.get_temp::<Option<CollaborationAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<CollaborationAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<CollaborationAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染整个对话框窗口（`ui` = 客户端区域）。

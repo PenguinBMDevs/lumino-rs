@@ -168,17 +168,12 @@ const ACTION_ID: &str = "lumino.shape-canvas.action";
 
 /// 记录本帧动作（同一帧可能有多条：按下 + 移动 + 松开）。
 pub fn push_action(ctx: &egui::Context, action: ShapeCanvasAction) {
-    let mut actions = ctx
-        .data(|d| d.get_temp::<Vec<ShapeCanvasAction>>(egui::Id::unique(ACTION_ID)))
-        .unwrap_or_default();
-    actions.push(action);
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), actions));
+    crate::action_slot::Queue::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧全部动作（按发生顺序）。
 pub fn take_actions(ctx: &egui::Context) -> Vec<ShapeCanvasAction> {
-    ctx.data_mut(|d| d.remove_temp::<Vec<ShapeCanvasAction>>(egui::Id::unique(ACTION_ID)))
-        .unwrap_or_default()
+    crate::action_slot::Queue::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 绘制画布并处理输入。

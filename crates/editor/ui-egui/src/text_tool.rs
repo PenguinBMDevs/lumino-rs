@@ -104,13 +104,12 @@ const ACTION_ID: &str = "lumino.text-tool.action";
 
 /// 记录本帧动作（一帧一条）。
 pub fn push_action(ctx: &egui::Context, action: TextToolAction) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<TextToolAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<TextToolAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 预览纹理缓存（签名变化才重建纹理）。

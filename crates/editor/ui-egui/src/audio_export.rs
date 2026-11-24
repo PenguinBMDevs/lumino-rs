@@ -12,7 +12,7 @@ mod fields;
 mod filter;
 mod settings;
 
-use egui::{Align, Id, RichText, ScrollArea, Vec2};
+use egui::{Align, RichText, ScrollArea, Vec2};
 
 use crate::chrome::{AudioExportModel, AudioExportPanelModel, AudioToggleId};
 use crate::theme;
@@ -78,20 +78,12 @@ pub enum AudioExportAction {
 
 /// 记录本帧动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: AudioExportAction) {
-    if ctx
-        .data(|d| d.get_temp::<Option<AudioExportAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<AudioExportAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<AudioExportAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染整块面板（`rect` = 生产里被整块替换的右侧内容区）。

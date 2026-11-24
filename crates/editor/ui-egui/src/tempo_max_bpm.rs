@@ -7,7 +7,7 @@
 //! 只回传原样文本，解析与校验由生产侧对话框状态负责。
 
 use egui::{
-    Align, Color32, CornerRadius, FontId, Frame, Id, Layout, Margin, Rect, RichText, Stroke, Vec2,
+    Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, Rect, RichText, Stroke, Vec2,
 };
 
 use crate::chrome::TempoMaxBpmModel;
@@ -46,20 +46,12 @@ pub enum TempoMaxBpmAction {
 
 /// 记录本帧动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: TempoMaxBpmAction) {
-    if ctx
-        .data(|d| d.get_temp::<Option<TempoMaxBpmAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<TempoMaxBpmAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<TempoMaxBpmAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染整个对话框窗口（`ui` = 客户端区域）。

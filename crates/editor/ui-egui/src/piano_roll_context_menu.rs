@@ -131,15 +131,12 @@ pub fn cached_layout(ctx: &egui::Context) -> Option<MenuLayout> {
 
 /// 记录本帧菜单动作（一帧一条；后写入覆盖）。
 pub fn push_action(ctx: &egui::Context, action: PianoRollContextMenuAction) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧菜单动作。
 pub fn take_action(ctx: &egui::Context) -> Option<PianoRollContextMenuAction> {
-    ctx.data_mut(|d| {
-        d.remove_temp::<Option<PianoRollContextMenuAction>>(egui::Id::unique(ACTION_ID))
-    })
-    .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 指针在面板上时用滚轮滚动菜单（面板放得下时不拦截）。

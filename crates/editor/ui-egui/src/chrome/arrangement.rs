@@ -91,16 +91,12 @@ const ACTION_ID: &str = "lumino.arrangement.action";
 
 /// 记录本帧动作。
 pub fn push_action(ctx: &egui::Context, action: ArrangementAction) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), action));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<ArrangementAction> {
-    let action = ctx.data(|d| d.get_temp::<ArrangementAction>(egui::Id::unique(ACTION_ID)));
-    if action.is_some() {
-        ctx.data_mut(|d| d.remove::<ArrangementAction>(egui::Id::unique(ACTION_ID)));
-    }
-    action
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 绘制并处理输入（顶部标尺 + 左侧轨道列）。

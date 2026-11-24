@@ -29,20 +29,12 @@ const BUTTON_H: f32 = 34.0;
 
 /// 记录本帧动作（一帧一条）。
 pub fn push_action(ctx: &egui::Context, action: VideoExportAction) {
-    if ctx
-        .data(|d| d.get_temp::<Option<VideoExportAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<VideoExportAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<VideoExportAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染整块面板。

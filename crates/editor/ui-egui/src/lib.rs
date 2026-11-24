@@ -11,6 +11,7 @@
 //!   表单优先使用 `egui::Grid`，避免手写绝对坐标堆叠。
 
 pub mod about;
+mod action_slot;
 pub mod area_palette;
 pub mod audio_export;
 pub mod autosave_recover;

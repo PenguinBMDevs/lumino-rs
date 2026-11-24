@@ -219,20 +219,12 @@ const ACTION_ID: &str = "lumino.statusbar.action";
 
 /// 记录本帧动作。
 pub fn push_action(ctx: &egui::Context, action: StatusbarAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<StatusbarAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<StatusbarAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<StatusbarAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 指标数值颜色（`palette.primary.strong`）。

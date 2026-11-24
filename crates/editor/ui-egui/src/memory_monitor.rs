@@ -82,33 +82,13 @@ pub enum MemoryMonitorAction {
 
 /// 记录本帧动作。
 pub fn push_action(ctx: &egui::Context, action: MemoryMonitorAction) {
-    let pending = ctx
-        .data(|d| {
-            d.get_temp::<Option<MemoryMonitorAction>>(egui::Id::unique(
-                "lumino.memory-monitor.action",
-            ))
-        })
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| {
-        d.insert_temp(
-            egui::Id::unique("lumino.memory-monitor.action"),
-            Some(action),
-        )
-    });
+    crate::action_slot::Slot::new(egui::Id::unique("lumino.memory-monitor.action"))
+        .push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<MemoryMonitorAction> {
-    ctx.data_mut(|d| {
-        d.remove_temp::<Option<MemoryMonitorAction>>(egui::Id::unique(
-            "lumino.memory-monitor.action",
-        ))
-    })
-    .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique("lumino.memory-monitor.action")).take(ctx)
 }
 
 /// 渲染整个对话框窗口（`ui` = 客户端区域）。

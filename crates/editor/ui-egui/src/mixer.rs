@@ -19,7 +19,7 @@ mod tests;
 
 pub use show::show_dialog;
 
-use egui::{Id, Rect};
+use egui::Rect;
 
 use crate::layout;
 use crate::widgets::HoverTip;
@@ -251,15 +251,10 @@ const ACTION_ID: &str = "lumino.mixer.dialog.action";
 
 /// 记录本帧动作。
 pub fn push_action(ctx: &egui::Context, action: MixerAction) {
-    let mut actions = ctx
-        .data(|d| d.get_temp::<Vec<MixerAction>>(Id::unique(ACTION_ID)))
-        .unwrap_or_default();
-    actions.push(action);
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), actions));
+    crate::action_slot::Queue::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_actions(ctx: &egui::Context) -> Vec<MixerAction> {
-    ctx.data_mut(|d| d.remove_temp::<Vec<MixerAction>>(Id::unique(ACTION_ID)))
-        .unwrap_or_default()
+    crate::action_slot::Queue::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }

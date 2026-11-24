@@ -30,16 +30,12 @@ const ACTION_ID: &str = "lumino.overlay-window.action";
 
 /// 记录本帧动作（一帧一条）。
 pub fn push_action(ctx: &egui::Context, action: OverlayWindowAction) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), action));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<OverlayWindowAction> {
-    let action = ctx.data(|d| d.get_temp(egui::Id::unique(ACTION_ID)));
-    if action.is_some() {
-        ctx.data_mut(|d| d.remove::<OverlayWindowAction>(egui::Id::unique(ACTION_ID)));
-    }
-    action
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 内容区（扣掉自制标题栏 30px）。

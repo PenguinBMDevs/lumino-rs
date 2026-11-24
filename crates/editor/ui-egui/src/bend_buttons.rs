@@ -64,15 +64,12 @@ const ACTION_ID: &str = "lumino.bend-buttons.action";
 
 /// 记录本帧弯折动作（一帧一条）。
 pub fn push_action(ctx: &egui::Context, bend: lumino_editor_state::AnchorBend) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(bend)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push(ctx, bend);
 }
 
 /// 取走本帧弯折动作。
 pub fn take_action(ctx: &egui::Context) -> Option<lumino_editor_state::AnchorBend> {
-    ctx.data_mut(|d| {
-        d.remove_temp::<Option<lumino_editor_state::AnchorBend>>(egui::Id::unique(ACTION_ID))
-    })
-    .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 绘制两个按钮并返回本帧动作。

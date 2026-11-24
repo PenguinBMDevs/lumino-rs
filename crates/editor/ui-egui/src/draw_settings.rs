@@ -22,23 +22,13 @@ pub enum DrawSettingsAction {
 
 /// 记录本帧动作。
 pub fn push_action(ctx: &egui::Context, action: DrawSettingsAction) {
-    let key = egui::Id::unique("lumino.draw-settings.action");
-    if ctx
-        .data(|d| d.get_temp::<Option<DrawSettingsAction>>(key))
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(key, Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique("lumino.draw-settings.action"))
+        .push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<DrawSettingsAction> {
-    ctx.data_mut(|d| {
-        d.remove_temp::<Option<DrawSettingsAction>>(egui::Id::unique("lumino.draw-settings.action"))
-    })
-    .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique("lumino.draw-settings.action")).take(ctx)
 }
 
 /// 渲染整个对话框窗口（`ui` = 客户端区域）。

@@ -133,18 +133,10 @@ pub enum SettingsAction {
 /// **先到先得**：一帧内只保留第一个动作，避免页面重排后新控件被同帧点击误命中
 /// 而覆盖掉真正的动作（例如下拉选项触发的页面切换）。
 pub fn push_action(ctx: &egui::Context, action: SettingsAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<SettingsAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<SettingsAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<SettingsAction>>(egui::Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }

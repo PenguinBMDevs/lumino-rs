@@ -7,7 +7,7 @@
 //! （圆角 8）、内边距 16、标题 18px、提示 12px、行高 32 + 间距 2、底部计数与
 //! 关闭按钮；列表在 8px 实体滚动条内滚动。
 
-use egui::{Color32, CornerRadius, Id, Rect, RichText, ScrollArea, Vec2};
+use egui::{Color32, CornerRadius, Rect, RichText, ScrollArea, Vec2};
 
 use crate::chrome::HistoryModel;
 use crate::theme;
@@ -36,20 +36,12 @@ pub enum HistoryAction {
 
 /// 记录本帧动作（一帧只保留第一个）。
 pub fn push_action(ctx: &egui::Context, action: HistoryAction) {
-    let pending = ctx
-        .data(|d| d.get_temp::<Option<HistoryAction>>(Id::unique(ACTION_ID)))
-        .flatten()
-        .is_some();
-    if pending {
-        return;
-    }
-    ctx.data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), Some(action)));
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).push_first(ctx, action);
 }
 
 /// 取走本帧动作。
 pub fn take_action(ctx: &egui::Context) -> Option<HistoryAction> {
-    ctx.data_mut(|d| d.remove_temp::<Option<HistoryAction>>(Id::unique(ACTION_ID)))
-        .flatten()
+    crate::action_slot::Slot::new(egui::Id::unique(ACTION_ID)).take(ctx)
 }
 
 /// 渲染整个对话框窗口（`ui` = 客户端区域）。
