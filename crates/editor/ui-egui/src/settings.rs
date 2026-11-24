@@ -9,6 +9,7 @@
 mod action;
 mod audio;
 mod cloud;
+mod engine;
 mod general;
 mod pages;
 mod ui;

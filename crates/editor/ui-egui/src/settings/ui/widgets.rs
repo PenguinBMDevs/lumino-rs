@@ -108,7 +108,7 @@ pub(super) fn draw_label(
 
 /// 主题卡片网格列数（按卡片宽度自适应）。
 pub(super) fn grid_columns(width: f32) -> usize {
-    let usable = (width - super::PAD * 2.0).max(CARD_W);
+    let usable = (width - super::engine::PAD * 2.0).max(CARD_W);
     (((usable + CARD_GAP) / (CARD_W + CARD_GAP)).floor() as usize).max(1)
 }
 

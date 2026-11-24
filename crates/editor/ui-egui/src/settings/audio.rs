@@ -8,23 +8,14 @@ use egui::{Align, Align2, FontId, Layout, Pos2, Rect, Sense, Vec2};
 use super::super::chrome::{AudioControlModel, AudioPageModel, SettingsPalette};
 use super::super::widgets;
 use super::action::{self, SettingsAction};
+use super::engine::{self, RowCursor};
 use super::pages::{action_button, switch_style, title};
 use super::set_hits;
 use crate::widgets::text_width;
 
-/// 内容内边距 / 行间距 / 标题区高度（与生产页面一致）。
-const PAD: f32 = 20.0;
-const GAP: f32 = 10.0;
-const TITLE_BLOCK: f32 = 44.0;
-
 /// 页面内容总高度（供 `ScrollArea` 预留空间）。
 pub(super) fn content_height(model: &AudioPageModel) -> f32 {
-    let rows: f32 = model
-        .rows
-        .iter()
-        .map(|row| row_height(&row.control) + GAP)
-        .sum();
-    PAD * 2.0 + TITLE_BLOCK + rows
+    engine::content_height(model.rows.iter().map(|row| row_height(&row.control)))
 }
 
 fn row_height(control: &AudioControlModel) -> f32 {
@@ -45,19 +36,20 @@ pub(super) fn show(
     model: &AudioPageModel,
     palette: &SettingsPalette,
 ) {
-    let x = rect.left() + PAD;
+    let mut cursor = RowCursor::new(rect);
+    let x = cursor.x();
     title(ui, x, rect.top(), &model.title, palette);
-    let mut y = rect.top() + PAD + TITLE_BLOCK;
 
     for row in &model.rows {
+        let y = cursor.y();
         let h = row_height(&row.control);
-        let center = y + h / 2.0;
+        let center = cursor.center(h);
         let mut hit: Option<Rect> = None;
         match &row.control {
             AudioControlModel::Checkbox { checked } => {
                 let row_rect = Rect::from_min_size(
                     Pos2::new(x, y),
-                    Vec2::new((rect.right() - PAD - x).max(crate::widgets::TRACK_W), h),
+                    Vec2::new(cursor.control_width(crate::widgets::TRACK_W), h),
                 );
                 let switch = crate::widgets::switch_row(
                     ui,
@@ -83,8 +75,8 @@ pub(super) fn show(
                 hit = Some(switch.track);
             }
             AudioControlModel::Button => {
-                let width = (text_width(ui, &row.label, 14.0) + 24.0)
-                    .min((rect.right() - PAD - x).max(1.0));
+                let width =
+                    (text_width(ui, &row.label, 14.0) + 24.0).min(cursor.control_width(1.0));
                 let button = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, h));
                 hit = Some(button);
                 if action_button(ui, button, &row.label, true, palette).clicked() {
@@ -92,7 +84,7 @@ pub(super) fn show(
                 }
             }
             AudioControlModel::Static { text, dim } => {
-                let available = (rect.right() - PAD - x).max(1.0);
+                let available = cursor.control_width(1.0);
                 let label_w = draw_label(
                     ui,
                     x,
@@ -113,7 +105,7 @@ pub(super) fn show(
                 );
             }
             AudioControlModel::Combo { options, selected } => {
-                let control_x = rect.right() - PAD - row.width;
+                let control_x = cursor.right() - row.width;
                 draw_label(
                     ui,
                     x,
@@ -154,7 +146,7 @@ pub(super) fn show(
                 max,
                 step,
             } => {
-                let control_x = rect.right() - PAD - row.width;
+                let control_x = cursor.right() - row.width;
                 draw_label(
                     ui,
                     x,
@@ -199,7 +191,7 @@ pub(super) fn show(
                 }
             }
             AudioControlModel::Text { value, placeholder } => {
-                let control_x = rect.right() - PAD - row.width;
+                let control_x = cursor.right() - row.width;
                 draw_label(
                     ui,
                     x,
@@ -250,7 +242,7 @@ pub(super) fn show(
             hits.audio_rows.push((row.field, rect));
             set_hits(ui.ctx(), hits);
         }
-        y += h + GAP;
+        cursor.advance(h);
     }
 }
 

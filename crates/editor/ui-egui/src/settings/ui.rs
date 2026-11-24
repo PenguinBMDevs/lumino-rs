@@ -8,6 +8,7 @@ use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Pos2, Rect, Sen
 use super::super::chrome::{SettingsPalette, UiField, UiPageModel, UiRow};
 use super::super::widgets as egui_widgets;
 use super::action::{self, SettingsAction};
+use super::engine::{self, RowCursor};
 use super::pages::{action_button, title};
 use super::set_hits;
 use crate::icons::{Icon, IconCache};
@@ -16,9 +17,6 @@ use crate::widgets::text_width;
 mod widgets;
 use widgets::{draw_label, draw_theme_card, grid_columns, row_height};
 
-const PAD: f32 = 20.0;
-const GAP: f32 = 10.0;
-const TITLE_BLOCK: f32 = 44.0;
 /// 主题卡片尺寸 / 间距（生产 `CARD_WIDTH` / `CARD_HEIGHT` / `CARD_SPACING`）。
 pub(super) const CARD_W: f32 = 158.0;
 pub(super) const CARD_H: f32 = 96.0;
@@ -29,12 +27,7 @@ pub(super) const BAR_H: f32 = 4.0;
 
 /// 页面内容总高度。
 pub(super) fn content_height(ui: &egui::Ui, model: &UiPageModel, width: f32) -> f32 {
-    let rows: f32 = model
-        .rows
-        .iter()
-        .map(|row| row_height(ui, row, width) + GAP)
-        .sum();
-    PAD * 2.0 + TITLE_BLOCK + rows
+    engine::content_height(model.rows.iter().map(|row| row_height(ui, row, width)))
 }
 
 /// 绘制页面。
@@ -45,15 +38,16 @@ pub(super) fn show(
     palette: &SettingsPalette,
     icons: &mut IconCache,
 ) {
-    let x = rect.left() + PAD;
+    let mut cursor = RowCursor::new(rect);
+    let x = cursor.x();
     title(ui, x, rect.top(), &model.title, palette);
-    let mut y = rect.top() + PAD + TITLE_BLOCK;
 
     for row in &model.rows {
+        let y = cursor.y();
         let h = row_height(ui, row, rect.width());
-        let center = y + h / 2.0;
+        let center = cursor.center(h);
         let mut hit: Option<(UiField, Rect)> = None;
-        let text_max = (rect.width() - PAD * 2.0).max(1.0);
+        let text_max = cursor.content_width();
         match row {
             UiRow::Section { title, hint } => {
                 let label = crate::text::truncate_to_width(ui, title, 16.0, text_max);
@@ -96,7 +90,7 @@ pub(super) fn show(
                 selected,
                 width,
             } => {
-                let control_x = rect.right() - PAD - width;
+                let control_x = cursor.right() - width;
                 draw_label(ui, x, center, label, hint, control_x - x - 8.0, palette);
                 let combo = Rect::from_min_size(Pos2::new(control_x, y), Vec2::new(*width, h));
                 hit = Some((*field, combo));
@@ -131,7 +125,7 @@ pub(super) fn show(
             } => {
                 let row_rect = Rect::from_min_size(
                     Pos2::new(x, y),
-                    Vec2::new((rect.right() - PAD - x).max(crate::widgets::TRACK_W), h),
+                    Vec2::new(cursor.control_width(crate::widgets::TRACK_W), h),
                 );
                 let switch =
                     widgets::switch_row(ui, row_rect, *field, label, hint, *checked, palette);
@@ -156,7 +150,7 @@ pub(super) fn show(
                 step,
                 value_text,
             } => {
-                let control_x = rect.right() - PAD - 180.0 - 48.0;
+                let control_x = cursor.right() - 180.0 - 48.0;
                 draw_label(ui, x, center, label, hint, control_x - x - 8.0, palette);
                 let slider = Rect::from_min_size(
                     Pos2::new(control_x, center - 10.0),
@@ -190,7 +184,7 @@ pub(super) fn show(
                     );
                 }
                 ui.painter().text(
-                    Pos2::new(rect.right() - PAD, center),
+                    Pos2::new(cursor.right(), center),
                     Align2::RIGHT_CENTER,
                     value_text,
                     FontId::proportional(14.0),
@@ -219,7 +213,7 @@ pub(super) fn show(
                 } else {
                     text_width(ui, suffix, 12.0) + 8.0
                 };
-                let control_x = rect.right() - PAD - width - suffix_w;
+                let control_x = cursor.right() - width - suffix_w;
                 draw_label(ui, x, center, label, hint, control_x - x - 8.0, palette);
                 let field_rect = Rect::from_min_size(Pos2::new(control_x, y), Vec2::new(*width, h));
                 hit = Some((*field, field_rect));
@@ -301,7 +295,7 @@ pub(super) fn show(
             }
             UiRow::Swatches { colors } => {
                 let panel =
-                    Rect::from_min_size(Pos2::new(x, y), Vec2::new(rect.width() - PAD * 2.0, h));
+                    Rect::from_min_size(Pos2::new(x, y), Vec2::new(cursor.content_width(), h));
                 ui.painter().rect(
                     panel,
                     CornerRadius::same(21),
@@ -348,7 +342,7 @@ pub(super) fn show(
             }
             UiRow::EchoCave { text, opacity } => {
                 let row =
-                    Rect::from_min_size(Pos2::new(x, y), Vec2::new(rect.width() - PAD * 2.0, 18.0));
+                    Rect::from_min_size(Pos2::new(x, y), Vec2::new(cursor.content_width(), 18.0));
                 let color = Color32::from_rgba_unmultiplied(
                     palette.text.r(),
                     palette.text.g(),
@@ -379,6 +373,6 @@ pub(super) fn show(
             hits.ui_rows.push((field, rect));
             set_hits(ui.ctx(), hits);
         }
-        y += h + GAP;
+        cursor.advance(h);
     }
 }
