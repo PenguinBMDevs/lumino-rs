@@ -149,6 +149,34 @@ impl OverlayActions {
 }
 
 impl Host {
+    /// 单值动作 → 消息：映射器可能判定「本帧不产生消息」（状态未变化等）。
+    ///
+    /// 26 条通道原本各自展开「取动作 → 映射 → 分发」三行样板；helper 不重排
+    /// 调用顺序，帧内语义与原实现一致。
+    fn dispatch_action<A>(
+        &mut self,
+        action: Option<A>,
+        map: impl FnOnce(&crate::root::Root, A) -> Option<crate::Message>,
+    ) {
+        if let Some(action) = action
+            && let Some(message) = map(&self.root, action)
+        {
+            self.dispatch_overlay_message(message);
+        }
+    }
+
+    /// 单值动作 → 消息：映射器恒产生一条消息。
+    fn dispatch_action_always<A>(
+        &mut self,
+        action: Option<A>,
+        map: impl FnOnce(&crate::root::Root, A) -> crate::Message,
+    ) {
+        if let Some(action) = action {
+            let message = map(&self.root, action);
+            self.dispatch_overlay_message(message);
+        }
+    }
+
     /// 应用本帧动作：每个动作最多产生一条 `Message`，按固定顺序处理。
     pub(super) fn apply_overlay_actions(&mut self, actions: OverlayActions, logical_width: f32) {
         // 仪表盘输入框失焦最先收口：同一帧往往还带着一次按钮点击，必须先提交
@@ -186,34 +214,27 @@ impl Host {
                 }
             }
         }
-        if let Some(action) = actions.titlebar {
-            let message = self.root.titlebar_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.first_screen {
-            let message = self.root.first_screen_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.piano_roll_menu {
-            let message = self.root.piano_roll_context_menu_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.editor_buttons {
-            let message = self.root.editor_button_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(bend) = actions.bend_buttons {
-            let message = self.root.bend_button_message(bend);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.text_tool {
-            let message = self.root.text_tool_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.velocity_panel {
-            let message = self.root.velocity_panel_message(action);
-            self.dispatch_overlay_message(message);
-        }
+        self.dispatch_action_always(actions.titlebar, |root, action| {
+            root.titlebar_action_message(action)
+        });
+        self.dispatch_action_always(actions.first_screen, |root, action| {
+            root.first_screen_action_message(action)
+        });
+        self.dispatch_action_always(actions.piano_roll_menu, |root, action| {
+            root.piano_roll_context_menu_message(action)
+        });
+        self.dispatch_action_always(actions.editor_buttons, |root, action| {
+            root.editor_button_message(action)
+        });
+        self.dispatch_action_always(actions.bend_buttons, |root, bend| {
+            root.bend_button_message(bend)
+        });
+        self.dispatch_action_always(actions.text_tool, |root, action| {
+            root.text_tool_message(action)
+        });
+        self.dispatch_action_always(actions.velocity_panel, |root, action| {
+            root.velocity_panel_message(action)
+        });
         if let Some(directed) = actions.scrollbar {
             let message = match (directed.vertical, directed.action) {
                 (true, lumino_ui_egui::scrollbar::ScrollbarAction::Scroll(y)) => {
@@ -231,36 +252,22 @@ impl Host {
             };
             self.dispatch_overlay_message(message);
         }
-        if let Some(index) = actions.menu
-            && let Some(message) = self.root.menu_action_message(index)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.dialog
-            && let Some(message) = self.root.save_confirm_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.project
-            && let Some(message) = self.root.project_settings_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.autosave
-            && let Some(message) = self.root.autosave_recover_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.history
-            && let Some(message) = self.root.history_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.batch_edit
-            && let Some(message) = self.root.batch_edit_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
+        self.dispatch_action(actions.menu, |root, index| root.menu_action_message(index));
+        self.dispatch_action(actions.dialog, |root, action| {
+            root.save_confirm_action_message(&action)
+        });
+        self.dispatch_action(actions.project, |root, action| {
+            root.project_settings_action_message(&action)
+        });
+        self.dispatch_action(actions.autosave, |root, action| {
+            root.autosave_recover_action_message(&action)
+        });
+        self.dispatch_action(actions.history, |root, action| {
+            root.history_action_message(&action)
+        });
+        self.dispatch_action(actions.batch_edit, |root, action| {
+            root.batch_edit_action_message(&action)
+        });
         if !actions.shape_canvas.is_empty() {
             // 画布动作直接改文档（与 上一代 Canvas 同一套逻辑），不走消息队列。
             let size = self.render_ctx.viewport.logical_size();
@@ -280,37 +287,29 @@ impl Host {
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }
-        if let Some(action) = actions.help_tip {
-            let message = self.root.help_tip_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.sidebar_menu
-            && let Some(message) = self.root.sidebar_menu_action_message(action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.sidebar_panel {
-            let message = self.root.sidebar_panel_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.statusbar {
-            let message = self.root.statusbar_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.mask_panel {
-            let message = self.root.mask_panel_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
+        self.dispatch_action_always(actions.help_tip, |root, action| {
+            root.help_tip_action_message(action)
+        });
+        self.dispatch_action(actions.sidebar_menu, |root, action| {
+            root.sidebar_menu_action_message(action)
+        });
+        self.dispatch_action_always(actions.sidebar_panel, |root, action| {
+            root.sidebar_panel_action_message(action)
+        });
+        self.dispatch_action_always(actions.statusbar, |root, action| {
+            root.statusbar_action_message(action)
+        });
+        self.dispatch_action_always(actions.mask_panel, |root, action| {
+            root.mask_panel_action_message(action)
+        });
         // DRAW-045：素材删除确认 / 自定义 BPM 上限都是独立窗口，动作只在
         // 各自的对话框 Root 上产生；主窗口不渲染对应视图，不会走到这里。
-        if let Some(action) = actions.material_delete {
-            let message = self.root.material_delete_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.tempo_max_bpm {
-            let message = self.root.tempo_max_bpm_action_message(action);
-            self.dispatch_overlay_message(message);
-        }
+        self.dispatch_action_always(actions.material_delete, |root, action| {
+            root.material_delete_action_message(action)
+        });
+        self.dispatch_action_always(actions.tempo_max_bpm, |root, action| {
+            root.tempo_max_bpm_action_message(action)
+        });
         // 混音台：独立窗口内产生的动作先落到对话框 Root，由 Runner 每帧取走并
         // 映射到主窗口；主窗口自身不再绘制混音台，因此不会走消息分发分支。
         for action in &actions.mixer {
@@ -332,16 +331,12 @@ impl Host {
             let message = self.root.lane_action_message(action);
             self.dispatch_overlay_message(message);
         }
-        if let Some(action) = &actions.arrangement
-            && let Some(message) = self.root.arrangement_action_message(action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.video_overlay
-            && let Some(message) = self.root.video_overlay_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
+        self.dispatch_action(actions.arrangement, |root, action| {
+            root.arrangement_action_message(&action)
+        });
+        self.dispatch_action(actions.video_overlay, |root, action| {
+            root.video_overlay_action_message(&action)
+        });
         if let Some(route) = actions.sidebar_route {
             use crate::sidebar::Event as SidebarEvent;
             let event = match route {
@@ -383,86 +378,54 @@ impl Host {
             };
             self.dispatch_overlay_message(crate::message::Message::Sidebar(event));
         }
-        if let Some(action) = actions.video_export
-            && let Some(message) = self.root.video_export_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.shape_drawer
-            && let Some(message) = self.root.shape_drawer_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.cloud_browser
-            && let Some(message) = self.root.cloud_browser_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.collaboration
-            && let Some(message) = self.root.collaboration_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.recover_track
-            && let Some(message) = self.root.recover_track_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.brush_settings
-            && let Some(message) = self.root.brush_settings_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.load_confirm
-            && let Some(message) = self.root.load_confirm_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.audio_export
-            && let Some(message) = self.root.audio_export_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.draw_settings
-            && let Some(message) = self.root.draw_settings_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.memory_monitor
-            && let Some(message) = self.root.memory_monitor_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.cloud_connect
-            && let Some(message) = self.root.cloud_connect_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.help
-            && let Some(message) = self.root.help_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.custom_precision
-            && let Some(message) = self.root.custom_precision_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.speed_change
-            && let Some(message) = self.root.speed_change_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.settings
-            && let Some(message) = self.root.settings_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
-        if let Some(action) = actions.panel
-            && let Some(message) = self.root.right_sidebar_action_message(&action)
-        {
-            self.dispatch_overlay_message(message);
-        }
+        self.dispatch_action(actions.video_export, |root, action| {
+            root.video_export_action_message(&action)
+        });
+        self.dispatch_action(actions.shape_drawer, |root, action| {
+            root.shape_drawer_action_message(&action)
+        });
+        self.dispatch_action(actions.cloud_browser, |root, action| {
+            root.cloud_browser_action_message(&action)
+        });
+        self.dispatch_action(actions.collaboration, |root, action| {
+            root.collaboration_action_message(&action)
+        });
+        self.dispatch_action(actions.recover_track, |root, action| {
+            root.recover_track_action_message(&action)
+        });
+        self.dispatch_action(actions.brush_settings, |root, action| {
+            root.brush_settings_action_message(&action)
+        });
+        self.dispatch_action(actions.load_confirm, |root, action| {
+            root.load_confirm_action_message(&action)
+        });
+        self.dispatch_action(actions.audio_export, |root, action| {
+            root.audio_export_action_message(&action)
+        });
+        self.dispatch_action(actions.draw_settings, |root, action| {
+            root.draw_settings_action_message(&action)
+        });
+        self.dispatch_action(actions.memory_monitor, |root, action| {
+            root.memory_monitor_action_message(&action)
+        });
+        self.dispatch_action(actions.cloud_connect, |root, action| {
+            root.cloud_connect_action_message(&action)
+        });
+        self.dispatch_action(actions.help, |root, action| {
+            root.help_action_message(&action)
+        });
+        self.dispatch_action(actions.custom_precision, |root, action| {
+            root.custom_precision_action_message(&action)
+        });
+        self.dispatch_action(actions.speed_change, |root, action| {
+            root.speed_change_action_message(&action)
+        });
+        self.dispatch_action(actions.settings, |root, action| {
+            root.settings_action_message(&action)
+        });
+        self.dispatch_action(actions.panel, |root, action| {
+            root.right_sidebar_action_message(&action)
+        });
         if let Some(action) = actions.toolbar {
             // 溢出项需要按「同一视口宽度」重算折叠结果，单独解析。
             let message = match &action {
