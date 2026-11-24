@@ -122,6 +122,33 @@ pub struct GridPrepareParams {
     pub time_signatures: Vec<(u32, u8, u8)>,
 }
 
+/// 网格朝向：横向（X=tick）或纵向（X=key，转置）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridOrientation {
+    /// 横向卷帘：X=tick、Y=key，键盘在左侧、标尺在顶部
+    Horizontal,
+    /// 纵向卷帘：X=key、Y=tick，键盘在底部、标尺在顶部
+    Vertical,
+}
+
+impl GridOrientation {
+    /// 渲染管线 / shader / buffer 的 label 前缀。
+    fn label_prefix(self) -> &'static str {
+        match self {
+            Self::Horizontal => "infinite_grid",
+            Self::Vertical => "infinite_grid_vertical",
+        }
+    }
+
+    /// shader 源码（横向/纵向只差片元转置与 C 音八度加粗）。
+    fn shader_src(self) -> &'static str {
+        match self {
+            Self::Horizontal => include_str!("shaders/infinite_grid.wgsl"),
+            Self::Vertical => include_str!("shaders/infinite_grid_vertical.wgsl"),
+        }
+    }
+}
+
 /// 网格渲染器
 pub struct GridRenderer {
     /// 渲染管线

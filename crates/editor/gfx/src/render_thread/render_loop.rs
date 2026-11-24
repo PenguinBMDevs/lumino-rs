@@ -24,7 +24,7 @@ pub struct Renderers {
     /// 背景网格渲染器（横向）
     pub grid: crate::GridRenderer,
     /// 纵向网格渲染器（转置版，键盘在底部，Key 范围明显分割）
-    pub vertical_grid: crate::VerticalGridRenderer,
+    pub vertical_grid: crate::GridRenderer,
     /// 主音符渲染器
     pub note: crate::NoteRenderer,
     /// 洋葱皮渲染器（不透明背景层，在主音轨之前绘制）
@@ -71,7 +71,7 @@ impl Renderers {
     ) -> Self {
         Self {
             grid: crate::GridRenderer::new(device, format),
-            vertical_grid: crate::VerticalGridRenderer::new(device, format),
+            vertical_grid: crate::GridRenderer::new_vertical(device, format),
             note: crate::NoteRenderer::new(device, queue, format, epoch),
             onion_skin: crate::NoteRenderer::new_onion_skin(device, queue, format, epoch),
             ruler: crate::RulerRenderer::new(device, format),
@@ -97,7 +97,7 @@ impl Renderers {
     ) -> Self {
         Self {
             grid: crate::GridRenderer::new_without_depth(device, format),
-            vertical_grid: crate::VerticalGridRenderer::new_without_depth(device, format),
+            vertical_grid: crate::GridRenderer::new_vertical_without_depth(device, format),
             note: crate::NoteRenderer::new_without_depth(device, queue, format, epoch),
             onion_skin: crate::NoteRenderer::new_onion_skin_without_depth(
                 device, queue, format, epoch,

@@ -30,7 +30,6 @@ mod pipeline;
 mod profiling;
 pub mod render_thread;
 mod ruler_renderer;
-mod vertical_grid_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 pub mod automation;
@@ -77,7 +76,7 @@ pub use global_bucket::{
 };
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};
-pub use grid_renderer::{GridPrepareParams, GridRenderer};
+pub use grid_renderer::{GridOrientation, GridPrepareParams, GridRenderer};
 /// 贴图瀑布流音符类型（从 lumino-midiplayer 重导出）
 pub use lumino_midiplayer::texture_waterfall::WaterfallNote;
 /// 贴图瀑布流渲染器（从 lumino-midiplayer 重导出）
@@ -98,7 +97,6 @@ pub use note_renderer::{
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
-pub use vertical_grid_renderer::VerticalGridRenderer;
 
 pub use miditrail_renderer::{
     MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu, MiditrailViewMode, pack_color,
