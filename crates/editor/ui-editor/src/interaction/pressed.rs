@@ -62,7 +62,7 @@ impl Editor {
             Tool::Pointer => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             // Y 向框选工具：行为与 Pointer 相同，但在 Selecting 状态下 Y 维度自动覆盖全部可见键
             Tool::PointerYSelect => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
-            Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
+            // 铅笔走默认分支（`_`）：放置新音符或编辑现有音符
             Tool::Curve => {
                 // Conductor 音轨（track 0）：整工具不可用，不开始任何曲线/填充绘制
                 if self.editor_state.data.current_track == 0 {
@@ -327,21 +327,6 @@ impl Editor {
         }
     }
 
-    /// 铅笔工具：放置新音符或编辑现有音符
-    pub(crate) fn handle_pencil_pressed(
-        &mut self,
-        pos: lumino_ui_core::geom::Point,
-        hit_result: Option<(usize, HitType)>,
-        snapped_tick: f32,
-        key: u16,
-    ) {
-        if let Some((index, hit_type)) = hit_result {
-            self.start_note_edit(index, hit_type, pos);
-        } else {
-            self.start_drawing(snapped_tick, key);
-        }
-    }
-
     /// 橡皮擦工具：删除音符
     pub(crate) fn handle_eraser_pressed(
         &mut self,
@@ -355,24 +340,7 @@ impl Editor {
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
-                    self.selection_clear();
-                    let (selection_start_tick, selection_current_tick) =
-                        self.begin_marquee_ticks(tick);
-                    let (start_y, current_y) = if self.editor_state.is_vertical_roll {
-                        let y = self.tick_to_y_vertical(tick);
-                        (y, y)
-                    } else {
-                        let y0 = self.editor_state.view.key_to_y(key);
-                        (y0, y0 + self.editor_state.view.zoom_y)
-                    };
-                    self.editor_state.interaction.edit_state = crate::EditState::Selecting {
-                        start_tick: selection_start_tick,
-                        start_key: key,
-                        current_tick: selection_current_tick,
-                        current_key: key,
-                        start_y,
-                        current_y,
-                    };
+                    self.begin_eraser_marquee(tick, key);
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
                 }
@@ -381,30 +349,36 @@ impl Editor {
                 if shift && hit_result.is_some() {
                     self.delete_note_at(pos);
                 } else {
-                    self.selection_clear();
-                    let (selection_start_tick, selection_current_tick) =
-                        self.begin_marquee_ticks(tick);
-                    let (start_y, current_y) = if self.editor_state.is_vertical_roll {
-                        let y = self.tick_to_y_vertical(tick);
-                        (y, y)
-                    } else {
-                        let y0 = self.editor_state.view.key_to_y(key);
-                        (y0, y0 + self.editor_state.view.zoom_y)
-                    };
-                    self.editor_state.interaction.edit_state = crate::EditState::Selecting {
-                        start_tick: selection_start_tick,
-                        start_key: key,
-                        current_tick: selection_current_tick,
-                        current_key: key,
-                        start_y,
-                        current_y,
-                    };
+                    self.begin_eraser_marquee(tick, key);
                 }
             }
         }
     }
 
-    /// 其他工具：默认使用铅笔工具逻辑
+    /// 橡皮擦的框选启动：清空选中并进入 `Selecting` 状态。
+    ///
+    /// 两种橡皮擦行为共用同一段前导（此前 Default / DirectSelect 各复制一份）。
+    fn begin_eraser_marquee(&mut self, tick: f32, key: u16) {
+        self.selection_clear();
+        let (selection_start_tick, selection_current_tick) = self.begin_marquee_ticks(tick);
+        let (start_y, current_y) = if self.editor_state.is_vertical_roll {
+            let y = self.tick_to_y_vertical(tick);
+            (y, y)
+        } else {
+            let y0 = self.editor_state.view.key_to_y(key);
+            (y0, y0 + self.editor_state.view.zoom_y)
+        };
+        self.editor_state.interaction.edit_state = crate::EditState::Selecting {
+            start_tick: selection_start_tick,
+            start_key: key,
+            current_tick: selection_current_tick,
+            current_key: key,
+            start_y,
+            current_y,
+        };
+    }
+
+    /// 默认工具（含铅笔）：放置新音符或编辑现有音符
     pub(crate) fn handle_default_tool_pressed(
         &mut self,
         pos: lumino_ui_core::geom::Point,
