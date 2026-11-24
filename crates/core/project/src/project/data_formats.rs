@@ -11,6 +11,28 @@ mod v2;
 use v1::LmshapesDataV1;
 use v2::LmshapesDataV2;
 
+/// 为「单一版本、固定魔数」的部件生成 `encode` / `decode` 固有方法。
+///
+/// 8 个部件的实现逐字相同，差异只有魔数与版本；调用点完全不感知。
+macro_rules! simple_part {
+    ($ty:ty, $magic:literal, $version:literal) => {
+        impl $ty {
+            /// 文件魔数
+            pub const MAGIC: &[u8; 4] = $magic;
+
+            /// 编码为二进制文件字节
+            pub fn encode(&self) -> Result<Vec<u8>> {
+                encode_binary_file(Self::MAGIC, $version, self)
+            }
+
+            /// 从二进制字节解码
+            pub fn decode(bytes: &[u8]) -> Result<Self> {
+                decode_binary_file(bytes, Self::MAGIC)
+            }
+        }
+    };
+}
+
 /// `.lmshapes` 当前编码版本
 ///
 /// - v2：`ShapeStyle` 追加 `align / ends / union / apart / borders / areas`（DRAW-040）。
@@ -26,20 +48,7 @@ pub struct LmtempData {
     pub default_bpm: f32,
 }
 
-impl LmtempData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMTM";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmtempData, b"LMTM", 1);
 
 /// 形状数据（.lmshapes）
 ///
@@ -106,20 +115,7 @@ pub struct LmsigData {
     pub key_signatures: Vec<(u32, i8, bool)>,
 }
 
-impl LmsigData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMSG";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmsigData, b"LMSG", 1);
 
 /// 控制事件数据（.lmctl）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -132,20 +128,7 @@ pub struct LmctlData {
     pub pitch_bends: Vec<(u32, u16, u8, i16)>,
 }
 
-impl LmctlData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMCT";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmctlData, b"LMCT", 1);
 
 /// 文本 meta 事件数据（.lmtxt）
 ///
@@ -159,20 +142,7 @@ pub struct LmtxtData {
     pub markers: Vec<(u32, u16, Vec<u8>)>,
 }
 
-impl LmtxtData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMTX";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmtxtData, b"LMTX", 1);
 
 /// 文本类 meta 事件数据（.lmmtx）
 ///
@@ -186,20 +156,7 @@ pub struct LmtextmetaData {
     pub text_events: Vec<(u32, u16, u8, Vec<u8>)>,
 }
 
-impl LmtextmetaData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMMT";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmtextmetaData, b"LMMT", 1);
 
 /// 触后事件数据（.lmcat）
 ///
@@ -214,20 +171,7 @@ pub struct LmcatData {
     pub poly_aftertouch: Vec<(u32, u16, u8, u8, u8)>,
 }
 
-impl LmcatData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMAT";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmcatData, b"LMAT", 1);
 
 /// SysEx 事件数据（.lmsyx）
 ///
@@ -240,20 +184,7 @@ pub struct LmsyxData {
     pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
 }
 
-impl LmsyxData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMSY";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmsyxData, b"LMSY", 1);
 
 /// 音轨名称映射表（.lmnames）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -262,20 +193,7 @@ pub struct LmnamesData {
     pub track_names: Vec<Option<String>>,
 }
 
-impl LmnamesData {
-    /// 文件魔数
-    pub const MAGIC: &[u8; 4] = b"LMNM";
-
-    /// 编码为二进制文件字节
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        encode_binary_file(Self::MAGIC, 1, self)
-    }
-
-    /// 从二进制字节解码
-    pub fn decode(bytes: &[u8]) -> Result<Self> {
-        decode_binary_file(bytes, Self::MAGIC)
-    }
-}
+simple_part!(LmnamesData, b"LMNM", 1);
 
 #[cfg(test)]
 mod tests;
