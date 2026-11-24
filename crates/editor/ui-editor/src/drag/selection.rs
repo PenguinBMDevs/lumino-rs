@@ -5,6 +5,8 @@
 use crate::{EditState, Editor};
 use lumino_editor_state::SelectionSet;
 
+use crate::note_ops::Bounds;
+
 /// 框选命中谓词 —— **全项目框选口径的唯一来源**（索引路径与无索引窗口兜底共用）。
 ///
 /// 语义：音符与选框**重叠**即命中；**仅「边界相触」不算命中**。
@@ -111,12 +113,8 @@ impl Editor {
                 ghost_aware_window_collect(self, min_tick, max_tick, min_key, max_key, lookback);
             // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
             // 注意：selected_bounds 缓存存 RAW（文档位置），渲染时再叠加 delta 得视觉框
-            let mut bounds = None;
+            let mut acc = Bounds::default();
             if !set.is_empty() {
-                let mut min_t = f32::INFINITY;
-                let mut max_te = f32::NEG_INFINITY;
-                let mut max_k = u16::MIN;
-                let mut min_k = u16::MAX;
                 for (i, n) in self
                     .editor_state
                     .data
@@ -129,16 +127,12 @@ impl Editor {
                     }
                     let tick = n.start_tick as f32;
                     let length = (n.end_tick - n.start_tick) as f32;
-                    min_t = min_t.min(tick);
-                    max_te = max_te.max(tick + length);
-                    max_k = max_k.max(n.key as u16);
-                    min_k = min_k.min(n.key as u16);
+                    acc.add(tick, tick + length, n.key as u16);
                 }
-                bounds = Some((min_t, max_te, max_k, min_k));
             }
 
             self.editor_state.interaction.selected_notes = set;
-            self.selected_bounds.set(bounds);
+            self.selected_bounds.set(acc.get());
             return;
         }
 
@@ -183,12 +177,8 @@ impl Editor {
         };
 
         // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
-        let mut bounds = None;
+        let mut acc = Bounds::default();
         if !set.is_empty() {
-            let mut min_t = f32::INFINITY;
-            let mut max_te = f32::NEG_INFINITY;
-            let mut max_k = u16::MIN;
-            let mut min_k = u16::MAX;
             for (i, n) in self
                 .editor_state
                 .data
@@ -201,16 +191,12 @@ impl Editor {
                 }
                 let tick = n.start_tick as f32;
                 let length = (n.end_tick - n.start_tick) as f32;
-                min_t = min_t.min(tick);
-                max_te = max_te.max(tick + length);
-                max_k = max_k.max(n.key as u16);
-                min_k = min_k.min(n.key as u16);
+                acc.add(tick, tick + length, n.key as u16);
             }
-            bounds = Some((min_t, max_te, max_k, min_k));
         }
 
         self.editor_state.interaction.selected_notes = set;
-        self.selected_bounds.set(bounds);
+        self.selected_bounds.set(acc.get());
     }
 }
 

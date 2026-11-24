@@ -5,7 +5,7 @@
 
 use lumino_editor_state::SelectionSet;
 
-use super::Editor;
+use super::{Bounds, Editor};
 use crate::Note;
 use crate::RemoteSelectionSet;
 
@@ -69,11 +69,7 @@ impl Editor {
     /// 和 `selection_box::draw` 各一次合并为一次，消除双重扫描。
     pub fn selection_assign(&mut self, new_set: SelectionSet) {
         let data = &self.editor_state.data;
-        let mut min_t = f32::INFINITY;
-        let mut max_te = f32::NEG_INFINITY;
-        let mut max_k = u16::MIN;
-        let mut min_k = u16::MAX;
-        let mut any = false;
+        let mut bounds = Bounds::default();
         let track = data.current_track_notes();
         // 大选中集（≥ 轨道 1/8）：顺序扫描轨道 + 集合命中，避免逐元素随机
         // `get_note_view` 在百万级选中集下的缓存未命中；小集合仍逐元素扫描
@@ -83,31 +79,19 @@ impl Editor {
                 if !new_set.contains(&i) {
                     continue;
                 }
-                any = true;
                 let tick = n.start_tick as f32;
                 let length = (n.end_tick - n.start_tick) as f32;
-                min_t = min_t.min(tick);
-                max_te = max_te.max(tick + length);
-                max_k = max_k.max(n.key as u16);
-                min_k = min_k.min(n.key as u16);
+                bounds.add(tick, tick + length, n.key as u16);
             }
         } else {
             for i in new_set.iter() {
                 if let Some(n) = data.get_note_view(i) {
-                    any = true;
-                    min_t = min_t.min(n.tick);
-                    max_te = max_te.max(n.tick + n.length);
-                    max_k = max_k.max(n.key);
-                    min_k = min_k.min(n.key);
+                    bounds.add(n.tick, n.tick + n.length, n.key);
                 }
             }
         }
         self.editor_state.interaction.selected_notes = new_set;
-        self.selected_bounds.set(if any {
-            Some((min_t, max_te, max_k, min_k))
-        } else {
-            None
-        });
+        self.selected_bounds.set(bounds.get());
     }
 
     /// 按参数全等（tick/key/length/velocity/channel）匹配并选中音符

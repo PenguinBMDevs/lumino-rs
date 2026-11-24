@@ -7,11 +7,14 @@
 //! - `delete`: 音符删除（delete_note_by_index/delete_note_at/delete_selected_notes）
 //! - `selection_box`: 选择框边界计算（get_selection_box_bounds + hit_test_selection_box）
 
+mod bounds;
 mod delete;
 mod hit_test;
 mod selection;
 mod selection_box;
 pub(crate) mod selection_remap;
+
+pub(crate) use bounds::Bounds;
 
 use super::Editor;
 
@@ -68,18 +71,12 @@ impl Editor {
         let note_count = data.current_track_note_count();
 
         // 边界：一次顺序扫描（全选时无需哈希命中判断）
-        let mut min_t = f32::INFINITY;
-        let mut max_te = f32::NEG_INFINITY;
-        let mut max_k = u16::MIN;
-        let mut min_k = u16::MAX;
+        let mut bounds = Bounds::default();
         if note_count > 0 {
             for n in data.current_track_notes().iter() {
                 let tick = n.start_tick as f32;
                 let length = (n.end_tick - n.start_tick) as f32;
-                min_t = min_t.min(tick);
-                max_te = max_te.max(tick + length);
-                max_k = max_k.max(n.key as u16);
-                min_k = min_k.min(n.key as u16);
+                bounds.add(tick, tick + length, n.key as u16);
             }
         }
 
@@ -89,10 +86,6 @@ impl Editor {
         for i in 0..note_count {
             set.insert(i);
         }
-        self.selected_bounds.set(if note_count > 0 {
-            Some((min_t, max_te, max_k, min_k))
-        } else {
-            None
-        });
+        self.selected_bounds.set(bounds.get());
     }
 }
