@@ -1,3 +1,6 @@
 # .cargo/config.toml
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld"
+# MSVC 目标从源头关闭 debug info：debuginfo=0 时 rustc 不向链接器传递 /DEBUG，
+# 链接阶段（含 rust-lld）就不会生成 PDB，避免测试构建吃满内存。
+rustflags = ["-C", "debuginfo=0"]

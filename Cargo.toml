@@ -317,6 +317,9 @@ assets = [
 
 [profile.dev]
 incremental = true
+# 关闭调试信息：Windows 链接阶段（rust-lld / link.exe）据此生成 PDB，
+# 大 workspace 下 PDB 体积与链接内存占用暴涨，从源头关掉避免吃满内存。
+debug = false
 
 # 实时音频 DSP（xsynth-*）在 debug/开发构建下也必须优化：
 # opt-level 0 的实时光栅渲染约慢 10 倍（实测 6.5µs vs 0.45µs/声部/块），
@@ -337,6 +340,11 @@ opt-level = 3
 
 [profile.dev.package.lumino-midi-loader]
 opt-level = 3
+
+# cargo test / cargo nextest 的测试二进制走 test profile（默认继承 dev）。
+# 显式关闭 debug，确保测试构建绝不产出 PDB。
+[profile.test]
+debug = false
 
 [profile.release]
 codegen-units = 1
