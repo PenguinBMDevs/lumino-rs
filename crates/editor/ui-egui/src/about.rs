@@ -7,7 +7,7 @@ use egui::{FontId, Label, Rect, RichText, Vec2};
 
 use crate::chrome::AboutModel;
 use crate::icons::{Icon, IconCache};
-use crate::{layout, theme};
+use crate::theme;
 
 /// 整窗内边距（与其他对话框一致）。
 const PAD: f32 = 24.0;
@@ -29,12 +29,7 @@ pub fn show(ui: &mut egui::Ui, model: &AboutModel, icons: &mut IconCache) {
 
     let rect = ui.max_rect();
     // 顶部 30px 自制标题栏由 `chrome::popup_titlebar` 绘制，本模块让出该区域。
-    let top = if model.titlebar {
-        layout::TITLEBAR_H
-    } else {
-        0.0
-    };
-    let body = Rect::from_min_max(egui::pos2(rect.left(), rect.top() + top), rect.max);
+    let body = crate::layout::body_rect(rect, model.titlebar);
     ui.painter().rect_filled(body, 0, theme::base_bg());
     let inner = body.shrink(PAD);
     if inner.width() <= 0.0 || inner.height() <= 0.0 {

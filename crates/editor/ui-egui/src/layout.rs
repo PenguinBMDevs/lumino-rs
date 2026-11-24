@@ -11,6 +11,14 @@
 
 /// 主窗口标题栏高度。
 pub const TITLEBAR_H: f32 = 30.0;
+
+/// 对话框正文区域：扣掉标题栏（可选）后的客户区。
+///
+/// 各弹窗的 body 几何前导曾各自复制；统一从这里取。
+pub fn body_rect(client: egui::Rect, titlebar: bool) -> egui::Rect {
+    let top = if titlebar { TITLEBAR_H } else { 0.0 };
+    egui::Rect::from_min_max(egui::pos2(client.left(), client.top() + top), client.max)
+}
 /// 工具栏总高度。
 pub const TOOLBAR_H: f32 = 72.0;
 /// 工具栏拖拽手柄高度。

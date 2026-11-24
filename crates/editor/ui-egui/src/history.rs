@@ -51,12 +51,7 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel, icons: &mut crate::icons::I
 
     let rect = ui.max_rect();
     // 顶部 30px 自制标题栏由 egui 绘制（`chrome::popup_titlebar`），本模块让出该区域。
-    let top = if model.titlebar {
-        crate::layout::TITLEBAR_H
-    } else {
-        0.0
-    };
-    let panel = Rect::from_min_max(egui::pos2(rect.left(), rect.top() + top), rect.max);
+    let panel = crate::layout::body_rect(rect, model.titlebar);
     if panel.width() <= 0.0 || panel.height() <= 0.0 {
         return;
     }

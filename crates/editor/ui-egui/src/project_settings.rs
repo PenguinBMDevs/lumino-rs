@@ -68,12 +68,7 @@ pub fn show(ui: &mut egui::Ui, model: &ProjectSettingsModel) {
     let rect = ui.max_rect();
     // 自制标题栏（红绿灯 + 拖动区）由 egui 绘制（`chrome::popup_titlebar`）：
     // 本模块只画标题栏以下的内容区，避免盖掉窗口控制按钮。
-    let top = if model.titlebar {
-        crate::layout::TITLEBAR_H
-    } else {
-        0.0
-    };
-    let body = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + top), rect.max);
+    let body = crate::layout::body_rect(rect, model.titlebar);
     ui.painter().rect_filled(body, 0, theme::base_bg());
     let inner = body.shrink(PAD);
     if inner.width() <= 0.0 || inner.height() <= 0.0 {

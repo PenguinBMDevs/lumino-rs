@@ -135,8 +135,7 @@ pub fn show(ui: &mut egui::Ui, model: &MemoryMonitorModel) {
 
 /// 客户区扣除标题栏后的内容区（`titlebar` = 是否绘制 30px 自制标题栏）。
 fn body_rect(client: egui::Rect, titlebar: bool) -> egui::Rect {
-    let top = if titlebar { layout::TITLEBAR_H } else { 0.0 };
-    egui::Rect::from_min_max(egui::pos2(client.left(), client.top() + top), client.max)
+    layout::body_rect(client, titlebar)
 }
 
 /// 内容视口：标题栏下方、底部按钮带上方的可滚动区域。

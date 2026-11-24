@@ -62,12 +62,7 @@ pub fn show(ui: &mut egui::Ui, model: &SpeedChangeModel) {
 
     let rect = ui.max_rect();
     // 顶部 30px 自制标题栏由 egui 绘制（`chrome::popup_titlebar`），本模块让出该区域。
-    let top = if model.titlebar {
-        crate::layout::TITLEBAR_H
-    } else {
-        0.0
-    };
-    let body = Rect::from_min_max(egui::pos2(rect.left(), rect.top() + top), rect.max);
+    let body = crate::layout::body_rect(rect, model.titlebar);
     ui.painter().rect_filled(body, 0, theme::base_bg());
     let inner = body.shrink(PAD);
     if inner.width() <= 0.0 || inner.height() <= 0.0 {
