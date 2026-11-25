@@ -34,18 +34,18 @@ pub use model::{
     HelpTopicRowModel, HistoryModel, HistoryRowModel, LoadConfirmModel, MaterialDeleteModel,
     MemoryMetricModel, MemoryMonitorModel, MemoryRowModel, MenuBarModel, MenuEntry, MenuModel,
     OnionMenuItem, OnionMenuModel, OnionSkinPageModel, OverflowItemModel, OverflowMenuModel,
-    PortSoundfontsModel, PortSoundfontsRowModel, ProgressModel, ProjectNoteCountModel,
-    ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel, RecoverTrackRowModel,
-    RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind, RightSidebarRailItem, RollBar,
-    SaveConfirmModel, SettingsLabels, SettingsPageModel, SettingsPalette, SettingsSnapshot,
-    ShapeActionButton, ShapeDrawerModel, ShapePanelAction, ShapeRowModel, ShapeSwatchModel,
-    ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel, SidebarRouteIcon,
-    SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel, SpeedChangeModel, StatusbarModel,
-    TempoMaxBpmModel, TextPairCell, TexturePreviewModel, TitlebarModel, ToolbarGroupsModel,
-    ToolbarModel, ToolbarTips, VideoButton, VideoButtonFill, VideoExportAction, VideoExportModel,
-    VideoExportOverlayModel, VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted,
-    VideoOverlayError, VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView,
-    VideoPreviewFrame, VideoRow, VideoSection,
+    PortSoundfontsModel, PortSoundfontsRowModel, PortSoundfontsUnsupportedModel, ProgressModel,
+    ProjectNoteCountModel, ProjectSettingsModel, RENDER_PREVIEW_TEXTURE_ID, RecoverTrackModel,
+    RecoverTrackRowModel, RecoverTrackSelection, RightSidebarModel, RightSidebarPanelKind,
+    RightSidebarRailItem, RollBar, SaveConfirmModel, SettingsLabels, SettingsPageModel,
+    SettingsPalette, SettingsSnapshot, ShapeActionButton, ShapeDrawerModel, ShapePanelAction,
+    ShapeRowModel, ShapeSwatchModel, ShortcutsPageModel, SidebarGroup, SidebarModel, SidebarPanel,
+    SidebarRouteIcon, SidebarRouteItem, SidebarTrack, SnapMenuItem, SnapMenuModel,
+    SpeedChangeModel, StatusbarModel, TempoMaxBpmModel, TextPairCell, TexturePreviewModel,
+    TitlebarModel, ToolbarGroupsModel, ToolbarModel, ToolbarTips, VideoButton, VideoButtonFill,
+    VideoExportAction, VideoExportModel, VideoExportOverlayModel, VideoExportPanelModel,
+    VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError, VideoOverlayFinalizing,
+    VideoOverlayProgress, VideoOverlayView, VideoPreviewFrame, VideoRow, VideoSection,
 };
 pub use model::{
     ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementScrollbarsModel,
@@ -432,6 +432,9 @@ pub fn show_bands(ui: &mut egui::Ui, model: &ChromeModel, icons: &mut IconCache)
             }
             DialogModel::PortSoundfonts(model) => {
                 crate::port_soundfonts::show(&mut root, model);
+            }
+            DialogModel::PortSoundfontsUnsupported(model) => {
+                crate::port_soundfonts_unsupported::show(&mut root, model);
             }
             DialogModel::History(model) => {
                 crate::history::show(&mut root, model, icons);

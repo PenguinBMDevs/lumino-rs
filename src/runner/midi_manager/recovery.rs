@@ -87,6 +87,9 @@ impl MidiManager {
                 self.active_backend = SynthBackend::XSynth;
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
+                // REND-005：XSynth 支持按端口音色库；丢弃旧后端遗留的不支持提示。
+                self.pending_port_soundfonts_unsupported = None;
+                self.port_soundfonts_unsupported_ack = false;
 
                 // REND-002 / REND-005：初始化期间文档可能已装载/切换，
                 // 完成时统一对齐布局与端口音色库（后台 worker，不卡 UI）。
@@ -143,6 +146,9 @@ impl MidiManager {
                 self.active_backend = SynthBackend::Lgs;
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
+                // REND-005：LGS 不支持按端口音色库；新后端落定后重新请求提示。
+                self.pending_port_soundfonts_unsupported = None;
+                self.port_soundfonts_unsupported_ack = false;
 
                 // REND-002 / REND-005：初始化期间文档可能已装载/切换，
                 // 完成时统一对齐布局与端口音色库。
@@ -196,6 +202,9 @@ impl MidiManager {
                 self.maestro_stats = Some(stats);
                 self.is_maestro_initializing = false;
                 self.maestro_init_rx = None;
+                // REND-005：Maestro 不支持按端口音色库；新后端落定后重新请求提示。
+                self.pending_port_soundfonts_unsupported = None;
+                self.port_soundfonts_unsupported_ack = false;
 
                 // REND-002 / REND-005：对齐布局与端口音色库。
                 self.align_synth_after_init("Maestro");
@@ -285,6 +294,21 @@ impl MidiManager {
         }
 
         self.needs_reinit = false;
+
+        // REND-005：后端代际 +1。旧后端在途的合成应用 worker 结果（可能带着
+        // “当前后端不支持按端口音色库”的提示）必须作废，否则切到 XSynth 后
+        // 状态栏仍会显示旧后端的能力提示。
+        self.synth_epoch = self.synth_epoch.wrapping_add(1);
+        // 新后端必须重新落定端口音色库：init 会带映射下发，但对齐一次才能把
+        // 加载失败/回退全局的原因推到状态栏。
+        self.spawned_port_soundfonts = PortSoundfontMap::default();
+        // 后端代际变化后重新评估“不支持”弹窗：旧提示作废，新后端落定后按需再请求。
+        self.port_soundfonts_unsupported_ack = false;
+        self.pending_port_soundfonts_unsupported = None;
+        tracing::info!(
+            "MIDI: 后端代际切换 -> {}（作废旧合成应用结果）",
+            self.synth_epoch
+        );
 
         // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
         self.drain_layout_apply(true);

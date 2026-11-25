@@ -1,8 +1,56 @@
 //! 对话框类窗口事件处理
 
+use crate::runner::midi_manager::PortSoundfontsUnsupportedNotice;
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
+use lumino_core::storage::config::SynthBackend;
 use lumino_core::tr;
 use std::sync::atomic::Ordering;
+
+impl RunnerInner {
+    /// 打开「端口音色库未生效」提示窗（REND-005）。
+    ///
+    /// 去重：已打开/初始化中只聚焦，不叠开第二个；后端切换成功后由
+    /// `handle_midi_reinit` 自动取消。
+    pub(crate) fn open_port_soundfonts_unsupported(
+        &mut self,
+        notice: PortSoundfontsUnsupportedNotice,
+    ) {
+        let backend = backend_label(notice.backend);
+        if self
+            .window_state
+            .dialog_manager
+            .is_open_or_pending(DialogType::PortSoundfontsUnsupported)
+        {
+            tracing::info!("端口音色库未生效提示已打开或在初始化中，忽略重复请求");
+            if let Some(window) = self
+                .window_state
+                .dialog_manager
+                .dialog_window_of_type(DialogType::PortSoundfontsUnsupported)
+            {
+                window.focus_window();
+            }
+            return;
+        }
+        tracing::info!(
+            "端口音色库未生效：当前后端 {backend} 不支持，弹窗告知用户（已配置 {} 个端口）",
+            notice.ports
+        );
+        self.window_state
+            .dialog_manager
+            .open_port_soundfonts_unsupported(backend, notice.ports);
+    }
+}
+
+/// 后端在提示文案中的显示名。
+fn backend_label(backend: SynthBackend) -> String {
+    match backend {
+        SynthBackend::XSynth => "XSynth".to_string(),
+        SynthBackend::Lgs => "LGS (GPU)".to_string(),
+        SynthBackend::Maestro => "Maestro".to_string(),
+        SynthBackend::Kdmapi => "KDMAPI".to_string(),
+        SynthBackend::System => tr!("系统 MIDI").to_string(),
+    }
+}
 
 impl RunnerInner {
     pub(crate) fn handle_dialog_events(

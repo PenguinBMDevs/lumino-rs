@@ -102,6 +102,14 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 注入后端名与端口数并打开「端口音色库未生效」提示窗（REND-005）。
+    pub fn set_port_soundfonts_unsupported_dialog(&mut self, backend: String, ports: usize) {
+        self.root
+            .set_port_soundfonts_unsupported_dialog(backend, ports);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 当前工程级图片转 MIDI 参数（保存 `.lmpj` / 云保存时写入 metadata）
     pub fn get_project_i2m_config(&self) -> lumino_core::I2mSettings {
         self.root.right_sidebar.config.to_settings()

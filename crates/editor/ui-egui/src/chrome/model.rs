@@ -89,9 +89,11 @@ pub struct ChromeModel {
 mod chrome;
 mod dialog;
 mod dialog_model;
+mod port_soundfonts;
 mod sidebar;
 
 pub use chrome::*;
 pub use dialog::*;
 pub use dialog_model::*;
+pub use port_soundfonts::*;
 pub use sidebar::*;

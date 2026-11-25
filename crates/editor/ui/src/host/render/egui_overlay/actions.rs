@@ -24,6 +24,7 @@ use lumino_ui_egui::history::HistoryAction;
 use lumino_ui_egui::load_confirm::LoadConfirmAction;
 use lumino_ui_egui::memory_monitor::MemoryMonitorAction;
 use lumino_ui_egui::port_soundfonts::PortSoundfontsAction;
+use lumino_ui_egui::port_soundfonts_unsupported::PortSoundfontsUnsupportedAction;
 use lumino_ui_egui::project_settings::ProjectSettingsAction;
 use lumino_ui_egui::recover_track::RecoverTrackAction;
 use lumino_ui_egui::settings::SettingsAction;
@@ -48,6 +49,7 @@ pub(super) struct OverlayActions {
     pub dialog: Option<SaveConfirmAction>,
     pub project: Option<ProjectSettingsAction>,
     pub port_soundfonts: Option<PortSoundfontsAction>,
+    pub port_soundfonts_unsupported: Option<PortSoundfontsUnsupportedAction>,
     pub autosave: Option<AutosaveRecoverAction>,
     pub history: Option<HistoryAction>,
     pub batch_edit: Option<BatchEditAction>,
@@ -105,6 +107,9 @@ impl OverlayActions {
             dialog: lumino_ui_egui::dialog::take_action(ctx),
             project: lumino_ui_egui::project_settings::take_action(ctx),
             port_soundfonts: lumino_ui_egui::port_soundfonts::take_action(ctx),
+            port_soundfonts_unsupported: lumino_ui_egui::port_soundfonts_unsupported::take_action(
+                ctx,
+            ),
             autosave: lumino_ui_egui::autosave_recover::take_action(ctx),
             history: lumino_ui_egui::history::take_action(ctx),
             batch_edit: lumino_ui_egui::batch_edit::take_action(ctx),
@@ -264,6 +269,9 @@ impl Host {
         });
         self.dispatch_action(actions.port_soundfonts, |root, action| {
             root.port_soundfonts_action_message(&action)
+        });
+        self.dispatch_action(actions.port_soundfonts_unsupported, |root, action| {
+            root.port_soundfonts_unsupported_action_message(&action)
         });
         self.dispatch_action(actions.autosave, |root, action| {
             root.autosave_recover_action_message(&action)

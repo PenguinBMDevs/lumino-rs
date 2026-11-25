@@ -78,6 +78,14 @@ impl Root {
         self.state.dialog_type = DialogType::PortSoundfonts;
     }
 
+    /// 注入后端名与端口数并打开「端口音色库未生效」提示窗（REND-005）。
+    pub fn set_port_soundfonts_unsupported_dialog(&mut self, backend: String, ports: usize) {
+        self.state
+            .port_soundfonts_unsupported_dialog
+            .open(backend, ports);
+        self.state.dialog_type = DialogType::PortSoundfontsUnsupported;
+    }
+
     /// 设置批量编辑对话框是否打开
     pub fn set_batch_edit_dialog_open(&mut self, open: bool) {
         self.state.batch_edit_dialog.is_open = open;

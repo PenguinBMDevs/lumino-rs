@@ -126,6 +126,13 @@ impl DialogWindow {
                     main_ui.document_max_port(),
                 );
             }
+            DialogType::PortSoundfontsUnsupported => {
+                let (backend, ports) = pending
+                    .pending_port_soundfonts_unsupported
+                    .clone()
+                    .unwrap_or_default();
+                ui.set_port_soundfonts_unsupported_dialog(backend, ports);
+            }
             DialogType::Settings => {
                 // MIDI 输入设备页需要主窗口的输入 API 与设备快照（设置面板为独立 Root）；
                 // 必须在 `set_settings_dialog_open` 之前注入，后者会立刻发起后台扫描。

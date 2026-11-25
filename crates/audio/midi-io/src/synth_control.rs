@@ -30,6 +30,11 @@ pub trait SynthControl: Api {
     /// - 只允许更新各通道的音色库矩阵；
     /// - 部分端口加载失败时应回退全局，并在 `Err` 中携带可见原因。
     fn apply_port_soundfonts(&mut self, _map: &PortSoundfontMap) -> Result<(), String> {
+        // 诊断：明确是哪个具体后端拒绝，避免“切了 XSynth 仍看到不支持”时无法定位。
+        tracing::warn!(
+            "合成后端 {} 不支持按端口音色库",
+            std::any::type_name::<Self>()
+        );
         Err(tr!("当前后端不支持按端口音色库").to_string())
     }
 

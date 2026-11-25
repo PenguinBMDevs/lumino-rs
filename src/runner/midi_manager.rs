@@ -136,6 +136,10 @@ pub struct MidiManager {
     desired_port_soundfonts: PortSoundfontMap,
     /// REND-005：当前合成器已应用的端口音色库映射（worker 成功后提交）。
     spawned_port_soundfonts: PortSoundfontMap,
+    /// REND-005：后端代际。每次整后端重初始化 +1；在途合成应用 worker 的
+    /// 结果若属于旧代际，必须丢弃（含旧后端“不支持按端口音色库”的提示），
+    /// 否则切到 XSynth 后仍会显示旧后端的能力提示。
+    synth_epoch: u64,
     /// REND-005：worker 在防抖窗口结束时读取的"最新期望映射"。
     port_soundfonts_desired: Arc<Mutex<PortSoundfontMap>>,
     /// REND-005：播放/暂停标志（每帧由 Runner 同步）。
@@ -143,6 +147,13 @@ pub struct MidiManager {
     /// 播放中不切换音色库矩阵：`SetSoundfonts` 不杀音，但 NoteOff 的 release
     /// spawner 使用当前矩阵，播放中切换会让释放尾音用错音色。
     playback_active: Arc<AtomicBool>,
+    /// REND-005：待展示的「当前后端不支持按端口音色库」提示（专用弹窗）。
+    ///
+    /// 由 Runner 每帧取走；取走即清。与状态栏提示分离：不支持属于需要用户
+    /// 明确知晓并选择（降级 / 切 XSynth）的决策，不能只在左下角一闪而过。
+    pending_port_soundfonts_unsupported: Option<PortSoundfontsUnsupportedNotice>,
+    /// REND-005：本轮映射是否已请求过“不支持”弹窗（防每帧重复请求）。
+    port_soundfonts_unsupported_ack: bool,
     /// #127：待向用户展示的后端提示（LGS 静默降级/初始化失败可见化）。
     ///
     /// 由 Runner 每帧取走并写入状态栏；取走即清，避免重复提示。
@@ -191,8 +202,11 @@ impl Default for MidiManager {
             layout_desired: Arc::new(AtomicU8::new(0)),
             desired_port_soundfonts: PortSoundfontMap::default(),
             spawned_port_soundfonts: PortSoundfontMap::default(),
+            synth_epoch: 0,
             port_soundfonts_desired: Arc::new(Mutex::new(PortSoundfontMap::default())),
             playback_active: Arc::new(AtomicBool::new(false)),
+            pending_port_soundfonts_unsupported: None,
+            port_soundfonts_unsupported_ack: false,
             pending_backend_notice: None,
             lgs_rebuild: lgs_rebuild::LgsRebuildState::default(),
             backend_fallback: fallback::BackendFallbackState::default(),
@@ -200,34 +214,7 @@ impl Default for MidiManager {
     }
 }
 
-impl MidiManager {
-    /// 取走待展示的后端提示（#127：LGS 静默降级/初始化失败可见化）。
-    ///
-    /// 取走即清；Runner 取到后写入状态栏，用户可见"当前实际后端与原因"。
-    pub fn take_pending_backend_notice(&mut self) -> Option<String> {
-        self.pending_backend_notice.take()
-    }
-
-    /// 取当前后端（仅 LGS 实现）的 GPU 缓冲状态快照。
-    ///
-    /// 非 LGS 后端由 `SynthControl` 默认实现返回 `None`；端口布局重建窗口期
-    /// `api` 被 worker 暂持，同样返回 `None`（UI 短暂隐藏指示器）。
-    pub fn gpu_buffer_stats(&self) -> Option<lumino_midi_io::GpuBufferStats> {
-        self.api.as_ref()?.gpu_buffer_stats()
-    }
-
-    /// 取 Maestro 实时统计（voice_count / nps / eps / nps_limit / latency）。
-    ///
-    /// 非 Maestro 后端或引擎重建窗口返回 `None`；供状态栏/性能指示器低频轮询。
-    pub fn maestro_stats(&self) -> Option<MaestroStats> {
-        self.maestro_stats.as_ref()?.stats()
-    }
-
-    /// 取走 Maestro 引擎通知（禁用/停止），供状态栏提示。
-    pub fn take_maestro_notice(&self) -> Option<String> {
-        self.maestro_stats.as_ref()?.take_notice()
-    }
-}
+// 查询/取通知类方法见 `queries.rs`（保持本文件 < 400 行）。
 
 // ── 子模块 ──────────────────────────────────────────────────────────────
 
@@ -240,8 +227,11 @@ mod maestro;
 mod outputs;
 mod panic_guard;
 mod port_soundfonts;
+mod queries;
 mod recovery;
 mod xsynth;
+
+pub use port_soundfonts::PortSoundfontsUnsupportedNotice;
 
 pub use audio_action::handle_audio_action;
 

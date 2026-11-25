@@ -19,7 +19,7 @@ use crate::history::HistoryAction;
 use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
 use crate::material_delete::MaterialDeleteDialogAction;
-use crate::port_soundfonts::PortSoundfontsAction;
+use crate::port_soundfonts::{PortSoundfontsAction, PortSoundfontsUnsupportedAction};
 use crate::project_settings::ProjectSettingsAction;
 use crate::recover_track::RecoverTrackAction;
 use crate::right_sidebar::RightSidebarAction;
@@ -137,6 +137,8 @@ pub enum Message<W, S, Se, T> {
     ProjectSettings(ProjectSettingsAction),
     /// 端口音色库对话框动作（REND-005）
     PortSoundfonts(PortSoundfontsAction),
+    /// 「端口音色库未生效」提示框动作（REND-005）
+    PortSoundfontsUnsupported(PortSoundfontsUnsupportedAction),
     /// 设置对话框动作
     SettingsDialog(SettingsDialogAction),
     /// 力度编辑面板动作

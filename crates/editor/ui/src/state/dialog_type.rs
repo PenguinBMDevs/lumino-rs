@@ -60,6 +60,8 @@ pub enum DialogType {
     History,
     /// 端口音色库（REND-005；独立 OS 窗口，从工程设置打开）
     PortSoundfonts,
+    /// 「端口音色库未生效」提示（REND-005；当前后端不支持时弹出）
+    PortSoundfontsUnsupported,
     /// 混音台（独立 OS 窗口）
     Mixer,
 }

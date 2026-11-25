@@ -91,6 +91,35 @@ impl PortSoundfontsDialogState {
     }
 }
 
+/// 「端口音色库未生效」提示窗状态（REND-005）。
+///
+/// 当前后端不支持按端口音色库时展示；映射已保存，窗口只负责告知与分流。
+#[derive(Debug, Clone, Default)]
+pub struct PortSoundfontsUnsupportedDialogState {
+    /// 当前实际生效的后端显示名。
+    backend: String,
+    /// 已配置的端口数。
+    ports: usize,
+}
+
+impl PortSoundfontsUnsupportedDialogState {
+    /// 注入后端名与端口数。
+    pub fn open(&mut self, backend: String, ports: usize) {
+        self.backend = backend;
+        self.ports = ports;
+    }
+
+    /// 当前后端显示名。
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    /// 已配置端口数。
+    pub fn ports(&self) -> usize {
+        self.ports
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

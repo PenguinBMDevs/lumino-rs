@@ -67,7 +67,7 @@ pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use mask_panel::MaskPanelAction;
 pub use material_delete::MaterialDeleteDialogAction;
-pub use port_soundfonts::PortSoundfontsAction;
+pub use port_soundfonts::{PortSoundfontsAction, PortSoundfontsUnsupportedAction};
 pub use project_settings::ProjectSettingsAction;
 pub use recover_track::RecoverTrackAction;
 pub use right_sidebar::{I2mConfigField, I2mSelectField, RightSidebarAction};

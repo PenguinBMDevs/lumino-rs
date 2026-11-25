@@ -87,6 +87,84 @@ fn synth_needs_alignment_covers_layout_and_soundfonts() {
     assert!(synth_needs_alignment(3, 3, &map, &empty), "音色库差异");
 }
 
+/// REND-005：后端代际不一致时，合成应用结果必须作废。
+#[test]
+fn synth_outcome_is_stale_only_on_epoch_change() {
+    assert!(!synth_outcome_is_stale(3, 3), "同代结果必须接受");
+    assert!(synth_outcome_is_stale(2, 3), "旧代结果必须丢弃");
+}
+
+/// 旧后端代的 worker 结果（含“不支持按端口音色库”提示）不得提交。
+///
+/// 回归路径：LGS 上排程的映射 worker 在用户切到 XSynth 后才收尾，旧提示
+/// 不能写进状态栏，旧布局/映射也不能记成“已应用”。
+#[test]
+fn stale_synth_outcome_is_discarded() {
+    let mut manager = manager_with(MockApi::ok().boxed());
+    manager.synth_epoch = 2;
+
+    let mut stale_map = PortSoundfontMap::default();
+    stale_map.set(1, vec!["stale.sf2".to_string()]);
+    let done = LayoutApplyDone {
+        api: MockApi::ok().boxed(),
+        result: Ok(SynthApplyOutcome {
+            applied: SynthAppliedState {
+                max_port: 2,
+                port_soundfonts: stale_map,
+            },
+            notice: Some("当前后端不支持按端口音色库".to_string()),
+        }),
+        epoch: 1,
+    };
+
+    manager.finish_layout_apply(done, Instant::now());
+
+    assert!(
+        manager.pending_backend_notice.is_none(),
+        "旧后端的能力提示不得写入状态栏"
+    );
+    assert_eq!(
+        manager.spawned_port_soundfonts,
+        PortSoundfontMap::default(),
+        "旧代映射不得提交"
+    );
+    assert_eq!(manager.spawned_midi_max_port, 0, "旧代布局不得提交");
+}
+
+/// 同代结果正常提交（对照组）。
+#[test]
+fn current_epoch_synth_outcome_commits() {
+    let mut manager = manager_with(MockApi::ok().boxed());
+    manager.synth_epoch = 1;
+
+    let mut map = PortSoundfontMap::default();
+    map.set(1, vec!["port1.sf2".to_string()]);
+    // 期望值与结果一致：避免提交后触发追赶 worker。
+    manager.desired_midi_max_port = 2;
+    manager.desired_port_soundfonts = map.clone();
+
+    let done = LayoutApplyDone {
+        api: MockApi::ok().boxed(),
+        result: Ok(SynthApplyOutcome {
+            applied: SynthAppliedState {
+                max_port: 2,
+                port_soundfonts: map.clone(),
+            },
+            notice: None,
+        }),
+        epoch: 1,
+    };
+
+    manager.finish_layout_apply(done, Instant::now());
+
+    assert_eq!(manager.spawned_midi_max_port, 2);
+    assert_eq!(manager.spawned_port_soundfonts, map);
+    assert!(
+        manager.layout_apply.is_none(),
+        "无差异不得追赶重排出 worker"
+    );
+}
+
 fn manager_with(api: MidiApi) -> MidiManager {
     MidiManager {
         api: Some(api),

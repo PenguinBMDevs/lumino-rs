@@ -186,42 +186,6 @@ pub struct ProjectNoteCountModel {
     pub value: String,
 }
 
-/// 端口音色库对话框（REND-005）：整窗内容。
-#[derive(Debug, Clone, Default)]
-pub struct PortSoundfontsModel {
-    /// 是否绘制 30px 自制标题栏。
-    pub titlebar: bool,
-    /// 窗口标题。
-    pub title: String,
-    /// 顶部说明。
-    pub hint: String,
-    /// 端口行（按端口升序）。
-    pub rows: Vec<PortSoundfontsRowModel>,
-    /// 确定按钮。
-    pub ok: String,
-    /// 取消按钮。
-    pub cancel: String,
-}
-
-/// 端口音色库对话框中的一行。
-#[derive(Debug, Clone, Default)]
-pub struct PortSoundfontsRowModel {
-    /// MIDI 端口号（动作回传用）。
-    pub port: u8,
-    /// 端口标签（端口 0 附带「全局（默认，可覆盖）」）。
-    pub label: String,
-    /// 当前路径（空 = 未配置）。
-    pub path: String,
-    /// 未配置时的占位文案。
-    pub path_hint: String,
-    /// 多路径回退链提示（v1 只显示首个）。
-    pub extra: Option<String>,
-    /// 「选择…」按钮文案。
-    pub browse: String,
-    /// 「清除」按钮文案。
-    pub clear: String,
-}
-
 /// 设置对话框调色板：由生产侧主题调色板映射。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsPalette {

@@ -22,6 +22,10 @@ use lumino_midi_model::multi_port::PortSoundfontMap;
 use super::panic_guard::{Guarded, run_guarded};
 use super::*;
 
+mod state;
+
+pub(super) use state::{SynthAppliedState, SynthApplyOutcome, synth_outcome_is_stale};
+
 /// 端口编辑的防抖窗口：停手 150ms 后才真正重建。
 pub(super) const LAYOUT_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -91,24 +95,6 @@ pub(super) fn synth_needs_alignment(
         || soundfonts_need_align(desired_soundfonts, spawned_soundfonts)
 }
 
-/// 合成器已应用状态：端口布局 + 端口音色库映射。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct SynthAppliedState {
-    /// 已生效的最大 MIDI 端口。
-    pub(super) max_port: u8,
-    /// 已生效的端口音色库映射。
-    pub(super) port_soundfonts: PortSoundfontMap,
-}
-
-/// worker 回传的落定结果。
-#[derive(Debug)]
-pub(super) struct SynthApplyOutcome {
-    /// worker 成功提交的状态（布局失败时不会产生本值）。
-    pub(super) applied: SynthAppliedState,
-    /// 音色库部分回退/后端不支持时的可见提示（None = 完全成功）。
-    pub(super) notice: Option<String>,
-}
-
 /// 后台布局重建在途状态。
 pub(super) struct LayoutApplyInFlight {
     /// worker 回传通道
@@ -125,6 +111,8 @@ pub(super) struct LayoutApplyDone {
     api: MidiApi,
     /// 应用结果
     result: Result<SynthApplyOutcome, LayoutApplyFailure>,
+    /// 排程时的后端代际；与 `MidiManager::synth_epoch` 不一致则结果作废。
+    epoch: u64,
 }
 
 /// 布局重建失败的语义：Err 与 panic 都保持旧布局，但 panic 额外触发后端重初始化。
@@ -222,6 +210,7 @@ impl MidiManager {
         let desired = Arc::clone(&self.layout_desired);
         let desired_soundfonts = Arc::clone(&self.port_soundfonts_desired);
         let playback_active = Arc::clone(&self.playback_active);
+        let epoch = self.synth_epoch;
         let applied =
             Self::applied_synth_state(self.spawned_midi_max_port, &self.spawned_port_soundfonts);
         let (tx, rx) = mpsc::channel();
@@ -235,7 +224,7 @@ impl MidiManager {
                 LAYOUT_DEBOUNCE,
             );
             // 先归还所有权：send 之后 API 已离开 worker，后续收尾都在主线程。
-            let _ = tx.send(LayoutApplyDone { api, result });
+            let _ = tx.send(LayoutApplyDone { api, result, epoch });
         });
         self.layout_apply = Some(LayoutApplyInFlight {
             rx,
@@ -325,6 +314,17 @@ impl MidiManager {
 
     /// 收尾一次后台重建：归还 API、更新已应用状态、必要时追赶最新期望值。
     fn finish_layout_apply(&mut self, done: LayoutApplyDone, started: Instant) {
+        // REND-005：旧后端代际的结果一律丢弃——包括“当前后端不支持按端口音色库”
+        // 这类能力提示；切到 XSynth 后旧 LGS worker 的提示不能污染状态栏。
+        // API 也不回收：调用方（reinit）随后会丢弃/替换整个后端实例。
+        if synth_outcome_is_stale(done.epoch, self.synth_epoch) {
+            tracing::info!(
+                "MIDI(后台): 丢弃旧后端代的合成状态结果（epoch {} -> {}）",
+                done.epoch,
+                self.synth_epoch
+            );
+            return;
+        }
         self.api = Some(done.api);
         match done.result {
             Ok(outcome) => {
@@ -336,8 +336,17 @@ impl MidiManager {
                     started.elapsed()
                 );
                 if let Some(notice) = outcome.notice {
-                    tracing::warn!("MIDI(后台): 端口音色库回退提示: {notice}");
-                    self.pending_backend_notice = Some(notice);
+                    if self.active_backend == SynthBackend::XSynth {
+                        tracing::warn!("MIDI(后台): 端口音色库回退提示: {notice}");
+                        self.pending_backend_notice = Some(notice);
+                    } else {
+                        // 不支持的后端（LGS/Maestro/System）由专用弹窗告知，
+                        // 不再用左下角状态栏一闪而过；不重置 ack，避免布局
+                        // 重建等无关事件让用户重复确认。
+                        tracing::info!(
+                            "MIDI(后台): 非 XSynth 后端的端口音色库提示改由弹窗展示: {notice}"
+                        );
+                    }
                 }
                 if self.synth_needs_catch_up() {
                     tracing::info!(

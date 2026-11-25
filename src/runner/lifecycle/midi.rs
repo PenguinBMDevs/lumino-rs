@@ -2,6 +2,7 @@
 
 use std::time::{Duration, Instant};
 
+use lumino_core::storage::config::SynthBackend;
 use lumino_core::tr;
 
 use crate::runner::inner::RunnerInner;
@@ -159,12 +160,47 @@ impl RunnerInner {
             AsyncInitOutcome::Switched => {
                 tracing::info!("MIDI: 异步后端初始化完成，正在创建新的播放连接...");
                 Self::reconnect_playback_output(self);
+                // REND-005：切到 XSynth 后，旧后端的“不支持端口音色库”提示
+                // 必须立即关闭并清掉状态栏残留；映射随后由对齐逻辑自动应用。
+                if self.midi_state.midi.active_backend() == SynthBackend::XSynth {
+                    if self.window_state.dialog_manager.is_open_or_pending(
+                        lumino_ui::state::root_state::DialogType::PortSoundfontsUnsupported,
+                    ) {
+                        self.window_state.dialog_manager.cancel_dialog(
+                            lumino_ui::state::root_state::DialogType::PortSoundfontsUnsupported,
+                        );
+                    }
+                    self.window_state.window.ui_mut().set_status_message(None);
+                }
             }
             AsyncInitOutcome::Failed => {
                 tracing::warn!("MIDI: 异步后端初始化失败，保持当前后端并重连播放输出");
                 Self::reconnect_playback_output(self);
             }
             AsyncInitOutcome::Pending => {}
+        }
+
+        // REND-005：当前后端不支持按端口音色库 → 独立提示窗。
+        // 软件后端初始化在途时先不弹：等落定后再判断，避免“即将切到 XSynth”时闪一下。
+        if !self.midi_state.midi.software_backend_pending()
+            && let Some(notice) = self
+                .midi_state
+                .midi
+                .take_port_soundfonts_unsupported_notice()
+        {
+            self.open_port_soundfonts_unsupported(notice);
+        }
+
+        // REND-005：用户清空映射后，已打开的“不支持”提示必须自动关闭，
+        // 避免继续显示“已保存 N 个端口”的过期文案。
+        if self.midi_state.midi.desired_port_soundfonts_is_empty()
+            && self.window_state.dialog_manager.is_open_or_pending(
+                lumino_ui::state::root_state::DialogType::PortSoundfontsUnsupported,
+            )
+        {
+            self.window_state
+                .dialog_manager
+                .cancel_dialog(lumino_ui::state::root_state::DialogType::PortSoundfontsUnsupported);
         }
 
         // #127：播放输出创建失败的自愈重试（换设备窗口期端口可能瞬时不可用）。

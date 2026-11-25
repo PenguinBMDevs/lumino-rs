@@ -193,17 +193,108 @@ fn soundfont_panic_keeps_api_and_requests_reinit() {
     assert!(manager.needs_reinit(), "worker panic 应触发后端重初始化");
 }
 
-/// 非软件后端（System）：给出可见提示，但不得排程无意义的后台任务。
+/// 非软件后端（System）：请求专用弹窗，但不得排程无意义的后台任务。
 #[test]
-fn non_software_backend_reports_notice_without_scheduling() {
+fn non_software_backend_reports_dialog_without_scheduling() {
     let mut manager = MidiManager::default();
     assert_eq!(manager.active_backend, SynthBackend::System);
+    let map = map_with(&[(1, &["port1.sf2"])]);
 
-    manager.apply_port_soundfonts_deferred(map_with(&[(1, &["port1.sf2"])]));
+    manager.apply_port_soundfonts_deferred(map.clone());
 
     assert!(manager.layout_apply.is_none());
     let notice = manager
-        .take_pending_backend_notice()
-        .expect("不支持的应产生可见提示");
-    assert!(notice.contains("不支持"), "提示应说明后端限制: {notice}");
+        .take_port_soundfonts_unsupported_notice()
+        .expect("不支持的应请求专用弹窗");
+    assert_eq!(notice.backend, SynthBackend::System);
+    assert_eq!(notice.ports, 1);
+    assert!(
+        manager.take_pending_backend_notice().is_none(),
+        "不支持不再写状态栏（改由弹窗告知）"
+    );
+    assert_eq!(
+        manager.spawned_port_soundfonts, map,
+        "降级应记录为已应用，避免 tick 反复排程"
+    );
+}
+
+/// LGS 已就绪：同样请求弹窗、不排程 worker。
+#[test]
+fn lgs_ready_reports_dialog_without_worker() {
+    let (api, record) = MockApi::recording(SoundfontBehavior::Ok);
+    let mut manager = MidiManager {
+        api: Some(api.boxed()),
+        active_backend: SynthBackend::Lgs,
+        ..MidiManager::default()
+    };
+    let map = map_with(&[(1, &["port1.sf2"])]);
+
+    manager.apply_port_soundfonts_deferred(map);
+
+    assert!(manager.layout_apply.is_none());
+    assert!(
+        record.soundfont_calls().is_empty(),
+        "不支持的后端不得调用 apply_port_soundfonts"
+    );
+    let notice = manager
+        .take_port_soundfonts_unsupported_notice()
+        .expect("LGS 应请求专用弹窗");
+    assert_eq!(notice.backend, SynthBackend::Lgs);
+}
+
+/// 弹窗请求每轮只发一次：用户关闭后不得每帧重复弹。
+#[test]
+fn unsupported_dialog_is_requested_once_per_round() {
+    let mut manager = MidiManager::default();
+    manager.apply_port_soundfonts_deferred(map_with(&[(1, &["port1.sf2"])]));
+    assert!(manager.take_port_soundfonts_unsupported_notice().is_some());
+
+    manager.tick_port_soundfonts(false);
+    assert!(
+        manager.take_port_soundfonts_unsupported_notice().is_none(),
+        "同一轮映射/后端不得重复请求弹窗"
+    );
+}
+
+/// 切到 XSynth 后（代际切换已清空 spawned/ack）应正常应用映射，且不再弹窗。
+#[test]
+fn switching_to_xsynth_applies_mapping() {
+    let (api, record) = MockApi::recording(SoundfontBehavior::Ok);
+    let mut manager = manager_with(api.boxed());
+    let map = map_with(&[(1, &["port1.sf2"])]);
+
+    // 模拟 reinit 后的状态：新后端 XSynth，spawned 清空、ack 重置、desired 保留。
+    manager.spawned_port_soundfonts = PortSoundfontMap::default();
+    manager.port_soundfonts_unsupported_ack = false;
+    manager.desired_port_soundfonts = map.clone();
+    *manager
+        .port_soundfonts_desired
+        .lock()
+        .expect("锁端口音色库期望值") = map.clone();
+
+    manager.tick_port_soundfonts(false);
+    poll_until_done(&mut manager);
+
+    assert_eq!(record.soundfont_calls(), vec![map.clone()]);
+    assert_eq!(manager.spawned_port_soundfonts, map);
+    assert!(
+        manager.take_port_soundfonts_unsupported_notice().is_none(),
+        "XSynth 支持按端口音色库，不得再请求不支持弹窗"
+    );
+}
+
+/// 清空映射不得弹“不支持”窗。
+#[test]
+fn clearing_mapping_on_unsupported_backend_is_silent() {
+    let mut manager = MidiManager::default();
+    manager.apply_port_soundfonts_deferred(map_with(&[(1, &["port1.sf2"])]));
+    assert!(manager.take_port_soundfonts_unsupported_notice().is_some());
+
+    manager.apply_port_soundfonts_deferred(PortSoundfontMap::default());
+
+    assert!(
+        manager.take_port_soundfonts_unsupported_notice().is_none(),
+        "清空映射后没有需要告知的不支持状态"
+    );
+    assert!(manager.spawned_port_soundfonts.is_empty());
 }

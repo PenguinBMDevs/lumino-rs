@@ -15,3 +15,14 @@ pub enum PortSoundfontsAction {
     /// 取消：丢弃本次编辑。
     Cancel,
 }
+
+/// 「端口音色库未生效」提示框动作（REND-005）。
+///
+/// 仅在当前后端不支持按端口音色库时出现；映射本身已保存。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortSoundfontsUnsupportedAction {
+    /// 知晓并继续：使用全局音色库（降级运行），关闭提示。
+    Acknowledge,
+    /// 打开合成器设置，用户可切换到 XSynth。
+    OpenSettings,
+}
