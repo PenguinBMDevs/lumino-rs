@@ -206,18 +206,13 @@ impl NoteSpatialIndex {
         visible_key_max: u16,
         result: &mut Vec<usize>,
     ) {
-        puffin::profile_function!();
-        result.clear();
-        if let Some(root_idx) = self.root {
-            self.query_node_iter::<false>(
-                root_idx,
-                visible_tick_start,
-                visible_tick_end,
-                visible_key_min,
-                visible_key_max,
-                result,
-            );
-        }
+        self.query_into::<false, _>(
+            visible_tick_start,
+            visible_tick_end,
+            visible_key_min,
+            visible_key_max,
+            result,
+        );
     }
 
     /// 框选（marquee）专用查询：tick 轴**半开**区间 `[tick_start, tick_end)`，
@@ -242,11 +237,7 @@ impl NoteSpatialIndex {
         key_max: u16,
         result: &mut Vec<usize>,
     ) {
-        puffin::profile_function!();
-        result.clear();
-        if let Some(root_idx) = self.root {
-            self.query_node_iter::<true>(root_idx, tick_start, tick_end, key_min, key_max, result);
-        }
+        self.query_into::<true, _>(tick_start, tick_end, key_min, key_max, result);
     }
 
     /// 直接从空间索引节点数据中收集视口内音符的 (tick, key, length)
@@ -260,33 +251,49 @@ impl NoteSpatialIndex {
         visible_key_max: u16,
         result: &mut Vec<(f32, u16, f32)>,
     ) {
+        self.query_into::<false, _>(
+            visible_tick_start,
+            visible_tick_end,
+            visible_key_min,
+            visible_key_max,
+            result,
+        );
+    }
+
+    /// 查询入口：清空结果并把根节点交给遍历骨架。
+    fn query_into<const HALF_OPEN: bool, S: HitSink>(
+        &self,
+        tick_start: f32,
+        tick_end: f32,
+        key_min: u16,
+        key_max: u16,
+        result: &mut S,
+    ) {
         puffin::profile_function!();
         result.clear();
         if let Some(root_idx) = self.root {
-            self.query_node_iter_direct::<false>(
-                root_idx,
-                visible_tick_start,
-                visible_tick_end,
-                visible_key_min,
-                visible_key_max,
-                result,
+            self.query_node_iter::<HALF_OPEN, S>(
+                root_idx, tick_start, tick_end, key_min, key_max, result,
             );
         }
     }
 
-    /// 遍历骨架（索引输出）。
+    /// 遍历骨架：索引与原始三元组共用同一份区间原语。
     ///
     /// `HALF_OPEN` 为编译期常量，两种口径各自单态化，**热路径无额外分支**：
     /// - `false`：tick 轴闭区间（视口/播放）
     /// - `true`：tick 轴半开区间（框选）
-    fn query_node_iter<const HALF_OPEN: bool>(
+    ///
+    /// 输出形态由 `HitSink` 静态分派（`Vec<usize>` / `Vec<(f32, u16, f32)>`），
+    /// 每命中一次仍是内联 push，无虚调用。
+    fn query_node_iter<const HALF_OPEN: bool, S: HitSink>(
         &self,
         root_idx: usize,
         tick_start: f32,
         tick_end: f32,
         key_min: u16,
         key_max: u16,
-        result: &mut Vec<usize>,
+        result: &mut S,
     ) {
         puffin::profile_function!();
         let mut stack = Vec::with_capacity(32);
@@ -308,7 +315,7 @@ impl NoteSpatialIndex {
 
                 for note_ref in &node.key_sorted[start_idx..end_idx] {
                     if note_tick_hits::<HALF_OPEN>(note_ref, tick_start, tick_end) {
-                        result.push(note_ref.index);
+                        result.push_hit(note_ref);
                     }
                 }
             }
@@ -321,49 +328,35 @@ impl NoteSpatialIndex {
             }
         }
     }
+}
 
-    /// 遍历骨架（原始 (tick, key, length) 输出）。口径同 [`Self::query_node_iter`]。
-    fn query_node_iter_direct<const HALF_OPEN: bool>(
-        &self,
-        root_idx: usize,
-        tick_start: f32,
-        tick_end: f32,
-        key_min: u16,
-        key_max: u16,
-        result: &mut Vec<(f32, u16, f32)>,
-    ) {
-        puffin::profile_function!();
-        let mut stack = Vec::with_capacity(32);
-        stack.push(root_idx);
+/// 查询命中输出：索引（渲染/播放）或原始三元组（空间直取）。
+trait HitSink {
+    fn clear(&mut self);
+    fn push_hit(&mut self, note_ref: &NoteRef);
+}
 
-        while let Some(node_idx) = stack.pop() {
-            let node = &self.nodes[node_idx];
-            if !node_tick_may_hit::<HALF_OPEN>(node, tick_start, tick_end) {
-                continue;
-            }
+impl HitSink for Vec<usize> {
+    #[inline]
+    fn clear(&mut self) {
+        Vec::clear(self);
+    }
 
-            if !node.key_sorted.is_empty() {
-                let start_idx = node
-                    .key_sorted
-                    .partition_point(|note_ref| note_ref.key < key_min);
-                let end_idx = node
-                    .key_sorted
-                    .partition_point(|note_ref| note_ref.key <= key_max);
+    #[inline]
+    fn push_hit(&mut self, note_ref: &NoteRef) {
+        self.push(note_ref.index);
+    }
+}
 
-                for note_ref in &node.key_sorted[start_idx..end_idx] {
-                    if note_tick_hits::<HALF_OPEN>(note_ref, tick_start, tick_end) {
-                        result.push((note_ref.tick, note_ref.key, note_ref.length));
-                    }
-                }
-            }
+impl HitSink for Vec<(f32, u16, f32)> {
+    #[inline]
+    fn clear(&mut self) {
+        Vec::clear(self);
+    }
 
-            if let Some(left) = node.left {
-                stack.push(left);
-            }
-            if let Some(right) = node.right {
-                stack.push(right);
-            }
-        }
+    #[inline]
+    fn push_hit(&mut self, note_ref: &NoteRef) {
+        self.push((note_ref.tick, note_ref.key, note_ref.length));
     }
 }
 

@@ -7,7 +7,7 @@
 //!
 //! NoteMove 使用轻量 `OperationEntry`，不参与 chain，逻辑撤销时单条退化。
 
-use super::{CreateEntry, EditorSnapshot, History, HistoryEntry, OpKind};
+use super::{CreateEntry, EditorSnapshot, History, HistoryDir, HistoryEntry, OpKind};
 use std::collections::HashSet;
 use std::time::Instant;
 
@@ -126,67 +126,51 @@ impl History {
     /// Create 链逻辑撤销：pop 同 chain 的 Create 条目，
     /// 合并全部 op 为一条返回（编辑侧逆序按值删除），原条目搬入 redo 栈。
     fn undo_logical_create(&mut self) -> Option<HistoryEntry> {
-        let HistoryEntry::Create(top) = self.undo_stack.back()? else {
-            return None;
-        };
-        let chain_groups = Self::collect_create_chain(top);
-
-        let mut all_ops: Vec<super::CreateOp> = Vec::new();
-        let mut oldest: Option<(Option<u64>, Option<u64>, Instant, u32)> = None;
-        while let Some(top) = self.undo_stack.back() {
-            if let HistoryEntry::Create(e) = top
-                && Self::create_in_chain(e, &chain_groups)
-            {
-                let entry = self.undo_stack.pop_back()?;
-                let HistoryEntry::Create(e) = &entry else {
-                    continue;
-                };
-                if oldest.is_none() {
-                    oldest = Some((e.group_id, e.parent_group_id, e.timestamp, e.entry_count));
-                }
-                // 时间正序：先 pop 的是最新组，前插保持创建顺序
-                let mut new_ops = e.ops.clone();
-                new_ops.extend(all_ops);
-                all_ops = new_ops;
-                self.redo_stack.push_back(entry);
-                continue;
-            }
-            break;
-        }
-        let (group_id, parent_group_id, timestamp, entry_count) =
-            oldest.unwrap_or((None, None, Instant::now(), 1));
-        Some(HistoryEntry::Create(CreateEntry {
-            ops: all_ops,
-            group_id,
-            parent_group_id,
-            timestamp,
-            entry_count,
-        }))
+        self.logical_create_step(HistoryDir::Undo)
     }
 
     /// Create 链逻辑重做：pop 同 chain 的 Create 条目（搬回 undo 栈），
     /// 合并全部 op 为一条返回（编辑侧正序插入）。
     fn redo_logical_create(&mut self) -> Option<HistoryEntry> {
-        let HistoryEntry::Create(top) = self.redo_stack.back()? else {
+        self.logical_create_step(HistoryDir::Redo)
+    }
+
+    /// Create 链逻辑回放的统一骨架。
+    ///
+    /// 两个方向只有「从哪条栈弹出、推入哪条栈」与 `all_ops` 的拼接顺序不同：
+    /// undo 先 pop 最新组、前插保持创建顺序；redo 先 pop 最早的组、追加即可。
+    fn logical_create_step(&mut self, dir: HistoryDir) -> Option<HistoryEntry> {
+        let (from, to, prepend) = match dir {
+            HistoryDir::Undo => (&mut self.undo_stack, &mut self.redo_stack, true),
+            HistoryDir::Redo => (&mut self.redo_stack, &mut self.undo_stack, false),
+        };
+        let HistoryEntry::Create(top) = from.back()? else {
             return None;
         };
         let chain_groups = Self::collect_create_chain(top);
 
         let mut all_ops: Vec<super::CreateOp> = Vec::new();
         let mut oldest: Option<(Option<u64>, Option<u64>, Instant, u32)> = None;
-        while let Some(top) = self.redo_stack.back() {
+        while let Some(top) = from.back() {
             if let HistoryEntry::Create(e) = top
                 && Self::create_in_chain(e, &chain_groups)
             {
-                let entry = self.redo_stack.pop_back()?;
+                let entry = from.pop_back()?;
                 let HistoryEntry::Create(e) = &entry else {
                     continue;
                 };
                 if oldest.is_none() {
                     oldest = Some((e.group_id, e.parent_group_id, e.timestamp, e.entry_count));
                 }
-                all_ops.extend(e.ops.clone());
-                self.undo_stack.push_back(entry);
+                if prepend {
+                    // 时间正序：先 pop 的是最新组，前插保持创建顺序
+                    let mut new_ops = e.ops.clone();
+                    new_ops.extend(all_ops);
+                    all_ops = new_ops;
+                } else {
+                    all_ops.extend(e.ops.clone());
+                }
+                to.push_back(entry);
                 continue;
             }
             break;

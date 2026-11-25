@@ -11,6 +11,13 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+/// 历史回放方向（单步与逻辑链共用）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HistoryDir {
+    Undo,
+    Redo,
+}
+
 mod entry;
 pub use entry::{CreateEntry, CreateOp, HistoryEntry, MoveOp, OperationEntry};
 mod snapshot;
@@ -232,70 +239,48 @@ impl History {
     /// 对 `Operation`：把反向操作推入 redo_stack，不推快照，避免混合堆叠导致
     /// 多次 undo/redo 时快照覆盖操作结果。
     pub fn undo(&mut self, current_state: EditorSnapshot) -> Option<HistoryEntry> {
-        if self.undo_stack.is_empty() {
-            return None;
-        }
-        match self.undo_stack.pop_back()? {
-            HistoryEntry::Snapshot(bx) => {
-                let s = *bx;
-                // 把被撤销动作的元数据带到 redo 快照上：当前快照由
-                // `make_snapshot_for_track` 生成，默认 `op_kind=Other`；
-                // 不带过去会让历史面板在 undo 后把后续步骤全部显示成“其他”。
-                let mut redo_state = current_state;
-                redo_state.group_id = s.group_id;
-                redo_state.parent_group_id = s.parent_group_id;
-                redo_state.timestamp = s.timestamp;
-                redo_state.op_kind = s.op_kind;
-                redo_state.entry_count = s.entry_count;
-                self.redo_stack
-                    .push_back(HistoryEntry::Snapshot(Box::new(redo_state)));
-                Some(HistoryEntry::Snapshot(Box::new(s)))
-            }
-            HistoryEntry::Operation(op) => {
-                let inverse = op.inverse();
-                self.redo_stack
-                    .push_back(HistoryEntry::Operation(inverse.clone()));
-                Some(HistoryEntry::Operation(inverse))
-            }
-            HistoryEntry::Create(entry) => {
-                // Create 原样搬移：undo 时 editor 按 inverse=true 删除音符，
-                // redo 栈保存同一 entry（重做时按 inverse=false 重新插入）。
-                self.redo_stack
-                    .push_back(HistoryEntry::Create(entry.clone()));
-                Some(HistoryEntry::Create(entry))
-            }
-        }
+        self.step(current_state, HistoryDir::Undo)
     }
 
     /// Redo the last undone action（单步重做）
     pub fn redo(&mut self, current_state: EditorSnapshot) -> Option<HistoryEntry> {
-        if self.redo_stack.is_empty() {
-            return None;
-        }
-        match self.redo_stack.pop_back()? {
+        self.step(current_state, HistoryDir::Redo)
+    }
+
+    /// 单步撤销/重做的统一骨架。
+    ///
+    /// 两个方向的差异只有「从哪条栈弹出、把反向项推入哪条栈」；Snapshot 元数据
+    /// 搬运、Operation 取逆、Create 原样搬移逐字相同。
+    fn step(&mut self, current_state: EditorSnapshot, dir: HistoryDir) -> Option<HistoryEntry> {
+        let (from, to) = match dir {
+            HistoryDir::Undo => (&mut self.undo_stack, &mut self.redo_stack),
+            HistoryDir::Redo => (&mut self.redo_stack, &mut self.undo_stack),
+        };
+        let entry = from.pop_back()?;
+        match entry {
             HistoryEntry::Snapshot(bx) => {
                 let s = *bx;
-                // 与 undo 对称：redo 回退到当前状态时，保留被重做动作的元数据。
-                let mut undo_state = current_state;
-                undo_state.group_id = s.group_id;
-                undo_state.parent_group_id = s.parent_group_id;
-                undo_state.timestamp = s.timestamp;
-                undo_state.op_kind = s.op_kind;
-                undo_state.entry_count = s.entry_count;
-                self.undo_stack
-                    .push_back(HistoryEntry::Snapshot(Box::new(undo_state)));
+                // 把被撤销/重做动作的元数据带到反向快照上：当前快照由
+                // `make_snapshot_for_track` 生成，默认 `op_kind=Other`；
+                // 不带过去会让历史面板在 undo 后把后续步骤全部显示成“其他”。
+                let mut counterpart = current_state;
+                counterpart.group_id = s.group_id;
+                counterpart.parent_group_id = s.parent_group_id;
+                counterpart.timestamp = s.timestamp;
+                counterpart.op_kind = s.op_kind;
+                counterpart.entry_count = s.entry_count;
+                to.push_back(HistoryEntry::Snapshot(Box::new(counterpart)));
                 Some(HistoryEntry::Snapshot(Box::new(s)))
             }
             HistoryEntry::Operation(op) => {
-                let forward = op.inverse();
-                self.undo_stack
-                    .push_back(HistoryEntry::Operation(forward.clone()));
-                Some(HistoryEntry::Operation(forward))
+                let inverse = op.inverse();
+                to.push_back(HistoryEntry::Operation(inverse.clone()));
+                Some(HistoryEntry::Operation(inverse))
             }
             HistoryEntry::Create(entry) => {
-                // Create 原样搬移：redo 时 editor 按 inverse=false 重新插入音符。
-                self.undo_stack
-                    .push_back(HistoryEntry::Create(entry.clone()));
+                // Create 原样搬移：undo 时 editor 按 inverse=true 删除音符，
+                // redo 时按 inverse=false 重新插入；重做栈保存同一 entry。
+                to.push_back(HistoryEntry::Create(entry.clone()));
                 Some(HistoryEntry::Create(entry))
             }
         }
