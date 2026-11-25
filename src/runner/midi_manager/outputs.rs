@@ -43,14 +43,11 @@ impl MidiManager {
         };
 
         let mut manager = Self {
+            // 由初始化结果/配置决定的字段显式赋值，其余沿用 [`Default`]
             api: init_result.api,
-            fallback_api: None,
             output: init_result.output,
             active_backend: init_result.backend,
-            needs_reinit: false,
             preferred_backend: preferred,
-            xsynth_init_rx: None,
-            is_xsynth_initializing: false,
             xsynth_soundfont_path: ui_config.soundfont_path.clone(),
             xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
@@ -58,26 +55,15 @@ impl MidiManager {
             xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
             xsynth_voice_target_ratio: ui_config.xsynth_voice_target_ratio,
             xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
-            lgs_init_rx: None,
-            is_lgs_initializing: false,
-            lgs_rebuild: super::lgs_rebuild::LgsRebuildState::default(),
             lgs_soundfont_path: ui_config.soundfont_path.clone(),
             lgs_sample_rate: ui_config.lgs_sample_rate,
             lgs_block_size: ui_config.lgs_block_size,
             lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
             lgs_use_sinc: ui_config.lgs_use_sinc,
-            maestro_init_rx: None,
-            is_maestro_initializing: false,
-            maestro_stats: None,
             winmm_output_device_id: ui_config.system_output_device_id,
-            desired_midi_max_port: 0,
-            spawned_midi_max_port: 0,
-            layout_apply: None,
-            layout_desired: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
             // KDMAPI 启动失败并回退 System 时，携带可见原因（状态栏展示）
             pending_backend_notice: init_result.notice,
-            // AUD-011：会话级 CPU 降级覆盖（初始跟随用户偏好）
-            backend_fallback: super::fallback::BackendFallbackState::default(),
+            ..Self::default()
         };
 
         // 软件合成后端（XSynth / LGS）：后台异步初始化；提前 bail（无音色库/
