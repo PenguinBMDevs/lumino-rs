@@ -43,6 +43,9 @@ impl Root {
         // 图片转 MIDI 参数（DRAW-030）同属工程数据：重置到默认，
         // 打开工程时再由 `apply_loaded_project_metadata` 回填。
         self.right_sidebar.config = crate::right_sidebar::I2mConfig::default();
+        // REND-005：端口音色库映射同属工程数据，关闭/新建工程必须归零，
+        // 否则上一工程的覆盖会污染下一工程的实时/导出结果。
+        self.port_soundfonts = lumino_midi_model::multi_port::PortSoundfontMap::default();
     }
 
     /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权。

@@ -3,6 +3,7 @@
 //! 放在集成测试里而不是 `metadata.rs` 内联模块：`metadata.rs` 已 391 行（REF-001
 //! 上限 400），内联加 60 行测试会超限；这里只用公开 API，正好当外部契约测试。
 
+use lumino_midi_model::multi_port::{PortSoundfontEntry, PortSoundfontMap};
 use lumino_project::{ProjectMetadata, SettingsMetadata};
 
 /// 洋葱皮显示范围必须能写进 TOML 并原样读回（工程范围记忆的存储层）。
@@ -64,4 +65,59 @@ fn test_settings_only_carries_onion_skin_mode() {
     assert!(settings.auto_scroll_mode.is_none());
     assert!(settings.enable_256key.is_none());
     assert!(settings.velocity_filter_threshold.is_none());
+    assert!(
+        settings.port_soundfonts.is_empty(),
+        "未配置端口音色库时必须为空（不写该键）"
+    );
+}
+
+/// REND-005：端口音色库映射必须能写进 `[settings]` 并原样读回。
+#[test]
+fn test_port_soundfonts_roundtrip_through_toml() {
+    let map = PortSoundfontMap::from_entries(vec![
+        PortSoundfontEntry::new(0, ["D:/音色库/piano.sf2", r"D:\音色库\fallback.sfz"]),
+        PortSoundfontEntry::new(2, ["D:/音色库/drums.sf2"]),
+    ]);
+    let mut meta = ProjectMetadata::default_with_name("Ports");
+    meta.settings = Some(SettingsMetadata {
+        port_soundfonts: map.entries().to_vec(),
+        ..Default::default()
+    });
+
+    let toml = meta.to_toml_str().expect("序列化端口音色库失败");
+    assert!(
+        toml.contains("[[settings.port_soundfonts]]"),
+        "必须写成 TOML 表数组（实得：\n{toml}）"
+    );
+    assert!(
+        toml.contains("piano.sf2"),
+        "路径必须原样落盘（实得：\n{toml}）"
+    );
+
+    let back = ProjectMetadata::from_toml_str(&toml).expect("解析端口音色库失败");
+    let entries = back.settings.expect("settings 段应存在").port_soundfonts;
+    assert_eq!(
+        PortSoundfontMap::from_entries(entries),
+        map,
+        "读回后的端口/路径必须一致"
+    );
+}
+
+/// 空映射不得写入 `port_soundfonts` 键，保证未使用该功能的工程零差异。
+#[test]
+fn test_empty_port_soundfonts_is_omitted() {
+    let mut meta = ProjectMetadata::default_with_name("NoPorts");
+    meta.settings = Some(SettingsMetadata {
+        onion_skin_mode: Some("all_tracks".into()),
+        ..Default::default()
+    });
+    let toml = meta.to_toml_str().expect("序列化失败");
+    assert!(
+        !toml.contains("port_soundfonts"),
+        "空映射不得写键（实得：\n{toml}）"
+    );
+
+    let back = ProjectMetadata::from_toml_str(&toml).expect("解析失败");
+    let settings = back.settings.expect("settings 段应存在");
+    assert!(settings.port_soundfonts.is_empty());
 }

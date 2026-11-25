@@ -154,6 +154,8 @@ impl RunnerInner {
                 let project_use10 = parsed.use10;
                 // 图片转 MIDI 参数（DRAW-030），必须在 parsed move 前提取
                 let project_i2m = parsed.i2m.clone();
+                // 端口音色库映射（REND-005），必须在 parsed move 前提取
+                let project_port_soundfonts = parsed.port_soundfonts.clone();
 
                 // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(parsed);
@@ -187,6 +189,16 @@ impl RunnerInner {
                         project_use10,
                         project_i2m,
                     );
+
+                // REND-005：端口音色库映射随工程恢复；UI 作为保存/导出的权威源，
+                // 实时合成器走后台延迟应用（播放中自动延后到停播）。
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .apply_project_port_soundfonts(project_port_soundfonts.clone());
+                self.midi_state
+                    .midi
+                    .apply_port_soundfonts_deferred(project_port_soundfonts);
 
                 // 设置工程创建时间（从文件系统获取）
                 self.session_tracker.created_at = self

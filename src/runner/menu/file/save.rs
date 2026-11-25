@@ -88,6 +88,12 @@ impl RunnerInner {
                 .settings
                 .get_or_insert_with(Default::default)
                 .i2m = Some(ui.get_project_i2m_config());
+            // REND-005：端口音色库映射随素材落盘（与工程设置同口径继承）
+            project
+                .metadata
+                .settings
+                .get_or_insert_with(Default::default)
+                .port_soundfonts = ui.get_project_port_soundfonts().entries().to_vec();
             project
         };
 

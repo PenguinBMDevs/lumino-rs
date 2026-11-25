@@ -78,6 +78,18 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 回填从已加载 `.lmpj` 工程恢复的端口音色库映射（REND-005）。
+    ///
+    /// 与作者/版权同一条加载链路：`reset_project_settings` 清空后调用本方法。
+    pub fn apply_project_port_soundfonts(
+        &mut self,
+        map: lumino_midi_model::multi_port::PortSoundfontMap,
+    ) {
+        self.root.set_port_soundfonts(map);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 当前工程级图片转 MIDI 参数（保存 `.lmpj` / 云保存时写入 metadata）
     pub fn get_project_i2m_config(&self) -> lumino_core::I2mSettings {
         self.root.right_sidebar.config.to_settings()

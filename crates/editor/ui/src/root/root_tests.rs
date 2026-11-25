@@ -440,6 +440,7 @@ mod draw_thickness_entry;
 mod echo_cave;
 mod fill_division_panel;
 mod port;
+mod port_soundfonts;
 mod sidebar;
 mod speed_change;
 mod tempo_single_source;

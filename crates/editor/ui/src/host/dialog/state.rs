@@ -455,6 +455,11 @@ impl Host {
         self.root.editor.editor_state.use10
     }
 
+    /// 当前工程的端口音色库映射（REND-005；保存/导出/实时共用同一字段）。
+    pub fn get_project_port_soundfonts(&self) -> lumino_midi_model::multi_port::PortSoundfontMap {
+        self.root.port_soundfonts().clone()
+    }
+
     /// 获取并清空对话框结果
     pub fn take_dialog_result(&mut self) -> Option<DialogResult> {
         self.root.take_dialog_result()

@@ -19,10 +19,6 @@ impl MidiManager {
     /// - 播放/暂停：只提交期望值，停播后由 [`Self::tick_port_soundfonts`] 应用，
     ///   并给出一次可见提示；
     /// - 后端不支持（System/Kdmapi）：给出可见提示，不反复排程。
-    ///
-    /// TODO(REND-005 P3/P4)：工程持久化与工程设置窗口接线后由生产路径调用；
-    /// 当前仅由状态机单测覆盖，接线时移除 `#[allow(dead_code)]`。
-    #[allow(dead_code)]
     pub fn apply_port_soundfonts_deferred(&mut self, map: PortSoundfontMap) {
         if self.desired_port_soundfonts == map {
             return;
