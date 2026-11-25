@@ -2,6 +2,7 @@
 
 use lumino_core::{tr, trf};
 
+use super::port_soundfonts::reject_port_soundfonts;
 use super::*;
 
 /// 检测 GPU 是否可用（尝试创建 wgpu 适配器）
@@ -24,6 +25,7 @@ pub fn render_audio_gpu_from_document(
     let config = &config;
 
     check_control(config)?;
+    reject_port_soundfonts(config)?;
 
     let report = |msg: &str, pct: f64| {
         if let Some(ref cb) = config.progress_callback {
@@ -168,6 +170,7 @@ pub fn render_audio_gpu_streaming(
     use lumino_gpu_synth::GpuSynth;
 
     check_control(config)?;
+    reject_port_soundfonts(config)?;
 
     let report = |msg: &str, pct: f64| {
         if let Some(ref cb) = config.progress_callback {

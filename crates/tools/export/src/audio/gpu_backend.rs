@@ -31,6 +31,7 @@ use super::config;
 use progress::{attach_render_progress, check_control};
 use synth_config::{build_export_data, build_synth_config};
 
+mod port_soundfonts;
 mod progress;
 mod render;
 mod synth_config;

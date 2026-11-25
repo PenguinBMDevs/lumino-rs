@@ -137,6 +137,8 @@ fn main() {
         block_frames: 256,
         // REF-LGS-009：离线块长（本 bin 走 CPU 后端，不影响；对齐默认值）
         gpu_block_size: 2048,
+        // REND-005：端口音色库覆盖（本 bin 不配置，空映射 = 全局库，对齐默认值）
+        port_soundfonts: lumino_midi_model::multi_port::PortSoundfontMap::default(),
         progress_callback: None,
         control: None,
     };

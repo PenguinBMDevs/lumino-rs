@@ -14,7 +14,8 @@ use xsynth_core::{
 };
 
 use lumino_midi_model::multi_port::{
-    channels_for_max_port_clamped, percussion_channels as port_percussion_channels,
+    PortSoundfontMap, channels_for_max_port_clamped,
+    percussion_channels as port_percussion_channels,
 };
 
 use super::codec::AudioCodec;
@@ -106,6 +107,13 @@ pub struct AudioRenderConfig {
     /// 注意与 [`Self::channels`]（音频输出声道模式）无关，不要混用。
     pub midi_max_port: u8,
 
+    // ── 多端口音色库（REND-005）──
+    /// 端口 → 音色库覆盖映射（仅 CPU 后端消费）。
+    ///
+    /// 未配置端口回退 [`Self::soundfonts`]；空映射时事件序列与历史完全一致。
+    /// GPU 后端遇到非空映射会显式拒绝（不支持多库），见 GPU 渲染入口。
+    pub port_soundfonts: PortSoundfontMap,
+
     // ── 后端选择 ──
     /// 音频渲染后端（CPU / GPU）
     pub backend: AudioBackendKind,
@@ -147,6 +155,7 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("block_frames", &self.block_frames)
             .field("gpu_block_size", &self.gpu_block_size)
             .field("midi_max_port", &self.midi_max_port)
+            .field("port_soundfonts", &self.port_soundfonts)
             .field("backend", &self.backend)
             .field(
                 "progress_callback",
@@ -384,6 +393,7 @@ impl Default for AudioRenderConfig {
             block_frames: 256,
             gpu_block_size: 2048,
             midi_max_port: 0,
+            port_soundfonts: PortSoundfontMap::default(),
             backend: AudioBackendKind::Cpu,
             progress_callback: None,
             control: None,

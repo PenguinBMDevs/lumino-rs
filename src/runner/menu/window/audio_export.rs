@@ -187,6 +187,8 @@ impl RunnerInner {
             backend: backend_kind,
             progress_callback: Some(progress_cb),
             control: Some(Arc::clone(&control)),
+            // REND-005：端口音色库映射在 P3 由工程态注入；P1 先保持空映射。
+            ..Default::default()
         };
 
         // 2. tempo 无需覆盖（2026-10-20 审计 §三）：`EditorData` 的 tempo 写入入口
