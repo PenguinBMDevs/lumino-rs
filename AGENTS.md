@@ -258,6 +258,10 @@ Changes that are not DSP but still belong to the product boundary and also need 
 changing the default synth backend (`SynthBackend`'s `#[default]`), changing the project file
 format, or changing export mapping rules.
 
+Updating the xsynth fork (dependency rev bump or upstream merge) is a separate and currently
+deferred decision: do not bump it as part of unrelated work, and do not pull its performance
+backlog (PREF items) forward until the CPU backend's role is re-decided.
+
 The encouraged direction is "hand MIDI to external tools more precisely": port/channel
 mapping, ProgramChange and drum-channel semantics, per-port soundfont targeting, CC/SysEx
 pass-through, tempo/time-signature fidelity. That is correctness, not effects.
