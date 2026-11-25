@@ -36,6 +36,10 @@ mod mixer_dialog;
 mod mixer_panel;
 mod state;
 pub(crate) mod video_clip_math;
+
+/// tick → 秒（tempo 分段积分）。转出为跨 crate 单一实现，
+/// 供根 crate 的视频导出计数器直接调用，避免同算法双份维护。
+pub use video_clip_math::ticks_to_seconds;
 mod view;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;

@@ -187,13 +187,13 @@ pub(super) fn current_time_signature(time_signatures: &[(u32, u8, u8)], tick: u3
     }
 }
 
-// tempo 换算统一使用 `super::ticks_to_seconds`（video_export.rs 单一实现）
+// tempo 换算统一使用 `lumino_ui::root::ticks_to_seconds`（跨 crate 单一实现）
 
 #[cfg(test)]
 mod tests {
-    use super::super::ticks_to_seconds;
     use super::*;
     use lumino_midi_loader::{NoteEvent, TrackManager};
+    use lumino_ui::root::ticks_to_seconds;
 
     fn make_doc(tracks: &[Vec<(u32, u32, u8)>]) -> MidiDocument {
         MidiDocument {

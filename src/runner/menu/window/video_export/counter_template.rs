@@ -26,7 +26,7 @@ use super::counter_format::{
 use super::counter_stats::{
     CounterRenderConfig, CounterStats, current_bpm, current_time_signature,
 };
-use super::ticks_to_seconds;
+use lumino_ui::root::ticks_to_seconds;
 
 /// 模板渲染所需的全部上下文值。
 pub(super) struct TemplateContext<'a> {
