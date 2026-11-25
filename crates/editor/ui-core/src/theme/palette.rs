@@ -2,8 +2,6 @@
 use crate::color;
 use crate::geom::Color;
 
-use std::sync::LazyLock;
-
 /// A color palette.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Palette {
@@ -301,92 +299,6 @@ pub struct Extended {
     /// Whether the palette is dark or not.
     pub is_dark: bool,
 }
-
-/// The built-in light variant of an [`Extended`] palette.
-pub static EXTENDED_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::LIGHT));
-
-/// The built-in dark variant of an [`Extended`] palette.
-pub static EXTENDED_DARK: LazyLock<Extended> = LazyLock::new(|| Extended::generate(Palette::DARK));
-
-/// The built-in Dracula variant of an [`Extended`] palette.
-pub static EXTENDED_DRACULA: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::DRACULA));
-
-/// The built-in Nord variant of an [`Extended`] palette.
-pub static EXTENDED_NORD: LazyLock<Extended> = LazyLock::new(|| Extended::generate(Palette::NORD));
-
-/// The built-in Solarized Light variant of an [`Extended`] palette.
-pub static EXTENDED_SOLARIZED_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::SOLARIZED_LIGHT));
-
-/// The built-in Solarized Dark variant of an [`Extended`] palette.
-pub static EXTENDED_SOLARIZED_DARK: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::SOLARIZED_DARK));
-
-/// The built-in Gruvbox Light variant of an [`Extended`] palette.
-pub static EXTENDED_GRUVBOX_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::GRUVBOX_LIGHT));
-
-/// The built-in Gruvbox Dark variant of an [`Extended`] palette.
-pub static EXTENDED_GRUVBOX_DARK: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::GRUVBOX_DARK));
-
-/// The built-in Catppuccin Latte variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_LATTE: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_LATTE));
-
-/// The built-in Catppuccin Frappé variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_FRAPPE: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_FRAPPE));
-
-/// The built-in Catppuccin Macchiato variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_MACCHIATO: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_MACCHIATO));
-
-/// The built-in Catppuccin Mocha variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_MOCHA: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_MOCHA));
-
-/// The built-in Tokyo Night variant of an [`Extended`] palette.
-pub static EXTENDED_TOKYO_NIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::TOKYO_NIGHT));
-
-/// The built-in Tokyo Night Storm variant of an [`Extended`] palette.
-pub static EXTENDED_TOKYO_NIGHT_STORM: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::TOKYO_NIGHT_STORM));
-
-/// The built-in Tokyo Night variant of an [`Extended`] palette.
-pub static EXTENDED_TOKYO_NIGHT_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::TOKYO_NIGHT_LIGHT));
-
-/// The built-in Kanagawa Wave variant of an [`Extended`] palette.
-pub static EXTENDED_KANAGAWA_WAVE: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::KANAGAWA_WAVE));
-
-/// The built-in Kanagawa Dragon variant of an [`Extended`] palette.
-pub static EXTENDED_KANAGAWA_DRAGON: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::KANAGAWA_DRAGON));
-
-/// The built-in Kanagawa Lotus variant of an [`Extended`] palette.
-pub static EXTENDED_KANAGAWA_LOTUS: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::KANAGAWA_LOTUS));
-
-/// The built-in Moonfly variant of an [`Extended`] palette.
-pub static EXTENDED_MOONFLY: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::MOONFLY));
-
-/// The built-in Nightfly variant of an [`Extended`] palette.
-pub static EXTENDED_NIGHTFLY: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::NIGHTFLY));
-
-/// The built-in Oxocarbon variant of an [`Extended`] palette.
-pub static EXTENDED_OXOCARBON: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::OXOCARBON));
-
-/// The built-in Ferra variant of an [`Extended`] palette.
-pub static EXTENDED_FERRA: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::FERRA));
 
 impl Extended {
     /// Generates an [`Extended`] palette from a simple [`Palette`].
