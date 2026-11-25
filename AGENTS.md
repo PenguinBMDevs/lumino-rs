@@ -187,59 +187,63 @@ use lumino_core::{Event, Result};
 
 ## DSP Read-Only Zone & AI Rules
 
-> Source of truth: `docs/2026-11-25-DSP-AI工作规则.md` (v1.2). The body below is copied
-> verbatim so agents see it without an extra hop; if the two ever disagree, the file wins
-> and this section must be resynced. Human-facing rationale lives in
-> `docs/2026-11-25-DSP手搓区与AI禁区.md`.
-> The rule body is kept in Chinese per the project's internal-text rule; the rest of this
-> file remains English for tooling convenience.
+> Source of truth: `docs/2026-11-25-DSP-AI工作规则.md` (v1.3). This section is the English
+> rendering of that document; if the two disagree, the Chinese document wins and this
+> section must be resynced. Human-facing rationale: `docs/2026-11-25-DSP手搓区与AI禁区.md`.
+> Sync order: edit the document first, then this section.
 
-### 0. 总则
+### 0. General
 
-DSP 实时内核与导出限幅属于「只读区」。AI 在此区域的默认动作是**读**，不是**改**。
+The DSP real-time kernels and the export limiter are a **read-only zone**. For this zone an
+AI agent's default action is to **read**, never to **write**.
 
-任何时候，只要任务需要改动只读区（哪怕只是「看起来行为不变」的重构），
-必须先停下来告诉用户：为什么需要改、改哪几行、会影响什么、怎么证明没改坏。
-在用户明确同意之前，不得落盘。
+Whenever a task requires touching the read-only zone — including "behavior-preserving"
+refactors — the agent must stop and tell the user why the change is needed, which lines are
+affected, what the impact is, and how to prove nothing broke. Nothing may be written before
+the user explicitly agrees.
 
-「不告知就改动」是本规则里唯一的一票否决项。
+"Changing it without telling the user" is the single hard veto in these rules.
 
-### 0.1 产品边界（同样不可越权）
+### 0.1 Product boundary (also non-negotiable)
 
-Lumino 的音频只服务于「预览与自检」，不服务于专业制作。以下功能属于产品决策，
-AI 不得把它们当作「顺手优化」自行实现，必须先由用户明确立项：
+Lumino's built-in audio is for preview and self-check only, not for production. The following
+are product decisions; an agent must not implement them as "incidental improvements":
 
-- 通用效果链（Chorus / Reverb / Delay、CC91/93/94 的实际算法）；
-- 应用内 VST 宿主、插件扫描、插件 GUI 嵌入；
-- 路由矩阵、总线、发送/返回、母带类处理；
-- 为了「听起来更专业」而调整限幅、包络、增益结构或默认音色。
+- a general effects chain (chorus / reverb / delay, the actual algorithms behind CC91/93/94);
+- an in-app VST host, plugin scanning, or embedded plugin GUIs;
+- a routing matrix, buses, sends/returns, or mastering-grade processing;
+- changing limiters, envelopes, gain structure, or default timbre "to sound more professional".
 
-如果任务描述暗示了以上需求，AI 必须停下来指出这是产品边界问题，而不是直接写代码。
-判断标准很简单：这个改动会不会让 Lumino 更像一个 DAW？会，就先问。
+If a task implies any of the above, the agent must stop and flag it as a product-boundary
+question instead of writing code. The test is simple: would this make Lumino more like a DAW?
+If yes, ask first.
 
-与 DSP 无关但同属产品边界、同样需要先问的还有：更改默认合成后端
-（`SynthBackend` 的 `#[default]`）、修改工程文件格式、修改导出映射规则。
+Changes that are not DSP but still belong to the product boundary and also need approval:
+changing the default synth backend (`SynthBackend`'s `#[default]`), changing the project file
+format, or changing export mapping rules.
 
-允许并鼓励的方向是「把 MIDI 更精确地交给外部」：端口/通道映射、ProgramChange 与
-鼓通道语义、每端口音色库指向、CC/SysEx 透传、tempo/拍号保真。这些属于正确性，
-不属于效果。
+The encouraged direction is "hand MIDI to external tools more precisely": port/channel
+mapping, ProgramChange and drum-channel semantics, per-port soundfont targeting, CC/SysEx
+pass-through, tempo/time-signature fidelity. That is correctness, not effects.
 
-### 0.2 MIDI Clip / 激活集工作的分级
+### 0.2 Level of MIDI Clip / activation-set work
 
-「按对象（Clip）组织 MIDI」与「按区间裁剪事件」是当前讨论中的性能方向，AI 可以参与，
-但按以下分级处理：
+"Organizing MIDI by object (clips)" and "culling events by time range" are the performance
+directions under discussion. Agents may participate, at these levels:
 
-- 激活集、冻结/离线排除、mute/solo 前移：属于 C 级，可自主实现，但必须附
-  「取消静音后控制器状态重建」的测试，避免幽灵状态；
-- 以 Clip 作为编辑对象：属于 B 级，需要先给出方案（CC 隔离、重叠语义、SMF 映射），
-  并说明对撤销、协作、文件格式的影响；
-- 按 Clip 寻址的播放/导出：属于 B 级以上，涉及播放引擎与导出管线，必须先出设计与对拍方案。
+- activation sets, freeze/offline exclusion, moving mute/solo earlier: level C, may be
+  implemented autonomously, but must include a test for "rebuilding controller state after
+  unmute" to avoid ghost state;
+- clips as editing objects: level B, requires a plan first (CC isolation, overlap semantics,
+  SMF mapping) and an impact statement for undo, collaboration and the project file format;
+- clip-addressed playback/export: level B or stricter; touches the playback engine and export
+  pipeline, so a design and a parity plan are mandatory before any code.
 
-任何情况下，这条线上的工作都不得触碰下面的只读区。
+None of this work may touch the read-only zone below.
 
-### 1. 只读区（A 级）
+### 1. Read-only zone (level A)
 
-以下路径，AI **不得修改**，只能阅读、分析、写报告：
+The agent must **not modify** the following paths; reading, analysis and reports are fine:
 
 ```
 crates/audio/gpu-synth/src/gpu/shaders/render.wgsl
@@ -255,113 +259,117 @@ crates/audio/gpu-synth/src/synth/engine/trim.rs
 crates/audio/gpu-synth/src/synth/voices.rs
 crates/audio/gpu-synth/src/audio/resample.rs
 crates/tools/export/src/audio/limiter.rs
-crates/audio/midi-io/src/ui_sfx.rs        # 仅 adapt_to_device / 播放回调部分
+crates/audio/midi-io/src/ui_sfx.rs        # adapt_to_device / audio-callback parts only
 ```
 
-另外，`gpu/layout.rs` 中 `VoiceParamsStatic` / `VoiceParamsDyn` / `VoiceState`
-的**字段集合与顺序**属于 A 级（改字段等于改内核契约）；纯注释修正不受限。
+In addition, the **field set and order** of `VoiceParamsStatic` / `VoiceParamsDyn` /
+`VoiceState` in `gpu/layout.rs` are level A (changing fields changes the kernel contract);
+comment-only fixes are not restricted.
 
-以上清单之外，但满足下面任一条件的改动，同样按 A 级处理：
+Any change outside the list above that meets any of the following is also level A:
 
-- 会改变输出样本的浮点累加顺序或求和分组；
-- 会改变包络、滤波、插值、限幅、重采样、淡出、抢占的任何参数或时序；
-- 会改变块边界行为，或让输出依赖 `block_size`；
-- 会改变声部生命周期（创建、释放、回收、槽位分配）的时序；
-- 会修改 `STATES_SYNC_EVERY`、`LIMITER_WINDOW` 等实时契约常量；
-- 会修改 xsynth fork（`PenguinBMDevs/xsynth-Lumino`）的任何代码。
+- changes the floating-point accumulation order or grouping of the output;
+- changes any parameter or timing of envelopes, filters, interpolation, limiting,
+  resampling, fades or voice stealing;
+- changes block-boundary behavior or makes output depend on `block_size`;
+- changes voice lifecycle timing (spawn, release, reclamation, slot allocation);
+- changes real-time contract constants such as `STATES_SYNC_EVERY` or `LIMITER_WINDOW`;
+- changes any code in the xsynth fork (`PenguinBMDevs/xsynth-Lumino`).
 
-### 2. 人审区（B 级）
+### 2. Human-review zone (level B)
 
-以下区域 AI 可以起草，但必须做到：先出方案、标明影响面、附对拍计划，
-改动落地后必须有人逐行复核，且必须通过逐位对拍。
+Agents may draft changes here, but must: present a plan, state the impact, attach a parity
+plan; the change must then be reviewed line by line and pass bit-exact comparison.
 
 ```
 crates/audio/gpu-synth/src/synth/engine/pool.rs
 crates/audio/gpu-synth/src/synth/engine/slot.rs
 crates/audio/gpu-synth/src/synth/engine/env_pool.rs
 crates/audio/gpu-synth/src/synth/engine/warm.rs
-crates/audio/gpu-synth/src/soundfont/*            # 解析与 zone 映射
+crates/audio/gpu-synth/src/soundfont/*            # parsing and zone mapping
 crates/tools/export/src/audio/tick_conv.rs
 crates/tools/export/src/audio/event/processor/dsp.rs
 crates/tools/export/src/audio/block_scheduler.rs
 ```
 
-B 级的判定标准是「会不会影响声音，但可以用确定性手段验证」。
-如果 AI 无法给出可执行的对拍方案，说明这次改动应降级为 A 级处理（只出方案，不动手）。
+Level B means "affects sound, but can be verified deterministically". If the agent cannot
+produce an executable parity plan, treat the change as level A (plan only, do not touch).
 
-### 3. 自主区（C 级）
+### 3. Autonomous zone (level C)
 
-以下区域 AI 可以自主修改，前提是遵守仓库通用规范（clippy、fmt、nextest、文件长度）：
+Agents may modify these autonomously, subject to the repository rules (clippy, fmt, nextest,
+file length):
 
-- `synth/engine/{dispatch,bind,readback,render,offline,events,init,diag}.rs` 中
-  不改变数学与顺序的调度/管线代码；
-- `audio/playback/*`（设备流、admission、governor、drain）；
-- `crates/audio/midi-io/src/api/*` 与 `playback/*` 的协议/宿主适配；
-- `midi/parser.rs`、`midi/port.rs`；
-- 测试、夹具、基准、文档、诊断统计；
-- 纯注释修正（不改变语义的文档修正）。
+- scheduling/pipeline code in
+  `synth/engine/{dispatch,bind,readback,render,offline,events,init,diag}.rs`
+  that does not change math or ordering;
+- `audio/playback/*` (device streams, admission, governor, drain);
+- protocol/host adaptation in `crates/audio/midi-io/src/api/*` and `playback/*`;
+- `midi/parser.rs`, `midi/port.rs`;
+- tests, fixtures, benchmarks, docs, diagnostics;
+- comment-only fixes.
 
-C 级也不是「随便改」：任何 C 级改动如果间接影响了 A 级文件的调用方式，
-必须在交付说明里列出受影响的 A 级文件清单。
+Level C is still not "anything goes": if a level-C change indirectly changes how a level-A
+file is called, the delivery notes must list the affected level-A files.
 
-### 4. 遇到 A 级需求时的固定动作
+### 4. Fixed procedure when a level-A change is needed
 
-当任务确实需要改 A 级代码时，AI 必须按以下顺序执行，不得跳步：
+1. **Stop writing.** Reading code, running benchmarks and analysis are fine; modifying
+   level-A files is not.
+2. **Report to the user**, including: files and lines, why it cannot be avoided, alternatives,
+   expected impact (output, block size, listening risk), verification plan (materials,
+   hashes, A/B runs).
+3. **Wait for explicit approval.** Do not modify anything before the user says yes or
+   proposes an alternative.
+4. **Provide evidence afterwards**: bit-exact hashes, `lgs_ab.py` results, relevant nextest
+   summaries, and the exact passages that need human listening checks.
 
-1. **停止落盘**。可以继续读代码、跑基准、做分析，但不得修改 A 级文件。
-2. **向用户报告**，内容必须包含：需要改的文件与行、为什么必须改、不改的替代方案、
-   预计影响（输出是否变化、块长是否受影响、听感风险）、验证方案（用哪些素材、
-   哪些哈希、跑几次 A/B）。
-3. **等待明确同意**。用户说「可以」或给出替代方案之前，不做修改。
-4. **落地后必须提供证据**：逐位一致的哈希、`lgs_ab.py` 结果、相关 nextest 摘要，
-   以及需要人工听感抽查的具体段落。
-
-报告模板：
+Report template:
 
 ```
-[DSP 只读区请求]
-目标：<一句话>
-需要改动：<文件:行>（A 级）
-为什么绕不开：<说明>
-替代方案：<如果没有，写明「无」>
-影响面：<输出/块长/听感/性能>
-验证方案：<哈希 + A/B + 听感段落>
-等待确认：是
+[DSP read-only request]
+Goal: <one line>
+Files to change: <file:line> (level A)
+Why it cannot be avoided: <explanation>
+Alternatives: <or "none">
+Impact: <output / block size / listening / performance>
+Verification: <hashes + A/B + listening passages>
+Awaiting approval: yes
 ```
 
-### 5. 明确禁止的行为
+### 5. Explicitly forbidden
 
-以下行为一律视为违规，不论理由多充分：
+- modifying the read-only zone without telling the user;
+- smuggling level-A edits in as "bug fixes", "formatting" or "warning cleanup";
+- bundling level-A edits into an unrelated PR;
+- raising `STATES_SYNC_EVERY`, or letting voices resume from stale state in any way;
+- changing the floating-point accumulation order of mixing/reduction (including workgroup
+  tree reductions or atomics);
+- letting the limiter window follow `block_size`;
+- removing or shortening trim fades, or removing the per-block fade budget;
+- locking, allocating, logging or making system calls in the audio callback;
+- merging the two limiters (LGS and export) without a parity comparison;
+- adding DSP features to the xsynth fork (host-adaptation patches only, and only with notice);
+- referencing or copying xsynth (LGPL-3.0) source to build a "home-grown" data layer or kernel;
+- implementing an effects chain, VST host or routing matrix without a product decision, or
+  tweaking default timbre "to sound more professional";
+- switching the default synth backend, changing the project file format or changing export
+  mapping rules without telling the user.
 
-- 不告知用户就修改只读区；
-- 以「修复 bug」「格式化」「清理警告」为名顺带改动 A 级代码；
-- 把 A 级改动夹带在无关 PR 里；
-- 提高 `STATES_SYNC_EVERY`，或以任何方式让声部从过期状态恢复；
-- 改变混音/归约的浮点累加顺序（包括引入 workgroup 树形归约、原子累加）；
-- 让限幅器窗口跟随 `block_size`；
-- 删除或缩短裁剪淡出、删掉每块淡出预算；
-- 在音频回调中加锁、分配、日志或系统调用；
-- 合并 LGS 与导出链路的两套限幅器而未做对拍；
-- 在 xsynth fork 上新增 DSP 特性（只允许宿主适配类修补，且需告知）；
-- 参考或复制 xsynth（LGPL-3.0）源码来实现「自研」的数据层或内核；
-- 未经产品决策就实现效果链、VST 宿主、路由矩阵，或为「更专业」调整默认音色；
-- 未告知用户就切换默认合成后端、改动工程文件格式或导出映射规则。
+### 6. Work that advances DSP without touching it
 
-### 6. 允许的「不碰 DSP 但推进 DSP」的工作
+- expanding benchmark fixtures and the golden-hash matrix;
+- improving `hash_render` / `lgs_ab.py` diagnostics;
+- writing **read-only** regression tests for level-A behavior (assertions only, no kernel edits);
+- implementing and refactoring the data layer and the control plane;
+- writing down "why it is done this way" in docs and cards;
+- producing phase data and performance comparisons for human kernel work.
 
-这些是 AI 在 DSP 议题下最应该主动做的事：
+### 7. Relation to repository rules
 
-- 扩充基准夹具与黄金哈希矩阵；
-- 改进 `hash_render` / `lgs_ab.py` 的诊断输出；
-- 为 A 级行为写**只读**的回归测试（不改内核，只加断言）；
-- 数据层与控制面的实现与重构；
-- 把「为什么这么做」写进文档与卡面；
-- 为人工内核改动提供分相数据与性能对照表。
-
-### 7. 与仓库规范的关系
-
-本规则是 DSP 领域的补充约束，不替代本文件的通用规则；两者冲突时以更严格者为准。
-新增或修改规则时，必须先改 `docs/2026-11-25-DSP-AI工作规则.md`，再同步本节。
+These rules supplement, not replace, the rest of this file; when they conflict, the stricter
+rule wins. When changing them, edit `docs/2026-11-25-DSP-AI工作规则.md` first, then resync
+this section.
 
 ## IDE Settings
 
