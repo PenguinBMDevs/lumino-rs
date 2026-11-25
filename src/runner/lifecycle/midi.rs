@@ -112,6 +112,11 @@ impl RunnerInner {
         // 暂存 / 退避重试；与布局重建共用 api 暂持工作机制）
         self.midi_state.midi.poll_lgs_rebuild();
 
+        // REND-005：同步走带状态；播放/暂停中暂不切换端口音色库矩阵，
+        // 停播后由同一后台 worker 应用（不重建管线、不杀音）。
+        let playback_active = self.window_state.window.ui().playback_is_active();
+        self.midi_state.midi.tick_port_soundfonts(playback_active);
+
         // 检查音频流恢复（音频设备被拔出/更换后自动重定向/重建）
         self.midi_state.midi.handle_stream_recovery();
 

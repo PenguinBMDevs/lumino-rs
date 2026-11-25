@@ -63,6 +63,30 @@ fn layout_needs_catch_up_only_on_change() {
     assert!(layout_needs_catch_up(0, 4), "关闭归零也要追赶到 0");
 }
 
+/// REND-005：端口音色库对齐只比较期望值与已应用值。
+#[test]
+fn soundfonts_need_align_compares_desired_and_spawned() {
+    let empty = PortSoundfontMap::default();
+    let mut map = PortSoundfontMap::default();
+    map.set(1, vec!["port1.sf2".to_string()]);
+
+    assert!(!soundfonts_need_align(&empty, &empty), "一致时不得重试");
+    assert!(soundfonts_need_align(&map, &empty), "新映射需要应用");
+    assert!(soundfonts_need_align(&empty, &map), "清空映射也需要应用");
+}
+
+/// 初始化后对齐：布局或端口音色库任一不一致都需要排程。
+#[test]
+fn synth_needs_alignment_covers_layout_and_soundfonts() {
+    let empty = PortSoundfontMap::default();
+    let mut map = PortSoundfontMap::default();
+    map.set(0, vec!["port0.sf2".to_string()]);
+
+    assert!(!synth_needs_alignment(3, 3, &empty, &empty));
+    assert!(synth_needs_alignment(3, 2, &empty, &empty), "布局差异");
+    assert!(synth_needs_alignment(3, 3, &map, &empty), "音色库差异");
+}
+
 fn manager_with(api: MidiApi) -> MidiManager {
     MidiManager {
         api: Some(api),
@@ -85,9 +109,12 @@ fn poll_layout_until_done(manager: &mut MidiManager) {
 #[test]
 fn worker_panic_returns_api_and_error() {
     let desired = Arc::new(AtomicU8::new(3));
-    let (api, result) = run_layout_apply_worker(
+    let (api, result) = run_synth_apply_worker(
         MockApi::panic_on_layout("注入的布局 panic").boxed(),
         desired,
+        Arc::new(Mutex::new(PortSoundfontMap::default())),
+        SynthAppliedState::default(),
+        Arc::new(AtomicBool::new(false)),
         Duration::ZERO,
     );
     assert!(api.version().is_some(), "panic 后 API 不得蒸发");

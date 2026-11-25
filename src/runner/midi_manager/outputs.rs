@@ -74,6 +74,13 @@ impl MidiManager {
             spawned_midi_max_port: 0,
             layout_apply: None,
             layout_desired: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            // REND-005：项目装载后由 `apply_port_soundfonts_deferred` 注入期望值
+            desired_port_soundfonts: PortSoundfontMap::default(),
+            spawned_port_soundfonts: PortSoundfontMap::default(),
+            port_soundfonts_desired: std::sync::Arc::new(std::sync::Mutex::new(
+                PortSoundfontMap::default(),
+            )),
+            playback_active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             // KDMAPI 启动失败并回退 System 时，携带可见原因（状态栏展示）
             pending_backend_notice: init_result.notice,
             // AUD-011：会话级 CPU 降级覆盖（初始跟随用户偏好）

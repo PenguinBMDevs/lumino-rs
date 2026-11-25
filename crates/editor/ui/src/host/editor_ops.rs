@@ -196,4 +196,9 @@ impl Host {
     pub fn is_playing(&self) -> bool {
         self.root.is_playing()
     }
+
+    /// 走带是否活跃（播放或暂停）：REND-005 端口音色库切换的延迟门控。
+    pub fn playback_is_active(&self) -> bool {
+        self.root.playback_is_active()
+    }
 }

@@ -2,10 +2,13 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex};
 
+use lumino_midi_model::multi_port::PortSoundfontMap;
+
 use crate::realtime::{ChannelMixHandle, RealtimeEventSender, RealtimeSynth};
 
 mod api;
 mod init;
+mod port_soundfonts;
 mod runtime;
 mod threads;
 
@@ -72,6 +75,11 @@ pub struct XSynthOptions {
     /// REND-002：0 → `SynthFormat::Midi`（16 通道，零行为变化）；否则
     /// `Custom { channels: (min(max_port,15)+1)*16 }`，并逐端口显式开启 ch9 打击乐。
     pub midi_max_port: u8,
+    /// 端口 → 音色库覆盖映射（REND-005；空映射 = 全部使用全局库）。
+    ///
+    /// 初始化与布局重建时逐端口逐通道下发；运行期由
+    /// [`crate::SynthControl::apply_port_soundfonts`] 热切换（不重建管线）。
+    pub port_soundfonts: PortSoundfontMap,
 }
 
 /// 线程池逃生口环境变量（**仅供 A/B 复测**，不对外暴露为设置项）。
@@ -125,5 +133,10 @@ pub struct XSynth {
     /// 单独存放而非只读 `options`：`options` 允许为 `None`，且布局切换需要在
     /// 重建成功后才提交（失败回滚），避免"配置说 Custom、管线还是 16 通道"的错位。
     midi_max_port: u8,
+    /// 当前生效的端口音色库映射（REND-005）。
+    ///
+    /// 与 `midi_max_port` 同理单独存放：`options` 可为 `None`，且布局重建
+    /// 必须在**成功前**就带上最新映射（重建失败时旧管线继续服务）。
+    port_soundfonts: PortSoundfontMap,
     version: String,
 }

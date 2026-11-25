@@ -12,9 +12,12 @@
 //! 等待在途任务归还 API，保证"apply → create_additional_output"的顺序不变。
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+use lumino_midi_model::multi_port::PortSoundfontMap;
 
 use super::panic_guard::{Guarded, run_guarded};
 use super::*;
@@ -69,6 +72,43 @@ pub(super) fn layout_needs_catch_up(desired: u8, applied: u8) -> bool {
     desired != applied
 }
 
+/// 异步初始化完成后是否需要对齐端口音色库（desired 与 spawned 不一致）。
+pub(super) fn soundfonts_need_align(
+    desired: &PortSoundfontMap,
+    spawned: &PortSoundfontMap,
+) -> bool {
+    desired != spawned
+}
+
+/// 异步初始化完成后是否需要对齐合成状态（布局或端口音色库）。
+pub(super) fn synth_needs_alignment(
+    desired_layout: u8,
+    spawned_layout: u8,
+    desired_soundfonts: &PortSoundfontMap,
+    spawned_soundfonts: &PortSoundfontMap,
+) -> bool {
+    should_align_after_init(desired_layout, spawned_layout)
+        || soundfonts_need_align(desired_soundfonts, spawned_soundfonts)
+}
+
+/// 合成器已应用状态：端口布局 + 端口音色库映射。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct SynthAppliedState {
+    /// 已生效的最大 MIDI 端口。
+    pub(super) max_port: u8,
+    /// 已生效的端口音色库映射。
+    pub(super) port_soundfonts: PortSoundfontMap,
+}
+
+/// worker 回传的落定结果。
+#[derive(Debug)]
+pub(super) struct SynthApplyOutcome {
+    /// worker 成功提交的状态（布局失败时不会产生本值）。
+    pub(super) applied: SynthAppliedState,
+    /// 音色库部分回退/后端不支持时的可见提示（None = 完全成功）。
+    pub(super) notice: Option<String>,
+}
+
 /// 后台布局重建在途状态。
 pub(super) struct LayoutApplyInFlight {
     /// worker 回传通道
@@ -79,12 +119,12 @@ pub(super) struct LayoutApplyInFlight {
     timed_out: bool,
 }
 
-/// worker 回传：归还 API + 应用结果（成功时带实际生效的 max_port）。
+/// worker 回传：归还 API + 应用结果。
 pub(super) struct LayoutApplyDone {
     /// 归还的 API 实例
     api: MidiApi,
     /// 应用结果
-    result: Result<u8, LayoutApplyFailure>,
+    result: Result<SynthApplyOutcome, LayoutApplyFailure>,
 }
 
 /// 布局重建失败的语义：Err 与 panic 都保持旧布局，但 panic 额外触发后端重初始化。
@@ -97,21 +137,55 @@ pub(super) enum LayoutApplyFailure {
 }
 
 /// 防抖后读取最新期望值并应用；panic 由守卫截断，API 原样归还。
-fn run_layout_apply_worker(
+///
+/// 顺序契约（REND-005）：
+/// 1. **仅在布局变化时**调用 `set_midi_port_layout`（同布局的轻量复位会
+///    `SystemReset` + 杀音，改映射时绝不能走）；
+/// 2. 映射变化且当前不在播放时调用 `apply_port_soundfonts`（只换矩阵、不杀音）；
+/// 3. 播放中到达的映射请求原样保留，由 `tick_port_soundfonts` 在停播后再应用。
+fn run_synth_apply_worker(
     api: MidiApi,
     desired: Arc<AtomicU8>,
+    desired_soundfonts: Arc<Mutex<PortSoundfontMap>>,
+    applied: SynthAppliedState,
+    playback_active: Arc<AtomicBool>,
     debounce: Duration,
-) -> (MidiApi, Result<u8, LayoutApplyFailure>) {
+) -> (MidiApi, Result<SynthApplyOutcome, LayoutApplyFailure>) {
     let (api, outcome) = run_guarded(api, |api| {
         std::thread::sleep(debounce);
-        let target = desired.load(Ordering::SeqCst);
-        api.set_midi_port_layout(target).map(|()| target)
+        let target_layout = desired.load(Ordering::SeqCst);
+        let target_soundfonts = desired_soundfonts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+
+        let mut applied = applied;
+
+        if target_layout != applied.max_port {
+            api.set_midi_port_layout(target_layout)
+                .map_err(LayoutApplyFailure::Error)?;
+            applied.max_port = target_layout;
+        }
+
+        let mut notice = None;
+        if target_soundfonts != applied.port_soundfonts && !playback_active.load(Ordering::SeqCst) {
+            match api.apply_port_soundfonts(&target_soundfonts) {
+                Ok(()) => applied.port_soundfonts = target_soundfonts,
+                Err(message) => {
+                    // 后端已按失败端口回退全局；记录已应用避免每帧重试，
+                    // 把原因交给状态栏提示。用户重新提交映射即可再次尝试。
+                    applied.port_soundfonts = target_soundfonts;
+                    notice = Some(message);
+                }
+            }
+        }
+
+        Ok(SynthApplyOutcome { applied, notice })
     });
-    let result = match outcome {
-        Guarded::Done(result) => result.map_err(LayoutApplyFailure::Error),
-        Guarded::Panicked(message) => Err(LayoutApplyFailure::Panicked(message)),
-    };
-    (api, result)
+    match outcome {
+        Guarded::Done(result) => (api, result),
+        Guarded::Panicked(message) => (api, Err(LayoutApplyFailure::Panicked(message))),
+    }
 }
 
 impl MidiManager {
@@ -138,14 +212,28 @@ impl MidiManager {
     }
 
     /// 启动一次性后台重建：防抖结束后取最新期望值执行，完成后归还 API。
-    fn start_layout_apply(&mut self) {
+    ///
+    /// REND-005：同一次 worker 同时落定「布局 + 端口音色库」，避免两条链路
+    /// 争抢 API 所有权；布局未变时不会调用 `set_midi_port_layout`。
+    pub(super) fn start_layout_apply(&mut self) {
         let Some(api) = self.api.take() else {
             return;
         };
         let desired = Arc::clone(&self.layout_desired);
+        let desired_soundfonts = Arc::clone(&self.port_soundfonts_desired);
+        let playback_active = Arc::clone(&self.playback_active);
+        let applied =
+            Self::applied_synth_state(self.spawned_midi_max_port, &self.spawned_port_soundfonts);
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let (api, result) = run_layout_apply_worker(api, desired, LAYOUT_DEBOUNCE);
+            let (api, result) = run_synth_apply_worker(
+                api,
+                desired,
+                desired_soundfonts,
+                applied,
+                playback_active,
+                LAYOUT_DEBOUNCE,
+            );
             // 先归还所有权：send 之后 API 已离开 worker，后续收尾都在主线程。
             let _ = tx.send(LayoutApplyDone { api, result });
         });
@@ -155,9 +243,17 @@ impl MidiManager {
             timed_out: false,
         });
         tracing::info!(
-            "MIDI(后台): 端口布局重建已排程（{:?} 防抖后执行）",
+            "MIDI(后台): 合成状态应用已排程（{:?} 防抖后执行）",
             LAYOUT_DEBOUNCE
         );
+    }
+
+    /// 构造“已应用状态”快照（供 worker 判断是否需要重建/换库）。
+    fn applied_synth_state(max_port: u8, port_soundfonts: &PortSoundfontMap) -> SynthAppliedState {
+        SynthAppliedState {
+            max_port,
+            port_soundfonts: port_soundfonts.clone(),
+        }
     }
 
     /// 每帧轮询后台重建结果（由 `handle_midi_reinit` 调用）。
@@ -227,17 +323,23 @@ impl MidiManager {
         }
     }
 
-    /// 收尾一次后台重建：归还 API、更新 spawned、必要时追赶最新期望值。
+    /// 收尾一次后台重建：归还 API、更新已应用状态、必要时追赶最新期望值。
     fn finish_layout_apply(&mut self, done: LayoutApplyDone, started: Instant) {
         self.api = Some(done.api);
         match done.result {
-            Ok(applied) => {
-                self.spawned_midi_max_port = applied;
+            Ok(outcome) => {
+                self.spawned_midi_max_port = outcome.applied.max_port;
+                self.spawned_port_soundfonts = outcome.applied.port_soundfonts;
                 tracing::info!(
-                    "MIDI(后台): 端口布局应用完成 max_port={applied}（自排程起 {:?}）",
+                    "MIDI(后台): 合成状态应用完成 max_port={}（自排程起 {:?}）",
+                    self.spawned_midi_max_port,
                     started.elapsed()
                 );
-                if layout_needs_catch_up(self.desired_midi_max_port, applied) {
+                if let Some(notice) = outcome.notice {
+                    tracing::warn!("MIDI(后台): 端口音色库回退提示: {notice}");
+                    self.pending_backend_notice = Some(notice);
+                }
+                if self.synth_needs_catch_up() {
                     tracing::info!(
                         "MIDI(后台): 防抖期间期望值已更新，追赶到 max_port={}",
                         self.desired_midi_max_port
@@ -260,6 +362,19 @@ impl MidiManager {
                 }
             }
         }
+    }
+
+    /// 是否还有未落定的合成状态（布局或停播后的端口音色库）。
+    ///
+    /// 播放中不追赶音色库：worker 会跳过，追赶只会形成空转循环；停播后由
+    /// [`Self::tick_port_soundfonts`] 排程。
+    fn synth_needs_catch_up(&self) -> bool {
+        let layout_pending =
+            layout_needs_catch_up(self.desired_midi_max_port, self.spawned_midi_max_port);
+        let soundfonts_pending =
+            soundfonts_need_align(&self.desired_port_soundfonts, &self.spawned_port_soundfonts)
+                && !self.playback_active.load(Ordering::SeqCst);
+        layout_pending || soundfonts_pending
     }
 }
 

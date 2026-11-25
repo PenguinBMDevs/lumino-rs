@@ -41,6 +41,30 @@ impl MidiManager {
         }
     }
 
+    /// 异步初始化完成后是否需要对齐布局或端口音色库（REND-002 / REND-005）。
+    ///
+    /// 音色库对齐同时承担“初始化期加载失败可见化”：XSynth 初始化已下发映射，
+    /// 但 `spawned_port_soundfonts` 仍为空，会再应用一次由 worker 产出提示
+    /// （缓存命中，代价可忽略）。
+    fn needs_synth_alignment(&self) -> bool {
+        layout::synth_needs_alignment(
+            self.desired_midi_max_port,
+            self.spawned_midi_max_port,
+            &self.desired_port_soundfonts,
+            &self.spawned_port_soundfonts,
+        )
+    }
+
+    /// 异步初始化完成后：如需对齐，统一排程后台 worker（布局 + 端口音色库）。
+    pub(super) fn align_synth_after_init(&mut self, backend: &str) {
+        if !self.needs_synth_alignment() {
+            return;
+        }
+        let desired = self.desired_midi_max_port;
+        tracing::info!("{backend}: 初始化后对齐合成状态 max_port={desired}（后台应用）");
+        self.apply_midi_port_layout_deferred(desired);
+    }
+
     /// 处理 XSynth 异步初始化结果（非阻塞）
     fn finish_xsynth_init(&mut self) -> AsyncInitOutcome {
         let rx = match &self.xsynth_init_rx {
@@ -64,16 +88,9 @@ impl MidiManager {
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
 
-                // REND-002 / DEBT-05 #122：初始化期间文档可能已装载/切换，完成时
-                // 对齐端口布局；重建较慢，统一下发后台防抖 worker（不卡 UI）。
-                if layout::should_align_after_init(
-                    self.desired_midi_max_port,
-                    self.spawned_midi_max_port,
-                ) {
-                    let desired = self.desired_midi_max_port;
-                    tracing::info!("XSynth: 初始化后端口布局对齐 max_port={desired}（后台重建）");
-                    self.apply_midi_port_layout_deferred(desired);
-                }
+                // REND-002 / REND-005：初始化期间文档可能已装载/切换，
+                // 完成时统一对齐布局与端口音色库（后台 worker，不卡 UI）。
+                self.align_synth_after_init("XSynth");
 
                 AsyncInitOutcome::Switched
             }
@@ -127,18 +144,10 @@ impl MidiManager {
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
 
-                // REND-002 / DEBT-05 #122：初始化期间文档可能已装载/切换，完成时
-                // 对齐端口布局（后台防抖重建，同 XSynth 口径）。
-                if layout::should_align_after_init(
-                    self.desired_midi_max_port,
-                    self.spawned_midi_max_port,
-                ) {
-                    let desired = self.desired_midi_max_port;
-                    tracing::info!(
-                        "LGS (GPU): 初始化后端口布局对齐 max_port={desired}（后台重建）"
-                    );
-                    self.apply_midi_port_layout_deferred(desired);
-                }
+                // REND-002 / REND-005：初始化期间文档可能已装载/切换，
+                // 完成时统一对齐布局与端口音色库。
+                // 非 XSynth 后端会在此产出“不支持按端口音色库”提示。
+                self.align_synth_after_init("LGS (GPU)");
 
                 AsyncInitOutcome::Switched
             }
@@ -188,14 +197,8 @@ impl MidiManager {
                 self.is_maestro_initializing = false;
                 self.maestro_init_rx = None;
 
-                if layout::should_align_after_init(
-                    self.desired_midi_max_port,
-                    self.spawned_midi_max_port,
-                ) {
-                    let desired = self.desired_midi_max_port;
-                    tracing::info!("Maestro: 初始化后端口布局对齐 max_port={desired}（后台重建）");
-                    self.apply_midi_port_layout_deferred(desired);
-                }
+                // REND-002 / REND-005：对齐布局与端口音色库。
+                self.align_synth_after_init("Maestro");
 
                 AsyncInitOutcome::Switched
             }

@@ -241,6 +241,7 @@ lumino-export = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
+lumino-midi-model = { workspace = true }
 lumino-diagnostics = { workspace = true }
 lumino-ui = { workspace = true }
 lumino-ui-runtime = { path = "crates/editor/ui-runtime" }
@@ -365,7 +366,6 @@ wgpu = { workspace = true }
 chrono = { workspace = true }
 # 剪贴板探测示例 (examples/domino_clipboard_probe.rs) 依赖
 encoding_rs = { workspace = true }
-lumino-midi-model = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { workspace = true }

@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use lumino_midi_model::multi_port::PortSoundfontMap;
+
 use crate::api::layout::{LayoutAction, layout_action};
 use crate::api::xsynth_output::XSynthOutputConn;
 use crate::{
@@ -73,5 +75,10 @@ impl SynthControl for XSynth {
                 self.rebuild_with_layout(max_port)
             }
         }
+    }
+
+    /// REND-005 / DEC-002：不重建管线、不杀音，只逐通道更新音色库矩阵。
+    fn apply_port_soundfonts(&mut self, map: &PortSoundfontMap) -> Result<(), String> {
+        self.apply_port_soundfonts_runtime(map)
     }
 }

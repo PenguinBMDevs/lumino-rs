@@ -51,13 +51,20 @@ impl MidiManager {
         // 装载文档，装载后由 apply_midi_port_layout 再对齐）。
         let desired_midi_max_port = self.desired_midi_max_port;
         self.spawned_midi_max_port = desired_midi_max_port;
+        // REND-005：端口音色库映射随初始化一并应用（初始化后仍会对齐一次，
+        // 用于把加载失败/回退全局的原因推送到状态栏）。
+        let port_soundfonts = self.desired_port_soundfonts.clone();
 
         // 在后台线程中初始化 XSynth
         let ui_config_clone = ui_config.clone();
         std::thread::spawn(move || {
             tracing::info!("XSynth: 后台线程开始初始化");
 
-            let xsynth_result = Self::init_xsynth_blocking(&ui_config_clone, desired_midi_max_port);
+            let xsynth_result = Self::init_xsynth_blocking(
+                &ui_config_clone,
+                desired_midi_max_port,
+                port_soundfonts,
+            );
 
             match &xsynth_result {
                 Ok(_) => tracing::info!("XSynth: 后台初始化成功"),
@@ -76,7 +83,11 @@ impl MidiManager {
     }
 
     /// 阻塞式初始化 XSynth（用于后台线程）
-    fn init_xsynth_blocking(ui_config: &UiConfig, midi_max_port: u8) -> MidiInitResult {
+    fn init_xsynth_blocking(
+        ui_config: &UiConfig,
+        midi_max_port: u8,
+        port_soundfonts: PortSoundfontMap,
+    ) -> MidiInitResult {
         use lumino_midi_io::{ApiKind, api::xsynth::XSynthOptions};
 
         let path = PathBuf::from(&ui_config.soundfont_path);
@@ -97,6 +108,8 @@ impl MidiManager {
             audio_output_device: ui_config.audio_output_device.clone(),
             // REND-002：文档端口布局（0 = 单端口/Midi）
             midi_max_port,
+            // REND-005：端口音色库映射（空映射 = 全局库）
+            port_soundfonts,
         };
 
         let api = lumino_midi_io::new_api_with_options(&api_kind, Some(options))
