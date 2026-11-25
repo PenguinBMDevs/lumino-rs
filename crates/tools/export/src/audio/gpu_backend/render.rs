@@ -312,7 +312,79 @@ pub fn gpu_backend_available() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::downmix_stereo_to_mono;
+    use super::*;
+    use std::path::PathBuf;
+
+    fn config_with_soundfont(path: PathBuf) -> AudioRenderConfig {
+        AudioRenderConfig {
+            soundfonts: vec![path],
+            ..Default::default()
+        }
+    }
+
+    /// 内存模式保留「请检查路径或重新选择」提示（历史文案）。
+    #[test]
+    fn memory_entry_keeps_path_hint_for_missing_soundfont() {
+        let config = config_with_soundfont(PathBuf::from("definitely_missing.sf2"));
+        let err = validate_export_inputs(&config, GpuEntry::InMemory)
+            .expect_err("不存在的音色库必须被拒绝");
+        let msg = err.to_string();
+        assert!(msg.contains("音色库文件不存在"), "{msg}");
+        assert!(msg.contains("请检查路径或重新选择"), "{msg}");
+    }
+
+    /// 流式模式只给路径，不带额外提示（历史文案）。
+    #[test]
+    fn streaming_entry_keeps_plain_missing_soundfont_error() {
+        let config = config_with_soundfont(PathBuf::from("definitely_missing.sf2"));
+        let err = validate_export_inputs(&config, GpuEntry::Streaming)
+            .expect_err("不存在的音色库必须被拒绝");
+        let msg = err.to_string();
+        assert!(msg.contains("音色库文件不存在"), "{msg}");
+        assert!(!msg.contains("请检查路径"), "{msg}");
+    }
+
+    /// 空音色库列表的错误两条入口一致。
+    #[test]
+    fn empty_soundfont_list_error_is_shared() {
+        let config = AudioRenderConfig::default();
+        let memory = validate_export_inputs(&config, GpuEntry::InMemory)
+            .expect_err("空音色库必须被拒绝")
+            .to_string();
+        let streaming = validate_export_inputs(&config, GpuEntry::Streaming)
+            .expect_err("空音色库必须被拒绝")
+            .to_string();
+        assert_eq!(memory, streaming);
+        assert!(memory.contains("未指定音色库文件"), "{memory}");
+    }
+
+    /// 非 .sf2/.sfz 扩展名被统一 helper 拒绝（两条入口同文案）。
+    #[test]
+    fn unsupported_extension_is_rejected_for_both_entries() {
+        let dir = tempfile::tempdir().expect("创建临时目录失败");
+        let path = dir.path().join("sound.txt");
+        std::fs::write(&path, b"not a soundfont").expect("写入夹具失败");
+        for entry in [GpuEntry::InMemory, GpuEntry::Streaming] {
+            let config = config_with_soundfont(path.clone());
+            let msg = validate_export_inputs(&config, entry)
+                .expect_err("非法扩展名必须被拒绝")
+                .to_string();
+            assert!(msg.contains("仅支持 .sf2/.sfz"), "{msg}");
+        }
+    }
+
+    /// 假 SF2（RIFF 头不符）被统一 helper 拒绝。
+    #[test]
+    fn non_riff_sf2_is_rejected() {
+        let dir = tempfile::tempdir().expect("创建临时目录失败");
+        let path = dir.path().join("broken.sf2");
+        std::fs::write(&path, b"NOPE1234").expect("写入夹具失败");
+        let config = config_with_soundfont(path);
+        let msg = validate_export_inputs(&config, GpuEntry::InMemory)
+            .expect_err("非 RIFF 头必须被拒绝")
+            .to_string();
+        assert!(msg.contains("头应为 RIFF"), "{msg}");
+    }
 
     /// DEBT-04 #121：Mono 导出必须是真降混（0.5*(L+R)），不是丢掉右声道。
     #[test]
