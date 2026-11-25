@@ -58,6 +58,8 @@ pub enum DialogType {
     ShapeDrawer,
     /// 撤销历史（独立 OS 窗口；DRAW-035）
     History,
+    /// 端口音色库（REND-005；独立 OS 窗口，从工程设置打开）
+    PortSoundfonts,
     /// 混音台（独立 OS 窗口）
     Mixer,
 }

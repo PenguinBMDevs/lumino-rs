@@ -90,6 +90,18 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 注入端口音色库对话框数据并打开（独立窗口；REND-005）。
+    pub fn set_port_soundfonts_dialog(
+        &mut self,
+        map: lumino_midi_model::multi_port::PortSoundfontMap,
+        document_max_port: u8,
+    ) {
+        self.root
+            .set_port_soundfonts_dialog(&map, document_max_port);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 当前工程级图片转 MIDI 参数（保存 `.lmpj` / 云保存时写入 metadata）
     pub fn get_project_i2m_config(&self) -> lumino_core::I2mSettings {
         self.root.right_sidebar.config.to_settings()

@@ -39,6 +39,8 @@ pub enum DialogResult {
     LoadConfirm,
     /// 取消操作
     Cancel,
+    /// 端口音色库映射（REND-005，独立窗口；确认后应用到工程）
+    PortSoundfonts(Box<lumino_midi_model::multi_port::PortSoundfontMap>),
     /// 保存确认对话框结果（关闭 / 打开 / 退出前的未保存更改确认）
     SaveConfirm(crate::message::SaveConfirmAction),
     /// 自动保存恢复对话框（启动时是否恢复上次会话的自动保存；DEBT-12）

@@ -296,6 +296,30 @@ impl RunnerInner {
                 let main_ui = self.window_state.window.ui_mut();
                 main_ui.apply_settings((**settings).clone(), theme.clone());
             }
+            DialogResult::PortSoundfonts(map) => {
+                let map = (**map).clone();
+                tracing::info!("应用端口音色库映射（{} 个端口）", map.len());
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .apply_project_port_soundfonts(map.clone());
+                // 实时合成器：空闲立即应用，播放中延后到停播（P2 状态机）。
+                self.midi_state
+                    .midi
+                    .apply_port_soundfonts_deferred(map.clone());
+                // 工程设置对话框可能仍开着：同步快照，避免摘要停留在旧值。
+                if let Some(id) = self
+                    .window_state
+                    .dialog_manager
+                    .first_dialog_id_of_type(DialogType::ProjectSettings)
+                    && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
+                {
+                    if let Some(ui) = dialog.ui_mut() {
+                        ui.apply_project_port_soundfonts(map);
+                    }
+                    dialog.request_redraw();
+                }
+            }
             _ => {
                 let is_permanent_delete =
                     matches!(&result, DialogResult::RecoverTrackPermanentlyDelete { .. });

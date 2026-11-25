@@ -55,6 +55,12 @@ impl DialogHandler {
                 // 真正写入生成侧在「确定」后的 ApplyProjectSettings 链路。
                 root.state.project_settings_dialog.use10 = value;
             }
+            ProjectSettingsAction::OpenPortSoundfonts => {
+                tracing::info!("Root: 请求打开端口音色库对话框");
+                crate::event::emit(crate::event::Event::Window(
+                    crate::event::window::Event::open_port_soundfonts_dialog(),
+                ));
+            }
         }
         None
     }

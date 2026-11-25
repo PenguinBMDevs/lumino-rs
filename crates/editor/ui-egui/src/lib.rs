@@ -45,6 +45,7 @@ pub mod memory_monitor;
 pub mod mixer;
 pub mod overlay_window;
 pub mod piano_roll_context_menu;
+pub mod port_soundfonts;
 pub mod project_settings;
 pub mod recover_track;
 pub mod remote_cursors;

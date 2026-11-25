@@ -290,6 +290,8 @@ impl RunnerInner {
                 let note_count_display = self.window_state.window.ui().note_count_display();
                 // DRAW-032：勾选状态随对话框数据快照带过去（独立窗口只有自己的 Root）
                 let use10 = self.window_state.window.ui().get_project_use10();
+                // REND-005：端口音色库快照（对话框内展示摘要 + 入口）
+                let port_soundfonts = self.window_state.window.ui().get_project_port_soundfonts();
                 self.window_state.window.ui_mut().set_project_settings_data(
                     lumino_ui::root::ProjectSettingsDialogData {
                         title: display_title.clone(),
@@ -302,6 +304,7 @@ impl RunnerInner {
                         note_count_display,
                         time_signatures,
                         use10,
+                        port_soundfonts,
                     },
                 );
 

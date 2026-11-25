@@ -25,6 +25,8 @@ pub(crate) enum PathDialogTask {
     AudioExportMidi,
     /// 音频导出：音色库文件
     AudioExportSoundfont,
+    /// 端口音色库对话框：指定端口选择音色库（REND-005）
+    PortSoundfonts(u8),
     /// 视频导出：计数器字体
     VideoCounterFont,
     /// 视频导出：计数器 CSV 输出
@@ -103,6 +105,11 @@ impl Root {
             }
             PathDialogTask::AudioExportSoundfont => {
                 self.state.audio_export_dialog.soundfont_path = path.to_string_lossy().to_string();
+            }
+            PathDialogTask::PortSoundfonts(port) => {
+                self.state
+                    .port_soundfonts_dialog
+                    .set_path(port, path.to_string_lossy().to_string());
             }
             PathDialogTask::VideoCounterFont => {
                 self.state.video_export_dialog.counter_font_path =

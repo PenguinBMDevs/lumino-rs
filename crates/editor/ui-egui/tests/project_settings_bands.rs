@@ -42,6 +42,9 @@ fn model() -> ProjectSettingsModel {
             label: "音符总量".to_owned(),
             value: "1,234".to_owned(),
         }),
+        port_soundfonts_label: "端口音色库".to_owned(),
+        port_soundfonts_summary: "全部使用全局音色库".to_owned(),
+        port_soundfonts_button: "编辑…".to_owned(),
         ok: "确定".to_owned(),
         cancel: "取消".to_owned(),
     }
@@ -121,6 +124,19 @@ fn use10_switch_dispatches_new_state() {
         actions.borrow().last(),
         Some(&ProjectSettingsAction::Use10Changed(true)),
         "开关点击应回传 Use10Changed(true)"
+    );
+}
+
+/// REND-005：「端口音色库」入口按钮回传 OpenPortSoundfonts。
+#[test]
+fn port_soundfonts_entry_dispatches_open_action() {
+    let (mut harness, actions) = make_harness(model());
+    harness.get_by_label("编辑…").click();
+    harness.run();
+    assert_eq!(
+        actions.borrow().last(),
+        Some(&ProjectSettingsAction::OpenPortSoundfonts),
+        "端口音色库入口应回传 OpenPortSoundfonts"
     );
 }
 

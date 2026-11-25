@@ -33,6 +33,7 @@ mod help;
 mod history;
 mod load_confirm;
 mod memory_monitor;
+mod port_soundfonts;
 mod project_settings;
 mod recover_track;
 mod speed_change;
@@ -100,6 +101,9 @@ impl Root {
             }
             DialogType::ProjectSettings => Some(DialogModel::ProjectSettings(Box::new(
                 self.project_settings_model(),
+            ))),
+            DialogType::PortSoundfonts => Some(DialogModel::PortSoundfonts(Box::new(
+                self.port_soundfonts_model(),
             ))),
             DialogType::History => Some(DialogModel::History(Box::new(self.history_model()))),
             DialogType::BatchEdit => {

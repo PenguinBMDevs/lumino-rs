@@ -319,6 +319,7 @@ fn test_reset_project_settings_restores_defaults() {
         note_count_display: lumino_core::storage::config::NoteCountDisplay::ProjectSettings,
         time_signatures: vec![(0, 6, 8)],
         use10: true,
+        port_soundfonts: lumino_midi_model::multi_port::PortSoundfontMap::default(),
     });
     assert_eq!(root.state.project_settings_dialog.title, "我的工程");
     assert_eq!(root.state.project_settings_dialog.tempo, "96");

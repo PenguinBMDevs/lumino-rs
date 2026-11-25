@@ -1,6 +1,7 @@
 //! 工程设置对话框数据管理
 
 use lumino_core::tr;
+use lumino_midi_model::multi_port::PortSoundfontMap;
 
 use crate::root::Root;
 
@@ -27,6 +28,8 @@ pub struct ProjectSettingsDialogData {
     pub time_signatures: Vec<(u32, u8, u8)>,
     /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
     pub use10: bool,
+    /// 端口音色库映射（REND-005；仅用于对话框内摘要展示与「编辑…」入口）
+    pub port_soundfonts: PortSoundfontMap,
 }
 
 impl Root {
@@ -105,6 +108,8 @@ impl Root {
             .project_settings_dialog
             .time_signature_denominator = denominator.to_string();
         self.state.project_settings_dialog.use10 = data.use10;
+        // REND-005：对话框是独立 Root，映射快照由 Runner 注入；摘要/入口据此展示
+        self.port_soundfonts = data.port_soundfonts;
     }
 
     /// 应用工程设置到主窗口

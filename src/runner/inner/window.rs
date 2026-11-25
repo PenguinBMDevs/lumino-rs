@@ -116,6 +116,10 @@ impl RunnerInner {
                 // 设置窗口同步），由 `lifecycle/dialog.rs` 直接分派。
                 tracing::warn!("素材删除 / BPM 上限结果不应通过 apply_dialog_result_to_ui 处理");
             }
+            DialogResult::PortSoundfonts(_) => {
+                // REND-005：需要同时更新 MidiManager，由 `lifecycle/dialog.rs` 直接分派。
+                tracing::warn!("端口音色库结果不应通过 apply_dialog_result_to_ui 处理");
+            }
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }

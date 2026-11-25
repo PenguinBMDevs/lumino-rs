@@ -3,7 +3,7 @@
 use super::*;
 
 /// 全部「真实」对话框类型（`None` 除外）
-const ALL_DIALOGS: [DialogType; 25] = [
+const ALL_DIALOGS: [DialogType; 26] = [
     DialogType::CustomPrecision,
     DialogType::Collaboration,
     DialogType::LoadConfirm,
@@ -28,6 +28,7 @@ const ALL_DIALOGS: [DialogType; 25] = [
     DialogType::About,
     DialogType::ShapeDrawer,
     DialogType::History,
+    DialogType::PortSoundfonts,
     DialogType::Mixer,
 ];
 

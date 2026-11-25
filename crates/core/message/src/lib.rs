@@ -30,6 +30,7 @@ pub mod loop_range;
 pub mod mask_panel;
 /// 素材删除确认对话框动作（DRAW-045，独立窗口）
 pub mod material_delete;
+pub mod port_soundfonts;
 pub mod project_settings;
 pub mod recover_track;
 pub mod right_sidebar;
@@ -66,6 +67,7 @@ pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use mask_panel::MaskPanelAction;
 pub use material_delete::MaterialDeleteDialogAction;
+pub use port_soundfonts::PortSoundfontsAction;
 pub use project_settings::ProjectSettingsAction;
 pub use recover_track::RecoverTrackAction;
 pub use right_sidebar::{I2mConfigField, I2mSelectField, RightSidebarAction};

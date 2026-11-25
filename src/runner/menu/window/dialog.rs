@@ -153,6 +153,25 @@ impl RunnerInner {
             CloseProjectSettingsDialog => {
                 self.close_dialog_traced(DialogType::ProjectSettings, "工程设置")
             }
+            OpenPortSoundfontsDialog => {
+                // REND-005：独立窗口；重复打开只聚焦，不叠开第二个。
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::PortSoundfonts)
+                {
+                    tracing::info!("端口音色库窗口已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::PortSoundfonts)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    self.open_dialog_traced(DialogType::PortSoundfonts, "端口音色库");
+                }
+            }
             ApplyProjectSettings {
                 title,
                 tempo,

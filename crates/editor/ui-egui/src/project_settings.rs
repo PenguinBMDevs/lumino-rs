@@ -44,6 +44,8 @@ pub enum ProjectSettingsAction {
     DenominatorChanged(String),
     /// 启用 / 停用通道 10（DRAW-032）。
     Use10Changed(bool),
+    /// 打开「端口音色库」独立窗口（REND-005）。
+    OpenPortSoundfonts,
     /// 确定：生产侧校验 BPM / 拍号后写回工程。
     Confirm,
     /// 取消：关闭对话框。
@@ -172,6 +174,9 @@ fn form(ui: &mut egui::Ui, model: &ProjectSettingsModel, width: f32) {
     time_signature_row(ui, model);
 
     ui.add_space(SECTION_GAP);
+    port_soundfonts_section(ui, model);
+
+    ui.add_space(SECTION_GAP);
     label(ui, &model.created_label);
     value(ui, &model.created);
 
@@ -255,6 +260,31 @@ fn bpm_row(ui: &mut egui::Ui, model: &ProjectSettingsModel, width: f32) {
             RichText::new("BPM").size(14.0).color(theme::text_dim()),
         ));
     });
+}
+
+/// REND-005：端口音色库入口（工程设置里只做入口 + 摘要，编辑在独立窗口）。
+fn port_soundfonts_section(ui: &mut egui::Ui, model: &ProjectSettingsModel) {
+    ui.horizontal(|ui| {
+        label(ui, &model.port_soundfonts_label);
+        ui.add_space(8.0);
+        let button = crate::widgets::text_button(
+            RichText::new(&model.port_soundfonts_button)
+                .size(12.0)
+                .color(theme::text()),
+        )
+        .fill(theme::toolbar_bg())
+        .corner_radius(CornerRadius::same(4));
+        if ui.add(button).clicked() {
+            push_action(ui.ctx(), ProjectSettingsAction::OpenPortSoundfonts);
+        }
+    });
+    if !model.port_soundfonts_summary.is_empty() {
+        ui.add(egui::Label::new(
+            RichText::new(&model.port_soundfonts_summary)
+                .size(12.0)
+                .color(theme::text_dim()),
+        ));
+    }
 }
 
 /// 拍号行：60 宽分子 + 4 + 「/」 + 4 + 60 宽分母。

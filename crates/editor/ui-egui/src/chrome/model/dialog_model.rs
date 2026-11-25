@@ -7,9 +7,9 @@ use super::{
     AboutModel, AutosaveRecoverModel, BatchEditModel, BrushSettingsModel, CloudBrowserModel,
     CloudConnectModel, CloudNoticeModel, CollaborationModel, CustomPrecisionModel,
     DeviceWarningModel, DrawSettingsModel, ExportProgressModel, HelpModel, HistoryModel,
-    LoadConfirmModel, MaterialDeleteModel, MemoryMonitorModel, ProgressModel, ProjectSettingsModel,
-    RecoverTrackModel, SaveConfirmModel, SettingsSnapshot, SpeedChangeModel, TempoMaxBpmModel,
-    VideoExportOverlayModel,
+    LoadConfirmModel, MaterialDeleteModel, MemoryMonitorModel, PortSoundfontsModel, ProgressModel,
+    ProjectSettingsModel, RecoverTrackModel, SaveConfirmModel, SettingsSnapshot, SpeedChangeModel,
+    TempoMaxBpmModel, VideoExportOverlayModel,
 };
 
 /// 独立对话框窗口的只读模型。
@@ -23,6 +23,8 @@ pub enum DialogModel {
     Settings(Box<SettingsSnapshot>),
     /// 工程设置（`DialogType::ProjectSettings`，系统原生标题栏，整窗内容）。
     ProjectSettings(Box<ProjectSettingsModel>),
+    /// 端口音色库（`DialogType::PortSoundfonts`，REND-005）。
+    PortSoundfonts(Box<PortSoundfontsModel>),
     /// 撤销历史（`DialogType::History`，只读时间线 + 跳转）。
     History(Box<HistoryModel>),
     /// 批量编辑（`DialogType::BatchEdit`）。

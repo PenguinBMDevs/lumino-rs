@@ -25,6 +25,7 @@ mod help;
 mod mask_panel;
 mod mode_animation_guard;
 mod piano_roll;
+mod port_soundfonts;
 mod recover_track;
 mod rendering_panel_exit;
 mod selection_drift;

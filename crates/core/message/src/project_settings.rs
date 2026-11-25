@@ -23,4 +23,6 @@ pub enum ProjectSettingsAction {
     TimeSignatureDenominatorChanged(String),
     /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
     Use10Changed(bool),
+    /// 打开「端口音色库」独立窗口（REND-005）
+    OpenPortSoundfonts,
 }
