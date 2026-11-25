@@ -48,6 +48,16 @@ enum MaestroInitResult {
     Failed(String),
 }
 
+/// 在途的软件合成后端异步初始化（XSynth / LGS / Maestro 互斥）。
+///
+/// 变体携带各自的接收器；`PendingInit::*` 存在即表示「该后端正在初始化」，
+/// 不再需要独立的 `is_*_initializing` 布尔字段。
+enum PendingInit {
+    XSynth(Receiver<XSynthInitResult>),
+    Lgs(Receiver<LgsInitResult>),
+    Maestro(Receiver<MaestroInitResult>),
+}
+
 /// 异步后端初始化的落定结果（#127）。
 ///
 /// 失败路径同样需要调用方重连播放输出：同步兜底后端（System）的连接已在
@@ -79,10 +89,11 @@ pub struct MidiManager {
     needs_reinit: bool,
     /// 配置中偏好的后端（用于异步初始化后知道应该切换到哪个后端）
     preferred_backend: SynthBackend,
-    /// XSynth 异步初始化接收器
-    xsynth_init_rx: Option<Receiver<XSynthInitResult>>,
-    /// 是否正在异步初始化 XSynth
-    is_xsynth_initializing: bool,
+    /// 在途的软件合成后端异步初始化（三者互斥，`None` = 无在途）
+    ///
+    /// 此前用「`Option<Receiver<_>>` + `bool is_*_initializing`」成对字段表达，
+    /// 两字段可能不一致；改为单一枚举后「哪个后端在途」只有一处真相。
+    pending_init: Option<PendingInit>,
     /// XSynth 音色库路径（用于 create_additional_output 回退创建时重用）
     xsynth_soundfont_path: String,
     /// XSynth 缓冲区大小（毫秒）
@@ -97,10 +108,6 @@ pub struct MidiManager {
     xsynth_voice_target_ratio: f64,
     /// XSynth 过载保命闸（软 NPS 闸，默认关闭）
     xsynth_soft_nps_gate: bool,
-    /// LGS (GPU) 异步初始化接收器
-    lgs_init_rx: Option<Receiver<LgsInitResult>>,
-    /// 是否正在异步初始化 LGS (GPU)
-    is_lgs_initializing: bool,
     /// LGS (GPU) 音色库路径（用于 create_additional_output 回退创建时重用）
     lgs_soundfont_path: String,
     /// LGS (GPU) 渲染采样率（Hz）
@@ -111,10 +118,6 @@ pub struct MidiManager {
     lgs_max_voices_per_key: usize,
     /// LGS (GPU) 是否使用 64 点 sinc 高质量插值
     lgs_use_sinc: bool,
-    /// Maestro 异步初始化接收器（AUD-009）
-    maestro_init_rx: Option<Receiver<MaestroInitResult>>,
-    /// 是否正在异步初始化 Maestro
-    is_maestro_initializing: bool,
     /// Maestro 统计读取器（布局重建后仍指向共享引擎）
     maestro_stats: Option<MaestroStatsReader>,
     /// 系统 MIDI (WinMM) 输出设备 ID（None = 第一个/默认）
@@ -153,8 +156,7 @@ impl Default for MidiManager {
             active_backend: SynthBackend::System,
             needs_reinit: false,
             preferred_backend: SynthBackend::System,
-            xsynth_init_rx: None,
-            is_xsynth_initializing: false,
+            pending_init: None,
             xsynth_soundfont_path: String::new(),
             xsynth_buffer_ms: 0.0,
             xsynth_sample_rate: 0,
@@ -162,15 +164,11 @@ impl Default for MidiManager {
             xsynth_global_voice_limit: None,
             xsynth_voice_target_ratio: 1.0 - 1.0 / std::f64::consts::E,
             xsynth_soft_nps_gate: false,
-            lgs_init_rx: None,
-            is_lgs_initializing: false,
             lgs_soundfont_path: String::new(),
             lgs_sample_rate: 0,
             lgs_block_size: 0,
             lgs_max_voices_per_key: 0,
             lgs_use_sinc: false,
-            maestro_init_rx: None,
-            is_maestro_initializing: false,
             maestro_stats: None,
             winmm_output_device_id: None,
             desired_midi_max_port: 0,
@@ -254,7 +252,7 @@ mod tests {
             .expect("未设置音色库时应产生可见提示");
         assert!(notice.contains("LGS"), "提示应说明 LGS 未生效: {notice}");
         assert!(
-            !manager.is_lgs_initializing(),
+            !manager.software_backend_pending(),
             "未设置音色库不应启动后台初始化"
         );
         assert!(
@@ -279,7 +277,7 @@ mod tests {
             .take_pending_backend_notice()
             .expect("音色库文件不存在时应产生可见提示");
         assert!(notice.contains("LGS"), "提示应说明 LGS 未生效: {notice}");
-        assert!(!manager.is_lgs_initializing());
+        assert!(!manager.software_backend_pending());
     }
 
     /// 返工 #149：未设置音色库时选择 XSynth 同样提前 bail（false + 可见提示），
@@ -303,7 +301,7 @@ mod tests {
             "提示应说明 XSynth 未生效: {notice}"
         );
         assert!(
-            !manager.is_xsynth_initializing(),
+            !manager.software_backend_pending(),
             "bail 后不应处于初始化状态"
         );
     }
@@ -313,7 +311,7 @@ mod tests {
     #[test]
     fn test_create_additional_output_deferred_while_software_backend_pending() {
         let mut manager = MidiManager {
-            is_xsynth_initializing: true,
+            pending_init: Some(PendingInit::XSynth(channel().1)),
             ..MidiManager::default()
         };
         assert!(
@@ -326,7 +324,7 @@ mod tests {
         );
 
         let mut manager = MidiManager {
-            is_lgs_initializing: true,
+            pending_init: Some(PendingInit::Lgs(channel().1)),
             ..MidiManager::default()
         };
         assert!(manager.software_backend_pending(), "LGS 在途应报告 pending");
@@ -350,8 +348,7 @@ mod tests {
     fn test_lgs_async_failure_reports_failed_outcome_and_notice() {
         let (tx, rx) = channel();
         let mut manager = MidiManager {
-            is_lgs_initializing: true,
-            lgs_init_rx: Some(rx),
+            pending_init: Some(PendingInit::Lgs(rx)),
             ..MidiManager::default()
         };
         tx.send(LgsInitResult::Failed("音色库加载失败".to_string()))
@@ -360,7 +357,10 @@ mod tests {
         let outcome = manager.check_async_init_complete();
 
         assert_eq!(outcome, AsyncInitOutcome::Failed);
-        assert!(!manager.is_lgs_initializing(), "失败后应结束初始化状态");
+        assert!(
+            !manager.software_backend_pending(),
+            "失败后应结束初始化状态"
+        );
         let notice = manager
             .take_pending_backend_notice()
             .expect("初始化失败应产生可见提示");
@@ -378,5 +378,33 @@ mod tests {
             manager.check_async_init_complete(),
             AsyncInitOutcome::Pending
         );
+    }
+
+    /// 在途且暂无结果时：轮询必须把接收器原样放回，状态不得丢失。
+    ///
+    /// 这是 `PendingInit` 取代 `(rx, bool)` 后的关键不变量——`take()` 后
+    /// 若 `Empty` 分支忘记放回，下一次轮询会误判为「未在初始化」。
+    #[test]
+    fn test_async_init_pending_keeps_receiver() {
+        let (_tx, rx) = channel();
+        let mut manager = MidiManager {
+            pending_init: Some(PendingInit::Lgs(rx)),
+            ..MidiManager::default()
+        };
+
+        assert_eq!(
+            manager.check_async_init_complete(),
+            AsyncInitOutcome::Pending
+        );
+        assert!(
+            matches!(manager.pending_init, Some(PendingInit::Lgs(_))),
+            "Empty 分支必须把接收器放回在途状态"
+        );
+        // 再轮询一次仍是 Pending（接收器仍在，未被丢弃）
+        assert_eq!(
+            manager.check_async_init_complete(),
+            AsyncInitOutcome::Pending
+        );
+        assert!(manager.software_backend_pending());
     }
 }

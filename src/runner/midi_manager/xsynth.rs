@@ -13,7 +13,7 @@ impl MidiManager {
     /// 返回 `false` = 提前 bail（无音色库/文件缺失），调用方应立即回退 System。
     /// 返工 #149：软件后端在途期间启动路径不触碰 System(WinMM)。
     pub(super) fn start_xsynth_async_init(&mut self, ui_config: &UiConfig) -> bool {
-        if self.is_xsynth_initializing {
+        if matches!(self.pending_init, Some(PendingInit::XSynth(_))) {
             // 已在进行中：路径已接管，调用方不得回退 System
             return true;
         }
@@ -42,10 +42,9 @@ impl MidiManager {
         }
 
         tracing::info!("XSynth: 启动后台初始化...");
-        self.is_xsynth_initializing = true;
 
         let (tx, rx) = channel();
-        self.xsynth_init_rx = Some(rx);
+        self.pending_init = Some(PendingInit::XSynth(rx));
 
         // REND-002：把当前文档期望的端口布局带入异步初始化（初始化期间可能尚未
         // 装载文档，装载后由 apply_midi_port_layout 再对齐）。
