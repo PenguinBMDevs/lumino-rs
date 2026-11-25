@@ -35,6 +35,38 @@ pub(super) fn bind_entry_dynamic_uniform(
     }
 }
 
+/// 创建单 bind group、无 push constant 的 compute pipeline。
+///
+/// 三条管线原本各自展开同一段 layout + descriptor 样板，差异只有 shader 源、
+/// 模块 label、pipeline label 与 layout label。
+fn create_compute(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    shader_label: &str,
+    shader_source: String,
+    pipeline_label: &str,
+    layout_label: &str,
+) -> wgpu::ComputePipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(shader_label),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+    });
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(pipeline_label),
+        layout: Some(
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(layout_label),
+                bind_group_layouts: &[layout],
+                push_constant_ranges: &[],
+            }),
+        ),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
+    })
+}
+
 pub(super) fn create_render_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -44,53 +76,30 @@ pub(super) fn create_render_pipeline(
         "const BLOCK: u32 = 512u;",
         &format!("const BLOCK: u32 = {block_size}u;"),
     );
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("render.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    });
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("lumino render"),
-        layout: Some(
-            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("render layout"),
-                bind_group_layouts: &[layout],
-                push_constant_ranges: &[],
-            }),
-        ),
-        module: &module,
-        entry_point: Some("main"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
     // Shader compilation errors surface on the device; validate eagerly by
     // checking the shader module info.
-    Ok(pipeline)
+    Ok(create_compute(
+        device,
+        layout,
+        "render.wgsl",
+        source,
+        "lumino render",
+        "render layout",
+    ))
 }
 
 pub(super) fn create_mix_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
 ) -> Result<wgpu::ComputePipeline, SynthError> {
-    let source = include_str!("shaders/mix.wgsl");
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("mix.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    });
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("lumino mix"),
-        layout: Some(
-            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("mix layout"),
-                bind_group_layouts: &[layout],
-                push_constant_ranges: &[],
-            }),
-        ),
-        module: &module,
-        entry_point: Some("main"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
-    Ok(pipeline)
+    Ok(create_compute(
+        device,
+        layout,
+        "mix.wgsl",
+        include_str!("shaders/mix.wgsl").to_string(),
+        "lumino mix",
+        "mix layout",
+    ))
 }
 
 /// REF-LGS-001: the tiny channel-reduce pass (see `mix_reduce.wgsl`).
@@ -98,26 +107,14 @@ pub(super) fn create_mix_reduce_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
 ) -> Result<wgpu::ComputePipeline, SynthError> {
-    let source = include_str!("shaders/mix_reduce.wgsl");
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("mix_reduce.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    });
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("lumino mix reduce"),
-        layout: Some(
-            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("mix reduce layout"),
-                bind_group_layouts: &[layout],
-                push_constant_ranges: &[],
-            }),
-        ),
-        module: &module,
-        entry_point: Some("main"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
-    Ok(pipeline)
+    Ok(create_compute(
+        device,
+        layout,
+        "mix_reduce.wgsl",
+        include_str!("shaders/mix_reduce.wgsl").to_string(),
+        "lumino mix reduce",
+        "mix reduce layout",
+    ))
 }
 
 #[cfg(test)]

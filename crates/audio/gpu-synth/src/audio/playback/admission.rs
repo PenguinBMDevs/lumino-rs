@@ -200,12 +200,8 @@ impl AdmissionState {
         let prev = LAST_GATE_LOG.load(Ordering::Relaxed);
         if ms - prev > 500 {
             LAST_GATE_LOG.store(ms, Ordering::Relaxed);
-            tracing::warn!(
-                "[NPS-GATE] 发送端限速丢弃 NoteOn 累计 {}（L{}）",
-                self.dropped(),
-                self.level()
-            );
-            eprintln!(
+            log_dual!(
+                warn,
                 "[NPS-GATE] 发送端限速丢弃 NoteOn 累计 {}（L{}）",
                 self.dropped(),
                 self.level()

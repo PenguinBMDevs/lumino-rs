@@ -343,8 +343,7 @@ impl AudioPlayback {
                         // block; print it once so the freeze is diagnosable
                         // instead of looking like a hung process.
                         if !last_err {
-                            tracing::error!("[render] block error: {e}");
-                            eprintln!("[render] block error: {e}");
+                            log_dual!(error, "[render] block error: {e}");
                             last_err = true;
                         }
                         std::thread::sleep(delay / 10);
@@ -434,24 +433,14 @@ impl AudioPlayback {
                             // 不丢弃音频、不淡出声部：仅施加运行时声部上限——
                             // trim 保留最老的声部（正在演奏的乐句），爆点新音符
                             // 被裁掉，音乐"糊过去"而不是被切断。
-                            tracing::warn!(
-                                "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
-                                level as u8
-                            );
-                            eprintln!(
+                            log_dual!(warn, 
                                 "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
                                 level as u8
                             );
                         } else if leaving {
                             let cutoff = clean_since_frame.unwrap_or(synth.global_frame());
                             let faded = synth.fade_voices_spawned_before(cutoff);
-                            tracing::warn!(
-                                "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
-                                faded,
-                                cutoff,
-                                level as u8
-                            );
-                            eprintln!(
+                            log_dual!(warn, 
                                 "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
                                 faded,
                                 cutoff,
@@ -460,17 +449,7 @@ impl AudioPlayback {
                         }
                         let voices = synth.voice_count();
                         let applied_limit = synth.set_runtime_voice_limit(governor.voice_limit());
-                        tracing::warn!(
-                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
-                            level as u8,
-                            elapsed / total,
-                            voices,
-                            applied_limit,
-                            drain_outcome.processed,
-                            drain_outcome.dropped_expired,
-                            drain_outcome.dropped_budget
-                        );
-                        eprintln!(
+                        log_dual!(warn, 
                             "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
                             level as u8,
                             elapsed / total,
@@ -527,8 +506,7 @@ impl AudioPlayback {
             .name("lumino-gpu-synth-stream-owner".into())
             .spawn(move || {
                 let err_fn = |e| {
-                    tracing::error!("lumino-gpu-synth playback error: {e}");
-                    eprintln!("lumino-gpu-synth playback error: {e}");
+                    log_dual!(error, "lumino-gpu-synth playback error: {e}");
                 };
                 let owner_stats = cb_stats.clone();
                 let mut recycler = CallbackBufferRecycler::new(recycle_tx, queue_blocks);
@@ -603,8 +581,7 @@ impl AudioPlayback {
                     } else if underruns > last_logged_underruns
                         && last_underrun_log.elapsed() >= Duration::from_millis(500)
                     {
-                        tracing::warn!("[UNDERRUN] queue empty (total: {underruns})");
-                        eprintln!("[UNDERRUN] queue empty (total: {underruns})");
+                        log_dual!(warn, "[UNDERRUN] queue empty (total: {underruns})");
                         last_logged_underruns = underruns;
                         last_underrun_log = Instant::now();
                     }

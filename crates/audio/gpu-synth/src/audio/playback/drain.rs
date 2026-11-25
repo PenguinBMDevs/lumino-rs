@@ -186,19 +186,8 @@ fn drain_events_with_budget(
 
     if flush_mode {
         let elapsed_ms = drain_start.elapsed().as_millis();
-        tracing::warn!(
-            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms，耗时 {}ms（累计 {}，L{}）",
-            processed,
-            note_offs,
-            controls,
-            dropped_expired,
-            dropped_budget,
-            oldest_ms,
-            elapsed_ms,
-            stats.dropped_note_ons() + dropped_expired,
-            governor.level() as u8
-        );
-        eprintln!(
+        log_dual!(
+            warn,
             "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms，耗时 {}ms（累计 {}，L{}）",
             processed,
             note_offs,
@@ -240,14 +229,8 @@ fn log_drop_rate_limited(
     if ms - prev > 500 {
         LAST_DROP_LOG.store(ms, Ordering::Relaxed);
         // 双通道：tracing 进文件日志（GUI release 唯一可见），eprintln 供控制台构建。
-        tracing::warn!(
-            "[EVENT-DROP] 过期 {} + 预算 {} 条（累计 {}，L{}）",
-            expired,
-            budget,
-            stats.dropped_note_ons(),
-            level as u8
-        );
-        eprintln!(
+        log_dual!(
+            warn,
             "[EVENT-DROP] 过期 {} + 预算 {} 条（累计 {}，L{}）",
             expired,
             budget,

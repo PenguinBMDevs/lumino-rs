@@ -57,6 +57,17 @@
 //! renders are comparable to XSynth output (see [`synth::dsp`] for the exact
 //! DSP formulas).
 
+/// 同时写 tracing 与 stderr（音频播放线程的诊断必须终端可见）。
+///
+/// 两条输出的格式串与参数完全一致；级别由第一个参数给出。
+/// 用法：`log_dual!(warn, "[X] {}", value);`
+macro_rules! log_dual {
+    ($level:ident, $($arg:tt)*) => {{
+        tracing::$level!($($arg)*);
+        eprintln!($($arg)*);
+    }};
+}
+
 pub mod audio;
 pub mod compare;
 pub mod config;
