@@ -433,14 +433,14 @@ impl AudioPlayback {
                             // 不丢弃音频、不淡出声部：仅施加运行时声部上限——
                             // trim 保留最老的声部（正在演奏的乐句），爆点新音符
                             // 被裁掉，音乐"糊过去"而不是被切断。
-                            log_dual!(warn, 
+                            log_dual!(warn,
                                 "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
                                 level as u8
                             );
                         } else if leaving {
                             let cutoff = clean_since_frame.unwrap_or(synth.global_frame());
                             let faded = synth.fade_voices_spawned_before(cutoff);
-                            log_dual!(warn, 
+                            log_dual!(warn,
                                 "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
                                 faded,
                                 cutoff,
@@ -449,7 +449,7 @@ impl AudioPlayback {
                         }
                         let voices = synth.voice_count();
                         let applied_limit = synth.set_runtime_voice_limit(governor.voice_limit());
-                        log_dual!(warn, 
+                        log_dual!(warn,
                             "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
                             level as u8,
                             elapsed / total,
