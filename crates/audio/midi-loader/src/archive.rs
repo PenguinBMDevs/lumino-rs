@@ -107,12 +107,8 @@ pub fn create_temp_dir() -> Result<tempfile::TempDir, ArchiveError> {
 pub fn is_midi_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(is_midi_extension_inner)
+        .map(format::is_midi_ext)
         .unwrap_or(false)
-}
-
-fn is_midi_extension_inner(ext: &str) -> bool {
-    matches!(ext.to_ascii_lowercase().as_str(), "mid" | "midi" | "lmpj")
 }
 
 /// 检查文件是否为支持加载的格式（MIDI 或压缩包）
