@@ -73,6 +73,25 @@ pub struct RoomInfo {
     pub host_id: String,
 }
 
+/// 读取响应文本；非 2xx 统一转成 `HTTP error: {body}`。
+async fn read_ok_text(response: reqwest::Response) -> Result<String> {
+    let status = response.status();
+    let text = response.text().await?;
+    if !status.is_success() {
+        return Err(crate::CollaborationError::Other(format!(
+            "HTTP error: {text}"
+        )));
+    }
+    Ok(text)
+}
+
+/// 解析 JSON 响应体（错误信息带原文，便于定位服务器返回的非 JSON 页面）。
+fn parse_json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    serde_json::from_str(text).map_err(|e| {
+        crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text))
+    })
+}
+
 impl HttpClient {
     /// 创建新的 HTTP 客户端
     pub fn new(host: &str, port: u16) -> Self {
@@ -111,22 +130,12 @@ impl HttpClient {
         let url = format!("{}/api/room/create", self.base_url);
         let response = self.client.post(&url).json(&request).send().await?;
 
-        let status = response.status();
-        let text = response.text().await?;
-
-        if !status.is_success() {
-            return Err(crate::CollaborationError::Other(format!(
-                "HTTP error: {}",
-                text
-            )));
-        }
+        let text = read_ok_text(response).await?;
 
         debug!(response = %text, "[HTTP] Response");
 
         // Debug: print the JSON structure
-        let room_response: CreateRoomResponse = serde_json::from_str(&text).map_err(|e| {
-            crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text))
-        })?;
+        let room_response: CreateRoomResponse = parse_json(&text)?;
 
         debug!(?room_response.room, "[HTTP] Parsed room");
         Ok(room_response)
@@ -137,17 +146,9 @@ impl HttpClient {
         let url = format!("{}/api/room/{}/info", self.base_url, room_id);
         let response: reqwest::Response = self.client.get(&url).send().await?;
 
-        let status = response.status();
-        let error_text = response.text().await?;
+        let text = read_ok_text(response).await?;
 
-        if !status.is_success() {
-            return Err(crate::CollaborationError::Other(format!(
-                "HTTP error: {}",
-                error_text
-            )));
-        }
-
-        let room_info: RoomInfo = serde_json::from_str(&error_text)?;
+        let room_info: RoomInfo = serde_json::from_str(&text)?;
         Ok(room_info)
     }
 
@@ -216,18 +217,8 @@ impl HttpClient {
             .send()
             .await?;
 
-        let status = response.status();
-        let text = response.text().await?;
-        if !status.is_success() {
-            return Err(crate::CollaborationError::Other(format!(
-                "HTTP error: {}",
-                text
-            )));
-        }
-
-        serde_json::from_str(&text).map_err(|e| {
-            crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text))
-        })
+        let text = read_ok_text(response).await?;
+        parse_json(&text)
     }
 
     /// 下载房间工程文件（joiner 路径）。

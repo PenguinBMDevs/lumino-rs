@@ -153,34 +153,27 @@ impl CloudClient for WebdavClient {
 
         let mut entries = Vec::new();
         for entity in entities {
-            match entity {
-                ListEntity::File(f) => {
-                    if is_self(&f.href, &target_raw) {
-                        continue;
-                    }
-                    let remote = normalize_href(&f.href);
-                    entries.push(CloudEntry {
-                        name: basename(&remote),
-                        path: normalize_remote(&remote),
-                        is_dir: false,
-                        size: f.content_length.max(0) as u64,
-                        modified: Some(f.last_modified.timestamp().max(0) as u64),
-                    });
-                }
-                ListEntity::Folder(f) => {
-                    if is_self(&f.href, &target_raw) {
-                        continue;
-                    }
-                    let remote = normalize_href(&f.href);
-                    entries.push(CloudEntry {
-                        name: basename(&remote),
-                        path: normalize_remote(&remote),
-                        is_dir: true,
-                        size: 0,
-                        modified: Some(f.last_modified.timestamp().max(0) as u64),
-                    });
-                }
+            // File/Folder 只有 is_dir 与 size 的取值不同，其余字段同一套转换
+            let (href, is_dir, size, modified) = match entity {
+                ListEntity::File(f) => (
+                    f.href,
+                    false,
+                    f.content_length.max(0) as u64,
+                    f.last_modified,
+                ),
+                ListEntity::Folder(f) => (f.href, true, 0, f.last_modified),
+            };
+            if is_self(&href, &target_raw) {
+                continue;
             }
+            let remote = normalize_href(&href);
+            entries.push(CloudEntry {
+                name: basename(&remote),
+                path: normalize_remote(&remote),
+                is_dir,
+                size,
+                modified: Some(modified.timestamp().max(0) as u64),
+            });
         }
         Ok(entries)
     }
