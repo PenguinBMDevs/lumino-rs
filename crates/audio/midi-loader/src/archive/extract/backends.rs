@@ -228,6 +228,33 @@ pub(super) fn extract_all_zip(
 
 // ── 纯 GZ / 纯 XZ 内容检测 ─────────────────────────────
 
+/// 单文件流式压缩格式（纯 GZ / 纯 XZ，非 TAR 容器）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SingleStreamFormat {
+    /// GZ（`MultiGzDecoder`：支持多 member）
+    Gz,
+    /// XZ
+    Xz,
+}
+
+impl SingleStreamFormat {
+    /// 打开解压流。
+    fn decoder(self, file: std::fs::File) -> Box<dyn Read> {
+        match self {
+            Self::Gz => Box::new(flate2::read::MultiGzDecoder::new(file)),
+            Self::Xz => Box::new(xz2::read::XzDecoder::new(file)),
+        }
+    }
+
+    /// 解压失败的错误（两条 i18n key 各自独立，历史文案保留）。
+    fn decompress_error(self, e: std::io::Error) -> ArchiveError {
+        ArchiveError::LibraryError(match self {
+            Self::Gz => trf!("GZ 解压失败: {e}", e = e),
+            Self::Xz => trf!("XZ 解压失败: {e}", e = e),
+        })
+    }
+}
+
 /// 检查前 4 字节是否为 MIDI 文件魔数
 pub(super) fn is_midi_magic_bytes(bytes: &[u8; 4]) -> bool {
     bytes == b"MThd" || bytes == b"RIFF"
@@ -246,15 +273,16 @@ pub(super) fn virtual_midi_name(path: &Path) -> String {
     }
 }
 
-/// 列出纯 GZ 文件条目（带内容检测回退）
+/// 列出单文件压缩流的条目（带内容检测回退）。
 ///
-/// 先用 unarc-rs 列出条目（GZ 可打开），如果条目名不带 .mid 扩展名，
-/// 则解压检查魔数。如果魔数是 MIDI，创建虚拟条目。
-pub(super) fn list_entries_gz_with_content_check(
+/// GZ 可被 unarc-rs 打开，先尝试列出条目；条目名不含 MIDI 扩展名（或格式不支持）
+/// 时解压前 4 字节检查魔数，命中则创建虚拟 MIDI 条目。XZ 直接走解码器。
+fn list_entries_single_stream(
     path: &Path,
+    format: SingleStreamFormat,
 ) -> Result<Vec<ArchiveEntry>, ArchiveError> {
-    // 首先尝试 unarc-rs 列出条目（GZ 格式可以工作）
-    if let Ok(entries) = list_entries_unarc(path)
+    if format == SingleStreamFormat::Gz
+        && let Ok(entries) = list_entries_unarc(path)
         && entries
             .iter()
             .any(|e| crate::archive::is_midi_extension(&e.name))
@@ -262,9 +290,8 @@ pub(super) fn list_entries_gz_with_content_check(
         return Ok(entries);
     }
 
-    // 回退：解压并检查魔数
     let file = std::fs::File::open(path)?;
-    let mut decoder = flate2::read::MultiGzDecoder::new(file);
+    let mut decoder = format.decoder(file);
     let mut magic = [0u8; 4];
     if decoder.read_exact(&mut magic).is_ok() && is_midi_magic_bytes(&magic) {
         let name = virtual_midi_name(path);
@@ -275,70 +302,70 @@ pub(super) fn list_entries_gz_with_content_check(
     }
 
     Ok(Vec::new())
+}
+
+/// 列出纯 GZ 文件条目（带内容检测回退）
+pub(super) fn list_entries_gz_with_content_check(
+    path: &Path,
+) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+    list_entries_single_stream(path, SingleStreamFormat::Gz)
 }
 
 /// 列出纯 XZ 文件条目（unarc-rs 不支持，直接用 xz2 解压检查）
 pub(super) fn list_entries_xz_with_content_check(
     path: &Path,
 ) -> Result<Vec<ArchiveEntry>, ArchiveError> {
-    let file = std::fs::File::open(path)?;
-    let mut decoder = xz2::read::XzDecoder::new(file);
-    let mut magic = [0u8; 4];
-    if decoder.read_exact(&mut magic).is_ok() && is_midi_magic_bytes(&magic) {
-        let name = virtual_midi_name(path);
-        return Ok(vec![ArchiveEntry {
-            name,
-            is_dir: false,
-        }]);
-    }
+    list_entries_single_stream(path, SingleStreamFormat::Xz)
+}
 
-    Ok(Vec::new())
+/// 解压单文件压缩流（忽略 entry_name）。
+fn extract_entry_data_single_stream(
+    path: &Path,
+    format: SingleStreamFormat,
+) -> Result<Vec<u8>, ArchiveError> {
+    let file = std::fs::File::open(path)?;
+    let mut decoder = format.decoder(file);
+    let mut decompressed_data = Vec::new();
+    decoder
+        .read_to_end(&mut decompressed_data)
+        .map_err(|e| format.decompress_error(e))?;
+    Ok(decompressed_data)
 }
 
 /// 从纯 GZ 文件中提取数据（单文件压缩，忽略 entry_name）
 pub(super) fn extract_entry_data_gz(path: &Path) -> Result<Vec<u8>, ArchiveError> {
-    let file = std::fs::File::open(path)?;
-    let mut decoder = flate2::read::MultiGzDecoder::new(file);
-    let mut decompressed_data = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed_data)
-        .map_err(|e| ArchiveError::LibraryError(trf!("GZ 解压失败: {e}", e = e)))?;
-    Ok(decompressed_data)
+    extract_entry_data_single_stream(path, SingleStreamFormat::Gz)
 }
 
 /// 从纯 XZ 文件中提取数据（单文件压缩，忽略 entry_name）
 pub(super) fn extract_entry_data_xz(path: &Path) -> Result<Vec<u8>, ArchiveError> {
-    let file = std::fs::File::open(path)?;
-    let mut decoder = xz2::read::XzDecoder::new(file);
-    let mut decompressed_data = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed_data)
-        .map_err(|e| ArchiveError::LibraryError(trf!("XZ 解压失败: {e}", e = e)))?;
-    Ok(decompressed_data)
+    extract_entry_data_single_stream(path, SingleStreamFormat::Xz)
+}
+
+/// 解压单文件压缩流到目录（虚拟 MIDI 文件名）。
+fn extract_all_single_stream(
+    path: &Path,
+    output_dir: &Path,
+    format: SingleStreamFormat,
+) -> Result<Vec<PathBuf>, ArchiveError> {
+    let extracted_data = extract_entry_data_single_stream(path, format)?;
+    let name = virtual_midi_name(path);
+    let output_path = safe_join(output_dir, &name)?;
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&output_path, &extracted_data)?;
+    Ok(vec![output_path])
 }
 
 /// 解压纯 GZ 文件到目录
 pub(super) fn extract_all_gz(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
-    let extracted_data = extract_entry_data_gz(path)?;
-    let name = virtual_midi_name(path);
-    let output_path = safe_join(output_dir, &name)?;
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&output_path, &extracted_data)?;
-    Ok(vec![output_path])
+    extract_all_single_stream(path, output_dir, SingleStreamFormat::Gz)
 }
 
 /// 解压纯 XZ 文件到目录
 pub(super) fn extract_all_xz(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
-    let extracted_data = extract_entry_data_xz(path)?;
-    let name = virtual_midi_name(path);
-    let output_path = safe_join(output_dir, &name)?;
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&output_path, &extracted_data)?;
-    Ok(vec![output_path])
+    extract_all_single_stream(path, output_dir, SingleStreamFormat::Xz)
 }
 
 #[cfg(test)]
