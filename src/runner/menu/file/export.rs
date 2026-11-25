@@ -59,17 +59,7 @@ impl RunnerInner {
         if !self.confirm_missing_eot_before_export() {
             return;
         }
-        // 自动提交当前编辑（ghost 方案：松手即提交）
-        let committed = self
-            .window_state
-            .window
-            .ui_mut()
-            .root_mut()
-            .editor
-            .commit_current_edit();
-        if committed {
-            tracing::debug!("导出工程前自动提交编辑");
-        }
+        self.commit_edit_before_io("导出工程");
 
         // 如果没有加载 MIDI 但有编辑器内容，先自动保存
         if self.midi_state.current_midi.is_none() && self.midi_state.current_midi_source.is_none() {

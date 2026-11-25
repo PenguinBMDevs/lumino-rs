@@ -23,6 +23,35 @@ fn is_lmpj_path(path: &Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("lmpj"))
 }
 
+/// 工程加载的进度/错误文案（由调用点用 `tr!` 翻译，i18n key 保持在调用处）。
+struct ProjectLoadText {
+    /// 日志里的对象称呼（"素材文件" / "LMPJ 工程"）
+    start: &'static str,
+    /// 开始加载的进度文案
+    loading: &'static str,
+    /// 成功进度文案
+    success: &'static str,
+    /// 加载失败模板（含 `{e}`）
+    failed: &'static str,
+    /// 任务失败模板（含 `{e}`）
+    task_failed: &'static str,
+}
+
+/// 加载失败的公共落定：渲染模板（`{e}`）、上报进度、清装载标记、发错误事件。
+fn finish_project_load_error(
+    progress_cb: &lumino_midi_loader::loader::ProgressCallback,
+    template: &str,
+    error: impl std::fmt::Display,
+) {
+    let msg = lumino_core::i18n::render(template, &[("e", error.to_string())]);
+    progress_cb(&msg, 1.0);
+    tracing::error!("{}", msg);
+    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
+    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+        lumino_ui::event::menu::file::Event::MidiParseError(msg),
+    ));
+}
+
 impl RunnerInner {
     /// 打开文件（支持 MIDI 文件和压缩包自动解压）
     pub(super) fn handle_open_file(&mut self) {
@@ -185,21 +214,71 @@ impl RunnerInner {
         });
     }
 
-    /// 加载素材文件（.lmmaterial，后台异步加载）
+    /// 后台加载工程文件的公共骨架（素材 / LMPJ 共用）。
     ///
-    /// 素材内部使用 lmpj 归档形式存储，加载后通过 metadata 的
-    /// `[material]` 段分辨素材文件与标准工程文件（非素材则拒绝加载）。
-    fn load_material_project(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
-        tracing::info!("开始后台加载素材文件：{:?}", path);
+    /// 固定流程：看门狗启动 + 装载标记 → 0.3 进度 → 阻塞线程池解析 →
+    /// 成功发 `MidiParsed` 并回调附加事件 / 失败发 `MidiParseError`。
+    /// 差异由 `text`（文案）与两个闭包表达：`load` 产出解析结果与附加产物，
+    /// `on_success` 在 `MidiParsed` 之后补发自身事件（形状/洋葱皮）。
+    fn spawn_project_load<T, F, G>(
+        &self,
+        path: PathBuf,
+        archive_guard: Option<ExtractedArchiveEntry>,
+        text: ProjectLoadText,
+        load: F,
+        on_success: G,
+    ) where
+        T: Send + 'static,
+        F: FnOnce(
+                PathBuf,
+            )
+                -> Result<(lumino_midi_loader::ParsedMidi, T), lumino_export::ExportError>
+            + Send
+            + 'static,
+        G: FnOnce(T) + Send + 'static,
+    {
+        tracing::info!("开始后台加载{}：{:?}", text.start, path);
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
         lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
             let _archive_guard = archive_guard;
-            progress_cb(tr!("正在加载素材"), 0.3);
+            progress_cb(text.loading, 0.3);
             let path_for_blocking = path.clone();
-            let load_result = tokio::task::spawn_blocking(move || {
+            let load_result = tokio::task::spawn_blocking(move || load(path_for_blocking)).await;
+
+            match load_result {
+                Ok(Ok((parsed, extras))) => {
+                    progress_cb(text.success, 1.0);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParsed(Arc::new(parsed)),
+                    ));
+                    on_success(extras);
+                }
+                Ok(Err(e)) => finish_project_load_error(&progress_cb, text.failed, e),
+                Err(e) => finish_project_load_error(&progress_cb, text.task_failed, e),
+            }
+        });
+    }
+
+    /// 加载素材文件（.lmmaterial，后台异步加载）
+    ///
+    /// 素材内部使用 lmpj 归档形式存储，加载后通过 metadata 的
+    /// `[material]` 段分辨素材文件与标准工程文件（非素材则拒绝加载）。
+    fn load_material_project(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
+        self.spawn_project_load(
+            path,
+            archive_guard,
+            ProjectLoadText {
+                start: "素材文件",
+                loading: tr!("正在加载素材"),
+                success: tr!("素材加载成功"),
+                failed: tr!("加载素材失败: {e}"),
+                task_failed: tr!("加载素材任务失败: {e}"),
+            },
+            |path_for_blocking| {
                 let project = lumino_export::load_project(&path_for_blocking)?;
                 // 从 metadata 分辨素材/工程：非素材文件拒绝按素材加载
                 if !project.metadata.is_material_file() {
@@ -208,54 +287,26 @@ impl RunnerInner {
                         path = path_for_blocking.display()
                     )));
                 }
-                lumino_export::project_to_parsed_midi(&project, path_for_blocking)
-            })
-            .await;
-
-            match load_result {
-                Ok(Ok(parsed)) => {
-                    progress_cb(tr!("素材加载成功"), 1.0);
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
-                            parsed,
-                        )),
-                    ));
-                }
-                Ok(Err(e)) => {
-                    let msg = trf!("加载素材失败: {e}", e = e);
-                    progress_cb(&msg, 1.0);
-                    tracing::error!("{}", msg);
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
-                    ));
-                }
-                Err(e) => {
-                    let msg = trf!("加载素材任务失败: {e}", e = e);
-                    progress_cb(&msg, 1.0);
-                    tracing::error!("{}", msg);
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
-                    ));
-                }
-            }
-        });
+                let parsed = lumino_export::project_to_parsed_midi(&project, path_for_blocking)?;
+                Ok((parsed, ()))
+            },
+            |()| {},
+        );
     }
 
     /// 加载 LMPJ 工程文件（新格式或上一代兼容）
     fn load_lmpj_project(&self, path: PathBuf, archive_guard: Option<ExtractedArchiveEntry>) {
-        tracing::info!("开始后台加载 LMPJ 工程：{:?}", path);
-        // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
-        lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
-        lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
-        let progress_cb = Arc::clone(&self.window_state.progress_cb);
-        tokio::spawn(async move {
-            let _archive_guard = archive_guard;
-            progress_cb(tr!("正在加载 LMPJ 工程"), 0.3);
-            let path_for_blocking = path.clone();
-            let load_result = tokio::task::spawn_blocking(move || {
+        self.spawn_project_load(
+            path,
+            archive_guard,
+            ProjectLoadText {
+                start: "LMPJ 工程",
+                loading: tr!("正在加载 LMPJ 工程"),
+                success: tr!("工程加载成功"),
+                failed: tr!("加载 LMPJ 工程失败: {e}"),
+                task_failed: tr!("加载 LMPJ 工程任务失败: {e}"),
+            },
+            |path_for_blocking| {
                 let project = lumino_export::load_project(&path_for_blocking)?;
                 // S0-5：形状对象随工程持久化，需在文档装载后灌回编辑器
                 let shapes = project.shapes.clone();
@@ -267,50 +318,21 @@ impl RunnerInner {
                     .and_then(|s| s.onion_skin_mode.clone())
                     .unwrap_or_default();
                 let parsed = lumino_export::project_to_parsed_midi(&project, path_for_blocking)?;
-                Ok::<_, lumino_export::ExportError>((parsed, shapes, onion_skin_mode))
-            })
-            .await;
-
-            match load_result {
-                Ok(Ok((parsed, shapes, onion_skin_mode))) => {
-                    progress_cb(tr!("工程加载成功"), 1.0);
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
-                            parsed,
-                        )),
-                    ));
-                    // 形状必须在 MidiParsed 之后发：文档装载路径会清空形状存储，
-                    // 顺序反了会把刚加载的形状再清掉。
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::ProjectShapes(shapes),
-                    ));
-                    // 洋葱皮显示范围同理放在最后：它只改工具栏状态，与文档装载无耦合，
-                    // 但排在后面对调试顺序更直观（文档 → 形状 → 视图偏好）。
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::ProjectOnionSkinMode(onion_skin_mode),
-                    ));
-                }
-                Ok(Err(e)) => {
-                    let msg = trf!("加载 LMPJ 工程失败: {e}", e = e);
-                    progress_cb(&msg, 1.0);
-                    tracing::error!("{}", msg);
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
-                    ));
-                }
-                Err(e) => {
-                    let msg = trf!("加载 LMPJ 工程任务失败: {e}", e = e);
-                    progress_cb(&msg, 1.0);
-                    tracing::error!("{}", msg);
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
-                    ));
-                }
-            }
-        });
+                Ok::<_, lumino_export::ExportError>((parsed, (shapes, onion_skin_mode)))
+            },
+            |(shapes, onion_skin_mode)| {
+                // 形状必须在 MidiParsed 之后发：文档装载路径会清空形状存储，
+                // 顺序反了会把刚加载的形状再清掉。
+                lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                    lumino_ui::event::menu::file::Event::ProjectShapes(shapes),
+                ));
+                // 洋葱皮显示范围同理放在最后：它只改工具栏状态，与文档装载无耦合，
+                // 但排在后面对调试顺序更直观（文档 → 形状 → 视图偏好）。
+                lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                    lumino_ui::event::menu::file::Event::ProjectOnionSkinMode(onion_skin_mode),
+                ));
+            },
+        );
     }
 
     /// 将 MIDI 数据导入到编辑器
