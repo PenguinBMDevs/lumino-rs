@@ -1,5 +1,7 @@
 //! GPU 渲染入口与结果写盘
 
+use std::borrow::Cow;
+
 use lumino_core::{tr, trf};
 
 use super::*;
@@ -9,28 +11,32 @@ pub fn is_gpu_available() -> bool {
     lumino_gpu_synth::gpu::create_gpu_context().is_ok()
 }
 
-/// 使用 GPU 后端从 MidiDocument 渲染到 Sink（内存模式）
-pub fn render_audio_gpu_from_document(
-    config: &AudioRenderConfig,
-    doc: &MidiDocument,
-) -> ExportResult<()> {
-    use lumino_gpu_synth::GpuSynth;
+/// GPU 导出入口（决定两条入口各自保留的进度文案与错误文案）。
+///
+/// 两条入口的**进度百分比序列**与**错误文案**是历史契约，合并骨架时必须逐项保留：
+/// - 内存模式：0.05 → 0.10 → **0.15 序列化** → 0.20 → 0.85 → 1.0；
+/// - 流式模式：0.05 → 0.10 → 0.20 → 0.85 → 1.0（复用已读入字节，无序列化步骤）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuEntry {
+    /// 内存模式：`MidiDocument` 序列化为内存 SMF 后渲染。
+    InMemory,
+    /// 流式模式：复用调用方已读入的 SMF 字节。
+    Streaming,
+}
 
-    // REND-002 #87 防御：直接调用方（example/测试）可能未预填端口布局，
-    // 合成通道空间必须以文档实际端口为准（外层 `render_audio_from_document`
-    // 已填，此处 `max` 幂等）。
-    let mut config = config.clone();
-    config.midi_max_port = config.midi_max_port.max(doc.max_port());
-    let config = &config;
+/// 进度上报（无回调时静默）。
+fn notify_progress(config: &AudioRenderConfig, msg: &str, pct: f64) {
+    if let Some(ref cb) = config.progress_callback {
+        cb(msg.to_string(), pct);
+    }
+}
 
-    check_control(config)?;
-
-    let report = |msg: &str, pct: f64| {
-        if let Some(ref cb) = config.progress_callback {
-            cb(msg.to_string(), pct);
-        }
-    };
-
+/// 两条 GPU 入口共用的输入校验：音色库非空 → 编码器参数 → 音色库存在性 →
+/// 扩展名与 SF2 RIFF 头。
+///
+/// 存在性提示文案两条入口不同（历史文案保留）；扩展名/RIFF 校验与 CPU 加载
+/// 共用 [`crate::audio::event::validate_sf2_file`]。
+fn validate_export_inputs(config: &AudioRenderConfig, entry: GpuEntry) -> ExportResult<()> {
     if config.soundfonts.is_empty() {
         return Err(ExportError::AudioWrite(
             tr!("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件").into(),
@@ -46,50 +52,45 @@ pub fn render_audio_gpu_from_document(
     // 检查音色库文件存在与格式（SFZ 会直接 panic，需前置拦截）
     let sf_path = &config.soundfonts[0];
     if !sf_path.exists() {
-        return Err(ExportError::AudioWrite(trf!(
-            "音色库文件不存在: {path}，请检查路径或重新选择",
-            path = format!("{sf_path:?}")
-        )));
+        return Err(ExportError::AudioWrite(match entry {
+            GpuEntry::InMemory => trf!(
+                "音色库文件不存在: {path}，请检查路径或重新选择",
+                path = format!("{sf_path:?}")
+            ),
+            GpuEntry::Streaming => trf!("音色库文件不存在: {path}", path = format!("{sf_path:?}")),
+        }));
     }
-    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
-        && !ext.eq_ignore_ascii_case("sf2")
-        && !ext.eq_ignore_ascii_case("sfz")
-    {
-        return Err(ExportError::AudioWrite(trf!(
-            "不支持的音色库格式 {path}：仅支持 .sf2/.sfz",
-            path = format!("{sf_path:?}")
-        )));
-    }
-    // 仅对 SF2 校验 RIFF 头，SFZ 为文本
-    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
-        && ext.eq_ignore_ascii_case("sf2")
-        && let Ok(mut f) = std::fs::File::open(sf_path)
-    {
-        use std::io::Read;
-        let mut header = [0u8; 4];
-        if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
-            return Err(ExportError::AudioWrite(trf!(
-                "音色库不是合法的 SF2 {path}：头应为 RIFF，实际 {header}",
-                path = format!("{sf_path:?}"),
-                header = format!("{header:02X?}")
-            )));
-        }
-    }
+    crate::audio::event::validate_sf2_file(sf_path)
+}
 
-    report(tr!("GPU 初始化中..."), 0.05);
+/// 两条 GPU 入口共用的渲染骨架（校验通过后的全部步骤）。
+///
+/// `prepare` 负责在「音色库已加载、渲染尚未开始」的同一位置产出 SMF 字节：
+/// 内存模式在此序列化（对应 0.15 进度与空文档检查），流式模式直接复用调用方
+/// 已读入的字节（`Cow::Borrowed`，不复制大文件）。
+fn render_gpu_bytes<'a>(
+    config: &AudioRenderConfig,
+    entry: GpuEntry,
+    prepare: impl FnOnce(&AudioRenderConfig) -> ExportResult<Cow<'a, [u8]>>,
+) -> ExportResult<()> {
+    use lumino_gpu_synth::GpuSynth;
+
+    notify_progress(config, tr!("GPU 初始化中..."), 0.05);
     check_control(config)?;
     let synth_config = build_synth_config(config);
     // REND-019 #152：离线导出使用 offline 语义上下文（丢失只置本地标志、
     // 不触发实时 LGS 重建链路）
-    let mut synth = GpuSynth::new_offline(synth_config).map_err(|e| {
-        ExportError::AudioWrite(trf!(
+    let mut synth = GpuSynth::new_offline(synth_config).map_err(|e| match entry {
+        GpuEntry::InMemory => ExportError::AudioWrite(trf!(
             "GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}",
             e = e
-        ))
+        )),
+        GpuEntry::Streaming => ExportError::AudioWrite(trf!("GPU 初始化失败: {e}", e = e)),
     })?;
 
-    report(tr!("GPU 加载音色库..."), 0.10);
+    notify_progress(config, tr!("GPU 加载音色库..."), 0.10);
     check_control(config)?;
+    let sf_path = &config.soundfonts[0];
     synth.load_soundfont(sf_path, 0, 0).map_err(|e| {
         ExportError::AudioWrite(trf!(
             "GPU 音色库加载失败 {sf_path}: {e}",
@@ -98,20 +99,16 @@ pub fn render_audio_gpu_from_document(
         ))
     })?;
 
-    report(tr!("GPU 序列化 MIDI（内存）..."), 0.15);
-    check_control(config)?;
-    // 空文档直接报错，交由上层回退到文件模式
-    let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
-    if total_notes == 0 && doc.control_events.is_empty() {
-        return Err(ExportError::AudioWrite(
-            tr!("MIDI 文档中没有可渲染的事件（0 notes），请检查 MIDI 是否已加载").into(),
-        ));
-    }
-    // EXP-002：SMF 序列化只发生在内存，直喂 GPU —— 全程无临时 MIDI 文件、无重复导出
-    let export_data = build_export_data(doc, config);
-    let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;
+    let midi_bytes = prepare(config)?;
 
-    report(tr!("GPU 渲染中（可能耗时，黑 MIDI 请耐心）..."), 0.20);
+    notify_progress(
+        config,
+        match entry {
+            GpuEntry::InMemory => tr!("GPU 渲染中（可能耗时，黑 MIDI 请耐心）..."),
+            GpuEntry::Streaming => tr!("GPU 渲染中..."),
+        },
+        0.20,
+    );
     check_control(config)?;
     // 渲染循环内的协作式暂停/中止检查点：GPU 渲染是长时间阻塞调用，
     // 没有它 UI 的"暂停/停止"要等整段渲染结束才生效。
@@ -132,11 +129,11 @@ pub fn render_audio_gpu_from_document(
         Ok(Ok(result)) => {
             check_control(config)?;
 
-            report(tr!("GPU 写入输出..."), 0.85);
+            notify_progress(config, tr!("GPU 写入输出..."), 0.85);
             // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
             write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
 
-            report(tr!("GPU 完成"), 1.0);
+            notify_progress(config, tr!("GPU 完成"), 1.0);
             Ok(())
         }
         Ok(Err(lumino_gpu_synth::SynthError::Cancelled)) => Err(ExportError::Aborted),
@@ -153,6 +150,38 @@ pub fn render_audio_gpu_from_document(
     }
 }
 
+/// 使用 GPU 后端从 MidiDocument 渲染到 Sink（内存模式）
+pub fn render_audio_gpu_from_document(
+    config: &AudioRenderConfig,
+    doc: &MidiDocument,
+) -> ExportResult<()> {
+    // REND-002 #87 防御：直接调用方（example/测试）可能未预填端口布局，
+    // 合成通道空间必须以文档实际端口为准（外层 `render_audio_from_document`
+    // 已填，此处 `max` 幂等）。
+    let mut config = config.clone();
+    config.midi_max_port = config.midi_max_port.max(doc.max_port());
+    let config = &config;
+
+    check_control(config)?;
+    validate_export_inputs(config, GpuEntry::InMemory)?;
+
+    render_gpu_bytes(config, GpuEntry::InMemory, |config| {
+        notify_progress(config, tr!("GPU 序列化 MIDI（内存）..."), 0.15);
+        check_control(config)?;
+        // 空文档直接报错，交由上层回退到文件模式
+        let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
+        if total_notes == 0 && doc.control_events.is_empty() {
+            return Err(ExportError::AudioWrite(
+                tr!("MIDI 文档中没有可渲染的事件（0 notes），请检查 MIDI 是否已加载").into(),
+            ));
+        }
+        // EXP-002：SMF 序列化只发生在内存，直喂 GPU —— 全程无临时 MIDI 文件、无重复导出
+        let export_data = build_export_data(doc, config);
+        let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;
+        Ok(Cow::Owned(midi_bytes))
+    })
+}
+
 /// 使用 GPU 后端从磁盘 MIDI **字节**渲染（流式模式，无 MidiDocument）
 ///
 /// 2026-10-17（审计 §6.2）：入参从「文件路径」改为「已读入的 SMF 字节」。
@@ -165,57 +194,9 @@ pub fn render_audio_gpu_streaming(
     config: &AudioRenderConfig,
     midi_bytes: &[u8],
 ) -> ExportResult<()> {
-    use lumino_gpu_synth::GpuSynth;
-
     check_control(config)?;
+    validate_export_inputs(config, GpuEntry::Streaming)?;
 
-    let report = |msg: &str, pct: f64| {
-        if let Some(ref cb) = config.progress_callback {
-            cb(msg.to_string(), pct);
-        }
-    };
-
-    if config.soundfonts.is_empty() {
-        return Err(ExportError::AudioWrite(
-            tr!("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件").into(),
-        ));
-    }
-    if let Err(msg) = config
-        .audio_codec
-        .validate(config.sample_rate, config.audio_bitrate)
-    {
-        return Err(ExportError::AudioWrite(msg));
-    }
-    let sf_path = &config.soundfonts[0];
-    if !sf_path.exists() {
-        return Err(ExportError::AudioWrite(trf!(
-            "音色库文件不存在: {path}",
-            path = format!("{sf_path:?}")
-        )));
-    }
-    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
-        && !ext.eq_ignore_ascii_case("sf2")
-        && !ext.eq_ignore_ascii_case("sfz")
-    {
-        return Err(ExportError::AudioWrite(trf!(
-            "不支持的音色库格式 {path}：仅支持 .sf2/.sfz",
-            path = format!("{sf_path:?}")
-        )));
-    }
-    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
-        && ext.eq_ignore_ascii_case("sf2")
-        && let Ok(mut f) = std::fs::File::open(sf_path)
-    {
-        use std::io::Read;
-        let mut header = [0u8; 4];
-        if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
-            return Err(ExportError::AudioWrite(trf!(
-                "音色库不是合法的 SF2 {path}：头应为 RIFF，实际 {header}",
-                path = format!("{sf_path:?}"),
-                header = format!("{header:02X?}")
-            )));
-        }
-    }
     if !config.midi_path.exists() {
         return Err(ExportError::AudioWrite(trf!(
             "MIDI 文件不存在: {midi_path}",
@@ -229,60 +210,10 @@ pub fn render_audio_gpu_streaming(
         ));
     }
 
-    report(tr!("GPU 初始化中..."), 0.05);
-    check_control(config)?;
-    let synth_config = build_synth_config(config);
-    // REND-019 #152：离线导出使用 offline 语义上下文（同内存模式）
-    let mut synth = GpuSynth::new_offline(synth_config)
-        .map_err(|e| ExportError::AudioWrite(trf!("GPU 初始化失败: {e}", e = e)))?;
-
-    report(tr!("GPU 加载音色库..."), 0.10);
-    check_control(config)?;
-    synth.load_soundfont(sf_path, 0, 0).map_err(|e| {
-        ExportError::AudioWrite(trf!(
-            "GPU 音色库加载失败 {sf_path}: {e}",
-            sf_path = format!("{sf_path:?}"),
-            e = e
-        ))
-    })?;
-
-    report(tr!("GPU 渲染中..."), 0.20);
-    check_control(config)?;
-    // 渲染循环内的协作式暂停/中止检查点（同内存模式）。
-    if let Some(ctrl) = config.control.clone() {
-        synth.set_render_checkpoint(Some(std::sync::Arc::new(move || {
-            ctrl.wait_if_paused();
-            !ctrl.is_aborted()
-        })));
-    }
-    attach_render_progress(&mut synth, config);
-    // REND-019 #152：导出边界兜底（同内存模式）
-    // data-storage：统一走 `render_midi_bytes`（与内存模式同一解析入口）
-    let render_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        synth.render_midi_bytes(midi_bytes)
-    }));
-    let result = match render_outcome {
-        Ok(Ok(result)) => result,
-        Ok(Err(lumino_gpu_synth::SynthError::Cancelled)) => return Err(ExportError::Aborted),
-        Ok(Err(other)) => {
-            return Err(ExportError::AudioWrite(trf!(
-                "GPU 渲染失败: {other}",
-                other = other
-            )));
-        }
-        Err(_) => {
-            tracing::error!("GPU 音频导出异常中断（设备丢失竞态，已兜底）");
-            return Err(ExportError::AudioWrite(
-                tr!("GPU 渲染异常中断（设备丢失），请重试导出").into(),
-            ));
-        }
-    };
-    check_control(config)?;
-
-    report(tr!("GPU 写入输出..."), 0.85);
-    write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
-    report(tr!("GPU 完成"), 1.0);
-    Ok(())
+    // 复用调用方已 mmap 的字节：不复制大文件。
+    render_gpu_bytes(config, GpuEntry::Streaming, |_| {
+        Ok(Cow::Borrowed(midi_bytes))
+    })
 }
 
 /// 将 GPU 渲染结果写入 Sink（处理声道数、净化与限幅）
