@@ -14,6 +14,7 @@ mod gpu;
 mod render;
 mod types;
 
+pub use font::load_monospace_font;
 pub use types::pack_rgb;
 
 /// 网格列数（与 CPU 风格一致）
