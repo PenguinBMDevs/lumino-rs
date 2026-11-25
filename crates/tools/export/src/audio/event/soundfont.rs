@@ -16,13 +16,11 @@ use lumino_core::{tr, trf};
 use crate::audio::config::{AudioRenderConfig, normalize_layer_limit};
 use crate::error::{ExportError, ExportResult};
 
-fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
-    if !path.exists() {
-        return Err(ExportError::AudioWrite(trf!(
-            "音色库文件不存在: {path}",
-            path = format!("{path:?}")
-        )));
-    }
+/// 校验音色库扩展名与 SF2 RIFF 头（**不含存在性检查**）。
+///
+/// GPU 的两条导出入口与 CPU 加载共用本函数，消除三份内联副本。存在性检查
+/// 留在调用方：两条 GPU 入口的「文件不存在」提示文案各不相同（历史文案）。
+pub(crate) fn validate_sf2_file(path: &std::path::Path) -> ExportResult<()> {
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         if ext.eq_ignore_ascii_case("sfz") {
             // CPU 的 SampleSoundfont 支持 SFZ（按扩展名分发到 new_sfz），允许通过；
@@ -45,13 +43,23 @@ fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
             return Err(ExportError::AudioWrite(trf!(
-                "音色库不是合法的 SF2 文件 {path}：头应为 RIFF，实际 {header}",
+                "音色库不是合法的 SF2 {path}：头应为 RIFF，实际 {header}",
                 path = format!("{path:?}"),
                 header = format!("{header:02X?}")
             )));
         }
     }
     Ok(())
+}
+
+fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
+    if !path.exists() {
+        return Err(ExportError::AudioWrite(trf!(
+            "音色库文件不存在: {path}",
+            path = format!("{path:?}")
+        )));
+    }
+    validate_sf2_file(path)
 }
 
 /// 加载 SF2 音色库到 ChannelGroup
