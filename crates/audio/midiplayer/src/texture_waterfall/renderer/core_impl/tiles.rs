@@ -10,30 +10,23 @@ use crate::texture_waterfall::types::WaterfallTileCoord;
 use super::TextureWaterfallRenderer;
 
 impl TextureWaterfallRenderer {
-    /// 上传一张贴图到 GPU
-    pub fn upload_tile(
-        &mut self,
+    /// 创建一张贴图的全部 GPU 资源（纹理 + 视图 + uniform buffer + bind group）。
+    ///
+    /// 普通贴图与临时脏区域覆层只有 label 不同；资源描述必须与原两份逐字段一致。
+    #[allow(clippy::too_many_arguments)]
+    fn create_tile_resource(
+        &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        coord: WaterfallTileCoord,
         pixels: &[u8],
         width: u32,
         height: u32,
-    ) {
-        // 若已存在则先移除
-        if self.tiles.contains_key(&coord) {
-            self.remove_tile(&coord);
-        }
-        // 注意：不移除 dirty_overlays！这是有意为之——后台流式接收（GenerateTextureWaterfall
-        // 或 RegenerateTextureWaterfallTrack）与 ShowTextureWaterfallDirtyOverlay 在同一帧循环中先后执行，
-        // 若在此处清除覆层，新上传的覆盖层会在同一帧被后台贴图流误清除，导致用户
-        // 永远看不到临时脏区域覆层。脏覆层在 upload_dirty_overlay 替换同坐标覆层时
-        // 自然清理，或在 dispose_TextureWaterfall_onion_skin 全量释放。
-
-        let byte_size = pixels.len();
-
+        texture_label: &str,
+        uniform_label: &str,
+        bind_group_label: &str,
+    ) -> TileGpuResource {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&format!("texture_waterfall_{coord:?}")),
+            label: Some(texture_label),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -68,16 +61,14 @@ impl TextureWaterfallRenderer {
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("texture_waterfall_uniform"),
+            label: Some(uniform_label),
             size: std::mem::size_of::<TextureWaterfallUniform>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("texture_waterfall_bind_group"),
+            label: Some(bind_group_label),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -95,16 +86,47 @@ impl TextureWaterfallRenderer {
             ],
         });
 
-        self.tiles.insert(
-            coord,
-            TileGpuResource {
-                texture,
-                view,
-                bind_group,
-                uniform_buffer,
-                byte_size,
-            },
+        TileGpuResource {
+            texture,
+            view,
+            bind_group,
+            uniform_buffer,
+            byte_size: pixels.len(),
+        }
+    }
+
+    /// 上传一张贴图到 GPU
+    pub fn upload_tile(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        coord: WaterfallTileCoord,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) {
+        // 若已存在则先移除
+        if self.tiles.contains_key(&coord) {
+            self.remove_tile(&coord);
+        }
+        // 注意：不移除 dirty_overlays！这是有意为之——后台流式接收（GenerateTextureWaterfall
+        // 或 RegenerateTextureWaterfallTrack）与 ShowTextureWaterfallDirtyOverlay 在同一帧循环中先后执行，
+        // 若在此处清除覆层，新上传的覆盖层会在同一帧被后台贴图流误清除，导致用户
+        // 永远看不到临时脏区域覆层。脏覆层在 upload_dirty_overlay 替换同坐标覆层时
+        // 自然清理，或在 dispose_TextureWaterfall_onion_skin 全量释放。
+
+        let byte_size = pixels.len();
+        let resource = self.create_tile_resource(
+            device,
+            queue,
+            pixels,
+            width,
+            height,
+            &format!("texture_waterfall_{coord:?}"),
+            "texture_waterfall_uniform",
+            "texture_waterfall_bind_group",
         );
+        self.tiles.insert(coord, resource);
         self.gpu_mem_used += byte_size;
         self.tile_order.push_back(coord);
         // 用户硬约束：不得限制 GPU 内存使用——删除 evict_if_over_limit 淘汰逻辑，
@@ -148,77 +170,17 @@ impl TextureWaterfallRenderer {
         }
 
         let byte_size = pixels.len();
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&format!("TextureWaterfall_dirty_overlay_{coord:?}")),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
+        let resource = self.create_tile_resource(
+            device,
+            queue,
             pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
+            width,
+            height,
+            &format!("TextureWaterfall_dirty_overlay_{coord:?}"),
+            "TextureWaterfall_dirty_overlay_uniform",
+            "TextureWaterfall_dirty_overlay_bind_group",
         );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("TextureWaterfall_dirty_overlay_uniform"),
-            size: std::mem::size_of::<TextureWaterfallUniform>() as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("TextureWaterfall_dirty_overlay_bind_group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-
-        self.dirty_overlays.insert(
-            coord,
-            TileGpuResource {
-                texture,
-                view,
-                bind_group,
-                uniform_buffer,
-                byte_size,
-            },
-        );
+        self.dirty_overlays.insert(coord, resource);
         self.gpu_mem_used += byte_size;
     }
 
