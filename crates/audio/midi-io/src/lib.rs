@@ -5,7 +5,6 @@
 
 pub mod api;
 pub mod audio_devices;
-pub mod compact;
 pub mod constants;
 pub mod playback;
 pub mod realtime;
