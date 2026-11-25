@@ -12,6 +12,7 @@ mod render;
 mod soundfont;
 
 pub use soundfont::load_soundfonts;
+pub(crate) use soundfont::validate_sf2_file;
 
 use std::collections::VecDeque;
 use std::sync::Arc;

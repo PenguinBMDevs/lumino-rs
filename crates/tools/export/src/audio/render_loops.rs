@@ -2,6 +2,11 @@
 //!
 //! 包含公共 API（render_audio / render_audio_from_document）和内部渲染循环。
 //! 流式模式从磁盘 MIDI 流式读取，内存模式复用已加载的 MidiDocument。
+//!
+//! 两条 CPU 循环共用 [`ProgressPump`]（100ms 节流上报 / 倍速采样 / 计数）与
+//! [`RenderDriver`]（块式游标推进 / 事件投递 / 收尾与端口折叠告警），实现见
+//! `audio/render_driver.rs`；循环体本身只保留**事件源适配**
+//! （事件从哪来、如何计 NoteOn）。
 
 use tracing::info;
 
@@ -9,19 +14,17 @@ use midly::{MidiMessage, TrackEventKind};
 
 use lumino_core::{tr, trf};
 use lumino_midi_loader::{MidiDocument, streaming::StreamingMidiPlayer};
-use lumino_midi_model::multi_port::MAX_PORTS;
 
 use crate::error::{ExportError, ExportResult};
 
-use super::block_scheduler::RenderCursor;
 use super::config::AudioRenderConfig;
 use super::engine::AudioEngine;
 use super::event::MidiEventProcessor;
 use super::event_kind::{build_track_event_kind, compute_total_tick};
 use super::event_stream::MidiDocEventStream;
-use super::report::{report_progress, warn_port_overflow};
+use super::render_driver::{ProgressPump, RenderDriver};
+use super::report::warn_port_overflow;
 use super::sink_factory::create_output_sink;
-use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 use super::tick_conv::TickToTime;
 
 // ════════════════════════════════════════════════════════════
@@ -207,96 +210,33 @@ pub(super) fn run_streaming_render(
     total_seconds: f64,
 ) -> ExportResult<()> {
     let total_ticks = player.total_ticks().max(1);
-    let mut event_count = 0_u64;
-    let mut note_count = 0_u64;
-    let mut last_progress_time = std::time::Instant::now();
-    let start_time = std::time::Instant::now();
-    // 倍速用 3s 窗口平均；tick 占比 × 总时长是音频时长的近似（tempo 变化时略有偏差，
-    // 对"倍速"展示足够）。
-    let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
+    let mut pump = ProgressPump::new(config, total_ticks, total_seconds);
     // 块式渲染游标（PREF-002）：事件按 B 帧块对齐，块首一次性投递后整块渲染
-    let mut cursor = RenderCursor::new(u64::from(config.effective_block_frames()));
+    let mut driver = RenderDriver::new(processor, u64::from(config.effective_block_frames()));
     // REND-002：先取出每轨端口快照，事件循环里按 track_idx 查（零拷贝借用冲突）。
     let track_ports = player.track_ports().to_vec();
-    // B1：超上限端口的折叠事件计数（渲染结束后汇总告警）。
-    let mut clamped_events = 0_u64;
 
     while let Some((tick, track_idx, kind)) = player.next_event() {
-        if let Some(ctrl) = &config.control {
-            ctrl.wait_if_paused();
-            ctrl.check_abort()?;
-        }
-        let now = std::time::Instant::now();
-        if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
-            let pct = tick as f64 / total_ticks as f64;
-            speed_meter.record(
-                now.duration_since(start_time).as_secs_f64(),
-                pct * total_seconds,
-            );
-            report_progress(
-                config,
-                pct,
-                event_count,
-                note_count,
-                start_time,
-                speed_meter.speed(),
-            );
-            last_progress_time = now;
-        }
+        pump.on_event(tick)?;
 
-        // 时间推进由调度器负责（块模式量化到块首；精确模式=逐事件）
-        let frame = processor.frame_at_tick(tick);
-        let advance = cursor.frames_before(frame);
-        if advance > 0 {
-            processor.render_frames(advance)?;
-        }
         let port = track_ports.get(track_idx).copied().unwrap_or(0);
-        // B1 口径与内存路径对齐：只统计 MIDI 事件（meta/文本等不计入折叠告警）。
-        if port >= MAX_PORTS && matches!(kind, TrackEventKind::Midi { .. }) {
-            clamped_events += 1;
-        }
-        cursor.add_rendered(processor.dispatch_event(&kind, port)?);
+        driver.dispatch(tick, &kind, port)?;
 
-        if let TrackEventKind::Midi {
-            channel: _,
-            message,
-        } = &kind
-        {
+        if let TrackEventKind::Midi { message, .. } = &kind {
             match message {
                 MidiMessage::NoteOn { .. } => {
-                    event_count += 1;
-                    note_count += 1;
+                    pump.count_event();
+                    pump.count_note();
                 }
-                MidiMessage::NoteOff { .. } => {
-                    event_count += 1;
-                }
+                MidiMessage::NoteOff { .. } => pump.count_event(),
                 _ => {}
             }
         }
     }
 
-    // 收尾：补齐到最后一个事件的精确帧（输出长度与逐事件旧实现一致）
-    let remainder = cursor.finish_remainder();
-    if remainder > 0 {
-        processor.render_frames(remainder)?;
-    }
-
-    if clamped_events > 0 {
-        tracing::warn!(
-            "[REND-002] 流式导出：{clamped_events} 个事件来自超上限端口，已折叠到端口 {} 块发送（B1）",
-            MAX_PORTS - 1
-        );
-    }
-
-    report_progress(
-        config,
-        1.0,
-        event_count,
-        note_count,
-        start_time,
-        speed_meter.speed(),
-    );
-    info!("流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
+    driver.finish("流式导出")?;
+    let (events, notes) = pump.finish();
+    info!("流式渲染完成: 处理 {events} 个事件, {notes} 个音符");
     Ok(())
 }
 
@@ -308,84 +248,30 @@ pub(super) fn run_document_render(
     total_tick: u64,
     total_seconds: f64,
 ) -> ExportResult<()> {
-    let mut event_count = 0_u64;
-    let mut note_count = 0_u64;
-    let mut last_progress_time = std::time::Instant::now();
-    let start_time = std::time::Instant::now();
-    let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
-    let mut cursor = RenderCursor::new(u64::from(config.effective_block_frames()));
+    let mut pump = ProgressPump::new(config, total_tick, total_seconds);
+    let mut driver = RenderDriver::new(processor, u64::from(config.effective_block_frames()));
 
     let mut stream = MidiDocEventStream::new(doc);
     let total_events = stream.total_events();
-    // B1：超上限端口的折叠事件计数（渲染结束后汇总告警）。
-    let mut clamped_events = 0_u64;
 
     info!("文档流式渲染循环开始 ({} 事件)...", total_events);
 
     while let Some(event) = stream.next_event() {
-        if let Some(ctrl) = &config.control {
-            ctrl.wait_if_paused();
-            ctrl.check_abort()?;
-        }
         let tick = event.tick as u64;
-
-        let now = std::time::Instant::now();
-        if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
-            let pct = tick as f64 / total_tick as f64;
-            speed_meter.record(
-                now.duration_since(start_time).as_secs_f64(),
-                pct * total_seconds,
-            );
-            report_progress(
-                config,
-                pct,
-                event_count,
-                note_count,
-                start_time,
-                speed_meter.speed(),
-            );
-            last_progress_time = now;
-        }
+        pump.on_event(tick)?;
 
         if let Some(kind) = build_track_event_kind(&event) {
-            let frame = processor.frame_at_tick(tick);
-            let advance = cursor.frames_before(frame);
-            if advance > 0 {
-                processor.render_frames(advance)?;
-            }
-            if event.port >= MAX_PORTS {
-                clamped_events += 1;
-            }
-            cursor.add_rendered(processor.dispatch_event(&kind, event.port)?);
-            event_count += 1;
+            driver.dispatch(tick, &kind, event.port)?;
+            pump.count_event();
             if event.kind == 0 {
                 // 0 = NoteOn（与流式路径同口径）
-                note_count += 1;
+                pump.count_note();
             }
         }
     }
 
-    // 收尾：补齐到最后一个事件的精确帧（输出长度与逐事件旧实现一致）
-    let remainder = cursor.finish_remainder();
-    if remainder > 0 {
-        processor.render_frames(remainder)?;
-    }
-
-    if clamped_events > 0 {
-        tracing::warn!(
-            "[REND-002] 内存导出：{clamped_events} 个事件来自超上限端口，已折叠到端口 {} 块发送（B1）",
-            MAX_PORTS - 1
-        );
-    }
-
-    report_progress(
-        config,
-        1.0,
-        event_count,
-        note_count,
-        start_time,
-        speed_meter.speed(),
-    );
-    info!("文档流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
+    driver.finish("内存导出")?;
+    let (events, notes) = pump.finish();
+    info!("文档流式渲染完成: 处理 {events} 个事件, {notes} 个音符");
     Ok(())
 }
