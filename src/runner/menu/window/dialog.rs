@@ -20,22 +20,10 @@ impl RunnerInner {
             OpenDrawSettingsDialog => {
                 // 齿轮是"开合"语义，但独立窗口不能靠再点一次关闭（主窗可能不在前台），
                 // 故同一时间只允许一个：已存在/正在初始化则把焦点交回它，不叠开第二个窗口。
-                // 用 `is_open_or_pending`（含排队与分帧初始化中）——对话框是分帧创建的，
-                // 只看已就绪窗口会在连点两次时漏判、真的开出两个。
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::DrawSettings)
-                {
-                    tracing::info!("音符画设置对话框已打开或在初始化中，忽略重复打开请求");
-                    if let Some(window) = self
-                        .window_state
-                        .dialog_manager
-                        .dialog_window_of_type(DialogType::DrawSettings)
-                    {
-                        window.focus_window();
-                    }
-                } else {
+                if !self.focus_dialog_if_open(
+                    DialogType::DrawSettings,
+                    "音符画设置对话框已打开或在初始化中，忽略重复打开请求",
+                ) {
                     self.open_dialog_traced(DialogType::DrawSettings, "音符画设置");
                 }
             }
@@ -43,20 +31,10 @@ impl RunnerInner {
                 self.close_dialog_traced(DialogType::DrawSettings, "音符画设置")
             }
             OpenShapeDrawerDialog => {
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::ShapeDrawer)
-                {
-                    tracing::info!("形状抽屉已打开或在初始化中，忽略重复打开请求");
-                    if let Some(window) = self
-                        .window_state
-                        .dialog_manager
-                        .dialog_window_of_type(DialogType::ShapeDrawer)
-                    {
-                        window.focus_window();
-                    }
-                } else {
+                if !self.focus_dialog_if_open(
+                    DialogType::ShapeDrawer,
+                    "形状抽屉已打开或在初始化中，忽略重复打开请求",
+                ) {
                     let shapes_dir = crate::storage::config_dir().join("shapes");
                     tracing::info!("打开形状抽屉: {}", shapes_dir.display());
                     self.window_state
@@ -66,20 +44,10 @@ impl RunnerInner {
             }
             CloseShapeDrawerDialog => self.close_dialog_traced(DialogType::ShapeDrawer, "形状抽屉"),
             OpenHistoryDialog => {
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::History)
-                {
-                    tracing::info!("撤销历史窗口已打开或在初始化中，忽略重复打开请求");
-                    if let Some(window) = self
-                        .window_state
-                        .dialog_manager
-                        .dialog_window_of_type(DialogType::History)
-                    {
-                        window.focus_window();
-                    }
-                } else {
+                if !self.focus_dialog_if_open(
+                    DialogType::History,
+                    "撤销历史窗口已打开或在初始化中，忽略重复打开请求",
+                ) {
                     // 历史窗口打开前先落盘 pending 批量移动/复制，避免用户
                     // 刚松开拖动时面板看不到这一步。
                     self.window_state.window.ui_mut().flush_history_pending();
@@ -190,19 +158,15 @@ impl RunnerInner {
                     .dialog_manager
                     .is_open_or_pending(DialogType::MaterialDelete)
                 {
-                    tracing::info!("素材删除确认窗口已打开或在初始化中，改指向最新目标");
                     // 主窗口的待确认下标已更新为最新素材：对话框必须同步，
                     // 否则确认回执与配对校验不一致，删除会被静默拒绝。
                     self.window_state
                         .dialog_manager
                         .rebind_material_delete(index, name);
-                    if let Some(window) = self
-                        .window_state
-                        .dialog_manager
-                        .dialog_window_of_type(DialogType::MaterialDelete)
-                    {
-                        window.focus_window();
-                    }
+                    self.focus_dialog_if_open(
+                        DialogType::MaterialDelete,
+                        "素材删除确认窗口已打开或在初始化中，改指向最新目标",
+                    );
                 } else {
                     self.window_state
                         .dialog_manager
@@ -210,20 +174,10 @@ impl RunnerInner {
                 }
             }
             OpenTempoMaxBpmDialog { current_bpm } => {
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::TempoMaxBpm)
-                {
-                    tracing::info!("自定义 BPM 上限窗口已打开或在初始化中，忽略重复打开请求");
-                    if let Some(window) = self
-                        .window_state
-                        .dialog_manager
-                        .dialog_window_of_type(DialogType::TempoMaxBpm)
-                    {
-                        window.focus_window();
-                    }
-                } else {
+                if !self.focus_dialog_if_open(
+                    DialogType::TempoMaxBpm,
+                    "自定义 BPM 上限窗口已打开或在初始化中，忽略重复打开请求",
+                ) {
                     self.window_state
                         .dialog_manager
                         .open_tempo_max_bpm(current_bpm);

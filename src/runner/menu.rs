@@ -102,18 +102,10 @@ impl RunnerInner {
         match help_event {
             About => {
                 // 独立窗口：已打开或正在初始化时只聚焦，不叠开第二个。
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::About)
-                {
-                    if let Some(window) = self
-                        .window_state
-                        .dialog_manager
-                        .dialog_window_of_type(DialogType::About)
-                    {
-                        window.focus_window();
-                    }
+                if self.focus_dialog_if_open(
+                    DialogType::About,
+                    "关于窗口已打开或在初始化中，忽略重复打开请求",
+                ) {
                     return;
                 }
                 tracing::info!("请求打开关于对话框");
