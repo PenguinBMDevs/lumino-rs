@@ -73,7 +73,7 @@ fn job_for_current(
         style: Arc::new(NoteStyle::new(1)),
         index,
         document,
-        simd: SimdLevel::detect(),
+        simd: SimdLevel::detect(false),
         early_coverage: false,
     }
 }

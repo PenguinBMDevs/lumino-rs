@@ -46,7 +46,7 @@
 | 模块 | 示例 | crate | 迁移结论 |
 |---|---|---|---|
 | `color` | `pack_rgb`（0x00RRGGBB）、`linear_to_pixel`、`blend_*` | `pack_argb`、`linear_to_argb`、无 blend | **已迁移常量与 sRGB**；其余语义不同，不能直接换 |
-| `simd` | `pub enum SimdLevel`、`fill_row`、`masked_fill_row(..., count_coverage)` | 模块 `pub(crate)`；无 `fill_row`；`masked_fill_row` 少 `count_coverage` | 需先把 crate 的 simd 公开并统一 `masked_fill_row` 签名（会改生产 API） |
+| `simd` | — | — | ✅ 已完成：crate `pub mod simd`、统一 `masked_fill_row(..., count_coverage)`、示例 re-export |
 | `camera` | `Camera`（276 行） | `CanvasCamera`（192 行） | 需逐方法对照 `screen<->canvas`、滚动/缩放语义后重写调用点 |
 | `render/band` | `LodMode`、`BandBuffer` | `CpuOnionRenderer::render_strip` / `shift_frame` | 示例的 band 缓冲是旧 LOD 实现，需按 crate 的 strip 接口重写 |
 | `render/buffer` | `BandBuffer` | `frame` + renderer 内部缓冲 | 无公开等价物 |
