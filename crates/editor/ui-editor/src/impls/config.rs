@@ -199,6 +199,11 @@ impl Editor {
         requested
     }
 
+    /// 当前框选弹簧动画状态（UI 渲染层读取）。
+    pub fn selection_box_anim(&self) -> Option<crate::SelectionBoxAnimState> {
+        self.selection_ui.anim.get()
+    }
+
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.editor_state.tool

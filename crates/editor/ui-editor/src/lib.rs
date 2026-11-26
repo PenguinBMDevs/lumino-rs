@@ -26,6 +26,7 @@ pub mod grid;
 pub mod history;
 pub mod note;
 mod playback_key_colors;
+mod selection_ui_state;
 mod shape_tool_state;
 mod transient;
 pub use transient::EditorTransient;
@@ -181,46 +182,18 @@ pub struct Editor {
     /// 力度编辑面板
     pub velocity_panel: velocity::VelocityPanel,
 
-    /// 框选框的动画显示状态（用于弹簧物理动画）
-    pub selection_box_anim: Cell<Option<SelectionBoxAnimState>>,
-
-    /// 上一帧框选矩形边界（raw），用于计算增量 delta。
-    ///
-    /// 元组: (min_tick, max_tick, min_key, max_key)
-    /// 存储上一帧精确的 raw 边界，配合 `rect_subtract` 计算新增/减少的薄条区域，
-    /// 仅对 delta 区域执行 R-tree 查询，避免每帧 O(N) 全量重建。
-    /// None = 不在 Selecting 状态 / 未初始化。
-    pub(crate) cached_selection_bounds: Cell<Option<(f32, f32, u16, u16)>>,
-
     /// 文字工具预览 RGBA 缓存（UI-023）。
     ///
     /// 键 = `Editor::text_preview_signature()`；egui 覆盖层每帧取预览时命中即
     /// 直接共享 `Arc`，不再重栅格化。确认 / 取消 / 换框时清空释放内存。
     pub(crate) text_preview_cache: RefCell<Option<crate::grid::text_tool_box::CachedTextPreview>>,
 
-    /// 框选 X 向量化锚点（按下时 `floor` 到音符精度网格的单元低边）。
-    ///
-    /// 拖动期间选框两端都由 `ViewState::snap_marquee_edges(锚点, 鼠标 tick)` 推算。
-    /// 锚点必须固定：否则"向左拖再拖回右侧"时选框无法正确**回缩**，只能单向扩张。
-    /// `None` = 当前 `Selecting` 非按下路径建立（不量化，保持原始精确语义）。
-    pub(crate) marquee_anchor_tick: Option<f32>,
-
-    /// 鼠标工具拖动「待确认产物镜像」时**已写回** owning tool 的累计偏移 `(dtick, dkey)`
-    ///
-    /// 待确认几何没有幽灵层（它本身就是待 √ 的产物），拖动即时落位；
-    /// `ShapeDrag` 存的是相对按下点的**累计**偏移，故每帧的写回增量 =
-    /// 累计偏移 − 本字段。松手 / 下一次按下归零（见 `sync_pending_drag_geometry`）。
-    pub(crate) pending_drag_applied: (f32, f32),
-
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
     /// 图形工具会话与 pending 编辑栈（T-30 slice 6）。
     pub(crate) shape_tools: shape_tool_state::ShapeToolState,
-
-    /// 选择框边界缓存（raw 坐标），增量维护，避免每帧 O(N) 全量扫描。
-    /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。
-    /// 元组: (min_tick, max_tick_end, max_key, min_key)
-    pub(crate) selected_bounds: Cell<Option<(f32, f32, u16, u16)>>,
+    /// 框选交互状态（边界缓存 / 锚点 / 弹簧动画，T-30 slice 7）。
+    pub(crate) selection_ui: selection_ui_state::SelectionUiState,
 
     /// 工程走带选区命中音符的派生缓存
     ///

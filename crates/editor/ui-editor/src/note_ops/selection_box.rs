@@ -111,113 +111,26 @@ impl Editor {
         );
 
         // 缓存有效：非 ghost 直接取原始框；ghost 在缓存上叠加 delta（O(1)）
-        if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+        if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds.get() {
             if !ghost.needs_ghost() {
-                return vec![self.bounds_to_screen_rect(min_t, max_te, max_k, min_k)];
+                return vec![bounds_to_screen_rect(self, min_t, max_te, max_k, min_k)];
             }
             puffin::profile_scope!("get_selection_box_rects::ghost_o1");
             let (dt, dk) = ghost.visible_delta();
             let (g_min_t, g_max_te, g_max_k, g_min_k) =
                 ghost_rect(min_t, max_te, max_k, min_k, dt, dk, max_key);
             // 不缓存 ghost 结果（delta 每帧变化）
-            return vec![self.bounds_to_screen_rect(g_min_t, g_max_te, g_max_k, g_min_k)];
+            return vec![bounds_to_screen_rect(
+                self, g_min_t, g_max_te, g_max_k, g_min_k,
+            )];
         }
 
         // 缓存失效（理论上不应发生）：O(N) 回退并恢复缓存
         if ghost.needs_ghost() {
-            self.selection_rects_from_ghost_scan(&ghost)
+            selection_rects_from_ghost_scan(self, &ghost)
         } else {
-            self.selection_rects_from_plain_scan()
+            selection_rects_from_plain_scan(self)
         }
-    }
-
-    /// 非 ghost 回退：全量扫描选中集，重建缓存并返回单框。
-    fn selection_rects_from_plain_scan(&self) -> Vec<ScreenRect> {
-        puffin::profile_scope!("get_selection_box_rects::fallback");
-        let mut bounds = Bounds::default();
-        for i in self.editor_state.interaction.selected_notes.iter() {
-            if let Some(n) = self.editor_state.data.get_note_view(i) {
-                bounds.add(n.tick, n.tick + n.length, n.key);
-            }
-        }
-        let raw = bounds.get();
-        self.selected_bounds.set(raw);
-        raw.map(|(min_t, max_te, max_k, min_k)| {
-            vec![self.bounds_to_screen_rect(min_t, max_te, max_k, min_k)]
-        })
-        .unwrap_or_default()
-    }
-
-    /// ghost 回退：单遍扫描同时累计原始包围盒（恢复缓存）与可见包围盒。
-    ///
-    /// 使用 `get_note_view(idx)` 替代 `notes.get(idx)`，在 NoteStore 启用时零 clone
-    /// （16M 音符场景下，B-tree 遍历每个节点 clone Note → SoA 数组直接取 NoteView）。
-    fn selection_rects_from_ghost_scan(&self, ghost: &GhostState) -> Vec<ScreenRect> {
-        puffin::profile_scope!("get_selection_box_rects::ghost_on");
-        let data = &self.editor_state.data;
-        let selected = &self.editor_state.interaction.selected_notes;
-        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-        let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.transient.pending_drag;
-        let pending_copy = &self.transient.pending_copy;
-
-        // 逐音符 drag delta：pending 只对 pending.selected 里的音符叠加
-        let (drag_dt, drag_dk) = match edit_state {
-            EditState::Dragging { drag_state, .. }
-            | EditState::DraggingSelection { drag_state } => {
-                (drag_state.delta_tick, drag_state.delta_key)
-            }
-            _ => (0i64, 0i16),
-        };
-
-        let mut raw = Bounds::default();
-        let mut visible = Bounds::default();
-        for i in selected.iter() {
-            let Some(n) = data.get_note_view(i) else {
-                continue;
-            };
-            // raw bounds（无 delta）— 用于恢复缓存
-            raw.add(n.tick, n.tick + n.length, n.key);
-            if ghost.copy_active {
-                // 副本 ghost = note + (移动 + 复制) delta；
-                // 连续复制（pending_copy + DraggingSelectionCopy）时旧副本与新
-                // 副本并存，两条都计入副本框边界。
-                if is_copy_ghosted(i, pending_copy, edit_state) {
-                    let (old_copy, new_copy) =
-                        copy_deltas_for_index(i, pending_copy, pending, edit_state);
-                    for (cdt, cdk) in [old_copy, new_copy].into_iter().flatten() {
-                        let tick = (n.tick + cdt as f32).max(0.0);
-                        let key = (n.key as i32 + cdk as i32).clamp(0, max_key as i32) as u16;
-                        visible.add(tick, tick + n.length, key);
-                    }
-                }
-            } else if ghost.move_active {
-                // 移动 ghost bounds（原件 + 移动 delta）
-                let mut dt = drag_dt;
-                let mut dk = drag_dk;
-                if let Some(pending) = pending
-                    && i < pending.selected.len()
-                    && pending.selected[i]
-                {
-                    dt = dt.saturating_add(pending.delta_tick);
-                    dk = dk.saturating_add(pending.delta_key);
-                }
-                let tick = (n.tick + dt as f32).max(0.0);
-                let key = (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
-                visible.add(tick, tick + n.length, key);
-            }
-        }
-
-        // 恢复 raw bounds 缓存，后续帧走 O(1) ghost 路径
-        self.selected_bounds.set(raw.get());
-
-        // 复制模式只保留最新件（副本）框选；移动模式跟随 ghost
-        visible
-            .get()
-            .map(|(min_t, max_te, max_k, min_k)| {
-                vec![self.bounds_to_screen_rect(min_t, max_te, max_k, min_k)]
-            })
-            .unwrap_or_default()
     }
 
     /// 兼容入口：返回所有选择框的并集（覆盖所有选中与副本）
@@ -242,6 +155,116 @@ impl Editor {
             }
         }
         None
+    }
+}
+
+/// 非 ghost 回退：全量扫描选中集，重建缓存并返回单框。
+fn selection_rects_from_plain_scan(editor: &Editor) -> Vec<ScreenRect> {
+    puffin::profile_scope!("get_selection_box_rects::fallback");
+    let mut bounds = Bounds::default();
+    for i in editor.editor_state.interaction.selected_notes.iter() {
+        if let Some(n) = editor.editor_state.data.get_note_view(i) {
+            bounds.add(n.tick, n.tick + n.length, n.key);
+        }
+    }
+    let raw = bounds.get();
+    editor.selection_ui.bounds.set(raw);
+    raw.map(|(min_t, max_te, max_k, min_k)| {
+        vec![bounds_to_screen_rect(editor, min_t, max_te, max_k, min_k)]
+    })
+    .unwrap_or_default()
+}
+
+/// ghost 回退：单遍扫描同时累计原始包围盒（恢复缓存）与可见包围盒。
+///
+/// 使用 `get_note_view(idx)` 替代 `notes.get(idx)`，在 NoteStore 启用时零 clone
+/// （16M 音符场景下，B-tree 遍历每个节点 clone Note → SoA 数组直接取 NoteView）。
+fn selection_rects_from_ghost_scan(editor: &Editor, ghost: &GhostState) -> Vec<ScreenRect> {
+    puffin::profile_scope!("get_selection_box_rects::ghost_on");
+    let data = &editor.editor_state.data;
+    let selected = &editor.editor_state.interaction.selected_notes;
+    let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
+    let edit_state = &editor.editor_state.interaction.edit_state;
+    let pending = &editor.transient.pending_drag;
+    let pending_copy = &editor.transient.pending_copy;
+
+    // 逐音符 drag delta：pending 只对 pending.selected 里的音符叠加
+    let (drag_dt, drag_dk) = match edit_state {
+        EditState::Dragging { drag_state, .. } | EditState::DraggingSelection { drag_state } => {
+            (drag_state.delta_tick, drag_state.delta_key)
+        }
+        _ => (0i64, 0i16),
+    };
+
+    let mut raw = Bounds::default();
+    let mut visible = Bounds::default();
+    for i in selected.iter() {
+        let Some(n) = data.get_note_view(i) else {
+            continue;
+        };
+        // raw bounds（无 delta）— 用于恢复缓存
+        raw.add(n.tick, n.tick + n.length, n.key);
+        if ghost.copy_active {
+            // 副本 ghost = note + (移动 + 复制) delta；
+            // 连续复制（pending_copy + DraggingSelectionCopy）时旧副本与新
+            // 副本并存，两条都计入副本框边界。
+            if is_copy_ghosted(i, pending_copy, edit_state) {
+                let (old_copy, new_copy) =
+                    copy_deltas_for_index(i, pending_copy, pending, edit_state);
+                for (cdt, cdk) in [old_copy, new_copy].into_iter().flatten() {
+                    let tick = (n.tick + cdt as f32).max(0.0);
+                    let key = (n.key as i32 + cdk as i32).clamp(0, max_key as i32) as u16;
+                    visible.add(tick, tick + n.length, key);
+                }
+            }
+        } else if ghost.move_active {
+            // 移动 ghost bounds（原件 + 移动 delta）
+            let mut dt = drag_dt;
+            let mut dk = drag_dk;
+            if let Some(pending) = pending
+                && i < pending.selected.len()
+                && pending.selected[i]
+            {
+                dt = dt.saturating_add(pending.delta_tick);
+                dk = dk.saturating_add(pending.delta_key);
+            }
+            let tick = (n.tick + dt as f32).max(0.0);
+            let key = (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
+            visible.add(tick, tick + n.length, key);
+        }
+    }
+
+    // 恢复 raw bounds 缓存，后续帧走 O(1) ghost 路径
+    editor.selection_ui.bounds.set(raw.get());
+
+    // 复制模式只保留最新件（副本）框选；移动模式跟随 ghost
+    visible
+        .get()
+        .map(|(min_t, max_te, max_k, min_k)| {
+            vec![bounds_to_screen_rect(editor, min_t, max_te, max_k, min_k)]
+        })
+        .unwrap_or_default()
+}
+
+#[inline]
+fn bounds_to_screen_rect(
+    editor: &Editor,
+    min_t: f32,
+    max_te: f32,
+    max_k: u16,
+    min_k: u16,
+) -> ScreenRect {
+    if editor.editor_state.is_vertical_roll {
+        vertical_rect_from_bounds(
+            &editor.editor_state.view,
+            editor.editor_state.canvas.size_y,
+            min_t,
+            max_te,
+            max_k,
+            min_k,
+        )
+    } else {
+        rect_from_bounds(&editor.editor_state.view, min_t, max_te, max_k, min_k)
     }
 }
 
@@ -301,22 +324,4 @@ fn ghost_rect(
         (max_k as i32 + dk as i32).clamp(0, max_key as i32) as u16,
         (min_k as i32 + dk as i32).clamp(0, max_key as i32) as u16,
     )
-}
-
-impl super::super::Editor {
-    #[inline]
-    fn bounds_to_screen_rect(&self, min_t: f32, max_te: f32, max_k: u16, min_k: u16) -> ScreenRect {
-        if self.editor_state.is_vertical_roll {
-            vertical_rect_from_bounds(
-                &self.editor_state.view,
-                self.editor_state.canvas.size_y,
-                min_t,
-                max_te,
-                max_k,
-                min_k,
-            )
-        } else {
-            rect_from_bounds(&self.editor_state.view, min_t, max_te, max_k, min_k)
-        }
-    }
 }

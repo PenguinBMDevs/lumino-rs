@@ -43,7 +43,7 @@ impl Editor {
         // 每次按下先清空框选锚点：只有真正进入框选（Selecting）的分支才会重新设置。
         // 否则上一次框选残留的锚点会被后续「非按下路径建立」的 Selecting 误用，
         // 导致选框按旧锚点量化（跨工具串味）。
-        self.marquee_anchor_tick = None;
+        self.selection_ui.marquee_anchor = None;
 
         // 图片转 MIDI 放置模式：拦截全部按下交互
         if self.editor_state.image_to_midi.is_active() {
@@ -213,7 +213,7 @@ impl Editor {
                         // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
                         // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
                         // 在下一次访问时通过 O(N) 回退或 ghost 路径重建缓存。
-                        self.selected_bounds.set(None);
+                        self.selection_ui.bounds.set(None);
                     }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
@@ -235,7 +235,7 @@ impl Editor {
                             self.transient.emit_local_selection_changed(true, &fps);
                         }
                         // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
-                        self.selected_bounds.set(None);
+                        self.selection_ui.bounds.set(None);
                     }
                     self.push_history();
                     self.editor_state.interaction.edit_state =

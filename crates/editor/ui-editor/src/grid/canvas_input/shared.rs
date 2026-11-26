@@ -41,6 +41,6 @@ pub(super) fn moved(editor: &Editor, local: (f32, f32)) -> Option<Message> {
 
 /// 释放：收起选择框动画并发出 `Released`。
 pub(super) fn released(editor: &Editor) -> Option<Message> {
-    editor.selection_box_anim.set(None);
+    editor.selection_ui.anim.set(None);
     Some(Message::EditorAction(EditorAction::Released))
 }

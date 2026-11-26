@@ -40,7 +40,7 @@ impl super::Editor {
     /// `moved.rs` 中不做量化，以保持原始精确语义。
     pub(super) fn begin_marquee_ticks(&mut self, tick: f32) -> (f32, f32) {
         let anchor = self.marquee_anchor(tick);
-        self.marquee_anchor_tick = Some(anchor);
+        self.selection_ui.marquee_anchor = Some(anchor);
         self.marquee_edges(anchor, tick)
     }
 

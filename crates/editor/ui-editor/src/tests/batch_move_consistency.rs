@@ -51,8 +51,8 @@ fn selected_sorted(editor: &Editor) -> Vec<usize> {
 
 /// 全量框选（清空增量缓存后重建），返回选中索引
 fn box_select_full(editor: &mut Editor, t0: f32, t1: f32, k0: u16, k1: u16) -> Vec<usize> {
-    editor.cached_selection_bounds.set(None);
-    editor.selected_bounds.set(None);
+    editor.selection_ui.cached_bounds.set(None);
+    editor.selection_ui.bounds.set(None);
     editor.editor_state.interaction.selected_notes.clear();
     editor.editor_state.interaction.edit_state = EditState::Selecting {
         start_tick: t0,

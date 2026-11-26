@@ -358,7 +358,7 @@ impl Editor {
         let Some(d) = self.editor_state.shape_select.drag() else {
             return;
         };
-        let (applied_tick, applied_key) = self.pending_drag_applied;
+        let (applied_tick, applied_key) = self.selection_ui.pending_drag_applied;
         let inc = (d.delta_tick - applied_tick, d.delta_key - applied_key);
         if inc.0 == 0.0 && inc.1 == 0.0 {
             return;
@@ -379,7 +379,7 @@ impl Editor {
                 self.editor_state.shape_select.set_source(id, src);
             }
         }
-        self.pending_drag_applied = (d.delta_tick, d.delta_key);
+        self.selection_ui.pending_drag_applied = (d.delta_tick, d.delta_key);
     }
 
     /// 把一次整体平移**写回** owning tool 的待确认几何（鼠标工具拖动待确认产物）
@@ -630,7 +630,7 @@ impl Editor {
     pub(crate) fn handle_shape_select_pressed(&mut self, tick: f32, key: f32, additive: bool) {
         // 新一次拖动从零开始：已写回待确认几何的累计偏移必须归零，否则
         // `sync_pending_drag_geometry` 会按上一次的残值算出错误增量。
-        self.pending_drag_applied = (0.0, 0.0);
+        self.selection_ui.pending_drag_applied = (0.0, 0.0);
         // 手势边界自愈：命中判定与选框都建立在镜像几何之上，动手前先保证它是最新的
         // （任何未预料到的待确认几何改动都不会再退化成「框不中」）。
         self.refresh_pending_mirror_geometry();
@@ -706,7 +706,7 @@ impl Editor {
     pub(crate) fn handle_shape_select_released(&mut self) {
         if self.is_shape_editing() {
             self.finish_shape_edit();
-            self.pending_drag_applied = (0.0, 0.0);
+            self.selection_ui.pending_drag_applied = (0.0, 0.0);
             return;
         }
         if let Some((dtick, dkey)) = self.editor_state.shape_select.end_drag() {
@@ -714,7 +714,7 @@ impl Editor {
         } else if let Some(area) = self.editor_state.shape_select.end_marquee() {
             self.finish_shape_marquee(area);
         }
-        self.pending_drag_applied = (0.0, 0.0);
+        self.selection_ui.pending_drag_applied = (0.0, 0.0);
     }
 
     /// 结束框选：拉框足够大时把框内**全部**可见图形并入选中集，返回本次**新**选中的 ID
@@ -786,7 +786,7 @@ impl Editor {
             let Some(r) = *pending else {
                 continue;
             };
-            let (applied_tick, applied_key) = self.pending_drag_applied;
+            let (applied_tick, applied_key) = self.selection_ui.pending_drag_applied;
             let inc = (dtick - applied_tick, dkey - applied_key);
             if inc.0 != 0.0 || inc.1 != 0.0 {
                 // 残差非零（本函数被直接调用 / 拖动帧未落几何）：补写；引用失效则跳过
@@ -800,7 +800,7 @@ impl Editor {
             self.record_pending_movement(r);
             pending_moved = true;
         }
-        self.pending_drag_applied = (0.0, 0.0);
+        self.selection_ui.pending_drag_applied = (0.0, 0.0);
 
         // ② 已确认图形：按值定位文档音符 → MoveOp（镜像无音符，天然不参与）
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);

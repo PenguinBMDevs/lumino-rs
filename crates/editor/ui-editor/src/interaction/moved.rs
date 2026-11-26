@@ -159,7 +159,7 @@ impl Editor {
         //
         // 锚点为 `None`（非按下路径构造的 Selecting，例如测试直接赋值）→ 保持
         // 原始精确语义，避免影响非用户路径。
-        let marquee_anchor = self.marquee_anchor_tick;
+        let marquee_anchor = self.selection_ui.marquee_anchor;
         let marquee_edges = marquee_anchor.map(|anchor| self.marquee_edges(anchor, tick));
 
         if let EditState::Selecting {

@@ -42,7 +42,7 @@ impl Editor {
             self.editor_state.interaction.edit_state,
             EditState::Selecting { .. }
         ) {
-            self.cached_selection_bounds.set(None);
+            self.selection_ui.cached_bounds.set(None);
             return;
         }
 
@@ -68,8 +68,8 @@ impl Editor {
         let new_bounds = (new_min_t, new_max_t, new_min_k, new_max_k);
 
         // 无缓存 → 全量重建（首帧）
-        let Some(old_bounds) = self.cached_selection_bounds.get() else {
-            self.cached_selection_bounds.set(Some(new_bounds));
+        let Some(old_bounds) = self.selection_ui.cached_bounds.get() else {
+            self.selection_ui.cached_bounds.set(Some(new_bounds));
             return rebuild_full_selection(self, new_min_t, new_max_t, new_min_k, new_max_k);
         };
 
@@ -77,7 +77,7 @@ impl Editor {
         if old_bounds == new_bounds {
             puffin::profile_scope!("diag::selection_cache_hit");
             if !self.has_selection() {
-                self.cached_selection_bounds.set(Some(new_bounds));
+                self.selection_ui.cached_bounds.set(Some(new_bounds));
                 rebuild_full_selection(self, new_min_t, new_max_t, new_min_k, new_max_k);
             }
             return;
@@ -85,11 +85,11 @@ impl Editor {
 
         // 安全保护：无选中音符但缓存在 → 全量重建
         if !self.has_selection() {
-            self.cached_selection_bounds.set(Some(new_bounds));
+            self.selection_ui.cached_bounds.set(Some(new_bounds));
             return rebuild_full_selection(self, new_min_t, new_max_t, new_min_k, new_max_k);
         }
 
-        self.cached_selection_bounds.set(Some(new_bounds));
+        self.selection_ui.cached_bounds.set(Some(new_bounds));
         apply_selection_delta(self, old_bounds, new_min_t, new_max_t, new_min_k, new_max_k);
     }
 
@@ -132,7 +132,7 @@ impl Editor {
             }
 
             self.editor_state.interaction.selected_notes = set;
-            self.selected_bounds.set(acc.get());
+            self.selection_ui.bounds.set(acc.get());
             return;
         }
 
@@ -196,7 +196,7 @@ impl Editor {
         }
 
         self.editor_state.interaction.selected_notes = set;
-        self.selected_bounds.set(acc.get());
+        self.selection_ui.bounds.set(acc.get());
     }
 }
 

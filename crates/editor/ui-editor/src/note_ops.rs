@@ -86,6 +86,6 @@ impl Editor {
         for i in 0..note_count {
             set.insert(i);
         }
-        self.selected_bounds.set(bounds.get());
+        self.selection_ui.bounds.set(bounds.get());
     }
 }
