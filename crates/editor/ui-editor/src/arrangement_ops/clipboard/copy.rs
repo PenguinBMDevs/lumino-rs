@@ -13,7 +13,7 @@ impl Editor {
             return false;
         }
 
-        let all_notes = self.collect_selected_notes_for_clipboard();
+        let all_notes = collect_selected_notes_for_clipboard(self);
         if all_notes.is_empty() {
             return false;
         }
@@ -111,45 +111,45 @@ impl Editor {
 
         crate::clipboard::set_clipboard_text(&s)
     }
+}
 
-    /// 从 MidiDocument 收集所有选中音符（NoteEvent，u32 tick 保精度）。
-    ///
-    /// P1 修复：按选区矩形窗口反查命中音符，复杂度 O(rects × 窗口)；
-    /// 替代原「遍历全曲所有音符 + selection.contains」的 O(全音符) 全扫。
-    ///
-    /// 命中判定统一走 `selection.contains`：冻结集存在时（拖动 / 变速后的
-    /// 落点重锚）为精确成员判定，避免把落点区域内既有的其他音符一并复制。
-    fn collect_selected_notes_for_clipboard(&self) -> Vec<(usize, NoteEvent)> {
-        let editor_data = &self.editor_state.data;
-        let selection = &editor_data.arrange_selection;
-        let mut all_notes: Vec<(usize, NoteEvent)> = Vec::new();
-        if editor_data.document.is_none() {
-            return all_notes;
-        }
-        // 去重：同一音符可能因重叠矩形被多次命中（用值做幂等键，无 ID）
-        let mut seen: std::collections::HashSet<(usize, u32, u32, u8, u8, u8)> =
-            std::collections::HashSet::new();
-        for &(ts, te, _kl, _kh, tl, th) in &selection.rects {
-            for v in tl..=th {
-                let doc_track = editor_data.document_track_at(v as usize);
-                let notes = editor_data.track_notes(doc_track);
-                let (lo, hi) = notes.window_range(ts, te, 0);
-                for (_, note_event) in notes.iter_window(lo, hi) {
-                    if selection.contains(v, note_event.start_tick, note_event.key)
-                        && seen.insert((
-                            doc_track,
-                            note_event.start_tick,
-                            note_event.end_tick,
-                            note_event.key,
-                            note_event.velocity,
-                            note_event.channel,
-                        ))
-                    {
-                        all_notes.push((doc_track, *note_event));
-                    }
+/// 从 MidiDocument 收集所有选中音符（NoteEvent，u32 tick 保精度）。
+///
+/// P1 修复：按选区矩形窗口反查命中音符，复杂度 O(rects × 窗口)；
+/// 替代原「遍历全曲所有音符 + selection.contains」的 O(全音符) 全扫。
+///
+/// 命中判定统一走 `selection.contains`：冻结集存在时（拖动 / 变速后的
+/// 落点重锚）为精确成员判定，避免把落点区域内既有的其他音符一并复制。
+fn collect_selected_notes_for_clipboard(editor: &Editor) -> Vec<(usize, NoteEvent)> {
+    let editor_data = &editor.editor_state.data;
+    let selection = &editor_data.arrange_selection;
+    let mut all_notes: Vec<(usize, NoteEvent)> = Vec::new();
+    if editor_data.document.is_none() {
+        return all_notes;
+    }
+    // 去重：同一音符可能因重叠矩形被多次命中（用值做幂等键，无 ID）
+    let mut seen: std::collections::HashSet<(usize, u32, u32, u8, u8, u8)> =
+        std::collections::HashSet::new();
+    for &(ts, te, _kl, _kh, tl, th) in &selection.rects {
+        for v in tl..=th {
+            let doc_track = editor_data.document_track_at(v as usize);
+            let notes = editor_data.track_notes(doc_track);
+            let (lo, hi) = notes.window_range(ts, te, 0);
+            for (_, note_event) in notes.iter_window(lo, hi) {
+                if selection.contains(v, note_event.start_tick, note_event.key)
+                    && seen.insert((
+                        doc_track,
+                        note_event.start_tick,
+                        note_event.end_tick,
+                        note_event.key,
+                        note_event.velocity,
+                        note_event.channel,
+                    ))
+                {
+                    all_notes.push((doc_track, *note_event));
                 }
             }
         }
-        all_notes
     }
+    all_notes
 }
