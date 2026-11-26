@@ -170,22 +170,22 @@ impl DialogHandler {
             }
             V::CounterTextChanged(text) => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_text = text;
+                st.counter.text = text;
             }
             V::CounterAlignmentChanged(v) => {
-                root.state.video_export_dialog.counter_alignment = v;
+                root.state.video_export_dialog.counter.alignment = v;
             }
             V::CounterFontSizeChanged(v) => {
-                root.state.video_export_dialog.counter_font_size = v.clamp(7, 512);
+                root.state.video_export_dialog.counter.font_size = v.clamp(7, 512);
             }
             V::CounterFontModeChanged(v) => {
-                root.state.video_export_dialog.counter_font_mode = v;
+                root.state.video_export_dialog.counter.font_mode = v;
             }
             V::CounterFontFamilyChanged(v) => {
-                root.state.video_export_dialog.counter_font_family = v;
+                root.state.video_export_dialog.counter.font_family = v;
             }
             V::CounterFontPathChanged(v) => {
-                root.state.video_export_dialog.counter_font_path = v;
+                root.state.video_export_dialog.counter.font_path = v;
             }
             V::CounterBrowseFont => {
                 // 浏览字体文件（TTF/OTF/TTC）：后台线程打开对话框（防 UI 冻结）
@@ -196,44 +196,44 @@ impl DialogHandler {
                 });
             }
             V::CounterUseCommasChanged(v) => {
-                root.state.video_export_dialog.counter_use_commas = v;
+                root.state.video_export_dialog.counter.use_commas = v;
             }
             V::CounterPaddingZeroesChanged(v) => {
-                root.state.video_export_dialog.counter_padding_zeroes = v;
+                root.state.video_export_dialog.counter.padding_zeroes = v;
             }
             V::CounterSaveCsvChanged(v) => {
-                root.state.video_export_dialog.counter_save_csv = v;
+                root.state.video_export_dialog.counter.save_csv = v;
             }
             V::CounterCsvPathChanged(v) => {
-                root.state.video_export_dialog.counter_csv_output = v;
+                root.state.video_export_dialog.counter.csv_output = v;
             }
             V::CounterCsvFormatChanged(v) => {
-                root.state.video_export_dialog.counter_csv_format = v;
+                root.state.video_export_dialog.counter.csv_format = v;
             }
             V::CounterPadChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "bpm_int" => st.counter_bpm_int_pad = value,
-                    "bpm_dec" => st.counter_bpm_dec_pad = value.min(12),
-                    "nc" => st.counter_note_count_pad = value,
-                    "plph" => st.counter_polyphony_pad = value,
-                    "nps" => st.counter_nps_pad = value,
-                    "ticks" => st.counter_ticks_pad = value,
-                    "bars" => st.counter_bars_pad = value,
-                    "frames" => st.counter_frames_pad = value,
+                    "bpm_int" => st.counter.bpm_int_pad = value,
+                    "bpm_dec" => st.counter.bpm_dec_pad = value.min(12),
+                    "nc" => st.counter.note_count_pad = value,
+                    "plph" => st.counter.polyphony_pad = value,
+                    "nps" => st.counter.nps_pad = value,
+                    "ticks" => st.counter.ticks_pad = value,
+                    "bars" => st.counter.bars_pad = value,
+                    "frames" => st.counter.frames_pad = value,
                     _ => {}
                 }
             }
             V::CounterResetPadding => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_bpm_int_pad = 3;
-                st.counter_bpm_dec_pad = 2;
-                st.counter_note_count_pad = 5;
-                st.counter_polyphony_pad = 3;
-                st.counter_nps_pad = 3;
-                st.counter_ticks_pad = 5;
-                st.counter_bars_pad = 3;
-                st.counter_frames_pad = 5;
+                st.counter.bpm_int_pad = 3;
+                st.counter.bpm_dec_pad = 2;
+                st.counter.note_count_pad = 5;
+                st.counter.polyphony_pad = 3;
+                st.counter.nps_pad = 3;
+                st.counter.ticks_pad = 5;
+                st.counter.bars_pad = 3;
+                st.counter.frames_pad = 5;
             }
             V::CounterLoadTemplate(name) => {
                 let st = &mut root.state.video_export_dialog;
@@ -241,11 +241,11 @@ impl DialogHandler {
                     "full" => crate::state::root_state::COUNTER_FULL_TEXT,
                     _ => crate::state::root_state::COUNTER_DEFAULT_TEXT,
                 };
-                st.counter_text = template.to_string();
+                st.counter.text = template.to_string();
             }
             V::CounterResetText => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
+                st.counter.text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
             }
             V::CounterBrowseCsv => {
                 root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {

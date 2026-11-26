@@ -43,7 +43,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         gap(4.0),
         VideoRow::TextArea {
             label: String::new(),
-            value: state.counter_text.clone(),
+            value: state.counter.text.clone(),
             hint: "Notes: {nc} / {tn}\\nBPM: {bpm}".to_string(),
             height: 140.0,
             id: 100,
@@ -62,7 +62,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             FONT_MODES.iter().map(|s| s.to_string()).collect(),
             FONT_MODES
                 .iter()
-                .position(|v| *v == state.counter_font_mode)
+                .position(|v| *v == state.counter.font_mode)
                 .unwrap_or(0),
             140.0,
             103,
@@ -71,14 +71,14 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     ];
 
     // 字体来源分支（与 上一代 同：系统字体 / 自定义字体 / 内置点阵提示）。
-    match state.counter_font_mode.as_str() {
+    match state.counter.font_mode.as_str() {
         "系统字体" => rows.push(pick(
             tr!("字体:"),
             100.0,
             SYSTEM_FONT_FAMILIES.iter().map(|s| s.to_string()).collect(),
             SYSTEM_FONT_FAMILIES
                 .iter()
-                .position(|v| *v == state.counter_font_family)
+                .position(|v| *v == state.counter.font_family)
                 .unwrap_or(0),
             140.0,
             104,
@@ -87,7 +87,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             "",
             0.0,
             105,
-            &state.counter_font_path,
+            &state.counter.font_path,
             tr!("选择 TTF/OTF 字体文件..."),
             0.0,
             button(tr!("浏览..."), 106, VideoButtonFill::Primary, 0.0),
@@ -106,7 +106,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         ALIGNMENTS.iter().map(|s| s.to_string()).collect(),
         ALIGNMENTS
             .iter()
-            .position(|v| *v == state.counter_alignment)
+            .position(|v| *v == state.counter.alignment)
             .unwrap_or(0),
         140.0,
         107,
@@ -115,24 +115,24 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     rows.push(VideoRow::Slider {
         label: tr!("字号:").to_string(),
         label_width: 100.0,
-        value: state.counter_font_size as f32,
+        value: state.counter.font_size as f32,
         min: 7.0,
         max: 256.0,
         step: 1.0,
         slider_width: 140.0,
-        value_text: format!("{} px", state.counter_font_size),
+        value_text: format!("{} px", state.counter.font_size),
         id: 108,
     });
     rows.push(gap(8.0));
     rows.push(VideoRow::Toggle {
         label: tr!("使用千分位分隔符（1,234,567）").to_string(),
-        checked: state.counter_use_commas,
+        checked: state.counter.use_commas,
         id: 109,
     });
     rows.push(gap(4.0));
     rows.push(VideoRow::Toggle {
         label: tr!("数字补零（按下方宽度对齐）").to_string(),
-        checked: state.counter_padding_zeroes,
+        checked: state.counter.padding_zeroes,
         id: 110,
     });
     rows.push(gap(12.0));
@@ -140,16 +140,16 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     // CSV 导出。
     rows.push(VideoRow::Toggle {
         label: tr!("每帧统计数据写入 CSV 文件").to_string(),
-        checked: state.counter_save_csv,
+        checked: state.counter.save_csv,
         id: 111,
     });
-    if state.counter_save_csv {
+    if state.counter.save_csv {
         rows.push(gap(4.0));
         rows.push(text_button(
             tr!("路径:"),
             50.0,
             112,
-            &state.counter_csv_output,
+            &state.counter.csv_output,
             tr!("选择 CSV 输出路径..."),
             0.0,
             button(tr!("浏览..."), 113, VideoButtonFill::Primary, 0.0),
@@ -158,7 +158,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         rows.push(VideoRow::Text {
             label: tr!("格式:").to_string(),
             label_width: 50.0,
-            value: state.counter_csv_format.clone(),
+            value: state.counter.csv_format.clone(),
             hint: "{nps},{plph},{bpm},{nc}".to_string(),
             width: 0.0,
             id: 114,
@@ -171,20 +171,20 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     rows.push(gap(4.0));
     let pads: [(TextPairCell, TextPairCell); 4] = [
         (
-            pad_cell(tr!("BPM 整数"), state.counter_bpm_int_pad, 120),
-            pad_cell(tr!("BPM 小数"), state.counter_bpm_dec_pad, 121),
+            pad_cell(tr!("BPM 整数"), state.counter.bpm_int_pad, 120),
+            pad_cell(tr!("BPM 小数"), state.counter.bpm_dec_pad, 121),
         ),
         (
-            pad_cell(tr!("音符数"), state.counter_note_count_pad, 122),
-            pad_cell(tr!("复音数"), state.counter_polyphony_pad, 123),
+            pad_cell(tr!("音符数"), state.counter.note_count_pad, 122),
+            pad_cell(tr!("复音数"), state.counter.polyphony_pad, 123),
         ),
         (
-            pad_cell("NPS", state.counter_nps_pad, 124),
-            pad_cell("Ticks", state.counter_ticks_pad, 125),
+            pad_cell("NPS", state.counter.nps_pad, 124),
+            pad_cell("Ticks", state.counter.ticks_pad, 125),
         ),
         (
-            pad_cell(tr!("小节"), state.counter_bars_pad, 126),
-            pad_cell(tr!("帧数"), state.counter_frames_pad, 127),
+            pad_cell(tr!("小节"), state.counter.bars_pad, 126),
+            pad_cell(tr!("帧数"), state.counter.frames_pad, 127),
         ),
     ];
     for (index, (left, right)) in pads.into_iter().enumerate() {

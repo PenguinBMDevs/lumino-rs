@@ -105,11 +105,11 @@ impl Root {
                 self.state.audio_export_dialog.soundfont_path = path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoCounterFont => {
-                self.state.video_export_dialog.counter_font_path =
+                self.state.video_export_dialog.counter.font_path =
                     path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoCounterCsv => {
-                self.state.video_export_dialog.counter_csv_output =
+                self.state.video_export_dialog.counter.csv_output =
                     path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoDataCurveFont => {

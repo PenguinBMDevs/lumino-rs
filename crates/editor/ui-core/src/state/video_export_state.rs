@@ -40,6 +40,55 @@ pub enum VideoExportOverlayState {
     Error(String),
 }
 
+/// 计数器（Counter）渲染设置（视频导出状态的分区）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CounterSection {
+    pub text: String,
+    pub alignment: String,
+    pub font_size: u32,
+    pub font_mode: String,
+    pub font_family: String,
+    pub font_path: String,
+    pub use_commas: bool,
+    pub padding_zeroes: bool,
+    pub save_csv: bool,
+    pub csv_output: String,
+    pub csv_format: String,
+    pub bpm_int_pad: u32,
+    pub bpm_dec_pad: u32,
+    pub note_count_pad: u32,
+    pub polyphony_pad: u32,
+    pub nps_pad: u32,
+    pub ticks_pad: u32,
+    pub bars_pad: u32,
+    pub frames_pad: u32,
+}
+
+impl Default for CounterSection {
+    fn default() -> Self {
+        Self {
+            text: COUNTER_DEFAULT_TEXT.to_string(),
+            alignment: "左上".to_string(),
+            font_size: 40,
+            font_mode: "内置点阵".to_string(),
+            font_family: "微软雅黑".to_string(),
+            font_path: String::new(),
+            use_commas: true,
+            padding_zeroes: false,
+            save_csv: false,
+            csv_output: String::new(),
+            csv_format: COUNTER_DEFAULT_CSV_FORMAT.to_string(),
+            bpm_int_pad: 3,
+            bpm_dec_pad: 2,
+            note_count_pad: 5,
+            polyphony_pad: 3,
+            nps_pad: 3,
+            ticks_pad: 5,
+            bars_pad: 3,
+            frames_pad: 5,
+        }
+    }
+}
 /// MIDITrail 渲染设置（从 VideoExportDialogState 拆出的第一个域）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MiditrailSection {
@@ -91,28 +140,8 @@ pub struct VideoExportDialogState {
     pub miditrail: MiditrailSection,
 
     // ── 计数器设置（参考 Zenith-MIDI NoteCountRender 设置面板） ──
-    /// 计数器文本模板
-    pub counter_text: String,
-    /// 计数器对齐方式（"左上"/"右上"/"左下"/"右下"/"顶部分散"/"底部分散"）
-    pub counter_alignment: String,
-    /// 计数器字号（像素）
-    pub counter_font_size: u32,
-    /// 计数器字体来源（"bitmap"/"system"/"file"）
-    pub counter_font_mode: String,
-    /// 计数器系统字体名称（如 "微软雅黑"）
-    pub counter_font_family: String,
-    /// 计数器自定义字体文件路径
-    pub counter_font_path: String,
-    /// 计数器千分位（true=逗号，false=无）
-    pub counter_use_commas: bool,
-    /// 计数器数字补零
-    pub counter_padding_zeroes: bool,
-    /// 计数器 CSV 导出开关
-    pub counter_save_csv: bool,
-    /// 计数器 CSV 输出路径
-    pub counter_csv_output: String,
-    /// 计数器 CSV 行格式
-    pub counter_csv_format: String,
+    /// 计数器渲染设置。
+    pub counter: CounterSection,
     // ── 数据曲线设置（参考 MIDIGraphRenderer graph 设置面板） ──
     /// 数据来源指标（"NPS（每秒音符数）"/"复音数"/"累计音符数"/"BPM（速度）"）
     pub dc_metric: String,
@@ -158,22 +187,6 @@ pub struct VideoExportDialogState {
     pub dc_show_text: bool,
     /// 显示水平网格线
     pub dc_show_bars: bool,
-    /// BPM 整数部分补零宽度
-    pub counter_bpm_int_pad: u32,
-    /// BPM 小数部分位数
-    pub counter_bpm_dec_pad: u32,
-    /// 音符数补零宽度
-    pub counter_note_count_pad: u32,
-    /// 复音数补零宽度
-    pub counter_polyphony_pad: u32,
-    /// NPS 补零宽度
-    pub counter_nps_pad: u32,
-    /// 时钟 tick 补零宽度
-    pub counter_ticks_pad: u32,
-    /// 小节数补零宽度
-    pub counter_bars_pad: u32,
-    /// 帧数补零宽度
-    pub counter_frames_pad: u32,
     /// 分辨率宽度
     pub width: u32,
     /// 分辨率高度
@@ -224,17 +237,7 @@ impl VideoExportDialogState {
             midi_console_backend: "GPU".to_string(),
             waterfall_speed: 1.0,
             miditrail: MiditrailSection::default(),
-            counter_text: COUNTER_DEFAULT_TEXT.to_string(),
-            counter_alignment: "左上".to_string(),
-            counter_font_size: 40,
-            counter_font_mode: "内置点阵".to_string(),
-            counter_font_family: "微软雅黑".to_string(),
-            counter_font_path: String::new(),
-            counter_use_commas: true,
-            counter_padding_zeroes: false,
-            counter_save_csv: false,
-            counter_csv_output: String::new(),
-            counter_csv_format: COUNTER_DEFAULT_CSV_FORMAT.to_string(),
+            counter: CounterSection::default(),
             dc_metric: "NPS（每秒音符数）".to_string(),
             dc_graph_duration: "2.0".to_string(),
             dc_zoom_smoothness: "8.0".to_string(),
@@ -257,14 +260,6 @@ impl VideoExportDialogState {
             dc_abbreviate_digits: "3".to_string(),
             dc_show_text: true,
             dc_show_bars: true,
-            counter_bpm_int_pad: 3,
-            counter_bpm_dec_pad: 2,
-            counter_note_count_pad: 5,
-            counter_polyphony_pad: 3,
-            counter_nps_pad: 3,
-            counter_ticks_pad: 5,
-            counter_bars_pad: 3,
-            counter_frames_pad: 5,
             width: 1920,
             height: 1080,
             fps: 60,
@@ -313,5 +308,44 @@ mod tests {
         assert_eq!(state.waterfall_speed, 1.0);
         assert_eq!(state.container, "MP4");
         assert_eq!(state.codec, "H.264");
+    }
+}
+
+#[cfg(test)]
+mod counter_tests {
+    use super::*;
+
+    /// 计数器子结构的默认值与旧字段逐一对应。
+    #[test]
+    fn counter_defaults_snapshot() {
+        let state = VideoExportDialogState::new();
+        assert_eq!(state.counter.text, COUNTER_DEFAULT_TEXT);
+        assert_eq!(state.counter.csv_format, COUNTER_DEFAULT_CSV_FORMAT);
+        assert_eq!(state.counter.font_size, 40);
+        assert!(state.counter.use_commas);
+        assert!(!state.counter.padding_zeroes);
+        assert_eq!(
+            [
+                state.counter.bpm_int_pad,
+                state.counter.bpm_dec_pad,
+                state.counter.note_count_pad,
+                state.counter.polyphony_pad,
+                state.counter.nps_pad,
+                state.counter.ticks_pad,
+                state.counter.bars_pad,
+                state.counter.frames_pad,
+            ],
+            [3, 2, 5, 3, 3, 5, 3, 5]
+        );
+    }
+
+    /// 计数器与其它域互不影响。
+    #[test]
+    fn counter_section_is_independent() {
+        let mut state = VideoExportDialogState::new();
+        state.counter.font_size = 96;
+        assert_eq!(state.miditrail.z_far, MIDITRAIL_Z_FAR_DEFAULT);
+        assert_eq!(state.waterfall_speed, 1.0);
+        assert_eq!(state.width, 1920);
     }
 }

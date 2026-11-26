@@ -209,7 +209,7 @@ fn widget_actions_map_to_messages() {
 fn counter_section_rows_cover_every_control() {
     let mut root = root();
     root.state.video_export_dialog.render_mode = "计数器".to_owned();
-    root.state.video_export_dialog.counter_save_csv = true;
+    root.state.video_export_dialog.counter.save_csv = true;
     let panel = root.video_export_panel_model(rect());
     let counter = panel
         .content
@@ -263,7 +263,7 @@ fn counter_section_rows_cover_every_control() {
         "CSV 格式行"
     );
 
-    root.state.video_export_dialog.counter_save_csv = false;
+    root.state.video_export_dialog.counter.save_csv = false;
     let panel = root.video_export_panel_model(rect());
     let counter = panel
         .content
@@ -285,7 +285,7 @@ fn counter_font_mode_branches() {
     let mut root = root();
     root.state.video_export_dialog.render_mode = "计数器".to_owned();
 
-    root.state.video_export_dialog.counter_font_mode = "系统字体".to_owned();
+    root.state.video_export_dialog.counter.font_mode = "系统字体".to_owned();
     let panel = root.video_export_panel_model(rect());
     let counter = panel
         .content
@@ -301,7 +301,7 @@ fn counter_font_mode_branches() {
         "系统字体分支应有字体族下拉"
     );
 
-    root.state.video_export_dialog.counter_font_mode = "自定义字体".to_owned();
+    root.state.video_export_dialog.counter.font_mode = "自定义字体".to_owned();
     let panel = root.video_export_panel_model(rect());
     let counter = panel
         .content
