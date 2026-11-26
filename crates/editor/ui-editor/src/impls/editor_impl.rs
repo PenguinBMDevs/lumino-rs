@@ -64,9 +64,6 @@ impl Editor {
                 collab_broadcast_batches: 0,
                 ctrl_pressed: false,
                 shift_pressed: false,
-                remote_selections: std::collections::HashMap::new(),
-                local_selection_timestamp: None,
-                local_selection_fingerprints: Vec::new(),
                 brush: BrushConfig::new(),
                 fill_division_dialog_requested: false,
             }

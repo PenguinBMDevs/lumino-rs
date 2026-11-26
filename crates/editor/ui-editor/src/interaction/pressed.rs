@@ -207,7 +207,8 @@ impl Editor {
                         self.drain_async_commit();
                         // 落盘后选中已跟随新值（poll 按新值重选），远端高亮同步到新位置。
                         if self.editor_state.data.collab_sync_enabled() {
-                            self.emit_local_selection_changed(true);
+                            let fps = self.selected_fingerprints();
+                            self.transient.emit_local_selection_changed(true, &fps);
                         }
                         // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
                         // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
@@ -230,7 +231,8 @@ impl Editor {
                         // 同 LeftEdge：等待落盘消除竞态，保留新值选区供拉伸。
                         self.drain_async_commit();
                         if self.editor_state.data.collab_sync_enabled() {
-                            self.emit_local_selection_changed(true);
+                            let fps = self.selected_fingerprints();
+                            self.transient.emit_local_selection_changed(true, &fps);
                         }
                         // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
                         self.selected_bounds.set(None);
@@ -320,7 +322,7 @@ impl Editor {
             }
             self.selection_clear();
             // 取消框选：结束本地选择会话（远端清除高亮）。
-            self.emit_local_selection_changed(false);
+            self.transient.emit_local_selection_changed(false, &[]);
         }
         if self.transient.pending_copy.is_some() {
             self.commit_pending_copy();

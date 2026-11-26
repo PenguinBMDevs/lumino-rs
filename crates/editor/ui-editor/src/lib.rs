@@ -279,23 +279,6 @@ pub struct Editor {
     /// 走 host 层可靠通道，避免 canvas 内 `ModifiersChanged` 事件因焦点问题不送达。
     shift_pressed: bool,
 
-    /// 远端用户选择集合（用于协作高亮 + first-writer-wins 冲突判定）
-    ///
-    /// key = 远端用户 ID，value = 该用户的选择指纹与时间戳。
-    pub remote_selections: std::collections::HashMap<String, RemoteSelectionSet>,
-
-    /// 本地当前选择的时间戳（ms）
-    ///
-    /// 框选完成时由 `emit_local_selection_changed(true)` 写入，用于冲突判定：
-    /// 提交本地编辑前比对远端选择时间戳，远端更早则本地让行。
-    pub(crate) local_selection_timestamp: Option<u64>,
-
-    /// 本地当前选择的指纹（track, tick, key, length）
-    ///
-    /// 与 `local_selection_timestamp` 同步写入/清空，供冲突判定复用，
-    /// 避免在提交热路径重新扫描选中集合。
-    pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
-
     /// 画刷工具配置（**全局绘制粗细** + 每层音轨分配）
     ///
     /// ⚠️ `thickness` 是**全局**值，不是画刷私有：曲线 / 形状的描边与画刷笔画共用它

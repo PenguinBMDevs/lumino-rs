@@ -117,7 +117,8 @@ impl Editor {
                     // 协作未连接时跳过：消费端 `is_connected` 会短路丢弃，而指纹构建
                     // （百万级选中 ~100ms）纯浪费。
                     if self.editor_state.data.collab_sync_enabled() {
-                        self.emit_local_selection_changed(true);
+                        let fps = self.selected_fingerprints();
+                        self.transient.emit_local_selection_changed(true, &fps);
                     }
                 }
             }

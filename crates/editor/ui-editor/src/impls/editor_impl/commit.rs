@@ -126,7 +126,7 @@ impl Editor {
 
         // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先），
         // 既不应用移动也不广播。
-        if self.local_selection_is_locked() {
+        if self.transient.local_selection_is_locked() {
             tracing::debug!("协作: 批量移动被远端抢先选择锁定，跳过（远端优先）");
             return false;
         }
@@ -230,7 +230,7 @@ impl Editor {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
         // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先）。
-        if self.local_selection_is_locked() {
+        if self.transient.local_selection_is_locked() {
             tracing::debug!("协作: 批量复制被远端抢先选择锁定，跳过（远端优先）");
             return false;
         }
@@ -277,7 +277,7 @@ impl Editor {
         }
         self.transient.pending_copy = None;
         // 编辑已提交：结束本地选择会话（通知对端）
-        self.emit_local_selection_changed(false);
+        self.transient.emit_local_selection_changed(false, &[]);
         tracing::info!("Editor: 已复制 {} 个音符", inserted);
         true
     }
@@ -553,7 +553,8 @@ impl Editor {
             && !self.editor_state.interaction.selected_notes.is_empty()
             && self.editor_state.data.collab_sync_enabled()
         {
-            self.emit_local_selection_changed(true);
+            let fps = self.selected_fingerprints();
+            self.transient.emit_local_selection_changed(true, &fps);
         }
         // 复制模式：未写入的副本在保存/播放/导出前必须写入内存层。
         // 必须在 drain 之后（异步提交整轨替换音符，先插入副本会被覆盖）
