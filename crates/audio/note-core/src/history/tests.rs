@@ -282,3 +282,4 @@ fn test_op_kind_is_chain_marker() {
     assert!(OpKind::ChainMarker.is_chain_marker());
     assert!(!OpKind::Other.is_chain_marker());
 }
+mod note_create;

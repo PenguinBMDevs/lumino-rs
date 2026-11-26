@@ -5,13 +5,13 @@
 
 pub mod archive;
 pub mod constants;
-#[cfg(test)]
-pub mod document_tests;
 pub mod event;
 pub mod info;
 pub mod loader;
 pub mod quantize;
 pub mod streaming;
+#[cfg(test)]
+mod tests;
 
 // 重新导出 lumino-midi-model 中的类型（调用链保持 lumino_midi_loader::Xxx 不变）
 pub use lumino_midi_model::{

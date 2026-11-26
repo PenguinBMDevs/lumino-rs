@@ -6,7 +6,7 @@
 //! - NoteOff 释放力度透传（`PackedNote` → `NoteEvent`）
 //! - 文本类元事件保留（Text/版权/乐器名/CuePoint）
 
-use super::MidiDocument;
+use super::super::MidiDocument;
 use midly::{Format, Header, MetaMessage, MidiMessage, Smf, Timing, TrackEvent, TrackEventKind};
 
 /// 用 midly 内存构造 SMF 并序列化为字节（不依赖外部测试资产文件）。

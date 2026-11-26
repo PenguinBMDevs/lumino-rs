@@ -454,4 +454,4 @@ pub fn new_api_with_options(
 }
 
 #[cfg(test)]
-mod output_tests;
+mod tests;

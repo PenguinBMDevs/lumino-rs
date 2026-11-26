@@ -381,6 +381,3 @@ mod note_create;
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod tests_note_create;

@@ -33,5 +33,4 @@ mod player;
 pub use player::StreamingMidiPlayer;
 
 #[cfg(test)]
-#[path = "streaming_tests.rs"]
 mod tests;

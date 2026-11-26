@@ -179,12 +179,6 @@ impl Clone for MidiDocument {
     }
 }
 
-/// MidiDocument 可写 API 单元测试（独立文件，保持本文件 ≤600 行）
+/// MidiDocument 读写/加载测试（`tests/` 子模块，T-40b）
 #[cfg(test)]
-#[path = "document_write_tests.rs"]
 mod tests;
-
-/// MidiDocument 加载链路验收单测（EXP-006 数据保留，独立文件）
-#[cfg(test)]
-#[path = "document_load_tests.rs"]
-mod load_tests;

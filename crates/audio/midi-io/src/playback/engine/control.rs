@@ -8,6 +8,6 @@ mod position;
 mod state;
 
 #[cfg(test)]
-mod control_tests;
+mod tests;
 
 pub use core::PlaybackEngine;
