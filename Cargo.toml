@@ -397,3 +397,8 @@ mod_module_files = "deny"  # AGENTS.md：禁止 mod.rs，使用 Rust 2018 模块
 unwrap_used = "deny"       # AGENTS.md 红线：NEVER use unwrap()（生产 + 测试）
 # 注：expect_used 不设全局 deny——测试代码允许 expect（AGENTS.md 规定），
 # 而 clippy 无法按 test/生产区分；生产代码的 expect 由 AGENTS.md 规范 + code review 守住。
+#
+# too_many_lines 暂不启用：存量 309 个 >100 行函数，而 CI 使用 `-D warnings`，
+# 直接启用会让 lint job 一次报 309 条错误。DEBT-10 Phase 0 用基线棘轮逐 crate 开启；
+# clippy.toml 的 too-many-lines-threshold 只对已启用该 lint 的 crate 生效。
+# 文件行数（生产 600 / 测试 800）由 scripts/check-file-size.py 检查，不是 clippy。
