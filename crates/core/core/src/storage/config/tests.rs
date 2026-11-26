@@ -222,3 +222,6 @@ fn test_recent_files_roundtrip_and_legacy_default() {
     let restored: UiConfig = serde_json::from_value(value).expect("缺字段的旧配置应能反序列化");
     assert!(restored.recent_files.is_empty(), "旧配置应落为空列表");
 }
+
+mod autosave;
+mod onion_backend;
