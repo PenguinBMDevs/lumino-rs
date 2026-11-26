@@ -6,19 +6,19 @@ use super::*;
 fn test_keyboard_colors_clear_after_stop() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.key_colors.enabled = true;
     editor.editor_state.data.document = Some(doc);
 
     // 播放到 tick 240（C4、G4 着色）
     editor.playback_position = 240.0;
     editor.update_playback_key_colors();
     assert_ne!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.key_colors.colors[60 * 4 + 3],
         0,
         "C4 should be colored before stop"
     );
     assert_ne!(
-        editor.playback_key_colors[67 * 4 + 3],
+        editor.key_colors.colors[67 * 4 + 3],
         0,
         "G4 should be colored before stop"
     );
@@ -29,7 +29,7 @@ fn test_keyboard_colors_clear_after_stop() {
     editor.clear_playback_key_colors();
 
     assert_eq!(
-        editor.playback_key_colors, [0u8; 1024],
+        editor.key_colors.colors, [0u8; 1024],
         "键盘颜色应在停止后恢复无颜色状态"
     );
     // 扫描状态也应被重置，下次播放从头扫描
@@ -47,8 +47,8 @@ fn test_keyboard_colors_clear_after_stop() {
 #[test]
 fn test_keyboard_colors_clear_is_idempotent() {
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.key_colors.enabled = true;
     // 无文档、无颜色：clear 不应 panic 也不应产生颜色
     editor.clear_playback_key_colors();
-    assert_eq!(editor.playback_key_colors, [0u8; 1024]);
+    assert_eq!(editor.key_colors.colors, [0u8; 1024]);
 }

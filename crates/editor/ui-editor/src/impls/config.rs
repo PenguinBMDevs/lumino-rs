@@ -265,9 +265,8 @@ impl Editor {
 
     /// 设置播放时键盘颜色指示是否启用
     pub fn set_playback_key_colors_enabled(&mut self, enabled: bool) {
-        self.playback_key_colors_enabled = enabled;
+        self.key_colors.set_enabled(enabled);
         if !enabled {
-            self.playback_key_colors = [0u8; 1024];
             // 关闭时重置扫描状态，下次启用从干净状态开始
             self.playback_scan_state = Default::default();
         }

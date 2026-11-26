@@ -25,6 +25,8 @@ pub mod editor_state;
 pub mod grid;
 pub mod history;
 pub mod note;
+mod playback_key_colors;
+use playback_key_colors::PlaybackKeyColors;
 pub mod recording;
 pub mod smooth_scroll;
 pub mod spatial_index;
@@ -143,13 +145,8 @@ pub struct Editor {
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
 
-    /// 播放期间琴键洋葱皮颜色（key → RGBA 颜色）
-    /// 使用固定大小数组替代HashMap，直接索引O(1)，避免hash计算开销
-    /// 索引 = key (0-255)，值 = [R, G, B, A]，全零表示无颜色
-    pub(crate) playback_key_colors: [u8; 1024],
-
-    /// 播放时键盘颜色指示是否启用（默认关闭，节省内存和CPU）
-    pub(crate) playback_key_colors_enabled: bool,
+    /// 演奏键色（着色开关 + 256 键 RGBA 缓存）。
+    pub(crate) key_colors: PlaybackKeyColors,
 
     /// Domino（TAKABO SOFT）剪贴板互粘是否启用（UiConfig 驱动，默认关闭，仅 Windows 生效）
     ///

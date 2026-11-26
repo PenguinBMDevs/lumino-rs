@@ -82,7 +82,7 @@ impl Editor {
     /// 清空数组，因此调用方无需另行判断开关。
     #[inline]
     pub fn playback_key_colors(&self) -> &[u8; 1024] {
-        &self.playback_key_colors
+        &self.key_colors.colors
     }
 
     /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
@@ -107,14 +107,12 @@ impl Editor {
     /// 复杂度 O(活跃音符数)，与已播放音符总量无关。仅文档切换时构建一次索引。
     pub fn update_playback_key_colors(&mut self) {
         puffin::profile_function!();
-        if !self.playback_key_colors_enabled {
+        if !self.key_colors.enabled {
             return;
         }
 
         if (self.playback_position - 0.0).abs() < f32::EPSILON {
-            if self.playback_key_colors != [0u8; 1024] {
-                self.playback_key_colors = [0u8; 1024];
-            }
+            self.key_colors.clear();
             // 停止时重置扫描状态，下次播放从头开始。
             // 注意：保留 key_color_index（仅依赖文档音符，与播放进度无关），
             // 避免重启后首帧全量重建退回 O(end) 线性扫描。
@@ -269,7 +267,7 @@ impl Editor {
             let offset = *offset;
             new_colors[offset..offset + 4].copy_from_slice(color);
         }
-        self.playback_key_colors = new_colors;
+        self.key_colors.colors = new_colors;
     }
 
     /// 为播放键色构建跨所有轨的空间索引（按 doc 缓存）
@@ -346,9 +344,7 @@ impl Editor {
     /// 当 `playback_key_colors_enabled == false` 时颜色数组本就是全零，调用安全无损。
     pub fn clear_playback_key_colors(&mut self) {
         puffin::profile_function!();
-        if self.playback_key_colors != [0u8; 1024] {
-            self.playback_key_colors = [0u8; 1024];
-        }
+        self.key_colors.clear();
         // 保留 key_color_index：它仅依赖文档音符，与播放进度无关，
         // 停止/重启不应使其失效（否则重启首帧会退回 O(end) 线性扫描）。
         self.playback_scan_state.last_tick = 0.0;
