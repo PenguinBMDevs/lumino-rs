@@ -14,8 +14,7 @@ impl Editor {
     ///
     /// 原遮罩与被遮形状都不变（像盖章）；返回新形状 id。
     pub fn apply_mask(&mut self, mask_id: u64) -> Option<u64> {
-        let (_, unit) = self
-            .mask_units()
+        let (_, unit) = super::mask_units(self)
             .into_iter()
             .find(|(ids, _)| ids.contains(&mask_id))?;
         let entries: Vec<(u64, ShapeModel, Vec<ShapeNote>)> = self
