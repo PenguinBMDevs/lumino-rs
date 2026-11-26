@@ -9,34 +9,56 @@
 
 /// 查本域英文译文；未登记返回 `None`。
 pub fn lookup(zh: &str) -> Option<&'static str> {
+    lookup_audio_1(zh)
+        .or_else(|| lookup_audio_2(zh))
+        .or_else(|| lookup_audio_3(zh))
+        .or_else(|| lookup_audio_4(zh))
+}
+
+/// 词条分片 1/4：按原 `match` 顺序切分，语义等价。
+fn lookup_audio_1(zh: &str) -> Option<&'static str> {
     match zh {
         // ── midi-io：后端初始化 / 设备 / 输出连接 ──
         "无可用音频输出设备" => Some("No audio output device available"),
+
         "读取默认输出配置失败: {e}" => {
             Some("Failed to read the default output configuration: {e}")
         }
         "创建输出流失败: {e}" => Some("Failed to create output stream: {e}"),
+
         "暂停输出流失败: {e}" => Some("Failed to pause the output stream: {e}"),
+
         "探测音频格式失败: {e}" => Some("Failed to probe the audio format: {e}"),
+
         "音频文件无可用轨道" => Some("The audio file has no usable track"),
+
         "创建解码器失败: {e}" => Some("Failed to create decoder: {e}"),
+
         "读取音频包失败: {e}" => Some("Failed to read audio packet: {e}"),
+
         "解码音频包失败: {e}" => Some("Failed to decode audio packet: {e}"),
+
         "音频解码结果为空" => Some("Audio decoding produced no data"),
+
         "当前后端不支持音频流恢复" => {
             Some("The current backend does not support audio stream recovery")
         }
         "MIDI 输入未初始化" => Some("MIDI input not initialized"),
+
         "MIDI 输入 API 未初始化，无法录制" => {
             Some("MIDI input API not initialized; recording is unavailable")
         }
         "未找到可用的 MIDI 输入设备" => Some("No MIDI input device available"),
+
         "获取 MIDI 输入设备失败：{e}" => {
             Some("Failed to enumerate MIDI input devices: {e}")
         }
         "无法打开 MIDI 输入设备：{e}" => Some("Failed to open MIDI input device: {e}"),
+
         "MIDI 输出未初始化" => Some("MIDI output not initialized"),
+
         "MIDI 文件为空" => Some("The MIDI file is empty"),
+
         "不是普通文件，无法按 MIDI 加载" => {
             Some("Not a regular file; cannot load it as MIDI")
         }
@@ -67,12 +89,20 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "KDMAPI 不支持 MIDI 输入" => Some("KDMAPI does not support MIDI input"),
+
         "OmniMIDI.dll 未找到。已尝试路径: {paths}。请确认 OmniMIDI 已安装（https://github.com/KeppySoftware/OmniMIDI）" => {
             Some(
                 "OmniMIDI.dll not found. Tried paths: {paths}. Please make sure OmniMIDI is installed (https://github.com/KeppySoftware/OmniMIDI)",
             )
         }
         "LGS (GPU) 初始化失败: {e}" => Some("LGS (GPU) initialization failed: {e}"),
+        _ => None,
+    }
+}
+
+/// 词条分片 2/4：按原 `match` 顺序切分，语义等价。
+fn lookup_audio_2(zh: &str) -> Option<&'static str> {
+    match zh {
         "LGS (GPU) 音色库加载失败: {e}" => {
             Some("LGS (GPU) failed to load the soundfont: {e}")
         }
@@ -83,17 +113,21 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("LGS (GPU): failed to send the reset request (render thread has stopped)")
         }
         "重建 GPU 合成引擎失败: {e}" => Some("Failed to rebuild the GPU synth engine: {e}"),
+
         "重启 GPU 音频流失败: {e}" => Some("Failed to restart the GPU audio stream: {e}"),
+
         "音频设备默认配置失败: {e}" => {
             Some("Failed to get the audio device default configuration: {e}")
         }
         "重建合成管线失败: {e}" => Some("Failed to rebuild the synth pipeline: {e}"),
+
         "xsynth 不支持的消息类型: 0x{code}" => {
             Some("Unsupported message type for xsynth: 0x{code}")
         }
 
         // ── midi-loader：加载 / 解压 / 扫描 ──
         "无法获取文件扩展名" => Some("Cannot get the file extension"),
+
         "文件是压缩包格式，请先解压后再加载。" => {
             Some("This file is an archive. Please extract it before loading.")
         }
@@ -103,8 +137,11 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "正在加载 Lumino 工程文件" => Some("Loading Lumino project file"),
+
         "解析 Lumino 工程文件" => Some("Parsing Lumino project file"),
+
         "Lumino 工程文件加载完成" => Some("Lumino project file loaded"),
+
         "正在准备加载文件 (内存: {initial_rss} MB)" => {
             Some("Preparing to load file (memory: {initial_rss} MB)")
         }
@@ -127,31 +164,60 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("MIDI loaded (memory: {final_rss} MB)")
         }
         "加载线程 panic: {e}" => Some("Loading thread panicked: {e}"),
+
         "解析 MIDI 数据失败: {e}" => Some("Failed to parse MIDI data: {e}"),
+
         "扫描 MIDI 文件失败: {e}" => Some("Failed to scan the MIDI file: {e}"),
+
         "MmapSmf 解析失败: {e}" => Some("Failed to parse MmapSmf: {e}"),
+
         "未知" => Some("Unknown"),
+
         "unarc-rs 打开失败: {e}" => Some("unarc-rs failed to open: {e}"),
+
         "unarc-rs 读取条目失败: {e}" => Some("unarc-rs failed to read entry: {e}"),
+
         "unarc-rs 读取数据失败: {e}" => Some("unarc-rs failed to read data: {e}"),
+
         "zip 打开失败: {e}" => Some("zip failed to open: {e}"),
+
         "zip 读取条目失败: {e}" => Some("zip failed to read entry: {e}"),
+        _ => None,
+    }
+}
+
+/// 词条分片 3/4：按原 `match` 顺序切分，语义等价。
+fn lookup_audio_3(zh: &str) -> Option<&'static str> {
+    match zh {
         "zip 读取数据失败: {e}" => Some("zip failed to read data: {e}"),
+
         "GZ 解压失败: {e}" => Some("GZ decompression failed: {e}"),
+
         "XZ 解压失败: {e}" => Some("XZ decompression failed: {e}"),
+
         "iso9660 读取条目失败: {e}" => Some("iso9660 failed to read entry: {e}"),
+
         "iso9660 读取文件失败: {e}" => Some("iso9660 failed to read file: {e}"),
+
         "iso9660 查找失败: {e}" => Some("iso9660 lookup failed: {e}"),
+
         "tar 读取条目失败: {e}" => Some("tar failed to read entry: {e}"),
+
         "tar 条目解析失败: {e}" => Some("tar failed to parse entry: {e}"),
+
         "tar 路径解析失败: {e}" => Some("tar failed to parse path: {e}"),
+
         "tar 读取数据失败: {e}" => Some("tar failed to read data: {e}"),
+
         "tar 解压失败: {e}" => Some("tar extraction failed: {e}"),
+
         "tar.gz 解压失败: {e}" => Some("tar.gz extraction failed: {e}"),
+
         "tar.xz 解压失败: {e}" => Some("tar.xz extraction failed: {e}"),
 
         // ── midi-model：文档构建 ──
         "无法解析 MIDI 文件头" => Some("Cannot parse the MIDI file header"),
+
         "提取音符失败: {e}" => Some("Failed to extract notes: {e}"),
 
         // ── midiplayer：贴图瀑布流生成进度与状态 ──
@@ -159,6 +225,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Generating texture waterfall in the background\u{2026}")
         }
         "贴图瀑布流资源已释放" => Some("Texture waterfall resources released"),
+
         "贴图瀑布流流式生成+上传完成" => {
             Some("Texture waterfall streaming generation and upload complete")
         }
@@ -166,7 +233,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Temporary dirty-region overlay generated for track group {track_group}")
         }
         "贴图瀑布流：无内容需生成" => Some("Texture waterfall: nothing to generate"),
+
         "贴图瀑布流生成完成" => Some("Texture waterfall generation complete"),
+
         "贴图瀑布流流式生成完成" => {
             Some("Texture waterfall streaming generation complete")
         }
@@ -192,7 +261,15 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
 
         // ── note-core：编辑模式显示名 ──
         "力度" => Some("Velocity"),
+
         "速度" => Some("Tempo"),
+        _ => None,
+    }
+}
+
+/// 词条分片 4/4：按原 `match` 顺序切分，语义等价。
+fn lookup_audio_4(zh: &str) -> Option<&'static str> {
+    match zh {
         "每个音符 NoteOff 后额外延长该时长再释放，>0 可避免极短音被吞；0=禁用。" => {
             Some(
                 "Extend each note after NoteOff before release; >0 avoids swallowed staccato notes; 0=disabled.",

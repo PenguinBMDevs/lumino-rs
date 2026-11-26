@@ -22,55 +22,98 @@
 
 /// 查本域英文译文；未登记返回 `None`。
 pub fn lookup(zh: &str) -> Option<&'static str> {
+    lookup_error_display_1(zh)
+        .or_else(|| lookup_error_display_2(zh))
+        .or_else(|| lookup_error_display_3(zh))
+}
+
+/// 词条分片 1/3：按原 `match` 顺序切分，语义等价。
+fn lookup_error_display_1(zh: &str) -> Option<&'static str> {
     match zh {
         // `crates/audio/midi-model/src/error.rs`（LoaderError）
         "IO 错误" => Some("I/O error"),
+
         "MIDI 解析错误" => Some("MIDI parse error"),
+
         "缓存错误" => Some("Cache error"),
+
         "序列化错误" => Some("Serialization error"),
+
         "压缩错误" => Some("Compression error"),
+
         "文件格式错误" => Some("Invalid file format"),
+
         "无效参数" => Some("Invalid argument"),
 
         // `crates/core/core/src/error.rs`（CoreError）复用上面 7 条，无新增 key。
 
         // `crates/tools/export/src/error.rs`（ExportError）
         "MIDI 写入错误" => Some("MIDI write error"),
+
         "音频写入错误" => Some("Audio write error"),
+
         "无效的导出数据" => Some("Invalid export data"),
+
         "无效的文件路径" => Some("Invalid file path"),
+
         "编码错误" => Some("Encoding error"),
 
         // `crates/tools/export/src/video/error.rs`（VideoExportError）
         "ffmpeg 退出码" => Some("ffmpeg exit code"),
+
         "ffmpeg 写入失败" => Some("ffmpeg write failed"),
+
         "未找到 ffmpeg 可执行文件" => Some("ffmpeg executable not found"),
+
         "ffmpeg 管道建立失败" => Some("Failed to set up ffmpeg pipes"),
+
         "帧数据尺寸不匹配" => Some("Frame data size mismatch"),
 
         // `crates/network/cloud/src/error.rs`（CloudError）
         "连接失败" => Some("Connection failed"),
+
         "认证失败" => Some("Authentication failed"),
+
         "配置错误" => Some("Configuration error"),
+
         "加密错误" => Some("Encryption error"),
+
         "协议错误" => Some("Protocol error"),
+
         "未连接" => Some("Not connected"),
+
         // `"操作失败"` 已在 `runner_host` 域登记（Operation failed），此处不重复。
 
         // `crates/network/collaboration/src/error.rs`（CollaborationError）
         "HTTP 请求失败" => Some("HTTP request failed"),
+
         "WebSocket 错误" => Some("WebSocket error"),
+
         "WebSocket 协议错误" => Some("WebSocket protocol error"),
+
         "JSON 错误" => Some("JSON error"),
+
         "连接超时" => Some("Connection timed out"),
+
         "房间未找到" => Some("Room not found"),
+
         "未连接到服务器" => Some("Not connected to server"),
 
         // `crates/audio/midi-loader/src/archive.rs`（ArchiveError）
         "不支持的压缩格式" => Some("Unsupported compression format"),
+
         "文件不是有效的压缩包" => Some("File is not a valid archive"),
+
         "解压失败" => Some("Extraction failed"),
+        _ => None,
+    }
+}
+
+/// 词条分片 2/3：按原 `match` 顺序切分，语义等价。
+fn lookup_error_display_2(zh: &str) -> Option<&'static str> {
+    match zh {
         "压缩包中未找到条目" => Some("Entry not found in archive"),
+
         "压缩包条目名不安全（疑似路径穿越攻击），已拒绝" => {
             Some("Unsafe archive entry name (possible path traversal attack), rejected")
         }
@@ -78,11 +121,14 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
 
         // `crates/audio/midiplayer/src/texture_waterfall/cache/core.rs`（WaterfallCacheError）
         "magic 不匹配" => Some("Magic mismatch"),
+
         "版本不匹配" => Some("Version mismatch"),
+
         "元数据序列化/反序列化失败" => {
             Some("Metadata serialization/deserialization failed")
         }
         "像素压缩/解压失败" => Some("Pixel compression/decompression failed"),
+
         "规格不匹配（缓存失效）" => Some("Specification mismatch (cache invalidated)"),
 
         // `crates/audio/midiplayer/src/texture_waterfall/config.rs`（WaterfallConfigError）
@@ -101,38 +147,62 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
 
         // `crates/editor/gfx/src/context.rs`（ContextError）
         "创建 surface 失败" => Some("Failed to create surface"),
+
         "创建 adapter 失败" => Some("Failed to create adapter"),
+
         "获取 preferred format 失败" => Some("Failed to get preferred format"),
+
         "请求 device 失败" => Some("Failed to request device"),
+
         "获取帧失败" => Some("Failed to acquire frame"),
+
         "GPU 尚未初始化" => Some("GPU not initialized"),
+
         "GPU 设备已丢失（等待重连）" => Some("GPU device lost (waiting for reconnect)"),
 
         // `crates/editor/gfx/src/global_bucket.rs`（GlobalBucketError）
         "音符数量超出 u32 索引范围" => Some("Note count exceeds u32 index range"),
+
         "直方图回读 map 失败" => Some("Histogram readback map failed"),
+
         "直方图回读超时" => Some("Histogram readback timed out"),
+
         "回读数据长度异常" => Some("Readback data length invalid"),
+
         "cull 内部资源缺失" => Some("Missing internal cull resource"),
 
         // `crates/editor/gfx/src/device_check/report.rs`（GpuCheckFailure 的 Display）
         "未找到适配器" => Some("No adapter found"),
+
         "设备请求失败" => Some("Device request failed"),
+
         "渲染执行失败" => Some("Rendering failed"),
+
         "检测超时" => Some("Check timed out"),
+
         "检测执行异常" => Some("The check could not be executed"),
 
         // `crates/editor/ui-core/src/resources/icon.rs`（IconError）
         "图标不在缓存中" => Some("Icon not in cache"),
+        _ => None,
+    }
+}
+
+/// 词条分片 3/3：按原 `match` 顺序切分，语义等价。
+fn lookup_error_display_3(zh: &str) -> Option<&'static str> {
+    match zh {
         "SVG 解析错误" => Some("SVG parse error"),
+
         "无法创建 pixmap" => Some("Failed to create pixmap"),
+
         "获取缓存锁失败" => Some("Failed to acquire cache lock"),
 
         // `src/runner/inner.rs`（InitError）
         "存储初始化失败" => Some("Storage initialization failed"),
-        "窗口初始化失败" => Some("Window initialization failed"),
-        "云存储初始化失败" => Some("Cloud storage initialization failed"),
 
+        "窗口初始化失败" => Some("Window initialization failed"),
+
+        "云存储初始化失败" => Some("Cloud storage initialization failed"),
         _ => None,
     }
 }

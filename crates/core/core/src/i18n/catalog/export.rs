@@ -5,9 +5,18 @@
 
 /// 查本域英文译文；未登记返回 `None`。
 pub fn lookup(zh: &str) -> Option<&'static str> {
+    lookup_export_1(zh)
+        .or_else(|| lookup_export_2(zh))
+        .or_else(|| lookup_export_3(zh))
+}
+
+/// 词条分片 1/3：按原 `match` 顺序切分，语义等价。
+fn lookup_export_1(zh: &str) -> Option<&'static str> {
     match zh {
         " | {s}× 实时" => Some(" | {s}× realtime"),
+
         "不支持的 MIDI 源格式: {ext}" => Some("Unsupported MIDI source format: {ext}"),
+
         "不支持的音色库格式 {path}：仅支持 .sf2/.sfz" => {
             Some("Unsupported soundfont format {path}: only .sf2/.sfz are supported")
         }
@@ -17,9 +26,13 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "反序列化失败: {e}" => Some("Deserialization failed: {e}"),
+
         "解析 MIDI 失败: {e}" => Some("Failed to parse MIDI: {e}"),
+
         "解析 LMPJ 失败: {e}" => Some("Failed to parse LMPJ: {e}"),
+
         "解压失败: {e}" => Some("Decompression failed: {e}"),
+
         "进度: {pct}% | 预载音色库 {done}/{total} | 耗时 {elapsed}s" => {
             Some("Progress: {pct}% | Preloading soundfonts {done}/{total} | Elapsed: {elapsed}s")
         }
@@ -32,6 +45,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "输出路径不是合法 UTF-8: {path}" => Some("Output path is not valid UTF-8: {path}"),
+
         "未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件" => {
             Some("No soundfont selected. Choose a .sf2 file under Soundfont (SF2) first")
         }
@@ -39,27 +53,49 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("No soundfont selected. Choose a .sf2 file in the export panel")
         }
         "无法创建 WAV 文件 {path}: {e}" => Some("Failed to create WAV file {path}: {e}"),
+
         "无法启动 ffmpeg: {e}" => Some("Failed to start ffmpeg: {e}"),
+
         "无法启动 stderr 排空线程: {e}" => {
             Some("Failed to start the stderr drain thread: {e}")
         }
         "无法获取 ffmpeg stderr" => Some("Failed to capture ffmpeg stderr"),
+
         "无法获取 ffmpeg stdin" => Some("Failed to capture ffmpeg stdin"),
+
         "写入错误: {e}" => Some("Write error: {e}"),
+
         "序列化失败: {e}" => Some("Serialization failed: {e}"),
+
         "压缩失败: {e}" => Some("Compression failed: {e}"),
+
         "ffmpeg 编码失败:\n{stderr_text}" => Some("ffmpeg encoding failed:\n{stderr_text}"),
+
         "ffmpeg 管道写入错误: {e}" => Some("ffmpeg pipe write error: {e}"),
+
         "ffmpeg 管道已关闭" => Some("The ffmpeg pipe is closed"),
+
         "ffmpeg 进程等待失败: {e}" => Some("Failed waiting for the ffmpeg process: {e}"),
+
         "ffmpeg 进程退出码: {code}" => Some("ffmpeg exit code: {code}"),
+
         "ffmpeg 退出码 {code}" => Some("ffmpeg exited with code {code}"),
+
         "ffmpeg 未知错误退出" => Some("ffmpeg exited with an unknown error"),
+
         "ffmpeg stderr 未 piped" => Some("ffmpeg stderr is not piped"),
+
         "无法启动 ffmpeg stderr 线程: {e}" => {
             Some("Failed to start the ffmpeg stderr thread: {e}")
         }
         "ffmpeg stdin 未 piped" => Some("ffmpeg stdin is not piped"),
+        _ => None,
+    }
+}
+
+/// 词条分片 2/3：按原 `match` 顺序切分，语义等价。
+fn lookup_export_2(zh: &str) -> Option<&'static str> {
+    match zh {
         "FLAC 不支持超过 384kHz 的采样率" => {
             Some("FLAC does not support sample rates above 384 kHz")
         }
@@ -76,28 +112,39 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("Vorbis does not support bitrates above 480 kbps")
         }
         "PCM 不需要 ffmpeg 编码" => Some("PCM does not require ffmpeg encoding"),
+
         "需要 ffmpeg 来编码 {ext} 格式，但未找到 ffmpeg" => {
             Some("ffmpeg is required to encode {ext}, but ffmpeg was not found")
         }
         "WAV 写入错误: {e}" => Some("WAV write error: {e}"),
+
         "WAV 写入器初始化失败: {e}" => Some("Failed to initialize the WAV writer: {e}"),
+
         "WAV 写入器已关闭" => Some("The WAV writer is closed"),
+
         "WAV finalize 失败: {e}" => Some("WAV finalize failed: {e}"),
+
         "write_all 失败: {e}" => Some("write_all failed: {e}"),
+
         "stdin_writer 已关闭，无法写入帧" => {
             Some("stdin_writer is closed; cannot write frames")
         }
         "GPU 初始化中..." => Some("Initializing GPU..."),
+
         "GPU 初始化失败: {e}" => Some("GPU initialization failed: {e}"),
+
         "GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}" => {
             Some("GPU initialization failed (no usable Vulkan/Metal adapter): {e}")
         }
         "GPU 加载音色库..." => Some("Loading soundfont on GPU..."),
+
         "GPU 音色库加载失败 {sf_path}: {e}" => {
             Some("Failed to load soundfont on GPU {sf_path}: {e}")
         }
         "GPU 序列化 MIDI（内存）..." => Some("GPU serializing MIDI (in memory)..."),
+
         "GPU 渲染中..." => Some("GPU rendering..."),
+
         "GPU 渲染中（可能耗时，黑 MIDI 请耐心）..." => {
             Some("GPU rendering (this may take a while; heavy MIDI needs patience)...")
         }
@@ -105,13 +152,18 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("MIDI file content is empty; cannot render")
         }
         "GPU 渲染失败: {other}" => Some("GPU rendering failed: {other}"),
+
         "GPU 写入输出..." => Some("GPU writing output..."),
+
         "GPU 写入 {pct}%" => Some("GPU writing {pct}%"),
+
         "GPU 完成" => Some("GPU finished"),
+
         "GPU 渲染异常中断（设备丢失），请重试导出" => {
             Some("GPU rendering was interrupted abnormally (device lost); please retry the export")
         }
         "音色库文件不存在: {path}" => Some("Soundfont file not found: {path}"),
+
         "音色库文件不存在: {path}，请检查路径或重新选择" => {
             Some("Soundfont file not found: {path}. Check the path or select it again")
         }
@@ -122,7 +174,15 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             Some("{path} is not a valid SF2 file: expected a RIFF header, got {header}")
         }
         "音色库 {sf_path}: {e}" => Some("Soundfont {sf_path}: {e}"),
+        _ => None,
+    }
+}
+
+/// 词条分片 3/3：按原 `match` 顺序切分，语义等价。
+fn lookup_export_3(zh: &str) -> Option<&'static str> {
+    match zh {
         "MIDI 文件不存在: {midi_path}" => Some("MIDI file not found: {midi_path}"),
+
         "MIDI 文档中没有可渲染的事件" => {
             Some("The MIDI document contains no renderable events")
         }
@@ -140,6 +200,7 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
             )
         }
         "预计剩余: {t}" => Some("Remaining: {t}"),
+
         "预计剩余: 计算中..." => Some("Remaining: calculating..."),
         _ => None,
     }
