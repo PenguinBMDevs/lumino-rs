@@ -4,7 +4,7 @@
 //! RulerRenderer 的构造函数及 pipeline 相关方法。
 
 use super::{INITIAL_CAPACITY, RulerRenderer, VERTEX_SHADER};
-use crate::gpu_resource_tracker::{self, TrackedBuffer};
+use crate::instance_buffer::InstanceBuffer;
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
 use crate::uniform_binding::UniformBinding;
@@ -163,7 +163,12 @@ impl RulerRenderer {
             .build();
 
         // 创建缓冲区
-        let instance_buffer = Self::create_instance_buffer(device, INITIAL_CAPACITY);
+        let instances = InstanceBuffer::new(
+            device,
+            "ruler_instance_buffer",
+            INITIAL_CAPACITY,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
 
         let viewport = UniformBinding::new(
             device,
@@ -185,9 +190,8 @@ impl RulerRenderer {
 
         Self {
             pipeline,
-            instance_buffer,
+            instances,
             viewport,
-            capacity: INITIAL_CAPACITY,
             measure_color: [0.3, 0.3, 0.3, 1.0],
             beat_color: [0.5, 0.5, 0.5, 1.0],
             subdivision_color: [0.7, 0.7, 0.7, 1.0],
@@ -203,15 +207,6 @@ impl RulerRenderer {
             cache_ticks_per_beat: 0,
             cache_time_signatures: vec![(0, 4, 4)],
         }
-    }
-
-    /// 创建实例缓冲区
-    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> TrackedBuffer {
-        gpu_resource_tracker::create_instance_buffer::<RulerTickInstance>(
-            device,
-            "ruler_instance_buffer",
-            capacity,
-        )
     }
 
     /// 实例缓冲区布局

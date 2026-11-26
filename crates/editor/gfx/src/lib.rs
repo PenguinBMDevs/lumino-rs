@@ -24,6 +24,7 @@ mod gpu_note_buffer;
 mod gpu_resource_tracker;
 pub mod grid;
 mod grid_renderer;
+mod instance_buffer;
 mod note_renderer;
 mod pipeline;
 /// Tracy 剖析插桩（`tracy` feature，默认零开销）
