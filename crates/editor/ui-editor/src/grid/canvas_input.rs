@@ -12,6 +12,7 @@ use super::PianoRollGrid;
 use super::state::GridInteractionState;
 use crate::Editor;
 
+mod shared;
 pub mod vertical;
 
 /// 画布鼠标按钮。
@@ -69,14 +70,10 @@ pub fn dispatch(
     event: CanvasEvent,
 ) -> Option<Message> {
     let grid = PianoRollGrid::new(editor);
-    let local = |local: (f32, f32)| lumino_ui_core::geom::Point::new(local.0, local.1);
+    let local = shared::point;
 
     match event {
-        CanvasEvent::Modifiers { shift, ctrl } => {
-            state.shift_pressed = shift;
-            state.control_pressed = ctrl;
-            None
-        }
+        CanvasEvent::Modifiers { shift, ctrl } => shared::apply_modifiers(state, shift, ctrl),
         CanvasEvent::FocusLost => {
             state.shift_pressed = false;
             state.control_pressed = false;
@@ -164,7 +161,7 @@ pub fn dispatch(
             if state.is_dragging_indicator {
                 state.is_dragging_indicator = false;
             }
-            Some(Message::EditorAction(EditorAction::Released))
+            shared::released(editor)
         }
         CanvasEvent::Wheel {
             local: pos,
