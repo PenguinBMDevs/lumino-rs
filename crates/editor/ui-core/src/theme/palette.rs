@@ -384,19 +384,23 @@ impl Background {
     }
 }
 
-/// A set of primary colors.
+/// A set of accent colors (primary / success / warning / danger share one shape).
+///
+/// The four roles previously had four byte-identical `struct` + `impl` pairs; a
+/// theme now only supplies the base color, and every role is an alias of this
+/// type, so adding or retuning one place cannot drift from the others.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Primary {
-    /// The base primary color.
+pub struct Tone {
+    /// The base color.
     pub base: Pair,
-    /// A weaker version of the base primary color.
+    /// A weaker version of the base color.
     pub weak: Pair,
-    /// A stronger version of the base primary color.
+    /// A stronger version of the base color.
     pub strong: Pair,
 }
 
-impl Primary {
-    /// Generates a set of [`Primary`] colors from the base, background, and text colors.
+impl Tone {
+    /// Generates a set of [`Tone`] colors from the base, background, and text colors.
     pub fn generate(base: Color, background: Color, text: Color) -> Self {
         let weak = mix(base, background, 0.4);
         let strong = deviate(base, 0.1);
@@ -408,6 +412,15 @@ impl Primary {
         }
     }
 }
+
+/// A set of primary colors.
+pub type Primary = Tone;
+/// A set of success colors.
+pub type Success = Tone;
+/// A set of warning colors.
+pub type Warning = Tone;
+/// A set of danger colors.
+pub type Danger = Tone;
 
 /// A set of secondary colors.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -428,81 +441,6 @@ impl Secondary {
         let weak = mix(deviate(base, 0.1), text, factor);
         let strong = mix(deviate(base, 0.3), text, factor);
         let base = mix(deviate(base, 0.2), text, factor);
-
-        Self {
-            base: Pair::new(base, text),
-            weak: Pair::new(weak, text),
-            strong: Pair::new(strong, text),
-        }
-    }
-}
-
-/// A set of success colors.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Success {
-    /// The base success color.
-    pub base: Pair,
-    /// A weaker version of the base success color.
-    pub weak: Pair,
-    /// A stronger version of the base success color.
-    pub strong: Pair,
-}
-
-impl Success {
-    /// Generates a set of [`Success`] colors from the base, background, and text colors.
-    pub fn generate(base: Color, background: Color, text: Color) -> Self {
-        let weak = mix(base, background, 0.4);
-        let strong = deviate(base, 0.1);
-
-        Self {
-            base: Pair::new(base, text),
-            weak: Pair::new(weak, text),
-            strong: Pair::new(strong, text),
-        }
-    }
-}
-
-/// A set of warning colors.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Warning {
-    /// The base warning color.
-    pub base: Pair,
-    /// A weaker version of the base warning color.
-    pub weak: Pair,
-    /// A stronger version of the base warning color.
-    pub strong: Pair,
-}
-
-impl Warning {
-    /// Generates a set of [`Warning`] colors from the base, background, and text colors.
-    pub fn generate(base: Color, background: Color, text: Color) -> Self {
-        let weak = mix(base, background, 0.4);
-        let strong = deviate(base, 0.1);
-
-        Self {
-            base: Pair::new(base, text),
-            weak: Pair::new(weak, text),
-            strong: Pair::new(strong, text),
-        }
-    }
-}
-
-/// A set of danger colors.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Danger {
-    /// The base danger color.
-    pub base: Pair,
-    /// A weaker version of the base danger color.
-    pub weak: Pair,
-    /// A stronger version of the base danger color.
-    pub strong: Pair,
-}
-
-impl Danger {
-    /// Generates a set of [`Danger`] colors from the base, background, and text colors.
-    pub fn generate(base: Color, background: Color, text: Color) -> Self {
-        let weak = mix(base, background, 0.4);
-        let strong = deviate(base, 0.1);
 
         Self {
             base: Pair::new(base, text),
