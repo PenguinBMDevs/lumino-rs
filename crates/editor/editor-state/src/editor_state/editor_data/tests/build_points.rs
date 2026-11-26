@@ -3,7 +3,7 @@
 use lumino_note_core::automation::{AutomationEdit, AutomationTarget, SegmentShape};
 use lumino_note_core::midi_types::PITCH_BEND_CENTER;
 
-use super::EditorData;
+use super::super::EditorData;
 
 #[test]
 fn test_build_cc_points_empty() {

@@ -4,7 +4,7 @@ use crate::SelectionSet as HashSet;
 
 use lumino_note_core::note::Note;
 
-use super::EditorData;
+use super::super::EditorData;
 
 // ── split_note 测试 ──
 

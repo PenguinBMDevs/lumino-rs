@@ -7,7 +7,7 @@ use crate::SelectionSet as HashSet;
 
 use lumino_note_core::note::Note;
 
-use super::EditorData;
+use super::super::EditorData;
 use crate::editor_state::editor_data::NoteDeltaEvent;
 
 fn make_data(note_count: usize) -> EditorData {

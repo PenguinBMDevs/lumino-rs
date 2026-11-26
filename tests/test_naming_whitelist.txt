@@ -7,16 +7,6 @@ crates/audio/midi-model/src/document_write_tests.rs
 crates/audio/note-core/src/history/tests_note_create.rs
 crates/core/core/src/shape/model/tests/tests_part2.rs
 crates/editor/cpu-onion/src/density/tests_grow.rs
-crates/editor/editor-state/src/editor_state/editor_data/notes_tests.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_automation_sync.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_automation.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_basics.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_build_points.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_history.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_note_delete.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_note_delta.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_note_ops.rs
-crates/editor/editor-state/src/editor_state/editor_data/tests_track_order.rs
 crates/editor/gfx/src/cpu_onion_renderer/tests_partial.rs
 crates/editor/gfx/src/cpu_onion_renderer/tests_support.rs
 crates/editor/gfx/src/global_bucket/cull_tests.rs

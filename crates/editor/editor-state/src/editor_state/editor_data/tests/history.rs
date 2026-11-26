@@ -6,8 +6,8 @@ use lumino_note_core::automation::{AutomationEdit, AutomationTarget, SegmentShap
 use lumino_note_core::history::CreateOp;
 use lumino_note_core::note::Note;
 
-use super::EditorData;
-use super::accessors::note_to_event;
+use super::super::EditorData;
+use super::super::accessors::note_to_event;
 
 #[test]
 fn test_undo_redo_basic() {

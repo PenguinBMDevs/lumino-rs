@@ -20,5 +20,4 @@ use crate::DragState;
 use lumino_note_core::note::Note;
 
 #[cfg(test)]
-#[path = "notes_tests.rs"]
 mod tests;

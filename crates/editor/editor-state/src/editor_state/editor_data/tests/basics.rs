@@ -3,7 +3,7 @@
 use crate::editor_state::constants::DEFAULT_BPM;
 use lumino_note_core::note::Note;
 
-use super::EditorData;
+use super::super::EditorData;
 
 #[test]
 fn test_editor_data_default() {

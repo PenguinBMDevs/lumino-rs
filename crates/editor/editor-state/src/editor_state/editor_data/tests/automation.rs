@@ -7,7 +7,7 @@
 
 use lumino_note_core::automation::{AutomationEdit, AutomationTarget, SegmentShape};
 
-use super::EditorData;
+use super::super::EditorData;
 
 mod handles;
 mod jump_pair;

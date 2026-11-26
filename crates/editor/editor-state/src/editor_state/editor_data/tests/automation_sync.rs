@@ -14,7 +14,7 @@
 use lumino_midi_model::{ChunkedList, PackedControlEvent};
 use lumino_note_core::automation::{AutomationEdit, AutomationTarget, SegmentShape};
 
-use super::EditorData;
+use super::super::EditorData;
 
 /// document 中 CC7 / PB 的 kind
 const KIND_CC: usize = 0;
