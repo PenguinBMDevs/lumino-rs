@@ -12,8 +12,8 @@ use crate::state::root_state::VideoExportOverlayState;
 
 /// 重置视频导出对话框的 overlay / 预览帧 / 缓存，并在对话框窗口中登记取消结果。
 pub(crate) fn reset_video_export_overlay(root: &mut Root) {
-    root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
-    root.state.video_export_dialog.preview_frame = None;
+    root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::None;
+    root.state.video_export_dialog.basic.preview_frame = None;
     if root.state.is_dialog_window {
         root.state.dialog_result = Some(DialogResult::Cancel);
     }
@@ -94,19 +94,19 @@ pub(crate) fn build_video_config(
         _ => CounterFont::Bitmap,
     };
     VideoExportConfig {
-        output_path: st.output_path.clone(),
-        midi_path: st.midi_path.clone(),
-        width: st.width,
-        height: st.height,
-        fps: st.fps,
+        output_path: st.basic.output_path.clone(),
+        midi_path: st.basic.midi_path.clone(),
+        width: st.basic.width,
+        height: st.basic.height,
+        fps: st.basic.fps,
         ppq,
         key_count,
-        container: parse_enum_or_log(&st.container, "container"),
-        codec: parse_enum_or_log(&st.codec, "codec"),
-        backend: parse_enum_or_log(&st.backend, "backend"),
-        quality: parse_enum_or_log(&st.quality, "quality"),
-        render_mode: parse_enum_or_log(&st.render_mode, "render_mode"),
-        waterfall_scroll_speed: st.waterfall_speed,
+        container: parse_enum_or_log(&st.basic.container, "container"),
+        codec: parse_enum_or_log(&st.basic.codec, "codec"),
+        backend: parse_enum_or_log(&st.basic.backend, "backend"),
+        quality: parse_enum_or_log(&st.basic.quality, "quality"),
+        render_mode: parse_enum_or_log(&st.basic.render_mode, "render_mode"),
+        waterfall_scroll_speed: st.basic.waterfall_speed,
         miditrail_view_mode: parse_enum_or_log(&st.miditrail.view_mode, "miditrail_view_mode"),
         miditrail_normal_speed: st.miditrail.normal_speed.max(0.1),
         miditrail_top_speed: st.miditrail.top_speed.max(0.1),
@@ -200,7 +200,10 @@ pub(crate) fn build_video_config(
             show_bars: st.data_curve.show_bars,
         },
         midi_console: MidiConsoleConfig {
-            render_backend: parse_enum_or_log(&st.midi_console_backend, "midi_console_backend"),
+            render_backend: parse_enum_or_log(
+                &st.basic.midi_console_backend,
+                "midi_console_backend",
+            ),
             ..MidiConsoleConfig::default()
         },
     }

@@ -15,20 +15,20 @@ use super::{assert_warning_toast, root_with_backend};
 fn test_start_export_with_blank_output_path_is_rejected() {
     let mut root = root_with_backend(OnionSkinBackend::Gpu);
     // 仅空白同样视为空：ffmpeg 会把它当成非法文件名，而不是「当前目录」。
-    root.state.video_export_dialog.output_path = "   ".to_owned();
+    root.state.video_export_dialog.basic.output_path = "   ".to_owned();
 
     root.update(Message::VideoExport(VideoExportAction::StartExport));
 
     assert_warning_toast(&root, "请先选择视频输出路径");
     assert!(
         matches!(
-            root.state.video_export_dialog.overlay,
+            root.state.video_export_dialog.basic.overlay,
             VideoExportOverlayState::None
         ),
         "拒绝必须发生在设置 Exporting 之前（不得亮起注定失败的进度覆盖层）"
     );
     assert_eq!(
-        root.state.video_export_dialog.progress, 0.0,
+        root.state.video_export_dialog.basic.progress, 0.0,
         "拒绝路径不得写进度字段"
     );
 }

@@ -67,7 +67,7 @@ impl crate::root::Root {
             },
             EguiAction::Slider { id, value } => match id {
                 6 => {
-                    if state.render_mode == "MIDITrail" {
+                    if state.basic.render_mode == "MIDITrail" {
                         if state.miditrail.view_mode == "Top" {
                             Prod::MiditrailTopSpeedChanged(*value)
                         } else {
@@ -172,9 +172,9 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     sections.push(VideoSection {
         title: tr!("MIDI 数据源").to_string(),
         rows: vec![
-            text("", 0.0, &state.midi_path, "", 0.0, 14),
+            text("", 0.0, &state.basic.midi_path, "", 0.0, 14),
             label(
-                if state.midi_path.is_empty() {
+                if state.basic.midi_path.is_empty() {
                     tr!("优先使用当前工程的 MIDI 数据")
                 } else {
                     tr!("使用指定 MIDI 文件流式读取")
@@ -189,7 +189,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     });
 
     // 渲染设置。
-    let is_miditrail = state.render_mode == "MIDITrail";
+    let is_miditrail = state.basic.render_mode == "MIDITrail";
     let is_top = state.miditrail.view_mode == "Top";
     let speed = if is_miditrail {
         if is_top {
@@ -198,7 +198,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             state.miditrail.normal_speed
         }
     } else {
-        state.waterfall_speed
+        state.basic.waterfall_speed
     };
     let mut settings = vec![
         pick(
@@ -210,7 +210,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .collect(),
             ["MP4", "MOV", "MKV", "AVI"]
                 .iter()
-                .position(|v| *v == state.container)
+                .position(|v| *v == state.basic.container)
                 .unwrap_or(0),
             200.0,
             1,
@@ -224,7 +224,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 .collect(),
             ["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
                 .iter()
-                .position(|v| *v == state.codec)
+                .position(|v| *v == state.basic.codec)
                 .unwrap_or(0),
             200.0,
             2,
@@ -235,7 +235,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             available_backends(),
             available_backends()
                 .iter()
-                .position(|v| *v == state.backend)
+                .position(|v| *v == state.basic.backend)
                 .unwrap_or(0),
             200.0,
             3,
@@ -246,7 +246,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             ["低", "中", "高"].iter().map(|s| s.to_string()).collect(),
             ["低", "中", "高"]
                 .iter()
-                .position(|v| *v == state.quality)
+                .position(|v| *v == state.basic.quality)
                 .unwrap_or(1),
             200.0,
             4,
@@ -257,7 +257,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             RenderMode::ALL.iter().map(|m| m.to_string()).collect(),
             RenderMode::ALL
                 .iter()
-                .position(|m| m.to_string() == state.render_mode)
+                .position(|m| m.to_string() == state.basic.render_mode)
                 .unwrap_or(0),
             200.0,
             5,
@@ -305,7 +305,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         left: TextPairCell {
             label: tr!("分辨率:").to_string(),
             label_width: 100.0,
-            value: state.width.to_string(),
+            value: state.basic.width.to_string(),
             hint: "1920".to_string(),
             width: 80.0,
             id: 10,
@@ -313,7 +313,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         right: TextPairCell {
             label: String::new(),
             label_width: 0.0,
-            value: state.height.to_string(),
+            value: state.basic.height.to_string(),
             hint: "1080".to_string(),
             width: 80.0,
             id: 11,
@@ -326,7 +326,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         [24u32, 30, 60, 120].iter().map(|v| v.to_string()).collect(),
         [24u32, 30, 60, 120]
             .iter()
-            .position(|v| *v == state.fps)
+            .position(|v| *v == state.basic.fps)
             .unwrap_or(1),
         200.0,
         12,
@@ -337,22 +337,22 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     });
 
     // 计数器 / 数据曲线附加设置（各自独立分区，与 上一代 顺序一致）。
-    if state.render_mode == "计数器" {
+    if state.basic.render_mode == "计数器" {
         sections.push(counter::section(state));
     }
-    if state.render_mode == "数据曲线" {
+    if state.basic.render_mode == "数据曲线" {
         sections.push(data_curve::section(state));
     }
 
     // MidiConsole 附加设置。
-    if state.render_mode == "MidiConsole" {
+    if state.basic.render_mode == "MidiConsole" {
         sections.push(VideoSection {
             title: tr!("MidiConsole 设置").to_string(),
             rows: vec![pick(
                 tr!("渲染后端:"),
                 100.0,
                 vec!["GPU".to_string(), "CPU".to_string()],
-                if state.midi_console_backend == "CPU" {
+                if state.basic.midi_console_backend == "CPU" {
                     1
                 } else {
                     0
@@ -367,7 +367,14 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     sections.push(VideoSection {
         title: tr!("导出位置").to_string(),
         rows: vec![
-            text("", 0.0, &state.output_path, tr!("选择输出路径..."), 0.0, 14),
+            text(
+                "",
+                0.0,
+                &state.basic.output_path,
+                tr!("选择输出路径..."),
+                0.0,
+                14,
+            ),
             VideoRow::Buttons {
                 buttons: vec![button(tr!("浏览..."), 16, VideoButtonFill::Primary, 0.0)],
             },

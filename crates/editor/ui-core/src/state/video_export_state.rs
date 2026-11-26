@@ -40,6 +40,61 @@ pub enum VideoExportOverlayState {
     Error(String),
 }
 
+/// 基础导出设置（容器 / 编码 / 分辨率 / 路径 / 进度）。
+#[derive(Debug, Clone)]
+pub struct BasicSection {
+    pub container: String,
+    pub codec: String,
+    pub backend: String,
+    pub quality: String,
+    pub render_mode: String,
+    pub midi_console_backend: String,
+    pub waterfall_speed: f32,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub midi_path: String,
+    pub output_path: String,
+    pub overlay: VideoExportOverlayState,
+    pub progress: f64,
+    pub status_message: String,
+    pub current_frame: u64,
+    pub total_frames: u64,
+    pub render_fps: f64,
+    pub elapsed_secs: f64,
+    pub preview_frame: Option<std::sync::Arc<Vec<u8>>>,
+    pub preview_width: u32,
+    pub preview_height: u32,
+}
+
+impl Default for BasicSection {
+    fn default() -> Self {
+        Self {
+            container: "MP4".to_string(),
+            codec: "H.264".to_string(),
+            backend: "Software (CPU)".to_string(),
+            quality: "中".to_string(),
+            render_mode: "Lumino瀑布流".to_string(),
+            midi_console_backend: "GPU".to_string(),
+            waterfall_speed: 1.0,
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            midi_path: String::new(),
+            output_path: String::new(),
+            overlay: VideoExportOverlayState::None,
+            progress: 0.0,
+            status_message: String::new(),
+            current_frame: 0,
+            total_frames: 0,
+            render_fps: 0.0,
+            elapsed_secs: 0.0,
+            preview_frame: None,
+            preview_width: 0,
+            preview_height: 0,
+        }
+    }
+}
 /// 数据曲线（DataCurveSection）渲染设置。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataCurveSection {
@@ -177,20 +232,8 @@ impl Default for MiditrailSection {
 /// 配置值用 String 存储（UI pick_list 原生支持），Runner 端解析回强类型。
 #[derive(Debug, Clone)]
 pub struct VideoExportDialogState {
-    /// 容器格式（"MP4"/"MOV"/"MKV"/"AVI"）
-    pub container: String,
-    /// 视频编码器（"H.264"/"H.265 / HEVC"/"ProRes"/"VP9"/"AV1"）
-    pub codec: String,
-    /// 硬件加速后端（"Software (CPU)"/"NVENC (NVIDIA)" 等）
-    pub backend: String,
-    /// 质量预设（"高"/"中"/"低"）
-    pub quality: String,
-    /// 渲染模式（"Lumino瀑布流"/"Lumino卷帘"/"MIDITrail"/"计数器"）
-    pub render_mode: String,
-    /// MidiConsole 渲染后端（"GPU"/"CPU"，默认 GPU）
-    pub midi_console_backend: String,
-    /// 瀑布流滚动速度（默认 1.0）
-    pub waterfall_speed: f32,
+    /// 基础导出设置。
+    pub basic: BasicSection,
     /// MIDITrail 渲染设置。
     pub miditrail: MiditrailSection,
 
@@ -200,36 +243,6 @@ pub struct VideoExportDialogState {
     // ── 数据曲线设置（参考 MIDIGraphRenderer graph 设置面板） ──
     /// 数据曲线渲染设置。
     pub data_curve: DataCurveSection,
-    /// 分辨率宽度
-    pub width: u32,
-    /// 分辨率高度
-    pub height: u32,
-    /// 帧率
-    pub fps: u32,
-    /// MIDI 文件路径（流式读取模式使用；内存模式优先使用已加载的 MidiDocument）
-    pub midi_path: String,
-    /// 输出路径
-    pub output_path: String,
-    /// 覆盖层状态（None=空闲，其余=显示模态覆盖层）
-    pub overlay: VideoExportOverlayState,
-    /// 进度 (0.0 - 1.0)
-    pub progress: f64,
-    /// 状态消息
-    pub status_message: String,
-    /// 当前已渲染帧
-    pub current_frame: u64,
-    /// 总帧数
-    pub total_frames: u64,
-    /// 渲染速度（fps，EMA 平滑）
-    pub render_fps: f64,
-    /// 已用时间（秒，墙钟真实时间，由导出线程测量并通过进度通道传入）
-    pub elapsed_secs: f64,
-    /// 预览帧数据（RGBA 格式，压缩后用于 dialog 内显示预览图像）
-    pub preview_frame: Option<std::sync::Arc<Vec<u8>>>,
-    /// 预览帧宽度
-    pub preview_width: u32,
-    /// 预览帧高度
-    pub preview_height: u32,
 }
 
 impl Default for VideoExportDialogState {
@@ -242,37 +255,16 @@ impl VideoExportDialogState {
     /// 创建一个默认的视频导出对话框状态
     pub fn new() -> Self {
         Self {
-            container: "MP4".to_string(),
-            codec: "H.264".to_string(),
-            backend: "Software (CPU)".to_string(),
-            quality: "中".to_string(),
-            render_mode: "Lumino瀑布流".to_string(),
-            midi_console_backend: "GPU".to_string(),
-            waterfall_speed: 1.0,
+            basic: BasicSection::default(),
             miditrail: MiditrailSection::default(),
             counter: CounterSection::default(),
             data_curve: DataCurveSection::default(),
-            width: 1920,
-            height: 1080,
-            fps: 60,
-            midi_path: String::new(),
-            output_path: String::new(),
-            overlay: VideoExportOverlayState::None,
-            progress: 0.0,
-            status_message: String::new(),
-            current_frame: 0,
-            total_frames: 0,
-            render_fps: 0.0,
-            elapsed_secs: 0.0,
-            preview_frame: None,
-            preview_width: 0,
-            preview_height: 0,
         }
     }
 
     /// 是否正在导出（覆盖层可见）
     pub fn is_exporting(&self) -> bool {
-        !matches!(self.overlay, VideoExportOverlayState::None)
+        !matches!(self.basic.overlay, VideoExportOverlayState::None)
     }
 }
 
@@ -297,9 +289,9 @@ mod tests {
         let mut state = VideoExportDialogState::new();
         state.miditrail.top_speed = 2.5;
         state.miditrail.notes_3d = true;
-        assert_eq!(state.waterfall_speed, 1.0);
-        assert_eq!(state.container, "MP4");
-        assert_eq!(state.codec, "H.264");
+        assert_eq!(state.basic.waterfall_speed, 1.0);
+        assert_eq!(state.basic.container, "MP4");
+        assert_eq!(state.basic.codec, "H.264");
     }
 }
 
@@ -337,8 +329,8 @@ mod counter_tests {
         let mut state = VideoExportDialogState::new();
         state.counter.font_size = 96;
         assert_eq!(state.miditrail.z_far, MIDITRAIL_Z_FAR_DEFAULT);
-        assert_eq!(state.waterfall_speed, 1.0);
-        assert_eq!(state.width, 1920);
+        assert_eq!(state.basic.waterfall_speed, 1.0);
+        assert_eq!(state.basic.width, 1920);
     }
 }
 
@@ -364,5 +356,32 @@ mod data_curve_tests {
         state.data_curve.line_thickness = "9".to_string();
         assert_eq!(state.counter.font_size, 40);
         assert_eq!(state.miditrail.z_far, MIDITRAIL_Z_FAR_DEFAULT);
+    }
+}
+
+#[cfg(test)]
+mod basic_tests {
+    use super::*;
+
+    /// 基础子结构的默认值与旧字段逐一对应。
+    #[test]
+    fn basic_defaults_snapshot() {
+        let state = VideoExportDialogState::new();
+        assert_eq!(state.basic.container, "MP4");
+        assert_eq!(state.basic.codec, "H.264");
+        assert_eq!(state.basic.width, 1920);
+        assert_eq!(state.basic.height, 1080);
+        assert_eq!(state.basic.fps, 60);
+        assert_eq!(state.basic.midi_path, "");
+        assert!(matches!(state.basic.overlay, VideoExportOverlayState::None));
+    }
+
+    /// 基础域与计数器 / 数据曲线互不影响。
+    #[test]
+    fn basic_section_is_independent() {
+        let mut state = VideoExportDialogState::new();
+        state.basic.width = 1280;
+        assert_eq!(state.counter.font_size, 40);
+        assert_eq!(state.data_curve.graph_duration, "2.0");
     }
 }

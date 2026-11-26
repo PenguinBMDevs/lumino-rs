@@ -201,7 +201,7 @@ fn test_cpu_blocks_video_export_panel_actions() {
     root.update(Message::VideoExport(VideoExportAction::StartExport));
     assert!(
         !matches!(
-            root.state.video_export_dialog.overlay,
+            root.state.video_export_dialog.basic.overlay,
             VideoExportOverlayState::Exporting
         ),
         "StartExport 不得进入导出中状态"

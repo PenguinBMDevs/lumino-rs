@@ -17,15 +17,15 @@ impl Host {
     ) {
         let dialog_state = &mut self.root.state.video_export_dialog;
         // 如果 overlay 尚未激活（e.g. 对话框窗口刚打开时），触发 Exporting 状态
-        if matches!(dialog_state.overlay, VideoExportOverlayState::None) {
-            dialog_state.overlay = VideoExportOverlayState::Exporting;
+        if matches!(dialog_state.basic.overlay, VideoExportOverlayState::None) {
+            dialog_state.basic.overlay = VideoExportOverlayState::Exporting;
         }
-        dialog_state.status_message = message;
-        dialog_state.progress = progress;
-        dialog_state.total_frames = total_frames;
-        dialog_state.render_fps = render_fps;
-        dialog_state.elapsed_secs = elapsed_secs;
-        dialog_state.current_frame =
+        dialog_state.basic.status_message = message;
+        dialog_state.basic.progress = progress;
+        dialog_state.basic.total_frames = total_frames;
+        dialog_state.basic.render_fps = render_fps;
+        dialog_state.basic.elapsed_secs = elapsed_secs;
+        dialog_state.basic.current_frame =
             (progress * total_frames as f64).min(total_frames as f64) as u64;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
@@ -46,9 +46,9 @@ impl Host {
         }
 
         // 预览帧直接交给 egui 纹理上传（相同尺寸/数据时由调用方按需跳过）。
-        dialog_state.preview_frame = Some(std::sync::Arc::new(data));
-        dialog_state.preview_width = width;
-        dialog_state.preview_height = height;
+        dialog_state.basic.preview_frame = Some(std::sync::Arc::new(data));
+        dialog_state.basic.preview_width = width;
+        dialog_state.basic.preview_height = height;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -56,7 +56,7 @@ impl Host {
     /// 检查视频导出是否正在进行
     pub fn is_video_exporting(&self) -> bool {
         matches!(
-            self.root.state.video_export_dialog.overlay,
+            self.root.state.video_export_dialog.basic.overlay,
             VideoExportOverlayState::Exporting
         )
     }
@@ -64,11 +64,11 @@ impl Host {
     /// 标记视频导出完成
     pub fn set_video_export_completed(&mut self, elapsed_secs: f64) {
         let dialog_state = &mut self.root.state.video_export_dialog;
-        let total_frames = dialog_state.total_frames;
-        dialog_state.overlay = VideoExportOverlayState::Completed {
+        let total_frames = dialog_state.basic.total_frames;
+        dialog_state.basic.overlay = VideoExportOverlayState::Completed {
             total_frames,
             elapsed_secs,
-            avg_fps: dialog_state.render_fps,
+            avg_fps: dialog_state.basic.render_fps,
         };
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
@@ -76,7 +76,7 @@ impl Host {
 
     /// 标记视频导出失败
     pub fn set_video_export_failed(&mut self, error: String) {
-        self.root.state.video_export_dialog.overlay = VideoExportOverlayState::Error(error);
+        self.root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Error(error);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

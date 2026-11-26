@@ -117,10 +117,11 @@ impl Root {
                     path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoExportOutput => {
-                self.state.video_export_dialog.output_path = path.to_string_lossy().to_string();
+                self.state.video_export_dialog.basic.output_path =
+                    path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoExportMidi => {
-                self.state.video_export_dialog.midi_path = path.to_string_lossy().to_string();
+                self.state.video_export_dialog.basic.midi_path = path.to_string_lossy().to_string();
             }
         }
     }

@@ -20,9 +20,9 @@ fn rect() -> egui::Rect {
 #[test]
 fn panel_model_has_all_main_sections() {
     let mut root = root();
-    root.state.video_export_dialog.midi_path = "C:/a.mid".to_owned();
-    root.state.video_export_dialog.output_path = "C:/out.mp4".to_owned();
-    root.state.video_export_dialog.render_mode = "Lumino瀑布流".to_owned();
+    root.state.video_export_dialog.basic.midi_path = "C:/a.mid".to_owned();
+    root.state.video_export_dialog.basic.output_path = "C:/out.mp4".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "Lumino瀑布流".to_owned();
     let panel = root.video_export_panel_model(rect());
     assert_eq!(panel.rect, rect());
     let content = &panel.content;
@@ -63,7 +63,7 @@ fn panel_model_has_all_main_sections() {
 #[test]
 fn miditrail_adds_extra_rows_and_midiconsole_section() {
     let mut root = root();
-    root.state.video_export_dialog.render_mode = "MIDITrail".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "MIDITrail".to_owned();
     root.state.video_export_dialog.miditrail.view_mode = "Top".to_owned();
     let panel = root.video_export_panel_model(rect());
     let rows = &panel.content.sections[1].rows;
@@ -83,7 +83,7 @@ fn miditrail_adds_extra_rows_and_midiconsole_section() {
         "3D 音符行"
     );
 
-    root.state.video_export_dialog.render_mode = "MidiConsole".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "MidiConsole".to_owned();
     let panel = root.video_export_panel_model(rect());
     assert!(
         panel
@@ -98,7 +98,7 @@ fn miditrail_adds_extra_rows_and_midiconsole_section() {
 #[test]
 fn counter_and_data_curve_sections_are_built() {
     let mut root = root();
-    root.state.video_export_dialog.render_mode = "计数器".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "计数器".to_owned();
     let panel = root.video_export_panel_model(rect());
     assert!(
         panel
@@ -136,7 +136,7 @@ fn counter_and_data_curve_sections_are_built() {
         .count();
     assert_eq!(pad_rows, 4, "补零宽度应有 4 行两列");
 
-    root.state.video_export_dialog.render_mode = "数据曲线".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "数据曲线".to_owned();
     let panel = root.video_export_panel_model(rect());
     assert!(
         panel
@@ -208,7 +208,7 @@ fn widget_actions_map_to_messages() {
 #[test]
 fn counter_section_rows_cover_every_control() {
     let mut root = root();
-    root.state.video_export_dialog.render_mode = "计数器".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "计数器".to_owned();
     root.state.video_export_dialog.counter.save_csv = true;
     let panel = root.video_export_panel_model(rect());
     let counter = panel
@@ -283,7 +283,7 @@ fn counter_section_rows_cover_every_control() {
 #[test]
 fn counter_font_mode_branches() {
     let mut root = root();
-    root.state.video_export_dialog.render_mode = "计数器".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "计数器".to_owned();
 
     root.state.video_export_dialog.counter.font_mode = "系统字体".to_owned();
     let panel = root.video_export_panel_model(rect());
@@ -321,7 +321,7 @@ fn counter_font_mode_branches() {
 #[test]
 fn data_curve_section_rows_and_font_branches() {
     let mut root = root();
-    root.state.video_export_dialog.render_mode = "数据曲线".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "数据曲线".to_owned();
     root.state.video_export_dialog.data_curve.font_mode = "系统字体".to_owned();
     let panel = root.video_export_panel_model(rect());
     let curve = panel
@@ -399,7 +399,7 @@ fn data_curve_section_rows_and_font_branches() {
 #[test]
 fn counter_and_data_curve_actions_map_to_messages() {
     let mut root = root();
-    root.state.video_export_dialog.render_mode = "计数器".to_owned();
+    root.state.video_export_dialog.basic.render_mode = "计数器".to_owned();
 
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Pick { id: 103, index: 1 }),

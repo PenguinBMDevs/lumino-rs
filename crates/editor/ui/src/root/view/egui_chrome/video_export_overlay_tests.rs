@@ -28,15 +28,15 @@ fn overlay(root: &Root) -> VideoOverlayView {
 fn every_overlay_state_has_distinct_visible_content() {
     let mut root = dialog_root();
     let state = &mut root.state.video_export_dialog;
-    state.fps = 60;
-    state.total_frames = 3600;
-    state.current_frame = 1512;
-    state.progress = 0.42;
-    state.render_fps = 57.6;
-    state.elapsed_secs = 26.2;
+    state.basic.fps = 60;
+    state.basic.total_frames = 3600;
+    state.basic.current_frame = 1512;
+    state.basic.progress = 0.42;
+    state.basic.render_fps = 57.6;
+    state.basic.elapsed_secs = 26.2;
 
     // ── 导出中 ──
-    root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
+    root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Exporting;
     let VideoOverlayView::Exporting(exporting) = overlay(&root) else {
         panic!("导出中应映射为 Exporting");
     };
@@ -47,7 +47,7 @@ fn every_overlay_state_has_distinct_visible_content() {
     assert!(!exporting.speed_line.is_empty(), "速度行不能为空");
 
     // ── 封装中：比导出中多出「正在完成编码 / 强制完成」──
-    root.state.video_export_dialog.overlay = VideoExportOverlayState::Finalizing;
+    root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Finalizing;
     let VideoOverlayView::Finalizing(finalizing) = overlay(&root) else {
         panic!("封装中应映射为 Finalizing");
     };
@@ -56,7 +56,7 @@ fn every_overlay_state_has_distinct_visible_content() {
     assert_eq!(finalizing.progress.percent_line, "42.0%");
 
     // ── 已完成：统计行必须逐项可见 ──
-    root.state.video_export_dialog.overlay = VideoExportOverlayState::Completed {
+    root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Completed {
         total_frames: 3600,
         elapsed_secs: 62.5,
         avg_fps: 57.6,
@@ -78,7 +78,8 @@ fn every_overlay_state_has_distinct_visible_content() {
 
     // ── 失败：错误详情必须原样带出（含换行与长路径）──
     let detail = "ffmpeg 编码失败（退出码 1）：\n无法写入输出文件 D:\\作品\\output.mp4";
-    root.state.video_export_dialog.overlay = VideoExportOverlayState::Error(detail.to_owned());
+    root.state.video_export_dialog.basic.overlay =
+        VideoExportOverlayState::Error(detail.to_owned());
     let VideoOverlayView::Error(error) = overlay(&root) else {
         panic!("失败应映射为 Error");
     };
@@ -89,7 +90,7 @@ fn every_overlay_state_has_distinct_visible_content() {
 #[test]
 fn no_overlay_means_no_dialog_model() {
     let mut root = dialog_root();
-    root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+    root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::None;
     let model = root.egui_chrome_model();
     assert!(
         !matches!(model.dialog, Some(DialogModel::VideoExportOverlay(_))),
@@ -101,10 +102,10 @@ fn no_overlay_means_no_dialog_model() {
 fn preview_frame_flows_into_overlay_model() {
     let mut root = dialog_root();
     let state = &mut root.state.video_export_dialog;
-    state.overlay = VideoExportOverlayState::Exporting;
-    state.preview_width = 4;
-    state.preview_height = 2;
-    state.preview_frame = Some(std::sync::Arc::new(vec![7u8; 4 * 2 * 4]));
+    state.basic.overlay = VideoExportOverlayState::Exporting;
+    state.basic.preview_width = 4;
+    state.basic.preview_height = 2;
+    state.basic.preview_frame = Some(std::sync::Arc::new(vec![7u8; 4 * 2 * 4]));
 
     let model = root.egui_chrome_model();
     let Some(DialogModel::VideoExportOverlay(panel)) = model.dialog else {
@@ -120,11 +121,11 @@ fn preview_frame_flows_into_overlay_model() {
 fn invalid_preview_frame_is_dropped() {
     let mut root = dialog_root();
     let state = &mut root.state.video_export_dialog;
-    state.overlay = VideoExportOverlayState::Exporting;
-    state.preview_width = 4;
-    state.preview_height = 4;
+    state.basic.overlay = VideoExportOverlayState::Exporting;
+    state.basic.preview_width = 4;
+    state.basic.preview_height = 4;
     // 字节数不足：上传纹理会越界，模型必须丢弃而不是透传。
-    state.preview_frame = Some(std::sync::Arc::new(vec![0u8; 3]));
+    state.basic.preview_frame = Some(std::sync::Arc::new(vec![0u8; 3]));
 
     let model = root.egui_chrome_model();
     let Some(DialogModel::VideoExportOverlay(panel)) = model.dialog else {

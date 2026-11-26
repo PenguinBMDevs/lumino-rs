@@ -52,7 +52,14 @@ impl DialogHandler {
                 // 输出路径是硬性前提：空串会让 ffmpeg 以 `Error opening output file .`
                 // （code -22）退出，而帧生成线程已经白跑一轮。入口拦截并明确提示；
                 // 不置 Exporting 状态（否则面板会显示一个注定失败的进度覆盖层）。
-                if root.state.video_export_dialog.output_path.trim().is_empty() {
+                if root
+                    .state
+                    .video_export_dialog
+                    .basic
+                    .output_path
+                    .trim()
+                    .is_empty()
+                {
                     root.toast
                         .push(ToastLevel::Warning, tr!("请先选择视频输出路径"));
                     return None;
@@ -71,8 +78,8 @@ impl DialogHandler {
                     if document.is_some() {
                         tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
                         tr!("内存模式").to_string()
-                    } else if !st.midi_path.is_empty() {
-                        tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.midi_path);
+                    } else if !st.basic.midi_path.is_empty() {
+                        tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.basic.midi_path);
                         tr!("流式读取").to_string()
                     } else {
                         tracing::warn!("视频导出未配置 MIDI 数据源");
@@ -81,15 +88,15 @@ impl DialogHandler {
                 };
 
                 // 设置导出中状态
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
+                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Exporting;
                 // 清掉上一次导出的尾帧，避免新导出首帧到达前显示陈旧画面。
-                root.state.video_export_dialog.preview_frame = None;
-                root.state.video_export_dialog.progress = 0.0;
-                root.state.video_export_dialog.status_message =
+                root.state.video_export_dialog.basic.preview_frame = None;
+                root.state.video_export_dialog.basic.progress = 0.0;
+                root.state.video_export_dialog.basic.status_message =
                     trf!("正在初始化... [{source}]", source = midi_source);
-                root.state.video_export_dialog.current_frame = 0;
-                root.state.video_export_dialog.total_frames = 0;
-                root.state.video_export_dialog.render_fps = 0.0;
+                root.state.video_export_dialog.basic.current_frame = 0;
+                root.state.video_export_dialog.basic.total_frames = 0;
+                root.state.video_export_dialog.basic.render_fps = 0.0;
 
                 let st = &root.state.video_export_dialog;
                 let video_config = build_video_config(
@@ -109,45 +116,45 @@ impl DialogHandler {
             }
             V::ForceFinish => {
                 let st = &root.state.video_export_dialog;
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::Completed {
-                    total_frames: st.total_frames,
-                    elapsed_secs: st.elapsed_secs,
-                    avg_fps: st.render_fps,
+                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Completed {
+                    total_frames: st.basic.total_frames,
+                    elapsed_secs: st.basic.elapsed_secs,
+                    avg_fps: st.basic.render_fps,
                 };
             }
             V::DismissOverlay => {
                 reset_video_export_overlay(root);
             }
             V::ContainerChanged(v) => {
-                root.state.video_export_dialog.container = v;
+                root.state.video_export_dialog.basic.container = v;
             }
             V::CodecChanged(v) => {
-                root.state.video_export_dialog.codec = v;
+                root.state.video_export_dialog.basic.codec = v;
             }
             V::BackendChanged(v) => {
-                root.state.video_export_dialog.backend = v;
+                root.state.video_export_dialog.basic.backend = v;
             }
             V::QualityChanged(v) => {
-                root.state.video_export_dialog.quality = v;
+                root.state.video_export_dialog.basic.quality = v;
             }
             V::WidthChanged(v) => {
                 if let Some(w) = parse_uint(&v) {
-                    root.state.video_export_dialog.width = w;
+                    root.state.video_export_dialog.basic.width = w;
                 }
             }
             V::HeightChanged(v) => {
                 if let Some(h) = parse_uint(&v) {
-                    root.state.video_export_dialog.height = h;
+                    root.state.video_export_dialog.basic.height = h;
                 }
             }
             V::RenderModeChanged(v) => {
-                root.state.video_export_dialog.render_mode = v;
+                root.state.video_export_dialog.basic.render_mode = v;
             }
             V::MidiConsoleBackendChanged(v) => {
-                root.state.video_export_dialog.midi_console_backend = v;
+                root.state.video_export_dialog.basic.midi_console_backend = v;
             }
             V::WaterfallSpeedChanged(v) => {
-                root.state.video_export_dialog.waterfall_speed = v;
+                root.state.video_export_dialog.basic.waterfall_speed = v;
             }
             V::MiditrailViewModeChanged(v) => {
                 // 仅接受 Normal/Top，非预期值回退 Normal（防两套设置污染）。
@@ -307,14 +314,14 @@ impl DialogHandler {
                 });
             }
             V::FpsChanged(v) => {
-                root.state.video_export_dialog.fps = v;
+                root.state.video_export_dialog.basic.fps = v;
             }
             V::OutputPathChanged(v) => {
-                root.state.video_export_dialog.output_path = v;
+                root.state.video_export_dialog.basic.output_path = v;
             }
             V::BrowseOutput => {
                 let st = &root.state.video_export_dialog;
-                let container = st.container.clone();
+                let container = st.basic.container.clone();
                 let ext = container.to_lowercase();
                 let default_name = format!("output.{ext}");
                 root.spawn_path_dialog(PathDialogTask::VideoExportOutput, move || {
@@ -325,7 +332,7 @@ impl DialogHandler {
                 });
             }
             V::MidiPathChanged(v) => {
-                root.state.video_export_dialog.midi_path = v;
+                root.state.video_export_dialog.basic.midi_path = v;
             }
             V::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::VideoExportMidi, || {
@@ -345,17 +352,17 @@ impl DialogHandler {
                 fps,
             } => {
                 let st = &mut root.state.video_export_dialog;
-                st.status_message = message;
-                st.progress = progress;
-                st.current_frame = current_frame;
-                st.total_frames = total_frames;
-                st.render_fps = fps;
+                st.basic.status_message = message;
+                st.basic.progress = progress;
+                st.basic.current_frame = current_frame;
+                st.basic.total_frames = total_frames;
+                st.basic.render_fps = fps;
             }
             V::ExportCompleted => {
                 // 由 Runner 回调设置具体字段，此处不处理
             }
             V::ExportFailed(err) => {
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::Error(err);
+                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Error(err);
             }
             V::UpdatePreviewFrame { .. } => {
                 // 由 Host 直接处理，此处不需要
