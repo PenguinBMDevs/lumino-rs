@@ -64,7 +64,7 @@ fn panel_model_has_all_main_sections() {
 fn miditrail_adds_extra_rows_and_midiconsole_section() {
     let mut root = root();
     root.state.video_export_dialog.render_mode = "MIDITrail".to_owned();
-    root.state.video_export_dialog.miditrail_view_mode = "Top".to_owned();
+    root.state.video_export_dialog.miditrail.view_mode = "Top".to_owned();
     let panel = root.video_export_panel_model(rect());
     let rows = &panel.content.sections[1].rows;
     assert!(

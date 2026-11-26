@@ -151,22 +151,22 @@ impl DialogHandler {
             }
             V::MiditrailViewModeChanged(v) => {
                 // 仅接受 Normal/Top，非预期值回退 Normal（防两套设置污染）。
-                root.state.video_export_dialog.miditrail_view_mode = match v.as_str() {
+                root.state.video_export_dialog.miditrail.view_mode = match v.as_str() {
                     "Top" => "Top".to_string(),
                     _ => "Normal".to_string(),
                 };
             }
             V::MiditrailNormalSpeedChanged(v) => {
-                root.state.video_export_dialog.miditrail_normal_speed = v;
+                root.state.video_export_dialog.miditrail.normal_speed = v;
             }
             V::MiditrailTopSpeedChanged(v) => {
-                root.state.video_export_dialog.miditrail_top_speed = v;
+                root.state.video_export_dialog.miditrail.top_speed = v;
             }
             V::MiditrailZFarChanged(v) => {
-                root.state.video_export_dialog.miditrail_z_far = v;
+                root.state.video_export_dialog.miditrail.z_far = v;
             }
             V::Miditrail3DNotesChanged(v) => {
-                root.state.video_export_dialog.miditrail_3d_notes = v;
+                root.state.video_export_dialog.miditrail.notes_3d = v;
             }
             V::CounterTextChanged(text) => {
                 let st = &mut root.state.video_export_dialog;

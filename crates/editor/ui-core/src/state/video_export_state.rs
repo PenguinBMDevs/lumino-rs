@@ -40,6 +40,33 @@ pub enum VideoExportOverlayState {
     Error(String),
 }
 
+/// MIDITrail 渲染设置（从 VideoExportDialogState 拆出的第一个域）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MiditrailSection {
+    /// 视图模式（Normal / Top）。
+    pub view_mode: String,
+    /// Normal 视图播放速度（默认 1.0）。
+    pub normal_speed: f32,
+    /// Top 视图播放速度（默认 1.0，与 Normal 独立）。
+    pub top_speed: f32,
+    /// Z 轴最远显示距离（默认 7.5，最小 0.1）。
+    pub z_far: f32,
+    /// 3D 音符开关（false = 平面，true = 原生粒子）。
+    pub notes_3d: bool,
+}
+
+impl Default for MiditrailSection {
+    fn default() -> Self {
+        Self {
+            view_mode: MIDITRAIL_VIEW_MODE_DEFAULT.to_string(),
+            normal_speed: MIDITRAIL_SPEED_DEFAULT,
+            top_speed: MIDITRAIL_SPEED_DEFAULT,
+            z_far: MIDITRAIL_Z_FAR_DEFAULT,
+            notes_3d: false,
+        }
+    }
+}
+
 /// 视频导出面板状态（主界面侧边栏面板）
 ///
 /// 纯 UI 状态，保存控件值与导出进度。
@@ -60,16 +87,9 @@ pub struct VideoExportDialogState {
     pub midi_console_backend: String,
     /// 瀑布流滚动速度（默认 1.0）
     pub waterfall_speed: f32,
-    /// MIDITrail 视图模式（"Normal"/"Top"，默认 Normal；视图切换入口）
-    pub miditrail_view_mode: String,
-    /// MIDITrail Normal 视图滚动速度（默认 1.0，由旧共享速度迁移而来）
-    pub miditrail_normal_speed: f32,
-    /// MIDITrail Top 视图滚动速度（默认 1.0，与 Normal 互相独立）
-    pub miditrail_top_speed: f32,
-    /// MIDITrail Z 方向显示距离（默认 7.5，精度 0.1）
-    pub miditrail_z_far: f32,
-    /// MIDITrail 3D 音符开关（默认 false = 平面；true 还原盒子）
-    pub miditrail_3d_notes: bool,
+    /// MIDITrail 渲染设置。
+    pub miditrail: MiditrailSection,
+
     // ── 计数器设置（参考 Zenith-MIDI NoteCountRender 设置面板） ──
     /// 计数器文本模板
     pub counter_text: String,
@@ -203,11 +223,7 @@ impl VideoExportDialogState {
             render_mode: "Lumino瀑布流".to_string(),
             midi_console_backend: "GPU".to_string(),
             waterfall_speed: 1.0,
-            miditrail_view_mode: MIDITRAIL_VIEW_MODE_DEFAULT.to_string(),
-            miditrail_normal_speed: MIDITRAIL_SPEED_DEFAULT,
-            miditrail_top_speed: MIDITRAIL_SPEED_DEFAULT,
-            miditrail_z_far: MIDITRAIL_Z_FAR_DEFAULT,
-            miditrail_3d_notes: false,
+            miditrail: MiditrailSection::default(),
             counter_text: COUNTER_DEFAULT_TEXT.to_string(),
             counter_alignment: "左上".to_string(),
             counter_font_size: 40,
@@ -270,5 +286,32 @@ impl VideoExportDialogState {
     /// 是否正在导出（覆盖层可见）
     pub fn is_exporting(&self) -> bool {
         !matches!(self.overlay, VideoExportOverlayState::None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// MIDITrail 子结构的默认值与旧字段逐一对应。
+    #[test]
+    fn miditrail_defaults_snapshot() {
+        let state = VideoExportDialogState::new();
+        assert_eq!(state.miditrail.view_mode, MIDITRAIL_VIEW_MODE_DEFAULT);
+        assert_eq!(state.miditrail.normal_speed, MIDITRAIL_SPEED_DEFAULT);
+        assert_eq!(state.miditrail.top_speed, MIDITRAIL_SPEED_DEFAULT);
+        assert_eq!(state.miditrail.z_far, MIDITRAIL_Z_FAR_DEFAULT);
+        assert!(!state.miditrail.notes_3d);
+    }
+
+    /// 子结构与基础字段互不影响（拆分不是换名字，而是分区）。
+    #[test]
+    fn miditrail_section_is_independent_from_basic_fields() {
+        let mut state = VideoExportDialogState::new();
+        state.miditrail.top_speed = 2.5;
+        state.miditrail.notes_3d = true;
+        assert_eq!(state.waterfall_speed, 1.0);
+        assert_eq!(state.container, "MP4");
+        assert_eq!(state.codec, "H.264");
     }
 }

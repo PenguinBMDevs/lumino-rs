@@ -68,7 +68,7 @@ impl crate::root::Root {
             EguiAction::Slider { id, value } => match id {
                 6 => {
                     if state.render_mode == "MIDITrail" {
-                        if state.miditrail_view_mode == "Top" {
+                        if state.miditrail.view_mode == "Top" {
                             Prod::MiditrailTopSpeedChanged(*value)
                         } else {
                             Prod::MiditrailNormalSpeedChanged(*value)
@@ -190,12 +190,12 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
 
     // 渲染设置。
     let is_miditrail = state.render_mode == "MIDITrail";
-    let is_top = state.miditrail_view_mode == "Top";
+    let is_top = state.miditrail.view_mode == "Top";
     let speed = if is_miditrail {
         if is_top {
-            state.miditrail_top_speed
+            state.miditrail.top_speed
         } else {
-            state.miditrail_normal_speed
+            state.miditrail.normal_speed
         }
     } else {
         state.waterfall_speed
@@ -286,17 +286,17 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         settings.push(VideoRow::Slider {
             label: tr!("Z 显示距离:").to_string(),
             label_width: 100.0,
-            value: state.miditrail_z_far,
+            value: state.miditrail.z_far,
             min: 0.1,
             max: MIDITRAIL_Z_FAR_MAX,
             step: 0.1,
             slider_width: 200.0,
-            value_text: format!("{:.1}", state.miditrail_z_far),
+            value_text: format!("{:.1}", state.miditrail.z_far),
             id: 8,
         });
         settings.push(VideoRow::Toggle {
             label: tr!("3D 音符（盒子，关闭则为平面）").to_string(),
-            checked: state.miditrail_3d_notes,
+            checked: state.miditrail.notes_3d,
             id: 9,
         });
     }
