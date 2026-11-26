@@ -51,23 +51,23 @@ pub(crate) struct ShapeEditState {
     pub mods: Mods,
 }
 
-impl Editor {
-    /// 041C 阶段 3：只有能可靠重生成的单支组合才开放手柄。
-    ///
-    /// Merge 的跨形状位移不在模型里，单独改第一支会丢第二支音符；Slice/Between
-    /// 是多支，暂不提供整体手柄。
-    fn pending_handle_supported(composed: &PendingComposed) -> bool {
-        composed.results.len() == 1
-            && matches!(
-                composed.kind,
-                ComposedKind::Live
-                    | ComposedKind::Join
-                    | ComposedKind::CopyAlong
-                    | ComposedKind::Velocity
-                    | ComposedKind::Single
-            )
-    }
+/// 041C 阶段 3：只有能可靠重生成的单支组合才开放手柄。
+///
+/// Merge 的跨形状位移不在模型里，单独改第一支会丢第二支音符；Slice/Between
+/// 是多支，暂不提供整体手柄。
+pub(super) fn pending_handle_supported(composed: &PendingComposed) -> bool {
+    composed.results.len() == 1
+        && matches!(
+            composed.kind,
+            ComposedKind::Live
+                | ComposedKind::Join
+                | ComposedKind::CopyAlong
+                | ComposedKind::Velocity
+                | ComposedKind::Single
+        )
+}
 
+impl Editor {
     /// 进入/退出「编辑图形」模式；进入后隐藏 ShapeSelect 选框。
     pub fn enable_shape_edit(&mut self) -> bool {
         // 已处于编辑态 → 本次为「退出」：丢弃未提交拖拽并恢复选框。
@@ -115,7 +115,7 @@ impl Editor {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return false;
                 };
-                if !Self::pending_handle_supported(composed) {
+                if !pending_handle_supported(composed) {
                     return false;
                 }
                 if !indexes.contains(&index) {
@@ -144,7 +144,7 @@ impl Editor {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return false;
                 };
-                if !Self::pending_handle_supported(composed) {
+                if !pending_handle_supported(composed) {
                     return false;
                 }
                 ShapeEditTarget::PendingComposed { index }
@@ -293,7 +293,7 @@ impl Editor {
                 self.shape_tools.edit = Some(state);
                 return false;
             }
-            self.write_group_parts(&state.group_parts, &models);
+            group::write_group_parts(self, &state.group_parts, &models);
             state.current = union_model(&models).unwrap_or_else(|| state.current.clone());
             self.shape_tools.edit = Some(state);
             return true;

@@ -60,7 +60,7 @@ impl Editor {
         let (target, model) = match drawn.pending {
             Some(PendingShapeRef::Composed(index)) => {
                 let composed = self.editor_state.pending_composed.get(index)?;
-                if !Self::pending_handle_supported(composed) {
+                if !super::pending_handle_supported(composed) {
                     return None;
                 }
                 (

@@ -22,7 +22,7 @@ impl Editor {
         match state.target {
             ShapeEditTarget::PendingComposed { index } => {
                 if !changed {
-                    self.restore_pending_part(index, &state.original);
+                    restore_pending_part(self, index, &state.original);
                     self.refresh_pending_mirror_geometry();
                     return false;
                 }
@@ -53,7 +53,7 @@ impl Editor {
             }
             ShapeEditTarget::Group => {
                 if !changed {
-                    self.restore_group_snapshot(state.original_composed);
+                    super::group::restore_group_snapshot(self, state.original_composed);
                     return false;
                 }
                 // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
@@ -78,25 +78,12 @@ impl Editor {
         };
         match state.target {
             ShapeEditTarget::PendingComposed { index } => {
-                self.restore_pending_part(index, &state.original);
+                restore_pending_part(self, index, &state.original);
                 self.refresh_pending_mirror_geometry();
             }
             ShapeEditTarget::Group => {
-                self.restore_group_snapshot(state.original_composed);
+                super::group::restore_group_snapshot(self, state.original_composed);
             }
-        }
-    }
-
-    fn restore_pending_part(&mut self, index: usize, model: &ShapeModel) {
-        let notes = self.part_notes_for_edit(model, model.track as usize);
-        if let Some(part) = self
-            .editor_state
-            .pending_composed
-            .get_mut(index)
-            .and_then(|composed| composed.results.first_mut())
-        {
-            part.model = model.clone();
-            part.notes = notes;
         }
     }
 
@@ -115,5 +102,18 @@ impl Editor {
         } else {
             self.shape_notes_of(model, track)
         }
+    }
+}
+
+fn restore_pending_part(editor: &mut Editor, index: usize, model: &ShapeModel) {
+    let notes = editor.part_notes_for_edit(model, model.track as usize);
+    if let Some(part) = editor
+        .editor_state
+        .pending_composed
+        .get_mut(index)
+        .and_then(|composed| composed.results.first_mut())
+    {
+        part.model = model.clone();
+        part.notes = notes;
     }
 }

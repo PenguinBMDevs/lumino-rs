@@ -47,27 +47,27 @@ impl Editor {
             .collect();
         union_model(&models)
     }
+}
 
-    /// 组编辑写回：每个成员模型 + 按模型重新生成的音符
-    pub(crate) fn write_group_parts(&mut self, parts: &[GroupPart], models: &[ShapeModel]) {
-        for (part, model) in parts.iter().zip(models) {
-            let notes = self.part_notes_for_edit(model, model.track as usize);
-            if let Some(target) = self
-                .editor_state
-                .pending_composed
-                .get_mut(part.index)
-                .and_then(|composed| composed.results.first_mut())
-            {
-                target.model = model.clone();
-                target.notes = notes;
-            }
+/// 组编辑写回：每个成员模型 + 按模型重新生成的音符
+pub(super) fn write_group_parts(editor: &mut Editor, parts: &[GroupPart], models: &[ShapeModel]) {
+    for (part, model) in parts.iter().zip(models) {
+        let notes = editor.part_notes_for_edit(model, model.track as usize);
+        if let Some(target) = editor
+            .editor_state
+            .pending_composed
+            .get_mut(part.index)
+            .and_then(|composed| composed.results.first_mut())
+        {
+            target.model = model.clone();
+            target.notes = notes;
         }
-        self.refresh_pending_mirror_geometry();
     }
+    editor.refresh_pending_mirror_geometry();
+}
 
-    /// 恢复整份 `pending_composed` 快照
-    pub(crate) fn restore_group_snapshot(&mut self, snapshot: Vec<PendingComposed>) {
-        self.editor_state.pending_composed = snapshot;
-        self.refresh_pending_mirror_geometry();
-    }
+/// 恢复整份 `pending_composed` 快照
+pub(super) fn restore_group_snapshot(editor: &mut Editor, snapshot: Vec<PendingComposed>) {
+    editor.editor_state.pending_composed = snapshot;
+    editor.refresh_pending_mirror_geometry();
 }
