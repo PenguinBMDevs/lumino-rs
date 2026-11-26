@@ -322,7 +322,7 @@ fn counter_font_mode_branches() {
 fn data_curve_section_rows_and_font_branches() {
     let mut root = root();
     root.state.video_export_dialog.render_mode = "数据曲线".to_owned();
-    root.state.video_export_dialog.dc_font_mode = "系统字体".to_owned();
+    root.state.video_export_dialog.data_curve.font_mode = "系统字体".to_owned();
     let panel = root.video_export_panel_model(rect());
     let curve = panel
         .content
@@ -380,7 +380,7 @@ fn data_curve_section_rows_and_font_branches() {
         .count();
     assert_eq!(pairs, 7, "曲线参数 2 + 外观 3 + 文字 2 = 7 行两列");
 
-    root.state.video_export_dialog.dc_font_mode = "自定义字体".to_owned();
+    root.state.video_export_dialog.data_curve.font_mode = "自定义字体".to_owned();
     let panel = root.video_export_panel_model(rect());
     let curve = panel
         .content

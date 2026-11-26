@@ -40,6 +40,61 @@ pub enum VideoExportOverlayState {
     Error(String),
 }
 
+/// 数据曲线（DataCurveSection）渲染设置。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DataCurveSection {
+    pub metric: String,
+    pub graph_duration: String,
+    pub zoom_smoothness: String,
+    pub graph_smoothness: String,
+    pub padding_mul: String,
+    pub bg_color: String,
+    pub line_color: String,
+    pub text_color: String,
+    pub bar_color: String,
+    pub line_thickness: String,
+    pub bar_thickness: String,
+    pub font_size: u32,
+    pub font_mode: String,
+    pub font_family: String,
+    pub font_path: String,
+    pub text_x_offset: String,
+    pub text_y_offset: String,
+    pub milestone_scale_mul: String,
+    pub abbreviate: bool,
+    pub abbreviate_digits: String,
+    pub show_text: bool,
+    pub show_bars: bool,
+}
+
+impl Default for DataCurveSection {
+    fn default() -> Self {
+        Self {
+            metric: "NPS（每秒音符数）".to_string(),
+            graph_duration: "2.0".to_string(),
+            zoom_smoothness: "8.0".to_string(),
+            graph_smoothness: "0".to_string(),
+            padding_mul: "0.1".to_string(),
+            bg_color: "#000000".to_string(),
+            line_color: "#00FFFF".to_string(),
+            text_color: "#FFFFFF7F".to_string(),
+            bar_color: "#FFFFFF7F".to_string(),
+            line_thickness: "3".to_string(),
+            bar_thickness: "1".to_string(),
+            font_size: 24,
+            font_mode: "内置点阵".to_string(),
+            font_family: "微软雅黑".to_string(),
+            font_path: String::new(),
+            text_x_offset: "2".to_string(),
+            text_y_offset: "2".to_string(),
+            milestone_scale_mul: "1.5".to_string(),
+            abbreviate: false,
+            abbreviate_digits: "3".to_string(),
+            show_text: true,
+            show_bars: true,
+        }
+    }
+}
 /// 计数器（Counter）渲染设置（视频导出状态的分区）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CounterSection {
@@ -143,50 +198,8 @@ pub struct VideoExportDialogState {
     /// 计数器渲染设置。
     pub counter: CounterSection,
     // ── 数据曲线设置（参考 MIDIGraphRenderer graph 设置面板） ──
-    /// 数据来源指标（"NPS（每秒音符数）"/"复音数"/"累计音符数"/"BPM（速度）"）
-    pub dc_metric: String,
-    /// 曲线窗口时长（秒）
-    pub dc_graph_duration: String,
-    /// 缩放动画平滑度
-    pub dc_zoom_smoothness: String,
-    /// 折线平滑窗口（0=关闭）
-    pub dc_graph_smoothness: String,
-    /// 纵轴缩放 padding 放大系数
-    pub dc_padding_mul: String,
-    /// 背景颜色（hex 字符串，如 "#000000"，支持 8 位 hex 带 alpha）
-    pub dc_bg_color: String,
-    /// 折线颜色（hex 字符串）
-    pub dc_line_color: String,
-    /// 刻度文字颜色（hex 字符串）
-    pub dc_text_color: String,
-    /// 水平网格线颜色（hex 字符串）
-    pub dc_bar_color: String,
-    /// 折线宽度（像素）
-    pub dc_line_thickness: String,
-    /// 水平网格线宽度（像素）
-    pub dc_bar_thickness: String,
-    /// 刻度文字字号（像素）
-    pub dc_font_size: u32,
-    /// 刻度文字字体来源（"内置点阵"/"系统字体"/"自定义字体"）
-    pub dc_font_mode: String,
-    /// 系统字体名称
-    pub dc_font_family: String,
-    /// 自定义字体文件路径
-    pub dc_font_path: String,
-    /// 刻度文字 X 偏移（像素）
-    pub dc_text_x_offset: String,
-    /// 刻度文字 Y 偏移（像素）
-    pub dc_text_y_offset: String,
-    /// 里程碑文字放大倍数
-    pub dc_milestone_scale_mul: String,
-    /// 刻度数字缩写（1,000 → 1K）
-    pub dc_abbreviate: bool,
-    /// 缩写保留小数位数
-    pub dc_abbreviate_digits: String,
-    /// 显示刻度文字
-    pub dc_show_text: bool,
-    /// 显示水平网格线
-    pub dc_show_bars: bool,
+    /// 数据曲线渲染设置。
+    pub data_curve: DataCurveSection,
     /// 分辨率宽度
     pub width: u32,
     /// 分辨率高度
@@ -238,28 +251,7 @@ impl VideoExportDialogState {
             waterfall_speed: 1.0,
             miditrail: MiditrailSection::default(),
             counter: CounterSection::default(),
-            dc_metric: "NPS（每秒音符数）".to_string(),
-            dc_graph_duration: "2.0".to_string(),
-            dc_zoom_smoothness: "8.0".to_string(),
-            dc_graph_smoothness: "0".to_string(),
-            dc_padding_mul: "0.1".to_string(),
-            dc_bg_color: "#000000".to_string(),
-            dc_line_color: "#00FFFF".to_string(),
-            dc_text_color: "#FFFFFF7F".to_string(),
-            dc_bar_color: "#FFFFFF7F".to_string(),
-            dc_line_thickness: "3".to_string(),
-            dc_bar_thickness: "1".to_string(),
-            dc_font_size: 24,
-            dc_font_mode: "内置点阵".to_string(),
-            dc_font_family: "微软雅黑".to_string(),
-            dc_font_path: String::new(),
-            dc_text_x_offset: "2".to_string(),
-            dc_text_y_offset: "2".to_string(),
-            dc_milestone_scale_mul: "1.5".to_string(),
-            dc_abbreviate: false,
-            dc_abbreviate_digits: "3".to_string(),
-            dc_show_text: true,
-            dc_show_bars: true,
+            data_curve: DataCurveSection::default(),
             width: 1920,
             height: 1080,
             fps: 60,
@@ -347,5 +339,30 @@ mod counter_tests {
         assert_eq!(state.miditrail.z_far, MIDITRAIL_Z_FAR_DEFAULT);
         assert_eq!(state.waterfall_speed, 1.0);
         assert_eq!(state.width, 1920);
+    }
+}
+
+#[cfg(test)]
+mod data_curve_tests {
+    use super::*;
+
+    /// 数据曲线子结构的默认值与旧字段逐一对应。
+    #[test]
+    fn data_curve_defaults_snapshot() {
+        let state = VideoExportDialogState::new();
+        assert_eq!(state.data_curve.graph_duration, "2.0");
+        assert_eq!(state.data_curve.bg_color, "#000000");
+        assert_eq!(state.data_curve.line_color, "#00FFFF");
+        assert!(!state.data_curve.abbreviate);
+        assert_eq!(state.data_curve.abbreviate_digits, "3");
+    }
+
+    /// 数据曲线与其它域互不影响。
+    #[test]
+    fn data_curve_section_is_independent() {
+        let mut state = VideoExportDialogState::new();
+        state.data_curve.line_thickness = "9".to_string();
+        assert_eq!(state.counter.font_size, 40);
+        assert_eq!(state.miditrail.z_far, MIDITRAIL_Z_FAR_DEFAULT);
     }
 }

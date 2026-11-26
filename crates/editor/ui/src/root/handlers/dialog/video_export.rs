@@ -258,46 +258,46 @@ impl DialogHandler {
             V::DataCurveNumberChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "graph_duration" => st.dc_graph_duration = fmt_num(value, 2),
-                    "zoom_smoothness" => st.dc_zoom_smoothness = fmt_num(value, 2),
-                    "graph_smoothness" => st.dc_graph_smoothness = fmt_num(value, 0),
-                    "padding_mul" => st.dc_padding_mul = fmt_num(value, 2),
-                    "line_thickness" => st.dc_line_thickness = fmt_num(value, 0),
-                    "bar_thickness" => st.dc_bar_thickness = fmt_num(value, 0),
-                    "text_x_offset" => st.dc_text_x_offset = fmt_num(value, 0),
-                    "text_y_offset" => st.dc_text_y_offset = fmt_num(value, 0),
-                    "milestone_scale_mul" => st.dc_milestone_scale_mul = fmt_num(value, 2),
-                    "abbreviate_digits" => st.dc_abbreviate_digits = fmt_num(value, 0),
+                    "graph_duration" => st.data_curve.graph_duration = fmt_num(value, 2),
+                    "zoom_smoothness" => st.data_curve.zoom_smoothness = fmt_num(value, 2),
+                    "graph_smoothness" => st.data_curve.graph_smoothness = fmt_num(value, 0),
+                    "padding_mul" => st.data_curve.padding_mul = fmt_num(value, 2),
+                    "line_thickness" => st.data_curve.line_thickness = fmt_num(value, 0),
+                    "bar_thickness" => st.data_curve.bar_thickness = fmt_num(value, 0),
+                    "text_x_offset" => st.data_curve.text_x_offset = fmt_num(value, 0),
+                    "text_y_offset" => st.data_curve.text_y_offset = fmt_num(value, 0),
+                    "milestone_scale_mul" => st.data_curve.milestone_scale_mul = fmt_num(value, 2),
+                    "abbreviate_digits" => st.data_curve.abbreviate_digits = fmt_num(value, 0),
                     _ => {}
                 }
             }
             V::DataCurveBoolChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "abbreviate" => st.dc_abbreviate = value,
-                    "show_text" => st.dc_show_text = value,
-                    "show_bars" => st.dc_show_bars = value,
+                    "abbreviate" => st.data_curve.abbreviate = value,
+                    "show_text" => st.data_curve.show_text = value,
+                    "show_bars" => st.data_curve.show_bars = value,
                     _ => {}
                 }
             }
             V::DataCurveTextChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "metric" => st.dc_metric = value,
-                    "bg_color" => st.dc_bg_color = value,
-                    "line_color" => st.dc_line_color = value,
-                    "text_color" => st.dc_text_color = value,
-                    "bar_color" => st.dc_bar_color = value,
-                    "font_family" => st.dc_font_family = value,
-                    "font_path" => st.dc_font_path = value,
+                    "metric" => st.data_curve.metric = value,
+                    "bg_color" => st.data_curve.bg_color = value,
+                    "line_color" => st.data_curve.line_color = value,
+                    "text_color" => st.data_curve.text_color = value,
+                    "bar_color" => st.data_curve.bar_color = value,
+                    "font_family" => st.data_curve.font_family = value,
+                    "font_path" => st.data_curve.font_path = value,
                     _ => {}
                 }
             }
             V::DataCurveFontSizeChanged(v) => {
-                root.state.video_export_dialog.dc_font_size = v.clamp(7, 256);
+                root.state.video_export_dialog.data_curve.font_size = v.clamp(7, 256);
             }
             V::DataCurveFontModeChanged(v) => {
-                root.state.video_export_dialog.dc_font_mode = v;
+                root.state.video_export_dialog.data_curve.font_mode = v;
             }
             V::DataCurveBrowseFont => {
                 root.spawn_path_dialog(PathDialogTask::VideoDataCurveFont, || {

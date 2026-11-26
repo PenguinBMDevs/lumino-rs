@@ -113,7 +113,8 @@ impl Root {
                     path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoDataCurveFont => {
-                self.state.video_export_dialog.dc_font_path = path.to_string_lossy().to_string();
+                self.state.video_export_dialog.data_curve.font_path =
+                    path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoExportOutput => {
                 self.state.video_export_dialog.output_path = path.to_string_lossy().to_string();

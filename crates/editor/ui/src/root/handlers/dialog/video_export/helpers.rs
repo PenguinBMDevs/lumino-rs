@@ -140,48 +140,64 @@ pub(crate) fn build_video_config(
             csv_format: st.counter.csv_format.clone(),
         },
         data_curve: DataCurveConfig {
-            metric: parse_enum_or_log(&st.dc_metric, "dc_metric"),
-            graph_duration: parse_f32_or_log(&st.dc_graph_duration, "dc_graph_duration", 2.0)
-                .clamp(0.5, 30.0),
-            zoom_smoothness: parse_f32_or_log(&st.dc_zoom_smoothness, "dc_zoom_smoothness", 8.0)
-                .clamp(1.0, 64.0),
-            graph_smoothness: parse_f32_or_log(&st.dc_graph_smoothness, "dc_graph_smoothness", 0.0)
-                .clamp(0.0, 32.0) as u32,
-            padding_mul: parse_f32_or_log(&st.dc_padding_mul, "dc_padding_mul", 0.1)
+            metric: parse_enum_or_log(&st.data_curve.metric, "dc_metric"),
+            graph_duration: parse_f32_or_log(
+                &st.data_curve.graph_duration,
+                "dc_graph_duration",
+                2.0,
+            )
+            .clamp(0.5, 30.0),
+            zoom_smoothness: parse_f32_or_log(
+                &st.data_curve.zoom_smoothness,
+                "dc_zoom_smoothness",
+                8.0,
+            )
+            .clamp(1.0, 64.0),
+            graph_smoothness: parse_f32_or_log(
+                &st.data_curve.graph_smoothness,
+                "dc_graph_smoothness",
+                0.0,
+            )
+            .clamp(0.0, 32.0) as u32,
+            padding_mul: parse_f32_or_log(&st.data_curve.padding_mul, "dc_padding_mul", 0.1)
                 .clamp(0.0, 1.0),
-            bg_color: hex_to_rgba(&st.dc_bg_color).unwrap_or([0, 0, 0, 255]),
-            line_color: hex_to_rgba(&st.dc_line_color).unwrap_or([0, 255, 255, 255]),
-            text_color: hex_to_rgba(&st.dc_text_color).unwrap_or([255, 255, 255, 127]),
-            bar_color: hex_to_rgba(&st.dc_bar_color).unwrap_or([255, 255, 255, 127]),
-            line_thickness: parse_f32_or_log(&st.dc_line_thickness, "dc_line_thickness", 3.0)
-                .clamp(1.0, 20.0) as u32,
-            bar_thickness: parse_f32_or_log(&st.dc_bar_thickness, "dc_bar_thickness", 1.0)
+            bg_color: hex_to_rgba(&st.data_curve.bg_color).unwrap_or([0, 0, 0, 255]),
+            line_color: hex_to_rgba(&st.data_curve.line_color).unwrap_or([0, 255, 255, 255]),
+            text_color: hex_to_rgba(&st.data_curve.text_color).unwrap_or([255, 255, 255, 127]),
+            bar_color: hex_to_rgba(&st.data_curve.bar_color).unwrap_or([255, 255, 255, 127]),
+            line_thickness: parse_f32_or_log(
+                &st.data_curve.line_thickness,
+                "dc_line_thickness",
+                3.0,
+            )
+            .clamp(1.0, 20.0) as u32,
+            bar_thickness: parse_f32_or_log(&st.data_curve.bar_thickness, "dc_bar_thickness", 1.0)
                 .clamp(1.0, 10.0) as u32,
-            font_size: st.dc_font_size,
+            font_size: st.data_curve.font_size,
             font: counter_font(
-                &st.dc_font_mode,
-                st.dc_font_family.clone(),
-                st.dc_font_path.clone(),
+                &st.data_curve.font_mode,
+                st.data_curve.font_family.clone(),
+                st.data_curve.font_path.clone(),
             ),
-            text_x_offset: parse_f32_or_log(&st.dc_text_x_offset, "dc_text_x_offset", 2.0)
+            text_x_offset: parse_f32_or_log(&st.data_curve.text_x_offset, "dc_text_x_offset", 2.0)
                 .clamp(0.0, 100.0) as u32,
-            text_y_offset: parse_f32_or_log(&st.dc_text_y_offset, "dc_text_y_offset", 2.0)
+            text_y_offset: parse_f32_or_log(&st.data_curve.text_y_offset, "dc_text_y_offset", 2.0)
                 .clamp(0.0, 100.0) as u32,
             milestone_scale_mul: parse_f32_or_log(
-                &st.dc_milestone_scale_mul,
+                &st.data_curve.milestone_scale_mul,
                 "dc_milestone_scale_mul",
                 1.5,
             )
             .clamp(1.0, 5.0),
-            abbreviate: st.dc_abbreviate,
+            abbreviate: st.data_curve.abbreviate,
             abbreviate_digits: parse_f32_or_log(
-                &st.dc_abbreviate_digits,
+                &st.data_curve.abbreviate_digits,
                 "dc_abbreviate_digits",
                 3.0,
             )
             .clamp(0.0, 10.0) as u32,
-            show_text: st.dc_show_text,
-            show_bars: st.dc_show_bars,
+            show_text: st.data_curve.show_text,
+            show_bars: st.data_curve.show_bars,
         },
         midi_console: MidiConsoleConfig {
             render_backend: parse_enum_or_log(&st.midi_console_backend, "midi_console_backend"),

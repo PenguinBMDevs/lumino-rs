@@ -48,7 +48,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             METRICS.iter().map(|s| s.to_string()).collect(),
             METRICS
                 .iter()
-                .position(|v| *v == state.dc_metric)
+                .position(|v| *v == state.data_curve.metric)
                 .unwrap_or(0),
             180.0,
             200,
@@ -63,14 +63,14 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         label(tr!("曲线参数"), 13.0, false),
         gap(4.0),
         VideoRow::TextPair {
-            left: number_cell(tr!("窗口时长(秒)"), &state.dc_graph_duration, 201),
-            right: number_cell(tr!("缩放平滑"), &state.dc_zoom_smoothness, 202),
+            left: number_cell(tr!("窗口时长(秒)"), &state.data_curve.graph_duration, 201),
+            right: number_cell(tr!("缩放平滑"), &state.data_curve.zoom_smoothness, 202),
             separator: String::new(),
         },
         gap(6.0),
         VideoRow::TextPair {
-            left: number_cell(tr!("折线平滑"), &state.dc_graph_smoothness, 203),
-            right: number_cell(tr!("纵轴 padding"), &state.dc_padding_mul, 204),
+            left: number_cell(tr!("折线平滑"), &state.data_curve.graph_smoothness, 203),
+            right: number_cell(tr!("纵轴 padding"), &state.data_curve.padding_mul, 204),
             separator: String::new(),
         },
         gap(4.0),
@@ -79,32 +79,32 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         label(tr!("外观"), 13.0, false),
         gap(4.0),
         VideoRow::TextPair {
-            left: color_cell(tr!("背景色"), &state.dc_bg_color, 210),
-            right: color_cell(tr!("折线色"), &state.dc_line_color, 211),
+            left: color_cell(tr!("背景色"), &state.data_curve.bg_color, 210),
+            right: color_cell(tr!("折线色"), &state.data_curve.line_color, 211),
             separator: String::new(),
         },
         gap(6.0),
         VideoRow::TextPair {
-            left: color_cell(tr!("文字色"), &state.dc_text_color, 212),
-            right: color_cell(tr!("网格线色"), &state.dc_bar_color, 213),
+            left: color_cell(tr!("文字色"), &state.data_curve.text_color, 212),
+            right: color_cell(tr!("网格线色"), &state.data_curve.bar_color, 213),
             separator: String::new(),
         },
         gap(6.0),
         VideoRow::TextPair {
-            left: number_cell(tr!("折线宽(px)"), &state.dc_line_thickness, 214),
-            right: number_cell(tr!("网格线宽(px)"), &state.dc_bar_thickness, 215),
+            left: number_cell(tr!("折线宽(px)"), &state.data_curve.line_thickness, 214),
+            right: number_cell(tr!("网格线宽(px)"), &state.data_curve.bar_thickness, 215),
             separator: String::new(),
         },
         gap(6.0),
         VideoRow::Slider {
             label: tr!("字号:").to_string(),
             label_width: 100.0,
-            value: state.dc_font_size as f32,
+            value: state.data_curve.font_size as f32,
             min: 7.0,
             max: 256.0,
             step: 1.0,
             slider_width: 140.0,
-            value_text: format!("{} px", state.dc_font_size),
+            value_text: format!("{} px", state.data_curve.font_size),
             id: 216,
         },
         gap(6.0),
@@ -114,7 +114,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             FONT_MODES.iter().map(|s| s.to_string()).collect(),
             FONT_MODES
                 .iter()
-                .position(|v| *v == state.dc_font_mode)
+                .position(|v| *v == state.data_curve.font_mode)
                 .unwrap_or(0),
             140.0,
             217,
@@ -122,14 +122,14 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         gap(6.0),
     ];
 
-    match state.dc_font_mode.as_str() {
+    match state.data_curve.font_mode.as_str() {
         "系统字体" => rows.push(pick(
             tr!("字体:"),
             100.0,
             SYSTEM_FONT_FAMILIES.iter().map(|s| s.to_string()).collect(),
             SYSTEM_FONT_FAMILIES
                 .iter()
-                .position(|v| *v == state.dc_font_family)
+                .position(|v| *v == state.data_curve.font_family)
                 .unwrap_or(0),
             140.0,
             218,
@@ -138,7 +138,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             "",
             0.0,
             219,
-            &state.dc_font_path,
+            &state.data_curve.font_path,
             tr!("选择 TTF/OTF 字体文件..."),
             0.0,
             button(tr!("浏览..."), 220, VideoButtonFill::Primary, 0.0),
@@ -160,32 +160,36 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     rows.push(label(tr!("文字与刻度"), 13.0, false));
     rows.push(gap(4.0));
     rows.push(VideoRow::TextPair {
-        left: number_cell(tr!("X 偏移(px)"), &state.dc_text_x_offset, 230),
-        right: number_cell(tr!("Y 偏移(px)"), &state.dc_text_y_offset, 231),
+        left: number_cell(tr!("X 偏移(px)"), &state.data_curve.text_x_offset, 230),
+        right: number_cell(tr!("Y 偏移(px)"), &state.data_curve.text_y_offset, 231),
         separator: String::new(),
     });
     rows.push(gap(6.0));
     rows.push(VideoRow::TextPair {
-        left: number_cell(tr!("里程碑放大"), &state.dc_milestone_scale_mul, 232),
-        right: number_cell(tr!("缩写位数"), &state.dc_abbreviate_digits, 233),
+        left: number_cell(
+            tr!("里程碑放大"),
+            &state.data_curve.milestone_scale_mul,
+            232,
+        ),
+        right: number_cell(tr!("缩写位数"), &state.data_curve.abbreviate_digits, 233),
         separator: String::new(),
     });
     rows.push(gap(6.0));
     rows.push(VideoRow::Toggle {
         label: tr!("刻度数字缩写（1,000 → 1K）").to_string(),
-        checked: state.dc_abbreviate,
+        checked: state.data_curve.abbreviate,
         id: 234,
     });
     rows.push(gap(4.0));
     rows.push(VideoRow::Toggle {
         label: tr!("显示刻度文字").to_string(),
-        checked: state.dc_show_text,
+        checked: state.data_curve.show_text,
         id: 235,
     });
     rows.push(gap(4.0));
     rows.push(VideoRow::Toggle {
         label: tr!("显示水平网格线").to_string(),
-        checked: state.dc_show_bars,
+        checked: state.data_curve.show_bars,
         id: 236,
     });
     rows.push(gap(4.0));
