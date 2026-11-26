@@ -1,7 +1,7 @@
 //! 020「编辑图形」提交/撤销/旋转/中心平移测试（从 `tests.rs` 拆出）
 
-use super::tests::{editor_with_pending_composed, enter_edit, model_bounds, screen_box};
 use super::*;
+use super::{editor_with_pending_composed, enter_edit, model_bounds, screen_box};
 use crate::tests::test_helpers::seed_notes;
 use lumino_editor_state::PendingShapeRef;
 use lumino_ui_core::geom::Point;

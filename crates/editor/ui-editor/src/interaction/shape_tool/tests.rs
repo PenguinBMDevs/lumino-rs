@@ -772,3 +772,4 @@ fn test_shape_ctrl_click_requests_dialog() {
         "Ctrl+单击不应开始拖拽"
     );
 }
+mod triangle;

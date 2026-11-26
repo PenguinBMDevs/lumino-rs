@@ -24,8 +24,6 @@
 mod confirm;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_triangle;
 
 use lumino_editor_state::shape_tool::point_in_shape;
 

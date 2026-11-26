@@ -16,13 +16,6 @@ crates/editor/gfx/src/note_renderer/export_path_tests.rs
 crates/editor/gfx/src/note_renderer/perf_tests.rs
 crates/editor/gfx/src/note_renderer/point_tests.rs
 crates/editor/gfx/src/waterfall_renderer/active_tests.rs
-crates/editor/ui-editor/src/grid/loop_range/loop_range_tests.rs
-crates/editor/ui-editor/src/interaction/line_tool/tests_arc.rs
-crates/editor/ui-editor/src/interaction/line_tool/tests_confirm.rs
-crates/editor/ui-editor/src/interaction/line_tool/tests_fill.rs
-crates/editor/ui-editor/src/interaction/line_tool/tests_vertical.rs
-crates/editor/ui-editor/src/interaction/shape_edit_ui/tests_ops.rs
-crates/editor/ui-editor/src/interaction/shape_tool/tests_triangle.rs
 crates/editor/ui/src/host/render/cpu_onion/tests_dirty.rs
 crates/editor/ui/src/host/render/cpu_onion/tests_gate.rs
 crates/editor/ui/src/host/render/onion_skin/tests_cpu.rs

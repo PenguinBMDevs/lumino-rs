@@ -424,3 +424,7 @@ fn test_press_no_drag_pops_empty_history() {
         "空操作不应产生撤销历史"
     );
 }
+mod arc;
+mod confirm;
+mod fill;
+mod vertical;

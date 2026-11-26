@@ -387,7 +387,5 @@ fn sane_geometry(model: &ShapeModel) -> bool {
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_ops;
 
 mod cursor;

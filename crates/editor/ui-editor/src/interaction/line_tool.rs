@@ -34,14 +34,6 @@ pub(crate) mod stroke_band;
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_arc;
-#[cfg(test)]
-mod tests_confirm;
-#[cfg(test)]
-mod tests_fill;
-#[cfg(test)]
-mod tests_vertical;
 
 use crate::Editor;
 use lumino_editor_state::{AnchorBend, BezierAnchor, HandleSide, LineToolInteraction};
