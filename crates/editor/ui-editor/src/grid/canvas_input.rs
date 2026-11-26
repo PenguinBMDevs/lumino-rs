@@ -93,7 +93,7 @@ pub fn dispatch(
             }
             CanvasButton::Right => {
                 let local_pos = local(pos);
-                if editor.shape_list_open {
+                if editor.shape_tools.list_open {
                     return Some(Message::EditorAction(EditorAction::ShapeListClose));
                 }
                 // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。

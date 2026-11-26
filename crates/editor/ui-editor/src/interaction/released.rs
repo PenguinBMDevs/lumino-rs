@@ -19,7 +19,11 @@ impl Editor {
             return;
         }
         // DRAW-025：切割松手 = 按拖出的线切分（失败保留布防）
-        if self.slice_cut.is_some_and(|state| state.dragging) {
+        if self
+            .shape_tools
+            .slice_cut
+            .is_some_and(|state| state.dragging)
+        {
             self.slice_cut_released();
             return;
         }

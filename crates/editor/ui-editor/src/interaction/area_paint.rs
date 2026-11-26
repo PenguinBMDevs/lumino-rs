@@ -56,7 +56,8 @@ impl Editor {
         };
         match reference {
             Some(PendingShapeRef::Composed(index)) => {
-                let Some(model) = self.area_paint_model(AreaPaintTarget::PendingComposed { index })
+                let Some(model) =
+                    area_paint_model(self, AreaPaintTarget::PendingComposed { index })
                 else {
                     return false;
                 };
@@ -80,7 +81,7 @@ impl Editor {
             return false;
         };
         let target = AreaPaintTarget::PendingComposed { index };
-        let Some(model) = self.area_paint_model(target) else {
+        let Some(model) = area_paint_model(self, target) else {
             return false;
         };
         // 只有闭合区域才有“内部”可着色；开放曲线不能走形状再生成。
@@ -100,14 +101,14 @@ impl Editor {
             .selected_shapes()
             .next()
             .map(|shape| shape.id);
-        self.area_paint = Some(AreaPaintState {
+        self.shape_tools.area_paint = Some(AreaPaintState {
             target,
             drawn_id,
             colour,
             original_fill,
             original_areas,
         });
-        self.shape_list_open = false;
+        self.shape_tools.list_open = false;
         true
     }
 
@@ -118,23 +119,10 @@ impl Editor {
         false
     }
 
-    /// 会话绑定目标的模型
-    fn area_paint_model(&self, target: AreaPaintTarget) -> Option<&ShapeModel> {
-        match target {
-            AreaPaintTarget::PendingComposed { index } => self
-                .editor_state
-                .pending_composed
-                .get(index)?
-                .results
-                .first()
-                .map(|part| &part.model),
-        }
-    }
-
     /// 区域着色会话对应的屏幕包围框
     pub(crate) fn area_paint_bounds(&self) -> Option<lumino_ui_core::geom::Rectangle> {
-        let target = self.area_paint.as_ref()?.target;
-        let model = self.area_paint_model(target)?;
+        let target = self.shape_tools.area_paint.as_ref()?.target;
+        let model = area_paint_model(self, target)?;
         let (tick_lo, key_lo, tick_hi, key_hi) = model.geometry.bounds()?;
         let a = self.line_pos_screen_pos((tick_lo, key_lo));
         let b = self.line_pos_screen_pos((tick_hi, key_hi));
@@ -155,36 +143,39 @@ impl Editor {
         {
             return false;
         }
-        self.area_paint = None;
-        self.shape_list_open = true;
+        self.shape_tools.area_paint = None;
+        self.shape_tools.list_open = true;
         true
     }
 
     /// 关闭 ShapeStore 模型列表
     pub fn close_shape_list(&mut self) {
-        if self.shape_list_open {
-            self.shape_list_open = false;
+        if self.shape_tools.list_open {
+            self.shape_tools.list_open = false;
         }
     }
 
     /// 退出区域着色模式
     pub fn end_area_paint(&mut self) {
-        self.area_paint.take();
+        self.shape_tools.area_paint.take();
     }
 
     /// 是否处于区域着色模式
     pub fn area_paint_active(&self) -> bool {
-        self.area_paint.is_some()
+        self.shape_tools.area_paint.is_some()
     }
 
     /// 当前画笔色号（无会话时返回 `None`）
     pub fn area_paint_colour(&self) -> Option<u8> {
-        self.area_paint.as_ref().map(|state| state.colour)
+        self.shape_tools
+            .area_paint
+            .as_ref()
+            .map(|state| state.colour)
     }
 
     /// 选择画笔色号（0..=15，启用通道 10 时 0..=16）
     pub fn set_area_paint_colour(&mut self, colour: u8) -> bool {
-        let Some(state) = &mut self.area_paint else {
+        let Some(state) = &mut self.shape_tools.area_paint else {
             return false;
         };
         let max = lumino_core::shape::most_colours(self.editor_state.use10);
@@ -201,7 +192,7 @@ impl Editor {
     /// 进入区域着色前的填充状态（轮廓图形回到轮廓，填充图形回到基础填充），
     /// 不允许把整个形状直接清空。
     pub(crate) fn paint_area_at(&mut self, tick: f32, key: f32, colour: u8) -> bool {
-        let Some(state) = self.area_paint.as_ref() else {
+        let Some(state) = self.shape_tools.area_paint.as_ref() else {
             return false;
         };
         let target = state.target;
@@ -219,7 +210,7 @@ impl Editor {
             self.end_area_paint();
             return false;
         }
-        let Some(mut model) = self.area_paint_model(target).cloned() else {
+        let Some(mut model) = area_paint_model(self, target).cloned() else {
             self.end_area_paint();
             return false;
         };
@@ -269,7 +260,7 @@ impl Editor {
             }
             model.style.areas = original_areas;
             model.style.fill = original_fill;
-            return self.commit_area_paint(index, model);
+            return commit_area_paint(self, index, model);
         }
 
         if model.style.areas.len() >= 256 {
@@ -287,20 +278,7 @@ impl Editor {
             .areas
             .retain(|spot| (spot.u - u).hypot(spot.v - v) > 0.02);
         model.style.areas.push(AreaSpot { u, v, colour });
-        self.commit_area_paint(index, model)
-    }
-
-    /// 一次区域着色点击 = 一次 pending 撤销（不进入文档历史）
-    fn commit_area_paint(&mut self, index: usize, model: ShapeModel) -> bool {
-        let snapshot = self.editor_state.pending_composed.clone();
-        self.update_pending_composed_model(index, model);
-        self.pending_edit_undo.push(snapshot);
-        while self.pending_edit_undo.len() > 64 {
-            self.pending_edit_undo.remove(0);
-        }
-        self.pending_edit_redo.clear();
-        self.pending_composed_redo.clear();
-        true
+        commit_area_paint(self, index, model)
     }
 
     /// 画布坐标处着色（供上下文菜单/网格事件复用）
@@ -308,6 +286,32 @@ impl Editor {
         let (tick, key) = self.pos_to_line_raw(pos);
         self.paint_area_at(tick, key, colour)
     }
+}
+
+/// 会话绑定目标的模型（自由函数：T-30 slice 6，不算 `Editor` 方法）。
+fn area_paint_model(editor: &Editor, target: AreaPaintTarget) -> Option<&ShapeModel> {
+    match target {
+        AreaPaintTarget::PendingComposed { index } => editor
+            .editor_state
+            .pending_composed
+            .get(index)?
+            .results
+            .first()
+            .map(|part| &part.model),
+    }
+}
+
+/// 一次区域着色点击 = 一次 pending 撤销（自由函数：T-30 slice 6）。
+fn commit_area_paint(editor: &mut Editor, index: usize, model: ShapeModel) -> bool {
+    let snapshot = editor.editor_state.pending_composed.clone();
+    editor.update_pending_composed_model(index, model);
+    editor.shape_tools.pending_edit_undo.push(snapshot);
+    while editor.shape_tools.pending_edit_undo.len() > 64 {
+        editor.shape_tools.pending_edit_undo.remove(0);
+    }
+    editor.shape_tools.pending_edit_redo.clear();
+    editor.shape_tools.pending_composed_redo.clear();
+    true
 }
 
 #[cfg(test)]

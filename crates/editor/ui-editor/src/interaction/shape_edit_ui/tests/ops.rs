@@ -147,7 +147,7 @@ fn test_pending_composed_handle_edits_preview_and_undo() {
             .any(|op| matches!(op, ShapeOp::CopyAlong(_))),
         "CopyAlong op 应保留"
     );
-    assert_eq!(editor.pending_edit_undo.len(), 1);
+    assert_eq!(editor.shape_tools.pending_edit_undo.len(), 1);
 
     assert!(editor.undo(), "pending 锚点编辑应可撤销");
     let restored = editor.editor_state.pending_composed[0].results[0]

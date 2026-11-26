@@ -80,7 +80,11 @@ fn test_drag_corner_sets_radius_and_undo_snapshot() {
     );
 
     assert!(editor.round_corner_released(), "松手应提交一次撤销");
-    assert_eq!(editor.pending_edit_undo.len(), 1, "一次拖拽 = 一次撤销");
+    assert_eq!(
+        editor.shape_tools.pending_edit_undo.len(),
+        1,
+        "一次拖拽 = 一次撤销"
+    );
 }
 
 #[test]
@@ -247,7 +251,11 @@ fn test_ctrl_drag_changes_shape_without_changing_radius() {
         (radius_after - radius_before).abs() < 1e-6,
         "Ctrl+拖不得改半径：{radius_before} → {radius_after}"
     );
-    assert_eq!(editor.pending_edit_undo.len(), 2, "两次拖拽 = 两次撤销");
+    assert_eq!(
+        editor.shape_tools.pending_edit_undo.len(),
+        2,
+        "两次拖拽 = 两次撤销"
+    );
 }
 
 #[test]

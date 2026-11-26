@@ -29,7 +29,7 @@ impl super::Editor {
         // 必须放在两个 early return 之后：被拒绝的切轨（同轨 / 异步提交中）
         // 不能误清会话。会话清掉后 `bake_placement_active` 为 false，8 手柄与
         // 黄色选择框随之消失，✓ 也不会再把旧轨模型写进新轨。
-        if self.bake_placement.is_some() {
+        if self.shape_tools.bake_placement.is_some() {
             self.exit_bake_placement_to_pending();
         }
 

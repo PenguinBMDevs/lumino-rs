@@ -12,7 +12,7 @@ use super::ShapeEditTarget;
 impl Editor {
     /// 松手提交；无实际变化或失败时恢复原几何
     pub(crate) fn finish_shape_edit(&mut self) -> bool {
-        let Some(state) = self.shape_edit.take() else {
+        let Some(state) = self.shape_tools.edit.take() else {
             return false;
         };
         let changed = match state.target {
@@ -40,12 +40,14 @@ impl Editor {
                         cut.validate_against(&part.model);
                     }
                 }
-                self.pending_edit_undo.push(state.original_composed);
-                while self.pending_edit_undo.len() > 64 {
-                    self.pending_edit_undo.remove(0);
+                self.shape_tools
+                    .pending_edit_undo
+                    .push(state.original_composed);
+                while self.shape_tools.pending_edit_undo.len() > 64 {
+                    self.shape_tools.pending_edit_undo.remove(0);
                 }
-                self.pending_edit_redo.clear();
-                self.pending_composed_redo.clear();
+                self.shape_tools.pending_edit_redo.clear();
+                self.shape_tools.pending_composed_redo.clear();
                 self.refresh_pending_mirror_geometry();
                 true
             }
@@ -55,12 +57,14 @@ impl Editor {
                     return false;
                 }
                 // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
-                self.pending_edit_undo.push(state.original_composed);
-                while self.pending_edit_undo.len() > 64 {
-                    self.pending_edit_undo.remove(0);
+                self.shape_tools
+                    .pending_edit_undo
+                    .push(state.original_composed);
+                while self.shape_tools.pending_edit_undo.len() > 64 {
+                    self.shape_tools.pending_edit_undo.remove(0);
                 }
-                self.pending_edit_redo.clear();
-                self.pending_composed_redo.clear();
+                self.shape_tools.pending_edit_redo.clear();
+                self.shape_tools.pending_composed_redo.clear();
                 self.refresh_pending_mirror_geometry();
                 true
             }
@@ -69,7 +73,7 @@ impl Editor {
 
     /// 取消拖拽并恢复原几何（Esc / 退出编辑图形）
     pub(crate) fn cancel_shape_edit(&mut self) {
-        let Some(state) = self.shape_edit.take() else {
+        let Some(state) = self.shape_tools.edit.take() else {
             return;
         };
         match state.target {

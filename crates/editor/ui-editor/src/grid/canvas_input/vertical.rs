@@ -82,7 +82,7 @@ fn left_press(
 /// 右键：关闭图形列表 / 清除区域着色 / 打开上下文菜单。
 fn right_press(editor: &Editor, local: (f32, f32)) -> Option<Message> {
     let local_pos = point(local);
-    if editor.shape_list_open {
+    if editor.shape_tools.list_open {
         return Some(Message::EditorAction(EditorAction::ShapeListClose));
     }
     if let Some(action) = crate::grid::area_paint_box::clear_action(editor, local_pos) {

@@ -100,8 +100,8 @@ impl Editor {
                 let Some(indexes) = self.promote_pending_group_for_edit(&refs) else {
                     return false;
                 };
-                self.shape_edit_armed = Some(ShapeEditTarget::Group);
-                self.shape_group_edit = Some(indexes);
+                self.shape_tools.edit_armed = Some(ShapeEditTarget::Group);
+                self.shape_tools.group_edit = Some(indexes);
                 return true;
             }
             if !all_composed {
@@ -125,14 +125,14 @@ impl Editor {
             if indexes.len() < 2 {
                 return false;
             }
-            self.shape_edit_armed = Some(ShapeEditTarget::Group);
-            self.shape_group_edit = Some(indexes);
+            self.shape_tools.edit_armed = Some(ShapeEditTarget::Group);
+            self.shape_tools.group_edit = Some(indexes);
             return true;
         }
         if selected != 1 {
             return false;
         }
-        self.shape_group_edit = None;
+        self.shape_tools.group_edit = None;
         let pending = {
             let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
@@ -160,7 +160,7 @@ impl Editor {
             // DEC-001：已 Bake 的图形只读，不再提供 8 点手柄 / 中心点编辑。
             None => return false,
         };
-        self.shape_edit_armed = Some(target);
+        self.shape_tools.edit_armed = Some(target);
         true
     }
 
@@ -176,17 +176,17 @@ impl Editor {
     ///
     /// 入口：双击空白处、右键「编辑图形」再点一次、切换工具。
     pub fn exit_shape_edit(&mut self) -> bool {
-        let was = self.shape_edit_armed.is_some() || self.shape_edit.is_some();
-        let was_bake = self.bake_placement.is_some();
-        if self.shape_edit.is_some() {
+        let was = self.shape_tools.edit_armed.is_some() || self.shape_tools.edit.is_some();
+        let was_bake = self.shape_tools.bake_placement.is_some();
+        if self.shape_tools.edit.is_some() {
             self.cancel_shape_edit();
         }
         // DRAW-049：退出 8 手柄 = 结束 Bake 放置态；pending 保留，预览音符
         // 恢复显示。否则残留的 `bake_placement_active` 会继续隐藏音符块，
         // 用户只看到蓝色矢量轮廓，且下一次 ✓ 会直接 Bake。
-        self.bake_placement = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
+        self.shape_tools.bake_placement = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
         // 放置态退出后不保留不可操作的黄色选择框；pending 仍在但不再选中。
         if was_bake {
             self.editor_state.shape_select.clear_selection();
@@ -241,7 +241,7 @@ impl Editor {
         } else {
             handle
         };
-        self.shape_edit = Some(ShapeEditState {
+        self.shape_tools.edit = Some(ShapeEditState {
             target,
             handle,
             start: (tick, key),
@@ -256,7 +256,7 @@ impl Editor {
 
     /// 拖动手柄；返回是否更新
     pub(crate) fn update_shape_edit(&mut self, tick: f32, key: f32) -> bool {
-        let Some(mut state) = self.shape_edit.take() else {
+        let Some(mut state) = self.shape_tools.edit.take() else {
             return false;
         };
         let k = match state.handle {
@@ -283,19 +283,19 @@ impl Editor {
                 state.mods,
                 k,
             ) {
-                self.shape_edit = Some(state);
+                self.shape_tools.edit = Some(state);
                 return false;
             }
             if models
                 .iter()
                 .any(|model| !finite_geometry(model) || !sane_geometry(model))
             {
-                self.shape_edit = Some(state);
+                self.shape_tools.edit = Some(state);
                 return false;
             }
             self.write_group_parts(&state.group_parts, &models);
             state.current = union_model(&models).unwrap_or_else(|| state.current.clone());
-            self.shape_edit = Some(state);
+            self.shape_tools.edit = Some(state);
             return true;
         }
         let mut next = state.original.clone();
@@ -307,11 +307,11 @@ impl Editor {
             state.mods,
             k,
         ) {
-            self.shape_edit = Some(state);
+            self.shape_tools.edit = Some(state);
             return false;
         }
         if !finite_geometry(&next) || !sane_geometry(&next) {
-            self.shape_edit = Some(state);
+            self.shape_tools.edit = Some(state);
             return false;
         }
         state.current = next;
@@ -332,13 +332,13 @@ impl Editor {
             // 组分支已在上方提前返回
             ShapeEditTarget::Group => {}
         }
-        self.shape_edit = Some(state);
+        self.shape_tools.edit = Some(state);
         true
     }
 
     /// 是否正在拖拽形状手柄
     pub(crate) fn is_shape_editing(&self) -> bool {
-        self.shape_edit.is_some()
+        self.shape_tools.edit.is_some()
     }
 }
 

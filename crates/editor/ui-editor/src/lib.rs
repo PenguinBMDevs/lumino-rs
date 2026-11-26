@@ -26,6 +26,7 @@ pub mod grid;
 pub mod history;
 pub mod note;
 mod playback_key_colors;
+mod shape_tool_state;
 mod transient;
 pub use transient::EditorTransient;
 pub mod recording;
@@ -213,35 +214,8 @@ pub struct Editor {
 
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
-    /// 020 Custom edit 的手柄拖拽状态
-    pub(crate) shape_edit: Option<crate::interaction::shape_edit_ui::ShapeEditState>,
-    /// 020 显式编辑目标（None = 普通 ShapeSelect 选框）
-    pub(crate) shape_edit_armed: Option<crate::interaction::shape_edit_ui::ShapeEditTarget>,
-    /// 020 多选组编辑的成员（`pending_composed` 下标；单目标时为空）
-    pub(crate) shape_group_edit: Option<Vec<usize>>,
-    /// DRAW-049：Bake 放置确认态（A+B；复用 pending composed + shape_edit_ui）
-    pub(crate) bake_placement:
-        Option<crate::interaction::shape_bake_placement::BakePlacementSession>,
-    /// DRAW-041C：Bake 前组合会话的 redo 栈（与 `editor_state.pending_composed` 成对）
-    pub(crate) pending_composed_redo: Vec<lumino_editor_state::PendingComposed>,
-    /// DRAW-041C 阶段 3：pending composed 手柄编辑的 undo 快照
-    pub(crate) pending_edit_undo: Vec<Vec<lumino_editor_state::PendingComposed>>,
-    /// DRAW-041C 阶段 3：pending composed 手柄编辑的 redo 快照
-    pub(crate) pending_edit_redo: Vec<Vec<lumino_editor_state::PendingComposed>>,
-    /// DRAW-032B：区域着色会话（仅鼠标工具、唯一选中图形时）
-    pub(crate) area_paint: Option<crate::interaction::area_paint::AreaPaintState>,
-    /// DRAW-025：切割布防（待确认形状 + 拖出的切线）
-    pub(crate) slice_cut: Option<crate::interaction::slice_cut::SliceCutState>,
-    /// DEBT-17：饼干模的刀（音符 / 几何），显式设置、切完清空
-    pub(crate) mould_knife: Option<crate::interaction::shape_compose::MouldKnife>,
-    /// DEBT-17：刀失效等一次性通知（UI 层取走后转 toast）
-    pub(crate) mould_notice: Option<crate::interaction::shape_compose::MouldNotice>,
-    /// DRAW-044：角度柔化模式（逐角点拖半径）
-    pub(crate) round_corner: Option<crate::interaction::round_corner::RoundCornerMode>,
-    /// DRAW-041B/032B：ShapeStore 模型列表是否展开
-    pub(crate) shape_list_open: bool,
-    /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）
-    pub(crate) baked_pending: std::collections::HashMap<u64, crate::interaction::bake::BakePending>,
+    /// 图形工具会话与 pending 编辑栈（T-30 slice 6）。
+    pub(crate) shape_tools: shape_tool_state::ShapeToolState,
 
     /// 选择框边界缓存（raw 坐标），增量维护，避免每帧 O(N) 全量扫描。
     /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。

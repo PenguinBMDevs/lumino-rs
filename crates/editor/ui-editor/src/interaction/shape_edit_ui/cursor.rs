@@ -35,9 +35,9 @@ impl Editor {
     /// 渲染（8+1 锚点/编辑框）、命中、光标都从这里取同一份目标与模型，
     /// 避免「看得见的锚点」与「点得中的锚点」分叉。
     pub(super) fn armed_edit_target(&self) -> Option<(ShapeEditTarget, ShapeModel)> {
-        let armed = self.shape_edit_armed?;
+        let armed = self.shape_tools.edit_armed?;
         if matches!(armed, ShapeEditTarget::Group) {
-            let indexes = self.shape_group_edit.as_ref()?;
+            let indexes = self.shape_tools.group_edit.as_ref()?;
             let selected: Vec<usize> = self
                 .editor_state
                 .shape_select

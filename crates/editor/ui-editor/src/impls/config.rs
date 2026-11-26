@@ -47,7 +47,7 @@ impl Editor {
         // DRAW-044：离开柔化模式必须收口，否则组合结果没有镜像、曲线看起来「消失」，
         // 且遗留的拖拽快照会污染撤销栈。未改过半径时还原提升前的曲线。
         if tool != Tool::ShapeSelect
-            && let Some(mode) = self.round_corner.clone()
+            && let Some(mode) = self.shape_tools.round_corner.clone()
         {
             self.end_round_corners();
             if !mode.changed && mode.composed + 1 == self.editor_state.pending_composed.len() {
@@ -75,15 +75,15 @@ impl Editor {
             // 切割布防（DRAW-025）：不结束会在曲线 / 画笔里继续切形状。
             self.end_slice_cut();
             // 区域着色（DRAW-032B）：遗留画笔会在别的工具里继续上色。
-            self.area_paint = None;
-            self.shape_list_open = false;
+            self.shape_tools.area_paint = None;
+            self.shape_tools.list_open = false;
             // 020「编辑图形」是鼠标工具的子状态：离开即退出，回来不会突然少掉选框。
-            self.shape_edit_armed = None;
-            self.shape_group_edit = None;
+            self.shape_tools.edit_armed = None;
+            self.shape_tools.group_edit = None;
         }
         if tool_changed {
             // DRAW-049：Bake 放置态只属于形状工具；换工具即收口会话（pending 保留）。
-            self.bake_placement = None;
+            self.shape_tools.bake_placement = None;
             self.rebuild_pending_mirrors();
         }
     }

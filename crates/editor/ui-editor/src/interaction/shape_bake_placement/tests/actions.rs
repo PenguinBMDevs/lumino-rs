@@ -56,7 +56,10 @@ fn multi_shape_bake_falls_back_to_legacy_commit() {
     editor.handle_action(EditorAction::ShapeToolConfirm);
 
     assert!(!editor.bake_placement_active(), "多形状不得进入放置态");
-    assert!(editor.bake_placement.is_none(), "多形状不得建放置会话");
+    assert!(
+        editor.shape_tools.bake_placement.is_none(),
+        "多形状不得建放置会话"
+    );
     assert!(editor.editor_state.pending_composed.is_empty());
     assert!(
         track_note_count(&editor, 1) > notes_before,
@@ -74,7 +77,10 @@ fn tool_switch_keeps_pending_and_clears_session() {
     editor.set_tool(Tool::Brush);
 
     assert!(!editor.bake_placement_active(), "换工具应退出放置态");
-    assert!(editor.bake_placement.is_none(), "换工具应清会话");
+    assert!(
+        editor.shape_tools.bake_placement.is_none(),
+        "换工具应清会话"
+    );
     assert_eq!(
         editor.editor_state.pending_composed.len(),
         1,
@@ -111,7 +117,10 @@ fn insert_pending_confirm_unchanged() {
 
     // Insert 不属于归属轨语义：单支 Insert 的 ✓ 走原路径，在当前轨确认。
     assert!(!editor.bake_placement_active());
-    assert!(editor.bake_placement.is_none(), "Insert 不得被放置会话接管");
+    assert!(
+        editor.shape_tools.bake_placement.is_none(),
+        "Insert 不得被放置会话接管"
+    );
     assert!(editor.editor_state.pending_composed.is_empty());
     assert!(
         track_note_count(&editor, 1) > notes_before,

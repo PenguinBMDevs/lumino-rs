@@ -306,7 +306,7 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
     let info = editor.mould_set_knife().expect("音符应能设为刀");
     assert_eq!(info.notes, Some(2));
     editor.set_tool(lumino_message::Tool::ShapeSelect);
-    assert!(editor.mould_knife.is_some(), "刀应跨工具保留");
+    assert!(editor.shape_tools.mould_knife.is_some(), "刀应跨工具保留");
 
     // 面团：覆盖空隙的待确认填充矩形（keys 59..63）
     add_pending_rect(&mut editor, 50.0, 350.0, 59);
@@ -347,7 +347,7 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
         "切口区间必须随组合结果保留（刀清空后仍可画）"
     );
     assert!(
-        editor.mould_knife.is_none(),
+        editor.shape_tools.mould_knife.is_none(),
         "刀被消费后应清空（虚线框消失）"
     );
 }

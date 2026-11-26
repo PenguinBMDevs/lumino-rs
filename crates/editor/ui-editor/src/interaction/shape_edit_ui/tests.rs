@@ -408,10 +408,13 @@ fn test_group_edit_union_box_and_move() {
     let mut editor = editor_with_two_pending_composed();
     enter_edit(&mut editor);
     assert!(matches!(
-        editor.shape_edit_armed,
+        editor.shape_tools.edit_armed,
         Some(ShapeEditTarget::Group)
     ));
-    assert_eq!(editor.shape_group_edit.as_deref(), Some(&[0usize, 1][..]));
+    assert_eq!(
+        editor.shape_tools.group_edit.as_deref(),
+        Some(&[0usize, 1][..])
+    );
     let union = editor.group_union_model().expect("联合 box");
     assert_eq!(
         union.geometry.bounds().expect("bounds"),
@@ -437,7 +440,11 @@ fn test_group_edit_union_box_and_move() {
             "成员 {index} 应整体 +2 key"
         );
     }
-    assert_eq!(editor.pending_edit_undo.len(), 1, "一次组拖动 = 一次 undo");
+    assert_eq!(
+        editor.shape_tools.pending_edit_undo.len(),
+        1,
+        "一次组拖动 = 一次 undo"
+    );
 }
 
 #[test]
@@ -475,7 +482,10 @@ fn test_group_cancel_restores_all_members() {
         editor.editor_state.pending_composed, before,
         "取消应恢复全部成员"
     );
-    assert!(editor.pending_edit_undo.is_empty(), "取消不入 undo 栈");
+    assert!(
+        editor.shape_tools.pending_edit_undo.is_empty(),
+        "取消不入 undo 栈"
+    );
 }
 
 #[test]
@@ -537,10 +547,13 @@ fn test_group_edit_promotes_plain_pending_shapes() {
         "多选待确认形状应先批量提升再进入组编辑"
     );
     assert!(matches!(
-        editor.shape_edit_armed,
+        editor.shape_tools.edit_armed,
         Some(ShapeEditTarget::Group)
     ));
-    assert_eq!(editor.shape_group_edit.as_deref(), Some(&[0usize, 1][..]));
+    assert_eq!(
+        editor.shape_tools.group_edit.as_deref(),
+        Some(&[0usize, 1][..])
+    );
     assert!(
         editor.editor_state.shape_tool.shapes.is_empty(),
         "原参数化实例应被提升移走"
@@ -567,7 +580,7 @@ fn test_shift_side_handle_tilts_by_whole_keys() {
     assert!(editor.begin_shape_edit(cx, bounds.1), "下边中点应命中");
     assert!(
         matches!(
-            editor.shape_edit.as_ref().map(|state| state.handle),
+            editor.shape_tools.edit.as_ref().map(|state| state.handle),
             Some(HandleKind::Side(_))
         ),
         "不按 Shift 时下边中点应是单边拉伸"
@@ -580,7 +593,7 @@ fn test_shift_side_handle_tilts_by_whole_keys() {
         editor.begin_shape_edit(cx, bounds.1),
         "Shift+下边中点应命中"
     );
-    let state = editor.shape_edit.as_ref().expect("应进入拖拽");
+    let state = editor.shape_tools.edit.as_ref().expect("应进入拖拽");
     assert!(
         matches!(state.handle, HandleKind::Skew),
         "Shift+边手柄应进入倾斜，实际 {:?}",

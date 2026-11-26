@@ -26,7 +26,7 @@ impl Editor {
         if !self.pending_single_selection() {
             return false;
         }
-        self.slice_cut = Some(SliceCutState {
+        self.shape_tools.slice_cut = Some(SliceCutState {
             from: (0.0, 0.0),
             to: (0.0, 0.0),
             dragging: false,
@@ -36,21 +36,21 @@ impl Editor {
 
     /// 是否处于切割布防
     pub fn slice_cut_active(&self) -> bool {
-        self.slice_cut.is_some()
+        self.shape_tools.slice_cut.is_some()
     }
 
     /// 退出布防
     pub fn end_slice_cut(&mut self) {
-        self.slice_cut.take();
+        self.shape_tools.slice_cut.take();
     }
 
     /// 按下：记录起点（`shift` = 不吸附）
     pub(crate) fn slice_cut_pressed(&mut self, pos: Point, shift: bool) -> bool {
-        if self.slice_cut.is_none() {
+        if self.shape_tools.slice_cut.is_none() {
             return false;
         }
         let point = self.slice_logical(pos, shift);
-        let Some(state) = &mut self.slice_cut else {
+        let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
         state.from = point;
@@ -61,15 +61,19 @@ impl Editor {
 
     /// 拖动：更新终点（未按 Shift 时把方向吸附到 0°/45°/90°）
     pub(crate) fn slice_cut_moved(&mut self, pos: Point) -> bool {
-        if !self.slice_cut.is_some_and(|state| state.dragging) {
+        if !self
+            .shape_tools
+            .slice_cut
+            .is_some_and(|state| state.dragging)
+        {
             return false;
         }
         let shift = self.shift_pressed();
-        let Some(state) = self.slice_cut else {
+        let Some(state) = self.shape_tools.slice_cut else {
             return false;
         };
         let point = self.constrain_end(state.from, self.slice_logical(pos, shift), shift);
-        let Some(state) = &mut self.slice_cut else {
+        let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
         state.to = point;
@@ -80,17 +84,17 @@ impl Editor {
     ///
     /// 唯一选中已不是待确认形状时（选区被改），布防一并退出。
     pub(crate) fn slice_cut_released(&mut self) -> bool {
-        let Some(state) = self.slice_cut else {
+        let Some(state) = self.shape_tools.slice_cut else {
             return false;
         };
         if !state.dragging {
             return false;
         }
-        if let Some(armed) = &mut self.slice_cut {
+        if let Some(armed) = &mut self.shape_tools.slice_cut {
             armed.dragging = false;
         }
         if self.compose_pending_slice(state.from, state.to) {
-            self.slice_cut = None;
+            self.shape_tools.slice_cut = None;
             true
         } else {
             false

@@ -59,7 +59,7 @@ fn corner_handles_resize_both_axes() {
             "{label} 角拖动后预览音符应重生成"
         );
         assert_eq!(
-            editor.pending_edit_undo.len(),
+            editor.shape_tools.pending_edit_undo.len(),
             1,
             "{label} 角一次拖动应入一条 pending undo"
         );
@@ -108,7 +108,7 @@ fn side_handles_resize_single_axis() {
             );
         }
         assert_eq!(
-            editor.pending_edit_undo.len(),
+            editor.shape_tools.pending_edit_undo.len(),
             1,
             "{label} 边一次拖动应入一条 pending undo"
         );
@@ -141,7 +141,7 @@ fn center_handle_translates_without_resize() {
         "平移后预览音符应重生成"
     );
     assert_eq!(
-        editor.pending_edit_undo.len(),
+        editor.shape_tools.pending_edit_undo.len(),
         1,
         "中心一次拖动应入一条 pending undo"
     );

@@ -106,7 +106,7 @@ fn test_pending_mould_geometry_knife_keeps_hole_as_cut() {
         "内环应成为切口（孔）：{:?}",
         composed.mould_cuts
     );
-    assert!(editor.mould_knife.is_none(), "切完应清刀");
+    assert!(editor.shape_tools.mould_knife.is_none(), "切完应清刀");
     assert!(
         !editor.overlay_preview().mould_cuts.is_empty(),
         "刀清空后切口仍应可绘制"
@@ -150,7 +150,7 @@ fn test_mould_knife_stale_after_notes_deleted() {
         Err(crate::MouldReject::KnifeStale),
         "刀音符被删后应报失效，而不是静默用旧快照"
     );
-    assert!(editor.mould_knife.is_none(), "失效后应清刀");
+    assert!(editor.shape_tools.mould_knife.is_none(), "失效后应清刀");
 }
 
 #[test]
@@ -167,7 +167,10 @@ fn test_delete_knife_notes_emits_expired_notice() {
 
     editor.handle_delete_pressed();
 
-    assert!(editor.mould_knife.is_none(), "删掉刀音符后应立即清刀");
+    assert!(
+        editor.shape_tools.mould_knife.is_none(),
+        "删掉刀音符后应立即清刀"
+    );
     assert_eq!(
         editor.take_mould_notice(),
         Some(crate::MouldNotice::Expired),
@@ -219,14 +222,17 @@ fn test_mould_knife_preview_visible_in_every_tool_and_persists() {
     );
 
     editor.set_tool(Tool::ShapeSelect);
-    assert!(editor.mould_knife.is_some(), "刀应跨工具保留");
+    assert!(editor.shape_tools.mould_knife.is_some(), "刀应跨工具保留");
     assert!(
         !editor.overlay_preview().knife_rects.is_empty(),
         "鼠标工具下显示刀框"
     );
 
     editor.set_tool(Tool::Curve);
-    assert!(editor.mould_knife.is_some(), "显式刀不应因切换工具而丢失");
+    assert!(
+        editor.shape_tools.mould_knife.is_some(),
+        "显式刀不应因切换工具而丢失"
+    );
     assert!(
         !editor.overlay_preview().knife_rects.is_empty(),
         "刀是显式会话，任何工具下都应可见"
@@ -234,7 +240,7 @@ fn test_mould_knife_preview_visible_in_every_tool_and_persists() {
 
     // Esc 显式清除刀
     editor.handle_action(lumino_message::EditorAction::EscapePressed);
-    assert!(editor.mould_knife.is_none(), "Esc 应清除刀");
+    assert!(editor.shape_tools.mould_knife.is_none(), "Esc 应清除刀");
     assert!(editor.overlay_preview().knife_rects.is_empty());
 }
 
@@ -272,5 +278,8 @@ fn test_geometry_knife_preview_disappears_when_source_removed() {
 
     // 换工具时把失效会话一并收敛
     editor.set_tool(lumino_message::Tool::Pointer);
-    assert!(editor.mould_knife.is_none(), "换工具应收敛失效刀");
+    assert!(
+        editor.shape_tools.mould_knife.is_none(),
+        "换工具应收敛失效刀"
+    );
 }

@@ -52,7 +52,8 @@ impl Editor {
 
     /// 是否正在 B 阶段的拉框。
     pub(crate) fn bake_marquee_active(&self) -> bool {
-        self.bake_placement
+        self.shape_tools
+            .bake_placement
             .as_ref()
             .is_some_and(|session| session.marquee_active)
     }
@@ -62,7 +63,7 @@ impl Editor {
     /// 返回 `false` 时调用方应回退到旧的 `confirm_shape_tool()`：v1 只支持
     /// 单个待确认形状；多形状 / 组合结果暂不接管（沿用原一次性提交）。
     pub(crate) fn begin_shape_bake_placement(&mut self) -> bool {
-        if self.bake_placement.is_some() {
+        if self.shape_tools.bake_placement.is_some() {
             return false;
         }
         if self.editor_state.data.current_track == 0 {
@@ -106,9 +107,9 @@ impl Editor {
                 notes.clone(),
                 Vec::new(),
             ));
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         // 先清空形状工具的待确认列表，再重建镜像：否则 `rebuild_pending_mirrors`
         // 会为刚转交给 pending 的形状再建一份失效镜像（指向空容器）。
         self.editor_state.shape_tool.clear_pending();
@@ -121,7 +122,7 @@ impl Editor {
         {
             self.editor_state.shape_select.select_only(id);
         }
-        self.bake_placement = Some(BakePlacementSession {
+        self.shape_tools.bake_placement = Some(BakePlacementSession {
             pending_index: index,
             original_model: model,
             original_notes: notes,
@@ -129,9 +130,9 @@ impl Editor {
         });
         // 清掉可能残留的旧编辑目标，再自动进入 8 手柄编辑；失败时仍可用既有
         // 「编辑图形」入口。
-        self.shape_edit = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
+        self.shape_tools.edit = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
         let _ = self.enable_shape_edit();
         self.mark_notes_changed();
         true
@@ -186,7 +187,7 @@ impl Editor {
 
     /// B 阶段拉框松手：有效框 → 映射模型；点击（无效框）→ 复位到原始模型。
     pub(crate) fn handle_bake_marquee_released(&mut self, edit_state: EditState) {
-        let Some(session) = self.bake_placement.as_mut() else {
+        let Some(session) = self.shape_tools.bake_placement.as_mut() else {
             return;
         };
         session.marquee_active = false;
@@ -229,7 +230,7 @@ impl Editor {
         }
         let ok = self.confirm_shape_tool();
         if ok {
-            self.bake_placement = None;
+            self.shape_tools.bake_placement = None;
         }
         ok
     }
@@ -242,7 +243,7 @@ impl Editor {
         if self.pending_single_owner_track() != Some(self.current_track()) {
             return false;
         }
-        if self.bake_placement.is_some() {
+        if self.shape_tools.bake_placement.is_some() {
             return false;
         }
         if self.editor_state.pending_composed.len() != 1 {
@@ -272,10 +273,10 @@ impl Editor {
         {
             self.editor_state.shape_select.select_only(id);
         }
-        self.shape_edit = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
-        self.bake_placement = Some(BakePlacementSession {
+        self.shape_tools.edit = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
+        self.shape_tools.bake_placement = Some(BakePlacementSession {
             pending_index: index,
             original_model: model,
             original_notes: notes,
@@ -288,16 +289,16 @@ impl Editor {
 
     /// 放置态 ×：直接丢弃整个 pending，不写文档/历史。
     pub(crate) fn cancel_bake_placement(&mut self) {
-        self.bake_placement = None;
+        self.shape_tools.bake_placement = None;
         self.cancel_shape_tool();
     }
 
     /// 撤销放置态但保留 pending：第二次 Ctrl+Z 回到 pending 图形/音符预览。
     pub(crate) fn exit_bake_placement_to_pending(&mut self) {
-        self.bake_placement = None;
-        self.shape_edit = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
+        self.shape_tools.bake_placement = None;
+        self.shape_tools.edit = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
         // 放置态退出后不再保留“黄色选择框”：pending 仍在，但未选中；
         // 避免留下一个不可操作的残留框（音符预览由 shape_preview 负责）。
         self.editor_state.shape_select.clear_selection();
@@ -305,7 +306,7 @@ impl Editor {
 
     /// pending 图形在画布局部坐标下的外接框（含少量 padding）。
     fn pending_screen_box(&self) -> Option<Rectangle> {
-        let session = self.bake_placement.as_ref()?;
+        let session = self.shape_tools.bake_placement.as_ref()?;
         let part = self
             .editor_state
             .pending_composed
@@ -337,7 +338,7 @@ impl Editor {
             start_y: key_y,
             current_y: key_y,
         };
-        if let Some(session) = &mut self.bake_placement {
+        if let Some(session) = &mut self.shape_tools.bake_placement {
             session.marquee_active = true;
         }
     }
@@ -374,7 +375,7 @@ impl Editor {
 
     /// 空白点击：恢复 Bake 前的模型与预览音符。
     fn restore_bake_original(&mut self, index: usize) {
-        let Some(session) = self.bake_placement.as_ref() else {
+        let Some(session) = self.shape_tools.bake_placement.as_ref() else {
             return;
         };
         let model = session.original_model.clone();

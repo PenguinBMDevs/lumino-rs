@@ -24,7 +24,7 @@ impl Editor {
 
     /// 当前放置会话的归属轨；会话 / 下标 / 形态失效返回 `None`。
     pub(crate) fn bake_session_owner_track(&self) -> Option<usize> {
-        let session = self.bake_placement.as_ref()?;
+        let session = self.shape_tools.bake_placement.as_ref()?;
         let composed = self
             .editor_state
             .pending_composed

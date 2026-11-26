@@ -59,7 +59,7 @@ impl Editor {
     }
 
     fn slice_preview_line(&self) -> Option<((f32, f32), (f32, f32))> {
-        let state = self.slice_cut.as_ref()?;
+        let state = self.shape_tools.slice_cut.as_ref()?;
         if !state.dragging {
             return None;
         }
@@ -74,7 +74,7 @@ impl Editor {
     /// 几何刀的源被删/改时立即隐藏；音符刀由 `set_tool` / 删除路径的
     /// `sync_mould_knife` 收口——避免每帧全轨扫描。
     fn knife_preview(&self) -> KnifePreview {
-        let Some(knife) = self.mould_knife.as_ref() else {
+        let Some(knife) = self.shape_tools.mould_knife.as_ref() else {
             return (Vec::new(), Vec::new(), None);
         };
         if knife.is_geometry_stale(self) {
@@ -122,7 +122,7 @@ impl Editor {
     }
 
     fn round_corner_preview(&self) -> EditorOverlayPreview {
-        let Some(mode) = self.round_corner.as_ref() else {
+        let Some(mode) = self.shape_tools.round_corner.as_ref() else {
             return EditorOverlayPreview::default();
         };
         let Some(model) = self

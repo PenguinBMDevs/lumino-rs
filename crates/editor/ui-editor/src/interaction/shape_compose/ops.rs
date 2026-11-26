@@ -131,12 +131,12 @@ impl Editor {
         // 已组合：快照只回退本次参数；刚提升：撤销组合会连提升一起回到 pending 矢量。
         if !promoted {
             let snapshot = self.editor_state.pending_composed.clone();
-            self.pending_edit_undo.push(snapshot);
-            while self.pending_edit_undo.len() > 64 {
-                self.pending_edit_undo.remove(0);
+            self.shape_tools.pending_edit_undo.push(snapshot);
+            while self.shape_tools.pending_edit_undo.len() > 64 {
+                self.shape_tools.pending_edit_undo.remove(0);
             }
-            self.pending_edit_redo.clear();
-            self.pending_composed_redo.clear();
+            self.shape_tools.pending_edit_redo.clear();
+            self.shape_tools.pending_composed_redo.clear();
         }
         self.update_pending_composed_model(index, model);
         Ok(())
@@ -173,11 +173,11 @@ impl Editor {
         if pending != 1 || !self.pending_single_selection() {
             return Err(MouldReject::Selection);
         }
-        let Some(knife) = self.mould_knife.clone() else {
+        let Some(knife) = self.shape_tools.mould_knife.clone() else {
             return Err(MouldReject::NoKnife);
         };
         if !knife.is_current(self) {
-            self.mould_knife = None;
+            self.shape_tools.mould_knife = None;
             return Err(MouldReject::KnifeStale);
         }
         if self.dough_matches_knife(&knife) {
@@ -185,7 +185,7 @@ impl Editor {
         }
         if self.compose_pending_mould(knife) {
             // 刀已消费：清掉虚线框，避免下一刀沿用旧快照
-            self.mould_knife = None;
+            self.shape_tools.mould_knife = None;
             Ok(())
         } else {
             Err(MouldReject::NoGap)
@@ -210,18 +210,18 @@ impl Editor {
             MouldKnife::Geometry { rings }
         };
         let info = knife.info();
-        self.mould_knife = Some(knife);
+        self.shape_tools.mould_knife = Some(knife);
         Ok(info)
     }
 
     /// 显式清除刀（Esc）；返回是否确实清除了
     pub fn mould_clear_knife(&mut self) -> bool {
-        self.mould_knife.take().is_some()
+        self.shape_tools.mould_knife.take().is_some()
     }
 
     /// 当前是否已设刀（右键菜单「取消刀」的可用性判据）
     pub fn has_mould_knife(&self) -> bool {
-        self.mould_knife.is_some()
+        self.shape_tools.mould_knife.is_some()
     }
 
     /// 当前选中集里是否有待确认形状
@@ -240,19 +240,20 @@ impl Editor {
     /// 返回是否发生了失效；失效时刀被清除并登记一次性通知，由 UI 层转成 toast。
     pub(crate) fn sync_mould_knife(&mut self) -> bool {
         let stale = self
+            .shape_tools
             .mould_knife
             .as_ref()
             .is_some_and(|knife| !knife.is_current(self));
         if stale {
-            self.mould_knife = None;
-            self.mould_notice = Some(MouldNotice::Expired);
+            self.shape_tools.mould_knife = None;
+            self.shape_tools.mould_notice = Some(MouldNotice::Expired);
         }
         stale
     }
 
     /// 取走刀相关的一次性通知（UI 层转 toast）
     pub fn take_mould_notice(&mut self) -> Option<MouldNotice> {
-        self.mould_notice.take()
+        self.shape_tools.mould_notice.take()
     }
 
     /// 当前面团是否就是刀里的某个形状

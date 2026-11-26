@@ -39,7 +39,13 @@ fn editor_with_pending_area() -> (Editor, usize) {
         editor.begin_area_paint(),
         "pending 闭合形状应能进入区域着色"
     );
-    let index = match editor.area_paint.as_ref().expect("应有着色会话").target {
+    let index = match editor
+        .shape_tools
+        .area_paint
+        .as_ref()
+        .expect("应有着色会话")
+        .target
+    {
         AreaPaintTarget::PendingComposed { index } => index,
     };
     (editor, index)

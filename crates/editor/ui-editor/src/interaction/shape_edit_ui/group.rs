@@ -21,7 +21,7 @@ pub(crate) struct GroupPart {
 impl Editor {
     /// 当前组编辑的成员（按 `shape_group_edit` 顺序）；不足 2 支返回 `None`
     pub(crate) fn group_parts(&self) -> Option<Vec<GroupPart>> {
-        let indexes = self.shape_group_edit.as_ref()?;
+        let indexes = self.shape_tools.group_edit.as_ref()?;
         let mut parts = Vec::with_capacity(indexes.len());
         for index in indexes {
             let model = self

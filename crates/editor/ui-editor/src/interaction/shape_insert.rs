@@ -54,9 +54,9 @@ impl Editor {
         self.editor_state
             .pending_composed
             .push(PendingComposed::from_drawer(model, notes, drawer));
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         // 插入后立刻选中，右键菜单才有目标（与既有组合入口一致）。
@@ -80,9 +80,9 @@ impl Editor {
         // 先取走再删除：只有确认来源可用才动 pending。
         let drawer = drawer.clone();
         self.editor_state.pending_composed.remove(index);
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
