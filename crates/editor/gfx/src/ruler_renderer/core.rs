@@ -7,6 +7,7 @@ use super::{INITIAL_CAPACITY, RulerRenderer, VERTEX_SHADER};
 use crate::gpu_resource_tracker::{self, TrackedBuffer};
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
+use crate::uniform_binding::UniformBinding;
 
 /// 标尺刻度实例数据
 #[repr(C)]
@@ -55,7 +56,7 @@ impl RulerTickInstance {
 
 /// 标尺视口 Uniform
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RulerViewportUniform {
     /// 视口大小
     pub viewport_size: [f32; 2],
@@ -164,42 +165,28 @@ impl RulerRenderer {
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, INITIAL_CAPACITY);
 
-        let viewport_buffer = TrackedBuffer::new_init(
+        let viewport = UniformBinding::new(
             device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("ruler_viewport_uniform"),
-                contents: bytemuck::cast_slice(&[RulerViewportUniform::from_params(
-                    &RulerPrepareParams {
-                        viewport_size: (800.0, 600.0),
-                        ruler_height: 30.0,
-                        keyboard_width: 60.0,
-                        scroll_x: 0.0,
-                        zoom_x: 0.1,
-                        ticks_per_measure: 1920,
-                        ticks_per_beat: 480,
-                        ppq: 480,
-                        time_signatures: vec![(0, 4, 4)],
-                    },
-                )]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
+            &bind_group_layout,
+            RulerViewportUniform::from_params(&RulerPrepareParams {
+                viewport_size: (800.0, 600.0),
+                ruler_height: 30.0,
+                keyboard_width: 60.0,
+                scroll_x: 0.0,
+                zoom_x: 0.1,
+                ticks_per_measure: 1920,
+                ticks_per_beat: 480,
+                ppq: 480,
+                time_signatures: vec![(0, 4, 4)],
+            }),
+            "ruler_viewport_uniform",
+            "ruler_bind_group",
         );
-
-        // 创建 bind group
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ruler_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: viewport_buffer.inner().as_entire_binding(),
-            }],
-        });
 
         Self {
             pipeline,
             instance_buffer,
-            viewport_buffer,
-            bind_group,
+            viewport,
             capacity: INITIAL_CAPACITY,
             measure_color: [0.3, 0.3, 0.3, 1.0],
             beat_color: [0.5, 0.5, 0.5, 1.0],

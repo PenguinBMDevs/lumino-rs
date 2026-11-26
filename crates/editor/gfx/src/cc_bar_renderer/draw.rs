@@ -11,7 +11,7 @@ impl CcBarRenderer {
         }
 
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_bind_group(0, self.viewport.bind_group(), &[]);
         render_pass.set_vertex_buffer(0, self.instance_buffer.inner().slice(..));
         render_pass.draw(0..4, 0..instance_count);
     }

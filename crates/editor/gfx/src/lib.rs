@@ -30,6 +30,7 @@ mod pipeline;
 mod profiling;
 pub mod render_thread;
 mod ruler_renderer;
+mod uniform_binding;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 pub mod automation;

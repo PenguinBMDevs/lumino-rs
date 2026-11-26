@@ -13,6 +13,7 @@ mod draw;
 mod prepare;
 
 use crate::gpu_resource_tracker::TrackedBuffer;
+use crate::uniform_binding::UniformBinding;
 
 /// 顶点着色器代码
 const VERTEX_SHADER: &str = include_str!("shaders/ruler.wgsl");
@@ -29,10 +30,8 @@ pub struct RulerRenderer {
     pipeline: wgpu::RenderPipeline,
     /// 实例缓冲区
     instance_buffer: TrackedBuffer,
-    /// 视口 uniform 缓冲区
-    viewport_buffer: TrackedBuffer,
-    /// Bind group
-    bind_group: wgpu::BindGroup,
+    /// 视口 uniform（buffer + bind group + 脏检查）
+    viewport: UniformBinding<RulerViewportUniform>,
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
     /// 小节线颜色

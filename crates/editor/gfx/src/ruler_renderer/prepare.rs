@@ -85,11 +85,7 @@ impl RulerRenderer {
         }
 
         // viewport uniform 每帧更新（体积极小，含 scroll_x 等视口参数）
-        let viewport_uniform = RulerViewportUniform::from_params(params);
-        queue.write_buffer(
-            self.viewport_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&[viewport_uniform]),
-        );
+        self.viewport
+            .write(queue, RulerViewportUniform::from_params(params));
     }
 }

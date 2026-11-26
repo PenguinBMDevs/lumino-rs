@@ -43,12 +43,10 @@ impl CcBarRenderer {
             );
         }
 
-        // 更新视口 uniform
-        let viewport_uniform = CcBarViewportUniform::new(viewport_size.0, viewport_size.1);
-        queue.write_buffer(
-            self.viewport_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&[viewport_uniform]),
+        // 更新视口 uniform（值变化时才上传）
+        self.viewport.write(
+            queue,
+            CcBarViewportUniform::new(viewport_size.0, viewport_size.1),
         );
     }
 }

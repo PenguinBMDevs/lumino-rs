@@ -3,6 +3,7 @@
 use crate::gpu_resource_tracker::{self, TrackedBuffer};
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
+use crate::uniform_binding::UniformBinding;
 
 /// CC / 自动化曲线实例数据 — 32 bytes
 #[repr(C)]
@@ -56,7 +57,7 @@ impl CcBarInstance {
 
 /// 视口 Uniform — 8 bytes
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CcBarViewportUniform {
     /// 视口尺寸 (width, height)
     pub viewport_size: [f32; 2],
@@ -82,10 +83,8 @@ pub struct CcBarRenderer {
     pub(crate) pipeline: wgpu::RenderPipeline,
     /// 实例缓冲区
     pub(crate) instance_buffer: TrackedBuffer,
-    /// 视口 uniform 缓冲区
-    pub(crate) viewport_buffer: TrackedBuffer,
-    /// Bind group
-    pub(crate) bind_group: wgpu::BindGroup,
+    /// 视口 uniform（buffer + bind group + 脏检查）
+    pub(crate) viewport: UniformBinding<CcBarViewportUniform>,
     /// 当前缓冲区容量（实例数量）
     pub(crate) capacity: usize,
 }
@@ -144,30 +143,18 @@ impl CcBarRenderer {
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY);
 
-        let viewport_buffer = TrackedBuffer::new_init(
+        let viewport = UniformBinding::new(
             device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("cc_bar_viewport_uniform"),
-                contents: bytemuck::cast_slice(&[CcBarViewportUniform::new(800.0, 600.0)]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
+            &bind_group_layout,
+            CcBarViewportUniform::new(800.0, 600.0),
+            "cc_bar_viewport_uniform",
+            "cc_bar_bind_group",
         );
-
-        // 创建 bind group
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("cc_bar_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: viewport_buffer.inner().as_entire_binding(),
-            }],
-        });
 
         Self {
             pipeline,
             instance_buffer,
-            viewport_buffer,
-            bind_group,
+            viewport,
             capacity: Self::INITIAL_CAPACITY,
         }
     }
