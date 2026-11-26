@@ -17,8 +17,8 @@ fn editor_with_baked_shape() -> Editor {
     let mut editor = Editor::new();
     seed_notes(&mut editor, 2, 1, &[Note::new(200.0, 60, 1.0)]);
     editor.editor_state.view.snap_precision = 1.0;
-    editor.set_canvas_size(Point::new(4000.0, 4000.0));
-    editor.set_canvas_offset(Point::new(0.0, 0.0));
+    editor.editor_state.canvas.set_size(4000.0, 4000.0);
+    editor.editor_state.canvas.set_offset(0.0, 0.0);
     let track = editor.editor_state.data.current_track;
     let id = editor.editor_state.shape_select.add(
         track,

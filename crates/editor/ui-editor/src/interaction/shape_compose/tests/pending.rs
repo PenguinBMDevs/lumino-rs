@@ -356,12 +356,11 @@ fn test_pending_mould_uses_selected_notes_as_knife() {
 fn test_zero_width_shape_at_tick_zero_selectable_with_slop() {
     use lumino_editor_state::{DrawnShapeSource, ShapeKind};
     use lumino_message::Tool;
-    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::{EditorAction, Point2};
 
     let mut editor = empty_editor();
-    editor.set_canvas_size(Point::new(1200.0, 800.0));
-    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.canvas.set_size(1200.0, 800.0);
+    editor.editor_state.canvas.set_offset(248.0, 60.0);
     editor.editor_state.view.zoom_x = 1.0;
     editor.editor_state.tool = Tool::ShapeSelect;
     let id = editor.editor_state.shape_select.add(
@@ -396,12 +395,11 @@ fn test_zero_width_shape_at_tick_zero_selectable_with_slop() {
 #[test]
 fn test_composed_at_tick_zero_selectable() {
     use lumino_message::Tool;
-    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::{EditorAction, Point2};
 
     let mut editor = empty_editor();
-    editor.set_canvas_size(Point::new(1200.0, 3000.0));
-    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.canvas.set_size(1200.0, 3000.0);
+    editor.editor_state.canvas.set_offset(248.0, 60.0);
     editor.editor_state.tool = Tool::ShapeSelect;
     setup_single_pending_rect(&mut editor);
     assert!(editor.copy_along_selected(), "先生成一个 pending 组合");
@@ -431,12 +429,11 @@ fn test_composed_at_tick_zero_selectable() {
 fn test_baked_shape_at_tick_zero_selectable() {
     use lumino_editor_state::{DrawnShapeSource, ShapeKind};
     use lumino_message::Tool;
-    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::{EditorAction, Point2};
 
     let mut editor = empty_editor();
-    editor.set_canvas_size(Point::new(1200.0, 800.0));
-    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.canvas.set_size(1200.0, 800.0);
+    editor.editor_state.canvas.set_offset(248.0, 60.0);
     editor.editor_state.tool = Tool::ShapeSelect;
     let id = editor.editor_state.shape_select.add(
         1,
@@ -470,12 +467,11 @@ fn test_baked_shape_at_tick_zero_selectable() {
 fn test_pending_curve_at_tick_zero_selectable() {
     use lumino_editor_state::BezierAnchor;
     use lumino_message::Tool;
-    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::{EditorAction, Point2};
 
     let mut editor = empty_editor();
-    editor.set_canvas_size(Point::new(1200.0, 800.0));
-    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.canvas.set_size(1200.0, 800.0);
+    editor.editor_state.canvas.set_offset(248.0, 60.0);
     editor.editor_state.tool = Tool::ShapeSelect;
     editor.editor_state.line_tool.paths.push(vec![
         BezierAnchor::new((0.0, 100.0)),
@@ -506,12 +502,11 @@ fn test_pending_curve_at_tick_zero_selectable() {
 #[test]
 fn test_shape_at_tick_zero_selectable_via_press() {
     use lumino_message::Tool;
-    use lumino_ui_core::geom::Point;
     use lumino_ui_core::message::{EditorAction, Point2};
 
     let mut editor = empty_editor();
-    editor.set_canvas_size(Point::new(1200.0, 800.0));
-    editor.set_canvas_offset(Point::new(248.0, 60.0));
+    editor.editor_state.canvas.set_size(1200.0, 800.0);
+    editor.editor_state.canvas.set_offset(248.0, 60.0);
     editor.editor_state.tool = Tool::ShapeSelect;
     add_pending_rect(&mut editor, 0.0, 1920.0, 100);
     editor.rebuild_pending_mirrors();

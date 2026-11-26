@@ -29,7 +29,10 @@ fn test_editor() -> Editor {
 
 /// 画一个 4 tick × 4 key 的矩形，停在「待确认形状」阶段。
 fn draw_rect(editor: &mut Editor) {
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
     editor.handle_shape_tool_released();

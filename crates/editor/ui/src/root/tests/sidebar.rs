@@ -20,10 +20,8 @@ use lumino_message::RightSidebarAction;
 fn test_canvas_overlay_clip_ends_at_canvas_right_when_right_panel_expanded() {
     let mut root = Root::new(&UiConfig::default());
     // 1600 宽窗口、左栏 248、右栏 48+300、滚动条 20 对应的画布几何。
-    root.editor
-        .set_canvas_size(lumino_ui_core::geom::Point::new(984.0, 800.0));
-    root.editor
-        .set_canvas_offset(lumino_ui_core::geom::Point::new(248.0, 102.0));
+    root.editor.editor_state.canvas.set_size(984.0, 800.0);
+    root.editor.editor_state.canvas.set_offset(248.0, 102.0);
     root.right_sidebar.panel_visible = true;
     let canvas_right =
         root.editor.editor_state.canvas.offset_x + root.editor.editor_state.canvas.size_x;
@@ -77,10 +75,8 @@ fn test_canvas_overlay_clip_ends_at_canvas_right_when_right_sidebar_hidden() {
         "关闭钢琴卷帘后右侧栏应跟随隐藏"
     );
     // 无右侧栏时的画布几何：1600 宽窗口 - 左栏 248 - 滚动条 20。
-    root.editor
-        .set_canvas_size(lumino_ui_core::geom::Point::new(1332.0, 800.0));
-    root.editor
-        .set_canvas_offset(lumino_ui_core::geom::Point::new(248.0, 102.0));
+    root.editor.editor_state.canvas.set_size(1332.0, 800.0);
+    root.editor.editor_state.canvas.set_offset(248.0, 102.0);
 
     let clip = root.canvas_overlay_clip().expect("画布应可裁剪");
     let canvas_right =

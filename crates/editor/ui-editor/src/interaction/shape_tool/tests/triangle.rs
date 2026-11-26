@@ -45,7 +45,10 @@ fn rows(editor: &Editor) -> Vec<(u16, Vec<(u32, u32)>)> {
 
 /// 三角形某次拖拽的几何参数（起点 → 当前点，不松手）
 fn drag_triangle(editor: &mut Editor, start: (f32, f32), current: (f32, f32)) -> ShapeSpec {
-    editor.set_shape(ShapeKind::Triangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Triangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(start.0, start.1, false);
     editor.handle_shape_tool_moved(current.0, current.1);
@@ -153,7 +156,10 @@ fn test_drag_up_produces_inverted_triangle() {
 #[test]
 fn test_reversing_drag_flips_triangle_live() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Triangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Triangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 64.0, false);
 
@@ -243,7 +249,10 @@ fn test_triangle_apex_follows_drag_direction_on_vertical_roll() {
 fn test_filled_triangle_follows_drag_direction() {
     // 向下拉（正立）：底边行 key 60 最宽 5 格，顶点行 64 最窄 1 格
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Triangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Triangle);
     editor.editor_state.shape_tool.fill_enabled = true;
     editor.handle_shape_tool_pressed(0.0, 64.0, false);
     editor.handle_shape_tool_moved(4.0, 60.0);
@@ -254,7 +263,10 @@ fn test_filled_triangle_follows_drag_direction() {
 
     // 向上拉（倒立）：同一外接框，宽行翻到 key 64
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Triangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Triangle);
     editor.editor_state.shape_tool.fill_enabled = true;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);

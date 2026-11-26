@@ -41,7 +41,10 @@ fn rows(editor: &Editor) -> Vec<(u16, Vec<(u32, u32)>)> {
 #[test]
 fn test_rectangle_outline_produces_notes() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     // 拖出 0..4 × key 60..64 的矩形轮廓
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -87,7 +90,10 @@ fn test_rectangle_outline_produces_notes() {
 #[test]
 fn test_rectangle_outline_expands_by_global_thickness() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.brush.set_thickness(3);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -131,7 +137,10 @@ fn test_rectangle_vertical_edges_widen_by_global_thickness() {
     // 不会被"像素尺度下几乎竖直"这类退化情形掩盖问题
     let draw = |thickness: u8| {
         let mut editor = test_editor();
-        editor.set_shape(ShapeKind::Rectangle);
+        editor
+            .editor_state
+            .shape_tool
+            .set_shape_kind(ShapeKind::Rectangle);
         editor.editor_state.shape_tool.fill_enabled = false;
         editor.brush.set_thickness(thickness);
         editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -197,7 +206,10 @@ fn covers(editor: &Editor, tick: u32, key: u16) -> bool {
 #[test]
 fn test_rectangle_corner_gap_is_filled_by_band() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.brush.set_thickness(3);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -263,7 +275,10 @@ fn test_rectangle_corner_gap_is_filled_by_band() {
 #[test]
 fn test_outline_preview_blocks_match_generated_notes() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.brush.set_thickness(3);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -320,7 +335,10 @@ fn test_outline_preview_blocks_include_min_length_padding() {
     editor.set_min_note_division(Some(
         lumino_editor_state::LineToolState::DEFAULT_MIN_NOTE_DIVISION,
     ));
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.brush.set_thickness(3);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -357,7 +375,10 @@ fn test_outline_preview_blocks_include_min_length_padding() {
 #[test]
 fn test_filled_shape_has_no_outline_preview_blocks() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = true;
     editor.brush.set_thickness(3);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -379,7 +400,10 @@ fn test_filled_shape_has_no_outline_preview_blocks() {
 #[test]
 fn test_circle_outline_produces_per_row_notes() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Circle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Circle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -417,7 +441,10 @@ fn test_circle_outline_produces_per_row_notes() {
 #[test]
 fn test_filled_rectangle_produces_interior_notes() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = true;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -431,7 +458,10 @@ fn test_filled_rectangle_produces_interior_notes() {
 #[test]
 fn test_cancel_clears_pending() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
     editor.handle_shape_tool_released();
@@ -445,7 +475,10 @@ fn test_cancel_clears_pending() {
 fn test_conductor_track_rejects_shape() {
     let mut editor = test_editor();
     editor.editor_state.data.current_track = 0;
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
     editor.handle_shape_tool_released();
@@ -456,7 +489,10 @@ fn test_conductor_track_rejects_shape() {
 #[test]
 fn test_fill_bucket_marks_existing_shape() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     // 先拉出轮廓（填充桶关闭）
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -476,7 +512,10 @@ fn test_fill_bucket_marks_existing_shape() {
 #[test]
 fn test_shift_uses_raw_mouse_coords_for_square() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     // 模拟 host 通道：Shift 按下（released 路径读取 shift_pressed 决定约束）
     editor.shift_pressed = true;
@@ -550,7 +589,10 @@ fn test_filled_shape_uses_division_step() {
     // 四分音符档（480 tick 太长 → 每行只有 1 条）；改用 1/8 档看切分效果。
     let mut editor = test_editor();
     editor.editor_state.view.ppq = 480;
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.set_fill_division(Some(8)); // 八分音符 = 240 tick
     editor.editor_state.shape_tool.fill_enabled = true;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -576,7 +618,10 @@ fn test_filled_shape_uses_division_step() {
 fn confirm_wide_rect_outline(division: Option<u32>) -> Editor {
     let mut editor = test_editor();
     editor.editor_state.view.ppq = 480;
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.set_fill_division(division);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -626,7 +671,10 @@ fn test_outline_shape_ignores_division() {
 fn test_no_division_keeps_filled_shape_behaviour() {
     // 填充腿不受本次描边同步影响：未开切分 → 仍是每格一条 snap 长音符
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = true;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -656,7 +704,10 @@ fn test_outline_min_length_fills_short_vertical_segments() {
     editor.set_min_note_division(Some(division));
     let min_ticks = (editor.editor_state.view.ppq / 32).max(1) as u32;
 
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     // 0..3840 × key 60..64：水平边 3840 tick（远超下限，不被补齐）
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
@@ -682,7 +733,10 @@ fn test_outline_min_length_fills_short_vertical_segments() {
 #[test]
 fn test_outline_min_length_is_configurable() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(3840.0, 64.0);
@@ -701,7 +755,10 @@ fn test_outline_min_length_is_configurable() {
     // None = 关闭下限：竖直段回到几何原样 1 tick
     let mut editor = test_editor();
     editor.set_min_note_division(None);
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(3840.0, 64.0);
@@ -719,7 +776,10 @@ fn test_outline_min_length_is_configurable() {
 fn test_degenerate_outline_shapes_do_not_panic() {
     // 纯水平拖拽：高为 0（key 不变）→ 单行一条贯通音符
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(100.0, 60.0);
@@ -729,7 +789,10 @@ fn test_degenerate_outline_shapes_do_not_panic() {
 
     // 纯竖直拖拽：宽为 0 → 逐音高行各 1 tick
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(0.0, 64.0);
@@ -760,7 +823,10 @@ fn test_chop_cells_merges_contiguous_and_keeps_gaps() {
 fn test_shape_ctrl_click_requests_dialog() {
     // 形状工具下的 Ctrl+单击同样请求弹窗（与曲线工具填充桶一致）
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.set_ctrl_pressed(true);
     editor.handle_shape_tool_pressed(2.0, 62.0, false);
     assert!(

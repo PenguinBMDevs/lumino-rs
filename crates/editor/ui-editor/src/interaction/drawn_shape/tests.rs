@@ -50,7 +50,10 @@ fn register_test_drawn_shape(editor: &mut Editor, source: DrawnShapeSource) {
 /// 描边音符数见 [`RECT_OUTLINE_NOTES`]（不再是「每格一条」的 16 条）。
 fn draw_and_confirm_rect() -> Editor {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -335,7 +338,10 @@ fn test_mouse_tool_selects_inside_and_deselects_outside() {
 #[test]
 fn test_circle_hit_uses_ellipse_interior() {
     let mut editor = test_editor();
-    editor.set_shape(ShapeKind::Circle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Circle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -560,7 +566,10 @@ fn test_point_segment_distance_basics() {
 /// 拉出（但不 √）一个待确认形状：模拟「用户刚画完图案还没确认」的状态
 fn draw_pending_rect(editor: &mut Editor) {
     editor.set_tool(Tool::Shape);
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);

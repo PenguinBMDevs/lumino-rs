@@ -67,9 +67,13 @@ impl Root {
             }
             Message::CanvasBoundsChanged { offset, size } => {
                 self.editor
-                    .set_canvas_offset(lumino_ui_core::geom::Point::new(offset.x, offset.y));
+                    .editor_state
+                    .canvas
+                    .set_offset(offset.x, offset.y);
                 self.editor
-                    .set_canvas_size(lumino_ui_core::geom::Point::new(size.width, size.height));
+                    .editor_state
+                    .canvas
+                    .set_size(size.width, size.height);
 
                 // 缩放不应出现空白区域：viewport 变化后，若琴键没填满 viewport，
                 // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。

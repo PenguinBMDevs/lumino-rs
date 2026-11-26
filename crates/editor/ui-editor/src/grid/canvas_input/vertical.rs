@@ -188,8 +188,8 @@ mod tests {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.is_vertical_roll = true;
-        editor.set_canvas_size(lumino_ui_core::geom::Point::new(2000.0, 3000.0));
-        editor.set_canvas_offset(lumino_ui_core::geom::Point::new(0.0, 0.0));
+        editor.editor_state.canvas.set_size(2000.0, 3000.0);
+        editor.editor_state.canvas.set_offset(0.0, 0.0);
         editor
     }
 

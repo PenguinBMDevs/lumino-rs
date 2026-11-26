@@ -45,10 +45,9 @@ impl Host {
             let current_offset_y = self.root.editor.editor_state.canvas.offset_y;
             self.root
                 .editor
-                .set_canvas_offset(lumino_ui_core::geom::Point::new(
-                    sidebar_width,
-                    current_offset_y,
-                ));
+                .editor_state
+                .canvas
+                .set_offset(sidebar_width, current_offset_y);
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }

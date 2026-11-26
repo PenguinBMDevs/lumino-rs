@@ -12,7 +12,6 @@ use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
 use lumino_message::Tool;
-use lumino_ui_core::geom::Point;
 use lumino_ui_core::message::{EditorAction, Point2};
 
 /// 带画布尺寸的编辑器（`is_inside_canvas` 需要非零 canvas 尺寸），当前轨 = 1
@@ -27,8 +26,8 @@ fn editor_with_canvas() -> Editor {
     editor.editor_state.view.snap_precision = 1.0;
     // 画布给足尺寸：全部 0..=127 键与测试用的 tick 都落在有效区内，
     // 避免 `is_inside_canvas` 因默认 zoom/keyboard_width 换算把按下点判成画布外。
-    editor.set_canvas_size(Point::new(4000.0, 4000.0));
-    editor.set_canvas_offset(Point::new(0.0, 0.0));
+    editor.editor_state.canvas.set_size(4000.0, 4000.0);
+    editor.editor_state.canvas.set_offset(0.0, 0.0);
     editor
 }
 
@@ -37,8 +36,8 @@ fn editor_with_empty_canvas() -> Editor {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 2, 1, &[]);
     editor.editor_state.view.snap_precision = 1.0;
-    editor.set_canvas_size(Point::new(4000.0, 4000.0));
-    editor.set_canvas_offset(Point::new(0.0, 0.0));
+    editor.editor_state.canvas.set_size(4000.0, 4000.0);
+    editor.editor_state.canvas.set_offset(0.0, 0.0);
     editor
 }
 
@@ -90,7 +89,10 @@ fn register_test_drawn_shape(editor: &mut Editor, source: lumino_editor_state::D
 /// 用形状工具画出矩形并 √（真实确认链路 + 测试用注册表对象）
 fn draw_and_confirm_rect(editor: &mut Editor) {
     editor.set_tool(Tool::Shape);
-    editor.set_shape(lumino_editor_state::ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(lumino_editor_state::ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -200,7 +202,10 @@ fn test_confirmed_curve_bakes_and_undo_restores_path() {
 fn test_marquee_over_unconfirmed_shape_is_selectable() {
     let mut editor = editor_with_empty_canvas();
     editor.set_tool(Tool::Shape);
-    editor.set_shape(lumino_editor_state::ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(lumino_editor_state::ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
@@ -440,7 +445,10 @@ fn test_delete_pending_shape_removes_geometry_and_keeps_later_mirror_usable() {
     let mut editor = editor_with_empty_canvas();
     // 两个待确认图形：A(0..4 × 60..64)、B(200..204 × 60..64)
     editor.set_tool(Tool::Shape);
-    editor.set_shape(lumino_editor_state::ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(lumino_editor_state::ShapeKind::Rectangle);
     editor.editor_state.shape_tool.fill_enabled = false;
     for (t0, t1) in [(0.0f32, 4.0f32), (200.0, 204.0)] {
         editor.handle_shape_tool_pressed(t0, 60.0, false);
@@ -505,7 +513,10 @@ fn test_marquee_over_two_confirmed_shapes_boxes_union_and_drags_group() {
     // 图形 A：0..4 × 60..64；图形 B：200..204 × 60..64（各自 √ 确认）
     for (t0, t1) in [(0.0f32, 4.0f32), (200.0, 204.0)] {
         editor.set_tool(Tool::Shape);
-        editor.set_shape(lumino_editor_state::ShapeKind::Rectangle);
+        editor
+            .editor_state
+            .shape_tool
+            .set_shape_kind(lumino_editor_state::ShapeKind::Rectangle);
         editor.editor_state.shape_tool.fill_enabled = false;
         editor.handle_shape_tool_pressed(t0, 60.0, false);
         editor.handle_shape_tool_moved(t1, 64.0);

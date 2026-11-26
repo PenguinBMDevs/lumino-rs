@@ -5,7 +5,6 @@
 use crate::Editor;
 use lumino_core::BrushConfig;
 use lumino_message::Tool;
-use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 设置当前工具（委托到 editor_state）
@@ -104,11 +103,6 @@ impl Editor {
         current == owner || current == Tool::ShapeSelect
     }
 
-    /// 设置当前形状类型（由工具栏 `current_shape` 同步）
-    pub fn set_shape(&mut self, kind: lumino_editor_state::ShapeKind) {
-        self.editor_state.shape_tool.set_shape_kind(kind);
-    }
-
     /// 设置颜料桶填充模式开关（曲线工具与形状工具共享同一开关）
     pub fn set_fill_enabled(&mut self, enabled: bool) {
         self.editor_state.line_tool.fill_enabled = enabled;
@@ -177,18 +171,6 @@ impl Editor {
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.editor_state.tool
-    }
-
-    /// 更新 Canvas 偏移量（用于坐标转换）
-    pub fn set_canvas_offset(&mut self, offset: Point) {
-        self.editor_state.canvas.offset_x = offset.x;
-        self.editor_state.canvas.offset_y = offset.y;
-    }
-
-    /// 更新 Canvas 尺寸
-    pub fn set_canvas_size(&mut self, size: Point) {
-        self.editor_state.canvas.size_x = size.x;
-        self.editor_state.canvas.size_y = size.y;
     }
 
     /// 检查音符数据是否已变化

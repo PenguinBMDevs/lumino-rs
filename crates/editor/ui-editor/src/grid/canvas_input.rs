@@ -201,8 +201,8 @@ mod tests {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.view.snap_precision = 1.0;
-        editor.set_canvas_size(lumino_ui_core::geom::Point::new(4000.0, 4000.0));
-        editor.set_canvas_offset(lumino_ui_core::geom::Point::new(0.0, 0.0));
+        editor.editor_state.canvas.set_size(4000.0, 4000.0);
+        editor.editor_state.canvas.set_offset(0.0, 0.0);
         editor
     }
 

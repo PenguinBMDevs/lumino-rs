@@ -66,7 +66,7 @@ impl ToolbarHandler {
                 crate::toolbar::ShapeType::Circle => lumino_editor_state::ShapeKind::Circle,
                 crate::toolbar::ShapeType::Triangle => lumino_editor_state::ShapeKind::Triangle,
             };
-            root.editor.set_shape(kind);
+            root.editor.editor_state.shape_tool.set_shape_kind(kind);
             tracing::debug!("Root: 形状工具类型切换为 {:?}", kind);
         }
         // DEBT-17：换工具前可能已把过期刀清掉，通知在这里转 toast
