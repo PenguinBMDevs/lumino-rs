@@ -38,7 +38,6 @@ impl RunnerInner {
             .window
             .ui_mut()
             .root_mut()
-            .editor
             .commit_current_edit();
         if committed {
             tracing::debug!("{reason}前自动提交编辑");
@@ -127,7 +126,6 @@ impl RunnerInner {
                     .window
                     .ui_mut()
                     .root_mut()
-                    .editor
                     .load_shapes(shapes);
                 tracing::info!("工程形状已载入：{count} 个");
             }

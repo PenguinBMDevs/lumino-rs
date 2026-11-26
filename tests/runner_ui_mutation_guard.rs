@@ -29,7 +29,11 @@ fn runner_has_no_direct_toast_or_modified_writes() {
     let mut offenders = Vec::new();
     for file in files {
         let text = std::fs::read_to_string(&file).expect("读取 runner 源文件");
-        if text.contains(".toast.push(") || text.contains("editor_state.data.modified = true") {
+        if text.contains(".toast.push(")
+            || text.contains("editor_state.data.modified = true")
+            || text.contains("root_mut().editor")
+            || text.contains("root_mut()\n            .editor")
+        {
             offenders.push(file.display().to_string());
         }
     }

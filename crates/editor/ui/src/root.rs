@@ -145,6 +145,48 @@ impl Root {
         self.editor.editor_state.data.modified = true;
     }
 
+    /// Runner 侧的命令入口：放大视图（锚定中心）。
+    pub fn zoom_in(&mut self) {
+        const FACTOR: f32 = 1.2;
+        let view = &self.editor.editor_state.view;
+        let (x, y) = (view.zoom_x * FACTOR, view.zoom_y * FACTOR);
+        self.editor.set_zoom_x(x, 0.5);
+        self.editor.set_zoom_y(y, 0.5);
+    }
+
+    /// Runner 侧的命令入口：缩小视图（锚定中心）。
+    pub fn zoom_out(&mut self) {
+        const FACTOR: f32 = 1.2;
+        let view = &self.editor.editor_state.view;
+        let (x, y) = (view.zoom_x / FACTOR, view.zoom_y / FACTOR);
+        self.editor.set_zoom_x(x, 0.5);
+        self.editor.set_zoom_y(y, 0.5);
+    }
+
+    /// Runner 侧的命令入口：重置视图缩放。
+    pub fn zoom_reset(&mut self) {
+        self.editor.set_zoom_x(0.1, 0.5);
+        self.editor.set_zoom_y(20.0, 0.5);
+    }
+
+    /// Runner 侧的命令入口：提交当前编辑（输入框失焦 / IO 前）。
+    pub fn commit_current_edit(&mut self) -> bool {
+        self.editor.commit_current_edit()
+    }
+
+    /// Runner 侧的命令入口：批量载入形状。
+    pub fn load_shapes(&mut self, shapes: Vec<lumino_core::shape::ShapeModel>) {
+        self.editor.load_shapes(shapes);
+    }
+
+    /// Runner 侧的命令入口：协作同步开关。
+    pub fn set_collab_sync_enabled(&mut self, enabled: bool) {
+        self.editor
+            .editor_state
+            .data
+            .set_collab_sync_enabled(enabled);
+    }
+
     /// 内部构造函数（消除 new/new_progress/new_dialog 的重复代码）
     fn from_params(params: RootInitParams) -> Self {
         puffin::profile_scope!("root_from_params");

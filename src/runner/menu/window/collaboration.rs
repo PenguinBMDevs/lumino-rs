@@ -20,8 +20,11 @@ impl RunnerInner {
     /// 连接建立（认证/进出房间）时开启，断开/失败时关闭——未连接时跳过
     /// 整轨 O(N) 对账与批量广播载荷构建（消费端 `is_connected` 本就会短路丢弃）。
     fn set_editor_collab_sync(&mut self, enabled: bool) {
-        let editor = &mut self.window_state.window.ui_mut().root_mut().editor;
-        editor.editor_state.data.set_collab_sync_enabled(enabled);
+        self.window_state
+            .window
+            .ui_mut()
+            .root_mut()
+            .set_collab_sync_enabled(enabled);
     }
 
     pub(crate) fn handle_collaboration_events(&mut self, window_event: Event) {
