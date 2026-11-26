@@ -135,6 +135,18 @@ impl Default for EditorState {
 }
 
 impl EditorState {
+    /// 设置总 tick 数并刷新最大滚动。
+    pub fn set_total_ticks(&mut self, total_ticks: u32) {
+        self.view.total_ticks = total_ticks;
+        viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
+            .update_max_scroll(total_ticks);
+    }
+
+    /// 设置 PPQ。
+    pub fn set_ppq(&mut self, ppq: u16) {
+        self.view.ppq = ppq;
+    }
+
     /// 创建新的编辑器状态
     pub fn new() -> Self {
         let mut view = ViewState::default();

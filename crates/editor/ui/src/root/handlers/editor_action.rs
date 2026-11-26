@@ -53,7 +53,12 @@ impl Root {
         self.drain_mould_notice();
         // 画布 Ctrl+单击（填充桶）→ 取走弹窗请求，打开「分音符填充」覆盖层。
         // Editor 不持有主窗口对话框状态，只能置一次性标志，由此处转成 UI 状态。
-        if self.editor.take_fill_division_dialog_request() {
+        if self
+            .editor
+            .editor_state
+            .line_tool
+            .take_fill_division_dialog_request()
+        {
             self.open_fill_division_dialog();
         }
         let new_tick = self.editor.playback_position;

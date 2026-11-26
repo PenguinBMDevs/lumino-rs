@@ -32,7 +32,10 @@ impl Root {
 
     /// 更新编辑器鼠标位置
     pub fn update_editor_cursor(&mut self, position: Option<lumino_ui_core::geom::Point>) {
-        self.editor.update_cursor_position(position);
+        self.editor
+            .editor_state
+            .canvas
+            .update_cursor_position(position.map(|p| (p.x, p.y)));
     }
 
     /// 更新编辑器 Canvas 偏移量

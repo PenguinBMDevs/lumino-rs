@@ -764,7 +764,10 @@ fn test_shape_ctrl_click_requests_dialog() {
     editor.set_ctrl_pressed(true);
     editor.handle_shape_tool_pressed(2.0, 62.0, false);
     assert!(
-        editor.take_fill_division_dialog_request(),
+        editor
+            .editor_state
+            .line_tool
+            .take_fill_division_dialog_request(),
         "形状工具 Ctrl+单击应置位弹窗请求"
     );
     assert!(

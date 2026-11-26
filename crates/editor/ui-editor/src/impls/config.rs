@@ -4,7 +4,6 @@
 
 use crate::Editor;
 use lumino_core::BrushConfig;
-use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
 use lumino_ui_core::geom::Point;
 
@@ -121,16 +120,6 @@ impl Editor {
         self.editor_state.line_tool.fill_enabled
     }
 
-    /// 开关三点圆弧模式（DRAW-014，由悬浮工具条「圆弧」条目同步）
-    pub fn set_line_arc_mode(&mut self, enabled: bool) {
-        self.editor_state.line_tool.set_arc_mode(enabled);
-    }
-
-    /// 三点圆弧模式是否开启
-    pub fn line_arc_mode(&self) -> bool {
-        self.editor_state.line_tool.arc_mode
-    }
-
     /// **全局绘制粗细**（层数，1-100；1 层 = 单 key 高的像素宽度）
     ///
     /// 单一权威：音符画悬浮工具条的「粗细」滑杆与画刷下拉展示/写入的都是它
@@ -148,18 +137,6 @@ impl Editor {
     ///    的居中描边（那与单侧向外的产物差半个带，竖直边在粗细 2 时差 2 倍）。
     pub fn draw_thickness(&self) -> u8 {
         self.brush.thickness.max(BrushConfig::MIN_THICKNESS)
-    }
-
-    /// **画刷**笔画/命中带的总宽（像素）= 全局粗细层数 × 单 key 高（`zoom_y`）
-    ///
-    /// 用途收窄到画刷：笔画命中判定（`brush_total_width_px`）与画刷预览的层高。
-    /// 曲线 / 形状的**描边预览**曾经也用它当线宽，但那与产物（单侧向外铺 `N-1` 层）
-    /// 不是一份几何——现在预览直接画音符块（见 `draw_thickness` 第 3 点）。
-    ///
-    /// 下限 1px：缩到极小（`zoom_y < 1`）时命中带不能消失（否则"按不住自己画的线"）。
-    pub fn draw_line_width_px(&self) -> f32 {
-        let thickness = self.draw_thickness() as f32;
-        (thickness * self.editor_state.view.zoom_y).max(1.0)
     }
 
     /// 设置颜料桶填充的**切分档位**（`Some(x)` = x 分音符切分；`None` = 整块填充）
@@ -192,13 +169,6 @@ impl Editor {
         self.editor_state.line_tool.min_note_division
     }
 
-    /// 取走「打开分音符填充对话框」请求（一次性标志，Root 每帧取用）
-    pub fn take_fill_division_dialog_request(&mut self) -> bool {
-        let requested = self.fill_division_dialog_requested;
-        self.fill_division_dialog_requested = false;
-        requested
-    }
-
     /// 当前框选弹簧动画状态（UI 渲染层读取）。
     pub fn selection_box_anim(&self) -> Option<crate::SelectionBoxAnimState> {
         self.selection_ui.anim.get()
@@ -207,15 +177,6 @@ impl Editor {
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.editor_state.tool
-    }
-
-    /// 更新鼠标位置（由外部调用）
-    pub fn update_cursor_position(&mut self, position: Option<Point>) {
-        let pos = position.map(|p| (p.x, p.y));
-        if self.editor_state.canvas.cursor_position == pos {
-            return;
-        }
-        self.editor_state.canvas.cursor_position = pos;
     }
 
     /// 更新 Canvas 偏移量（用于坐标转换）
@@ -228,21 +189,6 @@ impl Editor {
     pub fn set_canvas_size(&mut self, size: Point) {
         self.editor_state.canvas.size_x = size.x;
         self.editor_state.canvas.size_y = size.y;
-    }
-
-    /// 设置总 ticks
-    pub fn set_total_ticks(&mut self, total_ticks: u32) {
-        self.editor_state.view.total_ticks = total_ticks;
-        Viewport::new(
-            &mut self.editor_state.view,
-            &mut self.editor_state.max_scroll,
-        )
-        .update_max_scroll(total_ticks);
-    }
-
-    /// 设置 PPQ
-    pub fn set_ppq(&mut self, ppq: u16) {
-        self.editor_state.view.ppq = ppq;
     }
 
     /// 检查音符数据是否已变化

@@ -12,7 +12,7 @@ fn arc_editor() -> Editor {
     editor.editor_state.view.ppq = 480;
     editor.editor_state.view.zoom_x = 0.1;
     editor.editor_state.view.zoom_y = 10.0;
-    editor.set_line_arc_mode(true);
+    editor.editor_state.line_tool.set_arc_mode(true);
     editor
 }
 
@@ -60,7 +60,7 @@ fn test_arc_preview_uses_sampled_points_not_straight_anchors() {
     editor.editor_state.line_tool.paths = vec![path.clone()];
 
     let arc_blocks = editor.path_outline_blocks(&path);
-    editor.set_line_arc_mode(false);
+    editor.editor_state.line_tool.set_arc_mode(false);
     let straight_blocks = editor.path_outline_blocks(&path);
 
     assert!(!arc_blocks.is_empty(), "弧预览应产出音符块");

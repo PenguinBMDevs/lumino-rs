@@ -48,7 +48,6 @@ impl Editor {
                 ctrl_pressed: false,
                 shift_pressed: false,
                 brush: BrushConfig::new(),
-                fill_division_dialog_requested: false,
             }
         })
     }

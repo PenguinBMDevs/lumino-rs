@@ -161,7 +161,7 @@ impl Editor {
         // Ctrl+单击 = 打开「分音符填充」对话框（切分档位设置），不记填充标记。
         // 弹窗为主窗口覆盖层：Editor 只置请求位，由 Root 取走后打开。
         if self.ctrl_pressed() {
-            self.fill_division_dialog_requested = true;
+            self.editor_state.line_tool.fill_division_dialog_requested = true;
             tracing::info!("颜料桶: Ctrl+单击 → 请求打开分音符填充对话框");
             return;
         }

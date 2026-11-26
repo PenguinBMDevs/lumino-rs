@@ -38,14 +38,14 @@ impl Root {
 
     /// 设置编辑器总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
-        self.editor.set_total_ticks(total_ticks as u32);
+        self.editor.editor_state.set_total_ticks(total_ticks as u32);
         // 同步到走带视图（影响横向滚动最大长度）
         self.arrangement_view.viewport.total_ticks = total_ticks as u32;
     }
 
     /// 设置每四分音符的时钟数（PPQ）
     pub fn set_ppq(&mut self, ppq: u16) {
-        self.editor.set_ppq(ppq);
+        self.editor.editor_state.set_ppq(ppq);
         // 同步到单一权威源 document 的 division，保证保存/导出工程时
         // 写入用户设置的 PPQ（此前只更新视图状态，工程文件永远落盘旧值 480）。
         if let Some(doc) = self.editor.editor_state.data.document.as_mut() {

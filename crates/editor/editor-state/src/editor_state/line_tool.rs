@@ -137,6 +137,8 @@ pub struct LineToolState {
     /// 属**模式设置**（与 `fill_division` 同级）：√ 确认 / × 取消后仍保留
     /// （`reset` 显式保留）。改档位只影响之后生成的音符，不改写已有音符。
     pub min_note_division: Option<u32>,
+    /// 「打开分音符填充对话框」一次性请求（Root 每帧取用）。
+    pub fill_division_dialog_requested: bool,
     /// **三点圆弧模式**（DRAW-014）：开启后每次点击依次落下 a / b / c 三点，
     /// 满 3 点即完成一段弧（下一次点击开始新弧）。
     ///
@@ -173,6 +175,7 @@ impl Default for LineToolState {
             fill_enabled: false,
             fill_division: None,
             min_note_division: Some(LineToolState::DEFAULT_MIN_NOTE_DIVISION),
+            fill_division_dialog_requested: false,
             // 历史栈初始含空状态（撤销基准）
             history: History::new(PathSnapshot::default()),
             arc_mode: false,
@@ -219,6 +222,13 @@ impl LineToolState {
     /// 开关三点圆弧模式（DRAW-014）
     ///
     /// 关闭时中断圆弧草稿（不删除已落下的点：它们仍可按普通折线确认/继续编辑）。
+    /// 取走「打开分音符填充对话框」请求（一次性标志）。
+    pub fn take_fill_division_dialog_request(&mut self) -> bool {
+        let requested = self.fill_division_dialog_requested;
+        self.fill_division_dialog_requested = false;
+        requested
+    }
+
     pub fn set_arc_mode(&mut self, enabled: bool) {
         if self.arc_mode == enabled {
             return;

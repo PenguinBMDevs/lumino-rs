@@ -134,7 +134,7 @@ fn test_can_undo_redo_initial_state() {
 #[test]
 fn test_set_total_ticks_updates_max_scroll() {
     let mut editor = Editor::new();
-    editor.set_total_ticks(2000);
+    editor.editor_state.set_total_ticks(2000);
     assert_eq!(editor.editor_state.view.total_ticks, 2000);
     assert!(editor.editor_state.max_scroll.0 > 0.0);
 }
@@ -143,6 +143,6 @@ fn test_set_total_ticks_updates_max_scroll() {
 #[test]
 fn test_set_ppq() {
     let mut editor = Editor::new();
-    editor.set_ppq(960);
+    editor.editor_state.set_ppq(960);
     assert_eq!(editor.editor_state.view.ppq, 960);
 }

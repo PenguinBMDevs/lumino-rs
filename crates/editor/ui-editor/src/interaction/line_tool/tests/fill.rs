@@ -385,11 +385,17 @@ fn test_ctrl_click_requests_dialog_instead_of_marking() {
         "Ctrl+单击不记填充标记"
     );
     assert!(
-        editor.take_fill_division_dialog_request(),
+        editor
+            .editor_state
+            .line_tool
+            .take_fill_division_dialog_request(),
         "Ctrl+单击应置位弹窗请求"
     );
     assert!(
-        !editor.take_fill_division_dialog_request(),
+        !editor
+            .editor_state
+            .line_tool
+            .take_fill_division_dialog_request(),
         "请求标志是一次性的（取走后清零）"
     );
 }
@@ -400,7 +406,10 @@ fn test_plain_click_does_not_request_dialog() {
     seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     assert!(
-        !editor.take_fill_division_dialog_request(),
+        !editor
+            .editor_state
+            .line_tool
+            .take_fill_division_dialog_request(),
         "普通单击不得弹窗"
     );
     assert_eq!(editor.editor_state.line_tool.fill.len(), 1);
