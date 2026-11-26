@@ -172,35 +172,44 @@ fn counter_and_data_curve_sections_are_built() {
 fn widget_actions_map_to_messages() {
     let root = root();
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Pick { id: 1, index: 2 }),
+        root.video_export_action_message(&EguiAction::Pick { id: 1.into(), index: 2 }),
         Some(Message::VideoExport(Prod::ContainerChanged(v))) if v == "MKV"
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Pick { id: 12, index: 2 }),
+        root.video_export_action_message(&EguiAction::Pick {
+            id: 12.into(),
+            index: 2
+        }),
         Some(Message::VideoExport(Prod::FpsChanged(60)))
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Toggle { id: 9, value: true }),
+        root.video_export_action_message(&EguiAction::Toggle {
+            id: 9.into(),
+            value: true
+        }),
         Some(Message::VideoExport(Prod::Miditrail3DNotesChanged(true)))
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Text {
-            id: 11,
+            id: 11.into(),
             value: "720".to_owned()
         }),
         Some(Message::VideoExport(Prod::HeightChanged(v))) if v == "720"
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Button { id: 18 }),
+        root.video_export_action_message(&EguiAction::Button { id: 18.into() }),
         Some(Message::VideoExport(Prod::StartExport))
     ));
     // 越界下标 / 未知 id 不产生消息。
     assert!(
-        root.video_export_action_message(&EguiAction::Pick { id: 1, index: 9 })
-            .is_none()
+        root.video_export_action_message(&EguiAction::Pick {
+            id: 1.into(),
+            index: 9
+        })
+        .is_none()
     );
     assert!(
-        root.video_export_action_message(&EguiAction::Button { id: 99 })
+        root.video_export_action_message(&EguiAction::Button { id: 99.into() })
             .is_none()
     );
 }
@@ -402,68 +411,68 @@ fn counter_and_data_curve_actions_map_to_messages() {
     root.state.video_export_dialog.basic.render_mode = "计数器".to_owned();
 
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Pick { id: 103, index: 1 }),
+        root.video_export_action_message(&EguiAction::Pick { id: 103.into(), index: 1 }),
         Some(Message::VideoExport(Prod::CounterFontModeChanged(v))) if v == "系统字体"
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Pick { id: 104, index: 0 }),
+        root.video_export_action_message(&EguiAction::Pick { id: 104.into(), index: 0 }),
         Some(Message::VideoExport(Prod::CounterFontFamilyChanged(v))) if v == "微软雅黑"
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Pick { id: 107, index: 0 }),
+        root.video_export_action_message(&EguiAction::Pick { id: 107.into(), index: 0 }),
         Some(Message::VideoExport(Prod::CounterAlignmentChanged(v))) if v == "左上"
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Slider {
-            id: 108,
+            id: 108.into(),
             value: 42.4
         }),
         Some(Message::VideoExport(Prod::CounterFontSizeChanged(42)))
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Toggle {
-            id: 109,
+            id: 109.into(),
             value: false
         }),
         Some(Message::VideoExport(Prod::CounterUseCommasChanged(false)))
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Text {
-            id: 100,
+            id: 100.into(),
             value: "hi".to_owned()
         }),
         Some(Message::VideoExport(Prod::CounterTextChanged(v))) if v == "hi"
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Text {
-            id: 121,
+            id: 121.into(),
             value: "7".to_owned()
         }),
         Some(Message::VideoExport(Prod::CounterPadChanged { field, value }))
             if field == "bpm_dec" && value == 7
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Button { id: 102 }),
+        root.video_export_action_message(&EguiAction::Button { id: 102.into() }),
         Some(Message::VideoExport(Prod::CounterLoadTemplate(v))) if v == "full"
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Button { id: 128 }),
+        root.video_export_action_message(&EguiAction::Button { id: 128.into() }),
         Some(Message::VideoExport(Prod::CounterResetPadding))
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Button { id: 106 }),
+        root.video_export_action_message(&EguiAction::Button { id: 106.into() }),
         Some(Message::VideoExport(Prod::CounterBrowseFont))
     ));
 
     // 数据曲线。
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Pick { id: 200, index: 1 }),
+        root.video_export_action_message(&EguiAction::Pick { id: 200.into(), index: 1 }),
         Some(Message::VideoExport(Prod::DataCurveTextChanged { field, value }))
             if field == "metric" && value == "复音数"
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Text {
-            id: 201,
+            id: 201.into(),
             value: "3.5".to_owned()
         }),
         Some(Message::VideoExport(Prod::DataCurveNumberChanged { field, value }))
@@ -471,7 +480,7 @@ fn counter_and_data_curve_actions_map_to_messages() {
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Text {
-            id: 210,
+            id: 210.into(),
             value: "#112233".to_owned()
         }),
         Some(Message::VideoExport(Prod::DataCurveTextChanged { field, value }))
@@ -479,29 +488,32 @@ fn counter_and_data_curve_actions_map_to_messages() {
     ));
     assert!(matches!(
         root.video_export_action_message(&EguiAction::Slider {
-            id: 216,
+            id: 216.into(),
             value: 30.0
         }),
         Some(Message::VideoExport(Prod::DataCurveFontSizeChanged(30)))
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Toggle { id: 236, value: false }),
+        root.video_export_action_message(&EguiAction::Toggle { id: 236.into(), value: false }),
         Some(Message::VideoExport(Prod::DataCurveBoolChanged { field, value }))
             if field == "show_bars" && !value
     ));
     assert!(matches!(
-        root.video_export_action_message(&EguiAction::Button { id: 220 }),
+        root.video_export_action_message(&EguiAction::Button { id: 220.into() }),
         Some(Message::VideoExport(Prod::DataCurveBrowseFont))
     ));
 
     // 越界 / 未知 id 一律拒绝。
     assert!(
-        root.video_export_action_message(&EguiAction::Pick { id: 103, index: 9 })
-            .is_none()
+        root.video_export_action_message(&EguiAction::Pick {
+            id: 103.into(),
+            index: 9
+        })
+        .is_none()
     );
     assert!(
         root.video_export_action_message(&EguiAction::Text {
-            id: 199,
+            id: 199.into(),
             value: "x".to_owned()
         })
         .is_none()

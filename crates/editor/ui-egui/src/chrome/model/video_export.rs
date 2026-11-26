@@ -3,6 +3,7 @@
 //! 控件用通用行描述（下拉 / 滑杆 / 复选 / 文本 / 标签 / 按钮），生产侧只负责把
 //! 状态翻译成行并用 `id` 记住回传目标，渲染层不认识任何业务枚举。
 
+use super::video_row_id::VideoRowId;
 /// 视频导出面板（含占用矩形）。
 #[derive(Debug, Clone)]
 pub struct VideoExportPanelModel {
@@ -194,35 +195,35 @@ pub enum VideoExportAction {
     /// 下拉选择（`id` + 选项下标）。
     Pick {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 选项下标。
         index: usize,
     },
     /// 滑杆值。
     Slider {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 新值。
         value: f32,
     },
     /// 复选切换。
     Toggle {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 新值。
         value: bool,
     },
     /// 文本变化。
     Text {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 新文本。
         value: String,
     },
     /// 按钮点击。
     Button {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
 }
 

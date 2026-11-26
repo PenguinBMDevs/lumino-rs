@@ -145,7 +145,13 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
                     }
                 });
             if let Some(index) = chosen {
-                push_action(&ctx, VideoExportAction::Pick { id: *id, index });
+                push_action(
+                    &ctx,
+                    VideoExportAction::Pick {
+                        id: (*id).into(),
+                        index,
+                    },
+                );
             }
         }
         VideoRow::Slider {
@@ -178,7 +184,13 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
                     .show_value(false),
             );
             if response.changed() {
-                push_action(&ctx, VideoExportAction::Slider { id: *id, value: v });
+                push_action(
+                    &ctx,
+                    VideoExportAction::Slider {
+                        id: (*id).into(),
+                        value: v,
+                    },
+                );
             }
             // 数值用 Label 绘制（进入可访问树，读屏可读）。
             let value_rect = egui::Rect::from_min_max(
@@ -213,7 +225,7 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
                 push_action(
                     &ctx,
                     VideoExportAction::Toggle {
-                        id: *id,
+                        id: (*id).into(),
                         value: !*checked,
                     },
                 );
@@ -290,7 +302,12 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
             )
             .clicked()
             {
-                push_action(&ctx, VideoExportAction::Button { id: tail_button.id });
+                push_action(
+                    &ctx,
+                    VideoExportAction::Button {
+                        id: tail_button.id.into(),
+                    },
+                );
             }
         }
         VideoRow::TextArea {
@@ -357,7 +374,12 @@ fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
                     text_width(ui, &button_def.label, 14.0) + 24.0
                 };
                 if button(ui, egui::pos2(x, rect.top()), w, BUTTON_H, button_def).clicked() {
-                    push_action(&ctx, VideoExportAction::Button { id: button_def.id });
+                    push_action(
+                        &ctx,
+                        VideoExportAction::Button {
+                            id: button_def.id.into(),
+                        },
+                    );
                 }
                 x += w + GAP;
             }

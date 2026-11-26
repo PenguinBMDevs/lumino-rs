@@ -32,6 +32,7 @@ mod toolbar;
 mod video_export;
 mod video_export_overlay;
 mod video_preview;
+mod video_row_id;
 pub use about::*;
 pub use arrangement::*;
 pub use audio_export::*;
@@ -60,6 +61,7 @@ pub use toolbar::*;
 pub use video_export::*;
 pub use video_export_overlay::*;
 pub use video_preview::*;
+pub use video_row_id::VideoRowId;
 
 use super::piano_roll::PianoRollView;
 

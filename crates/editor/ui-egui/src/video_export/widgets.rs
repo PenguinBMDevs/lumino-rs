@@ -19,7 +19,12 @@ pub(super) fn buttons(ui: &mut egui::Ui, buttons: &[VideoButton]) {
             text_width(ui, &button_def.label, 14.0) + 48.0
         };
         if button(ui, egui::pos2(x, rect.top()), w, BUTTON_H, button_def).clicked() {
-            push_action(ui.ctx(), VideoExportAction::Button { id: button_def.id });
+            push_action(
+                ui.ctx(),
+                VideoExportAction::Button {
+                    id: button_def.id.into(),
+                },
+            );
         }
         x += w + 12.0;
     }
@@ -77,7 +82,13 @@ pub(super) fn text_input(ui: &mut egui::Ui, rect: egui::Rect, id: u16, value: &s
         })
         .inner;
     if response.changed() {
-        push_action(ui.ctx(), VideoExportAction::Text { id, value: buffer });
+        push_action(
+            ui.ctx(),
+            VideoExportAction::Text {
+                id: id.into(),
+                value: buffer,
+            },
+        );
     }
 }
 
@@ -168,6 +179,12 @@ pub(super) fn text_area(ui: &mut egui::Ui, height: f32, id: u16, value: &str, hi
         })
         .inner;
     if response.changed() {
-        push_action(ui.ctx(), VideoExportAction::Text { id, value: buffer });
+        push_action(
+            ui.ctx(),
+            VideoExportAction::Text {
+                id: id.into(),
+                value: buffer,
+            },
+        );
     }
 }

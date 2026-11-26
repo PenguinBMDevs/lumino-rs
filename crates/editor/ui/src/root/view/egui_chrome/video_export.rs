@@ -128,10 +128,16 @@ impl crate::root::Root {
                 ids::COUNTER_FONT_PATH => Prod::CounterFontPathChanged(value.clone()),
                 ids::COUNTER_CSV_PATH => Prod::CounterCsvPathChanged(value.clone()),
                 ids::COUNTER_CSV_FORMAT => Prod::CounterCsvFormatChanged(value.clone()),
-                ids::COUNTER_PAD_FIRST..=ids::COUNTER_PAD_LAST => Prod::CounterPadChanged {
-                    field: counter::PAD_FIELDS.get(usize::from(*id) - 120)?.to_string(),
-                    value: value.trim().parse::<u32>().unwrap_or(0),
-                },
+                id if id.get() >= ids::COUNTER_PAD_FIRST.get()
+                    && id.get() <= ids::COUNTER_PAD_LAST.get() =>
+                {
+                    Prod::CounterPadChanged {
+                        field: counter::PAD_FIELDS
+                            .get(usize::from(id.get()) - 120)?
+                            .to_string(),
+                        value: value.trim().parse::<u32>().unwrap_or(0),
+                    }
+                }
                 ids::DC_GRAPH_DURATION => curve_number("graph_duration", value)?,
                 ids::DC_ZOOM_SMOOTHNESS => curve_number("zoom_smoothness", value)?,
                 ids::DC_GRAPH_SMOOTHNESS => curve_number("graph_smoothness", value)?,

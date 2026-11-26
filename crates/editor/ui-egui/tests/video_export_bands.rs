@@ -146,7 +146,7 @@ fn buttons_dispatch_ids() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 18 })
+        Some(&VideoExportAction::Button { id: 18.into() })
     );
 
     let (mut harness, actions) = make_harness();
@@ -154,7 +154,7 @@ fn buttons_dispatch_ids() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 15 })
+        Some(&VideoExportAction::Button { id: 15.into() })
     );
 }
 
@@ -165,7 +165,10 @@ fn toggle_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Toggle { id: 9, value: true })
+        Some(&VideoExportAction::Toggle {
+            id: 9.into(),
+            value: true
+        })
     );
 }
 
@@ -185,7 +188,10 @@ fn pick_and_text_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Pick { id: 1, index: 1 })
+        Some(&VideoExportAction::Pick {
+            id: 1.into(),
+            index: 1
+        })
     );
 
     let (mut harness, actions) = make_harness();
@@ -198,7 +204,7 @@ fn pick_and_text_dispatch() {
     assert!(
         actions.borrow().iter().any(|action| matches!(
             action,
-            VideoExportAction::Text { id: 10, value } if value.contains('8')
+            VideoExportAction::Text { id, value } if id.get() == 10 && value.contains('8')
         )),
         "分辨率输入应回传 Text(10)，实际 {:?}",
         actions.borrow()
@@ -392,7 +398,7 @@ fn counter_buttons_and_pads_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 102 })
+        Some(&VideoExportAction::Button { id: 102.into() })
     );
 
     let (mut harness, actions) = make_rich_harness();
@@ -404,7 +410,7 @@ fn counter_buttons_and_pads_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 113 })
+        Some(&VideoExportAction::Button { id: 113.into() })
     );
 
     // 补零宽度的第二列（BPM 小数）输入。
@@ -419,7 +425,7 @@ fn counter_buttons_and_pads_dispatch() {
         actions
             .borrow()
             .iter()
-            .any(|action| matches!(action, VideoExportAction::Text { id: 121, .. })),
+            .any(|action| matches!(action, VideoExportAction::Text { id, .. } if id.get() == 121)),
         "补零输入应回传 Text(121)，实际 {:?}",
         actions.borrow()
     );
@@ -436,7 +442,7 @@ fn template_text_area_dispatches_full_text() {
         actions
             .borrow()
             .iter()
-            .any(|action| matches!(action, VideoExportAction::Text { id: 100, value } if value.contains('X'))),
+            .any(|action| matches!(action, VideoExportAction::Text { id, value } if id.get() == 100 && value.contains('X'))),
         "模板编辑应回传 Text(100)，实际 {:?}",
         actions.borrow()
     );

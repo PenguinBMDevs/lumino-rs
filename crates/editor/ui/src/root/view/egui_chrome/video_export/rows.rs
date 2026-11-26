@@ -84,74 +84,75 @@ pub(super) fn button(label: &str, id: u16, fill: VideoButtonFill, width: f32) ->
 /// 之前这些数字散落在 41 个 match 臂与构造点里，改名/删除无法被编译器发现。
 /// 先集中成常量，下一步再换成 newtype 枚举（T-21e）。
 pub(super) mod ids {
+    use lumino_ui_egui::chrome::VideoRowId;
     // Pick
-    pub const CONTAINER: u16 = 1;
-    pub const CODEC: u16 = 2;
-    pub const BACKEND: u16 = 3;
-    pub const QUALITY: u16 = 4;
-    pub const RENDER_MODE: u16 = 5;
-    pub const MIDITRAIL_VIEW_MODE: u16 = 7;
-    pub const FPS: u16 = 12;
-    pub const MIDI_CONSOLE_BACKEND: u16 = 13;
-    pub const COUNTER_FONT_MODE: u16 = 103;
-    pub const COUNTER_FONT_FAMILY: u16 = 104;
-    pub const COUNTER_ALIGNMENT: u16 = 107;
-    pub const DC_METRIC: u16 = 200;
-    pub const DC_FONT_MODE: u16 = 217;
-    pub const DC_FONT_FAMILY: u16 = 218;
+    pub const CONTAINER: VideoRowId = VideoRowId::new(1);
+    pub const CODEC: VideoRowId = VideoRowId::new(2);
+    pub const BACKEND: VideoRowId = VideoRowId::new(3);
+    pub const QUALITY: VideoRowId = VideoRowId::new(4);
+    pub const RENDER_MODE: VideoRowId = VideoRowId::new(5);
+    pub const MIDITRAIL_VIEW_MODE: VideoRowId = VideoRowId::new(7);
+    pub const FPS: VideoRowId = VideoRowId::new(12);
+    pub const MIDI_CONSOLE_BACKEND: VideoRowId = VideoRowId::new(13);
+    pub const COUNTER_FONT_MODE: VideoRowId = VideoRowId::new(103);
+    pub const COUNTER_FONT_FAMILY: VideoRowId = VideoRowId::new(104);
+    pub const COUNTER_ALIGNMENT: VideoRowId = VideoRowId::new(107);
+    pub const DC_METRIC: VideoRowId = VideoRowId::new(200);
+    pub const DC_FONT_MODE: VideoRowId = VideoRowId::new(217);
+    pub const DC_FONT_FAMILY: VideoRowId = VideoRowId::new(218);
 
     // Slider
-    pub const WATERFALL_SPEED: u16 = 6;
-    pub const MIDITRAIL_Z_FAR: u16 = 8;
-    pub const COUNTER_FONT_SIZE: u16 = 108;
-    pub const DC_FONT_SIZE: u16 = 216;
+    pub const WATERFALL_SPEED: VideoRowId = VideoRowId::new(6);
+    pub const MIDITRAIL_Z_FAR: VideoRowId = VideoRowId::new(8);
+    pub const COUNTER_FONT_SIZE: VideoRowId = VideoRowId::new(108);
+    pub const DC_FONT_SIZE: VideoRowId = VideoRowId::new(216);
 
     // Toggle
-    pub const MIDITRAIL_3D_NOTES: u16 = 9;
-    pub const COUNTER_USE_COMMAS: u16 = 109;
-    pub const COUNTER_PADDING_ZEROES: u16 = 110;
-    pub const COUNTER_SAVE_CSV: u16 = 111;
-    pub const DC_ABBREVIATE: u16 = 234;
-    pub const DC_SHOW_TEXT: u16 = 235;
-    pub const DC_SHOW_BARS: u16 = 236;
+    pub const MIDITRAIL_3D_NOTES: VideoRowId = VideoRowId::new(9);
+    pub const COUNTER_USE_COMMAS: VideoRowId = VideoRowId::new(109);
+    pub const COUNTER_PADDING_ZEROES: VideoRowId = VideoRowId::new(110);
+    pub const COUNTER_SAVE_CSV: VideoRowId = VideoRowId::new(111);
+    pub const DC_ABBREVIATE: VideoRowId = VideoRowId::new(234);
+    pub const DC_SHOW_TEXT: VideoRowId = VideoRowId::new(235);
+    pub const DC_SHOW_BARS: VideoRowId = VideoRowId::new(236);
 
     // Text
-    pub const WIDTH: u16 = 10;
-    pub const HEIGHT: u16 = 11;
-    pub const OUTPUT_PATH: u16 = 14;
-    pub const COUNTER_TEXT: u16 = 100;
-    pub const COUNTER_FONT_PATH: u16 = 105;
-    pub const COUNTER_CSV_PATH: u16 = 112;
-    pub const COUNTER_CSV_FORMAT: u16 = 114;
-    pub const COUNTER_PAD_FIRST: u16 = 120;
-    pub const COUNTER_PAD_LAST: u16 = 127;
-    pub const DC_GRAPH_DURATION: u16 = 201;
-    pub const DC_ZOOM_SMOOTHNESS: u16 = 202;
-    pub const DC_GRAPH_SMOOTHNESS: u16 = 203;
-    pub const DC_PADDING_MUL: u16 = 204;
-    pub const DC_BG_COLOR: u16 = 210;
-    pub const DC_LINE_COLOR: u16 = 211;
-    pub const DC_TEXT_COLOR: u16 = 212;
-    pub const DC_BAR_COLOR: u16 = 213;
-    pub const DC_LINE_THICKNESS: u16 = 214;
-    pub const DC_BAR_THICKNESS: u16 = 215;
-    pub const DC_FONT_PATH: u16 = 219;
-    pub const DC_TEXT_X_OFFSET: u16 = 230;
-    pub const DC_TEXT_Y_OFFSET: u16 = 231;
-    pub const DC_MILESTONE_SCALE: u16 = 232;
-    pub const DC_ABBREVIATE_DIGITS: u16 = 233;
+    pub const WIDTH: VideoRowId = VideoRowId::new(10);
+    pub const HEIGHT: VideoRowId = VideoRowId::new(11);
+    pub const OUTPUT_PATH: VideoRowId = VideoRowId::new(14);
+    pub const COUNTER_TEXT: VideoRowId = VideoRowId::new(100);
+    pub const COUNTER_FONT_PATH: VideoRowId = VideoRowId::new(105);
+    pub const COUNTER_CSV_PATH: VideoRowId = VideoRowId::new(112);
+    pub const COUNTER_CSV_FORMAT: VideoRowId = VideoRowId::new(114);
+    pub const COUNTER_PAD_FIRST: VideoRowId = VideoRowId::new(120);
+    pub const COUNTER_PAD_LAST: VideoRowId = VideoRowId::new(127);
+    pub const DC_GRAPH_DURATION: VideoRowId = VideoRowId::new(201);
+    pub const DC_ZOOM_SMOOTHNESS: VideoRowId = VideoRowId::new(202);
+    pub const DC_GRAPH_SMOOTHNESS: VideoRowId = VideoRowId::new(203);
+    pub const DC_PADDING_MUL: VideoRowId = VideoRowId::new(204);
+    pub const DC_BG_COLOR: VideoRowId = VideoRowId::new(210);
+    pub const DC_LINE_COLOR: VideoRowId = VideoRowId::new(211);
+    pub const DC_TEXT_COLOR: VideoRowId = VideoRowId::new(212);
+    pub const DC_BAR_COLOR: VideoRowId = VideoRowId::new(213);
+    pub const DC_LINE_THICKNESS: VideoRowId = VideoRowId::new(214);
+    pub const DC_BAR_THICKNESS: VideoRowId = VideoRowId::new(215);
+    pub const DC_FONT_PATH: VideoRowId = VideoRowId::new(219);
+    pub const DC_TEXT_X_OFFSET: VideoRowId = VideoRowId::new(230);
+    pub const DC_TEXT_Y_OFFSET: VideoRowId = VideoRowId::new(231);
+    pub const DC_MILESTONE_SCALE: VideoRowId = VideoRowId::new(232);
+    pub const DC_ABBREVIATE_DIGITS: VideoRowId = VideoRowId::new(233);
 
     // Button
-    pub const BROWSE_MIDI: u16 = 15;
-    pub const BROWSE_OUTPUT: u16 = 16;
-    pub const CLOSE_PANEL: u16 = 17;
-    pub const START_EXPORT: u16 = 18;
-    pub const COUNTER_TEMPLATE_DEFAULT: u16 = 101;
-    pub const COUNTER_TEMPLATE_FULL: u16 = 102;
-    pub const COUNTER_BROWSE_FONT: u16 = 106;
-    pub const COUNTER_BROWSE_CSV: u16 = 113;
-    pub const COUNTER_RESET_PADDING: u16 = 128;
-    pub const DC_BROWSE_FONT: u16 = 220;
+    pub const BROWSE_MIDI: VideoRowId = VideoRowId::new(15);
+    pub const BROWSE_OUTPUT: VideoRowId = VideoRowId::new(16);
+    pub const CLOSE_PANEL: VideoRowId = VideoRowId::new(17);
+    pub const START_EXPORT: VideoRowId = VideoRowId::new(18);
+    pub const COUNTER_TEMPLATE_DEFAULT: VideoRowId = VideoRowId::new(101);
+    pub const COUNTER_TEMPLATE_FULL: VideoRowId = VideoRowId::new(102);
+    pub const COUNTER_BROWSE_FONT: VideoRowId = VideoRowId::new(106);
+    pub const COUNTER_BROWSE_CSV: VideoRowId = VideoRowId::new(113);
+    pub const COUNTER_RESET_PADDING: VideoRowId = VideoRowId::new(128);
+    pub const DC_BROWSE_FONT: VideoRowId = VideoRowId::new(220);
 }
 
 #[cfg(test)]

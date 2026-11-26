@@ -63,7 +63,7 @@ pub use model::{
     VideoButtonFill, VideoExportAction, VideoExportModel, VideoExportOverlayModel,
     VideoExportPanelModel, VideoOverlayAction, VideoOverlayCompleted, VideoOverlayError,
     VideoOverlayFinalizing, VideoOverlayProgress, VideoOverlayView, VideoPreviewFrame, VideoRow,
-    VideoSection,
+    VideoRowId, VideoSection,
 };
 pub use model::{
     ArrangementLaneModel, ArrangementModel, ArrangementRulerModel, ArrangementScrollbarsModel,
