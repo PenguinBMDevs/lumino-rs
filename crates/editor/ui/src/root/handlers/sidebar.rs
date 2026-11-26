@@ -20,8 +20,7 @@ mod i2m;
 mod right_sidebar;
 
 #[cfg(test)]
-#[path = "sidebar/roll_tests.rs"]
-mod roll_tests;
+mod tests;
 
 impl Root {
     /// 处理模式切换（编辑器 ↔ 瀑布流）

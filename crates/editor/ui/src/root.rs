@@ -415,4 +415,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod root_tests;
+mod tests;

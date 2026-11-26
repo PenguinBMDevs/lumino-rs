@@ -116,17 +116,6 @@ const DEGRADE_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 /// 洋葱皮降级告警聚合间隔（REND-019 PR-A：日志节流，避免刷屏）
 const DEGRADE_WARN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// 状态机三态决策测试（独立文件，保持本文件 ≤600 行）
+/// 洋葱皮测试（`tests/` 子模块，T-40b）
 #[cfg(test)]
-#[path = "onion_skin/tests.rs"]
 mod tests;
-
-/// CPU 单轨模式（Q3 B）决策测试（独立文件，保持 `tests.rs` ≤600 行）
-#[cfg(test)]
-#[path = "onion_skin/tests_cpu.rs"]
-mod tests_cpu;
-
-/// 洋葱皮全局开关（工具栏按钮）决策测试（独立文件，保持 `tests.rs` ≤600 行）
-#[cfg(test)]
-#[path = "onion_skin/tests_toggle.rs"]
-mod tests_toggle;

@@ -374,3 +374,5 @@ fn track(id: usize, is_muted: bool) -> Track {
         color: None,
     }
 }
+mod dirty;
+mod gate;

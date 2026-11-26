@@ -14,10 +14,6 @@ mod snapshot;
 pub(crate) use snapshot::{bpm_at_tick, tempo_index_at_tick};
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_onion_skin;
-#[cfg(test)]
-mod tests_overflow;
 pub mod types;
 mod update;
 mod update_custom_precision;

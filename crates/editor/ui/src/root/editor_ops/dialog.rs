@@ -52,4 +52,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod dialog_tests;
+mod tests;

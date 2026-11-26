@@ -192,4 +192,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod handlers_tests;
+mod tests;

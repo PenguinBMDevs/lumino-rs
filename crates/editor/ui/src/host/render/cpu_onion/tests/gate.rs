@@ -6,7 +6,7 @@
 
 use lumino_core::storage::config::OnionSkinBackend;
 
-use super::{CpuOnionFrameGate, cpu_onion_frame_gate};
+use super::super::{CpuOnionFrameGate, cpu_onion_frame_gate};
 
 /// CPU 后端 + 开关打开 → 正常生成帧。
 #[test]

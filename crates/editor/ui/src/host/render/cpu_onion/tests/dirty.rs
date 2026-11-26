@@ -4,7 +4,7 @@
 //! 直接驱动 [`CpuOnionState`]（Host 只负责采集相机/静音/脏区并转发），
 //! 这样每条语义都能在不构造窗口与 GPU 设备的前提下锁死。
 //!
-//! 本文件只放共享 fixture 与子模块声明；用例按主题拆分到 `tests_dirty/*`，
+//! 本文件只放共享 fixture 与子模块声明；用例按主题拆分到 `dirty/*`，
 //! 保证每个测试文件 ≤600 行（硬门槛，按真实行数计）。
 
 use std::collections::HashSet;
@@ -14,8 +14,8 @@ use lumino_editor_state::{CpuOnionChange, CpuOnionDirty};
 use lumino_gfx::CpuOnionFrame;
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
-use super::camera::{CpuOnionCameraInput, CpuOnionGeometry};
-use super::state::{CpuOnionFrameKey, CpuOnionState};
+use super::super::camera::{CpuOnionCameraInput, CpuOnionGeometry};
+use super::super::state::{CpuOnionFrameKey, CpuOnionState};
 
 const WIDTH: f32 = 640.0;
 const HEIGHT: f32 = 240.0;
@@ -131,25 +131,25 @@ fn reference_pixels_at(
 }
 
 /// 当前轨直接编辑 / 切轨补齐（含同一帧内切轨）。
-#[path = "tests_dirty/current.rs"]
+#[path = "dirty/current.rs"]
 mod current;
 
 /// 洋葱轨脏区 / region / 整帧兜底。
-#[path = "tests_dirty/onion.rs"]
+#[path = "dirty/onion.rs"]
 mod onion;
 
 /// 布局变化（滚动）与停用重启用。
-#[path = "tests_dirty/frame.rs"]
+#[path = "dirty/frame.rs"]
 mod frame;
 
 /// 静音轨（直接编辑与几何补齐）。
-#[path = "tests_dirty/mute.rs"]
+#[path = "dirty/mute.rs"]
 mod mute;
 
 /// 直接 track_notes_mut 编辑的索引提示合成。
-#[path = "tests_dirty/direct.rs"]
+#[path = "dirty/direct.rs"]
 mod direct;
 
 /// Step 5b 脏区透传（`CpuOnionOutput::dirty` / `CpuOnionFrame::dirty_rect`）。
-#[path = "tests_dirty/dirty_rect.rs"]
+#[path = "dirty/dirty_rect.rs"]
 mod dirty_rect;

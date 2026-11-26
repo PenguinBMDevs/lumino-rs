@@ -9,8 +9,8 @@
 //!
 //! 独立文件以保持 `onion_skin/tests.rs` ≤600 行；构造器复用 `tests` 模块。
 
-use super::tests::{assert_none, make_fp};
 use super::*;
+use super::{assert_none, make_fp};
 
 /// 断言：只发 `ViewState`（uniform 零重传），不得触发任何数据重建。
 fn assert_view_state_only(action: &OnionSkinAction) {

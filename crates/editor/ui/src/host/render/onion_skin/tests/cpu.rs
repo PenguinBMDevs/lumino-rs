@@ -6,8 +6,8 @@
 //! 见 `tests_toggle.rs::onion_toggle_in_cpu_mode_emits_view_state`）。
 //! 独立文件以保持 `tests.rs` ≤600 行；构造器与断言复用 `tests` 模块。
 
-use super::tests::{assert_full, assert_none, make_fp, make_fp_dirty, make_fp_main_struct};
 use super::*;
+use super::{assert_full, assert_none, make_fp, make_fp_dirty, make_fp_main_struct};
 
 /// 构造一个「已在 CPU 单轨模式构造完成」的状态。
 ///
