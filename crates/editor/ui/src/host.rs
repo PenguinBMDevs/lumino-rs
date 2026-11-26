@@ -51,7 +51,7 @@ pub fn host_window(
     window
 }
 
-pub use render::egui_overlay::OverlayInput;
+pub use render::egui_overlay::{OverlayActions, OverlayInput};
 pub use types::{DialogResult, NoteData, ShapeInsertOptions, TrackNotes};
 
 /// UI 宿主 - 管理 上一代 渲染和 wgpu 音符渲染

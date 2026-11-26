@@ -646,8 +646,13 @@ impl NativeApp {
             // 直接跑生产 egui 外壳（标题栏 / 工具栏 / 左右栏 / 状态栏）。
             chrome::show_bands(ui, &model, &mut icons);
             // 菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏动作 → 生产 `Message`。
+            // 通道表与生产 Host 同源（`OverlayActions::take`），不再维护第二份清单。
             if let Some(root) = root.as_mut() {
-                let _ = root.apply_egui_chrome_actions(ui.ctx());
+                let actions = lumino_ui::host::OverlayActions::take(ui.ctx());
+                let applied = root.apply_egui_actions(actions, logical);
+                if applied > 0 {
+                    tracing::debug!("原生运行时: 已应用 {} 条 egui 动作", applied);
+                }
             }
 
             // 探针控件：验证输入仍能到达 egui。

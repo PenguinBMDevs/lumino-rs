@@ -35,7 +35,10 @@ use lumino_ui_egui::video_export_overlay::VideoOverlayAction;
 use crate::host::Host;
 
 /// 一帧内 egui 各通道产生的动作集合。
-pub(super) struct OverlayActions {
+///
+/// 生产 `Host` 与原生运行时（`lumino-ui-runtime`）共用这张表；
+/// 新增通道只需在 [`Self::take`] 里加一行。
+pub struct OverlayActions {
     pub menu: Option<usize>,
     pub toolbar: Option<ToolbarAction>,
     /// 仪表盘输入框失焦信号（独立于单槽工具栏动作，见 `DashboardBlur`）。
@@ -93,7 +96,7 @@ pub(super) struct OverlayActions {
 
 impl OverlayActions {
     /// 从 egui 内存取走本帧全部动作。
-    pub(super) fn take(ctx: &egui::Context) -> Self {
+    pub fn take(ctx: &egui::Context) -> Self {
         Self {
             menu: lumino_ui_egui::chrome::menu::take_action(ctx),
             toolbar: lumino_ui_egui::chrome::toolbar_popup::take_action(ctx),
