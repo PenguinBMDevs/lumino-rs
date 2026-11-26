@@ -19,7 +19,8 @@ fn test_accumulated_delta_two_drags_sum_up() {
     assert!(editor.has_pending_drag());
     assert_eq!(
         editor
-            .pending_drag_state
+            .transient
+            .pending_drag
             .as_ref()
             .expect("pending 应存在")
             .delta_tick,
@@ -27,7 +28,8 @@ fn test_accumulated_delta_two_drags_sum_up() {
     );
     assert_eq!(
         editor
-            .pending_drag_state
+            .transient
+            .pending_drag
             .as_ref()
             .expect("pending 应存在")
             .delta_key,
@@ -41,7 +43,8 @@ fn test_accumulated_delta_two_drags_sum_up() {
     // 累积 delta = (100+50, 5+3) = (150, 8)
     assert!(editor.has_pending_drag());
     let pending = editor
-        .pending_drag_state
+        .transient
+        .pending_drag
         .as_ref()
         .expect("累积后 pending 应存在");
     assert_eq!(pending.delta_tick, 150, "delta_tick 应累积");
@@ -107,7 +110,8 @@ fn test_accumulated_delta_three_drags_with_negative() {
     editor.handle_released();
 
     let pending = editor
-        .pending_drag_state
+        .transient
+        .pending_drag
         .as_ref()
         .expect("三次累积后 pending 应存在");
     assert_eq!(pending.delta_tick, -50, "100+50-200 = -50");

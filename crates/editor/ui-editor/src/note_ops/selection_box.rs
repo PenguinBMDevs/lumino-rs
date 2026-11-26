@@ -106,8 +106,8 @@ impl Editor {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let ghost = GhostState::capture(
             &self.editor_state.interaction.edit_state,
-            self.pending_drag_state.as_ref(),
-            self.pending_copy_drag_state.as_ref(),
+            self.transient.pending_drag.as_ref(),
+            self.transient.pending_copy.as_ref(),
         );
 
         // 缓存有效：非 ghost 直接取原始框；ghost 在缓存上叠加 delta（O(1)）
@@ -158,8 +158,8 @@ impl Editor {
         let selected = &self.editor_state.interaction.selected_notes;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.pending_drag_state;
-        let pending_copy = &self.pending_copy_drag_state;
+        let pending = &self.transient.pending_drag;
+        let pending_copy = &self.transient.pending_copy;
 
         // 逐音符 drag delta：pending 只对 pending.selected 里的音符叠加
         let (drag_dt, drag_dk) = match edit_state {

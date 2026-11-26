@@ -320,7 +320,7 @@ fn dynamic_overlays_keep_egui_skeleton() {
 
     // 协作远程光标画在骨架之上，不应让骨架消失。
     let mut remote = root();
-    remote.editor.remote_cursors.insert(
+    remote.editor.transient.remote_cursors.insert(
         "peer".to_owned(),
         (
             lumino_ui_core::geom::Point::new(10.0, 10.0),

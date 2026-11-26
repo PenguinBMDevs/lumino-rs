@@ -29,8 +29,8 @@ impl Editor {
     /// UI 层（渲染线程）判断是否走 ghost 增量路径。
     pub fn has_active_ghost_delta_state(&self) -> bool {
         has_active_ghost_delta(
-            &self.pending_drag_state,
-            &self.pending_copy_drag_state,
+            &self.transient.pending_drag,
+            &self.transient.pending_copy,
             &self.editor_state.interaction.edit_state,
         )
     }
@@ -39,7 +39,7 @@ impl Editor {
     ///
     /// 副本渲染走预览通道（原件保留在 GPU 段原位），UI 层据此分流。
     pub fn has_pending_copy_drag(&self) -> bool {
-        self.pending_copy_drag_state.is_some()
+        self.transient.pending_copy.is_some()
             || matches!(
                 self.editor_state.interaction.edit_state,
                 EditState::DraggingSelectionCopy { .. }
@@ -63,8 +63,8 @@ impl Editor {
         visible_indices: &[usize],
     ) -> Vec<(usize, (f32, u16, f32))> {
         let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.pending_drag_state;
-        let pending_copy = &self.pending_copy_drag_state;
+        let pending = &self.transient.pending_drag;
+        let pending_copy = &self.transient.pending_copy;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let data = &self.editor_state.data;
 
@@ -184,8 +184,8 @@ impl Editor {
     /// （仅视口内），UI 层构建 NoteInstance 发送 `PreviewInstances`。
     pub fn build_copy_ghost_positions(&self, visible_indices: &[usize]) -> Vec<(f32, u16, f32)> {
         let edit_state = &self.editor_state.interaction.edit_state;
-        let pending_copy = &self.pending_copy_drag_state;
-        let pending_drag = &self.pending_drag_state;
+        let pending_copy = &self.transient.pending_copy;
+        let pending_drag = &self.transient.pending_drag;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let data = &self.editor_state.data;
 

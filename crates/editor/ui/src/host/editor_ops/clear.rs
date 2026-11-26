@@ -28,7 +28,7 @@ impl Host {
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
 
         // 协作远端光标
-        root.editor.remote_cursors.clear();
+        root.editor.transient.remote_cursors.clear();
 
         // 失效所有 Canvas 缓存
 

@@ -200,8 +200,8 @@ impl Editor {
                     // 为避免 pending 索引在拉伸重排后失配 + 异步整轨写回覆盖拉伸变更，
                     // 此处先提交并等待落盘（drain），保留新值选区再拉伸。
                     // 纯拖动（无后续拉伸）仍只在空白处取消时落盘，满足幽灵语义。
-                    self.pending_copy_drag_state = None;
-                    if self.pending_drag_state.is_some() {
+                    self.transient.pending_copy = None;
+                    if self.transient.pending_drag.is_some() {
                         self.commit_pending_drag();
                         // 等待异步整轨写回完成，避免后台线程覆盖随后的拉伸变更。
                         self.drain_async_commit();
@@ -224,8 +224,8 @@ impl Editor {
                 crate::SelectionHitType::RightEdge => {
                     // 框选右边缘拉伸：同 LeftEdge，串行化 pending 后保留选区
                     // 未提交的复制（pending_copy）同样丢弃（见 LeftEdge 注释）
-                    self.pending_copy_drag_state = None;
-                    if self.pending_drag_state.is_some() {
+                    self.transient.pending_copy = None;
+                    if self.transient.pending_drag.is_some() {
                         self.commit_pending_drag();
                         // 同 LeftEdge：等待落盘消除竞态，保留新值选区供拉伸。
                         self.drain_async_commit();
@@ -311,18 +311,18 @@ impl Editor {
     /// 因此当两者并存时：先启动移动异步提交 → `drain_async_commit` 等待完成
     /// （document 回到一致状态）→ 再基于最新索引写入副本。
     fn flush_pending_drag(&mut self) {
-        if self.pending_drag_state.is_some() {
+        if self.transient.pending_drag.is_some() {
             self.commit_pending_drag();
             // 移动 + 复制并存：必须等移动异步提交完成（整轨替换），
             // 否则 replace_track_notes 会覆盖刚插入的副本
-            if self.pending_copy_drag_state.is_some() {
+            if self.transient.pending_copy.is_some() {
                 self.drain_async_commit();
             }
             self.selection_clear();
             // 取消框选：结束本地选择会话（远端清除高亮）。
             self.emit_local_selection_changed(false);
         }
-        if self.pending_copy_drag_state.is_some() {
+        if self.transient.pending_copy.is_some() {
             self.commit_pending_copy();
         }
     }

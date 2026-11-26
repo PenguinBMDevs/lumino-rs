@@ -15,7 +15,7 @@ fn test_selection_box_rects_only_copy_box() {
     // 复制松手：delta=600 → 副本位于 tick [600, 1080]，与原件 [0, 480] 完全分离
     let mut drag = DragState::from_indices([0], 1, 0, 60);
     drag.set_delta(600, 0);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     // 单框 = 副本框 [600, 1080]（最新件框选；原件不再框选）
     let rects = editor.get_selection_box_rects();
@@ -57,7 +57,7 @@ fn test_selection_box_hit_test_copy_box_only() {
     // 复制松手：delta=600 → 副本位于 tick [600, 1080]，与原件 [0, 480] 完全分离
     let mut drag = DragState::from_indices([0], 1, 0, 60);
     drag.set_delta(600, 0);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     let v = &editor.editor_state.view;
     let copy_center_y = v.key_to_y(60) + v.zoom_y / 2.0;
@@ -99,7 +99,7 @@ fn test_selection_box_hit_test_copy_box_only() {
     }
     // 内存未写入：pending 保留、document 未变（先 UI 后内存）
     assert!(
-        editor.pending_copy_drag_state.is_some(),
+        editor.transient.pending_copy.is_some(),
         "再次 Ctrl 拖动不应提交 pending 复制"
     );
     assert_eq!(

@@ -54,7 +54,7 @@ fn full_ctrl_drag_vertical_copy(
 
     // 松手：副本立即写入内存（松手即提交）
     editor.handle_released();
-    editor.pending_copy_drag_state.clone()
+    editor.transient.pending_copy.clone()
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn test_repro_ctrl_drag_vertical_copy_visible_after_release() {
 
     full_ctrl_drag_vertical_copy(&mut editor, 3);
     // 松手即提交后：pending 清空，副本是真实音符 → collect 走正常路径仍可见
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     let mut visible: Vec<(f32, u16, f32)> = Vec::new();
     editor.collect_visible_note_data(&mut visible, None, 0.0);
     let keys: Vec<u16> = visible.iter().map(|(_, k, _)| *k).collect();
@@ -155,7 +155,7 @@ fn test_repro_ctrl_drag_vertical_copy_visible_after_scroll() {
     editor.selection_insert(0);
 
     full_ctrl_drag_vertical_copy(&mut editor, 3);
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
 
     // 模拟滚动：垂直滚动 1 个 key 距离（副本 key 63 仍在视口内）
     editor.editor_state.view.scroll_y = editor.editor_state.view.zoom_y;

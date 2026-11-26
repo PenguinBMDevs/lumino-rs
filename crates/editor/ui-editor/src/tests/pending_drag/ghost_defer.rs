@@ -98,7 +98,8 @@ fn test_batch_drag_accumulated_ghost_then_cancel_applies_once() {
     editor.handle_released();
     assert_eq!(
         editor
-            .pending_drag_state
+            .transient
+            .pending_drag
             .as_ref()
             .expect("pending 应存在")
             .delta_tick,
@@ -126,5 +127,5 @@ fn test_batch_drag_accumulated_ghost_then_cancel_applies_once() {
     );
     editor.selection_clear();
     assert!(editor.get_selected_indices().is_empty(), "取消后选区应清空");
-    assert!(editor.pending_drag_state.is_none());
+    assert!(editor.transient.pending_drag.is_none());
 }

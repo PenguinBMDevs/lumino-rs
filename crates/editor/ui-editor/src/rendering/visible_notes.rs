@@ -60,8 +60,8 @@ impl Editor {
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.pending_drag_state;
-        let pending_copy = &self.pending_copy_drag_state;
+        let pending = &self.transient.pending_drag;
+        let pending_copy = &self.transient.pending_copy;
 
         // 渲染路径：仅在索引干净（键未过期且已构建）时复用，否则线性扫描。
         // 避免渲染帧触发 133ms 的全量重建——重建交给交互路径按需完成。

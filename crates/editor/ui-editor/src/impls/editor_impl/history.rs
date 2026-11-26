@@ -410,16 +410,16 @@ impl Editor {
         // 这一笔。否则历史面板会“偶尔没有移动步骤”，表现为时序竞态。
         const MAX_ROUNDS: usize = 8;
         for _ in 0..MAX_ROUNDS {
-            if self.pending_drag_state.is_none()
-                && self.pending_copy_drag_state.is_none()
+            if self.transient.pending_drag.is_none()
+                && self.transient.pending_copy.is_none()
                 && !self.has_pending_drag()
             {
                 break;
             }
-            if self.pending_drag_state.is_some() {
+            if self.transient.pending_drag.is_some() {
                 self.commit_pending_drag();
             }
-            if self.pending_copy_drag_state.is_some() {
+            if self.transient.pending_copy.is_some() {
                 self.commit_pending_copy();
             }
             if self.has_pending_drag() {

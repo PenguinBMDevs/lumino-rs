@@ -26,7 +26,9 @@ pub mod grid;
 pub mod history;
 pub mod note;
 mod playback_key_colors;
+mod transient;
 use playback_key_colors::PlaybackKeyColors;
+pub use transient::EditorTransient;
 pub mod recording;
 pub mod smooth_scroll;
 pub mod spatial_index;
@@ -139,8 +141,8 @@ pub struct Editor {
     /// 空间索引状态（音符索引、查询缓存等）
     pub spatial: SpatialIndexState,
 
-    /// 协作远端用户光标信息（用户ID -> (位置, 颜色, 用户名)）
-    pub remote_cursors: std::collections::HashMap<String, (Point, String, String)>,
+    /// 瞬时编辑状态（协作光标 / 待提交拖拽 / 待提交复制）。
+    pub transient: EditorTransient,
 
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
@@ -169,9 +171,6 @@ pub struct Editor {
     /// **累积模式**：再次拖动同一选区时，新 delta 会叠加到此字段的 delta 上。
     /// 渲染时 ghost 位置 = note + pending_drag_state.delta + drag_state.delta。
     ///
-    /// `None` 表示无待提交的拖动；`Some(drag_state)` 表示有待提交的累积偏移。
-    pub(crate) pending_drag_state: Option<lumino_editor_state::DragState>,
-
     /// 批量复制待提交状态（Ctrl+拖动 ghost 方案）
     ///
     /// `DraggingSelectionCopy` **松手即提交**：副本立即 `batch_insert_notes`
@@ -179,9 +178,6 @@ pub struct Editor {
     /// 本字段仅在复制拖动**过程中**（`DraggingSelectionCopy`）与提交失败
     /// 兜底（`commit_pending_copy` 内部）短暂存在；正常松手后即清空。
     ///
-    /// `None` 表示无待提交的复制；`Some(drag_state)` 表示有待写入的副本偏移。
-    pub(crate) pending_copy_drag_state: Option<lumino_editor_state::DragState>,
-
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,
 

@@ -108,7 +108,7 @@ impl Editor {
         // 飞行/幽灵期间（pending 存在）：显示位置 = 文档旧位置 + pending delta，
         // 框选必须按视觉（幽灵）位置命中，否则空白点击提交后立即新框选会基于旧文档错位。
         // 此时旁路空间索引（索引建在旧文档位置上），走幽灵感知的窗口扫描。
-        if self.pending_drag_state.is_some() {
+        if self.transient.pending_drag.is_some() {
             let set =
                 ghost_aware_window_collect(self, min_tick, max_tick, min_key, max_key, lookback);
             // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
@@ -228,7 +228,7 @@ fn query_rect_indices(
     out: &mut Vec<usize>,
 ) {
     // 幽灵期间旁路索引：索引建在旧文档位置上，幽灵移入/移出的音符会被漏检/误检
-    if editor.pending_drag_state.is_some() {
+    if editor.transient.pending_drag.is_some() {
         ghost_aware_query_rect(editor, t_min, t_max, k_min, k_max, out);
         return;
     }
@@ -421,7 +421,7 @@ fn marquee_hits_effective(
     min_key: u16,
     max_key: u16,
 ) -> bool {
-    if let Some(pending) = editor.pending_drag_state.as_ref()
+    if let Some(pending) = editor.transient.pending_drag.as_ref()
         && idx < pending.selected.len()
         && pending.selected[idx]
     {
@@ -455,7 +455,8 @@ fn ghost_aware_window_collect(
     lookback: u32,
 ) -> SelectionSet {
     let (dt, _) = editor
-        .pending_drag_state
+        .transient
+        .pending_drag
         .as_ref()
         .map(|p| (p.delta_tick as f32, p.delta_key))
         .unwrap_or((0.0, 0));
@@ -497,7 +498,8 @@ fn ghost_aware_query_rect(
     out: &mut Vec<usize>,
 ) {
     let (dt, _) = editor
-        .pending_drag_state
+        .transient
+        .pending_drag
         .as_ref()
         .map(|p| (p.delta_tick as f32, p.delta_key))
         .unwrap_or((0.0, 0));

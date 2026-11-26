@@ -194,8 +194,8 @@ impl Editor {
                         cur_dt,
                         cur_dk
                     );
-                    self.pending_drag_state = Some(fresh);
-                } else if let Some(mut pending) = self.pending_drag_state.take() {
+                    self.transient.pending_drag = Some(fresh);
+                } else if let Some(mut pending) = self.transient.pending_drag.take() {
                     pending.delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
                     pending.delta_key = pending.delta_key.saturating_add(drag_state.delta_key);
                     tracing::debug!(
@@ -203,14 +203,14 @@ impl Editor {
                         pending.delta_tick,
                         pending.delta_key
                     );
-                    self.pending_drag_state = Some(pending);
+                    self.transient.pending_drag = Some(pending);
                 } else {
                     tracing::debug!(
                         "Editor: 保存 pending 拖动 - delta=({}, {})",
                         drag_state.delta_tick,
                         drag_state.delta_key
                     );
-                    self.pending_drag_state = Some(drag_state);
+                    self.transient.pending_drag = Some(drag_state);
                 }
                 // 保留 selected_notes 不清空（pending 状态下仍显示框选）
                 // edit_state 切换到 Idle（std::mem::take 已处理）
@@ -232,7 +232,7 @@ impl Editor {
                 if drag_state.is_delta_zero() {
                     tracing::debug!("Editor: 复制拖动 delta 为零，取消复制");
                 } else {
-                    self.pending_copy_drag_state = Some(drag_state);
+                    self.transient.pending_copy = Some(drag_state);
                     self.commit_pending_copy();
                 }
                 // 不调用 mark_notes_changed（commit_pending_copy 内部已标记）

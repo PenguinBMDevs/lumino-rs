@@ -67,10 +67,10 @@ fn test_remote_cursor_update_and_remove() {
         Arc::from("#ff0000"),
         Arc::from("alice"),
     );
-    assert!(editor.remote_cursors.contains_key("user_1"));
+    assert!(editor.transient.remote_cursors.contains_key("user_1"));
 
     editor.remove_remote_cursor("user_1");
-    assert!(!editor.remote_cursors.contains_key("user_1"));
+    assert!(!editor.transient.remote_cursors.contains_key("user_1"));
 }
 
 /// 测试音频动作推入与取出

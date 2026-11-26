@@ -299,7 +299,7 @@ fn test_selection_inside_keeps_pending_drag_state() {
     // 设置 pending_drag_state（模拟之前拖动过且未提交）
     let mut pending = lumino_editor_state::DragState::from_single(0, 1, 0, 60);
     pending.set_delta(50, 2);
-    editor.pending_drag_state = Some(pending);
+    editor.transient.pending_drag = Some(pending);
 
     let pos = pos_inside_selection(&editor, 0);
     let snapped_tick = editor
@@ -321,7 +321,7 @@ fn test_selection_inside_keeps_pending_drag_state() {
     );
     // pending_drag_state 应保留（累积模式）
     assert!(
-        editor.pending_drag_state.is_some(),
+        editor.transient.pending_drag.is_some(),
         "累积模式下 pending_drag_state 应保留"
     );
 }

@@ -47,7 +47,7 @@ fn release_copy_drag(editor: &mut Editor, drag_state: DragState) {
 #[test]
 fn test_pending_copy_state_initial_is_none() {
     let editor = Editor::new();
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     assert!(!editor.has_pending_drag());
     assert!(!editor.is_editing());
 }
