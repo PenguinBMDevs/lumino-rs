@@ -23,7 +23,7 @@ impl Editor {
         }
 
         let current_track = self.editor_state.data.current_track;
-        let tracks_to_clean = self.collect_erase_targets(tick_start, tick_end, track_lo, track_hi);
+        let tracks_to_clean = collect_erase_targets(self, tick_start, tick_end, track_lo, track_hi);
 
         if tracks_to_clean.is_empty() {
             return 0;
@@ -35,7 +35,7 @@ impl Editor {
         // 精确记录受影响音轨（洋葱皮事件级增量，在 move 前捕获）
         let affected_tracks: std::collections::HashSet<usize> =
             tracks_to_clean.iter().copied().collect();
-        let deleted_count = self.apply_erase_internal(tick_start, tick_end, tracks_to_clean);
+        let deleted_count = apply_erase_internal(self, tick_start, tick_end, tracks_to_clean);
 
         if deleted_count == 0 {
             self.editor_state.data.discard_last_history();
@@ -58,59 +58,59 @@ impl Editor {
         );
         deleted_count
     }
+}
 
-    /// 执行擦除：从目标音轨中删除匹配的音符。
-    fn apply_erase_internal(
-        &mut self,
-        tick_start: f64,
-        tick_end: f64,
-        tracks_to_clean: Vec<usize>,
-    ) -> usize {
-        let mut deleted_count = 0usize;
-        for track_idx in tracks_to_clean {
-            // 2026-08 单一权威源：先从 document 收集命中索引，再区间归并删除
-            // （连续删除段合并为单条事件；逐音符事件会退化为 K 次 GPU 尾部搬移）
-            let indices: Vec<usize> = self
-                .editor_state
-                .data
-                .track_notes(track_idx)
-                .iter()
-                .enumerate()
-                .filter(|(_, note)| super::helpers::note_event_in_rect(note, tick_start, tick_end))
-                .map(|(i, _)| i)
-                .collect();
-            deleted_count += self
-                .editor_state
-                .data
-                .remove_notes_merged(track_idx, &indices);
-        }
-        deleted_count
+/// 执行擦除：从目标音轨中删除匹配的音符。
+fn apply_erase_internal(
+    editor: &mut Editor,
+    tick_start: f64,
+    tick_end: f64,
+    tracks_to_clean: Vec<usize>,
+) -> usize {
+    let mut deleted_count = 0usize;
+    for track_idx in tracks_to_clean {
+        // 2026-08 单一权威源：先从 document 收集命中索引，再区间归并删除
+        // （连续删除段合并为单条事件；逐音符事件会退化为 K 次 GPU 尾部搬移）
+        let indices: Vec<usize> = editor
+            .editor_state
+            .data
+            .track_notes(track_idx)
+            .iter()
+            .enumerate()
+            .filter(|(_, note)| super::helpers::note_event_in_rect(note, tick_start, tick_end))
+            .map(|(i, _)| i)
+            .collect();
+        deleted_count += editor
+            .editor_state
+            .data
+            .remove_notes_merged(track_idx, &indices);
     }
+    deleted_count
+}
 
-    /// 收集擦除范围内包含音符的音轨列表。
-    ///
-    /// 返回文档音轨索引列表（已由视觉位置映射）。
-    fn collect_erase_targets(
-        &self,
-        tick_start: f64,
-        tick_end: f64,
-        track_lo: usize,
-        track_hi: usize,
-    ) -> Vec<usize> {
-        let editor_data = &self.editor_state.data;
-        let mut tracks_to_clean: Vec<usize> = Vec::new();
-        for visual in track_lo..=track_hi {
-            // 视觉位置 → 文档音轨索引（拖动排序后二者不一致）
-            let doc_track = editor_data.document_track_at(visual);
-            // 2026-08 单一权威源：直接从 document 读取判断
-            let has_any = editor_data
-                .track_notes(doc_track)
-                .iter()
-                .any(|note| super::helpers::note_event_in_rect(note, tick_start, tick_end));
-            if has_any {
-                tracks_to_clean.push(doc_track);
-            }
+/// 收集擦除范围内包含音符的音轨列表。
+///
+/// 返回文档音轨索引列表（已由视觉位置映射）。
+fn collect_erase_targets(
+    editor: &Editor,
+    tick_start: f64,
+    tick_end: f64,
+    track_lo: usize,
+    track_hi: usize,
+) -> Vec<usize> {
+    let editor_data = &editor.editor_state.data;
+    let mut tracks_to_clean: Vec<usize> = Vec::new();
+    for visual in track_lo..=track_hi {
+        // 视觉位置 → 文档音轨索引（拖动排序后二者不一致）
+        let doc_track = editor_data.document_track_at(visual);
+        // 2026-08 单一权威源：直接从 document 读取判断
+        let has_any = editor_data
+            .track_notes(doc_track)
+            .iter()
+            .any(|note| super::helpers::note_event_in_rect(note, tick_start, tick_end));
+        if has_any {
+            tracks_to_clean.push(doc_track);
         }
-        tracks_to_clean
     }
+    tracks_to_clean
 }
