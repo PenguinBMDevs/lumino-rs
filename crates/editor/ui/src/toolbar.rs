@@ -20,7 +20,12 @@ mod tests_onion_skin;
 mod tests_overflow;
 pub mod types;
 mod update;
+mod update_custom_precision;
+mod update_dashboard;
 mod update_onion_skin;
+mod update_popovers;
+mod update_tools;
+mod update_transport;
 
 pub use event::{Event, FlipHorizontalMode, ShapeType, ToolPanelItem};
 pub use lumino_ui_core::button_descs::ButtonId;

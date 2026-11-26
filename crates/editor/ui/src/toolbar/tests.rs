@@ -588,3 +588,37 @@ fn test_arc_item_selects_curve_and_toggles_arc_mode() {
     toolbar.update(Event::ToolSelected(Tool::Pencil));
     assert!(!toolbar.arc_mode, "ToolSelected 应关闭圆弧模式");
 }
+
+/// 互斥浮层守卫：任意事件之后，窗口内浮层至多只有一个保持打开。
+///
+/// 守卫与各 Toggle 分支都可能改动这些 bool，这里用「连续切换」覆盖
+/// `dismiss_popovers` 与事件体两处写点的组合，防止再次出现两个下拉同时打开。
+#[test]
+fn test_at_most_one_popover_open() {
+    let mut toolbar = Toolbar::new();
+    let events = [
+        Event::ToggleOverflowMenu,
+        Event::ToggleBrushDropdown,
+        Event::ToggleShapeDropdown,
+        Event::ToggleOnionSkinMenu,
+        Event::ToggleThicknessPanel,
+        Event::ToolPanelItemSettingsRequested(ToolPanelItem::Text),
+        Event::ToolSelected(Tool::Pencil),
+        Event::ButtonHovered(None),
+    ];
+    for event in events {
+        toolbar.update(event);
+        let open = [
+            toolbar.overflow_menu_open,
+            toolbar.brush_dropdown_open,
+            toolbar.shape_dropdown_open,
+            toolbar.onion_skin_menu_open,
+            toolbar.thickness_panel_open,
+            toolbar.text_params_open,
+        ]
+        .into_iter()
+        .filter(|open| *open)
+        .count();
+        assert!(open <= 1, "同一时刻至多一个浮层，实际 {open}");
+    }
+}
