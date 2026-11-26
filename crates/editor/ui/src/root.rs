@@ -128,6 +128,23 @@ struct RootInitParams {
 }
 
 impl Root {
+    /// Runner 侧的命令入口：推送一条 Toast。
+    ///
+    /// Runner 不再直接 `root_mut().toast.push(...)`；所有 UI 侧写操作走命名方法，
+    /// 便于统一加脏标记 / 测试替身（T-23）。
+    pub fn push_toast(
+        &mut self,
+        level: crate::toast::ToastLevel,
+        message: impl Into<String>,
+    ) -> u64 {
+        self.toast.push(level, message)
+    }
+
+    /// Runner 侧的命令入口：把工程标记为已修改（自动保存恢复等场景）。
+    pub fn mark_project_modified(&mut self) {
+        self.editor.editor_state.data.modified = true;
+    }
+
     /// 内部构造函数（消除 new/new_progress/new_dialog 的重复代码）
     fn from_params(params: RootInitParams) -> Self {
         puffin::profile_scope!("root_from_params");

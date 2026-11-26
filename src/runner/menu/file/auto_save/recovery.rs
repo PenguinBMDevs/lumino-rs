@@ -138,7 +138,7 @@ impl RunnerInner {
         );
         {
             let ui = self.window_state.window.ui_mut();
-            ui.root_mut().editor.editor_state.data.modified = true;
+            ui.root_mut().mark_project_modified();
             ui.set_status_message(Some(tr!("已恢复自动保存，请另存为").to_string()));
         }
 

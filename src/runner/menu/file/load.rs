@@ -357,7 +357,7 @@ impl RunnerInner {
                 .import_midi_to_editor(ui, parsed);
 
             if after_eot > 0 {
-                ui.root_mut().toast.push(
+                ui.root_mut().push_toast(
                     lumino_ui::toast::ToastLevel::Warning,
                     trf!(
                         "导入完成：{n} 条轨在 End-of-Track 之后仍有事件（兼容模式已保留数据，导出前可裁剪）",
