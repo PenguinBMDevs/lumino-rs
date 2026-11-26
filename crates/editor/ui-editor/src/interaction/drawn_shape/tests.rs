@@ -632,4 +632,4 @@ fn test_switch_to_mouse_tool_keeps_pending_shape_without_notes() {
     );
 }
 
-mod tests_part2;
+mod part2;

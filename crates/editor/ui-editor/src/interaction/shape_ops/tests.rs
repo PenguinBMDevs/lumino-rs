@@ -620,4 +620,4 @@ fn test_create_shape_generates_notes_and_registers() {
     );
 }
 
-mod tests_part2;
+mod part2;

@@ -625,4 +625,4 @@ fn test_drawing_params_validate_and_roundtrip() {
     assert!(bad_roles.validate().is_err(), "roles 长度不匹配必须被拒绝");
 }
 
-mod tests_part2;
+mod part2;

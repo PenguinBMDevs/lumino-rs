@@ -629,4 +629,4 @@ fn test_text_tool_confirm_rejected_on_conductor_track() {
     assert_eq!(created, 0, "Conductor 音轨不应写入任何音符");
 }
 
-mod tests_part2;
+mod part2;
