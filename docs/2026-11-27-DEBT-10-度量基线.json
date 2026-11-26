@@ -1,46 +1,16 @@
 {
-  "files_total": 2263,
-  "lines_total": 416658,
+  "files_total": 2254,
+  "lines_total": 416714,
   "files_over_600": [
-    {
-      "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests.rs",
-      "lines": 1370,
-      "test": true
-    },
     {
       "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
       "lines": 1018,
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/shape_ops/tests.rs",
-      "lines": 986,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/text_tool/tests.rs",
-      "lines": 963,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
-      "lines": 953,
-      "test": true
-    },
-    {
-      "path": "crates/core/core/src/shape/model/tests.rs",
-      "lines": 923,
-      "test": true
-    },
-    {
       "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
       "lines": 898,
       "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/shape_compose/tests/pending.rs",
-      "lines": 892,
-      "test": true
     },
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -83,6 +53,11 @@
       "test": true
     },
     {
+      "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests/tests_part2.rs",
+      "lines": 740,
+      "test": true
+    },
+    {
       "path": "crates/editor/ui-core/src/state/video_clip_state.rs",
       "lines": 716,
       "test": false
@@ -103,9 +78,24 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests.rs",
+      "lines": 636,
+      "test": true
+    },
+    {
       "path": "crates/editor/ui-egui/src/chrome/sidebar.rs",
       "lines": 636,
       "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/interaction/text_tool/tests.rs",
+      "lines": 633,
+      "test": true
+    },
+    {
+      "path": "crates/core/core/src/shape/model/tests.rs",
+      "lines": 629,
+      "test": true
     },
     {
       "path": "crates/editor/editor-state/src/editor_state/brush_tool/tests.rs",
@@ -128,7 +118,22 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
+      "lines": 624,
+      "test": true
+    },
+    {
+      "path": "crates/editor/ui-editor/src/interaction/shape_ops/tests.rs",
+      "lines": 624,
+      "test": true
+    },
+    {
       "path": "crates/editor/ui-editor/src/interaction/shape_edit_ui/tests.rs",
+      "lines": 621,
+      "test": true
+    },
+    {
+      "path": "crates/editor/ui-editor/src/interaction/shape_compose/tests/pending.rs",
       "lines": 621,
       "test": true
     },
@@ -153,38 +158,7 @@
       "test": false
     }
   ],
-  "test_files_over_800": [
-    {
-      "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests.rs",
-      "lines": 1370,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/shape_ops/tests.rs",
-      "lines": 986,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/text_tool/tests.rs",
-      "lines": 963,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
-      "lines": 953,
-      "test": true
-    },
-    {
-      "path": "crates/core/core/src/shape/model/tests.rs",
-      "lines": 923,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/shape_compose/tests/pending.rs",
-      "lines": 892,
-      "test": true
-    }
-  ],
+  "test_files_over_800": [],
   "production_files_over_600": 17,
   "functions_over_100": [
     {
@@ -1532,9 +1506,9 @@
       "lines": 117
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
+      "path": "crates/editor/ui/src/root/view/egui_chrome/tests/tests_part2.rs",
       "name": "file_menu_recent_submenu_tracks_recent_files",
-      "line": 678,
+      "line": 60,
       "lines": 117
     },
     {
