@@ -47,7 +47,6 @@ pub(super) struct TtfFontRenderer {
     cache: HashMap<char, GlyphCacheEntry>,
 }
 
-mod blend;
 mod renderer;
 
 #[cfg(test)]

@@ -21,9 +21,7 @@ pub use lumino_midi_loader::ParsedMidi;
 
 mod collab;
 mod crash_log;
-mod file;
 mod lgs_reconnect;
-mod midi;
 mod pending_close;
 mod persist;
 mod reconnect;
