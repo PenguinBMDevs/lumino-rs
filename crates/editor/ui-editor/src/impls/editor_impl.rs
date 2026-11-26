@@ -58,7 +58,7 @@ impl Editor {
                 baked_pending: std::collections::HashMap::new(),
                 selected_bounds: Cell::new(None),
                 arrange_selection_cache:
-                    crate::arrangement_ops::selection_cache::new_arrange_selection_cache(),
+                    crate::arrangement_ops::selection_cache::ArrangeSelectionCache::default(),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
                 collab_batch_depth: 0,
                 #[cfg(test)]

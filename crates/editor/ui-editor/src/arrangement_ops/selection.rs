@@ -70,7 +70,9 @@ impl Editor {
     /// `compute_ghost_notes` 只在「正在拖动已有选区」（`move_drag.is_some()`）
     /// 时才读它——其余帧的扫描产出即扔。
     pub fn arrangement_selected_notes(&self) -> std::rc::Rc<[(f64, f64, usize, u8)]> {
-        self.arrangement_selection_hits().flat()
+        self.arrange_selection_cache
+            .hits(&self.editor_state.data)
+            .flat()
     }
 
     /// 解析**当前视图**的选中音符，返回视图无关快照（导出 / 闸门 / 菜单可用性共用）。
@@ -132,7 +134,11 @@ impl Editor {
         match view {
             // 走带优先：命中即真，避免无谓的回退扫描
             EditView::Arrangement => {
-                if self.arrangement_selection_hits().is_empty() {
+                if self
+                    .arrange_selection_cache
+                    .hits(&self.editor_state.data)
+                    .is_empty()
+                {
                     !self.collect_roll_selected_notes().is_empty()
                 } else {
                     true
@@ -140,7 +146,10 @@ impl Editor {
             }
             EditView::PianoRoll => {
                 if self.collect_roll_selected_notes().is_empty() {
-                    !self.arrangement_selection_hits().is_empty()
+                    !self
+                        .arrange_selection_cache
+                        .hits(&self.editor_state.data)
+                        .is_empty()
                 } else {
                     true
                 }
@@ -152,7 +161,10 @@ impl Editor {
     ///
     /// 2026-09 性能修复：改走 `selection_cache`，键命中时零扫描。
     fn collect_arrangement_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
-        self.arrangement_selection_hits().by_track().to_vec()
+        self.arrange_selection_cache
+            .hits(&self.editor_state.data)
+            .by_track()
+            .to_vec()
     }
 
     /// 卷帘选区命中的音符（单轨，索引位图）
