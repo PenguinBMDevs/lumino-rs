@@ -26,7 +26,13 @@ FILE_LIMIT = 600
 TEST_FILE_LIMIT = 800
 FUNCTION_LIMIT = 100
 
-GOD_OBJECT_RE = re.compile(r"^impl\s+([A-Z][A-Za-z0-9_]*)\s*\{", re.MULTILINE)
+GOD_OBJECT_RE = re.compile(
+    r"^\s*impl(?:<[^>]*>)?\s+([A-Z][A-Za-z0-9_]*)(?:<[^>]*>)?\b.*\{", re.MULTILINE
+)
+FN_METHOD_RE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:default\s+)?(?:const\s+)?(?:async\s+)?"
+    r"(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+[A-Za-z0-9_]+\s*[(<]"
+)
 STRUCT_RE = re.compile(r"^pub(?:\([^)]*\))?\s+struct\s+([A-Z][A-Za-z0-9_]*)\s*\{", re.MULTILINE)
 FN_RE = re.compile(
     r"^(?P<indent>\s*)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(?P<name>[A-Za-z0-9_]+)"
@@ -46,15 +52,17 @@ def count_lines(path: Path) -> int:
 
 
 def is_test_file(path: Path, text: str) -> bool:
-    """仅按路径判定测试文件。
+    """按路径判定测试文件。
 
     不能用「文件里出现 `#[cfg(test)]`」——大量生产文件底部挂着
     `#[cfg(test)] mod tests;`，会把它们错判成测试文件。
+    也不能只认 `tests.rs` / `/tests/`：仓库里还有 `*_tests.rs`、
+    `tests_*.rs`、`tests/xxx.rs` 三套命名，漏判会让生产文件数虚高。
     """
     del text  # 保留参数，调用方语义不变
     name = path.name
     posix = path.as_posix()
-    return name.endswith("tests.rs") or "/tests/" in posix
+    return "test" in name or "/tests/" in posix
 
 
 def scan_functions(text: str):
@@ -104,7 +112,12 @@ def scan_functions(text: str):
 
 
 def impl_method_counts(text: str):
-    """统计 `impl Type {` 块内的方法数：按花括号配平切块。"""
+    """统计 `impl Type {` 块内的方法数：按花括号配平切块。
+
+    `FN_METHOD_RE` 覆盖 `pub(super)` / `pub(in …)` / `async` / `const` / `unsafe` /
+    `extern "C"` 等修饰——只认 `fn ` / `pub fn ` / `pub(crate) fn ` 会漏掉
+    `Editor` 约 100 个方法，周报会误报「方法数下降」。
+    """
     counts = {}
     lines = text.split("\n")
     i = 0
@@ -118,10 +131,7 @@ def impl_method_counts(text: str):
         j = i + 1
         methods = 0
         while j < len(lines) and depth > 0:
-            stripped = lines[j].strip()
-            if stripped.startswith("fn ") or stripped.startswith("pub fn ") or stripped.startswith(
-                "pub(crate) fn "
-            ):
+            if FN_METHOD_RE.match(lines[j]):
                 methods += 1
             depth += lines[j].count("{") - lines[j].count("}")
             j += 1
@@ -165,7 +175,7 @@ def collect(root: Path, feature_keywords):
         files.append({"path": rel, "lines": lines, "test": test})
 
         funcs.extend(
-            {"path": rel, "name": name, "line": line, "lines": size}
+            {"path": rel, "name": name, "line": line, "lines": size, "test": test}
             for name, line, size in scan_functions(text)
         )
 
@@ -205,10 +215,15 @@ def summary(data):
         ),
         "production_files_over_600": len([f for f in prod if f["lines"] > FILE_LIMIT]),
         "functions_over_100": sorted(
-            [f for f in funcs if f["lines"] > FUNCTION_LIMIT], key=lambda f: -f["lines"]
+            [f for f in funcs if f["lines"] > FUNCTION_LIMIT and not f["test"]],
+            key=lambda f: -f["lines"],
         ),
         "functions_over_200": sorted(
-            [f for f in funcs if f["lines"] > 200], key=lambda f: -f["lines"]
+            [f for f in funcs if f["lines"] > 200 and not f["test"]],
+            key=lambda f: -f["lines"],
+        ),
+        "test_functions_over_100": len(
+            [f for f in funcs if f["lines"] > FUNCTION_LIMIT and f["test"]]
         ),
         "god_objects": sorted(data["impl_methods"].items(), key=lambda kv: -kv[1])[:20],
         "wide_structs": sorted(data["struct_fields"].items(), key=lambda kv: -kv[1])[:20],
