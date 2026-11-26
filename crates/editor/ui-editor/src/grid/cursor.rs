@@ -11,6 +11,18 @@ pub fn handle(
     bounds: Rectangle,
     cursor: mouse::Cursor,
 ) -> mouse::Interaction {
+    let local = cursor
+        .position()
+        .map(|pos| lumino_ui_core::geom::Point::new(pos.x - bounds.x, pos.y - bounds.y));
+    handle_at(editor, state, local)
+}
+
+/// 用局部坐标做命中判定；纵向卷帘等没有 egui 光标的路径直接复用。
+pub(crate) fn handle_at(
+    editor: &Editor,
+    state: &GridInteractionState,
+    local: Option<lumino_ui_core::geom::Point>,
+) -> mouse::Interaction {
     puffin::profile_function!();
 
     let in_grid = state.position.is_some_and(|pos| {
@@ -29,18 +41,15 @@ pub fn handle(
                 mouse::Interaction::ResizingHorizontally
             }
             I2mInteraction::None => {
-                if let Some(pos) = cursor.position() {
-                    let local_pos =
-                        lumino_ui_core::geom::Point::new(pos.x - bounds.x, pos.y - bounds.y);
-                    if let Some(hit) = editor.hit_test_i2m_region(local_pos) {
-                        return match hit {
-                            crate::SelectionHitType::LeftEdge
-                            | crate::SelectionHitType::RightEdge => {
-                                mouse::Interaction::ResizingHorizontally
-                            }
-                            crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
-                        };
-                    }
+                if let Some(local_pos) = local
+                    && let Some(hit) = editor.hit_test_i2m_region(local_pos)
+                {
+                    return match hit {
+                        crate::SelectionHitType::LeftEdge | crate::SelectionHitType::RightEdge => {
+                            mouse::Interaction::ResizingHorizontally
+                        }
+                        crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
+                    };
                 }
                 if in_grid {
                     mouse::Interaction::Crosshair
@@ -68,7 +77,7 @@ pub fn handle(
         };
     }
 
-    if editor.current_tool() == Tool::Eraser {
+    if matches!(editor.current_tool(), Tool::Eraser | Tool::DrawEraser) {
         return if in_grid {
             mouse::Interaction::Crosshair
         } else {
@@ -121,14 +130,10 @@ pub fn handle(
                 if editor.is_shape_editing() {
                     return mouse::Interaction::Grabbing;
                 }
-                if let Some(cursor_pos) = cursor.position() {
-                    let local_pos = lumino_ui_core::geom::Point::new(
-                        cursor_pos.x - bounds.x,
-                        cursor_pos.y - bounds.y,
-                    );
-                    if let Some(interaction) = editor.shape_handle_interaction(local_pos) {
-                        return interaction;
-                    }
+                if let Some(local_pos) = local
+                    && let Some(interaction) = editor.shape_handle_interaction(local_pos)
+                {
+                    return interaction;
                 }
             }
 
@@ -164,20 +169,15 @@ pub fn handle(
             // 先检查是否悬停在选择框上
             {
                 puffin::profile_scope!("selection_box_hit_test");
-                if let Some(cursor_pos) = cursor.position() {
-                    let local_pos = lumino_ui_core::geom::Point::new(
-                        cursor_pos.x - bounds.x,
-                        cursor_pos.y - bounds.y,
-                    );
-                    if let Some(sel_hit) = editor.hit_test_selection_box(local_pos) {
-                        return match sel_hit {
-                            crate::SelectionHitType::LeftEdge
-                            | crate::SelectionHitType::RightEdge => {
-                                mouse::Interaction::ResizingHorizontally
-                            }
-                            crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
-                        };
-                    }
+                if let Some(local_pos) = local
+                    && let Some(sel_hit) = editor.hit_test_selection_box(local_pos)
+                {
+                    return match sel_hit {
+                        crate::SelectionHitType::LeftEdge | crate::SelectionHitType::RightEdge => {
+                            mouse::Interaction::ResizingHorizontally
+                        }
+                        crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
+                    };
                 }
             }
 
