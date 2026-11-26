@@ -576,7 +576,7 @@ impl Toolbar {
             }
             Event::CloseTextParamsPanel => {
                 self.text_params_open = false;
-                tracing::debug!("???: ????????");
+                tracing::debug!("工具栏: 关闭文字参数面板");
             }
             #[cfg(lumino_shape_drawer_entry)]
             Event::OpenShapeDrawerDialog => {
