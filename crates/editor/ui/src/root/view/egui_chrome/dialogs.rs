@@ -40,7 +40,7 @@ mod support;
 mod video_export_overlay;
 
 #[cfg(test)]
-mod menu_binding_tests;
+mod tests;
 
 impl Root {
     /// 已支持整窗接管的对话框（保存确认 / 设置各页 …）。

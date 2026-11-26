@@ -620,4 +620,36 @@ fn legacy_popups_no_longer_disable_the_overlay() {
     assert!(panel.panel.is_none(), "默认没有打开的面板");
 }
 
+mod about;
+mod audio_export;
+mod batch_edit;
+mod brush_settings;
+mod cloud_browser;
+mod cloud_connect;
+mod collaboration;
+mod custom_precision;
+mod dialog_draw045;
+mod draw_settings;
+mod export_progress;
+mod help;
+mod history;
+mod key_colors;
+mod load_confirm;
+mod memory_monitor;
+mod menu;
+mod mixer;
+mod project_settings;
+mod recover_track;
+mod right_sidebar;
+mod save_confirm;
+mod settings_audio;
+mod settings_cloud;
+mod settings_page;
+mod shape_canvas;
+mod shape_drawer;
+mod sidebar_rename_blur;
+mod speed_change;
 mod tests_part2;
+mod tool_panel;
+mod video_export;
+mod video_export_overlay;
