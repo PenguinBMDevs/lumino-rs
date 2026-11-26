@@ -342,36 +342,8 @@ impl Editor {
             by_track.entry(sn.track).or_default().push(*sn);
         }
         for (track, group) in by_track {
-            self.remove_shape_notes_on_track(track, &group);
+            remove_shape_notes_on_track(self, track, &group);
         }
-    }
-
-    fn remove_shape_notes_on_track(&mut self, track: usize, notes: &[ShapeNote]) {
-        let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        let mut indices: Vec<usize> = Vec::with_capacity(notes.len());
-        for sn in notes {
-            // 形状音符力度随 `ShapeNote`，通道固定 0；指纹按同口径重建
-            let ev = note_to_event(
-                Note::new(sn.tick, sn.key, sn.length)
-                    .with_velocity(sn.velocity)
-                    .with_channel(sn.channel),
-            );
-            if let Some(idx) = self
-                .editor_state
-                .data
-                .track_notes(track)
-                .position_of_unused(&ev, &used)
-            {
-                used.insert(idx);
-                indices.push(idx);
-            }
-        }
-        indices.sort_unstable_by(|a, b| b.cmp(a));
-        for idx in indices {
-            let _ = self.editor_state.data.remove_note(track, idx);
-        }
-        let removed: Vec<ShapeNote> = notes.to_vec();
-        self.broadcast_shape_sync(track, &removed, false);
     }
 
     /// 形状音符的协作对账（改变音符数量 → 按值广播「删 / 加」）
@@ -400,6 +372,34 @@ mod funnel_notes;
 mod helpers;
 mod interior_fill;
 mod text_notes;
+
+fn remove_shape_notes_on_track(editor: &mut Editor, track: usize, notes: &[ShapeNote]) {
+    let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut indices: Vec<usize> = Vec::with_capacity(notes.len());
+    for sn in notes {
+        // 形状音符力度随 `ShapeNote`，通道固定 0；指纹按同口径重建
+        let ev = note_to_event(
+            Note::new(sn.tick, sn.key, sn.length)
+                .with_velocity(sn.velocity)
+                .with_channel(sn.channel),
+        );
+        if let Some(idx) = editor
+            .editor_state
+            .data
+            .track_notes(track)
+            .position_of_unused(&ev, &used)
+        {
+            used.insert(idx);
+            indices.push(idx);
+        }
+    }
+    indices.sort_unstable_by(|a, b| b.cmp(a));
+    for idx in indices {
+        let _ = editor.editor_state.data.remove_note(track, idx);
+    }
+    let removed: Vec<ShapeNote> = notes.to_vec();
+    editor.broadcast_shape_sync(track, &removed, false);
+}
 
 #[cfg(test)]
 mod tests;

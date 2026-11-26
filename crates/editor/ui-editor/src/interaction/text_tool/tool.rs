@@ -235,7 +235,7 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
-        let model = self.build_text_shape_model(&tt, track, snap);
+        let model = build_text_shape_model(self, &tt, track, snap);
 
         let mut create_ops = Vec::with_capacity(notes.len());
         for &(tick, key, len) in &notes {
@@ -328,40 +328,40 @@ impl Editor {
             scale.px_per_key,
         ))
     }
+}
 
-    /// 由文本框几何与参数构造新的文字形状模型（Bake 时登记）
-    fn build_text_shape_model(
-        &self,
-        tt: &lumino_editor_state::text_tool::TextToolState,
-        track: usize,
-        snap: f32,
-    ) -> ShapeModel {
-        // 视图比例随形状冻结：重烘焙必须复现制字时的屏幕格比例
-        let k = self.live_arc_k() as f32;
-        let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, k);
-        model.track = track as u16;
-        model.kind = ShapeKind::Custom;
-        let (tick_lo, tick_hi) = tt.normalized_ticks();
-        let (key_lo, key_hi) = tt.normalized_keys();
-        model.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(
-            tick_lo,
-            key_lo as f32,
-            tick_hi,
-            key_hi as f32,
-        ));
-        model
-            .ops
-            .retain(|op| !matches!(op, ShapeOp::Text(_) | ShapeOp::TextV2(_)));
-        model.ops.push(ShapeOp::TextV2(TextOpV2 {
-            text: tt.text.clone(),
-            params: tt.params.clone(),
-            layout: tt.layout_mode,
-            snap,
-            merged: tt.mode.is_merged(),
-            vertical: self.editor_state.is_vertical_roll,
-            k,
-        }));
-        model.name = tt.text.chars().take(32).collect();
-        model
-    }
+/// 由文本框几何与参数构造新的文字形状模型（Bake 时登记）
+fn build_text_shape_model(
+    editor: &Editor,
+    tt: &lumino_editor_state::text_tool::TextToolState,
+    track: usize,
+    snap: f32,
+) -> ShapeModel {
+    // 视图比例随形状冻结：重烘焙必须复现制字时的屏幕格比例
+    let k = editor.live_arc_k() as f32;
+    let mut model = ShapeModel::new(0, track as u16, ShapeKind::Custom, k);
+    model.track = track as u16;
+    model.kind = ShapeKind::Custom;
+    let (tick_lo, tick_hi) = tt.normalized_ticks();
+    let (key_lo, key_hi) = tt.normalized_keys();
+    model.geometry = ShapeGeometry::from_rect(ShapeRect::normalized(
+        tick_lo,
+        key_lo as f32,
+        tick_hi,
+        key_hi as f32,
+    ));
+    model
+        .ops
+        .retain(|op| !matches!(op, ShapeOp::Text(_) | ShapeOp::TextV2(_)));
+    model.ops.push(ShapeOp::TextV2(TextOpV2 {
+        text: tt.text.clone(),
+        params: tt.params.clone(),
+        layout: tt.layout_mode,
+        snap,
+        merged: tt.mode.is_merged(),
+        vertical: editor.editor_state.is_vertical_roll,
+        k,
+    }));
+    model.name = tt.text.chars().take(32).collect();
+    model
 }

@@ -72,7 +72,7 @@ impl Editor {
         let Some(state) = self.shape_tools.slice_cut else {
             return false;
         };
-        let point = self.constrain_end(state.from, self.slice_logical(pos, shift), shift);
+        let point = constrain_end(self, state.from, self.slice_logical(pos, shift), shift);
         let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
@@ -108,31 +108,31 @@ impl Editor {
             self.pos_to_raw_key(pos).clamp(0.0, 255.0),
         )
     }
+}
 
-    /// 方向约束：把拖拽向量吸附到 0°/45°/90°（屏幕空间）；Shift 关闭
-    ///
-    /// 网格吸附会把竖线端点拉到最近的 beat，导致切线变斜；切割要的是
-    /// 可预期的方向，因此这里只约束角度，位置完全跟随鼠标。
-    fn constrain_end(&self, start: (f32, f32), end: (f32, f32), shift: bool) -> (f32, f32) {
-        if shift {
-            return end;
-        }
-        let view = &self.editor_state.view;
-        let dx = ((end.0 - start.0) * view.zoom_x).abs();
-        let dy = ((end.1 - start.1) * view.zoom_y).abs();
-        if dx <= 1.0 && dy <= 1.0 {
-            return end;
-        }
-        // tan(22.5°)：落在 ±22.5° 内视为该轴方向
-        if dy <= dx * 0.4142 {
-            (end.0, start.1)
-        } else if dx <= dy * 0.4142 {
-            (start.0, end.1)
-        } else {
-            let dkey = (dx / view.zoom_y).max(0.0);
-            let sign = if end.1 >= start.1 { 1.0 } else { -1.0 };
-            (end.0, (start.1 + dkey * sign).clamp(0.0, 255.0))
-        }
+/// 方向约束：把拖拽向量吸附到 0°/45°/90°（屏幕空间）；Shift 关闭
+///
+/// 网格吸附会把竖线端点拉到最近的 beat，导致切线变斜；切割要的是
+/// 可预期的方向，因此这里只约束角度，位置完全跟随鼠标。
+fn constrain_end(editor: &Editor, start: (f32, f32), end: (f32, f32), shift: bool) -> (f32, f32) {
+    if shift {
+        return end;
+    }
+    let view = &editor.editor_state.view;
+    let dx = ((end.0 - start.0) * view.zoom_x).abs();
+    let dy = ((end.1 - start.1) * view.zoom_y).abs();
+    if dx <= 1.0 && dy <= 1.0 {
+        return end;
+    }
+    // tan(22.5°)：落在 ±22.5° 内视为该轴方向
+    if dy <= dx * 0.4142 {
+        (end.0, start.1)
+    } else if dx <= dy * 0.4142 {
+        (start.0, end.1)
+    } else {
+        let dkey = (dx / view.zoom_y).max(0.0);
+        let sign = if end.1 >= start.1 { 1.0 } else { -1.0 };
+        (end.0, (start.1 + dkey * sign).clamp(0.0, 255.0))
     }
 }
 
