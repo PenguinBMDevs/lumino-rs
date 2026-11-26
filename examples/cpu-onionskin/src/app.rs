@@ -15,7 +15,7 @@ mod frame;
 mod handler;
 mod present_bridge;
 #[cfg(test)]
-mod scroll_tests;
+mod tests;
 mod window;
 
 use std::{

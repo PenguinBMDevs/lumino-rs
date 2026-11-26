@@ -392,8 +392,4 @@ pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
 }
 
 #[cfg(test)]
-#[path = "density/tests.rs"]
 mod tests;
-
-#[cfg(test)]
-mod tests_grow;

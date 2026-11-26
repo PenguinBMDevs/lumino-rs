@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use lumino_midi_loader::{MidiDocument, NoteEvent};
 
-use super::canvas::shift_canvas_pixels;
+use super::super::canvas::shift_canvas_pixels;
 use crate::{
     camera::Camera,
     model::TrackIndex,

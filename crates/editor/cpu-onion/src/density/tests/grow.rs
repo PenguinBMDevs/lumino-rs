@@ -2,7 +2,7 @@
 
 use lumino_midi_model::{MidiDocument, NoteEvent};
 
-use super::DensityPyramid;
+use super::super::DensityPyramid;
 use crate::TrackIndex;
 
 fn sample_document() -> MidiDocument {
@@ -14,7 +14,7 @@ fn sample_document() -> MidiDocument {
 #[test]
 fn extreme_out_of_range_coarsens_instead_of_rebuilding() {
     let mut edited = sample_document();
-    let tick = (super::coverage::MAX_COVERAGE_CELLS / 128 * 8) as u32 + 5000;
+    let tick = (super::super::coverage::MAX_COVERAGE_CELLS / 128 * 8) as u32 + 5000;
     let note = NoteEvent::new(tick, tick + 100, 60, 100, 0);
     edited.insert_note(1, note);
     let index = TrackIndex::build(&edited);

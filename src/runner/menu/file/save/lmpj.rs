@@ -263,5 +263,4 @@ impl RunnerInner {
 }
 
 #[cfg(test)]
-#[path = "lmpj_tests.rs"]
 mod tests;

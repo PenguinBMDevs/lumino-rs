@@ -140,8 +140,8 @@ impl MidiDocEventStream {
 }
 
 #[cfg(test)]
-#[path = "event_stream/tests_parity.rs"]
-mod tests_parity;
+#[path = "event_stream/tests/parity.rs"]
+mod parity;
 
 #[cfg(test)]
 mod tests {
