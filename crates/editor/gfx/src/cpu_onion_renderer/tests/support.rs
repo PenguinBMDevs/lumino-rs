@@ -5,7 +5,7 @@
 
 use crate::constants::rendering::DEPTH_FORMAT;
 
-use super::{CpuOnionFrame, CpuOnionRenderer};
+use super::super::{CpuOnionFrame, CpuOnionRenderer};
 
 /// 创建**一次性**测试设备（实例 + 设备 + 队列），随绑定生命周期结束而释放。
 ///

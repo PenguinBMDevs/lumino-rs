@@ -19,7 +19,7 @@
 //! 若第 1 条将来变红（`prepare_direct` 开始跑 cull），说明上游分支已改，
 //! 应同步复核 `render_pass.rs` 的分支选择，而不是删掉本测试。
 
-use super::NoteRenderer;
+use super::super::NoteRenderer;
 use crate::note_renderer::types::CameraUniform;
 use crate::{GpuEpoch, NoteInstance};
 

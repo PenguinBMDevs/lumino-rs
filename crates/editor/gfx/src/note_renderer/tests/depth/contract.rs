@@ -165,15 +165,15 @@ fn test_region_values_are_positive_normal_floats() {
 #[test]
 fn test_shader_sources_share_depth_contract() {
     const SOURCES: [(&str, &str); 4] = [
-        ("note", include_str!("../../shaders/note.wgsl")),
+        ("note", include_str!("../../../shaders/note.wgsl")),
         (
             "note_vertical",
-            include_str!("../../shaders/note_vertical.wgsl"),
+            include_str!("../../../shaders/note_vertical.wgsl"),
         ),
-        ("onion_note", include_str!("../../shaders/onion_note.wgsl")),
+        ("onion_note", include_str!("../../../shaders/onion_note.wgsl")),
         (
             "onion_note_vertical",
-            include_str!("../../shaders/onion_note_vertical.wgsl"),
+            include_str!("../../../shaders/onion_note_vertical.wgsl"),
         ),
     ];
     const CONTRACT: [&str; 5] = [

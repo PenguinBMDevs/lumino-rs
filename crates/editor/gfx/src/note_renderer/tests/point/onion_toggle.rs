@@ -197,10 +197,10 @@ fn test_cull_path_drops_onion_when_disabled() {
 #[test]
 fn test_cull_shaders_carry_track_gate() {
     const CULLS: [(&str, &str); 2] = [
-        ("cull", include_str!("../../shaders/cull.wgsl")),
+        ("cull", include_str!("../../../shaders/cull.wgsl")),
         (
             "cull_vertical",
-            include_str!("../../shaders/cull_vertical.wgsl"),
+            include_str!("../../../shaders/cull_vertical.wgsl"),
         ),
     ];
     for (label, source) in CULLS {
@@ -231,7 +231,7 @@ fn test_cull_shaders_carry_track_gate() {
     }
 
     // 判据必须与 VS 同口径，否则「可见索引里留下的」与「真正画出的」会错位
-    let vs = include_str!("../../shaders/onion_note.wgsl");
+    let vs = include_str!("../../../shaders/onion_note.wgsl");
     assert!(
         vs.contains("view_state.onion_visible != 0u"),
         "onion_note.wgsl 缺少洋葱皮开关判据"

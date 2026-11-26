@@ -268,3 +268,4 @@ fn test_cull_tiebreak_deviation_is_bounded() {
         "tiebreak 差异像素占比超标：{diff_pixels}/{total_pixels} = {ratio:.4}"
     );
 }
+mod active;

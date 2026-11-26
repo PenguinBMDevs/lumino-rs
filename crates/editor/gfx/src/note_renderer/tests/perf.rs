@@ -32,8 +32,8 @@
 
 use std::time::{Duration, Instant};
 
-use super::NoteRenderer;
-use super::types::CameraUniform;
+use super::super::NoteRenderer;
+use super::super::types::CameraUniform;
 use crate::NoteInstance;
 
 /// 基准视口（与真机 1080p 走查口径对齐）

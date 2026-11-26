@@ -32,8 +32,8 @@
 //! 真实 GPU / WARP / Metal 路径全量断言，管线或 bind group 的真实错误仍以
 //! wgpu 校验 panic 暴露（探针不会吞错）。
 
-use super::NoteRenderer;
-use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
+use super::super::NoteRenderer;
+use super::super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
 use crate::constants::rendering::DEPTH_FORMAT;
 
 // ═══ 1. 区域化位空间深度：CPU 孪生与精度契约 ════════════════════════════════

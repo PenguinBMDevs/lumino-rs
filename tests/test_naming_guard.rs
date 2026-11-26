@@ -1,9 +1,8 @@
 //! 测试文件命名棘轮（DEBT-10 / T-40）。
 //!
 //! 仓库历史上存在多套测试命名：`tests.rs`、`*_tests.rs`、`tests_*.rs`、
-//! `tests/` 子目录。统一到 `tests/` 是 500+ 文件的 codemod，先做「只减不增」：
-//! 现有 90 个不合规文件登记在 `tests/test_naming_whitelist.txt`，
-//! 新增不合规文件会直接失败；白名单只允许删除条目。
+//! `tests/` 子目录。T-40b 已把 90 个存量文件全部迁入 `tests.rs` / `tests/`，
+//! 白名单已清零；此后新增不合规文件会直接失败。
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

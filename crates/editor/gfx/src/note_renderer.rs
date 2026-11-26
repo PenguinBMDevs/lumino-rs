@@ -17,25 +17,8 @@ mod pipeline;
 mod point;
 mod prepare;
 
-/// 深度编码验证（精度预算 CPU 孪生 + 绘制顺序无关的像素证据）
 #[cfg(test)]
-mod depth_tests;
-
-/// GPU 耗时分解基准（PREF-004 P1 决策依据，默认 #[ignore]）
-#[cfg(test)]
-mod perf_tests;
-
-/// 亚像素档位点图元直绘的正确性契约（PREF-004 P1）
-#[cfg(test)]
-mod point_tests;
-
-/// VS cull 直绘路径的像素等价与自判可见契约（PREF-005）
-#[cfg(test)]
-mod direct_tests;
-
-/// 视频导出（无 depth 变体）绘制前的 cull 契约探针（CPU 等价方案 P0 取证）
-#[cfg(test)]
-mod export_path_tests;
+mod tests;
 
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
@@ -196,7 +179,7 @@ impl NoteRenderer {
 }
 
 #[cfg(test)]
-mod tests {
+mod inline_tests {
     use super::*;
     use crate::note_renderer::types::DrawIndirectArgs;
 

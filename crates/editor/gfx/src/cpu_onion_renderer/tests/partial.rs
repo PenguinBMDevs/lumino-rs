@@ -4,11 +4,11 @@
 //! 旧像素**。因此帧 B 在脏区之外故意使用另一种颜色——若实现退化成全量上传
 //!（或错误清空纹理），下面「区域外 = A」的断言会立刻打到 B 的新颜色。
 
-use super::{
+use super::super::{
     CpuOnionFrame, CpuOnionRenderer, CpuOnionUploadRect,
-    tests_support::{TARGET_FORMAT, pixel, render_and_readback, transient_device},
     upload::{UploadPlan, UploadState},
 };
+use super::support::{TARGET_FORMAT, pixel, render_and_readback, transient_device};
 
 /// 测试纹理边长（4x4 足够覆盖「区域内 / 区域外 / 行距 / 末行」四件事）。
 const SIZE: u32 = 4;

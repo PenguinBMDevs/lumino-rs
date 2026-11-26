@@ -16,8 +16,6 @@
 
 mod build;
 mod cull;
-#[cfg(test)]
-mod cull_tests;
 mod support;
 #[cfg(test)]
 mod tests;

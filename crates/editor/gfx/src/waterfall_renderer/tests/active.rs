@@ -3,7 +3,7 @@
 //! 生产窗口序 last-writer（窗口集恒 `(key, start)` 稳定有序）等价于内核的
 //! “桶内自上而下回溯首个覆盖者”（窗口含全部覆盖音符）：含并列与 f32 来回截断。
 
-use super::test_harness::*;
+use super::super::test_harness::*;
 use crate::NoteInstance;
 
 /// CPU 参考循环（生产 legacy 语义）：稳定排序后窗口序 last-writer。
@@ -66,7 +66,7 @@ fn test_active_kernel_matches_cpu_loop() {
     // 最小管线装配（与 `WaterfallRenderer::run_active_kernel` 同布局语义）。
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("waterfall_active_test"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/waterfall_active.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(include_str!("../../shaders/waterfall_active.wgsl").into()),
     });
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("waterfall_active_test_bgl"),

@@ -8,7 +8,7 @@
 //! - `test_release_drops_owned_resources`（生命周期）：`release()` 后自有
 //!   句柄全空（纯 CPU 断言，无需 GPU；`FinishVideoExport` 释放语义的回归锁）。
 
-use super::{ResidentCull, prefix_counts};
+use super::super::{ResidentCull, prefix_counts};
 use crate::{CullWindow, NoteInstance};
 
 fn test_device() -> (wgpu::Device, wgpu::Queue) {
