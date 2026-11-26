@@ -56,16 +56,22 @@ pub fn show(ui: &mut egui::Ui, model: &PortSoundfontsUnsupportedModel) {
     child.add(egui::Label::new(
         RichText::new(&model.title).size(18.0).color(theme::text()),
     ));
-    child.add(egui::Label::new(
-        RichText::new(&model.message)
-            .size(14.0)
-            .color(theme::warning()),
-    ));
-    child.add(egui::Label::new(
-        RichText::new(&model.detail)
-            .size(12.0)
-            .color(theme::text_muted()),
-    ));
+    child.add(
+        egui::Label::new(
+            RichText::new(&model.message)
+                .size(14.0)
+                .color(theme::warning()),
+        )
+        .wrap(),
+    );
+    child.add(
+        egui::Label::new(
+            RichText::new(&model.detail)
+                .size(12.0)
+                .color(theme::text_muted()),
+        )
+        .wrap(),
+    );
 
     child.add_space(16.0);
     let width = inner.width();

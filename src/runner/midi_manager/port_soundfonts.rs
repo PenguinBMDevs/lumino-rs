@@ -72,8 +72,9 @@ impl MidiManager {
         }
 
         if self.playback_active.load(Ordering::SeqCst) {
-            self.pending_backend_notice =
-                Some(tr!("端口音色库映射已保存，将在当前播放结束后生效").to_string());
+            // 状态栏左侧是固定 220px 单行槽位，长句会被省略号截断；
+            // 这里用短句，完整说明留给端口音色库窗口/后续弹窗。
+            self.pending_backend_notice = Some(tr!("端口音色库映射将在停播后生效").to_string());
             tracing::info!("MIDI: 播放中，端口音色库映射暂存待停播后应用");
             return;
         }

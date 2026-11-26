@@ -213,8 +213,8 @@ pub fn dialog_size_hint(dialog_type: DialogType) -> DialogSizeHint {
         DialogType::History => DialogSizeHint::pinned(440.0, 560.0),
         // 端口音色库（REND-005）：端口行 + 滚动区，钉死高度避免滚动区测量失真
         DialogType::PortSoundfonts => DialogSizeHint::pinned(560.0, 520.0),
-        // 端口音色库未生效提示（REND-005）：短文案 + 两个按钮
-        DialogType::PortSoundfontsUnsupported => DialogSizeHint::pinned(500.0, 260.0),
+        // 端口音色库未生效提示（REND-005）：短文案 + 两个按钮；留足多行说明高度
+        DialogType::PortSoundfontsUnsupported => DialogSizeHint::pinned(520.0, 300.0),
         // 混音台：普通通道条 + 右侧主控条（无内容标题行，30px 标题栏 + 8px 内边距）
         DialogType::Mixer => DialogSizeHint::pinned(760.0, 226.0),
 

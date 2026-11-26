@@ -75,7 +75,7 @@ fn playing_defers_until_playback_stops() {
     let notice = manager
         .take_pending_backend_notice()
         .expect("播放中应提示延迟生效");
-    assert!(notice.contains("播放结束"), "提示应说明生效时机: {notice}");
+    assert!(notice.contains("停播"), "提示应说明生效时机: {notice}");
 
     manager.tick_port_soundfonts(false);
     poll_until_done(&mut manager);
