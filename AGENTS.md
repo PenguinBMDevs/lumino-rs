@@ -185,6 +185,36 @@ use lumino_core::{Event, Result};
 - Follow Conventional Commits: `feat(module): description`
 - Sign all commits with GPG
 
+## Size & Structure Discipline (DEBT-10)
+
+> Enforced by review, not by CI. There is deliberately no file-size job: the old 400-line guard was
+> deleted in `f740d1d6`, and DEBT-10 decided not to add a replacement. `clippy.toml` only constrains
+> function length once `too_many_lines` is enabled, so treating it as a file-size rule is wrong.
+
+| Object | Hard limit | Soft target | Notes |
+|---|---:|---:|---|
+| Production `.rs` file | **600** | 500 | level-A DSP files are reported, never force-split |
+| Test `.rs` file | **800** | 600 | one `#[test]` function ≤ 40 lines |
+| Function | **100** | 80 | generated i18n tables are data, not hand-written functions |
+| `struct` fields | **20** | 12 | a pure DTO needs a comment saying why it is that wide |
+| `impl` methods | **25** | 15 | `Default` / `From` impls do not count |
+| Function parameters | **6** | 4 | beyond that, use a named parameter struct |
+| Module directory | **4,000 lines / 20 files** | 2,500 / 12 | beyond that, register an owner and a split plan |
+
+Split by responsibility, never by line count:
+
+- Do not create a file to satisfy a number. A 4-line module holding one comment is not a split.
+- A split must move state with the behaviour. Extracting more `impl` blocks of the same `struct`
+  does not reduce coupling; `chrome.rs` (DEBT-10/T-10) is the reference: phases, channels and
+  overlay ordering became separate files, and `show_bands` dropped from 539 to 8 lines.
+- When a file crosses 600 lines, split along a phase or layer boundary and write down the order
+  that must be preserved (draw order, call order, upload order).
+- No new `#[allow(clippy::too_many_lines)]`; an existing one must carry `TODO(DEBT-10/T-xx)` and a
+  removal plan. Enabling the lint workspace-wide before the baseline is burned down is forbidden:
+  CI runs `-D warnings`, so it would fail on 309 functions at once.
+- The full task list, baselines and burn-down tables live in
+  `docs/2026-11-26-DEBT-10-结构减法与尺寸治理.md`.
+
 ## DSP Read-Only Zone & AI Rules
 
 > **Status: authoritative and self-contained (v1.4, 2026-11-25).** This section is the single
@@ -315,6 +345,19 @@ crates/audio/midi-io/src/ui_sfx.rs        # adapt_to_device / audio-callback par
 In addition, the **field set and order** of `VoiceParamsStatic` / `VoiceParamsDyn` /
 `VoiceState` in `gpu/layout.rs` are level A (changing fields changes the kernel contract);
 comment-only fixes are not restricted.
+
+**Adjudicated engine files (DEBT-10/T-06, 2026-11-26).** Two engine files were previously absent from
+the A/B/C lists and therefore defaulted to level A without an explicit boundary. They are now
+classified, and the classification never relaxes the blanket clause below:
+
+- `crates/audio/gpu-synth/src/synth/engine/cc.rs` — **level A** for any change to a mapped value or
+  its timing. This is the middle-circle "CC-to-DSP mapping" from §0: CC7/10/11 change gain and pan,
+  CC71/72/73 change filter parameters, RPN/NRPN change pitch. Level C is allowed only for
+  comment-only fixes, log text, or a rename that provably does not change the computed value.
+- `crates/audio/gpu-synth/src/synth/engine.rs` (the facade; the path is not `engine/engine.rs`) —
+  **level A** for anything touching dispatch order, block slicing, bucket construction, state
+  ownership or voice lifecycle. Level C is limited to the same kind of scheduling plumbing as §3
+  (`dispatch` / `bind` / `render`), and only when it provably neither reorders calls nor changes math.
 
 Any change outside the list above that meets any of the following is also level A:
 
