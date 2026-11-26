@@ -150,13 +150,10 @@ impl Editor {
             return true;
         }
         // 框内但未命中手柄：交给既有 ShapeSelect 选中/拖动逻辑。
-        if self
-            .pending_screen_box()
-            .is_some_and(|rect| rect.contains(pos))
-        {
+        if pending_screen_box(self).is_some_and(|rect| rect.contains(pos)) {
             return false;
         }
-        self.begin_bake_marquee(snapped_tick, key);
+        begin_bake_marquee(self, snapped_tick, key);
         true
     }
 
@@ -210,9 +207,9 @@ impl Editor {
             _ => None,
         };
         if let Some(new_box) = new_box {
-            self.apply_bake_box(index, new_box);
+            apply_bake_box(self, index, new_box);
         } else {
-            self.restore_bake_original(index);
+            restore_bake_original(self, index);
         }
         self.mark_notes_changed();
         if !self.is_shape_edit_armed() {
@@ -303,94 +300,94 @@ impl Editor {
         // 避免留下一个不可操作的残留框（音符预览由 shape_preview 负责）。
         self.editor_state.shape_select.clear_selection();
     }
+}
 
-    /// pending 图形在画布局部坐标下的外接框（含少量 padding）。
-    fn pending_screen_box(&self) -> Option<Rectangle> {
-        let session = self.shape_tools.bake_placement.as_ref()?;
-        let part = self
-            .editor_state
-            .pending_composed
-            .get(session.pending_index)?
-            .results
-            .first()?;
-        let (x0, y0, x1, y1) = part.model.geometry.bounds()?;
-        let a = self.line_pos_screen_pos((x0, y0));
-        let b = self.line_pos_screen_pos((x1, y1));
-        let left = a.x.min(b.x) - BOX_PADDING_PX;
-        let top = a.y.min(b.y) - BOX_PADDING_PX;
-        let width = (a.x - b.x).abs() + BOX_PADDING_PX * 2.0;
-        let height = (a.y - b.y).abs() + BOX_PADDING_PX * 2.0;
-        Some(Rectangle::new(
-            Point::new(left, top),
-            Size::new(width.max(1.0), height.max(1.0)),
-        ))
-    }
+/// pending 图形在画布局部坐标下的外接框（含少量 padding）。
+fn pending_screen_box(editor: &Editor) -> Option<Rectangle> {
+    let session = editor.shape_tools.bake_placement.as_ref()?;
+    let part = editor
+        .editor_state
+        .pending_composed
+        .get(session.pending_index)?
+        .results
+        .first()?;
+    let (x0, y0, x1, y1) = part.model.geometry.bounds()?;
+    let a = editor.line_pos_screen_pos((x0, y0));
+    let b = editor.line_pos_screen_pos((x1, y1));
+    let left = a.x.min(b.x) - BOX_PADDING_PX;
+    let top = a.y.min(b.y) - BOX_PADDING_PX;
+    let width = (a.x - b.x).abs() + BOX_PADDING_PX * 2.0;
+    let height = (a.y - b.y).abs() + BOX_PADDING_PX * 2.0;
+    Some(Rectangle::new(
+        Point::new(left, top),
+        Size::new(width.max(1.0), height.max(1.0)),
+    ))
+}
 
-    /// 进入 B 阶段：复用二维框选（`EditState::Selecting`）。
-    fn begin_bake_marquee(&mut self, snapped_tick: f32, key: u16) {
-        let (start_tick, current_tick) = self.begin_marquee_ticks(snapped_tick);
-        let key_y = self.key_to_y(key);
-        self.editor_state.interaction.edit_state = EditState::Selecting {
-            start_tick,
-            current_tick,
-            start_key: key,
-            current_key: key,
-            start_y: key_y,
-            current_y: key_y,
-        };
-        if let Some(session) = &mut self.shape_tools.bake_placement {
-            session.marquee_active = true;
-        }
+/// 进入 B 阶段：复用二维框选（`EditState::Selecting`）。
+fn begin_bake_marquee(editor: &mut Editor, snapped_tick: f32, key: u16) {
+    let (start_tick, current_tick) = editor.begin_marquee_ticks(snapped_tick);
+    let key_y = editor.key_to_y(key);
+    editor.editor_state.interaction.edit_state = EditState::Selecting {
+        start_tick,
+        current_tick,
+        start_key: key,
+        current_key: key,
+        start_y: key_y,
+        current_y: key_y,
+    };
+    if let Some(session) = &mut editor.shape_tools.bake_placement {
+        session.marquee_active = true;
     }
+}
 
-    /// 把当前 pending 模型按框映射，并重生成预览音符。
-    fn apply_bake_box(&mut self, index: usize, new_box: (f32, f32, f32, f32)) {
-        let Some(current) = self
-            .editor_state
-            .pending_composed
-            .get(index)
-            .and_then(|composed| composed.results.first())
-            .map(|part| part.model.clone())
-        else {
-            return;
-        };
-        let Some(from) = current.geometry.bounds() else {
-            return;
-        };
-        let mut model = current;
-        transform_model_box(&mut model, from, new_box);
-        let track = model.track as usize;
-        let notes = self.shape_notes_of(&model, track);
-        if let Some(part) = self
-            .editor_state
-            .pending_composed
-            .get_mut(index)
-            .and_then(|composed| composed.results.first_mut())
-        {
-            part.model = model;
-            part.notes = notes;
-        }
-        self.refresh_pending_mirror_geometry();
+/// 把当前 pending 模型按框映射，并重生成预览音符。
+fn apply_bake_box(editor: &mut Editor, index: usize, new_box: (f32, f32, f32, f32)) {
+    let Some(current) = editor
+        .editor_state
+        .pending_composed
+        .get(index)
+        .and_then(|composed| composed.results.first())
+        .map(|part| part.model.clone())
+    else {
+        return;
+    };
+    let Some(from) = current.geometry.bounds() else {
+        return;
+    };
+    let mut model = current;
+    transform_model_box(&mut model, from, new_box);
+    let track = model.track as usize;
+    let notes = editor.shape_notes_of(&model, track);
+    if let Some(part) = editor
+        .editor_state
+        .pending_composed
+        .get_mut(index)
+        .and_then(|composed| composed.results.first_mut())
+    {
+        part.model = model;
+        part.notes = notes;
     }
+    editor.refresh_pending_mirror_geometry();
+}
 
-    /// 空白点击：恢复 Bake 前的模型与预览音符。
-    fn restore_bake_original(&mut self, index: usize) {
-        let Some(session) = self.shape_tools.bake_placement.as_ref() else {
-            return;
-        };
-        let model = session.original_model.clone();
-        let notes = session.original_notes.clone();
-        if let Some(part) = self
-            .editor_state
-            .pending_composed
-            .get_mut(index)
-            .and_then(|composed| composed.results.first_mut())
-        {
-            part.model = model;
-            part.notes = notes;
-        }
-        self.refresh_pending_mirror_geometry();
+/// 空白点击：恢复 Bake 前的模型与预览音符。
+fn restore_bake_original(editor: &mut Editor, index: usize) {
+    let Some(session) = editor.shape_tools.bake_placement.as_ref() else {
+        return;
+    };
+    let model = session.original_model.clone();
+    let notes = session.original_notes.clone();
+    if let Some(part) = editor
+        .editor_state
+        .pending_composed
+        .get_mut(index)
+        .and_then(|composed| composed.results.first_mut())
+    {
+        part.model = model;
+        part.notes = notes;
     }
+    editor.refresh_pending_mirror_geometry();
 }
 
 #[cfg(test)]
