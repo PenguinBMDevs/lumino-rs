@@ -169,7 +169,7 @@ impl Editor {
     /// 以**当前选中目标是否仍匹配**为准：换选/取消选中后自动失效，
     /// 不会出现「选框被隐藏、锚点却不在」的空窗。
     pub fn is_shape_edit_armed(&self) -> bool {
-        self.armed_edit_target().is_some()
+        cursor::armed_edit_target(self).is_some()
     }
 
     /// 退出「编辑图形」：丢弃未提交的拖拽，恢复 ShapeSelect 选框。
@@ -202,7 +202,7 @@ impl Editor {
             return false;
         }
         let (target, model, original_composed, group_parts) = {
-            let Some((target, model)) = self.armed_edit_target() else {
+            let Some((target, model)) = cursor::armed_edit_target(self) else {
                 return false;
             };
             let composed = match target {
@@ -221,13 +221,13 @@ impl Editor {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let include_center = self.edit_allows_center(target);
+        let include_center = cursor::edit_allows_center(target);
         let mods = Mods {
             ctrl: self.ctrl_pressed(),
             shift: self.shift_pressed(),
         };
         // 旋转热区优先于锚点：角外那一圈必须能转，不能被角锚点的 10px 容差吃掉。
-        let handle = if self.in_shape_rotate_zone(&model, (tick, key)) {
+        let handle = if cursor::in_shape_rotate_zone(self, &model, (tick, key)) {
             HandleKind::Turn
         } else {
             match hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
@@ -263,7 +263,7 @@ impl Editor {
             // 旋转比例必须是**屏幕像素**意义上的「1 key / 1 tick」，横纵卷帘都成立。
             // 之前用 `model.k * ppq`（数据单位）会把它当成像素比例，屏幕上看就是
             // 旋转被拉成极端椭圆，甚至触发几何守卫整帧丢弃 —— 表现为「旋转没实现」。
-            HandleKind::Turn => self.turn_aspect(),
+            HandleKind::Turn => cursor::turn_aspect(self),
             _ => state.original.k,
         };
         // 关键：每帧都从拖动前的 original 重算一次。
