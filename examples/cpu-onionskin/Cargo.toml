@@ -22,6 +22,7 @@ path = "src/main.rs"
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+lumino-cpu-onion = { path = "../../crates/editor/cpu-onion" }
 lumino-diagnostics = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-midi-loader = { workspace = true }

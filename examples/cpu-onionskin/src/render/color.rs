@@ -13,40 +13,13 @@
 
 use lumino_extras::palette;
 
-/// UI 侧固定边框字段值（低 16 位）；实际每侧边框 = 2 × 本值。
-pub const NOTE_BORDER_WIDTH: u32 = 1;
-/// 着色器里每侧边框的实际像素数。
-pub const NOTE_BORDER_PX: f32 = NOTE_BORDER_WIDTH as f32 * 2.0;
-/// 边框加深因子（线性空间）。
-pub const BORDER_DARKEN_FACTOR: f32 = 0.4;
+pub use lumino_cpu_onion::color::{
+    BORDER_DARKEN_FACTOR, MAIN_TRACK_LINEAR, NOTE_BORDER_PX, srgb_decode, srgb_encode,
+};
+
 /// 预览音符 alpha。
 #[allow(dead_code)]
 pub const PREVIEW_ALPHA: f32 = 0.7;
-/// 主轨固定蓝（线性，与 `onion_note.wgsl::MAIN_TRACK_COLOR` 一致）。
-pub const MAIN_TRACK_LINEAR: [f32; 3] = [0.2, 0.55, 1.0];
-
-/// 线性值 → sRGB 字节。
-#[must_use]
-pub fn srgb_encode(linear: f32) -> u8 {
-    let v = linear.clamp(0.0, 1.0);
-    let encoded = if v <= 0.003_130_8 {
-        v * 12.92
-    } else {
-        1.055 * v.powf(1.0 / 2.4) - 0.055
-    };
-    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
-}
-
-/// sRGB 字节 → 线性值。
-#[must_use]
-pub fn srgb_decode(value: u8) -> f32 {
-    let v = value as f32 / 255.0;
-    if v <= 0.040_45 {
-        v / 12.92
-    } else {
-        ((v + 0.055) / 1.055).powf(2.4)
-    }
-}
 
 /// 三个 sRGB 字节打包为 0x00RRGGBB（softbuffer 像素格式）。
 #[must_use]
