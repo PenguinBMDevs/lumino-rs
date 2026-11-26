@@ -47,11 +47,11 @@
 |---|---|---|---|
 | `color` | `pack_rgb`（0x00RRGGBB）、`linear_to_pixel`、`blend_*` | `pack_argb`、`linear_to_argb`、无 blend | **已迁移常量与 sRGB**；其余语义不同，不能直接换 |
 | `simd` | — | — | ✅ 已完成：crate `pub mod simd`、统一 `masked_fill_row(..., count_coverage)`、示例 re-export |
-| `camera` | `Camera`（276 行） | `CanvasCamera`（192 行） | 需逐方法对照 `screen<->canvas`、滚动/缩放语义后重写调用点 |
+| `camera` | `Camera`（276 行，含 keyboard_width / ruler_height / ppq / total_ticks / scale_factor / target_scroll） | `CanvasCamera`（192 行，**只负责 canvas 区域**，不含 UI 偏移与 PPQ） | **设计边界，不合并**：crate 明确不感知键盘列 / 标尺 / PPQ；示例 `Camera` 是 UI 适配层，保留并在文档标注 |
 | `render/band` | `LodMode`、`BandBuffer` | `CpuOnionRenderer::render_strip` / `shift_frame` | 示例的 band 缓冲是旧 LOD 实现，需按 crate 的 strip 接口重写 |
 | `render/buffer` | `BandBuffer` | `frame` + renderer 内部缓冲 | 无公开等价物 |
 | `render/density/*` | 示例自己的 grow/coverage/render | `density::{build,grow,coverage,render}` | 需逐函数对照 |
 
 结论：T-32b 不是「删文件 + re-export」，而是**示例渲染层移植**；必须逐模块做像素对拍。
-需人类决定：移植示例，还是把示例降级为「仅演示 app/edit 层、渲染全部走 crate」并接受
-示例原有 LOD 行为变化。
+`color` 与 `simd` 已归一；`camera` 因 crate 的设计边界保留为 UI 适配层；
+`band` / `buffer` / `density` 仍需移植（T-32c）。

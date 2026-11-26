@@ -12,8 +12,8 @@ use std::f32::consts::E;
 /// 与 `lumino_core::view_state` 一致的默认值。
 pub const DEFAULT_KEYBOARD_WIDTH: f32 = 120.0;
 pub const DEFAULT_RULER_HEIGHT: f32 = 24.0;
-pub const DEFAULT_ZOOM_Y: f32 = 20.0;
-pub const KEY_COUNT: u16 = 128;
+pub const DEFAULT_ZOOM_Y: f32 = lumino_cpu_onion::camera::CanvasCamera::DEFAULT_ZOOM_Y;
+pub const KEY_COUNT: u16 = lumino_cpu_onion::camera::CanvasCamera::DEFAULT_KEY_COUNT;
 
 /// 相机与视口。
 #[derive(Debug, Clone)]
