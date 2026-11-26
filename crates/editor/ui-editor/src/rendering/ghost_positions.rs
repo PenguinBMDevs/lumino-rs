@@ -57,7 +57,7 @@ impl Editor {
     /// 当前视口内索引一致（仅用于过滤被拖音符，无需与 GPU 布局对应）。
     ///
     /// **复制模式例外**：`DraggingSelectionCopy` / `pending_copy_drag_state`
-    /// 副本走预览通道（[`Self::build_copy_ghost_positions`]），本方法返回空列表。
+    /// 副本走预览通道（`build_copy_ghost_positions`），本方法返回空列表。
     pub fn build_ghost_delta_positions(
         &self,
         visible_indices: &[usize],
@@ -74,7 +74,8 @@ impl Editor {
                 origin_tick,
                 last_tick,
             } => {
-                return self.build_resize_start_ghost_positions(
+                return build_resize_start_ghost_positions(
+                    self,
                     visible_indices,
                     *origin_tick,
                     *last_tick,
@@ -84,7 +85,8 @@ impl Editor {
                 origin_tick,
                 last_tick,
             } => {
-                return self.build_resize_end_ghost_positions(
+                return build_resize_end_ghost_positions(
+                    self,
                     visible_indices,
                     *origin_tick,
                     *last_tick,
@@ -119,69 +121,7 @@ impl Editor {
         }
         out
     }
-
-    /// 批量框选左边缘拉伸 ghost 位置
-    fn build_resize_start_ghost_positions(
-        &self,
-        visible_indices: &[usize],
-        origin_tick: f32,
-        last_tick: f32,
-    ) -> Vec<(usize, (f32, u16, f32))> {
-        let delta_tick = last_tick - origin_tick;
-        if delta_tick == 0.0 {
-            return Vec::new();
-        }
-        let snap_precision = self.editor_state.view.snap_precision;
-        let mut out = Vec::new();
-        for &i in visible_indices {
-            if !self.is_note_selected(i) {
-                continue;
-            }
-            let Some(note) = self.editor_state.data.get_note_view(i) else {
-                continue;
-            };
-            let new_length = note.length - delta_tick;
-            if new_length >= snap_precision {
-                let new_tick = (note.tick + delta_tick).max(0.0);
-                out.push((i, (new_tick, note.key, new_length)));
-            }
-        }
-        out
-    }
-
-    /// 批量框选右边缘拉伸 ghost 位置
-    fn build_resize_end_ghost_positions(
-        &self,
-        visible_indices: &[usize],
-        origin_tick: f32,
-        last_tick: f32,
-    ) -> Vec<(usize, (f32, u16, f32))> {
-        let delta_tick = last_tick - origin_tick;
-        if delta_tick == 0.0 {
-            return Vec::new();
-        }
-        let snap_precision = self.editor_state.view.snap_precision;
-        let mut out = Vec::new();
-        for &i in visible_indices {
-            if !self.is_note_selected(i) {
-                continue;
-            }
-            let Some(note) = self.editor_state.data.get_note_view(i) else {
-                continue;
-            };
-            let new_length = note.length + delta_tick;
-            if new_length >= snap_precision {
-                out.push((i, (note.tick, note.key, new_length)));
-            }
-        }
-        out
-    }
-
-    /// 构建复制模式副本的可见位置（统一全量渲染：副本 → 预览通道）
-    ///
-    /// 复制模式下原件保留在 GPU 段原位，副本（原位置 + 偏移位置，连续复制
-    /// 时旧副本 + 新副本并存）叠加渲染。返回副本位置列表 `(tick, key, length)`
-    /// （仅视口内），UI 层构建 NoteInstance 发送 `PreviewInstances`。
+    /// 复制 ghost 的预览位置（仅视口内），UI 层构造 `NoteInstance` 发送 `PreviewInstances`。
     pub fn build_copy_ghost_positions(&self, visible_indices: &[usize]) -> Vec<(f32, u16, f32)> {
         let edit_state = &self.editor_state.interaction.edit_state;
         let pending_copy = &self.transient.pending_copy;
@@ -212,6 +152,63 @@ impl Editor {
         }
         out
     }
+}
+
+/// 批量框选左边缘拉伸 ghost 位置
+fn build_resize_start_ghost_positions(
+    editor: &Editor,
+    visible_indices: &[usize],
+    origin_tick: f32,
+    last_tick: f32,
+) -> Vec<(usize, (f32, u16, f32))> {
+    let delta_tick = last_tick - origin_tick;
+    if delta_tick == 0.0 {
+        return Vec::new();
+    }
+    let snap_precision = editor.editor_state.view.snap_precision;
+    let mut out = Vec::new();
+    for &i in visible_indices {
+        if !editor.is_note_selected(i) {
+            continue;
+        }
+        let Some(note) = editor.editor_state.data.get_note_view(i) else {
+            continue;
+        };
+        let new_length = note.length - delta_tick;
+        if new_length >= snap_precision {
+            let new_tick = (note.tick + delta_tick).max(0.0);
+            out.push((i, (new_tick, note.key, new_length)));
+        }
+    }
+    out
+}
+
+/// 批量框选右边缘拉伸 ghost 位置
+fn build_resize_end_ghost_positions(
+    editor: &Editor,
+    visible_indices: &[usize],
+    origin_tick: f32,
+    last_tick: f32,
+) -> Vec<(usize, (f32, u16, f32))> {
+    let delta_tick = last_tick - origin_tick;
+    if delta_tick == 0.0 {
+        return Vec::new();
+    }
+    let snap_precision = editor.editor_state.view.snap_precision;
+    let mut out = Vec::new();
+    for &i in visible_indices {
+        if !editor.is_note_selected(i) {
+            continue;
+        }
+        let Some(note) = editor.editor_state.data.get_note_view(i) else {
+            continue;
+        };
+        let new_length = note.length + delta_tick;
+        if new_length >= snap_precision {
+            out.push((i, (note.tick, note.key, new_length)));
+        }
+    }
+    out
 }
 
 /// 应用 ghost delta 到音符位置
