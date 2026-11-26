@@ -4,7 +4,7 @@
 //! `data_curve_settings_style.rs`。
 
 use lumino_core::tr;
-use lumino_ui_egui::chrome::{TextPairCell, VideoButtonFill, VideoRow, VideoSection};
+use lumino_ui_egui::chrome::{TextPairCell, VideoButtonFill, VideoRow, VideoRowId, VideoSection};
 
 use super::backends::SYSTEM_FONT_FAMILIES;
 use crate::state::root_state::VideoExportDialogState;
@@ -16,26 +16,26 @@ use super::{button, gap, label, pick, text_button};
 pub(super) const METRICS: [&str; 4] = ["NPS（每秒音符数）", "复音数", "累计音符数", "BPM（速度）"];
 
 /// 数值输入单元（标签 110 + 输入 72）。
-fn number_cell(label: &str, value: &str, id: u16) -> TextPairCell {
+fn number_cell(label: &str, value: &str, id: impl Into<VideoRowId>) -> TextPairCell {
     TextPairCell {
         label: label.to_string(),
         label_width: 110.0,
         value: value.to_string(),
         hint: "0".to_string(),
         width: 72.0,
-        id,
+        id: id.into(),
     }
 }
 
 /// 颜色输入单元（标签 110 + 输入 96）。
-fn color_cell(label: &str, value: &str, id: u16) -> TextPairCell {
+fn color_cell(label: &str, value: &str, id: impl Into<VideoRowId>) -> TextPairCell {
     TextPairCell {
         label: label.to_string(),
         label_width: 110.0,
         value: value.to_string(),
         hint: "#000000".to_string(),
         width: 96.0,
-        id,
+        id: id.into(),
     }
 }
 
@@ -105,7 +105,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             step: 1.0,
             slider_width: 140.0,
             value_text: format!("{} px", state.data_curve.font_size),
-            id: 216,
+            id: 216.into(),
         },
         gap(6.0),
         pick(
@@ -178,19 +178,19 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     rows.push(VideoRow::Toggle {
         label: tr!("刻度数字缩写（1,000 → 1K）").to_string(),
         checked: state.data_curve.abbreviate,
-        id: 234,
+        id: 234.into(),
     });
     rows.push(gap(4.0));
     rows.push(VideoRow::Toggle {
         label: tr!("显示刻度文字").to_string(),
         checked: state.data_curve.show_text,
-        id: 235,
+        id: 235.into(),
     });
     rows.push(gap(4.0));
     rows.push(VideoRow::Toggle {
         label: tr!("显示水平网格线").to_string(),
         checked: state.data_curve.show_bars,
-        id: 236,
+        id: 236.into(),
     });
     rows.push(gap(4.0));
     rows.push(label(

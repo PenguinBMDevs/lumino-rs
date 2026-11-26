@@ -35,24 +35,23 @@ fn panel_model_has_all_main_sections() {
     );
     // 渲染设置包含 格式 / 编码器 / 加速 / 质量 / 风格 / 速度 / 分辨率 / 帧率。
     let rows = &content.sections[1].rows;
+    assert!(rows.iter().any(
+        |r| matches!(r, VideoRow::Pick { label, id, .. } if id.get() == 1 && label.contains("格式"))
+    ));
     assert!(
         rows.iter()
-            .any(|r| matches!(r, VideoRow::Pick { label, id: 1, .. } if label.contains("格式")))
-    );
-    assert!(
-        rows.iter()
-            .any(|r| matches!(r, VideoRow::Slider { id: 6, .. }))
+            .any(|r| matches!(r, VideoRow::Slider { id, .. } if id.get() == 6))
     );
     assert!(
         rows.iter().any(|r| matches!(
             r,
-            VideoRow::TextPair { left, .. } if left.id == 10
+            VideoRow::TextPair { left, .. } if left.id.get() == 10
         )),
         "分辨率应折成「标签 + 1920 x 1080」一行"
     );
     assert!(
         rows.iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 12, .. }))
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 12))
     );
     // 按钮：关闭 + 开始导出。
     assert_eq!(content.buttons.len(), 2);
@@ -69,17 +68,17 @@ fn miditrail_adds_extra_rows_and_midiconsole_section() {
     let rows = &panel.content.sections[1].rows;
     assert!(
         rows.iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 7, .. })),
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 7)),
         "视图模式行"
     );
     assert!(
         rows.iter()
-            .any(|r| matches!(r, VideoRow::Slider { id: 8, .. })),
+            .any(|r| matches!(r, VideoRow::Slider { id, .. } if id.get() == 8)),
         "Z 距离行"
     );
     assert!(
         rows.iter()
-            .any(|r| matches!(r, VideoRow::Toggle { id: 9, .. })),
+            .any(|r| matches!(r, VideoRow::Toggle { id, .. } if id.get() == 9)),
         "3D 音符行"
     );
 
@@ -118,14 +117,14 @@ fn counter_and_data_curve_sections_are_built() {
         counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::TextArea { id: 100, .. })),
+            .any(|r| matches!(r, VideoRow::TextArea { id, .. } if id.get() == 100)),
         "模板编辑区"
     );
     assert!(
         counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Slider { id: 108, .. })),
+            .any(|r| matches!(r, VideoRow::Slider { id, .. } if id.get() == 108)),
         "字号滑杆"
     );
     // 8 个补零输入（两两一行，共 4 行 TextPair）。
@@ -156,14 +155,14 @@ fn counter_and_data_curve_sections_are_built() {
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 200, .. })),
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 200)),
         "数据来源下拉"
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Toggle { id: 234, .. })),
+            .any(|r| matches!(r, VideoRow::Toggle { id, .. } if id.get() == 234)),
         "缩写开关"
     );
 }
@@ -261,14 +260,14 @@ fn counter_section_rows_cover_every_control() {
         counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::TextButton { text_id: 112, .. })),
+            .any(|r| matches!(r, VideoRow::TextButton { text_id, .. } if text_id.get() == 112)),
         "CSV 路径行"
     );
     assert!(
         counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Text { id: 114, .. })),
+            .any(|r| matches!(r, VideoRow::Text { id, .. } if id.get() == 114)),
         "CSV 格式行"
     );
 
@@ -284,7 +283,7 @@ fn counter_section_rows_cover_every_control() {
         !counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::TextButton { text_id: 112, .. })),
+            .any(|r| matches!(r, VideoRow::TextButton { text_id, .. } if text_id.get() == 112)),
         "关闭 CSV 后不应有路径行"
     );
 }
@@ -306,7 +305,7 @@ fn counter_font_mode_branches() {
         counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 104, .. })),
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 104)),
         "系统字体分支应有字体族下拉"
     );
 
@@ -322,7 +321,7 @@ fn counter_font_mode_branches() {
         counter
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::TextButton { text_id: 105, .. })),
+            .any(|r| matches!(r, VideoRow::TextButton { text_id, .. } if text_id.get() == 105)),
         "自定义字体分支应有路径输入"
     );
 }
@@ -344,43 +343,43 @@ fn data_curve_section_rows_and_font_branches() {
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 200, .. }))
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 200))
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 217, .. }))
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 217))
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Pick { id: 218, .. }))
+            .any(|r| matches!(r, VideoRow::Pick { id, .. } if id.get() == 218))
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Slider { id: 216, .. }))
+            .any(|r| matches!(r, VideoRow::Slider { id, .. } if id.get() == 216))
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Toggle { id: 234, .. }))
+            .any(|r| matches!(r, VideoRow::Toggle { id, .. } if id.get() == 234))
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Toggle { id: 235, .. }))
+            .any(|r| matches!(r, VideoRow::Toggle { id, .. } if id.get() == 235))
     );
     assert!(
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::Toggle { id: 236, .. }))
+            .any(|r| matches!(r, VideoRow::Toggle { id, .. } if id.get() == 236))
     );
     let pairs = curve
         .rows
@@ -401,7 +400,7 @@ fn data_curve_section_rows_and_font_branches() {
         curve
             .rows
             .iter()
-            .any(|r| matches!(r, VideoRow::TextButton { text_id: 219, .. }))
+            .any(|r| matches!(r, VideoRow::TextButton { text_id, .. } if text_id.get() == 219))
     );
 }
 

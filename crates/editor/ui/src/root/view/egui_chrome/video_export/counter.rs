@@ -4,7 +4,9 @@
 //! `counter_settings_font.rs`；控件全部由 `VideoRow` 描述，生产侧只提供数据。
 
 use lumino_core::tr;
-use lumino_ui_egui::chrome::{TextPairCell, VideoButton, VideoButtonFill, VideoRow, VideoSection};
+use lumino_ui_egui::chrome::{
+    TextPairCell, VideoButton, VideoButtonFill, VideoRow, VideoRowId, VideoSection,
+};
 
 use super::backends::SYSTEM_FONT_FAMILIES;
 use crate::state::root_state::VideoExportDialogState;
@@ -21,14 +23,14 @@ pub(super) const PAD_FIELDS: [&str; 8] = [
 ];
 
 /// 紧凑数值输入单元（标签 70 + 输入 56）。
-fn pad_cell(label: &str, value: u32, id: u16) -> TextPairCell {
+fn pad_cell(label: &str, value: u32, id: impl Into<VideoRowId>) -> TextPairCell {
     TextPairCell {
         label: label.to_string(),
         label_width: 70.0,
         value: value.to_string(),
         hint: "0".to_string(),
         width: 56.0,
-        id,
+        id: id.into(),
     }
 }
 
@@ -46,7 +48,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             value: state.counter.text.clone(),
             hint: "Notes: {nc} / {tn}\\nBPM: {bpm}".to_string(),
             height: 140.0,
-            id: 100,
+            id: 100.into(),
         },
         gap(4.0),
         VideoRow::Buttons {
@@ -121,19 +123,19 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         step: 1.0,
         slider_width: 140.0,
         value_text: format!("{} px", state.counter.font_size),
-        id: 108,
+        id: 108.into(),
     });
     rows.push(gap(8.0));
     rows.push(VideoRow::Toggle {
         label: tr!("使用千分位分隔符（1,234,567）").to_string(),
         checked: state.counter.use_commas,
-        id: 109,
+        id: 109.into(),
     });
     rows.push(gap(4.0));
     rows.push(VideoRow::Toggle {
         label: tr!("数字补零（按下方宽度对齐）").to_string(),
         checked: state.counter.padding_zeroes,
-        id: 110,
+        id: 110.into(),
     });
     rows.push(gap(12.0));
 
@@ -141,7 +143,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     rows.push(VideoRow::Toggle {
         label: tr!("每帧统计数据写入 CSV 文件").to_string(),
         checked: state.counter.save_csv,
-        id: 111,
+        id: 111.into(),
     });
     if state.counter.save_csv {
         rows.push(gap(4.0));
@@ -161,7 +163,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             value: state.counter.csv_format.clone(),
             hint: "{nps},{plph},{bpm},{nc}".to_string(),
             width: 0.0,
-            id: 114,
+            id: 114.into(),
         });
     }
     rows.push(gap(12.0));
@@ -201,7 +203,7 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
     rows.push(VideoRow::Buttons {
         buttons: vec![VideoButton {
             label: tr!("恢复默认补零宽度").to_string(),
-            id: 128,
+            id: 128.into(),
             fill: VideoButtonFill::Primary,
             width: 0.0,
         }],

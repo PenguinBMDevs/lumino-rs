@@ -1,6 +1,6 @@
 //! 视频导出面板的行构造小工具（供主模型与计数器 / 数据曲线分区共用）。
 
-use lumino_ui_egui::chrome::{VideoButton, VideoButtonFill, VideoRow};
+use lumino_ui_egui::chrome::{VideoButton, VideoButtonFill, VideoRow, VideoRowId};
 
 pub(super) fn pick(
     label: &str,
@@ -8,7 +8,7 @@ pub(super) fn pick(
     options: Vec<String>,
     selected: usize,
     width: f32,
-    id: u16,
+    id: impl Into<VideoRowId>,
 ) -> VideoRow {
     VideoRow::Pick {
         label: label.to_string(),
@@ -16,7 +16,7 @@ pub(super) fn pick(
         options,
         selected,
         width,
-        id,
+        id: id.into(),
     }
 }
 
@@ -27,7 +27,7 @@ pub(super) fn gap(height: f32) -> VideoRow {
 pub(super) fn text_button(
     label: &str,
     label_width: f32,
-    text_id: u16,
+    text_id: impl Into<VideoRowId>,
     value: &str,
     hint: &str,
     width: f32,
@@ -39,7 +39,7 @@ pub(super) fn text_button(
         value: value.to_string(),
         hint: hint.to_string(),
         width,
-        text_id,
+        text_id: text_id.into(),
         button,
     }
 }
@@ -50,7 +50,7 @@ pub(super) fn text(
     value: &str,
     hint: &str,
     width: f32,
-    id: u16,
+    id: impl Into<VideoRowId>,
 ) -> VideoRow {
     VideoRow::Text {
         label: label.to_string(),
@@ -58,7 +58,7 @@ pub(super) fn text(
         value: value.to_string(),
         hint: hint.to_string(),
         width,
-        id,
+        id: id.into(),
     }
 }
 
@@ -73,7 +73,7 @@ pub(super) fn label(text: &str, size: f32, muted: bool) -> VideoRow {
 pub(super) fn button(label: &str, id: u16, fill: VideoButtonFill, width: f32) -> VideoButton {
     VideoButton {
         label: label.to_string(),
-        id,
+        id: id.into(),
         fill,
         width,
     }

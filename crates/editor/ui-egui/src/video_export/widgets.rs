@@ -19,12 +19,7 @@ pub(super) fn buttons(ui: &mut egui::Ui, buttons: &[VideoButton]) {
             text_width(ui, &button_def.label, 14.0) + 48.0
         };
         if button(ui, egui::pos2(x, rect.top()), w, BUTTON_H, button_def).clicked() {
-            push_action(
-                ui.ctx(),
-                VideoExportAction::Button {
-                    id: button_def.id.into(),
-                },
-            );
+            push_action(ui.ctx(), VideoExportAction::Button { id: button_def.id });
         }
         x += w + 12.0;
     }
@@ -54,7 +49,13 @@ pub(super) fn label_cell(ui: &mut egui::Ui, row: egui::Rect, width: f32, text: &
 }
 
 /// 固定盒子输入框。
-pub(super) fn text_input(ui: &mut egui::Ui, rect: egui::Rect, id: u16, value: &str, hint: &str) {
+pub(super) fn text_input(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: crate::chrome::VideoRowId,
+    value: &str,
+    hint: &str,
+) {
     let mut buffer = value.to_owned();
     ui.painter().rect(
         rect,
@@ -82,13 +83,7 @@ pub(super) fn text_input(ui: &mut egui::Ui, rect: egui::Rect, id: u16, value: &s
         })
         .inner;
     if response.changed() {
-        push_action(
-            ui.ctx(),
-            VideoExportAction::Text {
-                id: id.into(),
-                value: buffer,
-            },
-        );
+        push_action(ui.ctx(), VideoExportAction::Text { id, value: buffer });
     }
 }
 
@@ -149,7 +144,13 @@ pub(super) fn text_pair_cell(
 }
 
 /// 多行文本域。
-pub(super) fn text_area(ui: &mut egui::Ui, height: f32, id: u16, value: &str, hint: &str) {
+pub(super) fn text_area(
+    ui: &mut egui::Ui,
+    height: f32,
+    id: crate::chrome::VideoRowId,
+    value: &str,
+    hint: &str,
+) {
     let rect = row_rect(ui, height);
     let mut buffer = value.to_owned();
     ui.painter().rect(
@@ -179,12 +180,6 @@ pub(super) fn text_area(ui: &mut egui::Ui, height: f32, id: u16, value: &str, hi
         })
         .inner;
     if response.changed() {
-        push_action(
-            ui.ctx(),
-            VideoExportAction::Text {
-                id: id.into(),
-                value: buffer,
-            },
-        );
+        push_action(ui.ctx(), VideoExportAction::Text { id, value: buffer });
     }
 }

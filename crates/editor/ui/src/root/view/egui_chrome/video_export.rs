@@ -296,7 +296,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             step: 0.1,
             slider_width: 200.0,
             value_text: format!("{speed:.1}x"),
-            id: 6,
+            id: 6.into(),
         },
     ];
     if is_miditrail {
@@ -317,12 +317,12 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             step: 0.1,
             slider_width: 200.0,
             value_text: format!("{:.1}", state.miditrail.z_far),
-            id: 8,
+            id: 8.into(),
         });
         settings.push(VideoRow::Toggle {
             label: tr!("3D 音符（盒子，关闭则为平面）").to_string(),
             checked: state.miditrail.notes_3d,
-            id: 9,
+            id: 9.into(),
         });
     }
     settings.push(VideoRow::Buttons { buttons: vec![] });
@@ -333,7 +333,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             value: state.basic.width.to_string(),
             hint: "1920".to_string(),
             width: 80.0,
-            id: 10,
+            id: 10.into(),
         },
         right: TextPairCell {
             label: String::new(),
@@ -341,7 +341,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             value: state.basic.height.to_string(),
             hint: "1080".to_string(),
             width: 80.0,
-            id: 11,
+            id: 11.into(),
         },
         separator: "x".to_string(),
     });
