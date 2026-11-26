@@ -430,7 +430,7 @@ pub fn apply_onion_track_remove_ranges(
     true
 }
 
-/// 段表纯函数测试（独立文件，保持本文件 < 400 行）
+/// 段表纯函数测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "onion_segments/tests.rs"]
 mod tests;

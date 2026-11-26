@@ -1,6 +1,6 @@
 //! 检测入口与适配器枚举。
 //!
-//! 线程模型的超时包装与廉价探测已拆到 `timeout.rs`（原文件超 400 行红线）。
+//! 线程模型的超时包装与廉价探测已拆到 `timeout.rs`（原文件超 600 行红线）。
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;

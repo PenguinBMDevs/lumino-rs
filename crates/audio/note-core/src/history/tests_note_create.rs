@@ -1,6 +1,6 @@
 //! NoteCreate 增量操作日志（CreateOp / CreateEntry）单元测试
 //!
-//! 拆分原因：`tests.rs` 超 400 行限制，将音符创建增量日志的测试独立成文件。
+//! 拆分原因：`tests.rs` 超 600 行限制，将音符创建增量日志的测试独立成文件。
 
 use super::*;
 use std::sync::Arc;

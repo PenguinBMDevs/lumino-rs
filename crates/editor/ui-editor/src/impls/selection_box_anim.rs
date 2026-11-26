@@ -2,7 +2,7 @@
 //!
 //! 包含：`update_selection_box_animation` 方法。
 //!
-//! 拆分原因：`editor_impl.rs` 接近 400 行限制，按职责拆分。
+//! 拆分原因：`editor_impl.rs` 接近 600 行限制，按职责拆分。
 
 use crate::Editor;
 use lumino_ui_core::geom::Point;

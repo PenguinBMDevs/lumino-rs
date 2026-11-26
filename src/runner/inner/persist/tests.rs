@@ -1,6 +1,6 @@
 //! 配置落盘守卫的真值表测试
 //!
-//! 抽出独立文件的原因：`persist.rs` 已接近 400 行上限（AGENTS.md 文件长度约束），
+//! 抽出独立文件的原因：`persist.rs` 已接近 600 行上限（AGENTS.md 文件长度约束），
 //! 把「纯函数守卫」的用例放这里，主文件只保留实现与调用点。
 
 use super::{should_persist_language, should_persist_onion_backend};

@@ -1,4 +1,4 @@
-//! 渲染进度与端口超限告警（自 `render_loops.rs` 拆出，保持单文件 < 400 行）
+//! 渲染进度与端口超限告警（自 `render_loops.rs` 拆出，保持单文件 ≤600 行）
 
 use lumino_core::trf;
 use lumino_midi_model::multi_port::MAX_PORTS;

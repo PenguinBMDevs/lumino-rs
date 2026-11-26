@@ -7,7 +7,7 @@
 //! 绝不能产出 `Full`（全量重传）或 `Delta`（段重建）——后者会把「关一下再打开」
 //! 变成一次黑乐谱级别的全量实例重建。
 //!
-//! 独立文件以保持 `onion_skin/tests.rs` < 400 行；构造器复用 `tests` 模块。
+//! 独立文件以保持 `onion_skin/tests.rs` ≤600 行；构造器复用 `tests` 模块。
 
 use super::tests::{assert_none, make_fp};
 use super::*;

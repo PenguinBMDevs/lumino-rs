@@ -1,6 +1,6 @@
 //! 侧边栏单测 —— 编排模式 / 面板互斥 / 右键菜单 / 颜色选择
 //!
-//! 与 `roll_bar_tests` 拆分，避免单测模块超 400 行。
+//! 与 `roll_bar_tests` 拆分，避免单测模块超 600 行。
 
 use crate::sidebar::*;
 use lumino_message::TrackContextMenuItem;

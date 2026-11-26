@@ -303,7 +303,7 @@ pub(crate) fn cpu_onion_frame_gate(
     }
 }
 
-/// CPU 洋葱皮帧生成测试（独立文件，保持本文件 < 400 行）
+/// CPU 洋葱皮帧生成测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "cpu_onion/tests.rs"]
 mod tests;
@@ -311,7 +311,7 @@ mod tests;
 #[cfg(test)]
 #[path = "cpu_onion/tests_dirty.rs"]
 mod tests_dirty;
-/// 洋葱皮全局开关闸门测试（独立文件，保持本文件 < 400 行）
+/// 洋葱皮全局开关闸门测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "cpu_onion/tests_gate.rs"]
 mod tests_gate;

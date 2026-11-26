@@ -2,7 +2,7 @@
 //!
 //! 包含：`PlaybackScanState` 缓存结构 + `update_playback_key_colors` 方法。
 //!
-//! 拆分原因：`editor_impl.rs` 接近 400 行限制，按职责拆分。
+//! 拆分原因：`editor_impl.rs` 接近 600 行限制，按职责拆分。
 
 use crate::spatial_index::{NoteRef, NoteSpatialIndex};
 use crate::{Editor, onion_track_color};

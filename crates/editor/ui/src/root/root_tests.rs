@@ -417,7 +417,7 @@ fn test_settings_dialog_same_theme_not_requeued() {
 }
 
 // ================================================================
-// 拆分说明（避免单文件超 400 行）：
+// 拆分说明（避免单文件超 600 行）：
 // - `root_tests/speed_change.rs`：变速按钮 Ctrl+Click 测试
 // - `root_tests/sidebar.rs`：右侧栏跟随钢琴卷帘 UI 显隐测试
 // - `root_tests/cloud_snapshot.rs`：云存储快照同步边界测试

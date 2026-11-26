@@ -1,4 +1,4 @@
-//! 音符编辑：分割、合并、连奏与删除增量事件合并（自 `notes.rs` 拆分，保持各文件 < 400 行）
+//! 音符编辑：分割、合并、连奏与删除增量事件合并（自 `notes.rs` 拆分，保持各文件 ≤600 行）
 
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};

@@ -1,6 +1,6 @@
 //! 工具栏仪表盘字段编辑契约（BPM / PPQ）：失焦收口与提交语义
 //!
-//! 从 `document_sync.rs` 拆出（REF-001：单文件 < 400 行）。
+//! 从 `document_sync.rs` 拆出（REF-001：单文件 ≤600 行）。
 
 use super::*;
 

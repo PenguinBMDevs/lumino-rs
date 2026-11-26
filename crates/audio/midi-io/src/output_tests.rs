@@ -1,4 +1,4 @@
-//! `OutputConnection` 默认实现测试（自 `lib.rs` 拆出，保持单文件 < 400 行）
+//! `OutputConnection` 默认实现测试（自 `lib.rs` 拆出，保持单文件 ≤600 行）
 
 use super::*;
 use std::sync::{Arc, Mutex};

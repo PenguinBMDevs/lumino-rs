@@ -1,6 +1,6 @@
 //! 020 「编辑图形」手柄命中/旋转区/光标反馈。
 //!
-//! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
+//! 从 `shape_edit_ui.rs` 拆出，保持单文件 ≤600 行。
 
 use lumino_core::shape::ShapeModel;
 use lumino_editor_state::PendingShapeRef;

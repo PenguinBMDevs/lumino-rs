@@ -1,4 +1,4 @@
-//! `AudioRenderConfig` 单元测试（自 `config.rs` 拆出，保持单文件 < 400 行）
+//! `AudioRenderConfig` 单元测试（自 `config.rs` 拆出，保持单文件 ≤600 行）
 
 use super::*;
 

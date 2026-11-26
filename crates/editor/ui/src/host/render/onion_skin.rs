@@ -32,7 +32,7 @@
 //!（见 `decide.rs`）——CPU 后端显存里虽然没有洋葱皮实例，开关位仍必须与工具栏
 //! 同步，否则切回 GPU 后端时状态错位。
 //!
-//! 子模块组织（保持每个文件 < 400 行）：
+//! 子模块组织（保持每个文件 ≤600 行）：
 //! - `state`：`OnionSkinState` 状态缓存（指纹、降级节流、CPU 单轨开关）
 //! - `fingerprint`：指纹收集与静音集合哈希
 //! - `decide`：`OnionSkinAction` 与三态决策（GPU / CPU 两条分支）
@@ -116,17 +116,17 @@ const DEGRADE_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 /// 洋葱皮降级告警聚合间隔（REND-019 PR-A：日志节流，避免刷屏）
 const DEGRADE_WARN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// 状态机三态决策测试（独立文件，保持本文件 < 400 行）
+/// 状态机三态决策测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "onion_skin/tests.rs"]
 mod tests;
 
-/// CPU 单轨模式（Q3 B）决策测试（独立文件，保持 `tests.rs` < 400 行）
+/// CPU 单轨模式（Q3 B）决策测试（独立文件，保持 `tests.rs` ≤600 行）
 #[cfg(test)]
 #[path = "onion_skin/tests_cpu.rs"]
 mod tests_cpu;
 
-/// 洋葱皮全局开关（工具栏按钮）决策测试（独立文件，保持 `tests.rs` < 400 行）
+/// 洋葱皮全局开关（工具栏按钮）决策测试（独立文件，保持 `tests.rs` ≤600 行）
 #[cfg(test)]
 #[path = "onion_skin/tests_toggle.rs"]
 mod tests_toggle;

@@ -1,4 +1,4 @@
-//! 配置持久化的纯判据辅助函数（从 `persist.rs` 拆出，REF-001 < 400 行）。
+//! 配置持久化的纯判据辅助函数（从 `persist.rs` 拆出，REF-001 ≤600 行）。
 //!
 //! 全部是纯函数、无状态，被 `persist.rs` 的 `config_diff` / 落盘逻辑与
 //! `persist/tests.rs` 直接引用；拆开只为让 `persist.rs` 保持可读长度。

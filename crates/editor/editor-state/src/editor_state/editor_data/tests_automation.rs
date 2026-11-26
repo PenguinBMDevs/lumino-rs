@@ -1,6 +1,6 @@
 //! Automation lane 测试 —— find/find_or_create/apply_edit
 //!
-//! 拆分说明（避免单文件超 400 行）：
+//! 拆分说明（避免单文件超 600 行）：
 //! - `tests_automation/move_edit.rs`：Move/CycleShape/Delete/Clear 编辑测试
 //! - `tests_automation/jump_pair.rs`：弯音跳变对（同 tick 多事件）语义测试
 //! - `tests_automation/handles.rs`：贝塞尔自动柄重算与钳制测试

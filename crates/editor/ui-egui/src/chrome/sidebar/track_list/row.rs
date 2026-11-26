@@ -1,6 +1,6 @@
 //! 左侧栏音轨行：编号 / 名称 / 独奏 `S` 的绘制与命中。
 //!
-//! 从 `track_list.rs` 拆出（文件长度红线 < 400 行）。几何常量仍来自
+//! 从 `track_list.rs` 拆出（文件长度红线 ≤600 行）。几何常量仍来自
 //! `crate::layout`，与列表容器（标题 / 添加行）保持同一套口径。
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, Sense, Vec2};

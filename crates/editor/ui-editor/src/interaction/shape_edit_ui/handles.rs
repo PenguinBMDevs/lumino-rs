@@ -1,6 +1,6 @@
 //! 020「编辑图形」锚点布局（屏幕坐标）。
 //!
-//! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
+//! 从 `shape_edit_ui.rs` 拆出，保持单文件 ≤600 行。
 
 use lumino_editor_state::editor_state::{HandleKind, Zoom, box_handles};
 use lumino_ui_core::geom::Point;

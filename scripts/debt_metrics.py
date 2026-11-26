@@ -46,13 +46,15 @@ def count_lines(path: Path) -> int:
 
 
 def is_test_file(path: Path, text: str) -> bool:
+    """仅按路径判定测试文件。
+
+    不能用「文件里出现 `#[cfg(test)]`」——大量生产文件底部挂着
+    `#[cfg(test)] mod tests;`，会把它们错判成测试文件。
+    """
+    del text  # 保留参数，调用方语义不变
     name = path.name
-    return (
-        name.endswith("tests.rs")
-        or "\\tests\\" in str(path)
-        or "/tests/" in path.as_posix()
-        or "#[cfg(test)]" in text
-    )
+    posix = path.as_posix()
+    return name.endswith("tests.rs") or "/tests/" in posix
 
 
 def scan_functions(text: str):

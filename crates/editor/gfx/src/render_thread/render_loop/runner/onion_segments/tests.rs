@@ -1,4 +1,4 @@
-//! 段表纯函数测试（自 `onion_segments.rs` 拆出，保持主文件 < 400 行）
+//! 段表纯函数测试（自 `onion_segments.rs` 拆出，保持主文件 ≤600 行）
 
 use super::*;
 

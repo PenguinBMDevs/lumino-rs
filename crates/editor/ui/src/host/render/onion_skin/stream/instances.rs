@@ -1,7 +1,7 @@
 //! 单音轨 `NoteInstance` 构建（小轨顺序 / 大轨 rayon 分片）。
 //!
 //! 从 `stream.rs` 拆出：全量会话、轨布局同步、事件级增量三条路径共用同一构建器，
-//! 拆出后 `stream.rs` 保持 < 400 行（AGENTS.md 文件长度红线）。
+//! 拆出后 `stream.rs` 保持 ≤600 行（AGENTS.md 文件长度红线）。
 
 use lumino_editor_state::EditorData;
 use lumino_gfx::NoteInstance;

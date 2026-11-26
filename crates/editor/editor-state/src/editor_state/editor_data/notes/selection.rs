@@ -1,4 +1,4 @@
-//! 音符选择与删除（自 `notes.rs` 拆分，保持各文件 < 400 行）
+//! 音符选择与删除（自 `notes.rs` 拆分，保持各文件 ≤600 行）
 
 use super::super::super::selection_set::SelectionSet;
 

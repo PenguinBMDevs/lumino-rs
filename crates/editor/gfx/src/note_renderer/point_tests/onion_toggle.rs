@@ -8,7 +8,7 @@
 //!    连顶点着色器都不跑、也不进 indirect 实例数；
 //! 4. 裁剪 shader 的闸门判据与洋葱皮 VS 同口径（纯源码断言，防静默丢失）。
 //!
-//! 独立文件以保持 `point_tests.rs` < 400 行；渲染与断言辅助复用父模块。
+//! 独立文件以保持 `point_tests.rs` ≤600 行；渲染与断言辅助复用父模块。
 
 use crate::NoteInstance;
 use crate::note_renderer::NoteRenderer;

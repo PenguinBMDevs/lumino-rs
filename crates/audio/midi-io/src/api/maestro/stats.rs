@@ -1,4 +1,4 @@
-//! Maestro 统计类型与读取器（从 `maestro.rs` 拆出，保持单文件 < 400 行）。
+//! Maestro 统计类型与读取器（从 `maestro.rs` 拆出，保持单文件 ≤600 行）。
 
 use maestro_api_rs::Stats;
 

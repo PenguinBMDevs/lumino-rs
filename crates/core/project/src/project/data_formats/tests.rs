@@ -1,6 +1,6 @@
 //! 工程专用数据格式测试
 //!
-//! 从 `data_formats.rs` 拆出（单文件 ≤400 行，含测试不豁免）。
+//! 从 `data_formats.rs` 拆出（单文件 ≤600 行，含测试不豁免）。
 
 use super::*;
 use lumino_core::shape::{

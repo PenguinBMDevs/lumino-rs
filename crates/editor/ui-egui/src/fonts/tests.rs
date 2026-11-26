@@ -1,4 +1,4 @@
-//! `fonts` 单元测试（REF-001：保持 `fonts.rs` < 400 行）。
+//! `fonts` 单元测试（REF-001：保持 `fonts.rs` ≤600 行）。
 
 use super::*;
 

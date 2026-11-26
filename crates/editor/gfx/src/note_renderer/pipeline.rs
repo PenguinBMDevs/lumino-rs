@@ -1,6 +1,6 @@
 //! 渲染/计算管线与 bind group layout 创建
 //!
-//! 与 `init.rs`（渲染器组装）分离，保持单文件 ≤ 400 行。
+//! 与 `init.rs`（渲染器组装）分离，保持单文件 ≤ 600 行。
 
 use crate::note_renderer::NoteRenderer;
 

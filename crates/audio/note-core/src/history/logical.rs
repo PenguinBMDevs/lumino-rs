@@ -1,6 +1,6 @@
 //! 逻辑撤销/重做（跨 group chain 一次性回退/重做）
 //!
-//! 拆分原因：`history.rs` 超 400 行限制，按职责拆分。
+//! 拆分原因：`history.rs` 超 600 行限制，按职责拆分。
 //!
 //! 逻辑撤销链：通过 `parent_group_id` 串联超限分割的子分组，
 //! `undo_logical` / `redo_logical` 跨 chain 一次性回退/重做整个逻辑操作。

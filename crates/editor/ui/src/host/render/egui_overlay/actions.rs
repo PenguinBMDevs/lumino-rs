@@ -1,6 +1,6 @@
 //! 叠加层动作分发：把 egui 各通道的动作翻译成生产 `Message` 并交给 `Host`。
 //!
-//! 从 `egui_overlay.rs` 拆出（REF-001：单文件 < 400 行）。动作在 `run_ui` 之后
+//! 从 `egui_overlay.rs` 拆出（REF-001：单文件 ≤600 行）。动作在 `run_ui` 之后
 //! 统一取走，保证一帧内不遗漏、顺序稳定（先控件后弹层）。
 
 use super::SPLITTER_W;

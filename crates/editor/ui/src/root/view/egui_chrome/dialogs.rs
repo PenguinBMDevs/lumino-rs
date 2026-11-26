@@ -1,6 +1,6 @@
 //! 对话框整窗模型：生产 `SettingsPanel` / 主题 → egui 的 `DialogModel`。
 //!
-//! 单独成文件把 `egui_chrome.rs` 保持在 400 行以内；渲染在
+//! 单独成文件把 `egui_chrome.rs` 保持在 600 行以内；渲染在
 //! `lumino_ui_egui::dialog` / `settings`，这里只做数据映射。
 
 use lumino_core::tr;

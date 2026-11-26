@@ -19,7 +19,7 @@
 //! 一条 `InsertAt` 渲染事件，万级音符时在 GPU 内造成超线性实例搬移（见
 //! `ui_fill_confirm_bench`）。
 //!
-//! 从 `shape_tool.rs` 拆出（文件长度纪律 REF-001：单文件 ≤ 400 行，含测试不豁免）。
+//! 从 `shape_tool.rs` 拆出（文件长度纪律 REF-001：单文件 ≤ 600 行，含测试不豁免）。
 
 use std::collections::{BTreeMap, HashSet};
 

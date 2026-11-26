@@ -377,6 +377,6 @@ fn test_draw_points_falls_back_without_point_pipeline() {
 
 /// **契约 5**：洋葱皮全局开关关闭时只画主音轨（真实 GPU 回读证据）。
 ///
-/// 独立文件以保持本文件 < 400 行；渲染与断言辅助复用本模块。
+/// 独立文件以保持本文件 ≤600 行；渲染与断言辅助复用本模块。
 #[cfg(test)]
 mod onion_toggle;

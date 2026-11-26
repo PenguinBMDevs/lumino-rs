@@ -1,6 +1,6 @@
 //! 设置对话框 MIDI 设备刷新入口。
 //!
-//! 独立成文件：`host/dialog/state.rs` 已超过 400 行，新增的设备刷新逻辑
+//! 独立成文件：`host/dialog/state.rs` 已超过 600 行，新增的设备刷新逻辑
 //! 不应继续膨胀该文件。
 
 use crate::host::Host;

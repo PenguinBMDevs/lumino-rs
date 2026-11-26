@@ -1,6 +1,6 @@
 //! 020「编辑图形」松手提交 / 取消 / 单支 pending 音符重生成。
 //!
-//! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
+//! 从 `shape_edit_ui.rs` 拆出，保持单文件 ≤600 行。
 
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::ShapeNote;

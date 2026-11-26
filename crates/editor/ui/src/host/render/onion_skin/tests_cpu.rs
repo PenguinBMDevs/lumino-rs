@@ -4,7 +4,7 @@
 //! 因此只有「段内容 / 段身份」变化才重传，且**永不**产出 `Delta`
 //!（洋葱皮开关的 `ViewState` 由 `decide_action` 上层统一处理，
 //! 见 `tests_toggle.rs::onion_toggle_in_cpu_mode_emits_view_state`）。
-//! 独立文件以保持 `tests.rs` < 400 行；构造器与断言复用 `tests` 模块。
+//! 独立文件以保持 `tests.rs` ≤600 行；构造器与断言复用 `tests` 模块。
 
 use super::tests::{assert_full, assert_none, make_fp, make_fp_dirty, make_fp_main_struct};
 use super::*;

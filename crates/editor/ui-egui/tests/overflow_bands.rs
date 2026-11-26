@@ -1,4 +1,4 @@
-//! 溢出菜单的无头交互测试（从 `chrome_bands.rs` 拆出，保持单文件 < 400 行）。
+//! 溢出菜单的无头交互测试（从 `chrome_bands.rs` 拆出，保持单文件 ≤600 行）。
 
 use egui_kittest::Harness;
 use lumino_ui_egui::chrome::{

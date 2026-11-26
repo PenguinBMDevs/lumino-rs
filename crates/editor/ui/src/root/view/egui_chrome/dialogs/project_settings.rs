@@ -1,6 +1,6 @@
 //! 工程设置对话框：生产状态 → egui 模型，以及动作 → `Message` 映射。
 //!
-//! 单独成文件把 `dialogs.rs` 保持在 400 行以内。
+//! 单独成文件把 `dialogs.rs` 保持在 600 行以内。
 
 use lumino_core::tr;
 use lumino_extras::i18n::main_translations;

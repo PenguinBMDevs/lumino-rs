@@ -1,4 +1,4 @@
-//! `TrackIndex` 聚合 / 掩码 / 上限回归（`index.rs` 的子模块，守住单文件 <400 行）。
+//! `TrackIndex` 聚合 / 掩码 / 上限回归（`index.rs` 的子模块，守住单文件 ≤600 行）。
 
 use lumino_midi_model::{MidiDocument, NoteEvent};
 

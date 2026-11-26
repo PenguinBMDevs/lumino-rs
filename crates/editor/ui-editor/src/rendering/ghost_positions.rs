@@ -1,6 +1,6 @@
 //! Ghost 增量位置构建：build_ghost_delta_positions + apply_ghost_delta
 //!
-//! 拆分原因：visible_notes.rs 接近 400 行限制，按职责拆分。
+//! 拆分原因：visible_notes.rs 接近 600 行限制，按职责拆分。
 //! 拖动期间 document 未变（ghost 方案），UI 层通过
 //! `build_ghost_delta_positions` 获取被拖动音符的 ghost 位置，
 //! 生成 UpdateMany 增量发送替代每帧全量重建。

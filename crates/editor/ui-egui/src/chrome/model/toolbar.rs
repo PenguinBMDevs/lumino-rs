@@ -1,6 +1,6 @@
 //! 工具栏（含精度 / 洋葱皮 / 溢出菜单）的只读视图模型。
 //!
-//! 从 `chrome/model.rs` 拆出（REF-001：单文件 < 400 行）。
+//! 从 `chrome/model.rs` 拆出（REF-001：单文件 ≤600 行）。
 
 use lumino_core::SnapSpec;
 use lumino_core::Tool;

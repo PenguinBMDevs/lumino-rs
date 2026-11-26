@@ -1,7 +1,7 @@
 //! `CpuOnionState::update` 的产出，及其到 gfx 帧字段的映射（纯数据契约）。
 //!
 //! 单独成文件的原因：脏区语义横跨「状态机 → 渲染侧」，把它固定在一处便于对齐；
-//! 同时让 `state.rs` 只留决策与执行（守住单文件 < 400 行的硬门槛）。
+//! 同时让 `state.rs` 只留决策与执行（守住单文件 ≤600 行的硬门槛）。
 
 use lumino_cpu_onion::CpuOnionRect;
 use lumino_gfx::{CpuOnionFrame, CpuOnionUploadRect};

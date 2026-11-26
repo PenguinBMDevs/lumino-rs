@@ -1,4 +1,4 @@
-//! 播放 MIDI 事件的通道映射与同 tick 排序（自 `playback.rs` 拆出，保持单文件 < 400 行）
+//! 播放 MIDI 事件的通道映射与同 tick 排序（自 `playback.rs` 拆出，保持单文件 ≤600 行）
 
 use crate::playback::{MidiMessage, MidiTrackEvent};
 

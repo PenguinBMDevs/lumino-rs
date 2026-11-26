@@ -20,7 +20,7 @@
 //! }
 //! ```
 //!
-//! 实现按职责拆分（保持各文件 < 400 行）：
+//! 实现按职责拆分（保持各文件 ≤600 行）：
 //! - `cursor`（streaming_cursor.rs）：每轨前进游标
 //! - `player`（streaming_player.rs）：播放器本体与 tempo 预扫描
 

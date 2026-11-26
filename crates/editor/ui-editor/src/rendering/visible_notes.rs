@@ -1,6 +1,6 @@
 //! 视口可见音符数据收集（渲染热路径）
 //!
-//! 拆分原因：rendering.rs 接近 400 行限制，按职责拆分。
+//! 拆分原因：rendering.rs 接近 600 行限制，按职责拆分。
 //!
 //! 性能优化：
 //! - **NoteStore 启用时走零 clone 路径**：`get_ref` / `iter_refs` 返回 NoteView（Copy）

@@ -66,7 +66,7 @@ impl<T> EpochTagged<T> {
     }
 }
 
-/// R0：EpochTagged 跨代次判据测试（独立文件，保持本文件 < 400 行）。
+/// R0：EpochTagged 跨代次判据测试（独立文件，保持本文件 ≤600 行）。
 #[cfg(test)]
 #[path = "epoch/tests.rs"]
 mod tests;

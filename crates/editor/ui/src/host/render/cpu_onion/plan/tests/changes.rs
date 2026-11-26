@@ -1,4 +1,4 @@
-//! 变更聚合与矩形值语义（`plan/tests.rs` 的子模块，保持每个测试文件 < 400 行）。
+//! 变更聚合与矩形值语义（`plan/tests.rs` 的子模块，保持每个测试文件 ≤600 行）。
 
 use lumino_cpu_onion::CpuOnionRect;
 use lumino_editor_state::CpuOnionChange;

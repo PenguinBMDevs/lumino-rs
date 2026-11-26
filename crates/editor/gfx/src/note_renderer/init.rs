@@ -3,7 +3,7 @@ use crate::epoch::GpuEpoch;
 use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::note_renderer::NoteRenderer;
 
-// 缓冲 / 绑定组构造拆到子模块，保持本文件 < 400 行（REF-001）
+// 缓冲 / 绑定组构造拆到子模块，保持本文件 ≤600 行（REF-001）
 mod buffers;
 
 impl NoteRenderer {

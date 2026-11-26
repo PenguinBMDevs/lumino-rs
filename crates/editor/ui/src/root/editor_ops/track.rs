@@ -3,7 +3,7 @@
 //! 2026-08 单一权威源改造：音符数据唯一权威是 `EditorData.document`，
 //! 加载/删除/恢复音轨直接整轨替换 document（`replace_track_notes`）。
 //!
-//! 子模块组织（保持本文件 < 400 行）：
+//! 子模块组织（保持本文件 ≤600 行）：
 //! - `deletion`: 音轨删除/找回/恢复（转发 Runner、缓存写入、恢复流程）
 
 use crate::root::Root;
