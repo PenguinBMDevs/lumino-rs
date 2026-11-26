@@ -4,4 +4,4 @@ mod playback;
 mod selection_box_anim;
 mod spatial;
 
-pub(crate) use playback::PlaybackScanState;
+pub(crate) use playback::PlaybackKeyState;

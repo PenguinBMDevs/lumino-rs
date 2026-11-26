@@ -27,7 +27,6 @@ pub mod history;
 pub mod note;
 mod playback_key_colors;
 mod transient;
-use playback_key_colors::PlaybackKeyColors;
 pub use transient::EditorTransient;
 pub mod recording;
 pub mod smooth_scroll;
@@ -147,9 +146,6 @@ pub struct Editor {
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
 
-    /// 演奏键色（着色开关 + 256 键 RGBA 缓存）。
-    pub(crate) key_colors: PlaybackKeyColors,
-
     /// Domino（TAKABO SOFT）剪贴板互粘是否启用（UiConfig 驱动，默认关闭，仅 Windows 生效）
     ///
     /// 关闭时复制只写 Lumino 私有二进制、粘贴不尝试解码 `MidiPortalSequence`，
@@ -260,8 +256,8 @@ pub struct Editor {
     /// 故按三者版本号缓存，见 `arrangement_ops::selection_cache`。
     pub(crate) arrange_selection_cache: arrangement_ops::selection_cache::ArrangeSelectionCache,
 
-    /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
-    pub(crate) playback_scan_state: impls::PlaybackScanState,
+    /// 播放键色状态（颜色缓存 + 增量扫描，T-30 slice 4）。
+    pub(crate) playback_key_state: impls::PlaybackKeyState,
 
     /// 协作广播批处理嵌套深度（DRAW-035B）：> 0 时只累积待广播队列，
     /// 回到 0 时统一冲刷一次（多步历史跳转的广播批次数 N → 1）。

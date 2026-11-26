@@ -255,21 +255,17 @@ impl Editor {
     /// 供 `clear_editor()` 调用，重置本模块私有的字段：
     /// - `notes_changed`：音符变更标志
     /// - `playback_position`：播放指示线位置
-    /// - `playback_scan_state`：播放键色增量扫描状态（避免旧文档残留）
+    /// - `playback_key_state.scan`：播放键色增量扫描状态（避免旧文档残留）
     pub fn reset_internal_state(&mut self) {
         self.notes_changed = false;
         self.playback_position = 0.0;
-        self.playback_scan_state = Default::default();
+        self.playback_key_state.reset_scan();
         self.velocity_panel = crate::velocity::VelocityPanel::new();
     }
 
     /// 设置播放时键盘颜色指示是否启用
     pub fn set_playback_key_colors_enabled(&mut self, enabled: bool) {
-        self.key_colors.set_enabled(enabled);
-        if !enabled {
-            // 关闭时重置扫描状态，下次启用从干净状态开始
-            self.playback_scan_state = Default::default();
-        }
+        self.playback_key_state.set_enabled(enabled);
     }
 
     /// Domino（TAKABO SOFT）剪贴板互粘是否启用（默认关闭，仅 Windows 生效）

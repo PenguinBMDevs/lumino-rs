@@ -30,7 +30,7 @@ impl Editor {
                 editor_state: crate::editor_state::EditorState::new(),
                 spatial: SpatialIndexState::default(),
                 playback_position: 0.0,
-                key_colors: crate::PlaybackKeyColors::default(),
+                playback_key_state: Default::default(),
                 domino_clipboard_enabled: false,
                 loop_range: Some(grid::LoopRange::new()),
                 notes_changed: false,
@@ -59,7 +59,6 @@ impl Editor {
                 selected_bounds: Cell::new(None),
                 arrange_selection_cache:
                     crate::arrangement_ops::selection_cache::ArrangeSelectionCache::default(),
-                playback_scan_state: crate::impls::PlaybackScanState::default(),
                 collab_batch_depth: 0,
                 #[cfg(test)]
                 collab_broadcast_batches: 0,
