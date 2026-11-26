@@ -28,6 +28,7 @@ pub mod interaction_ops;
 pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
+pub mod path_history;
 pub mod pending_compose;
 pub use pending_compose::{ComposedKind, ComposedPart, PendingComposed, PendingSource};
 pub mod selection_set;

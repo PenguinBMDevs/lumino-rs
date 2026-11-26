@@ -346,7 +346,7 @@ impl Editor {
             .unwrap_or(LineToolInteraction::None);
         line.drag_confirmed = false;
         // 状态产生变化（插入锚点/拖动平移）→ 记录历史；未变化（空点击）不记录
-        if line.snapshot() != line.path_history[line.path_history_index] {
+        if line.snapshot() != *line.history.current() {
             line.push_path_history();
         }
         line.last_push_path = None;

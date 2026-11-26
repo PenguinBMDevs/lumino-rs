@@ -413,13 +413,14 @@ fn test_undo_after_delete_anchor() {
 #[test]
 fn test_press_no_drag_pops_empty_history() {
     let mut editor = line_editor();
-    let before = editor.editor_state.line_tool.path_history_index;
+    let before = editor.editor_state.line_tool.history.index();
     let a_pos = editor.line_pos_screen_pos((0.0, 60.0));
     editor.handle_line_tool_pressed(a_pos, 0.0, 60.0);
     // 按下未拖动直接松开：不产生新历史
     editor.handle_line_tool_released();
     assert_eq!(
-        editor.editor_state.line_tool.path_history_index, before,
+        editor.editor_state.line_tool.history.index(),
+        before,
         "空操作不应产生撤销历史"
     );
 }

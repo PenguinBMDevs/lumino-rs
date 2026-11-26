@@ -14,6 +14,7 @@
 //! 覆盖（断墨修复）：相邻采样点之间由 [`cov::cover_cells`] 做线段栅格化，
 //! 输出**经过的全部网格单元**——采样频率再低也不会丢格，预览与生成共用同一函数。
 
+use super::path_history::History;
 pub mod cov;
 
 use cov::CoveredCell;
@@ -141,13 +142,8 @@ pub struct BrushToolState {
     pub drag_start_raw: (f32, f32),
     /// 拖动基准：被拖笔画的原始点列（增量始终相对它计算，避免累积漂移）
     pub drag_orig: BrushStroke,
-    /// 笔画编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
-    ///
-    /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
-    /// 拖动结束合并为一次撤销（`update_top_path_history`）。
-    pub path_history: Vec<Vec<BrushStroke>>,
-    /// 当前笔画历史状态索引（指向 `path_history` 中的当前状态）
-    pub path_history_index: usize,
+    /// 路径 / 笔画编辑历史（快照 = 操作后状态）。
+    pub history: History<Vec<BrushStroke>>,
 }
 
 impl Default for BrushToolState {
@@ -158,8 +154,7 @@ impl Default for BrushToolState {
             drag_start_raw: (0.0, 0.0),
             drag_orig: BrushStroke::default(),
             // 历史栈初始含空状态（撤销基准）
-            path_history: vec![Vec::new()],
-            path_history_index: 0,
+            history: History::new(Vec::new()),
         }
     }
 }
@@ -269,8 +264,7 @@ impl BrushToolState {
         self.strokes.clear();
         self.interaction = BrushInteraction::None;
         self.drag_orig = BrushStroke::default();
-        self.path_history = vec![Vec::new()];
-        self.path_history_index = 0;
+        self.history.clear_to(Vec::new());
     }
 
     /// 仅收敛**未完成的交互手势**（落笔中 / 整体拖动中），保留全部笔画与笔画历史
@@ -292,49 +286,42 @@ impl BrushToolState {
 
     /// 记录当前状态（操作完成后调用）：截断重做分支后入栈
     pub fn push_path_history(&mut self) {
-        self.path_history.truncate(self.path_history_index + 1);
-        self.path_history.push(self.snapshot());
-        self.path_history_index = self.path_history.len() - 1;
+        self.history.push(self.snapshot());
     }
 
     /// 更新栈顶为当前状态（合并连续操作——落笔拖动、整体拖动）
     pub fn update_top_path_history(&mut self) {
-        let snap = self.snapshot();
-        if let Some(top) = self.path_history.last_mut() {
-            *top = snap;
-        }
+        self.history.update_top(self.snapshot());
     }
 
     /// 撤销一次笔画编辑；无可撤销返回 false
     pub fn undo_path(&mut self) -> bool {
-        if self.path_history_index == 0 {
+        let Some(snap) = self.history.undo() else {
             return false;
-        }
-        self.path_history_index -= 1;
-        self.strokes = self.path_history[self.path_history_index].clone();
+        };
+        self.strokes = snap.clone();
         self.interaction = BrushInteraction::None;
         true
     }
 
     /// 重做一次笔画编辑；无可重做返回 false
     pub fn redo_path(&mut self) -> bool {
-        if self.path_history_index + 1 >= self.path_history.len() {
+        let Some(snap) = self.history.redo() else {
             return false;
-        }
-        self.path_history_index += 1;
-        self.strokes = self.path_history[self.path_history_index].clone();
+        };
+        self.strokes = snap.clone();
         self.interaction = BrushInteraction::None;
         true
     }
 
     /// 是否有可撤销的笔画编辑
     pub fn can_undo_path(&self) -> bool {
-        self.path_history_index > 0
+        self.history.can_undo()
     }
 
     /// 是否有可重做的笔画编辑
     pub fn can_redo_path(&self) -> bool {
-        self.path_history_index + 1 < self.path_history.len()
+        self.history.can_redo()
     }
 
     /// 重置整个笔画状态（含历史）

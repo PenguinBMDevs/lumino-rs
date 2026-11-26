@@ -62,7 +62,7 @@ impl Editor {
         match pending {
             BakePending::Line(mut state) => {
                 // 当前状态是权威：恢复后不应再走“路径 redo”而跳过 Bake redo。
-                state.path_history.truncate(state.path_history_index + 1);
+                state.history.truncate_redo();
                 self.editor_state.line_tool = state;
             }
             BakePending::Shape { state, composed } => {
@@ -73,7 +73,7 @@ impl Editor {
                 self.pending_edit_redo.clear();
             }
             BakePending::Brush { mut state, config } => {
-                state.path_history.truncate(state.path_history_index + 1);
+                state.history.truncate_redo();
                 self.editor_state.brush_tool = state;
                 self.brush = config;
             }
