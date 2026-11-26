@@ -212,6 +212,9 @@ Split by responsibility, never by line count:
 - No new `#[allow(clippy::too_many_lines)]`; an existing one must carry `TODO(DEBT-10/T-xx)` and a
   removal plan. Enabling the lint workspace-wide before the baseline is burned down is forbidden:
   CI runs `-D warnings`, so it would fail on 309 functions at once.
+- Test files use `tests.rs` or a `tests/` subdirectory. The legacy `*_tests.rs` / `tests_*.rs`
+  names are frozen in `tests/test_naming_whitelist.txt`; the list may only shrink
+  (`tests/test_naming_guard.rs` enforces it).
 - The full task list, baselines and burn-down tables live in
   `docs/2026-11-26-DEBT-10-结构减法与尺寸治理.md`.
 
