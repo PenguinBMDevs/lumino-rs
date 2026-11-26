@@ -26,7 +26,8 @@ impl Root {
         // 以为内容丢了。非绘制工具（指针 / 铅笔 / 橡皮等）不显示，避免浮层干扰音符编辑。
         let owner = editor.pending_preview_visible(Tool::Shape);
         let has_composed = !editor.editor_state.pending_composed.is_empty();
-        let composed_read_only = has_composed && draws_pending_read_only(editor.current_tool());
+        let composed_read_only =
+            has_composed && draws_pending_read_only(editor.editor_state.current_tool());
         if !owner && !composed_read_only {
             return ShapePreviewModel::default();
         }
@@ -47,7 +48,7 @@ impl Root {
             }
             // 拖拽预览只属于形状工具本身：切到鼠标工具后即使拖拽态晚一帧清空，
             // 也不能在画布上多画一个「角点」（表现为切换工具时闪一下）。
-            if editor.current_tool() == Tool::Shape
+            if editor.editor_state.current_tool() == Tool::Shape
                 && let Some((spec, filled)) = tool.preview_rect(editor.shift_pressed())
             {
                 shapes.push(preview_shape(editor, spec, filled, offset));

@@ -337,7 +337,7 @@ impl Host {
 
         // hover 预览（铅笔工具 + Idle 状态，跟随鼠标指针，转置支持）
         if matches!(edit_state, crate::editor::EditState::Idle)
-            && editor.current_tool() == crate::message::Tool::Pencil
+            && editor.editor_state.current_tool() == crate::message::Tool::Pencil
             && self.root.should_render_preview_note()
             && let Some((cx, cy)) = editor.editor_state.canvas.cursor_position
         {

@@ -143,7 +143,7 @@ impl Editor {
     /// 未进入「编辑图形」时返回 `None`，由普通 ShapeSelect 光标接管。
     pub(crate) fn shape_handle_interaction(&self, pos: Point) -> Option<mouse::Interaction> {
         let (target, model) = self.armed_edit_target()?;
-        if self.current_tool() != lumino_message::Tool::ShapeSelect {
+        if self.editor_state.current_tool() != lumino_message::Tool::ShapeSelect {
             return None;
         }
         let tick = self.pos_to_tick(pos);

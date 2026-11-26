@@ -96,7 +96,7 @@ impl Root {
                     vp.canvas_size.y,
                 ),
                 track_height: vp.track_height,
-                tool: self.editor.current_tool(),
+                tool: self.editor.editor_state.current_tool(),
                 selection: self
                     .editor
                     .editor_state

@@ -224,7 +224,7 @@ impl Editor {
             .filter_map(|s| s.pending)
             .collect();
         self.editor_state.shape_select.remove_pending_all();
-        if self.current_tool() != Tool::ShapeSelect {
+        if self.editor_state.current_tool() != Tool::ShapeSelect {
             return;
         }
         let track = self.editor_state.data.current_track;
@@ -508,7 +508,7 @@ impl Editor {
     /// 曲线/画笔的 pending 组合在 ShapeSelect 下完成（组合预览与 ✓× 由形状预览层承载），
     /// 避免在 owner 工具里生成看不见、也无法确认的 composed 结果。
     pub(crate) fn pending_menu_allowed(&self, pending: PendingShapeRef) -> bool {
-        match self.current_tool() {
+        match self.editor_state.current_tool() {
             Tool::ShapeSelect => true,
             Tool::Shape => matches!(
                 pending,

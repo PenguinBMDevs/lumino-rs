@@ -94,7 +94,7 @@ impl Root {
     /// `root/draw_toolbar.rs` 渲染），故此处需确保音符画工具箱处于展开态——
     /// 否则面板无处锚定；同时与其他工具设置下拉（画刷 / 形状）互斥。
     pub(crate) fn open_fill_division_dialog(&mut self) {
-        let current = self.editor.fill_division();
+        let current = self.editor.editor_state.line_tool.fill_division;
         self.state.fill_division_dialog.is_open = true;
         self.state.fill_division_dialog.value = current.map(|n| n.to_string()).unwrap_or_default();
         self.toolbar.tool_panel_open = true;

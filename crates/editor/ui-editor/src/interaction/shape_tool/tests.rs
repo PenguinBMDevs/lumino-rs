@@ -551,7 +551,7 @@ fn test_shift_uses_raw_mouse_coords_for_square() {
         px_per_key,
         editor.editor_state.view.key_count as i32,
         crate::interaction::line_tool::paths::min_note_length_ticks(
-            editor.min_note_division(),
+            editor.editor_state.line_tool.min_note_division,
             editor.editor_state.view.ppq,
         ),
         // 全局粗细：本用例的默认值（1 层），与编辑器实际生成口径同源

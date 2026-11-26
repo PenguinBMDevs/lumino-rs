@@ -22,7 +22,7 @@ impl ToolbarHandler {
             root.editor.editor_state.line_tool.set_arc_mode(false);
         }
         // 面板内选择工具：把工具栏已更新的 current_tool / fill_enabled 镜像到编辑器。
-        // 注意：`view_arrangement` 每帧会用 `editor.current_tool()` 反向覆盖
+        // 注意：`view_arrangement` 每帧会用 `editor.editor_state.current_tool()` 反向覆盖
         // `toolbar.current_tool`，若此处不同步到编辑器，面板选择就会被瞬间覆盖、
         // 表现为「点了工具却不切换」。这是与上一条 `ToolSelected` 完全一致的处理路径。
         match event {

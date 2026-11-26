@@ -41,7 +41,7 @@ impl Editor {
         // 白付 O(待确认) 与一次选中态扰动。
         //
         // 其余收口照旧执行：重复选中同一工具仍应退出填充 / 圆弧 / 下拉等附属态。
-        let tool_changed = self.current_tool() != tool;
+        let tool_changed = self.editor_state.current_tool() != tool;
         // DRAW-044：离开柔化模式必须收口，否则组合结果没有镜像、曲线看起来「消失」，
         // 且遗留的拖拽快照会污染撤销栈。未改过半径时还原提升前的曲线。
         if tool != Tool::ShapeSelect
@@ -99,7 +99,7 @@ impl Editor {
     /// ⚠️ 仅用于**几何预览与命中**（曲线/形状/画刷方块/文本框），不含 √× 按钮——
     /// 按钮仍是拥有者工具专属（确认/取消属于绘制工具的操作，选择工具不越权）。
     pub fn pending_preview_visible(&self, owner: Tool) -> bool {
-        let current = self.current_tool();
+        let current = self.editor_state.current_tool();
         current == owner || current == Tool::ShapeSelect
     }
 
@@ -107,11 +107,6 @@ impl Editor {
     pub fn set_fill_enabled(&mut self, enabled: bool) {
         self.editor_state.line_tool.fill_enabled = enabled;
         self.editor_state.shape_tool.fill_enabled = enabled;
-    }
-
-    /// 颜料桶填充模式是否开启
-    pub fn fill_enabled(&self) -> bool {
-        self.editor_state.line_tool.fill_enabled
     }
 
     /// **全局绘制粗细**（层数，1-100；1 层 = 单 key 高的像素宽度）
@@ -142,11 +137,6 @@ impl Editor {
         self.mark_notes_changed();
     }
 
-    /// 颜料桶填充的切分档位（`None` = 整块填充）
-    pub fn fill_division(&self) -> Option<u32> {
-        self.editor_state.line_tool.fill_division
-    }
-
     /// 设置曲线/形状工具生成音符的**最小长度档位**（修改接口）
     ///
     /// `Some(x)` = 至少 x 分音符（`4·ppq/x` tick，`Some(0)` 归一为 `None`）；
@@ -158,19 +148,9 @@ impl Editor {
         self.mark_notes_changed();
     }
 
-    /// 生成音符的最小长度档位（`None` = 不设下限）
-    pub fn min_note_division(&self) -> Option<u32> {
-        self.editor_state.line_tool.min_note_division
-    }
-
     /// 当前框选弹簧动画状态（UI 渲染层读取）。
     pub fn selection_box_anim(&self) -> Option<crate::SelectionBoxAnimState> {
         self.selection_ui.anim.get()
-    }
-
-    /// 获取当前工具
-    pub fn current_tool(&self) -> Tool {
-        self.editor_state.tool
     }
 
     /// 检查音符数据是否已变化

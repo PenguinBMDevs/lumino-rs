@@ -126,12 +126,12 @@ fn test_thickness_entry_does_not_disturb_tool_state() {
         "调粗细不应改变工具栏当前工具"
     );
     assert_eq!(
-        root.editor.current_tool(),
+        root.editor.editor_state.current_tool(),
         Tool::Brush,
         "调粗细不应改变编辑器当前工具"
     );
     assert!(
-        root.toolbar.fill_enabled && root.editor.fill_enabled(),
+        root.toolbar.fill_enabled && root.editor.editor_state.line_tool.fill_enabled,
         "调粗细不应改动颜料桶填充态"
     );
     assert_eq!(

@@ -98,7 +98,7 @@ fn right_press(editor: &Editor, local: (f32, f32)) -> Option<Message> {
             .map_or(ContextMenuTarget::Notes, |_| {
                 ContextMenuTarget::PendingDrawnShape
             }),
-        Some(false) if editor.current_tool() == lumino_message::Tool::ShapeSelect => {
+        Some(false) if editor.editor_state.current_tool() == lumino_message::Tool::ShapeSelect => {
             ContextMenuTarget::DrawnShape
         }
         _ => ContextMenuTarget::Notes,

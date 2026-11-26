@@ -154,7 +154,7 @@ impl Root {
         }
 
         let velocity_editing =
-            is_velocity && self.editor.current_tool() == lumino_message::Tool::Curve;
+            is_velocity && self.editor.editor_state.current_tool() == lumino_message::Tool::Curve;
         let velocity_points = if velocity_editing {
             VelocityPanel::build_velocity_points(es.data.current_track_notes())
                 .into_iter()
@@ -175,7 +175,7 @@ impl Root {
         };
         let tempo_editing = is_tempo
             && matches!(
-                self.editor.current_tool(),
+                self.editor.editor_state.current_tool(),
                 lumino_message::Tool::Curve
                     | lumino_message::Tool::Eraser
                     | lumino_message::Tool::DrawEraser
@@ -192,10 +192,10 @@ impl Root {
             Vec::new()
         };
         let eraser_tool = matches!(
-            self.editor.current_tool(),
+            self.editor.editor_state.current_tool(),
             lumino_message::Tool::Eraser | lumino_message::Tool::DrawEraser
         );
-        let curve_tool = self.editor.current_tool() == lumino_message::Tool::Curve;
+        let curve_tool = self.editor.editor_state.current_tool() == lumino_message::Tool::Curve;
         let automation_editing =
             (mode == EditMode::Bend || mode.is_cc()) && (curve_tool || eraser_tool);
         let automation = if mode == EditMode::Bend || mode.is_cc() {

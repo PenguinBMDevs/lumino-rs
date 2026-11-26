@@ -80,7 +80,11 @@ impl Editor {
         }
         // 组合结果只在形状 / 鼠标工具下可交互；撤销回到 pending 时自动切过去，
         // 避免用户「撤销后还要手动切工具才看到 pending」。
-        if restored_composed > 0 && !matches!(self.current_tool(), Tool::Shape | Tool::ShapeSelect)
+        if restored_composed > 0
+            && !matches!(
+                self.editor_state.current_tool(),
+                Tool::Shape | Tool::ShapeSelect
+            )
         {
             self.set_tool(Tool::ShapeSelect);
         }
@@ -128,7 +132,7 @@ impl Editor {
                     Some((owner, original_model, original_notes))
                         if owner == self.current_track() =>
                     {
-                        if self.current_tool() != Tool::ShapeSelect {
+                        if self.editor_state.current_tool() != Tool::ShapeSelect {
                             self.set_tool(Tool::ShapeSelect);
                         }
                         self.shape_tools.bake_placement = Some(

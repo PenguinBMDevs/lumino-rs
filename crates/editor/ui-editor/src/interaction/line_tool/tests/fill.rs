@@ -168,13 +168,16 @@ fn test_fill_mode_press_does_not_create_path() {
 fn test_fill_enabled_state_lives_on_line_tool() {
     // 开关状态持久于 line_tool（Editor::set_fill_enabled 读写）
     let mut editor = Editor::new();
-    assert!(!editor.fill_enabled());
+    assert!(!editor.editor_state.line_tool.fill_enabled);
     editor.set_fill_enabled(true);
-    assert!(editor.fill_enabled());
+    assert!(editor.editor_state.line_tool.fill_enabled);
     // 切到非曲线工具自动关闭
     editor.editor_state.tool = Tool::Curve;
     editor.set_tool(Tool::Pointer);
-    assert!(!editor.fill_enabled(), "切走曲线工具自动关闭填充");
+    assert!(
+        !editor.editor_state.line_tool.fill_enabled,
+        "切走曲线工具自动关闭填充"
+    );
 }
 
 #[test]
@@ -204,7 +207,7 @@ fn test_fill_full_ui_flow_default_snap() {
     seed_notes(&mut editor, 2, 1, &[]);
     // 工具栏开启颜料桶（FillToggled → set_fill_enabled）
     editor.set_fill_enabled(true);
-    assert!(editor.fill_enabled());
+    assert!(editor.editor_state.line_tool.fill_enabled);
     // 画布点击矩形内部格点 (1920,61)（handle_pressed 完整入口：snap_tick floor）
     let p = editor.line_pos_screen_pos((1920.0, 61.0));
     editor.handle_pressed(p, false);
@@ -443,7 +446,7 @@ fn test_fill_division_survives_confirm() {
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     assert!(editor.confirm_line_tool());
     assert_eq!(
-        editor.fill_division(),
+        editor.editor_state.line_tool.fill_division,
         Some(16),
         "√ 确认后切分档位保留，避免每次重填"
     );

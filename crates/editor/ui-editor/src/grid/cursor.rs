@@ -77,7 +77,10 @@ pub(crate) fn handle_at(
         };
     }
 
-    if matches!(editor.current_tool(), Tool::Eraser | Tool::DrawEraser) {
+    if matches!(
+        editor.editor_state.current_tool(),
+        Tool::Eraser | Tool::DrawEraser
+    ) {
         return if in_grid {
             mouse::Interaction::Crosshair
         } else {
@@ -86,7 +89,7 @@ pub(crate) fn handle_at(
     }
 
     // 曲线工具直线模式：悬停锚点/连线可拖动（Pointer），其余区域十字光标
-    if editor.current_tool() == Tool::Curve {
+    if editor.editor_state.current_tool() == Tool::Curve {
         if let Some(local_pos) = state.position
             && editor.line_tool_hit_test(local_pos).is_some()
         {
@@ -126,7 +129,7 @@ pub(crate) fn handle_at(
         EditState::Scrubbing => mouse::Interaction::Grabbing,
         EditState::Idle => {
             // 020：形状手柄/旋转区优先于普通选框光标
-            if editor.current_tool() == Tool::ShapeSelect {
+            if editor.editor_state.current_tool() == Tool::ShapeSelect {
                 if editor.is_shape_editing() {
                     return mouse::Interaction::Grabbing;
                 }

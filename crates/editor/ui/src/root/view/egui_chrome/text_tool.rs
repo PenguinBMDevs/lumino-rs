@@ -44,7 +44,7 @@ impl Root {
         let mut confirm = None;
         let mut cancel = None;
         let mut mode = None;
-        if editor.current_tool() == Tool::Text
+        if editor.editor_state.current_tool() == Tool::Text
             && let Some(btns) = lumino_ui_editor::grid::text_tool_box::button_rects(editor)
         {
             let rt = |t: (f32, f32, f32, f32)| to_rect(t.0, t.1, t.0 + t.2, t.1 + t.3);

@@ -195,7 +195,10 @@ fn test_bake_undo_restores_pending_selection_and_tool() {
 
     assert_eq!(editor.editor_state.pending_composed.len(), 1);
     assert!(
-        matches!(editor.current_tool(), Tool::Shape | Tool::ShapeSelect),
+        matches!(
+            editor.editor_state.current_tool(),
+            Tool::Shape | Tool::ShapeSelect
+        ),
         "撤销回到 pending 时自动回到可确认的工具"
     );
     assert!(

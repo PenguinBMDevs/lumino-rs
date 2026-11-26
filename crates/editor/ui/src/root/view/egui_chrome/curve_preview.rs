@@ -42,7 +42,7 @@ impl Root {
         };
 
         let selected = line.selected_anchor();
-        let show_handles = editor.current_tool() == Tool::Curve;
+        let show_handles = editor.editor_state.current_tool() == Tool::Curve;
         let mut segments = Vec::new();
         let mut blocks = Vec::new();
         let mut connectors = Vec::new();

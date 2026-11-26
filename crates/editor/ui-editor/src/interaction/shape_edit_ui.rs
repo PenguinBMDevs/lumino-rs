@@ -198,7 +198,7 @@ impl Editor {
     ///
     /// 未进入「编辑图形」时一律不接管：锚点只是示意，不会和 ShapeSelect 选框抢点击。
     pub(crate) fn begin_shape_edit(&mut self, tick: f32, key: f32) -> bool {
-        if self.current_tool() != lumino_message::Tool::ShapeSelect {
+        if self.editor_state.current_tool() != lumino_message::Tool::ShapeSelect {
             return false;
         }
         let (target, model, original_composed, group_parts) = {

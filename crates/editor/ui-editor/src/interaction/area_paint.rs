@@ -40,7 +40,7 @@ pub(crate) struct AreaPaintState {
 impl Editor {
     /// 进入区域着色模式：只接受单个 pending 形状/曲线（必要时先提升为单支组合）
     pub fn begin_area_paint(&mut self) -> bool {
-        if self.current_tool() != Tool::ShapeSelect {
+        if self.editor_state.current_tool() != Tool::ShapeSelect {
             return false;
         }
         // 先按来源判断闭合，避免「开放曲线」失败时留下一次无谓的提升（副作用）。

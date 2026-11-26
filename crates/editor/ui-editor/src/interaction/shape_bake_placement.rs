@@ -141,7 +141,7 @@ impl Editor {
     /// 选择工具按下时先尝试接管：8 手柄命中 → 交给 shape_edit_ui；
     /// 手柄框外空白 → 进入 B 阶段拉框。返回 `true` 表示已消费。
     pub(crate) fn bake_placement_press(&mut self, pos: Point, snapped_tick: f32, key: u16) -> bool {
-        if !self.bake_placement_active() || self.current_tool() != Tool::ShapeSelect {
+        if !self.bake_placement_active() || self.editor_state.current_tool() != Tool::ShapeSelect {
             return false;
         }
         let tick = self.pos_to_tick(pos);
@@ -262,7 +262,7 @@ impl Editor {
         let model = part.model.clone();
         let notes = part.notes.clone();
 
-        if self.current_tool() != Tool::ShapeSelect {
+        if self.editor_state.current_tool() != Tool::ShapeSelect {
             self.set_tool(Tool::ShapeSelect);
         }
         self.rebuild_pending_mirrors();

@@ -485,9 +485,13 @@ fn test_min_note_division_is_configurable() {
 
     // 关闭下限：竖直段保持 1 tick（几何原样，用于需要精确几何的调用方）
     let mut editor = vertical_line_editor();
-    assert_eq!(editor.min_note_division(), Some(128), "默认 128 分音符档");
+    assert_eq!(
+        editor.editor_state.line_tool.min_note_division,
+        Some(128),
+        "默认 128 分音符档"
+    );
     editor.set_min_note_division(None);
-    assert_eq!(editor.min_note_division(), None);
+    assert_eq!(editor.editor_state.line_tool.min_note_division, None);
     assert!(editor.confirm_line_tool());
     assert!(
         editor
@@ -501,7 +505,7 @@ fn test_min_note_division_is_configurable() {
 
     // `Some(0)` 归一为 `None`（0 分音符无意义）
     editor.set_min_note_division(Some(0));
-    assert_eq!(editor.min_note_division(), None);
+    assert_eq!(editor.editor_state.line_tool.min_note_division, None);
 }
 
 /// 档位是模式设置：√ 确认（`reset`）后保留，不必每次重设
@@ -510,5 +514,9 @@ fn test_min_note_division_survives_confirm() {
     let mut editor = vertical_line_editor();
     editor.set_min_note_division(Some(32));
     assert!(editor.confirm_line_tool());
-    assert_eq!(editor.min_note_division(), Some(32), "√ 确认后档位保留");
+    assert_eq!(
+        editor.editor_state.line_tool.min_note_division,
+        Some(32),
+        "√ 确认后档位保留"
+    );
 }

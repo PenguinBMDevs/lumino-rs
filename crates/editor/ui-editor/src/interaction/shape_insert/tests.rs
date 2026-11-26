@@ -230,7 +230,7 @@ fn test_pending_right_click_works_inside_selection_box() {
     let rect = ShapeRect::normalized(0.0, 60.0, 960.0, 72.0);
     assert!(editor.insert_shape_pending(model, drawer_origin(rect)));
     assert_eq!(
-        editor.current_tool(),
+        editor.editor_state.current_tool(),
         Tool::ShapeSelect,
         "插入后应处于形状选择"
     );

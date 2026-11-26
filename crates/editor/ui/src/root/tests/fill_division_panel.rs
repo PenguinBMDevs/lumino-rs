@@ -30,7 +30,10 @@ fn setup_paint_bucket() -> Root {
         Event::tool_panel_item_selected(ToolPanelItem::FillBucket),
     );
     assert!(root.toolbar.fill_enabled, "前置：工具栏油漆桶已开启");
-    assert!(root.editor.fill_enabled(), "前置：编辑器油漆桶已开启");
+    assert!(
+        root.editor.editor_state.line_tool.fill_enabled,
+        "前置：编辑器油漆桶已开启"
+    );
     root
 }
 
@@ -59,7 +62,10 @@ fn test_canvas_ctrl_click_opens_dialog_and_keeps_fill() {
         "画布 Ctrl+单击打开分音符填充时，应确保音符画工具箱展开（面板锚定其上）"
     );
     assert!(root.toolbar.fill_enabled, "工具栏油漆桶不应回退");
-    assert!(root.editor.fill_enabled(), "编辑器油漆桶不应回退");
+    assert!(
+        root.editor.editor_state.line_tool.fill_enabled,
+        "编辑器油漆桶不应回退"
+    );
 }
 
 /// 场景 B：悬浮条上**再次点击**已启用的「颜料桶」条目 —— 全程不按 Ctrl。
@@ -82,7 +88,10 @@ fn test_panel_second_click_fill_bucket_opens_panel_without_ctrl() {
         root.toolbar.fill_enabled,
         "再次点击颜料桶不应打回曲线（图标回退根因）"
     );
-    assert!(root.editor.fill_enabled(), "编辑器油漆桶不应回退");
+    assert!(
+        root.editor.editor_state.line_tool.fill_enabled,
+        "编辑器油漆桶不应回退"
+    );
     assert!(
         root.state.fill_division_dialog.is_open,
         "再次点击颜料桶应打开分音符填充面板"
@@ -109,7 +118,7 @@ fn test_panel_settings_requested_curve_degrades_without_dialog() {
         "曲线无独立设置，设置请求不应开面板"
     );
     assert_eq!(
-        root.editor.current_tool(),
+        root.editor.editor_state.current_tool(),
         Tool::Curve,
         "设置请求落在曲线条目上 = 选择曲线工具"
     );
@@ -178,7 +187,7 @@ fn test_fill_panel_disable_button_turns_fill_off() {
 
     assert!(!root.toolbar.fill_enabled, "「关闭填充」应停用工具栏填充态");
     assert!(
-        !root.editor.fill_enabled(),
+        !root.editor.editor_state.line_tool.fill_enabled,
         "「关闭填充」应停用编辑器填充态"
     );
     assert!(

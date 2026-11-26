@@ -13,7 +13,7 @@ impl DialogHandler {
     ) -> Option<Message> {
         match action {
             FillDivisionAction::OpenDialog => {
-                let current = root.editor.fill_division();
+                let current = root.editor.editor_state.line_tool.fill_division;
                 root.state.fill_division_dialog.is_open = true;
                 root.state.fill_division_dialog.value =
                     current.map(|n| n.to_string()).unwrap_or_default();

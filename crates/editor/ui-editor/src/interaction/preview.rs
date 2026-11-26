@@ -106,7 +106,7 @@ impl Editor {
 
     /// 饼干模切口（空隙区间 → 屏幕线段）
     fn mould_cut_lines(&self) -> Vec<((f32, f32), (f32, f32))> {
-        if self.current_tool() != lumino_message::Tool::ShapeSelect {
+        if self.editor_state.current_tool() != lumino_message::Tool::ShapeSelect {
             return Vec::new();
         }
         let mut out = Vec::new();

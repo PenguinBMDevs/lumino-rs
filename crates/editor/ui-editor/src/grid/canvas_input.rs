@@ -111,7 +111,7 @@ pub fn dispatch(
                             .map_or(ContextMenuTarget::Notes, |_| {
                                 ContextMenuTarget::PendingDrawnShape
                             }),
-                        Some(false) if editor.current_tool() == Tool::ShapeSelect => {
+                        Some(false) if editor.editor_state.current_tool() == Tool::ShapeSelect => {
                             ContextMenuTarget::DrawnShape
                         }
                         _ => ContextMenuTarget::Notes,

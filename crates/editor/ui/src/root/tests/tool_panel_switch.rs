@@ -3,7 +3,7 @@
 //! 背景：用户多次反馈「下拉面板内点工具无法切换」。根因曾有两层：
 //! 1) 面板内按钮的 `on_press` 曾被 `mouse_area(...).on_press(Message::Null)` 吞掉；
 //! 2) `ToolPanelItemSelected` 事件未同步到编辑器状态，而 `view_arrangement` 每帧用
-//!    `editor.current_tool()` 反向覆盖 `toolbar.current_tool`。
+//!    `editor.editor_state.current_tool()` 反向覆盖 `toolbar.current_tool`。
 //!
 //! 这里用单测把「事件 → 工具栏状态 → 编辑器状态」整条链路钉死，避免再靠肉眼回归。
 
@@ -20,7 +20,7 @@ fn select_and_assert(item: ToolPanelItem, expect_tool: Tool, expect_fill: bool) 
         Message::Toolbar(Event::ToolPanelItemSelected(item)),
     );
     assert_eq!(
-        root.editor.current_tool(),
+        root.editor.editor_state.current_tool(),
         expect_tool,
         "面板选择 {:?} 必须同步到编辑器 current_tool",
         item
@@ -31,11 +31,9 @@ fn select_and_assert(item: ToolPanelItem, expect_tool: Tool, expect_fill: bool) 
         item
     );
     assert_eq!(
-        root.editor.fill_enabled(),
-        expect_fill,
+        root.editor.editor_state.line_tool.fill_enabled, expect_fill,
         "面板选择 {:?} 的填充状态应为 {}",
-        item,
-        expect_fill
+        item, expect_fill
     );
 }
 
@@ -85,11 +83,14 @@ fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
     );
     assert_eq!(
-        root.editor.current_tool(),
+        root.editor.editor_state.current_tool(),
         Tool::Brush,
         "填充桶不应改变当前工具"
     );
-    assert!(root.editor.fill_enabled(), "填充桶应开启填充");
+    assert!(
+        root.editor.editor_state.line_tool.fill_enabled,
+        "填充桶应开启填充"
+    );
 
     // 事件层的 toggle 语义（`apply_tool_panel_item`）仍可关闭填充。
     // 注意：视图层对**已启用**的颜料桶发的是 `ToolPanelItemSettingsRequested`（弹面板），
@@ -98,8 +99,11 @@ fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
     );
-    assert!(!root.editor.fill_enabled(), "再次点击填充桶应关闭填充");
-    assert_eq!(root.editor.current_tool(), Tool::Brush);
+    assert!(
+        !root.editor.editor_state.line_tool.fill_enabled,
+        "再次点击填充桶应关闭填充"
+    );
+    assert_eq!(root.editor.editor_state.current_tool(), Tool::Brush);
 }
 
 #[test]
@@ -116,16 +120,22 @@ fn test_panel_fill_bucket_from_curve_toggles_fill() {
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
     );
-    assert_eq!(root.editor.current_tool(), Tool::Curve);
-    assert!(root.editor.fill_enabled(), "曲线下首次点填充桶应开启填充");
+    assert_eq!(root.editor.editor_state.current_tool(), Tool::Curve);
+    assert!(
+        root.editor.editor_state.line_tool.fill_enabled,
+        "曲线下首次点填充桶应开启填充"
+    );
 
     // 事件层 toggle 语义仍可关闭填充（视图层关闭路径见上一测试的说明；仍保持曲线）
     handler.handle(
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
     );
-    assert_eq!(root.editor.current_tool(), Tool::Curve);
-    assert!(!root.editor.fill_enabled(), "曲线下再次点填充桶应关闭填充");
+    assert_eq!(root.editor.editor_state.current_tool(), Tool::Curve);
+    assert!(
+        !root.editor.editor_state.line_tool.fill_enabled,
+        "曲线下再次点填充桶应关闭填充"
+    );
 }
 
 #[test]
