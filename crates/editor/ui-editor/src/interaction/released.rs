@@ -29,7 +29,7 @@ impl Editor {
         }
         // 框选结束：清除量化锚点（框选过程中的临时状态，任何一条松手路径都不再需要）。
         // 放在最前，保证 i2m / 文字 / 曲线等提前返回的分支同样被清理。
-        self.selection_ui.marquee_anchor = None;
+        self.selection_ui.set_marquee_anchor(None);
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
         // DRAW-049：Bake 放置态 B 阶段拉框收口
@@ -246,7 +246,7 @@ impl Editor {
                 origin_tick,
                 last_tick,
             } => {
-                self.selection_ui.bounds.set(None);
+                self.selection_ui.set_bounds(None);
                 let delta_tick = last_tick - origin_tick;
                 if delta_tick != 0.0 {
                     let selected = self.get_selected_indices();
@@ -281,7 +281,7 @@ impl Editor {
                 origin_tick,
                 last_tick,
             } => {
-                self.selection_ui.bounds.set(None);
+                self.selection_ui.set_bounds(None);
                 let delta_tick = last_tick - origin_tick;
                 if delta_tick != 0.0 {
                     let selected = self.get_selected_indices();

@@ -164,7 +164,7 @@ impl Editor {
         }
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_raw_key(pos).round().clamp(0.0, 255.0) as u16;
-        let (_, current_tick) = match self.selection_ui.marquee_anchor {
+        let (_, current_tick) = match self.selection_ui.marquee_anchor() {
             Some(anchor) => self.marquee_edges(anchor, tick),
             None => (tick, tick),
         };

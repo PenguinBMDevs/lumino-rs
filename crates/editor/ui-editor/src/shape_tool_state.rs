@@ -47,4 +47,60 @@ pub(crate) struct ShapeToolState {
     pub(crate) list_open: bool,
     /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）。
     pub(crate) baked_pending: HashMap<u64, BakePending>,
+    /// 待确认产物镜像拖动已写回的累计偏移 `(dtick, dkey)`。
+    ///
+    /// 从 `SelectionUiState` 迁入：它描述的是「形状会话的几何写回进度」，
+    /// 不是框选 UI 状态。
+    pub(crate) pending_drag_applied: (f32, f32),
+}
+
+impl ShapeToolState {
+    /// 计算本次待确认镜像拖动的增量并推进已写回偏移；零增量返回 `None`。
+    pub(crate) fn take_pending_drag_increment(
+        &mut self,
+        delta_tick: f32,
+        delta_key: f32,
+    ) -> Option<(f32, f32)> {
+        let (applied_tick, applied_key) = self.pending_drag_applied;
+        let inc = (delta_tick - applied_tick, delta_key - applied_key);
+        if inc.0 == 0.0 && inc.1 == 0.0 {
+            return None;
+        }
+        self.pending_drag_applied = (delta_tick, delta_key);
+        Some(inc)
+    }
+
+    /// 一次待确认几何拖动结束后重置写回偏移。
+    pub(crate) fn reset_pending_drag_applied(&mut self) {
+        self.pending_drag_applied = (0.0, 0.0);
+    }
+
+    /// 记录一次 pending 编辑快照；undo 栈上限 64，新编辑清空 redo 与组合 redo。
+    pub(crate) fn push_pending_edit_snapshot(&mut self, snapshot: Vec<PendingComposed>) {
+        self.pending_edit_undo.push(snapshot);
+        while self.pending_edit_undo.len() > 64 {
+            self.pending_edit_undo.remove(0);
+        }
+        self.pending_edit_redo.clear();
+        self.pending_composed_redo.clear();
+    }
+
+    /// 清空 pending 编辑的 undo/redo（不动组合 redo）。
+    pub(crate) fn clear_pending_edit_stacks(&mut self) {
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
+    }
+
+    /// 清空全部 pending 栈（组合 redo + 编辑 undo/redo）。
+    pub(crate) fn clear_pending_stacks(&mut self) {
+        self.pending_composed_redo.clear();
+        self.pending_edit_undo.clear();
+        self.pending_edit_redo.clear();
+    }
+
+    /// 压入组合 redo，并清空本次组合产生的编辑栈。
+    pub(crate) fn push_pending_composed_redo(&mut self, item: PendingComposed) {
+        self.pending_composed_redo.push(item);
+        self.clear_pending_edit_stacks();
+    }
 }

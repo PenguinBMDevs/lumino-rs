@@ -152,7 +152,7 @@ pub fn dispatch(
         }
         CanvasEvent::Release => {
             // 清除框选框动画状态
-            editor.selection_ui.anim.set(None);
+            editor.selection_ui.clear_anim();
 
             if state.is_loop_dragging {
                 state.is_loop_dragging = false;

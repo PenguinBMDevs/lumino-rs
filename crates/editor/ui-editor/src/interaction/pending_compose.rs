@@ -112,9 +112,7 @@ impl Editor {
         for source in &item.sources {
             self.restore_pending_source(source.clone());
         }
-        self.shape_tools.pending_composed_redo.push(item);
-        self.shape_tools.pending_edit_undo.clear();
-        self.shape_tools.pending_edit_redo.clear();
+        self.shape_tools.push_pending_composed_redo(item);
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         true
@@ -129,8 +127,7 @@ impl Editor {
             self.remove_pending_source(source);
         }
         self.editor_state.pending_composed.push(item);
-        self.shape_tools.pending_edit_undo.clear();
-        self.shape_tools.pending_edit_redo.clear();
+        self.shape_tools.clear_pending_edit_stacks();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         true
@@ -377,9 +374,7 @@ fn compose_pending_with(
         drawer: None,
         mould_cuts,
     });
-    editor.shape_tools.pending_composed_redo.clear();
-    editor.shape_tools.pending_edit_undo.clear();
-    editor.shape_tools.pending_edit_redo.clear();
+    editor.shape_tools.clear_pending_stacks();
     editor.editor_state.shape_select.remove_pending_all();
     editor.rebuild_pending_mirrors();
     if let Some(id) = editor

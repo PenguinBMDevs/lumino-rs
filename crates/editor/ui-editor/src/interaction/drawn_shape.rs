@@ -440,7 +440,7 @@ impl Editor {
     pub(crate) fn handle_shape_select_pressed(&mut self, tick: f32, key: f32, additive: bool) {
         // 新一次拖动从零开始：已写回待确认几何的累计偏移必须归零，否则
         // `sync_pending_drag_geometry` 会按上一次的残值算出错误增量。
-        self.selection_ui.pending_drag_applied = (0.0, 0.0);
+        self.shape_tools.reset_pending_drag_applied();
         // 手势边界自愈：命中判定与选框都建立在镜像几何之上，动手前先保证它是最新的
         // （任何未预料到的待确认几何改动都不会再退化成「框不中」）。
         self.refresh_pending_mirror_geometry();
@@ -516,7 +516,7 @@ impl Editor {
     pub(crate) fn handle_shape_select_released(&mut self) {
         if self.is_shape_editing() {
             self.finish_shape_edit();
-            self.selection_ui.pending_drag_applied = (0.0, 0.0);
+            self.shape_tools.reset_pending_drag_applied();
             return;
         }
         if let Some((dtick, dkey)) = self.editor_state.shape_select.end_drag() {
@@ -524,7 +524,7 @@ impl Editor {
         } else if let Some(area) = self.editor_state.shape_select.end_marquee() {
             finish_shape_marquee(self, area);
         }
-        self.selection_ui.pending_drag_applied = (0.0, 0.0);
+        self.shape_tools.reset_pending_drag_applied();
     }
 
     // ── 删除 ─────────────────────────────────────────────
@@ -715,15 +715,14 @@ fn move_selected_shapes(editor: &mut Editor, dtick: f32, dkey: f32) -> bool {
     // ① 待确认镜像：几何在拖动过程中已**即时写回**（`sync_pending_drag_geometry`），
     //    此处只补「尚未写回的残差」并为整次移动记一次历史（无文档变更）
     let mut pending_moved = false;
+    let residual = editor.shape_tools.take_pending_drag_increment(dtick, dkey);
     for (id, _, pending) in &selected {
         let Some(r) = *pending else {
             continue;
         };
-        let (applied_tick, applied_key) = editor.selection_ui.pending_drag_applied;
-        let inc = (dtick - applied_tick, dkey - applied_key);
-        if inc.0 != 0.0 || inc.1 != 0.0 {
+        if let Some((inc_tick, inc_key)) = residual {
             // 残差非零（本函数被直接调用 / 拖动帧未落几何）：补写；引用失效则跳过
-            if !translate_pending(editor, r, inc.0, inc.1) {
+            if !translate_pending(editor, r, inc_tick, inc_key) {
                 continue;
             }
             if let Some(src) = editor.pending_source(r) {
@@ -733,7 +732,7 @@ fn move_selected_shapes(editor: &mut Editor, dtick: f32, dkey: f32) -> bool {
         record_pending_movement(editor, r);
         pending_moved = true;
     }
-    editor.selection_ui.pending_drag_applied = (0.0, 0.0);
+    editor.shape_tools.reset_pending_drag_applied();
 
     // ② 已确认图形：按值定位文档音符 → MoveOp（镜像无音符，天然不参与）
     let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
@@ -876,11 +875,12 @@ fn sync_pending_drag_geometry(editor: &mut Editor) {
     let Some(d) = editor.editor_state.shape_select.drag() else {
         return;
     };
-    let (applied_tick, applied_key) = editor.selection_ui.pending_drag_applied;
-    let inc = (d.delta_tick - applied_tick, d.delta_key - applied_key);
-    if inc.0 == 0.0 && inc.1 == 0.0 {
+    let Some(inc) = editor
+        .shape_tools
+        .take_pending_drag_increment(d.delta_tick, d.delta_key)
+    else {
         return;
-    }
+    };
     let mirrors: Vec<(u64, PendingShapeRef)> = editor
         .editor_state
         .shape_select
@@ -897,7 +897,6 @@ fn sync_pending_drag_geometry(editor: &mut Editor) {
             editor.editor_state.shape_select.set_source(id, src);
         }
     }
-    editor.selection_ui.pending_drag_applied = (d.delta_tick, d.delta_key);
 }
 
 /// 为一次已完成的待确认几何移动补记历史快照（owning tool 的待确认历史）

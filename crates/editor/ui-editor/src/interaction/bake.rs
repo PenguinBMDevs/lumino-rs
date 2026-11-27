@@ -69,8 +69,7 @@ impl Editor {
                 restored_composed = composed.len();
                 self.editor_state.shape_tool = state;
                 self.editor_state.pending_composed = composed;
-                self.shape_tools.pending_edit_undo.clear();
-                self.shape_tools.pending_edit_redo.clear();
+                self.shape_tools.clear_pending_edit_stacks();
             }
             BakePending::Brush { mut state, config } => {
                 state.history.truncate_redo();
@@ -175,8 +174,7 @@ impl Editor {
             BakePending::Shape { .. } => {
                 self.editor_state.shape_tool.clear_pending();
                 self.editor_state.pending_composed.clear();
-                self.shape_tools.pending_edit_undo.clear();
-                self.shape_tools.pending_edit_redo.clear();
+                self.shape_tools.clear_pending_edit_stacks();
             }
             BakePending::Brush { .. } => self.editor_state.brush_tool.reset(),
         }

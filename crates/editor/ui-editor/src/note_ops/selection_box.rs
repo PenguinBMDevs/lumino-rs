@@ -111,7 +111,7 @@ impl Editor {
         );
 
         // 缓存有效：非 ghost 直接取原始框；ghost 在缓存上叠加 delta（O(1)）
-        if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds.get() {
+        if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds() {
             if !ghost.needs_ghost() {
                 return vec![bounds_to_screen_rect(self, min_t, max_te, max_k, min_k)];
             }
@@ -168,7 +168,7 @@ fn selection_rects_from_plain_scan(editor: &Editor) -> Vec<ScreenRect> {
         }
     }
     let raw = bounds.get();
-    editor.selection_ui.bounds.set(raw);
+    editor.selection_ui.set_bounds(raw);
     raw.map(|(min_t, max_te, max_k, min_k)| {
         vec![bounds_to_screen_rect(editor, min_t, max_te, max_k, min_k)]
     })
@@ -235,7 +235,7 @@ fn selection_rects_from_ghost_scan(editor: &Editor, ghost: &GhostState) -> Vec<S
     }
 
     // 恢复 raw bounds 缓存，后续帧走 O(1) ghost 路径
-    editor.selection_ui.bounds.set(raw.get());
+    editor.selection_ui.set_bounds(raw.get());
 
     // 复制模式只保留最新件（副本）框选；移动模式跟随 ghost
     visible

@@ -305,12 +305,7 @@ fn area_paint_model(editor: &Editor, target: AreaPaintTarget) -> Option<&ShapeMo
 fn commit_area_paint(editor: &mut Editor, index: usize, model: ShapeModel) -> bool {
     let snapshot = editor.editor_state.pending_composed.clone();
     editor.update_pending_composed_model(index, model);
-    editor.shape_tools.pending_edit_undo.push(snapshot);
-    while editor.shape_tools.pending_edit_undo.len() > 64 {
-        editor.shape_tools.pending_edit_undo.remove(0);
-    }
-    editor.shape_tools.pending_edit_redo.clear();
-    editor.shape_tools.pending_composed_redo.clear();
+    editor.shape_tools.push_pending_edit_snapshot(snapshot);
     true
 }
 

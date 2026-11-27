@@ -42,7 +42,7 @@ impl Editor {
             self.editor_state.interaction.edit_state,
             EditState::Selecting { .. }
         ) {
-            self.selection_ui.cached_bounds.set(None);
+            self.selection_ui.clear_cached_bounds();
             return;
         }
 
@@ -68,8 +68,8 @@ impl Editor {
         let new_bounds = (new_min_t, new_max_t, new_min_k, new_max_k);
 
         // 无缓存 → 全量重建（首帧）
-        let Some(old_bounds) = self.selection_ui.cached_bounds.get() else {
-            self.selection_ui.cached_bounds.set(Some(new_bounds));
+        let Some(old_bounds) = self.selection_ui.cached_bounds() else {
+            self.selection_ui.set_cached_bounds(Some(new_bounds));
             return rebuild_full_selection(self, new_min_t, new_max_t, new_min_k, new_max_k);
         };
 
@@ -77,7 +77,7 @@ impl Editor {
         if old_bounds == new_bounds {
             puffin::profile_scope!("diag::selection_cache_hit");
             if !self.has_selection() {
-                self.selection_ui.cached_bounds.set(Some(new_bounds));
+                self.selection_ui.set_cached_bounds(Some(new_bounds));
                 rebuild_full_selection(self, new_min_t, new_max_t, new_min_k, new_max_k);
             }
             return;
@@ -85,11 +85,11 @@ impl Editor {
 
         // 安全保护：无选中音符但缓存在 → 全量重建
         if !self.has_selection() {
-            self.selection_ui.cached_bounds.set(Some(new_bounds));
+            self.selection_ui.set_cached_bounds(Some(new_bounds));
             return rebuild_full_selection(self, new_min_t, new_max_t, new_min_k, new_max_k);
         }
 
-        self.selection_ui.cached_bounds.set(Some(new_bounds));
+        self.selection_ui.set_cached_bounds(Some(new_bounds));
         apply_selection_delta(self, old_bounds, new_min_t, new_max_t, new_min_k, new_max_k);
     }
 }
@@ -451,7 +451,7 @@ fn rebuild_selected_notes(
         // 注意：selected_bounds 缓存存 RAW（文档位置），渲染时再叠加 delta 得视觉框
         let bounds = selected_bounds_from(editor, &set);
         editor.editor_state.interaction.selected_notes = set;
-        editor.selection_ui.bounds.set(bounds);
+        editor.selection_ui.set_bounds(bounds);
         return;
     }
 
@@ -498,7 +498,7 @@ fn rebuild_selected_notes(
     // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
     let bounds = selected_bounds_from(editor, &set);
     editor.editor_state.interaction.selected_notes = set;
-    editor.selection_ui.bounds.set(bounds);
+    editor.selection_ui.set_bounds(bounds);
 }
 
 /// 按选中索引集合计算 RAW（文档位置）包围盒。

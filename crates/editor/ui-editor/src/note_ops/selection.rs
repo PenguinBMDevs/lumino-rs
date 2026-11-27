@@ -17,7 +17,7 @@ impl Editor {
             return; // 音符已选中，不需要更新边界
         }
         if let Some(n) = self.editor_state.data.get_note_view(index) {
-            let mut bounds = self.selection_ui.bounds.get();
+            let mut bounds = self.selection_ui.bounds();
             match &mut bounds {
                 Some((min_t, max_te, max_k, min_k)) => {
                     *min_t = min_t.min(n.tick);
@@ -29,7 +29,7 @@ impl Editor {
                     bounds = Some((n.tick, n.tick + n.length, n.key, n.key));
                 }
             }
-            self.selection_ui.bounds.set(bounds);
+            self.selection_ui.set_bounds(bounds);
         }
     }
 
@@ -40,7 +40,7 @@ impl Editor {
             return false;
         }
         // 检查被移除的音符是否在边界上，若在则缓存失效
-        if let Some(bounds) = self.selection_ui.bounds.get()
+        if let Some(bounds) = self.selection_ui.bounds()
             && let Some(n) = self.editor_state.data.get_note_view(*index)
         {
             let at_boundary = n.tick == bounds.0
@@ -48,7 +48,7 @@ impl Editor {
                 || n.key == bounds.2
                 || n.key == bounds.3;
             if at_boundary {
-                self.selection_ui.bounds.set(None);
+                self.selection_ui.set_bounds(None);
             }
         }
         true
@@ -57,7 +57,7 @@ impl Editor {
     /// 清空选中集合，并清除选择框边界缓存。
     pub fn selection_clear(&mut self) {
         self.editor_state.interaction.selected_notes.clear();
-        self.selection_ui.bounds.set(None);
+        self.selection_ui.set_bounds(None);
     }
 
     /// 替换选中集合，并重建选择框边界缓存。
@@ -90,7 +90,7 @@ impl Editor {
             }
         }
         self.editor_state.interaction.selected_notes = new_set;
-        self.selection_ui.bounds.set(bounds.get());
+        self.selection_ui.set_bounds(bounds.get());
     }
 
     /// 按参数全等（tick/key/length/velocity/channel）匹配并选中音符

@@ -150,7 +150,7 @@ impl Editor {
 
     /// 当前框选弹簧动画状态（UI 渲染层读取）。
     pub fn selection_box_anim(&self) -> Option<crate::SelectionBoxAnimState> {
-        self.selection_ui.anim.get()
+        self.selection_ui.anim()
     }
 
     /// 检查音符数据是否已变化

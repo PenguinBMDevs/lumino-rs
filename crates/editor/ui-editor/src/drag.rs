@@ -104,8 +104,8 @@ impl Editor {
                 // 实时视觉由 build_ghost_delta_positions 通过 origin_tick 计算。
                 let delta_tick = snapped_tick - *last_tick;
                 if delta_tick != 0.0 {
-                    if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds.get() {
-                        self.selection_ui.bounds.set(Some((
+                    if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds() {
+                        self.selection_ui.set_bounds(Some((
                             (min_t + delta_tick).max(0.0),
                             max_te,
                             max_k,
@@ -123,8 +123,8 @@ impl Editor {
                 // ghost 方案：拉伸期间不修改 document，仅更新 last_tick 和选择框边界缓存。
                 let delta_tick = snapped_tick - *last_tick;
                 if delta_tick != 0.0 {
-                    if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds.get() {
-                        self.selection_ui.bounds.set(Some((
+                    if let Some((min_t, max_te, max_k, min_k)) = self.selection_ui.bounds() {
+                        self.selection_ui.set_bounds(Some((
                             min_t,
                             max_te + delta_tick,
                             max_k,
