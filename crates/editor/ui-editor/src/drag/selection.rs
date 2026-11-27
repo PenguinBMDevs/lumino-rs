@@ -92,112 +92,6 @@ impl Editor {
         self.selection_ui.cached_bounds.set(Some(new_bounds));
         apply_selection_delta(self, old_bounds, new_min_t, new_max_t, new_min_k, new_max_k);
     }
-
-    /// 全量重建 selected_notes（首帧 / fallback）
-    ///
-    /// 2026-09 性能修复（超大工程框选）：旧实现逐索引 `selection_insert`
-    /// （每次随机 `get_note_view` 二分 + 边界更新）在 19.2M 轨道下 ~130ms/帧。
-    /// 现在改为**单遍顺序扫描**：查询得索引集合（位图，O(1) 命中），再沿轨道
-    /// 顺序扫描一次得出边界，全程顺序读。
-    fn rebuild_selected_notes(&mut self, min_tick: f32, max_tick: f32, min_key: u16, max_key: u16) {
-        self.selection_clear();
-        self.ensure_spatial_index();
-        // lookback = 最大音符长度（精确上界；固定 1M tick 在密集轨道下覆盖整轨）
-        let lookback = self.current_track_max_note_len();
-
-        // 飞行/幽灵期间（pending 存在）：显示位置 = 文档旧位置 + pending delta，
-        // 框选必须按视觉（幽灵）位置命中，否则空白点击提交后立即新框选会基于旧文档错位。
-        // 此时旁路空间索引（索引建在旧文档位置上），走幽灵感知的窗口扫描。
-        if self.transient.pending_drag.is_some() {
-            let set =
-                ghost_aware_window_collect(self, min_tick, max_tick, min_key, max_key, lookback);
-            // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
-            // 注意：selected_bounds 缓存存 RAW（文档位置），渲染时再叠加 delta 得视觉框
-            let mut acc = Bounds::default();
-            if !set.is_empty() {
-                for (i, n) in self
-                    .editor_state
-                    .data
-                    .current_track_notes()
-                    .iter()
-                    .enumerate()
-                {
-                    if !set.contains(&i) {
-                        continue;
-                    }
-                    let tick = n.start_tick as f32;
-                    let length = (n.end_tick - n.start_tick) as f32;
-                    acc.add(tick, tick + length, n.key as u16);
-                }
-            }
-
-            self.editor_state.interaction.selected_notes = set;
-            self.selection_ui.bounds.set(acc.get());
-            return;
-        }
-
-        let set = {
-            let notes = self.editor_state.data.current_track_notes();
-            if let Some(index) = self.spatial.note_index.borrow().as_ref() {
-                let mut cache = self.spatial.query_cache.borrow_mut();
-                cache.clear();
-                // 框选口径：tick 轴半开（`update_query` 是视口/播放的闭区间原语，不可用）
-                index.update_query_marquee(min_tick, max_tick, min_key, max_key, &mut cache);
-                let mut set = SelectionSet::default();
-                set.extend(cache.iter().copied());
-                set
-            } else {
-                // 超大型工程（无空间索引）→ 窗口扫描：块级二分框出 tick 范围
-                // （含 lookback 跨入），一次遍历同时收集索引。
-                //
-                // ⚠️ `window_range` 的 end 参数是**排他**上界，`end_u32 + 1` 使窗口
-                // 成为查询区间的**超集**，由 `marquee_hits` 精确收口。
-                // 不要为了「对齐半开」把这里改成 `end_u32` —— 那会让窗口变子集，
-                // 直接漏音符。
-                puffin::profile_scope!("diag::selection_window_scan");
-                let start_u32 = min_tick.max(0.0) as u32;
-                let end_u32 = max_tick.max(0.0) as u32;
-                let (lo, hi) = notes.window_range(start_u32, end_u32 + 1, lookback);
-                let mut set = SelectionSet::default();
-                for (i, note) in notes.iter_window(lo, hi) {
-                    if marquee_hits(
-                        note.start_tick as f32,
-                        note.end_tick as f32,
-                        note.key as u16,
-                        min_tick,
-                        max_tick,
-                        min_key,
-                        max_key,
-                    ) {
-                        set.insert(i);
-                    }
-                }
-                set
-            }
-        };
-
-        // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
-        let mut acc = Bounds::default();
-        if !set.is_empty() {
-            for (i, n) in self
-                .editor_state
-                .data
-                .current_track_notes()
-                .iter()
-                .enumerate()
-            {
-                if !set.contains(&i) {
-                    continue;
-                }
-                let tick = n.start_tick as f32;
-                let length = (n.end_tick - n.start_tick) as f32;
-                acc.add(tick, tick + length, n.key as u16);
-            }
-        }
-
-        self.editor_state.interaction.selected_notes = set;
-        self.selection_ui.bounds.set(acc.get());
-    }
 }
 
 /// 全量重建封装（用于从 `update_selection` 的 guard 块中调用）
@@ -209,7 +103,7 @@ fn rebuild_full_selection(
     max_key: u16,
 ) {
     puffin::profile_scope!("diag::selection_full_rebuild");
-    editor.rebuild_selected_notes(min_tick, max_tick, min_key, max_key);
+    rebuild_selected_notes(editor, min_tick, max_tick, min_key, max_key);
 }
 
 /// 查询矩形内的音符索引（追加到 `out`）。
@@ -527,4 +421,116 @@ fn ghost_aware_query_rect(
             out.push(i);
         }
     }
+}
+
+/// 全量重建 selected_notes（首帧 / fallback）
+///
+/// 2026-09 性能修复（超大工程框选）：旧实现逐索引 `selection_insert`
+/// （每次随机 `get_note_view` 二分 + 边界更新）在 19.2M 轨道下 ~130ms/帧。
+/// 现在改为**单遍顺序扫描**：查询得索引集合（位图，O(1) 命中），再沿轨道
+/// 顺序扫描一次得出边界，全程顺序读。
+fn rebuild_selected_notes(
+    editor: &mut Editor,
+    min_tick: f32,
+    max_tick: f32,
+    min_key: u16,
+    max_key: u16,
+) {
+    editor.selection_clear();
+    editor.ensure_spatial_index();
+    // lookback = 最大音符长度（精确上界；固定 1M tick 在密集轨道下覆盖整轨）
+    let lookback = editor.current_track_max_note_len();
+
+    // 飞行/幽灵期间（pending 存在）：显示位置 = 文档旧位置 + pending delta，
+    // 框选必须按视觉（幽灵）位置命中，否则空白点击提交后立即新框选会基于旧文档错位。
+    // 此时旁路空间索引（索引建在旧文档位置上），走幽灵感知的窗口扫描。
+    if editor.transient.pending_drag.is_some() {
+        let set =
+            ghost_aware_window_collect(editor, min_tick, max_tick, min_key, max_key, lookback);
+        // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
+        // 注意：selected_bounds 缓存存 RAW（文档位置），渲染时再叠加 delta 得视觉框
+        let mut acc = Bounds::default();
+        if !set.is_empty() {
+            for (i, n) in editor
+                .editor_state
+                .data
+                .current_track_notes()
+                .iter()
+                .enumerate()
+            {
+                if !set.contains(&i) {
+                    continue;
+                }
+                let tick = n.start_tick as f32;
+                let length = (n.end_tick - n.start_tick) as f32;
+                acc.add(tick, tick + length, n.key as u16);
+            }
+        }
+
+        editor.editor_state.interaction.selected_notes = set;
+        editor.selection_ui.bounds.set(acc.get());
+        return;
+    }
+
+    let set = {
+        let notes = editor.editor_state.data.current_track_notes();
+        if let Some(index) = editor.spatial.note_index.borrow().as_ref() {
+            let mut cache = editor.spatial.query_cache.borrow_mut();
+            cache.clear();
+            // 框选口径：tick 轴半开（`update_query` 是视口/播放的闭区间原语，不可用）
+            index.update_query_marquee(min_tick, max_tick, min_key, max_key, &mut cache);
+            let mut set = SelectionSet::default();
+            set.extend(cache.iter().copied());
+            set
+        } else {
+            // 超大型工程（无空间索引）→ 窗口扫描：块级二分框出 tick 范围
+            // （含 lookback 跨入），一次遍历同时收集索引。
+            //
+            // ⚠️ `window_range` 的 end 参数是**排他**上界，`end_u32 + 1` 使窗口
+            // 成为查询区间的**超集**，由 `marquee_hits` 精确收口。
+            // 不要为了「对齐半开」把这里改成 `end_u32` —— 那会让窗口变子集，
+            // 直接漏音符。
+            puffin::profile_scope!("diag::selection_window_scan");
+            let start_u32 = min_tick.max(0.0) as u32;
+            let end_u32 = max_tick.max(0.0) as u32;
+            let (lo, hi) = notes.window_range(start_u32, end_u32 + 1, lookback);
+            let mut set = SelectionSet::default();
+            for (i, note) in notes.iter_window(lo, hi) {
+                if marquee_hits(
+                    note.start_tick as f32,
+                    note.end_tick as f32,
+                    note.key as u16,
+                    min_tick,
+                    max_tick,
+                    min_key,
+                    max_key,
+                ) {
+                    set.insert(i);
+                }
+            }
+            set
+        }
+    };
+
+    // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
+    let mut acc = Bounds::default();
+    if !set.is_empty() {
+        for (i, n) in editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .enumerate()
+        {
+            if !set.contains(&i) {
+                continue;
+            }
+            let tick = n.start_tick as f32;
+            let length = (n.end_tick - n.start_tick) as f32;
+            acc.add(tick, tick + length, n.key as u16);
+        }
+    }
+
+    editor.editor_state.interaction.selected_notes = set;
+    editor.selection_ui.bounds.set(acc.get());
 }

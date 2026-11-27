@@ -50,7 +50,7 @@ impl Editor {
     /// `parse_clipboard_header`），2 个调用点找不到方法（`paste.rs` 的
     /// `paste_from_clipboard`、以及本模块的跨视图互通测试）。CI 跑 Linux 才暴露。
     ///
-    /// 与 [`Self::insert_grouped_notes`] 同一处理原则：**只碰系统剪贴板的部分才需要
+    /// 与 [`insert_grouped_notes`] 同一处理原则：**只碰系统剪贴板的部分才需要
     /// cfg，纯逻辑部分不得加 cfg**——加了会让非 Windows 平台的测试覆盖率恒为 0，
     /// 且把编译期错误伪装成平台差异。
     ///
@@ -146,7 +146,7 @@ impl Editor {
         self.selection_clear();
 
         if multi_track {
-            self.insert_grouped_notes(by_track);
+            insert_grouped_notes(self, by_track);
             self.mark_notes_changed();
             tracing::info!(
                 "Editor: 已从二进制剪贴板多轨粘贴 {} 个音符（走带子格式）",
@@ -159,60 +159,6 @@ impl Editor {
         self.commit_pasted_notes((anchor_tick, 0), single);
         tracing::info!("Editor: 已从二进制剪贴板粘贴 {} 个音符", inserted);
         true
-    }
-
-    /// 按目标文档轨分组批量插入（跨轨路由用）
-    ///
-    /// 无平台依赖（JSON 路径在所有平台都需要它），故**不带 `cfg(windows)`**——
-    /// 带的话非 Windows 构建下 `paste_json_payload` 会找不到本函数。
-    ///
-    /// 选区不在此处设置：卷帘选区是单轨索引位图，无法表达跨轨选择；走带侧由
-    /// [`Self::apply_clipboard_paste_entries`] 统一冻结新粘贴音符。
-    fn insert_grouped_notes(&mut self, by_track: HashMap<usize, Vec<Note>>) -> usize {
-        let current_track = self.editor_state.data.current_track;
-        let collab_sync = self.editor_state.data.collab_sync_enabled();
-        let mut inserted = 0usize;
-        let mut batch_acc: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
-        for (dest_track, notes) in by_track {
-            let ids = self
-                .editor_state
-                .data
-                .batch_insert_notes_to_track_with_ids(dest_track, &notes);
-            // DEBT-03 #120：按实际插入数计数与广播（目标轨不存在时 ids 为空）
-            let actual = ids.len();
-            if actual == 0 {
-                tracing::warn!(
-                    "粘贴：目标轨 {dest_track} 不存在，跳过 {} 个音符",
-                    notes.len()
-                );
-                continue;
-            }
-            for note in notes.iter().take(actual) {
-                inserted += 1;
-                if collab_sync {
-                    batch_acc.push((
-                        note.tick,
-                        note.key,
-                        note.length,
-                        note.velocity,
-                        note.channel,
-                        dest_track,
-                    ));
-                }
-            }
-            if dest_track == current_track {
-                self.mark_notes_changed();
-            }
-            self.editor_state
-                .data
-                .mark_track_notes_changed_for(Some(HashSet::from([dest_track])));
-        }
-        if !batch_acc.is_empty() {
-            lumino_message::events::emit(lumino_message::events::Event::Window(
-                lumino_message::events::window::Event::local_notes_added_batch(batch_acc),
-            ));
-        }
-        inserted
     }
 
     /// JSON 载荷粘贴（纯函数，不触碰系统剪贴板，便于单元测试）。
@@ -312,9 +258,64 @@ impl Editor {
         }
         self.push_history();
         self.selection_clear();
-        self.insert_grouped_notes(by_track);
+        insert_grouped_notes(self, by_track);
         self.mark_notes_changed();
         tracing::info!("Editor: 已从 JSON 剪贴板多轨粘贴音符");
         true
     }
+}
+
+/// 按目标文档轨分组批量插入（跨轨路由用）
+///
+/// 无平台依赖（JSON 路径在所有平台都需要它），故**不带 `cfg(windows)`**——
+/// 带的话非 Windows 构建下 `paste_json_payload` 会找不到本函数。
+///
+/// 选区不在此处设置：卷帘选区是单轨索引位图，无法表达跨轨选择；走带侧由
+/// [`Self::apply_clipboard_paste_entries`] 统一冻结新粘贴音符。
+fn insert_grouped_notes(editor: &mut Editor, by_track: HashMap<usize, Vec<Note>>) -> usize {
+    let current_track = editor.editor_state.data.current_track;
+    let collab_sync = editor.editor_state.data.collab_sync_enabled();
+    let mut inserted = 0usize;
+    let mut batch_acc: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
+    for (dest_track, notes) in by_track {
+        let ids = editor
+            .editor_state
+            .data
+            .batch_insert_notes_to_track_with_ids(dest_track, &notes);
+        // DEBT-03 #120：按实际插入数计数与广播（目标轨不存在时 ids 为空）
+        let actual = ids.len();
+        if actual == 0 {
+            tracing::warn!(
+                "粘贴：目标轨 {dest_track} 不存在，跳过 {} 个音符",
+                notes.len()
+            );
+            continue;
+        }
+        for note in notes.iter().take(actual) {
+            inserted += 1;
+            if collab_sync {
+                batch_acc.push((
+                    note.tick,
+                    note.key,
+                    note.length,
+                    note.velocity,
+                    note.channel,
+                    dest_track,
+                ));
+            }
+        }
+        if dest_track == current_track {
+            editor.mark_notes_changed();
+        }
+        editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(HashSet::from([dest_track])));
+    }
+    if !batch_acc.is_empty() {
+        lumino_message::events::emit(lumino_message::events::Event::Window(
+            lumino_message::events::window::Event::local_notes_added_batch(batch_acc),
+        ));
+    }
+    inserted
 }

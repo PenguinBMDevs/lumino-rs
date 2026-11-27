@@ -101,17 +101,17 @@ impl Editor {
     pub fn resolve_selection(&self, view: EditView) -> SelectionSnapshot {
         let resolved = match view {
             EditView::Arrangement => {
-                let arranged = self.collect_arrangement_selected_notes();
+                let arranged = collect_arrangement_selected_notes(self);
                 if arranged.is_empty() {
-                    self.collect_roll_selected_notes()
+                    collect_roll_selected_notes(self)
                 } else {
                     arranged
                 }
             }
             EditView::PianoRoll => {
-                let roll = self.collect_roll_selected_notes();
+                let roll = collect_roll_selected_notes(self);
                 if roll.is_empty() {
-                    self.collect_arrangement_selected_notes()
+                    collect_arrangement_selected_notes(self)
                 } else {
                     roll
                 }
@@ -139,13 +139,13 @@ impl Editor {
                     .hits(&self.editor_state.data)
                     .is_empty()
                 {
-                    !self.collect_roll_selected_notes().is_empty()
+                    !collect_roll_selected_notes(self).is_empty()
                 } else {
                     true
                 }
             }
             EditView::PianoRoll => {
-                if self.collect_roll_selected_notes().is_empty() {
+                if collect_roll_selected_notes(self).is_empty() {
                     !self
                         .arrange_selection_cache
                         .hits(&self.editor_state.data)
@@ -156,34 +156,35 @@ impl Editor {
             }
         }
     }
+}
 
-    /// 走带选区命中的音符（跨轨，**视觉空间**判定）
-    ///
-    /// 2026-09 性能修复：改走 `selection_cache`，键命中时零扫描。
-    fn collect_arrangement_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
-        self.arrange_selection_cache
-            .hits(&self.editor_state.data)
-            .by_track()
-            .to_vec()
+/// 走带选区命中的音符（跨轨，**视觉空间**判定）
+///
+/// 2026-09 性能修复：改走 `selection_cache`，键命中时零扫描。
+fn collect_arrangement_selected_notes(editor: &Editor) -> Vec<(usize, Vec<NoteEvent>)> {
+    editor
+        .arrange_selection_cache
+        .hits(&editor.editor_state.data)
+        .by_track()
+        .to_vec()
+}
+
+/// 卷帘选区命中的音符（单轨，索引位图）
+fn collect_roll_selected_notes(editor: &Editor) -> Vec<(usize, Vec<NoteEvent>)> {
+    let editor_data = &editor.editor_state.data;
+    if !editor.has_selection() {
+        return Vec::new();
     }
-
-    /// 卷帘选区命中的音符（单轨，索引位图）
-    fn collect_roll_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
-        let editor_data = &self.editor_state.data;
-        if !self.has_selection() {
-            return Vec::new();
-        }
-        let track = editor_data.current_track;
-        let notes = editor_data.track_notes(track);
-        let selected: Vec<NoteEvent> = self
-            .get_selected_indices()
-            .into_iter()
-            .filter_map(|idx| notes.get(idx).copied())
-            .collect();
-        if selected.is_empty() {
-            Vec::new()
-        } else {
-            vec![(track, selected)]
-        }
+    let track = editor_data.current_track;
+    let notes = editor_data.track_notes(track);
+    let selected: Vec<NoteEvent> = editor
+        .get_selected_indices()
+        .into_iter()
+        .filter_map(|idx| notes.get(idx).copied())
+        .collect();
+    if selected.is_empty() {
+        Vec::new()
+    } else {
+        vec![(track, selected)]
     }
 }

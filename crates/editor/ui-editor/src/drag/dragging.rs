@@ -22,7 +22,7 @@ impl Editor {
             return;
         };
 
-        if !self.should_start_dragging(pos, Point::new(start_pos.0, start_pos.1)) {
+        if !should_start_dragging(self, pos, Point::new(start_pos.0, start_pos.1)) {
             return;
         }
 
@@ -40,28 +40,6 @@ impl Editor {
             drag_state,
             last_played_key: original_key,
         };
-    }
-
-    fn should_start_dragging(
-        &self,
-        pos: lumino_ui_core::geom::Point,
-        start_pos: lumino_ui_core::geom::Point,
-    ) -> bool {
-        let delta_x = pos.x - start_pos.x;
-        let delta_y = pos.y - start_pos.y;
-        let key_threshold = self.editor_state.view.zoom_y * DRAG_START_THRESHOLD_RATIO;
-        let distance = (delta_x * delta_x + delta_y * delta_y).sqrt();
-        let started = distance > key_threshold;
-        if started {
-            tracing::info!(
-                "Editor: 拖动启动 - delta=({}, {}), distance={}, threshold={}",
-                delta_x,
-                delta_y,
-                distance,
-                key_threshold
-            );
-        }
-        started
     }
 
     /// 完成单音符拖动（ghost 方案）
@@ -174,4 +152,26 @@ impl Editor {
     // 注：原 `finalize_selection_dragging` 已移除——延迟提交方案下，松手保存到
     // `pending_drag_state`，真正提交在 `commit_pending_drag`（点击空白处或
     // `commit_current_edit` 时触发）。详见 `interaction/released.rs`。
+}
+
+fn should_start_dragging(
+    editor: &Editor,
+    pos: lumino_ui_core::geom::Point,
+    start_pos: lumino_ui_core::geom::Point,
+) -> bool {
+    let delta_x = pos.x - start_pos.x;
+    let delta_y = pos.y - start_pos.y;
+    let key_threshold = editor.editor_state.view.zoom_y * DRAG_START_THRESHOLD_RATIO;
+    let distance = (delta_x * delta_x + delta_y * delta_y).sqrt();
+    let started = distance > key_threshold;
+    if started {
+        tracing::info!(
+            "Editor: 拖动启动 - delta=({}, {}), distance={}, threshold={}",
+            delta_x,
+            delta_y,
+            distance,
+            key_threshold
+        );
+    }
+    started
 }
