@@ -1,7 +1,7 @@
 # DEBT-10 / T-32：cpu-onion 双份代码决策
 
 > 日期：2026-11-27
-> 状态：决策已定；T-32c-1 density 层已完成（2026-11-27），T-32c-2 band/buffer 待主轨方案
+> 状态：T-32c-1 density 层已完成（2026-11-27）；T-32c-2 复核判定 band/buffer 为示例主轨展示层，不并入 onion-only crate
 > 关联：`2026-11-26-DEBT-10-结构减法与尺寸治理.md`
 
 ## 1. 事实
@@ -52,6 +52,8 @@
 | `render/buffer` | `BandBuffer` | `frame` + renderer 内部缓冲 | 无公开等价物 |
 | `render/density/*` | 示例自己的 grow/coverage/render | `density::{build,grow,coverage,render}` | 需逐函数对照 |
 
-结论：T-32b 不是「删文件 + re-export」，而是**示例渲染层移植**；必须逐模块做像素对拍。
-`color` 与 `simd` 已归一；`camera` 因 crate 的设计边界保留为 UI 适配层；
-`band` / `buffer` / `density` 仍需移植（T-32c）。
+结论（2026-11-27 更新）：`color` / `simd` / `index` / `density` 已归一；`camera` 因
+crate 的设计边界保留为 UI 适配层。`band` / `buffer` 经 T-32c-1 后的复核判定为
+**示例主轨展示层**：crate 明确只画洋葱皮（`lib.rs` 边界），示例是纯 CPU 主轨演示；
+强行并入会让 crate 变成 full renderer，属于产品边界变更，因此 T-32c-2 关闭不做。
+density 层已删除 1240 行分叉实现（T-32c-1），示例只保留 chrome 与相机适配。
