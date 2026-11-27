@@ -85,4 +85,16 @@ impl Root {
             })
             .unwrap_or_default()
     }
+
+    /// 走带是否活跃（播放或暂停）。
+    ///
+    /// 暂停时仍有活跃声部：切换音色库矩阵会让后续 NoteOff 的 release
+    /// spawner 使用新矩阵，产生错误释放音色，因此 REND-005 用本状态做延迟门控。
+    pub fn playback_is_active(&self) -> bool {
+        self.playback
+            .manager
+            .as_ref()
+            .and_then(|m| m.last_frame())
+            .is_some_and(|f| f.state != crate::playback::PlaybackState::Stopped)
+    }
 }

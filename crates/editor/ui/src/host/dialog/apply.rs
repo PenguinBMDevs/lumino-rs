@@ -78,6 +78,38 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 回填从已加载 `.lmpj` 工程恢复的端口音色库映射（REND-005）。
+    ///
+    /// 与作者/版权同一条加载链路：`reset_project_settings` 清空后调用本方法。
+    pub fn apply_project_port_soundfonts(
+        &mut self,
+        map: lumino_midi_model::multi_port::PortSoundfontMap,
+    ) {
+        self.root.set_port_soundfonts(map);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 注入端口音色库对话框数据并打开（独立窗口；REND-005）。
+    pub fn set_port_soundfonts_dialog(
+        &mut self,
+        map: lumino_midi_model::multi_port::PortSoundfontMap,
+        document_max_port: u8,
+    ) {
+        self.root
+            .set_port_soundfonts_dialog(&map, document_max_port);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 注入后端名与端口数并打开「端口音色库未生效」提示窗（REND-005）。
+    pub fn set_port_soundfonts_unsupported_dialog(&mut self, backend: String, ports: usize) {
+        self.root
+            .set_port_soundfonts_unsupported_dialog(backend, ports);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 当前工程级图片转 MIDI 参数（保存 `.lmpj` / 云保存时写入 metadata）
     pub fn get_project_i2m_config(&self) -> lumino_core::I2mSettings {
         self.root.right_sidebar.config.to_settings()

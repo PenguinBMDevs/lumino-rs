@@ -20,6 +20,9 @@ use lumino_export::LuminoProject;
 use lumino_midi_loader::MidiDocument;
 use lumino_note_core::midi_types::TempoPoint;
 
+use crate::root::Root;
+use lumino_core::storage::config::UiConfig;
+
 /// 构造含一份 document（tempo=120、4/4）的编辑器数据
 fn data_with_document() -> EditorData {
     let mut doc = MidiDocument::empty_with_tracks(2, 480);
@@ -112,4 +115,74 @@ fn time_signature_edit_reaches_export_project() {
         "工程拍号必须是编辑后的值: {:?}",
         project.time_signatures
     );
+}
+
+/// 回归：工程设置只改初始速度，不得把导入的多次变速压成一个点。
+///
+/// 症状：用户只改标题/作者后点确定，`apply_project_settings` 曾用
+/// `set_tempo_points(vec![tick 0])` 整体替换，导致界面速度轨消失、
+/// 音频导出变恒速。
+#[test]
+fn project_settings_preserves_later_tempo_changes() {
+    let mut root = Root::new(&UiConfig::default());
+    let mut doc = MidiDocument::empty_with_tracks(1, 480);
+    doc.tempo_changes = vec![(0, 120.0), (960, 60.0)];
+    doc.time_signatures = vec![(0, 4, 4), (1920, 3, 4)];
+    root.set_midi_document(doc);
+
+    root.apply_project_settings(
+        "Title".into(),
+        150.0,
+        "Copyright".into(),
+        "Author".into(),
+        vec![(0, 6, 8)],
+        false,
+    );
+
+    let data = &root.editor.editor_state.data;
+    assert_eq!(data.tempo_points.len(), 2, "后续变速点不得丢失");
+    assert!(
+        (data.tempo_points[0].bpm - 150.0).abs() < 1e-9,
+        "tick 0 应更新为新 BPM"
+    );
+    assert_eq!(data.tempo_points[1].tick, 960.0);
+    assert_eq!(data.tempo_points[1].bpm, 60.0);
+
+    let doc = data.document.as_ref().expect("文档应存在");
+    assert_eq!(
+        doc.tempo_changes,
+        vec![(0, 150.0), (960, 60.0)],
+        "document 是导出/保存唯一权威，必须保留整条变速轨"
+    );
+    assert_eq!(
+        doc.time_signatures,
+        vec![(0, 6, 8), (1920, 3, 4)],
+        "后续拍号变化同样不得丢失"
+    );
+}
+
+/// 文档没有 tick 0 变速点时，工程设置只插入初始速度，保留原有后续点。
+#[test]
+fn project_settings_inserts_initial_tempo_when_missing() {
+    let mut root = Root::new(&UiConfig::default());
+    let mut doc = MidiDocument::empty_with_tracks(1, 480);
+    doc.tempo_changes = vec![(480, 90.0)];
+    doc.time_signatures = vec![(960, 3, 4)];
+    root.set_midi_document(doc);
+
+    root.apply_project_settings(
+        "T".into(),
+        120.0,
+        String::new(),
+        String::new(),
+        vec![(0, 4, 4)],
+        false,
+    );
+
+    let data = &root.editor.editor_state.data;
+    let ticks: Vec<f32> = data.tempo_points.iter().map(|point| point.tick).collect();
+    assert_eq!(ticks, vec![0.0, 480.0], "缺少 tick 0 时应补初始速度");
+    let doc = data.document.as_ref().expect("文档应存在");
+    assert_eq!(doc.tempo_changes, vec![(0, 120.0), (480, 90.0)]);
+    assert_eq!(doc.time_signatures, vec![(0, 4, 4), (960, 3, 4)]);
 }

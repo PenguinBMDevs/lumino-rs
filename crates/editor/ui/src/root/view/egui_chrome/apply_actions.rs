@@ -177,6 +177,20 @@ impl Root {
             self,
             actions,
             plan,
+            port_soundfonts,
+            port_soundfonts_action_message
+        );
+        push_option_ref!(
+            self,
+            actions,
+            plan,
+            port_soundfonts_unsupported,
+            port_soundfonts_unsupported_action_message
+        );
+        push_option_ref!(
+            self,
+            actions,
+            plan,
             autosave,
             autosave_recover_action_message
         );

@@ -277,6 +277,18 @@ fn lookup_audio_4(zh: &str) -> Option<&'static str> {
         }
         // ── midi-model：EOT / 结构诊断 ──
         "MIDI 结构错误" => Some("MIDI structure error"),
+
+        // ── midi-io：REND-005 端口音色库（`api/xsynth/port_soundfonts.rs`、`synth_control.rs`）──
+        "全局音色库加载失败：{error}" => {
+            Some("Failed to load the global soundfont: {error}")
+        }
+
+        "当前后端不支持按端口音色库" => {
+            Some("The current backend does not support per-port soundfonts")
+        }
+        "端口 {port} 的音色库 {path} 加载失败，已回退全局：{error}" => Some(
+            "Failed to load the soundfont {path} for port {port}; fell back to the global soundfont: {error}",
+        ),
         _ => None,
     }
 }

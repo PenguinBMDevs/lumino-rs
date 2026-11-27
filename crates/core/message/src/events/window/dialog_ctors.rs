@@ -134,6 +134,10 @@ impl Event {
     pub fn close_project_settings_dialog() -> Self {
         Self::dialog(dialog::Event::CloseProjectSettingsDialog)
     }
+    /// 构造打开端口音色库对话框事件（REND-005）
+    pub fn open_port_soundfonts_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenPortSoundfontsDialog)
+    }
     /// 构造打开内存监控对话框事件
     pub fn open_memory_monitor_dialog() -> Self {
         Self::dialog(dialog::Event::OpenMemoryMonitorDialog)

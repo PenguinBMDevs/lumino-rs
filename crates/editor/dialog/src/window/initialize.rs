@@ -116,7 +116,22 @@ impl DialogWindow {
                     note_count_display: main_ui.note_count_display(),
                     time_signatures,
                     use10,
+                    port_soundfonts: main_ui.get_project_port_soundfonts(),
                 });
+            }
+            DialogType::PortSoundfonts => {
+                // REND-005：映射与文档端口数都来自主窗口；对话框只编辑草稿。
+                ui.set_port_soundfonts_dialog(
+                    main_ui.get_project_port_soundfonts(),
+                    main_ui.document_max_port(),
+                );
+            }
+            DialogType::PortSoundfontsUnsupported => {
+                let (backend, ports) = pending
+                    .pending_port_soundfonts_unsupported
+                    .clone()
+                    .unwrap_or_default();
+                ui.set_port_soundfonts_unsupported_dialog(backend, ports);
             }
             DialogType::Settings => {
                 // MIDI 输入设备页需要主窗口的输入 API 与设备快照（设置面板为独立 Root）；

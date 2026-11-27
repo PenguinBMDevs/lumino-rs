@@ -1,9 +1,10 @@
 use lumino_core::storage::config::{AudioEngineKind, SynthBackend, UiConfig};
 use lumino_midi_io::api::maestro::{MaestroStats, MaestroStatsReader};
+use lumino_midi_model::multi_port::PortSoundfontMap;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, channel};
+use std::sync::{Arc, Mutex};
 
 /// MIDI API 类型别名（REND-002：基础 trait 冻结，能力经 `SynthControl` 扩展）
 type MidiApi = Box<dyn lumino_midi_io::SynthControl>;
@@ -134,6 +135,28 @@ pub struct MidiManager {
     layout_apply: Option<layout::LayoutApplyInFlight>,
     /// DEBT-05 #122：worker 在防抖窗口结束时读取的"最新期望布局"。
     layout_desired: Arc<AtomicU8>,
+    /// REND-005：工程期望的端口音色库映射（UI 线程提交；播放中暂存）。
+    desired_port_soundfonts: PortSoundfontMap,
+    /// REND-005：当前合成器已应用的端口音色库映射（worker 成功后提交）。
+    spawned_port_soundfonts: PortSoundfontMap,
+    /// REND-005：后端代际。每次整后端重初始化 +1；在途合成应用 worker 的
+    /// 结果若属于旧代际，必须丢弃（含旧后端“不支持按端口音色库”的提示），
+    /// 否则切到 XSynth 后仍会显示旧后端的能力提示。
+    synth_epoch: u64,
+    /// REND-005：worker 在防抖窗口结束时读取的"最新期望映射"。
+    port_soundfonts_desired: Arc<Mutex<PortSoundfontMap>>,
+    /// REND-005：播放/暂停标志（每帧由 Runner 同步）。
+    ///
+    /// 播放中不切换音色库矩阵：`SetSoundfonts` 不杀音，但 NoteOff 的 release
+    /// spawner 使用当前矩阵，播放中切换会让释放尾音用错音色。
+    playback_active: Arc<AtomicBool>,
+    /// REND-005：待展示的「当前后端不支持按端口音色库」提示（专用弹窗）。
+    ///
+    /// 由 Runner 每帧取走；取走即清。与状态栏提示分离：不支持属于需要用户
+    /// 明确知晓并选择（降级 / 切 XSynth）的决策，不能只在左下角一闪而过。
+    pending_port_soundfonts_unsupported: Option<PortSoundfontsUnsupportedNotice>,
+    /// REND-005：本轮映射是否已请求过“不支持”弹窗（防每帧重复请求）。
+    port_soundfonts_unsupported_ack: bool,
     /// #127：待向用户展示的后端提示（LGS 静默降级/初始化失败可见化）。
     ///
     /// 由 Runner 每帧取走并写入状态栏；取走即清，避免重复提示。
@@ -175,6 +198,13 @@ impl Default for MidiManager {
             spawned_midi_max_port: 0,
             layout_apply: None,
             layout_desired: Arc::new(AtomicU8::new(0)),
+            desired_port_soundfonts: PortSoundfontMap::default(),
+            spawned_port_soundfonts: PortSoundfontMap::default(),
+            synth_epoch: 0,
+            port_soundfonts_desired: Arc::new(Mutex::new(PortSoundfontMap::default())),
+            playback_active: Arc::new(AtomicBool::new(false)),
+            pending_port_soundfonts_unsupported: None,
+            port_soundfonts_unsupported_ack: false,
             pending_backend_notice: None,
             lgs_rebuild: lgs_rebuild::LgsRebuildState::default(),
             backend_fallback: fallback::BackendFallbackState::default(),
@@ -188,6 +218,25 @@ impl MidiManager {
     /// 取走即清；Runner 取到后写入状态栏，用户可见"当前实际后端与原因"。
     pub fn take_pending_backend_notice(&mut self) -> Option<String> {
         self.pending_backend_notice.take()
+    }
+
+    /// 取走「当前后端不支持按端口音色库」的弹窗请求（REND-005）。
+    ///
+    /// 取走即清；Runner 收到后打开独立提示窗（用户可继续降级或切 XSynth）。
+    pub fn take_port_soundfonts_unsupported_notice(
+        &mut self,
+    ) -> Option<PortSoundfontsUnsupportedNotice> {
+        self.pending_port_soundfonts_unsupported.take()
+    }
+
+    /// 当前实际生效的合成后端（只读，供 Runner 做 UI 分支）。
+    pub fn active_backend(&self) -> SynthBackend {
+        self.active_backend
+    }
+
+    /// 工程是否没有任何端口音色库覆盖（Runner 用来自动关闭过期的“不支持”提示）。
+    pub fn desired_port_soundfonts_is_empty(&self) -> bool {
+        self.desired_port_soundfonts.is_empty()
     }
 
     /// 取当前后端（仅 LGS 实现）的 GPU 缓冲状态快照。
@@ -221,8 +270,11 @@ mod lgs_rebuild;
 mod maestro;
 mod outputs;
 mod panic_guard;
+mod port_soundfonts;
 mod recovery;
 mod xsynth;
+
+pub use port_soundfonts::PortSoundfontsUnsupportedNotice;
 
 pub use audio_action::handle_audio_action;
 

@@ -149,6 +149,9 @@ impl RunnerInner {
                 let _ = progress_tx_cb.send((msg, pct, 0, 0.0, 0.0));
             });
 
+        // REND-005：端口音色库映射来自工程态（与实时/保存共用同一权威字段）。
+        let port_soundfonts = self.window_state.window.ui().get_project_port_soundfonts();
+
         let config = AudioRenderConfig {
             midi_path: midi_path_buf,
             soundfonts: vec![PathBuf::from(&soundfont_path)],
@@ -187,6 +190,8 @@ impl RunnerInner {
             backend: backend_kind,
             progress_callback: Some(progress_cb),
             control: Some(Arc::clone(&control)),
+            // REND-005：端口音色库映射来自工程态；GPU 后端会在渲染入口显式拒绝。
+            port_soundfonts,
         };
 
         // 2. tempo 无需覆盖（2026-10-20 审计 §三）：`EditorData` 的 tempo 写入入口

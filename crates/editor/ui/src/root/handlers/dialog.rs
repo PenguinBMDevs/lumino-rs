@@ -10,6 +10,8 @@ mod fill_division;
 mod history;
 mod load_confirm;
 mod material_delete;
+mod port_soundfonts;
+mod port_soundfonts_unsupported;
 mod project_settings;
 mod recover_track;
 mod save_confirm;
@@ -44,6 +46,10 @@ impl MessageHandler for DialogHandler {
             Message::CustomPrecision(action) => self.handle_custom_precision(root, action),
             Message::LoadConfirm(action) => self.handle_load_confirm(root, action),
             Message::ProjectSettings(action) => self.handle_project_settings(root, action),
+            Message::PortSoundfonts(action) => self.handle_port_soundfonts(root, action),
+            Message::PortSoundfontsUnsupported(action) => {
+                self.handle_port_soundfonts_unsupported(root, action)
+            }
             Message::SettingsDialog(action) => self.handle_settings_dialog(root, action),
             Message::AudioExport(action) => self.handle_audio_export(root, action),
             Message::VideoExport(action) => self.handle_video_export(root, action),

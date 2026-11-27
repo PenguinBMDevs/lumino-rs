@@ -56,6 +56,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -71,6 +72,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -86,6 +88,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -101,6 +104,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -119,6 +123,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -136,6 +141,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -154,6 +160,7 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: Some((index, name)),
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 
@@ -171,6 +178,26 @@ impl DialogManager {
             pending_modified_at: None,
             pending_material_delete: None,
             pending_tempo_max_bpm: Some(current_bpm),
+            pending_port_soundfonts_unsupported: None,
+        });
+    }
+
+    /// 请求打开「端口音色库未生效」提示窗（REND-005）。
+    ///
+    /// 仅在当前后端不支持按端口音色库时调用；映射已保存，窗口只负责告知
+    /// 用户并让其在「继续降级」与「打开合成器设置」之间选择。
+    pub fn open_port_soundfonts_unsupported(&mut self, backend: String, ports: usize) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::PortSoundfontsUnsupported,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+            pending_brush_config: None,
+            shapes_dir: None,
+            pending_modified_at: None,
+            pending_material_delete: None,
+            pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: Some((backend, ports)),
         });
     }
 
@@ -216,6 +243,7 @@ impl DialogManager {
             pending_modified_at: Some(modified_at),
             pending_material_delete: None,
             pending_tempo_max_bpm: None,
+            pending_port_soundfonts_unsupported: None,
         });
     }
 

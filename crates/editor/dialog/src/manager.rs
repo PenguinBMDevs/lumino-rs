@@ -43,6 +43,8 @@ pub struct PendingDialog {
     pub pending_material_delete: Option<(usize, String)>,
     /// TempoMaxBpm 的当前上限（输入框预填；DRAW-045）
     pub pending_tempo_max_bpm: Option<f64>,
+    /// PortSoundfontsUnsupported 的后端显示名与已配置端口数（REND-005）
+    pub pending_port_soundfonts_unsupported: Option<(String, usize)>,
 }
 
 /// 对话框管理器

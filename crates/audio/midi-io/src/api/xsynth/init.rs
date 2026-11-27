@@ -6,11 +6,12 @@ use cpal::traits::DeviceTrait;
 use xsynth_core::{
     AudioStreamParams, ChannelCount,
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent},
-    soundfont::SoundfontBase,
 };
 
 use lumino_core::trf;
-use lumino_midi_model::multi_port::{channels_for_max_port_clamped, percussion_channels};
+use lumino_midi_model::multi_port::{
+    PortSoundfontMap, channels_for_max_port_clamped, percussion_channels,
+};
 
 use crate::Error;
 use crate::realtime::{
@@ -90,7 +91,16 @@ impl XSynth {
 
         // REND-002：端口布局来自打开选项（文档切换由 `set_midi_port_layout` 重建）
         let midi_max_port = options.as_ref().map_or(0, |opt| opt.midi_max_port);
-        let (synth, sender) = Self::init_synth(soundfont_path, options.as_ref(), midi_max_port)?;
+        // REND-005：端口音色库映射同样来自打开选项（运行期由扩展 trait 热更新）
+        let port_soundfonts = options
+            .as_ref()
+            .map_or_else(Default::default, |opt| opt.port_soundfonts.clone());
+        let (synth, sender) = Self::init_synth(
+            soundfont_path,
+            options.as_ref(),
+            midi_max_port,
+            &port_soundfonts,
+        )?;
         let sender_shared = Arc::new(Mutex::new(sender));
         let mixer_shared = ChannelMixHandle::new(Mutex::new(synth.clone_channel_mix()));
         let master_peak_shared = synth.clone_master_peak();
@@ -106,6 +116,7 @@ impl XSynth {
             soundfont_path: soundfont_path.to_path_buf(),
             options,
             midi_max_port,
+            port_soundfonts,
             version,
         })
     }
@@ -118,6 +129,7 @@ impl XSynth {
         soundfont_path: &Path,
         options: Option<&XSynthOptions>,
         midi_max_port: u8,
+        port_soundfonts: &PortSoundfontMap,
     ) -> Result<(RealtimeSynth, RealtimeEventSender), Error> {
         // 采样率对齐原则：配置中的 `xsynth_sample_rate` 仅作提示，
         // 真正决定音高的是设备实际采样率。`RealtimeSynth`（xsynth-realtime）
@@ -218,11 +230,22 @@ impl XSynth {
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
         let mut sender = synth.get_sender_ref().clone();
 
-        // 配置音色库
-        let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
-        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-            ChannelConfigEvent::SetSoundfonts(soundfonts),
-        )));
+        // REND-005：全局库 + 端口覆盖一次下发；空映射时事件序列与历史完全一致。
+        // 端口库加载失败只回退该端口（全局库已覆盖全部通道），并在日志中保留原因；
+        // 运行期会由 `apply_port_soundfonts` 再次尝试并把提示推给状态栏。
+        let soundfont_apply = super::port_soundfonts::send_port_soundfonts(
+            &mut sender,
+            soundfont,
+            port_soundfonts,
+            midi_max_port,
+            actual_params,
+        );
+        if !soundfont_apply.warnings.is_empty() {
+            tracing::warn!(
+                "XSynth: 端口音色库部分回退全局：{}",
+                soundfont_apply.warnings.join("；")
+            );
+        }
 
         // 每键最大同音数（layers）：把用户设置真正下发。此前该设置从未接线，
         // 引擎始终用默认 Some(4)；None / 0 = 不限制，其余夹紧 1..=128。
@@ -286,9 +309,13 @@ impl XSynth {
     /// 仅在新管线构建成功后才提交 `midi_max_port`；失败时旧管线与旧布局保持不变，
     /// 避免"配置说 Custom、实际仍 16 通道"的错位。
     pub(super) fn rebuild_with_layout(&mut self, midi_max_port: u8) -> Result<(), String> {
-        let (synth, sender) =
-            Self::init_synth(&self.soundfont_path, self.options.as_ref(), midi_max_port)
-                .map_err(|e| trf!("重建合成管线失败: {e}", e = e))?;
+        let (synth, sender) = Self::init_synth(
+            &self.soundfont_path,
+            self.options.as_ref(),
+            midi_max_port,
+            &self.port_soundfonts,
+        )
+        .map_err(|e| trf!("重建合成管线失败: {e}", e = e))?;
 
         // 替换合成器（旧实例 drop：发送 Shutdown 并 join 全部线程）
         self.synth = synth;
@@ -310,101 +337,4 @@ impl XSynth {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// REND-002 零行为变化基线：单端口 → Midi/16 通道。
-    #[test]
-    fn rt_format_zero_is_midi_baseline() {
-        assert_eq!(rt_format(0), SynthFormat::Midi);
-    }
-
-    /// REND-002：多端口 → Custom 通道数；超产品上限折叠到 16 端口/256 通道。
-    #[test]
-    fn rt_format_multi_port_uses_custom_channels() {
-        assert_eq!(rt_format(6), SynthFormat::Custom { channels: 112 });
-        assert_eq!(
-            rt_format(127),
-            SynthFormat::Custom { channels: 256 },
-            "超上限端口折叠"
-        );
-    }
-
-    /// #102 N-5：轻量复位事件序列——单端口：16 通道退出打击乐 + SystemReset，
-    /// 不额外恢复 ch9（`SynthFormat::Midi` 自动开启）。
-    #[test]
-    fn reset_events_single_port_clear_then_system_reset() {
-        let events = reset_channel_state_events(0);
-        assert_eq!(events.len(), 16 + 1, "16 通道退出 + SystemReset");
-        for (ch, event) in events[..16].iter().enumerate() {
-            assert_eq!(
-                percussion_off_channel(event),
-                Some(ch as u32),
-                "第 {ch} 条应为通道 {ch} 退出打击乐"
-            );
-        }
-        assert!(is_system_reset(&events[16]), "SystemReset 收尾");
-        assert!(
-            events.iter().all(|e| percussion_on_channel(e).is_none()),
-            "单端口不得重复下发 ch9 恢复"
-        );
-    }
-
-    /// #102 N-5：多端口：逐通道退出 → SystemReset → 按端口 ch9 恢复；
-    /// 恢复必须在 SystemReset 之后（无论 SystemReset 是否清模态，终态正确）。
-    #[test]
-    fn reset_events_multi_port_restore_percussion_after_reset() {
-        let max_port = 6u8;
-        let channels = channels_for_max_port_clamped(max_port) as usize; // 112
-        let events = reset_channel_state_events(max_port);
-        let restored = percussion_channels(max_port);
-        assert_eq!(events.len(), channels + 1 + restored.len());
-
-        for (ch, event) in events[..channels].iter().enumerate() {
-            assert_eq!(
-                percussion_off_channel(event),
-                Some(ch as u32),
-                "出口段应按全局通道序逐通道退出"
-            );
-        }
-        assert!(
-            is_system_reset(&events[channels]),
-            "SystemReset 位于出口段之后"
-        );
-        let on: Vec<u32> = events[channels + 1..]
-            .iter()
-            .filter_map(percussion_on_channel)
-            .collect();
-        assert_eq!(on, restored, "SystemReset 之后逐端口恢复 ch9");
-    }
-
-    /// 若事件为“通道退出打击乐”，返回通道号。
-    fn percussion_off_channel(event: &SynthEvent) -> Option<u32> {
-        match event {
-            SynthEvent::Channel(
-                ch,
-                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(false)),
-            ) => Some(*ch),
-            _ => None,
-        }
-    }
-
-    /// 若事件为“通道恢复打击乐”，返回通道号。
-    fn percussion_on_channel(event: &SynthEvent) -> Option<u32> {
-        match event {
-            SynthEvent::Channel(
-                ch,
-                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
-            ) => Some(*ch),
-            _ => None,
-        }
-    }
-
-    /// 是否为全通道 SystemReset。
-    fn is_system_reset(event: &SynthEvent) -> bool {
-        matches!(
-            event,
-            SynthEvent::AllChannels(ChannelEvent::Audio(ChannelAudioEvent::SystemReset))
-        )
-    }
-}
+mod tests;

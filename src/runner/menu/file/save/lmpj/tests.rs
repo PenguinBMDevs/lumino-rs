@@ -67,6 +67,12 @@ fn test_snapshot_isolates_later_document_edits() {
 
 #[test]
 fn test_snapshot_into_project_keeps_metadata() {
+    use lumino_midi_model::multi_port::{PortSoundfontEntry, PortSoundfontMap};
+
+    let port_soundfonts = PortSoundfontMap::from_entries(vec![
+        PortSoundfontEntry::new(1, ["D:/音色库/port1.sf2"]),
+        PortSoundfontEntry::new(2, ["D:/音色库/port2.sf2"]),
+    ]);
     let snapshot = LmpjSnapshot {
         document: empty_document(),
         shapes: Vec::new(),
@@ -81,6 +87,7 @@ fn test_snapshot_into_project_keeps_metadata() {
             ..Default::default()
         },
         onion_skin_mode: "previous_track".into(),
+        port_soundfonts: port_soundfonts.clone(),
     };
 
     let project = snapshot.into_project();
@@ -123,12 +130,18 @@ fn test_snapshot_into_project_keeps_metadata() {
         Some("previous_track"),
         "洋葱皮显示范围必须随工程保存（工程范围记忆）"
     );
-    // 本任务只接管这一项：其余 [settings] 字段必须保持 None（不越权写别人字段）
+    // REND-005：端口音色库映射必须随工程落盘
     let settings = project
         .metadata
         .settings
         .as_ref()
         .expect("settings 段应存在");
+    assert_eq!(
+        settings.port_soundfonts,
+        port_soundfonts.entries().to_vec(),
+        "端口音色库映射必须随工程保存"
+    );
+    // 本任务只接管这些项：其余 [settings] 字段必须保持 None（不越权写别人字段）
     assert!(settings.auto_scroll_mode.is_none());
     assert!(settings.theme.is_none());
     assert!(settings.enable_256key.is_none());

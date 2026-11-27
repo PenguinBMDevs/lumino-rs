@@ -317,6 +317,49 @@ fn lookup_view_9(zh: &str) -> Option<&'static str> {
         "累计音符数" => Some("Total Notes"),
 
         "BPM（速度）" => Some("BPM (tempo)"),
+
+        // ── REND-005：端口音色库对话框与工程设置入口 ──
+        // （`root/view/egui_chrome/dialogs/port_soundfonts*.rs`、`project_settings.rs`）
+        "为每个 MIDI 端口绑定音色库；未配置的端口使用全局音色库，端口 0 可覆盖全局。播放中保存的修改将在停播后生效。" => {
+            Some(
+                "Bind a soundfont to each MIDI port; unconfigured ports use the global soundfont, and port 0 may override the global. Changes saved during playback take effect after playback stops.",
+            )
+        }
+        "全部使用全局音色库" => Some("All ports use the global soundfont"),
+
+        "另有 {n} 个回退库（当前 UI 只显示首个）" => {
+            Some("{n} additional fallback soundfonts (the UI currently shows only the first)")
+        }
+        "已保存 {ports} 个端口的映射；当前播放与导出将使用全局音色库（降级运行）。切换到 XSynth 后可恢复按端口音色库。" => {
+            Some(
+                "Saved mappings for {ports} ports; playback and export currently use the global soundfont (degraded). Switch to XSynth to restore per-port soundfonts.",
+            )
+        }
+        "已配置 {n} 个端口" => Some("{n} ports configured"),
+
+        "当前后端「{backend}」不支持按端口音色库。" => {
+            Some("The current backend “{backend}” does not support per-port soundfonts.")
+        }
+        "未覆盖：使用全局音色库" => Some("Not overridden: uses the global soundfont"),
+
+        "未配置：回退全局音色库" => {
+            Some("Not configured: falls back to the global soundfont")
+        }
+
+        "清除" => Some("Clear"),
+
+        "端口 0（全局，默认，可覆盖）" => {
+            Some("Port 0 (global, default, can be overridden)")
+        }
+        "端口 {port}" => Some("Port {port}"),
+
+        "端口音色库" => Some("Port Soundfonts"),
+
+        "继续（使用全局音色库）" => Some("Continue (use the global soundfont)"),
+
+        "编辑…" => Some("Edit…"),
+
+        "选择…" => Some("Choose…"),
         _ => None,
     }
 }

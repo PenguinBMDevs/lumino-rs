@@ -121,6 +121,33 @@ fn test_save_and_load_folder_entry_multi_track_overlapping() {
     assert_eq!(track1_notes[1].key, 67);
 }
 
+/// REND-005：端口音色库映射必须经「保存 → 加载 → ParsedMidi」完整保留。
+#[test]
+fn test_port_soundfonts_survive_save_load_roundtrip() {
+    use lumino_midi_model::multi_port::{PortSoundfontEntry, PortSoundfontMap};
+
+    let dir = tempdir().expect("临时目录应创建成功");
+    let archive_path = dir.path().join("port_soundfonts.lmpj");
+    let mut project = make_test_project();
+    let map = PortSoundfontMap::from_entries(vec![
+        PortSoundfontEntry::new(0, ["D:/音色库/port0.sf2"]),
+        PortSoundfontEntry::new(2, ["D:/音色库/port2.sf2"]),
+    ]);
+    project.metadata.settings = Some(SettingsMetadata {
+        port_soundfonts: map.entries().to_vec(),
+        ..Default::default()
+    });
+
+    save_to_archive(&project, &archive_path).expect("保存端口音色库归档失败");
+    let loaded = load_project(&archive_path).expect("加载端口音色库归档失败");
+    let parsed = project_to_parsed_midi(&loaded, &archive_path).expect("重建 ParsedMidi 失败");
+
+    assert_eq!(
+        parsed.port_soundfonts, map,
+        "端口音色库映射必须经保存/加载进入 ParsedMidi"
+    );
+}
+
 #[test]
 fn test_working_time_survives_save_load_roundtrip() {
     let dir = tempdir().expect("临时目录应创建成功");

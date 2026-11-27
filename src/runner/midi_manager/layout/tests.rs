@@ -63,6 +63,108 @@ fn layout_needs_catch_up_only_on_change() {
     assert!(layout_needs_catch_up(0, 4), "关闭归零也要追赶到 0");
 }
 
+/// REND-005：端口音色库对齐只比较期望值与已应用值。
+#[test]
+fn soundfonts_need_align_compares_desired_and_spawned() {
+    let empty = PortSoundfontMap::default();
+    let mut map = PortSoundfontMap::default();
+    map.set(1, vec!["port1.sf2".to_string()]);
+
+    assert!(!soundfonts_need_align(&empty, &empty), "一致时不得重试");
+    assert!(soundfonts_need_align(&map, &empty), "新映射需要应用");
+    assert!(soundfonts_need_align(&empty, &map), "清空映射也需要应用");
+}
+
+/// 初始化后对齐：布局或端口音色库任一不一致都需要排程。
+#[test]
+fn synth_needs_alignment_covers_layout_and_soundfonts() {
+    let empty = PortSoundfontMap::default();
+    let mut map = PortSoundfontMap::default();
+    map.set(0, vec!["port0.sf2".to_string()]);
+
+    assert!(!synth_needs_alignment(3, 3, &empty, &empty));
+    assert!(synth_needs_alignment(3, 2, &empty, &empty), "布局差异");
+    assert!(synth_needs_alignment(3, 3, &map, &empty), "音色库差异");
+}
+
+/// REND-005：后端代际不一致时，合成应用结果必须作废。
+#[test]
+fn synth_outcome_is_stale_only_on_epoch_change() {
+    assert!(!synth_outcome_is_stale(3, 3), "同代结果必须接受");
+    assert!(synth_outcome_is_stale(2, 3), "旧代结果必须丢弃");
+}
+
+/// 旧后端代的 worker 结果（含“不支持按端口音色库”提示）不得提交。
+///
+/// 回归路径：LGS 上排程的映射 worker 在用户切到 XSynth 后才收尾，旧提示
+/// 不能写进状态栏，旧布局/映射也不能记成“已应用”。
+#[test]
+fn stale_synth_outcome_is_discarded() {
+    let mut manager = manager_with(MockApi::ok().boxed());
+    manager.synth_epoch = 2;
+
+    let mut stale_map = PortSoundfontMap::default();
+    stale_map.set(1, vec!["stale.sf2".to_string()]);
+    let done = LayoutApplyDone {
+        api: MockApi::ok().boxed(),
+        result: Ok(SynthApplyOutcome {
+            applied: SynthAppliedState {
+                max_port: 2,
+                port_soundfonts: stale_map,
+            },
+            notice: Some("当前后端不支持按端口音色库".to_string()),
+        }),
+        epoch: 1,
+    };
+
+    manager.finish_layout_apply(done, Instant::now());
+
+    assert!(
+        manager.pending_backend_notice.is_none(),
+        "旧后端的能力提示不得写入状态栏"
+    );
+    assert_eq!(
+        manager.spawned_port_soundfonts,
+        PortSoundfontMap::default(),
+        "旧代映射不得提交"
+    );
+    assert_eq!(manager.spawned_midi_max_port, 0, "旧代布局不得提交");
+}
+
+/// 同代结果正常提交（对照组）。
+#[test]
+fn current_epoch_synth_outcome_commits() {
+    let mut manager = manager_with(MockApi::ok().boxed());
+    manager.synth_epoch = 1;
+
+    let mut map = PortSoundfontMap::default();
+    map.set(1, vec!["port1.sf2".to_string()]);
+    // 期望值与结果一致：避免提交后触发追赶 worker。
+    manager.desired_midi_max_port = 2;
+    manager.desired_port_soundfonts = map.clone();
+
+    let done = LayoutApplyDone {
+        api: MockApi::ok().boxed(),
+        result: Ok(SynthApplyOutcome {
+            applied: SynthAppliedState {
+                max_port: 2,
+                port_soundfonts: map.clone(),
+            },
+            notice: None,
+        }),
+        epoch: 1,
+    };
+
+    manager.finish_layout_apply(done, Instant::now());
+
+    assert_eq!(manager.spawned_midi_max_port, 2);
+    assert_eq!(manager.spawned_port_soundfonts, map);
+    assert!(
+        manager.layout_apply.is_none(),
+        "无差异不得追赶重排出 worker"
+    );
+}
+
 fn manager_with(api: MidiApi) -> MidiManager {
     MidiManager {
         api: Some(api),
@@ -85,9 +187,12 @@ fn poll_layout_until_done(manager: &mut MidiManager) {
 #[test]
 fn worker_panic_returns_api_and_error() {
     let desired = Arc::new(AtomicU8::new(3));
-    let (api, result) = run_layout_apply_worker(
+    let (api, result) = run_synth_apply_worker(
         MockApi::panic_on_layout("注入的布局 panic").boxed(),
         desired,
+        Arc::new(Mutex::new(PortSoundfontMap::default())),
+        SynthAppliedState::default(),
+        Arc::new(AtomicBool::new(false)),
         Duration::ZERO,
     );
     assert!(api.version().is_some(), "panic 后 API 不得蒸发");

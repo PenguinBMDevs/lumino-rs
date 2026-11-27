@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use lumino_core::{tr, trf};
 
+use super::port_soundfonts::reject_port_soundfonts;
 use super::*;
 
 /// 检测 GPU 是否可用（尝试创建 wgpu 适配器）
@@ -164,6 +165,7 @@ pub fn render_audio_gpu_from_document(
 
     check_control(config)?;
     validate_export_inputs(config, GpuEntry::InMemory)?;
+    reject_port_soundfonts(config)?;
 
     render_gpu_bytes(config, GpuEntry::InMemory, |config| {
         notify_progress(config, tr!("GPU 序列化 MIDI（内存）..."), 0.15);
@@ -196,6 +198,7 @@ pub fn render_audio_gpu_streaming(
 ) -> ExportResult<()> {
     check_control(config)?;
     validate_export_inputs(config, GpuEntry::Streaming)?;
+    reject_port_soundfonts(config)?;
 
     if !config.midi_path.exists() {
         return Err(ExportError::AudioWrite(trf!(
