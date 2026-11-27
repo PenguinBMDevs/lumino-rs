@@ -39,7 +39,7 @@ impl Editor {
             }
         }
 
-        self.write_arrangement_clipboard(all_notes)
+        write_arrangement_clipboard(self, all_notes)
     }
 
     /// 剪切工程走带选中音符（复制 + 删除）。
@@ -50,67 +50,67 @@ impl Editor {
         }
         self.arrange_delete_selected_notes()
     }
+}
 
-    // ── 私有辅助方法 ─────────────────────────────────────
+// ── 私有辅助方法 ─────────────────────────────────────
 
-    /// 构建并写入剪贴板 JSON（携带 division）。
-    fn write_arrangement_clipboard(&self, all_notes: Vec<(usize, NoteEvent)>) -> bool {
-        let editor_data = &self.editor_state.data;
-        let division = editor_data
-            .document
-            .as_ref()
-            .map(|d| d.division)
-            .unwrap_or(480);
-        let origin_tick = all_notes
-            .iter()
-            .map(|(_, note)| note.start_tick as f32)
-            .fold(f32::INFINITY, f32::min);
-        let origin_key = all_notes
-            .iter()
-            .map(|(_, note)| note.key as u16)
-            .min()
-            .unwrap_or(0);
-        let origin_visual = all_notes
-            .iter()
-            .map(|(track, _)| editor_data.visual_position_of(*track).unwrap_or(*track))
-            .min()
-            .unwrap_or(0);
+/// 构建并写入剪贴板 JSON（携带 division）。
+fn write_arrangement_clipboard(editor: &Editor, all_notes: Vec<(usize, NoteEvent)>) -> bool {
+    let editor_data = &editor.editor_state.data;
+    let division = editor_data
+        .document
+        .as_ref()
+        .map(|d| d.division)
+        .unwrap_or(480);
+    let origin_tick = all_notes
+        .iter()
+        .map(|(_, note)| note.start_tick as f32)
+        .fold(f32::INFINITY, f32::min);
+    let origin_key = all_notes
+        .iter()
+        .map(|(_, note)| note.key as u16)
+        .min()
+        .unwrap_or(0);
+    let origin_visual = all_notes
+        .iter()
+        .map(|(track, _)| editor_data.visual_position_of(*track).unwrap_or(*track))
+        .min()
+        .unwrap_or(0);
 
-        let note_count = all_notes.len();
-        let mut s = String::with_capacity(note_count.saturating_mul(48) + 180);
-        use std::fmt::Write as _;
+    let note_count = all_notes.len();
+    let mut s = String::with_capacity(note_count.saturating_mul(48) + 180);
+    use std::fmt::Write as _;
+    let _ = write!(
+        s,
+        "{{\"lumino\":\"{}\",\"version\":{},\"type\":\"arrangement\",\"origin_tick\":{},\"origin_key\":{},\"origin_track\":{},\"division\":{},\"notes\":[",
+        lumino_ui_core::constants::editor::CLIPBOARD_FORMAT,
+        lumino_ui_core::constants::editor::CLIPBOARD_VERSION,
+        origin_tick,
+        origin_key,
+        origin_visual,
+        division
+    );
+    let mut first = true;
+    for (track, note_event) in &all_notes {
+        let n = note_event_to_note(note_event);
+        let visual = editor_data.visual_position_of(*track).unwrap_or(*track);
+        let tick = (n.tick - origin_tick).max(0.0);
+        let key = (n.key as i32 - origin_key as i32).max(0) as u16;
+        let length = n.length;
+        let track_offset = (visual as i64 - origin_visual as i64).max(0) as usize;
+        if !first {
+            s.push(',');
+        }
+        first = false;
         let _ = write!(
             s,
-            "{{\"lumino\":\"{}\",\"version\":{},\"type\":\"arrangement\",\"origin_tick\":{},\"origin_key\":{},\"origin_track\":{},\"division\":{},\"notes\":[",
-            lumino_ui_core::constants::editor::CLIPBOARD_FORMAT,
-            lumino_ui_core::constants::editor::CLIPBOARD_VERSION,
-            origin_tick,
-            origin_key,
-            origin_visual,
-            division
+            "{{\"tick\":{},\"key\":{},\"length\":{},\"velocity\":{},\"channel\":{},\"track\":{}}}",
+            tick, key, length, n.velocity, n.channel, track_offset
         );
-        let mut first = true;
-        for (track, note_event) in &all_notes {
-            let n = note_event_to_note(note_event);
-            let visual = editor_data.visual_position_of(*track).unwrap_or(*track);
-            let tick = (n.tick - origin_tick).max(0.0);
-            let key = (n.key as i32 - origin_key as i32).max(0) as u16;
-            let length = n.length;
-            let track_offset = (visual as i64 - origin_visual as i64).max(0) as usize;
-            if !first {
-                s.push(',');
-            }
-            first = false;
-            let _ = write!(
-                s,
-                "{{\"tick\":{},\"key\":{},\"length\":{},\"velocity\":{},\"channel\":{},\"track\":{}}}",
-                tick, key, length, n.velocity, n.channel, track_offset
-            );
-        }
-        s.push_str("]}");
-
-        crate::clipboard::set_clipboard_text(&s)
     }
+    s.push_str("]}");
+
+    crate::clipboard::set_clipboard_text(&s)
 }
 
 /// 从 MidiDocument 收集所有选中音符（NoteEvent，u32 tick 保精度）。

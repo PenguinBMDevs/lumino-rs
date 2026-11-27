@@ -72,7 +72,8 @@ impl Editor {
         let needs_ghost = has_active_ghost_delta(pending, pending_copy, edit_state);
 
         if has_clean_index {
-            self.collect_via_index(
+            collect_via_index(
+                self,
                 result,
                 indices,
                 visible_tick_start,
@@ -87,7 +88,8 @@ impl Editor {
             );
         } else {
             // 索引脏 / 未建（1600W 超大型工程不建索引）→ 窗口扫描
-            self.collect_via_window(
+            collect_via_window(
+                self,
                 result,
                 indices,
                 visible_tick_start,
@@ -106,143 +108,54 @@ impl Editor {
     }
 }
 
-impl Editor {
-    /// 索引路径：空间索引 query 出 indices，再逐个取音符
-    ///
-    /// 参数较多是因为 hot path 避免参数打包结构体的 Clone/copy 开销，
-    /// 全部为只读引用或 Copy 类型，直接传参零成本。
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    fn collect_via_index(
-        &self,
-        result: &mut Vec<(f32, u16, f32)>,
-        mut indices: Option<&mut Vec<usize>>,
-        visible_tick_start: f32,
-        visible_tick_end: f32,
-        visible_key_min: u16,
-        visible_key_max: u16,
-        max_key: u16,
-        edit_state: &EditState,
-        pending: &Option<lumino_editor_state::DragState>,
-        pending_copy: &Option<lumino_editor_state::DragState>,
-        needs_ghost: bool,
-    ) {
-        let index = self.spatial.note_index.borrow();
-        let index = match index.as_ref() {
-            Some(idx) => idx,
-            None => return,
-        };
-        let mut indices_buf = Vec::new();
-        index.update_query(
-            visible_tick_start,
-            visible_tick_end,
-            visible_key_min,
-            visible_key_max,
-            &mut indices_buf,
-        );
+/// 索引路径：空间索引 query 出 indices，再逐个取音符
+///
+/// 参数较多是因为 hot path 避免参数打包结构体的 Clone/copy 开销，
+/// 全部为只读引用或 Copy 类型，直接传参零成本。
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn collect_via_index(
+    editor: &Editor,
+    result: &mut Vec<(f32, u16, f32)>,
+    mut indices: Option<&mut Vec<usize>>,
+    visible_tick_start: f32,
+    visible_tick_end: f32,
+    visible_key_min: u16,
+    visible_key_max: u16,
+    max_key: u16,
+    edit_state: &EditState,
+    pending: &Option<lumino_editor_state::DragState>,
+    pending_copy: &Option<lumino_editor_state::DragState>,
+    needs_ghost: bool,
+) {
+    let index = editor.spatial.note_index.borrow();
+    let index = match index.as_ref() {
+        Some(idx) => idx,
+        None => return,
+    };
+    let mut indices_buf = Vec::new();
+    index.update_query(
+        visible_tick_start,
+        visible_tick_end,
+        visible_key_min,
+        visible_key_max,
+        &mut indices_buf,
+    );
 
-        let (drag_dt, drag_dk) = current_drag_delta(edit_state);
+    let (drag_dt, drag_dk) = current_drag_delta(edit_state);
 
-        let data = &self.editor_state.data;
-        // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
-        let track_notes = data.current_track_notes();
+    let data = &editor.editor_state.data;
+    // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
+    let track_notes = data.current_track_notes();
 
-        if needs_ghost {
-            // 只有 pending 或 Dragging（单音符）会进入此分支。
-            // DraggingSelection 不走此路径——变化量只在松开鼠标时计算一次。
-            for &i in &indices_buf {
-                if let Some(idx_out) = indices.as_deref_mut() {
-                    idx_out.push(i);
-                }
-                if let Some(note) = track_notes.get(i) {
-                    let length = (note.end_tick - note.start_tick) as f32;
-                    let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
-                        apply_ghost_delta(
-                            note.start_tick as f32,
-                            note.key as u16,
-                            drag_dt,
-                            drag_dk,
-                            pending,
-                            i,
-                            max_key,
-                        )
-                    } else {
-                        (note.start_tick as f32, note.key as u16)
-                    };
-                    result.push((tick, key, length));
-                    // 复制模式：原始位置保留，副本在偏移位置追加实例。
-                    // 连续复制（pending_copy + DraggingSelectionCopy）时旧副本
-                    // 保持原位、新副本跟手——两条副本并存（"复制下一份"）。
-                    push_copy_instances(
-                        result,
-                        note.start_tick as f32,
-                        note.key as u16,
-                        length,
-                        max_key,
-                        i,
-                        pending_copy,
-                        pending,
-                        edit_state,
-                        |_, _| true,
-                    );
-                }
+    if needs_ghost {
+        // 只有 pending 或 Dragging（单音符）会进入此分支。
+        // DraggingSelection 不走此路径——变化量只在松开鼠标时计算一次。
+        for &i in &indices_buf {
+            if let Some(idx_out) = indices.as_deref_mut() {
+                idx_out.push(i);
             }
-        } else {
-            for &i in &indices_buf {
-                if let Some(idx_out) = indices.as_deref_mut() {
-                    idx_out.push(i);
-                }
-                if let Some(note) = track_notes.get(i) {
-                    result.push((
-                        note.start_tick as f32,
-                        note.key as u16,
-                        (note.end_tick - note.start_tick) as f32,
-                    ));
-                }
-            }
-        }
-    }
-
-    /// 窗口扫描路径：空间索引不可用（脏 / 超大型不建索引）时使用
-    ///
-    /// 普通线性扫描 O(N)——1600W 音符工程插入后每帧全扫 ~160ms，正是「编辑
-    /// 中间插入 4s + 内存 2-3G」的渲染侧大本营。本方法经 `ChunkedList::window_range`
-    /// 块级二分框出视口 tick 窗口（向左 lookback 回溯「跨入」长音符），只遍历
-    /// 窗口内音符，复杂度 O(log 块数 + 窗口长度) 与总音符量无关。
-    ///
-    /// 正确性：窗口下界 = 视口起点 - `NOTES_WINDOW_LOOKBACK`。音符起点早于
-    /// 下界且长度超过 lookback 的极端超长音符会漏出（工程上音符长度
-    /// < 1M tick ≈ 2600 小节 @ 1920ppq，可忽略）。原语义完整保留：过滤条件
-    /// 仍签名结束判定（`end >= visible_tick_start`），窗口仅做剪枝。
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    fn collect_via_window(
-        &self,
-        result: &mut Vec<(f32, u16, f32)>,
-        mut indices: Option<&mut Vec<usize>>,
-        visible_tick_start: f32,
-        visible_tick_end: f32,
-        visible_key_min: u16,
-        visible_key_max: u16,
-        max_key: u16,
-        edit_state: &EditState,
-        pending: &Option<lumino_editor_state::DragState>,
-        pending_copy: &Option<lumino_editor_state::DragState>,
-        needs_ghost: bool,
-    ) {
-        let (drag_dt, drag_dk) = current_drag_delta(edit_state);
-        let data = &self.editor_state.data;
-        // 2026-08 单一权威源：current_track_notes 返回分块容器（u32 tick/u8 key）
-        let track_notes = data.current_track_notes();
-        let start_tick = visible_tick_start.max(0.0) as u32;
-        let end_tick = visible_tick_end.max(0.0) as u32;
-        if end_tick < start_tick {
-            return;
-        }
-        let (lo, hi) = track_notes.window_range(start_tick, end_tick + 1, NOTES_WINDOW_LOOKBACK);
-
-        if needs_ghost {
-            for (i, note) in track_notes.iter_window(lo, hi) {
+            if let Some(note) = track_notes.get(i) {
                 let length = (note.end_tick - note.start_tick) as f32;
                 let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                     apply_ghost_delta(
@@ -257,52 +170,139 @@ impl Editor {
                 } else {
                     (note.start_tick as f32, note.key as u16)
                 };
-                let note_end = note.end_tick as f32;
-                if key >= visible_key_min
-                    && key <= visible_key_max
-                    && note_end >= visible_tick_start
-                    && tick <= visible_tick_end
-                {
-                    if let Some(idx_out) = indices.as_deref_mut() {
-                        idx_out.push(i);
-                    }
-                    result.push((tick, key, length));
-                    // 复制模式：原始位置保留，副本在偏移位置追加实例（同 collect_via_index）
-                    push_copy_instances(
-                        result,
-                        note.start_tick as f32,
-                        note.key as u16,
-                        length,
-                        max_key,
-                        i,
-                        pending_copy,
-                        pending,
-                        edit_state,
-                        |copy_tick, copy_key| {
-                            copy_key >= visible_key_min
-                                && copy_key <= visible_key_max
-                                && copy_tick <= visible_tick_end
-                        },
-                    );
-                }
+                result.push((tick, key, length));
+                // 复制模式：原始位置保留，副本在偏移位置追加实例。
+                // 连续复制（pending_copy + DraggingSelectionCopy）时旧副本
+                // 保持原位、新副本跟手——两条副本并存（"复制下一份"）。
+                push_copy_instances(
+                    result,
+                    note.start_tick as f32,
+                    note.key as u16,
+                    length,
+                    max_key,
+                    i,
+                    pending_copy,
+                    pending,
+                    edit_state,
+                    |_, _| true,
+                );
             }
-        } else {
-            for (i, note) in track_notes.iter_window(lo, hi) {
-                let note_end = note.end_tick as f32;
-                if note.key as u16 >= visible_key_min
-                    && note.key as u16 <= visible_key_max
-                    && note_end >= visible_tick_start
-                    && note.start_tick as f32 <= visible_tick_end
-                {
-                    if let Some(idx_out) = indices.as_deref_mut() {
-                        idx_out.push(i);
-                    }
-                    result.push((
-                        note.start_tick as f32,
-                        note.key as u16,
-                        (note.end_tick - note.start_tick) as f32,
-                    ));
+        }
+    } else {
+        for &i in &indices_buf {
+            if let Some(idx_out) = indices.as_deref_mut() {
+                idx_out.push(i);
+            }
+            if let Some(note) = track_notes.get(i) {
+                result.push((
+                    note.start_tick as f32,
+                    note.key as u16,
+                    (note.end_tick - note.start_tick) as f32,
+                ));
+            }
+        }
+    }
+}
+
+/// 窗口扫描路径：空间索引不可用（脏 / 超大型不建索引）时使用
+///
+/// 普通线性扫描 O(N)——1600W 音符工程插入后每帧全扫 ~160ms，正是「编辑
+/// 中间插入 4s + 内存 2-3G」的渲染侧大本营。本方法经 `ChunkedList::window_range`
+/// 块级二分框出视口 tick 窗口（向左 lookback 回溯「跨入」长音符），只遍历
+/// 窗口内音符，复杂度 O(log 块数 + 窗口长度) 与总音符量无关。
+///
+/// 正确性：窗口下界 = 视口起点 - `NOTES_WINDOW_LOOKBACK`。音符起点早于
+/// 下界且长度超过 lookback 的极端超长音符会漏出（工程上音符长度
+/// < 1M tick ≈ 2600 小节 @ 1920ppq，可忽略）。原语义完整保留：过滤条件
+/// 仍签名结束判定（`end >= visible_tick_start`），窗口仅做剪枝。
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn collect_via_window(
+    editor: &Editor,
+    result: &mut Vec<(f32, u16, f32)>,
+    mut indices: Option<&mut Vec<usize>>,
+    visible_tick_start: f32,
+    visible_tick_end: f32,
+    visible_key_min: u16,
+    visible_key_max: u16,
+    max_key: u16,
+    edit_state: &EditState,
+    pending: &Option<lumino_editor_state::DragState>,
+    pending_copy: &Option<lumino_editor_state::DragState>,
+    needs_ghost: bool,
+) {
+    let (drag_dt, drag_dk) = current_drag_delta(edit_state);
+    let data = &editor.editor_state.data;
+    // 2026-08 单一权威源：current_track_notes 返回分块容器（u32 tick/u8 key）
+    let track_notes = data.current_track_notes();
+    let start_tick = visible_tick_start.max(0.0) as u32;
+    let end_tick = visible_tick_end.max(0.0) as u32;
+    if end_tick < start_tick {
+        return;
+    }
+    let (lo, hi) = track_notes.window_range(start_tick, end_tick + 1, NOTES_WINDOW_LOOKBACK);
+
+    if needs_ghost {
+        for (i, note) in track_notes.iter_window(lo, hi) {
+            let length = (note.end_tick - note.start_tick) as f32;
+            let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
+                apply_ghost_delta(
+                    note.start_tick as f32,
+                    note.key as u16,
+                    drag_dt,
+                    drag_dk,
+                    pending,
+                    i,
+                    max_key,
+                )
+            } else {
+                (note.start_tick as f32, note.key as u16)
+            };
+            let note_end = note.end_tick as f32;
+            if key >= visible_key_min
+                && key <= visible_key_max
+                && note_end >= visible_tick_start
+                && tick <= visible_tick_end
+            {
+                if let Some(idx_out) = indices.as_deref_mut() {
+                    idx_out.push(i);
                 }
+                result.push((tick, key, length));
+                // 复制模式：原始位置保留，副本在偏移位置追加实例（同 collect_via_index）
+                push_copy_instances(
+                    result,
+                    note.start_tick as f32,
+                    note.key as u16,
+                    length,
+                    max_key,
+                    i,
+                    pending_copy,
+                    pending,
+                    edit_state,
+                    |copy_tick, copy_key| {
+                        copy_key >= visible_key_min
+                            && copy_key <= visible_key_max
+                            && copy_tick <= visible_tick_end
+                    },
+                );
+            }
+        }
+    } else {
+        for (i, note) in track_notes.iter_window(lo, hi) {
+            let note_end = note.end_tick as f32;
+            if note.key as u16 >= visible_key_min
+                && note.key as u16 <= visible_key_max
+                && note_end >= visible_tick_start
+                && note.start_tick as f32 <= visible_tick_end
+            {
+                if let Some(idx_out) = indices.as_deref_mut() {
+                    idx_out.push(i);
+                }
+                result.push((
+                    note.start_tick as f32,
+                    note.key as u16,
+                    (note.end_tick - note.start_tick) as f32,
+                ));
             }
         }
     }

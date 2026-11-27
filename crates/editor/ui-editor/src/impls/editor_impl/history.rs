@@ -276,69 +276,9 @@ impl Editor {
         {
             self.collab_broadcast_batches += 1;
         }
-        self.broadcast_pending_collab_sync();
-        self.broadcast_pending_collab_create_sync();
+        broadcast_pending_collab_sync(self);
+        broadcast_pending_collab_create_sync(self);
         self.broadcast_pending_collab_transform_sync();
-    }
-
-    /// 把 `EditorData` 中累积的「撤销/重做音符移动」广播给协作对端。
-    ///
-    /// 撤销/重做 MoveOp 直接改本地 document 但不经拖动管线，因此不会自动发射
-    /// `LocalNoteMoved`；若不在此补广播，B 端在 A 撤销后本地坐标与 A 端失同步，
-    /// 下一次操作按 A 端本地坐标引用会在 B 端 0/N 失配。本方法 drain
-    /// `pending_collab_move_sync` 并以与拖动一致的语义发射 `LocalNoteMoved`。
-    fn broadcast_pending_collab_sync(&mut self) {
-        let pending = self.editor_state.data.take_pending_collab_move_sync();
-        if pending.is_empty() {
-            return;
-        }
-        for (tick, key, tick_offset, key_offset, track_index) in pending {
-            lumino_message::events::emit(lumino_message::events::Event::Window(
-                lumino_message::events::window::Event::local_note_moved(
-                    tick,
-                    key,
-                    0.0,
-                    tick_offset,
-                    key_offset,
-                    track_index,
-                ),
-            ));
-        }
-    }
-
-    /// 把 `EditorData` 中累积的「撤销/重做音符创建/删除」广播给协作对端。
-    ///
-    /// 撤销创建（`inverse=true`）本地删除被创建音符，但不经绘制/删除管线，
-    /// 不会自动发射 `LocalNoteDeleted`，导致 B 端残留该音符（本次修复的缺陷）。
-    /// 重做创建（`inverse=false`）本地重新插入，需补发射 `LocalNoteAdded`。
-    /// 本方法 drain `pending_collab_create_sync` 并按 `is_added` 发射对应同步事件。
-    fn broadcast_pending_collab_create_sync(&mut self) {
-        let pending = self.editor_state.data.take_pending_collab_create_sync();
-        if pending.is_empty() {
-            return;
-        }
-        for (tick, key, length, velocity, channel, track_index, is_added) in pending {
-            let event = if is_added {
-                lumino_message::events::window::Event::local_note_added(
-                    tick,
-                    key,
-                    length,
-                    velocity,
-                    channel,
-                    track_index,
-                )
-            } else {
-                lumino_message::events::window::Event::local_note_deleted(
-                    tick,
-                    key,
-                    length,
-                    velocity,
-                    channel,
-                    track_index,
-                )
-            };
-            lumino_message::events::emit(lumino_message::events::Event::Window(event));
-        }
     }
 
     /// 把 `EditorData` 中累积的「变换类操作（移调/翻转/变速/批量编辑）」广播给协作对端。
@@ -497,5 +437,65 @@ impl Editor {
         self.editor_state.brush_tool.can_redo_path()
             || self.editor_state.line_tool.can_redo_path()
             || self.editor_state.data.history.can_redo()
+    }
+}
+
+/// 把 `EditorData` 中累积的「撤销/重做音符移动」广播给协作对端。
+///
+/// 撤销/重做 MoveOp 直接改本地 document 但不经拖动管线，因此不会自动发射
+/// `LocalNoteMoved`；若不在此补广播，B 端在 A 撤销后本地坐标与 A 端失同步，
+/// 下一次操作按 A 端本地坐标引用会在 B 端 0/N 失配。本方法 drain
+/// `pending_collab_move_sync` 并以与拖动一致的语义发射 `LocalNoteMoved`。
+fn broadcast_pending_collab_sync(editor: &mut Editor) {
+    let pending = editor.editor_state.data.take_pending_collab_move_sync();
+    if pending.is_empty() {
+        return;
+    }
+    for (tick, key, tick_offset, key_offset, track_index) in pending {
+        lumino_message::events::emit(lumino_message::events::Event::Window(
+            lumino_message::events::window::Event::local_note_moved(
+                tick,
+                key,
+                0.0,
+                tick_offset,
+                key_offset,
+                track_index,
+            ),
+        ));
+    }
+}
+
+/// 把 `EditorData` 中累积的「撤销/重做音符创建/删除」广播给协作对端。
+///
+/// 撤销创建（`inverse=true`）本地删除被创建音符，但不经绘制/删除管线，
+/// 不会自动发射 `LocalNoteDeleted`，导致 B 端残留该音符（本次修复的缺陷）。
+/// 重做创建（`inverse=false`）本地重新插入，需补发射 `LocalNoteAdded`。
+/// 本函数 drain `pending_collab_create_sync` 并按 `is_added` 发射对应同步事件。
+fn broadcast_pending_collab_create_sync(editor: &mut Editor) {
+    let pending = editor.editor_state.data.take_pending_collab_create_sync();
+    if pending.is_empty() {
+        return;
+    }
+    for (tick, key, length, velocity, channel, track_index, is_added) in pending {
+        let event = if is_added {
+            lumino_message::events::window::Event::local_note_added(
+                tick,
+                key,
+                length,
+                velocity,
+                channel,
+                track_index,
+            )
+        } else {
+            lumino_message::events::window::Event::local_note_deleted(
+                tick,
+                key,
+                length,
+                velocity,
+                channel,
+                track_index,
+            )
+        };
+        lumino_message::events::emit(lumino_message::events::Event::Window(event));
     }
 }

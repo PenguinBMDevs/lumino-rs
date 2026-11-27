@@ -19,7 +19,7 @@ impl Editor {
             return None;
         }
         let composed = self.editor_state.pending_composed.first()?;
-        Self::single_owner_track(composed)
+        single_owner_track(composed)
     }
 
     /// 当前放置会话的归属轨；会话 / 下标 / 形态失效返回 `None`。
@@ -29,7 +29,7 @@ impl Editor {
             .editor_state
             .pending_composed
             .get(session.pending_index)?;
-        Self::single_owner_track(composed)
+        single_owner_track(composed)
     }
 
     /// 是否存在「归属在别的轨」的待确认单支——非归属轨按 ✓ 时用来挡住提交。
@@ -42,15 +42,15 @@ impl Editor {
             .or_else(|| self.pending_single_owner_track())
             .is_some_and(|owner| owner != self.current_track())
     }
+}
 
-    /// 单支组合的归属轨；类型或支数不符返回 `None`。
-    fn single_owner_track(composed: &PendingComposed) -> Option<usize> {
-        if composed.kind != ComposedKind::Single || composed.results.len() != 1 {
-            return None;
-        }
-        composed
-            .results
-            .first()
-            .map(|part| part.model.track as usize)
+/// 单支组合的归属轨；类型或支数不符返回 `None`。
+fn single_owner_track(composed: &PendingComposed) -> Option<usize> {
+    if composed.kind != ComposedKind::Single || composed.results.len() != 1 {
+        return None;
     }
+    composed
+        .results
+        .first()
+        .map(|part| part.model.track as usize)
 }
